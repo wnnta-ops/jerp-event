@@ -1,0 +1,58 @@
+/* J-ERP Design Tokens — single source of truth.
+   Mirrors PRD_cloning.md §2.3.2. Edit here, propagate everywhere via Tailwind 4 @theme. */
+
+@theme {
+    /* Brand (J-ERP blue) */
+    --color-brand-50:  oklch(0.97 0.02 250);
+    --color-brand-100: oklch(0.93 0.04 250);
+    --color-brand-200: oklch(0.86 0.08 250);
+    --color-brand-300: oklch(0.76 0.12 250);
+    --color-brand-400: oklch(0.66 0.15 250);
+    --color-brand-500: oklch(0.55 0.18 250);
+    --color-brand-600: oklch(0.48 0.18 250);
+    --color-brand-700: oklch(0.42 0.18 250);
+    --color-brand-800: oklch(0.34 0.14 250);
+    --color-brand-900: oklch(0.25 0.10 250);
+
+    /* Semantic */
+    --color-success: oklch(0.65 0.18 145);
+    --color-warning: oklch(0.78 0.18 75);
+    --color-danger:  oklch(0.60 0.22 25);
+    --color-info:    oklch(0.65 0.15 220);
+
+    /* Surface (light mode defaults) */
+    --color-surface:        oklch(0.99 0 0);
+    --color-surface-muted:  oklch(0.96 0 0);
+    --color-surface-border: oklch(0.90 0 0);
+    --color-text:           oklch(0.18 0 0);
+    --color-text-muted:     oklch(0.45 0 0);
+
+    /* Typography */
+    --font-sans:    'Inter Variable', 'Plus Jakarta Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
+    --font-mono:    'JetBrains Mono', ui-monospace, 'SFMono-Regular', Menlo, monospace;
+    --font-numeric: 'Inter Variable', tabular-nums;
+
+    /* Radius */
+    --radius-card:   0.75rem;
+    --radius-button: 0.5rem;
+    --radius-input:  0.5rem;
+
+    /* Shadows */
+    --shadow-elev-1: 0 1px 2px 0 oklch(0 0 0 / 0.04);
+    --shadow-elev-2: 0 4px 12px -2px oklch(0 0 0 / 0.08);
+    --shadow-elev-3: 0 10px 30px -4px oklch(0 0 0 / 0.12);
+
+    /* Motion */
+    --motion-fast: 120ms;
+    --motion-base: 200ms;
+    --motion-slow: 320ms;
+}
+
+/* Dark mode surface overrides (text + surface only; brand+semantic stay vivid) */
+.dark {
+    --color-surface:        oklch(0.16 0.01 250);
+    --color-surface-muted:  oklch(0.22 0.01 250);
+    --color-surface-border: oklch(0.30 0.01 250);
+    --color-text:           oklch(0.96 0 0);
+    --color-text-muted:     oklch(0.70 0 0);
+}

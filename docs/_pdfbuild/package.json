@@ -1,0 +1,10 @@
+{
+  "name": "eproperty-docs-pdf",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "markdown-it": "^14.1.0",
+    "mermaid": "^11.4.1",
+    "puppeteer": "^23.10.4"
+  }
+}

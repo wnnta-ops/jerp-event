@@ -1,0 +1,134 @@
+<?php
+
+namespace App\Filament\Fo\Resources;
+
+use App\Filament\Fo\Resources\SkemaResource\Pages;
+use App\Modules\FO\Adminjual\Models\Skema;
+use App\Modules\FO\MarketingSales\Models\Tahap;
+use Filament\Forms;
+use Filament\Forms\Form;
+use Filament\Resources\Resource;
+use Filament\Tables;
+use Filament\Tables\Table;
+
+class SkemaResource extends Resource
+{
+    protected static ?string $model = Skema::class;
+
+    protected static ?string $navigationIcon = 'heroicon-o-table-cells';
+
+    protected static ?string $navigationGroup = 'Master Jual';
+
+    protected static ?int $navigationSort = 10;
+
+    protected static ?string $modelLabel = 'Skema Bayar';
+
+    protected static ?string $pluralModelLabel = 'Skema Pembayaran';
+
+    public static function form(Form $form): Form
+    {
+        return $form->schema([
+            Forms\Components\Section::make('Header Skema')->columns(3)->schema([
+                Forms\Components\TextInput::make('code')->label('Kode')->required()->maxLength(32)->unique(ignoreRecord: true),
+                Forms\Components\TextInput::make('name')->label('Nama')->required()->maxLength(255),
+                Forms\Components\Select::make('project_id')->label('Proyek')->relationship('project', 'name')->searchable()->preload(),
+                Forms\Components\Select::make('lokasi_id')->label('Lokasi')
+                    ->relationship('lokasi', 'nama')->searchable()->preload()->live()
+                    ->afterStateUpdated(fn (Forms\Set $set) => $set('tahap_id', null))
+                    ->helperText('Ikat skema ke lokasi tertentu (opsional — kosong = berlaku umum).'),
+                Forms\Components\Select::make('tahap_id')->label('Tahap')
+                    ->options(fn (Forms\Get $get) => Tahap::query()
+                        ->when($get('lokasi_id'), fn ($q, $id) => $q->where('lokasi_id', $id))
+                        ->orderBy('kode')->pluck('nama', 'id'))
+                    ->searchable()
+                    ->helperText('Tahap dalam lokasi tsb (opsional).'),
+                Forms\Components\Select::make('cara_bayar')->label('Jenis')->options([
+                    'KPR' => 'KPR', 'CASH_BERTAHAP' => 'Cash bertahap', 'CASH_KERAS' => 'Cash keras',
+                ])->default('KPR')->required(),
+                Forms\Components\Select::make('bf_dipotong_di')->label('Booking Fee dipotong di')->options([
+                    'DP1' => 'DP 1', 'ANGSURAN1' => 'Angsuran 1', 'DP_DISEBAR' => 'DP disebar',
+                    'ANGSURAN_DISEBAR' => 'Angsuran disebar', 'TIDAK_DISEBAR' => 'BF tidak disebar',
+                ])->default('TIDAK_DISEBAR'),
+                Forms\Components\TextInput::make('present_value')->label('Present Value')->numeric()->prefix('Rp')->default(0),
+                Forms\Components\TextInput::make('diskon_persen')->label('Diskon %')->numeric()->suffix('%')->default(0),
+                Forms\Components\TextInput::make('subsidi_persen')->label('Subsidi developer %')->numeric()->suffix('%')->default(20)
+                    ->helperText('Mode DP Disebar: free X% dari DP.'),
+                Forms\Components\TextInput::make('dp_persen')->label('DP total %')->numeric()->suffix('%')->default(0),
+                Forms\Components\TextInput::make('ang_persen')->label('Angsuran total %')->numeric()->suffix('%')->default(0),
+                Forms\Components\TextInput::make('bf_nominal')->label('Booking Fee (UTJ)')->numeric()->prefix('Rp')->default(0),
+                Forms\Components\TextInput::make('tenor_bulan')->label('Tenor (bulan)')->numeric(),
+                Forms\Components\TextInput::make('jumlah_termin')->label('Jumlah termin')->numeric()->default(1)->required(),
+                Forms\Components\Toggle::make('is_active')->label('Status aktif')->default(true),
+                Forms\Components\Toggle::make('tampil_siteplan')->label('Tampil di Site Plan')->default(true)
+                    ->helperText('Jika aktif, harga skema ini muncul di popup siteplan publik.'),
+                Forms\Components\Textarea::make('keterangan')->rows(2)->columnSpanFull(),
+            ]),
+
+            Forms\Components\Section::make('Termin Pembayaran')->schema([
+                Forms\Components\Repeater::make('lines')->label('Termin')
+                    ->relationship()
+                    ->columns(5)
+                    ->orderColumn('urutan')
+                    ->defaultItems(0)
+                    ->schema([
+                        Forms\Components\TextInput::make('urutan')->label('No')->numeric()->required(),
+                        Forms\Components\Select::make('tipe')->label('Tipe')->options([
+                            'BF' => 'BF', 'DP' => 'DP', 'ANG' => 'Angsuran', 'ADM' => 'Adm',
+                        ])->default('DP')->required(),
+                        Forms\Components\TextInput::make('nama_termin')->label('Nama')->required()->columnSpan(2),
+                        Forms\Components\Select::make('basis')->label('Nilai')->options(['PERSEN' => '% (persen)', 'NOMINAL' => 'F (nominal)'])
+                            ->default('PERSEN')->required()->live(),
+                        Forms\Components\TextInput::make('persen')->label('%')->numeric()->suffix('%')
+                            ->visible(fn (Forms\Get $get) => $get('basis') === 'PERSEN'),
+                        Forms\Components\TextInput::make('nominal')->label('Nominal')->numeric()->prefix('Rp')
+                            ->visible(fn (Forms\Get $get) => $get('basis') === 'NOMINAL'),
+                        Forms\Components\Select::make('jadwal_basis')->label('Jadwal')
+                            ->options(['BULAN' => 'Bulan', 'HARI' => 'Hari', 'TANGGAL' => 'Tanggal'])->default('BULAN'),
+                        Forms\Components\TextInput::make('jadwal_nilai')->label('Jadwal nilai')->numeric()->default(0),
+                        Forms\Components\TextInput::make('setelah')->label('Setelah termin')->numeric()->default(0),
+                        Forms\Components\Toggle::make('flag_bf')->label('BF')->inline(false),
+                        Forms\Components\Toggle::make('flag_kpr')->label('KPR')->inline(false),
+                        Forms\Components\Textarea::make('keterangan')->rows(1)->columnSpanFull(),
+                    ])
+                    ->reorderableWithButtons()
+                    ->collapsible()
+                    ->itemLabel(fn (array $state): ?string => ($state['tipe'] ?? '').' · '.($state['nama_termin'] ?? 'Termin').' — '.($state['persen'] ?? $state['nominal'] ?? '')),
+            ]),
+        ]);
+    }
+
+    public static function table(Table $table): Table
+    {
+        return $table->columns([
+            Tables\Columns\TextColumn::make('code')->label('Kode')->badge()->searchable()->sortable(),
+            Tables\Columns\TextColumn::make('name')->label('Nama')->searchable(),
+            Tables\Columns\TextColumn::make('project.name')->label('Proyek')->toggleable(),
+            Tables\Columns\TextColumn::make('lokasi.nama')->label('Lokasi')->placeholder('Umum')->toggleable(),
+            Tables\Columns\TextColumn::make('tahap.nama')->label('Tahap')->placeholder('—')->toggleable(),
+            Tables\Columns\TextColumn::make('cara_bayar')->label('Cara')->badge(),
+            Tables\Columns\TextColumn::make('dp_persen')->label('DP %')->numeric(2)->suffix('%')->alignEnd(),
+            Tables\Columns\TextColumn::make('tenor_bulan')->label('Tenor')->numeric()->alignEnd()->toggleable(),
+            Tables\Columns\TextColumn::make('jumlah_termin')->label('# Termin')->numeric()->alignEnd(),
+            Tables\Columns\IconColumn::make('is_active')->label('Aktif')->boolean(),
+        ])->filters([
+            Tables\Filters\SelectFilter::make('cara_bayar')->label('Jenis')->options([
+                'KPR' => 'KPR', 'CASH_BERTAHAP' => 'Cash bertahap', 'CASH_KERAS' => 'Cash keras',
+            ]),
+            Tables\Filters\TernaryFilter::make('is_active'),
+        ])->actions([
+            Tables\Actions\EditAction::make(),
+        ])->bulkActions([
+            Tables\Actions\BulkActionGroup::make([Tables\Actions\DeleteBulkAction::make()]),
+        ])->defaultSort('code');
+    }
+
+    public static function getPages(): array
+    {
+        // Pembuatan skema lewat Wizard (App\Filament\Fo\Pages\SkemaWizard) — bukan
+        // grid manual. Halaman ini hanya list + edit (fine-tune termin).
+        return [
+            'index' => Pages\ListSkemas::route('/'),
+            'edit' => Pages\EditSkema::route('/{record}/edit'),
+        ];
+    }
+}

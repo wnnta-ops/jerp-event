@@ -1,0 +1,23 @@
+includes:
+    - vendor/larastan/larastan/extension.neon
+
+parameters:
+    level: 5
+    # Ignore patterns target the full path set; allow analysing a subset
+    # (single file/dir) without failing on an as-yet-unmatched ignore.
+    reportUnmatchedIgnoredErrors: false
+    paths:
+        - app/Modules/BO
+        - app/Filament/Bo
+        - app/Services/Numerator
+        - app/Modules/FO/Launching/Services
+        - app/Modules/FO/Launching/Controllers
+        - app/Modules/FO/Shared
+    excludePaths:
+        - app/Filament/Bo/Resources/*/Pages/*
+    ignoreErrors:
+        # Filament/Livewire dynamic form state arrays are untyped by design.
+        - '#Access to an undefined property#'
+        # Defensive `Auth::user()?->x ?? fallback` — Larastan over-asserts
+        # Auth::user() as non-null, but it can be null in queue/cron contexts.
+        - '#nullsafe property access .* on left side of \?\? is unnecessary#'

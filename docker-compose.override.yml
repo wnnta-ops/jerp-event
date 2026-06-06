@@ -1,0 +1,54 @@
+# docker-compose.override.yml — DEV performance tuning (Windows / Docker Desktop)
+#
+# Auto-merged by `docker compose up` (no -f flag needed).
+#
+# WHY: the base compose bind-mounts the whole project (`./:/var/www/html`),
+# including vendor/ — tens of thousands of files. On Docker Desktop for Windows
+# every file access crosses the slow Windows→Linux filesystem bridge, so each
+# PHP request (which opens thousands of vendor autoload files) is painfully slow.
+#
+# This override mounts native Linux named volumes over vendor/ and node_modules/.
+# They are seeded automatically from the image (Dockerfile copies vendor at
+# build time), so reads no longer touch the Windows filesystem. Your app code
+# stays bind-mounted, so editing app/, resources/, routes/ still hot-reloads.
+#
+# It also bind-mounts php.ini so OPcache tweaks apply on `restart` (no rebuild),
+# since the base image bakes php.ini in at build time.
+#
+# TRADE-OFF: composer/npm installs done on the HOST no longer appear inside the
+# container. After changing PHP deps, refresh the vendor volume with either:
+#   docker compose exec app composer install        # re-fill the volume in place
+#   # or rebuild the image and recreate:
+#   docker compose build app && docker compose up -d
+#
+# REVERT: delete this file, then `docker compose down -v` (drops the volumes)
+# and `docker compose up -d`.
+
+volumes:
+  vendor:
+  node-modules:
+
+x-app-dev-mounts: &app-dev-mounts
+  - ./:/var/www/html
+  - vendor:/var/www/html/vendor
+  - node-modules:/var/www/html/node_modules
+
+services:
+  app:
+    volumes:
+      - ./:/var/www/html
+      - vendor:/var/www/html/vendor
+      - node-modules:/var/www/html/node_modules
+      # Bind php.ini so OPcache changes apply on `docker compose restart app`.
+      - ./docker/php/php.ini:/usr/local/etc/php/conf.d/jerp.ini:ro
+      # Bind entrypoint so the dev cache-priming change applies without rebuild.
+      - ./docker/php/entrypoint.sh:/usr/local/bin/entrypoint.sh:ro
+
+  horizon:
+    volumes: *app-dev-mounts
+
+  scheduler:
+    volumes: *app-dev-mounts
+
+  reverb:
+    volumes: *app-dev-mounts

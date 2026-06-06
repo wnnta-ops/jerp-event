@@ -1,0 +1,42 @@
+@import 'tailwindcss';
+@import './tokens.css';
+
+/* Tailwind 4: tell the compiler where to scan for class usage */
+@source '../../vendor/laravel/framework/src/Illuminate/Pagination/resources/views/*.blade.php';
+@source '../../storage/framework/views/*.php';
+@source '../**/*.blade.php';
+@source '../**/*.js';
+@source '../../app/Livewire/**/*.php';
+@source '../../app/Filament/**/*.php';
+@source '../views/filament/**/*.blade.php';
+
+/* Safelist responsive utilities — Tailwind 4 sometimes misses classes in
+   deeply-nested blade files; explicit safelist guarantees they compile. */
+@source inline("{sm:,md:,lg:,xl:,2xl:}grid-cols-{1,2,3,4,5,6,7,8,9,10,11,12}");
+@source inline("{sm:,md:,lg:,xl:,2xl:}col-span-{1,2,3,4,5,6}");
+@source inline("{sm:,md:,lg:,xl:,2xl:}gap-{1,2,3,4,5,6,8}");
+@source inline("aspect-{auto,square,video}");
+@source inline("line-clamp-{1,2,3}");
+@source inline("bg-clip-text text-transparent");
+
+/* Dark mode: class-strategy */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* Smooth font rendering + tabular nums for money columns */
+html {
+    -webkit-text-size-adjust: 100%;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+}
+
+body {
+    font-family: var(--font-sans);
+    font-feature-settings: 'cv02','cv03','cv04','cv11';
+    background-color: var(--color-surface);
+    color: var(--color-text);
+}
+
+.tabular {
+    font-variant-numeric: tabular-nums;
+    font-family: var(--font-numeric);
+}
