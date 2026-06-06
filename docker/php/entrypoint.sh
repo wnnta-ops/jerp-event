@@ -32,19 +32,45 @@ if [ "$ROLE" = "app" ] && [ -n "${DB_HOST:-}" ]; then
         sleep 1
     done
 
-    # Auto-migrate in dev only (production migrates via CI/CD pipeline)
-    if [ "${APP_ENV:-production}" != "production" ] && [ "${AUTO_MIGRATE:-true}" = "true" ]; then
-        echo "[entrypoint] Auto-migrating (APP_ENV=${APP_ENV})..."
-        php artisan migrate --force --no-interaction || echo "[entrypoint] migrate failed (continuing)"
-    fi
-
-    # Prime caches in production
     if [ "${APP_ENV:-production}" = "production" ]; then
+        # ── Produksi: first-boot turnkey (`docker compose up -d --build` cukup) ──
+
+        # 1) APP_KEY — generate sekali bila belum ada di .env (yang di-mount).
+        if ! grep -qE '^APP_KEY=.+' "$APP_DIR/.env" 2>/dev/null; then
+            echo "[entrypoint] APP_KEY kosong → generate..."
+            php artisan key:generate --force --no-interaction || echo "[entrypoint] key:generate gagal"
+        fi
+
+        # 2) Migrasi (idempotent — hanya yang pending).
+        if [ "${AUTO_MIGRATE:-true}" = "true" ]; then
+            echo "[entrypoint] Migrating (--force)..."
+            php artisan migrate --force --no-interaction || echo "[entrypoint] migrate gagal (lanjut)"
+        fi
+
+        # 3) Seed HANYA bila DB masih kosong (deploy pertama) — cegah duplikasi.
+        if [ "${AUTO_SEED:-true}" = "true" ]; then
+            USERS=$(php artisan tinker --execute='echo \Illuminate\Support\Facades\Schema::hasTable("users") ? \App\Models\User::query()->count() : 1;' 2>/dev/null | tail -n1 | tr -dc '0-9')
+            if [ "$USERS" = "0" ]; then
+                echo "[entrypoint] DB kosong → seeding awal..."
+                php artisan db:seed --force --no-interaction || echo "[entrypoint] seed gagal (lanjut)"
+            fi
+        fi
+
+        # 4) Symlink storage (harmless bila sudah ada; web image juga punya symlink).
+        php artisan storage:link --no-interaction 2>/dev/null || true
+
+        # 5) Prime caches produksi.
         php artisan config:cache  || true
         php artisan route:cache   || true
         php artisan view:cache    || true
         php artisan event:cache   || true
     else
+        # Auto-migrate dev
+        if [ "${AUTO_MIGRATE:-true}" = "true" ]; then
+            echo "[entrypoint] Auto-migrating dev (APP_ENV=${APP_ENV})..."
+            php artisan migrate --force --no-interaction || echo "[entrypoint] migrate failed (continuing)"
+        fi
+
         # Dev: prime the FAST caches so config + 240 routes + Filament panels
         # aren't rebuilt from the (slow Windows bind-mounted) filesystem on every
         # request. Rebuilt on each boot, so editing config/routes is picked up by

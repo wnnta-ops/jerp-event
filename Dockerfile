@@ -167,3 +167,19 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
 
 ENTRYPOINT ["/sbin/tini", "--", "/usr/local/bin/entrypoint.sh"]
 CMD ["php-fpm", "--nodaemonize"]
+
+# ───────────────────────────────────────────────────────────────────
+# Stage: web — Nginx PRODUKSI dengan public/ + aset Vite di-bake dari image runtime.
+# Dipakai oleh base docker-compose (prod). Dev pakai nginx:alpine + bind-mount source.
+# ───────────────────────────────────────────────────────────────────
+FROM nginx:1.27-alpine AS web
+
+COPY docker/nginx/nginx.conf /etc/nginx/nginx.conf
+COPY docker/nginx/default.conf /etc/nginx/conf.d/default.conf
+
+# Salin public/ (index.php + aset Vite build) dari image aplikasi.
+COPY --from=runtime /var/www/html/public /var/www/html/public
+
+# Symlink /storage → upload publik (siteplan, dll). File-nya datang dari
+# volume `storage` yang di-mount read-only ke container web saat runtime.
+RUN ln -sf /var/www/html/storage/app/public /var/www/html/public/storage

@@ -1,0 +1,62 @@
+# docker-compose.override.yml — DEV ONLY (Windows / Docker Desktop).
+#
+# ⚠️  FILE INI DI-GITIGNORE — TIDAK ikut ke VPS. Di server produksi hanya ada
+#     docker-compose.yml (base) sehingga `docker compose up -d --build` = mode
+#     produksi (image immutable). File ini hanya untuk dev lokal.
+#
+# Auto-merged oleh `docker compose up` (tanpa flag -f). Ia MENGGANTI volume
+# produksi (named volume + image immutable) dengan bind-mount source supaya
+# edit app/, resources/, routes/ langsung ke-reload.
+#
+# Perf Windows: vendor/ & node_modules/ pakai named volume (di-seed dari image),
+# jadi baca file tidak menyeberang filesystem Windows→Linux yang lambat.
+#
+# Butuh Docker Compose v2.24+ (untuk tag !override / !reset).
+#
+# TRADE-OFF: composer/npm install di HOST tidak muncul di container. Setelah ubah
+# dependency PHP: `docker compose exec app composer install` (isi ulang volume)
+# atau `docker compose build app && docker compose up -d`.
+#
+# Salin dari docker-compose.override.yml.example bila hilang.
+
+volumes:
+  vendor:
+  node-modules:
+
+services:
+  app:
+    volumes: !override
+      - ./:/var/www/html
+      - vendor:/var/www/html/vendor
+      - node-modules:/var/www/html/node_modules
+      # Bind php.ini supaya perubahan OPcache berlaku saat `restart` (tanpa rebuild).
+      - ./docker/php/php.ini:/usr/local/etc/php/conf.d/jerp.ini:ro
+      # Bind entrypoint supaya perubahan cache-priming dev berlaku tanpa rebuild.
+      - ./docker/php/entrypoint.sh:/usr/local/bin/entrypoint.sh:ro
+
+  horizon:
+    volumes: !override
+      - ./:/var/www/html
+      - vendor:/var/www/html/vendor
+      - node-modules:/var/www/html/node_modules
+
+  scheduler:
+    volumes: !override
+      - ./:/var/www/html
+      - vendor:/var/www/html/vendor
+      - node-modules:/var/www/html/node_modules
+
+  reverb:
+    volumes: !override
+      - ./:/var/www/html
+      - vendor:/var/www/html/vendor
+      - node-modules:/var/www/html/node_modules
+
+  # Dev: nginx polos + serve langsung dari source host (bukan image `web` prod).
+  nginx:
+    build: !reset null
+    image: nginx:1.27-alpine
+    volumes: !override
+      - ./docker/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./docker/nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./:/var/www/html:ro
