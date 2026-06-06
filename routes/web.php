@@ -10,6 +10,24 @@ use App\Modules\FO\MarketingSales\Controllers\CustomerQrController;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Route;
 
+// ─────────────────────────────────────────────────────────────────────────
+// Subdomain publik OPSIONAL (env NUP_DOMAIN / SITEPLAN_DOMAIN). Didefinisikan
+// SEBELUM route global "/" agar cocok lebih dulu saat host = subdomain tsb.
+// Kosong di .env (lokal) → blok ini di-skip, akses tetap via path biasa.
+// ─────────────────────────────────────────────────────────────────────────
+if ($nupDomain = config('jerp.nup_domain')) {
+    Route::domain($nupDomain)->middleware(['throttle:nup-public'])->group(function () {
+        Route::get('/', NupPublicForm::class)->name('nup.daftar.subdomain');
+    });
+}
+
+if ($siteplanDomain = config('jerp.siteplan_domain')) {
+    Route::domain($siteplanDomain)->middleware(['throttle:120,1'])->group(function () {
+        Route::get('/', [SiteplanController::class, 'index'])->name('siteplan.subdomain.index');
+        Route::get('/{project}', [SiteplanController::class, 'show'])->name('siteplan.subdomain.show');
+    });
+}
+
 Route::get('/', fn () => auth()->check() ? redirect()->route('dashboard') : redirect()->route('login'));
 
 // Public NUP registration (BR-NUP, see docs/04_BusinessFlow.md §2) — NO auth, rate-limited.
