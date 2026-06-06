@@ -93,12 +93,6 @@ RUN apk add --no-cache \
         libjpeg-turbo \
         freetype \
         oniguruma \
-        # Browsershot (Puppeteer) butuh Chromium dari Alpine
-        chromium \
-        nss \
-        freetype-dev \
-        ttf-freefont \
-        font-noto-emoji \
         # untuk supervisord (opsional kalau pakai multi-process di 1 container)
         supervisor \
     && apk add --no-cache --virtual .build-deps \
@@ -124,6 +118,19 @@ RUN apk add --no-cache \
     && docker-php-ext-enable redis \
     && apk del .build-deps \
     && rm -rf /var/cache/apk/* /tmp/* /var/tmp/*
+
+# Chromium untuk Browsershot (PDF server-side) — OPSIONAL & BERAT (~200 paket,
+# termasuk llvm/gtk/wayland). Default OFF supaya build cepat & tidak OOM di VPS
+# kecil; cetak HTML tetap jalan tanpa ini. Aktifkan PDF saat butuh:
+#   docker compose build --build-arg INSTALL_CHROMIUM=true app
+# atau set INSTALL_CHROMIUM=true di .env lalu `docker compose up -d --build`.
+ARG INSTALL_CHROMIUM=false
+RUN if [ "$INSTALL_CHROMIUM" = "true" ]; then \
+        apk add --no-cache chromium nss ttf-freefont font-noto-emoji \
+        && rm -rf /var/cache/apk/*; \
+    else \
+        echo "[build] Chromium dilewati (INSTALL_CHROMIUM=false) — PDF Browsershot nonaktif, cetak HTML tetap jalan."; \
+    fi
 
 # Puppeteer/Browsershot: pakai system Chromium, bukan download
 ENV PUPPETEER_SKIP_DOWNLOAD=true \

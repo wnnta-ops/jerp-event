@@ -75,6 +75,9 @@ services:
         APP_VERSION: ${APP_VERSION:-dev}
         BUILD_DATE: ${BUILD_DATE:-}
         VCS_REF: ${VCS_REF:-}
+        # Chromium/PDF opsional — default OFF (build cepat, hemat RAM VPS).
+        # Set INSTALL_CHROMIUM=true di .env saat butuh PDF Browsershot.
+        INSTALL_CHROMIUM: ${INSTALL_CHROMIUM:-false}
     image: jerp/app:${APP_VERSION:-latest}
     container_name: jerp-app
     restart: unless-stopped
