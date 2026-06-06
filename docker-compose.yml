@@ -140,6 +140,14 @@ services:
   # Queue worker — Horizon
   # ───────────────────────────────────────────────────────────────────
   horizon:
+    # Build sama dgn app supaya `up --build` di mesin baru TIDAK mencoba pull
+    # jerp/app dari registry. Compose build sekali, semua service reuse image-nya.
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: runtime
+      args:
+        INSTALL_CHROMIUM: ${INSTALL_CHROMIUM:-false}
     image: jerp/app:${APP_VERSION:-latest}
     container_name: jerp-horizon
     restart: unless-stopped
@@ -168,6 +176,12 @@ services:
   # Scheduler — Laravel artisan schedule:run tiap 60s
   # ───────────────────────────────────────────────────────────────────
   scheduler:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: runtime
+      args:
+        INSTALL_CHROMIUM: ${INSTALL_CHROMIUM:-false}
     image: jerp/app:${APP_VERSION:-latest}
     container_name: jerp-scheduler
     restart: unless-stopped
@@ -203,6 +217,12 @@ services:
   # Reverb — WebSocket server (Launching live unit, notifikasi)
   # ───────────────────────────────────────────────────────────────────
   reverb:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: runtime
+      args:
+        INSTALL_CHROMIUM: ${INSTALL_CHROMIUM:-false}
     image: jerp/app:${APP_VERSION:-latest}
     container_name: jerp-reverb
     restart: unless-stopped
