@@ -13,7 +13,10 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware): void {
-        //
+        // Di belakang reverse proxy (mis. Nginx Proxy Manager) yang terminasi TLS,
+        // percayai header X-Forwarded-* agar Laravel tahu request asalnya HTTPS →
+        // semua URL/aset di-generate https (hindari Mixed Content).
+        $middleware->trustProxies(at: '*');
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         //
