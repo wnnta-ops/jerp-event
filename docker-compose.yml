@@ -105,7 +105,10 @@ services:
       interval: 30s
       timeout: 5s
       retries: 3
-      start_period: 30s
+      # Boot pertama berat (migrate + config:cache + filament:optimize) bisa 60-90s
+      # sebelum php-fpm siap. Beri tenggang besar supaya container tidak keburu
+      # di-cap "unhealthy" → bikin nginx (depends_on healthy) gagal start saat `up`.
+      start_period: 150s
 
   # ───────────────────────────────────────────────────────────────────
   # Web — Nginx serving static + FastCGI
