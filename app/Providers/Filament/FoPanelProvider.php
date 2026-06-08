@@ -111,6 +111,22 @@ class FoPanelProvider extends PanelProvider
             return $builder->items($alwaysItems);
         }
 
+        // Modul boleh punya BEBERAPA sub-grup ('groups') seperti legacy
+        // (Komisi: Setup, BLT, Pengajuan, Realisasi, Reward) — atau satu daftar
+        // 'items' (satu grup). Render sesuai yang tersedia.
+        if (! empty($module['groups'])) {
+            $groups = [];
+            foreach ($module['groups'] as $g) {
+                $group = NavigationGroup::make($g['label'])->items($g['items']);
+                if (! empty($g['icon'])) {
+                    $group->icon($g['icon']);
+                }
+                $groups[] = $group;
+            }
+
+            return $builder->items($alwaysItems)->groups($groups);
+        }
+
         return $builder
             ->items($alwaysItems)
             ->groups([
@@ -192,6 +208,18 @@ class FoPanelProvider extends PanelProvider
             'tahaps' => 'setup-unit',
         ];
 
+        // Halaman placeholder generik (SegeraHadir) dipakai banyak menu; modul
+        // ditentukan dari query ?modul= agar sidebar yang benar yang tampil.
+        if ($segment === 'segera-hadir') {
+            $key = match ((string) request()->query('modul', '')) {
+                'Komisi' => 'komisi',
+                'Marketing & Sales' => 'marketing',
+                default => null,
+            };
+
+            return $key ? ($this->moduleDefinitions()[$key] ?? null) : null;
+        }
+
         $key = $segmentToModule[$segment] ?? null;
 
         return $key ? ($this->moduleDefinitions()[$key] ?? null) : null;
@@ -207,14 +235,39 @@ class FoPanelProvider extends PanelProvider
             ->icon($icon)
             ->isActiveWhen(fn () => request()->routeIs($activeRoutePrefix.'*') || request()->is(trim(parse_url($url, PHP_URL_PATH), '/').'*'));
 
+        // Item placeholder: struktur dipasang, flow/logika menyusul. Mengarah ke
+        // halaman SegeraHadir dengan label modul+fitur via query string.
+        $soon = fn (string $label, string $modul, string $fitur, string $icon = 'heroicon-o-wrench-screwdriver') => NavigationItem::make($label)
+            ->url(url('/fo/segera-hadir?modul='.rawurlencode($modul).'&fitur='.rawurlencode($fitur)))
+            ->icon($icon)
+            ->isActiveWhen(fn () => request()->is('fo/segera-hadir') && request()->query('fitur') === $fitur);
+
         return [
             'marketing' => [
                 'label' => 'Marketing & Sales',
                 'icon' => 'heroicon-o-shopping-bag',
-                'items' => [
-                    $item('Customer', '/fo/customers', 'heroicon-o-user-group', 'filament.fo.resources.customers.'),
-                    $item('Reservasi', '/fo/reservasis', 'heroicon-o-bookmark', 'filament.fo.resources.reservasis.'),
-                    $item('Kontrak', '/fo/kontraks', 'heroicon-o-document-text', 'filament.fo.resources.kontraks.'),
+                'groups' => [
+                    ['label' => 'Customer & Booking', 'items' => [
+                        $item('Customer', '/fo/customers', 'heroicon-o-user-group', 'filament.fo.resources.customers.'),
+                        $item('Master Booking', '/fo/reservasis', 'heroicon-o-bookmark', 'filament.fo.resources.reservasis.'),
+                        $soon('Ganti Nama', 'Marketing & Sales', 'Ganti Nama', 'heroicon-o-arrows-right-left'),
+                        $soon('Pindah Unit (Booking)', 'Marketing & Sales', 'Pindah Unit (Booking)', 'heroicon-o-arrow-path-rounded-square'),
+                    ]],
+                    ['label' => 'Kontrak', 'items' => [
+                        $item('Surat Pesanan', '/fo/kontraks', 'heroicon-o-document-text', 'filament.fo.resources.kontraks.'),
+                        $soon('Adjustment Kontrak', 'Marketing & Sales', 'Adjustment Kontrak', 'heroicon-o-adjustments-horizontal'),
+                        $soon('Adjustment Kontrak (PPN)', 'Marketing & Sales', 'Adjustment Kontrak (PPN)', 'heroicon-o-adjustments-horizontal'),
+                        $soon('Customize Tagihan', 'Marketing & Sales', 'Customize Tagihan', 'heroicon-o-list-bullet'),
+                        $soon('Reschedule Tagihan', 'Marketing & Sales', 'Reschedule Tagihan', 'heroicon-o-calendar-days'),
+                        $soon('Pengalihan Hak', 'Marketing & Sales', 'Pengalihan Hak', 'heroicon-o-identification'),
+                        $soon('Pindah Unit (Kontrak)', 'Marketing & Sales', 'Pindah Unit (Kontrak)', 'heroicon-o-arrow-path-rounded-square'),
+                        $soon('Pembatalan Kontrak', 'Marketing & Sales', 'Pembatalan Kontrak', 'heroicon-o-x-circle'),
+                    ]],
+                    ['label' => 'Migrate', 'items' => [
+                        $soon('Upload Kontrak', 'Marketing & Sales', 'Upload Kontrak', 'heroicon-o-arrow-up-tray'),
+                        $soon('Upload Jadwal Tagihan', 'Marketing & Sales', 'Upload Jadwal Tagihan', 'heroicon-o-arrow-up-tray'),
+                        $soon('Upload Pembayaran', 'Marketing & Sales', 'Upload Pembayaran', 'heroicon-o-arrow-up-tray'),
+                    ]],
                 ],
             ],
             'setup' => [
@@ -278,10 +331,31 @@ class FoPanelProvider extends PanelProvider
             'komisi' => [
                 'label' => 'Komisi',
                 'icon' => 'heroicon-o-receipt-percent',
-                'items' => [
-                    $item('Sales (master)', '/fo/agents', 'heroicon-o-user-circle', 'filament.fo.resources.agents.'),
-                    $item('Komisi', '/fo/komisis', 'heroicon-o-receipt-percent', 'filament.fo.resources.komisis.'),
-                    $item('Reward', '/fo/rewards', 'heroicon-o-trophy', 'filament.fo.resources.rewards.'),
+                'groups' => [
+                    ['label' => 'Setup', 'items' => [
+                        $soon('Setup Tarif', 'Komisi', 'Setup Tarif', 'heroicon-o-calculator'),
+                        $soon('Skema Komisi', 'Komisi', 'Skema Komisi', 'heroicon-o-table-cells'),
+                        $soon('Termin Komisi', 'Komisi', 'Termin Komisi', 'heroicon-o-list-bullet'),
+                        $soon('Skema BLT', 'Komisi', 'Skema BLT', 'heroicon-o-table-cells'),
+                        $soon('Termin BLT', 'Komisi', 'Termin BLT', 'heroicon-o-list-bullet'),
+                        $item('Sales (Agent)', '/fo/agents', 'heroicon-o-user-circle', 'filament.fo.resources.agents.'),
+                    ]],
+                    ['label' => 'BLT', 'items' => [
+                        $soon('Generate BLT', 'Komisi', 'Generate BLT', 'heroicon-o-bolt'),
+                        $soon('Pengajuan BLT', 'Komisi', 'Pengajuan BLT', 'heroicon-o-paper-airplane'),
+                        $soon('Realisasi BLT', 'Komisi', 'Realisasi BLT', 'heroicon-o-banknotes'),
+                    ]],
+                    ['label' => 'Komisi', 'items' => [
+                        $item('Daftar Komisi', '/fo/komisis', 'heroicon-o-receipt-percent', 'filament.fo.resources.komisis.'),
+                        $soon('Generate Komisi', 'Komisi', 'Generate Komisi', 'heroicon-o-bolt'),
+                        $soon('Pengajuan Komisi', 'Komisi', 'Pengajuan Komisi', 'heroicon-o-paper-airplane'),
+                        $soon('Realisasi Komisi', 'Komisi', 'Realisasi Komisi', 'heroicon-o-banknotes'),
+                    ]],
+                    ['label' => 'Reward', 'items' => [
+                        $item('Daftar Reward', '/fo/rewards', 'heroicon-o-trophy', 'filament.fo.resources.rewards.'),
+                        $soon('Pengajuan Reward', 'Komisi', 'Pengajuan Reward', 'heroicon-o-paper-airplane'),
+                        $soon('Realisasi Reward', 'Komisi', 'Realisasi Reward', 'heroicon-o-banknotes'),
+                    ]],
                 ],
             ],
             'pengaturan' => [
