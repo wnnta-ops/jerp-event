@@ -64,7 +64,10 @@ class SkemaWizardService
         $base = $base !== '' ? Str::limit($base, 28, '') : 'SKEMA';
         $code = $base;
         $i = 1;
-        while (Skema::query()->where('code', $code)->exists()) {
+        // withTrashed(): unique DB (tenant_id, code) tetap menghitung baris yang
+        // SOFT-DELETED, jadi cek bentrok wajib ikut menyertakan yang terhapus —
+        // kalau tidak, code "bebas" menurut query tapi tetap tabrakan di DB (1062).
+        while (Skema::withTrashed()->where('code', $code)->exists()) {
             $code = Str::limit($base, 28, '').'-'.(++$i);
         }
 
