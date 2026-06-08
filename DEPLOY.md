@@ -69,6 +69,12 @@ docker compose ps                                   # status service
 docker compose logs -f app                          # log aplikasi
 docker compose exec app php artisan migrate --force # migrasi manual
 docker compose exec app php artisan tinker          # REPL
+docker compose exec app php artisan key:generate
+docker compose exec app php artisan storage:link
+docker compose exec app php artisan db:seed
+docker compose exec app php artisan config:clear
+docker compose exec app php artisan cache:clear
+docker compose exec app php artisan optimize:clear
 docker compose down                                 # stop (data di named volume tetap)
 docker compose down -v                              # stop + HAPUS data (hati-hati!)
 ```
@@ -82,6 +88,42 @@ KTP/NPWP). Backup contoh:
 docker compose exec mysql mysqldump -ujerp -p"$DB_PASSWORD" jerp > backup-$(date +%F).sql
 docker run --rm -v jerp_storage:/data -v "$PWD":/out alpine tar czf /out/storage-$(date +%F).tgz -C /data .
 ```
+
+## Reset database dari awal
+
+> ⚠️ **DESTRUKTIF** — semua data (unit, pricelist, skema, NUP, customer, reservasi, dll)
+> akan **HILANG** dan diganti data seeder awal. **Backup dulu** (lihat bagian atas) bila perlu.
+> `APP_KEY` di `.env` tidak terganggu (file, bukan volume), jadi tak perlu generate ulang.
+
+### Opsi A — Reset isi DB saja (paling umum)
+Drop semua tabel → migrasi ulang → isi seeder awal (roles, user admin, master data).
+File upload (siteplan/KTP di `storage`) **TIDAK** terhapus.
+
+```bash
+cd jerp
+docker compose exec app php artisan migrate:fresh --seed --force
+docker compose exec app php artisan optimize:clear
+docker compose restart app
+```
+
+### Opsi B — Reset TOTAL (DB + Redis + Meilisearch + file upload)
+Hapus **semua** named volume (data DB, cache, **dan file upload**), lalu build & boot ulang.
+Saat boot, entrypoint otomatis migrate + seed (karena DB kosong).
+
+```bash
+cd jerp
+docker compose down -v            # ⚠️ hapus SEMUA volume — termasuk siteplan/KTP yang diupload!
+docker compose up -d --build
+```
+
+### Setelah reset
+- Login pakai user admin hasil seeder (lihat kredensial di [README.md](README.md)).
+- Data master yang Anda input manual (unit, pricelist, koordinat, siteplan, skema custom)
+  **perlu di-input/import ulang** — seeder hanya mengisi data dasar.
+- Cek: `docker compose exec app php artisan migrate:status` (semua "Ran").
+
+> Catatan dev (lokal): perintah sama, tanpa `--force` pun jalan karena `APP_ENV=local`.
+> Untuk dev cepat: `docker compose exec app php artisan migrate:fresh --seed`.
 
 ## Catatan dev vs prod
 
