@@ -165,8 +165,12 @@
             </div>
         </div>
 
-        {{-- Cascading wilayah — Alpine fetches dari proxy lokal /wilayah/* (hindari CORS) --}}
-        <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4"
+        {{-- Cascading wilayah — Alpine fetch dari proxy /wilayah/*. wire:ignore WAJIB:
+             opsi dropdown dirender Alpine (bukan state Livewire), jadi tanpa ini
+             setiap update Livewire (mis. klik Preferensi Unit) akan morph & MERESET
+             dropdown + opsinya. Nilai tetap tersinkron ke Livewire via $wire.set(). --}}
+        <div wire:ignore
+             class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4"
              x-data="ktpWilayah(@js(['prov' => $province, 'kab' => $city, 'kec' => $kecamatan, 'kel' => $kelurahan]))"
              x-init="initFromExisting()">
             <div>
