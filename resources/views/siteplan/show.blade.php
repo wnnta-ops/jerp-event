@@ -61,7 +61,7 @@
         /* Popup — Design C: kartu terang + harga sejajar (modern) */
         .leaflet-popup-content-wrapper { background:#fff; color:#0f172a; border-radius:16px; padding:0; box-shadow:0 20px 50px rgba(15,23,42,.25); border:1px solid #e2e8f0; }
         .leaflet-popup-tip { background:#fff; border:1px solid #e2e8f0; box-shadow:none; }
-        .leaflet-popup-content { margin:0; min-width: 300px; }
+        .leaflet-popup-content { margin:0; min-width: 330px; }
         .leaflet-popup-close-button { color:#94a3b8 !important; font-size:20px !important; width:26px !important; height:26px !important; padding:4px 0 0 0 !important; }
         .leaflet-popup-close-button:hover { color:#334155 !important; }
 
@@ -77,15 +77,11 @@
 
         .sp-prices { display:grid; grid-template-columns: repeat(3, 1fr); gap:8px; margin-top:13px; }
         .sp-prices.one { grid-template-columns: 1fr; }
-        .sp-pc { background:#f8fafc; border:1px solid #e7ebf0; border-radius:11px; padding:9px 6px; text-align:center; transition:transform .12s; }
-        .sp-pc:hover { transform:translateY(-2px); }
-        .sp-pc .lab { font-size:9.5px; font-weight:800; letter-spacing:.5px; color:#2563eb; margin-bottom:3px; }
-        .sp-pc .amt { font-size:14px; font-weight:800; color:#0f172a; line-height:1.05; }
-        .sp-pc .amt small { font-size:9px; font-weight:700; color:#64748b; margin-left:1px; }
-        .sp-pc.best { background:#eff6ff; border-color:#bfdbfe; }
-        .sp-pc.best .lab { color:#1d4ed8; }
-        .sp-pc.best .tag { display:block; font-size:8px; font-weight:800; letter-spacing:.4px; color:#16a34a; margin-top:3px; }
-        .sp-foot { font-size:10.5px; color:#94a3b8; text-align:center; margin-top:10px; }
+        .sp-pc { background:#f8fafc; border:1px solid #e7ebf0; border-radius:11px; padding:9px 5px; text-align:center; transition:transform .12s, box-shadow .12s; }
+        .sp-pc:hover { transform:translateY(-2px); box-shadow:0 4px 12px rgba(15,23,42,.10); }
+        .sp-pc .lab { font-size:9.5px; font-weight:800; letter-spacing:.4px; color:#2563eb; margin-bottom:4px; }
+        .sp-pc .cur { font-size:8px; font-weight:700; color:#94a3b8; line-height:1; }
+        .sp-pc .amt { font-size:12px; font-weight:800; color:#0f172a; line-height:1.15; white-space:nowrap; }
 
         .sp-empty { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; color:#94a3b8; text-align:center; padding:24px; }
     </style>
@@ -274,23 +270,16 @@
                         rows = [{ label: 'HARGA', price: Number(u.harga) || 0 }];
                     }
                     if (rows.length) {
-                        const minPrice = Math.min(...rows.map(r => r.price));
                         const wrap = el('div', { class: 'sp-prices' + (rows.length === 1 ? ' one' : '') });
                         rows.forEach(r => {
-                            const isBest = rows.length > 1 && r.price === minPrice;
-                            const pc = el('div', { class: 'sp-pc' + (isBest ? ' best' : '') });
-                            pc.title = r.label + ': ' + fmtRp(r.price);
+                            const pc = el('div', { class: 'sp-pc' });
                             pc.appendChild(el('div', { class: 'lab', text: r.label }));
-                            const amt = el('div', { class: 'amt' });
-                            const s = fmtShort(r.price);
-                            amt.appendChild(document.createTextNode(s.num));
-                            amt.appendChild(el('small', { text: s.unit }));
-                            pc.appendChild(amt);
-                            if (isBest) pc.appendChild(el('span', { class: 'tag', text: 'TERMURAH' }));
+                            pc.appendChild(el('div', { class: 'cur', text: 'Rp' }));
+                            // Angka PENUH (mis. 619.000.000) — hindari salah info dari singkatan.
+                            pc.appendChild(el('div', { class: 'amt', text: (Number(r.price) || 0).toLocaleString('id-ID') }));
                             wrap.appendChild(pc);
                         });
                         card.appendChild(wrap);
-                        card.appendChild(el('div', { class: 'sp-foot', text: 'Arahkan kursor ke harga untuk nominal penuh' }));
                     }
 
                     poly.bindPopup(card, { maxWidth: 340, autoPan: true }).openPopup();
