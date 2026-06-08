@@ -9,6 +9,7 @@ use Filament\Forms\Form;
 use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Table;
+use Illuminate\Validation\Rules\Unique;
 
 /**
  * Setup Unit → master Lokasi (per Project). Kode jadi segmen pertama No. Unit.
@@ -37,7 +38,12 @@ class LokasiResource extends Resource
                     ->relationship('project', 'name')->required()->searchable()->preload(),
                 Forms\Components\TextInput::make('kode')->label('Kode Lokasi')->required()->maxLength(32)
                     ->placeholder('mis. JRK3')
-                    ->helperText('Dipakai sebagai segmen pertama No. Unit (Lokasi-Tahap-Blok-Nomer).'),
+                    // Unik per project (mirror unique DB tenant_id+project_id+kode) →
+                    // pesan validasi ramah, bukan crash 1062. Catatan: Lokasi ≠ Tahap;
+                    // tahap dibuat di menu Tahap, bukan dgn menduplikasi lokasi.
+                    ->unique(ignoreRecord: true, modifyRuleUsing: fn (Unique $rule, Forms\Get $get) => $rule->where('project_id', $get('project_id')))
+                    ->validationMessages(['unique' => 'Kode Lokasi ini sudah ada untuk project tsb. Untuk menambah fase, pakai menu Tahap.'])
+                    ->helperText('Dipakai sebagai segmen pertama No. Unit (Lokasi-Tahap-Blok-Nomer). Satu kode per cluster.'),
                 Forms\Components\TextInput::make('nama')->label('Nama Lokasi')->required()->maxLength(255),
                 Forms\Components\Toggle::make('is_active')->label('Aktif')->default(true)->inline(false),
             ]),
