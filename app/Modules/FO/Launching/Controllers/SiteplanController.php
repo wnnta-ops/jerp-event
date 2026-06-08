@@ -124,13 +124,15 @@ class SiteplanController
         foreach ($units as $u) {
             $kode = $u->kode_unit ?: $u->label;
 
-            // Harga per skema bayar (fo_unit_price_lists) — skema bisa beda per
-            // lokasi/tahap, jadi popup menampilkan apa pun skema yang dimiliki unit.
+            // Harga per skema bayar (fo_unit_price_lists). Skema di-scope per
+            // lokasi/tahap → hanya yang COCOK dgn lokasi+tahap unit ini yang tampil
+            // (mis. skema CASH tahap 001 tak muncul di unit tahap 004).
             $pricelist = [];
             foreach ($u->pricelists as $p) {
                 $price = (float) $p->price_list;
-                // Hanya skema yang ditandai "Tampil di Site Plan" yang muncul ke publik.
-                if ($price <= 0 || $p->skema === null || ! $p->skema->tampil_siteplan) {
+                // Hanya skema "Tampil di Site Plan" + cocok lokasi/tahap unit.
+                if ($price <= 0 || $p->skema === null || ! $p->skema->tampil_siteplan
+                    || ! $p->skema->appliesToScope($u->lokasi_id, $u->tahap_id)) {
                     continue;
                 }
                 $pricelist[] = [

@@ -51,6 +51,17 @@ class Skema extends TenantAwareModel
         });
     }
 
+    /**
+     * Skema berlaku untuk lokasi & tahap tertentu? lokasi_id/tahap_id NULL = umum
+     * (berlaku semua). Dipakai agar harga skema hanya tampil di unit yang cocok
+     * tahap-nya (mis. skema CASH tahap 001 tidak muncul di unit tahap 004).
+     */
+    public function appliesToScope(?int $lokasiId, ?int $tahapId): bool
+    {
+        return ($this->lokasi_id === null || (int) $this->lokasi_id === $lokasiId)
+            && ($this->tahap_id === null || (int) $this->tahap_id === $tahapId);
+    }
+
     public function project(): BelongsTo
     {
         return $this->belongsTo(Project::class);
