@@ -5,6 +5,7 @@ namespace App\Modules\FO\Adminjual\Services;
 use App\Modules\FO\Adminjual\Models\Skema;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
+use RuntimeException;
 
 /**
  * Generator skema bayar (Gambar 1 "Pendaftaran Skema Baru"): dari rumus global
@@ -28,12 +29,23 @@ class SkemaWizardService
     {
         return DB::transaction(function () use ($data, $rumus) {
             $bfSatuan = $rumus['bf_satuan'] ?? 'RP';
+            $code = $data['code'] ?? $this->deriveCode((string) $data['name']);
 
-            $skema = Skema::create([
+            // Cari skema dengan code sama — TERMASUK yang sudah dihapus (soft-deleted),
+            // karena unique DB (tenant_id, code) tetap menghitungnya.
+            $existing = Skema::withTrashed()->where('code', $code)->first();
+            if ($existing && ! $existing->trashed()) {
+                // Masih aktif → tolak (cegah duplikat). Pesan jelas, bukan 1062.
+                throw new RuntimeException(
+                    'Skema dengan kode "'.$code.'" sudah ada. Gunakan nama lain, atau edit skema yang sudah ada.'
+                );
+            }
+
+            $attributes = [
                 'project_id' => $data['project_id'] ?? null,
                 'lokasi_id' => $data['lokasi_id'] ?? null,
                 'tahap_id' => $data['tahap_id'] ?? null,
-                'code' => $data['code'] ?? $this->deriveCode((string) $data['name']),
+                'code' => $code,
                 'name' => $data['name'],
                 'cara_bayar' => $data['cara_bayar'] ?? 'KPR',
                 // Parameter rumus yang dipakai SkemaCalculatorService (template):
@@ -47,7 +59,18 @@ class SkemaWizardService
                 'tampil_siteplan' => $data['tampil_siteplan'] ?? false,
                 'jumlah_termin' => (int) ($rumus['dp_count'] ?? 0) + (int) ($rumus['ang_count'] ?? 0),
                 'is_active' => true,
-            ]);
+            ];
+
+            if ($existing) {
+                // Terhapus → HIDUPKAN KEMBALI baris yang sama (id tetap → relasi
+                // pricelist/dll tetap utuh) + perbarui datanya + regenerate baris.
+                $existing->restore();
+                $existing->fill($attributes)->save();
+                $existing->lines()->delete();
+                $skema = $existing;
+            } else {
+                $skema = Skema::create($attributes);
+            }
 
             foreach ($this->generateLines($rumus, $skema->cara_bayar) as $line) {
                 $skema->lines()->create($line);
@@ -57,21 +80,15 @@ class SkemaWizardService
         });
     }
 
-    /** Kode skema unik per tenant dari nama (slug uppercase + suffix bila bentrok). */
+    /**
+     * Kode skema dari nama (slug uppercase). TIDAK auto-suffix: duplikat
+     * di-handle eksplisit di create() (aktif → ditolak, terhapus → di-revive).
+     */
     private function deriveCode(string $name): string
     {
         $base = trim(strtoupper((string) preg_replace('/[^A-Za-z0-9]+/', '-', $name)), '-');
-        $base = $base !== '' ? Str::limit($base, 28, '') : 'SKEMA';
-        $code = $base;
-        $i = 1;
-        // withTrashed(): unique DB (tenant_id, code) tetap menghitung baris yang
-        // SOFT-DELETED, jadi cek bentrok wajib ikut menyertakan yang terhapus —
-        // kalau tidak, code "bebas" menurut query tapi tetap tabrakan di DB (1062).
-        while (Skema::withTrashed()->where('code', $code)->exists()) {
-            $code = Str::limit($base, 28, '').'-'.(++$i);
-        }
 
-        return $code;
+        return $base !== '' ? Str::limit($base, 28, '') : 'SKEMA';
     }
 
     /**
