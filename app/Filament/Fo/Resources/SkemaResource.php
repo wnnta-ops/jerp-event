@@ -5,11 +5,14 @@ namespace App\Filament\Fo\Resources;
 use App\Filament\Fo\Resources\SkemaResource\Pages;
 use App\Modules\FO\Adminjual\Models\Skema;
 use App\Modules\FO\MarketingSales\Models\Tahap;
+use App\Modules\FO\MarketingSales\Models\UnitPricelist;
 use Filament\Forms;
 use Filament\Forms\Form;
+use Filament\Notifications\Notification;
 use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Table;
+use Illuminate\Support\Collection;
 
 class SkemaResource extends Resource
 {
@@ -24,6 +27,12 @@ class SkemaResource extends Resource
     protected static ?string $modelLabel = 'Skema Bayar';
 
     protected static ?string $pluralModelLabel = 'Skema Pembayaran';
+
+    /** Skema dipakai di Price List unit? (jadi tak boleh dihapus). */
+    public static function usedByPricelist(Skema $skema): bool
+    {
+        return UnitPricelist::query()->where('skema_id', $skema->id)->exists();
+    }
 
     public static function form(Form $form): Form
     {
@@ -117,8 +126,30 @@ class SkemaResource extends Resource
             Tables\Filters\TernaryFilter::make('is_active'),
         ])->actions([
             Tables\Actions\EditAction::make(),
+            Tables\Actions\DeleteAction::make()
+                ->before(function (Skema $record, Tables\Actions\DeleteAction $action) {
+                    if (static::usedByPricelist($record)) {
+                        Notification::make()->danger()
+                            ->title('Tidak bisa dihapus')
+                            ->body('Skema "'.$record->code.'" masih dipakai di Price List unit. Hapus/ubah harganya dulu.')
+                            ->send();
+                        $action->cancel();
+                    }
+                }),
         ])->bulkActions([
-            Tables\Actions\BulkActionGroup::make([Tables\Actions\DeleteBulkAction::make()]),
+            Tables\Actions\BulkActionGroup::make([
+                Tables\Actions\DeleteBulkAction::make()
+                    ->before(function (Collection $records, Tables\Actions\DeleteBulkAction $action) {
+                        $used = $records->filter(fn (Skema $r) => static::usedByPricelist($r));
+                        if ($used->isNotEmpty()) {
+                            Notification::make()->danger()
+                                ->title('Sebagian skema dipakai Price List')
+                                ->body('Tidak dihapus: '.$used->pluck('code')->implode(', ').'. Hapus/ubah harganya dulu.')
+                                ->send();
+                            $action->cancel();
+                        }
+                    }),
+            ]),
         ])->defaultSort('code');
     }
 

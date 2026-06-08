@@ -6,8 +6,10 @@ use App\Models\Concerns\TenantAwareModel;
 use App\Models\Project;
 use App\Modules\FO\MarketingSales\Models\Lokasi;
 use App\Modules\FO\MarketingSales\Models\Tahap;
+use App\Modules\FO\MarketingSales\Models\UnitPricelist;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use RuntimeException;
 
 class Skema extends TenantAwareModel
 {
@@ -31,6 +33,23 @@ class Skema extends TenantAwareModel
         'tampil_siteplan' => 'boolean',
         'is_active' => 'boolean',
     ];
+
+    protected static function booted(): void
+    {
+        parent::booted();
+
+        // Cegah hapus skema yang masih dipakai di Price List unit — supaya harga
+        // (mis. di /siteplan) tidak hilang/ter-orphan. Berlaku untuk semua jalur
+        // hapus (bulk, halaman edit, programatik). Hapus/ubah pricelist-nya dulu.
+        static::deleting(function (Skema $skema): void {
+            if (UnitPricelist::query()->where('skema_id', $skema->id)->exists()) {
+                throw new RuntimeException(
+                    'Skema "'.$skema->code.'" masih dipakai di Price List unit, tidak bisa dihapus. '
+                    .'Hapus/ubah harga skema ini di Price List dulu.'
+                );
+            }
+        });
+    }
 
     public function project(): BelongsTo
     {
