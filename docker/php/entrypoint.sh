@@ -19,6 +19,12 @@ if [ "$(id -u)" = "0" ]; then
 fi
 chmod -R ug+rwX "$APP_DIR/storage" "$APP_DIR/bootstrap/cache" 2>/dev/null || true
 
+# Manifest paket (packages.php/services.php) bisa BASI — mis. setelah `docker compose
+# down -v` lalu vendor di-reseed `--no-dev`, atau bootstrap/cache lama nyangkut di
+# bind-mount host (dev). Hapus supaya Laravel membangun ulang dari vendor/composer/
+# installed.json TERKINI → cegah "Class ...\ServiceProvider not found" (mis. debugbar).
+rm -f "$APP_DIR/bootstrap/cache/packages.php" "$APP_DIR/bootstrap/cache/services.php" 2>/dev/null || true
+
 # Wait for MySQL (only the 'app' role boots migrations)
 if [ "$ROLE" = "app" ] && [ -n "${DB_HOST:-}" ]; then
     echo "[entrypoint] Waiting for MySQL at ${DB_HOST}:${DB_PORT:-3306}..."
