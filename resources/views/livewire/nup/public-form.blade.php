@@ -169,7 +169,7 @@
              opsi dropdown dirender Alpine (bukan state Livewire), jadi tanpa ini
              setiap update Livewire (mis. klik Preferensi Unit) akan morph & MERESET
              dropdown + opsinya. Nilai tetap tersinkron ke Livewire via $wire.set(). --}}
-        <div wire:ignore
+        <div wire:ignore data-wilayah
              class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4"
              x-data="ktpWilayah(@js(['prov' => $province, 'kab' => $city, 'kec' => $kecamatan, 'kel' => $kelurahan]))"
              x-init="initFromExisting()">
@@ -287,8 +287,11 @@
 
         <div class="flex flex-wrap gap-2 mb-3">
             @foreach ($budgetOptions as $val => $lbl)
+                {{-- wire:model DEFERRED (bukan .live): klik pill TIDAK memicu round-trip
+                     Livewire → tak ada morph → dropdown wilayah (option dirender Alpine)
+                     tak ke-reset. Styling aktif via CSS :has(input:checked). --}}
                 <label class="nup-pill {{ in_array($val, $pilihan_budget) ? 'active' : '' }}">
-                    <input type="checkbox" wire:model.live="pilihan_budget" value="{{ $val }}" class="hidden">
+                    <input type="checkbox" wire:model="pilihan_budget" value="{{ $val }}" class="hidden">
                     {{ $lbl }}
                 </label>
             @endforeach
@@ -482,6 +485,32 @@
                     this.$wire.set('kelurahan', this.kelName, false);
                 }
             },
+            // Dipanggil setelah Livewire morph: jika morphdom sempat menghapus opsi
+            // hasil x-for sementara state Alpine tak berubah (sehingga x-for tak render
+            // ulang), bangun kembali dropdown dari nama yang tersimpan. Idempoten.
+            heal() {
+                const optionCount = this.$el.querySelectorAll('select option').length;
+                const expected = this.provinces.length + this.regencies.length
+                    + this.districts.length + this.villages.length + 4; // +4 placeholder "— Pilih"
+                if (optionCount < expected) {
+                    this.initFromExisting();
+                }
+            },
         };
+    }
+
+    // Self-heal global: setelah setiap morph Livewire, render ulang dropdown wilayah
+    // bila option-nya terhapus. Hook didaftarkan sekali saja.
+    if (! window.__wilayahHealHooked) {
+        window.__wilayahHealHooked = true;
+        document.addEventListener('livewire:init', () => {
+            Livewire.hook('morphed', ({ el }) => {
+                const scope = el && el.querySelectorAll ? el : document;
+                scope.querySelectorAll('[data-wilayah]').forEach((node) => {
+                    const data = window.Alpine && Alpine.$data(node);
+                    if (data && typeof data.heal === 'function') data.heal();
+                });
+            });
+        });
     }
 </script>

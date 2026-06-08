@@ -42,7 +42,8 @@
             transition: all .15s;
         }
         .nup-pill:hover { border-color: #2563eb; color: #2563eb; }
-        .nup-pill.active { background: #2563eb; border-color: #2563eb; color: #fff; }
+        .nup-pill.active,
+        .nup-pill:has(input:checked) { background: #2563eb; border-color: #2563eb; color: #fff; }
         .nup-error { color: #dc2626; font-size: 0.75rem; margin-top: 0.25rem; display: block; }
         .nup-card {
             background: #fff; border-radius: 8px; border: 1px solid #e5e7eb;
