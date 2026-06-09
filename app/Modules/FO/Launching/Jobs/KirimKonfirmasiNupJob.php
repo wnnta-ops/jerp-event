@@ -11,6 +11,7 @@ use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Facades\URL;
 
 /**
  * Sends NUP confirmation via email and (stub) WhatsApp.
@@ -41,18 +42,24 @@ class KirimKonfirmasiNupJob implements ShouldQueue
             return;
         }
 
-        // Email
+        // Link SPRS (signed, publik) — hanya bila sudah APPROVED (urutan/no_nup terbit).
+        // Dilampirkan PDF di email + dikirim sbg link di WA.
+        $sprsUrl = $registration->urutan !== null
+            ? URL::signedRoute('fo.cetak.sprs', ['registration' => $registration->id])
+            : null;
+
+        // Email (saat approved → lampirkan SPRS PDF + tautan).
         if ($email = $registration->email ?: $registration->customer?->email) {
-            Mail::to($email)->send(new NupConfirmationMail($registration));
+            Mail::to($email)->send(new NupConfirmationMail($registration, $sprsUrl));
         }
 
         // WhatsApp via Mekari Qontak (template-based; di-skip aman bila belum dikonfigurasi).
         if ($phone = $registration->phone ?: $registration->customer?->mobile) {
-            $this->dispatchWhatsApp($phone, $registration);
+            $this->dispatchWhatsApp($phone, $registration, $sprsUrl);
         }
     }
 
-    private function dispatchWhatsApp(string $phone, NupRegistration $r): void
+    private function dispatchWhatsApp(string $phone, NupRegistration $r, ?string $sprsUrl = null): void
     {
         $gateway = app(WhatsAppGatewayInterface::class);
         $eventName = $r->event?->name ?? '-';
@@ -60,6 +67,8 @@ class KirimKonfirmasiNupJob implements ShouldQueue
 
         if ($r->urutan !== null) {
             // No NUP & urutan sudah terbit (approved) → template konfirmasi.
+            // Param ke-6 = link SPRS (tambahkan {{6}} di template Qontak untuk
+            // mengirim dokumen SPRS ke customer; dibungkus aman bila template lama).
             $gateway->sendTemplate(
                 toNumber: $phone,
                 toName: (string) $r->nama_pendaftar,
@@ -70,6 +79,7 @@ class KirimKonfirmasiNupJob implements ShouldQueue
                     (string) $r->urutan,
                     $eventName,
                     $tglLaunching,
+                    (string) ($sprsUrl ?? '-'),
                 ],
             );
 

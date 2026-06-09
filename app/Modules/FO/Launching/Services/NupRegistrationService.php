@@ -51,6 +51,7 @@ class NupRegistrationService
                 'tenant_id' => $event->tenant_id,
                 'nup_event_id' => $event->id,
                 'project_pref_id' => $data['project_pref_id'] ?? $event->project_id,
+                'agent_id' => $data['agent_id'] ?? null,
                 'no_nup' => null,           // diterbitkan saat APPROVE
                 'urutan' => null,           // diterbitkan saat APPROVE (FIFO per event)
                 'customer_id' => $customer->id,

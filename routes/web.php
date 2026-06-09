@@ -36,6 +36,13 @@ Route::middleware(['throttle:nup-public'])
         Route::get('/nup/daftar', NupPublicForm::class)->name('nup.daftar');
     });
 
+// SPRS (Surat Pemesanan Rumah Sementara) — link dikirim ke customer via WA/email
+// saat verifikasi data di-APPROVE. SIGNED URL agar tak bisa diakses/diutak-atik
+// sembarangan (tanpa login). ?pdf=1 → unduh PDF (butuh Chromium/Browsershot).
+Route::middleware(['throttle:120,1', 'signed'])
+    ->get('/nup/sprs/{registration}', [ClosingPrintController::class, 'sprs'])
+    ->name('fo.cetak.sprs');
+
 // Public site plan viewer (marketing — customer & sales). Read-only.
 Route::middleware(['throttle:120,1'])
     ->prefix('siteplan')->name('siteplan.')

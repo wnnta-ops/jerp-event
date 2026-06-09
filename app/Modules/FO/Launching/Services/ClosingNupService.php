@@ -73,7 +73,9 @@ class ClosingNupService
                 'customer_id' => $reservasi->customer_id,
                 'unit_id' => $unit->id,
                 'skema_id' => $skema->id,
-                'agent_id' => $data['agent_id'] ?? null,
+                // Bawa Sales/Agent dari NUP (pendaftaran) bila closing tak menyetel —
+                // agar tampil di SPR & terhubung ke Komisi/BLT.
+                'agent_id' => $data['agent_id'] ?? $reg->agent_id,
                 'tgl_kontrak' => $data['tgl_kontrak'] ?? now()->toDateString(),
                 'harga_jual' => $harga,
                 'diskon' => 0,

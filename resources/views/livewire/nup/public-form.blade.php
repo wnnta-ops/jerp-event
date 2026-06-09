@@ -231,6 +231,89 @@
         </div>
     </div>
 
+    {{-- ── Data Pasangan (muncul saat status Menikah/KAWIN) ────────── --}}
+    @if ($marital_status === 'KAWIN')
+        <div class="nup-card mb-4">
+            <h2 class="nup-section-title mb-4"><span class="nup-section-dot"></span>Data Pasangan</h2>
+
+            <label class="nup-toggle-row text-sm mb-4">
+                <span class="nup-switch">
+                    <input type="checkbox" wire:model.live="spouse_address_same_as_pemohon">
+                    <span class="nup-switch-slider"></span>
+                </span>
+                <span style="color:#374151;">Alamat sama dengan pasangan</span>
+            </label>
+
+            {{-- Toggle ON → alamat pasangan = alamat pemohon (field disembunyikan). --}}
+            @if (! $spouse_address_same_as_pemohon)
+                <div class="mb-4">
+                    <label class="nup-label">Alamat KTP <span class="nup-required">*</span></label>
+                    <input wire:model="spouse_address" type="text" class="nup-input" placeholder="Jalan, Nomor Rumah, RT/RW, Desa">
+                    @error('spouse_address') <span class="nup-error">{{ $message }}</span> @enderror
+                </div>
+            @endif
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                <div>
+                    <label class="nup-label">Nama Lengkap <span class="nup-required">*</span></label>
+                    <input wire:model="spouse_full_name" type="text" class="nup-input" placeholder="Nama Lengkap Sesuai KTP">
+                    @error('spouse_full_name') <span class="nup-error">{{ $message }}</span> @enderror
+                </div>
+                <div>
+                    <label class="nup-label">Nomor KTP <span class="nup-required">*</span></label>
+                    <input wire:model="spouse_nik" type="text" inputmode="numeric" maxlength="16" class="nup-input" placeholder="Nomor KTP">
+                    @error('spouse_nik') <span class="nup-error">{{ $message }}</span> @enderror
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+                <div>
+                    <label class="nup-label">Nomor HP</label>
+                    <div class="flex">
+                        <span class="inline-flex items-center px-3 border border-r-0 text-sm"
+                              style="background:#f3f4f6; border-color:#d1d5db; color:#4b5563; border-top-left-radius:6px; border-bottom-left-radius:6px;">+62</span>
+                        <input wire:model="spouse_phone" type="text" inputmode="numeric" class="nup-input"
+                               style="border-top-left-radius:0; border-bottom-left-radius:0;"
+                               placeholder="Nomor Handphone / Whatsapp">
+                    </div>
+                    @error('spouse_phone') <span class="nup-error">{{ $message }}</span> @enderror
+                </div>
+                <div>
+                    <label class="nup-label">Email Aktif</label>
+                    <input wire:model="spouse_email" type="email" class="nup-input" placeholder="Alamat Email Aktif">
+                    @error('spouse_email') <span class="nup-error">{{ $message }}</span> @enderror
+                </div>
+                <div>
+                    <label class="nup-label">Upload KTP (Maks. 5MB)</label>
+                    <input type="file" wire:model="ktp_pasangan_file" accept=".jpg,.jpeg,.png,.pdf" class="nup-input" style="padding:0.375rem 0.5rem;">
+                    <div wire:loading wire:target="ktp_pasangan_file" class="text-xs mt-1" style="color:#2563eb;">Mengunggah…</div>
+                    @if ($ktp_pasangan_file && ! $errors->has('ktp_pasangan_file'))
+                        <div class="text-xs mt-1" style="color:#16a34a;">✓ {{ method_exists($ktp_pasangan_file, 'getClientOriginalName') ? $ktp_pasangan_file->getClientOriginalName() : 'Terunggah' }}</div>
+                    @endif
+                    @error('ktp_pasangan_file') <span class="nup-error">{{ $message }}</span> @enderror
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div>
+                    <label class="nup-label">Tempat Lahir</label>
+                    <input wire:model="spouse_birth_place" type="text" class="nup-input" placeholder="Tempat Lahir">
+                    @error('spouse_birth_place') <span class="nup-error">{{ $message }}</span> @enderror
+                </div>
+                <div>
+                    <label class="nup-label">Tanggal Lahir</label>
+                    <input wire:model="spouse_birth_date" type="date" class="nup-input">
+                    @error('spouse_birth_date') <span class="nup-error">{{ $message }}</span> @enderror
+                </div>
+                <div>
+                    <label class="nup-label">Pekerjaan</label>
+                    <input wire:model="spouse_occupation" type="text" class="nup-input" placeholder="Pekerjaan">
+                    @error('spouse_occupation') <span class="nup-error">{{ $message }}</span> @enderror
+                </div>
+            </div>
+        </div>
+    @endif
+
     {{-- ── Alamat Surat Menyurat ─────────────────────────────────── --}}
     <div class="nup-card mb-4">
         <div class="mb-4 flex items-center justify-between">
@@ -314,8 +397,19 @@
     <div class="nup-card mb-4">
         <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
             <div>
-                <label class="nup-label">Sales (Nama Sales - Nama Agen Properti) <span class="nup-required">*</span></label>
-                <input wire:model="ref_sales_name" type="text" class="nup-input" placeholder="Nama Sales">
+                <label class="nup-label">Sales (Nama Sales - Agensi Properti) <span class="nup-required">*</span></label>
+                {{-- Ketik nama sales → muncul saran dari master /fo/agents (format
+                     "Nama - Agensi"). Pilih saran → agent_id ter-resolve di server. --}}
+                <input wire:model.live.debounce.500ms="ref_sales_name" type="text" class="nup-input"
+                       list="nup-agents-list" autocomplete="off" placeholder="Ketik / pilih nama sales">
+                <datalist id="nup-agents-list">
+                    @foreach ($agents as $a)
+                        <option value="{{ $a->sales_label }}"></option>
+                    @endforeach
+                </datalist>
+                @if ($agent_id)
+                    <span class="text-xs" style="color:#16a34a;">✓ Sales terdaftar</span>
+                @endif
                 @error('ref_sales_name') <span class="nup-error">{{ $message }}</span> @enderror
             </div>
             <div>

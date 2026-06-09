@@ -40,6 +40,10 @@ class AgentResource extends Resource
                 Forms\Components\TextInput::make('name')
                     ->label('Nama Lengkap')->required()->maxLength(255)
                     ->columnSpan(2),
+                Forms\Components\TextInput::make('agency_name')
+                    ->label('Agensi Properti')->maxLength(191)
+                    ->placeholder('mis. Uhome / DB Real Estate')
+                    ->helperText('Tampil sbg "Nama - Agensi" di SPRS/SPR. Kosongkan utk sales internal.'),
                 Forms\Components\Select::make('project_id')
                     ->label('Project')
                     ->relationship('project', 'name')

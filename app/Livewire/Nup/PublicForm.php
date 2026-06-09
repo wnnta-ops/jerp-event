@@ -3,6 +3,7 @@
 namespace App\Livewire\Nup;
 
 use App\Models\Project;
+use App\Modules\FO\Komisi\Models\Agent;
 use App\Modules\FO\Launching\Models\NupEvent;
 use App\Modules\FO\Launching\Models\NupTipe;
 use App\Modules\FO\Launching\Services\NupRegistrationService;
@@ -104,6 +105,10 @@ class PublicForm extends Component
 
     public ?string $cara_bayar = null;
 
+    // Sales dari master /fo/agents. ref_sales_name menyimpan label "Nama - Agensi"
+    // (snapshot utk SPRS/SPR); agent_id menyimpan FK utk komisi/BLT.
+    public ?int $agent_id = null;
+
     public ?string $ref_sales_name = null;
 
     public ?string $ref_sales_phone = null;
@@ -161,6 +166,23 @@ class PublicForm extends Component
         $this->nup_tipe_id = null;
     }
 
+    /**
+     * Saat user mengetik/memilih Sales (datalist) → resolve agent_id dari master
+     * dengan mencocokkan label "Nama - Agensi". Cocok → isi agent_id + auto-fill
+     * No. Telp Sales. Tak cocok → agent_id null (boleh ketik manual).
+     */
+    public function updatedRefSalesName(): void
+    {
+        $value = trim((string) $this->ref_sales_name);
+        $match = Agent::query()->where('is_active', true)->get()
+            ->first(fn (Agent $a) => $a->sales_label === $value);
+
+        $this->agent_id = $match?->id;
+        if ($match && blank($this->ref_sales_phone)) {
+            $this->ref_sales_phone = $match->phone ?: $match->whatsapp;
+        }
+    }
+
     protected function rules(): array
     {
         return [
@@ -206,6 +228,7 @@ class PublicForm extends Component
             'nup_tipe_id' => ['required', 'integer', Rule::exists('fo_nup_tipe', 'id')->where('project_id', $this->project_pref_id)],
             'tipe_nup' => ['nullable', 'string', 'max:64'],
             'cara_bayar' => ['nullable', 'string', 'max:32'],
+            'agent_id' => ['nullable', 'exists:fo_agents,id'],
             'ref_sales_name' => ['nullable', 'string', 'max:255'],
             'ref_sales_phone' => ['nullable', 'string', 'max:32'],
 
@@ -308,6 +331,7 @@ class PublicForm extends Component
                 'spouse_address' => $this->spouse_address,
                 'tipe_nup' => $this->tipe_nup,
                 'cara_bayar' => $this->cara_bayar,
+                'agent_id' => $this->agent_id,
                 'ref_sales_name' => $this->ref_sales_name,
                 'ref_sales_phone' => $this->ref_sales_phone,
                 'pilihan_budget' => array_values($this->pilihan_budget),
@@ -345,6 +369,7 @@ class PublicForm extends Component
             'events' => NupEvent::query()->whereIn('status', ['OPEN'])->orderBy('tgl_launching')->get(),
             'tipeNupOptions' => $tipeNupOptions,
             'projects' => Project::query()->where('is_active', true)->orderBy('name')->get(),
+            'agents' => Agent::query()->where('is_active', true)->orderBy('name')->get(),
             'budgetOptions' => [
                 'RUMAH_200JT' => 'Rumah 200 Jutaan',
                 'RUMAH_400JT' => 'Rumah 400 Jutaan',

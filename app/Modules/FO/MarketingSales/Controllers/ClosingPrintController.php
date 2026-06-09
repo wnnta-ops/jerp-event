@@ -18,10 +18,22 @@ class ClosingPrintController extends Controller
 {
     public function spr(Kontrak $kontrak): mixed
     {
-        $kontrak->load(['customer', 'unit.unitType', 'skema', 'agent', 'reservasi']);
+        $kontrak->load(['customer', 'unit.unitType', 'unit.lokasi', 'skema.lines', 'agent', 'reservasi']);
         $nup = NupRegistration::query()->where('reservasi_id', $kontrak->reservasi_id)->orderByDesc('id')->first();
 
         return $this->render('pdf.fo.spr', ['kontrak' => $kontrak, 'nup' => $nup], 'SPR-'.$kontrak->no_kontrak);
+    }
+
+    /**
+     * SPRS (Surat Pemesanan Rumah Sementara) — dari NupRegistration. Dipakai utk
+     * dilihat/diunduh customer (link dikirim via WA) & dilampirkan di email saat
+     * verifikasi data di-APPROVE.
+     */
+    public function sprs(NupRegistration $registration): mixed
+    {
+        $registration->load(['customer', 'agent']);
+
+        return $this->render('pdf.fo.sprs', ['reg' => $registration], 'SPRS-'.($registration->no_nup ?: $registration->id));
     }
 
     public function kwitansi(Bkm $bkm): mixed

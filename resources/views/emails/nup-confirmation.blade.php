@@ -23,6 +23,11 @@
         </table>
 
         <p>Mohon hadir di hari launching membawa identitas diri. Detail lokasi & rundown akan kami kirim mendekati hari-H.</p>
+
+        @if (! empty($sprsUrl))
+            <p style="margin-top:18px;">Surat Pemesanan Rumah Sementara (SPRS) Anda terlampir pada email ini (PDF). Anda juga dapat membukanya melalui tautan berikut:</p>
+            <p><a href="{{ $sprsUrl }}" style="display:inline-block; background:#2563eb; color:#fff; padding:10px 18px; border-radius:8px; text-decoration:none; font-weight:600;">Lihat / Unduh SPRS</a></p>
+        @endif
     @else
         <h2 style="color: #1e40af;">Pendaftaran NUP berhasil</h2>
 

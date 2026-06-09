@@ -14,12 +14,21 @@ class Agent extends TenantAwareModel
     protected $table = 'fo_agents';
 
     protected $fillable = [
-        'tenant_id', 'project_id', 'code', 'inisial', 'name', 'jenis', 'is_arebi',
+        'tenant_id', 'project_id', 'code', 'inisial', 'name', 'agency_name', 'jenis', 'is_arebi',
         'sales_type_id', 'sales_level_id', 'atasan_id',
         'phone', 'whatsapp', 'email', 'alamat', 'npwp',
         'rekening_bank', 'rekening_number', 'rekening_holder',
         'komisi_persen_default', 'is_active', 'keterangan',
     ];
+
+    /**
+     * Label tampil "Nama Sales - Agensi Properti" (mis. "Danang - Uhome").
+     * Dipakai di dropdown NUP, SPRS, dan tanda tangan SPR. Tanpa agensi → nama saja.
+     */
+    public function getSalesLabelAttribute(): string
+    {
+        return trim($this->name.($this->agency_name ? ' - '.$this->agency_name : ''));
+    }
 
     protected $casts = [
         'komisi_persen_default' => 'decimal:2',

@@ -16,7 +16,7 @@ class NupRegistration extends TenantAwareModel
     protected $table = 'fo_nup_registrations';
 
     protected $fillable = [
-        'tenant_id', 'nup_event_id', 'project_pref_id',
+        'tenant_id', 'nup_event_id', 'project_pref_id', 'agent_id',
         'no_nup', 'urutan',
         'customer_id', 'nama_pendaftar', 'nik', 'phone', 'secondary_phone', 'email',
         'tgl_daftar', 'tgl_check_in', 'tgl_payment',
@@ -96,6 +96,12 @@ class NupRegistration extends TenantAwareModel
     public function projectPref(): BelongsTo
     {
         return $this->belongsTo(Project::class, 'project_pref_id');
+    }
+
+    /** Sales/Agent yang mendaftarkan NUP (dari master /fo/agents). */
+    public function agent(): BelongsTo
+    {
+        return $this->belongsTo(\App\Modules\FO\Komisi\Models\Agent::class);
     }
 
     public function customer(): BelongsTo
