@@ -58,6 +58,22 @@ COPY resources/ resources/
 COPY public/ public/
 COPY vite.config.* tailwind.config.* postcss.config.* tsconfig.json* ./
 
+# VITE_* ditanam ke bundle SAAT build (build-time). Tanpa nilai ini, window.Echo
+# (real-time Reverb) & reCAPTCHA TIDAK aktif di image produksi. Di-passing sbg
+# build args dari docker-compose.yml (lihat anchor x-vite-args).
+ARG VITE_REVERB_APP_KEY=
+ARG VITE_REVERB_HOST=localhost
+ARG VITE_REVERB_PORT=8088
+ARG VITE_REVERB_SCHEME=http
+ARG VITE_RECAPTCHA_SITE_KEY=
+ARG VITE_APP_NAME=J-ERP
+ENV VITE_REVERB_APP_KEY=$VITE_REVERB_APP_KEY \
+    VITE_REVERB_HOST=$VITE_REVERB_HOST \
+    VITE_REVERB_PORT=$VITE_REVERB_PORT \
+    VITE_REVERB_SCHEME=$VITE_REVERB_SCHEME \
+    VITE_RECAPTCHA_SITE_KEY=$VITE_RECAPTCHA_SITE_KEY \
+    VITE_APP_NAME=$VITE_APP_NAME
+
 RUN npm run build
 
 # ─────────────────────────────────────────────────────────────────────

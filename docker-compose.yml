@@ -62,6 +62,20 @@ x-app-env: &app-env
   REVERB_PORT: 8088
   REVERB_SCHEME: http
 
+# VITE_* HARUS tersedia saat BUILD (Vite menanamnya ke bundle app.js). Tanpa ini,
+# window.Echo (real-time Reverb) & reCAPTCHA tak aktif di image produksi. Anchor
+# ini di-merge ke build args SEMUA service yang memicu node-build, supaya aset
+# selalu konsisten (tak tertimpa build tanpa VITE). Default = nilai dev/localhost;
+# untuk produksi set di .env: VITE_REVERB_HOST=<domain>, VITE_REVERB_SCHEME=https,
+# VITE_REVERB_PORT=443.
+x-vite-args: &vite-args
+  VITE_REVERB_APP_KEY: ${VITE_REVERB_APP_KEY:-jerpkey}
+  VITE_REVERB_HOST: ${VITE_REVERB_HOST:-localhost}
+  VITE_REVERB_PORT: ${VITE_REVERB_PORT:-8088}
+  VITE_REVERB_SCHEME: ${VITE_REVERB_SCHEME:-http}
+  VITE_RECAPTCHA_SITE_KEY: ${VITE_RECAPTCHA_SITE_KEY:-}
+  VITE_APP_NAME: ${VITE_APP_NAME:-J-ERP}
+
 services:
   # ───────────────────────────────────────────────────────────────────
   # Application — PHP-FPM (Laravel)
@@ -72,6 +86,7 @@ services:
       dockerfile: Dockerfile
       target: runtime
       args:
+        <<: *vite-args
         APP_VERSION: ${APP_VERSION:-dev}
         BUILD_DATE: ${BUILD_DATE:-}
         VCS_REF: ${VCS_REF:-}
@@ -120,6 +135,8 @@ services:
       context: .
       dockerfile: Dockerfile
       target: web
+      args:
+        <<: *vite-args
     image: jerp/web:${APP_VERSION:-latest}
     container_name: jerp-nginx
     restart: unless-stopped
@@ -150,6 +167,7 @@ services:
       dockerfile: Dockerfile
       target: runtime
       args:
+        <<: *vite-args
         INSTALL_CHROMIUM: ${INSTALL_CHROMIUM:-false}
     image: jerp/app:${APP_VERSION:-latest}
     container_name: jerp-horizon
@@ -184,6 +202,7 @@ services:
       dockerfile: Dockerfile
       target: runtime
       args:
+        <<: *vite-args
         INSTALL_CHROMIUM: ${INSTALL_CHROMIUM:-false}
     image: jerp/app:${APP_VERSION:-latest}
     container_name: jerp-scheduler
@@ -225,6 +244,7 @@ services:
       dockerfile: Dockerfile
       target: runtime
       args:
+        <<: *vite-args
         INSTALL_CHROMIUM: ${INSTALL_CHROMIUM:-false}
     image: jerp/app:${APP_VERSION:-latest}
     container_name: jerp-reverb
