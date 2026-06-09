@@ -92,6 +92,13 @@ class PilihUnit extends Page
 
     public function scanBarcode(string $barcode): void
     {
+        // Hanya proses saat fase 'scan'. Scanner kamera kadang masih aktif &
+        // terus membaca QR yg sama setelah customer ter-load → tanpa guard ini
+        // terjadi banjir scanBarcode + fase choosing↔customer bolak-balik.
+        // Untuk scan customer baru, user klik "Scan Ulang" (→ fase 'scan').
+        if ($this->phase !== 'scan') {
+            return;
+        }
         $this->resetCustomer();
 
         try {
@@ -246,7 +253,7 @@ class PilihUnit extends Page
 
         $project = Project::find($this->clusterId);
 
-        return Unit::with(['unitType', 'pricelists.skema'])
+        return Unit::with(['unitType', 'pricelists.skema', 'lokasi'])
             ->where('project_id', $this->clusterId)
             ->where('is_active', true)
             ->when(
@@ -283,7 +290,9 @@ class PilihUnit extends Page
                     'blok' => $u->blok,
                     'no_unit' => $u->no_unit,
                     'tahap' => $u->tahap,
-                    'nama_lokasi' => $project?->code,
+                    // Sama dgn /siteplan: nama master Lokasi unit (mis. "Java
+                    // Residence Krian Cluster 3"), fallback nama project.
+                    'nama_lokasi' => $u->lokasi?->nama ?: $project?->name,
                     'tipe' => $u->unitType?->name ?: '—',
                     'luas_tanah' => (float) $u->luas_tanah,
                     'luas_bangunan' => (float) $u->luas_bangunan,

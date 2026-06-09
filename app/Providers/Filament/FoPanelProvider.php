@@ -162,8 +162,8 @@ class FoPanelProvider extends PanelProvider
     private function moduleForSegment(string $segment): ?array
     {
         $segmentToModule = [
-            // Marketing & Sales
-            'customers' => 'marketing',
+            // Marketing & Sales (daftar customer kini di /fo/sales)
+            'sales' => 'marketing',
             'reservasis' => 'marketing',
             'kontraks' => 'marketing',
             // Setup Sales (master + sales + unit + gimmick)
@@ -248,7 +248,7 @@ class FoPanelProvider extends PanelProvider
                 'icon' => 'heroicon-o-shopping-bag',
                 'groups' => [
                     ['label' => 'Customer & Booking', 'items' => [
-                        $item('Customer', '/fo/customers', 'heroicon-o-user-group', 'filament.fo.resources.customers.'),
+                        $item('Customer', '/fo/sales', 'heroicon-o-user-group', 'filament.fo.resources.sales.'),
                         $item('Master Booking', '/fo/reservasis', 'heroicon-o-bookmark', 'filament.fo.resources.reservasis.'),
                         $soon('Ganti Nama', 'Marketing & Sales', 'Ganti Nama', 'heroicon-o-arrows-right-left'),
                         $soon('Pindah Unit (Booking)', 'Marketing & Sales', 'Pindah Unit (Booking)', 'heroicon-o-arrow-path-rounded-square'),

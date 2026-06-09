@@ -32,22 +32,37 @@
         .pu-float.pu-panel { background: rgba(255,255,255,.94); }
         .dark .pu-float.pu-panel { background: rgba(15,23,42,.88); border-color: rgba(255,255,255,.14); }
 
-        /* Leaflet popup styling for the info card (mirror legacy eProperty look) */
-        .leaflet-popup-content-wrapper { background:#0f172a; color:#f1f5f9; border-radius:8px; padding:0; box-shadow:0 12px 32px rgba(0,0,0,.5); border:1px solid #334155; }
-        .leaflet-popup-tip { background:#0f172a; border:1px solid #334155; }
-        .leaflet-popup-content { margin:0; min-width:340px; }
-        .pu-info { padding: 14px; font-size: 13px; line-height: 1.55; }
-        .pu-info .row { display: grid; grid-template-columns: 90px 1fr; gap: 4px 8px; margin-bottom: 4px; }
-        .pu-info .row .lbl { font-weight: 500; color: #cbd5e1; }
-        .pu-info .row .val { color: #f8fafc; font-weight: 500; }
-        .pu-info table { width: 100%; margin-top: 10px; border-collapse: collapse; }
-        .pu-info table th, .pu-info table td { border: 1px solid #475569; padding: 6px 10px; font-size: 12px; }
-        .pu-info table th { background: #1e293b; text-align: left; font-weight: 600; }
-        .pu-info table td { text-align: right; font-family: ui-monospace, monospace; }
-        .pu-info table td.skema { text-align: left; font-family: inherit; font-weight: 500; }
-        .pu-pilih-btn { margin-top: 10px; width: 100%; padding: 8px 12px; border-radius: 6px; background:#2563eb; color:#fff; font-weight:600; font-size: 13px; border:0; cursor:pointer; }
+        /* Full layar seperti /siteplan: stage menutupi seluruh viewport, map isi penuh.
+           Panel scan (kiri-bawah) & Ganti Cluster (kanan-atas) mengambang di atasnya. */
+        .pu-stage.pu-fullscreen { position: fixed; inset: 0; z-index: 40; }
+        .pu-stage.pu-fullscreen > #pu-map { height: 100%; min-height: 0; border-radius: 0; border: 0; }
+
+        /* Popup info — kartu putih meniru /siteplan (lebih enak dilihat). */
+        .leaflet-popup-content-wrapper { background:#fff; color:#0f172a; border-radius:16px; padding:0; box-shadow:0 20px 50px rgba(15,23,42,.25); border:1px solid #e2e8f0; }
+        .leaflet-popup-tip { background:#fff; border:1px solid #e2e8f0; box-shadow:none; }
+        .leaflet-popup-content { margin:0; min-width:330px; }
+        .leaflet-popup-close-button { color:#94a3b8 !important; font-size:20px !important; width:26px !important; height:26px !important; padding:4px 0 0 0 !important; }
+        .leaflet-popup-close-button:hover { color:#334155 !important; }
+        .sp-card { padding:16px; font-family:inherit; }
+        .sp-head { display:flex; align-items:center; justify-content:space-between; gap:10px; }
+        .sp-code { font-size:17px; font-weight:800; color:#0f172a; letter-spacing:.2px; }
+        .sp-pill { font-size:10px; font-weight:800; letter-spacing:.6px; padding:4px 10px; border-radius:999px; color:#fff; white-space:nowrap; box-shadow:0 2px 6px rgba(0,0,0,.12); }
+        .sp-loc { font-size:11.5px; color:#64748b; margin-top:2px; }
+        .sp-sub { font-size:12.5px; color:#475569; margin-top:8px; }
+        .sp-sub b { color:#0f172a; font-weight:700; }
+        .sp-addr { display:flex; gap:6px; font-size:11.5px; color:#64748b; line-height:1.45; margin-top:6px; }
+        .sp-addr .pin { flex:0 0 auto; }
+        .sp-prices { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; margin-top:13px; }
+        .sp-prices.one { grid-template-columns:1fr; }
+        .sp-prices.two { grid-template-columns:repeat(2,1fr); }
+        .sp-pc { background:#f8fafc; border:1px solid #e7ebf0; border-radius:11px; padding:9px 5px; text-align:center; transition:transform .12s, box-shadow .12s; }
+        .sp-pc:hover { transform:translateY(-2px); box-shadow:0 4px 12px rgba(15,23,42,.10); }
+        .sp-pc .lab { font-size:9.5px; font-weight:800; letter-spacing:.4px; color:#2563eb; margin-bottom:4px; }
+        .sp-pc .cur { font-size:8px; font-weight:700; color:#94a3b8; line-height:1; }
+        .sp-pc .amt { font-size:12px; font-weight:800; color:#0f172a; line-height:1.15; white-space:nowrap; }
+        .pu-pilih-btn { margin-top:13px; width:100%; padding:10px 12px; border-radius:10px; background:#2563eb; color:#fff; font-weight:700; font-size:13px; border:0; cursor:pointer; }
         .pu-pilih-btn:hover { background:#1d4ed8; }
-        .pu-pilih-btn:disabled { background:#475569; cursor:not-allowed; }
+        .pu-pilih-btn:disabled { background:#94a3b8; cursor:not-allowed; }
 
         /* Stempel status unit (SOLD merah / BOOKING oranye) — anchor 0×0 +
            translate(-50%,-50%), ukuran dasar kecil lalu diskalakan ikut zoom. */
@@ -111,23 +126,11 @@
             @endforelse
         </div>
     @else
-        {{-- ──────────────── STEP 2+: Siteplan + scanner ──────────────── --}}
-        <div class="flex items-center justify-between mb-4">
-            <div>
-                <h2 class="text-xl md:text-2xl font-bold">{{ $this->clusterName ?: $project->name }}</h2>
-                <p class="text-xs text-gray-500 mt-0.5">{{ $project->code }} · {{ count($units) }} unit</p>
-            </div>
-            <button wire:click="backToClusters"
-                    class="text-sm rounded-lg border px-3 py-1.5 hover:bg-gray-100 dark:hover:bg-slate-800 transition"
-                    style="border-color: var(--gray-300);">
-                ← Ganti Cluster
-            </button>
-        </div>
-
+        {{-- ──────────────── STEP 2+: Siteplan + scanner (FULL LAYAR) ──────────────── --}}
         {{-- x-data WAJIB statik: kalau memuat data yang berubah (phase, regNoNup, …)
              string x-data berubah tiap update → Alpine bikin instance baru → polygon
              & timer beda instance. Data dinamis dibaca via $wire. --}}
-        <div class="pu-stage"
+        <div class="pu-stage pu-fullscreen"
              wire:key="pu-stage"
              x-data="pilihUnitState({
                  units: @js($units),
@@ -140,6 +143,21 @@
             {{-- Siteplan full (Leaflet). wire:ignore → Livewire tak men-morph DOM
                  yang disuntik Leaflet (kalau tidak, map hilang tiap scan/aksi). --}}
             <div id="pu-map" wire:ignore></div>
+
+            {{-- Kontrol cluster mengambang (pojok kanan atas), seperti panel kamera --}}
+            <div class="pu-float pu-panel" style="left:auto; right:1rem; top:1rem; bottom:auto; width:auto; max-width:calc(100% - 2rem);">
+                <div class="flex items-center gap-3">
+                    <div>
+                        <div class="text-sm font-bold leading-tight">{{ $this->clusterName ?: $project->name }}</div>
+                        <div class="text-xs text-gray-500">{{ $project->code }} · {{ count($units) }} unit</div>
+                    </div>
+                    <button wire:click="backToClusters"
+                            class="text-sm rounded-lg border px-3 py-1.5 hover:bg-gray-100 dark:hover:bg-slate-800 transition whitespace-nowrap"
+                            style="border-color: var(--gray-300);">
+                        ← Ganti Cluster
+                    </button>
+                </div>
+            </div>
 
             @if (! $siteplan)
                 <div class="pu-float pu-panel" style="left:1rem; right:1rem; top:1rem; bottom:auto; width:auto; max-width:none;">
@@ -268,7 +286,7 @@
                     this.initRealtime();
 
                     this.$watch('phase', (v) => {
-                        if (v === 'scan') { this.scanLocked = false; this.startScanner(); } else this.stopScanner();
+                        if (v === 'scan') { this.scanLocked = false; window.__puLastScan = null; this.startScanner(); } else this.stopScanner();
                         if (v === 'choosing') this.startTimer(); else this.stopTimer();
                         this.refreshPolygonStyles();
                     });
@@ -298,6 +316,19 @@
                     this.map.fitBounds(bounds);
                     this.baseZoom = this.map.getZoom();
                     this.map.on('zoomend', () => this.updateSoldScale());
+
+                    // PENTING (beda dgn /siteplan yang full-page statik): di dalam
+                    // panel Filament + mode fullscreen, ukuran #pu-map bisa berubah
+                    // SETELAH init (layout settle, topbar, dll). Kalau Leaflet pegang
+                    // ukuran basi, operasi zoom menghitung center dgn ukuran salah →
+                    // gambar/koordinat "loncat". ResizeObserver memanggil invalidateSize
+                    // tiap kontainer berubah ukuran → Leaflet selalu tahu ukuran asli.
+                    if (window.ResizeObserver) {
+                        this._ro = new ResizeObserver(() => {
+                            if (this.map) this.map.invalidateSize({ animate: false });
+                        });
+                        this._ro.observe(document.getElementById('pu-map'));
+                    }
 
                     this.renderPolygons();
 
@@ -339,7 +370,7 @@
                 /** Teks + kelas stempel per status (null = tanpa stempel). */
                 stampFor(status) {
                     if (status === 'TERJUAL' || status === 'LUNAS') return { text: 'SOLD', cls: 'sold' };
-                    if (status === 'BOOKING') return { text: 'BOOKING', cls: 'booking' };
+                    if (status === 'BOOKING') return { text: 'BOOKED', cls: 'booking' };
                     return null;
                 },
 
@@ -358,7 +389,10 @@
 
                     const stamp = this.el('span', { class: 'pu-stamp ' + info.cls, text: info.text });
                     this.soldStamps.push(stamp);
-                    const marker = L.marker(poly.getBounds().getCenter(), {
+                    // Center horizontal + dinaikkan ~14% tinggi unit (ubah 0.14 utk geser).
+                    const _b = poly.getBounds();
+                    const _pos = L.latLng(_b.getCenter().lat + (_b.getNorth() - _b.getSouth()) * 0.14, _b.getCenter().lng);
+                    const marker = L.marker(_pos, {
                         interactive: false, keyboard: false, zIndexOffset: 1000,
                         icon: L.divIcon({ className: 'pu-sold-div', html: stamp, iconSize: [0, 0], iconAnchor: [0, 0] }),
                     }).addTo(this.map);
@@ -378,12 +412,12 @@
 
                 colorForStatus(status) {
                     switch (status) {
-                        case 'TERSEDIA': return { stroke: '#10b981', fill: '#34d399' };
-                        case 'BOOKING':  return { stroke: '#f59e0b', fill: '#fbbf24' };
-                        case 'HOLD':     return { stroke: '#f97316', fill: '#fb923c' };
+                        case 'TERSEDIA': return { stroke: '#10b981', fill: '#34d399', badge: '#16a34a', label: 'TERSEDIA' };
+                        case 'BOOKING':  return { stroke: '#f59e0b', fill: '#fbbf24', badge: '#d97706', label: 'BOOKING' };
+                        case 'HOLD':     return { stroke: '#f97316', fill: '#fb923c', badge: '#ea580c', label: 'HOLD' };
                         case 'TERJUAL':
-                        case 'LUNAS':    return { stroke: '#64748b', fill: '#94a3b8' };
-                        default:         return { stroke: '#94a3b8', fill: '#cbd5e1' };
+                        case 'LUNAS':    return { stroke: '#64748b', fill: '#94a3b8', badge: '#dc2626', label: 'SOLD' };
+                        default:         return { stroke: '#94a3b8', fill: '#cbd5e1', badge: '#64748b', label: (status || '-') };
                     }
                 },
 
@@ -444,37 +478,58 @@
                 },
 
                 showUnitPopup(unit, polygon) {
-                    const box = this.el('div', { class: 'pu-info' });
+                    // Kartu putih ala /siteplan (createElement → hindari literal tag).
+                    const cur = this.colorForStatus(unit.status);
+                    const card = this.el('div', { class: 'sp-card' });
 
-                    box.appendChild(this.infoRow('Nama Lokasi', unit.nama_lokasi));
-                    box.appendChild(this.infoRow('No. Unit', unit.kode || unit.label));
-                    box.appendChild(this.infoRow('Tipe', unit.tipe));
-                    box.appendChild(this.infoRow('LT/LB', (unit.luas_tanah || '—') + ' / ' + (unit.luas_bangunan || '—')));
-                    box.appendChild(this.infoRow('Alamat', unit.alamat));
+                    // Header: kode unit + pill status
+                    const head = this.el('div', { class: 'sp-head' });
+                    head.appendChild(this.el('div', { class: 'sp-code', text: unit.kode || unit.label }));
+                    const pill = this.el('span', { class: 'sp-pill', text: cur.label });
+                    pill.style.background = cur.badge;
+                    head.appendChild(pill);
+                    card.appendChild(head);
 
-                    // Tabel harga per skema
-                    let priceRows = [];
+                    if (unit.nama_lokasi) card.appendChild(this.el('div', { class: 'sp-loc', text: unit.nama_lokasi }));
+
+                    // Tipe · LT/LB
+                    const sub = this.el('div', { class: 'sp-sub' });
+                    sub.appendChild(this.el('b', { text: unit.tipe || '—' }));
+                    sub.appendChild(document.createTextNode('  ·  LT ' + (unit.luas_tanah || '—') + ' / LB ' + (unit.luas_bangunan || '—')));
+                    card.appendChild(sub);
+
+                    if (unit.alamat) {
+                        const addr = this.el('div', { class: 'sp-addr' });
+                        addr.appendChild(this.el('span', { class: 'pin', text: '📍' }));
+                        addr.appendChild(this.el('span', { text: unit.alamat }));
+                        card.appendChild(addr);
+                    }
+
+                    // Harga per skema → kartu sejajar (angka penuh)
+                    let rows = [];
                     if (Array.isArray(unit.pricelist) && unit.pricelist.length) {
-                        priceRows = unit.pricelist.map(p => ({
-                            label: (p.skema_code || p.skema_name || '').toUpperCase(),
-                            price: this.fmtRp(p.price),
+                        rows = unit.pricelist.map(p => ({
+                            label: (p.skema_code || p.skema_name || p.cara_bayar || '').toString().toUpperCase(),
+                            price: Number(p.price) || 0,
                         }));
                     } else if (unit.harga > 0) {
-                        priceRows = [{ label: 'HARGA JUAL', price: this.fmtRp(unit.harga) }];
+                        rows = [{ label: 'HARGA', price: Number(unit.harga) || 0 }];
                     }
-                    if (priceRows.length) {
-                        const tbl = this.el('table');
-                        priceRows.forEach(r => {
-                            const tr = this.el('tr');
-                            tr.appendChild(this.el('td', { class: 'skema', text: r.label }));
-                            tr.appendChild(this.el('td', { text: r.price }));
-                            tbl.appendChild(tr);
+                    if (rows.length) {
+                        const cls = rows.length === 1 ? ' one' : (rows.length === 2 ? ' two' : '');
+                        const wrap = this.el('div', { class: 'sp-prices' + cls });
+                        rows.forEach(r => {
+                            const pc = this.el('div', { class: 'sp-pc' });
+                            pc.appendChild(this.el('div', { class: 'lab', text: r.label }));
+                            pc.appendChild(this.el('div', { class: 'cur', text: 'Rp' }));
+                            pc.appendChild(this.el('div', { class: 'amt', text: (Number(r.price) || 0).toLocaleString('id-ID') }));
+                            wrap.appendChild(pc);
                         });
-                        box.appendChild(tbl);
+                        card.appendChild(wrap);
                     }
 
-                    // Baca fase dari $wire (sumber kebenaran server) — bukan this.phase
-                    // yang bisa basi. Pemilihan hanya saat fase 'choosing' (timer aktif).
+                    // Tombol Pilih Unit (khusus Pilih Unit — tak ada di /siteplan).
+                    // Fase dibaca dari $wire (sumber kebenaran server). Pilih hanya saat 'choosing'.
                     const ph = this.$wire.phase;
                     const canPick = ph === 'choosing' && unit.status === 'TERSEDIA';
                     const btnLabel = unit.status !== 'TERSEDIA'
@@ -493,9 +548,9 @@
                             polygon.closePopup();
                         };
                     }
-                    box.appendChild(btn);
+                    card.appendChild(btn);
 
-                    polygon.bindPopup(box, { maxWidth: 380, autoPan: true }).openPopup();
+                    polygon.bindPopup(card, { maxWidth: 340, autoPan: true }).openPopup();
                 },
 
                 doConfirm() {
@@ -528,22 +583,47 @@
                     // Kunci: html5-qrcode memanggil callback tiap frame selama QR terlihat.
                     // Tanpa lock → puluhan $wire.call('scanBarcode') (banjir request).
                     if (!code || this.scanLocked) return;
+                    // Hanya kirim saat fase 'scan' (server). Setelah customer ter-load,
+                    // scanner kadang masih aktif & membaca QR yg sama → matikan & abaikan,
+                    // supaya tak banjir scanBarcode + fase bolak-balik.
+                    if (this.$wire.phase !== 'scan') { this.stopScanner(); return; }
+                    const c = code.trim();
+                    // Dedupe per-KODE (global): QR yg SAMA diabaikan SEPENUHNYA sampai
+                    // fase kembali ke 'scan' (Scan Ulang/DONE → __puLastScan di-reset)
+                    // atau kode QR berganti. Cegah re-scan QR yg masih nyangkut di
+                    // kamera (mis. customer sudah pilih unit → error berulang).
+                    if (window.__puLastScan === c) { this.stopScanner(); return; }
+                    window.__puLastScan = c;
                     this.scanLocked = true;
                     this.stopScanner();
-                    this.$wire.call('scanBarcode', code.trim());
+                    this.$wire.call('scanBarcode', c);
                     setTimeout(() => { this.scanLocked = false; }, 1500);
                 },
                 manualScan() { const c = (this.manualCode || '').trim(); if (c === '') return; this.$wire.call('scanBarcode', c); this.manualCode = ''; },
 
                 startTimer() {
-                    this.timerSec = 120; this.updateTimerDisplay();
-                    if (this.timerId) clearInterval(this.timerId);
-                    this.timerId = setInterval(() => {
-                        this.timerSec--; this.updateTimerDisplay();
-                        if (this.timerSec <= 0) { this.stopTimer(); this.$wire.call('timeout'); }
-                    }, 1000);
+                    // Deadline + interval GLOBAL (window) — kalau Livewire sempat
+                    // membuat ulang komponen ini, TANPA guard tiap instans menambah
+                    // setInterval sendiri (instans lama tak dibersihkan) → puluhan
+                    // interval → banjir $wire.call('timeout') → fase oscillasi.
+                    // Dengan guard: hanya SATU interval & SATU deadline yang pernah ada.
+                    if (! window.__puDeadline) window.__puDeadline = Date.now() + 120000;
+                    if (window.__puTimer) clearInterval(window.__puTimer);
+                    window.__puTimer = setInterval(() => {
+                        const remain = Math.max(0, Math.round((window.__puDeadline - Date.now()) / 1000));
+                        this.timerSec = remain; this.updateTimerDisplay();
+                        if (remain <= 0) {
+                            clearInterval(window.__puTimer); window.__puTimer = null; window.__puDeadline = null;
+                            this.$wire.call('timeout');
+                        }
+                    }, 250);
+                    this.timerId = window.__puTimer;
                 },
-                stopTimer() { if (this.timerId) { clearInterval(this.timerId); this.timerId = null; } },
+                stopTimer() {
+                    if (window.__puTimer) { clearInterval(window.__puTimer); window.__puTimer = null; }
+                    window.__puDeadline = null;
+                    this.timerId = null;
+                },
                 updateTimerDisplay() {
                     const m = Math.floor(this.timerSec / 60), s = this.timerSec % 60;
                     this.timerDisplay = String(m).padStart(2, '0') + ':' + String(s).padStart(2, '0');

@@ -6,6 +6,7 @@ use App\Models\Project;
 use App\Modules\FO\Launching\Models\NupEvent;
 use App\Modules\FO\Launching\Models\NupRegistration;
 use App\Modules\FO\Launching\Services\AktivasiNupService;
+use App\Modules\FO\MarketingSales\Services\CustomerQrService;
 use Filament\Forms;
 use Filament\Forms\Concerns\InteractsWithForms;
 use Filament\Forms\Contracts\HasForms;
@@ -116,7 +117,22 @@ class AktivasiNup extends Page implements HasForms, HasTable
                     ->icon('heroicon-o-qr-code')
                     ->color('gray')
                     ->visible(fn (NupRegistration $r) => (bool) $r->customer_id)
-                    ->url(fn (NupRegistration $r) => $r->customer_id ? route('fo.customer.qr', $r->customer_id) : null, shouldOpenInNewTab: true),
+                    // Popup/modal (bukan tab baru) — sama seperti tombol QR di Master Customer.
+                    ->modalHeading(fn (NupRegistration $r) => 'QR Customer — '.($r->customer?->full_name ?? $r->nama_pendaftar))
+                    ->modalSubmitAction(false)
+                    ->modalCancelActionLabel('Tutup')
+                    ->modalContent(function (NupRegistration $r) {
+                        $customer = $r->customer;
+                        $qr = app(CustomerQrService::class);
+                        $code = $qr->ensureCode($customer);
+
+                        return view('filament.fo.customer-qr-modal', [
+                            'customer' => $customer,
+                            'code' => $code,
+                            'svg' => $qr->svg($code, 240),
+                            'noNup' => $r->no_nup,
+                        ]);
+                    }),
                 Tables\Actions\Action::make('aktivasi')
                     ->label('Aktivasi')
                     ->icon('heroicon-o-check-badge')

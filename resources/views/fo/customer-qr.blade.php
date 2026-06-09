@@ -33,17 +33,8 @@
         <div class="code">{{ $code }}</div>
         <div class="name">{{ $customer->full_name }}</div>
         @if ($reg && $reg->no_nup)
-            <div class="nup">No. NUP: {{ $reg->no_nup }}{{ $reg->urutan ? ' · Urutan '.$reg->urutan : '' }}</div>
+            <div class="nup">No. NUP: {{ $reg->no_nup }}</div>
         @endif
-        <div class="meta">
-            @if ($customer->mobile || $customer->phone)
-                <div><span class="lbl">HP:</span> {{ $customer->mobile ?: $customer->phone }}</div>
-            @endif
-            <div><span class="lbl">Alamat:</span> {{ $customer->alamatRingkas() }}</div>
-            @if ($customer->project)
-                <div><span class="lbl">Project:</span> {{ $customer->project->name }}</div>
-            @endif
-        </div>
     </div>
 
     <div class="actions">

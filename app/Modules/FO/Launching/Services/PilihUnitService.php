@@ -123,7 +123,9 @@ class PilihUnitService
                 'registration' => $reg->refresh(),
                 'unit' => $unit->refresh(),
                 'reservasi' => $reservasi->refresh(),
-                'unit_label' => trim(($unit->blok ? $unit->blok.' / ' : '').$unit->no_unit),
+                // Format "Lokasi Blok Nomer" (mis. "JRK3 XVI 18") — jelas cluster +
+                // blok + nomer. Bagian kosong dilewati supaya tak ada spasi ganda.
+                'unit_label' => trim(implode(' ', array_filter([$unit->lokasi?->kode, $unit->blok, $unit->no_unit]))) ?: $unit->label,
             ];
         });
 

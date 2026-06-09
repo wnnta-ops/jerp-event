@@ -176,7 +176,7 @@
             // Stempel per status: SOLD (terjual/lunas) atau BOOKING. null = tanpa stempel.
             const stampFor = (s) => (s === 'TERJUAL' || s === 'LUNAS')
                 ? { text: 'SOLD', cls: '' }
-                : (s === 'BOOKING' ? { text: 'BOOKING', cls: ' booking' } : null);
+                : (s === 'BOOKING' ? { text: 'BOOKED', cls: ' booking' } : null);
 
             // Stempel SOLD ikut skala zoom: di zoom paling jauh (fit) ukurannya kecil,
             // membesar proporsional saat zoom-in supaya selalu pas dengan kavling.
@@ -198,7 +198,10 @@
                 const stamp = el('span', { class: 'sold-stamp' + info.cls, text: info.text });
                 soldStamps.push(stamp);
                 entry.stampEl = stamp;
-                entry.marker = L.marker(entry.poly.getBounds().getCenter(), {
+                // Center horizontal + dinaikkan ~14% tinggi unit (ubah 0.14 utk geser).
+                const _b = entry.poly.getBounds();
+                const _pos = L.latLng(_b.getCenter().lat + (_b.getNorth() - _b.getSouth()) * 0.14, _b.getCenter().lng);
+                entry.marker = L.marker(_pos, {
                     interactive: false,
                     keyboard: false,
                     icon: L.divIcon({ className: 'sold-div', html: stamp, iconSize: [0, 0], iconAnchor: [0, 0] }),
@@ -330,12 +333,19 @@
             }
 
             // ── Subscribe Reverb (public channel) — update unit terjual real-time ──
-            if (window.Echo) {
-                window.Echo.channel('siteplan.' + PROJECT_ID)
-                    .listen('.unit.status.changed', (e) => {
-                        if (e && e.unit_id) applyStatusChange(e.unit_id, e.new_status);
-                    });
-            }
+            // window.Echo dimuat dari Vite app.js (module, deferred) → sering BELUM
+            // siap saat baris ini jalan. Tanpa retry, langganan terlewat → tak pernah
+            // real-time. Poll sampai Echo tersedia (maks ~10 dtk), spt di Pilih Unit.
+            (function subscribeRealtime(attempt) {
+                if (window.Echo) {
+                    window.Echo.channel('siteplan.' + PROJECT_ID)
+                        .listen('.unit.status.changed', (e) => {
+                            if (e && e.unit_id) applyStatusChange(e.unit_id, e.new_status);
+                        });
+                    return;
+                }
+                if (attempt < 40) setTimeout(() => subscribeRealtime(attempt + 1), 250);
+            })(0);
         }
     </script>
 </body>

@@ -42,8 +42,15 @@ class VerifikasiNupResource extends Resource
                     ->placeholder('— belum approve'),
                 Tables\Columns\TextColumn::make('urutan')->label('Urutan')->numeric()->alignEnd()->sortable()
                     ->placeholder('—'),
-                Tables\Columns\TextColumn::make('xendit_external_id')->label('Ref Xendit')->searchable()
-                    ->placeholder('—')->toggleable()->copyable(),
+                // Ref Xendit = ID invoice ASLI dari Xendit (xendit_invoice_id) agar
+                // bisa langsung dicocokkan di dashboard Xendit; ref internal kita
+                // (xendit_external_id, mis. UTJ-NUP-1) tampil sbg baris kecil di bawah.
+                // Klik → buka halaman invoice Xendit (xendit_invoice_url) di tab baru.
+                Tables\Columns\TextColumn::make('xendit_invoice_id')->label('Ref Xendit')
+                    ->placeholder('—')->toggleable()->copyable()
+                    ->description(fn (NupRegistration $r) => $r->xendit_external_id ? 'Ref: '.$r->xendit_external_id : null)
+                    ->url(fn (NupRegistration $r) => $r->xendit_invoice_url ?: null, shouldOpenInNewTab: true)
+                    ->searchable(['xendit_invoice_id', 'xendit_external_id']),
                 Tables\Columns\TextColumn::make('nama_pendaftar')->label('Nama')->searchable(),
                 Tables\Columns\TextColumn::make('tgl_daftar')->label('Tanggal Input')->dateTime('d M Y')->sortable(),
                 Tables\Columns\TextColumn::make('cara_bayar')->label('Cara Bayar')->badge()->placeholder('—'),

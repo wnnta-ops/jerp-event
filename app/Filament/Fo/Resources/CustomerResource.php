@@ -18,6 +18,11 @@ class CustomerResource extends Resource
 {
     protected static ?string $model = Customer::class;
 
+    // URL modul Sales: daftar customer tampil di /fo/sales (bukan /fo/customers).
+    // Route name jadi filament.fo.resources.sales.* — rujukan di FoPanelProvider
+    // & dashboard ikut disesuaikan.
+    protected static ?string $slug = 'sales';
+
     protected static ?string $navigationIcon = 'heroicon-o-user-group';
 
     protected static ?string $navigationGroup = 'Marketing & Sales';

@@ -7,7 +7,6 @@ use App\Modules\FO\FinanceAR\Models\Tts;
 use App\Modules\FO\Komisi\Models\Komisi;
 use App\Modules\FO\Launching\Models\NupEvent;
 use App\Modules\FO\Launching\Models\NupRegistration;
-use App\Modules\FO\MarketingSales\Models\Customer;
 use App\Modules\FO\MarketingSales\Models\Kontrak;
 use App\Modules\FO\MarketingSales\Models\Unit;
 use Filament\Pages\Dashboard as BaseDashboard;
@@ -35,9 +34,11 @@ class Dashboard extends BaseDashboard
     {
         return [
             [
-                'label' => 'Marketing & Sales',
+                'label' => 'Sales',
                 'sub' => 'Customer, Reservasi, Kontrak',
-                'url' => url('/fo/marketing'),
+                // Membuka modul Sales (sidebar scoped: Customer & Booking /
+                // Kontrak / Migrate). 'Customer' adalah sub-menu di dalamnya.
+                'url' => url('/fo/sales'),
                 'icon' => 'M3 21h18M3 7l9-4 9 4M5 21V11h14v10M9 21v-6h6v6',
                 'gradient' => 'linear-gradient(135deg, #f97316 0%, #ea580c 100%)',
                 'count' => fn () => Kontrak::count(),
@@ -129,15 +130,9 @@ class Dashboard extends BaseDashboard
                 'count' => fn () => null,
                 'count_label' => '',
             ],
-            [
-                'label' => 'Master Customer',
-                'sub' => 'Verifikasi lead, terbitkan no.',
-                'url' => url('/fo/customers'),
-                'icon' => 'M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5 5 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z',
-                'gradient' => 'linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%)',
-                'count' => fn () => Customer::where('lead_status', 'LEAD')->count(),
-                'count_label' => 'menunggu verifikasi',
-            ],
+            // Tile "Master Customer" dihilangkan dari dashboard: sudah diakses
+            // dari kartu "Sales" → /fo/sales, dan sebagai sub-menu "Customer" di
+            // sidebar (grup Customer & Booking). Tidak perlu duplikat di sini.
         ];
     }
 
