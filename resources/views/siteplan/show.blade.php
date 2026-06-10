@@ -4,7 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
     <meta name="robots" content="index,follow">
-    <title>Site Plan — {{ $project->name }}{{ $cluster ? ' · '.$cluster : '' }}</title>
+    <title>Site Plan — {{ $project->name }}{{ isset($lokasi) && $lokasi ? ' · '.$lokasi->nama : '' }}</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     {{-- Laravel Echo (window.Echo) untuk update real-time unit terjual via Reverb. --}}
@@ -28,6 +28,17 @@
         /* Sembunyikan "status" (setelan admin): stempel SOLD/BOOKED di peta + pill status di popup */
         body.hide-status .sold-stamp { display: none !important; }
         body.hide-status .sp-pill { display: none !important; }
+
+        /* Switcher cluster (Lokasi) — tiap cluster siteplannya sendiri */
+        .cluster-switch {
+            position: fixed; top: 12px; left: 50%; transform: translateX(-50%); z-index: 1000;
+            display: flex; gap: 6px; background: rgba(255,255,255,.92); border: 1px solid #cbd5e1;
+            border-radius: 999px; padding: 5px 8px; box-shadow: 0 4px 14px rgba(0,0,0,.25);
+            max-width: 90vw; overflow-x: auto;
+        }
+        .cluster-switch a { font-size: 12px; font-weight: 700; color: #334155; text-decoration: none; padding: 5px 12px; border-radius: 999px; white-space: nowrap; }
+        .cluster-switch a.active { background: #2563eb; color: #fff; }
+        .cluster-switch a:hover:not(.active) { background: #e2e8f0; }
         .info-card {
             background: rgba(255,255,255,.94); border: 1px solid #cbd5e1; border-radius: 8px;
             padding: 10px 14px; box-shadow: 0 6px 18px rgba(0,0,0,.22); font-size: 13px;
@@ -91,6 +102,14 @@
     </style>
 </head>
 <body class="{{ ($showStatus ?? true) ? '' : 'hide-status' }}">
+    {{-- Switcher cluster (Lokasi). Tiap cluster pakai siteplan-nya sendiri. --}}
+    @if (isset($clusters) && $clusters->count() > 1)
+        <div class="cluster-switch">
+            @foreach ($clusters as $cl)
+                <a href="?cluster={{ $cl->kode }}" class="{{ isset($lokasi) && $lokasi && $lokasi->id === $cl->id ? 'active' : '' }}">{{ $cl->nama }}</a>
+            @endforeach
+        </div>
+    @endif
     @if (! $siteplan)
         <div class="sp-empty">
             Site plan untuk proyek <strong>&nbsp;{{ $project->name }}&nbsp;</strong> belum diupload.<br>

@@ -3,6 +3,7 @@
 namespace App\Filament\Fo\Resources;
 
 use App\Filament\Fo\Resources\KontrakResource\Pages;
+use App\Modules\FO\Adminjual\Models\Gimmick;
 use App\Modules\FO\MarketingSales\Models\Kontrak;
 use App\Modules\FO\MarketingSales\Models\Reservasi;
 use Filament\Forms;
@@ -28,6 +29,13 @@ class KontrakResource extends Resource
     public static function form(Form $form): Form
     {
         return $form->schema([
+            Forms\Components\Tabs::make('Kontrak')
+                ->columnSpanFull()
+                ->persistTabInQueryString()
+                ->tabs([
+                    Forms\Components\Tabs\Tab::make('Edit Kontrak')
+                        ->icon('heroicon-o-document-text')
+                        ->schema([
             Forms\Components\Section::make('Identitas Kontrak')
                 ->columns(2)
                 ->schema([
@@ -111,6 +119,80 @@ class KontrakResource extends Resource
                         ->default('DRAFT')
                         ->required(),
                     Forms\Components\Textarea::make('keterangan')->rows(2)->columnSpanFull(),
+                ]),
+                        ]),
+
+                    Forms\Components\Tabs\Tab::make('Jadwal Tagihan')
+                        ->icon('heroicon-o-calendar-days')
+                        ->schema([
+                            Forms\Components\Repeater::make('tagihan')->relationship()->label('')
+                                ->columns(12)->defaultItems(0)->addActionLabel('Tambah Tagihan')
+                                ->reorderable()->orderColumn('urutan')
+                                ->itemLabel(fn (array $state): ?string => ($state['nama_tagihan'] ?? null)
+                                    ? (($state['tipe'] ?? '').' — '.$state['nama_tagihan'])
+                                    : null)
+                                ->schema([
+                                    Forms\Components\Select::make('tipe')->label('Tipe')->columnSpan(2)
+                                        ->options(['BF' => 'BF (Booking Fee)', 'DP' => 'DP', 'ANG' => 'Angsuran', 'ADM' => 'Administrasi', 'LAIN' => 'Lain'])
+                                        ->default('ANG')->required(),
+                                    Forms\Components\TextInput::make('nama_tagihan')->label('Nama Tagihan')->columnSpan(4)->required(),
+                                    Forms\Components\DatePicker::make('jatuh_tempo')->label('Jatuh Tempo')->columnSpan(2)->native(false)->displayFormat('d M Y'),
+                                    Forms\Components\TextInput::make('nilai')->label('Nilai')->columnSpan(2)->numeric()->prefix('Rp')->default(0),
+                                    Forms\Components\TextInput::make('pelunasan')->label('Pelunasan')->columnSpan(2)->numeric()->prefix('Rp')->default(0),
+                                ]),
+                        ]),
+
+                    Forms\Components\Tabs\Tab::make('Jadwal Komisi')
+                        ->icon('heroicon-o-banknotes')
+                        ->schema([
+                            Forms\Components\Repeater::make('komisi')->relationship()->label('')
+                                ->columns(12)->defaultItems(0)->addActionLabel('Tambah Komisi')
+                                ->itemLabel(fn (array $state): ?string => isset($state['amount'])
+                                    ? ('Gross Rp '.number_format((float) ($state['amount'] ?? 0), 0, ',', '.'))
+                                    : null)
+                                ->schema([
+                                    Forms\Components\Select::make('agent_id')->label('Agent / Sales')->columnSpan(4)
+                                        ->relationship('agent', 'name')->searchable()->preload()->required(),
+                                    Forms\Components\DatePicker::make('tgl_komisi')->label('Tgl Komisi')->columnSpan(2)
+                                        ->default(now())->native(false)->displayFormat('d M Y')->required(),
+                                    Forms\Components\TextInput::make('dpp')->label('DPP')->columnSpan(3)->numeric()->prefix('Rp')->default(0),
+                                    Forms\Components\TextInput::make('persen_komisi')->label('% Komisi')->columnSpan(3)->numeric()->suffix('%')->default(0),
+                                    Forms\Components\TextInput::make('amount')->label('Gross Komisi')->columnSpan(3)->numeric()->prefix('Rp')->default(0),
+                                    Forms\Components\TextInput::make('pph_amount')->label('PPH')->columnSpan(3)->numeric()->prefix('Rp')->default(0),
+                                    Forms\Components\TextInput::make('amount_net')->label('Nilai Bayar (Net)')->columnSpan(3)->numeric()->prefix('Rp')->default(0),
+                                    Forms\Components\Select::make('status')->label('Status')->columnSpan(3)
+                                        ->options(['DRAFT' => 'Draft', 'APPROVED' => 'Approved', 'PAID' => 'Cair/Paid', 'BATAL' => 'Batal'])
+                                        ->default('DRAFT')->required(),
+                                ]),
+                        ]),
+
+                    Forms\Components\Tabs\Tab::make('Gimmick')
+                        ->icon('heroicon-o-gift')
+                        ->schema([
+                            Forms\Components\Repeater::make('gimmicks')->relationship()->label('')
+                                ->columns(12)->defaultItems(0)->addActionLabel('Tambah Gimmick')
+                                ->reorderable()->orderColumn('urutan')
+                                ->itemLabel(fn (array $state): ?string => $state['nama_barang'] ?? null)
+                                ->schema([
+                                    Forms\Components\Checkbox::make('diberikan')->label('Diberikan')->columnSpan(2)->default(true),
+                                    Forms\Components\Checkbox::make('diterima')->label('Diterima')->columnSpan(2),
+                                    Forms\Components\Select::make('gimmick_id')->label('Master Gimmick')->columnSpan(4)
+                                        ->options(fn () => Gimmick::where('is_active', true)->pluck('name', 'id'))
+                                        ->searchable()->live()
+                                        ->afterStateUpdated(function ($state, Forms\Set $set) {
+                                            $g = $state ? Gimmick::find($state) : null;
+                                            if ($g) {
+                                                $set('nama_barang', $g->name);
+                                                $set('harga_satuan', $g->nilai);
+                                            }
+                                        }),
+                                    Forms\Components\DatePicker::make('tgl_diterima')->label('Tgl Diterima')->columnSpan(4)->native(false)->displayFormat('d M Y'),
+                                    Forms\Components\TextInput::make('nama_barang')->label('Nama Barang')->columnSpan(4)->required(),
+                                    Forms\Components\TextInput::make('satuan')->label('Satuan')->columnSpan(2)->placeholder('VOUCHER'),
+                                    Forms\Components\TextInput::make('qty')->label('Qty')->columnSpan(2)->numeric()->default(0),
+                                    Forms\Components\TextInput::make('harga_satuan')->label('Harga Satuan')->columnSpan(4)->numeric()->prefix('Rp')->default(0),
+                                ]),
+                        ]),
                 ]),
         ]);
     }

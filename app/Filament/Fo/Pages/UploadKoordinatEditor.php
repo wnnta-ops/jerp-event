@@ -3,6 +3,7 @@
 namespace App\Filament\Fo\Pages;
 
 use App\Models\Project;
+use App\Modules\FO\MarketingSales\Models\Lokasi;
 use App\Modules\FO\MarketingSales\Models\Unit;
 use Filament\Forms;
 use Filament\Forms\Concerns\InteractsWithForms;
@@ -45,6 +46,8 @@ class UploadKoordinatEditor extends Page implements HasForms
 
     public ?int $projectId = null;
 
+    public ?int $lokasiId = null;
+
     public function mount(): void
     {
         $this->form->fill();
@@ -53,36 +56,46 @@ class UploadKoordinatEditor extends Page implements HasForms
     public function form(Form $form): Form
     {
         return $form->statePath('data')->schema([
-            Forms\Components\Section::make('Pilih Project')
-                ->description('Pilih project untuk muat siteplan + daftar unit. Site plan harus sudah diupload di menu Upload Site Plan.')
+            Forms\Components\Section::make('Pilih Cluster')
+                ->description('Pilih Cluster (Lokasi) untuk muat siteplan + unit cluster itu. Gambar siteplan diatur per cluster di menu Upload Site Plan (kosong → fallback gambar project).')
                 ->columns(2)
                 ->schema([
                     Forms\Components\Select::make('project_id')
-                        ->label('Project / Cluster')->required()
+                        ->label('Project')->required()
                         ->options(fn () => Project::pluck('name', 'id'))
-                        ->searchable()->preload()
-                        ->live()
-                        ->afterStateUpdated(function ($state) {
+                        ->searchable()->preload()->live()
+                        ->afterStateUpdated(function ($state, Forms\Set $set) {
                             $this->projectId = $state ? (int) $state : null;
+                            $this->lokasiId = null;
+                            $set('lokasi_id', null);
                         }),
+                    Forms\Components\Select::make('lokasi_id')
+                        ->label('Cluster / Lokasi')->required()
+                        ->options(fn (Forms\Get $get) => $get('project_id')
+                            ? Lokasi::where('project_id', $get('project_id'))->orderBy('kode')->pluck('nama', 'id')
+                            : [])
+                        ->disabled(fn (Forms\Get $get) => ! $get('project_id'))
+                        ->searchable()->preload()->live()
+                        ->afterStateUpdated(fn ($state) => $this->lokasiId = $state ? (int) $state : null),
                 ]),
         ]);
     }
 
-    public function getProject(): ?Project
+    public function getLokasi(): ?Lokasi
     {
-        return $this->projectId ? Project::find($this->projectId) : null;
+        return $this->lokasiId ? Lokasi::find($this->lokasiId) : null;
     }
 
-    /** Payload yang diconsume Alpine.js untuk inisialisasi map. */
+    /** Payload yang diconsume Alpine.js untuk inisialisasi map (per Cluster/Lokasi). */
     public function getEditorPayload(): array
     {
-        $project = $this->getProject();
-        if (! $project || ! $project->siteplan_image_path) {
+        $lokasi = $this->getLokasi();
+        $sp = $lokasi?->resolvedSiteplan();
+        if (! $lokasi || ! $sp) {
             return [];
         }
 
-        $units = Unit::where('project_id', $project->id)
+        $units = Unit::where('lokasi_id', $lokasi->id)
             ->orderBy('blok')->orderBy('no_unit')
             ->get(['id', 'blok', 'no_unit', 'tahap', 'cluster', 'status', 'siteplan_coords'])
             ->map(fn ($u) => [
@@ -98,11 +111,11 @@ class UploadKoordinatEditor extends Page implements HasForms
 
         return [
             'project' => [
-                'id' => $project->id,
-                'name' => $project->name,
-                'imageUrl' => Storage::disk('public')->url($project->siteplan_image_path),
-                'width' => (int) ($project->siteplan_width ?: 2000),
-                'height' => (int) ($project->siteplan_height ?: 1200),
+                'id' => $lokasi->id,
+                'name' => $lokasi->nama,
+                'imageUrl' => $sp['url'],
+                'width' => $sp['width'],
+                'height' => $sp['height'],
             ],
             'units' => $units,
         ];
@@ -128,8 +141,8 @@ class UploadKoordinatEditor extends Page implements HasForms
         }
 
         $unit = Unit::find($unitId);
-        if (! $unit || $unit->project_id !== $this->projectId) {
-            Notification::make()->title('Unit tidak ditemukan / beda project')->danger()->send();
+        if (! $unit || $unit->lokasi_id !== $this->lokasiId) {
+            Notification::make()->title('Unit tidak ditemukan / beda cluster')->danger()->send();
 
             return;
         }
@@ -142,7 +155,7 @@ class UploadKoordinatEditor extends Page implements HasForms
     public function clearCoords(int $unitId): void
     {
         $unit = Unit::find($unitId);
-        if (! $unit || $unit->project_id !== $this->projectId) {
+        if (! $unit || $unit->lokasi_id !== $this->lokasiId) {
             return;
         }
         $unit->update(['siteplan_coords' => null]);

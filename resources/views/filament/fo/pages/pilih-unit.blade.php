@@ -108,7 +108,7 @@
         </div>
         <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
             @forelse ($clusters as $c)
-                <button wire:click="selectCluster({{ $c['project_id'] }}, @js($c['cluster']))"
+                <button wire:click="selectCluster({{ $c['lokasi_id'] }})"
                         class="pu-cluster text-left text-white px-5 py-5"
                         style="background: linear-gradient(135deg, #06b6d4 0%, #0e7490 100%);">
                     <div class="text-xs uppercase tracking-wider opacity-80">{{ $c['project_name'] }}</div>
@@ -135,7 +135,7 @@
              x-data="pilihUnitState({
                  units: @js($units),
                  siteplan: @js($siteplan),
-                 projectId: @js($this->clusterId),
+                 projectId: @js($this->projectId),
              })"
              x-init="init()"
              x-effect="phase = $wire.phase">

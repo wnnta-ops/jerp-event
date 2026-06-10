@@ -5,7 +5,9 @@ namespace App\Modules\FO\MarketingSales\Models;
 use App\Models\Concerns\TenantAwareModel;
 use App\Modules\FO\Adminjual\Models\Skema;
 use App\Modules\FO\Komisi\Models\Agent;
+use App\Modules\FO\Komisi\Models\Komisi;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Kontrak extends TenantAwareModel
 {
@@ -65,5 +67,20 @@ class Kontrak extends TenantAwareModel
     public function agent(): BelongsTo
     {
         return $this->belongsTo(Agent::class);
+    }
+
+    public function tagihan(): HasMany
+    {
+        return $this->hasMany(KontrakTagihan::class)->orderBy('urutan');
+    }
+
+    public function komisi(): HasMany
+    {
+        return $this->hasMany(Komisi::class)->orderBy('id');
+    }
+
+    public function gimmicks(): HasMany
+    {
+        return $this->hasMany(KontrakGimmick::class)->orderBy('urutan');
     }
 }

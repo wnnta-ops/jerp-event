@@ -3,6 +3,7 @@
 namespace App\Modules\FO\Launching\Controllers;
 
 use App\Models\Project;
+use App\Modules\FO\MarketingSales\Models\Lokasi;
 use App\Modules\FO\MarketingSales\Models\Unit;
 use Illuminate\Contracts\View\View;
 use Illuminate\Http\Request;
@@ -41,28 +42,28 @@ class SiteplanController
             ->where(fn ($q) => $q->whereRaw('LOWER(code) = ?', [mb_strtolower($project)])->orWhere('id', $project))
             ->firstOrFail();
 
-        $cluster = $request->query('cluster');
+        // "Cluster" = Lokasi. Daftar Lokasi project ini (untuk switcher).
+        $lokasiList = Lokasi::where('project_id', $model->id)
+            ->where('is_active', true)->orderBy('kode')->get();
 
-        $clusters = Unit::query()
-            ->where('project_id', $model->id)
-            ->where('is_active', true)
-            ->whereNotNull('cluster')
-            ->where('cluster', '!=', '')
-            ->distinct()
-            ->orderBy('cluster')
-            ->pluck('cluster')
-            ->all();
+        // Lokasi terpilih dari ?cluster (kode atau id). Default: Lokasi pertama yang
+        // punya gambar sendiri, else Lokasi pertama.
+        $param = (string) $request->query('cluster', '');
+        $lokasi = $param !== ''
+            ? $lokasiList->first(fn ($l) => mb_strtolower($l->kode) === mb_strtolower($param) || (string) $l->id === $param)
+            : null;
+        $lokasi ??= $lokasiList->first(fn ($l) => $l->hasOwnSiteplan()) ?? $lokasiList->first();
 
         return view('siteplan.show', [
             'project' => $model,
-            'cluster' => $cluster,
-            'clusters' => $clusters,
-            'siteplan' => $this->siteplan($model),
-            'units' => $this->units($model, is_string($cluster) ? $cluster : null),
-            'tahapStats' => $this->tahapStats($model),
-            // Setelan tampilan (diatur admin di Upload Site Plan). Default true.
-            'showInfo' => $model->siteplan_show_info ?? true,
-            'showStatus' => $model->siteplan_show_status ?? true,
+            'lokasi' => $lokasi,
+            'clusters' => $lokasiList,
+            'siteplan' => $lokasi?->resolvedSiteplan() ?? $this->siteplan($model),
+            'units' => $this->units($model, $lokasi?->id),
+            'tahapStats' => $this->tahapStats($model, $lokasi?->id),
+            // Setelan tampilan per-Lokasi (fallback project). Default true.
+            'showInfo' => $lokasi ? $lokasi->resolvedShowInfo() : ($model->siteplan_show_info ?? true),
+            'showStatus' => $lokasi ? $lokasi->resolvedShowStatus() : ($model->siteplan_show_status ?? true),
         ]);
     }
 
@@ -72,11 +73,12 @@ class SiteplanController
      *
      * @return array<int,array{tahap:string,ready:int,sold:int,hold:int,total:int,ready_pct:float,sold_pct:float,hold_pct:float}>
      */
-    private function tahapStats(Project $project): array
+    private function tahapStats(Project $project, ?int $lokasiId = null): array
     {
         $units = Unit::with('lokasi:id,kode,nama')
             ->where('project_id', $project->id)
             ->where('is_active', true)
+            ->when($lokasiId, fn ($q) => $q->where('lokasi_id', $lokasiId))
             ->get(['lokasi_id', 'tahap', 'status']);
 
         $rows = [];
@@ -113,12 +115,12 @@ class SiteplanController
     /**
      * @return array<int,array<string,mixed>>
      */
-    private function units(Project $project, ?string $cluster): array
+    private function units(Project $project, ?int $lokasiId): array
     {
         $units = Unit::with(['unitType', 'lokasi', 'pricelists.skema'])
             ->where('project_id', $project->id)
             ->where('is_active', true)
-            ->when($cluster !== null && $cluster !== '', fn ($q) => $q->where('cluster', $cluster))
+            ->when($lokasiId, fn ($q) => $q->where('lokasi_id', $lokasiId))
             ->orderBy('blok')
             ->orderBy('no_unit')
             ->get();

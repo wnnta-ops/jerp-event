@@ -4,6 +4,7 @@ namespace App\Modules\FO\Komisi\Models;
 
 use App\Models\Concerns\TenantAwareModel;
 use App\Modules\FO\MarketingSales\Models\Kontrak;
+use App\Services\Numerator\NumeratorService;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class Komisi extends TenantAwareModel
@@ -28,6 +29,16 @@ class Komisi extends TenantAwareModel
         'pph_amount' => 'decimal:2',
         'amount_net' => 'decimal:2',
     ];
+
+    protected static function booted(): void
+    {
+        parent::booted();
+        static::creating(function (self $m) {
+            if (empty($m->no_komisi)) {
+                $m->no_komisi = app(NumeratorService::class)->next('KOMISI');
+            }
+        });
+    }
 
     public function agent(): BelongsTo
     {

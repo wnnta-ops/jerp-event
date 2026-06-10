@@ -5,6 +5,7 @@ namespace App\Filament\Fo\Pages;
 use App\Models\Project;
 use App\Modules\FO\Launching\Models\NupRegistration;
 use App\Modules\FO\Launching\Services\PilihUnitService;
+use App\Modules\FO\MarketingSales\Models\Lokasi;
 use App\Modules\FO\MarketingSales\Models\Unit;
 use Filament\Notifications\Notification;
 use Filament\Pages\Page;
@@ -32,10 +33,13 @@ class PilihUnit extends Page
 
     protected static bool $shouldRegisterNavigation = false;
 
-    /** Project dari cluster yang sedang aktif. Null = step pick cluster. */
+    /** Lokasi (cluster) yang sedang aktif. Null = step pick cluster. */
     public ?int $clusterId = null;
 
-    /** Nama cluster (kolom fo_units.cluster) yang sedang aktif. */
+    /** Project dari cluster aktif — utk channel real-time + lookup. */
+    public ?int $projectId = null;
+
+    /** Nama cluster (Lokasi) yang sedang aktif. */
     public ?string $clusterName = null;
 
     /** State machine phase: 'scan' | 'customer' | 'choosing' | 'done' */
@@ -75,10 +79,15 @@ class PilihUnit extends Page
         $this->phase = 'scan';
     }
 
-    public function selectCluster(int $projectId, ?string $cluster = null): void
+    public function selectCluster(int $lokasiId): void
     {
-        $this->clusterId = $projectId;
-        $this->clusterName = ($cluster !== null && $cluster !== '') ? $cluster : null;
+        $lokasi = Lokasi::find($lokasiId);
+        if (! $lokasi) {
+            return;
+        }
+        $this->clusterId = $lokasi->id;          // = lokasi_id
+        $this->projectId = $lokasi->project_id;  // utk channel real-time + lookup
+        $this->clusterName = $lokasi->nama;
         $this->phase = 'scan';
         $this->resetCustomer();
     }
@@ -86,6 +95,7 @@ class PilihUnit extends Page
     public function backToClusters(): void
     {
         $this->clusterId = null;
+        $this->projectId = null;
         $this->clusterName = null;
         $this->resetCustomer();
     }
@@ -210,35 +220,36 @@ class PilihUnit extends Page
     }
 
     /**
-     * Daftar cluster (kolom fo_units.cluster) per project aktif, dengan jumlah
-     * unit per status. Satu kartu = satu cluster (bukan project).
+     * Daftar cluster = master Lokasi (per project), dengan jumlah unit per status.
+     * Satu kartu = satu Lokasi (cluster), masing-masing punya siteplan sendiri.
      */
     public function getClusters(): array
     {
-        $projects = Project::query()->where('is_active', true)->pluck('name', 'id');
+        $lokasiList = Lokasi::with('project:id,name')
+            ->where('is_active', true)->orderBy('kode')->get();
 
-        return Unit::query()
-            ->where('is_active', true)
-            ->whereIn('project_id', $projects->keys())
+        // Hitung status unit per lokasi dalam satu query agregat.
+        $counts = Unit::query()->where('is_active', true)
+            ->whereIn('lokasi_id', $lokasiList->pluck('id'))
+            ->selectRaw('lokasi_id, status, COUNT(*) as c')
+            ->groupBy('lokasi_id', 'status')
             ->get()
-            ->groupBy(fn (Unit $u) => $u->project_id.'|'.($u->cluster ?? ''))
-            ->map(function ($units) use ($projects) {
-                /** @var Unit $first */
-                $first = $units->first();
+            ->groupBy('lokasi_id');
 
-                return [
-                    'project_id' => $first->project_id,
-                    'project_name' => $projects[$first->project_id] ?? '',
-                    'cluster' => ($first->cluster !== null && $first->cluster !== '') ? $first->cluster : null,
-                    'label' => ($first->cluster !== null && $first->cluster !== '') ? $first->cluster : 'Umum',
-                    'unit_tersedia' => $units->where('status', 'TERSEDIA')->count(),
-                    'unit_booking' => $units->where('status', 'BOOKING')->count(),
-                    'unit_terjual' => $units->whereIn('status', ['TERJUAL', 'LUNAS'])->count(),
-                ];
-            })
-            ->sortBy('label')
-            ->values()
-            ->all();
+        return $lokasiList->map(function (Lokasi $l) use ($counts) {
+            $byStatus = ($counts[$l->id] ?? collect())->pluck('c', 'status');
+
+            return [
+                'lokasi_id' => $l->id,
+                'project_id' => $l->project_id,
+                'project_name' => $l->project?->name ?? '',
+                'cluster' => $l->nama,
+                'label' => $l->nama,
+                'unit_tersedia' => (int) ($byStatus['TERSEDIA'] ?? 0),
+                'unit_booking' => (int) ($byStatus['BOOKING'] ?? 0),
+                'unit_terjual' => (int) (($byStatus['TERJUAL'] ?? 0) + ($byStatus['LUNAS'] ?? 0)),
+            ];
+        })->values()->all();
     }
 
     /**
@@ -251,16 +262,11 @@ class PilihUnit extends Page
             return [];
         }
 
-        $project = Project::find($this->clusterId);
+        $project = $this->getProject();
 
         return Unit::with(['unitType', 'pricelists.skema', 'lokasi'])
-            ->where('project_id', $this->clusterId)
+            ->where('lokasi_id', $this->clusterId)
             ->where('is_active', true)
-            ->when(
-                $this->clusterName !== null,
-                fn ($q) => $q->where('cluster', $this->clusterName),
-                fn ($q) => $q->where(fn ($w) => $w->whereNull('cluster')->orWhere('cluster', '')),
-            )
             ->orderBy('blok')
             ->orderBy('no_unit')
             ->get()
@@ -308,26 +314,17 @@ class PilihUnit extends Page
 
     public function getProject(): ?Project
     {
-        return $this->clusterId ? Project::find($this->clusterId) : null;
+        return $this->projectId ? Project::find($this->projectId) : null;
     }
 
     /**
-     * Siteplan image untuk Leaflet image-overlay. Null bila project belum
-     * upload siteplan.
+     * Siteplan image untuk Leaflet image-overlay — gambar Lokasi (cluster) terpilih,
+     * fallback ke gambar project. Null bila keduanya belum diupload.
      *
      * @return array{url:string,width:int,height:int}|null
      */
     public function getSiteplan(): ?array
     {
-        $project = $this->getProject();
-        if (! $project || ! $project->siteplan_image_path) {
-            return null;
-        }
-
-        return [
-            'url' => Storage::disk('public')->url($project->siteplan_image_path),
-            'width' => (int) ($project->siteplan_width ?: 2000),
-            'height' => (int) ($project->siteplan_height ?: 1200),
-        ];
+        return $this->clusterId ? Lokasi::find($this->clusterId)?->resolvedSiteplan() : null;
     }
 }
