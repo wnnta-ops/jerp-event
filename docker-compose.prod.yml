@@ -1,0 +1,38 @@
+# ═══════════════════════════════════════════════════════════════════
+# J-ERP — docker-compose.prod.yml (OVERRIDE PRODUKSI / VPS)
+#
+# Di-merge DI ATAS base docker-compose.yml. WAJIB pakai flag -f keduanya
+# (kalau tidak, Compose malah auto-load docker-compose.override.yml dev):
+#
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+#
+# Biar tidak panjang, bisa di-set sekali per shell session:
+#   export COMPOSE_FILE=docker-compose.yml:docker-compose.prod.yml
+#   docker compose up -d --build         # otomatis pakai kedua file
+#
+# ── Tujuan file ini ──────────────────────────────────────────────────
+#  1. mysql / redis / meilisearch TIDAK di-publish ke host (internal only)
+#     → hilangkan konflik port 3306/6379/7700 dgn project lain + lebih aman.
+#  2. reverb di-publish ke host lewat REVERB_HOST_PORT (port BEBAS, bukan 8088)
+#     supaya tidak bentrok. NPM "Custom Location /app" forward ke host:PORT ini.
+#  3. nginx tetap publish HTTP_PORT (NPM forward HTTP utama ke sini).
+#
+#  Butuh Docker Compose v2.24+ (tag !reset / !override).
+# ═══════════════════════════════════════════════════════════════════
+
+services:
+  # Reverb — port host khusus (default 9088). Container internal tetap 8088.
+  # Ganti REVERB_HOST_PORT di .env bila 9088 juga sudah dipakai project lain.
+  reverb:
+    ports: !override
+      - "${REVERB_HOST_PORT:-9088}:8088"
+
+  # ── Internal only: tidak ada port yang dibuka ke host ──────────────
+  mysql:
+    ports: !reset []
+
+  redis:
+    ports: !reset []
+
+  meilisearch:
+    ports: !reset []
