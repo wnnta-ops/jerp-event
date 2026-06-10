@@ -47,14 +47,22 @@
         $unitDesc = $u?->alamat ?: trim(($u?->kode_unit ?: '').' - '.($u?->unitType?->name ?: '').' - LT '.($u?->luas_tanah ?: '-').' - LB '.($u?->luas_bangunan ?: '-'), ' -');
         $clusterKode = $u?->lokasi?->kode ?: ($u?->blok ?: '—');
         $lokasiNama = $u?->lokasi?->nama ?: '—';
-        // Jadwal pembayaran dari baris skema (jika ada).
         $harga = (float) $kontrak->harga_jual;
+        // Jadwal pembayaran dari Jadwal Tagihan kontrak (integrasi Skema Bayar).
+        // Fallback ke baris skema bila tagihan belum terbentuk.
         $payRows = [];
-        foreach ($kontrak->skema?->lines ?? [] as $line) {
-            $amt = $line->basis === 'NOMINAL' ? (float) $line->nominal : round($harga * (float) $line->persen / 100, 2);
-            $jt = $kontrak->tgl_kontrak ? $kontrak->tgl_kontrak->copy()->addDays((int) $line->jatuh_tempo_hari) : null;
-            $payRows[] = ['nama' => $line->nama_termin, 'jatuh' => $jt, 'amount' => $amt];
+        foreach ($kontrak->tagihan ?? [] as $t) {
+            $payRows[] = ['nama' => $t->nama_tagihan, 'jatuh' => $t->jatuh_tempo, 'amount' => (float) $t->nilai, 'paid' => (float) $t->pelunasan];
         }
+        if (empty($payRows)) {
+            foreach ($kontrak->skema?->lines ?? [] as $line) {
+                $amt = $line->basis === 'NOMINAL' ? (float) $line->nominal : round($harga * (float) $line->persen / 100, 2);
+                $jt = $kontrak->tgl_kontrak ? $kontrak->tgl_kontrak->copy()->addDays((int) $line->jatuh_tempo_hari) : null;
+                $payRows[] = ['nama' => $line->nama_termin, 'jatuh' => $jt, 'amount' => $amt, 'paid' => 0];
+            }
+        }
+        // Gimmick yang diberikan → "sudah termasuk".
+        $gimmickNames = ($kontrak->gimmicks ?? collect())->where('diberikan', true)->pluck('nama_barang')->filter()->all();
         $payTotal = array_sum(array_column($payRows, 'amount')) ?: (float) $kontrak->total_kontrak;
     @endphp
 
@@ -63,7 +71,7 @@
         <div class="head">
             <div class="logo">M</div>
             <div class="co">
-                <div class="ttl">SURAT PEMESANAN</div>
+                <div class="ttl">SURAT PEMESANAN{{ ($kontrak->tahap ?? 'SPRS') === 'SPR' ? '' : ' SEMENTARA' }}</div>
                 <div class="no">Nomor : {{ $kontrak->no_kontrak }}</div>
                 <div class="no">Tanggal : {{ optional($kontrak->tgl_kontrak)->format('d M Y') }}</div>
             </div>
@@ -115,7 +123,14 @@
             <tr><td colspan="3" class="r" style="font-weight:700;">Total</td><td class="r" style="font-weight:700;">{{ number_format($payTotal, 0, ',', '.') }}</td></tr>
         </table>
 
-        <p style="margin-top:8px;">Keterangan harga di atas, sudah termasuk : - FREE BPHTB &nbsp; - FREE IPL 2 TAHUN &nbsp; - FREE BIAYA KPR INC ASURANSI &nbsp; - FREE TAMAN DEPAN &nbsp; - FREE AJB BBN &nbsp; - FREE CANOPY &nbsp; - FREE JAMINAN ANTI RAYAP (S/D 3 TAHUN) &nbsp; - VOUCHER SUPERINDO 500RB* &nbsp; - FREE LOGAM MULIA 1GR*</p>
+        @if (count($gimmickNames))
+            <p style="margin-top:8px; margin-bottom:2px;">Keterangan harga di atas, sudah termasuk :</p>
+            <ul style="margin:0; padding-left:18px;">
+                @foreach ($gimmickNames as $n)
+                    <li>{{ $n }}</li>
+                @endforeach
+            </ul>
+        @endif
         <div class="foot">1 Dari Halaman 5</div>
     </div>
 

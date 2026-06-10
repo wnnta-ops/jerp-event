@@ -9,6 +9,7 @@ use App\Modules\FO\MarketingSales\Models\Kontrak;
 use App\Modules\FO\MarketingSales\Models\Reservasi;
 use App\Modules\FO\MarketingSales\Models\Unit;
 use App\Modules\FO\MarketingSales\Models\UnitPricelist;
+use App\Modules\FO\MarketingSales\Services\KontrakGeneratorService;
 use App\Services\Numerator\NumeratorServiceInterface;
 use Illuminate\Support\Facades\DB;
 use RuntimeException;
@@ -91,6 +92,10 @@ class ClosingNupService
 
             $unit->update(['status' => 'TERJUAL']);
             $reservasi->update(['status' => 'NAIK_KONTRAK']);
+
+            // SPR terbentuk → bentuk otomatis Jadwal Tagihan (skema bayar),
+            // Jadwal Komisi (skema komisi), & Gimmick (master).
+            app(KontrakGeneratorService::class)->all($kontrak);
 
             // TTS untuk UTJ yang sudah dibayar → siap dibuka jadi kwitansi.
             $tts = Tts::create([

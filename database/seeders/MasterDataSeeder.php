@@ -81,6 +81,8 @@ class MasterDataSeeder extends Seeder
             ['code' => 'SKEMAKOMISI',  'format' => 'SK-{seq:4}'],
             ['code' => 'TERMINKOMISI', 'format' => 'TK-{seq:4}'],
             ['code' => 'SKEMAREWARD',  'format' => 'SR-{seq:4}'],
+            ['code' => 'TIPEGIMMICK', 'format' => 'TG-{seq:4}'],
+            ['code' => 'GIMMICK',     'format' => 'GMK-{seq:4}'],
             ['code' => 'APPROVAL', 'format' => 'APR-{YYYY}{MM}-{seq:5}'],
             ['code' => 'PPJB', 'format' => 'PPJB-{YYYY}-{seq:5}'],
             ['code' => 'AJB', 'format' => 'AJB-{YYYY}-{seq:5}'],

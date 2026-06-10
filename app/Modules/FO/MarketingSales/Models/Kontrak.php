@@ -31,6 +31,7 @@ class Kontrak extends TenantAwareModel
         'dp_persen',
         'dp_amount',
         'status',
+        'tahap',
         'keterangan',
     ];
 
@@ -72,6 +73,11 @@ class Kontrak extends TenantAwareModel
     public function tagihan(): HasMany
     {
         return $this->hasMany(KontrakTagihan::class)->orderBy('urutan');
+    }
+
+    public function skemaLines(): HasMany
+    {
+        return $this->hasMany(KontrakSkemaLine::class)->orderBy('urutan');
     }
 
     public function komisi(): HasMany

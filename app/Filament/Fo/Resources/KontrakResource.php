@@ -4,10 +4,13 @@ namespace App\Filament\Fo\Resources;
 
 use App\Filament\Fo\Resources\KontrakResource\Pages;
 use App\Modules\FO\Adminjual\Models\Gimmick;
+use App\Modules\FO\Adminjual\Models\Skema;
 use App\Modules\FO\MarketingSales\Models\Kontrak;
 use App\Modules\FO\MarketingSales\Models\Reservasi;
 use Filament\Forms;
 use Filament\Forms\Form;
+use Filament\Notifications\Notification;
+use Illuminate\Support\HtmlString;
 use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Table;
@@ -22,9 +25,9 @@ class KontrakResource extends Resource
 
     protected static ?int $navigationSort = 40;
 
-    protected static ?string $modelLabel = 'Kontrak';
+    protected static ?string $modelLabel = 'SPRS';
 
-    protected static ?string $pluralModelLabel = 'Kontrak';
+    protected static ?string $pluralModelLabel = 'SPRS';
 
     public static function form(Form $form): Form
     {
@@ -37,6 +40,7 @@ class KontrakResource extends Resource
                         ->icon('heroicon-o-document-text')
                         ->schema([
             Forms\Components\Section::make('Identitas Kontrak')
+                ->visibleOn('create')
                 ->columns(2)
                 ->schema([
                     Forms\Components\TextInput::make('no_kontrak')
@@ -78,6 +82,7 @@ class KontrakResource extends Resource
                 ]),
 
             Forms\Components\Section::make('Harga')
+                ->visibleOn('create')
                 ->columns(2)
                 ->schema([
                     Forms\Components\TextInput::make('harga_jual')->label('Harga jual')->numeric()->prefix('Rp')->default(0)->required(),
@@ -87,6 +92,7 @@ class KontrakResource extends Resource
                 ]),
 
             Forms\Components\Section::make('Cara Bayar')
+                ->visibleOn('create')
                 ->columns(3)
                 ->schema([
                     Forms\Components\Select::make('cara_bayar')
@@ -105,6 +111,7 @@ class KontrakResource extends Resource
                 ]),
 
             Forms\Components\Section::make('Status')
+                ->visibleOn('create')
                 ->columns(2)
                 ->schema([
                     Forms\Components\Select::make('status')
@@ -120,26 +127,14 @@ class KontrakResource extends Resource
                         ->required(),
                     Forms\Components\Textarea::make('keterangan')->rows(2)->columnSpanFull(),
                 ]),
-                        ]),
 
-                    Forms\Components\Tabs\Tab::make('Jadwal Tagihan')
-                        ->icon('heroicon-o-calendar-days')
-                        ->schema([
-                            Forms\Components\Repeater::make('tagihan')->relationship()->label('')
-                                ->columns(12)->defaultItems(0)->addActionLabel('Tambah Tagihan')
-                                ->reorderable()->orderColumn('urutan')
-                                ->itemLabel(fn (array $state): ?string => ($state['nama_tagihan'] ?? null)
-                                    ? (($state['tipe'] ?? '').' — '.$state['nama_tagihan'])
-                                    : null)
-                                ->schema([
-                                    Forms\Components\Select::make('tipe')->label('Tipe')->columnSpan(2)
-                                        ->options(['BF' => 'BF (Booking Fee)', 'DP' => 'DP', 'ANG' => 'Angsuran', 'ADM' => 'Administrasi', 'LAIN' => 'Lain'])
-                                        ->default('ANG')->required(),
-                                    Forms\Components\TextInput::make('nama_tagihan')->label('Nama Tagihan')->columnSpan(4)->required(),
-                                    Forms\Components\DatePicker::make('jatuh_tempo')->label('Jatuh Tempo')->columnSpan(2)->native(false)->displayFormat('d M Y'),
-                                    Forms\Components\TextInput::make('nilai')->label('Nilai')->columnSpan(2)->numeric()->prefix('Rp')->default(0),
-                                    Forms\Components\TextInput::make('pelunasan')->label('Pelunasan')->columnSpan(2)->numeric()->prefix('Rp')->default(0),
-                                ]),
+            Forms\Components\Section::make('Hasil Akhir Kontrak')
+                ->visibleOn('edit')
+                ->description('Read-only — otomatis mengikuti perubahan dari Adjustment Kontrak, tab Skema Bayar, Jadwal Komisi, & Gimmick.')
+                ->schema([
+                    Forms\Components\Placeholder::make('ringkasan')->label('')
+                        ->content(fn (?Kontrak $record) => self::kontrakSummary($record)),
+                ]),
                         ]),
 
                     Forms\Components\Tabs\Tab::make('Jadwal Komisi')
@@ -174,23 +169,84 @@ class KontrakResource extends Resource
                                 ->reorderable()->orderColumn('urutan')
                                 ->itemLabel(fn (array $state): ?string => $state['nama_barang'] ?? null)
                                 ->schema([
-                                    Forms\Components\Checkbox::make('diberikan')->label('Diberikan')->columnSpan(2)->default(true),
-                                    Forms\Components\Checkbox::make('diterima')->label('Diterima')->columnSpan(2),
-                                    Forms\Components\Select::make('gimmick_id')->label('Master Gimmick')->columnSpan(4)
-                                        ->options(fn () => Gimmick::where('is_active', true)->pluck('name', 'id'))
-                                        ->searchable()->live()
+                                    Forms\Components\Select::make('gimmick_id')->label('Item Gimmick (dari Master)')->columnSpan(9)
+                                        ->options(fn () => Gimmick::where('is_active', true)->orderBy('name')->pluck('name', 'id'))
+                                        ->searchable()->required()->live()
                                         ->afterStateUpdated(function ($state, Forms\Set $set) {
-                                            $g = $state ? Gimmick::find($state) : null;
-                                            if ($g) {
-                                                $set('nama_barang', $g->name);
-                                                $set('harga_satuan', $g->nilai);
-                                            }
+                                            $set('nama_barang', $state ? Gimmick::find($state)?->name : null);
                                         }),
-                                    Forms\Components\DatePicker::make('tgl_diterima')->label('Tgl Diterima')->columnSpan(4)->native(false)->displayFormat('d M Y'),
-                                    Forms\Components\TextInput::make('nama_barang')->label('Nama Barang')->columnSpan(4)->required(),
-                                    Forms\Components\TextInput::make('satuan')->label('Satuan')->columnSpan(2)->placeholder('VOUCHER'),
-                                    Forms\Components\TextInput::make('qty')->label('Qty')->columnSpan(2)->numeric()->default(0),
-                                    Forms\Components\TextInput::make('harga_satuan')->label('Harga Satuan')->columnSpan(4)->numeric()->prefix('Rp')->default(0),
+                                    Forms\Components\Toggle::make('diberikan')->label('Aktif (tampil di SPR)')->columnSpan(3)->default(true)->inline(false),
+                                    Forms\Components\Hidden::make('nama_barang'),
+                                ]),
+                        ]),
+
+                    Forms\Components\Tabs\Tab::make('Skema Bayar')
+                        ->icon('heroicon-o-calendar-days')
+                        ->schema([
+                            Forms\Components\Select::make('skema_id')->label('Skema Bayar')
+                                ->relationship('skema', 'name')
+                                ->getOptionLabelFromRecordUsing(fn ($record) => trim(($record->code ? $record->code.' — ' : '').$record->name))
+                                ->searchable()->preload()->live()
+                                ->helperText('Pilih skema bayar standar, lalu klik "Bentuk Ulang dari Master → Jadwal Tagihan" untuk generate. Untuk case khusus, atur baris tagihan manual di bawah.'),
+
+                            Forms\Components\Actions::make([
+                                Forms\Components\Actions\Action::make('salinSkema')->label('Salin dari Skema Master')
+                                    ->icon('heroicon-o-clipboard-document')->color('gray')
+                                    ->action(function (Forms\Get $get, Forms\Set $set) {
+                                        $skema = $get('skema_id') ? Skema::with('lines')->find($get('skema_id')) : null;
+                                        if (! $skema) {
+                                            Notification::make()->warning()->title('Pilih Skema Bayar dulu')->send();
+
+                                            return;
+                                        }
+                                        $rows = $skema->lines->map(fn ($l) => [
+                                            'tipe' => $l->tipe ?: 'ANG', 'nama_termin' => $l->nama_termin,
+                                            'basis' => $l->basis ?: 'PERSEN', 'persen' => $l->persen, 'nominal' => $l->nominal,
+                                            'jadwal_basis' => $l->jadwal_basis ?: 'HARI', 'jadwal_nilai' => $l->jadwal_nilai,
+                                            'setelah' => $l->setelah, 'flag_bf' => $l->flag_bf, 'flag_kpr' => $l->flag_kpr,
+                                        ])->all();
+                                        $set('skemaLines', $rows);
+                                        Notification::make()->success()->title(count($rows).' termin disalin dari skema')->send();
+                                    }),
+                            ]),
+
+                            Forms\Components\Repeater::make('skemaLines')->relationship()->label('Detail Skema Bayar (termin) — bisa diedit / input sendiri')
+                                ->columns(12)->defaultItems(0)->addActionLabel('Tambah termin')
+                                ->reorderable()->orderColumn('urutan')
+                                ->itemLabel(fn (array $state): ?string => trim(($state['tipe'] ?? '').' — '.($state['nama_termin'] ?? ''), ' —'))
+                                ->schema([
+                                    Forms\Components\Select::make('tipe')->label('Tipe')->columnSpan(2)
+                                        ->options(['BF' => 'BF', 'DP' => 'DP', 'ANG' => 'ANG', 'ADM' => 'ADM'])->default('ANG')->required(),
+                                    Forms\Components\TextInput::make('nama_termin')->label('Nama')->columnSpan(2)->required(),
+                                    Forms\Components\Radio::make('basis')->label('Nilai')->inline()->columnSpan(1)
+                                        ->options(['PERSEN' => '%', 'NOMINAL' => 'Rp'])->default('PERSEN')->live(),
+                                    Forms\Components\TextInput::make('persen')->label('Nilai')->columnSpan(2)->numeric()->suffix('%')->default(0)
+                                        ->visible(fn (Forms\Get $get) => $get('basis') !== 'NOMINAL'),
+                                    Forms\Components\TextInput::make('nominal')->label('Nilai')->columnSpan(2)->numeric()->prefix('Rp')->default(0)
+                                        ->visible(fn (Forms\Get $get) => $get('basis') === 'NOMINAL'),
+                                    Forms\Components\TextInput::make('jadwal_nilai')->label('Jadwal')->columnSpan(1)->numeric()->default(0),
+                                    Forms\Components\Radio::make('jadwal_basis')->label('Sat.')->inline()->columnSpan(2)
+                                        ->options(['BULAN' => 'Bln', 'HARI' => 'Hari'])->default('HARI'),
+                                    Forms\Components\TextInput::make('setelah')->label('Setelah')->columnSpan(1)->numeric()->default(0),
+                                    Forms\Components\Group::make()->columnSpan(1)->schema([
+                                        Forms\Components\Checkbox::make('flag_bf')->label('BF'),
+                                        Forms\Components\Checkbox::make('flag_kpr')->label('KPR'),
+                                    ]),
+                                ]),
+                            Forms\Components\Repeater::make('tagihan')->relationship()->label('Jadwal Tagihan')
+                                ->columns(12)->defaultItems(0)->addActionLabel('Tambah Tagihan')
+                                ->reorderable()->orderColumn('urutan')
+                                ->itemLabel(fn (array $state): ?string => ($state['nama_tagihan'] ?? null)
+                                    ? (($state['tipe'] ?? '').' — '.$state['nama_tagihan'])
+                                    : null)
+                                ->schema([
+                                    Forms\Components\Select::make('tipe')->label('Tipe')->columnSpan(2)
+                                        ->options(['BF' => 'BF (Booking Fee)', 'DP' => 'DP', 'ANG' => 'Angsuran', 'ADM' => 'Administrasi', 'LAIN' => 'Lain'])
+                                        ->default('ANG')->required(),
+                                    Forms\Components\TextInput::make('nama_tagihan')->label('Nama Tagihan')->columnSpan(4)->required(),
+                                    Forms\Components\DatePicker::make('jatuh_tempo')->label('Jatuh Tempo')->columnSpan(2)->native(false)->displayFormat('d M Y'),
+                                    Forms\Components\TextInput::make('nilai')->label('Nilai')->columnSpan(2)->numeric()->prefix('Rp')->default(0),
+                                    Forms\Components\TextInput::make('pelunasan')->label('Pelunasan')->columnSpan(2)->numeric()->prefix('Rp')->default(0),
                                 ]),
                         ]),
                 ]),
@@ -198,6 +254,13 @@ class KontrakResource extends Resource
     }
 
     public static function table(Table $table): Table
+    {
+        // Menu SPRS → tombol "Cetak SPRS".
+        return self::buildTable($table, 'Cetak SPRS');
+    }
+
+    /** Tabel kontrak (dipakai SPRS & SPR); $cetakLabel mengikuti menu. */
+    public static function buildTable(Table $table, string $cetakLabel = 'Cetak SPRS'): Table
     {
         return $table
             ->columns([
@@ -218,6 +281,9 @@ class KontrakResource extends Resource
                     'BATAL' => 'danger',
                     default => 'gray',
                 }),
+                Tables\Columns\TextColumn::make('tahap')->label('Tahap')->badge()
+                    ->formatStateUsing(fn (?string $state) => $state === 'SPR' ? '✓ Sudah SPR' : 'SPRS')
+                    ->color(fn (?string $state) => $state === 'SPR' ? 'success' : 'warning'),
             ])
             ->filters([
                 Tables\Filters\SelectFilter::make('cara_bayar')->options([
@@ -226,10 +292,15 @@ class KontrakResource extends Resource
                 Tables\Filters\SelectFilter::make('status')->options([
                     'DRAFT' => 'Draft', 'BOOKING' => 'Booking', 'AKTIF' => 'Aktif', 'LUNAS' => 'Lunas', 'BATAL' => 'Batal',
                 ]),
+                Tables\Filters\SelectFilter::make('tahap')->label('Tahap')->options([
+                    'SPRS' => 'SPRS (belum final)', 'SPR' => 'Sudah SPR',
+                ]),
             ])
             ->actions([
                 Tables\Actions\EditAction::make(),
-                Tables\Actions\Action::make('cetak_spr')->label('Cetak SPR')->icon('heroicon-o-document-text')
+                Tables\Actions\Action::make('cetak_spr')
+                    ->label($cetakLabel)
+                    ->icon('heroicon-o-document-text')
                     ->url(fn ($record) => route('fo.cetak.spr', $record), shouldOpenInNewTab: true),
                 Tables\Actions\Action::make('cetak_jadwal')->label('Jadwal')->icon('heroicon-o-calendar-days')
                     ->url(fn ($record) => route('fo.cetak.jadwal', $record), shouldOpenInNewTab: true),
@@ -240,6 +311,126 @@ class KontrakResource extends Resource
                 ]),
             ])
             ->defaultSort('tgl_kontrak', 'desc');
+    }
+
+    /** Ringkasan hasil akhir kontrak (read-only, seperti SPR) untuk tab Edit Kontrak saat edit. */
+    public static function kontrakSummary(?Kontrak $k): HtmlString
+    {
+        if (! $k) {
+            return new HtmlString('—');
+        }
+
+        $rp = fn ($v) => 'Rp '.number_format((float) $v, 0, ',', '.');
+        $total = (float) $k->total_kontrak;
+        $ppn = (float) $k->ppn;
+        $dpp = $ppn > 0 ? $total - $ppn : round($total / 1.11);
+        if ($ppn <= 0) {
+            $ppn = $total - $dpp;
+        }
+        $unit = trim(($k->unit?->blok ? $k->unit->blok.' / ' : '').($k->unit?->no_unit ?? ''));
+
+        $row = fn ($l, $v) => '<tr><td style="padding:2px 10px;color:#94a3b8;width:190px;">'.$l.'</td><td style="padding:2px 10px;">: '.$v.'</td></tr>';
+        $kv = '<table style="font-size:13px;border-collapse:collapse;width:100%;">'
+            .$row('No. Kontrak', e($k->no_kontrak))
+            .$row('Tanggal', e(optional($k->tgl_kontrak)->format('d M Y')))
+            .$row('Customer', e($k->customer?->full_name ?: '—'))
+            .$row('Unit', e($unit ?: '—'))
+            .$row('Sales', e($k->agent?->name ?: '—'))
+            .$row('Skema Bayar', e($k->skema?->name ?: '—'))
+            .$row('Price List (Gross)', $rp($k->harga_jual))
+            .$row('Diskon', $rp($k->diskon))
+            .$row('DPP', $rp($dpp))
+            .$row('PPN', $rp($ppn))
+            .$row('Nilai Kontrak', '<strong>'.$rp($total).'</strong>')
+            .$row('Status / Tahap', e($k->status).' / '.($k->tahap === 'SPR' ? 'SPR (final)' : 'SPRS'))
+            .'</table>';
+
+        // Jadwal Tagihan
+        $tg = '';
+        foreach ($k->tagihan as $t) {
+            $tg .= '<tr>'
+                .'<td style="padding:2px 10px;border-top:1px solid #475569;">'.e($t->tipe).'</td>'
+                .'<td style="padding:2px 10px;border-top:1px solid #475569;">'.e($t->nama_tagihan).'</td>'
+                .'<td style="padding:2px 10px;border-top:1px solid #475569;">'.e(optional($t->jatuh_tempo)->format('d M Y')).'</td>'
+                .'<td style="padding:2px 10px;border-top:1px solid #475569;text-align:right;">'.$rp($t->nilai).'</td>'
+                .'</tr>';
+        }
+        $tgTable = $tg
+            ? '<table style="font-size:12px;border-collapse:collapse;width:100%;"><thead><tr>'
+                .'<th style="text-align:left;padding:2px 10px;">Tipe</th><th style="text-align:left;padding:2px 10px;">Tagihan</th>'
+                .'<th style="text-align:left;padding:2px 10px;">Jatuh Tempo</th><th style="text-align:right;padding:2px 10px;">Nilai</th>'
+                .'</tr></thead><tbody>'.$tg.'</tbody></table>'
+            : '<span style="color:#94a3b8;">Belum ada jadwal tagihan.</span>';
+
+        // Gimmick (yang diberikan)
+        $gim = $k->gimmicks->where('diberikan', true)->pluck('nama_barang')->filter();
+        $gimList = $gim->count()
+            ? '<ul style="margin:0;padding-left:18px;font-size:12px;">'.$gim->map(fn ($n) => '<li>'.e($n).'</li>')->implode('').'</ul>'
+            : '<span style="color:#94a3b8;">—</span>';
+
+        return new HtmlString(
+            $kv
+            .'<div style="margin-top:14px;font-weight:700;font-size:13px;">Jadwal Tagihan</div>'.$tgTable
+            .'<div style="margin-top:14px;font-weight:700;font-size:13px;">Sudah termasuk (Gimmick)</div>'.$gimList
+        );
+    }
+
+    /** Preview HTML detail skema bayar (header + termin) untuk tab Skema Bayar. */
+    public static function skemaDetail(mixed $skemaId): HtmlString
+    {
+        if (! $skemaId) {
+            return new HtmlString('<span style="color:#94a3b8;">Pilih skema untuk lihat detail termin.</span>');
+        }
+
+        $skema = Skema::with('lines')->find($skemaId);
+        if (! $skema) {
+            return new HtmlString('—');
+        }
+
+        $pct = fn ($v) => rtrim(rtrim(number_format((float) $v, 2), '0'), '.').'%';
+        $head = 'Cara bayar: <strong>'.e($skema->cara_bayar).'</strong> · DP '.$pct($skema->dp_persen)
+            .' · Tenor '.(int) $skema->tenor_bulan.' bln · '.$skema->lines->count().' termin';
+
+        $td = 'padding:3px 9px;border-top:1px solid #475569;';
+        $rows = '';
+        $i = 0;
+        foreach ($skema->lines as $l) {
+            $i++;
+            $nilai = $l->basis === 'NOMINAL'
+                ? 'Rp '.number_format((float) $l->nominal, 0, ',', '.')
+                : $pct($l->persen);
+            $jadwal = ((int) $l->jadwal_nilai).' '.e($l->jadwal_basis ?: 'D');
+            $rows .= '<tr>'
+                .'<td style="'.$td.'text-align:center;">'.$i.'</td>'
+                .'<td style="'.$td.'">'.e($l->tipe ?: '-').'</td>'
+                .'<td style="'.$td.'">'.e($l->nama_termin).'</td>'
+                .'<td style="'.$td.'text-align:right;">'.$nilai.'</td>'
+                .'<td style="'.$td.'text-align:center;">'.$jadwal.'</td>'
+                .'<td style="'.$td.'text-align:center;">'.((int) $l->setelah).'</td>'
+                .'<td style="'.$td.'text-align:center;">'.($l->flag_bf ? '✓' : '–').'</td>'
+                .'<td style="'.$td.'text-align:center;">'.($l->flag_kpr ? '✓' : '–').'</td>'
+                .'</tr>';
+        }
+        if ($rows === '') {
+            $rows = '<tr><td colspan="8" style="padding:6px 10px;color:#94a3b8;">Skema ini belum punya baris termin.</td></tr>';
+        }
+
+        $th = 'padding:3px 9px;background:#1e293b;';
+        return new HtmlString(
+            '<div style="font-size:12px;margin-bottom:6px;">'.$head.'</div>'
+            .'<table style="font-size:12px;border-collapse:collapse;width:100%;">'
+            .'<thead><tr>'
+            .'<th style="'.$th.'text-align:center;width:36px;">No.</th>'
+            .'<th style="'.$th.'text-align:left;">Tipe</th>'
+            .'<th style="'.$th.'text-align:left;">Nama</th>'
+            .'<th style="'.$th.'text-align:right;">Nilai</th>'
+            .'<th style="'.$th.'text-align:center;">Jadwal</th>'
+            .'<th style="'.$th.'text-align:center;">Setelah</th>'
+            .'<th style="'.$th.'text-align:center;">BF</th>'
+            .'<th style="'.$th.'text-align:center;">KPR</th>'
+            .'</tr></thead><tbody>'.$rows.'</tbody></table>'
+            .'<div style="font-size:11px;color:#94a3b8;margin-top:4px;">Jadwal: nilai + satuan (M=Bulan, D=Hari). Ubah struktur skema di master Skema Cara Bayar.</div>'
+        );
     }
 
     public static function getPages(): array

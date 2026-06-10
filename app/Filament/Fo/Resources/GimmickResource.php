@@ -20,54 +20,59 @@ class GimmickResource extends Resource
 
     protected static ?int $navigationSort = 30;
 
-    protected static ?string $modelLabel = 'Gimmick';
+    protected static ?string $modelLabel = 'Pendaftaran Gimmick';
 
-    protected static ?string $pluralModelLabel = 'Gimmick / Promo';
+    protected static ?string $pluralModelLabel = 'Pendaftaran Gimmick';
 
     public static function form(Form $form): Form
     {
         return $form->schema([
-            Forms\Components\Section::make('Gimmick')->columns(2)->schema([
-                Forms\Components\TextInput::make('code')->label('Kode')->required()->maxLength(32)->unique(ignoreRecord: true),
-                Forms\Components\TextInput::make('name')->label('Nama')->required()->maxLength(255),
-                Forms\Components\Select::make('project_id')->label('Proyek')->relationship('project', 'name')->searchable()->preload(),
-                Forms\Components\Select::make('jenis')->label('Jenis')->options([
-                    'BARANG' => 'Barang (AC, kulkas, dll.)',
-                    'JASA' => 'Jasa',
-                    'CASHBACK' => 'Cashback',
-                    'DISKON' => 'Diskon',
-                    'LAIN' => 'Lain',
-                ])->default('BARANG')->required(),
-                Forms\Components\TextInput::make('nilai')->label('Nilai (Rp)')->numeric()->prefix('Rp')->default(0),
-                Forms\Components\Toggle::make('is_active')->label('Aktif')->default(true),
-                Forms\Components\DatePicker::make('berlaku_mulai')->label('Berlaku mulai'),
-                Forms\Components\DatePicker::make('berlaku_sampai')->label('Berlaku sampai'),
-                Forms\Components\Textarea::make('keterangan')->rows(2)->columnSpanFull(),
-            ]),
+            Forms\Components\Section::make('Spesifikasi')->columns(2)
+                ->description('Item gimmick (turunan Tipe Gimmick) yang nanti tercantum di SPR — mis. FREE CANOPY, FREE BPHTB, Logam Mulia 1 Gr.')
+                ->schema([
+                    Forms\Components\TextInput::make('code')->label('No.')
+                        ->default('#AUTO')->disabled()->dehydrated(false),
+                    Forms\Components\Select::make('project_id')->label('Project')
+                        ->relationship('project', 'name')->searchable()->preload()->placeholder('Semua'),
+                    Forms\Components\Select::make('tipe_gimmick_id')->label('Tipe Barang (Tipe Gimmick)')
+                        ->relationship('tipeGimmick', 'nama')->searchable()->preload()->required()
+                        ->helperText('Paket gimmick (CLUSTER 3.3 / REGULER / PRIORITAS). Kelola di menu Tipe Gimmick.')
+                        ->columnSpanFull(),
+
+                    // CREATE: input banyak nama sekaligus → tiap nama jadi 1 item.
+                    Forms\Components\Repeater::make('nama_barang_list')->label('Nama Barang (bisa banyak)')
+                        ->simple(Forms\Components\TextInput::make('nama')->required()->placeholder('mis. FREE CANOPY'))
+                        ->addActionLabel('Tambah Barang')->defaultItems(1)->minItems(1)->reorderable(false)
+                        ->visibleOn('create')->dehydrated()->columnSpanFull(),
+
+                    // EDIT: satu item = satu nama.
+                    Forms\Components\TextInput::make('name')->label('Nama Barang')
+                        ->required()->maxLength(255)->visibleOn('edit')->columnSpanFull(),
+
+                    Forms\Components\Toggle::make('is_active')->label('Aktif')->default(true),
+                    Forms\Components\Textarea::make('keterangan')->rows(2)->columnSpanFull(),
+                ]),
         ]);
     }
 
     public static function table(Table $table): Table
     {
         return $table->columns([
-            Tables\Columns\TextColumn::make('code')->label('Kode')->badge()->searchable()->sortable(),
-            Tables\Columns\TextColumn::make('name')->label('Nama')->searchable(),
-            Tables\Columns\TextColumn::make('jenis')->label('Jenis')->badge(),
-            Tables\Columns\TextColumn::make('nilai')->label('Nilai')->money('IDR', divideBy: 0)->alignEnd(),
-            Tables\Columns\TextColumn::make('project.code')->label('Proyek')->toggleable(),
-            Tables\Columns\TextColumn::make('berlaku_mulai')->label('Mulai')->date('d M Y')->toggleable(),
-            Tables\Columns\TextColumn::make('berlaku_sampai')->label('Sampai')->date('d M Y')->toggleable(),
+            Tables\Columns\TextColumn::make('code')->label('No.')->badge()->searchable()->sortable()->toggleable(),
+            Tables\Columns\TextColumn::make('name')->label('Nama Barang')->searchable()->sortable(),
+            Tables\Columns\TextColumn::make('tipeGimmick.nama')->label('Tipe Gimmick')->badge()->placeholder('—')->searchable(),
+            Tables\Columns\TextColumn::make('project.code')->label('Project')->toggleable(),
             Tables\Columns\IconColumn::make('is_active')->label('Aktif')->boolean(),
         ])->filters([
-            Tables\Filters\SelectFilter::make('jenis')->options([
-                'BARANG' => 'Barang', 'JASA' => 'Jasa', 'CASHBACK' => 'Cashback', 'DISKON' => 'Diskon', 'LAIN' => 'Lain',
-            ]),
+            Tables\Filters\SelectFilter::make('tipe_gimmick_id')->relationship('tipeGimmick', 'nama')->label('Tipe Gimmick'),
+            Tables\Filters\SelectFilter::make('project_id')->relationship('project', 'name')->label('Project'),
             Tables\Filters\TernaryFilter::make('is_active'),
         ])->actions([
             Tables\Actions\EditAction::make(),
+            Tables\Actions\DeleteAction::make(),
         ])->bulkActions([
             Tables\Actions\BulkActionGroup::make([Tables\Actions\DeleteBulkAction::make()]),
-        ])->defaultSort('code');
+        ])->defaultSort('name');
     }
 
     public static function getPages(): array
