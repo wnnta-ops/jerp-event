@@ -75,6 +75,10 @@ class PublicForm extends Component
 
     public ?string $mail_province = null;
 
+    public ?string $mail_kecamatan = null;
+
+    public ?string $mail_kelurahan = null;
+
     public ?string $mail_postal_code = null;
 
     // Pasangan (kondisional saat KAWIN)
@@ -213,6 +217,8 @@ class PublicForm extends Component
             'mail_address' => ['nullable', 'required_if:mail_same_as_ktp,false', 'string'],
             'mail_city' => ['nullable', 'required_if:mail_same_as_ktp,false', 'string'],
             'mail_province' => ['nullable', 'required_if:mail_same_as_ktp,false', 'string'],
+            'mail_kecamatan' => ['nullable', 'string', 'max:255'],
+            'mail_kelurahan' => ['nullable', 'string', 'max:255'],
             'mail_postal_code' => ['nullable', 'string', 'max:16'],
 
             'spouse_full_name' => ['nullable', 'required_if:marital_status,KAWIN', 'string', 'max:255'],
@@ -318,6 +324,8 @@ class PublicForm extends Component
                 'mail_same_as_ktp' => $this->mail_same_as_ktp,
                 'mail_address' => $this->mail_address,
                 'mail_city' => $this->mail_city,
+                'mail_kecamatan' => $this->mail_kecamatan,
+                'mail_kelurahan' => $this->mail_kelurahan,
                 'mail_province' => $this->mail_province,
                 'mail_postal_code' => $this->mail_postal_code,
                 'spouse_full_name' => $this->spouse_full_name,

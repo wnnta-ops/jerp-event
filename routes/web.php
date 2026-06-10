@@ -7,6 +7,7 @@ use App\Livewire\Nup\PublicForm as NupPublicForm;
 use App\Modules\BO\GeneralLedger\Controllers\JurnalPrintController;
 use App\Modules\FO\Launching\Controllers\SiteplanController;
 use App\Modules\FO\MarketingSales\Controllers\ClosingPrintController;
+use App\Modules\FO\MarketingSales\Controllers\CustomerFileController;
 use App\Modules\FO\MarketingSales\Controllers\CustomerQrController;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Route;
@@ -85,6 +86,12 @@ Route::middleware('auth')->group(function () {
     // FO — kartu QR customer (printable; di-scan saat Pilih Unit hari-H launching)
     Route::get('/fo/customer/{customer}/qr', [CustomerQrController::class, 'show'])
         ->name('fo.customer.qr');
+
+    // FO — berkas private customer (KTP/NPWP) untuk tim verifikasi data.
+    Route::get('/fo/customer/{customer}/file/{type}', [CustomerFileController::class, 'show'])
+        ->name('fo.customer.file');
+    Route::get('/fo/customer/{customer}/files-zip', [CustomerFileController::class, 'zip'])
+        ->name('fo.customer.files-zip');
 
     // FO — cetak dokumen closing (SPR, Kwitansi/BKM, Jadwal Pembayaran). ?pdf=1 → Browsershot.
     Route::get('/fo/cetak/spr/{kontrak}', [ClosingPrintController::class, 'spr'])->name('fo.cetak.spr');

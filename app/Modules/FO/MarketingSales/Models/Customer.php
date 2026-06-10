@@ -38,6 +38,8 @@ class Customer extends TenantAwareModel
         'mail_same_as_ktp',
         'mail_address',
         'mail_city',
+        'mail_kecamatan',
+        'mail_kelurahan',
         'mail_province',
         'mail_postal_code',
         'spouse_full_name',

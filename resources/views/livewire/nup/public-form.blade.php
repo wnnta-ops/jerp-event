@@ -171,7 +171,7 @@
              dropdown + opsinya. Nilai tetap tersinkron ke Livewire via $wire.set(). --}}
         <div wire:ignore data-wilayah
              class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4"
-             x-data="ktpWilayah(@js(['prov' => $province, 'kab' => $city, 'kec' => $kecamatan, 'kel' => $kelurahan]))"
+             x-data="ktpWilayah(@js(['prov' => $province, 'kab' => $city, 'kec' => $kecamatan, 'kel' => $kelurahan]), '')"
              x-init="initFromExisting()">
             <div>
                 <label class="nup-label">Provinsi <span class="nup-required">*</span></label>
@@ -339,24 +339,39 @@
                     <input type="text" class="nup-input" placeholder="01/02">
                 </div>
             </div>
-            <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <div wire:ignore data-wilayah
+                 class="grid grid-cols-1 md:grid-cols-4 gap-4"
+                 x-data="ktpWilayah(@js(['prov' => $mail_province, 'kab' => $mail_city, 'kec' => $mail_kecamatan, 'kel' => $mail_kelurahan]), 'mail_')"
+                 x-init="initFromExisting()">
                 <div>
                     <label class="nup-label">Provinsi <span class="nup-required">*</span></label>
-                    <input wire:model="mail_province" type="text" class="nup-input" placeholder="Pilih provinsi">
+                    <select x-model="provId" @change="onProv()" class="nup-input">
+                        <option value="">— Pilih</option>
+                        <template x-for="p in provinces" :key="p.id"><option :value="p.id" x-text="p.name"></option></template>
+                    </select>
                     @error('mail_province') <span class="nup-error">{{ $message }}</span> @enderror
                 </div>
                 <div>
                     <label class="nup-label">Kabupaten / Kota <span class="nup-required">*</span></label>
-                    <input wire:model="mail_city" type="text" class="nup-input" placeholder="Pilih kota">
+                    <select x-model="kabId" @change="onKab()" class="nup-input" :disabled="!provId">
+                        <option value="">— Pilih</option>
+                        <template x-for="k in regencies" :key="k.id"><option :value="k.id" x-text="k.name"></option></template>
+                    </select>
                     @error('mail_city') <span class="nup-error">{{ $message }}</span> @enderror
                 </div>
                 <div>
                     <label class="nup-label">Kecamatan</label>
-                    <input type="text" class="nup-input" placeholder="—">
+                    <select x-model="kecId" @change="onKec()" class="nup-input" :disabled="!kabId">
+                        <option value="">— Pilih</option>
+                        <template x-for="d in districts" :key="d.id"><option :value="d.id" x-text="d.name"></option></template>
+                    </select>
                 </div>
                 <div>
                     <label class="nup-label">Kelurahan</label>
-                    <input type="text" class="nup-input" placeholder="—">
+                    <select x-model="kelId" @change="onKel()" class="nup-input" :disabled="!kecId">
+                        <option value="">— Pilih</option>
+                        <template x-for="v in villages" :key="v.id"><option :value="v.id" x-text="v.name"></option></template>
+                    </select>
                 </div>
             </div>
         @else
@@ -488,8 +503,9 @@
 
 <script>
     // Cascading wilayah dropdown — fetched dari proxy lokal /wilayah/* (server-side ke emsifa, cached).
-    function ktpWilayah(initial) {
+    function ktpWilayah(initial, prefix) {
         return {
+            prefix: prefix || '',
             provId: '', kabId: '', kecId: '', kelId: '',
             provName: initial.prov || '', kabName: initial.kab || '',
             kecName: initial.kec || '', kelName: initial.kel || '',
@@ -573,10 +589,10 @@
             syncLivewire() {
                 // Push the human-readable name into Livewire properties (defer, no roundtrip)
                 if (typeof this.$wire !== 'undefined') {
-                    this.$wire.set('province', this.provName, false);
-                    this.$wire.set('city', this.kabName, false);
-                    this.$wire.set('kecamatan', this.kecName, false);
-                    this.$wire.set('kelurahan', this.kelName, false);
+                    this.$wire.set(this.prefix + 'province', this.provName, false);
+                    this.$wire.set(this.prefix + 'city', this.kabName, false);
+                    this.$wire.set(this.prefix + 'kecamatan', this.kecName, false);
+                    this.$wire.set(this.prefix + 'kelurahan', this.kelName, false);
                 }
             },
             // Dipanggil setelah Livewire morph: jika morphdom sempat menghapus opsi

@@ -40,7 +40,7 @@ class VerifikasiBookedResource extends Resource
     public static function table(Table $table): Table
     {
         return $table
-            ->query(NupRegistration::query()->where('jenis', 'BOOKED'))
+            ->query(NupRegistration::query()->where('jenis', 'BOOKED')->with('customer'))
             ->columns([
                 Tables\Columns\TextColumn::make('tgl_daftar')->label('Tgl Daftar')->date('d M Y')->sortable(),
                 Tables\Columns\TextColumn::make('nama_pendaftar')->label('Nama')->searchable()->description(fn ($r) => $r->nik),
@@ -57,6 +57,23 @@ class VerifikasiBookedResource extends Resource
                 ]),
             ])
             ->actions([
+                Tables\Actions\ActionGroup::make([
+                    Tables\Actions\Action::make('download_semua')->label('Download Semua (ZIP)')->icon('heroicon-o-archive-box-arrow-down')
+                        ->url(fn (NupRegistration $r) => route('fo.customer.files-zip', $r->customer_id))
+                        ->visible(fn (NupRegistration $r) => (bool) ($r->customer?->ktp_file_path || $r->customer?->npwp_file_path || $r->customer?->ktp_pasangan_file_path)),
+                    Tables\Actions\Action::make('lihat_ktp')->label('Lihat KTP')->icon('heroicon-o-eye')
+                        ->url(fn (NupRegistration $r) => route('fo.customer.file', [$r->customer_id, 'ktp']), shouldOpenInNewTab: true)
+                        ->visible(fn (NupRegistration $r) => (bool) $r->customer?->ktp_file_path),
+                    Tables\Actions\Action::make('unduh_ktp')->label('Unduh KTP')->icon('heroicon-o-arrow-down-tray')
+                        ->url(fn (NupRegistration $r) => route('fo.customer.file', [$r->customer_id, 'ktp']).'?download=1')
+                        ->visible(fn (NupRegistration $r) => (bool) $r->customer?->ktp_file_path),
+                    Tables\Actions\Action::make('unduh_npwp')->label('Unduh NPWP')->icon('heroicon-o-arrow-down-tray')
+                        ->url(fn (NupRegistration $r) => route('fo.customer.file', [$r->customer_id, 'npwp']).'?download=1')
+                        ->visible(fn (NupRegistration $r) => (bool) $r->customer?->npwp_file_path),
+                    Tables\Actions\Action::make('unduh_ktp_pasangan')->label('Unduh KTP Pasangan')->icon('heroicon-o-arrow-down-tray')
+                        ->url(fn (NupRegistration $r) => route('fo.customer.file', [$r->customer_id, 'ktp_pasangan']).'?download=1')
+                        ->visible(fn (NupRegistration $r) => (bool) $r->customer?->ktp_pasangan_file_path),
+                ])->label('Berkas')->icon('heroicon-o-paper-clip')->button()->color('gray'),
                 Tables\Actions\Action::make('approve')->label('Approve')->icon('heroicon-o-check-circle')->color('success')
                     ->visible(fn (NupRegistration $r) => $r->verif_status !== 'APPROVED')
                     ->form([

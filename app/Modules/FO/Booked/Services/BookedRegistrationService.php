@@ -111,6 +111,8 @@ class BookedRegistrationService
             'mail_same_as_ktp' => $data['mail_same_as_ktp'] ?? true,
             'mail_address' => $data['mail_address'] ?? null,
             'mail_city' => $data['mail_city'] ?? null,
+            'mail_kecamatan' => $data['mail_kecamatan'] ?? null,
+            'mail_kelurahan' => $data['mail_kelurahan'] ?? null,
             'mail_province' => $data['mail_province'] ?? null,
             'mail_postal_code' => $data['mail_postal_code'] ?? null,
             'spouse_full_name' => $data['spouse_full_name'] ?? null,
