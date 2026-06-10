@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\WilayahController;
 use App\Livewire\Auth\Login;
+use App\Livewire\Booked\PublicForm as BookedPublicForm;
 use App\Livewire\Nup\PublicForm as NupPublicForm;
 use App\Modules\BO\GeneralLedger\Controllers\JurnalPrintController;
 use App\Modules\FO\Launching\Controllers\SiteplanController;
@@ -28,12 +29,20 @@ if ($siteplanDomain = config('jerp.siteplan_domain')) {
     });
 }
 
+if ($bookedDomain = config('jerp.booked_domain')) {
+    Route::domain($bookedDomain)->middleware(['throttle:nup-public'])->group(function () {
+        Route::get('/', BookedPublicForm::class)->name('booked.daftar.subdomain');
+    });
+}
+
 Route::get('/', fn () => auth()->check() ? redirect()->route('dashboard') : redirect()->route('login'));
 
 // Public NUP registration (BR-NUP, see docs/04_BusinessFlow.md §2) — NO auth, rate-limited.
 Route::middleware(['throttle:nup-public'])
     ->group(function () {
         Route::get('/nup/daftar', NupPublicForm::class)->name('nup.daftar');
+        // Booked Manual — pendaftaran booking di luar launching (transfer bank manual).
+        Route::get('/booked/daftar', BookedPublicForm::class)->name('booked.daftar');
     });
 
 // SPRS (Surat Pemesanan Rumah Sementara) — link dikirim ke customer via WA/email

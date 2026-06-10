@@ -195,6 +195,7 @@ class FoPanelProvider extends PanelProvider
             'nup-events' => 'nup',
             'nup-registrations' => 'nup',
             'verifikasi-nups' => 'nup',
+            'verifikasi-booked' => 'marketing',
             // Launching (Aktivasi NUP + Pilih Unit + Closing NUP) — sidebar
             // disembunyikan via CSS untuk semua sub-pagenya.
             'launching' => 'launching',
@@ -259,6 +260,9 @@ class FoPanelProvider extends PanelProvider
                         $item('Master Booking', '/fo/reservasis', 'heroicon-o-bookmark', 'filament.fo.resources.reservasis.'),
                         $soon('Ganti Nama', 'Marketing & Sales', 'Ganti Nama', 'heroicon-o-arrows-right-left'),
                         $soon('Pindah Unit (Booking)', 'Marketing & Sales', 'Pindah Unit (Booking)', 'heroicon-o-arrow-path-rounded-square'),
+                    ]],
+                    ['label' => 'Booked Manual', 'items' => [
+                        $item('Verifikasi Data Booked', '/fo/verifikasi-booked', 'heroicon-o-clipboard-document-check', 'filament.fo.resources.verifikasi-booked.'),
                     ]],
                     ['label' => 'Kontrak', 'items' => [
                         $item('SPRS (Surat Pemesanan)', '/fo/kontraks', 'heroicon-o-document-text', 'filament.fo.resources.kontraks.'),

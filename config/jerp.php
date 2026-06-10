@@ -22,4 +22,6 @@ return [
 
     'siteplan_domain' => env('SITEPLAN_DOMAIN'),
 
+    'booked_domain' => env('BOOKED_DOMAIN'),
+
 ];

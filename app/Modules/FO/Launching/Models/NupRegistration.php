@@ -16,7 +16,7 @@ class NupRegistration extends TenantAwareModel
     protected $table = 'fo_nup_registrations';
 
     protected $fillable = [
-        'tenant_id', 'nup_event_id', 'project_pref_id', 'agent_id',
+        'tenant_id', 'jenis', 'nup_event_id', 'project_pref_id', 'agent_id',
         'no_nup', 'urutan',
         'customer_id', 'nama_pendaftar', 'nik', 'phone', 'secondary_phone', 'email',
         'tgl_daftar', 'tgl_check_in', 'tgl_payment',
