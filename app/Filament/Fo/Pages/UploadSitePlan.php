@@ -47,7 +47,13 @@ class UploadSitePlan extends Page implements HasForms
                     Forms\Components\Select::make('project_id')
                         ->label('Project / Cluster')->required()
                         ->options(fn () => Project::pluck('name', 'id'))
-                        ->searchable()->preload(),
+                        ->searchable()->preload()
+                        ->live()
+                        ->afterStateUpdated(function ($state, Forms\Set $set) {
+                            $p = $state ? Project::find($state) : null;
+                            $set('siteplan_show_info', $p?->siteplan_show_info ?? true);
+                            $set('siteplan_show_status', $p?->siteplan_show_status ?? true);
+                        }),
                     Forms\Components\FileUpload::make('file')
                         ->label('Gambar Site Plan')
                         ->required()
@@ -60,6 +66,18 @@ class UploadSitePlan extends Page implements HasForms
                             ->helperText('Resolusi asli untuk koordinat. Auto-detect dari gambar kalau kosong.'),
                         Forms\Components\TextInput::make('height')->label('Tinggi (px)')->numeric(),
                     ]),
+                ]),
+
+            Forms\Components\Section::make('Setelan Tampilan Site Plan (publik /siteplan)')
+                ->description('Atur apa yang tampil ke pengunjung di /siteplan. Tersimpan otomatis saat diubah (pilih Project dulu). Checklist ini hanya di sini — tidak tampil ke pengunjung.')
+                ->columns(2)
+                ->schema([
+                    Forms\Components\Toggle::make('siteplan_show_info')
+                        ->label('Tampilkan Informasi (statistik Ready / Sold / Hold)')
+                        ->default(true),
+                    Forms\Components\Toggle::make('siteplan_show_status')
+                        ->label('Tampilkan Status (stempel SOLD/BOOKED + badge di popup)')
+                        ->default(true),
                 ]),
 
             Forms\Components\Section::make('Preview Site Plan Existing')
@@ -83,6 +101,27 @@ class UploadSitePlan extends Page implements HasForms
         return new HtmlString(
             '<img src="'.e($url).'" class="rounded-lg border max-w-full" style="max-height:400px;" alt="Site Plan">'
         );
+    }
+
+    /** Simpan setelan tampilan siteplan (toggle Informasi/Status) ke project terpilih. */
+    public function saveDisplay(): void
+    {
+        $projectId = $this->data['project_id'] ?? null;
+        if (! $projectId) {
+            Notification::make()->warning()->title('Pilih Project dulu')->send();
+
+            return;
+        }
+
+        Project::whereKey($projectId)->update([
+            'siteplan_show_info' => (bool) ($this->data['siteplan_show_info'] ?? true),
+            'siteplan_show_status' => (bool) ($this->data['siteplan_show_status'] ?? true),
+        ]);
+
+        Notification::make()->success()
+            ->title('Setelan tampilan disimpan')
+            ->body('Refresh halaman /siteplan untuk melihat perubahan.')
+            ->send();
     }
 
     public function submit(): void

@@ -60,6 +60,9 @@ class SiteplanController
             'siteplan' => $this->siteplan($model),
             'units' => $this->units($model, is_string($cluster) ? $cluster : null),
             'tahapStats' => $this->tahapStats($model),
+            // Setelan tampilan (diatur admin di Upload Site Plan). Default true.
+            'showInfo' => $model->siteplan_show_info ?? true,
+            'showStatus' => $model->siteplan_show_status ?? true,
         ]);
     }
 

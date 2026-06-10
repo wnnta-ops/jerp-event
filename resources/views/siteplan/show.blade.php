@@ -24,6 +24,10 @@
         .info-toggle:hover { background: #fff; }
         .info-body { margin-top: 8px; max-height: calc(100vh - 80px); overflow-y: auto; display: flex; flex-direction: column; gap: 8px; }
         .info-body.hidden { display: none; }
+
+        /* Sembunyikan "status" (setelan admin): stempel SOLD/BOOKED di peta + pill status di popup */
+        body.hide-status .sold-stamp { display: none !important; }
+        body.hide-status .sp-pill { display: none !important; }
         .info-card {
             background: rgba(255,255,255,.94); border: 1px solid #cbd5e1; border-radius: 8px;
             padding: 10px 14px; box-shadow: 0 6px 18px rgba(0,0,0,.22); font-size: 13px;
@@ -86,7 +90,7 @@
         .sp-empty { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; color:#94a3b8; text-align:center; padding:24px; }
     </style>
 </head>
-<body>
+<body class="{{ ($showStatus ?? true) ? '' : 'hide-status' }}">
     @if (! $siteplan)
         <div class="sp-empty">
             Site plan untuk proyek <strong>&nbsp;{{ $project->name }}&nbsp;</strong> belum diupload.<br>
@@ -96,10 +100,10 @@
         <div id="map"></div>
     @endif
 
-    {{-- ── Show / Hide Information ── --}}
+    {{-- ── Panel Informasi (statistik). Tampil sesuai setelan admin di Upload
+         Site Plan (siteplan_show_info). Pengunjung tak melihat checklist. ── --}}
+    @if ($showInfo ?? true)
     <div class="info-wrap">
-        <button class="info-toggle" id="info-toggle"
-                onclick="(function(b){var x=document.getElementById('info-body');var h=x.classList.toggle('hidden');b.textContent=h?'Show Information':'Hide Information';})(this)">Hide Information</button>
         <div class="info-body" id="info-body">
             @forelse ($tahapStats as $t)
                 <div class="info-card" data-key="{{ $t['lokasi'] }}|{{ $t['tahap'] }}">
@@ -113,12 +117,7 @@
             @endforelse
         </div>
     </div>
-
-    {{-- ── Legend (clean) ── --}}
-    <div class="legend">
-        <div class="row"><span class="sold-stamp" style="transform:none">SOLD</span> Unit terjual</div>
-        <div class="row" style="margin-top:6px; color:#475569;">Klik kavling untuk detail &amp; harga.</div>
-    </div>
+    @endif
 
     <script>
         const SITEPLAN = @json($siteplan);

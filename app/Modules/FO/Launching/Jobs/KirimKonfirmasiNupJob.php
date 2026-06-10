@@ -35,7 +35,7 @@ class KirimKonfirmasiNupJob implements ShouldQueue
     public function handle(): void
     {
         $registration = NupRegistration::withoutGlobalScopes()
-            ->with(['customer', 'event', 'projectPref'])
+            ->with(['customer', 'event', 'projectPref', 'agent'])
             ->find($this->registrationId);
 
         if (! $registration) {
@@ -66,20 +66,26 @@ class KirimKonfirmasiNupJob implements ShouldQueue
         $tglLaunching = optional($r->event?->tgl_launching)->translatedFormat('d M Y') ?? '-';
 
         if ($r->urutan !== null) {
-            // No NUP & urutan sudah terbit (approved) → template konfirmasi.
-            // Param ke-6 = link SPRS (tambahkan {{6}} di template Qontak untuk
-            // mengirim dokumen SPRS ke customer; dibungkus aman bila template lama).
+            // Approved → template konfirmasi (7 variabel, dokumen SPRS+Kwitansi
+            // dilampirkan di EMAIL, bukan di WA). Urutan parameter HARUS cocok
+            // dgn template Qontak:
+            //   {{1}}Nama {{2}}Project {{3}}Event {{4}}No.NUP {{5}}No.Telp {{6}}NIK {{7}}Sales/Agen
+            $project = $r->projectPref?->name ?? '-';
+            $sales = $r->agent?->sales_label ?: ($r->ref_sales_name ?: '-');
+            $nik = $r->nik ?: ($r->customer?->nik ?: '-');
+
             $gateway->sendTemplate(
                 toNumber: $phone,
                 toName: (string) $r->nama_pendaftar,
                 templateId: (string) config('services.qontak.template_konfirmasi'),
                 bodyParams: [
                     (string) $r->nama_pendaftar,
-                    (string) $r->no_nup,
-                    (string) $r->urutan,
+                    $project,
                     $eventName,
-                    $tglLaunching,
-                    (string) ($sprsUrl ?? '-'),
+                    (string) $r->no_nup,
+                    $phone,
+                    (string) $nik,
+                    (string) $sales,
                 ],
             );
 

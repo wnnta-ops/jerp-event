@@ -20,12 +20,16 @@ class Project extends TenantAwareModel
         'siteplan_image_path',
         'siteplan_width',
         'siteplan_height',
+        'siteplan_show_info',
+        'siteplan_show_status',
     ];
 
     protected $casts = [
         'is_active' => 'boolean',
         'siteplan_width' => 'integer',
         'siteplan_height' => 'integer',
+        'siteplan_show_info' => 'boolean',
+        'siteplan_show_status' => 'boolean',
     ];
 
     public function company(): BelongsTo
