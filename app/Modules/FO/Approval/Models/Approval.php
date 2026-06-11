@@ -4,12 +4,23 @@ namespace App\Modules\FO\Approval\Models;
 
 use App\Models\Concerns\TenantAwareModel;
 use App\Models\User;
+use App\Services\Numerator\NumeratorService;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\MorphTo;
 
 class Approval extends TenantAwareModel
 {
     protected $table = 'fo_approvals';
+
+    protected static function booted(): void
+    {
+        parent::booted();
+        static::creating(function (self $m) {
+            if (empty($m->no_approval)) {
+                $m->no_approval = app(NumeratorService::class)->next('APPROVAL');
+            }
+        });
+    }
 
     protected $fillable = [
         'tenant_id', 'no_approval', 'tgl_approval', 'jenis',

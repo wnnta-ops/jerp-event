@@ -2,6 +2,8 @@
 
 namespace App\Filament\Fo\Pages;
 
+use App\Modules\FO\Approval\Models\Approval;
+use App\Modules\FO\Approval\Services\ApprovalService;
 use App\Modules\FO\MarketingSales\Models\Kontrak;
 use Filament\Forms;
 use Filament\Forms\Concerns\InteractsWithForms;
@@ -54,14 +56,12 @@ class AdjustmentKontrak extends Page implements HasForms, HasTable
     public function table(Table $table): Table
     {
         return $table
-            ->query(Kontrak::query()->with(['unit', 'customer', 'agent']))
-            ->heading('Daftar Kontrak')
-            ->description('Pilih kontrak yang akan di-adjust harganya.')
+            ->query(Kontrak::query()->with(['unit', 'customer', 'agent'])->where('tahap', 'SPR'))
+            ->heading('Daftar Kontrak (SPR)')
+            ->description('Hanya kontrak yang sudah SPR (final). Pilih untuk adjustment — pengajuan masuk ke Approval Adjustment.')
             ->columns([
                 Tables\Columns\TextColumn::make('no_kontrak')->label('No. Kontrak')->badge()->searchable()->sortable(),
-                Tables\Columns\TextColumn::make('unit.no_unit')->label('Unit')
-                    ->formatStateUsing(fn ($record) => trim(($record->unit?->blok ? $record->unit->blok.' / ' : '').($record->unit?->no_unit ?? '')))
-                    ->searchable(['blok', 'no_unit']),
+                Tables\Columns\TextColumn::make('unit.kode_unit')->label('Unit')->placeholder('—')->searchable(),
                 Tables\Columns\TextColumn::make('tgl_kontrak')->label('Tgl')->date('d M Y')->sortable(),
                 Tables\Columns\TextColumn::make('customer.full_name')->label('Customer / Sales')
                     ->description(fn ($record) => $record->agent?->name)
@@ -223,6 +223,34 @@ class AdjustmentKontrak extends Page implements HasForms, HasTable
         $dpp = round($nk / 1.11);
         $ppn = $nk - $dpp;
 
+        // Kontrak yang SUDAH SPR (final) → adjustment WAJIB lewat Approval Adjustment
+        // (2 level). Perubahan baru diterapkan ke kontrak setelah disetujui (L2).
+        if ($k->tahap === 'SPR') {
+            $approval = Approval::create([
+                'tgl_approval' => now(),
+                'jenis' => 'ADJ_HARGA',
+                'subject_type' => Kontrak::class,
+                'subject_id' => $k->id,
+                'amount_dampak' => $nk - (float) $k->total_kontrak,
+                'alasan' => 'Adjustment harga kontrak '.$k->no_kontrak,
+                'detail_lama' => ['nilai_kontrak' => (float) $k->total_kontrak, 'harga_jual' => (float) $k->harga_jual, 'diskon' => (float) $k->diskon],
+                'detail_baru' => ['harga_jual_baru' => $gross, 'total_kontrak_baru' => $nk, 'diskon' => $ds + $dt],
+                'status' => 'DRAFT',
+                'requested_by' => auth()->id(),
+            ]);
+            app(ApprovalService::class)->submit($approval);
+
+            Notification::make()->success()
+                ->title('Diajukan ke Approval Adjustment — '.$approval->no_approval)
+                ->body('Kontrak SPR: adjustment menunggu persetujuan (2 level). Perubahan diterapkan otomatis setelah disetujui.')
+                ->persistent()->send();
+
+            $this->backToList();
+
+            return;
+        }
+
+        // Kontrak belum SPR (SPRS) → terapkan langsung.
         $k->update([
             'harga_jual' => $gross,
             'diskon' => $ds + $dt,

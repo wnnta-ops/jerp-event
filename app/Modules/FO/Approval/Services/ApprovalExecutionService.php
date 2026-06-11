@@ -3,6 +3,7 @@
 namespace App\Modules\FO\Approval\Services;
 
 use App\Modules\FO\Approval\Models\Approval;
+use App\Modules\FO\FinanceAR\Models\Refund;
 use App\Modules\FO\MarketingSales\Models\Kontrak;
 use App\Modules\FO\MarketingSales\Models\Unit;
 use Illuminate\Support\Facades\DB;
@@ -31,7 +32,7 @@ class ApprovalExecutionService
         return DB::transaction(fn () => match ($approval->jenis) {
             'DISKON' => $this->applyDiskon($kontrak, $baru),
             'ADJ_HARGA' => $this->applyAdjustHarga($kontrak, $baru),
-            'BATAL_KONTRAK' => $this->applyBatal($kontrak),
+            'BATAL_KONTRAK' => $this->applyBatal($kontrak, $baru),
             'GANTI_NAMA' => $this->applyGantiNama($kontrak, $baru),
             'GANTI_UNIT' => $this->applyGantiUnit($kontrak, $baru),
             default => 'Jenis "'.$approval->jenis.'" disetujui — penerapan otomatis belum tersedia (tindak lanjut manual).',
@@ -59,16 +60,20 @@ class ApprovalExecutionService
         $total = (float) ($baru['total_kontrak_baru'] ?? $baru['nilai_kontrak'] ?? $k->total_kontrak);
         $gross = (float) ($baru['harga_jual_baru'] ?? $baru['gross'] ?? $total);
 
-        $k->update([
+        $update = [
             'harga_jual' => $gross,
             'total_kontrak' => $total,
             'ppn' => $this->ppn($total),
-        ]);
+        ];
+        if (isset($baru['diskon'])) {
+            $update['diskon'] = (float) $baru['diskon'];
+        }
+        $k->update($update);
 
         return 'Harga di-adjust → Nilai Kontrak Rp '.number_format($total, 0, ',', '.').'.';
     }
 
-    private function applyBatal(Kontrak $k): string
+    private function applyBatal(Kontrak $k, array $baru = []): string
     {
         $k->update(['status' => 'BATAL']);
         if ($k->unit_id && $unit = Unit::find($k->unit_id)) {
@@ -78,7 +83,26 @@ class ApprovalExecutionService
             $k->reservasi->update(['status' => 'BATAL']);
         }
 
-        return 'Kontrak '.$k->no_kontrak.' DIBATALKAN; unit dikembalikan TERSEDIA.';
+        // Ada pengembalian → buat Refund (Finance AR) untuk diproses.
+        $pengembalian = (float) ($baru['total_pengembalian'] ?? 0);
+        $extra = '';
+        if ($pengembalian > 0) {
+            $refund = Refund::create([
+                'tenant_id' => $k->tenant_id ?? 1,
+                'tgl_refund' => $baru['tgl_pengembalian'] ?? now()->toDateString(),
+                'jenis' => 'BOOKING',
+                'customer_id' => $k->customer_id,
+                'kontrak_id' => $k->id,
+                'nilai_kotor' => (float) ($baru['total_pelunasan'] ?? $pengembalian),
+                'biaya_admin' => (float) ($baru['unrefund'] ?? 0),
+                'nilai_refund' => $pengembalian,
+                'status' => 'DRAFT',
+                'keterangan' => 'Pengembalian batal kontrak '.$k->no_kontrak,
+            ]);
+            $extra = ' Refund '.$refund->no_refund.' (Rp '.number_format($pengembalian, 0, ',', '.').') dibuat.';
+        }
+
+        return 'Kontrak '.$k->no_kontrak.' DIBATALKAN; unit dikembalikan TERSEDIA.'.$extra;
     }
 
     private function applyGantiNama(Kontrak $k, array $baru): string
