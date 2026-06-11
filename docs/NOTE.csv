@@ -1,0 +1,11 @@
+BLT
+SET UP SKEMA BLT - SETUP TERMIN BLT - GENERATE BLT - PENGAJUAN BLT - REALISASI BLT
+
+KOMISI
+SET UP SKEMA KOMISI - SETUP TERMIN KOMISI - GENERATE KOMISI - PENGAJUAN KOMISI - REALISASI KOMISI
+
+NOTE
+"untuk BLT dibedakan untuk sales, koordinator dan kantor"
+saat generate dibedakan per type dalam tiap tahap
+"saat realisasi input PPh dan PPn (jika ada) dan no. rek, nama terang dan bank"
+"untuk no.rek, nama terang dan bank bisa ngelink dari setup sales"

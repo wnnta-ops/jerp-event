@@ -225,6 +225,8 @@ class FoPanelProvider extends PanelProvider
             'rewards' => 'komisi',
             'tipe-tarif' => 'komisi',
             'skema-komisi' => 'komisi',
+            'skema-blt' => 'komisi',
+            'termin-blt' => 'komisi',
             'termin-komisi' => 'komisi',
             'skema-reward' => 'komisi',
             // Pengaturan + Setup Unit (master Lokasi & Tahap)
@@ -375,10 +377,9 @@ class FoPanelProvider extends PanelProvider
                         $item('Setup Tarif', '/fo/tipe-tarif', 'heroicon-o-calculator', 'filament.fo.resources.tipe-tarif.'),
                         $item('Skema Komisi', '/fo/skema-komisi', 'heroicon-o-table-cells', 'filament.fo.resources.skema-komisi.'),
                         $item('Termin Komisi', '/fo/termin-komisi', 'heroicon-o-list-bullet', 'filament.fo.resources.termin-komisi.'),
-                        $soon('Skema BLT', 'Komisi', 'Skema BLT', 'heroicon-o-table-cells'),
-                        $soon('Termin BLT', 'Komisi', 'Termin BLT', 'heroicon-o-list-bullet'),
+                        $item('Skema BLT', '/fo/skema-blt', 'heroicon-o-table-cells', 'filament.fo.resources.skema-blt.'),
+                        $item('Termin BLT', '/fo/termin-blt', 'heroicon-o-list-bullet', 'filament.fo.resources.termin-blt.'),
                         $item('Setup Skema Reward', '/fo/skema-reward', 'heroicon-o-gift', 'filament.fo.resources.skema-reward.'),
-                        $item('Sales (Agent)', '/fo/agents', 'heroicon-o-user-circle', 'filament.fo.resources.agents.'),
                     ]],
                     ['label' => 'BLT', 'items' => [
                         $soon('Generate BLT', 'Komisi', 'Generate BLT', 'heroicon-o-bolt'),

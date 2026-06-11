@@ -1,0 +1,19 @@
+BLT SALES,,,,,,,
+NO.,NAMA USER,UNIT,SALES,AGENT, BLT ,PPH 21,BLT NETT
+1,KHUSNUL KHOTIMAH,JRK3-002-II-11A,AYU,HR PRO," 25,000,000.00 "," 625,000.00 "," 24,375,000.00 "
+2,XXX,XXX,XXX,XXX," 20,000,000.00 "," 500,000.00 "," 19,500,000.00 "
+3,XXX,XXX,XXX,XXX," 30,000,000.00 "," 750,000.00 "," 29,250,000.00 "
+,,,,,,,
+BLT KOORDINATOR,,,,,,,
+NO.,NAMA USER,UNIT,SALES,AGENT, BLT ,PPH 21,BLT NETT
+1,KHUSNUL KHOTIMAH,JRK3-002-II-11A,AYU,HR PRO," 2,500,000.00 "," 62,500.00 "," 2,437,500.00 "
+,,,,,,,
+BLT KANTOR,,,,,,,
+NO.,NAMA USER,UNIT,SALES,AGENT, BLT ,PPH 23,BLT NETT
+1,KHUSNUL KHOTIMAH,JRK3-002-II-11A,AYU,HR PRO," 2,500,000.00 "," 50,000 "," 2,450,000.00 "
+,,,,,,,
+NOTES:,,,,,,,
+1,"Jika nilai BLT  perorangan kurang/sama dengan 25.000.000 dipotong PPh 21 dengan nilai tarif 2,5%",,,,,,
+2,Jika nilai BLT perorangan lebih dari  25.000.000 dipotong PPh 21 dengan nilai tarif 50% dikali 5%,,,,,,
+3,Nilai BLT Perusahaan dipotong PPh 23 dengan tarif 2% ,,,,,,
+4,Potongan PPh dihitung dari total BLT yang diterima oleh sales/agent,,,,,,

@@ -83,6 +83,8 @@ class MasterDataSeeder extends Seeder
             ['code' => 'REWARD',  'format' => 'RWD-{YYYY}-{seq:5}'],
             ['code' => 'TIPETARIF',    'format' => 'TT-{seq:4}'],
             ['code' => 'SKEMAKOMISI',  'format' => 'SK-{seq:4}'],
+            ['code' => 'SKEMABLT',     'format' => 'SB-{seq:4}'],
+            ['code' => 'TERMINBLT',    'format' => 'TB-{seq:4}'],
             ['code' => 'TERMINKOMISI', 'format' => 'TK-{seq:4}'],
             ['code' => 'SKEMAREWARD',  'format' => 'SR-{seq:4}'],
             ['code' => 'TIPEGIMMICK', 'format' => 'TG-{seq:4}'],
