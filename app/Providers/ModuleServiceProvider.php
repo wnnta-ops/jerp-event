@@ -14,7 +14,9 @@ use Illuminate\Support\ServiceProvider;
 class ModuleServiceProvider extends ServiceProvider
 {
     /** @var array<int,string> */
-    protected array $modules = ['bankloan'];
+    // bankloan kini panel Filament penuh (BankloanPanelProvider) di /bankloan — tak lagi
+    // pakai route placeholder modul (yang dulu menyerobot path & menggagalkan Filament).
+    protected array $modules = [];
 
     public function boot(): void
     {
