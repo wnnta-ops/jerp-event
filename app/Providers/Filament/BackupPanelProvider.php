@@ -2,6 +2,7 @@
 
 namespace App\Providers\Filament;
 
+use App\Filament\Backup\Widgets\BackupStats;
 use Filament\Http\Middleware\Authenticate;
 use Filament\Http\Middleware\AuthenticateSession;
 use Filament\Http\Middleware\DisableBladeIconComponents;
@@ -45,7 +46,7 @@ class BackupPanelProvider extends PanelProvider
             ])
             ->discoverWidgets(in: app_path('Filament/Backup/Widgets'), for: 'App\\Filament\\Backup\\Widgets')
             ->widgets([
-                \App\Filament\Backup\Widgets\BackupStats::class,
+                BackupStats::class,
             ])
             ->navigationItems([
                 NavigationItem::make('menu-utama')

@@ -34,7 +34,7 @@ return [
                 ['label' => 'Dashboard',     'href' => '/bankloan',            'icon' => 'home'],
                 ['label' => 'Contracts',     'href' => '/bankloan/contracts',  'icon' => 'document'],
                 ['label' => 'Contract Bank', 'href' => '/bankloan/banks',      'icon' => 'bank'],
-                ['label' => 'BI Checking',   'href' => '/bankloan/bi-checking','icon' => 'magnifier'],
+                ['label' => 'BI Checking',   'href' => '/bankloan/bi-checking', 'icon' => 'magnifier'],
                 ['label' => 'Realisasi',     'href' => '/bankloan/realisasi',  'icon' => 'check'],
                 ['label' => 'Retensi',       'href' => '/bankloan/retensi',    'icon' => 'lock'],
                 ['label' => 'Buyback',       'href' => '/bankloan/buyback',    'icon' => 'refresh'],

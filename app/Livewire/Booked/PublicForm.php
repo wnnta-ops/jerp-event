@@ -3,11 +3,12 @@
 namespace App\Livewire\Booked;
 
 use App\Models\Project;
-use App\Modules\FO\Komisi\Models\Agent;
 use App\Modules\FO\Booked\Services\BookedRegistrationService;
+use App\Modules\FO\Komisi\Models\Agent;
 use App\Services\Recaptcha\RecaptchaVerifier;
 use App\Settings\FoSettings;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 use Livewire\Component;
 use Livewire\WithFileUploads;
 
@@ -220,7 +221,7 @@ class PublicForm extends Component
     {
         try {
             $this->validate();
-        } catch (\Illuminate\Validation\ValidationException $e) {
+        } catch (ValidationException $e) {
             $first = collect($e->errors())->keys()->first();
             $this->dispatch('nup-validation-failed', field: (string) $first, count: count($e->errors()));
             throw $e;

@@ -26,8 +26,11 @@ return [
                  * The list of directories and files that will be included in the backup.
                  */
                 'include' => [
-                    base_path(),
-                    // storage_path(),  // Include if you use zero downtime deployments and don't follow symlinks
+                    // Backup DATA saja: dokumen customer (storage/app/private: KTP/NPWP)
+                    // + upload publik (storage/app/public: siteplan, dll). KODE app TIDAK
+                    // di-backup (ada di git/image) → backup cepat, tak timeout di web.
+                    // (DB selalu ikut via bagian 'databases' di bawah.)
+                    storage_path('app'),
                 ],
 
                 /*
@@ -39,6 +42,11 @@ return [
                     base_path('vendor'),
                     base_path('node_modules'),
                     storage_path('framework'),
+                    // WAJIB: folder output backup ada di bawah base_path() → tanpa ini
+                    // setiap backup ikut menyertakan SEMUA backup lama (rekursif, membengkak,
+                    // timeout). File dokumen customer (storage/app/private) tetap ikut.
+                    storage_path('app/backups'),
+                    storage_path('app/backup-temp'),
                 ],
 
                 /*

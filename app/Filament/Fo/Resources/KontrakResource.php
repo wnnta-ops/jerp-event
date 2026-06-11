@@ -10,14 +10,21 @@ use App\Modules\FO\MarketingSales\Models\Reservasi;
 use Filament\Forms;
 use Filament\Forms\Form;
 use Filament\Notifications\Notification;
-use Illuminate\Support\HtmlString;
 use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Table;
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\HtmlString;
 
 class KontrakResource extends Resource
 {
     protected static ?string $model = Kontrak::class;
+
+    // Menu SPRS hanya menampilkan kontrak tahap SPRS; yang sudah final ada di menu SPR.
+    public static function getEloquentQuery(): Builder
+    {
+        return parent::getEloquentQuery()->where('tahap', 'SPRS');
+    }
 
     protected static ?string $navigationIcon = 'heroicon-o-document-text';
 
@@ -39,102 +46,102 @@ class KontrakResource extends Resource
                     Forms\Components\Tabs\Tab::make('Edit Kontrak')
                         ->icon('heroicon-o-document-text')
                         ->schema([
-            Forms\Components\Section::make('Identitas Kontrak')
-                ->visibleOn('create')
-                ->columns(2)
-                ->schema([
-                    Forms\Components\TextInput::make('no_kontrak')
-                        ->label('No kontrak')
-                        ->maxLength(32)
-                        ->placeholder('Otomatis')
-                        ->disabled()
-                        ->dehydrated()
-                        ->helperText('Di-generate otomatis saat simpan.'),
-                    Forms\Components\DatePicker::make('tgl_kontrak')->label('Tanggal kontrak')->required()->default(now()),
-                    Forms\Components\Select::make('reservasi_id')
-                        ->label('Reservasi (opsional)')
-                        ->relationship('reservasi', 'no_reservasi')
-                        ->searchable()
-                        ->preload()
-                        ->live()
-                        ->afterStateUpdated(function ($state, callable $set) {
-                            $r = Reservasi::find($state);
-                            if ($r) {
-                                $set('customer_id', $r->customer_id);
-                                $set('unit_id', $r->unit_id);
-                                $set('harga_jual', $r->harga_jual);
-                            }
-                        }),
-                    Forms\Components\Select::make('customer_id')
-                        ->label('Customer')
-                        ->relationship('customer', 'full_name')
-                        ->getOptionLabelFromRecordUsing(fn ($record) => $record->code.' — '.$record->full_name)
-                        ->searchable(['code', 'full_name'])
-                        ->preload()
-                        ->required(),
-                    Forms\Components\Select::make('unit_id')
-                        ->label('Unit')
-                        ->relationship('unit', 'no_unit')
-                        ->getOptionLabelFromRecordUsing(fn ($record) => trim(($record->blok ? $record->blok.' / ' : '').$record->no_unit))
-                        ->searchable(['blok', 'no_unit'])
-                        ->preload()
-                        ->required(),
-                ]),
+                            Forms\Components\Section::make('Identitas Kontrak')
+                                ->visibleOn('create')
+                                ->columns(2)
+                                ->schema([
+                                    Forms\Components\TextInput::make('no_kontrak')
+                                        ->label('No kontrak')
+                                        ->maxLength(32)
+                                        ->placeholder('Otomatis')
+                                        ->disabled()
+                                        ->dehydrated()
+                                        ->helperText('Di-generate otomatis saat simpan.'),
+                                    Forms\Components\DatePicker::make('tgl_kontrak')->label('Tanggal kontrak')->required()->default(now()),
+                                    Forms\Components\Select::make('reservasi_id')
+                                        ->label('Reservasi (opsional)')
+                                        ->relationship('reservasi', 'no_reservasi')
+                                        ->searchable()
+                                        ->preload()
+                                        ->live()
+                                        ->afterStateUpdated(function ($state, callable $set) {
+                                            $r = Reservasi::find($state);
+                                            if ($r) {
+                                                $set('customer_id', $r->customer_id);
+                                                $set('unit_id', $r->unit_id);
+                                                $set('harga_jual', $r->harga_jual);
+                                            }
+                                        }),
+                                    Forms\Components\Select::make('customer_id')
+                                        ->label('Customer')
+                                        ->relationship('customer', 'full_name')
+                                        ->getOptionLabelFromRecordUsing(fn ($record) => $record->code.' — '.$record->full_name)
+                                        ->searchable(['code', 'full_name'])
+                                        ->preload()
+                                        ->required(),
+                                    Forms\Components\Select::make('unit_id')
+                                        ->label('Unit')
+                                        ->relationship('unit', 'no_unit')
+                                        ->getOptionLabelFromRecordUsing(fn ($record) => trim(($record->blok ? $record->blok.' / ' : '').$record->no_unit))
+                                        ->searchable(['blok', 'no_unit'])
+                                        ->preload()
+                                        ->required(),
+                                ]),
 
-            Forms\Components\Section::make('Harga')
-                ->visibleOn('create')
-                ->columns(2)
-                ->schema([
-                    Forms\Components\TextInput::make('harga_jual')->label('Harga jual')->numeric()->prefix('Rp')->default(0)->required(),
-                    Forms\Components\TextInput::make('diskon')->label('Diskon')->numeric()->prefix('Rp')->default(0),
-                    Forms\Components\TextInput::make('ppn')->label('PPN')->numeric()->prefix('Rp')->default(0),
-                    Forms\Components\TextInput::make('total_kontrak')->label('Total kontrak')->numeric()->prefix('Rp')->default(0)->required(),
-                ]),
+                            Forms\Components\Section::make('Harga')
+                                ->visibleOn('create')
+                                ->columns(2)
+                                ->schema([
+                                    Forms\Components\TextInput::make('harga_jual')->label('Harga jual')->numeric()->prefix('Rp')->default(0)->required(),
+                                    Forms\Components\TextInput::make('diskon')->label('Diskon')->numeric()->prefix('Rp')->default(0),
+                                    Forms\Components\TextInput::make('ppn')->label('PPN')->numeric()->prefix('Rp')->default(0),
+                                    Forms\Components\TextInput::make('total_kontrak')->label('Total kontrak')->numeric()->prefix('Rp')->default(0)->required(),
+                                ]),
 
-            Forms\Components\Section::make('Cara Bayar')
-                ->visibleOn('create')
-                ->columns(3)
-                ->schema([
-                    Forms\Components\Select::make('cara_bayar')
-                        ->label('Cara bayar')
-                        ->options([
-                            'CASH' => 'Cash',
-                            'CASH_BERTAHAP' => 'Cash bertahap',
-                            'CICILAN' => 'Cicilan internal',
-                            'KPR' => 'KPR',
-                        ])
-                        ->default('KPR')
-                        ->required(),
-                    Forms\Components\TextInput::make('tenor_bulan')->label('Tenor (bulan)')->numeric(),
-                    Forms\Components\TextInput::make('dp_persen')->label('DP %')->numeric()->suffix('%'),
-                    Forms\Components\TextInput::make('dp_amount')->label('DP (Rp)')->numeric()->prefix('Rp'),
-                ]),
+                            Forms\Components\Section::make('Cara Bayar')
+                                ->visibleOn('create')
+                                ->columns(3)
+                                ->schema([
+                                    Forms\Components\Select::make('cara_bayar')
+                                        ->label('Cara bayar')
+                                        ->options([
+                                            'CASH' => 'Cash',
+                                            'CASH_BERTAHAP' => 'Cash bertahap',
+                                            'CICILAN' => 'Cicilan internal',
+                                            'KPR' => 'KPR',
+                                        ])
+                                        ->default('KPR')
+                                        ->required(),
+                                    Forms\Components\TextInput::make('tenor_bulan')->label('Tenor (bulan)')->numeric(),
+                                    Forms\Components\TextInput::make('dp_persen')->label('DP %')->numeric()->suffix('%'),
+                                    Forms\Components\TextInput::make('dp_amount')->label('DP (Rp)')->numeric()->prefix('Rp'),
+                                ]),
 
-            Forms\Components\Section::make('Status')
-                ->visibleOn('create')
-                ->columns(2)
-                ->schema([
-                    Forms\Components\Select::make('status')
-                        ->label('Status')
-                        ->options([
-                            'DRAFT' => 'Draft',
-                            'BOOKING' => 'Booking',
-                            'AKTIF' => 'Aktif',
-                            'LUNAS' => 'Lunas',
-                            'BATAL' => 'Batal',
-                        ])
-                        ->default('DRAFT')
-                        ->required(),
-                    Forms\Components\Textarea::make('keterangan')->rows(2)->columnSpanFull(),
-                ]),
+                            Forms\Components\Section::make('Status')
+                                ->visibleOn('create')
+                                ->columns(2)
+                                ->schema([
+                                    Forms\Components\Select::make('status')
+                                        ->label('Status')
+                                        ->options([
+                                            'DRAFT' => 'Draft',
+                                            'BOOKING' => 'Booking',
+                                            'AKTIF' => 'Aktif',
+                                            'LUNAS' => 'Lunas',
+                                            'BATAL' => 'Batal',
+                                        ])
+                                        ->default('DRAFT')
+                                        ->required(),
+                                    Forms\Components\Textarea::make('keterangan')->rows(2)->columnSpanFull(),
+                                ]),
 
-            Forms\Components\Section::make('Hasil Akhir Kontrak')
-                ->visibleOn('edit')
-                ->description('Read-only — otomatis mengikuti perubahan dari Adjustment Kontrak, tab Skema Bayar, Jadwal Komisi, & Gimmick.')
-                ->schema([
-                    Forms\Components\Placeholder::make('ringkasan')->label('')
-                        ->content(fn (?Kontrak $record) => self::kontrakSummary($record)),
-                ]),
+                            Forms\Components\Section::make('Hasil Akhir Kontrak')
+                                ->visibleOn('edit')
+                                ->description('Read-only — otomatis mengikuti perubahan dari Adjustment Kontrak, tab Skema Bayar, Jadwal Komisi, & Gimmick.')
+                                ->schema([
+                                    Forms\Components\Placeholder::make('ringkasan')->label('')
+                                        ->content(fn (?Kontrak $record) => self::kontrakSummary($record)),
+                                ]),
                         ]),
 
                     Forms\Components\Tabs\Tab::make('Jadwal Komisi')
@@ -416,6 +423,7 @@ class KontrakResource extends Resource
         }
 
         $th = 'padding:3px 9px;background:#1e293b;';
+
         return new HtmlString(
             '<div style="font-size:12px;margin-bottom:6px;">'.$head.'</div>'
             .'<table style="font-size:12px;border-collapse:collapse;width:100%;">'

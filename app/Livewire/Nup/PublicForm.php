@@ -10,6 +10,7 @@ use App\Modules\FO\Launching\Services\NupRegistrationService;
 use App\Services\Recaptcha\RecaptchaVerifier;
 use App\Settings\FoSettings;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 use Livewire\Component;
 use Livewire\WithFileUploads;
 
@@ -268,7 +269,7 @@ class PublicForm extends Component
     {
         try {
             $this->validate();
-        } catch (\Illuminate\Validation\ValidationException $e) {
+        } catch (ValidationException $e) {
             // Scroll user ke error pertama supaya tidak terjebak di tombol Register
             // tanpa tahu validasi gagal di field mana.
             $first = collect($e->errors())->keys()->first();

@@ -70,6 +70,12 @@
             "@php artisan config:clear --ansi",
             "@php artisan test"
         ],
+        "check": [
+            "./vendor/bin/pint --test",
+            "./vendor/bin/phpstan analyse",
+            "@php artisan config:clear --ansi",
+            "@php artisan test"
+        ],
         "post-autoload-dump": [
             "Illuminate\\Foundation\\ComposerScripts::postAutoloadDump",
             "@php artisan package:discover --ansi",

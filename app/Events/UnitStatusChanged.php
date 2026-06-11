@@ -29,8 +29,7 @@ class UnitStatusChanged implements ShouldBroadcast
         public readonly ?string $byUserName = null,
         public readonly ?string $blok = null,
         public readonly ?string $noUnit = null,
-    ) {
-    }
+    ) {}
 
     /**
      * Construct directly from a Unit model for convenience.

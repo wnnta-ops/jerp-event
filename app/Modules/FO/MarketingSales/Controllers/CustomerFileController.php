@@ -3,6 +3,7 @@
 namespace App\Modules\FO\MarketingSales\Controllers;
 
 use App\Modules\FO\MarketingSales\Models\Customer;
+use App\Support\TenantContext;
 use Illuminate\Support\Facades\Storage;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
@@ -15,6 +16,8 @@ class CustomerFileController
 {
     public function show(Customer $customer, string $type): StreamedResponse
     {
+        $this->authorizeTenant($customer);
+
         $map = [
             'ktp' => 'ktp_file_path',
             'npwp' => 'npwp_file_path',
@@ -35,6 +38,8 @@ class CustomerFileController
     /** Unduh SEMUA berkas customer (KTP + NPWP + KTP pasangan) sebagai satu ZIP. */
     public function zip(Customer $customer): mixed
     {
+        $this->authorizeTenant($customer);
+
         $files = array_filter([
             'KTP' => $customer->ktp_file_path,
             'NPWP' => $customer->npwp_file_path,
@@ -56,5 +61,15 @@ class CustomerFileController
         $zip->close();
 
         return response()->download($tmp, 'Berkas '.$nama.'.zip')->deleteFileAfterSend(true);
+    }
+
+    /**
+     * Cegah akses berkas customer lintas-tenant (IDOR). Route hanya untuk user
+     * login (middleware auth); guard ini memastikan customer di tenant yang sama.
+     * Catatan: pembatasan per-role (hanya tim verifikasi) menyusul saat RBAC siap.
+     */
+    private function authorizeTenant(Customer $customer): void
+    {
+        abort_unless((int) $customer->tenant_id === app(TenantContext::class)->id(), 403);
     }
 }

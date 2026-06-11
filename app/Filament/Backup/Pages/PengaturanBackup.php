@@ -111,17 +111,19 @@ class PengaturanBackup extends Page implements HasForms
         $data = $this->form->getState();
         $s = app(BackupSettings::class);
 
-        $s->enabled = (bool) $data['enabled'];
-        $s->frequency = $data['frequency'];
-        $s->time = $data['time'];
-        $s->weekly_day = (int) $data['weekly_day'];
-        $s->monthly_day = (int) $data['monthly_day'];
-        $s->yearly_month = (int) $data['yearly_month'];
-        $s->yearly_day = (int) $data['yearly_day'];
-        $s->only_db = (bool) $data['only_db'];
-        $s->disk = $data['disk'];
+        // Field hari/bulan tampil kondisional (mengikuti frequency) → pakai nilai
+        // tersimpan sebagai fallback agar tak "Undefined array key" saat tersembunyi.
+        $s->enabled = (bool) ($data['enabled'] ?? $s->enabled);
+        $s->frequency = $data['frequency'] ?? $s->frequency;
+        $s->time = $data['time'] ?? $s->time;
+        $s->weekly_day = (int) ($data['weekly_day'] ?? $s->weekly_day);
+        $s->monthly_day = (int) ($data['monthly_day'] ?? $s->monthly_day);
+        $s->yearly_month = (int) ($data['yearly_month'] ?? $s->yearly_month);
+        $s->yearly_day = (int) ($data['yearly_day'] ?? $s->yearly_day);
+        $s->only_db = (bool) ($data['only_db'] ?? $s->only_db);
+        $s->disk = $data['disk'] ?? $s->disk;
         $s->local_path = (string) ($data['local_path'] ?? '');
-        $s->retention_days = (int) $data['retention_days'];
+        $s->retention_days = (int) ($data['retention_days'] ?? $s->retention_days);
         $s->save();
 
         Notification::make()->title('Pengaturan backup disimpan')->success()->send();

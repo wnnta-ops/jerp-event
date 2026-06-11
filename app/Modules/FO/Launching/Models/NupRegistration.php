@@ -6,6 +6,7 @@ use App\Models\Concerns\TenantAwareModel;
 use App\Models\Project;
 use App\Models\User;
 use App\Modules\FO\FinanceAR\Models\Tts;
+use App\Modules\FO\Komisi\Models\Agent;
 use App\Modules\FO\MarketingSales\Models\Customer;
 use App\Modules\FO\MarketingSales\Models\Reservasi;
 use App\Modules\FO\MarketingSales\Models\Unit;
@@ -101,7 +102,7 @@ class NupRegistration extends TenantAwareModel
     /** Sales/Agent yang mendaftarkan NUP (dari master /fo/agents). */
     public function agent(): BelongsTo
     {
-        return $this->belongsTo(\App\Modules\FO\Komisi\Models\Agent::class);
+        return $this->belongsTo(Agent::class);
     }
 
     public function customer(): BelongsTo

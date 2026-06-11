@@ -10,10 +10,17 @@ use Filament\Notifications\Notification;
 use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Table;
+use Illuminate\Database\Eloquent\Builder;
 
 class NupRegistrationResource extends Resource
 {
     protected static ?string $model = NupRegistration::class;
+
+    // Daftar pendaftaran NUP (launching) saja; Booked Manual terpisah.
+    public static function getEloquentQuery(): Builder
+    {
+        return parent::getEloquentQuery()->where('jenis', 'NUP');
+    }
 
     protected static ?string $navigationIcon = 'heroicon-o-queue-list';
 

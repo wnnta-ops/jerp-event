@@ -45,6 +45,30 @@ class Kontrak extends TenantAwareModel
         'dp_amount' => 'decimal:2',
     ];
 
+    protected static function booted(): void
+    {
+        parent::booted();
+
+        // Sync ke BankLoan: kontrak KPR otomatis di-mirror jadi Contract KPR
+        // (data FO → bisa diakadkan di BankLoan). Listener: SyncContractToBankLoan.
+        static::created(function (self $kontrak) {
+            if (strtoupper((string) $kontrak->cara_bayar) === 'KPR') {
+                event(new \App\Modules\FO\MarketingSales\Events\KontrakCreated($kontrak));
+            }
+        });
+
+        // fo_komisi pakai restrictOnDelete → hapus kontrak akan gagal FK kalau ada
+        // komisi. Komisi PAID (sudah dibayar) WAJIB dilindungi: blok hapus. Komisi
+        // DRAFT/APPROVED/BATAL (hasil generate, belum cair) dibersihkan agar kontrak
+        // bisa dihapus. (tagihan/gimmick/skema_line sudah cascadeOnDelete.)
+        static::deleting(function (self $kontrak) {
+            if ($kontrak->komisi()->where('status', 'PAID')->exists()) {
+                throw new \RuntimeException('Kontrak tidak bisa dihapus: ada komisi berstatus PAID (sudah dibayar). Batalkan/kembalikan komisi tersebut lebih dulu.');
+            }
+            $kontrak->komisi()->delete();
+        });
+    }
+
     public function reservasi(): BelongsTo
     {
         return $this->belongsTo(Reservasi::class);

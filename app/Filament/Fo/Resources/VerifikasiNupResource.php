@@ -10,11 +10,18 @@ use Filament\Forms;
 use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Table;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\HtmlString;
 
 class VerifikasiNupResource extends Resource
 {
     protected static ?string $model = NupRegistration::class;
+
+    // Hanya pendaftaran NUP (launching); Booked Manual punya menu verifikasi sendiri.
+    public static function getEloquentQuery(): Builder
+    {
+        return parent::getEloquentQuery()->where('jenis', 'NUP');
+    }
 
     protected static ?string $navigationIcon = 'heroicon-o-clipboard-document-check';
 

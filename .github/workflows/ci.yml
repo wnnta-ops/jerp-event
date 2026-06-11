@@ -1,0 +1,50 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    name: Pint · PHPStan · Pest
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup PHP 8.3
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          extensions: mbstring, intl, gd, exif, pcntl, zip, bcmath, sodium, bz2, pdo_sqlite, redis
+          coverage: none
+          tools: composer:v2
+
+      - name: Cache Composer
+        uses: actions/cache@v4
+        with:
+          path: ~/.composer/cache
+          key: composer-${{ hashFiles('composer.lock') }}
+          restore-keys: composer-
+
+      - name: Install dependencies
+        run: composer install --no-interaction --prefer-dist --no-progress
+
+      - name: Prepare env
+        run: |
+          cp .env.example .env
+          php artisan key:generate
+
+      # Format check — gagal kalau ada file belum ter-format (jalankan `pint` lokal untuk fix).
+      - name: Pint (format check)
+        run: ./vendor/bin/pint --test
+
+      # Analisis statik (Larastan level 5, subset path di phpstan.neon).
+      - name: PHPStan
+        run: ./vendor/bin/phpstan analyse --no-progress
+
+      # Test suite (Pest) — DB SQLite :memory:, driver array/sync (lihat phpunit.xml).
+      - name: Tests
+        run: php artisan test

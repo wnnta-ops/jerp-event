@@ -71,7 +71,7 @@
         <div class="head">
             <div class="logo">M</div>
             <div class="co">
-                <div class="ttl">SURAT PEMESANAN{{ ($kontrak->tahap ?? 'SPRS') === 'SPR' ? '' : ' SEMENTARA' }}</div>
+                <div class="ttl">SURAT PEMESANAN RUMAH{{ ($kontrak->tahap ?? 'SPRS') === 'SPR' ? '' : ' SEMENTARA' }}</div>
                 <div class="no">Nomor : {{ $kontrak->no_kontrak }}</div>
                 <div class="no">Tanggal : {{ optional($kontrak->tgl_kontrak)->format('d M Y') }}</div>
             </div>

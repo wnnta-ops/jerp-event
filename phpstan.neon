@@ -21,3 +21,6 @@ parameters:
         # Defensive `Auth::user()?->x ?? fallback` — Larastan over-asserts
         # Auth::user() as non-null, but it can be null in queue/cron contexts.
         - '#nullsafe property access .* on left side of \?\? is unnecessary#'
+        # Relasi Eloquent yang tak ter-narrow Larastan (mis. $p->skema->appliesToScope()) —
+        # method-nya nyata di model terkait, hanya tipe relasi yang generic.
+        - '#Call to an undefined method Illuminate\\Database\\Eloquent\\Model::#'
