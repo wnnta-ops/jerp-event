@@ -93,6 +93,10 @@ Route::middleware('auth')->group(function () {
     Route::get('/fo/customer/{customer}/files-zip', [CustomerFileController::class, 'zip'])
         ->name('fo.customer.files-zip');
 
+    // Booked Manual — bukti transfer (untuk tim verifikasi).
+    Route::get('/fo/booked/{registration}/bukti-transfer', [CustomerFileController::class, 'bookedBukti'])
+        ->name('fo.booked.bukti');
+
     // FO — cetak dokumen closing (SPR, Kwitansi/BKM, Jadwal Pembayaran). ?pdf=1 → Browsershot.
     Route::get('/fo/cetak/spr/{kontrak}', [ClosingPrintController::class, 'spr'])->name('fo.cetak.spr');
     Route::get('/fo/cetak/kwitansi/{bkm}', [ClosingPrintController::class, 'kwitansi'])->name('fo.cetak.kwitansi');

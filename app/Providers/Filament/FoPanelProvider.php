@@ -188,6 +188,11 @@ class FoPanelProvider extends PanelProvider
             'bkms' => 'finance',
             'vas' => 'finance',
             'memos' => 'finance',
+            'fps' => 'finance',
+            'bgs' => 'finance',
+            'refunds' => 'finance',
+            'transfer-anonims' => 'finance',
+            'reminder-ar' => 'finance',
             // Approval
             'approvals' => 'approval',
             // NUP (Setup + Event + Pendaftaran + Verifikasi Data)
@@ -307,6 +312,11 @@ class FoPanelProvider extends PanelProvider
                     $item('BKM', '/fo/bkms', 'heroicon-o-banknotes', 'filament.fo.resources.bkms.'),
                     $item('VA', '/fo/vas', 'heroicon-o-credit-card', 'filament.fo.resources.vas.'),
                     $item('MEMO', '/fo/memos', 'heroicon-o-document-currency-dollar', 'filament.fo.resources.memos.'),
+                    $item('Faktur Pajak', '/fo/fps', 'heroicon-o-receipt-percent', 'filament.fo.resources.fps.'),
+                    $item('Bilyet Giro', '/fo/bgs', 'heroicon-o-document-currency-dollar', 'filament.fo.resources.bgs.'),
+                    $item('Refund / CB', '/fo/refunds', 'heroicon-o-arrow-uturn-left', 'filament.fo.resources.refunds.'),
+                    $item('Transfer Anonim', '/fo/transfer-anonims', 'heroicon-o-question-mark-circle', 'filament.fo.resources.transfer-anonims.'),
+                    $item('Reminder AR', '/fo/reminder-ar', 'heroicon-o-bell-alert', 'filament.fo.pages.reminder-ar'),
                 ],
             ],
             'approval' => [

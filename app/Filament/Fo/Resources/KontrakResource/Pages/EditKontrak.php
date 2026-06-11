@@ -26,9 +26,13 @@ class EditKontrak extends EditRecord
                 ->action(function () {
                     $this->save(shouldRedirect: false, shouldSendSavedNotification: false);
                     $this->record->update(['tahap' => 'SPR']);
+                    // Unit jadi TERJUAL hanya saat kontrak final (SPR); di SPRS masih BOOKING.
+                    if ($this->record->unit_id && $unit = \App\Modules\FO\MarketingSales\Models\Unit::find($this->record->unit_id)) {
+                        $unit->update(['status' => 'TERJUAL']);
+                    }
                     Notification::make()->success()
                         ->title('Disimpan sebagai SPR')
-                        ->body('Kontrak '.$this->record->no_kontrak.' kini berada di menu SPR.')
+                        ->body('Kontrak '.$this->record->no_kontrak.' kini SPR — unit ditandai TERJUAL.')
                         ->send();
                     $this->redirect(KontrakResource::getUrl('index'));
                 }),

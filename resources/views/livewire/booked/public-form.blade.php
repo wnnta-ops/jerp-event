@@ -435,6 +435,17 @@
             </div>
         </div>
 
+        <div class="mt-4">
+            <label class="nup-label">Upload Bukti Transfer (Maks. 5MB) <span class="nup-required">*</span></label>
+            <input type="file" wire:model="bukti_transfer_file" accept=".jpg,.jpeg,.png,.pdf" class="nup-input" style="padding:0.375rem 0.5rem;">
+            <div wire:loading wire:target="bukti_transfer_file" class="text-xs mt-1" style="color:#2563eb;">Mengunggah…</div>
+            @if ($bukti_transfer_file && ! $errors->has('bukti_transfer_file'))
+                <div class="text-xs mt-1" style="color:#16a34a;">✓ {{ method_exists($bukti_transfer_file, 'getClientOriginalName') ? $bukti_transfer_file->getClientOriginalName() : 'Terunggah' }}</div>
+            @endif
+            <p class="text-xs mt-1" style="color:#6b7280;">Bukti transfer pembayaran booking (struk/screenshot). Akan dicek tim verifikasi.</p>
+            @error('bukti_transfer_file') <span class="nup-error">{{ $message }}</span> @enderror
+        </div>
+
         <p class="text-xs mt-3" style="color:#dc2626;">*) Wajib diisi. Pembayaran via transfer bank — diverifikasi manual oleh tim.</p>
     </div>
 

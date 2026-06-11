@@ -32,7 +32,7 @@ class BookedRegistrationService
             $customer = $this->resolveOrCreateLead($data);
             $this->attachUploads($customer, $files);
 
-            return NupRegistration::create([
+            $reg = NupRegistration::create([
                 'tenant_id' => $data['tenant_id'],
                 'jenis' => 'BOOKED',
                 'nup_event_id' => null,           // booked manual: tanpa event
@@ -60,6 +60,14 @@ class BookedRegistrationService
                 'ip_address' => $data['ip_address'] ?? null,
                 'user_agent' => $data['user_agent'] ?? null,
             ]);
+
+            // Bukti transfer disimpan di registrasi (bisa dilihat/unduh verifikator).
+            $bukti = $files['bukti_transfer'] ?? null;
+            if ($bukti instanceof UploadedFile) {
+                $reg->update(['bukti_transfer_path' => $bukti->store('booked/bukti/'.$customer->id, 'local')]);
+            }
+
+            return $reg;
         });
     }
 

@@ -27,7 +27,7 @@ class NupRegistration extends TenantAwareModel
         'preferensi_unit', 'pilihan_budget',
         'pilihan_unit_1', 'pilihan_unit_2', 'pilihan_unit_3', 'rekomendasi_unit',
         'pernyataan_setuju',
-        'ip_address', 'user_agent',
+        'ip_address', 'user_agent', 'bukti_transfer_path',
         'keterangan',
         // Verifikasi Data / UTJ
         'verif_status', 'is_hold', 'hold_reason', 'utj_amount',

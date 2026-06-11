@@ -14,21 +14,49 @@ use Illuminate\Support\Facades\DB;
 use RuntimeException;
 
 /**
- * Verifikasi Booked Manual — tim cek mutasi bank lalu APPROVE. Approval langsung
- * membentuk Reservasi (unit dipilih) + Kontrak tahap SPRS (unit sudah pasti,
- * tak lewat launching). Lanjut alur SPRS → SPR seperti biasa.
+ * Verifikasi Booked Manual — alur 2 langkah (selaras permintaan):
+ *   1) APPROVE: tim cek mutasi bank → setujui (catat booking fee), BELUM pilih unit.
+ *   2) PILIH UNIT: operator pilih unit rumah → bentuk Reservasi + Kontrak tahap SPRS
+ *      + TTS booking fee (→ Buka Kuitansi/BKM, tak kelewat). Lanjut SPRS → SPR.
  */
 class BookedVerificationService
 {
     public function __construct(private readonly NumeratorServiceInterface $numerator) {}
 
-    public function approve(NupRegistration $reg, int $unitId, ?float $bookingFee, ?string $note, ?int $skemaId = null): NupRegistration
+    /** Langkah 1 — setujui pendaftaran (cek mutasi bank). Belum pilih unit. */
+    public function approve(NupRegistration $reg, ?float $bookingFee, ?string $note): NupRegistration
     {
         if ($reg->verif_status === 'APPROVED') {
             throw new RuntimeException('Pendaftaran sudah di-approve.');
         }
+        if ($reg->verif_status === 'REJECTED') {
+            throw new RuntimeException('Pendaftaran sudah ditolak.');
+        }
 
-        return DB::transaction(function () use ($reg, $unitId, $bookingFee, $note, $skemaId) {
+        $reg->update([
+            'verif_status' => 'APPROVED',
+            'status' => 'CHECK_IN',                  // disetujui, menunggu Pilih Unit
+            'booking_fee_paid' => $bookingFee ?? 0,
+            'verified_by' => Auth::id(),
+            'verified_at' => now(),
+            'is_manual_approve' => true,
+            'verif_note' => $note,
+        ]);
+
+        return $reg->fresh();
+    }
+
+    /** Langkah 2 — pilih unit → bentuk Reservasi + Kontrak SPRS + TTS booking fee. */
+    public function pilihUnit(NupRegistration $reg, int $unitId, ?int $skemaId = null): NupRegistration
+    {
+        if ($reg->verif_status !== 'APPROVED') {
+            throw new RuntimeException('Pendaftaran belum di-approve.');
+        }
+        if ($reg->reservasi_id) {
+            throw new RuntimeException('Unit sudah dipilih (kontrak sudah terbentuk).');
+        }
+
+        return DB::transaction(function () use ($reg, $unitId, $skemaId) {
             $unit = Unit::lockForUpdate()->findOrFail($unitId);
             if ($unit->status === 'TERJUAL') {
                 throw new RuntimeException('Unit '.$unit->no_unit.' sudah terjual.');
@@ -36,6 +64,7 @@ class BookedVerificationService
 
             $harga = (float) $unit->harga_jual;
             $caraBayar = $reg->cara_bayar ?: 'KPR';
+            $bookingFee = (float) ($reg->booking_fee_paid ?? 0);
 
             $reservasi = Reservasi::create([
                 'tenant_id' => $reg->tenant_id,
@@ -45,7 +74,7 @@ class BookedVerificationService
                 'tgl_reservasi' => now()->toDateString(),
                 'tgl_kadaluarsa' => now()->addDays(7)->toDateString(),
                 'harga_jual' => $harga,
-                'booking_fee' => $bookingFee ?? 0,
+                'booking_fee' => $bookingFee,
                 'status' => 'AKTIF',
                 'keterangan' => 'Booked manual',
             ]);
@@ -66,20 +95,19 @@ class BookedVerificationService
                 'cara_bayar' => $caraBayar,
                 'status' => 'AKTIF',
                 'tahap' => 'SPRS',
-                'keterangan' => 'Booked manual '.$reg->nama_pendaftar.($note ? ' — '.$note : ''),
+                'keterangan' => 'Booked manual '.$reg->nama_pendaftar,
             ]);
 
-            $unit->update(['status' => 'TERJUAL']);
+            // SPRS = booking sementara → unit BOOKING (bukan TERJUAL). Jadi TERJUAL
+            // saat kontrak naik ke SPR (lihat EditKontrak "Simpan sebagai SPR").
+            $unit->update(['status' => 'BOOKING']);
             $reservasi->update(['status' => 'NAIK_KONTRAK']);
 
-            // Bentuk otomatis tagihan/komisi/gimmick (tagihan butuh skema; bisa
-            // di-regenerate di tab Skema Bayar bila skema di-set belakangan).
             app(KontrakGeneratorService::class)->all($kontrak);
 
-            // TTS untuk booking fee (transfer manual) → feed ke "Buka Kuitansi"
-            // (TtsToBkmService) → BKM (posting GL) → cetak Kwitansi.
+            // TTS booking fee (transfer manual) → Buka Kuitansi (TtsToBkmService) → BKM → Kwitansi.
             $ttsId = null;
-            if (($bookingFee ?? 0) > 0) {
+            if ($bookingFee > 0) {
                 $tts = Tts::create([
                     'tenant_id' => $reg->tenant_id,
                     'no_tts' => $this->numerator->next('TTS'),
@@ -91,23 +119,17 @@ class BookedVerificationService
                     'amount' => $bookingFee,
                     'cara_bayar' => 'TRANSFER',
                     'status' => 'KONFIRMASI',
-                    'skip_gl_posting' => false,   // transfer manual → posting GL saat Buka Kuitansi
+                    'skip_gl_posting' => false,
                     'keterangan' => 'Booking fee Booked manual '.$reg->nama_pendaftar,
                 ]);
                 $ttsId = $tts->id;
             }
 
             $reg->update([
-                'verif_status' => 'APPROVED',
                 'status' => 'PILIH_UNIT',
                 'unit_id' => $unit->id,
                 'reservasi_id' => $reservasi->id,
                 'tts_id' => $ttsId,
-                'booking_fee_paid' => $bookingFee ?? 0,
-                'verified_by' => Auth::id(),
-                'verified_at' => now(),
-                'is_manual_approve' => true,
-                'verif_note' => $note,
             ]);
 
             return $reg->fresh();

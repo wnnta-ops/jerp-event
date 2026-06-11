@@ -76,7 +76,7 @@ class ContractResource extends Resource
         return $table
             ->columns([
                 Tables\Columns\TextColumn::make('contract_number')->label('No. Kontrak')->badge()->color('primary')->searchable()->sortable(),
-                Tables\Columns\TextColumn::make('customer.name')->label('Customer')->searchable()->description(fn ($r) => $r->unit_code),
+                Tables\Columns\TextColumn::make('customer.name')->label('Customer')->searchable()->description(fn (Contract $r) => $r->unit_code),
                 Tables\Columns\TextColumn::make('project.name')->label('Project')->placeholder('—')->toggleable(),
                 Tables\Columns\TextColumn::make('submission_amount')->label('Nominal KPR')->money('IDR')->sortable(),
                 Tables\Columns\TextColumn::make('contract_banks_count')->counts('contractBanks')->label('Bank')->badge()->color('gray'),

@@ -2,6 +2,7 @@
 
 namespace App\Modules\FO\MarketingSales\Controllers;
 
+use App\Modules\FO\Launching\Models\NupRegistration;
 use App\Modules\FO\MarketingSales\Models\Customer;
 use App\Support\TenantContext;
 use Illuminate\Support\Facades\Storage;
@@ -61,6 +62,21 @@ class CustomerFileController
         $zip->close();
 
         return response()->download($tmp, 'Berkas '.$nama.'.zip')->deleteFileAfterSend(true);
+    }
+
+    /** Bukti transfer Booked Manual (tersimpan di registrasi). ?download=1 untuk unduh. */
+    public function bookedBukti(NupRegistration $registration): mixed
+    {
+        abort_unless((int) $registration->tenant_id === app(TenantContext::class)->id(), 403);
+
+        $path = $registration->bukti_transfer_path;
+        abort_unless($path && Storage::disk('local')->exists($path), 404, 'Bukti transfer tidak ditemukan.');
+
+        $name = 'bukti-transfer-'.$registration->id.'.'.pathinfo($path, PATHINFO_EXTENSION);
+
+        return request()->boolean('download')
+            ? Storage::disk('local')->download($path, $name)
+            : Storage::disk('local')->response($path, $name);
     }
 
     /**

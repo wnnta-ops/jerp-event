@@ -75,6 +75,8 @@ class MasterDataSeeder extends Seeder
             ['code' => 'BKK', 'format' => 'BKK-{YYYY}{MM}-{seq:5}'],
             ['code' => 'BGM', 'format' => 'BGM-{YYYY}{MM}-{seq:5}'],
             ['code' => 'MEMO', 'format' => 'MEMO-{YYYY}{MM}-{seq:5}'],
+            ['code' => 'REFUND', 'format' => 'RF-{YYYY}{MM}-{seq:5}'],
+            ['code' => 'TA', 'format' => 'TA-{YYYY}{MM}-{seq:5}'],
             ['code' => 'KOMISI',  'format' => 'KOM-{YYYY}{MM}-{seq:5}'],
             ['code' => 'REWARD',  'format' => 'RWD-{YYYY}-{seq:5}'],
             ['code' => 'TIPETARIF',    'format' => 'TT-{seq:4}'],

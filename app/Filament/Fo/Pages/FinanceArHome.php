@@ -2,8 +2,12 @@
 
 namespace App\Filament\Fo\Pages;
 
+use App\Modules\FO\FinanceAR\Models\Bg;
 use App\Modules\FO\FinanceAR\Models\Bkm;
+use App\Modules\FO\FinanceAR\Models\Fp;
 use App\Modules\FO\FinanceAR\Models\Memo;
+use App\Modules\FO\FinanceAR\Models\Refund;
+use App\Modules\FO\FinanceAR\Models\TransferAnonim;
 use App\Modules\FO\FinanceAR\Models\Tts;
 use App\Modules\FO\FinanceAR\Models\Va;
 use Filament\Pages\Page;
@@ -77,15 +81,6 @@ class FinanceArHome extends Page
                 'count_label' => 'kwitansi',
             ],
             [
-                'label' => 'Tambah DP',
-                'sub' => 'Tambah uang muka (opsional)',
-                'url' => '#',
-                'icon' => 'M12 4v16m8-8H4',
-                'gradient' => 'linear-gradient(135deg, #6366f1 0%, #4338ca 100%)',
-                'count' => fn () => null,
-                'count_label' => '',
-            ],
-            [
                 'label' => 'VA',
                 'sub' => 'Virtual Account per customer',
                 'url' => url('/fo/vas'),
@@ -102,6 +97,53 @@ class FinanceArHome extends Page
                 'gradient' => 'linear-gradient(135deg, #f59e0b 0%, #b45309 100%)',
                 'count' => fn () => Memo::count(),
                 'count_label' => 'memo',
+            ],
+            [
+                'label' => 'Faktur Pajak',
+                'sub' => 'FP — di-link ke kuitansi',
+                'url' => url('/fo/fps'),
+                'icon' => 'M9 12h6m-6 4h6M9 8h6m4 13H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2z',
+                'gradient' => 'linear-gradient(135deg, #0ea5e9 0%, #0369a1 100%)',
+                'count' => fn () => Fp::where('status', 'BELUM_TERPAKAI')->count(),
+                'count_label' => 'belum terpakai',
+            ],
+            [
+                'label' => 'Bilyet Giro',
+                'sub' => 'BG/Cek + ganti giro',
+                'url' => url('/fo/bgs'),
+                'icon' => 'M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z',
+                'gradient' => 'linear-gradient(135deg, #f97316 0%, #c2410c 100%)',
+                'count' => fn () => Bg::where('status', 'BERMASALAH')->count(),
+                'count_label' => 'bermasalah',
+                'urgent' => true,
+            ],
+            [
+                'label' => 'Refund / CB',
+                'sub' => 'Refund booking & lebih bayar',
+                'url' => url('/fo/refunds'),
+                'icon' => 'M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6',
+                'gradient' => 'linear-gradient(135deg, #14b8a6 0%, #0f766e 100%)',
+                'count' => fn () => Refund::whereIn('status', ['DRAFT', 'DIPROSES'])->count(),
+                'count_label' => 'diproses',
+            ],
+            [
+                'label' => 'Transfer Anonim',
+                'sub' => 'Transfer belum teridentifikasi',
+                'url' => url('/fo/transfer-anonims'),
+                'icon' => 'M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z',
+                'gradient' => 'linear-gradient(135deg, #8b5cf6 0%, #6d28d9 100%)',
+                'count' => fn () => TransferAnonim::where('status', 'BARU')->count(),
+                'count_label' => 'baru',
+                'urgent' => true,
+            ],
+            [
+                'label' => 'Reminder AR',
+                'sub' => 'Tindak lanjut (TTS, giro, transfer)',
+                'url' => url('/fo/reminder-ar'),
+                'icon' => 'M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9',
+                'gradient' => 'linear-gradient(135deg, #ef4444 0%, #b91c1c 100%)',
+                'count' => fn () => Tts::whereIn('status', ['DRAFT', 'KONFIRMASI'])->count(),
+                'count_label' => 'perlu tindak lanjut',
             ],
         ];
     }

@@ -120,6 +120,8 @@ class PublicForm extends Component
 
     public $ktp_pasangan_file = null;
 
+    public $bukti_transfer_file = null;
+
     public ?string $recaptcha_token = null;
 
     public bool $pernyataan_setuju = false;
@@ -200,6 +202,7 @@ class PublicForm extends Component
             'ktp_file' => ['required', 'file', 'mimes:jpg,jpeg,png,pdf', 'max:5120'],
             'npwp_file' => ['nullable', 'file', 'mimes:jpg,jpeg,png,pdf', 'max:5120'],
             'ktp_pasangan_file' => ['nullable', 'file', 'mimes:jpg,jpeg,png,pdf', 'max:5120'],
+            'bukti_transfer_file' => ['required', 'file', 'mimes:jpg,jpeg,png,pdf', 'max:5120'],
 
             'pernyataan_setuju' => ['accepted'],
             'sumber_data' => ['nullable', 'string', 'max:64'],
@@ -213,6 +216,7 @@ class PublicForm extends Component
             'nik.digits' => 'NIK harus 16 digit.',
             'spouse_nik.digits' => 'NIK pasangan harus 16 digit.',
             'ktp_file.required' => 'Foto KTP wajib di-upload.',
+            'bukti_transfer_file.required' => 'Bukti transfer wajib di-upload.',
             'unit_diinginkan.required' => 'Unit yang diinginkan wajib diisi.',
         ];
     }
@@ -293,6 +297,7 @@ class PublicForm extends Component
                 'ktp' => $this->ktp_file,
                 'npwp' => $this->npwp_file,
                 'ktp_pasangan' => $this->ktp_pasangan_file,
+                'bukti_transfer' => $this->bukti_transfer_file,
             ],
         );
 
