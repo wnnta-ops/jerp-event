@@ -15,8 +15,8 @@ class Komisi extends TenantAwareModel
         'tenant_id', 'no_komisi', 'tgl_komisi',
         'agent_id', 'kontrak_id',
         'dpp', 'persen_komisi', 'amount',
-        'pph_persen', 'pph_amount', 'amount_net',
-        'status', 'tgl_bayar', 'bkk_ref_id', 'keterangan',
+        'pph_persen', 'pph_amount', 'ppn_amount', 'amount_net',
+        'status', 'tgl_bayar', 'rek_bank', 'rek_number', 'rek_holder', 'bkk_ref_id', 'keterangan',
     ];
 
     protected $casts = [
