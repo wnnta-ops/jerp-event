@@ -5,6 +5,7 @@ namespace App\Filament\System\Resources;
 use App\Filament\System\Resources\RoleResource\Pages;
 use Filament\Forms;
 use Filament\Forms\Form;
+use Filament\Notifications\Notification;
 use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Table;
@@ -20,61 +21,73 @@ class RoleResource extends Resource
 
     protected static ?int $navigationSort = 20;
 
-    protected static ?string $modelLabel = 'Role';
+    protected static ?string $modelLabel = 'Grup Akses';
 
-    protected static ?string $pluralModelLabel = 'Roles';
+    protected static ?string $pluralModelLabel = 'Grup Akses';
 
     public static function form(Form $form): Form
     {
         return $form->schema([
-            Forms\Components\Section::make('Identitas Role')
-                ->columns(2)
-                ->schema([
-                    Forms\Components\TextInput::make('name')
-                        ->label('Nama role')
-                        ->required()
-                        ->unique(ignoreRecord: true)
-                        ->helperText('Contoh: super_admin, finance_manager, sales_staff'),
-                    Forms\Components\TextInput::make('guard_name')
-                        ->label('Guard')
-                        ->required()
-                        ->default('web'),
-                ]),
+            Forms\Components\Section::make()->columns(2)->schema([
+                Forms\Components\TextInput::make('name')->label('Nama Grup Akses')->required()->unique(ignoreRecord: true),
+                Forms\Components\TextInput::make('guard_name')->label('Guard')->default('web')->disabled()->dehydrated(),
+            ]),
 
-            Forms\Components\Section::make('Permissions')
-                ->schema([
-                    Forms\Components\CheckboxList::make('permissions')
-                        ->label('Permissions')
-                        ->relationship('permissions', 'name')
-                        ->searchable()
-                        ->bulkToggleable()
-                        ->columns(2)
-                        ->gridDirection('row'),
-                ]),
+            Forms\Components\Section::make('Hak Akses (Permission)')
+                ->description('Centang aksi per menu. Index=Lihat, Store=Buat, Update=Ubah, Destroy=Hapus, Print=Cetak, Approve. Tiap modul/menu punya akses sendiri.')
+                ->schema(self::permissionMatrix()),
         ]);
+    }
+
+    /** @return array<int,\Filament\Forms\Components\Component> Section per modul, baris area × 6 aksi. */
+    public static function permissionMatrix(): array
+    {
+        $cfg = config('access_matrix');
+        $actions = $cfg['actions'];
+        $sections = [];
+
+        foreach ($cfg['modules'] as $module => $areas) {
+            $rows = [];
+            foreach ($areas as $areaKey => $label) {
+                $cols = [Forms\Components\Placeholder::make('lbl_'.str_replace('.', '_', $areaKey))
+                    ->label('')->content($label)];
+                foreach (array_keys($actions) as $action) {
+                    $cols[] = Forms\Components\Checkbox::make('m.'.str_replace('.', '~', $areaKey.'.'.$action))
+                        ->label(ucfirst($action));
+                }
+                $rows[] = Forms\Components\Grid::make(7)->schema($cols);
+            }
+            $sections[] = Forms\Components\Section::make($module)->collapsible()->collapsed()->schema($rows);
+        }
+
+        return $sections;
+    }
+
+    /** Daftar permission name terpilih dari state matrix 'm'. @return array<int,string> */
+    public static function collectPermissions(array $m): array
+    {
+        return collect($m)->filter()->keys()
+            ->map(fn ($k) => str_replace('~', '.', $k))->values()->all();
     }
 
     public static function table(Table $table): Table
     {
         return $table
             ->columns([
-                Tables\Columns\TextColumn::make('name')
-                    ->label('Nama role')
-                    ->searchable()
-                    ->sortable(),
-                Tables\Columns\TextColumn::make('guard_name')
-                    ->label('Guard')
-                    ->badge(),
-                Tables\Columns\TextColumn::make('permissions_count')
-                    ->label('Jumlah permission')
-                    ->counts('permissions')
-                    ->alignCenter(),
-                Tables\Columns\TextColumn::make('users_count')
-                    ->label('Jumlah pengguna')
-                    ->counts('users')
-                    ->alignCenter(),
+                Tables\Columns\TextColumn::make('name')->label('Nama Grup Akses')->searchable()->sortable()->weight('bold'),
+                Tables\Columns\TextColumn::make('permissions_count')->counts('permissions')->label('Jml Permission')->badge()->alignCenter(),
+                Tables\Columns\TextColumn::make('users_count')->counts('users')->label('Jml Pengguna')->badge()->color('info')->alignCenter(),
             ])
             ->actions([
+                Tables\Actions\Action::make('duplikasi')->label('Duplikasi')->icon('heroicon-o-document-duplicate')->color('gray')
+                    ->form([Forms\Components\TextInput::make('name')->label('Nama grup baru')->required()
+                        ->default(fn (Role $record) => $record->name.' (copy)')])
+                    ->action(function (Role $record, array $data) {
+                        $new = Role::create(['name' => $data['name'], 'guard_name' => $record->guard_name]);
+                        $new->syncPermissions($record->permissions);
+                        Notification::make()->success()->title('Grup diduplikasi: '.$new->name)
+                            ->body($record->permissions->count().' permission disalin.')->send();
+                    }),
                 Tables\Actions\EditAction::make(),
                 Tables\Actions\DeleteAction::make(),
             ])

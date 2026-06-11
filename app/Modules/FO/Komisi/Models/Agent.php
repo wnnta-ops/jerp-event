@@ -6,12 +6,24 @@ use App\Models\Concerns\TenantAwareModel;
 use App\Models\Project;
 use App\Modules\FO\Adminjual\Models\SalesLevel;
 use App\Modules\FO\Adminjual\Models\SalesType;
+use App\Services\Numerator\NumeratorService;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Agent extends TenantAwareModel
 {
     protected $table = 'fo_agents';
+
+    protected static function booted(): void
+    {
+        parent::booted();
+        // No. Sales otomatis (5 digit zero-padded) bila kosong.
+        static::creating(function (self $m) {
+            if (empty($m->code)) {
+                $m->code = app(NumeratorService::class)->next('SALES');
+            }
+        });
+    }
 
     protected $fillable = [
         'tenant_id', 'project_id', 'code', 'inisial', 'name', 'agency_name', 'jenis', 'is_arebi',

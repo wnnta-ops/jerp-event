@@ -5,7 +5,6 @@ namespace App\Services\Numerator;
 use App\Support\TenantContext;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
-use RuntimeException;
 
 /**
  * Atomic document numerator.
@@ -109,13 +108,20 @@ class NumeratorService implements NumeratorServiceInterface
         }
 
         if ($row === null) {
-            throw new RuntimeException(
-                "No numerator definition found for code [{$code}] (tenant {$tenantId}). ".
-                'Seed it in the `numerators` table first.'
-            );
+            // Kode belum terdaftar → AUTO-REGISTER dengan format default. resolve()
+            // membuat barisnya, sehingga kode penomoran baru OTOMATIS muncul di master
+            // Penomoran (System → Numerator) dan formatnya bisa diubah di sana. Dengan
+            // begitu semua penomoran tersintegrasi di satu tempat, tanpa perlu seeding.
+            return $this->defaultFormat($code);
         }
 
         return $row->format;
+    }
+
+    /** Format default untuk kode yang belum terdaftar (bulanan, reset tiap bulan). */
+    private function defaultFormat(string $code): string
+    {
+        return $code.'-{YYYY}{MM}-{seq:5}';
     }
 
     private function periodFor(string $format, Carbon $now): string

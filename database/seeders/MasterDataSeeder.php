@@ -82,6 +82,7 @@ class MasterDataSeeder extends Seeder
             ['code' => 'KOMISI',  'format' => 'KOM-{YYYY}{MM}-{seq:5}'],
             ['code' => 'BLT',     'format' => 'BLT-{YYYY}{MM}-{seq:5}'],
             ['code' => 'REWARD',  'format' => 'RWD-{YYYY}-{seq:5}'],
+            ['code' => 'SALES',   'format' => '{seq:5}'],
             ['code' => 'TIPETARIF',    'format' => 'TT-{seq:4}'],
             ['code' => 'SKEMAKOMISI',  'format' => 'SK-{seq:4}'],
             ['code' => 'SKEMABLT',     'format' => 'SB-{seq:4}'],

@@ -283,8 +283,6 @@ class FoPanelProvider extends PanelProvider
                     ['label' => 'Customer & Booking', 'items' => [
                         $item('Customer', '/fo/sales', 'heroicon-o-user-group', 'filament.fo.resources.sales.'),
                         $item('Master Booking', '/fo/reservasis', 'heroicon-o-bookmark', 'filament.fo.resources.reservasis.'),
-                        $soon('Ganti Nama', 'Marketing & Sales', 'Ganti Nama', 'heroicon-o-arrows-right-left'),
-                        $soon('Pindah Unit (Booking)', 'Marketing & Sales', 'Pindah Unit (Booking)', 'heroicon-o-arrow-path-rounded-square'),
                     ]],
                     ['label' => 'Booked Manual', 'items' => [
                         $item('Verifikasi Data Booked', '/fo/verifikasi-booked', 'heroicon-o-clipboard-document-check', 'filament.fo.resources.verifikasi-booked.'),

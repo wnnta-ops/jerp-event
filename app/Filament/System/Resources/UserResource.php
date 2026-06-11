@@ -6,6 +6,7 @@ use App\Filament\System\Resources\UserResource\Pages;
 use App\Models\User;
 use Filament\Forms;
 use Filament\Forms\Form;
+use Filament\Notifications\Notification;
 use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Table;
@@ -72,15 +73,21 @@ class UserResource extends Resource
                         ->default(true),
                 ]),
 
-            Forms\Components\Section::make('Hak Akses (Role)')
+            Forms\Components\Section::make('Hak Akses (Grup Akses)')
                 ->schema([
                     Forms\Components\Select::make('roles')
-                        ->label('Roles')
+                        ->label('Grup Akses')
                         ->multiple()
                         ->relationship('roles', 'name')
                         ->preload()
-                        ->searchable(),
+                        ->searchable()
+                        ->helperText('Akses dasar mengikuti Grup Akses. Untuk tambahan lintas-modul, isi "Hak Akses Khusus" di bawah.'),
                 ]),
+
+            Forms\Components\Section::make('Hak Akses Khusus (lintas modul) — opsional')
+                ->description('Tambahan hak akses untuk pengguna INI di luar Grup Akses (mis. anggota FAT yang butuh akses lintas modul secara dinamik). Akses efektif = Grup Akses + centang di sini.')
+                ->collapsible()->collapsed()
+                ->schema(RoleResource::permissionMatrix()),
         ]);
     }
 
@@ -96,7 +103,7 @@ class UserResource extends Resource
                     ->label('Email')
                     ->searchable(),
                 Tables\Columns\TextColumn::make('roles.name')
-                    ->label('Roles')
+                    ->label('Grup Akses')
                     ->badge()
                     ->color('info'),
                 Tables\Columns\TextColumn::make('tenant.name')
@@ -120,7 +127,36 @@ class UserResource extends Resource
                     ->multiple(),
             ])
             ->actions([
+                // Duplikasi pengguna — salin Grup Akses + Hak Akses Khusus, tinggal
+                // ganti nama/email + tambah akses lain. Efisien untuk lintas akses.
+                Tables\Actions\Action::make('duplikasi')->label('Duplikasi')->icon('heroicon-o-document-duplicate')->color('gray')
+                    ->modalHeading('Duplikasi Pengguna')
+                    ->modalDescription(fn (User $record) => 'Grup Akses + Hak Akses Khusus dari "'.$record->full_name.'" akan disalin ke pengguna baru.')
+                    ->form([
+                        Forms\Components\TextInput::make('name')->label('Username')->required()->unique('users', 'name'),
+                        Forms\Components\TextInput::make('full_name')->label('Nama Lengkap')->required()
+                            ->default(fn (User $record) => $record->full_name.' (copy)'),
+                        Forms\Components\TextInput::make('email')->label('Email')->email()->required()->unique('users', 'email'),
+                        Forms\Components\TextInput::make('password')->label('Kata Sandi')->password()->required()->minLength(6),
+                    ])
+                    ->action(function (User $record, array $data) {
+                        $new = User::create([
+                            'name' => $data['name'],
+                            'full_name' => $data['full_name'],
+                            'email' => $data['email'],
+                            'password' => $data['password'], // cast 'hashed' otomatis hash
+                            'tenant_id' => $record->tenant_id,
+                            'is_active' => true,
+                        ]);
+                        $new->syncRoles($record->roles);
+                        $new->syncPermissions($record->getDirectPermissions());
+
+                        Notification::make()->success()->title('Pengguna diduplikasi: '.$new->name)
+                            ->body('Grup Akses ('.$record->roles->count().') + hak akses khusus ('.$record->getDirectPermissions()->count().') disalin. Tinggal tambah akses lain bila perlu.')
+                            ->send();
+                    }),
                 Tables\Actions\EditAction::make(),
+                Tables\Actions\DeleteAction::make(),
             ])
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([

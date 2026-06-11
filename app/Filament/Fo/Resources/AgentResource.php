@@ -29,9 +29,9 @@ class AgentResource extends Resource
         return $form->schema([
             Forms\Components\Section::make('Identitas')->columns(3)->schema([
                 Forms\Components\TextInput::make('code')
-                    ->label('No. Sales')->maxLength(32)->required()->unique(ignoreRecord: true)
-                    ->placeholder('mis. 00193')
-                    ->helperText('Nomor unik per sales (5 digit, zero-padded).'),
+                    ->label('No. Sales')->maxLength(32)->unique(ignoreRecord: true)
+                    ->disabled()->dehydrated()->placeholder('Otomatis (5 digit)')
+                    ->helperText('Nomor unik per sales — otomatis (5 digit, zero-padded) saat disimpan.'),
                 Forms\Components\TextInput::make('inisial')
                     ->label('Inisial')->maxLength(16)
                     ->placeholder('mis. TS')
