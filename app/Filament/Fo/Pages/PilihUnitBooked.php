@@ -2,27 +2,29 @@
 
 namespace App\Filament\Fo\Pages;
 
+use App\Filament\Fo\Concerns\BuildsStockGrid;
 use App\Modules\FO\Adminjual\Models\Skema;
 use App\Modules\FO\Booked\Services\BookedVerificationService;
 use App\Modules\FO\Launching\Models\NupRegistration;
-use App\Modules\FO\MarketingSales\Models\Lokasi;
 use App\Modules\FO\MarketingSales\Models\Unit;
+use Filament\Actions\Action;
+use Filament\Actions\Concerns\InteractsWithActions;
+use Filament\Actions\Contracts\HasActions;
 use Filament\Forms;
+use Filament\Forms\Concerns\InteractsWithForms;
+use Filament\Forms\Contracts\HasForms;
 use Filament\Notifications\Notification;
 use Filament\Pages\Page;
-use Filament\Tables;
-use Filament\Tables\Concerns\InteractsWithTable;
-use Filament\Tables\Contracts\HasTable;
-use Filament\Tables\Enums\FiltersLayout;
-use Filament\Tables\Table;
 
 /**
- * Pilih Unit (Booked Manual) — tabel unit TERSEDIA; klik baris → konfirmasi → bentuk
- * Reservasi + Kontrak SPRS + TTS booking fee. Diakses dari Verifikasi Booked (Approve).
+ * Pilih Unit (Booked Manual) — tabel stok visual (cluster + tahap → grid blok×no.).
+ * Klik unit TERSEDIA → konfirmasi + skema bayar → Reservasi + Kontrak SPRS + TTS.
  */
-class PilihUnitBooked extends Page implements HasTable
+class PilihUnitBooked extends Page implements HasActions, HasForms
 {
-    use InteractsWithTable;
+    use BuildsStockGrid;
+    use InteractsWithActions;
+    use InteractsWithForms;
 
     protected static ?string $slug = 'pilih-unit-booked';
 
@@ -34,6 +36,14 @@ class PilihUnitBooked extends Page implements HasTable
 
     public ?NupRegistration $registration = null;
 
+    public ?int $projectId = null;
+
+    public ?int $lokasiId = null;
+
+    public ?string $tahap = null;
+
+    public ?int $pendingUnitId = null;
+
     public function mount(): void
     {
         $this->registration = NupRegistration::query()
@@ -41,67 +51,52 @@ class PilihUnitBooked extends Page implements HasTable
             ->where('verif_status', 'APPROVED')
             ->whereNull('reservasi_id')
             ->findOrFail(request()->integer('reg'));
+
+        $this->projectId = $this->registration->project_pref_id;
     }
 
-    public function table(Table $table): Table
+    public function updatedLokasiId(): void
     {
-        return $table
-            ->query(
-                Unit::query()
-                    ->where('is_active', true)
-                    ->when($this->registration?->project_pref_id, fn ($q) => $q->where('project_id', $this->registration->project_pref_id))
-                    ->orderBy('blok')->orderBy('no_unit')
-            )
-            ->columns([
-                Tables\Columns\TextColumn::make('blok')->label('Blok')->badge()->color('gray')->placeholder('—')->sortable(),
-                Tables\Columns\TextColumn::make('no_unit')->label('No. Unit')->weight('bold')->searchable()->sortable(),
-                Tables\Columns\TextColumn::make('unitType.name')->label('Tipe')->placeholder('—')->toggleable(),
-                Tables\Columns\TextColumn::make('lokasi.nama')->label('Lokasi')->placeholder('—')->toggleable(),
-                Tables\Columns\TextColumn::make('harga_jual')->label('Harga')->money('IDR')->sortable(),
-                Tables\Columns\TextColumn::make('status')->label('Status')->badge()
-                    ->formatStateUsing(fn (?string $state) => match ($state) {
-                        'TERSEDIA' => 'Tersedia', 'BOOKING' => 'Booked', 'TERJUAL' => 'Sold', default => $state,
-                    })
-                    ->color(fn (?string $state) => match ($state) {
-                        'TERSEDIA' => 'success', 'BOOKING' => 'warning', 'TERJUAL' => 'danger', default => 'gray',
-                    }),
-            ])
-            ->filters([
-                Tables\Filters\SelectFilter::make('lokasi_id')->label('Cluster (Lokasi)')
-                    ->options(fn () => Lokasi::query()
-                        ->when($this->registration?->project_pref_id, fn ($q) => $q->where('project_id', $this->registration->project_pref_id))
-                        ->orderBy('nama')->pluck('nama', 'id'))
-                    ->placeholder('— Semua cluster —')
-                    ->native(false),
-                Tables\Filters\SelectFilter::make('status')->label('Status')->native(false)
-                    ->options(['TERSEDIA' => 'Tersedia', 'BOOKING' => 'Booked', 'TERJUAL' => 'Sold']),
-            ])
-            ->filtersLayout(FiltersLayout::AboveContent)
-            ->actions([
-                Tables\Actions\Action::make('pilih')->label('Pilih Unit Ini')->icon('heroicon-o-check')->color('success')
-                    ->visible(fn (Unit $record) => $record->status === 'TERSEDIA')
-                    ->modalHeading('Yakin pilih unit ini?')
-                    ->modalDescription(fn (Unit $record) => 'Unit '.trim(($record->blok ? $record->blok.' / ' : '').$record->no_unit)
-                        .' (Rp '.number_format((float) $record->harga_jual, 0, ',', '.').') akan dijadikan Kontrak SPRS untuk '.$this->registration->nama_pendaftar.'.')
-                    ->form([
-                        Forms\Components\Select::make('skema_id')->label('Skema Bayar')->searchable()
-                            ->options(fn () => Skema::orderBy('name')->pluck('name', 'id'))
-                            ->helperText('Pilih skema bayar. Bisa juga diatur ulang nanti di tab Skema Bayar SPR.'),
-                    ])
-                    ->modalSubmitActionLabel('Ya, pilih unit ini')
-                    ->action(function (Unit $record, array $data) {
-                        try {
-                            app(BookedVerificationService::class)->pilihUnit($this->registration, $record->id, $data['skema_id'] ?? null);
-                            Notification::make()->success()->title('Unit dipilih → Kontrak SPRS + TTS terbentuk')
-                                ->body('Lanjut menu SPRS → Simpan sebagai SPR. TTS bisa di-Buka Kuitansi (BKM).')->persistent()->send();
+        $this->tahap = null;
+    }
 
-                            return redirect('/fo/verifikasi-booked');
-                        } catch (\Throwable $e) {
-                            Notification::make()->danger()->title('Gagal pilih unit')->body($e->getMessage())->send();
-                        }
-                    }),
+    /** @return array{rows:array,cols:array,cells:array,total:int} */
+    public function getGrid(): array
+    {
+        return $this->stockGridData($this->projectId, $this->lokasiId, $this->tahap);
+    }
+
+    public function selectGridUnit(int $unitId): void
+    {
+        $this->pendingUnitId = $unitId;
+        $this->mountAction('konfirmasi');
+    }
+
+    public function konfirmasi(): Action
+    {
+        $unit = $this->pendingUnitId ? Unit::find($this->pendingUnitId) : null;
+
+        return Action::make('konfirmasi')
+            ->modalHeading('Yakin pilih unit ini?')
+            ->modalDescription($unit
+                ? 'Unit '.($unit->kode_unit ?: $unit->no_unit).' (Rp '.number_format((float) $unit->harga_jual, 0, ',', '.').') akan dijadikan Kontrak SPRS untuk '.$this->registration->nama_pendaftar.'.'
+                : null)
+            ->modalSubmitActionLabel('Ya, pilih unit ini')
+            ->form([
+                Forms\Components\Select::make('skema_id')->label('Skema Bayar')->searchable()
+                    ->options(fn () => Skema::orderBy('name')->pluck('name', 'id'))
+                    ->helperText('Pilih skema bayar. Bisa diatur ulang nanti di tab Skema Bayar SPR.'),
             ])
-            ->emptyStateHeading('Tidak ada unit TERSEDIA')
-            ->paginated([25, 50, 100]);
+            ->action(function (array $data) {
+                try {
+                    app(BookedVerificationService::class)->pilihUnit($this->registration, (int) $this->pendingUnitId, $data['skema_id'] ?? null);
+                    Notification::make()->success()->title('Unit dipilih → Kontrak SPRS + TTS terbentuk')
+                        ->body('Lanjut menu SPRS → Simpan sebagai SPR. TTS bisa di-Buka Kuitansi (BKM).')->persistent()->send();
+
+                    $this->redirect('/fo/verifikasi-booked');
+                } catch (\Throwable $e) {
+                    Notification::make()->danger()->title('Gagal pilih unit')->body($e->getMessage())->send();
+                }
+            });
     }
 }

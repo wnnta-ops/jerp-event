@@ -81,9 +81,9 @@ class KontrakResource extends Resource
                                         ->required(),
                                     Forms\Components\Select::make('unit_id')
                                         ->label('Unit')
-                                        ->relationship('unit', 'no_unit')
-                                        ->getOptionLabelFromRecordUsing(fn ($record) => trim(($record->blok ? $record->blok.' / ' : '').$record->no_unit))
-                                        ->searchable(['blok', 'no_unit'])
+                                        ->relationship('unit', 'kode_unit')
+                                        ->getOptionLabelFromRecordUsing(fn ($record) => $record->kode_unit ?: trim(($record->blok ? $record->blok.' / ' : '').$record->no_unit))
+                                        ->searchable(['kode_unit', 'blok', 'no_unit'])
                                         ->preload()
                                         ->required(),
                                 ]),
@@ -274,9 +274,9 @@ class KontrakResource extends Resource
                 Tables\Columns\TextColumn::make('no_kontrak')->label('No kontrak')->searchable()->sortable()->badge(),
                 Tables\Columns\TextColumn::make('tgl_kontrak')->label('Tgl')->date('d M Y')->sortable(),
                 Tables\Columns\TextColumn::make('customer.full_name')->label('Customer')->searchable(),
-                Tables\Columns\TextColumn::make('unit.no_unit')
+                Tables\Columns\TextColumn::make('unit.kode_unit')
                     ->label('Unit')
-                    ->formatStateUsing(fn ($record) => trim(($record->unit?->blok ? $record->unit->blok.' / ' : '').$record->unit?->no_unit))
+                    ->placeholder('—')
                     ->searchable(),
                 Tables\Columns\TextColumn::make('cara_bayar')->label('Cara bayar')->badge(),
                 Tables\Columns\TextColumn::make('total_kontrak')->label('Total')->money('IDR', divideBy: 0)->alignEnd(),
@@ -305,6 +305,23 @@ class KontrakResource extends Resource
             ])
             ->actions([
                 Tables\Actions\EditAction::make(),
+                // Simpan sebagai SPR (dipersingkat "SPR") — finalkan SPRS → SPR, unit TERJUAL.
+                Tables\Actions\Action::make('jadikan_spr')
+                    ->label('SPR')
+                    ->icon('heroicon-o-document-check')
+                    ->color('success')
+                    ->visible(fn ($record) => $record->tahap !== 'SPR')
+                    ->requiresConfirmation()
+                    ->modalHeading('Simpan sebagai SPR')
+                    ->modalDescription('Finalkan SPRS ini menjadi SPR. Unit akan ditandai TERJUAL.')
+                    ->action(function ($record) {
+                        $record->update(['tahap' => 'SPR']);
+                        if ($record->unit_id && $unit = \App\Modules\FO\MarketingSales\Models\Unit::find($record->unit_id)) {
+                            $unit->update(['status' => 'TERJUAL']);
+                        }
+                        Notification::make()->success()->title('Disimpan sebagai SPR')
+                            ->body('Kontrak '.$record->no_kontrak.' kini SPR — unit ditandai TERJUAL.')->send();
+                    }),
                 Tables\Actions\Action::make('cetak_spr')
                     ->label($cetakLabel)
                     ->icon('heroicon-o-document-text')
@@ -334,7 +351,7 @@ class KontrakResource extends Resource
         if ($ppn <= 0) {
             $ppn = $total - $dpp;
         }
-        $unit = trim(($k->unit?->blok ? $k->unit->blok.' / ' : '').($k->unit?->no_unit ?? ''));
+        $unit = $k->unit?->kode_unit ?: trim(($k->unit?->blok ? $k->unit->blok.' / ' : '').($k->unit?->no_unit ?? ''));
 
         $row = fn ($l, $v) => '<tr><td style="padding:2px 10px;color:#94a3b8;width:190px;">'.$l.'</td><td style="padding:2px 10px;">: '.$v.'</td></tr>';
         $kv = '<table style="font-size:13px;border-collapse:collapse;width:100%;">'

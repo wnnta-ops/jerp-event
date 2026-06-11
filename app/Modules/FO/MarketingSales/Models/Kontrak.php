@@ -94,6 +94,16 @@ class Kontrak extends TenantAwareModel
         return $this->belongsTo(Agent::class);
     }
 
+    public function pengalihanHak(): HasMany
+    {
+        return $this->hasMany(PengalihanHak::class)->latest();
+    }
+
+    public function pindahUnit(): HasMany
+    {
+        return $this->hasMany(PindahUnit::class)->latest();
+    }
+
     public function tagihan(): HasMany
     {
         return $this->hasMany(KontrakTagihan::class)->orderBy('urutan');

@@ -168,6 +168,9 @@ class FoPanelProvider extends PanelProvider
             'kontraks' => 'marketing',
             'spr' => 'marketing',
             'adjustment-kontrak' => 'marketing',
+            'pengalihan-hak' => 'marketing',
+            'pindah-unit' => 'marketing',
+            'pindah-unit-pilih' => 'marketing',
             // Setup Sales (master + sales + unit + gimmick)
             'skemas' => 'setup',
             'sales-types' => 'setup',
@@ -273,8 +276,8 @@ class FoPanelProvider extends PanelProvider
                         $item('SPRS (Surat Pemesanan)', '/fo/kontraks', 'heroicon-o-document-text', 'filament.fo.resources.kontraks.'),
                         $item('SPR (Final)', '/fo/spr', 'heroicon-o-document-check', 'filament.fo.resources.spr.'),
                         $item('Adjustment Kontrak', '/fo/adjustment-kontrak', 'heroicon-o-adjustments-horizontal', 'filament.fo.pages.adjustment-kontrak'),
-                        $soon('Pengalihan Hak', 'Marketing & Sales', 'Pengalihan Hak', 'heroicon-o-identification'),
-                        $soon('Pindah Unit (Kontrak)', 'Marketing & Sales', 'Pindah Unit (Kontrak)', 'heroicon-o-arrow-path-rounded-square'),
+                        $item('Pengalihan Hak', '/fo/pengalihan-hak', 'heroicon-o-identification', 'filament.fo.resources.pengalihan-hak.'),
+                        $item('Pindah Unit', '/fo/pindah-unit', 'heroicon-o-arrows-right-left', 'filament.fo.resources.pindah-unit.'),
                         $soon('Pembatalan Kontrak', 'Marketing & Sales', 'Pembatalan Kontrak', 'heroicon-o-x-circle'),
                     ]],
                     ['label' => 'Migrate', 'items' => [

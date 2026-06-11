@@ -5,12 +5,24 @@ namespace App\Modules\FO\MarketingSales\Models;
 use App\Models\Concerns\TenantAwareModel;
 use App\Models\Project;
 use App\Modules\FO\Launching\Models\NupRegistration;
+use App\Services\Numerator\NumeratorService;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Customer extends TenantAwareModel
 {
     protected $table = 'fo_customers';
+
+    protected static function booted(): void
+    {
+        parent::booted();
+        // No. Customer otomatis (mis. saat daftar customer baru via Pengalihan Hak).
+        static::creating(function (self $m) {
+            if (empty($m->code)) {
+                $m->code = app(NumeratorService::class)->next('CUST');
+            }
+        });
+    }
 
     protected $fillable = [
         'tenant_id',
