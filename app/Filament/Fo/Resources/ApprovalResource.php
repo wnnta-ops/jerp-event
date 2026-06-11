@@ -4,6 +4,7 @@ namespace App\Filament\Fo\Resources;
 
 use App\Filament\Fo\Resources\ApprovalResource\Pages;
 use App\Modules\FO\Approval\Models\Approval;
+use App\Modules\FO\Approval\Services\ApprovalService;
 use Filament\Forms;
 use Filament\Forms\Form;
 use Filament\Notifications\Notification;
@@ -87,10 +88,12 @@ class ApprovalResource extends Resource
             Tables\Columns\TextColumn::make('subject_id')->label('ID')->toggleable(),
             Tables\Columns\TextColumn::make('amount_dampak')->label('Dampak')->money('IDR', divideBy: 0)->alignEnd()->toggleable(),
             Tables\Columns\TextColumn::make('requester.full_name')->label('Pemohon')->toggleable(),
-            Tables\Columns\TextColumn::make('status')->label('Status')->badge()->color(fn (?string $state) => match ($state) {
-                'DRAFT' => 'gray', 'PENDING' => 'warning', 'APPROVED' => 'success',
-                'REJECTED' => 'danger', 'EXECUTED' => 'primary', default => 'gray',
-            }),
+            Tables\Columns\TextColumn::make('status')->label('Status')->badge()
+                ->formatStateUsing(fn (Approval $r) => $r->status === 'PENDING' ? 'PENDING · L'.$r->current_level : $r->status)
+                ->color(fn (Approval $r) => match ($r->status) {
+                    'DRAFT' => 'gray', 'PENDING' => 'warning', 'APPROVED' => 'success',
+                    'REJECTED' => 'danger', 'EXECUTED' => 'primary', default => 'gray',
+                })->description(fn (Approval $r) => $r->executed_result ? \Illuminate\Support\Str::limit($r->executed_result, 50) : null),
         ])->filters([
             Tables\Filters\SelectFilter::make('status')->options([
                 'DRAFT' => 'Draft', 'PENDING' => 'Pending', 'APPROVED' => 'Approved',
@@ -102,50 +105,40 @@ class ApprovalResource extends Resource
                 'REFUND' => 'Refund', 'LAIN' => 'Lain',
             ]),
         ])->actions([
-            Tables\Actions\EditAction::make(),
-            Tables\Actions\Action::make('submit')
-                ->label('Submit')
-                ->icon('heroicon-o-paper-airplane')
-                ->color('info')
-                ->visible(fn (Approval $r) => $r->status === 'DRAFT')
+            Tables\Actions\Action::make('submit')->label('Submit')->icon('heroicon-o-paper-airplane')->color('info')
+                ->visible(fn (Approval $r) => $r->status === 'DRAFT')->requiresConfirmation()
                 ->action(function (Approval $r) {
-                    $r->update(['status' => 'PENDING']);
-                    Notification::make()->title('Submitted untuk approval')->success()->send();
+                    app(ApprovalService::class)->submit($r);
+                    Notification::make()->title('Diajukan — menunggu Approval Level 1')->success()->send();
                 }),
-            Tables\Actions\Action::make('approve')
-                ->label('Approve')
-                ->icon('heroicon-o-check-circle')
-                ->color('success')
-                ->visible(fn (Approval $r) => $r->status === 'PENDING')
-                ->form([
-                    Forms\Components\Textarea::make('catatan_approver')->label('Catatan')->rows(2),
-                ])
+            Tables\Actions\Action::make('approve_l1')->label('Approve L1')->icon('heroicon-o-check')->color('warning')
+                ->visible(fn (Approval $r) => $r->isAwaitingLevel1())
+                ->form([Forms\Components\Textarea::make('note')->label('Catatan Level 1')->rows(2)])
                 ->action(function (Approval $r, array $data) {
-                    $r->update([
-                        'status' => 'APPROVED',
-                        'approved_by' => auth()->id(),
-                        'approved_at' => now(),
-                        'catatan_approver' => $data['catatan_approver'] ?? null,
-                    ]);
-                    Notification::make()->title('Approved')->success()->send();
+                    app(ApprovalService::class)->approveLevel1($r, $data['note'] ?? null);
+                    Notification::make()->title('Disetujui Level 1 → menunggu Level 2 (final)')->success()->send();
                 }),
-            Tables\Actions\Action::make('reject')
-                ->label('Reject')
-                ->icon('heroicon-o-x-circle')
-                ->color('danger')
-                ->visible(fn (Approval $r) => $r->status === 'PENDING')
-                ->form([
-                    Forms\Components\Textarea::make('catatan_approver')->label('Alasan reject')->rows(2)->required(),
-                ])
+            Tables\Actions\Action::make('approve_l2')->label('Approve L2 (final)')->icon('heroicon-o-check-badge')->color('success')
+                ->visible(fn (Approval $r) => $r->isAwaitingLevel2())
+                ->requiresConfirmation()
+                ->modalDescription('Persetujuan final akan LANGSUNG menerapkan perubahan ke kontrak.')
+                ->form([Forms\Components\Textarea::make('note')->label('Catatan Level 2')->rows(2)])
                 ->action(function (Approval $r, array $data) {
-                    $r->update([
-                        'status' => 'REJECTED',
-                        'approved_by' => auth()->id(),
-                        'approved_at' => now(),
-                        'catatan_approver' => $data['catatan_approver'],
-                    ]);
-                    Notification::make()->title('Rejected')->success()->send();
+                    try {
+                        $a = app(ApprovalService::class)->approveLevel2($r, $data['note'] ?? null);
+                        Notification::make()->title('Disetujui & dieksekusi')->body($a->executed_result)->success()->persistent()->send();
+                    } catch (\Throwable $e) {
+                        Notification::make()->title('Gagal eksekusi')->body($e->getMessage())->danger()->persistent()->send();
+                    }
                 }),
+            Tables\Actions\Action::make('reject')->label('Reject')->icon('heroicon-o-x-circle')->color('danger')
+                ->visible(fn (Approval $r) => $r->status === 'PENDING')
+                ->form([Forms\Components\Textarea::make('note')->label('Alasan reject')->rows(2)->required()])
+                ->action(function (Approval $r, array $data) {
+                    app(ApprovalService::class)->reject($r, $data['note']);
+                    Notification::make()->title('Ditolak')->warning()->send();
+                }),
+            Tables\Actions\EditAction::make()->visible(fn (Approval $r) => $r->status === 'DRAFT'),
         ])->bulkActions([
             Tables\Actions\BulkActionGroup::make([Tables\Actions\DeleteBulkAction::make()]),
         ])->defaultSort('tgl_approval', 'desc');
