@@ -4,6 +4,7 @@ namespace App\Filament\System\Resources;
 
 use App\Filament\System\Resources\RoleResource\Pages;
 use Filament\Forms;
+use Filament\Forms\Components\Component;
 use Filament\Forms\Form;
 use Filament\Notifications\Notification;
 use Filament\Resources\Resource;
@@ -39,7 +40,7 @@ class RoleResource extends Resource
         ]);
     }
 
-    /** @return array<int,\Filament\Forms\Components\Component> Section per modul, baris area × 6 aksi. */
+    /** @return array<int,Component> Section per modul, baris area × 6 aksi. */
     public static function permissionMatrix(): array
     {
         $cfg = config('access_matrix');

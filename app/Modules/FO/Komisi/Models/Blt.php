@@ -49,7 +49,7 @@ class Blt extends TenantAwareModel
 
     public function agent(): BelongsTo
     {
-        return $this->belongsTo(\App\Modules\FO\Komisi\Models\Agent::class);
+        return $this->belongsTo(Agent::class);
     }
 
     public function salesLevel(): BelongsTo

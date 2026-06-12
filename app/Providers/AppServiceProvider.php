@@ -3,6 +3,7 @@
 namespace App\Providers;
 
 use App\Listeners\LogAuthenticationActivity;
+use App\Models\BackupSchedule;
 use App\Modules\FO\Launching\Events\NupRegistered;
 use App\Modules\FO\Launching\Listeners\KirimKonfirmasiNupListener;
 use App\Modules\FO\Shared\Integrations\WhatsApp\NullWhatsAppGateway;
@@ -13,8 +14,10 @@ use App\Modules\FO\Shared\Integrations\Xendit\XenditGateway;
 use App\Modules\FO\Shared\Integrations\Xendit\XenditGatewayInterface;
 use App\Services\Numerator\NumeratorService;
 use App\Services\Numerator\NumeratorServiceInterface;
-use App\Settings\BackupSettings;
+use App\Support\Rupiah;
 use App\Support\TenantContext;
+use Filament\Forms\Components\TextInput;
+use Filament\Support\RawJs;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Event;
@@ -80,6 +83,24 @@ class AppServiceProvider extends ServiceProvider
         });
 
         $this->applyBackupSettings();
+        $this->registerRupiahMacro();
+    }
+
+    /**
+     * Macro TextInput::rupiah() — format ribuan gaya Indonesia (488.600.000) pada
+     * semua field uang: prefix Rp, mask ribuan, bersihkan titik saat simpan, dan
+     * normalkan nilai DB (.00) saat muat. Dipakai lintas panel (FO/BO/BankLoan).
+     */
+    private function registerRupiahMacro(): void
+    {
+        TextInput::macro('rupiah', function () {
+            /** @var TextInput $this */
+            return $this
+                ->prefix('Rp')
+                ->mask(RawJs::make("\$money(\$input, ',', '.', 0)"))
+                ->stripCharacters('.')
+                ->formatStateUsing(fn ($state) => Rupiah::formatState($state));
+        });
     }
 
     /**
@@ -92,7 +113,7 @@ class AppServiceProvider extends ServiceProvider
             // Lokasi/retensi global Spatie Backup mengikuti jadwal AKTIF pertama
             // (BackupSchedule). Spatie pakai 1 config global, jadi semua jadwal
             // menulis ke lokasi yang sama (umumnya memang 1 folder backup).
-            $s = \App\Models\BackupSchedule::query()->orderByDesc('enabled')->orderBy('id')->first();
+            $s = BackupSchedule::query()->orderByDesc('enabled')->orderBy('id')->first();
             if (! $s) {
                 return;
             }

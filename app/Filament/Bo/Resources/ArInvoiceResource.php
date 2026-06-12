@@ -51,7 +51,7 @@ class ArInvoiceResource extends Resource
             Forms\Components\Section::make('Nominal & Akun')
                 ->columns(3)
                 ->schema([
-                    Forms\Components\TextInput::make('nominal')->label('Nominal')->numeric()->prefix('Rp')->required()->default(0),
+                    Forms\Components\TextInput::make('nominal')->label('Nominal')->numeric()->rupiah()->required()->default(0),
                     Forms\Components\TextInput::make('akun_piutang')->label('Akun piutang')->default('1.1.02.001')->required(),
                     Forms\Components\TextInput::make('akun_pendapatan')->label('Akun pendapatan')->default('4.1.01.001')->required(),
                     Forms\Components\Textarea::make('keterangan')->rows(2)->columnSpanFull(),

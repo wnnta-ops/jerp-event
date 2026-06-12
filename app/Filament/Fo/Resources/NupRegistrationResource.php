@@ -62,7 +62,7 @@ class NupRegistrationResource extends Resource
                 Forms\Components\DateTimePicker::make('tgl_daftar')->label('Tgl daftar')->default(now())->required(),
                 Forms\Components\DateTimePicker::make('tgl_check_in')->label('Tgl check-in'),
                 Forms\Components\DateTimePicker::make('tgl_payment')->label('Tgl payment'),
-                Forms\Components\TextInput::make('booking_fee_paid')->label('Booking fee dibayar')->numeric()->prefix('Rp')->default(0),
+                Forms\Components\TextInput::make('booking_fee_paid')->label('Booking fee dibayar')->numeric()->rupiah()->default(0),
                 Forms\Components\Select::make('status')->label('Status')->options([
                     'DAFTAR' => 'Daftar', 'CHECK_IN' => 'Check-in', 'BAYAR' => 'Bayar',
                     'PILIH_UNIT' => 'Pilih unit', 'TIDAK_HADIR' => 'Tidak hadir', 'BATAL' => 'Batal',

@@ -6,6 +6,7 @@ use App\Models\Concerns\TenantAwareModel;
 use App\Modules\FO\Adminjual\Models\Skema;
 use App\Modules\FO\Komisi\Models\Agent;
 use App\Modules\FO\Komisi\Models\Komisi;
+use App\Modules\FO\MarketingSales\Events\KontrakCreated;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
@@ -53,7 +54,7 @@ class Kontrak extends TenantAwareModel
         // (data FO → bisa diakadkan di BankLoan). Listener: SyncContractToBankLoan.
         static::created(function (self $kontrak) {
             if (strtoupper((string) $kontrak->cara_bayar) === 'KPR') {
-                event(new \App\Modules\FO\MarketingSales\Events\KontrakCreated($kontrak));
+                event(new KontrakCreated($kontrak));
             }
         });
 

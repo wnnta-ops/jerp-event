@@ -99,7 +99,7 @@ class AdjustmentKontrak extends Page implements HasForms, HasTable
 
     public function form(Form $form): Form
     {
-        $rp = fn (Forms\Components\TextInput $c) => $c->numeric()->prefix('Rp')->default(0);
+        $rp = fn (Forms\Components\TextInput $c) => $c->numeric()->rupiah()->default(0);
         $live = fn (Forms\Components\TextInput $c) => $c->live(onBlur: true)
             ->afterStateUpdated(fn (Forms\Get $get, Forms\Set $set) => self::recalc($get, $set));
 

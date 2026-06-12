@@ -49,9 +49,9 @@ class ContractResource extends Resource
                     Forms\Components\TextInput::make('sales_person_name')->label('Sales')->disabled(),
                     Forms\Components\Placeholder::make('project_name')->label('Project')
                         ->content(fn (?Contract $record) => $record?->project?->name ?? '—'),
-                    Forms\Components\TextInput::make('total_price')->label('Harga Kontrak')->disabled()->prefix('Rp')->numeric(),
-                    Forms\Components\TextInput::make('submission_amount')->label('Nominal KPR')->disabled()->prefix('Rp')->numeric(),
-                    Forms\Components\TextInput::make('down_payment')->label('DP')->disabled()->prefix('Rp')->numeric(),
+                    Forms\Components\TextInput::make('total_price')->label('Harga Kontrak')->disabled()->rupiah()->numeric(),
+                    Forms\Components\TextInput::make('submission_amount')->label('Nominal KPR')->disabled()->rupiah()->numeric(),
+                    Forms\Components\TextInput::make('down_payment')->label('DP')->disabled()->rupiah()->numeric(),
                 ]),
 
             Forms\Components\Section::make('Status & Pre-Interview')

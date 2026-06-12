@@ -4,8 +4,8 @@ namespace App\Filament\Fo\Resources;
 
 use App\Filament\Fo\Resources\TransferAnonimResource\Pages;
 use App\Models\Bank;
-use App\Modules\FO\FinanceAR\Models\Tts;
 use App\Modules\FO\FinanceAR\Models\TransferAnonim;
+use App\Modules\FO\FinanceAR\Models\Tts;
 use App\Modules\FO\MarketingSales\Models\Customer;
 use Filament\Forms;
 use Filament\Forms\Form;
@@ -33,7 +33,7 @@ class TransferAnonimResource extends Resource
         return $form->schema([
             Forms\Components\DatePicker::make('tgl_transfer')->label('Tgl Transfer')->default(now()),
             Forms\Components\Select::make('bank_id')->label('Bank Penerima')->options(fn () => Bank::orderBy('name')->pluck('name', 'id'))->searchable(),
-            Forms\Components\TextInput::make('amount')->label('Nominal (Rp)')->numeric()->prefix('Rp')->default(0),
+            Forms\Components\TextInput::make('amount')->label('Nominal (Rp)')->numeric()->rupiah()->default(0),
             Forms\Components\TextInput::make('keterangan_bank')->label('Berita/Referensi Bank')->columnSpanFull(),
             Forms\Components\Textarea::make('keterangan')->label('Catatan')->rows(2)->columnSpanFull(),
         ])->columns(2);

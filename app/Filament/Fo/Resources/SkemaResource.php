@@ -57,13 +57,13 @@ class SkemaResource extends Resource
                 Forms\Components\Select::make('bf_dipotong_di')->label('Booking Fee dipotong di')->options([
                     'ANGSURAN1' => 'FREE DP', 'DP_DISEBAR' => 'DP 3x', 'ANGSURAN_DISEBAR' => 'CASH / INHOUSE',
                 ])->default('ANGSURAN1'),
-                Forms\Components\TextInput::make('present_value')->label('Present Value')->numeric()->prefix('Rp')->default(0),
+                Forms\Components\TextInput::make('present_value')->label('Present Value')->numeric()->rupiah()->default(0),
                 Forms\Components\TextInput::make('diskon_persen')->label('Diskon %')->numeric()->suffix('%')->default(0),
                 Forms\Components\TextInput::make('subsidi_persen')->label('Subsidi developer %')->numeric()->suffix('%')->default(20)
                     ->helperText('Mode DP Disebar: free X% dari DP.'),
                 Forms\Components\TextInput::make('dp_persen')->label('DP total %')->numeric()->suffix('%')->default(0),
                 Forms\Components\TextInput::make('ang_persen')->label('Angsuran total %')->numeric()->suffix('%')->default(0),
-                Forms\Components\TextInput::make('bf_nominal')->label('Booking Fee (UTJ)')->numeric()->prefix('Rp')->default(0),
+                Forms\Components\TextInput::make('bf_nominal')->label('Booking Fee (UTJ)')->numeric()->rupiah()->default(0),
                 Forms\Components\TextInput::make('tenor_bulan')->label('Tenor (bulan)')->numeric(),
                 Forms\Components\TextInput::make('jumlah_termin')->label('Jumlah termin')->numeric()->default(1)->required(),
                 Forms\Components\Toggle::make('is_active')->label('Status aktif')->default(true),
@@ -88,7 +88,7 @@ class SkemaResource extends Resource
                             ->default('PERSEN')->required()->live(),
                         Forms\Components\TextInput::make('persen')->label('%')->numeric()->suffix('%')
                             ->visible(fn (Forms\Get $get) => $get('basis') === 'PERSEN'),
-                        Forms\Components\TextInput::make('nominal')->label('Nominal')->numeric()->prefix('Rp')
+                        Forms\Components\TextInput::make('nominal')->label('Nominal')->numeric()->rupiah()
                             ->visible(fn (Forms\Get $get) => $get('basis') === 'NOMINAL'),
                         Forms\Components\Select::make('jadwal_basis')->label('Jadwal')
                             ->options(['BULAN' => 'Bulan', 'HARI' => 'Hari', 'TANGGAL' => 'Tanggal'])->default('BULAN'),

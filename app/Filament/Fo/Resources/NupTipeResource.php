@@ -39,7 +39,7 @@ class NupTipeResource extends Resource
                 Forms\Components\TextInput::make('nama')->label('Tipe')->required()->maxLength(255)
                     ->placeholder('mis. Reguler / CLUSTER 3 TAHAP 4'),
                 Forms\Components\TextInput::make('nilai_utj')->label('Nilai (UTJ)')
-                    ->numeric()->prefix('Rp')->default(0)->required()
+                    ->numeric()->rupiah()->default(0)->required()
                     ->helperText('Nominal UTJ yang ditagihkan ke customer saat pendaftaran.'),
                 Forms\Components\Toggle::make('is_active')->label('Aktif')->default(true)->inline(false),
                 Forms\Components\TextInput::make('keterangan')->label('Keterangan')->maxLength(255)->columnSpanFull(),

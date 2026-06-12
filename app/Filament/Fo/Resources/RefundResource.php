@@ -35,11 +35,11 @@ class RefundResource extends Resource
             Forms\Components\DatePicker::make('tgl_refund')->label('Tgl Refund')->default(now()),
             Forms\Components\Select::make('customer_id')->label('Customer')->searchable()
                 ->options(fn () => Customer::query()->limit(300)->pluck('full_name', 'id')),
-            Forms\Components\TextInput::make('nilai_kotor')->label('Nilai Kotor (Rp)')->numeric()->prefix('Rp')->default(0)->live(onBlur: true)
+            Forms\Components\TextInput::make('nilai_kotor')->label('Nilai Kotor (Rp)')->numeric()->rupiah()->default(0)->live(onBlur: true)
                 ->afterStateUpdated(fn ($state, Forms\Get $get, Forms\Set $set) => $set('nilai_refund', max(0, (float) $state - (float) $get('biaya_admin')))),
-            Forms\Components\TextInput::make('biaya_admin')->label('Biaya Admin (Rp)')->numeric()->prefix('Rp')->default(0)->live(onBlur: true)
+            Forms\Components\TextInput::make('biaya_admin')->label('Biaya Admin (Rp)')->numeric()->rupiah()->default(0)->live(onBlur: true)
                 ->afterStateUpdated(fn ($state, Forms\Get $get, Forms\Set $set) => $set('nilai_refund', max(0, (float) $get('nilai_kotor') - (float) $state))),
-            Forms\Components\TextInput::make('nilai_refund')->label('Nilai Refund (Rp)')->numeric()->prefix('Rp')->default(0)
+            Forms\Components\TextInput::make('nilai_refund')->label('Nilai Refund (Rp)')->numeric()->rupiah()->default(0)
                 ->helperText('= Nilai Kotor − Biaya Admin'),
             Forms\Components\Select::make('bank_id')->label('Bank Tujuan')->options(fn () => Bank::orderBy('name')->pluck('name', 'id'))->searchable(),
             Forms\Components\TextInput::make('rekening_tujuan')->label('Rekening Tujuan'),

@@ -50,9 +50,9 @@ class ApInvoiceResource extends Resource
             ])->disabled(fn (?ApInvoice $r) => $r !== null && ! in_array($r->status, ['DRAFT'], true)),
 
             Forms\Components\Section::make('Nominal & Akun')->columns(3)->schema([
-                Forms\Components\TextInput::make('nominal')->label('DPP')->numeric()->prefix('Rp')->required()->default(0),
-                Forms\Components\TextInput::make('ppn')->label('PPN')->numeric()->prefix('Rp')->default(0),
-                Forms\Components\TextInput::make('pph')->label('PPh dipotong')->numeric()->prefix('Rp')->default(0),
+                Forms\Components\TextInput::make('nominal')->label('DPP')->numeric()->rupiah()->required()->default(0),
+                Forms\Components\TextInput::make('ppn')->label('PPN')->numeric()->rupiah()->default(0),
+                Forms\Components\TextInput::make('pph')->label('PPh dipotong')->numeric()->rupiah()->default(0),
                 Forms\Components\Select::make('akun_beban')->label('Akun beban/aset')->options(static::coaOptions())->searchable()->required()->default('5.9.01.001'),
                 Forms\Components\Select::make('akun_hutang')->label('Akun hutang')->options(static::coaOptions())->searchable()->required()->default('2.1.01.001'),
                 Forms\Components\Textarea::make('keterangan')->rows(2)->columnSpanFull(),

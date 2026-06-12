@@ -75,7 +75,7 @@ class CbVoucherResource extends Resource
                         ->searchable()->required(),
                     Forms\Components\Select::make('akun_lawan')->label('Akun Lawan')->options(static::coaOptions())
                         ->searchable()->required(),
-                    Forms\Components\TextInput::make('nominal')->label('Nominal')->numeric()->prefix('Rp')->required()->default(0),
+                    Forms\Components\TextInput::make('nominal')->label('Nominal')->numeric()->rupiah()->required()->default(0),
                     Forms\Components\TextInput::make('pihak')->label('Pembayar/Penerima')->maxLength(255),
                     Forms\Components\TextInput::make('no_referensi')->label('No referensi')->maxLength(64),
                     Forms\Components\Textarea::make('keterangan')->rows(2)->columnSpanFull(),

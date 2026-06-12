@@ -80,7 +80,7 @@ class PembatalanKontrak extends Page implements HasForms, HasTable
                         Forms\Components\DatePicker::make('tgl_pembatalan')->label('Tgl Pembatalan')->default(now())->required(),
                         Forms\Components\Hidden::make('utj_amount')->default(fn (Kontrak $record) => (float) ($record->reservasi?->booking_fee ?? 0)),
                         Forms\Components\DatePicker::make('tgl_refund')->label('Tgl Refund'),
-                        Forms\Components\TextInput::make('refund_utj')->label('Refund (UTJ)')->numeric()->prefix('Rp')->default(0)
+                        Forms\Components\TextInput::make('refund_utj')->label('Refund (UTJ)')->numeric()->rupiah()->default(0)
                             ->readOnly(fn (Forms\Get $get) => $get('alasan') !== 'LAINNYA')
                             ->helperText('Batal Sepihak: 0 (UTJ hangus). Reject Bank / Kol 5 / Tutup Buku: UTJ otomatis. Lainnya: isi manual.'),
                     ])

@@ -3,7 +3,6 @@
 namespace App\Filament\Fo\Resources;
 
 use App\Filament\Fo\Resources\VerifikasiBookedResource\Pages;
-use App\Modules\FO\Adminjual\Models\Skema;
 use App\Modules\FO\Booked\Services\BookedVerificationService;
 use App\Modules\FO\Launching\Models\NupRegistration;
 use App\Modules\FO\MarketingSales\Models\Unit;

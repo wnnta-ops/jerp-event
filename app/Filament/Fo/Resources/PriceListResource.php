@@ -103,7 +103,7 @@ class PriceListResource extends Resource
                             $schemes->map(function ($s) {
                                 return Forms\Components\TextInput::make('skema_'.$s->id)
                                     ->label($s->name.($s->tampil_siteplan ? '  ★ (tampil di siteplan)' : ''))
-                                    ->numeric()->minValue(0)->prefix('Rp')
+                                    ->numeric()->minValue(0)->rupiah()
                                     ->placeholder('Kosong = tidak berlaku');
                             })->all()
                         ),

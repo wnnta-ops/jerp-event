@@ -32,7 +32,7 @@ class ContractBanksRelationManager extends RelationManager
             Forms\Components\Select::make('requirement_status')->label('Status Syarat')->options([
                 'INCOMPLETE' => 'Belum Lengkap', 'COMPLETE' => 'Lengkap', 'VERIFYING' => 'Verifikasi',
             ]),
-            Forms\Components\TextInput::make('approved_amount')->label('Disetujui (Rp)')->numeric()->prefix('Rp'),
+            Forms\Components\TextInput::make('approved_amount')->label('Disetujui (Rp)')->numeric()->rupiah(),
             Forms\Components\TextInput::make('approved_description')->label('Keterangan Persetujuan')->columnSpanFull(),
         ])->columns(2);
     }

@@ -34,8 +34,8 @@ class AgreementRealizationResource extends Resource
                 ->options(fn () => ContractBankAgreement::with('contractBank.contract')->get()
                     ->mapWithKeys(fn ($a) => [$a->id => ($a->agreement_number ?: 'Akad #'.$a->id).' — '.($a->contractBank?->contract?->contract_number ?? '')])),
             Forms\Components\DatePicker::make('realization_date')->label('Tgl Realisasi')->default(now()),
-            Forms\Components\TextInput::make('disbursed_amount')->label('Nominal Cair (Rp)')->numeric()->default(0)->prefix('Rp'),
-            Forms\Components\TextInput::make('excess_realization_amount')->label('Selisih/Kelebihan (Rp)')->numeric()->default(0)->prefix('Rp'),
+            Forms\Components\TextInput::make('disbursed_amount')->label('Nominal Cair (Rp)')->numeric()->default(0)->rupiah(),
+            Forms\Components\TextInput::make('excess_realization_amount')->label('Selisih/Kelebihan (Rp)')->numeric()->default(0)->rupiah(),
             Forms\Components\Select::make('status')->label('Status')->default('DRAFT')
                 ->options(['DRAFT' => 'Draft', 'POSTED' => 'Posted', 'CANCELLED' => 'Cancelled']),
         ])->columns(2);

@@ -33,8 +33,8 @@ class RetentionRealizationResource extends Resource
                 ->options(fn () => RetentionSubmission::query()->whereIn('status', ['APPROVED', 'REALIZED'])->get()
                     ->mapWithKeys(fn ($p) => [$p->id => $p->number.' — '.($p->contract_number ?? '').' (Rp '.number_format((float) $p->requested_amount, 0, ',', '.').')'])),
             Forms\Components\DatePicker::make('realization_date')->label('Tgl Realisasi')->default(now()),
-            Forms\Components\TextInput::make('realized_amount')->label('Nominal Dicairkan (Rp)')->numeric()->default(0)->prefix('Rp'),
-            Forms\Components\TextInput::make('remaining_amount')->label('Sisa Retensi (Rp)')->numeric()->default(0)->prefix('Rp')
+            Forms\Components\TextInput::make('realized_amount')->label('Nominal Dicairkan (Rp)')->numeric()->default(0)->rupiah(),
+            Forms\Components\TextInput::make('remaining_amount')->label('Sisa Retensi (Rp)')->numeric()->default(0)->rupiah()
                 ->helperText('Sisa harus 0 agar retensi dianggap selesai (kontrak boleh CLOSED).'),
         ])->columns(2);
     }

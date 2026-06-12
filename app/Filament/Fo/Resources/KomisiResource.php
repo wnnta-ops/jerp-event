@@ -66,7 +66,7 @@ class KomisiResource extends Resource
             ]),
 
             Forms\Components\Section::make('Nilai Komisi')->columns(3)->schema([
-                Forms\Components\TextInput::make('dpp')->label('DPP')->numeric()->prefix('Rp')->required()
+                Forms\Components\TextInput::make('dpp')->label('DPP')->numeric()->rupiah()->required()
                     ->live(debounce: 500)
                     ->afterStateUpdated(function ($state, callable $set, callable $get) {
                         $persen = (float) ($get('persen_komisi') ?? 0);
@@ -78,7 +78,7 @@ class KomisiResource extends Resource
                         $dpp = (float) ($get('dpp') ?? 0);
                         $set('amount', round($dpp * ((float) $state) / 100, 2));
                     }),
-                Forms\Components\TextInput::make('amount')->label('Amount')->numeric()->prefix('Rp')->required()->default(0),
+                Forms\Components\TextInput::make('amount')->label('Amount')->numeric()->rupiah()->required()->default(0),
                 Forms\Components\TextInput::make('pph_persen')->label('% PPh')->numeric()->suffix('%')->default(0)
                     ->live(debounce: 500)
                     ->afterStateUpdated(function ($state, callable $set, callable $get) {
@@ -87,8 +87,8 @@ class KomisiResource extends Resource
                         $set('pph_amount', $pph);
                         $set('amount_net', round($amount - $pph, 2));
                     }),
-                Forms\Components\TextInput::make('pph_amount')->label('PPh (Rp)')->numeric()->prefix('Rp')->default(0),
-                Forms\Components\TextInput::make('amount_net')->label('Net')->numeric()->prefix('Rp')->default(0),
+                Forms\Components\TextInput::make('pph_amount')->label('PPh (Rp)')->numeric()->rupiah()->default(0),
+                Forms\Components\TextInput::make('amount_net')->label('Net')->numeric()->rupiah()->default(0),
             ]),
 
             Forms\Components\Section::make('Pembayaran')->columns(2)->schema([

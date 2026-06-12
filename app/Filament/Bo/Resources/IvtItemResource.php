@@ -34,7 +34,7 @@ class IvtItemResource extends Resource
                 Forms\Components\TextInput::make('nama')->label('Nama')->required()->columnSpan(2),
                 Forms\Components\Select::make('kategori_id')->label('Kategori')->relationship('kategori', 'nama')->searchable()->preload(),
                 Forms\Components\TextInput::make('satuan')->label('Satuan')->default('PCS')->maxLength(16),
-                Forms\Components\TextInput::make('harga_pokok')->label('Harga pokok')->numeric()->prefix('Rp')->default(0),
+                Forms\Components\TextInput::make('harga_pokok')->label('Harga pokok')->numeric()->rupiah()->default(0),
                 Forms\Components\TextInput::make('stok')->label('Stok awal')->numeric()->default(0)
                     ->disabled(fn (?IvtItem $r) => $r !== null)->helperText('Perubahan stok via movement.'),
                 Forms\Components\TextInput::make('min_stok')->label('Stok minimum')->numeric()->default(0),

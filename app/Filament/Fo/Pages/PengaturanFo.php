@@ -49,7 +49,7 @@ class PengaturanFo extends Page implements HasForms
     {
         return $form->statePath('data')->schema([
             Forms\Components\Section::make('Default nilai transaksi')->columns(3)->schema([
-                Forms\Components\TextInput::make('default_booking_fee')->label('Booking fee default')->numeric()->prefix('Rp')->required(),
+                Forms\Components\TextInput::make('default_booking_fee')->label('Booking fee default')->numeric()->rupiah()->required(),
                 Forms\Components\TextInput::make('default_tenor_bulan')->label('Tenor default (bulan)')->numeric()->required(),
                 Forms\Components\TextInput::make('default_dp_persen')->label('DP default (%)')->numeric()->suffix('%')->required(),
                 Forms\Components\TextInput::make('reservasi_expiry_days')->label('Expiry reservasi (hari)')->numeric()->required(),

@@ -36,7 +36,7 @@ class BgResource extends Resource
             Forms\Components\DatePicker::make('tgl_jatuh_tempo')->label('Jatuh Tempo'),
             Forms\Components\Select::make('customer_id')->label('Customer')->searchable()
                 ->options(fn () => Customer::query()->limit(300)->pluck('full_name', 'id')),
-            Forms\Components\TextInput::make('amount')->label('Nominal (Rp)')->numeric()->prefix('Rp')->default(0),
+            Forms\Components\TextInput::make('amount')->label('Nominal (Rp)')->numeric()->rupiah()->default(0),
             Forms\Components\TextInput::make('pengelola')->label('Pengelola'),
             Forms\Components\Select::make('status')->label('Status')->default('NORMAL')
                 ->options(['NORMAL' => 'Normal', 'JATUH_TEMPO' => 'Jatuh Tempo', 'CAIR' => 'Cair', 'BERMASALAH' => 'Bermasalah', 'DIGANTI' => 'Diganti']),

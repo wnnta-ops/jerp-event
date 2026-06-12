@@ -40,7 +40,7 @@ class RewardResource extends Resource
                     'CASHBACK' => 'Cashback', 'LAIN' => 'Lain',
                 ])->default('BONUS')->required(),
                 Forms\Components\TextInput::make('nama_reward')->label('Nama reward')->required()->maxLength(255),
-                Forms\Components\TextInput::make('amount')->label('Nilai')->numeric()->prefix('Rp')->default(0),
+                Forms\Components\TextInput::make('amount')->label('Nilai')->numeric()->rupiah()->default(0),
                 Forms\Components\Select::make('status')->label('Status')->options([
                     'DRAFT' => 'Draft', 'APPROVED' => 'Approved', 'CLAIMED' => 'Claimed', 'BATAL' => 'Batal',
                 ])->default('DRAFT')->required(),

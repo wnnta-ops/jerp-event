@@ -82,7 +82,7 @@ class UnitResource extends Resource
                 ->schema([
                     Forms\Components\TextInput::make('luas_tanah')->label('Luas tanah (m²)')->numeric(),
                     Forms\Components\TextInput::make('luas_bangunan')->label('Luas bangunan (m²)')->numeric(),
-                    Forms\Components\TextInput::make('harga_jual')->label('Harga jual')->numeric()->prefix('Rp')->default(0),
+                    Forms\Components\TextInput::make('harga_jual')->label('Harga jual')->numeric()->rupiah()->default(0),
                     Forms\Components\Textarea::make('keterangan')->rows(2)->columnSpanFull(),
                     Forms\Components\Toggle::make('is_active')->label('Aktif')->default(true),
                 ]),

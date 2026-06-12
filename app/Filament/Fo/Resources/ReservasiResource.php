@@ -63,8 +63,8 @@ class ReservasiResource extends Resource
                                 $set('harga_jual', $unit->harga_jual);
                             }
                         }),
-                    Forms\Components\TextInput::make('harga_jual')->label('Harga jual')->numeric()->prefix('Rp'),
-                    Forms\Components\TextInput::make('booking_fee')->label('Booking fee')->numeric()->prefix('Rp')->default(0),
+                    Forms\Components\TextInput::make('harga_jual')->label('Harga jual')->numeric()->rupiah(),
+                    Forms\Components\TextInput::make('booking_fee')->label('Booking fee')->numeric()->rupiah()->default(0),
                     Forms\Components\DatePicker::make('tgl_kadaluarsa')
                         ->label('Tanggal kadaluarsa')
                         ->helperText('Tanggal batas reservasi sebelum batal otomatis.'),

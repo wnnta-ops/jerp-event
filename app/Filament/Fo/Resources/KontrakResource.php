@@ -8,6 +8,7 @@ use App\Modules\FO\Adminjual\Models\Skema;
 use App\Modules\FO\MarketingSales\Models\Kontrak;
 use App\Modules\FO\MarketingSales\Models\Reservasi;
 use App\Modules\FO\MarketingSales\Models\Unit;
+use App\Support\Rupiah;
 use Filament\Forms;
 use Filament\Forms\Form;
 use Filament\Notifications\Notification;
@@ -93,10 +94,10 @@ class KontrakResource extends Resource
                                 ->visibleOn('create')
                                 ->columns(2)
                                 ->schema([
-                                    Forms\Components\TextInput::make('harga_jual')->label('Harga jual')->numeric()->prefix('Rp')->default(0)->required(),
-                                    Forms\Components\TextInput::make('diskon')->label('Diskon')->numeric()->prefix('Rp')->default(0),
-                                    Forms\Components\TextInput::make('ppn')->label('PPN')->numeric()->prefix('Rp')->default(0),
-                                    Forms\Components\TextInput::make('total_kontrak')->label('Total kontrak')->numeric()->prefix('Rp')->default(0)->required(),
+                                    Forms\Components\TextInput::make('harga_jual')->label('Harga jual')->numeric()->rupiah()->default(0)->required(),
+                                    Forms\Components\TextInput::make('diskon')->label('Diskon')->numeric()->rupiah()->default(0),
+                                    Forms\Components\TextInput::make('ppn')->label('PPN')->numeric()->rupiah()->default(0),
+                                    Forms\Components\TextInput::make('total_kontrak')->label('Total kontrak')->numeric()->rupiah()->default(0)->required(),
                                 ]),
 
                             Forms\Components\Section::make('Cara Bayar')
@@ -115,7 +116,7 @@ class KontrakResource extends Resource
                                         ->required(),
                                     Forms\Components\TextInput::make('tenor_bulan')->label('Tenor (bulan)')->numeric(),
                                     Forms\Components\TextInput::make('dp_persen')->label('DP %')->numeric()->suffix('%'),
-                                    Forms\Components\TextInput::make('dp_amount')->label('DP (Rp)')->numeric()->prefix('Rp'),
+                                    Forms\Components\TextInput::make('dp_amount')->label('DP (Rp)')->numeric()->rupiah(),
                                 ]),
 
                             Forms\Components\Section::make('Status')
@@ -158,11 +159,11 @@ class KontrakResource extends Resource
                                         ->relationship('agent', 'name')->searchable()->preload()->required(),
                                     Forms\Components\DatePicker::make('tgl_komisi')->label('Tgl Komisi')->columnSpan(2)
                                         ->default(now())->native(false)->displayFormat('d M Y')->required(),
-                                    Forms\Components\TextInput::make('dpp')->label('DPP')->columnSpan(3)->numeric()->prefix('Rp')->default(0),
+                                    Forms\Components\TextInput::make('dpp')->label('DPP')->columnSpan(3)->numeric()->rupiah()->default(0),
                                     Forms\Components\TextInput::make('persen_komisi')->label('% Komisi')->columnSpan(3)->numeric()->suffix('%')->default(0),
-                                    Forms\Components\TextInput::make('amount')->label('Gross Komisi')->columnSpan(3)->numeric()->prefix('Rp')->default(0),
-                                    Forms\Components\TextInput::make('pph_amount')->label('PPH')->columnSpan(3)->numeric()->prefix('Rp')->default(0),
-                                    Forms\Components\TextInput::make('amount_net')->label('Nilai Bayar (Net)')->columnSpan(3)->numeric()->prefix('Rp')->default(0),
+                                    Forms\Components\TextInput::make('amount')->label('Gross Komisi')->columnSpan(3)->numeric()->rupiah()->default(0),
+                                    Forms\Components\TextInput::make('pph_amount')->label('PPH')->columnSpan(3)->numeric()->rupiah()->default(0),
+                                    Forms\Components\TextInput::make('amount_net')->label('Nilai Bayar (Net)')->columnSpan(3)->numeric()->rupiah()->default(0),
                                     Forms\Components\Select::make('status')->label('Status')->columnSpan(3)
                                         ->options(['DRAFT' => 'Draft', 'APPROVED' => 'Approved', 'PAID' => 'Cair/Paid', 'BATAL' => 'Batal'])
                                         ->default('DRAFT')->required(),
@@ -230,7 +231,7 @@ class KontrakResource extends Resource
                                         ->options(['PERSEN' => '%', 'NOMINAL' => 'Rp'])->default('PERSEN')->live(),
                                     Forms\Components\TextInput::make('persen')->label('Nilai')->columnSpan(2)->numeric()->suffix('%')->default(0)
                                         ->visible(fn (Forms\Get $get) => $get('basis') !== 'NOMINAL'),
-                                    Forms\Components\TextInput::make('nominal')->label('Nilai')->columnSpan(2)->numeric()->prefix('Rp')->default(0)
+                                    Forms\Components\TextInput::make('nominal')->label('Nilai')->columnSpan(2)->numeric()->rupiah()->default(0)
                                         ->visible(fn (Forms\Get $get) => $get('basis') === 'NOMINAL'),
                                     Forms\Components\TextInput::make('jadwal_nilai')->label('Jadwal')->columnSpan(1)->numeric()->default(0),
                                     Forms\Components\Radio::make('jadwal_basis')->label('Sat.')->inline()->columnSpan(2)
@@ -257,8 +258,8 @@ class KontrakResource extends Resource
                                         ->default('ANG')->required()->live(),
                                     Forms\Components\TextInput::make('nama_tagihan')->label('Nama Tagihan')->columnSpan(4)->required(),
                                     Forms\Components\DatePicker::make('jatuh_tempo')->label('Jatuh Tempo')->columnSpan(2)->native(false)->displayFormat('d M Y'),
-                                    Forms\Components\TextInput::make('nilai')->label('Nilai')->columnSpan(2)->numeric()->prefix('Rp')->default(0)->live(onBlur: true),
-                                    Forms\Components\TextInput::make('pelunasan')->label('Pelunasan')->columnSpan(2)->numeric()->prefix('Rp')->default(0),
+                                    Forms\Components\TextInput::make('nilai')->label('Nilai')->columnSpan(2)->numeric()->rupiah()->default(0)->live(onBlur: true),
+                                    Forms\Components\TextInput::make('pelunasan')->label('Pelunasan')->columnSpan(2)->numeric()->rupiah()->default(0),
                                 ]),
 
                             // Rincian Nilai Kontrak vs Tagihan+Biaya + Selisih (mirip eProperty).
@@ -286,7 +287,7 @@ class KontrakResource extends Resource
     {
         $total = 0.0;
         foreach ($tagihan as $t) {
-            $total += (float) ($t['nilai'] ?? 0);
+            $total += Rupiah::toFloat($t['nilai'] ?? 0);
         }
 
         return [

@@ -38,7 +38,7 @@ class RetentionSubmissionResource extends Resource
                     $set('contract_number', $r?->contractBank?->contract?->contract_number);
                 }),
             Forms\Components\DatePicker::make('submission_date')->label('Tgl Pengajuan')->default(now()),
-            Forms\Components\TextInput::make('requested_amount')->label('Nominal Diminta (Rp)')->numeric()->default(0)->prefix('Rp'),
+            Forms\Components\TextInput::make('requested_amount')->label('Nominal Diminta (Rp)')->numeric()->default(0)->rupiah(),
             Forms\Components\TextInput::make('sales_person_name')->label('Sales'),
             Forms\Components\TextInput::make('contract_number')->label('No. Kontrak')->disabled()->dehydrated(),
             Forms\Components\Select::make('status')->label('Status')->default('DRAFT')

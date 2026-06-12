@@ -47,7 +47,7 @@ class UnitTypeResource extends Resource
                     Forms\Components\TextInput::make('harga_dasar')
                         ->label('Harga dasar')
                         ->numeric()
-                        ->prefix('Rp')
+                        ->rupiah()
                         ->default(0),
                     Forms\Components\TextInput::make('luas_tanah')->label('Luas tanah (m²)')->numeric(),
                     Forms\Components\TextInput::make('luas_bangunan')->label('Luas bangunan (m²)')->numeric(),

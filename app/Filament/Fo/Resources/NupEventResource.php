@@ -35,7 +35,7 @@ class NupEventResource extends Resource
                 Forms\Components\DateTimePicker::make('open_registration_at')->label('Buka pendaftaran'),
                 Forms\Components\DateTimePicker::make('close_registration_at')->label('Tutup pendaftaran'),
                 Forms\Components\TextInput::make('kuota')->label('Kuota')->numeric()->default(0),
-                Forms\Components\TextInput::make('booking_fee')->label('Booking fee')->numeric()->prefix('Rp')->default(0),
+                Forms\Components\TextInput::make('booking_fee')->label('Booking fee')->numeric()->rupiah()->default(0),
                 Forms\Components\Select::make('status')->label('Status')->options([
                     'DRAFT' => 'Draft', 'OPEN' => 'Buka pendaftaran', 'CLOSED' => 'Tutup pendaftaran',
                     'EXECUTED' => 'Sudah dilaksanakan', 'BATAL' => 'Batal',

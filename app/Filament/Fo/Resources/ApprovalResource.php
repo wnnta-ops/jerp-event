@@ -5,6 +5,7 @@ namespace App\Filament\Fo\Resources;
 use App\Filament\Fo\Resources\ApprovalResource\Pages;
 use App\Modules\FO\Approval\Models\Approval;
 use App\Modules\FO\Approval\Services\ApprovalService;
+use App\Modules\FO\MarketingSales\Models\Kontrak;
 use Filament\Forms;
 use Filament\Forms\Form;
 use Filament\Infolists;
@@ -14,6 +15,7 @@ use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Str;
 
 class ApprovalResource extends Resource
 {
@@ -65,7 +67,7 @@ class ApprovalResource extends Resource
                     'App\\Modules\\FO\\FinanceAR\\Models\\Tts' => 'TTS',
                 ]),
                 Forms\Components\TextInput::make('subject_id')->label('ID objek')->numeric(),
-                Forms\Components\TextInput::make('amount_dampak')->label('Dampak (Rp)')->numeric()->prefix('Rp'),
+                Forms\Components\TextInput::make('amount_dampak')->label('Dampak (Rp)')->numeric()->rupiah(),
             ]),
 
             Forms\Components\Section::make('Detail Permohonan')->schema([
@@ -125,7 +127,7 @@ class ApprovalResource extends Resource
     public static function subjectLabel(Approval $r): string
     {
         $s = $r->subject;
-        if ($s instanceof \App\Modules\FO\MarketingSales\Models\Kontrak) {
+        if ($s instanceof Kontrak) {
             return trim($s->no_kontrak.' — '.($s->customer?->full_name ?? '').' — '.($s->unit?->kode_unit ?? ''), ' —');
         }
 
@@ -214,7 +216,7 @@ class ApprovalResource extends Resource
                 ->color(fn (Approval $r) => match ($r->status) {
                     'DRAFT' => 'gray', 'PENDING' => 'warning', 'APPROVED' => 'success',
                     'REJECTED' => 'danger', 'EXECUTED' => 'primary', default => 'gray',
-                })->description(fn (Approval $r) => $r->executed_result ? \Illuminate\Support\Str::limit($r->executed_result, 50) : null),
+                })->description(fn (Approval $r) => $r->executed_result ? Str::limit($r->executed_result, 50) : null),
         ])->filters([
             Tables\Filters\SelectFilter::make('status')->options([
                 'DRAFT' => 'Draft', 'PENDING' => 'Pending', 'APPROVED' => 'Approved',

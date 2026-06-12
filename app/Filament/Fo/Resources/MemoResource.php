@@ -77,7 +77,7 @@ class MemoResource extends Resource
                     Forms\Components\TextInput::make('amount')
                         ->label('Jumlah')
                         ->numeric()
-                        ->prefix('Rp')
+                        ->rupiah()
                         ->required()
                         ->default(0),
                     Forms\Components\TextInput::make('akun_pasangan')

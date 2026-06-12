@@ -80,7 +80,7 @@ class SkemaWizard extends Page implements HasForms
                     Select::make('tahap_id')->label('Tahap')->placeholder('Semua (umum)')
                         ->options(fn (Get $get) => Tahap::query()->when($get('lokasi_id'), fn ($query, $id) => $query->where('lokasi_id', $id))->pluck('nama', 'id'))
                         ->searchable(),
-                    TextInput::make('present_value')->label('Present Value')->numeric()->prefix('Rp')->default(0)
+                    TextInput::make('present_value')->label('Present Value')->numeric()->rupiah()->default(0)
                         ->helperText('Harga acuan untuk simulasi (nominal nyata dihitung per unit dari price list)'),
                     TextInput::make('diskon_persen')->label('Diskon')->numeric()->suffix('% bertingkat')->default(0),
                     Radio::make('cara_bayar')->label('Tipe')->inline()->inlineLabel(false)->options([

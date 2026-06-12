@@ -109,7 +109,7 @@ class CustomerResource extends Resource
                 ->schema([
                     Forms\Components\TextInput::make('occupation')->label('Pekerjaan')->maxLength(255),
                     Forms\Components\TextInput::make('company_name')->label('Nama perusahaan')->maxLength(255),
-                    Forms\Components\TextInput::make('income_monthly')->label('Penghasilan / bulan')->numeric()->prefix('Rp'),
+                    Forms\Components\TextInput::make('income_monthly')->label('Penghasilan / bulan')->numeric()->rupiah(),
                 ])->collapsed(),
 
             Forms\Components\Section::make('Pendaftaran NUP / Launching')

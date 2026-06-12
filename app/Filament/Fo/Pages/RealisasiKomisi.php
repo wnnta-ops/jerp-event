@@ -58,8 +58,8 @@ class RealisasiKomisi extends Page implements HasTable
                     ])
                     ->form([
                         Forms\Components\DatePicker::make('tgl_bayar')->label('Tgl Pembayaran')->required(),
-                        Forms\Components\TextInput::make('pph_amount')->label('PPh (Rp)')->numeric()->prefix('Rp'),
-                        Forms\Components\TextInput::make('ppn_amount')->label('PPn (Rp, jika ada)')->numeric()->prefix('Rp')->default(0),
+                        Forms\Components\TextInput::make('pph_amount')->label('PPh (Rp)')->numeric()->rupiah(),
+                        Forms\Components\TextInput::make('ppn_amount')->label('PPn (Rp, jika ada)')->numeric()->rupiah()->default(0),
                         Forms\Components\TextInput::make('rek_bank')->label('Bank')->helperText('Link dari setup Sales/Agent.'),
                         Forms\Components\TextInput::make('rek_number')->label('No. Rekening'),
                         Forms\Components\TextInput::make('rek_holder')->label('Nama Terang'),

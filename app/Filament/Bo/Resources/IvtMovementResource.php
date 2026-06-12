@@ -54,7 +54,7 @@ class IvtMovementResource extends Resource
                     ->required()
                     ->default(fn (Forms\Get $get) => $get('jenis') ? IvtMovement::arahFor($get('jenis')) : 'MASUK'),
                 Forms\Components\TextInput::make('qty')->label('Qty')->numeric()->required()->minValue(0.01),
-                Forms\Components\TextInput::make('nilai')->label('Nilai')->numeric()->prefix('Rp')->default(0),
+                Forms\Components\TextInput::make('nilai')->label('Nilai')->numeric()->rupiah()->default(0),
                 Forms\Components\TextInput::make('ref_dokumen')->label('Ref dokumen')->maxLength(64),
                 Forms\Components\Textarea::make('keterangan')->rows(2)->columnSpanFull(),
             ])->disabled(fn (?IvtMovement $r) => $r !== null && $r->status !== 'DRAFT'),
