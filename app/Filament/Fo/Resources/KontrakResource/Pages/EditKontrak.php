@@ -3,6 +3,7 @@
 namespace App\Filament\Fo\Resources\KontrakResource\Pages;
 
 use App\Filament\Fo\Resources\KontrakResource;
+use App\Modules\FO\MarketingSales\Models\Unit;
 use App\Modules\FO\MarketingSales\Services\KontrakGeneratorService;
 use Filament\Actions;
 use Filament\Notifications\Notification;
@@ -11,6 +12,31 @@ use Filament\Resources\Pages\EditRecord;
 class EditKontrak extends EditRecord
 {
     protected static string $resource = KontrakResource::class;
+
+    /**
+     * SPR (final) wajib balance: total Tagihan + Biaya HARUS sama dengan Nilai
+     * Kontrak (harga unit) — selisih 0. Bila tidak, batalkan simpan. SPRS (draft)
+     * masih boleh belum pas karena sedang disusun.
+     */
+    protected function beforeSave(): void
+    {
+        if ($this->record->tahap !== 'SPR') {
+            return;
+        }
+
+        $nilaiKontrak = (float) ($this->data['total_kontrak'] ?? $this->record->total_kontrak ?? 0);
+        $calc = KontrakResource::hitungTagihan($this->data['tagihan'] ?? [], $nilaiKontrak);
+
+        if (abs($calc['selisih']) >= 1) {
+            $rp = fn (float $v) => 'Rp '.number_format($v, 0, ',', '.');
+            Notification::make()->danger()->persistent()
+                ->title('Tidak bisa simpan — tagihan tidak pas dengan Nilai Kontrak')
+                ->body('Nilai Kontrak '.$rp($nilaiKontrak).' · Tagihan + Biaya '.$rp($calc['total'])
+                    .' · Selisih '.$rp($calc['selisih']).'. Sesuaikan agar selisih 0.')
+                ->send();
+            $this->halt();
+        }
+    }
 
     protected function getHeaderActions(): array
     {
@@ -27,7 +53,7 @@ class EditKontrak extends EditRecord
                     $this->save(shouldRedirect: false, shouldSendSavedNotification: false);
                     $this->record->update(['tahap' => 'SPR']);
                     // Unit jadi TERJUAL hanya saat kontrak final (SPR); di SPRS masih BOOKING.
-                    if ($this->record->unit_id && $unit = \App\Modules\FO\MarketingSales\Models\Unit::find($this->record->unit_id)) {
+                    if ($this->record->unit_id && $unit = Unit::find($this->record->unit_id)) {
                         $unit->update(['status' => 'TERJUAL']);
                     }
                     Notification::make()->success()

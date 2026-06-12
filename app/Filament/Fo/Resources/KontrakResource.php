@@ -7,6 +7,7 @@ use App\Modules\FO\Adminjual\Models\Gimmick;
 use App\Modules\FO\Adminjual\Models\Skema;
 use App\Modules\FO\MarketingSales\Models\Kontrak;
 use App\Modules\FO\MarketingSales\Models\Reservasi;
+use App\Modules\FO\MarketingSales\Models\Unit;
 use Filament\Forms;
 use Filament\Forms\Form;
 use Filament\Notifications\Notification;
@@ -243,21 +244,78 @@ class KontrakResource extends Resource
                             Forms\Components\Repeater::make('tagihan')->relationship()->label('Jadwal Tagihan')
                                 ->columns(12)->defaultItems(0)->addActionLabel('Tambah Tagihan')
                                 ->reorderable()->orderColumn('urutan')
+                                // Duplikat baris (termasuk tanggal & nilai) → tambah tagihan serupa
+                                // lebih cepat tanpa pilih ulang tanggal tiap baris.
+                                ->cloneable()
+                                ->live()
                                 ->itemLabel(fn (array $state): ?string => ($state['nama_tagihan'] ?? null)
                                     ? (($state['tipe'] ?? '').' — '.$state['nama_tagihan'])
                                     : null)
                                 ->schema([
                                     Forms\Components\Select::make('tipe')->label('Tipe')->columnSpan(2)
                                         ->options(['BF' => 'BF (Booking Fee)', 'DP' => 'DP', 'ANG' => 'Angsuran', 'ADM' => 'Administrasi', 'LAIN' => 'Lain'])
-                                        ->default('ANG')->required(),
+                                        ->default('ANG')->required()->live(),
                                     Forms\Components\TextInput::make('nama_tagihan')->label('Nama Tagihan')->columnSpan(4)->required(),
                                     Forms\Components\DatePicker::make('jatuh_tempo')->label('Jatuh Tempo')->columnSpan(2)->native(false)->displayFormat('d M Y'),
-                                    Forms\Components\TextInput::make('nilai')->label('Nilai')->columnSpan(2)->numeric()->prefix('Rp')->default(0),
+                                    Forms\Components\TextInput::make('nilai')->label('Nilai')->columnSpan(2)->numeric()->prefix('Rp')->default(0)->live(onBlur: true),
                                     Forms\Components\TextInput::make('pelunasan')->label('Pelunasan')->columnSpan(2)->numeric()->prefix('Rp')->default(0),
                                 ]),
+
+                            // Rincian Nilai Kontrak vs Tagihan+Biaya + Selisih (mirip eProperty).
+                            // Selisih harus 0 agar SPR bisa disimpan (lihat EditKontrak::beforeSave).
+                            Forms\Components\Placeholder::make('ringkasan_tagihan')->label('')
+                                ->content(fn (Forms\Get $get, ?Kontrak $record) => new HtmlString(
+                                    self::ringkasanTagihanHtml(
+                                        (array) $get('tagihan'),
+                                        (float) ($record?->total_kontrak ?? $get('total_kontrak') ?? 0),
+                                    )
+                                )),
                         ]),
                 ]),
         ]);
+    }
+
+    /**
+     * Total Jadwal Tagihan untuk ringkasan & validasi selisih: jumlah seluruh
+     * baris tagihan dibandingkan ke Nilai Kontrak (harga unit). Tanpa biaya ADM.
+     *
+     * @param  array<int,array<string,mixed>>  $tagihan
+     * @return array{total:float,nilai_kontrak:float,selisih:float}
+     */
+    public static function hitungTagihan(array $tagihan, float $nilaiKontrak): array
+    {
+        $total = 0.0;
+        foreach ($tagihan as $t) {
+            $total += (float) ($t['nilai'] ?? 0);
+        }
+
+        return [
+            'total' => $total,
+            'nilai_kontrak' => $nilaiKontrak,
+            'selisih' => round($nilaiKontrak - $total, 2),
+        ];
+    }
+
+    /** Kartu ringkasan (HTML) Nilai Kontrak vs Total Tagihan + Selisih (mirip eProperty). */
+    private static function ringkasanTagihanHtml(array $tagihan, float $nilaiKontrak): string
+    {
+        $c = self::hitungTagihan($tagihan, $nilaiKontrak);
+        $rp = fn (float $v): string => 'Rp '.number_format($v, 0, ',', '.');
+        $pas = abs($c['selisih']) < 1;
+        $warna = $pas ? '#16a34a' : '#dc2626';
+        $baris = fn (string $label, string $nilai, string $extra = ''): string => '<div style="display:flex;justify-content:space-between;gap:24px;padding:3px 0;'.$extra.'">'
+            .'<span>'.$label.'</span><span style="font-variant-numeric:tabular-nums;">'.$nilai.'</span></div>';
+
+        return '<div style="max-width:440px;border:1px solid #e2e8f0;border-radius:8px;padding:12px 16px;font-size:13px;">'
+            .$baris('Nilai Kontrak (Harga Unit)', $rp($c['nilai_kontrak']))
+            .$baris('Total Tagihan', $rp($c['total']), 'border-top:1px solid #e2e8f0;margin-top:4px;padding-top:6px;font-weight:600;')
+            .$baris(
+                '<strong style="color:'.$warna.';">Selisih</strong>',
+                '<strong style="color:'.$warna.';">'.$rp($c['selisih']).($pas ? '  ✓ pas' : '').'</strong>',
+                'margin-top:2px;'
+            )
+            .($pas ? '' : '<div style="color:#dc2626;margin-top:6px;font-size:12px;">Total Tagihan harus pas dengan Nilai Kontrak (selisih 0) agar SPR bisa disimpan.</div>')
+            .'</div>';
     }
 
     public static function table(Table $table): Table
@@ -316,7 +374,7 @@ class KontrakResource extends Resource
                     ->modalDescription('Finalkan SPRS ini menjadi SPR. Unit akan ditandai TERJUAL.')
                     ->action(function ($record) {
                         $record->update(['tahap' => 'SPR']);
-                        if ($record->unit_id && $unit = \App\Modules\FO\MarketingSales\Models\Unit::find($record->unit_id)) {
+                        if ($record->unit_id && $unit = Unit::find($record->unit_id)) {
                             $unit->update(['status' => 'TERJUAL']);
                         }
                         Notification::make()->success()->title('Disimpan sebagai SPR')
