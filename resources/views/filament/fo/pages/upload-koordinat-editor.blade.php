@@ -38,7 +38,11 @@
             .leaflet-tooltip.pe-label { background: rgba(15,23,42,.85); color: #fff; border: 0; font-weight: 600; font-size: 11px; padding: 2px 6px; border-radius: 4px; }
         </style>
 
-        {{-- Dynamic Leaflet + Geoman loader. Bypass @push/@stack issues di Filament Page. --}}
+        {{-- Leaflet/Geoman loader + factory komponen Alpine. Dibungkus @assets agar
+             Livewire menjalankannya SEKALI & lebih awal — termasuk saat navigasi SPA
+             (script biasa TIDAK dieksekusi ulang saat navigate → koordinatEditor undefined
+             → "units/activeUnitId is not defined" → peta hitam). --}}
+        @assets
         <script>
             (function () {
                 if (window.__leafletLoaderStarted) return;
@@ -82,12 +86,11 @@
                     });
             })();
 
-            (function () {
-                if (window.__koordinatEditorRegistered) return;
-                window.__koordinatEditorRegistered = true;
-
-                function register() {
-                    window.Alpine.data('koordinatEditor', function (payload) {
+            // Factory komponen sebagai GLOBAL: x-data="koordinatEditor(...)" selalu bisa
+            // me-resolve-nya kapan pun Alpine memproses elemen — TIDAK bergantung timing
+            // Alpine.data (penyebab "units is not defined" / peta hitam, terutama di
+            // halaman Filament & navigasi SPA). Tetap didaftarkan sebagai Alpine.data juga.
+            window.koordinatEditor = function (payload) {
                         return {
                             project: payload.project,
                             units: payload.units || [],
@@ -234,16 +237,21 @@
                                 this.$wire.clearCoords(id);
                             },
                         };
-                    });
-                }
+            };
 
-                // Register SEBELUM Alpine memproses x-data (event alpine:init), agar
-                // komponen koordinatEditor sudah ada saat elemen di-init — mencegah
-                // "units/search/activeUnitId is not defined" (scope kosong → map hitam).
-                if (window.Alpine) register();
-                else document.addEventListener('alpine:init', register);
+            // Daftarkan juga sebagai Alpine.data (bila Alpine memilih versi terdaftar).
+            (function () {
+                function reg() {
+                    if (window.Alpine && ! window.Alpine.__koordinatEditorReg) {
+                        window.Alpine.data('koordinatEditor', window.koordinatEditor);
+                        window.Alpine.__koordinatEditorReg = true;
+                    }
+                }
+                if (window.Alpine) reg();
+                document.addEventListener('alpine:init', reg);
             })();
         </script>
+        @endassets
 
         <div class="mt-4"
              x-data="koordinatEditor({{ \Illuminate\Support\Js::from($payload) }})"
