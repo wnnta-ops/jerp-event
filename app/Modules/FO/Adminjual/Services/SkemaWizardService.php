@@ -173,9 +173,11 @@ class SkemaWizardService
         if ($n <= 0) {
             return [];
         }
-        $each = round($total / $n, 4);
+        // Keriting (6 desimal, selaras kolom decimal(9,6)); sisa diserap termin
+        // terakhir agar total TEPAT (mis. 5 ÷ 3 = 1,666667/1,666667/1,666666 = 5,000000).
+        $each = round($total / $n, 6);
         $parts = array_fill(0, $n, $each);
-        $parts[$n - 1] = round($total - $each * ($n - 1), 4);
+        $parts[$n - 1] = round($total - $each * ($n - 1), 6);
 
         return $parts;
     }

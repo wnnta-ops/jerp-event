@@ -27,6 +27,7 @@ class SystemPanelProvider extends PanelProvider
             ->id('system')
             ->path('system')
             ->brandName('J-ERP · System')
+            ->favicon(asset('favicon.svg'))
             ->login()
             ->colors([
                 'primary' => Color::Indigo,

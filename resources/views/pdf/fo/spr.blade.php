@@ -52,14 +52,37 @@
         // Fallback ke baris skema bila tagihan belum terbentuk.
         $payRows = [];
         foreach ($kontrak->tagihan ?? [] as $t) {
-            $payRows[] = ['nama' => $t->nama_tagihan, 'jatuh' => $t->jatuh_tempo, 'amount' => (float) $t->nilai, 'paid' => (float) $t->pelunasan];
+            $payRows[] = ['tipe' => $t->tipe, 'nama' => $t->nama_tagihan, 'jatuh' => $t->jatuh_tempo, 'amount' => (float) $t->nilai, 'paid' => (float) $t->pelunasan];
         }
         if (empty($payRows)) {
             foreach ($kontrak->skema?->lines ?? [] as $line) {
                 $amt = $line->basis === 'NOMINAL' ? (float) $line->nominal : round($harga * (float) $line->persen / 100, 2);
                 $jt = $kontrak->tgl_kontrak ? $kontrak->tgl_kontrak->copy()->addDays((int) $line->jatuh_tempo_hari) : null;
-                $payRows[] = ['nama' => $line->nama_termin, 'jatuh' => $jt, 'amount' => $amt, 'paid' => 0];
+                $payRows[] = ['tipe' => $line->tipe, 'nama' => $line->nama_termin, 'jatuh' => $jt, 'amount' => $amt, 'paid' => 0];
             }
+        }
+
+        // Angsuran 1 (FREE DP): tampilkan ringkas → UANG TANDA JADI (BF) +
+        // UANG MASUK (gabungan DP) + PENCAIRAN KPR (ANG/KPR). Total = harga unit.
+        if (($kontrak->skema?->bf_dipotong_di ?? null) === 'ANGSURAN1' && ! empty($payRows)) {
+            $bfRows = array_values(array_filter($payRows, fn ($r) => ($r['tipe'] ?? '') === 'BF'));
+            $dpRows = array_values(array_filter($payRows, fn ($r) => ($r['tipe'] ?? '') === 'DP'));
+            $kprRows = array_values(array_filter($payRows, fn ($r) => ! in_array(($r['tipe'] ?? ''), ['BF', 'DP'], true)));
+            $maxDate = fn ($rows) => collect($rows)->pluck('jatuh')->filter()->sortDesc()->first();
+            $minDate = fn ($rows) => collect($rows)->pluck('jatuh')->filter()->sort()->first();
+
+            $hargaTotal = (float) $kontrak->total_kontrak ?: $harga;
+            $bfSum = array_sum(array_column($bfRows, 'amount'));
+            $dpSum = array_sum(array_column($dpRows, 'amount'));
+            // PENCAIRAN KPR = sisa → total selalu = harga unit.
+            $pencairan = max(0, $hargaTotal - $bfSum - $dpSum);
+
+            $grouped = [
+                ['nama' => 'UANG TANDA JADI', 'jatuh' => $minDate($bfRows), 'amount' => $bfSum, 'paid' => array_sum(array_column($bfRows, 'paid'))],
+                ['nama' => 'UANG MASUK', 'jatuh' => $maxDate($dpRows), 'amount' => $dpSum, 'paid' => array_sum(array_column($dpRows, 'paid'))],
+                ['nama' => 'PENCAIRAN KPR', 'jatuh' => $maxDate($kprRows) ?? $maxDate($dpRows), 'amount' => $pencairan, 'paid' => 0],
+            ];
+            $payRows = $grouped;
         }
         // Gimmick yang diberikan → "sudah termasuk".
         $gimmickNames = ($kontrak->gimmicks ?? collect())->where('diberikan', true)->pluck('nama_barang')->filter()->all();

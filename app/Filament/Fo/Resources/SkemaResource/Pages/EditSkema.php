@@ -51,7 +51,7 @@ class EditSkema extends Page
             'diskon_persen' => (float) $this->record->diskon_persen,
             'present_value' => (float) $this->record->present_value,
             'subsidi_persen' => (float) $this->record->subsidi_persen,
-            'bf_dipotong_di' => $this->record->bf_dipotong_di ?? 'TIDAK_DISEBAR',
+            'bf_dipotong_di' => $this->record->bf_dipotong_di ?? 'ANGSURAN1',
         ];
 
         $rows = [];

@@ -26,6 +26,7 @@ class BoPanelProvider extends PanelProvider
             ->id('bo')
             ->path('bo')
             ->brandName('J-ERP · Back Office')
+            ->favicon(asset('favicon.svg'))
             ->login()
             ->colors([
                 'primary' => Color::Blue,

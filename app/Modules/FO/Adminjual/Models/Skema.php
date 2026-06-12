@@ -24,12 +24,12 @@ class Skema extends TenantAwareModel
     ];
 
     protected $casts = [
-        'dp_persen' => 'decimal:2',
-        'ang_persen' => 'decimal:2',
+        'dp_persen' => 'decimal:6',
+        'ang_persen' => 'decimal:6',
         'bf_nominal' => 'decimal:2',
-        'subsidi_persen' => 'decimal:2',
+        'subsidi_persen' => 'decimal:6',
         'present_value' => 'decimal:2',
-        'diskon_persen' => 'decimal:2',
+        'diskon_persen' => 'decimal:6',
         'tampil_siteplan' => 'boolean',
         'is_active' => 'boolean',
     ];

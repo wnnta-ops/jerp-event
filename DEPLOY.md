@@ -68,6 +68,7 @@ docker compose up -d --build      # rebuild image + entrypoint migrate otomatis
 docker compose ps                                   # status service
 docker compose logs -f app                          # log aplikasi
 docker compose exec app php artisan migrate --force # migrasi manual
+docker compose exec app php artisan migrate:fresh --seed
 docker compose exec app php artisan tinker          # REPL
 docker compose exec app php artisan key:generate
 docker compose exec app php artisan storage:link
@@ -136,3 +137,12 @@ docker compose up -d --build
 | `docker compose up` | `up -d` | `up -d --build` |
 
 Dev yang baru clone: `cp docker-compose.override.yml.example docker-compose.override.yml`.
+
+
+⚠️ Penting untuk deploy ke server (agar fitur baru muncul): setelah git pull → docker compose up -d --build, lalu sekali jalankan seeder untuk numerator & permission baru di DB lama:
+
+
+docker compose exec app php artisan db:seed --class=MasterDataSeeder --force
+docker compose exec app php artisan db:seed --class=AccessMatrixSeeder --force
+
+(MasterDataSeeder = numerator SALES/BLT/PH/PU/dll; AccessMatrixSeeder = 114 permission untuk matrix Grup Akses.)

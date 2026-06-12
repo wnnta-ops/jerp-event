@@ -18,7 +18,7 @@ class SkemaLine extends Model
 
     protected $casts = [
         'urutan' => 'integer',
-        'persen' => 'decimal:2',
+        'persen' => 'decimal:6',
         'nominal' => 'decimal:2',
         'jatuh_tempo_hari' => 'integer',
         'jadwal_nilai' => 'integer',

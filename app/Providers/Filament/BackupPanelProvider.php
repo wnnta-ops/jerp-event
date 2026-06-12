@@ -27,6 +27,7 @@ class BackupPanelProvider extends PanelProvider
             ->id('backup')
             ->path('backup')
             ->brandName('J-ERP · Backup')
+            ->favicon(asset('favicon.svg'))
             ->login()
             ->colors([
                 'primary' => Color::Cyan,

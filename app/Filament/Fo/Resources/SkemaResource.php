@@ -55,9 +55,8 @@ class SkemaResource extends Resource
                     'KPR' => 'KPR', 'CASH_BERTAHAP' => 'Cash bertahap', 'CASH_KERAS' => 'Cash keras',
                 ])->default('KPR')->required(),
                 Forms\Components\Select::make('bf_dipotong_di')->label('Booking Fee dipotong di')->options([
-                    'DP1' => 'DP 1', 'ANGSURAN1' => 'Angsuran 1', 'DP_DISEBAR' => 'DP disebar',
-                    'ANGSURAN_DISEBAR' => 'Angsuran disebar', 'TIDAK_DISEBAR' => 'BF tidak disebar',
-                ])->default('TIDAK_DISEBAR'),
+                    'ANGSURAN1' => 'FREE DP', 'DP_DISEBAR' => 'DP 3x', 'ANGSURAN_DISEBAR' => 'CASH / INHOUSE',
+                ])->default('ANGSURAN1'),
                 Forms\Components\TextInput::make('present_value')->label('Present Value')->numeric()->prefix('Rp')->default(0),
                 Forms\Components\TextInput::make('diskon_persen')->label('Diskon %')->numeric()->suffix('%')->default(0),
                 Forms\Components\TextInput::make('subsidi_persen')->label('Subsidi developer %')->numeric()->suffix('%')->default(20)

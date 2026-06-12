@@ -52,7 +52,7 @@ class SkemaWizard extends Page implements HasForms
     public function mount(): void
     {
         $this->form->fill([
-            'cara_bayar' => 'KPR', 'bf_dipotong_di' => 'TIDAK_DISEBAR', 'tampil_siteplan' => false,
+            'cara_bayar' => 'KPR', 'bf_dipotong_di' => 'ANGSURAN1', 'tampil_siteplan' => false,
             'present_value' => 0, 'diskon_persen' => 0, 'subsidi_persen' => 20,
             'bf_count' => 1, 'bf_nilai' => 5000000, 'bf_satuan' => 'RP',
             'bf_pertama' => 0, 'bf_pertama_basis' => 'HARI', 'bf_interval' => 0, 'bf_interval_basis' => 'HARI',
@@ -90,9 +90,8 @@ class SkemaWizard extends Page implements HasForms
                         ->helperText('Dipakai mode DP Disebar (Free X% dari DP)'),
                     Radio::make('bf_dipotong_di')->label('Booking Fee dipotong di')->inline()->inlineLabel(false)
                         ->columnSpanFull()->options([
-                            'DP1' => 'DP 1', 'ANGSURAN1' => 'Angsuran 1', 'DP_DISEBAR' => 'DP disebar',
-                            'ANGSURAN_DISEBAR' => 'Angsuran disebar', 'TIDAK_DISEBAR' => 'BF tidak disebar',
-                        ])->default('TIDAK_DISEBAR'),
+                            'ANGSURAN1' => 'FREE DP', 'DP_DISEBAR' => 'DP 3x', 'ANGSURAN_DISEBAR' => 'CASH / INHOUSE',
+                        ])->default('ANGSURAN1'),
                 ]),
 
             Section::make('Rumus Nilai')

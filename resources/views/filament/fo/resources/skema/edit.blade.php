@@ -73,11 +73,11 @@
                     <div class="grid grid-cols-2 gap-4">
                         <div>
                             <label class="{{ $lbl }}">Diskon <span class="normal-case text-gray-400">(% bertingkat)</span></label>
-                            <input type="number" step="0.01" wire:model="header.diskon_persen" class="{{ $num }}">
+                            <input type="number" step="any" wire:model="header.diskon_persen" class="{{ $num }}">
                         </div>
                         <div>
                             <label class="{{ $lbl }}">Subsidi developer <span class="normal-case text-gray-400">(%)</span></label>
-                            <input type="number" step="0.01" wire:model="header.subsidi_persen" class="{{ $num }}">
+                            <input type="number" step="any" wire:model="header.subsidi_persen" class="{{ $num }}">
                         </div>
                     </div>
                     <div>
@@ -98,7 +98,7 @@
         <div class="mt-6 border-t border-gray-100 dark:border-white/10 pt-5">
             <label class="{{ $lbl }}">Booking Fee dipotong di</label>
             <div class="flex flex-wrap gap-2">
-                @foreach (['DP1' => 'DP 1', 'ANGSURAN1' => 'Angsuran 1', 'DP_DISEBAR' => 'DP Disebar', 'ANGSURAN_DISEBAR' => 'Angsuran Disebar', 'TIDAK_DISEBAR' => 'Booking Fee Tidak Disebar'] as $val => $opt)
+                @foreach (['ANGSURAN1' => 'FREE DP', 'DP_DISEBAR' => 'DP 3x', 'ANGSURAN_DISEBAR' => 'CASH / INHOUSE'] as $val => $opt)
                     <label class="{{ $chip }}">
                         <input type="radio" wire:model="header.bf_dipotong_di" value="{{ $val }}" class="{{ $radio }}">
                         {{ $opt }}
@@ -153,7 +153,7 @@
                                         <input type="radio" wire:model="rows.{{ $i }}.basis" value="NOMINAL" class="text-primary-600 focus:ring-primary-500"> F
                                     </label>
                                 </div>
-                                <input type="number" step="0.0001" wire:model="rows.{{ $i }}.nilai" class="{{ $num }} w-36">
+                                <input type="number" step="any" wire:model="rows.{{ $i }}.nilai" class="{{ $num }} w-36">
                             </div>
                         </td>
                         <td class="px-3 py-3">
@@ -204,7 +204,7 @@
     @if (! empty($preview['lines']))
         <x-filament::section icon="heroicon-o-calculator">
             <x-slot name="heading">Simulasi — harga {{ 'Rp ' . number_format((float) $preview['harga'], 0, ',', '.') }}</x-slot>
-            <x-slot name="description">Mode {{ $preview['mode'] }}. Nominal nyata dihitung per unit dari price list.</x-slot>
+            <x-slot name="description">Mode {{ ['ANGSURAN1' => 'FREE DP', 'DP_DISEBAR' => 'DP 3x', 'ANGSURAN_DISEBAR' => 'CASH / INHOUSE'][$preview['mode']] ?? $preview['mode'] }}. Nominal nyata dihitung per unit dari price list. Total = harga unit.</x-slot>
             <div class="overflow-x-auto">
                 <table class="w-full text-sm">
                     <tbody>
@@ -215,10 +215,16 @@
                                 <td class="py-1.5 text-xs text-gray-400">{{ $line['keterangan'] }}</td>
                             </tr>
                         @endforeach
+                        @php $linesTotal = array_sum(array_map(fn ($l) => (float) $l['nominal'], $preview['lines'])); @endphp
+                        <tr class="font-bold border-t-2 border-gray-300 dark:border-white/20">
+                            <td class="py-2 pr-4">Total (= Harga Unit KPR)</td>
+                            <td class="py-2 pr-4 text-right tabular-nums">{{ 'Rp ' . number_format($linesTotal, 0, ',', '.') }}</td>
+                            <td class="text-xs text-gray-400">UTJ + DP + Pencairan = harga unit</td>
+                        </tr>
                         <tr class="font-semibold">
                             <td class="py-2 pr-4">Total dibayar customer</td>
                             <td class="py-2 pr-4 text-right tabular-nums">{{ 'Rp ' . number_format((float) $preview['total_customer'], 0, ',', '.') }}</td>
-                            <td></td>
+                            <td class="text-xs text-gray-400">UTJ saja (DP free dari developer)</td>
                         </tr>
                         @if ((float) $preview['plafond_kpr'] > 0)
                             <tr class="text-primary-600 font-semibold">

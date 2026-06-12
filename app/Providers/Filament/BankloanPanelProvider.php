@@ -26,6 +26,7 @@ class BankloanPanelProvider extends PanelProvider
             ->id('bankloan')
             ->path('bankloan')
             ->brandName('J-ERP · Bank Loan (KPR)')
+            ->favicon(asset('favicon.svg'))
             ->login()
             ->colors([
                 'primary' => Color::Teal,

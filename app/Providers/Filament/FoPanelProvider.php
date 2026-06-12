@@ -29,6 +29,7 @@ class FoPanelProvider extends PanelProvider
             ->id('fo')
             ->path('fo')
             ->brandName('J-ERP · Front Office')
+            ->favicon(asset('favicon.svg'))
             ->login()
             ->colors([
                 'primary' => Color::Blue,
