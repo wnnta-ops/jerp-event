@@ -89,20 +89,21 @@ class AppServiceProvider extends ServiceProvider
     private function applyBackupSettings(): void
     {
         try {
-            // Spatie laravel-settings memuat properti secara lazy, sehingga
-            // MissingSettings baru terlempar saat properti DIAKSES — bukan saat
-            // app() resolve. Karena itu seluruh pembacaan harus di dalam try/catch
-            // agar boot tidak gagal (500) ketika baris setting backup belum ada.
-            $s = app(BackupSettings::class);
+            // Lokasi/retensi global Spatie Backup mengikuti jadwal AKTIF pertama
+            // (BackupSchedule). Spatie pakai 1 config global, jadi semua jadwal
+            // menulis ke lokasi yang sama (umumnya memang 1 folder backup).
+            $s = \App\Models\BackupSchedule::query()->orderByDesc('enabled')->orderBy('id')->first();
+            if (! $s) {
+                return;
+            }
 
-            if ($s->disk === 'backup_target' && trim($s->local_path) !== '') {
+            if ($s->disk === 'backup_target' && trim((string) $s->local_path) !== '') {
                 config(['filesystems.disks.backup_target.root' => $s->local_path]);
             }
             config(['backup.backup.destination.disks' => [$s->disk]]);
-            config(['backup.cleanup.default_strategy.keep_all_backups_for_all_days' => $s->retention_days]);
+            config(['backup.cleanup.default_strategy.keep_all_backups_for_all_days' => (int) $s->retention_days]);
         } catch (\Throwable) {
-            // Settings belum tersedia (mis. sebelum migrate / baris backup belum
-            // dibuat). Biarkan config Spatie Backup pakai default dari config file.
+            // Tabel belum ada (sebelum migrate) — biarkan config Spatie pakai default.
         }
     }
 }

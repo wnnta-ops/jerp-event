@@ -1,6 +1,6 @@
 <?php
 
-use App\Settings\BackupSettings;
+use App\Models\BackupSchedule;
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Schedule;
@@ -10,40 +10,33 @@ Artisan::command('inspire', function () {
 })->purpose('Display an inspiring quote');
 
 /*
- * Backup terjadwal — frekuensi (mingguan/bulanan/tahunan), jam, dan lokasi
- * diambil dari BackupSettings (Pengaturan Backup). Spatie Backup otomatis
- * mengompres jadi .zip. Closure ->when() re-cek saat schedule:run berjalan.
+ * Backup terjadwal MULTI — loop semua BackupSchedule yang aktif. Tiap jadwal punya
+ * frekuensi/jam/only_db sendiri (lokasi global ikut jadwal aktif pertama, lihat
+ * AppServiceProvider). Spatie Backup mengompres jadi .zip. Dibaca ulang tiap
+ * `schedule:run` sehingga perubahan jadwal langsung berlaku.
  */
 try {
-    $backup = app(BackupSettings::class);
+    $schedules = BackupSchedule::where('enabled', true)->get();
 
-    // Flag dirangkai ke string command — `--only-db` adalah flag tanpa nilai,
-    // sehingga tidak boleh dilewatkan sebagai ['--only-db' => true] (jadi --only-db='1').
-    $runCmd = $backup->only_db ? 'backup:run --only-db' : 'backup:run';
+    foreach ($schedules as $s) {
+        // `--only-db` flag tanpa nilai → dirangkai ke string command.
+        $cmd = $s->only_db ? 'backup:run --only-db' : 'backup:run';
 
-    Schedule::command($runCmd)
-        ->weeklyOn($backup->weekly_day, $backup->time)
-        ->when(fn () => $backup->enabled && $backup->frequency === 'WEEKLY')
-        ->withoutOverlapping()
-        ->runInBackground();
+        $event = Schedule::command($cmd);
+        match ($s->frequency) {
+            'DAILY' => $event->dailyAt($s->time),
+            'WEEKLY' => $event->weeklyOn($s->weekly_day, $s->time),
+            'MONTHLY' => $event->monthlyOn($s->monthly_day, $s->time),
+            'YEARLY' => $event->yearlyOn($s->yearly_month, $s->yearly_day, $s->time),
+            default => $event->weeklyOn(1, $s->time),
+        };
+        $event->withoutOverlapping()->runInBackground();
+    }
 
-    Schedule::command($runCmd)
-        ->monthlyOn($backup->monthly_day, $backup->time)
-        ->when(fn () => $backup->enabled && $backup->frequency === 'MONTHLY')
-        ->withoutOverlapping()
-        ->runInBackground();
-
-    Schedule::command($runCmd)
-        ->yearlyOn($backup->yearly_month, $backup->yearly_day, $backup->time)
-        ->when(fn () => $backup->enabled && $backup->frequency === 'YEARLY')
-        ->withoutOverlapping()
-        ->runInBackground();
-
-    // Bersihkan backup lama sesuai retensi, tiap hari.
-    Schedule::command('backup:clean')
-        ->dailyAt('03:30')
-        ->when(fn () => $backup->enabled)
-        ->withoutOverlapping();
+    // Bersihkan backup lama sesuai retensi (config global) tiap hari.
+    if ($schedules->isNotEmpty()) {
+        Schedule::command('backup:clean')->dailyAt('03:30')->withoutOverlapping();
+    }
 } catch (Throwable) {
-    // BackupSettings belum tersedia (mis. sebelum migrate) — lewati penjadwalan.
+    // Tabel backup_schedules belum ada (sebelum migrate) — lewati penjadwalan.
 }

@@ -23,6 +23,9 @@ class PengaturanBackup extends Page implements HasForms
 
     protected static ?int $navigationSort = 20;
 
+    // Digantikan BackupScheduleResource (multi-jadwal). Sembunyikan dari nav.
+    protected static bool $shouldRegisterNavigation = false;
+
     protected static string $view = 'filament.backup.pages.pengaturan-backup';
 
     public ?array $data = [];

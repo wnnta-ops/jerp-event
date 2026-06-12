@@ -62,6 +62,18 @@ class KelolaBackup extends Page
         $this->backupRows = $rows;
     }
 
+    /** Unduh satu file backup .zip dari disk tujuan. */
+    public function download(string $disk, string $path)
+    {
+        abort_unless(
+            str_ends_with(strtolower($path), '.zip') && Storage::disk($disk)->exists($path),
+            404,
+            'File backup tidak ditemukan.'
+        );
+
+        return Storage::disk($disk)->download($path, basename($path));
+    }
+
     protected function getHeaderActions(): array
     {
         return [

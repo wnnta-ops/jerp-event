@@ -16,6 +16,7 @@
                         <th class="px-4 py-3">Disk</th>
                         <th class="px-4 py-3">Ukuran</th>
                         <th class="px-4 py-3">Tanggal</th>
+                        <th class="px-4 py-3 text-right">Aksi</th>
                     </tr>
                 </thead>
                 <tbody class="divide-y" style="border-color: rgb(229 231 235 / 1);">
@@ -27,6 +28,12 @@
                             </td>
                             <td class="px-4 py-3 tabular-nums">{{ $row['size'] }}</td>
                             <td class="px-4 py-3">{{ $row['date'] }}</td>
+                            <td class="px-4 py-3 text-right">
+                                <x-filament::button size="sm" color="success" icon="heroicon-o-arrow-down-tray"
+                                    wire:click="download('{{ $row['disk'] }}', @js($row['path']))">
+                                    Download
+                                </x-filament::button>
+                            </td>
                         </tr>
                     @endforeach
                 </tbody>
