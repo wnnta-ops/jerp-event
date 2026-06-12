@@ -4,9 +4,10 @@ namespace App\Filament\Fo\Resources;
 
 use App\Filament\Fo\Resources\PengalihanHakResource\Pages;
 use App\Filament\Fo\Resources\PengalihanHakResource\RelationManagers\HistoryRelationManager;
+use App\Modules\FO\Approval\Models\Approval;
+use App\Modules\FO\Approval\Services\ApprovalService;
 use App\Modules\FO\MarketingSales\Models\Customer;
 use App\Modules\FO\MarketingSales\Models\Kontrak;
-use App\Modules\FO\MarketingSales\Services\PengalihanHakService;
 use Filament\Forms;
 use Filament\Forms\Form;
 use Filament\Notifications\Notification;
@@ -95,15 +96,32 @@ class PengalihanHakResource extends Resource
 
     public static function runPengalihan(Kontrak $record, array $data): void
     {
-        $ph = app(PengalihanHakService::class)->transfer($record, (int) $data['customer_baru_id'], [
-            'tgl_pengalihan' => $data['tgl_pengalihan'] ?? null,
-            'biaya_admin' => $data['biaya_admin'] ?? 0,
-            'file_scan_path' => $data['file_scan_path'] ?? null,
-            'keterangan' => $data['keterangan'] ?? null,
-        ]);
+        // Pengalihan Hak (ganti nama/customer) WAJIB lewat Approval Pengalihan Hak
+        // (2 level). Customer kontrak baru pindah setelah disetujui (eksekusi GANTI_NAMA).
+        $custBaruId = (int) $data['customer_baru_id'];
+        $custBaru = Customer::find($custBaruId);
 
-        Notification::make()->success()->title('Pengalihan Hak selesai — '.$ph->no_pengalihan)
-            ->body('Customer kontrak kini: '.$ph->customerBaru?->full_name)->persistent()->send();
+        $approval = Approval::create([
+            'tgl_approval' => now(),
+            'jenis' => 'GANTI_NAMA',
+            'subject_type' => Kontrak::class,
+            'subject_id' => $record->id,
+            'alasan' => 'Pengalihan Hak '.$record->no_kontrak.': '.($record->customer?->full_name ?? '').' → '.($custBaru?->full_name ?? ''),
+            'detail_lama' => ['customer_id' => $record->customer_id, 'customer' => $record->customer?->full_name],
+            'detail_baru' => [
+                'customer_baru_id' => $custBaruId,
+                'customer_baru' => $custBaru?->full_name,
+                'tgl_pengalihan' => $data['tgl_pengalihan'] ?? null,
+                'keterangan' => $data['keterangan'] ?? null,
+            ],
+            'status' => 'DRAFT',
+            'requested_by' => auth()->id(),
+        ]);
+        app(ApprovalService::class)->submit($approval);
+
+        Notification::make()->success()->title('Diajukan ke Approval Pengalihan Hak — '.$approval->no_approval)
+            ->body('Pindah customer "'.($custBaru?->full_name ?? '').'" menunggu persetujuan (2 level). Berlaku setelah disetujui.')
+            ->persistent()->send();
     }
 
     public static function table(Table $table): Table

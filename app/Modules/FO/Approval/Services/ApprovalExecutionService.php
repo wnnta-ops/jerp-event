@@ -6,6 +6,7 @@ use App\Modules\FO\Approval\Models\Approval;
 use App\Modules\FO\FinanceAR\Models\Refund;
 use App\Modules\FO\MarketingSales\Models\Kontrak;
 use App\Modules\FO\MarketingSales\Models\Unit;
+use App\Modules\FO\MarketingSales\Services\PengalihanHakService;
 use Illuminate\Support\Facades\DB;
 use RuntimeException;
 
@@ -107,11 +108,21 @@ class ApprovalExecutionService
 
     private function applyGantiNama(Kontrak $k, array $baru): string
     {
+        // Pengalihan Hak ke customer lain → jalankan transfer penuh (kontrak +
+        // reservasi pindah customer, plus catat history PengalihanHak).
         if (! empty($baru['customer_baru_id'])) {
-            $k->update(['customer_id' => (int) $baru['customer_baru_id']]);
+            $ph = app(PengalihanHakService::class)->transfer(
+                $k,
+                (int) $baru['customer_baru_id'],
+                [
+                    'tgl_pengalihan' => $baru['tgl_pengalihan'] ?? null,
+                    'keterangan' => $baru['keterangan'] ?? null,
+                ]
+            );
 
-            return 'Customer kontrak diganti (ID '.$baru['customer_baru_id'].').';
+            return 'Pengalihan Hak '.$ph->no_pengalihan.' — customer kontrak kini "'.($ph->customerBaru?->full_name ?? '').'".';
         }
+        // Koreksi nama saja (tanpa ganti customer) — ubah nama di master customer.
         if (! empty($baru['nama_baru']) && $k->customer) {
             $k->customer->update(['full_name' => $baru['nama_baru']]);
 
