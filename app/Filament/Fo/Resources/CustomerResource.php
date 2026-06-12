@@ -35,6 +35,12 @@ class CustomerResource extends Resource
 
     protected static ?string $pluralModelLabel = 'Master Customer';
 
+    /** True bila customer sudah punya kontrak SPR (nama dikunci → wajib Pengalihan Hak). */
+    protected static function sudahSpr(?Customer $record): bool
+    {
+        return $record !== null && $record->kontrak()->where('tahap', 'SPR')->exists();
+    }
+
     public static function form(Form $form): Form
     {
         return $form->schema([
@@ -56,8 +62,14 @@ class CustomerResource extends Resource
                         ->label('Nama lengkap')
                         ->required()
                         ->maxLength(255)
-                        ->helperText('Sumber kebenaran nama — perubahan di sini langsung berlaku di Pilih Unit/launching.'),
-                    Forms\Components\TextInput::make('nik')->label('NIK')->maxLength(32),
+                        // Sebelum SPR: admin boleh edit nama langsung. Sesudah SPR: dikunci —
+                        // ganti nama/customer wajib lewat Pengalihan Hak (perlu approval).
+                        ->disabled(fn (?Customer $record) => self::sudahSpr($record))
+                        ->helperText(fn (?Customer $record) => self::sudahSpr($record)
+                            ? 'Customer sudah SPR — ganti nama/customer harus lewat Pengalihan Hak (perlu approval).'
+                            : 'Sumber kebenaran nama — perubahan di sini langsung berlaku di Pilih Unit/launching.'),
+                    Forms\Components\TextInput::make('nik')->label('NIK')->maxLength(32)
+                        ->disabled(fn (?Customer $record) => self::sudahSpr($record)),
                     Forms\Components\TextInput::make('npwp')->label('NPWP')->maxLength(32),
                     Forms\Components\Select::make('gender')
                         ->label('Jenis kelamin')

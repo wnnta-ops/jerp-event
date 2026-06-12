@@ -11,6 +11,7 @@ use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Validation\ValidationException;
 use Throwable;
 
 /**
@@ -103,6 +104,24 @@ class NupRegistrationService
     /**
      * Reuse customer by NIK if exists, otherwise create as LEAD.
      */
+    /**
+     * Tolak bila NIK sudah dipakai customer lain dengan nama berbeda (1 NIK = 1 nama).
+     * Perbandingan mengabaikan beda kapital & spasi berganda. NIK beda + nama sama
+     * tetap boleh (dua orang berbeda); hanya NIK sama + nama beda yang ditolak.
+     */
+    private function pastikanNamaCocok(Customer $existing, array $data): void
+    {
+        $norm = fn (?string $n): string => preg_replace('/\s+/', ' ', mb_strtoupper(trim((string) $n)));
+        $daftar = $norm($data['full_name'] ?? '');
+        $pemilik = $norm($existing->full_name);
+
+        if ($daftar !== '' && $pemilik !== '' && $daftar !== $pemilik) {
+            throw ValidationException::withMessages([
+                'nik' => 'NIK '.($data['nik'] ?? '').' sudah terdaftar atas nama "'.$existing->full_name.'". Nama harus sama dengan pemilik NIK ini.',
+            ]);
+        }
+    }
+
     private function resolveOrCreateLead(array $data): Customer
     {
         if (! empty($data['nik'])) {
@@ -111,6 +130,10 @@ class NupRegistrationService
                 ->where('nik', $data['nik'])
                 ->first();
             if ($existing) {
+                // 1 NIK = 1 nama customer. Nama yang didaftarkan harus sama dengan
+                // pemilik NIK ini — kalau beda → tolak (NIK tak boleh atas nama lain).
+                $this->pastikanNamaCocok($existing, $data);
+
                 // Lengkapi data yang belum ada (project + No. Customer).
                 $patch = [];
                 if (empty($existing->project_id) && ! empty($data['project_id'])) {

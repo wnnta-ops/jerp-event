@@ -57,9 +57,15 @@ class BookedVerificationService
         }
 
         return DB::transaction(function () use ($reg, $unitId, $skemaId) {
+            // Atomic lock + cek ketersediaan. Satu unit hanya boleh diambil sekali:
+            // tolak unit yang sudah BOOKING/TERJUAL (dipegang pendaftar lain), bukan
+            // hanya TERJUAL — cegah dobel-booking saat 2 verifikator pilih unit sama.
             $unit = Unit::lockForUpdate()->findOrFail($unitId);
-            if ($unit->status === 'TERJUAL') {
-                throw new RuntimeException('Unit '.$unit->no_unit.' sudah terjual.');
+            if ($unit->status !== 'TERSEDIA') {
+                throw new RuntimeException(
+                    'Unit '.trim(($unit->blok ? $unit->blok.' / ' : '').$unit->no_unit).
+                    ' sudah '.$unit->status.'. Pilih unit lain.'
+                );
             }
 
             $harga = (float) $unit->harga_jual;
