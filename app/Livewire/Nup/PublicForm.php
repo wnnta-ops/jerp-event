@@ -179,7 +179,7 @@ class PublicForm extends Component
     public function updatedRefSalesName(): void
     {
         $value = trim((string) $this->ref_sales_name);
-        $match = Agent::query()->where('is_active', true)->get()
+        $match = Agent::query()->where('is_active', true)->salesPicker()->get()
             ->first(fn (Agent $a) => $a->sales_label === $value);
 
         $this->agent_id = $match?->id;
@@ -386,7 +386,7 @@ class PublicForm extends Component
             'events' => NupEvent::query()->whereIn('status', ['OPEN'])->orderBy('tgl_launching')->get(),
             'tipeNupOptions' => $tipeNupOptions,
             'projects' => Project::query()->where('is_active', true)->orderBy('name')->get(),
-            'agents' => Agent::query()->where('is_active', true)->orderBy('name')->get(),
+            'agents' => Agent::query()->where('is_active', true)->salesPicker()->orderBy('name')->get(),
             'budgetOptions' => [
                 'RUMAH_200JT' => 'Rumah 200 Jutaan',
                 'RUMAH_400JT' => 'Rumah 400 Jutaan',

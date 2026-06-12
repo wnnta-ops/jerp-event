@@ -83,4 +83,20 @@ class Agent extends TenantAwareModel
     {
         return $this->hasMany(Reward::class);
     }
+
+    /**
+     * Hanya agent level "Sales" untuk dropdown pendaftaran (NUP/Booked) — sembunyikan
+     * Koordinator & Kantor. Identifikasi via SalesLevel (code/name): level berkode atau
+     * bernama KOOR/KOORDINATOR atau KANT/KANTOR dikecualikan; sales & agent tanpa level tetap muncul.
+     */
+    public function scopeSalesPicker($query)
+    {
+        return $query->whereDoesntHave('salesLevel', function ($q) {
+            $q->where('code', 'like', 'KOOR%')
+                ->orWhere('code', 'like', 'KANT%')
+                ->orWhere('name', 'like', 'KOOR%')
+                ->orWhere('name', 'like', '%KOORDINATOR%')
+                ->orWhere('name', 'like', '%KANTOR%');
+        });
+    }
 }

@@ -141,7 +141,7 @@ class PublicForm extends Component
     public function updatedRefSalesName(): void
     {
         $value = trim((string) $this->ref_sales_name);
-        $match = Agent::query()->where('is_active', true)->get()
+        $match = Agent::query()->where('is_active', true)->salesPicker()->get()
             ->first(fn (Agent $a) => $a->sales_label === $value);
 
         $this->agent_id = $match?->id;
@@ -316,7 +316,7 @@ class PublicForm extends Component
     {
         return view('livewire.booked.public-form', [
             'projects' => Project::query()->where('is_active', true)->orderBy('name')->get(),
-            'agents' => Agent::query()->where('is_active', true)->orderBy('name')->get(),
+            'agents' => Agent::query()->where('is_active', true)->salesPicker()->orderBy('name')->get(),
             'settings' => app(FoSettings::class),
         ])->layout('layouts.nup-public', ['title' => 'Pendaftaran Booked']);
     }
