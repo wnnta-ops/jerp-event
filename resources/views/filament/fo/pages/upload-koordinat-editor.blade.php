@@ -57,16 +57,29 @@
                     });
                 }
 
+                function loadFrom(base) {
+                    return addJs(base + 'leaflet@1.9.4/dist/leaflet.js')
+                        .then(function () { return addJs(base + '@geoman-io/leaflet-geoman-free@2.16.0/dist/leaflet-geoman.min.js'); });
+                }
+
                 addCss('https://unpkg.com/leaflet@1.9.4/dist/leaflet.css');
                 addCss('https://unpkg.com/@geoman-io/leaflet-geoman-free@2.16.0/dist/leaflet-geoman.css');
 
-                addJs('https://unpkg.com/leaflet@1.9.4/dist/leaflet.js')
-                    .then(function () { return addJs('https://unpkg.com/@geoman-io/leaflet-geoman-free@2.16.0/dist/leaflet-geoman.min.js'); })
+                // Coba unpkg → fallback jsdelivr bila gagal (mis. CDN diblokir di server/jaringan).
+                loadFrom('https://unpkg.com/')
+                    .catch(function () { return loadFrom('https://cdn.jsdelivr.net/npm/'); })
                     .then(function () {
                         window.__leafletReady = true;
                         document.dispatchEvent(new CustomEvent('leaflet-ready'));
                     })
-                    .catch(function (err) { console.error('Gagal load Leaflet/Geoman:', err); });
+                    .catch(function (err) {
+                        console.error('Gagal load Leaflet/Geoman:', err);
+                        var el = document.getElementById('pe-map');
+                        if (el) {
+                            el.innerHTML = '<div style="padding:24px;color:#fca5a5;font-size:13px;">Gagal memuat library peta (Leaflet) dari CDN. '
+                                + 'Periksa koneksi internet / pemblokir CDN (unpkg & jsdelivr), lalu refresh.</div>';
+                        }
+                    });
             })();
 
             (function () {
@@ -74,9 +87,7 @@
                 window.__koordinatEditorRegistered = true;
 
                 function register() {
-                    if (typeof Alpine === 'undefined') return setTimeout(register, 30);
-
-                    Alpine.data('koordinatEditor', function (payload) {
+                    window.Alpine.data('koordinatEditor', function (payload) {
                         return {
                             project: payload.project,
                             units: payload.units || [],
@@ -118,6 +129,20 @@
                                 });
                                 L.imageOverlay(this.project.imageUrl, bounds).addTo(this.map);
                                 this.map.fitBounds(bounds);
+
+                                // Banner bila gambar siteplan gagal dimuat (404 / storage tak terakses).
+                                var imgUrl = this.project.imageUrl;
+                                var probe = new Image();
+                                probe.onerror = function () {
+                                    var box = document.getElementById('pe-map');
+                                    if (! box) return;
+                                    box.style.position = 'relative';
+                                    var w = document.createElement('div');
+                                    w.style.cssText = 'position:absolute;top:8px;left:50px;z-index:1000;background:rgba(127,29,29,.92);color:#fff;padding:6px 10px;border-radius:6px;font-size:12px;max-width:80%;';
+                                    w.textContent = 'Gambar siteplan tidak dapat dimuat. Periksa upload Site Plan / akses storage (URL: ' + imgUrl + ').';
+                                    box.appendChild(w);
+                                };
+                                probe.src = imgUrl;
 
                                 if (this.map.pm) {
                                     this.map.pm.addControls({
@@ -212,8 +237,11 @@
                     });
                 }
 
-                if (document.readyState !== 'loading') register();
-                else document.addEventListener('DOMContentLoaded', register);
+                // Register SEBELUM Alpine memproses x-data (event alpine:init), agar
+                // komponen koordinatEditor sudah ada saat elemen di-init — mencegah
+                // "units/search/activeUnitId is not defined" (scope kosong → map hitam).
+                if (window.Alpine) register();
+                else document.addEventListener('alpine:init', register);
             })();
         </script>
 
