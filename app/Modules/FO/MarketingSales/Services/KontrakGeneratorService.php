@@ -47,26 +47,62 @@ class KontrakGeneratorService
 
         $total = (float) $kontrak->total_kontrak;
         $tgl = $kontrak->tgl_kontrak ?? now();
-        $n = 0;
+        $lineArr = $lines->values();
 
-        foreach ($lines as $i => $line) {
+        // Index baris PENCAIRAN/PELUNASAN KPR terakhir (flag_kpr) — nilainya jadi SISA
+        // (harga − tagihan lain) agar total PAS dengan harga unit & dijadwalkan setelah
+        // DP terakhir. Selaras simulasi skema bayar (Plafond = harga − DP − UTJ).
+        $kprIdx = null;
+        foreach ($lineArr as $idx => $l) {
+            if (($l->flag_kpr ?? false) && ($l->tipe ?? '') === 'ANG') {
+                $kprIdx = $idx;
+            }
+        }
+
+        $rows = [];
+        $lastDpDate = $tgl->copy();
+        foreach ($lineArr as $idx => $line) {
+            // Nilai tagihan dibulatkan ke RUPIAH PENUH (tanpa sen) — agar nilai tersimpan
+            // = nilai tampil (mask rupiah bulat), sehingga ringkasan selisih akurat (0).
             $nilai = $line->basis === 'NOMINAL'
-                ? (float) $line->nominal
-                : round($total * (float) $line->persen / 100, 2);
+                ? round((float) $line->nominal)
+                : round($total * (float) $line->persen / 100);
 
             // Jatuh tempo dari jadwal (M=bulan→×30, D=hari) + setelah; fallback jatuh_tempo_hari.
-            $days = ((int) ($line->jadwal_nilai ?? 0) * (in_array($line->jadwal_basis ?? 'HARI', ['M', 'BULAN'], true) ? 30 : 1))
-                + (int) ($line->setelah ?? 0);
+            $interval = (int) ($line->jadwal_nilai ?? 0) * (in_array($line->jadwal_basis ?? 'HARI', ['M', 'BULAN'], true) ? 30 : 1);
+            $days = $interval + (int) ($line->setelah ?? 0);
             if ($days === 0 && isset($line->jatuh_tempo_hari)) {
                 $days = (int) $line->jatuh_tempo_hari;
             }
+            $jatuh = $tgl->copy()->addDays($days);
+            if (($line->tipe ?? '') === 'DP' && $jatuh->gt($lastDpDate)) {
+                $lastDpDate = $jatuh->copy();
+            }
 
+            $rows[$idx] = ['line' => $line, 'nilai' => $nilai, 'jatuh' => $jatuh, 'interval' => $interval];
+        }
+
+        // PENCAIRAN KPR: nilai = sisa (balance ke harga unit), jatuh tempo setelah DP terakhir.
+        if ($kprIdx !== null) {
+            $sumLain = 0.0;
+            foreach ($rows as $idx => $r) {
+                if ($idx !== $kprIdx) {
+                    $sumLain += $r['nilai'];
+                }
+            }
+            $rows[$kprIdx]['nilai'] = round($total - $sumLain);
+            $rows[$kprIdx]['jatuh'] = $lastDpDate->copy()->addDays(max(1, $rows[$kprIdx]['interval']));
+        }
+
+        $n = 0;
+        foreach ($rows as $idx => $r) {
+            $line = $r['line'];
             $kontrak->tagihan()->create([
-                'urutan' => $line->urutan ?? $i,
+                'urutan' => $line->urutan ?? $idx,
                 'tipe' => $this->mapTipe($line->tipe ?? $line->nama_termin),
                 'nama_tagihan' => $line->nama_termin,
-                'jatuh_tempo' => $tgl->copy()->addDays($days),
-                'nilai' => $nilai,
+                'jatuh_tempo' => $r['jatuh'],
+                'nilai' => $r['nilai'],
                 'pelunasan' => 0,
             ]);
             $n++;

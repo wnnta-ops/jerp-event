@@ -151,7 +151,8 @@ class SkemaWizardService
                     'basis' => 'PERSEN', 'persen' => $parts[$i - 1], 'nominal' => null,
                     'jadwal_basis' => ($i === 1 ? ($r['ang_pertama_basis'] ?? 'BULAN') : ($r['ang_interval_basis'] ?? 'BULAN')),
                     'jadwal_nilai' => (int) ($i === 1 ? ($r['ang_pertama'] ?? 1) : ($r['ang_interval'] ?? 1)),
-                    'setelah' => $i,
+                    // Angsuran (mis. PENCAIRAN KPR) dijadwalkan setelah DP terakhir, bukan setelah BF.
+                    'setelah' => $dpCount + $i,
                     'flag_bf' => $bfDi === 'ANGSURAN_DISEBAR' || ($bfDi === 'ANGSURAN1' && $i === 1),
                     'flag_kpr' => $isKpr,
                 ];
