@@ -384,7 +384,10 @@ class KontrakResource extends Resource
                 Tables\Actions\Action::make('cetak_spr')
                     ->label($cetakLabel)
                     ->icon('heroicon-o-document-text')
-                    ->url(fn ($record) => route('fo.cetak.spr', $record), shouldOpenInNewTab: true),
+                    // SPRS → template SPRS (sprs.blade), SPR final → template SPR.
+                    ->url(fn (Kontrak $record) => $record->tahap === 'SPRS'
+                        ? route('fo.cetak.sprs-kontrak', $record)
+                        : route('fo.cetak.spr', $record), shouldOpenInNewTab: true),
                 Tables\Actions\Action::make('cetak_jadwal')->label('Jadwal')->icon('heroicon-o-calendar-days')
                     ->url(fn ($record) => route('fo.cetak.jadwal', $record), shouldOpenInNewTab: true),
             ])

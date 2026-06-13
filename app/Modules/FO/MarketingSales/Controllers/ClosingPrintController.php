@@ -4,6 +4,7 @@ namespace App\Modules\FO\MarketingSales\Controllers;
 
 use App\Http\Controllers\Controller;
 use App\Modules\FO\FinanceAR\Models\Bkm;
+use App\Modules\FO\FinanceAR\Models\Tts;
 use App\Modules\FO\Launching\Models\NupRegistration;
 use App\Modules\FO\MarketingSales\Models\Kontrak;
 use App\Support\Terbilang;
@@ -27,13 +28,70 @@ class ClosingPrintController extends Controller
     /**
      * SPRS (Surat Pemesanan Rumah Sementara) — dari NupRegistration. Dipakai utk
      * dilihat/diunduh customer (link dikirim via WA) & dilampirkan di email saat
-     * verifikasi data di-APPROVE.
+     * verifikasi data di-APPROVE. Bila sudah ada kontrak (reservasi naik kontrak),
+     * data unit/harga/pembayaran ikut ditarik dari kontrak.
      */
     public function sprs(NupRegistration $registration): mixed
     {
         $registration->load(['customer', 'agent']);
+        $kontrak = $registration->reservasi_id
+            ? Kontrak::with(['customer', 'unit.unitType', 'unit.lokasi', 'skema.lines', 'agent', 'reservasi', 'gimmicks'])
+                ->where('reservasi_id', $registration->reservasi_id)->orderByDesc('id')->first()
+            : null;
 
-        return $this->render('pdf.fo.sprs', ['reg' => $registration], 'SPRS-'.($registration->no_nup ?: $registration->id));
+        return $this->render('pdf.fo.sprs', $this->sprsViewData($registration, $kontrak),
+            'SPRS-'.($registration->no_nup ?: $registration->id));
+    }
+
+    /**
+     * Cetak SPRS dari Kontrak (tahap SPRS) — dipakai tombol "Cetak SPRS" di daftar SPRS.
+     * Cari NupRegistration terkait via reservasi; bila tak ada (SPRS dibuat manual),
+     * bentuk objek registrasi sementara dari kontrak agar template tetap lengkap.
+     */
+    public function sprsFromKontrak(Kontrak $kontrak): mixed
+    {
+        $kontrak->load(['customer', 'unit.unitType', 'unit.lokasi', 'skema.lines', 'agent', 'reservasi', 'gimmicks']);
+        $reg = NupRegistration::query()->where('reservasi_id', $kontrak->reservasi_id)->orderByDesc('id')->first();
+        if ($reg) {
+            $reg->load(['customer', 'agent']);
+        } else {
+            $reg = $this->regDariKontrak($kontrak);
+        }
+
+        return $this->render('pdf.fo.sprs', $this->sprsViewData($reg, $kontrak), 'SPRS-'.$kontrak->no_kontrak);
+    }
+
+    /**
+     * @param  array<string,mixed>  ...
+     * @return array<string,mixed>
+     */
+    private function sprsViewData(NupRegistration $reg, ?Kontrak $kontrak): array
+    {
+        $tts = $kontrak
+            ? Tts::query()->where('kontrak_id', $kontrak->id)
+                ->where('jenis_pembayaran', 'BOOKING')->orderBy('id')->first()
+            : null;
+
+        return ['reg' => $reg, 'kontrak' => $kontrak, 'tts' => $tts];
+    }
+
+    /** Objek NupRegistration sementara (tak disimpan) dari Kontrak untuk render SPRS. */
+    private function regDariKontrak(Kontrak $kontrak): NupRegistration
+    {
+        $reg = new NupRegistration;
+        $reg->customer_id = $kontrak->customer_id;
+        $reg->nama_pendaftar = $kontrak->customer?->full_name;
+        $reg->no_nup = $kontrak->no_kontrak;
+        $reg->nik = $kontrak->customer?->nik;
+        $reg->phone = $kontrak->customer?->mobile;
+        $reg->tipe_nup = $kontrak->unit?->unitType?->name ?: 'RUMAH';
+        $reg->cara_bayar = $kontrak->cara_bayar;
+        $reg->agent_id = $kontrak->agent_id;
+        $reg->keterangan = $kontrak->keterangan;
+        $reg->setRelation('customer', $kontrak->customer);
+        $reg->setRelation('agent', $kontrak->agent);
+
+        return $reg;
     }
 
     public function kwitansi(Bkm $bkm): mixed

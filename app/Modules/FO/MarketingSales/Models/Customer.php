@@ -4,6 +4,7 @@ namespace App\Modules\FO\MarketingSales\Models;
 
 use App\Models\Concerns\TenantAwareModel;
 use App\Models\Project;
+use App\Modules\FO\Adminjual\Models\SumberData;
 use App\Modules\FO\Launching\Models\NupRegistration;
 use App\Services\Numerator\NumeratorService;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -116,5 +117,20 @@ class Customer extends TenantAwareModel
         ]);
 
         return $parts ? implode(', ', $parts) : '—';
+    }
+
+    /**
+     * Label Sumber Data dari master (mis. kode "INSTAGRAM" → "Instagram"). Dipakai di
+     * printout SPRS. Fallback ke kode mentah bila tak ada di master; null bila kosong.
+     */
+    public function getSumberDataLabelAttribute(): ?string
+    {
+        if (blank($this->sumber_data)) {
+            return null;
+        }
+
+        return SumberData::query()
+            ->where('kode', $this->sumber_data)
+            ->value('nama') ?? $this->sumber_data;
     }
 }
