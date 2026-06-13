@@ -97,7 +97,8 @@ class ClosingNup extends Page implements HasForms, HasTable
                             ->default('KPR')->required(),
                         Forms\Components\Select::make('agent_id')
                             ->label('Sales')
-                            ->options(fn () => Agent::query()->where('is_active', true)->orderBy('name')->get()
+                            // Hanya agent level Sales (sembunyikan Koordinator & Kantor).
+                            ->options(fn () => Agent::query()->where('is_active', true)->salesPicker()->orderBy('name')->get()
                                 ->mapWithKeys(fn (Agent $a) => [$a->id => ($a->code ? $a->code.' — ' : '').$a->name]))
                             ->searchable()->placeholder('— pilih sales —'),
                     ])
