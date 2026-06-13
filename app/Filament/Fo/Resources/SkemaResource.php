@@ -4,8 +4,8 @@ namespace App\Filament\Fo\Resources;
 
 use App\Filament\Fo\Resources\SkemaResource\Pages;
 use App\Modules\FO\Adminjual\Models\Skema;
+use App\Modules\FO\MarketingSales\Models\Kontrak;
 use App\Modules\FO\MarketingSales\Models\Tahap;
-use App\Modules\FO\MarketingSales\Models\UnitPricelist;
 use Filament\Forms;
 use Filament\Forms\Form;
 use Filament\Notifications\Notification;
@@ -28,10 +28,10 @@ class SkemaResource extends Resource
 
     protected static ?string $pluralModelLabel = 'Skema Pembayaran';
 
-    /** Skema dipakai di Price List unit? (jadi tak boleh dihapus). */
-    public static function usedByPricelist(Skema $skema): bool
+    /** Skema dipakai di Kontrak (SPRS/SPR)? (jadi tak boleh dihapus). */
+    public static function usedByKontrak(Skema $skema): bool
     {
-        return UnitPricelist::query()->where('skema_id', $skema->id)->exists();
+        return Kontrak::query()->where('skema_id', $skema->id)->exists();
     }
 
     public static function form(Form $form): Form
@@ -126,11 +126,12 @@ class SkemaResource extends Resource
         ])->actions([
             Tables\Actions\EditAction::make(),
             Tables\Actions\DeleteAction::make()
+                ->modalDescription('Menghapus skema ini juga menghapus harga Price List & termin master untuk skema tsb. Lanjutkan?')
                 ->before(function (Skema $record, Tables\Actions\DeleteAction $action) {
-                    if (static::usedByPricelist($record)) {
+                    if (static::usedByKontrak($record)) {
                         Notification::make()->danger()
                             ->title('Tidak bisa dihapus')
-                            ->body('Skema "'.$record->code.'" masih dipakai di Price List unit. Hapus/ubah harganya dulu.')
+                            ->body('Skema "'.$record->code.'" sudah dipakai di kontrak (SPRS/SPR). Ganti/batalkan skema di kontrak terkait dulu.')
                             ->send();
                         $action->cancel();
                     }
@@ -139,11 +140,11 @@ class SkemaResource extends Resource
             Tables\Actions\BulkActionGroup::make([
                 Tables\Actions\DeleteBulkAction::make()
                     ->before(function (Collection $records, Tables\Actions\DeleteBulkAction $action) {
-                        $used = $records->filter(fn (Skema $r) => static::usedByPricelist($r));
+                        $used = $records->filter(fn (Skema $r) => static::usedByKontrak($r));
                         if ($used->isNotEmpty()) {
                             Notification::make()->danger()
-                                ->title('Sebagian skema dipakai Price List')
-                                ->body('Tidak dihapus: '.$used->pluck('code')->implode(', ').'. Hapus/ubah harganya dulu.')
+                                ->title('Sebagian skema dipakai kontrak')
+                                ->body('Tidak dihapus: '.$used->pluck('code')->implode(', ').'. Sudah dipakai di kontrak (SPRS/SPR).')
                                 ->send();
                             $action->cancel();
                         }

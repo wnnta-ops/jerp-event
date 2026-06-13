@@ -4,6 +4,7 @@ namespace App\Modules\FO\Adminjual\Models;
 
 use App\Models\Concerns\TenantAwareModel;
 use App\Models\Project;
+use App\Modules\FO\MarketingSales\Models\Kontrak;
 use App\Modules\FO\MarketingSales\Models\Lokasi;
 use App\Modules\FO\MarketingSales\Models\Tahap;
 use App\Modules\FO\MarketingSales\Models\UnitPricelist;
@@ -38,16 +39,18 @@ class Skema extends TenantAwareModel
     {
         parent::booted();
 
-        // Cegah hapus skema yang masih dipakai di Price List unit — supaya harga
-        // (mis. di /siteplan) tidak hilang/ter-orphan. Berlaku untuk semua jalur
-        // hapus (bulk, halaman edit, programatik). Hapus/ubah pricelist-nya dulu.
+        // Hapus skema: blokir HANYA bila sudah dipakai di Kontrak (SPRS/SPR) —
+        // kontrak bergantung pada skema ini. Sedangkan Price List & termin master
+        // ikut terhapus otomatis (cascade) karena tak ada transaksi yang bergantung.
         static::deleting(function (Skema $skema): void {
-            if (UnitPricelist::query()->where('skema_id', $skema->id)->exists()) {
+            if (Kontrak::query()->where('skema_id', $skema->id)->exists()) {
                 throw new RuntimeException(
-                    'Skema "'.$skema->code.'" masih dipakai di Price List unit, tidak bisa dihapus. '
-                    .'Hapus/ubah harga skema ini di Price List dulu.'
+                    'Skema "'.$skema->code.'" sudah dipakai di kontrak (SPRS/SPR), tidak bisa dihapus. '
+                    .'Ganti/batalkan skema di kontrak terkait dulu.'
                 );
             }
+            UnitPricelist::query()->where('skema_id', $skema->id)->delete();
+            $skema->lines()->delete();
         });
     }
 
