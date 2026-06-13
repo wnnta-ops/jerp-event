@@ -3,6 +3,7 @@
 namespace App\Livewire\Nup;
 
 use App\Models\Project;
+use App\Modules\FO\Adminjual\Models\SumberData;
 use App\Modules\FO\Komisi\Models\Agent;
 use App\Modules\FO\Launching\Models\NupEvent;
 use App\Modules\FO\Launching\Models\NupTipe;
@@ -387,6 +388,7 @@ class PublicForm extends Component
             'tipeNupOptions' => $tipeNupOptions,
             'projects' => Project::query()->where('is_active', true)->orderBy('name')->get(),
             'agents' => Agent::query()->where('is_active', true)->salesPicker()->orderBy('name')->get(),
+            'sumberDataOptions' => SumberData::query()->where('is_active', true)->orderBy('urutan')->orderBy('nama')->get(),
             'budgetOptions' => [
                 'RUMAH_200JT' => 'Rumah 200 Jutaan',
                 'RUMAH_400JT' => 'Rumah 400 Jutaan',

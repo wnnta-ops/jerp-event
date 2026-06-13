@@ -66,13 +66,9 @@
                 <label class="nup-label">Sumber Data <span class="nup-required">*</span></label>
                 <select wire:model="sumber_data" class="nup-input">
                     <option value="">— Pilih</option>
-                    <option value="INSTAGRAM">Instagram</option>
-                    <option value="FACEBOOK">Facebook</option>
-                    <option value="WEBSITE">Website</option>
-                    <option value="REFERRAL">Referral / Teman</option>
-                    <option value="BANNER">Banner / Baliho</option>
-                    <option value="AGEN">Agen Properti</option>
-                    <option value="LAIN">Lainnya</option>
+                    @foreach ($sumberDataOptions as $opt)
+                        <option value="{{ $opt->kode }}">{{ $opt->nama }}</option>
+                    @endforeach
                 </select>
                 @error('sumber_data') <span class="nup-error">{{ $message }}</span> @enderror
             </div>

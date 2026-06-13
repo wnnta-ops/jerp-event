@@ -3,6 +3,7 @@
 namespace App\Livewire\Booked;
 
 use App\Models\Project;
+use App\Modules\FO\Adminjual\Models\SumberData;
 use App\Modules\FO\Booked\Services\BookedRegistrationService;
 use App\Modules\FO\Komisi\Models\Agent;
 use App\Services\Recaptcha\RecaptchaVerifier;
@@ -317,6 +318,7 @@ class PublicForm extends Component
         return view('livewire.booked.public-form', [
             'projects' => Project::query()->where('is_active', true)->orderBy('name')->get(),
             'agents' => Agent::query()->where('is_active', true)->salesPicker()->orderBy('name')->get(),
+            'sumberDataOptions' => SumberData::query()->where('is_active', true)->orderBy('urutan')->orderBy('nama')->get(),
             'settings' => app(FoSettings::class),
         ])->layout('layouts.nup-public', ['title' => 'Pendaftaran Booked']);
     }

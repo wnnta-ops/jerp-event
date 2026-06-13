@@ -175,6 +175,7 @@ class FoPanelProvider extends PanelProvider
             'pindah-unit-pilih' => 'marketing',
             // Setup Sales (master + sales + unit + gimmick)
             'skemas' => 'setup',
+            'sumber-data' => 'setup',
             'sales-types' => 'setup',
             'sales-levels' => 'setup',
             'agents' => 'setup',
@@ -311,6 +312,7 @@ class FoPanelProvider extends PanelProvider
                     $item('Tipe Sales', '/fo/sales-types', 'heroicon-o-tag', 'filament.fo.resources.sales-types.'),
                     $item('Level Sales', '/fo/sales-levels', 'heroicon-o-bars-arrow-down', 'filament.fo.resources.sales-levels.'),
                     $item('Pendaftaran Sales', '/fo/agents', 'heroicon-o-user-plus', 'filament.fo.resources.agents.'),
+                    $item('Sumber Data', '/fo/sumber-data', 'heroicon-o-megaphone', 'filament.fo.resources.sumber-data.'),
                     $item('Price List', '/fo/price-lists', 'heroicon-o-currency-dollar', 'filament.fo.resources.price-lists.'),
                     $item('Tipe Gimmick', '/fo/tipe-gimmick', 'heroicon-o-squares-2x2', 'filament.fo.resources.tipe-gimmick.'),
                     $item('Pendaftaran Gimmick', '/fo/gimmicks', 'heroicon-o-sparkles', 'filament.fo.resources.gimmicks.'),
