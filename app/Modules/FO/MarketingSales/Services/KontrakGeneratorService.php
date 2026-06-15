@@ -61,13 +61,12 @@ class KontrakGeneratorService
 
         $rows = [];
         $lastDpDate = $tgl->copy();
+        // Metode SEBAR-BULAT: nilai dibulatkan ke rupiah penuh secara KUMULATIF
+        // (round(jumlah berjalan) − yang sudah dialokasikan). Efeknya tiap grup
+        // (mis. DP) jumlahnya tetap PAS (5%) & semua bulat; PENCAIRAN KPR = sisa.
+        $cumRaw = 0.0;       // jumlah berjalan nilai asli (selain PENCAIRAN KPR)
+        $cumRounded = 0.0;   // jumlah berjalan nilai yang sudah dibulatkan
         foreach ($lineArr as $idx => $line) {
-            // Nilai tagihan dibulatkan ke RUPIAH PENUH (tanpa sen) — agar nilai tersimpan
-            // = nilai tampil (mask rupiah bulat), sehingga ringkasan selisih akurat (0).
-            $nilai = $line->basis === 'NOMINAL'
-                ? round((float) $line->nominal)
-                : round($total * (float) $line->persen / 100);
-
             // Jatuh tempo dari jadwal (M=bulan→×30, D=hari) + setelah; fallback jatuh_tempo_hari.
             $interval = (int) ($line->jadwal_nilai ?? 0) * (in_array($line->jadwal_basis ?? 'HARI', ['M', 'BULAN'], true) ? 30 : 1);
             $days = $interval + (int) ($line->setelah ?? 0);
@@ -79,18 +78,23 @@ class KontrakGeneratorService
                 $lastDpDate = $jatuh->copy();
             }
 
+            $nilai = 0.0;
+            if ($idx !== $kprIdx) {
+                $raw = $line->basis === 'NOMINAL'
+                    ? (float) $line->nominal
+                    : $total * (float) $line->persen / 100;
+                $cumRaw += $raw;
+                $nilai = round($cumRaw) - $cumRounded;
+                $cumRounded += $nilai;
+            }
+
             $rows[$idx] = ['line' => $line, 'nilai' => $nilai, 'jatuh' => $jatuh, 'interval' => $interval];
         }
 
-        // PENCAIRAN KPR: nilai = sisa (balance ke harga unit), jatuh tempo setelah DP terakhir.
+        // PENCAIRAN KPR: nilai = sisa (harga − total lainnya) → bulat & balance;
+        // jatuh tempo setelah DP terakhir.
         if ($kprIdx !== null) {
-            $sumLain = 0.0;
-            foreach ($rows as $idx => $r) {
-                if ($idx !== $kprIdx) {
-                    $sumLain += $r['nilai'];
-                }
-            }
-            $rows[$kprIdx]['nilai'] = round($total - $sumLain);
+            $rows[$kprIdx]['nilai'] = round($total - $cumRounded);
             $rows[$kprIdx]['jatuh'] = $lastDpDate->copy()->addDays(max(1, $rows[$kprIdx]['interval']));
         }
 
