@@ -70,9 +70,15 @@ class SkemaCalculatorService
     }
 
     /**
-     * DP DISEBAR — KPR DP 3X (UTJ tidak mengurangi plafon).
-     * B = harga × dp%  →  C = B × subsidi%  →  D = B−C  →  F = D−UTJ  →  DP/n
-     * Plafond = harga − F.
+     * DP DISEBAR — KPR DP 3X (sesuai simulasi gambar):
+     *   A = harga
+     *   B = harga × dp%            (DP 5%)
+     *   C = B × subsidi%           (Subsidi DP 20%)
+     *   D = B − C                  (Hasil subsidi)
+     *   E = UTJ (Booking Fee)
+     *   F = D − E                  (DP 1-n dibayar customer)
+     *   G = F / n                  (per DP)
+     *   H = A − B                  (Plafond / Pencairan KPR)
      *
      * @return array<string,mixed>
      */
@@ -83,7 +89,7 @@ class SkemaCalculatorService
         $dpNet = $this->r($dpGross - $subsidi);              // D (subsidi DP3X)
         $dpBayar = $this->r($dpNet - $utj);                  // F (DP3X dibayar customer)
         $perDp = $this->r($dpBayar / max(1, $nDp));
-        $plafond = $this->r($harga - $dpBayar);              // H (pencairan KPR)
+        $plafond = $this->r($harga - $dpGross);              // H = A − B (pencairan KPR)
 
         $lines = [
             $this->line('UTJ (Booking Fee)', 'BF', $utj, false, 'Tidak mengurangi plafon'),

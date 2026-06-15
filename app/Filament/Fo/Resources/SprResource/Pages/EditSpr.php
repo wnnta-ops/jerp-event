@@ -18,6 +18,8 @@ class EditSpr extends EditKontrak
     {
         return [
             $this->regenAction(),
+            $this->freeDpAction(),
+            $this->cancelFreeDpAction(),
             Actions\DeleteAction::make(),
         ];
     }

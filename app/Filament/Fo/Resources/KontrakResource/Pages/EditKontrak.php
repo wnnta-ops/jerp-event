@@ -6,8 +6,10 @@ use App\Filament\Fo\Resources\KontrakResource;
 use App\Modules\FO\MarketingSales\Models\Unit;
 use App\Modules\FO\MarketingSales\Services\KontrakGeneratorService;
 use Filament\Actions;
+use Filament\Forms\Components\DatePicker;
 use Filament\Notifications\Notification;
 use Filament\Resources\Pages\EditRecord;
+use Illuminate\Support\Carbon;
 
 class EditKontrak extends EditRecord
 {
@@ -42,6 +44,8 @@ class EditKontrak extends EditRecord
     {
         return [
             $this->regenAction(),
+            $this->freeDpAction(),
+            $this->cancelFreeDpAction(),
 
             // Finalisasi: simpan + promosikan SPRS → SPR (beda dari Simpan biasa).
             Actions\Action::make('saveAsSpr')->label('Simpan sebagai SPR')
@@ -87,6 +91,95 @@ class EditKontrak extends EditRecord
                 ->modalDescription('Bentuk ulang Gimmick dari master Setup Gimmick. Baris gimmick lama diganti.')
                 ->action(fn () => $this->regen('gimmick')),
         ])->label('Bentuk Ulang dari Master')->icon('heroicon-o-sparkles')->button();
+    }
+
+    /**
+     * Free DP: bentuk ulang Jadwal Tagihan dari Skema Bayar (restore DP asli), lalu
+     * DP yang jatuh temponya > Tgl Berkas Lengkap → Rp 0 (FREE). Penyeimbang: baris
+     * "SUBSIDI FREE DP" = total yang di-free, agar Total Tagihan tetap = Nilai Kontrak
+     * (selisih 0) dan Pencairan KPR tidak berubah.
+     */
+    protected function applyFreeDp(Carbon $tglBerkas): void
+    {
+        // Restore jadwal dari skema (idempotent — DP kembali ke nilai asli DP3X).
+        app(KontrakGeneratorService::class)->tagihan($this->record);
+        $this->record->refresh();
+
+        $dp = $this->record->tagihan()->where('tipe', 'DP')->where('nilai', '>', 0)
+            ->orderBy('urutan')->orderBy('jatuh_tempo')->get();
+        // DP 1 selalu dibayar (tidak pernah di-free). Free DP ke-2 dst yang jatuh
+        // temponya SETELAH tanggal berkas lengkap (sebelum DP2 → DP2&3; setelah DP2 → DP3).
+        $freed = $dp->skip(1)->filter(fn ($t) => $t->jatuh_tempo?->gt($tglBerkas))->values();
+
+        if ($freed->isEmpty()) {
+            Notification::make()->warning()->title('Tidak ada DP yang di-free')
+                ->body('Semua DP sudah jatuh tempo s/d '.$tglBerkas->format('d M Y').', atau skema tidak memiliki DP.')
+                ->send();
+
+            return;
+        }
+
+        $freedSum = 0.0;
+        foreach ($freed as $t) {
+            $freedSum += (float) $t->nilai;
+            $t->update([
+                'nilai' => 0,
+                'nama_tagihan' => $t->nama_tagihan.' (FREE)',
+                'keterangan' => 'Free DP — berkas lengkap '.$tglBerkas->format('d M Y'),
+            ]);
+        }
+
+        // Penyeimbang subsidi (total tetap = Nilai Kontrak; Pencairan KPR tidak berubah).
+        $this->record->tagihan()->create([
+            'urutan' => 900,
+            'tipe' => 'LAIN',
+            'nama_tagihan' => 'SUBSIDI FREE DP',
+            'jatuh_tempo' => $tglBerkas,
+            'nilai' => $freedSum,
+            'pelunasan' => 0,
+            'keterangan' => 'Subsidi developer atas '.$freed->count().' DP yang di-free',
+        ]);
+
+        Notification::make()->success()
+            ->title($freed->count().' DP di-free (Rp '.number_format($freedSum, 0, ',', '.').')')
+            ->body('Pencairan KPR tetap; selisih menjadi subsidi developer. Klik Simpan untuk finalisasi.')
+            ->send();
+
+        // Reload halaman penuh agar repeater Jadwal Tagihan bersih (hindari item kosong
+        // sisa state Livewire akibat baris tagihan diubah di luar siklus form).
+        $this->redirect($this->getResource()::getUrl('edit', ['record' => $this->getRecord()]));
+    }
+
+    /** Tombol FREE DP (KPR DP3X) — dipakai di edit SPRS & SPR. */
+    protected function freeDpAction(): Actions\Action
+    {
+        return Actions\Action::make('freeDp')->label('Free DP')->icon('heroicon-o-gift')->color('warning')
+            ->visible(fn () => strtoupper((string) $this->record->cara_bayar) === 'KPR')
+            ->modalHeading('Free DP (KPR DP3X)')
+            ->modalDescription('DP 1 selalu dibayar. DP ke-2 dst yang jatuh temponya SETELAH tanggal berkas lengkap di-free (Rp 0). Pencairan KPR tetap; selisihnya menjadi subsidi developer.')
+            ->modalSubmitActionLabel('Terapkan Free DP')
+            ->form([
+                DatePicker::make('tgl_berkas')->label('Tgl Berkas Lengkap')->default(now())->required()
+                    ->helperText('DP 1 tetap dibayar; DP ke-2 dst yang jatuh tempo setelah tanggal ini akan di-free.'),
+            ])
+            ->action(fn (array $data) => $this->applyFreeDp(Carbon::parse($data['tgl_berkas'])));
+    }
+
+    /** Batalkan Free DP — kembalikan Jadwal Tagihan ke Skema Bayar (DP dipulihkan, baris Subsidi dihapus). */
+    protected function cancelFreeDpAction(): Actions\Action
+    {
+        return Actions\Action::make('cancelFreeDp')->label('Batal Free DP')->icon('heroicon-o-arrow-uturn-left')->color('gray')
+            ->visible(fn () => strtoupper((string) $this->record->cara_bayar) === 'KPR'
+                && $this->record->tagihan()->where('nama_tagihan', 'like', '%FREE%')->exists())
+            ->requiresConfirmation()
+            ->modalHeading('Batalkan Free DP')
+            ->modalDescription('Jadwal Tagihan dikembalikan ke Skema Bayar (DP3X): DP yang di-free dipulihkan & baris "SUBSIDI FREE DP" dihapus.')
+            ->action(function () {
+                app(KontrakGeneratorService::class)->tagihan($this->record);
+                Notification::make()->success()->title('Free DP dibatalkan')
+                    ->body('Jadwal Tagihan dikembalikan ke Skema Bayar.')->send();
+                $this->redirect($this->getResource()::getUrl('edit', ['record' => $this->getRecord()]));
+            });
     }
 
     /** Generate ulang satu tab dari masternya, lalu muat ulang form. */
