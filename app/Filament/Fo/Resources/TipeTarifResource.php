@@ -45,10 +45,21 @@ class TipeTarifResource extends Resource
                     Forms\Components\TextInput::make('nilai_biaya')
                         ->label('Nilai Biaya')->numeric()->required()->default(0),
                     Forms\Components\Radio::make('satuan')
-                        ->label('Satuan')->inline()
-                        ->options(['RP' => 'Rp', 'PERSEN' => '%'])
-                        ->default('PERSEN')->required(),
+                        ->label('Satuan')->inline()->live()
+                        ->options(['RP' => 'Rp', 'PERSEN' => '%', 'BAGI' => '÷ (pembagi DPP)'])
+                        ->default('PERSEN')->required()
+                        ->helperText(fn (Forms\Get $get) => $get('satuan') === 'BAGI'
+                            ? 'DPP = harga ÷ nilai. Isi 1,11 (PPN 11%).' : null),
                 ]),
+                Forms\Components\Radio::make('dikenakan')
+                    ->label('Dikenakan ke')->default('DPP')->columnSpanFull()
+                    ->visible(fn (Forms\Get $get) => $get('satuan') !== 'BAGI')
+                    ->required(fn (Forms\Get $get) => $get('satuan') !== 'BAGI')
+                    ->options([
+                        'DPP' => 'Potong DPP (mis. BPHTB, SSP) — sebelum komisi',
+                        'KOMISI' => 'Potong Komisi (mis. PPh 23) — atas komisi',
+                    ])
+                    ->helperText('DPP = biaya pemotong basis (% / Rp). KOMISI = pajak atas komisi (%). Untuk DPP pembagi, pilih Satuan ÷.'),
                 Forms\Components\TextInput::make('nilai_pengurang')
                     ->label('Nilai Pengurang')->numeric()->default(0)
                     ->helperText('Pengurang basis sebelum tarif diterapkan (mis. NJOPTKP BPHTB). 0 kalau tak ada.'),
@@ -63,10 +74,21 @@ class TipeTarifResource extends Resource
             Tables\Columns\TextColumn::make('kode')->label('No.')->badge()->searchable()->sortable(),
             Tables\Columns\TextColumn::make('nama')->label('Nama')->searchable()->sortable(),
             Tables\Columns\TextColumn::make('nilai_biaya')->label('Nilai')
-                ->formatStateUsing(fn ($state, TipeTarif $r) => $r->satuan === 'PERSEN'
-                    ? rtrim(rtrim(number_format((float) $state, 2), '0'), '.').'%'
-                    : 'Rp '.number_format((float) $state, 0, ',', '.'))
+                ->formatStateUsing(fn ($state, TipeTarif $r) => match (strtoupper((string) $r->satuan)) {
+                    'PERSEN' => rtrim(rtrim(number_format((float) $state, 2), '0'), '.').'%',
+                    'BAGI' => '÷ '.rtrim(rtrim(number_format((float) $state, 4), '0'), '.'),
+                    default => 'Rp '.number_format((float) $state, 0, ',', '.'),
+                })
                 ->alignEnd(),
+            Tables\Columns\TextColumn::make('dikenakan')->label('Dikenakan')->badge()
+                ->getStateUsing(fn (TipeTarif $r) => strtoupper((string) $r->satuan) === 'BAGI'
+                    ? 'BASIS' : strtoupper((string) ($r->dikenakan ?: 'DPP')))
+                ->color(fn (string $state) => match ($state) {
+                    'BASIS' => 'info', 'KOMISI' => 'warning', default => 'gray',
+                })
+                ->formatStateUsing(fn (string $state) => match ($state) {
+                    'BASIS' => 'Basis/DPP (÷)', 'KOMISI' => 'Komisi', default => 'Potong DPP',
+                }),
             Tables\Columns\TextColumn::make('nilai_pengurang')->label('Pengurang')->money('IDR', locale: 'id')->alignEnd()->toggleable(),
             Tables\Columns\TextColumn::make('project.name')->label('Project')->placeholder('Semua')->toggleable(),
             Tables\Columns\IconColumn::make('is_active')->label('Aktif')->boolean(),

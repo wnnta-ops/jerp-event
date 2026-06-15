@@ -20,16 +20,42 @@ class KomisiCalculatorService
     public function calculate(Kontrak $kontrak, SkemaKomisi $skema, float $ratePersen, float $pphPersen = 2.0): array
     {
         $total = (float) $kontrak->total_kontrak;
-        $basis = $skema->dasar_hitung === 'NILAI_KONTRAK' ? $total : (float) ceil($total / 1.11);
 
+        // DPP (basis): tarif dengan SATUAN '÷' (BAGI) = pembagi → DPP = harga ÷ nilai
+        // (mis. 1,11). Bila tak ada, fallback ke dasar_hitung skema.
+        $pembagi = 0.0;
+        foreach ($skema->biaya as $b) {
+            $tt = $b->tipeTarif;
+            if ($tt && (strtoupper((string) $tt->satuan) === 'BAGI' || strtoupper((string) $tt->dikenakan) === 'BASIS')) {
+                $pembagi = (float) $tt->nilai_biaya;
+            }
+        }
+        $basis = $pembagi > 0
+            ? (float) ceil($total / $pembagi)
+            : ($skema->dasar_hitung === 'NILAI_KONTRAK' ? $total : (float) ceil($total / 1.11));
+
+        // Biaya dari Setup Tarif (di-link ke skema):
+        //  - dikenakan=DPP    → potong basis (BPHTB, SSP)
+        //  - dikenakan=KOMISI → PPh atas komisi (PPh 23), dijumlahkan jadi % pph
         $biayaDetail = [];
         $biayaTotal = 0.0;
+        $pphFromTarif = null;
         foreach ($skema->biaya as $b) {
             $tt = $b->tipeTarif;
             if (! $tt) {
                 continue;
             }
-            $isPersen = in_array(strtoupper((string) $tt->satuan), ['PERSEN', '%', 'PERCENT'], true);
+            $satuan = strtoupper((string) $tt->satuan);
+            $dikenakan = strtoupper((string) ($tt->dikenakan ?? 'DPP'));
+            if ($satuan === 'BAGI' || $dikenakan === 'BASIS') {
+                continue; // pembagi DPP — sudah dipakai untuk derivasi basis
+            }
+            if ($dikenakan === 'KOMISI') {
+                $pphFromTarif = (float) ($pphFromTarif ?? 0) + (float) $tt->nilai_biaya;
+
+                continue;
+            }
+            $isPersen = in_array($satuan, ['PERSEN', '%', 'PERCENT'], true);
             $amt = $isPersen
                 ? max(0.0, $basis - (float) $tt->nilai_pengurang) * (float) $tt->nilai_biaya / 100
                 : (float) $tt->nilai_biaya;
@@ -38,9 +64,12 @@ class KomisiCalculatorService
             $biayaTotal += $amt;
         }
 
+        // PPh: pakai tarif KOMISI dari Setup Tarif bila di-link; else default param.
+        $effPph = $pphFromTarif ?? $pphPersen;
+
         $hargaNett = max(0.0, $basis - $biayaTotal);
         $komisi = (float) ceil($hargaNett * $ratePersen / 100);
-        $pph = (float) ceil($komisi * $pphPersen / 100);
+        $pph = (float) ceil($komisi * $effPph / 100);
         $nett = $komisi - $pph;
 
         return [
@@ -50,7 +79,7 @@ class KomisiCalculatorService
             'harga_nett' => $hargaNett,
             'rate_persen' => $ratePersen,
             'komisi' => $komisi,
-            'pph_persen' => $pphPersen,
+            'pph_persen' => $effPph,
             'pph' => $pph,
             'nett' => $nett,
         ];

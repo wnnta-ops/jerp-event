@@ -20,7 +20,7 @@ class TipeTarif extends TenantAwareModel
 
     protected $fillable = [
         'tenant_id', 'project_id', 'kode', 'nama',
-        'nilai_biaya', 'satuan', 'nilai_pengurang', 'is_active',
+        'nilai_biaya', 'satuan', 'dikenakan', 'nilai_pengurang', 'is_active',
     ];
 
     protected $casts = [
