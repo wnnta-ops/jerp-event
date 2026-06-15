@@ -6,7 +6,9 @@ use App\Modules\FO\Approval\Models\Approval;
 use App\Modules\FO\FinanceAR\Models\Refund;
 use App\Modules\FO\MarketingSales\Models\Kontrak;
 use App\Modules\FO\MarketingSales\Models\Unit;
+use App\Modules\FO\MarketingSales\Services\KontrakGeneratorService;
 use App\Modules\FO\MarketingSales\Services\PengalihanHakService;
+use App\Modules\FO\MarketingSales\Services\PindahUnitService;
 use Illuminate\Support\Facades\DB;
 use RuntimeException;
 
@@ -53,7 +55,7 @@ class ApprovalExecutionService
             'ppn' => $this->ppn($total),
         ]);
 
-        return 'Diskon Rp '.number_format($diskon, 0, ',', '.').' diterapkan → Nilai Kontrak Rp '.number_format($total, 0, ',', '.').'.';
+        return 'Diskon Rp '.number_format($diskon, 0, ',', '.').' diterapkan → Nilai Kontrak Rp '.number_format($total, 0, ',', '.').'.'.$this->regenTagihan($k);
     }
 
     private function applyAdjustHarga(Kontrak $k, array $baru): string
@@ -71,7 +73,15 @@ class ApprovalExecutionService
         }
         $k->update($update);
 
-        return 'Harga di-adjust → Nilai Kontrak Rp '.number_format($total, 0, ',', '.').'.';
+        return 'Harga di-adjust → Nilai Kontrak Rp '.number_format($total, 0, ',', '.').'.'.$this->regenTagihan($k);
+    }
+
+    /** Bentuk ulang Jadwal Tagihan mengikuti Nilai Kontrak terbaru (selisih jadi pas 0). */
+    private function regenTagihan(Kontrak $k): string
+    {
+        $n = app(KontrakGeneratorService::class)->tagihan($k->fresh());
+
+        return ' Jadwal Tagihan dibentuk ulang ('.$n.' baris).';
     }
 
     private function applyBatal(Kontrak $k, array $baru = []): string
@@ -138,21 +148,14 @@ class ApprovalExecutionService
         if (! $unitBaruId) {
             throw new RuntimeException('Ganti Unit: detail_baru harus berisi unit_baru_id.');
         }
-        $unitBaru = Unit::lockForUpdate()->findOrFail($unitBaruId);
-        if ($unitBaru->status === 'TERJUAL') {
-            throw new RuntimeException('Unit tujuan '.$unitBaru->no_unit.' sudah TERJUAL.');
-        }
+        // Pindah unit penuh: swap unit kontrak + reservasi, unit lama TERSEDIA, +
+        // catat history PindahUnit (selaras alur langsung PindahUnitService).
+        $pu = app(PindahUnitService::class)->move($k, $unitBaruId, [
+            'tgl_pindah' => $baru['tgl_pindah'] ?? null,
+            'keterangan' => $baru['keterangan'] ?? null,
+        ]);
 
-        if ($k->unit_id && $unitLama = Unit::find($k->unit_id)) {
-            $unitLama->update(['status' => 'TERSEDIA']);
-        }
-        $k->update(['unit_id' => $unitBaru->id]);
-        $unitBaru->update(['status' => 'TERJUAL']);
-        if ($k->reservasi) {
-            $k->reservasi->update(['unit_id' => $unitBaru->id]);
-        }
-
-        return 'Unit kontrak diganti ke '.$unitBaru->no_unit.'.';
+        return 'Pindah Unit '.$pu->no_pindah.' — unit kontrak kini '.($pu->unitBaru?->kode_unit ?: $pu->unitBaru?->no_unit ?: '').'.';
     }
 
     private function ppn(float $total): float

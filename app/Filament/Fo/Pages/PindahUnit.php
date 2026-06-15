@@ -3,9 +3,10 @@
 namespace App\Filament\Fo\Pages;
 
 use App\Filament\Fo\Concerns\BuildsStockGrid;
+use App\Modules\FO\Approval\Models\Approval;
+use App\Modules\FO\Approval\Services\ApprovalService;
 use App\Modules\FO\MarketingSales\Models\Kontrak;
 use App\Modules\FO\MarketingSales\Models\Unit;
-use App\Modules\FO\MarketingSales\Services\PindahUnitService;
 use Filament\Actions\Action;
 use Filament\Actions\Concerns\InteractsWithActions;
 use Filament\Actions\Contracts\HasActions;
@@ -87,13 +88,34 @@ class PindahUnit extends Page implements HasActions, HasForms
             ])
             ->action(function (array $data) {
                 try {
-                    $pu = app(PindahUnitService::class)->move($this->kontrak, (int) $this->pendingUnitId, $data);
-                    Notification::make()->success()->title('Pindah Unit selesai — '.$pu->no_pindah)
-                        ->body('Unit kontrak kini: '.($pu->unitBaru?->kode_unit ?: $pu->unitBaru?->no_unit))->persistent()->send();
+                    // Pindah Unit (kontrak SPR) WAJIB lewat Approval Pindah Unit (2 level).
+                    // Unit benar-benar pindah setelah disetujui (eksekusi GANTI_UNIT).
+                    $unitBaru = Unit::find((int) $this->pendingUnitId);
+                    $approval = Approval::create([
+                        'tgl_approval' => now(),
+                        'jenis' => 'GANTI_UNIT',
+                        'subject_type' => Kontrak::class,
+                        'subject_id' => $this->kontrak->id,
+                        'alasan' => 'Pindah Unit '.$this->kontrak->no_kontrak.': '.($this->kontrak->unit?->kode_unit ?? '-').' → '.($unitBaru?->kode_unit ?: $unitBaru?->no_unit ?: '-'),
+                        'detail_lama' => ['unit_id' => $this->kontrak->unit_id, 'unit' => $this->kontrak->unit?->kode_unit],
+                        'detail_baru' => [
+                            'unit_baru_id' => (int) $this->pendingUnitId,
+                            'unit_baru' => $unitBaru?->kode_unit ?: $unitBaru?->no_unit,
+                            'tgl_pindah' => $data['tgl_pindah'] ?? null,
+                            'keterangan' => $data['keterangan'] ?? null,
+                        ],
+                        'status' => 'DRAFT',
+                        'requested_by' => auth()->id(),
+                    ]);
+                    app(ApprovalService::class)->submit($approval);
+
+                    Notification::make()->success()->title('Diajukan ke Approval Pindah Unit — '.$approval->no_approval)
+                        ->body('Pindah unit "'.($unitBaru?->kode_unit ?: $unitBaru?->no_unit ?: '').'" menunggu persetujuan (2 level). Berlaku setelah disetujui.')
+                        ->persistent()->send();
 
                     $this->redirect('/fo/pindah-unit');
                 } catch (\Throwable $e) {
-                    Notification::make()->danger()->title('Gagal pindah unit')->body($e->getMessage())->send();
+                    Notification::make()->danger()->title('Gagal mengajukan')->body($e->getMessage())->send();
                 }
             });
     }

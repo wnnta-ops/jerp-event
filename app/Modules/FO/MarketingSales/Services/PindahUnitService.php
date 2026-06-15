@@ -5,13 +5,15 @@ namespace App\Modules\FO\MarketingSales\Services;
 use App\Modules\FO\MarketingSales\Models\Kontrak;
 use App\Modules\FO\MarketingSales\Models\PindahUnit;
 use App\Modules\FO\MarketingSales\Models\Unit;
+use App\Modules\FO\MarketingSales\Models\UnitPricelist;
 use Illuminate\Support\Facades\DB;
 use RuntimeException;
 
 /**
  * Eksekusi Pindah Unit: ganti unit kontrak (+reservasi) ke unit baru. Unit lama
  * dikembalikan TERSEDIA, unit baru ditandai terjual/booking sesuai tahap kontrak.
- * Nilai kontrak (financial) tidak diubah — bila perlu sesuaikan via Adjustment Kontrak.
+ * Harga IKUT unit baru: ambil dari Price List unit baru × skema kontrak (fallback
+ * harga unit), hitung ulang Nilai Kontrak/PPN, lalu regenerate Jadwal Tagihan.
  *
  * @param  array{tgl_pindah?:mixed,biaya_admin?:float,keterangan?:?string}  $data
  */
@@ -54,7 +56,25 @@ class PindahUnitService
                 $kontrak->reservasi->update(['unit_id' => $unitBaruId]);
             }
 
-            return $pu;
+            // Harga ikut unit baru: Price List (unit baru × skema) → fallback harga unit.
+            $pl = UnitPricelist::query()
+                ->where('unit_id', $unitBaruId)
+                ->where('skema_id', $kontrak->skema_id)
+                ->first();
+            $hargaBaru = ($pl && (float) $pl->price_list > 0) ? (float) $pl->price_list : (float) $unitBaru->harga_jual;
+            if ($hargaBaru > 0) {
+                $diskon = (float) $kontrak->diskon;
+                $total = max(0, $hargaBaru - $diskon);
+                $kontrak->update([
+                    'harga_jual' => $hargaBaru,
+                    'total_kontrak' => $total,
+                    'ppn' => round($total - round($total / 1.11), 2),
+                ]);
+                // Jadwal tagihan dibentuk ulang mengikuti harga unit baru.
+                app(KontrakGeneratorService::class)->tagihan($kontrak->fresh());
+            }
+
+            return $pu->fresh();
         });
     }
 }
