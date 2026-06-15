@@ -2,6 +2,7 @@
 
 namespace App\Filament\Fo\Pages;
 
+use App\Modules\FO\Komisi\Models\Agent;
 use App\Modules\FO\Komisi\Models\Blt;
 use App\Modules\FO\Komisi\Services\BltCalculatorService;
 use App\Modules\FO\MarketingSales\Models\Kontrak;
@@ -77,9 +78,14 @@ class GenerateBlt extends Page implements HasTable
             return 0;
         }
 
-        $kontrak->loadMissing(['customer', 'agent']);
+        $kontrak->loadMissing([
+            'customer', 'agent.salesLevel',
+            'agent.atasan.salesLevel', 'agent.atasan.atasan.salesLevel',
+        ]);
         $n = 0;
         foreach ($svc->generate($kontrak, $skema) as $row) {
+            // Penerima per level: Sales = agent; Koordinator/Kantor = naik ke atasan.
+            $penerima = $this->recipientAgent($kontrak, $row['level_type']);
             Blt::create([
                 'tenant_id' => $kontrak->tenant_id ?? 1,
                 'tgl_blt' => now()->toDateString(),
@@ -87,12 +93,15 @@ class GenerateBlt extends Page implements HasTable
                 'agent_id' => $kontrak->agent_id,
                 'sales_level_id' => $row['sales_level_id'],
                 'level_type' => $row['level_type'],
-                'nama_user' => $kontrak->customer?->full_name,
+                'nama_user' => $penerima?->name ?: $kontrak->agent?->name,
                 'nilai_blt' => $row['nilai_blt'],
                 'pph_jenis' => $row['pph_jenis'],
                 'pph_persen' => $row['pph_persen'],
                 'pph_amount' => $row['pph_amount'],
                 'nett' => $row['nett'],
+                'rek_bank' => $penerima?->rekening_bank,
+                'rek_number' => $penerima?->rekening_number,
+                'rek_holder' => $penerima?->rekening_holder ?: $penerima?->name,
                 'status' => 'DRAFT',
                 'keterangan' => 'Generate dari skema '.$skema->kode,
             ]);
@@ -104,5 +113,22 @@ class GenerateBlt extends Page implements HasTable
         }
 
         return $n;
+    }
+
+    /** Penerima BLT per level: SALES = agent; KOORDINATOR/KANTOR = naik rantai atasan. */
+    private function recipientAgent(Kontrak $kontrak, string $levelType): ?Agent
+    {
+        $sales = $kontrak->agent;
+        if (! $sales || $levelType === 'SALES') {
+            return $sales;
+        }
+        $needle = $levelType === 'KANTOR' ? 'KANTOR' : 'KOOR';
+        for ($cur = $sales->atasan; $cur; $cur = $cur->atasan) {
+            if (str_contains(strtoupper((string) $cur->salesLevel?->name), $needle)) {
+                return $cur;
+            }
+        }
+
+        return $sales;
     }
 }

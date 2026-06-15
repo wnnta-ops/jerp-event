@@ -3,6 +3,7 @@
 namespace App\Filament\Fo\Pages;
 
 use App\Modules\FO\Komisi\Models\Blt;
+use App\Support\Rupiah;
 use Filament\Forms;
 use Filament\Notifications\Notification;
 use Filament\Pages\Page;
@@ -11,7 +12,11 @@ use Filament\Tables\Concerns\InteractsWithTable;
 use Filament\Tables\Contracts\HasTable;
 use Filament\Tables\Table;
 
-/** Realisasi BLT — pencairan BLT APPROVED (input PPh/PPn + rek/bank) → PAID. */
+/**
+ * Realisasi BLT — daftar per No. Pengajuan (1 baris = 1 pengajuan hasil checklist
+ * Generate). Cetak ulang permohonan per batch, atau buka Detail/Edit untuk
+ * memperbaiki tiap BLT di dalamnya (NETT otomatis), lalu cetak ulang.
+ */
 class RealisasiBlt extends Page implements HasTable
 {
     use InteractsWithTable;
@@ -29,59 +34,87 @@ class RealisasiBlt extends Page implements HasTable
     public function table(Table $table): Table
     {
         return $table
-            ->query(Blt::query()->with(['agent', 'kontrak'])->whereIn('status', ['APPROVED', 'PAID']))
+            ->query(
+                Blt::query()->whereNotNull('no_pengajuan')->where('status', 'PAID')
+                    ->selectRaw('MIN(id) as id, no_pengajuan, COUNT(*) as jml, SUM(nilai_blt) as total_nilai, SUM(pph_amount) as total_pph, SUM(nett) as total_nett, MAX(tgl_bayar) as tgl_bayar')
+                    ->groupBy('no_pengajuan')
+            )
             ->heading('Realisasi BLT')
-            ->description('BLT APPROVED → cairkan (input PPh/PPn + rekening) menjadi PAID.')
+            ->description('Satu baris = satu No. Pengajuan (batch checklist). Cetak ulang permohonan, atau buka Detail/Edit untuk memperbaiki isinya.')
             ->columns([
-                Tables\Columns\TextColumn::make('no_blt')->label('No')->badge()->color('primary')->searchable()->sortable(),
-                Tables\Columns\TextColumn::make('level_type')->label('Type')->badge(),
-                Tables\Columns\TextColumn::make('nama_user')->label('Nama User')->placeholder('—')->limit(20),
-                Tables\Columns\TextColumn::make('nilai_blt')->label('Nilai BLT')->money('IDR')->alignEnd(),
-                Tables\Columns\TextColumn::make('pph_amount')->label('PPh')->money('IDR')->alignEnd()->toggleable(),
-                Tables\Columns\TextColumn::make('nett')->label('NETT')->money('IDR')->alignEnd()->weight('bold'),
+                Tables\Columns\TextColumn::make('no_pengajuan')->label('No. Pengajuan')->badge()->color('warning')->searchable()->sortable(),
+                Tables\Columns\TextColumn::make('jml')->label('Jumlah BLT')->alignCenter()->formatStateUsing(fn ($state) => $state.' BLT'),
+                Tables\Columns\TextColumn::make('total_nilai')->label('Total Nilai BLT')->money('IDR')->alignEnd(),
+                Tables\Columns\TextColumn::make('total_pph')->label('Total PPh')->money('IDR')->alignEnd()->toggleable(),
+                Tables\Columns\TextColumn::make('total_nett')->label('Total NETT')->money('IDR')->alignEnd()->weight('bold'),
                 Tables\Columns\TextColumn::make('tgl_bayar')->label('Tgl Bayar')->date('d M Y')->placeholder('—'),
-                Tables\Columns\TextColumn::make('status')->label('Status')->badge()->color(fn (?string $s) => $s === 'PAID' ? 'success' : 'warning'),
-            ])
-            ->filters([
-                Tables\Filters\SelectFilter::make('status')->options(['APPROVED' => 'Approved', 'PAID' => 'Paid'])->default('APPROVED'),
-                Tables\Filters\SelectFilter::make('level_type')->label('Type')->options(['SALES' => 'Sales', 'KOORDINATOR' => 'Koordinator', 'KANTOR' => 'Kantor']),
             ])
             ->actions([
-                Tables\Actions\Action::make('realisasi')->label('Realisasi')->icon('heroicon-o-banknotes')->color('success')->button()
-                    ->visible(fn (Blt $r) => $r->status === 'APPROVED')
-                    ->modalHeading('Realisasi (Cairkan) BLT')
+                Tables\Actions\Action::make('cetak')->label('Cetak')->icon('heroicon-o-printer')->color('gray')->button()
+                    ->url(fn (Blt $r) => route('fo.cetak.pengajuan-blt', ['pengajuan' => $r->no_pengajuan]))
+                    ->openUrlInNewTab(),
+                Tables\Actions\Action::make('detail')->label('Detail / Edit')->icon('heroicon-o-pencil-square')->color('primary')->button()
+                    ->modalHeading(fn (Blt $r) => 'Pengajuan '.$r->no_pengajuan)
+                    ->modalDescription('Perbaiki bila ada kesalahan — NETT dihitung ulang otomatis saat disimpan.')
+                    ->modalWidth('5xl')
+                    ->modalSubmitActionLabel('Simpan')
                     ->fillForm(fn (Blt $r) => [
-                        'tgl_bayar' => now(),
-                        'pph_amount' => (float) $r->pph_amount,
-                        'ppn_amount' => (float) $r->ppn_amount,
-                        'rek_bank' => $r->rek_bank ?: $r->agent?->rekening_bank,
-                        'rek_number' => $r->rek_number ?: $r->agent?->rekening_number,
-                        'rek_holder' => $r->rek_holder ?: ($r->agent?->rekening_holder ?: $r->nama_user),
+                        'lines' => Blt::query()->where('no_pengajuan', $r->no_pengajuan)
+                            ->orderByRaw("FIELD(level_type,'SALES','KOORDINATOR','KANTOR')")->get()
+                            ->map(fn (Blt $b) => [
+                                'id' => $b->id,
+                                'no_blt' => $b->no_blt,
+                                'level_type' => $b->level_type,
+                                'nama_user' => $b->nama_user,
+                                'nilai_blt' => (float) $b->nilai_blt,
+                                'pph_amount' => (float) $b->pph_amount,
+                                'ppn_amount' => (float) $b->ppn_amount,
+                                'rek_bank' => $b->rek_bank,
+                                'rek_number' => $b->rek_number,
+                                'rek_holder' => $b->rek_holder,
+                            ])->all(),
                     ])
                     ->form([
-                        Forms\Components\DatePicker::make('tgl_bayar')->label('Tgl Pembayaran')->required(),
-                        Forms\Components\TextInput::make('pph_amount')->label('PPh (Rp)')->numeric()->rupiah(),
-                        Forms\Components\TextInput::make('ppn_amount')->label('PPn (Rp, jika ada)')->numeric()->rupiah()->default(0),
-                        Forms\Components\TextInput::make('rek_bank')->label('Bank'),
-                        Forms\Components\TextInput::make('rek_number')->label('No. Rekening'),
-                        Forms\Components\TextInput::make('rek_holder')->label('Nama Terang'),
+                        Forms\Components\Repeater::make('lines')
+                            ->hiddenLabel()->addable(false)->deletable(false)->reorderable(false)->columns(3)
+                            ->collapsible()->collapsed()
+                            ->itemLabel(fn (array $state) => ($state['no_blt'] ?? '').' · '.($state['level_type'] ?? '').' · '.($state['nama_user'] ?? ''))
+                            ->schema([
+                                Forms\Components\Hidden::make('id'),
+                                Forms\Components\TextInput::make('no_blt')->label('No. BLT')->disabled(),
+                                Forms\Components\TextInput::make('level_type')->label('Type')->disabled(),
+                                Forms\Components\TextInput::make('nama_user')->label('Penerima'),
+                                Forms\Components\TextInput::make('nilai_blt')->label('Nilai BLT')->numeric()->rupiah()->required(),
+                                Forms\Components\TextInput::make('pph_amount')->label('PPh')->numeric()->rupiah()->default(0),
+                                Forms\Components\TextInput::make('ppn_amount')->label('PPn')->numeric()->rupiah()->default(0),
+                                Forms\Components\TextInput::make('rek_bank')->label('Bank'),
+                                Forms\Components\TextInput::make('rek_number')->label('No. Rekening'),
+                                Forms\Components\TextInput::make('rek_holder')->label('Nama Terang'),
+                            ]),
                     ])
                     ->action(function (Blt $r, array $data) {
-                        $net = max(0, (float) $r->nilai_blt - (float) ($data['pph_amount'] ?? 0) - (float) ($data['ppn_amount'] ?? 0));
-                        $r->update([
-                            'status' => 'PAID',
-                            'tgl_bayar' => $data['tgl_bayar'],
-                            'pph_amount' => $data['pph_amount'] ?? 0,
-                            'ppn_amount' => $data['ppn_amount'] ?? 0,
-                            'nett' => $net,
-                            'rek_bank' => $data['rek_bank'] ?? null,
-                            'rek_number' => $data['rek_number'] ?? null,
-                            'rek_holder' => $data['rek_holder'] ?? null,
-                        ]);
-                        Notification::make()->success()->title('BLT dicairkan — '.$r->no_blt)
-                            ->body('NETT Rp '.number_format($net, 0, ',', '.'))->send();
+                        foreach ($data['lines'] ?? [] as $line) {
+                            if (empty($line['id'])) {
+                                continue;
+                            }
+                            $nilai = Rupiah::toFloat($line['nilai_blt'] ?? 0);
+                            $pph = Rupiah::toFloat($line['pph_amount'] ?? 0);
+                            $ppn = Rupiah::toFloat($line['ppn_amount'] ?? 0);
+                            Blt::where('id', $line['id'])->update([
+                                'nama_user' => $line['nama_user'] ?? null,
+                                'nilai_blt' => $nilai,
+                                'pph_amount' => $pph,
+                                'ppn_amount' => $ppn,
+                                'nett' => max(0, $nilai - $pph - $ppn),
+                                'rek_bank' => $line['rek_bank'] ?? null,
+                                'rek_number' => $line['rek_number'] ?? null,
+                                'rek_holder' => $line['rek_holder'] ?? null,
+                            ]);
+                        }
+                        Notification::make()->success()->title('Pengajuan '.$r->no_pengajuan.' diperbarui')
+                            ->body('Silakan Cetak ulang bila perlu.')->send();
                     }),
             ])
-            ->defaultSort('tgl_blt', 'desc')->paginated([10, 25, 50]);
+            ->defaultSort('tgl_bayar', 'desc')->paginated([10, 25, 50]);
     }
 }

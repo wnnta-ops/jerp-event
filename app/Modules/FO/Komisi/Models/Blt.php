@@ -17,7 +17,7 @@ class Blt extends TenantAwareModel
     protected $table = 'fo_blt';
 
     protected $fillable = [
-        'tenant_id', 'no_blt', 'tgl_blt', 'kontrak_id', 'agent_id', 'sales_level_id',
+        'tenant_id', 'no_blt', 'no_pengajuan', 'tgl_blt', 'kontrak_id', 'agent_id', 'sales_level_id',
         'level_type', 'nama_user', 'nilai_blt', 'pph_jenis', 'pph_persen', 'pph_amount',
         'ppn_amount', 'nett', 'status', 'tgl_bayar', 'rek_bank', 'rek_number', 'rek_holder', 'keterangan',
     ];
