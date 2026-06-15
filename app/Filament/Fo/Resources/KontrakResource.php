@@ -152,7 +152,7 @@ class KontrakResource extends Resource
                             Forms\Components\Repeater::make('komisi')->relationship()->label('')
                                 ->columns(12)->defaultItems(0)->addActionLabel('Tambah Komisi')
                                 ->itemLabel(fn (array $state): ?string => isset($state['amount'])
-                                    ? ('Gross Rp '.number_format((float) ($state['amount'] ?? 0), 0, ',', '.'))
+                                    ? ('Gross Rp '.number_format(Rupiah::toFloat($state['amount'] ?? 0), 0, ',', '.'))
                                     : null)
                                 ->schema([
                                     Forms\Components\Select::make('agent_id')->label('Agent / Sales')->columnSpan(4)

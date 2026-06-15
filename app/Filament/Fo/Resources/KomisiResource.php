@@ -6,6 +6,7 @@ use App\Filament\Fo\Resources\KomisiResource\Pages;
 use App\Modules\FO\Komisi\Models\Agent;
 use App\Modules\FO\Komisi\Models\Komisi;
 use App\Modules\FO\MarketingSales\Models\Kontrak;
+use App\Support\Rupiah;
 use Filament\Forms;
 use Filament\Forms\Form;
 use Filament\Notifications\Notification;
@@ -70,19 +71,19 @@ class KomisiResource extends Resource
                     ->live(debounce: 500)
                     ->afterStateUpdated(function ($state, callable $set, callable $get) {
                         $persen = (float) ($get('persen_komisi') ?? 0);
-                        $set('amount', round(((float) $state) * $persen / 100, 2));
+                        $set('amount', round(Rupiah::toFloat($state) * $persen / 100, 2));
                     }),
                 Forms\Components\TextInput::make('persen_komisi')->label('% Komisi')->numeric()->suffix('%')->required()
                     ->live(debounce: 500)
                     ->afterStateUpdated(function ($state, callable $set, callable $get) {
-                        $dpp = (float) ($get('dpp') ?? 0);
+                        $dpp = Rupiah::toFloat($get('dpp'));
                         $set('amount', round($dpp * ((float) $state) / 100, 2));
                     }),
                 Forms\Components\TextInput::make('amount')->label('Amount')->numeric()->rupiah()->required()->default(0),
                 Forms\Components\TextInput::make('pph_persen')->label('% PPh')->numeric()->suffix('%')->default(0)
                     ->live(debounce: 500)
                     ->afterStateUpdated(function ($state, callable $set, callable $get) {
-                        $amount = (float) ($get('amount') ?? 0);
+                        $amount = Rupiah::toFloat($get('amount'));
                         $pph = round($amount * ((float) $state) / 100, 2);
                         $set('pph_amount', $pph);
                         $set('amount_net', round($amount - $pph, 2));

@@ -5,6 +5,7 @@ namespace App\Filament\Fo\Pages;
 use App\Modules\FO\Approval\Models\Approval;
 use App\Modules\FO\Approval\Services\ApprovalService;
 use App\Modules\FO\MarketingSales\Models\Kontrak;
+use App\Support\Rupiah;
 use Filament\Forms;
 use Filament\Forms\Concerns\InteractsWithForms;
 use Filament\Forms\Contracts\HasForms;
@@ -109,48 +110,30 @@ class AdjustmentKontrak extends Page implements HasForms, HasTable
             Forms\Components\Placeholder::make('skema_v')->label('Skema')
                 ->content(fn (Forms\Get $get) => $get('skema_nama') ?: '—'),
 
-            Forms\Components\Grid::make(2)->schema([
-                // ── KIRI: sebelum + perhitungan baru ──
-                Forms\Components\Group::make()->schema([
-                    Forms\Components\Section::make('Perincian Kontrak Sebelum Adjustment')->compact()->schema([
-                        self::ro('Nilai Kontrak', 'nilai_kontrak_lama'),
-                        self::ro('DPP', 'dpp_lama'),
-                        self::ro('PPN', 'ppn_lama'),
-                    ]),
-                    Forms\Components\Section::make('Perhitungan Harga Baru')->compact()
-                        ->description('Nilai DPP/PPN/Nilai Kontrak otomatis mengikuti input harga.')
-                        ->schema([
-                            $live($rp(Forms\Components\TextInput::make('price_list_gross')->label('Price List (Gross)'))),
-                            $live($rp(Forms\Components\TextInput::make('bunga')->label('Bunga'))),
-                            $live($rp(Forms\Components\TextInput::make('diskon_skema')->label('Diskon Skema'))),
-                            $live($rp(Forms\Components\TextInput::make('diskon_tambahan')->label('Diskon Tambahan'))),
-                            $rp(Forms\Components\TextInput::make('nilai_dpp')->label('Nilai DPP'))->readOnly()->dehydrated(false),
-                            $rp(Forms\Components\TextInput::make('nilai_ppn')->label('Nilai PPN'))->readOnly()->dehydrated(false),
-                            $rp(Forms\Components\TextInput::make('nilai_kontrak')->label('Nilai Kontrak'))->readOnly()->dehydrated(false)
-                                ->extraInputAttributes(['class' => 'font-bold']),
-                        ]),
-                ]),
-
-                // ── KANAN: info kontrak + ringkasan ──
-                Forms\Components\Group::make()->schema([
-                    Forms\Components\Section::make('Info Kontrak')->compact()->schema([
-                        Forms\Components\Placeholder::make('info_no_v')->label('No. Kontrak')->content(fn (Forms\Get $get) => $get('info_no') ?: '—'),
-                        Forms\Components\Placeholder::make('info_unit_v')->label('Unit')->content(fn (Forms\Get $get) => $get('info_unit') ?: '—'),
-                        Forms\Components\Placeholder::make('info_customer_v')->label('Customer')->content(fn (Forms\Get $get) => $get('info_customer') ?: '—'),
-                        Forms\Components\Placeholder::make('info_sales_v')->label('Sales')->content(fn (Forms\Get $get) => $get('info_sales') ?: '—'),
-                        self::ro('Nilai Kontrak', 'nilai_kontrak'),
-                        self::ro('Total Tagihan', 'total_tagihan'),
-                        self::ro('Selisih', 'selisih'),
-                    ]),
-                ]),
+            Forms\Components\Section::make('Perincian Kontrak Sebelum Adjustment')->compact()->columns(3)->schema([
+                self::ro('Nilai Kontrak', 'nilai_kontrak_lama'),
+                self::ro('DPP', 'dpp_lama'),
+                self::ro('PPN', 'ppn_lama'),
             ]),
+            Forms\Components\Section::make('Perhitungan Harga Baru')->compact()
+                ->description('Nilai DPP/PPN/Nilai Kontrak otomatis mengikuti input harga.')
+                ->schema([
+                    $live($rp(Forms\Components\TextInput::make('price_list_gross')->label('Price List (Gross)'))),
+                    $live($rp(Forms\Components\TextInput::make('bunga')->label('Bunga'))),
+                    $live($rp(Forms\Components\TextInput::make('diskon_skema')->label('Diskon Skema'))),
+                    $live($rp(Forms\Components\TextInput::make('diskon_tambahan')->label('Diskon Tambahan'))),
+                    $rp(Forms\Components\TextInput::make('nilai_dpp')->label('Nilai DPP'))->readOnly()->dehydrated(false),
+                    $rp(Forms\Components\TextInput::make('nilai_ppn')->label('Nilai PPN'))->readOnly()->dehydrated(false),
+                    $rp(Forms\Components\TextInput::make('nilai_kontrak')->label('Nilai Kontrak'))->readOnly()->dehydrated(false)
+                        ->extraInputAttributes(['class' => 'font-bold']),
+                ]),
         ]);
     }
 
     private static function ro(string $label, string $key): Forms\Components\Placeholder
     {
         return Forms\Components\Placeholder::make($key.'_v')->label($label)
-            ->content(fn (Forms\Get $get) => 'Rp '.number_format((float) $get($key), 0, ',', '.'));
+            ->content(fn (Forms\Get $get) => 'Rp '.number_format(Rupiah::toFloat($get($key)), 0, ',', '.'));
     }
 
     /** Hitung semua nilai (sebelum + prefill + hasil) untuk satu kontrak. */
@@ -197,17 +180,19 @@ class AdjustmentKontrak extends Page implements HasForms, HasTable
 
     public static function recalc(Forms\Get $get, Forms\Set $set): void
     {
-        $gross = (float) $get('price_list_gross');
-        $bunga = (float) $get('bunga');
-        $ds = (float) $get('diskon_skema');
-        $dt = (float) $get('diskon_tambahan');
+        // Field rupiah pakai mask ribuan → baca dengan Rupiah::toFloat (bukan (float))
+        // agar "500.000.000" tak terpotong jadi 500.
+        $gross = Rupiah::toFloat($get('price_list_gross'));
+        $bunga = Rupiah::toFloat($get('bunga'));
+        $ds = Rupiah::toFloat($get('diskon_skema'));
+        $dt = Rupiah::toFloat($get('diskon_tambahan'));
 
         $nk = max(0, $gross + $bunga - $ds - $dt);
         $dpp = round($nk / 1.11);
         $set('nilai_kontrak', $nk);
         $set('nilai_dpp', $dpp);
         $set('nilai_ppn', $nk - $dpp);
-        $set('selisih', $nk - (float) $get('total_tagihan'));
+        $set('selisih', $nk - Rupiah::toFloat($get('total_tagihan')));
     }
 
     public function submit(): void
