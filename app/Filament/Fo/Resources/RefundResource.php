@@ -55,11 +55,11 @@ class RefundResource extends Resource
         return $table
             ->columns([
                 Tables\Columns\TextColumn::make('no_refund')->label('No')->badge()->color('primary')->searchable()->sortable(),
-                Tables\Columns\TextColumn::make('jenis')->label('Jenis')->badge()->color(fn (?string $s) => $s === 'BOOKING' ? 'info' : 'warning'),
+                Tables\Columns\TextColumn::make('jenis')->label('Jenis')->badge()->color(fn (?string $state) => $state === 'BOOKING' ? 'info' : 'warning'),
                 Tables\Columns\TextColumn::make('customer.full_name')->label('Customer')->placeholder('—')->limit(24),
                 Tables\Columns\TextColumn::make('tgl_refund')->label('Tgl')->date('d M Y')->sortable(),
                 Tables\Columns\TextColumn::make('nilai_refund')->label('Refund')->money('IDR'),
-                Tables\Columns\TextColumn::make('status')->label('Status')->badge()->color(fn (?string $s) => match ($s) {
+                Tables\Columns\TextColumn::make('status')->label('Status')->badge()->color(fn (?string $state) => match ($state) {
                     'SELESAI' => 'success', 'BATAL' => 'danger', 'DIPROSES' => 'warning', default => 'gray',
                 }),
             ])

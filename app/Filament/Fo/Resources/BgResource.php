@@ -53,7 +53,7 @@ class BgResource extends Resource
                 Tables\Columns\TextColumn::make('customer.full_name')->label('Customer')->placeholder('—')->limit(24),
                 Tables\Columns\TextColumn::make('tgl_jatuh_tempo')->label('Jatuh Tempo')->date('d M Y')->sortable(),
                 Tables\Columns\TextColumn::make('amount')->label('Nominal')->money('IDR'),
-                Tables\Columns\TextColumn::make('status')->label('Status')->badge()->color(fn (?string $s) => match ($s) {
+                Tables\Columns\TextColumn::make('status')->label('Status')->badge()->color(fn (?string $state) => match ($state) {
                     'CAIR' => 'success', 'BERMASALAH' => 'danger', 'JATUH_TEMPO' => 'warning', 'DIGANTI' => 'gray', default => 'info',
                 }),
             ])

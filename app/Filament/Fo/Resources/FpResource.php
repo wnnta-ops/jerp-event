@@ -49,7 +49,7 @@ class FpResource extends Resource
                 Tables\Columns\TextColumn::make('tgl_terima')->label('Tgl Terima')->date('d M Y')->sortable(),
                 Tables\Columns\TextColumn::make('tts.no_tts')->label('TTS')->placeholder('—'),
                 Tables\Columns\TextColumn::make('project.name')->label('Project')->placeholder('—')->toggleable(),
-                Tables\Columns\TextColumn::make('status')->label('Status')->badge()->color(fn (?string $s) => $s === 'TERPAKAI' ? 'success' : 'gray'),
+                Tables\Columns\TextColumn::make('status')->label('Status')->badge()->color(fn (?string $state) => $state === 'TERPAKAI' ? 'success' : 'gray'),
             ])
             ->filters([Tables\Filters\SelectFilter::make('status')->options(['BELUM_TERPAKAI' => 'Belum Terpakai', 'TERPAKAI' => 'Terpakai'])])
             ->headerActions([Tables\Actions\CreateAction::make()])

@@ -74,7 +74,7 @@ class BackupScheduleResource extends Resource
             ->columns([
                 Tables\Columns\TextColumn::make('name')->label('Nama')->searchable()->weight('bold'),
                 Tables\Columns\TextColumn::make('frequency')->label('Frekuensi')->badge()
-                    ->formatStateUsing(fn (?string $s) => self::FREK[$s] ?? $s),
+                    ->formatStateUsing(fn (?string $state) => self::FREK[$state] ?? $state),
                 Tables\Columns\TextColumn::make('jadwal')->label('Jadwal')
                     ->state(fn (BackupSchedule $r) => match ($r->frequency) {
                         'DAILY' => 'Tiap hari '.$r->time,

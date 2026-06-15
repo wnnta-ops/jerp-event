@@ -48,7 +48,7 @@ class TransferAnonimResource extends Resource
                 Tables\Columns\TextColumn::make('amount')->label('Nominal')->money('IDR')->sortable(),
                 Tables\Columns\TextColumn::make('keterangan_bank')->label('Berita Bank')->limit(36)->placeholder('—'),
                 Tables\Columns\TextColumn::make('customer.full_name')->label('Customer')->placeholder('—')->limit(20),
-                Tables\Columns\TextColumn::make('status')->label('Status')->badge()->color(fn (?string $s) => match ($s) {
+                Tables\Columns\TextColumn::make('status')->label('Status')->badge()->color(fn (?string $state) => match ($state) {
                     'SELESAI' => 'success', 'TERIDENTIFIKASI' => 'warning', default => 'gray',
                 }),
             ])

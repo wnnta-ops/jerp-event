@@ -14,6 +14,7 @@ use Filament\Tables;
 use Filament\Tables\Concerns\InteractsWithTable;
 use Filament\Tables\Contracts\HasTable;
 use Filament\Tables\Table;
+use Illuminate\Support\HtmlString;
 
 /**
  * Pembatalan Kontrak — daftar kontrak SPR; ajukan pembatalan (alasan + pelunasan/
@@ -49,8 +50,16 @@ class PembatalanKontrak extends Page implements HasForms, HasTable
                 Tables\Columns\TextColumn::make('customer.full_name')->label('Customer')->searchable()->weight('bold'),
                 Tables\Columns\TextColumn::make('agent.name')->label('Sales')->placeholder('—'),
                 Tables\Columns\TextColumn::make('total_kontrak')->label('Nilai Kontrak')->money('IDR', divideBy: 0)->alignEnd(),
+                Tables\Columns\TextColumn::make('batal_count')->label('Pembatalan')->badge()
+                    ->getStateUsing(fn (Kontrak $record) => Approval::where('subject_type', Kontrak::class)->where('subject_id', $record->id)->where('jenis', 'BATAL_KONTRAK')->count())
+                    ->formatStateUsing(fn ($state) => $state.'×')
+                    ->color(fn ($state) => $state > 0 ? 'danger' : 'gray'),
             ])
             ->actions([
+                Tables\Actions\Action::make('riwayat')->label('Riwayat')->icon('heroicon-o-clock')->color('gray')->link()
+                    ->modalHeading(fn (Kontrak $record) => 'Riwayat Pembatalan — '.$record->no_kontrak)
+                    ->modalSubmitAction(false)->modalCancelActionLabel('Tutup')
+                    ->modalContent(fn (Kontrak $record) => new HtmlString(AdjustmentKontrak::riwayatApprovalHtml($record, 'BATAL_KONTRAK'))),
                 Tables\Actions\Action::make('ajukan')->label('Ajukan Pembatalan')->icon('heroicon-o-x-circle')->color('danger')->button()
                     ->modalHeading('Pengajuan Pembatalan Kontrak')
                     ->modalDescription(fn (Kontrak $record) => 'Status kontrak '.$record->no_kontrak.' akan menjadi BATAL setelah disetujui.')

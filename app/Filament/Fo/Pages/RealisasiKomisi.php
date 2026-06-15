@@ -39,7 +39,7 @@ class RealisasiKomisi extends Page implements HasTable
                 Tables\Columns\TextColumn::make('pph_amount')->label('PPh')->money('IDR')->alignEnd()->toggleable(),
                 Tables\Columns\TextColumn::make('amount_net')->label('NETT')->money('IDR')->alignEnd()->weight('bold'),
                 Tables\Columns\TextColumn::make('tgl_bayar')->label('Tgl Bayar')->date('d M Y')->placeholder('—'),
-                Tables\Columns\TextColumn::make('status')->label('Status')->badge()->color(fn (?string $s) => $s === 'PAID' ? 'success' : 'warning'),
+                Tables\Columns\TextColumn::make('status')->label('Status')->badge()->color(fn (?string $state) => $state === 'PAID' ? 'success' : 'warning'),
             ])
             ->filters([
                 Tables\Filters\SelectFilter::make('status')->options(['APPROVED' => 'Approved', 'PAID' => 'Paid'])->default('APPROVED'),

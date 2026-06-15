@@ -16,6 +16,7 @@ use Filament\Tables;
 use Filament\Tables\Concerns\InteractsWithTable;
 use Filament\Tables\Contracts\HasTable;
 use Filament\Tables\Table;
+use Illuminate\Support\HtmlString;
 
 /**
  * Adjustment Kontrak — ubah harga kontrak SPR yang sudah terbentuk.
@@ -71,6 +72,10 @@ class AdjustmentKontrak extends Page implements HasForms, HasTable
                 Tables\Columns\TextColumn::make('status')->label('Status')->badge()->color(fn (?string $state) => match ($state) {
                     'AKTIF' => 'success', 'LUNAS' => 'primary', 'BATAL' => 'danger', 'BOOKING' => 'info', default => 'gray',
                 }),
+                Tables\Columns\TextColumn::make('adj_count')->label('Adjustment')->badge()
+                    ->getStateUsing(fn (Kontrak $record) => Approval::where('subject_type', Kontrak::class)->where('subject_id', $record->id)->where('jenis', 'ADJ_HARGA')->count())
+                    ->formatStateUsing(fn ($state) => $state.'×')
+                    ->color(fn ($state) => $state > 0 ? 'warning' : 'gray'),
             ])
             ->filters([
                 Tables\Filters\SelectFilter::make('status')->options([
@@ -81,6 +86,10 @@ class AdjustmentKontrak extends Page implements HasForms, HasTable
                 Tables\Actions\Action::make('adjust')->label('Adjustment')->icon('heroicon-o-adjustments-horizontal')
                     ->button()->color('warning')
                     ->action(fn (Kontrak $record) => $this->selectKontrak($record->id)),
+                Tables\Actions\Action::make('riwayat')->label('Riwayat')->icon('heroicon-o-clock')->color('gray')->link()
+                    ->modalHeading(fn (Kontrak $record) => 'Riwayat Adjustment — '.$record->no_kontrak)
+                    ->modalSubmitAction(false)->modalCancelActionLabel('Tutup')
+                    ->modalContent(fn (Kontrak $record) => new HtmlString(self::riwayatApprovalHtml($record, 'ADJ_HARGA'))),
             ])
             ->defaultSort('tgl_kontrak', 'desc')
             ->paginated([10, 25, 50]);
@@ -110,23 +119,29 @@ class AdjustmentKontrak extends Page implements HasForms, HasTable
             Forms\Components\Placeholder::make('skema_v')->label('Skema')
                 ->content(fn (Forms\Get $get) => $get('skema_nama') ?: '—'),
 
-            Forms\Components\Section::make('Perincian Kontrak Sebelum Adjustment')->compact()->columns(3)->schema([
-                self::ro('Nilai Kontrak', 'nilai_kontrak_lama'),
-                self::ro('DPP', 'dpp_lama'),
-                self::ro('PPN', 'ppn_lama'),
-            ]),
-            Forms\Components\Section::make('Perhitungan Harga Baru')->compact()
-                ->description('Nilai DPP/PPN/Nilai Kontrak otomatis mengikuti input harga.')
-                ->schema([
-                    $live($rp(Forms\Components\TextInput::make('price_list_gross')->label('Price List (Gross)'))),
-                    $live($rp(Forms\Components\TextInput::make('bunga')->label('Bunga'))),
-                    $live($rp(Forms\Components\TextInput::make('diskon_skema')->label('Diskon Skema'))),
-                    $live($rp(Forms\Components\TextInput::make('diskon_tambahan')->label('Diskon Tambahan'))),
-                    $rp(Forms\Components\TextInput::make('nilai_dpp')->label('Nilai DPP'))->readOnly()->dehydrated(false),
-                    $rp(Forms\Components\TextInput::make('nilai_ppn')->label('Nilai PPN'))->readOnly()->dehydrated(false),
-                    $rp(Forms\Components\TextInput::make('nilai_kontrak')->label('Nilai Kontrak'))->readOnly()->dehydrated(false)
-                        ->extraInputAttributes(['class' => 'font-bold']),
+            // Konten di kolom kiri (lebih ramping), kolom kanan dibiarkan kosong
+            // (box "Info Kontrak" dihilangkan).
+            Forms\Components\Grid::make(2)->schema([
+                Forms\Components\Group::make()->schema([
+                    Forms\Components\Section::make('Perincian Kontrak Sebelum Adjustment')->compact()->schema([
+                        self::ro('Nilai Kontrak', 'nilai_kontrak_lama'),
+                        self::ro('DPP', 'dpp_lama'),
+                        self::ro('PPN', 'ppn_lama'),
+                    ]),
+                    Forms\Components\Section::make('Perhitungan Harga Baru')->compact()
+                        ->description('Nilai DPP/PPN/Nilai Kontrak otomatis mengikuti input harga.')
+                        ->schema([
+                            $live($rp(Forms\Components\TextInput::make('price_list_gross')->label('Price List (Gross)'))),
+                            $live($rp(Forms\Components\TextInput::make('bunga')->label('Bunga'))),
+                            $live($rp(Forms\Components\TextInput::make('diskon_skema')->label('Diskon Skema'))),
+                            $live($rp(Forms\Components\TextInput::make('diskon_tambahan')->label('Diskon Tambahan'))),
+                            $rp(Forms\Components\TextInput::make('nilai_dpp')->label('Nilai DPP'))->readOnly()->dehydrated(false),
+                            $rp(Forms\Components\TextInput::make('nilai_ppn')->label('Nilai PPN'))->readOnly()->dehydrated(false),
+                            $rp(Forms\Components\TextInput::make('nilai_kontrak')->label('Nilai Kontrak'))->readOnly()->dehydrated(false)
+                                ->extraInputAttributes(['class' => 'font-bold']),
+                        ]),
                 ]),
+            ]),
         ]);
     }
 
@@ -134,6 +149,34 @@ class AdjustmentKontrak extends Page implements HasForms, HasTable
     {
         return Forms\Components\Placeholder::make($key.'_v')->label($label)
             ->content(fn (Forms\Get $get) => 'Rp '.number_format(Rupiah::toFloat($get($key)), 0, ',', '.'));
+    }
+
+    /** Tabel HTML riwayat approval (jenis tertentu) untuk satu kontrak. */
+    public static function riwayatApprovalHtml(Kontrak $k, string $jenis): string
+    {
+        $rows = Approval::where('subject_type', Kontrak::class)->where('subject_id', $k->id)
+            ->where('jenis', $jenis)->orderByDesc('id')->get();
+        if ($rows->isEmpty()) {
+            return '<div style="color:#94a3b8;font-size:13px;">Belum ada riwayat.</div>';
+        }
+        $body = $rows->map(function ($a) {
+            $db = (array) $a->detail_baru;
+            $dl = (array) $a->detail_lama;
+            $nilai = $db['total_kontrak_baru'] ?? $db['nilai_kontrak_baru'] ?? $db['nilai_kontrak'] ?? $dl['nilai_kontrak'] ?? null;
+
+            return '<tr>'
+                .'<td style="padding:4px 10px;">'.e($a->no_approval).'</td>'
+                .'<td style="padding:4px 10px;">'.e(optional($a->tgl_approval)->format('d M Y')).'</td>'
+                .'<td style="padding:4px 10px;">'.e($a->status).'</td>'
+                .'<td style="padding:4px 10px;text-align:right;">'.($nilai !== null ? 'Rp '.number_format((float) $nilai, 0, ',', '.') : '—').'</td>'
+                .'</tr>';
+        })->implode('');
+
+        return '<table style="width:100%;font-size:13px;border-collapse:collapse;">'
+            .'<thead><tr style="text-align:left;color:#94a3b8;border-bottom:1px solid #334155;">'
+            .'<th style="padding:4px 10px;">No. Approval</th><th style="padding:4px 10px;">Tgl</th>'
+            .'<th style="padding:4px 10px;">Status</th><th style="padding:4px 10px;text-align:right;">Nilai Kontrak</th></tr></thead>'
+            .'<tbody>'.$body.'</tbody></table>';
     }
 
     /** Hitung semua nilai (sebelum + prefill + hasil) untuk satu kontrak. */
