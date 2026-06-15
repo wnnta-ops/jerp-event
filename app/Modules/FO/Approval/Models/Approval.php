@@ -20,6 +20,26 @@ class Approval extends TenantAwareModel
                 $m->no_approval = app(NumeratorService::class)->next('APPROVAL');
             }
         });
+
+        // Pengajuan BLT/Komisi ditolak → batch kembali DRAFT (ke menu Pengajuan).
+        static::updated(function (self $m) {
+            if (! $m->wasChanged('status') || $m->status !== 'REJECTED') {
+                return;
+            }
+            $no = (string) (((array) $m->detail_baru)['no_pengajuan'] ?? '');
+            if ($no === '') {
+                return;
+            }
+            if ($m->jenis === 'BLT') {
+                \App\Modules\FO\Komisi\Models\Blt::query()
+                    ->where('no_pengajuan', $no)->where('status', 'PENDING')
+                    ->update(['status' => 'DRAFT', 'no_pengajuan' => null]);
+            } elseif ($m->jenis === 'KOMISI') {
+                \App\Modules\FO\Komisi\Models\Komisi::query()
+                    ->where('no_pengajuan', $no)->where('status', 'PENDING')
+                    ->update(['status' => 'DRAFT', 'no_pengajuan' => null]);
+            }
+        });
     }
 
     protected $fillable = [

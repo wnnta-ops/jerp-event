@@ -208,6 +208,8 @@ class FoPanelProvider extends PanelProvider
             'approval-adjustment' => 'approval',
             'approval-reschedule' => 'approval',
             'approval-customize' => 'approval',
+            'approval-blt' => 'approval',
+            'approval-komisi' => 'approval',
             'approval-log' => 'approval',
             // NUP (Setup + Event + Pendaftaran + Verifikasi Data)
             'nup-tipes' => 'nup',
@@ -351,6 +353,8 @@ class FoPanelProvider extends PanelProvider
                     $item('Approval Adjustment', '/fo/approval-adjustment', 'heroicon-o-adjustments-horizontal', 'filament.fo.resources.approval-adjustment.'),
                     $item('Approval Reschedule', '/fo/approval-reschedule', 'heroicon-o-calendar-days', 'filament.fo.resources.approval-reschedule.'),
                     $item('Approval Customize', '/fo/approval-customize', 'heroicon-o-wrench-screwdriver', 'filament.fo.resources.approval-customize.'),
+                    $item('Approval BLT', '/fo/approval-blt', 'heroicon-o-banknotes', 'filament.fo.resources.approval-blt.'),
+                    $item('Approval Komisi', '/fo/approval-komisi', 'heroicon-o-receipt-percent', 'filament.fo.resources.approval-komisi.'),
                     $item('Log File', '/fo/approval-log', 'heroicon-o-document-text', 'filament.fo.pages.approval-log'),
                 ],
             ],
@@ -394,7 +398,6 @@ class FoPanelProvider extends PanelProvider
                         $item('Realisasi BLT', '/fo/realisasi-blt', 'heroicon-o-banknotes', 'filament.fo.pages.realisasi-blt'),
                     ]],
                     ['label' => 'Komisi', 'items' => [
-                        $item('Daftar Komisi', '/fo/komisis', 'heroicon-o-receipt-percent', 'filament.fo.resources.komisis.'),
                         $item('Generate Komisi', '/fo/generate-komisi', 'heroicon-o-bolt', 'filament.fo.pages.generate-komisi'),
                         $item('Pengajuan Komisi', '/fo/pengajuan-komisi', 'heroicon-o-paper-airplane', 'filament.fo.pages.pengajuan-komisi'),
                         $item('Realisasi Komisi', '/fo/realisasi-komisi', 'heroicon-o-banknotes', 'filament.fo.pages.realisasi-komisi'),

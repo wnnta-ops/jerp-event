@@ -105,6 +105,7 @@ Route::middleware('auth')->group(function () {
 
     // FO — cetak Permohonan Pengajuan BLT (1 dokumen, 3 halaman: Sales/Koordinator/Kantor).
     Route::get('/fo/cetak/pengajuan-blt', [\App\Modules\FO\Komisi\Controllers\BltPrintController::class, 'pengajuan'])->name('fo.cetak.pengajuan-blt');
+    Route::get('/fo/cetak/pengajuan-komisi', [\App\Modules\FO\Komisi\Controllers\KomisiPrintController::class, 'pengajuan'])->name('fo.cetak.pengajuan-komisi');
 
     Route::post('/logout', function () {
         Auth::logout();

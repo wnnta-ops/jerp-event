@@ -55,6 +55,8 @@ class ApprovalResource extends Resource
                     'GANTI_NAMA' => 'Ganti nama (pengalihan hak)',
                     'GANTI_UNIT' => 'Ganti unit (pindah unit)',
                     'REFUND' => 'Refund',
+                    'BLT' => 'Pengajuan BLT',
+                    'KOMISI' => 'Pengajuan Komisi',
                     'LAIN' => 'Lain (customize)',
                 ])->default(static::$jenisScope ?? 'DISKON')
                     ->disabled(fn () => filled(static::$jenisScope))->dehydrated()->required(),
@@ -111,9 +113,24 @@ class ApprovalResource extends Resource
             ]),
             Infolists\Components\Section::make('Detail Perubahan yang Diminta')
                 ->description('Bandingkan kondisi sebelum vs yang diminta sebelum menyetujui.')
+                ->visible(fn (Approval $r) => ! in_array($r->jenis, ['BLT', 'KOMISI'], true))
                 ->schema([
                     Infolists\Components\TextEntry::make('perubahan')->hiddenLabel()
                         ->state(fn (Approval $r) => self::renderPerubahan($r))->html()->columnSpanFull(),
+                ]),
+            Infolists\Components\Section::make('Daftar BLT (Pengajuan)')
+                ->description('Rincian BLT yang diajukan dalam batch ini.')
+                ->visible(fn (Approval $r) => $r->jenis === 'BLT')
+                ->schema([
+                    Infolists\Components\TextEntry::make('blt_lines')->hiddenLabel()
+                        ->state(fn (Approval $r) => self::renderBltLines($r))->html()->columnSpanFull(),
+                ]),
+            Infolists\Components\Section::make('Daftar Komisi (Pengajuan)')
+                ->description('Rincian komisi yang diajukan dalam batch ini.')
+                ->visible(fn (Approval $r) => $r->jenis === 'KOMISI')
+                ->schema([
+                    Infolists\Components\TextEntry::make('komisi_lines')->hiddenLabel()
+                        ->state(fn (Approval $r) => self::renderKomisiLines($r))->html()->columnSpanFull(),
                 ]),
             Infolists\Components\Section::make('Catatan & Hasil')->columns(2)->schema([
                 Infolists\Components\TextEntry::make('level1_note')->label('Catatan Level 1')->placeholder('—'),
@@ -156,6 +173,87 @@ class ApprovalResource extends Resource
             .'<div><div style="font-weight:700;color:#ef4444;margin-bottom:6px;">⊖ Sebelum</div>'.$col((array) $r->detail_lama).'</div>'
             .'<div><div style="font-weight:700;color:#22c55e;margin-bottom:6px;">⊕ Diminta</div>'.$col((array) $r->detail_baru).'</div>'
             .'</div>';
+    }
+
+    /** Tabel rincian BLT dalam batch pengajuan (No. Pengajuan dari detail_baru) — gaya printout. */
+    public static function renderBltLines(Approval $r): string
+    {
+        $no = (string) (((array) $r->detail_baru)['no_pengajuan'] ?? '');
+        if ($no === '') {
+            return '<em style="color:#94a3b8;">—</em>';
+        }
+        $rows = \App\Modules\FO\Komisi\Models\Blt::query()
+            ->with(['agent', 'kontrak.customer', 'kontrak.unit'])
+            ->where('no_pengajuan', $no)
+            ->orderByRaw("FIELD(level_type,'SALES','KOORDINATOR','KANTOR')")->get();
+        $rp = fn ($v) => 'Rp '.number_format((float) $v, 0, ',', '.');
+        $th = fn ($t, $align = 'left') => '<th style="padding:5px 8px;border-bottom:1px solid #334155;text-align:'.$align.';white-space:nowrap;">'.$t.'</th>';
+        $td = fn ($t, $align = 'left') => '<td style="padding:4px 8px;border-bottom:1px solid #1e293b;text-align:'.$align.';'.($align !== 'left' ? 'white-space:nowrap;' : '').'">'.$t.'</td>';
+
+        $head = '<tr>'.$th('No').$th('Nama Pembeli').$th('Penerima').$th('Agent').$th('Blok/Kav')
+            .$th('Cara Bayar').$th('Nilai BLT', 'right').$th('PPh', 'right').$th('NETT', 'right').'</tr>';
+        $body = '';
+        $i = 0;
+        foreach ($rows as $b) {
+            $i++;
+            $a = $b->agent;
+            $unit = $b->kontrak?->unit;
+            $body .= '<tr>'.$td((string) $i, 'center')
+                .$td(e((string) ($b->kontrak?->customer?->full_name ?: '—')))
+                .$td(e((string) ($b->nama_user ?: '—')))
+                .$td($a?->is_arebi ? 'AGENT AREBI' : 'AGENT NON AREBI')
+                .$td(e((string) ($unit?->kode_unit ?: $unit?->no_unit ?: '—')), 'center')
+                .$td(e((string) ($b->kontrak?->cara_bayar ?: '—')), 'center')
+                .$td($rp($b->nilai_blt), 'right').$td($rp($b->pph_amount), 'right')
+                .$td('<strong>'.$rp($b->nett).'</strong>', 'right')
+                .'</tr>';
+        }
+        $tot = '<tr style="font-weight:700;border-top:2px solid #475569;">'
+            .'<td colspan="6" style="padding:6px 8px;text-align:right;">TOTAL</td>'
+            .$td($rp($rows->sum('nilai_blt')), 'right').$td($rp($rows->sum('pph_amount')), 'right').$td($rp($rows->sum('nett')), 'right')
+            .'</tr>';
+
+        return '<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:12px;">'
+            .'<thead>'.$head.'</thead><tbody>'.$body.$tot.'</tbody></table></div>';
+    }
+
+    /** Tabel rincian Komisi dalam batch pengajuan (No. Pengajuan dari detail_baru). */
+    public static function renderKomisiLines(Approval $r): string
+    {
+        $no = (string) (((array) $r->detail_baru)['no_pengajuan'] ?? '');
+        if ($no === '') {
+            return '<em style="color:#94a3b8;">—</em>';
+        }
+        $rows = \App\Modules\FO\Komisi\Models\Komisi::query()
+            ->with(['agent', 'kontrak.customer', 'kontrak.unit'])
+            ->where('no_pengajuan', $no)->orderBy('id')->get();
+        $rp = fn ($v) => 'Rp '.number_format((float) $v, 0, ',', '.');
+        $th = fn ($t, $align = 'left') => '<th style="padding:5px 8px;border-bottom:1px solid #334155;text-align:'.$align.';white-space:nowrap;">'.$t.'</th>';
+        $td = fn ($t, $align = 'left') => '<td style="padding:4px 8px;border-bottom:1px solid #1e293b;text-align:'.$align.';'.($align !== 'left' ? 'white-space:nowrap;' : '').'">'.$t.'</td>';
+
+        $head = '<tr>'.$th('No').$th('Nama Pembeli').$th('Sales').$th('Blok/Kav').$th('Cara Bayar')
+            .$th('DPP', 'right').$th('Komisi', 'right').$th('PPh', 'right').$th('NETT', 'right').'</tr>';
+        $body = '';
+        $i = 0;
+        foreach ($rows as $k) {
+            $i++;
+            $unit = $k->kontrak?->unit;
+            $body .= '<tr>'.$td((string) $i, 'center')
+                .$td(e((string) ($k->kontrak?->customer?->full_name ?: '—')))
+                .$td(e((string) ($k->agent?->name ?: '—')))
+                .$td(e((string) ($unit?->kode_unit ?: $unit?->no_unit ?: '—')), 'center')
+                .$td(e((string) ($k->kontrak?->cara_bayar ?: '—')), 'center')
+                .$td($rp($k->dpp), 'right').$td($rp($k->amount), 'right')
+                .$td($rp($k->pph_amount), 'right').$td('<strong>'.$rp($k->amount_net).'</strong>', 'right')
+                .'</tr>';
+        }
+        $tot = '<tr style="font-weight:700;border-top:2px solid #475569;">'
+            .'<td colspan="6" style="padding:6px 8px;text-align:right;">TOTAL</td>'
+            .$td($rp($rows->sum('amount')), 'right').$td($rp($rows->sum('pph_amount')), 'right').$td($rp($rows->sum('amount_net')), 'right')
+            .'</tr>';
+
+        return '<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:12px;">'
+            .'<thead>'.$head.'</thead><tbody>'.$body.$tot.'</tbody></table></div>';
     }
 
     /** @return array<int,Tables\Actions\Action> Aksi alur 2-level (dipakai di baris & modal Detail). */
@@ -225,12 +323,13 @@ class ApprovalResource extends Resource
             Tables\Filters\SelectFilter::make('jenis')->visible(fn () => blank(static::$jenisScope))->options([
                 'DISKON' => 'Diskon', 'BATAL_KONTRAK' => 'Batal kontrak', 'ADJ_HARGA' => 'Adj harga',
                 'RESCHEDULE' => 'Reschedule', 'GANTI_NAMA' => 'Ganti nama', 'GANTI_UNIT' => 'Ganti unit',
-                'REFUND' => 'Refund', 'LAIN' => 'Lain',
+                'REFUND' => 'Refund', 'BLT' => 'Pengajuan BLT', 'KOMISI' => 'Pengajuan Komisi', 'LAIN' => 'Lain',
             ]),
         ])->headerActions([
             Tables\Actions\CreateAction::make()->label('Ajukan Approval'),
         ])->actions([
             Tables\Actions\ViewAction::make()->label('Detail')->icon('heroicon-o-eye')->color('gray')
+                ->modalWidth('5xl')
                 ->extraModalFooterActions(self::workflowActions()),
             ...self::workflowActions(),
             Tables\Actions\EditAction::make()->visible(fn (Approval $r) => $r->status === 'DRAFT'),

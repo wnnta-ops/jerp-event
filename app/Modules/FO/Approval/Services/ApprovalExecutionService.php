@@ -24,6 +24,14 @@ class ApprovalExecutionService
 {
     public function execute(Approval $approval): string
     {
+        // Pengajuan BLT / Komisi — subjek bukan Kontrak (batch via No. Pengajuan di detail).
+        if ($approval->jenis === 'BLT') {
+            return $this->applyBlt($approval);
+        }
+        if ($approval->jenis === 'KOMISI') {
+            return $this->applyKomisi($approval);
+        }
+
         $kontrak = $approval->subject;
         if (! $kontrak instanceof Kontrak) {
             // Subjek non-kontrak (mis. REFUND atas TTS) — eksekusi khusus menyusul.
@@ -161,5 +169,57 @@ class ApprovalExecutionService
     private function ppn(float $total): float
     {
         return round($total - round($total / 1.11), 2);
+    }
+
+    /** Eksekusi Pengajuan BLT: cairkan semua BLT dalam batch (PENDING → PAID). */
+    private function applyBlt(Approval $approval): string
+    {
+        $no = (string) (((array) $approval->detail_baru)['no_pengajuan'] ?? '');
+        if ($no === '') {
+            return 'Pengajuan BLT tidak memiliki No. Pengajuan.';
+        }
+
+        return DB::transaction(function () use ($no) {
+            $lines = \App\Modules\FO\Komisi\Models\Blt::query()
+                ->where('no_pengajuan', $no)->where('status', 'PENDING')->get();
+            foreach ($lines as $b) {
+                $b->update([
+                    'status' => 'PAID',
+                    'tgl_bayar' => now(),
+                    'nett' => max(0, (float) $b->nilai_blt - (float) $b->pph_amount - (float) $b->ppn_amount),
+                    'rek_bank' => $b->rek_bank ?: $b->agent?->rekening_bank,
+                    'rek_number' => $b->rek_number ?: $b->agent?->rekening_number,
+                    'rek_holder' => $b->rek_holder ?: ($b->agent?->rekening_holder ?: $b->nama_user),
+                ]);
+            }
+
+            return 'Pengajuan BLT '.$no.' disetujui — '.$lines->count().' BLT dicairkan (PAID). Lihat di Realisasi BLT.';
+        });
+    }
+
+    /** Eksekusi Pengajuan Komisi: cairkan semua komisi dalam batch (PENDING → PAID). */
+    private function applyKomisi(Approval $approval): string
+    {
+        $no = (string) (((array) $approval->detail_baru)['no_pengajuan'] ?? '');
+        if ($no === '') {
+            return 'Pengajuan Komisi tidak memiliki No. Pengajuan.';
+        }
+
+        return DB::transaction(function () use ($no) {
+            $lines = \App\Modules\FO\Komisi\Models\Komisi::query()
+                ->where('no_pengajuan', $no)->where('status', 'PENDING')->get();
+            foreach ($lines as $k) {
+                $k->update([
+                    'status' => 'PAID',
+                    'tgl_bayar' => now(),
+                    'amount_net' => max(0, (float) $k->amount - (float) $k->pph_amount - (float) $k->ppn_amount),
+                    'rek_bank' => $k->rek_bank ?: $k->agent?->rekening_bank,
+                    'rek_number' => $k->rek_number ?: $k->agent?->rekening_number,
+                    'rek_holder' => $k->rek_holder ?: ($k->agent?->rekening_holder ?: $k->agent?->name),
+                ]);
+            }
+
+            return 'Pengajuan Komisi '.$no.' disetujui — '.$lines->count().' komisi dicairkan (PAID). Lihat di Realisasi Komisi.';
+        });
     }
 }

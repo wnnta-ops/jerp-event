@@ -12,9 +12,9 @@ use Filament\Tables\Contracts\HasTable;
 use Filament\Tables\Table;
 
 /**
- * Pengajuan BLT — BLT DRAFT (hasil checklist di Generate BLT) langsung dicairkan
- * (Generate → PAID). PPh & rekening mengikuti master sales (agent); bisa diedit di
- * sini (NETT otomatis ikut editan). Cetak "Permohonan Pengajuan BLT" (3 halaman).
+ * Pengajuan BLT — BLT DRAFT (hasil checklist di Generate BLT). Edit bila perlu (NETT
+ * otomatis), lalu Ajukan ke Approval (DRAFT → PENDING, dijadikan 1 batch No. Pengajuan).
+ * Setelah disetujui di Approval BLT → PAID → masuk Realisasi BLT (siap cetak).
  */
 class PengajuanBlt extends Page implements HasTable
 {
@@ -35,12 +35,7 @@ class PengajuanBlt extends Page implements HasTable
         return $table
             ->query(Blt::query()->with(['agent', 'kontrak.customer', 'kontrak.unit'])->where('status', 'DRAFT'))
             ->heading('Pengajuan BLT')
-            ->description('BLT DRAFT — edit bila perlu (NETT otomatis), Cetak Pengajuan, lalu Generate (langsung cair → PAID).')
-            ->headerActions([
-                Tables\Actions\Action::make('cetak')->label('Cetak Pengajuan BLT')->icon('heroicon-o-printer')->color('gray')
-                    ->url(fn () => route('fo.cetak.pengajuan-blt', ['status' => 'DRAFT']))
-                    ->openUrlInNewTab(),
-            ])
+            ->description('BLT DRAFT — edit bila perlu (NETT otomatis), lalu Ajukan ke Approval (1 batch). Setelah disetujui → masuk Realisasi BLT.')
             ->columns([
                 Tables\Columns\TextColumn::make('no_blt')->label('No')->badge()->color('primary')->searchable()->sortable(),
                 Tables\Columns\TextColumn::make('level_type')->label('Type')->badge()->color(fn (?string $state) => match ($state) {
@@ -88,34 +83,28 @@ class PengajuanBlt extends Page implements HasTable
                         ]);
                         Notification::make()->success()->title('BLT diperbarui — '.$r->no_blt)->send();
                     }),
-                Tables\Actions\Action::make('generate')->label('Generate')->icon('heroicon-o-banknotes')->color('success')->button()
+                Tables\Actions\Action::make('ajukan')->label('Ajukan ke Approval')->icon('heroicon-o-paper-airplane')->color('warning')->button()
                     ->requiresConfirmation()
-                    ->modalHeading('Generate (Cairkan) BLT')
-                    ->modalDescription(fn (Blt $r) => 'BLT '.$r->no_blt.' akan langsung dicairkan (→ PAID).')
+                    ->modalHeading('Ajukan ke Approval')
+                    ->modalDescription(fn (Blt $r) => 'BLT '.$r->no_blt.' diajukan ke Approval BLT (menunggu persetujuan).')
                     ->action(function (Blt $r) {
                         $no = self::nextPengajuan();
-                        self::cairkan($r, $no);
-                        Notification::make()->success()->title('BLT dicairkan — Pengajuan '.$no)
-                            ->body('NETT Rp '.number_format((float) $r->nett, 0, ',', '.'))
-                            ->actions([
-                                \Filament\Notifications\Actions\Action::make('cetak')->label('Cetak Pengajuan BLT')
-                                    ->url(route('fo.cetak.pengajuan-blt', ['pengajuan' => $no]))->openUrlInNewTab(),
-                            ])->persistent()->send();
+                        $r->update(['status' => 'PENDING', 'no_pengajuan' => $no]);
+                        self::buatApproval($no, collect([$r]));
+                        Notification::make()->success()->title('Diajukan ke Approval — '.$no)
+                            ->body('Menunggu persetujuan di menu Approval → Approval BLT.')->send();
                     }),
             ])
             ->bulkActions([
-                Tables\Actions\BulkAction::make('generate_bulk')->label('Generate Terpilih')->icon('heroicon-o-banknotes')->color('success')
+                Tables\Actions\BulkAction::make('ajukan_bulk')->label('Ajukan Terpilih')->icon('heroicon-o-paper-airplane')->color('warning')
                     ->requiresConfirmation()
-                    ->modalDescription('BLT terpilih dijadikan SATU pengajuan (batch) dan langsung dicairkan (→ PAID).')
+                    ->modalDescription('BLT terpilih dijadikan SATU pengajuan (batch) dan diajukan ke Approval BLT.')
                     ->action(function ($records) {
                         $no = self::nextPengajuan();
-                        $records->each(fn (Blt $r) => self::cairkan($r, $no));
-                        Notification::make()->success()->title(count($records).' BLT — Pengajuan '.$no.' (PAID)')
-                            ->body('Bisa dicetak ulang kapan saja di Realisasi BLT.')
-                            ->actions([
-                                \Filament\Notifications\Actions\Action::make('cetak')->label('Cetak Pengajuan BLT')
-                                    ->url(route('fo.cetak.pengajuan-blt', ['pengajuan' => $no]))->openUrlInNewTab(),
-                            ])->persistent()->send();
+                        $records->each(fn (Blt $r) => $r->update(['status' => 'PENDING', 'no_pengajuan' => $no]));
+                        self::buatApproval($no, $records);
+                        Notification::make()->success()->title(count($records).' BLT diajukan — '.$no)
+                            ->body('Menunggu persetujuan di menu Approval → Approval BLT.')->send();
                     })->deselectRecordsAfterCompletion(),
             ])
             ->defaultSort('tgl_blt', 'desc')->paginated([10, 25, 50]);
@@ -133,19 +122,23 @@ class PengajuanBlt extends Page implements HasTable
         return app(\App\Services\Numerator\NumeratorService::class)->next('BLTPENG');
     }
 
-    /** Cairkan satu BLT → PAID; tandai batch pengajuan; rekening dari master sales bila kosong; NETT dihitung ulang. */
-    protected static function cairkan(Blt $r, string $noPengajuan): void
+    /** Buat record Approval (jenis BLT) untuk batch ini lalu submit (→ PENDING L1). */
+    protected static function buatApproval(string $noPengajuan, \Illuminate\Support\Collection $records): void
     {
-        $r->update([
-            'status' => 'PAID',
-            'no_pengajuan' => $noPengajuan,
-            'tgl_bayar' => now(),
-            'nett' => self::hitungNett([
-                'nilai_blt' => $r->nilai_blt, 'pph_amount' => $r->pph_amount, 'ppn_amount' => $r->ppn_amount,
-            ]),
-            'rek_bank' => $r->rek_bank ?: $r->agent?->rekening_bank,
-            'rek_number' => $r->rek_number ?: $r->agent?->rekening_number,
-            'rek_holder' => $r->rek_holder ?: ($r->agent?->rekening_holder ?: $r->nama_user),
+        $totalNett = (float) $records->sum(fn (Blt $b) => (float) $b->nett);
+        $approval = \App\Modules\FO\Approval\Models\Approval::create([
+            'tgl_approval' => now(),
+            'jenis' => 'BLT',
+            'amount_dampak' => $totalNett,
+            'alasan' => 'Pengajuan BLT '.$noPengajuan.' — '.$records->count().' BLT',
+            'detail_baru' => [
+                'no_pengajuan' => $noPengajuan,
+                'jumlah' => $records->count(),
+                'total_nett' => $totalNett,
+            ],
+            'status' => 'DRAFT',
+            'requested_by' => auth()->id(),
         ]);
+        app(\App\Modules\FO\Approval\Services\ApprovalService::class)->submit($approval);
     }
 }

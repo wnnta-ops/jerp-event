@@ -12,7 +12,7 @@ class Komisi extends TenantAwareModel
     protected $table = 'fo_komisi';
 
     protected $fillable = [
-        'tenant_id', 'no_komisi', 'tgl_komisi',
+        'tenant_id', 'no_komisi', 'no_pengajuan', 'tgl_komisi',
         'agent_id', 'kontrak_id',
         'dpp', 'persen_komisi', 'amount',
         'pph_persen', 'pph_amount', 'ppn_amount', 'amount_net',
