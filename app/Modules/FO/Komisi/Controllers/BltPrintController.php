@@ -3,7 +3,6 @@
 namespace App\Modules\FO\Komisi\Controllers;
 
 use App\Http\Controllers\Controller;
-use App\Models\Project;
 use App\Modules\FO\Komisi\Models\Blt;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
@@ -18,7 +17,7 @@ class BltPrintController extends Controller
 {
     public function pengajuan(Request $request): mixed
     {
-        $q = Blt::query()->with(['agent', 'kontrak.customer', 'kontrak.unit']);
+        $q = Blt::query()->with(['agent', 'kontrak.customer', 'kontrak.unit.lokasi']);
 
         if ($pengajuan = $request->query('pengajuan')) {
             $q->where('no_pengajuan', $pengajuan);
@@ -30,9 +29,8 @@ class BltPrintController extends Controller
 
         $blt = $q->orderBy('level_type')->orderBy('id')->get();
 
-        // Nama project dari unit kontrak pertama (untuk judul "UNTUK PENJUALAN ...").
-        $projectId = $blt->map(fn ($b) => $b->kontrak?->unit?->project_id)->filter()->first();
-        $projectName = $projectId ? (Project::find($projectId)?->name ?? '') : '';
+        // Nama lokasi dari unit kontrak pertama (untuk judul "UNTUK PENJUALAN ...").
+        $lokasiName = $blt->map(fn ($b) => $b->kontrak?->unit?->lokasi?->nama)->filter()->first() ?? '';
 
         // Kelompokkan per level, urut Sales → Koordinator → Kantor.
         $urut = ['SALES' => 0, 'KOORDINATOR' => 1, 'KANTOR' => 2];
@@ -41,7 +39,7 @@ class BltPrintController extends Controller
 
         $data = [
             'groups' => $groups,
-            'projectName' => $projectName,
+            'lokasiName' => $lokasiName,
             'tanggal' => now(),
         ];
 

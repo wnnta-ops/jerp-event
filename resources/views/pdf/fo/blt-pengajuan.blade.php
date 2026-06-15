@@ -47,7 +47,7 @@
         <div class="head">
             <div class="brand">M</div>
             <div class="co">
-                <div class="ttl">PERMOHONAN PENGAJUAN BLT {{ $label }} UNTUK PENJUALAN {{ $projectName ?: '—' }}</div>
+                <div class="ttl">PERMOHONAN PENGAJUAN BLT {{ $label }} UNTUK PENJUALAN {{ $lokasiName ?: '—' }}</div>
             </div>
             <div style="width:120px"></div>
         </div>
@@ -105,14 +105,14 @@
             </tbody>
         </table>
 
+        <div class="totbox">TOTAL {{ $rp($total) }}</div>
+        <div style="clear:both"></div>
         <div class="sign">
             <div class="c">Diajukan Oleh,<div class="line">(&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;)</div></div>
             <div class="c">Diperiksa Oleh,<div class="line">(&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;)</div></div>
             <div class="c">Diketahui Oleh,<div class="line">(&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;)</div></div>
             <div class="c">Disetujui Oleh,<div class="line">(&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;)</div></div>
         </div>
-        <div class="totbox">TOTAL {{ $rp($total) }}</div>
-        <div style="clear:both"></div>
     </div>
 @empty
     <div class="empty">Tidak ada data BLT untuk dicetak.</div>
