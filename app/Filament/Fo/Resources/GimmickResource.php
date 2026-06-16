@@ -39,15 +39,23 @@ class GimmickResource extends Resource
                         ->helperText('Paket gimmick (CLUSTER 3.3 / REGULER / PRIORITAS). Kelola di menu Tipe Gimmick.')
                         ->columnSpanFull(),
 
-                    // CREATE: input banyak nama sekaligus → tiap nama jadi 1 item.
+                    // CREATE: input banyak nama + harga sekaligus → tiap baris jadi 1 item.
                     Forms\Components\Repeater::make('nama_barang_list')->label('Nama Barang (bisa banyak)')
-                        ->simple(Forms\Components\TextInput::make('nama')->required()->placeholder('mis. FREE CANOPY'))
+                        ->schema([
+                            Forms\Components\TextInput::make('nama')->label('Nama Barang')->required()
+                                ->placeholder('mis. FREE CANOPY')->columnSpan(3),
+                            Forms\Components\TextInput::make('harga')->label('Harga')->numeric()->rupiah()->default(0)->columnSpan(2)
+                                ->helperText('Tidak ditagih ke customer — untuk BO (subsidi developer).'),
+                        ])->columns(5)
                         ->addActionLabel('Tambah Barang')->defaultItems(1)->minItems(1)->reorderable(false)
                         ->visibleOn('create')->dehydrated()->columnSpanFull(),
 
-                    // EDIT: satu item = satu nama.
-                    Forms\Components\TextInput::make('name')->label('Nama Barang')
-                        ->required()->maxLength(255)->visibleOn('edit')->columnSpanFull(),
+                    // EDIT: satu item = satu nama + harga.
+                    Forms\Components\Group::make()->columns(5)->visibleOn('edit')->columnSpanFull()->schema([
+                        Forms\Components\TextInput::make('name')->label('Nama Barang')->required()->maxLength(255)->columnSpan(3),
+                        Forms\Components\TextInput::make('nilai')->label('Harga')->numeric()->rupiah()->default(0)->columnSpan(2)
+                            ->helperText('Tidak ditagih ke customer — untuk BO (subsidi developer).'),
+                    ]),
 
                     Forms\Components\Toggle::make('is_active')->label('Aktif')->default(true),
                     Forms\Components\Textarea::make('keterangan')->rows(2)->columnSpanFull(),

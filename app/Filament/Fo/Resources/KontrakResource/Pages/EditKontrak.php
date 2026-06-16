@@ -40,6 +40,19 @@ class EditKontrak extends EditRecord
         }
     }
 
+    /** GMC (gimmick FREE) selalu mengikuti gimmick kontrak — sinkronkan setelah simpan. */
+    protected function afterSave(): void
+    {
+        $before = (int) $this->record->tagihan()->where('tipe', 'GMC')->count();
+        app(KontrakGeneratorService::class)->syncGmc($this->record);
+        $after = (int) $this->record->tagihan()->where('tipe', 'GMC')->count();
+
+        // Reload form penuh agar baris GMC di Jadwal Tagihan ikut berubah (hindari state lama).
+        if ($before !== $after) {
+            $this->redirect($this->getResource()::getUrl('edit', ['record' => $this->getRecord()]));
+        }
+    }
+
     protected function getHeaderActions(): array
     {
         return [

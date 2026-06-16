@@ -12,31 +12,33 @@ class CreateGimmick extends CreateRecord
 {
     protected static string $resource = GimmickResource::class;
 
-    /** Satu submit = banyak nama barang → satu baris Gimmick per nama. */
+    /** Satu submit = banyak nama barang (+ harga) → satu baris Gimmick per item. */
     protected function handleRecordCreation(array $data): Model
     {
-        $names = collect($data['nama_barang_list'] ?? [])
-            ->map(fn ($n) => is_array($n) ? ($n['nama'] ?? '') : $n)
-            ->map(fn ($n) => trim((string) $n))
-            ->filter()
+        $items = collect($data['nama_barang_list'] ?? [])
+            ->map(fn ($n) => is_array($n) ? $n : ['nama' => (string) $n, 'harga' => 0])
+            ->filter(fn ($n) => trim((string) ($n['nama'] ?? '')) !== '')
             ->values();
 
         unset($data['nama_barang_list']);
 
         // Fallback: kalau tak ada list (mis. edit pakai 'name'), buat satu.
-        if ($names->isEmpty()) {
+        if ($items->isEmpty()) {
             return Gimmick::create($data);
         }
 
         $first = null;
-        foreach ($names as $nama) {
-            $row = Gimmick::create(array_merge($data, ['name' => $nama]));
+        foreach ($items as $it) {
+            $row = Gimmick::create(array_merge($data, [
+                'name' => trim((string) $it['nama']),
+                'nilai' => \App\Support\Rupiah::toFloat($it['harga'] ?? 0),
+            ]));
             $first ??= $row;
         }
 
-        if ($names->count() > 1) {
+        if ($items->count() > 1) {
             Notification::make()->success()
-                ->title($names->count().' item gimmick dibuat')
+                ->title($items->count().' item gimmick dibuat')
                 ->send();
         }
 

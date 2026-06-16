@@ -112,6 +112,46 @@ class KontrakGeneratorService
             $n++;
         }
 
+        // GMC: gimmick FREE mengikuti gimmick kontrak (Tab Gimmick) — hapus gimmick →
+        // baris GMC ikut hilang. Harga diambil dari master terkini (tak stale).
+        $n += $this->syncGmc($kontrak, $tgl);
+
+        return $n;
+    }
+
+    /**
+     * Sinkronkan baris GMC (gimmick FREE) di Jadwal Tagihan dengan gimmick kontrak:
+     * hapus GMC lama, buat ulang dari gimmick yang diberikan (harga dari master terkini,
+     * hanya yang > 0). TIDAK ditagih ke customer (dikecualikan dari selisih & printout SPR);
+     * harganya untuk pembayaran subsidi developer (BO).
+     */
+    public function syncGmc(Kontrak $kontrak, $tgl = null): int
+    {
+        $tgl = $tgl ?? $kontrak->tgl_kontrak ?? now();
+        $kontrak->tagihan()->where('tipe', 'GMC')->delete();
+        $kontrak->load('gimmicks');
+
+        $urut = 900;
+        $n = 0;
+        foreach ($kontrak->gimmicks as $g) {
+            if (! ($g->diberikan ?? true)) {
+                continue;
+            }
+            $harga = (float) (Gimmick::find($g->gimmick_id)?->nilai ?? $g->harga_satuan);
+            if ($harga <= 0) {
+                continue;
+            }
+            $kontrak->tagihan()->create([
+                'urutan' => $urut++,
+                'tipe' => 'GMC',
+                'nama_tagihan' => $g->nama_barang,
+                'jatuh_tempo' => $tgl,
+                'nilai' => $harga,
+                'pelunasan' => 0,
+            ]);
+            $n++;
+        }
+
         return $n;
     }
 

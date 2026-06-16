@@ -52,6 +52,10 @@
         // Fallback ke baris skema bila tagihan belum terbentuk.
         $payRows = [];
         foreach ($kontrak->tagihan ?? [] as $t) {
+            // GMC (gimmick FREE) hanya internal/BO — tidak ditampilkan di jadwal pembayaran SPR.
+            if (($t->tipe ?? '') === 'GMC') {
+                continue;
+            }
             $payRows[] = ['tipe' => $t->tipe, 'nama' => $t->nama_tagihan, 'jatuh' => $t->jatuh_tempo, 'amount' => (float) $t->nilai, 'paid' => (float) $t->pelunasan];
         }
         if (empty($payRows)) {

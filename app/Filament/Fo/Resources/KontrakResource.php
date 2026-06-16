@@ -174,6 +174,7 @@ class KontrakResource extends Resource
                         ->icon('heroicon-o-gift')
                         ->schema([
                             Forms\Components\Repeater::make('gimmicks')->relationship()->label('')
+                                ->helperText('Baris GMC di Jadwal Tagihan otomatis menyesuaikan gimmick ini setelah Simpan.')
                                 ->columns(12)->defaultItems(0)->addActionLabel('Tambah Gimmick')
                                 ->reorderable()->orderColumn('urutan')
                                 ->itemLabel(fn (array $state): ?string => $state['nama_barang'] ?? null)
@@ -254,7 +255,7 @@ class KontrakResource extends Resource
                                     : null)
                                 ->schema([
                                     Forms\Components\Select::make('tipe')->label('Tipe')->columnSpan(2)
-                                        ->options(['BF' => 'BF (Booking Fee)', 'DP' => 'DP', 'ANG' => 'Angsuran', 'ADM' => 'Administrasi', 'LAIN' => 'Lain'])
+                                        ->options(['BF' => 'BF (Booking Fee)', 'DP' => 'DP', 'ANG' => 'Angsuran', 'ADM' => 'Administrasi', 'GMC' => 'Gimmick (FREE)', 'LAIN' => 'Lain'])
                                         ->default('ANG')->required()->live(),
                                     Forms\Components\TextInput::make('nama_tagihan')->label('Nama Tagihan')->columnSpan(4)->required(),
                                     Forms\Components\DatePicker::make('jatuh_tempo')->label('Jatuh Tempo')->columnSpan(2)->native(false)->displayFormat('d M Y'),
@@ -287,6 +288,10 @@ class KontrakResource extends Resource
     {
         $total = 0.0;
         foreach ($tagihan as $t) {
+            // GMC (gimmick FREE) tidak ditagih ke customer — tak dihitung di selisih.
+            if (($t['tipe'] ?? '') === 'GMC') {
+                continue;
+            }
             $total += Rupiah::toFloat($t['nilai'] ?? 0);
         }
 
