@@ -5,9 +5,16 @@
     <title>SPR — {{ $kontrak->no_kontrak }}</title>
     <style>
         * { box-sizing: border-box; }
+        @page { size: A4 portrait; margin: 14mm 14mm 12mm; }
         body { font-family: Arial, Helvetica, sans-serif; color: #111; font-size: 11px; margin: 0; padding: 26px 32px; line-height: 1.4; }
-        .page { page-break-after: always; }
+        .page { page-break-after: always; display: flex; flex-direction: column; min-height: 252mm; }
         .page:last-child { page-break-after: auto; }
+        /* Kaki halaman: kotak paraf (PT MUP | PEMESAN) di kanan-bawah + nomor halaman. */
+        .pagefoot { margin-top: auto; padding-top: 12px; }
+        .paraf { border-collapse: collapse; margin-left: auto; width: 240px; }
+        .paraf td { border: 1px solid #111; text-align: center; padding: 3px 6px; }
+        .paraf .h td { font-size: 10px; font-weight: 700; }
+        .paraf .p td { height: 42px; }
         .head { display: flex; align-items: center; justify-content: space-between; }
         .head .co { text-align: center; flex: 1; }
         .head .co .ttl { font-weight: 800; font-size: 15px; letter-spacing: .5px; }
@@ -31,9 +38,9 @@
         .sign { display: flex; justify-content: space-between; margin-top: 30px; text-align: center; }
         .sign .c { width: 32%; }
         .sign .nm { margin-top: 56px; font-weight: 700; }
-        .foot { text-align: center; font-size: 9px; color: #555; margin-top: 8px; }
+        .foot { text-align: center; font-size: 9px; color: #555; margin-top: 6px; }
         .actions { margin-top: 18px; }
-        @media print { .actions { display: none; } body { padding: 12px; } }
+        @media print { .actions { display: none; } body { padding: 0; } }
         .btn { display:inline-block; padding:8px 16px; background:#2563eb; color:#fff; border-radius:8px; text-decoration:none; font-size:13px; }
     </style>
 </head>
@@ -91,18 +98,39 @@
         // Gimmick yang diberikan → "sudah termasuk".
         $gimmickNames = ($kontrak->gimmicks ?? collect())->where('diberikan', true)->pluck('nama_barang')->filter()->all();
         $payTotal = array_sum(array_column($payRows, 'amount')) ?: (float) $kontrak->total_kontrak;
+        $totHal = 5;
     @endphp
+
+    {{-- Kaki halaman dipakai berulang: kotak paraf di kanan-bawah + nomor halaman. --}}
+    @php($pageFoot = function (int $hal) use ($totHal) {
+        return '<div class="pagefoot"><table class="paraf">'
+            .'<tr class="h"><td>PT MUP</td><td>PEMESAN</td></tr>'
+            .'<tr class="p"><td></td><td></td></tr></table>'
+            .'<div class="foot">'.$hal.' Dari Halaman '.$totHal.'</div></div>';
+    })
+
+    {{-- Logo kantor: ambil dari public/images/logo/<file>. Bila belum ada, pakai
+         fallback (teks/inisial) supaya layout tetap aman. Di-embed base64 agar
+         tampil baik di print HTML maupun PDF. --}}
+    @php($logoTag = function (string $file, string $fallback, string $style) {
+        $path = public_path('images/logo/'.$file);
+        if (is_file($path)) {
+            $mime = @mime_content_type($path) ?: 'image/png';
+            return '<img src="data:'.$mime.';base64,'.base64_encode((string) file_get_contents($path)).'" style="'.$style.'" alt="">';
+        }
+        return $fallback;
+    })
 
     {{-- ════════════ HALAMAN 1 ════════════ --}}
     <div class="page">
         <div class="head">
-            <div class="logo">M</div>
+            {!! $logoTag('mup.png', '<div class="logo">M</div>', 'max-width:120px; max-height:64px;') !!}
             <div class="co">
                 <div class="ttl">SURAT PEMESANAN RUMAH{{ ($kontrak->tahap ?? 'SPRS') === 'SPR' ? '' : ' SEMENTARA' }}</div>
                 <div class="no">Nomor : {{ $kontrak->no_kontrak }}</div>
                 <div class="no">Tanggal : {{ optional($kontrak->tgl_kontrak)->format('d M Y') }}</div>
             </div>
-            <div class="brand">JAVA<br>RESIDENCE</div>
+            {!! $logoTag('java-residence.png', '<div class="brand">JAVA<br>RESIDENCE</div>', 'max-width:140px; max-height:64px;') !!}
         </div>
 
         <p style="margin-top:14px;">Yang Bertanda Tangan Di bawah Ini :</p>
@@ -158,7 +186,7 @@
                 @endforeach
             </ul>
         @endif
-        <div class="foot">1 Dari Halaman 5</div>
+        {!! $pageFoot(1) !!}
     </div>
 
     {{-- ════════════ HALAMAN 2 ════════════ --}}
@@ -190,7 +218,7 @@
             <li><span class="clause-h">VIII.</span> Apabila pemesan lalai dalam hal kurang atau terlambat melakukan suatu pembayaran berdasarkan Surat Pemesanan ini, maka pemesan dikenakan dan wajib membayar kepada PT. MITRA USAHA PROPERTINDO denda sebesar 1‰ (satu permil) per setiap hari keterlambatan dari jumlah terhutang sejak tanggal seharusnya dibayar sampai dilunasi seluruhnya, dengan keterlambatan maksimal 30 hari kerja dan maksimal denda 5% dari jumlah terhutang.</li>
             <li><span class="clause-h">IX.</span> Apabila pemesan lalai dalam hal kurang atau terlambat melakukan suatu pembayaran yang berlangsung maksimal 14 (empat belas) hari kalender dan/atau mundur sepihak karena alasan dan/atau kesalahan pemesan, maka PT. MITRA USAHA PROPERTINDO dapat mengakhiri Surat Pemesanan ini sesuai butir XII di bawah. Terhadap seluruh uang yang telah dibayar oleh pemesan (kecuali Uang Tanda Jadi) akan dikembalikan setelah dipotong biaya administrasi pengakhiran sebesar 30% (tiga puluh persen).</li>
         </ol>
-        <div class="foot">2 Dari Halaman 5</div>
+        {!! $pageFoot(2) !!}
     </div>
 
     {{-- ════════════ HALAMAN 3 ════════════ --}}
@@ -217,7 +245,7 @@
                 </ol>
             </li>
         </ol>
-        <div class="foot">3 Dari Halaman 5</div>
+        {!! $pageFoot(3) !!}
     </div>
 
     {{-- ════════════ HALAMAN 4 ════════════ --}}
@@ -237,7 +265,14 @@
             </li>
             <li><span class="clause-h">XVI. KETENTUAN ESTATE MANAJEMEN.</span> Pemesan sepakat patuh dan tertib terhadap ketentuan Estate Manajemen PT. MITRA USAHA PROPERTINDO demi kenyamanan dan keamanan kawasan; apabila tidak bersedia mengikuti tata tertib, pemesan bersedia menerima konsekuensi sesuai peraturan Estate Manajemen.</li>
             <li><span class="clause-h">XVII. FORCE MAJEURE.</span> PT. MITRA USAHA PROPERTINDO dan Pemesan setuju mengadakan perubahan/penambahan atas SPR apabila terjadi Force Majeure (gempa bumi, banjir, bencana alam, epidemi, pandemi, huru-hara, perang, keadaan politik, atau kelangkaan bahan bangunan yang mempengaruhi kegiatan usaha properti).</li>
-            <li><span class="clause-h">KETENTUAN SERAH TERIMA.</span>
+        </ol>
+        {!! $pageFoot(4) !!}
+    </div>
+
+    {{-- ════════════ HALAMAN 5 ════════════ --}}
+    <div class="page">
+        <ol class="terms" style="list-style:none; padding-left:0;">
+            <li><span class="clause-h">XVII. KETENTUAN SERAH TERIMA.</span>
                 <ol class="alpha">
                     <li>1 Lantai paling lambat 18 Bulan setelah pembayaran lunas (cash/InHouse) atau setelah akad kredit (KPR).</li>
                     <li>2 Lantai paling lambat 24 Bulan setelah pembayaran lunas (cash/InHouse) atau setelah akad kredit (KPR).</li>
@@ -247,22 +282,27 @@
                     <li>Garansi bangunan dianggap hangus bila pemesan mengajukan desain ulang/perubahan desain.</li>
                 </ol>
             </li>
-            <li><span class="clause-h">XVIII. PENYELESAIAN PERSELISIHAN.</span> Perselisihan diselesaikan secara musyawarah; apabila dalam 30 hari tidak tercapai, para pihak sepakat menyelesaikannya melalui Pengadilan Negeri Sidoarjo.</li>
+            <li><span class="clause-h">XVIII. PENYELESAIAN PERSELISIHAN.</span>
+                <ol class="alpha">
+                    <li>Jika timbul perselisihan dalam melaksanakan Surat Pemesanan ini, maka akan diselesaikan oleh PT. MITRA USAHA PROPERTINDO dan Pemesan secara musyawarah.</li>
+                    <li>Apabila dalam jangka waktu 30 (tiga puluh) hari sejak sengketa atau beda pendapat tersebut penyelesaian secara musyawarah tidak tercapai, maka PT. MITRA USAHA PROPERTINDO dan Pemesan sepakat untuk menyelesaikannya melalui Pengadilan Negeri Sidoarjo.</li>
+                </ol>
+            </li>
         </ol>
-        <div class="foot">4 Dari Halaman 5</div>
-    </div>
 
-    {{-- ════════════ HALAMAN 5 ════════════ --}}
-    <div class="page">
         <p style="margin-top:10px;">Demikian Surat Pemesanan ini dibuat untuk dapat dilaksanakan sebagaimana mestinya.</p>
-        <p style="text-align:right; margin-top:20px;">Sidoarjo, {{ optional($kontrak->tgl_kontrak)->format('d M Y') }}</p>
-        <p style="margin-top:6px;">Pemesan &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; PT. MITRA USAHA PROPERTINDO</p>
-        <div class="sign">
+        <p style="margin-top:14px;">Sidoarjo, {{ optional($kontrak->tgl_kontrak)->format('d M Y') }}</p>
+        <div class="sign" style="margin-top:6px;">
+            <div class="c" style="font-weight:700;">Pemesan</div>
+            <div class="c"></div>
+            <div class="c" style="font-weight:700; white-space:nowrap;">PT. MITRA USAHA PROPERTINDO</div>
+        </div>
+        <div class="sign" style="margin-top:0;">
             <div class="c"><div class="nm">{{ $c?->full_name ?: '' }}</div>Pemesan</div>
             <div class="c"><div class="nm">{{ $ag?->name ?: '' }}@if ($ag?->agency_name) <br><span style="font-weight:400;font-size:9px;">{{ $ag->agency_name }}</span>@endif</div>Sales</div>
             <div class="c"><div class="nm">Rachmat Suhendra</div>Direktur</div>
         </div>
-        <div class="foot">5 Dari Halaman 5</div>
+        {!! $pageFoot(5) !!}
     </div>
 
     <div class="actions">

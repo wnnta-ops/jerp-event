@@ -182,8 +182,6 @@
     </table>
     <div style="text-align:right; margin-top:14px;">SIDOARJO, {{ $tgl($kwTgl) }}</div>
     <div style="margin-top:18px; display:inline-block; border:1px solid #111; padding:8px 16px; font-weight:800; font-size:14px;">JUMLAH &nbsp; {{ $rp($kwAmount) }}</div>
-    <p style="margin-top:14px; font-size:10px; color:#444;">NB: Pembayaran berupa cek/giro dianggap sah apabila dana tersebut telah cair.</p>
-    <p style="font-size:10px; color:#444;">Lembar Putih: Customer &nbsp;·&nbsp; Lembar Merah: Administrasi &nbsp;·&nbsp; Lembar Kuning: Finance</p>
     <div style="text-align:right; margin-top:30px;">Finance<br><span style="display:inline-block; border-top:1px solid #111; width:160px; margin-top:36px;"></span></div>
 
     <div class="actions">
