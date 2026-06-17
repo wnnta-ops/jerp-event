@@ -197,11 +197,11 @@ class PublicForm extends Component
             'unit_diinginkan' => ['required', 'string', 'max:255'],
             'cara_bayar' => ['nullable', 'string', 'max:32'],
             'agent_id' => ['nullable', 'exists:fo_agents,id'],
-            'ref_sales_name' => ['nullable', 'string', 'max:255'],
-            'ref_sales_phone' => ['nullable', 'string', 'max:32'],
+            'ref_sales_name' => ['required', 'string', 'max:255'],
+            'ref_sales_phone' => ['required', 'string', 'max:32'],
 
             'ktp_file' => ['required', 'file', 'mimes:jpg,jpeg,png,pdf', 'max:5120'],
-            'npwp_file' => ['nullable', 'file', 'mimes:jpg,jpeg,png,pdf', 'max:5120'],
+            'npwp_file' => ['required', 'file', 'mimes:jpg,jpeg,png,pdf', 'max:5120'],
             'ktp_pasangan_file' => ['nullable', 'file', 'mimes:jpg,jpeg,png,pdf', 'max:5120'],
             'bukti_transfer_file' => ['required', 'file', 'mimes:jpg,jpeg,png,pdf', 'max:5120'],
 

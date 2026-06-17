@@ -47,7 +47,9 @@
 
         $nama = $c?->full_name ?: $reg->nama_pendaftar;
         $alamat = $c?->alamatRingkas() ?: ($reg->keterangan ?: '—');
-        $sales = $reg->agent?->sales_label ?: ($reg->ref_sales_name ?: '—');
+        // Marketing = sales kontrak (utama), fallback ke agent/ref pendaftaran.
+        $sales = $k?->agent?->sales_label ?: ($k?->agent?->name
+            ?: ($reg->agent?->sales_label ?: ($reg->ref_sales_name ?: '—')));
         // Sumber Informasi = Sumber Data pemasaran (master) yang dipilih saat daftar.
         $sumberInfo = $c?->sumber_data_label ?: '—';
 

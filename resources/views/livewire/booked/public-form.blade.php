@@ -394,7 +394,7 @@
                 @error('ref_sales_name') <span class="nup-error">{{ $message }}</span> @enderror
             </div>
             <div>
-                <label class="nup-label">No. Telp Sales</label>
+                <label class="nup-label">No. Telp Sales <span class="nup-required">*</span></label>
                 <input wire:model="ref_sales_phone" type="text" class="nup-input" placeholder="No. Telp Sales">
                 @error('ref_sales_phone') <span class="nup-error">{{ $message }}</span> @enderror
             </div>
@@ -421,7 +421,7 @@
                 @error('ktp_file') <span class="nup-error">{{ $message }}</span> @enderror
             </div>
             <div>
-                <label class="nup-label">Upload NPWP Customer (Maks. 5MB)</label>
+                <label class="nup-label">Upload NPWP Customer (Maks. 5MB) <span class="nup-required">*</span></label>
                 <input type="file" wire:model="npwp_file" accept=".jpg,.jpeg,.png,.pdf" class="nup-input" style="padding:0.375rem 0.5rem;">
                 <div wire:loading wire:target="npwp_file" class="text-xs mt-1" style="color:#2563eb;">Mengunggah…</div>
                 @if ($npwp_file && ! $errors->has('npwp_file'))

@@ -247,7 +247,7 @@ class PublicForm extends Component
             'pilihan_unit_3' => ['nullable', 'string', 'max:255'],
 
             'ktp_file' => ['required', 'file', 'mimes:jpg,jpeg,png,pdf', 'max:5120'],         // 5 MB
-            'npwp_file' => ['nullable', 'file', 'mimes:jpg,jpeg,png,pdf', 'max:5120'],
+            'npwp_file' => ['required', 'file', 'mimes:jpg,jpeg,png,pdf', 'max:5120'],
             'ktp_pasangan_file' => ['nullable', 'file', 'mimes:jpg,jpeg,png,pdf', 'max:5120'],
 
             'pernyataan_setuju' => ['accepted'],
