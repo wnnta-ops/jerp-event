@@ -22,6 +22,12 @@ class TtsResource extends Resource
 
     protected static ?string $navigationGroup = 'Finance AR';
 
+    /** TTS terbit otomatis dari SPRS — tidak boleh dibuat manual. */
+    public static function canCreate(): bool
+    {
+        return false;
+    }
+
     protected static ?int $navigationSort = 10;
 
     protected static ?string $modelLabel = 'TTS';
@@ -191,11 +197,13 @@ class TtsResource extends Resource
                     ->color('success')
                     ->requiresConfirmation()
                     ->modalDescription('Buka kuitansi: konversi TTS ini menjadi BKM (Kwitansi resmi) yang siap dicetak. Aksi ini tidak bisa di-undo lewat UI.')
-                    ->visible(fn (Tts $r) => in_array($r->status, ['DRAFT', 'KONFIRMASI']) && $r->cara_bayar !== 'GIRO' && $r->cara_bayar !== 'CHEQUE')
+                    // Buka Kuitansi hanya muncul bila kontrak terisi (TTS tanpa kontrak tak bisa jadi kuitansi).
+                    ->visible(fn (Tts $r) => $r->kontrak_id && in_array($r->status, ['DRAFT', 'KONFIRMASI']) && $r->cara_bayar !== 'GIRO' && $r->cara_bayar !== 'CHEQUE')
                     ->action(function (Tts $r) {
                         $bkm = TtsToBkmService::convert($r);
                         Notification::make()
                             ->title('Kuitansi dibuka — '.$bkm->no_bkm)
+                            ->body('SPR untuk kontrak ini kini bisa dilanjutkan di menu SPRS.')
                             ->success()
                             ->actions([
                                 NotificationAction::make('cetak')->label('Cetak Kwitansi')

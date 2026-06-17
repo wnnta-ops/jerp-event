@@ -20,22 +20,30 @@ class BkmResource extends Resource
 
     protected static ?int $navigationSort = 20;
 
-    protected static ?string $modelLabel = 'BKM';
+    protected static ?string $navigationLabel = 'Kwitansi';
 
-    protected static ?string $pluralModelLabel = 'Bukti Kas Masuk';
+    protected static ?string $modelLabel = 'Kwitansi';
+
+    protected static ?string $pluralModelLabel = 'Kwitansi';
+
+    /** Kwitansi terbit otomatis dari alur pembayaran (SPRS/TTS) — tidak boleh dibuat manual. */
+    public static function canCreate(): bool
+    {
+        return false;
+    }
 
     public static function form(Form $form): Form
     {
         return $form->schema([
-            Forms\Components\Section::make('Identitas BKM')
+            Forms\Components\Section::make('Identitas Kwitansi')
                 ->columns(3)
                 ->schema([
                     Forms\Components\TextInput::make('no_bkm')
-                        ->label('No BKM')
+                        ->label('No Kwitansi')
                         ->disabled()
                         ->dehydrated()
                         ->placeholder('Otomatis'),
-                    Forms\Components\DatePicker::make('tgl_bkm')->label('Tgl BKM')->required()->default(now()),
+                    Forms\Components\DatePicker::make('tgl_bkm')->label('Tgl Kwitansi')->required()->default(now()),
                     Forms\Components\Select::make('tts_id')
                         ->label('Sumber TTS')
                         ->relationship('tts', 'no_tts')
@@ -110,7 +118,7 @@ class BkmResource extends Resource
     {
         return $table
             ->columns([
-                Tables\Columns\TextColumn::make('no_bkm')->label('No BKM')->badge()->color('success')->searchable()->sortable(),
+                Tables\Columns\TextColumn::make('no_bkm')->label('No Kwitansi')->badge()->color('success')->searchable()->sortable(),
                 Tables\Columns\TextColumn::make('tgl_bkm')->label('Tgl')->date('d M Y')->sortable(),
                 Tables\Columns\TextColumn::make('tts.no_tts')->label('Sumber TTS')->placeholder('Manual')->toggleable(),
                 Tables\Columns\TextColumn::make('customer.full_name')->label('Customer')->searchable(),

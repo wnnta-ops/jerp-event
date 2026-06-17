@@ -332,7 +332,7 @@ class FoPanelProvider extends PanelProvider
                 'icon' => 'heroicon-o-banknotes',
                 'items' => [
                     $item('TTS', '/fo/tts', 'heroicon-o-ticket', 'filament.fo.resources.tts.'),
-                    $item('BKM', '/fo/bkms', 'heroicon-o-banknotes', 'filament.fo.resources.bkms.'),
+                    $item('Kwitansi', '/fo/bkms', 'heroicon-o-banknotes', 'filament.fo.resources.bkms.'),
                     $item('VA', '/fo/vas', 'heroicon-o-credit-card', 'filament.fo.resources.vas.'),
                     $item('MEMO', '/fo/memos', 'heroicon-o-document-currency-dollar', 'filament.fo.resources.memos.'),
                     $item('Faktur Pajak', '/fo/fps', 'heroicon-o-receipt-percent', 'filament.fo.resources.fps.'),

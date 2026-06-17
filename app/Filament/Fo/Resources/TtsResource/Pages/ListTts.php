@@ -3,7 +3,6 @@
 namespace App\Filament\Fo\Resources\TtsResource\Pages;
 
 use App\Filament\Fo\Resources\TtsResource;
-use Filament\Actions;
 use Filament\Resources\Pages\ListRecords;
 
 class ListTts extends ListRecords
@@ -12,8 +11,7 @@ class ListTts extends ListRecords
 
     protected function getHeaderActions(): array
     {
-        return [
-            Actions\CreateAction::make(),
-        ];
+        // TTS terbit otomatis dari SPRS — tidak boleh dibuat manual (tanpa tombol Buat TTS).
+        return [];
     }
 }

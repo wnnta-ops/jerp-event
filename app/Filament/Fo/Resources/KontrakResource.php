@@ -284,6 +284,12 @@ class KontrakResource extends Resource
      * @param  array<int,array<string,mixed>>  $tagihan
      * @return array{total:float,nilai_kontrak:float,selisih:float}
      */
+    /** Kwitansi (BKM) sudah terbit untuk kontrak ini? Gate promosi SPRS → SPR. */
+    public static function kwitansiTerbit(Kontrak $record): bool
+    {
+        return \App\Modules\FO\FinanceAR\Models\Bkm::query()->where('kontrak_id', $record->id)->exists();
+    }
+
     public static function hitungTagihan(array $tagihan, float $nilaiKontrak): array
     {
         $total = 0.0;
@@ -374,11 +380,18 @@ class KontrakResource extends Resource
                     ->label('SPR')
                     ->icon('heroicon-o-document-check')
                     ->color('success')
-                    ->visible(fn ($record) => $record->tahap !== 'SPR')
+                    // SPR baru MUNCUL setelah finance "Buka Kuitansi" (kwitansi/BKM terbit) utk kontrak ini.
+                    ->visible(fn (Kontrak $record) => $record->tahap !== 'SPR' && self::kwitansiTerbit($record))
                     ->requiresConfirmation()
                     ->modalHeading('Simpan sebagai SPR')
                     ->modalDescription('Finalkan SPRS ini menjadi SPR. Unit akan ditandai TERJUAL.')
                     ->action(function ($record) {
+                        if (! self::kwitansiTerbit($record)) {
+                            Notification::make()->warning()->title('Belum bisa SPR')
+                                ->body('Kwitansi belum terbit dari finance. Buka Kuitansi dulu di menu TTS.')->send();
+
+                            return;
+                        }
                         $record->update(['tahap' => 'SPR']);
                         if ($record->unit_id && $unit = Unit::find($record->unit_id)) {
                             $unit->update(['status' => 'TERJUAL']);
