@@ -4,6 +4,7 @@ namespace App\Filament\Fo\Resources;
 
 use App\Filament\Fo\Resources\VerifikasiBookedResource\Pages;
 use App\Modules\FO\Booked\Services\BookedVerificationService;
+use App\Modules\FO\FinanceAR\Models\TransferAnonim;
 use App\Modules\FO\Launching\Models\NupRegistration;
 use App\Modules\FO\MarketingSales\Models\Unit;
 use Filament\Forms;
@@ -39,13 +40,15 @@ class VerifikasiBookedResource extends Resource
     public static function table(Table $table): Table
     {
         return $table
-            ->query(NupRegistration::query()->where('jenis', 'BOOKED')->with('customer'))
+            ->query(NupRegistration::query()->where('jenis', 'BOOKED')->with(['customer', 'transferAnonim.bank']))
             ->columns([
                 Tables\Columns\TextColumn::make('tgl_daftar')->label('Tgl Daftar')->date('d M Y')->sortable(),
                 Tables\Columns\TextColumn::make('nama_pendaftar')->label('Nama')->searchable()->description(fn (NupRegistration $r) => $r->nik),
                 Tables\Columns\TextColumn::make('pilihan_unit_1')->label('Unit Diinginkan')->placeholder('—'),
                 Tables\Columns\TextColumn::make('cara_bayar')->label('Cara Bayar')->badge(),
                 Tables\Columns\TextColumn::make('ref_sales_name')->label('Sales')->placeholder('—')->toggleable(),
+                Tables\Columns\TextColumn::make('transferAnonim.amount')->label('Bukti Transfer')->placeholder('— belum dicocokkan')
+                    ->money('IDR')->description(fn (NupRegistration $r) => $r->transferAnonim?->bank?->name)->color('success'),
                 Tables\Columns\TextColumn::make('verif_status')->label('Status')->badge()->color(fn (?string $state) => match ($state) {
                     'APPROVED' => 'success', 'REJECTED' => 'danger', 'MENUNGGU_BAYAR' => 'warning', default => 'gray',
                 }),
@@ -82,17 +85,31 @@ class VerifikasiBookedResource extends Resource
                 // Langkah 1 — Approve (cek mutasi bank). Belum pilih unit.
                 Tables\Actions\Action::make('approve')->label('Approve')->icon('heroicon-o-check-circle')->color('success')
                     ->visible(fn (NupRegistration $r) => $r->verif_status === 'MENUNGGU_BAYAR')
-                    ->modalDescription('Setujui setelah cek mutasi bank. Pilih unit dilakukan di langkah berikutnya.')
+                    ->modalHeading('Approve — cocokkan bukti transfer (finance)')
+                    ->modalDescription('Pilih Transfer Anonim yang sudah diidentifikasi finance untuk customer ini. Nominal otomatis dari transfer. Pilih unit di langkah berikutnya.')
                     ->form([
                         Forms\Components\Placeholder::make('info')->label('Unit Diinginkan Customer')
                             ->content(fn (NupRegistration $r) => $r->pilihan_unit_1 ?: '—'),
-                        Forms\Components\TextInput::make('booking_fee')->label('Nominal Transfer / Booking Fee (Rp)')->numeric()->default(0)
-                            ->helperText('Sesuai mutasi bank yang sudah dicek.'),
+                        Forms\Components\Select::make('transfer_anonim_id')->label('Transfer Anonim (bukti finance — UTJ/Booking Fee)')->required()->searchable()
+                            ->options(fn () => self::transferOptions(TransferAnonim::query()->with('bank')
+                                ->where('status', '!=', 'SELESAI')->orderByDesc('tgl_transfer')->limit(50)->get()))
+                            ->getSearchResultsUsing(fn (string $search) => self::transferOptions(
+                                TransferAnonim::query()->with('bank')->where('status', '!=', 'SELESAI')
+                                    ->where(function ($q) use ($search) {
+                                        $q->whereRaw("DATE_FORMAT(tgl_transfer, '%d %b %Y') LIKE ?", ['%'.$search.'%'])
+                                            ->orWhere('keterangan_bank', 'like', '%'.$search.'%')
+                                            ->orWhere('amount', 'like', '%'.$search.'%')
+                                            ->orWhereHas('bank', fn ($b) => $b->where('name', 'like', '%'.$search.'%'));
+                                    })->orderByDesc('tgl_transfer')->limit(50)->get()))
+                            ->getOptionLabelUsing(fn ($value) => ($t = TransferAnonim::with('bank')->find($value)) ? self::transferLabel($t) : null)
+                            ->helperText('Cari per tanggal / bank / nominal / berita. Nominal (booking fee) otomatis ikut transfer terpilih.'),
                         Forms\Components\Textarea::make('note')->label('Catatan Verifikasi')->rows(2),
                     ])
                     ->action(function (NupRegistration $r, array $data) {
                         try {
-                            app(BookedVerificationService::class)->approve($r, (float) ($data['booking_fee'] ?? 0), $data['note'] ?? null);
+                            $txId = ((int) ($data['transfer_anonim_id'] ?? 0)) ?: null;
+                            $bookingFee = $txId ? (float) (TransferAnonim::find($txId)?->amount ?? 0) : 0;
+                            app(BookedVerificationService::class)->approve($r, $bookingFee, $data['note'] ?? null, $txId);
                             Notification::make()->success()->title('Disetujui → lanjut Pilih Unit')->send();
                         } catch (\Throwable $e) {
                             Notification::make()->danger()->title('Gagal approve')->body($e->getMessage())->send();
@@ -119,5 +136,19 @@ class VerifikasiBookedResource extends Resource
         return [
             'index' => Pages\ListVerifikasiBookeds::route('/'),
         ];
+    }
+
+    /** Label pilihan Transfer Anonim: "tgl · bank · Rp nominal · berita". */
+    protected static function transferLabel(TransferAnonim $t): string
+    {
+        return $t->tgl_transfer?->format('d M Y').' · '.($t->bank?->name ?? 'Bank')
+            .' · Rp '.number_format((float) $t->amount, 0, ',', '.')
+            .($t->keterangan_bank ? ' · '.$t->keterangan_bank : '');
+    }
+
+    /** @return array<int,string> [id => label] dari koleksi TransferAnonim. */
+    protected static function transferOptions(\Illuminate\Support\Collection $rows): array
+    {
+        return $rows->mapWithKeys(fn (TransferAnonim $t) => [$t->id => self::transferLabel($t)])->all();
     }
 }

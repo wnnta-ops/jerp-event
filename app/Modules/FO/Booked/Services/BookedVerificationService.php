@@ -24,7 +24,7 @@ class BookedVerificationService
     public function __construct(private readonly NumeratorServiceInterface $numerator) {}
 
     /** Langkah 1 — setujui pendaftaran (cek mutasi bank). Belum pilih unit. */
-    public function approve(NupRegistration $reg, ?float $bookingFee, ?string $note): NupRegistration
+    public function approve(NupRegistration $reg, ?float $bookingFee, ?string $note, ?int $transferAnonimId = null): NupRegistration
     {
         if ($reg->verif_status === 'APPROVED') {
             throw new RuntimeException('Pendaftaran sudah di-approve.');
@@ -37,11 +37,21 @@ class BookedVerificationService
             'verif_status' => 'APPROVED',
             'status' => 'CHECK_IN',                  // disetujui, menunggu Pilih Unit
             'booking_fee_paid' => $bookingFee ?? 0,
+            'transfer_anonim_id' => $transferAnonimId,
             'verified_by' => Auth::id(),
             'verified_at' => now(),
             'is_manual_approve' => true,
             'verif_note' => $note,
         ]);
+
+        // Transfer Anonim dipilih sebagai bukti booking → status otomatis SELESAI,
+        // customer ditetapkan dari pendaftar booked (bila belum).
+        if ($transferAnonimId && $tx = \App\Modules\FO\FinanceAR\Models\TransferAnonim::find($transferAnonimId)) {
+            $tx->update([
+                'status' => 'SELESAI',
+                'customer_id' => $tx->customer_id ?: $reg->customer_id,
+            ]);
+        }
 
         return $reg->fresh();
     }

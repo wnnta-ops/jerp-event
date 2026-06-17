@@ -5,11 +5,8 @@ namespace App\Filament\Fo\Resources;
 use App\Filament\Fo\Resources\TransferAnonimResource\Pages;
 use App\Models\Bank;
 use App\Modules\FO\FinanceAR\Models\TransferAnonim;
-use App\Modules\FO\FinanceAR\Models\Tts;
-use App\Modules\FO\MarketingSales\Models\Customer;
 use Filament\Forms;
 use Filament\Forms\Form;
-use Filament\Notifications\Notification;
 use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Table;
@@ -57,28 +54,8 @@ class TransferAnonimResource extends Resource
             ])])
             ->headerActions([Tables\Actions\CreateAction::make()])
             ->actions([
-                Tables\Actions\Action::make('identifikasi')->label('Identifikasi')->icon('heroicon-o-user')->color('warning')
-                    ->visible(fn (TransferAnonim $r) => $r->status === 'BARU')
-                    ->form([Forms\Components\Select::make('customer_id')->label('Customer')->required()->searchable()
-                        ->options(fn () => Customer::query()->limit(300)->pluck('full_name', 'id'))])
-                    ->action(function (TransferAnonim $r, array $data) {
-                        $r->update(['customer_id' => $data['customer_id'], 'status' => 'TERIDENTIFIKASI']);
-                        Notification::make()->success()->title('Teridentifikasi')->send();
-                    }),
-                // Jadikan TTS → buat Tanda Terima dari transfer ini.
-                Tables\Actions\Action::make('jadikan_tts')->label('Jadikan TTS')->icon('heroicon-o-ticket')->color('success')
-                    ->visible(fn (TransferAnonim $r) => $r->status === 'TERIDENTIFIKASI' && $r->customer_id)
-                    ->requiresConfirmation()
-                    ->action(function (TransferAnonim $r) {
-                        $tts = Tts::create([
-                            'tenant_id' => $r->tenant_id, 'tgl_tts' => now()->toDateString(), 'tgl_terima' => $r->tgl_transfer,
-                            'customer_id' => $r->customer_id, 'jenis_pembayaran' => 'LAIN', 'cara_bayar' => 'TRANSFER',
-                            'amount' => $r->amount, 'bank_id' => $r->bank_id, 'no_referensi' => $r->keterangan_bank,
-                            'status' => 'KONFIRMASI', 'keterangan' => 'Dari transfer anonim',
-                        ]);
-                        $r->update(['tts_id' => $tts->id, 'status' => 'SELESAI']);
-                        Notification::make()->success()->title('TTS dibuat: '.$tts->no_tts)->send();
-                    }),
+                // Identifikasi & Jadikan TTS dihapus — status berubah otomatis (→ SELESAI)
+                // saat transfer ini dipilih sebagai bukti di Verifikasi Data Booked.
                 Tables\Actions\EditAction::make(),
                 Tables\Actions\DeleteAction::make(),
             ])

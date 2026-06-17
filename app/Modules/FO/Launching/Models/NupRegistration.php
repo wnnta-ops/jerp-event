@@ -21,7 +21,7 @@ class NupRegistration extends TenantAwareModel
         'no_nup', 'urutan',
         'customer_id', 'nama_pendaftar', 'nik', 'phone', 'secondary_phone', 'email',
         'tgl_daftar', 'tgl_check_in', 'tgl_payment',
-        'booking_fee_paid', 'tts_id', 'unit_id', 'reservasi_id',
+        'booking_fee_paid', 'tts_id', 'transfer_anonim_id', 'unit_id', 'reservasi_id',
         'status', 'channel', 'recaptcha_score',
         'ref_sales_name', 'ref_sales_phone', 'tipe_nup', 'cara_bayar',
         'preferensi_unit', 'pilihan_budget',
@@ -113,6 +113,11 @@ class NupRegistration extends TenantAwareModel
     public function tts(): BelongsTo
     {
         return $this->belongsTo(Tts::class);
+    }
+
+    public function transferAnonim(): BelongsTo
+    {
+        return $this->belongsTo(\App\Modules\FO\FinanceAR\Models\TransferAnonim::class, 'transfer_anonim_id');
     }
 
     public function unit(): BelongsTo
