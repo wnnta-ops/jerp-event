@@ -137,10 +137,8 @@ class KontrakGeneratorService
             if (! ($g->diberikan ?? true)) {
                 continue;
             }
+            // Semua gimmick yang diberikan → baris GMC (termasuk harga 0 = FREE Rp 0).
             $harga = (float) (Gimmick::find($g->gimmick_id)?->nilai ?? $g->harga_satuan);
-            if ($harga <= 0) {
-                continue;
-            }
             $kontrak->tagihan()->create([
                 'urutan' => $urut++,
                 'tipe' => 'GMC',
