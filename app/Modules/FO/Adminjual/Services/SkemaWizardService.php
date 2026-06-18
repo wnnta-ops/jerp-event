@@ -52,7 +52,7 @@ class SkemaWizardService
                 'dp_persen' => ($rumus['dp_satuan'] ?? 'PERSEN') === 'PERSEN' ? (float) ($rumus['dp_nilai'] ?? 0) : 0,
                 'ang_persen' => ($rumus['ang_satuan'] ?? 'PERSEN') === 'PERSEN' ? (float) ($rumus['ang_nilai'] ?? 0) : 0,
                 'bf_nominal' => $bfSatuan === 'RP' ? (float) ($rumus['bf_nilai'] ?? 0) : 0,
-                'subsidi_persen' => $data['subsidi_persen'] ?? 20,
+                'subsidi_persen' => $data['subsidi_persen'] ?? 0,
                 'present_value' => $data['present_value'] ?? 0,
                 'diskon_persen' => $data['diskon_persen'] ?? 0,
                 'bf_dipotong_di' => $data['bf_dipotong_di'] ?? 'TIDAK_DISEBAR',

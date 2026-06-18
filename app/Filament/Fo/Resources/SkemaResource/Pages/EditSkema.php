@@ -49,7 +49,7 @@ class EditSkema extends Page
 
             'tampil_siteplan' => (bool) $this->record->tampil_siteplan,
             'diskon_persen' => (float) $this->record->diskon_persen,
-            'present_value' => (float) $this->record->present_value,
+            'present_value' => number_format((float) $this->record->present_value, 0, ',', '.'),
             'subsidi_persen' => (float) $this->record->subsidi_persen,
             'bf_dipotong_di' => $this->record->bf_dipotong_di ?? 'ANGSURAN1',
         ];
@@ -97,7 +97,7 @@ class EditSkema extends Page
     /** Hitung breakdown (Gambar 2) dari header + rows memakai Present Value. */
     public function simulasi(): void
     {
-        $harga = (float) ($this->header['present_value'] ?? 0);
+        $harga = (float) str_replace('.', '', (string) ($this->header['present_value'] ?? 0));
         if ($harga <= 0) {
             Notification::make()->warning()->title('Isi Present Value dulu')->send();
 
@@ -141,7 +141,7 @@ class EditSkema extends Page
                 'is_active' => (bool) $this->header['is_active'],
                 'tampil_siteplan' => (bool) $this->header['tampil_siteplan'],
                 'diskon_persen' => (float) $this->header['diskon_persen'],
-                'present_value' => (float) $this->header['present_value'],
+                'present_value' => (float) str_replace('.', '', (string) $this->header['present_value']),
                 'subsidi_persen' => (float) $this->header['subsidi_persen'],
                 'bf_dipotong_di' => $this->header['bf_dipotong_di'],
                 'jumlah_termin' => count($this->rows),

@@ -78,21 +78,27 @@
         if (($kontrak->skema?->bf_dipotong_di ?? null) === 'ANGSURAN1' && ! empty($payRows)) {
             $bfRows = array_values(array_filter($payRows, fn ($r) => ($r['tipe'] ?? '') === 'BF'));
             $dpRows = array_values(array_filter($payRows, fn ($r) => ($r['tipe'] ?? '') === 'DP'));
-            $kprRows = array_values(array_filter($payRows, fn ($r) => ! in_array(($r['tipe'] ?? ''), ['BF', 'DP'], true)));
+            $tdpRows = array_values(array_filter($payRows, fn ($r) => ($r['tipe'] ?? '') === 'TDP'));
+            $kprRows = array_values(array_filter($payRows, fn ($r) => ! in_array(($r['tipe'] ?? ''), ['BF', 'DP', 'TDP'], true)));
             $maxDate = fn ($rows) => collect($rows)->pluck('jatuh')->filter()->sortDesc()->first();
             $minDate = fn ($rows) => collect($rows)->pluck('jatuh')->filter()->sort()->first();
 
             $hargaTotal = (float) $kontrak->total_kontrak ?: $harga;
             $bfSum = array_sum(array_column($bfRows, 'amount'));
             $dpSum = array_sum(array_column($dpRows, 'amount'));
-            // PENCAIRAN KPR = sisa → total selalu = harga unit.
-            $pencairan = max(0, $hargaTotal - $bfSum - $dpSum);
+            $tdpSum = array_sum(array_column($tdpRows, 'amount'));
+            // PENCAIRAN KPR = sisa (harga − UTJ − DP − Tambah DP) → total selalu = harga.
+            $pencairan = max(0, $hargaTotal - $bfSum - $dpSum - $tdpSum);
 
             $grouped = [
                 ['nama' => 'UANG TANDA JADI', 'jatuh' => $minDate($bfRows), 'amount' => $bfSum, 'paid' => array_sum(array_column($bfRows, 'paid'))],
                 ['nama' => 'UANG MASUK', 'jatuh' => $maxDate($dpRows), 'amount' => $dpSum, 'paid' => array_sum(array_column($dpRows, 'paid'))],
-                ['nama' => 'PENCAIRAN KPR', 'jatuh' => $maxDate($kprRows) ?? $maxDate($dpRows), 'amount' => $pencairan, 'paid' => 0],
             ];
+            // Tambah DP (TDP) → baris tersendiri, mengurangi Pencairan KPR.
+            if ($tdpSum > 0) {
+                $grouped[] = ['nama' => 'TAMBAH DP', 'jatuh' => $maxDate($tdpRows), 'amount' => $tdpSum, 'paid' => array_sum(array_column($tdpRows, 'paid'))];
+            }
+            $grouped[] = ['nama' => 'PENCAIRAN KPR', 'jatuh' => $maxDate($kprRows) ?? $maxDate($dpRows), 'amount' => $pencairan, 'paid' => 0];
             $payRows = $grouped;
         }
         // Gimmick yang diberikan → "sudah termasuk".

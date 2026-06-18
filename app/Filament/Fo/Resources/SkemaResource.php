@@ -59,8 +59,8 @@ class SkemaResource extends Resource
                 ])->default('ANGSURAN1'),
                 Forms\Components\TextInput::make('present_value')->label('Present Value')->numeric()->rupiah()->default(0),
                 Forms\Components\TextInput::make('diskon_persen')->label('Diskon %')->numeric()->suffix('%')->default(0),
-                Forms\Components\TextInput::make('subsidi_persen')->label('Subsidi developer %')->numeric()->suffix('%')->default(20)
-                    ->helperText('Mode DP Disebar: free X% dari DP.'),
+                Forms\Components\TextInput::make('subsidi_persen')->label('Subsidi developer %')->numeric()->suffix('%')->default(0)
+                    ->helperText('Default 0 — diisi admin per skema. Mode DP Disebar: free X% dari DP.'),
                 Forms\Components\TextInput::make('dp_persen')->label('DP total %')->numeric()->suffix('%')->default(0),
                 Forms\Components\TextInput::make('ang_persen')->label('Angsuran total %')->numeric()->suffix('%')->default(0),
                 Forms\Components\TextInput::make('bf_nominal')->label('Booking Fee (UTJ)')->numeric()->rupiah()->default(0),

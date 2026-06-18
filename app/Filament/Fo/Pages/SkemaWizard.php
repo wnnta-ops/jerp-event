@@ -53,7 +53,7 @@ class SkemaWizard extends Page implements HasForms
     {
         $this->form->fill([
             'cara_bayar' => 'KPR', 'bf_dipotong_di' => 'ANGSURAN1', 'tampil_siteplan' => false,
-            'present_value' => 0, 'diskon_persen' => 0, 'subsidi_persen' => 20,
+            'present_value' => 0, 'diskon_persen' => 0, 'subsidi_persen' => 0,
             'bf_count' => 1, 'bf_nilai' => 5000000, 'bf_satuan' => 'RP',
             'bf_pertama' => 0, 'bf_pertama_basis' => 'HARI', 'bf_interval' => 0, 'bf_interval_basis' => 'HARI',
             'dp_count' => 5, 'dp_nilai' => 30, 'dp_satuan' => 'PERSEN',
@@ -86,8 +86,8 @@ class SkemaWizard extends Page implements HasForms
                     Radio::make('cara_bayar')->label('Tipe')->inline()->inlineLabel(false)->options([
                         'KPR' => 'KPR', 'CASH_BERTAHAP' => 'Cash bertahap', 'CASH_KERAS' => 'Cash keras',
                     ])->default('KPR')->required(),
-                    TextInput::make('subsidi_persen')->label('Subsidi developer')->numeric()->suffix('%')->default(20)
-                        ->helperText('Dipakai mode DP Disebar (Free X% dari DP)'),
+                    TextInput::make('subsidi_persen')->label('Subsidi developer')->numeric()->suffix('%')->default(0)
+                        ->helperText('Default 0 — diisi admin per skema. Dipakai mode DP Disebar (Free X% dari DP).'),
                     Radio::make('bf_dipotong_di')->label('Booking Fee dipotong di')->inline()->inlineLabel(false)
                         ->columnSpanFull()->options([
                             'ANGSURAN1' => 'FREE DP', 'DP_DISEBAR' => 'DP 3x', 'ANGSURAN_DISEBAR' => 'CASH / INHOUSE',
@@ -175,7 +175,7 @@ class SkemaWizard extends Page implements HasForms
                     'name' => $d['name'], 'project_id' => $d['project_id'] ?? null,
                     'lokasi_id' => $d['lokasi_id'] ?? null, 'tahap_id' => $d['tahap_id'] ?? null,
                     'cara_bayar' => $d['cara_bayar'] ?? 'KPR', 'present_value' => $d['present_value'] ?? 0,
-                    'diskon_persen' => $d['diskon_persen'] ?? 0, 'subsidi_persen' => $d['subsidi_persen'] ?? 20,
+                    'diskon_persen' => $d['diskon_persen'] ?? 0, 'subsidi_persen' => $d['subsidi_persen'] ?? 0,
                     'bf_dipotong_di' => $d['bf_dipotong_di'] ?? 'TIDAK_DISEBAR',
                     'tampil_siteplan' => (bool) ($d['tampil_siteplan'] ?? false),
                 ],

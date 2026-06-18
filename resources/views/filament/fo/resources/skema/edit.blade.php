@@ -82,7 +82,7 @@
                     </div>
                     <div>
                         <label class="{{ $lbl }}">Present Value <span class="normal-case text-gray-400">(harga acuan simulasi)</span></label>
-                        <input type="number" step="0.01" wire:model="header.present_value" class="{{ $num }}">
+                        <input type="text" inputmode="numeric" x-mask:dynamic="$money($input, ',', '.', 0)" wire:model="header.present_value" class="{{ $num }}">
                     </div>
                 </div>
             </div>

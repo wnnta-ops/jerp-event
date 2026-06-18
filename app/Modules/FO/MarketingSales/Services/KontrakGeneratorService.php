@@ -28,8 +28,14 @@ class KontrakGeneratorService
         ];
     }
 
-    /** Jadwal Tagihan dari Skema Bayar kontrak. */
-    public function tagihan(Kontrak $kontrak, bool $replace = true): int
+    /**
+     * Jadwal Tagihan dari Skema Bayar kontrak.
+     *
+     * @param  bool  $withSubsidi  true = terapkan subsidi DP "Free X% developer"
+     *                             (mode DP3X). false = hitung tanpa subsidi (DP penuh)
+     *                             — dipakai tombol "Cancel Subsidi".
+     */
+    public function tagihan(Kontrak $kontrak, bool $replace = true, bool $withSubsidi = true): int
     {
         $kontrak->loadMissing(['skema.lines', 'skemaLines']);
         // Sumber termin: detail skema bayar per-kontrak (skemaLines) kalau ada,
@@ -98,6 +104,13 @@ class KontrakGeneratorService
             $rows[$kprIdx]['jatuh'] = $lastDpDate->copy()->addDays(max(1, $rows[$kprIdx]['interval']));
         }
 
+        // Mode DP DISEBAR (mis. KPR DP3X): terapkan "Free X% dari developer" pada DP.
+        $subsidiDp = $withSubsidi ? $this->applyDpDisebarSubsidi($kontrak, $rows, $total, $kprIdx) : 0.0;
+
+        // Mode ANGSURAN DISEBAR (CASH/INHOUSE): angsuran = sisa (harga − UTJ − lainnya)
+        // agar UTJ tidak ditambah di atas (total = harga, bukan harga + UTJ).
+        $this->applyAngsuranDisebarUtj($kontrak, $rows, $total);
+
         $n = 0;
         foreach ($rows as $idx => $r) {
             $line = $r['line'];
@@ -112,6 +125,22 @@ class KontrakGeneratorService
             $n++;
         }
 
+        // Baris penyeimbang SUBSIDI DP (developer) — agar total = harga & Pencairan KPR
+        // pas. Disubsidi developer (pelunasan = nilai) → sisa 0, bukan AR customer.
+        if ($subsidiDp > 0) {
+            $pct = rtrim(rtrim(number_format((float) $kontrak->skema->subsidi_persen, 2, '.', ''), '0'), '.');
+            $kontrak->tagihan()->create([
+                'urutan' => 850,
+                'tipe' => 'ADM',
+                'nama_tagihan' => 'UANG MASUK',
+                'jatuh_tempo' => $tgl,
+                'nilai' => $subsidiDp,
+                'pelunasan' => $subsidiDp,
+                'keterangan' => 'Subsidi developer Free '.$pct.'% atas DP (DP3X)',
+            ]);
+            $n++;
+        }
+
         // GMC: gimmick FREE mengikuti gimmick kontrak (Tab Gimmick) — hapus gimmick →
         // baris GMC ikut hilang. Harga diambil dari master terkini (tak stale).
         $n += $this->syncGmc($kontrak, $tgl);
@@ -120,24 +149,154 @@ class KontrakGeneratorService
     }
 
     /**
-     * Sinkronkan baris GMC (gimmick FREE) di Jadwal Tagihan dengan gimmick kontrak:
-     * hapus GMC lama, buat ulang dari gimmick yang diberikan (harga dari master terkini,
-     * hanya yang > 0). TIDAK ditagih ke customer (dikecualikan dari selisih & printout SPR);
-     * harganya untuk pembayaran subsidi developer (BO).
+     * Mode DP DISEBAR (mis. KPR DP3X) dengan subsidi% > 0: terapkan "Free X% dari
+     * developer" pada DP. Mengikuti sheet:
+     *   B = DP gross (Σ baris DP), C = B × subsidi% (Free X% developer),
+     *   D = B − C, E = UTJ (Booking Fee), F = D − E = DP yang dibayar customer,
+     *   tiap DP = F / n; UTJ TIDAK mengurangi plafon → Pencairan KPR = harga − B.
+     *
+     * Mengubah $rows (nilai DP & PENCAIRAN) di tempat; mengembalikan nominal subsidi
+     * (0 bila mode/subsidi tidak berlaku) untuk dibuat sebagai baris penyeimbang.
+     */
+    private function applyDpDisebarSubsidi(Kontrak $kontrak, array &$rows, float $total, ?int $kprIdx): float
+    {
+        $skema = $kontrak->skema;
+        if (($skema->bf_dipotong_di ?? '') !== 'DP_DISEBAR') {
+            return 0.0;
+        }
+        $subPct = (float) ($skema->subsidi_persen ?? 0);
+        if ($subPct <= 0) {
+            return 0.0;
+        }
+
+        $dpIdx = [];
+        $utj = 0.0;
+        foreach ($rows as $i => $r) {
+            $tipe = $r['line']->tipe ?? '';
+            if ($tipe === 'DP') {
+                $dpIdx[] = $i;
+            } elseif ($tipe === 'BF') {
+                $utj += (float) $r['nilai'];
+            }
+        }
+        if (empty($dpIdx)) {
+            return 0.0;
+        }
+
+        $dpGross = 0.0;                                       // B
+        foreach ($dpIdx as $i) {
+            $dpGross += (float) $rows[$i]['nilai'];
+        }
+        $subsidi = round($dpGross * $subPct / 100);          // C
+        $dpBayar = max(0.0, $dpGross - $subsidi - $utj);      // F = (B − C) − UTJ
+
+        // Sebar F ke baris DP (sebar-bulat kumulatif → Σ tepat = F).
+        $n = count($dpIdx);
+        $cum = 0.0;
+        $cumR = 0.0;
+        foreach ($dpIdx as $i) {
+            $cum += $dpBayar / $n;
+            $val = round($cum) - $cumR;
+            $cumR += $val;
+            $rows[$i]['nilai'] = $val;
+        }
+
+        // PENCAIRAN KPR = harga − B (UTJ tidak mengurangi plafon). Dihitung sebagai
+        // sisa: total − (BF + DP net + subsidi) = total − dpGross = harga − B.
+        if ($kprIdx !== null) {
+            $sumOther = 0.0;
+            foreach ($rows as $i => $r) {
+                if ($i !== $kprIdx) {
+                    $sumOther += (float) $r['nilai'];
+                }
+            }
+            $rows[$kprIdx]['nilai'] = round($total - $sumOther - $subsidi);
+        }
+
+        return $subsidi;
+    }
+
+    /**
+     * Mode ANGSURAN DISEBAR (CASH / INHOUSE): UTJ (Booking Fee) tidak ditambah di
+     * atas angsuran. Angsuran disebar = (gross angsuran − UTJ) / n, sehingga
+     * total = harga (bukan harga + UTJ). Selaras simulasi SkemaCalculatorService.
+     */
+    private function applyAngsuranDisebarUtj(Kontrak $kontrak, array &$rows, float $total): void
+    {
+        if (($kontrak->skema->bf_dipotong_di ?? '') !== 'ANGSURAN_DISEBAR') {
+            return;
+        }
+
+        // Index baris angsuran + total baris non-angsuran (BF/UTJ, dll).
+        $angIdx = [];
+        $sumOther = 0.0;
+        $angGross = 0.0;
+        foreach ($rows as $i => $r) {
+            if (($r['line']->tipe ?? '') === 'ANG') {
+                $angIdx[] = $i;
+                $angGross += (float) $r['nilai'];
+            } else {
+                $sumOther += (float) $r['nilai'];
+            }
+        }
+        if (empty($angIdx)) {
+            return;
+        }
+
+        // Angsuran MENGISI SISA: harga − UTJ − baris lain. (harga − UTJ)/n untuk
+        // angsuran sama rata; UTJ tidak ditambah di atas. Total selalu = harga.
+        $angBayar = max(0.0, $total - $sumOther);
+
+        // Sebar proporsional ke persen setup; baris TERAKHIR menyerap sisa pembulatan
+        // → Σ tepat = angBayar (selisih 0).
+        $n = count($angIdx);
+        $acc = 0.0;
+        foreach ($angIdx as $k => $i) {
+            $val = ($k === $n - 1)
+                ? round($angBayar - $acc)
+                : round($angGross > 0 ? (float) $rows[$i]['nilai'] / $angGross * $angBayar : $angBayar / $n);
+            $acc += $val;
+            $rows[$i]['nilai'] = $val;
+        }
+    }
+
+    /**
+     * Sinkronkan baris GMC (gimmick FREE) di Jadwal Tagihan dengan gimmick kontrak —
+     * NON-DESTRUKTIF: baris GMC yang sudah ada DIPERTAHANKAN (termasuk nominal hasil
+     * edit user di Jadwal Tagihan). Hanya tambah baris untuk gimmick baru (harga default
+     * dari master) dan hapus baris yang gimmick-nya tidak lagi diberikan.
+     *
+     * Catatan: untuk reset penuh ke harga master, pakai regenerate (tagihan(replace))
+     * yang menghapus semua tagihan dulu sehingga GMC dibuat ulang dari master.
+     *
+     * GMC TIDAK ditagih ke customer (dikecualikan dari selisih & printout SPR); harganya
+     * untuk pembayaran subsidi developer (BO).
      */
     public function syncGmc(Kontrak $kontrak, $tgl = null): int
     {
         $tgl = $tgl ?? $kontrak->tgl_kontrak ?? now();
-        $kontrak->tagihan()->where('tipe', 'GMC')->delete();
         $kontrak->load('gimmicks');
 
+        // Gimmick yang diberikan → tiap nama harus punya 1 baris GMC (cocokkan via nama).
+        $given = $kontrak->gimmicks->filter(fn ($g) => (bool) ($g->diberikan ?? true))->values();
+        $givenNames = $given->pluck('nama_barang')->filter()->unique()->values()->all();
+
+        // Hapus baris GMC yang gimmick-nya tidak lagi diberikan/dihapus.
+        $hapus = $kontrak->tagihan()->where('tipe', 'GMC');
+        if (! empty($givenNames)) {
+            $hapus->whereNotIn('nama_tagihan', $givenNames);
+        }
+        $hapus->delete();
+
+        // Baris GMC yang sudah ada dipertahankan; tambah hanya untuk gimmick yang belum ada.
+        $existing = $kontrak->tagihan()->where('tipe', 'GMC')->pluck('nama_tagihan')->all();
         $urut = 900;
         $n = 0;
-        foreach ($kontrak->gimmicks as $g) {
-            if (! ($g->diberikan ?? true)) {
+        foreach ($given as $g) {
+            if (in_array($g->nama_barang, $existing, true)) {
                 continue;
             }
-            // Semua gimmick yang diberikan → baris GMC (termasuk harga 0 = FREE Rp 0).
+            // Gimmick baru → baris GMC dengan harga master (termasuk harga 0 = FREE Rp 0).
             $harga = (float) (Gimmick::find($g->gimmick_id)?->nilai ?? $g->harga_satuan);
             $kontrak->tagihan()->create([
                 'urutan' => $urut++,
@@ -147,6 +306,7 @@ class KontrakGeneratorService
                 'nilai' => $harga,
                 'pelunasan' => 0,
             ]);
+            $existing[] = $g->nama_barang;
             $n++;
         }
 

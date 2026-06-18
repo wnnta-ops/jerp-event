@@ -25,7 +25,7 @@ class KontrakResource extends Resource
     // Menu SPRS hanya menampilkan kontrak tahap SPRS; yang sudah final ada di menu SPR.
     public static function getEloquentQuery(): Builder
     {
-        return parent::getEloquentQuery()->where('tahap', 'SPRS');
+        return parent::getEloquentQuery()->where('tahap', 'SPRS')->with('skema');
     }
 
     protected static ?string $navigationIcon = 'heroicon-o-document-text';
@@ -197,6 +197,19 @@ class KontrakResource extends Resource
                                 ->relationship('skema', 'name')
                                 ->getOptionLabelFromRecordUsing(fn ($record) => trim(($record->code ? $record->code.' — ' : '').$record->name))
                                 ->searchable()->preload()->live()
+                                // Ganti skema → termin ikut skema baru & Jadwal Tagihan lama dikosongkan
+                                // (agar skema lama tidak menempel). Klik "Bentuk Ulang dari Master" untuk
+                                // generate Jadwal Tagihan baru.
+                                ->afterStateUpdated(function ($state, Forms\Set $set) {
+                                    $skema = $state ? Skema::with('lines')->find($state) : null;
+                                    $set('skemaLines', $skema ? $skema->lines->map(fn ($l) => [
+                                        'tipe' => $l->tipe ?: 'ANG', 'nama_termin' => $l->nama_termin,
+                                        'basis' => $l->basis ?: 'PERSEN', 'persen' => $l->persen, 'nominal' => $l->nominal,
+                                        'jadwal_basis' => $l->jadwal_basis ?: 'HARI', 'jadwal_nilai' => $l->jadwal_nilai,
+                                        'setelah' => $l->setelah, 'flag_bf' => $l->flag_bf, 'flag_kpr' => $l->flag_kpr,
+                                    ])->all() : []);
+                                    $set('tagihan', []);
+                                })
                                 ->helperText('Pilih skema bayar standar, lalu klik "Bentuk Ulang dari Master → Jadwal Tagihan" untuk generate. Untuk case khusus, atur baris tagihan manual di bawah.'),
 
                             Forms\Components\Actions::make([
@@ -255,7 +268,7 @@ class KontrakResource extends Resource
                                     : null)
                                 ->schema([
                                     Forms\Components\Select::make('tipe')->label('Tipe')->columnSpan(2)
-                                        ->options(['BF' => 'BF (Booking Fee)', 'DP' => 'DP', 'ANG' => 'Angsuran', 'ADM' => 'Administrasi', 'GMC' => 'Gimmick (FREE)', 'LAIN' => 'Lain'])
+                                        ->options(['BF' => 'BF (Booking Fee)', 'DP' => 'DP', 'TDP' => 'Tambah DP', 'ANG' => 'Angsuran', 'ADM' => 'Administrasi', 'GMC' => 'Gimmick (FREE)', 'LAIN' => 'Lain'])
                                         ->default('ANG')->required()->live(),
                                     Forms\Components\TextInput::make('nama_tagihan')->label('Nama Tagihan')->columnSpan(4)->required(),
                                     Forms\Components\DatePicker::make('jatuh_tempo')->label('Jatuh Tempo')->columnSpan(2)->native(false)->displayFormat('d M Y'),
@@ -348,7 +361,10 @@ class KontrakResource extends Resource
                     ->label('Unit')
                     ->placeholder('—')
                     ->searchable(),
-                Tables\Columns\TextColumn::make('cara_bayar')->label('Cara bayar')->badge(),
+                // Judul tetap "Cara bayar", isinya nama Skema Bayar kontrak.
+                Tables\Columns\TextColumn::make('skema_bayar')->label('Cara bayar')->badge()
+                    ->state(fn (Kontrak $r) => $r->skema?->name ?: ($r->cara_bayar ?: '—'))
+                    ->color(fn (Kontrak $r) => strtoupper((string) $r->cara_bayar) === 'KPR' ? 'info' : 'gray'),
                 Tables\Columns\TextColumn::make('total_kontrak')->label('Total')->money('IDR', divideBy: 0)->alignEnd(),
                 Tables\Columns\TextColumn::make('status')->label('Status')->badge()->color(fn (?string $state) => match ($state) {
                     'DRAFT' => 'gray',
