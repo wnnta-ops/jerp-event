@@ -196,21 +196,8 @@ class KontrakResource extends Resource
                             Forms\Components\Select::make('skema_id')->label('Skema Bayar')
                                 ->relationship('skema', 'name')
                                 ->getOptionLabelFromRecordUsing(fn ($record) => trim(($record->code ? $record->code.' — ' : '').$record->name))
-                                ->searchable()->preload()->live()
-                                // Ganti skema → termin ikut skema baru & Jadwal Tagihan lama dikosongkan
-                                // (agar skema lama tidak menempel). Klik "Bentuk Ulang dari Master" untuk
-                                // generate Jadwal Tagihan baru.
-                                ->afterStateUpdated(function ($state, Forms\Set $set) {
-                                    $skema = $state ? Skema::with('lines')->find($state) : null;
-                                    $set('skemaLines', $skema ? $skema->lines->map(fn ($l) => [
-                                        'tipe' => $l->tipe ?: 'ANG', 'nama_termin' => $l->nama_termin,
-                                        'basis' => $l->basis ?: 'PERSEN', 'persen' => $l->persen, 'nominal' => $l->nominal,
-                                        'jadwal_basis' => $l->jadwal_basis ?: 'HARI', 'jadwal_nilai' => $l->jadwal_nilai,
-                                        'setelah' => $l->setelah, 'flag_bf' => $l->flag_bf, 'flag_kpr' => $l->flag_kpr,
-                                    ])->all() : []);
-                                    $set('tagihan', []);
-                                })
-                                ->helperText('Pilih skema bayar standar, lalu klik "Bentuk Ulang dari Master → Jadwal Tagihan" untuk generate. Untuk case khusus, atur baris tagihan manual di bawah.'),
+                                ->searchable()->preload()
+                                ->helperText('Ganti skema lalu klik Simpan → termin & Jadwal Tagihan otomatis TERGANTIKAN dengan skema baru. (Atau klik "Bentuk Ulang dari Master".)'),
 
                             Forms\Components\Actions::make([
                                 Forms\Components\Actions\Action::make('salinSkema')->label('Salin dari Skema Master')

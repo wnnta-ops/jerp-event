@@ -15,6 +15,9 @@ class EditKontrak extends EditRecord
 {
     protected static string $resource = KontrakResource::class;
 
+    /** Skema Bayar sebelum disimpan — untuk deteksi "ganti skema" di afterSave. */
+    private ?int $oldSkemaId = null;
+
     /**
      * SPR (final) wajib balance: total Tagihan + Biaya HARUS sama dengan Nilai
      * Kontrak (harga unit) — selisih 0. Bila tidak, batalkan simpan. SPRS (draft)
@@ -22,6 +25,9 @@ class EditKontrak extends EditRecord
      */
     protected function beforeSave(): void
     {
+        // Catat skema lama (record belum diupdate) untuk deteksi ganti skema.
+        $this->oldSkemaId = (int) $this->record->skema_id;
+
         if ($this->record->tahap !== 'SPR') {
             return;
         }
@@ -49,6 +55,21 @@ class EditKontrak extends EditRecord
     /** GMC (gimmick FREE) selalu mengikuti gimmick kontrak — sinkronkan setelah simpan. */
     protected function afterSave(): void
     {
+        // Ganti Skema Bayar → termin di-reset ke master skema baru + Jadwal Tagihan
+        // DI-GENERATE ULANG (tergantikan, bukan ditambah termin). Juga heal bila Jadwal
+        // riil kosong. Lalu reload.
+        $skemaGanti = $this->oldSkemaId !== null && (int) $this->record->skema_id !== $this->oldSkemaId;
+        $kosong = ! $this->record->tagihan()->where('tipe', '!=', 'GMC')->exists();
+        if ($skemaGanti || $kosong) {
+            if ($skemaGanti) {
+                $this->resetSkemaLinesToMaster((int) $this->record->skema_id);
+            }
+            app(KontrakGeneratorService::class)->tagihan($this->record);
+            $this->redirect($this->getResource()::getUrl('edit', ['record' => $this->getRecord()]));
+
+            return;
+        }
+
         // syncGmc kini NON-DESTRUKTIF: edit nominal GMC TIDAK mengubah ID (nominal hasil
         // edit user dipertahankan). Baris hanya berubah saat gimmick ditambah/dicabut.
         // Pencairan KPR otomatis = Harga − semua tagihan lain (termasuk Tambah DP) di DB.
@@ -354,8 +375,12 @@ class EditKontrak extends EditRecord
 
         $this->record->skema_id = (int) $skemaId;
         $this->record->save();
+        $this->resetSkemaLinesToMaster((int) $skemaId);
+    }
 
-        // Reset termin ke master skema BARU (Detail Skema & generator jadi konsisten).
+    /** Reset termin per-kontrak (skemaLines) ke baris master skema — agar Detail Skema & generator konsisten dgn skema baru. */
+    private function resetSkemaLinesToMaster(int $skemaId): void
+    {
         $skema = \App\Modules\FO\Adminjual\Models\Skema::with('lines')->find($skemaId);
         $this->record->skemaLines()->delete();
         $urut = 0;
