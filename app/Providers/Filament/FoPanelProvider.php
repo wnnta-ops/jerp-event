@@ -199,6 +199,10 @@ class FoPanelProvider extends PanelProvider
             'refunds' => 'finance',
             'transfer-anonims' => 'finance',
             'reminder-ar' => 'finance',
+            // Collection (penagihan AR setelah SPR)
+            'collection' => 'collection',
+            'collection-setup-sp' => 'collection',
+            'collection-termin-sp' => 'collection',
             // Approval
             'approvals' => 'approval',
             'approval-pengalihan-hak' => 'approval',
@@ -340,6 +344,19 @@ class FoPanelProvider extends PanelProvider
                     $item('Refund / CB', '/fo/refunds', 'heroicon-o-arrow-uturn-left', 'filament.fo.resources.refunds.'),
                     $item('Transfer Anonim', '/fo/transfer-anonims', 'heroicon-o-question-mark-circle', 'filament.fo.resources.transfer-anonims.'),
                     $item('Dashboard AR', '/fo/reminder-ar', 'heroicon-o-presentation-chart-line', 'filament.fo.pages.reminder-ar'),
+                ],
+            ],
+            'collection' => [
+                'label' => 'Collection',
+                'icon' => 'heroicon-o-banknotes',
+                'groups' => [
+                    ['label' => 'Penagihan', 'items' => [
+                        $item('Daftar Collection', '/fo/collection', 'heroicon-o-banknotes', 'filament.fo.resources.collection.'),
+                    ]],
+                    ['label' => 'Setup', 'items' => [
+                        $item('Setup SP', '/fo/collection-setup-sp', 'heroicon-o-document-text', 'filament.fo.pages.setup-sp'),
+                        $item('Setup Termin SP', '/fo/collection-termin-sp', 'heroicon-o-clock', 'filament.fo.pages.setup-termin-sp'),
+                    ]],
                 ],
             ],
             'approval' => [

@@ -10,6 +10,13 @@ Artisan::command('inspire', function () {
 })->purpose('Display an inspiring quote');
 
 /*
+ * Collection: penagihan otomatis harian — reminder pra-jatuh-tempo & Surat
+ * Peringatan I/II/III untuk AR kontrak SPR (lihat CollectionRunCommand). Butuh
+ * scheduler aktif (php artisan schedule:work / cron `schedule:run`).
+ */
+Schedule::command('collection:run')->dailyAt('08:00')->withoutOverlapping();
+
+/*
  * Backup terjadwal MULTI — loop semua BackupSchedule yang aktif. Tiap jadwal punya
  * frekuensi/jam/only_db sendiri (lokasi global ikut jadwal aktif pertama, lihat
  * AppServiceProvider). Spatie Backup mengompres jadi .zip. Dibaca ulang tiap

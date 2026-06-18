@@ -12,6 +12,9 @@ return Application::configure(basePath: dirname(__DIR__))
         channels: __DIR__.'/../routes/channels.php',
         health: '/up',
     )
+    ->withCommands([
+        \App\Modules\FO\Collection\Console\CollectionRunCommand::class,
+    ])
     ->withMiddleware(function (Middleware $middleware): void {
         // Di belakang reverse proxy (mis. Nginx Proxy Manager) yang terminasi TLS,
         // percayai header X-Forwarded-* agar Laravel tahu request asalnya HTTPS →

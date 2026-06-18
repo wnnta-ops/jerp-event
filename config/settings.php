@@ -1,6 +1,7 @@
 <?php
 
 use App\Settings\BackupSettings;
+use App\Settings\CollectionSettings;
 use App\Settings\FoSettings;
 use Spatie\LaravelData\Data;
 use Spatie\LaravelSettings\SettingsCasts\DataCast;
@@ -18,6 +19,7 @@ return [
     'settings' => [
         FoSettings::class,
         BackupSettings::class,
+        CollectionSettings::class,
     ],
 
     /*

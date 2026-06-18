@@ -64,13 +64,12 @@ class Dashboard extends BaseDashboard
             ],
             [
                 'label' => 'Collection',
-                'sub' => 'Tunggakan, PJT, SKL',
-                'url' => '#',
+                'sub' => 'Penagihan AR, Reminder & SP I-III',
+                'url' => url('/fo/collection'),
                 'icon' => 'M3 14l3-7h12l3 7M3 14v7h18v-7M5 14h2m2 0h2m2 0h2m2 0h2',
                 'gradient' => 'linear-gradient(135deg, #ec4899 0%, #be185d 100%)',
-                'count' => fn () => null,
-                'count_label' => 'menyusul',
-                'disabled' => true,
+                'count' => fn () => Kontrak::where('tahap', 'SPR')->count(),
+                'count_label' => 'kontrak SPR',
             ],
             [
                 'label' => 'Legal',
