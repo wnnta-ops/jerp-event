@@ -4,6 +4,7 @@ namespace App\Modules\FO\MarketingSales\Controllers;
 
 use App\Http\Controllers\Controller;
 use App\Modules\FO\FinanceAR\Models\Bkm;
+use App\Modules\FO\FinanceAR\Models\Fp;
 use App\Modules\FO\FinanceAR\Models\Tts;
 use App\Modules\FO\Launching\Models\NupRegistration;
 use App\Modules\FO\MarketingSales\Models\Kontrak;
@@ -127,6 +128,13 @@ class ClosingPrintController extends Controller
         }
 
         return $this->render('pdf.fo.jadwal', ['kontrak' => $kontrak, 'rows' => $rows], 'JADWAL-'.$kontrak->no_kontrak);
+    }
+
+    public function fakturPenjualan(Fp $fp): mixed
+    {
+        $fp->load(['kontrak.customer', 'kontrak.unit.unitType', 'kontrak.unit.lokasi', 'kontrak.agent', 'kontrak.skema', 'kontrak.tagihan']);
+
+        return $this->render('pdf.fo.faktur-penjualan', ['fp' => $fp], 'FAKTUR-'.$fp->no_fp);
     }
 
     /** @param  array<string,mixed>  $data */

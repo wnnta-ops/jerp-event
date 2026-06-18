@@ -3,8 +3,12 @@
 namespace App\Filament\Fo\Resources\KontrakResource\Pages;
 
 use App\Filament\Fo\Resources\KontrakResource;
+use App\Modules\FO\Approval\Models\Approval;
+use App\Modules\FO\Approval\Services\ApprovalService;
+use App\Modules\FO\MarketingSales\Models\Kontrak;
 use App\Modules\FO\MarketingSales\Models\Unit;
 use App\Modules\FO\MarketingSales\Services\KontrakGeneratorService;
+use App\Support\Rupiah;
 use Filament\Actions;
 use Filament\Forms\Components\DatePicker;
 use Filament\Notifications\Notification;
@@ -156,6 +160,46 @@ class EditKontrak extends EditRecord
             });
     }
 
+    /**
+     * Pengajuan Diskon dari tab Diskon. Diskon mengurangi harga unit → Nilai Kontrak.
+     * Keduanya lewat Approval, diterapkan otomatis (applyDiskon: set diskon/total/ppn +
+     * bentuk ulang Jadwal Tagihan) setelah disetujui:
+     *   - SPR (final): jenis DISKON — 2 level (L1 → L2/GM).
+     *   - SPRS (draft): jenis DISKON_SPRS — single-level langsung GM.
+     */
+    public function submitDiskon(array $data): void
+    {
+        $k = $this->record;
+        $diskon = Rupiah::toFloat($data['diskon_baru'] ?? 0);
+        $gross = (float) $k->harga_jual;
+        $total = max(0, $gross - $diskon);
+        $alasan = trim((string) ($data['alasan'] ?? ''));
+        $rp = fn (float $v) => 'Rp '.number_format($v, 0, ',', '.');
+
+        $isSpr = $k->tahap === 'SPR';
+        $jenis = $isSpr ? 'DISKON' : 'DISKON_SPRS';
+
+        $approval = Approval::create([
+            'tgl_approval' => now(),
+            'jenis' => $jenis,
+            'subject_type' => Kontrak::class,
+            'subject_id' => $k->id,
+            'amount_dampak' => $total - (float) $k->total_kontrak,
+            'alasan' => 'Diskon '.($isSpr ? 'SPR' : 'SPRS').' '.$k->no_kontrak.($alasan !== '' ? ' — '.$alasan : ''),
+            'detail_lama' => ['diskon' => (float) $k->diskon, 'nilai_kontrak' => (float) $k->total_kontrak],
+            'detail_baru' => ['nilai_diskon' => $diskon, 'nilai_kontrak_baru' => $total],
+            'status' => 'DRAFT',
+            'requested_by' => auth()->id(),
+        ]);
+        app(ApprovalService::class)->submit($approval);
+
+        $alur = $isSpr ? 'menunggu persetujuan (2 level)' : 'menunggu persetujuan GM (single-level)';
+        Notification::make()->success()
+            ->title('Diajukan ke Approval Diskon '.($isSpr ? 'SPR' : 'SPRS').' — '.$approval->no_approval)
+            ->body('Diskon '.$rp($diskon).' → Nilai Kontrak '.$rp($total).' '.$alur.'. Diterapkan otomatis setelah disetujui.')
+            ->persistent()->send();
+    }
+
     protected function getHeaderActions(): array
     {
         return [
@@ -178,9 +222,11 @@ class EditKontrak extends EditRecord
                     if ($this->record->unit_id && $unit = Unit::find($this->record->unit_id)) {
                         $unit->update(['status' => 'TERJUAL']);
                     }
+                    // Unit terjual → Faktur Penjualan otomatis terbit (idempotent).
+                    \App\Modules\FO\FinanceAR\Services\FakturPenjualanService::ensureForKontrak($this->record);
                     Notification::make()->success()
                         ->title('Disimpan sebagai SPR')
-                        ->body('Kontrak '.$this->record->no_kontrak.' kini SPR — unit ditandai TERJUAL.')
+                        ->body('Kontrak '.$this->record->no_kontrak.' kini SPR — unit TERJUAL & Faktur Penjualan terbit.')
                         ->send();
                     $this->redirect(KontrakResource::getUrl('index'));
                 }),

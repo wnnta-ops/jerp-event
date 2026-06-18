@@ -48,7 +48,8 @@ class ApprovalResource extends Resource
                 Forms\Components\TextInput::make('no_approval')->label('No approval')->disabled()->dehydrated()->placeholder('Otomatis'),
                 Forms\Components\DatePicker::make('tgl_approval')->label('Tanggal')->default(now())->required(),
                 Forms\Components\Select::make('jenis')->label('Jenis')->options([
-                    'DISKON' => 'Diskon harga',
+                    'DISKON' => 'Diskon harga (SPR)',
+                    'DISKON_SPRS' => 'Diskon SPRS (GM)',
                     'BATAL_KONTRAK' => 'Batal kontrak',
                     'ADJ_HARGA' => 'Adjust harga',
                     'RESCHEDULE' => 'Reschedule angsuran',
@@ -100,7 +101,9 @@ class ApprovalResource extends Resource
                 Infolists\Components\TextEntry::make('no_approval')->label('No')->badge()->color('primary'),
                 Infolists\Components\TextEntry::make('jenis')->label('Jenis')->badge(),
                 Infolists\Components\TextEntry::make('status')->label('Status')->badge()
-                    ->formatStateUsing(fn (Approval $r) => $r->status === 'PENDING' ? 'PENDING · L'.$r->current_level : $r->status)
+                    ->formatStateUsing(fn (Approval $r) => $r->status === 'PENDING'
+                    ? 'PENDING · '.(ApprovalService::isSingleLevel($r->jenis) ? 'GM' : 'L'.$r->current_level)
+                    : $r->status)
                     ->color(fn (Approval $r) => match ($r->status) {
                         'DRAFT' => 'gray', 'PENDING' => 'warning', 'APPROVED' => 'success',
                         'REJECTED' => 'danger', 'EXECUTED' => 'primary', default => 'gray',
@@ -273,7 +276,9 @@ class ApprovalResource extends Resource
                     app(ApprovalService::class)->approveLevel1($r, $data['note'] ?? null);
                     Notification::make()->title('Disetujui Level 1 → menunggu Level 2 (final)')->success()->send();
                 }),
-            Tables\Actions\Action::make('approve_l2')->label('Approve L2 (final)')->icon('heroicon-o-check-badge')->color('success')
+            Tables\Actions\Action::make('approve_l2')
+                ->label(fn (Approval $r) => ApprovalService::isSingleLevel($r->jenis) ? 'Approve (GM)' : 'Approve L2 (final)')
+                ->icon('heroicon-o-check-badge')->color('success')
                 ->visible(fn (Approval $r) => $r->isAwaitingLevel2())
                 ->requiresConfirmation()
                 ->modalDescription('Persetujuan final akan LANGSUNG menerapkan perubahan ke kontrak.')
@@ -310,7 +315,9 @@ class ApprovalResource extends Resource
             Tables\Columns\TextColumn::make('amount_dampak')->label('Dampak')->money('IDR', divideBy: 0)->alignEnd()->toggleable(),
             Tables\Columns\TextColumn::make('requester.full_name')->label('Pemohon')->toggleable(),
             Tables\Columns\TextColumn::make('status')->label('Status')->badge()
-                ->formatStateUsing(fn (Approval $r) => $r->status === 'PENDING' ? 'PENDING · L'.$r->current_level : $r->status)
+                ->formatStateUsing(fn (Approval $r) => $r->status === 'PENDING'
+                    ? 'PENDING · '.(ApprovalService::isSingleLevel($r->jenis) ? 'GM' : 'L'.$r->current_level)
+                    : $r->status)
                 ->color(fn (Approval $r) => match ($r->status) {
                     'DRAFT' => 'gray', 'PENDING' => 'warning', 'APPROVED' => 'success',
                     'REJECTED' => 'danger', 'EXECUTED' => 'primary', default => 'gray',
@@ -321,7 +328,7 @@ class ApprovalResource extends Resource
                 'REJECTED' => 'Rejected', 'EXECUTED' => 'Executed',
             ]),
             Tables\Filters\SelectFilter::make('jenis')->visible(fn () => blank(static::$jenisScope))->options([
-                'DISKON' => 'Diskon', 'BATAL_KONTRAK' => 'Batal kontrak', 'ADJ_HARGA' => 'Adj harga',
+                'DISKON' => 'Diskon', 'DISKON_SPRS' => 'Diskon SPRS', 'BATAL_KONTRAK' => 'Batal kontrak', 'ADJ_HARGA' => 'Adj harga',
                 'RESCHEDULE' => 'Reschedule', 'GANTI_NAMA' => 'Ganti nama', 'GANTI_UNIT' => 'Ganti unit',
                 'REFUND' => 'Refund', 'BLT' => 'Pengajuan BLT', 'KOMISI' => 'Pengajuan Komisi', 'LAIN' => 'Lain',
             ]),

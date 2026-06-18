@@ -201,6 +201,7 @@ class FoPanelProvider extends PanelProvider
             'reminder-ar' => 'finance',
             // Collection (penagihan AR setelah SPR)
             'collection' => 'collection',
+            'pemberkasan' => 'collection',
             'collection-setup-sp' => 'collection',
             'collection-termin-sp' => 'collection',
             // Approval
@@ -337,9 +338,7 @@ class FoPanelProvider extends PanelProvider
                 'items' => [
                     $item('TTS', '/fo/tts', 'heroicon-o-ticket', 'filament.fo.resources.tts.'),
                     $item('Kwitansi', '/fo/bkms', 'heroicon-o-banknotes', 'filament.fo.resources.bkms.'),
-                    $item('VA', '/fo/vas', 'heroicon-o-credit-card', 'filament.fo.resources.vas.'),
-                    $item('MEMO', '/fo/memos', 'heroicon-o-document-currency-dollar', 'filament.fo.resources.memos.'),
-                    $item('Faktur Pajak', '/fo/fps', 'heroicon-o-receipt-percent', 'filament.fo.resources.fps.'),
+                    $item('Faktur Penjualan', '/fo/fps', 'heroicon-o-receipt-percent', 'filament.fo.resources.fps.'),
                     $item('Bilyet Giro', '/fo/bgs', 'heroicon-o-document-currency-dollar', 'filament.fo.resources.bgs.'),
                     $item('Refund / CB', '/fo/refunds', 'heroicon-o-arrow-uturn-left', 'filament.fo.resources.refunds.'),
                     $item('Transfer Anonim', '/fo/transfer-anonims', 'heroicon-o-question-mark-circle', 'filament.fo.resources.transfer-anonims.'),
@@ -352,6 +351,7 @@ class FoPanelProvider extends PanelProvider
                 'groups' => [
                     ['label' => 'Penagihan', 'items' => [
                         $item('Daftar Collection', '/fo/collection', 'heroicon-o-banknotes', 'filament.fo.resources.collection.'),
+                        $item('Pemberkasan', '/fo/pemberkasan', 'heroicon-o-document-check', 'filament.fo.resources.pemberkasan.'),
                     ]],
                     ['label' => 'Setup', 'items' => [
                         $item('Setup SP', '/fo/collection-setup-sp', 'heroicon-o-document-text', 'filament.fo.pages.setup-sp'),
@@ -367,6 +367,7 @@ class FoPanelProvider extends PanelProvider
                     $item('Approval Pindah Unit', '/fo/approval-pindah-unit', 'heroicon-o-arrows-right-left', 'filament.fo.resources.approval-pindah-unit.'),
                     $item('Approval Pembatalan', '/fo/approval-pembatalan', 'heroicon-o-x-circle', 'filament.fo.resources.approval-pembatalan.'),
                     $item('Approval Diskon', '/fo/approval-diskon', 'heroicon-o-receipt-percent', 'filament.fo.resources.approval-diskon.'),
+                    $item('Approval Diskon SPRS', '/fo/approval-diskon-sprs', 'heroicon-o-receipt-percent', 'filament.fo.resources.approval-diskon-sprs.'),
                     $item('Approval Adjustment', '/fo/approval-adjustment', 'heroicon-o-adjustments-horizontal', 'filament.fo.resources.approval-adjustment.'),
                     $item('Approval Reschedule', '/fo/approval-reschedule', 'heroicon-o-calendar-days', 'filament.fo.resources.approval-reschedule.'),
                     $item('Approval Customize', '/fo/approval-customize', 'heroicon-o-wrench-screwdriver', 'filament.fo.resources.approval-customize.'),

@@ -40,6 +40,9 @@ class Customer extends TenantAwareModel
         'phone',
         'mobile',
         'email',
+        'bank_id',
+        'no_rekening',
+        'atas_nama_rekening',
         'address',
         'jalan',
         'rt_rw',
@@ -87,6 +90,11 @@ class Customer extends TenantAwareModel
     public function project(): BelongsTo
     {
         return $this->belongsTo(Project::class);
+    }
+
+    public function bank(): BelongsTo
+    {
+        return $this->belongsTo(\App\Models\Bank::class);
     }
 
     public function nupRegistrations(): HasMany

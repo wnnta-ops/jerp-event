@@ -10,9 +10,15 @@ use RuntimeException;
  * Workflow Approval 2-level:
  *   DRAFT → submit → PENDING(L1) → approveL1 → PENDING(L2) → approveL2 → APPROVED
  *         → eksekusi otomatis → EXECUTED ;  reject di level mana pun → REJECTED.
+ *
+ * Jenis SINGLE-LEVEL (langsung GM): submit → PENDING(L2/GM) → approveL2 → APPROVED.
+ * Mis. DISKON_SPRS (diskon saat masih SPRS) cukup persetujuan GM saja (tanpa L1).
  */
 class ApprovalService
 {
+    /** Jenis yang cukup 1 level persetujuan (langsung GM, lewati Level 1). */
+    private const SINGLE_LEVEL = ['DISKON_SPRS'];
+
     public function __construct(private readonly ApprovalExecutionService $executor) {}
 
     public function submit(Approval $a): Approval
@@ -20,9 +26,17 @@ class ApprovalService
         if ($a->status !== 'DRAFT') {
             throw new RuntimeException('Hanya approval DRAFT yang bisa diajukan.');
         }
-        $a->update(['status' => 'PENDING', 'current_level' => 1]);
+        // Single-level (GM): mulai langsung di Level 2 (final) tanpa Level 1.
+        $level = in_array($a->jenis, self::SINGLE_LEVEL, true) ? 2 : 1;
+        $a->update(['status' => 'PENDING', 'current_level' => $level]);
 
         return $a->fresh();
+    }
+
+    /** Jenis ini hanya butuh persetujuan GM (single-level)? */
+    public static function isSingleLevel(?string $jenis): bool
+    {
+        return in_array((string) $jenis, self::SINGLE_LEVEL, true);
     }
 
     public function approveLevel1(Approval $a, ?string $note = null): Approval

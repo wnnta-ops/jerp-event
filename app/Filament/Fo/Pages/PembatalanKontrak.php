@@ -88,10 +88,9 @@ class PembatalanKontrak extends Page implements HasForms, HasTable
                             ->required(fn (Forms\Get $get) => $get('alasan') === 'LAINNYA'),
                         Forms\Components\DatePicker::make('tgl_pembatalan')->label('Tgl Pembatalan')->default(now())->required(),
                         Forms\Components\Hidden::make('utj_amount')->default(fn (Kontrak $record) => (float) ($record->reservasi?->booking_fee ?? 0)),
-                        Forms\Components\DatePicker::make('tgl_refund')->label('Tgl Refund'),
                         Forms\Components\TextInput::make('refund_utj')->label('Refund (UTJ)')->numeric()->rupiah()->default(0)
                             ->readOnly(fn (Forms\Get $get) => $get('alasan') !== 'LAINNYA')
-                            ->helperText('Batal Sepihak: 0 (UTJ hangus). Reject Bank / Kol 5 / Tutup Buku: UTJ otomatis. Lainnya: isi manual.'),
+                            ->helperText('Batal Sepihak: 0 (UTJ hangus). Reject Bank / Kol 5 / Tutup Buku: UTJ otomatis. Lainnya: isi manual. Tgl refund diisi di menu Finance → Refund saat diproses.'),
                     ])
                     ->action(function (Kontrak $record, array $data) {
                         $alasanLabel = $data['alasan'] === 'LAINNYA'
@@ -111,7 +110,6 @@ class PembatalanKontrak extends Page implements HasForms, HasTable
                                 'alasan' => $data['alasan'],
                                 'alasan_text' => $alasanLabel,
                                 'tgl_pembatalan' => $data['tgl_pembatalan'] ?? null,
-                                'tgl_pengembalian' => $data['tgl_refund'] ?? null,
                                 'total_pengembalian' => (float) ($data['refund_utj'] ?? 0),
                             ],
                             'status' => 'DRAFT',

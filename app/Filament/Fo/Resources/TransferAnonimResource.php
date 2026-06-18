@@ -25,6 +25,12 @@ class TransferAnonimResource extends Resource
 
     protected static ?int $navigationSort = 65;
 
+    public static function getEloquentQuery(): \Illuminate\Database\Eloquent\Builder
+    {
+        // Transfer yang sudah SELESAI (terhubung via Verifikasi Data) tidak tampil lagi.
+        return parent::getEloquentQuery()->where('status', '!=', 'SELESAI');
+    }
+
     public static function form(Form $form): Form
     {
         return $form->schema([
@@ -50,7 +56,7 @@ class TransferAnonimResource extends Resource
                 }),
             ])
             ->filters([Tables\Filters\SelectFilter::make('status')->options([
-                'BARU' => 'Baru', 'TERIDENTIFIKASI' => 'Teridentifikasi', 'SELESAI' => 'Selesai',
+                'BARU' => 'Baru', 'TERIDENTIFIKASI' => 'Teridentifikasi',
             ])])
             ->headerActions([Tables\Actions\CreateAction::make()])
             ->actions([

@@ -146,6 +146,37 @@ class KontrakResource extends Resource
                                 ]),
                         ]),
 
+                    Forms\Components\Tabs\Tab::make('Diskon')
+                        ->icon('heroicon-o-receipt-percent')
+                        ->visible(fn (string $operation) => $operation === 'edit')
+                        ->schema([
+                            Forms\Components\Section::make('Diskon — mengurangi Harga Unit')
+                                ->description('Diskon mengurangi harga unit & WAJIB melalui Approval — diterapkan otomatis (Nilai Kontrak, DPP/PPN & Jadwal Tagihan dibentuk ulang) setelah disetujui. SPR (final): 2 level. SPRS: single-level langsung GM (menu Approval Diskon SPRS).')
+                                ->schema([
+                                    Forms\Components\Placeholder::make('diskon_status')->label('')
+                                        ->content(fn (?Kontrak $record) => new HtmlString(self::diskonStatusHtml($record))),
+                                    Forms\Components\Actions::make([
+                                        Forms\Components\Actions\Action::make('ajukan_diskon')
+                                            ->label('Ajukan Diskon ke Approval')->icon('heroicon-o-receipt-percent')->color('warning')->button()
+                                            ->modalHeading('Pengajuan Diskon')->modalWidth('lg')->modalSubmitActionLabel('Ajukan ke Approval')
+                                            ->fillForm(fn ($livewire) => ['diskon_baru' => (float) ($livewire->record->diskon ?? 0)])
+                                            ->form([
+                                                Forms\Components\TextInput::make('diskon_baru')->label('Diskon (Rp)')->numeric()->rupiah()->default(0)->required()->live(onBlur: true),
+                                                Forms\Components\Placeholder::make('preview')->label('Nilai Kontrak setelah diskon')
+                                                    ->content(function (Forms\Get $get, $livewire) {
+                                                        $gross = (float) ($livewire->record->harga_jual ?? 0);
+                                                        $total = max(0, $gross - Rupiah::toFloat($get('diskon_baru')));
+
+                                                        return new HtmlString('<strong>Rp '.number_format($total, 0, ',', '.').'</strong>'
+                                                            .' <span style="color:#94a3b8;">(Harga Unit Rp '.number_format($gross, 0, ',', '.').' − Diskon)</span>');
+                                                    }),
+                                                Forms\Components\Textarea::make('alasan')->label('Alasan / Catatan')->rows(2),
+                                            ])
+                                            ->action(fn (array $data, $livewire) => $livewire->submitDiskon($data)),
+                                    ]),
+                                ]),
+                        ]),
+
                     Forms\Components\Tabs\Tab::make('Jadwal Komisi')
                         ->icon('heroicon-o-banknotes')
                         ->schema([
@@ -377,6 +408,39 @@ class KontrakResource extends Resource
     }
 
     /** Ringkasan hasil akhir kontrak (read-only, seperti SPR) untuk tab Edit Kontrak saat edit. */
+    /** Status diskon tab Diskon: harga/diskon/nilai kontrak saat ini + pengajuan diskon yang masih open. */
+    public static function diskonStatusHtml(?Kontrak $k): string
+    {
+        if (! $k) {
+            return '—';
+        }
+        $rp = fn ($v) => 'Rp '.number_format((float) $v, 0, ',', '.');
+        $total = (float) $k->total_kontrak;
+        $ppn = (float) $k->ppn ?: round($total - round($total / 1.11), 2);
+        $dpp = $total - $ppn;
+
+        $row = fn ($l, $v, $strong = false) => '<tr><td style="padding:3px 12px;color:#94a3b8;width:220px;">'.$l
+            .'</td><td style="padding:3px 12px;text-align:right;'.($strong ? 'font-weight:700;' : '').'">'.$v.'</td></tr>';
+
+        $html = '<table style="font-size:13px;border-collapse:collapse;min-width:380px;">'
+            .$row('Harga Unit (Gross)', $rp($k->harga_jual))
+            .$row('Diskon saat ini', '− '.$rp($k->diskon))
+            .$row('DPP', $rp($dpp))
+            .$row('PPN (11%)', $rp($ppn))
+            .'<tr><td colspan="2" style="border-top:1px solid #475569;"></td></tr>'
+            .$row('Nilai Kontrak', $rp($total), true)
+            .'</table>';
+
+        $open = \App\Modules\FO\Approval\Models\Approval::where('subject_type', Kontrak::class)
+            ->where('subject_id', $k->id)->whereIn('jenis', ['DISKON', 'DISKON_SPRS'])
+            ->whereIn('status', ['DRAFT', 'PENDING'])->count();
+        if ($open > 0) {
+            $html .= '<div style="margin-top:10px;color:#fbbf24;font-size:13px;">⏳ '.$open.' pengajuan diskon menunggu persetujuan (lihat menu Approval).</div>';
+        }
+
+        return $html;
+    }
+
     public static function kontrakSummary(?Kontrak $k): HtmlString
     {
         if (! $k) {

@@ -41,7 +41,7 @@ class ApprovalExecutionService
         $baru = (array) $approval->detail_baru;
 
         return DB::transaction(fn () => match ($approval->jenis) {
-            'DISKON' => $this->applyDiskon($kontrak, $baru),
+            'DISKON', 'DISKON_SPRS' => $this->applyDiskon($kontrak, $baru),
             'ADJ_HARGA' => $this->applyAdjustHarga($kontrak, $baru),
             'BATAL_KONTRAK' => $this->applyBatal($kontrak, $baru),
             'GANTI_NAMA' => $this->applyGantiNama($kontrak, $baru),
@@ -101,20 +101,25 @@ class ApprovalExecutionService
         if ($k->reservasi) {
             $k->reservasi->update(['status' => 'BATAL']);
         }
+        // Faktur Penjualan kontrak ini → BATAL (printout otomatis ber-watermark BATAL).
+        \App\Modules\FO\FinanceAR\Models\Fp::where('kontrak_id', $k->id)->update(['status' => 'BATAL']);
 
         // Ada pengembalian → buat Refund (Finance AR) untuk diproses.
         $pengembalian = (float) ($baru['total_pengembalian'] ?? 0);
         $extra = '';
         if ($pengembalian > 0) {
+            $cust = $k->customer; // Bank & Rekening Tujuan ikut data rekening customer
             $refund = Refund::create([
                 'tenant_id' => $k->tenant_id ?? 1,
-                'tgl_refund' => $baru['tgl_pengembalian'] ?? now()->toDateString(),
+                'tgl_refund' => null, // diisi di Finance → Refund saat diproses
                 'jenis' => 'BOOKING',
                 'customer_id' => $k->customer_id,
                 'kontrak_id' => $k->id,
                 'nilai_kotor' => (float) ($baru['total_pelunasan'] ?? $pengembalian),
-                'biaya_admin' => (float) ($baru['unrefund'] ?? 0),
+                'biaya_admin' => (float) ($baru['unrefund'] ?? 0), // % dari UTJ diisi di Finance → Refund
                 'nilai_refund' => $pengembalian,
+                'bank_id' => $cust?->bank_id,
+                'rekening_tujuan' => $cust?->no_rekening,
                 'status' => 'DRAFT',
                 'keterangan' => 'Pengembalian batal kontrak '.$k->no_kontrak,
             ]);

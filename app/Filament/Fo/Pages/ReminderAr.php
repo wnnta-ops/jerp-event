@@ -4,11 +4,9 @@ namespace App\Filament\Fo\Pages;
 
 use App\Modules\FO\FinanceAR\Models\Bg;
 use App\Modules\FO\FinanceAR\Models\Bkm;
-use App\Modules\FO\FinanceAR\Models\Memo;
 use App\Modules\FO\FinanceAR\Models\Refund;
 use App\Modules\FO\FinanceAR\Models\TransferAnonim;
 use App\Modules\FO\FinanceAR\Models\Tts;
-use App\Modules\FO\FinanceAR\Models\Va;
 use App\Modules\FO\MarketingSales\Models\KontrakTagihan;
 use Filament\Pages\Page;
 use Illuminate\Support\Facades\DB;
@@ -90,8 +88,6 @@ class ReminderAr extends Page
             ['label' => 'TTS', 'count' => Tts::count(), 'color' => '#10b981', 'url' => url('/fo/tts')],
             ['label' => 'Kwitansi (BKM)', 'count' => Bkm::count(), 'color' => '#06b6d4', 'url' => url('/fo/bkms')],
             ['label' => 'Bilyet Giro', 'count' => Bg::count(), 'color' => '#f97316', 'url' => url('/fo/bgs')],
-            ['label' => 'Virtual Account', 'count' => Va::count(), 'color' => '#8b5cf6', 'url' => url('/fo/vas')],
-            ['label' => 'Memo', 'count' => Memo::count(), 'color' => '#f59e0b', 'url' => url('/fo/memos')],
             ['label' => 'Refund', 'count' => Refund::count(), 'color' => '#14b8a6', 'url' => url('/fo/refunds')],
         ];
     }

@@ -90,6 +90,16 @@ class CustomerResource extends Resource
                     Forms\Components\TextInput::make('email')->label('Email')->email()->maxLength(255),
                 ]),
 
+            // Rekening tujuan refund/pengembalian — dipakai otomatis oleh menu Finance → Refund.
+            Forms\Components\Section::make('Rekening (untuk Refund/Pengembalian)')
+                ->columns(3)
+                ->schema([
+                    Forms\Components\Select::make('bank_id')->label('Bank')
+                        ->options(fn () => \App\Models\Bank::orderBy('name')->pluck('name', 'id'))->searchable(),
+                    Forms\Components\TextInput::make('no_rekening')->label('No. Rekening')->maxLength(64),
+                    Forms\Components\TextInput::make('atas_nama_rekening')->label('Atas Nama')->maxLength(255),
+                ]),
+
             Forms\Components\Section::make('Alamat (sesuai KTP)')
                 ->columns(2)
                 ->schema([
