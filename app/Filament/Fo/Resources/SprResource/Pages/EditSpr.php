@@ -7,8 +7,8 @@ use App\Filament\Fo\Resources\SprResource;
 use Filament\Actions;
 
 /**
- * Edit SPR — sama dengan edit SPRS (tab + Bentuk Ulang dari Master), tapi
- * tanpa tombol "Simpan sebagai SPR" (sudah SPR).
+ * Edit SPR — sama dengan edit SPRS (tab), tapi tanpa tombol "Simpan sebagai SPR"
+ * (sudah SPR).
  */
 class EditSpr extends EditKontrak
 {
@@ -17,9 +17,11 @@ class EditSpr extends EditKontrak
     protected function getHeaderActions(): array
     {
         return [
-            $this->regenAction(),
             $this->freeDpAction(),
             $this->cancelFreeDpAction(),
+            $this->cancelSubsidiAction(),
+            $this->tambahDpAction(),
+            $this->cancelTambahDpAction(),
             Actions\DeleteAction::make(),
         ];
     }

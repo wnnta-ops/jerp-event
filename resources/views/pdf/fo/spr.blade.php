@@ -73,34 +73,8 @@
             }
         }
 
-        // Angsuran 1 (FREE DP): tampilkan ringkas → UANG TANDA JADI (BF) +
-        // UANG MASUK (gabungan DP) + PENCAIRAN KPR (ANG/KPR). Total = harga unit.
-        if (($kontrak->skema?->bf_dipotong_di ?? null) === 'ANGSURAN1' && ! empty($payRows)) {
-            $bfRows = array_values(array_filter($payRows, fn ($r) => ($r['tipe'] ?? '') === 'BF'));
-            $dpRows = array_values(array_filter($payRows, fn ($r) => ($r['tipe'] ?? '') === 'DP'));
-            $tdpRows = array_values(array_filter($payRows, fn ($r) => ($r['tipe'] ?? '') === 'TDP'));
-            $kprRows = array_values(array_filter($payRows, fn ($r) => ! in_array(($r['tipe'] ?? ''), ['BF', 'DP', 'TDP'], true)));
-            $maxDate = fn ($rows) => collect($rows)->pluck('jatuh')->filter()->sortDesc()->first();
-            $minDate = fn ($rows) => collect($rows)->pluck('jatuh')->filter()->sort()->first();
-
-            $hargaTotal = (float) $kontrak->total_kontrak ?: $harga;
-            $bfSum = array_sum(array_column($bfRows, 'amount'));
-            $dpSum = array_sum(array_column($dpRows, 'amount'));
-            $tdpSum = array_sum(array_column($tdpRows, 'amount'));
-            // PENCAIRAN KPR = sisa (harga − UTJ − DP − Tambah DP) → total selalu = harga.
-            $pencairan = max(0, $hargaTotal - $bfSum - $dpSum - $tdpSum);
-
-            $grouped = [
-                ['nama' => 'UANG TANDA JADI', 'jatuh' => $minDate($bfRows), 'amount' => $bfSum, 'paid' => array_sum(array_column($bfRows, 'paid'))],
-                ['nama' => 'UANG MASUK', 'jatuh' => $maxDate($dpRows), 'amount' => $dpSum, 'paid' => array_sum(array_column($dpRows, 'paid'))],
-            ];
-            // Tambah DP (TDP) → baris tersendiri, mengurangi Pencairan KPR.
-            if ($tdpSum > 0) {
-                $grouped[] = ['nama' => 'TAMBAH DP', 'jatuh' => $maxDate($tdpRows), 'amount' => $tdpSum, 'paid' => array_sum(array_column($tdpRows, 'paid'))];
-            }
-            $grouped[] = ['nama' => 'PENCAIRAN KPR', 'jatuh' => $maxDate($kprRows) ?? $maxDate($dpRows), 'amount' => $pencairan, 'paid' => 0];
-            $payRows = $grouped;
-        }
+        // Jadwal Tagihan sudah berstruktur final dari generator (mis. FREE DP: DP1 +
+        // UANG MASUK; DP3X: DP + UANG MASUK), jadi ditampilkan apa adanya.
         // Gimmick yang diberikan → "sudah termasuk".
         $gimmickNames = ($kontrak->gimmicks ?? collect())->where('diberikan', true)->pluck('nama_barang')->filter()->all();
         $payTotal = array_sum(array_column($payRows, 'amount')) ?: (float) $kontrak->total_kontrak;

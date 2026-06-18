@@ -37,12 +37,12 @@ class KontrakGeneratorService
      */
     public function tagihan(Kontrak $kontrak, bool $replace = true, bool $withSubsidi = true): int
     {
-        $kontrak->loadMissing(['skema.lines', 'skemaLines']);
-        // Sumber termin: detail skema bayar per-kontrak (skemaLines) kalau ada,
-        // else baris master skema.
-        $lines = $kontrak->skemaLines->isNotEmpty()
-            ? $kontrak->skemaLines
-            : ($kontrak->skema?->lines ?? collect());
+        // load (bukan loadMissing) agar skema selalu segar — penting setelah skema_id
+        // diganti (mis. Batal Free DP → DP3X) supaya tidak memakai skema lama yang basi.
+        $kontrak->load('skema.lines');
+        // Termin SELALU dari master Skema Bayar (diatur di Setup Skema). Tidak ada
+        // termin per-kontrak — ubah struktur DP/angsuran di master skema.
+        $lines = $kontrak->skema?->lines ?? collect();
         if ($lines->isEmpty()) {
             return 0;
         }
@@ -111,8 +111,15 @@ class KontrakGeneratorService
         // agar UTJ tidak ditambah di atas (total = harga, bukan harga + UTJ).
         $this->applyAngsuranDisebarUtj($kontrak, $rows, $total);
 
+        // Mode FREE DP (ANGSURAN1): berkas lengkap di awal → DP2+ otomatis FREE jadi
+        // UANG MASUK (subsidi developer). DP1 tetap dibayar.
+        $freeDpSum = $this->applyFreeDpAngsuran1($kontrak, $rows);
+
         $n = 0;
         foreach ($rows as $idx => $r) {
+            if (! empty($r['_free'])) {
+                continue; // DP yang di-free → digabung jadi UANG MASUK di bawah
+            }
             $line = $r['line'];
             $kontrak->tagihan()->create([
                 'urutan' => $line->urutan ?? $idx,
@@ -121,6 +128,20 @@ class KontrakGeneratorService
                 'jatuh_tempo' => $r['jatuh'],
                 'nilai' => $r['nilai'],
                 'pelunasan' => 0,
+            ]);
+            $n++;
+        }
+
+        // Baris UANG MASUK dari Free DP (DP2+ disubsidi developer) — pelunasan = nilai → bukan AR.
+        if ($freeDpSum > 0) {
+            $kontrak->tagihan()->create([
+                'urutan' => 840,
+                'tipe' => 'ADM',
+                'nama_tagihan' => 'UANG MASUK',
+                'jatuh_tempo' => $tgl,
+                'nilai' => $freeDpSum,
+                'pelunasan' => $freeDpSum,
+                'keterangan' => 'Free DP — DP2+ menjadi subsidi developer (berkas lengkap di awal)',
             ]);
             $n++;
         }
@@ -141,9 +162,8 @@ class KontrakGeneratorService
             $n++;
         }
 
-        // GMC: gimmick FREE mengikuti gimmick kontrak (Tab Gimmick) — hapus gimmick →
-        // baris GMC ikut hilang. Harga diambil dari master terkini (tak stale).
-        $n += $this->syncGmc($kontrak, $tgl);
+        // GMC (gimmick FREE) TIDAK lagi masuk Jadwal Tagihan — pengajuan tiap item FREE
+        // ditangani di modul Collection (terhubung BO). Daftar gimmick tetap di Tab Gimmick.
 
         return $n;
     }
@@ -261,56 +281,32 @@ class KontrakGeneratorService
     }
 
     /**
-     * Sinkronkan baris GMC (gimmick FREE) di Jadwal Tagihan dengan gimmick kontrak —
-     * NON-DESTRUKTIF: baris GMC yang sudah ada DIPERTAHANKAN (termasuk nominal hasil
-     * edit user di Jadwal Tagihan). Hanya tambah baris untuk gimmick baru (harga default
-     * dari master) dan hapus baris yang gimmick-nya tidak lagi diberikan.
-     *
-     * Catatan: untuk reset penuh ke harga master, pakai regenerate (tagihan(replace))
-     * yang menghapus semua tagihan dulu sehingga GMC dibuat ulang dari master.
-     *
-     * GMC TIDAK ditagih ke customer (dikecualikan dari selisih & printout SPR); harganya
-     * untuk pembayaran subsidi developer (BO).
+     * Mode FREE DP (ANGSURAN1, mis. KPR FREE DP): mengikuti Tgl Berkas Lengkap.
+     * DP yang jatuh temponya SETELAH berkas lengkap → FREE (jadi UANG MASUK = subsidi
+     * developer); DP yang jatuh tempo sebelum/saat berkas lengkap → tetap dibayar.
+     * Bila tgl_berkas_lengkap null (berkas lengkap di awal) → SELURUH DP free.
+     * Mengembalikan total DP yang di-free.
      */
-    public function syncGmc(Kontrak $kontrak, $tgl = null): int
+    private function applyFreeDpAngsuran1(Kontrak $kontrak, array &$rows): float
     {
-        $tgl = $tgl ?? $kontrak->tgl_kontrak ?? now();
-        $kontrak->load('gimmicks');
-
-        // Gimmick yang diberikan → tiap nama harus punya 1 baris GMC (cocokkan via nama).
-        $given = $kontrak->gimmicks->filter(fn ($g) => (bool) ($g->diberikan ?? true))->values();
-        $givenNames = $given->pluck('nama_barang')->filter()->unique()->values()->all();
-
-        // Hapus baris GMC yang gimmick-nya tidak lagi diberikan/dihapus.
-        $hapus = $kontrak->tagihan()->where('tipe', 'GMC');
-        if (! empty($givenNames)) {
-            $hapus->whereNotIn('nama_tagihan', $givenNames);
+        if (($kontrak->skema->bf_dipotong_di ?? '') !== 'ANGSURAN1') {
+            return 0.0;
         }
-        $hapus->delete();
 
-        // Baris GMC yang sudah ada dipertahankan; tambah hanya untuk gimmick yang belum ada.
-        $existing = $kontrak->tagihan()->where('tipe', 'GMC')->pluck('nama_tagihan')->all();
-        $urut = 900;
-        $n = 0;
-        foreach ($given as $g) {
-            if (in_array($g->nama_barang, $existing, true)) {
+        $berkas = $kontrak->tgl_berkas_lengkap;   // Carbon|null
+        $freedSum = 0.0;
+        foreach ($rows as $i => $r) {
+            if (($r['line']->tipe ?? '') !== 'DP') {
                 continue;
             }
-            // Gimmick baru → baris GMC dengan harga master (termasuk harga 0 = FREE Rp 0).
-            $harga = (float) (Gimmick::find($g->gimmick_id)?->nilai ?? $g->harga_satuan);
-            $kontrak->tagihan()->create([
-                'urutan' => $urut++,
-                'tipe' => 'GMC',
-                'nama_tagihan' => $g->nama_barang,
-                'jatuh_tempo' => $tgl,
-                'nilai' => $harga,
-                'pelunasan' => 0,
-            ]);
-            $existing[] = $g->nama_barang;
-            $n++;
+            $jatuh = $r['jatuh'] ?? null;
+            if ($berkas === null || ($jatuh && $jatuh->gt($berkas))) {
+                $freedSum += (float) $rows[$i]['nilai'];
+                $rows[$i]['_free'] = true;
+            }
         }
 
-        return $n;
+        return $freedSum;
     }
 
     /** Gimmick dari master (aktif, sesuai project unit / berlaku semua). */

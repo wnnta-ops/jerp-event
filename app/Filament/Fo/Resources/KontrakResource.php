@@ -197,52 +197,8 @@ class KontrakResource extends Resource
                                 ->relationship('skema', 'name')
                                 ->getOptionLabelFromRecordUsing(fn ($record) => trim(($record->code ? $record->code.' — ' : '').$record->name))
                                 ->searchable()->preload()
-                                ->helperText('Ganti skema lalu klik Simpan → termin & Jadwal Tagihan otomatis TERGANTIKAN dengan skema baru. (Atau klik "Bentuk Ulang dari Master".)'),
+                                ->helperText('Termin (struktur DP/angsuran) diatur di Setup Skema Bayar (master). Ganti skema lalu klik Simpan → Jadwal Tagihan otomatis tergantikan dengan skema baru.'),
 
-                            Forms\Components\Actions::make([
-                                Forms\Components\Actions\Action::make('salinSkema')->label('Salin dari Skema Master')
-                                    ->icon('heroicon-o-clipboard-document')->color('gray')
-                                    ->action(function (Forms\Get $get, Forms\Set $set) {
-                                        $skema = $get('skema_id') ? Skema::with('lines')->find($get('skema_id')) : null;
-                                        if (! $skema) {
-                                            Notification::make()->warning()->title('Pilih Skema Bayar dulu')->send();
-
-                                            return;
-                                        }
-                                        $rows = $skema->lines->map(fn ($l) => [
-                                            'tipe' => $l->tipe ?: 'ANG', 'nama_termin' => $l->nama_termin,
-                                            'basis' => $l->basis ?: 'PERSEN', 'persen' => $l->persen, 'nominal' => $l->nominal,
-                                            'jadwal_basis' => $l->jadwal_basis ?: 'HARI', 'jadwal_nilai' => $l->jadwal_nilai,
-                                            'setelah' => $l->setelah, 'flag_bf' => $l->flag_bf, 'flag_kpr' => $l->flag_kpr,
-                                        ])->all();
-                                        $set('skemaLines', $rows);
-                                        Notification::make()->success()->title(count($rows).' termin disalin dari skema')->send();
-                                    }),
-                            ]),
-
-                            Forms\Components\Repeater::make('skemaLines')->relationship()->label('Detail Skema Bayar (termin) — bisa diedit / input sendiri')
-                                ->columns(12)->defaultItems(0)->addActionLabel('Tambah termin')
-                                ->reorderable()->orderColumn('urutan')
-                                ->itemLabel(fn (array $state): ?string => trim(($state['tipe'] ?? '').' — '.($state['nama_termin'] ?? ''), ' —'))
-                                ->schema([
-                                    Forms\Components\Select::make('tipe')->label('Tipe')->columnSpan(2)
-                                        ->options(['BF' => 'BF', 'DP' => 'DP', 'ANG' => 'ANG', 'ADM' => 'ADM'])->default('ANG')->required(),
-                                    Forms\Components\TextInput::make('nama_termin')->label('Nama')->columnSpan(2)->required(),
-                                    Forms\Components\Radio::make('basis')->label('Nilai')->inline()->columnSpan(1)
-                                        ->options(['PERSEN' => '%', 'NOMINAL' => 'Rp'])->default('PERSEN')->live(),
-                                    Forms\Components\TextInput::make('persen')->label('Nilai')->columnSpan(2)->numeric()->suffix('%')->default(0)
-                                        ->visible(fn (Forms\Get $get) => $get('basis') !== 'NOMINAL'),
-                                    Forms\Components\TextInput::make('nominal')->label('Nilai')->columnSpan(2)->numeric()->rupiah()->default(0)
-                                        ->visible(fn (Forms\Get $get) => $get('basis') === 'NOMINAL'),
-                                    Forms\Components\TextInput::make('jadwal_nilai')->label('Jadwal')->columnSpan(1)->numeric()->default(0),
-                                    Forms\Components\Radio::make('jadwal_basis')->label('Sat.')->inline()->columnSpan(2)
-                                        ->options(['BULAN' => 'Bln', 'HARI' => 'Hari'])->default('HARI'),
-                                    Forms\Components\TextInput::make('setelah')->label('Setelah')->columnSpan(1)->numeric()->default(0),
-                                    Forms\Components\Group::make()->columnSpan(1)->schema([
-                                        Forms\Components\Checkbox::make('flag_bf')->label('BF'),
-                                        Forms\Components\Checkbox::make('flag_kpr')->label('KPR'),
-                                    ]),
-                                ]),
                             Forms\Components\Repeater::make('tagihan')->relationship()->label('Jadwal Tagihan')
                                 ->columns(12)->defaultItems(0)->addActionLabel('Tambah Tagihan')
                                 ->reorderable()->orderColumn('urutan')
@@ -255,7 +211,7 @@ class KontrakResource extends Resource
                                     : null)
                                 ->schema([
                                     Forms\Components\Select::make('tipe')->label('Tipe')->columnSpan(2)
-                                        ->options(['BF' => 'BF (Booking Fee)', 'DP' => 'DP', 'TDP' => 'Tambah DP', 'ANG' => 'Angsuran', 'ADM' => 'Administrasi', 'GMC' => 'Gimmick (FREE)', 'LAIN' => 'Lain'])
+                                        ->options(['BF' => 'BF (Booking Fee)', 'DP' => 'DP', 'TDP' => 'Tambah DP', 'ANG' => 'Angsuran', 'ADM' => 'Administrasi', 'LAIN' => 'Lain'])
                                         ->default('ANG')->required()->live(),
                                     Forms\Components\TextInput::make('nama_tagihan')->label('Nama Tagihan')->columnSpan(4)->required(),
                                     Forms\Components\DatePicker::make('jatuh_tempo')->label('Jatuh Tempo')->columnSpan(2)->native(false)->displayFormat('d M Y'),

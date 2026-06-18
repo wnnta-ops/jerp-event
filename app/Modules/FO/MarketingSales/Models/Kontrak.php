@@ -23,6 +23,7 @@ class Kontrak extends TenantAwareModel
         'skema_id',
         'agent_id',
         'tgl_kontrak',
+        'tgl_berkas_lengkap',
         'harga_jual',
         'diskon',
         'ppn',
@@ -38,6 +39,7 @@ class Kontrak extends TenantAwareModel
 
     protected $casts = [
         'tgl_kontrak' => 'date',
+        'tgl_berkas_lengkap' => 'date',
         'harga_jual' => 'decimal:2',
         'diskon' => 'decimal:2',
         'ppn' => 'decimal:2',
