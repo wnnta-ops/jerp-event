@@ -4,6 +4,7 @@ namespace Database\Seeders;
 
 use App\Models\Bank;
 use App\Modules\FO\Adminjual\Models\Skema;
+use App\Modules\FO\Komisi\Models\Agent;
 use App\Modules\FO\FinanceAR\Models\TransferAnonim;
 use App\Modules\FO\FinanceAR\Models\Tts;
 use App\Modules\FO\FinanceAR\Services\TtsToBkmService;
@@ -28,14 +29,33 @@ class DummyKontrakSeeder extends Seeder
         $num = app(NumeratorServiceInterface::class);
         $gen = app(KontrakGeneratorService::class);
 
-        // skema_id => [label, cara_bayar kontrak (enum: CASH|CASH_BERTAHAP|CICILAN|KPR)]
-        $groups = [
-            1 => ['CASH', 'CASH'],
-            3 => ['KPR', 'KPR'],
-            2 => ['INHOUSE', 'CASH_BERTAHAP'],
-            5 => ['KPR FREE DP', 'KPR'],
-            11 => ['KPR DP 3X', 'KPR'],
-        ];
+        // Resolusi skema DINAMIS by nama/code (portable lintas server). cara_bayar
+        // kontrak diturunkan dari skema (enum: CASH|CASH_BERTAHAP|CICILAN|KPR).
+        $wanted = ['CASH', 'KPR', 'INHOUSE', 'KPR FREE DP', 'KPR DP 3X'];
+        $groups = [];
+        foreach ($wanted as $label) {
+            $skema = Skema::query()
+                ->where('name', $label)
+                ->orWhere('code', str_replace(' ', '-', strtoupper($label)))
+                ->first();
+            if (! $skema) {
+                $this->command?->warn("Skema '{$label}' tidak ditemukan — dilewati.");
+
+                continue;
+            }
+            $caraBayar = match (strtoupper((string) $skema->cara_bayar)) {
+                'KPR' => 'KPR',
+                'CASH_BERTAHAP' => 'CASH_BERTAHAP',
+                'CICILAN' => 'CICILAN',
+                default => 'CASH',
+            };
+            $groups[$skema->id] = [$label, $caraBayar];
+        }
+        if (empty($groups)) {
+            $this->command?->error('Tidak ada skema yang cocok. Buat skema CASH/KPR/INHOUSE/KPR FREE DP/KPR DP 3X dulu.');
+
+            return;
+        }
 
         $names = [
             'Budi Santoso', 'Siti Aminah', 'Agus Wijaya', 'Dewi Lestari', 'Eko Prasetyo',
@@ -46,12 +66,17 @@ class DummyKontrakSeeder extends Seeder
         ];
 
         $bankId = Bank::query()->where('name', 'like', '%Central Asia%')->value('id') ?: Bank::query()->min('id');
-        $agents = [6, 7, 8];
-        $units = Unit::query()->where('status', 'TERSEDIA')->where('harga_jual', '>', 0)
-            ->orderBy('id')->limit(25)->get();
+        $agents = Agent::query()->where('is_active', true)->orderBy('id')->pluck('id')->all();
+        if (empty($agents)) {
+            $agents = [null];
+        }
 
-        if ($units->count() < 25) {
-            $this->command?->error('Unit TERSEDIA kurang dari 25.');
+        $perlu = count($groups) * 5;
+        $units = Unit::query()->where('status', 'TERSEDIA')->where('harga_jual', '>', 0)
+            ->orderBy('id')->limit($perlu)->get();
+
+        if ($units->count() < $perlu) {
+            $this->command?->error("Unit TERSEDIA kurang dari {$perlu} (ada {$units->count()}).");
 
             return;
         }
