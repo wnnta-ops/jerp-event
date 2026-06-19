@@ -200,6 +200,44 @@ class EditKontrak extends EditRecord
             ->persistent()->send();
     }
 
+    /**
+     * Koreksi Sales/Agent kontrak dari tab Sales (mis. salah input dari awal).
+     * Komisi yang BELUM cair (bukan PAID/BATAL) milik sales lama ikut dipindah ke
+     * sales baru; komisi yang sudah PAID tidak diubah.
+     */
+    public function submitSales(array $data): void
+    {
+        $k = $this->record;
+        $newAgent = (int) ($data['agent_id'] ?? 0);
+        $oldAgent = (int) $k->agent_id;
+        if (! $newAgent) {
+            return;
+        }
+        if ($newAgent === $oldAgent) {
+            Notification::make()->info()->title('Sales tidak berubah')->send();
+
+            return;
+        }
+
+        $oldName = $k->agent?->name;
+        $k->update(['agent_id' => $newAgent]);
+
+        // Pindahkan komisi yang belum cair dari sales lama → sales baru.
+        $moved = $k->komisi()->where('agent_id', $oldAgent)
+            ->whereNotIn('status', ['PAID', 'BATAL'])->update(['agent_id' => $newAgent]);
+
+        $newName = \App\Modules\FO\Komisi\Models\Agent::find($newAgent)?->name;
+        Notification::make()->success()
+            ->title('Sales kontrak diperbarui')
+            ->body('Sales '.$k->no_kontrak.' diubah'.($oldName ? ' dari '.$oldName : '').' menjadi '.$newName.'.'
+                .($moved ? ' '.$moved.' baris komisi (belum cair) ikut dipindah.' : ''))
+            ->send();
+
+        // Pakai resource halaman saat ini (SPRS=KontrakResource / SPR=SprResource) agar
+        // redirect tidak nyasar ke menu yang men-scope tahap lain (404).
+        $this->redirect($this->getResource()::getUrl('edit', ['record' => $k]));
+    }
+
     protected function getHeaderActions(): array
     {
         return [

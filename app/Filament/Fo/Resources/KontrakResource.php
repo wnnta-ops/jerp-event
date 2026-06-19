@@ -177,6 +177,30 @@ class KontrakResource extends Resource
                                 ]),
                         ]),
 
+                    Forms\Components\Tabs\Tab::make('Sales')
+                        ->icon('heroicon-o-user')
+                        ->visible(fn (string $operation) => $operation === 'edit')
+                        ->schema([
+                            Forms\Components\Section::make('Sales / Agent Kontrak')
+                                ->description('Koreksi sales bila salah input dari awal. Komisi yang BELUM cair otomatis ikut pindah ke sales baru.')
+                                ->schema([
+                                    Forms\Components\Placeholder::make('sales_status')->label('')
+                                        ->content(fn (?Kontrak $record) => new HtmlString(self::salesStatusHtml($record))),
+                                    Forms\Components\Actions::make([
+                                        Forms\Components\Actions\Action::make('ubah_sales')
+                                            ->label('Ubah Sales')->icon('heroicon-o-user')->color('warning')->button()
+                                            ->modalHeading('Ubah Sales Kontrak')->modalWidth('lg')->modalSubmitActionLabel('Simpan')
+                                            ->fillForm(fn ($livewire) => ['agent_id' => $livewire->record->agent_id])
+                                            ->form([
+                                                Forms\Components\Select::make('agent_id')->label('Sales / Agent')->required()->searchable()->preload()
+                                                    ->options(fn () => \App\Modules\FO\Komisi\Models\Agent::orderBy('name')->pluck('name', 'id')),
+                                                Forms\Components\Textarea::make('alasan')->label('Alasan koreksi')->rows(2),
+                                            ])
+                                            ->action(fn (array $data, $livewire) => $livewire->submitSales($data)),
+                                    ]),
+                                ]),
+                        ]),
+
                     Forms\Components\Tabs\Tab::make('Jadwal Komisi')
                         ->icon('heroicon-o-banknotes')
                         ->schema([
@@ -436,6 +460,33 @@ class KontrakResource extends Resource
             ->whereIn('status', ['DRAFT', 'PENDING'])->count();
         if ($open > 0) {
             $html .= '<div style="margin-top:10px;color:#fbbf24;font-size:13px;">⏳ '.$open.' pengajuan diskon menunggu persetujuan (lihat menu Approval).</div>';
+        }
+
+        return $html;
+    }
+
+    /** Status sales tab Sales: sales saat ini + jumlah komisi yang belum cair (ikut pindah). */
+    public static function salesStatusHtml(?Kontrak $k): string
+    {
+        if (! $k) {
+            return '—';
+        }
+        $row = fn ($l, $v, $strong = false) => '<tr><td style="padding:3px 12px;color:#94a3b8;width:200px;">'.$l
+            .'</td><td style="padding:3px 12px;'.($strong ? 'font-weight:700;' : '').'">'.$v.'</td></tr>';
+
+        $html = '<table style="font-size:13px;border-collapse:collapse;min-width:360px;">'
+            .$row('No. Kontrak', e($k->no_kontrak))
+            .$row('Customer', e($k->customer?->full_name ?: '—'))
+            .$row('Sales saat ini', '<strong>'.e($k->agent?->name ?: '—').'</strong>', true)
+            .'</table>';
+
+        $belumCair = $k->komisi()->whereNotIn('status', ['PAID', 'BATAL'])->count();
+        $paid = $k->komisi()->where('status', 'PAID')->count();
+        if ($belumCair > 0) {
+            $html .= '<div style="margin-top:10px;color:#fbbf24;font-size:13px;">⤳ '.$belumCair.' baris komisi (belum cair) akan ikut pindah ke sales baru.</div>';
+        }
+        if ($paid > 0) {
+            $html .= '<div style="margin-top:6px;color:#94a3b8;font-size:13px;">ℹ '.$paid.' komisi sudah PAID — TIDAK ikut dipindah (sudah dibayar).</div>';
         }
 
         return $html;
