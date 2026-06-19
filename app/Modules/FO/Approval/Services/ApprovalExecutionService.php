@@ -41,7 +41,8 @@ class ApprovalExecutionService
         $baru = (array) $approval->detail_baru;
 
         return DB::transaction(fn () => match ($approval->jenis) {
-            'DISKON', 'DISKON_SPRS' => $this->applyDiskon($kontrak, $baru),
+            'DISKON' => $this->applyDiskon($kontrak, $baru),
+            'DISKON_SPRS' => $this->applyDiskonSprs($kontrak, $baru),
             'ADJ_HARGA' => $this->applyAdjustHarga($kontrak, $baru),
             'BATAL_KONTRAK' => $this->applyBatal($kontrak, $baru),
             'GANTI_NAMA' => $this->applyGantiNama($kontrak, $baru),
@@ -64,6 +65,30 @@ class ApprovalExecutionService
         ]);
 
         return 'Diskon Rp '.number_format($diskon, 0, ',', '.').' diterapkan → Nilai Kontrak Rp '.number_format($total, 0, ',', '.').'.'.$this->regenTagihan($k);
+    }
+
+    /**
+     * Diskon SPRS disetujui GM → terapkan diskon LALU promosikan kontrak SPRS menjadi
+     * SPR (final): unit TERJUAL + Faktur Penjualan terbit (selaras tombol "Simpan sebagai SPR").
+     */
+    private function applyDiskonSprs(Kontrak $k, array $baru): string
+    {
+        return $this->applyDiskon($k, $baru).$this->promoteToSpr($k);
+    }
+
+    /** Promosikan kontrak menjadi SPR (final): unit TERJUAL + Faktur Penjualan terbit. */
+    private function promoteToSpr(Kontrak $k): string
+    {
+        if ($k->tahap === 'SPR') {
+            return '';
+        }
+        $k->update(['tahap' => 'SPR']);
+        if ($k->unit_id && $unit = Unit::find($k->unit_id)) {
+            $unit->update(['status' => 'TERJUAL']);
+        }
+        \App\Modules\FO\FinanceAR\Services\FakturPenjualanService::ensureForKontrak($k);
+
+        return ' Kontrak dipromosikan ke SPR (final) — unit TERJUAL & Faktur Penjualan terbit.';
     }
 
     private function applyAdjustHarga(Kontrak $k, array $baru): string
