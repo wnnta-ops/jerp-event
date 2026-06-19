@@ -40,6 +40,11 @@ class KontrakGeneratorService
         // load (bukan loadMissing) agar skema selalu segar — penting setelah skema_id
         // diganti (mis. Batal Free DP → DP3X) supaya tidak memakai skema lama yang basi.
         $kontrak->load('skema.lines');
+
+        // Cara bayar kontrak SELALU ikut skema. Ganti skema CASH → KPR (mis. di SPRS):
+        // cara_bayar otomatis menyesuaikan agar printout SPR/SPRS & badge tidak basi.
+        $this->syncCaraBayar($kontrak);
+
         // Termin SELALU dari master Skema Bayar (diatur di Setup Skema). Tidak ada
         // termin per-kontrak — ubah struktur DP/angsuran di master skema.
         $lines = $kontrak->skema?->lines ?? collect();
@@ -166,6 +171,27 @@ class KontrakGeneratorService
         // ditangani di modul Collection (terhubung BO). Daftar gimmick tetap di Tab Gimmick.
 
         return $n;
+    }
+
+    /**
+     * Selaraskan cara_bayar kontrak dengan skema-nya (enum kontrak: CASH / CASH_BERTAHAP
+     * / CICILAN / KPR). cara_bayar skema: CASH_KERAS / CASH_BERTAHAP / KPR.
+     * Dipanggil tiap generate jadwal → printout & badge selalu ikut skema terbaru.
+     */
+    private function syncCaraBayar(Kontrak $kontrak): void
+    {
+        $skema = $kontrak->skema;
+        if (! $skema) {
+            return;
+        }
+        $cara = match (strtoupper((string) $skema->cara_bayar)) {
+            'KPR' => 'KPR',
+            'CASH_BERTAHAP', 'CICILAN' => 'CASH_BERTAHAP',
+            default => 'CASH', // CASH_KERAS dll.
+        };
+        if ($kontrak->cara_bayar !== $cara) {
+            $kontrak->update(['cara_bayar' => $cara]);
+        }
     }
 
     /**
