@@ -238,9 +238,30 @@ class EditKontrak extends EditRecord
         $this->redirect($this->getResource()::getUrl('edit', ['record' => $k]));
     }
 
+    /**
+     * Menu Cetak — langsung cetak dokumen SPR/SPRS & Jadwal Tagihan dari halaman edit
+     * (efisien: habis ubah, langsung cetak). Route cetak dipilih per tahap kontrak.
+     */
+    protected function cetakAction(): Actions\ActionGroup
+    {
+        return Actions\ActionGroup::make([
+            Actions\Action::make('cetakDok')
+                ->label(fn () => $this->record->tahap === 'SPR' ? 'Cetak SPR' : 'Cetak SPRS')
+                ->icon('heroicon-o-document-text')
+                ->url(fn () => $this->record->tahap === 'SPR'
+                    ? route('fo.cetak.spr', $this->record)
+                    : route('fo.cetak.sprs-kontrak', $this->record), shouldOpenInNewTab: true),
+            Actions\Action::make('cetakJadwal')
+                ->label('Cetak Jadwal Tagihan')
+                ->icon('heroicon-o-calendar-days')
+                ->url(fn () => route('fo.cetak.jadwal', $this->record), shouldOpenInNewTab: true),
+        ])->label('Cetak')->icon('heroicon-o-printer')->button()->color('gray');
+    }
+
     protected function getHeaderActions(): array
     {
         return [
+            $this->cetakAction(),
             $this->freeDpAction(),
             $this->cancelFreeDpAction(),
             $this->cancelSubsidiAction(),

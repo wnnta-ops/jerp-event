@@ -55,8 +55,8 @@ class Dashboard extends BaseDashboard
             ],
             [
                 'label' => 'Finance AR',
-                'sub' => 'TTS, Kwitansi, Tambah DP, VA, MEMO',
-                'url' => url('/fo/finance-ar'),
+                'sub' => 'TTS, Pelunasan Angsuran, Kwitansi, Refund',
+                'url' => url('/fo/tts'),
                 'icon' => 'M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8V4m0 12v2M5 12H3m18 0h-2',
                 'gradient' => 'linear-gradient(135deg, #10b981 0%, #047857 100%)',
                 'count' => fn () => Tts::where('status', 'DRAFT')->count(),

@@ -17,6 +17,7 @@ class EditSpr extends EditKontrak
     protected function getHeaderActions(): array
     {
         return [
+            $this->cetakAction(),
             $this->freeDpAction(),
             $this->cancelFreeDpAction(),
             $this->cancelSubsidiAction(),
