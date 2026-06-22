@@ -46,11 +46,20 @@ class PelunasanAngsuran extends Page implements HasForms, HasTable
                     ->whereIn('tipe', ['DP', 'ANG', 'TDP'])
                     ->whereRaw('nilai - pelunasan > 0.5')
                     ->whereHas('kontrak', fn ($q) => $q->where('tahap', 'SPR')->where('status', '!=', 'BATAL'))
+                    // Hanya tagihan jatuh tempo BERIKUTNYA per kontrak: sembunyikan bila masih
+                    // ada tagihan belum-lunas yang lebih awal (urutan kecil). Cegah salah bayar.
+                    ->whereNotExists(function ($q) {
+                        $q->selectRaw('1')->from('fo_kontrak_tagihan as t2')
+                            ->whereColumn('t2.kontrak_id', 'fo_kontrak_tagihan.kontrak_id')
+                            ->whereIn('t2.tipe', ['DP', 'ANG', 'TDP'])
+                            ->whereRaw('t2.nilai - t2.pelunasan > 0.5')
+                            ->whereColumn('t2.urutan', '<', 'fo_kontrak_tagihan.urutan');
+                    })
             )
-            ->heading('Tagihan DP / Angsuran / Tambah DP belum lunas (kontrak SPR)')
-            ->description('Jatuh tempo & nominal mengikuti Jadwal Tagihan SPR. Terima pembayaran → sisa berkurang & kwitansi terbit otomatis.')
+            ->heading('Tagihan jatuh tempo berikutnya per kontrak (SPR)')
+            ->description('Hanya menampilkan tagihan berikutnya yang belum lunas per kontrak (urut sesuai jadwal SPR) — mis. DP 1 dulu; setelah lunas baru DP 2 muncul. Mencegah salah urut/salah bayar.')
             ->columns([
-                Tables\Columns\TextColumn::make('kontrak.no_kontrak')->label('No. Kontrak')->badge()->color('info')->searchable()->sortable(),
+                Tables\Columns\TextColumn::make('kontrak.unit.kode_unit')->label('Unit')->badge()->color('info')->placeholder('—')->searchable()->sortable(),
                 Tables\Columns\TextColumn::make('kontrak.customer.full_name')->label('Customer')->searchable()->weight('bold')->wrap(),
                 Tables\Columns\TextColumn::make('tipe')->label('Tipe')->badge()
                     ->color(fn (string $state) => match ($state) { 'TDP' => 'warning', 'DP' => 'info', default => 'gray' })
@@ -66,10 +75,24 @@ class PelunasanAngsuran extends Page implements HasForms, HasTable
                         if (! $r->jatuh_tempo) {
                             return 'TANPA JT';
                         }
+                        $jt = $r->jatuh_tempo->copy()->startOfDay();
+                        $today = now()->startOfDay();
+                        if ($jt->lt($today)) {
+                            return 'TELAT';
+                        }
+                        if ($jt->eq($today)) {
+                            return 'JATUH TEMPO';
+                        }
+                        $days = (int) $today->diffInDays($jt);
 
-                        return $r->jatuh_tempo->isPast() ? 'TELAT' : 'BELUM JT';
+                        return $days <= 3 ? 'H-'.$days : 'BELUM JT';
                     })
-                    ->color(fn (string $state) => $state === 'TELAT' ? 'danger' : 'gray'),
+                    ->color(fn (string $state) => match (true) {
+                        $state === 'TELAT' => 'danger',
+                        $state === 'JATUH TEMPO' => 'warning',
+                        str_starts_with($state, 'H-') => 'info',
+                        default => 'gray',
+                    }),
             ])
             ->defaultSort('jatuh_tempo', 'asc')
             ->actions([
@@ -82,7 +105,7 @@ class PelunasanAngsuran extends Page implements HasForms, HasTable
                         Forms\Components\TextInput::make('nominal')->label('Nominal Bayar (Rp)')->numeric()->rupiah()->required()
                             ->helperText('Default = sisa tagihan. Boleh bayar sebagian (tak melebihi sisa).'),
                         Forms\Components\DatePicker::make('tgl')->label('Tgl Pembayaran')->default(now())->required(),
-                        Forms\Components\Select::make('bank_id')->label('Bank / Kas')->options(fn () => Bank::orderBy('name')->pluck('name', 'id'))->searchable(),
+                        Forms\Components\Select::make('bank_id')->label('Bank / Kas')->options(fn () => Bank::orderBy('name')->pluck('name', 'id'))->searchable()->required(),
                         Forms\Components\TextInput::make('no_referensi')->label('No. Referensi / Transfer'),
                         Forms\Components\Textarea::make('keterangan')->label('Keterangan')->rows(2),
                     ])

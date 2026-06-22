@@ -156,7 +156,7 @@ class TtsResource extends Resource
                 Tables\Columns\TextColumn::make('no_tts')->label('No TTS')->badge()->searchable()->sortable(),
                 Tables\Columns\TextColumn::make('tgl_tts')->label('Tgl')->date('d M Y')->sortable(),
                 Tables\Columns\TextColumn::make('customer.full_name')->label('Customer')->searchable(),
-                Tables\Columns\TextColumn::make('kontrak.no_kontrak')->label('Kontrak')->toggleable(),
+                Tables\Columns\TextColumn::make('kontrak.unit.kode_unit')->label('Unit')->placeholder('—')->searchable()->toggleable(),
                 Tables\Columns\TextColumn::make('jenis_pembayaran')->label('Jenis')->badge(),
                 Tables\Columns\TextColumn::make('amount')->label('Jumlah')->money('IDR', divideBy: 0)->alignEnd(),
                 Tables\Columns\TextColumn::make('cara_bayar')->label('Cara')->badge()->color('gray'),

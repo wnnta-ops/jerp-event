@@ -80,6 +80,7 @@ class RefundResource extends Resource
                 Tables\Columns\TextColumn::make('no_refund')->label('No')->badge()->color('primary')->searchable()->sortable(),
                 Tables\Columns\TextColumn::make('jenis')->label('Jenis')->badge()->color(fn (?string $state) => $state === 'BOOKING' ? 'info' : 'warning'),
                 Tables\Columns\TextColumn::make('customer.full_name')->label('Customer')->placeholder('—')->limit(24),
+                Tables\Columns\TextColumn::make('kontrak.unit.kode_unit')->label('Unit')->placeholder('—')->searchable(),
                 Tables\Columns\TextColumn::make('tgl_refund')->label('Tgl')->date('d M Y')->sortable(),
                 Tables\Columns\TextColumn::make('nilai_refund')->label('Refund')->money('IDR'),
                 Tables\Columns\TextColumn::make('status')->label('Status')->badge()->color(fn (?string $state) => match ($state) {

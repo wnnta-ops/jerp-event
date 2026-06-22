@@ -120,10 +120,14 @@ class BkmResource extends Resource
             ->columns([
                 Tables\Columns\TextColumn::make('no_bkm')->label('No Kwitansi')->badge()->color('success')->searchable()->sortable(),
                 Tables\Columns\TextColumn::make('tgl_bkm')->label('Tgl')->date('d M Y')->sortable(),
-                Tables\Columns\TextColumn::make('tts.no_tts')->label('Sumber TTS')->placeholder('Manual')->toggleable(),
+                Tables\Columns\TextColumn::make('tts.no_tts')->label('Sumber')->placeholder('—')->toggleable()
+                    ->getStateUsing(fn ($record) => $record->tts?->no_tts ?: ($record->kontrak_tagihan_id ? 'Pelunasan' : 'Manual')),
                 Tables\Columns\TextColumn::make('customer.full_name')->label('Customer')->searchable(),
-                Tables\Columns\TextColumn::make('kontrak.no_kontrak')->label('Kontrak')->toggleable(),
-                Tables\Columns\TextColumn::make('jenis_pembayaran')->label('Jenis')->badge(),
+                Tables\Columns\TextColumn::make('kontrak.unit.kode_unit')->label('Unit')->placeholder('—')->searchable()->toggleable(),
+                // Jenis = nama tagihan spesifik bila pembayaran ter-link ke baris tagihan
+                // (mis. "DP 1", "ANGSURAN 3"); fallback ke jenis_pembayaran untuk BKM lama.
+                Tables\Columns\TextColumn::make('jenis_pembayaran')->label('Jenis')->badge()
+                    ->getStateUsing(fn ($record) => $record->kontrakTagihan?->nama_tagihan ?: $record->jenis_pembayaran),
                 Tables\Columns\TextColumn::make('amount')->label('Jumlah')->money('IDR', divideBy: 0)->alignEnd(),
                 Tables\Columns\TextColumn::make('bank.code')->label('Bank')->toggleable(),
                 Tables\Columns\TextColumn::make('status')->label('Status')->badge()->color(fn (?string $state) => match ($state) {
