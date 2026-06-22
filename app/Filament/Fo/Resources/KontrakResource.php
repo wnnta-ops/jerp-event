@@ -507,6 +507,14 @@ class KontrakResource extends Resource
         }
         $unit = $k->unit?->kode_unit ?: trim(($k->unit?->blok ? $k->unit->blok.' / ' : '').($k->unit?->no_unit ?? ''));
 
+        // Ringkasan pembayaran tagihan (untuk info LUNAS keseluruhan).
+        $totalBayar = (float) $k->tagihan->sum('pelunasan');
+        $totalTagihan = (float) $k->tagihan->sum('nilai');
+        $sisaTotal = $totalTagihan - $totalBayar;
+        $bayarInfo = $totalTagihan > 0 && $sisaTotal <= 0.5
+            ? $rp($totalBayar).' — <strong style="color:#22c55e;">LUNAS</strong>'
+            : $rp($totalBayar).' / '.$rp($totalTagihan).($totalBayar > 0.5 ? ' (sisa '.$rp($sisaTotal).')' : '');
+
         $row = fn ($l, $v) => '<tr><td style="padding:2px 10px;color:#94a3b8;width:190px;">'.$l.'</td><td style="padding:2px 10px;">: '.$v.'</td></tr>';
         $kv = '<table style="font-size:13px;border-collapse:collapse;width:100%;">'
             .$row('No. Kontrak', e($k->no_kontrak))
@@ -520,23 +528,35 @@ class KontrakResource extends Resource
             .$row('DPP', $rp($dpp))
             .$row('PPN', $rp($ppn))
             .$row('Nilai Kontrak', '<strong>'.$rp($total).'</strong>')
+            .$row('Pembayaran', $bayarInfo)
             .$row('Status / Tahap', e($k->status).' / '.($k->tahap === 'SPR' ? 'SPR (final)' : 'SPRS'))
             .'</table>';
 
-        // Jadwal Tagihan
+        // Jadwal Tagihan + status pembayaran (LUNAS) per baris — agar sales tahu DP/
+        // Angsuran/TDP yang sudah terbayar (dari menu Pelunasan). Hanya tampilan; printout tidak berubah.
         $tg = '';
         foreach ($k->tagihan as $t) {
+            $sisaT = (float) $t->nilai - (float) $t->pelunasan;
+            if ($sisaT <= 0.5) {
+                $status = '<span style="color:#22c55e;font-weight:700;">LUNAS</span>';
+            } elseif ((float) $t->pelunasan > 0.5) {
+                $status = '<span style="color:#fbbf24;">Terbayar '.$rp($t->pelunasan).'</span>';
+            } else {
+                $status = '<span style="color:#94a3b8;">Belum</span>';
+            }
             $tg .= '<tr>'
                 .'<td style="padding:2px 10px;border-top:1px solid #475569;">'.e($t->tipe).'</td>'
                 .'<td style="padding:2px 10px;border-top:1px solid #475569;">'.e($t->nama_tagihan).'</td>'
                 .'<td style="padding:2px 10px;border-top:1px solid #475569;">'.e(optional($t->jatuh_tempo)->format('d M Y')).'</td>'
                 .'<td style="padding:2px 10px;border-top:1px solid #475569;text-align:right;">'.$rp($t->nilai).'</td>'
+                .'<td style="padding:2px 10px;border-top:1px solid #475569;text-align:center;">'.$status.'</td>'
                 .'</tr>';
         }
         $tgTable = $tg
             ? '<table style="font-size:12px;border-collapse:collapse;width:100%;"><thead><tr>'
                 .'<th style="text-align:left;padding:2px 10px;">Tipe</th><th style="text-align:left;padding:2px 10px;">Tagihan</th>'
                 .'<th style="text-align:left;padding:2px 10px;">Jatuh Tempo</th><th style="text-align:right;padding:2px 10px;">Nilai</th>'
+                .'<th style="text-align:center;padding:2px 10px;">Status</th>'
                 .'</tr></thead><tbody>'.$tg.'</tbody></table>'
             : '<span style="color:#94a3b8;">Belum ada jadwal tagihan.</span>';
 

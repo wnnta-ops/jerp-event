@@ -32,6 +32,19 @@ class TtsToBkmService
                 'keterangan' => 'Otomatis dari TTS '.$tts->no_tts,
             ]);
 
+            // UTJ / Booking Fee: kurangi sisa baris BF di Jadwal Tagihan SPR + link
+            // kwitansi ke baris tagihan, agar sisa & Surat SP (Collection) akurat.
+            if ($tts->kontrak_id && $tts->jenis_pembayaran === 'BOOKING') {
+                $bf = \App\Modules\FO\MarketingSales\Models\KontrakTagihan::query()
+                    ->where('kontrak_id', $tts->kontrak_id)->where('tipe', 'BF')
+                    ->whereRaw('nilai - pelunasan > 0.5')->orderBy('urutan')->first();
+                if ($bf) {
+                    $bf->pelunasan = (float) $bf->pelunasan + min((float) $tts->amount, (float) $bf->sisa);
+                    $bf->save();
+                    $bkm->update(['kontrak_tagihan_id' => $bf->id]);
+                }
+            }
+
             $tts->update([
                 'status' => 'JADI_BKM',
                 'bkm_id' => $bkm->id,

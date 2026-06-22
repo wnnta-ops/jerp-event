@@ -6,6 +6,7 @@ use App\Models\Bank;
 use App\Models\Concerns\TenantAwareModel;
 use App\Modules\FO\MarketingSales\Models\Customer;
 use App\Modules\FO\MarketingSales\Models\Kontrak;
+use App\Modules\FO\MarketingSales\Models\KontrakTagihan;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class Bkm extends TenantAwareModel
@@ -19,6 +20,7 @@ class Bkm extends TenantAwareModel
         'tts_id',
         'customer_id',
         'kontrak_id',
+        'kontrak_tagihan_id',
         'bank_id',
         'amount',
         'jenis_pembayaran',
@@ -46,6 +48,11 @@ class Bkm extends TenantAwareModel
     public function kontrak(): BelongsTo
     {
         return $this->belongsTo(Kontrak::class);
+    }
+
+    public function kontrakTagihan(): BelongsTo
+    {
+        return $this->belongsTo(KontrakTagihan::class);
     }
 
     public function bank(): BelongsTo

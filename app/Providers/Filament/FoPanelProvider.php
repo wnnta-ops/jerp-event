@@ -191,6 +191,7 @@ class FoPanelProvider extends PanelProvider
             'upload-koordinat-editor' => 'setup',
             // Finance AR
             'tts' => 'finance',
+            'pelunasan-angsuran' => 'finance',
             'bkms' => 'finance',
             'vas' => 'finance',
             'memos' => 'finance',
@@ -337,6 +338,7 @@ class FoPanelProvider extends PanelProvider
                 'icon' => 'heroicon-o-banknotes',
                 'items' => [
                     $item('TTS', '/fo/tts', 'heroicon-o-ticket', 'filament.fo.resources.tts.'),
+                    $item('Pelunasan DP, Angsuran & TDP', '/fo/pelunasan-angsuran', 'heroicon-o-banknotes', 'filament.fo.pages.pelunasan-angsuran'),
                     $item('Kwitansi', '/fo/bkms', 'heroicon-o-banknotes', 'filament.fo.resources.bkms.'),
                     $item('Faktur Penjualan', '/fo/fps', 'heroicon-o-receipt-percent', 'filament.fo.resources.fps.'),
                     $item('Bilyet Giro', '/fo/bgs', 'heroicon-o-document-currency-dollar', 'filament.fo.resources.bgs.'),
