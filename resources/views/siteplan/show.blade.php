@@ -72,6 +72,7 @@
             white-space: nowrap; text-shadow: 0 1px 1px rgba(0,0,0,.25);
         }
         .sold-stamp.booking { background: #d97706; }   /* BOOKING */
+        .sold-stamp.hold { background: #ea580c; }      /* HOLD */
 
         /* Popup — Design C: kartu terang + harga sejajar (modern) */
         .leaflet-popup-content-wrapper { background:#fff; color:#0f172a; border-radius:16px; padding:0; box-shadow:0 20px 50px rgba(15,23,42,.25); border:1px solid #e2e8f0; }
@@ -191,10 +192,11 @@
 
             const toLatLng = (x, y) => [H - y, x];
 
-            // Stempel per status: SOLD (terjual/lunas) atau BOOKING. null = tanpa stempel.
+            // Stempel per status: SOLD (terjual/lunas), BOOKING, atau HOLD. null = tanpa stempel.
             const stampFor = (s) => (s === 'TERJUAL' || s === 'LUNAS')
                 ? { text: 'SOLD', cls: '' }
-                : (s === 'BOOKING' ? { text: 'BOOKED', cls: ' booking' } : null);
+                : (s === 'BOOKING' ? { text: 'BOOKED', cls: ' booking' }
+                : (s === 'HOLD' ? { text: 'HOLD', cls: ' hold' } : null));
 
             // Stempel SOLD ikut skala zoom: di zoom paling jauh (fit) ukurannya kecil,
             // membesar proporsional saat zoom-in supaya selalu pas dengan kavling.

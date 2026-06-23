@@ -129,6 +129,9 @@ class PublicForm extends Component
 
     public bool $submitted = false;
 
+    // Langkah pratinjau: klik Register → tampil preview data & dokumen → konfirmasi baru daftar.
+    public bool $reviewing = false;
+
     public function updatedKtpFile(): void
     {
         $this->validateOnly('ktp_file');
@@ -220,6 +223,27 @@ class PublicForm extends Component
             'bukti_transfer_file.required' => 'Bukti transfer wajib di-upload.',
             'unit_diinginkan.required' => 'Unit yang diinginkan wajib diisi.',
         ];
+    }
+
+    /** Langkah 1: validasi → tampilkan pratinjau data & dokumen (belum mendaftar). */
+    public function review(): void
+    {
+        try {
+            $this->validate();
+        } catch (ValidationException $e) {
+            $first = collect($e->errors())->keys()->first();
+            $this->dispatch('nup-validation-failed', field: (string) $first, count: count($e->errors()));
+            throw $e;
+        }
+
+        $this->reviewing = true;
+        $this->dispatch('scroll-to-top');
+    }
+
+    /** Kembali dari pratinjau ke form untuk perbaiki data. */
+    public function backToForm(): void
+    {
+        $this->reviewing = false;
     }
 
     public function submit(BookedRegistrationService $service, RecaptchaVerifier $recaptcha, FoSettings $settings): void
@@ -320,6 +344,6 @@ class PublicForm extends Component
             'agents' => Agent::query()->where('is_active', true)->salesPicker()->orderBy('name')->get(),
             'sumberDataOptions' => SumberData::query()->where('is_active', true)->orderBy('urutan')->orderBy('nama')->get(),
             'settings' => app(FoSettings::class),
-        ])->layout('layouts.nup-public', ['title' => 'Pendaftaran Booked']);
+        ])->layout('layouts.nup-public', ['title' => 'Pendaftaran Booked', 'systemName' => 'BOOKED SYSTEM']);
     }
 }

@@ -54,7 +54,7 @@ class BerkasLengkapResource extends Resource
                 Tables\Columns\TextColumn::make('no_kontrak')->label('No. Kontrak')->badge()->searchable()->sortable(),
                 Tables\Columns\TextColumn::make('customer.full_name')->label('Customer')->searchable(),
                 Tables\Columns\TextColumn::make('unit')->label('Unit')
-                    ->state(fn (Kontrak $r) => $r->unit?->alamat ?: $r->unit?->kode_unit ?: '—'),
+                    ->state(fn (Kontrak $r) => $r->unit?->kode_unit ?: '—'),
                 Tables\Columns\TextColumn::make('tahap')->label('Tahap')->badge()->color('gray'),
                 Tables\Columns\TextColumn::make('tgl_berkas_lengkap')->label('Tgl Berkas Lengkap')
                     ->date('d M Y')->placeholder('— berkas di awal (semua DP free)')

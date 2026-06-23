@@ -21,9 +21,17 @@ class SiteplanController
     /** Landing: pick a project/cluster. */
     public function index(): View
     {
+        // Tampilkan project yang punya siteplan level project ATAU punya cluster
+        // (Lokasi) dengan siteplan sendiri — per-cluster ikut dipublikasikan.
         $projects = Project::query()
             ->where('is_active', true)
-            ->whereNotNull('siteplan_image_path')
+            ->where(function ($q) {
+                $q->whereNotNull('siteplan_image_path')
+                    ->orWhereExists(fn ($sub) => $sub->selectRaw('1')->from('fo_lokasi as l')
+                        ->whereColumn('l.project_id', 'projects.id')
+                        ->where('l.is_active', true)
+                        ->whereNotNull('l.siteplan_image_path'));
+            })
             ->orderBy('name')
             ->get();
 

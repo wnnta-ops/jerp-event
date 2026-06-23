@@ -3,6 +3,32 @@
 Folder ini untuk aplikasi **mobile approver** (Expo / React Native) yang terhubung
 ke J-ERP lewat **Mobile Approver API** (`/api/mobile/*`, auth Sanctum token).
 
+## 🚀 Jalankan via Docker (satu klik)
+
+Tak perlu install Node di server. Dari root repo:
+
+```bash
+docker compose -f docker-compose.mobile.yml up -d      # start (Node 20 + Expo)
+docker logs -f jerp-mobile                              # lihat QR / URL exp://...
+```
+
+Scan QR dengan **Expo Go** di HP (Android: app Expo Go; iOS: Camera). Mode **tunnel**
+(default) → HP connect dari jaringan mana pun, tak perlu buka firewall. API tetap
+dipanggil HP langsung ke domain produksi (lihat `src/config.ts` → `API_BASE_URL`).
+
+Stop: `docker compose -f docker-compose.mobile.yml down`.
+
+> **Catatan**
+> - Login pakai akun J-ERP (mis. `admin@jerp.test`). Hanya approve/reject + riwayat.
+> - Build pertama lambat (`npm install` di dalam container, ~beberapa menit) — `node_modules`
+>   disimpan di named volume jadi start berikutnya cepat.
+> - Kalau **tunnel gagal** (ngrok), pakai mode **LAN**: di `docker-compose.mobile.yml`
+>   set `REACT_NATIVE_PACKAGER_HOSTNAME` ke IP/domain server, ganti command ke
+>   `npx expo start --port 8081`, dan buka **port 9091** di firewall. Lalu di Expo Go
+>   buka `exp://<ip-server>:9091`.
+> - Untuk produksi jangka panjang, sebaiknya **build APK** (EAS Build) lalu pasang di HP —
+>   tak perlu Expo/dev-server jalan terus.
+
 ## Cara memindahkan `approval_flow` ke sini
 
 1. Pindahkan **isi** folder `C:\Users\itptm\Documents\Project\Docker\approval_flow`

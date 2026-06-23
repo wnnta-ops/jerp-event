@@ -55,7 +55,7 @@ class CollectionResource extends Resource
                 Tables\Columns\TextColumn::make('customer.full_name')->label('Customer')->searchable()
                     ->description(fn (Kontrak $r) => $r->customer?->mobile ?: $r->customer?->phone),
                 Tables\Columns\TextColumn::make('unit')->label('Unit')
-                    ->state(fn (Kontrak $r) => $r->unit?->alamat ?: $r->unit?->kode_unit ?: '—'),
+                    ->state(fn (Kontrak $r) => $r->unit?->kode_unit ?: '—'),
                 // Judul kolom tetap "Cara bayar", tapi isinya nama Skema Bayar kontrak.
                 // Nama kolom virtual (bukan 'skema') agar tak bentrok dgn relasi skema().
                 Tables\Columns\TextColumn::make('skema_bayar')->label('Cara bayar')->badge()

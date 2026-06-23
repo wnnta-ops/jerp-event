@@ -11,14 +11,99 @@
             <div class="rounded-lg p-4 mb-2 text-left" style="background:#f0f9ff; border:1px solid #bae6fd;">
                 <p class="text-sm" style="color:#075985;">
                     Mohon lakukan <strong>transfer pembayaran ke rekening perusahaan</strong>. Data Anda akan
-                    <strong>diverifikasi oleh tim kami</strong> (cek mutasi bank) terlebih dahulu. Setelah disetujui,
-                    Surat Pemesanan (SPRS) akan diterbitkan dan dikirim ke email Anda.
+                    <strong>diverifikasi oleh tim kami</strong> terlebih dahulu.
                 </p>
             </div>
-            <p class="text-xs mt-4" style="color:#6b7280;">Mohon cek email Anda secara berkala untuk informasi selanjutnya.</p>
+        </div>
+    @elseif ($reviewing)
+        {{-- ── Pratinjau data & dokumen sebelum daftar ───────────────── --}}
+        <div class="max-w-3xl mx-auto" x-data="{ zoom: null }" x-init="window.scrollTo({top:0,behavior:'smooth'})">
+            <div class="nup-card mb-4">
+                <h1 class="text-lg font-semibold mb-1" style="color:#111827;">Periksa Data Pendaftaran</h1>
+                <p class="text-sm" style="color:#6b7280;">Pastikan data &amp; dokumen yang Anda unggah sudah benar. Bila sudah, klik <strong>Konfirmasi &amp; Daftar</strong>. Bila ada yang salah, klik <strong>Kembali</strong>.</p>
+            </div>
+
+            @php
+                $prow = fn ($l, $v) => '<div><dt style="color:#6b7280;font-size:12px;margin-bottom:1px;">'.$l.'</dt><dd style="color:#111827;font-weight:600;">'.($v !== '' && $v !== null ? $v : '—').'</dd></div>';
+            @endphp
+
+            <div class="nup-card mb-4">
+                <h2 class="text-sm font-semibold mb-3" style="color:#111827;">Data Pendaftar</h2>
+                <dl class="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-2 text-sm">
+                    {!! $prow('Nama Lengkap', e($full_name)) !!}
+                    {!! $prow('NIK', e($nik)) !!}
+                    {!! $prow('NPWP', e($npwp)) !!}
+                    {!! $prow('Tempat / Tgl Lahir', e(trim(($birth_place ?? '').' / '.($birth_date ?? ''), ' /'))) !!}
+                    {!! $prow('No. HP', e($mobile)) !!}
+                    {!! $prow('Email', e($email)) !!}
+                    {!! $prow('Alamat KTP', e(trim(preg_replace('/\s+/', ' ', ($jalan ?? '').' '.($rt_rw ?? '').' '.($kelurahan ?? '').' '.($kecamatan ?? '').' '.($city ?? '').' '.($province ?? '').' '.($postal_code ?? ''))))) !!}
+                    {!! $prow('Unit Diinginkan', e($unit_diinginkan)) !!}
+                    {!! $prow('Cara Bayar', e($cara_bayar)) !!}
+                    {!! $prow('Sales', e($ref_sales_name)) !!}
+                </dl>
+            </div>
+
+            @if ($marital_status === 'KAWIN')
+                <div class="nup-card mb-4">
+                    <h2 class="text-sm font-semibold mb-3" style="color:#111827;">Data Pasangan</h2>
+                    <dl class="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-2 text-sm">
+                        {!! $prow('Nama Pasangan', e($spouse_full_name)) !!}
+                        {!! $prow('NIK Pasangan', e($spouse_nik)) !!}
+                    </dl>
+                </div>
+            @endif
+
+            <div class="nup-card mb-4">
+                <h2 class="text-sm font-semibold mb-3" style="color:#111827;">Dokumen Diunggah</h2>
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+                    @foreach ([['KTP', $ktp_file], ['NPWP', $npwp_file], ['KTP Pasangan', $ktp_pasangan_file], ['Bukti Transfer', $bukti_transfer_file]] as $doc)
+                        <div class="rounded-lg p-2 text-center" style="border:1px solid #e5e7eb;background:#f9fafb;">
+                            <div class="text-xs font-semibold mb-1" style="color:#374151;">{{ $doc[0] }}</div>
+                            @if ($doc[1])
+                                @php $ext = strtolower($doc[1]->getClientOriginalExtension()); @endphp
+                                @if (in_array($ext, ['jpg', 'jpeg', 'png']))
+                                    <img src="{{ $doc[1]->temporaryUrl() }}" alt="{{ $doc[0] }}" class="mx-auto rounded"
+                                         style="max-height:150px;object-fit:contain;cursor:zoom-in;"
+                                         @click="zoom = '{{ $doc[1]->temporaryUrl() }}'">
+                                @else
+                                    <div class="py-6">
+                                        <div style="font-size:30px;">📄</div>
+                                        <div class="break-all" style="color:#6b7280;font-size:11px;">{{ $doc[1]->getClientOriginalName() }}</div>
+                                    </div>
+                                @endif
+                            @else
+                                <div class="py-6 text-xs" style="color:#9ca3af;">— tidak ada —</div>
+                            @endif
+                        </div>
+                    @endforeach
+                </div>
+            </div>
+
+            <div class="nup-card flex flex-col md:flex-row gap-3 md:justify-between">
+                <button type="button" wire:click="backToForm"
+                        class="inline-flex items-center justify-center gap-2 rounded px-6 py-2 text-sm font-semibold whitespace-nowrap"
+                        style="background:#e5e7eb;color:#374151;">
+                    ← Kembali / Perbaiki
+                </button>
+                <button type="button" wire:click="submit"
+                        class="inline-flex items-center justify-center gap-2 rounded px-6 py-2 text-sm font-semibold text-white whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed"
+                        style="background:#16a34a;"
+                        wire:loading.attr="disabled" wire:target="submit">
+                    <svg wire:loading wire:target="submit" class="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"/></svg>
+                    <span wire:loading.remove wire:target="submit">Register</span>
+                    <span wire:loading wire:target="submit">Mengirim…</span>
+                </button>
+            </div>
+
+            {{-- Lightbox: klik gambar untuk perbesar; klik area / Esc untuk tutup --}}
+            <div x-show="zoom" @click="zoom = null" @keydown.escape.window="zoom = null"
+                 class="fixed inset-0 flex items-center justify-center p-4"
+                 style="background:rgba(0,0,0,.85);z-index:60;cursor:zoom-out;">
+                <img :src="zoom" alt="" class="rounded" style="max-width:95%;max-height:95%;object-fit:contain;">
+            </div>
         </div>
     @else
-    <form wire:submit="submit" enctype="multipart/form-data"
+    <form wire:submit="review" enctype="multipart/form-data"
           x-data
           @nup-validation-failed.window="
             const el = document.getElementById('errors-summary');
@@ -456,10 +541,10 @@
                 class="inline-flex items-center justify-center gap-2 rounded px-6 py-2 text-sm font-semibold text-white whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed"
                 style="background:#2563eb;"
                 @disabled(! $pernyataan_setuju)
-                wire:loading.attr="disabled" wire:target="submit">
-            <svg wire:loading wire:target="submit" class="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"/></svg>
-            <span wire:loading.remove wire:target="submit">Register</span>
-            <span wire:loading wire:target="submit">Mengirim…</span>
+                wire:loading.attr="disabled" wire:target="review">
+            <svg wire:loading wire:target="review" class="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"/></svg>
+            <span wire:loading.remove wire:target="review">Register</span>
+            <span wire:loading wire:target="review">Memeriksa…</span>
         </button>
     </div>
 
