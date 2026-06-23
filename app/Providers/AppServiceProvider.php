@@ -101,6 +101,26 @@ class AppServiceProvider extends ServiceProvider
                 ->stripCharacters('.')
                 ->formatStateUsing(fn ($state) => Rupiah::formatState($state));
         });
+
+        // Field tarif yang MENGIKUTI toggle Tipe Tarif (PERSEN/RP):
+        //  - RP     → prefix Rp + mask ribuan (seperti rupiah())
+        //  - PERSEN → suffix % + angka biasa (boleh desimal)
+        // Toggle-nya wajib ->live() agar format ikut berubah saat dipilih.
+        TextInput::macro('rupiahPersen', function (string $toggle = 'tipe_tarif', string $rpValue = 'RP') {
+            /** @var TextInput $this */
+            $isRp = fn (\Filament\Forms\Get $get): bool => $get($toggle) === $rpValue;
+
+            return $this
+                ->prefix(fn (\Filament\Forms\Get $get) => $isRp($get) ? 'Rp' : null)
+                ->suffix(fn (\Filament\Forms\Get $get) => $isRp($get) ? null : '%')
+                ->mask(fn (\Filament\Forms\Get $get) => $isRp($get) ? RawJs::make("\$money(\$input, ',', '.', 0)") : null)
+                ->dehydrateStateUsing(fn ($state, \Filament\Forms\Get $get) => $isRp($get)
+                    ? (float) str_replace('.', '', (string) $state)
+                    : (float) str_replace(',', '.', (string) $state))
+                ->formatStateUsing(fn ($state, \Filament\Forms\Get $get) => $isRp($get)
+                    ? Rupiah::formatState($state)
+                    : (rtrim(rtrim(number_format((float) $state, 2, '.', ''), '0'), '.') ?: '0'));
+        });
     }
 
     /**

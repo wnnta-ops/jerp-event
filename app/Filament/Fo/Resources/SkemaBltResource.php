@@ -63,8 +63,8 @@ class SkemaBltResource extends Resource
                                     ->orderBy('name')->pluck('name', 'id');
                             })->searchable()->required()->helperText('Dari master Level Sales.'),
                         Forms\Components\Radio::make('tipe_tarif')->label('Tipe Tarif')->inline()
-                            ->options(['PERSEN' => '%', 'RP' => 'Rp'])->default('RP')->required(),
-                        Forms\Components\TextInput::make('tarif')->label('Tarif Komisi')->numeric()->required()->default(0),
+                            ->options(['PERSEN' => '%', 'RP' => 'Rp'])->default('RP')->required()->live(),
+                        Forms\Components\TextInput::make('tarif')->label('Tarif Komisi')->rupiahPersen()->required()->default(0),
                         Forms\Components\Radio::make('potong_komisi')->label('Potong Komisi')->inline()
                             ->options([0 => 'Tidak', 1 => 'Ya'])->default(0)->boolean(),
                     ]),

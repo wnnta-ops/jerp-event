@@ -84,8 +84,8 @@ class SkemaKomisiResource extends Resource
                             })
                             ->searchable()->required()->helperText('Dari master Level Sales.'),
                         Forms\Components\Radio::make('tipe_tarif')->label('Tipe Tarif')->inline()
-                            ->options(['PERSEN' => '%', 'RP' => 'Rp'])->default('PERSEN')->required(),
-                        Forms\Components\TextInput::make('tarif')->label('Tarif Komisi')->numeric()->required()->default(0),
+                            ->options(['PERSEN' => '%', 'RP' => 'Rp'])->default('PERSEN')->required()->live(),
+                        Forms\Components\TextInput::make('tarif')->label('Tarif Komisi')->rupiahPersen()->required()->default(0),
                     ]),
             ]),
 
