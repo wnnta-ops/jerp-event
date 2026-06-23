@@ -5,6 +5,7 @@ namespace App\Filament\Fo\Resources;
 use App\Filament\Fo\Resources\BkmResource\Pages;
 use App\Modules\FO\FinanceAR\Models\Bkm;
 use Filament\Forms;
+use Filament\Notifications\Notification;
 use Filament\Forms\Form;
 use Filament\Resources\Resource;
 use Filament\Tables;
@@ -154,6 +155,22 @@ class BkmResource extends Resource
                 Tables\Actions\EditAction::make(),
                 Tables\Actions\Action::make('cetak_kwitansi')->label('Cetak Kwitansi')->icon('heroicon-o-printer')->color('success')
                     ->url(fn ($record) => route('fo.cetak.kwitansi', $record), shouldOpenInNewTab: true),
+                // Batal: status → BATAL & dana kembali ke step sebelumnya (TTS / tagihan).
+                Tables\Actions\Action::make('batal')->label('Batal')->icon('heroicon-o-x-circle')->color('danger')
+                    ->visible(fn (Bkm $record) => $record->status !== 'BATAL')
+                    ->requiresConfirmation()
+                    ->modalHeading('Batalkan Kwitansi')
+                    ->modalDescription(fn (Bkm $record) => 'Batalkan '.$record->no_bkm.' (Rp '.number_format((float) $record->amount, 0, ',', '.').')? Status jadi BATAL & dana kembali ke '
+                        .($record->tts_id ? 'TTS '.($record->tts?->no_tts ?? '') : ($record->kontrak_tagihan_id ? 'tagihan '.($record->kontrakTagihan?->nama_tagihan ?? '') : 'sumbernya')).'.')
+                    ->action(function (Bkm $record) {
+                        try {
+                            app(\App\Modules\FO\FinanceAR\Services\BkmCancelService::class)->cancel($record);
+                            Notification::make()->success()->title('Kwitansi dibatalkan')
+                                ->body($record->no_bkm.' → BATAL. Dana dikembalikan ke step sebelumnya.')->send();
+                        } catch (\Throwable $e) {
+                            Notification::make()->danger()->title('Gagal membatalkan')->body($e->getMessage())->persistent()->send();
+                        }
+                    }),
             ])
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([
