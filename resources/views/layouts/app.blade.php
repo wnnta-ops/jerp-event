@@ -6,7 +6,7 @@
     <meta name="theme-color" content="#1e40af">
     <meta name="csrf-token" content="{{ csrf_token() }}">
 
-    <title>{{ $title ?? 'J-ERP' }} · {{ config('app.name') }}</title>
+    <title>{{ $title ?? 'Java Core' }} · {{ config('app.name') }}</title>
     <link rel="icon" href="{{ asset('favicon.svg') }}" type="image/svg+xml">
     <link rel="alternate icon" href="{{ asset('favicon.ico') }}">
 
@@ -31,7 +31,7 @@
 
         <footer class="border-t px-6 py-4 text-xs text-center"
                 style="border-color: var(--color-surface-border); color: var(--color-text-muted);">
-            J-ERP · Property Developer ERP — clone modern dari eProperty legacy
+            Java Core · Property Developer ERP — clone modern dari eProperty legacy
         </footer>
     </div>
 </div>

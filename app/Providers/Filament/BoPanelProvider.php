@@ -25,7 +25,7 @@ class BoPanelProvider extends PanelProvider
         return $panel
             ->id('bo')
             ->path('bo')
-            ->brandName('J-ERP · Back Office')
+            ->brandName('Java Core · Back Office')
             ->favicon(asset('favicon.svg'))
             ->login()
             ->colors([

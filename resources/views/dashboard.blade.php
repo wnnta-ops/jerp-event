@@ -57,7 +57,7 @@
         <a href="{{ route('dashboard') }}" class="flex items-center gap-2 font-bold tracking-tight">
             <span class="inline-grid place-items-center w-8 h-8 rounded text-white"
                   style="background-color: var(--color-brand-600);">J</span>
-            <span class="text-lg" style="color: var(--color-text);">J-ERP</span>
+            <span class="text-lg" style="color: var(--color-text);">Java Core</span>
         </a>
 
         <div class="ml-auto flex items-center gap-2">

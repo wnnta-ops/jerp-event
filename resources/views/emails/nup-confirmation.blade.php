@@ -74,7 +74,7 @@
 
     <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 24px 0;">
     <p style="color: #6b7280; font-size: 13px;">
-        Email ini dikirim otomatis oleh sistem J-ERP. Jangan balas email ini.<br>
+        Email ini dikirim otomatis oleh sistem Java Core. Jangan balas email ini.<br>
         Untuk pertanyaan, hubungi tim sales atau marketing kami.
     </p>
 </body>

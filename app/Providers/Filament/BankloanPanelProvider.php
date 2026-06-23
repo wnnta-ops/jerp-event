@@ -25,7 +25,7 @@ class BankloanPanelProvider extends PanelProvider
         return $panel
             ->id('bankloan')
             ->path('bankloan')
-            ->brandName('J-ERP · Bank Loan (KPR)')
+            ->brandName('Java Core · Bank Loan (KPR)')
             ->favicon(asset('favicon.svg'))
             ->login()
             ->colors([

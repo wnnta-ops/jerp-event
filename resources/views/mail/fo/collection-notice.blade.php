@@ -20,7 +20,7 @@
                     </tr>
                     <tr>
                         <td style="padding:14px 24px; background:#f9fafb; border-top:1px solid #e5e7eb; font-size:11px; color:#6b7280;">
-                            Email ini dikirim otomatis oleh sistem Collection J-ERP. Mohon tidak membalas email ini.
+                            Email ini dikirim otomatis oleh sistem Collection Java Core. Mohon tidak membalas email ini.
                         </td>
                     </tr>
                 </table>

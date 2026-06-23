@@ -40,7 +40,7 @@
                   style="background-color: {{ $moduleColor }};">J</span>
             <span x-show="sidebarOpen" x-cloak class="text-sm leading-tight">
                 <span class="block" style="color: var(--color-text);">{{ $moduleName }}</span>
-                <span class="block text-xs font-normal" style="color: var(--color-text-muted);">J-ERP</span>
+                <span class="block text-xs font-normal" style="color: var(--color-text-muted);">Java Core</span>
             </span>
         </a>
     </div>

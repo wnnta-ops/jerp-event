@@ -3,7 +3,7 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-    <meta name="theme-color" content="#0f172a">
+    <meta name="theme-color" content="#F37321">
     <meta name="csrf-token" content="{{ csrf_token() }}">
 
     <title>{{ $title ?? 'Pendaftaran NUP' }} · {{ config('app.name') }}</title>
@@ -72,11 +72,11 @@
 </head>
 <body class="min-h-screen antialiased" style="background: #f5f6fa;">
 
-<header style="background: #0f172a; border-bottom: 1px solid #1e293b;">
+<header style="background: #F37321; border-bottom: 1px solid #d9641a;">
     <div class="flex items-center gap-3 px-4 md:px-8 py-3 max-w-screen-xl mx-auto">
-        <span class="inline-grid place-items-center w-7 h-7 rounded text-white font-bold text-sm"
-              style="background-color: #2563eb;">N</span>
-        <span class="text-sm font-semibold tracking-wide" style="color: #f1f5f9;">NUP SYSTEM</span>
+        <span class="inline-grid place-items-center w-7 h-7 rounded font-bold text-sm"
+              style="background-color: #ffffff; color: #F37321;">{{ strtoupper(substr($systemName ?? 'NUP SYSTEM', 0, 1)) }}</span>
+        <span class="text-sm font-semibold tracking-wide" style="color: #ffffff;">{{ $systemName ?? 'NUP SYSTEM' }}</span>
     </div>
 </header>
 

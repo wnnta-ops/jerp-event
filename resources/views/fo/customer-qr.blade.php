@@ -28,7 +28,7 @@
 </head>
 <body>
     <div class="card">
-        <div class="brand">J-ERP · Kartu Customer</div>
+        <div class="brand">Java Core · Kartu Customer</div>
         <div class="qr">{!! $svg !!}</div>
         <div class="code">{{ $code }}</div>
         <div class="name">{{ $customer->full_name }}</div>

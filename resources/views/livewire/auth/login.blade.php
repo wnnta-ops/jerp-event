@@ -4,7 +4,7 @@
     <div class="flex flex-col items-center text-center mb-6">
         <span class="grid place-items-center w-12 h-12 rounded-xl text-white text-xl font-bold mb-3"
               style="background-color: var(--color-brand-600);">J</span>
-        <h1 class="text-2xl font-bold tracking-tight" style="color: var(--color-text);">J-ERP</h1>
+        <h1 class="text-2xl font-bold tracking-tight" style="color: var(--color-text);">Java Core</h1>
         <p class="text-sm mt-1" style="color: var(--color-text-muted);">Masuk ke akun Anda</p>
     </div>
 

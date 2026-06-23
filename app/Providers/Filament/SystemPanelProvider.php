@@ -26,7 +26,7 @@ class SystemPanelProvider extends PanelProvider
             ->default()
             ->id('system')
             ->path('system')
-            ->brandName('J-ERP · System')
+            ->brandName('Java Core · System')
             ->favicon(asset('favicon.svg'))
             ->login()
             ->colors([

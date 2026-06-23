@@ -24,7 +24,7 @@
 <body>
     <div class="head">
         <div>
-            <div class="title">{{ $jurnal->company->name ?? 'J-ERP' }}</div>
+            <div class="title">{{ $jurnal->company->name ?? 'Java Core' }}</div>
             <div>Voucher Jurnal — {{ $jurnal->jenis_dokumen }}</div>
         </div>
         <div style="text-align:right">

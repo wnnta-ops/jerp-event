@@ -15,7 +15,7 @@ class InitialAdminSeeder extends Seeder
             [
                 'tenant_id' => 1,
                 'name' => 'Super Admin',
-                'full_name' => 'J-ERP Super Admin',
+                'full_name' => 'Java Core Super Admin',
                 'password' => Hash::make('password'),
                 'email_verified_at' => now(),
                 'is_active' => true,

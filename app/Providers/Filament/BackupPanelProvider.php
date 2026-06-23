@@ -26,7 +26,7 @@ class BackupPanelProvider extends PanelProvider
         return $panel
             ->id('backup')
             ->path('backup')
-            ->brandName('J-ERP · Backup')
+            ->brandName('Java Core · Backup')
             ->favicon(asset('favicon.svg'))
             ->login()
             ->colors([
