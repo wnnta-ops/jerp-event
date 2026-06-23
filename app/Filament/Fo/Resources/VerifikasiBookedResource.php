@@ -39,6 +39,10 @@ class VerifikasiBookedResource extends Resource
 
     public static function table(Table $table): Table
     {
+        // Lepas unit yang masa hold-nya sudah lewat tanggal setup — langsung saat
+        // halaman dibuka (tak menunggu scheduler), sesuai periode Setup Hold.
+        app(\App\Modules\FO\Booked\Services\HoldService::class)->releaseExpired();
+
         return $table
             ->query(NupRegistration::query()->where('jenis', 'BOOKED')->with(['customer', 'transferAnonim.bank']))
             ->columns([
@@ -82,6 +86,47 @@ class VerifikasiBookedResource extends Resource
                         ->url(fn (NupRegistration $r) => route('fo.booked.bukti', $r->id).'?download=1')
                         ->visible(fn (NupRegistration $r) => (bool) $r->bukti_transfer_path),
                 ])->label('Berkas')->icon('heroicon-o-paper-clip')->button()->color('gray'),
+                // Hold Unit sementara — HANYA muncul saat ada periode Setup Hold aktif
+                // (sebelum tanggal periode, tombol disembunyikan). Sales reservasi unit
+                // sampai finance cocokkan transfer; auto-tersedia bila lewat masa hold.
+                Tables\Actions\Action::make('hold')->label('Hold Unit')->icon('heroicon-o-pause-circle')->color('warning')
+                    ->visible(fn (NupRegistration $r) => $r->verif_status === 'MENUNGGU_BAYAR'
+                        && app(\App\Modules\FO\Booked\Services\HoldService::class)->isHoldActive()
+                        && ! \App\Modules\FO\MarketingSales\Models\Unit::where('hold_registration_id', $r->id)->where('status', 'HOLD')->exists())
+                    ->modalHeading('Hold Unit Sementara')
+                    ->modalDescription(fn (NupRegistration $r) => 'Unit diinginkan: '.($r->pilihan_unit_1 ?: '—').'. Berlaku sampai akhir periode hold; otomatis TERSEDIA lagi bila tak ada transfer cocok.')
+                    ->fillForm(fn (NupRegistration $r) => ['unit_id' => self::matchUnitId($r)])
+                    ->form([
+                        Forms\Components\Select::make('unit_id')->label('Unit (TERSEDIA)')->required()->searchable()
+                            ->options(fn (NupRegistration $r) => self::unitOptions($r))
+                            ->getOptionLabelUsing(fn ($value) => ($u = \App\Modules\FO\MarketingSales\Models\Unit::find($value)) ? ($u->kode_unit ?: trim(($u->blok ? $u->blok.' / ' : '').$u->no_unit)) : null)
+                            ->helperText('Default mengikuti unit diinginkan pendaftar. Pilih unit yang TERSEDIA.'),
+                    ])
+                    ->action(function (NupRegistration $r, array $data) {
+                        try {
+                            $unit = \App\Modules\FO\MarketingSales\Models\Unit::findOrFail($data['unit_id']);
+                            app(\App\Modules\FO\Booked\Services\HoldService::class)->holdUnit($r->id, $unit, auth()->id());
+                            Notification::make()->success()->title('Unit di-hold sementara')
+                                ->body('Unit '.($unit->kode_unit ?: $unit->no_unit).' di-hold s/d '.optional($unit->fresh()->hold_until)->format('d M Y H:i').'.')->send();
+                        } catch (\Throwable $e) {
+                            Notification::make()->danger()->title('Gagal hold')->body($e->getMessage())->send();
+                        }
+                    }),
+                // Cancel Hold — lepas hold manual (sebelum booked) → unit TERSEDIA lagi.
+                Tables\Actions\Action::make('cancel_hold')->label('Cancel Hold')->icon('heroicon-o-x-mark')->color('danger')
+                    ->visible(fn (NupRegistration $r) => ! $r->reservasi_id
+                        && \App\Modules\FO\MarketingSales\Models\Unit::where('hold_registration_id', $r->id)->where('status', 'HOLD')->exists())
+                    ->requiresConfirmation()
+                    ->modalHeading('Cancel Hold Unit')
+                    ->modalDescription(fn (NupRegistration $r) => 'Lepas hold unit untuk '.($r->nama_pendaftar ?: $r->customer?->full_name ?: 'pendaftar ini').'? Unit kembali TERSEDIA.')
+                    ->action(function (NupRegistration $r) {
+                        $unit = \App\Modules\FO\MarketingSales\Models\Unit::where('hold_registration_id', $r->id)->where('status', 'HOLD')->first();
+                        if ($unit) {
+                            app(\App\Modules\FO\Booked\Services\HoldService::class)->releaseUnit($unit);
+                            Notification::make()->success()->title('Hold dibatalkan')
+                                ->body('Unit '.($unit->kode_unit ?: $unit->no_unit).' kembali TERSEDIA.')->send();
+                        }
+                    }),
                 // Langkah 1 — Approve (cek mutasi bank). Belum pilih unit.
                 Tables\Actions\Action::make('approve')->label('Approve')->icon('heroicon-o-check-circle')->color('success')
                     ->visible(fn (NupRegistration $r) => $r->verif_status === 'MENUNGGU_BAYAR')
@@ -115,9 +160,31 @@ class VerifikasiBookedResource extends Resource
                             Notification::make()->danger()->title('Gagal approve')->body($e->getMessage())->send();
                         }
                     }),
+                // Held unit + sudah Approve (transfer cocok) → selesaikan langsung jadi
+                // booked (Kontrak SPRS + TTS) pakai unit yang di-hold, tanpa map.
+                Tables\Actions\Action::make('booked_hold')->label('Selesaikan Booked (Unit Hold)')->icon('heroicon-o-home-modern')->color('primary')
+                    ->visible(fn (NupRegistration $r) => $r->verif_status === 'APPROVED' && ! $r->reservasi_id
+                        && \App\Modules\FO\MarketingSales\Models\Unit::where('hold_registration_id', $r->id)->where('status', 'HOLD')->exists())
+                    ->modalHeading('Selesaikan Booked — pakai unit yang di-hold')
+                    ->form([
+                        Forms\Components\Select::make('skema_id')->label('Skema Bayar')->required()->searchable()
+                            ->options(fn () => \App\Modules\FO\Adminjual\Models\Skema::orderBy('name')->pluck('name', 'id')),
+                    ])
+                    ->action(function (NupRegistration $r, array $data) {
+                        try {
+                            $unit = \App\Modules\FO\MarketingSales\Models\Unit::where('hold_registration_id', $r->id)->where('status', 'HOLD')->firstOrFail();
+                            app(BookedVerificationService::class)->pilihUnit($r, $unit->id, (int) $data['skema_id']);
+                            Notification::make()->success()->title('Booked — Kontrak SPRS + TTS terbentuk')
+                                ->body('Unit '.($unit->kode_unit ?: $unit->no_unit).' kini BOOKING.')->send();
+                        } catch (\Throwable $e) {
+                            Notification::make()->danger()->title('Gagal')->body($e->getMessage())->send();
+                        }
+                    }),
                 // Langkah 2 — Pilih Unit → buka halaman tabel unit (pilih cluster → klik unit).
+                // Disembunyikan bila ada unit yang di-hold untuk reg ini (pakai aksi di atas).
                 Tables\Actions\Action::make('pilih_unit')->label('Pilih Unit')->icon('heroicon-o-home-modern')->color('primary')
-                    ->visible(fn (NupRegistration $r) => $r->verif_status === 'APPROVED' && ! $r->reservasi_id)
+                    ->visible(fn (NupRegistration $r) => $r->verif_status === 'APPROVED' && ! $r->reservasi_id
+                        && ! \App\Modules\FO\MarketingSales\Models\Unit::where('hold_registration_id', $r->id)->where('status', 'HOLD')->exists())
                     ->url(fn (NupRegistration $r) => '/fo/pilih-unit-booked?reg='.$r->id),
                 Tables\Actions\Action::make('reject')->label('Reject')->icon('heroicon-o-x-circle')->color('danger')
                     ->visible(fn (NupRegistration $r) => ! in_array($r->verif_status, ['APPROVED', 'REJECTED']))
@@ -150,5 +217,33 @@ class VerifikasiBookedResource extends Resource
     protected static function transferOptions(\Illuminate\Support\Collection $rows): array
     {
         return $rows->mapWithKeys(fn (TransferAnonim $t) => [$t->id => self::transferLabel($t)])->all();
+    }
+
+    /** Unit TERSEDIA untuk di-hold (default project pendaftar). */
+    protected static function unitOptions(NupRegistration $r): array
+    {
+        return \App\Modules\FO\MarketingSales\Models\Unit::query()
+            ->where('status', 'TERSEDIA')
+            ->when($r->project_pref_id, fn ($q) => $q->where('project_id', $r->project_pref_id))
+            ->orderBy('kode_unit')->limit(300)->get()
+            ->mapWithKeys(fn ($u) => [$u->id => ($u->kode_unit ?: trim(($u->blok ? $u->blok.' / ' : '').$u->no_unit))])
+            ->all();
+    }
+
+    /** Tebak unit TERSEDIA yang cocok dengan "Unit Diinginkan" (teks pendaftar). */
+    protected static function matchUnitId(NupRegistration $r): ?int
+    {
+        $want = trim((string) $r->pilihan_unit_1);
+        if ($want === '') {
+            return null;
+        }
+
+        return \App\Modules\FO\MarketingSales\Models\Unit::query()
+            ->where('status', 'TERSEDIA')
+            ->when($r->project_pref_id, fn ($q) => $q->where('project_id', $r->project_pref_id))
+            ->where(fn ($q) => $q->where('kode_unit', 'like', '%'.$want.'%')
+                ->orWhere('no_unit', 'like', '%'.$want.'%')
+                ->orWhere('alamat', 'like', '%'.$want.'%'))
+            ->value('id');
     }
 }

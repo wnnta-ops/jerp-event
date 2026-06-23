@@ -16,6 +16,9 @@ Artisan::command('inspire', function () {
  */
 Schedule::command('collection:run')->dailyAt('08:00')->withoutOverlapping();
 
+// Lepas unit yang masa hold-nya habis (tak ada transfer cocok) → TERSEDIA.
+Schedule::command('hold:release')->everyTenMinutes()->withoutOverlapping();
+
 /*
  * Backup terjadwal MULTI — loop semua BackupSchedule yang aktif. Tiap jadwal punya
  * frekuensi/jam/only_db sendiri (lokasi global ikut jadwal aktif pertama, lihat

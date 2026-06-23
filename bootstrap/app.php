@@ -14,6 +14,7 @@ return Application::configure(basePath: dirname(__DIR__))
     )
     ->withCommands([
         \App\Modules\FO\Collection\Console\CollectionRunCommand::class,
+        \App\Modules\FO\Booked\Console\HoldReleaseCommand::class,
     ])
     ->withMiddleware(function (Middleware $middleware): void {
         // Di belakang reverse proxy (mis. Nginx Proxy Manager) yang terminasi TLS,

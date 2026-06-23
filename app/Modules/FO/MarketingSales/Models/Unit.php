@@ -40,6 +40,10 @@ class Unit extends TenantAwareModel
         'price_list_kavling',
         'siteplan_coords',
         'status',
+        'hold_until',
+        'hold_registration_id',
+        'hold_by',
+        'hold_period_id',
         'keterangan',
         'is_active',
     ];
@@ -57,6 +61,7 @@ class Unit extends TenantAwareModel
         'price_list_kavling' => 'decimal:2',
         'siteplan_coords' => 'array',
         'is_active' => 'boolean',
+        'hold_until' => 'datetime',
     ];
 
     /** @var array<int,?string> cache kode project per process (fallback Lokasi) */

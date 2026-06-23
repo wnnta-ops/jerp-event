@@ -71,7 +71,10 @@ class BookedVerificationService
             // tolak unit yang sudah BOOKING/TERJUAL (dipegang pendaftar lain), bukan
             // hanya TERJUAL — cegah dobel-booking saat 2 verifikator pilih unit sama.
             $unit = Unit::lockForUpdate()->findOrFail($unitId);
-            if ($unit->status !== 'TERSEDIA') {
+            // Boleh TERSEDIA, atau HOLD yang memang di-hold untuk registrasi ini
+            // (transfer cocok dalam masa hold → lanjut booked, hold dilepas di bawah).
+            $heldForThis = $unit->status === 'HOLD' && (int) $unit->hold_registration_id === (int) $reg->id;
+            if ($unit->status !== 'TERSEDIA' && ! $heldForThis) {
                 throw new RuntimeException(
                     'Unit '.trim(($unit->blok ? $unit->blok.' / ' : '').$unit->no_unit).
                     ' sudah '.$unit->status.'. Pilih unit lain.'
@@ -116,7 +119,8 @@ class BookedVerificationService
 
             // SPRS = booking sementara → unit BOOKING (bukan TERJUAL). Jadi TERJUAL
             // saat kontrak naik ke SPR (lihat EditKontrak "Simpan sebagai SPR").
-            $unit->update(['status' => 'BOOKING']);
+            // Lepas field hold (kalau unit ini sebelumnya di-hold sales).
+            $unit->update(['status' => 'BOOKING', 'hold_until' => null, 'hold_registration_id' => null, 'hold_by' => null]);
             $reservasi->update(['status' => 'NAIK_KONTRAK']);
 
             app(KontrakGeneratorService::class)->all($kontrak);
@@ -124,6 +128,9 @@ class BookedVerificationService
             // TTS booking fee (transfer manual) → Buka Kuitansi (TtsToBkmService) → BKM → Kwitansi.
             $ttsId = null;
             if ($bookingFee > 0) {
+                // Bank, No. Referensi (berita bank), & keterangan ikut dari Transfer Anonim
+                // yang dicocokkan finance saat verifikasi.
+                $transfer = $reg->transferAnonim;
                 $tts = Tts::create([
                     'tenant_id' => $reg->tenant_id,
                     'no_tts' => $this->numerator->next('TTS'),
@@ -134,9 +141,12 @@ class BookedVerificationService
                     'jenis_pembayaran' => 'BOOKING',
                     'amount' => $bookingFee,
                     'cara_bayar' => 'TRANSFER',
+                    'bank_id' => $transfer?->bank_id,
+                    'no_referensi' => $transfer?->keterangan_bank,
                     'status' => 'KONFIRMASI',
                     'skip_gl_posting' => false,
-                    'keterangan' => 'Booking fee Booked manual '.$reg->nama_pendaftar,
+                    'keterangan' => 'Booking fee Booked manual '.$reg->nama_pendaftar
+                        .($transfer?->keterangan ? ' · '.$transfer->keterangan : ''),
                 ]);
                 $ttsId = $tts->id;
             }

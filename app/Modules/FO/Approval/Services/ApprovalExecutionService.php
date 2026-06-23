@@ -31,6 +31,9 @@ class ApprovalExecutionService
         if ($approval->jenis === 'KOMISI') {
             return $this->applyKomisi($approval);
         }
+        if ($approval->jenis === 'HOLD') {
+            return $this->applyHold($approval);
+        }
 
         $kontrak = $approval->subject;
         if (! $kontrak instanceof Kontrak) {
@@ -199,6 +202,18 @@ class ApprovalExecutionService
     private function ppn(float $total): float
     {
         return round($total - round($total / 1.11), 2);
+    }
+
+    /** Periode Hold >2 hari disetujui → status ACTIVE (tombol Hold mulai berlaku). */
+    private function applyHold(Approval $approval): string
+    {
+        $period = $approval->subject;
+        if (! $period instanceof \App\Modules\FO\Booked\Models\HoldPeriod) {
+            return 'Subjek bukan periode hold.';
+        }
+        $period->update(['status' => 'ACTIVE']);
+
+        return 'Periode Hold '.$period->tgl_mulai->format('d M Y').' – '.$period->tgl_selesai->format('d M Y').' disetujui & AKTIF.';
     }
 
     /** Eksekusi Pengajuan BLT: cairkan semua BLT dalam batch (PENDING → PAID). */

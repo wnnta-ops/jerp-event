@@ -28,7 +28,7 @@ class FoPanelProvider extends PanelProvider
         return $panel
             ->id('fo')
             ->path('fo')
-            ->brandName('J-ERP · Front Office')
+            ->brandName('Java Core · Front Office')
             ->favicon(asset('favicon.svg'))
             ->login()
             ->colors([
@@ -101,7 +101,7 @@ class FoPanelProvider extends PanelProvider
                 ->url(url('/fo'))
                 ->icon('heroicon-o-squares-2x2')
                 ->sort(-100),
-            NavigationItem::make('Menu utama (J-ERP)')
+            NavigationItem::make('Menu utama (Java Core)')
                 ->url(url('/dashboard'))
                 ->icon('heroicon-o-arrow-left-circle')
                 ->sort(-99),
@@ -192,6 +192,7 @@ class FoPanelProvider extends PanelProvider
             // Finance AR
             'tts' => 'finance',
             'pelunasan-angsuran' => 'finance',
+            'setup-hold' => 'finance',
             'bkms' => 'finance',
             'vas' => 'finance',
             'memos' => 'finance',
@@ -344,6 +345,7 @@ class FoPanelProvider extends PanelProvider
                     $item('Bilyet Giro', '/fo/bgs', 'heroicon-o-document-currency-dollar', 'filament.fo.resources.bgs.'),
                     $item('Refund / CB', '/fo/refunds', 'heroicon-o-arrow-uturn-left', 'filament.fo.resources.refunds.'),
                     $item('Transfer Anonim', '/fo/transfer-anonims', 'heroicon-o-question-mark-circle', 'filament.fo.resources.transfer-anonims.'),
+                    $item('Setup Hold', '/fo/setup-hold', 'heroicon-o-pause-circle', 'filament.fo.pages.setup-hold'),
                     $item('Dashboard AR', '/fo/reminder-ar', 'heroicon-o-presentation-chart-line', 'filament.fo.pages.reminder-ar'),
                 ],
             ],
