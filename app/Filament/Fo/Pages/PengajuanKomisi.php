@@ -3,6 +3,7 @@
 namespace App\Filament\Fo\Pages;
 
 use App\Modules\FO\Komisi\Models\Komisi;
+use App\Modules\FO\Komisi\Services\KomisiCalculatorService;
 use Filament\Forms;
 use Filament\Notifications\Notification;
 use Filament\Pages\Page;
@@ -75,6 +76,20 @@ class PengajuanKomisi extends Page implements HasTable
                         ]);
                         Notification::make()->success()->title('Komisi diperbarui — '.$r->no_komisi)->send();
                     }),
+                Tables\Actions\Action::make('recalc')->label('Hitung Ulang')->icon('heroicon-o-calculator')->color('info')
+                    ->requiresConfirmation()
+                    ->modalHeading('Hitung Ulang Komisi')
+                    ->modalDescription(fn (Komisi $r) => 'Hitung ulang Komisi & PPh '.$r->no_komisi.' dari Skema Komisi terbaru (memperbaiki PPh yang masih 0).')
+                    ->action(function (Komisi $r) {
+                        if (self::recalcKomisi($r)) {
+                            $r->refresh();
+                            $rp = fn ($v) => 'Rp '.number_format((float) $v, 0, ',', '.');
+                            Notification::make()->success()->title('Dihitung ulang — '.$r->no_komisi)
+                                ->body('Komisi '.$rp($r->amount).' · PPh '.$rp($r->pph_amount).' ('.rtrim(rtrim(number_format((float) $r->pph_persen, 2), '0'), '.').'%) · NETT '.$rp($r->amount_net))->send();
+                        } else {
+                            Notification::make()->danger()->title('Gagal hitung ulang')->body('Tak ada Skema Komisi cocok / kontrak tanpa agent.')->send();
+                        }
+                    }),
                 Tables\Actions\Action::make('ajukan')->label('Ajukan ke Approval')->icon('heroicon-o-paper-airplane')->color('warning')->button()
                     ->requiresConfirmation()
                     ->modalHeading('Ajukan ke Approval')
@@ -88,6 +103,18 @@ class PengajuanKomisi extends Page implements HasTable
                     }),
             ])
             ->bulkActions([
+                Tables\Actions\BulkAction::make('recalc_bulk')->label('Hitung Ulang Terpilih')->icon('heroicon-o-calculator')->color('info')
+                    ->requiresConfirmation()
+                    ->modalDescription('Hitung ulang Komisi & PPh terpilih dari Skema Komisi terbaru (memperbaiki PPh 0).')
+                    ->action(function ($records) {
+                        $ok = 0;
+                        foreach ($records as $r) {
+                            if (self::recalcKomisi($r)) {
+                                $ok++;
+                            }
+                        }
+                        Notification::make()->success()->title("$ok komisi dihitung ulang")->send();
+                    })->deselectRecordsAfterCompletion(),
                 Tables\Actions\BulkAction::make('ajukan_bulk')->label('Ajukan Terpilih')->icon('heroicon-o-paper-airplane')->color('warning')
                     ->requiresConfirmation()
                     ->modalDescription('Komisi terpilih dijadikan SATU pengajuan (batch) dan diajukan ke Approval Komisi.')
@@ -100,6 +127,36 @@ class PengajuanKomisi extends Page implements HasTable
                     })->deselectRecordsAfterCompletion(),
             ])
             ->defaultSort('tgl_komisi', 'desc')->paginated([10, 25, 50]);
+    }
+
+    /**
+     * Hitung ulang Komisi dari Skema Komisi terkini (rate per level/AREBI + PPh 23).
+     * Memperbaiki data lama yang PPh-nya 0. Mengembalikan false bila tak ada skema/agent.
+     */
+    protected static function recalcKomisi(Komisi $r): bool
+    {
+        $kontrak = $r->kontrak;
+        $kontrak?->loadMissing(['agent', 'unit']);
+        if (! $kontrak || ! $kontrak->agent_id) {
+            return false;
+        }
+        $svc = app(KomisiCalculatorService::class);
+        $skema = $svc->matchSkema($kontrak);
+        if (! $skema) {
+            return false;
+        }
+        $rate = $svc->rateForAgent($skema, $kontrak->agent?->sales_level_id);
+        $c = $svc->calculate($kontrak, $skema, $rate);
+        $r->update([
+            'dpp' => $c['basis'],
+            'persen_komisi' => $c['rate'],
+            'amount' => $c['komisi'],
+            'pph_persen' => $c['pph_persen'],
+            'pph_amount' => $c['pph'],
+            'amount_net' => $c['nett'],
+        ]);
+
+        return true;
     }
 
     /** NETT = Komisi − PPh − PPn (tak pernah negatif). */
