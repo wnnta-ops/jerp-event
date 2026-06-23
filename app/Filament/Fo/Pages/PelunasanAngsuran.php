@@ -46,18 +46,23 @@ class PelunasanAngsuran extends Page implements HasForms, HasTable
                     ->whereIn('tipe', ['DP', 'ANG', 'TDP'])
                     ->whereRaw('nilai - pelunasan > 0.5')
                     ->whereHas('kontrak', fn ($q) => $q->where('tahap', 'SPR')->where('status', '!=', 'BATAL'))
-                    // Hanya tagihan jatuh tempo BERIKUTNYA per kontrak: sembunyikan bila masih
-                    // ada tagihan belum-lunas yang lebih awal (urutan kecil). Cegah salah bayar.
-                    ->whereNotExists(function ($q) {
-                        $q->selectRaw('1')->from('fo_kontrak_tagihan as t2')
-                            ->whereColumn('t2.kontrak_id', 'fo_kontrak_tagihan.kontrak_id')
-                            ->whereIn('t2.tipe', ['DP', 'ANG', 'TDP'])
-                            ->whereRaw('t2.nilai - t2.pelunasan > 0.5')
-                            ->whereColumn('t2.urutan', '<', 'fo_kontrak_tagihan.urutan');
+                    ->where(function ($q) {
+                        // Tambah DP (TDP) SELALU tampil — sering dibayar langsung di luar urutan.
+                        $q->where('tipe', 'TDP')
+                            // DP/ANG: hanya jatuh tempo BERIKUTNYA — sembunyikan bila masih ada
+                            // DP/ANG belum-lunas yang lebih awal (urutan kecil). Cegah salah urut.
+                            ->orWhere(fn ($s) => $s->whereIn('tipe', ['DP', 'ANG'])
+                                ->whereNotExists(function ($x) {
+                                    $x->selectRaw('1')->from('fo_kontrak_tagihan as t2')
+                                        ->whereColumn('t2.kontrak_id', 'fo_kontrak_tagihan.kontrak_id')
+                                        ->whereIn('t2.tipe', ['DP', 'ANG'])
+                                        ->whereRaw('t2.nilai - t2.pelunasan > 0.5')
+                                        ->whereColumn('t2.urutan', '<', 'fo_kontrak_tagihan.urutan');
+                                }));
                     })
             )
             ->heading('Tagihan jatuh tempo berikutnya per kontrak (SPR)')
-            ->description('Hanya menampilkan tagihan berikutnya yang belum lunas per kontrak (urut sesuai jadwal SPR) — mis. DP 1 dulu; setelah lunas baru DP 2 muncul. Mencegah salah urut/salah bayar.')
+            ->description('DP & Angsuran tampil berurutan (mis. DP 1 dulu; setelah lunas baru DP 2 muncul) untuk cegah salah bayar. Tambah DP (TDP) SELALU tampil karena sering dibayar langsung di luar urutan.')
             ->columns([
                 Tables\Columns\TextColumn::make('kontrak.unit.kode_unit')->label('Unit')->badge()->color('info')->placeholder('—')->searchable()->sortable(),
                 Tables\Columns\TextColumn::make('kontrak.customer.full_name')->label('Customer')->searchable()->weight('bold')->wrap(),
