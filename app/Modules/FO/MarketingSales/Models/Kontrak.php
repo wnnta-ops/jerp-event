@@ -126,4 +126,10 @@ class Kontrak extends TenantAwareModel
     {
         return $this->hasMany(KontrakGimmick::class)->orderBy('urutan');
     }
+
+    /** Pengajuan KPR (Finance) atas kontrak ini. */
+    public function kprPengajuans(): HasMany
+    {
+        return $this->hasMany(\App\Modules\FO\FinanceAR\Models\KprPengajuan::class)->latest('id');
+    }
 }

@@ -27,5 +27,8 @@ return [
         'REFUND' => ['debet' => '2.1.01.004', 'kredit' => '1.1.01.002'],
         // Memo cashback/koreksi
         'MEMO' => ['debet' => '5.9.01.001', 'kredit' => '1.1.02.001'],
+        // Biaya proses KPR yang dibayar developer (HT sebagian, KPR, notaris, sisa HT)
+        // → kas keluar. (Akun disesuaikan saat integrasi BO baru.)
+        'BIAYA_KPR' => ['debet' => '5.9.01.002', 'kredit' => '1.1.01.002'],
     ],
 ];

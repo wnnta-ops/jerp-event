@@ -192,6 +192,7 @@ class FoPanelProvider extends PanelProvider
             // Finance AR
             'tts' => 'finance',
             'pelunasan-angsuran' => 'finance',
+            'pengajuan-kpr' => 'finance',
             'setup-hold' => 'finance',
             'bkms' => 'finance',
             'vas' => 'finance',
@@ -340,6 +341,7 @@ class FoPanelProvider extends PanelProvider
                 'items' => [
                     $item('TTS', '/fo/tts', 'heroicon-o-ticket', 'filament.fo.resources.tts.'),
                     $item('Pelunasan DP, Angsuran & TDP', '/fo/pelunasan-angsuran', 'heroicon-o-banknotes', 'filament.fo.pages.pelunasan-angsuran'),
+                    $item('Pengajuan KPR', '/fo/pengajuan-kpr', 'heroicon-o-building-library', 'filament.fo.pages.pengajuan-kpr'),
                     $item('Kwitansi', '/fo/bkms', 'heroicon-o-banknotes', 'filament.fo.resources.bkms.'),
                     $item('Faktur Penjualan', '/fo/fps', 'heroicon-o-receipt-percent', 'filament.fo.resources.fps.'),
                     $item('Bilyet Giro', '/fo/bgs', 'heroicon-o-document-currency-dollar', 'filament.fo.resources.bgs.'),
