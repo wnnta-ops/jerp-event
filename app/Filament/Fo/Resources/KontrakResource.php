@@ -260,28 +260,32 @@ class KontrakResource extends Resource
                                 // Duplikat baris (termasuk tanggal & nilai) → tambah tagihan serupa
                                 // lebih cepat tanpa pilih ulang tanggal tiap baris.
                                 ->cloneable()
-                                ->live()
+                                // Repeater & field TIDAK live + ringkasan dibuat STATIK (tak membaca
+                                // $get('tagihan')) → form tak reaktif penuh → morph Livewire tidak
+                                // kacau saat tambah/hapus baris. Selisih divalidasi saat Simpan
+                                // (EditKontrak::beforeSave) dengan pesan jelas.
                                 ->itemLabel(fn (array $state): ?string => ($state['nama_tagihan'] ?? null)
                                     ? (($state['tipe'] ?? '').' — '.$state['nama_tagihan'])
                                     : null)
                                 ->schema([
                                     Forms\Components\Select::make('tipe')->label('Tipe')->columnSpan(2)
                                         ->options(['BF' => 'BF (Booking Fee)', 'DP' => 'DP', 'TDP' => 'Tambah DP', 'ANG' => 'Angsuran', 'ADM' => 'Administrasi', 'LAIN' => 'Lain'])
-                                        ->default('ANG')->required()->live(),
-                                    Forms\Components\TextInput::make('nama_tagihan')->label('Nama Tagihan')->columnSpan(4)->required(),
+                                        ->default('ANG'),
+                                    Forms\Components\TextInput::make('nama_tagihan')->label('Nama Tagihan')->columnSpan(4),
                                     Forms\Components\DatePicker::make('jatuh_tempo')->label('Jatuh Tempo')->columnSpan(2)->native(false)->displayFormat('d M Y'),
-                                    Forms\Components\TextInput::make('nilai')->label('Nilai')->columnSpan(2)->numeric()->rupiah()->default(0)->live(onBlur: true),
+                                    Forms\Components\TextInput::make('nilai')->label('Nilai')->columnSpan(2)->numeric()->rupiah()->default(0),
                                     Forms\Components\TextInput::make('pelunasan')->label('Pelunasan')->columnSpan(2)->numeric()->rupiah()->default(0),
                                 ]),
 
-                            // Rincian Nilai Kontrak vs Tagihan+Biaya + Selisih (mirip eProperty).
-                            // Selisih harus 0 agar SPR bisa disimpan (lihat EditKontrak::beforeSave).
+                            // Target Nilai Kontrak (STATIK — tidak reaktif agar morph repeater aman).
+                            // Selisih real-time dihapus; dicek otomatis saat Simpan.
                             Forms\Components\Placeholder::make('ringkasan_tagihan')->label('')
-                                ->content(fn (Forms\Get $get, ?Kontrak $record) => new HtmlString(
-                                    self::ringkasanTagihanHtml(
-                                        (array) $get('tagihan'),
-                                        (float) ($record?->total_kontrak ?? $get('total_kontrak') ?? 0),
-                                    )
+                                ->content(fn (?Kontrak $record) => new HtmlString(
+                                    '<div style="max-width:440px;border:1px solid #e2e8f0;border-radius:8px;padding:12px 16px;font-size:13px;">'
+                                    .'<div style="display:flex;justify-content:space-between;gap:24px;padding:3px 0;"><span>Nilai Kontrak (Harga Unit)</span>'
+                                    .'<span style="font-variant-numeric:tabular-nums;font-weight:600;">Rp '.number_format((float) ($record?->total_kontrak ?? 0), 0, ',', '.').'</span></div>'
+                                    .'<div style="color:#64748b;margin-top:6px;font-size:12px;">Total seluruh baris Jadwal Tagihan harus <b>PAS</b> dengan Nilai Kontrak (selisih 0). Dicek otomatis saat klik <b>Simpan</b>.</div>'
+                                    .'</div>'
                                 )),
                         ]),
                 ]),

@@ -31,6 +31,20 @@ class EditKontrak extends EditRecord
         // Catat skema lama (record belum diupdate) untuk deteksi ganti skema.
         $this->oldSkemaId = (int) $this->record->skema_id;
 
+        // Pengganti validasi field 'required' di Jadwal Tagihan (dimatikan agar hapus
+        // baris tak terganjal morph Livewire): tolak simpan bila ada baris belum lengkap.
+        foreach (($this->data['tagihan'] ?? []) as $row) {
+            if (trim((string) ($row['tipe'] ?? '')) === '' || trim((string) ($row['nama_tagihan'] ?? '')) === '') {
+                Notification::make()->danger()->persistent()
+                    ->title('Ada baris Jadwal Tagihan yang belum lengkap')
+                    ->body('Lengkapi Tipe & Nama Tagihan, atau hapus baris kosong, lalu Simpan lagi.')
+                    ->send();
+                $this->halt();
+
+                return;
+            }
+        }
+
         if ($this->record->tahap !== 'SPR') {
             return;
         }
