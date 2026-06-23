@@ -52,7 +52,13 @@ class KontrakGeneratorService
             return 0;
         }
 
+        // Snapshot pembayaran DP yang sudah ada (sebelum jadwal di-generate ulang) →
+        // DP yang SUDAH dibayar TIDAK ikut di-Free dan pembayarannya dipulihkan.
+        $paidDp = [];
         if ($replace) {
+            foreach ($kontrak->tagihan()->where('tipe', 'DP')->where('pelunasan', '>', 0.5)->get() as $t) {
+                $paidDp[strtoupper(trim((string) $t->nama_tagihan))] = (float) $t->pelunasan;
+            }
             $kontrak->tagihan()->delete();
         }
 
@@ -117,8 +123,8 @@ class KontrakGeneratorService
         $this->applyAngsuranDisebarUtj($kontrak, $rows, $total);
 
         // Mode FREE DP (ANGSURAN1): berkas lengkap di awal → DP2+ otomatis FREE jadi
-        // UANG MASUK (subsidi developer). DP1 tetap dibayar.
-        $freeDpSum = $this->applyFreeDpAngsuran1($kontrak, $rows);
+        // UANG MASUK (subsidi developer). DP yang sudah dibayar TIDAK di-free.
+        $freeDpSum = $this->applyFreeDpAngsuran1($kontrak, $rows, $paidDp);
 
         $n = 0;
         foreach ($rows as $idx => $r) {
@@ -170,7 +176,57 @@ class KontrakGeneratorService
         // GMC (gimmick FREE) TIDAK lagi masuk Jadwal Tagihan — pengajuan tiap item FREE
         // ditangani di modul Collection (terhubung BO). Daftar gimmick tetap di Tab Gimmick.
 
+        // Booking fee yang SUDAH diterima (BKM BOOKING POSTED) di-apply ulang ke baris BF
+        // — supaya pembayaran booking fee tidak hilang saat jadwal di-generate ulang
+        // (skema/SPRS→SPR delete+create baris). Sumber kebenaran: BKM (kas masuk).
+        if ($replace) {
+            $this->reapplyBookingFee($kontrak);
+            $this->reapplyPaidDp($kontrak, $paidDp);
+        }
+
         return $n;
+    }
+
+    /**
+     * Pulihkan pembayaran DP yang dipertahankan (Free DP: DP terbayar tetap dibayar).
+     *
+     * @param  array<string,float>  $paidDp  nama DP UPPER → pelunasan
+     */
+    private function reapplyPaidDp(Kontrak $kontrak, array $paidDp): void
+    {
+        foreach ($paidDp as $nama => $bayar) {
+            if ($bayar <= 0.5) {
+                continue;
+            }
+            $row = $kontrak->tagihan()->where('tipe', 'DP')
+                ->whereRaw('UPPER(TRIM(nama_tagihan)) = ?', [$nama])->first();
+            if ($row) {
+                $row->pelunasan = min($bayar, (float) $row->nilai);
+                $row->save();
+            }
+        }
+    }
+
+    /** Re-apply pembayaran booking fee (BKM BOOKING POSTED) ke baris BF jadwal. */
+    private function reapplyBookingFee(Kontrak $kontrak): void
+    {
+        $paid = (float) \App\Modules\FO\FinanceAR\Models\Bkm::query()
+            ->where('kontrak_id', $kontrak->id)->where('status', 'POSTED')
+            ->where('jenis_pembayaran', 'BOOKING')->sum('amount');
+        if ($paid <= 0.5) {
+            return;
+        }
+        $bf = $kontrak->tagihan()->where('tipe', 'BF')->orderBy('urutan')->first();
+        if (! $bf) {
+            return;
+        }
+        $bf->pelunasan = min($paid, (float) $bf->nilai);
+        $bf->save();
+        // Tautkan kembali BKM booking ke baris BF agar sisa/Collection akurat.
+        \App\Modules\FO\FinanceAR\Models\Bkm::query()
+            ->where('kontrak_id', $kontrak->id)->where('status', 'POSTED')
+            ->where('jenis_pembayaran', 'BOOKING')->whereNull('kontrak_tagihan_id')
+            ->update(['kontrak_tagihan_id' => $bf->id]);
     }
 
     /**
@@ -313,7 +369,11 @@ class KontrakGeneratorService
      * Bila tgl_berkas_lengkap null (berkas lengkap di awal) → SELURUH DP free.
      * Mengembalikan total DP yang di-free.
      */
-    private function applyFreeDpAngsuran1(Kontrak $kontrak, array &$rows): float
+    /**
+     * @param  array<string,float>  $paidDp  pembayaran DP existing (nama UPPER → pelunasan);
+     *                                       DP yang sudah dibayar TIDAK di-free.
+     */
+    private function applyFreeDpAngsuran1(Kontrak $kontrak, array &$rows, array $paidDp = []): float
     {
         if (($kontrak->skema->bf_dipotong_di ?? '') !== 'ANGSURAN1') {
             return 0.0;
@@ -323,6 +383,11 @@ class KontrakGeneratorService
         $freedSum = 0.0;
         foreach ($rows as $i => $r) {
             if (($r['line']->tipe ?? '') !== 'DP') {
+                continue;
+            }
+            // DP yang SUDAH dibayar tetap jadi DP customer (mis. DP 1 lunas) — tak di-free.
+            $nama = strtoupper(trim((string) ($r['line']->nama_termin ?? '')));
+            if (isset($paidDp[$nama])) {
                 continue;
             }
             $jatuh = $r['jatuh'] ?? null;

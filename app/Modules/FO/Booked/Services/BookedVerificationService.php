@@ -3,6 +3,7 @@
 namespace App\Modules\FO\Booked\Services;
 
 use App\Modules\FO\FinanceAR\Models\Tts;
+use App\Modules\FO\FinanceAR\Services\TtsToBkmService;
 use App\Modules\FO\Launching\Models\NupRegistration;
 use App\Modules\FO\MarketingSales\Models\Kontrak;
 use App\Modules\FO\MarketingSales\Models\Reservasi;
@@ -125,7 +126,7 @@ class BookedVerificationService
 
             app(KontrakGeneratorService::class)->all($kontrak);
 
-            // TTS booking fee (transfer manual) → Buka Kuitansi (TtsToBkmService) → BKM → Kwitansi.
+            // TTS booking fee (transfer manual) → langsung BKM/Kwitansi.
             $ttsId = null;
             if ($bookingFee > 0) {
                 // Bank, No. Referensi (berita bank), & keterangan ikut dari Transfer Anonim
@@ -148,6 +149,9 @@ class BookedVerificationService
                     'keterangan' => 'Booking fee Booked manual '.$reg->nama_pendaftar
                         .($transfer?->keterangan ? ' · '.$transfer->keterangan : ''),
                 ]);
+                // Uang booking fee SUDAH masuk (transfer anonim terverifikasi) → konversi
+                // TTS ke BKM sekarang: Booking Fee jadi LUNAS + Kwitansi terbit + posting GL.
+                TtsToBkmService::convert($tts);
                 $ttsId = $tts->id;
             }
 
