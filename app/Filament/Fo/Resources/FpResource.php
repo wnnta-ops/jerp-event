@@ -26,6 +26,22 @@ class FpResource extends Resource
 
     protected static ?int $navigationSort = 50;
 
+    // Faktur Penjualan terbit otomatis dari kontrak — tidak dibuat/ubah/hapus manual.
+    public static function canCreate(): bool
+    {
+        return false;
+    }
+
+    public static function canEdit($record): bool
+    {
+        return false;
+    }
+
+    public static function canDelete($record): bool
+    {
+        return false;
+    }
+
     public static function form(Form $form): Form
     {
         return $form->schema([
@@ -56,13 +72,10 @@ class FpResource extends Resource
                     ->color(fn (?string $state) => in_array($state, ['TERBIT', 'TERPAKAI']) ? 'success' : 'gray'),
             ])
             ->filters([Tables\Filters\SelectFilter::make('status')->options(['TERBIT' => 'Terbit', 'BELUM_TERPAKAI' => 'Belum Terpakai', 'TERPAKAI' => 'Terpakai'])])
-            ->headerActions([Tables\Actions\CreateAction::make()])
             ->actions([
                 Tables\Actions\Action::make('cetak')->label('Cetak')->icon('heroicon-o-printer')->color('success')
                     ->url(fn ($record) => $record->kontrak_id ? route('fo.cetak.faktur', $record) : null, shouldOpenInNewTab: true)
                     ->visible(fn ($record) => (bool) $record->kontrak_id),
-                Tables\Actions\EditAction::make(),
-                Tables\Actions\DeleteAction::make(),
             ])
             ->defaultSort('id', 'desc');
     }
