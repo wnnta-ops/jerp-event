@@ -30,6 +30,15 @@ if ($siteplanDomain = config('jerp.siteplan_domain')) {
     });
 }
 
+// Siteplan LIVE (acara NUP) punya subdomain sendiri (env SITEPLANLIVE_DOMAIN).
+// Root "/" subdomain → langsung halaman live. Real-time butuh proxy WebSocket
+// Reverb di subdomain ini juga (wss://<subdomain>/app → reverb).
+if ($siteplanLiveDomain = config('jerp.siteplanlive_domain')) {
+    Route::domain($siteplanLiveDomain)->middleware(['throttle:120,1'])->group(function () {
+        Route::get('/', [SiteplanController::class, 'live'])->name('siteplan.live.subdomain');
+    });
+}
+
 if ($bookedDomain = config('jerp.booked_domain')) {
     Route::domain($bookedDomain)->middleware(['throttle:nup-public'])->group(function () {
         Route::get('/', BookedPublicForm::class)->name('booked.daftar.subdomain');
