@@ -92,6 +92,20 @@ class Unit extends TenantAwareModel
                 $unit->kode_unit = $kode;
             }
         });
+
+        // Broadcast real-time SETIAP status unit berubah, dari FLOW MANA PUN (Booked,
+        // SPR, Hold, Pembatalan, Pindah Unit, Launching) → siteplan/siteplanlive &
+        // PetaUnitLive update tanpa refresh. (Flow Launching juga dispatch eksplisit;
+        // event ganda tak masalah — applyStatusChange idempoten.)
+        static::updated(function (self $unit) {
+            if ($unit->wasChanged('status')) {
+                event(\App\Events\UnitStatusChanged::fromUnit(
+                    $unit,
+                    (string) $unit->status,
+                    (string) ($unit->getOriginal('status') ?? '')
+                ));
+            }
+        });
     }
 
     /**
