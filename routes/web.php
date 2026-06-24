@@ -103,6 +103,7 @@ Route::middleware('auth')->group(function () {
 
     // FO — cetak dokumen closing (SPR, Kwitansi/BKM, Jadwal Pembayaran). ?pdf=1 → Browsershot.
     Route::get('/fo/cetak/spr/{kontrak}', [ClosingPrintController::class, 'spr'])->name('fo.cetak.spr');
+    Route::get('/fo/cetak/spr-accounting/{kontrak}', [ClosingPrintController::class, 'sprAccounting'])->name('fo.cetak.spr-accounting');
     Route::get('/fo/cetak/sprs-kontrak/{kontrak}', [ClosingPrintController::class, 'sprsFromKontrak'])->name('fo.cetak.sprs-kontrak');
     Route::get('/fo/cetak/kwitansi/{bkm}', [ClosingPrintController::class, 'kwitansi'])->name('fo.cetak.kwitansi');
     Route::get('/fo/cetak/jadwal/{kontrak}', [ClosingPrintController::class, 'jadwal'])->name('fo.cetak.jadwal');

@@ -55,10 +55,18 @@
         $clusterKode = $u?->lokasi?->kode ?: ($u?->blok ?: '—');
         $lokasiNama = $u?->lokasi?->nama ?: '—';
         $harga = (float) $kontrak->harga_jual;
+        // Versi ACCOUNTING (perpajakan): baris UANG MASUK (free DP + subsidi developer)
+        // dilebur ke Diskon & dihilangkan dari jadwal — hanya kas riil yang tampil.
+        // Controller cetak accounting mengirim override ($tagihan terfilter, $diskon,
+        // $net). Cetak SPR biasa tanpa override → pakai nilai default kontrak.
+        $accounting = $accounting ?? false;
+        $tagihanSrc = $tagihan ?? $kontrak->tagihan;
+        $diskonVal  = $diskon ?? (float) $kontrak->diskon;
+        $netVal     = $net ?? (float) $kontrak->total_kontrak;
         // Jadwal pembayaran dari Jadwal Tagihan kontrak (integrasi Skema Bayar).
         // Fallback ke baris skema bila tagihan belum terbentuk.
         $payRows = [];
-        foreach ($kontrak->tagihan ?? [] as $t) {
+        foreach ($tagihanSrc ?? [] as $t) {
             // GMC (gimmick FREE) hanya internal/BO — tidak ditampilkan di jadwal pembayaran SPR.
             if (($t->tipe ?? '') === 'GMC') {
                 continue;
@@ -77,7 +85,7 @@
         // UANG MASUK; DP3X: DP + UANG MASUK), jadi ditampilkan apa adanya.
         // Gimmick yang diberikan → "sudah termasuk".
         $gimmickNames = ($kontrak->gimmicks ?? collect())->where('diberikan', true)->pluck('nama_barang')->filter()->all();
-        $payTotal = array_sum(array_column($payRows, 'amount')) ?: (float) $kontrak->total_kontrak;
+        $payTotal = array_sum(array_column($payRows, 'amount')) ?: $netVal;
         $totHal = 5;
     @endphp
 
@@ -133,8 +141,8 @@
             <tr><td class="k">5. Luas Bangunan</td><td class="s">:</td><td>{{ $u?->luas_bangunan ?: '—' }}</td></tr>
             <tr><td class="k">6. Peruntukkan</td><td class="s">:</td><td>RUMAH</td></tr>
             <tr><td class="k">7. Harga Include PPN</td><td class="s">:</td><td>Rp {{ number_format($harga, 0, ',', '.') }}</td></tr>
-            <tr><td class="k">8. Diskon</td><td class="s">:</td><td>Rp {{ number_format((float) $kontrak->diskon, 0, ',', '.') }}</td></tr>
-            <tr><td class="k">9. Harga Pemesanan (setelah Diskon)</td><td class="s">:</td><td>Rp {{ number_format((float) $kontrak->total_kontrak, 0, ',', '.') }}</td></tr>
+            <tr><td class="k">8. Diskon</td><td class="s">:</td><td>Rp {{ number_format($diskonVal, 0, ',', '.') }}</td></tr>
+            <tr><td class="k">9. Harga Pemesanan (setelah Diskon)</td><td class="s">:</td><td>Rp {{ number_format($netVal, 0, ',', '.') }}</td></tr>
             <tr><td class="k">10. Cara Pembayaran</td><td class="s">:</td><td>{{ $kontrak->cara_bayar }}</td></tr>
             <tr><td class="k">11. Nama Sales</td><td class="s">:</td><td>{{ $ag?->name ?: '—' }}</td></tr>
             <tr><td class="k">12. Nama Agent Properti</td><td class="s">:</td><td>{{ $ag?->agency_name ?: '—' }}</td></tr>

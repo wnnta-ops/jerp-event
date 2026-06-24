@@ -426,6 +426,11 @@ class KontrakResource extends Resource
                         : route('fo.cetak.spr', $record), shouldOpenInNewTab: true),
                 Tables\Actions\Action::make('cetak_jadwal')->label('Jadwal')->icon('heroicon-o-calendar-days')
                     ->url(fn ($record) => route('fo.cetak.jadwal', $record), shouldOpenInNewTab: true),
+                // Cetak SPR ACCOUNTING (perpajakan) — hanya untuk SPR final. Free DP +
+                // subsidi DP dilebur ke Diskon, baris UANG MASUK hilang dari jadwal.
+                Tables\Actions\Action::make('cetak_spr_accounting')->label('SPR Accounting')->icon('heroicon-o-calculator')->color('warning')
+                    ->visible(fn (Kontrak $record) => $record->tahap === 'SPR')
+                    ->url(fn ($record) => route('fo.cetak.spr-accounting', $record), shouldOpenInNewTab: true),
             ])
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([

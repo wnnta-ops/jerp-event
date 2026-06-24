@@ -27,6 +27,32 @@ class ClosingPrintController extends Controller
     }
 
     /**
+     * Cetak SPR ACCOUNTING (untuk perpajakan). Sama dengan SPR, tetapi:
+     *  - DP yang di-free-kan + subsidi DP (baris "UANG MASUK") dilebur ke DISKON
+     *    (rumus: Diskon = diskon kontrak + Free DP + Subsidi).
+     *  - Baris UANG MASUK dihilangkan dari jadwal → hanya kas riil (Booking Fee,
+     *    DP nyata, Pencairan KPR). Total jadwal = Harga − Diskon (tetap konsisten).
+     */
+    public function sprAccounting(Kontrak $kontrak): mixed
+    {
+        $kontrak->load(['customer', 'unit.unitType', 'unit.lokasi', 'skema.lines', 'agent', 'reservasi', 'gimmicks', 'tagihan']);
+        $nup = NupRegistration::query()->where('reservasi_id', $kontrak->reservasi_id)->orderByDesc('id')->first();
+
+        $tagihan = $kontrak->tagihan ?? collect();
+        $uangMasukTotal = (float) $tagihan->where('nama_tagihan', 'UANG MASUK')->sum('nilai');
+        $tagihanAcc = $tagihan->reject(fn ($t) => $t->nama_tagihan === 'UANG MASUK')->values();
+
+        return $this->render('pdf.fo.spr', [
+            'kontrak' => $kontrak,
+            'nup' => $nup,
+            'accounting' => true,
+            'tagihan' => $tagihanAcc,
+            'diskon' => (float) $kontrak->diskon + $uangMasukTotal,
+            'net' => (float) $kontrak->total_kontrak - $uangMasukTotal,
+        ], 'SPR-ACC-'.$kontrak->no_kontrak);
+    }
+
+    /**
      * SPRS (Surat Pemesanan Rumah Sementara) — dari NupRegistration. Dipakai utk
      * dilihat/diunduh customer (link dikirim via WA) & dilampirkan di email saat
      * verifikasi data di-APPROVE. Bila sudah ada kontrak (reservasi naik kontrak),
