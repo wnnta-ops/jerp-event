@@ -385,9 +385,13 @@ class KontrakGeneratorService
             if (($r['line']->tipe ?? '') !== 'DP') {
                 continue;
             }
-            // DP yang SUDAH dibayar tetap jadi DP customer (mis. DP 1 lunas) — tak di-free.
+            // DP yang SUDAH dibayar tetap jadi DP customer (mis. DP 1 lunas) — tak di-free,
+            // dan nominalnya DIKUNCI ke jumlah terbayar (bukan ikut skema FREE DP baru).
+            // Selisihnya diserap Pencairan KPR (recompute) → DP 2,3 yang di-free.
             $nama = strtoupper(trim((string) ($r['line']->nama_termin ?? '')));
             if (isset($paidDp[$nama])) {
+                $rows[$i]['nilai'] = (float) $paidDp[$nama];
+
                 continue;
             }
             $jatuh = $r['jatuh'] ?? null;
