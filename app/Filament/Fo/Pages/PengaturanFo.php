@@ -42,6 +42,10 @@ class PengaturanFo extends Page implements HasForms
             'recaptcha_min_score' => $s->recaptcha_min_score,
             'komisi_pph_default_persen' => $s->komisi_pph_default_persen,
             'notification_email' => $s->notification_email,
+            'siteplanlive_show_stock' => $s->siteplanlive_show_stock,
+            'siteplanlive_sold_animation' => $s->siteplanlive_sold_animation,
+            'siteplanlive_focus_lokasi_id' => $s->siteplanlive_focus_lokasi_id,
+            'siteplanlive_focus_tahap' => $s->siteplanlive_focus_tahap,
         ]);
     }
 
@@ -65,6 +69,27 @@ class PengaturanFo extends Page implements HasForms
             Forms\Components\Section::make('Notifikasi')->schema([
                 Forms\Components\TextInput::make('notification_email')->label('Email notifikasi')->email()->required(),
             ]),
+
+            Forms\Components\Section::make('Siteplan Live (acara NUP)')
+                ->description('Tampilan live stock di /siteplanlive. BOOKING dihitung sebagai SOLD. Animasi SOLD OUT keluar otomatis saat scope yang dipilih (cluster + tahap) 100% terjual.')
+                ->columns(2)->schema([
+                    Forms\Components\Toggle::make('siteplanlive_show_stock')->label('Tampilkan kotak Stock Status (Ready/Sold)'),
+                    Forms\Components\Toggle::make('siteplanlive_sold_animation')->label('Animasi SOLD OUT otomatis (saat scope 100% sold)'),
+                    Forms\Components\Select::make('siteplanlive_focus_lokasi_id')->label('Fokus Cluster (Lokasi)')
+                        ->options(fn () => \App\Modules\FO\MarketingSales\Models\Lokasi::where('is_active', true)->orderBy('kode')->get()->mapWithKeys(fn ($l) => [$l->id => $l->kode.' — '.$l->nama]))
+                        ->placeholder('Seluruh project')->searchable()->live()
+                        ->afterStateUpdated(fn (callable $set) => $set('siteplanlive_focus_tahap', null))
+                        ->helperText('Kosongkan = pantau seluruh project.'),
+                    Forms\Components\Select::make('siteplanlive_focus_tahap')->label('Fokus Tahap')
+                        ->options(function (Forms\Get $get) {
+                            $lok = $get('siteplanlive_focus_lokasi_id');
+                            return \App\Modules\FO\MarketingSales\Models\Tahap::where('is_active', true)
+                                ->when($lok, fn ($q) => $q->where('lokasi_id', $lok))
+                                ->orderBy('kode')->get()->mapWithKeys(fn ($t) => [$t->kode => $t->kode.' — '.($t->nama ?: $t->kode)]);
+                        })
+                        ->placeholder('Semua tahap')->native(false)
+                        ->helperText('Diambil dari master Tahap pada cluster terpilih. Kosongkan = semua tahap.'),
+                ]),
         ]);
     }
 

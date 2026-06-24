@@ -5,6 +5,7 @@ namespace App\Modules\FO\Launching\Controllers;
 use App\Models\Project;
 use App\Modules\FO\MarketingSales\Models\Lokasi;
 use App\Modules\FO\MarketingSales\Models\Unit;
+use App\Settings\FoSettings;
 use Illuminate\Contracts\View\View;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
@@ -41,6 +42,69 @@ class SiteplanController
         }
 
         return view('siteplan.index', ['projects' => $projects]);
+    }
+
+    /**
+     * Siteplan LIVE (acara NUP) — real-time, BOOKING dihitung SOLD, kotak Stock
+     * Status, + animasi SOLD OUT otomatis saat scope (cluster/tahap) yang di-setup
+     * 100% terjual. Scope diambil dari Pengaturan FO.
+     */
+    public function live(Request $request): View
+    {
+        $s = app(FoSettings::class);
+        $focusLokasiId = $s->siteplanlive_focus_lokasi_id;
+        $focusTahap = trim((string) $s->siteplanlive_focus_tahap);
+
+        $focusLokasi = $focusLokasiId ? Lokasi::find($focusLokasiId) : null;
+        $project = $focusLokasi?->project ?? Project::query()
+            ->where('is_active', true)
+            ->where(fn ($q) => $q->whereNotNull('siteplan_image_path')
+                ->orWhereExists(fn ($sub) => $sub->selectRaw('1')->from('fo_lokasi as l')
+                    ->whereColumn('l.project_id', 'projects.id')->where('l.is_active', true)
+                    ->whereNotNull('l.siteplan_image_path')))
+            ->orderBy('name')->first();
+        abort_unless($project, 404);
+
+        // Tanpa fokus & project tak punya siteplan sendiri → default cluster pertama
+        // yang punya siteplan, supaya polygon SELALU sejajar gambar (spt /siteplan).
+        if (! $focusLokasi && ! $project->siteplan_image_path) {
+            $focusLokasi = Lokasi::where('project_id', $project->id)->where('is_active', true)
+                ->orderBy('kode')->get()->first(fn ($l) => $l->hasOwnSiteplan());
+        }
+
+        return view('siteplan.live', [
+            'project' => $project,
+            'siteplan' => $focusLokasi?->resolvedSiteplan() ?? $this->siteplan($project),
+            'units' => $this->units($project, $focusLokasi?->id),
+            'stock' => $this->liveStock($project, $focusLokasi?->id, $focusTahap),
+            'showStock' => $s->siteplanlive_show_stock,
+            'soldAnimation' => $s->siteplanlive_sold_animation,
+            'focusTahap' => $focusTahap,
+        ]);
+    }
+
+    /**
+     * Stok live scope (cluster+tahap, atau seluruh project). BOOKING/HOLD = SOLD.
+     *
+     * @return array{total:int,ready:int,sold:int,ready_pct:int,sold_pct:int,sold_out:bool}
+     */
+    private function liveStock(Project $project, ?int $lokasiId, string $tahap): array
+    {
+        $units = Unit::query()->where('project_id', $project->id)->where('is_active', true)
+            ->when($lokasiId, fn ($q) => $q->where('lokasi_id', $lokasiId))
+            ->when($tahap !== '', fn ($q) => $q->where('tahap', $tahap))
+            ->get(['status']);
+
+        $total = $units->count();
+        $ready = $units->where('status', 'TERSEDIA')->count();
+        $sold = $total - $ready; // BOOKING/TERJUAL/LUNAS/HOLD = SOLD
+
+        return [
+            'total' => $total, 'ready' => $ready, 'sold' => $sold,
+            'ready_pct' => $total > 0 ? (int) round($ready / $total * 100) : 0,
+            'sold_pct' => $total > 0 ? (int) round($sold / $total * 100) : 0,
+            'sold_out' => $total > 0 && $ready === 0,
+        ];
     }
 
     public function show(Request $request, string $project): View

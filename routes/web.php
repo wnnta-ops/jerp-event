@@ -61,6 +61,10 @@ Route::middleware(['throttle:120,1'])
         Route::get('/{project}', [SiteplanController::class, 'show'])->name('show');
     });
 
+// Siteplan LIVE (acara NUP) — real-time stock + animasi SOLD OUT. Setup di Pengaturan FO.
+Route::middleware(['throttle:120,1'])
+    ->get('/siteplanlive', [SiteplanController::class, 'live'])->name('siteplan.live');
+
 // Proxy data wilayah (hindari CORS emsifa.github.io). Same-origin, cached server-side.
 // Throttle longgar terpisah: cascading dropdown bisa banyak request per pengisian form.
 Route::middleware(['throttle:120,1'])

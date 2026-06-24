@@ -24,6 +24,15 @@ class FoSettings extends Settings
 
     public string $notification_email;
 
+    // Siteplan Live (acara NUP)
+    public bool $siteplanlive_show_stock;
+
+    public bool $siteplanlive_sold_animation;
+
+    public ?int $siteplanlive_focus_lokasi_id;
+
+    public ?string $siteplanlive_focus_tahap;
+
     public static function group(): string
     {
         return 'fo';
