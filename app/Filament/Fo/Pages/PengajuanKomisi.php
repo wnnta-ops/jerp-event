@@ -149,7 +149,7 @@ class PengajuanKomisi extends Page implements HasTable
         $c = $svc->calculate($kontrak, $skema, $rate);
         $r->update([
             'dpp' => $c['basis'],
-            'persen_komisi' => $c['rate'],
+            'persen_komisi' => $c['rate_persen'],
             'amount' => $c['komisi'],
             'pph_persen' => $c['pph_persen'],
             'pph_amount' => $c['pph'],
