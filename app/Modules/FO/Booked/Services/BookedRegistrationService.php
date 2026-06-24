@@ -166,7 +166,7 @@ class BookedRegistrationService
     private function attachUploads(Customer $customer, array $files): void
     {
         $updates = [];
-        foreach (['ktp' => 'ktp_file_path', 'npwp' => 'npwp_file_path', 'ktp_pasangan' => 'ktp_pasangan_file_path'] as $key => $column) {
+        foreach (['ktp' => 'ktp_file_path', 'npwp' => 'npwp_file_path', 'ktp_pasangan' => 'ktp_pasangan_file_path', 'npwp_pasangan' => 'npwp_pasangan_file_path'] as $key => $column) {
             $file = $files[$key] ?? null;
             if ($file instanceof UploadedFile) {
                 $updates[$column] = $file->store('booked/'.$customer->id, 'local');

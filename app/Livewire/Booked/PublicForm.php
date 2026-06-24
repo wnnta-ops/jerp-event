@@ -121,6 +121,8 @@ class PublicForm extends Component
 
     public $ktp_pasangan_file = null;
 
+    public $npwp_pasangan_file = null;
+
     public $bukti_transfer_file = null;
 
     public ?string $recaptcha_token = null;
@@ -206,6 +208,7 @@ class PublicForm extends Component
             'ktp_file' => ['required', 'file', 'mimes:jpg,jpeg,png,pdf', 'max:5120'],
             'npwp_file' => ['required', 'file', 'mimes:jpg,jpeg,png,pdf', 'max:5120'],
             'ktp_pasangan_file' => ['nullable', 'file', 'mimes:jpg,jpeg,png,pdf', 'max:5120'],
+            'npwp_pasangan_file' => ['nullable', 'file', 'mimes:jpg,jpeg,png,pdf', 'max:5120'],
             'bukti_transfer_file' => ['required', 'file', 'mimes:jpg,jpeg,png,pdf', 'max:5120'],
 
             'pernyataan_setuju' => ['accepted'],
@@ -323,6 +326,7 @@ class PublicForm extends Component
                     'ktp' => $this->ktp_file,
                     'npwp' => $this->npwp_file,
                     'ktp_pasangan' => $this->ktp_pasangan_file,
+                    'npwp_pasangan' => $this->npwp_pasangan_file,
                     'bukti_transfer' => $this->bukti_transfer_file,
                 ],
             );

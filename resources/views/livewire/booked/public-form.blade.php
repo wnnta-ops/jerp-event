@@ -56,7 +56,7 @@
             <div class="nup-card mb-4">
                 <h2 class="text-sm font-semibold mb-3" style="color:#111827;">Dokumen Diunggah</h2>
                 <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
-                    @foreach ([['KTP', $ktp_file], ['NPWP', $npwp_file], ['KTP Pasangan', $ktp_pasangan_file], ['Bukti Transfer', $bukti_transfer_file]] as $doc)
+                    @foreach (array_filter([['KTP', $ktp_file], ['NPWP', $npwp_file], ['KTP Pasangan', $ktp_pasangan_file], ['NPWP Pasangan', $npwp_pasangan_file], ['Bukti Transfer', $bukti_transfer_file]], fn ($d) => $d[1] || ! str_contains($d[0], 'Pasangan')) as $doc)
                         <div class="rounded-lg p-2 text-center" style="border:1px solid #e5e7eb;background:#f9fafb;">
                             <div class="text-xs font-semibold mb-1" style="color:#374151;">{{ $doc[0] }}</div>
                             @if ($doc[1])
@@ -356,15 +356,6 @@
                     <input wire:model="spouse_email" type="email" class="nup-input" placeholder="Alamat Email Aktif">
                     @error('spouse_email') <span class="nup-error">{{ $message }}</span> @enderror
                 </div>
-                <div>
-                    <label class="nup-label">Upload KTP (Maks. 5MB)</label>
-                    <input type="file" wire:model="ktp_pasangan_file" accept=".jpg,.jpeg,.png,.pdf" class="nup-input" style="padding:0.375rem 0.5rem;">
-                    <div wire:loading wire:target="ktp_pasangan_file" class="text-xs mt-1" style="color:#2563eb;">Mengunggah…</div>
-                    @if ($ktp_pasangan_file && ! $errors->has('ktp_pasangan_file'))
-                        <div class="text-xs mt-1" style="color:#16a34a;">✓ {{ method_exists($ktp_pasangan_file, 'getClientOriginalName') ? $ktp_pasangan_file->getClientOriginalName() : 'Terunggah' }}</div>
-                    @endif
-                    @error('ktp_pasangan_file') <span class="nup-error">{{ $message }}</span> @enderror
-                </div>
             </div>
 
             <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -495,9 +486,16 @@
             </div>
         </div>
 
+    </div>
+
+    {{-- ── Upload Berkas (semua dokumen dijadikan satu di sini) ───── --}}
+    <div class="nup-card mb-4">
+        <h2 class="nup-section-title mb-1"><span class="nup-section-dot"></span>Upload Berkas <span class="nup-required">*</span></h2>
+        <p class="nup-disclaimer mb-4">Semua berkas maks. 5MB — format JPG, PNG, atau PDF.</p>
+
         <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
-                <label class="nup-label">Upload KTP Customer (Maks. 5MB) <span class="nup-required">*</span></label>
+                <label class="nup-label">Upload KTP Customer <span class="nup-required">*</span></label>
                 <input type="file" wire:model="ktp_file" accept=".jpg,.jpeg,.png,.pdf" class="nup-input" style="padding:0.375rem 0.5rem;">
                 <div wire:loading wire:target="ktp_file" class="text-xs mt-1" style="color:#2563eb;">Mengunggah…</div>
                 @if ($ktp_file && ! $errors->has('ktp_file'))
@@ -506,7 +504,7 @@
                 @error('ktp_file') <span class="nup-error">{{ $message }}</span> @enderror
             </div>
             <div>
-                <label class="nup-label">Upload NPWP Customer (Maks. 5MB) <span class="nup-required">*</span></label>
+                <label class="nup-label">Upload NPWP Customer <span class="nup-required">*</span></label>
                 <input type="file" wire:model="npwp_file" accept=".jpg,.jpeg,.png,.pdf" class="nup-input" style="padding:0.375rem 0.5rem;">
                 <div wire:loading wire:target="npwp_file" class="text-xs mt-1" style="color:#2563eb;">Mengunggah…</div>
                 @if ($npwp_file && ! $errors->has('npwp_file'))
@@ -514,10 +512,31 @@
                 @endif
                 @error('npwp_file') <span class="nup-error">{{ $message }}</span> @enderror
             </div>
+
+            @if ($marital_status === 'KAWIN')
+                <div>
+                    <label class="nup-label">Upload KTP Pasangan</label>
+                    <input type="file" wire:model="ktp_pasangan_file" accept=".jpg,.jpeg,.png,.pdf" class="nup-input" style="padding:0.375rem 0.5rem;">
+                    <div wire:loading wire:target="ktp_pasangan_file" class="text-xs mt-1" style="color:#2563eb;">Mengunggah…</div>
+                    @if ($ktp_pasangan_file && ! $errors->has('ktp_pasangan_file'))
+                        <div class="text-xs mt-1" style="color:#16a34a;">✓ {{ method_exists($ktp_pasangan_file, 'getClientOriginalName') ? $ktp_pasangan_file->getClientOriginalName() : 'Terunggah' }}</div>
+                    @endif
+                    @error('ktp_pasangan_file') <span class="nup-error">{{ $message }}</span> @enderror
+                </div>
+                <div>
+                    <label class="nup-label">Upload NPWP Pasangan</label>
+                    <input type="file" wire:model="npwp_pasangan_file" accept=".jpg,.jpeg,.png,.pdf" class="nup-input" style="padding:0.375rem 0.5rem;">
+                    <div wire:loading wire:target="npwp_pasangan_file" class="text-xs mt-1" style="color:#2563eb;">Mengunggah…</div>
+                    @if ($npwp_pasangan_file && ! $errors->has('npwp_pasangan_file'))
+                        <div class="text-xs mt-1" style="color:#16a34a;">✓ {{ method_exists($npwp_pasangan_file, 'getClientOriginalName') ? $npwp_pasangan_file->getClientOriginalName() : 'Terunggah' }}</div>
+                    @endif
+                    @error('npwp_pasangan_file') <span class="nup-error">{{ $message }}</span> @enderror
+                </div>
+            @endif
         </div>
 
         <div class="mt-4">
-            <label class="nup-label">Upload Bukti Transfer (Maks. 5MB) <span class="nup-required">*</span></label>
+            <label class="nup-label">Upload Bukti Transfer <span class="nup-required">*</span></label>
             <input type="file" wire:model="bukti_transfer_file" accept=".jpg,.jpeg,.png,.pdf" class="nup-input" style="padding:0.375rem 0.5rem;">
             <div wire:loading wire:target="bukti_transfer_file" class="text-xs mt-1" style="color:#2563eb;">Mengunggah…</div>
             @if ($bukti_transfer_file && ! $errors->has('bukti_transfer_file'))
@@ -527,7 +546,7 @@
             @error('bukti_transfer_file') <span class="nup-error">{{ $message }}</span> @enderror
         </div>
 
-        <p class="text-xs mt-3" style="color:#dc2626;">*) Wajib diisi. Pembayaran via transfer bank — diverifikasi manual oleh tim.</p>
+        <p class="text-xs mt-3" style="color:#dc2626;">*) KTP &amp; NPWP customer + bukti transfer wajib. Berkas pasangan muncul saat status Menikah.</p>
     </div>
 
     {{-- ── Pernyataan + Register ───────────────────────────────── --}}

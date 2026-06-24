@@ -66,7 +66,7 @@ class VerifikasiBookedResource extends Resource
                 Tables\Actions\ActionGroup::make([
                     Tables\Actions\Action::make('download_semua')->label('Download Semua (ZIP)')->icon('heroicon-o-archive-box-arrow-down')
                         ->url(fn (NupRegistration $r) => route('fo.customer.files-zip', $r->customer_id))
-                        ->visible(fn (NupRegistration $r) => (bool) ($r->customer?->ktp_file_path || $r->customer?->npwp_file_path || $r->customer?->ktp_pasangan_file_path)),
+                        ->visible(fn (NupRegistration $r) => (bool) ($r->customer?->ktp_file_path || $r->customer?->npwp_file_path || $r->customer?->ktp_pasangan_file_path || $r->customer?->npwp_pasangan_file_path)),
                     Tables\Actions\Action::make('lihat_ktp')->label('Lihat KTP')->icon('heroicon-o-eye')
                         ->url(fn (NupRegistration $r) => route('fo.customer.file', [$r->customer_id, 'ktp']), shouldOpenInNewTab: true)
                         ->visible(fn (NupRegistration $r) => (bool) $r->customer?->ktp_file_path),
@@ -79,6 +79,9 @@ class VerifikasiBookedResource extends Resource
                     Tables\Actions\Action::make('unduh_ktp_pasangan')->label('Unduh KTP Pasangan')->icon('heroicon-o-arrow-down-tray')
                         ->url(fn (NupRegistration $r) => route('fo.customer.file', [$r->customer_id, 'ktp_pasangan']).'?download=1')
                         ->visible(fn (NupRegistration $r) => (bool) $r->customer?->ktp_pasangan_file_path),
+                    Tables\Actions\Action::make('unduh_npwp_pasangan')->label('Unduh NPWP Pasangan')->icon('heroicon-o-arrow-down-tray')
+                        ->url(fn (NupRegistration $r) => route('fo.customer.file', [$r->customer_id, 'npwp_pasangan']).'?download=1')
+                        ->visible(fn (NupRegistration $r) => (bool) $r->customer?->npwp_pasangan_file_path),
                     Tables\Actions\Action::make('lihat_bukti')->label('Lihat Bukti Transfer')->icon('heroicon-o-eye')->color('success')
                         ->url(fn (NupRegistration $r) => route('fo.booked.bukti', $r->id), shouldOpenInNewTab: true)
                         ->visible(fn (NupRegistration $r) => (bool) $r->bukti_transfer_path),

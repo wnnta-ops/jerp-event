@@ -23,6 +23,7 @@ class CustomerFileController
             'ktp' => 'ktp_file_path',
             'npwp' => 'npwp_file_path',
             'ktp_pasangan' => 'ktp_pasangan_file_path',
+            'npwp_pasangan' => 'npwp_pasangan_file_path',
         ];
         abort_unless(isset($map[$type]), 404);
 
@@ -36,7 +37,7 @@ class CustomerFileController
             : Storage::disk('local')->response($path, $name);
     }
 
-    /** Unduh SEMUA berkas customer (KTP + NPWP + KTP pasangan) sebagai satu ZIP. */
+    /** Unduh SEMUA berkas customer (KTP + NPWP + KTP/NPWP pasangan) sebagai satu ZIP. */
     public function zip(Customer $customer): mixed
     {
         $this->authorizeTenant($customer);
@@ -45,6 +46,7 @@ class CustomerFileController
             'KTP' => $customer->ktp_file_path,
             'NPWP' => $customer->npwp_file_path,
             'KTP Pasangan' => $customer->ktp_pasangan_file_path,
+            'NPWP Pasangan' => $customer->npwp_pasangan_file_path,
         ], fn ($p) => $p && Storage::disk('local')->exists($p));
 
         abort_if(empty($files), 404, 'Customer ini belum punya berkas.');

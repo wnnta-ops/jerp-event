@@ -70,6 +70,7 @@ class Customer extends TenantAwareModel
         'ktp_file_path',
         'npwp_file_path',
         'ktp_pasangan_file_path',
+        'npwp_pasangan_file_path',
         'sumber_data',
         'lead_status',
         'occupation',
