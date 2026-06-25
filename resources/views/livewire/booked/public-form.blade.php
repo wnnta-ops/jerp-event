@@ -17,7 +17,7 @@
         </div>
     @elseif ($reviewing)
         {{-- ── Pratinjau data & dokumen sebelum daftar ───────────────── --}}
-        <div class="max-w-3xl mx-auto" x-data="{ zoom: null }" x-init="window.scrollTo({top:0,behavior:'smooth'})">
+        <div class="max-w-3xl mx-auto" x-data="{ zoom: null, warn: false }" x-init="window.scrollTo({top:0,behavior:'smooth'})">
             <div class="nup-card mb-4">
                 <h1 class="text-lg font-semibold mb-1" style="color:#111827;">Periksa Data Pendaftaran</h1>
                 <p class="text-sm" style="color:#6b7280;">Pastikan data &amp; dokumen yang Anda unggah sudah benar. Bila sudah, klik <strong>Konfirmasi &amp; Daftar</strong>. Bila ada yang salah, klik <strong>Kembali</strong>.</p>
@@ -54,25 +54,27 @@
             @endif
 
             <div class="nup-card mb-4">
-                <h2 class="text-sm font-semibold mb-3" style="color:#111827;">Dokumen Diunggah</h2>
-                <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+                <h2 class="text-sm font-semibold mb-1" style="color:#111827;">Dokumen Diunggah</h2>
+                <p class="text-xs mb-3" style="color:#6b7280;">Klik gambar untuk memperbesar. Pastikan seluruh tulisan/foto terbaca jelas.</p>
+                <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
                     @foreach (array_filter([['KTP', $ktp_file], ['NPWP', $npwp_file], ['KTP Pasangan', $ktp_pasangan_file], ['NPWP Pasangan', $npwp_pasangan_file], ['Bukti Transfer', $bukti_transfer_file]], fn ($d) => $d[1] || ! str_contains($d[0], 'Pasangan')) as $doc)
                         <div class="rounded-lg p-2 text-center" style="border:1px solid #e5e7eb;background:#f9fafb;">
-                            <div class="text-xs font-semibold mb-1" style="color:#374151;">{{ $doc[0] }}</div>
+                            <div class="text-sm font-semibold mb-2" style="color:#374151;">{{ $doc[0] }}</div>
                             @if ($doc[1])
                                 @php $ext = strtolower($doc[1]->getClientOriginalExtension()); @endphp
                                 @if (in_array($ext, ['jpg', 'jpeg', 'png']))
-                                    <img src="{{ $doc[1]->temporaryUrl() }}" alt="{{ $doc[0] }}" class="mx-auto rounded"
-                                         style="max-height:150px;object-fit:contain;cursor:zoom-in;"
+                                    <img src="{{ $doc[1]->temporaryUrl() }}" alt="{{ $doc[0] }}" class="mx-auto rounded w-full"
+                                         style="height:260px;object-fit:contain;background:#fff;cursor:zoom-in;"
                                          @click="zoom = '{{ $doc[1]->temporaryUrl() }}'">
+                                    <div class="text-xs mt-1" style="color:#2563eb;">🔍 klik untuk perbesar</div>
                                 @else
-                                    <div class="py-6">
-                                        <div style="font-size:30px;">📄</div>
-                                        <div class="break-all" style="color:#6b7280;font-size:11px;">{{ $doc[1]->getClientOriginalName() }}</div>
+                                    <div class="py-12">
+                                        <div style="font-size:42px;">📄</div>
+                                        <div class="break-all" style="color:#6b7280;font-size:12px;">{{ $doc[1]->getClientOriginalName() }}</div>
                                     </div>
                                 @endif
                             @else
-                                <div class="py-6 text-xs" style="color:#9ca3af;">— tidak ada —</div>
+                                <div class="py-12 text-xs" style="color:#9ca3af;">— tidak ada —</div>
                             @endif
                         </div>
                     @endforeach
@@ -85,7 +87,7 @@
                         style="background:#e5e7eb;color:#374151;">
                     ← Kembali / Perbaiki
                 </button>
-                <button type="button" wire:click="submit"
+                <button type="button" @click="warn = true"
                         class="inline-flex items-center justify-center gap-2 rounded px-6 py-2 text-sm font-semibold text-white whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed"
                         style="background:#16a34a;"
                         wire:loading.attr="disabled" wire:target="submit">
@@ -95,11 +97,44 @@
                 </button>
             </div>
 
-            {{-- Lightbox: klik gambar untuk perbesar; klik area / Esc untuk tutup --}}
+            {{-- Perbesar gambar: BERBINGKAI (bukan fullscreen), ramah HP. Klik luar / Tutup / Esc utk menutup --}}
             <div x-show="zoom" @click="zoom = null" @keydown.escape.window="zoom = null"
                  class="fixed inset-0 flex items-center justify-center p-4"
-                 style="background:rgba(0,0,0,.85);z-index:60;cursor:zoom-out;">
-                <img :src="zoom" alt="" class="rounded" style="max-width:95%;max-height:95%;object-fit:contain;">
+                 style="background:rgba(0,0,0,.6);z-index:60;">
+                <div class="bg-white rounded-xl p-3" @click.stop
+                     style="max-width:94vw;max-height:88vh;box-shadow:0 20px 60px rgba(0,0,0,.45);">
+                    <div class="flex items-center justify-between mb-2 px-1">
+                        <span class="text-xs font-semibold" style="color:#6b7280;">Perbesar — cubit/zoom untuk lebih detail</span>
+                        <button type="button" @click="zoom = null"
+                                class="text-sm font-semibold px-3 py-1 rounded" style="background:#e5e7eb;color:#374151;">✕ Tutup</button>
+                    </div>
+                    <img :src="zoom" alt="" class="rounded" style="display:block;margin:0 auto;max-width:90vw;max-height:74vh;object-fit:contain;">
+                </div>
+            </div>
+
+            {{-- Konfirmasi sebelum daftar: muncul SETELAH klik Register di pratinjau --}}
+            <div x-show="warn" @keydown.escape.window="warn = false"
+                 class="fixed inset-0 flex items-center justify-center p-4"
+                 style="background:rgba(0,0,0,.6);z-index:70;">
+                <div class="rounded-xl bg-white w-full max-w-md p-6 text-center" style="box-shadow:0 20px 60px rgba(0,0,0,.4);" @click.stop>
+                    <div class="mx-auto mb-3 w-14 h-14 rounded-full grid place-items-center" style="background:#fef3c7;">
+                        <svg class="w-8 h-8" style="color:#d97706;" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v4m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/>
+                        </svg>
+                    </div>
+                    <h3 class="text-lg font-bold mb-2" style="color:#111827;">Periksa Kembali Data Anda</h3>
+                    <p class="text-sm mb-5" style="color:#4b5563;">Cek kembali <strong>Upload Berkas</strong> Anda. Jika ada kesalahan akan <strong>menghambat pemberkasan</strong>.</p>
+                    <div class="flex flex-col sm:flex-row gap-2">
+                        <button type="button" @click="warn = false"
+                                class="inline-flex items-center justify-center rounded px-6 py-2.5 text-sm font-semibold w-full" style="background:#e5e7eb;color:#374151;">
+                            Periksa Lagi
+                        </button>
+                        <button type="button" wire:click="submit" @click="warn = false"
+                                class="inline-flex items-center justify-center gap-2 rounded px-6 py-2.5 text-sm font-semibold text-white w-full" style="background:#16a34a;">
+                            Ya, Daftar Sekarang
+                        </button>
+                    </div>
+                </div>
             </div>
         </div>
     @else
@@ -180,7 +215,10 @@
             </div>
             <div>
                 <label class="nup-label">Tanggal Lahir <span class="nup-required">*</span></label>
-                <input wire:model="birth_date" type="date" class="nup-input">
+                <div wire:ignore>
+                    <input type="text" class="nup-input" placeholder="dd/mm/yyyy" autocomplete="off" x-data
+                           x-init="flatpickr($el, { dateFormat:'Y-m-d', altInput:true, altFormat:'d/m/Y', altInputClass:'nup-input', allowInput:true, maxDate:'today', onChange:(s,str)=>$wire.set('birth_date', str, false) })">
+                </div>
                 @error('birth_date') <span class="nup-error">{{ $message }}</span> @enderror
             </div>
         </div>
@@ -366,7 +404,10 @@
                 </div>
                 <div>
                     <label class="nup-label">Tanggal Lahir</label>
-                    <input wire:model="spouse_birth_date" type="date" class="nup-input">
+                    <div wire:ignore>
+                        <input type="text" class="nup-input" placeholder="dd/mm/yyyy" autocomplete="off" x-data
+                               x-init="flatpickr($el, { dateFormat:'Y-m-d', altInput:true, altFormat:'d/m/Y', altInputClass:'nup-input', allowInput:true, maxDate:'today', onChange:(s,str)=>$wire.set('spouse_birth_date', str, false) })">
+                    </div>
                     @error('spouse_birth_date') <span class="nup-error">{{ $message }}</span> @enderror
                 </div>
                 <div>

@@ -98,7 +98,10 @@
             </div>
             <div>
                 <label class="nup-label">Tanggal Lahir <span class="nup-required">*</span></label>
-                <input wire:model="birth_date" type="date" class="nup-input">
+                <div wire:ignore>
+                    <input type="text" class="nup-input" placeholder="dd/mm/yyyy" autocomplete="off" x-data
+                           x-init="flatpickr($el, { dateFormat:'Y-m-d', altInput:true, altFormat:'d/m/Y', altInputClass:'nup-input', allowInput:true, maxDate:'today', onChange:(s,str)=>$wire.set('birth_date', str, false) })">
+                </div>
                 @error('birth_date') <span class="nup-error">{{ $message }}</span> @enderror
             </div>
         </div>
@@ -298,7 +301,10 @@
                 </div>
                 <div>
                     <label class="nup-label">Tanggal Lahir</label>
-                    <input wire:model="spouse_birth_date" type="date" class="nup-input">
+                    <div wire:ignore>
+                        <input type="text" class="nup-input" placeholder="dd/mm/yyyy" autocomplete="off" x-data
+                               x-init="flatpickr($el, { dateFormat:'Y-m-d', altInput:true, altFormat:'d/m/Y', altInputClass:'nup-input', allowInput:true, maxDate:'today', onChange:(s,str)=>$wire.set('spouse_birth_date', str, false) })">
+                    </div>
                     @error('spouse_birth_date') <span class="nup-error">{{ $message }}</span> @enderror
                 </div>
                 <div>
