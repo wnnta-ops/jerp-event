@@ -34,7 +34,8 @@
             .pe-pill.green { background: #dcfce7; color: #15803d; }
             .pe-pill.amber { background: #fef3c7; color: #92400e; }
             .pe-pill.blue  { background: #dbeafe; color: #1e40af; }
-            .pe-search { width: 100%; padding: 6px 10px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px; margin-bottom: 8px; }
+            .pe-search { width: 100%; padding: 6px 10px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px; margin-bottom: 8px; background: #fff; color: #111827; }
+            .pe-search::placeholder { color: #9ca3af; }
             .leaflet-tooltip.pe-label { background: rgba(15,23,42,.85); color: #fff; border: 0; font-weight: 600; font-size: 11px; padding: 2px 6px; border-radius: 4px; }
             .leaflet-tooltip.pe-block-label { background: transparent; color: #fff; border: 0; box-shadow: none; font-weight: 800; font-size: 13px; letter-spacing: .5px; text-shadow: 0 1px 3px rgba(0,0,0,.95); }
         </style>
