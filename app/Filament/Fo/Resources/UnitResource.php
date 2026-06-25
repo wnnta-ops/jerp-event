@@ -113,8 +113,15 @@ class UnitResource extends Resource
                     'BATAL' => 'danger',
                     default => 'gray',
                 }),
+                // Enable/Disable: nonaktif = unit DI-HOLD internal → hilang dari siteplan,
+                // tak bisa dipilih, tak dihitung stok. Toggle di sini langsung tersimpan;
+                // aktifkan lagi → kembali seperti semula.
+                Tables\Columns\ToggleColumn::make('is_active')->label('Aktif')
+                    ->onColor('success')->offColor('danger')->sortable(),
             ])
             ->filters([
+                Tables\Filters\TernaryFilter::make('is_active')->label('Status aktif')
+                    ->placeholder('Semua')->trueLabel('Aktif')->falseLabel('Nonaktif (hold internal)'),
                 Tables\Filters\SelectFilter::make('project_id')->relationship('project', 'name')->label('Proyek'),
                 Tables\Filters\SelectFilter::make('status')->options([
                     'TERSEDIA' => 'Tersedia', 'BOOKING' => 'Booking', 'TERJUAL' => 'Terjual',
@@ -126,6 +133,15 @@ class UnitResource extends Resource
             ])
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([
+                    Tables\Actions\BulkAction::make('nonaktifkan')->label('Nonaktifkan (Hold)')
+                        ->icon('heroicon-o-eye-slash')->color('danger')->requiresConfirmation()
+                        ->modalDescription('Unit terpilih akan di-HOLD internal: hilang dari siteplan, tak bisa dipilih, tak dihitung stok.')
+                        ->action(fn ($records) => $records->each(fn ($u) => $u->update(['is_active' => false])))
+                        ->deselectRecordsAfterCompletion(),
+                    Tables\Actions\BulkAction::make('aktifkan')->label('Aktifkan')
+                        ->icon('heroicon-o-eye')->color('success')
+                        ->action(fn ($records) => $records->each(fn ($u) => $u->update(['is_active' => true])))
+                        ->deselectRecordsAfterCompletion(),
                     Tables\Actions\DeleteBulkAction::make(),
                 ]),
             ])

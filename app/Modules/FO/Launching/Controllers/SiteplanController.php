@@ -78,6 +78,7 @@ class SiteplanController
             'siteplan' => $focusLokasi?->resolvedSiteplan() ?? $this->siteplan($project),
             'units' => $this->units($project, $focusLokasi?->id),
             'blocks' => $this->blocks($project, $focusLokasi?->id),
+            'focusLokasiId' => $focusLokasi?->id,
             'stock' => $this->liveStock($project, $focusLokasi?->id, $focusTahap),
             'showStock' => $s->siteplanlive_show_stock,
             'soldAnimation' => $s->siteplanlive_sold_animation,

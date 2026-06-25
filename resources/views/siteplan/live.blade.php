@@ -78,6 +78,7 @@
         const SITEPLAN = @json($siteplan);
         const UNITS = @json($units);
         const PROJECT_ID = {{ $project->id }};
+        const FOCUS_LOKASI = @json($focusLokasiId ?? null);  // cluster yg ditampilkan (null = seluruh project)
         const SCOPE_TAHAP = @json($focusTahap);             // '' = semua tahap (dlm scope unit)
         const SHOW_STOCK = {{ ($showStock ?? true) ? 'true' : 'false' }};
         const SOLD_ANIM = {{ ($soldAnimation ?? true) ? 'true' : 'false' }};
@@ -142,8 +143,9 @@
                 entry.marker = null; entry.stampEl = null;
             }
 
-            UNITS.forEach(u => {
+            function renderUnit(u) {
                 if (!Array.isArray(u.siteplan_coords) || u.siteplan_coords.length < 3) return;
+                if (byId[u.id]) return; // sudah tampil
                 const st = statusStyle(u.status);
                 const latlngs = u.siteplan_coords.map(p => toLatLng(p[0], p[1]));
                 // Transparan spt /siteplan → warna desain di gambar tetap tampil; status
@@ -155,7 +157,8 @@
                 const entry = { u, poly, marker: null, stampEl: null };
                 byId[u.id] = entry;
                 if (isSold(u.status)) addStamp(entry);
-            });
+            }
+            UNITS.forEach(renderUnit);
             updateSoldScale();
 
             // ── Blok area (penanda tahap, tidak terikat unit) — menutup area belum dibuka ──
@@ -201,12 +204,42 @@
                 recomputeStock();
             }
 
+            // Disable (hold internal) → hilangkan unit + kurangi stok real-time.
+            function removeUnitLive(unitId) {
+                const entry = byId[unitId];
+                if (entry) {
+                    if (entry.poly) map.removeLayer(entry.poly);
+                    removeStamp(entry);
+                    delete byId[unitId];
+                }
+                const i = UNITS.findIndex(x => x.id === unitId);
+                if (i >= 0) UNITS.splice(i, 1);
+                recomputeStock();
+            }
+
+            // Enable → munculkan unit kembali (dari payload event) bila di cluster ini.
+            function addUnitLive(e) {
+                if (FOCUS_LOKASI !== null && e.lokasi_id !== FOCUS_LOKASI) return; // beda cluster
+                const u = {
+                    id: e.unit_id, label: e.label || ('#' + e.unit_id),
+                    status: e.status || 'TERSEDIA', tahap: e.tahap, siteplan_coords: e.coords,
+                };
+                const existing = UNITS.find(x => x.id === u.id);
+                if (existing) Object.assign(existing, u); else UNITS.push(u);
+                renderUnit(u);
+                updateSoldScale();
+                recomputeStock();
+            }
+
             // ── Subscribe Reverb — real-time ──
             (function sub(attempt) {
                 if (window.Echo) {
-                    window.Echo.channel('siteplan.' + PROJECT_ID).listen('.unit.status.changed', (e) => {
-                        if (e && e.unit_id) applyStatusChange(e.unit_id, e.new_status);
-                    });
+                    window.Echo.channel('siteplan.' + PROJECT_ID)
+                        .listen('.unit.status.changed', (e) => { if (e && e.unit_id) applyStatusChange(e.unit_id, e.new_status); })
+                        .listen('.unit.visibility.changed', (e) => {
+                            if (!e || !e.unit_id) return;
+                            if (e.is_active) addUnitLive(e); else removeUnitLive(e.unit_id);
+                        });
                     return;
                 }
                 if (attempt < 40) setTimeout(() => sub(attempt + 1), 250);

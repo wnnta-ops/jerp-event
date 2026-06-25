@@ -88,6 +88,9 @@ class PilihUnitService
             if (! $unit) {
                 throw new RuntimeException('Unit tidak ditemukan.');
             }
+            if (! $unit->is_active) {
+                throw new RuntimeException('Unit sedang di-hold internal (nonaktif). Pilih unit lain.');
+            }
             if ($unit->status !== 'TERSEDIA') {
                 throw new RuntimeException(
                     'Unit '.trim(($unit->blok ? $unit->blok.' / ' : '').$unit->no_unit).

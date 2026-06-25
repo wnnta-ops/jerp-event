@@ -105,6 +105,10 @@ class Unit extends TenantAwareModel
                     (string) ($unit->getOriginal('status') ?? '')
                 ));
             }
+            // Enable/disable (hold internal) → siteplan/siteplanlive add/remove real-time.
+            if ($unit->wasChanged('is_active')) {
+                event(\App\Events\UnitVisibilityChanged::fromUnit($unit));
+            }
         });
     }
 
