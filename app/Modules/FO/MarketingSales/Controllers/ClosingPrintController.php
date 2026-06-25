@@ -3,11 +3,13 @@
 namespace App\Modules\FO\MarketingSales\Controllers;
 
 use App\Http\Controllers\Controller;
+use App\Modules\FO\Collection\Models\SpLetter;
 use App\Modules\FO\FinanceAR\Models\Bkm;
 use App\Modules\FO\FinanceAR\Models\Fp;
 use App\Modules\FO\FinanceAR\Models\Tts;
 use App\Modules\FO\Launching\Models\NupRegistration;
 use App\Modules\FO\MarketingSales\Models\Kontrak;
+use App\Settings\CollectionSettings;
 use App\Support\Terbilang;
 use Illuminate\Http\Response;
 use Spatie\Browsershot\Browsershot;
@@ -161,6 +163,17 @@ class ClosingPrintController extends Controller
         $fp->load(['kontrak.customer', 'kontrak.unit.unitType', 'kontrak.unit.lokasi', 'kontrak.agent', 'kontrak.skema', 'kontrak.tagihan']);
 
         return $this->render('pdf.fo.faktur-penjualan', ['fp' => $fp], 'FAKTUR-'.$fp->no_fp);
+    }
+
+    /** Cetak Surat Peringatan (SP) tercetak — snapshot dari fo_sp_letters. */
+    public function sp(SpLetter $sp): mixed
+    {
+        $sp->load(['kontrak.customer', 'kontrak.unit.unitType', 'kontrak.unit.lokasi']);
+
+        return $this->render('pdf.fo.sp', [
+            'sp' => $sp,
+            'settings' => app(CollectionSettings::class),
+        ], str_replace('/', '-', (string) ($sp->no_surat ?: 'SP-'.$sp->id)));
     }
 
     /** @param  array<string,mixed>  $data */

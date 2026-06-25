@@ -2,8 +2,10 @@
 
 namespace App\Filament\Fo\Resources;
 
+use App\Filament\Fo\Pages\TerbitkanSp;
 use App\Filament\Fo\Resources\CollectionResource\Pages;
 use App\Modules\FO\Collection\Models\CollectionNotice;
+use App\Modules\FO\Collection\Models\SpLetter;
 use App\Modules\FO\Collection\Services\CollectionService;
 use App\Modules\FO\MarketingSales\Models\Kontrak;
 use App\Modules\FO\MarketingSales\Models\KontrakTagihan;
@@ -30,7 +32,7 @@ class CollectionResource extends Resource
 
     protected static ?string $modelLabel = 'Collection';
 
-    protected static ?string $pluralModelLabel = 'Daftar Collection';
+    protected static ?string $pluralModelLabel = 'Surat SP';
 
     protected static bool $shouldRegisterNavigation = false;
 
@@ -80,9 +82,14 @@ class CollectionResource extends Resource
                     'KPR' => 'KPR', 'CASH' => 'Cash', 'KKB' => 'KKB',
                 ]),
             ])
+            ->recordUrl(fn (Kontrak $r) => TerbitkanSp::getUrl(['kontrak' => $r->id]))
             ->actions([
-                // Kirim surat manual (reminder / SP) untuk tagihan terpilih.
-                Tables\Actions\Action::make('kirim')->label('Kirim Surat')->icon('heroicon-o-paper-airplane')->color('primary')
+                // Terbitkan + cetak Surat Peringatan (buka halaman detail penerbitan).
+                Tables\Actions\Action::make('terbitkan_sp')->label('Terbitkan SP')->icon('heroicon-o-document-text')->color('primary')
+                    ->url(fn (Kontrak $r) => TerbitkanSp::getUrl(['kontrak' => $r->id])),
+
+                // Kirim surat manual (reminder / SP) via Email/WA untuk tagihan terpilih.
+                Tables\Actions\Action::make('kirim')->label('Kirim Email/WA')->icon('heroicon-o-paper-airplane')->color('gray')
                     ->modalHeading('Kirim Surat Penagihan')
                     ->modalWidth('lg')
                     ->form([
@@ -122,6 +129,7 @@ class CollectionResource extends Resource
                     ->modalWidth('3xl')
                     ->modalSubmitAction(false)->modalCancelActionLabel('Tutup')
                     ->modalContent(fn (Kontrak $r) => view('filament.fo.collection.riwayat', [
+                        'spLetters' => SpLetter::where('kontrak_id', $r->id)->orderByDesc('tgl_surat')->orderByDesc('id')->get(),
                         'notices' => CollectionNotice::where('kontrak_id', $r->id)->latest('dikirim_pada')->get(),
                     ])),
 

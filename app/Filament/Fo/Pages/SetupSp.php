@@ -49,6 +49,11 @@ class SetupSp extends Page implements HasForms
             'wa_template_sp1' => $s->wa_template_sp1,
             'wa_template_sp2' => $s->wa_template_sp2,
             'wa_template_sp3' => $s->wa_template_sp3,
+            'sp_company_name' => $s->sp_company_name,
+            'sp_signer_name' => $s->sp_signer_name,
+            'sp_signer_title' => $s->sp_signer_title,
+            'sp_collection_phone' => $s->sp_collection_phone,
+            'sp_due_days' => $s->sp_due_days,
         ]);
     }
 
@@ -81,6 +86,17 @@ class SetupSp extends Page implements HasForms
                 Forms\Components\Textarea::make('sp3_body')->label('Isi pesan')->rows(6)->required()->helperText($placeholders),
                 Forms\Components\TextInput::make('wa_template_sp3')->label('ID Template WhatsApp (opsional)'),
             ])->collapsible()->collapsed(),
+
+            Forms\Components\Section::make('Surat SP Cetak — Kop & Tanda Tangan')
+                ->description('Dipakai pada SP tercetak (PDF) di menu Surat SP.')
+                ->columns(2)->schema([
+                    Forms\Components\TextInput::make('sp_company_name')->label('Nama Perusahaan (kop)')->required()->columnSpanFull(),
+                    Forms\Components\TextInput::make('sp_signer_name')->label('Nama Penandatangan')->required(),
+                    Forms\Components\TextInput::make('sp_signer_title')->label('Jabatan Penandatangan')->required(),
+                    Forms\Components\TextInput::make('sp_collection_phone')->label('Telp. Bag. Collection (footer)'),
+                    Forms\Components\TextInput::make('sp_due_days')->label('Tenggat pelunasan (hari)')->numeric()->required()
+                        ->helperText('Jatuh tempo surat = tanggal surat + n hari.'),
+                ])->collapsible()->collapsed(),
         ]);
     }
 

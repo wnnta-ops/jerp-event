@@ -1,4 +1,25 @@
 <div class="space-y-3">
+    {{-- Surat Peringatan tercetak (bisa dicetak ulang) --}}
+    @foreach ($spLetters ?? [] as $sp)
+        <div class="rounded-lg border border-amber-300 dark:border-amber-500/30 bg-amber-50/50 dark:bg-amber-900/10 p-3 text-sm">
+            <div class="flex items-center justify-between gap-2">
+                <span class="font-semibold">
+                    {{ $sp->level_label }}
+                    @if ($sp->no_surat) <span class="text-gray-400">· {{ $sp->no_surat }}</span> @endif
+                </span>
+                <a href="{{ route('fo.cetak.sp', $sp) }}" target="_blank"
+                   class="text-xs px-2 py-0.5 rounded-full bg-primary-600 text-white hover:bg-primary-500">Cetak</a>
+            </div>
+            <div class="text-xs text-gray-500 mt-1">
+                {{ optional($sp->tgl_surat)->format('d M Y') }}
+                · {{ count($sp->items ?? []) }} item
+                · kekurangan Rp {{ number_format((float) $sp->total_kekurangan, 0, ',', '.') }}
+                @if ((float) $sp->total_denda > 0) · denda Rp {{ number_format((float) $sp->total_denda, 0, ',', '.') }} @endif
+            </div>
+        </div>
+    @endforeach
+
+    {{-- Pengiriman Email / WhatsApp (reminder & SP otomatis) --}}
     @forelse ($notices as $n)
         <div class="rounded-lg border border-gray-200 dark:border-white/10 p-3 text-sm">
             <div class="flex items-center justify-between gap-2">
@@ -24,6 +45,8 @@
             @endif
         </div>
     @empty
-        <p class="text-sm text-gray-500">Belum ada surat penagihan yang dikirim untuk kontrak ini.</p>
+        @if (empty($spLetters) || count($spLetters) === 0)
+            <p class="text-sm text-gray-500">Belum ada surat untuk kontrak ini.</p>
+        @endif
     @endforelse
 </div>

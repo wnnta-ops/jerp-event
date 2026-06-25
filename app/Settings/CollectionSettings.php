@@ -57,6 +57,17 @@ class CollectionSettings extends Settings
 
     public string $wa_template_sp3;
 
+    // Kop & tanda tangan Surat Peringatan tercetak (PDF).
+    public string $sp_company_name;     // nama perusahaan (kop)
+
+    public string $sp_signer_name;      // nama penandatangan (mis. Finance Supervisor)
+
+    public string $sp_signer_title;     // jabatan penandatangan
+
+    public string $sp_collection_phone; // telp Bag. Collection (footer)
+
+    public int $sp_due_days;            // tenggat pelunasan (jatuh tempo = tgl surat + n hari)
+
     public static function group(): string
     {
         return 'collection';

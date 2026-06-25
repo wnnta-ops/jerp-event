@@ -356,7 +356,7 @@ class FoPanelProvider extends PanelProvider
                 'icon' => 'heroicon-o-banknotes',
                 'groups' => [
                     ['label' => 'Penagihan', 'items' => [
-                        $item('Daftar Collection', '/fo/collection', 'heroicon-o-banknotes', 'filament.fo.resources.collection.'),
+                        $item('Surat SP', '/fo/collection', 'heroicon-o-document-text', 'filament.fo.resources.collection.'),
                         $item('Pemberkasan', '/fo/pemberkasan', 'heroicon-o-document-check', 'filament.fo.resources.pemberkasan.'),
                     ]],
                     ['label' => 'Setup', 'items' => [
