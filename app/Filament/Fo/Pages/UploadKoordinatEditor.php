@@ -4,6 +4,7 @@ namespace App\Filament\Fo\Pages;
 
 use App\Models\Project;
 use App\Modules\FO\MarketingSales\Models\Lokasi;
+use App\Modules\FO\MarketingSales\Models\SiteplanBlock;
 use App\Modules\FO\MarketingSales\Models\Unit;
 use Filament\Forms;
 use Filament\Forms\Concerns\InteractsWithForms;
@@ -108,6 +109,16 @@ class UploadKoordinatEditor extends Page implements HasForms
             ->values()
             ->all();
 
+        $blocks = SiteplanBlock::where('lokasi_id', $lokasi->id)
+            ->get(['id', 'coords', 'label', 'color', 'opacity'])
+            ->map(fn ($b) => [
+                'id' => $b->id,
+                'coords' => is_array($b->coords) ? $b->coords : [],
+                'label' => $b->label,
+                'color' => $b->color,
+                'opacity' => (float) $b->opacity,
+            ])->values()->all();
+
         return [
             'project' => [
                 'id' => $lokasi->id,
@@ -117,6 +128,7 @@ class UploadKoordinatEditor extends Page implements HasForms
                 'height' => $sp['height'],
             ],
             'units' => $units,
+            'blocks' => $blocks,
         ];
     }
 
@@ -160,5 +172,118 @@ class UploadKoordinatEditor extends Page implements HasForms
         $unit->update(['siteplan_coords' => null]);
 
         $this->dispatch('coords-cleared', unitId: $unitId);
+    }
+
+    /**
+     * Simpan/ubah blok area (penanda tahap, tidak terikat unit). $id null = baru.
+     * Mengembalikan id blok (dipakai JS untuk melacak layer). Koordinat ruang image.
+     */
+    public function saveBlock(?int $id, array $coords, ?string $label): ?int
+    {
+        $lokasi = $this->getLokasi();
+        if (! $lokasi) {
+            return null;
+        }
+        if (count($coords) < 3) {
+            Notification::make()->title('Blok minimal 3 titik')->danger()->send();
+
+            return $id;
+        }
+
+        $clean = [];
+        foreach ($coords as $pair) {
+            if (! is_array($pair) || count($pair) !== 2) {
+                return $id;
+            }
+            $clean[] = [(int) round($pair[0]), (int) round($pair[1])];
+        }
+
+        $block = $id ? SiteplanBlock::find($id) : new SiteplanBlock;
+        if ($id && (! $block || $block->lokasi_id !== $lokasi->id)) {
+            return null;
+        }
+
+        $block->fill([
+            'project_id' => $lokasi->project_id,
+            'lokasi_id' => $lokasi->id,
+            'coords' => $clean,
+            'label' => $label !== null ? trim($label) : $block->label,
+            'created_by' => auth()->id(),
+        ]);
+        $block->save();
+
+        return $block->id;
+    }
+
+    public function deleteBlock(int $id): void
+    {
+        $lokasi = $this->getLokasi();
+        $block = SiteplanBlock::find($id);
+        if ($block && $lokasi && $block->lokasi_id === $lokasi->id) {
+            $block->delete();
+        }
+    }
+
+    /** Simpan ulang SEMUA posisi unit + blok dalam satu permintaan (tombol Simpan). */
+    public function saveAll(array $units, array $blocks): void
+    {
+        $lokasi = $this->getLokasi();
+        if (! $lokasi) {
+            return;
+        }
+
+        $nUnit = 0;
+        foreach ($units as $u) {
+            $id = (int) ($u['id'] ?? 0);
+            $clean = $this->cleanCoords($u['coords'] ?? []);
+            if (! $id || $clean === null) {
+                continue;
+            }
+            $unit = Unit::find($id);
+            if ($unit && $unit->lokasi_id === $this->lokasiId) {
+                $unit->update(['siteplan_coords' => $clean]);
+                $nUnit++;
+            }
+        }
+
+        $nBlock = 0;
+        foreach ($blocks as $b) {
+            $id = (int) ($b['id'] ?? 0);
+            $clean = $this->cleanCoords($b['coords'] ?? []);
+            if (! $id || $clean === null) {
+                continue;
+            }
+            $block = SiteplanBlock::find($id);
+            if ($block && $block->lokasi_id === $lokasi->id) {
+                $block->update([
+                    'coords' => $clean,
+                    'label' => array_key_exists('label', $b) ? trim((string) $b['label']) : $block->label,
+                ]);
+                $nBlock++;
+            }
+        }
+
+        Notification::make()->title("Tersimpan — {$nUnit} unit, {$nBlock} blok")->success()->send();
+    }
+
+    /**
+     * Bersihkan & validasi koordinat (≥3 titik, pasangan numeric). Null bila invalid.
+     *
+     * @return array<int,array{0:int,1:int}>|null
+     */
+    private function cleanCoords(array $coords): ?array
+    {
+        if (count($coords) < 3) {
+            return null;
+        }
+        $clean = [];
+        foreach ($coords as $pair) {
+            if (! is_array($pair) || count($pair) !== 2) {
+                return null;
+            }
+            $clean[] = [(int) round($pair[0]), (int) round($pair[1])];
+        }
+
+        return $clean;
     }
 }

@@ -4,6 +4,7 @@
         $units = $this->getUnits();
         $project = $this->getProject();
         $siteplan = $this->getSiteplan();
+        $blocks = $this->getBlocks();
     @endphp
 
     <div>
@@ -85,6 +86,7 @@
         .pu-modal-card { background: white; border-radius: 1.25rem; padding: 2.5rem 2rem; max-width: 480px; width: 90%; text-align: center; box-shadow: 0 25px 60px -12px rgba(0,0,0,.4); animation: puPopIn .4s cubic-bezier(.34,1.56,.64,1); }
         .dark .pu-modal-card { background: #1e293b; color: #f1f5f9; }
         @keyframes puPopIn { from { transform: scale(.7) translateY(40px); opacity: 0; } to { transform: scale(1) translateY(0); opacity: 1; } }
+        .leaflet-tooltip.pu-block-label { background:transparent; color:#fff; border:0; box-shadow:none; font-weight:800; font-size:15px; letter-spacing:.5px; text-shadow:0 1px 4px rgba(0,0,0,.95); }
     </style>
 
     {{-- Breadcrumb --}}
@@ -134,6 +136,7 @@
              wire:key="pu-stage"
              x-data="pilihUnitState({
                  units: @js($units),
+                 blocks: @js($blocks),
                  siteplan: @js($siteplan),
                  projectId: @js($this->projectId),
              })"
@@ -265,6 +268,7 @@
             return {
                 phase: 'scan',          // disinkron dari server via x-effect="phase = $wire.phase"
                 units: initial.units,
+                blocks: initial.blocks || [],
                 siteplan: initial.siteplan,
                 projectId: initial.projectId,
 
@@ -365,6 +369,23 @@
 
                         this.applySoldStamp(u, poly);
                     });
+
+                    // Blok area (penanda tahap, tidak terikat unit) — menutup area belum dibuka.
+                    this.blockPolys = [];
+                    (this.blocks || []).forEach(b => {
+                        if (!Array.isArray(b.coords) || b.coords.length < 3) return;
+                        const bp = L.polygon(b.coords.map(p => this.toLatLng(p[0], p[1])), {
+                            color: '#000', weight: 1, fillColor: b.color || '#0a0a0a',
+                            fillOpacity: (b.opacity != null ? b.opacity : 0.85), interactive: false,
+                        }).addTo(this.map);
+                        if (b.label) { bp.bindTooltip(b.label, { permanent: true, direction: 'center', className: 'pu-block-label' }); this.blockPolys.push(bp); }
+                    });
+                    // Label blok stabil saat zoom (sekali bind handler).
+                    if (! this._blockZoomBound) {
+                        this._blockZoomBound = true;
+                        const self = this;
+                        this.map.on('zoomend', () => (self.blockPolys || []).forEach(bp => { const tt = bp.getTooltip(); if (tt) tt.setLatLng(bp.getBounds().getCenter()); }));
+                    }
                 },
 
                 /** Teks + kelas stempel per status (null = tanpa stempel). */

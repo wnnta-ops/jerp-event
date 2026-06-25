@@ -52,6 +52,8 @@
         .info-card .sold  .v { color: #dc2626; }
         .info-card .hold  .v { color: #d97706; }
 
+        .leaflet-tooltip.sp-block-label { background:transparent; color:#fff; border:0; box-shadow:none; font-weight:800; font-size:15px; letter-spacing:.5px; text-shadow:0 1px 4px rgba(0,0,0,.95); }
+
         /* ── Status legend — bottom left ── */
         .legend {
             position: fixed; bottom: 14px; left: 14px; z-index: 1000;
@@ -310,6 +312,19 @@
             });
 
             updateSoldScale(); // skala awal sesuai zoom fit
+
+            // ── Blok area (penanda tahap, tidak terikat unit) — menutup area belum dibuka ──
+            const blockPolys = [];
+            (@json($blocks ?? [])).forEach(b => {
+                if (!Array.isArray(b.coords) || b.coords.length < 3) return;
+                const bp = L.polygon(b.coords.map(p => toLatLng(p[0], p[1])), {
+                    color: '#000', weight: 1, fillColor: b.color || '#0a0a0a',
+                    fillOpacity: (b.opacity != null ? b.opacity : 0.85), interactive: false,
+                }).addTo(map);
+                if (b.label) { bp.bindTooltip(b.label, { permanent: true, direction: 'center', className: 'sp-block-label' }); blockPolys.push(bp); }
+            });
+            // Label blok stabil saat zoom (tooltip center bisa melayang di zoom fraksional).
+            map.on('zoomend', () => blockPolys.forEach(bp => { const tt = bp.getTooltip(); if (tt) tt.setLatLng(bp.getBounds().getCenter()); }));
 
             // ── Statistik live: hitung ulang Ready/Sold/Hold dari UNITS, tulis ke panel ──
             function recomputeStats() {

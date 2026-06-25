@@ -39,6 +39,7 @@
             border: .75px solid #fff; box-shadow: 0 1px 2px rgba(0,0,0,.5); white-space: nowrap; }
 
         .sp-empty { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; color:#94a3b8; text-align:center; padding:24px; }
+        .leaflet-tooltip.sp-block-label { background:transparent; color:#fff; border:0; box-shadow:none; font-weight:800; font-size:15px; letter-spacing:.5px; text-shadow:0 1px 4px rgba(0,0,0,.95); }
 
         /* ── Animasi SOLD OUT ── */
         #soldout { position: fixed; inset: 0; z-index: 2000; display: none; align-items: center; justify-content: center;
@@ -156,6 +157,19 @@
                 if (isSold(u.status)) addStamp(entry);
             });
             updateSoldScale();
+
+            // ── Blok area (penanda tahap, tidak terikat unit) — menutup area belum dibuka ──
+            const blockPolys = [];
+            (@json($blocks ?? [])).forEach(b => {
+                if (!Array.isArray(b.coords) || b.coords.length < 3) return;
+                const bp = L.polygon(b.coords.map(p => toLatLng(p[0], p[1])), {
+                    color: '#000', weight: 1, fillColor: b.color || '#0a0a0a',
+                    fillOpacity: (b.opacity != null ? b.opacity : 0.85), interactive: false,
+                }).addTo(map);
+                if (b.label) { bp.bindTooltip(b.label, { permanent: true, direction: 'center', className: 'sp-block-label' }); blockPolys.push(bp); }
+            });
+            // Label blok stabil saat zoom (tooltip center bisa melayang di zoom fraksional).
+            map.on('zoomend', () => blockPolys.forEach(bp => { const tt = bp.getTooltip(); if (tt) tt.setLatLng(bp.getBounds().getCenter()); }));
 
             // ── Stock live (scope = unit dlm SCOPE_TAHAP) ──
             let soldOutFired = false;

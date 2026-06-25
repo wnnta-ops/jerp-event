@@ -4,6 +4,7 @@ namespace App\Modules\FO\Launching\Controllers;
 
 use App\Models\Project;
 use App\Modules\FO\MarketingSales\Models\Lokasi;
+use App\Modules\FO\MarketingSales\Models\SiteplanBlock;
 use App\Modules\FO\MarketingSales\Models\Unit;
 use App\Settings\FoSettings;
 use Illuminate\Contracts\View\View;
@@ -76,6 +77,7 @@ class SiteplanController
             'project' => $project,
             'siteplan' => $focusLokasi?->resolvedSiteplan() ?? $this->siteplan($project),
             'units' => $this->units($project, $focusLokasi?->id),
+            'blocks' => $this->blocks($project, $focusLokasi?->id),
             'stock' => $this->liveStock($project, $focusLokasi?->id, $focusTahap),
             'showStock' => $s->siteplanlive_show_stock,
             'soldAnimation' => $s->siteplanlive_sold_animation,
@@ -132,6 +134,7 @@ class SiteplanController
             'clusters' => $lokasiList,
             'siteplan' => $lokasi?->resolvedSiteplan() ?? $this->siteplan($model),
             'units' => $this->units($model, $lokasi?->id),
+            'blocks' => $this->blocks($model, $lokasi?->id),
             'tahapStats' => $this->tahapStats($model, $lokasi?->id),
             // Setelan tampilan per-Lokasi (fallback project). Default true.
             'showInfo' => $lokasi ? $lokasi->resolvedShowInfo() : ($model->siteplan_show_info ?? true),
@@ -241,6 +244,27 @@ class SiteplanController
         }
 
         return $out;
+    }
+
+    /**
+     * Blok area (penanda tahap, tidak terikat unit) untuk project/cluster ini.
+     *
+     * @return array<int,array{coords:array,label:?string,color:string,opacity:float}>
+     */
+    private function blocks(Project $project, ?int $lokasiId): array
+    {
+        return SiteplanBlock::query()
+            ->where('project_id', $project->id)
+            ->when($lokasiId, fn ($q) => $q->where('lokasi_id', $lokasiId))
+            ->get(['coords', 'label', 'color', 'opacity'])
+            ->map(fn ($b) => [
+                'coords' => is_array($b->coords) ? $b->coords : [],
+                'label' => $b->label,
+                'color' => $b->color ?: '#0a0a0a',
+                'opacity' => (float) $b->opacity,
+            ])
+            ->filter(fn ($b) => count($b['coords']) >= 3)
+            ->values()->all();
     }
 
     /**

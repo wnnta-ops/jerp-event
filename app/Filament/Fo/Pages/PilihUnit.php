@@ -326,4 +326,28 @@ class PilihUnit extends Page
     {
         return $this->clusterId ? Lokasi::find($this->clusterId)?->resolvedSiteplan() : null;
     }
+
+    /**
+     * Blok area (penanda tahap, tidak terikat unit) untuk cluster terpilih.
+     *
+     * @return array<int,array<string,mixed>>
+     */
+    public function getBlocks(): array
+    {
+        if (! $this->clusterId) {
+            return [];
+        }
+
+        return \App\Modules\FO\MarketingSales\Models\SiteplanBlock::query()
+            ->where('lokasi_id', $this->clusterId)
+            ->get(['coords', 'label', 'color', 'opacity'])
+            ->map(fn ($b) => [
+                'coords' => is_array($b->coords) ? $b->coords : [],
+                'label' => $b->label,
+                'color' => $b->color ?: '#0a0a0a',
+                'opacity' => (float) $b->opacity,
+            ])
+            ->filter(fn ($b) => count($b['coords']) >= 3)
+            ->values()->all();
+    }
 }
