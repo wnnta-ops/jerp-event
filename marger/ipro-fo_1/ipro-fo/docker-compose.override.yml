@@ -1,0 +1,19 @@
+# Override LOKAL — isolasi port agar tak bentrok dgn J-ERP & project lain.
+# File asli docker-compose.yml TIDAK diubah. `!override` mengganti daftar ports
+# (butuh Docker Compose v2.24+, sama seperti dipakai J-ERP prod).
+services:
+  nginx:
+    ports: !override
+      - "8090:80"
+  mysql:
+    ports: !override
+      - "33070:3306"
+  redis:
+    ports: !override
+      - "63800:6379"
+  reverb:
+    ports: !override
+      - "8089:8080"
+  meilisearch:
+    ports: !override
+      - "7710:7700"

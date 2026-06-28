@@ -73,6 +73,28 @@ return [
             ],
         ],
 
+        // Koneksi ke database BO/Bankloan ipro-fo (ipro_bo) di server MySQL yang SAMA
+        // (jerp-mysql). Dipakai untuk integrasi FO→BO: sync master (customer/unit/SPR/TTS)
+        // + posting GL langsung ke ipro_bo.bs_journals. User `jerp` sudah di-GRANT ALL
+        // di ipro_bo. Default mengikuti koneksi mysql utama.
+        'ipro_bo' => [
+            'driver' => 'mysql',
+            'host' => env('IPRO_DB_HOST', env('DB_HOST', '127.0.0.1')),
+            'port' => env('IPRO_DB_PORT', env('DB_PORT', '3306')),
+            'database' => env('IPRO_DB_DATABASE', 'ipro_bo'),
+            'username' => env('IPRO_DB_USERNAME', env('DB_USERNAME', 'jerp')),
+            'password' => env('IPRO_DB_PASSWORD', env('DB_PASSWORD', '')),
+            'charset' => 'utf8mb4',
+            'collation' => 'utf8mb4_unicode_ci',
+            'prefix' => '',
+            'prefix_indexes' => true,
+            'strict' => true,
+            'engine' => null,
+            'options' => extension_loaded('pdo_mysql') ? array_filter([
+                (PHP_VERSION_ID >= 80500 ? Mysql::ATTR_SSL_CA : PDO::MYSQL_ATTR_SSL_CA) => env('MYSQL_ATTR_SSL_CA'),
+            ]) : [],
+        ],
+
         'mariadb' => [
             'driver' => 'mariadb',
             'url' => env('DB_URL'),

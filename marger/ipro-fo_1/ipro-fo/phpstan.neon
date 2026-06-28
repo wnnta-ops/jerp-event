@@ -1,0 +1,11 @@
+includes:
+    - vendor/larastan/larastan/extension.neon
+
+parameters:
+    level: 6
+    paths:
+        - app/
+    excludePaths:
+        - app/Domain/*/Listeners/* # legacy queue listeners can be loose
+    checkMissingIterableValueType: false
+    treatPhpDocTypesAsCertain: false

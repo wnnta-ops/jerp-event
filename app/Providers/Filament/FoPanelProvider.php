@@ -7,6 +7,7 @@ use Filament\Http\Middleware\Authenticate;
 use Filament\Http\Middleware\AuthenticateSession;
 use Filament\Http\Middleware\DisableBladeIconComponents;
 use Filament\Http\Middleware\DispatchServingFilamentEvent;
+use Filament\Navigation\MenuItem;
 use Filament\Navigation\NavigationBuilder;
 use Filament\Navigation\NavigationGroup;
 use Filament\Navigation\NavigationItem;
@@ -28,11 +29,13 @@ class FoPanelProvider extends PanelProvider
         return $panel
             ->id('fo')
             ->path('fo')
-            ->brandName('Java Core · Front Office')
+            ->brandName('Java Core System')
             ->favicon(asset('favicon.svg'))
-            ->login()
+            // TANPA ->login(): tamu yg buka /fo diarahkan ke /login (Livewire) — satu
+            // pintu login untuk seluruh J-ERP. /fo/login dihapus.
+            // Warna brand mengikuti ipro-fo (oranye hangat #ff8c00 / Java Core).
             ->colors([
-                'primary' => Color::Blue,
+                'primary' => Color::Orange,
                 'gray' => Color::Slate,
                 'success' => Color::Emerald,
                 'warning' => Color::Amber,
@@ -42,6 +45,13 @@ class FoPanelProvider extends PanelProvider
             ->darkMode()
             ->sidebarCollapsibleOnDesktop()
             ->font('Inter')
+            // Menu silang ke BO/Bankloan ipro-fo via SSO token-handoff (1 login).
+            ->userMenuItems([
+                MenuItem::make()
+                    ->label('Buka BO / Bankloan')
+                    ->url(fn () => url('/sso/to-bo'))
+                    ->icon('heroicon-o-building-library'),
+            ])
             ->discoverResources(in: app_path('Filament/Fo/Resources'), for: 'App\\Filament\\Fo\\Resources')
             ->discoverPages(in: app_path('Filament/Fo/Pages'), for: 'App\\Filament\\Fo\\Pages')
             ->pages([
@@ -49,14 +59,12 @@ class FoPanelProvider extends PanelProvider
             ])
             ->discoverWidgets(in: app_path('Filament/Fo/Widgets'), for: 'App\\Filament\\Fo\\Widgets')
             ->widgets([])
-            // Replaces auto-discovered nav with module-scoped sidebar:
-            // - on /fo (dashboard): no sidebar items (sidebar hidden via CSS)
-            // - on /fo/{module-resource-or-page}: only that module's items + back link
-            ->navigation(fn (NavigationBuilder $builder) => $this->buildScopedNavigation($builder))
-            // Hide the whole sidebar visually on the FO dashboard route only.
+            // Sidebar PENUH semua modul FO (mirip ipro-fo) — grup collapsible, selalu tampil.
+            ->navigation(fn (NavigationBuilder $builder) => $this->buildFullNavigation($builder))
+            // Sembunyikan sidebar HANYA di halaman live full-screen (Launching/Pilih Unit/Siteplan live).
             ->renderHook(
                 PanelsRenderHook::HEAD_END,
-                fn () => $this->isOnDashboardHome()
+                fn () => $this->isFullscreenPage()
                     ? '<style>'
                         .'aside.fi-sidebar, .fi-sidebar-nav, .fi-topbar-open-sidebar-btn, .fi-topbar-close-sidebar-btn { display: none !important; }'
                         .'.fi-main-ctn { padding-inline-start: 0 !important; }'
@@ -64,6 +72,11 @@ class FoPanelProvider extends PanelProvider
                         .'@media (min-width: 1024px) { .fi-layout { grid-template-columns: 0 1fr !important; } }'
                         .'</style>'
                     : ''
+            )
+            // Theme global FO (semua halaman) — sidebar/kartu/tombol ala ipro-fo.
+            ->renderHook(
+                PanelsRenderHook::HEAD_END,
+                fn () => view('filament.fo.theme-style')->render()
             )
             ->middleware([
                 EncryptCookies::class,
@@ -79,6 +92,57 @@ class FoPanelProvider extends PanelProvider
             ->authMiddleware([
                 Authenticate::class,
             ]);
+    }
+
+    /**
+     * Sidebar PENUH: semua modul FO jadi grup collapsible (mirip sidebar ipro-fo).
+     */
+    private function buildFullNavigation(NavigationBuilder $builder): NavigationBuilder
+    {
+        $groups = [];
+        foreach ($this->moduleDefinitions() as $key => $mod) {
+            if ($key === 'setup-unit') {
+                continue; // duplikat dari 'pengaturan'
+            }
+            $items = [];
+            if (! empty($mod['groups'])) {
+                foreach ($mod['groups'] as $g) {
+                    $items = array_merge($items, $g['items']);
+                }
+            } else {
+                $items = $mod['items'] ?? [];
+            }
+            if (empty($items)) {
+                continue;
+            }
+            $groups[] = NavigationGroup::make($mod['label'])
+                ->icon($mod['icon'])
+                ->items($items)
+                ->collapsible();
+        }
+
+        return $builder
+            ->items([
+                NavigationItem::make('Dashboard')
+                    ->url(url('/fo'))
+                    ->icon('heroicon-o-squares-2x2')
+                    ->isActiveWhen(fn () => trim((string) request()->path(), '/') === 'fo')
+                    ->sort(-100),
+                // Kembali ke hub utama J-ERP (Front Office / Back Office / Backup).
+                NavigationItem::make('Kembali ke Dashboard Utama')
+                    ->url(url('/dashboard'))
+                    ->icon('heroicon-o-arrow-left-circle')
+                    ->sort(-99),
+            ])
+            ->groups($groups);
+    }
+
+    /** Halaman live full-screen (sidebar disembunyikan): Launching/Pilih Unit/Siteplan live. */
+    private function isFullscreenPage(): bool
+    {
+        return in_array(trim((string) request()->path(), '/'), [
+            'fo/launching', 'fo/aktivasi-nup', 'fo/pilih-unit', 'fo/peta-unit-live', 'fo/closing-nup',
+        ], true);
     }
 
     /**

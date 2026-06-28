@@ -1,0 +1,1005 @@
+<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word" xmlns="http://www.w3.org/TR/REC-html40"><head><meta charset="utf-8"><title>PRD — Java Core System</title><!--[if gte mso 9]><xml><w:WordDocument><w:View>Print</w:View><w:Zoom>100</w:Zoom></w:WordDocument></xml><![endif]--><style>  @page { size: A4; margin: 16mm 14mm; }
+  * { box-sizing: border-box; }
+  body { font-family: "Segoe UI", Arial, sans-serif; font-size: 11px; line-height: 1.5; color: #1f2937; max-width: 940px; margin: 0 auto; padding: 24px; }
+  h1 { font-size: 22px; color: #0f766e; border-bottom: 3px solid #0f766e; padding-bottom: 6px; margin-top: 28px; }
+  h2 { font-size: 16px; color: #115e59; border-bottom: 1px solid #d1d5db; padding-bottom: 4px; margin-top: 24px; }
+  h3 { font-size: 13px; color: #1e40af; margin-top: 18px; }
+  h4 { font-size: 12px; color: #374151; }
+  table { border-collapse: collapse; width: 100%; margin: 10px 0; font-size: 10px; page-break-inside: avoid; }
+  th, td { border: 1px solid #cbd5e1; padding: 5px 8px; text-align: left; vertical-align: top; }
+  th { background: #f1f5f9; font-weight: 600; }
+  tr:nth-child(even) td { background: #f8fafc; }
+  code { background: #f1f5f9; padding: 1px 4px; border-radius: 3px; font-family: Consolas, monospace; font-size: 10px; }
+  pre { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 10px; overflow-x: auto; }
+  blockquote { border-left: 4px solid #14b8a6; background: #f0fdfa; margin: 8px 0; padding: 6px 12px; color: #334155; }
+  a { color: #0d9488; }
+  hr { border: none; border-top: 1px solid #e2e8f0; margin: 20px 0; }
+  .mermaid { background: #fff; text-align: center; margin: 14px 0; page-break-inside: avoid; }
+  ul, ol { margin: 6px 0 6px 18px; }</style></head><body><h1>PRD — Java Core System</h1>
+<h3>Product Requirements Document (Dokumen Kebutuhan Produk)</h3>
+<table>
+<thead>
+<tr>
+<th></th>
+<th></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Produk</strong></td>
+<td>Java Core System — ERP Pengembang Properti (Sales + Akuntansi)</td>
+</tr>
+<tr>
+<td><strong>Pemilik</strong></td>
+<td>PT. Mitra Usaha Propertindo (MUP)</td>
+</tr>
+<tr>
+<td><strong>Versi dokumen</strong></td>
+<td>1.0</td>
+</tr>
+<tr>
+<td><strong>Tanggal</strong></td>
+<td>2026-06-04</td>
+</tr>
+<tr>
+<td><strong>Status</strong></td>
+<td>Production-ready (terverifikasi: 171 halaman render OK, 24 skenario trial PASS, E2E 39 sub-transaksi balanced)</td>
+</tr>
+<tr>
+<td><strong>Acuan kesetaraan</strong></td>
+<td>eProperty — FO <code>fo.javaresidence.com</code> + BO <code>bo.javaresidence.com</code> (&quot;Batavianet&quot;)</td>
+</tr>
+</tbody>
+</table>
+<blockquote>
+<p><strong>Cara baca dokumen ini:</strong> Bab 1–7 = gambaran &amp; aturan umum (baca dulu). Bab 8–11 = rincian tiap modul. Bab 12–21 = data, integrasi, non-fungsional, pengujian, deployment, glosarium. Lampiran A–C = peta route, peran, dan bagan akun.</p>
+</blockquote>
+<hr />
+<h2>Daftar Isi</h2>
+<ol>
+<li>Ringkasan Eksekutif</li>
+<li>Latar Belakang &amp; Masalah</li>
+<li>Tujuan, Sasaran &amp; Metrik Sukses</li>
+<li>Ruang Lingkup (In / Out)</li>
+<li>Persona &amp; Peran Pengguna (RBAC)</li>
+<li>Arsitektur &amp; Teknologi</li>
+<li>Prinsip &amp; Aturan Bisnis Lintas-Modul</li>
+<li>Modul Fungsional — Front Office (Sales, CRM, Collection, KPA, Legal)</li>
+<li>Modul Fungsional — Back Office / Business Support (Akuntansi)</li>
+<li>Modul Fungsional — Security, Setup Sales, Settings</li>
+<li>Laporan &amp; Dashboard</li>
+<li>Model Data (ERD ringkas)</li>
+<li>Integrasi Eksternal</li>
+<li>Kebutuhan Non-Fungsional</li>
+<li>Alur Kerja Utama (User Journeys)</li>
+<li>Penjurnalan Otomatis (Journal Templates)</li>
+<li>Penomoran Dokumen (Numerator)</li>
+<li>Pengujian &amp; Kriteria Penerimaan</li>
+<li>Deployment &amp; Operasional</li>
+<li>Roadmap, Di Luar Lingkup &amp; Risiko</li>
+<li>Glosarium</li>
+</ol>
+<ul>
+<li>Lampiran A: Peta Route Lengkap</li>
+<li>Lampiran B: Daftar Peran &amp; Domain Permission</li>
+<li>Lampiran C: Bagan Akun Inti &amp; Pemetaan Jurnal</li>
+</ul>
+<hr />
+<h2>1. Ringkasan Eksekutif</h2>
+<p><strong>Java Core System</strong> adalah aplikasi ERP berbasis web untuk pengembang properti yang menyatukan <strong>dua dunia</strong> dalam satu sistem:</p>
+<ul>
+<li><strong>Front Office (FO) — Penjualan &amp; CRM:</strong> dari prospek (lead) → NUP → hold unit → booking → kontrak (PPJB) → pembayaran (TTS/Kuitansi) → KPA/KPR → legal (AJB/BAST/Sertifikat) → komisi → penagihan (collection).</li>
+<li><strong>Back Office (BO) — Akuntansi penuh (&quot;Batavianet&quot;):</strong> General Ledger berbasis <strong>double-entry</strong>, Kas/Bank, Hutang (AP), Piutang (AR), Aset Tetap, Persediaan, Pembelian (PO), Kontraktor (SPK), Budget, COGS, Payroll, Pajak (e-Faktur/SPT), dan Tutup Buku.</li>
+</ul>
+<p>Setiap transaksi finansial <strong>otomatis membentuk jurnal GL yang seimbang (Debit = Kredit)</strong>. Sistem merupakan <strong>rebuild setia (faithful clone)</strong> dari eProperty/Batavianet milik MUP, dengan UI modern (Inertia + Vue 3 + Tailwind, dark-mode), RBAC granular, audit trail, dan dukung multi-tenant.</p>
+<p><strong>Status:</strong> seluruh alur teruji end-to-end; tidak ada sub-menu BO/FO yang teridentifikasi tertinggal.</p>
+<hr />
+<h2>2. Latar Belakang &amp; Masalah</h2>
+<p>MUP menjalankan operasi penjualan + akuntansi melalui eProperty (FO) dan Batavianet (BO) — dua sistem warisan berbasis ASPX yang <strong>terpisah, sulit dikustomisasi, dan tidak modern</strong>. Kebutuhan:</p>
+<ul>
+<li><strong>Satu sistem terpadu</strong> Sales ↔ Akuntansi (booking otomatis menghasilkan jurnal kontrak; pembayaran otomatis ke buku besar).</li>
+<li><strong>Akurasi akuntansi</strong> (double-entry yang dijamin seimbang, periode terkunci, audit trail).</li>
+<li><strong>Kepatuhan pajak Indonesia</strong> (PPN, PPh 21/23/4(2), e-Faktur, SPT Masa).</li>
+<li><strong>UI modern &amp; cepat</strong>, bisa dipakai banyak user, di mana saja.</li>
+<li><strong>Kemampuan kustomisasi penuh</strong> (kode dimiliki sendiri).</li>
+</ul>
+<hr />
+<h2>3. Tujuan, Sasaran &amp; Metrik Sukses</h2>
+<table>
+<thead>
+<tr>
+<th>Tujuan</th>
+<th>Sasaran terukur</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Kesetaraan fitur dengan eProperty/Batavianet</td>
+<td>100% sub-menu FO + BO teridentifikasi terimplementasi</td>
+</tr>
+<tr>
+<td>Integritas akuntansi</td>
+<td>100% jurnal otomatis <strong>seimbang</strong>; periode tertutup tak bisa diposting</td>
+</tr>
+<tr>
+<td>Keandalan</td>
+<td>Semua halaman (171) render tanpa error; 24 skenario alur inti lulus otomatis</td>
+</tr>
+<tr>
+<td>Kepatuhan pajak</td>
+<td>Output e-Faktur (CSV/XML) &amp; SPT Masa (PPN/PPh) sesuai skema DJP</td>
+</tr>
+<tr>
+<td>Kemudahan pakai</td>
+<td>UI Indonesia, dark-mode, pencarian, dropdown ber-cari, wizard multi-langkah</td>
+</tr>
+<tr>
+<td>Keamanan</td>
+<td>RBAC 193 permission / 11 role; audit trail; data sensitif terenkripsi</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2>4. Ruang Lingkup</h2>
+<h3>4.1 Termasuk (In Scope)</h3>
+<ul>
+<li>Modul FO penuh: Customer/CIF, Unit/Siteplan, Pricelist, NUP, Hold, Booking, Contract/PPJB, Gimmick, TTS, Kuitansi, Memo, Cashback, Refund, Komisi, KPA/Bank Loan, Legal, Collection, Exception (GN/GU/Reschedule), Virtual Account, Faktur Pajak, CRM Leads, Kalkulator (BPHTB/KPR/Skema).</li>
+<li>Modul BO penuh: CoA, GL/Jurnal (+approval lifecycle), Cash Book, Petty Cash, Bon Sementara, Cek/Giro, AP, AR, Fixed Asset, Inventory/Stock, Purchasing/PO, Contractor/SPK, Budget, COGS (+RealCost), Payroll, Pajak (e-Faktur/SPT/PPh), Tutup Buku (bulanan + tahunan), Saldo Awal, Upload Massal, Rekonsiliasi Bank.</li>
+<li>Laporan: Neraca, Laba/Rugi, Arus Kas (langsung+tak langsung), Neraca Lajur, Komparasi, Buku Besar, Neraca Saldo, GL Lanjutan, Proyeksi Hutang/Piutang, Aging, Kartu Hutang/Piutang.</li>
+<li>Lintas: RBAC, audit trail, numerator, parameter sistem, multi-tenant, PDF, notifikasi, scheduler.</li>
+</ul>
+<h3>4.2 Tidak Termasuk (Out of Scope) — saat ini</h3>
+<ul>
+<li>Aplikasi mobile native (web responsif tersedia).</li>
+<li>Integrasi bank host-to-host real-time (VA via webhook didukung; rekonsiliasi manual/impor).</li>
+<li>Migrasi data historis otomatis dari eProperty (disediakan <strong>Upload Massal</strong> + <strong>Saldo Awal</strong> sebagai jalurnya).</li>
+<li>BI/analitik lanjutan di luar laporan standar.</li>
+</ul>
+<hr />
+<h2>5. Persona &amp; Peran Pengguna (RBAC)</h2>
+<p>Model otorisasi: <strong>Spatie Laravel-Permission</strong> — <strong>193 permission</strong> dikelompokkan dalam 15 domain: <code>system, master, sales, finance, collection, bankloan, legal, commission, approval, reporting, businesssupport, crm, security, setupsales, incentive</code>. <strong><code>Gate::before</code></strong> memberi <strong>SuperAdmin</strong> akses penuh otomatis.</p>
+<p><strong>11 Peran bawaan:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Peran</th>
+<th>Fokus</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>SuperAdmin</strong></td>
+<td>Akses penuh seluruh sistem (bypass permission)</td>
+</tr>
+<tr>
+<td><strong>Direktur</strong></td>
+<td>Lihat semua + persetujuan tingkat atas</td>
+</tr>
+<tr>
+<td><strong>Admin</strong></td>
+<td>Administrasi sistem, user, parameter</td>
+</tr>
+<tr>
+<td><strong>SalesDirector / SalesManager / Sales</strong></td>
+<td>Penjualan: lead→booking→kontrak, sesuai tingkat (approval diskon, dll.)</td>
+</tr>
+<tr>
+<td><strong>Agent</strong></td>
+<td>Mitra penjual: lihat unit, daftar prospek, komisi</td>
+</tr>
+<tr>
+<td><strong>FinanceManager / Finance</strong></td>
+<td>Akuntansi penuh / transaksi &amp; posting (Business Support, AP/AR, kas)</td>
+</tr>
+<tr>
+<td><strong>Collection</strong></td>
+<td>Penagihan: followup, denda, SP, SKL, tunggakan</td>
+</tr>
+<tr>
+<td><strong>Viewer</strong></td>
+<td>Hanya-baca</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Konvensi permission</strong> (contoh Business Support): <code>businesssupport.view</code> (lihat), <code>businesssupport.transaction.create</code> (buat transaksi/jurnal), <code>businesssupport.setup.manage</code> (master/setup), <code>businesssupport.approval.act</code> (setujui/tutup periode). Pola serupa untuk domain lain.</p>
+<hr />
+<h2>6. Arsitektur &amp; Teknologi</h2>
+<table>
+<thead>
+<tr>
+<th>Lapisan</th>
+<th>Teknologi</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Bahasa/Runtime</strong></td>
+<td>PHP 8.4</td>
+</tr>
+<tr>
+<td><strong>Framework</strong></td>
+<td>Laravel 12</td>
+</tr>
+<tr>
+<td><strong>Frontend</strong></td>
+<td>Inertia.js + Vue 3 + TypeScript + Tailwind CSS (dark-mode), Vite</td>
+</tr>
+<tr>
+<td><strong>Database</strong></td>
+<td>SQLite (default; WAL untuk konkurensi) — siap migrasi MySQL/PostgreSQL</td>
+</tr>
+<tr>
+<td><strong>Auth &amp; RBAC</strong></td>
+<td>Laravel Auth + Spatie Permission (+ <code>Gate::before</code> SuperAdmin)</td>
+</tr>
+<tr>
+<td><strong>PDF</strong></td>
+<td>Browsershot (headless Chromium) untuk Kuitansi, SKL, SPT, dll.</td>
+</tr>
+<tr>
+<td><strong>Pola domain</strong></td>
+<td><strong>DDD-lite</strong>: <code>app/Domain/&lt;Konteks&gt;/{Models, Services, Actions}</code></td>
+</tr>
+<tr>
+<td><strong>Komponen UI</strong></td>
+<td>Komponen reusable (Button, Badge, SearchSelect ber-cari, EmptyState, Modal, dll.)</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Statistik kode:</strong> 72 migrasi/tabel · 152 model domain · 49 controller Business Support · 22 enum · ~300 named route.</p>
+<p><strong>Pola kunci:</strong></p>
+<ul>
+<li><strong>Trait <code>HasTenant</code></strong> — otomatis isi <code>tenant_id</code> + scope query per tenant (multi-perusahaan).</li>
+<li><strong>Trait <code>HasAuditTrail</code></strong> — catat perubahan (siapa, kapan, apa) untuk jejak audit.</li>
+<li><strong>Cast <code>EncryptedString</code></strong> — enkripsi data sensitif (mis. No. Identitas/KTP customer, NPWP agen).</li>
+<li><strong>Strict-mode Eloquent</strong> — mengakses atribut/relasi yang belum di-load akan error (mencegah bug diam-diam &amp; N+1).</li>
+<li><strong><code>JournalService::post(header, lines)</code></strong> — satu pintu posting jurnal: validasi <strong>Dr = Cr</strong>, minimal 2 baris, periode tidak tertutup; menyalurkan dimensi (cost center, departemen, ledger, lokasi, mata uang, kurs) per baris.</li>
+</ul>
+<hr />
+<h2>7. Prinsip &amp; Aturan Bisnis Lintas-Modul</h2>
+<ol>
+<li><strong>Double-entry wajib &amp; seimbang.</strong> Setiap jurnal: total Debit = total Kredit, ≥ 2 baris. Posting yang tak seimbang <strong>ditolak</strong>.</li>
+<li><strong>Bagan Akun (CoA) 6 level.</strong> Panjang kode 1/3/5/7/9/11 → level 1–6; hanya akun <em>postable</em> (level daun) boleh dijurnal. Tipe akun (aset/liabilitas/ekuitas/pendapatan/beban) diturunkan dari digit pertama kode.</li>
+<li><strong>Periode fiskal.</strong> Tutup buku <strong>bulanan = mengunci</strong> periode (tak bisa tambah jurnal); tutup buku <strong>tahunan = jurnal penutup</strong> L/R → Laba Ditahan.</li>
+<li><strong>Approval Engine generik.</strong> Transaksi tertentu (diskon booking, cashback, refund, jurnal manual, budget, dll.) melewati alur persetujuan (pending → approved/rejected) sesuai peran.</li>
+<li><strong>Numerator</strong> — penomoran dokumen otomatis &amp; unik per jenis &amp; periode (lihat Bab 17).</li>
+<li><strong>Soft-delete</strong> untuk entitas penting (audit &amp; pemulihan); data uji/E2E selalu di-rollback.</li>
+<li><strong>Idempotensi &amp; guard bisnis</strong> — mis. HPP per unit tak bisa dobel, panjar tak bisa dilepas 2×, aset tak bisa dijual 2×, progres SPK tak bisa dimutasi melebihi yang ada.</li>
+<li><strong>Lokalisasi</strong> — bahasa Indonesia, zona waktu Asia/Jakarta, format Rupiah.</li>
+<li><strong>Keamanan data</strong> — <code>APP_DEBUG=false</code> di produksi, HTTPS, cookie aman, file sensitif (.env, /storage, /database) tak diakses publik.</li>
+</ol>
+<hr />
+<h2>8. Modul Fungsional — Front Office (Sales, CRM, Collection, KPA, Legal)</h2>
+<h3>8.1 CRM — Leads</h3>
+<p>Kanban prospek dengan tahapan (LeadStage). Fitur: buat/ubah lead, <strong>pindah tahap</strong> (drag), <strong>funnel</strong>, catat <strong>aktivitas/follow-up</strong>, tandai <strong>lost</strong> (alasan), <strong>convert</strong> lead → Customer/Booking.</p>
+<h3>8.2 Customer / CIF</h3>
+<ul>
+<li>Pendaftaran customer lengkap (data pribadi, identitas, NPWP, alamat KTP &amp; domisili, pekerjaan, dll.) dengan <strong>AddressClone</strong> (&quot;sama dengan KTP&quot;).</li>
+<li><strong>NPWP:</strong> Nama &amp; No. NPWP di bawah Alamat NPWP; centang &quot;Sama dengan KTP&quot; → Nama NPWP = Nama Lengkap, No. NPWP = No. Identitas.</li>
+<li><strong>CIF</strong> (Customer Information File): profil 360° + riwayat.</li>
+<li><strong>Merge</strong> customer ganda (+ pemetaan referensi), <strong>Upload massal</strong> customer (template CSV), <strong>Recent Customers</strong> panel kontekstual.</li>
+<li>Data sensitif (No. Identitas) <strong>terenkripsi</strong>.</li>
+</ul>
+<h3>8.3 Unit, Siteplan, Pricelist (Setup Sales)</h3>
+<ul>
+<li>Master Unit (kode unit, cluster, blok, tipe, harga dasar/berjalan, status, atribut LT/LB).</li>
+<li><strong>Siteplan</strong> interaktif: lihat status unit, klik <strong>&quot;Buat Booking&quot;</strong> langsung.</li>
+<li><strong>Pricelist</strong> berversi (buat, isi per unit, <strong>aktifkan</strong>, riwayat harga).</li>
+<li>Master: <strong>Skema pembayaran</strong>, <strong>Sales</strong>, <strong>Agent</strong>, plus <strong>reminder</strong> &amp; <strong>log</strong> aktivitas.</li>
+</ul>
+<h3>8.4 NUP (Nomor Urut Pemesanan)</h3>
+<ul>
+<li>Pendaftaran NUP <strong>internal &amp; publik</strong> (form publik anonim → store/done), <strong>verifikasi</strong>, <strong>bayar/pay</strong>, <strong>refund</strong>, <strong>verify</strong>, hapus. Antri prioritas unit saat launching.</li>
+</ul>
+<h3>8.5 Hold Unit</h3>
+<ul>
+<li>Tahan unit sementara (create/store) dengan masa berlaku; <strong>release</strong> manual; <strong>kedaluwarsa otomatis</strong> via scheduler (<code>hold:expire</code>).</li>
+</ul>
+<h3>8.6 Booking</h3>
+<ul>
+<li>Wizard booking + <strong>state machine</strong> (mis. pending → confirmed/expired). <strong>Preview</strong> harga (diskon, gimmick, PPN, total). Booking dengan diskon → <strong>alur approval</strong>.</li>
+<li><strong>Promote</strong> dari NUP/hold; <strong>cancel</strong>; kedaluwarsa otomatis (<code>booking:expire</code>).</li>
+<li>Booking membentuk <strong>Jadwal Tagihan + Jurnal Kontrak</strong> (Dr Piutang / Cr Pendapatan + PPN Keluaran).</li>
+</ul>
+<h3>8.7 Contract / PPJB</h3>
+<ul>
+<li>Lifecycle PPJB (status + <strong>penomoran ganda</strong>: internal &amp; resmi), <strong>print</strong>, <strong>start-signing</strong>, <strong>complete/sign</strong>, kelengkapan <strong>dokumen</strong> (toggle compliance).</li>
+<li><strong>Gimmick:</strong> paket &amp; item gimmick, apply-package ke kontrak, toggle &quot;diterima&quot;, remove.</li>
+<li><strong>Kontrak-Ops:</strong> penyesuaian (mis. <strong>PPN</strong> preview/apply, operasi lain), <strong>Migrasi</strong> kontrak (template + upload massal).</li>
+</ul>
+<h3>8.8 TTS (Tanda Terima Sementara) &amp; Kuitansi</h3>
+<ul>
+<li><strong>TTS:</strong> create → <strong>post</strong> (penerimaan pembayaran) → auto-<strong>Kuitansi</strong>. Dukung <strong>giro</strong> (clear-giro / reject-giro). Alokasi pembayaran ke tagihan/booking.</li>
+<li><strong>Kuitansi:</strong> lihat + <strong>cetak PDF</strong> (No Unit muncul via join booking→unit).</li>
+</ul>
+<h3>8.9 Memo, Cashback, Refund</h3>
+<ul>
+<li><strong>Memo:</strong> Free DP &amp; Subsidi DP (grant/cancel), alokasi pembayaran non-tunai.</li>
+<li><strong>Cashback:</strong> ajukan → <strong>approve</strong> → <strong>pay</strong>.</li>
+<li><strong>Refund:</strong> <strong>approve</strong> → <strong>pay</strong> (pengembalian dana ke customer).</li>
+</ul>
+<h3>8.10 Virtual Account (VA)</h3>
+<ul>
+<li>Assign VA ke tagihan, daftar transaksi, <strong>pembayaran anonim</strong> + <strong>alokasi</strong>, <strong>webhook Xendit</strong> (<code>webhooks.xendit</code>) untuk pembayaran masuk otomatis.</li>
+</ul>
+<h3>8.11 Komisi (Commission)</h3>
+<ul>
+<li>Mesin perhitungan komisi otomatis + <strong>payout</strong> (jadwal komisi per kontrak/agent).</li>
+</ul>
+<h3>8.12 KPA / Bank Loan (KPR)</h3>
+<ul>
+<li>Pengajuan KPA: create → <strong>submit</strong> → <strong>SP3K</strong> → <strong>akad</strong> → akad-complete. <strong>Setup:</strong> master <strong>retensi</strong> &amp; master <strong>bank</strong> KPA.</li>
+</ul>
+<h3>8.13 Legal</h3>
+<ul>
+<li>PPJB, <strong>AJB</strong>, <strong>BAST</strong>, <strong>IMB</strong>, <strong>Sertifikat</strong> — penerbitan &amp; pelacakan dokumen legal per kontrak.</li>
+</ul>
+<h3>8.14 Collection (Penagihan)</h3>
+<ul>
+<li><strong>Followups</strong>, <strong>Denda</strong> (perumusan rumus + <strong>pemutihan/waive</strong>), <strong>PJT</strong> (regenerate), <strong>Tunggakan</strong>, <strong>SP</strong> (Surat Peringatan — issue), <strong>SKL</strong> (Surat Keterangan Lunas — issue + PDF). Jadwal otomatis: <code>billing:jatuh-tempo</code>, <code>pjt:generate</code>, <code>tunggakan:update</code>.</li>
+</ul>
+<h3>8.15 Exception Flow</h3>
+<ul>
+<li><strong>GN</strong> (Ganti Nama), <strong>GU</strong> (Ganti Unit), <strong>Reschedule</strong> jatuh tempo — masing-masing dengan <strong>approval</strong> + Surat Peringatan terkait.</li>
+</ul>
+<h3>8.16 Kalkulator</h3>
+<ul>
+<li><strong>BPHTB</strong>, <strong>KPR</strong>, <strong>Skema</strong> pembayaran — alat hitung mandiri (standalone) untuk simulasi.</li>
+</ul>
+<hr />
+<h2>9. Modul Fungsional — Back Office / Business Support (Akuntansi)</h2>
+<h3>9.1 Hub &amp; Master Akuntansi</h3>
+<ul>
+<li><strong>Hub Business Support</strong> (<code>bs.index</code>) — pusat navigasi modul.</li>
+<li><strong>Bagan Akun (CoA)</strong> — kelola akun 6 level (CRUD).</li>
+<li><strong>Cost Center</strong> — pusat biaya per proyek/cluster.</li>
+<li><strong>Dimensi Jurnal</strong> — master <strong>Departemen, Ledger, Lokasi</strong> (dipakai per baris jurnal + mata uang &amp; kurs).</li>
+<li><strong>Supplier</strong> — master pemasok/kontraktor.</li>
+</ul>
+<h3>9.2 General Ledger (GL) &amp; Jurnal</h3>
+<ul>
+<li><strong>Jurnal manual</strong> dengan <strong>lifecycle persetujuan</strong>: Baru → <strong>Finalize</strong> → <strong>Approve</strong> → (terposting) / <strong>Reject</strong>.</li>
+<li><strong>Import Jurnal (CSV)</strong> — impor massal, gabung per REFERENSI, validasi balance, <strong>dry-run</strong>.</li>
+<li><strong>Tutup/Buka periode</strong> (<code>period.close</code>/<code>open</code>).</li>
+<li>Laporan GL: <strong>Buku Besar (ledger)</strong>, <strong>Neraca Saldo (trial balance)</strong>, <strong>Neraca &amp; L/R (financials)</strong>, <strong>Arus Kas (cashflow)</strong>, <strong>Neraca Lajur (worksheet)</strong>, <strong>Komparasi (comparative)</strong>, <strong>GL Lanjutan (extra)</strong> (komparasi tahunan / multi-periode / histori saldo).</li>
+</ul>
+<h3>9.3 Pajak (Tax)</h3>
+<ul>
+<li><strong>Faktur Pajak Keluaran &amp; Masukan</strong> + <strong>Rekap</strong>, set <strong>NSFP</strong> (no. seri faktur).</li>
+<li><strong>e-Faktur</strong> export <strong>CSV &amp; XML</strong> (skema impor DJP).</li>
+<li><strong>SPT Masa</strong>: cetak <strong>PPN</strong>, <strong>PPh</strong>, <strong>Buku Pembantu Pajak</strong>.</li>
+<li><strong>PPh</strong> rekap (Pasal 21/23/4(2)) + export.</li>
+<li><strong>Dashboard Pajak</strong> (PPN/PPh 12 bulan + jatuh tempo setor/lapor).</li>
+</ul>
+<h3>9.4 Tutup Buku (Closing)</h3>
+<ul>
+<li><strong>Neraca Awal</strong> otomatis (carry-forward Laba Ditahan), <strong>Jurnal Saldo Awal</strong> (preview + CSV).</li>
+<li><strong>Tutup bulanan</strong> (kunci) + <strong>buka kembali</strong> (reopen) + <strong>Tutup tahunan</strong> (jurnal L/R → Laba Ditahan).</li>
+</ul>
+<h3>9.5 Hutang (Accounts Payable / AP)</h3>
+<ul>
+<li><strong>Invoice Hutang</strong> wizard multi-langkah (supplier, kategori, DPP, PPN, PPh, jadwal, <strong>Struktur jurnal</strong> Dr/Cr per baris + dimensi) → auto-jurnal. No. Invoice Supplier <strong>wajib</strong>.</li>
+<li><strong>Kategori Invoice</strong> (CRUD), <strong>Aging</strong>, <strong>Kartu Hutang</strong>.</li>
+<li><strong>Kuitansi Hutang</strong> (voucher pembayaran multi-invoice + <strong>void</strong>), <strong>Posting Invoice PO/SPK</strong>, <strong>Memorial Hutang</strong> (penyesuaian non-tunai), <strong>Penghapusan Nilai Hutang</strong> (write-off), <strong>Kelengkapan Berkas</strong> (master + checklist).</li>
+</ul>
+<h3>9.6 Piutang (Accounts Receivable / AR)</h3>
+<ul>
+<li><strong>Invoice Piutang</strong> wizard (customer, kategori, DPP/PPN/PPh, jadwal angsuran), <strong>Kategori</strong>, <strong>Aging</strong>, <strong>Kartu Piutang</strong>.</li>
+<li><strong>Reschedule Jatuh Tempo</strong> (jadwal ulang sisa piutang, angsuran terbayar terkunci, tanpa jurnal).</li>
+<li><strong>Kuitansi Piutang</strong> (penerimaan multi-invoice + void), <strong>Memorial Piutang</strong>, <strong>Penghapusan Piutang</strong>.</li>
+</ul>
+<h3>9.7 Kas &amp; Bank</h3>
+<ul>
+<li><strong>Cash Book</strong> (kas/bank masuk/keluar/transfer) + <strong>saldo (balances)</strong> + auto-jurnal.</li>
+<li><strong>Kas Kecil (Petty Cash)</strong> — top-up &amp; belanja, akun Kas Kecil khusus.</li>
+<li><strong>Bon Sementara (Uang Muka):</strong> terbit → <strong>realisasi</strong> (dengan opsi tunda penyelesaian) → <strong>Refund</strong> (sisa) / <strong>Reimburse</strong> (kekurangan).</li>
+<li><strong>Cek/Giro Masuk:</strong> terima → <strong>kliring (clear)</strong> / <strong>tolak (bounce)</strong>.</li>
+<li><strong>Rekonsiliasi Bank</strong> (cocokkan Cash Book vs rekening koran, toggle, finalize).</li>
+</ul>
+<h3>9.8 Aset Tetap (Fixed Asset)</h3>
+<ul>
+<li>Registrasi aset (kategori → akun aset/akumulasi/beban), <strong>Penyusutan</strong> garis lurus (per aset / <strong>batch</strong> per periode), <strong>Penghapusan</strong> (write-off), <strong>Penjualan</strong> (laba/rugi), <strong>Saldo Awal Penyusutan</strong> (migrasi).</li>
+</ul>
+<h3>9.9 Persediaan / Stock (Inventory)</h3>
+<ul>
+<li>Master <strong>Item</strong> &amp; <strong>kategori stok</strong> (inv.setup), <strong>FPB</strong> (permintaan barang) + approve, <strong>Penerimaan (receipt)</strong>, <strong>Pengeluaran (issue)</strong>, <strong>Kartu Stok</strong> — auto-jurnal GL (Dr Persediaan / Cr ...; Dr Beban/CIP / Cr Persediaan).</li>
+</ul>
+<h3>9.10 Pembelian / Purchase Order (PO)</h3>
+<ul>
+<li>PO (create, approve, close) + <strong>Revisi</strong>, <strong>Posting Termin</strong> (uang muka: Dr Uang Muka Pembelian / Cr Kas), <strong>Adjust PPN</strong>.</li>
+</ul>
+<h3>9.11 Kontraktor / SPK</h3>
+<ul>
+<li>SPK (create) → <strong>Progress termin</strong> (Dr CIP+PPN / Cr Hutang+Retensi) → <strong>Bayar</strong> (Dr Hutang / Cr Kas) → <strong>Cairkan Retensi</strong> (Dr Hutang Retensi / Cr Kas).</li>
+<li><strong>Addendum</strong> (± nilai kontrak), <strong>Adjust PPN</strong>, <strong>Pembatalan</strong>, <strong>Pemakaian Barang</strong> (Dr CIP / Cr Persediaan), <strong>Mutasi Progress</strong> (reklasifikasi CIP antar cost-center: Dr CIP-tujuan / Cr CIP-asal).</li>
+</ul>
+<h3>9.12 Budget Control</h3>
+<ul>
+<li><strong>Alokasi</strong> anggaran (per tahun/akun/cost-center) → <strong>workflow</strong> (Draft → Diajukan → <strong>Disetujui/Ditolak</strong>) → <strong>Mutasi</strong> (transfer antar baris) &amp; <strong>Koreksi</strong>. Tampilan <strong>budget vs realisasi</strong> (terpakai %, sisa, status). <strong>Upload Massal</strong> anggaran.</li>
+</ul>
+<h3>9.13 COGS (HPP)</h3>
+<ul>
+<li><strong>Pengakuan HPP</strong> manual (Dr Beban Pokok / Cr Persediaan/CIP).</li>
+<li><strong>HPP RealCost per unit:</strong> <strong>Generate</strong> (hitung biaya riil per unit dari pool CIP, alokasi rata/proporsi-harga) → <strong>Posting</strong> (akui HPP hanya untuk unit terjual &amp; belum diakui; idempoten).</li>
+</ul>
+<h3>9.14 Payroll &amp; Employee Center</h3>
+<ul>
+<li>Master <strong>Karyawan</strong> (CRUD), <strong>Run Payroll</strong> per periode → payslip + <strong>jurnal otomatis</strong> (Dr Beban Gaji / Cr PPh21 + BPJS + Kas).</li>
+</ul>
+<h3>9.15 Upload Massal &amp; Saldo Awal</h3>
+<ul>
+<li><strong>Upload Massal CSV</strong>: Aset, Anggaran, <strong>Saldo Awal Stok</strong> (Dr Persediaan / Cr Laba Ditahan) — dengan <strong>dry-run</strong> &amp; laporan error per-baris.</li>
+<li><strong>Saldo Awal</strong>: AP/AR via wizard (<code>trx_type = Saldo Awal</code>), Penyusutan (modul Aset), Stok (upload).</li>
+</ul>
+<h3>9.16 Proyeksi &amp; Laporan BO</h3>
+<ul>
+<li><strong>Proyeksi Hutang/Piutang</strong> — bucket Jatuh Tempo (overdue) + 12 bulan ke depan, per supplier/customer (proyeksi arus kas).</li>
+</ul>
+<hr />
+<h2>10. Modul Fungsional — Security, Setup Sales, Settings</h2>
+<h3>10.1 Security (modul SDM lapangan/satpam eProperty)</h3>
+<ul>
+<li><strong>Log</strong> aktivitas, <strong>Matrikulasi</strong> company/project (+ toggle), <strong>Absensi</strong> (store), <strong>Job History</strong> (store), <strong>Technical</strong> (CRUD). <em>(Catatan: ini modul &quot;Security&quot; eProperty — manajemen petugas, berbeda dari RBAC sistem.)</em></li>
+</ul>
+<h3>10.2 Setup Sales</h3>
+<ul>
+<li>Skema pembayaran, master Sales &amp; Agent, Pricelist, <strong>reminder dashboard</strong>, <strong>log</strong>, laporan setup (master-sales, price-list, history-price, summary-stock, master-unit).</li>
+</ul>
+<h3>10.3 Settings (administrasi sistem)</h3>
+<ul>
+<li><strong>User</strong>, <strong>Role &amp; Permission</strong> (RBAC), <strong>Numerator</strong> (format penomoran), <strong>Parameter</strong> sistem (mis. % PPN, dll.). Master <strong>Rekening</strong> bank perusahaan.</li>
+</ul>
+<hr />
+<h2>11. Laporan &amp; Dashboard</h2>
+<table>
+<thead>
+<tr>
+<th>Kategori</th>
+<th>Laporan</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Dashboard</strong></td>
+<td>Dashboard utama per peran (widget); <strong>Reminder</strong>; <strong>Dashboard Pajak</strong></td>
+</tr>
+<tr>
+<td><strong>GL/Keuangan</strong></td>
+<td>Buku Besar, Neraca Saldo, <strong>Neraca</strong>, <strong>Laba/Rugi</strong>, <strong>Arus Kas</strong> (langsung &amp; tak langsung), <strong>Neraca Lajur</strong>, <strong>Komparasi</strong> bulanan, <strong>GL Lanjutan</strong> (komparasi tahunan/multi-periode/histori)</td>
+</tr>
+<tr>
+<td><strong>AP/AR</strong></td>
+<td><strong>Aging Hutang/Piutang</strong> (bucket), <strong>Kartu Hutang/Piutang</strong>, <strong>Proyeksi Hutang/Piutang</strong></td>
+</tr>
+<tr>
+<td><strong>Pajak</strong></td>
+<td>Rekap Faktur Keluaran/Masukan, SPT Masa PPN/PPh, Buku Pembantu Pajak, Daftar Bukti Potong</td>
+</tr>
+<tr>
+<td><strong>Sales</strong></td>
+<td>Master Sales, Price List, History Price, Summary Stock, Master Unit, Report detail/summary/export</td>
+</tr>
+<tr>
+<td><strong>Lainnya</strong></td>
+<td>Stok (Kartu Stok), Budget vs Realisasi, HPP RealCost per unit</td>
+</tr>
+</tbody>
+</table>
+<p>Output cetak: <strong>PDF</strong> (Browsershot) untuk Kuitansi, SKL, SPT, dokumen legal; <strong>CSV/XML</strong> untuk e-Faktur &amp; ekspor data.</p>
+<hr />
+<h2>12. Model Data (ERD Ringkas)</h2>
+<p><strong>Inti Sales:</strong> <code>customers</code> ─&lt; <code>bookings</code> &gt;─ <code>units</code> (─ <code>clusters</code>/<code>blocks</code>/<code>unit_types</code>); <code>bookings</code> ─&lt; <code>contracts</code> (PPJB) ─&lt; <code>contract_documents</code>, <code>contract_gimmicks</code>; <code>bookings</code> ─&lt; <code>payment_allocations</code> (TTS/Memo/VA); <code>nup_registrations</code>, <code>holds</code>.</p>
+<p><strong>Inti Akuntansi:</strong> <code>bs_accounts</code> (CoA 6 level) ─&lt; <code>bs_journal_lines</code> &gt;─ <code>bs_journals</code> (header; + <code>cost_center_id, department_id, ledger_id, location_id, currency, kurs</code>). Sub-ledger: <code>bs_ap_invoices</code>(+lines/schedules/payments), <code>bs_ar_invoices</code>(+lines/schedules/payments), <code>bs_fixed_assets</code>(+depreciation_entries), <code>bs_stock_*</code>, <code>bs_purchase_orders</code>(+lines), <code>bs_work_orders</code>(+progress/addendums/materials/progress_mutations), <code>bs_budgets</code>(+mutations), <code>bs_cogs_recognitions</code>, <code>bs_payroll_runs</code>(+lines), <code>bs_cash_transactions</code>, <code>bs_cash_advances</code>, <code>bs_giros</code>, <code>bs_fiscal_periods</code>.</p>
+<p><strong>Fondasi:</strong> <code>users</code>, <code>roles</code>, <code>permissions</code> (Spatie), <code>tenants</code>, audit trail, <code>numerators</code>, <code>parameters</code>. <strong>Total 72 tabel.</strong></p>
+<blockquote>
+<p>Setiap entitas finansial menyimpan <code>journal_id</code> (referensi ke jurnal GL yang dibentuknya) → telusur lengkap transaksi ↔ buku besar.</p>
+</blockquote>
+<hr />
+<h2>13. Integrasi Eksternal</h2>
+<table>
+<thead>
+<tr>
+<th>Integrasi</th>
+<th>Bentuk</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>eProperty / Batavianet</strong></td>
+<td>Kesetaraan fungsional &amp; struktur (faithful clone) — acuan alur, field, jurnal</td>
+</tr>
+<tr>
+<td><strong>DJP — e-Faktur</strong></td>
+<td>Export CSV &amp; XML sesuai skema impor e-Faktur</td>
+</tr>
+<tr>
+<td><strong>DJP — SPT Masa</strong></td>
+<td>Cetak SPT PPN &amp; PPh (format DJP), Daftar Bukti Potong</td>
+</tr>
+<tr>
+<td><strong>Xendit (VA)</strong></td>
+<td>Webhook pembayaran VA masuk (<code>webhooks.xendit</code>) → alokasi otomatis</td>
+</tr>
+<tr>
+<td><strong>PDF</strong></td>
+<td>Browsershot (Chromium) untuk dokumen cetak</td>
+</tr>
+<tr>
+<td><strong>Email/Notifikasi</strong></td>
+<td>Dispatcher notifikasi (queue) — reset password, pemberitahuan</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2>14. Kebutuhan Non-Fungsional</h2>
+<ul>
+<li><strong>Ketersediaan:</strong> dirancang berjalan 24/7 di server (lihat <code>DEPLOY.md</code>); scheduler &amp; queue worker terus berjalan.</li>
+<li><strong>Kinerja:</strong> query ber-scope tenant, eager-loading (strict-mode mencegah N+1), aset frontend di-build &amp; di-cache; SQLite WAL untuk konkurensi tulis.</li>
+<li><strong>Keamanan:</strong> RBAC granular; <code>Gate::before</code> SuperAdmin; audit trail; enkripsi data sensitif; <code>APP_DEBUG=false</code>; HTTPS wajib; cookie <code>Secure</code>; proteksi file sensitif; validasi input ketat per form.</li>
+<li><strong>Integritas data:</strong> jurnal selalu seimbang; periode terkunci; soft-delete; transaksi DB (atomik).</li>
+<li><strong>Skalabilitas:</strong> multi-tenant; siap pindah ke MySQL/PostgreSQL.</li>
+<li><strong>Lokalisasi &amp; UX:</strong> Bahasa Indonesia, Asia/Jakarta, format Rupiah, dark-mode, dropdown ber-cari, wizard, halaman error kustom Indonesia.</li>
+<li><strong>Pemulihan:</strong> backup DB harian (cron), uji restore.</li>
+</ul>
+<hr />
+<h2>15. Alur Kerja Utama (User Journeys)</h2>
+<ol>
+<li><strong>Penjualan unit:</strong> Lead → (convert) Customer → NUP/Hold → <strong>Booking</strong> (diskon→approval) → <strong>Jurnal Kontrak otomatis</strong> → PPJB (print/sign) → <strong>TTS/pembayaran</strong> → <strong>Kuitansi</strong> → KPA (bila KPR) → Legal (AJB/BAST/Sertifikat) → <strong>Komisi</strong>.</li>
+<li><strong>Penagihan:</strong> Jadwal tagihan → jatuh tempo (scheduler) → Followup → Denda → SP → (lunas) SKL.</li>
+<li><strong>Hutang→bayar→pajak:</strong> Invoice Hutang (auto-jurnal) → <strong>Kuitansi Hutang</strong> (Dr Hutang/Cr Kas) → set <strong>NSFP</strong> Faktur Masukan → rekap/e-Faktur.</li>
+<li><strong>Kontraktor:</strong> SPK → Progress (Dr CIP+PPN/Cr Hutang+Retensi) → Bayar → Addendum/Pemakaian Barang/Mutasi Progress → Cairkan Retensi.</li>
+<li><strong>Aset:</strong> Perolehan → Penyusutan bulanan → Penjualan (laba/rugi) atau Penghapusan.</li>
+<li><strong>HPP:</strong> akumulasi biaya CIP per cluster → <strong>Generate RealCost</strong> per unit → <strong>Posting HPP</strong> unit terjual.</li>
+<li><strong>Tutup buku:</strong> input transaksi bulan → <strong>tutup bulanan (kunci)</strong> → akhir tahun <strong>tutup tahunan</strong> (L/R→Laba Ditahan).</li>
+</ol>
+<hr />
+<h2>16. Penjurnalan Otomatis (Journal Templates)</h2>
+<table>
+<thead>
+<tr>
+<th>Transaksi</th>
+<th>Debit</th>
+<th>Kredit</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Jurnal Kontrak (booking/PPJB)</td>
+<td>Piutang Usaha</td>
+<td>Pendapatan Penjualan (+ PPN Keluaran)</td>
+</tr>
+<tr>
+<td>Penerimaan (TTS/Kuitansi Piutang)</td>
+<td>Kas/Bank</td>
+<td>Piutang Usaha</td>
+</tr>
+<tr>
+<td>Invoice Hutang (AP)</td>
+<td>Beban/Persediaan + PPN Masukan</td>
+<td>Hutang Usaha</td>
+</tr>
+<tr>
+<td>Kuitansi Hutang (AP pay)</td>
+<td>Hutang Usaha</td>
+<td>Kas/Bank</td>
+</tr>
+<tr>
+<td>Invoice Piutang (AR)</td>
+<td>Piutang Usaha (+ PPh dibayar dimuka)</td>
+<td>Pendapatan + PPN Keluaran</td>
+</tr>
+<tr>
+<td>Kas Masuk / Keluar</td>
+<td>Kas/Bank / Beban</td>
+<td>Sumber / Kas/Bank</td>
+</tr>
+<tr>
+<td>Kas Kecil (top-up / belanja)</td>
+<td>Kas Kecil / Beban</td>
+<td>Bank / Kas Kecil</td>
+</tr>
+<tr>
+<td>Bon Sementara (terbit/realisasi/refund/reimburse)</td>
+<td>Uang Muka / Beban / Kas / Uang Muka</td>
+<td>Kas / Uang Muka / Uang Muka / Kas</td>
+</tr>
+<tr>
+<td>Giro (terima/kliring)</td>
+<td>Piutang Giro / Bank</td>
+<td>Piutang / Piutang Giro</td>
+</tr>
+<tr>
+<td>Aset (perolehan/penyusutan)</td>
+<td>Aset / Beban Penyusutan</td>
+<td>Sumber / Akumulasi Penyusutan</td>
+</tr>
+<tr>
+<td>Aset (penghapusan)</td>
+<td>Akum. + Rugi Penghapusan</td>
+<td>Aset Tetap</td>
+</tr>
+<tr>
+<td>Aset (penjualan)</td>
+<td>Kas + Akum. (+ Rugi)</td>
+<td>Aset + Laba (atau − Rugi)</td>
+</tr>
+<tr>
+<td>Saldo Awal Penyusutan</td>
+<td>Laba Ditahan</td>
+<td>Akumulasi Penyusutan</td>
+</tr>
+<tr>
+<td>SPK Progress</td>
+<td>CIP + PPN Masukan</td>
+<td>Hutang Usaha + Hutang Retensi</td>
+</tr>
+<tr>
+<td>SPK Bayar / Cair Retensi</td>
+<td>Hutang / Hutang Retensi</td>
+<td>Kas/Bank</td>
+</tr>
+<tr>
+<td>SPK Pemakaian Barang</td>
+<td>CIP / Konstruksi</td>
+<td>Persediaan</td>
+</tr>
+<tr>
+<td>SPK Mutasi Progress</td>
+<td>CIP (tujuan)</td>
+<td>CIP (asal)</td>
+</tr>
+<tr>
+<td>PO Posting Termin</td>
+<td>Uang Muka Pembelian</td>
+<td>Kas/Bank</td>
+</tr>
+<tr>
+<td>Persediaan (terima/keluar)</td>
+<td>Persediaan / Beban-CIP</td>
+<td>Sumber / Persediaan</td>
+</tr>
+<tr>
+<td>Saldo Awal Stok</td>
+<td>Persediaan</td>
+<td>Laba Ditahan</td>
+</tr>
+<tr>
+<td>COGS / HPP</td>
+<td>Beban Pokok Penjualan</td>
+<td>Persediaan / CIP</td>
+</tr>
+<tr>
+<td>Payroll</td>
+<td>Beban Gaji &amp; Tunjangan</td>
+<td>PPh 21 + BPJS + Kas</td>
+</tr>
+<tr>
+<td>Tutup Buku Tahunan</td>
+<td>Pendapatan (tutup)</td>
+<td>Beban (tutup) + Laba Ditahan (laba)</td>
+</tr>
+</tbody>
+</table>
+<blockquote>
+<p>Semua di atas <strong>wajib seimbang</strong> dan diposting via <code>JournalService</code> (validasi otomatis).</p>
+</blockquote>
+<hr />
+<h2>17. Penomoran Dokumen (Numerator)</h2>
+<p>Format multi-pola per jenis &amp; periode, otomatis &amp; unik. Contoh nyata:</p>
+<ul>
+<li>Booking: <code>BK/JRES/YYMM/00007</code> · Customer: <code>CUST/2026/00039</code></li>
+<li>AP Invoice: <code>AP.INV/&lt;KATEGORI&gt;/MUP/YY/&lt;ROMAWI-BULAN&gt;/00016</code> · AP Kuitansi: <code>AP.KUI/MUP/YY/&lt;ROMAWI&gt;/00002</code></li>
+<li>AR Invoice: <code>AR.INV/PENJUALAN-UNIT/MUP/YY/&lt;ROMAWI&gt;/00002</code></li>
+<li>SPK: <code>SPK/YYMM/0003</code> · Fixed Asset: <code>FA/YYMM/0001</code> · HPP: <code>HPP/YYMM/0001</code> · Payroll: <code>PAY/YYMM/0001</code></li>
+</ul>
+<p>Pola dikelola di modul <strong>Numerator</strong> (Settings) + <strong>Numerator Preview</strong>.</p>
+<hr />
+<h2>18. Pengujian &amp; Kriteria Penerimaan</h2>
+<p><strong>Otomatis (built-in):</strong></p>
+<ul>
+<li><strong><code>php artisan smoke:pages</code></strong> — render <strong>171 halaman</strong> harus 200/OK (0 FAIL).</li>
+<li><strong><code>php artisan trial:all</code></strong> — <strong>24 skenario alur inti</strong> (booking→approval, TTS→kuitansi, KPA, legal, komisi, exception, settings, dll.) harus PASS.</li>
+<li><strong><code>npm run build</code></strong> — kompilasi frontend tanpa error.</li>
+</ul>
+<p><strong>E2E akuntansi (terverifikasi):</strong> 8 siklus, <strong>39 sub-transaksi</strong> menembus controller asli (validasi→otorisasi→service→jurnal→GL) — SPK, Aset, AR, AP, COGS RealCost, Budget, Cash Book/Kas Kecil, Giro, Bon Sementara, Payroll, Tutup Buku — <strong>seluruh jurnal seimbang</strong>, integritas GL terjaga.</p>
+<p><strong>Kriteria penerimaan rilis:</strong> smoke 171/171 ✔ · trial 24/24 ✔ · build clean ✔ · E2E jurnal balanced ✔ · tidak ada error <code>APP_DEBUG</code> di produksi.</p>
+<hr />
+<h2>19. Deployment &amp; Operasional</h2>
+<p>Rinci di <strong><code>DEPLOY.md</code></strong> + <strong><code>MULAI-DISINI.md</code></strong>. Ringkas:</p>
+<ul>
+<li><strong>Server selalu-nyala</strong> (rekomendasi gratis: <strong>Oracle Cloud Always Free</strong>), Ubuntu + <strong>PHP 8.4 + Caddy (HTTPS otomatis)</strong>.</li>
+<li>Artefak siap pakai: <code>deploy/Caddyfile</code>, <code>deploy/deploy.sh</code> (rilis/update 1 perintah), <code>deploy/javacore-worker.service</code> (queue), <code>.env.production.example</code>.</li>
+<li><strong>Scheduler</strong> via cron (<code>* * * * * php artisan schedule:run</code>) untuk jatuh tempo/expire otomatis.</li>
+<li><strong>Backup</strong> DB harian + uji restore.</li>
+<li>Update aplikasi: <code>bash deploy/deploy.sh</code> (maintenance → pull → build → migrate → online).</li>
+</ul>
+<hr />
+<h2>20. Roadmap, Di Luar Lingkup &amp; Risiko</h2>
+<p><strong>Roadmap potensial:</strong> migrasi DB ke MySQL/PostgreSQL untuk skala besar; integrasi bank host-to-host; BI/analitik; aplikasi mobile; e-Meterai; tanda tangan digital legal.</p>
+<p><strong>Risiko &amp; mitigasi:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Risiko</th>
+<th>Mitigasi</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Konkurensi tulis SQLite (&quot;database is locked&quot;)</td>
+<td>WAL + busy_timeout; siap migrasi MySQL</td>
+</tr>
+<tr>
+<td>Ketergantungan Chromium (PDF) di server kecil</td>
+<td>Pasang Chromium / degradasi anggun</td>
+</tr>
+<tr>
+<td>Ketersediaan kapasitas Oracle Free (ARM)</td>
+<td>Fallback region/AD lain atau GCP e2-micro</td>
+</tr>
+<tr>
+<td>Kesalahan periode/jurnal</td>
+<td>Validasi balance + kunci periode + approval lifecycle</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2>21. Glosarium</h2>
+<table>
+<thead>
+<tr>
+<th>Istilah</th>
+<th>Arti</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>NUP</strong></td>
+<td>Nomor Urut Pemesanan (antrian prioritas unit)</td>
+</tr>
+<tr>
+<td><strong>Hold</strong></td>
+<td>Penahanan unit sementara</td>
+</tr>
+<tr>
+<td><strong>PPJB</strong></td>
+<td>Perjanjian Pengikatan Jual Beli</td>
+</tr>
+<tr>
+<td><strong>AJB / BAST</strong></td>
+<td>Akta Jual Beli / Berita Acara Serah Terima</td>
+</tr>
+<tr>
+<td><strong>TTS</strong></td>
+<td>Tanda Terima Sementara (bukti terima pembayaran)</td>
+</tr>
+<tr>
+<td><strong>KPA / KPR</strong></td>
+<td>Kredit Pemilikan Apartemen/Rumah (pembiayaan bank)</td>
+</tr>
+<tr>
+<td><strong>SP3K</strong></td>
+<td>Surat Persetujuan Pemberian Kredit</td>
+</tr>
+<tr>
+<td><strong>SP / SKL</strong></td>
+<td>Surat Peringatan / Surat Keterangan Lunas</td>
+</tr>
+<tr>
+<td><strong>GN / GU</strong></td>
+<td>Ganti Nama / Ganti Unit</td>
+</tr>
+<tr>
+<td><strong>PJT</strong></td>
+<td>Piutang Jatuh Tempo</td>
+</tr>
+<tr>
+<td><strong>Gimmick</strong></td>
+<td>Bonus/insentif penjualan (free DP, voucher, dll.)</td>
+</tr>
+<tr>
+<td><strong>AP / AR</strong></td>
+<td>Accounts Payable (Hutang) / Receivable (Piutang)</td>
+</tr>
+<tr>
+<td><strong>GL / CoA</strong></td>
+<td>General Ledger / Chart of Accounts (Bagan Akun)</td>
+</tr>
+<tr>
+<td><strong>CIP</strong></td>
+<td>Construction In Progress (Proyek Dalam Penyelesaian)</td>
+</tr>
+<tr>
+<td><strong>SPK</strong></td>
+<td>Surat Perintah Kerja (kontraktor)</td>
+</tr>
+<tr>
+<td><strong>HPP / COGS</strong></td>
+<td>Harga Pokok Penjualan / Cost of Goods Sold</td>
+</tr>
+<tr>
+<td><strong>RealCost</strong></td>
+<td>Biaya riil per unit (akumulasi CIP teralokasi)</td>
+</tr>
+<tr>
+<td><strong>NSFP</strong></td>
+<td>Nomor Seri Faktur Pajak</td>
+</tr>
+<tr>
+<td><strong>DPP / PPN / PPh</strong></td>
+<td>Dasar Pengenaan Pajak / Pajak Pertambahan Nilai / Pajak Penghasilan</td>
+</tr>
+<tr>
+<td><strong>Bon Sementara</strong></td>
+<td>Panjar/uang muka operasional ke pemegang</td>
+</tr>
+<tr>
+<td><strong>Tutup Buku</strong></td>
+<td>Penutupan periode (bulanan = kunci; tahunan = L/R→Laba Ditahan)</td>
+</tr>
+<tr>
+<td><strong>RBAC</strong></td>
+<td>Role-Based Access Control</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2>Lampiran A — Peta Route Lengkap (per modul)</h2>
+<p><strong>Auth/Publik:</strong> login, login.attempt, webhooks.xendit, nup.create, nup.public.store, nup.public.done, regions.children, dashboard.</p>
+<p><strong>CRM:</strong> crm.leads.{index,create,store,show,update,move,convert,activity,lost}.</p>
+<p><strong>Security (modul SDM lapangan):</strong> security.{index,log,matrikulasi.company,matrikulasi.project,matrikulasi.toggle,absensi,absensi.store,jobhistory,jobhistory.store,technical,technical.store,technical.update}.</p>
+<p><strong>Setup Sales:</strong> setup-sales.{index,dashboard,reminder,log}; scheme.{preview,index,create,store,show,edit,update,destroy}; sales.{index,store,update,destroy}; agent.{index,store,update,destroy}; pricelist.{index,create,units,store,show,activate,destroy}; reports.{index,master-sales,price-list,history-price,summary-stock,master-unit}; calculator.{index,bphtb,kpr,skema}; audit.record; activity.{index,store}.</p>
+<p><strong>Customer/Sales/Reports:</strong> reports.{index,detail,summary,export}; customers.{merge,merge.references,merge.apply,upload,upload.template,upload.store}; cif.{index,show}; siteplan.{show,update}.</p>
+<p><strong>Hold/NUP/Booking:</strong> holds.{index,create,store,release}; nup.{index,verifikasi,show,bayar,pay,refund,verify,destroy}; bookings.{preview,cancel,promote,gn,gu,reschedule}.</p>
+<p><strong>Contract/PPJB/Gimmick/Ops:</strong> contracts.{index,show,update,print,sign,ppjb.print,ppjb.start-signing,ppjb.complete,ppjb.numbering,documents.toggle,gimmicks.apply-package}; gimmicks.{toggle-diterima,remove}; sales.kontrak-ops.{index,find,ppn,ppn.preview,ppn.apply,operation,apply}; sales.migrasi.{index,template,upload}; exceptions.index.</p>
+<p><strong>Finance FO:</strong> tts.{index,create,store,show,post,clear-giro,reject-giro}; kuitansi.{index,show,pdf}; memos.{free-dp,subsidi-dp,cancel}; cashbacks.{index,store,approve,pay}; refunds.{index,approve,pay}; faktur-pajak.{index,create,store}; va.{index,assign,transactions,anonymous,anonymous.allocate}; rekening.{index,store,update,destroy}.</p>
+<p><strong>Collection:</strong> followups.{index,store}; dendas.index; denda.{perumusan,perumusan.update,pemutihan,pemutihan.waive}; pjt.{index,regenerate}; tunggakan.index; sp.{index,issue}; skl.{index,issue,pdf}.</p>
+<p><strong>KPA:</strong> kpa.setup.retensi.{index,store,update,destroy}; kpa.setup.bank.{index,create,store,edit,update,destroy}; kpa.{index,create,store,show,submit,sp3k,akad,akad-complete}.</p>
+<p><strong>Business Support — Master:</strong> bs.index; bs.accounts.{index,store,update,destroy}; bs.cost-centers.<em>; bs.journal-dimensions.</em>; bs.suppliers.*.</p>
+<p><strong>BS — Inventory/PO:</strong> bs.inv.setup.<em>; bs.items.</em>; bs.fpb.{index,create,store,show,approve}; bs.receipt.{index,create,store}; bs.issue.{index,create,store}; bs.stockcard.index; bs.po.{index,create,store,show,approve,close,revise,termin,adjust-ppn}.</p>
+<p><strong>BS — GL/Tax/Closing:</strong> bs.gl.{index,period.close,period.open,journal.index,journal.create,journal.store,journal.show,journal.finalize,journal.approve,journal.reject,journal.import,journal.import.store,extra,ledger,trialbalance,financials,cashflow,worksheet,comparative}; bs.tax.{rekap,keluaran,masukan,nsfp,export.keluaran,export.masukan,cetak.ppn,cetak.buku,cetak.pph,efaktur.csv,efaktur.xml,dashboard,pph,pph.export}; bs.closing.{index,neraca,saldoawal,saldoawal.csv,close,reopen,year}.</p>
+<p><strong>BS — AP:</strong> bs.ap.{index,create,store,aging,card,categories.*,kuitansi.{index,create,store,show,void},posting.{index,po,spk},memorial.{index,create,store},penghapusan.{index,store},berkas.{index,store,update,destroy,toggle},show,pay}.</p>
+<p><strong>BS — AR:</strong> bs.ar.{index,create,store,aging,card,categories.*,kuitansi.{index,create,store,show,void},memorial.{index,create,store},penghapusan.{index,store},show,pay,reschedule}.</p>
+<p><strong>BS — Kas/Aset/Lainnya:</strong> bs.cashbook.{index,balances,create,store,show}; bs.pettycash.{index,create,store}; bs.bankrec.{index,store,show,toggle,finalize}; bs.advance.{index,create,store,show,realize,refund,reimburse}; bs.giro.{index,create,store,show,clear,bounce}; bs.fa.{index,create,store,run,run.store,show,depreciate,dispose,sell,opening}; bs.budget.{index,store,update,destroy,submit,approve,mutate}; bs.bulk.{form,store}; bs.employees.*; bs.payroll.{index,store,show}; bs.cogs.{index,store,realcost,realcost.post}; bs.projection; bs.spk.{index,create,store,show,progress,progress.pay,retensi,addendum,adjust-ppn,cancel,material,mutate-progress}; bs.module.</p>
+<hr />
+<h2>Lampiran B — Peran &amp; Domain Permission</h2>
+<p><strong>11 Peran:</strong> SuperAdmin, Direktur, Admin, SalesDirector, SalesManager, Sales, Agent, FinanceManager, Finance, Collection, Viewer.</p>
+<p><strong>193 Permission</strong> dalam 15 domain: <code>system, master, sales, finance, collection, bankloan, legal, commission, approval, reporting, businesssupport, crm, security, setupsales, incentive</code>. Pola: <code>&lt;domain&gt;.&lt;aksi&gt;</code> (mis. <code>businesssupport.view</code>, <code>businesssupport.transaction.create</code>, <code>businesssupport.setup.manage</code>, <code>businesssupport.approval.act</code>).</p>
+<hr />
+<h2>Lampiran C — Bagan Akun Inti &amp; Pemetaan Jurnal (contoh CoA MUP)</h2>
+<table>
+<thead>
+<tr>
+<th>Kode</th>
+<th>Nama</th>
+<th>Pemakaian</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>10101020204</td>
+<td>Bank — BCA Rek. ...</td>
+<td>Kas/Bank default</td>
+</tr>
+<tr>
+<td>10101010102</td>
+<td>Kas Kecil</td>
+<td>Petty Cash</td>
+</tr>
+<tr>
+<td>10102010101</td>
+<td>Piutang Usaha</td>
+<td>AR</td>
+</tr>
+<tr>
+<td>10102010102</td>
+<td>Piutang Giro</td>
+<td>Cek/Giro masuk</td>
+</tr>
+<tr>
+<td>10104010101</td>
+<td>Persediaan — Bangunan Siap Jual</td>
+<td>Inventory / Saldo Awal Stok</td>
+</tr>
+<tr>
+<td>10104010132</td>
+<td>CIP Housing C3 Krian</td>
+<td>Konstruksi (SPK/COGS)</td>
+</tr>
+<tr>
+<td>10105010101</td>
+<td>PPN Masukan</td>
+<td>Pajak masukan</td>
+</tr>
+<tr>
+<td>10107010102</td>
+<td>Uang Muka Pembelian</td>
+<td>PO Termin</td>
+</tr>
+<tr>
+<td>10107030303</td>
+<td>Uang Muka Operasional</td>
+<td>Bon Sementara</td>
+</tr>
+<tr>
+<td>1020101xxxx</td>
+<td>Aset Tetap (bangunan/kendaraan/inventaris/tanah)</td>
+<td>Fixed Asset</td>
+</tr>
+<tr>
+<td>1020303xxxx</td>
+<td>Akumulasi Penyusutan</td>
+<td>Fixed Asset</td>
+</tr>
+<tr>
+<td>20101010101</td>
+<td>Hutang Usaha Supplier</td>
+<td>AP / SPK</td>
+</tr>
+<tr>
+<td>20104040406</td>
+<td>PPN Keluaran</td>
+<td>Pajak keluaran</td>
+</tr>
+<tr>
+<td>20107070704</td>
+<td>Hutang Retensi</td>
+<td>SPK retensi</td>
+</tr>
+<tr>
+<td>40101010101</td>
+<td>Penjualan Usaha</td>
+<td>Pendapatan</td>
+</tr>
+<tr>
+<td>40201010102</td>
+<td>Laba Penjualan Aset Tetap</td>
+<td>Aset (jual)</td>
+</tr>
+<tr>
+<td>50101010101</td>
+<td>Beban Pokok Penjualan (HPP)</td>
+<td>COGS</td>
+</tr>
+<tr>
+<td>50301010101</td>
+<td>Beban Gaji &amp; Tunjangan</td>
+<td>Payroll</td>
+</tr>
+<tr>
+<td>50302020230</td>
+<td>Rugi Penjualan/Penghapusan Aset</td>
+<td>Aset (lepas)</td>
+</tr>
+<tr>
+<td>80101010101</td>
+<td>Laba Rugi Ditahan</td>
+<td>Saldo awal / tutup buku</td>
+</tr>
+<tr>
+<td>80101010102</td>
+<td>Laba Rugi Tahun Berjalan</td>
+<td>Tutup buku</td>
+</tr>
+</tbody>
+</table>
+<blockquote>
+<p>Pemetaan lengkap di <code>config/business_support.php</code>.</p>
+</blockquote>
+<hr />
+<p><em>Dokumen ini menggambarkan Java Core System sebagaimana terbangun &amp; terverifikasi per 2026-06-04. Untuk detail teknis lihat kode di <code>app/Domain</code>, route di <code>routes/web.php</code>, dan panduan deploy di <code>DEPLOY.md</code>.</em></p>
+<hr />
+<h2>Lampiran D — Diagram</h2>
+<h3>D.1 Arsitektur Modul (Front Office ↔ Back Office)</h3>
+<p style="border:1px solid #cbd5e1;background:#f8fafc;padding:8px;color:#475569"><i>[Diagram alur/ERD — lihat berkas versi HTML atau PDF]</i></p>
+<h3>D.2 Alur Penjualan Unit (End-to-End)</h3>
+<p style="border:1px solid #cbd5e1;background:#f8fafc;padding:8px;color:#475569"><i>[Diagram alur/ERD — lihat berkas versi HTML atau PDF]</i></p>
+<h3>D.3 Alur Posting Akuntansi (Integritas GL)</h3>
+<p style="border:1px solid #cbd5e1;background:#f8fafc;padding:8px;color:#475569"><i>[Diagram alur/ERD — lihat berkas versi HTML atau PDF]</i></p>
+<h3>D.4 ERD Ringkas (Entitas Inti)</h3>
+<p style="border:1px solid #cbd5e1;background:#f8fafc;padding:8px;color:#475569"><i>[Diagram alur/ERD — lihat berkas versi HTML atau PDF]</i></p>
+<h3>D.5 Siklus SPK (Kontraktor) — State</h3>
+<p style="border:1px solid #cbd5e1;background:#f8fafc;padding:8px;color:#475569"><i>[Diagram alur/ERD — lihat berkas versi HTML atau PDF]</i></p>
+<h3>D.6 Lifecycle Persetujuan Jurnal Manual</h3>
+<p style="border:1px solid #cbd5e1;background:#f8fafc;padding:8px;color:#475569"><i>[Diagram alur/ERD — lihat berkas versi HTML atau PDF]</i></p>
+</body></html>

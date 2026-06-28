@@ -1,0 +1,34 @@
+# Java Core System — Caddy (web server + auto-HTTPS gratis dari Let's Encrypt)
+# Pasang: salin ke /etc/caddy/Caddyfile, ganti domain, lalu: sudo systemctl restart caddy
+#
+# Ganti "javacore-mup.duckdns.org" dengan domain/subdomain Anda.
+# Caddy otomatis mengurus sertifikat HTTPS — tidak perlu konfigurasi SSL manual.
+
+javacore-mup.duckdns.org {
+    root * /var/www/javacore/public
+    encode zstd gzip
+
+    # Jalankan PHP via PHP-FPM (socket sesuaikan versi PHP, mis. php8.4-fpm)
+    php_fastcgi unix//run/php/php8.4-fpm.sock
+
+    file_server
+
+    # Keamanan header dasar
+    header {
+        X-Content-Type-Options nosniff
+        X-Frame-Options SAMEORIGIN
+        Referrer-Policy strict-origin-when-cross-origin
+        -Server
+    }
+
+    # Jangan sajikan file sensitif
+    @forbidden path /.env /.git/* /storage/* /database/*
+    respond @forbidden 404
+
+    log {
+        output file /var/log/caddy/javacore.log {
+            roll_size 10MB
+            roll_keep 5
+        }
+    }
+}

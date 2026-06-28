@@ -1,0 +1,369 @@
+TABLES=184
+### activity_logs
+id, tenant_id, subject_type, subject_id, category, description, logged_at, logged_by, attachment_path, attachment_name, attachment_mime, attachment_size, created_at, updated_at, deleted_at
+### agent_types
+id, code, label, created_at, updated_at
+### agents
+id, tenant_id, code, name, agent_type_id, phone, email, npwp, bank_name, bank_account_no, bank_account_name, parent_agent_id, is_active, created_at, updated_at, deleted_at
+### ajb_documents
+id, tenant_id, booking_id, ajb_number, signed_at, notary_name, file_path, status, created_at, updated_at
+### anonymous_payments
+id, tenant_id, bank_account_id, amount, received_at, reference_no, description, status, customer_id, tts_receipt_id, created_at, updated_at
+### approval_actions
+id, approval_step_id, action, actor_id, notes, acted_at, created_at, updated_at
+### approval_chain_steps
+id, approval_chain_id, level, approver_type, approver_value, threshold, is_final, created_at, updated_at
+### approval_chains
+id, tenant_id, project_id, document_type, code, name, match_conditions, is_active, created_at, updated_at
+### approval_steps
+id, approval_id, level, approver_id, status, notes, acted_at, created_at, updated_at
+### approvals
+id, tenant_id, approval_chain_id, document_type, approvable_type, approvable_id, payload, status, submitted_by, submitted_at, completed_at, created_at, updated_at
+### audit_logs
+id, tenant_id, user_id, event, auditable_type, auditable_id, old_values, new_values, context, ip_address, user_agent, created_at
+### bank_accounts
+id, tenant_id, company_id, account_name, account_number, bank_name, branch, is_virtual_pool, is_active, created_at, updated_at
+### bank_partners
+id, tenant_id, code, name, contact_person, phone, email, is_active, created_at, updated_at, deleted_at, project_id, branch, account_no, account_name, address, city, notes
+### bank_products
+id, bank_partner_id, code, name, interest_pct, max_tenor_month, is_active, created_at, updated_at
+### bank_retention_terms
+id, bank_partner_id, retention_category_id, percentage, amount, notes, created_at, updated_at
+### bast_documents
+id, tenant_id, booking_id, bast_number, handed_over_at, checklist, file_path, status, created_at, updated_at
+### blocks
+id, tenant_id, cluster_id, code, created_at, updated_at, deleted_at
+### booking_discounts
+id, booking_id, reason, basis, value, approval_id, created_at, updated_at
+### booking_status_histories
+id, booking_id, from_status, to_status, changed_by, notes, changed_at
+### bookings
+id, tenant_id, project_id, booking_number, customer_id, unit_id, payment_scheme_id, sales_person_id, agent_id, nup_registration_id, booking_date, base_price, discount_amount, discount_pct, gimmick_value, ppn_pct, ppn_amount, total_price, booking_source, status, notes, created_by, updated_by, created_at, updated_at, deleted_at
+### bs_accounts
+id, tenant_id, code, name, type, normal_balance, parent_id, is_postable, is_active, created_at, updated_at, deleted_at, level, parent_code, category_code
+### bs_ap_berkas
+id, tenant_id, code, name, is_mandatory, is_active, created_at, updated_at
+### bs_ap_categories
+id, tenant_id, code, name, debit_account_id, payable_account_id, is_active, created_at, updated_at
+### bs_ap_invoice_berkas
+id, ap_invoice_id, berkas_id, is_complete
+### bs_ap_invoice_lines
+id, ap_invoice_id, description, qty, unit_price, amount
+### bs_ap_invoice_schedules
+id, ap_invoice_id, installment_no, due_date, amount, paid_amount, status
+### bs_ap_invoices
+id, tenant_id, invoice_number, invoice_date, due_date, supplier_id, expense_account_id, payable_account_id, description, dpp, ppn_pct, ppn_amount, total, paid_amount, status, journal_id, created_by, created_at, updated_at, deleted_at, category_id, supplier_invoice_no, manual_no, trx_type, receive_date, term_days, transfer_detail, kurs, ppn_mode, pph_mode, pph_pct, pph_amount, pph_account_id, net_payable, source_type, source_id, tax_invoice_no, unit_id, customer_id
+### bs_ap_kuitansi_lines
+id, kuitansi_id, ap_invoice_id, amount, payment_id
+### bs_ap_kuitansis
+id, tenant_id, kuitansi_number, kuitansi_date, supplier_id, cash_account_id, alat_transaksi, kasir, manual_no, description, total, status, journal_id, void_journal_id, voided_at, created_by, created_at, updated_at, deleted_at
+### bs_ap_memorials
+id, tenant_id, memorial_number, memorial_date, supplier_id, ap_invoice_id, trx_type, counter_account_id, payable_account_id, amount, description, kasir, manual_no, is_writeoff, journal_id, created_by, created_at, updated_at, deleted_at
+### bs_ap_payments
+id, ap_invoice_id, payment_date, cash_account_id, amount, reference, journal_id, created_by, created_at, updated_at
+### bs_ar_categories
+id, tenant_id, code, name, income_account_id, receivable_account_id, is_active, created_at, updated_at
+### bs_ar_invoice_lines
+id, ar_invoice_id, description, qty, unit_price, amount
+### bs_ar_invoice_schedules
+id, ar_invoice_id, installment_no, due_date, amount, paid_amount, status
+### bs_ar_invoices
+id, tenant_id, invoice_number, invoice_date, due_date, customer_id, income_account_id, receivable_account_id, description, dpp, ppn_pct, ppn_amount, total, paid_amount, status, journal_id, created_by, created_at, updated_at, deleted_at, category_id, customer_ref_no, manual_no, trx_type, receive_date, term_days, transfer_detail, kurs, ppn_mode, pph_mode, pph_pct, pph_amount, pph_account_id, net_receivable, tax_invoice_no
+### bs_ar_kuitansi_lines
+id, kuitansi_id, ar_invoice_id, amount, payment_id
+### bs_ar_kuitansis
+id, tenant_id, kuitansi_number, kuitansi_date, customer_id, cash_account_id, alat_transaksi, kasir, manual_no, description, total, status, journal_id, void_journal_id, voided_at, created_by, created_at, updated_at, deleted_at
+### bs_ar_memorials
+id, tenant_id, memorial_number, memorial_date, customer_id, ar_invoice_id, trx_type, counter_account_id, receivable_account_id, amount, description, kasir, manual_no, is_writeoff, journal_id, created_by, created_at, updated_at, deleted_at
+### bs_ar_payments
+id, ar_invoice_id, payment_date, cash_account_id, amount, reference, journal_id, created_by, created_at, updated_at
+### bs_bank_rec_lines
+id, reconciliation_id, journal_line_id, journal_id, tx_date, description, debit, credit, is_cleared
+### bs_bank_reconciliations
+id, tenant_id, account_id, statement_date, statement_balance, book_balance, status, notes, reconciled_at, created_by, created_at, updated_at, deleted_at
+### bs_budget_mutations
+id, tenant_id, year, kind, from_budget_id, to_budget_id, amount, mutation_date, note, created_by, created_at, updated_at
+### bs_budgets
+id, tenant_id, year, cost_center_id, account_id, amount, notes, created_by, created_at, updated_at, status, submitted_at, approved_at, approved_by, approval_note
+### bs_cash_advance_lines
+id, cash_advance_id, expense_account_id, description, amount
+### bs_cash_advances
+id, tenant_id, advance_number, advance_date, holder, purpose, cash_account_id, advance_account_id, amount, status, realized_date, realized_amount, settlement, journal_id, realize_journal_id, created_by, created_at, updated_at, deleted_at, settlement_status, settle_journal_id
+### bs_cash_transactions
+id, tenant_id, trx_number, trx_type, trx_date, cash_account_id, counter_account_id, amount, payee, description, reference, journal_id, created_by, created_at, updated_at, deleted_at
+### bs_cogs_recognitions
+id, tenant_id, cogs_number, recognition_date, reference, description, inventory_account_id, cogs_account_id, cost_center_id, amount, journal_id, created_by, created_at, updated_at, deleted_at
+### bs_cost_centers
+id, tenant_id, project_id, code, name, manager, is_active, created_at, updated_at, deleted_at
+### bs_departments
+id, tenant_id, code, name, is_active, created_at, updated_at, deleted_at
+### bs_depreciation_entries
+id, fixed_asset_id, period_year, period_month, entry_date, amount, book_value_after, journal_id, created_at, updated_at
+### bs_employees
+id, tenant_id, nik, name, position, cost_center_id, join_date, base_salary, allowance, bank_name, bank_account, is_active, created_by, created_at, updated_at, deleted_at
+### bs_fiscal_periods
+id, tenant_id, year, month, status, closed_at, created_at, updated_at
+### bs_fixed_assets
+id, tenant_id, asset_number, name, category, acquisition_date, acquisition_cost, residual_value, useful_life_months, method, asset_account_id, accum_account_id, expense_account_id, accumulated_depreciation, last_depreciation_date, status, acquire_journal_id, created_by, created_at, updated_at, deleted_at, disposed_date, disposal_type, disposal_proceeds, disposal_note, disposal_journal_id
+### bs_giros
+id, tenant_id, giro_number, receive_date, due_date, bank_name, cheque_number, drawer, amount, giro_account_id, counter_account_id, cash_account_id, status, settled_date, receive_journal_id, settle_journal_id, created_by, created_at, updated_at, deleted_at
+### bs_items
+id, tenant_id, stock_category_id, uom_id, code, name, brand, type, min_stock, is_active, created_at, updated_at, deleted_at
+### bs_journal_lines
+id, journal_id, account_id, cost_center_id, description, debit, credit, created_at, updated_at, department_id, ledger_id, location_id, currency, kurs
+### bs_journals
+id, tenant_id, cost_center_id, journal_number, journal_date, period_year, period_month, source, reference, description, status, total_debit, total_credit, created_by, posted_at, created_at, updated_at, deleted_at, finalized_at, approved_by
+### bs_ledgers
+id, tenant_id, code, name, is_active, created_at, updated_at, deleted_at
+### bs_locations
+id, tenant_id, code, name, is_active, created_at, updated_at, deleted_at
+### bs_material_request_lines
+id, material_request_id, item_id, qty, kind, spec, created_at, updated_at
+### bs_material_requests
+id, tenant_id, project_id, cost_center_id, mr_number, request_date, needed_date, department, status, notes, created_by, approved_at, approved_by, created_at, updated_at, deleted_at
+### bs_payroll_lines
+id, payroll_run_id, employee_id, employee_name, gaji_pokok, tunjangan, pph21, bpjs, potongan_lain, bruto, net
+### bs_payroll_runs
+id, tenant_id, run_number, period_year, period_month, run_date, description, total_bruto, total_deduction, total_net, status, journal_id, created_by, created_at, updated_at, deleted_at
+### bs_purchase_order_lines
+id, purchase_order_id, item_id, qty, qty_received, unit_price, amount, created_at, updated_at
+### bs_purchase_orders
+id, tenant_id, project_id, supplier_id, material_request_id, po_number, po_date, due_date, po_type, term_payment, subtotal, ppn_pct, ppn_amount, pph_pct, total, status, notes, created_by, approved_at, created_at, updated_at, deleted_at, dp_amount, dp_account_id, dp_journal_id, revision_count, revised_at
+### bs_stock_categories
+id, tenant_id, code, name, is_active, created_at, updated_at, deleted_at
+### bs_stock_movements
+id, tenant_id, item_id, warehouse_id, moved_at, direction, qty, unit_price, balance_after, ref_type, ref_id, ref_number, created_at, updated_at
+### bs_stock_transaction_lines
+id, stock_transaction_id, item_id, qty, unit_price, created_at, updated_at
+### bs_stock_transactions
+id, tenant_id, trx_number, trx_type, trx_date, warehouse_id, supplier_id, purchase_order_id, material_request_id, reference, notes, created_by, created_at, updated_at, deleted_at
+### bs_suppliers
+id, tenant_id, code, name, category, contact_person, phone, email, address, city, npwp, bank_name, bank_account_no, bank_account_name, is_active, created_at, updated_at, deleted_at
+### bs_uoms
+id, tenant_id, code, name, is_active, created_at, updated_at, deleted_at
+### bs_warehouses
+id, tenant_id, project_id, code, name, is_active, created_at, updated_at, deleted_at
+### bs_work_order_addendums
+id, tenant_id, work_order_id, addendum_date, kind, value_delta, old_contract_value, new_contract_value, old_ppn_pct, new_ppn_pct, note, created_by, created_at, updated_at
+### bs_work_order_materials
+id, tenant_id, work_order_id, usage_date, description, amount, inventory_account_id, journal_id, created_by, created_at, updated_at
+### bs_work_order_progress
+id, work_order_id, progress_date, description, progress_value, retention_amount, ppn_amount, net_payable, status, paid_at, journal_id, pay_journal_id, created_by, created_at, updated_at
+### bs_work_order_progress_mutations
+id, tenant_id, work_order_id, mutation_date, amount, from_account_id, from_cost_center_id, to_account_id, to_cost_center_id, journal_id, note, created_by, created_at, updated_at
+### bs_work_orders
+id, tenant_id, spk_number, spk_date, supplier_id, cost_center_id, construction_account_id, title, contract_value, retention_pct, ppn_pct, progress_value, retention_held, status, retention_released_at, notes, created_by, created_at, updated_at, deleted_at, addendum_value, material_used, cancelled_at, cancel_reason, progress_mutated
+### cache
+key, value, expiration
+### cache_locks
+key, owner, expiration
+### cancellation_requests
+id, tenant_id, booking_id, requested_at, reason, paid_to_date, penalty_amount, refund_amount, approval_id, status, created_at, updated_at
+### cashbacks
+id, tenant_id, booking_id, amount, reason, status, approval_id, paid_at, created_at, updated_at
+### clusters
+id, tenant_id, project_id, code, name, created_at, updated_at, deleted_at
+### commission_lines
+id, commission_id, agent_id, tier, rate_pct, amount, trigger_event, status, created_at, updated_at
+### commission_payouts
+id, commission_line_id, amount, paid_at, memo_id, status, approval_id, paid_by, created_at, updated_at
+### commission_scheme_terms
+id, commission_scheme_id, agent_type, trigger_event, rate_pct, flat_amount, term_no, created_at, updated_at
+### commission_schemes
+id, tenant_id, project_id, code, name, is_active, created_at, updated_at, deleted_at
+### commissions
+id, tenant_id, booking_id, commission_scheme_id, base_amount, status, created_at, updated_at
+### companies
+id, tenant_id, code, name, npwp, phone, email, address, created_at, updated_at, deleted_at
+### contract_clauses
+id, contract_id, clause_no, title, body, created_at, updated_at
+### contract_documents
+id, contract_id, document_type, is_present, file_path, original_name, mime_type, file_size, notes, verified_at, verified_by, uploaded_by, created_at, updated_at, deleted_at
+### contract_gimmicks
+id, contract_id, gimmick_id, value, created_at, updated_at, qty, harga_satuan, total_harga, target_lunas, diberikan, diterima, tgl_diterima, notes, gimmick_package_id, created_by, deleted_at
+### contract_operations
+id, tenant_id, contract_id, booking_id, operation_no, type, reason, old_values, new_values, amount, status, processed_by, processed_at, created_at, updated_at, deleted_at
+### contract_signers
+id, contract_id, role, name, id_number, signed_at, signature_path, created_at, updated_at
+### contracts
+id, tenant_id, booking_id, contract_number, signed_at, status, template_id, snapshot, created_by, created_at, updated_at, deleted_at, ppjb_status, ppjb_system_number, ppjb_manual_number, ppjb_use_manual_number, ppjb_date, ppjb_printed_at, ppjb_signed_at, notes, cancelled_at
+### crm_leads
+id, tenant_id, lead_number, name, phone, email, data_source_id, agent_id, assigned_to, unit_id, interest, stage, est_value, customer_id, booking_id, lost_reason, last_contact_at, next_followup_at, notes, created_by, created_at, updated_at, deleted_at
+### customer_documents
+id, customer_id, type, label, file_path, mime, size_bytes, uploaded_by, created_at, updated_at
+### customers
+id, tenant_id, code, full_name, id_type, id_number, dob, birth_place, gender, marital_status, phone, phone_alt, email, address_line, city, province, postal_code, country, npwp, occupation, employer_name, monthly_income, channel, referrer_agent_id, status, metadata, created_by, updated_by, created_at, updated_at, deleted_at, project_id, data_source_id, nationality, address_rt_rw, kelurahan, kecamatan, id_expires_at, id_lifetime, religion, npwp_name, npwp_same_as_ktp, npwp_address, npwp_rt_rw, npwp_kelurahan, npwp_kecamatan, npwp_kota, npwp_postal_code, home_phone, fax, mailing_same_as_ktp, mailing_address, mailing_rt_rw, mailing_kelurahan, mailing_kecamatan, mailing_kota, mailing_postal_code, job_title, office_phone, office_address, office_rt_rw, office_kelurahan, office_kecamatan, office_kota, office_postal_code, emergency_name, emergency_relationship, emergency_phone, emergency_email
+### data_sources
+id, tenant_id, code, name, description, is_active, display_order, created_at, updated_at, deleted_at
+### dendas
+id, payment_schedule_id, computed_date, overdue_days, rate_per_day, amount, amount_waived, amount_paid, status, created_at, updated_at
+### failed_jobs
+id, uuid, connection, queue, payload, exception, failed_at
+### faktur_pajak_items
+id, faktur_pajak_id, description, qty, unit_price, total, created_at, updated_at
+### faktur_pajaks
+id, tenant_id, fp_number, customer_id, booking_id, issued_at, dpp, ppn, ppnbm, total, status, djp_response, created_at, updated_at
+### followups
+id, tenant_id, customer_id, sales_person_id, channel, contacted_at, result, notes, next_action_at, status, created_at, updated_at
+### gimmick_package_items
+id, gimmick_package_id, gimmick_id, qty_default, target_lunas_days, created_at, updated_at
+### gimmick_packages
+id, tenant_id, project_id, cluster_code, code, name, description, valid_from, valid_until, is_active, created_at, updated_at, deleted_at
+### gimmicks
+id, tenant_id, project_id, code, name, description, value, effective_from, effective_to, is_active, created_at, updated_at, deleted_at, gimmick_type, satuan_barang, harga_satuan
+### idempotency_keys
+key, user_id, route, payload_hash, response, status_code, created_at, expires_at
+### imb_documents
+id, tenant_id, unit_id, imb_number, issued_at, file_path, created_at, updated_at
+### incentive_schemes
+id, tenant_id, type, code, name, basis, value, unit_type_id, is_active, notes, created_at, updated_at, deleted_at
+### incentives
+id, tenant_id, incentive_no, type, beneficiary_type, sales_person_id, agent_id, booking_id, scheme_id, description, amount, status, submitted_by, submitted_at, approved_by, approved_at, realized_by, realized_at, reject_reason, created_at, updated_at, deleted_at
+### job_batches
+id, name, total_jobs, pending_jobs, failed_jobs, failed_job_ids, options, cancelled_at, created_at, finished_at
+### jobs
+id, queue, payload, attempts, reserved_at, available_at, created_at
+### kpa_akads
+id, kpa_application_id, akad_at, place, notary, status, created_at, updated_at
+### kpa_applications
+id, tenant_id, application_number, booking_id, customer_id, bank_partner_id, bank_product_id, plafon_requested, plafon_approved, tenor_month, submitted_at, reviewed_at, status, reject_reason, handled_by, created_at, updated_at, deleted_at
+### kpa_buybacks
+id, booking_id, initiated_at, refund_amount, penalty_amount, status, approval_id, completed_at, created_at, updated_at
+### kpa_documents
+id, kpa_application_id, type, file_path, status, created_at, updated_at
+### kpa_realizations
+id, kpa_application_id, disbursed_at, disbursed_amount, retention_amount, reference_no, bank_account_id, created_at, updated_at
+### kpa_retentions
+id, kpa_realization_id, amount, released_at, status, claim_reason, created_at, updated_at
+### kpa_sp3k
+id, kpa_application_id, sp3k_number, sp3k_date, approved_amount, interest_pct, tenor_month, status, expires_at, created_at, updated_at
+### kuitansi_items
+id, kuitansi_id, description, amount, created_at, updated_at
+### kuitansis
+id, tenant_id, kuitansi_number, tts_receipt_id, customer_id, issued_date, amount, terbilang, signed_by, status, created_at, updated_at, deleted_at
+### launchings
+id, tenant_id, project_id, name, launching_at, rules, status, created_at, updated_at, deleted_at
+### memos
+id, tenant_id, memo_number, type, memo_date, amount, reference_type, reference_id, description, bank_account_id, status, created_by, created_at, updated_at, deleted_at, approved_by, approved_at, rejected_by, rejected_at, cancelled_by, cancelled_at, reason, approval_id
+### mfa_secrets
+id, user_id, secret, recovery_codes, confirmed_at, created_at, updated_at
+### migrations
+id, migration, batch
+### model_has_permissions
+permission_id, model_type, model_id
+### model_has_roles
+role_id, model_type, model_id
+### name_change_requests
+id, booking_id, old_customer_id, new_customer_id, requested_at, admin_fee, approval_id, status, created_at, updated_at
+### notification_preferences
+id, user_id, event, channels, enabled, created_at, updated_at
+### notification_templates
+id, tenant_id, event, channel, subject, body, is_active, created_at, updated_at
+### notifications
+id, type, notifiable_type, notifiable_id, data, read_at, created_at, updated_at
+### notifications_outbox
+id, tenant_id, event, channel, notifiable_type, notifiable_id, payload, rendered, status, attempts, last_error, scheduled_at, sent_at, created_at, updated_at
+### numerators
+id, tenant_id, project_id, code, prefix, format, seq_padding, reset_strategy, current_period, current_seq, created_at, updated_at
+### nup_payments
+id, nup_registration_id, amount, paid_at, payment_method, reference_no, received_by, created_at, updated_at
+### nup_registrations
+id, tenant_id, nup_scheme_id, customer_id, nup_number, queue_no, registered_at, sales_person_id, agent_id, status, created_at, updated_at, deleted_at, form_data, payment_status, payment_provider, payment_ref, payment_url, payment_external_id, verification_status, verified_at, verified_by, verification_note
+### nup_schemes
+id, tenant_id, project_id, launching_id, code, name, nup_amount, open_from, open_to, is_refundable, refund_penalty_pct, is_active, created_at, updated_at
+### parameters
+id, tenant_id, group, key, value, data_type, label, is_public, created_at, updated_at
+### password_histories
+id, user_id, password, created_at
+### password_reset_tokens
+email, token, created_at
+### payment_allocations
+id, tenant_id, payment_schedule_id, source_type, source_id, payment_method, amount, allocated_at, reference_number, notes, created_by, created_at, updated_at, deleted_at
+### payment_schedules
+id, booking_id, installment_no, label, due_date, amount, paid_amount, status, paid_at, created_at, updated_at, payment_type, sequence
+### payment_scheme_terms
+id, payment_scheme_id, term_no, label, basis, value, due_after_days, is_dp, created_at, updated_at
+### payment_schemes
+id, tenant_id, project_id, code, name, type, down_payment_pct, installment_months, discount_pct, is_active, created_at, updated_at, deleted_at, present_value, tiered_discounts, booking_fee, bf_treatment, dp_count, dp_basis, dp_value, inst_count, inst_basis, inst_value, schedule_first, schedule_interval, schedule_unit, notes
+### permissions
+id, name, module, label, guard_name, created_at, updated_at
+### personal_access_tokens
+id, tokenable_type, tokenable_id, name, token, abilities, device_name, user_agent, last_ip, last_used_at, expires_at, created_at, updated_at
+### pjt_details
+id, pjt_header_id, payment_schedule_id, amount, created_at, updated_at
+### pjt_headers
+id, tenant_id, pjt_number, customer_id, period_at, transaction_type, total_overdue, status, created_at, updated_at
+### ppjb_documents
+id, tenant_id, contract_id, ppjb_number, signed_at, file_path, status, created_at, updated_at
+### pricelist_items
+id, pricelist_id, unit_id, price, discount_max_pct, created_at, updated_at
+### pricelists
+id, tenant_id, project_id, name, effective_from, effective_to, is_active, created_at, updated_at, deleted_at
+### projects
+id, tenant_id, company_id, code, name, location, launched_at, siteplan_meta, is_active, created_at, updated_at, deleted_at
+### refunds
+id, tenant_id, refund_number, refundable_type, refundable_id, amount, requested_at, paid_at, memo_id, approval_id, status, created_at, updated_at
+### regions
+id, code, parent_code, level, name
+### reschedule_requests
+id, booking_id, proposed_schedule, admin_fee, approval_id, status, created_at, updated_at
+### retention_categories
+id, tenant_id, project_id, code, name, sort_order, is_active, created_at, updated_at, deleted_at
+### role_has_permissions
+permission_id, role_id
+### roles
+id, tenant_id, name, description, guard_name, is_system, created_at, updated_at
+### sales_persons
+id, tenant_id, user_id, code, name, phone, email, manager_id, joined_at, is_active, created_at, updated_at, deleted_at
+### sales_price_histories
+id, tenant_id, unit_id, pricelist_id, old_price, new_price, source, note, changed_by, created_at, updated_at
+### sec_attendances
+id, tenant_id, employee_id, date, clock_in, clock_out, status, note, created_by, created_at, updated_at
+### sec_job_histories
+id, tenant_id, employee_id, position, division, start_date, end_date, note, created_by, created_at, updated_at
+### sec_technical_problems
+id, tenant_id, ticket_no, title, description, module, priority, status, reported_by, assigned_to, resolved_at, created_at, updated_at, deleted_at
+### sec_user_companies
+id, tenant_id, user_id, company_id, created_at, updated_at
+### sec_user_projects
+id, tenant_id, user_id, project_id, created_at, updated_at
+### sertifikat_documents
+id, tenant_id, unit_id, owner_customer_id, type, serial_number, issued_at, file_path, created_at, updated_at
+### sessions
+id, user_id, ip_address, user_agent, payload, last_activity
+### siteplan_points
+id, project_id, unit_id, x, y, width, height, rotation, svg_path, created_at, updated_at
+### skl_documents
+id, tenant_id, skl_number, booking_id, customer_id, issued_at, signed_by, status, approval_id, created_at, updated_at
+### surat_peringatans
+id, tenant_id, sp_number, customer_id, tunggakan_header_id, level, issued_at, deadline_at, status, signed_by, created_at, updated_at
+### tenants
+id, code, name, domain, settings, activated_at, created_at, updated_at, deleted_at
+### tts_allocations
+id, tts_receipt_id, payment_schedule_id, amount, created_at, updated_at
+### tts_giros
+id, tts_receipt_id, giro_number, issuing_bank, giro_date, due_date, status, cleared_at, rejected_at, reject_reason, replaced_by, created_at, updated_at
+### tts_receipts
+id, tenant_id, project_id, tts_number, customer_id, booking_id, amount, payment_method, received_date, bank_account_id, reference_no, status, notes, received_by, posted_by, posted_at, created_at, updated_at, deleted_at
+### tunggakan_details
+id, tunggakan_header_id, payment_schedule_id, amount, created_at, updated_at
+### tunggakan_headers
+id, tenant_id, customer_id, transaction_type, category, term_overdue_count, total_amount, status, first_overdue_at, created_at, updated_at
+### unit_change_requests
+id, booking_id, old_unit_id, new_unit_id, price_diff, admin_fee, approval_id, status, created_at, updated_at
+### unit_holds
+id, tenant_id, unit_id, customer_id, sales_person_id, held_at, expires_at, reason, status, created_by, created_at, updated_at
+### unit_types
+id, tenant_id, project_id, code, name, lt, lb, bedrooms, bathrooms, created_at, updated_at, deleted_at
+### units
+id, tenant_id, project_id, cluster_id, block_id, unit_type_id, unit_code, address, base_price, current_price, status, attributes, created_at, updated_at, deleted_at
+### user_companies
+user_id, company_id
+### user_projects
+user_id, project_id
+### users
+id, tenant_id, name, email, username, phone, password, avatar_path, employee_nip, is_active, is_blocked, failed_login_count, blocked_until, email_verified_at, password_changed_at, last_login_at, last_login_ip, dark_mode, locale, remember_token, created_at, updated_at, deleted_at
+### va_transactions
+id, virtual_account_id, amount, received_at, external_reference, status, tts_receipt_id, created_at, updated_at
+### virtual_accounts
+id, tenant_id, customer_id, bank_partner_id, va_number, status, created_at, updated_at

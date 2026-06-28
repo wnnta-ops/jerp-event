@@ -1,0 +1,21 @@
+# Queue worker Java Core System (notifikasi, PDF, dll. di latar belakang)
+# Pasang:
+#   sudo cp deploy/javacore-worker.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now javacore-worker
+[Unit]
+Description=Java Core System queue worker
+After=network.target
+
+[Service]
+User=www-data
+Group=www-data
+Restart=always
+RestartSec=5
+WorkingDirectory=/var/www/javacore
+ExecStart=/usr/bin/php /var/www/javacore/artisan queue:work --sleep=3 --tries=3 --max-time=3600
+StandardOutput=append:/var/log/javacore-worker.log
+StandardError=append:/var/log/javacore-worker.log
+
+[Install]
+WantedBy=multi-user.target

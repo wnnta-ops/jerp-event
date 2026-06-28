@@ -1,0 +1,26 @@
+# ── Fase 2: ipro-fo pakai SATU MySQL bersama J-ERP (jerp-mysql, database ipro_bo) ──
+# J-ERP & ipro-fo tetap 2 compose project terpisah; berbagi HANYA MySQL via network
+# eksternal `shared-db` (isinya hanya jerp-mysql + ipro-app → tak ada bentrok alias
+# `app`/`mysql` dengan stack J-ERP, jadi J-ERP tidak terganggu).
+#
+# Jalankan (3 file -f, override.yml berisi port):
+#   docker compose -f docker-compose.yml -f docker-compose.override.yml -f docker-compose.shared.yml up -d app
+#
+# Redis/Reverb/Meili tetap milik ipro sendiri (di ipro-net). Yang disatukan hanya MySQL.
+services:
+  app:
+    environment:
+      - DB_HOST=jerp-mysql        # container jerp-mysql, di-resolve via shared-db
+      - DB_PORT=3306
+      - DB_DATABASE=ipro_bo
+      - DB_USERNAME=jerp
+      - DB_PASSWORD=secret
+    depends_on: !reset []          # jangan tunggu ipro-mysql (dimatikan); pakai jerp-mysql
+    networks:
+      - ipro-net                   # tetap: nginx (fastcgi), redis, reverb, meili ipro
+      - shareddb                   # akses jerp-mysql
+
+networks:
+  shareddb:
+    external: true
+    name: shared-db

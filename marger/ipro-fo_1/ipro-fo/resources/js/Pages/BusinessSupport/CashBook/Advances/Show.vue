@@ -1,0 +1,169 @@
+<script setup lang="ts">
+import { ref, computed } from 'vue';
+import { useForm, router } from '@inertiajs/vue3';
+import { ArrowLeft, Wallet, Plus, Trash2, ClipboardCheck, Printer, HandCoins, Lock } from 'lucide-vue-next';
+import Button from '@/Components/UI/Button.vue';
+import Badge from '@/Components/UI/Badge.vue';
+import SearchSelect from '@/Components/UI/SearchSelect.vue';
+
+const props = defineProps<{ advance: any; expenseAccounts: Array<any>; cashAccounts: Array<any>; signers?: Record<string, string>; requiredSigners?: string[]; fullyApproved?: boolean; canApprove?: boolean; canEditDocDate?: boolean }>();
+const showForm = ref(false);
+// #125: simpan tanggal terima dokumen (hanya finance) tanpa berpindah halaman.
+function saveDocDate(e: Event) {
+    router.post(route('bs.advance.received-date', props.advance.id), { received_document_date: (e.target as HTMLInputElement).value || null }, { preserveScroll: true, preserveState: false });
+}
+// #127: persetujuan berjenjang
+const approveForm = useForm<any>({ slot: '' });
+function approveSlot(slot: string) { approveForm.slot = slot; approveForm.post(route('bs.advance.approve', props.advance.id), { preserveScroll: true }); }
+function canApproveSlot(key: string): boolean {
+    const req = props.requiredSigners ?? [];
+    const idx = req.indexOf(key);
+    for (let i = 0; i < idx; i++) { if (!props.advance.approvals?.[req[i]]) return false; }
+    return true;
+}
+const today = new Date().toISOString().slice(0, 10);
+// defer_settlement selalu true: penyelesaian sisa/kekurangan ditangani dept Finance (Refund/Reimburse).
+const form = useForm<any>({ realized_date: today, defer_settlement: true, lines: [{ expense_account_id: '', description: '', amount: 0 }] });
+const settleForm = useForm<any>({ settle_date: today, cash_account_id: '' });
+// #49: pembayaran oleh Finance (tanggal transfer + sumber bank/kas) → jurnal terbentuk.
+const payForm = useForm<any>({ paid_date: today, cash_account_id: '' });
+function doPay() { payForm.post(route('bs.advance.pay', props.advance.id)); }
+const statusLabel: Record<string, string> = { requested: 'Diajukan', outstanding: 'Outstanding', realized: 'Realized' };
+const statusVariant: Record<string, any> = { requested: 'info', outstanding: 'warning', realized: 'success' };
+
+const realized = computed(() => form.lines.reduce((s: number, l: any) => s + (Number(l.amount) || 0), 0));
+const settlement = computed(() => Number(props.advance.amount) - realized.value); // + kembali / - nombok
+function addLine() { form.lines.push({ expense_account_id: '', description: '', amount: 0 }); }
+function removeLine(i: number) { form.lines.splice(i, 1); }
+function submit() { form.post(route('bs.advance.realize', props.advance.id), { onSuccess: () => { showForm.value = false; } }); }
+function doRefund() { if (confirm('Catat pengembalian sisa panjar ke kas?')) settleForm.post(route('bs.advance.refund', props.advance.id)); }
+function doReimburse() { if (confirm('Catat penggantian kekurangan panjar dari kas?')) settleForm.post(route('bs.advance.reimburse', props.advance.id)); }
+
+function fmtRp(v: number) { return 'Rp ' + Number(v ?? 0).toLocaleString('id-ID'); }
+function fmtDate(d: string) { return d ? new Date(d).toLocaleDateString('id-ID', { day:'2-digit', month:'long', year:'numeric' }) : '—'; }
+const inputCls = 'h-9 w-full rounded-lg border border-neutral-300 bg-white px-3 text-sm dark:border-neutral-700 dark:bg-neutral-900';
+
+// #80: navigasi kembali yang anti-gagal — pakai router.visit, fallback ke URL literal bila route() gagal resolve.
+function backToIndex() {
+    let url = '/business-support/bon-sementara';
+    try { url = route('bs.advance.index'); } catch (e) { /* ziggy belum siap → pakai URL literal */ }
+    router.visit(url);
+}
+</script>
+<template>
+    <div class="max-w-3xl space-y-4">
+        <button type="button" @click="backToIndex" class="inline-flex items-center gap-2 rounded-lg border border-neutral-300 bg-white px-3 py-1.5 text-sm font-medium text-neutral-700 hover:bg-neutral-50 dark:border-neutral-600 dark:bg-neutral-800 dark:text-neutral-200"><ArrowLeft class="h-4 w-4" /> Kembali ke Bon Sementara</button>
+        <div class="flex flex-wrap items-center justify-between gap-2">
+            <h1 class="flex items-center gap-2 font-mono text-2xl font-bold"><Wallet class="h-6 w-6 text-amber-600" /> {{ advance.advance_number }}</h1>
+            <div class="flex items-center gap-2">
+                <a :href="route('bs.advance.print', advance.id)" target="_blank" rel="noopener" class="inline-flex items-center gap-1.5 rounded-lg border border-neutral-300 bg-white px-3 py-1.5 text-sm font-medium text-neutral-700 hover:bg-neutral-50 dark:border-neutral-600 dark:bg-neutral-800 dark:text-neutral-200"><Printer class="h-4 w-4" /> {{ advance.status === 'requested' ? 'Cetak Pengajuan' : 'Cetak Pengeluaran' }}</a>
+                <a v-if="advance.status === 'realized'" :href="route('bs.advance.print-realisasi', advance.id)" target="_blank" rel="noopener" class="inline-flex items-center gap-1.5 rounded-lg border border-success-300 bg-success-50 px-3 py-1.5 text-sm font-medium text-success-700 hover:bg-success-100 dark:border-success-700/50 dark:bg-success-900/30 dark:text-success-300"><Printer class="h-4 w-4" /> Cetak Realisasi</a>
+                <Badge :variant="statusVariant[advance.status] ?? 'neutral'">{{ statusLabel[advance.status] ?? advance.status }}</Badge>
+            </div>
+        </div>
+
+        <div class="card grid gap-4 p-5 text-sm md:grid-cols-2">
+            <div><div class="text-neutral-500">Tanggal</div><div class="font-medium">{{ fmtDate(advance.advance_date) }}</div></div>
+            <div><div class="text-neutral-500">Pemegang</div><div class="font-medium">{{ advance.holder }}</div></div>
+            <div class="md:col-span-2"><div class="text-neutral-500">Keperluan</div><div class="font-medium">{{ advance.purpose }}</div></div>
+            <div><div class="text-neutral-500">Dari Kas/Bank</div><div class="font-medium">{{ advance.cash_account?.name ?? '— (belum dibayar)' }}</div></div>
+            <div><div class="text-neutral-500">Nominal</div><div class="font-mono text-lg font-bold text-amber-600">{{ fmtRp(advance.amount) }}</div></div>
+            <div v-if="advance.paid_date"><div class="text-neutral-500">Tanggal Transfer (Dibayar Finance)</div><div class="font-medium">{{ fmtDate(advance.paid_date) }}</div></div>
+            <!-- #125: tanggal terima dokumen — editable (finance) / read-only -->
+            <div>
+                <div class="text-neutral-500">Tanggal Terima Dokumen</div>
+                <input v-if="canEditDocDate" type="date" :value="advance.received_document_date" @change="saveDocDate" :class="[inputCls,'mt-0.5 w-auto']" />
+                <div v-else class="font-medium">{{ advance.received_document_date ? fmtDate(advance.received_document_date) : '—' }}</div>
+            </div>
+        </div>
+
+        <!-- #127: persetujuan berjenjang (muncul setelah bon diajukan & disimpan) -->
+        <div v-if="signers && requiredSigners?.length" class="card p-5">
+            <h2 class="mb-1 font-semibold">Persetujuan Bon (Berjenjang)</h2>
+            <p class="mb-3 text-xs text-neutral-400">{{ Number(advance.amount) > 1000000 ? 'Nominal > Rp 1 juta → persetujuan lengkap termasuk Moch Winarto & Boy Arifin.' : 'Nominal ≤ Rp 1 juta → tanpa Moch Winarto & Boy Arifin.' }}</p>
+            <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                <div v-for="key in requiredSigners" :key="key" class="rounded-lg border border-neutral-200 p-3 text-center text-sm dark:border-neutral-700">
+                    <div class="text-xs font-medium text-neutral-500">{{ signers[key] }}</div>
+                    <template v-if="advance.approvals?.[key]">
+                        <div class="mt-2 flex items-center justify-center gap-1 font-medium text-success-600"><ClipboardCheck class="h-4 w-4" /> {{ advance.approvals[key].name }}</div>
+                        <div class="text-[10px] text-neutral-400">{{ String(advance.approvals[key].approved_at).slice(0, 10) }}</div>
+                    </template>
+                    <button v-else-if="canApprove && canApproveSlot(key)" type="button" :disabled="approveForm.processing" @click="approveSlot(key)" class="mt-2 rounded-lg border border-primary-300 px-3 py-1 text-xs font-medium text-primary-600 hover:bg-primary-50 dark:border-primary-700">Setujui</button>
+                    <div v-else class="mt-2 text-[10px] text-neutral-400">Menunggu giliran</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Realisasi (jika sudah) -->
+        <div v-if="advance.status === 'realized'" class="card p-5">
+            <h2 class="mb-3 flex items-center gap-2 font-semibold"><ClipboardCheck class="h-5 w-5 text-success-600" /> Realisasi {{ fmtDate(advance.realized_date) }}</h2>
+            <table class="w-full text-sm">
+                <tbody class="divide-y divide-neutral-100 dark:divide-neutral-800">
+                    <tr v-for="l in advance.lines" :key="l.id"><td class="py-1.5">{{ l.expense_account?.code }} {{ l.expense_account?.name }}</td><td class="py-1.5 text-neutral-500">{{ l.description }}</td><td class="py-1.5 text-right font-mono">{{ fmtRp(l.amount) }}</td></tr>
+                </tbody>
+                <tfoot class="border-t border-neutral-200 font-semibold dark:border-neutral-700">
+                    <tr><td colspan="2" class="py-1.5 text-right">Total Realisasi</td><td class="py-1.5 text-right font-mono">{{ fmtRp(advance.realized_amount) }}</td></tr>
+                    <tr v-if="advance.settlement_status !== 'pending'"><td colspan="2" class="py-1.5 text-right" :class="advance.settlement >= 0 ? 'text-success-600' : 'text-danger-600'">{{ advance.settlement >= 0 ? 'Dikembalikan ke kas (Refund)' : 'Reimburse (diganti dari kas)' }}</td><td class="py-1.5 text-right font-mono">{{ fmtRp(Math.abs(advance.settlement)) }}</td></tr>
+                </tfoot>
+            </table>
+            <div v-if="advance.settlement_status === 'pending'" class="mt-3 space-y-2 rounded-lg bg-amber-50 px-4 py-3 dark:bg-amber-900/20">
+                <span class="block text-sm font-medium text-amber-700 dark:text-amber-300">{{ Number(advance.settlement) > 0 ? 'Sisa panjar belum dikembalikan' : 'Kekurangan belum diganti' }}: {{ fmtRp(Math.abs(advance.settlement)) }}</span>
+                <div class="flex flex-wrap items-end gap-2">
+                    <!-- #89/#93: pilih bank penerima refund / sumber reimburse -->
+                    <div class="min-w-56 flex-1">
+                        <label class="mb-1 block text-xs font-medium text-neutral-500">{{ Number(advance.settlement) > 0 ? 'Bank Penerima Refund' : 'Bank Sumber Reimburse' }}</label>
+                        <SearchSelect :model-value="settleForm.cash_account_id" :options="cashAccounts" placeholder="— default: bank sumber bayar —" @update:model-value="(v) => settleForm.cash_account_id = v" />
+                    </div>
+                    <div><label class="mb-1 block text-xs font-medium text-neutral-500">Tanggal</label><input v-model="settleForm.settle_date" type="date" :class="[inputCls,'w-auto']" /></div>
+                    <Button v-if="Number(advance.settlement) > 0" size="sm" variant="success" :disabled="settleForm.processing" @click="doRefund">Refund Sisa</Button>
+                    <Button v-else size="sm" variant="warning" :disabled="settleForm.processing" @click="doReimburse">Reimburse</Button>
+                </div>
+            </div>
+            <div v-else-if="advance.settlement_status === 'settled' && Math.abs(Number(advance.settlement)) >= 0.01" class="mt-3 text-xs font-medium text-success-600">● Sisa / kekurangan sudah diselesaikan (Refund/Reimburse)</div>
+        </div>
+
+        <!-- #49: Pembayaran oleh Finance (status requested) → jurnal terbentuk -->
+        <div v-if="advance.status === 'requested'" class="card p-5">
+            <h2 class="mb-1 flex items-center gap-2 font-semibold"><HandCoins class="h-5 w-5 text-amber-600" /> Pembayaran (Dept Finance)</h2>
+            <p class="mb-3 text-xs text-neutral-500">Pengajuan ini belum membentuk jurnal. Isi tanggal transfer &amp; sumber bank/kas untuk membayar — jurnal <b>Dr Uang Muka Operasional · Cr Bank/Kas</b> akan terbentuk.</p>
+            <!-- Gate: tombol baru aktif setelah SELURUH persetujuan (pengaju → Manager Finance) lengkap. -->
+            <div v-if="!fullyApproved" class="mb-3 flex items-center gap-2 rounded-lg border border-amber-300 bg-amber-50 px-4 py-2.5 text-xs font-medium text-amber-700 dark:border-amber-700/50 dark:bg-amber-900/20 dark:text-amber-300"><Lock class="h-4 w-4 shrink-0" /> Menunggu persetujuan lengkap — tombol "Catat Pembayaran &amp; Buat Jurnal" aktif setelah seluruh tanda tangan (pengaju s.d. Manager Finance) terpenuhi.</div>
+            <form @submit.prevent="doPay" class="grid gap-3 md:grid-cols-2">
+                <div><label class="mb-1 block text-xs font-medium text-neutral-500">Tanggal Transfer *</label><input v-model="payForm.paid_date" type="date" required :disabled="!fullyApproved" :class="[inputCls, !fullyApproved ? 'opacity-50' : '']" /><p v-if="payForm.errors.paid_date" class="mt-1 text-xs text-danger-500">{{ payForm.errors.paid_date }}</p></div>
+                <div><label class="mb-1 block text-xs font-medium text-neutral-500">Sumber Bank/Kas *</label><SearchSelect :model-value="payForm.cash_account_id" :options="cashAccounts" :disabled="!fullyApproved" placeholder="— pilih rekening —" @update:model-value="(v) => payForm.cash_account_id = v" /><p v-if="payForm.errors.cash_account_id" class="mt-1 text-xs text-danger-500">{{ payForm.errors.cash_account_id }}</p></div>
+                <div class="md:col-span-2 flex items-center justify-between rounded-lg bg-amber-50 px-4 py-2 text-xs text-amber-700 dark:bg-amber-900/20 dark:text-amber-300"><span>Jurnal: Dr Uang Muka Operasional · Cr Bank/Kas</span><span class="font-mono font-bold">{{ fmtRp(advance.amount) }}</span></div>
+                <div class="md:col-span-2"><Button type="submit" :disabled="payForm.processing || !payForm.cash_account_id || !fullyApproved"><template #icon-left><HandCoins class="h-4 w-4" /></template>Catat Pembayaran &amp; Buat Jurnal</Button></div>
+            </form>
+        </div>
+
+        <!-- Form realisasi (jika outstanding) -->
+        <div v-else-if="advance.status === 'outstanding'" class="card p-5">
+            <Button v-if="!showForm" @click="showForm = true"><template #icon-left><ClipboardCheck class="h-4 w-4" /></template>Realisasikan Bon</Button>
+            <form v-else @submit.prevent="submit" class="space-y-3">
+                <div class="flex items-center justify-between">
+                    <h2 class="font-semibold">Realisasi Bon Sementara</h2>
+                    <input :value="today" type="date" readonly title="Tanggal realisasi dikunci pada hari ini" :class="[inputCls,'w-auto cursor-not-allowed bg-neutral-100 dark:bg-neutral-800']" />
+                </div>
+                <table class="w-full text-sm">
+                    <thead class="text-left text-xs uppercase text-neutral-500"><tr><th class="py-1">Akun Beban</th><th class="py-1">Keterangan</th><th class="w-36 py-1 text-right">Jumlah</th><th class="w-8"></th></tr></thead>
+                    <tbody>
+                        <tr v-for="(l, i) in form.lines" :key="i">
+                            <td class="py-1 pr-2"><SearchSelect :model-value="l.expense_account_id" :options="expenseAccounts" placeholder="— cari akun —" @update:model-value="(v) => l.expense_account_id = v" /></td>
+                            <td class="py-1 pr-2"><input v-model="l.description" :class="inputCls" /></td>
+                            <td class="py-1 pr-2"><input v-model.number="l.amount" type="number" step="1" min="0" :class="[inputCls,'text-right']" /></td>
+                            <td class="py-1 text-center"><button type="button" @click="removeLine(i)" :disabled="form.lines.length===1" class="text-danger-500 disabled:opacity-30"><Trash2 class="h-4 w-4" /></button></td>
+                        </tr>
+                    </tbody>
+                </table>
+                <button type="button" @click="addLine" class="inline-flex items-center gap-1 rounded-lg border border-neutral-300 px-2.5 py-1.5 text-xs hover:bg-neutral-50 dark:border-neutral-700"><Plus class="h-3.5 w-3.5" /> Baris</button>
+                <div class="space-y-1 rounded-lg bg-neutral-50 p-3 text-sm dark:bg-neutral-800">
+                    <div class="flex justify-between"><span>Nominal</span><span class="font-mono">{{ fmtRp(advance.amount) }}</span></div>
+                    <div class="flex justify-between"><span>Total Realisasi (beban)</span><span class="font-mono">{{ fmtRp(realized) }}</span></div>
+                    <div class="flex justify-between border-t border-neutral-200 pt-1 font-semibold dark:border-neutral-700" :class="settlement >= 0 ? 'text-success-700' : 'text-danger-600'"><span>{{ settlement >= 0 ? 'Sisa dikembalikan ke kas (Refund)' : 'Kekurangan (Reimburse)' }}</span><span class="font-mono">{{ fmtRp(Math.abs(settlement)) }}</span></div>
+                </div>
+                <p class="text-xs text-neutral-400">Penyelesaian sisa/kekurangan ditangani dept Finance lewat tombol <b>Refund</b> / <b>Reimburse</b> setelah dana ditransfer.</p>
+                <div class="flex gap-2"><Button type="submit" :disabled="form.processing">Simpan Realisasi</Button><button type="button" @click="showForm = false" class="rounded-lg border border-neutral-300 px-4 py-2 text-sm dark:border-neutral-700">Batal</button></div>
+            </form>
+        </div>
+    </div>
+</template>

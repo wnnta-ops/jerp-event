@@ -1,0 +1,251 @@
+<?php
+
+declare(strict_types=1);
+
+namespace App\Domain\BusinessSupport\Services;
+
+use App\Domain\BusinessSupport\Models\BsAccount;
+use App\Domain\BusinessSupport\Models\BsBookedRevenue;
+use App\Domain\Master\Unit\Models\Unit;
+use App\Exceptions\BusinessRuleException;
+use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\DB;
+
+/**
+ * Booked Revenue — pendapatan ter-booking per customer & unit (deferred + akui).
+ *
+ *   Booking : Dr Piutang Usaha              / Cr Pendapatan Diterima Dimuka
+ *   Akui    : Dr Pendapatan Diterima Dimuka / Cr Penjualan Usaha
+ *   Batal   : Dr Pendapatan Diterima Dimuka / Cr Piutang Usaha (membalik booking)
+ */
+final class BookedRevenueService
+{
+    public function __construct(private readonly JournalService $journal) {}
+
+    /**
+     * Buat 1 record Booked Revenue (TANPA posting jurnal).
+     * Nilai Revenue (DPP) dihitung otoritatif: (Harga − Diskon/Free DP) ÷ 1,11.
+     *
+     * @param array{booking_date:string, customer_id:int, unit_id:int, gross_price?:float|int|string, discount?:float|int|string, cost_center_id?:?int, reference?:?string, description?:?string} $data
+     */
+    private function makeRecord(array $data, ?int $userId): BsBookedRevenue
+    {
+        $unit = Unit::findOrFail($data['unit_id']);
+
+        // Harga (gross, termasuk PPN): pakai input bila ada, jika tidak ambil dari unit.
+        $gross    = round((float) ($data['gross_price'] ?? ($unit->current_price ?: $unit->base_price)), 2);
+        $discount = round((float) ($data['discount'] ?? 0), 2);
+        if ($discount < 0) {
+            throw new BusinessRuleException('Diskon/Free DP tidak boleh negatif.', errorCode: 'BR_DISCOUNT_NEG');
+        }
+        if ($discount > $gross) {
+            throw new BusinessRuleException('Diskon/Free DP tidak boleh melebihi harga unit.', errorCode: 'BR_DISCOUNT_OVER');
+        }
+
+        // Nilai Revenue (DPP) = (Harga − Diskon/Free DP) ÷ 1,11.
+        $amount = round(($gross - $discount) / 1.11, 2);
+        if ($amount <= 0) {
+            throw new BusinessRuleException('Nilai revenue harus lebih dari 0 (cek harga & diskon).', errorCode: 'BR_ZERO');
+        }
+
+        return BsBookedRevenue::create([
+            'br_number'             => $this->nextNumber($data['booking_date']),
+            'booking_date'          => $data['booking_date'],
+            'customer_id'           => $data['customer_id'],
+            'unit_id'               => $unit->id,
+            'project_id'            => $unit->project_id,
+            'gross_price'           => $gross,
+            'discount'              => $discount,
+            'amount'                => $amount,
+            'receivable_account_id' => $this->account('receivable'),
+            'deferred_account_id'   => $this->account('unearned_revenue'),
+            'income_account_id'     => $this->account('income'),
+            'cost_center_id'        => $data['cost_center_id'] ?? null,
+            'reference'             => $data['reference'] ?? null,
+            'description'           => $data['description'] ?? null,
+            'status'                => 'booked',
+            'created_by'            => $userId,
+        ]);
+    }
+
+    /**
+     * Booking 1 unit dengan jurnal OTOMATIS (Dr Piutang / Cr Pendapatan Diterima Dimuka).
+     * Dipakai bila jurnal tidak diisi manual.
+     */
+    public function book(array $data, ?int $userId = null): BsBookedRevenue
+    {
+        return DB::transaction(function () use ($data, $userId): BsBookedRevenue {
+            $br      = $this->makeRecord($data, $userId);
+            $amount  = (float) $br->amount;
+            $journal = $this->journal->post([
+                'journal_date'   => $br->booking_date->toDateString(),
+                'source'         => 'memorial',
+                'reference'      => $br->br_number,
+                'description'    => 'Booked Revenue — '.$this->label($br),
+                'cost_center_id' => $br->cost_center_id,
+                'created_by'     => $userId,
+            ], [
+                ['account_id' => $br->receivable_account_id, 'debit' => $amount, 'credit' => 0, 'description' => 'Piutang booked revenue', 'cost_center_id' => $br->cost_center_id],
+                ['account_id' => $br->deferred_account_id, 'debit' => 0, 'credit' => $amount, 'description' => 'Pendapatan diterima dimuka', 'cost_center_id' => $br->cost_center_id],
+            ]);
+            $br->update(['booking_journal_id' => $journal->id]);
+
+            return $br;
+        });
+    }
+
+    /**
+     * Booking massal: 1 customer, banyak unit, dengan SATU jurnal MANUAL untuk seluruh transaksi.
+     * Atomik. Tiap unit → 1 record; semua record terhubung ke jurnal manual yang sama.
+     * Baris jurnal divalidasi oleh JournalService (balance Dr=Cr, ≥2 baris, periode terbuka).
+     *
+     * @param array{booking_date:string, customer_id:int, cost_center_id?:?int, reference?:?string, description?:?string} $header
+     * @param array<int,array{unit_id:int|string, discount?:float|int|string}> $units
+     * @param array<int,array{account_id:int|string, debit:float|int|string, credit:float|int|string}> $journalLines
+     * @return array<int,BsBookedRevenue>
+     */
+    public function bookMany(array $header, array $units, array $journalLines, ?int $userId = null): array
+    {
+        // Dedup unit (jaga-jaga bila satu unit ter-checklist ganda).
+        $byUnit = [];
+        foreach ($units as $u) {
+            $byUnit[(int) $u['unit_id']] = $u;
+        }
+        if ($byUnit === []) {
+            throw new BusinessRuleException('Pilih minimal 1 unit untuk di-booking.', errorCode: 'BR_NO_UNIT');
+        }
+
+        return DB::transaction(function () use ($header, $byUnit, $journalLines, $userId): array {
+            $cc      = $header['cost_center_id'] ?? null;
+            $records = [];
+            foreach ($byUnit as $unitId => $u) {
+                $records[] = $this->makeRecord([
+                    'booking_date'   => $header['booking_date'],
+                    'customer_id'    => (int) $header['customer_id'],
+                    'unit_id'        => $unitId,
+                    'discount'       => $u['discount'] ?? 0,
+                    'cost_center_id' => $cc,
+                    'reference'      => $header['reference'] ?? null,
+                    'description'    => $header['description'] ?? null,
+                ], $userId);
+            }
+
+            // Jurnal MANUAL (satu untuk seluruh booking).
+            $lines = array_map(fn (array $l): array => [
+                'account_id'     => (int) $l['account_id'],
+                'debit'          => round((float) ($l['debit'] ?? 0), 2),
+                'credit'         => round((float) ($l['credit'] ?? 0), 2),
+                'cost_center_id' => $cc,
+            ], $journalLines);
+
+            $first   = $records[0];
+            $extra   = count($records) - 1;
+            $journal = $this->journal->post([
+                'journal_date'   => $header['booking_date'],
+                'source'         => 'memorial',
+                'reference'      => $first->br_number.($extra > 0 ? ' +'.$extra : ''),
+                'description'    => 'Booked Revenue — '.$this->label($first).($extra > 0 ? ' (+'.$extra.' unit)' : ''),
+                'cost_center_id' => $cc,
+                'created_by'     => $userId,
+            ], $lines);
+
+            foreach ($records as $r) {
+                $r->update(['booking_journal_id' => $journal->id]);
+            }
+
+            return $records;
+        });
+    }
+
+    /** Akui pendapatan: reklas deferred → pendapatan penjualan. */
+    public function recognize(BsBookedRevenue $br, ?int $userId = null): BsBookedRevenue
+    {
+        if (! $br->isBooked()) {
+            throw new BusinessRuleException('Hanya Booked Revenue berstatus "booked" yang bisa diakui.', errorCode: 'BR_NOT_BOOKED');
+        }
+
+        return DB::transaction(function () use ($br, $userId): BsBookedRevenue {
+            $amount = round((float) $br->amount, 2);
+
+            $journal = $this->journal->post([
+                'journal_date'   => now()->toDateString(),
+                'source'         => 'memorial',
+                'reference'      => $br->br_number,
+                'description'    => 'Pengakuan Pendapatan — '.$this->label($br),
+                'cost_center_id' => $br->cost_center_id,
+                'created_by'     => $userId,
+            ], [
+                ['account_id' => $br->deferred_account_id, 'debit' => $amount, 'credit' => 0, 'description' => 'Reklas pendapatan diterima dimuka', 'cost_center_id' => $br->cost_center_id],
+                ['account_id' => $br->income_account_id, 'debit' => 0, 'credit' => $amount, 'description' => 'Penjualan usaha (diakui)', 'cost_center_id' => $br->cost_center_id],
+            ]);
+
+            $br->update([
+                'status'                 => 'recognized',
+                'recognized_at'          => now(),
+                'recognition_journal_id' => $journal->id,
+            ]);
+
+            return $br;
+        });
+    }
+
+    /** Batalkan booking: balik jurnal booking (Dr Deferred / Cr Piutang). */
+    public function cancel(BsBookedRevenue $br, ?int $userId = null): BsBookedRevenue
+    {
+        if (! $br->isBooked()) {
+            throw new BusinessRuleException('Hanya Booked Revenue berstatus "booked" yang bisa dibatalkan.', errorCode: 'BR_NOT_BOOKED');
+        }
+
+        return DB::transaction(function () use ($br, $userId): BsBookedRevenue {
+            $amount = round((float) $br->amount, 2);
+
+            $journal = $this->journal->post([
+                'journal_date'   => now()->toDateString(),
+                'source'         => 'memorial',
+                'reference'      => $br->br_number,
+                'description'    => 'Pembatalan Booked Revenue — '.$this->label($br),
+                'cost_center_id' => $br->cost_center_id,
+                'created_by'     => $userId,
+            ], [
+                ['account_id' => $br->deferred_account_id, 'debit' => $amount, 'credit' => 0, 'description' => 'Balik pendapatan diterima dimuka', 'cost_center_id' => $br->cost_center_id],
+                ['account_id' => $br->receivable_account_id, 'debit' => 0, 'credit' => $amount, 'description' => 'Balik piutang booked revenue', 'cost_center_id' => $br->cost_center_id],
+            ]);
+
+            $br->update([
+                'status'            => 'cancelled',
+                'cancelled_at'      => now(),
+                'cancel_journal_id' => $journal->id,
+            ]);
+
+            return $br;
+        });
+    }
+
+    /** Akun GL dari konfigurasi (kode → id), gagal jelas bila belum diset. */
+    private function account(string $key): int
+    {
+        $code = config("business_support.gl_accounts.{$key}");
+        $id   = $code ? BsAccount::where('code', $code)->value('id') : null;
+        if (! $id) {
+            throw new BusinessRuleException("Akun GL '{$key}' (kode {$code}) belum tersedia di Chart of Account.", errorCode: 'BR_NO_ACCOUNT');
+        }
+
+        return (int) $id;
+    }
+
+    private function label(BsBookedRevenue $br): string
+    {
+        $cust = $br->customer?->full_name ?? ('Customer #'.$br->customer_id);
+        $unit = $br->unit?->unit_code ?? ('Unit #'.$br->unit_id);
+
+        return $cust.' / '.$unit;
+    }
+
+    private function nextNumber(string $date): string
+    {
+        $d   = Carbon::parse($date);
+        $seq = BsBookedRevenue::withTrashed()->whereYear('booking_date', $d->year)->count() + 1;
+
+        return sprintf('BR/%s/%04d', $d->format('y').$d->format('m'), $seq);
+    }
+}

@@ -1,0 +1,132 @@
+<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word" xmlns="http://www.w3.org/TR/REC-html40"><head><meta charset="utf-8"><title>Diagram Alur per Modul — Java Core System</title><!--[if gte mso 9]><xml><w:WordDocument><w:View>Print</w:View><w:Zoom>100</w:Zoom></w:WordDocument></xml><![endif]--><style>  @page { size: A4; margin: 16mm 14mm; }
+  * { box-sizing: border-box; }
+  body { font-family: "Segoe UI", Arial, sans-serif; font-size: 11px; line-height: 1.5; color: #1f2937; max-width: 940px; margin: 0 auto; padding: 24px; }
+  h1 { font-size: 22px; color: #0f766e; border-bottom: 3px solid #0f766e; padding-bottom: 6px; margin-top: 28px; }
+  h2 { font-size: 16px; color: #115e59; border-bottom: 1px solid #d1d5db; padding-bottom: 4px; margin-top: 24px; }
+  h3 { font-size: 13px; color: #1e40af; margin-top: 18px; }
+  h4 { font-size: 12px; color: #374151; }
+  table { border-collapse: collapse; width: 100%; margin: 10px 0; font-size: 10px; page-break-inside: avoid; }
+  th, td { border: 1px solid #cbd5e1; padding: 5px 8px; text-align: left; vertical-align: top; }
+  th { background: #f1f5f9; font-weight: 600; }
+  tr:nth-child(even) td { background: #f8fafc; }
+  code { background: #f1f5f9; padding: 1px 4px; border-radius: 3px; font-family: Consolas, monospace; font-size: 10px; }
+  pre { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 10px; overflow-x: auto; }
+  blockquote { border-left: 4px solid #14b8a6; background: #f0fdfa; margin: 8px 0; padding: 6px 12px; color: #334155; }
+  a { color: #0d9488; }
+  hr { border: none; border-top: 1px solid #e2e8f0; margin: 20px 0; }
+  .mermaid { background: #fff; text-align: center; margin: 14px 0; page-break-inside: avoid; }
+  ul, ol { margin: 6px 0 6px 18px; }</style></head><body><h1>Diagram Alur per Modul — Java Core System</h1>
+<h3>Lampiran Diagram · Flowchart Detail Tiap Modul</h3>
+<table>
+<thead>
+<tr>
+<th></th>
+<th></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Versi</strong></td>
+<td>1.0 · 2026-06-04</td>
+</tr>
+<tr>
+<td><strong>Isi</strong></td>
+<td>Diagram alur (flowchart) detail untuk <strong>setiap modul</strong> — langkah, titik keputusan, dan jurnal otomatis</td>
+</tr>
+<tr>
+<td><strong>Pendamping</strong></td>
+<td><code>PRD-Java-Core-System</code> (gambaran) · <code>Spesifikasi-Modul-Detail</code> (field &amp; aturan)</td>
+</tr>
+</tbody>
+</table>
+<blockquote>
+<p>Diagram menggunakan <strong>Mermaid</strong> (ter-render otomatis di versi HTML &amp; PDF). Notasi: persegi = langkah/aksi · belah ketupat = keputusan · kotak &quot;Jurnal&quot; = posting GL otomatis.</p>
+</blockquote>
+<hr />
+<h1>BAGIAN A — FRONT OFFICE (PENJUALAN &amp; CRM)</h1>
+<h2>1. CRM — Leads</h2>
+<p style="border:1px solid #cbd5e1;background:#f8fafc;padding:8px;color:#475569"><i>[Diagram alur/ERD — lihat berkas versi HTML atau PDF]</i></p>
+<h2>2. Customer / CIF</h2>
+<p style="border:1px solid #cbd5e1;background:#f8fafc;padding:8px;color:#475569"><i>[Diagram alur/ERD — lihat berkas versi HTML atau PDF]</i></p>
+<h2>3. Master Properti &amp; Siteplan</h2>
+<p style="border:1px solid #cbd5e1;background:#f8fafc;padding:8px;color:#475569"><i>[Diagram alur/ERD — lihat berkas versi HTML atau PDF]</i></p>
+<h2>4. Pricelist</h2>
+<p style="border:1px solid #cbd5e1;background:#f8fafc;padding:8px;color:#475569"><i>[Diagram alur/ERD — lihat berkas versi HTML atau PDF]</i></p>
+<h2>5. NUP — Nomor Urut Pemesanan</h2>
+<p style="border:1px solid #cbd5e1;background:#f8fafc;padding:8px;color:#475569"><i>[Diagram alur/ERD — lihat berkas versi HTML atau PDF]</i></p>
+<h2>6. Hold Unit</h2>
+<p style="border:1px solid #cbd5e1;background:#f8fafc;padding:8px;color:#475569"><i>[Diagram alur/ERD — lihat berkas versi HTML atau PDF]</i></p>
+<h2>7. Booking</h2>
+<p style="border:1px solid #cbd5e1;background:#f8fafc;padding:8px;color:#475569"><i>[Diagram alur/ERD — lihat berkas versi HTML atau PDF]</i></p>
+<h2>8. Contract / PPJB</h2>
+<p style="border:1px solid #cbd5e1;background:#f8fafc;padding:8px;color:#475569"><i>[Diagram alur/ERD — lihat berkas versi HTML atau PDF]</i></p>
+<h2>9. Gimmick</h2>
+<p style="border:1px solid #cbd5e1;background:#f8fafc;padding:8px;color:#475569"><i>[Diagram alur/ERD — lihat berkas versi HTML atau PDF]</i></p>
+<h2>10. TTS — Tanda Terima Sementara</h2>
+<p style="border:1px solid #cbd5e1;background:#f8fafc;padding:8px;color:#475569"><i>[Diagram alur/ERD — lihat berkas versi HTML atau PDF]</i></p>
+<h2>11. Kuitansi</h2>
+<p style="border:1px solid #cbd5e1;background:#f8fafc;padding:8px;color:#475569"><i>[Diagram alur/ERD — lihat berkas versi HTML atau PDF]</i></p>
+<h2>12. Memo (Free DP / Subsidi DP)</h2>
+<p style="border:1px solid #cbd5e1;background:#f8fafc;padding:8px;color:#475569"><i>[Diagram alur/ERD — lihat berkas versi HTML atau PDF]</i></p>
+<h2>13. Cashback &amp; Refund</h2>
+<p style="border:1px solid #cbd5e1;background:#f8fafc;padding:8px;color:#475569"><i>[Diagram alur/ERD — lihat berkas versi HTML atau PDF]</i></p>
+<h2>14. Komisi</h2>
+<p style="border:1px solid #cbd5e1;background:#f8fafc;padding:8px;color:#475569"><i>[Diagram alur/ERD — lihat berkas versi HTML atau PDF]</i></p>
+<h2>15. KPA / Bank Loan</h2>
+<p style="border:1px solid #cbd5e1;background:#f8fafc;padding:8px;color:#475569"><i>[Diagram alur/ERD — lihat berkas versi HTML atau PDF]</i></p>
+<h2>16. Legal (AJB/BAST/IMB/Sertifikat)</h2>
+<p style="border:1px solid #cbd5e1;background:#f8fafc;padding:8px;color:#475569"><i>[Diagram alur/ERD — lihat berkas versi HTML atau PDF]</i></p>
+<h2>17. Collection — Penagihan</h2>
+<p style="border:1px solid #cbd5e1;background:#f8fafc;padding:8px;color:#475569"><i>[Diagram alur/ERD — lihat berkas versi HTML atau PDF]</i></p>
+<h2>18. Exception (GN / GU / Reschedule / Pembatalan)</h2>
+<p style="border:1px solid #cbd5e1;background:#f8fafc;padding:8px;color:#475569"><i>[Diagram alur/ERD — lihat berkas versi HTML atau PDF]</i></p>
+<h2>19. Virtual Account &amp; Pembayaran</h2>
+<p style="border:1px solid #cbd5e1;background:#f8fafc;padding:8px;color:#475569"><i>[Diagram alur/ERD — lihat berkas versi HTML atau PDF]</i></p>
+<h2>20. Faktur Pajak (FO) &amp; 21. Kalkulator</h2>
+<p style="border:1px solid #cbd5e1;background:#f8fafc;padding:8px;color:#475569"><i>[Diagram alur/ERD — lihat berkas versi HTML atau PDF]</i></p>
+<h1>BAGIAN B — BACK OFFICE / BUSINESS SUPPORT (AKUNTANSI)</h1>
+<h2>22–23. Master Akuntansi (CoA &amp; Dimensi)</h2>
+<p style="border:1px solid #cbd5e1;background:#f8fafc;padding:8px;color:#475569"><i>[Diagram alur/ERD — lihat berkas versi HTML atau PDF]</i></p>
+<h2>24. General Ledger / Jurnal Manual</h2>
+<p style="border:1px solid #cbd5e1;background:#f8fafc;padding:8px;color:#475569"><i>[Diagram alur/ERD — lihat berkas versi HTML atau PDF]</i></p>
+<h2>25. Hutang — AP (Invoice → Kuitansi → Pajak)</h2>
+<p style="border:1px solid #cbd5e1;background:#f8fafc;padding:8px;color:#475569"><i>[Diagram alur/ERD — lihat berkas versi HTML atau PDF]</i></p>
+<h2>26. Piutang — AR (Tagih → Reschedule → Terima)</h2>
+<p style="border:1px solid #cbd5e1;background:#f8fafc;padding:8px;color:#475569"><i>[Diagram alur/ERD — lihat berkas versi HTML atau PDF]</i></p>
+<h2>27–28. Kas/Bank &amp; Kas Kecil</h2>
+<p style="border:1px solid #cbd5e1;background:#f8fafc;padding:8px;color:#475569"><i>[Diagram alur/ERD — lihat berkas versi HTML atau PDF]</i></p>
+<h2>29. Bon Sementara (Uang Muka)</h2>
+<p style="border:1px solid #cbd5e1;background:#f8fafc;padding:8px;color:#475569"><i>[Diagram alur/ERD — lihat berkas versi HTML atau PDF]</i></p>
+<h2>30. Cek / Giro Masuk</h2>
+<p style="border:1px solid #cbd5e1;background:#f8fafc;padding:8px;color:#475569"><i>[Diagram alur/ERD — lihat berkas versi HTML atau PDF]</i></p>
+<h2>31. Rekonsiliasi Bank</h2>
+<p style="border:1px solid #cbd5e1;background:#f8fafc;padding:8px;color:#475569"><i>[Diagram alur/ERD — lihat berkas versi HTML atau PDF]</i></p>
+<h2>32. Aset Tetap</h2>
+<p style="border:1px solid #cbd5e1;background:#f8fafc;padding:8px;color:#475569"><i>[Diagram alur/ERD — lihat berkas versi HTML atau PDF]</i></p>
+<h2>33. Persediaan / Stock</h2>
+<p style="border:1px solid #cbd5e1;background:#f8fafc;padding:8px;color:#475569"><i>[Diagram alur/ERD — lihat berkas versi HTML atau PDF]</i></p>
+<h2>34. Pembelian / PO</h2>
+<p style="border:1px solid #cbd5e1;background:#f8fafc;padding:8px;color:#475569"><i>[Diagram alur/ERD — lihat berkas versi HTML atau PDF]</i></p>
+<h2>35. Kontraktor / SPK</h2>
+<p style="border:1px solid #cbd5e1;background:#f8fafc;padding:8px;color:#475569"><i>[Diagram alur/ERD — lihat berkas versi HTML atau PDF]</i></p>
+<h2>36. Budget Control</h2>
+<p style="border:1px solid #cbd5e1;background:#f8fafc;padding:8px;color:#475569"><i>[Diagram alur/ERD — lihat berkas versi HTML atau PDF]</i></p>
+<h2>37. COGS / HPP RealCost</h2>
+<p style="border:1px solid #cbd5e1;background:#f8fafc;padding:8px;color:#475569"><i>[Diagram alur/ERD — lihat berkas versi HTML atau PDF]</i></p>
+<h2>38. Payroll</h2>
+<p style="border:1px solid #cbd5e1;background:#f8fafc;padding:8px;color:#475569"><i>[Diagram alur/ERD — lihat berkas versi HTML atau PDF]</i></p>
+<h2>39. Pajak (e-Faktur &amp; SPT)</h2>
+<p style="border:1px solid #cbd5e1;background:#f8fafc;padding:8px;color:#475569"><i>[Diagram alur/ERD — lihat berkas versi HTML atau PDF]</i></p>
+<h2>40. Tutup Buku</h2>
+<p style="border:1px solid #cbd5e1;background:#f8fafc;padding:8px;color:#475569"><i>[Diagram alur/ERD — lihat berkas versi HTML atau PDF]</i></p>
+<h2>41. Upload Massal &amp; Proyeksi</h2>
+<p style="border:1px solid #cbd5e1;background:#f8fafc;padding:8px;color:#475569"><i>[Diagram alur/ERD — lihat berkas versi HTML atau PDF]</i></p>
+<hr />
+<h1>BAGIAN C — SECURITY, SETUP &amp; SETTINGS</h1>
+<h2>42–44. Security / Setup Sales / Settings</h2>
+<p style="border:1px solid #cbd5e1;background:#f8fafc;padding:8px;color:#475569"><i>[Diagram alur/ERD — lihat berkas versi HTML atau PDF]</i></p>
+<hr />
+<h2>Catatan</h2>
+<p>Diagram di atas menyederhanakan alur utama tiap modul; rincian field, status, dan aturan ada di <strong><code>Spesifikasi-Modul-Detail</code></strong>. Untuk diagram arsitektur &amp; ERD lihat <strong><code>PRD-Java-Core-System</code> (Lampiran D)</strong>.</p>
+<p><em>— Java Core System · 2026-06-04 —</em></p>
+</body></html>

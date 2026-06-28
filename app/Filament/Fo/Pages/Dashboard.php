@@ -3,10 +3,12 @@
 namespace App\Filament\Fo\Pages;
 
 use App\Modules\FO\Approval\Models\Approval;
+use App\Modules\FO\FinanceAR\Models\Bkm;
 use App\Modules\FO\FinanceAR\Models\Tts;
 use App\Modules\FO\Komisi\Models\Komisi;
 use App\Modules\FO\Launching\Models\NupEvent;
 use App\Modules\FO\Launching\Models\NupRegistration;
+use App\Modules\FO\MarketingSales\Models\Customer;
 use App\Modules\FO\MarketingSales\Models\Kontrak;
 use App\Modules\FO\MarketingSales\Models\Unit;
 use Filament\Pages\Dashboard as BaseDashboard;
@@ -133,6 +135,81 @@ class Dashboard extends BaseDashboard
             // dari kartu "Sales" → /fo/sales, dan sebagai sub-menu "Customer" di
             // sidebar (grup Customer & Booking). Tidak perlu duplikat di sini.
         ];
+    }
+
+    /**
+     * Kartu ringkasan (summary) di atas grid modul — meniru dashboard ipro-fo
+     * (Total Customer / Unit Tersedia / Booking Aktif / Penerimaan / Nilai Penjualan).
+     * Dihitung langsung dari tabel FO J-ERP.
+     */
+    public function getStats(): array
+    {
+        $totalUnit    = Unit::count();
+        $unitTersedia = Unit::where('status', 'TERSEDIA')->count();
+        $bookingAktif = Kontrak::whereIn('status', ['BOOKING', 'AKTIF'])->count();
+        $penerimaan   = (float) Bkm::where('status', 'POSTED')
+            ->whereYear('tgl_bkm', now()->year)->whereMonth('tgl_bkm', now()->month)->sum('amount');
+        $nilaiJual    = (float) Kontrak::sum('total_kontrak');
+
+        return [
+            ['label' => 'Total Customer', 'value' => number_format(Customer::count(), 0, ',', '.'),
+             'sub' => 'pelanggan terdaftar', 'accent' => false,
+             'icon' => 'M17 20h5v-2a4 4 0 00-3-3.87M9 20H4v-2a4 4 0 013-3.87m6-1.13a4 4 0 10-4-4 4 4 0 004 4z'],
+            ['label' => 'Unit Tersedia', 'value' => number_format($unitTersedia, 0, ',', '.'),
+             'sub' => 'dari ' . number_format($totalUnit, 0, ',', '.') . ' unit', 'accent' => false,
+             'icon' => 'M3 12l9-9 9 9M5 10v10h14V10'],
+            ['label' => 'Booking Aktif', 'value' => number_format($bookingAktif, 0, ',', '.'),
+             'sub' => 'kontrak booking/aktif', 'accent' => false,
+             'icon' => 'M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2'],
+            ['label' => 'Penerimaan Bln Ini', 'value' => 'Rp ' . $this->shortRupiah($penerimaan),
+             'sub' => now()->translatedFormat('F Y'), 'accent' => false,
+             'icon' => 'M3 10h18M7 15h2m4 0h4M3 7a2 2 0 012-2h14a2 2 0 012 2v10a2 2 0 01-2 2H5a2 2 0 01-2-2z'],
+            ['label' => 'Nilai Penjualan', 'value' => 'Rp ' . $this->shortRupiah($nilaiJual),
+             'sub' => Kontrak::count() . ' transaksi', 'accent' => true,
+             'icon' => 'M3 3v18h18M7 14l3-3 3 3 5-5'],
+        ];
+    }
+
+    private function shortRupiah(float $n): string
+    {
+        if ($n >= 1_000_000_000) {
+            return number_format($n / 1_000_000_000, 1, ',', '.') . ' M';
+        }
+        if ($n >= 1_000_000) {
+            return number_format($n / 1_000_000, 1, ',', '.') . ' Jt';
+        }
+
+        return number_format($n, 0, ',', '.');
+    }
+
+    /** Pipeline penjualan: NUP → Hold → Booking → Kontrak → Lunas + Batal. */
+    public function getPipeline(): array
+    {
+        return [
+            ['label' => 'NUP',           'count' => NupRegistration::count()],
+            ['label' => 'Hold Unit',     'count' => Unit::where('status', 'HOLD')->count()],
+            ['label' => 'Booking',       'count' => Kontrak::where('status', 'BOOKING')->count()],
+            ['label' => 'Kontrak Aktif', 'count' => Kontrak::where('status', 'AKTIF')->count()],
+            ['label' => 'Lunas',         'count' => Kontrak::where('status', 'LUNAS')->count()],
+            ['label' => 'Batal',         'count' => Kontrak::where('status', 'BATAL')->count()],
+        ];
+    }
+
+    /** Tren penjualan (nilai kontrak) 6 bulan terakhir untuk grafik batang. */
+    public function getTrend(): array
+    {
+        $out = [];
+        for ($i = 5; $i >= 0; $i--) {
+            $m = now()->subMonths($i);
+            $q = Kontrak::whereYear('tgl_kontrak', $m->year)->whereMonth('tgl_kontrak', $m->month);
+            $out[] = [
+                'label' => $m->translatedFormat('M'),
+                'nilai' => (float) (clone $q)->sum('total_kontrak'),
+                'count' => (clone $q)->count(),
+            ];
+        }
+
+        return $out;
     }
 
     /**

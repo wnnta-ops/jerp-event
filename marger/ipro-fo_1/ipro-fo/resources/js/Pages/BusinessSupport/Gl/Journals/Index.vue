@@ -1,0 +1,116 @@
+<script setup lang="ts">
+import { ref } from 'vue';
+import { router, Link } from '@inertiajs/vue3';
+import { Plus, ArrowLeft, FileText, ChevronDown, ListTree } from 'lucide-vue-next';
+import Button from '@/Components/UI/Button.vue';
+import Badge from '@/Components/UI/Badge.vue';
+import EmptyState from '@/Components/UI/EmptyState.vue';
+
+const props = defineProps<{ journals: any; sources: Record<string, string>; statuses: Record<string, string>; filters: Record<string, any> }>();
+const source = ref(props.filters.source ?? '');
+const statusFilter = ref(props.filters.status ?? '');
+const search = ref(props.filters.search ?? '');
+const dateFrom = ref(props.filters.date_from ?? '');
+const dateTo = ref(props.filters.date_to ?? '');
+
+function display() {
+    router.get(route('bs.gl.journal.index'), {
+        source: source.value || undefined,
+        status: statusFilter.value || undefined,
+        search: search.value || undefined,
+        date_from: dateFrom.value || undefined,
+        date_to: dateTo.value || undefined,
+    }, { preserveState: true, replace: true });
+}
+function exportExcel() {
+    window.location.href = route('bs.gl.journal.export', {
+        source: source.value || undefined,
+        status: statusFilter.value || undefined,
+        search: search.value || undefined,
+        date_from: dateFrom.value || undefined,
+        date_to: dateTo.value || undefined,
+    });
+}
+function fmtRp(v: number) { return Number(v ?? 0).toLocaleString('id-ID'); }
+function fmtDate(d: string) { return d ? new Date(d).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'; }
+const statusBadge: Record<string, any> = { draft: 'warning', final: 'info', posted: 'success' };
+
+// Rincian baris (akun debit/kredit) tiap jurnal. Default tampil agar semua jenis jurnal terlihat detailnya.
+const showDetail = ref(true);
+const open = ref<Record<number, boolean>>({});
+function toggle(id: number) { open.value[id] = !open.value[id]; }
+function isOpen(id: number) { return showDetail.value || open.value[id]; }
+</script>
+<template>
+    <div class="space-y-4">
+        <Link :href="route('bs.gl.index')" class="inline-flex items-center gap-2 text-sm text-neutral-500 hover:text-neutral-800 dark:hover:text-neutral-200"><ArrowLeft class="h-4 w-4" /> General Ledger</Link>
+        <div class="flex items-center justify-between">
+            <h1 class="flex items-center gap-2 text-2xl font-bold"><FileText class="h-6 w-6 text-primary-600" /> Detail Transaksi Jurnal</h1>
+            <Link :href="route('bs.gl.journal.create')"><Button><template #icon-left><Plus class="h-4 w-4" /></template>Jurnal Memorial</Button></Link>
+        </div>
+
+        <!-- Filter: periode tanggal + sumber + status + cari -->
+        <div class="card flex flex-wrap items-end gap-3 p-4">
+            <div><label class="mb-1 block text-xs font-medium text-neutral-500">Dari Tanggal</label><input v-model="dateFrom" type="date" class="h-9 rounded-lg border border-neutral-300 bg-white px-3 text-sm dark:border-neutral-700 dark:bg-neutral-900" /></div>
+            <div><label class="mb-1 block text-xs font-medium text-neutral-500">Sampai Tanggal</label><input v-model="dateTo" type="date" class="h-9 rounded-lg border border-neutral-300 bg-white px-3 text-sm dark:border-neutral-700 dark:bg-neutral-900" /></div>
+            <div><label class="mb-1 block text-xs font-medium text-neutral-500">Sumber</label><select v-model="source" class="h-9 rounded-lg border border-neutral-300 bg-white px-3 text-sm dark:border-neutral-700 dark:bg-neutral-900"><option value="">Semua Jenis</option><option v-for="(label, val) in sources" :key="val" :value="val">{{ label }}</option></select></div>
+            <div><label class="mb-1 block text-xs font-medium text-neutral-500">Status</label><select v-model="statusFilter" class="h-9 rounded-lg border border-neutral-300 bg-white px-3 text-sm dark:border-neutral-700 dark:bg-neutral-900"><option value="">Semua</option><option v-for="(label, val) in statuses" :key="val" :value="val">{{ label }}</option></select></div>
+            <div class="flex-1 min-w-[160px]"><label class="mb-1 block text-xs font-medium text-neutral-500">Cari</label><input v-model="search" placeholder="No. Jurnal / Keterangan / Ref" class="h-9 w-full rounded-lg border border-neutral-300 bg-white px-3 text-sm dark:border-neutral-700 dark:bg-neutral-900" @keyup.enter="display" /></div>
+            <button @click="display" class="h-9 rounded-lg bg-primary-600 px-5 text-sm font-semibold text-white hover:bg-primary-700">Display</button>
+            <button @click="exportExcel" class="h-9 rounded-lg bg-success-600 px-5 text-sm font-semibold text-white hover:bg-success-700">Excel</button>
+        </div>
+
+        <div class="flex items-center justify-between">
+            <p class="text-xs text-neutral-500">Periode <span class="font-medium">{{ fmtDate(filters.date_from) }}</span> s/d <span class="font-medium">{{ fmtDate(filters.date_to) }}</span> · {{ journals.total }} jurnal</p>
+            <button @click="showDetail = !showDetail" class="inline-flex items-center gap-1.5 rounded-lg border border-neutral-300 px-3 py-1.5 text-xs font-medium text-neutral-600 hover:bg-neutral-50 dark:border-neutral-700 dark:text-neutral-300">
+                <ListTree class="h-3.5 w-3.5" /> {{ showDetail ? 'Sembunyikan Rincian' : 'Tampilkan Rincian' }}
+            </button>
+        </div>
+
+        <div class="card overflow-x-auto">
+            <table class="w-full text-sm">
+                <thead class="bg-neutral-50 dark:bg-neutral-800"><tr class="text-left text-xs uppercase text-neutral-500">
+                    <th class="px-2 py-3 w-8"></th><th class="px-4 py-3">No. Jurnal</th><th class="px-4 py-3">Tanggal</th><th class="px-4 py-3">Sumber</th><th class="px-4 py-3">Keterangan</th><th class="px-4 py-3 text-center">Status</th><th class="px-4 py-3 text-center">Baris</th><th class="px-4 py-3 text-right">Nilai</th><th class="px-4 py-3 text-right"></th>
+                </tr></thead>
+                <tbody class="divide-y divide-neutral-200 dark:divide-neutral-800">
+                    <template v-for="j in journals.data" :key="j.id">
+                        <tr class="hover:bg-neutral-50/60 dark:hover:bg-neutral-800/40">
+                            <td class="px-2 py-2.5 text-center"><button type="button" @click="toggle(j.id)" class="text-neutral-400 hover:text-primary-600"><ChevronDown class="h-4 w-4 transition-transform" :class="{ 'rotate-180': isOpen(j.id) }" /></button></td>
+                            <td class="px-4 py-2.5 font-mono font-semibold">{{ j.journal_number }}</td>
+                            <td class="px-4 py-2.5 whitespace-nowrap">{{ fmtDate(j.journal_date) }}</td>
+                            <td class="px-4 py-2.5"><Badge variant="info" size="sm">{{ sources[j.source] ?? j.source }}</Badge></td>
+                            <td class="px-4 py-2.5">{{ j.description }}<span v-if="j.reference" class="block text-xs text-neutral-400">Ref: {{ j.reference }}</span></td>
+                            <td class="px-4 py-2.5 text-center"><Badge :variant="statusBadge[j.status] ?? 'neutral'" size="sm">{{ statuses[j.status] ?? j.status }}</Badge></td>
+                            <td class="px-4 py-2.5 text-center">{{ j.lines_count }}</td>
+                            <td class="px-4 py-2.5 text-right font-mono">{{ fmtRp(j.total_debit) }}</td>
+                            <td class="px-4 py-2.5 text-right"><Link :href="route('bs.gl.journal.show', j.id)" class="text-primary-600 text-sm">Lihat →</Link></td>
+                        </tr>
+                        <!-- Rincian baris jurnal (akun debit/kredit) -->
+                        <tr v-if="isOpen(j.id)" class="bg-neutral-50 dark:bg-neutral-900/40">
+                            <td></td>
+                            <td colspan="8" class="px-4 py-2">
+                                <table class="w-full text-xs">
+                                    <thead><tr class="text-left text-neutral-400"><th class="py-1 pl-2">Akun</th><th class="py-1">Keterangan Baris</th><th class="py-1 text-right">Debit</th><th class="py-1 text-right pr-2">Kredit</th></tr></thead>
+                                    <tbody>
+                                        <tr v-for="ln in (j.lines ?? [])" :key="ln.id" class="border-t border-neutral-200/70 dark:border-neutral-800">
+                                            <td class="py-1 pl-2 font-mono">{{ ln.account?.code }} — {{ ln.account?.name }}</td>
+                                            <td class="py-1 text-neutral-500">{{ ln.description ?? '—' }}</td>
+                                            <td class="py-1 text-right font-mono">{{ Number(ln.debit) > 0 ? fmtRp(ln.debit) : '' }}</td>
+                                            <td class="py-1 text-right font-mono pr-2">{{ Number(ln.credit) > 0 ? fmtRp(ln.credit) : '' }}</td>
+                                        </tr>
+                                        <tr class="border-t border-neutral-300 font-semibold dark:border-neutral-700">
+                                            <td class="py-1 pl-2" colspan="2">Total</td>
+                                            <td class="py-1 text-right font-mono">{{ fmtRp(j.total_debit) }}</td>
+                                            <td class="py-1 text-right font-mono pr-2">{{ fmtRp(j.total_credit) }}</td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </td>
+                        </tr>
+                    </template>
+                </tbody>
+            </table>
+            <EmptyState v-if="!journals.data?.length" title="Belum ada jurnal pada periode ini" description="Ubah rentang tanggal atau buat Jurnal Memorial." />
+        </div>
+    </div>
+</template>

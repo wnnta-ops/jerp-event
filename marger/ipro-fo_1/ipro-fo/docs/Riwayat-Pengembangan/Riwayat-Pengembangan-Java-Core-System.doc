@@ -1,0 +1,331 @@
+<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word" xmlns="http://www.w3.org/TR/REC-html40"><head><meta charset="utf-8"><title>Riwayat Pengembangan — Java Core System</title><!--[if gte mso 9]><xml><w:WordDocument><w:View>Print</w:View><w:Zoom>100</w:Zoom></w:WordDocument></xml><![endif]--><style>  @page { size: A4; margin: 16mm 14mm; }
+  * { box-sizing: border-box; }
+  body { font-family: "Segoe UI", Arial, sans-serif; font-size: 11px; line-height: 1.5; color: #1f2937; max-width: 940px; margin: 0 auto; padding: 24px; }
+  h1 { font-size: 22px; color: #0f766e; border-bottom: 3px solid #0f766e; padding-bottom: 6px; margin-top: 28px; }
+  h2 { font-size: 16px; color: #115e59; border-bottom: 1px solid #d1d5db; padding-bottom: 4px; margin-top: 24px; }
+  h3 { font-size: 13px; color: #1e40af; margin-top: 18px; }
+  h4 { font-size: 12px; color: #374151; }
+  table { border-collapse: collapse; width: 100%; margin: 10px 0; font-size: 10px; page-break-inside: avoid; }
+  th, td { border: 1px solid #cbd5e1; padding: 5px 8px; text-align: left; vertical-align: top; }
+  th { background: #f1f5f9; font-weight: 600; }
+  tr:nth-child(even) td { background: #f8fafc; }
+  code { background: #f1f5f9; padding: 1px 4px; border-radius: 3px; font-family: Consolas, monospace; font-size: 10px; }
+  pre { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 10px; overflow-x: auto; }
+  blockquote { border-left: 4px solid #14b8a6; background: #f0fdfa; margin: 8px 0; padding: 6px 12px; color: #334155; }
+  a { color: #0d9488; }
+  hr { border: none; border-top: 1px solid #e2e8f0; margin: 20px 0; }
+  ul, ol { margin: 6px 0 6px 18px; }</style></head><body><h1>Riwayat Pengembangan — Java Core System</h1>
+<blockquote>
+<p><strong>Dokumen backup ringkasan seluruh percakapan &amp; pekerjaan pengembangan.</strong>
+PT. Mitra Usaha Propertindo (MUP) · Java Residence
+Disusun: 4 Juni 2026 · Status: aktif dikembangkan</p>
+</blockquote>
+<hr />
+<h2>Daftar Isi</h2>
+<ol>
+<li><a href="#1-ikhtisar-proyek">Ikhtisar Proyek</a></li>
+<li><a href="#2-tech-stack--cara-akses">Tech Stack &amp; Cara Akses</a></li>
+<li><a href="#3-konvensi--pola-teknis-kunci">Konvensi &amp; Pola Teknis Kunci</a></li>
+<li><a href="#4-kronologi-pengembangan">Kronologi Pengembangan</a>
+<ul>
+<li><a href="#fase-a--pembangunan-awal--rebuild-eproperty">Fase A — Pembangunan Awal &amp; Rebuild eProperty</a></li>
+<li><a href="#fase-b--paritas-modul-sales-eproperty-phase-27">Fase B — Paritas Modul SALES eProperty (Phase 2–7)</a></li>
+<li><a href="#fase-c--business-support--akuntansi-batavianet-bo">Fase C — Business Support / Akuntansi (Batavianet BO)</a></li>
+<li><a href="#fase-d--pajak-crm-security-setup-sales">Fase D — Pajak, CRM, Security, Setup Sales</a></li>
+<li><a href="#fase-e--4-batch-paritas-bo--spk-mutasi-progress">Fase E — 4 Batch Paritas BO + SPK Mutasi Progress</a></li>
+<li><a href="#fase-f--pengujian-siklus-end-to-end-8-siklus">Fase F — Pengujian Siklus End-to-End (8 siklus)</a></li>
+<li><a href="#fase-g--deployment-247">Fase G — Deployment 24/7</a></li>
+<li><a href="#fase-h--dokumentasi-lengkap-prd-dll">Fase H — Dokumentasi Lengkap (PRD dll)</a></li>
+<li><a href="#fase-i--cif-360--cetakexcel">Fase I — CIF 360° + Cetak/Excel</a></li>
+<li><a href="#fase-j--modul-booked-revenue-baru">Fase J — Modul Booked Revenue (baru)</a></li>
+<li><a href="#fase-k--proyek-terkait-dashboard-exsum-firebase">Fase K — Proyek Terkait: Dashboard Exsum (Firebase)</a></li>
+</ul>
+</li>
+<li><a href="#5-daftar-bug-yang-ditemukan--diperbaiki">Daftar Bug yang Ditemukan &amp; Diperbaiki</a></li>
+<li><a href="#6-aset-dokumentasi-yang-dihasilkan">Aset Dokumentasi yang Dihasilkan</a></li>
+<li><a href="#7-status-verifikasi-terkini">Status Verifikasi Terkini</a></li>
+<li><a href="#8-lampiran--file--migrasi-kunci">Lampiran — File &amp; Migrasi Kunci</a></li>
+</ol>
+<hr />
+<h2>1. Ikhtisar Proyek</h2>
+<p><strong>Java Core System</strong> adalah ERP pengembang properti (property developer) untuk PT. Mitra Usaha Propertindo, dibangun ulang (rebuild) agar <strong>setia meniru (faithful mirror)</strong> sistem live <strong>eProperty</strong>:</p>
+<ul>
+<li><strong>Front Office (FO)</strong> — <code>fo.javaresidence.com</code> (Sales, Booking, Kontrak, Collection, dll.)</li>
+<li><strong>Back Office (BO) &quot;Batavianet&quot;</strong> — <code>bo.javaresidence.com</code> (Akuntansi/Business Support)</li>
+</ul>
+<p>Tujuan: satu sistem terpadu yang mereplikasi alur kerja eProperty + BO, dengan akuntansi double-entry penuh (General Ledger), agar bisa dipakai semua user kapan pun &amp; di mana pun.</p>
+<hr />
+<h2>2. Tech Stack &amp; Cara Akses</h2>
+<table>
+<thead>
+<tr>
+<th>Komponen</th>
+<th>Teknologi</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Backend</td>
+<td><strong>Laravel 12</strong> + PHP 8.4 (native, tanpa Docker)</td>
+</tr>
+<tr>
+<td>Frontend</td>
+<td><strong>Inertia.js + Vue 3 + TypeScript + Tailwind CSS</strong> (dark-mode)</td>
+</tr>
+<tr>
+<td>Database</td>
+<td><strong>SQLite</strong> (WAL-tunable via env)</td>
+</tr>
+<tr>
+<td>Arsitektur</td>
+<td><strong>DDD-lite</strong> — <code>app/Domain/&lt;Context&gt;/{Models,Services,Actions}</code></td>
+</tr>
+<tr>
+<td>Otorisasi</td>
+<td><strong>Spatie Permission</strong> (RBAC) — 193 permission / 11 role; <code>Gate::before</code> → SuperAdmin akses semua</td>
+</tr>
+<tr>
+<td>Akses jarak jauh</td>
+<td><strong>Tailscale funnel</strong> → <code>https://java-residence.tail212f65.ts.net</code></td>
+</tr>
+</tbody>
+</table>
+<p><strong>Verification trinity</strong> (dipakai di tiap perubahan):</p>
+<ul>
+<li><code>npm run build</code> — kompilasi vue-tsc + Vite</li>
+<li><code>php artisan smoke:pages</code> — render-test <strong>171 halaman</strong> Inertia</li>
+<li><code>php artisan trial:all</code> — <strong>24</strong> trial transaksi end-to-end</li>
+</ul>
+<hr />
+<h2>3. Konvensi &amp; Pola Teknis Kunci</h2>
+<ul>
+<li><strong><code>JournalService::post(header, lines)</code></strong> — satu-satunya gerbang posting GL. Memvalidasi <strong>Dr = Cr</strong>, minimal 2 baris, periode tidak closed; menyalurkan dimensi per-baris (cost_center, department, ledger, location, currency, kurs).</li>
+<li><strong>Trait</strong> <code>HasTenant</code> (auto <code>tenant_id</code> + scope), <code>HasAuditTrail</code>; cast <code>EncryptedString</code>.</li>
+<li><strong>Strict-mode Eloquent</strong> — akses atribut/relasi yang belum di-load akan error → pakai eager-loading atau <code>DB::table()</code>.</li>
+<li><strong>Resolusi akun</strong> via <code>config('business_support.gl_accounts.*')</code> (mis. <code>receivable</code> = 10102010101 Piutang Usaha; <code>income</code> = 40101010101 Penjualan Usaha; <code>unearned_revenue</code>/Uang Muka Penjualan = 20106060601).</li>
+<li><strong>Penomoran</strong> transaksi via pola <code>nextNumber()</code> per modul.</li>
+<li><strong>Komponen UI</strong> reusable: <code>SearchSelect.vue</code> (combobox cari kode/nama), <code>Button</code>, <code>Badge</code>, <code>EmptyState</code>, dll.</li>
+<li><strong>CoA riil eProperty</strong> 6-level di <code>database/data/eproperty_coa.php</code> (di-seed <code>EpropertyCoaSeeder</code>).</li>
+</ul>
+<hr />
+<h2>4. Kronologi Pengembangan</h2>
+<h3>Fase A — Pembangunan Awal &amp; Rebuild eProperty</h3>
+<ul>
+<li>Menyusun <strong>blueprint rebuild</strong> (Laravel) + dokumen pendamping (skema database, referensi API &amp; frontend).</li>
+<li>Scaffold proyek + foundation (Trait, Enum, Helper, Middleware, Provider) + seeders (Permission, Role, User, Numerator, Parameter).</li>
+<li>Instalasi tanpa Docker: PHP 8.4 + Composer + NPM + build + migrate + seed.</li>
+<li>Modul inti: <strong>Customer (CIF), Unit (+Siteplan), Booking (wizard + state machine), Contract (PPJB), TTS, Kuitansi, Memo</strong>, Approval Engine generik, <strong>Collection</strong> (Followup/Denda/PJT/Tunggakan/SP/SKL), <strong>Settings</strong> (User/Role/Numerator/Parameter), Scheduler, NUP, Hold.</li>
+<li><strong>Bank Loan (KPA)</strong> end-to-end, <strong>Legal</strong> (PPJB/AJB/BAST/IMB/Sertifikat), <strong>Commission engine + payout</strong>, <strong>Faktur Pajak + Cashback + Refund</strong>, <strong>Virtual Account + Webhook</strong>, <strong>Exception flow</strong> (GN/GU/Reschedule + SP), PDF (Browsershot) + Notification Dispatcher, API lengkap + bulk export/import.</li>
+<li>Pembuatan <code>trial:all</code> (24 trial) + <code>smoke:pages</code> (safety net) + LIVE_DEMO_LOG.</li>
+<li><strong>Rebrand</strong> IPRO FO → <strong>Java Core System</strong>.</li>
+</ul>
+<h3>Fase B — Paritas Modul SALES eProperty (Phase 2–7)</h3>
+<p>Observasi read-only sistem live eProperty, lalu membangun fitur yang kurang:</p>
+<ul>
+<li><strong>Phase 2 — Customer</strong>: +30 field (agama, status nikah, kewarganegaraan, sumber data), AddressClone, form 7-section, panel Recent Customers.</li>
+<li><strong>Phase 3 — Memo &amp; Free DP</strong>: Memo + Free DP/Subsidi DP (grant + cancel).</li>
+<li><strong>Phase 4 — PPJB lifecycle</strong>: dual numbering, contract_documents + compliance, Tab Proses PPJB.</li>
+<li><strong>Phase 5 — Gimmick</strong>: 8 tipe, paket gimmick, ContractGimmick, Tab Gimmick.</li>
+<li><strong>Phase 6 — Kalkulator</strong>: BPHTB, KPR, Skema (payment_schemes), UX Quick Wins, Site Plan &quot;Buat Booking&quot;.</li>
+<li><strong>Phase 7 — Pelengkap</strong>: CRM Activity Log (Jurnal polimorfik), error pages Indonesia, Numerator multi-format + cluster code, Bulk Import + migration validator, cutover/UAT plan.</li>
+</ul>
+<h3>Fase C — Business Support / Akuntansi (Batavianet BO)</h3>
+<p>Katalog &amp; deep-dive BO eProperty (CoA, Jurnal, AP/AR, Laporan), gap analysis, lalu bangun:</p>
+<ul>
+<li><strong>AP &amp; AR</strong> (register + pay + jurnal GL), aging + kartu hutang/piutang.</li>
+<li><strong>Cash Book</strong> (BKM/BKK auto-journal), <strong>Bon Sementara</strong> (uang muka operasional), <strong>Cek/Giro Masuk</strong> (terima/kliring/tolak).</li>
+<li><strong>Fixed Asset + Penyusutan</strong> + lifecycle approval jurnal (Baru→Final→Approved→Closed).</li>
+<li><strong>Budget Control</strong> (budget vs realisasi), <strong>Contractor (SPK)</strong> (progress/opname + retensi + AP), <strong>COGS/HPP</strong> (+ RealCost alokasi pool CIP ke unit), <strong>Laporan Arus Kas</strong> (Direct + Indirect).</li>
+<li><strong>Employee Center + Payroll</strong> (run + payslip + jurnal GL), Neraca Lajur + komparasi bulanan.</li>
+<li>Rebuild <strong>AP faithful</strong> (wizard multi-langkah, kategori invoice, Kuitansi Hutang, Posting Invoice PO/SPK, Memorial Hutang, Kelengkapan Berkas, Penghapusan Nilai Hutang).</li>
+<li>Rebuild <strong>AR faithful</strong> (kategori + lines + schedules, wizard 5-langkah, Kuitansi Piutang, Memorial Piutang).</li>
+</ul>
+<h3>Fase D — Pajak, CRM, Security, Setup Sales</h3>
+<ul>
+<li><strong>Faktur Pajak</strong>: NSFP pada AP/AR, keluaran/masukan/rekap, export CSV + XML e-Faktur DJP, PPN Penjualan Properti, PPh Rekap (21/23/4(2)), Rekonsiliasi Bank, <strong>Tutup Buku</strong> (closing L/R → laba ditahan), Buku Pembantu Pajak + cetak SPT Masa, Neraca Awal otomatis (carry-forward), Jurnal Saldo Awal, <strong>Dashboard Pajak</strong>.</li>
+<li><strong>CRM</strong>: crm_leads + LeadStage enum, Kanban + funnel + convert + follow-up.</li>
+<li><strong>Security</strong> &amp; <strong>Setup Sales</strong> modul (faithful dari eProperty).</li>
+</ul>
+<h3>Fase E — 4 Batch Paritas BO + SPK Mutasi Progress</h3>
+<p>Empat batch penutup gap BO, semua dengan auto-journal balanced:</p>
+<ol>
+<li><strong>Batch 1 — Aset</strong>: Disposal + Penjualan aset + Opening Penyusutan.</li>
+<li><strong>Batch 2 — Transaksi</strong>: AP/AR/PO/SPK lanjutan.</li>
+<li><strong>Batch 3 — Budget</strong>: workflow (ajukan→setujui→mutasi) + Upload massal + Saldo Awal.</li>
+<li><strong>Batch 4 — Laporan</strong>: Laporan Proyeksi + COGS RealCost.</li>
+<li><strong>SPK Mutasi Progress</strong> (<code>MutasiProgressRegis1</code>) — reklasifikasi CIP antar cost-center.</li>
+</ol>
+<h3>Fase F — Pengujian Siklus End-to-End (8 siklus)</h3>
+<p>Menguji <strong>39 sub-transaksi</strong> lewat controller nyata (pola: login user → buat Request → panggil controller → cek flash <code>error</code> + jurnal balanced, dibungkus <code>DB::beginTransaction()</code>/<code>rollBack()</code>):</p>
+<table>
+<thead>
+<tr>
+<th>Siklus diuji</th>
+<th>Hasil</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>SPK + Fixed Asset</td>
+<td>0 bug</td>
+</tr>
+<tr>
+<td>AR (tagih→reschedule→terima) / AP (→kuitansi→faktur pajak)</td>
+<td>0 bug</td>
+</tr>
+<tr>
+<td>COGS RealCost, <strong>Budget</strong>, Kas Kecil/Cash Book</td>
+<td><strong>1 bug ditemukan &amp; diperbaiki</strong> (Budget)</td>
+</tr>
+<tr>
+<td>Cek/Giro, Bon Sementara, Payroll, Tutup Buku</td>
+<td>0 bug</td>
+</tr>
+</tbody>
+</table>
+<p>Total: <strong>hanya 1 bug riil</strong> di seluruh 39 sub-transaksi; semua jurnal balanced.</p>
+<h3>Fase G — Deployment 24/7</h3>
+<p>Permintaan: web aktif selalu tanpa laptop menyala, bisa dipakai semua user. Direkomendasikan <strong>Oracle Cloud Always Free</strong> (VM 24/7 gratis). Disiapkan paket deployment:</p>
+<ul>
+<li><code>.env.production.example</code>, <code>deploy/Caddyfile</code> (php_fastcgi unix socket), <code>deploy/javacore-worker.service</code> (systemd queue), <code>deploy/deploy.sh</code>.</li>
+<li><code>DEPLOY.md</code> (runbook) + <strong><code>MULAI-DISINI.md</code></strong> (langkah satu per satu + link pendaftaran).</li>
+</ul>
+<blockquote>
+<p>Pengguna melakukan sendiri provisioning/login/pembayaran; asisten hanya menyiapkan paket &amp; panduan.</p>
+</blockquote>
+<h3>Fase H — Dokumentasi Lengkap (PRD dll)</h3>
+<p>Folder <strong><code>docs/</code></strong> berisi 4 dokumen × 4 format (<code>.md</code>, <code>.html</code>, <code>.doc</code>, <code>.pdf</code>):</p>
+<ul>
+<li><strong>PRD-Java-Core-System</strong> — Product Requirements Document lengkap.</li>
+<li><strong>Spesifikasi-Modul-Detail</strong> — penjelasan rinci <strong>44 modul</strong>.</li>
+<li><strong>Diagram-Alur-Modul</strong> — <strong>40+ flowchart</strong> (Mermaid) per modul.</li>
+<li><strong>Ringkasan-Eksekutif</strong> — executive brief.</li>
+<li>Tooling: <code>docs/_build.php</code> (CommonMark → HTML; Chrome headless → PDF), <code>docs/_schema.txt</code> (184 tabel), <code>docs/_diagrams.md</code>.</li>
+</ul>
+<h3>Fase I — CIF 360° + Cetak/Excel</h3>
+<ul>
+<li><strong>CustomerActivityService</strong> — timeline 360° aktivitas customer dari <strong>~25 modul</strong> (CRM, NUP, Hold, Booking, PPJB, TTS, Kuitansi, Memo, Cashback, Refund, Komisi, KPA, Legal, Pajak, VA, Collection, Exception, Piutang BS, Activity Log). Pakai <code>DB::table()</code> + guard <code>Schema::hasTable</code> agar lintas-domain &amp; aman strict-mode.</li>
+<li>Halaman <strong>CIF Show</strong> dapat kartu timeline + filter chip per modul.</li>
+<li><strong>Output report per customer</strong>: tombol <strong>Cetak</strong> (HTML A4 auto-print) + <strong>Download Excel</strong> (<code>.xls</code> HTML-table, 5 tabel: Profil, Ringkasan, Kontrak, Jadwal, Riwayat Aktivitas lengkap).</li>
+</ul>
+<h3>Fase J — Modul Booked Revenue (baru)</h3>
+<p>Modul akuntansi baru di Business Support — pendapatan ter-booking per <strong>Customer + Unit</strong> (deferred revenue). Dibangun bertahap sesuai permintaan:</p>
+<ol>
+<li><strong>Inti modul</strong> — pilih Customer (modul Customer) + Unit (modul Unit); jurnal deferred <strong>Dr Piutang Usaha / Cr Pendapatan Diterima Dimuka (Uang Muka Penjualan 20106060601)</strong>; aksi <strong>Akui Pendapatan</strong> (Dr Deferred / Cr Penjualan) &amp; <strong>Batal</strong>. <em>(migrasi <code>..._000110_booked_revenue.php</code>)</em></li>
+<li><strong>Mode massal</strong> — 1 customer, banyak unit via <strong>checklist</strong> (search + pilih semua), tiap unit → 1 record; atomik (<code>bookMany</code>).</li>
+<li><strong>Tombol &quot;Pilih Unit Rumah&quot;</strong> → modal hanya menampilkan unit yang <strong>belum pernah di-Booked Revenue</strong> (mengecualikan status booked/recognized; cancelled boleh ulang).</li>
+<li><strong>Kolom Diskon/Free DP</strong> + <strong>Nilai Revenue = (Harga − Diskon) ÷ 1,11</strong> (DPP, ex-PPN 11%), dihitung <strong>otoritatif di server</strong>; harga &amp; diskon disimpan (<code>gross_price</code>, <code>discount</code> — migrasi <code>..._000120_booked_revenue_discount.php</code>).</li>
+<li><strong>Perbaikan tampilan</strong> — input Diskon pakai pemisah ribuan + font <code>tabular-nums</code> (angka 0 tak terbaca seperti 8); kolom Harga &amp; Nilai Revenue juga <code>tabular-nums</code> (di Create, Show, Index).</li>
+<li><strong>Jurnal manual</strong> — menggantikan jurnal otomatis: <strong>3 baris debit + 3 baris kredit</strong>, COA terhubung General Ledger, <strong>1 jurnal untuk seluruh booking</strong> (semua record terhubung), prefill dari hitungan (Piutang/Deferred/PPN) tapi bisa diedit, indikator <strong>Balance</strong>, validasi <code>JournalService</code> (Dr=Cr, ≥2 baris), atomik.</li>
+<li><strong>Pemilih COA dapat dicari</strong> — pakai komponen <code>SearchSelect</code> (ketik nama/kode), bukan dropdown biasa.</li>
+</ol>
+<p><strong>File</strong>: <code>BsBookedRevenue</code> (model), <code>BookedRevenueService</code> (book/bookMany/recognize/cancel), <code>BookedRevenueController</code>, <code>Pages/BusinessSupport/BookedRevenue/{Index,Form,Show}.vue</code>.</p>
+<h3>Fase K — Proyek Terkait: Dashboard Exsum (Firebase)</h3>
+<p>Proyek <strong>terpisah</strong> <code>Exsum</code> (<code>exsum-mup.web.app</code>) — dashboard Ringkasan Eksekutif per departemen (Firebase Hosting + Firestore, auth client-side MVP).</p>
+<ul>
+<li>Permintaan: user departemen hanya boleh melihat <strong>grafik departemennya sendiri</strong> di Home.</li>
+<li>Solusi (1 file <code>public/dashboard-auth.js</code>): petakan tiap kanvas grafik Home → <code>dept-N</code>, sembunyikan grafik di luar <code>allowedModules()</code> user (admin = semua). Konsisten dengan gating kartu menu yang sudah ada.</li>
+<li>Diverifikasi via tes DOM-stub (Sales/KPR/multi/admin). <strong>Deploy dilakukan user sendiri</strong> (<code>firebase deploy --only hosting</code>).</li>
+</ul>
+<hr />
+<h2>5. Daftar Bug yang Ditemukan &amp; Diperbaiki</h2>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>Bug</th>
+<th>Konteks</th>
+<th>Perbaikan</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>Budget <code>store/update</code> &quot;Undefined array key cost_center_id&quot;</td>
+<td>uji siklus</td>
+<td><code>$v['cost_center_id'] ?: null</code> → <code>($v['cost_center_id'] ?? null) ?: null</code></td>
+</tr>
+<tr>
+<td>2</td>
+<td>CIF print/excel error: <code>id_type</code> enum (IdType) dilempar ke <code>e(?string)</code></td>
+<td>render-test CIF</td>
+<td>helper <code>e()</code> di-hardening unwrap <code>BackedEnum</code> + normalisasi <code>id_type</code> di <code>gather()</code></td>
+</tr>
+<tr>
+<td>3</td>
+<td><code>vue-tsc</code> tolak <code>transform((d) =&gt; …)</code> implicit any</td>
+<td>build Booked Revenue</td>
+<td>dianotasi <code>(d: any)</code></td>
+</tr>
+</tbody>
+</table>
+<blockquote>
+<p>Catatan non-bug yang diklarifikasi: Tutup Buku &quot;0 closing journals&quot; (perilaku benar — bulanan hanya lock, tahunan <code>closeYear()</code> yang posting L/R); volume timeline CIF tinggi (data demo terakumulasi, ditangani via filter chip + scroll).</p>
+</blockquote>
+<hr />
+<h2>6. Aset Dokumentasi yang Dihasilkan</h2>
+<pre><code>docs/
+├── PRD-Java-Core-System.{md,html,doc,pdf}        # PRD lengkap
+├── Spesifikasi-Modul-Detail.{md,html,doc,pdf}    # 44 modul detail
+├── Diagram-Alur-Modul.{md,html,doc,pdf}          # 40+ flowchart Mermaid
+├── Ringkasan-Eksekutif.{md,html,doc,pdf}         # executive brief
+├── README.md · _build.php · _schema.txt · _diagrams.md
+└── Riwayat-Pengembangan/                          # ← dokumen ini (backup riwayat)
+
+deploy/  + DEPLOY.md + MULAI-DISINI.md + .env.production.example   # paket deployment
+</code></pre>
+<hr />
+<h2>7. Status Verifikasi Terkini</h2>
+<table>
+<thead>
+<tr>
+<th>Pemeriksaan</th>
+<th>Hasil</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>npm run build</code> (vue-tsc + Vite)</td>
+<td>✅ sukses</td>
+</tr>
+<tr>
+<td><code>php artisan smoke:pages</code></td>
+<td>✅ <strong>171 / 171 halaman render OK</strong></td>
+</tr>
+<tr>
+<td><code>php artisan trial:all</code></td>
+<td>✅ 24 trial</td>
+</tr>
+<tr>
+<td>Jurnal GL seluruh transaksi</td>
+<td>✅ balanced (Dr = Cr)</td>
+</tr>
+<tr>
+<td>Total migrasi diterapkan</td>
+<td>74</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2>8. Lampiran — File &amp; Migrasi Kunci</h2>
+<p><strong>Migrasi batch (12 terakhir, semua diterapkan):</strong></p>
+<pre><code>2026_06_03_000010_create_contract_operations.php
+2026_06_03_000020_create_incentives.php
+2026_06_03_000030_add_category_code_to_bs_accounts.php
+2026_06_03_000040_add_journal_dimensions.php
+2026_06_03_000050_add_unit_customer_to_ap_invoices.php
+2026_06_03_000060_advance_settlement_and_petty_cash.php
+2026_06_03_000070_fixed_asset_disposal.php
+2026_06_03_000080_batch2_po_spk.php
+2026_06_03_000090_batch3_budget_workflow.php
+2026_06_03_000100_spk_progress_mutation.php
+2026_06_03_000110_booked_revenue.php
+2026_06_03_000120_booked_revenue_discount.php
+</code></pre>
+<p><strong>Layanan inti Business Support</strong> (<code>app/Domain/BusinessSupport/Services/</code>):
+<code>JournalService</code>, <code>BookedRevenueService</code>, <code>CogsService</code>, <code>ContractorService</code>, <code>FixedAssetService</code>, <code>PayrollService</code>, <code>GiroService</code>, <code>CashAdvanceService</code>, <code>PeriodClosingService</code>, <code>Ap/ArKuitansiService</code>, <code>Ap/ArMemorialService</code>, <code>StockService</code>.</p>
+<p><strong>Service domain Master</strong>: <code>CustomerActivityService</code> (timeline 360°).</p>
+<p><strong>Komponen UI reusable</strong>: <code>SearchSelect.vue</code>, <code>Button</code>, <code>Badge</code>, <code>EmptyState</code>, <code>Input</code>, <code>RegionSelect</code>, <code>AddressFields</code>.</p>
+<hr />
+<p><em>Dokumen ini adalah backup ringkasan. Untuk detail teknis tiap modul, lihat <code>docs/Spesifikasi-Modul-Detail.*</code> dan <code>docs/Diagram-Alur-Modul.*</code>.</em></p>
+</body></html>

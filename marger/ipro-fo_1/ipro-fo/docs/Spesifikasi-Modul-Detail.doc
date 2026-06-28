@@ -1,0 +1,472 @@
+<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word" xmlns="http://www.w3.org/TR/REC-html40"><head><meta charset="utf-8"><title>Spesifikasi Modul Detail — Java Core System</title><!--[if gte mso 9]><xml><w:WordDocument><w:View>Print</w:View><w:Zoom>100</w:Zoom></w:WordDocument></xml><![endif]--><style>  @page { size: A4; margin: 16mm 14mm; }
+  * { box-sizing: border-box; }
+  body { font-family: "Segoe UI", Arial, sans-serif; font-size: 11px; line-height: 1.5; color: #1f2937; max-width: 940px; margin: 0 auto; padding: 24px; }
+  h1 { font-size: 22px; color: #0f766e; border-bottom: 3px solid #0f766e; padding-bottom: 6px; margin-top: 28px; }
+  h2 { font-size: 16px; color: #115e59; border-bottom: 1px solid #d1d5db; padding-bottom: 4px; margin-top: 24px; }
+  h3 { font-size: 13px; color: #1e40af; margin-top: 18px; }
+  h4 { font-size: 12px; color: #374151; }
+  table { border-collapse: collapse; width: 100%; margin: 10px 0; font-size: 10px; page-break-inside: avoid; }
+  th, td { border: 1px solid #cbd5e1; padding: 5px 8px; text-align: left; vertical-align: top; }
+  th { background: #f1f5f9; font-weight: 600; }
+  tr:nth-child(even) td { background: #f8fafc; }
+  code { background: #f1f5f9; padding: 1px 4px; border-radius: 3px; font-family: Consolas, monospace; font-size: 10px; }
+  pre { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 10px; overflow-x: auto; }
+  blockquote { border-left: 4px solid #14b8a6; background: #f0fdfa; margin: 8px 0; padding: 6px 12px; color: #334155; }
+  a { color: #0d9488; }
+  hr { border: none; border-top: 1px solid #e2e8f0; margin: 20px 0; }
+  .mermaid { background: #fff; text-align: center; margin: 14px 0; page-break-inside: avoid; }
+  ul, ol { margin: 6px 0 6px 18px; }</style></head><body><h1>Spesifikasi Modul Detail — Java Core System</h1>
+<h3>Lampiran Teknis PRD · Penjelasan Lengkap per Modul</h3>
+<table>
+<thead>
+<tr>
+<th></th>
+<th></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Versi</strong></td>
+<td>1.0 · 2026-06-04</td>
+</tr>
+<tr>
+<td><strong>Sifat</strong></td>
+<td>Dokumen pendamping PRD — rincian <strong>field, status, alur, aturan, jurnal, route</strong> tiap modul</td>
+</tr>
+<tr>
+<td><strong>Cara baca</strong></td>
+<td>Tiap modul memakai templat seragam: <strong>Tujuan · Tabel &amp; Field · Status · Hak Akses · Alur Kerja · Aturan &amp; Validasi · Jurnal · Penomoran · Endpoint</strong></td>
+</tr>
+</tbody>
+</table>
+<blockquote>
+<p><strong>Legenda field:</strong> <code>*</code> = wajib · <code>?</code> = opsional/nullable · <code>(FK)</code> = referensi tabel lain · <code>(enc)</code> = terenkripsi · <code>(money)</code> = nilai uang (decimal) · <code>(soft)</code> = soft-delete (<code>deleted_at</code>).
+Sumber kebenaran: skema 184 tabel (<code>docs/_schema.txt</code>), route (<code>routes/web.php</code>), kode (<code>app/Domain</code>).</p>
+</blockquote>
+<hr />
+<h1>BAGIAN I — FONDASI &amp; MEKANISME LINTAS-MODUL</h1>
+<p>Mekanisme berikut dipakai <strong>semua</strong> modul; dijelaskan sekali di sini, lalu dirujuk.</p>
+<h2>F1. Multi-Tenant (<code>tenants</code>)</h2>
+<ul>
+<li><strong>Tujuan:</strong> satu instalasi melayani banyak badan usaha terpisah.</li>
+<li><strong>Field:</strong> <code>id, code*, name*, domain?, settings(json)?, activated_at?</code>.</li>
+<li><strong>Mekanisme:</strong> Trait <strong><code>HasTenant</code></strong> otomatis mengisi <code>tenant_id</code> saat create + men-<strong>scope</strong> semua query ke tenant aktif. Tiap tabel transaksi punya <code>tenant_id</code>.</li>
+</ul>
+<h2>F2. Audit Trail (<code>audit_logs</code>)</h2>
+<ul>
+<li><strong>Tujuan:</strong> jejak siapa-mengubah-apa-kapan.</li>
+<li><strong>Field:</strong> <code>user_id*, event*(created/updated/deleted), auditable_type/_id*(polimorfik), old_values(json), new_values(json), context(json), ip_address, user_agent, created_at</code>.</li>
+<li><strong>Mekanisme:</strong> Trait <strong><code>HasAuditTrail</code></strong> pada model yang dilacak.</li>
+</ul>
+<h2>F3. RBAC — Peran &amp; Hak Akses (<code>roles, permissions, role_has_permissions, model_has_roles</code>)</h2>
+<ul>
+<li><strong>Tujuan:</strong> kontrol akses berbasis peran (Spatie Permission).</li>
+<li><strong>Peran (<code>roles</code>):</strong> <code>name*, description, guard_name, is_system</code>. <strong>11 peran</strong> bawaan.</li>
+<li><strong>Permission (<code>permissions</code>):</strong> <code>name*</code> (pola <code>&lt;domain&gt;.&lt;aksi&gt;</code>), <code>module, label</code>. <strong>193 permission</strong> / 15 domain.</li>
+<li><strong>Mekanisme:</strong> <code>Gate::before</code> → <strong>SuperAdmin</strong> lolos semua. Tiap controller memanggil <code>abort_unless($user-&gt;can('&lt;perm&gt;'), 403)</code>.</li>
+</ul>
+<h2>F4. Approval Engine (<code>approvals, approval_chains, approval_chain_steps, approval_steps, approval_actions</code>)</h2>
+<ul>
+<li><strong>Tujuan:</strong> persetujuan berjenjang generik untuk dokumen apa pun (diskon, cashback, refund, jurnal, budget, exception).</li>
+<li><strong><code>approval_chains</code>:</strong> definisi rantai per <code>document_type</code> + <code>match_conditions(json)</code> (mis. ambang nilai). <strong><code>approval_chain_steps</code>:</strong> <code>level, approver_type, approver_value, threshold, is_final</code>.</li>
+<li><strong><code>approvals</code></strong> (instance): <code>approvable_type/_id(polimorfik), document_type, payload(json), status*(pending/approved/rejected), submitted_by, submitted_at, completed_at</code>. <strong><code>approval_steps</code>/<code>approval_actions</code>:</strong> rekam keputusan tiap level.</li>
+<li><strong>Alur:</strong> dokumen dibuat → <code>submit</code> membuat <code>approvals</code> (pending) → approver tiap level <code>approve/reject</code> → bila final approved → dokumen lanjut; bila reject → dokumen kembali.</li>
+</ul>
+<h2>F5. Penomoran (<code>numerators</code>)</h2>
+<ul>
+<li><strong>Field:</strong> <code>code*, prefix, format*, seq_padding, reset_strategy(yearly/monthly/never), current_period, current_seq</code>.</li>
+<li><strong>Mekanisme:</strong> tiap jenis dokumen punya pola; nomor di-generate atomik + unik per periode. Contoh format di §17 PRD.</li>
+</ul>
+<h2>F6. Parameter Sistem (<code>parameters</code>)</h2>
+<ul>
+<li><strong>Field:</strong> <code>group*, key*, value*, data_type, label, is_public</code>. Contoh: <code>tax.ppn_pct</code>, dll. Dikelola di Settings.</li>
+</ul>
+<h2>F7. Buku Besar — <code>JournalService</code> (<code>bs_journals</code>, <code>bs_journal_lines</code>)</h2>
+<ul>
+<li><strong><code>bs_journals</code></strong> (header): <code>journal_number*, journal_date*, period_year/month, source(memorial/cash/ap/ar), reference, description, status*(draft/finalized/posted), total_debit/credit(money), cost_center_id, finalized_at, approved_by, posted_at</code>.</li>
+<li><strong><code>bs_journal_lines</code>:</strong> <code>account_id*(FK CoA), debit(money), credit(money), description, cost_center_id, department_id, ledger_id, location_id, currency, kurs</code>.</li>
+<li><strong>Aturan WAJIB (di <code>JournalService::post</code>):</strong> total Dr = total Cr; ≥ 2 baris; <strong>periode tidak <code>closed</code></strong>; tiap baris punya akun <em>postable</em>. Pelanggaran → posting <strong>ditolak</strong> (exception).</li>
+<li><strong>Dampak:</strong> <strong>setiap modul akuntansi</strong> memanggil service ini → integritas GL terjamin (lihat tabel jurnal §16 PRD).</li>
+</ul>
+<hr />
+<h1>BAGIAN II — MODUL FRONT OFFICE (PENJUALAN &amp; CRM)</h1>
+<h2>1. CRM — Leads (<code>crm_leads</code>)</h2>
+<ul>
+<li><strong>Tujuan:</strong> kelola prospek dari awal kontak hingga konversi jadi customer/booking (papan Kanban).</li>
+<li><strong>Tabel/Field:</strong> <code>lead_number*, name*, phone?, email?, data_source_id?(FK sumber), agent_id?, assigned_to?(user), unit_id?(minat), interest?, stage*, est_value(money)?, customer_id?(hasil convert), booking_id?(hasil convert), lost_reason?, last_contact_at?, next_followup_at?, notes?</code> (soft).</li>
+<li><strong>Status (<code>stage</code>):</strong> tahapan funnel (mis. baru → kontak → kualifikasi → penawaran → menang/kalah).</li>
+<li><strong>Hak Akses:</strong> <code>crm.*</code> (Sales/Agent/Manager).</li>
+<li><strong>Alur:</strong> Buat lead → <strong>pindah tahap</strong> (Kanban drag/<code>move</code>) → catat <strong>aktivitas/follow-up</strong> → <strong>convert</strong> (jadi Customer/Booking) <strong>atau</strong> <strong>lost</strong> (+alasan).</li>
+<li><strong>Aturan:</strong> convert mengisi <code>customer_id</code>/<code>booking_id</code>; lost mengisi <code>lost_reason</code>; <code>next_followup_at</code> untuk pengingat.</li>
+<li><strong>Endpoint:</strong> <code>crm.leads.{index,create,store,show,update,move,convert,activity,lost}</code>.</li>
+</ul>
+<h2>2. Customer / CIF (<code>customers</code>, <code>customer_documents</code>)</h2>
+<ul>
+<li><strong>Tujuan:</strong> master data pembeli (Customer Information File) lengkap &amp; sesuai regulasi.</li>
+<li><strong>Tabel/Field (inti):</strong> <code>code*, full_name*, id_type*, id_number*(enc), dob, birth_place, gender, marital_status, religion, nationality, phone*, phone_alt, email, occupation, employer_name, monthly_income, status</code>. <strong>Alamat KTP:</strong> <code>address_line, address_rt_rw, kelurahan, kecamatan, city, province, postal_code</code>. <strong>NPWP:</strong> <code>npwp, npwp_name, npwp_same_as_ktp, npwp_address/rt_rw/kelurahan/kecamatan/kota/postal_code</code>. <strong>Surat-menyurat:</strong> <code>mailing_same_as_ktp, mailing_*</code>. <strong>Kantor:</strong> <code>office_*, job_title, office_phone</code>. <strong>Darurat:</strong> <code>emergency_name/relationship/phone/email</code>. <strong>Identitas berlaku:</strong> <code>id_expires_at, id_lifetime</code>. (soft)</li>
+<li><strong>Dokumen:</strong> <code>customer_documents</code> (KTP/NPWP/KK scan: <code>type, label, file_path, mime, size_bytes</code>).</li>
+<li><strong>Hak Akses:</strong> <code>master.*</code> / <code>sales.*</code>.</li>
+<li><strong>Aturan:</strong> <code>id_number</code> <strong>terenkripsi</strong>; centang <strong>&quot;Sama dengan KTP&quot;</strong> menyalin alamat (AddressClone) → mailing/office; centang NPWP &quot;Sama dengan KTP&quot; → <code>npwp_name</code>=full_name, <code>npwp</code>=id_number. <strong>Merge</strong> menggabungkan duplikat (+ pemetaan referensi). <strong>Upload massal</strong> via CSV template.</li>
+<li><strong>Endpoint:</strong> <code>customers.{merge,merge.references,merge.apply,upload,upload.template,upload.store}</code>, <code>cif.{index,show}</code>.</li>
+</ul>
+<h2>3. Master Properti — Project, Cluster, Block, Unit, Tipe, Siteplan</h2>
+<ul>
+<li><strong>Tujuan:</strong> struktur produk yang dijual.</li>
+<li><strong>Tabel:</strong> <code>projects (code,name,location,launched_at,siteplan_meta)</code> › <code>clusters (code,name)</code> › <code>blocks (code)</code> › <strong><code>units</code></strong> › <code>unit_types (code,name,lt,lb,bedrooms,bathrooms)</code>.</li>
+<li><strong><code>units</code>:</strong> <code>unit_code*, project_id, cluster_id, block_id, unit_type_id, address, base_price*(money), current_price(money), status*, attributes(json LT/LB)</code> (soft).</li>
+<li><strong><code>siteplan_points</code>:</strong> koordinat unit di siteplan (<code>x,y,width,height,rotation,svg_path</code>).</li>
+<li><strong>Status unit:</strong> available / hold / booked / sold (siklus).</li>
+<li><strong>Alur:</strong> kelola master → <strong>Siteplan</strong> interaktif (klik unit → status + <strong>&quot;Buat Booking&quot;</strong>).</li>
+<li><strong>Endpoint:</strong> <code>siteplan.{show,update}</code> + Setup Sales.</li>
+</ul>
+<h2>4. Pricelist (<code>pricelists</code>, <code>pricelist_items</code>, <code>sales_price_histories</code>)</h2>
+<ul>
+<li><strong>Tujuan:</strong> daftar harga berversi per unit.</li>
+<li><strong>Tabel:</strong> <code>pricelists (name, effective_from/until, is_active)</code> › <code>pricelist_items (unit_id, price, discount_max_pct)</code>. Perubahan harga dicatat di <code>sales_price_histories (old_price,new_price,source,note,changed_by)</code>.</li>
+<li><strong>Alur:</strong> buat pricelist → isi harga per unit → <strong>aktifkan</strong> (1 aktif/periode) → harga unit mengikuti.</li>
+<li><strong>Endpoint:</strong> <code>pricelist.{index,create,units,store,show,activate,destroy}</code>.</li>
+</ul>
+<h2>5. NUP — Nomor Urut Pemesanan (<code>nup_schemes</code>, <code>nup_registrations</code>, <code>nup_payments</code>, <code>launchings</code>)</h2>
+<ul>
+<li><strong>Tujuan:</strong> antrian prioritas pembelian (terutama saat launching).</li>
+<li><strong><code>nup_schemes</code>:</strong> <code>code,name, nup_amount(money), open_from/to, is_refundable, refund_penalty_pct, launching_id</code>.</li>
+<li><strong><code>nup_registrations</code>:</strong> <code>nup_number*, queue_no*, customer_id, registered_at, sales_person_id, agent_id, status*, form_data(json), payment_status, payment_provider/ref/url/external_id, verification_status, verified_at/by, verification_note</code> (soft).</li>
+<li><strong><code>nup_payments</code>:</strong> <code>amount, paid_at, payment_method, reference_no</code>.</li>
+<li><strong>Status:</strong> registrasi → (bayar) → <strong>verifikasi</strong> → siap promote ke booking; bisa <strong>refund</strong> (dengan penalti).</li>
+<li><strong>Alur:</strong> Daftar (internal <strong>atau</strong> form <strong>publik anonim</strong>) → bayar (<code>pay</code>) → <strong>verifikasi</strong> admin → <strong>promote</strong> ke Booking / <strong>refund</strong>.</li>
+<li><strong>Hak Akses:</strong> publik (store/done) tanpa login; internal <code>sales.*</code>.</li>
+<li><strong>Endpoint:</strong> <code>nup.{create,public.store,public.done}</code> (publik); <code>nup.{index,verifikasi,show,bayar,pay,refund,verify,destroy}</code>.</li>
+</ul>
+<h2>6. Hold Unit (<code>unit_holds</code>)</h2>
+<ul>
+<li><strong>Tujuan:</strong> tahan unit sementara agar tidak diambil orang lain.</li>
+<li><strong>Field:</strong> <code>unit_id*, customer_id?, sales_person_id?, held_at*, expires_at*, reason?, status*</code>.</li>
+<li><strong>Status:</strong> active / released / expired.</li>
+<li><strong>Alur:</strong> Buat hold (set masa berlaku) → unit &quot;terkunci&quot; → <strong>release</strong> manual <strong>atau</strong> <strong>kedaluwarsa otomatis</strong> (scheduler <code>hold:expire</code> tiap 00:30).</li>
+<li><strong>Endpoint:</strong> <code>holds.{index,create,store,release}</code>.</li>
+</ul>
+<h2>7. Booking (<code>bookings</code>, <code>booking_discounts</code>, <code>booking_status_histories</code>, <code>payment_schedules</code>, <code>payment_scheme_terms</code>)</h2>
+<ul>
+<li><strong>Tujuan:</strong> transaksi pemesanan unit — jantung penjualan.</li>
+<li><strong><code>bookings</code>:</strong> <code>booking_number*, customer_id*, unit_id*, payment_scheme_id*, sales_person_id, agent_id, nup_registration_id?, booking_date*, base_price(money), discount_amount/pct, gimmick_value, ppn_pct, ppn_amount, total_price(money), booking_source, status*, notes</code> (soft).</li>
+<li><strong><code>booking_discounts</code>:</strong> <code>reason, basis, value, approval_id</code> → diskon <strong>melewati approval</strong>.</li>
+<li><strong><code>payment_schedules</code></strong> (jadwal tagihan): <code>installment_no, label, due_date, amount(money), paid_amount, status, payment_type, sequence</code> — dibentuk dari <strong>skema pembayaran</strong> (<code>payment_schemes</code>/<code>payment_scheme_terms</code>: DP, cicilan, dll.).</li>
+<li><strong><code>booking_status_histories</code>:</strong> jejak transisi status.</li>
+<li><strong>Status (state machine):</strong> draft → pending → <strong>confirmed</strong> → (cancelled / expired). Diskon → approval; auto-confirm bila tanpa diskon.</li>
+<li><strong>Alur:</strong> Pilih unit (dari siteplan/hold/NUP) → <strong>preview</strong> harga (diskon+gimmick+PPN+total) → simpan → (diskon→approval) → <strong>confirmed</strong> → <strong>Jadwal Tagihan</strong> + <strong>Jurnal Kontrak</strong> terbentuk.</li>
+<li><strong>Jurnal Kontrak:</strong> <strong>Dr Piutang Usaha / Cr Pendapatan Penjualan (+ Cr PPN Keluaran)</strong>.</li>
+<li><strong>Aturan:</strong> kedaluwarsa otomatis (<code>booking:expire</code>); <code>promote</code> dari NUP; <code>cancel</code> (→ cancellation flow).</li>
+<li><strong>Endpoint:</strong> <code>bookings.{preview,cancel,promote,gn,gu,reschedule}</code>.</li>
+</ul>
+<h2>8. Contract / PPJB (<code>contracts</code>, <code>contract_documents</code>, <code>contract_clauses</code>, <code>contract_signers</code>, <code>contract_operations</code>, <code>ppjb_documents</code>)</h2>
+<ul>
+<li><strong>Tujuan:</strong> kontrak jual-beli (PPJB) + dokumennya.</li>
+<li><strong><code>contracts</code>:</strong> <code>contract_number*, booking_id*, signed_at, status, template_id, snapshot(json), **ppjb_status, ppjb_system_number, ppjb_manual_number, ppjb_use_manual_number, ppjb_date, ppjb_printed_at, ppjb_signed_at**, cancelled_at</code> (soft).</li>
+<li><strong><code>contract_documents</code>:</strong> checklist dokumen (<code>document_type, is_present, file_path, verified_at/by</code>). <strong><code>contract_clauses</code>:</strong> pasal. <strong><code>contract_signers</code>:</strong> penandatangan (<code>role,name,id_number,signed_at,signature_path</code>).</li>
+<li><strong><code>contract_operations</code>:</strong> operasi atas kontrak (<code>operation_no, type, reason, old_values, new_values, amount, status</code>) — mis. penyesuaian PPN.</li>
+<li><strong>Status PPJB:</strong> draft → printed → signing → <strong>signed/complete</strong>; penomoran <strong>ganda</strong> (sistem &amp; manual).</li>
+<li><strong>Alur:</strong> dari Booking confirmed → <strong>print PPJB</strong> → <strong>start-signing</strong> → <strong>complete/sign</strong> → kelengkapan dokumen (toggle compliance) → penomoran.</li>
+<li><strong>Endpoint:</strong> <code>contracts.{index,show,update,print,sign,ppjb.print,ppjb.start-signing,ppjb.complete,ppjb.numbering,documents.toggle}</code>, <code>sales.kontrak-ops.{index,find,ppn,ppn.preview,ppn.apply,operation,apply}</code>, <code>sales.migrasi.{index,template,upload}</code>.</li>
+</ul>
+<h2>9. Gimmick (<code>gimmicks</code>, <code>gimmick_packages</code>, <code>gimmick_package_items</code>, <code>contract_gimmicks</code>)</h2>
+<ul>
+<li><strong>Tujuan:</strong> bonus/insentif penjualan (free DP, voucher, barang) yang menempel ke kontrak.</li>
+<li><strong><code>gimmicks</code>:</strong> <code>code,name,description, value(money), gimmick_type, satuan_barang, harga_satuan, effective_from/to, is_active</code>.</li>
+<li><strong><code>gimmick_packages</code> + items:</strong> paket berisi beberapa gimmick (per cluster, masa berlaku).</li>
+<li><strong><code>contract_gimmicks</code>:</strong> gimmick terpasang di kontrak (<code>value, qty, harga_satuan, total_harga, target_lunas, diberikan, diterima, tgl_diterima, gimmick_package_id</code>).</li>
+<li><strong>Alur:</strong> apply <strong>paket</strong> ke kontrak → toggle <strong>&quot;diterima&quot;</strong> per item → remove bila batal.</li>
+<li><strong>Endpoint:</strong> <code>contracts.gimmicks.apply-package</code>, <code>gimmicks.{toggle-diterima,remove}</code>.</li>
+</ul>
+<h2>10. TTS — Tanda Terima Sementara (<code>tts_receipts</code>, <code>tts_allocations</code>, <code>tts_giros</code>, <code>payment_allocations</code>)</h2>
+<ul>
+<li><strong>Tujuan:</strong> bukti penerimaan pembayaran dari customer → alokasi ke jadwal tagihan.</li>
+<li><strong><code>tts_receipts</code>:</strong> <code>tts_number*, customer_id*, booking_id*, amount(money)*, payment_method*, received_date*, bank_account_id, reference_no, status*, received_by, posted_by, posted_at</code> (soft).</li>
+<li><strong><code>tts_allocations</code>:</strong> alokasi nominal ke <code>payment_schedule_id</code>. <strong><code>tts_giros</code>:</strong> bila bayar pakai giro (<code>giro_number, issuing_bank, giro_date, due_date, status, cleared_at, rejected_at</code>).</li>
+<li><strong><code>payment_allocations</code>:</strong> alokasi pembayaran generik (<code>source_type, source_id, payment_method, amount, allocated_at, reference_number</code>).</li>
+<li><strong>Status:</strong> draft → <strong>posted</strong> (mengakui penerimaan). Giro: pending → cleared/rejected.</li>
+<li><strong>Alur:</strong> Buat TTS → alokasikan ke termin → <strong>post</strong> → <strong>Kuitansi otomatis</strong> terbit. Giro: <strong>clear-giro</strong> / <strong>reject-giro</strong>.</li>
+<li><strong>Jurnal:</strong> <strong>Dr Kas/Bank / Cr Piutang Usaha</strong>.</li>
+<li><strong>Endpoint:</strong> <code>tts.{index,create,store,show,post,clear-giro,reject-giro}</code>.</li>
+</ul>
+<h2>11. Kuitansi (<code>kuitansis</code>, <code>kuitansi_items</code>)</h2>
+<ul>
+<li><strong>Tujuan:</strong> kuitansi resmi penerimaan (cetak).</li>
+<li><strong>Field:</strong> <code>kuitansi_number*, tts_receipt_id*(FK), customer_id, issued_date, amount(money), terbilang, signed_by, status</code> (soft). Item: <code>description, amount</code>.</li>
+<li><strong>Alur:</strong> otomatis dari TTS posted → <strong>cetak PDF</strong> (No Unit muncul via join booking→unit).</li>
+<li><strong>Endpoint:</strong> <code>kuitansi.{index,show,pdf}</code>.</li>
+</ul>
+<h2>12. Memo (Free DP / Subsidi DP) (<code>memos</code>)</h2>
+<ul>
+<li><strong>Tujuan:</strong> pembayaran non-tunai (potongan/subsidi DP) sebagai pengganti uang masuk.</li>
+<li><strong>Field:</strong> <code>memo_number*, type*(free_dp/subsidi_dp), memo_date, amount(money), reference_type/_id, description, bank_account_id, status*, approved_by/at, rejected_by/at, cancelled_by/at, reason, approval_id</code> (soft).</li>
+<li><strong>Status:</strong> draft → approved/rejected → (cancelled).</li>
+<li><strong>Alur:</strong> Grant <strong>Free DP</strong>/<strong>Subsidi DP</strong> ke booking → approval → alokasi ke jadwal; bisa <strong>cancel</strong>.</li>
+<li><strong>Endpoint:</strong> <code>memos.{free-dp,subsidi-dp,cancel}</code>.</li>
+</ul>
+<h2>13. Cashback (<code>cashbacks</code>) &amp; Refund (<code>refunds</code>)</h2>
+<ul>
+<li><strong>Cashback:</strong> <code>booking_id*, amount(money), reason, status*(pending/approved/paid), approval_id, paid_at</code>. Alur: ajukan → <strong>approve</strong> → <strong>pay</strong>.</li>
+<li><strong>Refund:</strong> <code>refund_number*, refundable_type/_id(polimorfik), amount(money), requested_at, paid_at, memo_id, approval_id, status*</code>. Alur: ajukan → <strong>approve</strong> → <strong>pay</strong> (pengembalian dana).</li>
+<li><strong>Endpoint:</strong> <code>cashbacks.{index,store,approve,pay}</code>, <code>refunds.{index,approve,pay}</code>.</li>
+</ul>
+<h2>14. Komisi (<code>commissions</code>, <code>commission_lines</code>, <code>commission_schemes</code>, <code>commission_scheme_terms</code>, <code>commission_payouts</code>, <code>incentives</code>, <code>incentive_schemes</code>)</h2>
+<ul>
+<li><strong>Tujuan:</strong> hitung &amp; bayar komisi agen/sales otomatis.</li>
+<li><strong><code>commission_schemes</code>+terms:</strong> aturan tarif per <code>agent_type, trigger_event, rate_pct/flat_amount, term_no</code>.</li>
+<li><strong><code>commissions</code>:</strong> <code>booking_id*, commission_scheme_id, base_amount(money), status</code>. <strong><code>commission_lines</code>:</strong> <code>agent_id, tier, rate_pct, amount, trigger_event, status</code>. <strong><code>commission_payouts</code>:</strong> <code>amount, paid_at, memo_id, status, approval_id</code>.</li>
+<li><strong><code>incentives</code>/<code>incentive_schemes</code>:</strong> insentif (BLT/reward) — <code>type, beneficiary_type, amount, status, submitted/approved/realized</code>.</li>
+<li><strong>Alur:</strong> booking memicu perhitungan komisi → payout (approval) → bayar.</li>
+<li><strong>Endpoint:</strong> incentives.* (BLT/reward), komisi via Setup Sales/finance.</li>
+</ul>
+<h2>15. KPA / Bank Loan (<code>kpa_applications</code>, <code>kpa_sp3k</code>, <code>kpa_akads</code>, <code>kpa_realizations</code>, <code>kpa_retentions</code>, <code>kpa_buybacks</code>, <code>kpa_documents</code>, <code>bank_partners</code>, <code>bank_products</code>, <code>bank_retention_terms</code>, <code>retention_categories</code>)</h2>
+<ul>
+<li><strong>Tujuan:</strong> proses pembiayaan bank (KPR/KPA) untuk pembeli.</li>
+<li><strong><code>kpa_applications</code>:</strong> <code>application_number*, booking_id*, customer_id*, bank_partner_id, bank_product_id, plafon_requested/approved(money), tenor_month, submitted_at, reviewed_at, status*, reject_reason, handled_by</code> (soft).</li>
+<li><strong><code>kpa_sp3k</code>:</strong> persetujuan kredit (<code>sp3k_number, sp3k_date, approved_amount, interest_pct, tenor_month, expires_at</code>). <strong><code>kpa_akads</code>:</strong> akad (<code>akad_at, place, notary, status</code>). <strong><code>kpa_realizations</code>:</strong> pencairan (<code>disbursed_at, disbursed_amount, retention_amount, bank_account_id</code>). <strong><code>kpa_retentions</code>:</strong> retensi bank (<code>amount, released_at, status, claim_reason</code>). <strong><code>kpa_buybacks</code>:</strong> buyback.</li>
+<li><strong>Master:</strong> <code>bank_partners</code> (bank rekanan), <code>bank_products</code> (produk KPR + bunga/tenor), <code>retention_categories</code> + <code>bank_retention_terms</code> (aturan retensi).</li>
+<li><strong>Status:</strong> draft → <strong>submit</strong> → <strong>SP3K</strong> → <strong>akad</strong> → akad-complete (→ realisasi/retensi).</li>
+<li><strong>Endpoint:</strong> <code>kpa.{index,create,store,show,submit,sp3k,akad,akad-complete}</code>, <code>kpa.setup.retensi.*</code>, <code>kpa.setup.bank.*</code>.</li>
+</ul>
+<h2>16. Legal (<code>ppjb_documents</code>, <code>ajb_documents</code>, <code>bast_documents</code>, <code>imb_documents</code>, <code>sertifikat_documents</code>)</h2>
+<ul>
+<li><strong>Tujuan:</strong> dokumen legal pasca-jual.</li>
+<li><strong>AJB:</strong> <code>ajb_number, signed_at, notary_name, file_path, status</code>. <strong>BAST:</strong> <code>bast_number, handed_over_at, checklist(json), status</code>. <strong>IMB:</strong> <code>imb_number, issued_at, file_path</code> (per unit). <strong>Sertifikat:</strong> <code>type, serial_number, issued_at, owner_customer_id</code> (per unit).</li>
+<li><strong>Alur:</strong> terbit &amp; lacak per booking/unit; status compliance.</li>
+</ul>
+<h2>17. Collection — Penagihan (<code>followups</code>, <code>dendas</code>, <code>pjt_headers/_details</code>, <code>tunggakan_headers/_details</code>, <code>surat_peringatans</code>, <code>skl_documents</code>)</h2>
+<ul>
+<li><strong>Tujuan:</strong> menagih tunggakan &amp; mengelola denda hingga lunas.</li>
+<li><strong><code>followups</code>:</strong> <code>customer_id, sales_person_id, channel, contacted_at, result, notes, next_action_at, status</code>.</li>
+<li><strong><code>dendas</code>:</strong> <code>payment_schedule_id, computed_date, overdue_days, rate_per_day, amount(money), amount_waived, amount_paid, status</code> — <strong>perumusan</strong> rumus denda + <strong>pemutihan/waive</strong>.</li>
+<li><strong><code>pjt_headers/_details</code>:</strong> Piutang Jatuh Tempo (regenerate per periode).</li>
+<li><strong><code>tunggakan_headers/_details</code>:</strong> rekap tunggakan per customer (<code>term_overdue_count, total_amount, first_overdue_at</code>).</li>
+<li><strong><code>surat_peringatans</code>:</strong> SP (<code>sp_number, level, issued_at, deadline_at, status, signed_by</code>). <strong><code>skl_documents</code>:</strong> SKL/lunas (<code>skl_number, issued_at, signed_by, status, approval_id</code>).</li>
+<li><strong>Otomatis (scheduler):</strong> <code>billing:jatuh-tempo</code> (01:00), <code>pjt:generate</code> (02:00), <code>tunggakan:update</code> (02:30).</li>
+<li><strong>Alur:</strong> jatuh tempo → followup → denda → <strong>SP</strong> (berjenjang) → (lunas) <strong>SKL</strong> (cetak PDF).</li>
+<li><strong>Endpoint:</strong> <code>followups.*, dendas.index, denda.{perumusan,perumusan.update,pemutihan,pemutihan.waive}, pjt.{index,regenerate}, tunggakan.index, sp.{index,issue}, skl.{index,issue,pdf}</code>.</li>
+</ul>
+<h2>18. Exception Flow (<code>cancellation_requests</code>, <code>name_change_requests</code>, <code>unit_change_requests</code>, <code>reschedule_requests</code>)</h2>
+<ul>
+<li><strong>Tujuan:</strong> perubahan/pembatalan transaksi terkendali (approval).</li>
+<li><strong>GN — Ganti Nama</strong> (<code>name_change_requests</code>): <code>old/new_customer_id, admin_fee, approval_id, status</code>.</li>
+<li><strong>GU — Ganti Unit</strong> (<code>unit_change_requests</code>): <code>old/new_unit_id, price_diff, admin_fee, approval_id, status</code>.</li>
+<li><strong>Reschedule</strong> (<code>reschedule_requests</code>): <code>proposed_schedule(json), admin_fee, approval_id, status</code>.</li>
+<li><strong>Pembatalan</strong> (<code>cancellation_requests</code>): <code>reason, paid_to_date, penalty_amount, refund_amount, approval_id, status</code>.</li>
+<li><strong>Alur:</strong> ajukan → <strong>approval</strong> → terapkan (+ Surat Peringatan/biaya admin terkait).</li>
+<li><strong>Endpoint:</strong> <code>bookings.{gn,gu,reschedule}</code>, <code>exceptions.index</code>.</li>
+</ul>
+<h2>19. Virtual Account &amp; Pembayaran (<code>virtual_accounts</code>, <code>va_transactions</code>, <code>anonymous_payments</code>, <code>bank_accounts</code>)</h2>
+<ul>
+<li><strong>Tujuan:</strong> terima pembayaran via VA bank otomatis.</li>
+<li><strong><code>virtual_accounts</code>:</strong> <code>customer_id, bank_partner_id, va_number, status</code>. <strong><code>va_transactions</code>:</strong> <code>amount, received_at, external_reference, status, tts_receipt_id</code>.</li>
+<li><strong><code>anonymous_payments</code>:</strong> pembayaran masuk tak teridentifikasi (<code>amount, received_at, reference_no, status, customer_id?, tts_receipt_id?</code>) → <strong>dialokasikan</strong> manual.</li>
+<li><strong><code>bank_accounts</code>:</strong> rekening perusahaan (<code>account_name/number, bank_name, is_virtual_pool</code>).</li>
+<li><strong>Alur:</strong> assign VA ke customer → bayar → <strong>webhook Xendit</strong> (<code>webhooks.xendit</code>) → buat transaksi + TTS otomatis; pembayaran anonim → alokasi.</li>
+<li><strong>Endpoint:</strong> <code>va.{index,assign,transactions,anonymous,anonymous.allocate}</code>, <code>rekening.*</code>, <code>webhooks.xendit</code>.</li>
+</ul>
+<h2>20. Faktur Pajak (FO) (<code>faktur_pajaks</code>, <code>faktur_pajak_items</code>)</h2>
+<ul>
+<li><strong>Tujuan:</strong> faktur pajak penjualan properti.</li>
+<li><strong>Field:</strong> <code>fp_number*, customer_id, booking_id, issued_at, dpp(money), ppn(money), ppnbm, total, status, djp_response(json)</code>.</li>
+<li><strong>Alur:</strong> terbit dari penjualan → masuk <strong>rekap Faktur Keluaran</strong> (lihat BO §Tax). <em>(Modul BO Tax mengelola e-Faktur/SPT.)</em></li>
+<li><strong>Endpoint:</strong> <code>faktur-pajak.{index,create,store}</code>.</li>
+</ul>
+<h2>21. Kalkulator (<code>calculator.*</code>)</h2>
+<ul>
+<li><strong>Tujuan:</strong> simulasi mandiri (standalone) tanpa menyimpan transaksi.</li>
+<li><strong>BPHTB:</strong> hitung Bea Perolehan Hak atas Tanah/Bangunan. <strong>KPR:</strong> simulasi cicilan (plafon, bunga, tenor). <strong>Skema:</strong> simulasi skema pembayaran (DP, cicilan, diskon).</li>
+<li><strong>Endpoint:</strong> <code>calculator.{index,bphtb,kpr,skema}</code>.</li>
+</ul>
+<h1>BAGIAN III — MODUL BACK OFFICE / BUSINESS SUPPORT (AKUNTANSI)</h1>
+<blockquote>
+<p>Semua modul di bawah berhak akses domain <code>businesssupport.*</code> (<code>view</code> / <code>transaction.create</code> / <code>setup.manage</code> / <code>approval.act</code>) dan memposting jurkal lewat <strong><code>JournalService</code></strong> (§F7).</p>
+</blockquote>
+<h2>22. Bagan Akun — CoA (<code>bs_accounts</code>)</h2>
+<ul>
+<li><strong>Tujuan:</strong> struktur akun 6 level untuk seluruh pembukuan.</li>
+<li><strong>Field:</strong> <code>code*(1/3/5/7/9/11 digit → level 1–6), name*, type*(asset/liability/equity/income/expense), normal_balance(D/C), parent_id/parent_code, category_code, level, is_postable*, is_active</code> (soft).</li>
+<li><strong>Aturan:</strong> hanya akun <strong>is_postable</strong> (daun) yang boleh dijurnal; tipe diturunkan dari digit pertama.</li>
+<li><strong>Endpoint:</strong> <code>bs.accounts.{index,store,update,destroy}</code>.</li>
+</ul>
+<h2>23. Master Dimensi (<code>bs_cost_centers</code>, <code>bs_departments</code>, <code>bs_ledgers</code>, <code>bs_locations</code>, <code>bs_suppliers</code>)</h2>
+<ul>
+<li><strong>Cost Center:</strong> <code>project_id, code, name, manager</code> — pusat biaya (dipakai SPK/COGS/Budget/jurnal).</li>
+<li><strong>Dimensi Jurnal:</strong> <strong>Departemen / Ledger / Lokasi</strong> (<code>code, name, is_active</code>) — label tambahan per baris jurnal (+ <code>currency</code>, <code>kurs</code>).</li>
+<li><strong>Supplier:</strong> <code>code,name,category, contact_person, phone, email, address, city, npwp, bank_*</code> — pemasok/kontraktor.</li>
+<li><strong>Endpoint:</strong> <code>bs.cost-centers.*, bs.journal-dimensions.*, bs.suppliers.*</code>.</li>
+</ul>
+<h2>24. General Ledger / Jurnal (<code>bs_journals</code>, <code>bs_journal_lines</code>, <code>bs_fiscal_periods</code>)</h2>
+<ul>
+<li><strong>Tujuan:</strong> jurnal manual + buku besar (lihat §F7 untuk struktur &amp; aturan balance).</li>
+<li><strong>Lifecycle jurnal manual:</strong> <strong>Baru</strong> → <code>finalize</code> (<code>finalized_at</code>) → <code>approve</code> (<code>approved_by</code>, status <strong>posted</strong>) / <code>reject</code>.</li>
+<li><strong>Import CSV:</strong> kolom <code>TANGGAL,KODE_AKUN,DEBIT,KREDIT,KETERANGAN,REFERENSI</code>; baris ber-REFERENSI sama digabung 1 jurnal; <strong>validasi balance</strong>; opsi <strong>dry-run</strong>.</li>
+<li><strong><code>bs_fiscal_periods</code>:</strong> <code>year, month, status(open/closed), closed_at</code> — kunci periode.</li>
+<li><strong>Laporan GL:</strong> Buku Besar (<code>ledger</code>), Neraca Saldo (<code>trialbalance</code>), Neraca &amp; L/R (<code>financials</code>), Arus Kas (<code>cashflow</code>), Neraca Lajur (<code>worksheet</code>), Komparasi (<code>comparative</code>), <strong>GL Lanjutan</strong> (<code>extra</code>: komparasi tahunan / multi-periode / histori saldo).</li>
+<li><strong>Endpoint:</strong> <code>bs.gl.{index,period.close,period.open,journal.index,journal.create,journal.store,journal.show,journal.finalize,journal.approve,journal.reject,journal.import,journal.import.store,extra,ledger,trialbalance,financials,cashflow,worksheet,comparative}</code>.</li>
+</ul>
+<h2>25. Hutang — AP (<code>bs_ap_invoices</code> + lines/schedules/payments/kuitansis/memorials/berkas, <code>bs_ap_categories</code>)</h2>
+<ul>
+<li><strong>Tujuan:</strong> kelola hutang usaha (invoice supplier → bayar → pajak).</li>
+<li><strong><code>bs_ap_invoices</code>:</strong> <code>invoice_number*, supplier_invoice_no*(WAJIB), invoice_date*, due_date, supplier_id*, category_id, trx_type(normal/denda/saldo_awal), description, dpp(money)*, ppn_mode(none/with), ppn_pct, ppn_amount, pph_mode(none/withheld), pph_pct, pph_amount, pph_account_id, total, net_payable, paid_amount, status*(open/paid), journal_id, expense/payable_account_id, kurs, transfer_detail, tax_invoice_no(NSFP), unit_id?, customer_id?</code> (soft).</li>
+<li><strong>Anak:</strong> <code>..._lines</code> (uraian: qty,unit_price,amount), <code>..._schedules</code> (jadwal: installment_no, due_date, amount, paid_amount, status), <code>..._payments</code>.</li>
+<li><strong>Kategori:</strong> <code>bs_ap_categories (code,name, debit_account_id, payable_account_id)</code> → menentukan akun jurnal.</li>
+<li><strong>Kuitansi Hutang</strong> (<code>bs_ap_kuitansis</code>+lines): voucher bayar multi-invoice (<code>kuitansi_number, supplier_id, cash_account_id, alat_transaksi(tunai/transfer/giro), kasir, total, status, journal_id, void_journal_id</code>) — bisa <strong>void</strong>.</li>
+<li><strong>Memorial</strong> (<code>bs_ap_memorials</code>): penyesuaian non-tunai (<code>trx_type, counter_account_id, amount, is_writeoff</code>) — termasuk <strong>Penghapusan</strong> (write-off).</li>
+<li><strong>Kelengkapan Berkas</strong> (<code>bs_ap_berkas</code> master + <code>bs_ap_invoice_berkas</code> checklist <code>is_complete</code>).</li>
+<li><strong>Jurnal:</strong> Invoice → <strong>Dr Beban/Persediaan + Dr PPN Masukan / Cr Hutang Usaha</strong>; Bayar/Kuitansi → <strong>Dr Hutang / Cr Kas</strong>.</li>
+<li><strong>Penomoran:</strong> <code>AP.INV/&lt;KATEGORI&gt;/MUP/YY/&lt;ROMAWI&gt;/NNNNN</code>, <code>AP.KUI/MUP/YY/&lt;ROMAWI&gt;/NNNNN</code>.</li>
+<li><strong>Endpoint:</strong> <code>bs.ap.{index,create,store,aging,card,categories.*,kuitansi.*,posting.{po,spk},memorial.*,penghapusan.*,berkas.*,show,pay}</code>.</li>
+</ul>
+<h2>26. Piutang — AR (<code>bs_ar_invoices</code> + lines/schedules/payments/kuitansis/memorials, <code>bs_ar_categories</code>)</h2>
+<ul>
+<li><strong>Tujuan:</strong> kelola piutang usaha (tagih → terima → reschedule).</li>
+<li><strong><code>bs_ar_invoices</code>:</strong> mirror AP: <code>invoice_number*, customer_id*, category_id, trx_type, dpp*, ppn_mode/pct/amount, pph_mode/pct/amount, total, net_receivable, paid_amount, status*(open/paid), income/receivable_account_id, customer_ref_no, tax_invoice_no, journal_id</code> (soft) + lines/schedules/payments.</li>
+<li><strong>Kategori:</strong> <code>bs_ar_categories (income_account_id, receivable_account_id)</code>.</li>
+<li><strong>Reschedule Jatuh Tempo:</strong> jadwal ulang <strong>sisa</strong> piutang (angsuran terbayar <strong>dikunci</strong>, sisa di-split jadi termin baru, header due-date tersinkron) — <strong>tanpa jurnal</strong> (hanya timing).</li>
+<li><strong>Kuitansi Piutang</strong> (<code>bs_ar_kuitansis</code>): penerimaan multi-invoice + <strong>void</strong>. <strong>Memorial Piutang</strong>: penyesuaian + <strong>Penghapusan</strong>.</li>
+<li><strong>Jurnal:</strong> Invoice → <strong>Dr Piutang (+ Dr PPh dibayar dimuka) / Cr Pendapatan + Cr PPN Keluaran</strong>; Terima → <strong>Dr Kas / Cr Piutang</strong>.</li>
+<li><strong>Endpoint:</strong> <code>bs.ar.{index,create,store,aging,card,categories.*,kuitansi.*,memorial.*,penghapusan.*,show,pay,reschedule}</code>.</li>
+</ul>
+<h2>27. Kas &amp; Bank (<code>bs_cash_transactions</code>)</h2>
+<ul>
+<li><strong>Tujuan:</strong> mutasi kas/bank harian.</li>
+<li><strong>Field:</strong> <code>trx_number*, trx_type*(in/out/transfer), trx_date*, cash_account_id*, counter_account_id*(≠cash), amount(money)*, payee, description, reference, journal_id</code> (soft).</li>
+<li><strong>Jurnal:</strong> Masuk → <strong>Dr Kas/Bank / Cr counter</strong>; Keluar → <strong>Dr counter / Cr Kas/Bank</strong>.</li>
+<li><strong>Endpoint:</strong> <code>bs.cashbook.{index,balances,create,store,show}</code>.</li>
+</ul>
+<h2>28. Kas Kecil — Petty Cash (<code>bs_cash_transactions</code> akun KAS KECIL)</h2>
+<ul>
+<li><strong>Tujuan:</strong> kas kecil operasional (top-up &amp; belanja) memakai akun <code>10101010102 KAS KECIL</code>.</li>
+<li><strong>Field input:</strong> <code>trx_type(in/out), trx_date, counter_account_id*, amount*, payee, description</code> (cash_account dipaksa = Kas Kecil).</li>
+<li><strong>Jurnal:</strong> Top-up → <strong>Dr Kas Kecil / Cr Bank</strong>; Belanja → <strong>Dr Beban / Cr Kas Kecil</strong>.</li>
+<li><strong>Endpoint:</strong> <code>bs.pettycash.{index,create,store}</code>.</li>
+</ul>
+<h2>29. Bon Sementara / Uang Muka (<code>bs_cash_advances</code>, <code>bs_cash_advance_lines</code>)</h2>
+<ul>
+<li><strong>Tujuan:</strong> panjar ke pemegang → realisasi → selesaikan sisa/kekurangan.</li>
+<li><strong>Field:</strong> <code>advance_number*, advance_date*, holder*, purpose*, cash_account_id*, advance_account_id, amount(money)*, status*(outstanding/realized), realized_date, realized_amount, settlement, settlement_status(null/pending/settled), journal_id, realize_journal_id, settle_journal_id</code> (soft). Lines realisasi: <code>expense_account_id, description, amount</code>.</li>
+<li><strong>Alur:</strong> <strong>Terbit</strong> (Dr Uang Muka / Cr Kas) → <strong>Realisasi</strong> (Dr Beban / Cr Uang Muka; opsi <strong>tunda penyelesaian</strong>) → <strong>Refund</strong> (sisa: Dr Kas / Cr Uang Muka) <strong>atau</strong> <strong>Reimburse</strong> (kekurangan: Dr Uang Muka / Cr Kas).</li>
+<li><strong>Endpoint:</strong> <code>bs.advance.{index,create,store,show,realize,refund,reimburse}</code>.</li>
+</ul>
+<h2>30. Cek / Giro Masuk (<code>bs_giros</code>)</h2>
+<ul>
+<li><strong>Tujuan:</strong> kelola cek/giro dari customer hingga cair/tolak.</li>
+<li><strong>Field:</strong> <code>giro_number*, receive_date*, due_date*, bank_name*, cheque_number, drawer*, amount(money)*, giro_account_id, counter_account_id*, cash_account_id, status*(in_hand/cleared/bounced), settled_date, receive_journal_id, settle_journal_id</code> (soft).</li>
+<li><strong>Alur:</strong> <strong>Terima</strong> (Dr Piutang Giro / Cr counter) → <strong>Kliring</strong> (Dr Bank / Cr Piutang Giro) <strong>atau</strong> <strong>Tolak/bounce</strong> (balik).</li>
+<li><strong>Endpoint:</strong> <code>bs.giro.{index,create,store,show,clear,bounce}</code>.</li>
+</ul>
+<h2>31. Rekonsiliasi Bank (<code>bs_bank_reconciliations</code>, <code>bs_bank_rec_lines</code>)</h2>
+<ul>
+<li><strong>Tujuan:</strong> cocokkan buku (Cash Book/GL) dengan rekening koran.</li>
+<li><strong>Field:</strong> <code>account_id*, statement_date, statement_balance(money), book_balance(money), status, reconciled_at</code>. Lines: <code>journal_line_id, tx_date, debit, credit, is_cleared</code>.</li>
+<li><strong>Alur:</strong> pilih akun + saldo koran → centang baris cleared → <strong>finalize</strong> (saldo cocok).</li>
+<li><strong>Endpoint:</strong> <code>bs.bankrec.{index,store,show,toggle,finalize}</code>.</li>
+</ul>
+<h2>32. Aset Tetap (<code>bs_fixed_assets</code>, <code>bs_depreciation_entries</code>)</h2>
+<ul>
+<li><strong>Tujuan:</strong> kelola aset, penyusutan, pelepasan.</li>
+<li><strong>Field:</strong> <code>asset_number*, name*, category*(bangunan/kendaraan/inventaris/tanah), acquisition_date*, acquisition_cost(money)*, residual_value, useful_life_months, method(straight_line), asset/accum/expense_account_id, accumulated_depreciation, last_depreciation_date, status*(active/fully_depreciated/disposed/sold), acquire_journal_id, **disposed_date, disposal_type(write_off/sale), disposal_proceeds, disposal_note, disposal_journal_id**</code> (soft). Entri: <code>bs_depreciation_entries (period_year/month, amount, book_value_after, journal_id)</code>.</li>
+<li><strong>Alur &amp; Jurnal:</strong> Perolehan (Dr Aset / Cr dana) → <strong>Penyusutan</strong> garis lurus per periode/batch (Dr Beban / Cr Akumulasi) → <strong>Penghapusan</strong> (Dr Akum + Dr Rugi / Cr Aset) / <strong>Penjualan</strong> (Dr Kas+Akum / Cr Aset + Laba|−Rugi) / <strong>Saldo Awal Penyusutan</strong> (Dr Laba Ditahan / Cr Akumulasi).</li>
+<li><strong>Penomoran:</strong> <code>FA/YYMM/NNNN</code>.</li>
+<li><strong>Endpoint:</strong> <code>bs.fa.{index,create,store,run,run.store,show,depreciate,dispose,sell,opening}</code>.</li>
+</ul>
+<h2>33. Persediaan / Stock (<code>bs_items</code>, <code>bs_stock_categories</code>, <code>bs_uoms</code>, <code>bs_warehouses</code>, <code>bs_material_requests</code>+lines, <code>bs_stock_transactions</code>+lines, <code>bs_stock_movements</code>)</h2>
+<ul>
+<li><strong>Tujuan:</strong> kelola barang/material proyek + kartu stok.</li>
+<li><strong>Master:</strong> <code>bs_items (code,name,brand,type,min_stock, stock_category_id, uom_id)</code>, <code>bs_stock_categories</code>, <code>bs_uoms</code>, <code>bs_warehouses (project_id, code, name)</code>.</li>
+<li><strong>FPB / Material Request</strong> (<code>bs_material_requests</code>): <code>mr_number, request_date, needed_date, department, status, approved_at/by</code> + lines (<code>item_id, qty, kind, spec</code>) → <strong>approve</strong>.</li>
+<li><strong>Transaksi</strong> (<code>bs_stock_transactions</code>): <code>trx_number, trx_type(receipt/issue), warehouse_id, supplier_id, purchase_order_id, material_request_id</code> + lines → <strong><code>bs_stock_movements</code></strong> (kartu stok: <code>direction(in/out), qty, unit_price, balance_after, ref_*</code>).</li>
+<li><strong>Jurnal:</strong> Penerimaan → <strong>Dr Persediaan / Cr ...</strong>; Pengeluaran → <strong>Dr Beban/CIP / Cr Persediaan</strong>.</li>
+<li><strong>Endpoint:</strong> <code>bs.items.*, bs.inv.setup.*, bs.fpb.{index,create,store,show,approve}, bs.receipt.*, bs.issue.*, bs.stockcard.index</code>.</li>
+</ul>
+<h2>34. Pembelian / PO (<code>bs_purchase_orders</code>, <code>bs_purchase_order_lines</code>)</h2>
+<ul>
+<li><strong>Tujuan:</strong> order pembelian ke supplier.</li>
+<li><strong>Field:</strong> <code>po_number*, project_id, supplier_id*, material_request_id?, po_date*, due_date, po_type(barang/jasa), term_payment, subtotal(money), ppn_pct/amount, pph_pct, total, status*(draft/approved/closed), **dp_amount, dp_account_id, dp_journal_id, revision_count, revised_at**</code> (soft). Lines: <code>item_id, qty, qty_received, unit_price, amount</code>.</li>
+<li><strong>Alur:</strong> Buat → <strong>approve</strong> → <strong>close</strong>; <strong>Revisi</strong> (edit baris + hitung ulang, revision_count++); <strong>Posting Termin</strong> (uang muka: <strong>Dr Uang Muka Pembelian / Cr Kas</strong>); <strong>Adjust PPN</strong> (set ulang % + total).</li>
+<li><strong>Penomoran:</strong> <code>PO/JRES/YYMM/NNNN</code>.</li>
+<li><strong>Endpoint:</strong> <code>bs.po.{index,create,store,show,approve,close,revise,termin,adjust-ppn}</code>.</li>
+</ul>
+<h2>35. Kontraktor / SPK (<code>bs_work_orders</code> + progress/addendums/materials/progress_mutations)</h2>
+<ul>
+<li><strong>Tujuan:</strong> kelola kontrak kerja kontraktor (progress, retensi, addendum, dll.).</li>
+<li><strong><code>bs_work_orders</code>:</strong> <code>spk_number*, spk_date*, supplier_id*, cost_center_id, construction_account_id*(CIP), title*, contract_value(money)*, addendum_value, retention_pct, ppn_pct, progress_value, material_used, progress_mutated, retention_held, status*(active/closed/cancelled), retention_released_at, cancelled_at, cancel_reason</code> (soft).</li>
+<li><strong>Anak:</strong> <code>..._progress</code> (termin: <code>progress_value, retention_amount, ppn_amount, net_payable, status(unpaid/paid), journal_id, pay_journal_id</code>), <code>..._addendums</code> (<code>kind(value/ppn), value_delta, old/new_contract_value, old/new_ppn_pct</code>), <code>..._materials</code> (<code>usage_date, amount, inventory_account_id, journal_id</code>), <code>..._progress_mutations</code> (<code>amount, from/to_account_id, from/to_cost_center_id, journal_id</code>).</li>
+<li><strong>Alur &amp; Jurnal:</strong> <strong>Progress</strong> (Dr CIP + PPN Masukan / Cr Hutang + Hutang Retensi) → <strong>Bayar</strong> (Dr Hutang / Cr Kas) → <strong>Cairkan Retensi</strong> (Dr Hutang Retensi / Cr Kas, SPK closed). <strong>Addendum</strong> (± nilai kontrak; guard: ≥ progress terpakai). <strong>Adjust PPN</strong> (progress berikutnya). <strong>Pembatalan</strong> (guard: tak ada termin belum-bayar &amp; retensi). <strong>Pemakaian Barang</strong> (Dr CIP / Cr Persediaan). <strong>Mutasi Progress</strong> (reklasifikasi: Dr CIP-tujuan / Cr CIP-asal; guard: ≤ progress belum dimutasi).</li>
+<li><strong>Penomoran:</strong> <code>SPK/YYMM/NNNN</code>.</li>
+<li><strong>Endpoint:</strong> <code>bs.spk.{index,create,store,show,progress,progress.pay,retensi,addendum,adjust-ppn,cancel,material,mutate-progress}</code>.</li>
+</ul>
+<h2>36. Budget Control (<code>bs_budgets</code>, <code>bs_budget_mutations</code>)</h2>
+<ul>
+<li><strong>Tujuan:</strong> anggaran per tahun/akun/cost-center + workflow + realisasi.</li>
+<li><strong><code>bs_budgets</code>:</strong> <code>year*, cost_center_id?, account_id*, amount(money)*, notes, status*(draft/submitted/approved/rejected), submitted_at, approved_at, approved_by, approval_note</code>.</li>
+<li><strong><code>bs_budget_mutations</code>:</strong> <code>year, kind(transfer/koreksi), from/to_budget_id, amount, mutation_date, note</code>.</li>
+<li><strong>Alur:</strong> <strong>Alokasi</strong> → <strong>Ajukan</strong> (submit) → <strong>Setujui/Tolak</strong> (approve) → <strong>Mutasi</strong> (transfer antar baris / koreksi). Tampilan <strong>budget vs realisasi</strong> (realisasi = Σ jurnal beban posted per akun/cost-center). <strong>Upload Massal</strong> (lihat §40).</li>
+<li><strong>Endpoint:</strong> <code>bs.budget.{index,store,update,destroy,submit,approve,mutate}</code>.</li>
+</ul>
+<h2>37. COGS / HPP (<code>bs_cogs_recognitions</code>)</h2>
+<ul>
+<li><strong>Tujuan:</strong> akui beban pokok penjualan (manual + RealCost per unit).</li>
+<li><strong>Field:</strong> <code>cogs_number*, recognition_date*, reference, description, inventory_account_id*, cogs_account_id, cost_center_id, amount(money)*, journal_id</code> (soft).</li>
+<li><strong>RealCost engine:</strong> <strong>Generate</strong> → hitung <strong>pool CIP</strong> (saldo akun konstruksi ≤ tanggal) ÷ alokasi ke unit proyek (dasar <strong>rata</strong> / <strong>proporsi harga</strong>); <strong>Posting</strong> → akui HPP hanya untuk unit <strong>terjual &amp; belum diakui</strong> (idempoten via <code>reference</code>=kode unit).</li>
+<li><strong>Jurnal:</strong> <strong>Dr Beban Pokok Penjualan / Cr Persediaan/CIP</strong>.</li>
+<li><strong>Penomoran:</strong> <code>HPP/YYMM/NNNN</code>.</li>
+<li><strong>Endpoint:</strong> <code>bs.cogs.{index,store,realcost,realcost.post}</code>.</li>
+</ul>
+<h2>38. Payroll &amp; Karyawan (<code>bs_employees</code>, <code>bs_payroll_runs</code>, <code>bs_payroll_lines</code>)</h2>
+<ul>
+<li><strong>Tujuan:</strong> master karyawan + proses penggajian + jurnal.</li>
+<li><strong><code>bs_employees</code>:</strong> <code>nik*, name*, position, cost_center_id, join_date, base_salary(money), allowance, bank_name, bank_account, is_active</code> (soft).</li>
+<li><strong><code>bs_payroll_runs</code>:</strong> <code>run_number*, period_year/month*, run_date*, total_bruto/deduction/net, status, journal_id</code> (soft). Lines per karyawan: <code>gaji_pokok, tunjangan, pph21, bpjs, potongan_lain, bruto, net</code>.</li>
+<li><strong>Alur:</strong> Run periode (% PPh21 + % BPJS) → hitung semua karyawan aktif → <strong>jurnal otomatis</strong>.</li>
+<li><strong>Jurnal:</strong> <strong>Dr Beban Gaji &amp; Tunjangan / Cr Hutang PPh21 + Cr Hutang BPJS + Cr Kas</strong>.</li>
+<li><strong>Penomoran:</strong> <code>PAY/YYMM/NNNN</code>.</li>
+<li><strong>Endpoint:</strong> <code>bs.employees.*, bs.payroll.{index,store,show}</code>.</li>
+</ul>
+<h2>39. Pajak — Tax (<code>bs.tax.*</code>; data dari <code>bs_ap_invoices</code>/<code>bs_ar_invoices</code> field pajak)</h2>
+<ul>
+<li><strong>Tujuan:</strong> kelola PPN/PPh, e-Faktur, SPT Masa.</li>
+<li><strong>Faktur Keluaran/Masukan + Rekap:</strong> dari invoice AR/AP ber-PPN; set <strong>NSFP</strong> (<code>tax_invoice_no</code>).</li>
+<li><strong>e-Faktur:</strong> export <strong>CSV &amp; XML</strong> (skema impor DJP). <strong>SPT Masa:</strong> cetak <strong>PPN</strong>, <strong>PPh</strong>, <strong>Buku Pembantu Pajak</strong>. <strong>PPh</strong> rekap (Pasal 21/23/4(2)) + export. <strong>Dashboard Pajak</strong> (PPN/PPh 12 bulan + jatuh tempo setor/lapor).</li>
+<li><strong>Endpoint:</strong> <code>bs.tax.{rekap,keluaran,masukan,nsfp,export.keluaran,export.masukan,cetak.ppn,cetak.buku,cetak.pph,efaktur.csv,efaktur.xml,dashboard,pph,pph.export}</code>.</li>
+</ul>
+<h2>40. Tutup Buku &amp; Saldo Awal (<code>bs_fiscal_periods</code>; Closing service)</h2>
+<ul>
+<li><strong>Tutup Bulanan</strong> (<code>close</code>): kunci periode (<code>status=closed</code>) → tak bisa tambah jurnal; <strong>Buka kembali</strong> (<code>reopen</code>).</li>
+<li><strong>Tutup Tahunan</strong> (<code>year</code>): <strong>jurnal penutup</strong> L/R → <strong>Dr Pendapatan / Cr Beban / (Cr|Dr) Laba Ditahan</strong> (laba/rugi).</li>
+<li><strong>Neraca Awal</strong> (<code>neraca</code>): carry-forward Laba Ditahan tahun berjalan. <strong>Jurnal Saldo Awal</strong> (<code>saldoawal</code> + CSV).</li>
+<li><strong>Endpoint:</strong> <code>bs.closing.{index,neraca,saldoawal,saldoawal.csv,close,reopen,year}</code>, <code>bs.gl.period.{close,open}</code>.</li>
+</ul>
+<h2>41. Upload Massal &amp; Proyeksi (<code>bs.bulk.*</code>, <code>bs.projection</code>)</h2>
+<ul>
+<li><strong>Upload Massal CSV</strong> (3 mode): <strong>Aset</strong> (registrasi massal), <strong>Anggaran</strong> (alokasi massal), <strong>Saldo Awal Stok</strong> (Dr Persediaan / Cr Laba Ditahan) — dengan <strong>dry-run</strong> + laporan error per-baris.</li>
+<li><strong>Proyeksi Hutang/Piutang:</strong> bucket Jatuh Tempo (overdue) + 12 bulan ke depan, per supplier/customer.</li>
+<li><strong>Endpoint:</strong> <code>bs.bulk.{form,store}</code>, <code>bs.projection</code>.</li>
+</ul>
+<hr />
+<h1>BAGIAN IV — SECURITY (SDM LAPANGAN), SETUP SALES &amp; SETTINGS</h1>
+<h2>42. Security — Modul SDM Lapangan (<code>sec_attendances</code>, <code>sec_job_histories</code>, <code>sec_technical_problems</code>, <code>sec_user_companies</code>, <code>sec_user_projects</code>)</h2>
+<ul>
+<li><strong>Tujuan:</strong> manajemen petugas/keamanan eProperty (berbeda dari RBAC sistem).</li>
+<li><strong>Absensi</strong> (<code>sec_attendances</code>): <code>employee_id, date, clock_in, clock_out, status, note</code>. <strong>Riwayat Jabatan</strong> (<code>sec_job_histories</code>): <code>position, division, start/end_date</code>. <strong>Technical/Tiket</strong> (<code>sec_technical_problems</code>): <code>ticket_no, title, module, priority, status, reported_by, assigned_to, resolved_at</code>. <strong>Matrikulasi</strong> company/project (<code>sec_user_companies</code>, <code>sec_user_projects</code>): pemetaan akses user ke company/project.</li>
+<li><strong>Endpoint:</strong> <code>security.{index,log,matrikulasi.company,matrikulasi.project,matrikulasi.toggle,absensi,absensi.store,jobhistory,jobhistory.store,technical,technical.store,technical.update}</code>.</li>
+</ul>
+<h2>43. Setup Sales (<code>payment_schemes</code>+terms, <code>sales_persons</code>, <code>agents</code>+<code>agent_types</code>, <code>pricelists</code>, <code>data_sources</code>, <code>activity_logs</code>)</h2>
+<ul>
+<li><strong>Tujuan:</strong> master &amp; konfigurasi penjualan.</li>
+<li><strong>Skema Pembayaran</strong> (<code>payment_schemes</code>): <code>code,name,type, down_payment_pct, installment_months, discount_pct, present_value, tiered_discounts(json), booking_fee, bf_treatment, dp_count/basis/value, inst_count/basis/value, schedule_first/interval/unit</code> + terms.</li>
+<li><strong>Sales</strong> (<code>sales_persons</code>: user_id, code, name, manager_id). <strong>Agent</strong> (<code>agents</code>: code,name, agent_type_id, npwp, bank_*, parent_agent_id).</li>
+<li><strong>Sumber Data</strong> (<code>data_sources</code>), <strong>Activity Log</strong> (<code>activity_logs</code> polimorfik: subject, category, description, attachment).</li>
+<li><strong>Endpoint:</strong> <code>setup-sales.*, scheme.*, sales.{index,store,update,destroy}, agent.*, pricelist.*, reports.*, calculator.*, activity.*, audit.record</code>.</li>
+</ul>
+<h2>44. Settings — Administrasi Sistem (<code>users</code>, <code>roles</code>, <code>permissions</code>, <code>numerators</code>, <code>parameters</code>, <code>companies</code>, <code>notification_*</code>, <code>mfa_secrets</code>, <code>password_histories</code>, <code>sessions</code>)</h2>
+<ul>
+<li><strong>User</strong> (<code>users</code>): <code>name, email*, username, phone, password(hash), avatar_path, employee_nip, is_active, is_blocked, failed_login_count, blocked_until, dark_mode, locale, last_login_at/ip</code> (soft) — + <strong>MFA</strong> (<code>mfa_secrets</code>), <strong>histori password</strong> (<code>password_histories</code>), <strong>sesi</strong> (<code>sessions</code>).</li>
+<li><strong>Role &amp; Permission:</strong> §F3 (RBAC). <strong>Numerator:</strong> §F5. <strong>Parameter:</strong> §F6. <strong>Company</strong> (<code>companies</code>: code,name,npwp). <strong>Notifikasi:</strong> <code>notification_templates</code>, <code>notification_preferences</code>, <code>notifications_outbox</code> (event,channel,payload,status).</li>
+<li><strong>Keamanan login:</strong> kunci akun setelah gagal beruntun (<code>failed_login_count</code>, <code>blocked_until</code>), wajib ganti password, MFA opsional.</li>
+</ul>
+<hr />
+<h2>Penutup</h2>
+<p>Dokumen ini melengkapi <strong>PRD utama</strong> dengan rincian teknis tiap modul (field, status, alur, aturan, jurnal, penomoran, endpoint). Untuk gambaran tingkat tinggi &amp; diagram, lihat <code>PRD-Java-Core-System</code>. Untuk kebenaran mutlak, rujuk kode (<code>app/Domain</code>), skema (<code>docs/_schema.txt</code>), dan route (<code>routes/web.php</code>).</p>
+<p><em>— Java Core System · 2026-06-04 —</em></p>
+</body></html>

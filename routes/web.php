@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\WilayahController;
 use App\Livewire\Auth\Login;
+use App\Modules\BO\IproBridge\Controllers\SsoController;
 use App\Livewire\Booked\PublicForm as BookedPublicForm;
 use App\Livewire\Nup\PublicForm as NupPublicForm;
 use App\Modules\BO\GeneralLedger\Controllers\JurnalPrintController;
@@ -11,6 +12,11 @@ use App\Modules\FO\MarketingSales\Controllers\CustomerFileController;
 use App\Modules\FO\MarketingSales\Controllers\CustomerQrController;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Route;
+
+// SSO token-handoff → buka BO/Bankloan ipro-fo dgn sesi login J-ERP.
+Route::get('/sso/to-bo', [SsoController::class, 'toBo'])
+    ->middleware(['web', 'auth'])
+    ->name('sso.to-bo');
 
 // ─────────────────────────────────────────────────────────────────────────
 // Subdomain publik OPSIONAL (env NUP_DOMAIN / SITEPLAN_DOMAIN). Didefinisikan

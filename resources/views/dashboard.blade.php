@@ -13,6 +13,15 @@
 
     @vite(['resources/css/app.css', 'resources/js/app.js'])
     @livewireStyles
+    {{-- Brand oranye "Java Core System" mengikuti ipro-fo (kesan 1 aplikasi). --}}
+    <style>
+        :root, .dark { --color-brand-600: #ff8c00 !important; --color-brand-500: #ffa733 !important; }
+        .jc-hub-brand {
+            font-weight: 900;
+            background: linear-gradient(90deg,#ffc266 0%,#ff8c00 45%,#ff7a00 100%);
+            -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
+        }
+    </style>
 </head>
 <body class="min-h-screen antialiased" style="background-color: var(--color-surface);">
 
@@ -28,18 +37,11 @@
             'path'  => 'M3 21h18M3 7l9-4 9 4M5 21V11h14v10',
         ],
         [
-            'href'  => '/bo',
+            'href'  => '/sso/to-bo',
             'label' => 'Back Office',
-            'desc'  => 'Akuntansi (GL, AR, AP, Cash & Bank, Inventory, HR).',
-            'bg'    => 'oklch(0.55 0.18 250)',
+            'desc'  => 'Akuntansi + Bank Loan/KPR terintegrasi: GL, AR, AP, Cash & Bank, Inventory, COGS, Budget, Proses KPR. (Java Core System)',
+            'bg'    => 'oklch(0.72 0.17 55)',
             'path'  => 'M4 4h16v16H4zM4 9h16M9 4v16',
-        ],
-        [
-            'href'  => '/bankloan',
-            'label' => 'Bank Loan',
-            'desc'  => 'Proses KPR: pengajuan, BI checking, akad, realisasi, retensi.',
-            'bg'    => 'oklch(0.55 0.18 200)',
-            'path'  => 'M3 21h18M3 10l9-7 9 7M5 10v11M19 10v11M9 10v11M15 10v11',
         ],
         [
             'href'  => '/backup',
@@ -57,7 +59,7 @@
         <a href="{{ route('dashboard') }}" class="flex items-center gap-2 font-bold tracking-tight">
             <span class="inline-grid place-items-center w-8 h-8 rounded text-white"
                   style="background-color: var(--color-brand-600);">J</span>
-            <span class="text-lg" style="color: var(--color-text);">Java Core</span>
+            <span class="text-lg jc-hub-brand">Java Core System</span>
         </a>
 
         <div class="ml-auto flex items-center gap-2">

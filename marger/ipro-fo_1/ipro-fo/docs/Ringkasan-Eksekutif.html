@@ -1,0 +1,149 @@
+<!DOCTYPE html><html lang="id"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Ringkasan Eksekutif — Java Core System</title><style>  @page { size: A4; margin: 16mm 14mm; }
+  * { box-sizing: border-box; }
+  body { font-family: "Segoe UI", Arial, sans-serif; font-size: 11px; line-height: 1.5; color: #1f2937; max-width: 940px; margin: 0 auto; padding: 24px; }
+  h1 { font-size: 22px; color: #0f766e; border-bottom: 3px solid #0f766e; padding-bottom: 6px; margin-top: 28px; }
+  h2 { font-size: 16px; color: #115e59; border-bottom: 1px solid #d1d5db; padding-bottom: 4px; margin-top: 24px; }
+  h3 { font-size: 13px; color: #1e40af; margin-top: 18px; }
+  h4 { font-size: 12px; color: #374151; }
+  table { border-collapse: collapse; width: 100%; margin: 10px 0; font-size: 10px; page-break-inside: avoid; }
+  th, td { border: 1px solid #cbd5e1; padding: 5px 8px; text-align: left; vertical-align: top; }
+  th { background: #f1f5f9; font-weight: 600; }
+  tr:nth-child(even) td { background: #f8fafc; }
+  code { background: #f1f5f9; padding: 1px 4px; border-radius: 3px; font-family: Consolas, monospace; font-size: 10px; }
+  pre { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 10px; overflow-x: auto; }
+  blockquote { border-left: 4px solid #14b8a6; background: #f0fdfa; margin: 8px 0; padding: 6px 12px; color: #334155; }
+  a { color: #0d9488; }
+  hr { border: none; border-top: 1px solid #e2e8f0; margin: 20px 0; }
+  .mermaid { background: #fff; text-align: center; margin: 14px 0; page-break-inside: avoid; }
+  ul, ol { margin: 6px 0 6px 18px; }</style></head><body><h1>Ringkasan Eksekutif — Java Core System</h1>
+<h3>ERP Pengembang Properti (Sales + Akuntansi) · PT. Mitra Usaha Propertindo</h3>
+<table>
+<thead>
+<tr>
+<th></th>
+<th></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Versi</strong></td>
+<td>1.0 · 2026-06-04</td>
+</tr>
+<tr>
+<td><strong>Status</strong></td>
+<td><strong>Production-ready</strong> (terverifikasi)</td>
+</tr>
+<tr>
+<td><strong>Acuan</strong></td>
+<td>Pengganti setia eProperty (FO) + Batavianet (BO)</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2>Apa ini?</h2>
+<p><strong>Java Core System</strong> adalah satu aplikasi web yang menyatukan <strong>penjualan properti</strong> dan <strong>akuntansi penuh</strong> dalam satu sistem terpadu — menggantikan dua sistem lama (eProperty &amp; Batavianet) yang terpisah dan sulit dikembangkan.</p>
+<p>Keunggulan utama: <strong>setiap transaksi penjualan &amp; keuangan otomatis membentuk jurnal akuntansi yang seimbang</strong> (Debit = Kredit), dari booking unit sampai laporan keuangan dan SPT pajak — tanpa input ganda.</p>
+<hr />
+<h2>Nilai untuk Perusahaan</h2>
+<table>
+<thead>
+<tr>
+<th>Manfaat</th>
+<th>Penjelasan</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Satu sistem terpadu</strong></td>
+<td>Sales ↔ Akuntansi terhubung otomatis. Booking → jurnal kontrak; pembayaran → buku besar. Tidak ada pencatatan ganda.</td>
+</tr>
+<tr>
+<td><strong>Akuntansi akurat &amp; aman</strong></td>
+<td>Double-entry dijamin seimbang, periode bisa dikunci, jejak audit lengkap (siapa/kapan/apa).</td>
+</tr>
+<tr>
+<td><strong>Patuh pajak Indonesia</strong></td>
+<td>PPN, PPh 21/23/4(2), <strong>e-Faktur (CSV/XML)</strong>, <strong>SPT Masa</strong> — sesuai format DJP.</td>
+</tr>
+<tr>
+<td><strong>Milik sendiri</strong></td>
+<td>Kode dimiliki perusahaan → bisa dikustomisasi kapan saja, tanpa biaya lisensi pihak ketiga.</td>
+</tr>
+<tr>
+<td><strong>Modern &amp; mudah</strong></td>
+<td>Bahasa Indonesia, antarmuka modern (mode gelap), bisa diakses banyak user dari mana saja.</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2>Cakupan Sistem (ringkas)</h2>
+<p><strong>Front Office — Penjualan &amp; CRM</strong>
+CRM/Leads · Customer/CIF · Unit &amp; Siteplan · Pricelist · NUP · Hold · <strong>Booking</strong> · <strong>PPJB</strong> · Gimmick · <strong>TTS/Kuitansi</strong> · Memo/Cashback/Refund · Komisi · <strong>KPA/KPR</strong> · Legal (AJB/BAST/Sertifikat) · <strong>Collection</strong> (Denda/SP/SKL) · Exception (Ganti Nama/Unit/Reschedule) · Virtual Account · Kalkulator (BPHTB/KPR/Skema).</p>
+<p><strong>Back Office — Akuntansi (&quot;Batavianet&quot;)</strong>
+Bagan Akun · <strong>General Ledger/Jurnal</strong> · Kas/Bank · Kas Kecil · Bon Sementara · Cek/Giro · <strong>Hutang (AP)</strong> · <strong>Piutang (AR)</strong> · <strong>Aset Tetap</strong> · Persediaan · Pembelian (PO) · <strong>Kontraktor (SPK)</strong> · <strong>Budget</strong> · <strong>COGS/HPP</strong> (real-cost per unit) · <strong>Payroll</strong> · <strong>Pajak</strong> (e-Faktur/SPT) · <strong>Tutup Buku</strong>.</p>
+<p><strong>Laporan</strong>: Neraca · Laba/Rugi · Arus Kas · Neraca Lajur · Komparasi · Aging · Kartu Hutang/Piutang · Proyeksi · Dashboard Pajak.</p>
+<hr />
+<h2>Skala &amp; Bukti Kesiapan</h2>
+<table>
+<thead>
+<tr>
+<th>Metrik</th>
+<th>Angka</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Modul/halaman aplikasi</td>
+<td><strong>171 halaman</strong> — semua render OK</td>
+</tr>
+<tr>
+<td>Skenario alur inti teruji otomatis</td>
+<td><strong>24 / 24 PASS</strong></td>
+</tr>
+<tr>
+<td>Pengujian transaksi end-to-end (akuntansi)</td>
+<td><strong>39 sub-transaksi — seluruh jurnal seimbang</strong></td>
+</tr>
+<tr>
+<td>Tabel database</td>
+<td>72</td>
+</tr>
+<tr>
+<td>Model domain</td>
+<td>152</td>
+</tr>
+<tr>
+<td>Hak akses (RBAC)</td>
+<td>193 permission / 11 peran</td>
+</tr>
+<tr>
+<td>Endpoint/route</td>
+<td>~300</td>
+</tr>
+</tbody>
+</table>
+<blockquote>
+<p>Seluruh sub-menu eProperty (FO) &amp; Batavianet (BO) yang teridentifikasi sudah terimplementasi. Pengujian end-to-end menemukan &amp; memperbaiki bug; tidak ada jurnal yang tidak seimbang.</p>
+</blockquote>
+<hr />
+<h2>Keamanan &amp; Tata Kelola</h2>
+<ul>
+<li><strong>RBAC granular</strong> (11 peran: Direktur, Finance, Sales, Collection, dll.) — tiap user hanya melihat yang berhak.</li>
+<li><strong>Jejak audit</strong> untuk perubahan penting; data sensitif (No. KTP/NPWP) <strong>terenkripsi</strong>.</li>
+<li><strong>Periode terkunci</strong> mencegah perubahan jurnal masa lalu; <strong>persetujuan berjenjang</strong> untuk diskon, cashback, refund, anggaran, jurnal.</li>
+</ul>
+<hr />
+<h2>Deployment (Operasional 24/7)</h2>
+<ul>
+<li>Dirancang berjalan <strong>24 jam di server</strong> (bukan laptop). Rekomendasi gratis: <strong>Oracle Cloud Always Free</strong>.</li>
+<li>Paket deploy siap pakai (web server + HTTPS otomatis, scheduler jatuh-tempo, backup harian). Panduan lengkap: <code>DEPLOY.md</code> &amp; <code>MULAI-DISINI.md</code>.</li>
+</ul>
+<hr />
+<h2>Rekomendasi &amp; Langkah Lanjut</h2>
+<ol>
+<li><strong>Go-live</strong>: aktifkan server, migrasikan saldo awal (tersedia Upload Massal + Saldo Awal), buat akun user per peran.</li>
+<li><strong>Pelatihan singkat</strong> tim Sales &amp; Finance per modul.</li>
+<li><strong>Roadmap opsional</strong>: migrasi DB ke MySQL untuk skala besar, integrasi bank, e-Meterai/tanda tangan digital.</li>
+</ol>
+<p><em>Dokumen lengkap (spesifikasi tiap modul, jurnal, data, route) ada di <code>PRD-Java-Core-System</code> (PDF/Word/HTML).</em></p>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script><script>mermaid.initialize({startOnLoad:true, theme:'neutral', securityLevel:'loose'});</script></body></html>

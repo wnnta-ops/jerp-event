@@ -170,6 +170,76 @@
                 animation: none !important; transition: none !important;
             }
         }
+
+        /* ── Tema "Java Core System" (mirip dashboard ipro-fo): kartu GELAP +
+              aksen oranye, bukan gradien warna-warni. ──────────────────────── */
+        .fo-tile {
+            background: linear-gradient(150deg, #1e293b 0%, #0f172a 100%) !important;
+            background-size: 100% 100% !important;
+            border: 1px solid rgba(255,140,0,.16);
+            box-shadow: 0 4px 14px rgba(0,0,0,.28), inset 0 1px 0 rgba(255,255,255,.04) !important;
+            animation: foFadeUp .5s cubic-bezier(.34,1.56,.64,1) backwards !important;
+        }
+        .fo-tile:hover {
+            border-color: rgba(255,140,0,.55);
+            box-shadow: 0 16px 34px -10px rgba(0,0,0,.55), 0 0 0 1px rgba(255,140,0,.3) !important;
+            filter: none !important;
+        }
+        .fo-icon {
+            background: linear-gradient(135deg, #ffa733 0%, #ff8c00 100%) !important;
+            border: 1px solid rgba(255,255,255,.25) !important;
+            box-shadow: 0 6px 16px -4px rgba(255,140,0,.55) !important;
+        }
+        .fo-tile:hover .fo-icon { background: linear-gradient(135deg, #ffb84d 0%, #ff9a1a 100%) !important; }
+        .fo-orb-a { background: rgba(255,140,0,.10) !important; }
+        .fo-orb-b { background: rgba(0,0,0,.18) !important; }
+        .fo-shine { background: linear-gradient(115deg, transparent 35%, rgba(255,140,0,.16) 50%, transparent 65%) !important; }
+        .fo-sparkle { background: #ffb84d !important; }
+        .fo-label-wrap > div { color: #f1f5f9 !important; }
+        /* Tile nonaktif tetap redup */
+        .fo-tile.disabled { filter: grayscale(.5) brightness(.8) !important; }
+
+        /* ── Kartu ringkasan (summary) — IKUT TEMA (terang/gelap) ─────────────── */
+        .jc-stats { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: .75rem; margin-bottom: 1.25rem; }
+        @media (min-width: 768px)  { .jc-stats { grid-template-columns: repeat(3, minmax(0,1fr)); } }
+        @media (min-width: 1280px) { .jc-stats { grid-template-columns: repeat(5, minmax(0,1fr)); } }
+        .jc-stat { position: relative; border-radius: 1rem; padding: 1.1rem 1.2rem;
+            background: #ffffff; border: 1px solid #e5e7eb; box-shadow: 0 1px 3px rgba(0,0,0,.07);
+            animation: foFadeUp .5s cubic-bezier(.34,1.56,.64,1) backwards; }
+        .dark .jc-stat { background: linear-gradient(150deg, #1e293b 0%, #0f172a 100%); border-color: rgba(255,140,0,.16); box-shadow: 0 4px 14px rgba(0,0,0,.25); }
+        .jc-stat-accent, .dark .jc-stat-accent { background: linear-gradient(135deg, #ffa733 0%, #ff8c00 100%) !important; border-color: rgba(255,255,255,.25); box-shadow: 0 10px 26px -8px rgba(255,140,0,.5); }
+        .jc-stat-top { display: flex; align-items: center; justify-content: space-between; margin-bottom: .5rem; }
+        .jc-stat-label { font-size: .72rem; font-weight: 600; color: #6b7280; }
+        .jc-stat-accent .jc-stat-label { color: rgba(255,255,255,.92); }
+        .jc-stat-icon { width: 30px; height: 30px; display: grid; place-items: center; border-radius: 8px; background: rgba(255,140,0,.12); color: #ea580c; }
+        .dark .jc-stat-icon { background: rgba(255,140,0,.15); color: #ff9a1a; }
+        .jc-stat-accent .jc-stat-icon, .dark .jc-stat-accent .jc-stat-icon { background: rgba(255,255,255,.22); color: #fff; }
+        .jc-stat-value { font-size: 1.7rem; font-weight: 800; line-height: 1.1; color: #111827; }
+        .dark .jc-stat-value { color: #f8fafc; }
+        .jc-stat-accent .jc-stat-value, .dark .jc-stat-accent .jc-stat-value { color: #fff; }
+        .jc-stat-sub { font-size: .72rem; color: #9ca3af; margin-top: .25rem; }
+        .jc-stat-accent .jc-stat-sub, .dark .jc-stat-accent .jc-stat-sub { color: rgba(255,255,255,.85); }
+
+        /* ── Panel tren + pipeline — ikut tema ────────────────────────────────── */
+        .jc-panels { display: grid; grid-template-columns: 1fr; gap: 1rem; }
+        @media (min-width: 1024px) { .jc-panels { grid-template-columns: 1.4fr 1fr; } }
+        .jc-panel { border-radius: 1rem; padding: 1.2rem 1.3rem; background: #ffffff; border: 1px solid #e5e7eb; box-shadow: 0 1px 3px rgba(0,0,0,.07); }
+        .dark .jc-panel { background: linear-gradient(150deg, #1e293b 0%, #0f172a 100%); border-color: rgba(255,140,0,.12); box-shadow: 0 4px 14px rgba(0,0,0,.25); }
+        .jc-panel-title { font-size: .9rem; font-weight: 800; color: #111827; margin-bottom: 1rem; }
+        .dark .jc-panel-title { color: #f1f5f9; }
+        .jc-chart { display: flex; align-items: flex-end; gap: .6rem; height: 180px; padding-top: .5rem; }
+        .jc-bar-col { flex: 1; display: flex; flex-direction: column; align-items: center; gap: .4rem; height: 100%; justify-content: flex-end; }
+        .jc-bar { width: 100%; max-width: 46px; border-radius: 6px 6px 0 0; background: linear-gradient(180deg, #ffa733 0%, #ff8c00 100%); min-height: 4px; transition: height .4s; }
+        .jc-bar-label { font-size: .7rem; color: #6b7280; }
+        .dark .jc-bar-label { color: #94a3b8; }
+        .jc-pipe { display: flex; flex-direction: column; gap: .7rem; }
+        .jc-pipe-row { display: flex; align-items: center; gap: .6rem; font-size: .8rem; }
+        .jc-pipe-label { width: 96px; color: #6b7280; flex-shrink: 0; }
+        .dark .jc-pipe-label { color: #94a3b8; }
+        .jc-pipe-bar-wrap { flex: 1; height: 8px; border-radius: 999px; background: rgba(255,140,0,.12); overflow: hidden; }
+        .jc-pipe-bar { display: block; height: 100%; border-radius: 999px; background: linear-gradient(90deg, #ffa733, #ff8c00); }
+        .jc-pipe-count { width: 36px; text-align: right; font-weight: 700; color: #111827; }
+        .dark .jc-pipe-count { color: #f1f5f9; }
     </style>
 
     {{-- ── Welcome header ──────────────────────────────────────── --}}
@@ -178,58 +248,63 @@
             {{ now()->translatedFormat('l, d F Y') }} · {{ now()->format('H:i') }} WIB
         </div>
         <h1 class="fo-header text-xl md:text-3xl font-bold mt-1 bg-clip-text text-transparent"
-            style="background-image: linear-gradient(90deg, #60a5fa 0%, #a78bfa 50%, #f472b6 100%);">
+            style="background-image: linear-gradient(90deg, #ffc266 0%, #ff8c00 45%, #ff7a00 100%);">
             {{ $salam }}, {{ $firstName }} 👋
         </h1>
         <p class="fo-header-sub text-sm text-gray-500 dark:text-gray-400 mt-0.5">
-            Pilih modul untuk mulai bekerja.
+            Ringkasan aktivitas Java Core System hari ini.
         </p>
     </div>
 
-    {{-- ── Tile grid (landscape, denser) ─────────────────────── --}}
-    <div class="fo-grid">
-        @foreach ($tiles as $t)
-            @php
-                $count = $t['count'] instanceof \Closure ? ($t['count'])() : $t['count'];
-                $disabled = $t['disabled'] ?? false;
-                $hasCount = ! $disabled && is_numeric($count) && (int) $count > 0;
-                $urgent = $hasCount && in_array(\Illuminate\Support\Str::slug($t['label']), ['nup', 'master-customer', 'approval']);
-            @endphp
-            <a href="{{ $disabled ? '#' : $t['url'] }}"
-               class="fo-tile {{ $disabled ? 'disabled' : '' }}"
-               style="background: {{ $t['gradient'] }}; background-size: 200% 200%; aspect-ratio: 5/3;"
-               @if ($disabled) onclick="event.preventDefault();" title="Belum tersedia" aria-disabled="true" @endif>
-
-                <div class="fo-orb-a"></div>
-                <div class="fo-orb-b"></div>
-                <div class="fo-shine"></div>
-
-                <span class="fo-sparkle s1"></span>
-                <span class="fo-sparkle s2"></span>
-                <span class="fo-sparkle s3"></span>
-                <span class="fo-sparkle s4"></span>
-
-                @if ($hasCount)
-                    <span class="fo-badge {{ $urgent ? 'urgent' : '' }}">{{ $count > 99 ? '99+' : $count }}</span>
-                @elseif ($disabled)
-                    <span class="fo-chip">Menyusul</span>
-                @endif
-
-                <div class="relative h-full w-full flex flex-col items-center justify-center px-2 py-3 text-center">
-                    <span class="fo-icon inline-grid place-items-center rounded-xl mb-2"
-                          style="width:44px; height:44px; background: rgba(255,255,255,.22); border: 1px solid rgba(255,255,255,.35);">
-                        <svg class="w-6 h-6 text-white drop-shadow" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.9">
-                            <path stroke-linecap="round" stroke-linejoin="round" d="{{ $t['icon'] }}"/>
+    {{-- ── Kartu ringkasan (summary) ─────────────────────────── --}}
+    <div class="jc-stats">
+        @foreach ($this->getStats() as $s)
+            <div class="jc-stat {{ $s['accent'] ? 'jc-stat-accent' : '' }}">
+                <div class="jc-stat-top">
+                    <span class="jc-stat-label">{{ $s['label'] }}</span>
+                    <span class="jc-stat-icon">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.8">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="{{ $s['icon'] }}"/>
                         </svg>
                     </span>
-
-                    <div class="fo-label-wrap">
-                        <div class="text-sm md:text-base font-bold text-white drop-shadow leading-tight uppercase tracking-wide">
-                            {{ $t['label'] }}
-                        </div>
-                    </div>
                 </div>
-            </a>
+                <div class="jc-stat-value">{{ $s['value'] }}</div>
+                <div class="jc-stat-sub">{{ $s['sub'] }}</div>
+            </div>
         @endforeach
+    </div>
+
+    {{-- ── Tren penjualan + Pipeline ─────────────────────────── --}}
+    @php
+        $trend = $this->getTrend();
+        $maxT = max(1, max(array_map(fn ($x) => $x['nilai'], $trend)));
+        $pipe = $this->getPipeline();
+        $maxP = max(1, max(array_map(fn ($x) => $x['count'], $pipe)));
+    @endphp
+    <div class="jc-panels">
+        <div class="jc-panel">
+            <div class="jc-panel-title">📈 Tren Penjualan 6 Bulan</div>
+            <div class="jc-chart">
+                @foreach ($trend as $t)
+                    <div class="jc-bar-col">
+                        <div class="jc-bar" style="height: {{ max(4, round($t['nilai'] / $maxT * 100)) }}%"
+                             title="{{ $t['count'] }} kontrak · Rp {{ number_format($t['nilai'], 0, ',', '.') }}"></div>
+                        <div class="jc-bar-label">{{ $t['label'] }}</div>
+                    </div>
+                @endforeach
+            </div>
+        </div>
+        <div class="jc-panel">
+            <div class="jc-panel-title">🔻 Pipeline Penjualan</div>
+            <div class="jc-pipe">
+                @foreach ($pipe as $p)
+                    <div class="jc-pipe-row">
+                        <span class="jc-pipe-label">{{ $p['label'] }}</span>
+                        <span class="jc-pipe-bar-wrap"><span class="jc-pipe-bar" style="width: {{ max(3, round($p['count'] / $maxP * 100)) }}%"></span></span>
+                        <span class="jc-pipe-count">{{ $p['count'] }}</span>
+                    </div>
+                @endforeach
+            </div>
+        </div>
     </div>
 </x-filament-panels::page>
