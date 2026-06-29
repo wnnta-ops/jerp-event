@@ -19,6 +19,10 @@ class Approval extends TenantAwareModel
             if (empty($m->no_approval)) {
                 $m->no_approval = app(NumeratorService::class)->next('APPROVAL');
             }
+            // Default aman: status & level tak bergantung pada input form.
+            $m->status ??= 'DRAFT';
+            $m->current_level ??= 1;
+            $m->requested_by ??= auth()->id();
         });
 
         // Pengajuan BLT/Komisi ditolak → batch kembali DRAFT (ke menu Pengajuan).
@@ -49,6 +53,7 @@ class Approval extends TenantAwareModel
         'status', 'current_level',
         'level1_by', 'level1_at', 'level1_note',
         'requested_by', 'approved_by', 'approved_at',
+        'rejected_by', 'rejected_at',
         'catatan_approver', 'executed_at', 'executed_result',
     ];
 
@@ -56,6 +61,7 @@ class Approval extends TenantAwareModel
         'tgl_approval' => 'date',
         'level1_at' => 'datetime',
         'approved_at' => 'datetime',
+        'rejected_at' => 'datetime',
         'executed_at' => 'datetime',
         'amount_dampak' => 'decimal:2',
         'detail_lama' => 'array',

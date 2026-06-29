@@ -14,6 +14,8 @@ class DatabaseSeeder extends Seeder
         $this->call([
             TenantSeeder::class,
             RolesAndPermissionsSeeder::class,
+            AccessMatrixSeeder::class,
+            ApprovalPermissionsSeeder::class,
             InitialAdminSeeder::class,
             MasterDataSeeder::class,
             // BO (Back Office / Accounting)

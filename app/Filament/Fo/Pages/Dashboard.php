@@ -12,6 +12,7 @@ use App\Modules\FO\MarketingSales\Models\Customer;
 use App\Modules\FO\MarketingSales\Models\Kontrak;
 use App\Modules\FO\MarketingSales\Models\Unit;
 use Filament\Pages\Dashboard as BaseDashboard;
+use Illuminate\Support\Facades\Cache;
 
 /**
  * Modern colorful-tile dashboard for the Front Office panel, inspired by the
@@ -142,32 +143,42 @@ class Dashboard extends BaseDashboard
      * (Total Customer / Unit Tersedia / Booking Aktif / Penerimaan / Nilai Penjualan).
      * Dihitung langsung dari tabel FO J-ERP.
      */
+    /** Kunci cache dashboard per-tenant (TTL pendek; dashboard toleran data agak basi). */
+    private function cacheKey(string $name): string
+    {
+        return 'fo:dash:'.$name.':'.(auth()->user()?->tenant_id ?? 1);
+    }
+
     public function getStats(): array
     {
-        $totalUnit    = Unit::count();
-        $unitTersedia = Unit::where('status', 'TERSEDIA')->count();
-        $bookingAktif = Kontrak::whereIn('status', ['BOOKING', 'AKTIF'])->count();
-        $penerimaan   = (float) Bkm::where('status', 'POSTED')
-            ->whereYear('tgl_bkm', now()->year)->whereMonth('tgl_bkm', now()->month)->sum('amount');
-        $nilaiJual    = (float) Kontrak::sum('total_kontrak');
+        return Cache::remember($this->cacheKey('stats'), 120, function (): array {
+            $totalUnit    = Unit::count();
+            $unitTersedia = Unit::where('status', 'TERSEDIA')->count();
+            $bookingAktif = Kontrak::whereIn('status', ['BOOKING', 'AKTIF'])->count();
+            $penerimaan   = (float) Bkm::where('status', 'POSTED')
+                ->whereYear('tgl_bkm', now()->year)->whereMonth('tgl_bkm', now()->month)->sum('amount');
+            $nilaiJual    = (float) Kontrak::sum('total_kontrak');
+            $totalCust    = Customer::count();
+            $totalTrx     = Kontrak::count();
 
-        return [
-            ['label' => 'Total Customer', 'value' => number_format(Customer::count(), 0, ',', '.'),
-             'sub' => 'pelanggan terdaftar', 'accent' => false,
-             'icon' => 'M17 20h5v-2a4 4 0 00-3-3.87M9 20H4v-2a4 4 0 013-3.87m6-1.13a4 4 0 10-4-4 4 4 0 004 4z'],
-            ['label' => 'Unit Tersedia', 'value' => number_format($unitTersedia, 0, ',', '.'),
-             'sub' => 'dari ' . number_format($totalUnit, 0, ',', '.') . ' unit', 'accent' => false,
-             'icon' => 'M3 12l9-9 9 9M5 10v10h14V10'],
-            ['label' => 'Booking Aktif', 'value' => number_format($bookingAktif, 0, ',', '.'),
-             'sub' => 'kontrak booking/aktif', 'accent' => false,
-             'icon' => 'M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2'],
-            ['label' => 'Penerimaan Bln Ini', 'value' => 'Rp ' . $this->shortRupiah($penerimaan),
-             'sub' => now()->translatedFormat('F Y'), 'accent' => false,
-             'icon' => 'M3 10h18M7 15h2m4 0h4M3 7a2 2 0 012-2h14a2 2 0 012 2v10a2 2 0 01-2 2H5a2 2 0 01-2-2z'],
-            ['label' => 'Nilai Penjualan', 'value' => 'Rp ' . $this->shortRupiah($nilaiJual),
-             'sub' => Kontrak::count() . ' transaksi', 'accent' => true,
-             'icon' => 'M3 3v18h18M7 14l3-3 3 3 5-5'],
-        ];
+            return [
+                ['label' => 'Total Customer', 'value' => number_format($totalCust, 0, ',', '.'),
+                 'sub' => 'pelanggan terdaftar', 'accent' => false,
+                 'icon' => 'M17 20h5v-2a4 4 0 00-3-3.87M9 20H4v-2a4 4 0 013-3.87m6-1.13a4 4 0 10-4-4 4 4 0 004 4z'],
+                ['label' => 'Unit Tersedia', 'value' => number_format($unitTersedia, 0, ',', '.'),
+                 'sub' => 'dari ' . number_format($totalUnit, 0, ',', '.') . ' unit', 'accent' => false,
+                 'icon' => 'M3 12l9-9 9 9M5 10v10h14V10'],
+                ['label' => 'Booking Aktif', 'value' => number_format($bookingAktif, 0, ',', '.'),
+                 'sub' => 'kontrak booking/aktif', 'accent' => false,
+                 'icon' => 'M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2'],
+                ['label' => 'Penerimaan Bln Ini', 'value' => 'Rp ' . $this->shortRupiah($penerimaan),
+                 'sub' => now()->translatedFormat('F Y'), 'accent' => false,
+                 'icon' => 'M3 10h18M7 15h2m4 0h4M3 7a2 2 0 012-2h14a2 2 0 012 2v10a2 2 0 01-2 2H5a2 2 0 01-2-2z'],
+                ['label' => 'Nilai Penjualan', 'value' => 'Rp ' . $this->shortRupiah($nilaiJual),
+                 'sub' => $totalTrx . ' transaksi', 'accent' => true,
+                 'icon' => 'M3 3v18h18M7 14l3-3 3 3 5-5'],
+            ];
+        });
     }
 
     private function shortRupiah(float $n): string
@@ -185,31 +196,39 @@ class Dashboard extends BaseDashboard
     /** Pipeline penjualan: NUP → Hold → Booking → Kontrak → Lunas + Batal. */
     public function getPipeline(): array
     {
-        return [
+        return Cache::remember($this->cacheKey('pipeline'), 120, fn (): array => [
             ['label' => 'NUP',           'count' => NupRegistration::count()],
             ['label' => 'Hold Unit',     'count' => Unit::where('status', 'HOLD')->count()],
             ['label' => 'Booking',       'count' => Kontrak::where('status', 'BOOKING')->count()],
             ['label' => 'Kontrak Aktif', 'count' => Kontrak::where('status', 'AKTIF')->count()],
             ['label' => 'Lunas',         'count' => Kontrak::where('status', 'LUNAS')->count()],
             ['label' => 'Batal',         'count' => Kontrak::where('status', 'BATAL')->count()],
-        ];
+        ]);
     }
 
-    /** Tren penjualan (nilai kontrak) 6 bulan terakhir untuk grafik batang. */
+    /** Tren penjualan (nilai kontrak) 6 bulan terakhir — 1 query grouped (bukan 12). */
     public function getTrend(): array
     {
-        $out = [];
-        for ($i = 5; $i >= 0; $i--) {
-            $m = now()->subMonths($i);
-            $q = Kontrak::whereYear('tgl_kontrak', $m->year)->whereMonth('tgl_kontrak', $m->month);
-            $out[] = [
-                'label' => $m->translatedFormat('M'),
-                'nilai' => (float) (clone $q)->sum('total_kontrak'),
-                'count' => (clone $q)->count(),
-            ];
-        }
+        return Cache::remember($this->cacheKey('trend'), 120, function (): array {
+            $since = now()->subMonths(5)->startOfMonth();
+            $rows = Kontrak::query()
+                ->whereDate('tgl_kontrak', '>=', $since->toDateString())
+                ->selectRaw('YEAR(tgl_kontrak) y, MONTH(tgl_kontrak) m, SUM(total_kontrak) nilai, COUNT(*) cnt')
+                ->groupBy('y', 'm')->get()->keyBy(fn ($r) => $r->y.'-'.$r->m);
 
-        return $out;
+            $out = [];
+            for ($i = 5; $i >= 0; $i--) {
+                $mm = now()->subMonths($i);
+                $r = $rows->get($mm->year.'-'.$mm->month);
+                $out[] = [
+                    'label' => $mm->translatedFormat('M'),
+                    'nilai' => (float) ($r->nilai ?? 0),
+                    'count' => (int) ($r->cnt ?? 0),
+                ];
+            }
+
+            return $out;
+        });
     }
 
     /**

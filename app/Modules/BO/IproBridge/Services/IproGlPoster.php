@@ -43,22 +43,30 @@ class IproGlPoster
         $kreditCode = $e->akunKredit ?: ($mapping[$e->jenis]['kredit'] ?? null);
 
         $map = (array) config('ipro.coa_map', []);
-        $debetId = $map[$debetCode] ?? null;
-        $kreditId = $map[$kreditCode] ?? null;
+        $suspense = ((int) config('ipro.suspense_account_id', 0)) ?: null;
+        $debetId = $map[$debetCode] ?? $suspense;
+        $kreditId = $map[$kreditCode] ?? $suspense;
         $amount = round((float) $e->amount, 2);
 
-        if (! $debetId || ! $kreditId || $amount <= 0) {
-            Log::warning("ipro GL skip {$e->jenis}/{$e->sourceNo}: akun/amount tak lengkap (D={$debetCode} K={$kreditCode} amt={$amount})");
+        if ($amount <= 0) {
+            Log::info("ipro GL skip {$e->jenis}/{$e->sourceNo}: amount<=0 (tak ada dampak keuangan).");
 
             return null;
+        }
+        if (! $debetId || ! $kreditId) {
+            // JANGAN hilang diam-diam: lempar → dicatat ke outbox fo_sync_failures (oleh listener).
+            throw new \RuntimeException(
+                "COA FO tak terpetakan ({$e->jenis} D={$debetCode} K={$kreditCode}); lengkapi config ipro.coa_map atau set ipro.suspense_account_id."
+            );
         }
 
         $reference = "{$e->sourceModul}/{$e->sourceNo}/{$e->jenis}";
 
-        $exists = $this->db()->table('bs_journals')
-            ->where('tenant_id', $this->tenantId)->where('reference', $reference)->value('id');
-        if ($exists) {
-            return (int) $exists; // sudah pernah diposting (idempoten)
+        // Idempotensi cepat (jalur umum): sudah pernah diposting?
+        $existing = $this->db()->table('fo_gl_postings')
+            ->where('tenant_id', $this->tenantId)->where('reference', $reference)->value('journal_id');
+        if ($existing) {
+            return (int) $existing;
         }
 
         $date = $e->tgl ? Carbon::parse($e->tgl) : Carbon::now();
@@ -69,6 +77,23 @@ class IproGlPoster
         $desc = $e->keterangan ?: "FO {$e->jenis} {$e->sourceNo}";
 
         return (int) $this->db()->transaction(function () use ($debetId, $kreditId, $amount, $reference, $date, $year, $month, $now, $status, $desc, $e) {
+            // Gate idempotensi race-safe: unique(tenant_id, reference). Bila baris ini
+            // sudah ada (proses paralel), insert gagal → ambil journal_id yang sudah ada.
+            try {
+                $this->db()->table('fo_gl_postings')->insert([
+                    'tenant_id' => $this->tenantId,
+                    'reference' => $reference,
+                    'created_at' => $now,
+                    'updated_at' => $now,
+                ]);
+            } catch (\Illuminate\Database\QueryException $ex) {
+                if ((string) $ex->getCode() === '23000') {
+                    return (int) $this->db()->table('fo_gl_postings')
+                        ->where('tenant_id', $this->tenantId)->where('reference', $reference)->value('journal_id');
+                }
+                throw $ex;
+            }
+
             $journalId = $this->db()->table('bs_journals')->insertGetId([
                 'tenant_id'      => $this->tenantId,
                 'journal_number' => $this->nextNumber($year, $month),
@@ -90,6 +115,10 @@ class IproGlPoster
                 ['journal_id' => $journalId, 'account_id' => $kreditId, 'debit' => 0, 'credit' => $amount, 'currency' => 'IDR', 'kurs' => 1, 'description' => $desc, 'created_at' => $now, 'updated_at' => $now],
             ]);
 
+            $this->db()->table('fo_gl_postings')
+                ->where('tenant_id', $this->tenantId)->where('reference', $reference)
+                ->update(['journal_id' => $journalId, 'updated_at' => $now]);
+
             return $journalId;
         });
     }
@@ -97,9 +126,11 @@ class IproGlPoster
     private function nextNumber(int $year, int $month): string
     {
         $prefix = sprintf('JFO-%04d%02d-', $year, $month);
+        // lockForUpdate: serialkan penomoran bln yg sama (cegah duplikat journal_number
+        // saat 2 posting jenis berbeda berjalan paralel). Dipanggil di dalam transaksi.
         $last = $this->db()->table('bs_journals')
             ->where('journal_number', 'like', $prefix . '%')
-            ->orderByDesc('journal_number')->value('journal_number');
+            ->orderByDesc('journal_number')->lockForUpdate()->value('journal_number');
         $seq = $last ? ((int) substr((string) $last, -5)) + 1 : 1;
 
         return $prefix . str_pad((string) $seq, 5, '0', STR_PAD_LEFT);

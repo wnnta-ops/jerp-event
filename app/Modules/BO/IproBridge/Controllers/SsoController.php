@@ -25,6 +25,7 @@ class SsoController
         $payload = base64_encode((string) json_encode([
             'email' => $user->email,
             'name'  => $user->name,
+            'jti'   => bin2hex(random_bytes(16)),   // nonce: token hanya boleh dipakai sekali
             'exp'   => now()->addSeconds(60)->timestamp,
         ]));
         $sig = hash_hmac('sha256', $payload, $secret);

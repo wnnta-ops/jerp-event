@@ -13,12 +13,34 @@ services:
       - DB_HOST=jerp-mysql        # container jerp-mysql, di-resolve via shared-db
       - DB_PORT=3306
       - DB_DATABASE=ipro_bo
-      - DB_USERNAME=jerp
-      - DB_PASSWORD=secret
+      # Kredensial dari .env ipro-fo (HARUS sama dgn user `jerp` di jerp-mysql).
+      # JANGAN hardcode — di server password berbeda dari dev.
+      - DB_USERNAME=${DB_USERNAME:-jerp}
+      - DB_PASSWORD=${DB_PASSWORD:?DB_PASSWORD wajib diset di .env ipro-fo}
     depends_on: !reset []          # jangan tunggu ipro-mysql (dimatikan); pakai jerp-mysql
     networks:
       - ipro-net                   # tetap: nginx (fastcgi), redis, reverb, meili ipro
       - shareddb                   # akses jerp-mysql
+
+  # horizon/scheduler/reverb TIDAK dijalankan oleh deploy.sh/up.sh (hanya app+nginx+redis),
+  # tapi disamakan ke jerp-mysql agar `docker compose up` penuh tidak crash (DB_HOST=mysql
+  # sudah tak ada). Aktifkan manual bila perlu antrian/realtime BO.
+  horizon:
+    environment:
+      - DB_HOST=jerp-mysql
+      - DB_DATABASE=ipro_bo
+      - DB_USERNAME=${DB_USERNAME:-jerp}
+      - DB_PASSWORD=${DB_PASSWORD:?DB_PASSWORD wajib diset di .env ipro-fo}
+    networks: [ipro-net, shareddb]
+  scheduler:
+    environment:
+      - DB_HOST=jerp-mysql
+      - DB_DATABASE=ipro_bo
+      - DB_USERNAME=${DB_USERNAME:-jerp}
+      - DB_PASSWORD=${DB_PASSWORD:?DB_PASSWORD wajib diset di .env ipro-fo}
+    networks: [ipro-net, shareddb]
+  reverb:
+    networks: [ipro-net, shareddb]
 
 networks:
   shareddb:

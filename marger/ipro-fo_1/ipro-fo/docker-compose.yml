@@ -24,6 +24,12 @@ services:
       redis: { condition: service_healthy }
     networks: [ipro-net]
     expose: ["9000", "8000"]
+    healthcheck:
+      test: ["CMD-SHELL", "php -v > /dev/null 2>&1 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
 
   nginx:
     image: nginx:1.27-alpine
@@ -34,7 +40,9 @@ services:
       - ./docker/nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
     ports:
       - "8000:80"
-    depends_on: [app]
+    depends_on:
+      app:
+        condition: service_healthy
     networks: [ipro-net]
 
   # mysql (MariaDB) DIHAPUS — BO/ipro-fo kini memakai jerp-mysql (database ipro_bo)

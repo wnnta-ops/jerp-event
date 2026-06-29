@@ -5,6 +5,7 @@ namespace App\Modules\BO\Providers;
 use App\Modules\BO\FoBoBridge\Listeners\PostFoEventToGl;
 use App\Modules\BO\GeneralLedger\Contracts\JurnalPostingServiceInterface;
 use App\Modules\BO\GeneralLedger\Services\JurnalPostingService;
+use App\Modules\BO\IproBridge\Jobs\SyncFoToIproJob;
 use App\Modules\BO\IproBridge\Services\IproMasterSync;
 use App\Modules\FO\FinanceAR\Models\KprPengajuan;
 use App\Modules\FO\FinanceAR\Models\Tts;
@@ -13,7 +14,6 @@ use App\Modules\FO\MarketingSales\Models\Kontrak;
 use App\Modules\FO\MarketingSales\Models\Unit;
 use App\Modules\FO\Shared\Events\FoFinancialEvent;
 use Illuminate\Support\Facades\Event;
-use Illuminate\Support\Facades\Log;
 use Illuminate\Support\ServiceProvider;
 
 /**
@@ -48,18 +48,16 @@ class BoServiceProvider extends ServiceProvider
 
     private function wireIproSync(): void
     {
-        $run = function (string $method, $model): void {
-            try {
-                app(IproMasterSync::class)->{$method}($model);
-            } catch (\Throwable $e) {
-                Log::warning("ipro sync {$method} #{$model->id}: {$e->getMessage()}");
-            }
+        // Sync ASINKRON: dispatch job SETELAH transaksi FO commit (afterCommit) →
+        // tak menambah latensi simpan, retry + outbox bila gagal. QUEUE=sync pun aman.
+        $dispatch = function (string $method, $model): void {
+            SyncFoToIproJob::dispatch($method, $model::class, $model->getKey())->afterCommit();
         };
 
-        Customer::saved(fn ($m) => $run('syncCustomer', $m));
-        Unit::saved(fn ($m) => $run('syncUnit', $m));
-        Kontrak::saved(fn ($m) => $run('syncSpr', $m));
-        Tts::saved(fn ($m) => $run('syncTts', $m));
-        KprPengajuan::saved(fn ($m) => $run('syncKpr', $m));
+        Customer::saved(fn ($m) => $dispatch('syncCustomer', $m));
+        Unit::saved(fn ($m) => $dispatch('syncUnit', $m));
+        Kontrak::saved(fn ($m) => $dispatch('syncSpr', $m));
+        Tts::saved(fn ($m) => $dispatch('syncTts', $m));
+        KprPengajuan::saved(fn ($m) => $dispatch('syncKpr', $m));
     }
 }

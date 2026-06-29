@@ -4,6 +4,8 @@ namespace App\Modules\FO\Approval\Services;
 
 use App\Modules\FO\Approval\Models\Approval;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Gate;
 use RuntimeException;
 
 /**
@@ -13,6 +15,9 @@ use RuntimeException;
  *
  * Jenis SINGLE-LEVEL (langsung GM): submit → PENDING(L2/GM) → approveL2 → APPROVED.
  * Mis. DISKON_SPRS (diskon saat masih SPRS) cukup persetujuan GM saja (tanpa L1).
+ *
+ * Otorisasi (siapa boleh) ditegakkan via Gate (App\Policies\ApprovalPolicy);
+ * integritas state + anti double-execute via lockForUpdate + transaksi tunggal.
  */
 class ApprovalService
 {
@@ -41,52 +46,72 @@ class ApprovalService
 
     public function approveLevel1(Approval $a, ?string $note = null): Approval
     {
-        if (! $a->isAwaitingLevel1()) {
-            throw new RuntimeException('Approval tidak sedang menunggu persetujuan Level 1.');
-        }
-        $a->update([
-            'level1_by' => Auth::id(),
-            'level1_at' => now(),
-            'level1_note' => $note,
-            'current_level' => 2,   // lanjut ke Level 2 (final)
-        ]);
+        return DB::transaction(function () use ($a, $note) {
+            $a = Approval::query()->whereKey($a->getKey())->lockForUpdate()->firstOrFail();
 
-        return $a->fresh();
+            if (! $a->isAwaitingLevel1()) {
+                throw new RuntimeException('Approval tidak sedang menunggu persetujuan Level 1.');
+            }
+            Gate::authorize('approveLevel1', $a);
+
+            $a->update([
+                'level1_by' => Auth::id(),
+                'level1_at' => now(),
+                'level1_note' => $note,
+                'current_level' => 2,   // lanjut ke Level 2 (final)
+            ]);
+
+            return $a->fresh();
+        });
     }
 
     public function approveLevel2(Approval $a, ?string $note = null): Approval
     {
-        if (! $a->isAwaitingLevel2()) {
-            throw new RuntimeException('Approval tidak sedang menunggu persetujuan Level 2 (final).');
-        }
+        return DB::transaction(function () use ($a, $note) {
+            // Kunci baris: cegah dua persetujuan final paralel (double-execute).
+            $a = Approval::query()->whereKey($a->getKey())->lockForUpdate()->firstOrFail();
 
-        $a->update([
-            'status' => 'APPROVED',
-            'approved_by' => Auth::id(),
-            'approved_at' => now(),
-            'catatan_approver' => $note,
-        ]);
+            if (! $a->isAwaitingLevel2()) {
+                throw new RuntimeException('Approval tidak sedang menunggu persetujuan Level 2 (final).');
+            }
+            Gate::authorize('approveLevel2', $a);
 
-        // Eksekusi otomatis: terapkan perubahan ke Kontrak.
-        $result = $this->executor->execute($a);
-        $a->update(['status' => 'EXECUTED', 'executed_at' => now(), 'executed_result' => $result]);
+            $a->update([
+                'status' => 'APPROVED',
+                'approved_by' => Auth::id(),
+                'approved_at' => now(),
+                'catatan_approver' => $note,
+            ]);
 
-        return $a->fresh();
+            // Eksekusi otomatis di transaksi yang sama: bila gagal, status APPROVED
+            // ikut rollback (tidak ada state APPROVED-tapi-tak-tereksekusi).
+            $result = $this->executor->execute($a);
+            $a->update(['status' => 'EXECUTED', 'executed_at' => now(), 'executed_result' => $result]);
+
+            return $a->fresh();
+        });
     }
 
     public function reject(Approval $a, string $note): Approval
     {
-        if ($a->status !== 'PENDING') {
-            throw new RuntimeException('Hanya approval PENDING yang bisa ditolak.');
-        }
-        $field = (int) $a->current_level === 1 ? 'level1_note' : 'catatan_approver';
-        $a->update([
-            'status' => 'REJECTED',
-            $field => $note,
-            'approved_by' => Auth::id(),
-            'approved_at' => now(),
-        ]);
+        return DB::transaction(function () use ($a, $note) {
+            $a = Approval::query()->whereKey($a->getKey())->lockForUpdate()->firstOrFail();
 
-        return $a->fresh();
+            if ($a->status !== 'PENDING') {
+                throw new RuntimeException('Hanya approval PENDING yang bisa ditolak.');
+            }
+            Gate::authorize('reject', $a);
+
+            // Penolakan dicatat di kolom rejected_* (approved_* tetap murni penyetuju).
+            $field = (int) $a->current_level === 1 ? 'level1_note' : 'catatan_approver';
+            $a->update([
+                'status' => 'REJECTED',
+                $field => $note,
+                'rejected_by' => Auth::id(),
+                'rejected_at' => now(),
+            ]);
+
+            return $a->fresh();
+        });
     }
 }

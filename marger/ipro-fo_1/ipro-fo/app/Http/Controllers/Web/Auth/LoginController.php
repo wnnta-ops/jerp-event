@@ -14,13 +14,23 @@ use Inertia\Response;
 
 class LoginController extends Controller
 {
-    public function show(): Response
+    public function show(): RedirectResponse|Response
     {
+        // Akses BO hanya via login J-ERP (1 pintu) → alihkan ke FO_URL/login.
+        if (config('sso.fo_login_only')) {
+            return redirect()->away(config('sso.fo_url').'/login');
+        }
+
         return Inertia::render('Auth/Login');
     }
 
     public function login(Request $request): RedirectResponse
     {
+        // Login langsung BO dimatikan saat mode 1-pintu — paksa lewat J-ERP.
+        if (config('sso.fo_login_only')) {
+            return redirect()->away(config('sso.fo_url').'/login');
+        }
+
         $data = $request->validate([
             'email'    => ['required', 'email'],
             'password' => ['required', 'string'],
@@ -46,6 +56,11 @@ class LoginController extends Controller
         Auth::guard('web')->logout();
         $request->session()->invalidate();
         $request->session()->regenerateToken();
+
+        // 1-pintu: setelah logout BO, kembali ke login J-ERP (bukan login BO).
+        if (config('sso.fo_login_only')) {
+            return redirect()->away(config('sso.fo_url').'/login');
+        }
 
         return redirect('/login');
     }

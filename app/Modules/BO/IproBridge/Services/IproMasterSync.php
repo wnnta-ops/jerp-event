@@ -25,7 +25,10 @@ class IproMasterSync
     private string $conn;
     private int $tenantId;
     private int $projectId;
-    private int $userId;
+    private ?int $userId = null;
+
+    /** @var array<string,int|null> memo hasil lookup id (cluster/type/scheme) per run */
+    private array $memo = [];
 
     public function __construct()
     {
@@ -33,19 +36,23 @@ class IproMasterSync
         if (str_starts_with($key, 'base64:')) {
             $key = base64_decode(substr($key, 7));
         }
-        // Cipher harus sama dgn ipro-fo (config/app.php → AES-256-CBC).
-        $this->enc = new Encrypter($key, 'AES-256-CBC');
+        // Cipher harus sama dgn ipro-fo (default AES-256-CBC; override via config bila ipro-fo ganti).
+        $this->enc = new Encrypter($key, (string) config('ipro.cipher', 'AES-256-CBC'));
         $this->conn = (string) config('ipro.connection', 'ipro_bo');
         $this->tenantId = (int) config('ipro.tenant_id', 1);
         $this->projectId = (int) config('ipro.project_id', 1);
-        // User default ipro_bo utk kolom created_by/received_by (FK users NOT NULL).
-        $this->userId = (int) (DB::connection($this->conn)->table('users')->where('email', 'admin@mup.local')->value('id')
-            ?? DB::connection($this->conn)->table('users')->min('id') ?? 1);
     }
 
     private function db(): ConnectionInterface
     {
         return DB::connection($this->conn);
+    }
+
+    /** User default ipro_bo (created_by/received_by). Lazy — jangan query saat boot singleton. */
+    private function userId(): int
+    {
+        return $this->userId ??= (int) ($this->db()->table('users')->where('email', 'admin@mup.local')->value('id')
+            ?? $this->db()->table('users')->min('id') ?? 1);
     }
 
     /** Upsert satu customer FO → ipro_bo.customers. Return id ipro_bo. */
@@ -150,6 +157,10 @@ class IproMasterSync
         if (! $lokasiId) {
             return null;
         }
+        $memoKey = 'cluster:' . $lokasiId;
+        if (array_key_exists($memoKey, $this->memo)) {
+            return $this->memo[$memoKey];
+        }
         $nama = DB::table('fo_lokasi')->where('id', $lokasiId)->value('nama') ?: ('Cluster ' . $lokasiId);
         $code = 'FOL-' . $lokasiId;
         $now = Carbon::now();
@@ -157,10 +168,10 @@ class IproMasterSync
         $existing = $this->db()->table('clusters')
             ->where('project_id', $this->projectId)->where('code', $code)->value('id');
         if ($existing) {
-            return (int) $existing;
+            return $this->memo[$memoKey] = (int) $existing;
         }
 
-        return (int) $this->db()->table('clusters')->insertGetId([
+        return $this->memo[$memoKey] = (int) $this->db()->table('clusters')->insertGetId([
             'tenant_id' => $this->tenantId, 'project_id' => $this->projectId,
             'code' => $code, 'name' => $nama, 'created_at' => $now, 'updated_at' => $now,
         ]);
@@ -173,9 +184,13 @@ class IproMasterSync
         if (! $typeId) {
             return null;
         }
+        $memoKey = 'type:' . $typeId;
+        if (array_key_exists($memoKey, $this->memo)) {
+            return $this->memo[$memoKey];
+        }
         $t = DB::table('fo_unit_types')->where('id', $typeId)->first();
         if (! $t) {
-            return null;
+            return $this->memo[$memoKey] = null;
         }
         $code = 'FOT-' . $typeId;
         $now = Carbon::now();
@@ -193,11 +208,11 @@ class IproMasterSync
         if ($existing) {
             $this->db()->table('unit_types')->where('id', $existing)->update($data);
 
-            return (int) $existing;
+            return $this->memo[$memoKey] = (int) $existing;
         }
         $data['created_at'] = $now;
 
-        return (int) $this->db()->table('unit_types')->insertGetId($data);
+        return $this->memo[$memoKey] = (int) $this->db()->table('unit_types')->insertGetId($data);
     }
 
     /** Cari id customer ipro_bo dari id customer FO (via code). */
@@ -233,7 +248,7 @@ class IproMasterSync
             return null; // master belum disinkron
         }
 
-        $schemeMap = ['CASH' => 1, 'CASH_BERTAHAP' => 2, 'CICILAN' => 2, 'KPR' => 3];
+        $typeMap = ['CASH' => 'cash_keras', 'CASH_BERTAHAP' => 'cicilan', 'CICILAN' => 'cicilan', 'KPR' => 'kpr'];
         $statusMap = ['DRAFT' => 'draft', 'BOOKING' => 'confirmed', 'AKTIF' => 'active', 'LUNAS' => 'completed', 'BATAL' => 'cancelled'];
         $now = Carbon::now();
 
@@ -247,7 +262,7 @@ class IproMasterSync
             'project_id'        => $this->projectId,
             'customer_id'       => $custId,
             'unit_id'           => $unitId,
-            'payment_scheme_id' => $schemeMap[$k->cara_bayar ?? 'KPR'] ?? 3,
+            'payment_scheme_id' => $this->iproPaymentSchemeId($typeMap[$k->cara_bayar ?? 'KPR'] ?? 'kpr'),
             'booking_date'      => $k->tgl_kontrak ?? $now->toDateString(),
             'base_price'        => $base,
             'discount_amount'   => $diskon,
@@ -255,26 +270,58 @@ class IproMasterSync
             'total_price'       => $total,
             'status'            => $statusMap[$k->status ?? 'DRAFT'] ?? 'draft',
             'booking_source'    => 'fo-jerp',
-            'created_by'        => $this->userId,
+            'created_by'        => $this->userId(),
             'notes'             => 'SPR ' . ($k->no_kontrak ?? ''),
             'updated_at'        => $now,
         ];
 
-        $existing = $this->db()->table('bookings')
-            ->where('tenant_id', $this->tenantId)->where('booking_number', $k->no_kontrak)->first();
+        // Transaksi: booking + payment_schedules atomik (cegah cicilan terhapus tanpa diisi ulang).
+        return $this->db()->transaction(function () use ($data, $k, $now) {
+            $existing = $this->db()->table('bookings')
+                ->where('tenant_id', $this->tenantId)->where('booking_number', $k->no_kontrak)->first();
 
-        if ($existing) {
-            $this->db()->table('bookings')->where('id', $existing->id)->update($data);
-            $bookingId = (int) $existing->id;
-        } else {
-            $data['booking_number'] = $k->no_kontrak;
-            $data['created_at'] = $now;
-            $bookingId = (int) $this->db()->table('bookings')->insertGetId($data);
+            if ($existing) {
+                $this->db()->table('bookings')->where('id', $existing->id)->update($data);
+                $bookingId = (int) $existing->id;
+            } else {
+                $data['booking_number'] = $k->no_kontrak;
+                $data['created_at'] = $now;
+                $bookingId = (int) $this->db()->table('bookings')->insertGetId($data);
+            }
+
+            $this->syncSchedules($bookingId, (int) $k->id, $k);
+
+            return $bookingId;
+        });
+    }
+
+    /** id payment_scheme ipro_bo untuk tipe tertentu (cash_keras/cicilan/kpr/...). Memoized. */
+    private function iproPaymentSchemeId(string $type): int
+    {
+        $memoKey = 'scheme:' . $type;
+        if (array_key_exists($memoKey, $this->memo) && $this->memo[$memoKey]) {
+            return (int) $this->memo[$memoKey];
         }
 
-        $this->syncSchedules($bookingId, (int) $k->id, $k);
+        $id = $this->db()->table('payment_schemes')
+            ->where('tenant_id', $this->tenantId)
+            ->where(fn ($q) => $q->where('project_id', $this->projectId)->orWhereNull('project_id'))
+            ->where('type', $type)->value('id');
 
-        return $bookingId;
+        // Fallback 1: skema apa pun milik tenant. Fallback 2: buat skema minimal utk tipe ini.
+        if (! $id) {
+            $id = $this->db()->table('payment_schemes')->where('tenant_id', $this->tenantId)->value('id');
+        }
+        if (! $id) {
+            $now = Carbon::now();
+            $id = $this->db()->table('payment_schemes')->insertGetId([
+                'tenant_id' => $this->tenantId, 'project_id' => $this->projectId,
+                'code' => 'FO-' . strtoupper($type), 'name' => 'FO ' . $type, 'type' => $type,
+                'is_active' => 1, 'created_at' => $now, 'updated_at' => $now,
+            ]);
+        }
+
+        return (int) ($this->memo[$memoKey] = (int) $id);
     }
 
     /** Replace payment_schedules dari fo_kontrak_tagihan. */
@@ -343,7 +390,7 @@ class IproMasterSync
             'received_date'  => $t->tgl_tts ?? $now->toDateString(),
             'reference_no'   => $t->no_referensi ?? null,
             'status'         => $statusMap[$t->status ?? 'DRAFT'] ?? 'pending',
-            'received_by'    => $this->userId,
+            'received_by'    => $this->userId(),
             'notes'          => $t->keterangan ?? null,
             'updated_at'     => $now,
         ];
@@ -381,7 +428,7 @@ class IproMasterSync
         $bookingId = $this->db()->table('bookings')
             ->where('tenant_id', $this->tenantId)->where('booking_number', $kontrak->no_kontrak)->value('id');
 
-        $statusMap = ['DRAFT' => 'in_progress', 'PROSES' => 'in_progress', 'SELESAI' => 'completed', 'BATAL' => 'in_progress'];
+        $statusMap = ['DRAFT' => 'in_progress', 'PROSES' => 'in_progress', 'SELESAI' => 'completed', 'BATAL' => 'cancelled'];
         $plafon = max(0.0, (float) ($kontrak->total_kontrak ?? 0) - (float) ($kontrak->dp_amount ?? 0));
         $now = Carbon::now();
 
@@ -394,7 +441,7 @@ class IproMasterSync
             'status'           => $statusMap[$p->status ?? 'DRAFT'] ?? 'in_progress',
             'stages'           => json_encode(['jerp_pengajuan_id' => $p->id, 'jerp_no' => $p->no_pengajuan]),
             'notes'            => $p->keterangan ?? null,
-            'initiated_by'     => $this->userId,
+            'initiated_by'     => $this->userId(),
             'updated_at'       => $now,
         ];
 

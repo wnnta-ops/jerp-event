@@ -5,8 +5,10 @@ namespace App\Http\Controllers\Api\Mobile;
 use App\Modules\FO\Approval\Models\Approval;
 use App\Modules\FO\Approval\Services\ApprovalMobileMapper;
 use App\Modules\FO\Approval\Services\ApprovalService;
+use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
 
 /**
  * API approval untuk aplikasi mobile approver. Memetakan semua jenis approval
@@ -35,7 +37,7 @@ class ApprovalController
 
         $done = Approval::with(['requester', 'subject', 'approver'])
             ->whereIn('status', ['EXECUTED', 'APPROVED', 'REJECTED'])
-            ->latest('approved_at')->limit(50)->get();
+            ->latest('updated_at')->limit(50)->get();
 
         return response()->json([
             'needs' => $needs->values()->map(fn (Approval $a) => $this->mapper->toRequestItem($a)),
@@ -62,7 +64,7 @@ class ApprovalController
     {
         $data = $request->validate([
             'action' => ['required', 'in:approved,rejected'],
-            'reason' => ['nullable', 'string'],
+            'reason' => ['required_if:action,rejected', 'nullable', 'string', 'max:500'],
         ]);
 
         if ($approval->status !== 'PENDING') {
@@ -70,13 +72,9 @@ class ApprovalController
         }
 
         try {
-            if ($data['action'] === 'rejected') {
-                $this->service->reject($approval, $data['reason'] ?: 'Ditolak');
-            } elseif ((int) $approval->current_level === 1) {
-                $this->service->approveLevel1($approval, $data['reason'] ?? null);
-            } else {
-                $this->service->approveLevel2($approval, $data['reason'] ?? null);
-            }
+            $this->dispatchDecision($approval, $data['action'], $data['reason'] ?? null);
+        } catch (AuthorizationException $e) {
+            return response()->json(['ok' => false, 'message' => 'Anda tidak berwenang atas approval ini.'], 403);
         } catch (\Throwable $e) {
             return response()->json(['ok' => false, 'message' => $e->getMessage()], 422);
         }
@@ -92,29 +90,47 @@ class ApprovalController
     public function decideMany(Request $request): JsonResponse
     {
         $data = $request->validate([
-            'ids' => ['required', 'array'],
-            'ids.*' => ['integer'],
+            'ids' => ['required', 'array', 'max:100'],
+            'ids.*' => ['integer', 'distinct'],
             'action' => ['required', 'in:approved,rejected'],
-            'reason' => ['nullable', 'string'],
+            'reason' => ['required_if:action,rejected', 'nullable', 'string', 'max:500'],
         ]);
 
-        $count = 0;
+        $approved = [];
+        $failed = [];
         foreach (Approval::whereIn('id', $data['ids'])->where('status', 'PENDING')->get() as $a) {
             try {
-                if ($data['action'] === 'rejected') {
-                    $this->service->reject($a, $data['reason'] ?: 'Ditolak');
-                } elseif ((int) $a->current_level === 1) {
-                    $this->service->approveLevel1($a, $data['reason'] ?? null);
-                } else {
-                    $this->service->approveLevel2($a, $data['reason'] ?? null);
-                }
-                $count++;
+                $this->dispatchDecision($a, $data['action'], $data['reason'] ?? null);
+                $approved[] = (int) $a->id;
             } catch (\Throwable $e) {
-                // lewati yang gagal, lanjut batch
+                $failed[] = ['id' => (int) $a->id, 'message' => $e->getMessage()];
+                Log::warning('Approval decideMany gagal', [
+                    'id' => $a->id,
+                    'user' => $request->user()?->id,
+                    'action' => $data['action'],
+                    'error' => $e->getMessage(),
+                ]);
             }
         }
 
-        return response()->json(['ok' => $count > 0, 'count' => $count]);
+        return response()->json([
+            'ok' => count($approved) > 0,
+            'count' => count($approved),
+            'approved' => $approved,
+            'failed' => $failed,
+        ]);
+    }
+
+    /** Arahkan keputusan ke service sesuai aksi & level (otorisasi & lock di service). */
+    private function dispatchDecision(Approval $a, string $action, ?string $reason): void
+    {
+        if ($action === 'rejected') {
+            $this->service->reject($a, $reason ?: 'Ditolak');
+        } elseif ((int) $a->current_level === 1) {
+            $this->service->approveLevel1($a, $reason);
+        } else {
+            $this->service->approveLevel2($a, $reason);
+        }
     }
 
     /**
@@ -132,7 +148,7 @@ class ApprovalController
     {
         $rows = Approval::with(['requester', 'subject', 'approver'])
             ->whereIn('status', ['EXECUTED', 'APPROVED', 'REJECTED'])
-            ->latest('approved_at')->limit(100)->get();
+            ->latest('updated_at')->limit(100)->get();
 
         return response()->json($rows->map(fn (Approval $a) => $this->mapper->toHistoryEntry($a)));
     }

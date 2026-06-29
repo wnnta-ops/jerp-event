@@ -17,8 +17,8 @@ Route::post('/webhooks/xendit', XenditWebhookController::class)->name('webhooks.
  * Mobile Approver API — dipakai aplikasi Expo/React Native (folder /mobile).
  * Auth via Sanctum personal access token (login → Bearer token).
  */
-Route::prefix('mobile')->group(function () {
-    Route::post('/auth/login', [AuthController::class, 'login']);
+Route::prefix('mobile')->middleware('throttle:api')->group(function () {
+    Route::post('/auth/login', [AuthController::class, 'login'])->middleware('throttle:mobile-login');
 
     Route::middleware('auth:sanctum')->group(function () {
         Route::get('/auth/me', [AuthController::class, 'me']);

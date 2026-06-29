@@ -26,8 +26,15 @@ class AuthController
         if (! $user || ! Hash::check($data['password'], $user->password)) {
             throw ValidationException::withMessages(['email' => ['Email atau password salah.']]);
         }
+        if (! $user->is_active) {
+            throw ValidationException::withMessages(['email' => ['Akun Anda dinonaktifkan.']]);
+        }
+        if (! $this->isApprover($user)) {
+            throw ValidationException::withMessages(['email' => ['Akun Anda bukan approver.']]);
+        }
 
-        $token = $user->createToken($data['device'] ?? 'mobile-approver')->plainTextToken;
+        // Token di-scope hanya untuk aksi approval (bukan ability '*').
+        $token = $user->createToken($data['device'] ?? 'mobile-approver', ['approval:act'])->plainTextToken;
 
         return response()->json([
             'token' => $token,
@@ -45,6 +52,25 @@ class AuthController
         $request->user()->currentAccessToken()->delete();
 
         return response()->json(['ok' => true]);
+    }
+
+    /** User boleh masuk app approver bila bisa bertindak atas minimal satu jenis approval. */
+    private function isApprover(User $user): bool
+    {
+        if ($user->hasRole('super_admin') || $user->hasAnyRole((array) config('approval.final_roles', []))) {
+            return true;
+        }
+
+        $perms = array_values((array) config('approval.jenis_permission', []));
+        $perms[] = (string) config('approval.fallback_permission');
+
+        foreach (array_unique(array_filter($perms)) as $perm) {
+            if ($user->can($perm)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /** @return array<string,mixed> */

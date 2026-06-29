@@ -339,10 +339,15 @@ class FoPanelProvider extends PanelProvider
      */
     private function moduleDefinitions(): array
     {
-        $item = fn (string $label, string $url, string $icon, string $activeRoutePrefix) => NavigationItem::make($label)
-            ->url(url($url))
-            ->icon($icon)
-            ->isActiveWhen(fn () => request()->routeIs($activeRoutePrefix.'*') || request()->is(trim(parse_url($url, PHP_URL_PATH), '/').'*'));
+        $item = function (string $label, string $url, string $icon, string $activeRoutePrefix) {
+            // Hitung path SEKALI di sini (bukan parse_url tiap render di isActiveWhen).
+            $path = trim((string) parse_url($url, PHP_URL_PATH), '/');
+
+            return NavigationItem::make($label)
+                ->url(url($url))
+                ->icon($icon)
+                ->isActiveWhen(fn () => request()->routeIs($activeRoutePrefix.'*') || request()->is($path.'*'));
+        };
 
         // Item placeholder: struktur dipasang, flow/logika menyusul. Mengarah ke
         // halaman SegeraHadir dengan label modul+fitur via query string.

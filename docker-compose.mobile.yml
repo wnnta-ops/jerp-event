@@ -26,6 +26,9 @@ services:
       - "9091:8081"   # Metro (dipakai kalau mode LAN, lihat catatan di bawah)
     environment:
       EXPO_NO_TELEMETRY: "1"
+      # API J-ERP utk app mobile (dibaca src/config.ts). Set FO_URL saat menjalankan,
+      # mis. FO_URL=https://fo.test.com bash marger/up.sh. Default localhost (aman).
+      EXPO_PUBLIC_API_BASE_URL: ${FO_URL:-http://127.0.0.1:8081}/api/mobile
       # Mode LAN (alternatif tunnel): set IP/domain server lalu ganti command ke
       # "npx expo start --port 8081" + buka port 9091 di firewall.
       # REACT_NATIVE_PACKAGER_HOSTNAME: "j-erp.anisaproperti.com"

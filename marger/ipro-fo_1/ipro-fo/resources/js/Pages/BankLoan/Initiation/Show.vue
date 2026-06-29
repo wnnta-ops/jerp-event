@@ -507,7 +507,7 @@ const analisaLabel: Record<string, string> = { layak: 'Layak', tidak_layak: 'Tid
                                         <th class="py-1.5 pr-3">Berkas</th><th class="py-1.5 text-center">Status</th>
                                     </tr></thead>
                                     <tbody class="divide-y divide-neutral-100 dark:divide-neutral-800">
-                                        <tr v-for="(it, i) in analisaBerkas.items" :key="i">
+                                        <tr v-for="(it, i) in analisaBerkas.items" :key="it.label">
                                             <td class="py-1.5 pr-3">{{ i + 1 }}. {{ it.label }}</td>
                                             <td class="py-1.5 text-center">
                                                 <Badge v-if="it.status === 'lengkap'" variant="success" size="sm">Lengkap</Badge>

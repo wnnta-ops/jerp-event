@@ -81,16 +81,22 @@ class ApprovalResource extends Resource
                     ->keyLabel('Field')->valueLabel('Nilai diminta'),
             ])->collapsible(),
 
-            Forms\Components\Section::make('Status & Approver')->columns(2)->schema([
-                Forms\Components\Select::make('status')->label('Status')->options([
-                    'DRAFT' => 'Draft', 'PENDING' => 'Pending', 'APPROVED' => 'Approved',
-                    'REJECTED' => 'Rejected', 'EXECUTED' => 'Executed',
-                ])->default('DRAFT')->required(),
-                Forms\Components\Select::make('requested_by')->label('Diminta oleh')->relationship('requester', 'name')->searchable()->preload(),
-                Forms\Components\Select::make('approved_by')->label('Di-approve oleh')->relationship('approver', 'name')->searchable()->preload(),
-                Forms\Components\DateTimePicker::make('approved_at')->label('Tgl approve'),
-                Forms\Components\Textarea::make('catatan_approver')->label('Catatan approver')->rows(2)->columnSpanFull(),
-            ]),
+            // Pemohon otomatis = user saat ini (set di model; tak bisa dipalsukan dari form).
+            // Status & approver: alur normal lewat tombol Approve/Reject. Koreksi manual
+            // HANYA super admin (cegah bypass workflow lewat form edit).
+            Forms\Components\Section::make('Status & Approver (koreksi manual)')->columns(2)
+                ->visible(fn () => (bool) auth()->user()?->hasRole('super_admin'))
+                ->description('Hanya super admin. Alur normal memakai tombol Approve/Reject.')
+                ->schema([
+                    Forms\Components\Select::make('status')->label('Status')->options([
+                        'DRAFT' => 'Draft', 'PENDING' => 'Pending', 'APPROVED' => 'Approved',
+                        'REJECTED' => 'Rejected', 'EXECUTED' => 'Executed',
+                    ])->required(),
+                    Forms\Components\Select::make('requested_by')->label('Diminta oleh')->relationship('requester', 'name')->searchable()->preload(),
+                    Forms\Components\Select::make('approved_by')->label('Di-approve oleh')->relationship('approver', 'name')->searchable()->preload(),
+                    Forms\Components\DateTimePicker::make('approved_at')->label('Tgl approve'),
+                    Forms\Components\Textarea::make('catatan_approver')->label('Catatan approver')->rows(2)->columnSpanFull(),
+                ]),
         ]);
     }
 
@@ -270,7 +276,7 @@ class ApprovalResource extends Resource
                     Notification::make()->title('Diajukan — menunggu Approval Level 1')->success()->send();
                 }),
             Tables\Actions\Action::make('approve_l1')->label('Approve L1')->icon('heroicon-o-check')->color('warning')
-                ->visible(fn (Approval $r) => $r->isAwaitingLevel1())
+                ->visible(fn (Approval $r) => $r->isAwaitingLevel1() && (bool) auth()->user()?->can('approveLevel1', $r))
                 ->form([Forms\Components\Textarea::make('note')->label('Catatan Level 1')->rows(2)])
                 ->action(function (Approval $r, array $data) {
                     app(ApprovalService::class)->approveLevel1($r, $data['note'] ?? null);
@@ -279,7 +285,7 @@ class ApprovalResource extends Resource
             Tables\Actions\Action::make('approve_l2')
                 ->label(fn (Approval $r) => ApprovalService::isSingleLevel($r->jenis) ? 'Approve (GM)' : 'Approve L2 (final)')
                 ->icon('heroicon-o-check-badge')->color('success')
-                ->visible(fn (Approval $r) => $r->isAwaitingLevel2())
+                ->visible(fn (Approval $r) => $r->isAwaitingLevel2() && (bool) auth()->user()?->can('approveLevel2', $r))
                 ->requiresConfirmation()
                 ->modalDescription('Persetujuan final akan LANGSUNG menerapkan perubahan ke kontrak.')
                 ->form([Forms\Components\Textarea::make('note')->label('Catatan Level 2')->rows(2)])
@@ -292,7 +298,7 @@ class ApprovalResource extends Resource
                     }
                 }),
             Tables\Actions\Action::make('reject')->label('Reject')->icon('heroicon-o-x-circle')->color('danger')
-                ->visible(fn (Approval $r) => $r->status === 'PENDING')
+                ->visible(fn (Approval $r) => $r->status === 'PENDING' && (bool) auth()->user()?->can('reject', $r))
                 ->form([Forms\Components\Textarea::make('note')->label('Alasan reject')->rows(2)->required()])
                 ->action(function (Approval $r, array $data) {
                     app(ApprovalService::class)->reject($r, $data['note']);

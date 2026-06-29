@@ -41,7 +41,7 @@ bash marger/up.sh              # + start Mobile (atau langsung up.sh saja setela
 | Bagian | Akses |
 |---|---|
 | **FO** (Marketing, Finance AR, Collection, Legal, Launching, Komisi) | `https://fo.test.com` → login `admin@jerp.test` → sidebar FO |
-| **BO** (GL, AR, AP, Cash, Inventory, COGS, Budget, KPR/Bankloan) | hub FO → tile **Back Office** (SSO) — atau `https://bo.test.com` (`admin@mup.local`) |
+| **BO + Bankloan** (GL, AR, AP, Cash, Inventory, COGS, Budget, KPR) | **HANYA via J-ERP**: login `fo.test.com` → hub → tile **Back Office** (SSO). Login langsung `bo.test.com` dimatikan (`SSO_FO_LOGIN_ONLY=true`) → 1 pintu. Darurat: set `false`. |
 | **Approval — FO (web)** | sidebar FO → grup **Approval** (`/fo/approvals`): diskon, batal, refund, BLT, komisi |
 | **Approval — BO (web)** | sidebar BO → **Approval Center** (`/approvals`): keuangan/GL/AP |
 | **Approval — Mobile** | app Expo `mobile/approval_flow`; jalankan `up.sh` → `docker logs -f jerp-mobile` → **scan QR pakai Expo Go** di HP. API ke `<FO_URL>/api/mobile`. |

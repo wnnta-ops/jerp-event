@@ -8,6 +8,7 @@ use App\Models\User;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Cache;
 
 /**
  * SSO consumer: menerima token bertanda-tangan dari J-ERP (FO), memverifikasi
@@ -28,6 +29,12 @@ class SsoController extends Controller
         $data = json_decode(base64_decode($payload), true);
         abort_unless(is_array($data), 403, 'Token SSO rusak.');
         abort_if((int) ($data['exp'] ?? 0) < now()->timestamp, 403, 'Token SSO kedaluwarsa.');
+
+        // Anti-replay: nonce (jti) hanya boleh dipakai sekali, s/d kedaluwarsa.
+        $jti = (string) ($data['jti'] ?? '');
+        abort_if($jti === '', 403, 'Token SSO tidak sah (tanpa nonce).');
+        $ttl = max(1, (int) ($data['exp'] ?? 0) - now()->timestamp);
+        abort_unless(Cache::add('sso:jti:'.$jti, 1, $ttl), 403, 'Token SSO sudah dipakai.');
 
         $email = (string) ($data['email'] ?? '');
         // Peta email FO→BO bila berbeda (lihat config/sso.php).

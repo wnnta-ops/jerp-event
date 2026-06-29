@@ -28,6 +28,13 @@ return [
     // mapping COA di bawah sebelum diubah ke 'posted'.
     'gl_status'  => env('IPRO_GL_STATUS', 'draft'),
 
+    // Cipher enkripsi PII (ikut ipro-fo). Default AES-256-CBC.
+    'cipher' => env('IPRO_CIPHER', 'AES-256-CBC'),
+
+    // Akun "suspense" (bs_accounts.id) untuk menampung posting saat COA tak terpetakan,
+    // agar kas tak hilang. Kosong (0/null) = posting GL gagal → masuk outbox fo_sync_failures.
+    'suspense_account_id' => (int) env('IPRO_SUSPENSE_ACCOUNT_ID', 0),
+
     // Pemetaan kode COA J-ERP (config/fobo.php) → id bs_accounts ipro_bo.
     // ⚠️ WAJIB DIVERIFIKASI AKUNTAN. Yang pasti: Kas, Piutang, Penjualan, Komisi.
     // Yang perlu dicek (best-effort): utang komisi, escrow akad, beban memo/KPR.

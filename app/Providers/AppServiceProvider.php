@@ -4,6 +4,7 @@ namespace App\Providers;
 
 use App\Listeners\LogAuthenticationActivity;
 use App\Models\BackupSchedule;
+use App\Modules\FO\Approval\Models\Approval;
 use App\Modules\FO\Launching\Events\NupRegistered;
 use App\Modules\FO\Launching\Listeners\KirimKonfirmasiNupListener;
 use App\Modules\FO\Shared\Integrations\WhatsApp\NullWhatsAppGateway;
@@ -12,6 +13,7 @@ use App\Modules\FO\Shared\Integrations\WhatsApp\WhatsAppGatewayInterface;
 use App\Modules\FO\Shared\Integrations\Xendit\NullXenditGateway;
 use App\Modules\FO\Shared\Integrations\Xendit\XenditGateway;
 use App\Modules\FO\Shared\Integrations\Xendit\XenditGatewayInterface;
+use App\Policies\ApprovalPolicy;
 use App\Services\Numerator\NumeratorService;
 use App\Services\Numerator\NumeratorServiceInterface;
 use App\Support\Rupiah;
@@ -21,6 +23,7 @@ use Filament\Support\RawJs;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Event;
+use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Facades\URL;
 use Illuminate\Support\ServiceProvider;
@@ -76,10 +79,23 @@ class AppServiceProvider extends ServiceProvider
         // FO/Launching domain events
         Event::listen(NupRegistered::class, KirimKonfirmasiNupListener::class);
 
+        // Otorisasi Approval (model di luar App\Models → daftarkan eksplisit).
+        Gate::policy(Approval::class, ApprovalPolicy::class);
+
         // Throttle public NUP registration: 5 req/min/IP for the GET form,
         // but the submit (Livewire POST) is throttled at the same key.
         RateLimiter::for('nup-public', function (Request $request) {
             return Limit::perMinute(20)->by($request->ip());
+        });
+
+        // Throttle API mobile: per-user (token) bila ada, jatuh ke IP.
+        RateLimiter::for('api', function (Request $request) {
+            return Limit::perMinute(60)->by($request->user()?->id ?: $request->ip());
+        });
+
+        // Throttle ketat untuk login mobile (anti brute-force).
+        RateLimiter::for('mobile-login', function (Request $request) {
+            return Limit::perMinute(5)->by(strtolower((string) $request->input('email')).'|'.$request->ip());
         });
 
         $this->applyBackupSettings();
