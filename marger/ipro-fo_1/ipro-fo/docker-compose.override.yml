@@ -5,9 +5,6 @@ services:
   nginx:
     ports: !override
       - "8090:80"
-  mysql:
-    ports: !override
-      - "33070:3306"
   redis:
     ports: !override
       - "63800:6379"

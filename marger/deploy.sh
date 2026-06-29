@@ -31,4 +31,6 @@ echo "==> 10/11 Migrate J-ERP";           docker exec jerp-app php artisan migra
 echo "==> 11/11 Backfill data FO -> BO";  docker exec jerp-app php artisan ipro:backfill all
 
 docker restart ipro-fo-nginx >/dev/null 2>&1 || true     # re-resolve upstream app
-echo "==> SELESAI. Cek FO_URL & BO_URL di .env, uji SSO (hub -> Back Office)."
+echo "==> Mobile Approver (opsional): set mobile/approval_flow/src/config.ts ->"
+echo "    API_BASE_URL='<FO_URL>/api/mobile', lalu: docker compose -f docker-compose.mobile.yml up -d"
+echo "==> SELESAI. Uji SSO (hub -> Back Office). Start harian SEMUA (FO+BO+Mobile): bash marger/up.sh"

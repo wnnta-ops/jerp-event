@@ -21,7 +21,6 @@ services:
       - MAIL_HOST=mailpit
       - MEILISEARCH_HOST=http://meilisearch:7700
     depends_on:
-      mysql: { condition: service_healthy }
       redis: { condition: service_healthy }
     networks: [ipro-net]
     expose: ["9000", "8000"]
@@ -38,26 +37,8 @@ services:
     depends_on: [app]
     networks: [ipro-net]
 
-  mysql:
-    image: mariadb:11
-    container_name: ipro-fo-mysql
-    restart: unless-stopped
-    environment:
-      MARIADB_ROOT_PASSWORD: root
-      MARIADB_DATABASE: ipro_fo
-      MARIADB_USER: ipro
-      MARIADB_PASSWORD: secret
-    ports:
-      - "3306:3306"
-    volumes:
-      - mysql_data:/var/lib/mysql
-      - ./docker/mysql/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
-    healthcheck:
-      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-    networks: [ipro-net]
+  # mysql (MariaDB) DIHAPUS — BO/ipro-fo kini memakai jerp-mysql (database ipro_bo)
+  # via network shared-db (lihat docker-compose.shared.yml). DB sudah disatukan.
 
   redis:
     image: redis:7-alpine
@@ -88,7 +69,6 @@ services:
       - DB_HOST=mysql
       - REDIS_HOST=redis
     depends_on:
-      mysql: { condition: service_healthy }
       redis: { condition: service_healthy }
     networks: [ipro-net]
 
@@ -103,7 +83,6 @@ services:
       - .:/var/www/html
     command: /bin/sh -c "while true; do php artisan schedule:run --verbose --no-interaction; sleep 60; done"
     depends_on:
-      mysql: { condition: service_healthy }
       redis: { condition: service_healthy }
     networks: [ipro-net]
 
@@ -165,7 +144,6 @@ networks:
     driver: bridge
 
 volumes:
-  mysql_data:
   redis_data:
   minio_data:
   meili_data:
