@@ -682,6 +682,7 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
     Route::get('/business-support/cash-book/{cashTransaction}/print', [BsCashBookController::class, 'print'])->name('bs.cashbook.print'); // #130 cetak transaksi
     Route::get('/business-support/cash-book/{cashTransaction}',[BsCashBookController::class, 'show'])->name('bs.cashbook.show');
 
+    Route::get('/business-support/petty-cash/export',         [BsPettyCashController::class, 'export'])->name('bs.pettycash.export'); // #8 download mutasi kas kecil
     // ── REKONSILIASI BANK (Cash Book vs rekening koran) ──
     Route::get('/business-support/bank-reconciliation',          [BsBankRecController::class, 'index'])->name('bs.bankrec.index');
     Route::post('/business-support/bank-reconciliation',         [BsBankRecController::class, 'store'])->name('bs.bankrec.store');

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref } from 'vue';
 import { router, Link } from '@inertiajs/vue3';
-import { Wallet, Plus } from 'lucide-vue-next';
+import { Wallet, Plus, Download } from 'lucide-vue-next';
 import Button from '@/Components/UI/Button.vue';
 import EmptyState from '@/Components/UI/EmptyState.vue';
 
@@ -19,7 +19,11 @@ function fmtDate(d: string) { return d ? new Date(d).toLocaleDateString('id-ID',
     <div class="space-y-4">
         <div class="flex items-center justify-between">
             <h1 class="flex items-center gap-2 text-2xl font-bold"><Wallet class="h-6 w-6 text-primary-600" /> Kas Kecil (Petty Cash)</h1>
-            <Link :href="route('bs.pettycash.create')"><Button><template #icon-left><Plus class="h-4 w-4" /></template>Tambah</Button></Link>
+            <div class="flex flex-wrap gap-2">
+                <!-- #8: unduh mutasi kas kecil sesuai filter periode -->
+                <a :href="route('bs.pettycash.export', { from: filters.from || undefined, to: filters.to || undefined })"><Button variant="secondary"><template #icon-left><Download class="h-4 w-4" /></template>Download Mutasi</Button></a>
+                <Link :href="route('bs.pettycash.create')"><Button><template #icon-left><Plus class="h-4 w-4" /></template>Tambah</Button></Link>
+            </div>
         </div>
         <div v-if="warning" class="rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-700 dark:bg-amber-900/20 dark:text-amber-300">{{ warning }}</div>
         <!-- #53: filter periode -->

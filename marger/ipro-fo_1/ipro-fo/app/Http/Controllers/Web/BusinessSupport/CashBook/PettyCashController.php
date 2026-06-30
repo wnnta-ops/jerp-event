@@ -107,6 +107,55 @@ class PettyCashController extends Controller
         ]);
     }
 
+    /** Download mutasi Kas Kecil (mengikuti filter layar Dari/Sampai) ke Excel (.xls) — pola #129. */
+    public function export(Request $request): \Illuminate\Http\Response
+    {
+        abort_unless($request->user()?->canModule('cashbook'), 403);
+
+        $pettyId = (int) BsAccount::where('code', self::PETTY_CODE)->value('id');
+        $e  = fn ($s) => htmlspecialchars((string) $s, ENT_QUOTES, 'UTF-8');
+        $rp = fn ($n) => number_format((float) $n, 0, ',', '.');
+
+        $base = fn () => BsJournalLine::query()
+            ->join('bs_journals as j', 'j.id', '=', 'bs_journal_lines.journal_id')
+            ->where('j.status', 'posted')->whereNull('j.deleted_at')
+            ->where('bs_journal_lines.account_id', $pettyId)
+            ->when($request->input('from'), fn ($q, $v) => $q->whereDate('j.journal_date', '>=', $v))
+            ->when($request->input('to'), fn ($q, $v) => $q->whereDate('j.journal_date', '<=', $v));
+
+        $opening = 0.0;
+        if ($pettyId && ($from = $request->input('from'))) {
+            $opening = (float) BsJournalLine::query()
+                ->join('bs_journals as j', 'j.id', '=', 'bs_journal_lines.journal_id')
+                ->where('j.status', 'posted')->whereNull('j.deleted_at')
+                ->where('bs_journal_lines.account_id', $pettyId)
+                ->whereDate('j.journal_date', '<', $from)
+                ->selectRaw('COALESCE(SUM(bs_journal_lines.debit-bs_journal_lines.credit),0) as bal')->value('bal');
+        }
+
+        $rows = $pettyId
+            ? $base()->orderBy('j.journal_date')->orderBy('bs_journal_lines.id')
+                ->get(['bs_journal_lines.debit', 'bs_journal_lines.credit', 'bs_journal_lines.description as line_description',
+                    'j.journal_number', 'j.reference', 'j.journal_date', 'j.description as journal_description'])
+            : collect();
+
+        $h = '<table border="1"><tr><th colspan="6" style="background:#0f766e;color:#fff">Mutasi Kas Kecil</th></tr>'
+            .'<tr style="background:#e2e8f0"><th>No.</th><th>Tanggal</th><th>Keterangan</th><th>Masuk</th><th>Keluar</th><th>Saldo</th></tr>';
+        $bal = $opening;
+        foreach ($rows as $r) {
+            $bal += (float) $r->debit - (float) $r->credit;
+            $h .= '<tr><td>'.$e($r->reference ?: $r->journal_number).'</td><td>'.$e(optional($r->journal_date)->toDateString())
+                .'</td><td>'.$e($r->line_description ?: $r->journal_description)
+                .'</td><td>'.$rp($r->debit).'</td><td>'.$rp($r->credit).'</td><td>'.$rp($bal).'</td></tr>';
+        }
+        $h .= '</table>';
+        $file = 'Mutasi-kas-kecil-'.now()->format('Ymd-His').'.xls';
+
+        return response('<html xmlns:x="urn:schemas-microsoft-com:office:excel"><head><meta charset="utf-8"></head><body>'.$h.'</body></html>')
+            ->header('Content-Type', 'application/vnd.ms-excel; charset=UTF-8')
+            ->header('Content-Disposition', 'attachment; filename="'.$file.'"');
+    }
+
     public function create(Request $request): Response
     {
         abort_unless($request->user()?->canModule('cashbook'), 403);
