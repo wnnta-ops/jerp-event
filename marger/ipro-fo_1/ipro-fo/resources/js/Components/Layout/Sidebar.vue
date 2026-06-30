@@ -220,8 +220,7 @@ const groups: { title: string; items: NavItem[] }[] = [
                 { label: 'Kas Kecil Masuk', href: 'bs.pettycash.index', params: { type: 'in' } },
                 { label: 'Kas Kecil Keluar', href: 'bs.pettycash.index', params: { type: 'out' } },
                 { label: 'Cek Giro Masuk', href: 'bs.giro.index' },
-                { label: 'Pengeluaran Kas & Bank', href: 'bs.cashbook.index', params: { type: 'out' } },
-                { label: 'Pengeluaran Kas & Bank (AP)', href: 'bs.ap.kuitansi.index' },
+                { label: 'Cek Giro Keluar', href: 'bs.cheque-out.index' },
                 { label: 'Realisasi Bon Sementara', href: 'bs.advance.index' },
             ]},
             { label: 'Report/Query', icon: FileBarChart, permission: ['businesssupport.view', 'cashbook.*'], children: [
