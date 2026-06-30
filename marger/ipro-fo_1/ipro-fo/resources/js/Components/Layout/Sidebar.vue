@@ -87,7 +87,6 @@ const groups: { title: string; items: NavItem[] }[] = [
             { label: 'Proyeksi Hutang/Piutang', icon: BookText, href: 'bs.projection', params: { mode: 'hutang' }, permission: ['businesssupport.view', 'ap.*', 'ar.*'] },
             { label: 'Account Receivable',icon: Coins,        href: 'bs.ar.index',           permission: ['businesssupport.view', 'ar.*'] },
             { label: 'Booked Revenue',    icon: CircleDollarSign, href: 'bs.booked-revenue.index', permission: ['businesssupport.view', 'ar.*'] },
-            { label: 'SIP (Instruksi Bayar)', icon: ClipboardList, href: 'bs.sip.index',      permission: ['businesssupport.view', 'bs.*'] },
             { label: 'Aset Tetap',        icon: Building,     href: 'bs.fa.index',           permission: ['businesssupport.view', 'bs.*'] },
             { label: 'Payroll',           icon: Banknote,    href: 'bs.payroll.index',      permission: ['businesssupport.view', 'bs.*'] },
             { label: 'Item / Stok',       icon: Boxes,        href: 'bs.items.index',        permission: ['businesssupport.view', 'bs.*'] },
@@ -240,6 +239,7 @@ const groups: { title: string; items: NavItem[] }[] = [
                 { label: 'Registrasi Pengeluaran Kas & Bank', href: 'bs.cashbook.create', params: { type: 'out' } },
                 { label: 'Registrasi Pengeluaran Kas & Bank (AP)', href: 'bs.ap.kuitansi.create' },
                 { label: 'Approval Pengeluaran Kas & Bank', href: 'bs.cashbook.approvals' },
+                { label: 'SIP (Instruksi Bayar)', href: 'bs.sip.index', permission: ['businesssupport.view', 'bs.*'] },
             ]},
             { label: 'Transaksi Penerimaan Bank', icon: Landmark, permission: ['businesssupport.view', 'cashbook.*'], children: [
                 { label: 'Transfer Antar Rekening', href: 'bs.cashbook.create', params: { type: 'transfer' } },
