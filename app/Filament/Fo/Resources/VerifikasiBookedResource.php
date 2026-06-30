@@ -73,6 +73,9 @@ class VerifikasiBookedResource extends Resource
                     Tables\Actions\Action::make('unduh_ktp')->label('Unduh KTP')->icon('heroicon-o-arrow-down-tray')
                         ->url(fn (NupRegistration $r) => route('fo.customer.file', [$r->customer_id, 'ktp']).'?download=1')
                         ->visible(fn (NupRegistration $r) => (bool) $r->customer?->ktp_file_path),
+                    Tables\Actions\Action::make('lihat_npwp')->label('Lihat NPWP')->icon('heroicon-o-eye')
+                        ->url(fn (NupRegistration $r) => route('fo.customer.file', [$r->customer_id, 'npwp']), shouldOpenInNewTab: true)
+                        ->visible(fn (NupRegistration $r) => (bool) $r->customer?->npwp_file_path),
                     Tables\Actions\Action::make('unduh_npwp')->label('Unduh NPWP')->icon('heroicon-o-arrow-down-tray')
                         ->url(fn (NupRegistration $r) => route('fo.customer.file', [$r->customer_id, 'npwp']).'?download=1')
                         ->visible(fn (NupRegistration $r) => (bool) $r->customer?->npwp_file_path),
