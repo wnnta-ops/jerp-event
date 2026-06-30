@@ -45,25 +45,66 @@ class CashBookController extends Controller
             ->latest('trx_date')->latest('id')
             ->paginate(50)->withQueryString();
 
-        $rows->getCollection()->transform(function (BsCashTransaction $r): BsCashTransaction {
-            $amt = (float) $r->amount;
-            $r->setAttribute('masuk', $r->trx_type === 'in' ? $amt : 0.0);
-            $r->setAttribute('keluar', in_array($r->trx_type, ['out', 'transfer'], true) ? $amt : 0.0);
-            $r->setAttribute('running_saldo', null);
+        $isTransferView = $request->input('type') === 'transfer';
 
-            return $r;
-        });
+        if ($isTransferView) {
+            // #7: tampilkan KEDUA sisi mutasi transfer (keluar di pengirim + masuk di penerima).
+            // Tiap transaksi transfer dipecah jadi 2 baris sintetis tanpa mengubah penyimpanan/jurnal.
+            $rows->setCollection($rows->getCollection()->flatMap(function (BsCashTransaction $r): array {
+                $amt    = (float) $r->amount;
+                $sender = $r->cashAccount;
+                $recv   = $r->counterAccount;
+
+                $out = clone $r;
+                $out->setAttribute('row_key', $r->id.'-out');
+                $out->setAttribute('trx_id', $r->id);
+                $out->setAttribute('rekening_label', $sender?->name);
+                $out->setAttribute('masuk', 0.0);
+                $out->setAttribute('keluar', $amt);
+                $out->setAttribute('running_saldo', null);
+                $out->setAttribute('description', trim((string) $r->description.' → ke '.($recv?->name ?? '—')));
+
+                $in = clone $r;
+                $in->setAttribute('row_key', $r->id.'-in');
+                $in->setAttribute('trx_id', $r->id);
+                $in->setAttribute('rekening_label', $recv?->name);
+                $in->setAttribute('masuk', $amt);
+                $in->setAttribute('keluar', 0.0);
+                $in->setAttribute('running_saldo', null);
+                $in->setAttribute('description', trim((string) $r->description.' ← dari '.($sender?->name ?? '—')));
+
+                return [$out, $in];
+            }));
+        } else {
+            $rows->getCollection()->transform(function (BsCashTransaction $r): BsCashTransaction {
+                $amt = (float) $r->amount;
+                $r->setAttribute('masuk', $r->trx_type === 'in' ? $amt : 0.0);
+                $r->setAttribute('keluar', in_array($r->trx_type, ['out', 'transfer'], true) ? $amt : 0.0);
+                $r->setAttribute('running_saldo', null);
+
+                return $r;
+            });
+        }
+
+        // #7: untuk view Transfer, masuk=keluar=SUM(amount transfer) → arus bersih 0 (mutasi internal).
+        $summary = $isTransferView
+            ? (function () use ($filtered) {
+                $sum = (float) (clone $filtered())->where('trx_type', 'transfer')->sum('amount');
+
+                return ['in' => $sum, 'out' => $sum];
+            })()
+            : [
+                'in'  => (float) (clone $filtered())->where('trx_type', 'in')->sum('amount'),
+                // Keluar = Pengeluaran + Transfer (kolom Keluar pada baris juga mencakup transfer → konsisten).
+                'out' => (float) (clone $filtered())->whereIn('trx_type', ['out', 'transfer'])->sum('amount'),
+            ];
 
         return Inertia::render('BusinessSupport/CashBook/Index', [
             'transactions' => $rows,
             'types'        => BsCashTransaction::TYPES,
             'cashAccounts' => $this->cashAccounts(),
             'filters'      => $request->only(['type', 'search', 'account_id', 'from', 'to']),
-            'summary'      => [
-                'in'  => (float) (clone $filtered())->where('trx_type', 'in')->sum('amount'),
-                // Keluar = Pengeluaran + Transfer (kolom Keluar pada baris juga mencakup transfer → konsisten).
-                'out' => (float) (clone $filtered())->whereIn('trx_type', ['out', 'transfer'])->sum('amount'),
-            ],
+            'summary'      => $summary,
             'glMode'       => false,
         ]);
     }
@@ -527,18 +568,33 @@ class CashBookController extends Controller
         } else {
             // Register "Semua Rekening" (BsCashTransaction).
             $rows = BsCashTransaction::query()
-                ->with(['cashAccount:id,code,name'])
+                ->with(['cashAccount:id,code,name', 'counterAccount:id,code,name'])
                 ->when($request->input('type'), fn ($q, $v) => $q->where('trx_type', $v))
                 ->when($request->input('search'), fn ($q, $s) => $q->where(fn ($w) => $w->where('trx_number', 'like', "%{$s}%")->orWhere('description', 'like', "%{$s}%")->orWhere('payee', 'like', "%{$s}%")))
                 ->when($request->input('from'), fn ($q, $v) => $q->whereDate('trx_date', '>=', $v))
                 ->when($request->input('to'), fn ($q, $v) => $q->whereDate('trx_date', '<=', $v))
                 ->latest('trx_date')->latest('id')->get();
+            $isTransferView = $request->input('type') === 'transfer';
             $h = '<table border="1"><tr style="background:#0f766e;color:#fff"><th>No.</th><th>Tanggal</th><th>Jenis</th><th>Rekening</th><th>Keterangan/Pihak</th><th>Masuk</th><th>Keluar</th></tr>';
             foreach ($rows as $r) {
-                $masuk  = $r->trx_type === 'in' ? (float) $r->amount : 0;
-                $keluar = in_array($r->trx_type, ['out', 'transfer'], true) ? (float) $r->amount : 0;
-                $h .= '<tr><td>'.$e($r->trx_number).'</td><td>'.$e(optional($r->trx_date)->toDateString()).'</td><td>'.$e(BsCashTransaction::TYPES[$r->trx_type] ?? $r->trx_type)
-                    .'</td><td>'.$e($r->cashAccount?->name).'</td><td>'.$e($r->description).($r->payee ? ' · '.$e($r->payee) : '').'</td><td>'.$rp($masuk).'</td><td>'.$rp($keluar).'</td></tr>';
+                $jenis = BsCashTransaction::TYPES[$r->trx_type] ?? $r->trx_type;
+                $no    = $e($r->trx_number);
+                $tgl   = $e(optional($r->trx_date)->toDateString());
+                if ($isTransferView) {
+                    // #7: dua sisi transfer (keluar pengirim + masuk penerima) konsisten dengan layar.
+                    $amt    = (float) $r->amount;
+                    $sender = $r->cashAccount?->name;
+                    $recv   = $r->counterAccount?->name;
+                    $h .= '<tr><td>'.$no.'</td><td>'.$tgl.'</td><td>'.$e($jenis).'</td><td>'.$e($sender)
+                        .'</td><td>'.$e(trim((string) $r->description.' → ke '.($recv ?? '—'))).'</td><td>'.$rp(0).'</td><td>'.$rp($amt).'</td></tr>';
+                    $h .= '<tr><td>'.$no.'</td><td>'.$tgl.'</td><td>'.$e($jenis).'</td><td>'.$e($recv)
+                        .'</td><td>'.$e(trim((string) $r->description.' ← dari '.($sender ?? '—'))).'</td><td>'.$rp($amt).'</td><td>'.$rp(0).'</td></tr>';
+                } else {
+                    $masuk  = $r->trx_type === 'in' ? (float) $r->amount : 0;
+                    $keluar = in_array($r->trx_type, ['out', 'transfer'], true) ? (float) $r->amount : 0;
+                    $h .= '<tr><td>'.$no.'</td><td>'.$tgl.'</td><td>'.$e($jenis)
+                        .'</td><td>'.$e($r->cashAccount?->name).'</td><td>'.$e($r->description).($r->payee ? ' · '.$e($r->payee) : '').'</td><td>'.$rp($masuk).'</td><td>'.$rp($keluar).'</td></tr>';
+                }
             }
             $h .= '</table>';
             $file = 'Mutasi-semua-rekening-'.now()->format('Ymd-His').'.xls';
@@ -549,62 +605,6 @@ class CashBookController extends Controller
             ->header('Content-Disposition', 'attachment; filename="'.$file.'"');
     }
 
-    /** #130: Cetak bukti transaksi kas (BKM/BKK/Transfer) — auto-print, layout eProperty + logo. */
-    public function print(Request $request, BsCashTransaction $cashTransaction): \Illuminate\Http\Response
-    {
-        abort_unless($request->user()?->canModule('cashbook'), 403);
-
-        $cashTransaction->load(['cashAccount:id,code,name', 'counterAccount:id,code,name', 'lines.account:id,code,name']);
-        $createdBy = $cashTransaction->created_by ? \App\Models\User::find($cashTransaction->created_by)?->name : null;
-
-        return response($this->renderCashPrint($cashTransaction, $request->user()?->name, $createdBy))
-            ->header('Content-Type', 'text/html; charset=UTF-8');
-    }
-
-    /** Bukti Pengeluaran/Penerimaan Kas/Bank — layout mengikuti format eProperty (logo + grid + tanda tangan). */
-    private function renderCashPrint(BsCashTransaction $trx, ?string $printedBy = null, ?string $createdBy = null): string
-    {
-        $e = fn ($s) => htmlspecialchars((string) $s, ENT_QUOTES, 'UTF-8');
-        // Nominal mengikuti lampiran: "Rp. 1,000,000.00" (negatif → dalam tanda kurung).
-        $amt = function ($n): string {
-            $neg = (float) $n < 0;
-
-            return 'Rp. '.($neg ? '(' : '').number_format(abs((float) $n), 2, '.', ',').($neg ? ')' : '');
-        };
-
-        $coName = (string) config('business_support.company.name', 'PT. MITRA USAHA PROPERTINDO');
-        $addr   = trim((string) config('business_support.company.address', ''));
-        // Default melengkapi alamat MUP penuh agar sesuai lampiran; alamat khusus via config tetap menimpa.
-        if ($addr === '' || $addr === 'Sidoarjo, Jawa Timur') {
-            $addr = 'Jl. Kahuripan Raya Ruko Avenue No 27 - 30, Sidoarjo, Jawa Timur';
-        }
-        $aParts   = explode(',', $addr, 2);
-        $addrHtml = $e(trim($aParts[0])).(isset($aParts[1]) ? '<br>'.$e(trim($aParts[1])) : '');
-        $logo     = '/images/mup-logo.jpeg';
-
-        $titles = [
-            'in'       => 'BUKTI<br>PENERIMAAN KAS/BANK',
-            'out'      => 'BUKTI<br>PENGELUARAN KAS/BANK',
-            'transfer' => 'BUKTI<br>TRANSFER ANTAR REKENING',
-        ];
-        $title = $titles[$trx->trx_type] ?? 'BUKTI<br>TRANSAKSI KAS/BANK';
-
-        $sourceOfFund = trim($e($trx->cashAccount?->code).' | '.$e($trx->cashAccount?->name), ' |');
-        $cqbg    = $trx->reference ? $e($trx->reference) : '-';
-        $reffNo  = $e($trx->trx_number);
-        $dateStr = optional($trx->trx_date)->format('d-m-Y') ?: '-';
-
-        $lines = $trx->lines->count()
-            ? $trx->lines
-            : collect([(object) ['account' => $trx->counterAccount, 'amount' => $trx->amount, 'description' => $trx->description]]);
-        $lineRows = '';
-        foreach ($lines as $l) {
-            $lineRows .= '<tr><td>'.$e($l->account?->code).'</td><td>'.$e($l->account?->name).'</td>'
-                .'<td class="c"></td><td>'.$e($l->description).'</td><td class="r">'.$amt($l->amount).'</td></tr>';
-        }
-
-        $terbilang    = $e(strtoupper(trim(preg_replace('/\s+/', ' ', terbilang((int) round((float) $trx->amount))))).' RUPIAH');
-        $totalBayar   = $amt($trx->amount);
     /** Bungkus respons Excel (.xls) — pola HTML table ms-excel (#129). */
     private function xlsResponse(string $bodyHtml, string $file): \Illuminate\Http\Response
     {
@@ -935,6 +935,62 @@ class CashBookController extends Controller
         return $this->pdfPage('KALENDER CEK GIRO', 'Bulan '.$d['month'], $body);
     }
 
+    /** #130: Cetak bukti transaksi kas (BKM/BKK/Transfer) — auto-print, layout eProperty + logo. */
+    public function print(Request $request, BsCashTransaction $cashTransaction): \Illuminate\Http\Response
+    {
+        abort_unless($request->user()?->canModule('cashbook'), 403);
+
+        $cashTransaction->load(['cashAccount:id,code,name', 'counterAccount:id,code,name', 'lines.account:id,code,name']);
+        $createdBy = $cashTransaction->created_by ? \App\Models\User::find($cashTransaction->created_by)?->name : null;
+
+        return response($this->renderCashPrint($cashTransaction, $request->user()?->name, $createdBy))
+            ->header('Content-Type', 'text/html; charset=UTF-8');
+    }
+
+    /** Bukti Pengeluaran/Penerimaan Kas/Bank — layout mengikuti format eProperty (logo + grid + tanda tangan). */
+    private function renderCashPrint(BsCashTransaction $trx, ?string $printedBy = null, ?string $createdBy = null): string
+    {
+        $e = fn ($s) => htmlspecialchars((string) $s, ENT_QUOTES, 'UTF-8');
+        // Nominal mengikuti lampiran: "Rp. 1,000,000.00" (negatif → dalam tanda kurung).
+        $amt = function ($n): string {
+            $neg = (float) $n < 0;
+
+            return 'Rp. '.($neg ? '(' : '').number_format(abs((float) $n), 2, '.', ',').($neg ? ')' : '');
+        };
+
+        $coName = (string) config('business_support.company.name', 'PT. MITRA USAHA PROPERTINDO');
+        $addr   = trim((string) config('business_support.company.address', ''));
+        // Default melengkapi alamat MUP penuh agar sesuai lampiran; alamat khusus via config tetap menimpa.
+        if ($addr === '' || $addr === 'Sidoarjo, Jawa Timur') {
+            $addr = 'Jl. Kahuripan Raya Ruko Avenue No 27 - 30, Sidoarjo, Jawa Timur';
+        }
+        $aParts   = explode(',', $addr, 2);
+        $addrHtml = $e(trim($aParts[0])).(isset($aParts[1]) ? '<br>'.$e(trim($aParts[1])) : '');
+        $logo     = '/images/mup-logo.jpeg';
+
+        $titles = [
+            'in'       => 'BUKTI<br>PENERIMAAN KAS/BANK',
+            'out'      => 'BUKTI<br>PENGELUARAN KAS/BANK',
+            'transfer' => 'BUKTI<br>TRANSFER ANTAR REKENING',
+        ];
+        $title = $titles[$trx->trx_type] ?? 'BUKTI<br>TRANSAKSI KAS/BANK';
+
+        $sourceOfFund = trim($e($trx->cashAccount?->code).' | '.$e($trx->cashAccount?->name), ' |');
+        $cqbg    = $trx->reference ? $e($trx->reference) : '-';
+        $reffNo  = $e($trx->trx_number);
+        $dateStr = optional($trx->trx_date)->format('d-m-Y') ?: '-';
+
+        $lines = $trx->lines->count()
+            ? $trx->lines
+            : collect([(object) ['account' => $trx->counterAccount, 'amount' => $trx->amount, 'description' => $trx->description]]);
+        $lineRows = '';
+        foreach ($lines as $l) {
+            $lineRows .= '<tr><td>'.$e($l->account?->code).'</td><td>'.$e($l->account?->name).'</td>'
+                .'<td class="c"></td><td>'.$e($l->description).'</td><td class="r">'.$amt($l->amount).'</td></tr>';
+        }
+
+        $terbilang    = $e(strtoupper(trim(preg_replace('/\s+/', ' ', terbilang((int) round((float) $trx->amount))))).' RUPIAH');
+        $totalBayar   = $amt($trx->amount);
         $deskripsi    = $e($trx->description);
         $kasirName    = $createdBy ? '<span class="nm">'.$e($createdBy).'</span>' : '';
         $diterimaName = $trx->payee ? '<span class="nm">'.$e($trx->payee).'</span>' : '';
