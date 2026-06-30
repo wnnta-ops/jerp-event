@@ -27,12 +27,14 @@ class Bkm extends TenantAwareModel
         'akun_kas',
         'no_referensi',
         'status',
+        'bo_posted_at',
         'keterangan',
     ];
 
     protected $casts = [
         'tgl_bkm' => 'date',
         'amount' => 'decimal:2',
+        'bo_posted_at' => 'datetime',
     ];
 
     public function tts(): BelongsTo

@@ -255,6 +255,7 @@ class FoPanelProvider extends PanelProvider
             'upload-koordinat-editor' => 'setup',
             // Finance AR
             'tts' => 'finance',
+            'pembayaran-ar' => 'finance',
             'pelunasan-angsuran' => 'finance',
             'pengajuan-kpr' => 'finance',
             'setup-hold' => 'finance',
@@ -410,6 +411,7 @@ class FoPanelProvider extends PanelProvider
                 'icon' => 'heroicon-o-banknotes',
                 'items' => [
                     $item('TTS', '/fo/tts', 'heroicon-o-ticket', 'filament.fo.resources.tts.'),
+                    $item('Pembayaran AR', '/fo/pembayaran-ar', 'heroicon-o-clipboard-document-list', 'filament.fo.pages.pembayaran-ar'),
                     $item('Pelunasan DP, Angsuran & TDP', '/fo/pelunasan-angsuran', 'heroicon-o-banknotes', 'filament.fo.pages.pelunasan-angsuran'),
                     $item('Pengajuan KPR', '/fo/pengajuan-kpr', 'heroicon-o-building-library', 'filament.fo.pages.pengajuan-kpr'),
                     $item('Kwitansi', '/fo/bkms', 'heroicon-o-banknotes', 'filament.fo.resources.bkms.'),
