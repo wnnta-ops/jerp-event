@@ -214,12 +214,13 @@ class RefundResource extends Resource
             ])
             ->headerActions([Tables\Actions\CreateAction::make()])
             ->actions([
-                // Proses refund: isi tgl & rekening, lalu KIRIM ke Account Payable BO sebagai
-                // HUTANG ke customer (status open). Pembayaran dilakukan di BO via kuitansi AP.
-                Tables\Actions\Action::make('proses')->label('Proses & Posting BO')->icon('heroicon-o-check-circle')->color('success')
+                // Proses refund: isi tgl & rekening, lalu KIRIM ke antrian Posting Invoice BO
+                // (ditampung per jenis). BELUM jadi hutang AP — BO yang menerbitkan invoice
+                // hutang dari Posting Invoice; baru setelah itu masuk Account Payable.
+                Tables\Actions\Action::make('proses')->label('Proses & Kirim ke BO')->icon('heroicon-o-paper-airplane')->color('success')
                     ->visible(fn (Refund $r) => in_array($r->status, ['DRAFT', 'DIPROSES']) && (float) $r->nilai_refund > 0)
-                    ->modalHeading('Proses Refund → Account Payable BO')
-                    ->modalDescription('Isi tanggal & rekening, lalu kirim ke Account Payable BO sebagai hutang refund (open). Pembayaran dilakukan di BO via kuitansi AP.')
+                    ->modalHeading('Proses Refund → Posting Invoice BO')
+                    ->modalDescription('Isi tanggal & rekening, lalu kirim ke antrian Posting Invoice BO (ditampung per jenis). BO menerbitkan invoice hutang dari sana — baru kemudian masuk Account Payable.')
                     ->fillForm(fn (Refund $r) => ['tgl_refund' => $r->tgl_refund, 'bank_id' => $r->bank_id, 'rekening_tujuan' => $r->rekening_tujuan])
                     ->form([
                         Forms\Components\DatePicker::make('tgl_refund')->label('Tgl Refund')->default(now())->required(),
@@ -238,11 +239,11 @@ class RefundResource extends Resource
                             'status' => 'DIPROSES',
                         ]);
                         try {
-                            app(\App\Modules\BO\IproBridge\Services\IproApPoster::class)->postRefund($r->load(['customer', 'kontrak']));
-                            \Filament\Notifications\Notification::make()->success()->title('Refund masuk Account Payable BO')
-                                ->body('Hutang refund '.$r->no_refund.' ('.str_replace('_', ' ', $sumber).') dibuat di AP BO — dibayar via kuitansi AP.')->send();
+                            app(\App\Modules\BO\IproBridge\Services\IproApPoster::class)->queueRefund($r->load(['customer', 'kontrak']));
+                            \Filament\Notifications\Notification::make()->success()->title('Refund dikirim ke Posting Invoice BO')
+                                ->body('Refund '.$r->no_refund.' ('.str_replace('_', ' ', $sumber).') menunggu diposting di BO → Posting Invoice. Setelah diposting baru masuk Account Payable.')->send();
                         } catch (\Throwable $e) {
-                            \Filament\Notifications\Notification::make()->warning()->title('Status DIPROSES, tapi posting AP BO gagal')
+                            \Filament\Notifications\Notification::make()->warning()->title('Status DIPROSES, tapi kirim ke BO gagal')
                                 ->body($e->getMessage())->persistent()->send();
                         }
                     }),

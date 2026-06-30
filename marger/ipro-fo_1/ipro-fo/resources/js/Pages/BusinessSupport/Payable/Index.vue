@@ -31,6 +31,9 @@ const dSupplier = (r: Row) => r.supplier?.name ?? r.customer?.name ?? '—';
 const SUMBER_LABEL: Record<string, string> = { SPR: 'Refund: SPR', SPRS: 'Refund: SPRS', TRANSFER_ANONIM: 'Refund: Transfer Anonim' };
 const dSumber = (r: Row) => {
     if (r.source_type === 'refund') return SUMBER_LABEL[r.refund_source ?? ''] ?? 'Refund';
+    if (r.source_type === 'komisi') return 'Komisi';
+    if (r.source_type === 'blt') return 'BLT';
+    if (r.source_type === 'gmc') return 'GMC';
     if (r.source_type === 'po') return 'PO';
     if (r.source_type === 'spk') return 'SPK';
     return 'Manual';
