@@ -214,6 +214,11 @@ final class RegisterApInvoice
                 'created_by'   => $userId,
             ], $jl);
 
+            // NO. JURNAL = nomor invoice (AP.INV/…) agar sama dengan memo internal,
+            // bukan auto-number GL (JAP/…). Khusus jurnal registrasi invoice ini;
+            // jurnal pembayaran AP tetap memakai penomoran GL standar (JAP).
+            $journal->update(['journal_number' => $inv->invoice_number]);
+
             $inv->update(['journal_id' => $journal->id]);
 
             return $inv;
