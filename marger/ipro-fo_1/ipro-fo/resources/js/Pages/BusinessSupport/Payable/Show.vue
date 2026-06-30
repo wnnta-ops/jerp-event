@@ -12,12 +12,15 @@ const props = defineProps<{
     defaultCash: number | null;
     writeoffs?: Array<{ memorial_number: string; memorial_date: string; amount: number; reason: string; journal_id: number | null; journal_number: string | null }>;
     writeoffTotal?: number;
+    journal?: { id: number; number: string | null; date: string | null; lines: Array<{ account_code: string | null; account_name: string | null; dimensi: string | null; description: string | null; debit: number; credit: number }>; total_debit: number; total_credit: number } | null;
 }>();
 
 // Penghapusan hutang menambah paid_amount; pisahkan dari pembayaran tunai nyata.
 const writeoffTotal = computed(() => Number(props.writeoffTotal ?? 0));
 const realPaid = computed(() => Math.max(0, Number(props.invoice.paid_amount ?? 0) - writeoffTotal.value));
 const showTerbayar = computed(() => writeoffTotal.value < 0.01 || realPaid.value > 0.009);
+// Jurnal pendaftaran balance bila total debit ≈ total kredit (selisih < Rp1).
+const journalBalanced = computed(() => !!props.journal && Math.abs((props.journal.total_debit || 0) - (props.journal.total_credit || 0)) < 1);
 
 const showPay = ref(false);
 const today = new Date().toISOString().slice(0, 10);
@@ -101,6 +104,42 @@ const justCreated = computed(() => Boolean(usePage().props.flash?.created));
                 <div class="flex justify-between sm:col-span-2 rounded-lg bg-neutral-50 px-3 py-2 font-bold dark:bg-neutral-800"><span>Sisa Hutang</span><span class="font-mono" :class="outstanding > 0 ? 'text-danger-600' : 'text-success-600'">{{ fmtRp(outstanding) }}</span></div>
             </div>
             <div v-if="invoice.journal_id" class="mt-3 text-xs text-neutral-400">Jurnal pendaftaran: #{{ invoice.journal_id }} (Dr Akun Debit + PPN / Cr Hutang + PPh)</div>
+        </div>
+
+        <!-- Struktur Jurnal pendaftaran invoice (Dr Akun + PPN Masukan / Cr Hutang + PPh) — penting untuk audit. -->
+        <div v-if="journal" class="card overflow-hidden">
+            <div class="flex flex-wrap items-center justify-between gap-2 border-b border-neutral-200 px-4 py-3 dark:border-neutral-800">
+                <h2 class="flex items-center gap-2 font-semibold"><BookText class="h-5 w-5 text-primary-600" /> Struktur Jurnal</h2>
+                <div class="flex items-center gap-2">
+                    <Link v-if="journal.id" :href="route('bs.gl.journal.show', journal.id)" class="inline-flex items-center gap-1 font-mono text-xs text-primary-600 hover:underline dark:text-primary-400" :title="'Jurnal GL: ' + (journal.number ?? ('#' + journal.id))"><BookText class="h-3.5 w-3.5" /> {{ invoice.invoice_number }}</Link>
+                    <Badge :variant="journalBalanced ? 'success' : 'warning'" size="sm">{{ journalBalanced ? 'Balance' : 'Tidak balance' }}</Badge>
+                </div>
+            </div>
+            <table class="w-full text-sm">
+                <thead class="bg-neutral-50 dark:bg-neutral-800"><tr class="text-left text-xs uppercase text-neutral-500">
+                    <th class="px-4 py-2.5">Account</th>
+                    <th class="px-4 py-2.5">Dimensi</th>
+                    <th class="px-4 py-2.5">Keterangan</th>
+                    <th class="px-4 py-2.5 text-right">Debit</th>
+                    <th class="px-4 py-2.5 text-right">Kredit</th>
+                </tr></thead>
+                <tbody class="divide-y divide-neutral-200 dark:divide-neutral-800">
+                    <tr v-for="(l, i) in journal.lines" :key="i">
+                        <td class="px-4 py-2.5"><span class="font-mono text-xs text-neutral-500">{{ l.account_code }}</span> — {{ l.account_name }}</td>
+                        <td class="px-4 py-2.5 text-neutral-500">{{ l.dimensi ?? '—' }}</td>
+                        <td class="px-4 py-2.5 text-neutral-600 dark:text-neutral-300">{{ l.description ?? '—' }}</td>
+                        <td class="px-4 py-2.5 text-right font-mono">{{ l.debit > 0 ? fmtRp(l.debit) : '' }}</td>
+                        <td class="px-4 py-2.5 text-right font-mono">{{ l.credit > 0 ? fmtRp(l.credit) : '' }}</td>
+                    </tr>
+                </tbody>
+                <tfoot>
+                    <tr class="border-t-2 border-neutral-200 font-semibold dark:border-neutral-700">
+                        <td class="px-4 py-2.5" colspan="3">Grand Total</td>
+                        <td class="px-4 py-2.5 text-right font-mono">{{ fmtRp(journal.total_debit) }}</td>
+                        <td class="px-4 py-2.5 text-right font-mono">{{ fmtRp(journal.total_credit) }}</td>
+                    </tr>
+                </tfoot>
+            </table>
         </div>
 
         <!-- Memo Penghapusan Hutang — alasan + rincian sisa hutang yang dihapus (bukan dibayar). -->

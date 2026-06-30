@@ -87,7 +87,6 @@ const groups: { title: string; items: NavItem[] }[] = [
             { label: 'Proyeksi Hutang/Piutang', icon: BookText, href: 'bs.projection', params: { mode: 'hutang' }, permission: ['businesssupport.view', 'ap.*', 'ar.*'] },
             { label: 'Account Receivable',icon: Coins,        href: 'bs.ar.index',           permission: ['businesssupport.view', 'ar.*'] },
             { label: 'Booked Revenue',    icon: CircleDollarSign, href: 'bs.booked-revenue.index', permission: ['businesssupport.view', 'ar.*'] },
-            { label: 'SIP (Instruksi Bayar)', icon: ClipboardList, href: 'bs.sip.index',      permission: ['businesssupport.view', 'bs.*'] },
             { label: 'Aset Tetap',        icon: Building,     href: 'bs.fa.index',           permission: ['businesssupport.view', 'bs.*'] },
             { label: 'Payroll',           icon: Banknote,    href: 'bs.payroll.index',      permission: ['businesssupport.view', 'bs.*'] },
             { label: 'Item / Stok',       icon: Boxes,        href: 'bs.items.index',        permission: ['businesssupport.view', 'bs.*'] },
@@ -221,8 +220,7 @@ const groups: { title: string; items: NavItem[] }[] = [
                 { label: 'Kas Kecil Masuk', href: 'bs.pettycash.index', params: { type: 'in' } },
                 { label: 'Kas Kecil Keluar', href: 'bs.pettycash.index', params: { type: 'out' } },
                 { label: 'Cek Giro Masuk', href: 'bs.giro.index' },
-                { label: 'Pengeluaran Kas & Bank', href: 'bs.cashbook.index', params: { type: 'out' } },
-                { label: 'Pengeluaran Kas & Bank (AP)', href: 'bs.ap.kuitansi.index' },
+                { label: 'Cek Giro Keluar', href: 'bs.cheque-out.index' },
                 { label: 'Realisasi Bon Sementara', href: 'bs.advance.index' },
             ]},
             { label: 'Report/Query', icon: FileBarChart, permission: ['businesssupport.view', 'cashbook.*'], children: [
@@ -240,6 +238,7 @@ const groups: { title: string; items: NavItem[] }[] = [
                 { label: 'Registrasi Pengeluaran Kas & Bank', href: 'bs.cashbook.create', params: { type: 'out' } },
                 { label: 'Registrasi Pengeluaran Kas & Bank (AP)', href: 'bs.ap.kuitansi.create' },
                 { label: 'Approval Pengeluaran Kas & Bank', href: 'bs.cashbook.approvals' },
+                { label: 'SIP (Instruksi Bayar)', href: 'bs.sip.index', permission: ['businesssupport.view', 'bs.*'] },
             ]},
             { label: 'Transaksi Penerimaan Bank', icon: Landmark, permission: ['businesssupport.view', 'cashbook.*'], children: [
                 { label: 'Transfer Antar Rekening', href: 'bs.cashbook.create', params: { type: 'transfer' } },

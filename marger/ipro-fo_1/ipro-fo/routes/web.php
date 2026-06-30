@@ -656,7 +656,11 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
     Route::post('/business-support/cash-book-repair/run',      [BsCashRepairController::class, 'run'])->name('bs.cashbook.repair.run');
     // CB-2: Rekening Ledger + Kalender Cek Giro
     Route::get('/business-support/cash-book-ledger',           [BsCashBookController::class, 'ledger'])->name('bs.cashbook.ledger');
+    Route::get('/business-support/cash-book-ledger-excel',     [BsCashBookController::class, 'ledgerExcel'])->name('bs.cashbook.ledger.excel');       // #9
+    Route::get('/business-support/cash-book-ledger-pdf',       [BsCashBookController::class, 'ledgerPdf'])->name('bs.cashbook.ledger.pdf');           // #9
     Route::get('/business-support/cash-book-giro-calendar',    [BsCashBookController::class, 'giroCalendar'])->name('bs.cashbook.giro-calendar');
+    Route::get('/business-support/cash-book-giro-calendar-excel', [BsCashBookController::class, 'giroCalendarExcel'])->name('bs.cashbook.giro-calendar.excel'); // #9
+    Route::get('/business-support/cash-book-giro-calendar-pdf', [BsCashBookController::class, 'giroCalendarPdf'])->name('bs.cashbook.giro-calendar.pdf');        // #9
     // CB-3: Approval Pengeluaran Kas & Bank
     Route::get('/business-support/cash-book-approvals',        [BsCashBookController::class, 'approvals'])->name('bs.cashbook.approvals');
     Route::post('/business-support/cash-book-approvals/{cashTransaction}', [BsCashBookController::class, 'approve'])->name('bs.cashbook.approve');
@@ -672,10 +676,14 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
     Route::post('/business-support/cash-book-approval-utjdp/{tts}/restore',   [BsBankApprovalController::class, 'utjdpRestore'])->name('bs.cashbook.approval-utjdp.restore'); // pulihkan TTS ditolak
     Route::get('/business-support/cash-book',                  [BsCashBookController::class, 'index'])->name('bs.cashbook.index');
     Route::get('/business-support/cash-book/saldo',           [BsCashBookController::class, 'balances'])->name('bs.cashbook.balances');
+    Route::get('/business-support/cash-book/saldo-excel',     [BsCashBookController::class, 'balancesExcel'])->name('bs.cashbook.balances.excel'); // #9
+    Route::get('/business-support/cash-book/saldo-pdf',       [BsCashBookController::class, 'balancesPdf'])->name('bs.cashbook.balances.pdf');     // #9
     Route::get('/business-support/cash-book/create',          [BsCashBookController::class, 'create'])->name('bs.cashbook.create');
     Route::post('/business-support/cash-book',                 [BsCashBookController::class, 'store'])->name('bs.cashbook.store');
     Route::get('/business-support/cash-book/export',          [BsCashBookController::class, 'export'])->name('bs.cashbook.export'); // #129 download mutasi
+    Route::get('/business-support/cash-book/export-pdf',      [BsCashBookController::class, 'exportPdf'])->name('bs.cashbook.export.pdf'); // #9 cetak mutasi
     Route::get('/business-support/petty-cash',                [BsPettyCashController::class, 'index'])->name('bs.pettycash.index');
+    Route::get('/business-support/petty-cash/export',         [BsPettyCashController::class, 'export'])->name('bs.pettycash.export'); // #8 download mutasi kas kecil
     Route::get('/business-support/petty-cash/create',         [BsPettyCashController::class, 'create'])->name('bs.pettycash.create');
     Route::post('/business-support/petty-cash',               [BsPettyCashController::class, 'store'])->name('bs.pettycash.store');
     Route::get('/business-support/cash-book/{cashTransaction}/edit', [BsCashBookController::class, 'edit'])->name('bs.cashbook.edit');
@@ -697,6 +705,8 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
     // #88: laporan bon sementara (4 bucket). Path sibling agar tidak bentrok {advance}.
     Route::get('/business-support/bon-sementara-laporan',           [BsAdvanceController::class, 'report'])->name('bs.advance.report');
     Route::get('/business-support/bon-sementara-kartu',             [BsAdvanceController::class, 'card'])->name('bs.advance.card');
+    Route::get('/business-support/bon-sementara-kartu-excel',        [BsAdvanceController::class, 'cardExcel'])->name('bs.advance.card.excel'); // #9
+    Route::get('/business-support/bon-sementara-kartu-pdf',          [BsAdvanceController::class, 'cardPdf'])->name('bs.advance.card.pdf');     // #9
     Route::post('/business-support/bon-sementara/{advance}/bayar',  [BsAdvanceController::class, 'pay'])->name('bs.advance.pay');
     Route::get('/business-support/bon-sementara/create',          [BsAdvanceController::class, 'create'])->name('bs.advance.create');
     Route::post('/business-support/bon-sementara',                 [BsAdvanceController::class, 'store'])->name('bs.advance.store');

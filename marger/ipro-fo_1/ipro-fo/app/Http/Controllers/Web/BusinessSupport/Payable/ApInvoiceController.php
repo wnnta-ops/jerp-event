@@ -331,8 +331,39 @@ class ApInvoiceController extends Controller
                 'journal_number'  => $m->journal?->journal_number,
             ]);
 
+        // Struktur jurnal pendaftaran invoice (Dr Akun + PPN Masukan / Cr Hutang + PPh).
+        // Ditarik dari journal_id invoice agar tampil di rincian AP.INV — penting untuk audit.
+        $journal = $invoice->journal_id
+            ? \App\Domain\BusinessSupport\Models\BsJournal::with(['lines' => fn ($q) => $q->orderBy('id'), 'lines.account:id,code,name'])->find($invoice->journal_id)
+            : null;
+        $journalData = null;
+        if ($journal) {
+            $ccCodes   = \Illuminate\Support\Facades\DB::table('bs_cost_centers')->pluck('code', 'id');
+            $deptCodes = \Illuminate\Support\Facades\DB::table('bs_departments')->pluck('code', 'id');
+            $journalData = [
+                'id'     => $journal->id,
+                'number' => $journal->journal_number,
+                'date'   => $journal->journal_date ? \Illuminate\Support\Carbon::parse($journal->journal_date)->toDateString() : null,
+                'lines'  => $journal->lines->map(function ($l) use ($ccCodes, $deptCodes) {
+                    $dim = collect([$ccCodes[$l->cost_center_id] ?? null, $deptCodes[$l->department_id] ?? null])->filter()->implode(' · ');
+
+                    return [
+                        'account_code' => $l->account?->code,
+                        'account_name' => $l->account?->name,
+                        'dimensi'      => $dim !== '' ? $dim : null,
+                        'description'  => $l->description,
+                        'debit'        => (float) $l->debit,
+                        'credit'       => (float) $l->credit,
+                    ];
+                })->values(),
+                'total_debit'  => round((float) $journal->lines->sum('debit'), 2),
+                'total_credit' => round((float) $journal->lines->sum('credit'), 2),
+            ];
+        }
+
         return Inertia::render('BusinessSupport/Payable/Show', [
             'invoice'       => array_merge($invoice->toArray(), ['payable_amount' => $invoice->payable_amount]),
+            'journal'       => $journalData,
             'outstanding'   => (float) $invoice->outstanding,
             'cashAccounts'  => BsAccount::where('is_active', true)->where('is_postable', true)->where('code', 'like', '101010%')->orderBy('code')->get(['id', 'code', 'name']),
             'defaultCash'   => $this->accId('cash'),
