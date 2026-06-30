@@ -77,6 +77,9 @@ class ClosingNupService
                 // Bawa Sales/Agent dari NUP (pendaftaran) bila closing tak menyetel —
                 // agar tampil di SPR & terhubung ke Komisi/BLT.
                 'agent_id' => $data['agent_id'] ?? $reg->agent_id,
+                // Sales FREE-TEXT (nama + telp) dari NUP → tercetak ke customer di SPRS.
+                'ref_sales_name' => $reg->ref_sales_name,
+                'ref_sales_phone' => $reg->ref_sales_phone,
                 'tgl_kontrak' => $data['tgl_kontrak'] ?? now()->toDateString(),
                 'harga_jual' => $harga,
                 'diskon' => 0,

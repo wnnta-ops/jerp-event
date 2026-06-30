@@ -22,6 +22,8 @@ class Kontrak extends TenantAwareModel
         'unit_id',
         'skema_id',
         'agent_id',
+        'ref_sales_name',
+        'ref_sales_phone',
         'tgl_kontrak',
         'tgl_berkas_lengkap',
         'harga_jual',

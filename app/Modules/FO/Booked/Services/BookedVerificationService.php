@@ -132,6 +132,19 @@ class BookedVerificationService
                 // Bank, No. Referensi (berita bank), & keterangan ikut dari Transfer Anonim
                 // yang dicocokkan finance saat verifikasi.
                 $transfer = $reg->transferAnonim;
+                // Cegah DOBEL GL: bila transfer anonim ini SUDAH dijurnal di BO "Tanpa Unit"
+                // (J1 = bank→titipan), JANGAN posting KAS_MASUK lagi (J2) → kas dihitung
+                // sekali. Gagal cek ipro_bo → tetap posting (jangan kehilangan jurnal).
+                $alreadyJournaled = false;
+                if ($transfer && config('ipro.sync_enabled', true)) {
+                    try {
+                        $alreadyJournaled = DB::connection(config('ipro.connection', 'ipro_bo'))
+                            ->table('tts_receipts')->where('tts_number', 'TA-'.$transfer->id)
+                            ->whereNotNull('journal_id')->exists();
+                    } catch (\Throwable $e) {
+                        $alreadyJournaled = false;
+                    }
+                }
                 $tts = Tts::create([
                     'tenant_id' => $reg->tenant_id,
                     'no_tts' => $this->numerator->next('TTS'),
@@ -145,7 +158,7 @@ class BookedVerificationService
                     'bank_id' => $transfer?->bank_id,
                     'no_referensi' => $transfer?->keterangan_bank,
                     'status' => 'KONFIRMASI',
-                    'skip_gl_posting' => false,
+                    'skip_gl_posting' => $alreadyJournaled,
                     'keterangan' => 'Booking fee Booked manual '.$reg->nama_pendaftar
                         .($transfer?->keterangan ? ' · '.$transfer->keterangan : ''),
                 ]);

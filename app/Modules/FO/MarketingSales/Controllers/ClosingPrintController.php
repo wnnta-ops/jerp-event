@@ -116,6 +116,8 @@ class ClosingPrintController extends Controller
         $reg->tipe_nup = $kontrak->unit?->unitType?->name ?: 'RUMAH';
         $reg->cara_bayar = $kontrak->cara_bayar;
         $reg->agent_id = $kontrak->agent_id;
+        $reg->ref_sales_name = $kontrak->ref_sales_name;
+        $reg->ref_sales_phone = $kontrak->ref_sales_phone;
         $reg->keterangan = $kontrak->keterangan;
         $reg->setRelation('customer', $kontrak->customer);
         $reg->setRelation('agent', $kontrak->agent);

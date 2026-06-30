@@ -18,7 +18,7 @@ type Row = {
     default_debit_account_id: number | null; default_credit_account_id: number | null;
     reject_reason: string | null; rejected_at: string | null;
 };
-const props = defineProps<{ rows: Row[]; accounts: Acc[]; tab: string; counts: { pending: number; rejected: number } }>();
+const props = defineProps<{ rows: Row[]; accounts: Acc[]; tab: string; counts: { pending: number; tanpa_unit: number; rejected: number } }>();
 
 const isRejected = computed(() => props.tab === 'rejected');
 function switchTab(tab: string) { if (tab !== props.tab) router.get(route('bs.cashbook.approval-utjdp'), { tab }, { preserveScroll: true }); }
@@ -153,8 +153,9 @@ const hSelCls = 'h-7 w-52 rounded border border-neutral-300 bg-white px-2 text-x
 
         <!-- Tab: Menunggu Approval / Ditolak -->
         <div class="flex w-fit gap-1 rounded-lg border border-neutral-300 p-0.5 text-sm dark:border-neutral-700">
-            <button @click="switchTab('pending')" class="rounded px-3 py-1.5 font-medium transition" :class="!isRejected ? 'bg-primary-600 text-white' : 'text-neutral-600 hover:bg-neutral-100 dark:text-neutral-300 dark:hover:bg-neutral-800'">Menunggu Approval <span class="opacity-70">({{ counts.pending }})</span></button>
-            <button @click="switchTab('rejected')" class="rounded px-3 py-1.5 font-medium transition" :class="isRejected ? 'bg-danger-600 text-white' : 'text-neutral-600 hover:bg-neutral-100 dark:text-neutral-300 dark:hover:bg-neutral-800'">Ditolak <span class="opacity-70">({{ counts.rejected }})</span></button>
+            <button @click="switchTab('pending')" class="rounded px-3 py-1.5 font-medium transition" :class="tab === 'pending' ? 'bg-primary-600 text-white' : 'text-neutral-600 hover:bg-neutral-100 dark:text-neutral-300 dark:hover:bg-neutral-800'">Menunggu Approval <span class="opacity-70">({{ counts.pending }})</span></button>
+            <button @click="switchTab('tanpa_unit')" class="rounded px-3 py-1.5 font-medium transition" :class="tab === 'tanpa_unit' ? 'bg-amber-600 text-white' : 'text-neutral-600 hover:bg-neutral-100 dark:text-neutral-300 dark:hover:bg-neutral-800'">Tanpa Unit <span class="opacity-70">({{ counts.tanpa_unit }})</span></button>
+            <button @click="switchTab('rejected')" class="rounded px-3 py-1.5 font-medium transition" :class="tab === 'rejected' ? 'bg-danger-600 text-white' : 'text-neutral-600 hover:bg-neutral-100 dark:text-neutral-300 dark:hover:bg-neutral-800'">Ditolak <span class="opacity-70">({{ counts.rejected }})</span></button>
         </div>
 
         <div class="flex items-center justify-between">

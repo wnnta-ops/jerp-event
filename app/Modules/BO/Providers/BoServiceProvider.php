@@ -8,6 +8,7 @@ use App\Modules\BO\GeneralLedger\Services\JurnalPostingService;
 use App\Modules\BO\IproBridge\Jobs\SyncFoToIproJob;
 use App\Modules\BO\IproBridge\Services\IproMasterSync;
 use App\Modules\FO\FinanceAR\Models\KprPengajuan;
+use App\Modules\FO\FinanceAR\Models\TransferAnonim;
 use App\Modules\FO\FinanceAR\Models\Tts;
 use App\Modules\FO\MarketingSales\Models\Customer;
 use App\Modules\FO\MarketingSales\Models\Kontrak;
@@ -59,5 +60,7 @@ class BoServiceProvider extends ServiceProvider
         Kontrak::saved(fn ($m) => $dispatch('syncSpr', $m));
         Tts::saved(fn ($m) => $dispatch('syncTts', $m));
         KprPengajuan::saved(fn ($m) => $dispatch('syncKpr', $m));
+        // Transfer Anonim → tts_receipts TANPA UNIT (muncul di BO Approval UTJ&DP "Tanpa Unit").
+        TransferAnonim::saved(fn ($m) => $dispatch('syncTransferAnonim', $m));
     }
 }

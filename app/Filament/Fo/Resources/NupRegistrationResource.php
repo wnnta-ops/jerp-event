@@ -56,6 +56,9 @@ class NupRegistrationResource extends Resource
                 Forms\Components\Select::make('channel')->label('Channel')->options([
                     'PUBLIC' => 'Public web', 'ADMIN' => 'Admin', 'AGENT' => 'Agent',
                 ])->default('ADMIN'),
+                Forms\Components\TextInput::make('ref_sales_name')->label('Sales (free text)')->maxLength(255)
+                    ->helperText('Nama sales yang TAMPIL ke customer di SPRS (boleh bukan dari master).'),
+                Forms\Components\TextInput::make('ref_sales_phone')->label('No. telp sales')->tel()->maxLength(32),
             ]),
 
             Forms\Components\Section::make('Status')->columns(3)->schema([

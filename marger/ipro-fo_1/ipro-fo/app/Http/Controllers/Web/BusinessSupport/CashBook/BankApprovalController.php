@@ -409,12 +409,15 @@ class BankApprovalController extends Controller
     {
         abort_unless($request->user()?->canModule('cashbook'), 403);
 
-        // Tab: 'pending' = TTS posted menunggu approval; 'rejected' = TTS yang ditolak.
-        $tab    = $request->input('tab') === 'rejected' ? 'rejected' : 'pending';
-        $status = $tab === 'rejected' ? 'rejected' : 'posted';
+        // Tab: 'pending' = posted BELUM dijurnal (menunggu approval); 'tanpa_unit' =
+        // sudah dijurnal TAPI tanpa unit (journal_id ada, booking_id null — mis. Transfer
+        // Anonim yg sudah di-posting tapi belum di-assign unit); 'rejected' = ditolak.
+        $tab = in_array($request->input('tab'), ['rejected', 'tanpa_unit'], true)
+            ? $request->input('tab') : 'pending';
         $counts = [
-            'pending'  => Tts::where('status', 'posted')->count(),
-            'rejected' => Tts::where('status', 'rejected')->count(),
+            'pending'    => Tts::where('status', 'posted')->whereNull('journal_id')->count(),
+            'tanpa_unit' => Tts::where('status', 'posted')->whereNotNull('journal_id')->whereNull('booking_id')->count(),
+            'rejected'   => Tts::where('status', 'rejected')->count(),
         ];
 
         $accounts = $this->postableAccounts();
@@ -423,7 +426,9 @@ class BankApprovalController extends Controller
             ?? ($accounts->firstWhere('code', config('business_support.gl_accounts.payable')));
 
         $tts = Tts::query()
-            ->where('status', $status)
+            ->when($tab === 'rejected', fn ($q) => $q->where('status', 'rejected'))
+            ->when($tab === 'tanpa_unit', fn ($q) => $q->where('status', 'posted')->whereNotNull('journal_id')->whereNull('booking_id'))
+            ->when($tab === 'pending', fn ($q) => $q->where('status', 'posted')->whereNull('journal_id'))
             ->with([
                 'customer:id,full_name',
                 // #164 — UNIT yang dibeli (via booking) untuk ditampilkan.

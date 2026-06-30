@@ -47,9 +47,13 @@
 
         $nama = $c?->full_name ?: $reg->nama_pendaftar;
         $alamat = $c?->alamatRingkas() ?: ($reg->keterangan ?: '—');
-        // Marketing = sales kontrak (utama), fallback ke agent/ref pendaftaran.
-        $sales = $k?->agent?->sales_label ?: ($k?->agent?->name
-            ?: ($reg->agent?->sales_label ?: ($reg->ref_sales_name ?: '—')));
+        // Marketing yang TERCETAK ke customer = sales FREE-TEXT (nama + telp) dari NUP.
+        // Master sales (agent) hanya fallback bila tak ada free-text (mis. kontrak langsung).
+        $sales = $k?->ref_sales_name ?: ($reg->ref_sales_name
+            ?: ($k?->agent?->sales_label ?: ($k?->agent?->name
+            ?: ($reg->agent?->sales_label ?: '—'))));
+        $salesPhone = $k?->ref_sales_phone ?: ($reg->ref_sales_phone
+            ?: ($k?->agent?->phone ?: ($k?->agent?->whatsapp ?: '')));
         // Sumber Informasi = Sumber Data pemasaran (master) yang dipilih saat daftar.
         $sumberInfo = $c?->sumber_data_label ?: '—';
 
@@ -157,7 +161,7 @@
 
     <div class="sign">
         <div class="c"><div class="line">{{ $nama ?: '' }}<br>Pembeli</div></div>
-        <div class="c"><div class="line">{{ $sales }}<br>Marketing</div></div>
+        <div class="c"><div class="line">{{ $sales }}@if($salesPhone)<br><span style="font-weight:400;font-size:10px;">{{ $salesPhone }}</span>@endif<br>Marketing</div></div>
         <div class="c"><div class="line">PT. MUP</div></div>
     </div>
 

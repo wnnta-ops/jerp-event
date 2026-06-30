@@ -199,6 +199,14 @@ class KontrakResource extends Resource
                                             ->action(fn (array $data, $livewire) => $livewire->submitSales($data)),
                                     ]),
                                 ]),
+
+                            Forms\Components\Section::make('Sales tercetak ke customer (SPRS)')
+                                ->description('Nama + no. telp sales yang TAMPIL ke customer di SPRS (free text, dibawa dari NUP). Terpisah dari master sales di atas — master yang mengikat untuk SPR/Komisi/BLT.')
+                                ->columns(2)
+                                ->schema([
+                                    Forms\Components\TextInput::make('ref_sales_name')->label('Nama sales (free text)')->maxLength(255),
+                                    Forms\Components\TextInput::make('ref_sales_phone')->label('No. telp sales')->tel()->maxLength(32),
+                                ]),
                         ]),
 
                     Forms\Components\Tabs\Tab::make('Jadwal Komisi')

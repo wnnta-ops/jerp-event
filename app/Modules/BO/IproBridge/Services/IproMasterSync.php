@@ -395,19 +395,115 @@ class IproMasterSync
             'updated_at'     => $now,
         ];
 
+        // Bila TTS ini berasal dari Transfer Anonim, MENYATU dgn placeholder tanpa-unit
+        // (key "TA-{id}") → satu baris yang bertransisi tanpa-unit → ada-unit (tak duplikat).
+        $anon = DB::table('fo_transfer_anonim')->where('tts_id', $t->id)->first();
+        $key = $anon ? 'TA-'.$anon->id : $t->no_tts;
+
         $existing = $this->db()->table('tts_receipts')
-            ->where('tenant_id', $this->tenantId)->where('tts_number', $t->no_tts)->first();
+            ->where('tenant_id', $this->tenantId)->where('tts_number', $key)->first();
 
         if ($existing) {
             $this->db()->table('tts_receipts')->where('id', $existing->id)->update($data);
+            // Baru dapat unit + sudah dijurnal (di BO "Tanpa Unit") → perbarui jurnal dgn unit.
+            if ($anon && ! $existing->booking_id && $bookingId && $existing->journal_id) {
+                $this->reclassifyJournalUnit((int) $existing->journal_id, $this->unitCodeForTransfer((int) $anon->id));
+            }
 
             return (int) $existing->id;
         }
 
-        $data['tts_number'] = $t->no_tts;
+        $data['tts_number'] = $key;
         $data['created_at'] = $now;
 
         return (int) $this->db()->table('tts_receipts')->insertGetId($data);
+    }
+
+    /**
+     * Transfer Anonim FO (fo_transfer_anonim) → ipro_bo.tts_receipts sbg penerimaan
+     * TANPA UNIT (booking_id null; customer null bila belum teridentifikasi). Muncul di
+     * BO "Approval UTJ & DP → Tanpa Unit"; approver posting GL di sana. Saat transfer
+     * ditarik jadi unit/SPR, baris ini MENYATU dgn TTS riil (syncTts key "TA-{id}") &
+     * jurnal diperbarui dgn unit. Return id receipt.
+     */
+    public function syncTransferAnonim(object $t): ?int
+    {
+        $custId = ! empty($t->customer_id) ? $this->iproCustomerIdByFo((int) $t->customer_id) : null;
+        $bookingId = $this->iproBookingIdForTransfer((int) $t->id);
+        $now = Carbon::now();
+        $key = 'TA-'.$t->id;
+
+        $existing = $this->db()->table('tts_receipts')
+            ->where('tenant_id', $this->tenantId)->where('tts_number', $key)->first();
+
+        $data = [
+            'tenant_id'      => $this->tenantId,
+            'customer_id'    => $custId,
+            'booking_id'     => $bookingId,
+            'amount'         => $t->amount ?? 0,
+            'payment_method' => 'TN',
+            'received_date'  => $t->tgl_transfer ?? $now->toDateString(),
+            'reference_no'   => $t->keterangan_bank ?? null,
+            'status'         => 'posted',   // tampil di Approval UTJ&DP (Tanpa Unit)
+            'received_by'    => $this->userId(),
+            'notes'          => 'Transfer Anonim'.($t->keterangan ? ' — '.$t->keterangan : ''),
+            'updated_at'     => $now,
+        ];
+
+        if ($existing) {
+            $this->db()->table('tts_receipts')->where('id', $existing->id)->update($data);
+            if (! $existing->booking_id && $bookingId && $existing->journal_id) {
+                $this->reclassifyJournalUnit((int) $existing->journal_id, $this->unitCodeForTransfer((int) $t->id));
+            }
+
+            return (int) $existing->id;
+        }
+
+        $data['tts_number'] = $key;
+        $data['created_at'] = $now;
+
+        return (int) $this->db()->table('tts_receipts')->insertGetId($data);
+    }
+
+    /** Booking ipro_bo dari Transfer Anonim (via NUP → reservasi → kontrak). */
+    private function iproBookingIdForTransfer(int $transferId): ?int
+    {
+        $resvId = DB::table('fo_nup_registrations')->where('transfer_anonim_id', $transferId)->value('reservasi_id');
+        if (! $resvId) {
+            return null;
+        }
+        $noK = DB::table('fo_kontrak')->where('reservasi_id', $resvId)->value('no_kontrak');
+        if (! $noK) {
+            return null;
+        }
+
+        return $this->db()->table('bookings')
+            ->where('tenant_id', $this->tenantId)->where('booking_number', $noK)->value('id');
+    }
+
+    /** Kode unit (FO) dari Transfer Anonim — untuk deskripsi jurnal. */
+    private function unitCodeForTransfer(int $transferId): ?string
+    {
+        $resvId = DB::table('fo_nup_registrations')->where('transfer_anonim_id', $transferId)->value('reservasi_id');
+        if (! $resvId) {
+            return null;
+        }
+        $unitId = DB::table('fo_kontrak')->where('reservasi_id', $resvId)->value('unit_id');
+
+        return $unitId ? DB::table('fo_units')->where('id', $unitId)->value('kode_unit') : null;
+    }
+
+    /** Perbarui deskripsi jurnal GL dgn unit saat penerimaan tanpa-unit akhirnya dapat unit. */
+    private function reclassifyJournalUnit(int $journalId, ?string $unitCode): void
+    {
+        if (! $unitCode) {
+            return;
+        }
+        $desc = (string) $this->db()->table('bs_journals')->where('id', $journalId)->value('description');
+        if ($desc !== '' && ! str_contains($desc, $unitCode)) {
+            $this->db()->table('bs_journals')->where('id', $journalId)
+                ->update(['description' => trim($desc.' · Unit '.$unitCode), 'updated_at' => Carbon::now()]);
+        }
     }
 
     /**
