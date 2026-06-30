@@ -6,8 +6,11 @@ use App\Filament\Fo\Resources\RefundResource\Pages;
 use App\Models\Bank;
 use App\Modules\FO\FinanceAR\Models\Refund;
 use App\Modules\FO\MarketingSales\Models\Customer;
+use App\Modules\FO\MarketingSales\Models\Kontrak;
+use App\Modules\FO\MarketingSales\Models\KontrakTagihan;
 use App\Support\Rupiah;
 use Filament\Forms;
+use Illuminate\Support\HtmlString;
 use Filament\Forms\Form;
 use Filament\Resources\Resource;
 use Filament\Tables;
@@ -29,20 +32,54 @@ class RefundResource extends Resource
 
     public static function form(Form $form): Form
     {
-        // Biaya admin = % dari UTJ (Nilai Kotor); Nilai Refund = Nilai Kotor − Biaya Admin.
-        $recompute = function (Forms\Get $get, Forms\Set $set) {
+        // Refund = Total Dibayar − Admin. Admin bisa diisi sbg % dari Total ATAU Rp langsung.
+        $fromPersen = function (Forms\Get $get, Forms\Set $set) {
             $kotor = Rupiah::toFloat($get('nilai_kotor'));
             $admin = round($kotor * (float) $get('biaya_admin_persen') / 100);
             $set('biaya_admin', $admin);
             $set('nilai_refund', max(0, $kotor - $admin));
         };
 
+        // Pilih kontrak (KPR/CASH) → auto-isi dari rincian tagihan yang SUDAH DIBAYAR:
+        //  - Total Dibayar = Σ pelunasan semua rincian (BF + DP + angsuran + ADM)
+        //  - Biaya Admin    = Σ pelunasan rincian ber-tipe ADM (tidak di-refund)
+        //  - Nilai Refund   = Total − ADM. (Pencairan KPR tak ikut: pelunasan=0 saat batal.)
+        $fillFromKontrak = function ($state, Forms\Set $set) {
+            if (! $state) {
+                return;
+            }
+            $k = Kontrak::with('customer')->find($state);
+            if (! $k) {
+                return;
+            }
+            [$total, $admin] = self::paidTotals((int) $k->id);
+            $set('nilai_kotor', $total);
+            $set('biaya_admin', $admin);
+            $set('biaya_admin_persen', $total > 0 ? round($admin / $total * 100, 2) : 0);
+            $set('nilai_refund', max(0, $total - $admin));
+            $set('customer_id', $k->customer_id);
+            $set('bank_id', $k->customer?->bank_id);
+            $set('rekening_tujuan', $k->customer?->no_rekening);
+            // Sumber refund (untuk dikelompokkan di AP BO): turun dari tahap kontrak.
+            $set('sumber', match ($k->tahap) {
+                'SPR' => 'SPR',
+                'SPRS' => 'SPRS',
+                default => 'TRANSFER_ANONIM',
+            });
+        };
+
         return $form->schema([
             Forms\Components\TextInput::make('no_refund')->label('No. Refund')->disabled()->dehydrated(false)->placeholder('otomatis (RF-...)')->visibleOn('edit'),
             Forms\Components\Select::make('jenis')->label('Jenis')->default('BOOKING')->required()
                 ->options(['BOOKING' => 'Refund Booking (batal)', 'LEBIH_BAYAR' => 'Lebih Bayar (Cash Back)']),
+            Forms\Components\Hidden::make('sumber'),
             Forms\Components\DatePicker::make('tgl_refund')->label('Tgl Refund')->default(now()),
-            // Pilih customer → Bank & Rekening Tujuan otomatis mengikuti data customer.
+            // Pilih Kontrak → auto-hitung refund dari yang sudah dibayar (tanpa ADM). KPR & CASH.
+            Forms\Components\Select::make('kontrak_id')->label('Kontrak (auto-hitung dari yang dibayar)')->searchable()->live()
+                ->options(fn () => Kontrak::with(['customer', 'unit'])->latest('id')->limit(300)->get()
+                    ->mapWithKeys(fn ($k) => [$k->id => trim($k->no_kontrak.' — '.($k->customer?->full_name ?? '').' — '.($k->unit?->kode_unit ?? ''), ' —')]))
+                ->afterStateUpdated(fn ($state, Forms\Set $set) => $fillFromKontrak($state, $set))
+                ->helperText('Pilih kontrak → Total Dibayar, ADM, & Refund terisi otomatis (boleh diedit).'),
             Forms\Components\Select::make('customer_id')->label('Customer')->searchable()->live()
                 ->options(fn () => Customer::query()->limit(300)->pluck('full_name', 'id'))
                 ->afterStateUpdated(function ($state, Forms\Set $set) {
@@ -50,27 +87,109 @@ class RefundResource extends Resource
                     $set('bank_id', $cust?->bank_id);
                     $set('rekening_tujuan', $cust?->no_rekening);
                 }),
-            Forms\Components\TextInput::make('nilai_kotor')->label('Nilai Kotor / UTJ (Rp)')->numeric()->rupiah()->default(0)
-                ->live(onBlur: true)->afterStateUpdated(fn (Forms\Get $get, Forms\Set $set) => $recompute($get, $set)),
-            Forms\Components\TextInput::make('biaya_admin_persen')->label('Biaya Admin (% dari UTJ)')->numeric()->suffix('%')->default(0)
+            Forms\Components\TextInput::make('nilai_kotor')->label('Total Dibayar Customer (Rp)')->numeric()->rupiah()->default(0)
+                ->readOnly(fn (Forms\Get $get) => filled($get('kontrak_id')))
+                ->formatStateUsing(fn ($state, ?Refund $record) => $record?->kontrak_id ? self::paidTotals((int) $record->kontrak_id)[0] : $state)
+                ->live(onBlur: true)->afterStateUpdated(fn (Forms\Get $get, Forms\Set $set) => $fromPersen($get, $set))
+                ->helperText('Ikut rincian kontrak (BF+DP+angsuran+ADM). Tanpa kontrak: ketik manual.'),
+            Forms\Components\TextInput::make('biaya_admin_persen')->label('Admin (% dari Total Dibayar)')->numeric()->suffix('%')->default(0)
                 ->dehydrated(false)->live(onBlur: true)
-                ->afterStateHydrated(function (Forms\Set $set, $record) {
-                    if ($record && (float) $record->nilai_kotor > 0) {
+                ->afterStateHydrated(function (Forms\Set $set, ?Refund $record) {
+                    if ($record?->kontrak_id) {
+                        [$t, $a] = self::paidTotals((int) $record->kontrak_id);
+                        $set('biaya_admin_persen', $t > 0 ? round($a / $t * 100, 2) : 0);
+                    } elseif ($record && (float) $record->nilai_kotor > 0) {
                         $set('biaya_admin_persen', round((float) $record->biaya_admin / (float) $record->nilai_kotor * 100, 2));
                     }
                 })
-                ->afterStateUpdated(fn (Forms\Get $get, Forms\Set $set) => $recompute($get, $set)),
-            Forms\Components\TextInput::make('biaya_admin')->label('Biaya Admin (Rp)')->numeric()->rupiah()->default(0)->readOnly()
-                ->helperText('= Nilai Kotor × Biaya Admin %'),
-            Forms\Components\TextInput::make('nilai_refund')->label('Nilai Refund (Rp)')->numeric()->rupiah()->default(0)->readOnly()
-                ->helperText('= Nilai Kotor − Biaya Admin'),
-            Forms\Components\Select::make('bank_id')->label('Bank Tujuan')->options(fn () => Bank::orderBy('name')->pluck('name', 'id'))->searchable()
-                ->helperText('Otomatis dari data rekening customer; bisa diubah.'),
+                ->afterStateUpdated(fn (Forms\Get $get, Forms\Set $set) => $fromPersen($get, $set))
+                ->helperText('Atur potongan admin di sini → Admin (Rp) & Refund otomatis menyesuaikan.'),
+            Forms\Components\TextInput::make('biaya_admin')->label('Admin / tidak di-refund (Rp)')->numeric()->rupiah()->default(0)->readOnly()
+                ->formatStateUsing(fn ($state, ?Refund $record) => $record?->kontrak_id ? self::paidTotals((int) $record->kontrak_id)[1] : $state)
+                ->helperText('= Total × % admin (otomatis). Default ikut ADM dari rincian.'),
+            Forms\Components\TextInput::make('nilai_refund')->label('Nilai Refund (Rp)')->numeric()->rupiah()->default(0)
+                ->formatStateUsing(function ($state, ?Refund $record) {
+                    if (! $record?->kontrak_id) {
+                        return $state;
+                    }
+                    [$t, $a] = self::paidTotals((int) $record->kontrak_id);
+
+                    return max(0, $t - $a);
+                })
+                ->helperText('= Total Dibayar − Admin. Otomatis, tapi bisa diubah.'),
+            // Rincian pembayaran (asal nominal) — seperti SPR, agar admin tahu dari mana.
+            Forms\Components\Placeholder::make('rincian')->label('Rincian Pembayaran (asal nominal)')->columnSpanFull()
+                ->content(fn (Forms\Get $get) => new HtmlString(self::rincianHtml(
+                    $get('kontrak_id') ? (int) $get('kontrak_id') : null,
+                    Rupiah::toFloat($get('biaya_admin')),
+                    Rupiah::toFloat($get('nilai_refund')),
+                ))),
+            Forms\Components\Select::make('bank_id')->label('Bank Tujuan')->searchable()->live()
+                ->options(fn () => Bank::orderBy('name')->pluck('name', 'id')->put(0, 'Lain-lain (ketik manual)'))
+                ->dehydrateStateUsing(fn ($state) => ((int) $state) === 0 ? null : $state)
+                ->afterStateHydrated(fn (Forms\Set $set, $state, $record) => $set('bank_id', $state ?: ($record?->bank_nama ? 0 : null)))
+                ->helperText('Otomatis dari rekening customer. Pilih "Lain-lain" untuk ketik bank sendiri.'),
+            Forms\Components\TextInput::make('bank_nama')->label('Nama Bank (ketik manual)')->maxLength(100)
+                ->visible(fn (Forms\Get $get) => (int) $get('bank_id') === 0)
+                ->required(fn (Forms\Get $get) => (int) $get('bank_id') === 0)
+                ->dehydrateStateUsing(fn ($state, Forms\Get $get) => (int) $get('bank_id') === 0 ? $state : null),
             Forms\Components\TextInput::make('rekening_tujuan')->label('Rekening Tujuan'),
             Forms\Components\Select::make('status')->label('Status')->default('DRAFT')
                 ->options(['DRAFT' => 'Draft', 'DIPROSES' => 'Diproses', 'SELESAI' => 'Selesai', 'BATAL' => 'Batal']),
             Forms\Components\Textarea::make('keterangan')->label('Keterangan')->rows(2)->columnSpanFull(),
         ])->columns(2);
+    }
+
+    /** [total dibayar, total ADM dibayar] dari rincian tagihan kontrak — 1 sumber angka. */
+    public static function paidTotals(?int $kontrakId): array
+    {
+        if (! $kontrakId) {
+            return [0.0, 0.0];
+        }
+        $t = KontrakTagihan::where('kontrak_id', $kontrakId)->get();
+
+        return [(float) $t->sum('pelunasan'), (float) $t->where('tipe', 'ADM')->sum('pelunasan')];
+    }
+
+    /**
+     * Tabel HTML rincian pembayaran (yang sudah dibayar) → asal Nilai Refund (gaya SPR).
+     * $adminOverride / $refundOverride: jika diisi, footer Admin & Refund ikut nilai form
+     * (mis. admin % yang diatur user) — bukan ADM tagihan saja → tetap clop dengan field atas.
+     */
+    public static function rincianHtml(?int $kontrakId, ?float $adminOverride = null, ?float $refundOverride = null): string
+    {
+        if (! $kontrakId) {
+            return '<em style="color:#94a3b8;">Pilih Kontrak untuk melihat rincian pembayaran.</em>';
+        }
+        $rows = KontrakTagihan::where('kontrak_id', $kontrakId)->where('pelunasan', '>', 0)->orderBy('urutan')->get();
+        if ($rows->isEmpty()) {
+            return '<em style="color:#94a3b8;">Belum ada pembayaran pada kontrak ini.</em>';
+        }
+        $rp = fn ($v) => 'Rp '.number_format((float) $v, 0, ',', '.');
+        $td = fn ($t, $align = 'left') => '<td style="padding:4px 10px;border-bottom:1px solid #e2e8f0;text-align:'.$align.';">'.$t.'</td>';
+
+        $body = '';
+        foreach ($rows as $r) {
+            $isAdm = $r->tipe === 'ADM';
+            $body .= '<tr style="'.($isAdm ? 'color:#b45309;' : '').'">'
+                .$td('<strong>'.e((string) $r->tipe).'</strong>')
+                .$td(e((string) $r->nama_tagihan).($isAdm ? ' <em>(tidak di-refund)</em>' : ''))
+                .$td($rp($r->pelunasan), 'right').'</tr>';
+        }
+        $total = (float) $rows->sum('pelunasan');
+        $admin = $adminOverride ?? (float) $rows->where('tipe', 'ADM')->sum('pelunasan');
+        $refund = $refundOverride ?? max(0, $total - $admin);
+        $footRow = fn (string $label, $val, string $style) => '<tr style="'.$style.'"><td colspan="2" style="padding:5px 10px;text-align:right;">'.$label.'</td>'
+            .'<td style="padding:5px 10px;text-align:right;">'.$rp($val).'</td></tr>';
+
+        return '<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:12px;">'
+            .'<thead><tr style="text-align:left;color:#64748b;border-bottom:1px solid #cbd5e1;">'
+            .'<th style="padding:5px 10px;">Tipe</th><th style="padding:5px 10px;">Keterangan</th><th style="padding:5px 10px;text-align:right;">Dibayar</th></tr></thead>'
+            .'<tbody>'.$body
+            .$footRow('Total Dibayar', $total, 'font-weight:700;border-top:2px solid #94a3b8;')
+            .$footRow('− Admin', $admin, 'color:#b45309;')
+            .$footRow('NILAI REFUND', $refund, 'font-weight:800;color:#16a34a;')
+            .'</tbody></table></div>';
     }
 
     public static function table(Table $table): Table
@@ -79,6 +198,8 @@ class RefundResource extends Resource
             ->columns([
                 Tables\Columns\TextColumn::make('no_refund')->label('No')->badge()->color('primary')->searchable()->sortable(),
                 Tables\Columns\TextColumn::make('jenis')->label('Jenis')->badge()->color(fn (?string $state) => $state === 'BOOKING' ? 'info' : 'warning'),
+                Tables\Columns\TextColumn::make('sumber')->label('Sumber')->badge()->color('gray')->placeholder('—')
+                    ->formatStateUsing(fn (?string $state) => $state ? str_replace('_', ' ', $state) : '—'),
                 Tables\Columns\TextColumn::make('customer.full_name')->label('Customer')->placeholder('—')->limit(24),
                 Tables\Columns\TextColumn::make('kontrak.unit.kode_unit')->label('Unit')->placeholder('—')->searchable(),
                 Tables\Columns\TextColumn::make('tgl_refund')->label('Tgl')->date('d M Y')->sortable(),
@@ -93,12 +214,13 @@ class RefundResource extends Resource
             ])
             ->headerActions([Tables\Actions\CreateAction::make()])
             ->actions([
-                // Proses refund: isi tgl & rekening, tandai SELESAI, lalu posting jurnal
-                // kas keluar ke BO (FOBO bridge, jenis REFUND).
-                Tables\Actions\Action::make('proses')->label('Proses & Posting BO')->icon('heroicon-o-check-circle')->color('success')
+                // Proses refund: isi tgl & rekening, lalu KIRIM ke antrian Posting Invoice BO
+                // (ditampung per jenis). BELUM jadi hutang AP — BO yang menerbitkan invoice
+                // hutang dari Posting Invoice; baru setelah itu masuk Account Payable.
+                Tables\Actions\Action::make('proses')->label('Proses & Kirim ke BO')->icon('heroicon-o-paper-airplane')->color('success')
                     ->visible(fn (Refund $r) => in_array($r->status, ['DRAFT', 'DIPROSES']) && (float) $r->nilai_refund > 0)
-                    ->modalHeading('Proses Refund → Posting BO')
-                    ->modalDescription('Isi tanggal & rekening pembayaran refund, lalu tandai SELESAI dan posting jurnal kas keluar ke BO.')
+                    ->modalHeading('Proses Refund → Posting Invoice BO')
+                    ->modalDescription('Isi tanggal & rekening, lalu kirim ke antrian Posting Invoice BO (ditampung per jenis). BO menerbitkan invoice hutang dari sana — baru kemudian masuk Account Payable.')
                     ->fillForm(fn (Refund $r) => ['tgl_refund' => $r->tgl_refund, 'bank_id' => $r->bank_id, 'rekening_tujuan' => $r->rekening_tujuan])
                     ->form([
                         Forms\Components\DatePicker::make('tgl_refund')->label('Tgl Refund')->default(now())->required(),
@@ -106,26 +228,22 @@ class RefundResource extends Resource
                         Forms\Components\TextInput::make('rekening_tujuan')->label('Rekening Tujuan'),
                     ])
                     ->action(function (Refund $r, array $data) {
+                        $sumber = $r->sumber ?: match ($r->kontrak?->tahap) {
+                            'SPR' => 'SPR', 'SPRS' => 'SPRS', default => 'TRANSFER_ANONIM',
+                        };
                         $r->update([
                             'tgl_refund' => $data['tgl_refund'],
                             'bank_id' => $data['bank_id'] ?? null,
                             'rekening_tujuan' => $data['rekening_tujuan'] ?? null,
-                            'status' => 'SELESAI',
+                            'sumber' => $sumber,
+                            'status' => 'DIPROSES',
                         ]);
                         try {
-                            \App\Modules\FO\Shared\Events\FoFinancialEvent::dispatch(
-                                jenis: 'REFUND',
-                                sourceModul: 'FO.FinanceAR',
-                                sourceNo: $r->no_refund,
-                                amount: (float) $r->nilai_refund,
-                                tgl: $r->tgl_refund->toDateString(),
-                                keterangan: 'Refund '.$r->no_refund.($r->customer ? ' — '.$r->customer->full_name : ''),
-                                meta: ['refund_id' => $r->id, 'customer_id' => $r->customer_id, 'kontrak_id' => $r->kontrak_id],
-                            );
-                            \Filament\Notifications\Notification::make()->success()->title('Refund SELESAI & diposting ke BO')
-                                ->body('Jurnal kas keluar refund '.$r->no_refund.' dikirim ke BO.')->send();
+                            app(\App\Modules\BO\IproBridge\Services\IproApPoster::class)->queueRefund($r->load(['customer', 'kontrak']));
+                            \Filament\Notifications\Notification::make()->success()->title('Refund dikirim ke Posting Invoice BO')
+                                ->body('Refund '.$r->no_refund.' ('.str_replace('_', ' ', $sumber).') menunggu diposting di BO → Posting Invoice. Setelah diposting baru masuk Account Payable.')->send();
                         } catch (\Throwable $e) {
-                            \Filament\Notifications\Notification::make()->warning()->title('Refund SELESAI, tapi posting BO gagal')
+                            \Filament\Notifications\Notification::make()->warning()->title('Status DIPROSES, tapi kirim ke BO gagal')
                                 ->body($e->getMessage())->persistent()->send();
                         }
                     }),

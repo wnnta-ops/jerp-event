@@ -18,7 +18,7 @@ class BsApInvoice extends Model
     protected $fillable = [
         'tenant_id', 'invoice_number', 'invoice_date', 'receive_date', 'due_date', 'term_days', 'supplier_id',
         'unit_id', 'customer_id',
-        'category_id', 'supplier_invoice_no', 'tax_invoice_no', 'manual_no', 'trx_type', 'source_type', 'source_id',
+        'category_id', 'supplier_invoice_no', 'tax_invoice_no', 'manual_no', 'trx_type', 'source_type', 'source_id', 'refund_source',
         'expense_account_id', 'payable_account_id', 'description', 'berkas_notes', 'transfer_detail', 'kurs',
         'dpp', 'ppn_pct', 'ppn_amount', 'ppn_base', 'ppn_mode', 'pph_mode', 'pph_type', 'pph_pct', 'pph_base', 'pph_amount', 'pph_account_id',
         'total', 'net_payable', 'paid_amount', 'status', 'journal_id', 'created_by',

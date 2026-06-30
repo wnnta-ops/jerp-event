@@ -51,6 +51,24 @@ class RealisasiKomisi extends Page implements HasTable
                 Tables\Actions\Action::make('cetak')->label('Cetak')->icon('heroicon-o-printer')->color('gray')->button()
                     ->url(fn (Komisi $r) => route('fo.cetak.pengajuan-komisi', ['pengajuan' => $r->no_pengajuan]))
                     ->openUrlInNewTab(),
+                // Posting BO: kirim batch (Total NETT) ke antrian Posting Invoice BO (Sumber: Komisi).
+                Tables\Actions\Action::make('postingBo')->label('Posting BO')->icon('heroicon-o-paper-airplane')->color('success')->button()
+                    ->requiresConfirmation()
+                    ->modalHeading('Posting Komisi ke BO')
+                    ->modalDescription(fn (Komisi $r) => 'Kirim batch '.$r->no_pengajuan.' ('.$r->jml.' komisi, NETT Rp '.number_format((float) $r->total_nett, 0, ',', '.').') ke Posting Invoice BO. Jadi hutang AP setelah diposting di BO.')
+                    ->action(function (Komisi $r) {
+                        try {
+                            app(\App\Modules\BO\IproBridge\Services\IproApPoster::class)->queueKomisi(
+                                (string) $r->no_pengajuan,
+                                (float) $r->total_nett,
+                                $r->tgl_bayar ? \Illuminate\Support\Carbon::parse($r->tgl_bayar)->toDateString() : null,
+                            );
+                            Notification::make()->success()->title('Komisi dikirim ke Posting Invoice BO')
+                                ->body('Batch '.$r->no_pengajuan.' menunggu diposting di BO → Posting Invoice (Sumber: Komisi).')->send();
+                        } catch (\Throwable $e) {
+                            Notification::make()->warning()->title('Gagal kirim ke BO')->body($e->getMessage())->persistent()->send();
+                        }
+                    }),
                 Tables\Actions\Action::make('batal')->label('Batal')->icon('heroicon-o-arrow-uturn-left')->color('danger')->button()
                     ->requiresConfirmation()
                     ->modalHeading('Batalkan Realisasi Komisi')

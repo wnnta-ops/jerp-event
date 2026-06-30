@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { router, Link } from '@inertiajs/vue3';
-import { ref } from 'vue';
-import { ArrowLeft, Landmark } from 'lucide-vue-next';
+import { ref, computed } from 'vue';
+import { ArrowLeft, Landmark, FileSpreadsheet, Printer } from 'lucide-vue-next';
 import EmptyState from '@/Components/UI/EmptyState.vue';
 
 const props = defineProps<{ rows: Array<any>; total: number; asOf: string }>();
@@ -9,13 +9,22 @@ const asOf = ref(props.asOf);
 function applyAsOf() {
     router.get(route('bs.cashbook.balances'), { as_of: asOf.value || undefined }, { preserveState: true, replace: true });
 }
+// #9: parameter unduhan mengikuti tanggal "s/d" yang sedang ditampilkan.
+const exportParams = computed<Record<string, any>>(() => (props.asOf ? { as_of: props.asOf } : {}));
 function fmtRp(v: number) { return 'Rp ' + Number(v ?? 0).toLocaleString('id-ID'); }
 function fmtDate(d: string) { return d ? new Date(d).toLocaleDateString('id-ID', { day: '2-digit', month: 'long', year: 'numeric' }) : '—'; }
 </script>
 <template>
     <div class="max-w-3xl space-y-4">
         <Link :href="route('bs.cashbook.index')" class="inline-flex items-center gap-2 text-sm text-neutral-500 hover:text-neutral-800 dark:hover:text-neutral-200"><ArrowLeft class="h-4 w-4" /> Cash Book</Link>
-        <h1 class="flex items-center gap-2 text-2xl font-bold"><Landmark class="h-6 w-6 text-primary-600" /> Saldo Rekening</h1>
+        <div class="flex flex-wrap items-center justify-between gap-2">
+            <h1 class="flex items-center gap-2 text-2xl font-bold"><Landmark class="h-6 w-6 text-primary-600" /> Saldo Rekening</h1>
+            <!-- #9: Excel + PDF mengikuti tanggal s/d terpilih -->
+            <div class="flex flex-wrap items-center gap-2">
+                <a :href="route('bs.cashbook.balances.excel', exportParams)" class="inline-flex items-center gap-1.5 rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-50 dark:border-neutral-600 dark:bg-neutral-800 dark:text-neutral-200"><FileSpreadsheet class="h-4 w-4" /> Excel</a>
+                <a :href="route('bs.cashbook.balances.pdf', exportParams)" target="_blank" rel="noopener" class="inline-flex items-center gap-1.5 rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-50 dark:border-neutral-600 dark:bg-neutral-800 dark:text-neutral-200"><Printer class="h-4 w-4" /> PDF</a>
+            </div>
+        </div>
         <p class="text-sm text-neutral-500">Saldo kas &amp; bank dihitung langsung dari jurnal terposting (General Ledger).</p>
 
         <!-- #84: pilih saldo per tanggal (s/d) -->

@@ -4,7 +4,6 @@ namespace App\Modules\FO\FinanceAR\Services;
 
 use App\Modules\FO\FinanceAR\Models\Bkm;
 use App\Modules\FO\MarketingSales\Models\KontrakTagihan;
-use App\Modules\FO\Shared\Events\FoFinancialEvent;
 use App\Services\Numerator\NumeratorServiceInterface;
 use Illuminate\Support\Facades\DB;
 use RuntimeException;
@@ -67,16 +66,9 @@ class PembayaranService
                 'keterangan' => $opts['keterangan'] ?? ('Pembayaran '.$tagihan->nama_tagihan.' — '.$kontrak->no_kontrak),
             ]);
 
-            FoFinancialEvent::dispatch(
-                jenis: 'KAS_MASUK',
-                sourceModul: 'FO.FinanceAR',
-                sourceNo: $bkm->no_bkm,
-                amount: (float) $bkm->amount,
-                tgl: $tgl,
-                keterangan: 'Penerimaan '.$tagihan->nama_tagihan.' '.$bkm->no_bkm.' ('.$kontrak->no_kontrak.')',
-                meta: ['bkm_id' => $bkm->id, 'kontrak_id' => $kontrak->id, 'kontrak_tagihan_id' => $tagihan->id, 'customer_id' => $kontrak->customer_id],
-            );
-
+            // GL TIDAK auto-posting lagi. Pelunasan dikirim ke BO "Approval UTJ & DP" lewat
+            // tombol "Posting BO" di daftar Kwitansi → jurnal GL terbentuk saat BO memilih
+            // akun Debit/Kredit & menyetujui (cegah jurnal dobel).
             return $bkm;
         });
     }

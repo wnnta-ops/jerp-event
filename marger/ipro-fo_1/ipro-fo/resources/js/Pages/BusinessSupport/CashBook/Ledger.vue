@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { ref } from 'vue';
+import { ref, computed } from 'vue';
 import { router, Link } from '@inertiajs/vue3';
-import { ArrowLeft, BookOpen } from 'lucide-vue-next';
+import { ArrowLeft, BookOpen, FileSpreadsheet, Printer } from 'lucide-vue-next';
 import EmptyState from '@/Components/UI/EmptyState.vue';
 import SearchSelect from '@/Components/UI/SearchSelect.vue';
 
@@ -18,6 +18,14 @@ const account = ref(props.accountId ?? '');
 const from = ref(props.filters.from ?? '');
 const to = ref(props.filters.to ?? '');
 function display() { router.get(route('bs.cashbook.ledger'), { account_id: account.value || undefined, from: from.value || undefined, to: to.value || undefined }, { preserveState: true, replace: true }); }
+// #9: parameter unduhan mengikuti rekening + rentang yang sedang ditampilkan (server-side).
+const exportParams = computed<Record<string, any>>(() => {
+    const p: Record<string, any> = {};
+    if (props.accountId) p.account_id = props.accountId;
+    if (props.filters.from) p.from = props.filters.from;
+    if (props.filters.to) p.to = props.filters.to;
+    return p;
+});
 function fmtRp(v: number) { return Number(v ?? 0).toLocaleString('id-ID'); }
 function fmtDate(d: string) { return d ? new Date(d).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'; }
 const inputCls = 'h-9 rounded-lg border border-neutral-300 bg-white px-3 text-sm dark:border-neutral-700 dark:bg-neutral-900';
@@ -26,7 +34,14 @@ const inputCls = 'h-9 rounded-lg border border-neutral-300 bg-white px-3 text-sm
 <template>
     <div class="space-y-4">
         <Link :href="route('bs.cashbook.home')" class="inline-flex items-center gap-2 text-sm text-neutral-500 hover:text-neutral-800 dark:hover:text-neutral-200"><ArrowLeft class="h-4 w-4" /> Cash Book</Link>
-        <h1 class="flex items-center gap-2 text-2xl font-bold"><BookOpen class="h-6 w-6 text-primary-600" /> Rekening Ledger</h1>
+        <div class="flex flex-wrap items-center justify-between gap-2">
+            <h1 class="flex items-center gap-2 text-2xl font-bold"><BookOpen class="h-6 w-6 text-primary-600" /> Rekening Ledger</h1>
+            <!-- #9: Excel + PDF mengikuti rekening & rentang terpilih (muncul setelah rekening dipilih) -->
+            <div v-if="accountId" class="flex flex-wrap items-center gap-2">
+                <a :href="route('bs.cashbook.ledger.excel', exportParams)" class="inline-flex items-center gap-1.5 rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-50 dark:border-neutral-600 dark:bg-neutral-800 dark:text-neutral-200"><FileSpreadsheet class="h-4 w-4" /> Excel</a>
+                <a :href="route('bs.cashbook.ledger.pdf', exportParams)" target="_blank" rel="noopener" class="inline-flex items-center gap-1.5 rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-50 dark:border-neutral-600 dark:bg-neutral-800 dark:text-neutral-200"><Printer class="h-4 w-4" /> PDF</a>
+            </div>
+        </div>
 
         <div class="card flex flex-wrap items-end gap-3 p-4">
             <div class="min-w-[260px] flex-1"><label class="mb-1 block text-xs font-medium text-neutral-500">Rekening Kas/Bank</label><SearchSelect v-model="account" :options="accounts" placeholder="— pilih rekening —" /></div>

@@ -141,6 +141,7 @@ class ApprovalExecutionService
                 'tenant_id' => $k->tenant_id ?? 1,
                 'tgl_refund' => null, // diisi di Finance → Refund saat diproses
                 'jenis' => 'BOOKING',
+                'sumber' => $k->tahap === 'SPRS' ? 'SPRS' : 'SPR', // untuk kelompok AP BO
                 'customer_id' => $k->customer_id,
                 'kontrak_id' => $k->id,
                 'nilai_kotor' => (float) ($baru['total_pelunasan'] ?? $pengembalian),

@@ -2,6 +2,7 @@
 
 namespace App\Filament\Fo\Pages;
 
+use App\Filament\Fo\Resources\RefundResource;
 use App\Modules\FO\Approval\Models\Approval;
 use App\Modules\FO\Approval\Services\ApprovalService;
 use App\Modules\FO\MarketingSales\Models\Kontrak;
@@ -41,11 +42,12 @@ class PembatalanKontrak extends Page implements HasForms, HasTable
     public function table(Table $table): Table
     {
         return $table
-            ->query(Kontrak::query()->with(['unit', 'customer', 'agent'])->where('tahap', 'SPR')->where('status', 'AKTIF'))
-            ->heading('Daftar Kontrak (SPR)')
-            ->description('Hanya kontrak SPR (final). Ajukan pembatalan — pengajuan masuk ke Approval Pembatalan.')
+            ->query(Kontrak::query()->with(['unit', 'customer', 'agent'])->whereIn('tahap', ['SPR', 'SPRS'])->where('status', 'AKTIF'))
+            ->heading('Daftar Kontrak (SPR & SPRS)')
+            ->description('Kontrak SPR (final) & SPRS (booking). Ajukan pembatalan — pengajuan masuk ke Approval Pembatalan; saat disetujui, Refund otomatis dibuat (sumber SPR/SPRS).')
             ->columns([
                 Tables\Columns\TextColumn::make('no_kontrak')->label('No. Kontrak')->badge()->color('info')->searchable()->sortable(),
+                Tables\Columns\TextColumn::make('tahap')->label('Tahap')->badge()->color(fn (?string $s) => $s === 'SPR' ? 'success' : 'warning'),
                 Tables\Columns\TextColumn::make('unit.kode_unit')->label('Unit')->placeholder('—')->searchable(),
                 Tables\Columns\TextColumn::make('customer.full_name')->label('Customer')->searchable()->weight('bold'),
                 Tables\Columns\TextColumn::make('agent.name')->label('Sales')->placeholder('—'),
@@ -68,10 +70,10 @@ class PembatalanKontrak extends Page implements HasForms, HasTable
                     ->form([
                         Forms\Components\Radio::make('alasan')->label('Alasan Pembatalan')->required()->live()
                             ->afterStateUpdated(function ($state, Forms\Get $get, Forms\Set $set) {
-                                // Reject Bank / Kol 5 / Tutup Buku → UTJ otomatis kembali.
-                                // Batal Sepihak → 0 (UTJ hangus). Lainnya → diisi manual.
+                                // Reject Bank / Kol 5 / Tutup Buku → kembalikan SEMUA yang sudah dibayar customer (− admin).
+                                // Batal Sepihak → 0 (hangus). Lainnya → diisi manual.
                                 if (in_array($state, ['REJECT_BANK', 'KOL_5', 'TUTUP_BUKU'], true)) {
-                                    $set('refund_utj', (float) $get('utj_amount'));
+                                    $set('refund_utj', (float) $get('paid_net'));
                                 } elseif ($state === 'BATAL_SEPIHAK') {
                                     $set('refund_utj', 0);
                                 }
@@ -87,10 +89,16 @@ class PembatalanKontrak extends Page implements HasForms, HasTable
                             ->visible(fn (Forms\Get $get) => $get('alasan') === 'LAINNYA')
                             ->required(fn (Forms\Get $get) => $get('alasan') === 'LAINNYA'),
                         Forms\Components\DatePicker::make('tgl_pembatalan')->label('Tgl Pembatalan')->default(now())->required(),
-                        Forms\Components\Hidden::make('utj_amount')->default(fn (Kontrak $record) => (float) ($record->reservasi?->booking_fee ?? 0)),
-                        Forms\Components\TextInput::make('refund_utj')->label('Refund (UTJ)')->numeric()->rupiah()->default(0)
+                        Forms\Components\Hidden::make('paid_net')->default(function (Kontrak $record) {
+                            [$total, $admin] = RefundResource::paidTotals((int) $record->id);
+
+                            return max(0, $total - $admin);
+                        }),
+                        Forms\Components\TextInput::make('refund_utj')->label('Refund (dari yang sudah dibayar)')->numeric()->rupiah()->default(0)
                             ->readOnly(fn (Forms\Get $get) => $get('alasan') !== 'LAINNYA')
-                            ->helperText('Batal Sepihak: 0 (UTJ hangus). Reject Bank / Kol 5 / Tutup Buku: UTJ otomatis. Lainnya: isi manual. Tgl refund diisi di menu Finance → Refund saat diproses.'),
+                            ->helperText('Reject Bank / Kol 5 / Tutup Buku: otomatis = TOTAL yang sudah dibayar customer (− admin). Batal Sepihak: 0 (hangus). Lainnya: isi manual. Pencairan di menu Finance → Refund.'),
+                        Forms\Components\Placeholder::make('rincian')->label('Rincian yang sudah dibayar customer')
+                            ->content(fn (Kontrak $record) => new HtmlString(RefundResource::rincianHtml((int) $record->id))),
                     ])
                     ->action(function (Kontrak $record, array $data) {
                         $alasanLabel = $data['alasan'] === 'LAINNYA'

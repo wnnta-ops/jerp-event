@@ -9,7 +9,8 @@ import ColumnFilter from '@/Components/UI/ColumnFilter.vue';
 
 type Row = {
     id: number; invoice_number: string; invoice_date: string | null; receive_date: string | null; due_date: string | null;
-    supplier: { name: string } | null; description: string | null; berkas_notes: string | null;
+    supplier: { name: string } | null; customer: { name: string } | null; source_type: string | null; refund_source: string | null;
+    description: string | null; berkas_notes: string | null;
     status: string; payable: number; sisa: number;
 };
 const props = defineProps<{ invoices: Row[] }>();
@@ -25,7 +26,18 @@ const todayStr = (() => { const d = new Date(); return `${d.getFullYear()}-${Str
 const dNo = (r: Row) => r.invoice_number ?? '';
 const dTgl = (r: Row) => fmtDate(r.invoice_date);
 const dTerima = (r: Row) => fmtDate(r.receive_date);
-const dSupplier = (r: Row) => r.supplier?.name ?? '—';
+const dSupplier = (r: Row) => r.supplier?.name ?? r.customer?.name ?? '—';
+// Sumber tagihan: PO / SPK / Refund (per jenis: SPR / SPRS / Transfer Anonim) / Manual.
+const SUMBER_LABEL: Record<string, string> = { SPR: 'Refund: SPR', SPRS: 'Refund: SPRS', TRANSFER_ANONIM: 'Refund: Transfer Anonim' };
+const dSumber = (r: Row) => {
+    if (r.source_type === 'refund') return SUMBER_LABEL[r.refund_source ?? ''] ?? 'Refund';
+    if (r.source_type === 'komisi') return 'Komisi';
+    if (r.source_type === 'blt') return 'BLT';
+    if (r.source_type === 'gmc') return 'GMC';
+    if (r.source_type === 'po') return 'PO';
+    if (r.source_type === 'spk') return 'SPK';
+    return 'Manual';
+};
 const dKet = (r: Row) => r.description ?? '';
 const dTotal = (r: Row) => fmtRp(r.payable);
 const dSisa = (r: Row) => fmtRp(r.sisa);
@@ -41,6 +53,7 @@ const optNo = computed(() => distinct(dNo));
 const optTgl = computed(() => distinct(dTgl));
 const optTerima = computed(() => distinct(dTerima));
 const optSupplier = computed(() => distinct(dSupplier));
+const optSumber = computed(() => distinct(dSumber));
 const optKet = computed(() => distinct(dKet));
 const optTotal = computed(() => distinct(dTotal));
 const optSisa = computed(() => distinct(dSisa));
@@ -49,20 +62,21 @@ const optBerkas = computed(() => distinct(dBerkas));
 
 // Filter global + checklist per-kolom (kosong = tampilkan semua). Semua di sisi klien.
 const search = ref('');
-const col = reactive<Record<string, string[]>>({ no: [], tgl: [], terima: [], supplier: [], ket: [], total: [], sisa: [], status: [], berkas: [] });
+const col = reactive<Record<string, string[]>>({ no: [], tgl: [], terima: [], supplier: [], sumber: [], ket: [], total: [], sisa: [], status: [], berkas: [] });
 const hasFilter = computed(() => Boolean(search.value) || Object.values(col).some((a) => a.length));
 function resetFilter() { search.value = ''; (Object.keys(col) as Array<keyof typeof col>).forEach((k) => (col[k] = [])); }
 
 const filtered = computed<Row[]>(() => props.invoices.filter((r) => {
     if (search.value) {
         const q = search.value.toLowerCase();
-        const hay = [dNo(r), dTgl(r), dTerima(r), dSupplier(r), dKet(r), dTotal(r), dSisa(r), dStatus(r), dBerkas(r)].join(' ').toLowerCase();
+        const hay = [dNo(r), dTgl(r), dTerima(r), dSupplier(r), dSumber(r), dKet(r), dTotal(r), dSisa(r), dStatus(r), dBerkas(r)].join(' ').toLowerCase();
         if (!hay.includes(q)) return false;
     }
     if (col.no.length && !col.no.includes(dNo(r))) return false;
     if (col.tgl.length && !col.tgl.includes(dTgl(r))) return false;
     if (col.terima.length && !col.terima.includes(dTerima(r))) return false;
     if (col.supplier.length && !col.supplier.includes(dSupplier(r))) return false;
+    if (col.sumber.length && !col.sumber.includes(dSumber(r))) return false;
     if (col.ket.length && !col.ket.includes(dKet(r))) return false;
     if (col.total.length && !col.total.includes(dTotal(r))) return false;
     if (col.sisa.length && !col.sisa.includes(dSisa(r))) return false;
@@ -88,10 +102,10 @@ const summary = computed(() => {
 });
 
 // Bila data berubah (mis. reload), buang nilai filter yang sudah tak ada agar tak diam-diam mengosongkan tabel.
-watch([optNo, optTgl, optTerima, optSupplier, optKet, optTotal, optSisa, optStatus, optBerkas], () => {
+watch([optNo, optTgl, optTerima, optSupplier, optSumber, optKet, optTotal, optSisa, optStatus, optBerkas], () => {
     const prune = (sel: string[], opts: string[]) => { const s = new Set(opts); return sel.filter((v) => s.has(v)); };
     col.no = prune(col.no, optNo.value); col.tgl = prune(col.tgl, optTgl.value); col.terima = prune(col.terima, optTerima.value);
-    col.supplier = prune(col.supplier, optSupplier.value); col.ket = prune(col.ket, optKet.value); col.total = prune(col.total, optTotal.value);
+    col.supplier = prune(col.supplier, optSupplier.value); col.sumber = prune(col.sumber, optSumber.value); col.ket = prune(col.ket, optKet.value); col.total = prune(col.total, optTotal.value);
     col.sisa = prune(col.sisa, optSisa.value); col.status = prune(col.status, optStatus.value); col.berkas = prune(col.berkas, optBerkas.value);
 });
 
@@ -230,7 +244,7 @@ watch(filtered, () => nextTick(measure));
             <table ref="tableEl" class="w-full text-sm">
                 <thead class="bg-neutral-50 dark:bg-neutral-800">
                     <tr class="text-left text-xs uppercase text-neutral-500">
-                        <th class="whitespace-nowrap px-4 pt-3 pb-1.5">No. Invoice</th><th class="whitespace-nowrap px-4 pt-3 pb-1.5">Tanggal</th><th class="whitespace-nowrap px-4 pt-3 pb-1.5">Tgl. Diterima</th><th class="px-4 pt-3 pb-1.5">Supplier</th><th class="px-4 pt-3 pb-1.5">Keterangan</th>
+                        <th class="whitespace-nowrap px-4 pt-3 pb-1.5">No. Invoice</th><th class="whitespace-nowrap px-4 pt-3 pb-1.5">Tanggal</th><th class="whitespace-nowrap px-4 pt-3 pb-1.5">Tgl. Diterima</th><th class="px-4 pt-3 pb-1.5">Supplier / Customer</th><th class="px-4 pt-3 pb-1.5">Sumber</th><th class="px-4 pt-3 pb-1.5">Keterangan</th>
                         <th class="whitespace-nowrap px-4 pt-3 pb-1.5 text-right">Total</th><th class="whitespace-nowrap px-4 pt-3 pb-1.5 text-right">Sisa</th><th class="px-4 pt-3 pb-1.5 text-center">Status</th><th class="px-4 pt-3 pb-1.5">Kelengkapan<br>Berkas</th>
                     </tr>
                     <!-- Filter checklist per-kolom (dropdown daftar nilai yang ada) -->
@@ -239,6 +253,7 @@ watch(filtered, () => nextTick(measure));
                         <th class="px-3 pb-2"><ColumnFilter v-model="col.tgl" :options="optTgl" /></th>
                         <th class="px-3 pb-2"><ColumnFilter v-model="col.terima" :options="optTerima" /></th>
                         <th class="px-3 pb-2"><ColumnFilter v-model="col.supplier" :options="optSupplier" /></th>
+                        <th class="px-3 pb-2"><ColumnFilter v-model="col.sumber" :options="optSumber" /></th>
                         <th class="px-3 pb-2"><ColumnFilter v-model="col.ket" :options="optKet" /></th>
                         <th class="px-3 pb-2"><ColumnFilter v-model="col.total" :options="optTotal" align="right" /></th>
                         <th class="px-3 pb-2"><ColumnFilter v-model="col.sisa" :options="optSisa" align="right" /></th>
@@ -251,7 +266,8 @@ watch(filtered, () => nextTick(measure));
                         <td class="whitespace-nowrap px-4 py-2.5 font-mono font-semibold">{{ r.invoice_number }}</td>
                         <td class="whitespace-nowrap px-4 py-2.5">{{ fmtDate(r.invoice_date) }}</td>
                         <td class="whitespace-nowrap px-4 py-2.5">{{ fmtDate(r.receive_date) }}</td>
-                        <td class="whitespace-nowrap px-4 py-2.5">{{ r.supplier?.name ?? '—' }}</td>
+                        <td class="whitespace-nowrap px-4 py-2.5">{{ r.supplier?.name ?? r.customer?.name ?? '—' }}</td>
+                        <td class="whitespace-nowrap px-4 py-2.5"><Badge v-if="r.source_type === 'refund'" variant="info" size="sm">{{ dSumber(r) }}</Badge><span v-else class="text-neutral-400">{{ dSumber(r) }}</span></td>
                         <td class="px-4 py-2.5 text-neutral-500"><span class="block max-w-[220px] truncate" :title="r.description ?? ''">{{ r.description }}</span></td>
                         <td class="whitespace-nowrap px-4 py-2.5 text-right font-mono">{{ fmtRp(r.payable) }}</td>
                         <td class="whitespace-nowrap px-4 py-2.5 text-right font-mono" :class="r.sisa > 0 ? 'text-danger-600' : 'text-neutral-400'">{{ fmtRp(r.sisa) }}</td>

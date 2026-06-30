@@ -136,6 +136,10 @@ class BkmResource extends Resource
                     'BATAL' => 'danger',
                     default => 'gray',
                 }),
+                Tables\Columns\TextColumn::make('bo_posted_at')->label('Approval BO')->badge()
+                    ->getStateUsing(fn (Bkm $record) => $record->bo_posted_at ? 'Terkirim' : 'Belum')
+                    ->color(fn (string $state) => $state === 'Terkirim' ? 'success' : 'gray')
+                    ->tooltip(fn (Bkm $record) => $record->bo_posted_at ? 'Dikirim ke Approval UTJ & DP: '.$record->bo_posted_at->format('d M Y H:i') : 'Belum dikirim ke BO'),
             ])
             ->filters([
                 Tables\Filters\SelectFilter::make('status')->options(['POSTED' => 'Posted', 'BATAL' => 'Batal']),
@@ -155,6 +159,23 @@ class BkmResource extends Resource
                 Tables\Actions\EditAction::make(),
                 Tables\Actions\Action::make('cetak_kwitansi')->label('Cetak Kwitansi')->icon('heroicon-o-printer')->color('success')
                     ->url(fn ($record) => route('fo.cetak.kwitansi', $record), shouldOpenInNewTab: true),
+                // Posting BO: kirim Kwitansi ke "Approval UTJ & DP" BO (menunggu approval); GL
+                // terbentuk saat BO pilih akun Debit/Kredit & setujui (tak auto-posting di FO).
+                Tables\Actions\Action::make('postingBo')->label('Posting BO')->icon('heroicon-o-paper-airplane')->color('primary')
+                    ->visible(fn (Bkm $record) => $record->status === 'POSTED' && ! $record->bo_posted_at)
+                    ->requiresConfirmation()
+                    ->modalHeading('Posting Kwitansi ke BO')
+                    ->modalDescription(fn (Bkm $record) => 'Kirim '.$record->no_bkm.' (Rp '.number_format((float) $record->amount, 0, ',', '.').') ke BO "Approval UTJ & DP" (menunggu approval). GL terbentuk saat BO pilih akun & setujui.')
+                    ->action(function (Bkm $record) {
+                        try {
+                            app(\App\Modules\BO\IproBridge\Services\IproMasterSync::class)->pushBkmToApproval($record);
+                            $record->update(['bo_posted_at' => now()]);
+                            Notification::make()->success()->title('Dikirim ke Approval UTJ & DP BO')
+                                ->body($record->no_bkm.' menunggu approval di BO (pilih akun Debit/Kredit → setujui → GL).')->send();
+                        } catch (\Throwable $e) {
+                            Notification::make()->danger()->title('Gagal kirim ke BO')->body($e->getMessage())->persistent()->send();
+                        }
+                    }),
                 // Batal: status → BATAL & dana kembali ke step sebelumnya (TTS / tagihan).
                 Tables\Actions\Action::make('batal')->label('Batal')->icon('heroicon-o-x-circle')->color('danger')
                     ->visible(fn (Bkm $record) => $record->status !== 'BATAL')
@@ -174,6 +195,36 @@ class BkmResource extends Resource
             ])
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([
+                    // Posting BO massal: kirim Kwitansi terpilih ke "Approval UTJ & DP" BO.
+                    // Yang sudah terkirim (bo_posted_at terisi) atau bukan POSTED DILEWATI → anti dobel.
+                    Tables\Actions\BulkAction::make('postingBoBulk')->label('Posting BO (terpilih)')->icon('heroicon-o-paper-airplane')->color('primary')
+                        ->requiresConfirmation()
+                        ->modalHeading('Posting Kwitansi terpilih ke BO')
+                        ->modalDescription('Kirim Kwitansi terpilih ke BO "Approval UTJ & DP". Yang sudah terkirim atau bukan POSTED dilewati (tak diposting 2 kali).')
+                        ->action(function (\Illuminate\Database\Eloquent\Collection $records) {
+                            $svc = app(\App\Modules\BO\IproBridge\Services\IproMasterSync::class);
+                            $ok = 0;
+                            $skip = 0;
+                            $err = 0;
+                            foreach ($records as $r) {
+                                if ($r->status !== 'POSTED' || $r->bo_posted_at) {
+                                    $skip++;
+
+                                    continue;
+                                }
+                                try {
+                                    $svc->pushBkmToApproval($r);
+                                    $r->update(['bo_posted_at' => now()]);
+                                    $ok++;
+                                } catch (\Throwable $e) {
+                                    $err++;
+                                }
+                            }
+                            $notif = Notification::make()->title('Posting BO selesai')
+                                ->body($ok.' terkirim · '.$skip.' dilewati (sudah terkirim / bukan POSTED)'.($err ? ' · '.$err.' gagal' : '').'.')->persistent();
+                            ($err ? $notif->warning() : $notif->success())->send();
+                        })
+                        ->deselectRecordsAfterCompletion(),
                     Tables\Actions\DeleteBulkAction::make(),
                 ]),
             ])

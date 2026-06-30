@@ -34,8 +34,8 @@ class ApInvoiceController extends Controller
         // Semua invoice dikirim ke klien; filter per-kolom & ringkasan dihitung di sisi klien
         // agar kotak summary mengikuti hasil filter. Total & Sisa = nett (setelah PPN & PPh).
         $rows = BsApInvoice::query()
-            ->with('supplier:id,name')
-            ->select(['id', 'invoice_number', 'invoice_date', 'receive_date', 'due_date', 'supplier_id', 'description', 'berkas_notes', 'total', 'net_payable', 'paid_amount', 'status'])
+            ->with(['supplier:id,name', 'customer:id,full_name'])
+            ->select(['id', 'invoice_number', 'invoice_date', 'receive_date', 'due_date', 'supplier_id', 'customer_id', 'source_type', 'refund_source', 'description', 'berkas_notes', 'total', 'net_payable', 'paid_amount', 'status'])
             ->latest('invoice_date')->latest('id')
             ->get()
             ->map(fn ($r) => [
@@ -45,6 +45,9 @@ class ApInvoiceController extends Controller
                 'receive_date'   => $r->receive_date?->toDateString(),
                 'due_date'       => $r->due_date?->toDateString(),  // utk ringkasan jatuh tempo
                 'supplier'       => $r->supplier ? ['name' => $r->supplier->name] : null,
+                'customer'       => $r->customer ? ['name' => $r->customer->full_name] : null, // refund: lawan = customer
+                'source_type'    => $r->source_type,    // po / spk / refund / null(manual)
+                'refund_source'  => $r->refund_source,  // SPR / SPRS / TRANSFER_ANONIM
                 'description'    => $r->description,
                 'berkas_notes'   => $r->berkas_notes,
                 'status'         => $r->status,
@@ -328,8 +331,39 @@ class ApInvoiceController extends Controller
                 'journal_number'  => $m->journal?->journal_number,
             ]);
 
+        // Struktur jurnal pendaftaran invoice (Dr Akun + PPN Masukan / Cr Hutang + PPh).
+        // Ditarik dari journal_id invoice agar tampil di rincian AP.INV — penting untuk audit.
+        $journal = $invoice->journal_id
+            ? \App\Domain\BusinessSupport\Models\BsJournal::with(['lines' => fn ($q) => $q->orderBy('id'), 'lines.account:id,code,name'])->find($invoice->journal_id)
+            : null;
+        $journalData = null;
+        if ($journal) {
+            $ccCodes   = \Illuminate\Support\Facades\DB::table('bs_cost_centers')->pluck('code', 'id');
+            $deptCodes = \Illuminate\Support\Facades\DB::table('bs_departments')->pluck('code', 'id');
+            $journalData = [
+                'id'     => $journal->id,
+                'number' => $journal->journal_number,
+                'date'   => $journal->journal_date ? \Illuminate\Support\Carbon::parse($journal->journal_date)->toDateString() : null,
+                'lines'  => $journal->lines->map(function ($l) use ($ccCodes, $deptCodes) {
+                    $dim = collect([$ccCodes[$l->cost_center_id] ?? null, $deptCodes[$l->department_id] ?? null])->filter()->implode(' · ');
+
+                    return [
+                        'account_code' => $l->account?->code,
+                        'account_name' => $l->account?->name,
+                        'dimensi'      => $dim !== '' ? $dim : null,
+                        'description'  => $l->description,
+                        'debit'        => (float) $l->debit,
+                        'credit'       => (float) $l->credit,
+                    ];
+                })->values(),
+                'total_debit'  => round((float) $journal->lines->sum('debit'), 2),
+                'total_credit' => round((float) $journal->lines->sum('credit'), 2),
+            ];
+        }
+
         return Inertia::render('BusinessSupport/Payable/Show', [
             'invoice'       => array_merge($invoice->toArray(), ['payable_amount' => $invoice->payable_amount]),
+            'journal'       => $journalData,
             'outstanding'   => (float) $invoice->outstanding,
             'cashAccounts'  => BsAccount::where('is_active', true)->where('is_postable', true)->where('code', 'like', '101010%')->orderBy('code')->get(['id', 'code', 'name']),
             'defaultCash'   => $this->accId('cash'),

@@ -4,8 +4,10 @@ namespace App\Filament\Fo\Resources;
 
 use App\Filament\Fo\Resources\TransferAnonimResource\Pages;
 use App\Models\Bank;
+use App\Modules\FO\FinanceAR\Models\Refund;
 use App\Modules\FO\FinanceAR\Models\TransferAnonim;
 use Filament\Forms;
+use Filament\Notifications\Notification;
 use Filament\Forms\Form;
 use Filament\Resources\Resource;
 use Filament\Tables;
@@ -27,8 +29,9 @@ class TransferAnonimResource extends Resource
 
     public static function getEloquentQuery(): \Illuminate\Database\Eloquent\Builder
     {
-        // Transfer yang sudah SELESAI (terhubung via Verifikasi Data) tidak tampil lagi.
-        return parent::getEloquentQuery()->where('status', '!=', 'SELESAI');
+        // Transfer yang sudah SELESAI (terhubung via Verifikasi Data) atau BATAL (sudah
+        // dibuatkan Refund) tidak tampil lagi.
+        return parent::getEloquentQuery()->whereNotIn('status', ['SELESAI', 'BATAL']);
     }
 
     public static function form(Form $form): Form
@@ -62,6 +65,31 @@ class TransferAnonimResource extends Resource
             ->actions([
                 // Identifikasi & Jadikan TTS dihapus — status berubah otomatis (→ SELESAI)
                 // saat transfer ini dipilih sebagai bukti di Verifikasi Data Booked.
+                // Batalkan & Refund: transfer (mis. salah/ditarik kembali) → buat Refund DRAFT
+                // (sumber TRANSFER_ANONIM) lalu diproses ke Account Payable BO.
+                Tables\Actions\Action::make('batalRefund')->label('Batalkan & Refund')->icon('heroicon-o-arrow-uturn-left')->color('danger')
+                    ->visible(fn (TransferAnonim $r) => $r->status !== 'BATAL' && (float) $r->amount > 0)
+                    ->requiresConfirmation()
+                    ->modalHeading('Batalkan Transfer Anonim & Buat Refund')
+                    ->modalDescription(fn (TransferAnonim $r) => 'Transfer Rp '.number_format((float) $r->amount, 0, ',', '.').' akan dibatalkan & dibuatkan Refund (DRAFT) untuk diproses ke Account Payable BO.')
+                    ->action(function (TransferAnonim $r) {
+                        $refund = Refund::create([
+                            'tenant_id' => $r->tenant_id ?? 1,
+                            'tgl_refund' => null,
+                            'jenis' => 'BOOKING',
+                            'sumber' => 'TRANSFER_ANONIM',
+                            'customer_id' => $r->customer_id,
+                            'nilai_kotor' => (float) $r->amount,
+                            'biaya_admin' => 0,
+                            'nilai_refund' => (float) $r->amount,
+                            'bank_id' => $r->bank_id,
+                            'status' => 'DRAFT',
+                            'keterangan' => 'Refund transfer anonim'.($r->keterangan_bank ? ' — '.$r->keterangan_bank : '').' (tgl '.optional($r->tgl_transfer)->format('d/m/Y').')',
+                        ]);
+                        $r->update(['status' => 'BATAL']);
+                        Notification::make()->success()->title('Refund dibuat: '.$refund->no_refund)
+                            ->body('Transfer anonim dibatalkan. Lanjut di Finance → Refund → Proses & Posting BO.')->persistent()->send();
+                    }),
                 Tables\Actions\EditAction::make(),
                 Tables\Actions\DeleteAction::make(),
             ])

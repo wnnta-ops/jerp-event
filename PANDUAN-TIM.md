@@ -66,24 +66,44 @@ Minta teman/lead lihat dulu sebelum di-merge ke `main`.
 
 ## 🔁 Alur Harian (cheat sheet)
 
-**Mulai kerja:**
+**1. Pindah ke branch kamu** (lihat dulu daftar branch):
 ```bash
-git checkout feat/fiturmu
-git fetch origin && git merge origin/main      # ambil update tim
+git branch -a                  # lihat semua branch (mis. bo, dev, dst)
+git checkout namabranchmu      # pindah, contoh: git checkout bo
 ```
 
-**Selesai (simpan kerjaan):**
+**2. SELALU update dari `main` dulu** (biar tak ketinggalan & konflik kecil):
+```bash
+git pull origin main           # tarik perubahan terbaru main ke branch kamu
+```
+
+**3. Kerja → simpan → kirim:**
 ```bash
 git add <file-yang-kamu-ubah>
 git commit -m "ringkasan singkat yang kamu kerjakan"
 git push
 ```
 
-**Mau digabung ke main:**
-1. `git fetch origin && git merge origin/main` (resolve bentrok di branch sendiri dulu)
+**4. Mau digabung ke main:**
+1. `git pull origin main` (tarik main terbaru dulu, resolve bentrok di branch sendiri)
 2. `git push`
 3. Buka **Pull Request** di GitHub: branch kamu → `main`
-4. Tunggu di-review → **Merge**
+4. Tunggu **Yogi** review & klik **Merge** (yang merge ke `main` hanya Yogi)
+
+---
+
+## ▶️ Menjalankan Aplikasi (lokal / server)
+```bash
+bash marger/up.sh        # NYALAKAN semua: FO + BO + Mobile (start harian)
+bash marger/down.sh      # MATIKAN semua (data tetap aman)
+```
+- Buka: **FO** → http://localhost:8081 · **BO** → http://localhost:8090
+- Di server (pakai domain), set FO_URL biar app mobile menunjuk server:
+  ```bash
+  FO_URL=https://fo.domainmu.com bash marger/up.sh
+  ```
+- **Deploy pertama** / setelah tarik kode baru (migrasi + build): `bash marger/deploy.sh`
+  (detail di `marger/CATATAN-SERVER.md`)
 
 ---
 
