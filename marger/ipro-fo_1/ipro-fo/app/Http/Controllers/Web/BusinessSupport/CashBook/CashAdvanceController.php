@@ -144,6 +144,101 @@ class CashAdvanceController extends Controller
         ]);
     }
 
+    /** #9: query baris Kartu Bon Sementara (mengikuti filter layar) untuk Excel/PDF — reuse logika card(). */
+    private function cardExport(Request $request): array
+    {
+        $holders  = array_values(array_filter((array) $request->input('holders', []), fn ($v) => $v !== '' && $v !== null));
+        $statuses = array_values(array_filter((array) $request->input('statuses', []), fn ($v) => $v !== '' && $v !== null));
+        $from     = $request->input('from') ?: null;
+        $to       = $request->input('to') ?: null;
+
+        $rows = BsCashAdvance::query()
+            ->with('department:id,name')
+            ->when($holders, fn ($q) => $q->whereIn('holder', $holders))
+            ->when($statuses, fn ($q) => $q->whereIn('status', $statuses))
+            ->when($from, fn ($q) => $q->whereDate('advance_date', '>=', $from))
+            ->when($to, fn ($q) => $q->whereDate('advance_date', '<=', $to))
+            ->orderByDesc('advance_date')->orderByDesc('id')->get()
+            ->map(fn ($a) => [
+                'no'          => $a->advance_number,
+                'date'        => optional($a->advance_date)->toDateString(),
+                'holder'      => $a->holder,
+                'department'  => $a->department?->name,
+                'purpose'     => $a->purpose,
+                'amount'      => (float) $a->amount,
+                'realized'    => (float) $a->realized_amount,
+                'outstanding' => round((float) $a->amount - (float) $a->realized_amount, 2),
+                'status'      => BsCashAdvance::STATUSES[$a->status] ?? $a->status,
+            ]);
+
+        return ['rows' => $rows, 'total' => [
+            'amount'      => (float) $rows->sum('amount'),
+            'realized'    => (float) $rows->sum('realized'),
+            'outstanding' => (float) $rows->sum('outstanding'),
+            'count'       => $rows->count(),
+        ]];
+    }
+
+    /** #9: Kartu Bon Sementara → Excel (.xls). */
+    public function cardExcel(Request $request): HttpResponse
+    {
+        abort_unless($request->user()?->canModule('cashbook'), 403);
+
+        $d  = $this->cardExport($request);
+        $e  = fn ($s) => htmlspecialchars((string) $s, ENT_QUOTES, 'UTF-8');
+        $rp = fn ($n) => number_format((float) $n, 0, ',', '.');
+
+        $h = '<table border="1"><tr><th colspan="8" style="background:#0f766e;color:#fff">Kartu Bon Sementara</th></tr>'
+            .'<tr style="background:#e2e8f0"><th>No Bon</th><th>Tanggal</th><th>Pemegang</th><th>Departemen</th><th>Keperluan</th><th>Nilai</th><th>Realisasi</th><th>Outstanding</th><th>Status</th></tr>';
+        foreach ($d['rows'] as $r) {
+            $h .= '<tr><td>'.$e($r['no']).'</td><td>'.$e($r['date']).'</td><td>'.$e($r['holder']).'</td><td>'.$e($r['department'])
+                .'</td><td>'.$e($r['purpose']).'</td><td>'.$rp($r['amount']).'</td><td>'.$rp($r['realized']).'</td><td>'.$rp($r['outstanding']).'</td><td>'.$e($r['status']).'</td></tr>';
+        }
+        $t = $d['total'];
+        $h .= '<tr style="background:#e2e8f0"><td colspan="5"><b>TOTAL ('.$t['count'].' bon)</b></td><td><b>'.$rp($t['amount']).'</b></td><td><b>'.$rp($t['realized']).'</b></td><td><b>'.$rp($t['outstanding']).'</b></td><td></td></tr></table>';
+        $file = 'Kartu-Bon-Sementara-'.now()->format('Ymd-His').'.xls';
+
+        return response('<html xmlns:x="urn:schemas-microsoft-com:office:excel"><head><meta charset="utf-8"></head><body>'.$h.'</body></html>')
+            ->header('Content-Type', 'application/vnd.ms-excel; charset=UTF-8')
+            ->header('Content-Disposition', 'attachment; filename="'.$file.'"');
+    }
+
+    /** #9: Kartu Bon Sementara → PDF (HTML A4 auto-print). */
+    public function cardPdf(Request $request): HttpResponse
+    {
+        abort_unless($request->user()?->canModule('cashbook'), 403);
+
+        $d   = $this->cardExport($request);
+        $e   = fn ($s) => htmlspecialchars((string) $s, ENT_QUOTES, 'UTF-8');
+        $rp  = fn ($n) => 'Rp '.number_format((float) $n, 0, ',', '.');
+        $co  = (string) config('business_support.company.name', 'PT. MITRA USAHA PROPERTINDO');
+        $now = now()->translatedFormat('d F Y H:i');
+
+        $body = '';
+        foreach ($d['rows'] as $r) {
+            $body .= '<tr><td>'.$e($r['no']).'</td><td>'.$e($r['date']).'</td><td>'.$e($r['holder']).'</td><td>'.$e($r['department'])
+                .'</td><td>'.$e($r['purpose']).'</td><td class="r">'.$rp($r['amount']).'</td><td class="r">'.$rp($r['realized']).'</td><td class="r">'.$rp($r['outstanding']).'</td><td>'.$e($r['status']).'</td></tr>';
+        }
+        if ($body === '') $body = '<tr><td colspan="9" class="c muted">Tidak ada data.</td></tr>';
+        $t = $d['total'];
+
+        $html = '<!DOCTYPE html><html lang="id"><head><meta charset="utf-8"><title>Kartu Bon Sementara</title><style>
+            @page{size:A4 landscape;margin:12mm}*{box-sizing:border-box}body{font-family:"Segoe UI",Arial,sans-serif;font-size:11px;color:#1f2937;margin:0}
+            h1{font-size:16px;margin:0 0 2px;color:#0f766e}.muted{color:#6b7280;font-weight:normal;font-size:10px}
+            .head{border-bottom:2px solid #0f766e;padding-bottom:6px;margin-bottom:10px;display:flex;justify-content:space-between}
+            table{border-collapse:collapse;width:100%;margin:4px 0;font-size:10px}th,td{border:1px solid #cbd5e1;padding:4px 6px;text-align:left}
+            thead th{background:#f1f5f9}.r{text-align:right;font-variant-numeric:tabular-nums}.c{text-align:center}tfoot td{font-weight:bold;background:#f8fafc}
+            @media print{.noprint{display:none}}</style></head><body>
+            <div class="head"><div><h1>KARTU BON SEMENTARA</h1><div class="muted">'.$e($co).'</div></div><div class="muted" style="text-align:right">Cetak: '.$e($now).'</div></div>
+            <table><thead><tr><th>No Bon</th><th>Tanggal</th><th>Pemegang</th><th>Departemen</th><th>Keperluan</th><th class="r">Nilai</th><th class="r">Realisasi</th><th class="r">Outstanding</th><th>Status</th></tr></thead>
+            <tbody>'.$body.'</tbody>
+            <tfoot><tr><td colspan="5">TOTAL ('.$t['count'].' bon)</td><td class="r">'.$rp($t['amount']).'</td><td class="r">'.$rp($t['realized']).'</td><td class="r">'.$rp($t['outstanding']).'</td><td></td></tr></tfoot></table>
+            <button class="noprint" onclick="window.print()" style="margin-top:12px;padding:6px 14px">Cetak / Simpan PDF</button>
+            <script>window.onload=function(){setTimeout(function(){window.print()},300)}</script></body></html>';
+
+        return response($html)->header('Content-Type', 'text/html; charset=UTF-8');
+    }
+
     /** #88: laporan bon sementara — 4 bucket (transfer & settlement). #150: filter departemen. */
     public function report(Request $request): Response
     {

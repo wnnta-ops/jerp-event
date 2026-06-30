@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue';
 import { Link } from '@inertiajs/vue3';
-import { ArrowLeft, BookText, FileClock, Hourglass, CheckCircle2, Wallet } from 'lucide-vue-next';
+import { ArrowLeft, BookText, FileClock, Hourglass, CheckCircle2, Wallet, FileSpreadsheet, Printer } from 'lucide-vue-next';
 import Badge from '@/Components/UI/Badge.vue';
 import EmptyState from '@/Components/UI/EmptyState.vue';
 import ColumnFilter from '@/Components/UI/ColumnFilter.vue';
@@ -38,6 +38,19 @@ const filteredRows = computed(() => props.rows.filter((r) =>
 
 const anyFilter = computed(() => fNo.value.length || fHolder.value.length || fPurpose.value.length || fStatus.value.length || from.value || to.value);
 function resetFilters() { fNo.value = []; fHolder.value = []; fPurpose.value = []; fStatus.value = []; from.value = ''; to.value = ''; }
+
+// #9: parameter unduhan = filter layar (pemegang, status, rentang tgl). fStatus menyimpan LABEL → petakan balik ke key.
+const exportParams = computed<Record<string, any>>(() => {
+    const p: Record<string, any> = {};
+    if (fHolder.value.length) p.holders = fHolder.value;
+    if (fStatus.value.length) {
+        const keys = Object.entries(props.statuses).filter(([, label]) => fStatus.value.includes(label)).map(([k]) => k);
+        if (keys.length) p.statuses = keys;
+    }
+    if (from.value) p.from = from.value;
+    if (to.value) p.to = to.value;
+    return p;
+});
 
 // ── Ringkasan reaktif terhadap filter ──
 const totals = computed(() => ({
@@ -80,7 +93,12 @@ const inputCls = 'h-7 w-full rounded border border-neutral-300 bg-white px-2 tex
         <Link :href="route('bs.cashbook.home')" class="inline-flex items-center gap-2 text-sm text-neutral-500 hover:text-neutral-800 dark:hover:text-neutral-200"><ArrowLeft class="h-4 w-4" /> Cash Book</Link>
         <div class="flex flex-wrap items-center justify-between gap-2">
             <h1 class="flex items-center gap-2 text-2xl font-bold"><BookText class="h-6 w-6 text-primary-600" /> Kartu Bon Sementara</h1>
-            <button v-if="anyFilter" type="button" @click="resetFilters" class="rounded-lg border border-neutral-300 px-3 py-1.5 text-xs font-medium text-neutral-600 hover:bg-neutral-50 dark:border-neutral-700 dark:text-neutral-300">Reset filter</button>
+            <div class="flex flex-wrap items-center gap-2">
+                <!-- #9: Excel + PDF mengikuti filter layar (pemegang, status, rentang tgl) -->
+                <a :href="route('bs.advance.card.excel', exportParams)" class="inline-flex items-center gap-1.5 rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-50 dark:border-neutral-600 dark:bg-neutral-800 dark:text-neutral-200"><FileSpreadsheet class="h-4 w-4" /> Excel</a>
+                <a :href="route('bs.advance.card.pdf', exportParams)" target="_blank" rel="noopener" class="inline-flex items-center gap-1.5 rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-50 dark:border-neutral-600 dark:bg-neutral-800 dark:text-neutral-200"><Printer class="h-4 w-4" /> PDF</a>
+                <button v-if="anyFilter" type="button" @click="resetFilters" class="rounded-lg border border-neutral-300 px-3 py-1.5 text-xs font-medium text-neutral-600 hover:bg-neutral-50 dark:border-neutral-700 dark:text-neutral-300">Reset filter</button>
+            </div>
         </div>
 
         <!-- Ringkasan per status (reaktif terhadap filter) -->
