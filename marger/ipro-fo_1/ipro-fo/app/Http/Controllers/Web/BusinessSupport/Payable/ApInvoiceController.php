@@ -34,8 +34,8 @@ class ApInvoiceController extends Controller
         // Semua invoice dikirim ke klien; filter per-kolom & ringkasan dihitung di sisi klien
         // agar kotak summary mengikuti hasil filter. Total & Sisa = nett (setelah PPN & PPh).
         $rows = BsApInvoice::query()
-            ->with('supplier:id,name')
-            ->select(['id', 'invoice_number', 'invoice_date', 'receive_date', 'due_date', 'supplier_id', 'description', 'berkas_notes', 'total', 'net_payable', 'paid_amount', 'status'])
+            ->with(['supplier:id,name', 'customer:id,full_name'])
+            ->select(['id', 'invoice_number', 'invoice_date', 'receive_date', 'due_date', 'supplier_id', 'customer_id', 'source_type', 'refund_source', 'description', 'berkas_notes', 'total', 'net_payable', 'paid_amount', 'status'])
             ->latest('invoice_date')->latest('id')
             ->get()
             ->map(fn ($r) => [
@@ -45,6 +45,9 @@ class ApInvoiceController extends Controller
                 'receive_date'   => $r->receive_date?->toDateString(),
                 'due_date'       => $r->due_date?->toDateString(),  // utk ringkasan jatuh tempo
                 'supplier'       => $r->supplier ? ['name' => $r->supplier->name] : null,
+                'customer'       => $r->customer ? ['name' => $r->customer->full_name] : null, // refund: lawan = customer
+                'source_type'    => $r->source_type,    // po / spk / refund / null(manual)
+                'refund_source'  => $r->refund_source,  // SPR / SPRS / TRANSFER_ANONIM
                 'description'    => $r->description,
                 'berkas_notes'   => $r->berkas_notes,
                 'status'         => $r->status,

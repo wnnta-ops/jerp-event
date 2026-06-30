@@ -395,10 +395,11 @@ class IproMasterSync
             'updated_at'     => $now,
         ];
 
-        // Bila TTS ini berasal dari Transfer Anonim, MENYATU dgn placeholder tanpa-unit
-        // (key "TA-{id}") → satu baris yang bertransisi tanpa-unit → ada-unit (tak duplikat).
-        $anon = DB::table('fo_transfer_anonim')->where('tts_id', $t->id)->first();
-        $key = $anon ? 'TA-'.$anon->id : $t->no_tts;
+        // Bila TTS ini berasal dari Transfer Anonim (link via NUP: tts_id+transfer_anonim_id),
+        // MENYATU dgn placeholder tanpa-unit (key "TA-{id}") → satu baris yang bertransisi
+        // tanpa-unit → ada-unit (tak duplikat, & hilang dari tab "Tanpa Unit").
+        $anonId = DB::table('fo_nup_registrations')->where('tts_id', $t->id)->value('transfer_anonim_id');
+        $key = $anonId ? 'TA-'.$anonId : $t->no_tts;
 
         $existing = $this->db()->table('tts_receipts')
             ->where('tenant_id', $this->tenantId)->where('tts_number', $key)->first();
@@ -406,8 +407,8 @@ class IproMasterSync
         if ($existing) {
             $this->db()->table('tts_receipts')->where('id', $existing->id)->update($data);
             // Baru dapat unit + sudah dijurnal (di BO "Tanpa Unit") → perbarui jurnal dgn unit.
-            if ($anon && ! $existing->booking_id && $bookingId && $existing->journal_id) {
-                $this->reclassifyJournalUnit((int) $existing->journal_id, $this->unitCodeForTransfer((int) $anon->id));
+            if ($anonId && ! $existing->booking_id && $bookingId && $existing->journal_id) {
+                $this->reclassifyJournalUnit((int) $existing->journal_id, $this->unitCodeForTransfer((int) $anonId));
             }
 
             return (int) $existing->id;

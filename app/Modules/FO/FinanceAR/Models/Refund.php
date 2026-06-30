@@ -22,9 +22,9 @@ class Refund extends TenantAwareModel
     protected $table = 'fo_refund';
 
     protected $fillable = [
-        'tenant_id', 'no_refund', 'tgl_refund', 'jenis', 'customer_id', 'kontrak_id',
+        'tenant_id', 'no_refund', 'tgl_refund', 'jenis', 'sumber', 'customer_id', 'kontrak_id',
         'reservasi_id', 'nilai_kotor', 'biaya_admin', 'nilai_refund',
-        'bank_id', 'rekening_tujuan', 'status', 'keterangan',
+        'bank_id', 'bank_nama', 'rekening_tujuan', 'status', 'keterangan',
     ];
 
     protected $casts = [
