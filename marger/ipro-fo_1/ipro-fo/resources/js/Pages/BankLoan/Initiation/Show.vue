@@ -181,6 +181,58 @@ function lvlPillClass(level: string, selected: boolean) {
 // R5 — opsi rekomendasi bank (daftar tetap sesuai permintaan).
 const BANK_REKOM = ['BTN', 'BSN', 'BRI', 'BNI', 'MANDIRI'];
 const BANK_REKOM_CUSTOMER = [...BANK_REKOM, 'Tanpa Preferensi'];
+
+// ── Rekomendasi Bank (Profiling) dihitung OTOMATIS dari skor tiap aspek Analisa.
+//    Matriks skor aspek×level → [BTN, BSN, BRI, BNI, MANDIRI] (file "Profiling Customer - Rekomendasi Bank.xlsx").
+const BANK_SCORE: Record<string, Record<AspekLevel, number[]>> = {
+    bi_pemohon:     { high: [1, 1, 1, 1, 1], medium: [2, 2, 0, 0, 0], low: [0, 3, 0, 0, 0] },
+    bi_pasangan:    { high: [1, 1, 0, 1, 1], medium: [2, 2, 0, 0, 0], low: [0, 3, 0, 0, 0] },
+    pref_customer:  { high: [1, 1, 1, 1, 1], medium: [2, 2, 2, 2, 0], low: [0, 0, 0, 0, 0] },
+    pref_developer: { high: [3, 3, 0, 0, 0], medium: [0, 0, 2, 2, 2], low: [0, 0, 0, 0, 0] },
+    angsuran:       { high: [1, 1, 1, 0, 0], medium: [2, 2, 1, 1, 1], low: [0, 0, 0, 0, 0] },
+    status_kerja:   { high: [3, 3, 3, 3, 3], medium: [2, 2, 2, 0, 0], low: [1, 1, 0, 0, 0] },
+    slip_gaji:      { high: [1, 1, 1, 1, 1], medium: [1, 2, 1, 0, 0], low: [0, 0, 0, 0, 0] },
+    tt_gaji_tunai:  { high: [1, 1, 1, 1, 1], medium: [1, 1, 1, 1, 1], low: [0, 0, 0, 0, 0] },
+    lap_keuangan:   { high: [1, 1, 1, 1, 1], medium: [2, 2, 0, 0, 0], low: [0, 0, 0, 0, 0] },
+    foto_usaha:     { high: [1, 1, 1, 1, 1], medium: [2, 2, 2, 1, 1], low: [0, 0, 0, 0, 0] },
+};
+// Total skor tiap bank dari aspek yang dinilai → urut skor desc; teratas = Rekom 1, ke-2 = Rekom 2.
+function computeBankRekom(items: Record<string, string>) {
+    const totals = BANK_REKOM.map(() => 0);
+    for (const [key, level] of Object.entries(items || {})) {
+        const row = BANK_SCORE[key]?.[level as AspekLevel];
+        if (row) row.forEach((v, i) => { totals[i] += v; });
+    }
+    return BANK_REKOM.map((name, i) => ({ name, score: totals[i] }))
+        .sort((x, y) => y.score - x.score)
+        .map((b, idx) => ({ ...b, rekom: idx === 0 ? 1 : idx === 1 ? 2 : 0 }));
+}
+const analisaItemsSaved = computed<Record<string, string>>(() => a.value.stages?.analisa?.indikator_items ?? {});
+// Live (preview di tahap Analisa): HANYA aspek yang berlaku utk kategori saat ini → cocok dgn hasil server
+// (server memangkas key aspek "basi" saat simpan, mis. kategori berganti setelah menilai).
+const analisaItemsLive = computed<Record<string, string>>(() => Object.fromEntries(
+    analisaAspek.value.map((x) => [x.key, f.analisa.indikator_items[x.key]] as const).filter(([, v]) => !!v),
+) as Record<string, string>);
+const bankRekom = computed(() => computeBankRekom(analisaItemsSaved.value));       // Profiling (data tersimpan)
+const bankRekomLive = computed(() => computeBankRekom(analisaItemsLive.value));     // preview di tahap Analisa
+const bankRekom1 = computed(() => bankRekom.value.find((b) => b.rekom === 1) ?? null);
+const bankRekom2 = computed(() => bankRekom.value.find((b) => b.rekom === 2) ?? null);
+// Panjang bar "jujur": skor maksimum teoretis = jumlah skor tertinggi tiap aspek yang dinilai (bukan skor bank teratas).
+const bankTheoreticalMax = computed(() => {
+    let m = 0;
+    for (const key of Object.keys(analisaItemsSaved.value)) {
+        const lv = BANK_SCORE[key];
+        if (lv) m += Math.max(...Object.values(lv).flat());
+    }
+    return Math.max(1, m);
+});
+// Indeks tahap Analisa (untuk tombol lompat dari Profiling).
+const analisaStageIdx = computed(() => stageList.value.findIndex((s) => s.key === 'analisa'));
+// Sinkronkan 2 rekomendasi teratas ke form Profiling agar ikut tersimpan.
+watch(bankRekom, (v) => {
+    f.profiling.bank_analisa_1 = v.find((b) => b.rekom === 1)?.name ?? '';
+    f.profiling.bank_analisa_2 = v.find((b) => b.rekom === 2)?.name ?? '';
+}, { immediate: true });
 // Bank yang DIPUTUS dilanjutkan (≤2) — sumber draft di stage Proses KPR.
 const decidedBanks = computed(() => {
     const out: Array<{ bank_partner_id: any; spr_issued: boolean }> = [];
@@ -632,6 +684,7 @@ const analisaLabel: Record<string, string> = { layak: 'Layak', tidak_layak: 'Tid
                                 </div>
                             </div>
                             <p v-if="lowAspek.length" class="mt-2 rounded-lg bg-danger-50 px-3 py-2 text-xs text-danger-700 dark:bg-danger-900/20 dark:text-danger-300">⚠ Ada {{ lowAspek.length }} aspek berisiko (Low): <b>{{ lowAspek.join(', ') }}</b>. Pertimbangkan baik-baik sebelum memutuskan Layak.</p>
+                            <p v-if="analisaScored > 0" class="mt-2 border-t border-primary-200/60 pt-2 text-xs text-neutral-600 dark:border-primary-900/40 dark:text-neutral-300">→ Rekomendasi bank (muncul di <b>Profiling</b>): <b class="text-success-700 dark:text-success-300">{{ bankRekomLive.find((b) => b.rekom === 1)?.name }}</b> &amp; <b class="text-primary-700 dark:text-primary-300">{{ bankRekomLive.find((b) => b.rekom === 2)?.name }}</b><span v-if="!analisaAllScored" class="text-warning-600"> · sementara — nilai {{ analisaTotal - analisaScored }} aspek lagi untuk final</span></p>
                         </div>
 
                         <!-- Hasil Analisa (keputusan analis) -->
@@ -656,11 +709,61 @@ const analisaLabel: Record<string, string> = { layak: 'Layak', tidak_layak: 'Tid
 
                     <!-- 6. PROFILING (R5) — indikator + rekomendasi bank + keputusan 2 bank + SPR -->
                     <form v-else-if="st.key === 'profiling'" @submit.prevent="save('profiling', f.profiling)" class="space-y-4">
-                        <!-- Keterangan indikator HIGH/MEDIUM/LOW (dari Analisa) -->
-                        <div class="rounded-lg border border-neutral-200 px-4 py-3 dark:border-neutral-700">
-                            <span class="text-sm text-neutral-500">Indikator Analisa Berkas: </span>
-                            <Badge v-if="a.stages?.analisa?.indikator" :variant="a.stages.analisa.indikator === 'high' ? 'success' : a.stages.analisa.indikator === 'medium' ? 'warning' : 'danger'">{{ indikatorLabel[a.stages.analisa.indikator] }}</Badge>
-                            <span v-else class="text-sm text-warning-600">— belum ada (isi di tahap Analisa) —</span>
+                        <p class="rounded-lg bg-neutral-100 px-3 py-2 text-xs text-neutral-600 dark:bg-neutral-800 dark:text-neutral-300">Alur: <b>Sistem menyarankan</b> (dari Analisa) → <b>Customer meminta</b> (preferensi) → <b>Anda memutuskan</b> (Keputusan bank yang dilanjutkan Proses KPR).</p>
+
+                        <!-- Rekomendasi Bank — OTOMATIS dari skor Analisa BI Checking & Berkas -->
+                        <div class="rounded-xl border border-primary-200 bg-primary-50/40 p-4 dark:border-primary-900/40 dark:bg-primary-900/10">
+                            <div class="mb-3 flex flex-wrap items-center justify-between gap-2">
+                                <div class="flex items-center gap-2">
+                                    <p class="text-sm font-semibold">Rekomendasi Bank — dari Analisa BI Checking &amp; Berkas</p>
+                                    <span class="rounded-full bg-neutral-200 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-neutral-600 dark:bg-neutral-700 dark:text-neutral-300">🔒 Otomatis</span>
+                                </div>
+                                <div class="flex items-center gap-2 text-xs text-neutral-500">
+                                    <span>Indikator:</span>
+                                    <Badge v-if="a.stages?.analisa?.indikator" :variant="a.stages.analisa.indikator === 'high' ? 'success' : a.stages.analisa.indikator === 'medium' ? 'warning' : 'danger'" size="sm">{{ indikatorLabel[a.stages.analisa.indikator] }}</Badge>
+                                    <span v-else class="text-warning-600">— belum ada —</span>
+                                </div>
+                            </div>
+
+                            <div v-if="!Object.keys(analisaItemsSaved).length" class="flex flex-wrap items-center gap-2 text-sm text-warning-600">
+                                <span>Belum ada penilaian aspek di tahap Analisa.</span>
+                                <button type="button" @click="openStage = analisaStageIdx" class="rounded-lg border border-primary-300 px-2.5 py-1 text-xs font-semibold text-primary-700 hover:bg-primary-50 dark:border-primary-700 dark:text-primary-300">Buka tahap Analisa →</button>
+                            </div>
+                            <template v-else>
+                                <!-- 2 rekomendasi teratas -->
+                                <div class="grid gap-3 sm:grid-cols-2">
+                                    <div class="rounded-lg border border-success-300 bg-success-50 p-3 dark:border-success-700 dark:bg-success-900/20">
+                                        <div class="flex items-center justify-between">
+                                            <span class="text-xs font-semibold uppercase tracking-wide text-success-700 dark:text-success-300">🥇 Rekomendasi 1</span>
+                                            <Badge variant="success" size="sm">Skor {{ bankRekom1?.score ?? 0 }}</Badge>
+                                        </div>
+                                        <p class="mt-1 text-xl font-bold">{{ bankRekom1?.name ?? '—' }}</p>
+                                    </div>
+                                    <div class="rounded-lg border border-primary-300 bg-white p-3 dark:border-primary-700 dark:bg-neutral-900/30">
+                                        <div class="flex items-center justify-between">
+                                            <span class="text-xs font-semibold uppercase tracking-wide text-primary-700 dark:text-primary-300">🥈 Rekomendasi 2</span>
+                                            <Badge variant="info" size="sm">Skor {{ bankRekom2?.score ?? 0 }}</Badge>
+                                        </div>
+                                        <p class="mt-1 text-xl font-bold">{{ bankRekom2?.name ?? '—' }}</p>
+                                    </div>
+                                </div>
+
+                                <!-- Rincian skor semua bank -->
+                                <div class="mt-3 space-y-1.5">
+                                    <div v-for="b in bankRekom" :key="b.name" class="flex items-center gap-2 text-xs">
+                                        <span class="w-16 shrink-0 font-semibold">{{ b.name }}</span>
+                                        <div class="h-2.5 flex-1 overflow-hidden rounded-full bg-neutral-200 dark:bg-neutral-700">
+                                            <div class="h-full rounded-full transition-all" :class="b.rekom === 1 ? 'bg-success-500' : b.rekom === 2 ? 'bg-primary-500' : 'bg-neutral-400'" :style="{ width: Math.round(b.score / bankTheoreticalMax * 100) + '%' }"></div>
+                                        </div>
+                                        <span class="w-7 shrink-0 text-right font-mono">{{ b.score }}</span>
+                                        <span class="w-20 shrink-0 text-right">
+                                            <Badge v-if="b.rekom" :variant="b.rekom === 1 ? 'success' : 'info'" size="sm">Rekom {{ b.rekom }}</Badge>
+                                            <span v-else class="text-neutral-400">—</span>
+                                        </span>
+                                    </div>
+                                </div>
+                                <p class="mt-2 text-[11px] text-neutral-500">Dihitung otomatis dari skor tiap aspek Analisa — semakin cocok profil customer dengan kriteria bank, semakin tinggi skornya.</p>
+                            </template>
                         </div>
 
                         <!-- Rekomendasi Bank oleh Customer (×2) -->
@@ -672,18 +775,10 @@ const analisaLabel: Record<string, string> = { layak: 'Layak', tidak_layak: 'Tid
                             </div>
                         </div>
 
-                        <!-- Rekomendasi Bank dari Analisa Berkas (×2) -->
-                        <div>
-                            <label class="label-base">Rekomendasi Bank dari Analisa Berkas</label>
-                            <div class="grid gap-3 sm:grid-cols-2">
-                                <div><label class="mb-1 block text-xs font-medium text-neutral-500">Pilihan 1</label><select v-model="f.profiling.bank_analisa_1" class="input-base"><option value="">— pilih bank —</option><option v-for="b in BANK_REKOM" :key="b" :value="b">{{ b }}</option></select></div>
-                                <div><label class="mb-1 block text-xs font-medium text-neutral-500">Pilihan 2</label><select v-model="f.profiling.bank_analisa_2" class="input-base"><option value="">— pilih bank —</option><option v-for="b in BANK_REKOM" :key="b" :value="b">{{ b }}</option></select></div>
-                            </div>
-                        </div>
-
                         <!-- Keputusan: 2 bank yang dilanjutkan Proses KPR + checklist SPR sudah terbit -->
                         <div class="rounded-lg border border-primary-200 bg-primary-50/50 p-4 dark:border-primary-900/40 dark:bg-primary-900/10 space-y-3">
                             <p class="text-sm font-semibold">Keputusan — Bank yang Dilanjutkan Proses KPR (maks 2)</p>
+                            <p class="text-xs text-neutral-500">Saran sistem: <b class="text-neutral-700 dark:text-neutral-200">{{ bankRekom1?.name ?? '—' }}</b>, <b class="text-neutral-700 dark:text-neutral-200">{{ bankRekom2?.name ?? '—' }}</b> · Preferensi customer: <b class="text-neutral-700 dark:text-neutral-200">{{ f.profiling.bank_customer_1 || '—' }}</b><span v-if="f.profiling.bank_customer_2">, <b class="text-neutral-700 dark:text-neutral-200">{{ f.profiling.bank_customer_2 }}</b></span></p>
                             <div class="grid items-end gap-2 sm:grid-cols-[1fr,auto]">
                                 <div><label class="mb-1 block text-xs font-medium text-neutral-500">Pilihan 1</label><SearchSelect v-model="f.profiling.decision_1" :options="bankOptions" placeholder="Pilih bank keputusan 1…" /></div>
                                 <label class="flex items-center gap-2 whitespace-nowrap pb-2 text-sm"><input type="checkbox" v-model="f.profiling.decision_1_spr" :disabled="!f.profiling.decision_1" class="h-4 w-4 rounded border-neutral-300" /> SPR sudah terbit</label>

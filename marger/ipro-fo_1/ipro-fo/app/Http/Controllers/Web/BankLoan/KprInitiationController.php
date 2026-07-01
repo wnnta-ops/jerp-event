@@ -47,6 +47,23 @@ class KprInitiationController extends Controller
     private const ANALISA_ASPEK_KARYAWAN = ['status_kerja', 'slip_gaji', 'tt_gaji_tunai'];
     private const ANALISA_ASPEK_WIRAUSAHA = ['lap_keuangan', 'foto_usaha'];
 
+    /** Rekomendasi Bank (Profiling): urutan bank + skor per aspek×level → [BTN,BSN,BRI,BNI,MANDIRI]
+     *  (file "Profiling Customer - Rekomendasi Bank.xlsx"). 2 skor tertinggi = Rekom 1 & Rekom 2. */
+    private const BANK_REKOM_LIST = ['BTN', 'BSN', 'BRI', 'BNI', 'MANDIRI'];
+
+    private const BANK_SCORE = [
+        'bi_pemohon'     => ['high' => [1, 1, 1, 1, 1], 'medium' => [2, 2, 0, 0, 0], 'low' => [0, 3, 0, 0, 0]],
+        'bi_pasangan'    => ['high' => [1, 1, 0, 1, 1], 'medium' => [2, 2, 0, 0, 0], 'low' => [0, 3, 0, 0, 0]],
+        'pref_customer'  => ['high' => [1, 1, 1, 1, 1], 'medium' => [2, 2, 2, 2, 0], 'low' => [0, 0, 0, 0, 0]],
+        'pref_developer' => ['high' => [3, 3, 0, 0, 0], 'medium' => [0, 0, 2, 2, 2], 'low' => [0, 0, 0, 0, 0]],
+        'angsuran'       => ['high' => [1, 1, 1, 0, 0], 'medium' => [2, 2, 1, 1, 1], 'low' => [0, 0, 0, 0, 0]],
+        'status_kerja'   => ['high' => [3, 3, 3, 3, 3], 'medium' => [2, 2, 2, 0, 0], 'low' => [1, 1, 0, 0, 0]],
+        'slip_gaji'      => ['high' => [1, 1, 1, 1, 1], 'medium' => [1, 2, 1, 0, 0], 'low' => [0, 0, 0, 0, 0]],
+        'tt_gaji_tunai'  => ['high' => [1, 1, 1, 1, 1], 'medium' => [1, 1, 1, 1, 1], 'low' => [0, 0, 0, 0, 0]],
+        'lap_keuangan'   => ['high' => [1, 1, 1, 1, 1], 'medium' => [2, 2, 0, 0, 0], 'low' => [0, 0, 0, 0, 0]],
+        'foto_usaha'     => ['high' => [1, 1, 1, 1, 1], 'medium' => [2, 2, 2, 1, 1], 'low' => [0, 0, 0, 0, 0]],
+    ];
+
     public function index(Request $request): Response
     {
         abort_unless($request->user()?->can('bankloan.application.view'), 403);
@@ -415,8 +432,12 @@ class KprInitiationController extends Controller
             $data['indikator_items'] = $clean;
             $data['indikator']       = $avg >= 2.5 ? 'high' : ($avg >= 1.5 ? 'medium' : 'low');
         }
-        if ($stage === 'profiling' && empty($data['decision_1']) && empty($data['decision_2'])) {
-            return back()->with('error', 'Pilih minimal 1 bank keputusan terlebih dahulu.');
+        if ($stage === 'profiling') {
+            if (empty($data['decision_1']) && empty($data['decision_2'])) {
+                return back()->with('error', 'Pilih minimal 1 bank keputusan terlebih dahulu.');
+            }
+            // 2 rekomendasi bank dihitung server (anti-tamper) dari skor aspek Analisa.
+            [$data['bank_analisa_1'], $data['bank_analisa_2']] = $this->bankRekomendasi((array) ($stages['analisa']['indikator_items'] ?? []));
         }
 
         // ── Tahap biasa: simpan data + tandai selesai + maju ke tahap berikutnya (preserve sub-data spt. docs) ──
@@ -426,6 +447,25 @@ class KprInitiationController extends Controller
         $initiation->save();
 
         return back()->with('success', self::STAGES[$stage].' disimpan.');
+    }
+
+    /** Hitung 2 rekomendasi bank (Rekom 1 & Rekom 2) dari skor aspek Analisa (indikator_items). */
+    private function bankRekomendasi(array $items): array
+    {
+        $totals = array_fill(0, count(self::BANK_REKOM_LIST), 0);
+        foreach ($items as $key => $level) {
+            $row = self::BANK_SCORE[$key][$level] ?? null;
+            if ($row) {
+                foreach ($row as $i => $v) {
+                    $totals[$i] += $v;
+                }
+            }
+        }
+        // Urut indeks bank berdasar skor desc; tie → urutan daftar (BTN..MANDIRI). 2 teratas = Rekom 1 & 2.
+        $idx = range(0, count(self::BANK_REKOM_LIST) - 1);
+        usort($idx, fn ($a, $b) => ($totals[$b] <=> $totals[$a]) ?: ($a <=> $b));
+
+        return [self::BANK_REKOM_LIST[$idx[0]] ?? null, self::BANK_REKOM_LIST[$idx[1]] ?? null];
     }
 
     /** Tolak inisiasi pada tahap BI Checking → status 'rejected' + alasan. Muncul di Database KPR → Reject BI Checking. */
