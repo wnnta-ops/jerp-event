@@ -35,7 +35,7 @@ function toggle(idx: number) { if (!locked(idx)) openStage.value = openStage.val
 // Tahap dianggap "selesai" (boleh Simpan & Lanjut) bila field utamanya terisi — cegah maju tanpa data.
 function stageComplete(key: string): boolean {
     if (key === 'sprs') return f.sprs.ktp_pemohon_received && f.sprs.npwp_pemohon_received && f.sprs.ktp_pasangan_received && f.sprs.npwp_pasangan_received;
-    if (key === 'bi_checking') return !!f.bi_checking.result;
+    if (key === 'bi_checking') return !!f.bi_checking.result && f.bi_checking.permintaan === 'lanjut_spr';
     if (key === 'analisa') return !!f.analisa.result && !!f.analisa.indikator;
     if (key === 'profiling') return decidedBanks.value.length >= 1;
     return true;
@@ -248,8 +248,14 @@ function save(key: string, data: Record<string, any> = {}) {
     });
 }
 
+// Reject BI Checking hanya untuk hasil bermasalah (Kol 2–5) DAN permintaan customer "Mundur / Reject".
+const canRejectBi = computed(() =>
+    ['kol2', 'kol3', 'kol4', 'kol5'].includes(f.bi_checking.result) && f.bi_checking.permintaan === 'mundur'
+);
+
 /* Tolak inisiasi pada tahap BI Checking → status 'rejected' (muncul di Database KPR → Reject BI Checking). */
 function reject() {
+    if (!canRejectBi.value) return; // gerbang: Kol 2–5 + permintaan "Mundur / Reject"
     if (!confirm('Tolak inisiasi KPR ini pada tahap BI Checking? Status menjadi Ditolak dan proses berhenti.')) return;
     const reason = window.prompt('Alasan penolakan BI Checking (opsional):', '');
     if (reason === null) return; // dibatalkan
@@ -439,10 +445,14 @@ const analisaLabel: Record<string, string> = { layak: 'Layak', tidak_layak: 'Tid
                             <p v-if="a.stages.bi_checking.rejected_by_name" class="mt-0.5 text-[11px] text-neutral-500">oleh {{ a.stages.bi_checking.rejected_by_name }} · {{ fmtDateTime(a.stages.bi_checking.rejected_at) }}</p>
                         </div>
                         <template v-else>
-                            <p v-if="!stageComplete('bi_checking')" class="text-xs text-warning-600">Pilih Hasil BI Checking untuk lanjut, atau Reject BI Checking untuk membatalkan proses.</p>
+                            <p class="text-xs text-warning-600">
+                                <span v-if="canRejectBi">Hasil bermasalah (Kol 2–5) &amp; customer mundur — gunakan <b>Reject BI Checking</b> untuk membatalkan proses.</span>
+                                <span v-else-if="stageComplete('bi_checking')">Permintaan customer lanjut — klik <b>Simpan &amp; Lanjut</b> ke Collect Berkas.</span>
+                                <span v-else><b>Simpan &amp; Lanjut</b> aktif bila Permintaan Customer = "Lanjut Pemberkasan SPR". <b>Reject BI Checking</b> aktif bila Hasil = Kol 2–5 &amp; Permintaan Customer = "Mundur / Reject".</span>
+                            </p>
                             <div class="flex flex-wrap gap-2">
                                 <Button type="submit" :loading="saving" :disabled="!stageComplete('bi_checking')">Simpan &amp; Lanjut →</Button>
-                                <Button type="button" variant="danger" :loading="saving" @click="reject">REJECT BI CHECKING</Button>
+                                <Button type="button" variant="danger" :loading="saving" :disabled="!canRejectBi" @click="reject">REJECT BI CHECKING</Button>
                             </div>
                             <p class="text-[11px] text-neutral-400">Simpan &amp; Lanjut dan Reject BI Checking bersifat pilihan — yang sudah di-Reject prosesnya batal &amp; tidak bisa dilanjutkan.</p>
                         </template>

@@ -358,8 +358,15 @@ class KprInitiationController extends Controller
         }
 
         // Gerbang server (mirror stageComplete client) — cegah maju tanpa field inti, walau request di-craft.
-        if ($stage === 'bi_checking' && empty($data['result'])) {
-            return back()->with('error', 'Pilih Hasil BI Checking terlebih dahulu.');
+        if ($stage === 'bi_checking') {
+            if (empty($data['result'])) {
+                return back()->with('error', 'Pilih Hasil BI Checking terlebih dahulu.');
+            }
+            // Simpan & Lanjut HANYA bila permintaan customer = "Lanjut Pemberkasan SPR".
+            // Mundur/Reject ditangani lewat tombol Reject BI Checking (endpoint terpisah).
+            if (($data['permintaan'] ?? '') !== 'lanjut_spr') {
+                return back()->with('error', 'Simpan & Lanjut hanya bila Permintaan Customer = "Lanjut Pemberkasan SPR". Untuk mundur, gunakan tombol Reject BI Checking.');
+            }
         }
         if ($stage === 'analisa' && (empty($data['result']) || empty($data['indikator']))) {
             return back()->with('error', 'Isi Hasil Analisa & Indikator (HIGH/MEDIUM/LOW) terlebih dahulu.');
@@ -399,6 +406,11 @@ class KprInitiationController extends Controller
             'permintaan' => ['nullable', 'string', 'max:30'],
             'notes'      => ['nullable', 'string', 'max:500'],
         ]);
+
+        // Gerbang: Reject HANYA untuk hasil bermasalah (Kol 2–5) DAN permintaan customer "Mundur / Reject".
+        if (! in_array($v['result'] ?? '', ['kol2', 'kol3', 'kol4', 'kol5'], true) || ($v['permintaan'] ?? '') !== 'mundur') {
+            return back()->with('error', 'Reject BI Checking hanya untuk Hasil Kol 2–5 dan Permintaan Customer = "Mundur / Reject".');
+        }
 
         $stages = $initiation->stages ?? [];
         $bi = $stages['bi_checking'] ?? [];
