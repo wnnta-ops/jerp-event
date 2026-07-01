@@ -326,9 +326,26 @@ class KprInitiationController extends Controller
             foreach ((array) ($data['items'] ?? []) as $key => $it) {
                 $key    = preg_replace('/[^a-z0-9_]/', '', strtolower((string) $key));
                 $status = in_array($it['status'] ?? null, ['lengkap', 'tidak_lengkap'], true) ? $it['status'] : '';
-                $items[$key] = array_merge($existing['items'][$key] ?? [], [
-                    'status' => $status,
-                    'note'   => $status === 'tidak_lengkap' ? (trim((string) ($it['note'] ?? '')) ?: null) : null,
+                $prev   = $existing['items'][$key] ?? [];
+
+                // status_at: jam & tanggal saat tombol Lengkap/Tidak Lengkap diklik.
+                // Pakai stempel dari client (waktu klik operator); jaga stempel lama bila status tak berubah; fallback waktu server.
+                $statusAt = null;
+                if ($status !== '') {
+                    $sent = $it['status_at'] ?? null;
+                    if (is_string($sent) && strtotime($sent) !== false) {
+                        $statusAt = $sent;
+                    } elseif (($prev['status'] ?? '') === $status && ! empty($prev['status_at'])) {
+                        $statusAt = $prev['status_at'];
+                    } else {
+                        $statusAt = now()->toIso8601String();
+                    }
+                }
+
+                $items[$key] = array_merge($prev, [
+                    'status'    => $status,
+                    'note'      => $status === 'tidak_lengkap' ? (trim((string) ($it['note'] ?? '')) ?: null) : null,
+                    'status_at' => $statusAt,
                 ]);
             }
 

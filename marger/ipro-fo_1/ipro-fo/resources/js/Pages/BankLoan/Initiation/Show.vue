@@ -79,7 +79,7 @@ const f = reactive({
     bi_checking: { result: s.bi_checking?.result ?? '', permintaan: s.bi_checking?.permintaan ?? '', notes: s.bi_checking?.notes ?? '' },
     collect_berkas: {
         category: s.collect_berkas?.category ?? '',
-        items: Object.fromEntries(Object.entries(s.collect_berkas?.items ?? {}).map(([k, v]: [string, any]) => [k, { status: v?.status ?? '', note: v?.note ?? '' }])) as Record<string, { status: string; note: string }>,
+        items: Object.fromEntries(Object.entries(s.collect_berkas?.items ?? {}).map(([k, v]: [string, any]) => [k, { status: v?.status ?? '', note: v?.note ?? '', status_at: v?.status_at ?? null }])) as Record<string, { status: string; note: string; status_at: string | null }>,
         notes: s.collect_berkas?.notes ?? '',
     },
     analisa: {
@@ -183,8 +183,14 @@ function setCategory(ck: string) {
     f.collect_berkas.category = ck;
     for (const it of (berkasCategories[ck]?.items ?? [])) {
         const k = ck + '__' + it.key;
-        if (!f.collect_berkas.items[k]) f.collect_berkas.items[k] = { status: '', note: '' };
+        if (!f.collect_berkas.items[k]) f.collect_berkas.items[k] = { status: '', note: '', status_at: null };
     }
+}
+// Tandai status berkas + stempel jam & tanggal saat tombol Lengkap/Tidak Lengkap diklik (per item, per kategori).
+function setBerkasStatus(key: string, status: 'lengkap' | 'tidak_lengkap') {
+    const it = f.collect_berkas.items[key] ?? (f.collect_berkas.items[key] = { status: '', note: '', status_at: null });
+    it.status = status;
+    it.status_at = new Date().toISOString();
 }
 // File & waktu unggah dibaca dari props server (reaktif); status/catatan dari form (editable).
 function itemFile(key: string): any { return a.value.stages?.collect_berkas?.items?.[key] ?? null; }
@@ -482,10 +488,10 @@ const analisaLabel: Record<string, string> = { layak: 'Layak', tidak_layak: 'Tid
                                         <div class="min-w-[180px] flex-1 text-sm font-medium">{{ i + 1 }}. {{ it.label }}</div>
                                         <!-- Status lengkap / tidak lengkap -->
                                         <div class="flex gap-1.5">
-                                            <button type="button" @click="f.collect_berkas.items[bkey(it.key)].status = 'lengkap'"
+                                            <button type="button" @click="setBerkasStatus(bkey(it.key), 'lengkap')"
                                                     class="rounded-lg border px-3 py-1.5 text-xs font-semibold transition"
                                                     :class="f.collect_berkas.items[bkey(it.key)]?.status === 'lengkap' ? 'border-success-500 bg-success-500 text-white' : 'border-success-300 text-success-700 hover:bg-success-50 dark:border-success-700'">✓ Lengkap</button>
-                                            <button type="button" @click="f.collect_berkas.items[bkey(it.key)].status = 'tidak_lengkap'"
+                                            <button type="button" @click="setBerkasStatus(bkey(it.key), 'tidak_lengkap')"
                                                     class="rounded-lg border px-3 py-1.5 text-xs font-semibold transition"
                                                     :class="f.collect_berkas.items[bkey(it.key)]?.status === 'tidak_lengkap' ? 'border-danger-500 bg-danger-500 text-white' : 'border-danger-300 text-danger-600 hover:bg-danger-50 dark:border-danger-700'">✗ Tidak Lengkap</button>
                                         </div>
@@ -499,6 +505,12 @@ const analisaLabel: Record<string, string> = { layak: 'Layak', tidak_layak: 'Tid
                                                 class="inline-flex shrink-0 items-center gap-1 rounded-lg border border-neutral-300 px-2.5 py-1.5 text-xs font-medium text-neutral-600 hover:bg-neutral-50 disabled:opacity-60 dark:border-neutral-700 dark:text-neutral-300">
                                             <Upload class="h-3.5 w-3.5" /> {{ uploadingKey === bkey(it.key) ? 'Mengunggah…' : (itemFile(bkey(it.key))?.uploaded_at ? 'Ganti File' : 'Upload') }}
                                         </button>
+                                    </div>
+                                    <!-- Stempel jam & tanggal saat status (Lengkap / Tidak Lengkap) ditandai -->
+                                    <div v-if="f.collect_berkas.items[bkey(it.key)]?.status && f.collect_berkas.items[bkey(it.key)]?.status_at"
+                                         class="mt-2 text-[11px]"
+                                         :class="f.collect_berkas.items[bkey(it.key)]?.status === 'lengkap' ? 'text-success-600' : 'text-danger-600'">
+                                        {{ f.collect_berkas.items[bkey(it.key)]?.status === 'lengkap' ? '✓ Ditandai Lengkap' : '✗ Ditandai Tidak Lengkap' }} · {{ fmtDateTime(f.collect_berkas.items[bkey(it.key)]?.status_at) }}
                                     </div>
                                     <!-- Info file terunggah -->
                                     <div v-if="itemFile(bkey(it.key))?.uploaded_at" class="mt-2 flex flex-wrap items-center gap-x-2 text-xs text-neutral-500">
