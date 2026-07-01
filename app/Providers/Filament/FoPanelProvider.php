@@ -325,6 +325,7 @@ class FoPanelProvider extends PanelProvider
             $key = match ((string) request()->query('modul', '')) {
                 'Komisi' => 'komisi',
                 'Marketing & Sales' => 'marketing',
+                'Report' => 'report',
                 default => null,
             };
 
@@ -504,6 +505,14 @@ class FoPanelProvider extends PanelProvider
                         $soon('Pengajuan Reward', 'Komisi', 'Pengajuan Reward', 'heroicon-o-paper-airplane'),
                         $soon('Realisasi Reward', 'Komisi', 'Realisasi Reward', 'heroicon-o-banknotes'),
                     ]],
+                ],
+            ],
+            'report' => [
+                'label' => 'Report',
+                'icon' => 'heroicon-o-chart-bar',
+                'items' => [
+                    // Isi laporan menyusul (didefinisikan bertahap). Placeholder agar grup tampil.
+                    $soon('Daftar Laporan', 'Report', 'Daftar Laporan', 'heroicon-o-document-chart-bar'),
                 ],
             ],
             'pengaturan' => [

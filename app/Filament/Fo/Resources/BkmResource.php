@@ -96,10 +96,6 @@ class BkmResource extends Resource
                         ->getOptionLabelFromRecordUsing(fn ($record) => $record->code.' — '.$record->name)
                         ->searchable()
                         ->preload(),
-                    Forms\Components\TextInput::make('akun_kas')
-                        ->label('Akun kas (GL)')
-                        ->maxLength(32)
-                        ->helperText('Kode akun untuk posting ke GL nanti.'),
                     Forms\Components\TextInput::make('no_referensi')->label('No referensi')->maxLength(64),
                     Forms\Components\Select::make('status')
                         ->label('Status')
