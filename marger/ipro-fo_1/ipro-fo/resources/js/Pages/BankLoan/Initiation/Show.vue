@@ -9,6 +9,7 @@ import SearchSelect from '@/Components/UI/SearchSelect.vue';
 
 const props = defineProps<{
     init: any;
+    contractInfo: any;
     stageDefs: Record<string, string>;
     banks: Array<any>;
     bookings: Array<any>;
@@ -69,10 +70,12 @@ function fmtDuration(ms: number | null): string {
 /* Form state tiap tahap (terisi dari data tersimpan bila ada). */
 const f = reactive({
     // R2 — SPRS: konfirmasi penerimaan 4 dokumen (Pemohon + Pasangan). OCR di menu "Cek Scan KTP & NPWP".
-    // No.SPRS & Tanggal SPRS auto-isi dari booking (SPRS) yg dibawa TTS bila belum disimpan.
-    sprs:        { number: s.sprs?.number ?? (init0.booking?.booking_number ?? ''), date: s.sprs?.date ?? String(init0.booking?.booking_date ?? '').slice(0, 10), notes: s.sprs?.notes ?? '',
-                   ktp_pemohon_received: !!s.sprs?.ktp_pemohon_received, npwp_pemohon_received: !!s.sprs?.npwp_pemohon_received,
-                   ktp_pasangan_received: !!s.sprs?.ktp_pasangan_received, npwp_pasangan_received: !!s.sprs?.npwp_pasangan_received },
+    // Info SPRS (No.Kontrak…PPN) auto-tampil dari Marketing & Sales (prop contractInfo) — tidak diinput di sini.
+    // *_received_at: stempel jam & tanggal saat checklist masing-masing dokumen dicentang.
+    sprs:        { ktp_pemohon_received: !!s.sprs?.ktp_pemohon_received, npwp_pemohon_received: !!s.sprs?.npwp_pemohon_received,
+                   ktp_pasangan_received: !!s.sprs?.ktp_pasangan_received, npwp_pasangan_received: !!s.sprs?.npwp_pasangan_received,
+                   ktp_pemohon_received_at: s.sprs?.ktp_pemohon_received_at ?? null, npwp_pemohon_received_at: s.sprs?.npwp_pemohon_received_at ?? null,
+                   ktp_pasangan_received_at: s.sprs?.ktp_pasangan_received_at ?? null, npwp_pasangan_received_at: s.sprs?.npwp_pasangan_received_at ?? null },
     bi_checking: { result: s.bi_checking?.result ?? '', permintaan: s.bi_checking?.permintaan ?? '', notes: s.bi_checking?.notes ?? '' },
     collect_berkas: {
         category: s.collect_berkas?.category ?? '',
@@ -230,6 +233,12 @@ function fmtDateTime(iso: string | null | undefined) {
 const bankOptions = computed(() => props.banks.map((b) => ({ id: b.id, code: b.code, name: b.name })));
 const bookingOptions = computed(() => props.bookings.map((b) => ({ id: b.id, label: `${b.booking_number} · ${b.customer?.full_name ?? '—'}` })));
 
+// SPRS: stempel jam & tanggal saat dokumen dicentang (kosongkan saat di-uncheck).
+function markSprsDoc(key: 'ktp_pemohon' | 'npwp_pemohon' | 'ktp_pasangan' | 'npwp_pasangan') {
+    const checked = (f.sprs as any)[key + '_received'];
+    (f.sprs as any)[key + '_received_at'] = checked ? new Date().toISOString() : null;
+}
+
 const saving = ref(false);
 function save(key: string, data: Record<string, any> = {}) {
     saving.value = true;
@@ -341,22 +350,55 @@ const analisaLabel: Record<string, string> = { layak: 'Layak', tidak_layak: 'Tid
                         <Button :loading="saving" @click="save('kuitansi')">Konfirmasi &amp; Lanjut →</Button>
                     </div>
 
-                    <!-- 2. SPRS — checklist KTP/NPWP diterima (scan/OCR di menu "Cek Scan KTP & NPWP") -->
+                    <!-- 2. SPRS — info kontrak auto dari Marketing & Sales + checklist KTP/NPWP diterima -->
                     <div v-else-if="st.key === 'sprs'" class="space-y-4">
-                        <div class="grid gap-3 sm:grid-cols-2">
-                            <Input v-model="f.sprs.number" label="No. SPRS" />
-                            <Input v-model="f.sprs.date" type="date" label="Tanggal SPRS" />
+                        <!-- Informasi SPRS (No. Kontrak … PPN) — otomatis dari modul Marketing & Sales (SPRS/Kontrak) -->
+                        <div v-if="contractInfo" class="rounded-lg border border-neutral-200 bg-neutral-50 p-4 dark:border-neutral-700 dark:bg-neutral-800/40">
+                            <p class="mb-3 text-sm font-semibold">Informasi SPRS</p>
+                            <dl class="grid gap-x-6 gap-y-2 text-sm sm:grid-cols-2 lg:grid-cols-3">
+                                <div><dt class="text-neutral-500">No. Kontrak</dt><dd class="font-mono">{{ contractInfo.contract_number ?? '—' }}</dd></div>
+                                <div><dt class="text-neutral-500">Tanggal</dt><dd>{{ contractInfo.date ?? '—' }}</dd></div>
+                                <div><dt class="text-neutral-500">Customer</dt><dd class="font-medium">{{ contractInfo.customer ?? '—' }}</dd></div>
+                                <div><dt class="text-neutral-500">Unit</dt><dd class="font-mono">{{ contractInfo.unit ?? '—' }}</dd></div>
+                                <div><dt class="text-neutral-500">Sales</dt><dd>{{ contractInfo.sales ?? '—' }}</dd></div>
+                                <div><dt class="text-neutral-500">Skema Bayar</dt><dd>{{ contractInfo.scheme ?? '—' }}</dd></div>
+                                <div><dt class="text-neutral-500">Price List (Gross)</dt><dd class="font-mono">{{ fmtRp(contractInfo.price_list_gross) }}</dd></div>
+                                <div><dt class="text-neutral-500">Diskon</dt><dd class="font-mono">{{ fmtRp(contractInfo.discount) }}</dd></div>
+                                <div><dt class="text-neutral-500">DPP</dt><dd class="font-mono">{{ fmtRp(contractInfo.dpp) }}</dd></div>
+                                <div><dt class="text-neutral-500">PPN</dt><dd class="font-mono">{{ fmtRp(contractInfo.ppn) }}</dd></div>
+                                <div><dt class="text-neutral-500">Nilai Kontrak</dt><dd class="font-mono font-semibold">{{ fmtRp(contractInfo.contract_value) }}</dd></div>
+                            </dl>
+                            <p class="mt-3 text-xs text-neutral-500">Sumber data berasal dari modul Marketing &amp; Sales → SPRS (otomatis).</p>
                         </div>
-                        <Input v-model="f.sprs.notes" label="Catatan" />
 
-                        <!-- Konfirmasi penerimaan dokumen (Pemohon + Pasangan) -->
+                        <!-- Konfirmasi penerimaan dokumen (Pemohon + Pasangan) — dengan jam & tanggal saat dicentang -->
                         <div class="rounded-lg border border-neutral-200 p-4 dark:border-neutral-700 space-y-2">
                             <p class="text-sm font-semibold">Konfirmasi Penerimaan Dokumen</p>
-                            <div class="grid gap-2 sm:grid-cols-2">
-                                <label class="flex items-center gap-2 text-sm"><input type="checkbox" v-model="f.sprs.ktp_pemohon_received" class="h-4 w-4 rounded border-neutral-300" /> KTP Pemohon sudah diterima</label>
-                                <label class="flex items-center gap-2 text-sm"><input type="checkbox" v-model="f.sprs.npwp_pemohon_received" class="h-4 w-4 rounded border-neutral-300" /> NPWP Pemohon sudah diterima</label>
-                                <label class="flex items-center gap-2 text-sm"><input type="checkbox" v-model="f.sprs.ktp_pasangan_received" class="h-4 w-4 rounded border-neutral-300" /> KTP Pasangan sudah diterima</label>
-                                <label class="flex items-center gap-2 text-sm"><input type="checkbox" v-model="f.sprs.npwp_pasangan_received" class="h-4 w-4 rounded border-neutral-300" /> NPWP Pasangan sudah diterima</label>
+                            <div class="grid gap-3 sm:grid-cols-2">
+                                <label class="flex items-start gap-2 text-sm">
+                                    <input type="checkbox" v-model="f.sprs.ktp_pemohon_received" @change="markSprsDoc('ktp_pemohon')" class="mt-0.5 h-4 w-4 rounded border-neutral-300" />
+                                    <span>KTP Pemohon sudah diterima
+                                        <span v-if="f.sprs.ktp_pemohon_received && f.sprs.ktp_pemohon_received_at" class="block text-[11px] text-success-600">✓ Dicentang {{ fmtDateTime(f.sprs.ktp_pemohon_received_at) }}</span>
+                                    </span>
+                                </label>
+                                <label class="flex items-start gap-2 text-sm">
+                                    <input type="checkbox" v-model="f.sprs.npwp_pemohon_received" @change="markSprsDoc('npwp_pemohon')" class="mt-0.5 h-4 w-4 rounded border-neutral-300" />
+                                    <span>NPWP Pemohon sudah diterima
+                                        <span v-if="f.sprs.npwp_pemohon_received && f.sprs.npwp_pemohon_received_at" class="block text-[11px] text-success-600">✓ Dicentang {{ fmtDateTime(f.sprs.npwp_pemohon_received_at) }}</span>
+                                    </span>
+                                </label>
+                                <label class="flex items-start gap-2 text-sm">
+                                    <input type="checkbox" v-model="f.sprs.ktp_pasangan_received" @change="markSprsDoc('ktp_pasangan')" class="mt-0.5 h-4 w-4 rounded border-neutral-300" />
+                                    <span>KTP Pasangan sudah diterima
+                                        <span v-if="f.sprs.ktp_pasangan_received && f.sprs.ktp_pasangan_received_at" class="block text-[11px] text-success-600">✓ Dicentang {{ fmtDateTime(f.sprs.ktp_pasangan_received_at) }}</span>
+                                    </span>
+                                </label>
+                                <label class="flex items-start gap-2 text-sm">
+                                    <input type="checkbox" v-model="f.sprs.npwp_pasangan_received" @change="markSprsDoc('npwp_pasangan')" class="mt-0.5 h-4 w-4 rounded border-neutral-300" />
+                                    <span>NPWP Pasangan sudah diterima
+                                        <span v-if="f.sprs.npwp_pasangan_received && f.sprs.npwp_pasangan_received_at" class="block text-[11px] text-success-600">✓ Dicentang {{ fmtDateTime(f.sprs.npwp_pasangan_received_at) }}</span>
+                                    </span>
+                                </label>
                             </div>
                         </div>
 

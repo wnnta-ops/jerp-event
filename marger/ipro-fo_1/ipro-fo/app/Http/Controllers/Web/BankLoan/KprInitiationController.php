@@ -12,6 +12,7 @@ use App\Domain\BankLoan\Models\KprInitiation;
 use App\Domain\BankLoan\Services\IdDocumentOcr;
 use App\Domain\Finance\Tts\Models\Tts;
 use App\Domain\Sales\Booking\Models\Booking;
+use App\Domain\Sales\Contract\Models\Contract;
 use App\Http\Controllers\Controller;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -137,10 +138,38 @@ class KprInitiationController extends Controller
         $initiation->load([
             'customer:id,full_name,phone,email',
             'ttsReceipt:id,tts_number,received_date,amount,customer_id',
-            'booking:id,booking_number,total_price,booking_date',
+            'booking:id,booking_number,total_price,booking_date,base_price,discount_amount,ppn_amount,customer_id,unit_id,payment_scheme_id,agent_id,sales_person_id',
+            'booking.customer:id,full_name',
+            'booking.unit:id,unit_code',
+            'booking.paymentScheme:id,name',
             'bank:id,name',
             'kprApplication:id,application_number,status',
         ]);
+
+        // Informasi SPRS/Kontrak (auto-tampil di tahap SPRS Inisiasi KPR) — sumber: SPRS Marketing & Sales (Booking)
+        // + nomor/tanggal dari Kontrak bila sudah promote. DPP = Nilai Kontrak − PPN; Price List (Gross) = base_price.
+        $contractInfo = null;
+        if ($booking = $initiation->booking) {
+            $contract  = Contract::where('booking_id', $booking->id)->first(['id', 'contract_number', 'signed_at']);
+            $salesName = $booking->agent_id
+                ? DB::table('agents')->where('id', $booking->agent_id)->value('name')
+                : ($booking->sales_person_id ? DB::table('sales_persons')->where('id', $booking->sales_person_id)->value('name') : null);
+            $ppn   = (float) $booking->ppn_amount;
+            $total = (float) $booking->total_price;
+            $contractInfo = [
+                'contract_number'  => $contract?->contract_number ?? $booking->booking_number,
+                'date'             => optional($contract?->signed_at ?? $booking->booking_date)->toDateString(),
+                'customer'         => $booking->customer?->full_name ?? $initiation->customer?->full_name,
+                'unit'             => $booking->unit?->unit_code,
+                'sales'            => $salesName,
+                'scheme'           => $booking->paymentScheme?->name,
+                'price_list_gross' => (float) $booking->base_price,
+                'discount'         => (float) $booking->discount_amount,
+                'dpp'              => $total - $ppn,
+                'ppn'              => $ppn,
+                'contract_value'   => $total,
+            ];
+        }
 
         // Teks mentah OCR (mengandung NIK/NPWP) hanya untuk yang berhak lihat data sensitif.
         $stages = $initiation->stages ?? [];
@@ -164,6 +193,7 @@ class KprInitiationController extends Controller
                 'kpr'            => $initiation->kprApplication,
                 'created_at'     => optional($initiation->created_at)->toIso8601String(),
             ],
+            'contractInfo' => $contractInfo,
             'stageDefs' => self::STAGES,
             'banks'     => BankPartner::where('is_active', true)->get(['id', 'code', 'name']),
             // Hanya booking milik customer inisiasi ini (cegah Draft KPR lintas-customer).
