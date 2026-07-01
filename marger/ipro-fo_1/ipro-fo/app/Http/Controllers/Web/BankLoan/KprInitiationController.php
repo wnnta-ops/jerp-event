@@ -12,6 +12,7 @@ use App\Domain\BankLoan\Models\KprInitiation;
 use App\Domain\BankLoan\Services\IdDocumentOcr;
 use App\Domain\Finance\Tts\Models\Tts;
 use App\Domain\Sales\Booking\Models\Booking;
+use App\Domain\Sales\Contract\Models\Contract;
 use App\Http\Controllers\Controller;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -39,6 +40,28 @@ class KprInitiationController extends Controller
     private const BERKAS_REQUIRED = [
         'karyawan'  => ['ktp_pemohon', 'ktp_pasangan', 'kk', 'npwp_pemohon', 'npwp_pasangan', 'surat_nikah', 'sk_kerja', 'slip_gaji_3bln', 'rekening_koran_3bln', 'spt_tahunan'],
         'wirausaha' => ['ktp_pemohon', 'ktp_pasangan', 'kk', 'npwp_pemohon', 'npwp_pasangan', 'surat_nikah', 'laporan_keuangan_6bln', 'rekening_koran_usaha_6bln', 'foto_denah_shareloc', 'spt_tahunan'],
+    ];
+
+    /** Aspek matriks "Indikator Analisa BI Checking & Berkas" (umum + spesifik per kategori pemohon). */
+    private const ANALISA_ASPEK_COMMON = ['bi_pemohon', 'bi_pasangan', 'pref_customer', 'pref_developer', 'angsuran'];
+    private const ANALISA_ASPEK_KARYAWAN = ['status_kerja', 'slip_gaji', 'tt_gaji_tunai'];
+    private const ANALISA_ASPEK_WIRAUSAHA = ['lap_keuangan', 'foto_usaha'];
+
+    /** Rekomendasi Bank (Profiling): urutan bank + skor per aspek×level → [BTN,BSN,BRI,BNI,MANDIRI]
+     *  (file "Profiling Customer - Rekomendasi Bank.xlsx"). 2 skor tertinggi = Rekom 1 & Rekom 2. */
+    private const BANK_REKOM_LIST = ['BTN', 'BSN', 'BRI', 'BNI', 'MANDIRI'];
+
+    private const BANK_SCORE = [
+        'bi_pemohon'     => ['high' => [1, 1, 1, 1, 1], 'medium' => [2, 2, 0, 0, 0], 'low' => [0, 3, 0, 0, 0]],
+        'bi_pasangan'    => ['high' => [1, 1, 0, 1, 1], 'medium' => [2, 2, 0, 0, 0], 'low' => [0, 3, 0, 0, 0]],
+        'pref_customer'  => ['high' => [1, 1, 1, 1, 1], 'medium' => [2, 2, 2, 2, 0], 'low' => [0, 0, 0, 0, 0]],
+        'pref_developer' => ['high' => [3, 3, 0, 0, 0], 'medium' => [0, 0, 2, 2, 2], 'low' => [0, 0, 0, 0, 0]],
+        'angsuran'       => ['high' => [1, 1, 1, 0, 0], 'medium' => [2, 2, 1, 1, 1], 'low' => [0, 0, 0, 0, 0]],
+        'status_kerja'   => ['high' => [3, 3, 3, 3, 3], 'medium' => [2, 2, 2, 0, 0], 'low' => [1, 1, 0, 0, 0]],
+        'slip_gaji'      => ['high' => [1, 1, 1, 1, 1], 'medium' => [1, 2, 1, 0, 0], 'low' => [0, 0, 0, 0, 0]],
+        'tt_gaji_tunai'  => ['high' => [1, 1, 1, 1, 1], 'medium' => [1, 1, 1, 1, 1], 'low' => [0, 0, 0, 0, 0]],
+        'lap_keuangan'   => ['high' => [1, 1, 1, 1, 1], 'medium' => [2, 2, 0, 0, 0], 'low' => [0, 0, 0, 0, 0]],
+        'foto_usaha'     => ['high' => [1, 1, 1, 1, 1], 'medium' => [2, 2, 2, 1, 1], 'low' => [0, 0, 0, 0, 0]],
     ];
 
     public function index(Request $request): Response
@@ -137,10 +160,38 @@ class KprInitiationController extends Controller
         $initiation->load([
             'customer:id,full_name,phone,email',
             'ttsReceipt:id,tts_number,received_date,amount,customer_id',
-            'booking:id,booking_number,total_price,booking_date',
+            'booking:id,booking_number,total_price,booking_date,base_price,discount_amount,ppn_amount,customer_id,unit_id,payment_scheme_id,agent_id,sales_person_id',
+            'booking.customer:id,full_name',
+            'booking.unit:id,unit_code',
+            'booking.paymentScheme:id,name',
             'bank:id,name',
             'kprApplication:id,application_number,status',
         ]);
+
+        // Informasi SPRS/Kontrak (auto-tampil di tahap SPRS Inisiasi KPR) — sumber: SPRS Marketing & Sales (Booking)
+        // + nomor/tanggal dari Kontrak bila sudah promote. DPP = Nilai Kontrak − PPN; Price List (Gross) = base_price.
+        $contractInfo = null;
+        if ($booking = $initiation->booking) {
+            $contract  = Contract::where('booking_id', $booking->id)->first(['id', 'contract_number', 'signed_at']);
+            $salesName = $booking->agent_id
+                ? DB::table('agents')->where('id', $booking->agent_id)->value('name')
+                : ($booking->sales_person_id ? DB::table('sales_persons')->where('id', $booking->sales_person_id)->value('name') : null);
+            $ppn   = (float) $booking->ppn_amount;
+            $total = (float) $booking->total_price;
+            $contractInfo = [
+                'contract_number'  => $contract?->contract_number ?? $booking->booking_number,
+                'date'             => optional($contract?->signed_at ?? $booking->booking_date)->toDateString(),
+                'customer'         => $booking->customer?->full_name ?? $initiation->customer?->full_name,
+                'unit'             => $booking->unit?->unit_code,
+                'sales'            => $salesName,
+                'scheme'           => $booking->paymentScheme?->name,
+                'price_list_gross' => (float) $booking->base_price,
+                'discount'         => (float) $booking->discount_amount,
+                'dpp'              => $total - $ppn,
+                'ppn'              => $ppn,
+                'contract_value'   => $total,
+            ];
+        }
 
         // Teks mentah OCR (mengandung NIK/NPWP) hanya untuk yang berhak lihat data sensitif.
         $stages = $initiation->stages ?? [];
@@ -164,6 +215,7 @@ class KprInitiationController extends Controller
                 'kpr'            => $initiation->kprApplication,
                 'created_at'     => optional($initiation->created_at)->toIso8601String(),
             ],
+            'contractInfo' => $contractInfo,
             'stageDefs' => self::STAGES,
             'banks'     => BankPartner::where('is_active', true)->get(['id', 'code', 'name']),
             // Hanya booking milik customer inisiasi ini (cegah Draft KPR lintas-customer).
@@ -296,9 +348,26 @@ class KprInitiationController extends Controller
             foreach ((array) ($data['items'] ?? []) as $key => $it) {
                 $key    = preg_replace('/[^a-z0-9_]/', '', strtolower((string) $key));
                 $status = in_array($it['status'] ?? null, ['lengkap', 'tidak_lengkap'], true) ? $it['status'] : '';
-                $items[$key] = array_merge($existing['items'][$key] ?? [], [
-                    'status' => $status,
-                    'note'   => $status === 'tidak_lengkap' ? (trim((string) ($it['note'] ?? '')) ?: null) : null,
+                $prev   = $existing['items'][$key] ?? [];
+
+                // status_at: jam & tanggal saat tombol Lengkap/Tidak Lengkap diklik.
+                // Pakai stempel dari client (waktu klik operator); jaga stempel lama bila status tak berubah; fallback waktu server.
+                $statusAt = null;
+                if ($status !== '') {
+                    $sent = $it['status_at'] ?? null;
+                    if (is_string($sent) && strtotime($sent) !== false) {
+                        $statusAt = $sent;
+                    } elseif (($prev['status'] ?? '') === $status && ! empty($prev['status_at'])) {
+                        $statusAt = $prev['status_at'];
+                    } else {
+                        $statusAt = now()->toIso8601String();
+                    }
+                }
+
+                $items[$key] = array_merge($prev, [
+                    'status'    => $status,
+                    'note'      => $status === 'tidak_lengkap' ? (trim((string) ($it['note'] ?? '')) ?: null) : null,
+                    'status_at' => $statusAt,
                 ]);
             }
 
@@ -328,14 +397,47 @@ class KprInitiationController extends Controller
         }
 
         // Gerbang server (mirror stageComplete client) — cegah maju tanpa field inti, walau request di-craft.
-        if ($stage === 'bi_checking' && empty($data['result'])) {
-            return back()->with('error', 'Pilih Hasil BI Checking terlebih dahulu.');
+        if ($stage === 'bi_checking') {
+            if (empty($data['result'])) {
+                return back()->with('error', 'Pilih Hasil BI Checking terlebih dahulu.');
+            }
+            // Simpan & Lanjut HANYA bila permintaan customer = "Lanjut Pemberkasan SPR".
+            // Mundur/Reject ditangani lewat tombol Reject BI Checking (endpoint terpisah).
+            if (($data['permintaan'] ?? '') !== 'lanjut_spr') {
+                return back()->with('error', 'Simpan & Lanjut hanya bila Permintaan Customer = "Lanjut Pemberkasan SPR". Untuk mundur, gunakan tombol Reject BI Checking.');
+            }
         }
-        if ($stage === 'analisa' && (empty($data['result']) || empty($data['indikator']))) {
-            return back()->with('error', 'Isi Hasil Analisa & Indikator (HIGH/MEDIUM/LOW) terlebih dahulu.');
+        if ($stage === 'analisa') {
+            if (empty($data['result'])) {
+                return back()->with('error', 'Pilih Hasil Analisa (Layak / Tidak Layak) terlebih dahulu.');
+            }
+            // Aspek wajib mengikuti kategori pemohon (Collect Berkas); semua aspek harus dinilai High/Medium/Low.
+            $cat   = $stages['collect_berkas']['category'] ?? null;
+            $aspek = array_merge(self::ANALISA_ASPEK_COMMON, match ($cat) {
+                'wirausaha' => self::ANALISA_ASPEK_WIRAUSAHA,
+                'karyawan'  => self::ANALISA_ASPEK_KARYAWAN,
+                default     => [],
+            });
+            $sent  = (array) ($data['indikator_items'] ?? []);
+            $clean = [];
+            foreach ($aspek as $k) {
+                if (! in_array($sent[$k] ?? null, ['high', 'medium', 'low'], true)) {
+                    return back()->with('error', 'Nilai semua aspek indikator (High / Medium / Low) terlebih dahulu.');
+                }
+                $clean[$k] = $sent[$k];
+            }
+            // Indikator keseluruhan diturunkan server (anti-tamper): rata-rata High=3/Medium=2/Low=1 → HIGH ≥2.5, MEDIUM ≥1.5.
+            $map = ['high' => 3, 'medium' => 2, 'low' => 1];
+            $avg = array_sum(array_map(fn ($l) => $map[$l], $clean)) / max(1, count($clean));
+            $data['indikator_items'] = $clean;
+            $data['indikator']       = $avg >= 2.5 ? 'high' : ($avg >= 1.5 ? 'medium' : 'low');
         }
-        if ($stage === 'profiling' && empty($data['decision_1']) && empty($data['decision_2'])) {
-            return back()->with('error', 'Pilih minimal 1 bank keputusan terlebih dahulu.');
+        if ($stage === 'profiling') {
+            if (empty($data['decision_1']) && empty($data['decision_2'])) {
+                return back()->with('error', 'Pilih minimal 1 bank keputusan terlebih dahulu.');
+            }
+            // 2 rekomendasi bank dihitung server (anti-tamper) dari skor aspek Analisa.
+            [$data['bank_analisa_1'], $data['bank_analisa_2']] = $this->bankRekomendasi((array) ($stages['analisa']['indikator_items'] ?? []));
         }
 
         // ── Tahap biasa: simpan data + tandai selesai + maju ke tahap berikutnya (preserve sub-data spt. docs) ──
@@ -345,6 +447,25 @@ class KprInitiationController extends Controller
         $initiation->save();
 
         return back()->with('success', self::STAGES[$stage].' disimpan.');
+    }
+
+    /** Hitung 2 rekomendasi bank (Rekom 1 & Rekom 2) dari skor aspek Analisa (indikator_items). */
+    private function bankRekomendasi(array $items): array
+    {
+        $totals = array_fill(0, count(self::BANK_REKOM_LIST), 0);
+        foreach ($items as $key => $level) {
+            $row = self::BANK_SCORE[$key][$level] ?? null;
+            if ($row) {
+                foreach ($row as $i => $v) {
+                    $totals[$i] += $v;
+                }
+            }
+        }
+        // Urut indeks bank berdasar skor desc; tie → urutan daftar (BTN..MANDIRI). 2 teratas = Rekom 1 & 2.
+        $idx = range(0, count(self::BANK_REKOM_LIST) - 1);
+        usort($idx, fn ($a, $b) => ($totals[$b] <=> $totals[$a]) ?: ($a <=> $b));
+
+        return [self::BANK_REKOM_LIST[$idx[0]] ?? null, self::BANK_REKOM_LIST[$idx[1]] ?? null];
     }
 
     /** Tolak inisiasi pada tahap BI Checking → status 'rejected' + alasan. Muncul di Database KPR → Reject BI Checking. */
@@ -369,6 +490,11 @@ class KprInitiationController extends Controller
             'permintaan' => ['nullable', 'string', 'max:30'],
             'notes'      => ['nullable', 'string', 'max:500'],
         ]);
+
+        // Gerbang: Reject HANYA untuk hasil bermasalah (Kol 2–5) DAN permintaan customer "Mundur / Reject".
+        if (! in_array($v['result'] ?? '', ['kol2', 'kol3', 'kol4', 'kol5'], true) || ($v['permintaan'] ?? '') !== 'mundur') {
+            return back()->with('error', 'Reject BI Checking hanya untuk Hasil Kol 2–5 dan Permintaan Customer = "Mundur / Reject".');
+        }
 
         $stages = $initiation->stages ?? [];
         $bi = $stages['bi_checking'] ?? [];
