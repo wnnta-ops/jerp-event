@@ -101,7 +101,7 @@ class BookedVerificationService
 
             $kontrak = Kontrak::create([
                 'tenant_id' => $reg->tenant_id,
-                'no_kontrak' => $this->numerator->next($caraBayar === 'KPR' ? 'KPR' : 'KONTRAK'),
+                'no_kontrak' => $this->numerator->next('SPR'), // semua kontrak: prefix SPR-{YYYY}-{seq}
                 'reservasi_id' => $reservasi->id,
                 'customer_id' => $reg->customer_id,
                 'unit_id' => $unit->id,

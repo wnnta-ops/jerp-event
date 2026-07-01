@@ -24,7 +24,6 @@ class Bkm extends TenantAwareModel
         'bank_id',
         'amount',
         'jenis_pembayaran',
-        'akun_kas',
         'no_referensi',
         'status',
         'bo_posted_at',

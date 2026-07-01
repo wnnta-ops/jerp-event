@@ -20,6 +20,35 @@ Bayangkan repo = **1 dokumen besar** yang dikerjakan rame-rame:
 
 ---
 
+## 📥 Update branch ke kode terbaru — LAKUKAN SERING (tiap mulai kerja)
+> Makin sering tarik update, selisih dengan tim makin kecil → konflik makin jarang & kecil.
+```bash
+git status                       # cek dulu: ada perubahan yang belum disimpan?
+git add <file-yang-kamu-ubah>    # pilih file yang kamu ubah
+git commit -m "ringkasan kerja"  # SIMPAN kerjaanmu dulu (atau: git stash, nanti git stash pop)
+
+git checkout bo                  # pastikan ada di branch sendiri (contoh: bo)
+git fetch origin                 # ambil info terbaru dari server GitHub
+git merge origin/main            # TARIK kode terbaru main ke branch kamu  ←  ini inti update-nya
+
+git push origin bo               # (opsional) simpan branch kamu ke server biar aman
+```
+> Kalau muncul **konflik** → lihat bagian **"Kalau Kena BENTROK"** di bawah (tenang, normal).
+> Setelah update, kalau ada migrasi/Vue baru jalankan: `SEED=0 bash marger/deploy.sh`.
+
+---
+
+## 🔐 Gabung branch ke `main` — KHUSUS Yogi
+> Hanya **Yogi** yang merge ke `main`. Anggota tim cukup buka **Pull Request** lalu tunggu di-merge.
+```bash
+git checkout main                # pindah ke main (sekarang Anda "berdiri" di main)
+git merge dev                    # tuang kerja branch dev ke main
+git merge bo                     # tuang kerja branch bo ke main
+git push origin main             # kirim main (gabungan dev + bo) ke GitHub
+```
+
+---
+
 ## ✅ 5 Aturan Wajib
 
 **1. Jangan kerja langsung di `main`.**
@@ -94,6 +123,7 @@ git push
 
 ## ▶️ Menjalankan Aplikasi (lokal / server)
 ```bash
+SEED=0 bash marger/deploy.sh  #PERUBAHAN CODE
 bash marger/up.sh        # NYALAKAN semua: FO + BO + Mobile (start harian)
 bash marger/down.sh      # MATIKAN semua (data tetap aman)
 ```
