@@ -36,7 +36,7 @@ function toggle(idx: number) { if (!locked(idx)) openStage.value = openStage.val
 function stageComplete(key: string): boolean {
     if (key === 'sprs') return f.sprs.ktp_pemohon_received && f.sprs.npwp_pemohon_received && f.sprs.ktp_pasangan_received && f.sprs.npwp_pasangan_received;
     if (key === 'bi_checking') return !!f.bi_checking.result && f.bi_checking.permintaan === 'lanjut_spr';
-    if (key === 'analisa') return !!f.analisa.result && !!f.analisa.indikator;
+    if (key === 'analisa') return !!f.analisa.result && analisaAllScored.value;
     if (key === 'profiling') return decidedBanks.value.length >= 1;
     return true;
 }
@@ -84,14 +84,9 @@ const f = reactive({
     },
     analisa: {
         result: s.analisa?.result ?? '',
-        // Dipindah dari Profiling (seed dari data lama bila ada) + field analisa baru.
-        pekerjaan: s.analisa?.pekerjaan ?? s.profiling?.pekerjaan ?? '',
-        status_pekerjaan: s.analisa?.status_pekerjaan ?? '',
-        penghasilan: s.analisa?.penghasilan ?? s.profiling?.penghasilan ?? '',
-        lama_kerja: s.analisa?.lama_kerja ?? s.profiling?.lama_kerja ?? '',
-        estimasi_bayar: s.analisa?.estimasi_bayar ?? '',
-        umur: s.analisa?.umur ?? '',
-        // R4 — indikator analisa berkas dikategorikan HIGH/MEDIUM/LOW (muncul di Profiling).
+        // R5 — skor indikator per-aspek (High/Medium/Low) sesuai matriks "Indikator Analisa BI Checking & Berkas".
+        indikator_items: { ...(s.analisa?.indikator_items ?? {}) } as Record<string, 'high' | 'medium' | 'low'>,
+        // Indikator keseluruhan diturunkan otomatis dari rata-rata skor aspek (dipakai di Profiling).
         indikator: s.analisa?.indikator ?? '',
         notes: s.analisa?.notes ?? '',
     },
@@ -113,6 +108,76 @@ const f = reactive({
 
 // R4/R5 — indikator analisa muncul di Profiling sebagai keterangan HIGH/MEDIUM/LOW.
 const indikatorLabel: Record<string, string> = { high: 'HIGH', medium: 'MEDIUM', low: 'LOW' };
+
+/* ── Analisa BI Checking & Berkas: matriks indikator per aspek (sumber: file "Indikator Analisa BI Checking & Berkas.xlsx").
+   Aspek "all" berlaku utk semua; "karyawan"/"wirausaha" muncul sesuai kategori pemohon (dari Collect Berkas). */
+type AspekLevel = 'high' | 'medium' | 'low';
+const ANALISA_ASPEK: Array<{ key: string; no: number; label: string; scope: 'all' | 'karyawan' | 'wirausaha'; options: Array<{ level: AspekLevel; desc: string; hint?: string }> }> = [
+    { key: 'bi_pemohon', no: 1, label: 'Hasil BI Checking KTP & NPWP Pemohon', scope: 'all',
+      options: [{ level: 'high', desc: 'Kol 1' }, { level: 'medium', desc: 'Kol 2' }, { level: 'low', desc: 'Kol 3–5' }] },
+    { key: 'bi_pasangan', no: 2, label: 'Hasil BI Checking KTP & NPWP Pasangan', scope: 'all',
+      options: [{ level: 'high', desc: 'Kol 1' }, { level: 'medium', desc: 'Kol 2' }, { level: 'low', desc: 'Kol 3–5' }] },
+    { key: 'pref_customer', no: 3, label: 'Preferensi Customer', scope: 'all',
+      options: [{ level: 'high', desc: 'Customer kooperatif, dokumen lengkap, respon cepat' }, { level: 'medium', desc: 'Masih mencari perbandingan bank, kelengkapan dokumen masih kurang' }, { level: 'low', desc: 'Tidak kooperatif, respon lambat, menunda proses, belum menentukan cara bayar' }] },
+    { key: 'pref_developer', no: 4, label: 'Preferensi Developer', scope: 'all',
+      options: [{ level: 'high', desc: 'Platinum' }, { level: 'medium', desc: 'Gold / Tier 3' }, { level: 'low', desc: 'Bronze' }] },
+    { key: 'angsuran', no: 5, label: 'Pertimbangan Angsuran per Bulan', scope: 'all',
+      options: [{ level: 'high', desc: 'Rp 3.000.000', hint: 'Angsuran ringan' }, { level: 'medium', desc: 'Rp 4.000.000', hint: 'Angsuran sedang' }, { level: 'low', desc: 'Rp 5.000.000', hint: 'Angsuran berat' }] },
+    { key: 'status_kerja', no: 6, label: 'Status Karyawan / Pekerjaan', scope: 'karyawan',
+      options: [{ level: 'high', desc: 'Karyawan tetap, masa kerja > 3 tahun di perusahaan Tbk' }, { level: 'medium', desc: 'Karyawan tetap masa kerja < 3 tahun, P3K' }, { level: 'low', desc: 'Karyawan kontrak/outsourcing, masa kerja < 1 tahun' }] },
+    { key: 'slip_gaji', no: 7, label: 'Slip Gaji & Rekening Koran 3 Bulan (RPC)', scope: 'karyawan',
+      options: [{ level: 'high', desc: 'Rp 10.000.000', hint: 'Penghasilan tinggi' }, { level: 'medium', desc: 'Rp 7.000.000', hint: 'Penghasilan menengah' }, { level: 'low', desc: 'Rp 5.000.000', hint: 'Penghasilan minimum' }] },
+    { key: 'tt_gaji_tunai', no: 8, label: 'Tanda Terima Gaji Tunai 3 Bulan (RPC Tambahan)', scope: 'karyawan',
+      options: [{ level: 'high', desc: 'Rp 5.000.000', hint: 'Penghasilan tinggi' }, { level: 'medium', desc: 'Rp 3.500.000', hint: 'Penghasilan menengah' }, { level: 'low', desc: 'Rp 2.500.000', hint: 'Penghasilan minimum' }] },
+    { key: 'lap_keuangan', no: 9, label: 'Laporan Keuangan & Rekening Koran 6 Bulan (RPC)', scope: 'wirausaha',
+      options: [{ level: 'high', desc: 'Rp 50.000.000', hint: 'Omzet tinggi' }, { level: 'medium', desc: 'Rp 35.000.000', hint: 'Omzet menengah' }, { level: 'low', desc: 'Rp 25.000.000', hint: 'Omzet minimum' }] },
+    { key: 'foto_usaha', no: 10, label: 'Foto, Denah Lokasi & Shareloc Tempat Usaha', scope: 'wirausaha',
+      options: [{ level: 'high', desc: 'Foto usaha lengkap & jelas, lokasi jelas, shareloc valid, usaha mudah diverifikasi & aktif' }, { level: 'medium', desc: 'Foto usaha lengkap, lokasi ditemukan namun ada ketidaksesuaian (pemilik, lama usaha, dll)' }, { level: 'low', desc: 'Foto usaha tidak lengkap, lokasi & shareloc tidak valid, usaha tidak dapat diverifikasi' }] },
+];
+// Kategori pemohon diambil dari tahap Collect Berkas (karyawan / wirausaha).
+const analisaCategory = computed<string>(() => a.value.stages?.collect_berkas?.category ?? '');
+// Aspek yang tampil = umum + spesifik kategori.
+const analisaAspek = computed(() => ANALISA_ASPEK.filter((x) => x.scope === 'all' || x.scope === analisaCategory.value));
+const analisaTotal = computed(() => analisaAspek.value.length);
+const analisaScored = computed(() => analisaAspek.value.filter((x) => !!f.analisa.indikator_items[x.key]).length);
+const analisaAllScored = computed(() => analisaTotal.value > 0 && analisaScored.value === analisaTotal.value);
+function setAspek(key: string, level: AspekLevel) { f.analisa.indikator_items[key] = level; }
+function lvlCount(level: AspekLevel) { return analisaAspek.value.filter((x) => f.analisa.indikator_items[x.key] === level).length; }
+function lvlActiveClass(level: string) {
+    return level === 'high' ? 'border-success-500 bg-success-500 text-white'
+        : level === 'medium' ? 'border-warning-500 bg-warning-500 text-white'
+        : 'border-danger-500 bg-danger-500 text-white';
+}
+// Indikator keseluruhan = rata-rata skor (High=3/Medium=2/Low=1) → HIGH ≥2.5, MEDIUM ≥1.5, selebihnya LOW.
+const indikatorDerived = computed<string>(() => {
+    const map: Record<string, number> = { high: 3, medium: 2, low: 1 };
+    const vals = analisaAspek.value.map((x) => map[f.analisa.indikator_items[x.key]]).filter((v) => v != null);
+    if (!vals.length) return '';
+    const avg = vals.reduce((s, v) => s + v, 0) / vals.length;
+    return avg >= 2.5 ? 'high' : avg >= 1.5 ? 'medium' : 'low';
+});
+// Sinkronkan indikator turunan ke form agar tersimpan & terbaca di Profiling.
+watch(indikatorDerived, (v) => { f.analisa.indikator = v; }, { immediate: true });
+// Aspek bernilai Low → ditonjolkan di ringkasan agar tidak "tersamar" oleh rata-rata.
+const lowAspek = computed(() => analisaAspek.value.filter((x) => f.analisa.indikator_items[x.key] === 'low').map((x) => x.label));
+// Peringatan bila keputusan analis berbeda dari indikator otomatis (dorong pencatatan alasan).
+const resultContradiction = computed<string>(() => {
+    if (!f.analisa.result || !indikatorDerived.value) return '';
+    if (f.analisa.result === 'layak' && indikatorDerived.value === 'low') return 'Keputusan LAYAK berbeda dari indikator otomatis (LOW).';
+    if (f.analisa.result === 'tidak_layak' && indikatorDerived.value === 'high') return 'Keputusan TIDAK LAYAK berbeda dari indikator otomatis (HIGH).';
+    return '';
+});
+// Bar tepi-kiri (traffic light) untuk opsi belum terpilih — tetap terbaca saat menumpuk di mobile.
+function lvlEdgeClass(level: string) {
+    return level === 'high' ? 'border-l-success-400' : level === 'medium' ? 'border-l-warning-400' : 'border-l-danger-400';
+}
+// Pil label level (High/Medium/Low) — solid berwarna saat belum terpilih, transparan saat terpilih.
+function lvlPillClass(level: string, selected: boolean) {
+    if (selected) return 'bg-white/20 text-white';
+    return level === 'high' ? 'bg-success-100 text-success-700 dark:bg-success-900/40 dark:text-success-300'
+        : level === 'medium' ? 'bg-warning-100 text-warning-700 dark:bg-warning-900/40 dark:text-warning-300'
+        : 'bg-danger-100 text-danger-700 dark:bg-danger-900/40 dark:text-danger-300';
+}
 // R5 — opsi rekomendasi bank (daftar tetap sesuai permintaan).
 const BANK_REKOM = ['BTN', 'BSN', 'BRI', 'BNI', 'MANDIRI'];
 const BANK_REKOM_CUSTOMER = [...BANK_REKOM, 'Tanpa Preferensi'];
@@ -202,18 +267,6 @@ const allBerkasComplete = computed(() => {
 });
 if (f.collect_berkas.category) setCategory(f.collect_berkas.category); // seed entri item utk kategori tersimpan
 
-// R4 — Analisa menampilkan kolom yang sama spt Collect Berkas (read-only) + kategori Karyawan/Wirausaha.
-const analisaBerkas = computed(() => {
-    const cb = a.value?.stages?.collect_berkas;
-    const cat = cb?.category;
-    if (!cat) return { category: null as string | null, label: null as string | null, items: [] as Array<{ label: string; optional?: boolean; status: string }> };
-    const items = (berkasCategories[cat]?.items ?? []).map((it) => ({
-        label: it.label,
-        optional: it.optional,
-        status: cb?.items?.[cat + '__' + it.key]?.status ?? '',
-    }));
-    return { category: cat, label: berkasCategories[cat]?.label ?? cat, items };
-});
 
 // Upload berkas — 1 input file tersembunyi dipakai bergiliran per item.
 const fileInput = ref<HTMLInputElement | null>(null);
@@ -529,77 +582,75 @@ const analisaLabel: Record<string, string> = { layak: 'Layak', tidak_layak: 'Tid
                         </template>
                     </div>
 
-                    <!-- 5. ANALISA -->
-                    <form v-else-if="st.key === 'analisa'" @submit.prevent="save('analisa', f.analisa)" class="space-y-3">
-                        <div class="grid gap-3 sm:grid-cols-2">
-                            <Input v-model="f.analisa.pekerjaan" label="Pekerjaan" />
-                            <div>
-                                <label class="label-base">Status Pekerjaan</label>
-                                <select v-model="f.analisa.status_pekerjaan" class="input-base">
-                                    <option value="">— pilih —</option>
-                                    <option value="tetap">Karyawan Tetap</option>
-                                    <option value="kontrak">Karyawan Kontrak</option>
-                                    <option value="wirausaha">Wirausaha</option>
-                                    <option value="profesional">Profesional</option>
-                                    <option value="lainnya">Lainnya</option>
-                                </select>
+                    <!-- 5. ANALISA BI CHECKING & BERKAS — matriks indikator per aspek (High/Medium/Low) -->
+                    <form v-else-if="st.key === 'analisa'" @submit.prevent="save('analisa', f.analisa)" class="space-y-4">
+                        <!-- Header: kategori pemohon + progres penilaian -->
+                        <div class="flex flex-wrap items-center justify-between gap-2">
+                            <div class="flex items-center gap-2">
+                                <p class="text-sm font-semibold">Penilaian Indikator</p>
+                                <Badge v-if="analisaCategory" variant="info" size="sm">{{ analisaCategory === 'wirausaha' ? 'Wirausaha' : 'Karyawan / Fixed Income' }}</Badge>
                             </div>
-                            <Input v-model="f.analisa.penghasilan" type="number" label="Penghasilan / bln (Rp)" />
-                            <Input v-model="f.analisa.lama_kerja" label="Lama Bekerja" />
-                            <Input v-model="f.analisa.estimasi_bayar" type="number" label="Estimasi Kemampuan Membayar / bln (Rp)" />
-                            <Input v-model="f.analisa.umur" type="number" label="Umur Customer Saat Ini (tahun)" />
-                            <div class="sm:col-span-2">
-                                <label class="label-base">Hasil Analisa</label>
-                                <select v-model="f.analisa.result" class="input-base">
-                                    <option value="">— pilih —</option>
-                                    <option value="layak">Layak</option>
-                                    <option value="tidak_layak">Tidak Layak</option>
-                                </select>
+                            <span class="text-xs font-medium" :class="analisaAllScored ? 'text-success-600' : 'text-neutral-500'">{{ analisaScored }} / {{ analisaTotal }} aspek dinilai</span>
+                        </div>
+                        <p v-if="!analisaCategory" class="text-sm text-warning-600">Kategori pemohon belum diisi pada tahap Collect Berkas — lengkapi dahulu.</p>
+
+                        <!-- Matriks aspek: pilih salah satu High / Medium / Low per aspek -->
+                        <div class="space-y-2.5">
+                            <div v-for="asp in analisaAspek" :key="asp.key"
+                                 class="rounded-xl border p-3 transition"
+                                 :class="f.analisa.indikator_items[asp.key] ? 'border-neutral-200 dark:border-neutral-700' : 'border-dashed border-neutral-300 dark:border-neutral-600'">
+                                <div class="mb-2 flex items-center gap-2 text-sm font-medium">
+                                    <span class="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-neutral-100 text-xs font-semibold text-neutral-600 dark:bg-neutral-800 dark:text-neutral-300">{{ asp.no }}</span>
+                                    <span>{{ asp.label }}</span>
+                                </div>
+                                <div class="grid gap-2 sm:grid-cols-3">
+                                    <button v-for="opt in asp.options" :key="opt.level" type="button" @click="setAspek(asp.key, opt.level)"
+                                            class="flex flex-col items-start gap-1 rounded-lg border p-2.5 text-left transition"
+                                            :class="f.analisa.indikator_items[asp.key] === opt.level ? lvlActiveClass(opt.level) : ('border-neutral-200 border-l-4 ' + lvlEdgeClass(opt.level) + ' bg-neutral-50/60 hover:bg-neutral-100 dark:border-neutral-700 dark:bg-neutral-800/40 dark:hover:bg-neutral-800')">
+                                        <span class="rounded px-1.5 py-0.5 text-[11px] font-bold uppercase tracking-wide" :class="lvlPillClass(opt.level, f.analisa.indikator_items[asp.key] === opt.level)">{{ indikatorLabel[opt.level] }}</span>
+                                        <span class="text-xs font-medium leading-snug" :class="f.analisa.indikator_items[asp.key] === opt.level ? 'text-white' : 'text-neutral-800 dark:text-neutral-200'">{{ opt.desc }}</span>
+                                        <span v-if="opt.hint" class="text-[11px] leading-snug" :class="f.analisa.indikator_items[asp.key] === opt.level ? 'text-white/80' : 'text-neutral-500'">{{ opt.hint }}</span>
+                                    </button>
+                                </div>
                             </div>
                         </div>
 
-                        <!-- R4 — Kolom berkas (sama spt Collect Berkas) + kategori Karyawan/Wirausaha (read-only) -->
-                        <div class="rounded-lg border border-neutral-200 p-4 dark:border-neutral-700 space-y-2">
-                            <div class="flex flex-wrap items-center justify-between gap-2">
-                                <p class="text-sm font-semibold">Analisa Berkas</p>
-                                <Badge v-if="analisaBerkas.category" variant="info" size="sm">{{ analisaBerkas.label }}</Badge>
+                        <!-- Ringkasan: distribusi skor + indikator keseluruhan (otomatis) -->
+                        <div class="rounded-xl border border-primary-200 bg-primary-50/50 p-4 dark:border-primary-900/40 dark:bg-primary-900/10">
+                            <div class="flex flex-wrap items-center justify-between gap-3">
+                                <div>
+                                    <p class="text-xs text-neutral-500">Indikator Analisa Keseluruhan <span class="text-[10px]">(otomatis dari rata-rata skor aspek)</span></p>
+                                    <div class="mt-1 flex items-center gap-2">
+                                        <Badge v-if="indikatorDerived" :variant="indikatorDerived === 'high' ? 'success' : indikatorDerived === 'medium' ? 'warning' : 'danger'">{{ indikatorLabel[indikatorDerived] }}</Badge>
+                                        <span v-else class="text-sm text-warning-600">— nilai semua aspek dahulu —</span>
+                                    </div>
+                                </div>
+                                <div class="flex gap-3 text-xs">
+                                    <span class="text-success-600">High: <b>{{ lvlCount('high') }}</b></span>
+                                    <span class="text-warning-600">Medium: <b>{{ lvlCount('medium') }}</b></span>
+                                    <span class="text-danger-600">Low: <b>{{ lvlCount('low') }}</b></span>
+                                </div>
                             </div>
-                            <p v-if="!analisaBerkas.category" class="text-xs text-warning-600">Kategori &amp; berkas belum diisi pada tahap Collect Berkas.</p>
-                            <div v-else class="overflow-x-auto">
-                                <table class="w-full text-sm">
-                                    <thead class="text-left text-xs uppercase text-neutral-500"><tr>
-                                        <th class="py-1.5 pr-3">Berkas</th><th class="py-1.5 text-center">Status</th>
-                                    </tr></thead>
-                                    <tbody class="divide-y divide-neutral-100 dark:divide-neutral-800">
-                                        <tr v-for="(it, i) in analisaBerkas.items" :key="it.label">
-                                            <td class="py-1.5 pr-3">{{ i + 1 }}. {{ it.label }}</td>
-                                            <td class="py-1.5 text-center">
-                                                <Badge v-if="it.status === 'lengkap'" variant="success" size="sm">Lengkap</Badge>
-                                                <Badge v-else-if="it.status === 'tidak_lengkap'" variant="danger" size="sm">Tidak Lengkap</Badge>
-                                                <span v-else class="text-xs text-neutral-400">—{{ it.optional ? ' (opsional)' : '' }}</span>
-                                            </td>
-                                        </tr>
-                                    </tbody>
-                                </table>
-                            </div>
+                            <p v-if="lowAspek.length" class="mt-2 rounded-lg bg-danger-50 px-3 py-2 text-xs text-danger-700 dark:bg-danger-900/20 dark:text-danger-300">⚠ Ada {{ lowAspek.length }} aspek berisiko (Low): <b>{{ lowAspek.join(', ') }}</b>. Pertimbangkan baik-baik sebelum memutuskan Layak.</p>
                         </div>
 
-                        <!-- R4 — Indikator dikategorikan HIGH / MEDIUM / LOW (muncul di Profiling) -->
+                        <!-- Hasil Analisa (keputusan analis) -->
                         <div>
-                            <label class="label-base">Indikator Analisa <span class="text-danger-500">*</span></label>
+                            <label class="label-base">Hasil Analisa <span class="text-danger-500">*</span></label>
                             <div class="flex flex-wrap gap-2">
-                                <button v-for="ind in ['high','medium','low']" :key="ind" type="button" @click="f.analisa.indikator = ind"
-                                        class="rounded-lg border px-4 py-2 text-sm font-bold uppercase transition"
-                                        :class="f.analisa.indikator === ind
-                                            ? (ind === 'high' ? 'border-success-500 bg-success-500 text-white' : ind === 'medium' ? 'border-warning-500 bg-warning-500 text-white' : 'border-danger-500 bg-danger-500 text-white')
-                                            : 'border-neutral-300 text-neutral-600 hover:bg-neutral-50 dark:border-neutral-700 dark:text-neutral-300'">
-                                    {{ indikatorLabel[ind] }}
-                                </button>
+                                <button type="button" @click="f.analisa.result = 'layak'"
+                                        class="rounded-lg border px-5 py-2 text-sm font-semibold transition"
+                                        :class="f.analisa.result === 'layak' ? 'border-success-500 bg-success-500 text-white' : 'border-success-300 text-success-700 hover:bg-success-50 dark:border-success-700'">✓ Layak</button>
+                                <button type="button" @click="f.analisa.result = 'tidak_layak'"
+                                        class="rounded-lg border px-5 py-2 text-sm font-semibold transition"
+                                        :class="f.analisa.result === 'tidak_layak' ? 'border-danger-500 bg-danger-500 text-white' : 'border-danger-300 text-danger-600 hover:bg-danger-50 dark:border-danger-700'">✗ Tidak Layak</button>
                             </div>
+                            <p v-if="indikatorDerived && !f.analisa.result" class="mt-1 text-[11px] text-neutral-500">Saran: indikator <b>{{ indikatorLabel[indikatorDerived] }}</b> → {{ indikatorDerived === 'low' ? 'pertimbangkan Tidak Layak / review lebih lanjut' : 'cenderung Layak' }}.</p>
+                            <p v-if="resultContradiction" class="mt-1 text-[11px] text-warning-600">⚠ {{ resultContradiction }} Pastikan alasan tercatat di Catatan Analisa.</p>
                         </div>
 
                         <Input v-model="f.analisa.notes" label="Catatan Analisa" />
-                        <p v-if="!stageComplete('analisa')" class="text-xs text-warning-600">Pilih Hasil Analisa &amp; Indikator (HIGH/MEDIUM/LOW) untuk lanjut.</p>
+                        <p v-if="!stageComplete('analisa')" class="text-xs text-warning-600">Nilai <b>semua</b> aspek indikator &amp; pilih Hasil Analisa (Layak / Tidak Layak) untuk lanjut.</p>
                         <Button type="submit" :loading="saving" :disabled="!stageComplete('analisa')">Simpan &amp; Lanjut →</Button>
                     </form>
 

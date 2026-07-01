@@ -42,6 +42,11 @@ class KprInitiationController extends Controller
         'wirausaha' => ['ktp_pemohon', 'ktp_pasangan', 'kk', 'npwp_pemohon', 'npwp_pasangan', 'surat_nikah', 'laporan_keuangan_6bln', 'rekening_koran_usaha_6bln', 'foto_denah_shareloc', 'spt_tahunan'],
     ];
 
+    /** Aspek matriks "Indikator Analisa BI Checking & Berkas" (umum + spesifik per kategori pemohon). */
+    private const ANALISA_ASPEK_COMMON = ['bi_pemohon', 'bi_pasangan', 'pref_customer', 'pref_developer', 'angsuran'];
+    private const ANALISA_ASPEK_KARYAWAN = ['status_kerja', 'slip_gaji', 'tt_gaji_tunai'];
+    private const ANALISA_ASPEK_WIRAUSAHA = ['lap_keuangan', 'foto_usaha'];
+
     public function index(Request $request): Response
     {
         abort_unless($request->user()?->can('bankloan.application.view'), 403);
@@ -385,8 +390,30 @@ class KprInitiationController extends Controller
                 return back()->with('error', 'Simpan & Lanjut hanya bila Permintaan Customer = "Lanjut Pemberkasan SPR". Untuk mundur, gunakan tombol Reject BI Checking.');
             }
         }
-        if ($stage === 'analisa' && (empty($data['result']) || empty($data['indikator']))) {
-            return back()->with('error', 'Isi Hasil Analisa & Indikator (HIGH/MEDIUM/LOW) terlebih dahulu.');
+        if ($stage === 'analisa') {
+            if (empty($data['result'])) {
+                return back()->with('error', 'Pilih Hasil Analisa (Layak / Tidak Layak) terlebih dahulu.');
+            }
+            // Aspek wajib mengikuti kategori pemohon (Collect Berkas); semua aspek harus dinilai High/Medium/Low.
+            $cat   = $stages['collect_berkas']['category'] ?? null;
+            $aspek = array_merge(self::ANALISA_ASPEK_COMMON, match ($cat) {
+                'wirausaha' => self::ANALISA_ASPEK_WIRAUSAHA,
+                'karyawan'  => self::ANALISA_ASPEK_KARYAWAN,
+                default     => [],
+            });
+            $sent  = (array) ($data['indikator_items'] ?? []);
+            $clean = [];
+            foreach ($aspek as $k) {
+                if (! in_array($sent[$k] ?? null, ['high', 'medium', 'low'], true)) {
+                    return back()->with('error', 'Nilai semua aspek indikator (High / Medium / Low) terlebih dahulu.');
+                }
+                $clean[$k] = $sent[$k];
+            }
+            // Indikator keseluruhan diturunkan server (anti-tamper): rata-rata High=3/Medium=2/Low=1 → HIGH ≥2.5, MEDIUM ≥1.5.
+            $map = ['high' => 3, 'medium' => 2, 'low' => 1];
+            $avg = array_sum(array_map(fn ($l) => $map[$l], $clean)) / max(1, count($clean));
+            $data['indikator_items'] = $clean;
+            $data['indikator']       = $avg >= 2.5 ? 'high' : ($avg >= 1.5 ? 'medium' : 'low');
         }
         if ($stage === 'profiling' && empty($data['decision_1']) && empty($data['decision_2'])) {
             return back()->with('error', 'Pilih minimal 1 bank keputusan terlebih dahulu.');
