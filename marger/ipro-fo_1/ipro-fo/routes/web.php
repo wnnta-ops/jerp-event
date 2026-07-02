@@ -946,6 +946,11 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
     // Kontrol Progress Lapangan (KPL / opname)
     Route::get('/business-support/spk-kpl',                      [BsKplController::class, 'index'])->name('bs.spk.kpl.index');
     Route::get('/business-support/spk-kpl/create',              [BsKplController::class, 'create'])->name('bs.spk.kpl.create');
+    // Registrasi massal per unit rumah (static path — HARUS sebelum route {progress}).
+    Route::get('/business-support/spk-kpl/units',               [BsKplController::class, 'units'])->name('bs.spk.kpl.units');
+    Route::get('/business-support/spk-kpl/items',               [BsKplController::class, 'items'])->name('bs.spk.kpl.items');
+    Route::get('/business-support/spk-kpl/import-template',     [BsKplController::class, 'importTemplate'])->name('bs.spk.kpl.import-template');
+    Route::post('/business-support/spk-kpl/import',             [BsKplController::class, 'importParse'])->name('bs.spk.kpl.import');
     Route::post('/business-support/spk-kpl',                     [BsKplController::class, 'store'])->name('bs.spk.kpl.store');
     Route::get('/business-support/spk-kpl/{progress}',          [BsKplController::class, 'show'])->name('bs.spk.kpl.show');
     Route::get('/business-support/spk-kpl/{progress}/bap',      [BsKplController::class, 'bap'])->name('bs.spk.kpl.bap');

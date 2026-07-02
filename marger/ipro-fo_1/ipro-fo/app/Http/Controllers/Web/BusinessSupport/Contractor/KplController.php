@@ -7,8 +7,11 @@ namespace App\Http\Controllers\Web\BusinessSupport\Contractor;
 use App\Domain\BusinessSupport\Models\BsWorkOrder;
 use App\Domain\BusinessSupport\Models\BsWorkOrderProgress;
 use App\Domain\BusinessSupport\Services\ContractorService;
+use App\Domain\Foundation\Tenant\Models\Project;
+use App\Domain\Master\Unit\Models\Unit;
 use App\Exceptions\BusinessRuleException;
 use App\Http\Controllers\Controller;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response as HttpResponse;
@@ -45,17 +48,79 @@ class KplController extends Controller
         $spks = BsWorkOrder::with('supplier:id,name')->where('status', 'active')
             ->orderByDesc('spk_date')->orderByDesc('id')->limit(500)->get()
             ->map(fn ($w) => [
-                'id' => $w->id, 'spk_number' => $w->spk_number, 'title' => $w->title,
+                'id' => $w->id, 'spk_number' => $w->spk_number, 'title' => $w->title, 'jenis' => $w->jenis,
                 'supplier' => $w->supplier?->name, 'remaining' => (float) $w->remaining_value,
+                'contract_value' => (float) $w->contract_value,
                 'retention_pct' => (float) $w->retention_pct, 'advance_pct' => (float) $w->advance_pct, 'ppn_pct' => (float) $w->ppn_pct,
             ])->values();
 
-        return Inertia::render('BusinessSupport/Contractor/Kpl/Create', ['spks' => $spks]);
+        return Inertia::render('BusinessSupport/Contractor/Kpl/Create', [
+            'spks'     => $spks,
+            // Project master (sumber unit rumah) untuk registrasi massal per unit.
+            'projects' => Project::orderBy('name')->get(['id', 'name'])
+                ->map(fn ($p) => ['id' => $p->id, 'name' => $p->name])->values(),
+        ]);
     }
 
     public function store(Request $request, ContractorService $svc): RedirectResponse
     {
         abort_unless($request->user()?->canModule('contractor'), 403);
+
+        // Mode MASSAL per unit rumah (ada 'units') vs mode tunggal (nilai DPP langsung).
+        if ($request->has('units')) {
+            $v = $request->validate([
+                'work_order_id'        => ['required', 'integer', 'exists:bs_work_orders,id'],
+                'project_id'           => ['required', 'integer'],
+                'progress_date'        => ['required', 'date'],
+                'description'          => ['required', 'string', 'max:200'],
+                'releaser'             => ['nullable', 'string', 'max:100'],
+                'pic'                  => ['nullable', 'string', 'max:100'],
+                'no_manual'            => ['nullable', 'string', 'max:50'],
+                'contractor_signer'    => ['nullable', 'string', 'max:100'],
+                'units'                => ['required', 'array', 'min:1'],
+                'units.*.unit_id'      => ['required', 'integer'],
+                'units.*.progress_pct' => ['nullable', 'numeric', 'min:0', 'max:100'],
+            ]);
+            $wo = BsWorkOrder::findOrFail($v['work_order_id']);
+            try {
+                $p = $svc->addProgressBulk($wo, $v, $request->user()->id);
+            } catch (BusinessRuleException $e) {
+                return back()->with('error', $e->getMessage());
+            }
+
+            return redirect()->route('bs.spk.kpl.index')
+                ->with('success', 'KPL HOUSING massal tercatat: '.$p->progressUnits()->count().' unit — jurnal termin otomatis.');
+        }
+
+        // Mode MASSAL per item pekerjaan (INFRA / LAIN-LAIN).
+        if ($request->has('items')) {
+            $v = $request->validate([
+                'work_order_id'         => ['required', 'integer', 'exists:bs_work_orders,id'],
+                'category'              => ['required', 'in:infra,lain_lain'],
+                'progress_date'         => ['required', 'date'],
+                'description'           => ['required', 'string', 'max:200'],
+                'releaser'              => ['nullable', 'string', 'max:100'],
+                'pic'                   => ['nullable', 'string', 'max:100'],
+                'no_manual'             => ['nullable', 'string', 'max:50'],
+                'contractor_signer'     => ['nullable', 'string', 'max:100'],
+                'items'                 => ['required', 'array', 'min:1'],
+                'items.*.label'         => ['nullable', 'string', 'max:200'],
+                'items.*.satuan'        => ['nullable', 'string', 'max:30'],
+                'items.*.volume'        => ['nullable', 'numeric'],
+                'items.*.nilai'         => ['nullable', 'numeric', 'min:0'],
+                'items.*.progress_pct'  => ['nullable', 'numeric', 'min:0', 'max:100'],
+            ]);
+            $wo = BsWorkOrder::findOrFail($v['work_order_id']);
+            try {
+                $p = $svc->addProgressItems($wo, $v, $request->user()->id);
+            } catch (BusinessRuleException $e) {
+                return back()->with('error', $e->getMessage());
+            }
+
+            return redirect()->route('bs.spk.kpl.index')
+                ->with('success', 'KPL '.strtoupper($v['category']).' massal tercatat: '.$p->progressUnits()->count().' item — jurnal termin otomatis.');
+        }
+
         $v = $request->validate([
             'work_order_id'     => ['required', 'integer', 'exists:bs_work_orders,id'],
             'progress_date'     => ['required', 'date'],
@@ -75,6 +140,196 @@ class KplController extends Controller
         }
 
         return redirect()->route('bs.spk.kpl.index')->with('success', 'Kontrol Progress Lapangan tercatat — jurnal termin otomatis.');
+    }
+
+    /** Daftar unit rumah suatu project (untuk registrasi KPL massal). */
+    public function units(Request $request): JsonResponse
+    {
+        abort_unless($request->user()?->canModule('contractor'), 403);
+        $units = Unit::where('project_id', (int) $request->input('project_id'))->orderBy('unit_code')
+            ->get(['id', 'unit_code', 'current_price', 'base_price'])
+            ->map(fn ($u) => ['id' => $u->id, 'unit_code' => $u->unit_code, 'price' => (float) ($u->current_price ?: $u->base_price ?: 0)])
+            ->values();
+
+        return response()->json(['units' => $units, 'denom' => (float) $units->sum('price')]);
+    }
+
+    /** Item pekerjaan (BoQ) dari SPK — untuk prefill registrasi INFRA/LAIN-LAIN. */
+    public function items(Request $request): JsonResponse
+    {
+        abort_unless($request->user()?->canModule('contractor'), 403);
+        $wo    = BsWorkOrder::find((int) $request->input('work_order_id'));
+        $items = $wo
+            ? $wo->items()->orderBy('seq')->orderBy('id')->get(['description', 'unit', 'qty', 'amount'])
+                ->map(fn ($i) => ['label' => (string) $i->description, 'satuan' => (string) $i->unit, 'volume' => (float) $i->qty, 'nilai' => (float) $i->amount])->values()
+            : collect();
+
+        return response()->json(['items' => $items]);
+    }
+
+    /** Unduh template Excel (.xlsx) registrasi massal — kolom sesuai kategori (housing / infra). */
+    public function importTemplate(Request $request): HttpResponse
+    {
+        abort_unless($request->user()?->canModule('contractor'), 403);
+        $cat = (string) $request->input('category', 'housing');
+
+        if (in_array($cat, ['infra', 'lain_lain'], true)) {
+            $rows = [['Uraian Pekerjaan', 'Satuan', 'Volume', 'Nilai', 'Progress %']];
+            $wo   = BsWorkOrder::find((int) $request->input('work_order_id'));
+            if ($wo) {
+                foreach ($wo->items()->orderBy('seq')->orderBy('id')->get(['description', 'unit', 'qty', 'amount']) as $it) {
+                    $rows[] = [(string) $it->description, (string) $it->unit, (float) $it->qty, (float) $it->amount, ''];
+                }
+            }
+            if (count($rows) === 1) {
+                $rows[] = ['(uraian pekerjaan)', 'ls', 1, 0, ''];
+            }
+
+            return $this->xlsxDownload($rows, 'template-kpl-infra.xlsx');
+        }
+
+        $codes = Unit::where('project_id', (int) $request->input('project_id'))->orderBy('unit_code')->pluck('unit_code');
+        $rows  = [['Kode Unit', 'Progress %']];
+        foreach ($codes as $c) {
+            $rows[] = [(string) $c, ''];
+        }
+        if (count($rows) === 1) {
+            $rows[] = ['(isi kode unit)', ''];
+        }
+
+        return $this->xlsxDownload($rows, 'template-kpl-housing.xlsx');
+    }
+
+    /** Parse file .xlsx/.csv yang diunggah → baris mentah [[c0,c1,...]] (dipetakan di client per kategori). */
+    public function importParse(Request $request): JsonResponse
+    {
+        abort_unless($request->user()?->canModule('contractor'), 403);
+        // Validasi tipe (mimes) + ukuran (CLAUDE.md §5.10); xlsxRead juga sniff isi (PK/CSV) sbg pertahanan ganda.
+        $request->validate(['file' => ['required', 'file', 'mimes:xlsx,xls,csv,txt', 'max:5120']]);
+        $rows = $this->xlsxRead($request->file('file')->getRealPath());
+        $out  = [];
+        foreach ($rows as $i => $r) {
+            $c0 = trim((string) ($r[0] ?? ''));
+            if ($c0 === '') {
+                continue;
+            }
+            $low = strtolower($c0);
+            if ($i === 0 && (str_contains($low, 'kode') || str_contains($low, 'uraian') || $low === 'no' || $low === 'no.')) {
+                continue; // lewati baris header
+            }
+            $out[] = array_map(fn ($x) => is_string($x) ? trim($x) : $x, array_values($r));
+        }
+
+        return response()->json(['rows' => $out]);
+    }
+
+    /** Bangun & unduh file .xlsx minimal (inline string), tanpa dependency eksternal. */
+    private function xlsxDownload(array $rows, string $filename): HttpResponse
+    {
+        $e   = fn ($s) => htmlspecialchars((string) $s, ENT_QUOTES, 'UTF-8');
+        $col = function (int $i): string { $s = ''; $i++; while ($i > 0) { $m = ($i - 1) % 26; $s = chr(65 + $m).$s; $i = intdiv($i - 1, 26); } return $s; };
+        $body = '';
+        foreach ($rows as $ri => $row) {
+            $r = $ri + 1; $cells = '';
+            foreach (array_values($row) as $ci => $val) {
+                $ref = $col($ci).$r;
+                if ($val === '' || $val === null) {
+                    $cells .= '<c r="'.$ref.'"/>';
+                } elseif (is_int($val) || is_float($val)) {
+                    $cells .= '<c r="'.$ref.'"><v>'.$val.'</v></c>';
+                } else {
+                    $cells .= '<c r="'.$ref.'" t="inlineStr"><is><t xml:space="preserve">'.$e($val).'</t></is></c>';
+                }
+            }
+            $body .= '<row r="'.$r.'">'.$cells.'</row>';
+        }
+        $sheet = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>'.$body.'</sheetData></worksheet>';
+        $ct    = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/></Types>';
+        $rels  = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>';
+        $wb    = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="KPL" sheetId="1" r:id="rId1"/></sheets></workbook>';
+        $wbr   = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/></Relationships>';
+
+        $tmp = tempnam(sys_get_temp_dir(), 'xlsx');
+        $zip = new \ZipArchive();
+        $zip->open($tmp, \ZipArchive::OVERWRITE);
+        $zip->addFromString('[Content_Types].xml', $ct);
+        $zip->addFromString('_rels/.rels', $rels);
+        $zip->addFromString('xl/workbook.xml', $wb);
+        $zip->addFromString('xl/_rels/workbook.xml.rels', $wbr);
+        $zip->addFromString('xl/worksheets/sheet1.xml', $sheet);
+        $zip->close();
+        $content = (string) file_get_contents($tmp);
+        @unlink($tmp);
+
+        return response($content)
+            ->header('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+            ->header('Content-Disposition', 'attachment; filename="'.$filename.'"');
+    }
+
+    /** Baca file .xlsx (ZipArchive) atau .csv → array baris [ [col0, col1, ...], ... ]. */
+    private function xlsxRead(string $path): array
+    {
+        $sig = (string) @file_get_contents($path, false, null, 0, 2);
+        if ($sig !== 'PK') { // bukan zip → perlakukan sebagai CSV
+            $rows = [];
+            if (($h = @fopen($path, 'r')) !== false) {
+                while (($d = fgetcsv($h, 0, ',')) !== false) { $rows[] = $d; }
+                fclose($h);
+            }
+
+            return $rows;
+        }
+
+        $zip = new \ZipArchive();
+        if ($zip->open($path) !== true) { return []; }
+        $shared = [];
+        if (($ss = $zip->getFromName('xl/sharedStrings.xml')) !== false) {
+            foreach (preg_split('/<si[ >]/', $ss) as $k => $si) {
+                if ($k === 0 || ! str_contains($si, '</si>')) { continue; }
+                preg_match_all('/<t[^>]*>(.*?)<\/t>/s', $si, $m);
+                $shared[] = html_entity_decode(implode('', $m[1]), ENT_QUOTES | ENT_XML1);
+            }
+        }
+        $sheet = $zip->getFromName('xl/worksheets/sheet1.xml');
+        $zip->close();
+        if ($sheet === false) { return []; }
+
+        $rows = [];
+        preg_match_all('/<row[^>]*>(.*?)<\/row>/s', $sheet, $rm);
+        foreach ($rm[1] as $rowXml) {
+            $cells = [];
+            preg_match_all('/<c\b([^>]*?)(?:\/>|>(.*?)<\/c>)/s', $rowXml, $cm, PREG_SET_ORDER);
+            foreach ($cm as $c) {
+                $attr = $c[1]; $inner = $c[2] ?? '';
+                $ci   = preg_match('/r="([A-Z]+)\d+"/', $attr, $rr) ? $this->colToIdx($rr[1]) : count($cells);
+                $t    = preg_match('/t="([^"]+)"/', $attr, $tt) ? $tt[1] : 'n';
+                $val  = '';
+                if ($t === 's' && preg_match('/<v>(.*?)<\/v>/s', $inner, $vv)) {
+                    $val = $shared[(int) $vv[1]] ?? '';
+                } elseif ($t === 'inlineStr' && preg_match('/<t[^>]*>(.*?)<\/t>/s', $inner, $vv)) {
+                    $val = html_entity_decode($vv[1], ENT_QUOTES | ENT_XML1);
+                } elseif (preg_match('/<v>(.*?)<\/v>/s', $inner, $vv)) {
+                    $val = $vv[1];
+                }
+                $cells[$ci] = $val;
+            }
+            if ($cells !== []) {
+                ksort($cells);
+                $line = [];
+                for ($i = 0, $max = max(array_keys($cells)); $i <= $max; $i++) { $line[$i] = $cells[$i] ?? ''; }
+                $rows[] = $line;
+            }
+        }
+
+        return $rows;
+    }
+
+    private function colToIdx(string $col): int
+    {
+        $n = 0;
+        foreach (str_split($col) as $ch) { $n = $n * 26 + (ord($ch) - 64); }
+
+        return $n - 1;
     }
 
     /** Detail KPL (dapat diklik dari daftar) + preview angka BAP + tombol Cetak. */
