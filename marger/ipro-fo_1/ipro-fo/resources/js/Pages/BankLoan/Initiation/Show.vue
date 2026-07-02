@@ -117,7 +117,7 @@ const ANALISA_ASPEK: Array<{ key: string; no: number; label: string; scope: 'all
       options: [{ level: 'high', desc: 'Kol 1' }, { level: 'medium', desc: 'Kol 2' }, { level: 'low', desc: 'Kol 3–5' }] },
     { key: 'bi_pasangan', no: 2, label: 'Hasil BI Checking KTP & NPWP Pasangan', scope: 'all',
       options: [{ level: 'high', desc: 'Kol 1' }, { level: 'medium', desc: 'Kol 2' }, { level: 'low', desc: 'Kol 3–5' }] },
-    { key: 'pref_customer', no: 3, label: 'Preferensi Customer', scope: 'all',
+    { key: 'pref_customer', no: 3, label: 'Karakteristik Customer', scope: 'all',
       options: [{ level: 'high', desc: 'Customer kooperatif, dokumen lengkap, respon cepat' }, { level: 'medium', desc: 'Masih mencari perbandingan bank, kelengkapan dokumen masih kurang' }, { level: 'low', desc: 'Tidak kooperatif, respon lambat, menunda proses, belum menentukan cara bayar' }] },
     { key: 'pref_developer', no: 4, label: 'Preferensi Developer', scope: 'all',
       options: [{ level: 'high', desc: 'Platinum' }, { level: 'medium', desc: 'Gold / Tier 3' }, { level: 'low', desc: 'Bronze' }] },
@@ -277,7 +277,7 @@ const berkasCategories: Record<string, { label: string; items: BerkasItem[] }> =
         { key: 'slip_gaji_3bln', label: 'Slip Gaji 3 Bulan' },
         { key: 'rekening_koran_3bln', label: 'Rekening Koran 3 Bulan' },
         { key: 'tanda_terima_gaji_3bln', label: 'Tanda Terima Gaji Tunai 3 Bulan (Apabila Ada)', optional: true },
-        { key: 'spt_tahunan', label: 'SPT Tahunan' },
+        { key: 'spt_tahunan', label: 'SPT Tahunan (Apabila Ada)', optional: true },
     ]},
     wirausaha: { label: 'Wirausaha', items: [
         { key: 'ktp_pemohon', label: 'KTP Pemohon' },
@@ -289,7 +289,7 @@ const berkasCategories: Record<string, { label: string; items: BerkasItem[] }> =
         { key: 'laporan_keuangan_6bln', label: 'Laporan Keuangan 6 Bulan' },
         { key: 'rekening_koran_usaha_6bln', label: 'Rekening Koran Usaha 6 Bulan' },
         { key: 'foto_denah_shareloc', label: 'Foto-Foto, Denah Lokasi Manual, Shareloc Tempat Usaha' },
-        { key: 'spt_tahunan', label: 'SPT Tahunan' },
+        { key: 'spt_tahunan', label: 'SPT Tahunan (Apabila Ada)', optional: true },
     ]},
 };
 const currentItems = computed<BerkasItem[]>(() => berkasCategories[f.collect_berkas.category]?.items ?? []);
