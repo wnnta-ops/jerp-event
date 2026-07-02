@@ -477,6 +477,7 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
     Route::post('/business-support/gl/journal/{journal}/approve',  [BsJournalController::class, 'approve'])->name('bs.gl.journal.approve');
     Route::post('/business-support/gl/journal/{journal}/reject',   [BsJournalController::class, 'reject'])->name('bs.gl.journal.reject');
     Route::get('/business-support/gl/journal-import',         [BsJournalImportController::class, 'form'])->name('bs.gl.journal.import');
+    Route::get('/business-support/gl/journal-import/template', [BsJournalImportController::class, 'template'])->name('bs.gl.journal.import.template');
     Route::post('/business-support/gl/journal-import',        [BsJournalImportController::class, 'store'])->name('bs.gl.journal.import.store');
     Route::get('/business-support/gl/laporan-lanjutan',       [BsGlExtraController::class, 'index'])->name('bs.gl.extra');
     Route::get('/business-support/gl/buku-besar',             [BsLedgerController::class, 'ledger'])->name('bs.gl.ledger');
