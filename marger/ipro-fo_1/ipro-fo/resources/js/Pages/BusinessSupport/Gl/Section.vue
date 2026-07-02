@@ -29,7 +29,7 @@ const titles: Record<string, string> = {
 };
 const sections = computed<Record<string, Item[]>>(() => ({
     'general': [
-        { label: 'Print-Out', route: r('bs.gl.printhub') },
+        { label: 'General Function', route: r('bs.gl.printhub') },
     ],
     'setup': [
         { label: 'Transaction Rule', route: r('bs.gl.transaction-rule.index') },

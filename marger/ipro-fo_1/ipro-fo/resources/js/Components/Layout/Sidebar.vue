@@ -101,7 +101,7 @@ const groups: { title: string; items: NavItem[] }[] = [
         title: 'General Ledger',
         items: [
             { label: 'General Function', icon: FileText, permission: ['businesssupport.view', 'gl.*'], children: [
-                { label: 'Print-Out', href: 'bs.gl.printhub' },
+                { label: 'General Function', href: 'bs.gl.printhub' },
             ]},
             { label: 'Setup', icon: SlidersHorizontal, permission: ['businesssupport.view', 'gl.*'], children: [
                 { label: 'Transaction Rule', href: 'bs.gl.transaction-rule.index' },

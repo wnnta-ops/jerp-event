@@ -35,7 +35,7 @@ function r(name?: string | null, params?: Record<string, any>): string | null {
 // 35 sub-modul GL â€” dikelompokkan persis seperti menu eProperty BO.
 const menu: Array<{ group: string; items: Array<{ label: string; route: string | null; summary?: string | null }> }> = [
     { group: 'General Function', items: [
-        { label: 'Print-Out', route: r('bs.gl.printhub') },
+        { label: 'General Function', route: r('bs.gl.printhub') },
     ]},
     { group: 'Setup', items: [
         { label: 'Transaction Rule', route: r('bs.gl.transaction-rule.index') },

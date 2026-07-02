@@ -463,7 +463,7 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
     // ── GENERAL LEDGER (modul mandiri; /general-ledger → hub GL) ──
     Route::redirect('/general-ledger', '/business-support/gl')->name('gl.home');
     Route::get('/business-support/gl',                        [BsGlController::class, 'index'])->name('bs.gl.index');
-    Route::get('/business-support/gl/print-out',             [BsGlController::class, 'printHub'])->name('bs.gl.printhub');
+    Route::get('/business-support/gl/general-function',      [BsGlController::class, 'generalFunction'])->name('bs.gl.printhub');
     Route::post('/business-support/gl/period/close',          [BsGlController::class, 'closePeriod'])->name('bs.gl.period.close');
     Route::post('/business-support/gl/period/open',           [BsGlController::class, 'openPeriod'])->name('bs.gl.period.open');
     Route::get('/business-support/gl/journal',                [BsJournalController::class, 'index'])->name('bs.gl.journal.index');
