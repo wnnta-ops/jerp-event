@@ -32,6 +32,7 @@ use App\Http\Controllers\Web\BusinessSupport\Payable\ApInvoiceController as BsAp
 use App\Http\Controllers\Web\BusinessSupport\Payable\ApOpeningController as BsApOpeningController;
 use App\Http\Controllers\Web\BusinessSupport\Payable\ApRepairController as BsApRepairController;
 use App\Http\Controllers\Web\BusinessSupport\Payable\ApCategoryController as BsApCategoryController;
+use App\Http\Controllers\Web\BusinessSupport\Payable\GimmickCategoryController as BsGimmickCategoryController;
 use App\Http\Controllers\Web\BusinessSupport\Payable\ApKuitansiController as BsApKuitansiController;
 use App\Http\Controllers\Web\BusinessSupport\Payable\PostingInvoiceController as BsApPostingController;
 use App\Http\Controllers\Web\BusinessSupport\Payable\PenghapusanController as BsApPenghapusanController;
@@ -584,6 +585,11 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
     Route::post('/business-support/payable-kategori',         [BsApCategoryController::class, 'store'])->name('bs.ap.categories.store');
     Route::put('/business-support/payable-kategori/{category}', [BsApCategoryController::class, 'update'])->name('bs.ap.categories.update');
     Route::delete('/business-support/payable-kategori/{category}', [BsApCategoryController::class, 'destroy'])->name('bs.ap.categories.destroy');
+    // AP — Kategori Gimmick (setup) — fungsi sama dengan Kategori Invoice
+    Route::get('/business-support/gimmick-kategori',          [BsGimmickCategoryController::class, 'index'])->name('bs.gimmick.categories.index');
+    Route::post('/business-support/gimmick-kategori',         [BsGimmickCategoryController::class, 'store'])->name('bs.gimmick.categories.store');
+    Route::put('/business-support/gimmick-kategori/{category}', [BsGimmickCategoryController::class, 'update'])->name('bs.gimmick.categories.update');
+    Route::delete('/business-support/gimmick-kategori/{category}', [BsGimmickCategoryController::class, 'destroy'])->name('bs.gimmick.categories.destroy');
     // AP — Kuitansi Hutang
     Route::get('/business-support/payable-kuitansi',          [BsApKuitansiController::class, 'index'])->name('bs.ap.kuitansi.index');
     Route::get('/business-support/payable-kuitansi/create',   [BsApKuitansiController::class, 'create'])->name('bs.ap.kuitansi.create');
@@ -937,7 +943,6 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
     // ── CONTRACTOR MANAGEMENT (modul mandiri; /contractor-management → hub) ──
     Route::redirect('/contractor-management', '/business-support/contractor-hub')->name('contractor.home');
     Route::get('/business-support/contractor-hub',               [BsSpkController::class, 'hub'])->name('bs.spk.home');
-    Route::get('/business-support/contractor-print-out',         [BsSpkController::class, 'printHub'])->name('bs.spk.printhub');
 
     // Setup → Project
     Route::get('/business-support/spk-project',                  [BsProjectController::class, 'index'])->name('bs.spk.project.index');
@@ -948,7 +953,14 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
     // Kontrol Progress Lapangan (KPL / opname)
     Route::get('/business-support/spk-kpl',                      [BsKplController::class, 'index'])->name('bs.spk.kpl.index');
     Route::get('/business-support/spk-kpl/create',              [BsKplController::class, 'create'])->name('bs.spk.kpl.create');
+    // Registrasi massal per unit rumah (static path — HARUS sebelum route {progress}).
+    Route::get('/business-support/spk-kpl/units',               [BsKplController::class, 'units'])->name('bs.spk.kpl.units');
+    Route::get('/business-support/spk-kpl/items',               [BsKplController::class, 'items'])->name('bs.spk.kpl.items');
+    Route::get('/business-support/spk-kpl/import-template',     [BsKplController::class, 'importTemplate'])->name('bs.spk.kpl.import-template');
+    Route::post('/business-support/spk-kpl/import',             [BsKplController::class, 'importParse'])->name('bs.spk.kpl.import');
     Route::post('/business-support/spk-kpl',                     [BsKplController::class, 'store'])->name('bs.spk.kpl.store');
+    Route::get('/business-support/spk-kpl/{progress}',          [BsKplController::class, 'show'])->name('bs.spk.kpl.show');
+    Route::get('/business-support/spk-kpl/{progress}/bap',      [BsKplController::class, 'bap'])->name('bs.spk.kpl.bap');
 
     // Progress Retensi + Registrasi Retensi
     Route::get('/business-support/spk-retention',               [BsRetentionController::class, 'index'])->name('bs.spk.retention.index');

@@ -17,9 +17,6 @@ function r(name?: string | null, params?: Record<string, any>): string | null {
 
 // Sub-modul Contractor Management â€” dikelompokkan persis seperti menu eProperty BO (/PLAN/).
 const menu: Array<{ group: string; items: Array<{ label: string; route: string | null; summary?: string | null }> }> = [
-    { group: 'General Function', items: [
-        { label: 'Print-Out', route: r('bs.spk.printhub') },
-    ]},
     { group: 'Setup', items: [
         { label: 'Project', route: r('bs.spk.project.index') },
     ]},

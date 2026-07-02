@@ -6,6 +6,7 @@ namespace App\Domain\BusinessSupport\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class BsWorkOrderProgress extends Model
 {
@@ -13,7 +14,7 @@ class BsWorkOrderProgress extends Model
     protected $fillable = [
         'work_order_id', 'progress_date', 'description', 'progress_value', 'retention_amount',
         'ppn_amount', 'net_payable', 'status', 'paid_at', 'journal_id', 'pay_journal_id', 'created_by',
-        'kpl_number', 'releaser', 'pic', 'no_manual',
+        'kpl_number', 'releaser', 'pic', 'no_manual', 'contractor_signer', 'category',
     ];
     protected $casts = [
         'progress_date' => 'date', 'paid_at' => 'date',
@@ -22,4 +23,6 @@ class BsWorkOrderProgress extends Model
     ];
 
     public function workOrder(): BelongsTo { return $this->belongsTo(BsWorkOrder::class, 'work_order_id'); }
+
+    public function progressUnits(): HasMany { return $this->hasMany(BsWorkOrderProgressUnit::class, 'progress_id'); }
 }

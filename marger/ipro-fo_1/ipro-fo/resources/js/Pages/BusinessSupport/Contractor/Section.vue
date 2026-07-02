@@ -14,7 +14,6 @@ function r(name?: string | null, params?: Record<string, any>): string | null {
 
 type Item = { label: string; route: string | null; summary?: string | null };
 const titles: Record<string, string> = {
-    general: 'General Function',
     setup: 'Setup',
     master: 'Master',
     query: 'Query',
@@ -23,9 +22,6 @@ const titles: Record<string, string> = {
     mutasi: 'Mutasi Progress',
 };
 const sections = computed<Record<string, Item[]>>(() => ({
-    general: [
-        { label: 'Print-Out', route: r('bs.spk.printhub') },
-    ],
     setup: [
         { label: 'Project', route: r('bs.spk.project.index') },
     ],

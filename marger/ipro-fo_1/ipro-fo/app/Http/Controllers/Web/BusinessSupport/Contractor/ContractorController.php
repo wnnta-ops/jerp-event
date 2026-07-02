@@ -37,12 +37,6 @@ class ContractorController extends Controller
         ]);
     }
 
-    public function printHub(Request $request): Response
-    {
-        abort_unless($request->user()?->canModule('contractor'), 403);
-
-        return Inertia::render('BusinessSupport/Contractor/PrintHub');
-    }
 
     /** Form picker: Addendum / Adjust PPN / Pembatalan — pilih SPK aktif lalu proses. */
     public function pickerForm(Request $request, string $action): Response
@@ -122,6 +116,7 @@ class ContractorController extends Controller
             'is_pkp'                  => ['nullable', 'boolean'],
             'contract_value'          => ['required', 'numeric', 'min:0.01'],
             'retention_pct'           => ['nullable', 'numeric', 'min:0', 'max:100'],
+            'advance_pct'             => ['nullable', 'numeric', 'min:0', 'max:100'],
             'ppn_pct'                 => ['nullable', 'numeric', 'min:0', 'max:100'],
             'notes'                   => ['nullable', 'string', 'max:255'],
             'items'                   => ['nullable', 'array'],

@@ -20,6 +20,11 @@ FROM composer:${COMPOSER_VERSION} AS composer-deps
 
 WORKDIR /app
 
+# Workaround jaringan lokal: codeload.github.com kadang membalas HTTP/2 400 saat
+# Composer mengunduh banyak paket PARALEL (rate-limit burst dari IP kantor). Batasi
+# unduhan paralel ke 1 → andal. (Aman direvert bila build di jaringan lain/CI.)
+ENV COMPOSER_MAX_PARALLEL_HTTP=1
+
 # Copy hanya manifest dulu agar layer composer cache-friendly
 COPY composer.json composer.lock ./
 

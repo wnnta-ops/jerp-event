@@ -6,6 +6,7 @@ namespace App\Domain\BusinessSupport\Services;
 
 use App\Domain\BusinessSupport\Models\BsAccount;
 use App\Domain\BusinessSupport\Models\BsWorkOrder;
+use App\Domain\Master\Unit\Models\Unit;
 use App\Domain\BusinessSupport\Models\BsWorkOrderAddendum;
 use App\Domain\BusinessSupport\Models\BsWorkOrderMaterial;
 use App\Domain\BusinessSupport\Models\BsWorkOrderMaterialReturn;
@@ -58,6 +59,7 @@ final class ContractorService
                 'is_pkp'                  => $data['is_pkp'] ?? true,
                 'contract_value'          => round((float) $data['contract_value'], 2),
                 'retention_pct'           => round((float) ($data['retention_pct'] ?? 0), 2),
+                'advance_pct'             => round((float) ($data['advance_pct'] ?? 0), 2),
                 'ppn_pct'                 => round((float) ($data['ppn_pct'] ?? 0), 2),
                 'status'                  => 'active',
                 'notes'                   => $data['notes'] ?? null,
@@ -158,6 +160,7 @@ final class ContractorService
                 'releaser'         => $data['releaser'] ?? null,
                 'pic'              => $data['pic'] ?? null,
                 'no_manual'        => $data['no_manual'] ?? null,
+                'contractor_signer'=> $data['contractor_signer'] ?? null,
                 'created_by'       => $userId,
             ]);
 
@@ -168,6 +171,177 @@ final class ContractorService
 
             return $progress;
         });
+    }
+
+    /**
+     * Registrasi KPL MASSAL per unit rumah. Nilai (DPP) tiap unit = porsi kontrak SPK
+     * (harga unit / Σ harga unit project) × progress%. Jurnal termin = AGREGAT (1 posting,
+     * mirror addProgress). Rincian per unit disimpan → feed HPP/CIP per unit (modul COGS).
+     *
+     * @param array{project_id:int, progress_date:string, description:string, units:array<int,array{unit_id:int,progress_pct:float}>, releaser?:string, pic?:string, no_manual?:string, contractor_signer?:string} $data
+     */
+    public function addProgressBulk(BsWorkOrder $wo, array $data, ?int $userId = null): BsWorkOrderProgress
+    {
+        return DB::transaction(function () use ($wo, $data, $userId): BsWorkOrderProgress {
+            if ($wo->status !== 'active') {
+                throw new BusinessRuleException('SPK sudah ditutup.', errorCode: 'SPK_CLOSED');
+            }
+
+            $projectId = (int) ($data['project_id'] ?? 0);
+            $allUnits  = Unit::where('project_id', $projectId)->get(['id', 'unit_code', 'current_price', 'base_price']);
+            if ($allUnits->isEmpty()) {
+                throw new BusinessRuleException('Project belum memiliki unit rumah.', errorCode: 'SPK_NO_UNITS');
+            }
+            $priceOf  = fn ($u) => (float) ($u->current_price ?: $u->base_price ?: 0);
+            $denom    = (float) $allUnits->sum($priceOf);
+            $equal    = $denom <= 0; // fallback: bagi rata bila semua harga kosong
+            $contract = (float) $wo->contract_value;
+            $byId     = $allUnits->keyBy('id');
+
+            // Alokasi porsi kontrak × progress% per unit rumah.
+            $lines = [];
+            foreach ((array) ($data['units'] ?? []) as $row) {
+                $u   = $byId->get((int) ($row['unit_id'] ?? 0));
+                $pct = round((float) ($row['progress_pct'] ?? 0), 2);
+                if (! $u || $pct <= 0) {
+                    continue;
+                }
+                $portion = $equal ? round($contract / $allUnits->count(), 2) : round($contract * $priceOf($u) / $denom, 2);
+                $dpp     = round($portion * $pct / 100, 2);
+                if ($dpp <= 0) {
+                    continue;
+                }
+                $lines[] = ['unit_id' => $u->id, 'unit_code' => $u->unit_code, 'progress_pct' => $pct, 'contract_portion' => $portion, 'dpp_value' => $dpp];
+            }
+            if ($lines === []) {
+                throw new BusinessRuleException('Isi progress% minimal satu unit rumah.', errorCode: 'SPK_BULK_EMPTY');
+            }
+
+            return $this->persistAggregateProgress($wo, array_merge($data, ['category' => 'housing']), $lines, count($lines).' unit', $userId);
+        });
+    }
+
+    /**
+     * Registrasi KPL MASSAL per ITEM pekerjaan (INFRA / LAIN-LAIN, berbasis BoQ). DPP tiap item = nilai × progress%.
+     * Jurnal termin AGREGAT (sama seperti HOUSING). Rincian item disimpan (line_label/satuan/volume).
+     *
+     * @param array{category?:string, progress_date:string, description:string, items:array<int,array{label?:string,satuan?:string,volume?:float,nilai:float,progress_pct:float}>, releaser?:string, pic?:string, no_manual?:string, contractor_signer?:string} $data
+     */
+    public function addProgressItems(BsWorkOrder $wo, array $data, ?int $userId = null): BsWorkOrderProgress
+    {
+        return DB::transaction(function () use ($wo, $data, $userId): BsWorkOrderProgress {
+            if ($wo->status !== 'active') {
+                throw new BusinessRuleException('SPK sudah ditutup.', errorCode: 'SPK_CLOSED');
+            }
+            $cat = in_array($data['category'] ?? '', ['infra', 'lain_lain'], true) ? $data['category'] : 'infra';
+
+            $lines = [];
+            foreach ((array) ($data['items'] ?? []) as $row) {
+                $label = trim((string) ($row['label'] ?? ''));
+                $nilai = round((float) ($row['nilai'] ?? 0), 2);
+                $pct   = round((float) ($row['progress_pct'] ?? 0), 2);
+                if ($label === '' || $nilai <= 0 || $pct <= 0) {
+                    continue;
+                }
+                $dpp = round($nilai * $pct / 100, 2);
+                if ($dpp <= 0) {
+                    continue;
+                }
+                $lines[] = [
+                    'unit_id'          => null,
+                    'line_label'       => mb_substr($label, 0, 200),
+                    'satuan'           => isset($row['satuan']) && $row['satuan'] !== '' ? mb_substr((string) $row['satuan'], 0, 30) : null,
+                    'volume'           => isset($row['volume']) && $row['volume'] !== '' ? round((float) $row['volume'], 2) : null,
+                    'progress_pct'     => $pct,
+                    'contract_portion' => $nilai,
+                    'dpp_value'        => $dpp,
+                ];
+            }
+            if ($lines === []) {
+                throw new BusinessRuleException('Isi minimal satu item pekerjaan dengan Nilai & progress% > 0.', errorCode: 'SPK_ITEM_EMPTY');
+            }
+
+            return $this->persistAggregateProgress($wo, array_merge($data, ['category' => $cat]), $lines, count($lines).' item', $userId);
+        });
+    }
+
+    /**
+     * Inti bersama: rincian baris (unit/item) → total DPP → jurnal termin AGREGAT + simpan KPL + rincian + update SPK.
+     * Dipanggil dlm transaksi oleh addProgressBulk (HOUSING) & addProgressItems (INFRA/LAIN).
+     *
+     * @param array<int,array<string,mixed>> $childLines tiap baris WAJIB punya dpp_value + field rincian utk disimpan
+     */
+    private function persistAggregateProgress(BsWorkOrder $wo, array $data, array $childLines, string $countLabel, ?int $userId): BsWorkOrderProgress
+    {
+        $totalDpp = round(array_sum(array_map(fn ($l) => (float) $l['dpp_value'], $childLines)), 2);
+        if ($totalDpp <= 0) {
+            throw new BusinessRuleException('Total progress harus lebih dari 0.', errorCode: 'SPK_BULK_EMPTY');
+        }
+        if ($totalDpp > (float) $wo->remaining_value + 0.01) {
+            throw new BusinessRuleException('Total progress melebihi sisa nilai kontrak ('.number_format((float) $wo->remaining_value, 2).').', errorCode: 'SPK_OVER');
+        }
+
+        // ── Jurnal agregat (identik pola addProgress) ──
+        $retention = round($totalDpp * (float) $wo->retention_pct / 100, 2);
+        $ppn       = round($totalDpp * (float) $wo->ppn_pct / 100, 2);
+        $net       = round($totalDpp + $ppn - $retention, 2);
+        $payable      = $this->acc('payable');
+        $retentionAcc = $retention > 0 ? $this->acc('retention_payable') : null;
+        if (! $payable) {
+            throw new BusinessRuleException('Akun Hutang Usaha belum diset.', errorCode: 'SPK_NO_PAYABLE');
+        }
+        if ($retention > 0 && ! $retentionAcc) {
+            throw new BusinessRuleException('Akun Hutang Retensi belum diset.', errorCode: 'SPK_NO_RETENTION_ACC');
+        }
+        $ppnAcc = $ppn > 0 ? $this->acc('ppn_in') : null;
+        $jlines = [];
+        if ($ppn > 0 && $ppnAcc) {
+            $jlines[] = ['account_id' => $wo->construction_account_id, 'debit' => $totalDpp, 'credit' => 0, 'description' => 'Progress '.$wo->title];
+            $jlines[] = ['account_id' => $ppnAcc, 'debit' => $ppn, 'credit' => 0, 'description' => 'PPN Masukan'];
+        } else {
+            $jlines[] = ['account_id' => $wo->construction_account_id, 'debit' => round($totalDpp + $ppn, 2), 'credit' => 0, 'description' => 'Progress '.$wo->title];
+        }
+        $jlines[] = ['account_id' => $payable, 'debit' => 0, 'credit' => $net, 'description' => 'Hutang kontraktor '.($wo->supplier?->name ?? '')];
+        if ($retention > 0) {
+            $jlines[] = ['account_id' => $retentionAcc, 'debit' => 0, 'credit' => $retention, 'description' => 'Retensi ditahan'];
+        }
+        $journal = $this->journal->post([
+            'journal_date'   => $data['progress_date'],
+            'source'         => 'ap',
+            'reference'      => $wo->spk_number,
+            'description'    => 'Progress SPK '.$wo->spk_number.' — '.$data['description'].' ('.$countLabel.')',
+            'cost_center_id' => $wo->cost_center_id,
+            'created_by'     => $userId,
+        ], $jlines);
+
+        $progress = $wo->progress()->create([
+            'progress_date'     => $data['progress_date'],
+            'description'       => $data['description'],
+            'category'          => $data['category'] ?? 'housing',
+            'progress_value'    => $totalDpp,
+            'retention_amount'  => $retention,
+            'ppn_amount'        => $ppn,
+            'net_payable'       => $net,
+            'status'            => 'unpaid',
+            'journal_id'        => $journal->id,
+            'kpl_number'        => $this->nextKplNumber($data['progress_date']),
+            'releaser'          => $data['releaser'] ?? null,
+            'pic'               => $data['pic'] ?? null,
+            'no_manual'         => $data['no_manual'] ?? null,
+            'contractor_signer' => $data['contractor_signer'] ?? null,
+            'created_by'        => $userId,
+        ]);
+
+        foreach ($childLines as $ln) {
+            $progress->progressUnits()->create($ln);
+        }
+
+        $wo->update([
+            'progress_value' => round((float) $wo->progress_value + $totalDpp, 2),
+            'retention_held' => round((float) $wo->retention_held + $retention, 2),
+        ]);
+
+        return $progress;
     }
 
     /** @param array{payment_date:string, cash_account_id:int} $data */

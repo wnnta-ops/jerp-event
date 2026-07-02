@@ -31,3 +31,6 @@ Thumbs.db
 # Dev-only compose override (lokal). Produksi/VPS pakai base saja → `docker compose
 # up -d --build` = mode prod. Dev: salin dari docker-compose.override.yml.example.
 /docker-compose.override.yml
+
+# Catatan kerja Claude Code (bukan bagian aplikasi J-ERP)
+/memory
