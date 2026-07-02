@@ -6,6 +6,7 @@ namespace App\Http\Controllers\Web\BusinessSupport\Gl;
 
 use App\Domain\BusinessSupport\Models\BsAccount;
 use App\Domain\BusinessSupport\Models\BsCostCenter;
+use App\Domain\BusinessSupport\Models\BsFiscalPeriod;
 use App\Domain\BusinessSupport\Models\BsJournal;
 use App\Domain\BusinessSupport\Services\JournalService;
 use App\Exceptions\BusinessRuleException;
@@ -159,9 +160,17 @@ class JournalController extends Controller
     }
 
     /** #54: form edit jurnal (koreksi pencatatan). */
-    public function edit(Request $request, BsJournal $journal): Response
+    public function edit(Request $request, BsJournal $journal): Response|RedirectResponse
     {
         abort_unless($request->user()?->canModule('gl'), 403);
+
+        // Jurnal pada periode yang sudah CLOSED tidak dapat diedit hingga closing dibuka (Closing Fiskal).
+        $period = BsFiscalPeriod::where('tenant_id', $journal->tenant_id)
+            ->where('year', $journal->period_year)->where('month', $journal->period_month)->first();
+        if ($period && $period->status === 'closed') {
+            return redirect()->route('bs.gl.journal.show', $journal)
+                ->with('error', "Periode {$journal->period_year}/{$journal->period_month} sudah CLOSED — jurnal tidak dapat diedit hingga closing dibuka.");
+        }
 
         return Inertia::render('BusinessSupport/Gl/Journals/Form', [
             'accounts'    => BsAccount::where('is_active', true)->where('is_postable', true)->orderBy('code')->get(['id', 'code', 'name', 'type']),

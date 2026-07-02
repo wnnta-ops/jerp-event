@@ -101,7 +101,7 @@ const groups: { title: string; items: NavItem[] }[] = [
         title: 'General Ledger',
         items: [
             { label: 'General Function', icon: FileText, permission: ['businesssupport.view', 'gl.*'], children: [
-                { label: 'Print-Out', href: 'bs.gl.printhub' },
+                { label: 'General Function', href: 'bs.gl.printhub' },
             ]},
             { label: 'Setup', icon: SlidersHorizontal, permission: ['businesssupport.view', 'gl.*'], children: [
                 { label: 'Transaction Rule', href: 'bs.gl.transaction-rule.index' },
@@ -124,7 +124,7 @@ const groups: { title: string; items: NavItem[] }[] = [
             ]},
             { label: 'Neraca', icon: Calculator, permission: ['businesssupport.view', 'gl.*'], children: [
                 { label: 'Neraca Saldo', href: 'bs.gl.trialbalance' },
-                { label: 'Neraca & Laba Rugi', href: 'bs.gl.financials' },
+                { label: 'Neraca', href: 'bs.gl.balancesheet' },
                 { label: 'Neraca Lajur', href: 'bs.gl.worksheet' },
                 { label: 'Histori Saldo', href: 'bs.gl.extra', params: { mode: 'histori' } },
                 { label: 'Neraca Multi Periode', href: 'bs.gl.extra', params: { mode: 'multi' } },
@@ -132,6 +132,8 @@ const groups: { title: string; items: NavItem[] }[] = [
                 { label: 'Neraca Komparasi (Tahunan)', href: 'bs.gl.extra', params: { mode: 'tahunan' } },
             ]},
             { label: 'Laba Rugi', icon: BarChart3, permission: ['businesssupport.view', 'gl.*'], children: [
+                { label: 'Laba Rugi', href: 'bs.gl.incomestatement' },
+                { label: 'Laba Rugi vs Budget', href: 'bs.gl.lr-budget' },
                 { label: 'Laba Rugi Multi Periode', href: 'bs.gl.extra', params: { mode: 'lr-multi' } },
                 { label: 'Laba Rugi Komparasi (Bulanan)', href: 'bs.gl.comparative' },
                 { label: 'Laba Rugi Komparasi (Tahunan)', href: 'bs.gl.extra', params: { mode: 'lr-tahunan' } },
