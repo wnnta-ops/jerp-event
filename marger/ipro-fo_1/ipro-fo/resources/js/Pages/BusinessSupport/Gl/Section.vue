@@ -61,6 +61,7 @@ const sections = computed<Record<string, Item[]>>(() => ({
         { label: 'Neraca Komparasi (Tahunan)', route: r('bs.gl.extra', { mode: 'tahunan' }) },
     ],
     'laba-rugi': [
+        { label: 'Laba Rugi vs Budget', route: r('bs.gl.lr-budget') },
         { label: 'Laba Rugi | Multi Periode', route: r('bs.gl.extra', { mode: 'lr-multi' }) },
         { label: 'Laba Rugi Komparasi (Bulanan)', route: r('bs.gl.comparative') },
         { label: 'Laba Rugi Komparasi (Tahunan)', route: r('bs.gl.extra', { mode: 'lr-tahunan' }) },

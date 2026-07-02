@@ -67,6 +67,7 @@ const menu: Array<{ group: string; items: Array<{ label: string; route: string |
         { label: 'Neraca Komparasi (Tahunan)', route: r('bs.gl.extra', { mode: 'tahunan' }) },
     ]},
     { group: 'Laba Rugi', items: [
+        { label: 'Laba Rugi vs Budget', route: r('bs.gl.lr-budget') },
         { label: 'Laba Rugi | Multi Periode', route: r('bs.gl.extra', { mode: 'lr-multi' }) },
         { label: 'Laba Rugi Komparasi (Bulanan)', route: r('bs.gl.comparative') },
         { label: 'Laba Rugi Komparasi (Tahunan)', route: r('bs.gl.extra', { mode: 'lr-tahunan' }) },

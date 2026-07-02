@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Web\BusinessSupport\Gl;
 
 use App\Domain\BusinessSupport\Models\BsAccount;
+use App\Domain\BusinessSupport\Models\BsBudget;
 use App\Domain\BusinessSupport\Models\BsJournalLine;
 use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
@@ -429,6 +430,143 @@ class LedgerReportController extends Controller
             'rows'       => $rows,
             'net_profit' => $netProfit,
         ]);
+    }
+
+    /**
+     * Laba Rugi vs Budget — realisasi (jurnal posted) vs budget (bs_budgets) + variance,
+     * berkategori sama dengan Laporan Laba Rugi. Variance = Realisasi − Budget.
+     */
+    public function incomeVsBudget(Request $request): Response
+    {
+        abort_unless($request->user()?->canModule('gl'), 403);
+
+        $year = $request->integer('year') ?: (int) now()->year;
+
+        // Realisasi: net (debit-credit) per kode dari jurnal posted pada period_year.
+        $realByCode = [];
+        foreach ($this->accountBalances($year) as $x) {
+            $realByCode[$x['code']] = (float) $x['net'];
+        }
+
+        // Budget: jumlah tahunan per akun × arah normal (D → +, K → −) supaya sekonvensi net jurnal.
+        $accts    = BsAccount::query()->get(['id', 'code', 'normal_balance']);
+        $codeById = $accts->pluck('code', 'id');
+        $signById = $accts->mapWithKeys(fn ($a) => [$a->id => $a->normal_balance === 'D' ? 1.0 : -1.0]);
+        $budByCode = [];
+        foreach (BsBudget::where('year', $year)->where('status', '!=', 'rejected')->get() as $b) {
+            $code = $codeById[$b->account_id] ?? null;
+            if (! $code) {
+                continue;
+            }
+            // Total tahunan: pakai amount (eksak) bila terisi, jika tidak jumlahkan breakdown bulanan.
+            $annual = abs((float) $b->amount) > 0.001 ? (float) $b->amount : (float) array_sum($b->monthsArray());
+            $budByCode[$code] = ($budByCode[$code] ?? 0.0) + ($signById[$b->account_id] ?? 1.0) * $annual;
+        }
+
+        $sumR  = fn (string $p) => $this->sumPrefix($realByCode, $p);
+        $sumB  = fn (string $p) => $this->sumPrefix($budByCode, $p);
+        $nodes = BsAccount::where('level', 3)->orderBy('code')->get(['code', 'name']);
+
+        // Nilai skalar per aliran (realisasi / budget) — mirror struktur Laporan Laba Rugi.
+        $vals = function (callable $sum): array {
+            $penjualan = -1.0 * $sum('401');
+            $hpp       = $sum('501');
+            $gross     = $penjualan - $hpp;
+            $bebanPenj = $sum('502');
+            $bua       = $sum('503');
+            $bebanOp   = $bebanPenj + $bua;
+            $ebitda    = $gross - $bebanOp;
+            $pendLain  = -1.0 * ($sum('402') + $sum('601'));
+            $bebanLain = $sum('701');
+            $netLain   = $pendLain - $bebanLain;
+
+            return [
+                'penjualan' => $penjualan, 'hpp' => $hpp, 'gross' => $gross,
+                'bebanPenj' => $bebanPenj, 'bua' => $bua, 'bebanOp' => $bebanOp, 'ebitda' => $ebitda,
+                'pendLain' => $pendLain, 'bebanLain' => $bebanLain, 'netLain' => $netLain,
+                'net' => $ebitda + $netLain,
+            ];
+        };
+        $R = $vals($sumR);
+        $B = $vals($sumB);
+
+        // Basis common-size % = Jumlah Pendapatan Usaha per kolom.
+        $baseR = $R['penjualan'];
+        $baseB = $B['penjualan'];
+
+        $rows = [];
+        $push = function (string $kind, string $label, ?float $r = null, ?float $b = null) use (&$rows, $baseR, $baseB): void {
+            $rows[] = [
+                'kind' => $kind, 'label' => $label,
+                'realisasi' => $r, 'budget' => $b,
+                'variance'  => ($r === null && $b === null) ? null : (float) (($r ?? 0.0) - ($b ?? 0.0)),
+                'realisasi_pct' => ($r !== null && abs($baseR) > 0.001) ? $r / $baseR * 100.0 : null,
+                'budget_pct'    => ($b !== null && abs($baseB) > 0.001) ? $b / $baseB * 100.0 : null,
+            ];
+        };
+        $pushLines = function (array $prefixes, bool $creditPositive) use ($nodes, $sumR, $sumB, $push): void {
+            $sign = $creditPositive ? -1.0 : 1.0;
+            foreach ($nodes as $n) {
+                foreach ($prefixes as $p) {
+                    if (str_starts_with($n['code'], $p)) {
+                        $r = $sign * $sumR($n['code']);
+                        $b = $sign * $sumB($n['code']);
+                        if (abs($r) > 0.001 || abs($b) > 0.001) {
+                            $push('line', $n['name'], $r, $b);
+                        }
+                        break;
+                    }
+                }
+            }
+        };
+
+        $push('header', 'PENDAPATAN');
+        $push('group', 'PENDAPATAN USAHA');
+        $pushLines(['401'], true);
+        $push('subtotal', 'JUMLAH PENDAPATAN USAHA', $R['penjualan'], $B['penjualan']);
+        $push('header', 'BEBAN POKOK PENDAPATAN');
+        $pushLines(['501'], false);
+        $push('subtotal', 'JUMLAH BEBAN POKOK PENDAPATAN', $R['hpp'], $B['hpp']);
+        $push('emphasis', 'LABA RUGI GROSS', $R['gross'], $B['gross']);
+        $push('header', 'BEBAN PENJUALAN');
+        $pushLines(['502'], false);
+        $push('subtotal', 'JUMLAH BEBAN PENJUALAN', $R['bebanPenj'], $B['bebanPenj']);
+        $push('header', 'BEBAN UMUM & ADMINISTRASI (BUA)');
+        $pushLines(['503'], false);
+        $push('subtotal', 'JUMLAH BEBAN UMUM & ADMINISTRASI', $R['bua'], $B['bua']);
+        $push('subtotal2', 'JUMLAH BEBAN PENJUALAN & BUA', $R['bebanOp'], $B['bebanOp']);
+        $push('emphasis', 'EBITDA', $R['ebitda'], $B['ebitda']);
+        $push('header', 'PENDAPATAN DAN BEBAN LAIN');
+        $push('group', 'PENDAPATAN LAIN-LAIN');
+        $pushLines(['402', '601'], true);
+        $push('subtotal', 'JUMLAH PENDAPATAN LAIN-LAIN', $R['pendLain'], $B['pendLain']);
+        $push('group', 'BEBAN LAIN-LAIN');
+        $pushLines(['701'], false);
+        $push('subtotal', 'JUMLAH BEBAN LAIN-LAIN', $R['bebanLain'], $B['bebanLain']);
+        $push('subtotal2', 'JUMLAH PENDAPATAN DAN BEBAN LAIN', $R['netLain'], $B['netLain']);
+        $push('total', 'LABA RUGI NETTO', $R['net'], $B['net']);
+
+        return Inertia::render('BusinessSupport/Gl/IncomeVsBudget', [
+            'company'    => $this->companyName(),
+            'year'       => $year,
+            'as_of'      => now()->translatedFormat('d F Y'),
+            'rows'       => $rows,
+            'totals'     => ['realisasi' => $R['net'], 'budget' => $B['net'], 'variance' => $R['net'] - $B['net']],
+            'has_budget' => array_sum(array_map('abs', $budByCode)) > 0.001,
+        ]);
+    }
+
+    /** Σ nilai di $map untuk kode berawalan $prefix. @param array<string,float> $map */
+    private function sumPrefix(array $map, string $prefix): float
+    {
+        $s = 0.0;
+        foreach ($map as $code => $v) {
+            if (str_starts_with((string) $code, $prefix)) {
+                $s += (float) $v;
+            }
+        }
+
+        return $s;
     }
 
     /** Nama perusahaan (tenant) untuk kop laporan. */

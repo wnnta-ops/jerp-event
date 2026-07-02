@@ -133,6 +133,7 @@ const groups: { title: string; items: NavItem[] }[] = [
             ]},
             { label: 'Laba Rugi', icon: BarChart3, permission: ['businesssupport.view', 'gl.*'], children: [
                 { label: 'Laba Rugi', href: 'bs.gl.incomestatement' },
+                { label: 'Laba Rugi vs Budget', href: 'bs.gl.lr-budget' },
                 { label: 'Laba Rugi Multi Periode', href: 'bs.gl.extra', params: { mode: 'lr-multi' } },
                 { label: 'Laba Rugi Komparasi (Bulanan)', href: 'bs.gl.comparative' },
                 { label: 'Laba Rugi Komparasi (Tahunan)', href: 'bs.gl.extra', params: { mode: 'lr-tahunan' } },

@@ -487,6 +487,7 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
     Route::get('/business-support/gl/laporan-keuangan',       [BsLedgerController::class, 'financials'])->name('bs.gl.financials');
     Route::get('/business-support/gl/neraca',                 [BsLedgerController::class, 'balanceSheet'])->name('bs.gl.balancesheet');
     Route::get('/business-support/gl/laba-rugi',              [BsLedgerController::class, 'incomeStatement'])->name('bs.gl.incomestatement');
+    Route::get('/business-support/gl/laba-rugi-vs-budget',    [BsLedgerController::class, 'incomeVsBudget'])->name('bs.gl.lr-budget');
     Route::get('/business-support/gl/arus-kas',               [BsCashFlowController::class, 'index'])->name('bs.gl.cashflow');
     Route::get('/business-support/gl/neraca-lajur',           [BsComparativeController::class, 'worksheet'])->name('bs.gl.worksheet');
     Route::get('/business-support/gl/komparasi',              [BsComparativeController::class, 'comparative'])->name('bs.gl.comparative');
