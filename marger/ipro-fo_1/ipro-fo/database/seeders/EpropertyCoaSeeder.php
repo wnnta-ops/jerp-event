@@ -58,15 +58,10 @@ class EpropertyCoaSeeder extends Seeder
             );
         }
 
-        // Bersihkan placeholder head-6 lama (BEBAN DILUAR USAHA) bila sempat ter-seed.
-        BsAccount::where('tenant_id', $tenant->id)
-            ->whereIn('code', ['601', '60101', '6010101', '601010101', '60101010101'])
-            ->forceDelete();
-
-        // L/R Ditahan & Berjalan dipindah dari Kategori 3 (MODAL) ke Kategori 8 — hapus sisa di head 3.
-        BsAccount::where('tenant_id', $tenant->id)
-            ->where(fn ($q) => $q->where('code', 'like', '30102%')->orWhere('code', 'like', '30103%'))
-            ->forceDelete();
+        // Catatan: blok pembersih lama (hapus 601* dan 30102*/30103*) DIHAPUS —
+        // COA resmi eProperty (8 file .xls) kini memuat 601 PENDAPATAN LAIN-LAIN
+        // (di head 6) serta 30102/30103 L/R di Kategori 3 (MODAL), sehingga akun
+        // tersebut wajib dipertahankan, bukan dihapus.
 
         // Hubungkan parent_id berdasarkan parent_code.
         $byCode = BsAccount::where('tenant_id', $tenant->id)->pluck('id', 'code');
