@@ -58,7 +58,8 @@ const menu: Array<{ group: string; items: Array<{ label: string; route: string |
     ]},
     { group: 'Neraca', items: [
         { label: 'Neraca Saldo (Trial Balance)', route: r('bs.gl.trialbalance') },
-        { label: 'Neraca & Laba Rugi (Periode)', route: r('bs.gl.financials') },
+        { label: 'Neraca (Balance Sheet)', route: r('bs.gl.balancesheet') },
+        { label: 'Laba Rugi (Income Statement)', route: r('bs.gl.incomestatement') },
         { label: 'Neraca Lajur (Worksheet)', route: r('bs.gl.worksheet') },
         { label: 'Histori Saldo', route: r('bs.gl.extra', { mode: 'histori' }) },
         { label: 'Neraca | Multi Periode', route: r('bs.gl.extra', { mode: 'multi' }) },

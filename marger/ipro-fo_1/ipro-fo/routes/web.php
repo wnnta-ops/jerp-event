@@ -482,7 +482,11 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
     Route::get('/business-support/gl/laporan-lanjutan',       [BsGlExtraController::class, 'index'])->name('bs.gl.extra');
     Route::get('/business-support/gl/buku-besar',             [BsLedgerController::class, 'ledger'])->name('bs.gl.ledger');
     Route::get('/business-support/gl/neraca-saldo',           [BsLedgerController::class, 'trialBalance'])->name('bs.gl.trialbalance');
+    Route::get('/business-support/gl/neraca-saldo/export',    [BsLedgerController::class, 'trialBalanceExport'])->name('bs.gl.trialbalance.export');
+    Route::get('/business-support/gl/neraca-saldo/print',     [BsLedgerController::class, 'trialBalancePrint'])->name('bs.gl.trialbalance.print');
     Route::get('/business-support/gl/laporan-keuangan',       [BsLedgerController::class, 'financials'])->name('bs.gl.financials');
+    Route::get('/business-support/gl/neraca',                 [BsLedgerController::class, 'balanceSheet'])->name('bs.gl.balancesheet');
+    Route::get('/business-support/gl/laba-rugi',              [BsLedgerController::class, 'incomeStatement'])->name('bs.gl.incomestatement');
     Route::get('/business-support/gl/arus-kas',               [BsCashFlowController::class, 'index'])->name('bs.gl.cashflow');
     Route::get('/business-support/gl/neraca-lajur',           [BsComparativeController::class, 'worksheet'])->name('bs.gl.worksheet');
     Route::get('/business-support/gl/komparasi',              [BsComparativeController::class, 'comparative'])->name('bs.gl.comparative');
