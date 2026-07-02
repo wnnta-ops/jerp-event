@@ -464,7 +464,7 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
     // ── GENERAL LEDGER (modul mandiri; /general-ledger → hub GL) ──
     Route::redirect('/general-ledger', '/business-support/gl')->name('gl.home');
     Route::get('/business-support/gl',                        [BsGlController::class, 'index'])->name('bs.gl.index');
-    Route::get('/business-support/gl/print-out',             [BsGlController::class, 'printHub'])->name('bs.gl.printhub');
+    Route::get('/business-support/gl/general-function',      [BsGlController::class, 'generalFunction'])->name('bs.gl.printhub');
     Route::post('/business-support/gl/period/close',          [BsGlController::class, 'closePeriod'])->name('bs.gl.period.close');
     Route::post('/business-support/gl/period/open',           [BsGlController::class, 'openPeriod'])->name('bs.gl.period.open');
     Route::get('/business-support/gl/journal',                [BsJournalController::class, 'index'])->name('bs.gl.journal.index');
@@ -478,11 +478,17 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
     Route::post('/business-support/gl/journal/{journal}/approve',  [BsJournalController::class, 'approve'])->name('bs.gl.journal.approve');
     Route::post('/business-support/gl/journal/{journal}/reject',   [BsJournalController::class, 'reject'])->name('bs.gl.journal.reject');
     Route::get('/business-support/gl/journal-import',         [BsJournalImportController::class, 'form'])->name('bs.gl.journal.import');
+    Route::get('/business-support/gl/journal-import/template', [BsJournalImportController::class, 'template'])->name('bs.gl.journal.import.template');
     Route::post('/business-support/gl/journal-import',        [BsJournalImportController::class, 'store'])->name('bs.gl.journal.import.store');
     Route::get('/business-support/gl/laporan-lanjutan',       [BsGlExtraController::class, 'index'])->name('bs.gl.extra');
     Route::get('/business-support/gl/buku-besar',             [BsLedgerController::class, 'ledger'])->name('bs.gl.ledger');
     Route::get('/business-support/gl/neraca-saldo',           [BsLedgerController::class, 'trialBalance'])->name('bs.gl.trialbalance');
+    Route::get('/business-support/gl/neraca-saldo/export',    [BsLedgerController::class, 'trialBalanceExport'])->name('bs.gl.trialbalance.export');
+    Route::get('/business-support/gl/neraca-saldo/print',     [BsLedgerController::class, 'trialBalancePrint'])->name('bs.gl.trialbalance.print');
     Route::get('/business-support/gl/laporan-keuangan',       [BsLedgerController::class, 'financials'])->name('bs.gl.financials');
+    Route::get('/business-support/gl/neraca',                 [BsLedgerController::class, 'balanceSheet'])->name('bs.gl.balancesheet');
+    Route::get('/business-support/gl/laba-rugi',              [BsLedgerController::class, 'incomeStatement'])->name('bs.gl.incomestatement');
+    Route::get('/business-support/gl/laba-rugi-vs-budget',    [BsLedgerController::class, 'incomeVsBudget'])->name('bs.gl.lr-budget');
     Route::get('/business-support/gl/arus-kas',               [BsCashFlowController::class, 'index'])->name('bs.gl.cashflow');
     Route::get('/business-support/gl/neraca-lajur',           [BsComparativeController::class, 'worksheet'])->name('bs.gl.worksheet');
     Route::get('/business-support/gl/komparasi',              [BsComparativeController::class, 'comparative'])->name('bs.gl.comparative');

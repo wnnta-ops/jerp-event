@@ -35,7 +35,7 @@ function r(name?: string | null, params?: Record<string, any>): string | null {
 // 35 sub-modul GL â€” dikelompokkan persis seperti menu eProperty BO.
 const menu: Array<{ group: string; items: Array<{ label: string; route: string | null; summary?: string | null }> }> = [
     { group: 'General Function', items: [
-        { label: 'Print-Out', route: r('bs.gl.printhub') },
+        { label: 'General Function', route: r('bs.gl.printhub') },
     ]},
     { group: 'Setup', items: [
         { label: 'Transaction Rule', route: r('bs.gl.transaction-rule.index') },
@@ -58,7 +58,8 @@ const menu: Array<{ group: string; items: Array<{ label: string; route: string |
     ]},
     { group: 'Neraca', items: [
         { label: 'Neraca Saldo (Trial Balance)', route: r('bs.gl.trialbalance') },
-        { label: 'Neraca & Laba Rugi (Periode)', route: r('bs.gl.financials') },
+        { label: 'Neraca (Balance Sheet)', route: r('bs.gl.balancesheet') },
+        { label: 'Laba Rugi (Income Statement)', route: r('bs.gl.incomestatement') },
         { label: 'Neraca Lajur (Worksheet)', route: r('bs.gl.worksheet') },
         { label: 'Histori Saldo', route: r('bs.gl.extra', { mode: 'histori' }) },
         { label: 'Neraca | Multi Periode', route: r('bs.gl.extra', { mode: 'multi' }) },
@@ -66,6 +67,7 @@ const menu: Array<{ group: string; items: Array<{ label: string; route: string |
         { label: 'Neraca Komparasi (Tahunan)', route: r('bs.gl.extra', { mode: 'tahunan' }) },
     ]},
     { group: 'Laba Rugi', items: [
+        { label: 'Laba Rugi vs Budget', route: r('bs.gl.lr-budget') },
         { label: 'Laba Rugi | Multi Periode', route: r('bs.gl.extra', { mode: 'lr-multi' }) },
         { label: 'Laba Rugi Komparasi (Bulanan)', route: r('bs.gl.comparative') },
         { label: 'Laba Rugi Komparasi (Tahunan)', route: r('bs.gl.extra', { mode: 'lr-tahunan' }) },

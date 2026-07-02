@@ -199,14 +199,32 @@ final class JournalService
         });
     }
 
-    /** Baru → Final. */
+    /**
+     * Baru → Final.
+     * Finalisasi = penegasan bahwa jurnal SUDAH BALANCE (total debit = total kredit).
+     * Berbeda dari Approve: finalisasi murni pengecekan keseimbangan, bukan verifikasi berwenang.
+     */
     public function finalize(BsJournal $journal): BsJournal
     {
         $this->assertPeriodOpen($journal);
         if ($journal->status !== 'draft') {
             throw new BusinessRuleException('Hanya jurnal berstatus Baru yang bisa difinalisasi.', errorCode: 'JOURNAL_NOT_DRAFT');
         }
-        $journal->update(['status' => 'final', 'finalized_at' => now()]);
+
+        // Syarat finalisasi: jurnal harus balance (debit = kredit) dan bernilai > 0.
+        $totalD = round((float) $journal->lines()->sum('debit'), 2);
+        $totalK = round((float) $journal->lines()->sum('credit'), 2);
+        if ($totalD <= 0.0) {
+            throw new BusinessRuleException('Nilai jurnal harus lebih dari 0 untuk difinalisasi.', errorCode: 'JOURNAL_ZERO');
+        }
+        if ($totalD !== $totalK) {
+            throw new BusinessRuleException(
+                'Jurnal belum balance: total debit ('.number_format($totalD, 2).') ≠ total kredit ('.number_format($totalK, 2).') — tidak bisa difinalisasi.',
+                errorCode: 'JOURNAL_NOT_BALANCED',
+            );
+        }
+
+        $journal->update(['status' => 'final', 'finalized_at' => now(), 'total_debit' => $totalD, 'total_credit' => $totalK]);
 
         return $journal;
     }
