@@ -37,12 +37,6 @@ class ContractorController extends Controller
         ]);
     }
 
-    public function printHub(Request $request): Response
-    {
-        abort_unless($request->user()?->canModule('contractor'), 403);
-
-        return Inertia::render('BusinessSupport/Contractor/PrintHub');
-    }
 
     /** Form picker: Addendum / Adjust PPN / Pembatalan — pilih SPK aktif lalu proses. */
     public function pickerForm(Request $request, string $action): Response

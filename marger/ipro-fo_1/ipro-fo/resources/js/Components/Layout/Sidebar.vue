@@ -165,7 +165,7 @@ const groups: { title: string; items: NavItem[] }[] = [
         title: 'Account Payable',
         items: [
             { label: 'General Function', icon: FileText, permission: ['businesssupport.view', 'ap.*'], children: [
-                { label: 'General Function', href: 'bs.ap.printhub' },
+                { label: 'Print-Out', href: 'bs.ap.printhub' },
             ]},
             { label: 'Setup', icon: SlidersHorizontal, permission: ['businesssupport.view', 'ap.*'], children: [
                 { label: 'Transaction Rule', href: 'bs.gl.transaction-rule.index', params: { source: 'ap' } },
@@ -206,7 +206,7 @@ const groups: { title: string; items: NavItem[] }[] = [
         title: 'Cash Book',
         items: [
             { label: 'General Function', icon: FileText, permission: ['businesssupport.view', 'cashbook.*'], children: [
-                { label: 'General Function', href: 'bs.cashbook.printhub' },
+                { label: 'Print-Out', href: 'bs.cashbook.printhub' },
             ]},
             { label: 'Setup', icon: SlidersHorizontal, permission: ['businesssupport.view', 'cashbook.*'], children: [
                 { label: 'Transaction Rule', href: 'bs.gl.transaction-rule.index', params: { source: 'cash' } },
@@ -298,9 +298,6 @@ const groups: { title: string; items: NavItem[] }[] = [
     {
         title: 'Contractor Management',
         items: [
-            { label: 'General Function', icon: FileText, permission: ['businesssupport.view', 'contractor.*'], children: [
-                { label: 'Print-Out', href: 'bs.spk.printhub' },
-            ]},
             { label: 'Setup', icon: FolderGit2, permission: ['businesssupport.view', 'contractor.*'], children: [
                 { label: 'Project', href: 'bs.spk.project.index' },
             ]},

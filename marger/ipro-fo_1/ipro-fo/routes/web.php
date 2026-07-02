@@ -936,7 +936,6 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
     // ── CONTRACTOR MANAGEMENT (modul mandiri; /contractor-management → hub) ──
     Route::redirect('/contractor-management', '/business-support/contractor-hub')->name('contractor.home');
     Route::get('/business-support/contractor-hub',               [BsSpkController::class, 'hub'])->name('bs.spk.home');
-    Route::get('/business-support/contractor-print-out',         [BsSpkController::class, 'printHub'])->name('bs.spk.printhub');
 
     // Setup → Project
     Route::get('/business-support/spk-project',                  [BsProjectController::class, 'index'])->name('bs.spk.project.index');
