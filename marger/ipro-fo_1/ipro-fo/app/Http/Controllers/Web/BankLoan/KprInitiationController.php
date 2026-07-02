@@ -36,10 +36,11 @@ class KprInitiationController extends Controller
         'kpr_application'=> 'Proses KPR',
     ];
 
-    /** Berkas WAJIB per kategori Collect Berkas (item "(Apabila Ada)" TIDAK termasuk → tidak menghalangi lanjut). */
+    /** Berkas WAJIB per kategori Collect Berkas (item "(Apabila Ada)" TIDAK termasuk → tidak menghalangi lanjut).
+     *  Tanda Terima Gaji Tunai & SPT Tahunan (karyawan) + SPT Tahunan (wirausaha) = opsional. */
     private const BERKAS_REQUIRED = [
-        'karyawan'  => ['ktp_pemohon', 'ktp_pasangan', 'kk', 'npwp_pemohon', 'npwp_pasangan', 'surat_nikah', 'sk_kerja', 'slip_gaji_3bln', 'rekening_koran_3bln', 'spt_tahunan'],
-        'wirausaha' => ['ktp_pemohon', 'ktp_pasangan', 'kk', 'npwp_pemohon', 'npwp_pasangan', 'surat_nikah', 'laporan_keuangan_6bln', 'rekening_koran_usaha_6bln', 'foto_denah_shareloc', 'spt_tahunan'],
+        'karyawan'  => ['ktp_pemohon', 'ktp_pasangan', 'kk', 'npwp_pemohon', 'npwp_pasangan', 'surat_nikah', 'sk_kerja', 'slip_gaji_3bln', 'rekening_koran_3bln'],
+        'wirausaha' => ['ktp_pemohon', 'ktp_pasangan', 'kk', 'npwp_pemohon', 'npwp_pasangan', 'surat_nikah', 'laporan_keuangan_6bln', 'rekening_koran_usaha_6bln', 'foto_denah_shareloc'],
     ];
 
     /** Aspek matriks "Indikator Analisa BI Checking & Berkas" (umum + spesifik per kategori pemohon). */
@@ -101,11 +102,15 @@ class KprInitiationController extends Controller
     {
         abort_unless($request->user()?->can('bankloan.application.create'), 403);
 
-        // R1 — sumber inisiasi = TTS (Tanda Terima Setoran). TTS membawa customer/booking/amount langsung.
+        // R1 — sumber inisiasi = TTS (Tanda Terima Setoran) AWAL. TTS membawa customer/booking/amount langsung.
         // TTS yang SUDAH dipakai inisiasi lain disembunyikan (1 TTS = 1 inisiasi).
+        // Hanya TTS "booked" (terikat booking) & yang sudah MELEWATI VERIFIKASI (status verified/posted)
+        // yang boleh tampil di awal inisiasi — TTS pending/giro-belum-cair & TTS tanpa booking disembunyikan.
         $usedTtsIds = KprInitiation::whereNotNull('tts_receipt_id')->pluck('tts_receipt_id')->all();
         $tts = Tts::query()
             ->whereNotIn('id', $usedTtsIds)
+            ->whereNotNull('booking_id')
+            ->whereIn('status', ['verified', 'posted'])
             ->with('customer:id,full_name')
             ->latest('received_date')
             ->limit(300)

@@ -46,6 +46,7 @@ function submit() {
       <table class="w-full text-sm">
         <thead>
           <tr class="bg-neutral-50 text-left text-xs uppercase text-neutral-500 dark:bg-neutral-800">
+            <th class="w-6 px-3 py-2"></th>
             <th class="px-3 py-2">No. KPL</th>
             <th class="px-3 py-2">Tgl</th>
             <th class="px-3 py-2">SPK</th>
@@ -57,7 +58,8 @@ function submit() {
           </tr>
         </thead>
         <tbody class="divide-y divide-neutral-200 dark:divide-neutral-800">
-          <tr v-for="r in rows.data" :key="r.id">
+          <tr v-for="r in rows.data" :key="r.id" @click="router.get(route('bs.spk.kpl.show', r.id))" class="cursor-pointer hover:bg-neutral-50 dark:hover:bg-neutral-800">
+            <td class="px-3 py-2 text-primary-600 dark:text-primary-400" title="Lihat detail">›</td>
             <td class="px-3 py-2 font-mono text-xs">{{ r.kpl_number }}</td>
             <td class="px-3 py-2">{{ fmtDate(r.progress_date) }}</td>
             <td class="px-3 py-2">{{ r.work_order?.spk_number }}</td>

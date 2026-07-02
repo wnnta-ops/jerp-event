@@ -18,7 +18,7 @@ const form = useForm<any>({
     project_id: '', jenis: 'bangunan', supplier_id: '', cost_center_id: '',
     construction_account_id: props.defaultConstruction ?? '', title: '',
     releaser: '', pic_project: '', is_pkp: true,
-    contract_value: 0, retention_pct: 5, ppn_pct: 11, notes: '',
+    contract_value: 0, retention_pct: 5, advance_pct: 0, ppn_pct: 11, notes: '',
     items: [] as any[], terms: [] as any[],
 });
 function fmtRp(v: number) { return 'Rp ' + Number(v ?? 0).toLocaleString('id-ID'); }
@@ -48,8 +48,9 @@ const inputCls = 'h-9 w-full rounded-lg border border-neutral-300 bg-white px-3 
                 <div class="md:col-span-2"><label class="mb-1 block text-xs font-medium text-neutral-500">Uraian Pekerjaan *</label><input v-model="form.title" required placeholder="mis. Pekerjaan struktur Cluster 3 Tahap 5" :class="inputCls" /><p v-if="form.errors.title" class="mt-1 text-xs text-danger-500">{{ form.errors.title }}</p></div>
                 <div><label class="mb-1 block text-xs font-medium text-neutral-500">Akun Konstruksi/CIP *</label><select v-model="form.construction_account_id" required :class="inputCls"><option value="">— pilih —</option><option v-for="a in constructionAccounts" :key="a.id" :value="a.id">{{ a.code }} - {{ a.name }}</option></select></div>
                 <div><label class="mb-1 block text-xs font-medium text-neutral-500">Nilai Kontrak *</label><input v-model.number="form.contract_value" type="number" step="1" min="1" required :class="[inputCls,'text-right font-mono']" /><p v-if="form.errors.contract_value" class="mt-1 text-xs text-danger-500">{{ form.errors.contract_value }}</p></div>
-                <div class="grid grid-cols-3 gap-3 md:col-span-2">
+                <div class="grid grid-cols-2 gap-3 md:grid-cols-4 md:col-span-2">
                     <div><label class="mb-1 block text-xs font-medium text-neutral-500">Retensi (%)</label><input v-model.number="form.retention_pct" type="number" step="0.5" min="0" max="100" :class="[inputCls,'text-right']" /></div>
+                    <div><label class="mb-1 block text-xs font-medium text-neutral-500">Uang Muka (%)</label><input v-model.number="form.advance_pct" type="number" step="0.5" min="0" max="100" :class="[inputCls,'text-right']" /></div>
                     <div><label class="mb-1 block text-xs font-medium text-neutral-500">PPN (%)</label><input v-model.number="form.ppn_pct" type="number" step="0.5" min="0" max="100" :class="[inputCls,'text-right']" /></div>
                     <div class="flex items-end"><label class="inline-flex items-center gap-2 text-sm"><input v-model="form.is_pkp" type="checkbox" /> PKP</label></div>
                 </div>
