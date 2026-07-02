@@ -948,6 +948,8 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
     Route::get('/business-support/spk-kpl',                      [BsKplController::class, 'index'])->name('bs.spk.kpl.index');
     Route::get('/business-support/spk-kpl/create',              [BsKplController::class, 'create'])->name('bs.spk.kpl.create');
     Route::post('/business-support/spk-kpl',                     [BsKplController::class, 'store'])->name('bs.spk.kpl.store');
+    Route::get('/business-support/spk-kpl/{progress}',          [BsKplController::class, 'show'])->name('bs.spk.kpl.show');
+    Route::get('/business-support/spk-kpl/{progress}/bap',      [BsKplController::class, 'bap'])->name('bs.spk.kpl.bap');
 
     // Progress Retensi + Registrasi Retensi
     Route::get('/business-support/spk-retention',               [BsRetentionController::class, 'index'])->name('bs.spk.retention.index');

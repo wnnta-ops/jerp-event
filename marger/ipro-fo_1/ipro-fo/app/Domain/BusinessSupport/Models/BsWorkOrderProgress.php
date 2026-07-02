@@ -13,7 +13,7 @@ class BsWorkOrderProgress extends Model
     protected $fillable = [
         'work_order_id', 'progress_date', 'description', 'progress_value', 'retention_amount',
         'ppn_amount', 'net_payable', 'status', 'paid_at', 'journal_id', 'pay_journal_id', 'created_by',
-        'kpl_number', 'releaser', 'pic', 'no_manual',
+        'kpl_number', 'releaser', 'pic', 'no_manual', 'contractor_signer',
     ];
     protected $casts = [
         'progress_date' => 'date', 'paid_at' => 'date',

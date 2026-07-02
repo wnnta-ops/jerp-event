@@ -11,12 +11,15 @@ use App\Exceptions\BusinessRuleException;
 use App\Http\Controllers\Controller;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Http\Response as HttpResponse;
 use Inertia\Inertia;
 use Inertia\Response;
 
 /**
  * Kontrol Progress Lapangan (KPL / opname) — mencatat progress lapangan terhadap SPK.
  * Output = termin progress (jurnal Dr CIP+PPN / Cr Hutang+Retensi) via ContractorService::addProgress.
+ * Detail (show) bisa diklik dari daftar; tombol "Cetak BAP" mengeluarkan Berita Acara Pembayaran
+ * dengan perhitungan sama seperti template Excel "BAP Pembangunan".
  */
 class KplController extends Controller
 {
@@ -44,7 +47,7 @@ class KplController extends Controller
             ->map(fn ($w) => [
                 'id' => $w->id, 'spk_number' => $w->spk_number, 'title' => $w->title,
                 'supplier' => $w->supplier?->name, 'remaining' => (float) $w->remaining_value,
-                'retention_pct' => (float) $w->retention_pct, 'ppn_pct' => (float) $w->ppn_pct,
+                'retention_pct' => (float) $w->retention_pct, 'advance_pct' => (float) $w->advance_pct, 'ppn_pct' => (float) $w->ppn_pct,
             ])->values();
 
         return Inertia::render('BusinessSupport/Contractor/Kpl/Create', ['spks' => $spks]);
@@ -54,13 +57,14 @@ class KplController extends Controller
     {
         abort_unless($request->user()?->canModule('contractor'), 403);
         $v = $request->validate([
-            'work_order_id'  => ['required', 'integer', 'exists:bs_work_orders,id'],
-            'progress_date'  => ['required', 'date'],
-            'description'    => ['required', 'string', 'max:200'],
-            'progress_value' => ['required', 'numeric', 'min:0.01'],
-            'releaser'       => ['nullable', 'string', 'max:100'],
-            'pic'            => ['nullable', 'string', 'max:100'],
-            'no_manual'      => ['nullable', 'string', 'max:50'],
+            'work_order_id'     => ['required', 'integer', 'exists:bs_work_orders,id'],
+            'progress_date'     => ['required', 'date'],
+            'description'       => ['required', 'string', 'max:200'],
+            'progress_value'    => ['required', 'numeric', 'min:0.01'],
+            'releaser'          => ['nullable', 'string', 'max:100'],
+            'pic'               => ['nullable', 'string', 'max:100'],
+            'no_manual'         => ['nullable', 'string', 'max:50'],
+            'contractor_signer' => ['nullable', 'string', 'max:100'],
         ]);
 
         $wo = BsWorkOrder::findOrFail($v['work_order_id']);
@@ -71,5 +75,243 @@ class KplController extends Controller
         }
 
         return redirect()->route('bs.spk.kpl.index')->with('success', 'Kontrol Progress Lapangan tercatat — jurnal termin otomatis.');
+    }
+
+    /** Detail KPL (dapat diklik dari daftar) + preview angka BAP + tombol Cetak. */
+    public function show(Request $request, BsWorkOrderProgress $progress): Response
+    {
+        abort_unless($request->user()?->canModule('contractor'), 403);
+        $progress->load(['workOrder:id,spk_number,spk_date,title,supplier_id,contract_value,addendum_value,retention_pct,advance_pct,ppn_pct,project_id', 'workOrder.supplier:id,name', 'workOrder.project:id,name']);
+
+        return Inertia::render('BusinessSupport/Contractor/Kpl/Show', [
+            'kpl' => $progress,
+            'bap' => $this->computeBap($progress),
+        ]);
+    }
+
+    /** Cetak Berita Acara Pembayaran (HTML → window.print). */
+    public function bap(Request $request, BsWorkOrderProgress $progress): HttpResponse
+    {
+        abort_unless($request->user()?->canModule('contractor'), 403);
+        $progress->load(['workOrder.supplier:id,name', 'workOrder.project:id,name']);
+
+        return response($this->renderBap($this->computeBap($progress)))
+            ->header('Content-Type', 'text/html; charset=UTF-8');
+    }
+
+    // ── Perhitungan BAP (basis GROSS / termasuk PPN, sama seperti template Excel) ──
+    private function computeBap(BsWorkOrderProgress $p): array
+    {
+        $wo = $p->workOrder;
+        $ppnFactor = 1 + (float) $wo->ppn_pct / 100;
+        $retPct    = (float) $wo->retention_pct / 100;
+        $advPct    = (float) $wo->advance_pct / 100;
+
+        // Nilai kontrak disajikan gross (termasuk PPN) seperti BAP; data app tersimpan DPP (excl. PPN).
+        // CATATAN: contract_value SUDAH termasuk addendum (ContractorService::addendum menambah delta ke
+        // contract_value DAN addendum_value). Maka kontrak awal (N35) = contract_value − addendum_value,
+        // dan N37 = contract_value gross (= N35 + N36), agar addendum tidak terhitung dua kali.
+        $originalDpp   = round((float) $wo->contract_value - (float) $wo->addendum_value, 2);
+        $contractGross = round($originalDpp * $ppnFactor, 2);                // N35 = Nilai Kontrak Awal (murni)
+        $addendumGross = round((float) $wo->addendum_value * $ppnFactor, 2); // N36 = delta addendum
+        $finalGross    = round((float) $wo->contract_value * $ppnFactor, 2); // N37 = kontrak kini (= N35 + N36)
+        $uangMuka      = round($advPct * $finalGross, 2);
+
+        // Progress kumulatif (DPP) s/d termin ini (rank) & sebelum ini, urut tanggal lalu id.
+        $all  = $wo->progress()->orderBy('progress_date')->orderBy('id')->get(['id', 'progress_value'])->values();
+        $rank = 0;
+        foreach ($all as $i => $row) {
+            if ((int) $row->id === (int) $p->id) { $rank = $i + 1; break; }
+        }
+        $cumNow = 0.0; $cumPrev = 0.0;
+        foreach ($all as $i => $row) {
+            if ($i < $rank) { $cumNow += (float) $row->progress_value; }
+            if ($i < $rank - 1) { $cumPrev += (float) $row->progress_value; }
+        }
+
+        // Nilai hak kumulatif (= N44) untuk suatu progress DPP kumulatif.
+        $entitlement = function (float $cumDpp) use ($ppnFactor, $finalGross, $uangMuka, $retPct): float {
+            $g          = $cumDpp * $ppnFactor;
+            $dpRecovery = $finalGross > 0 ? -($g / $finalGross) * $uangMuka : 0.0;
+            $sub        = $g + $uangMuka + $dpRecovery;
+            $ret        = -($g * $retPct);
+
+            return round($sub + $ret, 2);
+        };
+        $eNow  = $entitlement($cumNow);
+        $ePrev = $rank > 1 ? $entitlement($cumPrev) : 0.0;
+
+        $n39 = round($cumNow * $ppnFactor, 2);
+        $n40 = $uangMuka;
+        $n41 = $finalGross > 0 ? round(-($n39 / $finalGross) * $uangMuka, 2) : 0.0;
+        $n42 = round($n39 + $n40 + $n41, 2);
+        $n43 = round(-($n39 * $retPct), 2);
+        $n44 = round($n42 + $n43, 2);
+        $n45 = round(-$ePrev, 2);
+        $n46 = round($n44 + $n45, 2);
+        $n48 = round($finalGross - $ePrev, 2);
+        $n49 = round($n48 - $n46, 2);
+
+        $d      = $p->progress_date;
+        $bulan  = [1 => 'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
+        $hari   = ['Sunday' => 'Minggu', 'Monday' => 'Senin', 'Tuesday' => 'Selasa', 'Wednesday' => 'Rabu', 'Thursday' => 'Kamis', 'Friday' => 'Jumat', 'Saturday' => 'Sabtu'];
+        $roman  = [1 => 'I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X', 'XI', 'XII'];
+        $day    = (int) $d->format('j');
+        $month  = (int) $d->format('n');
+        $year   = (int) $d->format('Y');
+        $company = (array) config('business_support.company');
+
+        return [
+            'kpl_number'     => $p->kpl_number,
+            'bap_number'     => sprintf('%03d/BAP/MUP-MUK/%s/%d', max(1, $rank), $roman[$month] ?? '', $year),
+            'payment_seq'    => max(1, $rank),
+            'pemberi_tugas'  => $company['name'] ?? 'PT. MITRA USAHA PROPERTINDO',
+            'pemberi_signer' => $company['signer_name'] ?? '(__________)',
+            'pemberi_title'  => $company['signer_title'] ?? 'Direktur',
+            'city'           => $company['city'] ?? 'Sidoarjo',
+            'kontraktor'     => $wo->supplier?->name ?? '-',
+            'kontraktor_signer' => $p->contractor_signer ?: '(__________)',
+            'pekerjaan'      => $wo->title,
+            'project'        => $wo->project?->name,
+            'spk_number'     => $wo->spk_number,
+            'spk_date'       => optional($wo->spk_date)->format('d/m/Y'),
+            'uraian'         => $p->description,
+            // tanggal terbilang
+            'tgl_hari'       => $hari[$d->format('l')] ?? '',
+            'tgl_display'    => sprintf('%02d %s %d', $day, $bulan[$month] ?? '', $year),
+            'tgl_day_words'  => $this->terbilang($day),
+            'tgl_bulan'      => $bulan[$month] ?? '',
+            'tgl_year_words' => $this->terbilang($year),
+            // persentase & nilai
+            'retensi_pct'    => (float) $wo->retention_pct,
+            'advance_pct'    => (float) $wo->advance_pct,
+            'ppn_pct'        => (float) $wo->ppn_pct,
+            'progress_pct'   => $finalGross > 0 ? round($n39 / $finalGross * 100, 2) : 0.0,
+            'contract_gross' => $contractGross,   // N35
+            'addendum_gross' => $addendumGross,   // N36
+            'final_gross'    => $finalGross,      // N37
+            'progress_val'   => $n39,             // N39
+            'uang_muka'      => $n40,             // N40
+            'dp_recovery'    => $n41,             // N41
+            'sub_total'      => $n42,             // N42
+            'retensi'        => $n43,             // N43
+            'after_retensi'  => $n44,             // N44
+            'prev_paid'      => $n45,             // N45
+            'payable_now'    => $n46,             // N46
+            'sisa_sebelum'   => $n48,             // N48
+            'sisa_setelah'   => $n49,             // N49
+        ];
+    }
+
+    /** Angka bulat → terbilang Bahasa Indonesia (untuk tanggal BAP). */
+    private function terbilang(int $n): string
+    {
+        $n = abs($n);
+        $s = ['', 'Satu', 'Dua', 'Tiga', 'Empat', 'Lima', 'Enam', 'Tujuh', 'Delapan', 'Sembilan', 'Sepuluh', 'Sebelas'];
+        if ($n < 12) {
+            return $s[$n];
+        }
+        if ($n < 20) {
+            return trim($this->terbilang($n - 10).' Belas');
+        }
+        if ($n < 100) {
+            return trim($this->terbilang(intdiv($n, 10)).' Puluh '.$this->terbilang($n % 10));
+        }
+        if ($n < 200) {
+            return trim('Seratus '.$this->terbilang($n - 100));
+        }
+        if ($n < 1000) {
+            return trim($this->terbilang(intdiv($n, 100)).' Ratus '.$this->terbilang($n % 100));
+        }
+        if ($n < 2000) {
+            return trim('Seribu '.$this->terbilang($n - 1000));
+        }
+        if ($n < 1000000) {
+            return trim($this->terbilang(intdiv($n, 1000)).' Ribu '.$this->terbilang($n % 1000));
+        }
+        if ($n < 1000000000) {
+            return trim($this->terbilang(intdiv($n, 1000000)).' Juta '.$this->terbilang($n % 1000000));
+        }
+
+        return trim($this->terbilang(intdiv($n, 1000000000)).' Milyar '.$this->terbilang($n % 1000000000));
+    }
+
+    /** HTML Berita Acara Pembayaran (auto-print). Layout mengikuti template Excel BAP. */
+    private function renderBap(array $b): string
+    {
+        $e  = fn ($v) => htmlspecialchars((string) $v, ENT_QUOTES, 'UTF-8');
+        $rp = fn ($v) => number_format((float) $v, 2, ',', '.');
+        $row = fn (string $label, float $val, string $op = '') => '<tr><td class="lbl">'.$e($label).'</td><td class="op">'.$e($op).'</td><td class="r">'.$rp($val).'</td></tr>';
+
+        $calc = ''
+            .'<tr><td class="lbl">Nilai Kontrak Awal</td><td class="op">= Rp.</td><td class="r">'.$rp($b['contract_gross']).'</td></tr>'
+            .'<tr><td class="lbl">Nilai Pekerjaan Tambah Kurang</td><td class="op">+</td><td class="r">'.$rp($b['addendum_gross']).'</td></tr>'
+            .'<tr class="sub"><td class="lbl">Nilai Kontrak Akhir</td><td class="op">= Rp.</td><td class="r">'.$rp($b['final_gross']).'</td></tr>'
+            .'<tr><td colspan="3" class="sp"></td></tr>'
+            .'<tr><td class="lbl">Nilai Pekerjaan yang telah dilaksanakan sampai saat ini ('.$rp($b['progress_pct']).'%)</td><td class="op">Rp.</td><td class="r">'.$rp($b['progress_val']).'</td></tr>'
+            .'<tr><td class="lbl">Uang muka ('.$rp($b['advance_pct']).'%)</td><td class="op">+</td><td class="r">'.$rp($b['uang_muka']).'</td></tr>'
+            .'<tr><td class="lbl">Pengurangan pengembalian uang muka</td><td class="op">+</td><td class="r">'.$rp($b['dp_recovery']).'</td></tr>'
+            .'<tr class="sub"><td class="lbl">Sub total</td><td class="op">= Rp.</td><td class="r">'.$rp($b['sub_total']).'</td></tr>'
+            .'<tr><td class="lbl">Pengurangan Retensi ('.$rp($b['retensi_pct']).'%) x Nilai Progress</td><td class="op">+</td><td class="r">'.$rp($b['retensi']).'</td></tr>'
+            .'<tr class="sub"><td class="lbl">Jumlah setelah Retensi</td><td class="op">= Rp.</td><td class="r">'.$rp($b['after_retensi']).'</td></tr>'
+            .'<tr><td class="lbl">Pembayaran yang telah dibayarkan sampai saat ini</td><td class="op">+</td><td class="r">'.$rp($b['prev_paid']).'</td></tr>'
+            .'<tr class="tot"><td class="lbl">Total Pembayaran yang dapat dibayarkan sekarang</td><td class="op">= Rp.</td><td class="r">'.$rp($b['payable_now']).'</td></tr>'
+            .'<tr><td colspan="3" class="sp"></td></tr>'
+            .'<tr><td class="lbl">Sisa Pembayaran <b>sebelum</b> pembayaran ini</td><td class="op">Rp.</td><td class="r">'.$rp($b['sisa_sebelum']).'</td></tr>'
+            .'<tr><td class="lbl">Sisa Pembayaran <b>setelah</b> pembayaran ini</td><td class="op">Rp.</td><td class="r">'.$rp($b['sisa_setelah']).'</td></tr>';
+
+        return '<!DOCTYPE html><html lang="id"><head><meta charset="utf-8"><title>BAP '.$e($b['bap_number']).'</title><style>
+            @page{size:A4;margin:16mm}*{box-sizing:border-box}
+            body{font-family:Arial,Helvetica,sans-serif;font-size:11px;color:#111;margin:0;line-height:1.45}
+            h1{font-size:16px;text-align:center;margin:0;letter-spacing:.5px}
+            .no{text-align:center;margin:2px 0 14px;font-size:11px}
+            .meta{width:100%;border-collapse:collapse;margin-bottom:10px}
+            .meta td{vertical-align:top;padding:1px 4px}.meta .k{width:150px}.meta .s{width:12px}
+            p{margin:6px 0}.i{margin-left:18px}
+            table.calc{width:100%;border-collapse:collapse;margin:8px 0}
+            table.calc td{padding:2px 6px}table.calc td.lbl{width:60%}
+            table.calc td.op{width:12%;text-align:center}
+            table.calc td.r{text-align:right;font-variant-numeric:tabular-nums;border-bottom:1px solid #bbb}
+            table.calc tr.sub td{font-weight:bold}table.calc tr.sub td.r{border-top:1px solid #333}
+            table.calc tr.tot td{font-weight:bold;background:#f2f2f2}
+            table.calc td.sp{height:6px;border:0}
+            .signs{width:100%;margin-top:26px}.signs td{text-align:center;vertical-align:top;width:50%;font-size:11px}
+            .space{height:60px}.nm{font-weight:bold;text-decoration:underline}
+            .note{margin-top:22px;font-size:9px;color:#444;border-top:1px solid #ccc;padding-top:6px}
+            @media print{.noprint{display:none}}
+            </style></head><body>
+            <h1>BERITA ACARA PEMBAYARAN</h1>
+            <div class="no">No : '.$e($b['bap_number']).' &nbsp;·&nbsp; Pembayaran ke '.$e($b['payment_seq']).'</div>
+
+            <table class="meta">
+              <tr><td class="k">Pemberi Tugas</td><td class="s">:</td><td>'.$e($b['pemberi_tugas']).'</td></tr>
+              <tr><td class="k">Kontraktor</td><td class="s">:</td><td>'.$e($b['kontraktor']).'</td></tr>
+              <tr><td class="k">Pekerjaan</td><td class="s">:</td><td>'.$e($b['pekerjaan']).($b['project'] ? ' — '.$e($b['project']) : '').'</td></tr>
+              <tr><td class="k">No. Kontrak Kerja</td><td class="s">:</td><td>'.$e($b['spk_number']).' &nbsp; ('.$e($b['spk_date']).')</td></tr>
+              <tr><td class="k">Nilai Kontrak</td><td class="s">:</td><td>Rp. '.$rp($b['contract_gross']).' <span style="color:#666">(termasuk PPh &amp; PPN)</span></td></tr>
+              <tr><td class="k">Nilai Addendum</td><td class="s">:</td><td>Rp. '.$rp($b['addendum_gross']).' <span style="color:#666">(termasuk PPh &amp; PPN '.$rp($b['ppn_pct']).'%)</span></td></tr>
+              <tr><td class="k">Lampiran</td><td class="s">:</td><td>Copy SPK, Foto Progres pekerjaan.</td></tr>
+            </table>
+
+            <p>Pada hari ini <b>'.$e($b['tgl_hari']).'</b>, tanggal <b>'.$e($b['tgl_day_words']).'</b> bulan <b>'.$e($b['tgl_bulan']).'</b> Tahun <b>'.$e($b['tgl_year_words']).'</b>, kami yang bertandatangan di bawah ini :</p>
+            <p class="i">1. '.$e($b['pemberi_signer']).' &mdash; untuk dan atas nama <b>'.$e($b['pemberi_tugas']).'</b></p>
+            <p class="i">2. '.$e($b['kontraktor_signer']).' &mdash; untuk dan atas nama <b>'.$e($b['kontraktor']).'</b></p>
+            <p>Dengan ini menyatakan bahwa :</p>
+            <p class="i">Berdasarkan Berita Acara Pemeriksaan Kemajuan Pekerjaan terlampir, maka progress kemajuan pekerjaan yang telah dilaksanakan Kontraktor adalah : <b>'.$e($b['uraian']).'</b>.</p>
+            <p class="i">Pekerjaan yang telah dilaksanakan tersebut telah sesuai dengan ketentuan-ketentuan yang tercantum dalam Kontrak Kerja dan petunjuk-petunjuk yang telah diberikan.</p>
+            <p>Sehingga sesuai Kontrak Kerja, Kontraktor berhak menerima pembayaran dengan perincian sebagai berikut ( belum dipotong PPh Final ) :</p>
+
+            <table class="calc">'.$calc.'</table>
+
+            <p>Demikian Berita Acara Pembayaran ini dibuat dan ditandatangani dengan sesungguhnya dalam rangkap 1 (satu) untuk dipergunakan sebagaimana mestinya.</p>
+
+            <table class="signs">
+              <tr><td>'.$e($b['city']).', '.$e($b['tgl_display']).'<br>Disetujui oleh,<br><b>'.$e($b['pemberi_tugas']).'</b><div class="space"></div><span class="nm">'.$e($b['pemberi_signer']).'</span><br>'.$e($b['pemberi_title']).'</td>
+              <td>Kontraktor,<br><b>'.$e($b['kontraktor']).'</b><div class="space"></div><span class="nm">'.$e($b['kontraktor_signer']).'</span></td></tr>
+            </table>
+
+            <div class="note">Note: Pembayaran Uang Muka dapat dilakukan setelah Jaminan Uang Muka dan Jaminan Pelaksanaan diterima oleh Bagian Keuangan.</div>
+            <button class="noprint" onclick="window.print()" style="margin-top:14px;padding:6px 16px">Cetak</button>
+            <script>window.onload=function(){setTimeout(function(){window.print()},350)}</script></body></html>';
     }
 }

@@ -21,6 +21,7 @@ const form = useForm({
   releaser: '',
   pic: '',
   no_manual: '',
+  contractor_signer: '',
 });
 
 const sel = computed(()=>props.spks.find((s:any)=>s.id===form.work_order_id));
@@ -49,6 +50,7 @@ function submit(){ form.post(route('bs.spk.kpl.store')); }
       <div v-if="sel" class="rounded-lg border border-neutral-200 bg-neutral-50 p-4 text-sm dark:border-neutral-800 dark:bg-neutral-800">
         <div class="flex justify-between"><span class="text-neutral-500">Sisa Kontrak</span><span class="font-semibold">{{ fmtRp(sel.remaining) }}</span></div>
         <div class="mt-2 flex justify-between"><span class="text-neutral-500">Retensi ({{ sel.retention_pct }}%)</span><span>{{ fmtRp(ret) }}</span></div>
+        <div class="mt-1 flex justify-between"><span class="text-neutral-500">Uang Muka SPK ({{ sel.advance_pct ?? 0 }}%)</span><span class="text-neutral-500">dipakai di BAP</span></div>
         <div class="mt-1 flex justify-between"><span class="text-neutral-500">PPN ({{ sel.ppn_pct }}%)</span><span>{{ fmtRp(ppn) }}</span></div>
         <div class="mt-1 flex justify-between border-t border-neutral-200 pt-2 dark:border-neutral-700"><span class="text-neutral-500">Nilai Bersih</span><span class="font-semibold">{{ fmtRp(net) }}</span></div>
       </div>
@@ -81,6 +83,10 @@ function submit(){ form.post(route('bs.spk.kpl.store')); }
         <div>
           <label class="mb-1 block text-sm font-medium">No. Manual</label>
           <input v-model="form.no_manual" type="text" :class="inputCls" />
+        </div>
+        <div>
+          <label class="mb-1 block text-sm font-medium">Penandatangan Kontraktor</label>
+          <input v-model="form.contractor_signer" type="text" :class="inputCls" placeholder="Nama wakil kontraktor (untuk BAP)" />
         </div>
       </div>
 

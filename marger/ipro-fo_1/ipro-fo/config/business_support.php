@@ -13,6 +13,10 @@ return [
         'name'    => env('COMPANY_NAME', 'PT. MITRA USAHA PROPERTINDO'),
         'npwp'    => env('COMPANY_NPWP', '00.000.000.0-000.000'),
         'address' => env('COMPANY_ADDRESS', 'Sidoarjo, Jawa Timur'),
+        // Penandatangan & kota untuk dokumen BAP (Berita Acara Pembayaran) pihak Pemberi Tugas.
+        'city'         => env('COMPANY_CITY', 'Sidoarjo'),
+        'signer_name'  => env('COMPANY_SIGNER_NAME', 'Rachmat Suhendra'),
+        'signer_title' => env('COMPANY_SIGNER_TITLE', 'Direktur'),
     ],
 
     'gl_accounts' => [

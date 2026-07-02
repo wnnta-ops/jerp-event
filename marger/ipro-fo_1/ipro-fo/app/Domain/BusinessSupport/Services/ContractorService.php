@@ -58,6 +58,7 @@ final class ContractorService
                 'is_pkp'                  => $data['is_pkp'] ?? true,
                 'contract_value'          => round((float) $data['contract_value'], 2),
                 'retention_pct'           => round((float) ($data['retention_pct'] ?? 0), 2),
+                'advance_pct'             => round((float) ($data['advance_pct'] ?? 0), 2),
                 'ppn_pct'                 => round((float) ($data['ppn_pct'] ?? 0), 2),
                 'status'                  => 'active',
                 'notes'                   => $data['notes'] ?? null,
@@ -158,6 +159,7 @@ final class ContractorService
                 'releaser'         => $data['releaser'] ?? null,
                 'pic'              => $data['pic'] ?? null,
                 'no_manual'        => $data['no_manual'] ?? null,
+                'contractor_signer'=> $data['contractor_signer'] ?? null,
                 'created_by'       => $userId,
             ]);
 

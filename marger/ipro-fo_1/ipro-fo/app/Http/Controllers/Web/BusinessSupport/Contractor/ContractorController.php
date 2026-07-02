@@ -122,6 +122,7 @@ class ContractorController extends Controller
             'is_pkp'                  => ['nullable', 'boolean'],
             'contract_value'          => ['required', 'numeric', 'min:0.01'],
             'retention_pct'           => ['nullable', 'numeric', 'min:0', 'max:100'],
+            'advance_pct'             => ['nullable', 'numeric', 'min:0', 'max:100'],
             'ppn_pct'                 => ['nullable', 'numeric', 'min:0', 'max:100'],
             'notes'                   => ['nullable', 'string', 'max:255'],
             'items'                   => ['nullable', 'array'],
