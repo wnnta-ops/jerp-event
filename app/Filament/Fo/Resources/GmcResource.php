@@ -47,7 +47,18 @@ class GmcResource extends Resource
                 ->helperText('Mengikat No. SPR, Unit, & Customer dari kontrak.'),
             Forms\Components\Select::make('customer_id')->label('Customer')->searchable()
                 ->options(fn () => Customer::query()->limit(300)->pluck('full_name', 'id')),
-            Forms\Components\TextInput::make('nama')->label('Nama Gimmick')->required()->placeholder('mis. FREE AC, FREE biaya KPR')->maxLength(150),
+            // Nama Gimmick diambil dari master "Kategori Gimmick" di BO (bs_gimmick_categories @ ipro_bo).
+            Forms\Components\Select::make('nama')->label('Nama Gimmick')->required()->searchable()
+                ->options(function () {
+                    try {
+                        return \Illuminate\Support\Facades\DB::connection(config('ipro.connection', 'ipro_bo'))
+                            ->table('bs_gimmick_categories')->where('is_active', true)
+                            ->orderBy('name')->pluck('name', 'name')->toArray();
+                    } catch (\Throwable $e) {
+                        return [];
+                    }
+                })
+                ->helperText('Diambil dari master Kategori Gimmick (BO → Setup → Kategori Gimmick).'),
             Forms\Components\TextInput::make('nilai')->label('Nilai / Biaya (Rp)')->numeric()->rupiah()->default(0)->required()
                 ->helperText('Biaya gimmick yang ditanggung developer — BUKAN tagihan customer.'),
             Forms\Components\Textarea::make('keterangan')->label('Keterangan')->rows(2)->columnSpanFull(),

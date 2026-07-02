@@ -170,6 +170,7 @@ const groups: { title: string; items: NavItem[] }[] = [
             { label: 'Setup', icon: SlidersHorizontal, permission: ['businesssupport.view', 'ap.*'], children: [
                 { label: 'Transaction Rule', href: 'bs.gl.transaction-rule.index', params: { source: 'ap' } },
                 { label: 'Kategori Invoice', href: 'bs.ap.categories.index' },
+                { label: 'Kategori Gimmick', href: 'bs.gimmick.categories.index' },
                 { label: 'Repair Data', href: 'bs.ap.repair.index' },
                 { label: 'Kelengkapan Berkas', href: 'bs.ap.berkas.index' },
             ]},

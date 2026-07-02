@@ -151,18 +151,25 @@ class PembayaranAr extends Page implements HasTable
         // ── Render 1 tabel rincian ──
         $body = '';
         foreach ($rincian as $r) {
+            $dpp = (float) $r['nominal'] / 1.11;      // DPP = Nominal / 1,11
+            $ppn = $dpp * 0.11;                        // PPN = DPP × 11%
             $body .= '<tr style="'.($r['kpr'] ? 'color:#16a34a;' : '').'">'
                 .$td($tgl($r['tgl']))
                 .$td('<strong>'.e($r['tipe']).'</strong>')
                 .$td(e($r['ket']))
                 .$td('<span style="font-family:monospace;color:#64748b;">'.e($r['bukti']).'</span>')
-                .$td($rp($r['nominal']), 'right').'</tr>';
+                .$td($rp($r['nominal']), 'right')
+                .$td($rp($dpp), 'right')
+                .$td($rp($ppn), 'right').'</tr>';
         }
         if ($body === '') {
-            $body = '<tr>'.$td('<em style="color:#94a3b8;">Belum ada pembayaran.</em>').'<td colspan="4"></td></tr>';
+            $body = '<tr>'.$td('<em style="color:#94a3b8;">Belum ada pembayaran.</em>').'<td colspan="6"></td></tr>';
         }
         $total = array_sum(array_column($rincian, 'nominal'));
-        $body .= '<tr style="font-weight:700;border-top:2px solid #475569;">'.$td('Total', 'left').'<td colspan="3"></td>'.$td($rp($total), 'right').'</tr>';
+        $totalDpp = $total / 1.11;                 // DPP total = Total / 1,11
+        $totalPpn = $totalDpp * 0.11;              // PPN total = DPP × 11%
+        $body .= '<tr style="font-weight:700;border-top:2px solid #475569;">'.$td('Total', 'left').'<td colspan="3"></td>'
+            .$td($rp($total), 'right').$td($rp($totalDpp), 'right').$td($rp($totalPpn), 'right').'</tr>';
 
         $outstanding = max(0, $plafon - $sudahCair);
         $pct = $plafon > 0 ? min(100, round($sudahCair / $plafon * 100, 1)) : 0;
@@ -184,7 +191,7 @@ class PembayaranAr extends Page implements HasTable
 
         return '<div style="max-width:920px;">'.$head
             .'<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:12.5px;">'
-            .'<thead><tr>'.$th('Tgl').$th('Tipe').$th('Keterangan').$th('No. Bukti').$th('Nominal', 'right').'</tr></thead>'
+            .'<thead><tr>'.$th('Tgl').$th('Tipe').$th('Keterangan').$th('No. Bukti').$th('Nominal', 'right').$th('DPP', 'right').$th('PPN', 'right').'</tr></thead>'
             .'<tbody>'.$body.'</tbody></table></div>'.$note.'</div>';
     }
 }

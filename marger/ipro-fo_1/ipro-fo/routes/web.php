@@ -32,6 +32,7 @@ use App\Http\Controllers\Web\BusinessSupport\Payable\ApInvoiceController as BsAp
 use App\Http\Controllers\Web\BusinessSupport\Payable\ApOpeningController as BsApOpeningController;
 use App\Http\Controllers\Web\BusinessSupport\Payable\ApRepairController as BsApRepairController;
 use App\Http\Controllers\Web\BusinessSupport\Payable\ApCategoryController as BsApCategoryController;
+use App\Http\Controllers\Web\BusinessSupport\Payable\GimmickCategoryController as BsGimmickCategoryController;
 use App\Http\Controllers\Web\BusinessSupport\Payable\ApKuitansiController as BsApKuitansiController;
 use App\Http\Controllers\Web\BusinessSupport\Payable\PostingInvoiceController as BsApPostingController;
 use App\Http\Controllers\Web\BusinessSupport\Payable\PenghapusanController as BsApPenghapusanController;
@@ -584,6 +585,11 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
     Route::post('/business-support/payable-kategori',         [BsApCategoryController::class, 'store'])->name('bs.ap.categories.store');
     Route::put('/business-support/payable-kategori/{category}', [BsApCategoryController::class, 'update'])->name('bs.ap.categories.update');
     Route::delete('/business-support/payable-kategori/{category}', [BsApCategoryController::class, 'destroy'])->name('bs.ap.categories.destroy');
+    // AP — Kategori Gimmick (setup) — fungsi sama dengan Kategori Invoice
+    Route::get('/business-support/gimmick-kategori',          [BsGimmickCategoryController::class, 'index'])->name('bs.gimmick.categories.index');
+    Route::post('/business-support/gimmick-kategori',         [BsGimmickCategoryController::class, 'store'])->name('bs.gimmick.categories.store');
+    Route::put('/business-support/gimmick-kategori/{category}', [BsGimmickCategoryController::class, 'update'])->name('bs.gimmick.categories.update');
+    Route::delete('/business-support/gimmick-kategori/{category}', [BsGimmickCategoryController::class, 'destroy'])->name('bs.gimmick.categories.destroy');
     // AP — Kuitansi Hutang
     Route::get('/business-support/payable-kuitansi',          [BsApKuitansiController::class, 'index'])->name('bs.ap.kuitansi.index');
     Route::get('/business-support/payable-kuitansi/create',   [BsApKuitansiController::class, 'create'])->name('bs.ap.kuitansi.create');

@@ -83,7 +83,12 @@ class BookedVerificationService
             }
 
             $harga = (float) $unit->harga_jual;
-            $caraBayar = $reg->cara_bayar ?: 'KPR';
+            // cara_bayar kontrak = ENUM (CASH/CASH_BERTAHAP/CICILAN/KPR). reg.cara_bayar
+            // bisa berisi channel bayar ('TRANSFER') atau nilai lain → SARING; kalau tak
+            // sah pakai 'KPR' (nanti di-sync ulang dari skema saat generate jadwal).
+            // Cegah error "Data truncated for column 'cara_bayar'".
+            $caraKontrak = ['CASH', 'CASH_BERTAHAP', 'CICILAN', 'KPR'];
+            $caraBayar = in_array($reg->cara_bayar, $caraKontrak, true) ? $reg->cara_bayar : 'KPR';
             $bookingFee = (float) ($reg->booking_fee_paid ?? 0);
 
             $reservasi = Reservasi::create([

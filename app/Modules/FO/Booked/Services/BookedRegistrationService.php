@@ -53,7 +53,7 @@ class BookedRegistrationService
                 'recaptcha_score' => $data['recaptcha_score'] ?? null,
                 'ref_sales_name' => $data['ref_sales_name'] ?? null,
                 'ref_sales_phone' => $data['ref_sales_phone'] ?? null,
-                'cara_bayar' => $data['cara_bayar'] ?? 'TRANSFER',
+                'cara_bayar' => $data['cara_bayar'] ?? 'KPR',   // skema bayar (KPR/CASH/…), BUKAN channel transfer
                 'utj_amount' => 0,
                 'pilihan_unit_1' => $data['pilihan_unit_1'] ?? null,   // unit yang diinginkan
                 'secondary_phone' => $data['secondary_phone'] ?? null,
