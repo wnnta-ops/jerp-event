@@ -124,7 +124,7 @@ class KontrakGeneratorService
 
         // Mode FREE DP (ANGSURAN1): berkas lengkap di awal → DP2+ otomatis FREE jadi
         // UANG MASUK (subsidi developer). DP yang sudah dibayar TIDAK di-free.
-        $freeDpSum = $this->applyFreeDpAngsuran1($kontrak, $rows, $paidDp);
+        $freeDpSum = $this->applyFreeDpAngsuran1($kontrak, $rows, $total, $kprIdx, $paidDp);
 
         $n = 0;
         foreach ($rows as $idx => $r) {
@@ -373,7 +373,7 @@ class KontrakGeneratorService
      * @param  array<string,float>  $paidDp  pembayaran DP existing (nama UPPER → pelunasan);
      *                                       DP yang sudah dibayar TIDAK di-free.
      */
-    private function applyFreeDpAngsuran1(Kontrak $kontrak, array &$rows, array $paidDp = []): float
+    private function applyFreeDpAngsuran1(Kontrak $kontrak, array &$rows, float $total, ?int $kprIdx, array $paidDp = []): float
     {
         if (($kontrak->skema->bf_dipotong_di ?? '') !== 'ANGSURAN1') {
             return 0.0;
@@ -387,7 +387,7 @@ class KontrakGeneratorService
             }
             // DP yang SUDAH dibayar tetap jadi DP customer (mis. DP 1 lunas) — tak di-free,
             // dan nominalnya DIKUNCI ke jumlah terbayar (bukan ikut skema FREE DP baru).
-            // Selisihnya diserap Pencairan KPR (recompute) → DP 2,3 yang di-free.
+            // Selisihnya diserap Pencairan KPR (recompute di bawah) → DP 2,3 yang di-free.
             $nama = strtoupper(trim((string) ($r['line']->nama_termin ?? '')));
             if (isset($paidDp[$nama])) {
                 $rows[$i]['nilai'] = (float) $paidDp[$nama];
@@ -399,6 +399,20 @@ class KontrakGeneratorService
                 $freedSum += (float) $rows[$i]['nilai'];
                 $rows[$i]['_free'] = true;
             }
+        }
+
+        // PENCAIRAN KPR = SISA agar TOTAL selalu PAS = harga pemesanan. Mengunci DP
+        // terbayar ke jumlah terbayar (mis. < skema) mengubah Σ baris lain; KPR harus
+        // menyerap selisihnya. Baris _free tetap ikut dihitung karena nilainya muncul
+        // kembali sebagai UANG MASUK (freedSum) → total = Σ(non-KPR) + KPR = harga.
+        if ($kprIdx !== null) {
+            $sumOther = 0.0;
+            foreach ($rows as $i => $r) {
+                if ($i !== $kprIdx) {
+                    $sumOther += (float) $r['nilai'];
+                }
+            }
+            $rows[$kprIdx]['nilai'] = round($total - $sumOther);
         }
 
         return $freedSum;
