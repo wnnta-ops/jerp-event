@@ -13,6 +13,8 @@ const props = defineProps<{
     stageDefs: Record<string, string>;
     banks: Array<any>;
     bookings: Array<any>;
+    // Matriks aspek Analisa dari sub-modul "Kategori Analisa Berkas" (fallback ke default bila kosong).
+    analisaCfg?: { aspects: Array<{ key: string; no: number; label: string; scope: string; options: Array<{ level: string; desc: string; hint?: string | null; score?: number; bank?: number[] }> }>; banks: string[] };
 }>();
 
 const init0 = props.init;              // snapshot awal — hanya untuk seed nilai form
@@ -112,7 +114,7 @@ const indikatorLabel: Record<string, string> = { high: 'HIGH', medium: 'MEDIUM',
 /* ── Analisa BI Checking & Berkas: matriks indikator per aspek (sumber: file "Indikator Analisa BI Checking & Berkas.xlsx").
    Aspek "all" berlaku utk semua; "karyawan"/"wirausaha" muncul sesuai kategori pemohon (dari Collect Berkas). */
 type AspekLevel = 'high' | 'medium' | 'low';
-const ANALISA_ASPEK: Array<{ key: string; no: number; label: string; scope: 'all' | 'karyawan' | 'wirausaha'; options: Array<{ level: AspekLevel; desc: string; hint?: string }> }> = [
+const ANALISA_ASPEK_FALLBACK: Array<{ key: string; no: number; label: string; scope: 'all' | 'karyawan' | 'wirausaha'; options: Array<{ level: AspekLevel; desc: string; hint?: string }> }> = [
     { key: 'bi_pemohon', no: 1, label: 'Hasil BI Checking KTP & NPWP Pemohon', scope: 'all',
       options: [{ level: 'high', desc: 'Kol 1' }, { level: 'medium', desc: 'Kol 2' }, { level: 'low', desc: 'Kol 3–5' }] },
     { key: 'bi_pasangan', no: 2, label: 'Hasil BI Checking KTP & NPWP Pasangan', scope: 'all',
@@ -134,10 +136,33 @@ const ANALISA_ASPEK: Array<{ key: string; no: number; label: string; scope: 'all
     { key: 'foto_usaha', no: 10, label: 'Foto, Denah Lokasi & Shareloc Tempat Usaha', scope: 'wirausaha',
       options: [{ level: 'high', desc: 'Foto usaha lengkap & jelas, lokasi jelas, shareloc valid, usaha mudah diverifikasi & aktif' }, { level: 'medium', desc: 'Foto usaha lengkap, lokasi ditemukan namun ada ketidaksesuaian (pemilik, lama usaha, dll)' }, { level: 'low', desc: 'Foto usaha tidak lengkap, lokasi & shareloc tidak valid, usaha tidak dapat diverifikasi' }] },
 ];
+// Sumber aspek: konfigurasi DB (Kategori Analisa Berkas) bila ada, else fallback hardcoded di atas.
+const cfgAspects = computed<Array<any>>(() => (props.analisaCfg?.aspects?.length ? props.analisaCfg.aspects : ANALISA_ASPEK_FALLBACK) as Array<any>);
+// Skor indikator per aspek×level (bebas diubah, default 3/2/1) — untuk preview indikator sisi klien.
+const scoreMap = computed<Record<string, Record<string, number>>>(() => {
+    const m: Record<string, Record<string, number>> = {};
+    const def: Record<string, number> = { high: 3, medium: 2, low: 1 };
+    for (const x of cfgAspects.value) {
+        m[x.key] = {};
+        for (const o of x.options) m[x.key][o.level] = o.score ?? def[o.level] ?? 0;
+    }
+    return m;
+});
+// Skor rekomendasi bank per aspek×level → [BTN,BSN,BRI,BNI,MANDIRI] (fallback matriks default).
+const bankMap = computed<Record<string, Record<string, number[]>>>(() => {
+    const m: Record<string, Record<string, number[]>> = {};
+    for (const x of cfgAspects.value) {
+        const has = (x.options || []).some((o: any) => Array.isArray(o.bank));
+        if (has) { m[x.key] = {}; for (const o of x.options) m[x.key][o.level] = o.bank ?? []; }
+        else if (BANK_SCORE[x.key]) m[x.key] = BANK_SCORE[x.key] as any;
+    }
+    return m;
+});
+const bankList = computed<string[]>(() => (props.analisaCfg?.banks?.length ? props.analisaCfg.banks : BANK_REKOM));
 // Kategori pemohon diambil dari tahap Collect Berkas (karyawan / wirausaha).
 const analisaCategory = computed<string>(() => a.value.stages?.collect_berkas?.category ?? '');
 // Aspek yang tampil = umum + spesifik kategori.
-const analisaAspek = computed(() => ANALISA_ASPEK.filter((x) => x.scope === 'all' || x.scope === analisaCategory.value));
+const analisaAspek = computed(() => cfgAspects.value.filter((x) => x.scope === 'all' || x.scope === analisaCategory.value));
 const analisaTotal = computed(() => analisaAspek.value.length);
 const analisaScored = computed(() => analisaAspek.value.filter((x) => !!f.analisa.indikator_items[x.key]).length);
 const analisaAllScored = computed(() => analisaTotal.value > 0 && analisaScored.value === analisaTotal.value);
@@ -148,13 +173,20 @@ function lvlActiveClass(level: string) {
         : level === 'medium' ? 'border-warning-500 bg-warning-500 text-white'
         : 'border-danger-500 bg-danger-500 text-white';
 }
-// Indikator keseluruhan = rata-rata skor (High=3/Medium=2/Low=1) → HIGH ≥2.5, MEDIUM ≥1.5, selebihnya LOW.
+// Indikator keseluruhan = rata-rata skor tiap aspek dinormalisasi ke [0,1] (skor bebas diubah) → HIGH ≥0.75, MEDIUM ≥0.25.
 const indikatorDerived = computed<string>(() => {
-    const map: Record<string, number> = { high: 3, medium: 2, low: 1 };
-    const vals = analisaAspek.value.map((x) => map[f.analisa.indikator_items[x.key]]).filter((v) => v != null);
+    const vals: number[] = [];
+    for (const x of analisaAspek.value) {
+        const lvl = f.analisa.indikator_items[x.key];
+        if (!lvl) continue;
+        const sc = scoreMap.value[x.key] ?? { high: 3, medium: 2, low: 1 };
+        const arr = Object.values(sc);
+        const min = Math.min(...arr), max = Math.max(...arr);
+        vals.push(max > min ? ((sc[lvl] ?? min) - min) / (max - min) : 0.5);
+    }
     if (!vals.length) return '';
     const avg = vals.reduce((s, v) => s + v, 0) / vals.length;
-    return avg >= 2.5 ? 'high' : avg >= 1.5 ? 'medium' : 'low';
+    return avg >= 0.75 ? 'high' : avg >= 0.25 ? 'medium' : 'low';
 });
 // Sinkronkan indikator turunan ke form agar tersimpan & terbaca di Profiling.
 watch(indikatorDerived, (v) => { f.analisa.indikator = v; }, { immediate: true });
@@ -198,12 +230,13 @@ const BANK_SCORE: Record<string, Record<AspekLevel, number[]>> = {
 };
 // Total skor tiap bank dari aspek yang dinilai → urut skor desc; teratas = Rekom 1, ke-2 = Rekom 2.
 function computeBankRekom(items: Record<string, string>) {
-    const totals = BANK_REKOM.map(() => 0);
+    const banks = bankList.value;
+    const totals = banks.map(() => 0);
     for (const [key, level] of Object.entries(items || {})) {
-        const row = BANK_SCORE[key]?.[level as AspekLevel];
-        if (row) row.forEach((v, i) => { totals[i] += v; });
+        const row = bankMap.value[key]?.[level];
+        if (row) row.forEach((v, i) => { if (i < totals.length) totals[i] += v; });
     }
-    return BANK_REKOM.map((name, i) => ({ name, score: totals[i] }))
+    return banks.map((name, i) => ({ name, score: totals[i] }))
         .sort((x, y) => y.score - x.score)
         .map((b, idx) => ({ ...b, rekom: idx === 0 ? 1 : idx === 1 ? 2 : 0 }));
 }
@@ -221,7 +254,7 @@ const bankRekom2 = computed(() => bankRekom.value.find((b) => b.rekom === 2) ?? 
 const bankTheoreticalMax = computed(() => {
     let m = 0;
     for (const key of Object.keys(analisaItemsSaved.value)) {
-        const lv = BANK_SCORE[key];
+        const lv = bankMap.value[key];
         if (lv) m += Math.max(...Object.values(lv).flat());
     }
     return Math.max(1, m);
