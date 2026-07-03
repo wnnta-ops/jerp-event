@@ -371,16 +371,26 @@ class CashBookController extends Controller
                 ->when($from, fn ($q) => $q->whereDate('bs_journals.journal_date', '>=', $from))
                 ->when($to, fn ($q) => $q->whereDate('bs_journals.journal_date', '<=', $to))
                 ->orderBy('bs_journals.journal_date')->orderBy('bs_journal_lines.id')
-                ->get(['bs_journals.journal_date', 'bs_journals.journal_number', 'bs_journals.reference', 'bs_journals.source', 'bs_journal_lines.description', 'bs_journal_lines.debit', 'bs_journal_lines.credit']);
+                ->get(['bs_journal_lines.id', 'bs_journals.journal_date', 'bs_journals.journal_number', 'bs_journals.reference', 'bs_journals.source', 'bs_journal_lines.description', 'bs_journal_lines.debit', 'bs_journal_lines.credit']);
+
+            // Anotasi per-mutasi: tag kategori arus kas + pembagian cluster (di-load sekali).
+            $lineIds = $rows->pluck('id');
+            $cfTags = \App\Domain\BusinessSupport\Models\BsLedgerCfTag::whereIn('journal_line_id', $lineIds)->get()->keyBy('journal_line_id');
+            $splits = \App\Domain\BusinessSupport\Models\BsLedgerClusterSplit::whereIn('journal_line_id', $lineIds)->get()->groupBy('journal_line_id');
 
             $running = $opening;
-            $entries = $rows->map(function ($r) use (&$running) {
+            $entries = $rows->map(function ($r) use (&$running, $cfTags, $splits) {
                 $running += (float) $r->debit - (float) $r->credit;
+                $tag = $cfTags[$r->id] ?? null;
 
                 return [
+                    'id' => $r->id,
                     'date' => (string) $r->journal_date, 'ref' => $r->reference ?: $r->journal_number,
                     'source' => $r->source, 'desc' => $r->description,
                     'debit' => (float) $r->debit, 'credit' => (float) $r->credit, 'balance' => round($running, 2),
+                    'cf_direct_category_id' => $tag?->cf_direct_category_id,
+                    'cf_indirect_category_id' => $tag?->cf_indirect_category_id,
+                    'clusters' => ($splits[$r->id] ?? collect())->map(fn ($s) => ['cluster_id' => $s->cluster_id, 'amount' => (float) $s->amount, 'note' => $s->note])->values(),
                 ];
             });
         }
@@ -392,7 +402,56 @@ class CashBookController extends Controller
             'entries'   => $entries->values(),
             'closing'   => $entries->isNotEmpty() ? $entries->last()['balance'] : round($opening, 2),
             'filters'   => ['from' => $from, 'to' => $to],
+            // Pilihan kategori arus kas (dari Setup GL) + cluster untuk anotasi per-mutasi.
+            'cfDirect'  => \App\Domain\BusinessSupport\Models\BsCashFlowCategory::where('kind', 'direct')->where('is_active', true)->orderBy('sort_order')->orderBy('name')->get(['id', 'code', 'name', 'activity']),
+            'cfIndirect' => \App\Domain\BusinessSupport\Models\BsCashFlowCategory::where('kind', 'indirect')->where('is_active', true)->orderBy('sort_order')->orderBy('name')->get(['id', 'code', 'name', 'activity']),
+            'clusters'  => \App\Domain\Foundation\Tenant\Models\Cluster::orderBy('name')->get(['id', 'code', 'name']),
         ]);
+    }
+
+    /** Simpan tag kategori arus kas (Direct/Indirect) untuk satu mutasi Rekening Ledger. */
+    public function ledgerCf(Request $request): \Illuminate\Http\RedirectResponse
+    {
+        abort_unless($request->user()?->canModule('cashbook'), 403);
+        $v = $request->validate([
+            'journal_line_id'         => ['required', 'integer', 'exists:bs_journal_lines,id'],
+            'cf_direct_category_id'   => ['nullable', 'integer', 'exists:bs_cash_flow_categories,id'],
+            'cf_indirect_category_id' => ['nullable', 'integer', 'exists:bs_cash_flow_categories,id'],
+        ]);
+        \App\Domain\BusinessSupport\Models\BsLedgerCfTag::updateOrCreate(
+            ['journal_line_id' => $v['journal_line_id']],
+            ['cf_direct_category_id' => $v['cf_direct_category_id'] ?? null, 'cf_indirect_category_id' => $v['cf_indirect_category_id'] ?? null],
+        );
+
+        return back()->with('success', 'Kategori arus kas mutasi disimpan.');
+    }
+
+    /** Simpan pembagian cluster untuk satu mutasi Rekening Ledger (replace-all baris cluster). */
+    public function ledgerClusters(Request $request): \Illuminate\Http\RedirectResponse
+    {
+        abort_unless($request->user()?->canModule('cashbook'), 403);
+        $v = $request->validate([
+            'journal_line_id'     => ['required', 'integer', 'exists:bs_journal_lines,id'],
+            'splits'              => ['array'],
+            'splits.*.cluster_id' => ['required', 'integer', 'exists:clusters,id'],
+            'splits.*.amount'     => ['required', 'numeric'],
+            'splits.*.note'       => ['nullable', 'string', 'max:255'],
+        ]);
+        $tenantId = tenant_id() ?? default_tenant_id();
+        \DB::transaction(function () use ($v, $tenantId): void {
+            \App\Domain\BusinessSupport\Models\BsLedgerClusterSplit::where('journal_line_id', $v['journal_line_id'])->forceDelete();
+            foreach (($v['splits'] ?? []) as $s) {
+                \App\Domain\BusinessSupport\Models\BsLedgerClusterSplit::create([
+                    'tenant_id'       => $tenantId,
+                    'journal_line_id' => $v['journal_line_id'],
+                    'cluster_id'      => (int) $s['cluster_id'],
+                    'amount'          => round((float) $s['amount'], 2),
+                    'note'            => $s['note'] ?? null,
+                ]);
+            }
+        });
+
+        return back()->with('success', 'Pembagian cluster mutasi disimpan.');
     }
 
     /** Kalender Cek Giro — jatuh tempo cek/giro masuk & keluar per bulan. */
