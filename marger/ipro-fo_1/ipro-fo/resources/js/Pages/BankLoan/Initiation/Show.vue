@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { Link, router } from '@inertiajs/vue3';
 import { ref, reactive, computed, watch } from 'vue';
-import { ArrowLeft, ArrowRight, Check, Lock, ChevronRight, Upload, Download } from 'lucide-vue-next';
+import { ArrowLeft, ArrowRight, Check, Lock, ChevronRight, Download, User, Users } from 'lucide-vue-next';
 import Button from '@/Components/UI/Button.vue';
 import Input from '@/Components/UI/Input.vue';
 import Badge from '@/Components/UI/Badge.vue';
@@ -36,8 +36,12 @@ function locked(idx: number) { return idx > activeIdx.value; }
 function toggle(idx: number) { if (!locked(idx)) openStage.value = openStage.value === idx ? -1 : idx; }
 // Tahap dianggap "selesai" (boleh Simpan & Lanjut) bila field utamanya terisi — cegah maju tanpa data.
 function stageComplete(key: string): boolean {
-    if (key === 'sprs') return f.sprs.ktp_pemohon_received && f.sprs.npwp_pemohon_received && f.sprs.ktp_pasangan_received && f.sprs.npwp_pasangan_received;
-    if (key === 'bi_checking') return !!f.bi_checking.result && f.bi_checking.permintaan === 'lanjut_spr';
+    if (key === 'sprs') {
+        if (!f.sprs.marital_status) return false; // wajib pilih status pernikahan dulu
+        const base = f.sprs.ktp_pemohon_received && f.sprs.npwp_pemohon_received;
+        return f.sprs.marital_status === 'sudah_menikah' ? base && f.sprs.ktp_pasangan_received && f.sprs.npwp_pasangan_received : base;
+    }
+    if (key === 'bi_checking') return biAllFilled.value && f.bi_checking.permintaan === 'lanjut_spr';
     if (key === 'analisa') return !!f.analisa.result && analisaAllScored.value;
     if (key === 'profiling') return decidedBanks.value.length >= 1;
     return true;
@@ -74,11 +78,13 @@ const f = reactive({
     // R2 — SPRS: konfirmasi penerimaan 4 dokumen (Pemohon + Pasangan). OCR di menu "Cek Scan KTP & NPWP".
     // Info SPRS (No.Kontrak…PPN) auto-tampil dari Marketing & Sales (prop contractInfo) — tidak diinput di sini.
     // *_received_at: stempel jam & tanggal saat checklist masing-masing dokumen dicentang.
-    sprs:        { ktp_pemohon_received: !!s.sprs?.ktp_pemohon_received, npwp_pemohon_received: !!s.sprs?.npwp_pemohon_received,
+    // marital_status: 'belum_menikah' (2 dok) | 'sudah_menikah' (4 dok). Data lama (semua dok pasangan tercentang) → default 'sudah_menikah'.
+    sprs:        { marital_status: s.sprs?.marital_status ?? ((s.sprs?.ktp_pasangan_received || s.sprs?.npwp_pasangan_received) ? 'sudah_menikah' : ''),
+                   ktp_pemohon_received: !!s.sprs?.ktp_pemohon_received, npwp_pemohon_received: !!s.sprs?.npwp_pemohon_received,
                    ktp_pasangan_received: !!s.sprs?.ktp_pasangan_received, npwp_pasangan_received: !!s.sprs?.npwp_pasangan_received,
                    ktp_pemohon_received_at: s.sprs?.ktp_pemohon_received_at ?? null, npwp_pemohon_received_at: s.sprs?.npwp_pemohon_received_at ?? null,
                    ktp_pasangan_received_at: s.sprs?.ktp_pasangan_received_at ?? null, npwp_pasangan_received_at: s.sprs?.npwp_pasangan_received_at ?? null },
-    bi_checking: { result: s.bi_checking?.result ?? '', permintaan: s.bi_checking?.permintaan ?? '', notes: s.bi_checking?.notes ?? '' },
+    bi_checking: { result: s.bi_checking?.result ?? '', result_pasangan: s.bi_checking?.result_pasangan ?? '', permintaan: s.bi_checking?.permintaan ?? '', notes: s.bi_checking?.notes ?? '' },
     collect_berkas: {
         category: s.collect_berkas?.category ?? '',
         items: Object.fromEntries(Object.entries(s.collect_berkas?.items ?? {}).map(([k, v]: [string, any]) => [k, { status: v?.status ?? '', note: v?.note ?? '', status_at: v?.status_at ?? null }])) as Record<string, { status: string; note: string; status_at: string | null }>,
@@ -166,7 +172,10 @@ const analisaAspek = computed(() => cfgAspects.value.filter((x) => x.scope === '
 const analisaTotal = computed(() => analisaAspek.value.length);
 const analisaScored = computed(() => analisaAspek.value.filter((x) => !!f.analisa.indikator_items[x.key]).length);
 const analisaAllScored = computed(() => analisaTotal.value > 0 && analisaScored.value === analisaTotal.value);
-function setAspek(key: string, level: AspekLevel) { f.analisa.indikator_items[key] = level; }
+// Aspek Analisa yang diisi OTOMATIS dari hasil BI Checking (tidak bisa diklik manual).
+const AUTO_ASPEKS = ['bi_pemohon', 'bi_pasangan'];
+function isAutoAspek(key: string) { return AUTO_ASPEKS.includes(key); }
+function setAspek(key: string, level: AspekLevel) { if (isAutoAspek(key)) return; f.analisa.indikator_items[key] = level; }
 function lvlCount(level: AspekLevel) { return analisaAspek.value.filter((x) => f.analisa.indikator_items[x.key] === level).length; }
 function lvlActiveClass(level: string) {
     return level === 'high' ? 'border-success-500 bg-success-500 text-white'
@@ -382,6 +391,24 @@ function markSprsDoc(key: 'ktp_pemohon' | 'npwp_pemohon' | 'ktp_pasangan' | 'npw
     const checked = (f.sprs as any)[key + '_received'];
     (f.sprs as any)[key + '_received_at'] = checked ? new Date().toISOString() : null;
 }
+// Status pernikahan menentukan jumlah dokumen wajib (belum: 2, sudah: 4). Pindah ke "belum" → bersihkan data pasangan.
+function setSprsMarital(status: 'belum_menikah' | 'sudah_menikah') {
+    f.sprs.marital_status = status;
+    if (status === 'belum_menikah') {
+        f.sprs.ktp_pasangan_received = false;
+        f.sprs.npwp_pasangan_received = false;
+        f.sprs.ktp_pasangan_received_at = null;
+        f.sprs.npwp_pasangan_received_at = null;
+    }
+}
+// Petunjuk status pernikahan dari data customer (tidak mengunci pilihan operator).
+const custMaritalLabel = computed<string>(() => (({ menikah: 'Menikah', belum_menikah: 'Belum Menikah', cerai: 'Cerai', lain_lain: 'Lain-lain' } as Record<string, string>)[a.value.customer?.marital_status ?? ''] ?? ''));
+// Pesan pemandu tombol Simpan sesuai status pernikahan & kelengkapan checklist.
+const sprsHint = computed<string>(() => {
+    if (!f.sprs.marital_status) return 'Pilih status pernikahan pemohon (Belum / Sudah Menikah) terlebih dahulu.';
+    if (f.sprs.marital_status === 'belum_menikah') return 'Centang KTP & NPWP Pemohon sudah diterima untuk lanjut ke BI Checking.';
+    return 'Centang keempat dokumen (KTP/NPWP Pemohon & Pasangan) sudah diterima untuk lanjut ke BI Checking.';
+});
 
 const saving = ref(false);
 function save(key: string, data: Record<string, any> = {}) {
@@ -392,23 +419,57 @@ function save(key: string, data: Record<string, any> = {}) {
     });
 }
 
-// Reject BI Checking hanya untuk hasil bermasalah (Kol 2–5) DAN permintaan customer "Mundur / Reject".
-const canRejectBi = computed(() =>
-    ['kol2', 'kol3', 'kol4', 'kol5'].includes(f.bi_checking.result) && f.bi_checking.permintaan === 'mundur'
-);
+// Hasil BI: "bersih" = Clear/Kol 1; "bermasalah" = Kol 2–5.
+const BI_CLEAN = ['clear', 'kol1'];
+const BI_BAD = ['kol2', 'kol3', 'kol4', 'kol5'];
+// Pasangan hanya relevan bila pemohon "Sudah Menikah" (dari SPRS). Belum menikah → BI pasangan tak diperlukan.
+const biNeedPasangan = computed(() => a.value.stages?.sprs?.marital_status !== 'belum_menikah');
+const biPemohonFilled = computed(() => !!f.bi_checking.result);
+const biPasanganFilled = computed(() => !biNeedPasangan.value || !!f.bi_checking.result_pasangan);
+const biAllFilled = computed(() => biPemohonFilled.value && biPasanganFilled.value);
+// Semua hasil bersih (Clear/Kol 1) → customer mundur = pembatalan sepihak. Ada Kol 2–5 → reject BI Checking.
+const biBothClean = computed(() => BI_CLEAN.includes(f.bi_checking.result) && (!biNeedPasangan.value || BI_CLEAN.includes(f.bi_checking.result_pasangan)));
+const biAnyBad = computed(() => BI_BAD.includes(f.bi_checking.result) || (biNeedPasangan.value && BI_BAD.includes(f.bi_checking.result_pasangan)));
+const isMundur = computed(() => f.bi_checking.permintaan === 'mundur');
+// Reject Batal Sepihak: customer mundur padahal BI bersih (Clear/Kol 1 semua).
+const canBatalSepihak = computed(() => isMundur.value && biAllFilled.value && biBothClean.value);
+// Reject BI Checking: customer mundur & ada hasil bermasalah (Kol 2–5).
+const canRejectBi = computed(() => isMundur.value && biAllFilled.value && biAnyBad.value);
 
-/* Tolak inisiasi pada tahap BI Checking → status 'rejected' (muncul di Database KPR → Reject BI Checking). */
-function reject() {
-    if (!canRejectBi.value) return; // gerbang: Kol 2–5 + permintaan "Mundur / Reject"
-    if (!confirm('Tolak inisiasi KPR ini pada tahap BI Checking? Status menjadi Ditolak dan proses berhenti.')) return;
-    const reason = window.prompt('Alasan penolakan BI Checking (opsional):', '');
+/* Tolak inisiasi pada tahap BI Checking → status 'rejected' (muncul di Database KPR → Reject BI Checking).
+   type: 'bi_checking' (hasil Kol 2–5) | 'batal_sepihak' (BI bersih tapi customer mundur). */
+function reject(type: 'bi_checking' | 'batal_sepihak') {
+    const allowed = type === 'batal_sepihak' ? canBatalSepihak.value : canRejectBi.value;
+    if (!allowed) return;
+    const isB = type === 'batal_sepihak';
+    const confirmMsg = isB
+        ? 'Reject Batal Sepihak — customer mundur padahal BI Checking bersih. Transaksi ditolak & masuk Database Reject BI Checking. Lanjutkan?'
+        : 'Reject BI Checking — hasil bermasalah (Kol 2–5) & customer mundur. Transaksi ditolak & proses berhenti. Lanjutkan?';
+    if (!confirm(confirmMsg)) return;
+    const reason = window.prompt((isB ? 'Alasan Reject Batal Sepihak' : 'Alasan Reject BI Checking') + ' (opsional):', '');
     if (reason === null) return; // dibatalkan
     saving.value = true;
     // Sertakan hasil BI Checking yang sudah diisi agar tampil di Database Reject BI Checking.
     router.post(route('kpr.initiation.reject', a.value.id),
-        { reason, result: f.bi_checking.result, permintaan: f.bi_checking.permintaan, notes: f.bi_checking.notes },
+        { reason, reject_type: type, result: f.bi_checking.result, result_pasangan: f.bi_checking.result_pasangan, permintaan: f.bi_checking.permintaan, notes: f.bi_checking.notes },
         { preserveScroll: true, onFinish: () => (saving.value = false) });
 }
+
+// Aspek bi_pemohon & bi_pasangan Analisa → OTOMATIS dari hasil BI Checking (Clear/Kol 1 = High, Kol 2 = Medium, Kol 3–5 = Low).
+const BI_AUTO_MAP: Record<string, AspekLevel> = { clear: 'high', kol1: 'high', kol2: 'medium', kol3: 'low', kol4: 'low', kol5: 'low' };
+const biStored = computed<any>(() => a.value.stages?.bi_checking ?? {});
+const biPemohonAuto = computed<AspekLevel | ''>(() => BI_AUTO_MAP[biStored.value.result ?? f.bi_checking.result] ?? '');
+// Pasangan: bila tak ada hasil pasangan (belum menikah / data lama), ikut hasil pemohon agar penilaian tetap lengkap.
+const biPasanganAuto = computed<AspekLevel | ''>(() => {
+    const pas = biNeedPasangan.value ? (biStored.value.result_pasangan ?? f.bi_checking.result_pasangan) : '';
+    const src = pas || (biStored.value.result ?? f.bi_checking.result);
+    return BI_AUTO_MAP[src] ?? '';
+});
+// Sinkronkan nilai otomatis ke matriks Analisa (aspek ini tak bisa diubah manual).
+watch([biPemohonAuto, biPasanganAuto], ([p, s]) => {
+    if (p) f.analisa.indikator_items['bi_pemohon'] = p;
+    if (s) f.analisa.indikator_items['bi_pasangan'] = s;
+}, { immediate: true });
 
 
 function fmtRp(v: number) { return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(v ?? 0); }
@@ -521,29 +582,60 @@ const analisaLabel: Record<string, string> = { layak: 'Layak', tidak_layak: 'Tid
                             <p class="mt-3 text-xs text-neutral-500">Sumber data berasal dari modul Marketing &amp; Sales → SPRS (otomatis).</p>
                         </div>
 
-                        <!-- Konfirmasi penerimaan dokumen (Pemohon + Pasangan) — dengan jam & tanggal saat dicentang -->
+                        <!-- Status pernikahan pemohon — WAJIB dipilih dulu; menentukan 2 vs 4 dokumen wajib -->
                         <div class="rounded-lg border border-neutral-200 p-4 dark:border-neutral-700 space-y-2">
+                            <div class="flex flex-wrap items-center justify-between gap-2">
+                                <p class="text-sm font-semibold">Status Pernikahan Pemohon</p>
+                                <span v-if="custMaritalLabel" class="text-xs text-neutral-500">Data customer: <span class="font-medium text-neutral-700 dark:text-neutral-300">{{ custMaritalLabel }}</span></span>
+                            </div>
+                            <div class="grid gap-2 sm:grid-cols-2">
+                                <button type="button" @click="setSprsMarital('belum_menikah')"
+                                    class="flex items-center gap-3 rounded-lg border p-3 text-left transition"
+                                    :class="f.sprs.marital_status === 'belum_menikah' ? 'border-primary-500 bg-primary-50 ring-1 ring-primary-500 dark:bg-primary-900/20' : 'border-neutral-200 hover:border-neutral-300 dark:border-neutral-700'">
+                                    <span class="grid h-9 w-9 shrink-0 place-items-center rounded-full" :class="f.sprs.marital_status === 'belum_menikah' ? 'bg-primary-500 text-white' : 'bg-neutral-100 text-neutral-500 dark:bg-neutral-800'"><User class="h-5 w-5" /></span>
+                                    <span class="min-w-0">
+                                        <span class="block text-sm font-semibold">Belum Menikah</span>
+                                        <span class="block text-xs text-neutral-500">2 dokumen: KTP &amp; NPWP Pemohon</span>
+                                    </span>
+                                    <Check v-if="f.sprs.marital_status === 'belum_menikah'" class="ml-auto h-5 w-5 shrink-0 text-primary-600" />
+                                </button>
+                                <button type="button" @click="setSprsMarital('sudah_menikah')"
+                                    class="flex items-center gap-3 rounded-lg border p-3 text-left transition"
+                                    :class="f.sprs.marital_status === 'sudah_menikah' ? 'border-primary-500 bg-primary-50 ring-1 ring-primary-500 dark:bg-primary-900/20' : 'border-neutral-200 hover:border-neutral-300 dark:border-neutral-700'">
+                                    <span class="grid h-9 w-9 shrink-0 place-items-center rounded-full" :class="f.sprs.marital_status === 'sudah_menikah' ? 'bg-primary-500 text-white' : 'bg-neutral-100 text-neutral-500 dark:bg-neutral-800'"><Users class="h-5 w-5" /></span>
+                                    <span class="min-w-0">
+                                        <span class="block text-sm font-semibold">Sudah Menikah</span>
+                                        <span class="block text-xs text-neutral-500">4 dokumen: + KTP &amp; NPWP Pasangan</span>
+                                    </span>
+                                    <Check v-if="f.sprs.marital_status === 'sudah_menikah'" class="ml-auto h-5 w-5 shrink-0 text-primary-600" />
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Konfirmasi penerimaan dokumen — aktif setelah status pernikahan dipilih; jam & tanggal saat dicentang -->
+                        <div class="rounded-lg border border-neutral-200 p-4 dark:border-neutral-700 space-y-2" :class="!f.sprs.marital_status ? 'opacity-60' : ''">
                             <p class="text-sm font-semibold">Konfirmasi Penerimaan Dokumen</p>
+                            <p v-if="!f.sprs.marital_status" class="text-xs text-warning-600">Pilih status pernikahan pemohon di atas untuk mengaktifkan checklist.</p>
                             <div class="grid gap-3 sm:grid-cols-2">
-                                <label class="flex items-start gap-2 text-sm">
-                                    <input type="checkbox" v-model="f.sprs.ktp_pemohon_received" @change="markSprsDoc('ktp_pemohon')" class="mt-0.5 h-4 w-4 rounded border-neutral-300" />
+                                <label class="flex items-start gap-2 text-sm" :class="!f.sprs.marital_status ? 'cursor-not-allowed opacity-60' : ''">
+                                    <input type="checkbox" :disabled="!f.sprs.marital_status" v-model="f.sprs.ktp_pemohon_received" @change="markSprsDoc('ktp_pemohon')" class="mt-0.5 h-4 w-4 rounded border-neutral-300 disabled:cursor-not-allowed" />
                                     <span>KTP Pemohon sudah diterima
                                         <span v-if="f.sprs.ktp_pemohon_received && f.sprs.ktp_pemohon_received_at" class="block text-[11px] text-success-600">✓ Dicentang {{ fmtDateTime(f.sprs.ktp_pemohon_received_at) }}</span>
                                     </span>
                                 </label>
-                                <label class="flex items-start gap-2 text-sm">
-                                    <input type="checkbox" v-model="f.sprs.npwp_pemohon_received" @change="markSprsDoc('npwp_pemohon')" class="mt-0.5 h-4 w-4 rounded border-neutral-300" />
+                                <label class="flex items-start gap-2 text-sm" :class="!f.sprs.marital_status ? 'cursor-not-allowed opacity-60' : ''">
+                                    <input type="checkbox" :disabled="!f.sprs.marital_status" v-model="f.sprs.npwp_pemohon_received" @change="markSprsDoc('npwp_pemohon')" class="mt-0.5 h-4 w-4 rounded border-neutral-300 disabled:cursor-not-allowed" />
                                     <span>NPWP Pemohon sudah diterima
                                         <span v-if="f.sprs.npwp_pemohon_received && f.sprs.npwp_pemohon_received_at" class="block text-[11px] text-success-600">✓ Dicentang {{ fmtDateTime(f.sprs.npwp_pemohon_received_at) }}</span>
                                     </span>
                                 </label>
-                                <label class="flex items-start gap-2 text-sm">
+                                <label v-if="f.sprs.marital_status === 'sudah_menikah'" class="flex items-start gap-2 text-sm">
                                     <input type="checkbox" v-model="f.sprs.ktp_pasangan_received" @change="markSprsDoc('ktp_pasangan')" class="mt-0.5 h-4 w-4 rounded border-neutral-300" />
                                     <span>KTP Pasangan sudah diterima
                                         <span v-if="f.sprs.ktp_pasangan_received && f.sprs.ktp_pasangan_received_at" class="block text-[11px] text-success-600">✓ Dicentang {{ fmtDateTime(f.sprs.ktp_pasangan_received_at) }}</span>
                                     </span>
                                 </label>
-                                <label class="flex items-start gap-2 text-sm">
+                                <label v-if="f.sprs.marital_status === 'sudah_menikah'" class="flex items-start gap-2 text-sm">
                                     <input type="checkbox" v-model="f.sprs.npwp_pasangan_received" @change="markSprsDoc('npwp_pasangan')" class="mt-0.5 h-4 w-4 rounded border-neutral-300" />
                                     <span>NPWP Pasangan sudah diterima
                                         <span v-if="f.sprs.npwp_pasangan_received && f.sprs.npwp_pasangan_received_at" class="block text-[11px] text-success-600">✓ Dicentang {{ fmtDateTime(f.sprs.npwp_pasangan_received_at) }}</span>
@@ -552,7 +644,7 @@ const analisaLabel: Record<string, string> = { layak: 'Layak', tidak_layak: 'Tid
                             </div>
                         </div>
 
-                        <p v-if="!stageComplete('sprs')" class="text-xs text-warning-600">Centang keempat dokumen (KTP/NPWP Pemohon &amp; Pasangan) sudah diterima untuk lanjut ke BI Checking.</p>
+                        <p v-if="!stageComplete('sprs')" class="text-xs text-warning-600">{{ sprsHint }}</p>
                         <Button :loading="saving" :disabled="!stageComplete('sprs')" @click="save('sprs', f.sprs)">Simpan &amp; Lanjut → BI Checking</Button>
                     </div>
 
@@ -560,8 +652,20 @@ const analisaLabel: Record<string, string> = { layak: 'Layak', tidak_layak: 'Tid
                     <form v-else-if="st.key === 'bi_checking'" @submit.prevent="save('bi_checking', f.bi_checking)" class="space-y-3">
                         <div class="grid gap-3 sm:grid-cols-2">
                             <div>
-                                <label class="label-base">Hasil BI Checking</label>
+                                <label class="label-base">Hasil BI Checking Pemohon</label>
                                 <select v-model="f.bi_checking.result" class="input-base">
+                                    <option value="">— pilih —</option>
+                                    <option value="clear">Clear</option>
+                                    <option value="kol1">Kol 1</option>
+                                    <option value="kol2">Kol 2</option>
+                                    <option value="kol3">Kol 3</option>
+                                    <option value="kol4">Kol 4</option>
+                                    <option value="kol5">Kol 5</option>
+                                </select>
+                            </div>
+                            <div v-if="biNeedPasangan">
+                                <label class="label-base">Hasil BI Checking Pasangan</label>
+                                <select v-model="f.bi_checking.result_pasangan" class="input-base">
                                     <option value="">— pilih —</option>
                                     <option value="clear">Clear</option>
                                     <option value="kol1">Kol 1</option>
@@ -584,21 +688,23 @@ const analisaLabel: Record<string, string> = { layak: 'Layak', tidak_layak: 'Tid
 
                         <!-- R3 — Reject bersifat TERMINAL: bila sudah di-Reject, proses batal & tak bisa Simpan & Lanjut -->
                         <div v-if="a.stages?.bi_checking?.rejected" class="rounded-lg border border-danger-300 bg-danger-50 px-4 py-3 text-sm dark:border-danger-800 dark:bg-danger-900/30">
-                            <p class="font-semibold text-danger-700 dark:text-danger-300">✗ BI Checking di-REJECT — proses dibatalkan.</p>
+                            <p class="font-semibold text-danger-700 dark:text-danger-300">✗ {{ a.stages.bi_checking.reject_type === 'batal_sepihak' ? 'Ditolak — Reject Batal Sepihak (customer mundur, BI bersih).' : 'BI Checking di-REJECT — proses dibatalkan.' }}</p>
                             <p v-if="a.stages.bi_checking.reject_reason" class="mt-0.5 text-xs text-danger-600">Alasan: {{ a.stages.bi_checking.reject_reason }}</p>
                             <p v-if="a.stages.bi_checking.rejected_by_name" class="mt-0.5 text-[11px] text-neutral-500">oleh {{ a.stages.bi_checking.rejected_by_name }} · {{ fmtDateTime(a.stages.bi_checking.rejected_at) }}</p>
                         </div>
                         <template v-else>
                             <p class="text-xs text-warning-600">
-                                <span v-if="canRejectBi">Hasil bermasalah (Kol 2–5) &amp; customer mundur — gunakan <b>Reject BI Checking</b> untuk membatalkan proses.</span>
+                                <span v-if="canBatalSepihak">BI Checking bersih (Clear/Kol 1) &amp; customer mundur — gunakan <b>Reject Batal Sepihak</b> untuk membatalkan (pembatalan dari pihak customer).</span>
+                                <span v-else-if="canRejectBi">Ada hasil bermasalah (Kol 2–5) &amp; customer mundur — gunakan <b>Reject BI Checking</b> untuk membatalkan proses.</span>
                                 <span v-else-if="stageComplete('bi_checking')">Permintaan customer lanjut — klik <b>Simpan &amp; Lanjut</b> ke Collect Berkas.</span>
-                                <span v-else><b>Simpan &amp; Lanjut</b> aktif bila Permintaan Customer = "Lanjut Pemberkasan SPR". <b>Reject BI Checking</b> aktif bila Hasil = Kol 2–5 &amp; Permintaan Customer = "Mundur / Reject".</span>
+                                <span v-else><b>Simpan &amp; Lanjut</b> aktif bila Permintaan Customer = "Lanjut Pemberkasan SPR". Saat Permintaan = "Mundur / Reject": <b>Reject Batal Sepihak</b> muncul bila BI bersih, <b>Reject BI Checking</b> bila ada Kol 2–5.</span>
                             </p>
                             <div class="flex flex-wrap gap-2">
                                 <Button type="submit" :loading="saving" :disabled="!stageComplete('bi_checking')">Simpan &amp; Lanjut →</Button>
-                                <Button type="button" variant="danger" :loading="saving" :disabled="!canRejectBi" @click="reject">REJECT BI CHECKING</Button>
+                                <Button v-if="canBatalSepihak" type="button" variant="danger" :loading="saving" @click="reject('batal_sepihak')">REJECT BATAL SEPIHAK</Button>
+                                <Button v-else type="button" variant="danger" :loading="saving" :disabled="!canRejectBi" @click="reject('bi_checking')">REJECT BI CHECKING</Button>
                             </div>
-                            <p class="text-[11px] text-neutral-400">Simpan &amp; Lanjut dan Reject BI Checking bersifat pilihan — yang sudah di-Reject prosesnya batal &amp; tidak bisa dilanjutkan.</p>
+                            <p class="text-[11px] text-neutral-400">Simpan &amp; Lanjut, Reject BI Checking, dan Reject Batal Sepihak bersifat pilihan — yang sudah di-Reject prosesnya batal &amp; tidak bisa dilanjutkan.</p>
                         </template>
                     </form>
 
@@ -619,7 +725,7 @@ const analisaLabel: Record<string, string> = { layak: 'Layak', tidak_layak: 'Tid
                         <p v-if="!f.collect_berkas.category" class="text-sm text-warning-600">Pilih kategori pemohon (Karyawan / Wirausaha) untuk menampilkan checklist berkas.</p>
 
                         <template v-else>
-                            <p class="text-xs text-neutral-500">Tandai tiap berkas <b>Lengkap</b> / <b>Tidak Lengkap</b>. Untuk yang Tidak Lengkap, isi catatan (di sebelah kanan). Unggah file (maks 10 MB) bila ada — tanggal &amp; jam unggah tercatat otomatis.</p>
+                            <p class="text-xs text-neutral-500">Tandai tiap berkas <b>Lengkap</b> / <b>Tidak Lengkap</b>. Untuk yang Tidak Lengkap, isi catatan (di sebelah kanan).</p>
                             <div class="space-y-2">
                                 <div v-for="(it, i) in currentItems" :key="bkey(it.key)" class="rounded-lg border border-neutral-200 p-3 dark:border-neutral-800">
                                     <div class="flex flex-wrap items-center gap-x-3 gap-y-2">
@@ -638,11 +744,6 @@ const analisaLabel: Record<string, string> = { layak: 'Layak', tidak_layak: 'Tid
                                                :disabled="f.collect_berkas.items[bkey(it.key)]?.status !== 'tidak_lengkap'"
                                                :placeholder="f.collect_berkas.items[bkey(it.key)]?.status === 'tidak_lengkap' ? 'Catatan: kenapa belum lengkap…' : 'Catatan (aktif bila Tidak Lengkap)'"
                                                class="h-8 min-w-[160px] flex-1 rounded-lg border border-neutral-300 px-2 text-xs disabled:cursor-not-allowed disabled:bg-neutral-100 disabled:text-neutral-400 dark:border-neutral-700 dark:bg-neutral-900 dark:disabled:bg-neutral-800" />
-                                        <!-- Upload -->
-                                        <button type="button" @click="triggerUpload(bkey(it.key))" :disabled="uploadingKey === bkey(it.key)"
-                                                class="inline-flex shrink-0 items-center gap-1 rounded-lg border border-neutral-300 px-2.5 py-1.5 text-xs font-medium text-neutral-600 hover:bg-neutral-50 disabled:opacity-60 dark:border-neutral-700 dark:text-neutral-300">
-                                            <Upload class="h-3.5 w-3.5" /> {{ uploadingKey === bkey(it.key) ? 'Mengunggah…' : (itemFile(bkey(it.key))?.uploaded_at ? 'Ganti File' : 'Upload') }}
-                                        </button>
                                     </div>
                                     <!-- Stempel jam & tanggal saat status (Lengkap / Tidak Lengkap) ditandai -->
                                     <div v-if="f.collect_berkas.items[bkey(it.key)]?.status && f.collect_berkas.items[bkey(it.key)]?.status_at"
@@ -684,14 +785,15 @@ const analisaLabel: Record<string, string> = { layak: 'Layak', tidak_layak: 'Tid
                             <div v-for="asp in analisaAspek" :key="asp.key"
                                  class="rounded-xl border p-3 transition"
                                  :class="f.analisa.indikator_items[asp.key] ? 'border-neutral-200 dark:border-neutral-700' : 'border-dashed border-neutral-300 dark:border-neutral-600'">
-                                <div class="mb-2 flex items-center gap-2 text-sm font-medium">
+                                <div class="mb-2 flex flex-wrap items-center gap-2 text-sm font-medium">
                                     <span class="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-neutral-100 text-xs font-semibold text-neutral-600 dark:bg-neutral-800 dark:text-neutral-300">{{ asp.no }}</span>
                                     <span>{{ asp.label }}</span>
+                                    <Badge v-if="isAutoAspek(asp.key)" variant="info" size="sm">otomatis dari BI Checking</Badge>
                                 </div>
                                 <div class="grid gap-2 sm:grid-cols-3">
-                                    <button v-for="opt in asp.options" :key="opt.level" type="button" @click="setAspek(asp.key, opt.level)"
+                                    <button v-for="opt in asp.options" :key="opt.level" type="button" :disabled="isAutoAspek(asp.key)" @click="setAspek(asp.key, opt.level)"
                                             class="flex flex-col items-start gap-1 rounded-lg border p-2.5 text-left transition"
-                                            :class="f.analisa.indikator_items[asp.key] === opt.level ? lvlActiveClass(opt.level) : ('border-neutral-200 border-l-4 ' + lvlEdgeClass(opt.level) + ' bg-neutral-50/60 hover:bg-neutral-100 dark:border-neutral-700 dark:bg-neutral-800/40 dark:hover:bg-neutral-800')">
+                                            :class="f.analisa.indikator_items[asp.key] === opt.level ? lvlActiveClass(opt.level) : ('border-neutral-200 border-l-4 ' + lvlEdgeClass(opt.level) + (isAutoAspek(asp.key) ? ' cursor-not-allowed opacity-50 dark:border-neutral-700' : ' bg-neutral-50/60 hover:bg-neutral-100 dark:border-neutral-700 dark:bg-neutral-800/40 dark:hover:bg-neutral-800'))">
                                         <span class="rounded px-1.5 py-0.5 text-[11px] font-bold uppercase tracking-wide" :class="lvlPillClass(opt.level, f.analisa.indikator_items[asp.key] === opt.level)">{{ indikatorLabel[opt.level] }}</span>
                                         <span class="text-xs font-medium leading-snug" :class="f.analisa.indikator_items[asp.key] === opt.level ? 'text-white' : 'text-neutral-800 dark:text-neutral-200'">{{ opt.desc }}</span>
                                         <span v-if="opt.hint" class="text-[11px] leading-snug" :class="f.analisa.indikator_items[asp.key] === opt.level ? 'text-white/80' : 'text-neutral-500'">{{ opt.hint }}</span>
