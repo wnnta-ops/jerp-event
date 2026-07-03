@@ -59,9 +59,17 @@ class CashFlowController extends Controller
             ->whereIn('bs_journal_lines.account_id', $cashIds)
             ->distinct()->pluck('bs_journal_lines.journal_id');
 
-        // Mapping akun → aktivitas (Mapping Cash Flow Direct); override heuristik bila sudah dipetakan.
+        // Mapping akun → aktivitas arus kas. Utamakan kategori Cash Flow Direct yang dipetakan
+        // langsung di Chart of Account (cf_direct_category_id); fallback ke tabel Mapping Cash Flow
+        // Direct lama; bila keduanya kosong, dipakai heuristik classify() per akun.
         $mapActivity = BsCashFlowMapping::with('category:id,activity')->get()
-            ->mapWithKeys(fn ($m) => [$m->account_id => $m->category?->activity])->filter();
+            ->mapWithKeys(fn ($m) => [$m->account_id => $m->category?->activity])->filter()->all();
+        $coaMap = BsAccount::whereNotNull('cf_direct_category_id')->with('cfDirectCategory:id,activity')
+            ->get(['id', 'cf_direct_category_id'])
+            ->mapWithKeys(fn ($a) => [$a->id => $a->cfDirectCategory?->activity])->filter()->all();
+        foreach ($coaMap as $accId => $activity) {
+            $mapActivity[$accId] = $activity; // pemetaan di CoA menang atas mapping lama
+        }
 
         $directBuckets = ['operating' => [], 'investing' => [], 'financing' => []];
         if ($cashJournalIds->isNotEmpty()) {
