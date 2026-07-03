@@ -7,6 +7,7 @@ use App\Http\Controllers\Web\Auth\LoginController;
 use App\Domain\BankLoan\Models\KprApplication;
 use App\Http\Controllers\Web\BankLoan\KprApplicationController;
 use App\Http\Controllers\Web\BankLoan\Setup\KprBankController;
+use App\Http\Controllers\Web\BankLoan\Setup\AnalisaAspectController;
 use App\Http\Controllers\Web\BankLoan\Setup\RetentionCategoryController;
 use App\Http\Controllers\Web\BusinessSupport\BusinessSupportController;
 use App\Http\Controllers\Web\BusinessSupport\Setup\AccountController as BsAccountController;
@@ -405,6 +406,11 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
     Route::get('/kpr/setup/bank/{bank}/edit',     [KprBankController::class, 'edit'])->name('kpr.setup.bank.edit');
     Route::put('/kpr/setup/bank/{bank}',          [KprBankController::class, 'update'])->name('kpr.setup.bank.update');
     Route::delete('/kpr/setup/bank/{bank}',       [KprBankController::class, 'destroy'])->name('kpr.setup.bank.destroy');
+
+    Route::get('/kpr/setup/analisa-berkas',             [AnalisaAspectController::class, 'index'])->name('kpr.setup.analisa.index');
+    Route::post('/kpr/setup/analisa-berkas',            [AnalisaAspectController::class, 'store'])->name('kpr.setup.analisa.store');
+    Route::put('/kpr/setup/analisa-berkas/{aspect}',    [AnalisaAspectController::class, 'update'])->name('kpr.setup.analisa.update');
+    Route::delete('/kpr/setup/analisa-berkas/{aspect}', [AnalisaAspectController::class, 'destroy'])->name('kpr.setup.analisa.destroy');
 
     // ── BUSINESS SUPPORT (Back-Office Akuntansi) ───────────
     Route::get('/business-support',                           [BusinessSupportController::class, 'index'])->name('bs.index');
