@@ -12,6 +12,7 @@ enum KprStatus: string
     case Submitted   = 'submitted';
     case InReview    = 'in_review';
     case Sp3kIssued  = 'sp3k';
+    case Si          = 'si';
     case AkadDone    = 'akad';
     case Disbursed   = 'disbursed';
     case Active      = 'active';
@@ -25,6 +26,7 @@ enum KprStatus: string
             self::Submitted   => 'Submitted',
             self::InReview    => 'In Review',
             self::Sp3kIssued  => 'SP3K Issued',
+            self::Si          => 'SI',
             self::AkadDone    => 'Akad Done',
             self::Disbursed   => 'Pencairan',
             self::Active      => 'Lunas',
@@ -38,7 +40,7 @@ enum KprStatus: string
         return match ($this) {
             self::Draft       => 'neutral',
             self::Submitted, self::InReview => 'warning',
-            self::Sp3kIssued, self::AkadDone => 'info',
+            self::Sp3kIssued, self::Si, self::AkadDone => 'info',
             self::Disbursed, self::Active => 'success',
             self::Rejected, self::Cancelled => 'danger',
         };
@@ -52,7 +54,8 @@ enum KprStatus: string
             // Submitted boleh langsung ke SP3K (tahap In Review opsional, tak ada UI-nya).
             self::Submitted   => [self::InReview, self::Sp3kIssued, self::Rejected, self::Cancelled],
             self::InReview    => [self::Sp3kIssued, self::Rejected, self::Cancelled],
-            self::Sp3kIssued  => [self::AkadDone, self::Rejected, self::Cancelled],
+            self::Sp3kIssued  => [self::Si, self::Rejected, self::Cancelled],
+            self::Si          => [self::AkadDone, self::Rejected, self::Cancelled],
             self::AkadDone    => [self::Disbursed, self::Cancelled],
             self::Disbursed   => [self::Active],
             self::Active, self::Rejected, self::Cancelled => [],
