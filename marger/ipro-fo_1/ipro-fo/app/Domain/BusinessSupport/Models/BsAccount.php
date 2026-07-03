@@ -20,6 +20,7 @@ class BsAccount extends Model
 
     protected $fillable = [
         'tenant_id', 'code', 'category_code', 'name', 'type', 'level', 'parent_code', 'normal_balance', 'parent_id', 'is_postable', 'is_active',
+        'cf_direct_category_id', 'cf_indirect_category_id',
     ];
 
     /** Kategori (head) sebuah kode — biasanya digit pertama, kecuali pengelompokan eProperty. */
@@ -48,5 +49,17 @@ class BsAccount extends Model
     public function parent(): BelongsTo
     {
         return $this->belongsTo(self::class, 'parent_id');
+    }
+
+    /** Kategori Cash Flow Direct akun ini (bs_cash_flow_categories, kind=direct). */
+    public function cfDirectCategory(): BelongsTo
+    {
+        return $this->belongsTo(BsCashFlowCategory::class, 'cf_direct_category_id');
+    }
+
+    /** Kategori Cash Flow Indirect akun ini (bs_cash_flow_categories, kind=indirect). */
+    public function cfIndirectCategory(): BelongsTo
+    {
+        return $this->belongsTo(BsCashFlowCategory::class, 'cf_indirect_category_id');
     }
 }

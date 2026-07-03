@@ -89,12 +89,14 @@ function doPrint() { window.print(); }
             <!-- 3. BI Checking (REJECT) -->
             <div class="rounded-lg border border-danger-300 bg-danger-50 p-4 dark:border-danger-800 dark:bg-danger-900/20">
                 <div class="flex items-center justify-between">
-                    <p class="flex items-center gap-2 font-semibold text-danger-700 dark:text-danger-300"><Landmark class="h-4 w-4" /> 3. BI Checking — DITOLAK</p>
+                    <p class="flex items-center gap-2 font-semibold text-danger-700 dark:text-danger-300"><Landmark class="h-4 w-4" /> 3. BI Checking — {{ bi.reject_type === 'batal_sepihak' ? 'REJECT BATAL SEPIHAK' : 'DITOLAK' }}</p>
                     <span class="text-xs text-neutral-400">{{ fmtDateTime(bi.rejected_at) }}</span>
                 </div>
                 <dl class="mt-2 grid grid-cols-2 gap-x-4 gap-y-1 text-sm">
-                    <div><dt class="text-neutral-500">Hasil BI Checking</dt><dd><Badge :variant="bi.result ? 'warning' : 'neutral'" size="sm">{{ biLabel(bi.result) }}</Badge></dd></div>
+                    <div><dt class="text-neutral-500">Jenis Reject</dt><dd><Badge :variant="bi.reject_type === 'batal_sepihak' ? 'danger' : 'warning'" size="sm">{{ bi.reject_type === 'batal_sepihak' ? 'Reject Batal Sepihak' : 'Reject BI Checking' }}</Badge></dd></div>
                     <div><dt class="text-neutral-500">Permintaan Customer</dt><dd>{{ permintaanMap[bi.permintaan] ?? bi.permintaan ?? '—' }}</dd></div>
+                    <div><dt class="text-neutral-500">Hasil BI Checking Pemohon</dt><dd><Badge :variant="bi.result ? 'warning' : 'neutral'" size="sm">{{ biLabel(bi.result) }}</Badge></dd></div>
+                    <div v-if="bi.result_pasangan"><dt class="text-neutral-500">Hasil BI Checking Pasangan</dt><dd><Badge variant="warning" size="sm">{{ biLabel(bi.result_pasangan) }}</Badge></dd></div>
                 </dl>
                 <p class="mt-2 text-sm"><span class="text-neutral-500">Alasan penolakan:</span> <span class="font-medium text-danger-700 dark:text-danger-300">{{ bi.reject_reason || '— tanpa alasan —' }}</span></p>
                 <p v-if="bi.notes" class="mt-1 text-xs text-neutral-500">Catatan BI: {{ bi.notes }}</p>

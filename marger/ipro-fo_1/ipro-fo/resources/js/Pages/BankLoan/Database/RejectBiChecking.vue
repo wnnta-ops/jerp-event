@@ -6,12 +6,13 @@ import Badge from '@/Components/UI/Badge.vue';
 import EmptyState from '@/Components/UI/EmptyState.vue';
 import ColumnFilter from '@/Components/UI/ColumnFilter.vue';
 
-type Row = { id: number; number: string; customer: string | null; tts: string | null; unit: string | null; bi_result: string | null; reason: string | null; rejected_at: string | null; rejected_by: string | null };
+type Row = { id: number; number: string; customer: string | null; tts: string | null; unit: string | null; bi_result: string | null; bi_result_pasangan: string | null; reject_type: string | null; reason: string | null; rejected_at: string | null; rejected_by: string | null };
 const props = defineProps<{ records: Row[] }>();
 
 function fmtDate(d: string | null) { return d ? new Date(d).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'; }
 const biMap: Record<string, string> = { clear: 'Clear', kol1: 'Kol 1', kol2: 'Kol 2', kol3: 'Kol 3', kol4: 'Kol 4', kol5: 'Kol 5', caution: 'Perlu Perhatian', reject: 'Ditolak' };
 function biLabel(r: string | null) { return r ? (biMap[r] ?? r) : '—'; }
+function typeLabel(t: string | null) { return t === 'batal_sepihak' ? 'Reject Batal Sepihak' : 'Reject BI Checking'; }
 
 // Nilai tampilan per-kolom — dipakai utk render, opsi filter & pencocokan filter agar konsisten.
 const dNo = (r: Row) => r.number ?? '';
@@ -19,6 +20,7 @@ const dCust = (r: Row) => r.customer ?? '—';
 const dTts = (r: Row) => r.tts ?? '—';
 const dUnit = (r: Row) => r.unit ?? '—';
 const dBi = (r: Row) => biLabel(r.bi_result);
+const dType = (r: Row) => typeLabel(r.reject_type);
 const dReason = (r: Row) => r.reason ?? '—';
 const dTgl = (r: Row) => fmtDate(r.rejected_at);
 
@@ -32,19 +34,20 @@ const optCust = computed(() => distinct(dCust));
 const optTts = computed(() => distinct(dTts));
 const optUnit = computed(() => distinct(dUnit));
 const optBi = computed(() => distinct(dBi));
+const optType = computed(() => distinct(dType));
 const optReason = computed(() => distinct(dReason));
 const optTgl = computed(() => distinct(dTgl));
 
 // Pencarian (typing, instan) + checklist per-kolom (kosong = tampilkan semua). Semua di sisi klien.
 const search = ref('');
-const col = reactive<Record<string, string[]>>({ no: [], cust: [], tts: [], unit: [], bi: [], reason: [], tgl: [] });
+const col = reactive<Record<string, string[]>>({ no: [], cust: [], tts: [], unit: [], bi: [], type: [], reason: [], tgl: [] });
 const hasFilter = computed(() => Boolean(search.value) || Object.values(col).some((a) => a.length));
 function resetFilter() { search.value = ''; (Object.keys(col) as Array<keyof typeof col>).forEach((k) => (col[k] = [])); }
 
 const filtered = computed<Row[]>(() => props.records.filter((r) => {
     if (search.value) {
         const q = search.value.toLowerCase();
-        const hay = [dNo(r), dCust(r), dTts(r), dUnit(r), dBi(r), dReason(r), dTgl(r), r.rejected_by ?? ''].join(' ').toLowerCase();
+        const hay = [dNo(r), dCust(r), dTts(r), dUnit(r), dBi(r), dType(r), dReason(r), dTgl(r), r.rejected_by ?? ''].join(' ').toLowerCase();
         if (!hay.includes(q)) return false;
     }
     if (col.no.length && !col.no.includes(dNo(r))) return false;
@@ -52,15 +55,16 @@ const filtered = computed<Row[]>(() => props.records.filter((r) => {
     if (col.tts.length && !col.tts.includes(dTts(r))) return false;
     if (col.unit.length && !col.unit.includes(dUnit(r))) return false;
     if (col.bi.length && !col.bi.includes(dBi(r))) return false;
+    if (col.type.length && !col.type.includes(dType(r))) return false;
     if (col.reason.length && !col.reason.includes(dReason(r))) return false;
     if (col.tgl.length && !col.tgl.includes(dTgl(r))) return false;
     return true;
 }));
 
-watch([optNo, optCust, optTts, optUnit, optBi, optReason, optTgl], () => {
+watch([optNo, optCust, optTts, optUnit, optBi, optType, optReason, optTgl], () => {
     const prune = (sel: string[], opts: string[]) => { const s = new Set(opts); return sel.filter((v) => s.has(v)); };
     col.no = prune(col.no, optNo.value); col.cust = prune(col.cust, optCust.value); col.tts = prune(col.tts, optTts.value);
-    col.unit = prune(col.unit, optUnit.value); col.bi = prune(col.bi, optBi.value); col.reason = prune(col.reason, optReason.value); col.tgl = prune(col.tgl, optTgl.value);
+    col.unit = prune(col.unit, optUnit.value); col.bi = prune(col.bi, optBi.value); col.type = prune(col.type, optType.value); col.reason = prune(col.reason, optReason.value); col.tgl = prune(col.tgl, optTgl.value);
 });
 
 // Pilih baris (checklist) — Set id reaktif.
@@ -101,7 +105,7 @@ function downloadExcel() {
                 <thead class="bg-neutral-50 dark:bg-neutral-800">
                     <tr class="text-left text-xs uppercase text-neutral-500">
                         <th class="px-3 pt-3 pb-1.5"><input type="checkbox" :checked="allFilteredSelected" @change="toggleAll" class="h-4 w-4 accent-danger-600" title="Pilih semua (hasil filter)" /></th>
-                        <th class="whitespace-nowrap px-3 pt-3 pb-1.5">No. Inisiasi</th><th class="px-3 pt-3 pb-1.5">Customer</th><th class="px-3 pt-3 pb-1.5">TTS</th><th class="px-3 pt-3 pb-1.5">Unit</th><th class="px-3 pt-3 pb-1.5 text-center">Hasil BI</th><th class="px-3 pt-3 pb-1.5">Alasan Penolakan</th><th class="whitespace-nowrap px-3 pt-3 pb-1.5">Ditolak</th><th class="px-3 pt-3 pb-1.5 text-center">Detail</th>
+                        <th class="whitespace-nowrap px-3 pt-3 pb-1.5">No. Inisiasi</th><th class="px-3 pt-3 pb-1.5">Customer</th><th class="px-3 pt-3 pb-1.5">TTS</th><th class="px-3 pt-3 pb-1.5">Unit</th><th class="px-3 pt-3 pb-1.5 text-center">Hasil BI</th><th class="px-3 pt-3 pb-1.5">Jenis Reject</th><th class="px-3 pt-3 pb-1.5">Alasan Penolakan</th><th class="whitespace-nowrap px-3 pt-3 pb-1.5">Ditolak</th><th class="px-3 pt-3 pb-1.5 text-center">Detail</th>
                     </tr>
                     <!-- Filter checklist per-kolom -->
                     <tr class="border-b border-neutral-200 dark:border-neutral-700">
@@ -111,6 +115,7 @@ function downloadExcel() {
                         <th class="px-3 pb-2"><ColumnFilter v-model="col.tts" :options="optTts" /></th>
                         <th class="px-3 pb-2"><ColumnFilter v-model="col.unit" :options="optUnit" /></th>
                         <th class="px-3 pb-2"><ColumnFilter v-model="col.bi" :options="optBi" /></th>
+                        <th class="px-3 pb-2"><ColumnFilter v-model="col.type" :options="optType" /></th>
                         <th class="px-3 pb-2"><ColumnFilter v-model="col.reason" :options="optReason" /></th>
                         <th class="px-3 pb-2"><ColumnFilter v-model="col.tgl" :options="optTgl" /></th>
                         <th class="px-3 pb-2"></th>
@@ -124,6 +129,7 @@ function downloadExcel() {
                         <td class="px-3 py-3 font-mono text-xs text-neutral-500">{{ r.tts ?? '—' }}</td>
                         <td class="px-3 py-3">{{ r.unit ?? '—' }}</td>
                         <td class="px-3 py-3 text-center"><Badge size="sm" :variant="r.bi_result ? 'warning' : 'neutral'">{{ biLabel(r.bi_result) }}</Badge></td>
+                        <td class="px-3 py-3 whitespace-nowrap"><Badge size="sm" :variant="r.reject_type === 'batal_sepihak' ? 'danger' : 'warning'">{{ typeLabel(r.reject_type) }}</Badge></td>
                         <td class="px-3 py-3"><span v-if="r.reason" class="text-neutral-700 dark:text-neutral-200">{{ r.reason }}</span><span v-else class="text-xs italic text-neutral-400">— tanpa alasan —</span></td>
                         <td class="whitespace-nowrap px-3 py-3">{{ fmtDate(r.rejected_at) }}<div v-if="r.rejected_by" class="text-xs text-neutral-400">oleh {{ r.rejected_by }}</div></td>
                         <td class="px-3 py-3 text-center whitespace-nowrap"><Link :href="route('kpr.database.reject-bi.detail', r.id)" class="inline-flex items-center gap-1 rounded-lg border border-neutral-300 px-2.5 py-1 text-xs font-medium hover:bg-neutral-50 dark:border-neutral-700 dark:hover:bg-neutral-800"><FileText class="h-3.5 w-3.5" /> Report</Link></td>

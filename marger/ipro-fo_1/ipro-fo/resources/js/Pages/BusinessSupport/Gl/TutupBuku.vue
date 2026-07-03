@@ -25,7 +25,6 @@ function changeYear() { router.get(route('bs.closing.index'), { year: year.value
 function fmtRp(v: number) { return 'Rp ' + Number(v ?? 0).toLocaleString('id-ID'); }
 function closeMonth(m: number) { if (confirm(`Tutup (kunci) periode ${monthNames[m-1]} ${props.year}? Jurnal tidak bisa ditambah / diedit di periode terkunci hingga dibuka kembali.`)) router.post(route('bs.closing.close'), { year: props.year, month: m }, { preserveScroll: true }); }
 function reopenMonth(m: number) { if (confirm(`Buka kembali periode ${monthNames[m-1]} ${props.year}?`)) router.post(route('bs.closing.reopen'), { year: props.year, month: m }, { preserveScroll: true }); }
-function closeSelected() { selectedClosed.value ? reopenMonth(closeM.value) : closeMonth(closeM.value); }
 </script>
 <template>
     <div class="space-y-4">
@@ -60,9 +59,11 @@ function closeSelected() { selectedClosed.value ? reopenMonth(closeM.value) : cl
                 <div class="pb-1.5">
                     <Badge :variant="selectedClosed ? 'neutral' : 'success'" size="sm">{{ selectedClosed ? 'Terkunci' : 'Terbuka' }}</Badge>
                 </div>
-                <Button :variant="selectedClosed ? 'secondary' : 'primary'" @click="closeSelected">
-                    <template #icon-left><Unlock v-if="selectedClosed" class="h-4 w-4" /><Lock v-else class="h-4 w-4" /></template>
-                    {{ selectedClosed ? 'Buka Periode' : 'Tutup Periode' }}
+                <Button variant="primary" :disabled="selectedClosed" @click="closeMonth(closeM)">
+                    <template #icon-left><Lock class="h-4 w-4" /></template>Tutup Periode
+                </Button>
+                <Button variant="secondary" :disabled="!selectedClosed" @click="reopenMonth(closeM)">
+                    <template #icon-left><Unlock class="h-4 w-4" /></template>Buka Periode
                 </Button>
             </div>
         </div>
@@ -81,8 +82,10 @@ function closeSelected() { selectedClosed.value ? reopenMonth(closeM.value) : cl
                         <td class="px-4 py-2.5 text-right font-mono" :class="m.profit >= 0 ? 'text-neutral-700 dark:text-neutral-200' : 'text-danger-600'">{{ fmtRp(m.profit) }}</td>
                         <td class="px-4 py-2.5 text-center"><Badge :variant="m.status === 'closed' ? 'neutral' : 'success'" size="sm">{{ m.status === 'closed' ? 'Terkunci' : 'Terbuka' }}</Badge></td>
                         <td class="px-4 py-2.5 text-right">
-                            <button v-if="m.status !== 'closed'" @click="closeMonth(m.month)" class="inline-flex items-center gap-1 text-xs text-neutral-600 hover:text-neutral-900 dark:text-neutral-300"><Lock class="h-3.5 w-3.5" /> Tutup</button>
-                            <button v-else @click="reopenMonth(m.month)" class="inline-flex items-center gap-1 text-xs text-primary-600 hover:underline"><Unlock class="h-3.5 w-3.5" /> Buka</button>
+                            <div class="inline-flex items-center justify-end gap-3">
+                                <button @click="closeMonth(m.month)" :disabled="m.status === 'closed'" class="inline-flex items-center gap-1 text-xs text-neutral-600 hover:text-neutral-900 disabled:cursor-not-allowed disabled:opacity-30 dark:text-neutral-300"><Lock class="h-3.5 w-3.5" /> Tutup</button>
+                                <button @click="reopenMonth(m.month)" :disabled="m.status !== 'closed'" class="inline-flex items-center gap-1 text-xs text-primary-600 hover:underline disabled:cursor-not-allowed disabled:opacity-30"><Unlock class="h-3.5 w-3.5" /> Buka</button>
+                            </div>
                         </td>
                     </tr>
                 </tbody>

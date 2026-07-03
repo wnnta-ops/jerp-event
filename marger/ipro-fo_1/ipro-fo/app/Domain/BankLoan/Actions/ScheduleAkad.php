@@ -12,10 +12,10 @@ final class ScheduleAkad
 {
     public function execute(KprApplication $app, array $data): KprAkad
     {
-        if ($app->status->value !== 'sp3k') {
+        if ($app->status->value !== 'akad') {
             throw new BusinessRuleException(
-                'Akad hanya dapat dijadwalkan setelah SP3K diterbitkan.',
-                errorCode: 'AKAD_REQUIRES_SP3K',
+                'Akad hanya dapat dicatat pada tahap Akad (setelah Surat Instruksi).',
+                errorCode: 'AKAD_REQUIRES_STAGE_AKAD',
             );
         }
 
