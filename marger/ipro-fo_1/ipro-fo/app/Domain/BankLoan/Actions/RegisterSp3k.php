@@ -13,8 +13,7 @@ final class RegisterSp3k
 {
     public function execute(KprApplication $app, array $data): KprSp3k
     {
-        $app->status->assertCanTransitionTo(KprStatus::Sp3kIssued);
-
+        // Catat data SP3K pada tahap SP3K (status TIDAK diubah di sini; transisi via proceedSp3k → SI).
         return DB::transaction(function () use ($app, $data): KprSp3k {
             $sp3k = KprSp3k::updateOrCreate(
                 ['kpr_application_id' => $app->id],
@@ -30,7 +29,6 @@ final class RegisterSp3k
             );
 
             $app->update([
-                'status'          => KprStatus::Sp3kIssued,
                 'plafon_approved' => $data['approved_amount'],
                 'tenor_month'     => $data['tenor_month'] ?? $app->tenor_month,
                 'reviewed_at'     => now()->toDateString(),

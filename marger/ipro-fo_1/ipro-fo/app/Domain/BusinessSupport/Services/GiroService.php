@@ -44,8 +44,31 @@ final class GiroService
                 'giro_account_id'    => $giroAccount,
                 'counter_account_id' => $data['counter_account_id'],
                 'status'             => 'in_hand',
+                'source'             => 'manual',
                 'created_by'         => $userId,
             ]);
+
+            // Entri manual → jurnal terima langsung diposting.
+            return $this->postReceiveJournal($giro, $userId);
+        });
+    }
+
+    /**
+     * Posting jurnal PENERIMAAN untuk giro Di Tangan yang BELUM di-jurnal (mis. kiriman
+     * FO Bilyet Giro). Dr Piutang Giro / Cr Piutang Usaha (lawan). Idempotent.
+     */
+    public function postReceiveJournal(BsGiro $giro, ?int $userId = null): BsGiro
+    {
+        return DB::transaction(function () use ($giro, $userId): BsGiro {
+            if ($giro->receive_journal_id) {
+                throw new BusinessRuleException('Jurnal penerimaan giro sudah diposting.', errorCode: 'GIRO_JOURNALED');
+            }
+            $amount = round((float) $giro->amount, 2);
+            $giroAccount = $giro->giro_account_id ?: BsAccount::where('code', config('business_support.gl_accounts.giro_in'))->value('id');
+            $counter = $giro->counter_account_id ?: BsAccount::where('code', config('business_support.gl_accounts.receivable'))->value('id');
+            if (! $giroAccount || ! $counter) {
+                throw new BusinessRuleException('Akun Piutang Giro / Piutang Usaha belum diset.', errorCode: 'GIRO_NO_ACCOUNT');
+            }
 
             $journal = $this->journal->post([
                 'journal_date' => $giro->receive_date->toDateString(),
@@ -55,10 +78,14 @@ final class GiroService
                 'created_by'   => $userId,
             ], [
                 ['account_id' => $giroAccount, 'debit' => $amount, 'credit' => 0, 'description' => 'Cek/Giro di tangan'],
-                ['account_id' => $giro->counter_account_id, 'debit' => 0, 'credit' => $amount, 'description' => 'Piutang dialihkan ke giro'],
+                ['account_id' => $counter, 'debit' => 0, 'credit' => $amount, 'description' => 'Piutang dialihkan ke giro'],
             ]);
 
-            $giro->update(['receive_journal_id' => $journal->id]);
+            $giro->update([
+                'giro_account_id'    => $giroAccount,
+                'counter_account_id' => $counter,
+                'receive_journal_id' => $journal->id,
+            ]);
 
             return $giro;
         });
@@ -81,6 +108,9 @@ final class GiroService
         return DB::transaction(function () use ($giro, $status, $date, $cashAccountId, $userId): BsGiro {
             if ($giro->status !== 'in_hand') {
                 throw new BusinessRuleException('Cek/Giro sudah diproses.', errorCode: 'GIRO_DONE');
+            }
+            if (! $giro->receive_journal_id) {
+                throw new BusinessRuleException('Posting GL penerimaan dulu (menu Penerimaan Cek Giro) sebelum kliring/tolak.', errorCode: 'GIRO_NOT_POSTED');
             }
             $amount = round((float) $giro->amount, 2);
 

@@ -58,7 +58,9 @@ class KprDatabaseController extends Controller
             'tts'         => $r->ttsReceipt?->tts_number,
             'unit'        => $r->booking?->unit?->unit_code,
             'bi_result'   => $bi['result'] ?? null,
+            'bi_result_pasangan' => $bi['result_pasangan'] ?? null,
             'permintaan'  => $bi['permintaan'] ?? null,
+            'reject_type' => $bi['reject_type'] ?? 'bi_checking',
             'reason'      => $bi['reject_reason'] ?? null,
             'rejected_at' => isset($bi['rejected_at']) ? Carbon::parse($bi['rejected_at'])->toDateString() : null,
             'rejected_by' => $bi['rejected_by_name'] ?? null,
@@ -144,11 +146,13 @@ class KprDatabaseController extends Controller
             ->latest('id')->get()->map(fn (KprInitiation $r) => $this->biRow($r));
 
         $e = fn ($v) => htmlspecialchars((string) ($v ?? ''), ENT_QUOTES);
+        $typeLabel = fn ($t) => ($t ?? 'bi_checking') === 'batal_sepihak' ? 'Reject Batal Sepihak' : 'Reject BI Checking';
         $h = '<table border="1" cellspacing="0"><tr style="background:#fde68a;font-weight:bold">'
-            .'<th>No. Inisiasi</th><th>Customer</th><th>TTS</th><th>Unit</th><th>Hasil BI</th><th>Alasan Penolakan</th><th>Tgl Ditolak</th><th>Ditolak Oleh</th></tr>';
+            .'<th>No. Inisiasi</th><th>Customer</th><th>TTS</th><th>Unit</th><th>Hasil BI</th><th>Jenis Reject</th><th>Alasan Penolakan</th><th>Tgl Ditolak</th><th>Ditolak Oleh</th></tr>';
         foreach ($rows as $r) {
             $h .= '<tr><td>'.$e($r['number']).'</td><td>'.$e($r['customer'] ?: '—').'</td><td>'.$e($r['tts'] ?: '—').'</td>'
                 .'<td>'.$e($r['unit'] ?: '—').'</td><td>'.$e($this->biResultLabel($r['bi_result'])).'</td>'
+                .'<td>'.$e($typeLabel($r['reject_type'])).'</td>'
                 .'<td>'.$e($r['reason'] ?: '—').'</td><td>'.$e($r['rejected_at'] ?: '—').'</td><td>'.$e($r['rejected_by'] ?: '—').'</td></tr>';
         }
         $h .= '</table>';

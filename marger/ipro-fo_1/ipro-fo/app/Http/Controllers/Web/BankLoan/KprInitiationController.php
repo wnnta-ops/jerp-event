@@ -7,6 +7,7 @@ namespace App\Http\Controllers\Web\BankLoan;
 use App\Domain\BankLoan\Actions\CreateKprApplication;
 use App\Domain\BankLoan\Enums\KprStatus;
 use App\Domain\BankLoan\Models\BankPartner;
+use App\Domain\BankLoan\Models\KprAnalisaAspect;
 use App\Domain\BankLoan\Models\KprApplication;
 use App\Domain\BankLoan\Models\KprInitiation;
 use App\Domain\BankLoan\Services\IdDocumentOcr;
@@ -64,6 +65,60 @@ class KprInitiationController extends Controller
         'lap_keuangan'   => ['high' => [1, 1, 1, 1, 1], 'medium' => [2, 2, 0, 0, 0], 'low' => [0, 0, 0, 0, 0]],
         'foto_usaha'     => ['high' => [1, 1, 1, 1, 1], 'medium' => [2, 2, 2, 1, 1], 'low' => [0, 0, 0, 0, 0]],
     ];
+
+    /**
+     * Konfigurasi aspek Analisa dari sub-modul "Kategori Analisa Berkas" (tabel kpr_analisa_aspects).
+     * Bila belum ada data aktif → fallback ke default hardcoded di atas (perilaku tidak berubah).
+     *
+     * @return array{
+     *   keys: array{all: list<string>, karyawan: list<string>, wirausaha: list<string>},
+     *   score: array<string, array<string,int>>,
+     *   bank: array<string, array<string, list<int>>>,
+     *   banks: list<string>,
+     *   aspects: list<array{key:string,no:int,label:string,scope:string,options:list<array<string,mixed>>}>
+     * }
+     */
+    private function analisaConfig(): array
+    {
+        $rows = KprAnalisaAspect::where('is_active', true)->orderBy('aspect_no')->orderBy('id')->get();
+
+        if ($rows->isEmpty()) {
+            $keys = [
+                'all'       => self::ANALISA_ASPEK_COMMON,
+                'karyawan'  => self::ANALISA_ASPEK_KARYAWAN,
+                'wirausaha' => self::ANALISA_ASPEK_WIRAUSAHA,
+            ];
+            $score = [];
+            foreach (array_merge($keys['all'], $keys['karyawan'], $keys['wirausaha']) as $k) {
+                $score[$k] = ['high' => 3, 'medium' => 2, 'low' => 1];
+            }
+
+            return ['keys' => $keys, 'score' => $score, 'bank' => self::BANK_SCORE, 'banks' => self::BANK_REKOM_LIST, 'aspects' => []];
+        }
+
+        $keys = ['all' => [], 'karyawan' => [], 'wirausaha' => []];
+        $score = [];
+        $bank = [];
+        $aspects = [];
+        foreach ($rows as $r) {
+            $scope = in_array($r->scope, ['all', 'karyawan', 'wirausaha'], true) ? $r->scope : 'all';
+            $keys[$scope][] = $r->aspect_key;
+            $opts = [];
+            foreach ((array) $r->options as $o) {
+                $lvl = $o['level'] ?? null;
+                if (! in_array($lvl, ['high', 'medium', 'low'], true)) {
+                    continue;
+                }
+                $bankRow = array_map('intval', array_values((array) ($o['bank'] ?? [])));
+                $score[$r->aspect_key][$lvl] = (int) ($o['score'] ?? 0);
+                $bank[$r->aspect_key][$lvl] = $bankRow;
+                $opts[] = ['level' => $lvl, 'desc' => (string) ($o['desc'] ?? ''), 'hint' => $o['hint'] ?? null, 'score' => (int) ($o['score'] ?? 0), 'bank' => $bankRow];
+            }
+            $aspects[] = ['key' => $r->aspect_key, 'no' => (int) $r->aspect_no, 'label' => $r->label, 'scope' => $scope, 'options' => $opts];
+        }
+
+        return ['keys' => $keys, 'score' => $score, 'bank' => $bank, 'banks' => KprAnalisaAspect::BANKS, 'aspects' => $aspects];
+    }
 
     public function index(Request $request): Response
     {
@@ -222,6 +277,12 @@ class KprInitiationController extends Controller
             ],
             'contractInfo' => $contractInfo,
             'stageDefs' => self::STAGES,
+            // Matriks aspek Analisa (dari Kategori Analisa Berkas) untuk render matriks + preview skor/rekomendasi.
+            'analisaCfg' => (function () {
+                $c = $this->analisaConfig();
+
+                return ['aspects' => $c['aspects'], 'banks' => $c['banks']];
+            })(),
             'banks'     => BankPartner::where('is_active', true)->get(['id', 'code', 'name']),
             // Hanya booking milik customer inisiasi ini (cegah Draft KPR lintas-customer).
             'bookings'  => Booking::query()->whereIn('status', ['active', 'ppjb'])
@@ -334,13 +395,29 @@ class KprInitiationController extends Controller
                 ->with('success', count($clean).' Draft Proses KPR dibuat dari inisiasi — tentukan kelanjutan (Lanjut/Batal) tiap bank di Proses KPR.');
         }
 
-        // R2 — SPRS lanjut bila keempat dokumen (KTP/NPWP Pemohon & Pasangan) dikonfirmasi diterima.
+        // R2 — SPRS: WAJIB pilih status pernikahan dulu, lalu konfirmasi dokumen (belum menikah = 2, sudah menikah = 4).
         //      OCR/scan pindah ke menu "Cek Scan KTP & NPWP" (terpisah, tidak menggerbang tahap ini).
         if ($stage === 'sprs') {
-            if (! ($data['ktp_pemohon_received'] ?? false) || ! ($data['npwp_pemohon_received'] ?? false)
-                || ! ($data['ktp_pasangan_received'] ?? false) || ! ($data['npwp_pasangan_received'] ?? false)) {
-                return back()->with('error', 'Centang keempat dokumen (KTP/NPWP Pemohon & Pasangan) sudah diterima untuk lanjut ke BI Checking.');
+            $marital = in_array($data['marital_status'] ?? null, ['belum_menikah', 'sudah_menikah'], true) ? $data['marital_status'] : null;
+            if ($marital === null) {
+                return back()->with('error', 'Pilih status pernikahan pemohon (Belum / Sudah Menikah) terlebih dahulu.');
             }
+            $needPasangan = $marital === 'sudah_menikah';
+            $pemohonOk = ($data['ktp_pemohon_received'] ?? false) && ($data['npwp_pemohon_received'] ?? false);
+            $pasanganOk = ! $needPasangan || (($data['ktp_pasangan_received'] ?? false) && ($data['npwp_pasangan_received'] ?? false));
+            if (! $pemohonOk || ! $pasanganOk) {
+                return back()->with('error', $needPasangan
+                    ? 'Centang keempat dokumen (KTP/NPWP Pemohon & Pasangan) sudah diterima untuk lanjut ke BI Checking.'
+                    : 'Centang KTP & NPWP Pemohon sudah diterima untuk lanjut ke BI Checking.');
+            }
+            // Belum menikah → jangan simpan data pasangan (konsisten dengan 2 dokumen wajib).
+            if (! $needPasangan) {
+                $data['ktp_pasangan_received'] = false;
+                $data['npwp_pasangan_received'] = false;
+                $data['ktp_pasangan_received_at'] = null;
+                $data['npwp_pasangan_received_at'] = null;
+            }
+            $data['marital_status'] = $marital;
         }
 
         // ── Collect Berkas: kategori (karyawan/wirausaha) + checklist per-item (lengkap/tidak_lengkap) + catatan.
@@ -416,14 +493,19 @@ class KprInitiationController extends Controller
             if (empty($data['result'])) {
                 return back()->with('error', 'Pilih Hasil Analisa (Layak / Tidak Layak) terlebih dahulu.');
             }
-            // Aspek wajib mengikuti kategori pemohon (Collect Berkas); semua aspek harus dinilai High/Medium/Low.
+            // Aspek wajib mengikuti kategori pemohon (Collect Berkas); daftar & skor dari Kategori Analisa Berkas.
+            $cfg   = $this->analisaConfig();
             $cat   = $stages['collect_berkas']['category'] ?? null;
-            $aspek = array_merge(self::ANALISA_ASPEK_COMMON, match ($cat) {
-                'wirausaha' => self::ANALISA_ASPEK_WIRAUSAHA,
-                'karyawan'  => self::ANALISA_ASPEK_KARYAWAN,
-                default     => [],
-            });
+            $aspek = array_merge($cfg['keys']['all'], $cfg['keys'][$cat] ?? []);
             $sent  = (array) ($data['indikator_items'] ?? []);
+            // bi_pemohon & bi_pasangan diturunkan OTOMATIS dari hasil BI Checking (anti-tamper): Clear/Kol 1=high, Kol 2=medium, Kol 3–5=low.
+            $biMap  = ['clear' => 'high', 'kol1' => 'high', 'kol2' => 'medium', 'kol3' => 'low', 'kol4' => 'low', 'kol5' => 'low'];
+            $needPa = ($stages['sprs']['marital_status'] ?? '') !== 'belum_menikah';
+            $biRes  = $stages['bi_checking']['result'] ?? '';
+            // Pasangan: bila kosong (belum menikah / data lama), ikut hasil pemohon agar aspek tetap terisi.
+            $biResP = ($needPa ? ($stages['bi_checking']['result_pasangan'] ?? '') : '') ?: $biRes;
+            if (isset($biMap[$biRes]))  { $sent['bi_pemohon'] = $biMap[$biRes]; }
+            if (isset($biMap[$biResP])) { $sent['bi_pasangan'] = $biMap[$biResP]; }
             $clean = [];
             foreach ($aspek as $k) {
                 if (! in_array($sent[$k] ?? null, ['high', 'medium', 'low'], true)) {
@@ -431,18 +513,26 @@ class KprInitiationController extends Controller
                 }
                 $clean[$k] = $sent[$k];
             }
-            // Indikator keseluruhan diturunkan server (anti-tamper): rata-rata High=3/Medium=2/Low=1 → HIGH ≥2.5, MEDIUM ≥1.5.
-            $map = ['high' => 3, 'medium' => 2, 'low' => 1];
-            $avg = array_sum(array_map(fn ($l) => $map[$l], $clean)) / max(1, count($clean));
+            // Indikator keseluruhan diturunkan server (anti-tamper): skor tiap aspek dinormalisasi ke [0,1]
+            // memakai skor konfigurasi (bebas diubah, tidak harus 3/2/1) → rata-rata: HIGH ≥0.75, MEDIUM ≥0.25.
+            $sum = 0.0;
+            foreach ($clean as $k => $lvl) {
+                $sc   = $cfg['score'][$k] ?? ['high' => 3, 'medium' => 2, 'low' => 1];
+                $vals = array_values($sc);
+                $min  = min($vals);
+                $max  = max($vals);
+                $sum += $max > $min ? (($sc[$lvl] ?? $min) - $min) / ($max - $min) : 0.5;
+            }
+            $avg = count($clean) ? $sum / count($clean) : 0;
             $data['indikator_items'] = $clean;
-            $data['indikator']       = $avg >= 2.5 ? 'high' : ($avg >= 1.5 ? 'medium' : 'low');
+            $data['indikator']       = $avg >= 0.75 ? 'high' : ($avg >= 0.25 ? 'medium' : 'low');
         }
         if ($stage === 'profiling') {
             if (empty($data['decision_1']) && empty($data['decision_2'])) {
                 return back()->with('error', 'Pilih minimal 1 bank keputusan terlebih dahulu.');
             }
-            // 2 rekomendasi bank dihitung server (anti-tamper) dari skor aspek Analisa.
-            [$data['bank_analisa_1'], $data['bank_analisa_2']] = $this->bankRekomendasi((array) ($stages['analisa']['indikator_items'] ?? []));
+            // 2 rekomendasi bank dihitung server (anti-tamper) dari skor aspek Analisa (matriks Kategori Analisa Berkas).
+            [$data['bank_analisa_1'], $data['bank_analisa_2']] = $this->bankRekomendasi((array) ($stages['analisa']['indikator_items'] ?? []), $this->analisaConfig());
         }
 
         // ── Tahap biasa: simpan data + tandai selesai + maju ke tahap berikutnya (preserve sub-data spt. docs) ──
@@ -454,23 +544,32 @@ class KprInitiationController extends Controller
         return back()->with('success', self::STAGES[$stage].' disimpan.');
     }
 
-    /** Hitung 2 rekomendasi bank (Rekom 1 & Rekom 2) dari skor aspek Analisa (indikator_items). */
-    private function bankRekomendasi(array $items): array
+    /**
+     * Hitung 2 rekomendasi bank (Rekom 1 & Rekom 2) dari skor aspek Analisa (indikator_items).
+     *
+     * @param  array<string,string>  $items
+     * @param  array{bank: array<string, array<string, list<int>>>, banks: list<string>}  $cfg
+     * @return array{0: ?string, 1: ?string}
+     */
+    private function bankRekomendasi(array $items, array $cfg): array
     {
-        $totals = array_fill(0, count(self::BANK_REKOM_LIST), 0);
+        $banks = $cfg['banks'];
+        $totals = array_fill(0, count($banks), 0);
         foreach ($items as $key => $level) {
-            $row = self::BANK_SCORE[$key][$level] ?? null;
+            $row = $cfg['bank'][$key][$level] ?? null;
             if ($row) {
                 foreach ($row as $i => $v) {
-                    $totals[$i] += $v;
+                    if (isset($totals[$i])) {
+                        $totals[$i] += $v;
+                    }
                 }
             }
         }
         // Urut indeks bank berdasar skor desc; tie → urutan daftar (BTN..MANDIRI). 2 teratas = Rekom 1 & 2.
-        $idx = range(0, count(self::BANK_REKOM_LIST) - 1);
+        $idx = range(0, count($banks) - 1);
         usort($idx, fn ($a, $b) => ($totals[$b] <=> $totals[$a]) ?: ($a <=> $b));
 
-        return [self::BANK_REKOM_LIST[$idx[0]] ?? null, self::BANK_REKOM_LIST[$idx[1]] ?? null];
+        return [$banks[$idx[0]] ?? null, $banks[$idx[1]] ?? null];
     }
 
     /** Tolak inisiasi pada tahap BI Checking → status 'rejected' + alasan. Muncul di Database KPR → Reject BI Checking. */
@@ -490,25 +589,45 @@ class KprInitiationController extends Controller
         }
 
         $v = $request->validate([
-            'reason'     => ['nullable', 'string', 'max:500'],
-            'result'     => ['nullable', 'string', 'max:20'],
-            'permintaan' => ['nullable', 'string', 'max:30'],
-            'notes'      => ['nullable', 'string', 'max:500'],
+            'reason'          => ['nullable', 'string', 'max:500'],
+            'reject_type'     => ['nullable', 'string', 'in:bi_checking,batal_sepihak'],
+            'result'          => ['nullable', 'string', 'max:20'],
+            'result_pasangan' => ['nullable', 'string', 'max:20'],
+            'permintaan'      => ['nullable', 'string', 'max:30'],
+            'notes'           => ['nullable', 'string', 'max:500'],
         ]);
 
-        // Gerbang: Reject HANYA untuk hasil bermasalah (Kol 2–5) DAN permintaan customer "Mundur / Reject".
-        if (! in_array($v['result'] ?? '', ['kol2', 'kol3', 'kol4', 'kol5'], true) || ($v['permintaan'] ?? '') !== 'mundur') {
-            return back()->with('error', 'Reject BI Checking hanya untuk Hasil Kol 2–5 dan Permintaan Customer = "Mundur / Reject".');
+        $stages = $initiation->stages ?? [];
+        $type   = in_array($v['reject_type'] ?? '', ['bi_checking', 'batal_sepihak'], true) ? $v['reject_type'] : 'bi_checking';
+        $clean  = ['clear', 'kol1'];
+        $bad    = ['kol2', 'kol3', 'kol4', 'kol5'];
+        // Pasangan hanya diperhitungkan bila pemohon "Sudah Menikah" (dari SPRS).
+        $needP     = ($stages['sprs']['marital_status'] ?? '') !== 'belum_menikah';
+        $rD        = $v['result'] ?? '';
+        $rP        = $v['result_pasangan'] ?? '';
+        $bothClean = in_array($rD, $clean, true) && (! $needP || in_array($rP, $clean, true));
+        $anyBad    = in_array($rD, $bad, true) || ($needP && in_array($rP, $bad, true));
+
+        // Gerbang: Reject hanya bila customer "Mundur / Reject". Jenis reject ditentukan hasil BI (anti-tamper).
+        if (($v['permintaan'] ?? '') !== 'mundur') {
+            return back()->with('error', 'Reject hanya bila Permintaan Customer = "Mundur / Reject".');
+        }
+        if ($type === 'batal_sepihak' && ! $bothClean) {
+            return back()->with('error', 'Reject Batal Sepihak hanya bila hasil BI Checking bersih (Clear / Kol 1).');
+        }
+        if ($type === 'bi_checking' && ! $anyBad) {
+            return back()->with('error', 'Reject BI Checking hanya bila ada hasil bermasalah (Kol 2–5).');
         }
 
-        $stages = $initiation->stages ?? [];
         $bi = $stages['bi_checking'] ?? [];
         // Simpan hasil BI Checking yang sudah diisi (agar tampil di Database Reject BI Checking).
-        if (! empty($v['result']))     { $bi['result'] = $v['result']; }
-        if (! empty($v['permintaan'])) { $bi['permintaan'] = $v['permintaan']; }
+        if (! empty($v['result']))          { $bi['result'] = $v['result']; }
+        if (! empty($v['result_pasangan'])) { $bi['result_pasangan'] = $v['result_pasangan']; }
+        if (! empty($v['permintaan']))      { $bi['permintaan'] = $v['permintaan']; }
         if (array_key_exists('notes', $v) && $v['notes'] !== null) { $bi['notes'] = $v['notes']; }
         $stages['bi_checking'] = array_merge($bi, [
             'rejected'         => true,
+            'reject_type'      => $type,
             'reject_reason'    => trim((string) ($v['reason'] ?? '')) ?: null,
             'rejected_at'      => now()->toIso8601String(),
             'rejected_by'      => $request->user()?->id,
@@ -516,7 +635,9 @@ class KprInitiationController extends Controller
         ]);
         $initiation->fill(['stages' => $stages, 'status' => 'rejected'])->save();
 
-        return back()->with('success', "Inisiasi {$initiation->initiation_number} ditolak pada tahap BI Checking.");
+        $label = $type === 'batal_sepihak' ? 'Batal Sepihak' : 'BI Checking';
+
+        return back()->with('success', "Inisiasi {$initiation->initiation_number} ditolak ({$label}).");
     }
 
     // ── R2: "Cek Scan KTP & NPWP" (sidebar terpisah) — upload TANPA OCR; OCR on-demand via tombol ──

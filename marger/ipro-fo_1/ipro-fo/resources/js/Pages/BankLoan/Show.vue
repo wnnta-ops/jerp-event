@@ -7,7 +7,7 @@ import Button from '@/Components/UI/Button.vue';
 import Input from '@/Components/UI/Input.vue';
 import MoneyInput from '@/Components/UI/MoneyInput.vue';
 
-const props = defineProps<{ app: any; identity?: any; siblings?: Array<any>; retentionCategories: Array<any>; bankTerms: Record<string, number>; canApproveRetensi?: boolean; hasRetention?: boolean }>();
+const props = defineProps<{ app: any; identity?: any; siblings?: Array<any>; retentionCategories: Array<any>; bankTerms: Record<string, number>; canApproveRetensi?: boolean; hasRetention?: boolean; si?: any }>();
 const a = props.app;
 
 // #item4 — keputusan Lanjut/Batal (gerbang ke akad). Salinan reaktif lokal agar kolom berubah SEKETIKA (optimistic).
@@ -31,8 +31,8 @@ function decide(id: number, decision: 'lanjut' | 'batal') {
 function decisionVariant(d: string | null) { return d === 'lanjut' ? 'success' : (d === 'batal' ? 'danger' : 'neutral'); }
 function decisionLabel(d: string | null) { return d === 'lanjut' ? 'Disetujui' : (d === 'batal' ? 'Batal' : 'Belum diputuskan'); }
 // KPR yang DISETUJUI bisa langsung membuka proses Akad-nya (navigasi penuh = hard refresh) walau yang
-// sedang dibuka adalah KPR sibling yang Batal. Halaman tujuan langsung membuka blok Akad (?akad=1).
-function goToAkad(id: number) { window.location.href = route('kpr.show', id) + '?akad=1'; }
+// sedang dibuka adalah KPR sibling yang Batal.
+function goToAkad(id: number) { window.location.href = route('kpr.show', id); }
 // "Ubah" — buka kembali tombol Lanjut/Batal pada baris (lokal). Re-pick akan tersimpan saat Lanjut/Batal diklik.
 function clearDecision(s: any) { s.decision = null; if (s.id === a.id) currentDecision.value = null; }
 // KPR sibling yang sudah Disetujui (untuk mengarahkan dari halaman KPR yang Batal ke proses Akad-nya).
@@ -42,12 +42,8 @@ const pendingDecisions = computed(() => sibRows.value.filter((s: any) => s.decis
 const allDecided = computed(() => sibRows.value.length > 0 && pendingDecisions.value.length === 0);
 // Tombol Akad aktif HANYA jika KPR ini Disetujui DAN semua KPR lain sudah diputuskan.
 const canAkad = computed(() => currentDecision.value === 'lanjut' && allDecided.value);
-// Proses Akad = tampilan terpisah. Di SP3K hanya tombol "Lanjut ke Proses Akad"; saat masuk view Akad
-// barulah Keputusan KPR + form Catat Akad tampil. akadView dipertahankan via URL (?akad=1) agar tahan reload.
-const akadView = ref(new URLSearchParams(window.location.search).get('akad') === '1');
-function enterAkadView() { akadView.value = true; const u = new URL(window.location.href); u.searchParams.set('akad', '1'); window.history.replaceState({}, '', u.toString()); }
-function exitAkadView() { akadView.value = false; const u = new URL(window.location.href); u.searchParams.delete('akad'); window.history.replaceState({}, '', u.toString()); }
-const showDecision = computed(() => a.status === 'sp3k' && akadView.value);
+// Keputusan KPR (Lanjut/Batal) + form Catat Akad kini tampil pada TAHAP AKAD (status 'akad').
+const showDecision = computed(() => a.status === 'akad');
 
 // #64: tampilkan Rp dengan 2 desimal di seluruh halaman.
 function fmtRp(v: number | null | undefined) {
@@ -73,7 +69,7 @@ const totalDisbursed = computed(() => Math.max(0, grossDisbursed.value - heldRet
 const outstandingDisburse = computed(() => Math.max(0, plafon.value - totalDisbursed.value)); // termasuk retensi held
 const disbursePct = computed(() => plafon.value > 0 ? Math.min(100, (totalDisbursed.value / plafon.value) * 100) : 0);
 const grossHeadroom = computed(() => Math.max(0, plafon.value - grossDisbursed.value)); // sisa plafon utk pencairan (gross) berikutnya
-const canDisburse = computed(() => ['akad', 'disbursed'].includes(a.status) && grossHeadroom.value > 0.01);
+const canDisburse = computed(() => a.status === 'disbursed' && grossHeadroom.value > 0.01);
 // #167: retensi/DAJAM tetap bisa dicatat (menambah outstanding) selama KPR disbursed/active —
 // walau pencairan sudah 100% (canDisburse false). Input Nominal Cair-nya yang disembunyikan.
 const canAddRetention = computed(() => ['disbursed', 'active'].includes(a.status));
@@ -136,14 +132,20 @@ watch(() => disbForm.retention_category_id, (id) => {
     if (pct > 0) disbForm.disbursed_amount = Math.round((pct / 100) * plafon.value);
 });
 
-const steps = ['draft', 'submitted', 'sp3k', 'akad', 'disbursed', 'active'];
-const stepLabels: Record<string, string> = { draft: 'Draft', submitted: 'Submitted', sp3k: 'SP3K', akad: 'Akad', disbursed: 'Pencairan', active: 'Lunas' };
+const steps = ['draft', 'submitted', 'sp3k', 'si', 'akad', 'disbursed', 'active'];
+const stepLabels: Record<string, string> = { draft: 'Draft', submitted: 'Submitted', sp3k: 'SP3K', si: 'SI', akad: 'Akad', disbursed: 'Pencairan', active: 'Lunas' };
 const curIdx = () => { const i = steps.indexOf(a.status); return i === -1 ? (a.status === 'in_review' ? 1 : 0) : i; };
 const dotBg: Record<string, string> = { neutral: 'bg-neutral-400', warning: 'bg-warning-500', info: 'bg-info-500', success: 'bg-success-500' };
 
 // #99: tetap di halaman (preserveScroll) agar form tahap berikutnya langsung terlihat setelah remount.
 // preserveScroll harus di argumen OPTIONS (arg ke-3), bukan data (arg ke-2) — kalau salah, scroll ter-reset.
 function submitKpa() { router.post(route('kpr.submit', a.id), {}, { onSuccess: () => window.location.reload() }); }
+
+// Tombol "Lanjut" antar tahap (identitas → SP3K → SI → Akad → Pencairan). Status maju satu tahap.
+function proceedSubmitted() { router.post(route('kpr.proceed-submitted', a.id), {}, { onSuccess: () => window.location.reload() }); }
+function proceedSp3k() { router.post(route('kpr.proceed-sp3k', a.id), {}, { onSuccess: () => window.location.reload() }); }
+function proceedSi() { router.post(route('kpr.proceed-si', a.id), {}, { onSuccess: () => window.location.reload() }); }
+function proceedAkad() { router.post(route('kpr.proceed-akad', a.id), {}, { onSuccess: () => window.location.reload() }); }
 
 // Tolak proses KPR (dari tahap Submitted/SP3K) → status Rejected; muncul di Database KPR → Reject Proses KPR.
 function reject() {
@@ -247,8 +249,8 @@ const stageView = computed<StageView>(() => {
         title: st === 'in_review' ? 'Rincian Submitted — Sedang Ditinjau Bank' : 'Rincian Submitted — Terkirim ke Bank, Menunggu SP3K',
         badgeVariant: 'warning', badgeLabel: st === 'in_review' ? 'In Review' : 'Submitted',
         intro: st === 'in_review'
-            ? 'Aplikasi sedang ditinjau bank. Isi data SP3K di bawah saat surat persetujuan terbit.'
-            : 'Aplikasi sudah dikirim ke bank. Saat SP3K terbit, isi langsung di formulir di bawah untuk lanjut ke tahap SP3K.',
+            ? 'Aplikasi sedang ditinjau bank. Periksa identitas nasabah, lalu Lanjutkan.'
+            : 'Aplikasi sudah dikirim ke bank. Periksa identitas nasabah di atas, lalu klik Lanjutkan untuk masuk tahap SP3K.',
         edit: null,
         rows: [
             { label: 'Tanggal Submit', value: fmtDate(a.submitted_at) },
@@ -263,8 +265,8 @@ const stageView = computed<StageView>(() => {
     if (st === 'sp3k') return {
         title: 'Rincian SP3K — Surat Persetujuan Terbit',
         badgeVariant: 'info', badgeLabel: 'SP3K Issued',
-        intro: 'SP3K telah terbit — plafon resmi disetujui. Lanjutkan dengan mencatat akad di formulir di bawah.',
-        edit: 'sp3k',
+        intro: a.sp3k ? 'SP3K telah terbit — plafon resmi disetujui. Lanjut ke Surat Instruksi (SI).' : 'Isi data SP3K (Tanggal & Plafon Disetujui) di formulir di bawah.',
+        edit: a.sp3k ? 'sp3k' : null,
         rows: [
             { label: 'No. SP3K', value: a.sp3k?.sp3k_number, mono: true },
             { label: 'Tanggal SP3K', value: fmtDate(a.sp3k?.sp3k_date) },
@@ -273,11 +275,24 @@ const stageView = computed<StageView>(() => {
         ],
         showProgress: true, mode: 'rows',
     };
+    if (st === 'si') return {
+        title: 'Surat Instruksi (SI) — Instruksi Lanjut ke Akad',
+        badgeVariant: 'info', badgeLabel: 'SI',
+        intro: 'Surat Instruksi diterbitkan. Cetak bila diperlukan (tombol Cetak di kanan atas), lalu lanjut ke Proses Akad.',
+        edit: null,
+        rows: [
+            { label: 'Nama', value: props.si?.nama ?? a.customer?.full_name },
+            { label: 'Tipe Unit', value: props.si?.tipe_unit ?? props.si?.unit_code ?? '—' },
+            { label: 'ACC KPR', value: fmtRp(props.si?.acc_kpr), success: true },
+            { label: 'Free DP 5%', value: fmtRp(props.si?.free_dp) },
+        ],
+        showProgress: true, mode: 'rows',
+    };
     if (st === 'akad') return {
-        title: 'Rincian Akad — Akad Selesai, Siap Pencairan',
-        badgeVariant: 'info', badgeLabel: 'Akad Done',
-        intro: 'Akad telah selesai. Catat pencairan dana (boleh bertahap) di formulir di bawah hingga plafon penuh.',
-        edit: 'akad',
+        title: 'Rincian Akad — Proses Akad',
+        badgeVariant: 'info', badgeLabel: 'Akad',
+        intro: a.akad ? 'Akad selesai. Lanjut ke tahap Pencairan.' : 'Tetapkan Keputusan KPR (Lanjut/Batal) di atas, lalu catat akad di formulir di bawah.',
+        edit: a.akad ? 'akad' : null,
         rows: [
             { label: 'Tanggal Akad', value: fmtDate(a.akad?.akad_at) },
             { label: 'Tempat', value: a.akad?.place ?? '—' },
@@ -336,12 +351,13 @@ const stageView = computed<StageView>(() => {
     };
 });
 
-// Form tahap berikutnya yang tampil inline (bukan modal) sesuai status.
-const showSp3kForm = computed(() => a.status === 'submitted' || a.status === 'in_review' || (a.status === 'sp3k' && editSp3k.value));
-const showAkadForm = computed(() => (a.status === 'sp3k' && akadView.value && !editSp3k.value) || (a.status === 'akad' && editAkad.value));
-// #167: form tetap tampil saat disbursed/active agar retensi/DAJAM masih bisa dicatat,
+// Form tiap tahap tampil pada TAHAP-nya sendiri (sinkron dengan stepper).
+// SP3K: form saat belum ada record (atau saat Edit). Akad: idem.
+const showSp3kForm = computed(() => a.status === 'sp3k' && (!a.sp3k || editSp3k.value));
+const showAkadForm = computed(() => a.status === 'akad' && (!a.akad || editAkad.value));
+// #167: form pencairan tampil di tahap Pencairan (disbursed/active) agar retensi/DAJAM masih bisa dicatat,
 // walau pencairan sudah 100% (canDisburse false). Input Nominal Cair-nya yang di-gate canDisburse.
-const showDisbForm = computed(() => (a.status === 'akad' && !editAkad.value) || ((a.status === 'disbursed' || a.status === 'active') && (canDisburse.value || canAddRetention.value)));
+const showDisbForm = computed(() => (a.status === 'disbursed' || a.status === 'active') && (canDisburse.value || canAddRetention.value));
 
 // Chip ringkasan kumulatif (tumbuh tiap tahap selesai).
 const recapChips = computed<string[]>(() => {
@@ -363,6 +379,7 @@ const historyNodes = computed<HistoryNode[]>(() => {
     if (has('draft')) nodes.push({ key: 'draft', label: 'Draft', date: '', summary: `Aplikasi ${a.application_number} dibuat`, dot: 'neutral' });
     if (has('submitted')) nodes.push({ key: 'submitted', label: 'Submitted', date: fmtDate(a.submitted_at), summary: `Diajukan ke ${a.bank?.name ?? '—'}`, dot: 'warning' });
     if (has('sp3k') && a.sp3k) nodes.push({ key: 'sp3k', label: 'SP3K', date: fmtDate(a.sp3k.sp3k_date), summary: `No. ${a.sp3k.sp3k_number} · ${fmtRp(a.sp3k.approved_amount)}`, dot: 'info', edit: 'sp3k' });
+    if (has('si')) nodes.push({ key: 'si', label: 'SI', date: '', summary: 'Surat Instruksi diterbitkan', dot: 'info' });
     if (has('akad') && a.akad) nodes.push({ key: 'akad', label: 'Akad', date: fmtDate(a.akad.akad_at), summary: a.akad.place ?? '—', dot: 'info', edit: 'akad' });
     // #143: setiap realisasi pencairan jadi 1 node "Pencairan N" (guard: sudah masuk tahap disbursed/active).
     if (has('disbursed') || a.status === 'disbursed' || a.status === 'active') {
@@ -438,7 +455,6 @@ const historyNodes = computed<HistoryNode[]>(() => {
         <div v-if="showDecision && sibRows.length > 0" class="card p-4">
             <div class="mb-1 flex items-center justify-between gap-2">
                 <h3 class="text-sm font-semibold">Proses Akad — Keputusan KPR (Pengajuan ke Bank)</h3>
-                <button type="button" @click="exitAkadView" class="text-xs text-neutral-500 hover:text-neutral-800 dark:hover:text-neutral-200">← Kembali ke SP3K</button>
             </div>
             <p class="mb-3 text-xs text-neutral-500">Tetapkan <strong>Lanjut</strong> pada bank yang dipilih nasabah (boleh lanjut ke akad) &amp; <strong>Batal</strong> pada lainnya. Hanya KPR berstatus Lanjut yang bisa ke akad.</p>
             <div class="overflow-x-auto">
@@ -486,7 +502,8 @@ const historyNodes = computed<HistoryNode[]>(() => {
                 <div class="flex shrink-0 items-center gap-2">
                     <Badge :variant="stageView.badgeVariant">{{ stageView.badgeLabel }}</Badge>
                     <!-- Tolak proses KPR pada tahap Submitted / SP3K -->
-                    <button v-if="['submitted', 'in_review', 'sp3k'].includes(a.status)" type="button" @click="reject" class="text-xs px-2 py-1 rounded border border-danger-300 text-danger-600 hover:bg-danger-50 dark:border-danger-700">Tolak Proses KPR</button>
+                    <a v-if="a.status === 'si'" :href="route('kpr.si-print', a.id)" target="_blank" class="text-xs px-2 py-1 rounded border border-primary-300 text-primary-600 hover:bg-primary-50 dark:border-primary-700">Cetak</a>
+                    <button v-if="['submitted', 'in_review', 'sp3k', 'si'].includes(a.status)" type="button" @click="reject" class="text-xs px-2 py-1 rounded border border-danger-300 text-danger-600 hover:bg-danger-50 dark:border-danger-700">Tolak Proses KPR</button>
                     <!-- Edit/Hapus record milik tahap aktif (SP3K / Akad) -->
                     <template v-if="stageView.edit === 'sp3k' && !editSp3k">
                         <button class="text-xs px-2 py-1 rounded border border-neutral-300 hover:bg-neutral-50 dark:border-neutral-700" @click="openEditSp3k">Edit</button>
@@ -634,7 +651,7 @@ const historyNodes = computed<HistoryNode[]>(() => {
 
             <!-- Daftar SP3K (saat Submitted) atau Edit SP3K (saat tahap SP3K) -->
             <div v-if="showSp3kForm" id="next-step-form" class="mt-5 border-t border-neutral-200 dark:border-neutral-800 pt-5">
-                <h3 class="font-semibold mb-3">{{ a.sp3k ? 'Edit SP3K' : 'Langkah Berikutnya — Daftarkan SP3K' }}</h3>
+                <h3 class="font-semibold mb-3">{{ a.sp3k ? 'Edit SP3K' : 'Daftarkan SP3K' }}</h3>
                 <form @submit.prevent="submitSp3k" class="space-y-3">
                     <div class="grid gap-3 sm:grid-cols-2">
                         <Input v-model="sp3kForm.sp3k_date" type="date" label="Tanggal SP3K" required />
@@ -643,33 +660,50 @@ const historyNodes = computed<HistoryNode[]>(() => {
                             <MoneyInput v-model="sp3kForm.approved_amount" />
                         </div>
                     </div>
-                    <p v-if="!a.sp3k" class="text-xs text-neutral-400">Nomor SP3K dibuat otomatis oleh sistem. Setelah disimpan, halaman lanjut ke Rincian SP3K.</p>
+                    <p v-if="!a.sp3k" class="text-xs text-neutral-400">Nomor SP3K dibuat otomatis oleh sistem. Setelah disimpan, klik "Lanjut ke SI".</p>
                     <div v-if="editSp3k" class="flex justify-end gap-2">
                         <Button variant="secondary" @click="cancelEditSp3k">Batal</Button>
                         <Button type="submit" :loading="sp3kForm.processing">Simpan Perubahan</Button>
                     </div>
-                    <Button v-else type="submit" size="lg" block :loading="sp3kForm.processing">Simpan &amp; Lanjut: SP3K →</Button>
+                    <Button v-else type="submit" size="lg" block :loading="sp3kForm.processing">Simpan SP3K</Button>
                 </form>
             </div>
 
-            <!-- SP3K: lanjut ke Proses Akad (tampilan terpisah; keputusan + catat akad ada di sana) -->
-            <div v-if="a.status === 'sp3k' && !akadView" id="next-step-form" class="mt-5 border-t border-neutral-200 dark:border-neutral-800 pt-5">
-                <p class="mb-3 text-sm text-neutral-500">SP3K sudah tercatat. Lanjut ke <strong>Proses Akad</strong> untuk menetapkan keputusan KPR &amp; mencatat akad.</p>
-                <Button size="lg" block variant="primary" @click="enterAkadView">Lanjut ke Proses Akad →</Button>
+            <!-- Submitted: hanya cek identitas nasabah → Lanjutkan ke SP3K -->
+            <div v-if="a.status === 'submitted' || a.status === 'in_review'" id="next-step-form" class="mt-5 border-t border-neutral-200 dark:border-neutral-800 pt-5">
+                <p class="mb-3 text-sm text-neutral-500">Identitas nasabah sudah tampil di atas. Klik Lanjutkan untuk masuk ke tahap SP3K.</p>
+                <Button size="lg" block variant="primary" @click="proceedSubmitted">Lanjutkan → SP3K</Button>
+            </div>
+
+            <!-- SP3K tercatat → Lanjut ke Surat Instruksi (SI) -->
+            <div v-if="a.status === 'sp3k' && a.sp3k && !editSp3k" id="next-step-form" class="mt-5 border-t border-neutral-200 dark:border-neutral-800 pt-5">
+                <p class="mb-3 text-sm text-neutral-500">SP3K sudah tercatat. Lanjut ke <strong>Surat Instruksi (SI)</strong>.</p>
+                <Button size="lg" block variant="primary" @click="proceedSp3k">Lanjut ke SI →</Button>
+            </div>
+
+            <!-- SI (Surat Instruksi) → Lanjut ke Proses Akad -->
+            <div v-if="a.status === 'si'" id="next-step-form" class="mt-5 border-t border-neutral-200 dark:border-neutral-800 pt-5">
+                <p class="mb-3 text-sm text-neutral-500">Surat Instruksi diterbitkan. Cetak di kanan atas bila perlu, lalu lanjut ke <strong>Proses Akad</strong>.</p>
+                <Button size="lg" block variant="primary" @click="proceedSi">Lanjut ke Proses Akad →</Button>
+            </div>
+
+            <!-- Akad tercatat → Lanjut ke Pencairan -->
+            <div v-if="a.status === 'akad' && a.akad && !editAkad" id="next-step-form" class="mt-5 border-t border-neutral-200 dark:border-neutral-800 pt-5">
+                <p class="mb-3 text-sm text-neutral-500">Akad sudah tercatat. Lanjut ke tahap <strong>Pencairan</strong>.</p>
+                <Button size="lg" block variant="primary" @click="proceedAkad">Lanjut ke Pencairan →</Button>
             </div>
 
             <!-- Catat Akad (di tampilan Proses Akad saat SP3K) atau Edit Akad (saat tahap Akad) -->
             <div v-if="showAkadForm" id="next-step-form" class="mt-5 border-t border-neutral-200 dark:border-neutral-800 pt-5">
                 <div class="mb-3 flex items-center justify-between gap-2">
-                    <h3 class="font-semibold">{{ a.akad ? 'Edit Akad' : 'Proses Akad — Catat Akad' }}</h3>
-                    <button v-if="a.status === 'sp3k' && akadView && !editAkad" type="button" @click="exitAkadView" class="text-xs text-neutral-500 hover:text-neutral-800 dark:hover:text-neutral-200">← Kembali ke SP3K</button>
+                    <h3 class="font-semibold">{{ a.akad ? 'Edit Akad' : 'Catat Akad' }}</h3>
                 </div>
                 <form @submit.prevent="submitAkad" class="space-y-3">
                     <div class="grid gap-3 sm:grid-cols-2">
                         <Input v-model="akadForm.akad_at" type="date" label="Tanggal Akad" required />
                         <Input v-model="akadForm.place" label="Tempat" hint="Otomatis dari bank — bisa diubah" />
                     </div>
-                    <p v-if="!a.akad" class="text-xs text-neutral-400">Setelah disimpan, akad otomatis selesai dan halaman lanjut ke tahap Pencairan.</p>
+                    <p v-if="!a.akad" class="text-xs text-neutral-400">Setelah disimpan, akad selesai — lalu klik "Lanjut ke Pencairan".</p>
                     <!-- KPR ini Batal tapi ada KPR lain yang Disetujui → arahkan ke proses Akad KPR tersebut -->
                     <div v-if="!a.akad && currentDecision === 'batal' && approvedKpr" class="rounded-lg border border-warning-300 bg-warning-50 px-3 py-2.5 text-xs text-warning-700 dark:border-warning-700 dark:bg-warning-900/30 dark:text-warning-300">
                         ⚠ KPR ini <strong>dibatalkan</strong>. Lanjutkan Akad pada KPR yang Disetujui: <strong>{{ approvedKpr.bank }}</strong> ({{ approvedKpr.application_number }}).
@@ -682,13 +716,13 @@ const historyNodes = computed<HistoryNode[]>(() => {
                         <Button variant="secondary" @click="cancelEditAkad">Batal</Button>
                         <Button type="submit" :loading="akadForm.processing">Simpan Perubahan</Button>
                     </div>
-                    <Button v-else type="submit" size="lg" block :loading="akadForm.processing" :disabled="!canAkad">Simpan &amp; Lanjut: Akad →</Button>
+                    <Button v-else type="submit" size="lg" block :loading="akadForm.processing" :disabled="!canAkad">Simpan Akad</Button>
                 </form>
             </div>
 
             <!-- Catat Pencairan (saat tahap Akad / Pencairan bertahap) -->
             <div v-if="showDisbForm" id="next-step-form" class="mt-5 border-t border-neutral-200 dark:border-neutral-800 pt-5">
-                <h3 class="font-semibold mb-3">{{ a.status === 'akad' ? 'Langkah Berikutnya — Catat Pencairan' : 'Catat Pencairan Lagi' }}</h3>
+                <h3 class="font-semibold mb-3">{{ (a.realizations?.length ?? 0) === 0 ? 'Langkah Berikutnya — Catat Pencairan' : 'Catat Pencairan Lagi' }}</h3>
                 <div class="mb-3 rounded-lg bg-neutral-50 dark:bg-neutral-800 p-3 text-xs space-y-1">
                     <div class="flex justify-between"><span class="text-neutral-500">Plafon KPR:</span><span class="font-mono font-semibold">{{ fmtRp(plafon) }}</span></div>
                     <div class="flex justify-between"><span class="text-neutral-500">Outstanding:</span><span class="font-mono font-semibold">{{ fmtRp(liveOutstanding) }}</span></div>

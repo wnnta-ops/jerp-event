@@ -3,7 +3,6 @@
 namespace App\Filament\Fo\Resources;
 
 use App\Filament\Fo\Resources\BgResource\Pages;
-use App\Models\Bank;
 use App\Modules\FO\FinanceAR\Models\Bg;
 use App\Modules\FO\MarketingSales\Models\Customer;
 use Filament\Forms;
@@ -30,16 +29,15 @@ class BgResource extends Resource
     public static function form(Form $form): Form
     {
         return $form->schema([
-            Forms\Components\TextInput::make('no_bg')->label('No. BG/Cek')->required(),
-            Forms\Components\Select::make('bank_id')->label('Bank')->options(fn () => Bank::orderBy('name')->pluck('name', 'id'))->searchable(),
+            // No. BG otomatis dari numerator (BG-...). Hanya tampil (disabled) saat edit.
+            Forms\Components\TextInput::make('no_bg')->label('No. BG/Cek')->disabled()->dehydrated(false)->placeholder('otomatis (BG-...)')->visibleOn('edit'),
+            // Bank = free text (ketik manual, tak harus dari master bank).
+            Forms\Components\TextInput::make('bank_nama')->label('Bank')->maxLength(100)->placeholder('ketik nama bank'),
             Forms\Components\DatePicker::make('tgl_bg')->label('Tgl BG'),
             Forms\Components\DatePicker::make('tgl_jatuh_tempo')->label('Jatuh Tempo'),
             Forms\Components\Select::make('customer_id')->label('Customer')->searchable()
                 ->options(fn () => Customer::query()->limit(300)->pluck('full_name', 'id')),
             Forms\Components\TextInput::make('amount')->label('Nominal (Rp)')->numeric()->rupiah()->default(0),
-            Forms\Components\TextInput::make('pengelola')->label('Pengelola'),
-            Forms\Components\Select::make('status')->label('Status')->default('NORMAL')
-                ->options(['NORMAL' => 'Normal', 'JATUH_TEMPO' => 'Jatuh Tempo', 'CAIR' => 'Cair', 'BERMASALAH' => 'Bermasalah', 'DIGANTI' => 'Diganti']),
             Forms\Components\Textarea::make('keterangan')->label('Keterangan')->rows(2)->columnSpanFull(),
         ])->columns(2);
     }
@@ -49,7 +47,7 @@ class BgResource extends Resource
         return $table
             ->columns([
                 Tables\Columns\TextColumn::make('no_bg')->label('No. BG')->badge()->searchable()->sortable(),
-                Tables\Columns\TextColumn::make('bank.name')->label('Bank')->placeholder('—'),
+                Tables\Columns\TextColumn::make('bank_nama')->label('Bank')->placeholder('—')->getStateUsing(fn (Bg $r) => $r->bank_nama ?: $r->bank?->name),
                 Tables\Columns\TextColumn::make('customer.full_name')->label('Customer')->placeholder('—')->limit(24),
                 Tables\Columns\TextColumn::make('tgl_jatuh_tempo')->label('Jatuh Tempo')->date('d M Y')->sortable(),
                 Tables\Columns\TextColumn::make('amount')->label('Nominal')->money('IDR'),
@@ -74,7 +72,7 @@ class BgResource extends Resource
                         $baru = Bg::create([
                             'tenant_id' => $r->tenant_id, 'no_bg' => $data['no_bg_baru'],
                             'tgl_bg' => $data['tgl_bg_baru'] ?? now(), 'tgl_jatuh_tempo' => $data['tgl_jt_baru'] ?? null,
-                            'bank_id' => $r->bank_id, 'customer_id' => $r->customer_id, 'tts_id' => $r->tts_id,
+                            'bank_id' => $r->bank_id, 'bank_nama' => $r->bank_nama, 'customer_id' => $r->customer_id, 'tts_id' => $r->tts_id,
                             'amount' => $r->amount, 'pengelola' => $r->pengelola, 'status' => 'NORMAL',
                             'keterangan' => 'Pengganti dari BG '.$r->no_bg,
                         ]);

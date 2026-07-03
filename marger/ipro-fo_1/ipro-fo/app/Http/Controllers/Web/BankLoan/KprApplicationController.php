@@ -95,7 +95,7 @@ class KprApplicationController extends Controller
         abort_unless(auth()->user()?->can('bankloan.disbursement.create'), 403);
 
         $rows = KprApplication::query()
-            ->whereIn('status', [KprStatus::AkadDone->value, KprStatus::Disbursed->value])
+            ->whereIn('status', [KprStatus::Disbursed->value])
             ->with([
                 'customer:id,full_name',
                 'bank:id,name',
@@ -158,7 +158,7 @@ class KprApplicationController extends Controller
         foreach ($v['rows'] as $i => $row) {
             $rowNo = $i + 1;
             $kpr   = KprApplication::find($row['kpr_id']);
-            if (! $kpr || ! in_array($kpr->status->value, ['akad', 'disbursed'], true)) {
+            if (! $kpr || $kpr->status->value !== 'disbursed') {
                 $errors[] = "Baris {$rowNo}: KPR tidak valid / bukan tahap pencairan.";
                 $skipped++;
 
@@ -221,7 +221,7 @@ class KprApplicationController extends Controller
         $effectiveTerms = $categories->mapWithKeys(fn ($c) => [(int) $c->id => (float) $c->percentage]);
 
         $kpr->load([
-            'booking', 'customer', 'bank', 'documents', 'sp3k', 'akad',
+            'booking.unit.unitType', 'customer', 'bank', 'documents', 'sp3k', 'akad',
             'realizations.retentions.releases', 'realizations.category:id,code,name', 'realizations.tts:id,tts_number,status',
         ]);
 
@@ -243,7 +243,7 @@ class KprApplicationController extends Controller
         // #item4 — semua KPR customer ini yg sudah submitted/SP3K (lintas bank) utk keputusan Lanjut/Batal.
         $siblings = KprApplication::where('customer_id', $kpr->customer_id)
             ->where(function ($q) {
-                $q->whereIn('status', [KprStatus::Submitted->value, KprStatus::InReview->value, KprStatus::Sp3kIssued->value])
+                $q->whereIn('status', [KprStatus::Submitted->value, KprStatus::InReview->value, KprStatus::Sp3kIssued->value, KprStatus::Si->value, KprStatus::AkadDone->value])
                     ->orWhereNotNull('decision'); // tetap tampilkan yang sudah diputuskan (Disetujui/Batal)
             })
             ->with('bank:id,code,name')
@@ -268,6 +268,14 @@ class KprApplicationController extends Controller
             // CTA "Buka Approval Retensi" hanya untuk user yg punya akses Cash Book.
             'canApproveRetensi'   => (bool) ($request->user()?->canModule('cashbook')),
             'hasRetention'        => $kpr->realizations->contains(fn ($r) => $r->retentions->isNotEmpty()),
+            // Data tahap SI (Surat Instruksi): nama, tipe unit, ACC KPR, Free DP 5%.
+            'si' => [
+                'nama'      => $kpr->customer?->full_name,
+                'tipe_unit' => $kpr->booking?->unit?->unitType?->name,
+                'unit_code' => $kpr->booking?->unit?->unit_code,
+                'acc_kpr'   => (float) ($kpr->plafon_approved ?: $kpr->plafon_requested),
+                'free_dp'   => round(0.05 * (float) ($kpr->booking?->unit?->current_price ?: $kpr->booking?->unit?->base_price ?: 0), 2),
+            ],
         ]);
     }
 
@@ -286,11 +294,107 @@ class KprApplicationController extends Controller
         return redirect()->route('kpr.show', $kpr)->with('success', 'KPR submitted ke bank.');
     }
 
+    /** Submitted → SP3K: cek identitas nasabah lalu lanjut (form Daftarkan SP3K ada di tahap SP3K). */
+    public function proceedSubmitted(KprApplication $kpr): RedirectResponse
+    {
+        abort_unless(auth()->user()?->can('bankloan.sp3k.register'), 403);
+        try {
+            $kpr->status->assertCanTransitionTo(KprStatus::Sp3kIssued);
+        } catch (InvalidStateTransitionException $e) {
+            return back()->with('error', 'Status KPR saat ini tidak bisa lanjut ke SP3K.');
+        }
+        $kpr->update(['status' => KprStatus::Sp3kIssued]);
+
+        return redirect()->route('kpr.show', $kpr)->with('success', 'Lanjut ke tahap SP3K.');
+    }
+
+    /** SP3K → SI (Surat Instruksi): setelah data SP3K tercatat. */
+    public function proceedSp3k(KprApplication $kpr): RedirectResponse
+    {
+        abort_unless(auth()->user()?->can('bankloan.akad.schedule'), 403);
+        if (! $kpr->sp3k) {
+            return back()->with('error', 'Daftarkan SP3K dulu sebelum lanjut ke Surat Instruksi.');
+        }
+        try {
+            $kpr->status->assertCanTransitionTo(KprStatus::Si);
+        } catch (InvalidStateTransitionException $e) {
+            return back()->with('error', 'Status KPR saat ini tidak bisa lanjut ke SI.');
+        }
+        $kpr->update(['status' => KprStatus::Si]);
+
+        return redirect()->route('kpr.show', $kpr)->with('success', 'Lanjut ke Surat Instruksi (SI).');
+    }
+
+    /** SI → Akad: dari Surat Instruksi lanjut ke Proses Akad. */
+    public function proceedSi(KprApplication $kpr): RedirectResponse
+    {
+        abort_unless(auth()->user()?->can('bankloan.akad.schedule'), 403);
+        try {
+            $kpr->status->assertCanTransitionTo(KprStatus::AkadDone);
+        } catch (InvalidStateTransitionException $e) {
+            return back()->with('error', 'Status KPR saat ini tidak bisa lanjut ke Akad.');
+        }
+        $kpr->update(['status' => KprStatus::AkadDone]);
+
+        return redirect()->route('kpr.show', $kpr)->with('success', 'Lanjut ke Proses Akad.');
+    }
+
+    /** Akad → Pencairan: setelah akad tercatat, lanjut ke tahap Pencairan. */
+    public function proceedAkad(KprApplication $kpr): RedirectResponse
+    {
+        abort_unless(auth()->user()?->can('bankloan.disbursement.create'), 403);
+        if (! $kpr->akad) {
+            return back()->with('error', 'Catat Akad dulu sebelum lanjut ke Pencairan.');
+        }
+        try {
+            $kpr->status->assertCanTransitionTo(KprStatus::Disbursed);
+        } catch (InvalidStateTransitionException $e) {
+            return back()->with('error', 'Status KPR saat ini tidak bisa lanjut ke Pencairan.');
+        }
+        $kpr->update(['status' => KprStatus::Disbursed]);
+
+        return redirect()->route('kpr.show', $kpr)->with('success', 'Lanjut ke tahap Pencairan.');
+    }
+
+    /** Cetak Surat Instruksi (SI): ringkasan Nama, Tipe Unit, ACC KPR, Free DP 5%. */
+    public function siPrint(Request $request, KprApplication $kpr): HttpResponse
+    {
+        abort_unless($request->user()?->can('bankloan.application.view'), 403);
+
+        $kpr->load(['customer:id,full_name', 'bank:id,name', 'booking.unit.unitType']);
+        $e  = fn ($v) => htmlspecialchars((string) ($v ?? ''), ENT_QUOTES);
+        $rp = fn ($v) => 'Rp '.number_format((float) $v, 2, ',', '.');
+        $accKpr = (float) ($kpr->plafon_approved ?: $kpr->plafon_requested);
+        $price  = (float) ($kpr->booking?->unit?->current_price ?: $kpr->booking?->unit?->base_price ?: 0);
+        $freeDp = round(0.05 * $price, 2);
+        $tipe   = $kpr->booking?->unit?->unitType?->name ?? $kpr->booking?->unit?->unit_code ?? '—';
+
+        $html = '<!DOCTYPE html><html lang="id"><head><meta charset="utf-8"><title>Surat Instruksi '.$e($kpr->application_number).'</title>'
+            .'<style>@page{size:A4;margin:2cm} body{font-family:Arial,Helvetica,sans-serif;color:#111;font-size:13px} '
+            .'h1{font-size:20px;margin:0 0 2px;text-align:center;letter-spacing:1px} .sub{text-align:center;color:#555;margin:0 0 18px} '
+            .'table{width:100%;border-collapse:collapse;margin-top:10px} td{padding:9px 12px;border:1px solid #ccc} '
+            .'td.k{width:38%;color:#555;background:#f7f7f7;font-weight:bold} .no{font-family:monospace} '
+            .'.ttd{margin-top:64px;display:flex;justify-content:space-between} .ttd div{width:40%;text-align:center} '
+            .'.print{margin:0 0 16px;text-align:right} button{padding:8px 16px;font-size:13px;cursor:pointer} @media print{.print{display:none}}</style></head><body>'
+            .'<div class="print"><button onclick="window.print()">Cetak</button></div>'
+            .'<h1>SURAT INSTRUKSI</h1><p class="sub">No. '.$e($kpr->application_number).' &middot; '.$e($kpr->bank?->name).'</p>'
+            .'<table>'
+            .'<tr><td class="k">Nama</td><td>'.$e($kpr->customer?->full_name).'</td></tr>'
+            .'<tr><td class="k">Tipe Unit</td><td>'.$e($tipe).'</td></tr>'
+            .'<tr><td class="k">ACC KPR</td><td class="no">'.$e($rp($accKpr)).'</td></tr>'
+            .'<tr><td class="k">Free DP 5%</td><td class="no">'.$e($rp($freeDp)).'</td></tr>'
+            .'</table>'
+            .'<div class="ttd"><div>Hormat kami,<br><br><br><br>__________________</div><div>Menyetujui,<br><br><br><br>__________________</div></div>'
+            .'</body></html>';
+
+        return response($html)->header('Content-Type', 'text/html');
+    }
+
     public function sp3k(Request $request, KprApplication $kpr, RegisterSp3k $action): RedirectResponse
     {
         abort_unless($request->user()?->can('bankloan.sp3k.register'), 403);
 
-        // Submitted → SP3K: alur semula (Simpan & Lanjut), tanpa gate keputusan. Keputusan kini di tahap Akad.
+        // Catat data SP3K pada TAHAP SP3K (status sudah 'sp3k'); setelah tersimpan, lanjut ke SI via tombol.
         // Field Nomor SP3K, Bunga, Tenor, Berlaku Hingga dihilangkan dari form (per permintaan user).
         $data = $request->validate([
             'sp3k_date'       => 'required|date',
@@ -307,8 +411,8 @@ class KprApplicationController extends Controller
             return back()->with('error', 'Status KPR saat ini tidak memungkinkan registrasi SP3K.');
         }
 
-        // #144: redirect Inertia agar prop `app.status` ter-refresh & stepper maju dari SP3K → Akad.
-        return redirect()->route('kpr.show', $kpr)->with('success', "SP3K {$data['sp3k_number']} berhasil dicatat.");
+        // #144: redirect Inertia agar prop `app.status` ter-refresh; SP3K tercatat → tombol "Lanjut ke SI" muncul.
+        return redirect()->route('kpr.show', $kpr)->with('success', "SP3K {$data['sp3k_number']} dicatat — lanjut ke Surat Instruksi.");
     }
 
     /**
@@ -321,10 +425,11 @@ class KprApplicationController extends Controller
 
         $v = $request->validate(['decision' => 'required|in:lanjut,batal']);
 
-        // Keputusan bisa diatur/diubah saat Submitted/SP3K, atau saat sudah Cancelled (membatalkan keputusan Batal).
-        $allowed = [KprStatus::Submitted->value, KprStatus::InReview->value, KprStatus::Sp3kIssued->value, KprStatus::Cancelled->value];
+        // Keputusan (Lanjut/Batal) kini ditetapkan di tahap Akad; tetap boleh diubah di tahap sebelumnya
+        // atau saat sudah Cancelled (membatalkan keputusan Batal).
+        $allowed = [KprStatus::Submitted->value, KprStatus::InReview->value, KprStatus::Sp3kIssued->value, KprStatus::Si->value, KprStatus::AkadDone->value, KprStatus::Cancelled->value];
         if (! in_array($kpr->status->value, $allowed, true)) {
-            return back()->with('error', 'Keputusan Lanjut/Batal hanya bisa diatur saat KPR berstatus Submitted/SP3K.');
+            return back()->with('error', 'Keputusan Lanjut/Batal hanya bisa diatur sampai tahap Akad (sebelum pencairan).');
         }
 
         // ── BATAL: Proses KPR di bank ini dibatalkan (status → Cancelled; masih bisa diubah lagi via "Ubah") ──
@@ -345,10 +450,11 @@ class KprApplicationController extends Controller
             return back()->with('error', "Sudah ada KPR yang Disetujui (Lanjut) untuk nasabah ini di {$existing->bank?->name} ({$existing->application_number}). Ubah keputusan KPR tsb (Batal) dulu bila ingin pindah bank.");
         }
 
-        // Bila KPR ini sebelumnya Batal (Cancelled), pulihkan status agar bisa lanjut ke akad.
+        // Bila KPR ini sebelumnya Batal (Cancelled), pulihkan status. Keputusan ditetapkan di tahap Akad,
+        // jadi bila SP3K sudah ada kembalikan ke tahap Akad; selain itu ke Submitted.
         $extra = [];
         if ($kpr->status === KprStatus::Cancelled) {
-            $extra['status'] = $kpr->sp3k()->exists() ? KprStatus::Sp3kIssued : KprStatus::Submitted;
+            $extra['status'] = $kpr->sp3k()->exists() ? KprStatus::AkadDone : KprStatus::Submitted;
         }
         $kpr->update(array_merge(['decision' => 'lanjut', 'decided_at' => now()->toDateString()], $extra));
 
@@ -363,9 +469,9 @@ class KprApplicationController extends Controller
     {
         abort_unless($request->user()?->can('bankloan.sp3k.register'), 403);
 
-        $allowed = [KprStatus::Submitted->value, KprStatus::InReview->value, KprStatus::Sp3kIssued->value];
+        $allowed = [KprStatus::Submitted->value, KprStatus::InReview->value, KprStatus::Sp3kIssued->value, KprStatus::Si->value];
         if (! in_array($kpr->status->value, $allowed, true)) {
-            return back()->with('error', 'Reject hanya bisa dilakukan saat KPR berstatus Submitted atau SP3K.');
+            return back()->with('error', 'Reject hanya bisa dilakukan saat KPR berstatus Submitted / SP3K / SI.');
         }
 
         $v = $request->validate(['reason' => ['nullable', 'string', 'max:500']]);
@@ -391,22 +497,22 @@ class KprApplicationController extends Controller
      * menjadwalkan + menyelesaikan akad (status → Akad Done) supaya langsung pindah step.
      * Dibungkus try/catch agar tidak pernah memunculkan 500.
      */
-    public function akad(Request $request, KprApplication $kpr, ScheduleAkad $schedule, CompleteAkad $complete): RedirectResponse
+    public function akad(Request $request, KprApplication $kpr, ScheduleAkad $schedule): RedirectResponse
     {
         abort_unless($request->user()?->can('bankloan.akad.schedule'), 403);
 
-        // #item4 — hanya KPR dengan keputusan "Lanjut" yang boleh lanjut ke akad.
+        // #item4 — keputusan Lanjut/Batal kini ditetapkan di tahap Akad; hanya "Lanjut" yang boleh mencatat akad.
         if ($kpr->decision !== 'lanjut') {
-            return back()->with('error', 'KPR ini belum diputuskan "Lanjut" pada tahap SP3K. Tetapkan keputusan Lanjut dulu sebelum akad.');
+            return back()->with('error', 'Tetapkan keputusan "Lanjut" (Disetujui) dulu pada panel Keputusan KPR sebelum mencatat akad.');
         }
 
-        // Semua KPR nasabah (yang masih di pipeline Submitted/SP3K) harus sudah diputuskan Lanjut/Batal dulu.
+        // Semua KPR nasabah (yang masih di pipeline) harus sudah diputuskan Lanjut/Batal dulu.
         $pending = KprApplication::where('customer_id', $kpr->customer_id)
             ->whereNull('decision')
-            ->whereIn('status', [KprStatus::Submitted->value, KprStatus::InReview->value, KprStatus::Sp3kIssued->value])
+            ->whereIn('status', [KprStatus::Submitted->value, KprStatus::InReview->value, KprStatus::Sp3kIssued->value, KprStatus::Si->value, KprStatus::AkadDone->value])
             ->count();
         if ($pending > 0) {
-            return back()->with('error', "Masih ada {$pending} KPR nasabah ini yang belum diputuskan (Lanjut/Batal). Putuskan semua dulu sebelum melanjutkan ke akad.");
+            return back()->with('error', "Masih ada {$pending} KPR nasabah ini yang belum diputuskan (Lanjut/Batal). Putuskan semua dulu sebelum mencatat akad.");
         }
 
         $data = $request->validate([
@@ -418,14 +524,14 @@ class KprApplicationController extends Controller
         $data['notary'] = null;
 
         try {
-            $schedule->execute($kpr, $data);
-            $complete->execute($kpr->fresh());
+            $schedule->execute($kpr, $data); // butuh status 'akad'
         } catch (BusinessRuleException | InvalidStateTransitionException $e) {
             return back()->with('error', $e->getMessage());
         }
+        // Akad langsung selesai (record status 'done'); status APLIKASI TETAP 'akad' → lanjut ke Pencairan via tombol.
+        $kpr->akad?->update(['status' => 'done']);
 
-        // #144: redirect Inertia agar prop `app.status` ter-refresh & stepper maju dari Akad → Pencairan.
-        return redirect()->route('kpr.show', $kpr)->with('success', 'Akad dicatat & selesai — lanjut ke pencairan.');
+        return redirect()->route('kpr.show', $kpr)->with('success', 'Akad dicatat & selesai — lanjut ke Pencairan.');
     }
 
     public function completeAkad(KprApplication $kpr, CompleteAkad $action): RedirectResponse
@@ -506,13 +612,13 @@ class KprApplicationController extends Controller
     public function destroySp3k(Request $request, KprApplication $kpr): RedirectResponse
     {
         abort_unless($request->user()?->can('bankloan.sp3k.register'), 403);
-        if (in_array($kpr->status->value, ['akad', 'disbursed', 'active'], true)) {
+        if ($kpr->akad()->exists() || $kpr->realizations()->exists()) {
             return back()->with('error', 'Tidak bisa hapus SP3K: sudah ada akad / pencairan. Hapus tahap itu dulu.');
         }
         $kpr->sp3k?->delete();
-        $kpr->update(['status' => KprStatus::Submitted, 'plafon_approved' => null]);
+        $kpr->update(['status' => KprStatus::Sp3kIssued, 'plafon_approved' => null]);
 
-        return back()->with('success', 'SP3K dihapus — kembali ke status Submitted.');
+        return back()->with('success', 'SP3K dihapus — kembali ke tahap SP3K.');
     }
 
     /** Edit Akad (tanggal & tempat). */
@@ -535,13 +641,13 @@ class KprApplicationController extends Controller
     public function destroyAkad(Request $request, KprApplication $kpr): RedirectResponse
     {
         abort_unless($request->user()?->can('bankloan.akad.schedule'), 403);
-        if (in_array($kpr->status->value, ['disbursed', 'active'], true)) {
+        if ($kpr->realizations()->exists()) {
             return back()->with('error', 'Tidak bisa hapus Akad: sudah ada pencairan. Hapus pencairan dulu.');
         }
         $kpr->akad?->delete();
-        $kpr->update(['status' => KprStatus::Sp3kIssued]);
+        $kpr->update(['status' => KprStatus::AkadDone]);
 
-        return back()->with('success', 'Akad dihapus — kembali ke status SP3K.');
+        return back()->with('success', 'Akad dihapus — kembali ke tahap Akad.');
     }
 
     /** Hapus realisasi pencairan (reversal aman: kembalikan jadwal + hapus TTS). */

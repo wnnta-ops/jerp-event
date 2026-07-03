@@ -22,6 +22,7 @@ function display() {
 }
 function fmtInt(v: number) { return Number(v ?? 0).toLocaleString('id-ID'); }
 const monthNames = ['', 'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
+const years = Array.from(new Set([props.year, ...Array.from({ length: 7 }, (_, i) => new Date().getFullYear() + 1 - i)])).sort((a, b) => b - a);
 
 const stats = [
     { key: 'baru', label: 'Jurnal Baru', hint: 'draft', cls: 'text-sky-600', ring: 'bg-sky-50 dark:bg-sky-900/20' },
@@ -49,7 +50,7 @@ const stats = [
             <div class="flex flex-wrap items-end gap-3">
                 <div>
                     <label class="mb-1 block text-[10px] uppercase text-neutral-400">Tahun</label>
-                    <input v-model.number="yearInput" type="number" @keyup.enter="display" class="h-9 w-24 rounded-lg border border-neutral-300 bg-white px-3 text-sm dark:border-neutral-700 dark:bg-neutral-900" />
+                    <select v-model.number="yearInput" @change="display" class="h-9 w-28 rounded-lg border border-neutral-300 bg-white px-3 text-sm dark:border-neutral-700 dark:bg-neutral-900"><option v-for="y in years" :key="y" :value="y">{{ y }}</option></select>
                 </div>
                 <div>
                     <label class="mb-1 block text-[10px] uppercase text-neutral-400">Sumber</label>
@@ -89,7 +90,7 @@ const stats = [
                     <th class="px-4 py-2.5"></th>
                 </tr></thead>
                 <tbody class="divide-y divide-neutral-100 dark:divide-neutral-800">
-                    <tr v-for="p in periods" :key="p.month" :class="p.frontier ? 'bg-amber-400/80 font-semibold text-neutral-900' : (p.isClosed ? 'bg-neutral-50/60 dark:bg-neutral-800/30' : '')">
+                    <tr v-for="p in periods" :key="p.month" class="cursor-default transition-colors" :class="p.frontier ? 'bg-amber-400/80 font-semibold text-neutral-900 hover:bg-amber-500' : (p.isClosed ? 'bg-neutral-50/60 hover:bg-primary-50 dark:bg-neutral-800/30 dark:hover:bg-primary-900/20' : 'hover:bg-primary-50 dark:hover:bg-primary-900/20')">
                         <td class="px-4 py-2 tabular-nums">{{ year }}</td>
                         <td class="px-4 py-2"><span class="font-medium tabular-nums">{{ p.month }}</span> <span class="text-xs" :class="p.frontier ? 'text-neutral-800' : 'text-neutral-400'">{{ monthNames[p.month] }}</span></td>
                         <td class="px-4 py-2 text-right font-mono" :class="p.baru ? 'text-sky-600' : 'text-neutral-300 dark:text-neutral-600'">{{ p.baru || '' }}</td>

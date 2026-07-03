@@ -55,6 +55,51 @@ class IproMasterSync
             ?? $this->db()->table('users')->min('id') ?? 1);
     }
 
+    /**
+     * Auto-push Bilyet Giro FO → BO "Cek Giro Masuk" (bs_giros) status Di Tangan, BELUM
+     * jurnal (receive_journal_id null) → menunggu "Posting GL" di Penerimaan Cek Giro.
+     * Idempotent by source_ref. Dipanggil dari event created FO — pemanggil wajib try/catch.
+     */
+    public function pushGiro(object $bg): void
+    {
+        $ref = 'FO-BG-'.$bg->id;
+        if ($this->db()->table('bs_giros')->where('source_ref', $ref)->exists()) {
+            return; // sudah dikirim sebelumnya
+        }
+        // Akun BO: Piutang Giro (10102010102) & Piutang Usaha (10102010101).
+        $giroAcc = $this->db()->table('bs_accounts')->where('code', '10102010102')->value('id');
+        $counterAcc = $this->db()->table('bs_accounts')->where('code', '10102010101')->value('id');
+        if (! $giroAcc || ! $counterAcc) {
+            return; // akun BO belum tersedia
+        }
+        $drawer = '-';
+        if ($bg->customer_id) {
+            $drawer = (string) (\App\Modules\FO\MarketingSales\Models\Customer::whereKey($bg->customer_id)->value('full_name') ?: '-');
+        }
+        $tgl = $bg->tgl_bg ? \Illuminate\Support\Carbon::parse((string) $bg->tgl_bg)->toDateString() : now()->toDateString();
+        $jt = $bg->tgl_jatuh_tempo ? \Illuminate\Support\Carbon::parse((string) $bg->tgl_jatuh_tempo)->toDateString() : $tgl;
+
+        $this->db()->table('bs_giros')->insert([
+            'tenant_id'          => $this->tenantId,
+            'giro_number'        => (string) $bg->no_bg,
+            'receive_date'       => $tgl,
+            'due_date'           => $jt,
+            'bank_name'          => (string) ($bg->bank_nama ?: '-'),
+            'cheque_number'      => (string) $bg->no_bg,
+            'drawer'             => $drawer,
+            'amount'             => round((float) $bg->amount, 2),
+            'giro_account_id'    => $giroAcc,
+            'counter_account_id' => $counterAcc,
+            'status'             => 'in_hand',
+            'source'             => 'fo',
+            'source_ref'         => $ref,
+            'receive_journal_id' => null,
+            'created_by'         => $this->userId(),
+            'created_at'         => now(),
+            'updated_at'         => now(),
+        ]);
+    }
+
     /** Upsert satu customer FO → ipro_bo.customers. Return id ipro_bo. */
     public function syncCustomer(object $c): int
     {
