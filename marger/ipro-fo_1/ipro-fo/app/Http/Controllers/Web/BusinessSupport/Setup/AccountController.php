@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Web\BusinessSupport\Setup;
 
 use App\Domain\BusinessSupport\Models\BsAccount;
+use App\Domain\BusinessSupport\Models\BsCashFlowCategory;
 use App\Http\Controllers\Controller;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -25,17 +26,23 @@ class AccountController extends Controller
         $type   = $request->input('type');
 
         $rows = BsAccount::query()
+            ->with(['cfDirectCategory:id,code,name', 'cfIndirectCategory:id,code,name'])
             ->when($search, fn ($q, $s) => $q->where(fn ($w) => $w->where('code', 'like', "%{$s}%")->orWhere('name', 'like', "%{$s}%")))
             ->when($type, fn ($q, $v) => $q->where('type', $v))
             // Kelompokkan per kategori (head), level-1 header lebih dulu, lalu urut kode.
             ->orderByRaw("COALESCE(category_code, substr(code,1,1)) asc, case when level = 1 then '0' else code end asc")
-            ->get(['id', 'code', 'category_code', 'name', 'type', 'level', 'parent_code', 'normal_balance', 'is_postable', 'is_active']);
+            ->get(['id', 'code', 'category_code', 'name', 'type', 'level', 'parent_code', 'normal_balance', 'is_postable', 'is_active', 'cf_direct_category_id', 'cf_indirect_category_id']);
+
+        $cfCats = fn (string $kind) => BsCashFlowCategory::where('kind', $kind)->where('is_active', true)
+            ->orderBy('sort_order')->orderBy('code')->get(['id', 'code', 'name', 'activity']);
 
         return Inertia::render('BusinessSupport/Setup/Accounts', [
-            'accounts' => $rows,
-            'types'    => BsAccount::TYPES,
-            'filters'  => ['search' => $search, 'type' => $type],
-            'stats'    => [
+            'accounts'    => $rows,
+            'types'       => BsAccount::TYPES,
+            'cfDirect'    => $cfCats('direct'),
+            'cfIndirect'  => $cfCats('indirect'),
+            'filters'     => ['search' => $search, 'type' => $type],
+            'stats'       => [
                 'total'    => BsAccount::count(),
                 'postable' => BsAccount::where('is_postable', true)->count(),
             ],
@@ -76,6 +83,8 @@ class AccountController extends Controller
             'normal_balance' => ['required', Rule::in(['D', 'K'])],
             'is_postable'    => ['boolean'],
             'is_active'      => ['boolean'],
+            'cf_direct_category_id'   => ['nullable', 'integer', Rule::exists('bs_cash_flow_categories', 'id')->where('kind', 'direct')],
+            'cf_indirect_category_id' => ['nullable', 'integer', Rule::exists('bs_cash_flow_categories', 'id')->where('kind', 'indirect')],
         ]);
 
         // Turunkan level & parent dari kode hierarkis (1/3/5/7/9/11 digit).

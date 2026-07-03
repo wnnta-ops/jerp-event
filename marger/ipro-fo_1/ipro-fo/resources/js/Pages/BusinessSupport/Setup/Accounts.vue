@@ -9,6 +9,8 @@ import EmptyState from '@/Components/UI/EmptyState.vue';
 const props = defineProps<{
     accounts: Array<any>;
     types: Record<string, string>;
+    cfDirect: Array<{ id: number; code: string; name: string; activity: string }>;
+    cfIndirect: Array<{ id: number; code: string; name: string; activity: string }>;
     filters: Record<string, any>;
     stats: { total: number; postable: number };
 }>();
@@ -24,13 +26,15 @@ const levelName: Record<number, string> = { 1: 'Kategori', 2: 'Sub Kategori', 3:
 
 const showModal = ref(false);
 const editingId = ref<number | null>(null);
-const form = useForm({ code: '', name: '', type: 'asset', normal_balance: 'D', is_postable: true, is_active: true });
+const form = useForm<any>({ code: '', name: '', type: 'asset', normal_balance: 'D', is_postable: true, is_active: true, cf_direct_category_id: null, cf_indirect_category_id: null });
 
 function openCreate() { editingId.value = null; form.reset(); showModal.value = true; }
 function openEdit(a: any) {
     editingId.value = a.id;
     form.code = a.code; form.name = a.name; form.type = a.type; form.normal_balance = a.normal_balance;
     form.is_postable = !!a.is_postable; form.is_active = !!a.is_active;
+    form.cf_direct_category_id = a.cf_direct_category_id ?? null;
+    form.cf_indirect_category_id = a.cf_indirect_category_id ?? null;
     showModal.value = true;
 }
 function submit() {
@@ -73,7 +77,9 @@ const inputCls = 'h-9 w-full rounded-lg border border-neutral-300 bg-white px-3 
                 <thead class="bg-neutral-50 dark:bg-neutral-800">
                     <tr class="text-left text-xs uppercase text-neutral-500">
                         <th class="px-4 py-3">Kode / Akun</th><th class="px-4 py-3">Level</th><th class="px-4 py-3">Tipe</th>
-                        <th class="px-4 py-3 text-center">Normal</th><th class="px-4 py-3 text-center">Postable</th><th class="px-4 py-3 text-right">Aksi</th>
+                        <th class="px-4 py-3 text-center">Normal</th><th class="px-4 py-3 text-center">Postable</th>
+                        <th class="px-4 py-3">Cash Flow Direct</th><th class="px-4 py-3">Cash Flow Indirect</th>
+                        <th class="px-4 py-3 text-right">Aksi</th>
                     </tr>
                 </thead>
                 <tbody class="divide-y divide-neutral-100 dark:divide-neutral-800/60">
@@ -89,6 +95,14 @@ const inputCls = 'h-9 w-full rounded-lg border border-neutral-300 bg-white px-3 
                         <td class="px-4 py-2"><Badge v-if="a.is_postable" :variant="typeColor[a.type] ?? 'neutral'" size="sm">{{ types[a.type] }}</Badge></td>
                         <td class="px-4 py-2 text-center font-mono text-xs">{{ a.is_postable ? a.normal_balance : '' }}</td>
                         <td class="px-4 py-2 text-center">{{ a.is_postable ? '✓' : '—' }}</td>
+                        <td class="px-4 py-2 text-xs">
+                            <span v-if="a.cf_direct_category" class="inline-flex items-center gap-1 whitespace-nowrap rounded bg-sky-50 px-1.5 py-0.5 text-sky-700 dark:bg-sky-900/25 dark:text-sky-300"><span class="font-mono">{{ a.cf_direct_category.code }}</span> {{ a.cf_direct_category.name }}</span>
+                            <span v-else class="text-neutral-300 dark:text-neutral-600">—</span>
+                        </td>
+                        <td class="px-4 py-2 text-xs">
+                            <span v-if="a.cf_indirect_category" class="inline-flex items-center gap-1 whitespace-nowrap rounded bg-amber-50 px-1.5 py-0.5 text-amber-700 dark:bg-amber-900/25 dark:text-amber-300"><span class="font-mono">{{ a.cf_indirect_category.code }}</span> {{ a.cf_indirect_category.name }}</span>
+                            <span v-else class="text-neutral-300 dark:text-neutral-600">—</span>
+                        </td>
                         <td class="px-4 py-2"><div class="flex justify-end gap-2">
                             <button @click="openEdit(a)" class="text-primary-600 hover:text-primary-800"><Pencil class="h-4 w-4" /></button>
                             <button @click="destroy(a)" class="text-danger-500 hover:text-danger-700"><Trash2 class="h-4 w-4" /></button>
@@ -109,6 +123,24 @@ const inputCls = 'h-9 w-full rounded-lg border border-neutral-300 bg-white px-3 
                         <div class="grid grid-cols-2 gap-3">
                             <div><label class="mb-1 block text-xs font-medium text-neutral-500">Tipe *</label><select v-model="form.type" :class="inputCls"><option v-for="(label, val) in types" :key="val" :value="val">{{ label }}</option></select></div>
                             <div><label class="mb-1 block text-xs font-medium text-neutral-500">Saldo Normal *</label><select v-model="form.normal_balance" :class="inputCls"><option value="D">Debit (D)</option><option value="K">Kredit (K)</option></select></div>
+                        </div>
+                        <div class="grid grid-cols-2 gap-3">
+                            <div>
+                                <label class="mb-1 block text-xs font-medium text-neutral-500">Kategori Cash Flow Direct</label>
+                                <select v-model="form.cf_direct_category_id" :class="inputCls">
+                                    <option :value="null">— tidak dipetakan —</option>
+                                    <option v-for="c in cfDirect" :key="c.id" :value="c.id">{{ c.code }} - {{ c.name }}</option>
+                                </select>
+                                <p v-if="form.errors.cf_direct_category_id" class="mt-1 text-xs text-danger-500">{{ form.errors.cf_direct_category_id }}</p>
+                            </div>
+                            <div>
+                                <label class="mb-1 block text-xs font-medium text-neutral-500">Kategori Cash Flow Indirect</label>
+                                <select v-model="form.cf_indirect_category_id" :class="inputCls">
+                                    <option :value="null">— tidak dipetakan —</option>
+                                    <option v-for="c in cfIndirect" :key="c.id" :value="c.id">{{ c.code }} - {{ c.name }}</option>
+                                </select>
+                                <p v-if="form.errors.cf_indirect_category_id" class="mt-1 text-xs text-danger-500">{{ form.errors.cf_indirect_category_id }}</p>
+                            </div>
                         </div>
                         <div class="flex gap-5">
                             <label class="flex items-center gap-2 text-sm"><input v-model="form.is_postable" type="checkbox" class="rounded" /> Bisa dijurnal</label>
