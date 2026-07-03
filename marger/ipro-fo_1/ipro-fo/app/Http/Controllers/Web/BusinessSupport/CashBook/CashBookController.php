@@ -1086,11 +1086,15 @@ class CashBookController extends Controller
         ];
     }
 
-    /** Rekening kas/bank = akun postable di bawah KAS DAN SETARA KAS (kode 101010…). */
+    /**
+     * Rekening kas/bank = akun postable di bawah KAS DAN SETARA KAS.
+     * Mencakup 10101 (kas, bank, giro) DAN 10108 (kas & setara kas yang dibatasi /
+     * dana escrow bank) — agar seluruh akun kas/bank tampil & sinkron dengan Buku Besar GL.
+     */
     private function cashAccounts()
     {
         return BsAccount::where('is_active', true)->where('is_postable', true)
-            ->where('code', 'like', '101010%')
+            ->where(fn ($q) => $q->where('code', 'like', '10101%')->orWhere('code', 'like', '10108%'))
             ->orderBy('code')->get(['id', 'code', 'name']);
     }
 }
