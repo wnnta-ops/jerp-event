@@ -71,6 +71,7 @@ const groups: { title: string; items: NavItem[] }[] = [
         items: [
             { label: 'Kategori Retensi', icon: Percent,       href: 'kpr.setup.retensi.index', permission: 'bankloan.setup.view' },
             { label: 'Kategori Bank',    icon: Landmark,      href: 'kpr.setup.bank.index',    permission: 'bankloan.setup.view' },
+            { label: 'Kategori Analisa Berkas', icon: ClipboardList, href: 'kpr.setup.analisa.index', permission: 'bankloan.setup.view' },
             { label: 'Inisiasi KPR',     icon: GitMerge,      href: 'kpr.initiation.index',    permission: 'bankloan.application.view' },
             { label: 'Proses KPR',       icon: Banknote,      href: 'kpr.index',               permission: 'bankloan.application.view' },
             { label: 'Database KPR',     icon: Database, permission: 'bankloan.application.view', children: [
