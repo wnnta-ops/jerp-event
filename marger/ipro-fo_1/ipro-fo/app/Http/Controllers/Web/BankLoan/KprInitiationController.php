@@ -7,6 +7,7 @@ namespace App\Http\Controllers\Web\BankLoan;
 use App\Domain\BankLoan\Actions\CreateKprApplication;
 use App\Domain\BankLoan\Enums\KprStatus;
 use App\Domain\BankLoan\Models\BankPartner;
+use App\Domain\BankLoan\Models\KprAnalisaAspect;
 use App\Domain\BankLoan\Models\KprApplication;
 use App\Domain\BankLoan\Models\KprInitiation;
 use App\Domain\BankLoan\Services\IdDocumentOcr;
@@ -64,6 +65,60 @@ class KprInitiationController extends Controller
         'lap_keuangan'   => ['high' => [1, 1, 1, 1, 1], 'medium' => [2, 2, 0, 0, 0], 'low' => [0, 0, 0, 0, 0]],
         'foto_usaha'     => ['high' => [1, 1, 1, 1, 1], 'medium' => [2, 2, 2, 1, 1], 'low' => [0, 0, 0, 0, 0]],
     ];
+
+    /**
+     * Konfigurasi aspek Analisa dari sub-modul "Kategori Analisa Berkas" (tabel kpr_analisa_aspects).
+     * Bila belum ada data aktif → fallback ke default hardcoded di atas (perilaku tidak berubah).
+     *
+     * @return array{
+     *   keys: array{all: list<string>, karyawan: list<string>, wirausaha: list<string>},
+     *   score: array<string, array<string,int>>,
+     *   bank: array<string, array<string, list<int>>>,
+     *   banks: list<string>,
+     *   aspects: list<array{key:string,no:int,label:string,scope:string,options:list<array<string,mixed>>}>
+     * }
+     */
+    private function analisaConfig(): array
+    {
+        $rows = KprAnalisaAspect::where('is_active', true)->orderBy('aspect_no')->orderBy('id')->get();
+
+        if ($rows->isEmpty()) {
+            $keys = [
+                'all'       => self::ANALISA_ASPEK_COMMON,
+                'karyawan'  => self::ANALISA_ASPEK_KARYAWAN,
+                'wirausaha' => self::ANALISA_ASPEK_WIRAUSAHA,
+            ];
+            $score = [];
+            foreach (array_merge($keys['all'], $keys['karyawan'], $keys['wirausaha']) as $k) {
+                $score[$k] = ['high' => 3, 'medium' => 2, 'low' => 1];
+            }
+
+            return ['keys' => $keys, 'score' => $score, 'bank' => self::BANK_SCORE, 'banks' => self::BANK_REKOM_LIST, 'aspects' => []];
+        }
+
+        $keys = ['all' => [], 'karyawan' => [], 'wirausaha' => []];
+        $score = [];
+        $bank = [];
+        $aspects = [];
+        foreach ($rows as $r) {
+            $scope = in_array($r->scope, ['all', 'karyawan', 'wirausaha'], true) ? $r->scope : 'all';
+            $keys[$scope][] = $r->aspect_key;
+            $opts = [];
+            foreach ((array) $r->options as $o) {
+                $lvl = $o['level'] ?? null;
+                if (! in_array($lvl, ['high', 'medium', 'low'], true)) {
+                    continue;
+                }
+                $bankRow = array_map('intval', array_values((array) ($o['bank'] ?? [])));
+                $score[$r->aspect_key][$lvl] = (int) ($o['score'] ?? 0);
+                $bank[$r->aspect_key][$lvl] = $bankRow;
+                $opts[] = ['level' => $lvl, 'desc' => (string) ($o['desc'] ?? ''), 'hint' => $o['hint'] ?? null, 'score' => (int) ($o['score'] ?? 0), 'bank' => $bankRow];
+            }
+            $aspects[] = ['key' => $r->aspect_key, 'no' => (int) $r->aspect_no, 'label' => $r->label, 'scope' => $scope, 'options' => $opts];
+        }
+
+        return ['keys' => $keys, 'score' => $score, 'bank' => $bank, 'banks' => KprAnalisaAspect::BANKS, 'aspects' => $aspects];
+    }
 
     public function index(Request $request): Response
     {
@@ -222,6 +277,12 @@ class KprInitiationController extends Controller
             ],
             'contractInfo' => $contractInfo,
             'stageDefs' => self::STAGES,
+            // Matriks aspek Analisa (dari Kategori Analisa Berkas) untuk render matriks + preview skor/rekomendasi.
+            'analisaCfg' => (function () {
+                $c = $this->analisaConfig();
+
+                return ['aspects' => $c['aspects'], 'banks' => $c['banks']];
+            })(),
             'banks'     => BankPartner::where('is_active', true)->get(['id', 'code', 'name']),
             // Hanya booking milik customer inisiasi ini (cegah Draft KPR lintas-customer).
             'bookings'  => Booking::query()->whereIn('status', ['active', 'ppjb'])
@@ -416,13 +477,10 @@ class KprInitiationController extends Controller
             if (empty($data['result'])) {
                 return back()->with('error', 'Pilih Hasil Analisa (Layak / Tidak Layak) terlebih dahulu.');
             }
-            // Aspek wajib mengikuti kategori pemohon (Collect Berkas); semua aspek harus dinilai High/Medium/Low.
+            // Aspek wajib mengikuti kategori pemohon (Collect Berkas); daftar & skor dari Kategori Analisa Berkas.
+            $cfg   = $this->analisaConfig();
             $cat   = $stages['collect_berkas']['category'] ?? null;
-            $aspek = array_merge(self::ANALISA_ASPEK_COMMON, match ($cat) {
-                'wirausaha' => self::ANALISA_ASPEK_WIRAUSAHA,
-                'karyawan'  => self::ANALISA_ASPEK_KARYAWAN,
-                default     => [],
-            });
+            $aspek = array_merge($cfg['keys']['all'], $cfg['keys'][$cat] ?? []);
             $sent  = (array) ($data['indikator_items'] ?? []);
             $clean = [];
             foreach ($aspek as $k) {
@@ -431,18 +489,26 @@ class KprInitiationController extends Controller
                 }
                 $clean[$k] = $sent[$k];
             }
-            // Indikator keseluruhan diturunkan server (anti-tamper): rata-rata High=3/Medium=2/Low=1 → HIGH ≥2.5, MEDIUM ≥1.5.
-            $map = ['high' => 3, 'medium' => 2, 'low' => 1];
-            $avg = array_sum(array_map(fn ($l) => $map[$l], $clean)) / max(1, count($clean));
+            // Indikator keseluruhan diturunkan server (anti-tamper): skor tiap aspek dinormalisasi ke [0,1]
+            // memakai skor konfigurasi (bebas diubah, tidak harus 3/2/1) → rata-rata: HIGH ≥0.75, MEDIUM ≥0.25.
+            $sum = 0.0;
+            foreach ($clean as $k => $lvl) {
+                $sc   = $cfg['score'][$k] ?? ['high' => 3, 'medium' => 2, 'low' => 1];
+                $vals = array_values($sc);
+                $min  = min($vals);
+                $max  = max($vals);
+                $sum += $max > $min ? (($sc[$lvl] ?? $min) - $min) / ($max - $min) : 0.5;
+            }
+            $avg = count($clean) ? $sum / count($clean) : 0;
             $data['indikator_items'] = $clean;
-            $data['indikator']       = $avg >= 2.5 ? 'high' : ($avg >= 1.5 ? 'medium' : 'low');
+            $data['indikator']       = $avg >= 0.75 ? 'high' : ($avg >= 0.25 ? 'medium' : 'low');
         }
         if ($stage === 'profiling') {
             if (empty($data['decision_1']) && empty($data['decision_2'])) {
                 return back()->with('error', 'Pilih minimal 1 bank keputusan terlebih dahulu.');
             }
-            // 2 rekomendasi bank dihitung server (anti-tamper) dari skor aspek Analisa.
-            [$data['bank_analisa_1'], $data['bank_analisa_2']] = $this->bankRekomendasi((array) ($stages['analisa']['indikator_items'] ?? []));
+            // 2 rekomendasi bank dihitung server (anti-tamper) dari skor aspek Analisa (matriks Kategori Analisa Berkas).
+            [$data['bank_analisa_1'], $data['bank_analisa_2']] = $this->bankRekomendasi((array) ($stages['analisa']['indikator_items'] ?? []), $this->analisaConfig());
         }
 
         // ── Tahap biasa: simpan data + tandai selesai + maju ke tahap berikutnya (preserve sub-data spt. docs) ──
@@ -454,23 +520,32 @@ class KprInitiationController extends Controller
         return back()->with('success', self::STAGES[$stage].' disimpan.');
     }
 
-    /** Hitung 2 rekomendasi bank (Rekom 1 & Rekom 2) dari skor aspek Analisa (indikator_items). */
-    private function bankRekomendasi(array $items): array
+    /**
+     * Hitung 2 rekomendasi bank (Rekom 1 & Rekom 2) dari skor aspek Analisa (indikator_items).
+     *
+     * @param  array<string,string>  $items
+     * @param  array{bank: array<string, array<string, list<int>>>, banks: list<string>}  $cfg
+     * @return array{0: ?string, 1: ?string}
+     */
+    private function bankRekomendasi(array $items, array $cfg): array
     {
-        $totals = array_fill(0, count(self::BANK_REKOM_LIST), 0);
+        $banks = $cfg['banks'];
+        $totals = array_fill(0, count($banks), 0);
         foreach ($items as $key => $level) {
-            $row = self::BANK_SCORE[$key][$level] ?? null;
+            $row = $cfg['bank'][$key][$level] ?? null;
             if ($row) {
                 foreach ($row as $i => $v) {
-                    $totals[$i] += $v;
+                    if (isset($totals[$i])) {
+                        $totals[$i] += $v;
+                    }
                 }
             }
         }
         // Urut indeks bank berdasar skor desc; tie → urutan daftar (BTN..MANDIRI). 2 teratas = Rekom 1 & 2.
-        $idx = range(0, count(self::BANK_REKOM_LIST) - 1);
+        $idx = range(0, count($banks) - 1);
         usort($idx, fn ($a, $b) => ($totals[$b] <=> $totals[$a]) ?: ($a <=> $b));
 
-        return [self::BANK_REKOM_LIST[$idx[0]] ?? null, self::BANK_REKOM_LIST[$idx[1]] ?? null];
+        return [$banks[$idx[0]] ?? null, $banks[$idx[1]] ?? null];
     }
 
     /** Tolak inisiasi pada tahap BI Checking → status 'rejected' + alasan. Muncul di Database KPR → Reject BI Checking. */
