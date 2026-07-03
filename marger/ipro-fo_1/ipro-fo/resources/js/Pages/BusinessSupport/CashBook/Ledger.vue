@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue';
+import { ref, watch, computed } from 'vue';
 import { router, Link } from '@inertiajs/vue3';
-import { ArrowLeft, BookOpen, FileSpreadsheet, Printer } from 'lucide-vue-next';
+import { ArrowLeft, BookOpen, FileSpreadsheet, Printer, Layers, Plus, Trash2, ChevronDown, ChevronRight, Save } from 'lucide-vue-next';
 import EmptyState from '@/Components/UI/EmptyState.vue';
 import SearchSelect from '@/Components/UI/SearchSelect.vue';
 
@@ -12,13 +12,15 @@ const props = defineProps<{
     entries: Array<any>;
     closing: number;
     filters: { from: string | null; to: string | null };
+    cfDirect: Array<{ id: number; code: string; name: string; activity: string }>;
+    cfIndirect: Array<{ id: number; code: string; name: string; activity: string }>;
+    clusters: Array<{ id: number; code: string; name: string }>;
 }>();
 
 const account = ref(props.accountId ?? '');
 const from = ref(props.filters.from ?? '');
 const to = ref(props.filters.to ?? '');
 function display() { router.get(route('bs.cashbook.ledger'), { account_id: account.value || undefined, from: from.value || undefined, to: to.value || undefined }, { preserveState: true, replace: true }); }
-// #9: parameter unduhan mengikuti rekening + rentang yang sedang ditampilkan (server-side).
 const exportParams = computed<Record<string, any>>(() => {
     const p: Record<string, any> = {};
     if (props.accountId) p.account_id = props.accountId;
@@ -29,6 +31,36 @@ const exportParams = computed<Record<string, any>>(() => {
 function fmtRp(v: number) { return Number(v ?? 0).toLocaleString('id-ID'); }
 function fmtDate(d: string) { return d ? new Date(d).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'; }
 const inputCls = 'h-9 rounded-lg border border-neutral-300 bg-white px-3 text-sm dark:border-neutral-700 dark:bg-neutral-900';
+const selCls = 'h-8 w-full min-w-[140px] rounded-md border border-neutral-300 bg-white px-2 text-xs dark:border-neutral-700 dark:bg-neutral-900';
+
+// Salinan reaktif tiap mutasi (untuk edit tag arus kas + pembagian cluster inline).
+const rows = ref<any[]>([]);
+watch(() => props.entries, (v) => { rows.value = (v ?? []).map((e: any) => ({ ...e, clusters: (e.clusters ?? []).map((c: any) => ({ ...c })) })); }, { immediate: true });
+
+// #1 — Simpan tag kategori arus kas (Direct/Indirect) saat dipilih.
+function saveCf(row: any) {
+    router.post(route('bs.cashbook.ledger.cf'), {
+        journal_line_id: row.id,
+        cf_direct_category_id: row.cf_direct_category_id || null,
+        cf_indirect_category_id: row.cf_indirect_category_id || null,
+    }, { preserveState: true, preserveScroll: true });
+}
+
+// #2 — Pembagian cluster: expand/collapse + edit baris + simpan.
+const expanded = ref<Set<number>>(new Set());
+function toggle(id: number) { const s = new Set(expanded.value); s.has(id) ? s.delete(id) : s.add(id); expanded.value = s; }
+function addSplit(row: any) { row.clusters.push({ cluster_id: props.clusters[0]?.id ?? null, amount: 0, note: '' }); }
+function removeSplit(row: any, i: number) { row.clusters.splice(i, 1); }
+function sumSplits(row: any) { return (row.clusters ?? []).reduce((s: number, c: any) => s + (Number(c.amount) || 0), 0); }
+function mutAmount(row: any) { return Number(row.debit) || Number(row.credit) || 0; }
+const savingCluster = ref<number | null>(null);
+function saveClusters(row: any) {
+    savingCluster.value = row.id;
+    router.post(route('bs.cashbook.ledger.clusters'), {
+        journal_line_id: row.id,
+        splits: (row.clusters ?? []).filter((c: any) => c.cluster_id).map((c: any) => ({ cluster_id: c.cluster_id, amount: Number(c.amount) || 0, note: c.note || '' })),
+    }, { preserveState: true, preserveScroll: true, onFinish: () => (savingCluster.value = null) });
+}
 </script>
 
 <template>
@@ -36,7 +68,6 @@ const inputCls = 'h-9 rounded-lg border border-neutral-300 bg-white px-3 text-sm
         <Link :href="route('bs.cashbook.home')" class="inline-flex items-center gap-2 text-sm text-neutral-500 hover:text-neutral-800 dark:hover:text-neutral-200"><ArrowLeft class="h-4 w-4" /> Cash Book</Link>
         <div class="flex flex-wrap items-center justify-between gap-2">
             <h1 class="flex items-center gap-2 text-2xl font-bold"><BookOpen class="h-6 w-6 text-primary-600" /> Rekening Ledger</h1>
-            <!-- #9: Excel + PDF mengikuti rekening & rentang terpilih (muncul setelah rekening dipilih) -->
             <div v-if="accountId" class="flex flex-wrap items-center gap-2">
                 <a :href="route('bs.cashbook.ledger.excel', exportParams)" class="inline-flex items-center gap-1.5 rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-50 dark:border-neutral-600 dark:bg-neutral-800 dark:text-neutral-200"><FileSpreadsheet class="h-4 w-4" /> Excel</a>
                 <a :href="route('bs.cashbook.ledger.pdf', exportParams)" target="_blank" rel="noopener" class="inline-flex items-center gap-1.5 rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-50 dark:border-neutral-600 dark:bg-neutral-800 dark:text-neutral-200"><Printer class="h-4 w-4" /> PDF</a>
@@ -52,22 +83,63 @@ const inputCls = 'h-9 rounded-lg border border-neutral-300 bg-white px-3 text-sm
         </div>
 
         <div v-if="accountId" class="card overflow-x-auto">
-            <table class="w-full text-sm">
-                <thead class="bg-neutral-50 dark:bg-neutral-800"><tr class="text-left text-xs uppercase text-neutral-500"><th class="px-4 py-3">Tanggal</th><th class="px-4 py-3">Referensi</th><th class="px-4 py-3">Keterangan</th><th class="px-4 py-3 text-right">Debit</th><th class="px-4 py-3 text-right">Kredit</th><th class="px-4 py-3 text-right">Saldo</th></tr></thead>
+            <table class="w-full min-w-[1100px] text-sm">
+                <thead class="bg-neutral-50 dark:bg-neutral-800"><tr class="text-left text-xs uppercase text-neutral-500">
+                    <th class="px-3 py-3">Tanggal</th><th class="px-3 py-3">Referensi</th><th class="px-3 py-3">Keterangan</th>
+                    <th class="px-3 py-3 text-right">Debit</th><th class="px-3 py-3 text-right">Kredit</th><th class="px-3 py-3 text-right">Saldo</th>
+                    <th class="px-3 py-3">Cash Flow Direct</th><th class="px-3 py-3">Cash Flow Indirect</th><th class="px-3 py-3 text-center">Cluster</th>
+                </tr></thead>
                 <tbody class="divide-y divide-neutral-200 dark:divide-neutral-800">
-                    <tr class="bg-neutral-50/60 dark:bg-neutral-800/40"><td class="px-4 py-2 font-medium" colspan="5">Saldo Awal</td><td class="px-4 py-2 text-right font-mono font-semibold">{{ fmtRp(opening) }}</td></tr>
-                    <tr v-for="(e, i) in entries" :key="i">
-                        <td class="px-4 py-2">{{ fmtDate(e.date) }}</td>
-                        <td class="px-4 py-2 font-mono text-xs">{{ e.ref }}</td>
-                        <td class="px-4 py-2 text-neutral-500">{{ e.desc }}</td>
-                        <td class="px-4 py-2 text-right font-mono">{{ e.debit ? fmtRp(e.debit) : '' }}</td>
-                        <td class="px-4 py-2 text-right font-mono">{{ e.credit ? fmtRp(e.credit) : '' }}</td>
-                        <td class="px-4 py-2 text-right font-mono font-semibold">{{ fmtRp(e.balance) }}</td>
-                    </tr>
+                    <tr class="bg-neutral-50/60 dark:bg-neutral-800/40"><td class="px-3 py-2 font-medium" colspan="5">Saldo Awal</td><td class="px-3 py-2 text-right font-mono font-semibold">{{ fmtRp(opening) }}</td><td colspan="3"></td></tr>
+                    <template v-for="row in rows" :key="row.id">
+                        <tr :class="expanded.has(row.id) ? 'bg-primary-50/30 dark:bg-primary-900/10' : ''">
+                            <td class="px-3 py-2 whitespace-nowrap">{{ fmtDate(row.date) }}</td>
+                            <td class="px-3 py-2 font-mono text-xs">{{ row.ref }}</td>
+                            <td class="px-3 py-2 text-neutral-500">{{ row.desc }}</td>
+                            <td class="px-3 py-2 text-right font-mono">{{ row.debit ? fmtRp(row.debit) : '' }}</td>
+                            <td class="px-3 py-2 text-right font-mono">{{ row.credit ? fmtRp(row.credit) : '' }}</td>
+                            <td class="px-3 py-2 text-right font-mono font-semibold">{{ fmtRp(row.balance) }}</td>
+                            <td class="px-3 py-2"><select v-model="row.cf_direct_category_id" @change="saveCf(row)" :class="selCls"><option :value="null">—</option><option v-for="c in cfDirect" :key="c.id" :value="c.id">{{ c.name }}</option></select></td>
+                            <td class="px-3 py-2"><select v-model="row.cf_indirect_category_id" @change="saveCf(row)" :class="selCls"><option :value="null">—</option><option v-for="c in cfIndirect" :key="c.id" :value="c.id">{{ c.name }}</option></select></td>
+                            <td class="px-3 py-2 text-center">
+                                <button type="button" @click="toggle(row.id)"
+                                        class="inline-flex items-center gap-1 rounded-lg border px-2.5 py-1.5 text-xs font-semibold transition"
+                                        :class="expanded.has(row.id) ? 'border-primary-500 bg-primary-500 text-white' : (row.clusters.length ? 'border-primary-300 text-primary-700 hover:bg-primary-50 dark:border-primary-700 dark:text-primary-300' : 'border-neutral-300 text-neutral-600 hover:bg-neutral-50 dark:border-neutral-700 dark:text-neutral-300')">
+                                    <component :is="expanded.has(row.id) ? ChevronDown : ChevronRight" class="h-3.5 w-3.5" /><Layers class="h-3.5 w-3.5" /> PEMBAGIAN CLUSTER
+                                    <span v-if="row.clusters.length" class="ml-0.5 rounded-full bg-white/25 px-1.5 text-[10px]">{{ row.clusters.length }}</span>
+                                </button>
+                            </td>
+                        </tr>
+                        <!-- Rincian pembagian cluster (bisa hide/tampil) -->
+                        <tr v-if="expanded.has(row.id)">
+                            <td colspan="9" class="bg-neutral-50 px-4 py-3 dark:bg-neutral-800/40">
+                                <div class="mb-2 flex flex-wrap items-center justify-between gap-2">
+                                    <p class="flex items-center gap-2 text-sm font-semibold"><Layers class="h-4 w-4 text-primary-600" /> Pembagian Biaya per Cluster <span class="text-xs font-normal text-neutral-500">— nilai mutasi Rp {{ fmtRp(mutAmount(row)) }}</span></p>
+                                    <button type="button" @click="toggle(row.id)" class="text-xs text-neutral-500 hover:text-neutral-800 dark:hover:text-neutral-200">Sembunyikan ▲</button>
+                                </div>
+                                <div class="space-y-2">
+                                    <div v-for="(c, i) in row.clusters" :key="i" class="flex flex-wrap items-center gap-2">
+                                        <select v-model="c.cluster_id" class="h-8 min-w-[180px] flex-1 rounded-md border border-neutral-300 bg-white px-2 text-xs dark:border-neutral-700 dark:bg-neutral-900"><option :value="null" disabled>— pilih cluster —</option><option v-for="cl in clusters" :key="cl.id" :value="cl.id">{{ cl.code }} — {{ cl.name }}</option></select>
+                                        <input v-model.number="c.amount" type="number" placeholder="Nominal" class="h-8 w-36 rounded-md border border-neutral-300 bg-white px-2 text-right text-xs font-mono dark:border-neutral-700 dark:bg-neutral-900" />
+                                        <input v-model="c.note" placeholder="Keterangan (opsional)" class="h-8 min-w-[160px] flex-1 rounded-md border border-neutral-300 bg-white px-2 text-xs dark:border-neutral-700 dark:bg-neutral-900" />
+                                        <button type="button" @click="removeSplit(row, i)" class="rounded-md border border-danger-300 p-1.5 text-danger-600 hover:bg-danger-50 dark:border-danger-700"><Trash2 class="h-3.5 w-3.5" /></button>
+                                    </div>
+                                    <p v-if="!row.clusters.length" class="text-xs italic text-neutral-400">Belum ada pembagian. Klik "Tambah Cluster" untuk membagi biaya mutasi ini ke beberapa cluster.</p>
+                                </div>
+                                <div class="mt-3 flex flex-wrap items-center justify-between gap-2">
+                                    <button type="button" @click="addSplit(row)" class="inline-flex items-center gap-1 rounded-lg border border-dashed border-neutral-300 px-3 py-1.5 text-xs font-medium text-neutral-600 hover:bg-neutral-100 dark:border-neutral-700 dark:text-neutral-300"><Plus class="h-3.5 w-3.5" /> Tambah Cluster</button>
+                                    <div class="flex items-center gap-3">
+                                        <span class="text-xs text-neutral-500">Total split: <b class="font-mono" :class="Math.abs(sumSplits(row) - mutAmount(row)) < 1 ? 'text-success-600' : 'text-warning-600'">Rp {{ fmtRp(sumSplits(row)) }}</b> / Rp {{ fmtRp(mutAmount(row)) }}</span>
+                                        <button type="button" @click="saveClusters(row)" :disabled="savingCluster === row.id" class="inline-flex items-center gap-1.5 rounded-lg bg-primary-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-primary-700 disabled:opacity-60"><Save class="h-3.5 w-3.5" /> {{ savingCluster === row.id ? 'Menyimpan…' : 'Simpan Pembagian' }}</button>
+                                    </div>
+                                </div>
+                            </td>
+                        </tr>
+                    </template>
                 </tbody>
-                <tfoot class="border-t border-neutral-200 bg-neutral-50 font-bold dark:border-neutral-700 dark:bg-neutral-800"><tr><td class="px-4 py-2.5" colspan="5">Saldo Akhir</td><td class="px-4 py-2.5 text-right font-mono">{{ fmtRp(closing) }}</td></tr></tfoot>
+                <tfoot class="border-t border-neutral-200 bg-neutral-50 font-bold dark:border-neutral-700 dark:bg-neutral-800"><tr><td class="px-3 py-2.5" colspan="5">Saldo Akhir</td><td class="px-3 py-2.5 text-right font-mono">{{ fmtRp(closing) }}</td><td colspan="3"></td></tr></tfoot>
             </table>
-            <EmptyState v-if="!entries?.length" title="Tidak ada mutasi" description="Rekening ini belum punya mutasi pada rentang tsb." />
+            <EmptyState v-if="!rows?.length" title="Tidak ada mutasi" description="Rekening ini belum punya mutasi pada rentang tsb." />
         </div>
         <EmptyState v-else title="Pilih rekening" description="Pilih rekening kas/bank untuk melihat buku besarnya." />
     </div>
