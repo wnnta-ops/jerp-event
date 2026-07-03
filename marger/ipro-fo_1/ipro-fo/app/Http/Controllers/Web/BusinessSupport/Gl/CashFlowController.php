@@ -37,25 +37,28 @@ class CashFlowController extends Controller
         abort_unless($request->user()?->canModule('gl'), 403);
 
         $year    = (int) $request->integer('year', (int) now()->year);
+        $month   = (int) $request->integer('month', 0); // 0 = setahun penuh; 1-12 = bulan tertentu
+        $method  = in_array($request->input('method'), ['direct', 'indirect'], true) ? $request->input('method') : null;
+        $periodStart = $month > 0 ? sprintf('%04d-%02d-01', $year, $month) : "{$year}-01-01";
         $cashIds = BsAccount::where('is_postable', true)->where('code', 'like', '101010%')->pluck('id');
 
-        // Saldo kas awal & perubahan tahun berjalan.
+        // Saldo kas awal (sebelum periode) & perubahan pada periode terpilih.
         $beginning = (float) BsJournalLine::query()
             ->join('bs_journals', 'bs_journals.id', '=', 'bs_journal_lines.journal_id')
             ->where('bs_journals.status', 'posted')->whereIn('bs_journal_lines.account_id', $cashIds)
-            ->whereDate('bs_journals.journal_date', '<', "{$year}-01-01")
+            ->whereDate('bs_journals.journal_date', '<', $periodStart)
             ->sum(DB::raw('debit-credit'));
 
         $cashMovement = (float) BsJournalLine::query()
             ->join('bs_journals', 'bs_journals.id', '=', 'bs_journal_lines.journal_id')
             ->where('bs_journals.status', 'posted')->whereIn('bs_journal_lines.account_id', $cashIds)
-            ->where('bs_journals.period_year', $year)
+            ->where('bs_journals.period_year', $year)->when($month > 0, fn ($q) => $q->where('bs_journals.period_month', $month))
             ->sum(DB::raw('debit-credit'));
 
         // ── DIRECT: klasifikasi sisi lawan dari jurnal yang menyentuh kas ──
         $cashJournalIds = BsJournalLine::query()
             ->join('bs_journals', 'bs_journals.id', '=', 'bs_journal_lines.journal_id')
-            ->where('bs_journals.status', 'posted')->where('bs_journals.period_year', $year)
+            ->where('bs_journals.status', 'posted')->where('bs_journals.period_year', $year)->when($month > 0, fn ($q) => $q->where('bs_journals.period_month', $month))
             ->whereIn('bs_journal_lines.account_id', $cashIds)
             ->distinct()->pluck('bs_journal_lines.journal_id');
 
@@ -102,12 +105,12 @@ class CashFlowController extends Controller
         $netByType = fn (string $type) => (float) BsJournalLine::query()
             ->join('bs_journals', 'bs_journals.id', '=', 'bs_journal_lines.journal_id')
             ->join('bs_accounts', 'bs_accounts.id', '=', 'bs_journal_lines.account_id')
-            ->where('bs_journals.status', 'posted')->where('bs_journals.period_year', $year)
+            ->where('bs_journals.status', 'posted')->where('bs_journals.period_year', $year)->when($month > 0, fn ($q) => $q->where('bs_journals.period_month', $month))
             ->where('bs_accounts.type', $type)->sum(DB::raw('debit-credit'));
         $sumPrefix = fn (string $prefix, bool $creditMinusDebit = false) => (float) BsJournalLine::query()
             ->join('bs_journals', 'bs_journals.id', '=', 'bs_journal_lines.journal_id')
             ->join('bs_accounts', 'bs_accounts.id', '=', 'bs_journal_lines.account_id')
-            ->where('bs_journals.status', 'posted')->where('bs_journals.period_year', $year)
+            ->where('bs_journals.status', 'posted')->where('bs_journals.period_year', $year)->when($month > 0, fn ($q) => $q->where('bs_journals.period_month', $month))
             ->where('bs_accounts.code', 'like', $prefix.'%')
             ->sum(DB::raw($creditMinusDebit ? 'credit-debit' : 'debit-credit'));
 
@@ -132,8 +135,36 @@ class CashFlowController extends Controller
             'net_change' => $cashFromOps + $investing + $financing,
         ];
 
+        // ── Anotasi per-mutasi Rekening Ledger: pembagian cluster + tag kategori arus kas ──
+        $cashLineIds = BsJournalLine::query()
+            ->join('bs_journals', 'bs_journals.id', '=', 'bs_journal_lines.journal_id')
+            ->where('bs_journals.status', 'posted')
+            ->where('bs_journals.period_year', $year)->when($month > 0, fn ($q) => $q->where('bs_journals.period_month', $month))
+            ->whereIn('bs_journal_lines.account_id', $cashIds)
+            ->pluck('bs_journal_lines.id');
+
+        $clusterBreakdown = \App\Domain\BusinessSupport\Models\BsLedgerClusterSplit::query()
+            ->whereIn('journal_line_id', $cashLineIds)
+            ->join('clusters', 'clusters.id', '=', 'bs_ledger_cluster_splits.cluster_id')
+            ->groupBy('clusters.id', 'clusters.code', 'clusters.name')
+            ->selectRaw('clusters.code, clusters.name, COALESCE(SUM(bs_ledger_cluster_splits.amount),0) as total')
+            ->get()->map(fn ($r) => ['code' => $r->code, 'name' => $r->name, 'total' => (float) $r->total])->values();
+
+        $taggedBy = fn (string $col) => \App\Domain\BusinessSupport\Models\BsLedgerCfTag::query()
+            ->whereIn('journal_line_id', $cashLineIds)->whereNotNull($col)
+            ->join('bs_journal_lines', 'bs_journal_lines.id', '=', 'bs_ledger_cf_tags.journal_line_id')
+            ->join('bs_cash_flow_categories', 'bs_cash_flow_categories.id', '=', "bs_ledger_cf_tags.{$col}")
+            ->groupBy('bs_cash_flow_categories.id', 'bs_cash_flow_categories.name', 'bs_cash_flow_categories.activity')
+            ->selectRaw('bs_cash_flow_categories.name, bs_cash_flow_categories.activity, COALESCE(SUM(bs_journal_lines.debit - bs_journal_lines.credit),0) as amount')
+            ->get()->map(fn ($r) => ['name' => $r->name, 'activity' => $r->activity, 'amount' => (float) $r->amount])->values();
+
         return Inertia::render('BusinessSupport/Gl/CashFlow', [
             'year'      => $year,
+            'month'     => $month,
+            'method'    => $method, // 'direct' | 'indirect' | null (dua-duanya)
+            'clusterBreakdown' => $clusterBreakdown,
+            'directTagged'     => $taggedBy('cf_direct_category_id'),
+            'indirectTagged'   => $taggedBy('cf_indirect_category_id'),
             'beginning' => $beginning,
             'ending'    => $beginning + $cashMovement,
             'cashMovement' => $cashMovement,
