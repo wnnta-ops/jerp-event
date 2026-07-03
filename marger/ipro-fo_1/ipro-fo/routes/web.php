@@ -752,6 +752,9 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
     Route::get('/business-support/cek-giro/{giro}',               [BsGiroController::class, 'show'])->name('bs.giro.show');
     Route::post('/business-support/cek-giro/{giro}/kliring',      [BsGiroController::class, 'clear'])->name('bs.giro.clear');
     Route::post('/business-support/cek-giro/{giro}/tolak',        [BsGiroController::class, 'bounce'])->name('bs.giro.bounce');
+    // Penerimaan Cek Giro — daftar giro Di Tangan belum-jurnal (kiriman FO) + Posting GL (path literal, tak tertangkap {giro})
+    Route::get('/business-support/cek-giro-penerimaan',           [BsGiroController::class, 'penerimaan'])->name('bs.giro.penerimaan');
+    Route::post('/business-support/cek-giro/{giro}/posting-gl',   [BsGiroController::class, 'postGl'])->name('bs.giro.postgl');
 
     // ── BG/CEK KELUAR (perusahaan) #55 ──
     Route::get('/business-support/cek-giro-keluar',                [BsOutgoingChequeController::class, 'index'])->name('bs.cheque-out.index');

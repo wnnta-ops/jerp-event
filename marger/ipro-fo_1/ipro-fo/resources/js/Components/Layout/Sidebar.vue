@@ -258,7 +258,7 @@ const groups: { title: string; items: NavItem[] }[] = [
                 { label: 'Pengeluaran Kas Kecil', href: 'bs.pettycash.create', params: { type: 'out' } },
             ]},
             { label: 'Transaksi Cek Giro Masuk', icon: FileText, permission: ['businesssupport.view', 'cashbook.*'], children: [
-                { label: 'Penerimaan Cek Giro', href: 'bs.giro.create' },
+                { label: 'Penerimaan Cek Giro', href: 'bs.giro.penerimaan' },
                 { label: 'Kliring Cek Giro Masuk', href: 'bs.giro.index' },
                 { label: 'Tolakan Cek Giro Masuk', href: 'bs.giro.index' },
             ]},
