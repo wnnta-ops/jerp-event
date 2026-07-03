@@ -395,13 +395,29 @@ class KprInitiationController extends Controller
                 ->with('success', count($clean).' Draft Proses KPR dibuat dari inisiasi — tentukan kelanjutan (Lanjut/Batal) tiap bank di Proses KPR.');
         }
 
-        // R2 — SPRS lanjut bila keempat dokumen (KTP/NPWP Pemohon & Pasangan) dikonfirmasi diterima.
+        // R2 — SPRS: WAJIB pilih status pernikahan dulu, lalu konfirmasi dokumen (belum menikah = 2, sudah menikah = 4).
         //      OCR/scan pindah ke menu "Cek Scan KTP & NPWP" (terpisah, tidak menggerbang tahap ini).
         if ($stage === 'sprs') {
-            if (! ($data['ktp_pemohon_received'] ?? false) || ! ($data['npwp_pemohon_received'] ?? false)
-                || ! ($data['ktp_pasangan_received'] ?? false) || ! ($data['npwp_pasangan_received'] ?? false)) {
-                return back()->with('error', 'Centang keempat dokumen (KTP/NPWP Pemohon & Pasangan) sudah diterima untuk lanjut ke BI Checking.');
+            $marital = in_array($data['marital_status'] ?? null, ['belum_menikah', 'sudah_menikah'], true) ? $data['marital_status'] : null;
+            if ($marital === null) {
+                return back()->with('error', 'Pilih status pernikahan pemohon (Belum / Sudah Menikah) terlebih dahulu.');
             }
+            $needPasangan = $marital === 'sudah_menikah';
+            $pemohonOk = ($data['ktp_pemohon_received'] ?? false) && ($data['npwp_pemohon_received'] ?? false);
+            $pasanganOk = ! $needPasangan || (($data['ktp_pasangan_received'] ?? false) && ($data['npwp_pasangan_received'] ?? false));
+            if (! $pemohonOk || ! $pasanganOk) {
+                return back()->with('error', $needPasangan
+                    ? 'Centang keempat dokumen (KTP/NPWP Pemohon & Pasangan) sudah diterima untuk lanjut ke BI Checking.'
+                    : 'Centang KTP & NPWP Pemohon sudah diterima untuk lanjut ke BI Checking.');
+            }
+            // Belum menikah → jangan simpan data pasangan (konsisten dengan 2 dokumen wajib).
+            if (! $needPasangan) {
+                $data['ktp_pasangan_received'] = false;
+                $data['npwp_pasangan_received'] = false;
+                $data['ktp_pasangan_received_at'] = null;
+                $data['npwp_pasangan_received_at'] = null;
+            }
+            $data['marital_status'] = $marital;
         }
 
         // ── Collect Berkas: kategori (karyawan/wirausaha) + checklist per-item (lengkap/tidak_lengkap) + catatan.
@@ -482,6 +498,14 @@ class KprInitiationController extends Controller
             $cat   = $stages['collect_berkas']['category'] ?? null;
             $aspek = array_merge($cfg['keys']['all'], $cfg['keys'][$cat] ?? []);
             $sent  = (array) ($data['indikator_items'] ?? []);
+            // bi_pemohon & bi_pasangan diturunkan OTOMATIS dari hasil BI Checking (anti-tamper): Clear/Kol 1=high, Kol 2=medium, Kol 3–5=low.
+            $biMap  = ['clear' => 'high', 'kol1' => 'high', 'kol2' => 'medium', 'kol3' => 'low', 'kol4' => 'low', 'kol5' => 'low'];
+            $needPa = ($stages['sprs']['marital_status'] ?? '') !== 'belum_menikah';
+            $biRes  = $stages['bi_checking']['result'] ?? '';
+            // Pasangan: bila kosong (belum menikah / data lama), ikut hasil pemohon agar aspek tetap terisi.
+            $biResP = ($needPa ? ($stages['bi_checking']['result_pasangan'] ?? '') : '') ?: $biRes;
+            if (isset($biMap[$biRes]))  { $sent['bi_pemohon'] = $biMap[$biRes]; }
+            if (isset($biMap[$biResP])) { $sent['bi_pasangan'] = $biMap[$biResP]; }
             $clean = [];
             foreach ($aspek as $k) {
                 if (! in_array($sent[$k] ?? null, ['high', 'medium', 'low'], true)) {
@@ -565,25 +589,45 @@ class KprInitiationController extends Controller
         }
 
         $v = $request->validate([
-            'reason'     => ['nullable', 'string', 'max:500'],
-            'result'     => ['nullable', 'string', 'max:20'],
-            'permintaan' => ['nullable', 'string', 'max:30'],
-            'notes'      => ['nullable', 'string', 'max:500'],
+            'reason'          => ['nullable', 'string', 'max:500'],
+            'reject_type'     => ['nullable', 'string', 'in:bi_checking,batal_sepihak'],
+            'result'          => ['nullable', 'string', 'max:20'],
+            'result_pasangan' => ['nullable', 'string', 'max:20'],
+            'permintaan'      => ['nullable', 'string', 'max:30'],
+            'notes'           => ['nullable', 'string', 'max:500'],
         ]);
 
-        // Gerbang: Reject HANYA untuk hasil bermasalah (Kol 2–5) DAN permintaan customer "Mundur / Reject".
-        if (! in_array($v['result'] ?? '', ['kol2', 'kol3', 'kol4', 'kol5'], true) || ($v['permintaan'] ?? '') !== 'mundur') {
-            return back()->with('error', 'Reject BI Checking hanya untuk Hasil Kol 2–5 dan Permintaan Customer = "Mundur / Reject".');
+        $stages = $initiation->stages ?? [];
+        $type   = in_array($v['reject_type'] ?? '', ['bi_checking', 'batal_sepihak'], true) ? $v['reject_type'] : 'bi_checking';
+        $clean  = ['clear', 'kol1'];
+        $bad    = ['kol2', 'kol3', 'kol4', 'kol5'];
+        // Pasangan hanya diperhitungkan bila pemohon "Sudah Menikah" (dari SPRS).
+        $needP     = ($stages['sprs']['marital_status'] ?? '') !== 'belum_menikah';
+        $rD        = $v['result'] ?? '';
+        $rP        = $v['result_pasangan'] ?? '';
+        $bothClean = in_array($rD, $clean, true) && (! $needP || in_array($rP, $clean, true));
+        $anyBad    = in_array($rD, $bad, true) || ($needP && in_array($rP, $bad, true));
+
+        // Gerbang: Reject hanya bila customer "Mundur / Reject". Jenis reject ditentukan hasil BI (anti-tamper).
+        if (($v['permintaan'] ?? '') !== 'mundur') {
+            return back()->with('error', 'Reject hanya bila Permintaan Customer = "Mundur / Reject".');
+        }
+        if ($type === 'batal_sepihak' && ! $bothClean) {
+            return back()->with('error', 'Reject Batal Sepihak hanya bila hasil BI Checking bersih (Clear / Kol 1).');
+        }
+        if ($type === 'bi_checking' && ! $anyBad) {
+            return back()->with('error', 'Reject BI Checking hanya bila ada hasil bermasalah (Kol 2–5).');
         }
 
-        $stages = $initiation->stages ?? [];
         $bi = $stages['bi_checking'] ?? [];
         // Simpan hasil BI Checking yang sudah diisi (agar tampil di Database Reject BI Checking).
-        if (! empty($v['result']))     { $bi['result'] = $v['result']; }
-        if (! empty($v['permintaan'])) { $bi['permintaan'] = $v['permintaan']; }
+        if (! empty($v['result']))          { $bi['result'] = $v['result']; }
+        if (! empty($v['result_pasangan'])) { $bi['result_pasangan'] = $v['result_pasangan']; }
+        if (! empty($v['permintaan']))      { $bi['permintaan'] = $v['permintaan']; }
         if (array_key_exists('notes', $v) && $v['notes'] !== null) { $bi['notes'] = $v['notes']; }
         $stages['bi_checking'] = array_merge($bi, [
             'rejected'         => true,
+            'reject_type'      => $type,
             'reject_reason'    => trim((string) ($v['reason'] ?? '')) ?: null,
             'rejected_at'      => now()->toIso8601String(),
             'rejected_by'      => $request->user()?->id,
@@ -591,7 +635,9 @@ class KprInitiationController extends Controller
         ]);
         $initiation->fill(['stages' => $stages, 'status' => 'rejected'])->save();
 
-        return back()->with('success', "Inisiasi {$initiation->initiation_number} ditolak pada tahap BI Checking.");
+        $label = $type === 'batal_sepihak' ? 'Batal Sepihak' : 'BI Checking';
+
+        return back()->with('success', "Inisiasi {$initiation->initiation_number} ditolak ({$label}).");
     }
 
     // ── R2: "Cek Scan KTP & NPWP" (sidebar terpisah) — upload TANPA OCR; OCR on-demand via tombol ──
