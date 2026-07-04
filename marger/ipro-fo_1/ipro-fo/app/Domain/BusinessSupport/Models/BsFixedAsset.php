@@ -16,9 +16,9 @@ class BsFixedAsset extends Model
 
     protected $table = 'bs_fixed_assets';
     protected $fillable = [
-        'tenant_id', 'asset_number', 'name', 'category', 'acquisition_date', 'acquisition_cost',
+        'tenant_id', 'asset_number', 'name', 'quantity', 'category', 'acquisition_date', 'acquisition_cost',
         'residual_value', 'useful_life_months', 'method', 'asset_account_id', 'accum_account_id',
-        'expense_account_id', 'accumulated_depreciation', 'last_depreciation_date', 'status',
+        'expense_account_id', 'accumulated_depreciation', 'last_depreciation_date', 'status', 'pic', 'location',
         'acquire_journal_id', 'created_by',
         'disposed_date', 'disposal_type', 'disposal_proceeds', 'disposal_note', 'disposal_journal_id',
     ];
