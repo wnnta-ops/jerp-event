@@ -781,6 +781,7 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
     Route::post('/business-support/fixed-asset',                   [BsFaController::class, 'store'])->name('bs.fa.store');
     Route::get('/business-support/fixed-asset/run',               [BsFaController::class, 'run'])->name('bs.fa.run');
     Route::post('/business-support/fixed-asset/run',              [BsFaController::class, 'runStore'])->name('bs.fa.run.store');
+    Route::get('/business-support/fixed-asset-summary',           [BsFaController::class, 'summary'])->name('bs.fa.summary'); // report jadwal penyusutan
     Route::get('/business-support/fixed-asset/{fixedAsset}',      [BsFaController::class, 'show'])->name('bs.fa.show');
     Route::post('/business-support/fixed-asset/{fixedAsset}/depreciate', [BsFaController::class, 'depreciate'])->name('bs.fa.depreciate');
     Route::post('/business-support/fixed-asset/{fixedAsset}/dispose',     [BsFaController::class, 'dispose'])->name('bs.fa.dispose');
@@ -953,6 +954,9 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
     Route::get('/business-support/booked-revenue/{bookedRevenue}',       [BsBookedRevenueController::class, 'show'])->name('bs.booked-revenue.show');
     Route::post('/business-support/booked-revenue/{bookedRevenue}/recognize', [BsBookedRevenueController::class, 'recognize'])->name('bs.booked-revenue.recognize');
     Route::post('/business-support/booked-revenue/{bookedRevenue}/cancel',    [BsBookedRevenueController::class, 'cancel'])->name('bs.booked-revenue.cancel');
+    Route::get('/business-support/booked-revenue-control/bast', [BsBookedRevenueController::class, 'controlBast'])->name('bs.booked-revenue.control.bast');
+    Route::get('/business-support/booked-revenue-control/ajb',  [BsBookedRevenueController::class, 'controlAjb'])->name('bs.booked-revenue.control.ajb');
+    Route::get('/business-support/booked-revenue-control/fp',   [BsBookedRevenueController::class, 'controlFakturPajak'])->name('bs.booked-revenue.control.fp');
 
     // ── CONTRACTOR MANAGEMENT (modul mandiri; /contractor-management → hub) ──
     Route::redirect('/contractor-management', '/business-support/contractor-hub')->name('contractor.home');
