@@ -11,6 +11,7 @@ use App\Exceptions\BusinessRuleException;
 use App\Http\Controllers\Controller;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Carbon;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -59,12 +60,15 @@ class FixedAssetController extends Controller
 
         $v = $request->validate([
             'name'               => ['required', 'string', 'max:150'],
+            'quantity'           => ['nullable', 'string', 'max:32'],
             'category'           => ['required', 'in:bangunan,kendaraan,inventaris,tanah'],
             'acquisition_date'   => ['required', 'date'],
             'acquisition_cost'   => ['required', 'numeric', 'min:0.01'],
             'residual_value'     => ['nullable', 'numeric', 'min:0', 'lt:acquisition_cost'],
             'useful_life_months' => ['nullable', 'integer', 'min:0', 'max:1200'],
             'funding_account_id' => ['nullable', 'integer', 'exists:bs_accounts,id'],
+            'pic'                => ['nullable', 'string', 'max:100'],
+            'location'           => ['nullable', 'string', 'max:100'],
         ]);
 
         try {
@@ -191,5 +195,89 @@ class FixedAssetController extends Controller
 
         return redirect()->route('bs.fa.index')->with('success',
             "Penyusutan {$v['year']}/{$v['month']}: {$res['posted']} aset terposting (Rp ".number_format($res['total'], 0, ',', '.')."), {$res['skipped']} dilewati.");
+    }
+
+    /**
+     * Report Summary Aset — jadwal penyusutan garis lurus (persis lampiran):
+     * per kategori → per aset → per periode (tahunan lampau + bulanan tahun terpilih):
+     * Jumlah Bulan, Beban Penyusutan, Akumulasi, Nilai Buku + subtotal per kategori & grand total.
+     */
+    public function summary(Request $request): Response
+    {
+        abort_unless($request->user()?->canModule('bs'), 403);
+
+        $year   = (int) $request->integer('year', (int) now()->year);
+        $assets = BsFixedAsset::whereIn('status', ['active', 'fully_depreciated'])
+            ->orderBy('category')->orderBy('acquisition_date')->orderBy('id')->get();
+
+        // Periode: tahunan dari tahun perolehan terlama (maks 6 th ke belakang) s/d year-1, lalu bulanan Jan-Des year.
+        $minYear   = (int) ($assets->min(fn ($a) => (int) $a->acquisition_date->year) ?: $year);
+        $startYear = max($minYear, $year - 6);
+        $mn        = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
+        $periods   = [];
+        for ($y = $startYear; $y < $year; $y++) {
+            $periods[] = ['key' => "y{$y}", 'label' => "Tahun {$y}", 'end' => Carbon::create($y, 12, 1)->endOfMonth()];
+        }
+        for ($m = 1; $m <= 12; $m++) {
+            $periods[] = ['key' => "m{$year}-{$m}", 'label' => $mn[$m - 1]." {$year}", 'end' => Carbon::create($year, $m, 1)->endOfMonth()];
+        }
+        $pc = count($periods);
+
+        // Akumulasi & jumlah bulan penyusutan tercatat sampai akhir suatu periode.
+        $accumAt = function (BsFixedAsset $a, Carbon $end): array {
+            $monthly = $a->monthly_depreciation;
+            if ($monthly <= 0 || $a->acquisition_date->gt($end)) {
+                return ['months' => 0, 'accum' => 0.0];
+            }
+            $months = ($end->year - $a->acquisition_date->year) * 12 + ($end->month - $a->acquisition_date->month) + 1;
+            $months = max(0, min($months, (int) $a->useful_life_months));
+
+            return ['months' => $months, 'accum' => min(round($months * $monthly, 2), $a->depreciable_base)];
+        };
+        $blank = fn () => array_fill(0, $pc, ['expense' => 0.0, 'accum' => 0.0, 'book' => 0.0]);
+        $add   = function (array $agg, int $i, float $e, float $ac, float $bk): array {
+            $agg[$i] = ['expense' => $agg[$i]['expense'] + $e, 'accum' => $agg[$i]['accum'] + $ac, 'book' => $agg[$i]['book'] + $bk];
+
+            return $agg;
+        };
+
+        $groups = [];
+        $grandCost = 0.0; $grandCells = $blank(); $no = 0;
+        foreach (BsFixedAsset::CATEGORIES as $catKey => $catLabel) {
+            $catAssets = $assets->where('category', $catKey)->values();
+            if ($catAssets->isEmpty()) {
+                continue;
+            }
+            $rows = []; $subCost = 0.0; $subMonthly = 0.0; $subCells = $blank();
+            foreach ($catAssets as $a) {
+                $no++;
+                $cost = (float) $a->acquisition_cost;
+                $subCost += $cost; $grandCost += $cost; $subMonthly += $a->monthly_depreciation;
+                $cells = []; $prevAccum = 0.0; $prevMonths = 0;
+                foreach ($periods as $i => $p) {
+                    $at      = $accumAt($a, $p['end']);
+                    $expense = round($at['accum'] - $prevAccum, 2);
+                    $book    = round($cost - $at['accum'], 2);
+                    $cells[] = ['months' => max(0, $at['months'] - $prevMonths), 'expense' => $expense, 'accum' => $at['accum'], 'book' => $book];
+                    $subCells   = $add($subCells, $i, $expense, $at['accum'], $book);
+                    $grandCells = $add($grandCells, $i, $expense, $at['accum'], $book);
+                    $prevAccum = $at['accum']; $prevMonths = $at['months'];
+                }
+                $rows[] = [
+                    'no' => $no, 'name' => $a->name, 'quantity' => $a->quantity, 'asset_number' => $a->asset_number,
+                    'acquisition_date' => $a->acquisition_date->toDateString(), 'acquisition_cost' => $cost,
+                    'useful_life_months' => (int) $a->useful_life_months, 'pic' => $a->pic, 'location' => $a->location,
+                    'monthly' => $a->monthly_depreciation, 'cells' => $cells,
+                ];
+            }
+            $groups[] = ['category' => $catKey, 'label' => $catLabel, 'assets' => $rows, 'subtotal' => ['cost' => round($subCost, 2), 'monthly' => round($subMonthly, 2), 'cells' => $subCells]];
+        }
+
+        return Inertia::render('BusinessSupport/FixedAsset/Summary', [
+            'year'    => $year,
+            'periods' => array_map(fn ($p) => ['key' => $p['key'], 'label' => $p['label']], $periods),
+            'groups'  => $groups,
+            'grand'   => ['cost' => round($grandCost, 2), 'cells' => $grandCells],
+        ]);
     }
 }
