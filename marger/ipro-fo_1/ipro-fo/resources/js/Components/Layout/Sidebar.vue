@@ -87,8 +87,6 @@ const groups: { title: string; items: NavItem[] }[] = [
             { label: 'Overview',          icon: Briefcase,    href: 'bs.index',              permission: ['businesssupport.view', 'ap.*', 'ar.*', 'gl.*', 'cashbook.*', 'budget.*', 'contractor.*', 'cogs.*', 'tax.*', 'datacenter.*', 'bs.*'] },
             { label: 'Proyeksi Hutang/Piutang', icon: BookText, href: 'bs.projection', params: { mode: 'hutang' }, permission: ['businesssupport.view', 'ap.*', 'ar.*'] },
             { label: 'Account Receivable',icon: Coins,        href: 'bs.ar.index',           permission: ['businesssupport.view', 'ar.*'] },
-            { label: 'Booked Revenue',    icon: CircleDollarSign, href: 'bs.booked-revenue.index', permission: ['businesssupport.view', 'ar.*'] },
-            { label: 'Aset Tetap',        icon: Building,     href: 'bs.fa.index',           permission: ['businesssupport.view', 'bs.*'] },
             { label: 'Payroll',           icon: Banknote,    href: 'bs.payroll.index',      permission: ['businesssupport.view', 'bs.*'] },
             { label: 'Item / Stok',       icon: Boxes,        href: 'bs.items.index',        permission: ['businesssupport.view', 'bs.*'] },
             { label: 'FPB (Permintaan)',  icon: ClipboardList,href: 'bs.fpb.index',          permission: ['businesssupport.view', 'bs.*'] },
@@ -96,6 +94,35 @@ const groups: { title: string; items: NavItem[] }[] = [
             { label: 'Penerimaan',        icon: PackagePlus,  href: 'bs.receipt.index',      permission: ['businesssupport.view', 'bs.*'] },
             { label: 'Pengeluaran',       icon: PackageMinus, href: 'bs.issue.index',        permission: ['businesssupport.view', 'bs.*'] },
             { label: 'Kartu Stok',        icon: LayoutList,   href: 'bs.stockcard.index',    permission: ['businesssupport.view', 'bs.*'] },
+        ],
+    },
+    {
+        title: 'Booked Revenue',
+        items: [
+            { label: 'Booked Revenue', icon: CircleDollarSign, href: 'bs.booked-revenue.index', permission: ['businesssupport.view', 'ar.*'] },
+            { label: 'Control', icon: ClipboardList, permission: ['businesssupport.view', 'ar.*'], children: [
+                { label: 'Control BAST', href: 'bs.booked-revenue.control.bast' },
+                { label: 'Control AJB', href: 'bs.booked-revenue.control.ajb' },
+                { label: 'Control Faktur Pajak', href: 'bs.booked-revenue.control.fp' },
+            ] },
+        ],
+    },
+    {
+        title: 'Aset Tetap',
+        items: [
+            { label: 'Overview Aset', icon: Building, href: 'bs.fa.index', permission: ['businesssupport.view', 'bs.*'] },
+            { label: 'Master', icon: BookText, permission: ['businesssupport.view', 'bs.*'], children: [
+                { label: 'Master Aset Tetap', href: 'bs.fa.index' },
+            ] },
+            { label: 'Report / Query', icon: FileBarChart, permission: ['businesssupport.view', 'bs.*'], children: [
+                { label: 'Summary Aset', href: 'bs.fa.summary' },
+                { label: 'Penjualan Aset', href: 'bs.fa.index', params: { status: 'sold' } },
+            ] },
+            { label: 'Registrasi', icon: ClipboardList, permission: ['businesssupport.view', 'bs.*'], children: [
+                { label: 'Registrasi Aset', href: 'bs.fa.create' },
+                { label: 'Registrasi Penyusutan', href: 'bs.fa.run' },
+                { label: 'Upload Aset Massal', href: 'bs.bulk.form', params: { mode: 'asset' } },
+            ] },
         ],
     },
     {
