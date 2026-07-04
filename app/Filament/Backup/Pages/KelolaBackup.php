@@ -93,6 +93,40 @@ class KelolaBackup extends Page
                     }
                 }),
 
+            // Backup HANYA APP (file/kode + storage), tanpa database.
+            Action::make('backupFiles')
+                ->label('Backup App (file saja)')
+                ->icon('heroicon-o-folder-arrow-down')
+                ->color('gray')
+                ->requiresConfirmation()
+                ->modalDescription('Backup HANYA file aplikasi (kode + storage), tanpa database. Cocok bila hanya ingin snapshot berkas.')
+                ->action(function () {
+                    try {
+                        Artisan::call('backup:run', ['--only-files' => true]);
+                        Notification::make()->title('Backup app (file) selesai')->body('Snapshot file aplikasi dibuat (tanpa database).')->success()->send();
+                        $this->refreshList();
+                    } catch (\Throwable $e) {
+                        Notification::make()->title('Backup file gagal')->body($e->getMessage())->danger()->send();
+                    }
+                }),
+
+            // Backup HANYA database (FO + BO), tanpa file — lebih cepat & kecil.
+            Action::make('backupDb')
+                ->label('Backup DB saja')
+                ->icon('heroicon-o-circle-stack')
+                ->color('gray')
+                ->requiresConfirmation()
+                ->modalDescription('Backup HANYA database (FO + BO), tanpa file aplikasi. Lebih cepat & kecil.')
+                ->action(function () {
+                    try {
+                        Artisan::call('backup:run', ['--only-db' => true]);
+                        Notification::make()->title('Backup database selesai')->body('Snapshot database (jerp + ipro_bo) dibuat.')->success()->send();
+                        $this->refreshList();
+                    } catch (\Throwable $e) {
+                        Notification::make()->title('Backup DB gagal')->body($e->getMessage())->danger()->send();
+                    }
+                }),
+
             // Backup manual untuk gladi kotor — disimpan ke folder custom (dibuat otomatis).
             Action::make('backupGladi')
                 ->label('Backup Manual / Gladi')
