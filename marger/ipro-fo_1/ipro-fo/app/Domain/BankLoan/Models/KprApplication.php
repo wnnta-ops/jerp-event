@@ -25,6 +25,7 @@ class KprApplication extends Model
         'bank_partner_id', 'bank_product_id', 'plafon_requested', 'plafon_approved',
         'tenor_month', 'submitted_at', 'reviewed_at', 'status', 'reject_reason', 'handled_by',
         'decision', 'decided_at', // keputusan SP3K: lanjut/batal (gerbang ke akad)
+        'timeline', // cap waktu tiap tahap → Laporan Durasi Proses
     ];
 
     protected $casts = [
@@ -34,6 +35,7 @@ class KprApplication extends Model
         'decided_at'       => 'date',
         'plafon_requested' => 'decimal:2',
         'plafon_approved'  => 'decimal:2',
+        'timeline'         => 'array',
     ];
 
     public function booking(): BelongsTo  { return $this->belongsTo(\App\Domain\Sales\Booking\Models\Booking::class); }
