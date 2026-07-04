@@ -13,6 +13,10 @@ use Symfony\Component\Process\Process;
  * MENIMPA seluruh data DB saat ini dengan isi backup. Dipakai untuk alur
  * "gladi kotor": Buat Backup → gladi → backup:restore (DB balik ke titik backup).
  * Default membuat backup darurat (DB-only) lebih dulu sebagai jaring pengaman.
+ *
+ * MULTI-DB: satu backup bisa berisi beberapa dump (mis. jerp.sql = FO, ipro_bo.sql =
+ * BO). Tiap .sql dipetakan ke database-nya sendiri berdasar nama file (database_dump_
+ * filename_base = 'database'). Backup lama (1 .sql) tetap kompatibel → masuk ke 'jerp'.
  */
 class RestoreBackupCommand extends Command
 {
@@ -22,14 +26,23 @@ class RestoreBackupCommand extends Command
         {--force : Lewati konfirmasi interaktif}
         {--no-safety-backup : Lewati backup darurat sebelum restore}';
 
-    protected $description = 'Restore database dari file backup zip (MENIMPA data saat ini).';
+    protected $description = 'Restore database (FO + BO) dari file backup zip (MENIMPA data saat ini).';
 
     public function handle(): int
     {
         $disk = $this->option('disk') ?: (config('backup.backup.destination.disks')[0] ?? 'local');
         $path = $this->argument('path');
         $storage = Storage::disk($disk);
-        $dbName = (string) config('database.connections.mysql.database');
+
+        // Koneksi target yang mungkin ada di backup: FO 'mysql' (jerp) + BO 'ipro_bo'.
+        $targets = [];
+        foreach (['mysql', 'ipro_bo'] as $conn) {
+            $cfg = config("database.connections.{$conn}");
+            if (is_array($cfg) && ($cfg['driver'] ?? '') === 'mysql' && ! empty($cfg['database'])) {
+                $targets[$conn] = $cfg;
+            }
+        }
+        $dbNames = implode(', ', array_map(fn ($c) => $c['database'], $targets));
 
         if (! $storage->exists($path)) {
             $this->error("File backup tidak ditemukan: [{$disk}] {$path}");
@@ -37,7 +50,7 @@ class RestoreBackupCommand extends Command
             return self::FAILURE;
         }
 
-        if (! $this->option('force') && ! $this->confirm("Restore akan MENIMPA seluruh database '{$dbName}' dari {$path}. Lanjutkan?")) {
+        if (! $this->option('force') && ! $this->confirm("Restore akan MENIMPA database ({$dbNames}) dari {$path}. Lanjutkan?")) {
             $this->warn('Dibatalkan.');
 
             return self::FAILURE;
@@ -55,7 +68,7 @@ class RestoreBackupCommand extends Command
             }
         }
 
-        // Salin zip ke temp lokal (mendukung disk apa pun), lalu ekstrak db-dump .sql.
+        // Salin zip ke temp lokal (mendukung disk apa pun), lalu ekstrak SEMUA db-dump .sql.
         $tmpZip = tempnam(sys_get_temp_dir(), 'restore-zip-');
         file_put_contents($tmpZip, $storage->get($path));
 
@@ -67,15 +80,14 @@ class RestoreBackupCommand extends Command
             return self::FAILURE;
         }
 
-        $sqlEntry = null;
+        $sqlEntries = [];
         for ($i = 0; $i < $zip->numFiles; $i++) {
-            $name = $zip->getNameIndex($i);
-            if (preg_match('#db-dumps/.+\.sql$#i', $name) || preg_match('#\.sql$#i', $name)) {
-                $sqlEntry = $name;
-                break;
+            $name = (string) $zip->getNameIndex($i);
+            if (preg_match('#\.sql$#i', $name)) {
+                $sqlEntries[] = $name;
             }
         }
-        if ($sqlEntry === null) {
+        if (empty($sqlEntries)) {
             $zip->close();
             @unlink($tmpZip);
             $this->error('Backup tidak berisi dump database (.sql).');
@@ -83,33 +95,66 @@ class RestoreBackupCommand extends Command
             return self::FAILURE;
         }
 
-        $tmpSql = tempnam(sys_get_temp_dir(), 'restore-sql-');
-        file_put_contents($tmpSql, $zip->getFromName($sqlEntry));
+        // Pemetaan tiap .sql → koneksi target (dari nama database di nama file).
+        $restored = [];
+        $failed = [];
+        foreach ($sqlEntries as $entry) {
+            $base = strtolower(basename($entry));
+            $conn = null;
+            foreach ($targets as $c => $cfg) {
+                if (str_contains($base, strtolower((string) $cfg['database']))) {
+                    $conn = $c;
+                    break;
+                }
+            }
+            // Kompat backup lama (1 file, nama tak cocok) → default ke 'mysql' (jerp).
+            if ($conn === null) {
+                if (count($sqlEntries) === 1 && isset($targets['mysql'])) {
+                    $conn = 'mysql';
+                } else {
+                    $this->warn("Lewati {$entry} — tak cocok database mana pun.");
+
+                    continue;
+                }
+            }
+            $cfg = $targets[$conn];
+            $dbName = (string) $cfg['database'];
+
+            $tmpSql = tempnam(sys_get_temp_dir(), 'restore-sql-');
+            file_put_contents($tmpSql, $zip->getFromName($entry));
+
+            // Import via client mariadb (MYSQL_PWD agar password tak tampil di proses).
+            $cmd = sprintf(
+                'mariadb --host=%s --port=%s --user=%s --skip-ssl %s < %s',
+                escapeshellarg((string) $cfg['host']),
+                escapeshellarg((string) ($cfg['port'] ?? 3306)),
+                escapeshellarg((string) $cfg['username']),
+                escapeshellarg($dbName),
+                escapeshellarg($tmpSql),
+            );
+            $proc = Process::fromShellCommandline($cmd, base_path(), ['MYSQL_PWD' => (string) $cfg['password']], null, 1800);
+            $proc->run();
+            @unlink($tmpSql);
+
+            if ($proc->isSuccessful()) {
+                $restored[] = $dbName;
+                $this->info("✓ {$dbName} dipulihkan dari {$entry}");
+            } else {
+                $failed[] = $dbName;
+                $this->error("✗ Import {$dbName} gagal: ".trim($proc->getErrorOutput() ?: $proc->getOutput()));
+            }
+        }
+
         $zip->close();
-
-        // Import via client mariadb (MYSQL_PWD agar password tak tampil di proses).
-        $db = config('database.connections.mysql');
-        $cmd = sprintf(
-            'mariadb --host=%s --port=%s --user=%s --skip-ssl %s < %s',
-            escapeshellarg((string) $db['host']),
-            escapeshellarg((string) ($db['port'] ?? 3306)),
-            escapeshellarg((string) $db['username']),
-            escapeshellarg($dbName),
-            escapeshellarg($tmpSql),
-        );
-        $proc = Process::fromShellCommandline($cmd, base_path(), ['MYSQL_PWD' => (string) $db['password']], null, 1800);
-        $proc->run();
-
         @unlink($tmpZip);
-        @unlink($tmpSql);
 
-        if (! $proc->isSuccessful()) {
-            $this->error('Import gagal: '.trim($proc->getErrorOutput() ?: $proc->getOutput()));
+        if (! empty($failed)) {
+            $this->error('Restore ada yang GAGAL: '.implode(', ', $failed).'. Berhasil: '.(implode(', ', $restored) ?: '—'));
 
             return self::FAILURE;
         }
 
-        $this->info("Restore selesai dari {$path} → database '{$dbName}'.");
+        $this->info("Restore selesai dari {$path} → database: ".implode(', ', $restored).'.');
 
         return self::SUCCESS;
     }

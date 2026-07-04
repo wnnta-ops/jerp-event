@@ -241,4 +241,87 @@ class BookedRevenueController extends Controller
 
         return back()->with('success', "Booked Revenue {$bookedRevenue->br_number} dibatalkan — jurnal balik diposting.");
     }
+
+    // ── Control sub-modul: monitoring dokumen milestone Booked Revenue (BAST / AJB / Faktur Pajak) ──
+
+    /** Control BAST — daftar Berita Acara Serah Terima per booking. */
+    public function controlBast(Request $request): Response
+    {
+        abort_unless($request->user()?->canModule('ar'), 403);
+        $base = fn () => \App\Domain\Legal\Bast\Models\BastDocument::query();
+        $rows = $base()
+            ->with(['booking.customer:id,full_name,code', 'booking.unit:id,unit_code'])
+            ->when($request->input('status'), fn ($q, $s) => $q->where('status', $s))
+            ->when($request->input('search'), fn ($q, $s) => $q->where(fn ($w) => $w->where('bast_number', 'like', "%{$s}%")
+                ->orWhereHas('booking.customer', fn ($c) => $c->where('full_name', 'like', "%{$s}%")->orWhere('code', 'like', "%{$s}%"))
+                ->orWhereHas('booking.unit', fn ($u) => $u->where('unit_code', 'like', "%{$s}%"))))
+            ->latest('handed_over_at')->latest('id')->paginate(50)->withQueryString();
+        $rows->getCollection()->transform(fn ($r) => [
+            'id' => $r->id, 'number' => $r->bast_number, 'date' => $r->handed_over_at?->toDateString(),
+            'customer' => $r->booking?->customer?->full_name, 'unit' => $r->booking?->unit?->unit_code,
+            'status' => $r->status, 'extra' => null,
+        ]);
+
+        return $this->renderControl($request, 'bast', 'Control BAST', 'Berita Acara Serah Terima (serah terima unit)', null, $rows, $base());
+    }
+
+    /** Control AJB — daftar Akta Jual Beli per booking. */
+    public function controlAjb(Request $request): Response
+    {
+        abort_unless($request->user()?->canModule('ar'), 403);
+        $base = fn () => \App\Domain\Legal\Ajb\Models\AjbDocument::query();
+        $rows = $base()
+            ->with(['booking.customer:id,full_name,code', 'booking.unit:id,unit_code'])
+            ->when($request->input('status'), fn ($q, $s) => $q->where('status', $s))
+            ->when($request->input('search'), fn ($q, $s) => $q->where(fn ($w) => $w->where('ajb_number', 'like', "%{$s}%")
+                ->orWhere('notary_name', 'like', "%{$s}%")
+                ->orWhereHas('booking.customer', fn ($c) => $c->where('full_name', 'like', "%{$s}%")->orWhere('code', 'like', "%{$s}%"))
+                ->orWhereHas('booking.unit', fn ($u) => $u->where('unit_code', 'like', "%{$s}%"))))
+            ->latest('signed_at')->latest('id')->paginate(50)->withQueryString();
+        $rows->getCollection()->transform(fn ($r) => [
+            'id' => $r->id, 'number' => $r->ajb_number, 'date' => $r->signed_at?->toDateString(),
+            'customer' => $r->booking?->customer?->full_name, 'unit' => $r->booking?->unit?->unit_code,
+            'status' => $r->status, 'extra' => $r->notary_name,
+        ]);
+
+        return $this->renderControl($request, 'ajb', 'Control AJB', 'Akta Jual Beli (akta notaris)', 'Notaris', $rows, $base());
+    }
+
+    /** Control Faktur Pajak — daftar FP per customer/booking. */
+    public function controlFakturPajak(Request $request): Response
+    {
+        abort_unless($request->user()?->canModule('ar'), 403);
+        $base = fn () => \App\Domain\Finance\FakturPajak\Models\FakturPajak::query();
+        $rows = $base()
+            ->with(['customer:id,full_name,code', 'booking.unit:id,unit_code'])
+            ->when($request->input('status'), fn ($q, $s) => $q->where('status', $s))
+            ->when($request->input('search'), fn ($q, $s) => $q->where(fn ($w) => $w->where('fp_number', 'like', "%{$s}%")
+                ->orWhereHas('customer', fn ($c) => $c->where('full_name', 'like', "%{$s}%")->orWhere('code', 'like', "%{$s}%"))
+                ->orWhereHas('booking.unit', fn ($u) => $u->where('unit_code', 'like', "%{$s}%"))))
+            ->latest('issued_at')->latest('id')->paginate(50)->withQueryString();
+        $rows->getCollection()->transform(fn ($r) => [
+            'id' => $r->id, 'number' => $r->fp_number, 'date' => $r->issued_at?->toDateString(),
+            'customer' => $r->customer?->full_name, 'unit' => $r->booking?->unit?->unit_code,
+            'status' => $r->status, 'extra' => (float) $r->total,
+        ]);
+
+        return $this->renderControl($request, 'fp', 'Control Faktur Pajak', 'Faktur Pajak (DPP, PPN & total)', 'Nilai (Total)', $rows, $base(), true);
+    }
+
+    /** Render halaman control monitoring generik (dipakai BAST / AJB / Faktur Pajak). */
+    private function renderControl(Request $request, string $type, string $title, string $subtitle, ?string $extraLabel, $rows, $baseQuery, bool $extraIsMoney = false): Response
+    {
+        $byStatus = $baseQuery->selectRaw('status, COUNT(*) as c')->groupBy('status')->pluck('c', 'status');
+
+        return Inertia::render('BusinessSupport/BookedRevenue/Control', [
+            'type'         => $type,
+            'title'        => $title,
+            'subtitle'     => $subtitle,
+            'extraLabel'   => $extraLabel,
+            'extraIsMoney' => $extraIsMoney,
+            'rows'         => $rows,
+            'filters'      => $request->only(['search', 'status']),
+            'summary'      => ['total' => (int) $byStatus->sum(), 'byStatus' => $byStatus],
+        ]);
+    }
 }

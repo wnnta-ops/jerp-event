@@ -63,6 +63,12 @@ class FreeDpBalanceTest extends TestCase
         // DP terbayar tetap tampil sesuai jumlah bayar; DP3 tak lagi jadi baris DP (jadi UANG MASUK).
         $this->assertSame(5_600_000.0, (float) $kontrak->tagihan()->where('nama_tagihan', 'DP 1')->value('nilai'));
         $this->assertSame(0, $kontrak->tagihan()->where('nama_tagihan', 'DP 3')->count());
-        $this->assertGreaterThan(0, $kontrak->tagihan()->where('nama_tagihan', 'UANG MASUK')->value('nilai'));
+
+        // Pencairan KPR TETAP plafon awal (harga − DP gross 24,75jt − BF 3jt = 467,25jt),
+        // TIDAK menyerap selisih DP.
+        $this->assertEqualsWithDelta(467_250_000, (float) $kontrak->tagihan()->where('nama_tagihan', 'PENCAIRAN KPR')->value('nilai'), 0.5, 'Pencairan KPR harus tetap plafon awal');
+
+        // UANG MASUK = DP3 free (8,25jt) + selisih DP1/DP2 (2×2,65jt = 5,3jt) = 13,55jt.
+        $this->assertEqualsWithDelta(13_550_000, (float) $kontrak->tagihan()->where('nama_tagihan', 'UANG MASUK')->sum('nilai'), 0.5, 'UANG MASUK = DP3 free + selisih DP terbayar');
     }
 }

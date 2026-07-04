@@ -49,15 +49,7 @@ class GmcResource extends Resource
                 ->options(fn () => Customer::query()->limit(300)->pluck('full_name', 'id')),
             // Nama Gimmick diambil dari master "Kategori Gimmick" di BO (bs_gimmick_categories @ ipro_bo).
             Forms\Components\Select::make('nama')->label('Nama Gimmick')->required()->searchable()
-                ->options(function () {
-                    try {
-                        return \Illuminate\Support\Facades\DB::connection(config('ipro.connection', 'ipro_bo'))
-                            ->table('bs_gimmick_categories')->where('is_active', true)
-                            ->orderBy('name')->pluck('name', 'name')->toArray();
-                    } catch (\Throwable $e) {
-                        return [];
-                    }
-                })
+                ->options(fn () => self::gimmickOptions())
                 ->helperText('Diambil dari master Kategori Gimmick (BO → Setup → Kategori Gimmick).'),
             Forms\Components\TextInput::make('nilai')->label('Nilai / Biaya (Rp)')->numeric()->rupiah()->default(0)->required()
                 ->helperText('Biaya gimmick yang ditanggung developer — BUKAN tagihan customer.'),
@@ -80,7 +72,7 @@ class GmcResource extends Resource
             ->filters([
                 Tables\Filters\SelectFilter::make('status')->options(['DRAFT' => 'Draft', 'DIPROSES' => 'Diproses']),
             ])
-            ->headerActions([Tables\Actions\CreateAction::make()])
+            ->headerActions([Tables\Actions\CreateAction::make(), self::gmcMassalAction()])
             ->actions([
                 // Posting BO: kirim biaya gimmick ke antrian Posting Invoice BO (Sumber: GMC).
                 Tables\Actions\Action::make('postingBo')->label('Posting BO')->icon('heroicon-o-paper-airplane')->color('success')
@@ -108,11 +100,75 @@ class GmcResource extends Resource
                 Tables\Actions\EditAction::make(),
                 Tables\Actions\DeleteAction::make(),
             ])
+            ->bulkActions([
+                // Posting BO massal — kirim GMC terpilih ke Posting Invoice BO sekaligus (anti dobel).
+                Tables\Actions\BulkAction::make('postingBoBulk')->label('Posting BO (terpilih)')
+                    ->icon('heroicon-o-paper-airplane')->color('success')->requiresConfirmation()
+                    ->modalHeading('Posting BO GMC terpilih')
+                    ->modalDescription('Kirim GMC terpilih ke Posting Invoice BO (Sumber: GMC). Yang sudah DIPROSES atau nilai 0 dilewati (tak dobel-posting).')
+                    ->action(function (\Illuminate\Support\Collection $records): void {
+                        $ok = 0;
+                        $skip = 0;
+                        $fail = 0;
+                        foreach ($records as $r) {
+                            if ($r->status === 'DIPROSES' || (float) $r->nilai <= 0) {
+                                $skip++;
+
+                                continue;
+                            }
+                            try {
+                                app(\App\Modules\BO\IproBridge\Services\IproApPoster::class)->queueGmc(
+                                    (string) $r->no_gmc,
+                                    (float) $r->nilai,
+                                    $r->customer_id ? (int) $r->customer_id : null,
+                                    $r->customer?->full_name,
+                                    $r->tgl?->toDateString(),
+                                    trim('Gimmick '.$r->nama.($r->kontrak ? ' — SPR '.$r->kontrak->no_kontrak : '')),
+                                );
+                                $r->update(['status' => 'DIPROSES']);
+                                $ok++;
+                            } catch (\Throwable $e) {
+                                $fail++;
+                            }
+                        }
+                        \Filament\Notifications\Notification::make()
+                            ->title('Posting BO massal: '.$ok.' terkirim'.($skip ? ', '.$skip.' dilewati' : '').($fail ? ', '.$fail.' gagal' : ''))
+                            ->{$fail ? 'warning' : 'success'}()->send();
+                    })
+                    ->deselectRecordsAfterCompletion(),
+            ])
             ->defaultSort('id', 'desc');
+    }
+
+    /** Opsi Nama Gimmick dari master Kategori Gimmick BO (bs_gimmick_categories @ ipro_bo). */
+    private static function gimmickOptions(): array
+    {
+        try {
+            return \Illuminate\Support\Facades\DB::connection(config('ipro.connection', 'ipro_bo'))
+                ->table('bs_gimmick_categories')->where('is_active', true)
+                ->orderBy('name')->pluck('name', 'name')->toArray();
+        } catch (\Throwable $e) {
+            return [];
+        }
+    }
+
+    /**
+     * Tombol "GMC Massal" — buka HALAMAN repeater (bukan modal table-action) agar
+     * Select searchable/live di dalam repeater TIDAK kena "Livewire Entangle Error"
+     * (mountedTableActionsData) yang membuat tambah/hapus baris jadi dobel.
+     */
+    private static function gmcMassalAction(): Tables\Actions\Action
+    {
+        return Tables\Actions\Action::make('gmcMassal')
+            ->label('GMC Massal')->icon('heroicon-o-squares-plus')->color('warning')
+            ->url(fn () => static::getUrl('massal'));
     }
 
     public static function getPages(): array
     {
-        return ['index' => Pages\ListGmcs::route('/')];
+        return [
+            'index' => Pages\ListGmcs::route('/'),
+            'massal' => Pages\GmcMassal::route('/massal'),
+        ];
     }
 }

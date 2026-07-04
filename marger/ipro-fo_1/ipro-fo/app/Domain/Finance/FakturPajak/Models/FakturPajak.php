@@ -30,4 +30,5 @@ class FakturPajak extends Model
 
     public function items(): HasMany { return $this->hasMany(FakturPajakItem::class); }
     public function customer(): BelongsTo { return $this->belongsTo(Customer::class, 'customer_id'); }
+    public function booking(): BelongsTo { return $this->belongsTo(\App\Domain\Sales\Booking\Models\Booking::class); }
 }

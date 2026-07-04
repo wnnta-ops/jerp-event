@@ -263,6 +263,19 @@ class KprApplicationController extends Controller
             'app'                 => $kpr,
             'identity'            => $identity,
             'siblings'            => $siblings,
+            // Semua Proses KPR nasabah ini (untuk "Tambah SP3K Lain" → pilih & lanjutkan hingga SP3K).
+            'customerApps'        => KprApplication::where('customer_id', $kpr->customer_id)
+                ->with('bank:id,name')->orderBy('id')
+                ->get(['id', 'application_number', 'bank_partner_id', 'status', 'plafon_requested', 'plafon_approved'])
+                ->map(fn ($x) => [
+                    'id'           => $x->id,
+                    'number'       => $x->application_number,
+                    'bank'         => $x->bank?->name,
+                    'status'       => $x->status->value,
+                    'status_label' => $x->status->label(),
+                    'plafon'       => (float) ($x->plafon_approved ?: $x->plafon_requested),
+                    'is_current'   => (int) $x->id === (int) $kpr->id,
+                ]),
             'retentionCategories' => $categories,
             'bankTerms'           => $effectiveTerms,
             // CTA "Buka Approval Retensi" hanya untuk user yg punya akses Cash Book.
@@ -288,7 +301,7 @@ class KprApplicationController extends Controller
         } catch (InvalidStateTransitionException $e) {
             return back()->with('error', 'Status KPR saat ini tidak bisa di-submit.');
         }
-        $kpr->update(['status' => KprStatus::Submitted, 'submitted_at' => now()->toDateString()]);
+        $kpr->update(['status' => KprStatus::Submitted, 'submitted_at' => now()->toDateString(), 'timeline' => $this->stampTimeline($kpr, 'draft')]);
 
         // #144: redirect Inertia (bukan Inertia::location) agar prop `app.status` ter-refresh & stepper maju.
         return redirect()->route('kpr.show', $kpr)->with('success', 'KPR submitted ke bank.');
@@ -303,7 +316,7 @@ class KprApplicationController extends Controller
         } catch (InvalidStateTransitionException $e) {
             return back()->with('error', 'Status KPR saat ini tidak bisa lanjut ke SP3K.');
         }
-        $kpr->update(['status' => KprStatus::Sp3kIssued]);
+        $kpr->update(['status' => KprStatus::Sp3kIssued, 'timeline' => $this->stampTimeline($kpr, 'submitted')]);
 
         return redirect()->route('kpr.show', $kpr)->with('success', 'Lanjut ke tahap SP3K.');
     }
@@ -334,7 +347,7 @@ class KprApplicationController extends Controller
         } catch (InvalidStateTransitionException $e) {
             return back()->with('error', 'Status KPR saat ini tidak bisa lanjut ke Akad.');
         }
-        $kpr->update(['status' => KprStatus::AkadDone]);
+        $kpr->update(['status' => KprStatus::AkadDone, 'timeline' => $this->stampTimeline($kpr, 'si')]);
 
         return redirect()->route('kpr.show', $kpr)->with('success', 'Lanjut ke Proses Akad.');
     }
@@ -351,40 +364,74 @@ class KprApplicationController extends Controller
         } catch (InvalidStateTransitionException $e) {
             return back()->with('error', 'Status KPR saat ini tidak bisa lanjut ke Pencairan.');
         }
-        $kpr->update(['status' => KprStatus::Disbursed]);
+        $kpr->update(['status' => KprStatus::Disbursed, 'timeline' => $this->stampTimeline($kpr, 'akad')]);
 
         return redirect()->route('kpr.show', $kpr)->with('success', 'Lanjut ke tahap Pencairan.');
     }
 
-    /** Cetak Surat Instruksi (SI): ringkasan Nama, Tipe Unit, ACC KPR, Free DP 5%. */
+    /** Catat cap waktu tahap yang SELESAI (untuk Laporan Durasi Proses). Idempotent — cap pertama dipertahankan. */
+    private function stampTimeline(KprApplication $kpr, string $stage): array
+    {
+        $tl = $kpr->timeline ?? [];
+        $tl[$stage] ??= now()->toIso8601String();
+
+        return $tl;
+    }
+
+    /** Cetak SI = Standing Instruction (surat instruksi auto-debet ke bank) sesuai format standar bank. */
     public function siPrint(Request $request, KprApplication $kpr): HttpResponse
     {
         abort_unless($request->user()?->can('bankloan.application.view'), 403);
 
-        $kpr->load(['customer:id,full_name', 'bank:id,name', 'booking.unit.unitType']);
-        $e  = fn ($v) => htmlspecialchars((string) ($v ?? ''), ENT_QUOTES);
-        $rp = fn ($v) => 'Rp '.number_format((float) $v, 2, ',', '.');
-        $accKpr = (float) ($kpr->plafon_approved ?: $kpr->plafon_requested);
-        $price  = (float) ($kpr->booking?->unit?->current_price ?: $kpr->booking?->unit?->base_price ?: 0);
-        $freeDp = round(0.05 * $price, 2);
-        $tipe   = $kpr->booking?->unit?->unitType?->name ?? $kpr->booking?->unit?->unit_code ?? '—';
+        $kpr->load(['customer', 'bank:id,name']);
+        $c = $kpr->customer;
+        $e = fn ($v) => htmlspecialchars((string) ($v ?? ''), ENT_QUOTES);
+        $addr = trim((string) implode(', ', array_filter([
+            $c?->address_line, $c?->address_rt_rw, $c?->kelurahan, $c?->kecamatan, $c?->city, $c?->province, $c?->postal_code,
+        ])), ', ');
+        $fill = '................................................';
+        $val = fn ($v) => ($v !== null && $v !== '') ? $e($v) : $fill;
 
-        $html = '<!DOCTYPE html><html lang="id"><head><meta charset="utf-8"><title>Surat Instruksi '.$e($kpr->application_number).'</title>'
-            .'<style>@page{size:A4;margin:2cm} body{font-family:Arial,Helvetica,sans-serif;color:#111;font-size:13px} '
-            .'h1{font-size:20px;margin:0 0 2px;text-align:center;letter-spacing:1px} .sub{text-align:center;color:#555;margin:0 0 18px} '
-            .'table{width:100%;border-collapse:collapse;margin-top:10px} td{padding:9px 12px;border:1px solid #ccc} '
-            .'td.k{width:38%;color:#555;background:#f7f7f7;font-weight:bold} .no{font-family:monospace} '
-            .'.ttd{margin-top:64px;display:flex;justify-content:space-between} .ttd div{width:40%;text-align:center} '
-            .'.print{margin:0 0 16px;text-align:right} button{padding:8px 16px;font-size:13px;cursor:pointer} @media print{.print{display:none}}</style></head><body>'
+        $rows = [
+            ['Nama Lengkap', $val($c?->full_name)],
+            ['No. Identitas (KTP/Paspor)', $val($c?->id_number)],
+            ['Alamat Lengkap', $val($addr)],
+            ['No. Handphone', $val($c?->phone)],
+            ['Nomor Rekening', $fill],
+            ['Sumber Dana', $fill],
+            ['Tujuan Penggunaan Dana', $val('Angsuran KPR '.$kpr->application_number)],
+        ];
+        $transfer = [
+            ['Waktu Pelaksanaan', 'Setiap bulan, tanggal '.$fill.' (apabila hari libur, agar dilaksanakan pada hari kerja berikutnya)'],
+            ['Jangka waktu transfer', 'Bulan ......... Tahun ......... s/d Bulan ......... Tahun .........'],
+            ['Jumlah', 'Rp '.$fill],
+            ['Terbilang', $fill],
+            ['No. Rekening Penerima <sup>**)</sup>', $fill],
+            ['Atas Nama', $fill],
+        ];
+        $tr = fn ($r) => '<tr><td class="lbl">'.$r[0].'</td><td class="c">:</td><td>'.$r[1].'</td></tr>';
+
+        $html = '<!DOCTYPE html><html lang="id"><head><meta charset="utf-8"><title>Standing Instruction '.$e($kpr->application_number).'</title>'
+            .'<style>@page{size:A4;margin:2cm} body{font-family:Arial,Helvetica,sans-serif;color:#111;font-size:12px;line-height:1.5} '
+            .'h1{font-size:16px;text-align:center;letter-spacing:1px;margin:0 0 22px;font-weight:bold} '
+            .'table.f{border-collapse:collapse;margin:6px 0} table.f td{padding:2px 4px;vertical-align:top} td.lbl{width:210px} td.c{width:10px} '
+            .'ol{margin:6px 0;padding-left:18px} li{margin-bottom:6px} p{margin:10px 0} '
+            .'.recipient{margin-bottom:16px} .sign{margin-top:36px;text-align:right} .sign .box{display:inline-block;text-align:center;min-width:240px} '
+            .'.notes{margin-top:30px;font-size:10px;color:#333} .notes div{margin:1px 0} '
+            .'.print{text-align:right;margin-bottom:10px} button{padding:8px 16px;font-size:13px;cursor:pointer} @media print{.print{display:none}}</style></head><body>'
             .'<div class="print"><button onclick="window.print()">Cetak</button></div>'
-            .'<h1>SURAT INSTRUKSI</h1><p class="sub">No. '.$e($kpr->application_number).' &middot; '.$e($kpr->bank?->name).'</p>'
-            .'<table>'
-            .'<tr><td class="k">Nama</td><td>'.$e($kpr->customer?->full_name).'</td></tr>'
-            .'<tr><td class="k">Tipe Unit</td><td>'.$e($tipe).'</td></tr>'
-            .'<tr><td class="k">ACC KPR</td><td class="no">'.$e($rp($accKpr)).'</td></tr>'
-            .'<tr><td class="k">Free DP 5%</td><td class="no">'.$e($rp($freeDp)).'</td></tr>'
-            .'</table>'
-            .'<div class="ttd"><div>Hormat kami,<br><br><br><br>__________________</div><div>Menyetujui,<br><br><br><br>__________________</div></div>'
+            .'<h1>STANDING INSTRUCTION</h1>'
+            .'<div class="recipient">Kepada Yth,<br><b>'.$e($kpr->bank?->name ?: 'Bank').'</b><br>Kantor Cabang / KCP '.$fill.'</div>'
+            .'<p>Yang bertandatangan di bawah ini :</p>'
+            .'<table class="f">'.implode('', array_map($tr, $rows)).'</table>'
+            .'<p>Mohon agar dilakukan pemindahbukuan/transfer dana dari rekening saya/kami<sup>*)</sup> tersebut diatas sebagai berikut :</p>'
+            .'<table class="f">'.implode('', array_map($tr, $transfer)).'</table>'
+            .'<p>Dengan adanya <i>Standing Instruction</i> ini, maka :</p>'
+            .'<ol><li>Bank dibebaskan dari segala akibat yang mungkin timbul dari pelaksanaan pemindahbukuan berdasarkan <i>Standing Instruction</i> ini;</li>'
+            .'<li>Saya/Kami<sup>*)</sup> meyakini atas kebenaran data dan informasi pada <i>Standing Instruction</i> ini.</li></ol>'
+            .'<p>Demikian surat ini Saya buat untuk dipergunakan sebagaimana mestinya dan akan berakhir sesuai jangka waktu atau setelah ada pemberitahuan tertulis dari Saya.</p>'
+            .'<div class="sign"><div class="box">'.$fill.', ......./......./..........<br><br>Pemohon,<br><br><span style="font-size:10px;color:#666">Materai &amp; Stempel<sup>***)</sup></span><br><br><br>( '.$e($c?->full_name ?: '.................................').' )</div></div>'
+            .'<div class="notes"><div><sup>*)</sup> Coret yang tidak perlu</div><div><sup>**)</sup> Rekening penerima dapat lebih dari 1 (satu)</div><div><sup>***)</sup> Untuk instansi/perusahaan dibuat pada kop surat instansi/perusahaan dan dibubuhkan stempel</div></div>'
             .'</body></html>';
 
         return response($html)->header('Content-Type', 'text/html');
@@ -394,7 +441,7 @@ class KprApplicationController extends Controller
     {
         abort_unless($request->user()?->can('bankloan.sp3k.register'), 403);
 
-        // Catat data SP3K pada TAHAP SP3K (status sudah 'sp3k'); setelah tersimpan, lanjut ke SI via tombol.
+        // Catat data SP3K pada TAHAP SP3K lalu LANGSUNG lanjut ke SI (satu proses, satu tombol).
         // Field Nomor SP3K, Bunga, Tenor, Berlaku Hingga dihilangkan dari form (per permintaan user).
         $data = $request->validate([
             'sp3k_date'       => 'required|date',
@@ -407,12 +454,16 @@ class KprApplicationController extends Controller
 
         try {
             $action->execute($kpr, $data);
+            // Satu proses: SP3K tercatat → langsung maju ke tahap SI (Surat Instruksi).
+            if ($kpr->status === KprStatus::Sp3kIssued) {
+                $kpr->update(['status' => KprStatus::Si, 'timeline' => $this->stampTimeline($kpr, 'sp3k')]);
+            }
         } catch (InvalidStateTransitionException | BusinessRuleException $e) {
             return back()->with('error', 'Status KPR saat ini tidak memungkinkan registrasi SP3K.');
         }
 
-        // #144: redirect Inertia agar prop `app.status` ter-refresh; SP3K tercatat → tombol "Lanjut ke SI" muncul.
-        return redirect()->route('kpr.show', $kpr)->with('success', "SP3K {$data['sp3k_number']} dicatat — lanjut ke Surat Instruksi.");
+        // #144: redirect Inertia agar prop `app.status` ter-refresh & langsung ke tahap SI.
+        return redirect()->route('kpr.show', $kpr)->with('success', "SP3K {$data['sp3k_number']} dicatat — lanjut ke Surat Instruksi (SI).");
     }
 
     /**
@@ -469,9 +520,9 @@ class KprApplicationController extends Controller
     {
         abort_unless($request->user()?->can('bankloan.sp3k.register'), 403);
 
-        $allowed = [KprStatus::Submitted->value, KprStatus::InReview->value, KprStatus::Sp3kIssued->value, KprStatus::Si->value];
+        $allowed = [KprStatus::Submitted->value, KprStatus::InReview->value, KprStatus::Sp3kIssued->value];
         if (! in_array($kpr->status->value, $allowed, true)) {
-            return back()->with('error', 'Reject hanya bisa dilakukan saat KPR berstatus Submitted / SP3K / SI.');
+            return back()->with('error', 'Reject hanya bisa dilakukan saat KPR berstatus Submitted / SP3K.');
         }
 
         $v = $request->validate(['reason' => ['nullable', 'string', 'max:500']]);
@@ -580,6 +631,9 @@ class KprApplicationController extends Controller
         // otomatis arahkan ke modul Approval Retensi (filter ke customer KPR ini). Hanya bila user
         // punya akses Cash Book; selain itu kembali ke detail KPR seperti biasa.
         $kpr->refresh();
+        if ($kpr->status === KprStatus::Active) {
+            $kpr->update(['timeline' => $this->stampTimeline($kpr, 'disbursed')]);
+        }
         $isLunas        = $kpr->status === KprStatus::Active;
         $pendingRetensi = $kpr->realizations()->whereHas('retentions', fn ($q) => $q->whereNull('journal_id'))->exists();
         if ($isLunas && $pendingRetensi && $request->user()?->canModule('cashbook')) {

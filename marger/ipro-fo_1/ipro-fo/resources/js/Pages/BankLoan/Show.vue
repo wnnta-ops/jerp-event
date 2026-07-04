@@ -1,14 +1,15 @@
 <script setup lang="ts">
 import { Link, router, useForm } from '@inertiajs/vue3';
 import { ref, computed, watch } from 'vue';
-import { CheckCircle2, Plus } from 'lucide-vue-next';
+import { CheckCircle2, Plus, Printer } from 'lucide-vue-next';
 import Badge from '@/Components/UI/Badge.vue';
 import Button from '@/Components/UI/Button.vue';
 import Input from '@/Components/UI/Input.vue';
 import MoneyInput from '@/Components/UI/MoneyInput.vue';
 
-const props = defineProps<{ app: any; identity?: any; siblings?: Array<any>; retentionCategories: Array<any>; bankTerms: Record<string, number>; canApproveRetensi?: boolean; hasRetention?: boolean; si?: any }>();
+const props = defineProps<{ app: any; identity?: any; siblings?: Array<any>; customerApps?: Array<any>; retentionCategories: Array<any>; bankTerms: Record<string, number>; canApproveRetensi?: boolean; hasRetention?: boolean; si?: any }>();
 const a = props.app;
+const showOtherApps = ref(false);
 
 // #item4 — keputusan Lanjut/Batal (gerbang ke akad). Salinan reaktif lokal agar kolom berubah SEKETIKA (optimistic).
 const sibRows = ref<any[]>((props.siblings ?? []).map((s: any) => ({ ...s })));
@@ -50,6 +51,34 @@ function fmtRp(v: number | null | undefined) {
     return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Number(v ?? 0));
 }
 function fmtDate(d: string | null | undefined) { return d ? new Date(d).toLocaleDateString('id-ID', { day: '2-digit', month: 'long', year: 'numeric' }) : '—'; }
+function fmtDateTime(iso: string | null | undefined) { return iso ? new Date(iso).toLocaleString('id-ID', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—'; }
+function fmtDuration(ms: number | null): string {
+    if (ms === null || ms < 0) return '—';
+    const s = Math.floor(ms / 1000);
+    const d = Math.floor(s / 86400), h = Math.floor((s % 86400) / 3600), m = Math.floor((s % 3600) / 60);
+    if (d > 0) return `${d} hari ${h} jam`;
+    if (h > 0) return `${h} jam ${m} mnt`;
+    if (m > 0) return `${m} mnt`;
+    return `${s} dtk`;
+}
+// Laporan durasi proses: cap waktu tiap tahap selesai (a.timeline) + selisih dari tahap sebelumnya & dari dibuat.
+const prosesLaporan = computed(() => {
+    const tl: Record<string, string> = a.timeline ?? {};
+    const order = ['draft', 'submitted', 'sp3k', 'si', 'akad', 'disbursed'];
+    const stageLbl: Record<string, string> = { draft: 'Draft', submitted: 'Submitted', sp3k: 'SP3K', si: 'SI (Standing Instruction)', akad: 'Akad', disbursed: 'Pencairan' };
+    const rows: Array<{ key: string; label: string; at: string; durMs: number | null }> = [];
+    const start = a.created_at ? new Date(a.created_at).getTime() : null;
+    let prev: number | null = start;
+    for (const key of order) {
+        const at = tl[key];
+        if (!at) continue;
+        const t = new Date(at).getTime();
+        rows.push({ key, label: stageLbl[key], at, durMs: prev !== null ? (t - prev) : null });
+        prev = t;
+    }
+    const totalMs = (rows.length && start !== null) ? (new Date(rows[rows.length - 1].at).getTime() - start) : null;
+    return { rows, totalMs, start: a.created_at };
+});
 
 // #66: ringkasan pencairan bertahap. Retensi yang DITAHAN (held) MENGURANGI pencairan & MENAMBAH outstanding.
 const plafon = computed(() => Number(a.plafon_approved) || 0);
@@ -88,7 +117,7 @@ const editSp3k = ref(false);
 const editAkad = ref(false);
 const editingRecord = computed(() => (a.status === 'sp3k' && editSp3k.value) || (a.status === 'akad' && editAkad.value));
 
-const sp3kForm = useForm<any>({ sp3k_date: new Date().toISOString().slice(0, 10), approved_amount: a.plafon_requested });
+const sp3kForm = useForm<any>({ sp3k_date: a.sp3k?.sp3k_date ? String(a.sp3k.sp3k_date).slice(0, 10) : new Date().toISOString().slice(0, 10), approved_amount: a.sp3k?.approved_amount ?? a.plafon_requested });
 // Default Akad mengikuti SP3K yang dipilih: tanggal = tgl SP3K, tempat = Kantor bank (keduanya bisa diubah).
 const akadForm = useForm<any>({ akad_at: a.sp3k?.sp3k_date ? String(a.sp3k.sp3k_date).slice(0, 10) : new Date().toISOString().slice(0, 10), place: a.bank?.name ? 'Kantor ' + a.bank.name : '' });
 const disbForm = useForm<any>({ disbursed_at: new Date().toISOString().slice(0, 10), disbursed_amount: 0, dajam_lines: [{ retention_amount: 0, retention_note: '' }], retention_category_id: null, bank_account_id: null, ssp_bphtb_date: new Date().toISOString().slice(0, 10), ssp_bphtb_amount: 0 });
@@ -162,9 +191,8 @@ function openEditSp3k() {
 }
 function cancelEditSp3k() { editSp3k.value = false; }
 function submitSp3k() {
-    const opts = { onSuccess: () => window.location.reload() }; // hard refresh penuh setelah simpan
-    if (a.sp3k) sp3kForm.put(route('kpr.sp3k.update', a.id), opts);   // edit
-    else sp3kForm.post(route('kpr.sp3k', a.id), opts);                // daftar baru → status lanjut ke SP3K
+    // Satu proses: catat SP3K + langsung lanjut ke SI (status dimajukan server).
+    sp3kForm.post(route('kpr.sp3k', a.id), { onSuccess: () => window.location.reload() });
 }
 function deleteSp3k() { if (confirm('Hapus SP3K? Status kembali ke Submitted.')) router.delete(route('kpr.sp3k.destroy', a.id), { onSuccess: () => window.location.reload() }); }
 
@@ -265,8 +293,8 @@ const stageView = computed<StageView>(() => {
     if (st === 'sp3k') return {
         title: 'Rincian SP3K — Surat Persetujuan Terbit',
         badgeVariant: 'info', badgeLabel: 'SP3K Issued',
-        intro: a.sp3k ? 'SP3K telah terbit — plafon resmi disetujui. Lanjut ke Surat Instruksi (SI).' : 'Isi data SP3K (Tanggal & Plafon Disetujui) di formulir di bawah.',
-        edit: a.sp3k ? 'sp3k' : null,
+        intro: 'Isi data SP3K (Tanggal & Plafon Disetujui), lalu Simpan untuk langsung lanjut ke Surat Instruksi (SI).',
+        edit: null,
         rows: [
             { label: 'No. SP3K', value: a.sp3k?.sp3k_number, mono: true },
             { label: 'Tanggal SP3K', value: fmtDate(a.sp3k?.sp3k_date) },
@@ -353,7 +381,7 @@ const stageView = computed<StageView>(() => {
 
 // Form tiap tahap tampil pada TAHAP-nya sendiri (sinkron dengan stepper).
 // SP3K: form saat belum ada record (atau saat Edit). Akad: idem.
-const showSp3kForm = computed(() => a.status === 'sp3k' && (!a.sp3k || editSp3k.value));
+const showSp3kForm = computed(() => a.status === 'sp3k');
 const showAkadForm = computed(() => a.status === 'akad' && (!a.akad || editAkad.value));
 // #167: form pencairan tampil di tahap Pencairan (disbursed/active) agar retensi/DAJAM masih bisa dicatat,
 // walau pencairan sudah 100% (canDisburse false). Input Nominal Cair-nya yang di-gate canDisburse.
@@ -421,6 +449,7 @@ const historyNodes = computed<HistoryNode[]>(() => {
             </div>
             <!-- Kanan atas hanya badge status; aksi tiap tahap pakai tombol "Simpan & Lanjut" di dalam form. -->
             <div class="flex shrink-0 items-center gap-2">
+                <button type="button" @click="showOtherApps = !showOtherApps" class="inline-flex items-center gap-1.5 rounded-lg border border-primary-300 px-3 py-1.5 text-xs font-semibold text-primary-700 hover:bg-primary-50 dark:border-primary-700 dark:text-primary-300"><Plus class="h-3.5 w-3.5" /> Tambah SP3K Lain</button>
                 <Badge v-if="currentDecision" :variant="decisionVariant(currentDecision)" dot>{{ decisionLabel(currentDecision) }}</Badge>
                 <Badge dot>{{ a.status }}</Badge>
             </div>
@@ -435,6 +464,33 @@ const historyNodes = computed<HistoryNode[]>(() => {
                     <span>{{ stepLabels[s] }}</span>
                     <span v-if="i < steps.length - 1" class="text-neutral-300">→</span>
                 </div>
+            </div>
+        </div>
+
+        <!-- Tambah SP3K Lain: semua Proses KPR nasabah → pilih untuk dibuka & dilanjutkan hingga SP3K -->
+        <div v-if="showOtherApps" class="card p-4">
+            <div class="mb-1 flex flex-wrap items-center justify-between gap-2">
+                <h3 class="text-sm font-semibold">Proses KPR Nasabah — {{ a.customer?.full_name }}</h3>
+                <Link :href="route('kpr.create')" class="inline-flex items-center gap-1 text-xs font-semibold text-primary-600 hover:underline"><Plus class="h-3.5 w-3.5" /> Buat Proses KPR Baru</Link>
+            </div>
+            <p class="mb-3 text-xs text-neutral-500">Semua pengajuan KPR nasabah ini (lintas bank). Pilih salah satu untuk dibuka &amp; dilanjutkan hingga tahap SP3K.</p>
+            <div class="overflow-x-auto">
+                <table class="w-full text-sm">
+                    <thead class="text-left text-xs uppercase text-neutral-500"><tr><th class="py-2">No. KPR</th><th class="py-2">Bank</th><th class="py-2">Status</th><th class="py-2 text-right">Plafon</th><th class="py-2 text-center">Aksi</th></tr></thead>
+                    <tbody class="divide-y divide-neutral-200 dark:divide-neutral-800">
+                        <tr v-for="app in (customerApps ?? [])" :key="app.id" :class="app.is_current ? 'bg-primary-50/40 dark:bg-primary-900/20' : ''">
+                            <td class="py-2 font-mono text-xs">{{ app.number }}<span v-if="app.is_current" class="ml-1 text-[10px] text-primary-600">(ini)</span></td>
+                            <td class="py-2">{{ app.bank ?? '—' }}</td>
+                            <td class="py-2"><Badge size="sm" variant="info">{{ app.status_label }}</Badge></td>
+                            <td class="py-2 text-right font-mono">{{ fmtRp(app.plafon) }}</td>
+                            <td class="py-2 text-center">
+                                <span v-if="app.is_current" class="text-xs text-neutral-400">—</span>
+                                <a v-else :href="route('kpr.show', app.id)" class="inline-flex items-center gap-1 rounded border border-primary-300 px-2.5 py-1 text-xs font-medium text-primary-700 hover:bg-primary-50 dark:border-primary-700">Buka →</a>
+                            </td>
+                        </tr>
+                        <tr v-if="!(customerApps ?? []).length"><td colspan="5" class="py-3 text-center text-neutral-400">Belum ada Proses KPR lain.</td></tr>
+                    </tbody>
+                </table>
             </div>
         </div>
 
@@ -502,8 +558,8 @@ const historyNodes = computed<HistoryNode[]>(() => {
                 <div class="flex shrink-0 items-center gap-2">
                     <Badge :variant="stageView.badgeVariant">{{ stageView.badgeLabel }}</Badge>
                     <!-- Tolak proses KPR pada tahap Submitted / SP3K -->
-                    <a v-if="a.status === 'si'" :href="route('kpr.si-print', a.id)" target="_blank" class="text-xs px-2 py-1 rounded border border-primary-300 text-primary-600 hover:bg-primary-50 dark:border-primary-700">Cetak</a>
-                    <button v-if="['submitted', 'in_review', 'sp3k', 'si'].includes(a.status)" type="button" @click="reject" class="text-xs px-2 py-1 rounded border border-danger-300 text-danger-600 hover:bg-danger-50 dark:border-danger-700">Tolak Proses KPR</button>
+                    <a v-if="a.status === 'si'" :href="route('kpr.si-print', a.id)" target="_blank" class="inline-flex items-center gap-2 rounded-lg bg-primary-600 px-5 py-2.5 text-base font-bold text-white shadow-sm hover:bg-primary-700"><Printer class="h-5 w-5" /> Cetak</a>
+                    <button v-if="['submitted', 'in_review', 'sp3k'].includes(a.status)" type="button" @click="reject" class="text-xs px-2 py-1 rounded border border-danger-300 text-danger-600 hover:bg-danger-50 dark:border-danger-700">Tolak Proses KPR</button>
                     <!-- Edit/Hapus record milik tahap aktif (SP3K / Akad) -->
                     <template v-if="stageView.edit === 'sp3k' && !editSp3k">
                         <button class="text-xs px-2 py-1 rounded border border-neutral-300 hover:bg-neutral-50 dark:border-neutral-700" @click="openEditSp3k">Edit</button>
@@ -651,7 +707,7 @@ const historyNodes = computed<HistoryNode[]>(() => {
 
             <!-- Daftar SP3K (saat Submitted) atau Edit SP3K (saat tahap SP3K) -->
             <div v-if="showSp3kForm" id="next-step-form" class="mt-5 border-t border-neutral-200 dark:border-neutral-800 pt-5">
-                <h3 class="font-semibold mb-3">{{ a.sp3k ? 'Edit SP3K' : 'Daftarkan SP3K' }}</h3>
+                <h3 class="font-semibold mb-3">Daftarkan SP3K</h3>
                 <form @submit.prevent="submitSp3k" class="space-y-3">
                     <div class="grid gap-3 sm:grid-cols-2">
                         <Input v-model="sp3kForm.sp3k_date" type="date" label="Tanggal SP3K" required />
@@ -660,12 +716,8 @@ const historyNodes = computed<HistoryNode[]>(() => {
                             <MoneyInput v-model="sp3kForm.approved_amount" />
                         </div>
                     </div>
-                    <p v-if="!a.sp3k" class="text-xs text-neutral-400">Nomor SP3K dibuat otomatis oleh sistem. Setelah disimpan, klik "Lanjut ke SI".</p>
-                    <div v-if="editSp3k" class="flex justify-end gap-2">
-                        <Button variant="secondary" @click="cancelEditSp3k">Batal</Button>
-                        <Button type="submit" :loading="sp3kForm.processing">Simpan Perubahan</Button>
-                    </div>
-                    <Button v-else type="submit" size="lg" block :loading="sp3kForm.processing">Simpan SP3K</Button>
+                    <p class="text-xs text-neutral-400">Nomor SP3K dibuat otomatis oleh sistem. Setelah disimpan, langsung lanjut ke Surat Instruksi (SI).</p>
+                    <Button type="submit" size="lg" block :loading="sp3kForm.processing">Simpan SP3K &amp; Lanjut ke SI →</Button>
                 </form>
             </div>
 
@@ -673,12 +725,6 @@ const historyNodes = computed<HistoryNode[]>(() => {
             <div v-if="a.status === 'submitted' || a.status === 'in_review'" id="next-step-form" class="mt-5 border-t border-neutral-200 dark:border-neutral-800 pt-5">
                 <p class="mb-3 text-sm text-neutral-500">Identitas nasabah sudah tampil di atas. Klik Lanjutkan untuk masuk ke tahap SP3K.</p>
                 <Button size="lg" block variant="primary" @click="proceedSubmitted">Lanjutkan → SP3K</Button>
-            </div>
-
-            <!-- SP3K tercatat → Lanjut ke Surat Instruksi (SI) -->
-            <div v-if="a.status === 'sp3k' && a.sp3k && !editSp3k" id="next-step-form" class="mt-5 border-t border-neutral-200 dark:border-neutral-800 pt-5">
-                <p class="mb-3 text-sm text-neutral-500">SP3K sudah tercatat. Lanjut ke <strong>Surat Instruksi (SI)</strong>.</p>
-                <Button size="lg" block variant="primary" @click="proceedSp3k">Lanjut ke SI →</Button>
             </div>
 
             <!-- SI (Surat Instruksi) → Lanjut ke Proses Akad -->
@@ -822,6 +868,39 @@ const historyNodes = computed<HistoryNode[]>(() => {
                     </div>
                 </li>
             </ol>
+        </div>
+
+        <!-- LAPORAN DURASI PROSES (seperti pada Inisiasi KPR) -->
+        <div v-if="prosesLaporan.rows.length" class="card p-6">
+            <h2 class="mb-1 text-lg font-bold">Laporan Durasi Proses</h2>
+            <p class="mb-3 text-xs text-neutral-500">Waktu penyelesaian tiap tahap &amp; lama dari satu proses ke proses berikutnya.</p>
+            <div class="overflow-x-auto">
+                <table class="w-full text-sm">
+                    <thead class="bg-neutral-50 dark:bg-neutral-800"><tr class="text-left text-xs uppercase text-neutral-500">
+                        <th class="px-3 py-2">Tahap</th>
+                        <th class="px-3 py-2">Selesai pada</th>
+                        <th class="px-3 py-2 text-right">Durasi dari tahap sebelumnya</th>
+                    </tr></thead>
+                    <tbody class="divide-y divide-neutral-200 dark:divide-neutral-800">
+                        <tr v-if="prosesLaporan.start" class="text-neutral-500">
+                            <td class="px-3 py-2 italic">Mulai — Proses KPR dibuat</td>
+                            <td class="px-3 py-2">{{ fmtDateTime(prosesLaporan.start) }}</td>
+                            <td class="px-3 py-2 text-right text-neutral-300">—</td>
+                        </tr>
+                        <tr v-for="row in prosesLaporan.rows" :key="row.key">
+                            <td class="px-3 py-2 font-medium">{{ row.label }}</td>
+                            <td class="px-3 py-2">{{ fmtDateTime(row.at) }}</td>
+                            <td class="px-3 py-2 text-right font-mono">{{ fmtDuration(row.durMs) }}</td>
+                        </tr>
+                    </tbody>
+                    <tfoot v-if="prosesLaporan.totalMs !== null" class="border-t-2 border-neutral-300 bg-neutral-50 dark:border-neutral-700 dark:bg-neutral-800">
+                        <tr class="font-bold">
+                            <td class="px-3 py-2.5" colspan="2">Total durasi proses</td>
+                            <td class="px-3 py-2.5 text-right font-mono text-primary-600">{{ fmtDuration(prosesLaporan.totalMs) }}</td>
+                        </tr>
+                    </tfoot>
+                </table>
+            </div>
         </div>
     </div>
 </template>

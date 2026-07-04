@@ -37,6 +37,7 @@ final class FixedAssetService
             $asset = BsFixedAsset::create([
                 'asset_number'       => $this->nextNumber($data['acquisition_date']),
                 'name'               => $data['name'],
+                'quantity'           => $data['quantity'] ?? null,
                 'category'           => $data['category'],
                 'acquisition_date'   => $data['acquisition_date'],
                 'acquisition_cost'   => $cost,
@@ -47,6 +48,8 @@ final class FixedAssetService
                 'accum_account_id'   => $accId($map['accum']),
                 'expense_account_id' => $accId($map['expense']),
                 'status'             => 'active',
+                'pic'                => $data['pic'] ?? null,
+                'location'           => $data['location'] ?? null,
                 'created_by'         => $userId,
             ]);
 
