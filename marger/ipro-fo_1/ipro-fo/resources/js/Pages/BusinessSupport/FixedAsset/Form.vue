@@ -7,8 +7,8 @@ import Button from '@/Components/UI/Button.vue';
 defineProps<{ categories: Record<string, string>; fundingAccounts: Array<any> }>();
 const today = new Date().toISOString().slice(0, 10);
 const form = useForm<any>({
-    name: '', category: 'inventaris', acquisition_date: today, acquisition_cost: 0,
-    residual_value: 0, useful_life_months: 48, funding_account_id: '',
+    name: '', quantity: '1 UNIT', category: 'inventaris', acquisition_date: today, acquisition_cost: 0,
+    residual_value: 0, useful_life_months: 48, funding_account_id: '', pic: '', location: '',
 });
 
 const monthly = computed(() => {
@@ -28,12 +28,15 @@ const inputCls = 'h-9 w-full rounded-lg border border-neutral-300 bg-white px-3 
         <form @submit.prevent="submit" class="space-y-4">
             <div class="card grid gap-4 p-5 md:grid-cols-2">
                 <div class="md:col-span-2"><label class="mb-1 block text-xs font-medium text-neutral-500">Nama Aset *</label><input v-model="form.name" required placeholder="mis. Toyota Avanza B 1234 ABC" :class="inputCls" /><p v-if="form.errors.name" class="mt-1 text-xs text-danger-500">{{ form.errors.name }}</p></div>
+                <div><label class="mb-1 block text-xs font-medium text-neutral-500">Jumlah</label><input v-model="form.quantity" placeholder="mis. 1 UNIT / 1 SET" :class="inputCls" /></div>
                 <div><label class="mb-1 block text-xs font-medium text-neutral-500">Kategori *</label><select v-model="form.category" :class="inputCls"><option v-for="(label, val) in categories" :key="val" :value="val">{{ label }}</option></select></div>
                 <div><label class="mb-1 block text-xs font-medium text-neutral-500">Tgl Perolehan *</label><input v-model="form.acquisition_date" type="date" required :class="inputCls" /></div>
                 <div><label class="mb-1 block text-xs font-medium text-neutral-500">Harga Perolehan *</label><input v-model.number="form.acquisition_cost" type="number" step="1" min="1" required :class="[inputCls,'text-right font-mono']" /><p v-if="form.errors.acquisition_cost" class="mt-1 text-xs text-danger-500">{{ form.errors.acquisition_cost }}</p></div>
                 <div><label class="mb-1 block text-xs font-medium text-neutral-500">Nilai Residu</label><input v-model.number="form.residual_value" type="number" step="1" min="0" :class="[inputCls,'text-right font-mono']" /><p v-if="form.errors.residual_value" class="mt-1 text-xs text-danger-500">{{ form.errors.residual_value }}</p></div>
                 <div><label class="mb-1 block text-xs font-medium text-neutral-500">Umur Ekonomis (bulan) <span v-if="form.category==='tanah'" class="text-neutral-400">— tanah tidak disusutkan</span></label><input v-model.number="form.useful_life_months" type="number" step="1" min="0" max="1200" :disabled="form.category==='tanah'" :class="[inputCls,'text-right']" /></div>
                 <div><label class="mb-1 block text-xs font-medium text-neutral-500">Penyusutan / bulan</label><div class="flex h-9 items-center justify-end rounded-lg bg-neutral-100 px-3 font-mono text-sm dark:bg-neutral-800">{{ fmtRp(monthly) }}</div></div>
+                <div><label class="mb-1 block text-xs font-medium text-neutral-500">PIC</label><input v-model="form.pic" placeholder="mis. GA / SPV Finance" :class="inputCls" /></div>
+                <div><label class="mb-1 block text-xs font-medium text-neutral-500">Lokasi</label><input v-model="form.location" placeholder="mis. Office / Site / Mobile" :class="inputCls" /></div>
                 <div class="md:col-span-2"><label class="mb-1 block text-xs font-medium text-neutral-500">Sumber Dana (jurnal perolehan — opsional)</label><select v-model="form.funding_account_id" :class="inputCls"><option value="">— tanpa jurnal perolehan (aset sudah tercatat) —</option><option v-for="a in fundingAccounts" :key="a.id" :value="a.id">{{ a.code }} - {{ a.name }}</option></select><p class="mt-1 text-[11px] text-neutral-400">Bila dipilih: Dr Aset Tetap · Cr sumber dana.</p></div>
             </div>
             <div class="flex gap-2">
