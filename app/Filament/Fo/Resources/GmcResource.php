@@ -152,54 +152,23 @@ class GmcResource extends Resource
         }
     }
 
-    /** Tombol "GMC Massal" — buat banyak GMC sekaligus lewat repeater baris (Tgl, SPR, Customer read-only, Gimmick, Nilai). */
+    /**
+     * Tombol "GMC Massal" — buka HALAMAN repeater (bukan modal table-action) agar
+     * Select searchable/live di dalam repeater TIDAK kena "Livewire Entangle Error"
+     * (mountedTableActionsData) yang membuat tambah/hapus baris jadi dobel.
+     */
     private static function gmcMassalAction(): Tables\Actions\Action
     {
         return Tables\Actions\Action::make('gmcMassal')
             ->label('GMC Massal')->icon('heroicon-o-squares-plus')->color('warning')
-            ->modalHeading('Buat GMC Massal')->modalWidth('7xl')->modalSubmitActionLabel('Buat Semua')
-            ->form([
-                Forms\Components\Repeater::make('rows')->label('Daftar GMC')
-                    ->schema([
-                        Forms\Components\DatePicker::make('tgl')->label('Tgl')->default(now())->required(),
-                        Forms\Components\Select::make('kontrak_id')->label('SPR / Kontrak')->searchable()->live()->required()
-                            ->options(fn () => Kontrak::with(['customer', 'unit'])->latest('id')->limit(300)->get()
-                                ->mapWithKeys(fn ($k) => [$k->id => trim($k->no_kontrak.' — '.($k->unit?->kode_unit ?? ''), ' —')])),
-                        // Customer read-only — otomatis dari SPR yang dipilih di baris ini.
-                        Forms\Components\Placeholder::make('customer_display')->label('Customer')
-                            ->content(fn (Forms\Get $get) => ($id = $get('kontrak_id'))
-                                ? (Kontrak::with('customer')->find($id)?->customer?->full_name ?? '—') : '—'),
-                        Forms\Components\Select::make('nama')->label('Nama Gimmick')->searchable()->required()
-                            ->options(fn () => self::gimmickOptions()),
-                        Forms\Components\TextInput::make('nilai')->label('Nilai / Biaya (Rp)')->numeric()->rupiah()->default(0)->required(),
-                    ])
-                    ->columns(5)->defaultItems(1)->addActionLabel('+ Tambah baris')->reorderable(false)
-                    ->helperText('Customer otomatis dari SPR (read-only). Tambah baris untuk banyak GMC sekaligus.'),
-            ])
-            ->action(function (array $data): void {
-                $n = 0;
-                foreach ($data['rows'] ?? [] as $row) {
-                    if (empty($row['kontrak_id']) || empty($row['nama'])) {
-                        continue;
-                    }
-                    $k = Kontrak::find($row['kontrak_id']);
-                    Gmc::create([
-                        'tgl' => $row['tgl'] ?? now(),
-                        'kontrak_id' => $row['kontrak_id'],
-                        'customer_id' => $k?->customer_id,
-                        'nama' => $row['nama'],
-                        'nilai' => $row['nilai'] ?? 0,
-                        'status' => 'DRAFT',
-                    ]);
-                    $n++;
-                }
-                \Filament\Notifications\Notification::make()->success()
-                    ->title($n.' GMC dibuat')->body('GMC massal tersimpan (status DRAFT). Lakukan Posting BO bila perlu.')->send();
-            });
+            ->url(fn () => static::getUrl('massal'));
     }
 
     public static function getPages(): array
     {
-        return ['index' => Pages\ListGmcs::route('/')];
+        return [
+            'index' => Pages\ListGmcs::route('/'),
+            'massal' => Pages\GmcMassal::route('/massal'),
+        ];
     }
 }
