@@ -1,18 +1,29 @@
 <script setup lang="ts">
 import { ref } from 'vue';
 import { router, Link } from '@inertiajs/vue3';
-import { ArrowLeft, Table2 } from 'lucide-vue-next';
+import { ArrowLeft, Table2, FileSpreadsheet } from 'lucide-vue-next';
 import EmptyState from '@/Components/UI/EmptyState.vue';
+import SearchSelect from '@/Components/UI/SearchSelect.vue';
 
 const props = defineProps<{
     year: number;
     periods: Array<{ key: string; label: string }>;
     groups: Array<any>;
     grand: { cost: number; cells: Array<{ expense: number; accum: number; book: number }> };
+    categories: Record<string, string>;
+    filters: { date_from?: string; date_to?: string; category?: string; search?: string };
 }>();
 
 const year = ref(props.year);
-function reload() { router.get(route('bs.fa.summary'), { year: year.value }, { preserveState: true, replace: true }); }
+const cat = ref(props.filters?.category ?? '');
+const dateFrom = ref(props.filters?.date_from ?? '');
+const dateTo = ref(props.filters?.date_to ?? '');
+const search = ref(props.filters?.search ?? '');
+const catOptions = Object.entries(props.categories).map(([id, label]) => ({ id, label }));
+function params() { return { year: year.value, category: cat.value || undefined, date_from: dateFrom.value || undefined, date_to: dateTo.value || undefined, search: search.value || undefined }; }
+function reload() { router.get(route('bs.fa.summary'), params(), { preserveState: true, replace: true }); }
+function exportXls() { window.location.href = route('bs.fa.summary.export', params()); }
+const inputCls = 'h-9 rounded-lg border border-neutral-300 bg-white px-3 text-sm dark:border-neutral-700 dark:bg-neutral-900';
 function n(v: number) { return Number(v ?? 0).toLocaleString('id-ID', { maximumFractionDigits: 0 }); }
 function fmtDate(d: string) { return d ? new Date(d).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'; }
 function life(m: number) { return m > 0 ? (m % 12 === 0 ? (m / 12) + ' Tahun' : m + ' Bln') : '—'; }
@@ -22,12 +33,19 @@ const td = 'px-2 py-1.5 whitespace-nowrap';
 <template>
     <div class="space-y-4">
         <Link :href="route('bs.fa.index')" class="inline-flex items-center gap-2 text-sm text-neutral-500 hover:text-neutral-800 dark:hover:text-neutral-200"><ArrowLeft class="h-4 w-4" /> Aset Tetap</Link>
-        <div class="flex flex-wrap items-center justify-between gap-3">
-            <div>
-                <h1 class="flex items-center gap-2 text-2xl font-bold"><Table2 class="h-6 w-6 text-primary-600" /> Summary Aset — Jadwal Penyusutan</h1>
-                <p class="text-sm text-neutral-500">Penyusutan garis lurus per kategori: tahunan (lampau) + bulanan {{ year }}. Nilai buku negatif = telah lewat masa manfaat.</p>
-            </div>
-            <div><label class="mb-1 block text-xs font-medium text-neutral-500">Tahun (detail bulanan)</label><input v-model.number="year" @change="reload" type="number" class="h-9 w-28 rounded-lg border border-neutral-300 bg-white px-3 text-sm dark:border-neutral-700 dark:bg-neutral-900" /></div>
+        <div>
+            <h1 class="flex items-center gap-2 text-2xl font-bold"><Table2 class="h-6 w-6 text-primary-600" /> Summary Aset — Jadwal Penyusutan</h1>
+            <p class="text-sm text-neutral-500">Penyusutan garis lurus per kategori: tahunan (lampau) + bulanan {{ year }}. Nilai buku negatif = telah lewat masa manfaat.</p>
+        </div>
+
+        <div class="card flex flex-wrap items-end gap-3 p-4">
+            <div><label class="mb-1 block text-xs font-medium text-neutral-500">Tahun (detail bulanan)</label><input v-model.number="year" type="number" :class="[inputCls, 'w-28']" /></div>
+            <div class="min-w-[12rem]"><label class="mb-1 block text-xs font-medium text-neutral-500">Kategori</label><SearchSelect v-model="cat" :options="catOptions" placeholder="Semua kategori" /></div>
+            <div><label class="mb-1 block text-xs font-medium text-neutral-500">Tgl Perolehan (dari)</label><input v-model="dateFrom" type="date" :class="inputCls" /></div>
+            <div><label class="mb-1 block text-xs font-medium text-neutral-500">s/d</label><input v-model="dateTo" type="date" :class="inputCls" /></div>
+            <div class="min-w-[10rem] flex-1"><label class="mb-1 block text-xs font-medium text-neutral-500">Cari</label><input v-model="search" placeholder="No. / nama aset…" :class="[inputCls, 'w-full']" @keyup.enter="reload" /></div>
+            <button @click="reload" class="h-9 rounded-lg bg-primary-600 px-5 text-sm font-semibold text-white hover:bg-primary-700">Tampilkan</button>
+            <button @click="exportXls" class="inline-flex h-9 items-center gap-1.5 rounded-lg border border-emerald-300 bg-emerald-50 px-3 text-sm font-medium text-emerald-700 hover:bg-emerald-100 dark:border-emerald-700/50 dark:bg-emerald-900/30 dark:text-emerald-300"><FileSpreadsheet class="h-4 w-4" /> Excel</button>
         </div>
 
         <div v-if="groups.length" class="card overflow-x-auto p-0">

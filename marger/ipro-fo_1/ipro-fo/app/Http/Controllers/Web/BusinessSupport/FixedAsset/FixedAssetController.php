@@ -17,29 +17,122 @@ use Inertia\Response;
 
 class FixedAssetController extends Controller
 {
+    /** Label status aset (dipakai overview & report). */
+    private const STATUSES = ['active' => 'Aktif', 'fully_depreciated' => 'Habis Susut', 'sold' => 'Terjual', 'disposed' => 'Dihapus'];
+
+    /** Overview Aset — ringkasan seluruh modul Aset Tetap + daftar aset (filter per-kolom di client). */
     public function index(Request $request): Response
     {
         abort_unless($request->user()?->canModule('bs'), 403);
 
-        $rows = BsFixedAsset::query()
-            ->when($request->input('category'), fn ($q, $v) => $q->where('category', $v))
-            ->when($request->input('status'), fn ($q, $v) => $q->where('status', $v))
-            ->when($request->input('search'), fn ($q, $s) => $q->where(fn ($w) => $w->where('asset_number', 'like', "%{$s}%")->orWhere('name', 'like', "%{$s}%")))
-            ->latest('acquisition_date')->latest('id')
-            ->paginate(50)->withQueryString();
+        $assets = BsFixedAsset::orderBy('category')->latest('acquisition_date')->latest('id')->get();
 
-        $rows->getCollection()->transform(fn ($a) => array_merge($a->toArray(), ['book_value' => $a->book_value, 'monthly_depreciation' => $a->monthly_depreciation]));
+        $rows = $assets->map(fn ($a) => [
+            'id' => $a->id, 'asset_number' => $a->asset_number, 'name' => $a->name,
+            'category' => $a->category, 'category_label' => BsFixedAsset::CATEGORIES[$a->category] ?? $a->category,
+            'acquisition_date' => $a->acquisition_date?->toDateString(), 'acquisition_cost' => (float) $a->acquisition_cost,
+            'accumulated_depreciation' => (float) $a->accumulated_depreciation, 'book_value' => $a->book_value,
+            'status' => $a->status, 'pic' => $a->pic, 'location' => $a->location,
+        ])->values();
+
+        $cost  = (float) $assets->sum(fn ($a) => (float) $a->acquisition_cost);
+        $accum = (float) $assets->sum(fn ($a) => (float) $a->accumulated_depreciation);
+
+        // Ringkasan per kategori.
+        $byCategory = [];
+        foreach (BsFixedAsset::CATEGORIES as $k => $label) {
+            $grp = $assets->where('category', $k);
+            if ($grp->isEmpty()) {
+                continue;
+            }
+            $c  = (float) $grp->sum(fn ($a) => (float) $a->acquisition_cost);
+            $ac = (float) $grp->sum(fn ($a) => (float) $a->accumulated_depreciation);
+            $byCategory[] = ['key' => $k, 'label' => $label, 'count' => $grp->count(), 'cost' => $c, 'accum' => $ac, 'book' => $c - $ac];
+        }
+
+        // Ringkasan per status.
+        $byStatus = [];
+        foreach (self::STATUSES as $k => $label) {
+            $grp = $assets->where('status', $k);
+            $byStatus[] = ['key' => $k, 'label' => $label, 'count' => $grp->count(), 'cost' => (float) $grp->sum(fn ($a) => (float) $a->acquisition_cost)];
+        }
+
+        $year = (int) now()->year;
 
         return Inertia::render('BusinessSupport/FixedAsset/Index', [
             'assets'     => $rows,
             'categories' => BsFixedAsset::CATEGORIES,
-            'filters'    => $request->only(['category', 'status', 'search']),
+            'statuses'   => self::STATUSES,
+            'byCategory' => $byCategory,
+            'byStatus'   => $byStatus,
             'summary'    => [
-                'cost'       => (float) BsFixedAsset::sum('acquisition_cost'),
-                'accum'      => (float) BsFixedAsset::sum('accumulated_depreciation'),
-                'book_value' => (float) BsFixedAsset::sum('acquisition_cost') - (float) BsFixedAsset::sum('accumulated_depreciation'),
+                'count'         => $assets->count(),
+                'cost'          => $cost,
+                'accum'         => $accum,
+                'book_value'    => $cost - $accum,
+                'dep_this_year' => (float) \App\Domain\BusinessSupport\Models\BsDepreciationEntry::where('period_year', $year)->sum('amount'),
+                'dep_year'      => $year,
+                'sold_count'    => $assets->where('status', 'sold')->count(),
+                'sold_proceeds' => (float) $assets->where('status', 'sold')->sum(fn ($a) => (float) $a->disposal_proceeds),
+                'disposed_count'=> $assets->where('status', 'disposed')->count(),
             ],
         ]);
+    }
+
+    /** Report Penjualan/Pelepasan Aset — aset terjual/dihapus + laba/rugi, filter tanggal pelepasan. */
+    public function penjualan(Request $request): Response
+    {
+        abort_unless($request->user()?->canModule('bs'), 403);
+        $rows = $this->penjualanRows($request);
+
+        return Inertia::render('BusinessSupport/FixedAsset/Penjualan', [
+            'rows'       => $rows,
+            'categories' => BsFixedAsset::CATEGORIES,
+            'filters'    => $request->only(['date_from', 'date_to', 'category']),
+            'total'      => [
+                'count'    => $rows->count(),
+                'cost'     => round($rows->sum('cost'), 2),
+                'book'     => round($rows->sum('book'), 2),
+                'proceeds' => round($rows->sum('proceeds'), 2),
+                'gain'     => round($rows->sum(fn ($r) => (float) ($r['gain'] ?? 0)), 2),
+            ],
+        ]);
+    }
+
+    private function penjualanRows(Request $request)
+    {
+        return BsFixedAsset::whereIn('status', ['sold', 'disposed'])
+            ->when($request->input('category'), fn ($q, $v) => $q->where('category', $v))
+            ->when($request->input('date_from'), fn ($q, $d) => $q->whereDate('disposed_date', '>=', $d))
+            ->when($request->input('date_to'), fn ($q, $d) => $q->whereDate('disposed_date', '<=', $d))
+            ->orderByDesc('disposed_date')->orderByDesc('id')->get()
+            ->map(function ($a) {
+                $book     = round((float) $a->acquisition_cost - (float) $a->accumulated_depreciation, 2);
+                $proceeds = (float) $a->disposal_proceeds;
+
+                return [
+                    'id' => $a->id, 'asset_number' => $a->asset_number, 'name' => $a->name,
+                    'category' => $a->category, 'category_label' => BsFixedAsset::CATEGORIES[$a->category] ?? $a->category,
+                    'acquisition_date' => $a->acquisition_date?->toDateString(), 'cost' => (float) $a->acquisition_cost,
+                    'accum' => (float) $a->accumulated_depreciation, 'book' => $book,
+                    'disposed_date' => $a->disposed_date?->toDateString(), 'disposal_type' => $a->disposal_type ?? $a->status,
+                    'proceeds' => $proceeds, 'gain' => $a->status === 'sold' ? round($proceeds - $book, 2) : null,
+                    'status' => $a->status,
+                ];
+            })->values();
+    }
+
+    /** Export Excel Penjualan Aset (mengikuti filter). */
+    public function penjualanExport(Request $request): \Illuminate\Http\Response
+    {
+        abort_unless($request->user()?->canModule('bs'), 403);
+        $rows = $this->penjualanRows($request)->map(fn ($r) => [
+            $r['asset_number'], $r['name'], $r['category_label'], $r['acquisition_date'], $r['cost'], $r['accum'], $r['book'],
+            $r['disposed_date'], $r['disposal_type'] === 'sold' || $r['status'] === 'sold' ? 'Jual' : 'Hapus', $r['proceeds'], $r['gain'],
+        ]);
+
+        return $this->xls('Penjualan Aset Tetap',
+            ['No. Aset', 'Nama', 'Kategori', 'Tgl Perolehan', 'Harga', 'Akumulasi', 'Nilai Buku', 'Tgl Lepas', 'Jenis', 'Hasil Jual', 'Laba/(Rugi)'], $rows);
     }
 
     public function create(Request $request): Response
@@ -205,9 +298,94 @@ class FixedAssetController extends Controller
     public function summary(Request $request): Response
     {
         abort_unless($request->user()?->canModule('bs'), 403);
+        $d = $this->computeSchedule($request);
 
+        return Inertia::render('BusinessSupport/FixedAsset/Summary', [
+            'year'       => $d['year'],
+            'periods'    => array_map(fn ($p) => ['key' => $p['key'], 'label' => $p['label']], $d['periods']),
+            'groups'     => $d['groups'],
+            'grand'      => $d['grand'],
+            'categories' => BsFixedAsset::CATEGORIES,
+            'filters'    => $request->only(['date_from', 'date_to', 'category', 'search']),
+        ]);
+    }
+
+    /** Export Excel Summary Aset — jadwal penyusutan diratakan (flatten) per periode. */
+    public function summaryExport(Request $request): \Illuminate\Http\Response
+    {
+        abort_unless($request->user()?->canModule('bs'), 403);
+        $d = $this->computeSchedule($request);
+
+        $header = ['No', 'Nama Aset', 'Jumlah', 'Nomer', 'Tanggal', 'Harga', 'Masa Manfaat (bln)', 'PIC', 'Lokasi', 'Peny./Bulan'];
+        foreach ($d['periods'] as $p) {
+            $header[] = $p['label'].' - Jml Bln';
+            $header[] = $p['label'].' - Beban';
+            $header[] = $p['label'].' - Akumulasi';
+            $header[] = $p['label'].' - Nilai Buku';
+        }
+        $nc = count($header);
+
+        $rows = [];
+        foreach ($d['groups'] as $g) {
+            $cat = array_fill(0, $nc, ''); $cat[1] = $g['label']; $rows[] = $cat;
+            foreach ($g['assets'] as $a) {
+                $r = [$a['no'], $a['name'], $a['quantity'], $a['asset_number'], $a['acquisition_date'], $a['acquisition_cost'], $a['useful_life_months'], $a['pic'], $a['location'], $a['monthly']];
+                foreach ($a['cells'] as $c) {
+                    $r[] = $c['months'] ?: ''; $r[] = $c['expense'] ?: ''; $r[] = $c['accum'] ?: ''; $r[] = $c['book'];
+                }
+                $rows[] = $r;
+            }
+            $st = array_fill(0, $nc, ''); $st[1] = 'SUB TOTAL '.$g['label']; $st[5] = $g['subtotal']['cost']; $st[9] = $g['subtotal']['monthly'];
+            $i = 10;
+            foreach ($g['subtotal']['cells'] as $c) { $st[$i + 1] = $c['expense'] ?: ''; $st[$i + 2] = $c['accum'] ?: ''; $st[$i + 3] = $c['book']; $i += 4; }
+            $rows[] = $st;
+        }
+        $gr = array_fill(0, $nc, ''); $gr[1] = 'GRAND TOTAL'; $gr[5] = $d['grand']['cost'];
+        $i = 10;
+        foreach ($d['grand']['cells'] as $c) { $gr[$i + 1] = $c['expense'] ?: ''; $gr[$i + 2] = $c['accum'] ?: ''; $gr[$i + 3] = $c['book']; $i += 4; }
+        $rows[] = $gr;
+
+        return $this->xls('Summary Aset - Jadwal Penyusutan '.$d['year'], $header, $rows);
+    }
+
+    /** Bangun file .xls (HTML-table) kompatibel Excel. @param array<int,array<int,mixed>> $rows */
+    private function xls(string $title, array $header, $rows): \Illuminate\Http\Response
+    {
+        $e = fn ($v) => htmlspecialchars((string) ($v ?? ''), ENT_QUOTES, 'UTF-8');
+        $h = '<table border="1"><tr style="background:#0f766e;color:#fff">';
+        foreach ($header as $c) {
+            $h .= '<th>'.$e($c).'</th>';
+        }
+        $h .= '</tr>';
+        foreach ($rows as $r) {
+            $h .= '<tr>';
+            foreach ($r as $c) {
+                $h .= '<td>'.$e($c).'</td>';
+            }
+            $h .= '</tr>';
+        }
+        $h .= '</table>';
+        $file = str_replace(' ', '-', $title).'-'.now()->format('Ymd-His').'.xls';
+
+        return response('<html xmlns:x="urn:schemas-microsoft-com:office:excel"><head><meta charset="utf-8"></head><body><h3>'.$e($title).'</h3>'.$h.'</body></html>')
+            ->header('Content-Type', 'application/vnd.ms-excel; charset=UTF-8')
+            ->header('Content-Disposition', 'attachment; filename="'.$file.'"');
+    }
+
+    /**
+     * Hitung jadwal penyusutan garis lurus (dipakai Summary Aset & exportnya).
+     * Filter: year (kolom bulanan), date_from/date_to (tgl perolehan), category, search.
+     *
+     * @return array{year:int, periods:array<int,array<string,mixed>>, groups:array<int,mixed>, grand:array<string,mixed>}
+     */
+    private function computeSchedule(Request $request): array
+    {
         $year   = (int) $request->integer('year', (int) now()->year);
         $assets = BsFixedAsset::whereIn('status', ['active', 'fully_depreciated'])
+            ->when($request->input('category'), fn ($q, $v) => $q->where('category', $v))
+            ->when($request->input('date_from'), fn ($q, $d) => $q->whereDate('acquisition_date', '>=', $d))
+            ->when($request->input('date_to'), fn ($q, $d) => $q->whereDate('acquisition_date', '<=', $d))
+            ->when($request->input('search'), fn ($q, $s) => $q->where(fn ($w) => $w->where('name', 'like', "%{$s}%")->orWhere('asset_number', 'like', "%{$s}%")))
             ->orderBy('category')->orderBy('acquisition_date')->orderBy('id')->get();
 
         // Periode: tahunan dari tahun perolehan terlama (maks 6 th ke belakang) s/d year-1, lalu bulanan Jan-Des year.
@@ -273,11 +451,11 @@ class FixedAssetController extends Controller
             $groups[] = ['category' => $catKey, 'label' => $catLabel, 'assets' => $rows, 'subtotal' => ['cost' => round($subCost, 2), 'monthly' => round($subMonthly, 2), 'cells' => $subCells]];
         }
 
-        return Inertia::render('BusinessSupport/FixedAsset/Summary', [
+        return [
             'year'    => $year,
-            'periods' => array_map(fn ($p) => ['key' => $p['key'], 'label' => $p['label']], $periods),
+            'periods' => $periods,
             'groups'  => $groups,
             'grand'   => ['cost' => round($grandCost, 2), 'cells' => $grandCells],
-        ]);
+        ];
     }
 }

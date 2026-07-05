@@ -36,15 +36,146 @@ class JournalController extends Controller
             ->latest('journal_date')->latest('id')
             ->paginate(50)->withQueryString();
 
+        // Master → "Jurnal" = ringkas (rincian tersembunyi). Query → "Detail Transaksi Jurnal" = rincian tampil.
+        $isDetail = $request->routeIs('bs.gl.journal.detail');
+
         return Inertia::render('BusinessSupport/Gl/Journals/Index', [
-            'journals' => $rows,
-            'sources'  => BsJournal::SOURCES,
-            'statuses' => BsJournal::STATUSES,
+            'journals'      => $rows,
+            'sources'       => BsJournal::SOURCES,
+            'statuses'      => BsJournal::STATUSES,
+            'defaultDetail' => $isDetail,
+            'listRoute'     => $isDetail ? 'bs.gl.journal.detail' : 'bs.gl.journal.index',
+            'title'         => $isDetail ? 'Detail Transaksi Jurnal' : 'Jurnal',
             'filters'  => array_merge(
                 $request->only(['source', 'status', 'search']),
                 ['date_from' => $from->toDateString(), 'date_to' => $to->toDateString()],
             ),
         ]);
+    }
+
+    /**
+     * Finalisasi Jurnal — daftar jurnal "Baru" (draft) per periode + rincian, lalu finalisasi
+     * (batch) yang sudah balance. Draft = Jurnal Memorial manual yang belum difinalisasi.
+     */
+    public function finalisasi(Request $request): Response
+    {
+        abort_unless($request->user()?->canModule('gl'), 403);
+
+        $from = $request->date('date_from') ?? now()->startOfMonth();
+        $to   = $request->date('date_to')   ?? now()->endOfMonth();
+
+        $rows = BsJournal::query()
+            ->with(['lines.account:id,code,name', 'costCenter:id,code,name', 'createdBy:id,name'])
+            ->withCount('lines')
+            ->where('status', 'draft')
+            ->whereBetween('journal_date', [$from->toDateString(), $to->toDateString()])
+            ->when($request->input('source'), fn ($q, $v) => $q->where('source', $v))
+            ->when($request->input('search'), fn ($q, $s) => $q->where(fn ($w) => $w->where('journal_number', 'like', "%{$s}%")->orWhere('description', 'like', "%{$s}%")->orWhere('reference', 'like', "%{$s}%")))
+            ->latest('journal_date')->latest('id')
+            ->paginate(100)->withQueryString();
+
+        return Inertia::render('BusinessSupport/Gl/Journals/Finalisasi', [
+            'journals' => $rows,
+            'sources'  => BsJournal::SOURCES,
+            'filters'  => array_merge($request->only(['source', 'search']), ['date_from' => $from->toDateString(), 'date_to' => $to->toDateString()]),
+        ]);
+    }
+
+    /**
+     * Approval Jurnal — grid batch ala legacy. Default menampilkan jurnal "Final" (belum di-approve);
+     * bisa dialihkan ke "Approved" untuk membatalkan approval. Approve = efektif di GL.
+     */
+    public function approval(Request $request): Response
+    {
+        abort_unless($request->user()?->canModule('gl'), 403);
+
+        $from = $request->date('date_from') ?? now()->startOfMonth();
+        $to   = $request->date('date_to')   ?? now()->endOfMonth();
+        // Tab status: 'final' (menunggu approval) | 'posted' (sudah approved → bisa dibatalkan).
+        $status = in_array($request->input('status'), ['final', 'posted'], true) ? $request->input('status') : 'final';
+
+        $rows = BsJournal::query()
+            ->with(['costCenter:id,code,name', 'createdBy:id,name'])
+            ->withCount('lines')
+            ->where('status', $status)
+            ->whereBetween('journal_date', [$from->toDateString(), $to->toDateString()])
+            ->when($request->input('source'), fn ($q, $v) => $q->where('source', $v))
+            ->when($request->input('search'), fn ($q, $s) => $q->where(fn ($w) => $w->where('journal_number', 'like', "%{$s}%")->orWhere('description', 'like', "%{$s}%")->orWhere('reference', 'like', "%{$s}%")))
+            ->orderBy('journal_date')->orderBy('id')
+            ->paginate(100)->withQueryString();
+
+        $counts = [
+            'final'  => (int) BsJournal::where('status', 'final')->whereBetween('journal_date', [$from->toDateString(), $to->toDateString()])->count(),
+            'posted' => (int) BsJournal::where('status', 'posted')->whereBetween('journal_date', [$from->toDateString(), $to->toDateString()])->count(),
+        ];
+
+        return Inertia::render('BusinessSupport/Gl/Journals/Approval', [
+            'journals'   => $rows,
+            'sources'    => BsJournal::SOURCES,
+            'statuses'   => BsJournal::STATUSES,
+            'statusTab'  => $status,
+            'counts'     => $counts,
+            'canApprove' => (bool) $request->user()?->can('businesssupport.approval.act'),
+            'filters'    => array_merge($request->only(['source', 'search']), ['date_from' => $from->toDateString(), 'date_to' => $to->toDateString()]),
+        ]);
+    }
+
+    /** Batch finalisasi: draft (balance) → final. */
+    public function finalizeBatch(Request $request, JournalService $svc): RedirectResponse
+    {
+        abort_unless($request->user()?->canModule('gl'), 403);
+
+        return $this->batch($request, fn (BsJournal $j) => $svc->finalize($j), 'difinalisasi (Final)');
+    }
+
+    /** Batch approval: final → posted (efektif di GL). */
+    public function approveBatch(Request $request, JournalService $svc): RedirectResponse
+    {
+        abort_unless($request->user()?->can('businesssupport.approval.act'), 403);
+        $uid = $request->user()->id;
+
+        return $this->batch($request, fn (BsJournal $j) => $svc->approve($j, $uid), 'di-approve (efektif di GL)');
+    }
+
+    /** Batch cancel approval: posted → final (batalkan approval). */
+    public function cancelBatch(Request $request, JournalService $svc): RedirectResponse
+    {
+        abort_unless($request->user()?->can('businesssupport.approval.act'), 403);
+
+        return $this->batch($request, fn (BsJournal $j) => $svc->unapprove($j), 'dibatalkan approval-nya');
+    }
+
+    /**
+     * Jalankan aksi batch atas daftar id jurnal; hitung sukses & gagal (gagal tidak menghentikan sisanya).
+     *
+     * @param  \Closure(BsJournal):mixed  $action
+     */
+    private function batch(Request $request, \Closure $action, string $verb): RedirectResponse
+    {
+        $v = $request->validate([
+            'ids'   => ['required', 'array', 'min:1'],
+            'ids.*' => ['integer'],
+        ]);
+
+        $ok = 0;
+        $fail = 0;
+        $lastError = null;
+        foreach (BsJournal::whereIn('id', $v['ids'])->get() as $journal) {
+            try {
+                $action($journal);
+                $ok++;
+            } catch (BusinessRuleException $e) {
+                $fail++;
+                $lastError = $e->getMessage();
+            }
+        }
+
+        $msg = "{$ok} jurnal {$verb}.";
+        if ($fail > 0) {
+            $msg .= " {$fail} gagal".($lastError ? " (mis. {$lastError})" : '').'.';
+        }
+
+        return back()->with($fail > 0 && $ok === 0 ? 'error' : 'success', $msg);
     }
 
     /** Export Excel: semua info Detail Transaksi Jurnal (header + semua baris akun) mengikuti filter layar. */

@@ -5,7 +5,7 @@ import { ArrowLeft, BarChart3 } from 'lucide-vue-next';
 import EmptyState from '@/Components/UI/EmptyState.vue';
 
 const props = defineProps<{
-    filters: { year: number; cost_center_id: number | null };
+    filters: { year: number; cost_center_id: number | null; date_from: string | null; date_to: string | null };
     rows: Array<any>;
     monthLabels: string[];
     costCenters: Array<any>;
@@ -14,9 +14,11 @@ const props = defineProps<{
 
 const year = ref(props.filters.year);
 const cc = ref<number | string>(props.filters.cost_center_id ?? '');
+const dateFrom = ref<string>(props.filters.date_from ?? '');
+const dateTo = ref<string>(props.filters.date_to ?? '');
 const mode = ref<'nilai' | 'persen'>('nilai');
 
-function apply() { router.get(route('bs.budget.query.realization'), { year: year.value, cost_center_id: cc.value || undefined }, { preserveState: true, replace: true }); }
+function apply() { router.get(route('bs.budget.query.realization'), { year: year.value, cost_center_id: cc.value || undefined, date_from: dateFrom.value || undefined, date_to: dateTo.value || undefined }, { preserveState: true, replace: true }); }
 function fmt(v: number) { return Number(v ?? 0).toLocaleString('id-ID'); }
 function cellClass(pct: number) { return pct > 100 ? 'text-danger-600' : (pct >= 90 ? 'text-amber-600' : 'text-neutral-700 dark:text-neutral-300'); }
 const inputCls = 'h-9 rounded-lg border border-neutral-300 bg-white px-3 text-sm dark:border-neutral-700 dark:bg-neutral-900';
@@ -30,6 +32,8 @@ const inputCls = 'h-9 rounded-lg border border-neutral-300 bg-white px-3 text-sm
         <div class="flex flex-wrap items-end gap-2">
             <div><label class="mb-1 block text-xs text-neutral-500">Tahun</label><input v-model.number="year" type="number" :class="[inputCls, 'w-28']" /></div>
             <div><label class="mb-1 block text-xs text-neutral-500">Cost Center</label><select v-model="cc" :class="[inputCls, 'w-52']"><option value="">Semua</option><option v-for="c in costCenters" :key="c.id" :value="c.id">{{ c.name }}</option></select></div>
+            <div><label class="mb-1 block text-xs text-neutral-500">Tgl Awal</label><input v-model="dateFrom" type="date" :class="inputCls" /></div>
+            <div><label class="mb-1 block text-xs text-neutral-500">Tgl Akhir</label><input v-model="dateTo" type="date" :class="inputCls" /></div>
             <button @click="apply" class="h-9 rounded-lg bg-primary-600 px-4 text-sm font-semibold text-white hover:bg-primary-700">Tampilkan</button>
             <div class="ml-auto inline-flex overflow-hidden rounded-lg border border-neutral-300 dark:border-neutral-700">
                 <button @click="mode = 'nilai'" class="px-3 py-1.5 text-sm" :class="mode === 'nilai' ? 'bg-primary-600 text-white' : ''">Nilai</button>

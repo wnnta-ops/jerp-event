@@ -12,9 +12,12 @@ const props = defineProps<{
   rows: Array<any>;
   statuses: Record<string, string>;
   summary: { count: number };
+  filterStatus?: string;
+  pending?: number;
 }>();
 
 const year = ref(props.year);
+const statusFilter = ref<string>(props.filterStatus ?? 'approved');
 
 const stBadge: Record<string, any> = { baru: 'warning', approved: 'success', rejected: 'danger' };
 
@@ -28,7 +31,7 @@ function fmtDate(d: string): string {
 }
 
 function reload() {
-  router.get(route('bs.budget.correction.index'), { year: year.value }, { preserveState: true, replace: true });
+  router.get(route('bs.budget.correction.index'), { year: year.value, status: statusFilter.value }, { preserveState: true, replace: true });
 }
 </script>
 
@@ -44,6 +47,7 @@ function reload() {
       </h1>
       <div class="flex items-center gap-2">
         <input v-model.number="year" type="number" :class="inputCls" class="!w-28" @change="reload" />
+        <select v-model="statusFilter" @change="reload" :class="inputCls" class="!w-auto" title="Filter status"><option value="approved">Disetujui</option><option value="baru">Menunggu Approval</option><option value="rejected">Ditolak</option><option value="all">Semua Status</option></select>
         <Link :href="route('bs.budget.correction.create')">
           <Button>
             <Plus class="h-4 w-4" /> Koreksi Baru
@@ -51,6 +55,11 @@ function reload() {
         </Link>
       </div>
     </div>
+
+    <Link v-if="pending && statusFilter === 'approved'" :href="route('bs.budget.correction.approvals')" class="flex items-center justify-between gap-2 rounded-lg border border-amber-300 bg-amber-50 px-4 py-2.5 text-sm text-amber-800 hover:bg-amber-100 dark:border-amber-700/50 dark:bg-amber-900/20 dark:text-amber-300">
+      <span><b>{{ pending }}</b> koreksi menunggu approval — belum tampil di daftar ini.</span>
+      <span class="font-semibold underline">Buka Approval Koreksi Budget →</span>
+    </Link>
 
     <div class="card overflow-x-auto">
       <table class="w-full text-sm">

@@ -2,12 +2,12 @@
 <script setup lang="ts">
 import { ref } from 'vue';
 import { Link, router } from '@inertiajs/vue3';
-import { ArrowLeft, FileBarChart } from 'lucide-vue-next';
+import { ArrowLeft, FileBarChart, FileSpreadsheet } from 'lucide-vue-next';
 import Button from '@/Components/UI/Button.vue';
 import EmptyState from '@/Components/UI/EmptyState.vue';
 
 const props = defineProps<{
-  filters: { project_id: any; jenis: any };
+  filters: { project_id: any; jenis: any; date_from?: any; date_to?: any };
   projects: Array<any>;
   jenisOpts: Record<string, string>;
   rows: Array<any>;
@@ -18,12 +18,11 @@ function fmtRp(v: number) { return 'Rp ' + Number(v ?? 0).toLocaleString('id-ID'
 
 const proj = ref(props.filters?.project_id ?? '');
 const jen = ref(props.filters?.jenis ?? '');
-function apply() {
-  router.get(route('bs.spk.query.summary'), {
-    project_id: proj.value || undefined,
-    jenis: jen.value || undefined,
-  }, { preserveState: true, replace: true });
-}
+const df = ref(props.filters?.date_from ?? '');
+const dt = ref(props.filters?.date_to ?? '');
+function params(){ return {project_id:proj.value||undefined,jenis:jen.value||undefined,date_from:df.value||undefined,date_to:dt.value||undefined}; }
+function apply() { router.get(route('bs.spk.query.summary'), params(), { preserveState: true, replace: true }); }
+function exportXls(){ window.location.href=route('bs.spk.query.export',{type:'summary',...params()}); }
 
 const inputCls = 'h-9 w-full rounded-lg border border-neutral-300 bg-white px-3 text-sm dark:border-neutral-700 dark:bg-neutral-900';
 </script>
@@ -36,24 +35,25 @@ const inputCls = 'h-9 w-full rounded-lg border border-neutral-300 bg-white px-3 
 
     <!-- Filter bar -->
     <div class="card p-4">
-      <div class="grid gap-3 sm:grid-cols-3">
-        <div>
+      <div class="flex flex-wrap items-end gap-3">
+        <div class="min-w-[180px] flex-1">
           <label class="mb-1 block text-xs font-medium text-neutral-500">Project</label>
           <select v-model="proj" :class="inputCls">
             <option value="">Semua</option>
             <option v-for="p in projects" :key="p.id" :value="p.id">{{ p.code }} — {{ p.name }}</option>
           </select>
         </div>
-        <div>
+        <div class="min-w-[180px] flex-1">
           <label class="mb-1 block text-xs font-medium text-neutral-500">Jenis</label>
           <select v-model="jen" :class="inputCls">
             <option value="">Semua</option>
             <option v-for="(lbl, key) in jenisOpts" :key="key" :value="key">{{ lbl }}</option>
           </select>
         </div>
-        <div class="flex items-end">
-          <Button type="button" @click="apply">Tampilkan</Button>
-        </div>
+        <div><label class="mb-1 block text-xs font-medium text-neutral-500">Tgl Awal</label><input v-model="df" type="date" :class="inputCls" /></div>
+        <div><label class="mb-1 block text-xs font-medium text-neutral-500">Tgl Akhir</label><input v-model="dt" type="date" :class="inputCls" /></div>
+        <Button type="button" @click="apply">Tampilkan</Button>
+        <button @click="exportXls" class="inline-flex h-9 items-center gap-1.5 rounded-lg border border-emerald-300 bg-emerald-50 px-3 text-sm font-medium text-emerald-700 hover:bg-emerald-100 dark:border-emerald-700/50 dark:bg-emerald-900/30 dark:text-emerald-300"><FileSpreadsheet class="h-4 w-4" /> Excel</button>
       </div>
     </div>
 
