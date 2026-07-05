@@ -162,6 +162,28 @@ class ContractorController extends Controller
         ]);
     }
 
+    /**
+     * Cetak SPK — halaman dokumen SPK yang bisa diedit per-pasal lalu dicetak (window.print).
+     * Semua field & pasal ter-prefill dari data SPK; user boleh mengubah sebagian saja.
+     */
+    public function printForm(Request $request, BsWorkOrder $workOrder): Response
+    {
+        abort_unless($request->user()?->canModule('contractor'), 403);
+
+        $workOrder->load([
+            'supplier:id,code,name,address,city,npwp,contact_person,phone,bank_name,bank_account_no,bank_account_name',
+            'project:id,code,name', 'costCenter:id,code,name',
+            'items' => fn ($q) => $q->orderBy('seq')->orderBy('id'),
+            'terms' => fn ($q) => $q->orderBy('seq')->orderBy('id'),
+        ]);
+
+        return Inertia::render('BusinessSupport/Contractor/Print', [
+            'spk'       => $workOrder,
+            'company'   => config('business_support.company'),
+            'jenisOpts' => BsWorkOrder::JENIS,
+        ]);
+    }
+
     public function mutateProgress(Request $request, BsWorkOrder $workOrder, ContractorService $svc): RedirectResponse
     {
         abort_unless($request->user()?->canModule('contractor'), 403);
