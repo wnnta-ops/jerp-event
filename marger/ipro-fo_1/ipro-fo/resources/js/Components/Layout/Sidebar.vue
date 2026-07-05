@@ -100,11 +100,13 @@ const groups: { title: string; items: NavItem[] }[] = [
         title: 'Booked Revenue',
         items: [
             { label: 'Booked Revenue', icon: CircleDollarSign, href: 'bs.booked-revenue.index', permission: ['businesssupport.view', 'ar.*'] },
-            { label: 'Control', icon: ClipboardList, permission: ['businesssupport.view', 'ar.*'], children: [
-                { label: 'Control BAST', href: 'bs.booked-revenue.control.bast' },
-                { label: 'Control AJB', href: 'bs.booked-revenue.control.ajb' },
-                { label: 'Control Faktur Pajak', href: 'bs.booked-revenue.control.fp' },
+            { label: 'Detail BAST', icon: FileCheck, href: 'bs.booked-revenue.control.bast', permission: ['businesssupport.view', 'ar.*'] },
+            { label: 'Detail AJB', icon: FileText, href: 'bs.booked-revenue.control.ajb', permission: ['businesssupport.view', 'ar.*'] },
+            { label: 'Verifikasi Faktur Pajak', icon: Receipt, permission: ['businesssupport.view', 'tax.*'], children: [
+                { label: 'PPN Masukan', href: 'bs.tax.masukan' },
+                { label: 'PPN Keluaran', href: 'bs.tax.keluaran' },
             ] },
+            { label: 'Report / Query', icon: FileBarChart, href: 'bs.booked-revenue.report', permission: ['businesssupport.view', 'ar.*'] },
         ],
     },
     {
