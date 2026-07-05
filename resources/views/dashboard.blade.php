@@ -50,6 +50,13 @@
             'bg'    => 'oklch(0.55 0.18 180)',
             'path'  => 'M21 8H3v13h18zM3 8V3h18v5M10 12h4',
         ],
+        [
+            'href'  => '/fo/asisten-ai',
+            'label' => 'Asisten AI',
+            'desc'  => 'Tanya-jawab & cari data customer; hasil pencarian bisa diunduh sebagai Excel.',
+            'bg'    => 'oklch(0.55 0.20 300)',
+            'path'  => 'M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.86 9.86 0 01-4-.8L3 20l1.3-3.9A7.9 7.9 0 013 12c0-4.418 4.03-8 9-8s9 3.582 9 8z',
+        ],
     ];
 @endphp
 
