@@ -6,7 +6,6 @@ use App\Modules\FO\Shared\Assistant\DataSearchTool;
 use App\Modules\FO\Shared\Assistant\Exports\CustomerSearchExport;
 use App\Modules\FO\Shared\Assistant\SearchResult;
 use App\Modules\FO\Shared\Integrations\Ai\AiAssistantGatewayInterface;
-use App\Modules\FO\Shared\Integrations\Ai\NullAiAssistantGateway;
 use Filament\Actions\Action;
 use Filament\Pages\Page;
 use Illuminate\Support\Carbon;
@@ -57,9 +56,7 @@ class AsistenAi extends Page
         $this->aiReal = app(AiAssistantGatewayInterface::class)->isRealAi();
         $this->chat[] = [
             'role' => 'assistant',
-            'html' => $this->md('Halo! Saya asisten data FO. Coba tanyakan, misalnya: '
-                .'*"cari customer booking Juni 2026"* atau *"daftar customer proyek RAYA yang belum bayar"*. '
-                .'Kalau butuh Excel-nya, tinggal minta atau klik tombol **Download Excel** di bawah tabel hasil.'),
+            'html' => $this->md('Halo! Saya AI Asisten Anda'),
         ];
     }
 
@@ -102,6 +99,15 @@ class AsistenAi extends Page
             report($ex);
             $this->chat[] = ['role' => 'assistant', 'html' => '<span class="text-danger-600">Maaf, terjadi kendala saat memproses. Coba lagi.</span>'];
         }
+
+        $this->dispatch('chat-updated'); // picu auto-scroll ke bawah
+    }
+
+    /** Kirim cepat dari chip saran. */
+    public function kirimCepat(string $text): void
+    {
+        $this->prompt = $text;
+        $this->kirim();
     }
 
     public function bukaPreview(): void
@@ -133,21 +139,17 @@ class AsistenAi extends Page
         $gateway = app(AiAssistantGatewayInterface::class);
         $tools = [app(DataSearchTool::class)->definition()];
         $system = $this->systemPrompt();
-        $fallbackNotified = false;
 
         for ($i = 0; $i < 4; $i++) {
             try {
                 $res = $gateway->chat($this->api, $tools, $system);
             } catch (\Throwable $e) {
                 report($e);
-                // Provider AI gagal (mis. kuota Gemini habis) → beralih ke mode dasar
-                // agar asisten tetap bisa mencari data, bukan mati total.
-                $gateway = app(NullAiAssistantGateway::class);
-                if (! $fallbackNotified) {
-                    $this->chat[] = ['role' => 'assistant', 'html' => $this->md('_Layanan AI utama sedang tidak tersedia — beralih ke **mode dasar** (pencarian kata kunci)._')];
-                    $fallbackNotified = true;
-                }
-                $res = $gateway->chat($this->api, $tools, $system);
+                // AI-only: bila layanan AI gagal (mis. batas kuota), beri pesan jelas —
+                // TIDAK turun ke mode dasar/kata kunci.
+                $this->chat[] = ['role' => 'assistant', 'html' => $this->md('Maaf, layanan AI sedang tidak tersedia sesaat (kemungkinan batas kuota). Silakan coba lagi beberapa saat lagi. 🙏')];
+
+                return;
             }
 
             // Rekam giliran asisten ke riwayat API (blok mentah bila ada, else teks).
@@ -206,21 +208,32 @@ class AsistenAi extends Page
         $today = Carbon::today()->format('d F Y');
 
         return <<<TXT
-        Anda adalah Asisten Data untuk staf Front Office developer properti (J-ERP).
-        Tugas: membantu mencari data customer memakai tool `cari_customer`.
+        Kamu adalah asisten AI yang ramah, cerdas, dan enak diajak ngobrol untuk staf
+        Front Office di J-ERP (ERP developer properti). Berbincanglah senatural mungkin
+        seperti asisten AI pada umumnya — boleh menyapa, menjelaskan, memberi saran,
+        membantu menyusun kalimat, dan menjawab pertanyaan umum seputar pekerjaan mereka.
+        Bersikap hangat dan gunakan bahasa yang mengalir, bukan jawaban kaku.
 
-        Aturan:
-        - Anda HANYA membaca & menyajikan data (read-only). Anda TIDAK bisa membuat, mengubah, menghapus,
-          atau menyetujui apa pun. Bila diminta hal itu, jelaskan Anda hanya dapat menampilkan data.
-        - SELALU gunakan tool `cari_data` (pilih entitas: customer, kontrak, pembayaran, tagihan) untuk
-          pertanyaan pencarian/daftar data. JANGAN mengarang data.
-        - Bila tool mengembalikan error "akses_ditolak", sampaikan dengan sopan bahwa pengguna tidak memiliki
-          hak akses untuk data tersebut — jangan tampilkan data apa pun.
-        - Jawab ringkas dalam Bahasa Indonesia.
-        - Setelah tool memberi hasil, sebutkan JUMLAH data yang ditemukan dan ingatkan user bisa menekan
-          tombol "Download Excel" di bawah tabel untuk mengunduh.
-        - Detail baris tidak dikirim ke Anda demi privasi; itu ditampilkan langsung ke user sebagai tabel.
-        - Hari ini tanggal {$today} (pakai untuk memahami periode seperti "bulan ini", "tahun ini").
+        Kemampuan khusus: kamu bisa MENCARI & MENAMPILKAN data Front Office lewat tool
+        `cari_data` (customer, kontrak, tagihan, pembayaran/TTS, reservasi, unit, sales/agent,
+        kwitansi, faktur, bilyet giro, refund, transfer anonim, gmc, komisi, blt, reward,
+        surat SP, NUP, pengalihan hak, pindah unit, memo). Panggil tool ini setiap user ingin
+        mencari/melihat/menampilkan/mendaftar data — jangan pernah mengarang data, selalu ambil
+        dari tool. Untuk obrolan biasa atau pertanyaan umum, jawab langsung tanpa tool.
+
+        Setelah menampilkan hasil data, sebut jumlahnya dengan natural dan ingatkan user bahwa
+        hasilnya bisa diunduh lewat tombol "Download Excel" di bawah tabel.
+
+        Penting:
+        - Kamu hanya bisa MEMBACA & menyajikan data (read-only) — tidak bisa membuat, mengubah,
+          menghapus, atau menyetujui apa pun. Sampaikan dengan ramah jika diminta hal itu.
+        - Detail baris tidak dikirim kepadamu demi privasi; itu tampil langsung ke user sebagai tabel.
+          Jadi jangan berpura-pura tahu isi barisnya — cukup rujuk ke tabel & tombol Excel.
+        - Jika tool mengembalikan "akses_ditolak", sampaikan dengan sopan bahwa user belum punya
+          hak akses ke data tersebut.
+
+        Jawab dalam Bahasa Indonesia yang natural. Hari ini tanggal {$today}
+        (pakai untuk memahami "bulan ini", "tahun ini", dsb).
         TXT;
     }
 

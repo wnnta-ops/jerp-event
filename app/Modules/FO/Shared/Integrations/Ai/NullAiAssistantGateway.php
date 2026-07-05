@@ -186,8 +186,8 @@ class NullAiAssistantGateway implements AiAssistantGatewayInterface
 
     private function helpText(): string
     {
-        return "Mode dasar (tanpa API key) aktif. Saya bisa membantu mencari **data customer**. "
-            ."Contoh: *\"cari customer booking Juni 2026\"* atau *\"daftar customer proyek RAYA yang belum bayar\"*. "
-            .'Isi `ANTHROPIC_API_KEY` untuk mengaktifkan mode AI penuh (tanya-jawab bebas).';
+        return "Saya sedang di **mode dasar** (layanan AI utama tak tersedia sesaat — mis. batas kuota). "
+            ."Saya tetap bisa membantu mencari data FO. Contoh: *\"cari customer booking Juni 2026\"*, "
+            ."*\"daftar tunggakan\"*, atau *\"kontrak proyek RAYA\"*. Coba lagi sebentar untuk mode AI penuh.";
     }
 }
