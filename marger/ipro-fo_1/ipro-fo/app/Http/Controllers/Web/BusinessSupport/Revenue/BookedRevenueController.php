@@ -16,6 +16,7 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Inertia\Response;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class BookedRevenueController extends Controller
 {
@@ -242,6 +243,129 @@ class BookedRevenueController extends Controller
         return back()->with('success', "Booked Revenue {$bookedRevenue->br_number} dibatalkan — jurnal balik diposting.");
     }
 
+    // ── Report / Query: rekap keseluruhan Booked Revenue per unit ──
+    // Menyatukan milestone per unit: BAST · AJB · Retensi (tgl+nominal) · UTJ & DP (tgl+nominal) ·
+    // Faktur Pajak (tgl+nominal+nomor). Basis = unit yang punya Booked Revenue.
+
+    public function report(Request $request): Response
+    {
+        abort_unless($request->user()?->canModule('ar'), 403);
+
+        [$rows, $summary] = $this->reportRows($request);
+
+        return Inertia::render('BusinessSupport/BookedRevenue/Report', [
+            'rows'     => $rows->values(),
+            'filters'  => $request->only(['search', 'status']),
+            'summary'  => $summary,
+            'statuses' => ['booked', 'recognized', 'cancelled'],
+        ]);
+    }
+
+    public function reportExport(Request $request): StreamedResponse
+    {
+        abort_unless($request->user()?->canModule('ar'), 403);
+
+        [$rows] = $this->reportRows($request);
+        $header = ['Unit', 'Cluster', 'Customer', 'No. BR', 'Tgl BR', 'Nilai BR', 'Status',
+            'Tgl BAST', 'Tgl AJB', 'Notaris', 'Tgl Retensi', 'Nominal Retensi',
+            'Tgl UTJ&DP', 'Nominal UTJ&DP', 'Tgl Faktur Pajak', 'Nominal Faktur Pajak', 'No. Faktur Pajak'];
+
+        return response()->streamDownload(function () use ($header, $rows): void {
+            $out = fopen('php://output', 'wb');
+            fputcsv($out, $header);
+            foreach ($rows as $r) {
+                fputcsv($out, [
+                    $r['unit'], $r['cluster'], $r['customer'], $r['br_number'], $r['br_date'], $r['br_amount'], $r['br_status'],
+                    $r['bast_date'], $r['ajb_date'], $r['ajb_notary'], $r['retensi_date'], $r['retensi_amount'],
+                    $r['utjdp_date'], $r['utjdp_amount'], $r['fp_date'], $r['fp_amount'], $r['fp_number'],
+                ]);
+            }
+            fclose($out);
+        }, 'booked-revenue-report.csv', ['Content-Type' => 'text/csv']);
+    }
+
+    /**
+     * Susun baris report per-unit + ringkasan.
+     *
+     * @return array{0:\Illuminate\Support\Collection<int,array<string,mixed>>, 1:array<string,mixed>}
+     */
+    private function reportRows(Request $request): array
+    {
+        $brs = BsBookedRevenue::query()
+            ->with(['customer:id,code,full_name', 'unit:id,unit_code,cluster_id', 'unit.cluster:id,name'])
+            ->when($request->input('status'), fn ($q, $s) => $q->where('status', $s))
+            ->when($request->input('search'), fn ($q, $s) => $q->where(fn ($w) => $w
+                ->where('br_number', 'like', "%{$s}%")
+                ->orWhereHas('customer', fn ($c) => $c->where('full_name', 'like', "%{$s}%")->orWhere('code', 'like', "%{$s}%"))
+                ->orWhereHas('unit', fn ($u) => $u->where('unit_code', 'like', "%{$s}%"))))
+            ->latest('booking_date')->latest('id')
+            ->get();
+
+        $unitIds = $brs->pluck('unit_id')->filter()->unique()->values();
+
+        // Booking terakhir per unit → jembatan ke dokumen milestone (BAST/AJB/FP/entri).
+        $bookingByUnit = \App\Domain\Sales\Booking\Models\Booking::query()
+            ->whereIn('unit_id', $unitIds)->whereNull('deleted_at')
+            ->latest('id')->get(['id', 'unit_id'])
+            ->groupBy('unit_id')->map(fn ($g) => $g->first());
+        $bookingIds = $bookingByUnit->map->id->values();
+
+        $bast = \App\Domain\Legal\Bast\Models\BastDocument::whereIn('booking_id', $bookingIds)
+            ->get(['id', 'booking_id', 'handed_over_at'])->groupBy('booking_id')->map(fn ($g) => $g->sortByDesc('handed_over_at')->first());
+        $ajb = \App\Domain\Legal\Ajb\Models\AjbDocument::whereIn('booking_id', $bookingIds)
+            ->get(['id', 'booking_id', 'signed_at', 'notary_name'])->groupBy('booking_id')->map(fn ($g) => $g->sortByDesc('signed_at')->first());
+        $fp = \App\Domain\Finance\FakturPajak\Models\FakturPajak::whereIn('booking_id', $bookingIds)
+            ->get(['id', 'booking_id', 'issued_at', 'total', 'fp_number'])->groupBy('booking_id')->map(fn ($g) => $g->sortByDesc('issued_at')->first());
+        $entries = \App\Domain\BusinessSupport\Models\BsFakturKeluaranEntry::whereIn('booking_id', $bookingIds)
+            ->get(['id', 'booking_id', 'source_type', 'doc_date', 'total']);
+        $retByBooking = $entries->where('source_type', 'retensi')->groupBy('booking_id');
+        $utjByBooking = $entries->where('source_type', 'utj_dp')->groupBy('booking_id');
+
+        $rows = $brs->map(function ($br) use ($bookingByUnit, $bast, $ajb, $fp, $retByBooking, $utjByBooking) {
+            $bid     = $bookingByUnit->get($br->unit_id)?->id;
+            $bastDoc = $bid ? $bast->get($bid) : null;
+            $ajbDoc  = $bid ? $ajb->get($bid) : null;
+            $fpDoc   = $bid ? $fp->get($bid) : null;
+            $ret     = $bid ? ($retByBooking->get($bid) ?? collect()) : collect();
+            $utj     = $bid ? ($utjByBooking->get($bid) ?? collect()) : collect();
+
+            return [
+                'id'             => $br->id,
+                'unit'           => $br->unit?->unit_code,
+                'cluster'        => $br->unit?->cluster?->name,
+                'customer'       => $br->customer?->full_name,
+                'customer_code'  => $br->customer?->code,
+                'br_number'      => $br->br_number,
+                'br_date'        => $br->booking_date?->toDateString(),
+                'br_amount'      => (float) $br->amount,
+                'br_status'      => $br->status,
+                'bast_date'      => $bastDoc?->handed_over_at?->toDateString(),
+                'ajb_date'       => $ajbDoc?->signed_at?->toDateString(),
+                'ajb_notary'     => $ajbDoc?->notary_name,
+                'retensi_date'   => optional($ret->sortByDesc('doc_date')->first())?->doc_date?->toDateString(),
+                'retensi_amount' => (float) $ret->sum('total'),
+                'utjdp_date'     => optional($utj->sortByDesc('doc_date')->first())?->doc_date?->toDateString(),
+                'utjdp_amount'   => (float) $utj->sum('total'),
+                'fp_date'        => $fpDoc?->issued_at?->toDateString(),
+                'fp_amount'      => (float) ($fpDoc?->total ?? 0),
+                'fp_number'      => $fpDoc?->fp_number,
+            ];
+        });
+
+        $summary = [
+            'units'         => $rows->count(),
+            'with_bast'     => $rows->filter(fn ($r) => $r['bast_date'])->count(),
+            'with_ajb'      => $rows->filter(fn ($r) => $r['ajb_date'])->count(),
+            'with_fp'       => $rows->filter(fn ($r) => $r['fp_number'])->count(),
+            'br_total'      => round($rows->sum('br_amount'), 2),
+            'retensi_total' => round($rows->sum('retensi_amount'), 2),
+            'utjdp_total'   => round($rows->sum('utjdp_amount'), 2),
+            'fp_total'      => round($rows->sum('fp_amount'), 2),
+        ];
+
+        return [$rows, $summary];
+    }
+
     // ── Control sub-modul: monitoring dokumen milestone Booked Revenue (BAST / AJB / Faktur Pajak) ──
 
     /** Control BAST — daftar Berita Acara Serah Terima per booking. */
@@ -262,7 +386,7 @@ class BookedRevenueController extends Controller
             'status' => $r->status, 'extra' => null,
         ]);
 
-        return $this->renderControl($request, 'bast', 'Control BAST', 'Berita Acara Serah Terima (serah terima unit)', null, $rows, $base());
+        return $this->renderControl($request, 'bast', 'Detail BAST', 'Berita Acara Serah Terima (serah terima unit)', null, $rows, $base());
     }
 
     /** Control AJB — daftar Akta Jual Beli per booking. */
@@ -284,7 +408,7 @@ class BookedRevenueController extends Controller
             'status' => $r->status, 'extra' => $r->notary_name,
         ]);
 
-        return $this->renderControl($request, 'ajb', 'Control AJB', 'Akta Jual Beli (akta notaris)', 'Notaris', $rows, $base());
+        return $this->renderControl($request, 'ajb', 'Detail AJB', 'Akta Jual Beli (akta notaris)', 'Notaris', $rows, $base());
     }
 
     /** Control Faktur Pajak — daftar FP per customer/booking. */

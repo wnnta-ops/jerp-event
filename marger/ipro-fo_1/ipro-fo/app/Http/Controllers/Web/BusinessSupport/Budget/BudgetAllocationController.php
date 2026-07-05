@@ -34,9 +34,13 @@ class BudgetAllocationController extends Controller
     {
         abort_unless($request->user()?->canModule('budget'), 403);
         $year = (int) $request->integer('year', (int) now()->year);
+        // Gate approval: default hanya alokasi yang SUDAH di-approve.
+        $status = (string) $request->input('status', 'approved');
 
         $rows = BsBudgetAllocation::with(['account:id,code,name', 'costCenter:id,code,name', 'budget:id,doc_no'])
-            ->where('year', $year)->orderByDesc('id')->get()
+            ->where('year', $year)
+            ->when($status !== 'all', fn ($q) => $q->where('status', $status))
+            ->orderByDesc('id')->get()
             ->map(fn ($a) => [
                 'id' => $a->id, 'doc_no' => $a->doc_no, 'date' => $a->alloc_date?->format('Y-m-d'),
                 'ref' => $a->budget?->doc_no, 'account' => $a->account?->code.' - '.$a->account?->name,
@@ -47,6 +51,8 @@ class BudgetAllocationController extends Controller
 
         return Inertia::render('BusinessSupport/Budget/Allocations/Index', [
             'year' => $year, 'rows' => $rows, 'statuses' => BsBudgetAllocation::STATUSES,
+            'filterStatus' => $status,
+            'pending' => BsBudgetAllocation::where('year', $year)->where('status', 'baru')->count(),
             'summary' => ['count' => $rows->count(), 'total' => $rows->sum('amount')],
         ]);
     }

@@ -483,6 +483,14 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
     Route::post('/business-support/gl/journal/{journal}/finalize', [BsJournalController::class, 'finalize'])->name('bs.gl.journal.finalize');
     Route::post('/business-support/gl/journal/{journal}/approve',  [BsJournalController::class, 'approve'])->name('bs.gl.journal.approve');
     Route::post('/business-support/gl/journal/{journal}/reject',   [BsJournalController::class, 'reject'])->name('bs.gl.journal.reject');
+    // Master → Jurnal (ringkas) vs Query → Detail Transaksi Jurnal (rincian) — controller sama, mode beda by route.
+    Route::get('/business-support/gl/journal-detail',          [BsJournalController::class, 'index'])->name('bs.gl.journal.detail');
+    // Finalisasi Jurnal (daftar Baru per periode + batch finalisasi) & Approval Jurnal (grid batch Final→Approved).
+    Route::get('/business-support/gl/journal-finalisasi',      [BsJournalController::class, 'finalisasi'])->name('bs.gl.journal.finalisasi');
+    Route::post('/business-support/gl/journal-finalize-batch', [BsJournalController::class, 'finalizeBatch'])->name('bs.gl.journal.finalize-batch');
+    Route::get('/business-support/gl/journal-approval',        [BsJournalController::class, 'approval'])->name('bs.gl.journal.approval');
+    Route::post('/business-support/gl/journal-approve-batch',  [BsJournalController::class, 'approveBatch'])->name('bs.gl.journal.approve-batch');
+    Route::post('/business-support/gl/journal-cancel-batch',   [BsJournalController::class, 'cancelBatch'])->name('bs.gl.journal.cancel-batch');
     Route::get('/business-support/gl/journal-import',         [BsJournalImportController::class, 'form'])->name('bs.gl.journal.import');
     Route::get('/business-support/gl/journal-import/template', [BsJournalImportController::class, 'template'])->name('bs.gl.journal.import.template');
     Route::post('/business-support/gl/journal-import',        [BsJournalImportController::class, 'store'])->name('bs.gl.journal.import.store');
@@ -541,6 +549,10 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
     Route::get('/business-support/faktur-pajak/masukan',      [BsTaxController::class, 'masukan'])->name('bs.tax.masukan');
     Route::post('/business-support/faktur-pajak/nsfp',        [BsTaxController::class, 'updateNsfp'])->name('bs.tax.nsfp');
     Route::post('/business-support/faktur-pajak/masukan/bulk', [BsTaxController::class, 'bulkNsfp'])->name('bs.tax.masukan.bulk'); // #5 input massal FP & NPWP
+    // Entri Faktur Pajak Keluaran dari Approval Retensi / UTJ & DP: isi nomor FP (single + massal) & konversi UTJ→Uang Muka.
+    Route::post('/business-support/faktur-pajak/entry/nsfp',             [BsTaxController::class, 'updateEntryNsfp'])->name('bs.tax.entry.nsfp');
+    Route::post('/business-support/faktur-pajak/keluaran/bulk',          [BsTaxController::class, 'bulkKeluaranNsfp'])->name('bs.tax.keluaran.bulk');
+    Route::post('/business-support/faktur-pajak/entry/{entry}/konversi', [BsTaxController::class, 'konversiUangMuka'])->name('bs.tax.entry.konversi');
     Route::get('/business-support/faktur-pajak/export/keluaran', [BsTaxController::class, 'exportKeluaran'])->name('bs.tax.export.keluaran');
     Route::get('/business-support/faktur-pajak/export/masukan',  [BsTaxController::class, 'exportMasukan'])->name('bs.tax.export.masukan');
     Route::get('/business-support/faktur-pajak/export/masukan/xlsx', [BsTaxController::class, 'exportMasukanXlsx'])->name('bs.tax.export.masukan.xlsx'); // #4 tarik Excel FP masukan
@@ -785,6 +797,9 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
     Route::get('/business-support/fixed-asset/run',               [BsFaController::class, 'run'])->name('bs.fa.run');
     Route::post('/business-support/fixed-asset/run',              [BsFaController::class, 'runStore'])->name('bs.fa.run.store');
     Route::get('/business-support/fixed-asset-summary',           [BsFaController::class, 'summary'])->name('bs.fa.summary'); // report jadwal penyusutan
+    Route::get('/business-support/fixed-asset-summary/export',    [BsFaController::class, 'summaryExport'])->name('bs.fa.summary.export');
+    Route::get('/business-support/fixed-asset-penjualan',         [BsFaController::class, 'penjualan'])->name('bs.fa.penjualan');
+    Route::get('/business-support/fixed-asset-penjualan/export',  [BsFaController::class, 'penjualanExport'])->name('bs.fa.penjualan.export');
     Route::get('/business-support/fixed-asset/{fixedAsset}',      [BsFaController::class, 'show'])->name('bs.fa.show');
     Route::post('/business-support/fixed-asset/{fixedAsset}/depreciate', [BsFaController::class, 'depreciate'])->name('bs.fa.depreciate');
     Route::post('/business-support/fixed-asset/{fixedAsset}/dispose',     [BsFaController::class, 'dispose'])->name('bs.fa.dispose');
@@ -960,6 +975,9 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
     Route::get('/business-support/booked-revenue-control/bast', [BsBookedRevenueController::class, 'controlBast'])->name('bs.booked-revenue.control.bast');
     Route::get('/business-support/booked-revenue-control/ajb',  [BsBookedRevenueController::class, 'controlAjb'])->name('bs.booked-revenue.control.ajb');
     Route::get('/business-support/booked-revenue-control/fp',   [BsBookedRevenueController::class, 'controlFakturPajak'])->name('bs.booked-revenue.control.fp');
+    // Report / Query: rekap keseluruhan Booked Revenue per unit (BAST/AJB/Retensi/UTJ&DP/Faktur Pajak). Path terpisah agar tidak tertangkap wildcard {bookedRevenue}.
+    Route::get('/business-support/booked-revenue-report',        [BsBookedRevenueController::class, 'report'])->name('bs.booked-revenue.report');
+    Route::get('/business-support/booked-revenue-report/export', [BsBookedRevenueController::class, 'reportExport'])->name('bs.booked-revenue.report.export');
 
     // ── CONTRACTOR MANAGEMENT (modul mandiri; /contractor-management → hub) ──
     Route::redirect('/contractor-management', '/business-support/contractor-hub')->name('contractor.home');
@@ -1014,11 +1032,14 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
     Route::get('/business-support/spk-query/kartu-hutang',   [BsContractorQueryController::class, 'kartuHutang'])->name('bs.spk.query.kartu-hutang');
     Route::get('/business-support/spk-query/pemakaian',      [BsContractorQueryController::class, 'pemakaian'])->name('bs.spk.query.pemakaian');
     Route::get('/business-support/spk-query/summary',        [BsContractorQueryController::class, 'summary'])->name('bs.spk.query.summary');
+    // Export Excel per query (mengikuti filter periode & project/jenis).
+    Route::get('/business-support/spk-query/export/{type}',   [BsContractorQueryController::class, 'export'])->whereIn('type', ['rekap', 'kartu-hutang', 'pemakaian', 'summary'])->name('bs.spk.query.export');
 
     Route::get('/business-support/spk',                           [BsSpkController::class, 'index'])->name('bs.spk.index');
     Route::get('/business-support/spk/create',                   [BsSpkController::class, 'create'])->name('bs.spk.create');
     Route::post('/business-support/spk',                          [BsSpkController::class, 'store'])->name('bs.spk.store');
     Route::get('/business-support/spk/{workOrder}',              [BsSpkController::class, 'show'])->name('bs.spk.show');
+    Route::get('/business-support/spk/{workOrder}/print',        [BsSpkController::class, 'printForm'])->name('bs.spk.print');
     Route::post('/business-support/spk/{workOrder}/progress',    [BsSpkController::class, 'addProgress'])->name('bs.spk.progress');
     Route::post('/business-support/spk/progress/{progress}/pay', [BsSpkController::class, 'payProgress'])->name('bs.spk.progress.pay');
     Route::post('/business-support/spk/{workOrder}/retensi',     [BsSpkController::class, 'releaseRetention'])->name('bs.spk.retensi');

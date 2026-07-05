@@ -2,13 +2,13 @@
 // Laporan Pemakaian Barang — material usage report with usage/return totals
 import { ref } from 'vue';
 import { Link, router } from '@inertiajs/vue3';
-import { ArrowLeft, FileBarChart } from 'lucide-vue-next';
+import { ArrowLeft, FileBarChart, FileSpreadsheet } from 'lucide-vue-next';
 import Badge from '@/Components/UI/Badge.vue';
 import Button from '@/Components/UI/Button.vue';
 import EmptyState from '@/Components/UI/EmptyState.vue';
 
 const props = defineProps<{
-  filters: { project_id: number | null; jenis: string | null };
+  filters: { project_id: number | null; jenis: string | null; date_from: string | null; date_to: string | null };
   projects: Array<any>;
   jenisOpts: Record<string, string>;
   rows: Array<any>;
@@ -23,10 +23,12 @@ const stBadge:Record<string,any>={baru:'warning',approved:'success',rejected:'da
 
 const proj=ref<string|number>(props.filters.project_id ?? '');
 const jen=ref<string>(props.filters.jenis ?? '');
+const df=ref<string>(props.filters.date_from ?? '');
+const dt=ref<string>(props.filters.date_to ?? '');
 
-function apply(){
-  router.get(route('bs.spk.query.pemakaian'),{project_id:proj.value||undefined,jenis:jen.value||undefined},{preserveState:true,replace:true});
-}
+function params(){ return {project_id:proj.value||undefined,jenis:jen.value||undefined,date_from:df.value||undefined,date_to:dt.value||undefined}; }
+function apply(){ router.get(route('bs.spk.query.pemakaian'),params(),{preserveState:true,replace:true}); }
+function exportXls(){ window.location.href=route('bs.spk.query.export',{type:'pemakaian',...params()}); }
 </script>
 
 <template>
@@ -51,7 +53,10 @@ function apply(){
             <option v-for="(lbl,key) in jenisOpts" :key="key" :value="key">{{ lbl }}</option>
           </select>
         </div>
+        <div><label class="mb-1 block text-xs font-medium text-neutral-500">Tgl Awal</label><input v-model="df" type="date" :class="inputCls" /></div>
+        <div><label class="mb-1 block text-xs font-medium text-neutral-500">Tgl Akhir</label><input v-model="dt" type="date" :class="inputCls" /></div>
         <Button @click="apply">Tampilkan</Button>
+        <button @click="exportXls" class="inline-flex h-9 items-center gap-1.5 rounded-lg border border-emerald-300 bg-emerald-50 px-3 text-sm font-medium text-emerald-700 hover:bg-emerald-100 dark:border-emerald-700/50 dark:bg-emerald-900/30 dark:text-emerald-300"><FileSpreadsheet class="h-4 w-4" /> Excel</button>
       </div>
     </div>
 

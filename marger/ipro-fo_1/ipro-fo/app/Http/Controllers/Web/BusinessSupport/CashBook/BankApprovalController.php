@@ -7,6 +7,7 @@ namespace App\Http\Controllers\Web\BusinessSupport\CashBook;
 use App\Domain\BankLoan\Enums\KprStatus;
 use App\Domain\BankLoan\Models\KprRetention;
 use App\Domain\BusinessSupport\Models\BsAccount;
+use App\Domain\BusinessSupport\Models\BsFakturKeluaranEntry;
 use App\Domain\BusinessSupport\Services\JournalService;
 use App\Domain\Finance\Bank\Models\BankAccount;
 use App\Domain\Finance\Tts\Models\Tts;
@@ -145,6 +146,31 @@ class BankApprovalController extends Controller
         }
 
         return $parts ? ' · '.implode(' · ', $parts) : '';
+    }
+
+    /**
+     * Catat/segarkan entri Faktur Pajak Keluaran dari approval (retensi/utj_dp).
+     * Idempoten via (source_type, source_id) — muncul di Verifikasi Faktur Pajak (PPN Keluaran).
+     *  - retensi → langsung aktif (boleh isi nomor FP).
+     *  - utj_dp  → belum aktif; aktif setelah "Konversi ke Uang Muka Penjualan".
+     */
+    private function recordFakturKeluaranEntry(Request $request, string $type, int $sourceId, ?int $customerId, ?int $bookingId, string $docDate, float $dpp, float $ppn, float $total, int $journalId, bool $active): void
+    {
+        BsFakturKeluaranEntry::updateOrCreate(
+            ['source_type' => $type, 'source_id' => $sourceId],
+            [
+                'keterangan'  => $type === 'retensi' ? 'Retensi' : 'UTJ & DP',
+                'customer_id' => $customerId,
+                'booking_id'  => $bookingId,
+                'doc_date'    => $docDate,
+                'dpp'         => round($dpp, 2),
+                'ppn'         => round($ppn, 2),
+                'total'       => round($total, 2),
+                'is_active'   => $active,
+                'journal_id'  => $journalId,
+                'created_by'  => $request->user()->id,
+            ],
+        );
     }
 
     // ── Approval Retensi (retensi pencairan KPR) ──────────────────────────
@@ -346,6 +372,15 @@ class BankApprovalController extends Controller
 
         // Setujui sekaligus bersihkan tanda penolakan (bila sebelumnya pernah ditolak lalu dijurnal).
         $retention->update(['journal_id' => $journal->id, 'approval_status' => null, 'reject_reason' => null]);
+
+        // Selain GL: catat entri Faktur Pajak Keluaran (keterangan Retensi) — langsung aktif untuk
+        // diisi Nomor Faktur Pajak di Verifikasi Faktur Pajak. DPP = Uang Muka, PPN = split 11%.
+        $entryPpn = round((float) ($v['ppn_amount'] ?? 0), 2);
+        $entryDpp = round((float) ($v['uang_muka_amount'] ?? 0), 2);
+        if ($entryDpp <= 0 && $entryPpn <= 0) {
+            $entryDpp = round($amount, 2); // mode kredit-tunggal: seluruh nominal dianggap DPP
+        }
+        $this->recordFakturKeluaranEntry($request, 'retensi', $retention->id, $app?->customer_id, $app?->booking_id, $v['journal_date'], $entryDpp, $entryPpn, $amount, $journal->id, true);
 
         return back()->with('success', "Retensi disetujui & jurnal {$journal->journal_number} terposting.");
     }
@@ -554,6 +589,11 @@ class BankApprovalController extends Controller
         }
 
         $tts->update(['journal_id' => $journal->id]);
+
+        // Selain GL: catat entri Faktur Pajak Keluaran (keterangan UTJ & DP) — BELUM aktif; nomor
+        // Faktur Pajak baru bisa diisi setelah "Konversi ke Uang Muka Penjualan". DPP/PPN diisi 0
+        // dulu (dana masih di Hutang Usaha); di-split saat konversi.
+        $this->recordFakturKeluaranEntry($request, 'utj_dp', $tts->id, $tts->customer_id, $tts->booking_id, $v['journal_date'], 0.0, 0.0, $amount, $journal->id, false);
 
         return back()->with('success', "UTJ/DP disetujui & jurnal {$journal->journal_number} terposting.");
     }

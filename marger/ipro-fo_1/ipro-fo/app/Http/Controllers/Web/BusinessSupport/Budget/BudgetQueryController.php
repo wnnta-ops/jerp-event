@@ -26,17 +26,23 @@ class BudgetQueryController extends Controller
         return [
             'year' => (int) $request->integer('year', (int) now()->year),
             'cost_center_id' => $request->integer('cost_center_id') ?: null,
+            // Filter periode: tanggal awal & tanggal akhir (opsional).
+            'date_from' => $request->input('date_from') ?: null,
+            'date_to'   => $request->input('date_to') ?: null,
         ];
     }
 
-    /** Laporan Master Budget. */
+    /** Laporan Master Budget — hanya anggaran yang SUDAH di-approve. */
     public function master(Request $request): Response
     {
         abort_unless($request->user()?->canModule('budget'), 403);
         $f = $this->filters($request);
 
         $rows = BsBudget::with(['account:id,code,name', 'costCenter:id,code,name'])
-            ->where('year', $f['year'])->when($f['cost_center_id'], fn ($q, $id) => $q->where('cost_center_id', $id))
+            ->where('year', $f['year'])->where('status', 'approved')
+            ->when($f['cost_center_id'], fn ($q, $id) => $q->where('cost_center_id', $id))
+            ->when($f['date_from'], fn ($q, $d) => $q->whereDate('created_at', '>=', $d))
+            ->when($f['date_to'], fn ($q, $d) => $q->whereDate('created_at', '<=', $d))
             ->orderBy('doc_no')->get()
             ->map(fn ($b) => [
                 'doc_no' => $b->doc_no, 'account' => $b->account?->code.' - '.$b->account?->name,
@@ -57,11 +63,13 @@ class BudgetQueryController extends Controller
         $f = $this->filters($request);
 
         $rows = BsBudget::with(['account:id,code,name', 'costCenter:id,code,name'])
-            ->where('year', $f['year'])->when($f['cost_center_id'], fn ($q, $id) => $q->where('cost_center_id', $id))
+            ->where('year', $f['year'])->where('status', 'approved')
+            ->when($f['cost_center_id'], fn ($q, $id) => $q->where('cost_center_id', $id))
             ->orderBy('doc_no')->get()
             ->map(function ($b) use ($f) {
                 $budgetM = $b->monthsArray();
-                $realM   = $this->realisasi->byMonth($f['year'], $b->account_id, $b->cost_center_id);
+                // Realisasi dibatasi rentang tanggal (jika diisi) pada tanggal jurnal.
+                $realM   = $this->realisasi->byMonth($f['year'], $b->account_id, $b->cost_center_id, $f['date_from'], $f['date_to']);
                 $months  = [];
                 $sumB = 0.0;
                 $sumR = 0.0;
@@ -93,7 +101,10 @@ class BudgetQueryController extends Controller
         $f = $this->filters($request);
 
         $rows = BsBudgetAllocation::with(['account:id,code,name', 'costCenter:id,code,name', 'budget:id,doc_no'])
-            ->where('year', $f['year'])->when($f['cost_center_id'], fn ($q, $id) => $q->where('cost_center_id', $id))
+            ->where('year', $f['year'])->where('status', 'approved')
+            ->when($f['cost_center_id'], fn ($q, $id) => $q->where('cost_center_id', $id))
+            ->when($f['date_from'], fn ($q, $d) => $q->whereDate('alloc_date', '>=', $d))
+            ->when($f['date_to'], fn ($q, $d) => $q->whereDate('alloc_date', '<=', $d))
             ->orderBy('doc_no')->get()
             ->map(fn ($a) => [
                 'doc_no' => $a->doc_no, 'ref' => $a->budget?->doc_no, 'date' => $a->alloc_date?->format('Y-m-d'),
@@ -113,7 +124,10 @@ class BudgetQueryController extends Controller
         $f = $this->filters($request);
 
         $rows = BsBudgetCorrection::with(['account:id,code,name', 'costCenter:id,code,name', 'budget:id,doc_no'])
-            ->where('year', $f['year'])->when($f['cost_center_id'], fn ($q, $id) => $q->where('cost_center_id', $id))
+            ->where('year', $f['year'])->where('status', 'approved')
+            ->when($f['cost_center_id'], fn ($q, $id) => $q->where('cost_center_id', $id))
+            ->when($f['date_from'], fn ($q, $d) => $q->whereDate('corr_date', '>=', $d))
+            ->when($f['date_to'], fn ($q, $d) => $q->whereDate('corr_date', '<=', $d))
             ->orderBy('doc_no')->get()
             ->map(fn ($c) => [
                 'doc_no' => $c->doc_no, 'ref' => $c->budget?->doc_no, 'date' => $c->corr_date?->format('Y-m-d'),

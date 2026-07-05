@@ -63,9 +63,14 @@ class BudgetController extends Controller
         abort_unless($request->user()?->canModule('budget'), 403);
 
         $year = (int) $request->integer('year', (int) now()->year);
+        // Gate approval: default hanya tampilkan anggaran yang SUDAH di-approve.
+        // (Tambahan anggaran/upload yang belum di-approve tidak muncul di Master Budget Control.)
+        $status = (string) $request->input('status', 'approved');
 
         $budgets = BsBudget::with(['account:id,code,name', 'costCenter:id,code,name'])
-            ->where('year', $year)->orderBy('doc_no')->get()
+            ->where('year', $year)
+            ->when($status !== 'all', fn ($q) => $q->where('status', $status))
+            ->orderBy('doc_no')->get()
             ->map(function ($b) use ($year) {
                 $real   = $this->realisasi->total($year, $b->account_id, $b->cost_center_id);
                 $amount = (float) $b->amount;
@@ -99,8 +104,11 @@ class BudgetController extends Controller
                     'id' => $m->id, 'kind' => $m->kind, 'date' => $m->mutation_date?->format('Y-m-d'), 'amount' => (float) $m->amount, 'note' => $m->note,
                     'from' => $m->fromBudget?->account?->code, 'to' => $m->toBudget?->account?->code,
                 ]),
-            'accounts'    => BsAccount::where('is_active', true)->where('is_postable', true)->where('type', 'expense')->orderBy('code')->get(['id', 'code', 'name']),
+            // Semua akun postable (bukan hanya akun beban) agar anggaran bisa untuk akun apa pun.
+            'accounts'    => BsAccount::where('is_active', true)->where('is_postable', true)->orderBy('code')->get(['id', 'code', 'name']),
             'costCenters' => BsCostCenter::where('is_active', true)->orderBy('code')->get(['id', 'code', 'name']),
+            'filterStatus' => $status,
+            'pending'      => BsBudget::where('year', $year)->where('status', 'submitted')->count(),
         ]);
     }
 
@@ -234,8 +242,11 @@ class BudgetController extends Controller
         $existing = BsBudget::where('tenant_id', tenant_id())->where('year', $v['year'])
             ->where('cost_center_id', ($v['cost_center_id'] ?? null) ?: null)->where('account_id', $v['account_id'])->first();
 
+        // Setiap tambahan/perubahan anggaran WAJIB melewati Approval Budget → langsung 'submitted'
+        // (masuk antrean approval, tidak tampil di Master Budget Control sampai di-approve).
         $payload = array_merge($months, [
             'project' => $v['project'] ?? null, 'amount' => $amount, 'notes' => $v['notes'] ?? null,
+            'status' => 'submitted', 'submitted_at' => now(), 'approved_at' => null, 'approved_by' => null, 'approval_note' => null,
         ]);
 
         if ($existing) {
@@ -247,12 +258,11 @@ class BudgetController extends Controller
                 'year'       => $v['year'],
                 'cost_center_id' => ($v['cost_center_id'] ?? null) ?: null,
                 'account_id' => $v['account_id'],
-                'status'     => 'draft',
                 'created_by' => $request->user()->id,
             ]));
         }
 
-        return back()->with('success', 'Anggaran disimpan.');
+        return back()->with('success', 'Anggaran disimpan & diajukan — menunggu Approval Budget.');
     }
 
     public function update(Request $request, BsBudget $budget): RedirectResponse
@@ -264,13 +274,15 @@ class BudgetController extends Controller
         $sum    = array_sum($months);
         $amount = $sum > 0 ? $sum : (float) ($v['amount'] ?? 0);
 
+        // Perubahan anggaran mengembalikan status ke 'submitted' → wajib di-approve ulang.
         $budget->update(array_merge($months, [
             'year' => $v['year'], 'project' => $v['project'] ?? null,
             'cost_center_id' => ($v['cost_center_id'] ?? null) ?: null,
             'account_id' => $v['account_id'], 'amount' => $amount, 'notes' => $v['notes'] ?? null,
+            'status' => 'submitted', 'submitted_at' => now(), 'approved_at' => null, 'approved_by' => null, 'approval_note' => null,
         ]));
 
-        return back()->with('success', 'Anggaran diperbarui.');
+        return back()->with('success', 'Anggaran diperbarui & diajukan ulang — menunggu Approval Budget.');
     }
 
     public function destroy(Request $request, BsBudget $budget): RedirectResponse

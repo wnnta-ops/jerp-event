@@ -12,12 +12,15 @@ const props = defineProps<{
   rows: Array<any>;
   statuses: Record<string, string>;
   summary: { count: number; total: number };
+  filterStatus?: string;
+  pending?: number;
 }>();
 
 const inputCls = 'h-9 w-full rounded-lg border border-neutral-300 bg-white px-3 text-sm dark:border-neutral-700 dark:bg-neutral-900';
 const stBadge: Record<string, any> = { baru: 'warning', approved: 'success', rejected: 'danger' };
 
 const year = ref<number>(props.year);
+const statusFilter = ref<string>(props.filterStatus ?? 'approved');
 
 function fmtRp(v: number) { return 'Rp ' + Number(v ?? 0).toLocaleString('id-ID'); }
 
@@ -27,7 +30,7 @@ function fmtDate(d: string): string {
 }
 
 function reload() {
-  router.get(route('bs.budget.allocation.index'), { year: year.value }, { preserveState: true, replace: true });
+  router.get(route('bs.budget.allocation.index'), { year: year.value, status: statusFilter.value }, { preserveState: true, replace: true });
 }
 </script>
 
@@ -43,6 +46,7 @@ function reload() {
       </h1>
       <div class="flex items-center gap-2">
         <input type="number" v-model.number="year" :class="inputCls" class="!w-28" @change="reload" />
+        <select v-model="statusFilter" @change="reload" :class="inputCls" class="!w-auto" title="Filter status"><option value="approved">Disetujui</option><option value="baru">Menunggu Approval</option><option value="rejected">Ditolak</option><option value="all">Semua Status</option></select>
         <Link :href="route('bs.budget.allocation.create')">
           <Button>
             <Plus class="h-4 w-4" /> Alokasi Baru
@@ -50,6 +54,11 @@ function reload() {
         </Link>
       </div>
     </div>
+
+    <Link v-if="pending && statusFilter === 'approved'" :href="route('bs.budget.allocation.approvals')" class="flex items-center justify-between gap-2 rounded-lg border border-amber-300 bg-amber-50 px-4 py-2.5 text-sm text-amber-800 hover:bg-amber-100 dark:border-amber-700/50 dark:bg-amber-900/20 dark:text-amber-300">
+      <span><b>{{ pending }}</b> alokasi menunggu approval — belum tampil di daftar ini.</span>
+      <span class="font-semibold underline">Buka Approval Alokasi Budget →</span>
+    </Link>
 
     <div class="card overflow-x-auto">
       <table class="w-full text-sm">

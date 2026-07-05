@@ -142,6 +142,7 @@ class FoPanelProvider extends PanelProvider
     {
         return in_array(trim((string) request()->path(), '/'), [
             'fo/launching', 'fo/aktivasi-nup', 'fo/pilih-unit', 'fo/peta-unit-live', 'fo/closing-nup',
+            'fo/asisten-ai',
         ], true);
     }
 
@@ -254,6 +255,7 @@ class FoPanelProvider extends PanelProvider
             'upload-koordinat' => 'setup',
             'upload-koordinat-editor' => 'setup',
             // Finance AR
+            'asisten-ai' => 'finance',
             'tts' => 'finance',
             'pembayaran-ar' => 'finance',
             'pelunasan-angsuran' => 'finance',
@@ -411,6 +413,7 @@ class FoPanelProvider extends PanelProvider
                 'label' => 'Finance AR',
                 'icon' => 'heroicon-o-banknotes',
                 'items' => [
+                    $item('Transfer Anonim', '/fo/transfer-anonims', 'heroicon-o-question-mark-circle', 'filament.fo.resources.transfer-anonims.'),
                     $item('TTS', '/fo/tts', 'heroicon-o-ticket', 'filament.fo.resources.tts.'),
                     $item('Pembayaran AR', '/fo/pembayaran-ar', 'heroicon-o-clipboard-document-list', 'filament.fo.pages.pembayaran-ar'),
                     $item('Pelunasan DP, Angsuran & TDP', '/fo/pelunasan-angsuran', 'heroicon-o-banknotes', 'filament.fo.pages.pelunasan-angsuran'),
@@ -419,7 +422,6 @@ class FoPanelProvider extends PanelProvider
                     $item('Faktur Penjualan', '/fo/fps', 'heroicon-o-receipt-percent', 'filament.fo.resources.fps.'),
                     $item('Bilyet Giro', '/fo/bgs', 'heroicon-o-document-currency-dollar', 'filament.fo.resources.bgs.'),
                     $item('Refund / CB', '/fo/refunds', 'heroicon-o-arrow-uturn-left', 'filament.fo.resources.refunds.'),
-                    $item('Transfer Anonim', '/fo/transfer-anonims', 'heroicon-o-question-mark-circle', 'filament.fo.resources.transfer-anonims.'),
                     $item('GMC (Gimmick)', '/fo/gmcs', 'heroicon-o-gift', 'filament.fo.resources.gmcs.'),
                     $item('Setup Hold', '/fo/setup-hold', 'heroicon-o-pause-circle', 'filament.fo.pages.setup-hold'),
                     $item('Dashboard AR', '/fo/reminder-ar', 'heroicon-o-presentation-chart-line', 'filament.fo.pages.reminder-ar'),

@@ -45,6 +45,7 @@ class GmcMassal extends Page implements HasForms
     public function mount(): void
     {
         // Kosong — Repeater ->defaultItems(1) yang membuat baris awal ber-UUID benar.
+        // Guard anti-resurrection ditangani global (App\Support\Livewire\RepeaterResurrectionGuard).
         $this->form->fill();
     }
 
