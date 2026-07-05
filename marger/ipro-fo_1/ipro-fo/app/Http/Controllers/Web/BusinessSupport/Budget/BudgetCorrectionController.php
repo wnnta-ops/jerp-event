@@ -23,9 +23,13 @@ class BudgetCorrectionController extends Controller
     {
         abort_unless($request->user()?->canModule('budget'), 403);
         $year = (int) $request->integer('year', (int) now()->year);
+        // Gate approval: default hanya koreksi yang SUDAH di-approve.
+        $status = (string) $request->input('status', 'approved');
 
         $rows = BsBudgetCorrection::with(['account:id,code,name', 'costCenter:id,code,name', 'budget:id,doc_no'])
-            ->where('year', $year)->orderByDesc('id')->get()
+            ->where('year', $year)
+            ->when($status !== 'all', fn ($q) => $q->where('status', $status))
+            ->orderByDesc('id')->get()
             ->map(fn ($c) => [
                 'id' => $c->id, 'doc_no' => $c->doc_no, 'date' => $c->corr_date?->format('Y-m-d'),
                 'ref' => $c->budget?->doc_no, 'account' => $c->account?->code.' - '.$c->account?->name,
@@ -36,6 +40,8 @@ class BudgetCorrectionController extends Controller
 
         return Inertia::render('BusinessSupport/Budget/Corrections/Index', [
             'year' => $year, 'rows' => $rows, 'statuses' => BsBudgetCorrection::STATUSES,
+            'filterStatus' => $status,
+            'pending' => BsBudgetCorrection::where('year', $year)->where('status', 'baru')->count(),
             'summary' => ['count' => $rows->count()],
         ]);
     }
