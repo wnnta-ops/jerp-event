@@ -541,6 +541,10 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
     Route::get('/business-support/faktur-pajak/masukan',      [BsTaxController::class, 'masukan'])->name('bs.tax.masukan');
     Route::post('/business-support/faktur-pajak/nsfp',        [BsTaxController::class, 'updateNsfp'])->name('bs.tax.nsfp');
     Route::post('/business-support/faktur-pajak/masukan/bulk', [BsTaxController::class, 'bulkNsfp'])->name('bs.tax.masukan.bulk'); // #5 input massal FP & NPWP
+    // Entri Faktur Pajak Keluaran dari Approval Retensi / UTJ & DP: isi nomor FP (single + massal) & konversi UTJ→Uang Muka.
+    Route::post('/business-support/faktur-pajak/entry/nsfp',             [BsTaxController::class, 'updateEntryNsfp'])->name('bs.tax.entry.nsfp');
+    Route::post('/business-support/faktur-pajak/keluaran/bulk',          [BsTaxController::class, 'bulkKeluaranNsfp'])->name('bs.tax.keluaran.bulk');
+    Route::post('/business-support/faktur-pajak/entry/{entry}/konversi', [BsTaxController::class, 'konversiUangMuka'])->name('bs.tax.entry.konversi');
     Route::get('/business-support/faktur-pajak/export/keluaran', [BsTaxController::class, 'exportKeluaran'])->name('bs.tax.export.keluaran');
     Route::get('/business-support/faktur-pajak/export/masukan',  [BsTaxController::class, 'exportMasukan'])->name('bs.tax.export.masukan');
     Route::get('/business-support/faktur-pajak/export/masukan/xlsx', [BsTaxController::class, 'exportMasukanXlsx'])->name('bs.tax.export.masukan.xlsx'); // #4 tarik Excel FP masukan
@@ -957,6 +961,9 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
     Route::get('/business-support/booked-revenue-control/bast', [BsBookedRevenueController::class, 'controlBast'])->name('bs.booked-revenue.control.bast');
     Route::get('/business-support/booked-revenue-control/ajb',  [BsBookedRevenueController::class, 'controlAjb'])->name('bs.booked-revenue.control.ajb');
     Route::get('/business-support/booked-revenue-control/fp',   [BsBookedRevenueController::class, 'controlFakturPajak'])->name('bs.booked-revenue.control.fp');
+    // Report / Query: rekap keseluruhan Booked Revenue per unit (BAST/AJB/Retensi/UTJ&DP/Faktur Pajak). Path terpisah agar tidak tertangkap wildcard {bookedRevenue}.
+    Route::get('/business-support/booked-revenue-report',        [BsBookedRevenueController::class, 'report'])->name('bs.booked-revenue.report');
+    Route::get('/business-support/booked-revenue-report/export', [BsBookedRevenueController::class, 'reportExport'])->name('bs.booked-revenue.report.export');
 
     // ── CONTRACTOR MANAGEMENT (modul mandiri; /contractor-management → hub) ──
     Route::redirect('/contractor-management', '/business-support/contractor-hub')->name('contractor.home');
