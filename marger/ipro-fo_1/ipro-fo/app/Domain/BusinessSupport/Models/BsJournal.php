@@ -44,4 +44,5 @@ class BsJournal extends Model
 
     public function lines(): HasMany { return $this->hasMany(BsJournalLine::class, 'journal_id'); }
     public function costCenter(): BelongsTo { return $this->belongsTo(BsCostCenter::class, 'cost_center_id'); }
+    public function createdBy(): BelongsTo { return $this->belongsTo(\App\Models\User::class, 'created_by'); }
 }

@@ -19,6 +19,13 @@ return [
         'signer_title' => env('COMPANY_SIGNER_TITLE', 'Direktur'),
     ],
 
+    // Jurnal GL: status default saat posting otomatis dari modul lain.
+    //  'final'  → semua sumber ANTRE approval (baru efektif di GL setelah di-approve batch di Approval Jurnal) — sesuai legacy.
+    //  'posted' → langsung efektif (perilaku lama). Jurnal Memorial manual TETAP mulai 'draft' (Baru) apa pun nilainya.
+    'journal' => [
+        'auto_status' => env('GL_JOURNAL_AUTO_STATUS', 'final'),
+    ],
+
     'gl_accounts' => [
         'inventory'  => '10104010101', // Persediaan — Bangunan Siap Jual
         'payable'    => '20101010101', // Utang Usaha Supplier

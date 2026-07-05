@@ -101,7 +101,11 @@ final class JournalService
             throw new BusinessRuleException("Periode {$date->year}/{$date->month} sudah CLOSED — tidak bisa menambah jurnal.", errorCode: 'PERIOD_CLOSED');
         }
 
-        $status = in_array($header['status'] ?? 'posted', ['draft', 'final', 'posted'], true) ? ($header['status'] ?? 'posted') : 'posted';
+        // Status default posting otomatis modul lain = config (default 'final' → antre approval, seperti legacy).
+        // Pemanggil yang menetapkan status eksplisit (mis. 'draft' untuk memorial) tetap dihormati.
+        $autoDefault = config('business_support.journal.auto_status', 'final');
+        $requested   = $header['status'] ?? $autoDefault;
+        $status = in_array($requested, ['draft', 'final', 'posted'], true) ? $requested : $autoDefault;
 
         return DB::transaction(function () use ($header, $clean, $totalD, $totalK, $date, $source, $status): BsJournal {
             $journal = BsJournal::create([
@@ -237,6 +241,18 @@ final class JournalService
             throw new BusinessRuleException('Hanya jurnal berstatus Final yang bisa di-approve.', errorCode: 'JOURNAL_NOT_FINAL');
         }
         $journal->update(['status' => 'posted', 'posted_at' => now(), 'approved_by' => $userId ?? auth()->id()]);
+
+        return $journal;
+    }
+
+    /** Approved → Final (batalkan approval saja; jurnal keluar dari GL efektif tapi tetap Final). */
+    public function unapprove(BsJournal $journal): BsJournal
+    {
+        $this->assertPeriodOpen($journal);
+        if ($journal->status !== 'posted') {
+            throw new BusinessRuleException('Hanya jurnal berstatus Approved yang bisa dibatalkan approval-nya.', errorCode: 'JOURNAL_NOT_POSTED');
+        }
+        $journal->update(['status' => 'final', 'posted_at' => null, 'approved_by' => null]);
 
         return $journal;
     }
