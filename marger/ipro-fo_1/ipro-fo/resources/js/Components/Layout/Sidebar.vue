@@ -118,7 +118,7 @@ const groups: { title: string; items: NavItem[] }[] = [
             ] },
             { label: 'Report / Query', icon: FileBarChart, permission: ['businesssupport.view', 'bs.*'], children: [
                 { label: 'Summary Aset', href: 'bs.fa.summary' },
-                { label: 'Penjualan Aset', href: 'bs.fa.index', params: { status: 'sold' } },
+                { label: 'Penjualan Aset', href: 'bs.fa.penjualan' },
             ] },
             { label: 'Registrasi', icon: ClipboardList, permission: ['businesssupport.view', 'bs.*'], children: [
                 { label: 'Registrasi Aset', href: 'bs.fa.create' },
@@ -149,7 +149,7 @@ const groups: { title: string; items: NavItem[] }[] = [
                 { label: 'Dimensi Jurnal', href: 'bs.journal-dimensions.index' },
             ]},
             { label: 'Query', icon: FileBarChart, permission: ['businesssupport.view', 'gl.*'], children: [
-                { label: 'Detail Transaksi Jurnal', href: 'bs.gl.journal.index' },
+                { label: 'Detail Transaksi Jurnal', href: 'bs.gl.journal.detail' },
                 { label: 'General Ledger', href: 'bs.gl.ledger' },
             ]},
             { label: 'Neraca', icon: Calculator, permission: ['businesssupport.view', 'gl.*'], children: [
@@ -184,8 +184,8 @@ const groups: { title: string; items: NavItem[] }[] = [
                 { label: 'Import Jurnal', href: 'bs.gl.journal.import' },
             ]},
             { label: 'Generate Lap. Keuangan', icon: FileCheck, permission: ['businesssupport.view', 'gl.*'], children: [
-                { label: 'Finalisasi Jurnal', href: 'bs.gl.journal.index', params: { stage: 'finalisasi' } },
-                { label: 'Approval Jurnal', href: 'bs.gl.journal.index', params: { stage: 'approval' } },
+                { label: 'Finalisasi Jurnal', href: 'bs.gl.journal.finalisasi' },
+                { label: 'Approval Jurnal', href: 'bs.gl.journal.approval' },
                 { label: 'Late Closing', href: 'bs.gl.late-closing' },
             ]},
             { label: 'Generate Lap. Perusahaan', icon: Lock, permission: ['businesssupport.view', 'gl.*'], children: [
