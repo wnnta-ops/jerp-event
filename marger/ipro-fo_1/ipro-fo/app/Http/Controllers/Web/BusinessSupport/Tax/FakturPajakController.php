@@ -7,7 +7,10 @@ namespace App\Http\Controllers\Web\BusinessSupport\Tax;
 use App\Domain\BusinessSupport\Models\BsAccount;
 use App\Domain\BusinessSupport\Models\BsApInvoice;
 use App\Domain\BusinessSupport\Models\BsArInvoice;
+use App\Domain\BusinessSupport\Models\BsFakturKeluaranEntry;
+use App\Domain\BusinessSupport\Services\JournalService;
 use App\Domain\Finance\FakturPajak\Models\FakturPajak;
+use App\Exceptions\BusinessRuleException;
 use App\Exports\FakturPajakMasukanExport;
 use App\Http\Controllers\Controller;
 use Illuminate\Http\RedirectResponse;
@@ -55,7 +58,23 @@ class FakturPajakController extends Controller
                 'npwp' => $f->customer?->npwp ?: '-', 'dpp' => (float) $f->dpp, 'ppn' => (float) $f->ppn,
             ]);
 
-        $rows = $arRows->concat($propRows)->sortBy('invoice_date')->values();
+        // Sumber 3: Entri dari Approval Retensi & Approval UTJ & DP (keterangan Retensi / UTJ & DP).
+        //   - Retensi  → editable (boleh isi Nomor Faktur Pajak).
+        //   - UTJ & DP → editable HANYA setelah "Konversi ke Uang Muka Penjualan".
+        $entryRows = BsFakturKeluaranEntry::with(['customer:id,full_name,npwp,npwp_name', 'booking.unit:id,unit_code'])
+            ->whereYear('doc_date', $year)->whereMonth('doc_date', $month)
+            ->orderBy('doc_date')->orderBy('id')->get()
+            ->map(fn ($e) => [
+                'source' => $e->source_type, 'editable' => (bool) $e->is_active, 'is_entry' => true,
+                'id' => $e->id, 'doc_no' => $e->booking?->unit?->unit_code ?: $e->keterangan, 'tax_invoice_no' => $e->fp_number,
+                'invoice_date' => $e->doc_date?->format('Y-m-d'),
+                'partner' => $e->customer?->npwp_name ?: ($e->customer?->full_name ?? '—'),
+                'npwp' => $e->customer?->npwp ?: '-', 'dpp' => (float) $e->dpp, 'ppn' => (float) $e->ppn,
+                'keterangan' => $e->keterangan, 'is_active' => (bool) $e->is_active,
+                'converted' => $e->converted_at !== null, 'unit' => $e->booking?->unit?->unit_code,
+            ]);
+
+        $rows = $arRows->concat($propRows)->concat($entryRows)->sortBy('invoice_date')->values();
 
         return Inertia::render('BusinessSupport/Tax/Keluaran', [
             'rows'    => $rows,
@@ -63,6 +82,8 @@ class FakturPajakController extends Controller
             'totals'  => [
                 'dpp' => round($rows->sum('dpp'), 2), 'ppn' => round($rows->sum('ppn'), 2), 'count' => $rows->count(),
                 'ar_ppn' => round($arRows->sum('ppn'), 2), 'prop_ppn' => round($propRows->sum('ppn'), 2),
+                'ret_ppn' => round($entryRows->where('source', 'retensi')->sum('ppn'), 2),
+                'utj_ppn' => round($entryRows->where('source', 'utj_dp')->sum('ppn'), 2),
             ],
         ]);
     }
@@ -175,6 +196,168 @@ class FakturPajakController extends Controller
         });
 
         return back()->with('success', "Tersimpan: {$invoiceCount} faktur, {$supplierCount} NPWP supplier diperbarui.");
+    }
+
+    /** Set / ubah Nomor Faktur Pajak pada satu entri Retensi / UTJ & DP (harus sudah aktif). */
+    public function updateEntryNsfp(Request $request): RedirectResponse
+    {
+        abort_unless($request->user()?->canModule('tax'), 403);
+        $v = $request->validate([
+            'entry_id'       => ['required', 'integer'],
+            'tax_invoice_no' => ['nullable', 'string', 'max:30'],
+        ]);
+
+        $entry = BsFakturKeluaranEntry::findOrFail($v['entry_id']);
+        if (! $entry->is_active) {
+            return back()->with('error', 'Nomor Faktur Pajak belum bisa diisi — konversi UTJ & DP ke Uang Muka Penjualan terlebih dahulu.');
+        }
+        $entry->update(['fp_number' => $v['tax_invoice_no'] ?: null]);
+
+        return back()->with('success', 'Nomor Faktur Pajak diperbarui.');
+    }
+
+    /** Simpan Nomor Faktur Pajak massal untuk baris terpilih (AR Invoice & entri Retensi/UTJ). */
+    public function bulkKeluaranNsfp(Request $request): RedirectResponse
+    {
+        abort_unless($request->user()?->canModule('tax'), 403);
+        $v = $request->validate([
+            'items'                  => ['required', 'array', 'min:1'],
+            'items.*.type'           => ['required', 'in:ar,entry'],
+            'items.*.id'             => ['required', 'integer'],
+            'items.*.tax_invoice_no' => ['nullable', 'string', 'max:30'],
+        ]);
+
+        $saved = 0;
+        $skipped = 0;
+        DB::transaction(function () use ($v, &$saved, &$skipped): void {
+            foreach ($v['items'] as $item) {
+                $no = ($item['tax_invoice_no'] ?? null) ?: null;
+                if ($item['type'] === 'ar') {
+                    $inv = BsArInvoice::find($item['id']);
+                    if ($inv) {
+                        $inv->update(['tax_invoice_no' => $no]);
+                        $saved++;
+                    }
+
+                    continue;
+                }
+                $entry = BsFakturKeluaranEntry::find($item['id']);
+                if (! $entry) {
+                    continue;
+                }
+                if (! $entry->is_active) {
+                    $skipped++; // UTJ & DP yang belum dikonversi tidak bisa diisi
+
+                    continue;
+                }
+                $entry->update(['fp_number' => $no]);
+                $saved++;
+            }
+        });
+
+        $msg = "Tersimpan: {$saved} Nomor Faktur Pajak.";
+        if ($skipped > 0) {
+            $msg .= " {$skipped} entri UTJ & DP dilewati (belum dikonversi ke Uang Muka Penjualan).";
+        }
+
+        return back()->with($skipped > 0 ? 'error' : 'success', $msg);
+    }
+
+    /**
+     * Konversi entri UTJ & DP → Uang Muka Penjualan.
+     * Membentuk jurnal reklasifikasi (Dr Hutang Usaha / Cr Uang Muka Penjualan + PPN Keluaran)
+     * yang otomatis tersinkron ke General Ledger, lalu mengaktifkan pengisian Nomor Faktur Pajak.
+     */
+    public function konversiUangMuka(Request $request, BsFakturKeluaranEntry $entry, JournalService $svc): RedirectResponse
+    {
+        abort_unless($request->user()?->canModule('tax'), 403);
+
+        if ($entry->source_type !== 'utj_dp') {
+            return back()->with('error', 'Konversi hanya berlaku untuk entri UTJ & DP.');
+        }
+        if ($entry->converted_at) {
+            return back()->with('error', 'Entri ini sudah dikonversi ke Uang Muka Penjualan.');
+        }
+        $amount = round((float) $entry->total, 2);
+        if ($amount <= 0) {
+            return back()->with('error', 'Nominal entri tidak valid.');
+        }
+
+        // PPN inklusif 11%: PPN Keluaran = amount * 11/111; Uang Muka = sisa.
+        $ppn      = round($amount * 11 / 111, 2);
+        $uangMuka = round($amount - $ppn, 2);
+
+        $entry->loadMissing(['journal.lines', 'booking.unit:id,unit_code', 'customer:id,full_name']);
+        // Debit = akun yang dulu dikredit saat approval (umumnya Hutang Usaha); fallback by name/config.
+        $hutangId   = optional($entry->journal?->lines->first(fn ($l) => (float) $l->credit > 0))->account_id
+            ?? $this->resolveAccountId('hutang usaha', 'payable');
+        $uangMukaId = $this->resolveAccountId('uang muka penjualan', 'unearned_revenue');
+        $ppnId      = $this->resolveAccountId('ppn keluaran', 'ppn_out');
+
+        if (! $hutangId || ! $uangMukaId) {
+            return back()->with('error', 'Akun Hutang Usaha atau Uang Muka Penjualan belum tersedia di CoA.');
+        }
+        if ((int) $hutangId === (int) $uangMukaId) {
+            return back()->with('error', 'Akun debit (Hutang Usaha) tidak boleh sama dengan Uang Muka Penjualan.');
+        }
+
+        $suffix = '';
+        if ($entry->customer?->full_name) {
+            $suffix .= ' · '.$entry->customer->full_name;
+        }
+        if ($entry->booking?->unit?->unit_code) {
+            $suffix .= ' · Unit '.$entry->booking->unit->unit_code;
+        }
+        $desc = 'Konversi UTJ/DP ke Uang Muka Penjualan'.$suffix;
+
+        $lines = [['account_id' => (int) $hutangId, 'debit' => $amount, 'credit' => 0, 'description' => $desc]];
+        if ($ppnId && $ppn > 0 && (int) $ppnId !== (int) $hutangId) {
+            $lines[] = ['account_id' => (int) $uangMukaId, 'debit' => 0, 'credit' => $uangMuka, 'description' => 'Uang Muka Penjualan'.$suffix];
+            $lines[] = ['account_id' => (int) $ppnId, 'debit' => 0, 'credit' => $ppn, 'description' => 'PPN Keluaran'.$suffix];
+        } else {
+            // Tanpa akun PPN valid: seluruh nominal masuk Uang Muka (jaga jurnal tetap balance).
+            $uangMuka = $amount;
+            $ppn      = 0.0;
+            $lines[]  = ['account_id' => (int) $uangMukaId, 'debit' => 0, 'credit' => $amount, 'description' => 'Uang Muka Penjualan'.$suffix];
+        }
+
+        try {
+            $journal = $svc->post([
+                'journal_date' => now()->toDateString(),
+                'source'       => 'cash',
+                'status'       => 'posted',
+                'reference'    => 'KONVERSI-UTJDP-'.$entry->id,
+                'description'  => $desc,
+                'created_by'   => $request->user()->id,
+            ], $lines);
+        } catch (BusinessRuleException $e) {
+            return back()->with('error', $e->getMessage());
+        }
+
+        $entry->update([
+            'dpp'                => $uangMuka,
+            'ppn'                => $ppn,
+            'is_active'          => true,
+            'converted_at'       => now(),
+            'convert_journal_id' => $journal->id,
+        ]);
+
+        return back()->with('success', "UTJ & DP dikonversi ke Uang Muka Penjualan — jurnal {$journal->journal_number} terposting. Nomor Faktur Pajak kini bisa diisi.");
+    }
+
+    /** Cari id akun postable berdasarkan NAMA (mengandung frasa), fallback ke kode config. */
+    private function resolveAccountId(string $needle, string $configKey): ?int
+    {
+        $needle = mb_strtolower($needle);
+        $hit = BsAccount::where('is_active', true)->where('is_postable', true)->get(['id', 'name', 'code'])
+            ->first(fn ($a) => str_contains(mb_strtolower((string) $a->name), $needle));
+        if ($hit) {
+            return (int) $hit->id;
+        }
+        $code = config("business_support.gl_accounts.{$configKey}");
+        $id = $code ? BsAccount::where('code', $code)->value('id') : null;
+
+        return $id ? (int) $id : null;
     }
 
     public function exportMasukanXlsx(Request $request): StreamedResponse
