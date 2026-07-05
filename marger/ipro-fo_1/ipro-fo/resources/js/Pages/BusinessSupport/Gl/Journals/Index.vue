@@ -6,7 +6,8 @@ import Button from '@/Components/UI/Button.vue';
 import Badge from '@/Components/UI/Badge.vue';
 import EmptyState from '@/Components/UI/EmptyState.vue';
 
-const props = defineProps<{ journals: any; sources: Record<string, string>; statuses: Record<string, string>; filters: Record<string, any> }>();
+const props = defineProps<{ journals: any; sources: Record<string, string>; statuses: Record<string, string>; filters: Record<string, any>; defaultDetail?: boolean; listRoute?: string; title?: string }>();
+const listRoute = props.listRoute ?? 'bs.gl.journal.index';
 const source = ref(props.filters.source ?? '');
 const statusFilter = ref(props.filters.status ?? '');
 const search = ref(props.filters.search ?? '');
@@ -14,7 +15,7 @@ const dateFrom = ref(props.filters.date_from ?? '');
 const dateTo = ref(props.filters.date_to ?? '');
 
 function display() {
-    router.get(route('bs.gl.journal.index'), {
+    router.get(route(listRoute), {
         source: source.value || undefined,
         status: statusFilter.value || undefined,
         search: search.value || undefined,
@@ -35,8 +36,9 @@ function fmtRp(v: number) { return Number(v ?? 0).toLocaleString('id-ID'); }
 function fmtDate(d: string) { return d ? new Date(d).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'; }
 const statusBadge: Record<string, any> = { draft: 'warning', final: 'info', posted: 'success' };
 
-// Rincian baris (akun debit/kredit) tiap jurnal. Default tampil agar semua jenis jurnal terlihat detailnya.
-const showDetail = ref(true);
+// Rincian baris (akun debit/kredit) tiap jurnal. Default mengikuti mode halaman:
+//  Master → "Jurnal" = tersembunyi (ringkas); Query → "Detail Transaksi Jurnal" = tampil.
+const showDetail = ref(props.defaultDetail ?? false);
 const open = ref<Record<number, boolean>>({});
 function toggle(id: number) { open.value[id] = !open.value[id]; }
 function isOpen(id: number) { return showDetail.value || open.value[id]; }
@@ -45,7 +47,7 @@ function isOpen(id: number) { return showDetail.value || open.value[id]; }
     <div class="space-y-4">
         <Link :href="route('bs.gl.index')" class="inline-flex items-center gap-2 text-sm text-neutral-500 hover:text-neutral-800 dark:hover:text-neutral-200"><ArrowLeft class="h-4 w-4" /> General Ledger</Link>
         <div class="flex items-center justify-between">
-            <h1 class="flex items-center gap-2 text-2xl font-bold"><FileText class="h-6 w-6 text-primary-600" /> Detail Transaksi Jurnal</h1>
+            <h1 class="flex items-center gap-2 text-2xl font-bold"><FileText class="h-6 w-6 text-primary-600" /> {{ title ?? 'Jurnal' }}</h1>
             <Link :href="route('bs.gl.journal.create')"><Button><template #icon-left><Plus class="h-4 w-4" /></template>Jurnal Memorial</Button></Link>
         </div>
 
