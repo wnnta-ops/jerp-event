@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue';
 import { useForm, Link } from '@inertiajs/vue3';
-import { ArrowLeft, HardHat, Plus, Wallet, Unlock, FilePlus2, Percent, PackageMinus, Ban, Shuffle } from 'lucide-vue-next';
+import { ArrowLeft, HardHat, Plus, Wallet, Unlock, FilePlus2, Percent, PackageMinus, Ban, Shuffle, Printer } from 'lucide-vue-next';
 import Button from '@/Components/UI/Button.vue';
 import Badge from '@/Components/UI/Badge.vue';
 import SearchSelect from '@/Components/UI/SearchSelect.vue';
@@ -50,7 +50,10 @@ const inputCls = 'h-9 w-full rounded-lg border border-neutral-300 bg-white px-3 
         <Link :href="route('bs.spk.home')" class="inline-flex items-center gap-2 text-sm text-neutral-500 hover:text-neutral-800 dark:hover:text-neutral-200"><ArrowLeft class="h-4 w-4" /> Contractor Management</Link>
         <div class="flex items-center justify-between">
             <h1 class="flex items-center gap-2 text-2xl font-bold"><HardHat class="h-6 w-6 text-amber-600" /> <span class="font-mono">{{ spk.spk_number }}</span></h1>
-            <Badge :variant="statusBadge[spk.status] ?? 'neutral'">{{ statusLabel[spk.status] ?? spk.status }}</Badge>
+            <div class="flex items-center gap-2">
+                <Link :href="route('bs.spk.print', spk.id)" target="_blank" class="inline-flex h-9 items-center gap-1.5 rounded-lg bg-primary-600 px-4 text-sm font-semibold text-white shadow-sm hover:bg-primary-700"><Printer class="h-4 w-4" /> Cetak SPK</Link>
+                <Badge :variant="statusBadge[spk.status] ?? 'neutral'">{{ statusLabel[spk.status] ?? spk.status }}</Badge>
+            </div>
         </div>
 
         <div v-if="spk.status === 'cancelled'" class="card border-l-4 border-l-danger-500 p-4 text-sm">

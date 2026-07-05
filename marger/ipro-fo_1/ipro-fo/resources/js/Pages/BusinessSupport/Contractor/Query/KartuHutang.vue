@@ -2,12 +2,12 @@
 <script setup lang="ts">
 import { ref } from 'vue';
 import { Link, router } from '@inertiajs/vue3';
-import { ArrowLeft, FileBarChart } from 'lucide-vue-next';
+import { ArrowLeft, FileBarChart, FileSpreadsheet } from 'lucide-vue-next';
 import EmptyState from '@/Components/UI/EmptyState.vue';
 import Button from '@/Components/UI/Button.vue';
 
 const props = defineProps<{
-  filters: { project_id?: any; jenis?: any };
+  filters: { project_id?: any; jenis?: any; date_from?: any; date_to?: any };
   projects: Array<any>;
   jenisOpts: Record<string, string>;
   rows: Array<any>;
@@ -21,13 +21,12 @@ const inputCls='h-9 w-full rounded-lg border border-neutral-300 bg-white px-3 te
 
 const proj = ref(props.filters?.project_id ?? '');
 const jen = ref(props.filters?.jenis ?? '');
+const df = ref(props.filters?.date_from ?? '');
+const dt = ref(props.filters?.date_to ?? '');
 
-function apply(){
-  router.get(route('bs.spk.query.kartu-hutang'), {
-    project_id: proj.value || undefined,
-    jenis: jen.value || undefined,
-  }, { preserveState:true, replace:true });
-}
+function params(){ return {project_id:proj.value||undefined,jenis:jen.value||undefined,date_from:df.value||undefined,date_to:dt.value||undefined}; }
+function apply(){ router.get(route('bs.spk.query.kartu-hutang'), params(), { preserveState:true, replace:true }); }
+function exportXls(){ window.location.href=route('bs.spk.query.export',{type:'kartu-hutang',...params()}); }
 </script>
 
 <template>
@@ -52,7 +51,10 @@ function apply(){
             <option v-for="(lbl,key) in jenisOpts" :key="key" :value="key">{{ lbl }}</option>
           </select>
         </div>
+        <div><label class="mb-1 block text-xs text-neutral-500">Tgl Awal</label><input v-model="df" type="date" :class="inputCls" /></div>
+        <div><label class="mb-1 block text-xs text-neutral-500">Tgl Akhir</label><input v-model="dt" type="date" :class="inputCls" /></div>
         <Button @click="apply">Tampilkan</Button>
+        <button @click="exportXls" class="inline-flex h-9 items-center gap-1.5 rounded-lg border border-emerald-300 bg-emerald-50 px-3 text-sm font-medium text-emerald-700 hover:bg-emerald-100 dark:border-emerald-700/50 dark:bg-emerald-900/30 dark:text-emerald-300"><FileSpreadsheet class="h-4 w-4" /> Excel</button>
       </div>
     </div>
 
