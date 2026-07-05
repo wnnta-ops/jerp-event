@@ -15,10 +15,13 @@ const props = defineProps<{
     mutations: Array<any>;
     accounts: Array<any>;
     costCenters: Array<any>;
+    filterStatus?: string;
+    pending?: number;
 }>();
 
 const year = ref(props.year);
-function changeYear() { router.get(route('bs.budget.index'), { year: year.value }, { preserveState: true, replace: true }); }
+const statusFilter = ref(props.filterStatus ?? 'approved');
+function reload() { router.get(route('bs.budget.index'), { year: year.value, status: statusFilter.value }, { preserveState: true, replace: true }); }
 function fmtRp(v: number) { return 'Rp ' + Number(v ?? 0).toLocaleString('id-ID'); }
 
 const wfBadge: Record<string, any> = { draft: 'neutral', submitted: 'warning', approved: 'success', rejected: 'danger' };
@@ -59,7 +62,8 @@ const inputCls = 'h-9 w-full rounded-lg border border-neutral-300 bg-white px-3 
         <div class="flex flex-wrap items-center justify-between gap-2">
             <h1 class="flex items-center gap-2 text-2xl font-bold"><PieChart class="h-6 w-6 text-primary-600" /> Master Budget</h1>
             <div class="flex items-center gap-2">
-                <input v-model.number="year" @change="changeYear" type="number" class="h-9 w-28 rounded-lg border border-neutral-300 bg-white px-3 text-sm dark:border-neutral-700 dark:bg-neutral-900" />
+                <input v-model.number="year" @change="reload" type="number" class="h-9 w-28 rounded-lg border border-neutral-300 bg-white px-3 text-sm dark:border-neutral-700 dark:bg-neutral-900" />
+                <select v-model="statusFilter" @change="reload" class="h-9 rounded-lg border border-neutral-300 bg-white px-3 text-sm dark:border-neutral-700 dark:bg-neutral-900" title="Filter status"><option value="approved">Disetujui</option><option value="submitted">Menunggu Approval</option><option value="rejected">Ditolak</option><option value="all">Semua Status</option></select>
                 <Link :href="route('bs.budget.upload.index')" class="inline-flex h-9 items-center gap-1.5 rounded-lg border border-neutral-300 px-3 text-sm font-medium dark:border-neutral-700"><Upload class="h-4 w-4" /> Upload</Link>
                 <a :href="route('bs.budget.export', { year })" class="inline-flex h-9 items-center gap-1.5 rounded-lg border border-emerald-300 bg-emerald-50 px-3 text-sm font-medium text-emerald-700 hover:bg-emerald-100 dark:border-emerald-700/50 dark:bg-emerald-900/30 dark:text-emerald-300"><FileSpreadsheet class="h-4 w-4" /> Excel</a>
                 <button @click="showMutate = true" class="inline-flex h-9 items-center gap-1.5 rounded-lg border border-neutral-300 px-3 text-sm font-medium dark:border-neutral-700"><Shuffle class="h-4 w-4" /> Mutasi</button>
@@ -73,6 +77,12 @@ const inputCls = 'h-9 w-full rounded-lg border border-neutral-300 bg-white px-3 
             <div class="card p-4"><div class="text-xs uppercase text-neutral-400">Realisasi</div><div class="mt-1 text-lg font-bold text-primary-600">{{ fmtRp(summary.realisasi) }}</div></div>
             <div class="card p-4"><div class="text-xs uppercase text-neutral-400">Sisa Anggaran</div><div class="mt-1 text-lg font-bold" :class="summary.sisa >= 0 ? 'text-success-700' : 'text-danger-600'">{{ fmtRp(summary.sisa) }}</div></div>
         </div>
+
+        <!-- Gate approval: yang belum di-approve tidak tampil di daftar (default "Disetujui"). -->
+        <Link v-if="pending && statusFilter === 'approved'" :href="route('bs.budget.approvals')" class="flex items-center justify-between gap-2 rounded-lg border border-amber-300 bg-amber-50 px-4 py-2.5 text-sm text-amber-800 hover:bg-amber-100 dark:border-amber-700/50 dark:bg-amber-900/20 dark:text-amber-300">
+            <span><b>{{ pending }}</b> anggaran menunggu approval — belum tampil di daftar ini.</span>
+            <span class="font-semibold underline">Buka Approval Budget →</span>
+        </Link>
 
         <div class="card overflow-x-auto">
             <table class="w-full text-sm">
@@ -119,7 +129,7 @@ const inputCls = 'h-9 w-full rounded-lg border border-neutral-300 bg-white px-3 
                             <div><label class="mb-1 block text-xs font-medium text-neutral-500">Project</label><input v-model="form.project" placeholder="JR" :class="inputCls" /></div>
                             <div class="col-span-2"><label class="mb-1 block text-xs font-medium text-neutral-500">Cost Center</label><select v-model="form.cost_center_id" :class="inputCls"><option value="">Semua cost center</option><option v-for="c in costCenters" :key="c.id" :value="c.id">{{ c.name }}</option></select></div>
                         </div>
-                        <div><label class="mb-1 block text-xs font-medium text-neutral-500">Akun Beban *</label><select v-model="form.account_id" required :class="inputCls"><option value="">— pilih —</option><option v-for="a in accounts" :key="a.id" :value="a.id">{{ a.code }} - {{ a.name }}</option></select><p v-if="form.errors.account_id" class="mt-1 text-xs text-danger-500">{{ form.errors.account_id }}</p></div>
+                        <div><label class="mb-1 block text-xs font-medium text-neutral-500">Akun *</label><select v-model="form.account_id" required :class="inputCls"><option value="">— pilih —</option><option v-for="a in accounts" :key="a.id" :value="a.id">{{ a.code }} - {{ a.name }}</option></select><p v-if="form.errors.account_id" class="mt-1 text-xs text-danger-500">{{ form.errors.account_id }}</p></div>
                         <div>
                             <label class="mb-1 block text-xs font-medium text-neutral-500">Anggaran per Bulan</label>
                             <div class="grid grid-cols-3 gap-2 sm:grid-cols-4 lg:grid-cols-6">

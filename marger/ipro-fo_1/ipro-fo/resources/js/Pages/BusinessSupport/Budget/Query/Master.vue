@@ -8,7 +8,7 @@ import Badge from '@/Components/UI/Badge.vue';
 import EmptyState from '@/Components/UI/EmptyState.vue';
 
 const props = defineProps<{
-  filters: { year: number; cost_center_id: number | null };
+  filters: { year: number; cost_center_id: number | null; date_from: string | null; date_to: string | null };
   rows: Array<any>;
   monthLabels: string[];
   costCenters: Array<any>;
@@ -23,9 +23,11 @@ const inputCls = 'h-9 w-full rounded-lg border border-neutral-300 bg-white px-3 
 
 const year = ref<number>(props.filters.year);
 const cc = ref<number | null>(props.filters.cost_center_id);
+const dateFrom = ref<string>(props.filters.date_from ?? '');
+const dateTo = ref<string>(props.filters.date_to ?? '');
 
 function apply() {
-  router.get(route('bs.budget.query.master'), { year: year.value, cost_center_id: cc.value || undefined }, { preserveState: true, replace: true });
+  router.get(route('bs.budget.query.master'), { year: year.value, cost_center_id: cc.value || undefined, date_from: dateFrom.value || undefined, date_to: dateTo.value || undefined }, { preserveState: true, replace: true });
 }
 </script>
 
@@ -51,6 +53,14 @@ function apply() {
             <option :value="''">Semua</option>
             <option v-for="c in costCenters" :key="c.id" :value="c.id">{{ c.name }}</option>
           </select>
+        </div>
+        <div>
+          <label class="mb-1 block text-xs font-medium text-neutral-500">Tgl Awal</label>
+          <input v-model="dateFrom" type="date" :class="inputCls" />
+        </div>
+        <div>
+          <label class="mb-1 block text-xs font-medium text-neutral-500">Tgl Akhir</label>
+          <input v-model="dateTo" type="date" :class="inputCls" />
         </div>
         <Button @click="apply">Tampilkan</Button>
       </div>
