@@ -7,6 +7,7 @@ namespace App\Http\Controllers\Web\BusinessSupport\Payable;
 use App\Domain\BusinessSupport\Models\BsAccount;
 use App\Domain\BusinessSupport\Models\BsApInvoice;
 use App\Domain\BusinessSupport\Models\BsPurchaseOrder;
+use App\Domain\BusinessSupport\Models\BsSupplier;
 use App\Domain\BusinessSupport\Models\BsWorkOrder;
 use App\Domain\BusinessSupport\Models\BsWorkOrderProgress;
 use App\Domain\BusinessSupport\Services\JournalService;
@@ -15,6 +16,7 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -65,30 +67,95 @@ class PostingInvoiceController extends Controller
                 },
                 'amount'       => (float) $r->amount,
                 'tgl'          => $r->tgl_refund,
+                'keterangan'   => $r->keterangan, // mis. GMC → nama gimmick ("Gimmick BPHTB — SPR ...")
             ])->values();
 
+        // Master supplier (Data Center → Supplier Center) untuk dropdown kolom Supplier.
+        $suppliers = BsSupplier::query()->where('is_active', true)->orderBy('name')
+            ->get(['id', 'code', 'name'])
+            ->map(fn ($s) => ['id' => $s->id, 'label' => trim(($s->code ? $s->code.' — ' : '').$s->name)])
+            ->values();
+
         return Inertia::render('BusinessSupport/Payable/Posting', [
-            'pos'      => $pos,
-            'progress' => $progress,
-            'refunds'  => $refunds,
+            'pos'       => $pos,
+            'progress'  => $progress,
+            'refunds'   => $refunds,
+            'suppliers' => $suppliers,
         ]);
     }
 
-    /** Terbitkan invoice hutang dari 1 baris antrian (refund/komisi/blt) → masuk Account Payable. */
+    /** Terbitkan invoice hutang dari 1 baris antrian (refund/komisi/blt/gmc) → masuk Account Payable. */
     public function fromRefund(Request $request, JournalService $journal, int $queue): RedirectResponse
     {
         abort_unless($request->user()?->canModule('ap'), 403);
+
+        // Supplier WAJIB dipilih (integrasi Supplier Center) — jadi hutang AP tertaut supplier.
+        $validated = $request->validate([
+            'supplier_id' => ['required', 'integer', Rule::exists('bs_suppliers', 'id')],
+        ]);
 
         $row = DB::table('bs_ap_refund_queue')->where('id', $queue)->first();
         if (! $row || $row->status === 'posted') {
             return back()->with('error', 'Antrian tidak ditemukan atau sudah diposting.');
         }
 
+        $res = $this->issueFromRefundRow($row, (int) $validated['supplier_id'], $journal, (int) $request->user()->id);
+        if (! $res['ok']) {
+            return back()->with('error', $res['error']);
+        }
+
+        return redirect()->route('bs.ap.show', $res['invoice'])
+            ->with('success', "Invoice {$res['invoice']->invoice_number} diterbitkan dari {$row->refund_no} — masuk Account Payable.");
+    }
+
+    /** Posting MASSAL beberapa baris antrian sekaligus; tiap item wajib punya supplier_id. */
+    public function bulkRefund(Request $request, JournalService $journal): RedirectResponse
+    {
+        abort_unless($request->user()?->canModule('ap'), 403);
+
+        $validated = $request->validate([
+            'items'               => ['required', 'array', 'min:1'],
+            'items.*.id'          => ['required', 'integer'],
+            'items.*.supplier_id' => ['required', 'integer', Rule::exists('bs_suppliers', 'id')],
+        ]);
+
+        $ok = 0;
+        $errors = [];
+        foreach ($validated['items'] as $item) {
+            $row = DB::table('bs_ap_refund_queue')->where('id', $item['id'])->first();
+            if (! $row) {
+                $errors[] = "#{$item['id']}: tidak ditemukan";
+
+                continue;
+            }
+            $res = $this->issueFromRefundRow($row, (int) $item['supplier_id'], $journal, (int) $request->user()->id);
+            $res['ok'] ? $ok++ : $errors[] = $res['error'];
+        }
+
+        $msg = "Posting massal selesai: {$ok} invoice diterbitkan.";
+        if ($errors) {
+            return back()->with('error', $msg.' Gagal: '.implode('; ', $errors));
+        }
+
+        return back()->with('success', $msg);
+    }
+
+    /**
+     * Terbitkan 1 invoice AP dari baris antrian refund/komisi/blt/gmc + jurnal pengakuan.
+     *
+     * @return array{ok:bool, invoice?:BsApInvoice, error?:string}
+     */
+    private function issueFromRefundRow(object $row, int $supplierId, JournalService $journal, int $userId): array
+    {
+        if ($row->status === 'posted') {
+            return ['ok' => false, 'error' => "{$row->refund_no}: sudah diposting"];
+        }
+
         // Akun BO sudah di-resolve J-ERP (coa_map) saat masuk antrian; fallback payable generik.
         $payable = $row->payable_account_id ?: BsAccount::where('code', config('business_support.gl_accounts.payable'))->value('id');
         $offset = $row->offset_account_id ?: $payable;
         if (! $payable || ! $offset || (int) $payable === (int) $offset) {
-            return back()->with('error', 'Akun hutang / lawan belum ter-set (cek ipro.coa_map di J-ERP).');
+            return ['ok' => false, 'error' => "{$row->refund_no}: akun hutang/lawan belum ter-set"];
         }
 
         $amount = round((float) $row->amount, 2);
@@ -102,19 +169,19 @@ class PostingInvoiceController extends Controller
         $hutangLabel = ['komisi' => 'Hutang Komisi', 'blt' => 'Hutang BLT', 'gmc' => 'Hutang Gimmick'][$row->kind] ?? 'Hutang Refund';
         $date = $row->tgl_refund ?: now()->toDateString();
 
-        $inv = DB::transaction(function () use ($row, $amount, $payable, $offset, $desc, $hutangLabel, $date, $journal, $request) {
+        $inv = DB::transaction(function () use ($row, $supplierId, $amount, $payable, $offset, $desc, $hutangLabel, $date, $journal, $userId) {
             $inv = $this->makeInvoice([
-                'supplier_id' => null, 'customer_id' => $row->customer_id,
+                'supplier_id' => $supplierId, 'customer_id' => $row->customer_id,
                 'expense_account_id' => $offset, 'payable_account_id' => $payable,
                 'description' => $desc, 'invoice_date' => $date, 'receive_date' => $date, 'due_date' => $date,
                 'dpp' => $amount, 'total' => $amount, 'net_payable' => $amount,
                 'source_type' => $row->kind, 'source_id' => $row->refund_id, 'refund_source' => $row->refund_source,
-            ], $request->user()->id);
+            ], $userId);
 
             // Jurnal pengakuan: Dr lawan (beban/titipan) / Cr Hutang (refund/komisi/blt).
             $j = $journal->post([
                 'journal_date' => $inv->invoice_date->toDateString(), 'source' => 'ap',
-                'reference' => $inv->invoice_number, 'description' => 'AP — '.$desc, 'created_by' => $request->user()->id,
+                'reference' => $inv->invoice_number, 'description' => 'AP — '.$desc, 'created_by' => $userId,
             ], [
                 ['account_id' => $offset, 'debit' => $amount, 'credit' => 0, 'description' => $desc],
                 ['account_id' => $payable, 'debit' => 0, 'credit' => $amount, 'description' => $hutangLabel],
@@ -127,7 +194,7 @@ class PostingInvoiceController extends Controller
             return $inv;
         });
 
-        return redirect()->route('bs.ap.show', $inv)->with('success', "Invoice {$inv->invoice_number} diterbitkan dari {$row->refund_no} — masuk Account Payable.");
+        return ['ok' => true, 'invoice' => $inv];
     }
 
     public function fromPo(Request $request, BsPurchaseOrder $po): RedirectResponse

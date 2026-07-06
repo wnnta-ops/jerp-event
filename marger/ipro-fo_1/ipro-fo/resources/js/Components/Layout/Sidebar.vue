@@ -14,7 +14,7 @@ import {
 } from 'lucide-vue-next';
 
 defineProps<{ open: boolean }>();
-defineEmits<{ (e: 'close'): void }>();
+defineEmits<{ (e: 'toggle'): void }>();
 
 const page = usePage();
 
@@ -490,7 +490,7 @@ function safeRoute(href?: string, params?: Record<string, any>): string | null {
     >
         <div class="flex items-center justify-between px-4 h-16 border-b border-primary-200 sticky top-0 bg-primary-100 z-10">
             <span v-if="open" class="text-base font-bold text-primary-900">Java Core System</span>
-            <button @click="$emit('close')" class="text-primary-700 hover:text-primary-900">
+            <button @click="$emit('toggle')" class="text-primary-700 hover:text-primary-900" :title="open ? 'Tutup sidebar' : 'Buka sidebar'">
                 <ChevronLeft class="h-5 w-5" :class="{ 'rotate-180': ! open }" />
             </button>
         </div>

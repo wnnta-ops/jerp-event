@@ -13,10 +13,9 @@ return [
     // Set false HANYA utk pemulihan darurat (mis. SSO bermasalah) agar bisa login langsung.
     'fo_login_only' => (bool) env('SSO_FO_LOGIN_ONLY', true),
 
-    // Peta email FO (J-ERP) → BO (ipro-fo) bila berbeda. IDEALNYA email user disamakan
-    // di kedua app (atau pakai 1 tabel users saat fase 1-aplikasi). Sementara, petakan
-    // admin agar SSO bisa langsung diuji. Tambah baris utk user lain sesuai kebutuhan.
+    // Peta email FO (J-ERP) → BO (ipro-fo) bila berbeda. Kini email user FO & BO sudah
+    // DISAMAKAN (provisioning otomatis membuat kembaran BO ber-email sama), jadi peta ini
+    // kosong. Isi hanya bila ada user dengan email berbeda di kedua app.
     'email_map' => [
-        'admin@jerp.test' => 'admin@mup.local',
     ],
 ];

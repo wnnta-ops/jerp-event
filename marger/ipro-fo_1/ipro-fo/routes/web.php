@@ -627,6 +627,7 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
     Route::post('/business-support/payable-posting/po/{po}', [BsApPostingController::class, 'fromPo'])->name('bs.ap.posting.po');
     Route::post('/business-support/payable-posting/spk/{progress}', [BsApPostingController::class, 'fromSpk'])->name('bs.ap.posting.spk');
     Route::post('/business-support/payable-posting/refund/{queue}', [BsApPostingController::class, 'fromRefund'])->name('bs.ap.posting.refund');
+    Route::post('/business-support/payable-posting/bulk-refund', [BsApPostingController::class, 'bulkRefund'])->name('bs.ap.posting.bulk-refund');
     // AP — Penghapusan Nilai Hutang
     Route::get('/business-support/payable-penghapusan',      [BsApPenghapusanController::class, 'index'])->name('bs.ap.penghapusan.index');
     Route::get('/business-support/payable-penghapusan-report', [BsApPenghapusanController::class, 'report'])->name('bs.ap.penghapusan.report'); // Laporan Penghapusan Hutang (rincian + history)
