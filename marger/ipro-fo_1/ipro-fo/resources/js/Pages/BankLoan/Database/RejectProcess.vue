@@ -71,7 +71,7 @@ function toggleAll() {
 }
 function printBulk() {
     if (!selected.value.size) return;
-    const url = route('kpr.database.reject-kpr.memo-bulk', { ids: [...selected.value].join(',') });
+    const url = route('kpr.database.reject-kpr.memo-form', { ids: [...selected.value].join(',') });
     window.open(url, '_blank', 'noopener');
 }
 
@@ -133,7 +133,7 @@ function downloadExcel() {
                         <td class="px-3 py-3"><span v-if="r.reason" class="text-neutral-700 dark:text-neutral-200">{{ r.reason }}</span><span v-else class="text-xs italic text-neutral-400">— tanpa alasan —</span></td>
                         <td class="whitespace-nowrap px-3 py-3">{{ fmtDate(r.rejected_at) }}</td>
                         <td class="px-3 py-3 text-center whitespace-nowrap">
-                            <a :href="route('kpr.database.reject-kpr.memo', r.id)" target="_blank" rel="noopener" class="inline-flex items-center gap-1.5 rounded-lg border border-danger-300 bg-danger-50 px-3 py-1.5 text-xs font-medium text-danger-700 hover:bg-danger-100 dark:border-danger-700/50 dark:bg-danger-900/30 dark:text-danger-300"><Printer class="h-3.5 w-3.5" /> Memo Rekom Batal</a>
+                            <a :href="route('kpr.database.reject-kpr.memo-form', { ids: r.id })" target="_blank" rel="noopener" class="inline-flex items-center gap-1.5 rounded-lg border border-danger-300 bg-danger-50 px-3 py-1.5 text-xs font-medium text-danger-700 hover:bg-danger-100 dark:border-danger-700/50 dark:bg-danger-900/30 dark:text-danger-300"><Printer class="h-3.5 w-3.5" /> Memo Rekom Batal</a>
                         </td>
                     </tr>
                 </tbody>

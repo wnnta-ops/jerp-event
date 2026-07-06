@@ -1107,8 +1107,7 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
     Route::get('/kpr-database/reject-bi-checking/{initiation}', [\App\Http\Controllers\Web\BankLoan\KprDatabaseController::class, 'rejectBiCheckingDetail'])->name('kpr.database.reject-bi.detail');
     Route::get('/kpr-database/reject-proses-kpr',             [\App\Http\Controllers\Web\BankLoan\KprDatabaseController::class, 'rejectProcess'])->name('kpr.database.reject-kpr');
     Route::get('/kpr-database/reject-proses-kpr-excel',       [\App\Http\Controllers\Web\BankLoan\KprDatabaseController::class, 'rejectProcessExcel'])->name('kpr.database.reject-kpr.excel'); // unduh rincian Excel
-    Route::get('/kpr-database/reject-proses-kpr-memo-batal-massal', [\App\Http\Controllers\Web\BankLoan\KprDatabaseController::class, 'rejectProcessMemoBulk'])->name('kpr.database.reject-kpr.memo-bulk'); // cetak Memo Rekom Batal (massal)
-    Route::get('/kpr-database/reject-proses-kpr/{application}/memo-batal', [\App\Http\Controllers\Web\BankLoan\KprDatabaseController::class, 'rejectProcessMemo'])->name('kpr.database.reject-kpr.memo'); // cetak Memo Rekom Batal
+    Route::get('/kpr-database/reject-proses-kpr-memo-batal', [\App\Http\Controllers\Web\BankLoan\KprDatabaseController::class, 'rejectProcessMemoForm'])->name('kpr.database.reject-kpr.memo-form'); // form editable Memo Rekom Batal (massal / per-baris) — ?ids=
 
     // ── LEGAL ──────────────────────────────────────────────
     Route::get('/ppjb',                                       [PpjbController::class, 'index'])->name('ppjb.index');
