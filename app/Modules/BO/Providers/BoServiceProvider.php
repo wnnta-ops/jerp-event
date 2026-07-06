@@ -5,6 +5,7 @@ namespace App\Modules\BO\Providers;
 use App\Modules\BO\FoBoBridge\Listeners\PostFoEventToGl;
 use App\Modules\BO\GeneralLedger\Contracts\JurnalPostingServiceInterface;
 use App\Modules\BO\GeneralLedger\Services\JurnalPostingService;
+use App\Models\User;
 use App\Modules\BO\IproBridge\Jobs\SyncFoToIproJob;
 use App\Modules\BO\IproBridge\Services\IproMasterSync;
 use App\Modules\FO\FinanceAR\Models\KprPengajuan;
@@ -62,5 +63,24 @@ class BoServiceProvider extends ServiceProvider
         KprPengajuan::saved(fn ($m) => $dispatch('syncKpr', $m));
         // Transfer Anonim → tts_receipts TANPA UNIT (muncul di BO Approval UTJ&DP "Tanpa Unit").
         TransferAnonim::saved(fn ($m) => $dispatch('syncTransferAnonim', $m));
+
+        // Provisioning pengguna FO (jerp.users) → ipro_bo.users BY EMAIL agar SSO FO→BO
+        // cocok. Hanya saat user baru / identitas berubah (hindari sync tiap kali login
+        // memperbarui last_login_at). Bisa dimatikan lewat config ipro.user_sync_enabled.
+        if (config('ipro.user_sync_enabled', true)) {
+            User::saved(function ($m) use ($dispatch) {
+                // Lewati update yang HANYA mencatat login agar tak sync tiap login.
+                // Perubahan role FO tak mengubah kolom users → getChanges() kosong →
+                // TIDAK login-only → tetap tersinkron (job reload user, baca role terbaru).
+                $changed = array_keys($m->getChanges());
+                $loginOnly = $changed !== [] && ! array_diff($changed, [
+                    'last_login_at', 'last_login_ip', 'failed_attempts', 'locked_until', 'remember_token', 'updated_at',
+                ]);
+                if ($loginOnly) {
+                    return;
+                }
+                $dispatch('syncUser', $m);
+            });
+        }
     }
 }

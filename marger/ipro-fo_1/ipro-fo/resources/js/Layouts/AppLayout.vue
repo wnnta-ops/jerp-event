@@ -12,10 +12,6 @@ defineProps<{ title?: string }>();
 const sidebarOpen = ref(true);
 const mainEl = ref<HTMLElement | null>(null);
 
-function toggleSidebar() {
-    sidebarOpen.value = !sidebarOpen.value;
-}
-
 const page = usePage();
 const user = computed(() => page.props.auth.user);
 
@@ -46,10 +42,10 @@ onUnmounted(() => {
     <Head :title="title" />
 
     <div class="flex h-screen overflow-hidden bg-neutral-50 dark:bg-neutral-950">
-        <Sidebar :open="sidebarOpen" @close="sidebarOpen = false" />
+        <Sidebar :open="sidebarOpen" @toggle="sidebarOpen = !sidebarOpen" />
 
         <div class="flex flex-1 flex-col overflow-hidden">
-            <Topbar :user="user" @toggle-sidebar="toggleSidebar" />
+            <Topbar :user="user" />
 
             <main ref="mainEl" class="flex-1 overflow-y-auto">
                 <div class="container mx-auto py-6">

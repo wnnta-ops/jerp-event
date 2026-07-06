@@ -4,6 +4,7 @@ namespace App\Filament\Fo\Resources;
 
 use App\Filament\Fo\Resources\GmcResource\Pages;
 use App\Modules\FO\FinanceAR\Models\Gmc;
+use App\Modules\FO\FinanceAR\Models\GmcItem;
 use App\Modules\FO\MarketingSales\Models\Customer;
 use App\Modules\FO\MarketingSales\Models\Kontrak;
 use Filament\Forms;
@@ -45,16 +46,80 @@ class GmcResource extends Resource
                     $set('customer_id', $k?->customer_id);
                 })
                 ->helperText('Mengikat No. SPR, Unit, & Customer dari kontrak.'),
-            Forms\Components\Select::make('customer_id')->label('Customer')->searchable()
-                ->options(fn () => Customer::query()->limit(300)->pluck('full_name', 'id')),
+            // Read-only: Customer mengikuti SPR/Kontrak (di-set otomatis di atas) agar tak salah pilih.
+            Forms\Components\Select::make('customer_id')->label('Customer')
+                ->options(fn (Forms\Get $get) => Customer::whereKey($get('customer_id'))->pluck('full_name', 'id'))
+                ->disabled()->dehydrated()
+                ->helperText('Otomatis dari SPR/Kontrak — tak dapat diubah.'),
             // Nama Gimmick diambil dari master "Kategori Gimmick" di BO (bs_gimmick_categories @ ipro_bo).
             Forms\Components\Select::make('nama')->label('Nama Gimmick')->required()->searchable()
                 ->options(fn () => self::gimmickOptions())
                 ->helperText('Diambil dari master Kategori Gimmick (BO → Setup → Kategori Gimmick).'),
             Forms\Components\TextInput::make('nilai')->label('Nilai / Biaya (Rp)')->numeric()->rupiah()->default(0)->required()
-                ->helperText('Biaya gimmick yang ditanggung developer — BUKAN tagihan customer.'),
+                ->helperText('Untuk gimmick tunggal. Bila mengisi Rincian Komponen di bawah, nilai otomatis = jumlah rincian.'),
             Forms\Components\Textarea::make('keterangan')->label('Keterangan')->rows(2)->columnSpanFull(),
+
+            // Rincian komponen (opsional) — gimmick multi-supplier (mis. PPJB = Jasa Notaris + PNBP + Jasa CV).
+            Forms\Components\Repeater::make('items')
+                ->label('Rincian Komponen (opsional — untuk gimmick multi-supplier)')
+                ->relationship()
+                ->schema([
+                    Forms\Components\TextInput::make('nama')->label('Nama Komponen')->required()->columnSpan(2),
+                    Forms\Components\Select::make('supplier_id')->label('Supplier')->required()->searchable()
+                        ->options(fn () => GmcItem::supplierOptions())->columnSpan(2),
+                    Forms\Components\TextInput::make('nilai')->label('Nilai (Rp)')->numeric()->rupiah()->default(0)->required()->columnSpan(2),
+                ])
+                ->columns(6)->live()->addActionLabel('+ Tambah komponen')
+                ->helperText('Tiap komponen jadi hutang AP terpisah ke supplier-nya saat Posting BO. Kosongkan bila gimmick tunggal.')
+                ->columnSpanFull(),
+            Forms\Components\Placeholder::make('total_rincian')->label('Total Rincian')
+                ->content(fn (Forms\Get $get) => 'Rp '.number_format(collect($get('items') ?? [])
+                    ->sum(fn ($r) => (float) str_replace('.', '', (string) ($r['nilai'] ?? 0))), 0, ',', '.'))
+                ->visible(fn (Forms\Get $get) => filled($get('items')))
+                ->columnSpanFull(),
         ])->columns(2);
+    }
+
+    /** Bila GMC punya rincian komponen, nilai total = jumlah komponen. */
+    public static function syncNilaiFromItems(Gmc $record): void
+    {
+        if ($record->items()->exists()) {
+            $record->update(['nilai' => (float) $record->items()->sum('nilai')]);
+        }
+    }
+
+    /**
+     * Posting GMC → antrian Posting Invoice BO. Bila ada rincian komponen: kirim
+     * 1 baris per komponen (refund_no unik + supplier masing-masing). Bila tidak:
+     * 1 baris (perilaku lama, supplier dipilih saat posting di BO).
+     */
+    public static function postGmcToBo(Gmc $r): void
+    {
+        $poster = app(\App\Modules\BO\IproBridge\Services\IproApPoster::class);
+        $sprRef = $r->kontrak ? ' — SPR '.$r->kontrak->no_kontrak : '';
+        $custId = $r->customer_id ? (int) $r->customer_id : null;
+        $custName = $r->customer?->full_name;
+        $tgl = $r->tgl?->toDateString();
+        $items = $r->items;
+
+        if ($items->isNotEmpty()) {
+            $i = 0;
+            foreach ($items as $it) {
+                $i++;
+                $poster->queueGmc(
+                    (string) $r->no_gmc.'-'.$i,
+                    (float) $it->nilai,
+                    $custId, $custName, $tgl,
+                    trim('Gimmick '.$r->nama.' — '.$it->nama.$sprRef),
+                    $it->supplier_id ? (int) $it->supplier_id : null,
+                );
+            }
+        } else {
+            $poster->queueGmc((string) $r->no_gmc, (float) $r->nilai, $custId, $custName, $tgl,
+                trim('Gimmick '.$r->nama.$sprRef));
+        }
+
+        $r->update(['status' => 'DIPROSES']);
     }
 
     public static function table(Table $table): Table
@@ -72,32 +137,27 @@ class GmcResource extends Resource
             ->filters([
                 Tables\Filters\SelectFilter::make('status')->options(['DRAFT' => 'Draft', 'DIPROSES' => 'Diproses']),
             ])
-            ->headerActions([Tables\Actions\CreateAction::make(), self::gmcMassalAction()])
+            ->headerActions([
+                Tables\Actions\CreateAction::make()->after(fn (Gmc $record) => self::syncNilaiFromItems($record)),
+                self::gmcMassalAction(),
+            ])
             ->actions([
                 // Posting BO: kirim biaya gimmick ke antrian Posting Invoice BO (Sumber: GMC).
                 Tables\Actions\Action::make('postingBo')->label('Posting BO')->icon('heroicon-o-paper-airplane')->color('success')
                     ->visible(fn (Gmc $r) => (float) $r->nilai > 0)
                     ->requiresConfirmation()
                     ->modalHeading('Posting GMC ke BO')
-                    ->modalDescription(fn (Gmc $r) => 'Kirim biaya gimmick '.$r->no_gmc.' (Rp '.number_format((float) $r->nilai, 0, ',', '.').') ke Posting Invoice BO (Sumber: GMC). Jadi hutang AP setelah diposting di BO.')
+                    ->modalDescription(fn (Gmc $r) => 'Kirim biaya gimmick '.$r->no_gmc.' (Rp '.number_format((float) $r->nilai, 0, ',', '.').') ke Posting Invoice BO (Sumber: GMC)'.($r->items()->exists() ? ' — pecah '.$r->items()->count().' komponen ke supplier masing-masing' : '').'.')
                     ->action(function (Gmc $r) {
                         try {
-                            app(\App\Modules\BO\IproBridge\Services\IproApPoster::class)->queueGmc(
-                                (string) $r->no_gmc,
-                                (float) $r->nilai,
-                                $r->customer_id ? (int) $r->customer_id : null,
-                                $r->customer?->full_name,
-                                $r->tgl?->toDateString(),
-                                trim('Gimmick '.$r->nama.($r->kontrak ? ' — SPR '.$r->kontrak->no_kontrak : '')),
-                            );
-                            $r->update(['status' => 'DIPROSES']);
+                            self::postGmcToBo($r);
                             \Filament\Notifications\Notification::make()->success()->title('GMC dikirim ke Posting Invoice BO')
                                 ->body('Biaya gimmick '.$r->no_gmc.' menunggu diposting di BO → Posting Invoice (Sumber: GMC).')->send();
                         } catch (\Throwable $e) {
                             \Filament\Notifications\Notification::make()->warning()->title('Gagal kirim ke BO')->body($e->getMessage())->persistent()->send();
                         }
                     }),
-                Tables\Actions\EditAction::make(),
+                Tables\Actions\EditAction::make()->after(fn (Gmc $record) => self::syncNilaiFromItems($record)),
                 Tables\Actions\DeleteAction::make(),
             ])
             ->bulkActions([
@@ -117,15 +177,7 @@ class GmcResource extends Resource
                                 continue;
                             }
                             try {
-                                app(\App\Modules\BO\IproBridge\Services\IproApPoster::class)->queueGmc(
-                                    (string) $r->no_gmc,
-                                    (float) $r->nilai,
-                                    $r->customer_id ? (int) $r->customer_id : null,
-                                    $r->customer?->full_name,
-                                    $r->tgl?->toDateString(),
-                                    trim('Gimmick '.$r->nama.($r->kontrak ? ' — SPR '.$r->kontrak->no_kontrak : '')),
-                                );
-                                $r->update(['status' => 'DIPROSES']);
+                                self::postGmcToBo($r);
                                 $ok++;
                             } catch (\Throwable $e) {
                                 $fail++;

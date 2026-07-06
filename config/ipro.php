@@ -18,6 +18,36 @@ return [
     // Sync master otomatis (event saat FO disimpan). Set false utk matikan.
     'sync_enabled' => (bool) env('IPRO_SYNC_ENABLED', true),
 
+    // Provisioning pengguna FO → ipro_bo.users (BY EMAIL) agar SSO FO→BO cocok.
+    // Saat user FO dibuat/identitasnya berubah, kembaran user BO dibuat/diselaraskan.
+    'user_sync_enabled' => (bool) env('IPRO_USER_SYNC_ENABLED', true),
+    // Grup akses BO default untuk user hasil provisioning (kosong = tanpa role).
+    'default_bo_role' => env('IPRO_DEFAULT_BO_ROLE', 'Viewer'),
+
+    // Prefix kode akun BANK di Chart of Account BO (bs_accounts.code) — untuk
+    // dropdown "Bank Penerima" Transfer Anonim (akun bank postable di bawah grup ini).
+    'coa_bank_prefix' => env('IPRO_COA_BANK_PREFIX', '10101020'),
+
+    // Pemetaan role FO (jerp) → role BO (ipro_bo). Hak akses BO MENGIKUTI FO:
+    // saat user FO disinkron, grup akses BO-nya diselaraskan dari role FO di sini.
+    // Role FO tak terpetakan → default_bo_role. Role BO-only (mis. Agent) yang
+    // di-set manual di "Pengguna BO" dipertahankan (tak ditimpa). Silakan sesuaikan.
+    'role_map' => [
+        'super_admin'     => 'SuperAdmin',
+        'it_admin'        => 'Admin',
+        'direktur'        => 'Direktur',
+        'finance_manager' => 'FinanceManager',
+        'finance_staff'   => 'Finance',
+        'accounting'      => 'Finance',
+        'kasir_launching' => 'Finance',
+        'kpr_officer'     => 'Finance',   // best-effort: BO tak punya role bankloan khusus
+        'collector'       => 'Collection',
+        'sales_manager'   => 'SalesManager',
+        'sales_staff'     => 'Sales',
+        'auditor'         => 'Viewer',
+        'legal_staff'     => 'Viewer',    // best-effort: BO tak punya role legal khusus
+    ],
+
     // ── SSO token-handoff ke BO ipro-fo ────────────────────────────────────────
     'sso_secret' => env('SSO_SHARED_SECRET'),
     'bo_url'     => rtrim(env('IPRO_BO_URL', 'http://localhost:8090'), '/'),

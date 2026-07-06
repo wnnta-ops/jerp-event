@@ -4,6 +4,7 @@ namespace App\Filament\System\Resources;
 
 use App\Filament\System\Resources\UserResource\Pages;
 use App\Models\User;
+use App\Modules\BO\IproBridge\Services\IproMasterSync;
 use Filament\Forms;
 use Filament\Forms\Form;
 use Filament\Notifications\Notification;
@@ -155,11 +156,45 @@ class UserResource extends Resource
                             ->body('Grup Akses ('.$record->roles->count().') + hak akses khusus ('.$record->getDirectPermissions()->count().') disalin. Tinggal tambah akses lain bila perlu.')
                             ->send();
                     }),
+                // Provision/selaraskan kembaran user BO (ipro_bo, by email) agar SSO FO→BO cocok.
+                Tables\Actions\Action::make('sinkronBo')->label('Sinkronkan ke BO')
+                    ->icon('heroicon-o-arrows-right-left')->color('warning')
+                    ->requiresConfirmation()
+                    ->modalHeading('Sinkronkan ke BO')
+                    ->modalDescription(fn (User $record) => 'Buat/selaraskan kembaran pengguna BO ber-email "'.$record->email.'" agar login SSO FO→BO cocok.')
+                    ->action(function (User $record) {
+                        try {
+                            $id = app(IproMasterSync::class)->syncUser($record);
+                            $id
+                                ? Notification::make()->success()->title('Tersinkron ke BO')
+                                    ->body('Pengguna BO (id '.$id.') untuk '.$record->email.' siap. Berlaku penuh setelah cache izin BO di-reset.')->send()
+                                : Notification::make()->warning()->title('Dilewati')
+                                    ->body('Pengguna tanpa email tak dapat disinkron ke BO.')->send();
+                        } catch (\Throwable $e) {
+                            Notification::make()->danger()->title('Gagal sinkron ke BO')->body($e->getMessage())->send();
+                        }
+                    }),
                 Tables\Actions\EditAction::make(),
                 Tables\Actions\DeleteAction::make(),
             ])
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([
+                    Tables\Actions\BulkAction::make('sinkronBoBulk')->label('Sinkronkan ke BO')
+                        ->icon('heroicon-o-arrows-right-left')->color('warning')
+                        ->requiresConfirmation()
+                        ->action(function (\Illuminate\Support\Collection $records) {
+                            $svc = app(IproMasterSync::class);
+                            $ok = $skip = $fail = 0;
+                            foreach ($records as $r) {
+                                try {
+                                    $svc->syncUser($r) ? $ok++ : $skip++;
+                                } catch (\Throwable $e) {
+                                    $fail++;
+                                }
+                            }
+                            Notification::make()->success()->title('Sinkron BO selesai')
+                                ->body("Berhasil: {$ok} · Dilewati: {$skip} · Gagal: {$fail}. Berlaku penuh setelah cache izin BO di-reset.")->send();
+                        })->deselectRecordsAfterCompletion(),
                     Tables\Actions\DeleteBulkAction::make(),
                 ]),
             ])

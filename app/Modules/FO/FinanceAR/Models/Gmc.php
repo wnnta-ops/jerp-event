@@ -7,6 +7,7 @@ use App\Modules\FO\MarketingSales\Models\Customer;
 use App\Modules\FO\MarketingSales\Models\Kontrak;
 use App\Services\Numerator\NumeratorService;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
 /**
@@ -48,5 +49,11 @@ class Gmc extends TenantAwareModel
     public function customer(): BelongsTo
     {
         return $this->belongsTo(Customer::class);
+    }
+
+    /** Rincian komponen (opsional). Bila diisi, GMC pecah per komponen saat Posting BO. */
+    public function items(): HasMany
+    {
+        return $this->hasMany(GmcItem::class)->orderBy('urutan')->orderBy('id');
     }
 }
