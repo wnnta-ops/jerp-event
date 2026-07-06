@@ -8,6 +8,8 @@ use Illuminate\Database\ConnectionInterface;
 use Illuminate\Encryption\Encrypter;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Str;
 
 /**
  * Sinkronisasi master FO (J-ERP) → BO ipro-fo (ipro_bo), ditulis LANGSUNG ke DB
@@ -53,6 +55,138 @@ class IproMasterSync
     {
         return $this->userId ??= (int) ($this->db()->table('users')->where('email', 'admin@mup.local')->value('id')
             ?? $this->db()->table('users')->min('id') ?? 1);
+    }
+
+    /**
+     * Provisioning pengguna FO (jerp.users) → ipro_bo.users, idempoten BY EMAIL agar
+     * SSO FO→BO cocok (SsoController@consume mencari user by email, tak auto-buat).
+     *  - Baru: buat akun (password acak — login BO hanya via SSO) + grup akses default.
+     *  - Sudah ada: perbarui nama & status aktif saja; JANGAN sentuh password/role
+     *    (dikelola di app BO / halaman "Pengguna BO"). Return id user ipro_bo.
+     */
+    public function syncUser(object $u): ?int
+    {
+        $email = trim((string) ($u->email ?? ''));
+        if ($email === '') {
+            return null; // tanpa email tak bisa dipetakan ke SSO BO
+        }
+
+        $now = Carbon::now();
+        $name = (string) ($u->name ?? ($u->full_name ?? $email));
+        $active = ((int) ($u->is_active ?? 1)) === 1 ? 1 : 0;
+
+        $existing = $this->db()->table('users')->where('email', $email)->first();
+
+        if ($existing) {
+            $this->db()->table('users')->where('id', $existing->id)->update([
+                'name'       => $name,
+                'is_active'  => $active,
+                'updated_at' => $now,
+            ]);
+            $this->syncBoRolesFromFo((int) $existing->id, $u);
+
+            return (int) $existing->id;
+        }
+
+        $id = (int) $this->db()->table('users')->insertGetId([
+            'tenant_id'         => $this->tenantId,
+            'name'              => $name,
+            'email'             => $email,
+            'username'          => $this->uniqueUsername($email),
+            'password'          => Hash::make(Str::random(40)), // acak; user login BO via SSO FO
+            'is_active'         => $active,
+            'is_blocked'        => 0,
+            'email_verified_at' => $now,
+            'created_at'        => $now,
+            'updated_at'        => $now,
+        ]);
+
+        $this->syncBoRolesFromFo($id, $u);
+
+        return $id;
+    }
+
+    /** Username unik dari local-part email (nullable). Tambah sufiks bila bentrok. */
+    private function uniqueUsername(string $email): ?string
+    {
+        $base = Str::of($email)->before('@')->slug('_')->limit(50, '')->value();
+        if ($base === '') {
+            return null;
+        }
+        $candidate = $base;
+        for ($i = 1; $this->db()->table('users')->where('username', $candidate)->exists(); $i++) {
+            if ($i > 50) {
+                return null; // menyerah — biarkan null (kolom nullable-unik)
+            }
+            $candidate = $base.'_'.$i;
+        }
+
+        return $candidate;
+    }
+
+    /** Nama role BO hasil pemetaan dari role FO user (config ipro.role_map). @return array<int,string> */
+    private function mappedBoRoleNames(object $u): array
+    {
+        $map = (array) config('ipro.role_map', []);
+        $foRoles = method_exists($u, 'getRoleNames') ? $u->getRoleNames()->all() : [];
+
+        $names = [];
+        foreach ($foRoles as $r) {
+            if (! empty($map[$r])) {
+                $names[] = $map[$r];
+            }
+        }
+        $names = array_values(array_unique($names));
+
+        if (! $names) {
+            $default = (string) config('ipro.default_bo_role', 'Viewer');
+            if ($default !== '') {
+                $names = [$default];
+            }
+        }
+
+        return $names;
+    }
+
+    /**
+     * Selaraskan grup akses BO user agar MENGIKUTI role FO (config ipro.role_map).
+     * Otoritatif atas role yang "dikelola" pemetaan (target map + default); role
+     * BO-only (mis. Agent/SalesDirector) yang di-set manual DIPERTAHANKAN.
+     */
+    private function syncBoRolesFromFo(int $boUserId, object $u): void
+    {
+        $map = (array) config('ipro.role_map', []);
+        $default = (string) config('ipro.default_bo_role', 'Viewer');
+        $governedNames = array_values(array_unique(array_merge(
+            array_values($map),
+            $default !== '' ? [$default] : []
+        )));
+
+        $desiredNames = $this->mappedBoRoleNames($u);
+
+        $governedIds = $governedNames
+            ? $this->db()->table('roles')->whereIn('name', $governedNames)->pluck('id')->map(fn ($v) => (int) $v)->all()
+            : [];
+        $desiredIds = $desiredNames
+            ? $this->db()->table('roles')->whereIn('name', $desiredNames)->pluck('id')->map(fn ($v) => (int) $v)->all()
+            : [];
+
+        $current = $this->db()->table('model_has_roles')
+            ->where('model_id', $boUserId)->where('model_type', 'user')
+            ->pluck('role_id')->map(fn ($v) => (int) $v)->all();
+
+        // Pertahankan role BO-only (bukan dikelola FO), buang governed yg tak diinginkan, tambah desired.
+        $keep = array_values(array_diff($current, $governedIds));
+        $final = array_values(array_unique(array_merge($keep, $desiredIds)));
+
+        $this->db()->table('model_has_roles')
+            ->where('model_id', $boUserId)->where('model_type', 'user')->delete();
+        if ($final) {
+            $rows = array_map(fn ($rid) => [
+                'role_id' => $rid, 'model_id' => $boUserId, 'model_type' => 'user',
+            ], $final);
+            $this->db()->table('model_has_roles')->insert($rows);
+        }
     }
 
     /**

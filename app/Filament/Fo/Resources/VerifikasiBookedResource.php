@@ -52,7 +52,7 @@ class VerifikasiBookedResource extends Resource
                 Tables\Columns\TextColumn::make('cara_bayar')->label('Cara Bayar')->badge(),
                 Tables\Columns\TextColumn::make('ref_sales_name')->label('Sales')->placeholder('—')->toggleable(),
                 Tables\Columns\TextColumn::make('transferAnonim.amount')->label('Bukti Transfer')->placeholder('— belum dicocokkan')
-                    ->money('IDR')->description(fn (NupRegistration $r) => $r->transferAnonim?->bank?->name)->color('success'),
+                    ->money('IDR')->description(fn (NupRegistration $r) => $r->transferAnonim?->coaBankName() ?: $r->transferAnonim?->bank?->name)->color('success'),
                 Tables\Columns\TextColumn::make('verif_status')->label('Status')->badge()->color(fn (?string $state) => match ($state) {
                     'APPROVED' => 'success', 'REJECTED' => 'danger', 'MENUNGGU_BAYAR' => 'warning', default => 'gray',
                 }),
@@ -214,7 +214,7 @@ class VerifikasiBookedResource extends Resource
     /** Label pilihan Transfer Anonim: "tgl · bank · Rp nominal · berita". */
     protected static function transferLabel(TransferAnonim $t): string
     {
-        return $t->tgl_transfer?->format('d M Y').' · '.($t->bank?->name ?? 'Bank')
+        return $t->tgl_transfer?->format('d M Y').' · '.($t->coaBankName() ?: ($t->bank?->name ?? 'Bank'))
             .' · Rp '.number_format((float) $t->amount, 0, ',', '.')
             .($t->keterangan_bank ? ' · '.$t->keterangan_bank : '');
     }
