@@ -53,7 +53,15 @@ class BackupScheduleResource extends Resource
                         ->visible(fn (Forms\Get $get) => $get('frequency') === 'YEARLY'),
                     Forms\Components\TextInput::make('yearly_day')->label('Tanggal (tahunan)')->numeric()->minValue(1)->maxValue(28)->default(1)
                         ->visible(fn (Forms\Get $get) => $get('frequency') === 'YEARLY'),
-                    Forms\Components\Toggle::make('only_db')->label('Hanya database (tanpa file storage)')->inline(false)->default(true),
+                    Forms\Components\Select::make('scope')->label('Cakupan backup')->required()->native(false)
+                        ->options([
+                            'DB_ALL' => 'Database FO + BO',
+                            'DB_FO' => 'Database FO saja (jerp)',
+                            'DB_BO' => 'Database BO saja (ipro_bo)',
+                            'APP' => 'APP saja (file, tanpa DB)',
+                            'FULL' => 'Lengkap (APP + DB FO + BO)',
+                        ])->default('DB_ALL')
+                        ->helperText('Pilih apa yang di-backup: database tertentu, file aplikasi, atau lengkap.'),
                 ]),
 
             Forms\Components\Section::make('Lokasi Backup')->columns(2)->schema([
@@ -83,7 +91,13 @@ class BackupScheduleResource extends Resource
                         'YEARLY' => $r->yearly_day.' '.(self::BULAN[$r->yearly_month] ?? '').' '.$r->time,
                         default => $r->time,
                     }),
-                Tables\Columns\IconColumn::make('only_db')->label('DB only')->boolean(),
+                Tables\Columns\TextColumn::make('scope')->label('Cakupan')->badge()
+                    ->formatStateUsing(fn (?string $state) => match ($state) {
+                        'DB_ALL' => 'DB FO+BO', 'DB_FO' => 'DB FO', 'DB_BO' => 'DB BO', 'APP' => 'APP', 'FULL' => 'Lengkap', default => $state ?? '—',
+                    })
+                    ->color(fn (?string $state) => match ($state) {
+                        'DB_FO' => 'success', 'DB_BO' => 'warning', 'APP' => 'gray', 'FULL' => 'info', default => 'primary',
+                    }),
                 Tables\Columns\TextColumn::make('disk')->label('Disk')->badge()->color('gray'),
                 Tables\Columns\TextColumn::make('retention_days')->label('Retensi')->suffix(' hari')->alignEnd(),
                 Tables\Columns\IconColumn::make('enabled')->label('Aktif')->boolean(),
