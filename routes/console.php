@@ -29,8 +29,9 @@ try {
     $schedules = BackupSchedule::where('enabled', true)->get();
 
     foreach ($schedules as $s) {
-        // `--only-db` flag tanpa nilai → dirangkai ke string command.
-        $cmd = $s->only_db ? 'backup:run --only-db' : 'backup:run';
+        // Cakupan backup: FULL|DB_ALL|DB_FO|DB_BO|APP. Fallback ke only_db lama bila kosong.
+        $scope = $s->scope ?: ($s->only_db ? 'DB_ALL' : 'FULL');
+        $cmd = 'backup:scoped '.$scope;
 
         $event = Schedule::command($cmd);
         match ($s->frequency) {
