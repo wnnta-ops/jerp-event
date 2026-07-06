@@ -358,11 +358,44 @@ class EditKontrak extends EditRecord
 
                     return;
                 }
+                // Kunci Pencairan KPR: skema KPR FREE DP (ANGSURAN1) memotong Booking Fee
+                // di titik berbeda → plafon KPR bisa bergeser. Tangkap nilai lama agar
+                // Pencairan KPR TETAP; selisihnya diserap UANG MASUK (total tetap = harga).
+                $oldKpr = (float) ($this->record->tagihan()->where('tipe', 'ANG')->max('nilai') ?? 0);
                 $this->record->update(['skema_id' => $free->id]);
                 app(KontrakGeneratorService::class)->tagihan($this->record);
+                $this->preservePencairanKpr($this->record, $oldKpr);
                 Notification::make()->success()->title('Free DP diterapkan → KPR FREE DP')->send();
                 $this->redirect($this->getResource()::getUrl('edit', ['record' => $this->getRecord()]));
             });
+    }
+
+    /**
+     * Kunci Pencairan KPR ke $oldKpr (nilai sebelum Free DP) agar TIDAK berubah oleh
+     * perpindahan skema. Selisih diserap baris UANG MASUK (subsidi) → total tetap = harga.
+     */
+    protected function preservePencairanKpr(\App\Modules\FO\MarketingSales\Models\Kontrak $kontrak, float $oldKpr): void
+    {
+        if ($oldKpr <= 0) {
+            return;
+        }
+        $kpr = $kontrak->tagihan()->where('tipe', 'ANG')->orderByDesc('nilai')->first();
+        $um = $kontrak->tagihan()->where('tipe', 'ADM')->where('nama_tagihan', 'UANG MASUK')->orderByDesc('nilai')->first();
+        if (! $kpr || ! $um) {
+            return; // butuh baris Pencairan KPR & UANG MASUK untuk menyeimbangkan
+        }
+
+        $delta = round($oldKpr - (float) $kpr->nilai);   // yang harus dikembalikan ke KPR
+        if ((int) $delta === 0) {
+            return;
+        }
+        $umNew = round((float) $um->nilai - $delta);
+        if ($umNew < 0) {
+            return; // UANG MASUK tak cukup menyerap → biarkan apa adanya (hindari saldo minus)
+        }
+
+        $kpr->update(['nilai' => round($oldKpr)]);
+        $um->update(['nilai' => $umNew, 'pelunasan' => $umNew]); // UANG MASUK = subsidi → lunas
     }
 
     /**
