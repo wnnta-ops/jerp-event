@@ -30,6 +30,30 @@ const stats = [
     { key: 'approved', label: 'Jurnal Approved', hint: 'posted / efektif GL', cls: 'text-emerald-600', ring: 'bg-emerald-50 dark:bg-emerald-900/20' },
     { key: 'closed', label: 'Jurnal Closed', hint: 'periode ditutup', cls: 'text-slate-700 dark:text-slate-200', ring: 'bg-slate-100 dark:bg-slate-800/40' },
 ] as const;
+
+// ── Link ke Detail Transaksi Jurnal, terfilter status + rentang tanggal agar jumlahnya persis ──
+function pad(n: number) { return String(n).padStart(2, '0'); }
+function mStart(m: number) { return `${props.year}-${pad(m)}-01`; }
+function mEnd(m: number) { return `${props.year}-${pad(m)}-${pad(new Date(props.year, m, 0).getDate())}`; }
+const lastClosed = props.closing?.month ?? 0;                 // bulan closing terakhir (0 = belum)
+const yearStart = `${props.year}-01-01`;
+const yearEnd = `${props.year}-12-31`;
+const openStart = lastClosed >= 12 ? yearEnd : (lastClosed > 0 ? mStart(lastClosed + 1) : yearStart);
+const closedEnd = lastClosed > 0 ? mEnd(lastClosed) : yearEnd;
+const STATUSMAP: Record<string, string> = { baru: 'draft', final: 'final', approved: 'posted' };
+function detailLink(params: Record<string, any>) {
+    return route('bs.gl.journal.detail', { source: props.source || undefined, ...params });
+}
+// Kartu ringkasan (total setahun). Baru/Final/Approved = bulan terbuka; Closed = jurnal di bulan tertutup.
+function cardHref(key: string): string | null {
+    if (key === 'closed') return lastClosed > 0 ? detailLink({ date_from: yearStart, date_to: closedEnd }) : null;
+    return detailLink({ date_from: openStart, date_to: yearEnd, status: STATUSMAP[key] });
+}
+// Sel per bulan.
+function cellHref(m: number, key: string): string {
+    if (key === 'closed') return detailLink({ date_from: mStart(m), date_to: mEnd(m) });
+    return detailLink({ date_from: mStart(m), date_to: mEnd(m), status: STATUSMAP[key] });
+}
 </script>
 <template>
     <div class="space-y-4">
@@ -69,15 +93,18 @@ const stats = [
             </div>
         </div>
 
-        <!-- Ringkasan jumlah jurnal per status -->
+        <!-- Ringkasan jumlah jurnal per status — klik untuk rincian jurnalnya -->
         <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            <div v-for="s in stats" :key="s.key" class="card flex items-center justify-between p-4" :class="s.ring">
+            <component :is="(cardHref(s.key) && totals[s.key]) ? Link : 'div'" v-for="s in stats" :key="s.key"
+                :href="(cardHref(s.key) && totals[s.key]) ? cardHref(s.key) : undefined"
+                class="card flex items-center justify-between p-4 transition"
+                :class="[s.ring, (cardHref(s.key) && totals[s.key]) ? 'cursor-pointer hover:-translate-y-0.5 hover:shadow-md hover:ring-2 hover:ring-primary-300' : '']">
                 <div>
                     <div class="text-xs font-medium text-neutral-500">{{ s.label }}</div>
                     <div class="text-[11px] text-neutral-400">{{ s.hint }}</div>
                 </div>
                 <div class="text-2xl font-bold tabular-nums" :class="s.cls">{{ fmtInt(totals[s.key]) }}</div>
-            </div>
+            </component>
         </div>
 
         <!-- Papan per bulan -->
@@ -93,16 +120,16 @@ const stats = [
                     <tr v-for="p in periods" :key="p.month" class="cursor-default transition-colors" :class="p.frontier ? 'bg-amber-400/80 font-semibold text-neutral-900 hover:bg-amber-500' : (p.isClosed ? 'bg-neutral-50/60 hover:bg-primary-50 dark:bg-neutral-800/30 dark:hover:bg-primary-900/20' : 'hover:bg-primary-50 dark:hover:bg-primary-900/20')">
                         <td class="px-4 py-2 tabular-nums">{{ year }}</td>
                         <td class="px-4 py-2"><span class="font-medium tabular-nums">{{ p.month }}</span> <span class="text-xs" :class="p.frontier ? 'text-neutral-800' : 'text-neutral-400'">{{ monthNames[p.month] }}</span></td>
-                        <td class="px-4 py-2 text-right font-mono" :class="p.baru ? 'text-sky-600' : 'text-neutral-300 dark:text-neutral-600'">{{ p.baru || '' }}</td>
-                        <td class="px-4 py-2 text-right font-mono" :class="p.final ? 'text-amber-600' : 'text-neutral-300 dark:text-neutral-600'">{{ p.final || '' }}</td>
-                        <td class="px-4 py-2 text-right font-mono" :class="p.approved ? 'text-emerald-600' : 'text-neutral-300 dark:text-neutral-600'">{{ p.approved || '' }}</td>
-                        <td class="px-4 py-2 text-right font-mono" :class="p.closed ? 'font-semibold' : 'text-neutral-300 dark:text-neutral-600'">{{ p.closed || '' }}</td>
+                        <td class="px-4 py-2 text-right font-mono"><Link v-if="p.baru" :href="cellHref(p.month, 'baru')" class="text-sky-600 hover:underline">{{ p.baru }}</Link></td>
+                        <td class="px-4 py-2 text-right font-mono"><Link v-if="p.final" :href="cellHref(p.month, 'final')" class="text-amber-600 hover:underline">{{ p.final }}</Link></td>
+                        <td class="px-4 py-2 text-right font-mono"><Link v-if="p.approved" :href="cellHref(p.month, 'approved')" class="text-emerald-600 hover:underline">{{ p.approved }}</Link></td>
+                        <td class="px-4 py-2 text-right font-mono"><Link v-if="p.closed" :href="cellHref(p.month, 'closed')" class="font-semibold hover:underline">{{ p.closed }}</Link></td>
                         <td class="px-4 py-2 text-right"><span v-if="p.frontier" class="rounded-full bg-white/70 px-2 py-0.5 text-[10px] font-semibold uppercase text-amber-700">batas closing</span></td>
                     </tr>
                 </tbody>
             </table>
             <p class="border-t border-neutral-100 px-4 py-2.5 text-[11px] text-neutral-400 dark:border-neutral-800">
-                Baru = jurnal draft · Final = jurnal final · Approved = jurnal posted (efektif di GL) · Closed = total jurnal pada periode yang sudah ditutup. Baris <span class="font-semibold text-amber-600">oranye</span> = batas closing terakhir.
+                Baru = jurnal draft · Final = jurnal final · Approved = jurnal posted (efektif di GL) · Closed = total jurnal pada periode yang sudah ditutup. Baris <span class="font-semibold text-amber-600">oranye</span> = batas closing terakhir. <span class="font-medium text-neutral-500">Klik angka</span> untuk membuka rincian jurnalnya (Detail Transaksi Jurnal, terfilter).
             </p>
         </div>
     </div>
