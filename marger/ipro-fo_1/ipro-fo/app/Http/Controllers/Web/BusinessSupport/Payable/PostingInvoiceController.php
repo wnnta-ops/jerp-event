@@ -68,6 +68,7 @@ class PostingInvoiceController extends Controller
                 'amount'       => (float) $r->amount,
                 'tgl'          => $r->tgl_refund,
                 'keterangan'   => $r->keterangan, // mis. GMC → nama gimmick ("Gimmick BPHTB — SPR ...")
+                'supplier_id'  => $r->supplier_id ? (int) $r->supplier_id : null, // GMC komponen → prefill supplier
             ])->values();
 
         // Master supplier (Data Center → Supplier Center) untuk dropdown kolom Supplier.
