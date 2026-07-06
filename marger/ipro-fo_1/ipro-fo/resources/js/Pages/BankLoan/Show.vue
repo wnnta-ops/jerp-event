@@ -557,8 +557,13 @@ const historyNodes = computed<HistoryNode[]>(() => {
                 </div>
                 <div class="flex shrink-0 items-center gap-2">
                     <Badge :variant="stageView.badgeVariant">{{ stageView.badgeLabel }}</Badge>
-                    <!-- Tolak proses KPR pada tahap Submitted / SP3K -->
-                    <a v-if="a.status === 'si'" :href="route('kpr.si-print', a.id)" target="_blank" class="inline-flex items-center gap-2 rounded-lg bg-primary-600 px-5 py-2.5 text-base font-bold text-white shadow-sm hover:bg-primary-700"><Printer class="h-5 w-5" /> Cetak</a>
+                    <!-- Cetak SI sesuai format bank: BTN / BSN / BRI -->
+                    <div v-if="a.status === 'si'" class="inline-flex items-center gap-1.5 rounded-lg bg-primary-600 p-1.5 shadow-sm">
+                        <span class="flex items-center gap-1.5 pl-1 pr-0.5 text-sm font-bold text-white"><Printer class="h-4 w-4" /> Cetak SI</span>
+                        <a :href="route('kpr.si-print', { kpr: a.id, bank: 'btn' })" target="_blank" class="rounded-md bg-white px-3 py-1.5 text-xs font-bold text-primary-700 hover:bg-primary-50">BTN</a>
+                        <a :href="route('kpr.si-print', { kpr: a.id, bank: 'bsn' })" target="_blank" class="rounded-md bg-white px-3 py-1.5 text-xs font-bold text-primary-700 hover:bg-primary-50">BSN</a>
+                        <a :href="route('kpr.si-print', { kpr: a.id, bank: 'bri' })" target="_blank" class="rounded-md bg-white px-3 py-1.5 text-xs font-bold text-primary-700 hover:bg-primary-50">BRI</a>
+                    </div>
                     <button v-if="['submitted', 'in_review', 'sp3k'].includes(a.status)" type="button" @click="reject" class="text-xs px-2 py-1 rounded border border-danger-300 text-danger-600 hover:bg-danger-50 dark:border-danger-700">Tolak Proses KPR</button>
                     <!-- Edit/Hapus record milik tahap aktif (SP3K / Akad) -->
                     <template v-if="stageView.edit === 'sp3k' && !editSp3k">

@@ -383,6 +383,12 @@ class KprApplicationController extends Controller
     {
         abort_unless($request->user()?->can('bankloan.application.view'), 403);
 
+        // Cetak SI sesuai format bank (BTN / BSN / BRI) bila diminta.
+        $bank = strtolower(trim((string) $request->string('bank', '')));
+        if (in_array($bank, ['btn', 'bsn', 'bri'], true)) {
+            return response($this->siBankLetters($kpr, $bank))->header('Content-Type', 'text/html');
+        }
+
         $kpr->load(['customer', 'bank:id,name']);
         $c = $kpr->customer;
         $e = fn ($v) => htmlspecialchars((string) ($v ?? ''), ENT_QUOTES);
@@ -435,6 +441,187 @@ class KprApplicationController extends Controller
             .'</body></html>';
 
         return response($html)->header('Content-Type', 'text/html');
+    }
+
+    /** Angka → kata (terbilang Indonesia). */
+    private function terbilang($num): string
+    {
+        $n = abs((int) round((float) $num));
+        $s = ['', 'satu', 'dua', 'tiga', 'empat', 'lima', 'enam', 'tujuh', 'delapan', 'sembilan', 'sepuluh', 'sebelas'];
+        $f = function ($x) use (&$f, $s) {
+            if ($x < 12) return $s[$x];
+            if ($x < 20) return $f($x - 10).' belas';
+            if ($x < 100) return $f(intdiv($x, 10)).' puluh'.($x % 10 ? ' '.$s[$x % 10] : '');
+            if ($x < 200) return 'seratus'.($x - 100 ? ' '.$f($x - 100) : '');
+            if ($x < 1000) return $f(intdiv($x, 100)).' ratus'.($x % 100 ? ' '.$f($x % 100) : '');
+            if ($x < 2000) return 'seribu'.($x - 1000 ? ' '.$f($x - 1000) : '');
+            if ($x < 1000000) return $f(intdiv($x, 1000)).' ribu'.($x % 1000 ? ' '.$f($x % 1000) : '');
+            if ($x < 1000000000) return $f(intdiv($x, 1000000)).' juta'.($x % 1000000 ? ' '.$f($x % 1000000) : '');
+            if ($x < 1000000000000) return $f(intdiv($x, 1000000000)).' miliar'.($x % 1000000000 ? ' '.$f($x % 1000000000) : '');
+            return $f(intdiv($x, 1000000000000)).' triliun'.($x % 1000000000000 ? ' '.$f($x % 1000000000000) : '');
+        };
+        if ($n === 0) return 'nol';
+
+        return trim(preg_replace('/\s+/', ' ', $f($n)));
+    }
+
+    /**
+     * Cetak Surat Instruksi (SI) sesuai format bank: BTN / BSN / BRI (format lampiran MUP — Java Residence).
+     * Data nasabah/unit/nilai diambil dari KPR; konstanta bank (cabang, rekening, notaris) sesuai template.
+     */
+    private function siBankLetters(KprApplication $kpr, string $bank): string
+    {
+        $kpr->load([
+            'customer', 'bank:id,name',
+            'booking.unit:id,unit_code,cluster_id,unit_type_id,base_price,current_price',
+            'booking.unit.unitType:id,name', 'booking.unit.cluster:id,name',
+            'akad:id,kpr_application_id,akad_at',
+        ]);
+        $c  = $kpr->customer;
+        $u  = $kpr->booking?->unit;
+        $co = config('business_support.company');
+        $e  = fn ($v) => htmlspecialchars((string) ($v ?? ''), ENT_QUOTES);
+        $fill = '.............................';
+        $mn = ['', 'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
+        $roman = ['', 'I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X', 'XI', 'XII'];
+        $today = now();
+        $tglInd = $today->day.' '.$mn[$today->month].' '.$today->year;
+        $rp    = fn ($x) => 'Rp. '.number_format((float) $x, 0, ',', '.').',-';
+        $terb  = fn ($x) => ucfirst($this->terbilang($x)).' rupiah';
+
+        $name  = strtoupper(trim((string) $c?->full_name));
+        $addr  = strtoupper(trim((string) implode(', ', array_filter([$c?->address_line, $c?->address_rt_rw, $c?->kelurahan, $c?->kecamatan, $c?->city, $c?->province])), ', ')) ?: $fill;
+        $perum = $u?->cluster?->name ?: 'Java Residence Cluster 3';
+        $unit  = strtoupper(trim((string) $u?->unit_code)) ?: $fill;
+        $tipe  = strtoupper(trim((string) $u?->unitType?->name)) ?: $fill;
+        $kprAmt = (float) ($kpr->plafon_approved ?: $kpr->plafon_requested);
+        $umAmt  = round(0.05 * (float) ($u?->current_price ?: $u?->base_price ?: 0), 2);
+        $akadTgl = $kpr->akad?->akad_at ? ($kpr->akad->akad_at->day.' '.$mn[$kpr->akad->akad_at->month].' '.$kpr->akad->akad_at->year) : $fill;
+        $signer = $co['signer_name'] ?? 'Rachmat Suhendra';
+        $sTitle = $co['signer_title'] ?? 'Direktur';
+        $coName = $co['name'] ?? 'PT. MITRA USAHA PROPERTINDO';
+        $notaris = 'Ayu Militansia Brillyanti, SH., M.KN, Perum Pondok Jati Blok BO No 4 Sidoarjo, Jawa Timur';
+
+        $kop  = '<div class="kop"><div class="co">'.$e($coName).'</div><div class="ad">'.$e($co['address'] ?? 'Sidoarjo, Jawa Timur').'</div></div>';
+        $hdr  = fn ($no, $hal, $lamp = '-') => '<div class="hdr">'
+            .'<div class="kv"><span class="k">Nomor</span><span class="c">:</span><span class="v">'.$e($no).'</span></div>'
+            .'<div class="kv"><span class="k">Hal</span><span class="c">:</span><span class="v">'.$e($hal).'</span></div>'
+            .'<div class="kv"><span class="k">Lamp</span><span class="c">:</span><span class="v">'.$e($lamp).'</span></div></div>';
+        $kv   = fn ($k, $v) => '<div class="kv"><span class="k">'.$e($k).'</span><span class="c">:</span><span class="v">'.$e($v).'</span></div>';
+        $to   = fn ($lines) => '<div class="to">Kepada,<br>'.implode('<br>', array_map($e, $lines)).'</div>';
+        $sign = fn ($withCo = true) => '<div class="sign">Hormat Kami,'.($withCo ? '<br>'.$e($coName) : '').'<div class="nm">'.$e($signer).'</div>'.$e($sTitle).'</div>';
+        $rdate = fn () => '<div class="right">Sidoarjo, '.$e($tglInd).'</div>';
+        $noStr = fn ($code) => $fill.'/FIN/SI/OUT-'.$code.'/'.$roman[$today->month].'/'.$today->year;
+        $wrap  = fn ($inner) => '<div class="letter">'.$kop.$inner.'</div>';
+        $lokasi = 'Yang berlokasi di Java Residence Krian Desa Terungkulon Kecamatan Krian Kabupaten Sidoarjo Provinsi Jawa Timur. Adapun sertifikat atas tanah dan bangunan tersebut telah diserahkan oleh '.$e($coName).' dengan Notaris '.$e($notaris).'.';
+
+        // Surat "Keterangan Proses Pembangunan Rumah" (dipakai BSN & BRI).
+        $keterangan = fn ($code) => $wrap(
+            $hdr($noStr($code), 'Keterangan Proses Pembangunan Rumah', '1')
+            .'<p>Yang bertanda tangan dibawah ini :</p>'
+            .$kv('Nama', $signer).$kv('Jabatan', $sTitle.' '.$coName)
+            .'<p>Dalam hal ini bertindak berdasarkan jabatannya selaku pihak berwenang dari '.$e($coName).', berkedudukan di Sidoarjo, dengan ini menerangkan sebagai berikut:</p>'
+            .$kv('NAMA', $name).$kv('ALAMAT RUMAH', $unit).$kv('TIPE', $tipe).$kv('DESA', 'TERUNGKULON').$kv('KECAMATAN', 'KRIAN').$kv('KABUPATEN', 'SIDOARJO')
+            .'<p>Bahwa untuk pembangunan rumah tersebut masih dalam proses dan akan diselesaikan dalam jangka waktu 18 (delapan belas) bulan sejak surat keterangan ini dibuat.</p>'
+            .'<p>Demikian Surat Keterangan ini dibuat untuk dipergunakan sebagaimana perlunya.</p>'
+            .$rdate().$sign(false)
+        );
+
+        $letters = [];
+
+        if ($bank === 'btn') {
+            $letters[] = $wrap(
+                $rdate().$hdr($noStr('BTN.SBD'), 'Pemberitahuan Lunas Uang Muka')
+                .$to(['Pimpinan Bank BTN', 'KC Surabaya Bukit Darmo', 'Jl. HR. Muhammad', 'Surabaya'])
+                .'<p>Dengan hormat,</p>'
+                .'<p>Sehubungan dengan permohonan Kredit '.$e($unit).' di '.$e($perum).', maka dengan ini kami '.$e($coName).' selaku developer dari Perumahan '.$e($perum).' menerangkan bahwa:</p>'
+                .$kv('Nama', $name).$kv('Alamat', $addr)
+                .'<p>Telah melakukan Pelunasan Uang Muka di '.$e($perum).' sejumlah '.$rp($umAmt).' ('.$e($terb($umAmt)).').</p>'
+                .'<p>Demikian pemberitahuan ini dibuat dengan sebenar-benarnya, atas perhatian dan kerjasamanya kami ucapkan terimakasih.</p>'
+                .$sign(false)
+            );
+        } elseif ($bank === 'bsn') {
+            $bsnTo = ['Pimpinan Bank Syariah Nasional', 'KC Diponegoro Surabaya'];
+            $letters[] = $wrap(
+                $rdate().$hdr($noStr('BSN.DIPO'), 'Pemberitahuan Lunas Uang Muka').$to($bsnTo)
+                .'<p>Dengan hormat,</p>'
+                .'<p>Sehubungan dengan '.$e($unit).' di '.$e($perum).' maka dengan ini kami '.$e($coName).' selaku developer dari Perumahan '.$e($perum).' menerangkan bahwa:</p>'
+                .$kv('Nama', $name).$kv('Alamat', $addr)
+                .'<p>Telah melakukan Pelunasan Uang Muka di '.$e($perum).' sejumlah '.$rp($umAmt).' ('.$e($terb($umAmt)).').</p>'
+                .'<p>Demikian pemberitahuan ini dibuat dengan sebenar-benarnya, atas perhatian dan kerjasamanya kami ucapkan terimakasih.</p>'.$sign(false)
+            );
+            $letters[] = $wrap(
+                '<div class="right">Tanggal '.$e($akadTgl).'</div>'.$hdr($noStr('BSN.DIPO'), 'Pemberitahuan Pencairan Dana KPR').$to($bsnTo)
+                .'<p>Sehubungan dengan telah dilaksanakannya akad kredit pada tanggal ('.$e($akadTgl).') atas nama:</p>'
+                .$kv('Nama', $name).$kv('Alamat Rumah', $addr).$kv('KPR', $rp($kprAmt))
+                .'<p>'.$lokasi.' Maka atas realisasi akad kredit diatas, bersama ini kami mohon kepada Bank Syariah Nasional untuk dapat mencairkan dana tersebut ke Rekening kami, adapun rinciannya sebagai berikut:</p>'
+                .$kv('Atas nama', $coName).$kv('No. Rekening', '100-000-170-9')
+                .'<p>Demikian permohonan ini, atas bantuan dan kerjasamanya kami ucapkan terimakasih.</p>'.$sign(true)
+            );
+            $letters[] = $keterangan('BSN.DIPO');
+            $letters[] = $wrap(
+                $hdr($noStr('BSN.DIPO'), 'SI Klaim Fee').$to($bsnTo)
+                .'<p>Dengan hormat,</p>'
+                .'<p>Sehubungan dengan telah dilaksanakan proses kredit KPR customer atas '.$e($name).' Unit '.$e($unit).' pada tanggal ('.$e($akadTgl).') sebesar '.$rp($kprAmt).'</p>'
+                .'<p>Maka dengan ini mohon agar Insentif/Fee KPR dapat dicairkan ke:</p>'
+                .$kv('Nama', $signer).$kv('No. Rek', '7032-0628-92 (Bank Syariah Nasional)')
+                .'<p>Demikian permohonan ini kami sampaikan, atas bantuan dan kerjasamanya kami ucapkan terimakasih.</p>'.$sign(true)
+            );
+            $letters[] = $wrap(
+                $rdate().$hdr($noStr('BSN.DIPO'), 'SI Pencadangan Pajak').$to($bsnTo)
+                .'<p>Dengan hormat,</p>'
+                .'<p>Sehubungan dengan permohonan Kredit di '.$e($perum).', maka dengan ini kami '.$e($coName).' selaku developer mohon untuk dicairkan pencadangan pajak atas nama customer sebagai berikut:</p>'
+                .'<table class="pajak"><tr><th>UNIT</th><th>NAMA</th><th>SSP</th><th>BPHTB</th><th>TOTAL</th></tr>'
+                .'<tr><td>'.$e($unit).'</td><td>'.$e($name).'</td><td>'.$fill.'</td><td>'.$fill.'</td><td>'.$fill.'</td></tr></table>'
+                .'<p>Kami mohon untuk pencadangan pajak dengan rincian di atas dan sisa dana KPR tersebut mohon untuk dicairkan ke rekening:</p>'
+                .$kv('Atas nama', $coName).$kv('No. Rekening', '1000069747')
+                .'<p>Demikian permohonan ini, atas perhatian dan kerjasamanya kami ucapkan terimakasih.</p>'.$sign(false)
+            );
+        } elseif ($bank === 'bri') {
+            $briTo = ['PT. Bank Rakyat Indonesia (BRI)', 'Cabang Sidoarjo'];
+            $letters[] = $wrap(
+                $rdate().$hdr($noStr('BRI.SDA'), 'Pemberitahuan Lunas Uang Muka').$to($briTo)
+                .'<p>Dengan hormat,</p>'
+                .'<p>Sehubungan dengan permohonan Kredit perumahan '.$e($perum).', kami selaku developer menerangkan bahwa debitur atas nama :</p>'
+                .$kv('NAMA', $name).$kv('UNIT', $unit).$kv('TIPE', $tipe)
+                .'<p>Telah melakukan Pelunasan Uang Muka sebesar '.$rp($umAmt).' ('.$e($terb($umAmt)).').</p>'
+                .'<p>Demikian pemberitahuan ini dibuat dengan sebenar-benarnya, atas perhatian dan kerjasamanya kami ucapkan terimakasih.</p>'.$sign(false)
+            );
+            $letters[] = $wrap(
+                '<div class="right">Tanggal '.$e($akadTgl).'</div>'.$hdr($noStr('BRI.SDA'), 'Pemberitahuan Pencairan Dana KPR').$to($briTo)
+                .'<p>Sehubungan dengan telah dilaksanakannya akad kredit pada tanggal ('.$e($akadTgl).') atas nama:</p>'
+                .$kv('NAMA', $name).$kv('ALAMAT RUMAH', $addr).$kv('KPR', $rp($kprAmt))
+                .'<p>'.$lokasi.' Maka atas realisasi akad kredit diatas, bersama ini kami mohon kepada Bank BRI Cabang Sidoarjo untuk dapat mencairkan dana tersebut ke Rekening kami, adapun rinciannya sebagai berikut :</p>'
+                .$kv('Atas nama', $coName)
+                .$kv('No. Rekening', '0086 – 01 – 003982 – 30 - 2 (Giro Operasional)').$kv('Sebesar 90%', $rp(round(0.9 * $kprAmt, 0)))
+                .$kv('No. Rekening', '0086 – 01 – 003983 – 30 – 8 (Giro Escrow)').$kv('Sebesar 10%', $rp(round(0.1 * $kprAmt, 0)))
+                .'<p>Demikian permohonan ini, atas bantuan dan kerjasamanya kami ucapkan terimakasih.</p>'.$sign(true)
+            );
+            $letters[] = $wrap(
+                $hdr($noStr('BRI.SDA'), 'Klaim Fee KPR').$to($briTo)
+                .'<p>Dengan hormat,</p>'
+                .'<p>Sehubungan dengan telah dilaksanakan proses kredit KPR konsumen atas nama '.$e($name).' Unit '.$e($unit).' pada tanggal ('.$e($akadTgl).') sebesar '.$rp($kprAmt).'</p>'
+                .'<p>Maka dengan ini mohon agar Insentif/Fee KPR dapat dicairkan ke:</p>'
+                .$kv('Nama', $signer).$kv('No. Rek', '0086-01-002987-56-1 (BRI)')
+                .'<p>Demikian permohonan ini kami sampaikan, atas bantuan dan kerjasamanya kami ucapkan terimakasih.</p>'.$sign(true)
+            );
+            $letters[] = $keterangan('BRI.SDA');
+        }
+
+        $css = '@page{size:A4;margin:2cm} body{font-family:"Times New Roman",serif;font-size:12.5px;color:#000;line-height:1.5}'
+            .'.letter{page-break-after:always}.letter:last-child{page-break-after:auto}'
+            .'.kop{text-align:center;border-bottom:2.5px solid #111;padding-bottom:6px;margin-bottom:16px}'
+            .'.kop .co{font-size:17px;font-weight:bold;letter-spacing:.5px}.kop .ad{font-size:10.5px;color:#333}'
+            .'.right{text-align:right;margin-bottom:6px}.hdr{margin:8px 0}.to{margin:12px 0}'
+            .'.kv{display:flex;margin:1px 0}.kv .k{width:150px;flex:0 0 150px}.kv .c{width:12px;flex:0 0 12px}.kv .v{flex:1}'
+            .'p{margin:9px 0;text-align:justify}'
+            .'table.pajak{border-collapse:collapse;margin:10px 0;font-size:11px;width:100%}table.pajak th,table.pajak td{border:1px solid #111;padding:4px 6px;text-align:center}'
+            .'.sign{margin-top:34px}.sign .nm{font-weight:bold;text-decoration:underline;margin-top:62px}'
+            .'.print{text-align:right;margin-bottom:12px}button{padding:8px 16px;font-size:13px;cursor:pointer}@media print{.print{display:none}}';
+
+        return '<!DOCTYPE html><html lang="id"><head><meta charset="utf-8"><title>SI '.strtoupper($bank).' — '.$e($kpr->application_number).'</title><style>'.$css.'</style></head><body>'
+            .'<div class="print"><button onclick="window.print()">Cetak SI '.strtoupper($bank).'</button></div>'
+            .implode('', $letters).'</body></html>';
     }
 
     public function sp3k(Request $request, KprApplication $kpr, RegisterSp3k $action): RedirectResponse

@@ -211,121 +211,71 @@ class KprDatabaseController extends Controller
     }
 
     /**
-     * Cetak "Memo Rekomendasi Pembatalan KPR" untuk aplikasi yang DITOLAK (Submitted/SP3K).
-     * HTML auto-print (mirror Memo Internal AP).
+     * Form editable "Memo Rekom Batal (Massal)" — mengikuti format Memo Internal + lampiran
+     * "List Rekomendasi Pembatalan KPR". Data yang belum ada di sistem (Cluster/THP/Tipe/Sales/Agent
+     * serta header memo) diisi manual di halaman ini sebelum dicetak. ?ids=1,2,3 (wajib; dari checklist).
+     * Dipakai baik oleh tombol massal maupun per-baris (?ids=<id> tunggal).
      */
-    public function rejectProcessMemo(Request $request, KprApplication $application): \Illuminate\Http\Response
-    {
-        abort_unless($request->user()?->can('bankloan.application.view'), 403);
-        abort_unless($application->status === KprStatus::Rejected, 404, 'Aplikasi KPR ini tidak berstatus ditolak.');
-
-        $application->load([
-            'customer', // full — accessor compact_ktp_address butuh seluruh kolom alamat
-            'bank:id,name',
-            'booking:id,booking_number,unit_id',
-            'booking.unit:id,unit_code',
-            'sp3k:id,kpr_application_id',
-        ]);
-
-        return response($this->renderRekomBatal($application, $request->user()))
-            ->header('Content-Type', 'text/html; charset=UTF-8');
-    }
-
-    /** Cetak Memo Rekom Batal MASSAL untuk beberapa aplikasi ditolak sekaligus (?ids=1,2,3) — satu memo per halaman. */
-    public function rejectProcessMemoBulk(Request $request): \Illuminate\Http\Response
+    public function rejectProcessMemoForm(Request $request): Response
     {
         abort_unless($request->user()?->can('bankloan.application.view'), 403);
 
-        $ids = collect(is_array($request->input('ids')) ? $request->input('ids') : explode(',', (string) $request->input('ids')))
-            ->map(fn ($v) => (int) trim((string) $v))->filter()->unique()->values();
-        abort_if($ids->isEmpty(), 404, 'Pilih minimal satu KPR untuk dicetak.');
+        $ids = $this->idsParam($request);
+        abort_if($ids->isEmpty(), 404, 'Pilih minimal satu KPR untuk dibuatkan memo.');
 
         $apps = KprApplication::whereIn('id', $ids)
             ->where('status', KprStatus::Rejected->value)
-            ->with(['customer', 'bank:id,name', 'booking:id,booking_number,unit_id', 'booking.unit:id,unit_code', 'sp3k:id,kpr_application_id'])
+            ->with([
+                'customer:id,full_name',
+                'booking:id,booking_number,unit_id',
+                'booking.unit:id,unit_code,cluster_id,unit_type_id',
+                'booking.unit.cluster:id,name',
+                'booking.unit.unitType:id,name',
+            ])
             ->orderBy('id')->get();
         abort_if($apps->isEmpty(), 404, 'Tidak ada KPR berstatus ditolak yang cocok.');
 
-        $bodies = $apps->map(fn ($a) => $this->rekomBatalBody($a, $request->user()))->implode('');
+        // Baris lampiran — pra-isi dari data sistem; kolom yang belum ada dibiarkan kosong utk diisi manual.
+        $rows = $apps->values()->map(fn (KprApplication $a, int $i) => [
+            'id'         => $a->id,
+            'no'         => $i + 1,
+            'cluster'    => (string) ($a->booking?->unit?->cluster?->name ?? ''),
+            'thp'        => '',
+            'tipe'       => (string) ($a->booking?->unit?->unitType?->name ?? ''),
+            'unit'       => (string) ($a->booking?->unit?->unit_code ?? ''),
+            'user'       => (string) ($a->customer?->full_name ?? ''),
+            'sales'      => '',
+            'agent'      => '',
+            'cara_bayar' => 'KPR',
+            'status'     => 'BATAL',
+            'keterangan' => (string) ($a->reject_reason ?? ''),
+        ]);
 
-        return response($this->rekomBatalDoc($bodies))->header('Content-Type', 'text/html; charset=UTF-8');
-    }
+        $now   = now();
+        $roman = ['', 'I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X', 'XI', 'XII'][$now->month];
 
-    private function renderRekomBatal(KprApplication $app, $user): string
-    {
-        return $this->rekomBatalDoc($this->rekomBatalBody($app, $user));
-    }
-
-    /** Bungkus dokumen lengkap (style + auto-print) untuk satu / banyak memo. */
-    private function rekomBatalDoc(string $bodies): string
-    {
-        return '<!DOCTYPE html><html lang="id"><head><meta charset="utf-8"><title>Memo Rekomendasi Pembatalan KPR</title><style>
-            @page{size:A4;margin:18mm}*{box-sizing:border-box}body{font-family:"Segoe UI",Arial,sans-serif;font-size:12px;color:#1f2937;margin:0}
-            .memo{page-break-after:always}.memo:last-child{page-break-after:auto}
-            .head{display:flex;align-items:center;gap:12px;border-bottom:3px double #b45309;padding-bottom:10px;margin-bottom:6px}
-            .head img{height:46px;width:auto}.head .co{font-size:15px;font-weight:bold;color:#111827;letter-spacing:.3px}.head .ad{font-size:11px;color:#6b7280}
-            h1{font-size:15px;margin:14px 0 2px;text-align:center;text-transform:uppercase;letter-spacing:.5px;color:#9a3412}
-            .meta{display:flex;justify-content:space-between;font-size:11px;color:#6b7280;margin-bottom:10px}
-            dl{display:grid;grid-template-columns:150px 1fr;gap:4px 10px;margin:8px 0}dt{color:#6b7280}dd{margin:0;font-weight:500}
-            .sec{font-size:12px;font-weight:bold;color:#9a3412;margin:14px 0 4px;border-bottom:1px solid #fed7aa;padding-bottom:2px}
-            .reason{background:#fff7ed;border:1px solid #fed7aa;border-radius:6px;padding:8px 12px;margin:6px 0}
-            .rec{margin:8px 0;text-align:justify;line-height:1.6}
-            .sign{margin-top:40px;display:flex;justify-content:space-between;font-size:11px;text-align:center}.sign div{width:30%}
-            @media print{.noprint{display:none}}</style></head><body>'
-            .$bodies
-            .'<button class="noprint" onclick="window.print()" style="margin:18px;padding:6px 14px;cursor:pointer">Cetak</button>
-            <script>window.onload=function(){setTimeout(function(){window.print()},300)}</script></body></html>';
-    }
-
-    /** Fragmen satu memo (tanpa wrapper dokumen). */
-    private function rekomBatalBody(KprApplication $app, $user): string
-    {
-        $e   = fn ($s) => htmlspecialchars((string) $s, ENT_QUOTES, 'UTF-8');
-        $rp  = fn ($n) => 'Rp '.number_format((float) $n, 0, ',', '.');
-        $co  = (string) config('business_support.company.name', 'PT. MITRA USAHA PROPERTINDO');
-        $coAddr = (string) config('business_support.company.address', '');
-        $logo = asset('images/mup-logo.jpeg');
-
-        $cust    = $app->customer;
-        $alamat  = method_exists($cust, 'getCompactKtpAddressAttribute') || isset($cust->compact_ktp_address)
-            ? (string) ($cust->compact_ktp_address ?? '')
-            : trim((string) ($cust->address_line ?? ''));
-        $stage   = $app->sp3k ? 'SP3K' : 'Submitted';
-        $now     = now()->translatedFormat('d F Y H.i');
-        $tgl     = optional($app->decided_at)->translatedFormat('d F Y') ?: '—';
-        $reason  = $app->reject_reason ?: '—';
-        $plafon  = (float) ($app->plafon_requested ?? 0);
-        $tenor   = (int) ($app->tenor_month ?? 0);
-
-        return '<div class="memo">
-            <div class="head"><img src="'.$e($logo).'" alt="logo" onerror="this.style.display=\'none\'"><div><div class="co">'.$e($co).'</div><div class="ad">'.$e($coAddr).'</div></div></div>
-            <h1>Memo Rekomendasi Pembatalan KPR</h1>
-            <div class="meta"><span>No. KPR: <b>'.$e($app->application_number).'</b></span><span>Tanggal Cetak: '.$e($now).'</span></div>
-            <div class="sec">Data Pemohon</div>
-            <dl>
-                <dt>Nama Customer</dt><dd>'.$e($cust?->full_name ?? '—').($cust?->code ? ' ('.$e($cust->code).')' : '').'</dd>
-                <dt>Alamat</dt><dd>'.$e($alamat ?: '—').'</dd>
-                <dt>Unit</dt><dd>'.$e($app->booking?->unit?->unit_code ?? '—').'</dd>
-                <dt>No. Booking</dt><dd>'.$e($app->booking?->booking_number ?? '—').'</dd>
-                <dt>Bank</dt><dd>'.$e($app->bank?->name ?? '—').'</dd>
-                <dt>Plafon Diajukan</dt><dd>'.$e($rp($plafon)).'</dd>
-                <dt>Tenor</dt><dd>'.($tenor > 0 ? $e($tenor).' bulan' : '—').'</dd>
-            </dl>
-            <div class="sec">Penolakan</div>
-            <dl>
-                <dt>Ditolak di Tahap</dt><dd>'.$e($stage).'</dd>
-                <dt>Tanggal Ditolak</dt><dd>'.$e($tgl).'</dd>
-            </dl>
-            <div class="reason"><b>Alasan Penolakan:</b><br>'.nl2br($e($reason)).'</div>
-            <div class="sec">Rekomendasi</div>
-            <p class="rec">Berdasarkan penolakan pengajuan KPR di atas oleh <b>'.$e($app->bank?->name ?? 'pihak bank').'</b>'
-                .($stage === 'SP3K' ? ' pada tahap SP3K' : ' pada tahap pengajuan (Submitted)').', dengan ini kami merekomendasikan <b>PEMBATALAN</b> proses KPR dan pemesanan unit '
-                .$e($app->booking?->unit?->unit_code ?? '').' atas nama <b>'.$e($cust?->full_name ?? '').'</b>. Mohon untuk diproses lebih lanjut sesuai ketentuan yang berlaku (penyelesaian administrasi / pengembalian pemesanan).</p>
-            <div class="sign">
-                <div>Dibuat,<br><br><br><br>('.$e($user?->name ?? '__________').')</div>
-                <div>Diperiksa,<br><br><br><br>(__________)</div>
-                <div>Disetujui,<br><br><br><br>(__________)</div>
-            </div>
-        </div>';
+        return Inertia::render('BankLoan/Database/RekomBatal', [
+            'rows' => $rows,
+            'memo' => [
+                'no'       => '____/MUP-KPR/JRK/'.$roman.'/'.$now->year,
+                'kepada'   => 'RS',
+                'tembusan' => 'RZ',
+                'dari'     => 'PS',
+                'tanggal'  => ucfirst($now->translatedFormat('l, d F Y')),
+                'perihal'  => 'Rekomendasi Pembatalan KPR',
+            ],
+            'listHeading' => 'List Rekomendasi Pembatalan KPR',
+            'listDate'    => ucfirst($now->translatedFormat('d F Y')),
+            'company' => [
+                'name'    => (string) config('business_support.company.name', 'PT. MITRA USAHA PROPERTINDO'),
+                'address' => 'Ruko Kahuripan Avenue No. 27-30 Kahuripan Nirwana, Sumput - Sidoarjo',
+                'phone'   => '0822-4442-9999',
+                'web'     => 'www.javaresidence.com',
+            ],
+            'signers' => [
+                'left'  => ['label' => 'Hormat kami,', 'name' => 'Prawanita Sari', 'title' => 'Finance Manager'],
+                'right' => ['label' => 'Mengetahui,', 'name' => (string) config('business_support.company.signer_name', 'Rachmat Suhendra'), 'title' => (string) config('business_support.company.signer_title', 'Direktur')],
+            ],
+        ]);
     }
 }
