@@ -381,11 +381,6 @@ class FoPanelProvider extends PanelProvider
                         $item('Pindah Unit', '/fo/pindah-unit', 'heroicon-o-arrows-right-left', 'filament.fo.resources.pindah-unit.'),
                         $item('Pembatalan Kontrak', '/fo/pembatalan-kontrak', 'heroicon-o-x-circle', 'filament.fo.pages.pembatalan-kontrak'),
                     ]],
-                    ['label' => 'Migrate', 'items' => [
-                        $soon('Upload Kontrak', 'Marketing & Sales', 'Upload Kontrak', 'heroicon-o-arrow-up-tray'),
-                        $soon('Upload Jadwal Tagihan', 'Marketing & Sales', 'Upload Jadwal Tagihan', 'heroicon-o-arrow-up-tray'),
-                        $soon('Upload Pembayaran', 'Marketing & Sales', 'Upload Pembayaran', 'heroicon-o-arrow-up-tray'),
-                    ]],
                 ],
             ],
             'setup' => [
