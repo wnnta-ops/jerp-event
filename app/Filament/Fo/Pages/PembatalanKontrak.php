@@ -47,7 +47,7 @@ class PembatalanKontrak extends Page implements HasForms, HasTable
             ->description('Kontrak SPR (final) & SPRS (booking). Ajukan pembatalan — pengajuan masuk ke Approval Pembatalan; saat disetujui, Refund otomatis dibuat (sumber SPR/SPRS).')
             ->columns([
                 Tables\Columns\TextColumn::make('no_kontrak')->label('No. Kontrak')->badge()->color('info')->searchable()->sortable(),
-                Tables\Columns\TextColumn::make('tahap')->label('Tahap')->badge()->color(fn (?string $s) => $s === 'SPR' ? 'success' : 'warning'),
+                Tables\Columns\TextColumn::make('tahap')->label('Tahap')->badge()->color(fn (?string $state) => $state === 'SPR' ? 'success' : 'warning'),
                 Tables\Columns\TextColumn::make('unit.kode_unit')->label('Unit')->placeholder('—')->searchable(),
                 Tables\Columns\TextColumn::make('customer.full_name')->label('Customer')->searchable()->weight('bold'),
                 Tables\Columns\TextColumn::make('agent.name')->label('Sales')->placeholder('—'),
