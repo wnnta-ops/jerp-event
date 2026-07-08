@@ -84,6 +84,7 @@ class FakturPajakController extends Controller
                 'ar_ppn' => round($arRows->sum('ppn'), 2), 'prop_ppn' => round($propRows->sum('ppn'), 2),
                 'ret_ppn' => round($entryRows->where('source', 'retensi')->sum('ppn'), 2),
                 'utj_ppn' => round($entryRows->where('source', 'utj_dp')->sum('ppn'), 2),
+                'penc_ppn' => round($entryRows->where('source', 'pencairan')->sum('ppn'), 2),
             ],
         ]);
     }
