@@ -703,6 +703,10 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
     Route::post('/business-support/cash-book-approval-retensi/{retention}',   [BsBankApprovalController::class, 'retensiPost'])->name('bs.cashbook.approval-retensi.post');
     Route::post('/business-support/cash-book-approval-retensi/{retention}/reject',  [BsBankApprovalController::class, 'retensiReject'])->name('bs.cashbook.approval-retensi.reject');
     Route::post('/business-support/cash-book-approval-retensi/{retention}/restore', [BsBankApprovalController::class, 'retensiRestore'])->name('bs.cashbook.approval-retensi.restore'); // pulihkan retensi ditolak
+    // Approval PENCAIRAN (net = disbursed − retention) — baris Pencairan pada layar Approval Retensi (KprRealization).
+    Route::post('/business-support/cash-book-approval-realization/{realization}',         [BsBankApprovalController::class, 'realizationPost'])->name('bs.cashbook.approval-realization.post');
+    Route::post('/business-support/cash-book-approval-realization/{realization}/reject',  [BsBankApprovalController::class, 'realizationReject'])->name('bs.cashbook.approval-realization.reject');
+    Route::post('/business-support/cash-book-approval-realization/{realization}/restore', [BsBankApprovalController::class, 'realizationRestore'])->name('bs.cashbook.approval-realization.restore');
     Route::get('/business-support/cash-book-approval-utjdp',                  [BsBankApprovalController::class, 'utjdpIndex'])->name('bs.cashbook.approval-utjdp');
     Route::post('/business-support/cash-book-approval-utjdp/{tts}',           [BsBankApprovalController::class, 'utjdpPost'])->name('bs.cashbook.approval-utjdp.post');
     Route::post('/business-support/cash-book-approval-utjdp/{tts}/reject',    [BsBankApprovalController::class, 'utjdpReject'])->name('bs.cashbook.approval-utjdp.reject');

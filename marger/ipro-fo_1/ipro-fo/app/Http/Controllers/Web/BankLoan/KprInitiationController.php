@@ -26,15 +26,16 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class KprInitiationController extends Controller
 {
-    /** Urutan & label 7 tahap inisiasi KPR. */
+    /** Urutan & label 8 tahap inisiasi KPR. */
     private const STAGES = [
-        'kuitansi'       => 'TTS',
-        'sprs'           => 'SPRS',
-        'bi_checking'    => 'BI Checking',
-        'collect_berkas' => 'Collect Berkas',
-        'analisa'        => 'Analisa BI Checking & Berkas',
-        'profiling'      => 'Profiling Customer',
-        'kpr_application'=> 'Proses KPR',
+        'kuitansi'         => 'TTS',
+        'sprs'             => 'SPRS',
+        'bi_checking'      => 'BI Checking',
+        'collect_berkas'   => 'Collect Berkas',
+        'analisa'          => 'Analisa BI Checking & Berkas',
+        'profiling_berkas' => 'Profiling Berkas',
+        'profiling'        => 'Profiling Customer',
+        'kpr_application'  => 'Proses KPR',
     ];
 
     /** Berkas WAJIB per kategori Collect Berkas (item "(Apabila Ada)" TIDAK termasuk → tidak menghalangi lanjut).
@@ -140,7 +141,7 @@ class KprInitiationController extends Controller
                 'customer'      => $r->customer?->full_name,
                 'kuitansi'      => $r->ttsReceipt?->tts_number,
                 'current_stage' => $r->current_stage,
-                'stage_label'   => array_values(self::STAGES)[min($r->current_stage, 7) - 1] ?? '-',
+                'stage_label'   => array_values(self::STAGES)[min($r->current_stage, 8) - 1] ?? '-',
                 'status'        => $r->status,
                 'kpr_number'    => $r->kprApplication?->application_number,
                 'kpr_id'        => $r->kpr_application_id,
@@ -218,7 +219,10 @@ class KprInitiationController extends Controller
         abort_unless($request->user()?->can('bankloan.application.view'), 403);
 
         $initiation->load([
-            'customer:id,full_name,phone,email',
+            // Kolom tambahan untuk tahap "Profiling Berkas": dob (umur), alamat domisili (dari NUP),
+            // sumber data (dataSource), penghasilan/pekerjaan (prefill).
+            'customer:id,full_name,phone,email,marital_status,dob,birth_place,address_line,address_rt_rw,kelurahan,kecamatan,city,province,postal_code,data_source_id,occupation,job_title,employer_name,monthly_income',
+            'customer.dataSource:id,name',
             'ttsReceipt:id,tts_number,received_date,amount,customer_id',
             'booking:id,booking_number,total_price,booking_date,base_price,discount_amount,ppn_amount,customer_id,unit_id,payment_scheme_id,agent_id,sales_person_id',
             'booking.customer:id,full_name',
@@ -269,7 +273,11 @@ class KprInitiationController extends Controller
                 'booking_id'     => $initiation->booking_id,
                 'bank_partner_id'=> $initiation->bank_partner_id,
                 'stages'         => $stages,
-                'customer'       => $initiation->customer,
+                // dob di-serialize sbg Y-m-d (bukan datetime UTC) agar prefill <input type=date> & umur tidak geser 1 hari (TZ +7).
+                'customer'       => $initiation->customer ? array_merge(
+                    $initiation->customer->toArray(),
+                    ['dob' => optional($initiation->customer->dob)->toDateString()],
+                ) : null,
                 'tts'            => $initiation->ttsReceipt,
                 'booking'        => $initiation->booking,
                 'kpr'            => $initiation->kprApplication,
@@ -384,7 +392,7 @@ class KprInitiationController extends Controller
                     'booking_id'         => $booking,
                     'kpr_application_id' => $createdIds[0],
                     'stages'             => $stages,
-                    'current_stage'      => 7,
+                    'current_stage'      => 8,
                     'status'             => 'completed',
                 ])->save();
 
@@ -466,7 +474,7 @@ class KprInitiationController extends Controller
             ], $allComplete ? ['at' => now()->toIso8601String()] : []);
             $initiation->stages = $stages;
             if ($allComplete) {
-                $initiation->current_stage = min(7, max($initiation->current_stage, $idx + 2));
+                $initiation->current_stage = min(8, max($initiation->current_stage, $idx + 2));
             }
             $initiation->save();
 
@@ -534,11 +542,24 @@ class KprInitiationController extends Controller
             // 2 rekomendasi bank dihitung server (anti-tamper) dari skor aspek Analisa (matriks Kategori Analisa Berkas).
             [$data['bank_analisa_1'], $data['bank_analisa_2']] = $this->bankRekomendasi((array) ($stages['analisa']['indikator_items'] ?? []), $this->analisaConfig());
         }
+        if ($stage === 'profiling_berkas') {
+            // Gerbang server: komponen input wajib (tanggal lahir → umur, domisili pekerjaan, jabatan).
+            // Umur/domisili/sumber/penghasilan hanya ditampilkan (diturunkan dari Customer/NUP/Analisa) — tidak disimpan.
+            $request->validate([
+                'data.tanggal_lahir'      => ['required', 'date'],
+                'data.domisili_pekerjaan' => ['required', 'string', 'max:255'],
+                'data.jabatan'            => ['required', 'string', 'in:PNS,Karyawan Swasta,Wiraswasta'],
+            ], [], [
+                'data.tanggal_lahir'      => 'tanggal lahir',
+                'data.domisili_pekerjaan' => 'domisili pekerjaan',
+                'data.jabatan'            => 'jabatan',
+            ]);
+        }
 
         // ── Tahap biasa: simpan data + tandai selesai + maju ke tahap berikutnya (preserve sub-data spt. docs) ──
         $stages[$stage] = array_merge($stages[$stage] ?? [], $data, ['done' => true, 'at' => now()->toIso8601String()]);
         $initiation->stages = $stages;
-        $initiation->current_stage = min(7, max($initiation->current_stage, $idx + 2));
+        $initiation->current_stage = min(8, max($initiation->current_stage, $idx + 2));
         $initiation->save();
 
         return back()->with('success', self::STAGES[$stage].' disimpan.');

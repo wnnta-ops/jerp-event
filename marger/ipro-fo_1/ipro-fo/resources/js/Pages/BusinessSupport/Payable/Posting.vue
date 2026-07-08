@@ -52,7 +52,7 @@ function postBulk() {
     if (! ids.length) return;
     const missing = ids.filter((id) => ! rowSupplier(id));
     if (missing.length) { alert(`Pilih supplier dulu untuk ${missing.length} baris terpilih.`); return; }
-    if (! confirm(`Terbitkan ${ids.length} invoice hutang sekaligus? Akan masuk ke Account Payable.`)) return;
+    if (! confirm(`Gabungkan ${ids.length} item jadi 1 Invoice Hutang? Tiap item jadi baris + struktur jurnal. Masuk ke Account Payable.`)) return;
     const items = ids.map((id) => ({ id, supplier_id: rowSupplier(id) }));
     router.post(route('bs.ap.posting.bulk-refund'), { items }, { preserveScroll: true });
 }

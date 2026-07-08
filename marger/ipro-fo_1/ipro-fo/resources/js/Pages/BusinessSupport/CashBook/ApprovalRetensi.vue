@@ -12,7 +12,10 @@ import TableTopScroll from '@/Components/UI/TableTopScroll.vue';
 
 type Acc = { id: number; code: string; name: string; type?: string };
 type Row = {
-    id: number; amount: number; status: string; released_at: string | null; retention_date: string | null; akad_date: string | null; kpr_number: string | null; unit_code: string | null; unit_info: string | null; customer: string | null; note: string | null;
+    // #171 — dua jenis baris: 'retensi' (KprRetention) & 'pencairan' (KprRealization, net). row_key
+    // unik lintas jenis (id bisa bertabrakan antar tabel) → dipakai utk :key, forms & state.
+    id: number; kind: 'retensi' | 'pencairan'; row_key: string;
+    amount: number; status: string; released_at: string | null; retention_date: string | null; akad_date: string | null; kpr_number: string | null; unit_code: string | null; unit_info: string | null; customer: string | null; note: string | null;
     rejected: boolean; reject_reason: string | null; rejected_at: string | null;
     journaled: boolean; journal_id: number | null; journal_number: string | null; journal_date: string | null;
     debit_account_id: number | null; debit_account: string | null; credit_account_id: number | null; credit_account: string | null;
@@ -42,11 +45,12 @@ type RetForm = {
     ppn_account_id: any; ppn_amount: number;
     processing: boolean;
 };
-const forms = reactive<Record<number, RetForm>>({});
+// Dikunci per row_key (bukan id) — id retensi & pencairan bisa sama.
+const forms = reactive<Record<string, RetForm>>({});
 for (const r of props.rows) {
     if (!r.journaled) {
-        forms[r.id] = {
-            // #162 — default tgl jurnal = tgl akad, fallback tgl retensi/dilepas, fallback hari ini.
+        forms[r.row_key] = {
+            // #162 — default tgl jurnal = tgl akad, fallback tgl retensi/cair, fallback hari ini.
             journal_date: r.akad_date ?? r.retention_date ?? r.released_at ?? todayStr(),
             debit_account_id: r.default_debit_account_id ?? '',
             uang_muka_account_id: props.accountDefaults.uang_muka_account_id ?? '',
@@ -61,25 +65,30 @@ for (const r of props.rows) {
 function fmtRp(v: number) { return 'Rp ' + Number(v ?? 0).toLocaleString('id-ID'); }
 function fmtDate(d: string | null) { return d ? new Date(d).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'; }
 
-// Total kredit (Uang Muka + PPN) per baris; harus == nilai retensi agar balance.
-function creditTotal(id: number) { const f = forms[id]; return Math.round(((Number(f.uang_muka_amount) || 0) + (Number(f.ppn_amount) || 0)) * 100) / 100; }
-function balanced(r: Row) { return Math.round((Number(r.amount) || 0) * 100) / 100 === creditTotal(r.id); }
+// Nama route approval sesuai jenis baris (retensi → KprRetention, pencairan → KprRealization).
+function postRoute(r: Row, action: 'post' | 'reject' | 'restore') {
+    const base = r.kind === 'pencairan' ? 'bs.cashbook.approval-realization' : 'bs.cashbook.approval-retensi';
+    return route(`${base}.${action}`, r.id);
+}
 
-// Hitung ulang split PPN-inklusif 11% dari nilai retensi (tombol bantu, tetap bisa override manual).
+// Total kredit (Uang Muka + PPN) per baris; harus == nilai (retensi/pencairan) agar balance.
+function creditTotal(key: string) { const f = forms[key]; return Math.round(((Number(f.uang_muka_amount) || 0) + (Number(f.ppn_amount) || 0)) * 100) / 100; }
+function balanced(r: Row) { return Math.round((Number(r.amount) || 0) * 100) / 100 === creditTotal(r.row_key); }
+
+// Hitung ulang split PPN-inklusif 11% dari nilai baris (tombol bantu, tetap bisa override manual).
 function recalcSplit(r: Row) {
-    const f = forms[r.id];
+    const f = forms[r.row_key];
     const amt = Math.round((Number(r.amount) || 0) * 100) / 100;
     const ppn = Math.round((amt * props.accountDefaults.ppn_rate_num / props.accountDefaults.ppn_rate_den) * 100) / 100;
     f.ppn_amount = ppn;
     f.uang_muka_amount = Math.round((amt - ppn) * 100) / 100;
 }
 
-// #162 — SELISIH: |debit (nilai retensi) − total kredit|. Ditampilkan merah bila ≠ 0.
-function selisih(r: Row) { return Math.round(Math.abs((Number(r.amount) || 0) - creditTotal(r.id)) * 100) / 100; }
+// #162 — SELISIH: |debit (nilai) − total kredit|. Ditampilkan merah bila ≠ 0.
+function selisih(r: Row) { return Math.round(Math.abs((Number(r.amount) || 0) - creditTotal(r.row_key)) * 100) / 100; }
 
 // #162 — Quick-add akun GL baru langsung dari SearchSelect debit/kredit.
-// POST bs.accounts.store (code+name+type+normal_balance) → refresh daftar akun → pre-select.
-type AddTarget = { rowId: number; field: 'debit_account_id' | 'uang_muka_account_id' | 'ppn_account_id' };
+type AddTarget = { rowKey: string; field: 'debit_account_id' | 'uang_muka_account_id' | 'ppn_account_id' };
 const addTarget = ref<AddTarget | null>(null);
 const addForm = reactive({ code: '', name: '', type: 'asset', processing: false });
 const accTypes: Array<{ id: string; label: string }> = [
@@ -89,8 +98,8 @@ const accTypes: Array<{ id: string; label: string }> = [
 // Saldo normal turunan dari tipe: Aktiva/Beban = D, lainnya = K.
 function normalBalanceOf(type: string) { return (type === 'asset' || type === 'expense') ? 'D' : 'K'; }
 
-function openAddAccount(rowId: number, field: AddTarget['field']) {
-    addTarget.value = { rowId, field };
+function openAddAccount(rowKey: string, field: AddTarget['field']) {
+    addTarget.value = { rowKey, field };
     addForm.code = ''; addForm.name = ''; addForm.type = 'asset'; addForm.processing = false;
 }
 function closeAddAccount() { addTarget.value = null; }
@@ -115,7 +124,7 @@ function submitAddAccount() {
                     const list: Acc[] = (page?.props?.accounts ?? props.accounts) as Acc[];
                     accountList.value = [...list];
                     const created = list.find((a) => String(a.code) === code);
-                    if (created && forms[t.rowId]) { (forms[t.rowId] as any)[t.field] = created.id; }
+                    if (created && forms[t.rowKey]) { (forms[t.rowKey] as any)[t.field] = created.id; }
                     closeAddAccount();
                 },
                 onFinish: () => { addForm.processing = false; },
@@ -131,6 +140,7 @@ const fCustomer = ref<any>('');
 onMounted(() => { if (props.initialCustomer) fCustomer.value = props.initialCustomer; });
 // #163 — filter berdasarkan UNIT (unit_code), bukan nomor KPR.
 const fUnit = ref<any>('');
+const fKind = ref('');
 const fStatus = ref('');
 const fJournaled = ref('');
 const fDateFrom = ref('');
@@ -142,11 +152,12 @@ const customerOptions = computed(() => (uniq(props.rows.map((r) => r.customer)) 
 const unitOptions = computed(() => (uniq(props.rows.map((r) => r.unit_code)) as string[]).sort().map((u) => ({ id: u, label: u })));
 const nilaiOptions = computed(() => (uniq(props.rows.map((r) => r.amount)) as number[]).sort((a, b) => b - a).map((n) => ({ id: n, label: fmtRp(n) })));
 
-function resetFilter() { fCustomer.value = ''; fUnit.value = ''; fStatus.value = ''; fJournaled.value = ''; fDateFrom.value = ''; fDateTo.value = ''; fNilai.value = ''; }
+function resetFilter() { fCustomer.value = ''; fUnit.value = ''; fKind.value = ''; fStatus.value = ''; fJournaled.value = ''; fDateFrom.value = ''; fDateTo.value = ''; fNilai.value = ''; }
 
 const filtered = computed(() => props.rows.filter((r) => {
     if (fCustomer.value && r.customer !== fCustomer.value) return false;
     if (fUnit.value && r.unit_code !== fUnit.value) return false;
+    if (fKind.value && r.kind !== fKind.value) return false;
     if (fStatus.value && r.status !== fStatus.value) return false;
     if (fJournaled.value === 'belum' && (r.journaled || r.rejected)) return false;
     if (fJournaled.value === 'sudah' && !r.journaled) return false;
@@ -157,18 +168,22 @@ const filtered = computed(() => props.rows.filter((r) => {
     return true;
 }));
 
+// Ringkasan kecil: berapa retensi vs pencairan yang tampil.
+const countRetensi = computed(() => filtered.value.filter((r) => r.kind === 'retensi').length);
+const countPencairan = computed(() => filtered.value.filter((r) => r.kind === 'pencairan').length);
+
 function approve(r: Row) {
-    const f = forms[r.id];
+    const f = forms[r.row_key];
     if (!f.debit_account_id) { alert('Pilih akun Debit (Bank) terlebih dahulu.'); return; }
     if (!f.uang_muka_account_id && !f.ppn_account_id) { alert('Pilih akun kredit (Uang Muka Penjualan / PPN Keluaran).'); return; }
     if (String(f.debit_account_id) === String(f.uang_muka_account_id) || String(f.debit_account_id) === String(f.ppn_account_id)) {
         alert('Akun Debit tidak boleh sama dengan akun Kredit.'); return;
     }
     if (!balanced(r)) {
-        alert(`Tidak balance: total kredit (${fmtRp(creditTotal(r.id))}) harus sama dengan nilai retensi (${fmtRp(r.amount)}).`); return;
+        alert(`Tidak balance: total kredit (${fmtRp(creditTotal(r.row_key))}) harus sama dengan nilai (${fmtRp(r.amount)}).`); return;
     }
     f.processing = true;
-    router.post(route('bs.cashbook.approval-retensi.post', r.id), {
+    router.post(postRoute(r, 'post'), {
         journal_date: f.journal_date,
         debit_account_id: f.debit_account_id,
         uang_muka_account_id: f.uang_muka_account_id || null,
@@ -178,20 +193,22 @@ function approve(r: Row) {
     }, { onSuccess: () => window.location.reload(), onFinish: () => { f.processing = false; } });
 }
 
-// Tolak retensi (belum dijurnal) → status ditolak + alasan (mirror Approval UTJ & DP).
+// Tolak (belum dijurnal) → status ditolak + alasan (mirror Approval UTJ & DP).
 function reject(r: Row) {
-    if (!confirm('Tolak retensi ini? Retensi akan ditandai ditolak (tidak dijurnal).')) return;
+    const label = r.kind === 'pencairan' ? 'pencairan' : 'retensi';
+    if (!confirm(`Tolak ${label} ini? Akan ditandai ditolak (tidak dijurnal).`)) return;
     const reason = window.prompt('Alasan penolakan (opsional):', '') ?? '';
-    const f = forms[r.id]; if (f) f.processing = true;
-    router.post(route('bs.cashbook.approval-retensi.reject', r.id), { reason },
+    const f = forms[r.row_key]; if (f) f.processing = true;
+    router.post(postRoute(r, 'reject'), { reason },
         { onSuccess: () => window.location.reload(), onFinish: () => { if (f) f.processing = false; } });
 }
-// Pulihkan retensi yang ditolak → kembali menunggu approval.
-const restoring = ref<number | null>(null);
-function restore(id: number) {
-    if (!confirm('Pulihkan retensi ini ke daftar menunggu approval?')) return;
-    restoring.value = id;
-    router.post(route('bs.cashbook.approval-retensi.restore', id), {},
+// Pulihkan yang ditolak → kembali menunggu approval.
+const restoring = ref<string | null>(null);
+function restore(r: Row) {
+    const label = r.kind === 'pencairan' ? 'pencairan' : 'retensi';
+    if (!confirm(`Pulihkan ${label} ini ke daftar menunggu approval?`)) return;
+    restoring.value = r.row_key;
+    router.post(postRoute(r, 'restore'), {},
         { onSuccess: () => window.location.reload(), onFinish: () => { restoring.value = null; } });
 }
 
@@ -205,11 +222,11 @@ const hSelCls = 'h-7 w-52 rounded border border-neutral-300 bg-white px-2 text-x
         <Link :href="route('bs.cashbook.home')" class="inline-flex items-center gap-2 text-sm text-neutral-500 hover:text-neutral-800 dark:hover:text-neutral-200"><ArrowLeft class="h-4 w-4" /> Cash Book</Link>
         <div>
             <h1 class="flex items-center gap-2 text-2xl font-bold"><Landmark class="h-6 w-6 text-primary-600" /> Approval Retensi</h1>
-            <p class="text-sm text-neutral-500">Retensi dari pencairan Proses KPR. Untuk yang belum dijurnal: akun Debit (Bank akad) &amp; split Kredit (Uang Muka Penjualan + PPN Keluaran 11%) sudah terisi otomatis — periksa/ubah lalu setujui. Jurnal GL otomatis terposting.</p>
+            <p class="text-sm text-neutral-500">Retensi <b>dan pencairan</b> dari Proses KPR. Setiap input pencairan otomatis masuk sebagai baris <span class="font-medium text-sky-600">Pencairan</span> (net = pencairan − retensi); retensi ditahan sebagai baris <span class="font-medium text-amber-600">Retensi</span>. Akun Debit (Bank akad) &amp; split Kredit (Uang Muka Penjualan + PPN Keluaran 11%) terisi otomatis — periksa/ubah lalu setujui. Jurnal GL otomatis terposting.</p>
         </div>
 
         <div class="flex items-center justify-between">
-            <p class="text-xs text-neutral-500">{{ filtered.length }} dari {{ rows.length }} retensi</p>
+            <p class="text-xs text-neutral-500">{{ filtered.length }} dari {{ rows.length }} baris · <span class="text-sky-600">{{ countPencairan }} pencairan</span> · <span class="text-amber-600">{{ countRetensi }} retensi</span></p>
             <button @click="resetFilter" class="inline-flex items-center gap-1.5 rounded-lg border border-neutral-300 px-3 py-1.5 text-xs font-medium text-neutral-600 hover:bg-neutral-50 dark:border-neutral-700 dark:text-neutral-300"><RotateCcw class="h-3.5 w-3.5" /> Reset Filter</button>
         </div>
 
@@ -218,8 +235,8 @@ const hSelCls = 'h-7 w-52 rounded border border-neutral-300 bg-white px-2 text-x
                 <thead class="bg-neutral-50 dark:bg-neutral-800">
                     <tr class="text-left text-xs uppercase text-neutral-500">
                         <th class="px-3 py-3">Customer / Unit</th>
-                        <th class="px-3 py-3">Status</th>
-                        <th class="px-3 py-3 text-right">Nilai Retensi</th>
+                        <th class="px-3 py-3">Jenis / Status</th>
+                        <th class="px-3 py-3 text-right">Nilai</th>
                         <th class="px-3 py-3 w-36">Tgl Jurnal</th>
                         <th class="px-3 py-3 w-56">Akun Debit (Bank)</th>
                         <th class="px-3 py-3 w-80">Akun Kredit (split)</th>
@@ -228,7 +245,10 @@ const hSelCls = 'h-7 w-52 rounded border border-neutral-300 bg-white px-2 text-x
                     <!-- Filter melekat per-kolom -->
                     <tr class="border-t border-neutral-100 dark:border-neutral-800/60">
                         <th class="px-2 py-2"><div class="flex min-w-[12rem] flex-col gap-1"><SearchSelect v-model="fCustomer" :options="customerOptions" placeholder="Semua customer" /><SearchSelect v-model="fUnit" :options="unitOptions" placeholder="Semua unit" /></div></th>
-                        <th class="px-2 py-2"><select v-model="fStatus" :class="[hSelCls, 'min-w-[10rem]']"><option value="">Semua</option><option value="held">Held</option><option value="partial">Partial</option><option value="released">Released</option></select></th>
+                        <th class="px-2 py-2"><div class="flex min-w-[10rem] flex-col gap-1">
+                            <select v-model="fKind" :class="hSelCls"><option value="">Semua jenis</option><option value="pencairan">Pencairan</option><option value="retensi">Retensi</option></select>
+                            <select v-model="fStatus" :class="hSelCls"><option value="">Semua status</option><option value="pencairan">Pencairan</option><option value="held">Held</option><option value="partial">Partial</option><option value="released">Released</option></select>
+                        </div></th>
                         <th class="px-2 py-2"><div class="min-w-[10rem]"><SearchSelect v-model="fNilai" :options="nilaiOptions" placeholder="Semua nilai" /></div></th>
                         <th class="px-2 py-2"><div class="flex min-w-[9.5rem] flex-col gap-1"><input v-model="fDateFrom" type="date" :class="hInputCls" title="Tgl jurnal dari" /><input v-model="fDateTo" type="date" :class="hInputCls" title="Tgl jurnal sampai" /></div></th>
                         <th class="px-2 py-2"></th>
@@ -237,47 +257,50 @@ const hSelCls = 'h-7 w-52 rounded border border-neutral-300 bg-white px-2 text-x
                     </tr>
                 </thead>
                 <tbody class="divide-y divide-neutral-200 dark:divide-neutral-800 align-top">
-                    <tr v-if="!filtered.length"><td colspan="7" class="px-3 py-10"><EmptyState title="Tidak ada retensi sesuai filter" description="Ubah kriteria filter di atas." /></td></tr>
-                    <tr v-for="r in filtered" :key="r.id">
+                    <tr v-if="!filtered.length"><td colspan="7" class="px-3 py-10"><EmptyState title="Tidak ada baris sesuai filter" description="Ubah kriteria filter di atas." /></td></tr>
+                    <tr v-for="r in filtered" :key="r.row_key">
                         <td class="px-3 py-3">
                             <div class="font-semibold">{{ r.customer ?? '—' }}</div>
                             <div class="text-xs font-medium text-neutral-600 dark:text-neutral-300">{{ r.unit_info ?? r.unit_code ?? '—' }}</div>
-                            <div class="text-[11px] text-neutral-400">{{ r.kpr_number ?? '—' }}<span v-if="r.released_at"> · dilepas {{ fmtDate(r.released_at) }}</span></div>
+                            <div class="text-[11px] text-neutral-400">{{ r.kpr_number ?? '—' }}<span v-if="r.note"> · {{ r.note }}</span><span v-if="r.released_at"> · dilepas {{ fmtDate(r.released_at) }}</span></div>
                         </td>
-                        <td class="px-3 py-3"><Badge size="sm" :variant="r.status === 'released' ? 'success' : 'warning'">{{ r.status }}</Badge></td>
+                        <td class="px-3 py-3">
+                            <Badge size="sm" :variant="r.kind === 'pencairan' ? 'info' : 'primary'">{{ r.kind === 'pencairan' ? 'Pencairan' : 'Retensi' }}</Badge>
+                            <div v-if="r.kind === 'retensi'" class="mt-1"><Badge size="sm" :variant="r.status === 'released' ? 'success' : 'warning'">{{ r.status }}</Badge></div>
+                        </td>
                         <td class="px-3 py-3 text-right font-mono font-bold">{{ fmtRp(r.amount) }}</td>
                         <!-- Ditolak -->
                         <template v-if="r.rejected">
                             <td class="px-3 py-3 text-xs">{{ fmtDate(r.rejected_at) }}</td>
                             <td class="px-3 py-3 text-xs" colspan="2"><Badge size="sm" variant="danger">Ditolak</Badge><span v-if="r.reject_reason" class="ml-1 text-neutral-500">— {{ r.reject_reason }}</span></td>
-                            <td class="px-3 py-3 text-center"><Button size="sm" variant="secondary" :loading="restoring === r.id" @click="restore(r.id)"><template #icon-left><Undo2 class="h-4 w-4" /></template>Pulihkan</Button></td>
+                            <td class="px-3 py-3 text-center"><Button size="sm" variant="secondary" :loading="restoring === r.row_key" @click="restore(r)"><template #icon-left><Undo2 class="h-4 w-4" /></template>Pulihkan</Button></td>
                         </template>
                         <!-- Belum dijurnal → form approve / tolak -->
                         <template v-else-if="!r.journaled">
-                            <td class="px-3 py-3"><input v-model="forms[r.id].journal_date" type="date" :class="inputCls" /></td>
+                            <td class="px-3 py-3"><input v-model="forms[r.row_key].journal_date" type="date" :class="inputCls" /></td>
                             <td class="px-3 py-3">
                                 <div class="flex items-center gap-1.5">
-                                    <div class="flex-1"><SearchSelect v-model="forms[r.id].debit_account_id" :options="accountList" placeholder="Cari akun debit…" /></div>
-                                    <button type="button" @click="openAddAccount(r.id, 'debit_account_id')" title="Tambah akun GL" class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-neutral-300 text-neutral-500 hover:bg-neutral-50 hover:text-primary-600 dark:border-neutral-700 dark:hover:bg-neutral-800"><Plus class="h-4 w-4" /></button>
+                                    <div class="flex-1"><SearchSelect v-model="forms[r.row_key].debit_account_id" :options="accountList" placeholder="Cari akun debit…" /></div>
+                                    <button type="button" @click="openAddAccount(r.row_key, 'debit_account_id')" title="Tambah akun GL" class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-neutral-300 text-neutral-500 hover:bg-neutral-50 hover:text-primary-600 dark:border-neutral-700 dark:hover:bg-neutral-800"><Plus class="h-4 w-4" /></button>
                                 </div>
                                 <p v-if="r.bank_account_label" class="mt-1 text-[11px] text-neutral-400">Bank akad: {{ r.bank_account_label }}</p>
                             </td>
                             <td class="px-3 py-3">
                                 <div class="space-y-2">
                                     <div class="grid grid-cols-[1fr,2rem,7rem] gap-1.5 items-center">
-                                        <SearchSelect v-model="forms[r.id].uang_muka_account_id" :options="accountList" placeholder="Uang Muka Penjualan…" />
-                                        <button type="button" @click="openAddAccount(r.id, 'uang_muka_account_id')" title="Tambah akun GL" class="flex h-9 w-8 items-center justify-center rounded-lg border border-neutral-300 text-neutral-500 hover:bg-neutral-50 hover:text-primary-600 dark:border-neutral-700 dark:hover:bg-neutral-800"><Plus class="h-4 w-4" /></button>
-                                        <MoneyInput v-model="forms[r.id].uang_muka_amount" />
+                                        <SearchSelect v-model="forms[r.row_key].uang_muka_account_id" :options="accountList" placeholder="Uang Muka Penjualan…" />
+                                        <button type="button" @click="openAddAccount(r.row_key, 'uang_muka_account_id')" title="Tambah akun GL" class="flex h-9 w-8 items-center justify-center rounded-lg border border-neutral-300 text-neutral-500 hover:bg-neutral-50 hover:text-primary-600 dark:border-neutral-700 dark:hover:bg-neutral-800"><Plus class="h-4 w-4" /></button>
+                                        <MoneyInput v-model="forms[r.row_key].uang_muka_amount" />
                                     </div>
                                     <div class="grid grid-cols-[1fr,2rem,7rem] gap-1.5 items-center">
-                                        <SearchSelect v-model="forms[r.id].ppn_account_id" :options="accountList" placeholder="PPN Keluaran…" />
-                                        <button type="button" @click="openAddAccount(r.id, 'ppn_account_id')" title="Tambah akun GL" class="flex h-9 w-8 items-center justify-center rounded-lg border border-neutral-300 text-neutral-500 hover:bg-neutral-50 hover:text-primary-600 dark:border-neutral-700 dark:hover:bg-neutral-800"><Plus class="h-4 w-4" /></button>
-                                        <MoneyInput v-model="forms[r.id].ppn_amount" />
+                                        <SearchSelect v-model="forms[r.row_key].ppn_account_id" :options="accountList" placeholder="PPN Keluaran…" />
+                                        <button type="button" @click="openAddAccount(r.row_key, 'ppn_account_id')" title="Tambah akun GL" class="flex h-9 w-8 items-center justify-center rounded-lg border border-neutral-300 text-neutral-500 hover:bg-neutral-50 hover:text-primary-600 dark:border-neutral-700 dark:hover:bg-neutral-800"><Plus class="h-4 w-4" /></button>
+                                        <MoneyInput v-model="forms[r.row_key].ppn_amount" />
                                     </div>
                                     <div class="flex items-center justify-between text-[11px]">
                                         <button type="button" @click="recalcSplit(r)" class="text-primary-600 hover:underline">Hitung ulang 11%</button>
                                         <span :class="balanced(r) ? 'text-success-600' : 'text-danger-600 font-semibold'">
-                                            Kredit: {{ fmtRp(creditTotal(r.id)) }}<span v-if="!balanced(r)"> ≠ {{ fmtRp(r.amount) }}</span>
+                                            Kredit: {{ fmtRp(creditTotal(r.row_key)) }}<span v-if="!balanced(r)"> ≠ {{ fmtRp(r.amount) }}</span>
                                         </span>
                                     </div>
                                     <div v-if="selisih(r) > 0" class="text-[11px] font-semibold text-danger-600">Selisih: {{ fmtRp(selisih(r)) }}</div>
@@ -285,8 +308,8 @@ const hSelCls = 'h-7 w-52 rounded border border-neutral-300 bg-white px-2 text-x
                             </td>
                             <td class="px-3 py-3 text-center">
                                 <div class="flex flex-col gap-1.5">
-                                    <Button size="sm" variant="success" :disabled="!balanced(r)" :loading="forms[r.id].processing" @click="approve(r)">Setujui &amp; Posting</Button>
-                                    <Button size="sm" variant="danger" :loading="forms[r.id].processing" @click="reject(r)">Tolak</Button>
+                                    <Button size="sm" variant="success" :disabled="!balanced(r)" :loading="forms[r.row_key].processing" @click="approve(r)">Setujui &amp; Posting</Button>
+                                    <Button size="sm" variant="danger" :loading="forms[r.row_key].processing" @click="reject(r)">Tolak</Button>
                                 </div>
                             </td>
                         </template>

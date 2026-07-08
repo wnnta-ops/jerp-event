@@ -9,7 +9,7 @@ import EmptyState from '@/Components/UI/EmptyState.vue';
 const props = defineProps<{
     rows: Array<any>;
     period: { year: number; month: number };
-    totals: { dpp: number; ppn: number; count: number; ar_ppn: number; prop_ppn: number; ret_ppn: number; utj_ppn: number };
+    totals: { dpp: number; ppn: number; count: number; ar_ppn: number; prop_ppn: number; ret_ppn: number; utj_ppn: number; penc_ppn: number };
 }>();
 
 const year = ref(props.period.year);
@@ -24,8 +24,8 @@ function fmtDate(d: string) { return d ? new Date(d).toLocaleDateString('id-ID',
 function rowKey(r: any) { return r.source + '-' + r.id; }
 function isEntry(r: any) { return !!r.is_entry; }
 function needsKonversi(r: any) { return r.source === 'utj_dp' && !r.converted; }
-function sumberLabel(r: any) { return ({ ar: 'AR', properti: 'Properti', retensi: 'Retensi', utj_dp: 'UTJ & DP' } as Record<string,string>)[r.source] ?? r.source; }
-function sumberVariant(r: any) { return ({ ar: 'neutral', properti: 'primary', retensi: 'info', utj_dp: 'warning' } as Record<string,any>)[r.source] ?? 'neutral'; }
+function sumberLabel(r: any) { return ({ ar: 'AR', properti: 'Properti', retensi: 'Retensi', pencairan: 'Pencairan KPR', utj_dp: 'UTJ & DP' } as Record<string,string>)[r.source] ?? r.source; }
+function sumberVariant(r: any) { return ({ ar: 'neutral', properti: 'primary', retensi: 'info', pencairan: 'success', utj_dp: 'warning' } as Record<string,any>)[r.source] ?? 'neutral'; }
 
 // ── Filter per-kolom (ketik untuk mencari) ──
 const f = reactive({ fp: '', sumber: '', date: '', npwp: '', nama: '', dok: '', dpp: '', ppn: '' });
@@ -106,7 +106,7 @@ const fCls = 'h-7 w-full rounded border border-neutral-300 bg-white px-2 text-xs
         <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
             <div class="card p-4"><div class="text-xs uppercase text-neutral-400">Total DPP</div><div class="mt-1 text-xl font-bold">{{ fmtRp(totals.dpp) }}</div></div>
             <div class="card p-4"><div class="text-xs uppercase text-neutral-400">Total PPN Keluaran</div><div class="mt-1 text-xl font-bold text-success-600">{{ fmtRp(totals.ppn) }}</div><div class="mt-1 text-[11px] text-neutral-400">AR {{ fmtRp(totals.ar_ppn) }} · Properti {{ fmtRp(totals.prop_ppn) }}</div></div>
-            <div class="card p-4"><div class="text-xs uppercase text-neutral-400">PPN Retensi / UTJ &amp; DP</div><div class="mt-1 text-xl font-bold text-info-600">{{ fmtRp(totals.ret_ppn + totals.utj_ppn) }}</div><div class="mt-1 text-[11px] text-neutral-400">Retensi {{ fmtRp(totals.ret_ppn) }} · UTJ&amp;DP {{ fmtRp(totals.utj_ppn) }}</div></div>
+            <div class="card p-4"><div class="text-xs uppercase text-neutral-400">PPN Retensi / Pencairan / UTJ &amp; DP</div><div class="mt-1 text-xl font-bold text-info-600">{{ fmtRp(totals.ret_ppn + (totals.penc_ppn || 0) + totals.utj_ppn) }}</div><div class="mt-1 text-[11px] text-neutral-400">Retensi {{ fmtRp(totals.ret_ppn) }} · Pencairan {{ fmtRp(totals.penc_ppn || 0) }} · UTJ&amp;DP {{ fmtRp(totals.utj_ppn) }}</div></div>
             <div class="card p-4"><div class="text-xs uppercase text-neutral-400">Jumlah Faktur</div><div class="mt-1 text-xl font-bold">{{ totals.count }}</div></div>
         </div>
 

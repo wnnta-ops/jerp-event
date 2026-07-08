@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Web\BusinessSupport\CashBook;
 
 use App\Domain\BankLoan\Enums\KprStatus;
+use App\Domain\BankLoan\Models\KprRealization;
 use App\Domain\BankLoan\Models\KprRetention;
 use App\Domain\BusinessSupport\Models\BsAccount;
 use App\Domain\BusinessSupport\Models\BsFakturKeluaranEntry;
@@ -159,7 +160,7 @@ class BankApprovalController extends Controller
         BsFakturKeluaranEntry::updateOrCreate(
             ['source_type' => $type, 'source_id' => $sourceId],
             [
-                'keterangan'  => $type === 'retensi' ? 'Retensi' : 'UTJ & DP',
+                'keterangan'  => $type === 'retensi' ? 'Retensi' : ($type === 'pencairan' ? 'Pencairan KPR' : 'UTJ & DP'),
                 'customer_id' => $customerId,
                 'booking_id'  => $bookingId,
                 'doc_date'    => $docDate,
@@ -199,7 +200,7 @@ class BankApprovalController extends Controller
             ? BankAccount::whereIn('id', $bankIds)->get()->keyBy('id')
             : collect();
 
-        $rows = $retentions->map(function ($r) use ($accounts, $banks, $defaults) {
+        $retRows = $retentions->map(function ($r) use ($accounts, $banks, $defaults) {
             $j = $r->journal;
             $debit  = $j?->lines->first(fn ($l) => (float) $l->debit > 0);
             $credit = $j?->lines->first(fn ($l) => (float) $l->credit > 0);
@@ -220,6 +221,8 @@ class BankApprovalController extends Controller
 
             return [
                 'id'                => $r->id,
+                'kind'              => 'retensi',
+                'row_key'           => 'retensi-'.$r->id,
                 'amount'            => $amount,
                 'status'            => $r->status,
                 'released_at'       => optional($r->released_at)->toDateString(),
@@ -255,13 +258,92 @@ class BankApprovalController extends Controller
             ];
         });
 
+        // ── Baris PENCAIRAN (net = disbursed − retention) — setiap input pencairan KPR ikut masuk
+        //    approval, dijurnal DR Bank / CR Uang Muka Penjualan + PPN (sama seperti retensi). Net TTS
+        //    pencairan hanya subledger (status 'verified', tanpa jurnal GL) → tidak double-count. ──
+        $reals = KprRealization::query()
+            ->whereRaw('(disbursed_amount - COALESCE(retention_amount, 0)) > 0.009')
+            ->with([
+                'application.customer:id,full_name',
+                'application.booking.unit.unitType:id,code,name',
+                'application.akad:id,kpr_application_id,akad_at',
+                'category:id,code,name',
+                'journal.lines.account:id,code,name',
+            ])
+            ->get();
+
+        $rBankIds = $reals->pluck('bank_account_id')->filter()->unique()->values();
+        $rBanks   = $rBankIds->isNotEmpty() ? BankAccount::whereIn('id', $rBankIds)->get()->keyBy('id') : collect();
+
+        $pencRows = $reals->map(function ($r) use ($accounts, $rBanks) {
+            $net    = round((float) $r->disbursed_amount - (float) $r->retention_amount, 2);
+            $j      = $r->journal;
+            $debit  = $j?->lines->first(fn ($l) => (float) $l->debit > 0);
+            $credit = $j?->lines->first(fn ($l) => (float) $l->credit > 0);
+
+            $bankId   = $r->bank_account_id;
+            $bankGl   = $this->mapBankAccountToGl($bankId ? $rBanks->get($bankId) : null, $accounts);
+            $ppn      = round($net * self::PPN_RATE_NUM / self::PPN_RATE_DEN, 2);
+            $uangMuka = round($net - $ppn, 2);
+
+            $unit     = $r->application?->booking?->unit;
+            $unitType = $unit?->unitType;
+            $unitInfo = $unitType ? trim((string) ($unitType->code ?: $unitType->name)) : null;
+            $akadDate = optional($r->application?->akad?->akad_at)->toDateString();
+            $kategori = $r->category?->name;
+
+            return [
+                'id'                => $r->id,
+                'kind'              => 'pencairan',
+                'row_key'           => 'pencairan-'.$r->id,
+                'amount'            => $net,
+                'status'            => 'pencairan',
+                'released_at'       => null,
+                // Default tgl jurnal utk pencairan = tgl akad (fallback tgl cair).
+                'retention_date'    => optional($r->disbursed_at)->toDateString(),
+                'akad_date'         => $akadDate,
+                'kpr_number'        => $r->application?->application_number,
+                'unit_code'         => $unit?->unit_code,
+                'unit_info'         => $unit ? trim((string) $unit->unit_code.($unitInfo ? ' · '.$unitInfo : '')) : null,
+                'customer'          => $r->application?->customer?->full_name,
+                // Keterangan pencairan = kategori retensi (mis. TANAH MATANG 50) / catatan pencairan.
+                'note'              => $kategori ?: $r->retention_note,
+                'rejected'          => $r->approval_status === 'rejected',
+                'reject_reason'     => $r->reject_reason,
+                'rejected_at'       => optional($r->updated_at)->toDateString(),
+                'journaled'         => (bool) $r->journal_id,
+                'journal_id'        => $r->journal_id,
+                'journal_number'    => $j?->journal_number,
+                'journal_date'      => optional($j?->journal_date)->toDateString(),
+                'debit_account_id'  => $debit?->account_id,
+                'debit_account'     => $debit?->account ? $debit->account->code.' - '.$debit->account->name : null,
+                'credit_account_id' => $credit?->account_id,
+                'credit_account'    => $credit?->account ? $credit->account->code.' - '.$credit->account->name : null,
+                'default_debit_account_id' => $bankGl?->id,
+                'default_debit_account'    => $bankGl ? $bankGl->code.' - '.$bankGl->name : null,
+                'bank_account_label'       => ($bankId && $rBanks->get($bankId))
+                    ? trim(($rBanks->get($bankId)->bank_name ?? '').' '.($rBanks->get($bankId)->account_number ?? ''))
+                    : null,
+                'default_ppn'              => $ppn,
+                'default_uang_muka'        => $uangMuka,
+            ];
+        });
+
+        // Gabung retensi + pencairan; belum dijurnal (pending) di atas, lalu id terbaru.
+        $rows = $retRows->concat($pencRows)
+            ->sortBy(fn ($x) => ($x['journaled'] ? 1_000_000_000_000 : 0) - $x['id'])
+            ->values();
+
         // Pra-filter ke customer tertentu saat datang dari auto-redirect "KPR Lunas" (?customer_id=).
         // ID di URL (bukan nama) → privasi terjaga; nama di-resolve di server utk set filter awal.
         $initialCustomer = null;
         if ($cid = (int) $request->integer('customer_id')) {
             $initialCustomer = optional($retentions->first(
                 fn ($r) => (int) ($r->realization?->application?->customer_id ?? 0) === $cid
-            ))?->realization?->application?->customer?->full_name;
+            ))?->realization?->application?->customer?->full_name
+                ?? optional($reals->first(
+                    fn ($r) => (int) ($r->application?->customer_id ?? 0) === $cid
+                ))?->application?->customer?->full_name;
         }
 
         return Inertia::render('BusinessSupport/CashBook/ApprovalRetensi', [
@@ -439,6 +521,136 @@ class BankApprovalController extends Controller
         return back()->with('success', 'Retensi dipulihkan ke daftar menunggu approval.');
     }
 
+    // ── Approval PENCAIRAN (net pencairan KPR = disbursed − retention) ─────
+    // Setiap realisasi pencairan bisa disetujui/dijurnal di sini (DR Bank / CR Uang Muka + PPN),
+    // persis alur retensi. Sumber Faktur Pajak Keluaran: source_type 'pencairan' (langsung aktif).
+
+    public function realizationPost(Request $request, KprRealization $realization, JournalService $svc): RedirectResponse
+    {
+        abort_unless($request->user()?->can('businesssupport.approval.act'), 403);
+
+        if ($realization->journal_id) {
+            return back()->with('error', 'Pencairan ini sudah dijurnal.');
+        }
+        if ($realization->approval_status === 'rejected') {
+            return back()->with('error', 'Pencairan ini ditolak — pulihkan dulu sebelum disetujui/dijurnal.');
+        }
+        $amount = round((float) $realization->disbursed_amount - (float) $realization->retention_amount, 2);
+        if ($amount <= 0) {
+            return back()->with('error', 'Nominal pencairan (net) tidak valid.');
+        }
+
+        $realization->loadMissing([
+            'application.customer:id,full_name',
+            'application.booking.unit:id,unit_code',
+        ]);
+        $app    = $realization->application;
+        $ref    = $app?->application_number ?? "PENCAIRAN-{$realization->id}";
+        $suffix = $this->descSuffix($app?->customer?->full_name, $app?->booking?->unit?->unit_code);
+        $desc   = "Approval Pencairan KPR {$ref}".$suffix;
+
+        $v = $request->validate([
+            'journal_date'         => ['required', 'date'],
+            'debit_account_id'     => ['required', 'integer', 'exists:bs_accounts,id'],
+            'uang_muka_account_id' => ['nullable', 'integer', 'exists:bs_accounts,id'],
+            'uang_muka_amount'     => ['nullable', 'numeric', 'min:0'],
+            'ppn_account_id'       => ['nullable', 'integer', 'exists:bs_accounts,id'],
+            'ppn_amount'           => ['nullable', 'numeric', 'min:0'],
+            'credit_account_id'    => ['nullable', 'integer', 'exists:bs_accounts,id'],
+        ]);
+
+        // Susun baris kredit (Uang Muka + PPN split, atau kredit tunggal) — sama seperti retensiPost.
+        $creditLines = [];
+        $addCredit = function (?int $accId, $amt, string $desc) use (&$creditLines): void {
+            $accId = $accId ? (int) $accId : 0;
+            $amt   = round((float) $amt, 2);
+            if ($accId > 0 && $amt > 0) {
+                $creditLines[] = ['account_id' => $accId, 'amount' => $amt, 'description' => $desc];
+            }
+        };
+        $addCredit($v['uang_muka_account_id'] ?? null, $v['uang_muka_amount'] ?? 0, 'Uang Muka Penjualan'.$suffix);
+        $addCredit($v['ppn_account_id'] ?? null, $v['ppn_amount'] ?? 0, 'PPN Keluaran'.$suffix);
+        if (! $creditLines && ! empty($v['credit_account_id'])) {
+            $addCredit((int) $v['credit_account_id'], $amount, 'Pencairan KPR'.$suffix);
+        }
+        if (! $creditLines) {
+            return back()->with('error', 'Tentukan minimal satu akun & nominal kredit (Uang Muka / PPN, atau akun kredit tunggal).');
+        }
+
+        $totalCredit = round(array_sum(array_column($creditLines, 'amount')), 2);
+        if ($totalCredit !== round($amount, 2)) {
+            return back()->with('error', 'Total kredit ('.number_format($totalCredit, 2).') harus sama dengan nominal pencairan net ('.number_format($amount, 2).').');
+        }
+        foreach ($creditLines as $cl) {
+            if ((int) $v['debit_account_id'] === $cl['account_id']) {
+                return back()->with('error', 'Akun Debit tidak boleh sama dengan akun Kredit.');
+            }
+        }
+
+        $lines = [
+            ['account_id' => (int) $v['debit_account_id'], 'debit' => round($amount, 2), 'credit' => 0, 'description' => $desc],
+        ];
+        foreach ($creditLines as $cl) {
+            $lines[] = ['account_id' => $cl['account_id'], 'debit' => 0, 'credit' => $cl['amount'], 'description' => $cl['description']];
+        }
+
+        try {
+            $journal = $svc->post([
+                'journal_date' => $v['journal_date'],
+                'source'       => 'cash',
+                'status'       => 'posted',
+                'reference'    => $ref,
+                'description'  => $desc,
+                'created_by'   => $request->user()->id,
+            ], $lines);
+        } catch (BusinessRuleException $e) {
+            return back()->with('error', $e->getMessage());
+        }
+
+        $realization->update(['journal_id' => $journal->id, 'approval_status' => null, 'reject_reason' => null]);
+
+        // Faktur Pajak Keluaran (keterangan 'Pencairan KPR') — langsung aktif, DPP = Uang Muka, PPN = split 11%.
+        $entryPpn = round((float) ($v['ppn_amount'] ?? 0), 2);
+        $entryDpp = round((float) ($v['uang_muka_amount'] ?? 0), 2);
+        if ($entryDpp <= 0 && $entryPpn <= 0) {
+            $entryDpp = round($amount, 2);
+        }
+        $this->recordFakturKeluaranEntry($request, 'pencairan', $realization->id, $app?->customer_id, $app?->booking_id, $v['journal_date'], $entryDpp, $entryPpn, $amount, $journal->id, true);
+
+        return back()->with('success', "Pencairan disetujui & jurnal {$journal->journal_number} terposting.");
+    }
+
+    /** Tolak approval Pencairan (belum dijurnal) → approval_status 'rejected' + alasan. */
+    public function realizationReject(Request $request, KprRealization $realization): RedirectResponse
+    {
+        abort_unless($request->user()?->can('businesssupport.approval.act'), 403);
+
+        if ($realization->journal_id) {
+            return back()->with('error', 'Pencairan ini sudah dijurnal, tidak bisa ditolak.');
+        }
+        $v = $request->validate(['reason' => ['nullable', 'string', 'max:255']]);
+        $realization->update([
+            'approval_status' => 'rejected',
+            'reject_reason'   => trim((string) ($v['reason'] ?? '')) ?: $realization->reject_reason,
+        ]);
+
+        // Pencairan (realisasi) & alokasi TTS ke booking tetap — hanya persetujuan jurnal yang ditolak.
+        return back()->with('success', 'Pencairan ditolak (tidak dijurnal). Realisasi & alokasi tetap; hanya persetujuan jurnal yang ditolak.');
+    }
+
+    /** Pulihkan Pencairan yang ditolak → kembali menunggu approval. */
+    public function realizationRestore(Request $request, KprRealization $realization): RedirectResponse
+    {
+        abort_unless($request->user()?->can('businesssupport.approval.act'), 403);
+
+        if ($realization->approval_status !== 'rejected') {
+            return back()->with('error', 'Hanya pencairan berstatus ditolak yang bisa dipulihkan.');
+        }
+        $realization->update(['approval_status' => null]);
+
+        return back()->with('success', 'Pencairan dipulihkan ke daftar menunggu approval.');
+    }
+
     // ── Approval UTJ & DP (TTS yang sudah diposting ke Kuitansi) ──────────
     public function utjdpIndex(Request $request): Response
     {
@@ -449,8 +661,13 @@ class BankApprovalController extends Controller
         // Anonim yg sudah di-posting tapi belum di-assign unit); 'rejected' = ditolak.
         $tab = in_array($request->input('tab'), ['rejected', 'tanpa_unit'], true)
             ? $request->input('tab') : 'pending';
+        // Cegah double-count: TTS net-pencairan KPR (reference_no 'KPR-DISB-…') sudah dijurnal
+        // lewat Approval Retensi (baris Pencairan). Kalau TTS-nya kebetulan di-posting manual di
+        // modul TTS, JANGAN tampilkan di sini agar Bank tidak terdebit dua kali (DR Bank ganda).
+        $notKprDisb = fn ($q) => $q->where(fn ($w) => $w->whereNull('reference_no')->orWhere('reference_no', 'not like', 'KPR-DISB-%'));
+
         $counts = [
-            'pending'    => Tts::where('status', 'posted')->whereNull('journal_id')->count(),
+            'pending'    => Tts::where('status', 'posted')->whereNull('journal_id')->where($notKprDisb)->count(),
             'tanpa_unit' => Tts::where('status', 'posted')->whereNotNull('journal_id')->whereNull('booking_id')->count(),
             'rejected'   => Tts::where('status', 'rejected')->count(),
         ];
@@ -463,7 +680,7 @@ class BankApprovalController extends Controller
         $tts = Tts::query()
             ->when($tab === 'rejected', fn ($q) => $q->where('status', 'rejected'))
             ->when($tab === 'tanpa_unit', fn ($q) => $q->where('status', 'posted')->whereNotNull('journal_id')->whereNull('booking_id'))
-            ->when($tab === 'pending', fn ($q) => $q->where('status', 'posted')->whereNull('journal_id'))
+            ->when($tab === 'pending', fn ($q) => $q->where('status', 'posted')->whereNull('journal_id')->where($notKprDisb))
             ->with([
                 'customer:id,full_name',
                 // #164 — UNIT yang dibeli (via booking) untuk ditampilkan.
