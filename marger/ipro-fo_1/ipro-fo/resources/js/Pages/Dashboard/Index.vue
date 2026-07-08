@@ -1,10 +1,12 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue';
-import { Head, Link } from '@inertiajs/vue3';
+import { Head, Link, usePage } from '@inertiajs/vue3';
 import {
     Users, Home, ClipboardList, Wallet, TrendingUp, TrendingDown, Bell,
     Activity, ShoppingCart, AlertTriangle, Landmark, FileText, ArrowRight, BarChart3,
     ClipboardCheck, BookOpen, Receipt, PiggyBank, Boxes, HardHat, Percent, Database,
+    Building2, Banknote, CircleDollarSign, Building, Briefcase, Vote, FileBarChart,
+    Settings2, ShieldCheck, Settings, LayoutGrid,
 } from 'lucide-vue-next';
 import Sparkline from '@/Components/Charts/Sparkline.vue';
 import Donut from '@/Components/Charts/Donut.vue';
@@ -97,10 +99,47 @@ function relTime(iso: string): string {
 /* Persentase progress (untuk bar realisasi/kontrak), aman bila pembagi 0. */
 function pct(a: number, b: number): number { return b > 0 ? Math.min(100, Math.round((a / b) * 100)) : 0; }
 const mod = props.metrics.modules;
+
+/* ══ MENU UTAMA — peluncur modul (kotak-kotak yang mengarah ke tiap modul BO) ══
+   Hanya tampil bila route dikenal & user punya izin (mirror gating Sidebar).
+   Warna chip pakai inline-style (hex) agar aman dari purge Tailwind. */
+const pageP = usePage();
+function modHasPermission(perm?: string | string[]): boolean {
+    if (!perm) return true;
+    const perms: string[] = (pageP.props as any).auth?.user?.permissions ?? [];
+    const list = Array.isArray(perm) ? perm : [perm];
+    return list.some((p) => p.endsWith('.*') ? perms.some((x) => x.startsWith(p.slice(0, -1))) : perms.includes(p));
+}
+function modRoute(name: string, params?: Record<string, any>): string | null {
+    try { return route(name, params); } catch { return null; }
+}
+interface ModCard { key: string; title: string; desc: string; icon: any; color: string; route: string; params?: Record<string, any>; permission?: string | string[]; }
+const MODULES: ModCard[] = [
+    { key: 'master',      title: 'Master',                desc: 'Data unit & master properti.',                      icon: Building2,       color: '#ff8c00', route: 'units.index',            permission: 'master.unit.view' },
+    { key: 'datacenter',  title: 'Data Center',           desc: 'Pusat data Customer, Supplier & Karyawan.',         icon: Database,        color: '#0ea5e9', route: 'bs.dc.customer.center',  permission: ['master.customer.view', 'businesssupport.view', 'datacenter.*'] },
+    { key: 'kpr',         title: 'KPR',                   desc: 'Inisiasi & Proses KPR bank (Bank Loan).',           icon: Banknote,        color: '#10b981', route: 'kpr.index',              permission: 'bankloan.application.view' },
+    { key: 'bs',          title: 'Business Support',      desc: 'AR, Payroll, Inventory & Purchasing.',              icon: Briefcase,       color: '#f59e0b', route: 'bs.index',               permission: ['businesssupport.view', 'ap.*', 'ar.*', 'gl.*', 'cashbook.*', 'budget.*', 'contractor.*', 'cogs.*', 'tax.*', 'bs.*'] },
+    { key: 'revenue',     title: 'Booked Revenue',        desc: 'Pendapatan diakui, BAST/AJB & Faktur Pajak.',       icon: CircleDollarSign,color: '#14b8a6', route: 'bs.booked-revenue.index',permission: ['businesssupport.view', 'ar.*'] },
+    { key: 'fa',          title: 'Aset Tetap',            desc: 'Registrasi & penyusutan aset tetap.',               icon: Building,        color: '#06b6d4', route: 'bs.fa.index',            permission: ['businesssupport.view', 'bs.*'] },
+    { key: 'gl',          title: 'General Ledger',        desc: 'Jurnal, Neraca, Laba Rugi & Cash Flow.',            icon: BookOpen,        color: '#7c3aed', route: 'bs.gl.printhub',         permission: ['businesssupport.view', 'gl.*'] },
+    { key: 'ap',          title: 'Account Payable',       desc: 'Invoice & pembayaran hutang supplier.',             icon: Receipt,         color: '#f43f5e', route: 'bs.ap.index',            permission: ['businesssupport.view', 'ap.*'] },
+    { key: 'cashbook',    title: 'Cash Book',             desc: 'Kas, Bank, Giro, Bon Sementara & approval.',        icon: Wallet,          color: '#6366f1', route: 'bs.cashbook.printhub',   permission: ['businesssupport.view', 'cashbook.*'] },
+    { key: 'budget',      title: 'Budget Control',        desc: 'Anggaran, alokasi & koreksi budget.',               icon: PiggyBank,       color: '#d946ef', route: 'bs.budget.index',        permission: ['businesssupport.view', 'budget.*'] },
+    { key: 'contractor',  title: 'Contractor Management', desc: 'SPK, progress lapangan & retensi.',                 icon: HardHat,         color: '#f97316', route: 'bs.spk.index',           permission: ['businesssupport.view', 'contractor.*'] },
+    { key: 'cogs',        title: 'COGS',                  desc: 'HPP RealCost & budget proyek.',                     icon: Boxes,           color: '#84cc16', route: 'bs.cogs.printhub',       permission: ['businesssupport.view', 'cogs.*'] },
+    { key: 'approval',    title: 'Approval',              desc: 'Pusat persetujuan seluruh transaksi.',              icon: Vote,            color: '#eab308', route: 'approvals.index',        permission: 'approval.view' },
+    { key: 'reports',     title: 'Reports',               desc: 'Laporan & export data.',                            icon: FileBarChart,    color: '#3b82f6', route: 'reports.index',          permission: 'reporting.report.export' },
+    { key: 'setupsales',  title: 'Setup Sales',           desc: 'Skema bayar, sales, agen & price list.',            icon: Settings2,       color: '#ec4899', route: 'setup-sales.index',      permission: 'setupsales.view' },
+    { key: 'security',    title: 'Security',              desc: 'User, hak akses, absensi & log.',                   icon: ShieldCheck,     color: '#ef4444', route: 'security.index',         permission: 'security.view' },
+    { key: 'system',      title: 'System',                desc: 'Pengaturan & konfigurasi sistem.',                  icon: Settings,        color: '#64748b', route: 'settings.index',         permission: 'system.user.view' },
+];
+const launcherModules = computed(() => MODULES
+    .map((mm) => ({ ...mm, url: modRoute(mm.route, mm.params) }))
+    .filter((mm) => mm.url && modHasPermission(mm.permission)));
 </script>
 
 <template>
-    <Head title="Dashboard" />
+    <Head title="Menu Utama" />
 
     <div class="space-y-6">
         <!-- Header -->
@@ -114,6 +153,40 @@ const mod = props.metrics.modules;
                     Login terakhir: {{ fmtDateTime(greeting.last_login_at) }}
                     <span v-if="greeting.last_login_ip">· IP {{ greeting.last_login_ip }}</span>
                 </p>
+            </div>
+        </div>
+
+        <!-- ════ MENU UTAMA — peluncur modul (klik kotak → buka modul terkait) ════ -->
+        <section>
+            <div class="mb-3 flex items-center gap-2">
+                <span class="flex h-8 w-8 items-center justify-center rounded-lg bg-primary-500/15"><LayoutGrid class="h-5 w-5 text-primary-600" /></span>
+                <div>
+                    <h2 class="text-lg font-bold text-neutral-900 dark:text-neutral-100">Menu Utama</h2>
+                    <p class="text-xs text-neutral-500">Pilih modul untuk mulai — {{ launcherModules.length }} modul tersedia.</p>
+                </div>
+            </div>
+            <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+                <Link v-for="mm in launcherModules" :key="mm.key" :href="mm.url!"
+                      class="group card card-hover relative flex flex-col gap-3 overflow-hidden p-5 transition hover:-translate-y-0.5 hover:shadow-md">
+                    <span class="absolute inset-x-0 top-0 h-1" :style="{ background: mm.color }"></span>
+                    <div class="flex items-center gap-3">
+                        <span class="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl shadow-sm" :style="{ background: mm.color }">
+                            <component :is="mm.icon" class="h-6 w-6 text-white" />
+                        </span>
+                        <h3 class="text-base font-bold leading-tight text-neutral-900 dark:text-neutral-100">{{ mm.title }}</h3>
+                        <ArrowRight class="ml-auto h-4 w-4 shrink-0 text-neutral-300 transition group-hover:translate-x-0.5 group-hover:text-primary-500" />
+                    </div>
+                    <p class="text-sm leading-relaxed text-neutral-500 dark:text-neutral-400">{{ mm.desc }}</p>
+                </Link>
+            </div>
+        </section>
+
+        <!-- ════ Ringkasan & Statistik ════ -->
+        <div class="flex items-center gap-2 pt-2">
+            <span class="h-5 w-1.5 rounded-full bg-primary-500"></span>
+            <div>
+                <h2 class="text-lg font-bold text-neutral-900 dark:text-neutral-100">Ringkasan &amp; Statistik</h2>
+                <p class="text-xs text-neutral-500">Ringkasan aktivitas &amp; performa tiap modul</p>
             </div>
         </div>
 

@@ -43,7 +43,7 @@ const groups: { title: string; items: NavItem[] }[] = [
     {
         title: '',
         items: [
-            { label: 'Dashboard',  icon: LayoutDashboard, href: 'dashboard' },
+            { label: 'Menu Utama', icon: LayoutDashboard, href: 'dashboard' },
             { label: 'Kalkulator', icon: Calculator,      href: 'calculator.index' },
             // Menu silang → kembali ke hub/dashboard J-ERP (URL dari env via Inertia config.fo_url).
             { label: 'Kembali ke Dashboard J-ERP', icon: Building2, external: ((page.props as any).config?.fo_url ?? '') + '/dashboard' },
