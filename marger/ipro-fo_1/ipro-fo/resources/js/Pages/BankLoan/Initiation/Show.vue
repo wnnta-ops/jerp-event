@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { Link, router } from '@inertiajs/vue3';
 import { ref, reactive, computed, watch } from 'vue';
-import { ArrowLeft, ArrowRight, Check, Lock, ChevronRight, Download, User, Users } from 'lucide-vue-next';
+import { ArrowLeft, ArrowRight, Check, Lock, ChevronRight, Download, User, Users, CalendarDays, MapPin, Megaphone, Wallet } from 'lucide-vue-next';
 import Button from '@/Components/UI/Button.vue';
 import Input from '@/Components/UI/Input.vue';
 import Badge from '@/Components/UI/Badge.vue';
@@ -25,9 +25,9 @@ const stageList = computed(() => Object.entries(props.stageDefs).map(([key, labe
 // Label ringkas utk stepper horizontal (alur modul, spt Account Payable).
 const stepShort: Record<string, string> = {
     kuitansi: 'TTS', sprs: 'SPRS', bi_checking: 'BI Checking', collect_berkas: 'Berkas',
-    analisa: 'Analisa', profiling: 'Profiling', kpr_application: 'Proses KPR',
+    analisa: 'Analisa', profiling_berkas: 'Prof. Berkas', profiling: 'Profiling', kpr_application: 'Proses KPR',
 };
-const activeIdx = computed(() => Math.max(0, Math.min(7, (a.value.current_stage ?? 1)) - 1));
+const activeIdx = computed(() => Math.max(0, Math.min(8, (a.value.current_stage ?? 1)) - 1));
 const openStage = ref(activeIdx.value);
 watch(activeIdx, (v) => { openStage.value = v; }); // auto-buka tahap aktif setelah tahap maju
 
@@ -43,6 +43,7 @@ function stageComplete(key: string): boolean {
     }
     if (key === 'bi_checking') return biAllFilled.value && f.bi_checking.permintaan === 'lanjut_spr';
     if (key === 'analisa') return !!f.analisa.result && analisaAllScored.value;
+    if (key === 'profiling_berkas') return !!f.profiling_berkas.tanggal_lahir && !!f.profiling_berkas.domisili_pekerjaan && !!f.profiling_berkas.jabatan;
     if (key === 'profiling') return decidedBanks.value.length >= 1;
     return true;
 }
@@ -110,6 +111,13 @@ const f = reactive({
         decision_2: s.profiling?.decision_2 ?? '',
         decision_2_spr: !!s.profiling?.decision_2_spr,
         notes: s.profiling?.notes ?? '',
+    },
+    // Profiling Berkas (tahap baru): input tanggal lahir (→ umur), domisili pekerjaan, jabatan.
+    // Prefill tanggal lahir dari Customer.dob; jabatan default dari kategori Collect Berkas.
+    profiling_berkas: {
+        tanggal_lahir: (s.profiling_berkas?.tanggal_lahir ?? init0.customer?.dob ?? '').slice(0, 10),
+        domisili_pekerjaan: s.profiling_berkas?.domisili_pekerjaan ?? '',
+        jabatan: s.profiling_berkas?.jabatan ?? (s.collect_berkas?.category === 'wirausaha' ? 'Wiraswasta' : (s.collect_berkas?.category === 'karyawan' ? 'Karyawan Swasta' : '')),
     },
     kpr_application: { booking_id: init0.booking_id ?? '' },
 });
@@ -410,6 +418,42 @@ const sprsHint = computed<string>(() => {
     return 'Centang keempat dokumen (KTP/NPWP Pemohon & Pasangan) sudah diterima untuk lanjut ke BI Checking.';
 });
 
+// ── Profiling Berkas: data turunan yang HANYA ditampilkan (umur / domisili / sumber / penghasilan) ──
+function ageFromDob(dob: string): { years: number; months: number } | null {
+    if (!dob) return null;
+    const b = new Date(dob); if (isNaN(b.getTime())) return null;
+    const n = new Date();
+    let months = (n.getFullYear() - b.getFullYear()) * 12 + (n.getMonth() - b.getMonth());
+    if (n.getDate() < b.getDate()) months--;
+    if (months < 0) return null;
+    return { years: Math.floor(months / 12), months: months % 12 };
+}
+const pbUmur = computed(() => ageFromDob(f.profiling_berkas.tanggal_lahir));
+// Domisili/tempat tinggal — dirakit dari alamat Customer (diisi saat NUP/pendaftaran).
+const pbDomisili = computed<string>(() => {
+    const c: any = a.value.customer || {};
+    return [c.address_line, c.address_rt_rw ? 'RT/RW ' + c.address_rt_rw : '', c.kelurahan ? 'Kel. ' + c.kelurahan : '', c.kecamatan ? 'Kec. ' + c.kecamatan : '', c.city, c.province, c.postal_code].filter(Boolean).join(', ');
+});
+// Sumber informasi — pilihan "Sumber Data" pada NUP (tersimpan di Customer.data_source).
+const pbSumber = computed<string>(() => a.value.customer?.data_source?.name ?? '');
+// Penghasilan (RPC) dari tahap Analisa: slip_gaji (karyawan) / lap_keuangan (wirausaha) + tt_gaji_tunai tambahan.
+const pbPenghasilan = computed<Array<{ label: string; level: string; amount: string; hint: string }>>(() => {
+    const cat = a.value.stages?.collect_berkas?.category ?? '';
+    const items: Record<string, string> = a.value.stages?.analisa?.indikator_items ?? {};
+    const keys = cat === 'wirausaha' ? ['lap_keuangan'] : ['slip_gaji', 'tt_gaji_tunai'];
+    const rows: Array<{ label: string; level: string; amount: string; hint: string }> = [];
+    for (const k of keys) {
+        const lvl = items[k];
+        if (!lvl) continue;
+        const asp: any = cfgAspects.value.find((x: any) => x.key === k);
+        const opt: any = asp?.options?.find((o: any) => o.level === lvl);
+        if (asp && opt) rows.push({ label: asp.label, level: lvl, amount: opt.desc, hint: opt.hint ?? '' });
+    }
+    return rows;
+});
+const pbMonthlyIncome = computed<number>(() => Number(a.value.customer?.monthly_income ?? 0));
+const JABATAN_OPTS = ['PNS', 'Karyawan Swasta', 'Wiraswasta'];
+
 const saving = ref(false);
 function save(key: string, data: Record<string, any> = {}) {
     saving.value = true;
@@ -492,7 +536,7 @@ const analisaLabel: Record<string, string> = { layak: 'Layak', tidak_layak: 'Tid
                 </div>
                 <Badge :variant="a.status === 'completed' ? 'success' : (a.status === 'rejected' ? 'danger' : 'warning')" dot>{{ a.status === 'completed' ? 'Selesai' : (a.status === 'rejected' ? 'Ditolak' : 'Berproses') }}</Badge>
             </div>
-            <p class="mt-1 text-xs text-neutral-400">Tahap {{ Math.min(a.current_stage, 7) }} dari 7</p>
+            <p class="mt-1 text-xs text-neutral-400">Tahap {{ Math.min(a.current_stage, 8) }} dari 8</p>
         </div>
 
         <!-- Alur modul — stepper 1 baris penuh-lebar (seperti Account Payable) -->
@@ -520,7 +564,7 @@ const analisaLabel: Record<string, string> = { layak: 'Layak', tidak_layak: 'Tid
             </div>
         </div>
 
-        <!-- Stepper 7 tahap -->
+        <!-- Stepper 8 tahap -->
         <div class="space-y-3">
             <div v-for="st in stageList" :key="st.key" class="card overflow-hidden"
                  :class="locked(st.idx) ? 'opacity-60' : ''">
@@ -842,7 +886,75 @@ const analisaLabel: Record<string, string> = { layak: 'Layak', tidak_layak: 'Tid
                         <Button type="submit" :loading="saving" :disabled="!stageComplete('analisa')">Simpan &amp; Lanjut →</Button>
                     </form>
 
-                    <!-- 6. PROFILING (R5) — indikator + rekomendasi bank + keputusan 2 bank + SPR -->
+                    <!-- 6. PROFILING BERKAS — rangkuman profil pemohon (umur/domisili/sumber/penghasilan) + pekerjaan -->
+                    <form v-else-if="st.key === 'profiling_berkas'" @submit.prevent="save('profiling_berkas', f.profiling_berkas)" class="space-y-4">
+                        <p class="rounded-lg bg-neutral-100 px-3 py-2 text-xs text-neutral-600 dark:bg-neutral-800 dark:text-neutral-300">
+                            Rangkuman profil berkas pemohon — sebagian data ditarik otomatis dari <b>NUP / Pendaftaran</b> &amp; <b>Analisa BI Checking &amp; Berkas</b>. Lengkapi <b>tanggal lahir</b>, <b>domisili pekerjaan</b>, dan <b>jabatan</b> untuk lanjut.
+                        </p>
+
+                        <div class="grid gap-4 md:grid-cols-2">
+                            <!-- 1. Umur -->
+                            <div class="rounded-xl border border-sky-200 bg-sky-50/50 p-4 dark:border-sky-900/40 dark:bg-sky-900/10">
+                                <div class="mb-2 flex items-center gap-2 text-sm font-semibold text-sky-700 dark:text-sky-300"><CalendarDays class="h-4 w-4" /> Umur Pemohon</div>
+                                <label class="mb-1 block text-xs font-medium text-neutral-500">Tanggal Lahir <span class="text-danger-500">*</span></label>
+                                <input v-model="f.profiling_berkas.tanggal_lahir" type="date" class="input-base" />
+                                <div class="mt-2 text-sm">
+                                    <span v-if="pbUmur" class="font-semibold text-sky-700 dark:text-sky-300">{{ pbUmur.years }} tahun {{ pbUmur.months }} bulan</span>
+                                    <span v-else class="text-neutral-400">— isi tanggal lahir untuk menghitung umur —</span>
+                                </div>
+                            </div>
+
+                            <!-- 2. Tempat tinggal / domisili -->
+                            <div class="rounded-xl border border-emerald-200 bg-emerald-50/50 p-4 dark:border-emerald-900/40 dark:bg-emerald-900/10">
+                                <div class="mb-2 flex items-center gap-2 text-sm font-semibold text-emerald-700 dark:text-emerald-300"><MapPin class="h-4 w-4" /> Tempat Tinggal / Domisili</div>
+                                <p v-if="pbDomisili" class="text-sm leading-relaxed text-neutral-700 dark:text-neutral-200">{{ pbDomisili }}</p>
+                                <p v-else class="text-sm text-neutral-400">— data domisili belum tersedia dari NUP/pendaftaran —</p>
+                                <p class="mt-2 text-[11px] text-neutral-400">Sumber: alamat NUP / pendaftaran customer</p>
+                            </div>
+
+                            <!-- 3. Sumber informasi -->
+                            <div class="rounded-xl border border-violet-200 bg-violet-50/50 p-4 dark:border-violet-900/40 dark:bg-violet-900/10">
+                                <div class="mb-2 flex items-center gap-2 text-sm font-semibold text-violet-700 dark:text-violet-300"><Megaphone class="h-4 w-4" /> Sumber Informasi</div>
+                                <span v-if="pbSumber" class="inline-flex rounded-full bg-violet-100 px-3 py-1 text-sm font-semibold text-violet-700 dark:bg-violet-900/40 dark:text-violet-200">{{ pbSumber }}</span>
+                                <span v-else class="text-sm text-neutral-400">— belum ada sumber data —</span>
+                                <p class="mt-2 text-[11px] text-neutral-400">Sumber: pilihan "Sumber Data" saat NUP / pendaftaran</p>
+                            </div>
+
+                            <!-- 4. Data penghasilan (RPC) -->
+                            <div class="rounded-xl border border-amber-200 bg-amber-50/50 p-4 dark:border-amber-900/40 dark:bg-amber-900/10">
+                                <div class="mb-2 flex items-center gap-2 text-sm font-semibold text-amber-700 dark:text-amber-300"><Wallet class="h-4 w-4" /> Data Penghasilan (RPC)</div>
+                                <div v-if="pbPenghasilan.length" class="space-y-1.5">
+                                    <div v-for="row in pbPenghasilan" :key="row.label" class="flex items-center justify-between gap-2 text-sm">
+                                        <span class="text-neutral-600 dark:text-neutral-300">{{ row.hint || row.label }}</span>
+                                        <span class="flex items-center gap-2"><Badge size="sm" :variant="row.level === 'high' ? 'success' : (row.level === 'medium' ? 'warning' : 'danger')">{{ indikatorLabel[row.level] }}</Badge><span class="font-mono font-semibold">{{ row.amount }}</span></span>
+                                    </div>
+                                </div>
+                                <p v-else class="text-sm text-neutral-400">— belum ada penilaian penghasilan di tahap Analisa —</p>
+                                <p v-if="pbMonthlyIncome > 0" class="mt-2 border-t border-amber-200/60 pt-2 text-xs text-neutral-500 dark:border-amber-900/40">Penghasilan tercatat: <b class="font-mono">{{ fmtRp(pbMonthlyIncome) }}</b> / bln</p>
+                                <p class="mt-1 text-[11px] text-neutral-400">Sumber: slip gaji / RPC pada Analisa BI Checking &amp; Berkas</p>
+                            </div>
+                        </div>
+
+                        <!-- 5. Domisili pekerjaan (free text) + 6. Jabatan / pekerjaan -->
+                        <div class="grid gap-4 md:grid-cols-2">
+                            <div>
+                                <label class="label-base">Domisili Pekerjaan <span class="text-danger-500">*</span></label>
+                                <input v-model="f.profiling_berkas.domisili_pekerjaan" type="text" class="input-base" placeholder="Alamat / lokasi tempat bekerja…" />
+                            </div>
+                            <div>
+                                <label class="label-base">Jabatan / Pekerjaan <span class="text-danger-500">*</span></label>
+                                <select v-model="f.profiling_berkas.jabatan" class="input-base">
+                                    <option value="">— pilih —</option>
+                                    <option v-for="j in JABATAN_OPTS" :key="j" :value="j">{{ j }}</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <p v-if="!stageComplete('profiling_berkas')" class="text-xs text-warning-600">Lengkapi tanggal lahir, domisili pekerjaan, dan jabatan untuk lanjut ke Profiling Customer.</p>
+                        <Button type="submit" :loading="saving" :disabled="!stageComplete('profiling_berkas')">Simpan &amp; Lanjut →</Button>
+                    </form>
+
+                    <!-- 7. PROFILING CUSTOMER (R5) — indikator + rekomendasi bank + keputusan 2 bank + SPR -->
                     <form v-else-if="st.key === 'profiling'" @submit.prevent="save('profiling', f.profiling)" class="space-y-4">
                         <p class="rounded-lg bg-neutral-100 px-3 py-2 text-xs text-neutral-600 dark:bg-neutral-800 dark:text-neutral-300">Alur: <b>Sistem menyarankan</b> (dari Analisa) → <b>Customer meminta</b> (preferensi) → <b>Anda memutuskan</b> (Keputusan bank yang dilanjutkan Proses KPR).</p>
 
