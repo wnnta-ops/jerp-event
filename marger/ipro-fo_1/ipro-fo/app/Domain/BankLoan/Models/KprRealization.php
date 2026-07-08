@@ -18,6 +18,7 @@ class KprRealization extends Model
         'kpr_application_id', 'disbursed_at', 'disbursed_amount', 'retention_amount', 'retention_note',
         'retention_category_id', 'reference_no', 'bank_account_id', 'tts_id',
         'ssp_bphtb_date', 'ssp_bphtb_amount', 'ssp_tts_id', // #146 DAJAM Pajak: pembayaran SSP/BPHTB
+        'journal_id', 'approval_status', 'reject_reason',   // Approval Retensi — baris PENCAIRAN (net) dijurnal ke GL
     ];
 
     protected $casts = [
@@ -39,6 +40,9 @@ class KprRealization extends Model
     /** #146 — TTS pembayaran SSP/BPHTB (DAJAM Pajak). */
     public function sspTts(): BelongsTo { return $this->belongsTo(Tts::class, 'ssp_tts_id'); }
 
+    /** Jurnal GL hasil Approval Retensi untuk baris PENCAIRAN (net) ini. */
+    public function journal(): BelongsTo { return $this->belongsTo(\App\Domain\BusinessSupport\Models\BsJournal::class, 'journal_id'); }
+
     /**
      * #146 — Reversal aman TTS SSP/BPHTB saat realisasi dihapus (ReverseDisbursement hanya
      * membalik tts utama). Hook `deleting` membatalkan alokasi & menghapus TTS SSP agar
@@ -47,6 +51,15 @@ class KprRealization extends Model
     protected static function booted(): void
     {
         static::deleting(function (self $realization): void {
+            // Pencairan yang sudah disetujui/dijurnal di Approval Retensi tidak boleh dihapus — jurnal GL
+            // akan menggantung. Void/hapus jurnalnya dulu (mirror guard TTS SSP di bawah & retensi).
+            if ($realization->journal_id) {
+                throw new \App\Exceptions\BusinessRuleException(
+                    'Pencairan ini sudah dijurnal di Approval Retensi — batalkan/void jurnalnya dulu sebelum menghapus realisasi.',
+                    errorCode: 'REALIZATION_JOURNALED',
+                );
+            }
+
             $sspTts = $realization->ssp_tts_id ? Tts::with('allocations')->find($realization->ssp_tts_id) : null;
             if (! $sspTts) {
                 return;
