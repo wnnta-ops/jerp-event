@@ -158,30 +158,31 @@ class KprInitiationController extends Controller
     {
         abort_unless($request->user()?->can('bankloan.application.create'), 403);
 
-        // R1 — sumber inisiasi = TTS (Tanda Terima Setoran) AWAL. TTS membawa customer/booking/amount langsung.
-        // TTS yang SUDAH dipakai inisiasi lain disembunyikan (1 TTS = 1 inisiasi).
-        // Hanya TTS "booked" (terikat booking) & yang sudah MELEWATI VERIFIKASI (status verified/posted)
-        // yang boleh tampil di awal inisiasi — TTS pending/giro-belum-cair & TTS tanpa booking disembunyikan.
-        $usedTtsIds = KprInitiation::whereNotNull('tts_receipt_id')->pluck('tts_receipt_id')->all();
-        $tts = Tts::query()
-            ->whereNotIn('id', $usedTtsIds)
-            ->whereNotNull('booking_id')
-            ->whereIn('status', ['verified', 'posted'])
-            ->with('customer:id,full_name')
-            ->latest('received_date')
+        // R1 — sumber inisiasi = SPRS (booking KPR). Nominal inisiasi KPR = PENCAIRAN KPR, yaitu jadwal
+        // tagihan bertipe ANG pada SPRS tsb — BUKAN nominal TTS/booking fee (mis. 3.000.000).
+        // Hanya SPRS yang punya jadwal Pencairan KPR (ANG > 0) & belum dipakai inisiasi lain yang tampil
+        // (1 SPRS = 1 inisiasi).
+        $usedBookingIds = KprInitiation::whereNotNull('booking_id')->pluck('booking_id')->all();
+        $sprs = Booking::query()
+            ->whereNotIn('id', $usedBookingIds)
+            ->where('status', '!=', 'cancelled')
+            ->whereHas('paymentSchedules', fn ($q) => $q->where('payment_type', 'ANG')->where('amount', '>', 0))
+            ->withSum(['paymentSchedules as pencairan_kpr' => fn ($q) => $q->where('payment_type', 'ANG')], 'amount')
+            ->with('customer:id,full_name', 'unit:id,unit_code')
+            ->latest('booking_date')
             ->limit(300)
-            ->get(['id', 'tts_number', 'received_date', 'amount', 'customer_id', 'booking_id'])
-            ->map(fn (Tts $t) => [
-                'id'          => $t->id,
-                'number'      => $t->tts_number,
-                'date'        => $t->received_date?->toDateString(),
-                'amount'      => (float) $t->amount,
-                'customer'    => $t->customer?->full_name,
-                'has_booking' => (bool) $t->booking_id,
+            ->get(['id', 'booking_number', 'booking_date', 'customer_id', 'unit_id'])
+            ->map(fn (Booking $b) => [
+                'id'        => $b->id,
+                'number'    => $b->booking_number,
+                'date'      => $b->booking_date?->toDateString(),
+                'pencairan' => (float) ($b->pencairan_kpr ?? 0),
+                'customer'  => $b->customer?->full_name,
+                'unit'      => $b->unit?->unit_code,
             ]);
 
         return Inertia::render('BankLoan/Initiation/Create', [
-            'ttsReceipts' => $tts,
+            'sprsList' => $sprs,
         ]);
     }
 
@@ -189,20 +190,32 @@ class KprInitiationController extends Controller
     {
         abort_unless($request->user()?->can('bankloan.application.create'), 403);
 
-        $v = $request->validate(['tts_receipt_id' => 'required|integer|exists:tts_receipts,id']);
-        $tts = Tts::findOrFail($v['tts_receipt_id']);
+        $v = $request->validate(['booking_id' => 'required|integer|exists:bookings,id']);
+        $booking = Booking::findOrFail($v['booking_id']);
 
-        // Cegah duplikat: 1 TTS hanya boleh dipakai untuk SATU inisiasi KPR.
-        if (KprInitiation::where('tts_receipt_id', $tts->id)->exists()) {
+        // Cegah duplikat: 1 SPRS hanya boleh dipakai untuk SATU inisiasi KPR.
+        if (KprInitiation::where('booking_id', $booking->id)->exists()) {
             return redirect()->route('kpr.initiation.index')
-                ->with('error', "TTS {$tts->tts_number} sudah dipakai untuk inisiasi KPR lain.");
+                ->with('error', "SPRS {$booking->booking_number} sudah dipakai untuk inisiasi KPR lain.");
+        }
+
+        // Nominal inisiasi = PENCAIRAN KPR = jumlah jadwal tagihan tipe ANG pada SPRS ini.
+        $pencairan = (float) DB::table('payment_schedules')
+            ->where('booking_id', $booking->id)
+            ->where('payment_type', 'ANG')
+            ->sum('amount');
+
+        if ($pencairan <= 0) {
+            return redirect()->route('kpr.initiation.index')
+                ->with('error', "SPRS {$booking->booking_number} belum punya jadwal Pencairan KPR (ANG).");
         }
 
         $init = KprInitiation::create([
-            'tts_receipt_id'   => $tts->id,
-            'customer_id'      => $tts->customer_id,
-            'booking_id'       => $tts->booking_id,
-            'plafon_requested' => $tts->amount,
+            // Sumber = SPRS, tapi tahap TTS TETAP integrasi ke TTS (setoran) milik SPRS ini bila ada.
+            'tts_receipt_id'   => $this->bookingTts($booking->id)?->id,
+            'customer_id'      => $booking->customer_id,
+            'booking_id'       => $booking->id,
+            'plafon_requested' => $pencairan,
             'current_stage'    => 1,
             'status'           => 'in_progress',
             'initiated_by'     => $request->user()?->id,
@@ -211,7 +224,16 @@ class KprInitiationController extends Controller
         $init->update(['initiation_number' => sprintf('INIT/%s/%04d', now()->format('y/m'), $init->id)]);
 
         return redirect()->route('kpr.initiation.show', $init)
-            ->with('success', "Inisiasi KPR dibuat dari TTS {$tts->tts_number}.");
+            ->with('success', "Inisiasi KPR dibuat dari SPRS {$booking->booking_number} — plafon Rp " . number_format($pencairan, 0, ',', '.') . '.');
+    }
+
+    /** TTS (setoran) milik sebuah SPRS/booking — ditautkan/ditampilkan di tahap TTS inisiasi. */
+    private function bookingTts(int $bookingId): ?Tts
+    {
+        return Tts::where('booking_id', $bookingId)
+            ->whereIn('status', ['verified', 'posted'])
+            ->latest('received_date')
+            ->first(['id', 'tts_number', 'received_date', 'amount', 'customer_id']);
     }
 
     public function show(Request $request, KprInitiation $initiation): Response
@@ -257,6 +279,10 @@ class KprInitiationController extends Controller
             ];
         }
 
+        // Tahap TTS TETAP integrasi ke TTS: pakai TTS tertaut, atau—untuk inisiasi bersumber SPRS yang
+        // belum tertaut—resolve TTS (setoran) milik booking-nya agar No. TTS & Nominal tetap tampil.
+        $tts = $initiation->ttsReceipt ?: (($b = $initiation->booking) ? $this->bookingTts($b->id) : null);
+
         // Teks mentah OCR (mengandung NIK/NPWP) hanya untuk yang berhak lihat data sensitif.
         $stages = $initiation->stages ?? [];
         if (! ($request->user()?->can('master.customer.view.sensitive') ?? false)) {
@@ -278,7 +304,7 @@ class KprInitiationController extends Controller
                     $initiation->customer->toArray(),
                     ['dob' => optional($initiation->customer->dob)->toDateString()],
                 ) : null,
-                'tts'            => $initiation->ttsReceipt,
+                'tts'            => $tts,
                 'booking'        => $initiation->booking,
                 'kpr'            => $initiation->kprApplication,
                 'created_at'     => optional($initiation->created_at)->toIso8601String(),
