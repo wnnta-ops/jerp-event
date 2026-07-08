@@ -109,7 +109,12 @@ class PostingInvoiceController extends Controller
             ->with('success', "Invoice {$res['invoice']->invoice_number} diterbitkan dari {$row->refund_no} — masuk Account Payable.");
     }
 
-    /** Posting MASSAL beberapa baris antrian sekaligus; tiap item wajib punya supplier_id. */
+    /**
+     * Posting MASSAL — item yang dicentang DIGABUNG jadi SATU Invoice Hutang (AP):
+     * total = jumlah item; tiap item jadi 1 baris invoice (bs_ap_invoice_lines) +
+     * sepasang baris jurnal (Dr beban/lawan · Cr hutang) dalam 1 jurnal. Header
+     * supplier = supplier item pertama (item bisa beda supplier — pilihan user).
+     */
     public function bulkRefund(Request $request, JournalService $journal): RedirectResponse
     {
         abort_unless($request->user()?->canModule('ap'), 403);
@@ -120,7 +125,8 @@ class PostingInvoiceController extends Controller
             'items.*.supplier_id' => ['required', 'integer', Rule::exists('bs_suppliers', 'id')],
         ]);
 
-        $ok = 0;
+        // Siapkan tiap baris (resolusi akun + deskripsi). Yang gagal/terposting dilewati.
+        $prepared = [];
         $errors = [];
         foreach ($validated['items'] as $item) {
             $row = DB::table('bs_ap_refund_queue')->where('id', $item['id'])->first();
@@ -129,24 +135,81 @@ class PostingInvoiceController extends Controller
 
                 continue;
             }
-            $res = $this->issueFromRefundRow($row, (int) $item['supplier_id'], $journal, (int) $request->user()->id);
-            $res['ok'] ? $ok++ : $errors[] = $res['error'];
+            $p = $this->prepRefundRow($row);
+            if (! $p['ok']) {
+                $errors[] = $p['error'];
+
+                continue;
+            }
+            $p['row'] = $row;
+            $p['supplier_id'] = (int) $item['supplier_id'];
+            $prepared[] = $p;
         }
 
-        $msg = "Posting massal selesai: {$ok} invoice diterbitkan.";
+        if (! $prepared) {
+            return back()->with('error', 'Tak ada item valid untuk diposting.'.($errors ? ' '.implode('; ', $errors) : ''));
+        }
+
+        $total = round(array_sum(array_column($prepared, 'amount')), 2);
+        $userId = (int) $request->user()->id;
+
+        $inv = DB::transaction(function () use ($prepared, $total, $journal, $userId) {
+            $first = $prepared[0];
+            $inv = $this->makeInvoice([
+                'supplier_id'        => $first['supplier_id'],
+                'customer_id'        => null,
+                'expense_account_id' => $first['offset'],
+                'payable_account_id' => $first['payable'],
+                'description'        => 'Invoice hutang gabungan ('.count($prepared).' item)',
+                'invoice_date'       => now()->toDateString(),
+                'receive_date'       => now()->toDateString(),
+                'due_date'           => now()->toDateString(),
+                'dpp'                => $total, 'total' => $total, 'net_payable' => $total,
+                'source_type'        => 'batch', 'source_id' => null,
+            ], $userId);
+
+            // Baris detail invoice + baris jurnal per item (Dr beban/lawan · Cr hutang).
+            $jLines = [];
+            foreach ($prepared as $p) {
+                DB::table('bs_ap_invoice_lines')->insert([
+                    'ap_invoice_id' => $inv->id,
+                    'description'   => $p['desc'],
+                    'qty'           => 1,
+                    'unit_price'    => $p['amount'],
+                    'amount'        => $p['amount'],
+                ]);
+                $jLines[] = ['account_id' => $p['offset'], 'debit' => $p['amount'], 'credit' => 0, 'description' => $p['desc']];
+                $jLines[] = ['account_id' => $p['payable'], 'debit' => 0, 'credit' => $p['amount'], 'description' => $p['hutangLabel'].' — '.$p['desc']];
+            }
+
+            $j = $journal->post([
+                'journal_date' => $inv->invoice_date->toDateString(), 'source' => 'ap',
+                'reference' => $inv->invoice_number, 'description' => 'AP — Invoice gabungan '.$inv->invoice_number, 'created_by' => $userId,
+            ], $jLines);
+            $inv->update(['journal_id' => $j->id]);
+
+            foreach ($prepared as $p) {
+                DB::table('bs_ap_refund_queue')->where('id', $p['row']->id)
+                    ->update(['status' => 'posted', 'ap_invoice_id' => $inv->id, 'posted_at' => now(), 'updated_at' => now()]);
+            }
+
+            return $inv;
+        });
+
+        $msg = "1 Invoice Hutang {$inv->invoice_number} diterbitkan dari ".count($prepared)." item (total Rp ".number_format($total, 0, ',', '.').").";
         if ($errors) {
-            return back()->with('error', $msg.' Gagal: '.implode('; ', $errors));
+            return back()->with('error', $msg.' Dilewati: '.implode('; ', $errors));
         }
 
         return back()->with('success', $msg);
     }
 
     /**
-     * Terbitkan 1 invoice AP dari baris antrian refund/komisi/blt/gmc + jurnal pengakuan.
+     * Resolusi akun + deskripsi 1 baris antrian (tanpa menulis DB).
      *
-     * @return array{ok:bool, invoice?:BsApInvoice, error?:string}
+     * @return array{ok:bool, amount?:float, payable?:int, offset?:int, desc?:string, hutangLabel?:string, date?:string, error?:string}
      */
-    private function issueFromRefundRow(object $row, int $supplierId, JournalService $journal, int $userId): array
+    private function prepRefundRow(object $row): array
     {
         if ($row->status === 'posted') {
             return ['ok' => false, 'error' => "{$row->refund_no}: sudah diposting"];
@@ -159,7 +222,6 @@ class PostingInvoiceController extends Controller
             return ['ok' => false, 'error' => "{$row->refund_no}: akun hutang/lawan belum ter-set"];
         }
 
-        $amount = round((float) $row->amount, 2);
         $jenis = ['SPR' => 'SPR', 'SPRS' => 'SPRS', 'TRANSFER_ANONIM' => 'Transfer Anonim'][$row->refund_source] ?? (string) $row->refund_source;
         $desc = match ($row->kind) {
             'komisi' => 'Komisi '.$row->refund_no,
@@ -168,24 +230,46 @@ class PostingInvoiceController extends Controller
             default  => 'Refund '.$row->refund_no.($row->customer_name ? ' — '.$row->customer_name : '').' ('.$jenis.')',
         };
         $hutangLabel = ['komisi' => 'Hutang Komisi', 'blt' => 'Hutang BLT', 'gmc' => 'Hutang Gimmick'][$row->kind] ?? 'Hutang Refund';
-        $date = $row->tgl_refund ?: now()->toDateString();
 
-        $inv = DB::transaction(function () use ($row, $supplierId, $amount, $payable, $offset, $desc, $hutangLabel, $date, $journal, $userId) {
+        return [
+            'ok'          => true,
+            'amount'      => round((float) $row->amount, 2),
+            'payable'     => (int) $payable,
+            'offset'      => (int) $offset,
+            'desc'        => $desc,
+            'hutangLabel' => $hutangLabel,
+            'date'        => $row->tgl_refund ?: now()->toDateString(),
+        ];
+    }
+
+    /**
+     * Terbitkan 1 invoice AP dari 1 baris antrian (posting satuan) + jurnal pengakuan.
+     *
+     * @return array{ok:bool, invoice?:BsApInvoice, error?:string}
+     */
+    private function issueFromRefundRow(object $row, int $supplierId, JournalService $journal, int $userId): array
+    {
+        $p = $this->prepRefundRow($row);
+        if (! $p['ok']) {
+            return $p;
+        }
+
+        $inv = DB::transaction(function () use ($row, $supplierId, $p, $journal, $userId) {
             $inv = $this->makeInvoice([
                 'supplier_id' => $supplierId, 'customer_id' => $row->customer_id,
-                'expense_account_id' => $offset, 'payable_account_id' => $payable,
-                'description' => $desc, 'invoice_date' => $date, 'receive_date' => $date, 'due_date' => $date,
-                'dpp' => $amount, 'total' => $amount, 'net_payable' => $amount,
+                'expense_account_id' => $p['offset'], 'payable_account_id' => $p['payable'],
+                'description' => $p['desc'], 'invoice_date' => $p['date'], 'receive_date' => $p['date'], 'due_date' => $p['date'],
+                'dpp' => $p['amount'], 'total' => $p['amount'], 'net_payable' => $p['amount'],
                 'source_type' => $row->kind, 'source_id' => $row->refund_id, 'refund_source' => $row->refund_source,
             ], $userId);
 
             // Jurnal pengakuan: Dr lawan (beban/titipan) / Cr Hutang (refund/komisi/blt).
             $j = $journal->post([
                 'journal_date' => $inv->invoice_date->toDateString(), 'source' => 'ap',
-                'reference' => $inv->invoice_number, 'description' => 'AP — '.$desc, 'created_by' => $userId,
+                'reference' => $inv->invoice_number, 'description' => 'AP — '.$p['desc'], 'created_by' => $userId,
             ], [
-                ['account_id' => $offset, 'debit' => $amount, 'credit' => 0, 'description' => $desc],
-                ['account_id' => $payable, 'debit' => 0, 'credit' => $amount, 'description' => $hutangLabel],
+                ['account_id' => $p['offset'], 'debit' => $p['amount'], 'credit' => 0, 'description' => $p['desc']],
+                ['account_id' => $p['payable'], 'debit' => 0, 'credit' => $p['amount'], 'description' => $p['hutangLabel']],
             ]);
             $inv->update(['journal_id' => $j->id]);
 
