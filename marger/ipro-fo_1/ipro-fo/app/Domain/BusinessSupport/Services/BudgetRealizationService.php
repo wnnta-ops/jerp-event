@@ -51,10 +51,17 @@ final class BudgetRealizationService
             ->where('bs_journals.status', 'posted')
             ->where('bs_journals.period_year', $year)
             ->where('bs_journal_lines.account_id', $accountId)
-            ->when($costCenterId, fn ($q) => $q->where('bs_journals.cost_center_id', $costCenterId))
+            // Cost center efektif = baris (mis. AP set per-baris) → fallback header (jurnal memorial set di header).
+            ->when($costCenterId, fn ($q) => $q->whereRaw('COALESCE(bs_journal_lines.cost_center_id, bs_journals.cost_center_id) = ?', [$costCenterId]))
             // Filter tanggal opsional (Realisasi Budget per periode): batasi tanggal jurnal.
             ->when($from, fn ($q, $d) => $q->whereDate('bs_journals.journal_date', '>=', $d))
             ->when($to, fn ($q, $d) => $q->whereDate('bs_journals.journal_date', '<=', $d));
+    }
+
+    /** Kontribusi satu baris ke realisasi budget akunnya (bertanda): +menambah, −mengurangi. Utk gerbang over-budget. */
+    public function contribution(int $accountId, float $debit, float $credit): float
+    {
+        return round($this->sign($accountId) * ($debit - $credit), 2);
     }
 
     /** +1 utk akun debit-normal (Aset/Beban), −1 utk akun credit-normal (Kewajiban/Modal/Pendapatan). */
