@@ -254,7 +254,7 @@ class JournalController extends Controller
             'journal_date'   => ['required', 'date'],
             'reference'      => ['nullable', 'string', 'max:150'],
             'description'    => ['required', 'string', 'max:255'],
-            'cost_center_id' => ['nullable', 'integer', 'exists:bs_cost_centers,id'],
+            'cost_center_id' => ['required', 'integer', 'exists:bs_cost_centers,id'], // wajib (mandatory)
             'lines'                 => ['required', 'array', 'min:2'],
             'lines.*.account_id'    => ['required', 'integer', 'exists:bs_accounts,id'],
             'lines.*.debit'         => ['nullable', 'numeric', 'min:0'],
@@ -322,7 +322,7 @@ class JournalController extends Controller
             'journal_date'        => ['required', 'date'],
             'reference'           => ['nullable', 'string', 'max:150'],
             'description'         => ['required', 'string', 'max:255'],
-            'cost_center_id'      => ['nullable', 'integer', 'exists:bs_cost_centers,id'],
+            'cost_center_id'      => ['required', 'integer', 'exists:bs_cost_centers,id'], // wajib (mandatory)
             'lines'               => ['required', 'array', 'min:2'],
             'lines.*.account_id'  => ['required', 'integer', 'exists:bs_accounts,id'],
             'lines.*.debit'       => ['nullable', 'numeric', 'min:0'],

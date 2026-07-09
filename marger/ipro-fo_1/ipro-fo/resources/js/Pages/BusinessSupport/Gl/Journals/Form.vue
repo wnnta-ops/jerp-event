@@ -31,7 +31,7 @@ const allAccountsSet = computed(() => form.lines.every((l: any) => !!l.account_i
 const userName = computed(() => (usePage().props as any).auth?.user?.name ?? '—');
 function fmtRp(v: number) { return Number(v ?? 0).toLocaleString('id-ID'); }
 function submit() {
-    if (!balanced.value) return;
+    if (!balanced.value || !form.cost_center_id) return;
     if (props.editing) form.put(route('bs.gl.journal.update', props.editing.id));
     else form.post(route('bs.gl.journal.store'));
 }
@@ -53,6 +53,7 @@ const inputCls = 'h-9 w-full rounded-lg border border-neutral-300 bg-white px-3 
                 <div><label class="mb-1 block text-xs font-medium text-neutral-500">Tanggal *</label><input v-model="form.journal_date" type="date" required :class="inputCls" /></div>
                 <div class="md:col-span-2"><label class="mb-1 block text-xs font-medium text-neutral-500">Keterangan *</label><input v-model="form.description" required :class="inputCls" /></div>
                 <div><label class="mb-1 block text-xs font-medium text-neutral-500">No. Manual</label><input v-model="form.reference" :class="inputCls" /></div>
+                <div><label class="mb-1 block text-xs font-medium text-neutral-500">Cost Center *</label><SearchSelect v-model="form.cost_center_id" :options="costCenters" placeholder="— pilih cost center —" /><p v-if="form.errors.cost_center_id" class="mt-1 text-xs text-danger-500">{{ form.errors.cost_center_id }}</p></div>
                 <div>
                     <label class="mb-1 block text-xs font-medium text-neutral-500">Dibuat oleh</label>
                     <input :value="userName" type="text" readonly disabled tabindex="-1" title="Otomatis dari user yang login — tidak dapat diubah"
@@ -89,7 +90,8 @@ const inputCls = 'h-9 w-full rounded-lg border border-neutral-300 bg-white px-3 
             </div>
 
             <div class="flex gap-2">
-                <Button type="submit" :disabled="form.processing || !balanced || !allAccountsSet"><template #icon-left><Save class="h-4 w-4" /></template>{{ editing ? 'Simpan Perubahan' : 'Posting Jurnal' }}</Button>
+                <Button type="submit" :disabled="form.processing || !balanced || !allAccountsSet || !form.cost_center_id"><template #icon-left><Save class="h-4 w-4" /></template>{{ editing ? 'Simpan Perubahan' : 'Posting Jurnal' }}</Button>
+                <span v-if="!form.cost_center_id" class="self-center text-xs text-danger-500">Pilih Cost Center dulu.</span>
                 <Link :href="route('bs.gl.journal.index')" class="rounded-lg border border-neutral-300 px-4 py-2 text-sm dark:border-neutral-700">Batal</Link>
             </div>
         </form>
