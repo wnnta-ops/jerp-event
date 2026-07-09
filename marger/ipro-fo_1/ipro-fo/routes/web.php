@@ -801,6 +801,8 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
     Route::get('/business-support/fixed-asset-summary/export',    [BsFaController::class, 'summaryExport'])->name('bs.fa.summary.export');
     Route::get('/business-support/fixed-asset-penjualan',         [BsFaController::class, 'penjualan'])->name('bs.fa.penjualan');
     Route::get('/business-support/fixed-asset-penjualan/export',  [BsFaController::class, 'penjualanExport'])->name('bs.fa.penjualan.export');
+    Route::get('/business-support/fixed-asset/{fixedAsset}/edit', [BsFaController::class, 'edit'])->name('bs.fa.edit'); // edit master aset (semua komponen)
+    Route::put('/business-support/fixed-asset/{fixedAsset}',      [BsFaController::class, 'update'])->name('bs.fa.update');
     Route::get('/business-support/fixed-asset/{fixedAsset}',      [BsFaController::class, 'show'])->name('bs.fa.show');
     Route::post('/business-support/fixed-asset/{fixedAsset}/depreciate', [BsFaController::class, 'depreciate'])->name('bs.fa.depreciate');
     Route::post('/business-support/fixed-asset/{fixedAsset}/dispose',     [BsFaController::class, 'dispose'])->name('bs.fa.dispose');
