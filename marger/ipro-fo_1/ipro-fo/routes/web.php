@@ -68,6 +68,8 @@ use App\Http\Controllers\Web\BusinessSupport\Setup\BulkUploadController as BsBul
 use App\Http\Controllers\Web\BusinessSupport\Report\ProjectionController as BsProjectionController;
 use App\Http\Controllers\Web\BusinessSupport\Contractor\ContractorController as BsSpkController;
 use App\Http\Controllers\Web\BusinessSupport\Contractor\ProjectController as BsProjectController;
+use App\Http\Controllers\Web\BusinessSupport\Contractor\GenerateBastController as BsGenerateBastController;
+use App\Http\Controllers\Web\BusinessSupport\Contractor\SpkDraftController as BsSpkDraftController;
 use App\Http\Controllers\Web\BusinessSupport\Contractor\KplController as BsKplController;
 use App\Http\Controllers\Web\BusinessSupport\Contractor\RetentionController as BsRetentionController;
 use App\Http\Controllers\Web\BusinessSupport\Contractor\MaterialController as BsSbomatController;
@@ -992,8 +994,20 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
     // Setup → Project
     Route::get('/business-support/spk-project',                  [BsProjectController::class, 'index'])->name('bs.spk.project.index');
     Route::post('/business-support/spk-project',                 [BsProjectController::class, 'store'])->name('bs.spk.project.store');
+    Route::get('/business-support/spk-project/{project}',        [BsProjectController::class, 'show'])->name('bs.spk.project.show');
     Route::put('/business-support/spk-project/{project}',        [BsProjectController::class, 'update'])->name('bs.spk.project.update');
     Route::delete('/business-support/spk-project/{project}',     [BsProjectController::class, 'destroy'])->name('bs.spk.project.destroy');
+
+    // Setup → Set Up SPK (draft Cetak SPK)
+    Route::get('/business-support/spk-draft',                    [BsSpkDraftController::class, 'edit'])->name('bs.spk.draft.edit');
+    Route::put('/business-support/spk-draft',                    [BsSpkDraftController::class, 'update'])->name('bs.spk.draft.update');
+    Route::delete('/business-support/spk-draft',                 [BsSpkDraftController::class, 'reset'])->name('bs.spk.draft.reset');
+
+    // Generate BAST (daftar unit + status BAST + import Excel)
+    Route::get('/business-support/spk-generate-bast',            [BsGenerateBastController::class, 'index'])->name('bs.spk.bast.index');
+    Route::get('/business-support/spk-generate-bast/template',   [BsGenerateBastController::class, 'importTemplate'])->name('bs.spk.bast.template');
+    Route::post('/business-support/spk-generate-bast/import',    [BsGenerateBastController::class, 'import'])->name('bs.spk.bast.import');
+    Route::delete('/business-support/spk-generate-bast/{bastUnit}', [BsGenerateBastController::class, 'destroy'])->name('bs.spk.bast.destroy');
 
     // Kontrol Progress Lapangan (KPL / opname)
     Route::get('/business-support/spk-kpl',                      [BsKplController::class, 'index'])->name('bs.spk.kpl.index');

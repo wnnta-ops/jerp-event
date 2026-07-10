@@ -334,6 +334,7 @@ const groups: { title: string; items: NavItem[] }[] = [
         items: [
             { label: 'Setup', icon: FolderGit2, permission: ['businesssupport.view', 'contractor.*'], children: [
                 { label: 'Project', href: 'bs.spk.project.index' },
+                { label: 'Set Up SPK', href: 'bs.spk.draft.edit' },
             ]},
             { label: 'Master', icon: FileSignature, permission: ['businesssupport.view', 'contractor.*'], children: [
                 { label: 'Surat Perintah Kerja', href: 'bs.spk.index' },
@@ -365,6 +366,7 @@ const groups: { title: string; items: NavItem[] }[] = [
                 { label: 'Registrasi Mutasi Progress Bangunan', href: 'bs.spk.mutation.create' },
                 { label: 'Approval Mutasi Progress Bangunan', href: 'bs.spk.mutation.approvals' },
             ]},
+            { label: 'Generate BAST', icon: FileCheck, href: 'bs.spk.bast.index', permission: ['businesssupport.view', 'contractor.*'] },
         ],
     },
     {
