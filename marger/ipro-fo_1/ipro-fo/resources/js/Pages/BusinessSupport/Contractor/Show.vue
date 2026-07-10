@@ -57,6 +57,22 @@ function submitRetensi() { retForm.post(route('bs.spk.retensi', props.spk.id), {
 
 function fmtRp(v: number) { return 'Rp ' + Number(v ?? 0).toLocaleString('id-ID'); }
 function fmtDate(d: string) { return d ? new Date(d).toLocaleDateString('id-ID', { day:'2-digit', month:'short', year:'numeric' }) : '—'; }
+function fmtPct(v: number) { return (Math.round((Number(v) || 0) * 100) / 100).toLocaleString('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' %'; }
+
+// Detil Progress (gaya legacy): Progress Lama / Mutasi Progresi / Progress Terakhir (kumulatif) per termin KPL.
+const progressRows = computed(() => {
+    const cv = Number(props.spk.contract_value) || 0;
+    let cumRaw = 0, prevRounded = 0;
+    return (props.spk.progress ?? []).map((p: any, i: number) => {
+        cumRaw += cv > 0 ? (Number(p.progress_value) || 0) / cv * 100 : 0;
+        const terakhir = Math.round(cumRaw * 100) / 100;                    // kumulatif dibulatkan sekali
+        const lama = prevRounded;
+        const mut = Math.round((terakhir - prevRounded) * 100) / 100;       // mutasi = selisih → Lama + Mutasi = Terakhir
+        prevRounded = terakhir;
+        return { ...p, no: i + 1, mutasi_pct: mut, lama_pct: lama, terakhir_pct: terakhir };
+    });
+});
+const catLabel: Record<string, string> = { housing: 'Housing', infra: 'Infra', lain_lain: 'Lain-lain' };
 const inputCls = 'h-9 w-full rounded-lg border border-neutral-300 bg-white px-3 text-sm dark:border-neutral-700 dark:bg-neutral-900';
 </script>
 <template>
@@ -104,13 +120,52 @@ const inputCls = 'h-9 w-full rounded-lg border border-neutral-300 bg-white px-3 
             </table>
         </div>
 
-        <!-- Detil Term -->
-        <div v-if="spk.terms?.length" class="card overflow-hidden">
-            <div class="border-b border-neutral-200 px-4 py-3 font-semibold dark:border-neutral-800">Rencana Termin</div>
+        <!-- Detil Pekerjaan per Unit (Alokasi Porsi Kontrak) -->
+        <div v-if="spk.units?.length" class="card overflow-hidden">
+            <div class="flex items-center justify-between border-b border-neutral-200 px-4 py-3 font-semibold dark:border-neutral-800">
+                <span>Detil Pekerjaan per Unit — Porsi Kontrak</span>
+                <span class="text-xs font-normal text-neutral-400">{{ spk.units.length }} unit · Total {{ fmtRp(spk.units.reduce((s, u) => s + Number(u.unit_price || 0), 0)) }}</span>
+            </div>
             <table class="w-full text-sm">
-                <thead class="bg-neutral-50 dark:bg-neutral-800"><tr class="text-left text-xs uppercase text-neutral-500"><th class="px-4 py-2.5">Keterangan</th><th class="px-4 py-2.5 text-right">%</th><th class="px-4 py-2.5 text-right">Nilai</th><th class="px-4 py-2.5">Jatuh Tempo</th></tr></thead>
+                <thead class="bg-neutral-50 dark:bg-neutral-800"><tr class="text-left text-xs uppercase text-neutral-500"><th class="px-4 py-2.5 w-12">No</th><th class="px-4 py-2.5">Unit Rumah</th><th class="px-4 py-2.5 text-right">Harga Satuan (Porsi Kontrak)</th></tr></thead>
                 <tbody class="divide-y divide-neutral-200 dark:divide-neutral-800">
-                    <tr v-for="t in spk.terms" :key="t.id"><td class="px-4 py-2">{{ t.description ?? '—' }}</td><td class="px-4 py-2 text-right">{{ t.percentage }}%</td><td class="px-4 py-2 text-right font-mono">{{ fmtRp(t.amount) }}</td><td class="px-4 py-2">{{ fmtDate(t.due_date) }}</td></tr>
+                    <tr v-for="(u, i) in spk.units" :key="u.id"><td class="px-4 py-2 tabular-nums text-neutral-500">{{ i + 1 }}</td><td class="px-4 py-2 font-mono font-medium">{{ u.unit_code }}</td><td class="px-4 py-2 text-right font-mono">{{ fmtRp(u.unit_price) }}</td></tr>
+                </tbody>
+            </table>
+        </div>
+
+        <!-- Detil DP (Termin Pembayaran) -->
+        <div v-if="spk.terms?.length" class="card overflow-hidden">
+            <div class="border-b border-neutral-200 px-4 py-3 font-semibold dark:border-neutral-800">Detil DP (Termin Pembayaran)</div>
+            <table class="w-full text-sm">
+                <thead class="bg-neutral-50 dark:bg-neutral-800"><tr class="text-left text-xs uppercase text-neutral-500"><th class="px-4 py-2.5">Keterangan</th><th class="px-4 py-2.5">Jatuh Tempo</th><th class="px-4 py-2.5 text-right">Progress / %</th><th class="px-4 py-2.5 text-right">Nominal</th></tr></thead>
+                <tbody class="divide-y divide-neutral-200 dark:divide-neutral-800">
+                    <tr v-for="t in spk.terms" :key="t.id"><td class="px-4 py-2">{{ t.description ?? '—' }}</td><td class="px-4 py-2">{{ fmtDate(t.due_date) }}</td><td class="px-4 py-2 text-right">{{ t.percentage }}%</td><td class="px-4 py-2 text-right font-mono">{{ fmtRp(t.amount) }}</td></tr>
+                </tbody>
+            </table>
+        </div>
+
+        <!-- Detil Progress (dari Kontrol Progress Lapangan) -->
+        <div v-if="progressRows.length" class="card overflow-x-auto">
+            <div class="border-b border-neutral-200 px-4 py-3 font-semibold dark:border-neutral-800">Detil Progress</div>
+            <table class="w-full text-sm">
+                <thead class="bg-neutral-50 dark:bg-neutral-800"><tr class="text-left text-xs uppercase text-neutral-500">
+                    <th class="px-3 py-2.5 w-12">No</th><th class="px-3 py-2.5">Tgl Progress</th><th class="px-3 py-2.5">No. Manual / KPL</th><th class="px-3 py-2.5">Kategori</th>
+                    <th class="px-3 py-2.5 text-right">Progress Lama</th><th class="px-3 py-2.5 text-right">Mutasi Progresi</th><th class="px-3 py-2.5 text-right">Progress Terakhir</th>
+                    <th class="px-3 py-2.5 text-right">Realisasi Biaya</th><th class="px-3 py-2.5">Keterangan</th>
+                </tr></thead>
+                <tbody class="divide-y divide-neutral-200 dark:divide-neutral-800">
+                    <tr v-for="p in progressRows" :key="p.id" class="hover:bg-neutral-50 dark:hover:bg-neutral-800/50">
+                        <td class="px-3 py-2 tabular-nums text-neutral-500">{{ p.no }}</td>
+                        <td class="px-3 py-2">{{ fmtDate(p.progress_date) }}</td>
+                        <td class="px-3 py-2 font-mono text-xs">{{ p.no_manual || p.kpl_number || '—' }}</td>
+                        <td class="px-3 py-2">{{ catLabel[p.category] ?? p.category ?? 'Housing' }}</td>
+                        <td class="px-3 py-2 text-right tabular-nums text-neutral-500">{{ fmtPct(p.lama_pct) }}</td>
+                        <td class="px-3 py-2 text-right tabular-nums font-semibold text-primary-600">{{ fmtPct(p.mutasi_pct) }}</td>
+                        <td class="px-3 py-2 text-right tabular-nums">{{ fmtPct(p.terakhir_pct) }}</td>
+                        <td class="px-3 py-2 text-right font-mono">{{ fmtRp(p.progress_value) }}</td>
+                        <td class="px-3 py-2 text-neutral-500">{{ p.description }}</td>
+                    </tr>
                 </tbody>
             </table>
         </div>
