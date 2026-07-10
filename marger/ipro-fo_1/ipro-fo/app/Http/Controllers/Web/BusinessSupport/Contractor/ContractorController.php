@@ -177,10 +177,13 @@ class ContractorController extends Controller
             'terms' => fn ($q) => $q->orderBy('seq')->orderBy('id'),
         ]);
 
+        $draft = \App\Domain\BusinessSupport\Models\BsSpkDraft::query()->first();
+
         return Inertia::render('BusinessSupport/Contractor/Print', [
             'spk'       => $workOrder,
             'company'   => config('business_support.company'),
             'jenisOpts' => BsWorkOrder::JENIS,
+            'draft'     => $draft?->only(['judul', 'subjudul', 'tempat', 'pembukaan', 'pasals']),
         ]);
     }
 

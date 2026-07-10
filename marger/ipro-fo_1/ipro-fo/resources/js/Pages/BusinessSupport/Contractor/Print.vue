@@ -3,7 +3,7 @@ import { reactive, ref, computed, onMounted, nextTick } from 'vue';
 import { Link } from '@inertiajs/vue3';
 import { ArrowLeft, Printer, Plus, Trash2, RotateCcw } from 'lucide-vue-next';
 
-const props = defineProps<{ spk: any; company: Record<string, any>; jenisOpts: Record<string, string> }>();
+const props = defineProps<{ spk: any; company: Record<string, any>; jenisOpts: Record<string, string>; draft?: any }>();
 
 // ── Helpers ──
 function fmtRpNum(v: any) { return Number(v ?? 0).toLocaleString('id-ID'); }
@@ -43,9 +43,32 @@ const s = props.spk;
 const jenisLabel = props.jenisOpts?.[s.jenis] ?? s.jenis ?? '—';
 const nilai = Number(s.contract_value) || 0;
 const durasi = daysBetween(s.est_start, s.est_end);
+const kota = props.company?.city || 'Sidoarjo';
+
+// ── Substitusi placeholder untuk draft "Set Up SPK" ──
+const subMap: Record<string, string> = {
+    '{pekerjaan}': s.title || '—',
+    '{jenis}': jenisLabel,
+    '{proyek}': s.project?.name || '—',
+    '{nilai_rp}': fmtRp(nilai),
+    '{nilai_terbilang}': (capit(terbilang(nilai)) + ' rupiah').trim(),
+    '{ppn_note}': s.is_pkp ? `sudah termasuk PPN ${Number(s.ppn_pct)}%` : 'bersifat Non-PKP',
+    '{durasi}': durasi ? String(durasi) : '……',
+    '{durasi_terbilang}': durasi ? capit(terbilang(durasi)) : '……',
+    '{periode_note}': (s.est_start && s.est_end) ? `terhitung sejak ${fmtTgl(s.est_start)} sampai dengan ${fmtTgl(s.est_end)}` : 'sesuai jadwal pelaksanaan',
+    '{dp}': String(Number(s.advance_pct) || 0),
+    '{retensi}': String(Number(s.retention_pct) || 5),
+    '{kota}': kota,
+    '{tanggal}': fmtTgl(s.spk_date) || '……',
+};
+function subst(t: any): string { return String(t ?? '').replace(/\{[a-z_]+\}/g, (m) => subMap[m] ?? m); }
 
 // ── Default pasal (bisa diedit / dihapus sebagian) ──
 function defaultPasals() {
+    const d = props.draft;
+    if (d?.pasals?.length) {
+        return d.pasals.map((p: any) => ({ title: subst(p.title), body: subst(p.body) }));
+    }
     return [
         { title: 'PASAL 1 — LINGKUP PEKERJAAN', body:
             `PIHAK PERTAMA memberikan pekerjaan kepada PIHAK KEDUA, dan PIHAK KEDUA menerima pekerjaan berupa: ${s.title || '—'}`
@@ -81,13 +104,16 @@ function defaultPasals() {
 }
 
 function makeState() {
+    const d = props.draft;
     return {
-        judul: 'SURAT PERINTAH KERJA',
-        subjudul: '(SPK)',
+        judul: d?.judul || 'SURAT PERINTAH KERJA',
+        subjudul: d?.subjudul || '(SPK)',
         nomor: s.no_manual || s.spk_number || '',
         tanggal: s.spk_date ?? '',
-        tempat: props.company?.city || 'Sidoarjo',
-        pembukaan: `Pada hari ini ${fmtTgl(s.spk_date) || '……'}, bertempat di ${props.company?.city || '……'}, yang bertanda tangan di bawah ini:`,
+        tempat: d?.tempat || kota,
+        pembukaan: d?.pembukaan
+            ? subst(d.pembukaan)
+            : `Pada hari ini ${fmtTgl(s.spk_date) || '……'}, bertempat di ${kota}, yang bertanda tangan di bawah ini:`,
         pihak1: {
             nama: props.company?.signer_name || '', jabatan: props.company?.signer_title || 'Direktur',
             perusahaan: props.company?.name || '', alamat: props.company?.address || '',
