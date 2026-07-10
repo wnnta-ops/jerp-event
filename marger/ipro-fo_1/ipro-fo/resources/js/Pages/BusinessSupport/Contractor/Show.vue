@@ -5,8 +5,22 @@ import { ArrowLeft, HardHat, Plus, Wallet, Unlock, FilePlus2, Percent, PackageMi
 import Button from '@/Components/UI/Button.vue';
 import Badge from '@/Components/UI/Badge.vue';
 import SearchSelect from '@/Components/UI/SearchSelect.vue';
+import Stepper from '@/Components/UI/Stepper.vue';
 
 const props = defineProps<{ spk: any; remaining: number; cashAccounts: Array<any>; inventoryAccounts: Array<any>; costCenters: Array<any>; defaultCash: number | null; defaultInventory: number | null }>();
+
+const SPK_STAGES = [
+    { label: 'SPK Terbit' }, { label: 'Progress' }, { label: 'Retensi' }, { label: 'Selesai' },
+];
+const spkStep = computed(() => {
+    const r = props.spk;
+    if (r.status === 'closed') return 5;
+    const cv = Number(r.contract_value) || 0;
+    const pv = Number(r.progress_value) || 0;
+    if (cv > 0 && pv >= cv) return 3;
+    if (pv > 0) return 2;
+    return 1;
+});
 
 const today = new Date().toISOString().slice(0, 10);
 const panel = ref<'' | 'progress' | 'retensi' | 'addendum' | 'adjustppn' | 'material' | 'cancel' | 'mutprog'>('');
@@ -60,16 +74,22 @@ const inputCls = 'h-9 w-full rounded-lg border border-neutral-300 bg-white px-3 
             <span class="font-semibold text-danger-600">SPK dibatalkan</span> · {{ fmtDate(spk.cancelled_at) }}<template v-if="spk.cancel_reason"> — {{ spk.cancel_reason }}</template>
         </div>
 
+        <!-- Progres tahapan SPK -->
+        <div class="card px-5 py-4">
+            <Stepper :stages="SPK_STAGES" :current="spkStep" :cancelled="spk.status === 'cancelled'" />
+        </div>
+
         <div class="card grid gap-4 p-5 text-sm md:grid-cols-3">
             <div><div class="text-neutral-500">Kontraktor</div><div class="font-medium">{{ spk.supplier?.name }}</div></div>
             <div><div class="text-neutral-500">Tgl SPK</div><div class="font-medium">{{ fmtDate(spk.spk_date) }}</div></div>
             <div><div class="text-neutral-500">Project</div><div class="font-medium">{{ spk.project?.name ?? spk.cost_center?.name ?? '—' }}</div></div>
             <div><div class="text-neutral-500">Jenis</div><div class="font-medium">{{ jenisLabel[spk.jenis] ?? spk.jenis ?? '—' }}</div></div>
             <div><div class="text-neutral-500">Estimasi</div><div class="font-medium">{{ fmtDate(spk.est_start) }} – {{ fmtDate(spk.est_end) }}</div></div>
-            <div><div class="text-neutral-500">PKP / No. Manual</div><div class="font-medium">{{ spk.is_pkp ? 'PKP' : 'Non-PKP' }}<span v-if="spk.no_manual"> · {{ spk.no_manual }}</span></div></div>
+            <div><div class="text-neutral-500">PKP / No. SPK</div><div class="font-medium">{{ spk.is_pkp ? 'PKP' : 'Non-PKP' }}<span v-if="spk.no_manual"> · {{ spk.no_manual }}</span></div></div>
             <div><div class="text-neutral-500">Releaser</div><div class="font-medium">{{ spk.releaser ?? '—' }}</div></div>
             <div><div class="text-neutral-500">PIC Project</div><div class="font-medium">{{ spk.pic_project ?? '—' }}</div></div>
             <div><div class="text-neutral-500">Cost Center</div><div class="font-medium">{{ spk.cost_center?.name ?? '—' }}</div></div>
+            <div><div class="text-neutral-500">Nominal Profit</div><div class="font-medium">{{ Number(spk.nominal_profit) > 0 ? fmtRp(spk.nominal_profit) : '—' }}</div></div>
             <div class="md:col-span-3"><div class="text-neutral-500">Pekerjaan</div><div class="font-medium">{{ spk.title }}</div></div>
         </div>
 

@@ -4,15 +4,25 @@ import { ref } from 'vue';
 import { Link, router } from '@inertiajs/vue3';
 import { ArrowLeft, ClipboardCheck, Plus } from 'lucide-vue-next';
 import Button from '@/Components/UI/Button.vue';
-import Badge from '@/Components/UI/Badge.vue';
 import EmptyState from '@/Components/UI/EmptyState.vue';
+import Stepper from '@/Components/UI/Stepper.vue';
 
 const props = defineProps<{
   rows: any;
   filters: { search?: string };
 }>();
 
-const stBadge: Record<string, any> = { baru: 'warning', approved: 'success', rejected: 'danger', active: 'info', closed: 'success', cancelled: 'danger', open: 'warning', unpaid: 'warning', paid: 'success' };
+// Tahapan KPL (progres, gaya Inisiasi KPR)
+const KPL_STAGES = [
+  { label: 'Terdaftar', short: 'Daftar' },
+  { label: 'Dibayar', short: 'Bayar' },
+  { label: 'Retensi Cair', short: 'Retensi' },
+];
+function kplCurrent(r: any): number {
+  if (r.status === 'paid' && r.work_order?.status === 'closed') return 4;   // dibayar & retensi cair → semua selesai
+  if (r.status === 'paid') return 3;                                        // sudah dibayar → menunggu pencairan retensi
+  return 1;                                                                 // baru terdaftar (belum dibayar)
+}
 
 const inputCls = 'h-9 w-full rounded-lg border border-neutral-300 bg-white px-3 text-sm dark:border-neutral-700 dark:bg-neutral-900';
 
@@ -54,7 +64,7 @@ function submit() {
             <th class="px-3 py-2">Uraian</th>
             <th class="px-3 py-2 text-right">Nilai</th>
             <th class="px-3 py-2 text-right">Net</th>
-            <th class="px-3 py-2">Status</th>
+            <th class="px-3 py-2">Tahapan</th>
           </tr>
         </thead>
         <tbody class="divide-y divide-neutral-200 dark:divide-neutral-800">
@@ -67,7 +77,7 @@ function submit() {
             <td class="px-3 py-2">{{ r.description }}</td>
             <td class="px-3 py-2 text-right">{{ fmtRp(r.progress_value) }}</td>
             <td class="px-3 py-2 text-right">{{ fmtRp(r.net_payable) }}</td>
-            <td class="px-3 py-2"><Badge :variant="stBadge[r.status]">{{ r.status }}</Badge></td>
+            <td class="px-3 py-2"><Stepper compact :stages="KPL_STAGES" :current="kplCurrent(r)" /></td>
           </tr>
         </tbody>
       </table>

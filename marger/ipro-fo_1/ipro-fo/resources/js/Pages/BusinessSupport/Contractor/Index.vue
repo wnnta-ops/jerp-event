@@ -2,8 +2,24 @@
 import { router, Link } from '@inertiajs/vue3';
 import { ref } from 'vue';
 import { ArrowLeft, HardHat, Search } from 'lucide-vue-next';
-import Badge from '@/Components/UI/Badge.vue';
 import EmptyState from '@/Components/UI/EmptyState.vue';
+import Stepper from '@/Components/UI/Stepper.vue';
+
+// Tahapan SPK (progres, gaya Inisiasi KPR)
+const SPK_STAGES = [
+    { label: 'SPK Terbit', short: 'Terbit' },
+    { label: 'Progress', short: 'Progress' },
+    { label: 'Retensi', short: 'Retensi' },
+    { label: 'Selesai', short: 'Selesai' },
+];
+function spkCurrent(r: any): number {
+    if (r.status === 'closed') return 5;                          // semua tahap selesai
+    const cv = Number(r.contract_value) || 0;
+    const pv = Number(r.progress_value) || 0;
+    if (cv > 0 && pv >= cv) return 3;                             // fisik 100% → fase retensi
+    if (pv > 0) return 2;                                         // progress berjalan
+    return 1;                                                     // baru terbit
+}
 
 const props = defineProps<{
     workOrders: any;
@@ -42,7 +58,7 @@ function pct(p: number, c: number) { return c > 0 ? Math.min(100, Math.round(p /
         <div class="card overflow-x-auto">
             <table class="w-full text-sm">
                 <thead class="bg-neutral-50 dark:bg-neutral-800"><tr class="text-left text-xs uppercase text-neutral-500">
-                    <th class="px-4 py-3">No. SPK</th><th class="px-4 py-3">Tanggal</th><th class="px-4 py-3">Kontraktor</th><th class="px-4 py-3">Pekerjaan</th><th class="px-4 py-3 text-right">Nilai Kontrak</th><th class="px-4 py-3 w-32">Progress</th><th class="px-4 py-3 text-center">Status</th>
+                    <th class="px-4 py-3">No. SPK</th><th class="px-4 py-3">Tanggal</th><th class="px-4 py-3">Kontraktor</th><th class="px-4 py-3">Pekerjaan</th><th class="px-4 py-3 text-right">Nilai Kontrak</th><th class="px-4 py-3 w-32">Progress</th><th class="px-4 py-3">Tahapan</th>
                 </tr></thead>
                 <tbody class="divide-y divide-neutral-200 dark:divide-neutral-800">
                     <tr v-for="r in workOrders.data" :key="r.id" class="cursor-pointer hover:bg-neutral-50 dark:hover:bg-neutral-800/50" @click="router.get(route('bs.spk.show', r.id))">
@@ -52,7 +68,7 @@ function pct(p: number, c: number) { return c > 0 ? Math.min(100, Math.round(p /
                         <td class="px-4 py-2.5 text-neutral-500">{{ r.title }}</td>
                         <td class="px-4 py-2.5 text-right font-mono">{{ fmtRp(r.contract_value) }}</td>
                         <td class="px-4 py-2.5"><div class="flex items-center gap-2"><div class="h-2 flex-1 overflow-hidden rounded-full bg-neutral-200 dark:bg-neutral-700"><div class="h-full bg-primary-500" :style="{ width: pct(r.progress_value, r.contract_value) + '%' }"></div></div><span class="text-xs text-neutral-400">{{ pct(r.progress_value, r.contract_value) }}%</span></div></td>
-                        <td class="px-4 py-2.5 text-center"><Badge :variant="r.status === 'closed' ? 'success' : 'info'" size="sm">{{ r.status === 'closed' ? 'Selesai' : 'Aktif' }}</Badge></td>
+                        <td class="px-4 py-2.5"><Stepper compact :stages="SPK_STAGES" :current="spkCurrent(r)" :cancelled="r.status === 'cancelled'" /></td>
                     </tr>
                 </tbody>
             </table>

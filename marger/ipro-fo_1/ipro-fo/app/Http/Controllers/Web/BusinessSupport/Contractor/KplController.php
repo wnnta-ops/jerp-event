@@ -31,7 +31,7 @@ class KplController extends Controller
         abort_unless($request->user()?->canModule('contractor'), 403);
 
         $rows = BsWorkOrderProgress::query()
-            ->with(['workOrder:id,spk_number,title,supplier_id', 'workOrder.supplier:id,name'])
+            ->with(['workOrder:id,spk_number,title,supplier_id,status', 'workOrder.supplier:id,name'])
             ->when($request->input('search'), fn ($q, $s) => $q->where(fn ($w) => $w->where('kpl_number', 'like', "%{$s}%")->orWhere('description', 'like', "%{$s}%")))
             ->latest('progress_date')->latest('id')->paginate(50)->withQueryString();
 
@@ -336,7 +336,7 @@ class KplController extends Controller
     public function show(Request $request, BsWorkOrderProgress $progress): Response
     {
         abort_unless($request->user()?->canModule('contractor'), 403);
-        $progress->load(['workOrder:id,spk_number,spk_date,title,supplier_id,contract_value,addendum_value,retention_pct,advance_pct,ppn_pct,project_id', 'workOrder.supplier:id,name', 'workOrder.project:id,name']);
+        $progress->load(['workOrder:id,spk_number,spk_date,title,supplier_id,contract_value,addendum_value,retention_pct,advance_pct,ppn_pct,project_id,status', 'workOrder.supplier:id,name', 'workOrder.project:id,name']);
 
         return Inertia::render('BusinessSupport/Contractor/Kpl/Show', [
             'kpl' => $progress,
