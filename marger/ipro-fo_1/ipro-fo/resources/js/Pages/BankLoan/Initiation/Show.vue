@@ -25,7 +25,7 @@ const stageList = computed(() => Object.entries(props.stageDefs).map(([key, labe
 // Label ringkas utk stepper horizontal (alur modul, spt Account Payable).
 const stepShort: Record<string, string> = {
     kuitansi: 'TTS', sprs: 'SPRS', bi_checking: 'BI Checking', collect_berkas: 'Berkas',
-    analisa: 'Analisa', profiling_berkas: 'Prof. Berkas', profiling: 'Profiling', kpr_application: 'Proses KPR',
+    analisa: 'Analisa', profiling_berkas: 'Profiling Berkas', profiling: 'Profiling Customer', kpr_application: 'Proses KPR',
 };
 const activeIdx = computed(() => Math.max(0, Math.min(8, (a.value.current_stage ?? 1)) - 1));
 const openStage = ref(activeIdx.value);
@@ -539,27 +539,27 @@ const analisaLabel: Record<string, string> = { layak: 'Layak', tidak_layak: 'Tid
             <p class="mt-1 text-xs text-neutral-400">Tahap {{ Math.min(a.current_stage, 8) }} dari 8</p>
         </div>
 
-        <!-- Alur modul — stepper 1 baris penuh-lebar (seperti Account Payable) -->
-        <div class="card px-6 py-5">
-            <div class="flex flex-nowrap items-center justify-between gap-3 overflow-x-auto">
+        <!-- Alur modul — stepper melipat (tanpa scroll; turun ke baris berikutnya bila tidak muat) -->
+        <div class="card px-5 py-4">
+            <div class="flex flex-wrap items-center gap-x-2 gap-y-2">
                 <template v-for="st in stageList" :key="st.key">
                     <button type="button" @click="toggle(st.idx)" :disabled="locked(st.idx)"
                             :title="locked(st.idx) ? 'Selesaikan & simpan tahap sebelumnya dulu' : ''"
-                            class="flex shrink-0 items-center gap-3 whitespace-nowrap rounded-xl px-4 py-2.5 text-lg font-semibold transition-colors"
+                            class="flex shrink-0 items-center gap-2 whitespace-nowrap rounded-lg px-3 py-1.5 text-sm font-semibold transition-colors"
                             :class="[
                                 done(st.key) ? 'text-success-600' : (st.idx === activeIdx ? 'bg-primary-600 text-white' : 'text-neutral-400'),
                                 locked(st.idx) ? 'cursor-not-allowed' : 'cursor-pointer hover:opacity-80',
                             ]">
-                        <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-base"
+                        <span class="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-bold"
                               :class="done(st.key) ? 'bg-success-100 dark:bg-success-900/40' : (st.idx === activeIdx ? 'bg-white/20' : 'bg-neutral-100 dark:bg-neutral-800')">
-                            <Check v-if="done(st.key)" class="h-5 w-5" />
-                            <Lock v-else-if="locked(st.idx)" class="h-4 w-4" />
+                            <Check v-if="done(st.key)" class="h-4 w-4" />
+                            <Lock v-else-if="locked(st.idx)" class="h-3.5 w-3.5" />
                             <span v-else>{{ st.idx + 1 }}</span>
                         </span>
                         {{ stepShort[st.key] ?? st.label }}
                     </button>
                     <ArrowRight v-if="st.idx < stageList.length - 1" :stroke-width="2.5"
-                                :class="['h-6 w-6 shrink-0', done(st.key) ? 'text-success-600' : 'text-neutral-400']" />
+                                :class="['h-4 w-4 shrink-0', done(st.key) ? 'text-success-600' : 'text-neutral-300']" />
                 </template>
             </div>
         </div>
