@@ -1,8 +1,7 @@
 <script setup lang="ts">
 import { router, Link } from '@inertiajs/vue3';
 import { ref } from 'vue';
-import { Plus, ArrowLeft, HardHat, Search } from 'lucide-vue-next';
-import Button from '@/Components/UI/Button.vue';
+import { ArrowLeft, HardHat, Search } from 'lucide-vue-next';
 import Badge from '@/Components/UI/Badge.vue';
 import EmptyState from '@/Components/UI/EmptyState.vue';
 
@@ -23,7 +22,6 @@ function pct(p: number, c: number) { return c > 0 ? Math.min(100, Math.round(p /
         <Link :href="route('bs.index')" class="inline-flex items-center gap-2 text-sm text-neutral-500 hover:text-neutral-800 dark:hover:text-neutral-200"><ArrowLeft class="h-4 w-4" /> Business Support</Link>
         <div class="flex items-center justify-between">
             <h1 class="flex items-center gap-2 text-2xl font-bold"><HardHat class="h-6 w-6 text-amber-600" /> Kontraktor (SPK)</h1>
-            <Link :href="route('bs.spk.create')"><Button><template #icon-left><Plus class="h-4 w-4" /></template>Buat SPK</Button></Link>
         </div>
 
         <div class="grid gap-3 sm:grid-cols-4">
@@ -58,7 +56,7 @@ function pct(p: number, c: number) { return c > 0 ? Math.min(100, Math.round(p /
                     </tr>
                 </tbody>
             </table>
-            <EmptyState v-if="!workOrders.data?.length" title="Belum ada SPK" description="Klik Buat SPK untuk menerbitkan surat perintah kerja kontraktor." />
+            <EmptyState v-if="!workOrders.data?.length" title="Belum ada SPK" description="SPK terbit otomatis dari proses kontrak kontraktor." />
         </div>
     </div>
 </template>
