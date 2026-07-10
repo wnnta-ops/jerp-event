@@ -2,7 +2,7 @@
 <script setup lang="ts">
 import { Link, router, useForm } from '@inertiajs/vue3';
 import { ref } from 'vue';
-import { ArrowLeft, FolderGit2, Plus, Pencil, Trash2 } from 'lucide-vue-next';
+import { ArrowLeft, FolderGit2, Plus, Pencil, Trash2, ChevronRight } from 'lucide-vue-next';
 import Button from '@/Components/UI/Button.vue';
 import Badge from '@/Components/UI/Badge.vue';
 import EmptyState from '@/Components/UI/EmptyState.vue';
@@ -57,15 +57,15 @@ function destroy(id: number) {
                     <th class="px-4 py-3">Kode</th><th class="px-4 py-3">Nama</th><th class="px-4 py-3">Dept</th><th class="px-4 py-3 text-center">Status</th><th class="px-4 py-3 text-right">Aksi</th>
                 </tr></thead>
                 <tbody class="divide-y divide-neutral-200 dark:divide-neutral-800">
-                    <tr v-for="r in projects" :key="r.id" class="hover:bg-neutral-50 dark:hover:bg-neutral-800/50">
-                        <td class="px-4 py-2.5 font-mono font-semibold">{{ r.code }}</td>
+                    <tr v-for="r in projects" :key="r.id" class="cursor-pointer hover:bg-neutral-50 dark:hover:bg-neutral-800/50" @click="router.get(route('bs.spk.project.show', r.id))">
+                        <td class="px-4 py-2.5 font-mono font-semibold"><span class="inline-flex items-center gap-1.5 text-primary-600"><ChevronRight class="h-3.5 w-3.5" />{{ r.code }}</span></td>
                         <td class="px-4 py-2.5">{{ r.name }}</td>
                         <td class="px-4 py-2.5 text-neutral-500">{{ r.dept || '—' }}</td>
                         <td class="px-4 py-2.5 text-center"><Badge :variant="r.is_active ? 'success' : 'danger'" size="sm">{{ r.is_active ? 'active' : 'inactive' }}</Badge></td>
                         <td class="px-4 py-2.5">
                             <div class="flex items-center justify-end gap-2">
-                                <button @click="openEdit(r)" class="rounded p-1.5 text-neutral-500 hover:bg-neutral-100 hover:text-primary-600 dark:hover:bg-neutral-800"><Pencil class="h-4 w-4" /></button>
-                                <button @click="destroy(r.id)" class="rounded p-1.5 text-neutral-500 hover:bg-neutral-100 hover:text-red-600 dark:hover:bg-neutral-800"><Trash2 class="h-4 w-4" /></button>
+                                <button @click.stop="openEdit(r)" class="rounded p-1.5 text-neutral-500 hover:bg-neutral-100 hover:text-primary-600 dark:hover:bg-neutral-800"><Pencil class="h-4 w-4" /></button>
+                                <button @click.stop="destroy(r.id)" class="rounded p-1.5 text-neutral-500 hover:bg-neutral-100 hover:text-red-600 dark:hover:bg-neutral-800"><Trash2 class="h-4 w-4" /></button>
                             </div>
                         </td>
                     </tr>
