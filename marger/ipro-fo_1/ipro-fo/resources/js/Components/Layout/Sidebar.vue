@@ -99,7 +99,8 @@ const groups: { title: string; items: NavItem[] }[] = [
     {
         title: 'Booked Revenue',
         items: [
-            { label: 'Booked Revenue', icon: CircleDollarSign, href: 'bs.booked-revenue.index', permission: ['businesssupport.view', 'ar.*'] },
+            { label: 'Belum Booked Revenue', icon: CircleDollarSign, href: 'bs.booked-revenue.belum', permission: ['businesssupport.view', 'ar.*'] },
+            { label: 'Sudah Booked Revenue', icon: CircleDollarSign, href: 'bs.booked-revenue.index', permission: ['businesssupport.view', 'ar.*'] },
             { label: 'Detail BAST', icon: FileCheck, href: 'bs.booked-revenue.control.bast', permission: ['businesssupport.view', 'ar.*'] },
             { label: 'Detail AJB', icon: FileText, href: 'bs.booked-revenue.control.ajb', permission: ['businesssupport.view', 'ar.*'] },
             { label: 'Verifikasi Faktur Pajak', icon: Receipt, permission: ['businesssupport.view', 'tax.*'], children: [

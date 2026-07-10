@@ -368,47 +368,107 @@ class BookedRevenueController extends Controller
 
     // ── Control sub-modul: monitoring dokumen milestone Booked Revenue (BAST / AJB / Faktur Pajak) ──
 
-    /** Control BAST — daftar Berita Acara Serah Terima per booking. */
+    /** Status booking "SPR final" (dari Marketing & Sales) yang layak punya BAST/AJB. */
+    private const FINAL_SPR_STATUSES = ['ppjb', 'active', 'lunas', 'closed'];
+
+    /** Query dasar booking SPR final (+ relasi tampilan). */
+    private function finalBookings()
+    {
+        return \App\Domain\Sales\Booking\Models\Booking::query()
+            ->whereIn('status', self::FINAL_SPR_STATUSES)
+            ->with(['customer:id,full_name,code', 'unit:id,unit_code']);
+    }
+
+    /**
+     * Control BAST — gabungan dokumen BAST terbit (SUDAH) + booking SPR final tanpa BAST (BELUM).
+     * Baris BELUM bisa di-"Sudah"-kan (terbitkan BAST) satuan / massal.
+     */
     public function controlBast(Request $request): Response
     {
         abort_unless($request->user()?->canModule('ar'), 403);
-        $base = fn () => \App\Domain\Legal\Bast\Models\BastDocument::query();
-        $rows = $base()
-            ->with(['booking.customer:id,full_name,code', 'booking.unit:id,unit_code'])
-            ->when($request->input('status'), fn ($q, $s) => $q->where('status', $s))
-            ->when($request->input('search'), fn ($q, $s) => $q->where(fn ($w) => $w->where('bast_number', 'like', "%{$s}%")
-                ->orWhereHas('booking.customer', fn ($c) => $c->where('full_name', 'like', "%{$s}%")->orWhere('code', 'like', "%{$s}%"))
-                ->orWhereHas('booking.unit', fn ($u) => $u->where('unit_code', 'like', "%{$s}%"))))
-            ->latest('handed_over_at')->latest('id')->paginate(50)->withQueryString();
-        $rows->getCollection()->transform(fn ($r) => [
-            'id' => $r->id, 'number' => $r->bast_number, 'date' => $r->handed_over_at?->toDateString(),
-            'customer' => $r->booking?->customer?->full_name, 'unit' => $r->booking?->unit?->unit_code,
-            'status' => $r->status, 'extra' => null,
-        ]);
 
-        return $this->renderControl($request, 'bast', 'Detail BAST', 'Berita Acara Serah Terima (serah terima unit)', null, $rows, $base());
+        $docs = \App\Domain\Legal\Bast\Models\BastDocument::query()
+            ->with(['booking.customer:id,full_name,code', 'booking.unit:id,unit_code'])
+            ->latest('handed_over_at')->latest('id')->get();
+        $doneBookingIds = $docs->pluck('booking_id')->filter()->unique()->all();
+        $belum = $this->finalBookings()->whereNotIn('id', $doneBookingIds)->orderByDesc('id')->get();
+
+        $rows = collect();
+        foreach ($docs as $d) {
+            $rows->push([
+                'id' => $d->id, 'kind' => 'sudah', 'booking_id' => $d->booking_id, 'number' => $d->bast_number,
+                'date' => $d->handed_over_at?->toDateString(), 'spr' => $d->booking?->booking_number,
+                'customer' => $d->booking?->customer?->full_name, 'unit' => $d->booking?->unit?->unit_code, 'extra' => null,
+            ]);
+        }
+        foreach ($belum as $b) {
+            $rows->push([
+                'id' => null, 'kind' => 'belum', 'booking_id' => $b->id, 'number' => null, 'date' => null,
+                'spr' => $b->booking_number, 'customer' => $b->customer?->full_name, 'unit' => $b->unit?->unit_code, 'extra' => null,
+            ]);
+        }
+        $rows = $this->filterDocRows($rows, $request->input('search'));
+
+        return $this->renderDocControl($request, 'bast', 'Detail BAST', 'Berita Acara Serah Terima (serah terima unit)', null, $rows, $belum,
+            'bs.booked-revenue.control.bast.issue', false);
     }
 
-    /** Control AJB — daftar Akta Jual Beli per booking. */
+    /**
+     * Control AJB — gabungan dokumen AJB terbit (SUDAH) + booking SPR final tanpa AJB (BELUM).
+     * Baris BELUM bisa di-"Sudah"-kan (terbitkan AJB, wajib lunas) satuan / massal.
+     */
     public function controlAjb(Request $request): Response
     {
         abort_unless($request->user()?->canModule('ar'), 403);
-        $base = fn () => \App\Domain\Legal\Ajb\Models\AjbDocument::query();
-        $rows = $base()
-            ->with(['booking.customer:id,full_name,code', 'booking.unit:id,unit_code'])
-            ->when($request->input('status'), fn ($q, $s) => $q->where('status', $s))
-            ->when($request->input('search'), fn ($q, $s) => $q->where(fn ($w) => $w->where('ajb_number', 'like', "%{$s}%")
-                ->orWhere('notary_name', 'like', "%{$s}%")
-                ->orWhereHas('booking.customer', fn ($c) => $c->where('full_name', 'like', "%{$s}%")->orWhere('code', 'like', "%{$s}%"))
-                ->orWhereHas('booking.unit', fn ($u) => $u->where('unit_code', 'like', "%{$s}%"))))
-            ->latest('signed_at')->latest('id')->paginate(50)->withQueryString();
-        $rows->getCollection()->transform(fn ($r) => [
-            'id' => $r->id, 'number' => $r->ajb_number, 'date' => $r->signed_at?->toDateString(),
-            'customer' => $r->booking?->customer?->full_name, 'unit' => $r->booking?->unit?->unit_code,
-            'status' => $r->status, 'extra' => $r->notary_name,
-        ]);
 
-        return $this->renderControl($request, 'ajb', 'Detail AJB', 'Akta Jual Beli (akta notaris)', 'Notaris', $rows, $base());
+        $docs = \App\Domain\Legal\Ajb\Models\AjbDocument::query()
+            ->with(['booking.customer:id,full_name,code', 'booking.unit:id,unit_code'])
+            ->latest('signed_at')->latest('id')->get();
+        $doneBookingIds = $docs->pluck('booking_id')->filter()->unique()->all();
+        $belum = $this->finalBookings()->whereNotIn('id', $doneBookingIds)->orderByDesc('id')->get();
+
+        $rows = collect();
+        foreach ($docs as $d) {
+            $rows->push([
+                'id' => $d->id, 'kind' => 'sudah', 'booking_id' => $d->booking_id, 'number' => $d->ajb_number,
+                'date' => $d->signed_at?->toDateString(), 'spr' => $d->booking?->booking_number,
+                'customer' => $d->booking?->customer?->full_name, 'unit' => $d->booking?->unit?->unit_code, 'extra' => $d->notary_name,
+            ]);
+        }
+        foreach ($belum as $b) {
+            $rows->push([
+                'id' => null, 'kind' => 'belum', 'booking_id' => $b->id, 'number' => null, 'date' => null,
+                'spr' => $b->booking_number, 'customer' => $b->customer?->full_name, 'unit' => $b->unit?->unit_code, 'extra' => null,
+            ]);
+        }
+        $rows = $this->filterDocRows($rows, $request->input('search'));
+
+        return $this->renderDocControl($request, 'ajb', 'Detail AJB', 'Akta Jual Beli (akta notaris)', 'Notaris', $rows, $belum,
+            'bs.booked-revenue.control.ajb.issue', true);
+    }
+
+    /** Filter baris control (no dokumen / SPR / customer / unit). */
+    private function filterDocRows($rows, ?string $search)
+    {
+        if ($search) {
+            $rows = $rows->filter(fn ($r) => stripos(implode(' ', [$r['number'], $r['spr'], $r['customer'], $r['unit']]), $search) !== false);
+        }
+        // BELUM di atas (perlu tindakan), lalu SUDAH.
+        return $rows->sortBy(fn ($r) => $r['kind'] === 'belum' ? 0 : 1)->values();
+    }
+
+    /** Render Control BAST/AJB (union) + data modal Input Massal. */
+    private function renderDocControl(Request $request, string $type, string $title, string $subtitle, ?string $extraLabel, $rows, $belum, string $issueRoute, bool $needsNotary): Response
+    {
+        return Inertia::render('BusinessSupport/BookedRevenue/Control', [
+            'type' => $type, 'title' => $title, 'subtitle' => $subtitle, 'extraLabel' => $extraLabel, 'extraIsMoney' => false,
+            'rows' => ['data' => $rows->values(), 'links' => []],
+            'filters' => $request->only(['search']),
+            'summary' => ['total' => $rows->count(), 'byStatus' => ['sudah' => $rows->where('kind', 'sudah')->count(), 'belum' => $rows->where('kind', 'belum')->count()]],
+            'belumBookings' => $belum->map(fn ($b) => ['booking_id' => $b->id, 'spr' => $b->booking_number, 'unit' => $b->unit?->unit_code, 'customer' => $b->customer?->full_name])->values(),
+            'issueRoute' => $issueRoute,
+            'issueNeedsNotary' => $needsNotary,
+        ]);
     }
 
     /** Control Faktur Pajak — daftar FP per customer/booking. */
@@ -446,6 +506,101 @@ class BookedRevenueController extends Controller
             'rows'         => $rows,
             'filters'      => $request->only(['search', 'status']),
             'summary'      => ['total' => (int) $byStatus->sum(), 'byStatus' => $byStatus],
+        ]);
+    }
+
+    /** Terbitkan BAST (Sudah) utk booking terpilih — satuan / massal (Input Massal). */
+    public function issueBast(Request $request, \App\Domain\Legal\Bast\Actions\IssueBast $issue): RedirectResponse
+    {
+        abort_unless($request->user()?->canModule('ar'), 403);
+        $v = $request->validate([
+            'booking_ids'   => ['required', 'array', 'min:1'],
+            'booking_ids.*' => ['integer', 'exists:bookings,id'],
+            'date'          => ['nullable', 'date'],
+        ]);
+        $date = $v['date'] ?? now()->toDateString();
+        $ok = 0;
+        $skip = 0;
+        foreach (array_unique($v['booking_ids']) as $bid) {
+            $b = \App\Domain\Sales\Booking\Models\Booking::find($bid);
+            if (! $b || \App\Domain\Legal\Bast\Models\BastDocument::where('booking_id', $bid)->exists()) {
+                $skip++;
+                continue;
+            }
+            $issue->execute($b, $date);
+            $ok++;
+        }
+
+        return back()->with($ok ? 'success' : 'warning', "$ok BAST diterbitkan (Sudah).".($skip ? " $skip dilewati (sudah ada)." : ''));
+    }
+
+    /** Terbitkan AJB (Sudah) utk booking terpilih — satuan / massal. Wajib lunas (dicek IssueAjb). */
+    public function issueAjb(Request $request, \App\Domain\Legal\Ajb\Actions\IssueAjb $issue): RedirectResponse
+    {
+        abort_unless($request->user()?->canModule('ar'), 403);
+        $v = $request->validate([
+            'booking_ids'   => ['required', 'array', 'min:1'],
+            'booking_ids.*' => ['integer', 'exists:bookings,id'],
+            'date'          => ['nullable', 'date'],
+            'notary_name'   => ['nullable', 'string', 'max:150'],
+        ]);
+        $date = $v['date'] ?? now()->toDateString();
+        $notary = trim((string) ($v['notary_name'] ?? '')) ?: '-';
+        $ok = 0;
+        $skip = 0;
+        $fail = [];
+        foreach (array_unique($v['booking_ids']) as $bid) {
+            $b = \App\Domain\Sales\Booking\Models\Booking::find($bid);
+            if (! $b || \App\Domain\Legal\Ajb\Models\AjbDocument::where('booking_id', $bid)->exists()) {
+                $skip++;
+                continue;
+            }
+            try {
+                $issue->execute($b, $notary, $date);
+                $ok++;
+            } catch (BusinessRuleException $e) {
+                $fail[] = $b->booking_number;
+            }
+        }
+        $msg = "$ok AJB diterbitkan (Sudah).".($skip ? " $skip dilewati (sudah ada)." : '').($fail ? ' Gagal (belum lunas): '.implode(', ', array_slice($fail, 0, 8)).'.' : '');
+
+        return back()->with($ok ? 'success' : ($fail ? 'error' : 'warning'), $msg);
+    }
+
+    /** Belum Booked Revenue — booking SPR final yg sudah BAST ATAU AJB, tapi belum di-booking revenue. */
+    public function belumBooked(Request $request): Response
+    {
+        abort_unless($request->user()?->canModule('ar'), 403);
+
+        $bookedUnitIds = BsBookedRevenue::whereIn('status', ['booked', 'recognized'])
+            ->whereNotNull('unit_id')->distinct()->pluck('unit_id')->all();
+
+        $bast = \App\Domain\Legal\Bast\Models\BastDocument::get(['booking_id', 'handed_over_at'])->keyBy('booking_id');
+        $ajb  = \App\Domain\Legal\Ajb\Models\AjbDocument::get(['booking_id', 'signed_at'])->keyBy('booking_id');
+        $bookingIds = $bast->keys()->merge($ajb->keys())->unique()->values();
+
+        $bookings = \App\Domain\Sales\Booking\Models\Booking::whereIn('id', $bookingIds)
+            ->whereNotIn('unit_id', $bookedUnitIds)
+            ->with(['customer:id,full_name,code', 'unit:id,unit_code'])
+            ->when($request->input('search'), fn ($q, $s) => $q->where(fn ($w) => $w->where('booking_number', 'like', "%{$s}%")
+                ->orWhereHas('customer', fn ($c) => $c->where('full_name', 'like', "%{$s}%"))
+                ->orWhereHas('unit', fn ($u) => $u->where('unit_code', 'like', "%{$s}%"))))
+            ->orderByDesc('id')->get();
+
+        $rows = $bookings->values()->map(fn ($b, $i) => [
+            'no'         => $i + 1,
+            'booking_id' => $b->id,
+            'unit_id'    => $b->unit_id,
+            'spr'        => $b->booking_number,
+            'unit'       => $b->unit?->unit_code,
+            'customer'   => $b->customer?->full_name,
+            'ajb_date'   => $ajb->get($b->id)?->signed_at?->toDateString(),
+            'bast_date'  => $bast->get($b->id)?->handed_over_at?->toDateString(),
+        ]);
+
+        return Inertia::render('BusinessSupport/BookedRevenue/BelumBooked', [
+            'rows'    => $rows,
+            'filters' => $request->only(['search']),
         ]);
     }
 }
