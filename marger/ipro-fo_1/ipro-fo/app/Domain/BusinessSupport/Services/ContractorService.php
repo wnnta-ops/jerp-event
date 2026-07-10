@@ -92,6 +92,24 @@ final class ContractorService
                 ]);
             }
 
+            // Alokasi unit rumah (Detil Pekerjaan per unit) — harga satuan = porsi kontrak per unit.
+            // Lewati porsi <= 0 (tak bermakna) & duplikat unit (jaga unique + hindari 500).
+            $seenUnits = [];
+            foreach (($data['units'] ?? []) as $i => $u) {
+                $unitId = (int) ($u['unit_id'] ?? 0);
+                $price  = round((float) ($u['unit_price'] ?? 0), 2);
+                if ($unitId <= 0 || $price <= 0 || isset($seenUnits[$unitId])) {
+                    continue;
+                }
+                $seenUnits[$unitId] = true;
+                $wo->units()->create([
+                    'unit_id'    => $unitId,
+                    'unit_code'  => isset($u['unit_code']) && $u['unit_code'] !== '' ? mb_substr((string) $u['unit_code'], 0, 50) : null,
+                    'unit_price' => $price,
+                    'seq'        => $i + 1,
+                ]);
+            }
+
             return $wo;
         });
     }
@@ -188,32 +206,68 @@ final class ContractorService
                 throw new BusinessRuleException('SPK sudah ditutup.', errorCode: 'SPK_CLOSED');
             }
 
-            $projectId = (int) ($data['project_id'] ?? 0);
-            $allUnits  = Unit::where('project_id', $projectId)->get(['id', 'unit_code', 'current_price', 'base_price']);
-            if ($allUnits->isEmpty()) {
-                throw new BusinessRuleException('Project belum memiliki unit rumah.', errorCode: 'SPK_NO_UNITS');
-            }
-            $priceOf  = fn ($u) => (float) ($u->current_price ?: $u->base_price ?: 0);
-            $denom    = (float) $allUnits->sum($priceOf);
-            $equal    = $denom <= 0; // fallback: bagi rata bila semua harga kosong
-            $contract = (float) $wo->contract_value;
-            $byId     = $allUnits->keyBy('id');
-
-            // Alokasi porsi kontrak × progress% per unit rumah.
+            // Porsi Kontrak per unit = harga satuan yang dialokasikan pada SPK (bs_work_order_units).
+            // DPP = Porsi Kontrak × progress%. Bila SPK belum punya alokasi unit → fallback proporsional (perilaku lama).
+            $alloc = $wo->units()->get()->keyBy('unit_id'); // unit_id => BsWorkOrderUnit
             $lines = [];
-            foreach ((array) ($data['units'] ?? []) as $row) {
-                $u   = $byId->get((int) ($row['unit_id'] ?? 0));
-                $pct = round((float) ($row['progress_pct'] ?? 0), 2);
-                if (! $u || $pct <= 0) {
-                    continue;
+
+            if ($alloc->isNotEmpty()) {
+                // DPP yang sudah terpakai per unit dari KPL sebelumnya (ceiling = porsi kontrak / unit_price).
+                $consumed = \App\Domain\BusinessSupport\Models\BsWorkOrderProgressUnit::query()
+                    ->whereHas('progress', fn ($q) => $q->where('work_order_id', $wo->id))
+                    ->selectRaw('unit_id, SUM(dpp_value) AS used')
+                    ->groupBy('unit_id')
+                    ->pluck('used', 'unit_id');
+
+                foreach ((array) ($data['units'] ?? []) as $row) {
+                    $uid = (int) ($row['unit_id'] ?? 0);
+                    $a   = $alloc->get($uid);
+                    $pct = round((float) ($row['progress_pct'] ?? 0), 2);
+                    if (! $a || $pct <= 0) {
+                        continue;
+                    }
+                    $portion = round((float) $a->unit_price, 2);
+                    $dpp     = round($portion * $pct / 100, 2);
+                    if ($dpp <= 0) {
+                        continue;
+                    }
+                    // Cegah akumulasi progress per unit melebihi porsi kontraknya (jaga HPP/CIP per unit).
+                    $used = round((float) ($consumed[$uid] ?? 0), 2);
+                    if ($used + $dpp > $portion + 0.01) {
+                        throw new BusinessRuleException('Progress unit '.$a->unit_code.' melebihi porsi kontrak ('.number_format($portion, 2).').', errorCode: 'SPK_UNIT_OVER');
+                    }
+                    $consumed[$uid] = $used + $dpp;   // tangkap juga duplikat dalam satu submission
+                    $lines[] = ['unit_id' => $uid, 'unit_code' => $a->unit_code, 'progress_pct' => $pct, 'contract_portion' => $portion, 'dpp_value' => $dpp];
                 }
-                $portion = $equal ? round($contract / $allUnits->count(), 2) : round($contract * $priceOf($u) / $denom, 2);
-                $dpp     = round($portion * $pct / 100, 2);
-                if ($dpp <= 0) {
-                    continue;
+            } else {
+                $projectId = (int) ($data['project_id'] ?? 0);
+                if ($projectId <= 0) {
+                    throw new BusinessRuleException('Pilih Project sumber unit rumah.', errorCode: 'SPK_NO_PROJECT');
                 }
-                $lines[] = ['unit_id' => $u->id, 'unit_code' => $u->unit_code, 'progress_pct' => $pct, 'contract_portion' => $portion, 'dpp_value' => $dpp];
+                $allUnits  = Unit::where('project_id', $projectId)->get(['id', 'unit_code', 'current_price', 'base_price']);
+                if ($allUnits->isEmpty()) {
+                    throw new BusinessRuleException('Project belum memiliki unit rumah.', errorCode: 'SPK_NO_UNITS');
+                }
+                $priceOf  = fn ($u) => (float) ($u->current_price ?: $u->base_price ?: 0);
+                $denom    = (float) $allUnits->sum($priceOf);
+                $equal    = $denom <= 0; // fallback: bagi rata bila semua harga kosong
+                $contract = (float) $wo->contract_value;
+                $byId     = $allUnits->keyBy('id');
+                foreach ((array) ($data['units'] ?? []) as $row) {
+                    $u   = $byId->get((int) ($row['unit_id'] ?? 0));
+                    $pct = round((float) ($row['progress_pct'] ?? 0), 2);
+                    if (! $u || $pct <= 0) {
+                        continue;
+                    }
+                    $portion = $equal ? round($contract / $allUnits->count(), 2) : round($contract * $priceOf($u) / $denom, 2);
+                    $dpp     = round($portion * $pct / 100, 2);
+                    if ($dpp <= 0) {
+                        continue;
+                    }
+                    $lines[] = ['unit_id' => $u->id, 'unit_code' => $u->unit_code, 'progress_pct' => $pct, 'contract_portion' => $portion, 'dpp_value' => $dpp];
+                }
             }
+
             if ($lines === []) {
                 throw new BusinessRuleException('Isi progress% minimal satu unit rumah.', errorCode: 'SPK_BULK_EMPTY');
             }

@@ -11,10 +11,12 @@ use App\Domain\BusinessSupport\Models\BsSupplier;
 use App\Domain\BusinessSupport\Models\BsWorkOrder;
 use App\Domain\BusinessSupport\Models\BsWorkOrderProgress;
 use App\Domain\BusinessSupport\Services\ContractorService;
+use App\Domain\Foundation\Tenant\Models\Project;
 use App\Exceptions\BusinessRuleException;
 use App\Http\Controllers\Controller;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -93,6 +95,8 @@ class ContractorController extends Controller
                 ->where(fn ($q) => $q->where('code', 'like', '10104%')->orWhere('type', 'expense'))
                 ->orderBy('code')->get(['id', 'code', 'name']),
             'defaultConstruction' => BsAccount::where('code', config('business_support.contractor.construction'))->value('id'),
+            // Project master (Sales) sebagai sumber unit rumah untuk alokasi Detil Pekerjaan per unit.
+            'salesProjects' => Project::orderBy('name')->get(['id', 'name'])->map(fn ($p) => ['id' => $p->id, 'name' => $p->name])->values(),
         ]);
     }
 
@@ -130,6 +134,10 @@ class ContractorController extends Controller
             'terms.*.percentage'      => ['nullable', 'numeric', 'min:0', 'max:100'],
             'terms.*.amount'          => ['nullable', 'numeric', 'min:0'],
             'terms.*.due_date'        => ['nullable', 'date'],
+            'units'                   => ['nullable', 'array'],
+            'units.*.unit_id'         => ['required', 'integer', 'distinct', Rule::exists('units', 'id')->where('tenant_id', tenant_id())],
+            'units.*.unit_code'       => ['nullable', 'string', 'max:50'],
+            'units.*.unit_price'      => ['nullable', 'numeric', 'min:0'],
         ]);
 
         $wo = $svc->createSpk($v, $request->user()->id);
@@ -146,6 +154,7 @@ class ContractorController extends Controller
                 'supplier:id,code,name', 'costCenter:id,code,name', 'project:id,code,name',
                 'items' => fn ($q) => $q->orderBy('seq')->orderBy('id'),
                 'terms' => fn ($q) => $q->orderBy('seq')->orderBy('id'),
+                'units' => fn ($q) => $q->orderBy('seq')->orderBy('id'),
                 'progress' => fn ($q) => $q->orderBy('progress_date')->orderBy('id'),
                 'addendums' => fn ($q) => $q->orderBy('addendum_date')->orderBy('id'),
                 'materials' => fn ($q) => $q->orderBy('usage_date')->orderBy('id'),

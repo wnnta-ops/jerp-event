@@ -43,6 +43,7 @@ class BsWorkOrder extends Model
     public function progressMutations(): HasMany { return $this->hasMany(BsWorkOrderProgressMutation::class, 'work_order_id'); }
     public function items(): HasMany { return $this->hasMany(BsWorkOrderItem::class, 'work_order_id'); }
     public function terms(): HasMany { return $this->hasMany(BsWorkOrderTerm::class, 'work_order_id'); }
+    public function units(): HasMany { return $this->hasMany(BsWorkOrderUnit::class, 'work_order_id'); }
 
     public function getRemainingValueAttribute(): float { return (float) $this->contract_value - (float) $this->progress_value; }
 }
