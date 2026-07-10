@@ -15,7 +15,7 @@ const filterCls = 'h-7 w-full rounded border border-neutral-300 px-2 text-xs fon
 const numCls = 'h-8 w-24 rounded border border-neutral-300 px-2 text-right text-sm dark:border-neutral-700 dark:bg-neutral-900';
 const today = new Date().toISOString().slice(0, 10);
 
-type UnitRow = { unit_id: number; unit_code: string; price: number; progress_pct: number | string; checked: boolean };
+type UnitRow = { unit_id: number; unit_code: string; price: number; porsi: number; progress_pct: number | string; checked: boolean };
 type ItemRow = { label: string; satuan: string; volume: number | string; nilai: number | string; progress_pct: number | string; checked: boolean };
 
 const CATS = [
@@ -38,10 +38,16 @@ const importMsg = ref('');
 const sel = computed(() => props.spks.find((s: any) => s.id === form.work_order_id));
 const isHousing = computed(() => form.category === 'housing');
 const contract = computed(() => Number(sel.value?.contract_value ?? 0));
+// SPK punya alokasi unit → Porsi Kontrak = harga satuan alokasi (tetap), bukan proporsional.
+const hasAlloc = computed(() => isHousing.value && Number(sel.value?.alloc_units || 0) > 0);
 
-// ── HOUSING: alokasi porsi kontrak per unit ──
+// ── HOUSING: porsi kontrak per unit ──
 const denom = computed(() => (form.units as UnitRow[]).reduce((a, u) => a + Number(u.price || 0), 0));
-function portion(u: UnitRow) { const n = (form.units as UnitRow[]).length || 1; return denom.value > 0 ? contract.value * Number(u.price || 0) / denom.value : contract.value / n; }
+function portion(u: UnitRow) {
+  if (hasAlloc.value) return Number(u.porsi || 0);           // dari alokasi SPK
+  const n = (form.units as UnitRow[]).length || 1;
+  return denom.value > 0 ? contract.value * Number(u.price || 0) / denom.value : contract.value / n; // proporsional (fallback)
+}
 function unitDpp(u: UnitRow) { return portion(u) * (Number(u.progress_pct) || 0) / 100; }
 // ── INFRA/LAIN: nilai item × % ──
 function itemDpp(it: ItemRow) { return (Number(it.nilai) || 0) * (Number(it.progress_pct) || 0) / 100; }
@@ -75,42 +81,58 @@ const allCheckedH = computed({ get: () => displayedUnits.value.length > 0 && dis
 const allCheckedI = computed({ get: () => displayedItems.value.length > 0 && displayedItems.value.every((it) => it.checked), set: (v: boolean) => displayedItems.value.forEach((it) => { it.checked = v; }) });
 
 // ── Loaders ──
+let loadSeq = 0; // buang respons usang saat SPK/project berganti cepat
 async function loadUnits() {
+  const seq = ++loadSeq;
   form.units = []; importMsg.value = '';
-  if (!form.project_id) return;
   loading.value = true;
   try {
-    const res = await window.axios.get(route('bs.spk.kpl.units'), { params: { project_id: form.project_id } });
-    form.units = (res.data.units || []).map((u: any) => ({ unit_id: u.id, unit_code: u.unit_code, price: Number(u.price || 0), progress_pct: 0, checked: false }));
-  } catch { importMsg.value = 'Gagal memuat unit.'; } finally { loading.value = false; }
+    if (hasAlloc.value) {
+      // Unit + Porsi Kontrak dari alokasi SPK (harga satuan tetap).
+      const res = await window.axios.get(route('bs.spk.kpl.spk-units'), { params: { work_order_id: form.work_order_id } });
+      if (seq !== loadSeq) return;
+      form.units = (res.data.units || []).map((u: any) => ({ unit_id: u.id, unit_code: u.unit_code, price: Number(u.harga || 0), porsi: Number(u.porsi || 0), progress_pct: 0, checked: false }));
+    } else {
+      if (!form.project_id) { loading.value = false; return; }
+      const res = await window.axios.get(route('bs.spk.kpl.units'), { params: { project_id: form.project_id } });
+      if (seq !== loadSeq) return;
+      form.units = (res.data.units || []).map((u: any) => ({ unit_id: u.id, unit_code: u.unit_code, price: Number(u.price || 0), porsi: 0, progress_pct: 0, checked: false }));
+    }
+  } catch { if (seq === loadSeq) importMsg.value = 'Gagal memuat unit.'; } finally { if (seq === loadSeq) loading.value = false; }
 }
 async function loadItems() {
+  const seq = ++loadSeq;
   importMsg.value = '';
   if (!form.work_order_id) { form.items = []; return; }
   loading.value = true;
   try {
     const res = await window.axios.get(route('bs.spk.kpl.items'), { params: { work_order_id: form.work_order_id } });
+    if (seq !== loadSeq) return;
     form.items = (res.data.items || []).map((i: any) => ({ label: i.label, satuan: i.satuan, volume: Number(i.volume || 0), nilai: Number(i.nilai || 0), progress_pct: 0, checked: false }));
-  } catch { importMsg.value = 'Gagal memuat item BoQ.'; } finally { loading.value = false; }
+  } catch { if (seq === loadSeq) importMsg.value = 'Gagal memuat item BoQ.'; } finally { if (seq === loadSeq) loading.value = false; }
 }
 function addItem() { (form.items as ItemRow[]).push({ label: '', satuan: '', volume: 0, nilai: 0, progress_pct: 0, checked: true }); }
 function removeItem(it: ItemRow) { form.items = (form.items as ItemRow[]).filter((x) => x !== it); }
 
-// SPK dipilih → default kategori dari jenis SPK.
+// SPK dipilih → default kategori dari jenis SPK (satu jalur reload saja).
 watch(() => form.work_order_id, () => {
-  if (sel.value?.jenis && jenisToCat[sel.value.jenis]) form.category = jenisToCat[sel.value.jenis];
-  reloadForCategory();
+  const newCat = sel.value?.jenis ? jenisToCat[sel.value.jenis] : undefined;
+  if (newCat && newCat !== form.category) form.category = newCat;   // watcher kategori akan reload sekali
+  else reloadForCategory();
 });
 watch(() => form.category, reloadForCategory);
-watch(() => form.project_id, () => { if (isHousing.value) loadUnits(); });
-function reloadForCategory() { if (isHousing.value) { if (form.project_id) loadUnits(); } else { loadItems(); } }
+watch(() => form.project_id, () => { if (isHousing.value && !hasAlloc.value) loadUnits(); });
+function reloadForCategory() { if (isHousing.value) { if (hasAlloc.value || form.project_id) loadUnits(); else form.units = []; } else { loadItems(); } }
 
 // ── Import .xlsx ──
 const templateUrl = computed(() => {
-  if (isHousing.value) return form.project_id ? route('bs.spk.kpl.import-template', { category: 'housing', project_id: form.project_id }) : '#';
+  if (isHousing.value) {
+    if (hasAlloc.value) return form.work_order_id ? route('bs.spk.kpl.import-template', { category: 'housing', work_order_id: form.work_order_id }) : '#';
+    return form.project_id ? route('bs.spk.kpl.import-template', { category: 'housing', project_id: form.project_id }) : '#';
+  }
   return form.work_order_id ? route('bs.spk.kpl.import-template', { category: form.category, work_order_id: form.work_order_id }) : '#';
 });
-const templateReady = computed(() => isHousing.value ? !!form.project_id : !!form.work_order_id);
+const templateReady = computed(() => isHousing.value ? (hasAlloc.value ? !!form.work_order_id : !!form.project_id) : !!form.work_order_id);
 
 async function onImport(e: Event) {
   const file = (e.target as HTMLInputElement).files?.[0];
@@ -142,7 +164,7 @@ function submit() {
   form.transform((d: any) => {
     const base = { work_order_id: d.work_order_id, category: d.category, progress_date: d.progress_date, description: d.description, releaser: d.releaser, pic: d.pic, no_manual: d.no_manual, contractor_signer: d.contractor_signer };
     if (d.category === 'housing') {
-      return { ...base, project_id: d.project_id, units: (d.units as UnitRow[]).filter((u) => u.checked && Number(u.progress_pct) > 0).map((u) => ({ unit_id: u.unit_id, progress_pct: Number(u.progress_pct) || 0 })) };
+      return { ...base, project_id: d.project_id || null, units: (d.units as UnitRow[]).filter((u) => u.checked && Number(u.progress_pct) > 0).map((u) => ({ unit_id: u.unit_id, progress_pct: Number(u.progress_pct) || 0 })) };
     }
     return { ...base, items: (d.items as ItemRow[]).filter((it) => it.checked && Number(it.progress_pct) > 0 && Number(it.nilai) > 0).map((it) => ({ label: it.label, satuan: it.satuan, volume: Number(it.volume) || 0, nilai: Number(it.nilai) || 0, progress_pct: Number(it.progress_pct) || 0 })) };
   }).post(route('bs.spk.kpl.store'));
@@ -174,13 +196,16 @@ function submit() {
         </div>
       </div>
 
-      <div v-if="isHousing">
+      <div v-if="isHousing && !hasAlloc">
         <label class="mb-1 block text-sm font-medium">Project (sumber unit rumah) *</label>
         <select v-model="form.project_id" :class="inputCls" required>
           <option value="">— pilih —</option>
           <option v-for="p in props.projects" :key="p.id" :value="p.id">{{ p.name }}</option>
         </select>
       </div>
+      <p v-else-if="hasAlloc" class="rounded-lg border border-success-500/40 bg-success-500/10 px-3 py-2 text-xs text-success-600">
+        Unit &amp; <b>Porsi Kontrak</b> diambil dari alokasi SPK ({{ sel?.alloc_units }} unit). DPP = Porsi Kontrak × Progress%.
+      </p>
 
       <div v-if="sel" class="grid gap-2 rounded-lg border border-neutral-200 bg-neutral-50 p-3 text-sm dark:border-neutral-800 dark:bg-neutral-800 sm:grid-cols-4">
         <div><span class="text-neutral-500">Nilai Kontrak</span><div class="font-semibold">{{ fmtRp(contract) }}</div></div>
@@ -297,7 +322,7 @@ function submit() {
       </div>
 
       <div class="flex items-center gap-2">
-        <Button type="submit" :disabled="form.processing || !hasRows || filledCount === 0 || overLimit || (isHousing && !form.project_id)">Simpan &amp; Jurnal</Button>
+        <Button type="submit" :disabled="form.processing || !hasRows || filledCount === 0 || overLimit || (isHousing && !hasAlloc && !form.project_id)">Simpan &amp; Jurnal</Button>
         <Link :href="route('bs.spk.kpl.index')" class="text-sm text-neutral-500 hover:text-neutral-800 dark:hover:text-neutral-200">Batal</Link>
       </div>
     </form>
