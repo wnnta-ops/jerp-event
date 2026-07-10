@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, ref, watch } from 'vue';
 import { useForm, Link } from '@inertiajs/vue3';
 import { ArrowLeft, Save, HardHat, Plus, Trash2 } from 'lucide-vue-next';
 import Button from '@/Components/UI/Button.vue';
@@ -11,6 +11,7 @@ const props = defineProps<{
     costCenters: Array<any>;
     constructionAccounts: Array<any>;
     defaultConstruction: number | null;
+    salesProjects: Array<any>;
 }>();
 const today = new Date().toISOString().slice(0, 10);
 const form = useForm<any>({
@@ -20,6 +21,7 @@ const form = useForm<any>({
     releaser: '', pic_project: '', is_pkp: true,
     contract_value: 0, nominal_profit: 0, retention_pct: 5, advance_pct: 0, ppn_pct: 11, notes: '',
     items: [] as any[], terms: [] as any[],
+    alloc_project_id: '', units: [] as any[],
 });
 function fmtRp(v: number) { return 'Rp ' + Number(v ?? 0).toLocaleString('id-ID'); }
 function addItem() { form.items.push({ description: '', unit: '', qty: 1, unit_price: 0 }); }
@@ -27,7 +29,35 @@ function rmItem(i: number) { form.items.splice(i, 1); }
 function addTerm() { form.terms.push({ description: '', percentage: 0, amount: 0, due_date: '' }); }
 function rmTerm(i: number) { form.terms.splice(i, 1); }
 const itemsTotal = computed(() => form.items.reduce((s: number, it: any) => s + Number(it.qty || 0) * Number(it.unit_price || 0), 0));
-function submit() { form.post(route('bs.spk.store')); }
+
+// ── Alokasi Unit & Porsi Kontrak (Detil Pekerjaan per unit) ──
+const allocLoading = ref(false);
+const bulkHarga = ref<number | string>('');
+let allocSeq = 0; // buang respons usang saat project alokasi berganti cepat
+async function loadAllocUnits() {
+    const seq = ++allocSeq;
+    form.units = [];
+    if (!form.alloc_project_id) return;
+    allocLoading.value = true;
+    try {
+        const res = await window.axios.get(route('bs.spk.kpl.units'), { params: { project_id: form.alloc_project_id } });
+        if (seq !== allocSeq) return;
+        form.units = (res.data.units || []).map((u: any) => ({ unit_id: u.id, unit_code: u.unit_code, price: Number(u.price || 0), unit_price: 0, checked: false }));
+    } catch { /* ignore */ } finally { if (seq === allocSeq) allocLoading.value = false; }
+}
+watch(() => form.alloc_project_id, loadAllocUnits);
+const allocChecked = computed(() => (form.units as any[]).filter((u) => u.checked));
+const allocTotal = computed(() => allocChecked.value.reduce((s: number, u: any) => s + (Number(u.unit_price) || 0), 0));
+const allAlloc = computed(() => (form.units as any[]).length > 0 && (form.units as any[]).every((u) => u.checked));
+function toggleAllAlloc(e: Event) { const v = (e.target as HTMLInputElement).checked; (form.units as any[]).forEach((u) => { u.checked = v; }); }
+function applyBulkHarga() { const h = Number(bulkHarga.value) || 0; (form.units as any[]).forEach((u) => { if (u.checked) u.unit_price = h; }); }
+
+function submit() {
+    form.transform((d: any) => ({
+        ...d,
+        units: (d.units as any[]).filter((u) => u.checked).map((u) => ({ unit_id: u.unit_id, unit_code: u.unit_code, unit_price: Number(u.unit_price) || 0 })),
+    })).post(route('bs.spk.store'));
+}
 const inputCls = 'h-9 w-full rounded-lg border border-neutral-300 bg-white px-3 text-sm dark:border-neutral-700 dark:bg-neutral-900';
 </script>
 <template>
@@ -80,22 +110,62 @@ const inputCls = 'h-9 w-full rounded-lg border border-neutral-300 bg-white px-3 
                 <p v-else class="text-xs text-neutral-400">Opsional — rincian item pekerjaan. Total BoQ tidak wajib sama dengan nilai kontrak.</p>
             </div>
 
-            <!-- Detil Term (jadwal termin) -->
+            <!-- Detil Pekerjaan per Unit (Alokasi Porsi Kontrak) -->
             <div class="card p-5">
-                <div class="mb-2 flex items-center justify-between"><h2 class="text-sm font-semibold">Detil Term (Rencana Termin)</h2><button type="button" @click="addTerm" class="inline-flex items-center gap-1 text-sm text-primary-600 hover:text-primary-800"><Plus class="h-4 w-4" /> Tambah Term</button></div>
+                <div class="mb-2 flex items-center justify-between">
+                    <h2 class="text-sm font-semibold">Detil Pekerjaan per Unit — Alokasi Porsi Kontrak</h2>
+                    <span class="text-xs text-neutral-400">{{ allocChecked.length }} unit dipilih · Total {{ fmtRp(allocTotal) }}</span>
+                </div>
+                <div class="mb-3 flex flex-wrap items-end gap-3">
+                    <div>
+                        <label class="mb-1 block text-xs font-medium text-neutral-500">Project Sumber Unit (Sales)</label>
+                        <select v-model="form.alloc_project_id" :class="inputCls" style="min-width: 240px"><option value="">— pilih project —</option><option v-for="p in salesProjects" :key="p.id" :value="p.id">{{ p.name }}</option></select>
+                    </div>
+                    <div v-if="form.units.length">
+                        <label class="mb-1 block text-xs font-medium text-neutral-500">Set Harga Satuan (unit terpilih)</label>
+                        <div class="flex items-center gap-2">
+                            <input v-model.number="bulkHarga" type="number" step="1" min="0" :class="[inputCls,'text-right font-mono']" style="width: 180px" placeholder="0" />
+                            <button type="button" @click="applyBulkHarga" class="h-9 rounded-lg border border-neutral-300 px-3 text-sm hover:bg-neutral-50 dark:border-neutral-700">Terapkan</button>
+                        </div>
+                    </div>
+                </div>
+                <p v-if="allocLoading" class="text-xs text-neutral-500">Memuat unit…</p>
+                <div v-else-if="form.units.length" class="overflow-x-auto">
+                    <table class="w-full text-sm">
+                        <thead><tr class="text-left text-xs uppercase text-neutral-500">
+                            <th class="w-10 py-1 text-center"><input type="checkbox" :checked="allAlloc" @change="toggleAllAlloc" class="h-4 w-4 rounded border-neutral-300" /></th>
+                            <th class="py-1">Unit Rumah</th><th class="py-1 w-40 text-right">Harga Jual</th><th class="py-1 w-52 text-right">Harga Satuan (Porsi Kontrak)</th>
+                        </tr></thead>
+                        <tbody>
+                            <tr v-for="u in form.units" :key="u.unit_id" :class="u.checked ? 'bg-primary-50/40 dark:bg-primary-900/10' : ''">
+                                <td class="py-1 text-center"><input type="checkbox" v-model="u.checked" class="h-4 w-4 rounded border-neutral-300" /></td>
+                                <td class="py-1 font-medium">{{ u.unit_code }}</td>
+                                <td class="py-1 text-right text-neutral-500 font-mono">{{ fmtRp(u.price) }}</td>
+                                <td class="py-1 pl-2"><input v-model.number="u.unit_price" type="number" step="1" min="0" :class="[inputCls,'text-right font-mono']" /></td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+                <p v-else-if="form.alloc_project_id" class="text-xs text-warning-600">Project ini belum punya unit rumah.</p>
+                <p v-else class="text-xs text-neutral-400">Opsional — pilih project, centang unit, lalu isi <b>Harga Satuan (Porsi Kontrak)</b> per unit. Dipakai saat Registrasi KPL: <b>DPP = Harga Satuan × Progress%</b>.</p>
+            </div>
+
+            <!-- Detil DP (Termin Pembayaran) -->
+            <div class="card p-5">
+                <div class="mb-2 flex items-center justify-between"><h2 class="text-sm font-semibold">Detil DP (Termin Pembayaran)</h2><button type="button" @click="addTerm" class="inline-flex items-center gap-1 text-sm text-primary-600 hover:text-primary-800"><Plus class="h-4 w-4" /> Tambah Termin DP</button></div>
                 <table v-if="form.terms.length" class="w-full text-sm">
-                    <thead><tr class="text-left text-xs uppercase text-neutral-500"><th class="py-1">Keterangan</th><th class="py-1 w-24 text-right">%</th><th class="py-1 w-36 text-right">Nilai</th><th class="py-1 w-40">Jatuh Tempo</th><th class="w-8"></th></tr></thead>
+                    <thead><tr class="text-left text-xs uppercase text-neutral-500"><th class="py-1">Keterangan</th><th class="py-1 w-40">Tgl Jatuh Tempo</th><th class="py-1 w-28 text-right">Progress / %</th><th class="py-1 w-40 text-right">Nominal</th><th class="w-8"></th></tr></thead>
                     <tbody>
                         <tr v-for="(t, i) in form.terms" :key="i">
-                            <td class="py-1 pr-2"><input v-model="t.description" placeholder="Termin 1 - DP" :class="inputCls" /></td>
+                            <td class="py-1 pr-2"><input v-model="t.description" placeholder="mis. Pembayaran DP Termin 1 30%" :class="inputCls" /></td>
+                            <td class="py-1 pr-2"><input v-model="t.due_date" type="date" :class="inputCls" /></td>
                             <td class="py-1 pr-2"><input v-model.number="t.percentage" type="number" step="0.1" :class="[inputCls,'text-right']" /></td>
                             <td class="py-1 pr-2"><input v-model.number="t.amount" type="number" step="1" :class="[inputCls,'text-right font-mono']" /></td>
-                            <td class="py-1 pr-2"><input v-model="t.due_date" type="date" :class="inputCls" /></td>
                             <td class="text-center"><button type="button" @click="rmTerm(i)" class="text-danger-500 hover:text-danger-700"><Trash2 class="h-4 w-4" /></button></td>
                         </tr>
                     </tbody>
                 </table>
-                <p v-else class="text-xs text-neutral-400">Opsional — rencana termin (bila kosong, isi nilai/% akan dihitung dari nilai kontrak).</p>
+                <p v-else class="text-xs text-neutral-400">Opsional — termin pembayaran DP (beberapa kali). Bila Nominal kosong, dihitung dari % × nilai kontrak.</p>
             </div>
 
             <div class="flex gap-2">
