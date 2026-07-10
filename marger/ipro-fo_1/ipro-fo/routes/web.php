@@ -1060,6 +1060,7 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
     Route::post('/business-support/spk',                          [BsSpkController::class, 'store'])->name('bs.spk.store');
     Route::get('/business-support/spk/{workOrder}',              [BsSpkController::class, 'show'])->name('bs.spk.show');
     Route::get('/business-support/spk/{workOrder}/print',        [BsSpkController::class, 'printForm'])->name('bs.spk.print');
+    Route::put('/business-support/spk/{workOrder}/print',        [BsSpkController::class, 'printSave'])->name('bs.spk.print.save');
     Route::post('/business-support/spk/{workOrder}/progress',    [BsSpkController::class, 'addProgress'])->name('bs.spk.progress');
     Route::post('/business-support/spk/progress/{progress}/pay', [BsSpkController::class, 'payProgress'])->name('bs.spk.progress.pay');
     Route::post('/business-support/spk/{workOrder}/retensi',     [BsSpkController::class, 'releaseRetention'])->name('bs.spk.retensi');

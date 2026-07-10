@@ -102,22 +102,23 @@ class ContractorController extends Controller
 
         $v = $request->validate([
             'spk_date'                => ['required', 'date'],
-            'no_manual'               => ['nullable', 'string', 'max:50'],
-            'est_start'               => ['nullable', 'date'],
-            'est_end'                 => ['nullable', 'date'],
-            'project_id'              => ['nullable', 'integer', 'exists:bs_projects,id'],
-            'jenis'                   => ['nullable', 'in:bangunan,sarana_prasarana,lain_lain'],
+            'no_manual'               => ['required', 'string', 'max:50'],
+            'est_start'               => ['required', 'date'],
+            'est_end'                 => ['required', 'date', 'after_or_equal:est_start'],
+            'project_id'              => ['required', 'integer', 'exists:bs_projects,id'],
+            'jenis'                   => ['required', 'in:bangunan,sarana_prasarana,lain_lain'],
             'supplier_id'             => ['required', 'integer', 'exists:bs_suppliers,id'],
-            'cost_center_id'          => ['nullable', 'integer', 'exists:bs_cost_centers,id'],
+            'cost_center_id'          => ['required', 'integer', 'exists:bs_cost_centers,id'],
             'construction_account_id' => ['required', 'integer', 'exists:bs_accounts,id'],
             'title'                   => ['required', 'string', 'max:200'],
             'releaser'                => ['nullable', 'string', 'max:100'],
             'pic_project'             => ['nullable', 'string', 'max:100'],
             'is_pkp'                  => ['nullable', 'boolean'],
             'contract_value'          => ['required', 'numeric', 'min:0.01'],
-            'retention_pct'           => ['nullable', 'numeric', 'min:0', 'max:100'],
-            'advance_pct'             => ['nullable', 'numeric', 'min:0', 'max:100'],
-            'ppn_pct'                 => ['nullable', 'numeric', 'min:0', 'max:100'],
+            'nominal_profit'          => ['nullable', 'numeric', 'min:0'],
+            'retention_pct'           => ['required', 'numeric', 'min:0', 'max:100'],
+            'advance_pct'             => ['required', 'numeric', 'min:0', 'max:100'],
+            'ppn_pct'                 => ['required', 'numeric', 'min:0', 'max:100'],
             'notes'                   => ['nullable', 'string', 'max:255'],
             'items'                   => ['nullable', 'array'],
             'items.*.description'     => ['nullable', 'string', 'max:200'],
@@ -184,7 +185,22 @@ class ContractorController extends Controller
             'company'   => config('business_support.company'),
             'jenisOpts' => BsWorkOrder::JENIS,
             'draft'     => $draft?->only(['judul', 'subjudul', 'tempat', 'pembukaan', 'pasals']),
+            'saved'     => $workOrder->print_payload,
         ]);
+    }
+
+    /** Simpan editan dokumen Cetak SPK per-SPK (dari tombol "Simpan" di Cetak SPK). */
+    public function printSave(Request $request, BsWorkOrder $workOrder): RedirectResponse
+    {
+        abort_unless($request->user()?->canModule('contractor'), 403);
+
+        $payload = $request->validate([
+            'payload' => ['required', 'array'],
+        ])['payload'];
+
+        $workOrder->update(['print_payload' => $payload]);
+
+        return back()->with('success', 'Dokumen SPK tersimpan.');
     }
 
     public function mutateProgress(Request $request, BsWorkOrder $workOrder, ContractorService $svc): RedirectResponse

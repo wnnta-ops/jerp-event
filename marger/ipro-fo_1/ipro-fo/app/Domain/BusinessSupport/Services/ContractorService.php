@@ -58,6 +58,7 @@ final class ContractorService
                 'pic_project'             => $data['pic_project'] ?? null,
                 'is_pkp'                  => $data['is_pkp'] ?? true,
                 'contract_value'          => round((float) $data['contract_value'], 2),
+                'nominal_profit'          => round((float) ($data['nominal_profit'] ?? 0), 2),
                 'retention_pct'           => round((float) ($data['retention_pct'] ?? 0), 2),
                 'advance_pct'             => round((float) ($data['advance_pct'] ?? 0), 2),
                 'ppn_pct'                 => round((float) ($data['ppn_pct'] ?? 0), 2),
