@@ -87,25 +87,6 @@ const justCreated = computed(() => Boolean(usePage().props.flash?.created));
             <div class="md:col-span-3"><div class="text-neutral-500">Keterangan</div><div class="font-medium">{{ invoice.description }}</div></div>
         </div>
 
-        <div class="card p-5">
-            <div class="grid gap-2 text-sm sm:grid-cols-2">
-                <div class="flex justify-between"><span class="text-neutral-500">DPP</span><span class="font-mono">{{ fmtRp(invoice.dpp) }}</span></div>
-                <!-- #140: rincian objek vs non-objek PPN -->
-                <template v-if="invoice.ppn_mode === 'with'">
-                    <div class="flex justify-between text-xs text-neutral-400 sm:col-span-2"><span class="pl-3">Objek PPN</span><span class="font-mono">{{ fmtRp(ppnBase) }}</span></div>
-                    <div v-if="ppnNonObject > 0" class="flex justify-between text-xs text-neutral-400 sm:col-span-2"><span class="pl-3">Non-objek PPN</span><span class="font-mono">{{ fmtRp(ppnNonObject) }}</span></div>
-                </template>
-                <div class="flex justify-between"><span class="text-neutral-500">PPN ({{ invoice.ppn_pct }}%)</span><span class="font-mono">{{ fmtRp(invoice.ppn_amount) }}</span></div>
-                <div class="flex justify-between"><span class="text-neutral-500">Total (DPP+PPN)</span><span class="font-mono">{{ fmtRp(invoice.total) }}</span></div>
-                <div class="flex justify-between"><span class="text-neutral-500">PPh {{ invoice.pph_mode === 'borne' ? 'ditanggung' : 'dipotong' }} ({{ invoice.pph_pct }}%)</span><span class="font-mono text-danger-600">{{ invoice.pph_amount > 0 ? (invoice.pph_mode === 'borne' ? fmtRp(invoice.pph_amount) : '−' + fmtRp(invoice.pph_amount).slice(3)) : fmtRp(0) }}</span></div>
-                <div class="flex justify-between border-t border-neutral-200 pt-2 font-semibold dark:border-neutral-700 sm:col-span-2"><span>Net Dibayar ke Supplier</span><span class="font-mono">{{ fmtRp(invoice.payable_amount) }}</span></div>
-                <div v-if="showTerbayar" class="flex justify-between border-t border-neutral-200 pt-2 dark:border-neutral-700 sm:col-span-2"><span class="text-neutral-500">Terbayar</span><span class="font-mono text-success-600">{{ fmtRp(realPaid) }}</span></div>
-                <div v-if="writeoffTotal > 0.009" class="flex justify-between dark:border-neutral-700 sm:col-span-2" :class="showTerbayar ? '' : 'border-t border-neutral-200 pt-2'"><span class="text-neutral-500">Memo Penghapusan Hutang</span><span class="font-mono text-amber-600">{{ fmtRp(writeoffTotal) }}</span></div>
-                <div class="flex justify-between sm:col-span-2 rounded-lg bg-neutral-50 px-3 py-2 font-bold dark:bg-neutral-800"><span>Sisa Hutang</span><span class="font-mono" :class="outstanding > 0 ? 'text-danger-600' : 'text-success-600'">{{ fmtRp(outstanding) }}</span></div>
-            </div>
-            <div v-if="invoice.journal_id" class="mt-3 text-xs text-neutral-400">Jurnal pendaftaran: #{{ invoice.journal_id }} (Dr Akun Debit + PPN / Cr Hutang + PPh)</div>
-        </div>
-
         <!-- Struktur Jurnal pendaftaran invoice (Dr Akun + PPN Masukan / Cr Hutang + PPh) — penting untuk audit. -->
         <div v-if="journal" class="card overflow-hidden">
             <div class="flex flex-wrap items-center justify-between gap-2 border-b border-neutral-200 px-4 py-3 dark:border-neutral-800">

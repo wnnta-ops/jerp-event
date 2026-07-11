@@ -69,6 +69,8 @@ use App\Http\Controllers\Web\BusinessSupport\Setup\BulkUploadController as BsBul
 use App\Http\Controllers\Web\BusinessSupport\Report\ProjectionController as BsProjectionController;
 use App\Http\Controllers\Web\BusinessSupport\Contractor\ContractorController as BsSpkController;
 use App\Http\Controllers\Web\BusinessSupport\Contractor\ProjectController as BsProjectController;
+use App\Http\Controllers\Web\BusinessSupport\Contractor\GenerateBastController as BsGenerateBastController;
+use App\Http\Controllers\Web\BusinessSupport\Contractor\SpkDraftController as BsSpkDraftController;
 use App\Http\Controllers\Web\BusinessSupport\Contractor\KplController as BsKplController;
 use App\Http\Controllers\Web\BusinessSupport\Contractor\RetentionController as BsRetentionController;
 use App\Http\Controllers\Web\BusinessSupport\Contractor\MaterialController as BsSbomatController;
@@ -809,6 +811,8 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
     Route::get('/business-support/fixed-asset-summary/export',    [BsFaController::class, 'summaryExport'])->name('bs.fa.summary.export');
     Route::get('/business-support/fixed-asset-penjualan',         [BsFaController::class, 'penjualan'])->name('bs.fa.penjualan');
     Route::get('/business-support/fixed-asset-penjualan/export',  [BsFaController::class, 'penjualanExport'])->name('bs.fa.penjualan.export');
+    Route::get('/business-support/fixed-asset/{fixedAsset}/edit', [BsFaController::class, 'edit'])->name('bs.fa.edit'); // edit master aset (semua komponen)
+    Route::put('/business-support/fixed-asset/{fixedAsset}',      [BsFaController::class, 'update'])->name('bs.fa.update');
     Route::get('/business-support/fixed-asset/{fixedAsset}',      [BsFaController::class, 'show'])->name('bs.fa.show');
     Route::post('/business-support/fixed-asset/{fixedAsset}/depreciate', [BsFaController::class, 'depreciate'])->name('bs.fa.depreciate');
     Route::post('/business-support/fixed-asset/{fixedAsset}/dispose',     [BsFaController::class, 'dispose'])->name('bs.fa.dispose');
@@ -984,6 +988,9 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
     Route::get('/business-support/booked-revenue-control/bast', [BsBookedRevenueController::class, 'controlBast'])->name('bs.booked-revenue.control.bast');
     Route::get('/business-support/booked-revenue-control/ajb',  [BsBookedRevenueController::class, 'controlAjb'])->name('bs.booked-revenue.control.ajb');
     Route::get('/business-support/booked-revenue-control/fp',   [BsBookedRevenueController::class, 'controlFakturPajak'])->name('bs.booked-revenue.control.fp');
+    Route::get('/business-support/belum-booked-revenue',        [BsBookedRevenueController::class, 'belumBooked'])->name('bs.booked-revenue.belum'); // pipeline: sudah BAST/AJB, belum di-booking
+    Route::post('/business-support/booked-revenue-control/bast/issue', [BsBookedRevenueController::class, 'issueBast'])->name('bs.booked-revenue.control.bast.issue'); // terbitkan BAST (Sudah) satuan/massal
+    Route::post('/business-support/booked-revenue-control/ajb/issue',  [BsBookedRevenueController::class, 'issueAjb'])->name('bs.booked-revenue.control.ajb.issue'); // terbitkan AJB (Sudah) satuan/massal
     // Report / Query: rekap keseluruhan Booked Revenue per unit (BAST/AJB/Retensi/UTJ&DP/Faktur Pajak). Path terpisah agar tidak tertangkap wildcard {bookedRevenue}.
     Route::get('/business-support/booked-revenue-report',        [BsBookedRevenueController::class, 'report'])->name('bs.booked-revenue.report');
     Route::get('/business-support/booked-revenue-report/export', [BsBookedRevenueController::class, 'reportExport'])->name('bs.booked-revenue.report.export');
@@ -995,14 +1002,27 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
     // Setup → Project
     Route::get('/business-support/spk-project',                  [BsProjectController::class, 'index'])->name('bs.spk.project.index');
     Route::post('/business-support/spk-project',                 [BsProjectController::class, 'store'])->name('bs.spk.project.store');
+    Route::get('/business-support/spk-project/{project}',        [BsProjectController::class, 'show'])->name('bs.spk.project.show');
     Route::put('/business-support/spk-project/{project}',        [BsProjectController::class, 'update'])->name('bs.spk.project.update');
     Route::delete('/business-support/spk-project/{project}',     [BsProjectController::class, 'destroy'])->name('bs.spk.project.destroy');
+
+    // Setup → Set Up SPK (draft Cetak SPK)
+    Route::get('/business-support/spk-draft',                    [BsSpkDraftController::class, 'edit'])->name('bs.spk.draft.edit');
+    Route::put('/business-support/spk-draft',                    [BsSpkDraftController::class, 'update'])->name('bs.spk.draft.update');
+    Route::delete('/business-support/spk-draft',                 [BsSpkDraftController::class, 'reset'])->name('bs.spk.draft.reset');
+
+    // Generate BAST (daftar unit + status BAST + import Excel)
+    Route::get('/business-support/spk-generate-bast',            [BsGenerateBastController::class, 'index'])->name('bs.spk.bast.index');
+    Route::get('/business-support/spk-generate-bast/template',   [BsGenerateBastController::class, 'importTemplate'])->name('bs.spk.bast.template');
+    Route::post('/business-support/spk-generate-bast/import',    [BsGenerateBastController::class, 'import'])->name('bs.spk.bast.import');
+    Route::delete('/business-support/spk-generate-bast/{bastUnit}', [BsGenerateBastController::class, 'destroy'])->name('bs.spk.bast.destroy');
 
     // Kontrol Progress Lapangan (KPL / opname)
     Route::get('/business-support/spk-kpl',                      [BsKplController::class, 'index'])->name('bs.spk.kpl.index');
     Route::get('/business-support/spk-kpl/create',              [BsKplController::class, 'create'])->name('bs.spk.kpl.create');
     // Registrasi massal per unit rumah (static path — HARUS sebelum route {progress}).
     Route::get('/business-support/spk-kpl/units',               [BsKplController::class, 'units'])->name('bs.spk.kpl.units');
+    Route::get('/business-support/spk-kpl/spk-units',           [BsKplController::class, 'spkUnits'])->name('bs.spk.kpl.spk-units');
     Route::get('/business-support/spk-kpl/items',               [BsKplController::class, 'items'])->name('bs.spk.kpl.items');
     Route::get('/business-support/spk-kpl/import-template',     [BsKplController::class, 'importTemplate'])->name('bs.spk.kpl.import-template');
     Route::post('/business-support/spk-kpl/import',             [BsKplController::class, 'importParse'])->name('bs.spk.kpl.import');
@@ -1049,6 +1069,7 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
     Route::post('/business-support/spk',                          [BsSpkController::class, 'store'])->name('bs.spk.store');
     Route::get('/business-support/spk/{workOrder}',              [BsSpkController::class, 'show'])->name('bs.spk.show');
     Route::get('/business-support/spk/{workOrder}/print',        [BsSpkController::class, 'printForm'])->name('bs.spk.print');
+    Route::put('/business-support/spk/{workOrder}/print',        [BsSpkController::class, 'printSave'])->name('bs.spk.print.save');
     Route::post('/business-support/spk/{workOrder}/progress',    [BsSpkController::class, 'addProgress'])->name('bs.spk.progress');
     Route::post('/business-support/spk/progress/{progress}/pay', [BsSpkController::class, 'payProgress'])->name('bs.spk.progress.pay');
     Route::post('/business-support/spk/{workOrder}/retensi',     [BsSpkController::class, 'releaseRetention'])->name('bs.spk.retensi');

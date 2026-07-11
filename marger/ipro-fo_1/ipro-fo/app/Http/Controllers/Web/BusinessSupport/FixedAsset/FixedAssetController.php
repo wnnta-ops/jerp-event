@@ -173,6 +173,68 @@ class FixedAssetController extends Controller
         return redirect()->route('bs.fa.show', $asset)->with('success', "Aset {$asset->asset_number} terdaftar.");
     }
 
+    /** Form edit master aset — semua komponen (memakai halaman Form yang sama, mode edit). */
+    public function edit(Request $request, BsFixedAsset $fixedAsset): Response
+    {
+        abort_unless($request->user()?->canModule('bs'), 403);
+
+        return Inertia::render('BusinessSupport/FixedAsset/Form', [
+            'categories'      => BsFixedAsset::CATEGORIES,
+            'fundingAccounts' => BsAccount::where('is_active', true)->where('is_postable', true)
+                ->where(fn ($q) => $q->where('code', 'like', '101010%')->orWhere('type', 'liability'))
+                ->orderBy('code')->get(['id', 'code', 'name', 'type']),
+            // acquisition_date sbg Y-m-d (bukan datetime UTC) agar prefill <input type=date> tidak geser 1 hari (TZ +7).
+            'asset' => [
+                'id'                 => $fixedAsset->id,
+                'asset_number'       => $fixedAsset->asset_number,
+                'name'               => $fixedAsset->name,
+                'quantity'           => $fixedAsset->quantity,
+                'category'           => $fixedAsset->category,
+                'acquisition_date'   => $fixedAsset->acquisition_date?->toDateString(),
+                'acquisition_cost'   => (float) $fixedAsset->acquisition_cost,
+                'residual_value'     => (float) $fixedAsset->residual_value,
+                'useful_life_months' => (int) $fixedAsset->useful_life_months,
+                'pic'                => $fixedAsset->pic,
+                'location'           => $fixedAsset->location,
+            ],
+        ]);
+    }
+
+    /**
+     * Simpan perubahan master aset (semua komponen). Penyusutan/bulan & nilai buku = accessor → dihitung ulang
+     * otomatis. TIDAK menyentuh jurnal perolehan / entri penyusutan yang sudah terbentuk (koreksi master saja).
+     */
+    public function update(Request $request, BsFixedAsset $fixedAsset): RedirectResponse
+    {
+        abort_unless($request->user()?->canModule('bs'), 403);
+
+        $v = $request->validate([
+            'name'               => ['required', 'string', 'max:150'],
+            'quantity'           => ['nullable', 'string', 'max:32'],
+            'category'           => ['required', 'in:bangunan,kendaraan,inventaris,tanah'],
+            'acquisition_date'   => ['required', 'date'],
+            'acquisition_cost'   => ['required', 'numeric', 'min:0.01'],
+            'residual_value'     => ['nullable', 'numeric', 'min:0', 'lt:acquisition_cost'],
+            'useful_life_months' => ['nullable', 'integer', 'min:0', 'max:1200'],
+            'pic'                => ['nullable', 'string', 'max:100'],
+            'location'           => ['nullable', 'string', 'max:100'],
+        ]);
+
+        $fixedAsset->update([
+            'name'               => $v['name'],
+            'quantity'           => $v['quantity'] ?? null,
+            'category'           => $v['category'],
+            'acquisition_date'   => $v['acquisition_date'],
+            'acquisition_cost'   => $v['acquisition_cost'],
+            'residual_value'     => $v['residual_value'] ?? 0,
+            'useful_life_months' => $v['category'] === 'tanah' ? 0 : ($v['useful_life_months'] ?? 0),
+            'pic'                => $v['pic'] ?? null,
+            'location'           => $v['location'] ?? null,
+        ]);
+
+        return redirect()->route('bs.fa.show', $fixedAsset)->with('success', "Aset {$fixedAsset->asset_number} diperbarui.");
+    }
+
     public function show(Request $request, BsFixedAsset $fixedAsset): Response
     {
         abort_unless($request->user()?->canModule('bs'), 403);
@@ -180,7 +242,8 @@ class FixedAssetController extends Controller
         return Inertia::render('BusinessSupport/FixedAsset/Show', [
             'asset'   => array_merge(
                 $fixedAsset->load(['assetAccount:id,code,name', 'entries' => fn ($q) => $q->orderBy('period_year')->orderBy('period_month')])->toArray(),
-                ['book_value' => $fixedAsset->book_value, 'monthly_depreciation' => $fixedAsset->monthly_depreciation, 'depreciable_base' => $fixedAsset->depreciable_base],
+                // acquisition_date sbg Y-m-d agar default "Per Tanggal" saldo awal = Tgl Perolehan (tanpa geser 1 hari TZ +7).
+                ['book_value' => $fixedAsset->book_value, 'monthly_depreciation' => $fixedAsset->monthly_depreciation, 'depreciable_base' => $fixedAsset->depreciable_base, 'acquisition_date' => $fixedAsset->acquisition_date?->toDateString()],
             ),
             'now'     => ['year' => (int) now()->year, 'month' => (int) now()->month],
             'today'   => now()->toDateString(),

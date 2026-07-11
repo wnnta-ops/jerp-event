@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue';
 import { useForm, Link } from '@inertiajs/vue3';
-import { ArrowLeft, Building, TrendingDown, BookText, Banknote, Trash2, History } from 'lucide-vue-next';
+import { ArrowLeft, Building, TrendingDown, BookText, Banknote, Trash2, History, Pencil } from 'lucide-vue-next';
 import Button from '@/Components/UI/Button.vue';
 import Badge from '@/Components/UI/Badge.vue';
 import SearchSelect from '@/Components/UI/SearchSelect.vue';
@@ -20,7 +20,8 @@ const action = ref<'' | 'depreciate' | 'sell' | 'dispose' | 'opening'>('');
 const depForm = useForm<any>({ year: props.now.year, month: props.now.month });
 const sellForm = useForm<any>({ disposed_date: props.today, proceeds: 0, cash_account_id: '', note: '' });
 const dispForm = useForm<any>({ disposed_date: props.today, note: '' });
-const openForm = useForm<any>({ as_of_date: props.today, amount: 0 });
+// Default "Per Tanggal" saldo awal = Tgl Perolehan aset (Y-m-d dari server), tetap bisa diedit.
+const openForm = useForm<any>({ as_of_date: String(props.asset.acquisition_date ?? props.today).slice(0, 10), amount: 0 });
 
 const sellGain = computed(() => (Number(sellForm.proceeds) || 0) - bookValue.value);
 function reset() { action.value = ''; }
@@ -36,9 +37,12 @@ const inputCls = 'h-9 w-full rounded-lg border border-neutral-300 bg-white px-3 
 <template>
     <div class="max-w-3xl space-y-4">
         <Link :href="route('bs.fa.index')" class="inline-flex items-center gap-2 text-sm text-neutral-500 hover:text-neutral-800 dark:hover:text-neutral-200"><ArrowLeft class="h-4 w-4" /> Aset Tetap</Link>
-        <div class="flex items-center justify-between">
+        <div class="flex flex-wrap items-center justify-between gap-2">
             <h1 class="flex items-center gap-2 text-2xl font-bold"><Building class="h-6 w-6 text-primary-600" /> <span class="font-mono">{{ asset.asset_number }}</span> · {{ asset.name }}</h1>
-            <Badge :variant="statusBadge[asset.status] ?? 'neutral'">{{ statusLabel[asset.status] ?? asset.status }}</Badge>
+            <div class="flex items-center gap-2">
+                <Link :href="route('bs.fa.edit', asset.id)" class="inline-flex items-center gap-1.5 rounded-lg border border-neutral-300 px-3 py-1.5 text-sm font-medium text-neutral-700 hover:bg-neutral-50 dark:border-neutral-700 dark:text-neutral-200 dark:hover:bg-neutral-800"><Pencil class="h-4 w-4" /> Edit</Link>
+                <Badge :variant="statusBadge[asset.status] ?? 'neutral'">{{ statusLabel[asset.status] ?? asset.status }}</Badge>
+            </div>
         </div>
 
         <div class="card grid gap-4 p-5 text-sm md:grid-cols-3">

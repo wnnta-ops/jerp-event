@@ -1,13 +1,23 @@
 <script setup lang="ts">
 // Detail Kontrol Progress Lapangan + preview & Cetak BAP (Berita Acara Pembayaran)
 import { Link } from '@inertiajs/vue3';
+import { computed } from 'vue';
 import { ArrowLeft, ClipboardCheck, Printer } from 'lucide-vue-next';
 import Button from '@/Components/UI/Button.vue';
 import Badge from '@/Components/UI/Badge.vue';
+import Stepper from '@/Components/UI/Stepper.vue';
 
 const props = defineProps<{ kpl: any; bap: any }>();
 
 const stBadge: Record<string, any> = { unpaid: 'warning', paid: 'success', open: 'warning', closed: 'success' };
+
+const KPL_STAGES = [{ label: 'Terdaftar' }, { label: 'Dibayar' }, { label: 'Retensi Cair' }];
+const kplStep = computed(() => {
+  const r = props.kpl;
+  if (r.status === 'paid' && r.work_order?.status === 'closed') return 4;
+  if (r.status === 'paid') return 3;
+  return 1;
+});
 function rp(v: number) { return 'Rp ' + Number(v ?? 0).toLocaleString('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
 function fmtDate(d: string): string { return d ? new Date(d).toLocaleDateString('id-ID', { day: '2-digit', month: 'long', year: 'numeric' }) : '—'; }
 function cetak() { window.open(route('bs.spk.kpl.bap', props.kpl.id), '_blank'); }
@@ -43,6 +53,11 @@ const lines = [
         <Badge :variant="stBadge[kpl.status]">{{ kpl.status }}</Badge>
         <Button @click="cetak"><Printer class="h-4 w-4" /> Cetak BAP</Button>
       </div>
+    </div>
+
+    <!-- Progres tahapan KPL -->
+    <div class="card px-5 py-4">
+      <Stepper :stages="KPL_STAGES" :current="kplStep" />
     </div>
 
     <!-- Info KPL / SPK -->

@@ -31,7 +31,7 @@ class KplController extends Controller
         abort_unless($request->user()?->canModule('contractor'), 403);
 
         $rows = BsWorkOrderProgress::query()
-            ->with(['workOrder:id,spk_number,title,supplier_id', 'workOrder.supplier:id,name'])
+            ->with(['workOrder:id,spk_number,title,supplier_id,status', 'workOrder.supplier:id,name'])
             ->when($request->input('search'), fn ($q, $s) => $q->where(fn ($w) => $w->where('kpl_number', 'like', "%{$s}%")->orWhere('description', 'like', "%{$s}%")))
             ->latest('progress_date')->latest('id')->paginate(50)->withQueryString();
 
@@ -45,13 +45,14 @@ class KplController extends Controller
     {
         abort_unless($request->user()?->canModule('contractor'), 403);
 
-        $spks = BsWorkOrder::with('supplier:id,name')->where('status', 'active')
+        $spks = BsWorkOrder::with('supplier:id,name')->withCount('units')->where('status', 'active')
             ->orderByDesc('spk_date')->orderByDesc('id')->limit(500)->get()
             ->map(fn ($w) => [
                 'id' => $w->id, 'spk_number' => $w->spk_number, 'title' => $w->title, 'jenis' => $w->jenis,
                 'supplier' => $w->supplier?->name, 'remaining' => (float) $w->remaining_value,
                 'contract_value' => (float) $w->contract_value,
                 'retention_pct' => (float) $w->retention_pct, 'advance_pct' => (float) $w->advance_pct, 'ppn_pct' => (float) $w->ppn_pct,
+                'alloc_units' => (int) $w->units_count,   // >0 → porsi kontrak dari alokasi unit SPK
             ])->values();
 
         return Inertia::render('BusinessSupport/Contractor/Kpl/Create', [
@@ -70,7 +71,7 @@ class KplController extends Controller
         if ($request->has('units')) {
             $v = $request->validate([
                 'work_order_id'        => ['required', 'integer', 'exists:bs_work_orders,id'],
-                'project_id'           => ['required', 'integer'],
+                'project_id'           => ['nullable', 'integer'],   // wajib hanya untuk mode proporsional (SPK tanpa alokasi unit)
                 'progress_date'        => ['required', 'date'],
                 'description'          => ['required', 'string', 'max:200'],
                 'releaser'             => ['nullable', 'string', 'max:100'],
@@ -78,7 +79,7 @@ class KplController extends Controller
                 'no_manual'            => ['nullable', 'string', 'max:50'],
                 'contractor_signer'    => ['nullable', 'string', 'max:100'],
                 'units'                => ['required', 'array', 'min:1'],
-                'units.*.unit_id'      => ['required', 'integer'],
+                'units.*.unit_id'      => ['required', 'integer', 'distinct'],
                 'units.*.progress_pct' => ['nullable', 'numeric', 'min:0', 'max:100'],
             ]);
             $wo = BsWorkOrder::findOrFail($v['work_order_id']);
@@ -142,7 +143,25 @@ class KplController extends Controller
         return redirect()->route('bs.spk.kpl.index')->with('success', 'Kontrol Progress Lapangan tercatat — jurnal termin otomatis.');
     }
 
-    /** Daftar unit rumah suatu project (untuk registrasi KPL massal). */
+    /** Unit rumah yang dialokasikan pada suatu SPK — Porsi Kontrak = harga satuan alokasi. */
+    public function spkUnits(Request $request): JsonResponse
+    {
+        abort_unless($request->user()?->canModule('contractor'), 403);
+        $wo    = BsWorkOrder::find((int) $request->input('work_order_id'));
+        $units = $wo
+            ? $wo->units()->with('unit:id,current_price,base_price')->orderBy('seq')->orderBy('id')->get(['id', 'unit_id', 'unit_code', 'unit_price'])
+                ->map(fn ($u) => [
+                    'id'        => $u->unit_id,
+                    'unit_code' => (string) $u->unit_code,
+                    'porsi'     => (float) $u->unit_price,
+                    'harga'     => (float) ($u->unit?->current_price ?: $u->unit?->base_price ?: 0),
+                ])->values()
+            : collect();
+
+        return response()->json(['units' => $units]);
+    }
+
+    /** Daftar unit rumah suatu project (untuk registrasi KPL massal — fallback proporsional). */
     public function units(Request $request): JsonResponse
     {
         abort_unless($request->user()?->canModule('contractor'), 403);
@@ -188,7 +207,13 @@ class KplController extends Controller
             return $this->xlsxDownload($rows, 'template-kpl-infra.xlsx');
         }
 
-        $codes = Unit::where('project_id', (int) $request->input('project_id'))->orderBy('unit_code')->pluck('unit_code');
+        // Mode alokasi SPK (work_order_id) → kode unit dari alokasi; else dari project.
+        if (($woId = (int) $request->input('work_order_id')) > 0) {
+            $wo    = BsWorkOrder::find($woId);
+            $codes = $wo ? $wo->units()->orderBy('seq')->orderBy('id')->pluck('unit_code') : collect();
+        } else {
+            $codes = Unit::where('project_id', (int) $request->input('project_id'))->orderBy('unit_code')->pluck('unit_code');
+        }
         $rows  = [['Kode Unit', 'Progress %']];
         foreach ($codes as $c) {
             $rows[] = [(string) $c, ''];
@@ -336,7 +361,7 @@ class KplController extends Controller
     public function show(Request $request, BsWorkOrderProgress $progress): Response
     {
         abort_unless($request->user()?->canModule('contractor'), 403);
-        $progress->load(['workOrder:id,spk_number,spk_date,title,supplier_id,contract_value,addendum_value,retention_pct,advance_pct,ppn_pct,project_id', 'workOrder.supplier:id,name', 'workOrder.project:id,name']);
+        $progress->load(['workOrder:id,spk_number,spk_date,title,supplier_id,contract_value,addendum_value,retention_pct,advance_pct,ppn_pct,project_id,status', 'workOrder.supplier:id,name', 'workOrder.project:id,name']);
 
         return Inertia::render('BusinessSupport/Contractor/Kpl/Show', [
             'kpl' => $progress,

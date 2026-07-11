@@ -243,7 +243,7 @@ class ApInvoiceController extends Controller
         ]);
     }
 
-    public function store(Request $request, RegisterApInvoice $action): \Symfony\Component\HttpFoundation\Response
+    public function store(Request $request, RegisterApInvoice $action, \App\Domain\BusinessSupport\Services\BudgetGuardService $budgetGuard): \Symfony\Component\HttpFoundation\Response
     {
         abort_unless($request->user()?->canModule('ap'), 403);
 
@@ -293,6 +293,8 @@ class ApInvoiceController extends Controller
         ]);
 
         try {
+            // Gerbang over-budget: tolak bila baris jurnal (Dr akun ber-anggaran + cost center) melewati anggaran.
+            $budgetGuard->assertWithinBudget($v['journal_lines'] ?? [], null, $v['invoice_date']);
             $inv = $action->execute($v, $request->user()->id);
         } catch (BusinessRuleException $e) {
             return back()->withInput()->with('error', $e->getMessage());
