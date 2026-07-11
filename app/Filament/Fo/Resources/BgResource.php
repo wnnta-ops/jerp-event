@@ -11,6 +11,7 @@ use Filament\Notifications\Notification;
 use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Table;
+use Illuminate\Support\Facades\DB;
 
 class BgResource extends Resource
 {
@@ -35,8 +36,51 @@ class BgResource extends Resource
             Forms\Components\TextInput::make('bank_nama')->label('Bank')->maxLength(100)->placeholder('ketik nama bank'),
             Forms\Components\DatePicker::make('tgl_bg')->label('Tgl BG'),
             Forms\Components\DatePicker::make('tgl_jatuh_tempo')->label('Jatuh Tempo'),
-            Forms\Components\Select::make('customer_id')->label('Customer')->searchable()
-                ->options(fn () => Customer::query()->limit(300)->pluck('full_name', 'id')),
+            Forms\Components\Select::make('customer_id')->label('Customer')->searchable()->live()
+                ->options(fn () => Customer::query()->limit(300)->pluck('full_name', 'id'))
+                // Ganti customer → reset pilihan tagihan agar tak salah-tarik.
+                ->afterStateUpdated(fn (Forms\Set $set) => $set('tagihan_ref', null)),
+            // Setelah Customer dipilih: pilih DP/Angsuran yang BELUM LUNAS → Nominal terisi otomatis (tetap bisa diedit).
+            Forms\Components\Select::make('tagihan_ref')
+                ->label('DP / Angsuran (belum lunas)')
+                ->helperText('Pilih tagihan → Nominal terisi otomatis (tetap bisa diedit).')
+                ->searchable()
+                ->live()
+                ->dehydrated(false) // hanya pembantu, tak disimpan ke fo_bg
+                ->visible(fn (Forms\Get $get) => filled($get('customer_id')))
+                ->options(function (Forms\Get $get): array {
+                    $cid = $get('customer_id');
+                    if (! $cid) {
+                        return [];
+                    }
+
+                    return DB::table('fo_kontrak_tagihan as t')
+                        ->join('fo_kontrak as k', 'k.id', '=', 't.kontrak_id')
+                        ->where('k.customer_id', $cid)->whereNull('k.deleted_at')
+                        ->whereIn('t.tipe', ['DP', 'ANG'])
+                        // Kecualikan PENCAIRAN KPR (pencairan bank → developer, bukan bayaran customer via giro).
+                        ->whereRaw("UPPER(COALESCE(t.nama_tagihan, '')) NOT LIKE '%PENCAIRAN%'")
+                        ->whereRaw('(t.nilai - COALESCE(t.pelunasan, 0)) >= 1') // belum lunas (sisa >= 1 rupiah; abaikan recehan desimal)
+                        ->orderBy('k.no_kontrak')->orderBy('t.urutan')
+                        ->get(['t.id', 'k.no_kontrak', 't.nama_tagihan', 't.nilai', 't.pelunasan'])
+                        ->mapWithKeys(fn ($t) => [
+                            $t->id => $t->no_kontrak.' · '.$t->nama_tagihan.' · sisa Rp '.number_format((float) $t->nilai - (float) $t->pelunasan, 0, ',', '.'),
+                        ])->all();
+                })
+                ->afterStateUpdated(function ($state, Forms\Set $set): void {
+                    if (! $state) {
+                        return;
+                    }
+                    $t = DB::table('fo_kontrak_tagihan as t')->join('fo_kontrak as k', 'k.id', '=', 't.kontrak_id')
+                        ->where('t.id', $state)->first(['t.nilai', 't.pelunasan', 't.nama_tagihan', 'k.no_kontrak']);
+                    if (! $t) {
+                        return;
+                    }
+                    $sisa = (float) $t->nilai - (float) $t->pelunasan;
+                    // State field rupiah = integer polos (mask yang memformat tampilan). Bulatkan → hindari recehan desimal.
+                    $set('amount', (int) round($sisa));                                            // default (bisa diedit)
+                    $set('keterangan', 'Pembayaran '.$t->nama_tagihan.' — '.$t->no_kontrak);       // jejak tagihan (bisa diedit)
+                }),
             Forms\Components\TextInput::make('amount')->label('Nominal (Rp)')->numeric()->rupiah()->default(0),
             Forms\Components\Textarea::make('keterangan')->label('Keterangan')->rows(2)->columnSpanFull(),
         ])->columns(2);
