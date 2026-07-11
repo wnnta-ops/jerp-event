@@ -184,6 +184,15 @@ class KontrakGeneratorService
             $this->reapplyPaidDp($kontrak, $paidDp);
         }
 
+        // Stempel nilai Free DP (subsidi DP2+ developer) pada kontrak → ikut tersinkron ke BO
+        // (bookings.free_dp_amount) via Kontrak::saved → syncSpr. $freeDpSum = 0 utk skema non-Free-DP,
+        // jadi ini juga otomatis mengosongkan saat "Batal Free DP".
+        $newFree = (float) round($freeDpSum);
+        if ((float) ($kontrak->free_dp_amount ?? 0) !== $newFree) {
+            $kontrak->free_dp_amount = $newFree;
+            $kontrak->save();
+        }
+
         return $n;
     }
 

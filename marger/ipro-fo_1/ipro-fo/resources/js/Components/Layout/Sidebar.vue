@@ -69,6 +69,7 @@ const groups: { title: string; items: NavItem[] }[] = [
     {
         title: 'KPR',
         items: [
+            { label: 'Master Data KPR',  icon: FileSpreadsheet, href: 'kpr.master-data.index',   permission: 'bankloan.application.view' },
             { label: 'Kategori Retensi', icon: Percent,       href: 'kpr.setup.retensi.index', permission: 'bankloan.setup.view' },
             { label: 'Kategori Bank',    icon: Landmark,      href: 'kpr.setup.bank.index',    permission: 'bankloan.setup.view' },
             { label: 'Kategori Analisa Berkas', icon: ClipboardList, href: 'kpr.setup.analisa.index', permission: 'bankloan.setup.view' },

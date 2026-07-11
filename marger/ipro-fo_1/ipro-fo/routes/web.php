@@ -6,6 +6,7 @@ use App\Http\Controllers\Web\Approval\ApprovalController;
 use App\Http\Controllers\Web\Auth\LoginController;
 use App\Domain\BankLoan\Models\KprApplication;
 use App\Http\Controllers\Web\BankLoan\KprApplicationController;
+use App\Http\Controllers\Web\BankLoan\MasterDataKprController;
 use App\Http\Controllers\Web\BankLoan\Setup\KprBankController;
 use App\Http\Controllers\Web\BankLoan\Setup\AnalisaAspectController;
 use App\Http\Controllers\Web\BankLoan\Setup\RetentionCategoryController;
@@ -394,6 +395,9 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
     // SKL sub-module dihapus (#119) — routes, controller, page, model, action, PDF & seeder dibersihkan.
 
     // ── BANK LOAN ──────────────────────────────────────────
+    // Master Data KPR — rekap per-SPR (harus SEBELUM /kpr/{kpr} agar tidak tertangkap wildcard).
+    Route::get('/kpr/master-data',                [MasterDataKprController::class, 'index'])->name('kpr.master-data.index');
+
     // SETTING KPR (harus SEBELUM /kpr/{kpr} agar tidak tertangkap wildcard).
     Route::get('/kpr/setup/retensi',              [RetentionCategoryController::class, 'index'])->name('kpr.setup.retensi.index');
     Route::post('/kpr/setup/retensi',             [RetentionCategoryController::class, 'store'])->name('kpr.setup.retensi.store');

@@ -445,6 +445,7 @@ class IproMasterSync
             'booking_date'      => $k->tgl_kontrak ?? $now->toDateString(),
             'base_price'        => $base,
             'discount_amount'   => $diskon,
+            'free_dp_amount'    => (float) ($k->free_dp_amount ?? 0),
             'ppn_amount'        => $ppn,
             'total_price'       => $total,
             'status'            => $statusMap[$k->status ?? 'DRAFT'] ?? 'draft',
