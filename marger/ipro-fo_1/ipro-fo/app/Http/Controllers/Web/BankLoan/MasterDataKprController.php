@@ -67,7 +67,8 @@ class MasterDataKprController extends Controller
                 'b.id', 'b.booking_number', 'b.base_price', 'b.discount_amount', 'b.discount_pct',
                 'b.free_dp_amount', 'b.gimmick_value',
                 'b.ppn_amount', 'b.total_price', 'b.agent_id', 'b.sales_person_id',
-                'u.unit_code', 'ut.name as unit_type', 'c.full_name as customer', 'ps.name as scheme_name',
+                'u.unit_code', 'ut.name as unit_type', 'c.full_name as customer',
+                'b.scheme_name as fo_scheme_name', 'ps.name as bo_scheme_name',
                 'ag.name as agent_name', 'sp.name as sales_name', 'nag.name as nup_agent_name', 'nsp.name as nup_sales_name',
             ]);
 
@@ -119,7 +120,8 @@ class MasterDataKprController extends Controller
                 'revenue'         => (float) $b->total_price - (float) $b->ppn_amount, // DPP
                 // Agen/Sales: dari booking; fallback ke agen/sales pada NUP.
                 'agent_sales'     => $b->agent_name ?: ($b->sales_name ?: ($b->nup_agent_name ?: $b->nup_sales_name)),
-                'cara_bayar'      => $b->scheme_name,
+                // Cara Bayar = nama skema FO asli (mis. "KPR FREE DP"); fallback ke nama generik BO.
+                'cara_bayar'      => $b->fo_scheme_name ?: $b->bo_scheme_name,
                 // Data KPR
                 'tgl_bast'        => $this->d($bast[$b->id] ?? null),
                 'tgl_ajb'         => $this->d($ajb[$b->id] ?? null),
