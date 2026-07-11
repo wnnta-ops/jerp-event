@@ -43,7 +43,7 @@ const groups: { title: string; items: NavItem[] }[] = [
     {
         title: '',
         items: [
-            { label: 'Dashboard',  icon: LayoutDashboard, href: 'dashboard' },
+            { label: 'Menu Utama', icon: LayoutDashboard, href: 'dashboard' },
             { label: 'Kalkulator', icon: Calculator,      href: 'calculator.index' },
             // Menu silang → kembali ke hub/dashboard J-ERP (URL dari env via Inertia config.fo_url).
             { label: 'Kembali ke Dashboard J-ERP', icon: Building2, external: ((page.props as any).config?.fo_url ?? '') + '/dashboard' },
@@ -69,6 +69,7 @@ const groups: { title: string; items: NavItem[] }[] = [
     {
         title: 'KPR',
         items: [
+            { label: 'Master Data KPR',  icon: FileSpreadsheet, href: 'kpr.master-data.index',   permission: 'bankloan.application.view' },
             { label: 'Kategori Retensi', icon: Percent,       href: 'kpr.setup.retensi.index', permission: 'bankloan.setup.view' },
             { label: 'Kategori Bank',    icon: Landmark,      href: 'kpr.setup.bank.index',    permission: 'bankloan.setup.view' },
             { label: 'Kategori Analisa Berkas', icon: ClipboardList, href: 'kpr.setup.analisa.index', permission: 'bankloan.setup.view' },
@@ -99,7 +100,8 @@ const groups: { title: string; items: NavItem[] }[] = [
     {
         title: 'Booked Revenue',
         items: [
-            { label: 'Booked Revenue', icon: CircleDollarSign, href: 'bs.booked-revenue.index', permission: ['businesssupport.view', 'ar.*'] },
+            { label: 'Belum Booked Revenue', icon: CircleDollarSign, href: 'bs.booked-revenue.belum', permission: ['businesssupport.view', 'ar.*'] },
+            { label: 'Sudah Booked Revenue', icon: CircleDollarSign, href: 'bs.booked-revenue.index', permission: ['businesssupport.view', 'ar.*'] },
             { label: 'Detail BAST', icon: FileCheck, href: 'bs.booked-revenue.control.bast', permission: ['businesssupport.view', 'ar.*'] },
             { label: 'Detail AJB', icon: FileText, href: 'bs.booked-revenue.control.ajb', permission: ['businesssupport.view', 'ar.*'] },
             { label: 'Verifikasi Faktur Pajak', icon: Receipt, permission: ['businesssupport.view', 'tax.*'], children: [
@@ -333,6 +335,7 @@ const groups: { title: string; items: NavItem[] }[] = [
         items: [
             { label: 'Setup', icon: FolderGit2, permission: ['businesssupport.view', 'contractor.*'], children: [
                 { label: 'Project', href: 'bs.spk.project.index' },
+                { label: 'Set Up SPK', href: 'bs.spk.draft.edit' },
             ]},
             { label: 'Master', icon: FileSignature, permission: ['businesssupport.view', 'contractor.*'], children: [
                 { label: 'Surat Perintah Kerja', href: 'bs.spk.index' },
@@ -364,6 +367,7 @@ const groups: { title: string; items: NavItem[] }[] = [
                 { label: 'Registrasi Mutasi Progress Bangunan', href: 'bs.spk.mutation.create' },
                 { label: 'Approval Mutasi Progress Bangunan', href: 'bs.spk.mutation.approvals' },
             ]},
+            { label: 'Generate BAST', icon: FileCheck, href: 'bs.spk.bast.index', permission: ['businesssupport.view', 'contractor.*'] },
         ],
     },
     {

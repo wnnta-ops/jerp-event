@@ -5,8 +5,22 @@ import { ArrowLeft, HardHat, Plus, Wallet, Unlock, FilePlus2, Percent, PackageMi
 import Button from '@/Components/UI/Button.vue';
 import Badge from '@/Components/UI/Badge.vue';
 import SearchSelect from '@/Components/UI/SearchSelect.vue';
+import Stepper from '@/Components/UI/Stepper.vue';
 
 const props = defineProps<{ spk: any; remaining: number; cashAccounts: Array<any>; inventoryAccounts: Array<any>; costCenters: Array<any>; defaultCash: number | null; defaultInventory: number | null }>();
+
+const SPK_STAGES = [
+    { label: 'SPK Terbit' }, { label: 'Progress' }, { label: 'Retensi' }, { label: 'Selesai' },
+];
+const spkStep = computed(() => {
+    const r = props.spk;
+    if (r.status === 'closed') return 5;
+    const cv = Number(r.contract_value) || 0;
+    const pv = Number(r.progress_value) || 0;
+    if (cv > 0 && pv >= cv) return 3;
+    if (pv > 0) return 2;
+    return 1;
+});
 
 const today = new Date().toISOString().slice(0, 10);
 const panel = ref<'' | 'progress' | 'retensi' | 'addendum' | 'adjustppn' | 'material' | 'cancel' | 'mutprog'>('');
@@ -43,6 +57,22 @@ function submitRetensi() { retForm.post(route('bs.spk.retensi', props.spk.id), {
 
 function fmtRp(v: number) { return 'Rp ' + Number(v ?? 0).toLocaleString('id-ID'); }
 function fmtDate(d: string) { return d ? new Date(d).toLocaleDateString('id-ID', { day:'2-digit', month:'short', year:'numeric' }) : '—'; }
+function fmtPct(v: number) { return (Math.round((Number(v) || 0) * 100) / 100).toLocaleString('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' %'; }
+
+// Detil Progress (gaya legacy): Progress Lama / Mutasi Progresi / Progress Terakhir (kumulatif) per termin KPL.
+const progressRows = computed(() => {
+    const cv = Number(props.spk.contract_value) || 0;
+    let cumRaw = 0, prevRounded = 0;
+    return (props.spk.progress ?? []).map((p: any, i: number) => {
+        cumRaw += cv > 0 ? (Number(p.progress_value) || 0) / cv * 100 : 0;
+        const terakhir = Math.round(cumRaw * 100) / 100;                    // kumulatif dibulatkan sekali
+        const lama = prevRounded;
+        const mut = Math.round((terakhir - prevRounded) * 100) / 100;       // mutasi = selisih → Lama + Mutasi = Terakhir
+        prevRounded = terakhir;
+        return { ...p, no: i + 1, mutasi_pct: mut, lama_pct: lama, terakhir_pct: terakhir };
+    });
+});
+const catLabel: Record<string, string> = { housing: 'Housing', infra: 'Infra', lain_lain: 'Lain-lain' };
 const inputCls = 'h-9 w-full rounded-lg border border-neutral-300 bg-white px-3 text-sm dark:border-neutral-700 dark:bg-neutral-900';
 </script>
 <template>
@@ -60,16 +90,22 @@ const inputCls = 'h-9 w-full rounded-lg border border-neutral-300 bg-white px-3 
             <span class="font-semibold text-danger-600">SPK dibatalkan</span> · {{ fmtDate(spk.cancelled_at) }}<template v-if="spk.cancel_reason"> — {{ spk.cancel_reason }}</template>
         </div>
 
+        <!-- Progres tahapan SPK -->
+        <div class="card px-5 py-4">
+            <Stepper :stages="SPK_STAGES" :current="spkStep" :cancelled="spk.status === 'cancelled'" />
+        </div>
+
         <div class="card grid gap-4 p-5 text-sm md:grid-cols-3">
             <div><div class="text-neutral-500">Kontraktor</div><div class="font-medium">{{ spk.supplier?.name }}</div></div>
             <div><div class="text-neutral-500">Tgl SPK</div><div class="font-medium">{{ fmtDate(spk.spk_date) }}</div></div>
             <div><div class="text-neutral-500">Project</div><div class="font-medium">{{ spk.project?.name ?? spk.cost_center?.name ?? '—' }}</div></div>
             <div><div class="text-neutral-500">Jenis</div><div class="font-medium">{{ jenisLabel[spk.jenis] ?? spk.jenis ?? '—' }}</div></div>
             <div><div class="text-neutral-500">Estimasi</div><div class="font-medium">{{ fmtDate(spk.est_start) }} – {{ fmtDate(spk.est_end) }}</div></div>
-            <div><div class="text-neutral-500">PKP / No. Manual</div><div class="font-medium">{{ spk.is_pkp ? 'PKP' : 'Non-PKP' }}<span v-if="spk.no_manual"> · {{ spk.no_manual }}</span></div></div>
+            <div><div class="text-neutral-500">PKP / No. SPK</div><div class="font-medium">{{ spk.is_pkp ? 'PKP' : 'Non-PKP' }}<span v-if="spk.no_manual"> · {{ spk.no_manual }}</span></div></div>
             <div><div class="text-neutral-500">Releaser</div><div class="font-medium">{{ spk.releaser ?? '—' }}</div></div>
             <div><div class="text-neutral-500">PIC Project</div><div class="font-medium">{{ spk.pic_project ?? '—' }}</div></div>
             <div><div class="text-neutral-500">Cost Center</div><div class="font-medium">{{ spk.cost_center?.name ?? '—' }}</div></div>
+            <div><div class="text-neutral-500">Nominal Profit</div><div class="font-medium">{{ Number(spk.nominal_profit) > 0 ? fmtRp(spk.nominal_profit) : '—' }}</div></div>
             <div class="md:col-span-3"><div class="text-neutral-500">Pekerjaan</div><div class="font-medium">{{ spk.title }}</div></div>
         </div>
 
@@ -84,13 +120,52 @@ const inputCls = 'h-9 w-full rounded-lg border border-neutral-300 bg-white px-3 
             </table>
         </div>
 
-        <!-- Detil Term -->
-        <div v-if="spk.terms?.length" class="card overflow-hidden">
-            <div class="border-b border-neutral-200 px-4 py-3 font-semibold dark:border-neutral-800">Rencana Termin</div>
+        <!-- Detil Pekerjaan per Unit (Alokasi Porsi Kontrak) -->
+        <div v-if="spk.units?.length" class="card overflow-hidden">
+            <div class="flex items-center justify-between border-b border-neutral-200 px-4 py-3 font-semibold dark:border-neutral-800">
+                <span>Detil Pekerjaan per Unit — Porsi Kontrak</span>
+                <span class="text-xs font-normal text-neutral-400">{{ spk.units.length }} unit · Total {{ fmtRp(spk.units.reduce((s, u) => s + Number(u.unit_price || 0), 0)) }}</span>
+            </div>
             <table class="w-full text-sm">
-                <thead class="bg-neutral-50 dark:bg-neutral-800"><tr class="text-left text-xs uppercase text-neutral-500"><th class="px-4 py-2.5">Keterangan</th><th class="px-4 py-2.5 text-right">%</th><th class="px-4 py-2.5 text-right">Nilai</th><th class="px-4 py-2.5">Jatuh Tempo</th></tr></thead>
+                <thead class="bg-neutral-50 dark:bg-neutral-800"><tr class="text-left text-xs uppercase text-neutral-500"><th class="px-4 py-2.5 w-12">No</th><th class="px-4 py-2.5">Unit Rumah</th><th class="px-4 py-2.5 text-right">Harga Satuan (Porsi Kontrak)</th></tr></thead>
                 <tbody class="divide-y divide-neutral-200 dark:divide-neutral-800">
-                    <tr v-for="t in spk.terms" :key="t.id"><td class="px-4 py-2">{{ t.description ?? '—' }}</td><td class="px-4 py-2 text-right">{{ t.percentage }}%</td><td class="px-4 py-2 text-right font-mono">{{ fmtRp(t.amount) }}</td><td class="px-4 py-2">{{ fmtDate(t.due_date) }}</td></tr>
+                    <tr v-for="(u, i) in spk.units" :key="u.id"><td class="px-4 py-2 tabular-nums text-neutral-500">{{ i + 1 }}</td><td class="px-4 py-2 font-mono font-medium">{{ u.unit_code }}</td><td class="px-4 py-2 text-right font-mono">{{ fmtRp(u.unit_price) }}</td></tr>
+                </tbody>
+            </table>
+        </div>
+
+        <!-- Detil DP (Termin Pembayaran) -->
+        <div v-if="spk.terms?.length" class="card overflow-hidden">
+            <div class="border-b border-neutral-200 px-4 py-3 font-semibold dark:border-neutral-800">Detil DP (Termin Pembayaran)</div>
+            <table class="w-full text-sm">
+                <thead class="bg-neutral-50 dark:bg-neutral-800"><tr class="text-left text-xs uppercase text-neutral-500"><th class="px-4 py-2.5">Keterangan</th><th class="px-4 py-2.5">Jatuh Tempo</th><th class="px-4 py-2.5 text-right">Progress / %</th><th class="px-4 py-2.5 text-right">Nominal</th></tr></thead>
+                <tbody class="divide-y divide-neutral-200 dark:divide-neutral-800">
+                    <tr v-for="t in spk.terms" :key="t.id"><td class="px-4 py-2">{{ t.description ?? '—' }}</td><td class="px-4 py-2">{{ fmtDate(t.due_date) }}</td><td class="px-4 py-2 text-right">{{ t.percentage }}%</td><td class="px-4 py-2 text-right font-mono">{{ fmtRp(t.amount) }}</td></tr>
+                </tbody>
+            </table>
+        </div>
+
+        <!-- Detil Progress (dari Kontrol Progress Lapangan) -->
+        <div v-if="progressRows.length" class="card overflow-x-auto">
+            <div class="border-b border-neutral-200 px-4 py-3 font-semibold dark:border-neutral-800">Detil Progress</div>
+            <table class="w-full text-sm">
+                <thead class="bg-neutral-50 dark:bg-neutral-800"><tr class="text-left text-xs uppercase text-neutral-500">
+                    <th class="px-3 py-2.5 w-12">No</th><th class="px-3 py-2.5">Tgl Progress</th><th class="px-3 py-2.5">No. Manual / KPL</th><th class="px-3 py-2.5">Kategori</th>
+                    <th class="px-3 py-2.5 text-right">Progress Lama</th><th class="px-3 py-2.5 text-right">Mutasi Progresi</th><th class="px-3 py-2.5 text-right">Progress Terakhir</th>
+                    <th class="px-3 py-2.5 text-right">Realisasi Biaya</th><th class="px-3 py-2.5">Keterangan</th>
+                </tr></thead>
+                <tbody class="divide-y divide-neutral-200 dark:divide-neutral-800">
+                    <tr v-for="p in progressRows" :key="p.id" class="hover:bg-neutral-50 dark:hover:bg-neutral-800/50">
+                        <td class="px-3 py-2 tabular-nums text-neutral-500">{{ p.no }}</td>
+                        <td class="px-3 py-2">{{ fmtDate(p.progress_date) }}</td>
+                        <td class="px-3 py-2 font-mono text-xs">{{ p.no_manual || p.kpl_number || '—' }}</td>
+                        <td class="px-3 py-2">{{ catLabel[p.category] ?? p.category ?? 'Housing' }}</td>
+                        <td class="px-3 py-2 text-right tabular-nums text-neutral-500">{{ fmtPct(p.lama_pct) }}</td>
+                        <td class="px-3 py-2 text-right tabular-nums font-semibold text-primary-600">{{ fmtPct(p.mutasi_pct) }}</td>
+                        <td class="px-3 py-2 text-right tabular-nums">{{ fmtPct(p.terakhir_pct) }}</td>
+                        <td class="px-3 py-2 text-right font-mono">{{ fmtRp(p.progress_value) }}</td>
+                        <td class="px-3 py-2 text-neutral-500">{{ p.description }}</td>
+                    </tr>
                 </tbody>
             </table>
         </div>

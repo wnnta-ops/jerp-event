@@ -1,9 +1,12 @@
 <script setup lang="ts">
 import { reactive, ref, computed, onMounted, nextTick } from 'vue';
-import { Link } from '@inertiajs/vue3';
-import { ArrowLeft, Printer, Plus, Trash2, RotateCcw } from 'lucide-vue-next';
+import { Link, router } from '@inertiajs/vue3';
+import { ArrowLeft, Printer, Plus, Trash2, RotateCcw, Save } from 'lucide-vue-next';
+import PrintLayout from '@/Layouts/PrintLayout.vue';
 
-const props = defineProps<{ spk: any; company: Record<string, any>; jenisOpts: Record<string, string> }>();
+defineOptions({ layout: PrintLayout });
+
+const props = defineProps<{ spk: any; company: Record<string, any>; jenisOpts: Record<string, string>; draft?: any; saved?: any }>();
 
 // ── Helpers ──
 function fmtRpNum(v: any) { return Number(v ?? 0).toLocaleString('id-ID'); }
@@ -43,9 +46,32 @@ const s = props.spk;
 const jenisLabel = props.jenisOpts?.[s.jenis] ?? s.jenis ?? '—';
 const nilai = Number(s.contract_value) || 0;
 const durasi = daysBetween(s.est_start, s.est_end);
+const kota = props.company?.city || 'Sidoarjo';
+
+// ── Substitusi placeholder untuk draft "Set Up SPK" ──
+const subMap: Record<string, string> = {
+    '{pekerjaan}': s.title || '—',
+    '{jenis}': jenisLabel,
+    '{proyek}': s.project?.name || '—',
+    '{nilai_rp}': fmtRp(nilai),
+    '{nilai_terbilang}': (capit(terbilang(nilai)) + ' rupiah').trim(),
+    '{ppn_note}': s.is_pkp ? `sudah termasuk PPN ${Number(s.ppn_pct)}%` : 'bersifat Non-PKP',
+    '{durasi}': durasi ? String(durasi) : '……',
+    '{durasi_terbilang}': durasi ? capit(terbilang(durasi)) : '……',
+    '{periode_note}': (s.est_start && s.est_end) ? `terhitung sejak ${fmtTgl(s.est_start)} sampai dengan ${fmtTgl(s.est_end)}` : 'sesuai jadwal pelaksanaan',
+    '{dp}': String(Number(s.advance_pct) || 0),
+    '{retensi}': String(Number(s.retention_pct) || 5),
+    '{kota}': kota,
+    '{tanggal}': fmtTgl(s.spk_date) || '……',
+};
+function subst(t: any): string { return String(t ?? '').replace(/\{[a-z_]+\}/g, (m) => subMap[m] ?? m); }
 
 // ── Default pasal (bisa diedit / dihapus sebagian) ──
 function defaultPasals() {
+    const d = props.draft;
+    if (d?.pasals?.length) {
+        return d.pasals.map((p: any) => ({ title: subst(p.title), body: subst(p.body) }));
+    }
     return [
         { title: 'PASAL 1 — LINGKUP PEKERJAAN', body:
             `PIHAK PERTAMA memberikan pekerjaan kepada PIHAK KEDUA, dan PIHAK KEDUA menerima pekerjaan berupa: ${s.title || '—'}`
@@ -81,13 +107,16 @@ function defaultPasals() {
 }
 
 function makeState() {
+    const d = props.draft;
     return {
-        judul: 'SURAT PERINTAH KERJA',
-        subjudul: '(SPK)',
+        judul: d?.judul || 'SURAT PERINTAH KERJA',
+        subjudul: d?.subjudul || '(SPK)',
         nomor: s.no_manual || s.spk_number || '',
         tanggal: s.spk_date ?? '',
-        tempat: props.company?.city || 'Sidoarjo',
-        pembukaan: `Pada hari ini ${fmtTgl(s.spk_date) || '……'}, bertempat di ${props.company?.city || '……'}, yang bertanda tangan di bawah ini:`,
+        tempat: d?.tempat || kota,
+        pembukaan: d?.pembukaan
+            ? subst(d.pembukaan)
+            : `Pada hari ini ${fmtTgl(s.spk_date) || '……'}, bertempat di ${kota}, yang bertanda tangan di bawah ini:`,
         pihak1: {
             nama: props.company?.signer_name || '', jabatan: props.company?.signer_title || 'Direktur',
             perusahaan: props.company?.name || '', alamat: props.company?.address || '',
@@ -109,8 +138,10 @@ function makeState() {
     };
 }
 
-const f = reactive<any>(makeState());
-function resetAll() { if (confirm('Kembalikan seluruh isi SPK ke default? Semua editan akan hilang.')) Object.assign(f, makeState()); nextTick(autosizeAll); }
+// Seed dari dokumen tersimpan (print_payload per-SPK) bila ada; jika tidak, dari draft Set Up SPK.
+const hasSaved = props.saved && typeof props.saved === 'object' && Object.keys(props.saved).length > 0;
+const f = reactive<any>(hasSaved ? { ...makeState(), ...props.saved } : makeState());
+function resetAll() { if (confirm('Kembalikan seluruh isi SPK ke default (draft Set Up SPK)? Semua editan akan hilang.')) { Object.assign(f, makeState()); nextTick(autosizeAll); } }
 
 const rincianTotal = computed(() => f.rincian.reduce((sum: number, r: any) => sum + (Number(r.volume) || 0) * (Number(r.harga) || 0), 0));
 function rowJumlah(r: any) { return (Number(r.volume) || 0) * (Number(r.harga) || 0); }
@@ -127,6 +158,21 @@ function autosizeAll() { document.querySelectorAll<HTMLTextAreaElement>('.spk-do
 onMounted(() => nextTick(autosizeAll));
 
 function cetak() { window.print(); }
+
+// Simpan dokumen (editan) per-SPK → dipakai kembali saat membuka Cetak SPK ini lagi.
+const saving = ref(false);
+const justSaved = ref(false);
+let savedTimer: any;
+function simpan() {
+    saving.value = true;
+    justSaved.value = false;
+    router.put(route('bs.spk.print.save', s.id), { payload: JSON.parse(JSON.stringify(f)) }, {
+        preserveScroll: true,
+        preserveState: true,
+        onSuccess: () => { justSaved.value = true; clearTimeout(savedTimer); savedTimer = setTimeout(() => { justSaved.value = false; }, 2500); },
+        onFinish: () => { saving.value = false; },
+    });
+}
 </script>
 
 <template>
@@ -137,6 +183,7 @@ function cetak() { window.print(); }
             <div class="flex items-center gap-2">
                 <span class="hidden text-xs text-neutral-400 sm:inline">Klik teks mana pun untuk mengedit — hanya pasal yang perlu.</span>
                 <button @click="resetAll" class="inline-flex h-9 items-center gap-1.5 rounded-lg border border-neutral-300 px-3 text-sm font-medium text-neutral-600 hover:bg-neutral-50 dark:border-neutral-700 dark:text-neutral-300"><RotateCcw class="h-4 w-4" /> Reset</button>
+                <button @click="simpan" :disabled="saving" class="inline-flex h-9 items-center gap-1.5 rounded-lg border border-success-500 px-3 text-sm font-semibold text-success-600 hover:bg-success-500/10 disabled:opacity-50 dark:hover:bg-success-500/20"><Save class="h-4 w-4" /> {{ saving ? 'Menyimpan…' : (justSaved ? 'Tersimpan ✓' : 'Simpan') }}</button>
                 <button @click="cetak" class="inline-flex h-10 items-center gap-2 rounded-lg bg-primary-600 px-5 text-base font-bold text-white shadow-sm hover:bg-primary-700"><Printer class="h-5 w-5" /> Cetak</button>
             </div>
         </div>

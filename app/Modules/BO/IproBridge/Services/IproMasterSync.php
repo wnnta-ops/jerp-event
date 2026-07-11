@@ -445,6 +445,7 @@ class IproMasterSync
             'booking_date'      => $k->tgl_kontrak ?? $now->toDateString(),
             'base_price'        => $base,
             'discount_amount'   => $diskon,
+            'free_dp_amount'    => (float) ($k->free_dp_amount ?? 0),
             'ppn_amount'        => $ppn,
             'total_price'       => $total,
             'status'            => $statusMap[$k->status ?? 'DRAFT'] ?? 'draft',
@@ -504,6 +505,13 @@ class IproMasterSync
     }
 
     /** Replace payment_schedules dari fo_kontrak_tagihan. */
+    /**
+     * Sinkron jadwal tagihan FO → ipro_bo.payment_schedules secara REKONSILIASI (bukan delete+insert),
+     * agar id payment_schedules yang direferensi tabel lain (tts_allocations, payment_allocations,
+     * dendas, pjt_details, tunggakan_details) TIDAK dilanggar FK. Baris dicocokkan per kunci
+     * (payment_type|label|#urutan-kemunculan): cocok → update in-place (id tetap), baru → insert,
+     * sisa existing → hapus HANYA yang tak direferensi.
+     */
     private function syncSchedules(int $bookingId, int $foKontrakId, object $k): void
     {
         // PaymentType enum ipro-fo (varchar 5): BF, DP, ANG, ADM. LAIN→ANG.
@@ -511,32 +519,85 @@ class IproMasterSync
         $now = Carbon::now();
         $fallbackDue = $k->tgl_kontrak ?? $now->toDateString();
 
-        $this->db()->table('payment_schedules')->where('booking_id', $bookingId)->delete();
-
-        $rows = [];
+        // Baris yang diinginkan dari tagihan FO (dengan kunci pencocokan stabil).
+        $desired = [];
         $i = 0;
+        $dCounters = [];
         foreach (DB::table('fo_kontrak_tagihan')->where('kontrak_id', $foKontrakId)->orderBy('urutan')->get() as $t) {
             $i++;
             $nilai = (float) ($t->nilai ?? 0);
             $bayar = (float) ($t->pelunasan ?? 0);
-            $rows[] = [
-                'booking_id'     => $bookingId,
-                'installment_no' => $t->urutan ?: $i,
-                'sequence'       => $i,
-                'payment_type'   => $typeMap[$t->tipe ?? 'ANG'] ?? 'ANG',
-                'label'          => $t->nama_tagihan ?? null,
-                'due_date'       => $t->jatuh_tempo ?? $fallbackDue,
-                'amount'         => $nilai,
-                'paid_amount'    => $bayar,
-                'status'         => ($nilai > 0 && $bayar >= $nilai) ? 'paid' : 'outstanding',
-                'created_at'     => $now,
-                'updated_at'     => $now,
+            $type = $typeMap[$t->tipe ?? 'ANG'] ?? 'ANG';
+            $label = $t->nama_tagihan ?? null;
+            $desired[] = [
+                'key'  => $this->scheduleKey($type, $label, $dCounters),
+                'data' => [
+                    'booking_id'     => $bookingId,
+                    'installment_no' => $t->urutan ?: $i,
+                    'sequence'       => $i,
+                    'payment_type'   => $type,
+                    'label'          => $label,
+                    'due_date'       => $t->jatuh_tempo ?? $fallbackDue,
+                    'amount'         => $nilai,
+                    'paid_amount'    => $bayar,
+                    'status'         => ($nilai > 0 && $bayar >= $nilai) ? 'paid' : 'outstanding',
+                    'updated_at'     => $now,
+                ],
             ];
         }
 
-        if ($rows) {
-            $this->db()->table('payment_schedules')->insert($rows);
+        // Baris existing → map kunci => id (urut sequence/id agar penomoran kemunculan stabil).
+        $existing = $this->db()->table('payment_schedules')
+            ->where('booking_id', $bookingId)->orderBy('sequence')->orderBy('id')
+            ->get(['id', 'payment_type', 'label']);
+        $existingByKey = [];
+        $eCounters = [];
+        foreach ($existing as $row) {
+            $existingByKey[$this->scheduleKey($row->payment_type, $row->label, $eCounters)] = (int) $row->id;
         }
+
+        // Rekonsiliasi: cocok → update in-place (id tetap → FK aman); baru → insert.
+        $usedIds = [];
+        foreach ($desired as $d) {
+            $id = $existingByKey[$d['key']] ?? null;
+            if ($id) {
+                $this->db()->table('payment_schedules')->where('id', $id)->update($d['data']);
+                $usedIds[] = $id;
+            } else {
+                $this->db()->table('payment_schedules')->insert($d['data'] + ['created_at' => $now]);
+            }
+        }
+
+        // Sisa existing yang tak terpakai: hapus HANYA yang tak direferensi tabel lain.
+        $leftover = array_values(array_diff(
+            array_map(fn ($r) => (int) $r->id, $existing->all()),
+            $usedIds,
+        ));
+        if ($leftover) {
+            $referenced = [];
+            $refTables = ['tts_allocations', 'payment_allocations', 'dendas', 'pjt_details', 'tunggakan_details'];
+            foreach ($refTables as $tbl) {
+                if (! $this->db()->getSchemaBuilder()->hasTable($tbl)) {
+                    continue;
+                }
+                foreach ($this->db()->table($tbl)->whereIn('payment_schedule_id', $leftover)->pluck('payment_schedule_id') as $refId) {
+                    $referenced[(int) $refId] = true;
+                }
+            }
+            $deletable = array_values(array_filter($leftover, fn ($id) => ! isset($referenced[$id])));
+            if ($deletable) {
+                $this->db()->table('payment_schedules')->whereIn('id', $deletable)->delete();
+            }
+        }
+    }
+
+    /** Kunci pencocokan jadwal: payment_type|LABEL|#urutan-kemunculan (menangani label kembar mis. UANG MASUK). */
+    private function scheduleKey(?string $type, ?string $label, array &$counters): string
+    {
+        $base = ($type ?? 'ANG') . '|' . strtoupper(trim((string) $label));
+        $counters[$base] = ($counters[$base] ?? 0) + 1;
+
+        return $base . '|#' . $counters[$base];
     }
 
     /** Upsert TTS (fo_tts) → ipro_bo.tts_receipts. Return id receipt. */

@@ -11,10 +11,12 @@ use App\Domain\BusinessSupport\Models\BsSupplier;
 use App\Domain\BusinessSupport\Models\BsWorkOrder;
 use App\Domain\BusinessSupport\Models\BsWorkOrderProgress;
 use App\Domain\BusinessSupport\Services\ContractorService;
+use App\Domain\Foundation\Tenant\Models\Project;
 use App\Exceptions\BusinessRuleException;
 use App\Http\Controllers\Controller;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -93,6 +95,8 @@ class ContractorController extends Controller
                 ->where(fn ($q) => $q->where('code', 'like', '10104%')->orWhere('type', 'expense'))
                 ->orderBy('code')->get(['id', 'code', 'name']),
             'defaultConstruction' => BsAccount::where('code', config('business_support.contractor.construction'))->value('id'),
+            // Project master (Sales) sebagai sumber unit rumah untuk alokasi Detil Pekerjaan per unit.
+            'salesProjects' => Project::orderBy('name')->get(['id', 'name'])->map(fn ($p) => ['id' => $p->id, 'name' => $p->name])->values(),
         ]);
     }
 
@@ -102,22 +106,23 @@ class ContractorController extends Controller
 
         $v = $request->validate([
             'spk_date'                => ['required', 'date'],
-            'no_manual'               => ['nullable', 'string', 'max:50'],
-            'est_start'               => ['nullable', 'date'],
-            'est_end'                 => ['nullable', 'date'],
-            'project_id'              => ['nullable', 'integer', 'exists:bs_projects,id'],
-            'jenis'                   => ['nullable', 'in:bangunan,sarana_prasarana,lain_lain'],
+            'no_manual'               => ['required', 'string', 'max:50'],
+            'est_start'               => ['required', 'date'],
+            'est_end'                 => ['required', 'date', 'after_or_equal:est_start'],
+            'project_id'              => ['required', 'integer', 'exists:bs_projects,id'],
+            'jenis'                   => ['required', 'in:bangunan,sarana_prasarana,lain_lain'],
             'supplier_id'             => ['required', 'integer', 'exists:bs_suppliers,id'],
-            'cost_center_id'          => ['nullable', 'integer', 'exists:bs_cost_centers,id'],
+            'cost_center_id'          => ['required', 'integer', 'exists:bs_cost_centers,id'],
             'construction_account_id' => ['required', 'integer', 'exists:bs_accounts,id'],
             'title'                   => ['required', 'string', 'max:200'],
             'releaser'                => ['nullable', 'string', 'max:100'],
             'pic_project'             => ['nullable', 'string', 'max:100'],
             'is_pkp'                  => ['nullable', 'boolean'],
             'contract_value'          => ['required', 'numeric', 'min:0.01'],
-            'retention_pct'           => ['nullable', 'numeric', 'min:0', 'max:100'],
-            'advance_pct'             => ['nullable', 'numeric', 'min:0', 'max:100'],
-            'ppn_pct'                 => ['nullable', 'numeric', 'min:0', 'max:100'],
+            'nominal_profit'          => ['nullable', 'numeric', 'min:0'],
+            'retention_pct'           => ['required', 'numeric', 'min:0', 'max:100'],
+            'advance_pct'             => ['required', 'numeric', 'min:0', 'max:100'],
+            'ppn_pct'                 => ['required', 'numeric', 'min:0', 'max:100'],
             'notes'                   => ['nullable', 'string', 'max:255'],
             'items'                   => ['nullable', 'array'],
             'items.*.description'     => ['nullable', 'string', 'max:200'],
@@ -129,6 +134,10 @@ class ContractorController extends Controller
             'terms.*.percentage'      => ['nullable', 'numeric', 'min:0', 'max:100'],
             'terms.*.amount'          => ['nullable', 'numeric', 'min:0'],
             'terms.*.due_date'        => ['nullable', 'date'],
+            'units'                   => ['nullable', 'array'],
+            'units.*.unit_id'         => ['required', 'integer', 'distinct', Rule::exists('units', 'id')->where('tenant_id', tenant_id())],
+            'units.*.unit_code'       => ['nullable', 'string', 'max:50'],
+            'units.*.unit_price'      => ['nullable', 'numeric', 'min:0'],
         ]);
 
         $wo = $svc->createSpk($v, $request->user()->id);
@@ -145,6 +154,7 @@ class ContractorController extends Controller
                 'supplier:id,code,name', 'costCenter:id,code,name', 'project:id,code,name',
                 'items' => fn ($q) => $q->orderBy('seq')->orderBy('id'),
                 'terms' => fn ($q) => $q->orderBy('seq')->orderBy('id'),
+                'units' => fn ($q) => $q->orderBy('seq')->orderBy('id'),
                 'progress' => fn ($q) => $q->orderBy('progress_date')->orderBy('id'),
                 'addendums' => fn ($q) => $q->orderBy('addendum_date')->orderBy('id'),
                 'materials' => fn ($q) => $q->orderBy('usage_date')->orderBy('id'),
@@ -177,11 +187,29 @@ class ContractorController extends Controller
             'terms' => fn ($q) => $q->orderBy('seq')->orderBy('id'),
         ]);
 
+        $draft = \App\Domain\BusinessSupport\Models\BsSpkDraft::query()->first();
+
         return Inertia::render('BusinessSupport/Contractor/Print', [
             'spk'       => $workOrder,
             'company'   => config('business_support.company'),
             'jenisOpts' => BsWorkOrder::JENIS,
+            'draft'     => $draft?->only(['judul', 'subjudul', 'tempat', 'pembukaan', 'pasals']),
+            'saved'     => $workOrder->print_payload,
         ]);
+    }
+
+    /** Simpan editan dokumen Cetak SPK per-SPK (dari tombol "Simpan" di Cetak SPK). */
+    public function printSave(Request $request, BsWorkOrder $workOrder): RedirectResponse
+    {
+        abort_unless($request->user()?->canModule('contractor'), 403);
+
+        $payload = $request->validate([
+            'payload' => ['required', 'array'],
+        ])['payload'];
+
+        $workOrder->update(['print_payload' => $payload]);
+
+        return back()->with('success', 'Dokumen SPK tersimpan.');
     }
 
     public function mutateProgress(Request $request, BsWorkOrder $workOrder, ContractorService $svc): RedirectResponse
