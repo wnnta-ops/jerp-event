@@ -35,6 +35,8 @@ return [
         'expense'    => '50101010101', // Beban Pokok Penjualan
         'ppn_in'     => '10105010101', // PPN Masukan
         'ppn_out'    => '20104040406', // PPN Keluaran
+        'ppn_out_pending' => '20104040409', // PPN Keluaran Akan Diterbitkan — Booked Revenue
+        'sales_discount'  => '40102020201', // Diskon Penjualan — Booked Revenue
         'cash'       => '10101020204', // Bank — BCA REK. 6155428914
         'cogs'       => '50101010101', // Beban Pokok Penjualan (HPP)
         'giro_in'    => '10102010102', // Piutang Giro (cek/giro masuk)
