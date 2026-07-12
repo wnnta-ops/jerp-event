@@ -442,6 +442,7 @@ class IproMasterSync
             'customer_id'       => $custId,
             'unit_id'           => $unitId,
             'payment_scheme_id' => $this->iproPaymentSchemeId($typeMap[$k->cara_bayar ?? 'KPR'] ?? 'kpr'),
+            'scheme_name'       => $k->skema?->name,   // nama skema FO asli (mis. "KPR FREE DP", "CASH 3X")
             'booking_date'      => $k->tgl_kontrak ?? $now->toDateString(),
             'base_price'        => $base,
             'discount_amount'   => $diskon,
