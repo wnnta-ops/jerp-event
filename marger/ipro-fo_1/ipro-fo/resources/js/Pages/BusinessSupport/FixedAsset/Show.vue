@@ -17,7 +17,13 @@ const canOpening = computed(() => isLive.value && props.asset.category !== 'tana
 const bookValue = computed(() => Number(props.asset.book_value) || 0);
 
 const action = ref<'' | 'depreciate' | 'sell' | 'dispose' | 'opening'>('');
-const depForm = useForm<any>({ year: props.now.year, month: props.now.month });
+const depForm = useForm<any>({ year: props.now.year, month: props.now.month, end_year: props.now.year, end_month: props.now.month });
+// Jumlah bulan yang akan diposting (bulan awal s/d bulan akhir, inklusif). <1 = periode tidak valid.
+const depMonths = computed(() => {
+    const s = Number(depForm.year) * 12 + (Number(depForm.month) - 1);
+    const e = Number(depForm.end_year) * 12 + (Number(depForm.end_month) - 1);
+    return e >= s ? e - s + 1 : 0;
+});
 const sellForm = useForm<any>({ disposed_date: props.today, proceeds: 0, cash_account_id: '', note: '' });
 const dispForm = useForm<any>({ disposed_date: props.today, note: '' });
 // Default "Per Tanggal" saldo awal = Tgl Perolehan aset (Y-m-d dari server), tetap bisa diedit.
@@ -76,12 +82,29 @@ const inputCls = 'h-9 w-full rounded-lg border border-neutral-300 bg-white px-3 
                 <button v-if="canOpening" @click="action = action === 'opening' ? '' : 'opening'" class="inline-flex items-center gap-1.5 rounded-lg border px-3 py-2 text-sm font-medium" :class="action === 'opening' ? 'border-primary-500 bg-primary-50 text-primary-700 dark:bg-primary-900/20 dark:text-primary-300' : 'border-neutral-300 dark:border-neutral-700'"><History class="h-4 w-4" /> Saldo Awal Penyusutan</button>
             </div>
 
-            <!-- Susutkan periode -->
-            <form v-if="action === 'depreciate'" @submit.prevent="doDep" class="mt-4 flex flex-wrap items-end gap-3 border-t border-neutral-200 pt-4 dark:border-neutral-800">
-                <div><label class="mb-1 block text-xs font-medium text-neutral-500">Tahun</label><input v-model.number="depForm.year" type="number" required :class="[inputCls,'w-28']" /></div>
-                <div><label class="mb-1 block text-xs font-medium text-neutral-500">Bulan</label><input v-model.number="depForm.month" type="number" min="1" max="12" required :class="[inputCls,'w-20']" /></div>
-                <Button type="submit" :disabled="depForm.processing">Posting Penyusutan</Button>
-                <p class="w-full text-xs text-neutral-400">Jurnal: Dr Beban Penyusutan · Cr Akumulasi Penyusutan — {{ fmtRp(asset.monthly_depreciation) }}</p>
+            <!-- Susutkan rentang periode (bulan awal s/d bulan akhir) -->
+            <form v-if="action === 'depreciate'" @submit.prevent="doDep" class="mt-4 space-y-3 border-t border-neutral-200 pt-4 dark:border-neutral-800">
+                <div class="grid gap-3 sm:max-w-2xl sm:grid-cols-2">
+                    <div class="rounded-lg border border-neutral-200 p-3 dark:border-neutral-800">
+                        <p class="mb-2 text-[11px] font-semibold uppercase tracking-wide text-neutral-500">Bulan Awal</p>
+                        <div class="flex items-end gap-2">
+                            <div><label class="mb-1 block text-[11px] text-neutral-500">Tahun</label><input v-model.number="depForm.year" type="number" required :class="[inputCls,'w-24']" /></div>
+                            <div><label class="mb-1 block text-[11px] text-neutral-500">Bulan</label><input v-model.number="depForm.month" type="number" min="1" max="12" required :class="[inputCls,'w-16']" /></div>
+                        </div>
+                    </div>
+                    <div class="rounded-lg border border-neutral-200 p-3 dark:border-neutral-800">
+                        <p class="mb-2 text-[11px] font-semibold uppercase tracking-wide text-neutral-500">Bulan Akhir</p>
+                        <div class="flex items-end gap-2">
+                            <div><label class="mb-1 block text-[11px] text-neutral-500">Tahun</label><input v-model.number="depForm.end_year" type="number" required :class="[inputCls,'w-24']" /></div>
+                            <div><label class="mb-1 block text-[11px] text-neutral-500">Bulan</label><input v-model.number="depForm.end_month" type="number" min="1" max="12" required :class="[inputCls,'w-16']" /></div>
+                        </div>
+                    </div>
+                </div>
+                <div class="flex flex-wrap items-center gap-3">
+                    <Button type="submit" :disabled="depForm.processing || depMonths < 1">Posting Penyusutan</Button>
+                    <p v-if="depMonths < 1" class="text-xs font-medium text-danger-500">Bulan akhir tidak boleh sebelum bulan awal.</p>
+                    <p v-else class="text-xs text-neutral-400">{{ depMonths }} bulan · Dr Beban Penyusutan · Cr Akumulasi Penyusutan — {{ fmtRp(asset.monthly_depreciation) }}/bulan (± {{ fmtRp(asset.monthly_depreciation * depMonths) }}).</p>
+                </div>
             </form>
 
             <!-- Jual aset -->
