@@ -100,18 +100,24 @@ class BookedRevenueController extends Controller
             'customer_name' => $unitCustomer->get($u->id)?->customer?->full_name,
         ]);
 
-        // Pencairan Proses KPR per UNIT (Σ disbursed_amount realisasi akad, via booking→KPR) → dasar UM Penjualan.
-        // Di-scope per unit (bukan per customer) agar customer dgn >1 unit KPR tidak saling menumpuk pencairan.
-        $pencairan = \App\Domain\BankLoan\Models\KprRealization::query()
+        // Pencairan Proses KPR per UNIT (Σ disbursed_amount realisasi akad) → dasar UM Penjualan.
+        // Di-scope ke booking TERAKHIR per unit (sama dgn sumber gross/diskon/customer di atas) supaya:
+        //  - booking lama yg dibatalkan (status cancelled, belum soft-delete) tidak ikut menumpuk;
+        //  - customer dgn >1 unit KPR tidak saling menumpuk pencairan.
+        // Realisasi yg ditolak (approval_status='rejected') dikecualikan (null = menunggu/disetujui).
+        $bookingIdByUnit = $unitCustomer->map(fn ($b) => $b->id);           // unit_id => booking terakhir
+        $pencairanByBooking = \App\Domain\BankLoan\Models\KprRealization::query()
             ->join('kpr_applications', 'kpr_applications.id', '=', 'kpr_realizations.kpr_application_id')
-            ->join('bookings', 'bookings.id', '=', 'kpr_applications.booking_id')
             ->where('kpr_applications.tenant_id', tenant_id())
             ->whereNull('kpr_applications.deleted_at')
-            ->whereNull('bookings.deleted_at')
-            ->whereNotNull('bookings.unit_id')
-            ->groupBy('bookings.unit_id')
-            ->selectRaw('bookings.unit_id AS uid, SUM(kpr_realizations.disbursed_amount) AS total')
-            ->pluck('total', 'uid');
+            ->whereNull('kpr_realizations.approval_status')
+            ->whereIn('kpr_applications.booking_id', $bookingIdByUnit->values())
+            ->groupBy('kpr_applications.booking_id')
+            ->selectRaw('kpr_applications.booking_id AS bid, SUM(kpr_realizations.disbursed_amount) AS total')
+            ->pluck('total', 'bid');
+        $pencairan = $bookingIdByUnit->mapWithKeys(
+            fn ($bid, $unitId) => [$unitId => (float) ($pencairanByBooking[$bid] ?? 0)]
+        );
 
         $accCode = fn (string $key) => (int) (BsAccount::where('code', config("business_support.gl_accounts.{$key}"))->value('id') ?? 0);
 
