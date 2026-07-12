@@ -82,7 +82,7 @@ class BookedRevenueController extends Controller
             ->whereNull('deleted_at')
             ->with('customer:id,code,full_name')
             ->latest('id')
-            ->get(['id', 'unit_id', 'customer_id'])
+            ->get(['id', 'unit_id', 'customer_id', 'base_price', 'discount_amount'])
             ->groupBy('unit_id')
             ->map(fn ($g) => $g->first());
 
@@ -91,11 +91,27 @@ class BookedRevenueController extends Controller
             'code'          => $u->unit_code,
             'cluster'       => $u->cluster?->name,
             'price'         => (float) ($u->current_price ?: $u->base_price),
+            // Pricelist GROSS & DISKON dari SPR (booking) — dasar hitungan jurnal Booked Revenue.
+            'gross'         => (float) ($unitCustomer->get($u->id)?->base_price ?: ($u->current_price ?: $u->base_price)),
+            'diskon'        => (float) ($unitCustomer->get($u->id)?->discount_amount ?: 0),
             'status'        => $u->status instanceof \BackedEnum ? $u->status->value : $u->status,
             // Collection->get(): null-safe bila unit tsb belum punya booking (hindari "Undefined array key").
             'customer_id'   => $unitCustomer->get($u->id)?->customer_id,
             'customer_name' => $unitCustomer->get($u->id)?->customer?->full_name,
         ]);
+
+        // Pencairan Proses KPR per UNIT (Σ disbursed_amount realisasi akad, via booking→KPR) → dasar UM Penjualan.
+        // Di-scope per unit (bukan per customer) agar customer dgn >1 unit KPR tidak saling menumpuk pencairan.
+        $pencairan = \App\Domain\BankLoan\Models\KprRealization::query()
+            ->join('kpr_applications', 'kpr_applications.id', '=', 'kpr_realizations.kpr_application_id')
+            ->join('bookings', 'bookings.id', '=', 'kpr_applications.booking_id')
+            ->where('kpr_applications.tenant_id', tenant_id())
+            ->whereNull('kpr_applications.deleted_at')
+            ->whereNull('bookings.deleted_at')
+            ->whereNotNull('bookings.unit_id')
+            ->groupBy('bookings.unit_id')
+            ->selectRaw('bookings.unit_id AS uid, SUM(kpr_realizations.disbursed_amount) AS total')
+            ->pluck('total', 'uid');
 
         $accCode = fn (string $key) => (int) (BsAccount::where('code', config("business_support.gl_accounts.{$key}"))->value('id') ?? 0);
 
@@ -108,11 +124,17 @@ class BookedRevenueController extends Controller
             // COA dari General Ledger (akun postable) untuk jurnal manual.
             'accounts'    => BsAccount::where('is_active', true)->where('is_postable', true)
                 ->orderBy('code')->get(['id', 'code', 'name', 'normal_balance']),
-            // Akun default untuk prefill baris jurnal (boleh diganti user).
+            // Pencairan KPR per customer + unit terpilih dari list Belum (auto-follow).
+            'pencairan'   => $pencairan,
+            'preselect'   => $request->integer('unit_id') ?: null,
+            // Akun default untuk prefill baris jurnal Booked Revenue (boleh diganti user).
             'prefill'     => [
-                'receivable_id' => $accCode('receivable'),
-                'deferred_id'   => $accCode('unearned_revenue'),
-                'ppn_out_id'    => $accCode('ppn_out'),
+                'piutang_id'      => $accCode('receivable'),        // Piutang Usaha
+                'diskon_id'       => $accCode('sales_discount'),    // Diskon Penjualan
+                'um_id'           => $accCode('unearned_revenue'),  // UM / Uang Muka Penjualan
+                'ppn_keluaran_id' => $accCode('ppn_out'),           // PPN Keluaran
+                'penjualan_id'    => $accCode('income'),            // Penjualan
+                'ppn_pending_id'  => $accCode('ppn_out_pending'),   // PPN Keluaran Akan Diterbitkan
             ],
         ]);
     }
@@ -130,11 +152,11 @@ class BookedRevenueController extends Controller
             'units'            => ['required', 'array', 'min:1'],
             'units.*.unit_id'  => ['required', 'integer', 'distinct', 'exists:units,id'],
             'units.*.discount' => ['nullable', 'numeric', 'min:0'],
-            // Jurnal manual: maks 3 baris debit + 3 baris kredit.
-            'debits'              => ['array', 'max:3'],
+            // Jurnal manual Booked Revenue: hingga 4 baris debit + 3 baris kredit.
+            'debits'              => ['array', 'max:6'],
             'debits.*.account_id' => ['nullable', 'integer', 'exists:bs_accounts,id'],
             'debits.*.amount'     => ['nullable', 'numeric', 'min:0'],
-            'credits'              => ['array', 'max:3'],
+            'credits'              => ['array', 'max:6'],
             'credits.*.account_id' => ['nullable', 'integer', 'exists:bs_accounts,id'],
             'credits.*.amount'     => ['nullable', 'numeric', 'min:0'],
         ], [

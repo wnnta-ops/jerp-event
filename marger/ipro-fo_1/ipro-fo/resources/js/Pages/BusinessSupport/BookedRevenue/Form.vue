@@ -8,61 +8,87 @@ import SearchSelect from '@/Components/UI/SearchSelect.vue';
 
 const props = defineProps<{
     customers: Array<{ id: number; code: string; name: string }>;
-    units: Array<{ id: number; code: string; cluster?: string; price: number; status: string; customer_id?: number; customer_name?: string }>;
+    units: Array<{ id: number; code: string; cluster?: string; price: number; gross?: number; diskon?: number; status: string; customer_id?: number; customer_name?: string }>;
     bookedCount: number;
-    costCenters: Array<{ id: number; code: string; name: string }>;
     accounts: Array<{ id: number; code: string; name: string; normal_balance: string }>;
-    prefill: { receivable_id: number; deferred_id: number; ppn_out_id: number };
+    pencairan: Record<number, number>;   // { unit_id: total pencairan Proses KPR }
+    preselect?: number | null;           // unit_id dari list Belum Booked Revenue (auto-follow)
+    prefill: { piutang_id: number; diskon_id: number; um_id: number; ppn_keluaran_id: number; penjualan_id: number; ppn_pending_id: number };
 }>();
 
 function fmtRp(v: number) { return 'Rp ' + Number(v ?? 0).toLocaleString('id-ID'); }
 function fmtNum(v: number) { return (Number(v) || 0).toLocaleString('id-ID'); } // 3000000 → "3.000.000"
 
-// Input diskon: tampilkan dengan pemisah ribuan, simpan sebagai angka, clamp ke harga.
-function onDiscountInput(r: { price: number; discount: number }, e: Event) {
+// Input diskon: tampilkan dengan pemisah ribuan, simpan sebagai angka, clamp ke Gross SPR (dasar semua hitungan).
+function onDiscountInput(r: { price: number; gross?: number; discount: number }, e: Event) {
     const el = e.target as HTMLInputElement;
     const digits = el.value.replace(/\D/g, '');
     let n = digits ? Number(digits) : 0;
-    if (n > r.price) n = r.price;
+    const cap = Number(r.gross ?? r.price) || 0;
+    if (n > cap) n = cap;
     r.discount = n;
     el.value = fmtNum(n); // paksa DOM ke format bertitik (hindari nilai basi)
 }
 
-// Baris unit (hanya yang BELUM pernah di-Booked Revenue) + state checklist & diskon.
-const rows = reactive(props.units.map((u) => ({ ...u, checked: false, discount: 0 })));
+// Baris unit (hanya yang BELUM pernah di-Booked Revenue) + state checklist & diskon (default dari SPR).
+const rows = reactive(props.units.map((u) => ({ ...u, checked: false, discount: Number(u.diskon) || 0 })));
 const selected = computed(() => rows.filter((r) => r.checked));
-// Nilai Revenue (DPP) = (Harga − Diskon/Free DP) ÷ 1,11.
-function revenueOf(r: { price: number; discount: number }) {
-    const g = Number(r.price) || 0;
+// Nilai Revenue (DPP) = (Pricelist Gross SPR − Diskon/Free DP) ÷ 1,11.
+function revenueOf(r: { price: number; gross?: number; discount: number }) {
+    const g = Number(r.gross ?? r.price) || 0;
     const d = Number(r.discount) || 0;
     return Math.max(0, Math.round(((g - d) / 1.11) * 100) / 100);
 }
 const total = computed(() => selected.value.reduce((s, r) => s + revenueOf(r), 0));
 
-// ── Jurnal manual (3 baris debit + 3 baris kredit, COA dari General Ledger) ──
+const today = new Date().toISOString().slice(0, 10);
+const form = useForm<any>({ booking_date: today, customer_id: '', description: '', units: [] });
+
+// ── Jurnal manual Booked Revenue (hingga 4 baris debit + 3 baris kredit, COA dari General Ledger) ──
 type JLine = { account_id: number | ''; amount: number };
-const debits = reactive<JLine[]>([{ account_id: '', amount: 0 }, { account_id: '', amount: 0 }, { account_id: '', amount: 0 }]);
+const debits = reactive<JLine[]>([{ account_id: '', amount: 0 }, { account_id: '', amount: 0 }, { account_id: '', amount: 0 }, { account_id: '', amount: 0 }]);
 const credits = reactive<JLine[]>([{ account_id: '', amount: 0 }, { account_id: '', amount: 0 }, { account_id: '', amount: 0 }]);
 let journalTouched = false;
 function markTouched() { journalTouched = true; }
 
-// Total nilai untuk prefill: Piutang = Σ(Harga−Diskon); Pendapatan Diterima Dimuka = Σ Revenue; PPN = selisihnya.
-const totalGrossNet = computed(() => selected.value.reduce((s, r) => s + Math.max(0, (Number(r.price) || 0) - (Number(r.discount) || 0)), 0));
-const totalPpn = computed(() => Math.round((totalGrossNet.value - total.value) * 100) / 100);
+// Acuan hitungan (SPR gross/diskon + pencairan Proses KPR customer terpilih).
+const grossSum = computed(() => selected.value.reduce((s, r) => s + (Number(r.gross ?? r.price) || 0), 0));
+const diskonSum = computed(() => selected.value.reduce((s, r) => s + (Number(r.discount) || 0), 0));
+const nettSum = computed(() => grossSum.value - diskonSum.value);
+const dppSum = computed(() => Math.round((nettSum.value / 1.11) * 100) / 100);
+const ppnSprSum = computed(() => Math.round((dppSum.value * 0.11) * 100) / 100);
+// Pencairan Proses KPR dijumlahkan per UNIT terpilih (bukan total customer) → tidak menumpuk unit lain.
+const pencairanSum = computed(() => selected.value.reduce((s, r) => s + Number(props.pencairan?.[r.id] ?? 0), 0));
+// Peringatan: pencairan melebihi Nett → Piutang negatif (jurnal tak bisa diposting).
+const pencairanOver = computed(() => pencairanSum.value > nettSum.value + 0.005);
+const r2 = (x: number) => Math.round(x * 100) / 100;
 
+// Jurnal Booked Revenue sesuai "Alur Jurnal Booked Revenue" (balance dijamin secara aljabar).
 function applyPrefill() {
-    debits[0] = { account_id: props.prefill.receivable_id || '', amount: totalGrossNet.value };
-    debits[1] = { account_id: '', amount: 0 };
-    debits[2] = { account_id: '', amount: 0 };
-    credits[0] = { account_id: props.prefill.deferred_id || '', amount: total.value };
-    credits[1] = { account_id: props.prefill.ppn_out_id || '', amount: totalPpn.value };
-    credits[2] = { account_id: '', amount: 0 };
+    const gross = grossSum.value, diskon = diskonSum.value, penc = pencairanSum.value;
+    const nett = gross - diskon;
+    const um = penc / 1.11;                                  // UM Penjualan
+    const piutang = r2(nett - penc);                         // Piutang Usaha
+    const diskonPenjualan = r2(diskon / 1.11);              // Diskon Penjualan
+    const umPenjualan = r2(um);
+    const ppnKeluaranDebit = r2(um * 0.11);                 // PPN Keluaran (debit)
+    const penjualan = r2(gross / 1.11);                     // Penjualan
+    const ppnKeluaranCredit = r2((um / 1.11) * 0.11);      // PPN Keluaran (kredit)
+    const debitTotal = piutang + diskonPenjualan + umPenjualan + ppnKeluaranDebit;
+    const ppnPending = r2(debitTotal - penjualan - ppnKeluaranCredit); // PPN Keluaran Akan Diterbitkan (plug → balance persis)
+    debits[0] = { account_id: props.prefill.piutang_id || '', amount: piutang };
+    debits[1] = { account_id: props.prefill.diskon_id || '', amount: diskonPenjualan };
+    debits[2] = { account_id: props.prefill.um_id || '', amount: umPenjualan };
+    debits[3] = { account_id: props.prefill.ppn_keluaran_id || '', amount: ppnKeluaranDebit };
+    credits[0] = { account_id: props.prefill.penjualan_id || '', amount: penjualan };
+    credits[1] = { account_id: props.prefill.ppn_keluaran_id || '', amount: ppnKeluaranCredit };
+    credits[2] = { account_id: props.prefill.ppn_pending_id || '', amount: ppnPending };
 }
 function fillFromCalc() { journalTouched = false; applyPrefill(); }
-// Selama user belum menyentuh jurnal, sinkronkan otomatis dari hitungan.
-watch([selected, total], () => { if (!journalTouched) applyPrefill(); }, { deep: true });
+// Auto-sync jurnal dari hitungan selama user belum menyentuh (pencairan kini ikut unit terpilih).
+watch(selected, () => { if (!journalTouched) applyPrefill(); }, { deep: true });
 
-// #36: saat unit dipilih, customer otomatis terisi dari booking unit tsb (bila customer belum dipilih).
+// Customer otomatis terisi dari unit yang dipilih (bila belum dipilih).
 watch(selected, (rows) => {
     if (!form.customer_id) {
         const withCust = rows.find((r: any) => r.customer_id);
@@ -70,8 +96,16 @@ watch(selected, (rows) => {
     }
 }, { deep: true });
 
-const totalDebit = computed(() => debits.reduce((s, r) => s + (Number(r.amount) || 0), 0));
-const totalCredit = computed(() => credits.reduce((s, r) => s + (Number(r.amount) || 0), 0));
+// Auto-follow: unit dari list Belum Booked Revenue (query unit_id) langsung terpilih + customer terisi.
+if (props.preselect) {
+    const pr = rows.find((x) => x.id === props.preselect);
+    if (pr) { pr.checked = true; if (pr.customer_id) form.customer_id = pr.customer_id; }
+}
+
+// Total pakai clamp ≥0: baris negatif (mis. Piutang saat pencairan>nett) DIBUANG saat submit,
+// jadi totals di layar harus mencerminkan yang benar-benar dikirim agar "Balance" tidak menyesatkan.
+const totalDebit = computed(() => debits.reduce((s, r) => s + Math.max(0, Number(r.amount) || 0), 0));
+const totalCredit = computed(() => credits.reduce((s, r) => s + Math.max(0, Number(r.amount) || 0), 0));
 const journalBalanced = computed(() => Math.abs(totalDebit.value - totalCredit.value) < 0.01 && totalDebit.value > 0);
 const filledLines = computed(() => [...debits, ...credits].filter((r) => r.account_id && (Number(r.amount) || 0) > 0).length);
 
@@ -101,9 +135,6 @@ const allFilteredChecked = computed(() => filtered.value.length > 0 && filtered.
 function toggleAll() { const v = !allFilteredChecked.value; filtered.value.forEach((r) => (r.checked = v)); }
 function openPicker() { search.value = ''; showPicker.value = true; }
 
-const today = new Date().toISOString().slice(0, 10);
-const form = useForm<any>({ booking_date: today, customer_id: '', cost_center_id: '', reference: '', description: '', units: [] });
-
 function submit() {
     form.transform((d: any) => ({
         ...d,
@@ -130,8 +161,8 @@ const inputCls = 'h-10 w-full rounded-lg border border-neutral-300 bg-white px-3
                         <p v-if="form.errors.booking_date" class="mt-1 text-xs text-danger-500">{{ form.errors.booking_date }}</p>
                     </div>
                     <div>
-                        <label class="mb-1 block text-xs font-medium text-neutral-500">Cost Center</label>
-                        <select v-model="form.cost_center_id" :class="inputCls"><option value="">—</option><option v-for="c in costCenters" :key="c.id" :value="c.id">{{ c.code }} - {{ c.name }}</option></select>
+                        <label class="mb-1 block text-xs font-medium text-neutral-500">Keterangan</label>
+                        <input v-model="form.description" placeholder="opsional" :class="inputCls" />
                     </div>
                 </div>
                 <div>
@@ -141,16 +172,6 @@ const inputCls = 'h-10 w-full rounded-lg border border-neutral-300 bg-white px-3
                         <option v-for="c in customers" :key="c.id" :value="c.id">{{ c.code }} — {{ c.name }}</option>
                     </select>
                     <p v-if="form.errors.customer_id" class="mt-1 text-xs text-danger-500">{{ form.errors.customer_id }}</p>
-                </div>
-                <div class="grid gap-4 sm:grid-cols-2">
-                    <div>
-                        <label class="mb-1 block text-xs font-medium text-neutral-500">Referensi (Booking/Kontrak)</label>
-                        <input v-model="form.reference" placeholder="opsional" :class="inputCls" />
-                    </div>
-                    <div>
-                        <label class="mb-1 block text-xs font-medium text-neutral-500">Keterangan</label>
-                        <input v-model="form.description" placeholder="opsional" :class="inputCls" />
-                    </div>
                 </div>
             </div>
 
@@ -167,14 +188,14 @@ const inputCls = 'h-10 w-full rounded-lg border border-neutral-300 bg-white px-3
 
                 <table v-if="selected.length" class="w-full text-sm">
                     <thead class="bg-neutral-50 dark:bg-neutral-800"><tr class="text-left text-xs uppercase text-neutral-500">
-                        <th class="px-4 py-2.5">Unit</th><th class="px-4 py-2.5">Cluster</th><th class="px-4 py-2.5">Status</th><th class="px-4 py-2.5 text-right">Harga</th><th class="px-4 py-2.5 text-right">Diskon/Free DP</th><th class="px-4 py-2.5 text-right">Nilai Revenue</th><th class="px-4 py-2.5 w-10"></th>
+                        <th class="px-4 py-2.5">Unit</th><th class="px-4 py-2.5">Cluster</th><th class="px-4 py-2.5">Status</th><th class="px-4 py-2.5 text-right">Harga (Gross SPR)</th><th class="px-4 py-2.5 text-right">Diskon/Free DP</th><th class="px-4 py-2.5 text-right">Nilai Revenue</th><th class="px-4 py-2.5 w-10"></th>
                     </tr></thead>
                     <tbody class="divide-y divide-neutral-100 dark:divide-neutral-800">
                         <tr v-for="r in selected" :key="r.id">
                             <td class="px-4 py-2 font-mono font-medium">{{ r.code }}</td>
                             <td class="px-4 py-2 text-neutral-500">{{ r.cluster ?? '—' }}</td>
                             <td class="px-4 py-2"><span :class="statusColor[r.status] ?? 'text-neutral-500'">{{ r.status }}</span></td>
-                            <td class="px-4 py-2 text-right tabular-nums text-neutral-400">{{ fmtRp(r.price) }}</td>
+                            <td class="px-4 py-2 text-right tabular-nums text-neutral-400">{{ fmtRp(r.gross ?? r.price) }}</td>
                             <td class="px-4 py-2 text-right"><input :value="fmtNum(r.discount)" @input="onDiscountInput(r, $event)" type="text" inputmode="numeric" class="h-8 w-36 rounded border border-neutral-300 bg-white px-2 text-right text-sm tabular-nums dark:border-neutral-700 dark:bg-neutral-900" /></td>
                             <td class="px-4 py-2 text-right tabular-nums font-semibold text-primary-600">{{ fmtRp(revenueOf(r)) }}</td>
                             <td class="px-4 py-2 text-center"><button type="button" @click="r.checked = false" class="text-neutral-400 hover:text-danger-500"><Trash2 class="h-4 w-4" /></button></td>
@@ -195,14 +216,22 @@ const inputCls = 'h-10 w-full rounded-lg border border-neutral-300 bg-white px-3
                 <div class="flex flex-wrap items-center justify-between gap-3 border-b border-neutral-200 px-4 py-3 dark:border-neutral-800">
                     <div>
                         <div class="font-semibold">Jurnal Penambahan (Manual)</div>
-                        <div class="text-xs text-neutral-400">COA terhubung ke General Ledger · maks 3 baris debit + 3 baris kredit · harus balance.</div>
+                        <div class="text-xs text-neutral-400">COA terhubung ke General Ledger · hingga 4 baris debit + 3 baris kredit · harus balance.</div>
                     </div>
                     <button type="button" @click="fillFromCalc" class="inline-flex h-9 items-center gap-1.5 rounded-lg border border-primary-300 bg-primary-50 px-3 text-sm font-medium text-primary-700 hover:bg-primary-100 dark:border-primary-700/50 dark:bg-primary-900/20 dark:text-primary-300"><Wand2 class="h-4 w-4" /> Isi dari hitungan</button>
                 </div>
 
-                <div class="px-4 pt-2 text-xs text-neutral-500">
-                    Acuan: Σ(Harga−Diskon) <b class="tabular-nums">{{ fmtRp(totalGrossNet) }}</b> · Revenue/DPP <b class="tabular-nums">{{ fmtRp(total) }}</b> · PPN 11% <b class="tabular-nums">{{ fmtRp(totalPpn) }}</b>
+                <div class="flex flex-wrap gap-x-4 gap-y-1 px-4 pt-2 text-xs text-neutral-500">
+                    <span>Gross SPR <b class="tabular-nums">{{ fmtRp(grossSum) }}</b></span>
+                    <span>Diskon <b class="tabular-nums">{{ fmtRp(diskonSum) }}</b></span>
+                    <span>Nett <b class="tabular-nums">{{ fmtRp(nettSum) }}</b></span>
+                    <span>DPP <b class="tabular-nums">{{ fmtRp(dppSum) }}</b></span>
+                    <span>PPN SPR <b class="tabular-nums">{{ fmtRp(ppnSprSum) }}</b></span>
+                    <span>Pencairan KPR <b class="tabular-nums">{{ fmtRp(pencairanSum) }}</b></span>
                 </div>
+                <p v-if="pencairanOver" class="px-4 pt-1 text-xs text-amber-600 dark:text-amber-400">
+                    ⚠ Pencairan KPR ({{ fmtRp(pencairanSum) }}) melebihi Nett ({{ fmtRp(nettSum) }}) → Piutang Usaha negatif; jurnal tidak akan balance / tidak bisa diposting. Periksa data pencairan Proses KPR unit ini.
+                </p>
 
                 <div class="grid gap-5 p-4 md:grid-cols-2">
                     <!-- DEBIT -->
@@ -260,7 +289,7 @@ const inputCls = 'h-10 w-full rounded-lg border border-neutral-300 bg-white px-3
                         <table v-if="rows.length" class="w-full text-sm">
                             <thead class="sticky top-0 bg-neutral-50 dark:bg-neutral-800"><tr class="text-left text-xs uppercase text-neutral-500">
                                 <th class="px-5 py-2.5 w-10"><input type="checkbox" :checked="allFilteredChecked" @change="toggleAll" class="h-4 w-4 rounded border-neutral-300" /></th>
-                                <th class="px-3 py-2.5">Unit</th><th class="px-3 py-2.5">Cluster</th><th class="px-3 py-2.5">Customer</th><th class="px-3 py-2.5">Status</th><th class="px-3 py-2.5 text-right">Harga</th>
+                                <th class="px-3 py-2.5">Unit</th><th class="px-3 py-2.5">Cluster</th><th class="px-3 py-2.5">Customer</th><th class="px-3 py-2.5">Status</th><th class="px-3 py-2.5 text-right">Harga (Gross SPR)</th>
                             </tr></thead>
                             <tbody class="divide-y divide-neutral-100 dark:divide-neutral-800">
                                 <tr v-for="r in filtered" :key="r.id" class="cursor-pointer hover:bg-neutral-50 dark:hover:bg-neutral-800/40" :class="r.checked ? 'bg-primary-50/50 dark:bg-primary-900/10' : ''" @click="r.checked = !r.checked">
@@ -269,7 +298,7 @@ const inputCls = 'h-10 w-full rounded-lg border border-neutral-300 bg-white px-3
                                     <td class="px-3 py-2 text-neutral-500">{{ r.cluster ?? '—' }}</td>
                                     <td class="px-3 py-2 text-neutral-500">{{ r.customer_name ?? '—' }}</td>
                                     <td class="px-3 py-2"><span :class="statusColor[r.status] ?? 'text-neutral-500'">{{ r.status }}</span></td>
-                                    <td class="px-3 py-2 text-right tabular-nums text-neutral-400">{{ fmtRp(r.price) }}</td>
+                                    <td class="px-3 py-2 text-right tabular-nums text-neutral-400">{{ fmtRp(r.gross ?? r.price) }}</td>
                                 </tr>
                                 <tr v-if="!filtered.length"><td colspan="6" class="px-4 py-8 text-center text-neutral-400">Tidak ada unit cocok pencarian.</td></tr>
                             </tbody>
