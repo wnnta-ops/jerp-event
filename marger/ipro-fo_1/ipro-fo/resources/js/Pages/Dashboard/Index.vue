@@ -3,11 +3,12 @@ import { ref, computed } from 'vue';
 import { Head, Link, usePage } from '@inertiajs/vue3';
 import {
     Users, Home, ClipboardList, Wallet, TrendingUp, TrendingDown, Bell,
-    Activity, ShoppingCart, AlertTriangle, Landmark, FileText, ArrowRight, BarChart3,
+    Activity, ShoppingCart, AlertTriangle, Landmark, FileText, ArrowRight, ArrowLeft, BarChart3,
     ClipboardCheck, BookOpen, Receipt, PiggyBank, Boxes, HardHat, Percent, Database,
     Building2, Banknote, CircleDollarSign, Building, Briefcase, Vote, FileBarChart,
-    Settings2, ShieldCheck, Settings, LayoutGrid,
+    Settings2, ShieldCheck, Settings, LayoutGrid, ChevronRight,
 } from 'lucide-vue-next';
+import { navGroups, type NavItem } from '@/Components/Layout/navGroups';
 import Sparkline from '@/Components/Charts/Sparkline.vue';
 import Donut from '@/Components/Charts/Donut.vue';
 import Bars from '@/Components/Charts/Bars.vue';
@@ -136,6 +137,54 @@ const MODULES: ModCard[] = [
 const launcherModules = computed(() => MODULES
     .map((mm) => ({ ...mm, url: modRoute(mm.route, mm.params) }))
     .filter((mm) => mm.url && modHasPermission(mm.permission)));
+
+/* ══ Rincian modul — sub-modul per modul, diambil dari struktur navigasi bersama
+   (navGroups) sehingga selalu sinkron dengan sidebar. Klik kartu modul → tampilkan
+   rincian: daftar sub-modul (kiri) + kotak sub-modul (kanan). ══ */
+const foUrl = (pageP.props as any).config?.fo_url ?? '';
+const navByTitle = computed<Record<string, NavItem[]>>(() => {
+    const map: Record<string, NavItem[]> = {};
+    for (const g of navGroups(foUrl)) map[g.title] = g.items;
+    return map;
+});
+/** URL sub-modul: langsung href, atau child pertama yang dapat diakses bila punya children. */
+function subUrl(it: NavItem): string | null {
+    if (it.href) return modRoute(it.href, it.params);
+    for (const c of it.children ?? []) {
+        if (!modHasPermission(c.permission)) continue;
+        const u = c.href ? modRoute(c.href, c.params) : null;
+        if (u) return u;
+    }
+    return null;
+}
+function subVisible(it: NavItem): boolean { return modHasPermission(it.permission) && subUrl(it) !== null; }
+function subChildLabels(it: NavItem): string {
+    if (!it.children?.length) return '';
+    // Hanya cantumkan child yang benar-benar dapat diakses (izin + route ter-resolve).
+    const names = it.children
+        .filter((c) => modHasPermission(c.permission) && (c.href ? modRoute(c.href, c.params) !== null : false))
+        .map((c) => c.label);
+    return names.slice(0, 4).join(' · ') + (names.length > 4 ? ' …' : '');
+}
+interface SubCard { label: string; icon: any; url: string; subtitle: string }
+function subModulesFor(mod: { title: string }): SubCard[] {
+    return (navByTitle.value[mod.title] ?? [])
+        .filter(subVisible)
+        .map((it) => ({ label: it.label, icon: it.icon, url: subUrl(it)!, subtitle: subChildLabels(it) }));
+}
+
+const selected = ref<(typeof MODULES)[number] & { url: string | null } | null>(null);
+const selectedSubs = computed<SubCard[]>(() => {
+    if (!selected.value) return [];
+    const subs = subModulesFor(selected.value);
+    // Fallback: bila tak ada sub-modul terlihat, pakai route landing modul itu sendiri.
+    if (!subs.length && selected.value.url) {
+        return [{ label: selected.value.title, icon: selected.value.icon, url: selected.value.url, subtitle: selected.value.desc }];
+    }
+    return subs;
+});
+function openModule(mm: (typeof MODULES)[number] & { url: string | null }) { selected.value = mm; }
+function backToMenu() { selected.value = null; }
 </script>
 
 <template>
@@ -156,18 +205,31 @@ const launcherModules = computed(() => MODULES
             </div>
         </div>
 
-        <!-- ════ MENU UTAMA — peluncur modul (klik kotak → buka modul terkait) ════ -->
+        <!-- ════ MENU UTAMA — peluncur modul (klik kotak → rincian sub-modul) ════ -->
         <section>
-            <div class="mb-3 flex items-center gap-2">
-                <span class="flex h-8 w-8 items-center justify-center rounded-lg bg-primary-500/15"><LayoutGrid class="h-5 w-5 text-primary-600" /></span>
-                <div>
-                    <h2 class="text-lg font-bold text-neutral-900 dark:text-neutral-100">Menu Utama</h2>
-                    <p class="text-xs text-neutral-500">Pilih modul untuk mulai — {{ launcherModules.length }} modul tersedia.</p>
-                </div>
+            <!-- Header: mode Menu Utama vs mode rincian modul -->
+            <div class="mb-3 flex flex-wrap items-center gap-2">
+                <template v-if="!selected">
+                    <span class="flex h-8 w-8 items-center justify-center rounded-lg bg-primary-500/15"><LayoutGrid class="h-5 w-5 text-primary-600" /></span>
+                    <div>
+                        <h2 class="text-lg font-bold text-neutral-900 dark:text-neutral-100">Menu Utama</h2>
+                        <p class="text-xs text-neutral-500">Pilih modul untuk melihat rincian sub-modul — {{ launcherModules.length }} modul tersedia.</p>
+                    </div>
+                </template>
+                <template v-else>
+                    <button type="button" @click="backToMenu" class="inline-flex items-center gap-1.5 rounded-lg border border-neutral-300 px-3 py-1.5 text-sm font-medium text-neutral-600 hover:bg-neutral-50 dark:border-neutral-700 dark:text-neutral-300"><ArrowLeft class="h-4 w-4" /> Menu Utama</button>
+                    <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl shadow-sm" :style="{ background: selected.color }"><component :is="selected.icon" class="h-5 w-5 text-white" /></span>
+                    <div>
+                        <h2 class="text-lg font-bold text-neutral-900 dark:text-neutral-100">{{ selected.title }}</h2>
+                        <p class="text-xs text-neutral-500">{{ selected.desc }}</p>
+                    </div>
+                </template>
             </div>
-            <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-                <Link v-for="mm in launcherModules" :key="mm.key" :href="mm.url!"
-                      class="group card card-hover relative flex flex-col gap-3 overflow-hidden p-5 transition hover:-translate-y-0.5 hover:shadow-md">
+
+            <!-- Grid modul (default) -->
+            <div v-if="!selected" class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+                <button v-for="mm in launcherModules" :key="mm.key" type="button" @click="openModule(mm)"
+                        class="group card card-hover relative flex flex-col gap-3 overflow-hidden p-5 text-left transition hover:-translate-y-0.5 hover:shadow-md">
                     <span class="absolute inset-x-0 top-0 h-1" :style="{ background: mm.color }"></span>
                     <div class="flex items-center gap-3">
                         <span class="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl shadow-sm" :style="{ background: mm.color }">
@@ -177,10 +239,41 @@ const launcherModules = computed(() => MODULES
                         <ArrowRight class="ml-auto h-4 w-4 shrink-0 text-neutral-300 transition group-hover:translate-x-0.5 group-hover:text-primary-500" />
                     </div>
                     <p class="text-sm leading-relaxed text-neutral-500 dark:text-neutral-400">{{ mm.desc }}</p>
-                </Link>
+                </button>
+            </div>
+
+            <!-- Rincian modul: daftar sub-modul (kiri) + kotak sub-modul (kanan) -->
+            <div v-else class="grid gap-4 lg:grid-cols-[16rem_1fr]">
+                <div class="card h-fit p-2">
+                    <p class="px-3 py-2 text-xs font-semibold uppercase tracking-wide text-neutral-400">Sub-modul {{ selected.title }}</p>
+                    <nav class="space-y-0.5">
+                        <Link v-for="s in selectedSubs" :key="s.label" :href="s.url"
+                              class="flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-medium text-neutral-700 hover:bg-primary-50 hover:text-primary-700 dark:text-neutral-200 dark:hover:bg-primary-900/20">
+                            <component :is="s.icon" class="h-4 w-4 shrink-0 text-neutral-400" />
+                            <span class="truncate">{{ s.label }}</span>
+                            <ChevronRight class="ml-auto h-4 w-4 shrink-0 text-neutral-300" />
+                        </Link>
+                    </nav>
+                </div>
+                <div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+                    <Link v-for="s in selectedSubs" :key="s.label" :href="s.url"
+                          class="group card card-hover relative flex flex-col gap-2 overflow-hidden p-5 transition hover:-translate-y-0.5 hover:shadow-md">
+                        <span class="absolute inset-x-0 top-0 h-1" :style="{ background: selected.color }"></span>
+                        <div class="flex items-center gap-3">
+                            <span class="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl shadow-sm" :style="{ background: selected.color }">
+                                <component :is="s.icon" class="h-5 w-5 text-white" />
+                            </span>
+                            <h3 class="text-sm font-bold leading-tight text-neutral-900 dark:text-neutral-100">{{ s.label }}</h3>
+                            <ArrowRight class="ml-auto h-4 w-4 shrink-0 text-neutral-300 transition group-hover:translate-x-0.5 group-hover:text-primary-500" />
+                        </div>
+                        <p v-if="s.subtitle" class="text-xs leading-relaxed text-neutral-500 dark:text-neutral-400">{{ s.subtitle }}</p>
+                    </Link>
+                </div>
             </div>
         </section>
 
+        <!-- Statistik & performa modul — disembunyikan saat melihat rincian modul -->
+        <template v-if="!selected">
         <!-- ════ Ringkasan & Statistik ════ -->
         <div class="flex items-center gap-2 pt-2">
             <span class="h-5 w-1.5 rounded-full bg-primary-500"></span>
@@ -543,6 +636,7 @@ const launcherModules = computed(() => MODULES
                 </li>
             </ul>
         </div>
+        </template>
     </div>
 </template>
 
