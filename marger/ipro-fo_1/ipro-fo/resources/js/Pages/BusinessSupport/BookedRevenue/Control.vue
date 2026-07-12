@@ -58,21 +58,23 @@ const displayRows = computed(() => {
 // ── Input Massal / terbitkan (Sudah) BAST/AJB ──
 const showModal = ref(false);
 const selected = ref<Set<number>>(new Set());
-const issueDate = ref(new Date().toISOString().slice(0, 10));
+const issueDate = ref('');   // default kosong — wajib diisi manual
 const notary = ref('');
 const processing = ref(false);
-function openBulk() { selected.value = new Set(); notary.value = ''; issueDate.value = new Date().toISOString().slice(0, 10); showModal.value = true; }
-function openSingle(bookingId: number) { selected.value = new Set([bookingId]); notary.value = ''; issueDate.value = new Date().toISOString().slice(0, 10); showModal.value = true; }
+// Valid saat ada seleksi, tanggal terisi, dan (untuk AJB) notaris terisi.
+const issueValid = computed(() => !!selected.value.size && !!issueDate.value && (!props.issueNeedsNotary || !!notary.value.trim()));
+function openBulk() { selected.value = new Set(); notary.value = ''; issueDate.value = ''; showModal.value = true; }
+function openSingle(bookingId: number) { selected.value = new Set([bookingId]); notary.value = ''; issueDate.value = ''; showModal.value = true; }
 function toggle(id: number) { selected.value.has(id) ? selected.value.delete(id) : selected.value.add(id); }
 const allSelected = computed(() => (props.belumBookings?.length ?? 0) > 0 && props.belumBookings!.every((b) => selected.value.has(b.booking_id)));
 function toggleAll() { allSelected.value ? (selected.value = new Set()) : (selected.value = new Set((props.belumBookings ?? []).map((b) => b.booking_id))); }
 function submitIssue() {
-    if (!selected.value.size || !props.issueRoute) return;
+    if (!issueValid.value || !props.issueRoute) return;
     processing.value = true;
     router.post(route(props.issueRoute), {
         booking_ids: [...selected.value],
         date: issueDate.value,
-        notary_name: props.issueNeedsNotary ? (notary.value || undefined) : undefined,
+        notary_name: props.issueNeedsNotary ? notary.value.trim() : undefined,
     }, { preserveScroll: true, onSuccess: () => { showModal.value = false; }, onFinish: () => { processing.value = false; } });
 }
 
@@ -167,8 +169,8 @@ const cardTints = ['text-primary-600', 'text-emerald-600', 'text-amber-600', 'te
                         <p class="text-xs text-neutral-500">Pilih booking (SPR final) dari Marketing &amp; Sales untuk dibuatkan {{ docLabel }} berstatus "Sudah".</p>
                     </div>
                     <div class="grid gap-3 px-5 py-3 sm:grid-cols-2">
-                        <div><label class="mb-1 block text-xs font-medium text-neutral-500">Tanggal {{ docLabel }}</label><input v-model="issueDate" type="date" :class="[inputCls, 'w-full']" /></div>
-                        <div v-if="issueNeedsNotary"><label class="mb-1 block text-xs font-medium text-neutral-500">Notaris</label><input v-model="notary" type="text" placeholder="Nama notaris (opsional)" :class="[inputCls, 'w-full']" /></div>
+                        <div><label class="mb-1 block text-xs font-medium text-neutral-500">Tanggal {{ docLabel }} <span class="text-rose-500">*</span></label><input v-model="issueDate" type="date" required :class="[inputCls, 'w-full']" /></div>
+                        <div v-if="issueNeedsNotary"><label class="mb-1 block text-xs font-medium text-neutral-500">Notaris <span class="text-rose-500">*</span></label><input v-model="notary" type="text" required maxlength="150" placeholder="Nama notaris" :class="[inputCls, 'w-full']" /></div>
                     </div>
                     <div class="min-h-0 flex-1 overflow-y-auto px-5">
                         <table class="w-full text-sm">
@@ -189,7 +191,7 @@ const cardTints = ['text-primary-600', 'text-emerald-600', 'text-amber-600', 'te
                         <span class="text-xs text-neutral-500">{{ selected.size }} dipilih</span>
                         <div class="flex gap-2">
                             <button type="button" @click="showModal = false" class="rounded-lg border border-neutral-300 px-4 py-2 text-sm dark:border-neutral-700">Batal</button>
-                            <Button :disabled="!selected.size || processing" :loading="processing" @click="submitIssue">Terbitkan {{ docLabel }} ({{ selected.size }})</Button>
+                            <Button :disabled="!issueValid || processing" :loading="processing" @click="submitIssue">Terbitkan {{ docLabel }} ({{ selected.size }})</Button>
                         </div>
                     </div>
                 </div>

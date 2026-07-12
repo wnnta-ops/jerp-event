@@ -516,9 +516,9 @@ class BookedRevenueController extends Controller
         $v = $request->validate([
             'booking_ids'   => ['required', 'array', 'min:1'],
             'booking_ids.*' => ['integer', 'exists:bookings,id'],
-            'date'          => ['nullable', 'date'],
+            'date'          => ['required', 'date'],
         ]);
-        $date = $v['date'] ?? now()->toDateString();
+        $date = $v['date'];
         $ok = 0;
         $skip = 0;
         foreach (array_unique($v['booking_ids']) as $bid) {
@@ -541,11 +541,11 @@ class BookedRevenueController extends Controller
         $v = $request->validate([
             'booking_ids'   => ['required', 'array', 'min:1'],
             'booking_ids.*' => ['integer', 'exists:bookings,id'],
-            'date'          => ['nullable', 'date'],
-            'notary_name'   => ['nullable', 'string', 'max:150'],
+            'date'          => ['required', 'date'],
+            'notary_name'   => ['required', 'string', 'max:150'],
         ]);
-        $date = $v['date'] ?? now()->toDateString();
-        $notary = trim((string) ($v['notary_name'] ?? '')) ?: '-';
+        $date = $v['date'];
+        $notary = trim((string) $v['notary_name']);
         $ok = 0;
         $skip = 0;
         $fail = [];
