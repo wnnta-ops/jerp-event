@@ -53,16 +53,24 @@ export function navGroups(foUrl: string): { title: string; items: NavItem[] }[] 
     {
         title: 'KPR',
         items: [
-            { label: 'Kategori Retensi', icon: Percent,       href: 'kpr.setup.retensi.index', permission: 'bankloan.setup.view' },
-            { label: 'Kategori Bank',    icon: Landmark,      href: 'kpr.setup.bank.index',    permission: 'bankloan.setup.view' },
-            { label: 'Kategori Analisa Berkas', icon: ClipboardList, href: 'kpr.setup.analisa.index', permission: 'bankloan.setup.view' },
-            { label: 'Inisiasi KPR',     icon: GitMerge,      href: 'kpr.initiation.index',    permission: 'bankloan.application.view' },
-            { label: 'Proses KPR',       icon: Banknote,      href: 'kpr.index',               permission: 'bankloan.application.view' },
-            { label: 'Database KPR',     icon: Database, permission: 'bankloan.application.view', children: [
+            // Set Up — kategori/master parameter KPR.
+            { label: 'Set Up', icon: SlidersHorizontal, permission: 'bankloan.setup.view', children: [
+                { label: 'Kategori Retensi',        href: 'kpr.setup.retensi.index', permission: 'bankloan.setup.view' },
+                { label: 'Kategori Bank',           href: 'kpr.setup.bank.index',    permission: 'bankloan.setup.view' },
+                { label: 'Kategori Analisa Berkas', href: 'kpr.setup.analisa.index', permission: 'bankloan.setup.view' },
+            ]},
+            // Transaction — proses transaksi KPR.
+            { label: 'Transaction', icon: GitMerge, permission: 'bankloan.application.view', children: [
+                { label: 'Inisiasi KPR',                     href: 'kpr.initiation.index', permission: 'bankloan.application.view' },
+                { label: 'Proses KPR',                       href: 'kpr.index',            permission: 'bankloan.application.view' },
+                { label: 'Cek Scan KTP & NPWP (belum jadi)', href: 'kpr.scan.index',       permission: 'bankloan.application.view' },
+            ]},
+            // Query/Report — master data & arsip Database KPR (Reject BI Checking / Reject Proses KPR).
+            { label: 'Query/Report', icon: FileBarChart, permission: 'bankloan.application.view', children: [
+                { label: 'Master Data KPR',    href: 'kpr.index',               permission: 'bankloan.application.view' },
                 { label: 'Reject BI Checking', href: 'kpr.database.reject-bi',  permission: 'bankloan.application.view' },
                 { label: 'Reject Proses KPR',  href: 'kpr.database.reject-kpr', permission: 'bankloan.application.view' },
             ]},
-            { label: 'Cek Scan KTP & NPWP (belum jadi)', icon: IdCard, href: 'kpr.scan.index', permission: 'bankloan.application.view' },
         ],
     },
     {
