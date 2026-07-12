@@ -76,13 +76,17 @@ function applyPrefill() {
     const ppnKeluaranCredit = r2((um / 1.11) * 0.11);      // PPN Keluaran (kredit)
     const debitTotal = piutang + diskonPenjualan + umPenjualan + ppnKeluaranDebit;
     const ppnPending = r2(debitTotal - penjualan - ppnKeluaranCredit); // PPN Keluaran Akan Diterbitkan (plug → balance persis)
-    debits[0] = { account_id: props.prefill.piutang_id || '', amount: piutang };
-    debits[1] = { account_id: props.prefill.diskon_id || '', amount: diskonPenjualan };
-    debits[2] = { account_id: props.prefill.um_id || '', amount: umPenjualan };
-    debits[3] = { account_id: props.prefill.ppn_keluaran_id || '', amount: ppnKeluaranDebit };
-    credits[0] = { account_id: props.prefill.penjualan_id || '', amount: penjualan };
-    credits[1] = { account_id: props.prefill.ppn_keluaran_id || '', amount: ppnKeluaranCredit };
-    credits[2] = { account_id: props.prefill.ppn_pending_id || '', amount: ppnPending };
+    // Clamp ≥0 tiap baris: pada kasus abnormal pencairan>nett, Piutang & plug bisa negatif — jadi 0 di layar
+    // (baris negatif tetap dibuang saat submit), sehingga baris tampil = Total Debit/Kredit (yg juga di-clamp).
+    // Normal (semua positif) → no-op. Journal tetap tak balance di kasus abnormal ⇒ submit nonaktif.
+    const nn = (x: number) => Math.max(0, x);
+    debits[0] = { account_id: props.prefill.piutang_id || '', amount: nn(piutang) };
+    debits[1] = { account_id: props.prefill.diskon_id || '', amount: nn(diskonPenjualan) };
+    debits[2] = { account_id: props.prefill.um_id || '', amount: nn(umPenjualan) };
+    debits[3] = { account_id: props.prefill.ppn_keluaran_id || '', amount: nn(ppnKeluaranDebit) };
+    credits[0] = { account_id: props.prefill.penjualan_id || '', amount: nn(penjualan) };
+    credits[1] = { account_id: props.prefill.ppn_keluaran_id || '', amount: nn(ppnKeluaranCredit) };
+    credits[2] = { account_id: props.prefill.ppn_pending_id || '', amount: nn(ppnPending) };
 }
 function fillFromCalc() { journalTouched = false; applyPrefill(); }
 // Auto-sync jurnal dari hitungan selama user belum menyentuh (pencairan kini ikut unit terpilih).
