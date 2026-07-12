@@ -312,20 +312,44 @@ class FixedAssetController extends Controller
     {
         abort_unless($request->user()?->canModule('bs'), 403);
 
+        // Rentang periode: bulan awal (year/month) s/d bulan akhir (end_year/end_month).
+        // end_* opsional → bila kosong, hanya 1 bulan (kompatibel perilaku lama). Idempoten per bulan.
         $v = $request->validate([
-            'year'  => ['required', 'integer', 'min:2000', 'max:2100'],
-            'month' => ['required', 'integer', 'min:1', 'max:12'],
+            'year'      => ['required', 'integer', 'min:2000', 'max:2100'],
+            'month'     => ['required', 'integer', 'min:1', 'max:12'],
+            'end_year'  => ['nullable', 'integer', 'min:2000', 'max:2100'],
+            'end_month' => ['nullable', 'integer', 'min:1', 'max:12'],
         ]);
 
+        $startY = (int) $v['year'];
+        $startM = (int) $v['month'];
+        $endY   = (int) ($v['end_year'] ?? $startY);
+        $endM   = (int) ($v['end_month'] ?? $startM);
+        $start  = $startY * 12 + ($startM - 1);
+        $end    = $endY * 12 + ($endM - 1);
+        if ($end < $start) {
+            return back()->with('error', 'Bulan akhir penyusutan tidak boleh sebelum bulan awal.');
+        }
+        if ($end - $start > 120) {
+            return back()->with('error', 'Rentang penyusutan maksimal 120 bulan.');
+        }
+
+        $posted = 0;
         try {
-            $entry = $svc->depreciate($fixedAsset, $v['year'], $v['month'], $request->user()->id);
+            for ($idx = $start; $idx <= $end; $idx++) {
+                if ($svc->depreciate($fixedAsset, intdiv($idx, 12), ($idx % 12) + 1, $request->user()->id)) {
+                    $posted++;
+                }
+            }
         } catch (BusinessRuleException $e) {
             return back()->with('error', $e->getMessage());
         }
 
-        return redirect()->route('bs.fa.show', $fixedAsset)->with($entry ? 'success' : 'error', $entry
-            ? 'Penyusutan '.$v['year'].'/'.$v['month'].' terposting (Dr Beban / Cr Akumulasi).'
-            : 'Tidak ada penyusutan untuk periode itu (sudah disusut / belum perolehan / nilai habis).');
+        $range = $start === $end ? "{$startY}/{$startM}" : "{$startY}/{$startM} s/d {$endY}/{$endM}";
+
+        return redirect()->route('bs.fa.show', $fixedAsset)->with($posted ? 'success' : 'error', $posted
+            ? "Penyusutan {$range} terposting — {$posted} bulan (Dr Beban / Cr Akumulasi)."
+            : "Tidak ada penyusutan baru untuk {$range} (sudah disusut / belum perolehan / nilai habis).");
     }
 
     public function run(Request $request): Response
