@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { reactive, ref, computed, watch } from 'vue';
 import { useForm, Link } from '@inertiajs/vue3';
-import { ArrowLeft, CircleDollarSign, Save, Search, Home, X, Trash2, Wand2, Scale } from 'lucide-vue-next';
+import { ArrowLeft, CircleDollarSign, Save, Search, Home, X, Trash2, Wand2, Scale, BookText, Check } from 'lucide-vue-next';
 import Button from '@/Components/UI/Button.vue';
 import EmptyState from '@/Components/UI/EmptyState.vue';
 import SearchSelect from '@/Components/UI/SearchSelect.vue';
@@ -215,53 +215,81 @@ const inputCls = 'h-10 w-full rounded-lg border border-neutral-300 bg-white px-3
                 </div>
             </div>
 
-            <!-- Jurnal Manual (3 debit + 3 kredit, COA dari General Ledger) -->
-            <div class="card">
-                <div class="flex flex-wrap items-center justify-between gap-3 border-b border-neutral-200 px-4 py-3 dark:border-neutral-800">
-                    <div>
-                        <div class="font-semibold">Jurnal Penambahan (Manual)</div>
-                        <div class="text-xs text-neutral-400">COA terhubung ke General Ledger · hingga 4 baris debit + 3 baris kredit · harus balance.</div>
+            <!-- Jurnal Manual — COA dari General Ledger, harus balance -->
+            <div class="card overflow-hidden">
+                <div class="flex flex-wrap items-center justify-between gap-3 border-b border-neutral-200 px-5 py-3.5 dark:border-neutral-800">
+                    <div class="flex items-center gap-2.5">
+                        <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary-500/15 text-primary-600"><BookText class="h-[18px] w-[18px]" /></span>
+                        <div>
+                            <div class="font-semibold">Jurnal Penambahan <span class="font-normal text-neutral-400">(Manual)</span></div>
+                            <div class="text-xs text-neutral-400">COA terhubung ke General Ledger · maks. 4 debit + 3 kredit · harus balance</div>
+                        </div>
                     </div>
                     <button type="button" @click="fillFromCalc" class="inline-flex h-9 items-center gap-1.5 rounded-lg border border-primary-300 bg-primary-50 px-3 text-sm font-medium text-primary-700 hover:bg-primary-100 dark:border-primary-700/50 dark:bg-primary-900/20 dark:text-primary-300"><Wand2 class="h-4 w-4" /> Isi dari hitungan</button>
                 </div>
 
-                <div class="flex flex-wrap gap-x-4 gap-y-1 px-4 pt-2 text-xs text-neutral-500">
-                    <span>Gross SPR <b class="tabular-nums">{{ fmtRp(grossSum) }}</b></span>
-                    <span>Diskon <b class="tabular-nums">{{ fmtRp(diskonSum) }}</b></span>
-                    <span>Nett <b class="tabular-nums">{{ fmtRp(nettSum) }}</b></span>
-                    <span>DPP <b class="tabular-nums">{{ fmtRp(dppSum) }}</b></span>
-                    <span>PPN SPR <b class="tabular-nums">{{ fmtRp(ppnSprSum) }}</b></span>
-                    <span>Pencairan KPR <b class="tabular-nums">{{ fmtRp(pencairanSum) }}</b></span>
+                <!-- Panel acuan hitungan (dari SPR + pencairan KPR) -->
+                <div class="grid grid-cols-2 gap-px border-b border-neutral-200 bg-neutral-200 dark:border-neutral-800 dark:bg-neutral-800 sm:grid-cols-3 lg:grid-cols-6">
+                    <div class="bg-neutral-50 px-4 py-2.5 dark:bg-neutral-900"><div class="text-[11px] font-medium uppercase tracking-wide text-neutral-400">Gross SPR</div><div class="mt-0.5 text-sm font-bold tabular-nums text-neutral-800 dark:text-neutral-200">{{ fmtRp(grossSum) }}</div></div>
+                    <div class="bg-neutral-50 px-4 py-2.5 dark:bg-neutral-900"><div class="text-[11px] font-medium uppercase tracking-wide text-neutral-400">Diskon</div><div class="mt-0.5 text-sm font-bold tabular-nums text-neutral-800 dark:text-neutral-200">{{ fmtRp(diskonSum) }}</div></div>
+                    <div class="bg-neutral-50 px-4 py-2.5 dark:bg-neutral-900"><div class="text-[11px] font-medium uppercase tracking-wide text-neutral-400">Nett</div><div class="mt-0.5 text-sm font-bold tabular-nums text-neutral-800 dark:text-neutral-200">{{ fmtRp(nettSum) }}</div></div>
+                    <div class="bg-neutral-50 px-4 py-2.5 dark:bg-neutral-900"><div class="text-[11px] font-medium uppercase tracking-wide text-neutral-400">DPP</div><div class="mt-0.5 text-sm font-bold tabular-nums text-neutral-800 dark:text-neutral-200">{{ fmtRp(dppSum) }}</div></div>
+                    <div class="bg-neutral-50 px-4 py-2.5 dark:bg-neutral-900"><div class="text-[11px] font-medium uppercase tracking-wide text-neutral-400">PPN SPR</div><div class="mt-0.5 text-sm font-bold tabular-nums text-neutral-800 dark:text-neutral-200">{{ fmtRp(ppnSprSum) }}</div></div>
+                    <div class="bg-neutral-50 px-4 py-2.5 dark:bg-neutral-900"><div class="text-[11px] font-medium uppercase tracking-wide text-neutral-400">Pencairan KPR</div><div class="mt-0.5 text-sm font-bold tabular-nums text-neutral-800 dark:text-neutral-200">{{ fmtRp(pencairanSum) }}</div></div>
                 </div>
-                <p v-if="pencairanOver" class="px-4 pt-1 text-xs text-amber-600 dark:text-amber-400">
-                    ⚠ Pencairan KPR ({{ fmtRp(pencairanSum) }}) melebihi Nett ({{ fmtRp(nettSum) }}) → Piutang Usaha negatif; jurnal tidak akan balance / tidak bisa diposting. Periksa data pencairan Proses KPR unit ini.
+                <p v-if="pencairanOver" class="flex items-start gap-1.5 border-b border-amber-200 bg-amber-50 px-4 py-2 text-xs text-amber-700 dark:border-amber-900/40 dark:bg-amber-900/20 dark:text-amber-300">
+                    <span>⚠</span><span>Pencairan KPR ({{ fmtRp(pencairanSum) }}) melebihi Nett ({{ fmtRp(nettSum) }}) → Piutang Usaha negatif; jurnal tidak akan balance / tidak bisa diposting. Periksa data pencairan Proses KPR unit ini.</span>
                 </p>
 
-                <div class="grid gap-5 p-4 md:grid-cols-2">
+                <div class="grid md:grid-cols-2">
                     <!-- DEBIT -->
-                    <div>
-                        <div class="mb-2 text-xs font-semibold uppercase text-emerald-600">Debit</div>
-                        <div v-for="(row, i) in debits" :key="'d' + i" class="mb-2 flex items-center gap-2">
-                            <SearchSelect :model-value="row.account_id" :options="accounts" placeholder="— pilih / cari akun —" class="flex-1" @update:model-value="(v) => { row.account_id = v; markTouched(); }" />
-                            <input :value="fmtNum(row.amount)" @input="onAmtInput(row, $event)" type="text" inputmode="numeric" placeholder="0" class="h-9 w-32 shrink-0 rounded-lg border border-neutral-300 bg-white px-2 text-right text-sm tabular-nums dark:border-neutral-700 dark:bg-neutral-900" />
+                    <div class="p-4">
+                        <div class="mb-3 flex items-center justify-between">
+                            <span class="inline-flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-emerald-600"><span class="h-2 w-2 rounded-full bg-emerald-500"></span> Debit</span>
+                            <span class="text-sm font-semibold tabular-nums text-neutral-800 dark:text-neutral-200">{{ fmtRp(totalDebit) }}</span>
                         </div>
-                        <div class="mt-1 flex justify-between border-t border-neutral-200 pt-1.5 text-sm dark:border-neutral-700"><span class="text-neutral-500">Total Debit</span><span class="font-semibold tabular-nums">{{ fmtRp(totalDebit) }}</span></div>
+                        <div class="space-y-2">
+                            <div v-for="(row, i) in debits" :key="'d' + i" class="flex items-center gap-2">
+                                <span class="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-emerald-50 text-[11px] font-bold text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-400">{{ i + 1 }}</span>
+                                <SearchSelect :model-value="row.account_id" :options="accounts" placeholder="— pilih / cari akun —" class="min-w-0 flex-1" @update:model-value="(v) => { row.account_id = v; markTouched(); }" />
+                                <div class="flex h-9 w-40 shrink-0 items-center rounded-lg border border-neutral-300 bg-white pl-2 pr-2.5 focus-within:border-primary-400 focus-within:ring-1 focus-within:ring-primary-400 dark:border-neutral-700 dark:bg-neutral-900">
+                                    <span class="mr-1 text-xs text-neutral-400">Rp</span>
+                                    <input :value="fmtNum(row.amount)" @input="onAmtInput(row, $event)" type="text" inputmode="numeric" placeholder="0" class="w-full bg-transparent text-right text-sm tabular-nums focus:outline-none" :class="(Number(row.amount) || 0) === 0 ? 'text-neutral-400' : 'text-neutral-900 dark:text-neutral-100'" />
+                                </div>
+                            </div>
+                        </div>
                     </div>
                     <!-- KREDIT -->
-                    <div>
-                        <div class="mb-2 text-xs font-semibold uppercase text-rose-600">Kredit</div>
-                        <div v-for="(row, i) in credits" :key="'c' + i" class="mb-2 flex items-center gap-2">
-                            <SearchSelect :model-value="row.account_id" :options="accounts" placeholder="— pilih / cari akun —" class="flex-1" @update:model-value="(v) => { row.account_id = v; markTouched(); }" />
-                            <input :value="fmtNum(row.amount)" @input="onAmtInput(row, $event)" type="text" inputmode="numeric" placeholder="0" class="h-9 w-32 shrink-0 rounded-lg border border-neutral-300 bg-white px-2 text-right text-sm tabular-nums dark:border-neutral-700 dark:bg-neutral-900" />
+                    <div class="border-t border-neutral-200 p-4 dark:border-neutral-800 md:border-l md:border-t-0">
+                        <div class="mb-3 flex items-center justify-between">
+                            <span class="inline-flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-rose-600"><span class="h-2 w-2 rounded-full bg-rose-500"></span> Kredit</span>
+                            <span class="text-sm font-semibold tabular-nums text-neutral-800 dark:text-neutral-200">{{ fmtRp(totalCredit) }}</span>
                         </div>
-                        <div class="mt-1 flex justify-between border-t border-neutral-200 pt-1.5 text-sm dark:border-neutral-700"><span class="text-neutral-500">Total Kredit</span><span class="font-semibold tabular-nums">{{ fmtRp(totalCredit) }}</span></div>
+                        <div class="space-y-2">
+                            <div v-for="(row, i) in credits" :key="'c' + i" class="flex items-center gap-2">
+                                <span class="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-rose-50 text-[11px] font-bold text-rose-600 dark:bg-rose-900/30 dark:text-rose-400">{{ i + 1 }}</span>
+                                <SearchSelect :model-value="row.account_id" :options="accounts" placeholder="— pilih / cari akun —" class="min-w-0 flex-1" @update:model-value="(v) => { row.account_id = v; markTouched(); }" />
+                                <div class="flex h-9 w-40 shrink-0 items-center rounded-lg border border-neutral-300 bg-white pl-2 pr-2.5 focus-within:border-primary-400 focus-within:ring-1 focus-within:ring-primary-400 dark:border-neutral-700 dark:bg-neutral-900">
+                                    <span class="mr-1 text-xs text-neutral-400">Rp</span>
+                                    <input :value="fmtNum(row.amount)" @input="onAmtInput(row, $event)" type="text" inputmode="numeric" placeholder="0" class="w-full bg-transparent text-right text-sm tabular-nums focus:outline-none" :class="(Number(row.amount) || 0) === 0 ? 'text-neutral-400' : 'text-neutral-900 dark:text-neutral-100'" />
+                                </div>
+                            </div>
+                            <!-- penyeimbang tinggi kolom (debit 4 baris vs kredit 3 baris) -->
+                            <div v-for="n in Math.max(0, debits.length - credits.length)" :key="'g' + n" class="hidden h-9 md:block"></div>
+                        </div>
                     </div>
                 </div>
 
-                <div class="flex items-center justify-between border-t border-neutral-200 px-4 py-3 dark:border-neutral-800">
-                    <span v-if="journalBalanced" class="inline-flex items-center gap-1.5 rounded-lg bg-emerald-50 px-3 py-1.5 text-sm font-medium text-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-300"><Scale class="h-4 w-4" /> Balance</span>
-                    <span v-else class="inline-flex items-center gap-1.5 rounded-lg bg-rose-50 px-3 py-1.5 text-sm font-medium text-rose-700 dark:bg-rose-900/20 dark:text-rose-300"><Scale class="h-4 w-4" /> Belum balance · selisih {{ fmtRp(Math.abs(totalDebit - totalCredit)) }}</span>
-                    <span class="text-xs text-neutral-400">{{ filledLines }} baris terisi (min. 2)</span>
+                <div class="flex flex-wrap items-center justify-between gap-3 border-t px-5 py-3"
+                     :class="journalBalanced ? 'border-emerald-200 bg-emerald-50/50 dark:border-emerald-900/40 dark:bg-emerald-900/10' : 'border-rose-200 bg-rose-50/50 dark:border-rose-900/40 dark:bg-rose-900/10'">
+                    <span v-if="journalBalanced" class="inline-flex items-center gap-1.5 rounded-lg bg-emerald-100 px-3 py-1.5 text-sm font-semibold text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300"><Check class="h-4 w-4" /> Balance</span>
+                    <span v-else class="inline-flex items-center gap-1.5 rounded-lg bg-rose-100 px-3 py-1.5 text-sm font-semibold text-rose-700 dark:bg-rose-900/40 dark:text-rose-300"><Scale class="h-4 w-4" /> Belum balance · selisih {{ fmtRp(Math.abs(totalDebit - totalCredit)) }}</span>
+                    <div class="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-neutral-500">
+                        <span>Debit <b class="tabular-nums text-neutral-800 dark:text-neutral-200">{{ fmtRp(totalDebit) }}</b></span>
+                        <span class="font-bold" :class="journalBalanced ? 'text-emerald-600' : 'text-rose-500'">{{ journalBalanced ? '=' : '≠' }}</span>
+                        <span>Kredit <b class="tabular-nums text-neutral-800 dark:text-neutral-200">{{ fmtRp(totalCredit) }}</b></span>
+                        <span class="rounded-full bg-neutral-100 px-2 py-0.5 text-xs text-neutral-500 dark:bg-neutral-800">{{ filledLines }} baris · min. 2</span>
+                    </div>
                 </div>
             </div>
 
