@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { Link, usePage } from '@inertiajs/vue3';
-import { ref } from 'vue';
+import { ref, watch, nextTick } from 'vue';
 import {
     LayoutDashboard, Users, Building2, ClipboardList, Wallet, FileText, Receipt, FileSignature,
     BarChart3, Settings, ChevronLeft, ChevronDown, Phone, AlertTriangle, FileWarning, FileCheck,
@@ -21,14 +21,23 @@ const page = usePage();
 
 // Grup submodul bisa di-collapse (dropdown) — disimpan di localStorage.
 const collapsed = ref<Record<string, boolean>>(JSON.parse(localStorage.getItem('sidebarCollapsed') || '{}'));
+// Grup yang dibuka otomatis oleh revealActive (runtime saja, TIDAK dipersist). Dipisah dari
+// preferensi collapse user agar toggleGroup tak pernah menuliskan reveal sementara ke localStorage.
+const revealed = ref<Record<string, boolean>>({});
+// Grup dianggap tertutup hanya bila user meng-collapse-nya DAN tidak sedang di-reveal otomatis.
+function isCollapsed(title: string): boolean { return !!collapsed.value[title] && !revealed.value[title]; }
 function toggleGroup(title: string) {
     collapsed.value[title] = !collapsed.value[title];
+    delete revealed.value[title]; // niat eksplisit user menang atas reveal otomatis
     localStorage.setItem('sidebarCollapsed', JSON.stringify(collapsed.value));
 }
 
 // Sub-modul (level 2) yang punya children bisa dibuka untuk menampilkan detail modul (level 3).
 const openSub = ref<Record<string, boolean>>({});
 function toggleSub(key: string) { openSub.value[key] = !openSub.value[key]; }
+
+// Elemen <aside> untuk menggulir item aktif ke tampilan saat lokasi berubah.
+const asideEl = ref<HTMLElement | null>(null);
 
 const foUrl: string = ((page.props as any).config?.fo_url ?? "");
 const groups = navGroups(foUrl);
@@ -57,10 +66,33 @@ function safeRoute(href?: string, params?: Record<string, any>): string | null {
     try { return route(href, params); }
     catch { return null; }
 }
+
+// Auto-reveal lokasi aktif: buka grup + sub-modul yang memuat route halaman saat ini,
+// lalu gulir item aktif ke tampilan — sidebar kiri mengikuti lokasi konten di kanan.
+// Hanya MEMBUKA (tak pernah menutup) agar preferensi grup lain yang dibuka user tetap.
+function revealActive(): void {
+    for (const g of groups) {
+        for (const item of g.items) {
+            const active = item.children?.length
+                ? item.children.some(c => hasPermission(c.permission) && isActive(c.href, c.params))
+                : (hasPermission(item.permission) && isActive(item.href, item.params));
+            if (! active) continue;
+            if (g.title) revealed.value[g.title] = true;                         // buka grup (runtime, tak dipersist)
+            if (item.children?.length) openSub.value[g.title + '|' + item.label] = true; // buka sub-modul
+        }
+    }
+    nextTick(() => {
+        asideEl.value?.querySelector<HTMLElement>('[data-active="true"]')
+            ?.scrollIntoView({ block: 'nearest' });
+    });
+}
+// Jalankan saat mount (immediate) & tiap kali URL berpindah (navigasi Inertia).
+watch(() => page.url, () => revealActive(), { immediate: true });
 </script>
 
 <template>
     <aside
+        ref="asideEl"
         class="bg-primary-100 text-primary-900 border-r border-primary-200 flex-shrink-0 transition-all duration-300 overflow-y-auto"
         :class="open ? 'w-64' : 'w-16'"
     >
@@ -77,10 +109,10 @@ function safeRoute(href?: string, params?: Record<string, any>): string | null {
                     type="button" @click="toggleGroup(g.title)"
                     class="flex w-full items-center justify-between px-4 mt-4 mb-1 text-[12px] uppercase tracking-wider text-primary-700 font-extrabold hover:text-primary-800">
                     <span>{{ g.title }}</span>
-                    <ChevronDown class="h-3.5 w-3.5 transition-transform" :class="{ '-rotate-90': collapsed[g.title] }" />
+                    <ChevronDown class="h-3.5 w-3.5 transition-transform" :class="{ '-rotate-90': isCollapsed(g.title) }" />
                 </button>
                 <template v-for="item in g.items" :key="(item.href ?? item.label) + JSON.stringify(item.params ?? {})">
-                    <template v-if="hasPermission(item.permission) && (!g.title || !collapsed[g.title] || !open)">
+                    <template v-if="hasPermission(item.permission) && (!g.title || !isCollapsed(g.title) || !open)">
                         <!-- Sub-modul dengan children (level 2) → klik untuk buka detail modul (level 3) -->
                         <template v-if="item.children">
                             <button
@@ -97,6 +129,7 @@ function safeRoute(href?: string, params?: Record<string, any>): string | null {
                                     <Link
                                         v-if="hasPermission(c.permission) && safeRoute(c.href, c.params)"
                                         :href="safeRoute(c.href, c.params) ?? '#'"
+                                        :data-active="isActive(c.href, c.params) ? 'true' : undefined"
                                         class="flex items-center gap-2 py-1.5 pl-11 pr-4 mx-2 rounded-lg text-sm transition"
                                         :class="isActive(c.href, c.params) ? 'bg-primary-500 text-primary-950 font-bold' : 'text-primary-800 font-medium hover:bg-primary-300 hover:text-primary-950'"
                                     >
@@ -118,6 +151,7 @@ function safeRoute(href?: string, params?: Record<string, any>): string | null {
                         <Link
                             v-else-if="safeRoute(item.href, item.params)"
                             :href="safeRoute(item.href, item.params) ?? '#'"
+                            :data-active="isActive(item.href, item.params) ? 'true' : undefined"
                             class="flex items-center gap-3 px-4 py-2 mx-2 rounded-lg text-[15px] transition"
                             :class="isActive(item.href, item.params)
                                 ? 'bg-primary-500 text-primary-950 font-bold'
