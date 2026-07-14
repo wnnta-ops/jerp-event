@@ -369,6 +369,34 @@ class KprApplicationController extends Controller
         return redirect()->route('kpr.show', $kpr)->with('success', 'Lanjut ke tahap Pencairan.');
     }
 
+    /**
+     * Kembali ke tahap sebelumnya (non-destruktif) — status mundur 1 langkah agar operator bisa
+     * meninjau/mengedit tahap sebelumnya lalu melanjutkan lagi. Data SP3K/Akad TIDAK dihapus.
+     * Hanya pada tahap sebelum Pencairan (SP3K/SI/Akad) untuk mencegah gangguan data pencairan/retensi.
+     */
+    public function stepBack(KprApplication $kpr): RedirectResponse
+    {
+        $user = auth()->user();
+        abort_unless($user?->can('bankloan.akad.schedule') || $user?->can('bankloan.sp3k.register'), 403);
+
+        $prev = match ($kpr->status) {
+            KprStatus::Sp3kIssued => KprStatus::Submitted,
+            KprStatus::Si         => KprStatus::Sp3kIssued,
+            KprStatus::AkadDone   => KprStatus::Si,
+            default               => null,
+        };
+        if ($prev === null) {
+            return back()->with('error', 'Tahap ini tidak dapat dikembalikan ke tahap sebelumnya.');
+        }
+        // Hapus cap waktu tahap yang di-masuki-ulang ($prev->value = kunci cap: 'submitted'/'sp3k'/'si')
+        // agar Laporan Durasi Proses tidak lagi menandainya SELESAI; cap dibuat ulang saat operator lanjut lagi.
+        $timeline = $kpr->timeline ?? [];
+        unset($timeline[$prev->value]);
+        $kpr->update(['status' => $prev, 'timeline' => $timeline]); // hanya status mundur; record tahap (SP3K/Akad) dipertahankan
+
+        return redirect()->route('kpr.show', $kpr)->with('success', "Kembali ke tahap {$prev->label()} — silakan tinjau/edit lalu lanjutkan kembali.");
+    }
+
     /** Catat cap waktu tahap yang SELESAI (untuk Laporan Durasi Proses). Idempotent — cap pertama dipertahankan. */
     private function stampTimeline(KprApplication $kpr, string $stage): array
     {

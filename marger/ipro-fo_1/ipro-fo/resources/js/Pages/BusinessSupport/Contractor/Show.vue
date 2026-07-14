@@ -124,7 +124,7 @@ const inputCls = 'h-9 w-full rounded-lg border border-neutral-300 bg-white px-3 
         <div v-if="spk.units?.length" class="card overflow-hidden">
             <div class="flex items-center justify-between border-b border-neutral-200 px-4 py-3 font-semibold dark:border-neutral-800">
                 <span>Detil Pekerjaan per Unit — Porsi Kontrak</span>
-                <span class="text-xs font-normal text-neutral-400">{{ spk.units.length }} unit · Total {{ fmtRp(spk.units.reduce((s, u) => s + Number(u.unit_price || 0), 0)) }}</span>
+                <span class="text-xs font-normal text-neutral-400">{{ spk.units.length }} unit · Total {{ fmtRp(spk.units.reduce((s: number, u: any) => s + Number(u.unit_price || 0), 0)) }}</span>
             </div>
             <table class="w-full text-sm">
                 <thead class="bg-neutral-50 dark:bg-neutral-800"><tr class="text-left text-xs uppercase text-neutral-500"><th class="px-4 py-2.5 w-12">No</th><th class="px-4 py-2.5">Unit Rumah</th><th class="px-4 py-2.5 text-right">Harga Satuan (Porsi Kontrak)</th></tr></thead>

@@ -1117,6 +1117,7 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
     Route::post('/kpr/{kpr}/proceed-sp3k',                    [KprApplicationController::class, 'proceedSp3k'])->name('kpr.proceed-sp3k');
     Route::post('/kpr/{kpr}/proceed-si',                      [KprApplicationController::class, 'proceedSi'])->name('kpr.proceed-si');
     Route::post('/kpr/{kpr}/proceed-akad',                    [KprApplicationController::class, 'proceedAkad'])->name('kpr.proceed-akad');
+    Route::post('/kpr/{kpr}/step-back',                       [KprApplicationController::class, 'stepBack'])->name('kpr.step-back');
     Route::get('/kpr/{kpr}/si-print',                         [KprApplicationController::class, 'siPrint'])->name('kpr.si-print'); // cetak Surat Instruksi
     // #65: edit & hapus tiap step
     Route::put('/kpr/{kpr}/sp3k',                             [KprApplicationController::class, 'updateSp3k'])->name('kpr.sp3k.update');
