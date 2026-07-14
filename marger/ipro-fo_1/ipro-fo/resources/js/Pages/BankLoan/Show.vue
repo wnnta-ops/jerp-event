@@ -175,6 +175,13 @@ function proceedSubmitted() { router.post(route('kpr.proceed-submitted', a.id), 
 function proceedSp3k() { router.post(route('kpr.proceed-sp3k', a.id), {}, { onSuccess: () => window.location.reload() }); }
 function proceedSi() { router.post(route('kpr.proceed-si', a.id), {}, { onSuccess: () => window.location.reload() }); }
 function proceedAkad() { router.post(route('kpr.proceed-akad', a.id), {}, { onSuccess: () => window.location.reload() }); }
+// Kembali ke tahap sebelumnya (non-destruktif) — bisa meninjau/mengedit tahap sebelumnya lalu lanjut lagi.
+const canStepBack = computed(() => ['sp3k', 'si', 'akad'].includes(a.status));
+function stepBack() {
+    if (!canStepBack.value) return;
+    if (!confirm('Kembali ke tahap sebelumnya? Data tahap ini tetap tersimpan — Anda bisa meninjau/mengedit tahap sebelumnya lalu melanjutkan kembali.')) return;
+    router.post(route('kpr.step-back', a.id), {}, { onSuccess: () => window.location.reload() });
+}
 
 // Tolak proses KPR (dari tahap Submitted/SP3K) → status Rejected; muncul di Database KPR → Reject Proses KPR.
 function reject() {
@@ -392,8 +399,10 @@ const recapChips = computed<string[]>(() => {
     const chips: string[] = [];
     chips.push('Plafon diajukan ' + fmtRp(a.plafon_requested));
     if (a.submitted_at && a.status !== 'draft') chips.push('Submitted ' + fmtDate(a.submitted_at));
-    if (a.sp3k) { chips.push('Plafon disetujui ' + fmtRp(a.plafon_approved)); chips.push('SP3K ' + a.sp3k.sp3k_number); }
-    if (a.akad) chips.push('Akad ' + fmtDate(a.akad.akad_at));
+    // Gate pada status TERCAPAI (bukan sekadar keberadaan record) — setelah "← Tahap Sebelumnya"
+    // record SP3K/Akad tetap ada tapi status mundur, jadi chip tahap yg belum dicapai tidak ditampilkan.
+    if (a.sp3k && curIdx() >= steps.indexOf('sp3k')) { chips.push('Plafon disetujui ' + fmtRp(a.plafon_approved)); chips.push('SP3K ' + a.sp3k.sp3k_number); }
+    if (a.akad && curIdx() >= steps.indexOf('akad')) chips.push('Akad ' + fmtDate(a.akad.akad_at));
     if ((a.realizations?.length ?? 0) > 0) chips.push('Cair ' + disbursePct.value.toFixed(0) + '% · ' + fmtRp(totalDisbursed.value));
     return chips;
 });
@@ -557,6 +566,7 @@ const historyNodes = computed<HistoryNode[]>(() => {
                 </div>
                 <div class="flex shrink-0 items-center gap-2">
                     <Badge :variant="stageView.badgeVariant">{{ stageView.badgeLabel }}</Badge>
+                    <button v-if="canStepBack" type="button" @click="stepBack" class="inline-flex items-center gap-1 rounded border border-neutral-300 px-2 py-1 text-xs text-neutral-600 hover:bg-neutral-50 dark:border-neutral-700 dark:text-neutral-300" title="Kembali ke tahap sebelumnya untuk meninjau / mengedit">← Tahap Sebelumnya</button>
                     <!-- Cetak SI sesuai format bank: BTN / BSN / BRI -->
                     <div v-if="a.status === 'si'" class="inline-flex items-center gap-1.5 rounded-lg bg-primary-600 p-1.5 shadow-sm">
                         <span class="flex items-center gap-1.5 pl-1 pr-0.5 text-sm font-bold text-white"><Printer class="h-4 w-4" /> Cetak SI</span>

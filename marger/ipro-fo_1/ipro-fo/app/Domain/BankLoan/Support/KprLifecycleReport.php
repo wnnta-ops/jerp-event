@@ -44,6 +44,13 @@ final class KprLifecycleReport
         $sp3k    = $k->sp3k;
         $akad    = $k->akad;
 
+        // Gate pada status TERCAPAI, bukan sekadar keberadaan record: setelah "← Tahap Sebelumnya"
+        // (KprApplication::stepBack) record SP3K/Akad tetap ada tapi status mundur, sehingga kolom
+        // tahap yang belum tercapai (mis. Akad saat status kembali ke SI) tidak boleh terisi/aging jalan.
+        $rank         = self::rank($k->status);
+        $reachedSp3k  = $sp3k !== null && $rank >= self::rank(KprStatus::Sp3kIssued);
+        $reachedAkad  = $akad !== null && $rank >= self::rank(KprStatus::AkadDone);
+
         return [
             'id'       => $k->id,
             'no_kpr'   => $k->application_number,
@@ -67,13 +74,13 @@ final class KprLifecycleReport
                 'aging'   => self::aging($k->submitted_at),
             ],
 
-            // SP3K — terisi bila SP3K sudah terbit.
+            // SP3K — terisi bila SP3K sudah terbit DAN status masih di tahap SP3K atau setelahnya.
             'sp3k' => [
-                'bank'    => $sp3k ? $bank : null,
-                'no'      => $sp3k?->sp3k_number,
-                'nominal' => $sp3k ? self::money($sp3k->approved_amount) : null,
-                'tanggal' => self::date($sp3k?->sp3k_date),
-                'aging'   => self::aging($sp3k?->sp3k_date),
+                'bank'    => $reachedSp3k ? $bank : null,
+                'no'      => $reachedSp3k ? $sp3k?->sp3k_number : null,
+                'nominal' => $reachedSp3k ? self::money($sp3k->approved_amount) : null,
+                'tanggal' => $reachedSp3k ? self::date($sp3k?->sp3k_date) : null,
+                'aging'   => $reachedSp3k ? self::aging($sp3k?->sp3k_date) : null,
             ],
 
             // Keputusan — Lanjut (Disetujui) / Batal.
@@ -82,13 +89,13 @@ final class KprLifecycleReport
                 'tanggal'   => self::date($k->decided_at),
             ],
 
-            // Akad — terisi bila akad sudah dicatat.
+            // Akad — terisi bila akad sudah dicatat DAN status masih di tahap Akad atau setelahnya.
             'akad' => [
-                'bank'    => $akad ? $bank : null,
-                'no'      => $akad ? $sp3k?->sp3k_number : null,
-                'nominal' => $akad ? self::money($k->plafon_approved) : null,
-                'tanggal' => self::date($akad?->akad_at),
-                'aging'   => self::aging($akad?->akad_at),
+                'bank'    => $reachedAkad ? $bank : null,
+                'no'      => $reachedAkad ? $sp3k?->sp3k_number : null,
+                'nominal' => $reachedAkad ? self::money($k->plafon_approved) : null,
+                'tanggal' => $reachedAkad ? self::date($akad?->akad_at) : null,
+                'aging'   => $reachedAkad ? self::aging($akad?->akad_at) : null,
             ],
 
             'status' => $k->status?->label(),
@@ -106,6 +113,26 @@ final class KprLifecycleReport
             $r['keputusan']['keputusan'], $r['keputusan']['tanggal'],
             $r['akad']['bank'], $r['akad']['no'], $r['akad']['nominal'], $r['akad']['tanggal'], $r['akad']['aging'],
         ];
+    }
+
+    /**
+     * Urutan tahap KPR untuk membandingkan "sudah tercapai atau belum".
+     * Rejected/Cancelled = terminal (99) → kolom tetap tampil apa adanya (record presence),
+     * sehingga KPR yang ditolak/batal tetap memperlihatkan tahap yang sempat dicapai.
+     */
+    private static function rank(KprStatus $s): int
+    {
+        return match ($s) {
+            KprStatus::Draft      => 0,
+            KprStatus::Submitted  => 1,
+            KprStatus::InReview   => 2,
+            KprStatus::Sp3kIssued => 3,
+            KprStatus::Si         => 4,
+            KprStatus::AkadDone   => 5,
+            KprStatus::Disbursed  => 6,
+            KprStatus::Active     => 7,
+            KprStatus::Rejected, KprStatus::Cancelled => 99,
+        };
     }
 
     private static function money(mixed $v): ?float
