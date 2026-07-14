@@ -26,15 +26,14 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class KprInitiationController extends Controller
 {
-    /** Urutan & label 8 tahap inisiasi KPR. */
+    /** Urutan & label 7 tahap inisiasi KPR. TTS = sumber data (dari Finance), BUKAN tahap — proses langsung mulai dari SPRS. */
     private const STAGES = [
-        'kuitansi'         => 'TTS',
         'sprs'             => 'SPRS',
         'bi_checking'      => 'BI Checking',
         'collect_berkas'   => 'Collect Berkas',
         'analisa'          => 'Analisa BI Checking & Berkas',
-        'profiling_berkas' => 'Profiling Berkas',
-        'profiling'        => 'Profiling Customer',
+        'profiling_berkas' => 'Profiling Customer',
+        'profiling'        => 'Profiling Bank',
         'kpr_application'  => 'Proses KPR',
     ];
 
@@ -141,7 +140,7 @@ class KprInitiationController extends Controller
                 'customer'      => $r->customer?->full_name,
                 'kuitansi'      => $r->ttsReceipt?->tts_number,
                 'current_stage' => $r->current_stage,
-                'stage_label'   => array_values(self::STAGES)[min($r->current_stage, 8) - 1] ?? '-',
+                'stage_label'   => array_values(self::STAGES)[min($r->current_stage, count(self::STAGES)) - 1] ?? '-',
                 'status'        => $r->status,
                 'kpr_number'    => $r->kprApplication?->application_number,
                 'kpr_id'        => $r->kpr_application_id,
@@ -211,15 +210,15 @@ class KprInitiationController extends Controller
         }
 
         $init = KprInitiation::create([
-            // Sumber = SPRS, tapi tahap TTS TETAP integrasi ke TTS (setoran) milik SPRS ini bila ada.
+            // Sumber = SPRS; TTS (setoran) milik SPRS ini TETAP ditautkan sebagai data (bukan tahap).
             'tts_receipt_id'   => $this->bookingTts($booking->id)?->id,
             'customer_id'      => $booking->customer_id,
             'booking_id'       => $booking->id,
             'plafon_requested' => $pencairan,
-            'current_stage'    => 1,
+            'current_stage'    => 1, // langsung ke SPRS (tahap 1) — TTS bukan lagi tahap
             'status'           => 'in_progress',
             'initiated_by'     => $request->user()?->id,
-            'stages'           => ['kuitansi' => ['done' => false]],
+            'stages'           => [],
         ]);
         $init->update(['initiation_number' => sprintf('INIT/%s/%04d', now()->format('y/m'), $init->id)]);
 
@@ -227,7 +226,7 @@ class KprInitiationController extends Controller
             ->with('success', "Inisiasi KPR dibuat dari SPRS {$booking->booking_number} — plafon Rp " . number_format($pencairan, 0, ',', '.') . '.');
     }
 
-    /** TTS (setoran) milik sebuah SPRS/booking — ditautkan/ditampilkan di tahap TTS inisiasi. */
+    /** TTS (setoran) milik sebuah SPRS/booking — ditautkan sebagai data inisiasi (bukan tahap). */
     private function bookingTts(int $bookingId): ?Tts
     {
         return Tts::where('booking_id', $bookingId)
@@ -279,10 +278,6 @@ class KprInitiationController extends Controller
             ];
         }
 
-        // Tahap TTS TETAP integrasi ke TTS: pakai TTS tertaut, atau—untuk inisiasi bersumber SPRS yang
-        // belum tertaut—resolve TTS (setoran) milik booking-nya agar No. TTS & Nominal tetap tampil.
-        $tts = $initiation->ttsReceipt ?: (($b = $initiation->booking) ? $this->bookingTts($b->id) : null);
-
         // Teks mentah OCR (mengandung NIK/NPWP) hanya untuk yang berhak lihat data sensitif.
         $stages = $initiation->stages ?? [];
         if (! ($request->user()?->can('master.customer.view.sensitive') ?? false)) {
@@ -304,13 +299,16 @@ class KprInitiationController extends Controller
                     $initiation->customer->toArray(),
                     ['dob' => optional($initiation->customer->dob)->toDateString()],
                 ) : null,
-                'tts'            => $tts,
+                'tts'            => $initiation->ttsReceipt,
                 'booking'        => $initiation->booking,
                 'kpr'            => $initiation->kprApplication,
                 'created_at'     => optional($initiation->created_at)->toIso8601String(),
             ],
             'contractInfo' => $contractInfo,
             'stageDefs' => self::STAGES,
+            // Dropdown catatan berkas "Tidak Lengkap" (dari master Kategori Berkas Tidak Lengkap).
+            'berkasCategories' => \App\Domain\BankLoan\Models\BerkasIncompleteCategory::where('is_active', true)
+                ->orderBy('sort_order')->orderBy('name')->pluck('name')->values(),
             // Matriks aspek Analisa (dari Kategori Analisa Berkas) untuk render matriks + preview skor/rekomendasi.
             'analisaCfg' => (function () {
                 $c = $this->analisaConfig();
@@ -418,7 +416,7 @@ class KprInitiationController extends Controller
                     'booking_id'         => $booking,
                     'kpr_application_id' => $createdIds[0],
                     'stages'             => $stages,
-                    'current_stage'      => 8,
+                    'current_stage'      => count(self::STAGES), // tahap terakhir (Proses KPR)
                     'status'             => 'completed',
                 ])->save();
 
@@ -457,6 +455,15 @@ class KprInitiationController extends Controller
         // ── Collect Berkas: kategori (karyawan/wirausaha) + checklist per-item (lengkap/tidak_lengkap) + catatan.
         //    File diunggah lewat endpoint terpisah (preserve di-merge). SELALU disimpan; HANYA maju bila semua wajib 'lengkap'.
         if ($stage === 'collect_berkas') {
+            // WAJIB: Catatan Umum + catatan tiap berkas berstatus "Tidak Lengkap" (mirror gerbang klien).
+            if (trim((string) ($data['notes'] ?? '')) === '') {
+                return back()->with('error', 'Catatan Umum wajib diisi.');
+            }
+            foreach ((array) ($data['items'] ?? []) as $it) {
+                if (($it['status'] ?? '') === 'tidak_lengkap' && trim((string) ($it['note'] ?? '')) === '') {
+                    return back()->with('error', 'Isi catatan untuk setiap berkas yang ditandai Tidak Lengkap.');
+                }
+            }
             $existing = $stages['collect_berkas'] ?? [];
             $category = in_array($data['category'] ?? null, ['karyawan', 'wirausaha'], true) ? $data['category'] : null;
 
@@ -500,7 +507,7 @@ class KprInitiationController extends Controller
             ], $allComplete ? ['at' => now()->toIso8601String()] : []);
             $initiation->stages = $stages;
             if ($allComplete) {
-                $initiation->current_stage = min(8, max($initiation->current_stage, $idx + 2));
+                $initiation->current_stage = min(count(self::STAGES), max($initiation->current_stage, $idx + 2));
             }
             $initiation->save();
 
@@ -522,10 +529,16 @@ class KprInitiationController extends Controller
             if (($data['permintaan'] ?? '') !== 'lanjut_spr') {
                 return back()->with('error', 'Simpan & Lanjut hanya bila Permintaan Customer = "Lanjut Pemberkasan SPR". Untuk mundur, gunakan tombol Reject BI Checking.');
             }
+            if (trim((string) ($data['notes'] ?? '')) === '') {
+                return back()->with('error', 'Catatan wajib diisi.');
+            }
         }
         if ($stage === 'analisa') {
             if (empty($data['result'])) {
                 return back()->with('error', 'Pilih Hasil Analisa (Layak / Tidak Layak) terlebih dahulu.');
+            }
+            if (trim((string) ($data['notes'] ?? '')) === '') {
+                return back()->with('error', 'Catatan Analisa wajib diisi.');
             }
             // Aspek wajib mengikuti kategori pemohon (Collect Berkas); daftar & skor dari Kategori Analisa Berkas.
             $cfg   = $this->analisaConfig();
@@ -585,7 +598,7 @@ class KprInitiationController extends Controller
         // ── Tahap biasa: simpan data + tandai selesai + maju ke tahap berikutnya (preserve sub-data spt. docs) ──
         $stages[$stage] = array_merge($stages[$stage] ?? [], $data, ['done' => true, 'at' => now()->toIso8601String()]);
         $initiation->stages = $stages;
-        $initiation->current_stage = min(8, max($initiation->current_stage, $idx + 2));
+        $initiation->current_stage = min(count(self::STAGES), max($initiation->current_stage, $idx + 2));
         $initiation->save();
 
         return back()->with('success', self::STAGES[$stage].' disimpan.');
@@ -630,8 +643,8 @@ class KprInitiationController extends Controller
         if ($initiation->status === 'rejected') {
             return back()->with('error', 'Inisiasi ini sudah ditolak.');
         }
-        // Reject hanya pada/ setelah tahap BI Checking (stage 3) — bukan saat TTS/SPRS.
-        if ($initiation->current_stage < 3) {
+        // Reject hanya pada/ setelah tahap BI Checking (tahap 2, setelah TTS dihilangkan) — bukan saat SPRS.
+        if ($initiation->current_stage < 2) {
             return back()->with('error', 'Reject hanya bisa dilakukan pada tahap BI Checking.');
         }
 
@@ -658,6 +671,10 @@ class KprInitiationController extends Controller
         // Gerbang: Reject hanya bila customer "Mundur / Reject". Jenis reject ditentukan hasil BI (anti-tamper).
         if (($v['permintaan'] ?? '') !== 'mundur') {
             return back()->with('error', 'Reject hanya bila Permintaan Customer = "Mundur / Reject".');
+        }
+        // Catatan BI Checking wajib diisi (mirror gerbang klien: tombol reject nonaktif bila catatan kosong).
+        if (trim((string) ($v['notes'] ?? '')) === '') {
+            return back()->with('error', 'Catatan wajib diisi.');
         }
         if ($type === 'batal_sepihak' && ! $bothClean) {
             return back()->with('error', 'Reject Batal Sepihak hanya bila hasil BI Checking bersih (Clear / Kol 1).');

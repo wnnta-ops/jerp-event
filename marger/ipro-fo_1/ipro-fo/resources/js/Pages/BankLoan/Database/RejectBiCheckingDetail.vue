@@ -16,7 +16,6 @@ const permintaanMap: Record<string, string> = { lanjut_spr: 'Lanjut Pemberkasan 
 
 const sprs = computed(() => props.stages?.sprs ?? {});
 const bi = computed(() => props.stages?.bi_checking ?? {});
-const ttsStage = computed(() => props.stages?.kuitansi ?? {});
 
 const sprsChecks = computed(() => [
     { label: 'KTP Pemohon diterima', ok: !!sprs.value.ktp_pemohon_received },
@@ -61,7 +60,6 @@ function doPrint() { window.print(); }
             <div class="rounded-lg border border-neutral-200 p-4 dark:border-neutral-700">
                 <div class="flex items-center justify-between">
                     <p class="flex items-center gap-2 font-semibold"><Receipt class="h-4 w-4 text-primary-600" /> 1. TTS (Sumber)</p>
-                    <span class="text-xs text-neutral-400">{{ fmtDateTime(ttsStage.at) }}</span>
                 </div>
                 <p class="mt-1 text-sm text-neutral-500">TTS {{ init.tts ?? '—' }} dikonfirmasi sebagai sumber inisiasi.</p>
             </div>

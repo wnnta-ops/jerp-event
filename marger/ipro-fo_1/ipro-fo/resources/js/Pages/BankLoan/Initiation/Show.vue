@@ -13,6 +13,7 @@ const props = defineProps<{
     stageDefs: Record<string, string>;
     banks: Array<any>;
     bookings: Array<any>;
+    berkasCategories?: string[]; // opsi dropdown catatan berkas "Tidak Lengkap" (master Kategori Berkas Tidak Lengkap)
     // Matriks aspek Analisa dari sub-modul "Kategori Analisa Berkas" (fallback ke default bila kosong).
     analisaCfg?: { aspects: Array<{ key: string; no: number; label: string; scope: string; options: Array<{ level: string; desc: string; hint?: string | null; score?: number; bank?: number[] }> }>; banks: string[] };
 }>();
@@ -24,10 +25,10 @@ const a = computed(() => props.init);  // SELALU props terbaru → tabel & OCR i
 const stageList = computed(() => Object.entries(props.stageDefs).map(([key, label], idx) => ({ key, label: label as string, idx })));
 // Label ringkas utk stepper horizontal (alur modul, spt Account Payable).
 const stepShort: Record<string, string> = {
-    kuitansi: 'TTS', sprs: 'SPRS', bi_checking: 'BI Checking', collect_berkas: 'Berkas',
-    analisa: 'Analisa', profiling_berkas: 'Profiling Berkas', profiling: 'Profiling Customer', kpr_application: 'Proses KPR',
+    sprs: 'SPRS', bi_checking: 'BI Checking', collect_berkas: 'Berkas',
+    analisa: 'Analisa', profiling_berkas: 'Profiling Customer', profiling: 'Profiling Bank', kpr_application: 'Proses KPR',
 };
-const activeIdx = computed(() => Math.max(0, Math.min(8, (a.value.current_stage ?? 1)) - 1));
+const activeIdx = computed(() => Math.max(0, Math.min(stageList.value.length, (a.value.current_stage ?? 1)) - 1));
 const openStage = ref(activeIdx.value);
 watch(activeIdx, (v) => { openStage.value = v; }); // auto-buka tahap aktif setelah tahap maju
 
@@ -41,8 +42,8 @@ function stageComplete(key: string): boolean {
         const base = f.sprs.ktp_pemohon_received && f.sprs.npwp_pemohon_received;
         return f.sprs.marital_status === 'sudah_menikah' ? base && f.sprs.ktp_pasangan_received && f.sprs.npwp_pasangan_received : base;
     }
-    if (key === 'bi_checking') return biAllFilled.value && f.bi_checking.permintaan === 'lanjut_spr';
-    if (key === 'analisa') return !!f.analisa.result && analisaAllScored.value;
+    if (key === 'bi_checking') return biAllFilled.value && f.bi_checking.permintaan === 'lanjut_spr' && biNotesFilled.value;
+    if (key === 'analisa') return !!f.analisa.result && analisaAllScored.value && !!(f.analisa.notes ?? '').trim();
     if (key === 'profiling_berkas') return !!f.profiling_berkas.tanggal_lahir && !!f.profiling_berkas.domisili_pekerjaan && !!f.profiling_berkas.jabatan;
     if (key === 'profiling') return decidedBanks.value.length >= 1;
     return true;
@@ -367,6 +368,15 @@ const allBerkasComplete = computed(() => {
     const req = (berkasCategories[cat]?.items ?? []).filter((it) => !it.optional);
     return req.length > 0 && req.every((it) => f.collect_berkas.items[cat + '__' + it.key]?.status === 'lengkap');
 });
+// WAJIB: tiap berkas berstatus "Tidak Lengkap" harus punya catatan, dan Catatan Umum harus diisi.
+const collectNotesOk = computed(() => currentItems.value.every((it) => {
+    const v = f.collect_berkas.items[bkey(it.key)];
+    return !v || v.status !== 'tidak_lengkap' || !!(v.note ?? '').trim();
+}));
+const catatanUmumOk = computed(() => !!(f.collect_berkas.notes ?? '').trim());
+const collectCanSave = computed(() => collectNotesOk.value && catatanUmumOk.value);
+// Opsi dropdown catatan berkas "Tidak Lengkap" (dari master Kategori Berkas Tidak Lengkap).
+const berkasCategoryOpts = computed<string[]>(() => props.berkasCategories ?? []);
 if (f.collect_berkas.category) setCategory(f.collect_berkas.category); // seed entri item utk kategori tersimpan
 
 
@@ -462,6 +472,17 @@ function save(key: string, data: Record<string, any> = {}) {
         onFinish: () => (saving.value = false),
     });
 }
+// Simpan Collect Berkas: kirim HANYA item kategori aktif (karyawan__* / wirausaha__*). Berkas ini 1-kategori,
+// dan gerbang collectNotesOk hanya memeriksa kategori aktif — jadi payload pun dibatasi ke kategori aktif agar
+// tak ada item "Tidak Lengkap" tanpa catatan dari kategori LAIN (yang tak terlihat) yang ditolak server.
+function saveCollect() {
+    const prefix = f.collect_berkas.category + '__';
+    const items: Record<string, any> = {};
+    for (const [k, v] of Object.entries(f.collect_berkas.items)) {
+        if (k.startsWith(prefix)) items[k] = v;
+    }
+    save('collect_berkas', { ...f.collect_berkas, items });
+}
 
 // Hasil BI: "bersih" = Clear/Kol 1; "bermasalah" = Kol 2–5.
 const BI_CLEAN = ['clear', 'kol1'];
@@ -471,6 +492,8 @@ const biNeedPasangan = computed(() => a.value.stages?.sprs?.marital_status !== '
 const biPemohonFilled = computed(() => !!f.bi_checking.result);
 const biPasanganFilled = computed(() => !biNeedPasangan.value || !!f.bi_checking.result_pasangan);
 const biAllFilled = computed(() => biPemohonFilled.value && biPasanganFilled.value);
+// Catatan BI Checking WAJIB diisi — mengunci Simpan & Lanjut / Reject BI Checking / Reject Batal Sepihak.
+const biNotesFilled = computed(() => !!(f.bi_checking.notes ?? '').trim());
 // Semua hasil bersih (Clear/Kol 1) → customer mundur = pembatalan sepihak. Ada Kol 2–5 → reject BI Checking.
 const biBothClean = computed(() => BI_CLEAN.includes(f.bi_checking.result) && (!biNeedPasangan.value || BI_CLEAN.includes(f.bi_checking.result_pasangan)));
 const biAnyBad = computed(() => BI_BAD.includes(f.bi_checking.result) || (biNeedPasangan.value && BI_BAD.includes(f.bi_checking.result_pasangan)));
@@ -484,7 +507,8 @@ const canRejectBi = computed(() => isMundur.value && biAllFilled.value && biAnyB
    type: 'bi_checking' (hasil Kol 2–5) | 'batal_sepihak' (BI bersih tapi customer mundur). */
 function reject(type: 'bi_checking' | 'batal_sepihak') {
     const allowed = type === 'batal_sepihak' ? canBatalSepihak.value : canRejectBi.value;
-    if (!allowed) return;
+    if (!allowed || !biNotesFilled.value) return; // Catatan wajib diisi
+
     const isB = type === 'batal_sepihak';
     const confirmMsg = isB
         ? 'Reject Batal Sepihak — customer mundur padahal BI Checking bersih. Transaksi ditolak & masuk Database Reject BI Checking. Lanjutkan?'
@@ -532,11 +556,11 @@ const analisaLabel: Record<string, string> = { layak: 'Layak', tidak_layak: 'Tid
             <div class="flex items-start justify-between gap-3">
                 <div>
                     <h1 class="text-xl font-bold">Inisiasi KPR <span class="font-mono text-sm text-neutral-400">{{ a.number }}</span></h1>
-                    <p class="text-sm text-neutral-500 mt-0.5">{{ a.customer?.full_name }} · TTS {{ a.tts?.tts_number ?? '—' }}</p>
+                    <p class="text-sm text-neutral-500 mt-0.5">{{ a.customer?.full_name }}</p>
                 </div>
                 <Badge :variant="a.status === 'completed' ? 'success' : (a.status === 'rejected' ? 'danger' : 'warning')" dot>{{ a.status === 'completed' ? 'Selesai' : (a.status === 'rejected' ? 'Ditolak' : 'Berproses') }}</Badge>
             </div>
-            <p class="mt-1 text-xs text-neutral-400">Tahap {{ Math.min(a.current_stage, 8) }} dari 8</p>
+            <p class="mt-1 text-xs text-neutral-400">Tahap {{ Math.min(a.current_stage, stageList.length) }} dari {{ stageList.length }}</p>
         </div>
 
         <!-- Alur modul — stepper melipat (tanpa scroll; turun ke baris berikutnya bila tidak muat) -->
@@ -564,7 +588,7 @@ const analisaLabel: Record<string, string> = { layak: 'Layak', tidak_layak: 'Tid
             </div>
         </div>
 
-        <!-- Stepper 8 tahap -->
+        <!-- Stepper tahap (dinamis dari stageDefs) -->
         <div class="space-y-3">
             <div v-for="st in stageList" :key="st.key" class="card overflow-hidden"
                  :class="locked(st.idx) ? 'opacity-60' : ''">
@@ -593,20 +617,8 @@ const analisaLabel: Record<string, string> = { layak: 'Layak', tidak_layak: 'Tid
                 <!-- Body tahap -->
                 <div v-if="openStage === st.idx && !locked(st.idx)" class="border-t border-neutral-100 px-4 py-4 dark:border-neutral-800">
 
-                    <!-- 1. TTS (sumber) -->
-                    <div v-if="st.key === 'kuitansi'" class="space-y-3">
-                        <dl class="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
-                            <div><dt class="text-neutral-500">No. TTS</dt><dd class="font-mono">{{ a.tts?.tts_number ?? '—' }}</dd></div>
-                            <div><dt class="text-neutral-500">Nominal</dt><dd class="font-mono">{{ fmtRp(a.tts?.amount ?? 0) }}</dd></div>
-                            <div><dt class="text-neutral-500">Customer</dt><dd class="font-medium">{{ a.customer?.full_name ?? '—' }}</dd></div>
-                            <div><dt class="text-neutral-500">Booking</dt><dd class="font-mono">{{ a.booking?.booking_number ?? '—' }}</dd></div>
-                        </dl>
-                        <p class="text-xs text-neutral-500">Sumber data berasal dari modul Finance → TTS (Tanda Terima Setoran).</p>
-                        <Button :loading="saving" @click="save('kuitansi')">Konfirmasi &amp; Lanjut →</Button>
-                    </div>
-
-                    <!-- 2. SPRS — info kontrak auto dari Marketing & Sales + checklist KTP/NPWP diterima -->
-                    <div v-else-if="st.key === 'sprs'" class="space-y-4">
+                    <!-- 1. SPRS — info kontrak auto dari Marketing & Sales + checklist KTP/NPWP diterima. TTS = sumber data (bukan tahap). -->
+                    <div v-if="st.key === 'sprs'" class="space-y-4">
                         <!-- Informasi SPRS (No. Kontrak … PPN) — otomatis dari modul Marketing & Sales (SPRS/Kontrak) -->
                         <div v-if="contractInfo" class="rounded-lg border border-neutral-200 bg-neutral-50 p-4 dark:border-neutral-700 dark:bg-neutral-800/40">
                             <p class="mb-3 text-sm font-semibold">Informasi SPRS</p>
@@ -728,7 +740,10 @@ const analisaLabel: Record<string, string> = { layak: 'Layak', tidak_layak: 'Tid
                                 </select>
                             </div>
                         </div>
-                        <Input v-model="f.bi_checking.notes" label="Catatan" />
+                        <div>
+                            <Input v-model="f.bi_checking.notes" label="Catatan *" placeholder="Wajib diisi" />
+                            <p v-if="!biNotesFilled" class="mt-1 text-xs text-warning-600">Catatan wajib diisi untuk Simpan &amp; Lanjut atau Reject.</p>
+                        </div>
 
                         <!-- R3 — Reject bersifat TERMINAL: bila sudah di-Reject, proses batal & tak bisa Simpan & Lanjut -->
                         <div v-if="a.stages?.bi_checking?.rejected" class="rounded-lg border border-danger-300 bg-danger-50 px-4 py-3 text-sm dark:border-danger-800 dark:bg-danger-900/30">
@@ -745,8 +760,8 @@ const analisaLabel: Record<string, string> = { layak: 'Layak', tidak_layak: 'Tid
                             </p>
                             <div class="flex flex-wrap gap-2">
                                 <Button type="submit" :loading="saving" :disabled="!stageComplete('bi_checking')">Simpan &amp; Lanjut →</Button>
-                                <Button v-if="canBatalSepihak" type="button" variant="danger" :loading="saving" @click="reject('batal_sepihak')">REJECT BATAL SEPIHAK</Button>
-                                <Button v-else type="button" variant="danger" :loading="saving" :disabled="!canRejectBi" @click="reject('bi_checking')">REJECT BI CHECKING</Button>
+                                <Button v-if="canBatalSepihak" type="button" variant="danger" :loading="saving" :disabled="!biNotesFilled" @click="reject('batal_sepihak')">REJECT BATAL SEPIHAK</Button>
+                                <Button v-else type="button" variant="danger" :loading="saving" :disabled="!canRejectBi || !biNotesFilled" @click="reject('bi_checking')">REJECT BI CHECKING</Button>
                             </div>
                             <p class="text-[11px] text-neutral-400">Simpan &amp; Lanjut, Reject BI Checking, dan Reject Batal Sepihak bersifat pilihan — yang sudah di-Reject prosesnya batal &amp; tidak bisa dilanjutkan.</p>
                         </template>
@@ -783,11 +798,14 @@ const analisaLabel: Record<string, string> = { layak: 'Layak', tidak_layak: 'Tid
                                                     class="rounded-lg border px-3 py-1.5 text-xs font-semibold transition"
                                                     :class="f.collect_berkas.items[bkey(it.key)]?.status === 'tidak_lengkap' ? 'border-danger-500 bg-danger-500 text-white' : 'border-danger-300 text-danger-600 hover:bg-danger-50 dark:border-danger-700'">✗ Tidak Lengkap</button>
                                         </div>
-                                        <!-- Catatan: aktif hanya bila Tidak Lengkap -->
-                                        <input v-model="f.collect_berkas.items[bkey(it.key)].note"
-                                               :disabled="f.collect_berkas.items[bkey(it.key)]?.status !== 'tidak_lengkap'"
-                                               :placeholder="f.collect_berkas.items[bkey(it.key)]?.status === 'tidak_lengkap' ? 'Catatan: kenapa belum lengkap…' : 'Catatan (aktif bila Tidak Lengkap)'"
-                                               class="h-8 min-w-[160px] flex-1 rounded-lg border border-neutral-300 px-2 text-xs disabled:cursor-not-allowed disabled:bg-neutral-100 disabled:text-neutral-400 dark:border-neutral-700 dark:bg-neutral-900 dark:disabled:bg-neutral-800" />
+                                        <!-- Catatan: dropdown alasan (Kategori Berkas Tidak Lengkap), aktif hanya bila Tidak Lengkap -->
+                                        <select v-model="f.collect_berkas.items[bkey(it.key)].note"
+                                                :disabled="f.collect_berkas.items[bkey(it.key)]?.status !== 'tidak_lengkap'"
+                                                class="h-8 min-w-[180px] flex-1 rounded-lg border border-neutral-300 px-2 text-xs disabled:cursor-not-allowed disabled:bg-neutral-100 disabled:text-neutral-400 dark:border-neutral-700 dark:bg-neutral-900 dark:disabled:bg-neutral-800">
+                                            <option value="">{{ f.collect_berkas.items[bkey(it.key)]?.status === 'tidak_lengkap' ? '— pilih alasan —' : '— (aktif bila Tidak Lengkap) —' }}</option>
+                                            <option v-for="cat in berkasCategoryOpts" :key="cat" :value="cat">{{ cat }}</option>
+                                            <option v-if="f.collect_berkas.items[bkey(it.key)]?.note && !berkasCategoryOpts.includes(f.collect_berkas.items[bkey(it.key)].note)" :value="f.collect_berkas.items[bkey(it.key)].note">{{ f.collect_berkas.items[bkey(it.key)].note }} (lama)</option>
+                                        </select>
                                     </div>
                                     <!-- Stempel jam & tanggal saat status (Lengkap / Tidak Lengkap) ditandai -->
                                     <div v-if="f.collect_berkas.items[bkey(it.key)]?.status && f.collect_berkas.items[bkey(it.key)]?.status_at"
@@ -803,12 +821,16 @@ const analisaLabel: Record<string, string> = { layak: 'Layak', tidak_layak: 'Tid
                                 </div>
                             </div>
 
-                            <Input v-model="f.collect_berkas.notes" label="Catatan Umum" />
+                            <Input v-model="f.collect_berkas.notes" label="Catatan Umum *" placeholder="Wajib diisi" />
 
-                            <p class="text-xs font-medium" :class="allBerkasComplete ? 'text-success-600' : 'text-warning-600'">
+                            <p v-if="!collectCanSave" class="text-xs text-warning-600">
+                                <span v-if="!collectNotesOk">Isi <b>catatan</b> untuk setiap berkas yang ditandai <b>Tidak Lengkap</b>. </span>
+                                <span v-if="!catatanUmumOk"><b>Catatan Umum</b> wajib diisi.</span>
+                            </p>
+                            <p v-else class="text-xs font-medium" :class="allBerkasComplete ? 'text-success-600' : 'text-warning-600'">
                                 {{ allBerkasComplete ? '✓ Semua berkas wajib sudah Lengkap — siap lanjut ke Analisa.' : 'Tandai semua berkas wajib "Lengkap" untuk bisa Simpan & Lanjut.' }}
                             </p>
-                            <Button type="button" :loading="saving" @click="save('collect_berkas', f.collect_berkas)">{{ allBerkasComplete ? 'Simpan & Lanjut →' : 'Simpan' }}</Button>
+                            <Button type="button" :loading="saving" :disabled="!collectCanSave" @click="saveCollect()">{{ allBerkasComplete ? 'Simpan & Lanjut →' : 'Simpan' }}</Button>
                         </template>
                     </div>
 
@@ -881,12 +903,15 @@ const analisaLabel: Record<string, string> = { layak: 'Layak', tidak_layak: 'Tid
                             <p v-if="resultContradiction" class="mt-1 text-[11px] text-warning-600">⚠ {{ resultContradiction }} Pastikan alasan tercatat di Catatan Analisa.</p>
                         </div>
 
-                        <Input v-model="f.analisa.notes" label="Catatan Analisa" />
-                        <p v-if="!stageComplete('analisa')" class="text-xs text-warning-600">Nilai <b>semua</b> aspek indikator &amp; pilih Hasil Analisa (Layak / Tidak Layak) untuk lanjut.</p>
+                        <div>
+                            <Input v-model="f.analisa.notes" label="Catatan Analisa *" placeholder="Wajib diisi" />
+                            <p v-if="!(f.analisa.notes ?? '').trim()" class="mt-1 text-xs text-warning-600">Catatan Analisa wajib diisi.</p>
+                        </div>
+                        <p v-if="!stageComplete('analisa')" class="text-xs text-warning-600">Nilai <b>semua</b> aspek indikator, isi <b>Catatan Analisa</b> &amp; pilih Hasil Analisa (Layak / Tidak Layak) untuk lanjut.</p>
                         <Button type="submit" :loading="saving" :disabled="!stageComplete('analisa')">Simpan &amp; Lanjut →</Button>
                     </form>
 
-                    <!-- 6. PROFILING BERKAS — rangkuman profil pemohon (umur/domisili/sumber/penghasilan) + pekerjaan -->
+                    <!-- 6. PROFILING CUSTOMER — rangkuman profil pemohon (umur/domisili/sumber/penghasilan) + pekerjaan -->
                     <form v-else-if="st.key === 'profiling_berkas'" @submit.prevent="save('profiling_berkas', f.profiling_berkas)" class="space-y-4">
                         <p class="rounded-lg bg-neutral-100 px-3 py-2 text-xs text-neutral-600 dark:bg-neutral-800 dark:text-neutral-300">
                             Rangkuman profil berkas pemohon — sebagian data ditarik otomatis dari <b>NUP / Pendaftaran</b> &amp; <b>Analisa BI Checking &amp; Berkas</b>. Lengkapi <b>tanggal lahir</b>, <b>domisili pekerjaan</b>, dan <b>jabatan</b> untuk lanjut.
@@ -914,7 +939,7 @@ const analisaLabel: Record<string, string> = { layak: 'Layak', tidak_layak: 'Tid
 
                             <!-- 3. Sumber informasi -->
                             <div class="rounded-xl border border-violet-200 bg-violet-50/50 p-4 dark:border-violet-900/40 dark:bg-violet-900/10">
-                                <div class="mb-2 flex items-center gap-2 text-sm font-semibold text-violet-700 dark:text-violet-300"><Megaphone class="h-4 w-4" /> Sumber Informasi</div>
+                                <div class="mb-2 flex items-center gap-2 text-sm font-semibold text-violet-700 dark:text-violet-300"><Megaphone class="h-4 w-4" /> Sumber Data</div>
                                 <span v-if="pbSumber" class="inline-flex rounded-full bg-violet-100 px-3 py-1 text-sm font-semibold text-violet-700 dark:bg-violet-900/40 dark:text-violet-200">{{ pbSumber }}</span>
                                 <span v-else class="text-sm text-neutral-400">— belum ada sumber data —</span>
                                 <p class="mt-2 text-[11px] text-neutral-400">Sumber: pilihan "Sumber Data" saat NUP / pendaftaran</p>
@@ -950,11 +975,11 @@ const analisaLabel: Record<string, string> = { layak: 'Layak', tidak_layak: 'Tid
                             </div>
                         </div>
 
-                        <p v-if="!stageComplete('profiling_berkas')" class="text-xs text-warning-600">Lengkapi tanggal lahir, domisili pekerjaan, dan jabatan untuk lanjut ke Profiling Customer.</p>
+                        <p v-if="!stageComplete('profiling_berkas')" class="text-xs text-warning-600">Lengkapi tanggal lahir, domisili pekerjaan, dan jabatan untuk lanjut ke Profiling Bank.</p>
                         <Button type="submit" :loading="saving" :disabled="!stageComplete('profiling_berkas')">Simpan &amp; Lanjut →</Button>
                     </form>
 
-                    <!-- 7. PROFILING CUSTOMER (R5) — indikator + rekomendasi bank + keputusan 2 bank + SPR -->
+                    <!-- 7. PROFILING BANK (R5) — indikator + rekomendasi bank + keputusan 2 bank + SPR -->
                     <form v-else-if="st.key === 'profiling'" @submit.prevent="save('profiling', f.profiling)" class="space-y-4">
                         <p class="rounded-lg bg-neutral-100 px-3 py-2 text-xs text-neutral-600 dark:bg-neutral-800 dark:text-neutral-300">Alur: <b>Sistem menyarankan</b> (dari Analisa) → <b>Customer meminta</b> (preferensi) → <b>Anda memutuskan</b> (Keputusan bank yang dilanjutkan Proses KPR).</p>
 
