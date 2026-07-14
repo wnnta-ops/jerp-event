@@ -24,10 +24,10 @@ const a = computed(() => props.init);  // SELALU props terbaru → tabel & OCR i
 const stageList = computed(() => Object.entries(props.stageDefs).map(([key, label], idx) => ({ key, label: label as string, idx })));
 // Label ringkas utk stepper horizontal (alur modul, spt Account Payable).
 const stepShort: Record<string, string> = {
-    kuitansi: 'TTS', sprs: 'SPRS', bi_checking: 'BI Checking', collect_berkas: 'Berkas',
+    sprs: 'SPRS', bi_checking: 'BI Checking', collect_berkas: 'Berkas',
     analisa: 'Analisa', profiling_berkas: 'Profiling Berkas', profiling: 'Profiling Customer', kpr_application: 'Proses KPR',
 };
-const activeIdx = computed(() => Math.max(0, Math.min(8, (a.value.current_stage ?? 1)) - 1));
+const activeIdx = computed(() => Math.max(0, Math.min(stageList.value.length, (a.value.current_stage ?? 1)) - 1));
 const openStage = ref(activeIdx.value);
 watch(activeIdx, (v) => { openStage.value = v; }); // auto-buka tahap aktif setelah tahap maju
 
@@ -41,7 +41,7 @@ function stageComplete(key: string): boolean {
         const base = f.sprs.ktp_pemohon_received && f.sprs.npwp_pemohon_received;
         return f.sprs.marital_status === 'sudah_menikah' ? base && f.sprs.ktp_pasangan_received && f.sprs.npwp_pasangan_received : base;
     }
-    if (key === 'bi_checking') return biAllFilled.value && f.bi_checking.permintaan === 'lanjut_spr';
+    if (key === 'bi_checking') return biAllFilled.value && f.bi_checking.permintaan === 'lanjut_spr' && biNotesFilled.value;
     if (key === 'analisa') return !!f.analisa.result && analisaAllScored.value;
     if (key === 'profiling_berkas') return !!f.profiling_berkas.tanggal_lahir && !!f.profiling_berkas.domisili_pekerjaan && !!f.profiling_berkas.jabatan;
     if (key === 'profiling') return decidedBanks.value.length >= 1;
@@ -471,6 +471,8 @@ const biNeedPasangan = computed(() => a.value.stages?.sprs?.marital_status !== '
 const biPemohonFilled = computed(() => !!f.bi_checking.result);
 const biPasanganFilled = computed(() => !biNeedPasangan.value || !!f.bi_checking.result_pasangan);
 const biAllFilled = computed(() => biPemohonFilled.value && biPasanganFilled.value);
+// Catatan BI Checking WAJIB diisi — mengunci Simpan & Lanjut / Reject BI Checking / Reject Batal Sepihak.
+const biNotesFilled = computed(() => !!(f.bi_checking.notes ?? '').trim());
 // Semua hasil bersih (Clear/Kol 1) → customer mundur = pembatalan sepihak. Ada Kol 2–5 → reject BI Checking.
 const biBothClean = computed(() => BI_CLEAN.includes(f.bi_checking.result) && (!biNeedPasangan.value || BI_CLEAN.includes(f.bi_checking.result_pasangan)));
 const biAnyBad = computed(() => BI_BAD.includes(f.bi_checking.result) || (biNeedPasangan.value && BI_BAD.includes(f.bi_checking.result_pasangan)));
@@ -484,7 +486,8 @@ const canRejectBi = computed(() => isMundur.value && biAllFilled.value && biAnyB
    type: 'bi_checking' (hasil Kol 2–5) | 'batal_sepihak' (BI bersih tapi customer mundur). */
 function reject(type: 'bi_checking' | 'batal_sepihak') {
     const allowed = type === 'batal_sepihak' ? canBatalSepihak.value : canRejectBi.value;
-    if (!allowed) return;
+    if (!allowed || !biNotesFilled.value) return; // Catatan wajib diisi
+
     const isB = type === 'batal_sepihak';
     const confirmMsg = isB
         ? 'Reject Batal Sepihak — customer mundur padahal BI Checking bersih. Transaksi ditolak & masuk Database Reject BI Checking. Lanjutkan?'
@@ -532,11 +535,11 @@ const analisaLabel: Record<string, string> = { layak: 'Layak', tidak_layak: 'Tid
             <div class="flex items-start justify-between gap-3">
                 <div>
                     <h1 class="text-xl font-bold">Inisiasi KPR <span class="font-mono text-sm text-neutral-400">{{ a.number }}</span></h1>
-                    <p class="text-sm text-neutral-500 mt-0.5">{{ a.customer?.full_name }} · TTS {{ a.tts?.tts_number ?? '—' }}</p>
+                    <p class="text-sm text-neutral-500 mt-0.5">{{ a.customer?.full_name }}</p>
                 </div>
                 <Badge :variant="a.status === 'completed' ? 'success' : (a.status === 'rejected' ? 'danger' : 'warning')" dot>{{ a.status === 'completed' ? 'Selesai' : (a.status === 'rejected' ? 'Ditolak' : 'Berproses') }}</Badge>
             </div>
-            <p class="mt-1 text-xs text-neutral-400">Tahap {{ Math.min(a.current_stage, 8) }} dari 8</p>
+            <p class="mt-1 text-xs text-neutral-400">Tahap {{ Math.min(a.current_stage, stageList.length) }} dari {{ stageList.length }}</p>
         </div>
 
         <!-- Alur modul — stepper melipat (tanpa scroll; turun ke baris berikutnya bila tidak muat) -->
@@ -564,7 +567,7 @@ const analisaLabel: Record<string, string> = { layak: 'Layak', tidak_layak: 'Tid
             </div>
         </div>
 
-        <!-- Stepper 8 tahap -->
+        <!-- Stepper tahap (dinamis dari stageDefs) -->
         <div class="space-y-3">
             <div v-for="st in stageList" :key="st.key" class="card overflow-hidden"
                  :class="locked(st.idx) ? 'opacity-60' : ''">
@@ -593,20 +596,8 @@ const analisaLabel: Record<string, string> = { layak: 'Layak', tidak_layak: 'Tid
                 <!-- Body tahap -->
                 <div v-if="openStage === st.idx && !locked(st.idx)" class="border-t border-neutral-100 px-4 py-4 dark:border-neutral-800">
 
-                    <!-- 1. TTS (sumber) -->
-                    <div v-if="st.key === 'kuitansi'" class="space-y-3">
-                        <dl class="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
-                            <div><dt class="text-neutral-500">No. TTS</dt><dd class="font-mono">{{ a.tts?.tts_number ?? '—' }}</dd></div>
-                            <div><dt class="text-neutral-500">Nominal</dt><dd class="font-mono">{{ fmtRp(a.tts?.amount ?? 0) }}</dd></div>
-                            <div><dt class="text-neutral-500">Customer</dt><dd class="font-medium">{{ a.customer?.full_name ?? '—' }}</dd></div>
-                            <div><dt class="text-neutral-500">Booking</dt><dd class="font-mono">{{ a.booking?.booking_number ?? '—' }}</dd></div>
-                        </dl>
-                        <p class="text-xs text-neutral-500">Sumber data berasal dari modul Finance → TTS (Tanda Terima Setoran).</p>
-                        <Button :loading="saving" @click="save('kuitansi')">Konfirmasi &amp; Lanjut →</Button>
-                    </div>
-
-                    <!-- 2. SPRS — info kontrak auto dari Marketing & Sales + checklist KTP/NPWP diterima -->
-                    <div v-else-if="st.key === 'sprs'" class="space-y-4">
+                    <!-- 1. SPRS — info kontrak auto dari Marketing & Sales + checklist KTP/NPWP diterima. TTS = sumber data (bukan tahap). -->
+                    <div v-if="st.key === 'sprs'" class="space-y-4">
                         <!-- Informasi SPRS (No. Kontrak … PPN) — otomatis dari modul Marketing & Sales (SPRS/Kontrak) -->
                         <div v-if="contractInfo" class="rounded-lg border border-neutral-200 bg-neutral-50 p-4 dark:border-neutral-700 dark:bg-neutral-800/40">
                             <p class="mb-3 text-sm font-semibold">Informasi SPRS</p>
@@ -728,7 +719,10 @@ const analisaLabel: Record<string, string> = { layak: 'Layak', tidak_layak: 'Tid
                                 </select>
                             </div>
                         </div>
-                        <Input v-model="f.bi_checking.notes" label="Catatan" />
+                        <div>
+                            <Input v-model="f.bi_checking.notes" label="Catatan *" placeholder="Wajib diisi" />
+                            <p v-if="!biNotesFilled" class="mt-1 text-xs text-warning-600">Catatan wajib diisi untuk Simpan &amp; Lanjut atau Reject.</p>
+                        </div>
 
                         <!-- R3 — Reject bersifat TERMINAL: bila sudah di-Reject, proses batal & tak bisa Simpan & Lanjut -->
                         <div v-if="a.stages?.bi_checking?.rejected" class="rounded-lg border border-danger-300 bg-danger-50 px-4 py-3 text-sm dark:border-danger-800 dark:bg-danger-900/30">
@@ -745,8 +739,8 @@ const analisaLabel: Record<string, string> = { layak: 'Layak', tidak_layak: 'Tid
                             </p>
                             <div class="flex flex-wrap gap-2">
                                 <Button type="submit" :loading="saving" :disabled="!stageComplete('bi_checking')">Simpan &amp; Lanjut →</Button>
-                                <Button v-if="canBatalSepihak" type="button" variant="danger" :loading="saving" @click="reject('batal_sepihak')">REJECT BATAL SEPIHAK</Button>
-                                <Button v-else type="button" variant="danger" :loading="saving" :disabled="!canRejectBi" @click="reject('bi_checking')">REJECT BI CHECKING</Button>
+                                <Button v-if="canBatalSepihak" type="button" variant="danger" :loading="saving" :disabled="!biNotesFilled" @click="reject('batal_sepihak')">REJECT BATAL SEPIHAK</Button>
+                                <Button v-else type="button" variant="danger" :loading="saving" :disabled="!canRejectBi || !biNotesFilled" @click="reject('bi_checking')">REJECT BI CHECKING</Button>
                             </div>
                             <p class="text-[11px] text-neutral-400">Simpan &amp; Lanjut, Reject BI Checking, dan Reject Batal Sepihak bersifat pilihan — yang sudah di-Reject prosesnya batal &amp; tidak bisa dilanjutkan.</p>
                         </template>

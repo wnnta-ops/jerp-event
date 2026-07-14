@@ -28,7 +28,7 @@ function statusLabel(s: string) { return s === 'completed' ? 'Selesai' : (s === 
         <div class="flex items-center justify-between">
             <div>
                 <h1 class="text-2xl font-bold flex items-center gap-2"><GitMerge class="h-6 w-6 text-primary-600" /> Inisiasi KPR</h1>
-                <p class="text-sm text-neutral-500 mt-0.5">Pra-kualifikasi 7 tahap: TTS → SPRS → BI Checking → Collect Berkas → Analisa → Profiling → Proses KPR</p>
+                <p class="text-sm text-neutral-500 mt-0.5">Pra-kualifikasi {{ stageNames.length }} tahap: {{ stageNames.join(' → ') }}</p>
             </div>
             <Link :href="route('kpr.initiation.create')"><Button><template #icon-left><Plus class="h-4 w-4" /></template>Mulai Inisiasi</Button></Link>
         </div>
