@@ -246,7 +246,7 @@ class JournalController extends Controller
         ]);
     }
 
-    public function store(Request $request, JournalService $svc): RedirectResponse
+    public function store(Request $request, JournalService $svc, \App\Domain\BusinessSupport\Services\BudgetGuardService $guard): RedirectResponse
     {
         abort_unless($request->user()?->canModule('gl'), 403);
 
@@ -263,6 +263,8 @@ class JournalController extends Controller
         ]);
 
         try {
+            // Gerbang over-budget: tolak input bila baris menambah realisasi melewati anggaran (akun+cost center).
+            $guard->assertWithinBudget($v['lines'], (int) $v['cost_center_id'], $v['journal_date']);
             $journal = $svc->post([
                 'journal_date'   => $v['journal_date'],
                 'source'         => 'memorial',
@@ -314,7 +316,7 @@ class JournalController extends Controller
     }
 
     /** #54: simpan perubahan jurnal (ganti baris, tetap balance). */
-    public function update(Request $request, BsJournal $journal, JournalService $svc): RedirectResponse
+    public function update(Request $request, BsJournal $journal, JournalService $svc, \App\Domain\BusinessSupport\Services\BudgetGuardService $guard): RedirectResponse
     {
         abort_unless($request->user()?->canModule('gl'), 403);
 
@@ -331,6 +333,8 @@ class JournalController extends Controller
         ]);
 
         try {
+            // Gerbang over-budget (kecualikan jurnal ini dari realisasi agar tak dihitung ganda saat edit).
+            $guard->assertWithinBudget($v['lines'], (int) $v['cost_center_id'], $v['journal_date'], $journal->id);
             $svc->update($journal, [
                 'journal_date'   => $v['journal_date'],
                 'reference'      => $v['reference'] ?? null,
