@@ -414,6 +414,11 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
     Route::put('/kpr/setup/analisa-berkas/{aspect}',    [AnalisaAspectController::class, 'update'])->name('kpr.setup.analisa.update');
     Route::delete('/kpr/setup/analisa-berkas/{aspect}', [AnalisaAspectController::class, 'destroy'])->name('kpr.setup.analisa.destroy');
 
+    Route::get('/kpr/setup/berkas-tidak-lengkap',              [\App\Http\Controllers\Web\BankLoan\Setup\BerkasIncompleteCategoryController::class, 'index'])->name('kpr.setup.berkas-tidak-lengkap.index');
+    Route::post('/kpr/setup/berkas-tidak-lengkap',             [\App\Http\Controllers\Web\BankLoan\Setup\BerkasIncompleteCategoryController::class, 'store'])->name('kpr.setup.berkas-tidak-lengkap.store');
+    Route::put('/kpr/setup/berkas-tidak-lengkap/{category}',   [\App\Http\Controllers\Web\BankLoan\Setup\BerkasIncompleteCategoryController::class, 'update'])->name('kpr.setup.berkas-tidak-lengkap.update');
+    Route::delete('/kpr/setup/berkas-tidak-lengkap/{category}',[\App\Http\Controllers\Web\BankLoan\Setup\BerkasIncompleteCategoryController::class, 'destroy'])->name('kpr.setup.berkas-tidak-lengkap.destroy');
+
     // ── BUSINESS SUPPORT (Back-Office Akuntansi) ───────────
     Route::get('/business-support',                           [BusinessSupportController::class, 'index'])->name('bs.index');
     Route::get('/business-support/setup/accounts',            [BsAccountController::class, 'index'])->name('bs.accounts.index');

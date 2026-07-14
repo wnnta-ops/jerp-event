@@ -58,6 +58,7 @@ export function navGroups(foUrl: string): { title: string; items: NavItem[] }[] 
                 { label: 'Kategori Retensi',        href: 'kpr.setup.retensi.index', permission: 'bankloan.setup.view' },
                 { label: 'Kategori Bank',           href: 'kpr.setup.bank.index',    permission: 'bankloan.setup.view' },
                 { label: 'Kategori Analisa Berkas', href: 'kpr.setup.analisa.index', permission: 'bankloan.setup.view' },
+                { label: 'Kategori Berkas Tidak Lengkap', href: 'kpr.setup.berkas-tidak-lengkap.index', permission: 'bankloan.setup.view' },
             ]},
             // Transaction — proses transaksi KPR.
             { label: 'Transaction', icon: GitMerge, permission: 'bankloan.application.view', children: [
