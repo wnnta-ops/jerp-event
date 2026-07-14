@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { reactive, ref, computed, watch } from 'vue';
 import { useForm, Link } from '@inertiajs/vue3';
-import { ArrowLeft, CircleDollarSign, Save, Search, Home, X, Trash2, Wand2, Scale, BookText, Check } from 'lucide-vue-next';
+import { ArrowLeft, CircleDollarSign, Save, Search, Home, X, Trash2, Wand2, Scale, BookText, Check, Lock } from 'lucide-vue-next';
 import Button from '@/Components/UI/Button.vue';
 import EmptyState from '@/Components/UI/EmptyState.vue';
 import SearchSelect from '@/Components/UI/SearchSelect.vue';
@@ -19,18 +19,7 @@ const props = defineProps<{
 function fmtRp(v: number) { return 'Rp ' + Number(v ?? 0).toLocaleString('id-ID'); }
 function fmtNum(v: number) { return (Number(v) || 0).toLocaleString('id-ID'); } // 3000000 → "3.000.000"
 
-// Input diskon: tampilkan dengan pemisah ribuan, simpan sebagai angka, clamp ke Gross SPR (dasar semua hitungan).
-function onDiscountInput(r: { price: number; gross?: number; discount: number }, e: Event) {
-    const el = e.target as HTMLInputElement;
-    const digits = el.value.replace(/\D/g, '');
-    let n = digits ? Number(digits) : 0;
-    const cap = Number(r.gross ?? r.price) || 0;
-    if (n > cap) n = cap;
-    r.discount = n;
-    el.value = fmtNum(n); // paksa DOM ke format bertitik (hindari nilai basi)
-}
-
-// Baris unit (hanya yang BELUM pernah di-Booked Revenue) + state checklist & diskon (default dari SPR).
+// Baris unit (hanya yang BELUM pernah di-Booked Revenue) + state checklist & diskon (TERKUNCI dari SPR).
 const rows = reactive(props.units.map((u) => ({ ...u, checked: false, discount: Number(u.diskon) || 0 })));
 const selected = computed(() => rows.filter((r) => r.checked));
 // Nilai Revenue (DPP) = (Pricelist Gross SPR − Diskon/Free DP) ÷ 1,11.
@@ -43,6 +32,9 @@ const total = computed(() => selected.value.reduce((s, r) => s + revenueOf(r), 0
 
 const today = new Date().toISOString().slice(0, 10);
 const form = useForm<any>({ booking_date: today, customer_id: '', description: '', units: [] });
+
+// Customer TERKUNCI — hanya menampilkan hasil auto-isi dari unit terpilih (tidak bisa diubah manual).
+const selectedCustomer = computed(() => props.customers.find((c) => c.id === Number(form.customer_id)) || null);
 
 // ── Jurnal manual Booked Revenue (hingga 4 baris debit + 3 baris kredit, COA dari General Ledger) ──
 type JLine = { account_id: number | ''; amount: number };
@@ -170,11 +162,12 @@ const inputCls = 'h-10 w-full rounded-lg border border-neutral-300 bg-white px-3
                     </div>
                 </div>
                 <div>
-                    <label class="mb-1 block text-xs font-medium text-neutral-500">Customer * <span class="text-neutral-400">(otomatis dari unit yang dipilih · bisa diubah)</span></label>
-                    <select v-model="form.customer_id" required :class="inputCls">
-                        <option value="" disabled>— pilih customer —</option>
-                        <option v-for="c in customers" :key="c.id" :value="c.id">{{ c.code }} — {{ c.name }}</option>
-                    </select>
+                    <label class="mb-1 block text-xs font-medium text-neutral-500">Customer <span class="text-neutral-400">(otomatis dari unit · terkunci)</span></label>
+                    <div class="flex h-10 items-center gap-2 rounded-lg border border-neutral-200 bg-neutral-50 px-3 text-sm dark:border-neutral-700 dark:bg-neutral-800/60">
+                        <span v-if="selectedCustomer" class="truncate font-medium text-neutral-800 dark:text-neutral-100">{{ selectedCustomer.code }} — {{ selectedCustomer.name }}</span>
+                        <span v-else class="text-neutral-400">— otomatis terisi setelah unit dipilih —</span>
+                        <Lock class="ml-auto h-3.5 w-3.5 shrink-0 text-neutral-300" />
+                    </div>
                     <p v-if="form.errors.customer_id" class="mt-1 text-xs text-danger-500">{{ form.errors.customer_id }}</p>
                 </div>
             </div>
@@ -192,7 +185,7 @@ const inputCls = 'h-10 w-full rounded-lg border border-neutral-300 bg-white px-3
 
                 <table v-if="selected.length" class="w-full text-sm">
                     <thead class="bg-neutral-50 dark:bg-neutral-800"><tr class="text-left text-xs uppercase text-neutral-500">
-                        <th class="px-4 py-2.5">Unit</th><th class="px-4 py-2.5">Cluster</th><th class="px-4 py-2.5">Status</th><th class="px-4 py-2.5 text-right">Harga (Gross SPR)</th><th class="px-4 py-2.5 text-right">Diskon/Free DP</th><th class="px-4 py-2.5 text-right">Nilai Revenue</th><th class="px-4 py-2.5 w-10"></th>
+                        <th class="px-4 py-2.5">Unit</th><th class="px-4 py-2.5">Cluster</th><th class="px-4 py-2.5">Status</th><th class="px-4 py-2.5 text-right">Harga (Gross SPR)</th><th class="px-4 py-2.5 text-right">Diskon/Free DP <span class="font-normal normal-case text-neutral-400">(SPR)</span></th><th class="px-4 py-2.5 text-right">Nilai Revenue</th><th class="px-4 py-2.5 w-10"></th>
                     </tr></thead>
                     <tbody class="divide-y divide-neutral-100 dark:divide-neutral-800">
                         <tr v-for="r in selected" :key="r.id">
@@ -200,7 +193,7 @@ const inputCls = 'h-10 w-full rounded-lg border border-neutral-300 bg-white px-3
                             <td class="px-4 py-2 text-neutral-500">{{ r.cluster ?? '—' }}</td>
                             <td class="px-4 py-2"><span :class="statusColor[r.status] ?? 'text-neutral-500'">{{ r.status }}</span></td>
                             <td class="px-4 py-2 text-right tabular-nums text-neutral-400">{{ fmtRp(r.gross ?? r.price) }}</td>
-                            <td class="px-4 py-2 text-right"><input :value="fmtNum(r.discount)" @input="onDiscountInput(r, $event)" type="text" inputmode="numeric" class="h-8 w-36 rounded border border-neutral-300 bg-white px-2 text-right text-sm tabular-nums dark:border-neutral-700 dark:bg-neutral-900" /></td>
+                            <td class="px-4 py-2 text-right tabular-nums text-neutral-500">{{ fmtRp(r.discount) }}</td>
                             <td class="px-4 py-2 text-right tabular-nums font-semibold text-primary-600">{{ fmtRp(revenueOf(r)) }}</td>
                             <td class="px-4 py-2 text-center"><button type="button" @click="r.checked = false" class="text-neutral-400 hover:text-danger-500"><Trash2 class="h-4 w-4" /></button></td>
                         </tr>

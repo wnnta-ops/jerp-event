@@ -170,6 +170,21 @@ class BookedRevenueController extends Controller
             'units.min'      => 'Pilih minimal 1 unit untuk di-booking.',
         ]);
 
+        // Diskon/Free DP WAJIB ikut SPR (bukan input manual): timpa nilai dari client dengan
+        // discount_amount booking TERAKHIR per unit — konsisten dgn yang tampil di form & anti-tamper payload.
+        $sprDiscount = \App\Domain\Sales\Booking\Models\Booking::query()
+            ->whereIn('unit_id', collect($v['units'])->pluck('unit_id'))
+            ->whereNull('deleted_at')
+            ->latest('id')
+            ->get(['id', 'unit_id', 'discount_amount'])
+            ->groupBy('unit_id')
+            ->map(fn ($g) => (float) ($g->first()->discount_amount ?? 0));
+        $v['units'] = array_map(function (array $u) use ($sprDiscount): array {
+            $u['discount'] = (float) ($sprDiscount[$u['unit_id']] ?? 0);
+
+            return $u;
+        }, $v['units']);
+
         // Susun baris jurnal manual: lewati baris kosong; tolak baris setengah terisi.
         $lines = [];
         foreach (['debits' => 'debit', 'credits' => 'credit'] as $key => $side) {
