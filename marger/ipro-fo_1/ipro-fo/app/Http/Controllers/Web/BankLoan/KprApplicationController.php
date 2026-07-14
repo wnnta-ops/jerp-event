@@ -32,6 +32,15 @@ use Symfony\Component\HttpFoundation\Response as HttpResponse;
 
 class KprApplicationController extends Controller
 {
+    /** Tahap "dalam pipeline" (untuk siblings / keputusan / cek akad). Termasuk 5 tahap tambahan baru. */
+    private const PIPELINE_STATUSES = ['submitted', 'wawancara', 'input_bank', 'verifikasi', 'analis', 'banding', 'in_review', 'sp3k', 'si', 'akad'];
+
+    /** Tahap yang boleh di-Reject (Tolak Proses KPR) — sebelum SP3K terbit / SI. */
+    private const REJECTABLE_STATUSES = ['submitted', 'wawancara', 'input_bank', 'verifikasi', 'analis', 'banding', 'in_review', 'sp3k'];
+
+    /** Tahap tambahan Proses KPR + urutan lanjut default (Analis → Banding|SP3K ditentukan runtime). */
+    private const PROCESS_STAGES = ['wawancara', 'input_bank', 'verifikasi', 'analis', 'banding'];
+
     public function index(Request $request): Response
     {
         abort_unless($request->user()?->can('bankloan.application.view'), 403);
@@ -243,7 +252,7 @@ class KprApplicationController extends Controller
         // #item4 — semua KPR customer ini yg sudah submitted/SP3K (lintas bank) utk keputusan Lanjut/Batal.
         $siblings = KprApplication::where('customer_id', $kpr->customer_id)
             ->where(function ($q) {
-                $q->whereIn('status', [KprStatus::Submitted->value, KprStatus::InReview->value, KprStatus::Sp3kIssued->value, KprStatus::Si->value, KprStatus::AkadDone->value])
+                $q->whereIn('status', self::PIPELINE_STATUSES)
                     ->orWhereNotNull('decision'); // tetap tampilkan yang sudah diputuskan (Disetujui/Batal)
             })
             ->with('bank:id,code,name')
@@ -307,18 +316,154 @@ class KprApplicationController extends Controller
         return redirect()->route('kpr.show', $kpr)->with('success', 'KPR submitted ke bank.');
     }
 
-    /** Submitted → SP3K: cek identitas nasabah lalu lanjut (form Daftarkan SP3K ada di tahap SP3K). */
+    /** Submitted → Wawancara: cek identitas nasabah lalu mulai tahap Wawancara. */
     public function proceedSubmitted(KprApplication $kpr): RedirectResponse
     {
         abort_unless(auth()->user()?->can('bankloan.sp3k.register'), 403);
         try {
-            $kpr->status->assertCanTransitionTo(KprStatus::Sp3kIssued);
+            $kpr->status->assertCanTransitionTo(KprStatus::Wawancara);
         } catch (InvalidStateTransitionException $e) {
-            return back()->with('error', 'Status KPR saat ini tidak bisa lanjut ke SP3K.');
+            return back()->with('error', 'Status KPR saat ini tidak bisa lanjut ke Wawancara.');
         }
-        $kpr->update(['status' => KprStatus::Sp3kIssued, 'timeline' => $this->stampTimeline($kpr, 'submitted')]);
+        $kpr->update(['status' => KprStatus::Wawancara, 'timeline' => $this->stampTimeline($kpr, 'submitted')]);
 
-        return redirect()->route('kpr.show', $kpr)->with('success', 'Lanjut ke tahap SP3K.');
+        return redirect()->route('kpr.show', $kpr)->with('success', 'Lanjut ke tahap Wawancara.');
+    }
+
+    /**
+     * Simpan data tahap tambahan (Wawancara / Input Sistem Bank / Verifikasi / Analis / Banding) ke
+     * kolom JSON `process_stages`. `advance=true` (Simpan & Lanjut) memvalidasi kelengkapan tahap,
+     * mencatat cap waktu, lalu memajukan status ke tahap berikutnya (Analis → Banding bila dipilih,
+     * selain itu langsung SP3K). NON-destruktif: data tahap sebelumnya tetap tersimpan.
+     */
+    public function saveProcess(Request $request, KprApplication $kpr): RedirectResponse
+    {
+        abort_unless(auth()->user()?->can('bankloan.sp3k.register'), 403);
+
+        $stage = (string) $request->input('stage');
+        if (! in_array($stage, self::PROCESS_STAGES, true)) {
+            return back()->with('error', 'Tahap proses tidak dikenal.');
+        }
+        $statusFor = [
+            'wawancara' => KprStatus::Wawancara, 'input_bank' => KprStatus::InputBank,
+            'verifikasi' => KprStatus::Verifikasi, 'analis' => KprStatus::Analis, 'banding' => KprStatus::Banding,
+        ];
+        if ($kpr->status !== $statusFor[$stage]) {
+            return back()->with('error', 'Tahap ini tidak sedang aktif — muat ulang halaman.');
+        }
+
+        [$clean, $complete, $err] = $this->normalizeProcessStage($stage, (array) $request->input('data', []));
+        if ($err !== null) {
+            return back()->with('error', $err);
+        }
+
+        $stages = $kpr->process_stages ?? [];
+        $stages[$stage] = $clean;
+        $kpr->process_stages = $stages;
+
+        // Simpan progres saja (tanpa lanjut).
+        if (! $request->boolean('advance')) {
+            $kpr->save();
+
+            return back()->with('success', 'Progres tahap disimpan.');
+        }
+
+        // Simpan & Lanjut: butuh tahap lengkap (tanggal selesai + field wajib).
+        if (! $complete) {
+            return back()->with('error', 'Lengkapi tanggal selesai (dan field wajib) sebelum lanjut ke tahap berikutnya.');
+        }
+
+        $next = match ($stage) {
+            'wawancara'  => KprStatus::InputBank,
+            'input_bank' => KprStatus::Verifikasi,
+            'verifikasi' => KprStatus::Analis,
+            'analis'     => (($clean['banding'] ?? false) ? KprStatus::Banding : KprStatus::Sp3kIssued),
+            'banding'    => KprStatus::Sp3kIssued,
+        };
+        try {
+            $kpr->status->assertCanTransitionTo($next);
+        } catch (InvalidStateTransitionException $e) {
+            return back()->with('error', 'Status KPR saat ini tidak bisa lanjut dari tahap ini.');
+        }
+        $kpr->timeline = $this->stampTimeline($kpr, $stage); // cap tahap SELESAI
+        $kpr->status = $next;
+        $kpr->save();
+
+        return redirect()->route('kpr.show', $kpr)->with('success', 'Lanjut ke tahap '.$next->label().'.');
+    }
+
+    /**
+     * Validasi + normalisasi data satu tahap tambahan. Mengembalikan [data bersih, lengkap?, error|null].
+     * Field tanggal dinormalkan ke 'Y-m-d' (atau null). "Lengkap" = tanggal selesai (+ field wajib) terisi.
+     *
+     * @return array{0: array<string,mixed>, 1: bool, 2: ?string}
+     */
+    private function normalizeProcessStage(string $stage, array $data): array
+    {
+        $date = function ($v): ?string {
+            $v = trim((string) ($v ?? ''));
+
+            return ($v !== '' && strtotime($v) !== false) ? date('Y-m-d', strtotime($v)) : null;
+        };
+        $text = fn ($v) => (trim((string) ($v ?? '')) !== '') ? trim((string) $v) : null;
+        // satu blok tanggal-mulai/catatan/tanggal-selesai; error bila selesai < mulai.
+        $block = function (array $d) use ($date, $text): array {
+            $start = $date($d['started_at'] ?? null);
+            $end = $date($d['finished_at'] ?? null);
+            $bad = ($start !== null && $end !== null && $end < $start);
+
+            return [['started_at' => $start, 'notes' => $text($d['notes'] ?? null), 'finished_at' => $end], $end !== null && ! $bad, $bad];
+        };
+
+        if ($stage === 'wawancara' || $stage === 'input_bank') {
+            [$b, $ok, $bad] = $block($data);
+            if ($bad) {
+                return [$b, false, 'Tanggal selesai tidak boleh sebelum tanggal mulai.'];
+            }
+
+            return [$b, $ok, null];
+        }
+
+        if ($stage === 'verifikasi') {
+            [$ots, $okO, $badO] = $block((array) ($data['ots'] ?? []));
+            [$w2, $okW, $badW] = $block((array) ($data['wawancara2'] ?? []));
+            if ($badO || $badW) {
+                return [['ots' => $ots, 'wawancara2' => $w2], false, 'Tanggal selesai tidak boleh sebelum tanggal mulai.'];
+            }
+
+            return [['ots' => $ots, 'wawancara2' => $w2], $okO && $okW, null];
+        }
+
+        if ($stage === 'analis') {
+            [$b, $ok, $bad] = $block($data);
+            $clean = array_merge($b, [
+                'berkas_tambahan' => $text($data['berkas_tambahan'] ?? null),
+                'banding'         => (bool) ($data['banding'] ?? false),
+            ]);
+            if ($bad) {
+                return [$clean, false, 'Tanggal selesai tidak boleh sebelum tanggal mulai.'];
+            }
+
+            return [$clean, $ok, null];
+        }
+
+        // banding
+        $allowedJenis = ['tambah_dp', 'pindah_unit', 'plafon_tidak_sesuai', 'tenor_tidak_sesuai', 'ganti_nama', 'lain_lain'];
+        $jenis = in_array($data['jenis'] ?? null, $allowedJenis, true) ? $data['jenis'] : null;
+        $jenisLain = $text($data['jenis_lain'] ?? null);
+        [$b, $ok, $bad] = $block($data);
+        $clean = array_merge($b, [
+            'jenis'           => $jenis,
+            'jenis_lain'      => $jenisLain,
+            'berkas_tambahan' => $text($data['berkas_tambahan'] ?? null),
+        ]);
+        if ($bad) {
+            return [$clean, false, 'Tanggal selesai tidak boleh sebelum tanggal mulai.'];
+        }
+        // Lengkap bila jenis dipilih (+ keterangan bila "Lain-Lain") DAN tanggal selesai terisi.
+        $complete = $ok && $jenis !== null && ! ($jenis === 'lain_lain' && $jenisLain === null);
+
+        return [$clean, $complete, null];
     }
 
     /** SP3K → SI (Surat Instruksi): setelah data SP3K tercatat. */
@@ -380,7 +525,16 @@ class KprApplicationController extends Controller
         abort_unless($user?->can('bankloan.akad.schedule') || $user?->can('bankloan.sp3k.register'), 403);
 
         $prev = match ($kpr->status) {
-            KprStatus::Sp3kIssued => KprStatus::Submitted,
+            KprStatus::Wawancara  => KprStatus::Submitted,
+            KprStatus::InputBank  => KprStatus::Wawancara,
+            KprStatus::Verifikasi => KprStatus::InputBank,
+            KprStatus::Analis     => KprStatus::Verifikasi,
+            KprStatus::Banding    => KprStatus::Analis,
+            // SP3K kembali ke Banding (bila tadinya banding) atau Analis. Record lama (tanpa
+            // process_stages / alur lama) tak pernah lewat tahap baru → mundur ke Submitted.
+            KprStatus::Sp3kIssued => (empty($kpr->process_stages)
+                ? KprStatus::Submitted
+                : ((($kpr->process_stages['analis']['banding'] ?? false)) ? KprStatus::Banding : KprStatus::Analis)),
             KprStatus::Si         => KprStatus::Sp3kIssued,
             KprStatus::AkadDone   => KprStatus::Si,
             default               => null,
@@ -388,7 +542,7 @@ class KprApplicationController extends Controller
         if ($prev === null) {
             return back()->with('error', 'Tahap ini tidak dapat dikembalikan ke tahap sebelumnya.');
         }
-        // Hapus cap waktu tahap yang di-masuki-ulang ($prev->value = kunci cap: 'submitted'/'sp3k'/'si')
+        // Hapus cap waktu tahap yang di-masuki-ulang ($prev->value = kunci cap tahap: mis. 'analis'/'sp3k'/'si')
         // agar Laporan Durasi Proses tidak lagi menandainya SELESAI; cap dibuat ulang saat operator lanjut lagi.
         $timeline = $kpr->timeline ?? [];
         unset($timeline[$prev->value]);
@@ -693,14 +847,16 @@ class KprApplicationController extends Controller
 
         // Keputusan (Lanjut/Batal) kini ditetapkan di tahap Akad; tetap boleh diubah di tahap sebelumnya
         // atau saat sudah Cancelled (membatalkan keputusan Batal).
-        $allowed = [KprStatus::Submitted->value, KprStatus::InReview->value, KprStatus::Sp3kIssued->value, KprStatus::Si->value, KprStatus::AkadDone->value, KprStatus::Cancelled->value];
+        $allowed = [...self::PIPELINE_STATUSES, KprStatus::Cancelled->value];
         if (! in_array($kpr->status->value, $allowed, true)) {
             return back()->with('error', 'Keputusan Lanjut/Batal hanya bisa diatur sampai tahap Akad (sebelum pencairan).');
         }
 
         // ── BATAL: Proses KPR di bank ini dibatalkan (status → Cancelled; masih bisa diubah lagi via "Ubah") ──
         if ($v['decision'] === 'batal') {
-            $kpr->update(['decision' => 'batal', 'decided_at' => now()->toDateString(), 'status' => KprStatus::Cancelled]);
+            // Catat tahap terakhir sebelum dibatalkan agar bisa dipulihkan persis saat "Ubah → Lanjut".
+            $extra = $kpr->status !== KprStatus::Cancelled ? ['status_before_cancel' => $kpr->status->value] : [];
+            $kpr->update(array_merge(['decision' => 'batal', 'decided_at' => now()->toDateString(), 'status' => KprStatus::Cancelled], $extra));
 
             return back()->with('success', "Pengajuan KPR di {$kpr->bank?->name} dibatalkan ({$kpr->application_number}).");
         }
@@ -716,11 +872,14 @@ class KprApplicationController extends Controller
             return back()->with('error', "Sudah ada KPR yang Disetujui (Lanjut) untuk nasabah ini di {$existing->bank?->name} ({$existing->application_number}). Ubah keputusan KPR tsb (Batal) dulu bila ingin pindah bank.");
         }
 
-        // Bila KPR ini sebelumnya Batal (Cancelled), pulihkan status. Keputusan ditetapkan di tahap Akad,
-        // jadi bila SP3K sudah ada kembalikan ke tahap Akad; selain itu ke Submitted.
+        // Bila KPR ini sebelumnya Batal (Cancelled), pulihkan ke tahap terakhir yang dicatat
+        // (status_before_cancel). Fallback data lama tanpa catatan: SP3K ada → Akad, selain itu Submitted.
         $extra = [];
         if ($kpr->status === KprStatus::Cancelled) {
-            $extra['status'] = $kpr->sp3k()->exists() ? KprStatus::AkadDone : KprStatus::Submitted;
+            $resume = $kpr->status_before_cancel !== null ? KprStatus::tryFrom($kpr->status_before_cancel) : null;
+            $resume ??= $kpr->sp3k()->exists() ? KprStatus::AkadDone : KprStatus::Submitted;
+            $extra['status'] = $resume;
+            $extra['status_before_cancel'] = null;
         }
         $kpr->update(array_merge(['decision' => 'lanjut', 'decided_at' => now()->toDateString()], $extra));
 
@@ -735,9 +894,8 @@ class KprApplicationController extends Controller
     {
         abort_unless($request->user()?->can('bankloan.sp3k.register'), 403);
 
-        $allowed = [KprStatus::Submitted->value, KprStatus::InReview->value, KprStatus::Sp3kIssued->value];
-        if (! in_array($kpr->status->value, $allowed, true)) {
-            return back()->with('error', 'Reject hanya bisa dilakukan saat KPR berstatus Submitted / SP3K.');
+        if (! in_array($kpr->status->value, self::REJECTABLE_STATUSES, true)) {
+            return back()->with('error', 'Reject hanya bisa dilakukan sampai tahap SP3K (sebelum SI).');
         }
 
         $v = $request->validate(['reason' => ['nullable', 'string', 'max:500']]);
@@ -775,7 +933,7 @@ class KprApplicationController extends Controller
         // Semua KPR nasabah (yang masih di pipeline) harus sudah diputuskan Lanjut/Batal dulu.
         $pending = KprApplication::where('customer_id', $kpr->customer_id)
             ->whereNull('decision')
-            ->whereIn('status', [KprStatus::Submitted->value, KprStatus::InReview->value, KprStatus::Sp3kIssued->value, KprStatus::Si->value, KprStatus::AkadDone->value])
+            ->whereIn('status', self::PIPELINE_STATUSES)
             ->count();
         if ($pending > 0) {
             return back()->with('error', "Masih ada {$pending} KPR nasabah ini yang belum diputuskan (Lanjut/Batal). Putuskan semua dulu sebelum mencatat akad.");
