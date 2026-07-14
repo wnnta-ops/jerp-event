@@ -32,8 +32,8 @@ class KprInitiationController extends Controller
         'bi_checking'      => 'BI Checking',
         'collect_berkas'   => 'Collect Berkas',
         'analisa'          => 'Analisa BI Checking & Berkas',
-        'profiling_berkas' => 'Profiling Berkas',
-        'profiling'        => 'Profiling Customer',
+        'profiling_berkas' => 'Profiling Customer',
+        'profiling'        => 'Profiling Bank',
         'kpr_application'  => 'Proses KPR',
     ];
 
@@ -284,6 +284,9 @@ class KprInitiationController extends Controller
             ],
             'contractInfo' => $contractInfo,
             'stageDefs' => self::STAGES,
+            // Dropdown catatan berkas "Tidak Lengkap" (dari master Kategori Berkas Tidak Lengkap).
+            'berkasCategories' => \App\Domain\BankLoan\Models\BerkasIncompleteCategory::where('is_active', true)
+                ->orderBy('sort_order')->orderBy('name')->pluck('name')->values(),
             // Matriks aspek Analisa (dari Kategori Analisa Berkas) untuk render matriks + preview skor/rekomendasi.
             'analisaCfg' => (function () {
                 $c = $this->analisaConfig();
@@ -430,6 +433,15 @@ class KprInitiationController extends Controller
         // ── Collect Berkas: kategori (karyawan/wirausaha) + checklist per-item (lengkap/tidak_lengkap) + catatan.
         //    File diunggah lewat endpoint terpisah (preserve di-merge). SELALU disimpan; HANYA maju bila semua wajib 'lengkap'.
         if ($stage === 'collect_berkas') {
+            // WAJIB: Catatan Umum + catatan tiap berkas berstatus "Tidak Lengkap" (mirror gerbang klien).
+            if (trim((string) ($data['notes'] ?? '')) === '') {
+                return back()->with('error', 'Catatan Umum wajib diisi.');
+            }
+            foreach ((array) ($data['items'] ?? []) as $it) {
+                if (($it['status'] ?? '') === 'tidak_lengkap' && trim((string) ($it['note'] ?? '')) === '') {
+                    return back()->with('error', 'Isi catatan untuk setiap berkas yang ditandai Tidak Lengkap.');
+                }
+            }
             $existing = $stages['collect_berkas'] ?? [];
             $category = in_array($data['category'] ?? null, ['karyawan', 'wirausaha'], true) ? $data['category'] : null;
 
@@ -502,6 +514,9 @@ class KprInitiationController extends Controller
         if ($stage === 'analisa') {
             if (empty($data['result'])) {
                 return back()->with('error', 'Pilih Hasil Analisa (Layak / Tidak Layak) terlebih dahulu.');
+            }
+            if (trim((string) ($data['notes'] ?? '')) === '') {
+                return back()->with('error', 'Catatan Analisa wajib diisi.');
             }
             // Aspek wajib mengikuti kategori pemohon (Collect Berkas); daftar & skor dari Kategori Analisa Berkas.
             $cfg   = $this->analisaConfig();
