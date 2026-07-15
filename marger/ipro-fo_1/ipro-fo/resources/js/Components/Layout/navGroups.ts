@@ -130,6 +130,7 @@ export function navGroups(foUrl: string): NavGroup[] {
                 { label: 'PPN Masukan', href: 'bs.tax.masukan' },
                 { label: 'PPN Keluaran', href: 'bs.tax.keluaran' },
             ] },
+            { label: 'Rincian Batal Akad', icon: TriangleAlert, href: 'bs.batal-akad.index', permission: ['businesssupport.view', 'ar.*'] },
             { label: 'Report / Query', icon: FileBarChart, href: 'bs.booked-revenue.report', permission: ['businesssupport.view', 'ar.*'] },
         ],
     },

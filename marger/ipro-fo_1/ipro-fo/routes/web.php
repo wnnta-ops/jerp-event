@@ -723,6 +723,8 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
     Route::post('/business-support/cash-book-approval-utjdp/{tts}/reject',    [BsBankApprovalController::class, 'utjdpReject'])->name('bs.cashbook.approval-utjdp.reject');
     Route::post('/business-support/cash-book-approval-utjdp/{tts}/restore',   [BsBankApprovalController::class, 'utjdpRestore'])->name('bs.cashbook.approval-utjdp.restore'); // pulihkan TTS ditolak
     // Approval UM Penjualan — lanjutan UTJ & DP: konversi ke Uang Muka Penjualan (Dr Hutang Usaha / Cr Uang Muka + PPN)
+    // Rincian Batal Akad — KPR batal/ditolak; disaring keluar dari antrean approval.
+    Route::get('/business-support/batal-akad',                                [\App\Http\Controllers\Web\BusinessSupport\BatalAkadController::class, 'index'])->name('bs.batal-akad.index');
     Route::get('/business-support/cash-book-approval-um',                     [BsBankApprovalController::class, 'umIndex'])->name('bs.cashbook.approval-um');
     Route::post('/business-support/cash-book-approval-um/{entry}',            [BsBankApprovalController::class, 'umPost'])->name('bs.cashbook.approval-um.post');
     Route::get('/business-support/cash-book',                  [BsCashBookController::class, 'index'])->name('bs.cashbook.index');
