@@ -125,12 +125,17 @@ final class KprLifecycleReport
         return match ($s) {
             KprStatus::Draft      => 0,
             KprStatus::Submitted  => 1,
-            KprStatus::InReview   => 2,
-            KprStatus::Sp3kIssued => 3,
-            KprStatus::Si         => 4,
-            KprStatus::AkadDone   => 5,
-            KprStatus::Disbursed  => 6,
-            KprStatus::Active     => 7,
+            KprStatus::Wawancara  => 2,
+            KprStatus::InputBank  => 3,
+            KprStatus::Verifikasi => 4,
+            KprStatus::Analis     => 5,
+            KprStatus::Banding    => 6,
+            KprStatus::InReview   => 6, // legacy — sejajar sebelum SP3K
+            KprStatus::Sp3kIssued => 7,
+            KprStatus::Si         => 8,
+            KprStatus::AkadDone   => 9,
+            KprStatus::Disbursed  => 10,
+            KprStatus::Active     => 11,
             KprStatus::Rejected, KprStatus::Cancelled => 99,
         };
     }
