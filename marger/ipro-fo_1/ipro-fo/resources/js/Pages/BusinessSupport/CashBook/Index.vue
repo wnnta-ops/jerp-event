@@ -22,16 +22,35 @@ const accountId = ref<any>(props.filters.account_id ?? '');
 const from = ref(props.filters.from ?? '');
 const to = ref(props.filters.to ?? '');
 function applyFilter() {
+    // Centang WAJIB dikosongkan: id berganti makna antar mode (transaksi kas ⇄ baris jurnal),
+    // dan baris terpilih bisa hilang dari hasil filter baru.
+    selected.value = [];
     router.get(route('bs.cashbook.index'), {
         search: search.value || undefined, type: type.value || undefined,
         account_id: accountId.value || undefined, from: from.value || undefined, to: to.value || undefined,
     }, { preserveState: true, replace: true });
 }
+
+// ── Pilih massal (checkbox per baris) ──
+const selected = ref<number[]>([]);
+const rowId = (r: any) => Number(r.trx_id ?? r.id);
+// Transfer tampil 2 baris (sisi keluar + masuk) dari 1 transaksi → id-nya sama, dihitung sekali.
+const pageIds = computed<number[]>(() => Array.from(new Set((props.transactions.data ?? []).map((r: any) => rowId(r)))));
+const allChecked = computed<boolean>({
+    get: () => pageIds.value.length > 0 && pageIds.value.every((id) => selected.value.includes(id)),
+    set: (v: boolean) => { selected.value = v ? [...pageIds.value] : []; },
+});
+const filterParams = computed<Record<string, any>>(() => ({
+    account_id: props.filters.account_id || undefined, type: props.filters.type || undefined,
+    search: props.filters.search || undefined, from: props.filters.from || undefined, to: props.filters.to || undefined,
+}));
+const selectedParams = computed(() => ({ ...filterParams.value, ids: selected.value.join(',') }));
 const anyFilter = computed(() => !!(search.value || type.value || accountId.value || from.value || to.value));
 function resetFilters() {
     search.value = ''; type.value = ''; accountId.value = ''; from.value = ''; to.value = '';
     applyFilter();
 }
+const cbCls = 'h-4 w-4 cursor-pointer rounded border-neutral-300 text-primary-600 focus:ring-primary-500 dark:border-neutral-600 dark:bg-neutral-900';
 function fmtRp(v: number) { return 'Rp ' + Number(v ?? 0).toLocaleString('id-ID'); }
 function fmtDate(d: string) { return d ? new Date(d).toLocaleDateString('id-ID', { day:'2-digit', month:'short', year:'numeric' }) : '—'; }
 const typeMeta: Record<string, any> = {
@@ -47,10 +66,10 @@ const typeMeta: Record<string, any> = {
             <h1 class="flex items-center gap-2 text-2xl font-bold"><Banknote class="h-6 w-6 text-primary-600" /> Cash Book <span class="text-base font-normal text-neutral-400">(Kas / Bank)</span></h1>
             <div class="flex flex-wrap gap-2">
                 <Link :href="route('bs.cashbook.balances')"><Button variant="secondary"><template #icon-left><Landmark class="h-4 w-4" /></template>Saldo Rekening</Button></Link>
-                <!-- #129: unduh mutasi sesuai filter layar -->
-                <a :href="route('bs.cashbook.export', { account_id: filters.account_id || undefined, type: filters.type || undefined, search: filters.search || undefined, from: filters.from || undefined, to: filters.to || undefined })"><Button variant="secondary"><template #icon-left><Download class="h-4 w-4" /></template>Download Mutasi</Button></a>
+                <!-- #129: unduh mutasi sesuai filter layar (tanpa ids → seluruh hasil filter) -->
+                <a :href="route('bs.cashbook.export', filterParams)"><Button variant="secondary"><template #icon-left><Download class="h-4 w-4" /></template>Download Mutasi</Button></a>
                 <!-- #9: cetak mutasi sesuai filter layar -->
-                <a :href="route('bs.cashbook.export.pdf', { account_id: filters.account_id || undefined, type: filters.type || undefined, search: filters.search || undefined, from: filters.from || undefined, to: filters.to || undefined })" target="_blank" rel="noopener"><Button variant="secondary"><template #icon-left><Printer class="h-4 w-4" /></template>PDF</Button></a>
+                <a :href="route('bs.cashbook.export.pdf', filterParams)" target="_blank" rel="noopener"><Button variant="secondary"><template #icon-left><Printer class="h-4 w-4" /></template>PDF</Button></a>
                 <Link :href="route('bs.bankrec.index')" title="Rekonsiliasi Bank: mencocokkan catatan kas/bank di sistem dengan rekening koran bank, untuk menemukan selisih (transaksi belum tercatat / belum kliring)." class="inline-flex h-9 items-center gap-1.5 rounded-lg border border-neutral-300 px-3 text-sm font-medium hover:bg-neutral-50 dark:border-neutral-700"><Scale class="h-4 w-4" /> Rekonsiliasi</Link>
                 <!-- #77: bayar beberapa invoice 1 supplier sekaligus (Kuitansi Hutang) -->
                 <Link :href="route('bs.ap.kuitansi.create')" title="Bayar beberapa invoice untuk 1 supplier dalam 1 tanggal pembayaran (Kuitansi Hutang)."><Button variant="secondary"><template #icon-left><ReceiptText class="h-4 w-4" /></template>Bayar Hutang (Multi-Invoice)</Button></Link>
@@ -78,18 +97,33 @@ const typeMeta: Record<string, any> = {
             <button v-if="anyFilter" type="button" @click="resetFilters" class="ml-auto rounded-lg border border-neutral-300 px-3 py-2 text-sm font-medium text-neutral-600 hover:bg-neutral-50 dark:border-neutral-700 dark:text-neutral-300">Reset filter</button>
         </div>
 
+        <!-- Aksi massal atas baris yang dicentang. Sticky agar tetap terjangkau saat menggulir daftar panjang. -->
+        <div v-if="selected.length" class="card sticky top-2 z-10 flex flex-wrap items-center gap-3 border-l-4 border-l-primary-500 p-3">
+            <span class="text-sm"><b>{{ selected.length }}</b> {{ glMode ? 'mutasi' : 'transaksi' }} dipilih</span>
+            <span v-if="glMode" class="text-xs text-neutral-400">Cetak bukti hanya tersedia pada tampilan "Semua rekening" — baris di sini adalah mutasi buku besar, bukan transaksi kas.</span>
+            <div class="ml-auto flex flex-wrap gap-2">
+                <a v-if="!glMode" :href="route('bs.cashbook.print-bulk', { ids: selected.join(',') })" target="_blank" rel="noopener" title="Cetak bukti kas/bank untuk semua transaksi terpilih — 1 bukti per halaman."><Button variant="secondary"><template #icon-left><Printer class="h-4 w-4" /></template>Cetak Bukti ({{ selected.length }})</Button></a>
+                <a :href="route('bs.cashbook.export', selectedParams)" title="Unduh baris terpilih ke Excel."><Button variant="secondary"><template #icon-left><Download class="h-4 w-4" /></template>Download Excel</Button></a>
+                <a :href="route('bs.cashbook.export.pdf', selectedParams)" target="_blank" rel="noopener" title="Cetak daftar mutasi berisi baris terpilih."><Button variant="secondary"><template #icon-left><Printer class="h-4 w-4" /></template>PDF Mutasi</Button></a>
+                <button type="button" @click="selected = []" class="rounded-lg border border-neutral-300 px-3 py-2 text-sm font-medium text-neutral-600 hover:bg-neutral-50 dark:border-neutral-700 dark:text-neutral-300">Batal pilih</button>
+            </div>
+        </div>
+
         <!-- #6: fit-to-page — TableTopScroll menyediakan card + scrollbar atas tersinkron -->
         <TableTopScroll>
             <table class="w-full text-sm">
                 <thead class="bg-neutral-50 dark:bg-neutral-800">
                     <tr class="text-left text-xs uppercase text-neutral-500">
+                        <th class="w-10 px-3 py-3"><input v-model="allChecked" type="checkbox" :class="cbCls" :title="allChecked ? 'Kosongkan pilihan' : 'Pilih semua baris di halaman ini'" /></th>
                         <th class="whitespace-nowrap px-4 py-3">No.</th><th class="whitespace-nowrap px-4 py-3">Tanggal</th><th class="whitespace-nowrap px-4 py-3">Jenis</th><th class="px-4 py-3">Rekening</th><th class="px-4 py-3">Keterangan / Pihak</th>
                         <th class="whitespace-nowrap px-4 py-3 text-right">Nominal Masuk</th><th class="whitespace-nowrap px-4 py-3 text-right">Nominal Keluar</th>
                         <th class="whitespace-nowrap px-4 py-3 text-right">Saldo</th>
                     </tr>
                 </thead>
                 <tbody class="divide-y divide-neutral-200 dark:divide-neutral-800">
-                    <tr v-for="r in transactions.data" :key="r.row_key ?? r.id" class="hover:bg-neutral-50 dark:hover:bg-neutral-800/50" :class="glMode ? '' : 'cursor-pointer'" @click="!glMode && router.get(route('bs.cashbook.show', r.trx_id ?? r.id))">
+                    <tr v-for="r in transactions.data" :key="r.row_key ?? r.id" class="hover:bg-neutral-50 dark:hover:bg-neutral-800/50" :class="[glMode ? '' : 'cursor-pointer', selected.includes(rowId(r)) ? 'bg-primary-500/10' : '']" @click="!glMode && router.get(route('bs.cashbook.show', r.trx_id ?? r.id))">
+                        <!-- .stop: mencentang tidak boleh ikut membuka detail transaksi -->
+                        <td class="px-3 py-2.5" @click.stop><input v-model="selected" type="checkbox" :value="rowId(r)" :class="cbCls" /></td>
                         <td class="whitespace-nowrap px-4 py-2.5 font-mono font-semibold">{{ r.trx_number }}</td>
                         <td class="whitespace-nowrap px-4 py-2.5">{{ fmtDate(r.trx_date) }}</td>
                         <td class="whitespace-nowrap px-4 py-2.5"><Badge :variant="typeMeta[r.trx_type]?.badge ?? 'neutral'" size="sm">{{ types[r.trx_type] }}</Badge></td>

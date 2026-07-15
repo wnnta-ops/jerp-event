@@ -735,6 +735,8 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
     Route::post('/business-support/cash-book',                 [BsCashBookController::class, 'store'])->name('bs.cashbook.store');
     Route::get('/business-support/cash-book/export',          [BsCashBookController::class, 'export'])->name('bs.cashbook.export'); // #129 download mutasi
     Route::get('/business-support/cash-book/export-pdf',      [BsCashBookController::class, 'exportPdf'])->name('bs.cashbook.export.pdf'); // #9 cetak mutasi
+    // Cetak bukti massal dari checkbox layar Cash Book (?ids=1,2,3) — HARUS di atas /cash-book/{cashTransaction}.
+    Route::get('/business-support/cash-book/print-bulk',      [BsCashBookController::class, 'printBulk'])->name('bs.cashbook.print-bulk');
     Route::get('/business-support/petty-cash',                [BsPettyCashController::class, 'index'])->name('bs.pettycash.index');
     Route::get('/business-support/petty-cash/export',         [BsPettyCashController::class, 'export'])->name('bs.pettycash.export'); // #8 download mutasi kas kecil
     Route::get('/business-support/petty-cash/create',         [BsPettyCashController::class, 'create'])->name('bs.pettycash.create');
