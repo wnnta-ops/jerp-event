@@ -324,6 +324,7 @@ export function navGroups(foUrl: string): NavGroup[] {
                 { label: 'Transfer Antar Rekening', href: 'bs.cashbook.create', params: { type: 'transfer' } },
                 { label: 'Penerimaan Bank', href: 'bs.cashbook.create', params: { type: 'in' } },
                 { label: 'Approval Retensi', href: 'bs.cashbook.approval-retensi' },
+                { label: 'Approval UM Penjualan', href: 'bs.cashbook.approval-um' },
                 { label: 'Approval UTJ & DP', href: 'bs.cashbook.approval-utjdp' },
             ]},
             { label: 'Transaksi Bon Sementara', icon: HandCoins, permission: ['businesssupport.view', 'cashbook.*'], children: [
