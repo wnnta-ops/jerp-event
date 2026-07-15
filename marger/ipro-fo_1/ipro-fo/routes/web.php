@@ -722,6 +722,9 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
     Route::post('/business-support/cash-book-approval-utjdp/{tts}',           [BsBankApprovalController::class, 'utjdpPost'])->name('bs.cashbook.approval-utjdp.post');
     Route::post('/business-support/cash-book-approval-utjdp/{tts}/reject',    [BsBankApprovalController::class, 'utjdpReject'])->name('bs.cashbook.approval-utjdp.reject');
     Route::post('/business-support/cash-book-approval-utjdp/{tts}/restore',   [BsBankApprovalController::class, 'utjdpRestore'])->name('bs.cashbook.approval-utjdp.restore'); // pulihkan TTS ditolak
+    // Approval UM Penjualan — lanjutan UTJ & DP: konversi ke Uang Muka Penjualan (Dr Hutang Usaha / Cr Uang Muka + PPN)
+    Route::get('/business-support/cash-book-approval-um',                     [BsBankApprovalController::class, 'umIndex'])->name('bs.cashbook.approval-um');
+    Route::post('/business-support/cash-book-approval-um/{entry}',            [BsBankApprovalController::class, 'umPost'])->name('bs.cashbook.approval-um.post');
     Route::get('/business-support/cash-book',                  [BsCashBookController::class, 'index'])->name('bs.cashbook.index');
     Route::get('/business-support/cash-book/saldo',           [BsCashBookController::class, 'balances'])->name('bs.cashbook.balances');
     Route::get('/business-support/cash-book/saldo-excel',     [BsCashBookController::class, 'balancesExcel'])->name('bs.cashbook.balances.excel'); // #9
