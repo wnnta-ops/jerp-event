@@ -3,12 +3,12 @@
 import {
     LayoutDashboard, Users, Building2, ClipboardList, Wallet, FileText, Receipt, FileSignature,
     BarChart3, Settings, ChevronLeft, ChevronDown, Phone, AlertTriangle, FileWarning, FileCheck,
-    Vote, Hand, Star, Banknote, ScrollText, Award, RefreshCcw, CircleDollarSign, Calculator,
+    Hand, Star, Banknote, ScrollText, Award, RefreshCcw, CircleDollarSign, Calculator,
     FileBarChart, ShieldCheck, Percent, Landmark, Briefcase, BookOpen, Truck,
     Boxes, ShoppingCart, PackagePlus, PackageMinus, LayoutList, BookText,
     HandCoins, Coins, Building, PieChart, HardHat, Target,
     FolderGit2, CalendarClock, TriangleAlert, Lock,
-    Settings2, Layers, Handshake, Tag, BellRing, FileCog,
+    Layers, FileCog,
     GitMerge, FileSpreadsheet, IdCard, Gift, Eraser, SlidersHorizontal, DatabaseZap, Database, UserPlus,
 } from 'lucide-vue-next';
 
@@ -28,7 +28,6 @@ export function navGroups(foUrl: string): { title: string; items: NavItem[] }[] 
         title: '',
         items: [
             { label: 'Menu Utama', icon: LayoutDashboard, href: 'dashboard' },
-            { label: 'Kalkulator', icon: Calculator,      href: 'calculator.index' },
             // Menu silang → kembali ke hub/dashboard utama J-ERP (URL dari env via Inertia config.fo_url).
             { label: 'Kembali ke Dashboard Utama', icon: Building2, external: foUrl + '/dashboard' },
         ],
@@ -424,33 +423,8 @@ export function navGroups(foUrl: string): { title: string; items: NavItem[] }[] 
         ],
     },
     // ── FO (Legal / Komisi) DINONAKTIFKAN — dikelola di J-ERP. ───────────────────
-    {
-        title: 'Approval',
-        items: [
-            { label: 'Approval Center', icon: Vote, href: 'approvals.index', permission: 'approval.view' },
-        ],
-    },
-    {
-        title: 'Reports',
-        items: [
-            { label: 'Laporan',         icon: FileBarChart, href: 'reports.index',     permission: 'reporting.report.export' },
-            { label: 'Export Customer', icon: BarChart3,    href: 'exports.customers', permission: 'master.customer.export' },
-            { label: 'Export Booking',  icon: BarChart3,    href: 'exports.bookings',  permission: 'reporting.report.export' },
-        ],
-    },
-    {
-        title: 'Setup Sales',
-        items: [
-            { label: 'Setup Sales',     icon: Settings2,     href: 'setup-sales.index',            permission: 'setupsales.view' },
-            { label: 'Skema Cara Bayar',icon: Layers,        href: 'setup-sales.scheme.index',     permission: 'setupsales.view' },
-            { label: 'Master Sales',    icon: Users,         href: 'setup-sales.sales.index',      permission: 'setupsales.view' },
-            { label: 'Master Agen',     icon: Handshake,     href: 'setup-sales.agent.index',      permission: 'setupsales.view' },
-            { label: 'Price List',      icon: Tag,           href: 'setup-sales.pricelist.index',  permission: 'setupsales.view' },
-            { label: 'Dashboard Sales', icon: LayoutDashboard, href: 'setup-sales.dashboard',      permission: 'setupsales.view' },
-            { label: 'Laporan Sales',   icon: FileBarChart,  href: 'setup-sales.reports.index',    permission: 'setupsales.view' },
-            { label: 'Reminder Sales',  icon: BellRing,      href: 'setup-sales.reminder',         permission: 'setupsales.view' },
-        ],
-    },
+    // ── Grup "Approval", "Reports" & "Setup Sales" DIHAPUS dari sidebar (permintaan user).
+    //    Route & halamannya sengaja TIDAK dihapus — hanya tak lagi tampil di menu.
     {
         title: 'Security',
         items: [
