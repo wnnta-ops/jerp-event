@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { Link, router, useForm } from '@inertiajs/vue3';
-import { ref, computed, watch } from 'vue';
-import { CheckCircle2, Plus, Printer } from 'lucide-vue-next';
+import { Link, router, useForm, usePage } from '@inertiajs/vue3';
+import { ref, reactive, computed, watch } from 'vue';
+import { CheckCircle2, Plus, Printer, Search } from 'lucide-vue-next';
 import Badge from '@/Components/UI/Badge.vue';
 import Button from '@/Components/UI/Button.vue';
 import Input from '@/Components/UI/Input.vue';
@@ -64,8 +64,8 @@ function fmtDuration(ms: number | null): string {
 // Laporan durasi proses: cap waktu tiap tahap selesai (a.timeline) + selisih dari tahap sebelumnya & dari dibuat.
 const prosesLaporan = computed(() => {
     const tl: Record<string, string> = a.timeline ?? {};
-    const order = ['draft', 'submitted', 'sp3k', 'si', 'akad', 'disbursed'];
-    const stageLbl: Record<string, string> = { draft: 'Draft', submitted: 'Submitted', sp3k: 'SP3K', si: 'SI (Standing Instruction)', akad: 'Akad', disbursed: 'Pencairan' };
+    const order = ['draft', 'submitted', 'wawancara', 'input_bank', 'verifikasi', 'analis', 'banding', 'sp3k', 'si', 'akad', 'disbursed'];
+    const stageLbl: Record<string, string> = { draft: 'Draft', submitted: 'Submitted', wawancara: 'Wawancara', input_bank: 'Input Sistem Bank', verifikasi: 'Proses Verifikasi', analis: 'Proses Analis', banding: 'Proses Banding', sp3k: 'SP3K', si: 'SI (Standing Instruction)', akad: 'Akad', disbursed: 'Pencairan' };
     const rows: Array<{ key: string; label: string; at: string; durMs: number | null }> = [];
     const start = a.created_at ? new Date(a.created_at).getTime() : null;
     let prev: number | null = start;
@@ -161,9 +161,21 @@ watch(() => disbForm.retention_category_id, (id) => {
     if (pct > 0) disbForm.disbursed_amount = Math.round((pct / 100) * plafon.value);
 });
 
-const steps = ['draft', 'submitted', 'sp3k', 'si', 'akad', 'disbursed', 'active'];
-const stepLabels: Record<string, string> = { draft: 'Draft', submitted: 'Submitted', sp3k: 'SP3K', si: 'SI', akad: 'Akad', disbursed: 'Pencairan', active: 'Lunas' };
+const steps = ['draft', 'submitted', 'wawancara', 'input_bank', 'verifikasi', 'analis', 'banding', 'sp3k', 'si', 'akad', 'disbursed', 'active'];
+const stepLabels: Record<string, string> = { draft: 'Draft', submitted: 'Submitted', wawancara: 'Wawancara', input_bank: 'Input Sistem Bank', verifikasi: 'Verifikasi', analis: 'Analis', banding: 'Banding', sp3k: 'SP3K', si: 'SI', akad: 'Akad', disbursed: 'Pencairan', active: 'Lunas' };
+// in_review (legacy) diperlakukan setara 'submitted' (idx 1).
 const curIdx = () => { const i = steps.indexOf(a.status); return i === -1 ? (a.status === 'in_review' ? 1 : 0) : i; };
+// Banding hanya dipakai bila di tahap Analis dipilih "perlu banding". Untuk pewarnaan stepper: bila
+// tidak dipakai & sudah melewati Analis, tahap Banding ditandai "dilewati" (bukan selesai).
+const bandingUsed = computed(() => !!(a.process_stages?.analis?.banding));
+const bandingSkipped = computed(() => !bandingUsed.value && curIdx() > steps.indexOf('banding') && a.status !== 'banding');
+// Kelas bulatan stepper per tahap (selesai / aktif / dilewati / belum).
+function stepDotClass(i: number, s: string): string {
+    if (s === 'banding' && bandingSkipped.value) return 'bg-neutral-100 text-neutral-300 line-through dark:bg-neutral-800';
+    if (i < curIdx() || a.status === 'active') return 'bg-success-500 text-white';
+    if (i === curIdx()) return 'bg-primary-600 text-white';
+    return 'bg-neutral-200 text-neutral-500';
+}
 const dotBg: Record<string, string> = { neutral: 'bg-neutral-400', warning: 'bg-warning-500', info: 'bg-info-500', success: 'bg-success-500' };
 
 // #99: tetap di halaman (preserveScroll) agar form tahap berikutnya langsung terlihat setelah remount.
@@ -176,12 +188,54 @@ function proceedSp3k() { router.post(route('kpr.proceed-sp3k', a.id), {}, { onSu
 function proceedSi() { router.post(route('kpr.proceed-si', a.id), {}, { onSuccess: () => window.location.reload() }); }
 function proceedAkad() { router.post(route('kpr.proceed-akad', a.id), {}, { onSuccess: () => window.location.reload() }); }
 // Kembali ke tahap sebelumnya (non-destruktif) — bisa meninjau/mengedit tahap sebelumnya lalu lanjut lagi.
-const canStepBack = computed(() => ['sp3k', 'si', 'akad'].includes(a.status));
+const canStepBack = computed(() => ['wawancara', 'input_bank', 'verifikasi', 'analis', 'banding', 'sp3k', 'si', 'akad'].includes(a.status));
 function stepBack() {
     if (!canStepBack.value) return;
     if (!confirm('Kembali ke tahap sebelumnya? Data tahap ini tetap tersimpan — Anda bisa meninjau/mengedit tahap sebelumnya lalu melanjutkan kembali.')) return;
     router.post(route('kpr.step-back', a.id), {}, { onSuccess: () => window.location.reload() });
 }
+
+// ── Tahap tambahan Proses KPR (Wawancara / Input Sistem Bank / Verifikasi / Analis / Banding) ──
+// State reaktif di-seed dari kolom process_stages (JSON). Simpan/Lanjut lewat route kpr.process.
+const dstr = (v: any) => (v ? String(v).slice(0, 10) : '');
+const ps = a.process_stages ?? {};
+const proc = reactive<any>({
+    wawancara:  { started_at: dstr(ps.wawancara?.started_at),  notes: ps.wawancara?.notes ?? '',  finished_at: dstr(ps.wawancara?.finished_at) },
+    input_bank: { started_at: dstr(ps.input_bank?.started_at), notes: ps.input_bank?.notes ?? '', finished_at: dstr(ps.input_bank?.finished_at) },
+    verifikasi: {
+        ots:        { started_at: dstr(ps.verifikasi?.ots?.started_at),        notes: ps.verifikasi?.ots?.notes ?? '',        finished_at: dstr(ps.verifikasi?.ots?.finished_at) },
+        wawancara2: { started_at: dstr(ps.verifikasi?.wawancara2?.started_at), notes: ps.verifikasi?.wawancara2?.notes ?? '', finished_at: dstr(ps.verifikasi?.wawancara2?.finished_at) },
+    },
+    analis:  { started_at: dstr(ps.analis?.started_at),  notes: ps.analis?.notes ?? '',  berkas_tambahan: ps.analis?.berkas_tambahan ?? '',  finished_at: dstr(ps.analis?.finished_at),  banding: !!ps.analis?.banding },
+    banding: { jenis: ps.banding?.jenis ?? '', jenis_lain: ps.banding?.jenis_lain ?? '', started_at: dstr(ps.banding?.started_at), notes: ps.banding?.notes ?? '', berkas_tambahan: ps.banding?.berkas_tambahan ?? '', finished_at: dstr(ps.banding?.finished_at) },
+});
+const savingProc = ref(false);
+function saveProc(stage: string, advance: boolean) {
+    savingProc.value = true;
+    router.post(route('kpr.process', a.id), { stage, data: proc[stage], advance }, {
+        preserveScroll: true,
+        onSuccess: () => { if (advance) window.location.reload(); },
+        onFinish: () => (savingProc.value = false),
+    });
+}
+// Kelengkapan tiap tahap (mengaktifkan "Simpan & Lanjut"): tanggal selesai wajib & tak boleh < tanggal mulai.
+const okBlock = (b: any) => !!b?.finished_at && (!b.started_at || b.finished_at >= b.started_at);
+const wawancaraOk = computed(() => okBlock(proc.wawancara));
+const inputBankOk = computed(() => okBlock(proc.input_bank));
+const verifikasiOk = computed(() => okBlock(proc.verifikasi.ots) && okBlock(proc.verifikasi.wawancara2));
+const analisOk = computed(() => okBlock(proc.analis));
+const bandingOk = computed(() => okBlock(proc.banding) && !!proc.banding.jenis && !(proc.banding.jenis === 'lain_lain' && !String(proc.banding.jenis_lain ?? '').trim()));
+const BANDING_JENIS = [
+    { value: 'tambah_dp', label: 'Tambah DP' },
+    { value: 'pindah_unit', label: 'Pindah Unit' },
+    { value: 'plafon_tidak_sesuai', label: 'Plafon Tidak Sesuai' },
+    { value: 'tenor_tidak_sesuai', label: 'Tenor Tidak Sesuai' },
+    { value: 'ganti_nama', label: 'Ganti Nama Nasabah' },
+    { value: 'lain_lain', label: 'Lain-Lain' },
+];
+function bandingJenisLabel(v: string | null) { return BANDING_JENIS.find((x) => x.value === v)?.label ?? '—'; }
+// CEK PROSES LAIN (di tahap SP3K): buka daftar semua Proses KPR nasabah lalu gulir ke atas ke tabelnya.
+function cekProsesLain() { showOtherApps.value = true; if (typeof window !== 'undefined') window.scrollTo({ top: 0, behavior: 'smooth' }); }
 
 // Tolak proses KPR (dari tahap Submitted/SP3K) → status Rejected; muncul di Database KPR → Reject Proses KPR.
 function reject() {
@@ -189,6 +243,28 @@ function reject() {
     const reason = window.prompt('Alasan penolakan (opsional):', '');
     if (reason === null) return; // dibatalkan
     router.post(route('kpr.reject', a.id), { reason }, { onSuccess: () => window.location.reload() });
+}
+
+// ── Tombol "Batal" / "Pulihkan" pada rincian tiap tahap ──
+// Aktif dari Draft s/d SI; TIDAK aktif bila sudah Akad / Pencairan / Lunas (mirror gerbang server
+// CANCELLABLE_STATUSES). Tombol hanya tampil bila user memang berwenang (server: bankloan.sp3k.register).
+const page = usePage();
+const can = computed(() => (page.props.auth.user?.permissions ?? []) as string[]);
+const mayDecideKpr = computed(() => can.value.includes('bankloan.sp3k.register'));
+const CANCELLABLE = ['draft', 'submitted', 'in_review', 'wawancara', 'input_bank', 'verifikasi', 'analis', 'banding', 'sp3k', 'si'];
+const showCancel = computed(() => mayDecideKpr.value && !['rejected', 'cancelled'].includes(a.status));
+const canCancel = computed(() => CANCELLABLE.includes(a.status));
+function cancelKpr() {
+    if (!canCancel.value || !mayDecideKpr.value) return;
+    if (!confirm(`Batalkan Proses KPR ${a.application_number}?\n\nStatus menjadi Batal (Cancelled) dan proses tidak dilanjutkan. Data tiap tahap tetap tersimpan (tidak dihapus) dan proses bisa dipulihkan lagi lewat tombol "Pulihkan Proses".`)) return;
+    router.post(route('kpr.cancel', a.id), {}, { onSuccess: () => window.location.reload() });
+}
+// Kebalikan Batal: kembalikan ke tahap sebelum dibatalkan (agar Batal bukan pintu satu arah).
+const showUncancel = computed(() => mayDecideKpr.value && a.status === 'cancelled');
+function uncancelKpr() {
+    if (!showUncancel.value) return;
+    if (!confirm(`Pulihkan Proses KPR ${a.application_number}?\n\nStatus kembali ke tahap terakhir sebelum dibatalkan; keputusan "Batal" dicabut (kembali Belum diputuskan).`)) return;
+    router.post(route('kpr.uncancel', a.id), {}, { onSuccess: () => window.location.reload() });
 }
 
 // ── SP3K (inline) ──
@@ -296,6 +372,31 @@ const stageView = computed<StageView>(() => {
             { label: 'Tenor', value: (a.tenor_month ?? '-') + ' bulan' },
         ],
         showProgress: false, mode: 'rows',
+    };
+    if (st === 'wawancara') return {
+        title: 'Wawancara', badgeVariant: 'warning', badgeLabel: 'Wawancara',
+        intro: 'Isi tanggal mulai, update proses & kendala wawancara, lalu tanggal selesai. Setelah selesai, lanjut ke Input Sistem Bank.',
+        edit: null, rows: [], showProgress: false, mode: 'rows',
+    };
+    if (st === 'input_bank') return {
+        title: 'Input Sistem Bank', badgeVariant: 'warning', badgeLabel: 'Input Sistem Bank',
+        intro: 'Catat proses input data ke sistem bank: tanggal mulai, update & kendala, tanggal selesai. Lalu lanjut ke Proses Verifikasi.',
+        edit: null, rows: [], showProgress: false, mode: 'rows',
+    };
+    if (st === 'verifikasi') return {
+        title: 'Proses Verifikasi — OTS & Wawancara Kedua', badgeVariant: 'warning', badgeLabel: 'Verifikasi',
+        intro: 'Dua sub-proses: OTS dan Wawancara Kedua. Isi tanggal mulai, update & kendala, dan tanggal selesai masing-masing. Lalu lanjut ke Proses Analis.',
+        edit: null, rows: [], showProgress: false, mode: 'rows',
+    };
+    if (st === 'analis') return {
+        title: 'Proses Analis', badgeVariant: 'warning', badgeLabel: 'Analis',
+        intro: 'Isi tanggal mulai, update & kendala, tambahan berkas yang diminta analis, dan tanggal selesai. Tentukan apakah perlu Proses Banding sebelum SP3K.',
+        edit: null, rows: [], showProgress: false, mode: 'rows',
+    };
+    if (st === 'banding') return {
+        title: 'Proses Banding (Opsional)', badgeVariant: 'warning', badgeLabel: 'Banding',
+        intro: 'Pilih jenis banding, lalu isi tanggal mulai, update & kendala, tambahan berkas yang diminta analis, dan tanggal selesai. Lalu lanjut ke SP3K.',
+        edit: null, rows: [], showProgress: false, mode: 'rows',
     };
     if (st === 'sp3k') return {
         title: 'Rincian SP3K — Surat Persetujuan Terbit',
@@ -415,6 +516,14 @@ const historyNodes = computed<HistoryNode[]>(() => {
     const nodes: HistoryNode[] = [];
     if (has('draft')) nodes.push({ key: 'draft', label: 'Draft', date: '', summary: `Aplikasi ${a.application_number} dibuat`, dot: 'neutral' });
     if (has('submitted')) nodes.push({ key: 'submitted', label: 'Submitted', date: fmtDate(a.submitted_at), summary: `Diajukan ke ${a.bank?.name ?? '—'}`, dot: 'warning' });
+    // Tahap tambahan (Wawancara..Banding) — tampil bila sudah dilewati DAN ada datanya di process_stages
+    // (record lama alur lama punya process_stages=null → jangan tampilkan tahap yang tak pernah terjadi).
+    const pst = a.process_stages ?? {};
+    if (has('wawancara') && pst.wawancara) nodes.push({ key: 'wawancara', label: 'Wawancara', date: fmtDate(pst.wawancara?.finished_at), summary: pst.wawancara?.notes || 'Wawancara selesai', dot: 'warning' });
+    if (has('input_bank') && pst.input_bank) nodes.push({ key: 'input_bank', label: 'Input Sistem Bank', date: fmtDate(pst.input_bank?.finished_at), summary: pst.input_bank?.notes || 'Input sistem bank selesai', dot: 'warning' });
+    if (has('verifikasi') && (pst.verifikasi?.ots || pst.verifikasi?.wawancara2)) nodes.push({ key: 'verifikasi', label: 'Proses Verifikasi', date: fmtDate(pst.verifikasi?.wawancara2?.finished_at || pst.verifikasi?.ots?.finished_at), summary: 'OTS & Wawancara Kedua selesai', dot: 'warning' });
+    if (has('analis') && pst.analis) nodes.push({ key: 'analis', label: 'Proses Analis', date: fmtDate(pst.analis?.finished_at), summary: pst.analis?.banding ? 'Analis selesai · perlu Banding' : 'Analis selesai', dot: 'warning' });
+    if (has('banding') && bandingUsed.value) nodes.push({ key: 'banding', label: 'Proses Banding', date: fmtDate(pst.banding?.finished_at), summary: `${bandingJenisLabel(pst.banding?.jenis)} — selesai`, dot: 'warning' });
     if (has('sp3k') && a.sp3k) nodes.push({ key: 'sp3k', label: 'SP3K', date: fmtDate(a.sp3k.sp3k_date), summary: `No. ${a.sp3k.sp3k_number} · ${fmtRp(a.sp3k.approved_amount)}`, dot: 'info', edit: 'sp3k' });
     if (has('si')) nodes.push({ key: 'si', label: 'SI', date: '', summary: 'Surat Instruksi diterbitkan', dot: 'info' });
     if (has('akad') && a.akad) nodes.push({ key: 'akad', label: 'Akad', date: fmtDate(a.akad.akad_at), summary: a.akad.place ?? '—', dot: 'info', edit: 'akad' });
@@ -468,9 +577,10 @@ const historyNodes = computed<HistoryNode[]>(() => {
         <div class="card p-4">
             <div class="flex items-center gap-2 text-xs flex-wrap">
                 <div v-for="(s, i) in steps" :key="s" class="flex items-center gap-1">
-                    <!-- Saat KPR LUNAS (active), tahap terakhir 'Lunas' jadi HIJAU (selesai), bukan primary. -->
-                    <span :class="['w-5 h-5 rounded-full flex items-center justify-center text-[10px]', i < curIdx() || a.status === 'active' ? 'bg-success-500 text-white' : i === curIdx() ? 'bg-primary-600 text-white' : 'bg-neutral-200 text-neutral-500']">{{ i + 1 }}</span>
-                    <span>{{ stepLabels[s] }}</span>
+                    <!-- Saat KPR LUNAS (active), tahap terakhir 'Lunas' jadi HIJAU (selesai), bukan primary.
+                         Banding yang dilewati ditandai abu-abu + coret. -->
+                    <span :class="['w-5 h-5 rounded-full flex items-center justify-center text-[10px]', stepDotClass(i, s)]">{{ i + 1 }}</span>
+                    <span :class="s === 'banding' && bandingSkipped ? 'text-neutral-300 line-through' : ''">{{ stepLabels[s] }}</span>
                     <span v-if="i < steps.length - 1" class="text-neutral-300">→</span>
                 </div>
             </div>
@@ -537,7 +647,7 @@ const historyNodes = computed<HistoryNode[]>(() => {
                                 <button v-if="s.decision" type="button" @click="clearDecision(s)" class="text-[11px] text-neutral-400 hover:text-primary-600 hover:underline">Ubah</button>
                                 <div v-else class="flex justify-center gap-1">
                                     <button type="button" @click="decide(s.id, 'lanjut')" class="rounded border border-success-300 px-2 py-0.5 text-xs text-success-700 hover:bg-success-50 dark:border-success-700">Lanjut</button>
-                                    <button type="button" @click="decide(s.id, 'batal')" class="rounded border border-danger-300 px-2 py-0.5 text-xs text-danger-600 hover:bg-danger-50 dark:border-danger-700">Batal</button>
+                                    <button type="button" @click="decide(s.id, 'batal')" title="Batalkan pengajuan di bank ini (nasabah memilih bank lain)" class="rounded border border-danger-300 px-2 py-0.5 text-xs text-danger-600 hover:bg-danger-50 dark:border-danger-700">Batal (pilih bank lain)</button>
                                 </div>
                             </td>
                             <!-- ACTION: Disetujui → Lanjut & Akad (hard refresh ke proses akad KPR-nya); Batal → keterangan -->
@@ -574,7 +684,19 @@ const historyNodes = computed<HistoryNode[]>(() => {
                         <a :href="route('kpr.si-print', { kpr: a.id, bank: 'bsn' })" target="_blank" class="rounded-md bg-white px-3 py-1.5 text-xs font-bold text-primary-700 hover:bg-primary-50">BSN</a>
                         <a :href="route('kpr.si-print', { kpr: a.id, bank: 'bri' })" target="_blank" class="rounded-md bg-white px-3 py-1.5 text-xs font-bold text-primary-700 hover:bg-primary-50">BRI</a>
                     </div>
-                    <button v-if="['submitted', 'in_review', 'sp3k'].includes(a.status)" type="button" @click="reject" class="text-xs px-2 py-1 rounded border border-danger-300 text-danger-600 hover:bg-danger-50 dark:border-danger-700">Tolak Proses KPR</button>
+                    <button v-if="mayDecideKpr && ['submitted', 'in_review', 'wawancara', 'input_bank', 'verifikasi', 'analis', 'banding', 'sp3k'].includes(a.status)" type="button" @click="reject" class="text-xs px-2 py-1 rounded border border-danger-300 text-danger-600 hover:bg-danger-50 dark:border-danger-700">Tolak Proses KPR</button>
+                    <!-- Batal: tersedia di rincian tiap tahap; nonaktif sejak Akad / Pencairan / Lunas.
+                         Di tahap Akad pembatalan (pindah bank) dilakukan lewat panel "Keputusan KPR" di atas. -->
+                    <button
+                        v-if="showCancel"
+                        type="button"
+                        :disabled="!canCancel"
+                        :title="canCancel ? 'Batalkan proses KPR ini (data tahap tetap tersimpan, bisa dipulihkan)' : 'Pembatalan dari rincian tahap hanya sampai sebelum Akad. Pada tahap Akad gunakan panel &quot;Keputusan KPR&quot; di atas.'"
+                        :class="['text-xs px-2 py-1 rounded border', canCancel ? 'border-danger-300 text-danger-600 hover:bg-danger-50 dark:border-danger-700' : 'cursor-not-allowed border-neutral-200 text-neutral-300 dark:border-neutral-800 dark:text-neutral-600']"
+                        @click="cancelKpr"
+                    >Batal</button>
+                    <!-- Pulihkan: kebalikan Batal — kembali ke tahap sebelum dibatalkan -->
+                    <button v-if="showUncancel" type="button" @click="uncancelKpr" title="Kembalikan ke tahap terakhir sebelum dibatalkan" class="text-xs px-2 py-1 rounded border border-success-300 text-success-700 hover:bg-success-50 dark:border-success-700 dark:text-success-300">Pulihkan Proses</button>
                     <!-- Edit/Hapus record milik tahap aktif (SP3K / Akad) -->
                     <template v-if="stageView.edit === 'sp3k' && !editSp3k">
                         <button class="text-xs px-2 py-1 rounded border border-neutral-300 hover:bg-neutral-50 dark:border-neutral-700" @click="openEditSp3k">Edit</button>
@@ -722,7 +844,10 @@ const historyNodes = computed<HistoryNode[]>(() => {
 
             <!-- Daftar SP3K (saat Submitted) atau Edit SP3K (saat tahap SP3K) -->
             <div v-if="showSp3kForm" id="next-step-form" class="mt-5 border-t border-neutral-200 dark:border-neutral-800 pt-5">
-                <h3 class="font-semibold mb-3">Daftarkan SP3K</h3>
+                <div class="mb-3 flex flex-wrap items-center justify-between gap-2">
+                    <h3 class="font-semibold">Daftarkan SP3K</h3>
+                    <button type="button" @click="cekProsesLain" class="inline-flex items-center gap-1.5 rounded-lg border border-primary-300 px-3 py-1.5 text-xs font-semibold text-primary-700 hover:bg-primary-50 dark:border-primary-700 dark:text-primary-300" title="Cek & lanjutkan proses KPR lain milik nasabah ini tanpa kembali ke daftar"><Search class="h-3.5 w-3.5" /> CEK PROSES LAIN</button>
+                </div>
                 <form @submit.prevent="submitSp3k" class="space-y-3">
                     <div class="grid gap-3 sm:grid-cols-2">
                         <Input v-model="sp3kForm.sp3k_date" type="date" label="Tanggal SP3K" required />
@@ -736,10 +861,135 @@ const historyNodes = computed<HistoryNode[]>(() => {
                 </form>
             </div>
 
-            <!-- Submitted: hanya cek identitas nasabah → Lanjutkan ke SP3K -->
+            <!-- Submitted: cek identitas nasabah → mulai tahap Wawancara -->
             <div v-if="a.status === 'submitted' || a.status === 'in_review'" id="next-step-form" class="mt-5 border-t border-neutral-200 dark:border-neutral-800 pt-5">
-                <p class="mb-3 text-sm text-neutral-500">Identitas nasabah sudah tampil di atas. Klik Lanjutkan untuk masuk ke tahap SP3K.</p>
-                <Button size="lg" block variant="primary" @click="proceedSubmitted">Lanjutkan → SP3K</Button>
+                <p class="mb-3 text-sm text-neutral-500">Identitas nasabah sudah tampil di atas. Klik Lanjutkan untuk memulai tahap <strong>Wawancara</strong>.</p>
+                <Button size="lg" block variant="primary" @click="proceedSubmitted">Lanjutkan → Wawancara</Button>
+            </div>
+
+            <!-- Tahap: Wawancara -->
+            <div v-if="a.status === 'wawancara'" id="next-step-form" class="mt-5 space-y-3 border-t border-neutral-200 pt-5 dark:border-neutral-800">
+                <div class="grid gap-3 sm:grid-cols-2">
+                    <Input v-model="proc.wawancara.started_at" type="date" label="Tanggal Mulai Wawancara" />
+                    <Input v-model="proc.wawancara.finished_at" type="date" label="Tanggal Selesai Wawancara" />
+                </div>
+                <div>
+                    <label class="mb-1 block text-sm font-medium">Update Proses &amp; Kendala Wawancara</label>
+                    <textarea v-model="proc.wawancara.notes" rows="3" class="w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-900" placeholder="Perkembangan & kendala selama wawancara…"></textarea>
+                </div>
+                <div class="flex flex-wrap gap-2">
+                    <Button type="button" variant="secondary" :loading="savingProc" @click="saveProc('wawancara', false)">Simpan Progres</Button>
+                    <Button type="button" variant="primary" :loading="savingProc" :disabled="!wawancaraOk" @click="saveProc('wawancara', true)">Simpan &amp; Lanjut → Input Sistem Bank</Button>
+                </div>
+                <p v-if="!wawancaraOk" class="text-xs text-warning-600">Isi Tanggal Selesai (≥ Tanggal Mulai) untuk mengaktifkan "Simpan &amp; Lanjut".</p>
+            </div>
+
+            <!-- Tahap: Input Sistem Bank -->
+            <div v-if="a.status === 'input_bank'" id="next-step-form" class="mt-5 space-y-3 border-t border-neutral-200 pt-5 dark:border-neutral-800">
+                <div class="grid gap-3 sm:grid-cols-2">
+                    <Input v-model="proc.input_bank.started_at" type="date" label="Tanggal Mulai" />
+                    <Input v-model="proc.input_bank.finished_at" type="date" label="Tanggal Selesai" />
+                </div>
+                <div>
+                    <label class="mb-1 block text-sm font-medium">Update Proses &amp; Kendala</label>
+                    <textarea v-model="proc.input_bank.notes" rows="3" class="w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-900" placeholder="Perkembangan & kendala input data ke sistem bank…"></textarea>
+                </div>
+                <div class="flex flex-wrap gap-2">
+                    <Button type="button" variant="secondary" :loading="savingProc" @click="saveProc('input_bank', false)">Simpan Progres</Button>
+                    <Button type="button" variant="primary" :loading="savingProc" :disabled="!inputBankOk" @click="saveProc('input_bank', true)">Simpan &amp; Lanjut → Proses Verifikasi</Button>
+                </div>
+                <p v-if="!inputBankOk" class="text-xs text-warning-600">Isi Tanggal Selesai (≥ Tanggal Mulai) untuk mengaktifkan "Simpan &amp; Lanjut".</p>
+            </div>
+
+            <!-- Tahap: Proses Verifikasi (OTS + Wawancara Kedua) -->
+            <div v-if="a.status === 'verifikasi'" id="next-step-form" class="mt-5 space-y-4 border-t border-neutral-200 pt-5 dark:border-neutral-800">
+                <div class="space-y-3 rounded-lg border border-neutral-200 p-3 dark:border-neutral-700">
+                    <h4 class="text-sm font-semibold">1. OTS (On The Spot)</h4>
+                    <div class="grid gap-3 sm:grid-cols-2">
+                        <Input v-model="proc.verifikasi.ots.started_at" type="date" label="Tanggal Mulai OTS" />
+                        <Input v-model="proc.verifikasi.ots.finished_at" type="date" label="Tanggal Selesai OTS" />
+                    </div>
+                    <div>
+                        <label class="mb-1 block text-sm font-medium">Update Proses &amp; Kendala OTS</label>
+                        <textarea v-model="proc.verifikasi.ots.notes" rows="2" class="w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-900" placeholder="Hasil & kendala OTS…"></textarea>
+                    </div>
+                </div>
+                <div class="space-y-3 rounded-lg border border-neutral-200 p-3 dark:border-neutral-700">
+                    <h4 class="text-sm font-semibold">2. Wawancara Kedua</h4>
+                    <div class="grid gap-3 sm:grid-cols-2">
+                        <Input v-model="proc.verifikasi.wawancara2.started_at" type="date" label="Tanggal Mulai Wawancara Kedua" />
+                        <Input v-model="proc.verifikasi.wawancara2.finished_at" type="date" label="Tanggal Selesai Wawancara Kedua" />
+                    </div>
+                    <div>
+                        <label class="mb-1 block text-sm font-medium">Update Proses &amp; Kendala Wawancara Kedua</label>
+                        <textarea v-model="proc.verifikasi.wawancara2.notes" rows="2" class="w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-900" placeholder="Hasil & kendala wawancara kedua…"></textarea>
+                    </div>
+                </div>
+                <div class="flex flex-wrap gap-2">
+                    <Button type="button" variant="secondary" :loading="savingProc" @click="saveProc('verifikasi', false)">Simpan Progres</Button>
+                    <Button type="button" variant="primary" :loading="savingProc" :disabled="!verifikasiOk" @click="saveProc('verifikasi', true)">Simpan &amp; Lanjut → Proses Analis</Button>
+                </div>
+                <p v-if="!verifikasiOk" class="text-xs text-warning-600">Isi Tanggal Selesai kedua sub-proses (OTS &amp; Wawancara Kedua) untuk mengaktifkan "Simpan &amp; Lanjut".</p>
+            </div>
+
+            <!-- Tahap: Proses Analis -->
+            <div v-if="a.status === 'analis'" id="next-step-form" class="mt-5 space-y-3 border-t border-neutral-200 pt-5 dark:border-neutral-800">
+                <div class="grid gap-3 sm:grid-cols-2">
+                    <Input v-model="proc.analis.started_at" type="date" label="Tanggal Mulai" />
+                    <Input v-model="proc.analis.finished_at" type="date" label="Tanggal Selesai" />
+                </div>
+                <div>
+                    <label class="mb-1 block text-sm font-medium">Update Proses &amp; Kendala</label>
+                    <textarea v-model="proc.analis.notes" rows="3" class="w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-900" placeholder="Perkembangan & kendala proses analis…"></textarea>
+                </div>
+                <div>
+                    <label class="mb-1 block text-sm font-medium">Tambahan Berkas yang Diminta Analis</label>
+                    <textarea v-model="proc.analis.berkas_tambahan" rows="2" class="w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-900" placeholder="mis. slip gaji terbaru, rekening koran 3 bulan…"></textarea>
+                </div>
+                <div>
+                    <label class="mb-1 block text-sm font-medium">Perlu Proses Banding sebelum SP3K?</label>
+                    <div class="inline-flex rounded-lg border border-neutral-300 p-0.5 dark:border-neutral-700">
+                        <button type="button" @click="proc.analis.banding = false" class="rounded-md px-3 py-1 text-xs font-medium transition" :class="!proc.analis.banding ? 'bg-primary-600 text-white' : 'text-neutral-600 hover:bg-neutral-100 dark:text-neutral-300 dark:hover:bg-neutral-800'">Tidak — langsung SP3K</button>
+                        <button type="button" @click="proc.analis.banding = true" class="rounded-md px-3 py-1 text-xs font-medium transition" :class="proc.analis.banding ? 'bg-primary-600 text-white' : 'text-neutral-600 hover:bg-neutral-100 dark:text-neutral-300 dark:hover:bg-neutral-800'">Ya — proses Banding</button>
+                    </div>
+                </div>
+                <div class="flex flex-wrap gap-2">
+                    <Button type="button" variant="secondary" :loading="savingProc" @click="saveProc('analis', false)">Simpan Progres</Button>
+                    <Button type="button" variant="primary" :loading="savingProc" :disabled="!analisOk" @click="saveProc('analis', true)">{{ proc.analis.banding ? 'Simpan & Lanjut → Proses Banding' : 'Simpan & Lanjut → SP3K' }}</Button>
+                </div>
+                <p v-if="!analisOk" class="text-xs text-warning-600">Isi Tanggal Selesai (≥ Tanggal Mulai) untuk mengaktifkan "Simpan &amp; Lanjut".</p>
+            </div>
+
+            <!-- Tahap: Proses Banding (opsional) -->
+            <div v-if="a.status === 'banding'" id="next-step-form" class="mt-5 space-y-3 border-t border-neutral-200 pt-5 dark:border-neutral-800">
+                <div>
+                    <label class="mb-1 block text-sm font-medium">Jenis Banding <span class="text-danger-500">*</span></label>
+                    <select v-model="proc.banding.jenis" class="h-9 w-full rounded-lg border border-neutral-300 bg-white px-3 text-sm dark:border-neutral-700 dark:bg-neutral-900">
+                        <option value="">— pilih jenis banding —</option>
+                        <option v-for="j in BANDING_JENIS" :key="j.value" :value="j.value">{{ j.label }}</option>
+                    </select>
+                </div>
+                <div v-if="proc.banding.jenis === 'lain_lain'">
+                    <label class="mb-1 block text-sm font-medium">Keterangan Lain-Lain <span class="text-danger-500">*</span></label>
+                    <Input v-model="proc.banding.jenis_lain" placeholder="Jelaskan jenis banding…" />
+                </div>
+                <div class="grid gap-3 sm:grid-cols-2">
+                    <Input v-model="proc.banding.started_at" type="date" label="Tanggal Mulai" />
+                    <Input v-model="proc.banding.finished_at" type="date" label="Tanggal Selesai" />
+                </div>
+                <div>
+                    <label class="mb-1 block text-sm font-medium">Update Proses &amp; Kendala</label>
+                    <textarea v-model="proc.banding.notes" rows="3" class="w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-900" placeholder="Perkembangan & kendala proses banding…"></textarea>
+                </div>
+                <div>
+                    <label class="mb-1 block text-sm font-medium">Tambahan Berkas yang Diminta Analis</label>
+                    <textarea v-model="proc.banding.berkas_tambahan" rows="2" class="w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-900" placeholder="mis. dokumen pendukung banding…"></textarea>
+                </div>
+                <div class="flex flex-wrap gap-2">
+                    <Button type="button" variant="secondary" :loading="savingProc" @click="saveProc('banding', false)">Simpan Progres</Button>
+                    <Button type="button" variant="primary" :loading="savingProc" :disabled="!bandingOk" @click="saveProc('banding', true)">Simpan &amp; Lanjut → SP3K</Button>
+                </div>
+                <p v-if="!bandingOk" class="text-xs text-warning-600">Pilih Jenis Banding (isi keterangan bila "Lain-Lain") &amp; Tanggal Selesai (≥ Tanggal Mulai) untuk lanjut.</p>
             </div>
 
             <!-- SI (Surat Instruksi) → Lanjut ke Proses Akad -->
