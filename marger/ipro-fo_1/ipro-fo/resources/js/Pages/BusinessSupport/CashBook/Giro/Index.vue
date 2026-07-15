@@ -42,7 +42,10 @@ const badge: Record<string, any> = { in_hand: 'warning', cleared: 'success', bou
                         <td class="px-4 py-2.5">{{ r.bank_name }}<span v-if="r.cheque_number" class="text-neutral-400"> · {{ r.cheque_number }}</span></td>
                         <td class="px-4 py-2.5">{{ r.drawer }}</td>
                         <td class="px-4 py-2.5 text-right font-mono">{{ fmtRp(r.amount) }}</td>
-                        <td class="px-4 py-2.5 text-center"><Badge :variant="badge[r.status] ?? 'neutral'" size="sm">{{ statuses[r.status] }}</Badge></td>
+                        <td class="px-4 py-2.5 text-center">
+                            <Badge :variant="badge[r.status] ?? 'neutral'" size="sm">{{ statuses[r.status] }}</Badge>
+                            <p v-if="r.status === 'bounced' && r.bounce_reason" class="mx-auto mt-1 max-w-[180px] truncate text-[11px] text-danger-600" :title="r.bounce_reason">{{ r.bounce_reason }}</p>
+                        </td>
                     </tr>
                 </tbody>
             </table>

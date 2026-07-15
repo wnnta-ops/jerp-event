@@ -118,7 +118,11 @@ class GiroController extends Controller
     {
         abort_unless($request->user()?->canModule('cashbook'), 403);
 
-        $v = $request->validate(['settled_date' => ['required', 'date']]);
+        // Alasan WAJIB: tolakan warkat harus bisa dipertanggungjawabkan & ditagihkan ulang ke penerbit.
+        $v = $request->validate([
+            'settled_date'  => ['required', 'date'],
+            'bounce_reason' => ['required', 'string', 'max:255'],
+        ], [], ['bounce_reason' => 'alasan penolakan']);
 
         try {
             $svc->bounce($giro, $v, $request->user()->id);
