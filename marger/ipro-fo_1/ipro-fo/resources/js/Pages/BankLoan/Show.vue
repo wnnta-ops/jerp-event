@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Link, router, useForm } from '@inertiajs/vue3';
+import { Link, router, useForm, usePage } from '@inertiajs/vue3';
 import { ref, reactive, computed, watch } from 'vue';
 import { CheckCircle2, Plus, Printer, Search } from 'lucide-vue-next';
 import Badge from '@/Components/UI/Badge.vue';
@@ -243,6 +243,28 @@ function reject() {
     const reason = window.prompt('Alasan penolakan (opsional):', '');
     if (reason === null) return; // dibatalkan
     router.post(route('kpr.reject', a.id), { reason }, { onSuccess: () => window.location.reload() });
+}
+
+// ── Tombol "Batal" / "Pulihkan" pada rincian tiap tahap ──
+// Aktif dari Draft s/d SI; TIDAK aktif bila sudah Akad / Pencairan / Lunas (mirror gerbang server
+// CANCELLABLE_STATUSES). Tombol hanya tampil bila user memang berwenang (server: bankloan.sp3k.register).
+const page = usePage();
+const can = computed(() => (page.props.auth.user?.permissions ?? []) as string[]);
+const mayDecideKpr = computed(() => can.value.includes('bankloan.sp3k.register'));
+const CANCELLABLE = ['draft', 'submitted', 'in_review', 'wawancara', 'input_bank', 'verifikasi', 'analis', 'banding', 'sp3k', 'si'];
+const showCancel = computed(() => mayDecideKpr.value && !['rejected', 'cancelled'].includes(a.status));
+const canCancel = computed(() => CANCELLABLE.includes(a.status));
+function cancelKpr() {
+    if (!canCancel.value || !mayDecideKpr.value) return;
+    if (!confirm(`Batalkan Proses KPR ${a.application_number}?\n\nStatus menjadi Batal (Cancelled) dan proses tidak dilanjutkan. Data tiap tahap tetap tersimpan (tidak dihapus) dan proses bisa dipulihkan lagi lewat tombol "Pulihkan Proses".`)) return;
+    router.post(route('kpr.cancel', a.id), {}, { onSuccess: () => window.location.reload() });
+}
+// Kebalikan Batal: kembalikan ke tahap sebelum dibatalkan (agar Batal bukan pintu satu arah).
+const showUncancel = computed(() => mayDecideKpr.value && a.status === 'cancelled');
+function uncancelKpr() {
+    if (!showUncancel.value) return;
+    if (!confirm(`Pulihkan Proses KPR ${a.application_number}?\n\nStatus kembali ke tahap terakhir sebelum dibatalkan; keputusan "Batal" dicabut (kembali Belum diputuskan).`)) return;
+    router.post(route('kpr.uncancel', a.id), {}, { onSuccess: () => window.location.reload() });
 }
 
 // ── SP3K (inline) ──
@@ -625,7 +647,7 @@ const historyNodes = computed<HistoryNode[]>(() => {
                                 <button v-if="s.decision" type="button" @click="clearDecision(s)" class="text-[11px] text-neutral-400 hover:text-primary-600 hover:underline">Ubah</button>
                                 <div v-else class="flex justify-center gap-1">
                                     <button type="button" @click="decide(s.id, 'lanjut')" class="rounded border border-success-300 px-2 py-0.5 text-xs text-success-700 hover:bg-success-50 dark:border-success-700">Lanjut</button>
-                                    <button type="button" @click="decide(s.id, 'batal')" class="rounded border border-danger-300 px-2 py-0.5 text-xs text-danger-600 hover:bg-danger-50 dark:border-danger-700">Batal</button>
+                                    <button type="button" @click="decide(s.id, 'batal')" title="Batalkan pengajuan di bank ini (nasabah memilih bank lain)" class="rounded border border-danger-300 px-2 py-0.5 text-xs text-danger-600 hover:bg-danger-50 dark:border-danger-700">Batal (pilih bank lain)</button>
                                 </div>
                             </td>
                             <!-- ACTION: Disetujui → Lanjut & Akad (hard refresh ke proses akad KPR-nya); Batal → keterangan -->
@@ -662,7 +684,19 @@ const historyNodes = computed<HistoryNode[]>(() => {
                         <a :href="route('kpr.si-print', { kpr: a.id, bank: 'bsn' })" target="_blank" class="rounded-md bg-white px-3 py-1.5 text-xs font-bold text-primary-700 hover:bg-primary-50">BSN</a>
                         <a :href="route('kpr.si-print', { kpr: a.id, bank: 'bri' })" target="_blank" class="rounded-md bg-white px-3 py-1.5 text-xs font-bold text-primary-700 hover:bg-primary-50">BRI</a>
                     </div>
-                    <button v-if="['submitted', 'in_review', 'wawancara', 'input_bank', 'verifikasi', 'analis', 'banding', 'sp3k'].includes(a.status)" type="button" @click="reject" class="text-xs px-2 py-1 rounded border border-danger-300 text-danger-600 hover:bg-danger-50 dark:border-danger-700">Tolak Proses KPR</button>
+                    <button v-if="mayDecideKpr && ['submitted', 'in_review', 'wawancara', 'input_bank', 'verifikasi', 'analis', 'banding', 'sp3k'].includes(a.status)" type="button" @click="reject" class="text-xs px-2 py-1 rounded border border-danger-300 text-danger-600 hover:bg-danger-50 dark:border-danger-700">Tolak Proses KPR</button>
+                    <!-- Batal: tersedia di rincian tiap tahap; nonaktif sejak Akad / Pencairan / Lunas.
+                         Di tahap Akad pembatalan (pindah bank) dilakukan lewat panel "Keputusan KPR" di atas. -->
+                    <button
+                        v-if="showCancel"
+                        type="button"
+                        :disabled="!canCancel"
+                        :title="canCancel ? 'Batalkan proses KPR ini (data tahap tetap tersimpan, bisa dipulihkan)' : 'Pembatalan dari rincian tahap hanya sampai sebelum Akad. Pada tahap Akad gunakan panel &quot;Keputusan KPR&quot; di atas.'"
+                        :class="['text-xs px-2 py-1 rounded border', canCancel ? 'border-danger-300 text-danger-600 hover:bg-danger-50 dark:border-danger-700' : 'cursor-not-allowed border-neutral-200 text-neutral-300 dark:border-neutral-800 dark:text-neutral-600']"
+                        @click="cancelKpr"
+                    >Batal</button>
+                    <!-- Pulihkan: kebalikan Batal — kembali ke tahap sebelum dibatalkan -->
+                    <button v-if="showUncancel" type="button" @click="uncancelKpr" title="Kembalikan ke tahap terakhir sebelum dibatalkan" class="text-xs px-2 py-1 rounded border border-success-300 text-success-700 hover:bg-success-50 dark:border-success-700 dark:text-success-300">Pulihkan Proses</button>
                     <!-- Edit/Hapus record milik tahap aktif (SP3K / Akad) -->
                     <template v-if="stageView.edit === 'sp3k' && !editSp3k">
                         <button class="text-xs px-2 py-1 rounded border border-neutral-300 hover:bg-neutral-50 dark:border-neutral-700" @click="openEditSp3k">Edit</button>
