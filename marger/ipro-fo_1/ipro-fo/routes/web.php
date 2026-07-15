@@ -1110,6 +1110,8 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
     Route::get('/kpr',                                        [KprApplicationController::class, 'index'])->name('kpr.index');
     Route::get('/kpr/create',                                 [KprApplicationController::class, 'create'])->name('kpr.create');
     Route::get('/kpr/pencairan-massal',                       [KprApplicationController::class, 'disbursementBulk'])->name('kpr.disbursement-bulk'); // Pencairan Retensi (Massal)
+    // Cetak SI massal — HARUS sebelum /kpr/{kpr} agar segmen statis tidak tertangkap sebagai id.
+    Route::get('/kpr/si-print-massal',                        [KprApplicationController::class, 'siPrintBulk'])->name('kpr.si-print-bulk');
     Route::post('/kpr',                                       [KprApplicationController::class, 'store'])->name('kpr.store');
     Route::post('/kpr/pencairan-massal',                      [KprApplicationController::class, 'disbursementBulkStore'])->name('kpr.disbursement-bulk.store');
     Route::get('/kpr/{kpr}',                                  [KprApplicationController::class, 'show'])->name('kpr.show');
