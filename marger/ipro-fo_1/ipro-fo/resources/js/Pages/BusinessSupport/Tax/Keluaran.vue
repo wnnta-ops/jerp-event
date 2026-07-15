@@ -24,7 +24,9 @@ function fmtDate(d: string) { return d ? new Date(d).toLocaleDateString('id-ID',
 function rowKey(r: any) { return r.source + '-' + r.id; }
 function isEntry(r: any) { return !!r.is_entry; }
 function needsKonversi(r: any) { return r.source === 'utj_dp' && !r.converted; }
-function sumberLabel(r: any) { return ({ ar: 'AR', properti: 'Properti', retensi: 'Retensi', pencairan: 'Pencairan KPR', utj_dp: 'UTJ & DP' } as Record<string,string>)[r.source] ?? r.source; }
+// Sumber data = modul asal entri. Untuk entri approval, sebut nama modul approval-nya
+// (retensi & pencairan sama-sama disetujui di halaman Approval Retensi).
+function sumberLabel(r: any) { return ({ ar: 'AR', properti: 'Properti', retensi: 'Approval Retensi', pencairan: 'Approval Pencairan', utj_dp: 'Approval UM Penjualan' } as Record<string,string>)[r.source] ?? r.source; }
 function sumberVariant(r: any) { return ({ ar: 'neutral', properti: 'primary', retensi: 'info', pencairan: 'success', utj_dp: 'warning' } as Record<string,any>)[r.source] ?? 'neutral'; }
 
 // ── Filter per-kolom (ketik untuk mencari) ──
