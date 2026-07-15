@@ -38,6 +38,12 @@ class KprApplicationController extends Controller
     /** Tahap yang boleh di-Reject (Tolak Proses KPR) — sebelum SP3K terbit / SI. */
     private const REJECTABLE_STATUSES = ['submitted', 'wawancara', 'input_bank', 'verifikasi', 'analis', 'banding', 'in_review', 'sp3k'];
 
+    /**
+     * Tahap yang boleh DIBATALKAN lewat tombol "Batal" pada rincian tahap.
+     * TIDAK termasuk akad / disbursed (Pencairan) / active (Lunas) — sudah terlalu jauh untuk dibatalkan.
+     */
+    private const CANCELLABLE_STATUSES = ['draft', 'submitted', 'in_review', 'wawancara', 'input_bank', 'verifikasi', 'analis', 'banding', 'sp3k', 'si'];
+
     /** Tahap tambahan Proses KPR + urutan lanjut default (Analis → Banding|SP3K ditentukan runtime). */
     private const PROCESS_STAGES = ['wawancara', 'input_bank', 'verifikasi', 'analis', 'banding'];
 
@@ -884,6 +890,68 @@ class KprApplicationController extends Controller
         $kpr->update(array_merge(['decision' => 'lanjut', 'decided_at' => now()->toDateString()], $extra));
 
         return back()->with('success', "Pengajuan KPR {$kpr->application_number} disetujui — silakan lanjut ke proses Akad.");
+    }
+
+    /**
+     * Batalkan proses KPR dari rincian tahap mana pun SEBELUM Akad (tombol "Batal").
+     * TIDAK aktif bila sudah Akad / Pencairan / Lunas. Tahap terakhir dicatat di
+     * status_before_cancel sehingga keputusan bisa diubah kembali ke "Lanjut" dan proses
+     * kembali persis ke tahap semula (lihat decide()).
+     */
+    public function cancel(Request $request, KprApplication $kpr): RedirectResponse
+    {
+        abort_unless($request->user()?->can('bankloan.sp3k.register'), 403);
+
+        if (! in_array($kpr->status->value, self::CANCELLABLE_STATUSES, true)) {
+            return back()->with('error', 'Proses KPR tidak dapat dibatalkan pada tahap Akad / Pencairan / Lunas.');
+        }
+
+        try {
+            $kpr->status->assertCanTransitionTo(KprStatus::Cancelled);
+        } catch (InvalidStateTransitionException $e) {
+            return back()->with('error', 'Status KPR saat ini tidak bisa dibatalkan.');
+        }
+
+        $before = $kpr->status->value; // catat tahap terakhir SEBELUM diubah jadi Cancelled
+
+        $kpr->update([
+            'decision'             => 'batal',
+            'decided_at'           => now()->toDateString(),
+            'status'               => KprStatus::Cancelled,
+            'status_before_cancel' => $before, // agar bisa dipulihkan via "Ubah → Lanjut"
+            'handled_by'           => $request->user()?->id,
+        ]);
+
+        return redirect()->route('kpr.show', $kpr)->with('success', "Proses KPR {$kpr->application_number} dibatalkan (status Batal). Data tiap tahap tetap tersimpan.");
+    }
+
+    /**
+     * Pulihkan Proses KPR yang dibatalkan → kembali ke tahap sebelum dibatalkan (kebalikan cancel()).
+     * Keputusan "batal" DICABUT (decision → null), bukan diubah jadi "lanjut" — memulihkan ≠ menyetujui,
+     * sehingga tidak memakai jatah "hanya 1 KPR Lanjut per nasabah".
+     * Cancelled tidak punya allowedTransitions, jadi update langsung (sama seperti decide()).
+     */
+    public function uncancel(Request $request, KprApplication $kpr): RedirectResponse
+    {
+        abort_unless($request->user()?->can('bankloan.sp3k.register'), 403);
+
+        if ($kpr->status !== KprStatus::Cancelled) {
+            return back()->with('error', 'Hanya Proses KPR berstatus Batal yang bisa dipulihkan.');
+        }
+
+        // Tahap terakhir sebelum dibatalkan; fallback data lama tanpa catatan.
+        $resume = $kpr->status_before_cancel !== null ? KprStatus::tryFrom($kpr->status_before_cancel) : null;
+        $resume ??= $kpr->sp3k()->exists() ? KprStatus::Sp3kIssued : KprStatus::Submitted;
+
+        $kpr->update([
+            'status'               => $resume,
+            'status_before_cancel' => null,
+            'decision'             => null, // batal dicabut — belum diputuskan lagi
+            'decided_at'           => null,
+            'handled_by'           => $request->user()?->id,
+        ]);
+
+        return redirect()->route('kpr.show', $kpr)->with('success', "Proses KPR {$kpr->application_number} dipulihkan — kembali ke tahap {$resume->label()}.");
     }
 
     /**

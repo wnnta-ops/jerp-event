@@ -1108,6 +1108,8 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
     Route::post('/kpr/{kpr}/submit',                          [KprApplicationController::class, 'submit'])->name('kpr.submit');
     Route::post('/kpr/{kpr}/decision',                        [KprApplicationController::class, 'decide'])->name('kpr.decide'); // #item4 Lanjut/Batal
     Route::post('/kpr/{kpr}/reject',                          [KprApplicationController::class, 'reject'])->name('kpr.reject'); // tolak proses KPR (Submitted/SP3K)
+    Route::post('/kpr/{kpr}/cancel',                          [KprApplicationController::class, 'cancel'])->name('kpr.cancel'); // batalkan proses KPR (sebelum Akad)
+    Route::post('/kpr/{kpr}/uncancel',                        [KprApplicationController::class, 'uncancel'])->name('kpr.uncancel'); // pulihkan proses KPR yang dibatalkan
     Route::post('/kpr/{kpr}/sp3k',                            [KprApplicationController::class, 'sp3k'])->name('kpr.sp3k');
     Route::post('/kpr/{kpr}/akad',                            [KprApplicationController::class, 'akad'])->name('kpr.akad');
     Route::post('/kpr/{kpr}/akad-complete',                   [KprApplicationController::class, 'completeAkad'])->name('kpr.akad-complete');
@@ -1128,7 +1130,7 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
     Route::delete('/kpr/{kpr}/realization/{realization}',     [KprApplicationController::class, 'destroyRealization'])->name('kpr.realization.destroy');
     // GET fallback untuk URL aksi KPR (POST-only): bila diakses via GET (reload / address bar lama / akses langsung),
     // arahkan ke detail KPR — bukan 405 Method Not Allowed.
-    foreach (['submit', 'sp3k', 'akad', 'akad-complete', 'disbursement', 'reject', 'proceed-submitted', 'proceed-sp3k', 'proceed-si', 'proceed-akad', 'step-back', 'process'] as $kprAction) {
+    foreach (['submit', 'sp3k', 'akad', 'akad-complete', 'disbursement', 'reject', 'cancel', 'uncancel', 'proceed-submitted', 'proceed-sp3k', 'proceed-si', 'proceed-akad', 'step-back', 'process'] as $kprAction) {
         Route::get("/kpr/{kpr}/{$kprAction}", fn (KprApplication $kpr) => redirect()->route('kpr.show', $kpr));
     }
     Route::post('/retentions/{retention}/release',            [KprApplicationController::class, 'releaseRetention'])->name('kpr.retention-release');
