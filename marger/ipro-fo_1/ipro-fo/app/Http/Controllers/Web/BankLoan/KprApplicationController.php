@@ -1115,6 +1115,11 @@ class KprApplicationController extends Controller
             return back()->with('error', 'Isi Nominal Cair atau Retensi/DAJAM (salah satu wajib lebih dari 0).');
         }
 
+        // Ada Retensi/DAJAM → keterangannya WAJIB (mirror gerbang klien dajamOk di Show.vue).
+        if ((float) ($data['retention_amount'] ?? 0) > 0 && trim((string) ($data['retention_note'] ?? '')) === '') {
+            return back()->with('error', 'Keterangan Retensi / DAJAM wajib diisi untuk setiap retensi.');
+        }
+
 
         try {
             $action->execute($kpr, $data);

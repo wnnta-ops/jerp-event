@@ -150,6 +150,10 @@ const projectedTotal = computed(() => grossDisbursed.value + effectiveDisbursed.
 const exceedsPlafon = computed(() => plafon.value > 0 && projectedTotal.value > plafon.value + 0.01);
 // Boleh submit bila nominal cair > 0, ATAU (saat 100%) total retensi/DAJAM > 0.
 const canSubmitDisb = computed(() => effectiveDisbursed.value > 0 || totalRetention.value > 0);
+// WAJIB: bila "Terdapat Retensi DAJAM", TIAP baris harus punya Nominal > 0 DAN Keterangan terisi
+// (mirror gerbang server di KprApplicationController::disbursement()).
+const dajamLineOk = (l: any) => Number(l?.retention_amount) > 0 && String(l?.retention_note ?? '').trim() !== '';
+const dajamOk = computed(() => !hasDajam.value || disbForm.dajam_lines.every(dajamLineOk));
 
 // NO107: saat memilih Kategori Retensi, Nominal Cair otomatis terisi = persentase efektif × plafon
 // (pakai term bank bila ada, kalau tidak pakai persentase kategori). Tetap bisa diedit manual.
@@ -297,6 +301,7 @@ function submitDisb() {
     if (exceedsPlafon.value) return; // kunci: jangan kirim bila total pencairan melebihi plafon
     if (!disbForm.retention_category_id) return; // kategori retensi wajib diisi
     if (!canSubmitDisb.value) return; // #167: nominal cair ATAU retensi harus > 0
+    if (!dajamOk.value) return; // tiap baris DAJAM wajib punya Nominal > 0 & Keterangan
     disbForm.transform((d: any) => ({
         disbursed_at: d.disbursed_at,
         // #167: nominal cair = 0 saat input disembunyikan (pencairan 100%) → hanya retensi yang dicatat.
@@ -1068,11 +1073,16 @@ const historyNodes = computed<HistoryNode[]>(() => {
                         <div class="space-y-3" :class="{ 'opacity-50': !hasDajam }">
                             <div v-for="(dl, di) in disbForm.dajam_lines" :key="di" class="space-y-2 rounded-lg border border-neutral-200 p-3 dark:border-neutral-700">
                                 <div class="flex items-center justify-between">
-                                    <label class="block text-sm font-medium">Retensi / Pengurangan DAJAM (Rp)</label>
+                                    <label class="block text-sm font-medium">Retensi / Pengurangan DAJAM (Rp) <span v-if="hasDajam" class="text-danger-500">*</span></label>
                                     <button v-if="hasDajam && disbForm.dajam_lines.length > 1" type="button" @click="removeDajamLine(di)" class="rounded border border-danger-300 px-2 py-0.5 text-xs text-danger-600 hover:bg-danger-50 dark:border-danger-700">Hapus</button>
                                 </div>
                                 <MoneyInput v-model="dl.retention_amount" :disabled="!hasDajam" />
-                                <Input v-model="dl.retention_note" :disabled="!hasDajam" label="Keterangan Retensi / DAJAM" placeholder="mis. potongan biaya provisi / DAJAM apa" />
+                                <p v-if="hasDajam && !(Number(dl.retention_amount) > 0)" class="text-xs text-danger-600">Nominal wajib diisi (lebih dari 0).</p>
+                                <div>
+                                    <label class="mb-1 block text-sm font-medium">Keterangan Retensi / DAJAM <span v-if="hasDajam" class="text-danger-500">*</span></label>
+                                    <Input v-model="dl.retention_note" :disabled="!hasDajam" placeholder="mis. potongan biaya provisi / DAJAM apa" />
+                                    <p v-if="hasDajam && !String(dl.retention_note ?? '').trim()" class="mt-1 text-xs text-danger-600">Keterangan wajib diisi.</p>
+                                </div>
                             </div>
                             <button v-if="hasDajam" type="button" @click="addDajamLine" class="inline-flex items-center gap-1 rounded-lg border border-dashed border-neutral-300 px-3 py-1.5 text-xs font-medium text-neutral-600 hover:bg-neutral-50 dark:border-neutral-700 dark:text-neutral-300"><Plus class="h-3.5 w-3.5" /> Tambah Retensi / Pengurangan DAJAM</button>
                             <p class="text-xs text-neutral-400">{{ hasDajam ? 'Isi manual sesuai pengurangan DAJAM. Total retensi menambah "Outstanding setelah".' : 'Tidak ada retensi/pengurangan DAJAM pada pencairan ini.' }}</p>
@@ -1096,7 +1106,10 @@ const historyNodes = computed<HistoryNode[]>(() => {
                         Maksimal yang dapat dicairkan saat ini: <span class="font-semibold">{{ fmtRp(grossHeadroom) }}</span>.
                     </div>
                     <!-- #167: boleh submit bila Nominal Cair > 0 ATAU (saat 100%) ada Retensi/DAJAM > 0. -->
-                    <Button type="submit" size="lg" block :loading="disbForm.processing" :disabled="exceedsPlafon || !canSubmitDisb || !disbForm.retention_category_id" variant="success">{{ canDisburse ? 'Catat Pencairan + Auto-TTS →' : 'Catat Retensi / DAJAM →' }}</Button>
+                    <p v-if="hasDajam && !dajamOk" class="rounded-lg border border-warning-300 bg-warning-50 px-3 py-2 text-xs text-warning-700 dark:border-warning-700 dark:bg-warning-900/30 dark:text-warning-300">
+                        ⚠ Lengkapi <strong>Nominal</strong> (lebih dari 0) &amp; <strong>Keterangan</strong> pada setiap baris Retensi / Pengurangan DAJAM.
+                    </p>
+                    <Button type="submit" size="lg" block :loading="disbForm.processing" :disabled="exceedsPlafon || !canSubmitDisb || !dajamOk || !disbForm.retention_category_id" variant="success">{{ canDisburse ? 'Catat Pencairan + Auto-TTS →' : 'Catat Retensi / DAJAM →' }}</Button>
                 </form>
             </div>
 
