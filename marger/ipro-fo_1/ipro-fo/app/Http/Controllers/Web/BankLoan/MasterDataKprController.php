@@ -37,6 +37,25 @@ class MasterDataKprController extends Controller
         ['key' => 'dajam_bestek', 'label' => 'RETENSI 4 (DAJAM BESTEK)',        'match' => ['BESTEK']],
     ];
 
+    /**
+     * 12 tahap Proses KPR (urut) — tiap tahap punya kolom Tanggal + Summary.
+     * Label mengikuti stepper di BankLoan/Show.vue agar konsisten dengan halaman proses.
+     */
+    private const PROSES_COLS = [
+        ['key' => 'draft',      'label' => 'Draft'],
+        ['key' => 'submitted',  'label' => 'Submitted'],
+        ['key' => 'wawancara',  'label' => 'Wawancara'],
+        ['key' => 'input_bank', 'label' => 'Input Sistem Bank'],
+        ['key' => 'verifikasi', 'label' => 'Proses Verifikasi'],
+        ['key' => 'analis',     'label' => 'Proses Analis'],
+        ['key' => 'banding',    'label' => 'Proses Banding'],
+        ['key' => 'sp3k',       'label' => 'SP3K'],
+        ['key' => 'si',         'label' => 'SI'],
+        ['key' => 'akad',       'label' => 'Akad'],
+        ['key' => 'disbursed',  'label' => 'Pencairan'],
+        ['key' => 'active',     'label' => 'Lunas'],
+    ];
+
     public function index(Request $request): Response
     {
         abort_unless($request->user()?->can('bankloan.application.view'), 403);
@@ -74,7 +93,7 @@ class MasterDataKprController extends Controller
 
         $ids = $bookings->pluck('id')->all();
         if (empty($ids)) {
-            return Inertia::render('BankLoan/MasterData/Index', ['rows' => [], 'retensiCols' => $this->retensiHeaders()]);
+            return Inertia::render('BankLoan/MasterData/Index', ['rows' => [], 'retensiCols' => $this->retensiHeaders(), 'prosesCols' => $this->prosesHeaders()]);
         }
 
         // ── Maps (keyed by booking_id) ──
@@ -86,6 +105,10 @@ class MasterDataKprController extends Controller
         $akad       = $this->akadByApplication(array_values($appIdByBooking));
         $realisasi  = $this->realisasiByApplication(array_values($appIdByBooking));
         $retensi    = $this->retensiByBooking($appIdByBooking);
+        // Bahan 12 kolom Proses KPR.
+        $sp3k       = $this->sp3kByApplication(array_values($appIdByBooking));
+        $pencairan  = $this->pencairanByApplication(array_values($appIdByBooking));
+        $inisiasi   = $this->initiationByBooking($ids);
 
         $rows = [];
         $no = 0;
@@ -130,6 +153,14 @@ class MasterDataKprController extends Controller
                 'pengajuan_kpr'   => $pengajuan,
                 'acc_kpr'         => $acc,
                 'selisih'         => ($pengajuan !== null && $acc !== null) ? $pengajuan - $acc : null,
+                // Proses KPR — 12 tahap, tiap tahap {t: tanggal, s: summary}
+                'proses'          => $this->prosesCells(
+                    $app,
+                    $inisiasi[$b->id] ?? [],
+                    $appId ? ($sp3k[$appId] ?? null) : null,
+                    $ak,
+                    $appId ? ($pencairan[$appId] ?? null) : null,
+                ),
                 // Collection UTJ & DP
                 'utj'             => $sch['utj'],
                 'dp'              => array_map(fn ($l) => $sch['dp'][$l] ?? null, self::DP_LABELS),
@@ -150,6 +181,7 @@ class MasterDataKprController extends Controller
         return Inertia::render('BankLoan/MasterData/Index', [
             'rows'        => $rows,
             'retensiCols' => $this->retensiHeaders(),
+            'prosesCols'  => $this->prosesHeaders(),
         ]);
     }
 
@@ -212,7 +244,12 @@ class MasterDataKprController extends Controller
             ->leftJoin('bank_partners as bp', 'bp.id', '=', 'ka.bank_partner_id')
             ->whereIn('ka.booking_id', $ids)->whereNull('ka.deleted_at')
             ->orderBy('ka.booking_id')->orderByDesc('ka.id')
-            ->get(['ka.id', 'ka.booking_id', 'ka.plafon_requested', 'ka.plafon_approved', 'bp.name as bank_name']);
+            ->get([
+                'ka.id', 'ka.booking_id', 'ka.plafon_requested', 'ka.plafon_approved', 'bp.name as bank_name',
+                // Bahan 12 kolom Proses KPR (tanggal + summary per tahap).
+                'ka.timeline', 'ka.process_stages', 'ka.submitted_at', 'ka.decision', 'ka.decided_at',
+                'ka.status', 'ka.created_at', 'ka.application_number', 'ka.reject_reason',
+            ]);
         $apps = [];
         $idBy = [];
         foreach ($rows as $r) {
@@ -253,6 +290,155 @@ class MasterDataKprController extends Controller
             $map[$r->kpr_application_id] ??= $r;
         }
         return $map;
+    }
+
+    /** SP3K per aplikasi (terbaru) — untuk kolom proses SP3K. */
+    private function sp3kByApplication(array $appIds): array
+    {
+        if (empty($appIds)) {
+            return [];
+        }
+        $rows = DB::table('kpr_sp3k')->whereIn('kpr_application_id', $appIds)
+            ->orderBy('kpr_application_id')->orderByDesc('id')
+            ->get(['kpr_application_id', 'sp3k_number', 'sp3k_date', 'approved_amount']);
+        $map = [];
+        foreach ($rows as $r) {
+            $map[$r->kpr_application_id] ??= $r;
+        }
+        return $map;
+    }
+
+    /** Ringkasan pencairan per aplikasi: jumlah realisasi + total cair + tanggal cair terakhir. */
+    private function pencairanByApplication(array $appIds): array
+    {
+        if (empty($appIds)) {
+            return [];
+        }
+        $rows = DB::table('kpr_realizations')->whereIn('kpr_application_id', $appIds)
+            ->whereNull('approval_status') // realisasi yang ditolak tidak dihitung
+            ->orderBy('kpr_application_id')->orderBy('disbursed_at')
+            ->get(['kpr_application_id', 'disbursed_at', 'disbursed_amount']);
+        $map = [];
+        foreach ($rows as $r) {
+            $m = &$map[$r->kpr_application_id];
+            $m ??= ['n' => 0, 'total' => 0.0, 'last' => null];
+            $m['n']++;
+            $m['total'] += (float) $r->disbursed_amount;
+            $m['last'] = $r->disbursed_at; // urut menaik → nilai terakhir = paling baru
+            unset($m);
+        }
+        return $map;
+    }
+
+    /** Tahap inisiasi (kpr_initiations.stages) per booking — sumber cap waktu pra-pengajuan. */
+    private function initiationByBooking(array $ids): array
+    {
+        $rows = DB::table('kpr_initiations')->whereIn('booking_id', $ids)->whereNull('deleted_at')
+            ->orderBy('booking_id')->orderByDesc('id')
+            ->get(['booking_id', 'stages']);
+        $map = [];
+        foreach ($rows as $r) {
+            $map[$r->booking_id] ??= (array) (json_decode((string) $r->stages, true) ?: []);
+        }
+        return $map;
+    }
+
+    private function prosesHeaders(): array
+    {
+        return array_map(fn ($c) => $c['label'], self::PROSES_COLS);
+    }
+
+    /**
+     * 12 sel {t: tanggal|null, s: summary|null} — satu per tahap Proses KPR.
+     *
+     * Tanggal memakai rantai: data tahap (process_stages/tabel) → cap timeline → kolom keras.
+     * Urutan ini penting: "← Tahap Sebelumnya" MENGHAPUS cap timeline tapi TIDAK menghapus
+     * process_stages, sehingga sumber data tahap lebih tahan banting daripada timeline.
+     */
+    private function prosesCells(?object $app, array $stages, ?object $sp3k, ?object $ak, ?array $cair): array
+    {
+        $tl = $app ? (array) (json_decode((string) ($app->timeline ?? ''), true) ?: []) : [];
+        $ps = $app ? (array) (json_decode((string) ($app->process_stages ?? ''), true) ?: []) : [];
+
+        $txt = function (?string ...$parts): ?string {
+            $s = trim(implode(' · ', array_filter(array_map(fn ($p) => trim((string) $p), $parts), fn ($p) => $p !== '')));
+            return $s !== '' ? mb_substr($s, 0, 180) : null;
+        };
+        $rp = fn ($v) => 'Rp '.number_format((float) $v, 0, ',', '.');
+        // Tahap proses (wawancara/input_bank/analis/banding): tanggal selesai + catatan.
+        $stg = fn (string $k) => is_array($ps[$k] ?? null) ? $ps[$k] : [];
+
+        $verif = $stg('verifikasi');
+        $analis = $stg('analis');
+        $banding = $stg('banding');
+        $cell = [];
+
+        foreach (self::PROSES_COLS as $c) {
+            $t = null;
+            $s = null;
+            switch ($c['key']) {
+                case 'draft':
+                    $t = $this->d($tl['draft'] ?? $app?->created_at ?? null);
+                    $s = $txt($app?->application_number);
+                    break;
+                case 'submitted':
+                    $t = $this->d($app?->submitted_at ?? $tl['submitted'] ?? null);
+                    $s = $txt($app?->bank_name);
+                    break;
+                case 'wawancara':
+                case 'input_bank':
+                    $x = $stg($c['key']);
+                    $t = $this->d($x['finished_at'] ?? $tl[$c['key']] ?? null);
+                    $s = $txt($x['notes'] ?? null);
+                    break;
+                case 'verifikasi':
+                    $t = $this->d($verif['wawancara2']['finished_at'] ?? $verif['ots']['finished_at'] ?? $tl['verifikasi'] ?? null);
+                    $s = $txt(
+                        ($verif['ots']['notes'] ?? null) ? 'OTS: '.$verif['ots']['notes'] : null,
+                        ($verif['wawancara2']['notes'] ?? null) ? 'Wwc-2: '.$verif['wawancara2']['notes'] : null,
+                    );
+                    break;
+                case 'analis':
+                    $t = $this->d($analis['finished_at'] ?? $tl['analis'] ?? null);
+                    $s = $txt(
+                        $analis['notes'] ?? null,
+                        ($analis['berkas_tambahan'] ?? null) ? 'Berkas: '.$analis['berkas_tambahan'] : null,
+                        ! empty($analis['banding']) ? 'perlu Banding' : null,
+                    );
+                    break;
+                case 'banding':
+                    $t = $this->d($banding['finished_at'] ?? $tl['banding'] ?? null);
+                    $jenis = $banding['jenis'] ?? null;
+                    $s = $txt(
+                        $jenis ? ($jenis === 'lain_lain' ? (string) ($banding['jenis_lain'] ?? 'Lain-Lain') : str_replace('_', ' ', (string) $jenis)) : null,
+                        $banding['notes'] ?? null,
+                    );
+                    break;
+                case 'sp3k':
+                    $t = $this->d($sp3k?->sp3k_date ?? $tl['sp3k'] ?? null);
+                    $s = $txt($sp3k?->sp3k_number, $sp3k?->approved_amount !== null ? $rp($sp3k->approved_amount) : null);
+                    break;
+                case 'si':
+                    $t = $this->d($tl['si'] ?? null); // SI tak punya tabel — hanya cap timeline
+                    $s = $t ? 'Surat Instruksi diterbitkan' : null;
+                    break;
+                case 'akad':
+                    $t = $this->d($ak?->akad_at ?? $tl['akad'] ?? null);
+                    $s = $txt(match ($app?->decision) { 'lanjut' => 'Disetujui', 'batal' => 'Batal', default => null });
+                    break;
+                case 'disbursed':
+                    $t = $this->d($cair['last'] ?? $tl['disbursed'] ?? null);
+                    $s = $cair ? $txt($cair['n'].'× pencairan', $rp($cair['total'])) : null;
+                    break;
+                case 'active':
+                    // Lunas: hanya bila status benar-benar Active.
+                    $t = ($app?->status === 'active') ? $this->d($cair['last'] ?? $tl['disbursed'] ?? null) : null;
+                    $s = ($app?->status === 'active') ? 'Lunas' : ($app?->status === 'rejected' ? $txt('Ditolak', $app?->reject_reason) : ($app?->status === 'cancelled' ? 'Batal' : null));
+                    break;
+            }
+            $cell[] = ['t' => $t, 's' => $s];
+        }
+        return $cell;
     }
 
     /**

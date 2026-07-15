@@ -657,7 +657,28 @@ class KprApplicationController extends Controller
      * Cetak Surat Instruksi (SI) sesuai format bank: BTN / BSN / BRI (format lampiran MUP — Java Residence).
      * Data nasabah/unit/nilai diambil dari KPR; konstanta bank (cabang, rekening, notaris) sesuai template.
      */
-    private function siBankLetters(KprApplication $kpr, string $bank): string
+    /** Bungkus satu/banyak surat SI menjadi dokumen HTML siap cetak (CSS + tombol Cetak). */
+    private function siDoc(string $title, string $btnLabel, string $body): string
+    {
+        $e = fn ($v) => htmlspecialchars((string) ($v ?? ''), ENT_QUOTES);
+        $css = '@page{size:A4;margin:2cm} body{font-family:"Times New Roman",serif;font-size:12.5px;color:#000;line-height:1.5}'
+            .'.letter{page-break-after:always}.letter:last-child{page-break-after:auto}'
+            .'.kop{text-align:center;border-bottom:2.5px solid #111;padding-bottom:6px;margin-bottom:16px}'
+            .'.kop .co{font-size:17px;font-weight:bold;letter-spacing:.5px}.kop .ad{font-size:10.5px;color:#333}'
+            .'.right{text-align:right;margin-bottom:6px}.hdr{margin:8px 0}.to{margin:12px 0}'
+            .'.kv{display:flex;margin:1px 0}.kv .k{width:150px;flex:0 0 150px}.kv .c{width:12px;flex:0 0 12px}.kv .v{flex:1}'
+            .'p{margin:9px 0;text-align:justify}'
+            .'table.pajak{border-collapse:collapse;margin:10px 0;font-size:11px;width:100%}table.pajak th,table.pajak td{border:1px solid #111;padding:4px 6px;text-align:center}'
+            .'.sign{margin-top:34px}.sign .nm{font-weight:bold;text-decoration:underline;margin-top:62px}'
+            .'.print{text-align:right;margin-bottom:12px}button{padding:8px 16px;font-size:13px;cursor:pointer}@media print{.print{display:none}}';
+
+        return '<!DOCTYPE html><html lang="id"><head><meta charset="utf-8"><title>'.$e($title).'</title><style>'.$css.'</style></head><body>'
+            .'<div class="print"><button onclick="window.print()">'.$e($btnLabel).'</button></div>'
+            .$body.'</body></html>';
+    }
+
+    /** Surat SI satu KPR sesuai format bank — HTML isi saja (tanpa <html>), agar bisa digabung massal. */
+    private function siLetterBody(KprApplication $kpr, string $bank): string
     {
         $kpr->load([
             'customer', 'bank:id,name',
@@ -796,20 +817,52 @@ class KprApplicationController extends Controller
             $letters[] = $keterangan('BRI.SDA');
         }
 
-        $css = '@page{size:A4;margin:2cm} body{font-family:"Times New Roman",serif;font-size:12.5px;color:#000;line-height:1.5}'
-            .'.letter{page-break-after:always}.letter:last-child{page-break-after:auto}'
-            .'.kop{text-align:center;border-bottom:2.5px solid #111;padding-bottom:6px;margin-bottom:16px}'
-            .'.kop .co{font-size:17px;font-weight:bold;letter-spacing:.5px}.kop .ad{font-size:10.5px;color:#333}'
-            .'.right{text-align:right;margin-bottom:6px}.hdr{margin:8px 0}.to{margin:12px 0}'
-            .'.kv{display:flex;margin:1px 0}.kv .k{width:150px;flex:0 0 150px}.kv .c{width:12px;flex:0 0 12px}.kv .v{flex:1}'
-            .'p{margin:9px 0;text-align:justify}'
-            .'table.pajak{border-collapse:collapse;margin:10px 0;font-size:11px;width:100%}table.pajak th,table.pajak td{border:1px solid #111;padding:4px 6px;text-align:center}'
-            .'.sign{margin-top:34px}.sign .nm{font-weight:bold;text-decoration:underline;margin-top:62px}'
-            .'.print{text-align:right;margin-bottom:12px}button{padding:8px 16px;font-size:13px;cursor:pointer}@media print{.print{display:none}}';
+        return implode('', $letters);
+    }
 
-        return '<!DOCTYPE html><html lang="id"><head><meta charset="utf-8"><title>SI '.strtoupper($bank).' — '.$e($kpr->application_number).'</title><style>'.$css.'</style></head><body>'
-            .'<div class="print"><button onclick="window.print()">Cetak SI '.strtoupper($bank).'</button></div>'
-            .implode('', $letters).'</body></html>';
+    /** Cetak SI satu KPR (dipakai siPrint) — isi surat dibungkus dokumen cetak. */
+    private function siBankLetters(KprApplication $kpr, string $bank): string
+    {
+        return $this->siDoc(
+            'SI '.strtoupper($bank).' — '.$kpr->application_number,
+            'Cetak SI '.strtoupper($bank),
+            $this->siLetterBody($kpr, $bank),
+        );
+    }
+
+    /**
+     * Cetak SI MASSAL (Pencairan Retensi Massal) — satu surat per customer terpilih, format
+     * identik dengan SI pada tahap SI di Proses KPR. Antar surat otomatis page-break
+     * (CSS .letter{page-break-after:always}), jadi sekali cetak untuk banyak customer.
+     */
+    public function siPrintBulk(Request $request): HttpResponse
+    {
+        abort_unless($request->user()?->can('bankloan.application.view'), 403);
+
+        $bank = strtolower(trim((string) $request->string('bank', 'btn')));
+        if (! in_array($bank, ['btn', 'bsn', 'bri'], true)) {
+            $bank = 'btn';
+        }
+
+        $ids = array_values(array_unique(array_filter(array_map('intval', (array) $request->input('ids', [])))));
+        if ($ids === []) {
+            return response($this->siDoc('SI Massal', 'Cetak', '<p style="text-align:center">Tidak ada customer dipilih.</p>'), 422)
+                ->header('Content-Type', 'text/html');
+        }
+
+        $apps = KprApplication::whereIn('id', $ids)->orderBy('id')->get();
+        if ($apps->isEmpty()) {
+            return response($this->siDoc('SI Massal', 'Cetak', '<p style="text-align:center">Data KPR tidak ditemukan.</p>'), 404)
+                ->header('Content-Type', 'text/html');
+        }
+
+        $body = $apps->map(fn (KprApplication $k) => $this->siLetterBody($k, $bank))->implode('');
+
+        return response($this->siDoc(
+            'SI '.strtoupper($bank).' — Massal ('.$apps->count().' customer)',
+            'Cetak SI '.strtoupper($bank).' — '.$apps->count().' Customer',
+            $body,
+        ))->header('Content-Type', 'text/html');
     }
 
     public function sp3k(Request $request, KprApplication $kpr, RegisterSp3k $action): RedirectResponse
@@ -1061,6 +1114,12 @@ class KprApplicationController extends Controller
         if ((float) $data['disbursed_amount'] <= 0 && (float) ($data['retention_amount'] ?? 0) <= 0) {
             return back()->with('error', 'Isi Nominal Cair atau Retensi/DAJAM (salah satu wajib lebih dari 0).');
         }
+
+        // Ada Retensi/DAJAM → keterangannya WAJIB (mirror gerbang klien dajamOk di Show.vue).
+        if ((float) ($data['retention_amount'] ?? 0) > 0 && trim((string) ($data['retention_note'] ?? '')) === '') {
+            return back()->with('error', 'Keterangan Retensi / DAJAM wajib diisi untuk setiap retensi.');
+        }
+
 
         try {
             $action->execute($kpr, $data);
