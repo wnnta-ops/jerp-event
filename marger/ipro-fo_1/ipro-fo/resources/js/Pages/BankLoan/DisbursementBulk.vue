@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue';
 import { useForm, Link } from '@inertiajs/vue3';
-import { Layers, ArrowLeft, CheckCircle2, UserPlus, Users, Trash2, Search, X } from 'lucide-vue-next';
+import { Layers, ArrowLeft, CheckCircle2, UserPlus, Users, Trash2, Search, X, Printer } from 'lucide-vue-next';
 import Button from '@/Components/UI/Button.vue';
 import MoneyInput from '@/Components/UI/MoneyInput.vue';
 import SearchSelect from '@/Components/UI/SearchSelect.vue';
@@ -144,6 +144,12 @@ function lineValid(l: any): boolean {
 }
 const invalidLines = computed(() => activeLines.value.filter(l => !lineValid(l)));
 
+// Cetak SI (Massal) — satu surat per customer terpilih, format identik SI tahap SI di Proses KPR.
+// Dibuka sebagai <a target="_blank"> (bukan Inertia Link) karena responsnya HTML cetak, bukan halaman Inertia.
+function siBulkUrl(bank: string): string {
+    return route('kpr.si-print-bulk', { bank, ids: activeLines.value.map((l: any) => l.kpr_id) });
+}
+
 const form = useForm<{ rows: any[] }>({ rows: [] });
 function submit() {
     if (!activeLines.value.length) { alert('Pilih minimal satu customer untuk dicairkan.'); return; }
@@ -274,7 +280,13 @@ const cellInput = 'h-9 w-full rounded-md border border-neutral-300 bg-white px-2
                     <span v-if="totalRetensi"> · retensi <span class="font-mono">Rp {{ fmtRp(totalRetensi) }}</span></span>
                     <span v-if="invalidLines.length" class="ml-2 font-medium text-danger-600">· {{ invalidLines.length }} baris belum lengkap</span>
                 </p>
-                <div class="flex gap-3">
+                <div class="flex flex-wrap items-center gap-3">
+                    <!-- Cetak SI (Massal): satu surat per customer terpilih, format sama dgn SI di tahap SI -->
+                    <div v-if="activeLines.length" class="inline-flex items-center gap-1.5 rounded-lg border border-primary-300 p-1 dark:border-primary-700">
+                        <span class="flex items-center gap-1.5 pl-1.5 text-xs font-semibold text-primary-700 dark:text-primary-300"><Printer class="h-3.5 w-3.5" /> Cetak SI ({{ activeLines.length }})</span>
+                        <a v-for="b in ['btn', 'bsn', 'bri']" :key="b" :href="siBulkUrl(b)" target="_blank"
+                           class="rounded-md bg-primary-600 px-2.5 py-1 text-xs font-bold text-white hover:bg-primary-700">{{ b.toUpperCase() }}</a>
+                    </div>
                     <Link :href="route('kpr.index')"><Button variant="secondary">Batal</Button></Link>
                     <Button variant="success" :loading="form.processing" :disabled="!activeLines.length || invalidLines.length > 0" @click="submit"><template #icon-left><CheckCircle2 class="h-4 w-4" /></template>Catat Pencairan ({{ activeLines.length }})</Button>
                 </div>
