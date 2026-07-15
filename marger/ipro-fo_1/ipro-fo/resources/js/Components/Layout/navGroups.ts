@@ -74,19 +74,24 @@ export function navGroups(foUrl: string): { title: string; items: NavItem[] }[] 
             ]},
         ],
     },
+    // Grup "Business Support" dibubarkan: Purchase Order → Purchasing; Item/FPB/Penerimaan/
+    // Pengeluaran/Kartu Stok → Inventory; Account Receivable → grup mandiri (dekat Account Payable).
+    // Overview, Proyeksi Hutang/Piutang & Payroll dihapus dari menu — halamannya tetap ada:
+    // Proyeksi duplikat di grup Account Payable, Payroll via Data Center → Employee Center → Karyawan.
     {
-        title: 'Business Support',
+        title: 'Purchasing',
         items: [
-            { label: 'Overview',          icon: Briefcase,    href: 'bs.index',              permission: ['businesssupport.view', 'ap.*', 'ar.*', 'gl.*', 'cashbook.*', 'budget.*', 'contractor.*', 'cogs.*', 'tax.*', 'datacenter.*', 'bs.*'] },
-            { label: 'Proyeksi Hutang/Piutang', icon: BookText, href: 'bs.projection', params: { mode: 'hutang' }, permission: ['businesssupport.view', 'ap.*', 'ar.*'] },
-            { label: 'Account Receivable',icon: Coins,        href: 'bs.ar.index',           permission: ['businesssupport.view', 'ar.*'] },
-            { label: 'Payroll',           icon: Banknote,    href: 'bs.payroll.index',      permission: ['businesssupport.view', 'bs.*'] },
-            { label: 'Item / Stok',       icon: Boxes,        href: 'bs.items.index',        permission: ['businesssupport.view', 'bs.*'] },
-            { label: 'FPB (Permintaan)',  icon: ClipboardList,href: 'bs.fpb.index',          permission: ['businesssupport.view', 'bs.*'] },
-            { label: 'Purchase Order',    icon: ShoppingCart, href: 'bs.po.index',           permission: ['businesssupport.view', 'bs.*'] },
-            { label: 'Penerimaan',        icon: PackagePlus,  href: 'bs.receipt.index',      permission: ['businesssupport.view', 'bs.*'] },
-            { label: 'Pengeluaran',       icon: PackageMinus, href: 'bs.issue.index',        permission: ['businesssupport.view', 'bs.*'] },
-            { label: 'Kartu Stok',        icon: LayoutList,   href: 'bs.stockcard.index',    permission: ['businesssupport.view', 'bs.*'] },
+            { label: 'Purchase Order',     icon: ShoppingCart,  href: 'bs.po.index',           permission: ['businesssupport.view', 'bs.*'] },
+        ],
+    },
+    {
+        title: 'Inventory',
+        items: [
+            { label: 'Item / Stok',        icon: Boxes,         href: 'bs.items.index',        permission: ['businesssupport.view', 'bs.*'] },
+            { label: 'FPB (Permintaan)',   icon: ClipboardList, href: 'bs.fpb.index',          permission: ['businesssupport.view', 'bs.*'] },
+            { label: 'Penerimaan Barang',  icon: PackagePlus,   href: 'bs.receipt.index',      permission: ['businesssupport.view', 'bs.*'] },
+            { label: 'Pengeluaran Barang', icon: PackageMinus,  href: 'bs.issue.index',        permission: ['businesssupport.view', 'bs.*'] },
+            { label: 'Kartu Stok',         icon: LayoutList,    href: 'bs.stockcard.index',    permission: ['businesssupport.view', 'bs.*'] },
         ],
     },
     {
@@ -185,6 +190,19 @@ export function navGroups(foUrl: string): { title: string; items: NavItem[] }[] 
             { label: 'Generate Lap. Perusahaan', icon: Lock, permission: ['businesssupport.view', 'gl.*'], children: [
                 { label: 'Closing Fiskal', href: 'bs.closing.index' },
             ]},
+        ],
+    },
+    {
+        title: 'Account Receivable',
+        items: [
+            { label: 'Invoice Piutang',     icon: Coins,            href: 'bs.ar.index',             permission: ['businesssupport.view', 'ar.*'] },
+            { label: 'Registrasi Piutang',  icon: ClipboardList,    href: 'bs.ar.create',            permission: ['businesssupport.view', 'ar.*'] },
+            { label: 'Kuitansi Piutang',    icon: Receipt,          href: 'bs.ar.kuitansi.index',    permission: ['businesssupport.view', 'ar.*'] },
+            { label: 'Memorial Piutang',    icon: BookText,         href: 'bs.ar.memorial.index',    permission: ['businesssupport.view', 'ar.*'] },
+            { label: 'Kartu Piutang',       icon: LayoutList,       href: 'bs.ar.card',              permission: ['businesssupport.view', 'ar.*'] },
+            { label: 'Aging Piutang',       icon: FileBarChart,     href: 'bs.ar.aging',             permission: ['businesssupport.view', 'ar.*'] },
+            { label: 'Penghapusan Piutang', icon: Eraser,           href: 'bs.ar.penghapusan.index', permission: ['businesssupport.view', 'ar.*'] },
+            { label: 'Kategori Invoice',    icon: SlidersHorizontal,href: 'bs.ar.categories.index',  permission: ['businesssupport.view', 'ar.*'] },
         ],
     },
     {
