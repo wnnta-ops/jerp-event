@@ -6,7 +6,7 @@ import {
     Hand, Star, Banknote, ScrollText, Award, RefreshCcw, CircleDollarSign, Calculator,
     FileBarChart, ShieldCheck, Percent, Landmark, Briefcase, BookOpen, Truck,
     Boxes, ShoppingCart, PackagePlus, PackageMinus, LayoutList, BookText,
-    HandCoins, Coins, Building, PieChart, HardHat, Target,
+    HandCoins, Coins, Building, PieChart, HardHat, Target, PiggyBank,
     FolderGit2, CalendarClock, TriangleAlert, Lock,
     Layers, FileCog,
     GitMerge, FileSpreadsheet, IdCard, Gift, Eraser, SlidersHorizontal, DatabaseZap, Database, UserPlus,
@@ -22,7 +22,21 @@ export interface NavItem {
     children?: NavItem[]; // detail modul (level 3) — bila ada, item jadi sub-modul yang bisa dibuka
 }
 
-export function navGroups(foUrl: string): { title: string; items: NavItem[] }[] {
+/**
+ * Satu grup = satu MODUL. Selain dipakai Sidebar, metadata di bawah menjadi sumber
+ * kartu modul pada "Menu Utama" (Dashboard) — sehingga menambah/menghapus/mengubah
+ * modul cukup di file ini saja dan kedua tampilan otomatis ikut berubah.
+ */
+export interface NavGroup {
+    title: string;      // judul grup = nama modul (dipakai mencocokkan kartu ↔ sub-modul)
+    items: NavItem[];
+    icon?: any;         // ikon kartu Menu Utama
+    color?: string;     // warna aksen kartu
+    desc?: string;      // deskripsi singkat pada kartu
+    route?: string;     // route landing kartu; bila kosong → pakai sub-modul pertama yang dapat diakses
+}
+
+export function navGroups(foUrl: string): NavGroup[] {
     return [
     {
         title: '',
@@ -34,12 +48,16 @@ export function navGroups(foUrl: string): { title: string; items: NavItem[] }[] 
     },
     {
         title: 'Master',
+        icon: Building2, color: '#ff8c00', route: 'units.index',
+        desc: 'Data unit & master properti.',
         items: [
             { label: 'Unit',     icon: Building2, href: 'units.index',     permission: 'master.unit.view' },
         ],
     },
     {
         title: 'Data Center',
+        icon: Database, color: '#0ea5e9', route: 'bs.dc.customer.center',
+        desc: 'Pusat data Customer, Supplier & Karyawan.',
         items: [
             { label: 'Customer Center', icon: Users,  href: 'bs.dc.customer.center', permission: 'master.customer.view' },
             { label: 'Supplier Center', icon: Truck,  href: 'bs.dc.supplier.center', permission: ['businesssupport.view', 'datacenter.*'] },
@@ -51,6 +69,8 @@ export function navGroups(foUrl: string): { title: string; items: NavItem[] }[] 
     //    J-ERP → ipro_bo. Menu FO disembunyikan agar BO/Bankloan saja yang tampil.
     {
         title: 'KPR',
+        icon: Banknote, color: '#10b981', route: 'kpr.index',
+        desc: 'Inisiasi & Proses KPR bank (Bank Loan).',
         items: [
             // Set Up — kategori/master parameter KPR.
             { label: 'Set Up', icon: SlidersHorizontal, permission: 'bankloan.setup.view', children: [
@@ -79,12 +99,16 @@ export function navGroups(foUrl: string): { title: string; items: NavItem[] }[] 
     // Proyeksi duplikat di grup Account Payable, Payroll via Data Center → Employee Center → Karyawan.
     {
         title: 'Purchasing',
+        icon: ShoppingCart, color: '#f59e0b', route: 'bs.po.index',
+        desc: 'Purchase Order ke supplier.',
         items: [
             { label: 'Purchase Order',     icon: ShoppingCart,  href: 'bs.po.index',           permission: ['businesssupport.view', 'bs.*'] },
         ],
     },
     {
         title: 'Inventory',
+        icon: Boxes, color: '#eab308', route: 'bs.items.index',
+        desc: 'Item/stok, FPB, penerimaan & pengeluaran barang.',
         items: [
             { label: 'Item / Stok',        icon: Boxes,         href: 'bs.items.index',        permission: ['businesssupport.view', 'bs.*'] },
             { label: 'FPB (Permintaan)',   icon: ClipboardList, href: 'bs.fpb.index',          permission: ['businesssupport.view', 'bs.*'] },
@@ -95,6 +119,8 @@ export function navGroups(foUrl: string): { title: string; items: NavItem[] }[] 
     },
     {
         title: 'Booked Revenue',
+        icon: CircleDollarSign, color: '#14b8a6', route: 'bs.booked-revenue.index',
+        desc: 'Pendapatan diakui, BAST/AJB & Faktur Pajak.',
         items: [
             { label: 'Sudah Booked Revenue', icon: CircleDollarSign, href: 'bs.booked-revenue.index', permission: ['businesssupport.view', 'ar.*'] },
             { label: 'Belum Booked Revenue', icon: CircleDollarSign, href: 'bs.booked-revenue.belum', permission: ['businesssupport.view', 'ar.*'] },
@@ -109,6 +135,8 @@ export function navGroups(foUrl: string): { title: string; items: NavItem[] }[] 
     },
     {
         title: 'Aset Tetap',
+        icon: Building, color: '#06b6d4', route: 'bs.fa.index',
+        desc: 'Registrasi & penyusutan aset tetap.',
         items: [
             { label: 'Overview Aset', icon: Building, href: 'bs.fa.index', permission: ['businesssupport.view', 'bs.*'] },
             { label: 'Master', icon: BookText, permission: ['businesssupport.view', 'bs.*'], children: [
@@ -127,6 +155,8 @@ export function navGroups(foUrl: string): { title: string; items: NavItem[] }[] 
     },
     {
         title: 'General Ledger',
+        icon: BookOpen, color: '#7c3aed', route: 'bs.gl.printhub',
+        desc: 'Jurnal, Neraca, Laba Rugi & Cash Flow.',
         items: [
             { label: 'General Function', icon: FileText, permission: ['businesssupport.view', 'gl.*'], children: [
                 { label: 'General Function', href: 'bs.gl.printhub' },
@@ -193,6 +223,8 @@ export function navGroups(foUrl: string): { title: string; items: NavItem[] }[] 
     },
     {
         title: 'Account Receivable',
+        icon: Coins, color: '#3b82f6', route: 'bs.ar.index',
+        desc: 'Invoice, kuitansi & kartu piutang customer.',
         items: [
             { label: 'Invoice Piutang',     icon: Coins,            href: 'bs.ar.index',             permission: ['businesssupport.view', 'ar.*'] },
             { label: 'Registrasi Piutang',  icon: ClipboardList,    href: 'bs.ar.create',            permission: ['businesssupport.view', 'ar.*'] },
@@ -206,6 +238,8 @@ export function navGroups(foUrl: string): { title: string; items: NavItem[] }[] 
     },
     {
         title: 'Account Payable',
+        icon: Receipt, color: '#f43f5e', route: 'bs.ap.index',
+        desc: 'Invoice & pembayaran hutang supplier.',
         items: [
             { label: 'General Function', icon: FileText, permission: ['businesssupport.view', 'ap.*'], children: [
                 { label: 'Print-Out', href: 'bs.ap.printhub' },
@@ -248,6 +282,8 @@ export function navGroups(foUrl: string): { title: string; items: NavItem[] }[] 
     },
     {
         title: 'Cash Book',
+        icon: Wallet, color: '#6366f1', route: 'bs.cashbook.printhub',
+        desc: 'Kas, Bank, Giro, Bon Sementara & approval.',
         items: [
             { label: 'General Function', icon: FileText, permission: ['businesssupport.view', 'cashbook.*'], children: [
                 { label: 'Print-Out', href: 'bs.cashbook.printhub' },
@@ -310,6 +346,8 @@ export function navGroups(foUrl: string): { title: string; items: NavItem[] }[] 
     },
     {
         title: 'Budget Control',
+        icon: PiggyBank, color: '#d946ef', route: 'bs.budget.index',
+        desc: 'Anggaran, alokasi & koreksi budget.',
         items: [
             { label: 'General Function', icon: FileText, permission: ['businesssupport.view', 'budget.*'], children: [
                 { label: 'Print-Out', href: 'bs.budget.printhub' },
@@ -341,6 +379,8 @@ export function navGroups(foUrl: string): { title: string; items: NavItem[] }[] 
     },
     {
         title: 'Contractor Management',
+        icon: HardHat, color: '#f97316', route: 'bs.spk.index',
+        desc: 'SPK, progress lapangan & retensi.',
         items: [
             { label: 'Setup', icon: FolderGit2, permission: ['businesssupport.view', 'contractor.*'], children: [
                 { label: 'Project', href: 'bs.spk.project.index' },
@@ -381,6 +421,8 @@ export function navGroups(foUrl: string): { title: string; items: NavItem[] }[] 
     },
     {
         title: 'COGS',
+        icon: Boxes, color: '#84cc16', route: 'bs.cogs.printhub',
+        desc: 'HPP RealCost & budget proyek.',
         items: [
             { label: 'General Function', icon: FileText, permission: ['businesssupport.view', 'cogs.*'], children: [
                 { label: 'Print-Out', href: 'bs.cogs.printhub' },
@@ -427,6 +469,8 @@ export function navGroups(foUrl: string): { title: string; items: NavItem[] }[] 
     //    Route & halamannya sengaja TIDAK dihapus — hanya tak lagi tampil di menu.
     {
         title: 'Security',
+        icon: ShieldCheck, color: '#ef4444', route: 'security.index',
+        desc: 'User, hak akses, absensi & log.',
         items: [
             { label: 'Security',        icon: ShieldCheck,   href: 'security.index',                permission: 'security.view' },
             { label: 'Matrikulasi Perusahaan', icon: Building2, href: 'security.matrikulasi.company', permission: 'security.view' },
@@ -439,6 +483,8 @@ export function navGroups(foUrl: string): { title: string; items: NavItem[] }[] 
     },
     {
         title: 'System',
+        icon: Settings, color: '#64748b', route: 'settings.index',
+        desc: 'Pengaturan & konfigurasi sistem.',
         items: [
             { label: 'Settings', icon: Settings, href: 'settings.index', permission: 'system.user.view' },
             { label: 'Konfigurasi Sistem', icon: SlidersHorizontal, href: 'settings.config.index', permission: 'system.setup.parameter' },

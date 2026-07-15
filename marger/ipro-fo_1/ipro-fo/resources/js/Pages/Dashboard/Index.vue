@@ -5,8 +5,7 @@ import {
     Users, Home, ClipboardList, Wallet, TrendingUp, TrendingDown, Bell,
     Activity, ShoppingCart, AlertTriangle, Landmark, FileText, ArrowRight, ArrowLeft, BarChart3,
     ClipboardCheck, BookOpen, Receipt, PiggyBank, Boxes, HardHat, Percent, Database,
-    Building2, Banknote, CircleDollarSign, Building, Coins,
-    ShieldCheck, Settings, LayoutGrid, ChevronRight,
+    LayoutGrid, ChevronRight,
 } from 'lucide-vue-next';
 import { navGroups, type NavItem } from '@/Components/Layout/navGroups';
 import Sparkline from '@/Components/Charts/Sparkline.vue';
@@ -114,29 +113,6 @@ function modHasPermission(perm?: string | string[]): boolean {
 function modRoute(name: string, params?: Record<string, any>): string | null {
     try { return route(name, params); } catch { return null; }
 }
-interface ModCard { key: string; title: string; desc: string; icon: any; color: string; route: string; params?: Record<string, any>; permission?: string | string[]; }
-const MODULES: ModCard[] = [
-    { key: 'master',      title: 'Master',                desc: 'Data unit & master properti.',                      icon: Building2,       color: '#ff8c00', route: 'units.index',            permission: 'master.unit.view' },
-    { key: 'datacenter',  title: 'Data Center',           desc: 'Pusat data Customer, Supplier & Karyawan.',         icon: Database,        color: '#0ea5e9', route: 'bs.dc.customer.center',  permission: ['master.customer.view', 'businesssupport.view', 'datacenter.*'] },
-    { key: 'kpr',         title: 'KPR',                   desc: 'Inisiasi & Proses KPR bank (Bank Loan).',           icon: Banknote,        color: '#10b981', route: 'kpr.index',              permission: 'bankloan.application.view' },
-    { key: 'purchasing',  title: 'Purchasing',            desc: 'Purchase Order ke supplier.',                       icon: ShoppingCart,    color: '#f59e0b', route: 'bs.po.index',            permission: ['businesssupport.view', 'bs.*'] },
-    { key: 'inventory',   title: 'Inventory',             desc: 'Item/stok, FPB, penerimaan & pengeluaran barang.',  icon: Boxes,           color: '#eab308', route: 'bs.items.index',         permission: ['businesssupport.view', 'bs.*'] },
-    { key: 'revenue',     title: 'Booked Revenue',        desc: 'Pendapatan diakui, BAST/AJB & Faktur Pajak.',       icon: CircleDollarSign,color: '#14b8a6', route: 'bs.booked-revenue.index',permission: ['businesssupport.view', 'ar.*'] },
-    { key: 'fa',          title: 'Aset Tetap',            desc: 'Registrasi & penyusutan aset tetap.',               icon: Building,        color: '#06b6d4', route: 'bs.fa.index',            permission: ['businesssupport.view', 'bs.*'] },
-    { key: 'gl',          title: 'General Ledger',        desc: 'Jurnal, Neraca, Laba Rugi & Cash Flow.',            icon: BookOpen,        color: '#7c3aed', route: 'bs.gl.printhub',         permission: ['businesssupport.view', 'gl.*'] },
-    { key: 'ar',          title: 'Account Receivable',    desc: 'Invoice, kuitansi & kartu piutang customer.',       icon: Coins,           color: '#3b82f6', route: 'bs.ar.index',            permission: ['businesssupport.view', 'ar.*'] },
-    { key: 'ap',          title: 'Account Payable',       desc: 'Invoice & pembayaran hutang supplier.',             icon: Receipt,         color: '#f43f5e', route: 'bs.ap.index',            permission: ['businesssupport.view', 'ap.*'] },
-    { key: 'cashbook',    title: 'Cash Book',             desc: 'Kas, Bank, Giro, Bon Sementara & approval.',        icon: Wallet,          color: '#6366f1', route: 'bs.cashbook.printhub',   permission: ['businesssupport.view', 'cashbook.*'] },
-    { key: 'budget',      title: 'Budget Control',        desc: 'Anggaran, alokasi & koreksi budget.',               icon: PiggyBank,       color: '#d946ef', route: 'bs.budget.index',        permission: ['businesssupport.view', 'budget.*'] },
-    { key: 'contractor',  title: 'Contractor Management', desc: 'SPK, progress lapangan & retensi.',                 icon: HardHat,         color: '#f97316', route: 'bs.spk.index',           permission: ['businesssupport.view', 'contractor.*'] },
-    { key: 'cogs',        title: 'COGS',                  desc: 'HPP RealCost & budget proyek.',                     icon: Boxes,           color: '#84cc16', route: 'bs.cogs.printhub',       permission: ['businesssupport.view', 'cogs.*'] },
-    { key: 'security',    title: 'Security',              desc: 'User, hak akses, absensi & log.',                   icon: ShieldCheck,     color: '#ef4444', route: 'security.index',         permission: 'security.view' },
-    { key: 'system',      title: 'System',                desc: 'Pengaturan & konfigurasi sistem.',                  icon: Settings,        color: '#64748b', route: 'settings.index',         permission: 'system.user.view' },
-];
-const launcherModules = computed(() => MODULES
-    .map((mm) => ({ ...mm, url: modRoute(mm.route, mm.params) }))
-    .filter((mm) => mm.url && modHasPermission(mm.permission)));
-
 /* ══ Rincian modul — sub-modul per modul, diambil dari struktur navigasi bersama
    (navGroups) sehingga selalu sinkron dengan sidebar. Klik kartu modul → tampilkan
    rincian: daftar sub-modul (kiri) + kotak sub-modul (kanan). ══ */
@@ -172,7 +148,27 @@ function subModulesFor(mod: { title: string }): SubCard[] {
         .map((it) => ({ label: it.label, icon: it.icon, url: subUrl(it)!, subtitle: subChildLabels(it) }));
 }
 
-const selected = ref<(typeof MODULES)[number] & { url: string | null } | null>(null);
+/* ══ Kartu modul "Menu Utama" — DITURUNKAN dari navGroups (sumber tunggal), bukan daftar
+   hardcoded. Menambah/menghapus/mengubah modul cukup dilakukan di navGroups.ts: sidebar
+   DAN Menu Utama otomatis ikut, jadi keduanya tidak bisa lagi saling out-of-sync.
+   Kartu hanya tampil bila ada minimal satu sub-modul yang benar-benar dapat diakses user
+   (izin terpenuhi + route ter-resolve). ══ */
+interface ModCard { key: string; title: string; desc: string; icon: any; color: string; url: string }
+const launcherModules = computed<ModCard[]>(() =>
+    navGroups(foUrl)
+        .filter((g) => g.title && g.icon) // lewati grup tanpa judul (Menu Utama / link silang J-ERP)
+        .map((g) => {
+            const first = g.items.find(subVisible);
+            const firstUrl = first ? subUrl(first) : null;
+            if (!firstUrl) return null; // tak ada sub-modul yang dapat diakses → kartu disembunyikan
+            // Landing kartu: route modul (bila dideklarasikan & ter-resolve), selain itu sub-modul pertama.
+            const url = (g.route ? modRoute(g.route) : null) ?? firstUrl;
+            return { key: g.title, title: g.title, desc: g.desc ?? '', icon: g.icon, color: g.color ?? '#64748b', url };
+        })
+        .filter((c): c is ModCard => c !== null),
+);
+
+const selected = ref<ModCard | null>(null);
 const selectedSubs = computed<SubCard[]>(() => {
     if (!selected.value) return [];
     const subs = subModulesFor(selected.value);
@@ -182,7 +178,7 @@ const selectedSubs = computed<SubCard[]>(() => {
     }
     return subs;
 });
-function openModule(mm: (typeof MODULES)[number] & { url: string | null }) { selected.value = mm; }
+function openModule(mm: ModCard) { selected.value = mm; }
 function backToMenu() { selected.value = null; }
 </script>
 
