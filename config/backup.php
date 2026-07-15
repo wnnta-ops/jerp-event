@@ -98,7 +98,8 @@ return [
              * For a complete list of available customization options, see https://github.com/spatie/db-dumper
              */
             'databases' => [
-                env('DB_CONNECTION', 'mysql'),
+                env('DB_CONNECTION', 'mysql'),   // FO — database 'jerp'
+                'ipro_bo',                        // BO / Bankloan — database 'ipro_bo'
             ],
         ],
 

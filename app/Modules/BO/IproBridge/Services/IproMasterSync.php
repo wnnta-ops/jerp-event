@@ -8,6 +8,8 @@ use Illuminate\Database\ConnectionInterface;
 use Illuminate\Encryption\Encrypter;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Str;
 
 /**
  * Sinkronisasi master FO (J-ERP) → BO ipro-fo (ipro_bo), ditulis LANGSUNG ke DB
@@ -53,6 +55,183 @@ class IproMasterSync
     {
         return $this->userId ??= (int) ($this->db()->table('users')->where('email', 'admin@mup.local')->value('id')
             ?? $this->db()->table('users')->min('id') ?? 1);
+    }
+
+    /**
+     * Provisioning pengguna FO (jerp.users) → ipro_bo.users, idempoten BY EMAIL agar
+     * SSO FO→BO cocok (SsoController@consume mencari user by email, tak auto-buat).
+     *  - Baru: buat akun (password acak — login BO hanya via SSO) + grup akses default.
+     *  - Sudah ada: perbarui nama & status aktif saja; JANGAN sentuh password/role
+     *    (dikelola di app BO / halaman "Pengguna BO"). Return id user ipro_bo.
+     */
+    public function syncUser(object $u): ?int
+    {
+        $email = trim((string) ($u->email ?? ''));
+        if ($email === '') {
+            return null; // tanpa email tak bisa dipetakan ke SSO BO
+        }
+
+        $now = Carbon::now();
+        $name = (string) ($u->name ?? ($u->full_name ?? $email));
+        $active = ((int) ($u->is_active ?? 1)) === 1 ? 1 : 0;
+
+        $existing = $this->db()->table('users')->where('email', $email)->first();
+
+        if ($existing) {
+            $this->db()->table('users')->where('id', $existing->id)->update([
+                'name'       => $name,
+                'is_active'  => $active,
+                'updated_at' => $now,
+            ]);
+            $this->syncBoRolesFromFo((int) $existing->id, $u);
+
+            return (int) $existing->id;
+        }
+
+        $id = (int) $this->db()->table('users')->insertGetId([
+            'tenant_id'         => $this->tenantId,
+            'name'              => $name,
+            'email'             => $email,
+            'username'          => $this->uniqueUsername($email),
+            'password'          => Hash::make(Str::random(40)), // acak; user login BO via SSO FO
+            'is_active'         => $active,
+            'is_blocked'        => 0,
+            'email_verified_at' => $now,
+            'created_at'        => $now,
+            'updated_at'        => $now,
+        ]);
+
+        $this->syncBoRolesFromFo($id, $u);
+
+        return $id;
+    }
+
+    /** Username unik dari local-part email (nullable). Tambah sufiks bila bentrok. */
+    private function uniqueUsername(string $email): ?string
+    {
+        $base = Str::of($email)->before('@')->slug('_')->limit(50, '')->value();
+        if ($base === '') {
+            return null;
+        }
+        $candidate = $base;
+        for ($i = 1; $this->db()->table('users')->where('username', $candidate)->exists(); $i++) {
+            if ($i > 50) {
+                return null; // menyerah — biarkan null (kolom nullable-unik)
+            }
+            $candidate = $base.'_'.$i;
+        }
+
+        return $candidate;
+    }
+
+    /** Nama role BO hasil pemetaan dari role FO user (config ipro.role_map). @return array<int,string> */
+    private function mappedBoRoleNames(object $u): array
+    {
+        $map = (array) config('ipro.role_map', []);
+        $foRoles = method_exists($u, 'getRoleNames') ? $u->getRoleNames()->all() : [];
+
+        $names = [];
+        foreach ($foRoles as $r) {
+            if (! empty($map[$r])) {
+                $names[] = $map[$r];
+            }
+        }
+        $names = array_values(array_unique($names));
+
+        if (! $names) {
+            $default = (string) config('ipro.default_bo_role', 'Viewer');
+            if ($default !== '') {
+                $names = [$default];
+            }
+        }
+
+        return $names;
+    }
+
+    /**
+     * Selaraskan grup akses BO user agar MENGIKUTI role FO (config ipro.role_map).
+     * Otoritatif atas role yang "dikelola" pemetaan (target map + default); role
+     * BO-only (mis. Agent/SalesDirector) yang di-set manual DIPERTAHANKAN.
+     */
+    private function syncBoRolesFromFo(int $boUserId, object $u): void
+    {
+        $map = (array) config('ipro.role_map', []);
+        $default = (string) config('ipro.default_bo_role', 'Viewer');
+        $governedNames = array_values(array_unique(array_merge(
+            array_values($map),
+            $default !== '' ? [$default] : []
+        )));
+
+        $desiredNames = $this->mappedBoRoleNames($u);
+
+        $governedIds = $governedNames
+            ? $this->db()->table('roles')->whereIn('name', $governedNames)->pluck('id')->map(fn ($v) => (int) $v)->all()
+            : [];
+        $desiredIds = $desiredNames
+            ? $this->db()->table('roles')->whereIn('name', $desiredNames)->pluck('id')->map(fn ($v) => (int) $v)->all()
+            : [];
+
+        $current = $this->db()->table('model_has_roles')
+            ->where('model_id', $boUserId)->where('model_type', 'user')
+            ->pluck('role_id')->map(fn ($v) => (int) $v)->all();
+
+        // Pertahankan role BO-only (bukan dikelola FO), buang governed yg tak diinginkan, tambah desired.
+        $keep = array_values(array_diff($current, $governedIds));
+        $final = array_values(array_unique(array_merge($keep, $desiredIds)));
+
+        $this->db()->table('model_has_roles')
+            ->where('model_id', $boUserId)->where('model_type', 'user')->delete();
+        if ($final) {
+            $rows = array_map(fn ($rid) => [
+                'role_id' => $rid, 'model_id' => $boUserId, 'model_type' => 'user',
+            ], $final);
+            $this->db()->table('model_has_roles')->insert($rows);
+        }
+    }
+
+    /**
+     * Auto-push Bilyet Giro FO → BO "Cek Giro Masuk" (bs_giros) status Di Tangan, BELUM
+     * jurnal (receive_journal_id null) → menunggu "Posting GL" di Penerimaan Cek Giro.
+     * Idempotent by source_ref. Dipanggil dari event created FO — pemanggil wajib try/catch.
+     */
+    public function pushGiro(object $bg): void
+    {
+        $ref = 'FO-BG-'.$bg->id;
+        if ($this->db()->table('bs_giros')->where('source_ref', $ref)->exists()) {
+            return; // sudah dikirim sebelumnya
+        }
+        // Akun BO: Piutang Giro (10102010102) & Piutang Usaha (10102010101).
+        $giroAcc = $this->db()->table('bs_accounts')->where('code', '10102010102')->value('id');
+        $counterAcc = $this->db()->table('bs_accounts')->where('code', '10102010101')->value('id');
+        if (! $giroAcc || ! $counterAcc) {
+            return; // akun BO belum tersedia
+        }
+        $drawer = '-';
+        if ($bg->customer_id) {
+            $drawer = (string) (\App\Modules\FO\MarketingSales\Models\Customer::whereKey($bg->customer_id)->value('full_name') ?: '-');
+        }
+        $tgl = $bg->tgl_bg ? \Illuminate\Support\Carbon::parse((string) $bg->tgl_bg)->toDateString() : now()->toDateString();
+        $jt = $bg->tgl_jatuh_tempo ? \Illuminate\Support\Carbon::parse((string) $bg->tgl_jatuh_tempo)->toDateString() : $tgl;
+
+        $this->db()->table('bs_giros')->insert([
+            'tenant_id'          => $this->tenantId,
+            'giro_number'        => (string) $bg->no_bg,
+            'receive_date'       => $tgl,
+            'due_date'           => $jt,
+            'bank_name'          => (string) ($bg->bank_nama ?: '-'),
+            'cheque_number'      => (string) $bg->no_bg,
+            'drawer'             => $drawer,
+            'amount'             => round((float) $bg->amount, 2),
+            'giro_account_id'    => $giroAcc,
+            'counter_account_id' => $counterAcc,
+            'status'             => 'in_hand',
+            'source'             => 'fo',
+            'source_ref'         => $ref,
+            'receive_journal_id' => null,
+            'created_by'         => $this->userId(),
+            'created_at'         => now(),
+            'updated_at'         => now(),
+        ]);
     }
 
     /** Upsert satu customer FO → ipro_bo.customers. Return id ipro_bo. */
@@ -263,9 +442,11 @@ class IproMasterSync
             'customer_id'       => $custId,
             'unit_id'           => $unitId,
             'payment_scheme_id' => $this->iproPaymentSchemeId($typeMap[$k->cara_bayar ?? 'KPR'] ?? 'kpr'),
+            'scheme_name'       => $k->skema?->name,   // nama skema FO asli (mis. "KPR FREE DP", "CASH 3X")
             'booking_date'      => $k->tgl_kontrak ?? $now->toDateString(),
             'base_price'        => $base,
             'discount_amount'   => $diskon,
+            'free_dp_amount'    => (float) ($k->free_dp_amount ?? 0),
             'ppn_amount'        => $ppn,
             'total_price'       => $total,
             'status'            => $statusMap[$k->status ?? 'DRAFT'] ?? 'draft',
@@ -325,6 +506,13 @@ class IproMasterSync
     }
 
     /** Replace payment_schedules dari fo_kontrak_tagihan. */
+    /**
+     * Sinkron jadwal tagihan FO → ipro_bo.payment_schedules secara REKONSILIASI (bukan delete+insert),
+     * agar id payment_schedules yang direferensi tabel lain (tts_allocations, payment_allocations,
+     * dendas, pjt_details, tunggakan_details) TIDAK dilanggar FK. Baris dicocokkan per kunci
+     * (payment_type|label|#urutan-kemunculan): cocok → update in-place (id tetap), baru → insert,
+     * sisa existing → hapus HANYA yang tak direferensi.
+     */
     private function syncSchedules(int $bookingId, int $foKontrakId, object $k): void
     {
         // PaymentType enum ipro-fo (varchar 5): BF, DP, ANG, ADM. LAIN→ANG.
@@ -332,32 +520,85 @@ class IproMasterSync
         $now = Carbon::now();
         $fallbackDue = $k->tgl_kontrak ?? $now->toDateString();
 
-        $this->db()->table('payment_schedules')->where('booking_id', $bookingId)->delete();
-
-        $rows = [];
+        // Baris yang diinginkan dari tagihan FO (dengan kunci pencocokan stabil).
+        $desired = [];
         $i = 0;
+        $dCounters = [];
         foreach (DB::table('fo_kontrak_tagihan')->where('kontrak_id', $foKontrakId)->orderBy('urutan')->get() as $t) {
             $i++;
             $nilai = (float) ($t->nilai ?? 0);
             $bayar = (float) ($t->pelunasan ?? 0);
-            $rows[] = [
-                'booking_id'     => $bookingId,
-                'installment_no' => $t->urutan ?: $i,
-                'sequence'       => $i,
-                'payment_type'   => $typeMap[$t->tipe ?? 'ANG'] ?? 'ANG',
-                'label'          => $t->nama_tagihan ?? null,
-                'due_date'       => $t->jatuh_tempo ?? $fallbackDue,
-                'amount'         => $nilai,
-                'paid_amount'    => $bayar,
-                'status'         => ($nilai > 0 && $bayar >= $nilai) ? 'paid' : 'outstanding',
-                'created_at'     => $now,
-                'updated_at'     => $now,
+            $type = $typeMap[$t->tipe ?? 'ANG'] ?? 'ANG';
+            $label = $t->nama_tagihan ?? null;
+            $desired[] = [
+                'key'  => $this->scheduleKey($type, $label, $dCounters),
+                'data' => [
+                    'booking_id'     => $bookingId,
+                    'installment_no' => $t->urutan ?: $i,
+                    'sequence'       => $i,
+                    'payment_type'   => $type,
+                    'label'          => $label,
+                    'due_date'       => $t->jatuh_tempo ?? $fallbackDue,
+                    'amount'         => $nilai,
+                    'paid_amount'    => $bayar,
+                    'status'         => ($nilai > 0 && $bayar >= $nilai) ? 'paid' : 'outstanding',
+                    'updated_at'     => $now,
+                ],
             ];
         }
 
-        if ($rows) {
-            $this->db()->table('payment_schedules')->insert($rows);
+        // Baris existing → map kunci => id (urut sequence/id agar penomoran kemunculan stabil).
+        $existing = $this->db()->table('payment_schedules')
+            ->where('booking_id', $bookingId)->orderBy('sequence')->orderBy('id')
+            ->get(['id', 'payment_type', 'label']);
+        $existingByKey = [];
+        $eCounters = [];
+        foreach ($existing as $row) {
+            $existingByKey[$this->scheduleKey($row->payment_type, $row->label, $eCounters)] = (int) $row->id;
         }
+
+        // Rekonsiliasi: cocok → update in-place (id tetap → FK aman); baru → insert.
+        $usedIds = [];
+        foreach ($desired as $d) {
+            $id = $existingByKey[$d['key']] ?? null;
+            if ($id) {
+                $this->db()->table('payment_schedules')->where('id', $id)->update($d['data']);
+                $usedIds[] = $id;
+            } else {
+                $this->db()->table('payment_schedules')->insert($d['data'] + ['created_at' => $now]);
+            }
+        }
+
+        // Sisa existing yang tak terpakai: hapus HANYA yang tak direferensi tabel lain.
+        $leftover = array_values(array_diff(
+            array_map(fn ($r) => (int) $r->id, $existing->all()),
+            $usedIds,
+        ));
+        if ($leftover) {
+            $referenced = [];
+            $refTables = ['tts_allocations', 'payment_allocations', 'dendas', 'pjt_details', 'tunggakan_details'];
+            foreach ($refTables as $tbl) {
+                if (! $this->db()->getSchemaBuilder()->hasTable($tbl)) {
+                    continue;
+                }
+                foreach ($this->db()->table($tbl)->whereIn('payment_schedule_id', $leftover)->pluck('payment_schedule_id') as $refId) {
+                    $referenced[(int) $refId] = true;
+                }
+            }
+            $deletable = array_values(array_filter($leftover, fn ($id) => ! isset($referenced[$id])));
+            if ($deletable) {
+                $this->db()->table('payment_schedules')->whereIn('id', $deletable)->delete();
+            }
+        }
+    }
+
+    /** Kunci pencocokan jadwal: payment_type|LABEL|#urutan-kemunculan (menangani label kembar mis. UANG MASUK). */
+    private function scheduleKey(?string $type, ?string $label, array &$counters): string
+    {
+        $base = ($type ?? 'ANG') . '|' . strtoupper(trim((string) $label));
+        $counters[$base] = ($counters[$base] ?? 0) + 1;
+
+        return $base . '|#' . $counters[$base];
     }
 
     /** Upsert TTS (fo_tts) → ipro_bo.tts_receipts. Return id receipt. */

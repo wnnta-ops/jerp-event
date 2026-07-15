@@ -68,8 +68,12 @@ class IproApPoster
         return $this->queueIncentive('blt', $noPengajuan, $amount, $tgl, $ket ?: ('BLT '.$noPengajuan));
     }
 
-    /** GMC (gimmick/promo developer, mengikat SPR/customer) → antrian (kind=gmc). */
-    public function queueGmc(string $noGmc, float $amount, ?int $foCustomerId = null, ?string $custName = null, ?string $tgl = null, ?string $ket = null): ?int
+    /**
+     * GMC (gimmick/promo developer, mengikat SPR/customer) → antrian (kind=gmc).
+     * $supplierId (bs_suppliers.id) diisi untuk komponen GMC multi-supplier → di
+     * Posting Invoice BO dropdown supplier terisi otomatis.
+     */
+    public function queueGmc(string $noGmc, float $amount, ?int $foCustomerId = null, ?string $custName = null, ?string $tgl = null, ?string $ket = null, ?int $supplierId = null): ?int
     {
         $amount = round($amount, 2);
         if ($amount <= 0 || trim($noGmc) === '') {
@@ -81,6 +85,7 @@ class IproApPoster
             'customer_name'      => $custName,
             'refund_source'      => null,
             'amount'             => $amount,
+            'supplier_id'        => $supplierId,
             'payable_account_id' => $this->acc('2.1.01.004'), // Hutang/Titipan
             'offset_account_id'  => $this->acc('5.9.01.001'), // Beban promosi/gimmick
             'tgl_refund'         => $tgl,

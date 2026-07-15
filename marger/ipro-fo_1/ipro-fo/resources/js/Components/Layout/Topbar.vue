@@ -1,11 +1,10 @@
 <script setup lang="ts">
 import { router } from '@inertiajs/vue3';
-import { Menu, Search, Bell, Sun, Moon, LogOut, X } from 'lucide-vue-next';
+import { Search, Bell, Sun, Moon, LogOut, X } from 'lucide-vue-next';
 import { ref, watch, onMounted, onUnmounted } from 'vue';
 import { pageQuery, pageMatches, pageTotal } from '@/Composables/usePageSearch';
 
 defineProps<{ user: any }>();
-defineEmits<{ (e: 'toggle-sidebar'): void }>();
 
 const dark = ref<boolean>(localStorage.getItem('theme') === 'dark');
 const searchInput = ref<HTMLInputElement | null>(null);
@@ -40,10 +39,6 @@ function logout() {
 
 <template>
     <header class="h-16 border-b border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 flex items-center px-6 gap-4">
-        <button @click="$emit('toggle-sidebar')" class="text-neutral-500 hover:text-neutral-900 dark:hover:text-white">
-            <Menu class="h-5 w-5" />
-        </button>
-
         <!-- Pencarian / filter ISI HALAMAN ini -->
         <div class="flex-1 flex items-center gap-2 max-w-md px-3 h-9 rounded-lg border border-neutral-300 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-800 text-sm focus-within:ring-2 focus-within:ring-primary-500 focus-within:border-primary-500 transition">
             <Search class="h-4 w-4 text-neutral-400 shrink-0" />

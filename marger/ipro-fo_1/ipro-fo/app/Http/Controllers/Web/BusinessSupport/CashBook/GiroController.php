@@ -36,6 +36,20 @@ class GiroController extends Controller
         ]);
     }
 
+    /** Penerimaan Cek Giro — daftar giro "Di Tangan" yang BELUM di-jurnal (kiriman FO / entri manual belum posting) untuk di-"Posting GL". */
+    public function penerimaan(Request $request): Response
+    {
+        abort_unless($request->user()?->canModule('cashbook'), 403);
+
+        $q = fn () => BsGiro::query()->where('status', 'in_hand')->whereNull('receive_journal_id');
+        $rows = $q()->latest('receive_date')->latest('id')->paginate(50)->withQueryString();
+
+        return Inertia::render('BusinessSupport/CashBook/Giro/Penerimaan', [
+            'giros'   => $rows,
+            'summary' => ['pending' => (float) $q()->sum('amount'), 'count' => $q()->count()],
+        ]);
+    }
+
     public function create(Request $request): Response
     {
         abort_unless($request->user()?->canModule('cashbook'), 403);
@@ -113,5 +127,19 @@ class GiroController extends Controller
         }
 
         return redirect()->route('bs.giro.show', $giro)->with('success', 'Cek/Giro ditolak — piutang dipulihkan, jurnal otomatis terbentuk.');
+    }
+
+    /** Posting GL — post jurnal penerimaan untuk giro Di Tangan yang belum di-jurnal (kiriman FO). */
+    public function postGl(Request $request, BsGiro $giro, GiroService $svc): RedirectResponse
+    {
+        abort_unless($request->user()?->canModule('cashbook'), 403);
+
+        try {
+            $svc->postReceiveJournal($giro, $request->user()->id);
+        } catch (BusinessRuleException $e) {
+            return back()->with('error', $e->getMessage());
+        }
+
+        return back()->with('success', "Posting GL {$giro->giro_number} berhasil — jurnal penerimaan terbentuk.");
     }
 }

@@ -124,7 +124,7 @@ class KontrakGeneratorService
 
         // Mode FREE DP (ANGSURAN1): berkas lengkap di awal → DP2+ otomatis FREE jadi
         // UANG MASUK (subsidi developer). DP yang sudah dibayar TIDAK di-free.
-        $freeDpSum = $this->applyFreeDpAngsuran1($kontrak, $rows, $total, $kprIdx, $paidDp);
+        $freeDpSum = $this->applyFreeDpAngsuran1($kontrak, $rows, $paidDp);
 
         $n = 0;
         foreach ($rows as $idx => $r) {
@@ -182,6 +182,15 @@ class KontrakGeneratorService
         if ($replace) {
             $this->reapplyBookingFee($kontrak);
             $this->reapplyPaidDp($kontrak, $paidDp);
+        }
+
+        // Stempel nilai Free DP (subsidi DP2+ developer) pada kontrak → ikut tersinkron ke BO
+        // (bookings.free_dp_amount) via Kontrak::saved → syncSpr. $freeDpSum = 0 utk skema non-Free-DP,
+        // jadi ini juga otomatis mengosongkan saat "Batal Free DP".
+        $newFree = (float) round($freeDpSum);
+        if ((float) ($kontrak->free_dp_amount ?? 0) !== $newFree) {
+            $kontrak->free_dp_amount = $newFree;
+            $kontrak->save();
         }
 
         return $n;
@@ -373,7 +382,7 @@ class KontrakGeneratorService
      * @param  array<string,float>  $paidDp  pembayaran DP existing (nama UPPER → pelunasan);
      *                                       DP yang sudah dibayar TIDAK di-free.
      */
-    private function applyFreeDpAngsuran1(Kontrak $kontrak, array &$rows, float $total, ?int $kprIdx, array $paidDp = []): float
+    private function applyFreeDpAngsuran1(Kontrak $kontrak, array &$rows, array $paidDp = []): float
     {
         if (($kontrak->skema->bf_dipotong_di ?? '') !== 'ANGSURAN1') {
             return 0.0;
@@ -386,10 +395,11 @@ class KontrakGeneratorService
                 continue;
             }
             // DP yang SUDAH dibayar tetap jadi DP customer (mis. DP 1 lunas) — tak di-free,
-            // dan nominalnya DIKUNCI ke jumlah terbayar (bukan ikut skema FREE DP baru).
-            // Selisihnya diserap Pencairan KPR (recompute di bawah) → DP 2,3 yang di-free.
+            // nominalnya DIKUNCI ke jumlah terbayar. SELISIH (skema − terbayar) = subsidi
+            // developer → masuk UANG MASUK (freedSum), BUKAN menambah Pencairan KPR.
             $nama = strtoupper(trim((string) ($r['line']->nama_termin ?? '')));
             if (isset($paidDp[$nama])) {
+                $freedSum += max(0.0, (float) $rows[$i]['nilai'] - (float) $paidDp[$nama]);
                 $rows[$i]['nilai'] = (float) $paidDp[$nama];
 
                 continue;
@@ -401,19 +411,10 @@ class KontrakGeneratorService
             }
         }
 
-        // PENCAIRAN KPR = SISA agar TOTAL selalu PAS = harga pemesanan. Mengunci DP
-        // terbayar ke jumlah terbayar (mis. < skema) mengubah Σ baris lain; KPR harus
-        // menyerap selisihnya. Baris _free tetap ikut dihitung karena nilainya muncul
-        // kembali sebagai UANG MASUK (freedSum) → total = Σ(non-KPR) + KPR = harga.
-        if ($kprIdx !== null) {
-            $sumOther = 0.0;
-            foreach ($rows as $i => $r) {
-                if ($i !== $kprIdx) {
-                    $sumOther += (float) $r['nilai'];
-                }
-            }
-            $rows[$kprIdx]['nilai'] = round($total - $sumOther);
-        }
+        // Pencairan KPR TIDAK diubah — tetap plafon awal (harga − DP gross − UTJ, dihitung
+        // di baris "PENCAIRAN KPR" atas). Selisih DP terbayar + DP yang di-free sudah masuk
+        // UANG MASUK (freedSum) → TOTAL tetap = harga:
+        //   BF + DP terbayar + Pencairan KPR + UANG MASUK = harga.
 
         return $freedSum;
     }

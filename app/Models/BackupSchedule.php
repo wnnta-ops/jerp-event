@@ -12,7 +12,7 @@ class BackupSchedule extends Model
     protected $fillable = [
         'name', 'enabled', 'frequency', 'time',
         'weekly_day', 'monthly_day', 'yearly_month', 'yearly_day',
-        'only_db', 'disk', 'local_path', 'retention_days',
+        'only_db', 'scope', 'disk', 'local_path', 'retention_days',
     ];
 
     protected $casts = [

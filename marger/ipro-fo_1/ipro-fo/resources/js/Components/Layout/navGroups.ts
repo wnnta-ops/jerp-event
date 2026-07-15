@@ -87,7 +87,7 @@ export function navGroups(foUrl: string): NavGroup[] {
             ]},
             // Query/Report — master data & arsip Database KPR (Reject BI Checking / Reject Proses KPR).
             { label: 'Query/Report', icon: FileBarChart, permission: 'bankloan.application.view', children: [
-                { label: 'Master Data KPR',    href: 'kpr.index',               permission: 'bankloan.application.view' },
+                { label: 'Master Data KPR',    href: 'kpr.master-data.index',    permission: 'bankloan.application.view' },
                 { label: 'Reject BI Checking', href: 'kpr.database.reject-bi',  permission: 'bankloan.application.view' },
                 { label: 'Reject Proses KPR',  href: 'kpr.database.reject-kpr', permission: 'bankloan.application.view' },
             ]},

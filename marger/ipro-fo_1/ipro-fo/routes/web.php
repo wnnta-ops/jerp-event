@@ -6,6 +6,7 @@ use App\Http\Controllers\Web\Approval\ApprovalController;
 use App\Http\Controllers\Web\Auth\LoginController;
 use App\Domain\BankLoan\Models\KprApplication;
 use App\Http\Controllers\Web\BankLoan\KprApplicationController;
+use App\Http\Controllers\Web\BankLoan\MasterDataKprController;
 use App\Http\Controllers\Web\BankLoan\Setup\KprBankController;
 use App\Http\Controllers\Web\BankLoan\Setup\AnalisaAspectController;
 use App\Http\Controllers\Web\BankLoan\Setup\RetentionCategoryController;
@@ -396,6 +397,9 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
     // SKL sub-module dihapus (#119) — routes, controller, page, model, action, PDF & seeder dibersihkan.
 
     // ── BANK LOAN ──────────────────────────────────────────
+    // Master Data KPR — rekap per-SPR (harus SEBELUM /kpr/{kpr} agar tidak tertangkap wildcard).
+    Route::get('/kpr/master-data',                [MasterDataKprController::class, 'index'])->name('kpr.master-data.index');
+
     // SETTING KPR (harus SEBELUM /kpr/{kpr} agar tidak tertangkap wildcard).
     Route::get('/kpr/setup/retensi',              [RetentionCategoryController::class, 'index'])->name('kpr.setup.retensi.index');
     Route::post('/kpr/setup/retensi',             [RetentionCategoryController::class, 'store'])->name('kpr.setup.retensi.store');
@@ -634,6 +638,7 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
     Route::post('/business-support/payable-posting/po/{po}', [BsApPostingController::class, 'fromPo'])->name('bs.ap.posting.po');
     Route::post('/business-support/payable-posting/spk/{progress}', [BsApPostingController::class, 'fromSpk'])->name('bs.ap.posting.spk');
     Route::post('/business-support/payable-posting/refund/{queue}', [BsApPostingController::class, 'fromRefund'])->name('bs.ap.posting.refund');
+    Route::post('/business-support/payable-posting/bulk-refund', [BsApPostingController::class, 'bulkRefund'])->name('bs.ap.posting.bulk-refund');
     // AP — Penghapusan Nilai Hutang
     Route::get('/business-support/payable-penghapusan',      [BsApPenghapusanController::class, 'index'])->name('bs.ap.penghapusan.index');
     Route::get('/business-support/payable-penghapusan-report', [BsApPenghapusanController::class, 'report'])->name('bs.ap.penghapusan.report'); // Laporan Penghapusan Hutang (rincian + history)
@@ -783,6 +788,9 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
     Route::get('/business-support/cek-giro/{giro}',               [BsGiroController::class, 'show'])->name('bs.giro.show');
     Route::post('/business-support/cek-giro/{giro}/kliring',      [BsGiroController::class, 'clear'])->name('bs.giro.clear');
     Route::post('/business-support/cek-giro/{giro}/tolak',        [BsGiroController::class, 'bounce'])->name('bs.giro.bounce');
+    // Penerimaan Cek Giro — daftar giro Di Tangan belum-jurnal (kiriman FO) + Posting GL (path literal, tak tertangkap {giro})
+    Route::get('/business-support/cek-giro-penerimaan',           [BsGiroController::class, 'penerimaan'])->name('bs.giro.penerimaan');
+    Route::post('/business-support/cek-giro/{giro}/posting-gl',   [BsGiroController::class, 'postGl'])->name('bs.giro.postgl');
 
     // ── BG/CEK KELUAR (perusahaan) #55 ──
     Route::get('/business-support/cek-giro-keluar',                [BsOutgoingChequeController::class, 'index'])->name('bs.cheque-out.index');

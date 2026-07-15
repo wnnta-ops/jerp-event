@@ -7,6 +7,10 @@ use App\Models\BackupSchedule;
 use App\Modules\FO\Approval\Models\Approval;
 use App\Modules\FO\Launching\Events\NupRegistered;
 use App\Modules\FO\Launching\Listeners\KirimKonfirmasiNupListener;
+use App\Modules\FO\Shared\Integrations\Ai\AiAssistantGatewayInterface;
+use App\Modules\FO\Shared\Integrations\Ai\ClaudeAiGateway;
+use App\Modules\FO\Shared\Integrations\Ai\GeminiAiGateway;
+use App\Modules\FO\Shared\Integrations\Ai\NullAiAssistantGateway;
 use App\Modules\FO\Shared\Integrations\WhatsApp\NullWhatsAppGateway;
 use App\Modules\FO\Shared\Integrations\WhatsApp\QontakWhatsAppGateway;
 use App\Modules\FO\Shared\Integrations\WhatsApp\WhatsAppGatewayInterface;
@@ -33,6 +37,11 @@ class AppServiceProvider extends ServiceProvider
 {
     public function register(): void
     {
+        // Guard GLOBAL anti-"resurrection" baris repeater (bug Livewire 3.8). WAJIB di
+        // fase register() agar masuk daftar SEBELUM Livewire mem-boot ComponentHookRegistry
+        // (kalau di boot() → terlambat, hook tak pernah dipasang). Lihat App\Support\Livewire.
+        \Livewire\ComponentHookRegistry::register(\App\Support\Livewire\RepeaterResurrectionGuard::class);
+
         $this->app->singleton(TenantContext::class);
         $this->app->bind(NumeratorServiceInterface::class, NumeratorService::class);
 
@@ -43,6 +52,38 @@ class AppServiceProvider extends ServiceProvider
             return $secret !== ''
                 ? new XenditGateway($secret, (string) config('services.xendit.base_url'))
                 : new NullXenditGateway;
+        });
+
+        // Asisten AI: pilih provider (Claude / Gemini) sesuai key + AI_PROVIDER,
+        // fallback kata kunci sederhana bila tak ada key (modul tetap jalan).
+        $this->app->bind(AiAssistantGatewayInterface::class, function () {
+            $provider = strtolower((string) config('services.ai.provider', 'auto'));
+            $anthropicKey = (string) config('services.anthropic.api_key');
+            $geminiKey = (string) config('services.gemini.api_key');
+
+            $wantClaude = $provider === 'claude' || ($provider === 'auto' && $anthropicKey !== '');
+            $wantGemini = $provider === 'gemini' || ($provider === 'auto' && $anthropicKey === '' && $geminiKey !== '');
+
+            if ($wantClaude && $anthropicKey !== '') {
+                return new ClaudeAiGateway(
+                    apiKey: $anthropicKey,
+                    model: (string) config('services.anthropic.model'),
+                    baseUrl: (string) config('services.anthropic.base_url'),
+                    version: (string) config('services.anthropic.version'),
+                    maxTokens: (int) config('services.anthropic.max_tokens'),
+                );
+            }
+
+            if ($wantGemini && $geminiKey !== '') {
+                return new GeminiAiGateway(
+                    apiKey: $geminiKey,
+                    model: (string) config('services.gemini.model'),
+                    baseUrl: (string) config('services.gemini.base_url'),
+                    maxTokens: (int) config('services.gemini.max_tokens'),
+                );
+            }
+
+            return new NullAiAssistantGateway;
         });
 
         // WhatsApp (Mekari Qontak): real gateway when an access token is configured.

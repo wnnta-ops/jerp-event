@@ -48,6 +48,30 @@ return [
         'base_url' => env('XENDIT_BASE_URL', 'https://api.xendit.co'),
     ],
 
+    // Asisten AI FO — pilih provider: 'auto' (Claude bila ada key, else Gemini,
+    // else fallback), atau paksa 'claude' / 'gemini'.
+    'ai' => [
+        'provider' => env('AI_PROVIDER', 'auto'),
+    ],
+
+    // Anthropic Claude — Asisten AI FO (cari data + jawab pertanyaan).
+    // Tanpa api_key → jatuh ke NullAiAssistantGateway (mode kata kunci sederhana).
+    'anthropic' => [
+        'api_key' => env('ANTHROPIC_API_KEY'),
+        'base_url' => env('ANTHROPIC_BASE_URL', 'https://api.anthropic.com'),
+        'model' => env('ANTHROPIC_MODEL', 'claude-sonnet-5'),
+        'version' => env('ANTHROPIC_VERSION', '2023-06-01'),
+        'max_tokens' => (int) env('ANTHROPIC_MAX_TOKENS', 1024),
+    ],
+
+    // Google Gemini — alternatif provider Asisten AI (function-calling).
+    'gemini' => [
+        'api_key' => env('GEMINI_API_KEY'),
+        'base_url' => env('GEMINI_BASE_URL', 'https://generativelanguage.googleapis.com'),
+        'model' => env('GEMINI_MODEL', 'gemini-2.5-flash-lite'),
+        'max_tokens' => (int) env('GEMINI_MAX_TOKENS', 1024),
+    ],
+
     // Mekari Qontak — WhatsApp notification (UTJ payment & NUP confirmation)
     'qontak' => [
         'access_token' => env('QONTAK_ACCESS_TOKEN'),

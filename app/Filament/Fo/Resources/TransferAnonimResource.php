@@ -38,7 +38,9 @@ class TransferAnonimResource extends Resource
     {
         return $form->schema([
             Forms\Components\DatePicker::make('tgl_transfer')->label('Tgl Transfer')->default(now()),
-            Forms\Components\Select::make('bank_id')->label('Bank Penerima')->options(fn () => Bank::orderBy('name')->pluck('name', 'id'))->searchable(),
+            Forms\Components\Select::make('coa_bank_code')->label('Bank Penerima')
+                ->options(fn () => TransferAnonim::coaBankOptions())
+                ->searchable()->placeholder('Pilih akun bank (Chart of Account)'),
             Forms\Components\TextInput::make('amount')->label('Nominal (Rp)')->numeric()->rupiah()->default(0),
             Forms\Components\TextInput::make('keterangan_bank')->label('Berita/Referensi Bank')->columnSpanFull(),
             Forms\Components\Textarea::make('keterangan')->label('Catatan')->rows(2)->columnSpanFull(),
@@ -50,7 +52,8 @@ class TransferAnonimResource extends Resource
         return $table
             ->columns([
                 Tables\Columns\TextColumn::make('tgl_transfer')->label('Tgl')->date('d M Y')->sortable(),
-                Tables\Columns\TextColumn::make('bank.name')->label('Bank')->placeholder('—'),
+                Tables\Columns\TextColumn::make('coa_bank_code')->label('Bank')
+                    ->getStateUsing(fn (TransferAnonim $r) => $r->coaBankName() ?: $r->bank?->name)->placeholder('—'),
                 Tables\Columns\TextColumn::make('amount')->label('Nominal')->money('IDR')->sortable(),
                 Tables\Columns\TextColumn::make('keterangan_bank')->label('Berita Bank')->limit(36)->placeholder('—'),
                 Tables\Columns\TextColumn::make('customer.full_name')->label('Customer')->placeholder('—')->limit(20),
