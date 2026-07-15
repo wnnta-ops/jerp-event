@@ -16,6 +16,7 @@ type Row = {
     // unik lintas jenis (id bisa bertabrakan antar tabel) → dipakai utk :key, forms & state.
     id: number; kind: 'retensi' | 'pencairan'; row_key: string;
     amount: number; status: string; released_at: string | null; retention_date: string | null; akad_date: string | null; kpr_number: string | null; unit_code: string | null; unit_info: string | null; customer: string | null; note: string | null;
+    akad_status?: 'sudah' | 'belum' | 'batal';
     rejected: boolean; reject_reason: string | null; rejected_at: string | null;
     journaled: boolean; journal_id: number | null; journal_number: string | null; journal_date: string | null;
     debit_account_id: number | null; debit_account: string | null; credit_account_id: number | null; credit_account: string | null;
@@ -267,6 +268,13 @@ const hSelCls = 'h-7 w-52 rounded border border-neutral-300 bg-white px-2 text-x
                         <td class="px-3 py-3">
                             <Badge size="sm" :variant="r.kind === 'pencairan' ? 'info' : 'primary'">{{ r.kind === 'pencairan' ? 'Pencairan' : 'Retensi' }}</Badge>
                             <div v-if="r.kind === 'retensi'" class="mt-1"><Badge size="sm" :variant="r.status === 'released' ? 'success' : 'warning'">{{ r.status }}</Badge></div>
+                            <!-- Status akad dari Proses KPR. Baris "Batal" tidak muncul di sini —
+                                 dipindah ke modul Rincian Batal Akad (kecuali yang telanjur dijurnal). -->
+                            <div v-if="r.akad_status" class="mt-1">
+                                <Badge size="sm" :variant="r.akad_status === 'sudah' ? 'success' : (r.akad_status === 'batal' ? 'danger' : 'warning')">
+                                    {{ r.akad_status === 'sudah' ? 'Sudah Akad' : (r.akad_status === 'batal' ? 'Batal Akad' : 'Belum Akad') }}
+                                </Badge>
+                            </div>
                         </td>
                         <td class="px-3 py-3 text-right font-mono font-bold">{{ fmtRp(r.amount) }}</td>
                         <!-- Ditolak -->
