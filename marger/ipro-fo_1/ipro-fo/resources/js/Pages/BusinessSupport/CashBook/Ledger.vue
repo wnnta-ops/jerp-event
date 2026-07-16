@@ -33,9 +33,35 @@ function fmtDate(d: string) { return d ? new Date(d).toLocaleDateString('id-ID',
 const inputCls = 'h-9 rounded-lg border border-neutral-300 bg-white px-3 text-sm dark:border-neutral-700 dark:bg-neutral-900';
 const selCls = 'h-8 w-full min-w-[140px] rounded-md border border-neutral-300 bg-white px-2 text-xs dark:border-neutral-700 dark:bg-neutral-900';
 
+// ── Cetak bukti kas/bank massal (checkbox per mutasi) ──
+// Hanya mutasi yang berasal dari transaksi kas (trx_id terisi) yang punya bukti; mutasi
+// saldo awal / jurnal manual / AP / bon sementara tidak — checkbox-nya dinonaktifkan.
+// Dideklarasikan SEBELUM watch di bawah: watch immediate:true berjalan saat setup.
+const selected = ref<number[]>([]);
+
 // Salinan reaktif tiap mutasi (untuk edit tag arus kas + pembagian cluster inline).
 const rows = ref<any[]>([]);
-watch(() => props.entries, (v) => { rows.value = (v ?? []).map((e: any) => ({ ...e, clusters: (e.clusters ?? []).map((c: any) => ({ ...c })) })); }, { immediate: true });
+watch(() => props.entries, (v) => {
+    rows.value = (v ?? []).map((e: any) => ({ ...e, clusters: (e.clusters ?? []).map((c: any) => ({ ...c })) }));
+    // Buang centang yang barisnya sudah tidak ada lagi — TAPI jangan dikosongkan semua:
+    // saveCf/saveClusters mem-post lalu back(), sehingga props.entries ikut ter-refresh.
+    // Mengosongkan di sini akan menghapus pilihan user tiap kali ia menandai arus kas.
+    // (Set dibangun dari rows, bukan printableIds — computed itu dideklarasikan di bawah.)
+    const ada = new Set(rows.value.filter((r) => r.trx_id).map((r) => Number(r.trx_id)));
+    selected.value = selected.value.filter((id) => ada.has(id));
+}, { immediate: true });
+
+// Ganti rekening/periode → centang lama tidak lagi relevan. Dipicu oleh PERUBAHAN filter,
+// bukan oleh refresh props, agar simpan arus kas/cluster tidak ikut menghapus pilihan.
+watch(() => [props.accountId, props.filters.from, props.filters.to].join('|'), () => { selected.value = []; });
+
+const printableIds = computed<number[]>(() => Array.from(new Set(rows.value.filter((r) => r.trx_id).map((r) => Number(r.trx_id)))));
+const noBuktiCount = computed(() => rows.value.filter((r) => !r.trx_id).length);
+const allChecked = computed<boolean>({
+    get: () => printableIds.value.length > 0 && printableIds.value.every((id) => selected.value.includes(id)),
+    set: (v: boolean) => { selected.value = v ? [...printableIds.value] : []; },
+});
+const cbCls = 'h-4 w-4 rounded border-neutral-300 text-primary-600 focus:ring-primary-500 dark:border-neutral-600 dark:bg-neutral-900';
 
 // #1 — Simpan tag kategori arus kas (Direct/Indirect) saat dipilih.
 function saveCf(row: any) {
@@ -82,17 +108,37 @@ function saveClusters(row: any) {
             <div v-if="accountId" class="ml-auto text-right"><div class="text-xs uppercase text-neutral-400">Saldo Akhir</div><div class="font-mono text-lg font-bold">Rp {{ fmtRp(closing) }}</div></div>
         </div>
 
+        <!-- Cetak bukti kas/bank untuk mutasi yang dicentang. Sticky agar tetap terjangkau saat menggulir. -->
+        <div v-if="accountId && selected.length" class="card sticky top-2 z-10 flex flex-wrap items-center gap-3 border-l-4 border-l-primary-500 p-3">
+            <span class="text-sm"><b>{{ selected.length }}</b> transaksi dipilih</span>
+            <div class="ml-auto flex flex-wrap gap-2">
+                <a :href="route('bs.cashbook.print-bulk', { ids: selected.join(',') })" target="_blank" rel="noopener"
+                   title="Cetak Bukti Penerimaan/Pengeluaran Kas & Bank untuk semua transaksi terpilih — 1 bukti per halaman."
+                   class="inline-flex items-center gap-1.5 rounded-lg bg-primary-600 px-3 py-2 text-sm font-semibold text-white hover:bg-primary-700"><Printer class="h-4 w-4" /> Cetak Bukti ({{ selected.length }})</a>
+                <button type="button" @click="selected = []" class="rounded-lg border border-neutral-300 px-3 py-2 text-sm font-medium text-neutral-600 hover:bg-neutral-50 dark:border-neutral-700 dark:text-neutral-300">Batal pilih</button>
+            </div>
+        </div>
+
         <div v-if="accountId" class="card overflow-x-auto">
+            <p v-if="rows.length && noBuktiCount" class="border-b border-neutral-100 px-3 py-2 text-xs text-neutral-400 dark:border-neutral-800">
+                {{ noBuktiCount }} dari {{ rows.length }} mutasi tidak bisa dicentang karena bukan transaksi kas
+                (saldo awal / jurnal manual / hutang-piutang / bon sementara) sehingga tidak punya Bukti Kas &amp; Bank.
+            </p>
             <table class="w-full min-w-[1100px] text-sm">
                 <thead class="bg-neutral-50 dark:bg-neutral-800"><tr class="text-left text-xs uppercase text-neutral-500">
+                    <th class="w-10 px-3 py-3"><input v-model="allChecked" type="checkbox" :class="cbCls" :disabled="!printableIds.length" :title="allChecked ? 'Kosongkan pilihan' : 'Pilih semua mutasi yang punya bukti kas/bank'" /></th>
                     <th class="px-3 py-3">Tanggal</th><th class="px-3 py-3">Referensi</th><th class="px-3 py-3">Keterangan</th>
                     <th class="px-3 py-3 text-right">Debit</th><th class="px-3 py-3 text-right">Kredit</th><th class="px-3 py-3 text-right">Saldo</th>
                     <th class="px-3 py-3">Cash Flow Direct</th><th class="px-3 py-3">Cash Flow Indirect</th><th class="px-3 py-3 text-center">Cluster</th>
                 </tr></thead>
                 <tbody class="divide-y divide-neutral-200 dark:divide-neutral-800">
-                    <tr class="bg-neutral-50/60 dark:bg-neutral-800/40"><td class="px-3 py-2 font-medium" colspan="5">Saldo Awal</td><td class="px-3 py-2 text-right font-mono font-semibold">{{ fmtRp(opening) }}</td><td colspan="3"></td></tr>
+                    <tr class="bg-neutral-50/60 dark:bg-neutral-800/40"><td class="px-3 py-2 font-medium" colspan="6">Saldo Awal</td><td class="px-3 py-2 text-right font-mono font-semibold">{{ fmtRp(opening) }}</td><td colspan="3"></td></tr>
                     <template v-for="row in rows" :key="row.id">
-                        <tr :class="expanded.has(row.id) ? 'bg-primary-50/30 dark:bg-primary-900/10' : ''">
+                        <tr :class="[expanded.has(row.id) ? 'bg-primary-50/30 dark:bg-primary-900/10' : '', row.trx_id && selected.includes(Number(row.trx_id)) ? 'bg-primary-500/10' : '']">
+                            <td class="px-3 py-2">
+                                <input v-if="row.trx_id" v-model="selected" type="checkbox" :value="Number(row.trx_id)" :class="cbCls" title="Pilih untuk cetak Bukti Kas & Bank" />
+                                <span v-else class="cursor-not-allowed text-neutral-300 dark:text-neutral-600" title="Mutasi ini bukan transaksi kas (saldo awal / jurnal manual / hutang-piutang / bon sementara) — tidak ada Bukti Kas & Bank yang bisa dicetak.">—</span>
+                            </td>
                             <td class="px-3 py-2 whitespace-nowrap">{{ fmtDate(row.date) }}</td>
                             <td class="px-3 py-2 font-mono text-xs">{{ row.ref }}</td>
                             <td class="px-3 py-2 text-neutral-500">{{ row.desc }}</td>
@@ -112,7 +158,7 @@ function saveClusters(row: any) {
                         </tr>
                         <!-- Rincian pembagian cluster (bisa hide/tampil) -->
                         <tr v-if="expanded.has(row.id)">
-                            <td colspan="9" class="bg-neutral-50 px-4 py-3 dark:bg-neutral-800/40">
+                            <td colspan="10" class="bg-neutral-50 px-4 py-3 dark:bg-neutral-800/40">
                                 <div class="mb-2 flex flex-wrap items-center justify-between gap-2">
                                     <p class="flex items-center gap-2 text-sm font-semibold"><Layers class="h-4 w-4 text-primary-600" /> Pembagian Biaya per Cluster <span class="text-xs font-normal text-neutral-500">— nilai mutasi Rp {{ fmtRp(mutAmount(row)) }}</span></p>
                                     <button type="button" @click="toggle(row.id)" class="text-xs text-neutral-500 hover:text-neutral-800 dark:hover:text-neutral-200">Sembunyikan ▲</button>
@@ -137,7 +183,7 @@ function saveClusters(row: any) {
                         </tr>
                     </template>
                 </tbody>
-                <tfoot class="border-t border-neutral-200 bg-neutral-50 font-bold dark:border-neutral-700 dark:bg-neutral-800"><tr><td class="px-3 py-2.5" colspan="5">Saldo Akhir</td><td class="px-3 py-2.5 text-right font-mono">{{ fmtRp(closing) }}</td><td colspan="3"></td></tr></tfoot>
+                <tfoot class="border-t border-neutral-200 bg-neutral-50 font-bold dark:border-neutral-700 dark:bg-neutral-800"><tr><td class="px-3 py-2.5" colspan="6">Saldo Akhir</td><td class="px-3 py-2.5 text-right font-mono">{{ fmtRp(closing) }}</td><td colspan="3"></td></tr></tfoot>
             </table>
             <EmptyState v-if="!rows?.length" title="Tidak ada mutasi" description="Rekening ini belum punya mutasi pada rentang tsb." />
         </div>

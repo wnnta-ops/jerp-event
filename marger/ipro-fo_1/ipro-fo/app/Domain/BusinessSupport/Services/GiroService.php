@@ -97,15 +97,19 @@ final class GiroService
         return $this->settle($giro, 'cleared', $data['settled_date'], (int) $data['cash_account_id'], $userId);
     }
 
-    /** Tolakan — giro ditolak, piutang dipulihkan. @param array{settled_date:string} $data */
+    /** Tolakan — giro ditolak, piutang dipulihkan. @param array{settled_date:string, bounce_reason?:?string} $data */
     public function bounce(BsGiro $giro, array $data, ?int $userId = null): BsGiro
     {
-        return $this->settle($giro, 'bounced', $data['settled_date'], null, $userId);
+        // Dipotong di sini juga (bukan hanya di validasi request) agar pemanggil non-web
+        // — job / sinkronisasi FO — tidak bisa membuat update gagal karena alasan kepanjangan.
+        $reason = $this->cut(trim((string) ($data['bounce_reason'] ?? '')));
+
+        return $this->settle($giro, 'bounced', $data['settled_date'], null, $userId, $reason !== '' ? $reason : null);
     }
 
-    private function settle(BsGiro $giro, string $status, string $date, ?int $cashAccountId, ?int $userId): BsGiro
+    private function settle(BsGiro $giro, string $status, string $date, ?int $cashAccountId, ?int $userId, ?string $reason = null): BsGiro
     {
-        return DB::transaction(function () use ($giro, $status, $date, $cashAccountId, $userId): BsGiro {
+        return DB::transaction(function () use ($giro, $status, $date, $cashAccountId, $userId, $reason): BsGiro {
             if ($giro->status !== 'in_hand') {
                 throw new BusinessRuleException('Cek/Giro sudah diproses.', errorCode: 'GIRO_DONE');
             }
@@ -124,11 +128,12 @@ final class GiroService
                 ];
                 $desc = 'Kliring Cek/Giro '.$giro->giro_number;
             } else {
+                // Alasan tolakan ikut ke jurnal agar terbaca dari General Ledger, bukan hanya dari layar giro.
                 $lines = [
                     ['account_id' => $giro->counter_account_id, 'debit' => $amount, 'credit' => 0, 'description' => 'Piutang dipulihkan (giro ditolak)'],
-                    ['account_id' => $giro->giro_account_id, 'debit' => 0, 'credit' => $amount, 'description' => 'Giro ditolak'],
+                    ['account_id' => $giro->giro_account_id, 'debit' => 0, 'credit' => $amount, 'description' => $this->cut('Giro ditolak'.($reason !== null ? ': '.$reason : ''))],
                 ];
-                $desc = 'Tolakan Cek/Giro '.$giro->giro_number;
+                $desc = $this->cut('Tolakan Cek/Giro '.$giro->giro_number.($reason !== null ? ' — '.$reason : ''));
             }
 
             $journal = $this->journal->post([
@@ -144,10 +149,17 @@ final class GiroService
                 'settled_date'      => $date,
                 'cash_account_id'   => $cashAccountId,
                 'settle_journal_id' => $journal->id,
+                'bounce_reason'     => $status === 'bounced' ? $reason : null,
             ]);
 
             return $giro;
         });
+    }
+
+    /** bs_giros.bounce_reason & description jurnal sama-sama VARCHAR(255) — potong agar alasan panjang tidak gagal simpan. */
+    private function cut(string $text, int $max = 255): string
+    {
+        return mb_strlen($text) <= $max ? $text : mb_substr($text, 0, $max - 1).'…';
     }
 
     private function nextNumber(string $date): string

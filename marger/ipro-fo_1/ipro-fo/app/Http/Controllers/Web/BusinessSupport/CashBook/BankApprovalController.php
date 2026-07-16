@@ -7,6 +7,7 @@ namespace App\Http\Controllers\Web\BusinessSupport\CashBook;
 use App\Domain\BankLoan\Enums\KprStatus;
 use App\Domain\BankLoan\Models\KprRealization;
 use App\Domain\BankLoan\Models\KprRetention;
+use App\Domain\BusinessSupport\Actions\ConvertUtjDpToUangMuka;
 use App\Domain\BusinessSupport\Models\BsAccount;
 use App\Domain\BusinessSupport\Models\BsFakturKeluaranEntry;
 use App\Domain\BusinessSupport\Services\JournalService;
@@ -218,10 +219,13 @@ class BankApprovalController extends Controller
             $unitType = $unit?->unitType;
             $unitInfo = $unitType ? trim((string) ($unitType->code ?: $unitType->name)) : null;
             $akadDate = optional($r->realization?->application?->akad?->akad_at)->toDateString();
+            // Status akad dari Proses KPR; baris ber-status 'batal' disaring keluar (→ Rincian Batal Akad).
+            $akadStat = $this->akadStatusFrom($r->realization?->application?->status?->value, $akadDate);
 
             return [
                 'id'                => $r->id,
                 'kind'              => 'retensi',
+                'akad_status'       => $akadStat['status'],
                 'row_key'           => 'retensi-'.$r->id,
                 'amount'            => $amount,
                 'status'            => $r->status,
@@ -291,10 +295,13 @@ class BankApprovalController extends Controller
             $unitInfo = $unitType ? trim((string) ($unitType->code ?: $unitType->name)) : null;
             $akadDate = optional($r->application?->akad?->akad_at)->toDateString();
             $kategori = $r->category?->name;
+            // Status akad dari Proses KPR; baris ber-status 'batal' disaring keluar (→ Rincian Batal Akad).
+            $akadStat = $this->akadStatusFrom($r->application?->status?->value, $akadDate);
 
             return [
                 'id'                => $r->id,
                 'kind'              => 'pencairan',
+                'akad_status'       => $akadStat['status'],
                 'row_key'           => 'pencairan-'.$r->id,
                 'amount'            => $net,
                 'status'            => 'pencairan',
@@ -330,7 +337,10 @@ class BankApprovalController extends Controller
         });
 
         // Gabung retensi + pencairan; belum dijurnal (pending) di atas, lalu id terbaru.
+        // KPR yang BATAL AKAD dipindahkan ke modul "Rincian Batal Akad" — tak boleh ikut
+        // diapprove di sini. Yang SUDAH terlanjur dijurnal tetap ditampilkan sebagai riwayat.
         $rows = $retRows->concat($pencRows)
+            ->reject(fn ($x) => $x['akad_status'] === 'batal' && ! $x['journaled'])
             ->sortBy(fn ($x) => ($x['journaled'] ? 1_000_000_000_000 : 0) - $x['id'])
             ->values();
 
@@ -813,5 +823,165 @@ class BankApprovalController extends Controller
         $this->recordFakturKeluaranEntry($request, 'utj_dp', $tts->id, $tts->customer_id, $tts->booking_id, $v['journal_date'], 0.0, 0.0, $amount, $journal->id, false);
 
         return back()->with('success', "UTJ/DP disetujui & jurnal {$journal->journal_number} terposting.");
+    }
+
+    /* ══════════════════ APPROVAL UM PENJUALAN ══════════════════
+     * Lanjutan Approval UTJ & DP: entri yang SUDAH "Setujui & Posting" di UTJ & DP
+     * (Dr Bank / Cr Hutang Usaha) menunggu dikonversi ke Uang Muka Penjualan
+     * (Dr Hutang Usaha / Cr Uang Muka + PPN Keluaran 11% inklusif).
+     *
+     * Sumber daftar = bs_faktur_keluaran_entries source_type='utj_dp' — baris ini dibuat
+     * oleh utjdpPost() (lihat recordFakturKeluaranEntry di akhir method tsb), jadi isinya
+     * OTOMATIS hanya TTS yang sudah lolos Setujui & Posting UTJ & DP.
+     * Posting memakai action ConvertUtjDpToUangMuka — sama persis dengan tombol "Konversi
+     * ke Uang Muka" di Verifikasi Faktur Pajak, sehingga jurnal identik & tak bisa dobel.
+     */
+    public function umIndex(Request $request): Response
+    {
+        abort_unless($request->user()?->canModule('cashbook'), 403);
+
+        $tab = in_array($request->query('tab'), ['selesai'], true) ? $request->query('tab') : 'pending';
+
+        $base = fn () => BsFakturKeluaranEntry::query()->where('source_type', 'utj_dp');
+        $counts = [
+            'pending' => (clone $base())->whereNull('converted_at')->count(),
+            'selesai' => (clone $base())->whereNotNull('converted_at')->count(),
+        ];
+
+        $entries = $base()
+            ->when($tab === 'pending', fn ($q) => $q->whereNull('converted_at'))
+            ->when($tab === 'selesai', fn ($q) => $q->whereNotNull('converted_at'))
+            ->with([
+                'customer:id,full_name',
+                'booking:id,booking_number,unit_id',
+                'booking.unit:id,unit_code',
+                'convertJournal:id,journal_number,journal_date',
+            ])
+            ->orderByDesc('id')
+            ->limit(500)
+            ->get();
+
+        $akad = $this->akadStatusByBooking($entries->pluck('booking_id')->filter()->unique()->values()->all());
+
+        // KPR yang BATAL AKAD dipindahkan ke modul "Rincian Batal Akad" — tak ikut antre approval
+        // di sini. Yang sudah terlanjur diposting tetap tampil di tab "Sudah Diposting" (riwayat).
+        $entries = $entries->reject(
+            fn (BsFakturKeluaranEntry $e) => $e->converted_at === null
+                && $e->booking_id
+                && (($akad[$e->booking_id]['status'] ?? null) === 'batal')
+        )->values();
+
+        $rows = $entries->map(function (BsFakturKeluaranEntry $e) use ($akad) {
+            $total = round((float) $e->total, 2);
+            // Pratinjau jurnal (PPN inklusif 11%) — angka final tetap dihitung ulang di action saat posting.
+            $ppn = round($total * 11 / 111, 2);
+            $a = $e->booking_id ? ($akad[$e->booking_id] ?? null) : null;
+
+            return [
+                'id'            => $e->id,
+                'keterangan'    => $e->keterangan,
+                'customer'      => $e->customer?->full_name,
+                'unit'          => $e->booking?->unit?->unit_code,
+                'booking'       => $e->booking?->booking_number,
+                'doc_date'      => optional($e->doc_date)->toDateString(),
+                'total'         => $total,
+                'dpp_preview'   => round($total - $ppn, 2),
+                'ppn_preview'   => $ppn,
+                'converted_at'  => optional($e->converted_at)->toDateString(),
+                'journal_number' => $e->convertJournal?->journal_number,
+                // Status akad dari Proses KPR: sudah | belum | batal | null (tanpa booking → tak bisa ditelusuri)
+                'akad_status'   => $a['status'] ?? null,
+                'akad_at'       => $a['akad_at'] ?? null,
+            ];
+        });
+
+        return Inertia::render('BusinessSupport/CashBook/ApprovalUmPenjualan', [
+            'rows'   => $rows,
+            'tab'    => $tab,
+            'counts' => $counts,
+        ]);
+    }
+
+    public function umPost(Request $request, BsFakturKeluaranEntry $entry, ConvertUtjDpToUangMuka $action): RedirectResponse
+    {
+        abort_unless($request->user()?->can('businesssupport.approval.act'), 403);
+
+        try {
+            $journal = $action->execute($entry, (int) $request->user()->id);
+        } catch (BusinessRuleException $e) {
+            return back()->with('error', $e->getMessage());
+        }
+
+        return back()->with('success', "UM Penjualan disetujui & jurnal {$journal->journal_number} terposting.");
+    }
+
+    /**
+     * Status akad per booking, dari Proses KPR (aplikasi TERBARU per booking).
+     *
+     * Aturan (disepakati):
+     *  - 'batal' → KPR ditolak/dibatalkan (didahulukan, walau akadnya sempat terjadi)
+     *  - 'sudah' → status Pencairan/Lunas, ATAU tahap Akad DAN record akad memang ada
+     *  - 'belum' → selain itu
+     * Cek "record akad ada" saja TIDAK cukup: aksi "← Tahap Sebelumnya" menyisakan record
+     * kpr_akads meski status mundur; sebaliknya status 'akad' bisa tercapai tanpa record akad.
+     *
+     * @param  array<int,int>  $bookingIds
+     * @return array<int, array{status:string, akad_at:?string}>
+     */
+    private function akadStatusByBooking(array $bookingIds): array
+    {
+        if ($bookingIds === []) {
+            return [];
+        }
+        // Aplikasi KPR terbaru per booking (id terbesar menang; hormati soft delete).
+        $apps = \Illuminate\Support\Facades\DB::table('kpr_applications')
+            ->whereIn('booking_id', $bookingIds)->whereNull('deleted_at')
+            ->orderBy('booking_id')->orderByDesc('id')
+            ->get(['id', 'booking_id', 'status']);
+        $latest = [];
+        foreach ($apps as $a) {
+            $latest[$a->booking_id] ??= $a;
+        }
+        if ($latest === []) {
+            return [];
+        }
+        // Record akad (kpr_akads tak punya tenant_id/soft delete → di-scope lewat id aplikasi di atas).
+        $akads = \Illuminate\Support\Facades\DB::table('kpr_akads')
+            ->whereIn('kpr_application_id', array_map(fn ($a) => $a->id, $latest))
+            ->orderBy('kpr_application_id')->orderByDesc('id')
+            ->get(['kpr_application_id', 'akad_at']);
+        $akadBy = [];
+        foreach ($akads as $k) {
+            $akadBy[$k->kpr_application_id] ??= $k->akad_at;
+        }
+
+        $out = [];
+        foreach ($latest as $bookingId => $a) {
+            $out[$bookingId] = $this->akadStatusFrom($a->status, $akadBy[$a->id] ?? null);
+        }
+
+        return $out;
+    }
+
+    /**
+     * Aturan status akad (fungsi murni) — SUMBER TUNGGAL, dipakai Approval Retensi,
+     * Approval UM Penjualan, dan Rincian Batal Akad agar ketiganya tak mungkin berbeda.
+     *
+     * @param  ?string  $statusValue  nilai kolom kpr_applications.status
+     * @param  ?string  $akadAt       kpr_akads.akad_at (bila ada)
+     * @return array{status:string, akad_at:?string}
+     */
+    private function akadStatusFrom(?string $statusValue, ?string $akadAt): array
+    {
+        $status = match (true) {
+            // Batal DIDAHULUKAN: KPR batal/ditolak, walau akadnya sempat terjadi.
+            in_array($statusValue, [KprStatus::Rejected->value, KprStatus::Cancelled->value], true) => 'batal',
+            in_array($statusValue, [KprStatus::Disbursed->value, KprStatus::Active->value], true)   => 'sudah',
+            // Tahap Akad saja belum cukup — record akad harus ada (status 'akad' bisa tercapai tanpa record).
+            $statusValue === KprStatus::AkadDone->value && $akadAt !== null                          => 'sudah',
+            default                                                                                  => 'belum',
+        };
+
+        return ['status' => $status, 'akad_at' => $akadAt ? substr((string) $akadAt, 0, 10) : null];
     }
 }
