@@ -12,6 +12,7 @@ use App\Exceptions\BusinessRuleException;
 use App\Http\Controllers\Controller;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -31,7 +32,7 @@ class CashBookController extends Controller
             : $this->indexAllAccounts($request);
     }
 
-    /** "Semua Rekening" — register transaksi kas (BsCashTransaction). Saldo berjalan tidak ditampilkan. */
+    /** "Semua Rekening" — register transaksi kas (BsCashTransaction) + pelunasan hutang (AP). Saldo berjalan tidak ditampilkan. */
     private function indexAllAccounts(Request $request): Response
     {
         $filtered = fn () => BsCashTransaction::query()
@@ -43,14 +44,14 @@ class CashBookController extends Controller
         $rows = $filtered()
             ->with(['cashAccount:id,code,name', 'counterAccount:id,code,name'])
             ->latest('trx_date')->latest('id')
-            ->paginate(50)->withQueryString();
+            ->get();
 
         $isTransferView = $request->input('type') === 'transfer';
 
         if ($isTransferView) {
             // #7: tampilkan KEDUA sisi mutasi transfer (keluar di pengirim + masuk di penerima).
             // Tiap transaksi transfer dipecah jadi 2 baris sintetis tanpa mengubah penyimpanan/jurnal.
-            $rows->setCollection($rows->getCollection()->flatMap(function (BsCashTransaction $r): array {
+            $rows = $rows->flatMap(function (BsCashTransaction $r): array {
                 $amt    = (float) $r->amount;
                 $sender = $r->cashAccount;
                 $recv   = $r->counterAccount;
@@ -74,17 +75,40 @@ class CashBookController extends Controller
                 $in->setAttribute('description', trim((string) $r->description.' ← dari '.($sender?->name ?? '—')));
 
                 return [$out, $in];
-            }));
+            });
         } else {
-            $rows->getCollection()->transform(function (BsCashTransaction $r): BsCashTransaction {
+            $rows->transform(function (BsCashTransaction $r): BsCashTransaction {
                 $amt = (float) $r->amount;
                 $r->setAttribute('masuk', $r->trx_type === 'in' ? $amt : 0.0);
                 $r->setAttribute('keluar', in_array($r->trx_type, ['out', 'transfer'], true) ? $amt : 0.0);
                 $r->setAttribute('running_saldo', null);
+                $r->setAttribute('row_key', 'trx-'.$r->id);
 
                 return $r;
             });
         }
+
+        // Pelunasan hutang (AP) hanya berjurnal — tidak punya baris BsCashTransaction — sehingga
+        // dulu tak pernah tampil di register "Semua rekening" (hanya terlihat saat 1 rekening
+        // dipilih / mode GL). Padahal itu kas keluar sungguhan. Baris sintetis di bawah menutup
+        // celah tsb untuk layar Kas Keluar & Pengeluaran Kas & Bank (keduanya type=out).
+        $apRows = $isTransferView ? collect() : $this->apPaymentRows($request);
+        $rows = $rows->concat($apRows)
+            ->sortByDesc(fn ($r) => [(string) ($r->trx_date instanceof \Illuminate\Support\Carbon ? $r->trx_date->toDateString() : $r->trx_date), (int) $r->id])
+            ->values();
+
+        // Paginasi manual: sumbernya dua (transaksi kas + pelunasan AP), tak bisa lagi paginate() di query.
+        $perPage = 50;
+        $page    = max(1, (int) $request->integer('page', 1));
+        $paged   = new \Illuminate\Pagination\LengthAwarePaginator(
+            $rows->forPage($page, $perPage)->values(),
+            $rows->count(),
+            $perPage,
+            $page,
+            ['path' => $request->url(), 'query' => $request->query()],
+        );
+
+        $apOut = (float) $apRows->sum('keluar');
 
         // #7: untuk view Transfer, masuk=keluar=SUM(amount transfer) → arus bersih 0 (mutasi internal).
         $summary = $isTransferView
@@ -95,18 +119,80 @@ class CashBookController extends Controller
             })()
             : [
                 'in'  => (float) (clone $filtered())->where('trx_type', 'in')->sum('amount'),
-                // Keluar = Pengeluaran + Transfer (kolom Keluar pada baris juga mencakup transfer → konsisten).
-                'out' => (float) (clone $filtered())->whereIn('trx_type', ['out', 'transfer'])->sum('amount'),
+                // Keluar = Pengeluaran + Transfer (kolom Keluar pada baris juga mencakup transfer → konsisten)
+                // + pelunasan hutang, agar total atas cocok dengan baris yang tampil.
+                'out' => (float) (clone $filtered())->whereIn('trx_type', ['out', 'transfer'])->sum('amount') + $apOut,
             ];
 
         return Inertia::render('BusinessSupport/CashBook/Index', [
-            'transactions' => $rows,
+            'transactions' => $paged,
             'types'        => BsCashTransaction::TYPES,
             'cashAccounts' => $this->cashAccounts(),
             'filters'      => $request->only(['type', 'search', 'account_id', 'from', 'to']),
             'summary'      => $summary,
             'glMode'       => false,
         ]);
+    }
+
+    /**
+     * Pelunasan hutang (bs_ap_payments) sebagai baris "Kas Keluar" sintetis untuk register
+     * "Semua rekening". Tidak menyentuh penyimpanan/jurnal — murni tampilan.
+     *
+     * HANYA yang benar-benar mengeluarkan kas: bs_ap_payments.cash_account_id bisa berisi akun
+     * "BG-Cek Beredar" (kewajiban) untuk pelunasan lewat penyerahan warkat — kasnya baru keluar
+     * saat warkat dicairkan, jadi baris seperti itu BUKAN kas keluar dan sengaja dilewati.
+     * Baris yang sudah punya BsCashTransaction sendiri juga dilewati agar tidak terhitung dua kali.
+     */
+    private function apPaymentRows(Request $request)
+    {
+        $type = $request->input('type');
+        if ($type !== null && $type !== 'out') {
+            return collect(); // pelunasan hutang selalu kas KELUAR
+        }
+
+        $cashIds = $this->cashAccounts()->pluck('id');
+
+        return \App\Domain\BusinessSupport\Models\BsApPayment::query()
+            ->with(['invoice:id,invoice_number,supplier_id', 'invoice.supplier:id,name', 'cashAccount:id,code,name'])
+            ->whereIn('cash_account_id', $cashIds)
+            // Jangan terhitung dua kali bila jurnal yang sama juga punya baris transaksi kas.
+            // Subquery, BUKAN whereNotIn(pluck seluruh journal_id): daftar itu tumbuh tanpa batas
+            // dan akan menembus batas ±65.535 placeholder MySQL (error 1390) → seluruh register &
+            // ekspornya mati. NOT EXISTS juga otomatis benar untuk journal_id NULL (tidak ada yang
+            // cocok → baris tetap ikut), tanpa perlu whereNull terpisah.
+            ->whereNotExists(fn ($q) => $q
+                ->select(DB::raw(1))
+                ->from('bs_cash_transactions')
+                ->whereColumn('bs_cash_transactions.journal_id', 'bs_ap_payments.journal_id')
+                ->whereNull('bs_cash_transactions.deleted_at'))
+            ->when($request->input('from'), fn ($q, $v) => $q->whereDate('payment_date', '>=', $v))
+            ->when($request->input('to'), fn ($q, $v) => $q->whereDate('payment_date', '<=', $v))
+            ->when($request->input('search'), fn ($q, $s) => $q->where(fn ($w) => $w
+                ->where('reference', 'like', "%{$s}%")
+                ->orWhereHas('invoice', fn ($i) => $i->where('invoice_number', 'like', "%{$s}%"))
+                ->orWhereHas('invoice.supplier', fn ($i) => $i->where('name', 'like', "%{$s}%"))))
+            ->latest('payment_date')->latest('id')
+            ->get()
+            ->map(function ($p) {
+                $inv = $p->invoice;
+                // Bentuk baris disamakan dgn BsCashTransaction agar layar tak perlu tahu asalnya.
+                $r = new BsCashTransaction();
+                $r->setAttribute('id', $p->id);
+                $r->setAttribute('row_key', 'ap-'.$p->id);           // beda ruang dari 'trx-<id>'
+                $r->setAttribute('trx_id', null);                     // bukan transaksi kas → tak bisa dibuka/dicetak
+                $r->setAttribute('is_ap_payment', true);
+                $r->setAttribute('trx_number', $inv?->invoice_number ?? ('AP-'.$p->id));
+                $r->setAttribute('trx_date', $p->payment_date);
+                $r->setAttribute('trx_type', 'out');
+                $r->setAttribute('rekening_label', $p->cashAccount?->name);
+                $r->setAttribute('description', 'Pelunasan hutang '.($inv?->invoice_number ?? ''));
+                $r->setAttribute('payee', $inv?->supplier?->name);
+                $r->setAttribute('masuk', 0.0);
+                $r->setAttribute('keluar', (float) $p->amount);
+                $r->setAttribute('running_saldo', null);
+
+                return $r;
+            });
     }
 
     /**
@@ -649,6 +735,11 @@ class CashBookController extends Controller
                 ->when($request->input('to'), fn ($q, $v) => $q->whereDate('trx_date', '<=', $v))
                 ->latest('trx_date')->latest('id')->get();
             $isTransferView = $request->input('type') === 'transfer';
+            // Pelunasan hutang (AP) ikut, sama seperti di layar — kecuali saat mencetak baris
+            // tercentang (centang hanya bisa mengenai transaksi kas).
+            if (! $isTransferView && ! $ids) {
+                $rows = $rows->concat($this->apPaymentRows($request));
+            }
             $h = '<table border="1"><tr style="background:#0f766e;color:#fff"><th>No.</th><th>Tanggal</th><th>Jenis</th><th>Rekening</th><th>Keterangan/Pihak</th><th>Masuk</th><th>Keluar</th></tr>';
             foreach ($rows as $r) {
                 $jenis = BsCashTransaction::TYPES[$r->trx_type] ?? $r->trx_type;
@@ -664,10 +755,18 @@ class CashBookController extends Controller
                     $h .= '<tr><td>'.$no.'</td><td>'.$tgl.'</td><td>'.$e($jenis).'</td><td>'.$e($recv)
                         .'</td><td>'.$e(trim((string) $r->description.' ← dari '.($sender ?? '—'))).'</td><td>'.$rp($amt).'</td><td>'.$rp(0).'</td></tr>';
                 } else {
-                    $masuk  = $r->trx_type === 'in' ? (float) $r->amount : 0;
-                    $keluar = in_array($r->trx_type, ['out', 'transfer'], true) ? (float) $r->amount : 0;
+                    // Baris pelunasan AP sintetis membawa masuk/keluar & rekening_label sendiri
+                    // (tanpa kolom amount / relasi cashAccount) — pakai itu bila ada.
+                    // getAttributes() = array mentah; getAttribute() akan MELEMPAR untuk atribut
+                    // yang tidak ada karena Model::shouldBeStrict() aktif di luar produksi.
+                    $raw    = $r->getAttributes();
+                    $isAp   = (bool) ($raw['is_ap_payment'] ?? false);
+                    $masuk  = $isAp ? 0 : ($r->trx_type === 'in' ? (float) $r->amount : 0);
+                    $keluar = $isAp ? (float) ($raw['keluar'] ?? 0) : (in_array($r->trx_type, ['out', 'transfer'], true) ? (float) $r->amount : 0);
+                    $jenis  = $isAp ? 'Pelunasan Hutang (AP)' : $jenis;
+                    $rek    = $isAp ? (string) ($raw['rekening_label'] ?? '') : (string) $r->cashAccount?->name;
                     $h .= '<tr><td>'.$no.'</td><td>'.$tgl.'</td><td>'.$e($jenis)
-                        .'</td><td>'.$e($r->cashAccount?->name).'</td><td>'.$e($r->description).($r->payee ? ' · '.$e($r->payee) : '').'</td><td>'.$rp($masuk).'</td><td>'.$rp($keluar).'</td></tr>';
+                        .'</td><td>'.$e($rek).'</td><td>'.$e($r->description).($r->payee ? ' · '.$e($r->payee) : '').'</td><td>'.$rp($masuk).'</td><td>'.$rp($keluar).'</td></tr>';
                 }
             }
             $h .= '</table>';
@@ -794,6 +893,10 @@ class CashBookController extends Controller
             ->when($request->input('to'), fn ($q, $v) => $q->whereDate('trx_date', '<=', $v))
             ->latest('trx_date')->latest('id')->get();
         $isTransferView = $request->input('type') === 'transfer';
+        // Pelunasan hutang (AP) ikut, sama seperti di layar (lihat indexAllAccounts).
+        if (! $isTransferView && ! $ids) {
+            $rows = $rows->concat($this->apPaymentRows($request));
+        }
 
         $body = '<table><thead><tr><th>No.</th><th>Tanggal</th><th>Jenis</th><th>Rekening</th><th>Keterangan/Pihak</th><th class="r">Masuk</th><th class="r">Keluar</th></tr></thead><tbody>';
         foreach ($rows as $r) {
@@ -809,10 +912,17 @@ class CashBookController extends Controller
                 $body .= '<tr><td>'.$no.'</td><td>'.$tgl.'</td><td>'.$e($jenis).'</td><td>'.$e($recv)
                     .'</td><td>'.$e(trim((string) $r->description.' ← dari '.($sender ?? '—'))).'</td><td class="r">'.$rp($amt).'</td><td class="r">'.$rp(0).'</td></tr>';
             } else {
-                $masuk  = $r->trx_type === 'in' ? (float) $r->amount : 0;
-                $keluar = in_array($r->trx_type, ['out', 'transfer'], true) ? (float) $r->amount : 0;
+                // Baris pelunasan AP sintetis membawa masuk/keluar & rekening_label sendiri.
+                // getAttributes() = array mentah; getAttribute() akan MELEMPAR untuk atribut
+                // yang tidak ada karena Model::shouldBeStrict() aktif di luar produksi.
+                $raw    = $r->getAttributes();
+                $isAp   = (bool) ($raw['is_ap_payment'] ?? false);
+                $masuk  = $isAp ? 0 : ($r->trx_type === 'in' ? (float) $r->amount : 0);
+                $keluar = $isAp ? (float) ($raw['keluar'] ?? 0) : (in_array($r->trx_type, ['out', 'transfer'], true) ? (float) $r->amount : 0);
+                $jenis  = $isAp ? 'Pelunasan Hutang (AP)' : $jenis;
+                $rek    = $isAp ? (string) ($raw['rekening_label'] ?? '') : (string) $r->cashAccount?->name;
                 $body .= '<tr><td>'.$no.'</td><td>'.$tgl.'</td><td>'.$e($jenis)
-                    .'</td><td>'.$e($r->cashAccount?->name).'</td><td>'.$e($r->description).($r->payee ? ' · '.$e($r->payee) : '').'</td><td class="r">'.$rp($masuk).'</td><td class="r">'.$rp($keluar).'</td></tr>';
+                    .'</td><td>'.$e($rek).'</td><td>'.$e($r->description).($r->payee ? ' · '.$e($r->payee) : '').'</td><td class="r">'.$rp($masuk).'</td><td class="r">'.$rp($keluar).'</td></tr>';
             }
         }
         if ($rows->isEmpty()) $body .= '<tr><td colspan="7" class="c muted">Tidak ada transaksi.</td></tr>';

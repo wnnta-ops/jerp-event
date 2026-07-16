@@ -34,8 +34,12 @@ function applyFilter() {
 // ── Pilih massal (checkbox per baris) ──
 const selected = ref<number[]>([]);
 const rowId = (r: any) => Number(r.trx_id ?? r.id);
+// Pelunasan hutang (AP) tampil sebagai baris sintetis — bukan transaksi kas, jadi tidak punya
+// bukti kas/bank & tidak bisa dibuka. WAJIB dikecualikan dari checkbox: id-nya milik
+// bs_ap_payments dan akan bertabrakan dgn id BsCashTransaction → bisa mencetak bukti yang SALAH.
+const isCashTrx = (r: any) => !r.is_ap_payment;
 // Transfer tampil 2 baris (sisi keluar + masuk) dari 1 transaksi → id-nya sama, dihitung sekali.
-const pageIds = computed<number[]>(() => Array.from(new Set((props.transactions.data ?? []).map((r: any) => rowId(r)))));
+const pageIds = computed<number[]>(() => Array.from(new Set((props.transactions.data ?? []).filter(isCashTrx).map((r: any) => rowId(r)))));
 const allChecked = computed<boolean>({
     get: () => pageIds.value.length > 0 && pageIds.value.every((id) => selected.value.includes(id)),
     set: (v: boolean) => { selected.value = v ? [...pageIds.value] : []; },
@@ -121,12 +125,18 @@ const typeMeta: Record<string, any> = {
                     </tr>
                 </thead>
                 <tbody class="divide-y divide-neutral-200 dark:divide-neutral-800">
-                    <tr v-for="r in transactions.data" :key="r.row_key ?? r.id" class="hover:bg-neutral-50 dark:hover:bg-neutral-800/50" :class="[glMode ? '' : 'cursor-pointer', selected.includes(rowId(r)) ? 'bg-primary-500/10' : '']" @click="!glMode && router.get(route('bs.cashbook.show', r.trx_id ?? r.id))">
+                    <tr v-for="r in transactions.data" :key="r.row_key ?? r.id" class="hover:bg-neutral-50 dark:hover:bg-neutral-800/50" :class="[(glMode || r.is_ap_payment) ? '' : 'cursor-pointer', isCashTrx(r) && selected.includes(rowId(r)) ? 'bg-primary-500/10' : '']" @click="!glMode && !r.is_ap_payment && router.get(route('bs.cashbook.show', r.trx_id ?? r.id))">
                         <!-- .stop: mencentang tidak boleh ikut membuka detail transaksi -->
-                        <td class="px-3 py-2.5" @click.stop><input v-model="selected" type="checkbox" :value="rowId(r)" :class="cbCls" /></td>
+                        <td class="px-3 py-2.5" @click.stop>
+                            <input v-if="isCashTrx(r)" v-model="selected" type="checkbox" :value="rowId(r)" :class="cbCls" />
+                            <span v-else class="cursor-not-allowed text-neutral-300 dark:text-neutral-600" title="Pelunasan hutang (AP) hanya berjurnal — tidak punya Bukti Kas/Bank yang bisa dicetak. Buka lewat modul Account Payable.">—</span>
+                        </td>
                         <td class="whitespace-nowrap px-4 py-2.5 font-mono font-semibold">{{ r.trx_number }}</td>
                         <td class="whitespace-nowrap px-4 py-2.5">{{ fmtDate(r.trx_date) }}</td>
-                        <td class="whitespace-nowrap px-4 py-2.5"><Badge :variant="typeMeta[r.trx_type]?.badge ?? 'neutral'" size="sm">{{ types[r.trx_type] }}</Badge></td>
+                        <td class="whitespace-nowrap px-4 py-2.5">
+                            <Badge v-if="r.is_ap_payment" variant="warning" size="sm" title="Pelunasan hutang dari modul Account Payable — hanya berjurnal, bukan transaksi kas.">Pelunasan Hutang (AP)</Badge>
+                            <Badge v-else :variant="typeMeta[r.trx_type]?.badge ?? 'neutral'" size="sm">{{ types[r.trx_type] }}</Badge>
+                        </td>
                         <td class="px-4 py-2.5"><span class="block max-w-[200px] truncate" :title="r.rekening_label ?? r.cash_account?.name ?? ''">{{ r.rekening_label ?? r.cash_account?.name ?? '—' }}</span></td>
                         <td class="px-4 py-2.5 text-neutral-500"><span class="block max-w-[200px] truncate" :title="(r.description ?? '') + (r.payee ? ' · ' + r.payee : '')">{{ r.description }}<span v-if="r.payee" class="text-neutral-400"> · {{ r.payee }}</span></span></td>
                         <td class="whitespace-nowrap px-4 py-2.5 text-right font-mono text-success-600">{{ r.masuk > 0 ? fmtRp(r.masuk) : '—' }}</td>
