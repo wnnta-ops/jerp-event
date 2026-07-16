@@ -5,7 +5,11 @@ import { ArrowLeft, FileBarChart, Send, Clock, RotateCcw, HandCoins, FileSpreads
 import EmptyState from '@/Components/UI/EmptyState.vue';
 import ColumnFilter from '@/Components/UI/ColumnFilter.vue';
 
-type Bucket = { label: string; desc: string; rows: Array<any>; count: number; total: number };
+type Bucket = {
+    label: string; desc: string; rows: Array<any>; count: number; total: number;
+    // Aturan aging ditentukan server (lihat CashAdvanceController::reportBuckets).
+    aging?: boolean; aging_label?: string | null; aging_from?: string | null;
+};
 type Department = { id: number; code: string | null; name: string };
 const props = defineProps<{
     buckets: Record<string, Bucket>;
@@ -14,6 +18,13 @@ const props = defineProps<{
 }>();
 function fmtRp(v: number) { return 'Rp ' + Number(v ?? 0).toLocaleString('id-ID'); }
 function fmtDate(d: string) { return d ? new Date(d).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'; }
+// Makin tua makin merah — ambang mengikuti kelaziman aging (30/60/90 hari).
+function agingColor(days: number) {
+    if (days >= 90) return 'text-danger-600';
+    if (days >= 60) return 'text-warning-600';
+    if (days >= 30) return 'text-amber-600';
+    return 'text-neutral-600 dark:text-neutral-300';
+}
 
 const meta: Record<string, { icon: any; color: string; settlement?: boolean }> = {
     sudah_transfer:  { icon: Send, color: 'text-amber-600' },
@@ -126,7 +137,10 @@ const grandCount = computed(() => Object.values(filteredBuckets.value).reduce((s
             </div>
             <table v-if="b.rows.length" class="w-full text-sm">
                 <thead class="bg-neutral-50 dark:bg-neutral-800"><tr class="text-left text-xs uppercase text-neutral-500">
-                    <th class="px-4 py-2.5">No.</th><th class="px-4 py-2.5">Tanggal</th><th class="px-4 py-2.5">Pemegang</th><th class="px-4 py-2.5">Departemen</th><th class="px-4 py-2.5">Keperluan</th><th class="px-4 py-2.5 text-right">{{ meta[key]?.settlement ? 'Sisa/Kurang' : 'Nilai' }}</th>
+                    <th class="px-4 py-2.5">No.</th><th class="px-4 py-2.5">Tanggal</th><th class="px-4 py-2.5">Pemegang</th><th class="px-4 py-2.5">Departemen</th><th class="px-4 py-2.5">Keperluan</th>
+                    <!-- Aging hanya untuk bucket yang punya tanggal acuan (server yang menentukan). -->
+                    <th v-if="b.aging" class="px-4 py-2.5 text-right" :title="b.aging_label ?? ''">Aging</th>
+                    <th class="px-4 py-2.5 text-right">{{ meta[key]?.settlement ? 'Sisa/Kurang' : 'Nilai' }}</th>
                 </tr></thead>
                 <tbody class="divide-y divide-neutral-200 dark:divide-neutral-800">
                     <tr v-for="r in b.rows" :key="r.id" class="cursor-pointer hover:bg-neutral-50 dark:hover:bg-neutral-800/50" @click="$inertia.visit(route('bs.advance.show', r.id))">
@@ -135,6 +149,10 @@ const grandCount = computed(() => Object.values(filteredBuckets.value).reduce((s
                         <td class="px-4 py-2.5">{{ r.holder }}</td>
                         <td class="px-4 py-2.5 text-neutral-500">{{ r.department ?? '—' }}</td>
                         <td class="px-4 py-2.5 text-neutral-500">{{ r.purpose }}</td>
+                        <td v-if="b.aging" class="px-4 py-2.5 text-right">
+                            <span v-if="r.aging_days !== null" class="font-mono font-semibold" :class="agingColor(r.aging_days)" :title="(b.aging_label ?? '') + ' ' + fmtDate(r.aging_base_date)">{{ r.aging_days }} hari</span>
+                            <span v-else class="text-xs text-neutral-400" :title="b.aging_from === 'paid_date' ? 'Tanggal bayar bon belum diisi' : 'Tanggal berkas diterima belum diisi'">—</span>
+                        </td>
                         <td class="px-4 py-2.5 text-right font-mono">{{ fmtRp(meta[key]?.settlement ? Math.abs(r.settlement) : r.amount) }}</td>
                     </tr>
                 </tbody>
