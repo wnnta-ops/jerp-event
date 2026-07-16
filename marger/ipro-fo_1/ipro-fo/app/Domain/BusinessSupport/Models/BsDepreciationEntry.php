@@ -17,4 +17,10 @@ class BsDepreciationEntry extends Model
     ];
 
     public function asset(): BelongsTo { return $this->belongsTo(BsFixedAsset::class, 'fixed_asset_id'); }
+
+    /**
+     * Jurnal penyusutannya. Sejak jurnal digabung per kategori/COA, SATU jurnal dipakai
+     * BERSAMA oleh banyak entry (banyak aset) — karena itu relasinya belongsTo, bukan hasOne.
+     */
+    public function journal(): BelongsTo { return $this->belongsTo(BsJournal::class, 'journal_id'); }
 }

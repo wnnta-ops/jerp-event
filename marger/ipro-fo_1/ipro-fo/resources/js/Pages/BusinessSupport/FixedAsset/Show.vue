@@ -159,7 +159,8 @@ const inputCls = 'h-9 w-full rounded-lg border border-neutral-300 bg-white px-3 
                         <td class="px-4 py-2.5">{{ fmtDate(e.entry_date) }}</td>
                         <td class="px-4 py-2.5 text-right font-mono text-danger-600">{{ fmtRp(e.amount) }}</td>
                         <td class="px-4 py-2.5 text-right font-mono">{{ fmtRp(e.book_value_after) }}</td>
-                        <td class="px-4 py-2.5 text-center"><span v-if="e.journal_id" class="inline-flex items-center gap-1 text-xs text-neutral-400"><BookText class="h-3.5 w-3.5" /> #{{ e.journal_id }}</span></td>
+                        <!-- Jurnal penyusutan massal digabung per kategori/COA → nomor yg sama bisa muncul di beberapa aset. -->
+                        <td class="px-4 py-2.5 text-center"><span v-if="e.journal_id" class="inline-flex items-center gap-1 font-mono text-xs text-neutral-400" title="Jurnal penyusutan. Untuk penyusutan massal, jurnal ini digabung per kategori/COA sehingga dipakai bersama beberapa aset."><BookText class="h-3.5 w-3.5" /> {{ e.journal?.journal_number ?? '#' + e.journal_id }}</span></td>
                     </tr>
                 </tbody>
             </table>
