@@ -60,7 +60,11 @@ watch(() => form.cheque_purpose, (mode) => {
     form.lines = [];
     form.supplier_id = '';
     form.payee = '';
-    if (mode === 'non_hutang') form.amount = 0;
+    if (mode === 'non_hutang') {
+        form.amount = 0;
+        // Keterangan tak lagi tampil di mode ini → jangan biarkan nilainya ikut tersimpan diam-diam.
+        form.description = '';
+    }
 });
 // Ganti supplier → reset pilihan invoice & isi nama penerima dari supplier (mode hutang).
 watch(() => form.supplier_id, () => {
@@ -111,7 +115,13 @@ function toggle(inv: OpenInvoice) {
                     <p class="mt-1 text-xs text-neutral-400">Pilih dari nomor warkat dimiliki (sesuai bank) atau ketik nomor baru.</p>
                     <p v-if="form.errors.cheque_number" class="mt-1 text-xs text-danger-500">{{ form.errors.cheque_number }}</p>
                 </div>
-                <div><label class="mb-1 block text-xs font-medium text-neutral-500">Tanggal BG/Cek *</label><input v-model="form.cheque_date" type="date" required :class="inputCls" /><p v-if="form.errors.cheque_date" class="mt-1 text-xs text-danger-500">{{ form.errors.cheque_date }}</p></div>
+                <!-- Opsional: warkat sering disiapkan dulu, tanggalnya ditulis saat diserahkan. -->
+                <div>
+                    <label class="mb-1 block text-xs font-medium text-neutral-500">Tanggal BG/Cek</label>
+                    <input v-model="form.cheque_date" type="date" :class="inputCls" />
+                    <p v-if="form.errors.cheque_date" class="mt-1 text-xs text-danger-500">{{ form.errors.cheque_date }}</p>
+                    <p v-else-if="!form.cheque_date" class="mt-1 text-xs text-neutral-400">Boleh dikosongkan — tapi warkat tanpa tanggal tidak muncul di Kalender Cek Giro.</p>
+                </div>
                 <div>
                     <label class="mb-1 block text-xs font-medium text-neutral-500">Nominal *</label>
                     <input v-model.number="form.amount" type="number" step="1" min="1" required :readonly="hasLines" :class="[inputCls,'text-right font-mono', hasLines ? 'bg-neutral-100 dark:bg-neutral-800' : '']" />
@@ -120,13 +130,14 @@ function toggle(inv: OpenInvoice) {
                 </div>
                 <!-- Penerima: pop up Supplier/Vendor (mode hutang) atau Pihak Ketiga bebas (mode non-hutang) -->
                 <div v-if="isHutang">
-                    <label class="mb-1 block text-xs font-medium text-neutral-500">Penerima (Supplier/Vendor) *</label>
+                    <label class="mb-1 block text-xs font-medium text-neutral-500">Penerima (Supplier/Vendor)</label>
                     <SearchSelect v-model="form.supplier_id" :options="suppliers ?? []" placeholder="— pilih supplier/vendor —" />
                     <p v-if="form.errors.supplier_id" class="mt-1 text-xs text-danger-500">{{ form.errors.supplier_id }}</p>
+                    <p v-else-if="!form.supplier_id" class="mt-1 text-xs text-neutral-400">Boleh dikosongkan — penerima dicetak blank & diisi tangan.</p>
                 </div>
                 <div v-else>
-                    <label class="mb-1 block text-xs font-medium text-neutral-500">Penerima (Pihak Ketiga) *</label>
-                    <input v-model="form.payee" required placeholder="nama pihak ketiga" :class="inputCls" />
+                    <label class="mb-1 block text-xs font-medium text-neutral-500">Penerima (Pihak Ketiga)</label>
+                    <input v-model="form.payee" placeholder="nama pihak ketiga" :class="inputCls" />
                     <p v-if="form.errors.payee" class="mt-1 text-xs text-danger-500">{{ form.errors.payee }}</p>
                 </div>
 
@@ -140,7 +151,8 @@ function toggle(inv: OpenInvoice) {
                 <div><label class="mb-1 block text-xs font-medium text-neutral-500">Pejabat Penandatangan 1 *</label><input v-model="form.signer_name" required placeholder="nama pejabat ttd 1" :class="inputCls" /><p v-if="form.errors.signer_name" class="mt-1 text-xs text-danger-500">{{ form.errors.signer_name }}</p></div>
                 <div><label class="mb-1 block text-xs font-medium text-neutral-500">Pejabat Penandatangan 2 *</label><input v-model="form.signer_name_2" required placeholder="nama pejabat ttd 2" :class="inputCls" /><p v-if="form.errors.signer_name_2" class="mt-1 text-xs text-danger-500">{{ form.errors.signer_name_2 }}</p></div>
 
-                <div class="md:col-span-2"><label class="mb-1 block text-xs font-medium text-neutral-500">Keterangan</label><input v-model="form.description" :class="inputCls" /></div>
+                <!-- Keterangan hanya untuk warkat atas pelunasan hutang; disembunyikan di mode non-hutang. -->
+                <div v-if="isHutang" class="md:col-span-2"><label class="mb-1 block text-xs font-medium text-neutral-500">Keterangan</label><input v-model="form.description" :class="inputCls" /></div>
                 <div class="md:col-span-2 flex items-center justify-between rounded-lg bg-primary-50 px-4 py-3 dark:bg-primary-900/20"><span class="font-semibold">Nominal BG/Cek</span><span class="font-mono text-lg font-bold text-primary-700 dark:text-primary-300">{{ fmtRp(form.amount) }}</span></div>
             </div>
 
