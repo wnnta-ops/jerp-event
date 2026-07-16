@@ -6,12 +6,19 @@ declare(strict_types=1);
  * Chart of Account riil PT Mitra Usaha Propertindo (eProperty Back Office).
  * Sumber: bo.javaresidence.com -> General Ledger -> Chart of Account (8 file ekspor .xls).
  *
- * Format: [kode, nama]. Level, parent, tipe, postable, & saldo normal diturunkan
- * dari kode oleh EpropertyCoaSeeder:
+ * Format: [kode, nama] atau [kode, nama, tipe]. Level, parent, tipe, postable, & saldo
+ * normal diturunkan dari kode oleh EpropertyCoaSeeder:
  *   level         = (panjang_kode + 1) / 2   (1,3,5,7,9,11 digit -> level 1..6)
  *   parent_code   = potongan kode tanpa 2 digit terakhir
  *   tipe          = digit pertama (1 aset, 2 kewajiban, 3 modal, 4 pendapatan, 5/6/7 beban, 8 modal/LR)
  *   postable      = level 6 (Detil Sub Transaksi)
+ *   saldo normal  = D untuk aset/beban, K untuk sisanya
+ *
+ * Elemen ke-3 (opsional) MENIMPA tipe turunan, untuk kode yang penamaan head-nya tidak
+ * mencerminkan isinya. Satu-satunya kasus saat ini: subtree 601 — head "6" bernama BEBAN
+ * (mengikuti ekspor eProperty) padahal 601 adalah PENDAPATAN LAIN-LAIN. Tanpa penimpaan ini
+ * akun pendapatan akan bertipe beban & bersaldo normal D, sehingga tampil di sisi yang salah
+ * pada Laba Rugi dan salah arah saat tutup buku.
  */
 return [
     // === 1 . ASET ===
@@ -411,14 +418,19 @@ return [
     ['50302020229', 'AMORTISASI PENYUSUTAN SOFTWARE'],
     ['50302020230', 'BIAYA PENYUSUTAN AT BANGUNAN TIDAK PERMANEN'],
     // === 6 . BEBAN ===
+    // Head "6" bernama BEBAN mengikuti ekspor eProperty & menaungi 502/503 BEBAN PENJUALAN &
+    // UMUM lewat category_code (lihat BsAccount::categoryOf). Isi kode 6xx sendiri justru
+    // PENDAPATAN LAIN-LAIN → subtree 601 ditandai 'income' agar tidak ikut aturan digit 6 = beban.
     ['6', 'BEBAN'],
-    ['601', 'PENDAPATAN LAIN-LAIN'],
-    ['60101', 'PENDAPATAN LAIN-LAIN'],
-    ['6010101', 'PENDAPATAN LAIN-LAIN'],
-    ['601010101', 'PENDAPATAN LAIN-LAIN'],
-    ['60101010101', 'PENDAPATAN BUNGA & JASA KEUANGAN'],
-    ['60101010102', 'PENDAPATAN REKSADANA'],
-    ['60101010103', 'PENDAPATAN LAIN-LAIN'],
+    ['601', 'PENDAPATAN LAIN-LAIN', 'income'],
+    ['60101', 'PENDAPATAN LAIN-LAIN', 'income'],
+    ['6010101', 'PENDAPATAN LAIN-LAIN', 'income'],
+    ['601010101', 'PENDAPATAN LAIN-LAIN', 'income'],
+    ['60101010101', 'PENDAPATAN BUNGA & JASA KEUANGAN', 'income'],
+    ['60101010102', 'PENDAPATAN REKSADANA', 'income'],
+    ['60101010103', 'PENDAPATAN LAIN-LAIN', 'income'],
+    // Lawan laba saat aset tetap dijual di atas nilai buku (FixedAssetService::sell).
+    ['60101010104', 'LABA PENJUALAN ASET TETAP', 'income'],
     // === 7 . PENDAPATAN DAN BEBAN LAIN ===
     ['7', 'PENDAPATAN DAN BEBAN LAIN'],
     ['701', 'BEBAN LAIN-LAIN'],
@@ -438,6 +450,10 @@ return [
     ['70101010111', 'BIAYA PAJAK LAINNYA'],
     ['70101010112', 'BEBAN DILUAR USAHA LAIN-LAIN'],
     ['70101010113', 'BIAYA PROVISI BANK'],
+    // Lawan rugi pelepasan aset tetap — DIPISAH: dijual di bawah nilai buku (sell) vs
+    // dihapus tanpa hasil jual (dispose). Lihat FixedAssetService & config fixed_asset_disposal.
+    ['70101010114', 'RUGI PENJUALAN ASET TETAP'],
+    ['70101010115', 'RUGI PENGHAPUSAN ASET TETAP'],
     // === 8 . L/R DITAHAN & L/R BERJALAN ===
     ['8', 'L/R DITAHAN & L/R BERJALAN'],
     ['801', 'L/R DITAHAN & L/R BERJALAN'],
