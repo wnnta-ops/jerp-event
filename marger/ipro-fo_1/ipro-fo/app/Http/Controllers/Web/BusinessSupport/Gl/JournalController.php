@@ -8,6 +8,7 @@ use App\Domain\BusinessSupport\Models\BsAccount;
 use App\Domain\BusinessSupport\Models\BsCostCenter;
 use App\Domain\BusinessSupport\Models\BsFiscalPeriod;
 use App\Domain\BusinessSupport\Models\BsJournal;
+use App\Domain\BusinessSupport\Services\JournalPartyResolver;
 use App\Domain\BusinessSupport\Services\JournalService;
 use App\Exceptions\BusinessRuleException;
 use App\Http\Controllers\Controller;
@@ -179,7 +180,7 @@ class JournalController extends Controller
     }
 
     /** Export Excel: semua info Detail Transaksi Jurnal (header + semua baris akun) mengikuti filter layar. */
-    public function export(Request $request): \Illuminate\Http\Response
+    public function export(Request $request, JournalPartyResolver $party): \Illuminate\Http\Response
     {
         abort_unless($request->user()?->canModule('gl'), 403);
 
@@ -200,9 +201,15 @@ class JournalController extends Controller
         $src = BsJournal::SOURCES;
         $st  = BsJournal::STATUSES;
 
+        // Pihak Terkait — nama supplier/employee/customer di balik tiap jurnal. Di-resolve
+        // sekali untuk SELURUH jurnal periode ini (batch), bukan per baris → bukan N+1.
+        $pihak = $party->forJournalIds($journals->pluck('id')->all());
+
+        // Urutan kolom: Kode Akun & Nama Akun paling kiri, lalu Pihak Terkait tepat setelah Sumber.
         $h = '<table border="1"><tr style="background:#0f766e;color:#fff">'
-            .'<th>No. Jurnal</th><th>Tanggal</th><th>Sumber</th><th>Status</th><th>Keterangan</th><th>Referensi</th>'
-            .'<th>Cost Center</th><th>Kode Akun</th><th>Nama Akun</th><th>Keterangan Baris</th><th>Debit</th><th>Kredit</th></tr>';
+            .'<th>Kode Akun</th><th>Nama Akun</th>'
+            .'<th>No. Jurnal</th><th>Tanggal</th><th>Sumber</th><th>Pihak Terkait</th><th>Status</th><th>Keterangan</th><th>Referensi</th>'
+            .'<th>Cost Center</th><th>Keterangan Baris</th><th>Debit</th><th>Kredit</th></tr>';
         $totalD = 0.0;
         $totalK = 0.0;
         foreach ($journals as $j) {
@@ -210,22 +217,23 @@ class JournalController extends Controller
                 $totalD += (float) $ln->debit;
                 $totalK += (float) $ln->credit;
                 $h .= '<tr>'
+                    .'<td>'.$e($ln->account?->code).'</td>'
+                    .'<td>'.$e($ln->account?->name).'</td>'
                     .'<td>'.$e($j->journal_number).'</td>'
                     .'<td>'.$e(optional($j->journal_date)->toDateString()).'</td>'
                     .'<td>'.$e($src[$j->source] ?? $j->source).'</td>'
+                    .'<td>'.$e($pihak[$j->id] ?? '').'</td>'
                     .'<td>'.$e($st[$j->status] ?? $j->status).'</td>'
                     .'<td>'.$e($j->description).'</td>'
                     .'<td>'.$e($j->reference).'</td>'
                     .'<td>'.$e($j->costCenter?->name).'</td>'
-                    .'<td>'.$e($ln->account?->code).'</td>'
-                    .'<td>'.$e($ln->account?->name).'</td>'
                     .'<td>'.$e($ln->description).'</td>'
                     .'<td>'.$rp($ln->debit).'</td>'
                     .'<td>'.$rp($ln->credit).'</td>'
                     .'</tr>';
             }
         }
-        $h .= '<tr style="font-weight:bold;background:#f1f5f9"><td colspan="10">TOTAL</td><td>'.$rp($totalD).'</td><td>'.$rp($totalK).'</td></tr></table>';
+        $h .= '<tr style="font-weight:bold;background:#f1f5f9"><td colspan="11">TOTAL</td><td>'.$rp($totalD).'</td><td>'.$rp($totalK).'</td></tr></table>';
 
         $file = 'Detail-Transaksi-Jurnal-'.$from->format('Ymd').'-'.$to->format('Ymd').'.xls';
 
