@@ -371,20 +371,28 @@ class CashBookController extends Controller
                 ->when($from, fn ($q) => $q->whereDate('bs_journals.journal_date', '>=', $from))
                 ->when($to, fn ($q) => $q->whereDate('bs_journals.journal_date', '<=', $to))
                 ->orderBy('bs_journals.journal_date')->orderBy('bs_journal_lines.id')
-                ->get(['bs_journal_lines.id', 'bs_journals.journal_date', 'bs_journals.journal_number', 'bs_journals.reference', 'bs_journals.source', 'bs_journal_lines.description', 'bs_journal_lines.debit', 'bs_journal_lines.credit']);
+                ->get(['bs_journal_lines.id', 'bs_journal_lines.journal_id', 'bs_journals.journal_date', 'bs_journals.journal_number', 'bs_journals.reference', 'bs_journals.source', 'bs_journal_lines.description', 'bs_journal_lines.debit', 'bs_journal_lines.credit']);
 
             // Anotasi per-mutasi: tag kategori arus kas + pembagian cluster (di-load sekali).
             $lineIds = $rows->pluck('id');
             $cfTags = \App\Domain\BusinessSupport\Models\BsLedgerCfTag::whereIn('journal_line_id', $lineIds)->get()->keyBy('journal_line_id');
             $splits = \App\Domain\BusinessSupport\Models\BsLedgerClusterSplit::whereIn('journal_line_id', $lineIds)->get()->groupBy('journal_line_id');
 
+            // Peta baris ledger → transaksi kas, untuk cetak bukti massal dari layar ini.
+            // Kaitannya lewat bs_cash_transactions.journal_id (bukan cocok-cocokan nomor referensi).
+            // Mutasi non-kas (saldo awal, memorial/jurnal manual, AP, bon sementara) TIDAK punya
+            // bukti kas/bank → trx_id null → layar menonaktifkan checkbox-nya.
+            $trxByJournal = BsCashTransaction::whereIn('journal_id', $rows->pluck('journal_id')->filter()->unique()->all())
+                ->pluck('id', 'journal_id');
+
             $running = $opening;
-            $entries = $rows->map(function ($r) use (&$running, $cfTags, $splits) {
+            $entries = $rows->map(function ($r) use (&$running, $cfTags, $splits, $trxByJournal) {
                 $running += (float) $r->debit - (float) $r->credit;
                 $tag = $cfTags[$r->id] ?? null;
 
                 return [
                     'id' => $r->id,
+                    'trx_id' => $trxByJournal[$r->journal_id] ?? null,
                     'date' => (string) $r->journal_date, 'ref' => $r->reference ?: $r->journal_number,
                     'source' => $r->source, 'desc' => $r->description,
                     'debit' => (float) $r->debit, 'credit' => (float) $r->credit, 'balance' => round($running, 2),
