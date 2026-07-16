@@ -120,7 +120,10 @@ const inputCls = 'h-9 w-full rounded-lg border border-neutral-300 bg-white px-3 
                     <div class="flex justify-between"><span>Harga Jual</span><span class="font-mono">{{ fmtRp(sellForm.proceeds) }}</span></div>
                     <div class="flex justify-between border-t border-neutral-200 pt-1 font-semibold dark:border-neutral-700" :class="sellGain >= 0 ? 'text-success-700' : 'text-danger-600'"><span>{{ sellGain >= 0 ? 'Laba Penjualan' : 'Rugi Penjualan' }}</span><span class="font-mono">{{ fmtRp(Math.abs(sellGain)) }}</span></div>
                 </div>
-                <p class="text-xs text-neutral-400">Jurnal: Dr Kas/Bank + Dr Akumulasi · Cr Aset Tetap + {{ sellGain >= 0 ? 'Cr Laba' : 'Dr Rugi' }} Penjualan Aset.</p>
+                <!-- Sebut kode akunnya agar bisa dicocokkan langsung ke Chart of Account. Impas → tanpa baris laba/rugi. -->
+                <p class="text-xs text-neutral-400">
+                    Jurnal: Dr Kas/Bank + Dr Akumulasi Penyusutan · Cr Aset Tetap<template v-if="Math.abs(sellGain) > 0"> + {{ sellGain > 0 ? 'Cr Laba Penjualan Aset Tetap (60101010104)' : 'Dr Rugi Penjualan Aset Tetap (70101010114)' }}</template><template v-else> (impas — tanpa baris laba/rugi)</template>.
+                </p>
                 <div class="flex gap-2"><Button type="submit" variant="primary" :disabled="sellForm.processing">Catat Penjualan</Button><button type="button" @click="reset" class="rounded-lg border border-neutral-300 px-4 py-2 text-sm dark:border-neutral-700">Batal</button></div>
             </form>
 
@@ -133,7 +136,7 @@ const inputCls = 'h-9 w-full rounded-lg border border-neutral-300 bg-white px-3 
                 <div class="space-y-1 rounded-lg bg-danger-50 p-3 text-sm dark:bg-danger-900/20">
                     <div class="flex justify-between"><span>Nilai Buku dihapuskan (rugi)</span><span class="font-mono font-semibold text-danger-600">{{ fmtRp(bookValue) }}</span></div>
                 </div>
-                <p class="text-xs text-neutral-400">Jurnal: Dr Akumulasi Penyusutan + Dr Rugi Penghapusan · Cr Aset Tetap.</p>
+                <p class="text-xs text-neutral-400">Jurnal: Dr Akumulasi Penyusutan + Dr Rugi Penghapusan Aset Tetap (70101010115) · Cr Aset Tetap.</p>
                 <div class="flex gap-2"><Button type="submit" variant="danger" :disabled="dispForm.processing">Hapus Aset</Button><button type="button" @click="reset" class="rounded-lg border border-neutral-300 px-4 py-2 text-sm dark:border-neutral-700">Batal</button></div>
             </form>
 

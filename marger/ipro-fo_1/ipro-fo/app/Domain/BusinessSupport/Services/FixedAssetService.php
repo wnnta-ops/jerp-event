@@ -260,9 +260,10 @@ final class FixedAssetService
                 $lines[] = ['account_id' => $asset->accum_account_id, 'debit' => $accum, 'credit' => 0, 'description' => 'Akumulasi penyusutan dihapus'];
             }
             if ($book > 0.009) {
-                $lossId = $this->accId(config('business_support.fixed_asset_disposal.loss'));
+                // Rugi PENGHAPUSAN — akun terpisah dari rugi penjualan (70101010114).
+                $lossId = $this->accId(config('business_support.fixed_asset_disposal.loss_disposal'));
                 if (! $lossId) {
-                    throw new BusinessRuleException('Akun rugi penghapusan aset belum tersedia.', errorCode: 'FA_NO_LOSS_ACCOUNT');
+                    throw new BusinessRuleException('Akun Rugi Penghapusan Aset Tetap (70101010115) belum ada di Chart of Account.', errorCode: 'FA_NO_LOSS_ACCOUNT');
                 }
                 $lines[] = ['account_id' => $lossId, 'debit' => $book, 'credit' => 0, 'description' => 'Rugi penghapusan aset'];
             }
@@ -312,16 +313,20 @@ final class FixedAssetService
                 $lines[] = ['account_id' => $asset->accum_account_id, 'debit' => $accum, 'credit' => 0, 'description' => 'Akumulasi penyusutan dihapus'];
             }
             $lines[] = ['account_id' => $asset->asset_account_id, 'debit' => 0, 'credit' => $cost, 'description' => 'Aset tetap dilepas'];
+            // Selisih hasil jual vs nilai buku. Impas (selisih 0) tidak memunculkan baris
+            // laba/rugi sama sekali — jurnal sudah balance tanpa itu, dan baris bernilai 0
+            // memang ditolak JournalService::post().
             if ($gain > 0.009) {
                 $gainId = $this->accId(config('business_support.fixed_asset_disposal.gain'));
                 if (! $gainId) {
-                    throw new BusinessRuleException('Akun laba penjualan aset belum tersedia.', errorCode: 'FA_NO_GAIN_ACCOUNT');
+                    throw new BusinessRuleException('Akun Laba Penjualan Aset Tetap (60101010104) belum ada di Chart of Account.', errorCode: 'FA_NO_GAIN_ACCOUNT');
                 }
                 $lines[] = ['account_id' => $gainId, 'debit' => 0, 'credit' => $gain, 'description' => 'Laba penjualan aset'];
             } elseif ($gain < -0.009) {
-                $lossId = $this->accId(config('business_support.fixed_asset_disposal.loss'));
+                // Rugi PENJUALAN — akun terpisah dari rugi penghapusan (70101010115).
+                $lossId = $this->accId(config('business_support.fixed_asset_disposal.loss_sale'));
                 if (! $lossId) {
-                    throw new BusinessRuleException('Akun rugi penjualan aset belum tersedia.', errorCode: 'FA_NO_LOSS_ACCOUNT');
+                    throw new BusinessRuleException('Akun Rugi Penjualan Aset Tetap (70101010114) belum ada di Chart of Account.', errorCode: 'FA_NO_LOSS_ACCOUNT');
                 }
                 $lines[] = ['account_id' => $lossId, 'debit' => abs($gain), 'credit' => 0, 'description' => 'Rugi penjualan aset'];
             }
