@@ -722,6 +722,11 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
     Route::post('/business-support/cash-book-approval-utjdp/{tts}',           [BsBankApprovalController::class, 'utjdpPost'])->name('bs.cashbook.approval-utjdp.post');
     Route::post('/business-support/cash-book-approval-utjdp/{tts}/reject',    [BsBankApprovalController::class, 'utjdpReject'])->name('bs.cashbook.approval-utjdp.reject');
     Route::post('/business-support/cash-book-approval-utjdp/{tts}/restore',   [BsBankApprovalController::class, 'utjdpRestore'])->name('bs.cashbook.approval-utjdp.restore'); // pulihkan TTS ditolak
+    // Approval UM Penjualan — lanjutan UTJ & DP: konversi ke Uang Muka Penjualan (Dr Hutang Usaha / Cr Uang Muka + PPN)
+    // Rincian Batal Akad — KPR batal/ditolak; disaring keluar dari antrean approval.
+    Route::get('/business-support/batal-akad',                                [\App\Http\Controllers\Web\BusinessSupport\BatalAkadController::class, 'index'])->name('bs.batal-akad.index');
+    Route::get('/business-support/cash-book-approval-um',                     [BsBankApprovalController::class, 'umIndex'])->name('bs.cashbook.approval-um');
+    Route::post('/business-support/cash-book-approval-um/{entry}',            [BsBankApprovalController::class, 'umPost'])->name('bs.cashbook.approval-um.post');
     Route::get('/business-support/cash-book',                  [BsCashBookController::class, 'index'])->name('bs.cashbook.index');
     Route::get('/business-support/cash-book/saldo',           [BsCashBookController::class, 'balances'])->name('bs.cashbook.balances');
     Route::get('/business-support/cash-book/saldo-excel',     [BsCashBookController::class, 'balancesExcel'])->name('bs.cashbook.balances.excel'); // #9
@@ -730,6 +735,8 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
     Route::post('/business-support/cash-book',                 [BsCashBookController::class, 'store'])->name('bs.cashbook.store');
     Route::get('/business-support/cash-book/export',          [BsCashBookController::class, 'export'])->name('bs.cashbook.export'); // #129 download mutasi
     Route::get('/business-support/cash-book/export-pdf',      [BsCashBookController::class, 'exportPdf'])->name('bs.cashbook.export.pdf'); // #9 cetak mutasi
+    // Cetak bukti massal dari checkbox layar Cash Book (?ids=1,2,3) — HARUS di atas /cash-book/{cashTransaction}.
+    Route::get('/business-support/cash-book/print-bulk',      [BsCashBookController::class, 'printBulk'])->name('bs.cashbook.print-bulk');
     Route::get('/business-support/petty-cash',                [BsPettyCashController::class, 'index'])->name('bs.pettycash.index');
     Route::get('/business-support/petty-cash/export',         [BsPettyCashController::class, 'export'])->name('bs.pettycash.export'); // #8 download mutasi kas kecil
     Route::get('/business-support/petty-cash/create',         [BsPettyCashController::class, 'create'])->name('bs.pettycash.create');

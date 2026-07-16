@@ -130,6 +130,7 @@ export function navGroups(foUrl: string): NavGroup[] {
                 { label: 'PPN Masukan', href: 'bs.tax.masukan' },
                 { label: 'PPN Keluaran', href: 'bs.tax.keluaran' },
             ] },
+            { label: 'Rincian Batal Akad', icon: TriangleAlert, href: 'bs.batal-akad.index', permission: ['businesssupport.view', 'ar.*'] },
             { label: 'Report / Query', icon: FileBarChart, href: 'bs.booked-revenue.report', permission: ['businesssupport.view', 'ar.*'] },
         ],
     },
@@ -324,6 +325,7 @@ export function navGroups(foUrl: string): NavGroup[] {
                 { label: 'Transfer Antar Rekening', href: 'bs.cashbook.create', params: { type: 'transfer' } },
                 { label: 'Penerimaan Bank', href: 'bs.cashbook.create', params: { type: 'in' } },
                 { label: 'Approval Retensi', href: 'bs.cashbook.approval-retensi' },
+                { label: 'Approval UM Penjualan', href: 'bs.cashbook.approval-um' },
                 { label: 'Approval UTJ & DP', href: 'bs.cashbook.approval-utjdp' },
             ]},
             { label: 'Transaksi Bon Sementara', icon: HandCoins, permission: ['businesssupport.view', 'cashbook.*'], children: [

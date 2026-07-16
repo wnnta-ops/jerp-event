@@ -371,20 +371,28 @@ class CashBookController extends Controller
                 ->when($from, fn ($q) => $q->whereDate('bs_journals.journal_date', '>=', $from))
                 ->when($to, fn ($q) => $q->whereDate('bs_journals.journal_date', '<=', $to))
                 ->orderBy('bs_journals.journal_date')->orderBy('bs_journal_lines.id')
-                ->get(['bs_journal_lines.id', 'bs_journals.journal_date', 'bs_journals.journal_number', 'bs_journals.reference', 'bs_journals.source', 'bs_journal_lines.description', 'bs_journal_lines.debit', 'bs_journal_lines.credit']);
+                ->get(['bs_journal_lines.id', 'bs_journal_lines.journal_id', 'bs_journals.journal_date', 'bs_journals.journal_number', 'bs_journals.reference', 'bs_journals.source', 'bs_journal_lines.description', 'bs_journal_lines.debit', 'bs_journal_lines.credit']);
 
             // Anotasi per-mutasi: tag kategori arus kas + pembagian cluster (di-load sekali).
             $lineIds = $rows->pluck('id');
             $cfTags = \App\Domain\BusinessSupport\Models\BsLedgerCfTag::whereIn('journal_line_id', $lineIds)->get()->keyBy('journal_line_id');
             $splits = \App\Domain\BusinessSupport\Models\BsLedgerClusterSplit::whereIn('journal_line_id', $lineIds)->get()->groupBy('journal_line_id');
 
+            // Peta baris ledger → transaksi kas, untuk cetak bukti massal dari layar ini.
+            // Kaitannya lewat bs_cash_transactions.journal_id (bukan cocok-cocokan nomor referensi).
+            // Mutasi non-kas (saldo awal, memorial/jurnal manual, AP, bon sementara) TIDAK punya
+            // bukti kas/bank → trx_id null → layar menonaktifkan checkbox-nya.
+            $trxByJournal = BsCashTransaction::whereIn('journal_id', $rows->pluck('journal_id')->filter()->unique()->all())
+                ->pluck('id', 'journal_id');
+
             $running = $opening;
-            $entries = $rows->map(function ($r) use (&$running, $cfTags, $splits) {
+            $entries = $rows->map(function ($r) use (&$running, $cfTags, $splits, $trxByJournal) {
                 $running += (float) $r->debit - (float) $r->credit;
                 $tag = $cfTags[$r->id] ?? null;
 
                 return [
                     'id' => $r->id,
+                    'trx_id' => $trxByJournal[$r->journal_id] ?? null,
                     'date' => (string) $r->journal_date, 'ref' => $r->reference ?: $r->journal_number,
                     'source' => $r->source, 'desc' => $r->description,
                     'debit' => (float) $r->debit, 'credit' => (float) $r->credit, 'balance' => round($running, 2),
@@ -580,6 +588,7 @@ class CashBookController extends Controller
         abort_unless($request->user()?->canModule('cashbook'), 403);
 
         $accId = $request->integer('account_id') ?: null;
+        $ids = $this->selectedIds($request);
         $e  = fn ($s) => htmlspecialchars((string) $s, ENT_QUOTES, 'UTF-8');
         $rp = fn ($n) => number_format((float) $n, 0, ',', '.');
 
@@ -610,24 +619,30 @@ class CashBookController extends Controller
             }
 
             $rows = $base()->orderBy('j.journal_date')->orderBy('bs_journal_lines.id')
-                ->get(['bs_journal_lines.debit', 'bs_journal_lines.credit', 'bs_journal_lines.description as line_description',
+                ->get(['bs_journal_lines.id', 'bs_journal_lines.debit', 'bs_journal_lines.credit', 'bs_journal_lines.description as line_description',
                     'j.journal_number', 'j.reference', 'j.source', 'j.journal_date', 'j.description as journal_description']);
 
-            $h = '<table border="1"><tr><th colspan="7" style="background:#0f766e;color:#fff">Mutasi Rekening: '.$e($acc?->code).' — '.$e($acc?->name).'</th></tr>'
+            $h = '<table border="1"><tr><th colspan="7" style="background:#0f766e;color:#fff">Mutasi Rekening: '.$e($acc?->code).' — '.$e($acc?->name).($ids ? ' (baris terpilih)' : '').'</th></tr>'
                 .'<tr style="background:#e2e8f0"><th>No.</th><th>Tanggal</th><th>Sumber</th><th>Keterangan</th><th>Masuk</th><th>Keluar</th><th>Saldo</th></tr>';
             $bal = $opening;
             foreach ($rows as $r) {
+                // Saldo diakumulasi dari SELURUH mutasi terfilter; centang hanya menyaring baris yang
+                // DICETAK. Kolom Saldo baris terpilih karena itu tetap sama persis dengan di layar.
                 $bal += (float) $r->debit - (float) $r->credit;
+                if ($ids && ! in_array((int) $r->id, $ids, true)) {
+                    continue;
+                }
                 $h .= '<tr><td>'.$e($r->reference ?: $r->journal_number).'</td><td>'.$e(optional($r->journal_date)->toDateString())
                     .'</td><td>'.$e(strtoupper((string) $r->source)).'</td><td>'.$e($r->line_description ?: $r->journal_description)
                     .'</td><td>'.$rp($r->debit).'</td><td>'.$rp($r->credit).'</td><td>'.$rp($bal).'</td></tr>';
             }
             $h .= '</table>';
-            $file = 'Mutasi-'.($acc?->code ?? 'rekening').'-'.now()->format('Ymd-His').'.xls';
+            $file = 'Mutasi-'.($acc?->code ?? 'rekening').($ids ? '-terpilih' : '').'-'.now()->format('Ymd-His').'.xls';
         } else {
             // Register "Semua Rekening" (BsCashTransaction).
             $rows = BsCashTransaction::query()
                 ->with(['cashAccount:id,code,name', 'counterAccount:id,code,name'])
+                ->when($ids, fn ($q) => $q->whereIn('id', $ids))
                 ->when($request->input('type'), fn ($q, $v) => $q->where('trx_type', $v))
                 ->when($request->input('search'), fn ($q, $s) => $q->where(fn ($w) => $w->where('trx_number', 'like', "%{$s}%")->orWhere('description', 'like', "%{$s}%")->orWhere('payee', 'like', "%{$s}%")))
                 ->when($request->input('from'), fn ($q, $v) => $q->whereDate('trx_date', '>=', $v))
@@ -656,12 +671,26 @@ class CashBookController extends Controller
                 }
             }
             $h .= '</table>';
-            $file = 'Mutasi-semua-rekening-'.now()->format('Ymd-His').'.xls';
+            $file = 'Mutasi-semua-rekening'.($ids ? '-terpilih' : '').'-'.now()->format('Ymd-His').'.xls';
         }
 
         return response('<html xmlns:x="urn:schemas-microsoft-com:office:excel"><head><meta charset="utf-8"></head><body>'.$h.'</body></html>')
             ->header('Content-Type', 'application/vnd.ms-excel; charset=UTF-8')
             ->header('Content-Disposition', 'attachment; filename="'.$file.'"');
+    }
+
+    /**
+     * Baris yang dicentang di layar Cash Book (?ids=1,2,3). Kosong = "semua sesuai filter" (perilaku lama).
+     *
+     * Makna id mengikuti mode layar: tanpa account_id → id BsCashTransaction; dengan account_id
+     * (mode GL) → id BsJournalLine. Karena itu layar WAJIB mengosongkan centang saat filter berubah.
+     */
+    private function selectedIds(Request $request): array
+    {
+        $raw = $request->input('ids');
+        $ids = is_array($raw) ? $raw : array_filter(explode(',', (string) $raw), fn ($v) => trim($v) !== '');
+
+        return array_values(array_unique(array_map('intval', $ids)));
     }
 
     /** Bungkus respons Excel (.xls) — pola HTML table ms-excel (#129). */
@@ -700,6 +729,7 @@ class CashBookController extends Controller
         abort_unless($request->user()?->canModule('cashbook'), 403);
 
         $accId = $request->integer('account_id') ?: null;
+        $ids = $this->selectedIds($request);
         $e  = fn ($s) => htmlspecialchars((string) $s, ENT_QUOTES, 'UTF-8');
         $rp = fn ($n) => number_format((float) $n, 0, ',', '.');
 
@@ -730,26 +760,34 @@ class CashBookController extends Controller
             }
 
             $rows = $base()->orderBy('j.journal_date')->orderBy('bs_journal_lines.id')
-                ->get(['bs_journal_lines.debit', 'bs_journal_lines.credit', 'bs_journal_lines.description as line_description',
+                ->get(['bs_journal_lines.id', 'bs_journal_lines.debit', 'bs_journal_lines.credit', 'bs_journal_lines.description as line_description',
                     'j.journal_number', 'j.reference', 'j.source', 'j.journal_date', 'j.description as journal_description']);
 
             $body = '<table><thead><tr><th>No.</th><th>Tanggal</th><th>Sumber</th><th>Keterangan</th><th class="r">Masuk</th><th class="r">Keluar</th><th class="r">Saldo</th></tr></thead><tbody>';
             $bal = $opening;
+            $shown = 0;
             foreach ($rows as $r) {
+                // Saldo diakumulasi dari SELURUH mutasi terfilter (lihat export()); centang hanya
+                // menyaring baris yang dicetak agar kolom Saldo tetap cocok dengan layar.
                 $bal += (float) $r->debit - (float) $r->credit;
+                if ($ids && ! in_array((int) $r->id, $ids, true)) {
+                    continue;
+                }
+                $shown++;
                 $body .= '<tr><td>'.$e($r->reference ?: $r->journal_number).'</td><td>'.$e(optional($r->journal_date)->toDateString())
                     .'</td><td>'.$e(strtoupper((string) $r->source)).'</td><td>'.$e($r->line_description ?: $r->journal_description)
                     .'</td><td class="r">'.$rp($r->debit).'</td><td class="r">'.$rp($r->credit).'</td><td class="r">'.$rp($bal).'</td></tr>';
             }
-            if ($rows->isEmpty()) $body .= '<tr><td colspan="7" class="c muted">Tidak ada mutasi.</td></tr>';
+            if ($shown === 0) $body .= '<tr><td colspan="7" class="c muted">Tidak ada mutasi.</td></tr>';
             $body .= '</tbody></table>';
 
-            return $this->pdfPage('MUTASI REKENING', trim((string) $acc?->code.' — '.(string) $acc?->name, ' —'), $body);
+            return $this->pdfPage('MUTASI REKENING', trim(trim((string) $acc?->code.' — '.(string) $acc?->name, ' —').($ids ? ' · '.$shown.' baris terpilih' : '')), $body);
         }
 
         // Register "Semua Rekening" (BsCashTransaction). #7: dua sisi bila type=transfer.
         $rows = BsCashTransaction::query()
             ->with(['cashAccount:id,code,name', 'counterAccount:id,code,name'])
+            ->when($ids, fn ($q) => $q->whereIn('id', $ids))
             ->when($request->input('type'), fn ($q, $v) => $q->where('trx_type', $v))
             ->when($request->input('search'), fn ($q, $s) => $q->where(fn ($w) => $w->where('trx_number', 'like', "%{$s}%")->orWhere('description', 'like', "%{$s}%")->orWhere('payee', 'like', "%{$s}%")))
             ->when($request->input('from'), fn ($q, $v) => $q->whereDate('trx_date', '>=', $v))
@@ -780,7 +818,7 @@ class CashBookController extends Controller
         if ($rows->isEmpty()) $body .= '<tr><td colspan="7" class="c muted">Tidak ada transaksi.</td></tr>';
         $body .= '</tbody></table>';
 
-        return $this->pdfPage('MUTASI SEMUA REKENING', '', $body);
+        return $this->pdfPage('MUTASI SEMUA REKENING', $ids ? $rows->count().' transaksi terpilih' : '', $body);
     }
 
     /** #9: query mutasi 1 rekening (basis GL, saldo berjalan) untuk Excel/PDF Ledger — reuse logika ledger(). */
@@ -1002,12 +1040,58 @@ class CashBookController extends Controller
         $cashTransaction->load(['cashAccount:id,code,name', 'counterAccount:id,code,name', 'lines.account:id,code,name']);
         $createdBy = $cashTransaction->created_by ? \App\Models\User::find($cashTransaction->created_by)?->name : null;
 
-        return response($this->renderCashPrint($cashTransaction, $request->user()?->name, $createdBy))
+        return response($this->cashPrintDoc(
+            (string) $cashTransaction->trx_number,
+            $this->cashPrintSheet($cashTransaction, $request->user()?->name, $createdBy),
+        ))->header('Content-Type', 'text/html; charset=UTF-8');
+    }
+
+    /**
+     * Cetak bukti MASSAL (checkbox di layar Cash Book) — 1 dokumen, 1 bukti per halaman.
+     * Format tiap lembar IDENTIK dengan cetak satuan karena memakai cashPrintSheet() yang sama.
+     */
+    public function printBulk(Request $request): \Illuminate\Http\Response
+    {
+        abort_unless($request->user()?->canModule('cashbook'), 403);
+
+        $ids = $this->selectedIds($request);
+        abort_if($ids === [], 400, 'Belum ada transaksi yang dicentang.');
+
+        $rows = BsCashTransaction::query()
+            ->whereIn('id', $ids)
+            ->with(['cashAccount:id,code,name', 'counterAccount:id,code,name', 'lines.account:id,code,name'])
+            ->orderBy('trx_date')->orderBy('id')
+            ->get();
+        abort_if($rows->isEmpty(), 404, 'Transaksi tidak ditemukan.');
+
+        // Nama pembuat di-preload sekali (hindari N+1 saat mencetak puluhan bukti).
+        $names = \App\Models\User::whereIn('id', $rows->pluck('created_by')->filter()->unique()->all())->pluck('name', 'id');
+
+        $inner = $rows
+            ->map(fn (BsCashTransaction $t): string => $this->cashPrintSheet(
+                $t,
+                $request->user()?->name,
+                $t->created_by ? ($names[$t->created_by] ?? null) : null,
+            ))
+            ->implode('');
+
+        return response($this->cashPrintDoc('Bukti Kas/Bank ('.$rows->count().')', $inner))
             ->header('Content-Type', 'text/html; charset=UTF-8');
     }
 
+    /** Bungkus dokumen bukti (CSS + auto-print). $inner = satu atau banyak <section class="sheet">. */
+    private function cashPrintDoc(string $title, string $inner): string
+    {
+        $e = fn ($s) => htmlspecialchars((string) $s, ENT_QUOTES, 'UTF-8');
+
+        return '<!DOCTYPE html><html lang="id"><head><meta charset="utf-8"><title>'.$e($title).'</title>'
+            .'<style>'.$this->cashPrintCss().'</style></head><body>'.$inner
+            .'<button class="noprint" onclick="window.print()" style="margin-top:14px;padding:6px 14px">Cetak</button>'
+            .'<script>window.onload=function(){setTimeout(function(){window.print()},350)}</script></body></html>';
+    }
+
     /** Bukti Pengeluaran/Penerimaan Kas/Bank — layout mengikuti format eProperty (logo + grid + tanda tangan). */
-    private function renderCashPrint(BsCashTransaction $trx, ?string $printedBy = null, ?string $createdBy = null): string
+    private function cashPrintSheet(BsCashTransaction $trx, ?string $printedBy = null, ?string $createdBy = null): string
     {
         $e = fn ($s) => htmlspecialchars((string) $s, ENT_QUOTES, 'UTF-8');
         // Nominal mengikuti lampiran: "Rp. 1,000,000.00" (negatif → dalam tanda kurung).
@@ -1055,32 +1139,10 @@ class CashBookController extends Controller
         $diterimaName = $trx->payee ? '<span class="nm">'.$e($trx->payee).'</span>' : '';
         $printDate    = now()->format('d-m-Y H.i.s');
         $printUser    = $printedBy ? $e($printedBy) : '';
-        $docNo        = $e($trx->trx_number);
-
-        $css = '@page{size:A4;margin:10mm}*{box-sizing:border-box}'
-            .'body{font-family:Arial,"Segoe UI",sans-serif;font-size:11px;color:#1f2937;margin:0}'
-            .'table{border-collapse:collapse}'
-            .'.hdr{width:100%;margin-bottom:10px}.hdr td{vertical-align:middle}'
-            .'.logo{width:58px;height:58px;object-fit:contain}'
-            .'.co{padding-left:10px}.co .nm{font-weight:bold;font-size:13px;line-height:1.2}.co .ad{font-size:11px;line-height:1.35;margin-top:2px}'
-            .'.titlebox{border:1px solid #9aa0a6;border-radius:12px;padding:14px 8px;text-align:center;font-weight:bold;font-size:16px;line-height:1.25}'
-            .'.gridwrap{border:1px solid #9aa0a6;border-radius:10px;overflow:hidden;margin-bottom:10px}'
-            .'.info{width:100%}.info td{padding:7px 10px;border:1px solid #dbe0e6;vertical-align:top;font-size:11px}'
-            .'.info td.lbl{width:115px;white-space:nowrap}.info td.val{word-break:break-word}'
-            .'.info tr:first-child td{border-top:0}.info tr:last-child td{border-bottom:0}.info td:first-child{border-left:0}.info td:last-child{border-right:0}'
-            .'.lines{width:100%;margin-bottom:10px;font-size:11px}.lines th,.lines td{border:1px solid #b9bfc6;padding:6px 8px;vertical-align:top}'
-            .'.lines th{text-align:center;font-weight:bold}.lines .r{text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}.lines .c{text-align:center}'
-            .'.tt{width:100%;margin-bottom:10px}.tt td{vertical-align:top}'
-            .'.rbox{border:1px solid #9aa0a6;border-radius:10px;padding:8px 12px;font-size:11px}'
-            .'.sign{width:100%;margin-top:6px}.sign td{vertical-align:top;padding:0}'
-            .'.sigcell{border:1px solid #333;height:98px;position:relative;padding:6px 8px}'
-            .'.role{font-size:10.5px;line-height:1.3}.sigline{position:absolute;left:8px;right:8px;bottom:7px;border-top:1px dotted #555;padding-top:3px;min-height:15px}'
-            .'.nm{font-weight:bold;font-size:10.5px}.pinfo{padding:6px 10px;font-size:10.5px;line-height:1.55;vertical-align:top}'
-            .'@media print{.noprint{display:none}}';
 
         $sig = fn (string $role, string $name = '') => '<div class="sigcell"><div class="role">'.$role.'</div><div class="sigline">'.$name.'</div></div>';
 
-        return '<!DOCTYPE html><html lang="id"><head><meta charset="utf-8"><title>'.$docNo.'</title><style>'.$css.'</style></head><body>'
+        return '<section class="sheet">'
             .'<table class="hdr"><tr>'
                 .'<td style="width:60%"><table><tr><td><img class="logo" src="'.$logo.'" alt="MUP"></td>'
                     .'<td class="co"><div class="nm">'.$e($coName).'</div><div class="ad">'.$addrHtml.'</div></td></tr></table></td>'
@@ -1112,8 +1174,34 @@ class CashBookController extends Controller
             .'</tr><tr>'
                 .'<td>'.$sig('Diterima Oleh', $diterimaName).'</td><td colspan="5"></td>'
             .'</tr></table>'
-            .'<button class="noprint" onclick="window.print()" style="margin-top:14px;padding:6px 14px">Cetak</button>'
-            .'<script>window.onload=function(){setTimeout(function(){window.print()},350)}</script></body></html>';
+            .'</section>';
+    }
+
+    /** CSS bukti kas — dipakai bersama cetak satuan & massal. */
+    private function cashPrintCss(): string
+    {
+        return '@page{size:A4;margin:10mm}*{box-sizing:border-box}'
+            .'body{font-family:Arial,"Segoe UI",sans-serif;font-size:11px;color:#1f2937;margin:0}'
+            .'table{border-collapse:collapse}'
+            // Cetak massal: 1 bukti = 1 halaman; lembar terakhir tidak menyisakan halaman kosong.
+            .'.sheet{page-break-after:always}.sheet:last-of-type{page-break-after:auto}'
+            .'.hdr{width:100%;margin-bottom:10px}.hdr td{vertical-align:middle}'
+            .'.logo{width:58px;height:58px;object-fit:contain}'
+            .'.co{padding-left:10px}.co .nm{font-weight:bold;font-size:13px;line-height:1.2}.co .ad{font-size:11px;line-height:1.35;margin-top:2px}'
+            .'.titlebox{border:1px solid #9aa0a6;border-radius:12px;padding:14px 8px;text-align:center;font-weight:bold;font-size:16px;line-height:1.25}'
+            .'.gridwrap{border:1px solid #9aa0a6;border-radius:10px;overflow:hidden;margin-bottom:10px}'
+            .'.info{width:100%}.info td{padding:7px 10px;border:1px solid #dbe0e6;vertical-align:top;font-size:11px}'
+            .'.info td.lbl{width:115px;white-space:nowrap}.info td.val{word-break:break-word}'
+            .'.info tr:first-child td{border-top:0}.info tr:last-child td{border-bottom:0}.info td:first-child{border-left:0}.info td:last-child{border-right:0}'
+            .'.lines{width:100%;margin-bottom:10px;font-size:11px}.lines th,.lines td{border:1px solid #b9bfc6;padding:6px 8px;vertical-align:top}'
+            .'.lines th{text-align:center;font-weight:bold}.lines .r{text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}.lines .c{text-align:center}'
+            .'.tt{width:100%;margin-bottom:10px}.tt td{vertical-align:top}'
+            .'.rbox{border:1px solid #9aa0a6;border-radius:10px;padding:8px 12px;font-size:11px}'
+            .'.sign{width:100%;margin-top:6px}.sign td{vertical-align:top;padding:0}'
+            .'.sigcell{border:1px solid #333;height:98px;position:relative;padding:6px 8px}'
+            .'.role{font-size:10.5px;line-height:1.3}.sigline{position:absolute;left:8px;right:8px;bottom:7px;border-top:1px dotted #555;padding-top:3px;min-height:15px}'
+            .'.nm{font-weight:bold;font-size:10.5px}.pinfo{padding:6px 10px;font-size:10.5px;line-height:1.55;vertical-align:top}'
+            .'@media print{.noprint{display:none}}';
     }
 
     /** Aturan validasi transaksi kas (multi-baris akun lawan #15). */

@@ -17,7 +17,7 @@ class BsGiro extends Model
     protected $fillable = [
         'tenant_id', 'giro_number', 'receive_date', 'due_date', 'bank_name', 'cheque_number', 'drawer',
         'amount', 'giro_account_id', 'counter_account_id', 'cash_account_id', 'status', 'settled_date',
-        'receive_journal_id', 'settle_journal_id', 'created_by', 'source', 'source_ref',
+        'bounce_reason', 'receive_journal_id', 'settle_journal_id', 'created_by', 'source', 'source_ref',
     ];
     protected $casts = [
         'receive_date' => 'date', 'due_date' => 'date', 'settled_date' => 'date', 'amount' => 'decimal:2',
