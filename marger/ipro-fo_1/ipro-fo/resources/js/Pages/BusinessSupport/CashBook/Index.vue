@@ -5,6 +5,7 @@ import { Plus, ArrowLeft, Banknote, Search, ArrowDownCircle, ArrowUpCircle, Repe
 import Button from '@/Components/UI/Button.vue';
 import Badge from '@/Components/UI/Badge.vue';
 import EmptyState from '@/Components/UI/EmptyState.vue';
+import SearchSelect from '@/Components/UI/SearchSelect.vue';
 import TableTopScroll from '@/Components/UI/TableTopScroll.vue';
 
 const props = defineProps<{
@@ -97,7 +98,8 @@ const typeMeta: Record<string, any> = {
             <div><label class="mb-1 block text-[11px] font-medium uppercase text-neutral-400">Dari Tanggal</label><input v-model="from" @change="applyFilter" type="date" title="Dari tanggal" class="h-9 rounded-lg border border-neutral-300 bg-white px-2 text-sm dark:border-neutral-700 dark:bg-neutral-900" /></div>
             <div><label class="mb-1 block text-[11px] font-medium uppercase text-neutral-400">Sampai Tanggal</label><input v-model="to" @change="applyFilter" type="date" title="Sampai tanggal" class="h-9 rounded-lg border border-neutral-300 bg-white px-2 text-sm dark:border-neutral-700 dark:bg-neutral-900" /></div>
             <div><label class="mb-1 block text-[11px] font-medium uppercase text-neutral-400">Jenis</label><select v-model="type" @change="applyFilter" class="h-9 w-auto min-w-[8.5rem] rounded-lg border border-neutral-300 bg-white px-2 pr-6 text-sm dark:border-neutral-700 dark:bg-neutral-900"><option value="">Semua</option><option v-for="(label, val) in types" :key="val" :value="val">{{ label }}</option></select></div>
-            <div><label class="mb-1 block text-[11px] font-medium uppercase text-neutral-400">Rekening</label><select v-model="accountId" @change="applyFilter" class="h-9 w-auto min-w-[11rem] rounded-lg border border-neutral-300 bg-white px-2 pr-6 text-sm dark:border-neutral-700 dark:bg-neutral-900"><option value="">Semua rekening</option><option v-for="a in cashAccounts" :key="a.id" :value="String(a.id)">{{ a.name }}</option></select></div>
+            <!-- Rekening bisa dicari dengan mengetik (kode / nama) — daftarnya panjang (20+ rekening). -->
+            <div class="min-w-[16rem]"><label class="mb-1 block text-[11px] font-medium uppercase text-neutral-400">Rekening</label><SearchSelect v-model="accountId" :options="cashAccounts" placeholder="Semua rekening" @update:model-value="applyFilter" /></div>
             <button v-if="anyFilter" type="button" @click="resetFilters" class="ml-auto rounded-lg border border-neutral-300 px-3 py-2 text-sm font-medium text-neutral-600 hover:bg-neutral-50 dark:border-neutral-700 dark:text-neutral-300">Reset filter</button>
         </div>
 
