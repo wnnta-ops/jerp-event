@@ -10,10 +10,10 @@ import ColumnFilter from '@/Components/UI/ColumnFilter.vue';
 type Row = {
     id: number; invoice_number: string; invoice_date: string | null; receive_date: string | null; due_date: string | null;
     supplier: { name: string } | null; customer: { name: string } | null; source_type: string | null; refund_source: string | null;
-    description: string | null; berkas_notes: string | null;
+    description: string | null; berkas_notes: string | null; berkas_finance_date: string | null;
     status: string; payable: number; sisa: number;
 };
-const props = defineProps<{ invoices: Row[] }>();
+const props = defineProps<{ invoices: Row[]; canBerkasFinance?: boolean }>();
 
 function fmtRp(v: number) { return 'Rp ' + Number(v ?? 0).toLocaleString('id-ID'); }
 function fmtDate(d: string | null) { return d ? new Date(d).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'; }
@@ -43,6 +43,14 @@ const dTotal = (r: Row) => fmtRp(r.payable);
 const dSisa = (r: Row) => fmtRp(r.sisa);
 const dStatus = (r: Row) => statusLabel(r.status);
 const dBerkas = (r: Row) => r.berkas_notes || '—';
+const dBerkasFinance = (r: Row) => fmtDate(r.berkas_finance_date);
+
+// Tanggal berkas diterima Finance — hanya tampil sbg input bila user Dept Finance (server tetap
+// penentu: ApInvoiceController::updateBerkasFinance menolak selain Finance/FinanceManager).
+function saveBerkasFinance(r: Row, ev: Event) {
+    const val = (ev.target as HTMLInputElement).value || null;
+    router.post(route('bs.ap.berkas-finance', r.id), { berkas_finance_date: val }, { preserveScroll: true, preserveState: false });
+}
 
 function distinct(fn: (r: Row) => string) {
     const s = new Set<string>();
@@ -59,17 +67,18 @@ const optTotal = computed(() => distinct(dTotal));
 const optSisa = computed(() => distinct(dSisa));
 const optStatus = computed(() => distinct(dStatus));
 const optBerkas = computed(() => distinct(dBerkas));
+const optBerkasFinance = computed(() => distinct(dBerkasFinance));
 
 // Filter global + checklist per-kolom (kosong = tampilkan semua). Semua di sisi klien.
 const search = ref('');
-const col = reactive<Record<string, string[]>>({ no: [], tgl: [], terima: [], supplier: [], sumber: [], ket: [], total: [], sisa: [], status: [], berkas: [] });
+const col = reactive<Record<string, string[]>>({ no: [], tgl: [], terima: [], supplier: [], sumber: [], ket: [], total: [], sisa: [], status: [], berkas: [], berkasFinance: [] });
 const hasFilter = computed(() => Boolean(search.value) || Object.values(col).some((a) => a.length));
 function resetFilter() { search.value = ''; (Object.keys(col) as Array<keyof typeof col>).forEach((k) => (col[k] = [])); }
 
 const filtered = computed<Row[]>(() => props.invoices.filter((r) => {
     if (search.value) {
         const q = search.value.toLowerCase();
-        const hay = [dNo(r), dTgl(r), dTerima(r), dSupplier(r), dSumber(r), dKet(r), dTotal(r), dSisa(r), dStatus(r), dBerkas(r)].join(' ').toLowerCase();
+        const hay = [dNo(r), dTgl(r), dTerima(r), dSupplier(r), dSumber(r), dKet(r), dTotal(r), dSisa(r), dStatus(r), dBerkas(r), dBerkasFinance(r)].join(' ').toLowerCase();
         if (!hay.includes(q)) return false;
     }
     if (col.no.length && !col.no.includes(dNo(r))) return false;
@@ -82,6 +91,7 @@ const filtered = computed<Row[]>(() => props.invoices.filter((r) => {
     if (col.sisa.length && !col.sisa.includes(dSisa(r))) return false;
     if (col.status.length && !col.status.includes(dStatus(r))) return false;
     if (col.berkas.length && !col.berkas.includes(dBerkas(r))) return false;
+    if (col.berkasFinance.length && !col.berkasFinance.includes(dBerkasFinance(r))) return false;
     return true;
 }));
 
@@ -102,11 +112,12 @@ const summary = computed(() => {
 });
 
 // Bila data berubah (mis. reload), buang nilai filter yang sudah tak ada agar tak diam-diam mengosongkan tabel.
-watch([optNo, optTgl, optTerima, optSupplier, optSumber, optKet, optTotal, optSisa, optStatus, optBerkas], () => {
+watch([optNo, optTgl, optTerima, optSupplier, optSumber, optKet, optTotal, optSisa, optStatus, optBerkas, optBerkasFinance], () => {
     const prune = (sel: string[], opts: string[]) => { const s = new Set(opts); return sel.filter((v) => s.has(v)); };
     col.no = prune(col.no, optNo.value); col.tgl = prune(col.tgl, optTgl.value); col.terima = prune(col.terima, optTerima.value);
     col.supplier = prune(col.supplier, optSupplier.value); col.sumber = prune(col.sumber, optSumber.value); col.ket = prune(col.ket, optKet.value); col.total = prune(col.total, optTotal.value);
     col.sisa = prune(col.sisa, optSisa.value); col.status = prune(col.status, optStatus.value); col.berkas = prune(col.berkas, optBerkas.value);
+    col.berkasFinance = prune(col.berkasFinance, optBerkasFinance.value);
 });
 
 // Export Excel mengikuti TAMPILAN saat ini (hasil filter + nilai nett).
@@ -124,10 +135,11 @@ function exportExcel() {
         + `<td>${esc(num(r.sisa))}</td>`
         + `<td>${esc(statusLabel(r.status))}</td>`
         + `<td>${esc(r.berkas_notes ?? '')}</td>`
+        + `<td>${esc(fmtDate(r.berkas_finance_date))}</td>`
         + '</tr>').join('');
     const html = '<html xmlns:x="urn:schemas-microsoft-com:office:excel"><head><meta charset="utf-8"></head><body>'
         + '<table border="1"><tr style="background:#0f766e;color:#fff">'
-        + '<th>No. Invoice</th><th>Tanggal</th><th>Tgl. Diterima</th><th>Jatuh Tempo</th><th>Supplier</th><th>Keterangan</th><th>Total (Net)</th><th>Sisa (Net)</th><th>Status</th><th>Kelengkapan Berkas</th>'
+        + '<th>No. Invoice</th><th>Tanggal</th><th>Tgl. Diterima</th><th>Jatuh Tempo</th><th>Supplier</th><th>Keterangan</th><th>Total (Net)</th><th>Sisa (Net)</th><th>Status</th><th>Kelengkapan Berkas</th><th>Berkas Diterima Finance</th>'
         + `</tr>${body}</table></body></html>`;
     const url = URL.createObjectURL(new Blob([html], { type: 'application/vnd.ms-excel' }));
     const a = document.createElement('a');
@@ -246,6 +258,7 @@ watch(filtered, () => nextTick(measure));
                     <tr class="text-left text-xs uppercase text-neutral-500">
                         <th class="whitespace-nowrap px-4 pt-3 pb-1.5">No. Invoice</th><th class="whitespace-nowrap px-4 pt-3 pb-1.5">Tanggal</th><th class="whitespace-nowrap px-4 pt-3 pb-1.5">Tgl. Diterima</th><th class="px-4 pt-3 pb-1.5">Supplier / Customer</th><th class="px-4 pt-3 pb-1.5">Sumber</th><th class="px-4 pt-3 pb-1.5">Keterangan</th>
                         <th class="whitespace-nowrap px-4 pt-3 pb-1.5 text-right">Total</th><th class="whitespace-nowrap px-4 pt-3 pb-1.5 text-right">Sisa</th><th class="px-4 pt-3 pb-1.5 text-center">Status</th><th class="px-4 pt-3 pb-1.5">Kelengkapan<br>Berkas</th>
+                        <th class="whitespace-nowrap px-4 pt-3 pb-1.5" title="Tanggal berkas fisik diterima Finance — berbeda dari Tgl. Diterima (tagihan supplier masuk). Hanya Dept Finance yang boleh mengisi.">Berkas Diterima<br>Finance</th>
                     </tr>
                     <!-- Filter checklist per-kolom (dropdown daftar nilai yang ada) -->
                     <tr class="border-b border-neutral-200 dark:border-neutral-700">
@@ -259,6 +272,7 @@ watch(filtered, () => nextTick(measure));
                         <th class="px-3 pb-2"><ColumnFilter v-model="col.sisa" :options="optSisa" align="right" /></th>
                         <th class="px-3 pb-2"><ColumnFilter v-model="col.status" :options="optStatus" /></th>
                         <th class="px-3 pb-2"><ColumnFilter v-model="col.berkas" :options="optBerkas" /></th>
+                        <th class="px-3 pb-2"><ColumnFilter v-model="col.berkasFinance" :options="optBerkasFinance" /></th>
                     </tr>
                 </thead>
                 <tbody class="divide-y divide-neutral-200 dark:divide-neutral-800">
@@ -273,6 +287,13 @@ watch(filtered, () => nextTick(measure));
                         <td class="whitespace-nowrap px-4 py-2.5 text-right font-mono" :class="r.sisa > 0 ? 'text-danger-600' : 'text-neutral-400'">{{ fmtRp(r.sisa) }}</td>
                         <td class="px-4 py-2.5 text-center"><Badge :variant="r.status === 'paid' ? 'success' : 'warning'" size="sm">{{ statusLabel(r.status) }}</Badge></td>
                         <td class="px-4 py-2.5 text-neutral-500"><span class="block max-w-[200px] truncate" :title="r.berkas_notes ?? ''">{{ r.berkas_notes || '—' }}</span></td>
+                        <!-- .stop: mengisi tanggal tidak boleh ikut membuka rincian invoice -->
+                        <td class="whitespace-nowrap px-4 py-2.5" @click.stop>
+                            <input v-if="canBerkasFinance" :value="r.berkas_finance_date ?? ''" @change="saveBerkasFinance(r, $event)" type="date"
+                                class="h-8 rounded border border-neutral-300 bg-white px-2 text-xs dark:border-neutral-700 dark:bg-neutral-900"
+                                title="Tanggal berkas fisik diterima Finance" />
+                            <span v-else :title="r.berkas_finance_date ? '' : 'Hanya Dept Finance yang boleh mengisi tanggal ini.'">{{ dBerkasFinance(r) }}</span>
+                        </td>
                     </tr>
                 </tbody>
             </table>
