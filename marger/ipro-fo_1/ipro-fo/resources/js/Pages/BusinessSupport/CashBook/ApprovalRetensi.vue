@@ -224,6 +224,7 @@ const hSelCls = 'h-7 w-52 rounded border border-neutral-300 bg-white px-2 text-x
         <div>
             <h1 class="flex items-center gap-2 text-2xl font-bold"><Landmark class="h-6 w-6 text-primary-600" /> Approval Retensi</h1>
             <p class="text-sm text-neutral-500">Retensi <b>dan pencairan</b> dari Proses KPR. Setiap input pencairan otomatis masuk sebagai baris <span class="font-medium text-sky-600">Pencairan</span> (net = pencairan − retensi); retensi ditahan sebagai baris <span class="font-medium text-amber-600">Retensi</span>. Akun Debit (Bank akad) &amp; split Kredit (Uang Muka Penjualan + PPN Keluaran 11%) terisi otomatis — periksa/ubah lalu setujui. Jurnal GL otomatis terposting.</p>
+            <p class="text-sm text-neutral-500">DAJAM yang masih <span class="font-medium text-amber-600">held</span> belum tampil di sini — uangnya masih ditahan. Baris DAJAM baru muncul setelah di-<b>Release</b> pada Proses KPR (sebagian maupun penuh).</p>
         </div>
 
         <div class="flex items-center justify-between">
