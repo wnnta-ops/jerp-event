@@ -88,6 +88,7 @@ use App\Http\Controllers\Web\BusinessSupport\Cogs\CogsRealizationController as B
 use App\Http\Controllers\Web\BusinessSupport\Cogs\CogsHppController as BsCogsHppController;
 use App\Http\Controllers\Web\BusinessSupport\Cogs\CogsQueryController as BsCogsQueryController;
 use App\Http\Controllers\Web\BusinessSupport\Revenue\BookedRevenueController as BsBookedRevenueController;
+use App\Http\Controllers\Web\BusinessSupport\Revenue\SalesInvoiceController as BsSalesInvoiceController;
 use App\Http\Controllers\Web\BusinessSupport\Gl\CashFlowController as BsCashFlowController;
 use App\Http\Controllers\Web\BusinessSupport\Gl\ComparativeReportController as BsComparativeController;
 use App\Http\Controllers\Web\BusinessSupport\Hrd\EmployeeController as BsEmployeeController;
@@ -1007,6 +1008,11 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
     // Report / Query: rekap keseluruhan Booked Revenue per unit (BAST/AJB/Retensi/UTJ&DP/Faktur Pajak). Path terpisah agar tidak tertangkap wildcard {bookedRevenue}.
     Route::get('/business-support/booked-revenue-report',        [BsBookedRevenueController::class, 'report'])->name('bs.booked-revenue.report');
     Route::get('/business-support/booked-revenue-report/export', [BsBookedRevenueController::class, 'reportExport'])->name('bs.booked-revenue.report.export');
+    // Invoice Penjualan — cetak massal dari rincian yang sudah Booked Revenue. Prefix TERPISAH
+    // (bukan di bawah /booked-revenue/) agar tidak tertangkap wildcard {bookedRevenue} di atas.
+    Route::get('/business-support/invoice-penjualan',            [BsSalesInvoiceController::class, 'index'])->name('bs.sales-invoice.index');
+    Route::get('/business-support/invoice-penjualan/print-bulk', [BsSalesInvoiceController::class, 'printBulk'])->name('bs.sales-invoice.print-bulk'); // HARUS di atas /{bookedRevenue}
+    Route::get('/business-support/invoice-penjualan/{bookedRevenue}', [BsSalesInvoiceController::class, 'print'])->name('bs.sales-invoice.print');
 
     // ── CONTRACTOR MANAGEMENT (modul mandiri; /contractor-management → hub) ──
     Route::redirect('/contractor-management', '/business-support/contractor-hub')->name('contractor.home');
