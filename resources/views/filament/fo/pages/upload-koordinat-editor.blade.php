@@ -99,6 +99,7 @@
                             activeUnitId: null,
                             blocks: payload.blocks || [],
                             blockMode: false,
+                            shiftMode: false,   // Geser Semua: seret peta → translate semua polygon+blok
                             activeBlockId: null,
                             blockLayers: {},
                             search: '',
@@ -132,12 +133,19 @@
                                 var el = document.getElementById('pe-map');
                                 if (! el) return;
 
+                                // Idempoten — kalau balik dari menu lain & map lama masih menempel di elemen,
+                                // hapus dulu. Kalau tidak, L.map() melempar "Map container is already initialized"
+                                // → this.map gagal terisi → SEMUA tombol toolbar (Geser Semua dll.) mati.
+                                if (window.__peMap) { try { window.__peMap.remove(); } catch (e) {} window.__peMap = null; }
+                                if (el._leaflet_id) { try { el._leaflet_id = null; el.innerHTML = ''; } catch (e) {} }
+
                                 this.map = L.map(el, {
                                     crs: L.CRS.Simple,
                                     minZoom: -4, maxZoom: 4,
                                     zoomSnap: 0.25,
                                     attributionControl: false,
                                 });
+                                window.__peMap = this.map;
                                 L.imageOverlay(this.project.imageUrl, bounds).addTo(this.map);
                                 this.map.fitBounds(bounds);
 
@@ -224,10 +232,12 @@
                                     permanent: true, direction: 'center', className: 'pe-label',
                                 });
                                 poly.on('click', function (e) {
+                                    if (self.shiftMode) return;                                // mode Geser Semua → biar peta yg tangani
                                     if (e.originalEvent && e.originalEvent.altKey) return; // Alt = salin-seret, jangan ganti unit aktif
                                     self.selectUnit(unitId);
                                 });
                                 poly.on('mousedown', function (e) {
+                                    if (self.shiftMode) return;
                                     if (! e.originalEvent || ! e.originalEvent.altKey) return;
                                     L.DomEvent.stop(e);
                                     self.startAltCopyDrag(poly, e.latlng);
@@ -377,7 +387,7 @@
                                 if (poly._blockLabel) {
                                     poly.bindTooltip(poly._blockLabel, { permanent: true, direction: 'center', className: 'pe-block-label' });
                                 }
-                                poly.on('click', function () { self.selectBlock(block.id); });
+                                poly.on('click', function () { if (self.shiftMode) return; self.selectBlock(block.id); });
                                 if (poly.pm) {
                                     var sync = function () { var tt = poly.getTooltip(); if (tt) tt.setLatLng(poly.getBounds().getCenter()); };
                                     poly.on('pm:edit',    function () { self.persistBlock(poly); sync(); });
@@ -441,6 +451,93 @@
                                 this.$wire.deleteBlock(id);
                                 this.activeBlockId = null;
                             },
+
+                            // ── GESER SEMUA — untuk gambar siteplan yang berubah: geser/skala SEMUA
+                            //    polygon unit + blok sekaligus (tak perlu gambar ulang). Auto-save saat OFF.
+                            allShiftLayers() {
+                                var self = this;
+                                return Object.keys(this.polygons).map(function (id) { return self.polygons[id]; })
+                                    .concat(Object.keys(this.blockLayers).map(function (id) { return self.blockLayers[id]; }));
+                            },
+
+                            toggleShiftMode() {
+                                if (! this.map) return;   // map belum siap → jangan error
+                                this.shiftMode = ! this.shiftMode;
+                                if (this.shiftMode) {
+                                    this.blockMode = false;
+                                    this.deselectBlock();
+                                    this.activeUnitId = null;
+                                    this.cancelPaste();
+                                    // Matikan SEMUA mode Geoman + edit vertex per-layer → drag bersih, tak bentrok.
+                                    if (this.map.pm) { try { this.map.pm.disableGlobalEditMode(); this.map.pm.disableGlobalDragMode(); this.map.pm.disableGlobalRemovalMode(); this.map.pm.disableDraw(); } catch (e) {} }
+                                    this.allShiftLayers().forEach(function (l) { if (l.pm && l.pm.disable) { try { l.pm.disable(); } catch (e) {} } });
+                                    this.enableShiftDrag();
+                                } else {
+                                    this.disableShiftDrag();
+                                    this.saveAll();   // simpan hasil geser saat mode dimatikan
+                                }
+                            },
+
+                            translateAll(dLat, dLng) {
+                                this.allShiftLayers().forEach(function (layer) {
+                                    layer.setLatLngs(layer.getLatLngs()[0].map(function (ll) { return [ll.lat + dLat, ll.lng + dLng]; }));
+                                    var tt = layer.getTooltip(); if (tt) { try { tt.setLatLng(layer.getBounds().getCenter()); } catch (e) {} }
+                                });
+                            },
+
+                            scaleAll(factor) {
+                                var cLat = this.project.height / 2, cLng = this.project.width / 2;   // pusat gambar (ruang latlng)
+                                this.allShiftLayers().forEach(function (layer) {
+                                    layer.setLatLngs(layer.getLatLngs()[0].map(function (ll) {
+                                        return [cLat + (ll.lat - cLat) * factor, cLng + (ll.lng - cLng) * factor];
+                                    }));
+                                    var tt = layer.getTooltip(); if (tt) { try { tt.setLatLng(layer.getBounds().getCenter()); } catch (e) {} }
+                                });
+                            },
+
+                            nudge(dir) {
+                                var s = 5;
+                                if (dir === 'left')  this.translateAll(0, -s);
+                                if (dir === 'right') this.translateAll(0,  s);
+                                if (dir === 'up')    this.translateAll( s, 0);
+                                if (dir === 'down')  this.translateAll(-s, 0);
+                            },
+
+                            // Drag via event DOM pada container peta → tetap tertangkap walau kursor di atas
+                            // polygon (event menggelembung ke container), tak seperti map.on('mousedown').
+                            enableShiftDrag() {
+                                var self = this;
+                                this.map.dragging.disable();
+                                var el = this.map.getContainer();
+                                el.style.cursor = 'move';
+                                this._sDown = function (ev) {
+                                    if (ev.button !== 0) return;
+                                    self._sLast = self.map.mouseEventToLatLng(ev);
+                                    self._sDragging = true;
+                                    ev.preventDefault();
+                                };
+                                this._sMove = function (ev) {
+                                    if (! self._sDragging || ! self._sLast) return;
+                                    var cur = self.map.mouseEventToLatLng(ev);
+                                    self.translateAll(cur.lat - self._sLast.lat, cur.lng - self._sLast.lng);
+                                    self._sLast = cur;
+                                };
+                                this._sUp = function () { self._sDragging = false; self._sLast = null; };
+                                el.addEventListener('mousedown', this._sDown);
+                                window.addEventListener('mousemove', this._sMove);
+                                window.addEventListener('mouseup', this._sUp);
+                            },
+
+                            disableShiftDrag() {
+                                if (! this.map) return;
+                                try { this.map.dragging.enable(); } catch (e) {}
+                                var el = this.map.getContainer();
+                                el.style.cursor = '';
+                                el.removeEventListener('mousedown', this._sDown);
+                                window.removeEventListener('mousemove', this._sMove);
+                                window.removeEventListener('mouseup', this._sUp);
+                                this._sDragging = false; this._sLast = null;
+                            },
                         };
             };
 
@@ -500,6 +597,23 @@
                         x-show="activeBlockId" @click="removeBlock()">Hapus Blok</button>
                 <button type="button" class="text-xs px-3 py-1 rounded bg-gray-500 text-white hover:bg-gray-600"
                         x-show="activeBlockId" @click="deselectBlock()">Selesai Edit Blok</button>
+
+                <span style="width:1px;height:18px;background:#cbd5e1;display:inline-block;"></span>
+                {{-- Geser Semua: kalau gambar siteplan berubah, geser/skala semua polygon sekaligus (tak perlu gambar ulang). --}}
+                <button type="button"
+                        class="text-xs px-3 py-1 rounded"
+                        :class="shiftMode ? 'bg-purple-700 text-white' : 'bg-purple-100 text-purple-800 hover:bg-purple-200'"
+                        @click="toggleShiftMode()"
+                        x-text="shiftMode ? '⇹ Geser Semua: ON — seret peta' : '⇹ Geser Semua'"></button>
+                <span x-show="shiftMode" style="display:inline-flex;gap:4px;align-items:center;">
+                    <span class="pe-pill amber">Seret peta = geser semua • Simpan otomatis saat OFF</span>
+                    <button type="button" class="text-xs px-2 py-1 rounded bg-gray-200 text-gray-700 hover:bg-gray-300" @click="nudge('left')"  title="Geser kiri">◄</button>
+                    <button type="button" class="text-xs px-2 py-1 rounded bg-gray-200 text-gray-700 hover:bg-gray-300" @click="nudge('right')" title="Geser kanan">►</button>
+                    <button type="button" class="text-xs px-2 py-1 rounded bg-gray-200 text-gray-700 hover:bg-gray-300" @click="nudge('up')"    title="Geser atas">▲</button>
+                    <button type="button" class="text-xs px-2 py-1 rounded bg-gray-200 text-gray-700 hover:bg-gray-300" @click="nudge('down')"  title="Geser bawah">▼</button>
+                    <button type="button" class="text-xs px-2 py-1 rounded bg-gray-200 text-gray-700 hover:bg-gray-300" @click="scaleAll(1.03)" title="Perbesar semua">＋</button>
+                    <button type="button" class="text-xs px-2 py-1 rounded bg-gray-200 text-gray-700 hover:bg-gray-300" @click="scaleAll(0.97)" title="Perkecil semua">－</button>
+                </span>
             </div>
 
             <div class="pe-grid">

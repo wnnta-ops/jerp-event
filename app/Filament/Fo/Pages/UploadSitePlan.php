@@ -10,7 +10,6 @@ use Filament\Forms\Contracts\HasForms;
 use Filament\Forms\Form;
 use Filament\Notifications\Notification;
 use Filament\Pages\Page;
-use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\HtmlString;
 
 class UploadSitePlan extends Page implements HasForms
@@ -35,14 +34,29 @@ class UploadSitePlan extends Page implements HasForms
 
     public function mount(): void
     {
+        // Setelah Ganti/Hapus gambar via upload langsung, controller redirect dgn ?lok=ID →
+        // pilih otomatis cluster tsb agar Preview langsung tampil gambar terbaru.
+        $l = ($lok = (int) request()->query('lok')) ? Lokasi::find($lok) : null;
+        if ($l) {
+            $this->form->fill([
+                'project_id'           => $l->project_id,
+                'lokasi_id'            => $l->id,
+                'siteplan_show_info'   => $l->resolvedShowInfo(),
+                'siteplan_show_status' => $l->resolvedShowStatus(),
+                'width'                => $l->siteplan_width,
+                'height'               => $l->siteplan_height,
+            ]);
+
+            return;
+        }
         $this->form->fill();
     }
 
     public function form(Form $form): Form
     {
         return $form->statePath('data')->schema([
-            Forms\Components\Section::make('Upload Gambar Site Plan (per Cluster / Lokasi)')
-                ->description('Tiap Cluster (Lokasi) punya siteplan sendiri. Kosong → otomatis pakai gambar project sebagai fallback. Format PNG/JPG, maks 10 MB, resolusi ≥ 2000×1200. Setelah ganti gambar cluster, gambar ulang koordinat unit di Polygon Editor.')
+            Forms\Components\Section::make('Cluster & Dimensi Site Plan')
+                ->description('Pilih Cluster untuk atur dimensi & tampilan. Untuk mengganti/menghapus gambar, pakai tombol "Edit Gambar Site Plan" di atas. Setelah gambar berubah, sesuaikan koordinat di Polygon Editor — kalau layout sama cukup "Geser Semua" (tak perlu gambar ulang).')
                 ->columns(2)
                 ->schema([
                     Forms\Components\Select::make('project_id')
@@ -64,13 +78,6 @@ class UploadSitePlan extends Page implements HasForms
                             $set('width', $l?->siteplan_width);
                             $set('height', $l?->siteplan_height);
                         }),
-                    Forms\Components\FileUpload::make('file')
-                        ->label('Gambar Site Plan Cluster')
-                        ->image()->imagePreviewHeight('300')
-                        ->disk('public')->directory('siteplans')
-                        ->visibility('public')
-                        ->maxSize(10240)
-                        ->helperText('Kosongkan kalau hanya ingin ubah setelan tampilan (tanpa ganti gambar).'),
                     Forms\Components\Grid::make(2)->schema([
                         Forms\Components\TextInput::make('width')->label('Lebar (px)')->numeric()
                             ->helperText('Resolusi asli untuk koordinat. Auto-detect dari gambar kalau kosong.'),
@@ -117,64 +124,28 @@ class UploadSitePlan extends Page implements HasForms
         );
     }
 
-    /** Simpan setelan tampilan (toggle Informasi/Status) ke Cluster (Lokasi) terpilih. */
-    public function saveDisplay(): void
-    {
-        $lokasiId = $this->data['lokasi_id'] ?? null;
-        if (! $lokasiId) {
-            Notification::make()->warning()->title('Pilih Cluster dulu')->send();
-
-            return;
-        }
-
-        Lokasi::whereKey($lokasiId)->update([
-            'siteplan_show_info' => (bool) ($this->data['siteplan_show_info'] ?? true),
-            'siteplan_show_status' => (bool) ($this->data['siteplan_show_status'] ?? true),
-        ]);
-
-        Notification::make()->success()
-            ->title('Setelan tampilan disimpan')
-            ->body('Refresh /siteplan untuk melihat perubahan.')
-            ->send();
-    }
-
+    /** Simpan DIMENSI + setelan tampilan cluster. Ganti/hapus GAMBAR lewat tombol "Edit Gambar Site Plan" (SitePlanImageController). */
     public function submit(): void
     {
         $data = $this->form->getState();
         $lokasi = Lokasi::findOrFail($data['lokasi_id']);
 
-        $payload = [
-            'siteplan_show_info' => (bool) ($data['siteplan_show_info'] ?? true),
+        $lokasi->update([
+            'siteplan_show_info'   => (bool) ($data['siteplan_show_info'] ?? true),
             'siteplan_show_status' => (bool) ($data['siteplan_show_status'] ?? true),
-        ];
+            'siteplan_width'       => $data['width'] ?: $lokasi->siteplan_width,
+            'siteplan_height'      => $data['height'] ?: $lokasi->siteplan_height,
+        ]);
 
-        if (! empty($data['file'])) {
-            // Ganti gambar cluster (hapus gambar lama milik cluster ini saja).
-            if ($lokasi->siteplan_image_path && Storage::disk('public')->exists($lokasi->siteplan_image_path)) {
-                Storage::disk('public')->delete($lokasi->siteplan_image_path);
-            }
+        Notification::make()->title('Dimensi & setelan cluster disimpan')->success()->send();
 
-            $w = $data['width'] ?: null;
-            $h = $data['height'] ?: null;
-            if ((! $w || ! $h) && function_exists('getimagesize')) {
-                $size = @getimagesize(Storage::disk('public')->path($data['file']));
-                if ($size) {
-                    $w = $w ?: $size[0];
-                    $h = $h ?: $size[1];
-                }
-            }
-
-            $payload += ['siteplan_image_path' => $data['file'], 'siteplan_width' => $w, 'siteplan_height' => $h];
-            $lokasi->update($payload);
-
-            Notification::make()->title('Site plan cluster diupload')
-                ->body($lokasi->nama.' — '.($w ? $w.'×'.$h : 'dimensi belum di-set').'. Gambar ulang koordinat di Polygon Editor.')
-                ->success()->send();
-        } else {
-            $lokasi->update($payload);
-            Notification::make()->title('Setelan cluster disimpan')->success()->send();
-        }
-
-        $this->form->fill(['project_id' => $lokasi->project_id, 'lokasi_id' => $lokasi->id]);
+        $this->form->fill([
+            'project_id'           => $lokasi->project_id,
+            'lokasi_id'            => $lokasi->id,
+            'siteplan_show_info'   => $lokasi->resolvedShowInfo(),
+            'siteplan_show_status' => $lokasi->resolvedShowStatus(),
+            'width'                => $lokasi->siteplan_width,
+            'height'               => $lokasi->siteplan_height,
+        ]);
     }
 }
