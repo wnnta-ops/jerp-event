@@ -30,6 +30,8 @@ return new class extends Migration
             $t->decimal('accumulated_depreciation', 20, 2)->default(0);
             $t->date('last_depreciation_date')->nullable();
             $t->string('status', 16)->default('active');         // active / fully_depreciated / disposed
+            // Catatan: 16 ternyata kurang 1 karakter untuk 'fully_depreciated' (17) —
+            // diperlebar ke 24 oleh 2026_07_16_150000_widen_fixed_asset_status.
             $t->unsignedBigInteger('acquire_journal_id')->nullable();
             $t->unsignedBigInteger('created_by')->nullable();
             $t->timestamps();

@@ -19,6 +19,27 @@ return [
         'signer_title' => env('COMPANY_SIGNER_TITLE', 'Direktur'),
     ],
 
+    /**
+     * Invoice Penjualan (Sales Invoice) — identitas penjual & penanda tangan pada cetakan.
+     *
+     * SENGAJA terpisah dari 'company' di atas: identitas pada template invoice resmi berbeda dengan
+     * yang dipakai dokumen lain (company.npwp masih placeholder '00.000.000.0-000.000', dan
+     * penanda tangannya Direktur, bukan Manager Finance). Memakai blok sendiri agar invoice benar
+     * TANPA diam-diam mengubah kop dokumen lain (SPT/e-Faktur, Bukti Kas/Bank, Bon Sementara).
+     *
+     * Nilai default diambil dari template resmi "Invoice Penjualan.xlsx".
+     */
+    'sales_invoice' => [
+        'seller_name'    => env('INVOICE_SELLER_NAME', 'PT. Mitra Usaha Propertindo'),
+        'seller_address' => env('INVOICE_SELLER_ADDRESS', 'Ruko Avenue No. 27-30, Kahuripan Nirwana, Sidoarjo'),
+        'seller_npwp'    => env('INVOICE_SELLER_NPWP', '65.507.877.2-603.001'),
+        'signer_name'    => env('INVOICE_SIGNER_NAME', 'Prawanita Sari'),
+        'signer_title'   => env('INVOICE_SIGNER_TITLE', 'Manager Finance'),
+        // PPN 12% atas DPP Nilai Lain (11/12 dari harga nett) — aturan PPN 2025.
+        // Tarif efektifnya tetap 11%, persis seperti rumus di template.
+        'ppn_pct'        => (float) env('INVOICE_PPN_PCT', 12),
+    ],
+
     // Jurnal GL: status default saat posting otomatis dari modul lain.
     //  'final'  → semua sumber ANTRE approval (baru efektif di GL setelah di-approve batch di Approval Jurnal) — sesuai legacy.
     //  'posted' → langsung efektif (perilaku lama). Jurnal Memorial manual TETAP mulai 'draft' (Baru) apa pun nilainya.
@@ -70,10 +91,21 @@ return [
         'tanah'      => ['asset' => '10201010101', 'accum' => null, 'expense' => null],
     ],
 
-    /** Pelepasan aset (penghapusan / penjualan) & saldo awal akumulasi penyusutan. */
+    /**
+     * Pelepasan aset (penjualan / penghapusan) & saldo awal akumulasi penyusutan.
+     *
+     * Rugi PENJUALAN & rugi PENGHAPUSAN sengaja dipisah ke dua akun: keduanya peristiwa
+     * berbeda dan perlu terbaca terpisah di Laba Rugi.
+     *
+     * Kode lama 'gain' => 40201010102 & 'loss' => 50302020230 DIGANTI: 40201010102 tidak pernah
+     * ada di COA (jual untung selalu gagal FA_NO_GAIN_ACCOUNT), dan 50302020230 ternyata milik
+     * "BIAYA PENYUSUTAN AT BANGUNAN TIDAK PERMANEN" — rugi pelepasan diam-diam masuk akun beban
+     * penyusutan. Lihat migrasi 2026_07_16_140000_coa_laba_rugi_aset_tetap.
+     */
     'fixed_asset_disposal' => [
-        'gain'           => '40201010102', // LABA PENJUALAN ASET TETAP (income)
-        'loss'           => '50302020230', // RUGI PENJUALAN/PENGHAPUSAN ASET TETAP (expense)
+        'gain'           => '60101010104', // LABA PENJUALAN ASET TETAP (income) — jual > nilai buku
+        'loss_sale'      => '70101010114', // RUGI PENJUALAN ASET TETAP (expense) — jual < nilai buku
+        'loss_disposal'  => '70101010115', // RUGI PENGHAPUSAN ASET TETAP (expense) — hapus tanpa hasil jual
         'opening_offset' => '80101010101', // LABA RUGI DITAHAN (lawan saldo awal akumulasi penyusutan)
     ],
 

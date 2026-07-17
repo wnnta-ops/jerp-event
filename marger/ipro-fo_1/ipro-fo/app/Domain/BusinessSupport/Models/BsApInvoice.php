@@ -19,12 +19,12 @@ class BsApInvoice extends Model
         'tenant_id', 'invoice_number', 'invoice_date', 'receive_date', 'due_date', 'term_days', 'supplier_id',
         'unit_id', 'customer_id',
         'category_id', 'supplier_invoice_no', 'tax_invoice_no', 'manual_no', 'trx_type', 'source_type', 'source_id', 'refund_source',
-        'expense_account_id', 'payable_account_id', 'description', 'berkas_notes', 'transfer_detail', 'kurs',
+        'expense_account_id', 'payable_account_id', 'description', 'berkas_notes', 'berkas_finance_date', 'transfer_detail', 'kurs',
         'dpp', 'ppn_pct', 'ppn_amount', 'ppn_base', 'ppn_mode', 'pph_mode', 'pph_type', 'pph_pct', 'pph_base', 'pph_amount', 'pph_account_id',
         'total', 'net_payable', 'paid_amount', 'status', 'journal_id', 'created_by',
     ];
     protected $casts = [
-        'invoice_date' => 'date', 'receive_date' => 'date', 'due_date' => 'date', 'term_days' => 'integer',
+        'invoice_date' => 'date', 'receive_date' => 'date', 'due_date' => 'date', 'berkas_finance_date' => 'date', 'term_days' => 'integer',
         'kurs' => 'decimal:4',
         'dpp' => 'decimal:2', 'ppn_pct' => 'decimal:2', 'ppn_amount' => 'decimal:2', 'ppn_base' => 'decimal:2',
         'pph_pct' => 'decimal:2', 'pph_base' => 'decimal:2', 'pph_amount' => 'decimal:2',

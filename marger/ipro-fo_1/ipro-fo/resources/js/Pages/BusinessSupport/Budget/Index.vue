@@ -1,10 +1,11 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue';
+import { ref, reactive, computed, watch } from 'vue';
 import { router, useForm, Link } from '@inertiajs/vue3';
-import { Plus, Pencil, Trash2, ArrowLeft, PieChart, Send, Check, X, Shuffle, Upload, FileSpreadsheet } from 'lucide-vue-next';
+import { Plus, Pencil, Trash2, ArrowLeft, PieChart, Send, Check, X, Shuffle, Upload, FileSpreadsheet, Search, FilterX } from 'lucide-vue-next';
 import Button from '@/Components/UI/Button.vue';
 import Badge from '@/Components/UI/Badge.vue';
 import EmptyState from '@/Components/UI/EmptyState.vue';
+import ColumnFilter from '@/Components/UI/ColumnFilter.vue';
 
 const props = defineProps<{
     year: number;
@@ -55,6 +56,75 @@ function destroy(b: any) { if (confirm('Hapus anggaran ini?')) router.delete(rou
 const statusBadge: Record<string, any> = { aman: 'success', warning: 'warning', over: 'danger', na: 'neutral' };
 const barColor: Record<string, string> = { aman: 'bg-success-500', warning: 'bg-amber-500', over: 'bg-danger-500', na: 'bg-neutral-300' };
 const inputCls = 'h-9 w-full rounded-lg border border-neutral-300 bg-white px-3 text-sm dark:border-neutral-700 dark:bg-neutral-900';
+
+// ── Filter per kolom (mengikuti pola Account Payable) ────────────────────────────
+// Nilai tampilan per-kolom — dipakai untuk render, opsi filter, & pencocokan filter
+// agar yang difilter selalu SAMA PERSIS dengan yang terbaca di layar.
+const dNo = (b: any) => b.doc_no ?? '—';
+const dAkun = (b: any) => b.account ?? '';
+const dCc = (b: any) => b.cost_center ?? '';
+const dStatus = (b: any) => props.statuses[b.wf_status] ?? b.wf_status ?? '';
+const dAnggaran = (b: any) => fmtRp(b.amount);
+const dRealisasi = (b: any) => fmtRp(b.realisasi);
+const dSisa = (b: any) => fmtRp(b.sisa);
+const dTerpakai = (b: any) => b.percent + '%';
+
+function distinct(fn: (b: any) => string) {
+    const s = new Set<string>();
+    for (const b of props.budgets) s.add(fn(b));
+    return [...s].sort((a, b) => a.localeCompare(b, 'id', { numeric: true }));
+}
+const optNo = computed(() => distinct(dNo));
+const optAkun = computed(() => distinct(dAkun));
+const optCc = computed(() => distinct(dCc));
+const optStatus = computed(() => distinct(dStatus));
+const optAnggaran = computed(() => distinct(dAnggaran));
+const optRealisasi = computed(() => distinct(dRealisasi));
+const optSisa = computed(() => distinct(dSisa));
+const optTerpakai = computed(() => distinct(dTerpakai));
+
+// Filter global (ketik) + checklist per-kolom (kosong = tampilkan semua). Semua di sisi klien.
+const search = ref('');
+const col = reactive<Record<string, string[]>>({ no: [], akun: [], cc: [], status: [], anggaran: [], realisasi: [], sisa: [], terpakai: [] });
+const hasFilter = computed(() => Boolean(search.value) || Object.values(col).some((a) => a.length));
+function resetFilter() { search.value = ''; Object.keys(col).forEach((k) => (col[k] = [])); }
+
+const filtered = computed<any[]>(() => props.budgets.filter((b) => {
+    if (search.value) {
+        const q = search.value.toLowerCase();
+        const hay = [dNo(b), dAkun(b), dCc(b), dStatus(b), dAnggaran(b), dRealisasi(b), dSisa(b), dTerpakai(b)].join(' ').toLowerCase();
+        if (!hay.includes(q)) return false;
+    }
+    if (col.no.length && !col.no.includes(dNo(b))) return false;
+    if (col.akun.length && !col.akun.includes(dAkun(b))) return false;
+    if (col.cc.length && !col.cc.includes(dCc(b))) return false;
+    if (col.status.length && !col.status.includes(dStatus(b))) return false;
+    if (col.anggaran.length && !col.anggaran.includes(dAnggaran(b))) return false;
+    if (col.realisasi.length && !col.realisasi.includes(dRealisasi(b))) return false;
+    if (col.sisa.length && !col.sisa.includes(dSisa(b))) return false;
+    if (col.terpakai.length && !col.terpakai.includes(dTerpakai(b))) return false;
+    return true;
+}));
+
+// Kartu ringkasan mengikuti hasil filter agar angka atas cocok dgn baris yang tampil.
+// Tanpa filter hasilnya identik dgn props.summary (sumber & rumusnya sama).
+const view = computed(() => {
+    const amount = filtered.value.reduce((s, b) => s + Number(b.amount || 0), 0);
+    const realisasi = filtered.value.reduce((s, b) => s + Number(b.realisasi || 0), 0);
+    return {
+        amount, realisasi, sisa: amount - realisasi,
+        approved: filtered.value.filter((b) => b.wf_status === 'approved').reduce((s, b) => s + Number(b.amount || 0), 0),
+    };
+});
+
+// Data berubah (mis. ganti tahun/status) → buang nilai filter yang sudah tak ada,
+// supaya tabel tidak diam-diam kosong karena filter lama yang tak lagi relevan.
+watch([optNo, optAkun, optCc, optStatus, optAnggaran, optRealisasi, optSisa, optTerpakai], () => {
+    const prune = (sel: string[], opts: string[]) => { const s = new Set(opts); return sel.filter((v) => s.has(v)); };
+    col.no = prune(col.no, optNo.value); col.akun = prune(col.akun, optAkun.value); col.cc = prune(col.cc, optCc.value);
+    col.status = prune(col.status, optStatus.value); col.anggaran = prune(col.anggaran, optAnggaran.value);
+    col.realisasi = prune(col.realisasi, optRealisasi.value); col.sisa = prune(col.sisa, optSisa.value); col.terpakai = prune(col.terpakai, optTerpakai.value);
+});
 </script>
 <template>
     <div class="space-y-4">
@@ -72,10 +142,10 @@ const inputCls = 'h-9 w-full rounded-lg border border-neutral-300 bg-white px-3 
         </div>
 
         <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            <div class="card p-4"><div class="text-xs uppercase text-neutral-400">Total Anggaran {{ year }}</div><div class="mt-1 text-lg font-bold">{{ fmtRp(summary.amount) }}</div></div>
-            <div class="card p-4"><div class="text-xs uppercase text-neutral-400">Disetujui</div><div class="mt-1 text-lg font-bold text-success-700">{{ fmtRp(summary.approved) }}</div></div>
-            <div class="card p-4"><div class="text-xs uppercase text-neutral-400">Realisasi</div><div class="mt-1 text-lg font-bold text-primary-600">{{ fmtRp(summary.realisasi) }}</div></div>
-            <div class="card p-4"><div class="text-xs uppercase text-neutral-400">Sisa Anggaran</div><div class="mt-1 text-lg font-bold" :class="summary.sisa >= 0 ? 'text-success-700' : 'text-danger-600'">{{ fmtRp(summary.sisa) }}</div></div>
+            <div class="card p-4"><div class="text-xs uppercase text-neutral-400">Total Anggaran {{ year }}<span v-if="hasFilter" class="ml-1 normal-case text-[10px] text-primary-500">(sesuai filter)</span></div><div class="mt-1 text-lg font-bold">{{ fmtRp(view.amount) }}</div></div>
+            <div class="card p-4"><div class="text-xs uppercase text-neutral-400">Disetujui<span v-if="hasFilter" class="ml-1 normal-case text-[10px] text-primary-500">(sesuai filter)</span></div><div class="mt-1 text-lg font-bold text-success-700">{{ fmtRp(view.approved) }}</div></div>
+            <div class="card p-4"><div class="text-xs uppercase text-neutral-400">Realisasi<span v-if="hasFilter" class="ml-1 normal-case text-[10px] text-primary-500">(sesuai filter)</span></div><div class="mt-1 text-lg font-bold text-primary-600">{{ fmtRp(view.realisasi) }}</div></div>
+            <div class="card p-4"><div class="text-xs uppercase text-neutral-400">Sisa Anggaran<span v-if="hasFilter" class="ml-1 normal-case text-[10px] text-primary-500">(sesuai filter)</span></div><div class="mt-1 text-lg font-bold" :class="view.sisa >= 0 ? 'text-success-700' : 'text-danger-600'">{{ fmtRp(view.sisa) }}</div></div>
         </div>
 
         <!-- Gate approval: yang belum di-approve tidak tampil di daftar (default "Disetujui"). -->
@@ -84,13 +154,36 @@ const inputCls = 'h-9 w-full rounded-lg border border-neutral-300 bg-white px-3 
             <span class="font-semibold underline">Buka Approval Budget →</span>
         </Link>
 
+        <!-- Pencarian ketik (semua kolom) + reset filter kolom -->
+        <div class="flex flex-wrap items-center gap-2">
+            <div class="relative min-w-[240px] flex-1 sm:max-w-xs">
+                <Search class="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-neutral-400" />
+                <input v-model="search" type="text" placeholder="Cari semua kolom…" class="h-9 w-full rounded-lg border border-neutral-300 bg-white pl-8 pr-3 text-sm dark:border-neutral-700 dark:bg-neutral-900" />
+            </div>
+            <p class="text-xs text-neutral-500">{{ filtered.length }} dari {{ budgets.length }} anggaran</p>
+            <button v-if="hasFilter" type="button" @click="resetFilter" class="ml-auto inline-flex h-9 items-center gap-1.5 rounded-lg border border-neutral-300 px-3 text-sm font-medium text-neutral-600 hover:bg-neutral-50 dark:border-neutral-700 dark:text-neutral-300"><FilterX class="h-4 w-4" /> Reset filter</button>
+        </div>
+
         <div class="card overflow-x-auto">
             <table class="w-full text-sm">
-                <thead class="bg-neutral-50 dark:bg-neutral-800"><tr class="text-left text-xs uppercase text-neutral-500">
-                    <th class="px-4 py-3">No. Budget</th><th class="px-4 py-3">Akun</th><th class="px-4 py-3">Cost Center</th><th class="px-4 py-3 text-center">Status</th><th class="px-4 py-3 text-right">Anggaran</th><th class="px-4 py-3 text-right">Realisasi</th><th class="px-4 py-3 text-right">Sisa</th><th class="px-4 py-3 w-40">Terpakai</th><th class="px-4 py-3 text-right">Aksi</th>
-                </tr></thead>
+                <thead class="bg-neutral-50 dark:bg-neutral-800">
+                    <tr class="text-left text-xs uppercase text-neutral-500">
+                        <th class="px-4 pb-1.5 pt-3">No. Budget</th><th class="px-4 pb-1.5 pt-3">Akun</th><th class="px-4 pb-1.5 pt-3">Cost Center</th><th class="px-4 pb-1.5 pt-3 text-center">Status</th><th class="px-4 pb-1.5 pt-3 text-right">Anggaran</th><th class="px-4 pb-1.5 pt-3 text-right">Realisasi</th><th class="px-4 pb-1.5 pt-3 text-right">Sisa</th><th class="w-40 px-4 pb-1.5 pt-3">Terpakai</th><th class="px-4 pb-1.5 pt-3 text-right">Aksi</th>
+                    </tr>
+                    <tr>
+                        <th class="px-3 pb-2"><ColumnFilter v-model="col.no" :options="optNo" /></th>
+                        <th class="px-3 pb-2"><ColumnFilter v-model="col.akun" :options="optAkun" /></th>
+                        <th class="px-3 pb-2"><ColumnFilter v-model="col.cc" :options="optCc" /></th>
+                        <th class="px-3 pb-2"><ColumnFilter v-model="col.status" :options="optStatus" /></th>
+                        <th class="px-3 pb-2"><ColumnFilter v-model="col.anggaran" :options="optAnggaran" align="right" /></th>
+                        <th class="px-3 pb-2"><ColumnFilter v-model="col.realisasi" :options="optRealisasi" align="right" /></th>
+                        <th class="px-3 pb-2"><ColumnFilter v-model="col.sisa" :options="optSisa" align="right" /></th>
+                        <th class="px-3 pb-2"><ColumnFilter v-model="col.terpakai" :options="optTerpakai" align="right" /></th>
+                        <th class="px-3 pb-2"></th>
+                    </tr>
+                </thead>
                 <tbody class="divide-y divide-neutral-200 dark:divide-neutral-800">
-                    <tr v-for="b in budgets" :key="b.id">
+                    <tr v-for="b in filtered" :key="b.id">
                         <td class="px-4 py-2.5 font-mono text-xs text-neutral-500">{{ b.doc_no ?? '—' }}</td>
                         <td class="px-4 py-2.5">{{ b.account }}</td>
                         <td class="px-4 py-2.5 text-neutral-500">{{ b.cost_center }}</td>
@@ -117,6 +210,7 @@ const inputCls = 'h-9 w-full rounded-lg border border-neutral-300 bg-white px-3 
                 </tbody>
             </table>
             <EmptyState v-if="!budgets?.length" title="Belum ada anggaran" description="Klik Tambah Anggaran atau Upload Budget untuk menetapkan anggaran bulanan per akun & cost center." />
+            <EmptyState v-else-if="!filtered.length" title="Tidak ada hasil" description="Tidak ada anggaran yang cocok dengan filter/pencarian. Klik Reset filter untuk menampilkan semua." />
         </div>
 
         <Teleport to="body">

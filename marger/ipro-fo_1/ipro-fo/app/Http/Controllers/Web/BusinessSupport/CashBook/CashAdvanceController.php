@@ -283,10 +283,18 @@ class CashAdvanceController extends Controller
         $rp = fn ($n) => number_format((float) $n, 0, ',', '.');
         $h = '';
         foreach ($this->reportBuckets($department ? (int) $department : null, $f) as $b) {
-            $h .= '<table border="1"><tr><th colspan="7" style="background:#0f766e;color:#fff">'.$e($b['label']).' — '.$e($rp($b['total'])).' ('.$b['count'].' bon)</th></tr>'
-                .'<tr style="background:#e2e8f0"><th>No.</th><th>Tgl Bon</th><th>Tgl Realisasi</th><th>Pemegang</th><th>Departemen</th><th>Keperluan</th><th>Nilai</th></tr>';
+            // Kolom Aging hanya untuk bucket yang punya tanggal acuan — sama persis dengan layar.
+            $aging = (bool) ($b['aging'] ?? false);
+            $cols  = $aging ? 8 : 7;
+            $h .= '<table border="1"><tr><th colspan="'.$cols.'" style="background:#0f766e;color:#fff">'.$e($b['label']).' — '.$e($rp($b['total'])).' ('.$b['count'].' bon)</th></tr>'
+                .'<tr style="background:#e2e8f0"><th>No.</th><th>Tgl Bon</th><th>Tgl Realisasi</th><th>Pemegang</th><th>Departemen</th><th>Keperluan</th>'
+                .($aging ? '<th>Aging (hari)<br><span style="font-weight:normal">'.$e($b['aging_label']).'</span></th>' : '')
+                .'<th>Nilai</th></tr>';
             foreach ($b['rows'] as $r) {
-                $h .= '<tr><td>'.$e($r['advance_number']).'</td><td>'.$e($r['advance_date']).'</td><td>'.$e($r['realized_date']).'</td><td>'.$e($r['holder']).'</td><td>'.$e($r['department']).'</td><td>'.$e($r['purpose']).'</td><td>'.$rp($r['amount']).'</td></tr>';
+                $h .= '<tr><td>'.$e($r['advance_number']).'</td><td>'.$e($r['advance_date']).'</td><td>'.$e($r['realized_date']).'</td><td>'.$e($r['holder']).'</td><td>'.$e($r['department']).'</td><td>'.$e($r['purpose']).'</td>'
+                    // Angka mentah (tanpa " hari") agar bisa langsung difilter/dihitung di Excel.
+                    .($aging ? '<td>'.($r['aging_days'] === null ? '' : (int) $r['aging_days']).'</td>' : '')
+                    .'<td>'.$rp($r['amount']).'</td></tr>';
             }
             $h .= '</table><br>';
         }
@@ -314,13 +322,20 @@ class CashAdvanceController extends Controller
 
         $sections = '';
         foreach ($this->reportBuckets($department ? (int) $department : null, $f) as $b) {
+            // Kolom Aging hanya untuk bucket yang punya tanggal acuan — sama persis dengan layar.
+            $aging = (bool) ($b['aging'] ?? false);
+            $cols  = $aging ? 7 : 6;
             $rows = '';
             foreach ($b['rows'] as $r) {
-                $rows .= '<tr><td>'.$e($r['advance_number']).'</td><td>'.$e($r['advance_date']).'</td><td>'.$e($r['holder']).'</td><td>'.$e($r['department']).'</td><td>'.$e($r['purpose']).'</td><td class="r">'.$rp($r['amount']).'</td></tr>';
+                $rows .= '<tr><td>'.$e($r['advance_number']).'</td><td>'.$e($r['advance_date']).'</td><td>'.$e($r['holder']).'</td><td>'.$e($r['department']).'</td><td>'.$e($r['purpose']).'</td>'
+                    .($aging ? '<td class="r">'.($r['aging_days'] === null ? '—' : (int) $r['aging_days'].' hari').'</td>' : '')
+                    .'<td class="r">'.$rp($r['amount']).'</td></tr>';
             }
-            if ($rows === '') $rows = '<tr><td colspan="6" class="c muted">Tidak ada data.</td></tr>';
+            if ($rows === '') $rows = '<tr><td colspan="'.$cols.'" class="c muted">Tidak ada data.</td></tr>';
             $sections .= '<h3>'.$e($b['label']).' <span class="muted">('.$b['count'].' bon · '.$rp($b['total']).')</span></h3>'
-                .'<table><thead><tr><th>No.</th><th>Tanggal</th><th>Pemegang</th><th>Departemen</th><th>Keperluan</th><th class="r">Nilai</th></tr></thead><tbody>'.$rows.'</tbody></table>';
+                .'<table><thead><tr><th>No.</th><th>Tanggal</th><th>Pemegang</th><th>Departemen</th><th>Keperluan</th>'
+                .($aging ? '<th class="r">Aging<br><span class="muted">'.$e($b['aging_label']).'</span></th>' : '')
+                .'<th class="r">Nilai</th></tr></thead><tbody>'.$rows.'</tbody></table>';
         }
 
         $html = '<!DOCTYPE html><html lang="id"><head><meta charset="utf-8"><title>Rekap Bon Sementara</title><style>
@@ -348,18 +363,34 @@ class CashAdvanceController extends Controller
         $from     = $f['from'] ?? null;
         $to       = $f['to']   ?? null;
 
-        $map = fn ($a) => [
+        // Aging = umur bon dalam hari s/d HARI INI, dihitung dari tanggal yang berbeda per bucket:
+        //   Outstanding (Sudah Ditransfer) → dari paid_date (tanggal Finance membayar bon)
+        //   Belum Direfund / Direimburse   → dari received_document_date (tanggal berkas diterima)
+        // Basisnya sengaja beda karena "umur" yang ditunggu pun beda: yang satu uang sudah keluar
+        // tapi belum dipertanggungjawabkan, yang satu berkas sudah masuk tapi belum diselesaikan.
+        // Tanggal acuan boleh NULL (belum diisi) → aging null, ditampilkan "—", bukan 0 hari.
+        $today  = now()->startOfDay();
+        $agingOf = fn (?\Illuminate\Support\Carbon $d) => $d
+            ? (int) $d->copy()->startOfDay()->diffInDays($today, false)
+            : null;
+
+        $map = fn (string $agingFrom) => fn ($a) => [
             'id'             => $a->id,
             'advance_number' => $a->advance_number,
             'advance_date'   => $a->advance_date?->toDateString(),
             'paid_date'      => $a->paid_date?->toDateString(),
             'realized_date'  => $a->realized_date?->toDateString(),
+            'received_document_date' => $a->received_document_date?->toDateString(),
             'holder'         => $a->holder,
             'department_id'  => $a->department_id,
             'department'     => $a->department?->name,
             'purpose'        => $a->purpose,
             'amount'         => (float) $a->amount,
             'settlement'     => (float) $a->settlement,
+            // Tanggal acuan aging + hasilnya, agar layar/Excel tak perlu tahu aturannya.
+            'aging_from'      => $agingFrom,
+            'aging_base_date' => $a->{$agingFrom}?->toDateString(),
+            'aging_days'      => $agingOf($a->{$agingFrom}),
         ];
 
         // #150: query dasar yang men-eager-load department + filter departemen bila ada.
@@ -378,21 +409,29 @@ class CashAdvanceController extends Controller
         $belumReimburse = $base()->where('status', 'realized')->where('settlement_status', 'pending')
             ->where('settlement', '<', 0)->latest('realized_date')->get();
 
-        $bucket = fn (string $label, string $desc, $rows, string $amountKey = 'amount') => [
+        // $agingFrom = null → bucket tanpa kolom aging (Belum Ditransfer: uang belum keluar & berkas
+        // belum ada, tidak ada yang wajar dihitung umurnya).
+        $bucket = fn (string $label, string $desc, $rows, string $amountKey = 'amount', ?string $agingFrom = null) => [
             'label' => $label,
             'desc'  => $desc,
-            'rows'  => $rows->map($map)->values(),
+            'rows'  => $rows->map($agingFrom ? $map($agingFrom) : $map('advance_date'))->values(),
             'count' => $rows->count(),
+            'aging' => $agingFrom !== null,
+            'aging_label' => match ($agingFrom) {
+                'paid_date'              => 'Sejak tanggal bayar bon',
+                'received_document_date' => 'Sejak tanggal berkas diterima',
+                default                  => null,
+            },
             'total' => $amountKey === 'amount'
                 ? (float) $rows->sum('amount')
                 : (float) $rows->sum(fn ($a) => abs((float) $a->settlement)),
         ];
 
         return [
-            'sudah_transfer'  => $bucket('Outstanding (Sudah Ditransfer)', 'Bon sudah dibayar Finance, belum direalisasi.', $sudahTransfer),
+            'sudah_transfer'  => $bucket('Outstanding (Sudah Ditransfer)', 'Bon sudah dibayar Finance, belum direalisasi.', $sudahTransfer, 'amount', 'paid_date'),
             'belum_transfer'  => $bucket('Outstanding (Belum Ditransfer)', 'Pengajuan bon menunggu pembayaran Finance.', $belumTransfer),
-            'belum_refund'    => $bucket('Realisasi — Belum Direfund', 'Sisa panjar berlebih belum dikembalikan ke kas.', $belumRefund, 'settlement'),
-            'belum_reimburse' => $bucket('Realisasi — Belum Direimburse', 'Kekurangan panjar belum diganti dari kas.', $belumReimburse, 'settlement'),
+            'belum_refund'    => $bucket('Realisasi — Belum Direfund', 'Sisa panjar berlebih belum dikembalikan ke kas.', $belumRefund, 'settlement', 'received_document_date'),
+            'belum_reimburse' => $bucket('Realisasi — Belum Direimburse', 'Kekurangan panjar belum diganti dari kas.', $belumReimburse, 'settlement', 'received_document_date'),
         ];
     }
 

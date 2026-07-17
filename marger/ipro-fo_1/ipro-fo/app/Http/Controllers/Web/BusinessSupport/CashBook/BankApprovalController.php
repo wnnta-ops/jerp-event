@@ -339,8 +339,15 @@ class BankApprovalController extends Controller
         // Gabung retensi + pencairan; belum dijurnal (pending) di atas, lalu id terbaru.
         // KPR yang BATAL AKAD dipindahkan ke modul "Rincian Batal Akad" — tak boleh ikut
         // diapprove di sini. Yang SUDAH terlanjur dijurnal tetap ditampilkan sebagai riwayat.
+        //
+        // DAJAM yang masih 'held' (belum dilepas sama sekali) juga belum boleh diapprove: uangnya
+        // memang masih ditahan, belum ada yang cair. Baru muncul setelah di-Release — status
+        // 'partial' (sebagian dilepas) atau 'released' (lepas penuh). Sama seperti aturan batal
+        // akad, yang telanjur dijurnal tetap tampil sebagai riwayat agar jurnal tidak hilang
+        // dari layar.
         $rows = $retRows->concat($pencRows)
             ->reject(fn ($x) => $x['akad_status'] === 'batal' && ! $x['journaled'])
+            ->reject(fn ($x) => $x['kind'] === 'retensi' && $x['status'] === 'held' && ! $x['journaled'])
             ->sortBy(fn ($x) => ($x['journaled'] ? 1_000_000_000_000 : 0) - $x['id'])
             ->values();
 

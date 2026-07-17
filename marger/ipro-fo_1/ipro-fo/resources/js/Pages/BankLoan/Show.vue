@@ -763,7 +763,8 @@ const historyNodes = computed<HistoryNode[]>(() => {
                 <div class="overflow-x-auto">
                     <table class="w-full text-sm">
                         <thead class="text-left text-xs uppercase text-neutral-500">
-                            <tr><th class="py-2">Tgl Cair</th><th class="py-2">Kategori Retensi</th><th class="py-2 text-right">Nominal</th><th class="py-2 text-right">Retensi</th><th class="py-2">Keterangan</th><th class="py-2 text-center">Aksi</th></tr>
+                            <!-- Kolom nominal yang ditahan disebut DAJAM (istilah operasional); "Kategori Retensi" dibiarkan karena mengacu master kategori. -->
+                            <tr><th class="py-2">Tgl Cair</th><th class="py-2">Kategori Retensi</th><th class="py-2 text-right">Nominal</th><th class="py-2 text-right">DAJAM</th><th class="py-2">Keterangan</th><th class="py-2 text-center">Aksi</th></tr>
                         </thead>
                         <tbody class="divide-y">
                             <tr v-for="r in a.realizations" :key="r.id">
@@ -784,7 +785,7 @@ const historyNodes = computed<HistoryNode[]>(() => {
                 </div>
 
                 <template v-if="a.realizations?.some((r: any) => r.retentions?.length)">
-                    <h3 class="font-semibold mt-4 mb-2 text-sm">Retensi</h3>
+                    <h3 class="font-semibold mt-4 mb-2 text-sm">DAJAM</h3>
                     <div class="space-y-2">
                         <template v-for="r in a.realizations" :key="r.id">
                             <div v-for="ret in r.retentions" :key="ret.id" class="rounded border p-2">

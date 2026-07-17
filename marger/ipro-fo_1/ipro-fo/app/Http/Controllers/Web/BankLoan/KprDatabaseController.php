@@ -266,12 +266,8 @@ class KprDatabaseController extends Controller
             ],
             'listHeading' => 'List Rekomendasi Pembatalan KPR',
             'listDate'    => ucfirst($now->translatedFormat('d F Y')),
-            'company' => [
-                'name'    => (string) config('business_support.company.name', 'PT. MITRA USAHA PROPERTINDO'),
-                'address' => 'Ruko Kahuripan Avenue No. 27-30 Kahuripan Nirwana, Sumput - Sidoarjo',
-                'phone'   => '0822-4442-9999',
-                'web'     => 'www.javaresidence.com',
-            ],
+            // Identitas perusahaan tidak dikirim lagi: nama/alamat/telepon/web sudah menyatu di
+            // dalam gambar kop (public/images/mup-letterhead.jpeg), sama seperti lampiran.
             'signers' => [
                 'left'  => ['label' => 'Hormat kami,', 'name' => 'Prawanita Sari', 'title' => 'Finance Manager'],
                 'right' => ['label' => 'Mengetahui,', 'name' => (string) config('business_support.company.signer_name', 'Rachmat Suhendra'), 'title' => (string) config('business_support.company.signer_title', 'Direktur')],
