@@ -17,7 +17,6 @@ const props = defineProps<{
     memo: { no: string; kepada: string; tembusan: string; dari: string; tanggal: string; perihal: string };
     listHeading: string;
     listDate: string;
-    company: { name: string; address: string; phone: string; web: string };
     signers: { left: Sign; right: Sign };
 }>();
 
@@ -74,14 +73,19 @@ onMounted(async () => {
 
         <div class="page-wrap">
             <!-- ══════════ HALAMAN 1 — MEMO INTERNAL ══════════ -->
+            <!-- Kop (logo atas + bilah oranye bawah) datang dari gambar latar .memo-sheet,
+                 bukan elemen — persis seperti lampiran; lihat catatan di CSS. -->
             <section class="sheet memo-sheet">
-                <div class="memo-logo-row">
-                    <div class="logo">M</div>
-                </div>
-
                 <h1 class="memo-title">MEMO INTERNAL</h1>
 
-                <div class="memo-no">No : <input class="f no-inp" v-model="memo.no" /></div>
+                <!-- Kotak isian dipaskan ke lebar teks lewat span bayangan (lihat CSS), supaya
+                     "No : xxx" benar-benar rata tengah seperti lampiran. -->
+                <div class="memo-no">No :
+                    <span class="no-box">
+                        <span class="no-mirror" aria-hidden="true">{{ memo.no || ' ' }}</span>
+                        <input class="f no-inp" v-model="memo.no" />
+                    </span>
+                </div>
 
                 <table class="memo-meta">
                     <tbody>
@@ -115,15 +119,6 @@ onMounted(async () => {
                         <div class="sign-gap"></div>
                         <input class="f center nm" v-model="signRight.name" />
                         <input class="f center" v-model="signRight.title" />
-                    </div>
-                </div>
-
-                <div class="footer-bar">
-                    <div class="fb-name">{{ company.name }}</div>
-                    <div class="fb-contact">
-                        <span>&#9873; {{ company.address }}</span>
-                        <span>&#9742; {{ company.phone }}</span>
-                        <span>&#127760; {{ company.web }}</span>
                     </div>
                 </div>
             </section>
@@ -206,15 +201,32 @@ onMounted(async () => {
 }
 
 /* ── Halaman 1 — Memo Internal ── */
-.rekom .logo {
-    width: 54px; height: 54px; background: var(--orange); color: #fff; font-weight: 900;
-    font-size: 34px; line-height: 54px; text-align: center; border-radius: 8px;
-    font-family: Arial, sans-serif; letter-spacing: -1px;
+/* Kop surat = SATU gambar latar A4 penuh, sama seperti lampiran: di sana logo dan bilah
+   oranye bukan dua objek terpisah, melainkan satu image1.jpeg yang dipasang di header
+   Word (behindDoc, selebar halaman). Ukuran aslinya 2482x3511 px = tepat A4 @300 dpi,
+   jadi diregangkan 100% x 100% agar bilah oranye jatuh pas di tepi bawah kertas. */
+.rekom .memo-sheet {
+    padding-top: 30mm;                 /* = margin atas lampiran (1702 twips); ruang untuk logo */
+    background-image: url('/images/mup-letterhead.jpeg');
+    background-repeat: no-repeat;
+    background-position: center top;
+    background-size: 100% 100%;
     -webkit-print-color-adjust: exact; print-color-adjust: exact;
 }
 .rekom .memo-title { text-align: center; font-size: 17px; font-weight: bold; letter-spacing: 1px; text-decoration: underline; margin: 4px 0 14px; }
-.rekom .memo-no { font-size: 12px; margin-bottom: 8px; display: flex; align-items: center; gap: 4px; }
-.rekom .memo-no .no-inp { width: 260px; }
+/* Rata tengah mengikuti lampiran (paragraf No. ber-<w:jc w:val="center"/>).
+   Kotak isian HARUS selebar teks yang benar-benar dirender. Atribut `size` tidak bisa
+   dipakai: lebarnya dihitung dari rata-rata karakter font, bukan lebar teks, sehingga
+   menyisakan ruang mati di kanan angka — kotaknya center tapi glifnya meleset ke kiri.
+   Solusinya span bayangan: ia yang menentukan lebar (ikut isi, reaktif), input menimpanya
+   pas 100%. Padding keduanya sama (.f = 0 1px) agar glif jatuh di titik yang sama persis. */
+.rekom .memo-no { font-size: 12px; margin-bottom: 8px; display: flex; justify-content: center; align-items: center; gap: 4px; }
+.rekom .memo-no .no-box { position: relative; display: inline-block; }
+.rekom .memo-no .no-mirror { visibility: hidden; white-space: pre; padding: 0 1px; }
+.rekom .memo-no .no-inp { position: absolute; left: 0; top: 0; width: 100%; height: 100%; }
+/* Saat isian dikosongkan, kotak menciut jadi tak terklik — beri lebar minimum di LAYAR saja;
+   pada cetak tidak berlaku agar perataan tengah tetap eksak. */
+@media screen { .rekom .memo-no .no-box { min-width: 90px; } }
 
 .rekom .memo-meta { border-collapse: collapse; width: 100%; margin: 4px 0 16px; }
 .rekom .memo-meta td { border: 1px solid #111; padding: 4px 8px; vertical-align: middle; font-size: 12px; }
@@ -228,15 +240,6 @@ onMounted(async () => {
 .rekom .signs { display: flex; justify-content: space-between; margin-top: 30px; padding: 0 6mm; }
 .rekom .sign { width: 42%; text-align: center; font-size: 12px; }
 .rekom .sign-gap { height: 62px; }
-
-/* Footer oranye menempel di bawah kertas */
-.rekom .footer-bar {
-    position: absolute; left: 0; right: 0; bottom: 0; background: var(--orange); color: #fff;
-    padding: 7px 15mm; text-align: center;
-    -webkit-print-color-adjust: exact; print-color-adjust: exact;
-}
-.rekom .fb-name { font-weight: bold; font-size: 12px; letter-spacing: .3px; }
-.rekom .fb-contact { display: flex; justify-content: center; flex-wrap: wrap; gap: 4px 16px; font-size: 9.5px; margin-top: 2px; }
 
 /* ── Halaman 2 — List / lampiran ── */
 .rekom .list-head { text-align: center; margin-bottom: 10px; }
@@ -257,7 +260,9 @@ onMounted(async () => {
     .rekom .noprint { display: none !important; }
     .rekom .page-wrap { background: #fff; padding: 0; }
     .rekom .sheet { box-shadow: none; margin: 0; width: auto; min-height: auto; }
-    .rekom .memo-sheet { page-break-after: always; height: 297mm; }
+    /* Ukuran dikunci tepat A4: gambar kop diregangkan ke ukuran elemen, jadi kalau
+       elemennya melar/menciut bilah oranye ikut meleset dari tepi kertas. */
+    .rekom .memo-sheet { page-break-after: always; width: 210mm; height: 297mm; }
     .rekom .list-sheet { page-break-before: always; }
     .rekom .f { border: 0 !important; background: transparent !important; }
     .rekom .list-table tr { page-break-inside: avoid; }
