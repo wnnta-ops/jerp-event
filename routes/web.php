@@ -102,6 +102,12 @@ Route::middleware('auth')->group(function () {
     Route::get('/bo/cetak/jurnal/{jurnal}', [JurnalPrintController::class, 'show'])
         ->name('bo.cetak.jurnal');
 
+    // FO — Ganti/Hapus gambar Site Plan cluster via upload HTML biasa (bypass FilePond/Livewire).
+    Route::post('/fo/site-plan/image', [\App\Modules\FO\MarketingSales\Controllers\SitePlanImageController::class, 'upload'])
+        ->name('fo.siteplan.image.upload');
+    Route::delete('/fo/site-plan/image', [\App\Modules\FO\MarketingSales\Controllers\SitePlanImageController::class, 'destroy'])
+        ->name('fo.siteplan.image.destroy');
+
     // FO — kartu QR customer (printable; di-scan saat Pilih Unit hari-H launching)
     Route::get('/fo/customer/{customer}/qr', [CustomerQrController::class, 'show'])
         ->name('fo.customer.qr');

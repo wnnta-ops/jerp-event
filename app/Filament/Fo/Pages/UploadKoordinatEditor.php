@@ -3,15 +3,19 @@
 namespace App\Filament\Fo\Pages;
 
 use App\Models\Project;
+use App\Modules\FO\Adminjual\Exports\UnitKoordinatExport;
 use App\Modules\FO\MarketingSales\Models\Lokasi;
 use App\Modules\FO\MarketingSales\Models\SiteplanBlock;
 use App\Modules\FO\MarketingSales\Models\Unit;
+use Filament\Actions\Action;
 use Filament\Forms;
 use Filament\Forms\Concerns\InteractsWithForms;
 use Filament\Forms\Contracts\HasForms;
 use Filament\Forms\Form;
 use Filament\Notifications\Notification;
 use Filament\Pages\Page;
+use Illuminate\Support\Str;
+use Maatwebsite\Excel\Facades\Excel;
 
 /**
  * Polygon Editor untuk koordinat unit di siteplan.
@@ -51,6 +55,29 @@ class UploadKoordinatEditor extends Page implements HasForms
     public function mount(): void
     {
         $this->form->fill();
+    }
+
+    /** Tombol Export Excel — koordinat semua unit cluster terpilih (No. Unit / Peta / Koordinat). */
+    protected function getHeaderActions(): array
+    {
+        return [
+            Action::make('exportExcel')
+                ->label('Export Excel')
+                ->icon('heroicon-o-table-cells')
+                ->color('success')
+                ->visible(fn (): bool => filled($this->data['lokasi_id'] ?? null))
+                ->action(function () {
+                    $lokasiId = (int) ($this->data['lokasi_id'] ?? 0);
+                    if (! $lokasiId) {
+                        Notification::make()->title('Pilih Cluster dulu')->warning()->send();
+
+                        return null;
+                    }
+                    $nama = Str::slug(Lokasi::find($lokasiId)?->nama ?? 'unit');
+
+                    return Excel::download(new UnitKoordinatExport($lokasiId), 'koordinat-'.$nama.'-'.now()->format('Ymd').'.xlsx');
+                }),
+        ];
     }
 
     public function form(Form $form): Form
