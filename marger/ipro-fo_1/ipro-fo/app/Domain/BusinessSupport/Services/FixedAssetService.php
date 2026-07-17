@@ -72,75 +72,172 @@ final class FixedAssetService
         });
     }
 
-    /** Posting penyusutan satu aset untuk satu periode. Mengembalikan entry atau null bila dilewati. */
+    /**
+     * Posting penyusutan SATU aset untuk satu periode (mis. susulan dari halaman aset).
+     * Jurnalnya memang per aset karena asetnya pun cuma satu.
+     * Mengembalikan entry atau null bila dilewati.
+     */
     public function depreciate(BsFixedAsset $asset, int $year, int $month, ?int $userId = null): ?BsDepreciationEntry
     {
         return DB::transaction(function () use ($asset, $year, $month, $userId): ?BsDepreciationEntry {
-            if ($asset->status !== 'active' || $asset->category === 'tanah') {
-                return null;
-            }
-            // Akun beban/akumulasi wajib ada agar jurnal tidak rusak.
-            if (! $asset->expense_account_id || ! $asset->accum_account_id) {
-                throw new BusinessRuleException('Akun beban/akumulasi penyusutan belum diset untuk aset ini.', errorCode: 'FA_NO_ACCOUNT');
-            }
-            // Belum boleh menyusut sebelum tanggal perolehan.
-            $periodEnd = Carbon::create($year, $month, 1)->endOfMonth();
-            if ($asset->acquisition_date->gt($periodEnd)) {
-                return null;
-            }
-            // Sudah disusut untuk periode ini?
-            if (BsDepreciationEntry::where('fixed_asset_id', $asset->id)->where('period_year', $year)->where('period_month', $month)->exists()) {
-                return null;
-            }
-
-            $remaining = round($asset->depreciable_base - (float) $asset->accumulated_depreciation, 2);
-            if ($remaining <= 0.009) {
-                $asset->update(['status' => 'fully_depreciated']);
-                return null;
-            }
-            $amount = min($asset->monthly_depreciation, $remaining);
-            if ($amount <= 0.009) {
+            $plan = $this->planDepreciation($asset, $year, $month);
+            if ($plan === null) {
                 return null;
             }
 
             $journal = $this->journal->post([
-                'journal_date' => $periodEnd->toDateString(),
+                'journal_date' => $plan['period_end']->toDateString(),
                 'source'       => 'memorial',
                 'reference'    => $asset->asset_number,
                 'description'  => "Penyusutan {$asset->name} {$year}/{$month}",
                 'created_by'   => $userId,
             ], [
-                ['account_id' => $asset->expense_account_id, 'debit' => $amount, 'credit' => 0, 'description' => 'Beban penyusutan'],
-                ['account_id' => $asset->accum_account_id, 'debit' => 0, 'credit' => $amount, 'description' => 'Akumulasi penyusutan'],
+                ['account_id' => $asset->expense_account_id, 'debit' => $plan['amount'], 'credit' => 0, 'description' => 'Beban penyusutan'],
+                ['account_id' => $asset->accum_account_id, 'debit' => 0, 'credit' => $plan['amount'], 'description' => 'Akumulasi penyusutan'],
             ]);
 
-            $newAccum = round((float) $asset->accumulated_depreciation + $amount, 2);
-            $entry = $asset->entries()->create([
-                'period_year' => $year, 'period_month' => $month, 'entry_date' => $periodEnd->toDateString(),
-                'amount' => $amount, 'book_value_after' => round((float) $asset->acquisition_cost - $newAccum, 2),
-                'journal_id' => $journal->id,
-            ]);
-
-            $asset->update([
-                'accumulated_depreciation' => $newAccum,
-                'last_depreciation_date'   => $periodEnd->toDateString(),
-                'status'                   => $newAccum >= $asset->depreciable_base - 0.009 ? 'fully_depreciated' : 'active',
-            ]);
-
-            return $entry;
+            return $this->recordDepreciation($asset, $plan, $year, $month, $journal->id);
         });
     }
 
-    /** Jalankan penyusutan seluruh aset aktif untuk satu periode. @return array{posted:int, total:float, skipped:int} */
+    /**
+     * Jalankan penyusutan SELURUH aset aktif untuk satu periode.
+     *
+     * Jurnal dikelompokkan PER PASANGAN AKUN (beban + akumulasi) — bukan per aset — supaya
+     * jurnal yang terbentuk tidak membanjiri buku besar & antrean approval. Satu periode
+     * biasanya hanya menghasilkan 1 jurnal per kategori COA (Inventaris/Kendaraan/Bangunan).
+     *
+     * KENAPA PASANGAN AKUN, BUKAN KOLOM `category`: akun beban/akumulasi di-snapshot ke baris
+     * aset saat register(), sedangkan Edit Aset MEMBOLEHKAN kategori diubah TANPA memetakan
+     * ulang akunnya. Jadi dua aset berkategori sama bisa sah-sah saja berakun beda. Mengelompokkan
+     * per kategori akan menjurnal nilai aset A ke akun aset B → GL salah diam-diam.
+     *
+     * Rincian per aset TIDAK hilang: tetap tercatat di bs_depreciation_entries (Riwayat
+     * Penyusutan pada halaman aset), masing-masing menunjuk ke jurnal gabungan ini.
+     *
+     * @return array{posted:int, total:float, skipped:int, journals:int}
+     */
     public function runBatch(int $year, int $month, ?int $userId = null): array
     {
-        $posted = 0; $total = 0.0; $skipped = 0;
-        BsFixedAsset::where('status', 'active')->where('category', '!=', 'tanah')->get()->each(function ($asset) use ($year, $month, $userId, &$posted, &$total, &$skipped): void {
-            $entry = $this->depreciate($asset, $year, $month, $userId);
-            if ($entry) { $posted++; $total += (float) $entry->amount; } else { $skipped++; }
-        });
+        // Satu transaksi untuk SELURUH run: jurnal gabungan + entry + update aset harus
+        // utuh bersama. (Sebelumnya tiap aset transaksi sendiri-sendiri.)
+        return DB::transaction(function () use ($year, $month, $userId): array {
+            $assets = BsFixedAsset::where('status', 'active')->where('category', '!=', 'tanah')->get();
 
-        return ['posted' => $posted, 'total' => round($total, 2), 'skipped' => $skipped];
+            // Guard per aset TETAP per aset (idempotensi tidak ikut digabung).
+            $plans = [];
+            $skipped = 0;
+            foreach ($assets as $asset) {
+                $plan = $this->planDepreciation($asset, $year, $month);
+                if ($plan === null) { $skipped++; continue; }
+                // Kunci gabungan = pasangan akun; aset dgn akun beda tidak akan tercampur.
+                $plans[$asset->expense_account_id.'-'.$asset->accum_account_id][] = ['asset' => $asset, 'plan' => $plan];
+            }
+
+            $posted = 0; $total = 0.0; $journals = 0;
+            foreach ($plans as $group) {
+                $sum = round(array_sum(array_map(fn ($g) => $g['plan']['amount'], $group)), 2);
+                if ($sum <= 0.009) { continue; }
+
+                $first     = $group[0]['asset'];
+                $periodEnd = $group[0]['plan']['period_end'];
+                $label     = $this->groupLabel($group);
+
+                $journal = $this->journal->post([
+                    'journal_date' => $periodEnd->toDateString(),
+                    'source'       => 'memorial',
+                    'reference'    => 'PENY/'.$periodEnd->format('ym').'/'.strtoupper($label['slug']),
+                    'description'  => "Penyusutan {$label['name']} {$year}/{$month} — ".count($group).' aset',
+                    'created_by'   => $userId,
+                ], [
+                    ['account_id' => $first->expense_account_id, 'debit' => $sum, 'credit' => 0, 'description' => 'Beban penyusutan '.$label['name'].' ('.count($group).' aset)'],
+                    ['account_id' => $first->accum_account_id, 'debit' => 0, 'credit' => $sum, 'description' => 'Akumulasi penyusutan '.$label['name'].' ('.count($group).' aset)'],
+                ]);
+                $journals++;
+
+                foreach ($group as $g) {
+                    $this->recordDepreciation($g['asset'], $g['plan'], $year, $month, $journal->id);
+                    $posted++;
+                    $total += (float) $g['plan']['amount'];
+                }
+            }
+
+            return ['posted' => $posted, 'total' => round($total, 2), 'skipped' => $skipped, 'journals' => $journals];
+        });
+    }
+
+    /**
+     * Nama & slug untuk jurnal gabungan, diambil dari kategori aset di dalamnya.
+     * Umumnya satu kategori; bila akun yang sama dipakai lintas kategori → "Campuran".
+     *
+     * @return array{name:string, slug:string}
+     */
+    private function groupLabel(array $group): array
+    {
+        $cats = array_values(array_unique(array_map(fn ($g) => (string) $g['asset']->category, $group)));
+
+        return count($cats) === 1
+            ? ['name' => BsFixedAsset::CATEGORIES[$cats[0]] ?? $cats[0], 'slug' => $cats[0]]
+            : ['name' => 'Campuran', 'slug' => 'campuran'];
+    }
+
+    /**
+     * Aturan boleh/tidaknya sebuah aset disusutkan untuk satu periode + nilainya.
+     * Null = dilewati. Dipakai BERSAMA oleh depreciate() (satuan) & runBatch() (massal)
+     * agar aturannya mustahil berbeda.
+     *
+     * @return array{amount:float, period_end:Carbon}|null
+     */
+    private function planDepreciation(BsFixedAsset $asset, int $year, int $month): ?array
+    {
+        if ($asset->status !== 'active' || $asset->category === 'tanah') {
+            return null;
+        }
+        // Akun beban/akumulasi wajib ada agar jurnal tidak rusak.
+        if (! $asset->expense_account_id || ! $asset->accum_account_id) {
+            throw new BusinessRuleException('Akun beban/akumulasi penyusutan belum diset untuk aset ini.', errorCode: 'FA_NO_ACCOUNT');
+        }
+        // Belum boleh menyusut sebelum tanggal perolehan.
+        $periodEnd = Carbon::create($year, $month, 1)->endOfMonth();
+        if ($asset->acquisition_date->gt($periodEnd)) {
+            return null;
+        }
+        // Sudah disusut untuk periode ini? (idempotensi — per ASET, bukan per jurnal)
+        if (BsDepreciationEntry::where('fixed_asset_id', $asset->id)->where('period_year', $year)->where('period_month', $month)->exists()) {
+            return null;
+        }
+
+        $remaining = round($asset->depreciable_base - (float) $asset->accumulated_depreciation, 2);
+        if ($remaining <= 0.009) {
+            $asset->update(['status' => 'fully_depreciated']);
+
+            return null;
+        }
+        $amount = min($asset->monthly_depreciation, $remaining);
+        if ($amount <= 0.009) {
+            return null;
+        }
+
+        return ['amount' => $amount, 'period_end' => $periodEnd];
+    }
+
+    /** Catat entry penyusutan + perbarui akumulasi aset, setelah jurnalnya terbentuk. */
+    private function recordDepreciation(BsFixedAsset $asset, array $plan, int $year, int $month, int $journalId): BsDepreciationEntry
+    {
+        $newAccum = round((float) $asset->accumulated_depreciation + $plan['amount'], 2);
+        $entry = $asset->entries()->create([
+            'period_year' => $year, 'period_month' => $month, 'entry_date' => $plan['period_end']->toDateString(),
+            'amount' => $plan['amount'], 'book_value_after' => round((float) $asset->acquisition_cost - $newAccum, 2),
+            'journal_id' => $journalId,
+        ]);
+
+        $asset->update([
+            'accumulated_depreciation' => $newAccum,
+            'last_depreciation_date'   => $plan['period_end']->toDateString(),
+            'status'                   => $newAccum >= $asset->depreciable_base - 0.009 ? 'fully_depreciated' : 'active',
+        ]);
+
+        return $entry;
     }
 
     /**
@@ -163,9 +260,10 @@ final class FixedAssetService
                 $lines[] = ['account_id' => $asset->accum_account_id, 'debit' => $accum, 'credit' => 0, 'description' => 'Akumulasi penyusutan dihapus'];
             }
             if ($book > 0.009) {
-                $lossId = $this->accId(config('business_support.fixed_asset_disposal.loss'));
+                // Rugi PENGHAPUSAN — akun terpisah dari rugi penjualan (70101010114).
+                $lossId = $this->accId(config('business_support.fixed_asset_disposal.loss_disposal'));
                 if (! $lossId) {
-                    throw new BusinessRuleException('Akun rugi penghapusan aset belum tersedia.', errorCode: 'FA_NO_LOSS_ACCOUNT');
+                    throw new BusinessRuleException('Akun Rugi Penghapusan Aset Tetap (70101010115) belum ada di Chart of Account.', errorCode: 'FA_NO_LOSS_ACCOUNT');
                 }
                 $lines[] = ['account_id' => $lossId, 'debit' => $book, 'credit' => 0, 'description' => 'Rugi penghapusan aset'];
             }
@@ -215,16 +313,20 @@ final class FixedAssetService
                 $lines[] = ['account_id' => $asset->accum_account_id, 'debit' => $accum, 'credit' => 0, 'description' => 'Akumulasi penyusutan dihapus'];
             }
             $lines[] = ['account_id' => $asset->asset_account_id, 'debit' => 0, 'credit' => $cost, 'description' => 'Aset tetap dilepas'];
+            // Selisih hasil jual vs nilai buku. Impas (selisih 0) tidak memunculkan baris
+            // laba/rugi sama sekali — jurnal sudah balance tanpa itu, dan baris bernilai 0
+            // memang ditolak JournalService::post().
             if ($gain > 0.009) {
                 $gainId = $this->accId(config('business_support.fixed_asset_disposal.gain'));
                 if (! $gainId) {
-                    throw new BusinessRuleException('Akun laba penjualan aset belum tersedia.', errorCode: 'FA_NO_GAIN_ACCOUNT');
+                    throw new BusinessRuleException('Akun Laba Penjualan Aset Tetap (60101010104) belum ada di Chart of Account.', errorCode: 'FA_NO_GAIN_ACCOUNT');
                 }
                 $lines[] = ['account_id' => $gainId, 'debit' => 0, 'credit' => $gain, 'description' => 'Laba penjualan aset'];
             } elseif ($gain < -0.009) {
-                $lossId = $this->accId(config('business_support.fixed_asset_disposal.loss'));
+                // Rugi PENJUALAN — akun terpisah dari rugi penghapusan (70101010115).
+                $lossId = $this->accId(config('business_support.fixed_asset_disposal.loss_sale'));
                 if (! $lossId) {
-                    throw new BusinessRuleException('Akun rugi penjualan aset belum tersedia.', errorCode: 'FA_NO_LOSS_ACCOUNT');
+                    throw new BusinessRuleException('Akun Rugi Penjualan Aset Tetap (70101010114) belum ada di Chart of Account.', errorCode: 'FA_NO_LOSS_ACCOUNT');
                 }
                 $lines[] = ['account_id' => $lossId, 'debit' => abs($gain), 'credit' => 0, 'description' => 'Rugi penjualan aset'];
             }

@@ -241,7 +241,9 @@ class FixedAssetController extends Controller
 
         return Inertia::render('BusinessSupport/FixedAsset/Show', [
             'asset'   => array_merge(
-                $fixedAsset->load(['assetAccount:id,code,name', 'entries' => fn ($q) => $q->orderBy('period_year')->orderBy('period_month')])->toArray(),
+                // entries.journal: nomor jurnal jauh lebih berarti daripada id mentah — apalagi
+                // sejak jurnal penyusutan digabung per kategori (1 jurnal dipakai banyak aset).
+                $fixedAsset->load(['assetAccount:id,code,name', 'entries' => fn ($q) => $q->orderBy('period_year')->orderBy('period_month')->with('journal:id,journal_number')])->toArray(),
                 // acquisition_date sbg Y-m-d agar default "Per Tanggal" saldo awal = Tgl Perolehan (tanpa geser 1 hari TZ +7).
                 ['book_value' => $fixedAsset->book_value, 'monthly_depreciation' => $fixedAsset->monthly_depreciation, 'depreciable_base' => $fixedAsset->depreciable_base, 'acquisition_date' => $fixedAsset->acquisition_date?->toDateString()],
             ),
@@ -371,10 +373,16 @@ class FixedAssetController extends Controller
             'month' => ['required', 'integer', 'min:1', 'max:12'],
         ]);
 
-        $res = $svc->runBatch($v['year'], $v['month'], $request->user()->id);
+        try {
+            $res = $svc->runBatch($v['year'], $v['month'], $request->user()->id);
+        } catch (BusinessRuleException $e) {
+            return back()->with('error', $e->getMessage());
+        }
 
+        // Jurnal digabung per kategori/COA → sebutkan jumlah jurnalnya, bukan cuma jumlah aset.
         return redirect()->route('bs.fa.index')->with('success',
-            "Penyusutan {$v['year']}/{$v['month']}: {$res['posted']} aset terposting (Rp ".number_format($res['total'], 0, ',', '.')."), {$res['skipped']} dilewati.");
+            "Penyusutan {$v['year']}/{$v['month']}: {$res['posted']} aset terposting (Rp ".number_format($res['total'], 0, ',', '.')
+            .") dalam {$res['journals']} jurnal gabungan per kategori, {$res['skipped']} dilewati.");
     }
 
     /**

@@ -93,7 +93,9 @@ class OutgoingChequeController extends Controller
             'supplier_id'          => ['nullable', 'integer', Rule::exists('bs_suppliers', 'id')->where('is_active', true)],
             'payee'                => ['nullable', 'string', 'max:150'],
             'amount'               => ['required', 'numeric', 'min:0.01'],
-            'cheque_date'          => ['required', 'date'],
+            // Tanggal BG/Cek OPSIONAL — warkat sering disiapkan & dicetak dulu, tanggalnya
+            // ditulis tangan saat diserahkan. Kolomnya memang sudah nullable di DB.
+            'cheque_date'          => ['nullable', 'date'],
             'signer_name'          => ['required', 'string', 'max:150'],   // #67 dua pejabat wajib
             'signer_name_2'        => ['required', 'string', 'max:150'],
             'recipient_bank'       => ['nullable', 'required_if:cheque_type,bg', 'string', 'max:150'], // #72
@@ -117,20 +119,22 @@ class OutgoingChequeController extends Controller
         unset($v['lines']);
         $lines = [];
 
+        // Penerima OPSIONAL di kedua mode — warkat boleh disimpan & dicetak dengan penerima
+        // kosong (cetakannya memang sudah mendukung: "#71 penerima kosong dicetak BLANK").
         if ($purpose === 'non_hutang') {
             // Penerima pihak ketiga (bebas) — tanpa relasi hutang, referensi invoice diabaikan.
-            if (empty($v['payee'])) {
-                return back()->withInput()->with('error', 'Nama penerima (pihak ketiga) wajib diisi.');
-            }
             $v['supplier_id'] = null;
             $v['payee_type']  = 'pihak_ketiga';
+            // Keterangan tidak berlaku untuk warkat non-hutang (kolomnya disembunyikan di form).
+            $v['description'] = null;
             $rawLines = [];
         } else {
-            // Atas pelunasan hutang → penerima = Supplier/Vendor; nama penerima diisi dari master supplier.
-            if (empty($v['supplier_id'])) {
-                return back()->withInput()->with('error', 'Pilih Penerima (Supplier/Vendor) untuk BG/Cek atas pelunasan hutang.');
-            }
-            $v['payee']      = (string) BsSupplier::whereKey($v['supplier_id'])->value('name');
+            // Atas pelunasan hutang → penerima = Supplier/Vendor; nama penerima diisi dari master
+            // supplier. Tanpa supplier, payee dibiarkan NULL — BUKAN string kosong (whereKey(null)
+            // mengembalikan null, dan (string) null = '' yang akan tersimpan sebagai payee kosong).
+            $v['payee'] = ! empty($v['supplier_id'])
+                ? (BsSupplier::whereKey($v['supplier_id'])->value('name') ?: null)
+                : null;
             $v['payee_type'] = 'supplier';
         }
 

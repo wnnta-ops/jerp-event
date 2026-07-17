@@ -1,7 +1,7 @@
 // Struktur navigasi bersama — dipakai Sidebar (kiri) & Menu Utama pada Dashboard.
 // Sumber tunggal daftar modul & sub-modul agar keduanya selalu sinkron.
 import {
-    LayoutDashboard, Users, Building2, ClipboardList, Wallet, FileText, Receipt, FileSignature,
+    LayoutDashboard, Users, Building2, ClipboardList, Wallet, FileText, Receipt, ReceiptText, FileSignature,
     BarChart3, Settings, ChevronLeft, ChevronDown, Phone, AlertTriangle, FileWarning, FileCheck,
     Hand, Star, Banknote, ScrollText, Award, RefreshCcw, CircleDollarSign, Calculator,
     FileBarChart, ShieldCheck, Percent, Landmark, Briefcase, BookOpen, Truck,
@@ -131,6 +131,7 @@ export function navGroups(foUrl: string): NavGroup[] {
                 { label: 'PPN Keluaran', href: 'bs.tax.keluaran' },
             ] },
             { label: 'Rincian Batal Akad', icon: TriangleAlert, href: 'bs.batal-akad.index', permission: ['businesssupport.view', 'ar.*'] },
+            { label: 'Invoice Penjualan', icon: ReceiptText, href: 'bs.sales-invoice.index', permission: ['businesssupport.view', 'ar.*'] },
             { label: 'Report / Query', icon: FileBarChart, href: 'bs.booked-revenue.report', permission: ['businesssupport.view', 'ar.*'] },
         ],
     },

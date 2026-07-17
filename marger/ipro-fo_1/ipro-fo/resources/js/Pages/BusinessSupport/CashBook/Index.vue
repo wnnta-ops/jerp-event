@@ -5,6 +5,7 @@ import { Plus, ArrowLeft, Banknote, Search, ArrowDownCircle, ArrowUpCircle, Repe
 import Button from '@/Components/UI/Button.vue';
 import Badge from '@/Components/UI/Badge.vue';
 import EmptyState from '@/Components/UI/EmptyState.vue';
+import SearchSelect from '@/Components/UI/SearchSelect.vue';
 import TableTopScroll from '@/Components/UI/TableTopScroll.vue';
 
 const props = defineProps<{
@@ -34,8 +35,12 @@ function applyFilter() {
 // ── Pilih massal (checkbox per baris) ──
 const selected = ref<number[]>([]);
 const rowId = (r: any) => Number(r.trx_id ?? r.id);
+// Pelunasan hutang (AP) tampil sebagai baris sintetis — bukan transaksi kas, jadi tidak punya
+// bukti kas/bank & tidak bisa dibuka. WAJIB dikecualikan dari checkbox: id-nya milik
+// bs_ap_payments dan akan bertabrakan dgn id BsCashTransaction → bisa mencetak bukti yang SALAH.
+const isCashTrx = (r: any) => !r.is_ap_payment;
 // Transfer tampil 2 baris (sisi keluar + masuk) dari 1 transaksi → id-nya sama, dihitung sekali.
-const pageIds = computed<number[]>(() => Array.from(new Set((props.transactions.data ?? []).map((r: any) => rowId(r)))));
+const pageIds = computed<number[]>(() => Array.from(new Set((props.transactions.data ?? []).filter(isCashTrx).map((r: any) => rowId(r)))));
 const allChecked = computed<boolean>({
     get: () => pageIds.value.length > 0 && pageIds.value.every((id) => selected.value.includes(id)),
     set: (v: boolean) => { selected.value = v ? [...pageIds.value] : []; },
@@ -93,7 +98,8 @@ const typeMeta: Record<string, any> = {
             <div><label class="mb-1 block text-[11px] font-medium uppercase text-neutral-400">Dari Tanggal</label><input v-model="from" @change="applyFilter" type="date" title="Dari tanggal" class="h-9 rounded-lg border border-neutral-300 bg-white px-2 text-sm dark:border-neutral-700 dark:bg-neutral-900" /></div>
             <div><label class="mb-1 block text-[11px] font-medium uppercase text-neutral-400">Sampai Tanggal</label><input v-model="to" @change="applyFilter" type="date" title="Sampai tanggal" class="h-9 rounded-lg border border-neutral-300 bg-white px-2 text-sm dark:border-neutral-700 dark:bg-neutral-900" /></div>
             <div><label class="mb-1 block text-[11px] font-medium uppercase text-neutral-400">Jenis</label><select v-model="type" @change="applyFilter" class="h-9 w-auto min-w-[8.5rem] rounded-lg border border-neutral-300 bg-white px-2 pr-6 text-sm dark:border-neutral-700 dark:bg-neutral-900"><option value="">Semua</option><option v-for="(label, val) in types" :key="val" :value="val">{{ label }}</option></select></div>
-            <div><label class="mb-1 block text-[11px] font-medium uppercase text-neutral-400">Rekening</label><select v-model="accountId" @change="applyFilter" class="h-9 w-auto min-w-[11rem] rounded-lg border border-neutral-300 bg-white px-2 pr-6 text-sm dark:border-neutral-700 dark:bg-neutral-900"><option value="">Semua rekening</option><option v-for="a in cashAccounts" :key="a.id" :value="String(a.id)">{{ a.name }}</option></select></div>
+            <!-- Rekening bisa dicari dengan mengetik (kode / nama) — daftarnya panjang (20+ rekening). -->
+            <div class="min-w-[16rem]"><label class="mb-1 block text-[11px] font-medium uppercase text-neutral-400">Rekening</label><SearchSelect v-model="accountId" :options="cashAccounts" placeholder="Semua rekening" @update:model-value="applyFilter" /></div>
             <button v-if="anyFilter" type="button" @click="resetFilters" class="ml-auto rounded-lg border border-neutral-300 px-3 py-2 text-sm font-medium text-neutral-600 hover:bg-neutral-50 dark:border-neutral-700 dark:text-neutral-300">Reset filter</button>
         </div>
 
@@ -121,12 +127,18 @@ const typeMeta: Record<string, any> = {
                     </tr>
                 </thead>
                 <tbody class="divide-y divide-neutral-200 dark:divide-neutral-800">
-                    <tr v-for="r in transactions.data" :key="r.row_key ?? r.id" class="hover:bg-neutral-50 dark:hover:bg-neutral-800/50" :class="[glMode ? '' : 'cursor-pointer', selected.includes(rowId(r)) ? 'bg-primary-500/10' : '']" @click="!glMode && router.get(route('bs.cashbook.show', r.trx_id ?? r.id))">
+                    <tr v-for="r in transactions.data" :key="r.row_key ?? r.id" class="hover:bg-neutral-50 dark:hover:bg-neutral-800/50" :class="[(glMode || r.is_ap_payment) ? '' : 'cursor-pointer', isCashTrx(r) && selected.includes(rowId(r)) ? 'bg-primary-500/10' : '']" @click="!glMode && !r.is_ap_payment && router.get(route('bs.cashbook.show', r.trx_id ?? r.id))">
                         <!-- .stop: mencentang tidak boleh ikut membuka detail transaksi -->
-                        <td class="px-3 py-2.5" @click.stop><input v-model="selected" type="checkbox" :value="rowId(r)" :class="cbCls" /></td>
+                        <td class="px-3 py-2.5" @click.stop>
+                            <input v-if="isCashTrx(r)" v-model="selected" type="checkbox" :value="rowId(r)" :class="cbCls" />
+                            <span v-else class="cursor-not-allowed text-neutral-300 dark:text-neutral-600" title="Pelunasan hutang (AP) hanya berjurnal — tidak punya Bukti Kas/Bank yang bisa dicetak. Buka lewat modul Account Payable.">—</span>
+                        </td>
                         <td class="whitespace-nowrap px-4 py-2.5 font-mono font-semibold">{{ r.trx_number }}</td>
                         <td class="whitespace-nowrap px-4 py-2.5">{{ fmtDate(r.trx_date) }}</td>
-                        <td class="whitespace-nowrap px-4 py-2.5"><Badge :variant="typeMeta[r.trx_type]?.badge ?? 'neutral'" size="sm">{{ types[r.trx_type] }}</Badge></td>
+                        <td class="whitespace-nowrap px-4 py-2.5">
+                            <Badge v-if="r.is_ap_payment" variant="warning" size="sm" title="Pelunasan hutang dari modul Account Payable — hanya berjurnal, bukan transaksi kas.">Pelunasan Hutang (AP)</Badge>
+                            <Badge v-else :variant="typeMeta[r.trx_type]?.badge ?? 'neutral'" size="sm">{{ types[r.trx_type] }}</Badge>
+                        </td>
                         <td class="px-4 py-2.5"><span class="block max-w-[200px] truncate" :title="r.rekening_label ?? r.cash_account?.name ?? ''">{{ r.rekening_label ?? r.cash_account?.name ?? '—' }}</span></td>
                         <td class="px-4 py-2.5 text-neutral-500"><span class="block max-w-[200px] truncate" :title="(r.description ?? '') + (r.payee ? ' · ' + r.payee : '')">{{ r.description }}<span v-if="r.payee" class="text-neutral-400"> · {{ r.payee }}</span></span></td>
                         <td class="whitespace-nowrap px-4 py-2.5 text-right font-mono text-success-600">{{ r.masuk > 0 ? fmtRp(r.masuk) : '—' }}</td>

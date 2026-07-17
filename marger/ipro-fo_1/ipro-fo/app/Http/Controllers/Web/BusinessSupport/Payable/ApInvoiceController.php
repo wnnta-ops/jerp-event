@@ -35,7 +35,7 @@ class ApInvoiceController extends Controller
         // agar kotak summary mengikuti hasil filter. Total & Sisa = nett (setelah PPN & PPh).
         $rows = BsApInvoice::query()
             ->with(['supplier:id,name', 'customer:id,full_name'])
-            ->select(['id', 'invoice_number', 'invoice_date', 'receive_date', 'due_date', 'supplier_id', 'customer_id', 'source_type', 'refund_source', 'description', 'berkas_notes', 'total', 'net_payable', 'paid_amount', 'status'])
+            ->select(['id', 'invoice_number', 'invoice_date', 'receive_date', 'due_date', 'supplier_id', 'customer_id', 'source_type', 'refund_source', 'description', 'berkas_notes', 'berkas_finance_date', 'total', 'net_payable', 'paid_amount', 'status'])
             ->latest('invoice_date')->latest('id')
             ->get()
             ->map(fn ($r) => [
@@ -50,6 +50,7 @@ class ApInvoiceController extends Controller
                 'refund_source'  => $r->refund_source,  // SPR / SPRS / TRANSFER_ANONIM
                 'description'    => $r->description,
                 'berkas_notes'   => $r->berkas_notes,
+                'berkas_finance_date' => $r->berkas_finance_date?->toDateString(),
                 'status'         => $r->status,
                 'payable'        => round($r->payable_amount, 2),   // nett dibayar ke supplier (total − PPh dipotong)
                 'sisa'           => round($r->outstanding, 2),       // nett − terbayar
@@ -57,6 +58,8 @@ class ApInvoiceController extends Controller
 
         return Inertia::render('BusinessSupport/Payable/Index', [
             'invoices' => $rows,
+            // Hanya Finance yang boleh mengisi tanggal berkas diterima Finance.
+            'canBerkasFinance' => $this->isFinance($request),
         ]);
     }
 
@@ -130,7 +133,7 @@ class ApInvoiceController extends Controller
         $e  = fn ($s) => htmlspecialchars((string) $s, ENT_QUOTES, 'UTF-8');
         $rp = fn ($n) => number_format((float) $n, 0, ',', '.');
         $today = \Illuminate\Support\Carbon::today();
-        $h  = '<table border="1"><tr style="background:#0f766e;color:#fff"><th>No Invoice</th><th>Tanggal</th><th>Tgl Diterima</th><th>Jatuh Tempo</th><th>Aging Hutang</th><th>Aging Jatuh Tempo</th><th>Supplier</th><th>Keterangan</th><th>Status</th><th>Total</th><th>Terbayar</th><th>Sisa</th></tr>';
+        $h  = '<table border="1"><tr style="background:#0f766e;color:#fff"><th>No Invoice</th><th>Tanggal</th><th>Tgl Diterima</th><th>Berkas Diterima Finance</th><th>Jatuh Tempo</th><th>Aging Hutang</th><th>Aging Jatuh Tempo</th><th>Supplier</th><th>Keterangan</th><th>Status</th><th>Total</th><th>Terbayar</th><th>Sisa</th></tr>';
         foreach ($rows as $r) {
             $sisa = (float) $r->total - (float) $r->paid_amount;
             // Aging Hutang = jumlah hari sejak tanggal diterima (receive_date) sampai hari ini (>=0).
@@ -141,7 +144,8 @@ class ApInvoiceController extends Controller
             $agingJt = $r->due_date
                 ? (string) (int) $r->due_date->copy()->startOfDay()->diffInDays($today, false)
                 : '-';
-            $h .= '<tr><td>'.$e($r->invoice_number).'</td><td>'.$e($r->invoice_date?->toDateString()).'</td><td>'.$e($r->receive_date?->toDateString()).'</td><td>'.$e($r->due_date?->toDateString()).'</td><td>'.$e($agingHutang).'</td><td>'.$e($agingJt).'</td><td>'.$e($r->supplier?->code).' '.$e($r->supplier?->name).'</td><td>'.$e($r->description).'</td><td>'.$e($r->status).'</td><td>'.$rp($r->total).'</td><td>'.$rp($r->paid_amount).'</td><td>'.$rp($sisa).'</td></tr>';
+            $h .= '<tr><td>'.$e($r->invoice_number).'</td><td>'.$e($r->invoice_date?->toDateString()).'</td><td>'.$e($r->receive_date?->toDateString())
+                .'</td><td>'.$e($r->berkas_finance_date?->toDateString()).'</td><td>'.$e($r->due_date?->toDateString()).'</td><td>'.$e($agingHutang).'</td><td>'.$e($agingJt).'</td><td>'.$e($r->supplier?->code).' '.$e($r->supplier?->name).'</td><td>'.$e($r->description).'</td><td>'.$e($r->status).'</td><td>'.$rp($r->total).'</td><td>'.$rp($r->paid_amount).'</td><td>'.$rp($sisa).'</td></tr>';
         }
         $h .= '</table>';
 
@@ -383,6 +387,38 @@ class ApInvoiceController extends Controller
         $invoice->update(['berkas_notes' => ($data['notes'] ?? '') !== '' ? $data['notes'] : null]);
 
         return back(303);
+    }
+
+    /**
+     * Tanggal berkas fisik diterima Finance — HANYA boleh diisi Finance.
+     *
+     * Dibatasi lewat PERAN (Finance / FinanceManager), bukan departemen: di sistem ini user tidak
+     * punya kaitan departemen sama sekali (users tanpa kolom departemen, bs_hr_departments kosong,
+     * bs_employees.department_id semuanya NULL), sehingga peran adalah proksi Dept Finance yang
+     * benar-benar ada. SuperAdmin tetap bisa — bypass global yang berlaku di seluruh aplikasi.
+     *
+     * Catatan: belum ada syarat "approval lengkap" karena Invoice Hutang memang belum punya alur
+     * approval (status hanya Open/Lunas). Syarat itu menyusul bila alurnya dibangun.
+     */
+    public function updateBerkasFinance(Request $request, BsApInvoice $invoice): RedirectResponse
+    {
+        abort_unless($request->user()?->canModule('ap'), 403);
+        abort_unless($this->isFinance($request), 403, 'Hanya Dept Finance yang boleh mengisi tanggal berkas diterima Finance.');
+
+        $data = $request->validate(['berkas_finance_date' => ['nullable', 'date']], [], [
+            'berkas_finance_date' => 'tanggal berkas diterima Finance',
+        ]);
+        $invoice->update(['berkas_finance_date' => $data['berkas_finance_date'] ?? null]);
+
+        return back(303)->with('success', ($data['berkas_finance_date'] ?? null)
+            ? 'Tanggal berkas diterima Finance disimpan.'
+            : 'Tanggal berkas diterima Finance dikosongkan.');
+    }
+
+    /** Apakah user termasuk Dept Finance (proksi peran). SuperAdmin ikut lewat Gate::before. */
+    private function isFinance(Request $request): bool
+    {
+        return (bool) $request->user()?->hasAnyRole(['Finance', 'FinanceManager', 'SuperAdmin']);
     }
 
     /** #51: Cetak bukti hutang supplier + riwayat pembayaran (auto-print). */

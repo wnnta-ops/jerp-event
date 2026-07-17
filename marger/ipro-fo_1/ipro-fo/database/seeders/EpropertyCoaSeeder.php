@@ -36,10 +36,13 @@ class EpropertyCoaSeeder extends Seeder
 
         $rows = require database_path('data/eproperty_coa.php');
 
-        foreach ($rows as [$code, $name]) {
+        foreach ($rows as $row) {
+            [$code, $name] = $row;
             $len   = strlen($code);
             $level = intdiv($len + 1, 2);
-            $type  = match ($code[0]) {
+            // Elemen ke-3 (opsional) menimpa tipe turunan — dipakai subtree 601 PENDAPATAN
+            // LAIN-LAIN yang berada di head "6" (BEBAN). Lihat catatan di data/eproperty_coa.php.
+            $type  = $row[2] ?? match ($code[0]) {
                 '1' => 'asset', '2' => 'liability', '3', '8' => 'equity',
                 '4' => 'income', '5', '6', '7' => 'expense', default => 'asset',
             };
