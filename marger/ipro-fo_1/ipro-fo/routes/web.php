@@ -691,9 +691,12 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
     // dengan aksi "Kompensasi dengan AR" (memindahkan baris ke Rekonsiliasi Piutang).
     Route::get('/business-support/receivable-um',              [BsArUmController::class, 'index'])->name('bs.ar.um.index');
     Route::post('/business-support/receivable-um/kompensasi',  [BsArUmController::class, 'compensate'])->name('bs.ar.um.compensate');
+    Route::post('/business-support/receivable-um/batal',       [BsArUmController::class, 'undo'])->name('bs.ar.um.undo');
     // AR — Rekonsiliasi Piutang (sidebar mandiri): invoice piutang vs UM terkompensasi, per SPR.
     Route::get('/business-support/receivable-rekonsiliasi',        [BsArRekonsiliasiController::class, 'index'])->name('bs.ar.rekonsiliasi.index');
     Route::get('/business-support/receivable-rekonsiliasi/tagihan', [BsArRekonsiliasiController::class, 'printTagihan'])->name('bs.ar.rekonsiliasi.tagihan');
+    // AR — kaitkan/lepas SPR pada invoice yang sudah tercatat (invoice lama ber-booking_id NULL).
+    Route::patch('/business-support/receivable-spr/{invoice}', [BsArController::class, 'linkSpr'])->name('bs.ar.link-spr');
     Route::get('/business-support/receivable/{invoice}',      [BsArController::class, 'show'])->name('bs.ar.show');
     Route::post('/business-support/receivable/{invoice}/pay', [BsArController::class, 'pay'])->name('bs.ar.pay');
     Route::post('/business-support/receivable/{invoice}/reschedule', [BsArController::class, 'reschedule'])->name('bs.ar.reschedule');

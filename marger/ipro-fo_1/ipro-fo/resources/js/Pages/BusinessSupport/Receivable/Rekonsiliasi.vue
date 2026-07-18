@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue';
+import { ref, computed, watch } from 'vue';
 import { router, Link } from '@inertiajs/vue3';
-import { ArrowLeft, Scale, Search, FilterX, Printer, ChevronDown, ChevronRight } from 'lucide-vue-next';
+import { ArrowLeft, Scale, Search, FilterX, Printer, ChevronDown, ChevronRight, Undo2 } from 'lucide-vue-next';
 import Badge from '@/Components/UI/Badge.vue';
 import EmptyState from '@/Components/UI/EmptyState.vue';
 import TableTopScroll from '@/Components/UI/TableTopScroll.vue';
@@ -41,12 +41,36 @@ const allChecked = computed<boolean>({
     set: (v: boolean) => { selected.value = v ? [...pageKeys.value] : []; },
 });
 const selectedSisa = computed(() => props.rows.filter((r) => selected.value.includes(r.row_key)).reduce((s, r) => s + Number(r.sisa || 0), 0));
+
+// Daftar berubah (mis. sesudah membatalkan kompensasi, grup bisa lenyap karena isinya habis)
+// -> buang centang yang barisnya sudah tidak ada. MEMANGKAS, bukan mengosongkan: centang lain
+// yang masih sah harus tetap bertahan. Tanpa ini, "Cetak Surat Tagihan" mengirim key hantu
+// dan berakhir 404.
+watch(() => props.rows, (rows) => {
+    if (! selected.value.length) return;
+    const ada = new Set(rows.map((r) => r.row_key));
+    const tersisa = selected.value.filter((k) => ada.has(k));
+    if (tersisa.length !== selected.value.length) selected.value = tersisa;
+});
 const cbCls = 'h-4 w-4 rounded border-neutral-300 text-primary-600 focus:ring-primary-500 dark:border-neutral-600 dark:bg-neutral-900';
 
 // Rincian per SPR dibuka sesuai kebutuhan agar tabel induk tetap terbaca.
 const open = ref<string[]>([]);
 function toggle(key: string) {
     open.value = open.value.includes(key) ? open.value.filter((k) => k !== key) : [...open.value, key];
+}
+
+// Batalkan kompensasi satu baris UM — mengembalikannya ke antrean UM Penjualan.
+// Tidak menyentuh jurnal (kompensasi memang tidak memposting jurnal).
+const membatalkan = ref(false);
+function batalKompensasi(u: Um) {
+    if (membatalkan.value) return;
+    if (! window.confirm(`Batalkan kompensasi ${u.source_label} sebesar ${fmtRp(u.amount)}?\n\nBaris ini akan kembali ke antrean UM Penjualan.`)) return;
+    membatalkan.value = true;
+    router.post(route('bs.ar.um.undo'), { ids: [u.id] }, {
+        preserveScroll: true,
+        onFinish: () => { membatalkan.value = false; },
+    });
 }
 </script>
 
@@ -164,6 +188,13 @@ function toggle(key: string) {
                                                     <td class="py-1 pr-2 text-neutral-500">{{ fmtDate(u.date) }}</td>
                                                     <td class="py-1 pr-2 text-neutral-500"><span class="block max-w-[200px] truncate" :title="u.note ?? ''">{{ u.note ?? '—' }}</span></td>
                                                     <td class="py-1 text-right font-mono text-warning-600">{{ fmtRp(u.amount) }}</td>
+                                                    <td class="py-1 pl-2 text-right">
+                                                        <button type="button" @click="batalKompensasi(u)" :disabled="membatalkan"
+                                                                title="Batalkan kompensasi — baris kembali ke antrean UM Penjualan"
+                                                                class="text-neutral-400 hover:text-danger-600 disabled:opacity-40">
+                                                            <Undo2 class="h-3.5 w-3.5" />
+                                                        </button>
+                                                    </td>
                                                 </tr>
                                                 <tr v-if="!r.ums.length"><td colspan="4" class="py-1 text-neutral-400">Belum ada UM dikompensasi</td></tr>
                                             </tbody>

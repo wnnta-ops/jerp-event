@@ -109,6 +109,34 @@ class ArUmPenjualanController extends Controller
         return back()->with('success', $pilih->count().' UM Penjualan dikompensasi dengan AR — cek di Rekonsiliasi Piutang.');
     }
 
+    /**
+     * Batalkan kompensasi — baris kembali ke antrean UM Penjualan.
+     *
+     * Kompensasi dilakukan dengan mencentang massal, jadi salah centang mudah terjadi; tanpa
+     * jalan pulang, kekeliruan itu permanen dan hanya bisa dibetulkan lewat database.
+     * Karena kompensasi tidak memposting jurnal, membatalkannya juga tidak menyentuh buku besar.
+     */
+    public function undo(Request $request): RedirectResponse
+    {
+        abort_unless($request->user()?->canModule('ar'), 403);
+
+        $v = $request->validate([
+            'ids'   => ['required', 'array', 'min:1'],
+            'ids.*' => ['integer'],
+        ]);
+
+        // Hard delete, bukan soft delete: unique (source_type, source_id) tidak mengabaikan baris
+        // ber-deleted_at, jadi baris tertinggal akan memblokir kompensasi ulang atas sumber yang sama.
+        $n = BsArUmCompensation::whereIn('id', $v['ids'])->forceDelete();
+
+        return back()->with(
+            $n > 0 ? 'success' : 'error',
+            $n > 0
+                ? $n.' kompensasi dibatalkan — barisnya kembali ke antrean UM Penjualan.'
+                : 'Tidak ada kompensasi yang cocok untuk dibatalkan.'
+        );
+    }
+
     // ── Sumber data ──────────────────────────────────────────────────────────────────────────
 
     /** Baris UM yang sudah diposting DAN belum dikompensasi. */
