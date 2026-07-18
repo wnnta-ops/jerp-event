@@ -9,6 +9,7 @@ const props = defineProps<{
     categories: Array<any>;
     pphAccounts: Array<any>;
     trxTypes: Record<string, string>;
+    bookings: Array<{ id: number; code: string; name: string; customer_id: number | null }>;
 }>();
 
 const steps = ['Pilih Customer', 'Input Transaksi', 'Detil Tagihan', 'Struktur', 'Selesai'];
@@ -17,7 +18,7 @@ const today = new Date().toISOString().slice(0, 10);
 const customerSearch = ref('');
 
 const form = useForm<any>({
-    customer_id: '', category_id: '', trx_type: 'normal', customer_ref_no: '', manual_no: '',
+    customer_id: '', booking_id: '', category_id: '', trx_type: 'normal', customer_ref_no: '', manual_no: '',
     invoice_date: today, receive_date: today, term_days: 30, due_date: '',
     description: '', transfer_detail: '', kurs: 1, dpp: 0,
     ppn_mode: 'none', ppn_pct: 11, pph_mode: 'none', pph_pct: 2, pph_account_id: '',
@@ -29,6 +30,9 @@ const filteredCustomers = computed(() => {
     return q ? props.customers.filter((s: any) => (s.full_name + s.code).toLowerCase().includes(q)) : props.customers;
 });
 const customer = computed(() => props.customers.find((s: any) => s.id === form.customer_id));
+// SPR dibatasi milik customer terpilih — mencegah invoice tersambung ke unit customer lain.
+// Bila customer tsb tidak punya SPR, daftarnya kosong dan isian tetap boleh dibiarkan kosong.
+const bookingOptions = computed(() => (props.bookings ?? []).filter((b) => !form.customer_id || b.customer_id === form.customer_id));
 const category = computed(() => props.categories.find((c: any) => c.id === form.category_id));
 
 const ppn = computed(() => form.ppn_mode === 'with' ? Math.round((Number(form.dpp) || 0) * (Number(form.ppn_pct) || 0)) / 100 : 0);
@@ -40,7 +44,12 @@ const linesSum = computed(() => form.lines.reduce((s: number, l: any) => s + (Nu
 const schedSum = computed(() => form.schedules.reduce((s: number, l: any) => s + (Number(l.amount) || 0), 0));
 
 function fmtRp(v: number) { return 'Rp ' + Number(v ?? 0).toLocaleString('id-ID'); }
-function pickCustomer(s: any) { form.customer_id = s.id; step.value = 2; }
+function pickCustomer(s: any) {
+    // Ganti customer → SPR lama bisa jadi milik customer lain; kosongkan agar tidak salah kait.
+    if (form.customer_id !== s.id) form.booking_id = '';
+    form.customer_id = s.id;
+    step.value = 2;
+}
 function addLine() { form.lines.push({ description: form.description || '', qty: 1, unit_price: 0, amount: 0 }); }
 function removeLine(i: number) { form.lines.splice(i, 1); }
 function addSchedule() { form.schedules.push({ due_date: dueDate.value, amount: 0 }); }
@@ -96,6 +105,14 @@ const inputCls = 'h-9 w-full rounded-lg border border-neutral-300 bg-white px-3 
                 <div class="md:col-span-2 rounded-lg bg-neutral-50 px-4 py-2 text-sm dark:bg-neutral-800">Customer: <span class="font-semibold">{{ customer?.full_name }}</span></div>
                 <div class="md:col-span-2"><label class="mb-1 block text-xs font-medium text-neutral-500">Kategori Invoice *</label><select v-model="form.category_id" required :class="inputCls"><option value="">— pilih kategori —</option><option v-for="c in categories" :key="c.id" :value="c.id">{{ c.name }} ({{ c.code }})</option></select>
                     <p v-if="category" class="mt-1 text-[11px] text-neutral-400">Cr {{ category.income }} · Dr {{ category.receivable }}</p></div>
+                <div class="md:col-span-2">
+                    <label class="mb-1 block text-xs font-medium text-neutral-500">No. SPR / Unit <span class="text-neutral-400">(opsional)</span></label>
+                    <select v-model="form.booking_id" :class="inputCls">
+                        <option value="">— tanpa SPR (denda / saldo awal / tagihan non-unit) —</option>
+                        <option v-for="b in bookingOptions" :key="b.id" :value="b.id">{{ b.code }} — {{ b.name }}</option>
+                    </select>
+                    <p class="mt-1 text-[11px] text-neutral-400">Diisi bila tagihan ini melekat pada satu unit — dipakai mengelompokkan Rekonsiliasi Piutang per SPR.</p>
+                </div>
                 <div><label class="mb-1 block text-xs font-medium text-neutral-500">Tipe Transaksi *</label><select v-model="form.trx_type" :class="inputCls"><option v-for="(label,val) in trxTypes" :key="val" :value="val">{{ label }}</option></select></div>
                 <div><label class="mb-1 block text-xs font-medium text-neutral-500">No. Ref. Customer</label><input v-model="form.customer_ref_no" :class="inputCls" /></div>
                 <div><label class="mb-1 block text-xs font-medium text-neutral-500">Tgl. Invoice *</label><input v-model="form.invoice_date" type="date" required :class="inputCls" /></div>
