@@ -10,6 +10,7 @@ import {
     FolderGit2, CalendarClock, TriangleAlert, Lock,
     Layers, FileCog,
     GitMerge, FileSpreadsheet, IdCard, Gift, Eraser, SlidersHorizontal, DatabaseZap, Database, UserPlus,
+    Scale,
 } from 'lucide-vue-next';
 
 export interface NavItem {
@@ -230,6 +231,7 @@ export function navGroups(foUrl: string): NavGroup[] {
         items: [
             { label: 'Invoice Piutang',     icon: Coins,            href: 'bs.ar.index',             permission: ['businesssupport.view', 'ar.*'] },
             { label: 'UM Penjualan',        icon: Wallet,           href: 'bs.ar.um.index',          permission: ['businesssupport.view', 'ar.*'] },
+            { label: 'Rekonsiliasi Piutang', icon: Scale,           href: 'bs.ar.rekonsiliasi.index', permission: ['businesssupport.view', 'ar.*'] },
             { label: 'Registrasi Piutang',  icon: ClipboardList,    href: 'bs.ar.create',            permission: ['businesssupport.view', 'ar.*'] },
             { label: 'Kuitansi Piutang',    icon: Receipt,          href: 'bs.ar.kuitansi.index',    permission: ['businesssupport.view', 'ar.*'] },
             { label: 'Memorial Piutang',    icon: BookText,         href: 'bs.ar.memorial.index',    permission: ['businesssupport.view', 'ar.*'] },
