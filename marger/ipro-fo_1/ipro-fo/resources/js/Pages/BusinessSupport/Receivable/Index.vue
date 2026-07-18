@@ -8,12 +8,15 @@ import EmptyState from '@/Components/UI/EmptyState.vue';
 
 type Row = {
     id: number; invoice_number: string; invoice_date: string | null; due_date: string | null;
-    customer: string | null; customer_code: string | null; spr: string | null; unit: string | null;
+    customer: string | null; customer_code: string | null; customer_id: number | null;
+    booking_id: number | null; spr: string | null; unit: string | null;
     unit_type: string | null; description: string | null;
     dpp: number; ppn: number; total: number; outstanding: number; paid_amount: number; status: string;
 };
+type SprOpt = { id: number; label: string };
 const props = defineProps<{
     invoices: { data: Row[]; links?: Array<any>; total?: number };
+    sprOptions: Record<string, SprOpt[]>;
     filters: { status?: string; search?: string };
     summary: { open: number; count_open: number; count_total: number };
 }>();
@@ -34,6 +37,20 @@ const allChecked = computed<boolean>({
     set: (v: boolean) => { selected.value = v ? [...pageIds.value] : []; },
 });
 const cbCls = 'h-4 w-4 rounded border-neutral-300 text-primary-600 focus:ring-primary-500 dark:border-neutral-600 dark:bg-neutral-900';
+
+// ── Kaitkan SPR pada invoice yang sudah tercatat ──
+// Kolom booking_id baru, jadi seluruh invoice lama bernilai NULL; tanpa jalan ini mereka
+// tidak akan pernah masuk Rekonsiliasi per SPR.
+const savingSpr = ref(false);
+function optionsFor(r: Row): SprOpt[] { return props.sprOptions?.[String(r.customer_id ?? '')] ?? []; }
+function simpanSpr(r: Row, value: string) {
+    if (savingSpr.value) return;
+    savingSpr.value = true;
+    router.patch(route('bs.ar.link-spr', r.id), { booking_id: value === '' ? null : Number(value) }, {
+        preserveScroll: true,
+        onFinish: () => { savingSpr.value = false; },
+    });
+}
 function fmtRp(v: number) { return 'Rp ' + Number(v ?? 0).toLocaleString('id-ID'); }
 function fmtDate(d: string | null) { return d ? new Date(d).toLocaleDateString('id-ID', { day:'2-digit', month:'short', year:'numeric' }) : '—'; }
 </script>
@@ -96,7 +113,18 @@ function fmtDate(d: string | null) { return d ? new Date(d).toLocaleDateString('
                         <td class="cursor-pointer px-4 py-2.5 font-mono font-semibold" @click="router.get(route('bs.ar.show', r.id))">{{ r.invoice_number }}</td>
                         <td class="cursor-pointer whitespace-nowrap px-4 py-2.5" @click="router.get(route('bs.ar.show', r.id))">{{ fmtDate(r.invoice_date) }}</td>
                         <td class="cursor-pointer px-4 py-2.5" @click="router.get(route('bs.ar.show', r.id))">{{ r.customer ?? '—' }}</td>
-                        <td class="whitespace-nowrap px-4 py-2.5 font-mono text-xs text-neutral-500">{{ r.spr ?? '—' }}</td>
+                        <!-- Select langsung (pola sama dengan Rekening Ledger): tanpa mode-edit,
+                             sehingga tidak ada urutan change/blur yang bisa membuang perubahan. -->
+                        <td class="whitespace-nowrap px-4 py-2.5 text-xs">
+                            <select v-if="optionsFor(r).length" :value="r.booking_id ?? ''" :disabled="savingSpr"
+                                    @change="simpanSpr(r, ($event.target as HTMLSelectElement).value)"
+                                    title="Kaitkan invoice ini ke SPR — dasar pengelompokan Rekonsiliasi Piutang"
+                                    class="h-7 max-w-[170px] rounded border border-neutral-300 bg-white px-1 font-mono text-xs disabled:opacity-50 dark:border-neutral-700 dark:bg-neutral-900">
+                                <option value="">— tanpa SPR —</option>
+                                <option v-for="o in optionsFor(r)" :key="o.id" :value="o.id">{{ o.label }}</option>
+                            </select>
+                            <span v-else class="font-mono text-neutral-400" title="Customer ini belum punya SPR yang bisa dikaitkan">{{ r.spr ?? '—' }}</span>
+                        </td>
                         <td class="whitespace-nowrap px-4 py-2.5">
                             <span>{{ r.unit ?? '—' }}</span>
                             <span v-if="r.unit_type" class="block text-xs text-neutral-400">{{ r.unit_type }}</span>

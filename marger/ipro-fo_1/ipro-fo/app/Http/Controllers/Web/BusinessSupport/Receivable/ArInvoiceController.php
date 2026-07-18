@@ -38,8 +38,23 @@ class ArInvoiceController extends Controller
 
         $rows->getCollection()->transform(fn (BsArInvoice $r) => $this->row($r));
 
+        // SPR yang bisa dipilih untuk baris di HALAMAN INI saja (dikelompokkan per customer).
+        // Dibatasi ke customer yang benar-benar tampil supaya payload tidak membawa seluruh
+        // booking hanya untuk mengisi dropdown yang jarang dipakai.
+        $customerIds = $rows->getCollection()->pluck('customer_id')->filter()->unique()->values();
+        $sprOptions = $customerIds->isEmpty() ? [] : Booking::query()
+            ->whereIn('customer_id', $customerIds)
+            ->with('unit:id,unit_code')
+            ->latest('booking_date')->get()
+            ->groupBy('customer_id')
+            ->map(fn ($list) => $list->map(fn (Booking $b) => [
+                'id'    => $b->id,
+                'label' => trim($b->booking_number.($b->unit?->unit_code ? ' · '.$b->unit->unit_code : '')),
+            ])->values());
+
         return Inertia::render('BusinessSupport/Receivable/Index', [
-            'invoices' => $rows,
+            'invoices'   => $rows,
+            'sprOptions' => $sprOptions,
             'filters'  => $request->only(['status', 'search']),
             'summary'  => [
                 // Basis HARUS sama dengan kolom "Sisa" per baris (accessor outstanding), yaitu
@@ -72,6 +87,8 @@ class ArInvoiceController extends Controller
             'due_date'       => optional($r->due_date)->toDateString(),
             'customer'       => $r->customer?->full_name,
             'customer_code'  => $r->customer?->code,
+            'customer_id'    => $r->customer_id,
+            'booking_id'     => $r->booking_id,
             'spr'            => $r->booking?->booking_number,
             'unit'           => $unit?->unit_code,
             'unit_type'      => $unit?->unitType?->name,
@@ -85,6 +102,39 @@ class ArInvoiceController extends Controller
             'paid_amount'    => (float) $r->paid_amount,
             'status'         => $r->status,
         ];
+    }
+
+    /**
+     * Kaitkan / lepas SPR pada invoice yang SUDAH tercatat.
+     *
+     * Diperlukan karena kolom booking_id baru ditambahkan: seluruh invoice yang sudah ada
+     * bernilai NULL dan tanpa jalan ini tidak akan pernah bisa masuk Rekonsiliasi per SPR.
+     * Hanya mengubah pengelompokan — tidak menyentuh nilai, status, maupun jurnal.
+     */
+    public function linkSpr(Request $request, BsArInvoice $invoice): RedirectResponse
+    {
+        abort_unless($request->user()?->canModule('ar'), 403);
+
+        $v = $request->validate([
+            'booking_id' => ['nullable', 'integer', 'exists:bookings,id'],
+        ]);
+
+        $bookingId = $v['booking_id'] ?? null;
+
+        // SPR WAJIB milik customer invoice ini. Tanpa penjaga ini, salah pilih akan membuat
+        // tagihan customer A muncul di grup rekonsiliasi (dan surat tagihan) customer B.
+        if ($bookingId !== null) {
+            $booking = Booking::find($bookingId);
+            if (! $booking || (int) $booking->customer_id !== (int) $invoice->customer_id) {
+                return back()->with('error', 'SPR tersebut bukan milik customer invoice ini.');
+            }
+        }
+
+        $invoice->update(['booking_id' => $bookingId]);
+
+        return back()->with('success', $bookingId
+            ? "Invoice {$invoice->invoice_number} dikaitkan ke SPR."
+            : "Kaitan SPR pada invoice {$invoice->invoice_number} dilepas.");
     }
 
     public function create(Request $request): Response
