@@ -229,6 +229,7 @@ export function navGroups(foUrl: string): NavGroup[] {
         desc: 'Invoice, kuitansi & kartu piutang customer.',
         items: [
             { label: 'Invoice Piutang',     icon: Coins,            href: 'bs.ar.index',             permission: ['businesssupport.view', 'ar.*'] },
+            { label: 'UM Penjualan',        icon: Wallet,           href: 'bs.ar.um.index',          permission: ['businesssupport.view', 'ar.*'] },
             { label: 'Registrasi Piutang',  icon: ClipboardList,    href: 'bs.ar.create',            permission: ['businesssupport.view', 'ar.*'] },
             { label: 'Kuitansi Piutang',    icon: Receipt,          href: 'bs.ar.kuitansi.index',    permission: ['businesssupport.view', 'ar.*'] },
             { label: 'Memorial Piutang',    icon: BookText,         href: 'bs.ar.memorial.index',    permission: ['businesssupport.view', 'ar.*'] },
