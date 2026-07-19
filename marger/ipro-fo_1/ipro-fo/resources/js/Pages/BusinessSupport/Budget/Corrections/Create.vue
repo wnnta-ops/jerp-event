@@ -55,7 +55,7 @@ function submit() {
                 <label class="mb-1 block text-sm font-medium">Budget master</label>
                 <select v-model="form.budget_id" :class="inputCls">
                     <option value="">— pilih —</option>
-                    <option v-for="b in props.budgets" :key="b.id" :value="b.id">{{ b.doc_no }} — {{ b.account }} ({{ fmtRp(b.amount) }})</option>
+                    <option v-for="b in props.budgets" :key="b.id" :value="b.id">{{ b.cost_center }} — {{ b.account }} ({{ fmtRp(b.amount) }})</option>
                 </select>
             </div>
 

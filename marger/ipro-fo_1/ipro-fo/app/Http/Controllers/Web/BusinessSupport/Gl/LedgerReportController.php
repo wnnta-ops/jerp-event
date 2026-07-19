@@ -19,52 +19,132 @@ class LedgerReportController extends Controller
     public function ledger(Request $request): Response
     {
         abort_unless($request->user()?->canModule('gl'), 403);
-
-        $accountId = $request->integer('account_id');
-        $from = $request->date('from');
-        $to   = $request->date('to');
-
-        $rows = collect();
-        $opening = 0.0;
-        $account = $accountId ? BsAccount::find($accountId) : null;
-
-        if ($account) {
-            // Saldo awal sebelum 'from'.
-            if ($from) {
-                $opening = (float) BsJournalLine::where('account_id', $accountId)
-                    ->whereHas('journal', fn ($q) => $q->where('status', 'posted')->whereDate('journal_date', '<', $from))
-                    ->selectRaw('COALESCE(SUM(debit-credit),0) as b')->value('b');
-            }
-            $running = $opening;
-            $rows = BsJournalLine::query()
-                ->where('account_id', $accountId)
-                ->whereHas('journal', function ($q) use ($from, $to) {
-                    $q->where('status', 'posted');
-                    if ($from) $q->whereDate('journal_date', '>=', $from);
-                    if ($to) $q->whereDate('journal_date', '<=', $to);
-                })
-                ->with('journal:id,journal_number,journal_date,description')
-                ->get()
-                ->sortBy(fn ($l) => [$l->journal->journal_date, $l->id])
-                ->values()
-                ->map(function ($l) use (&$running) {
-                    $running += (float) $l->debit - (float) $l->credit;
-                    return [
-                        'date' => $l->journal->journal_date?->format('Y-m-d'),
-                        'number' => $l->journal->journal_number,
-                        'description' => $l->description ?: $l->journal->description,
-                        'debit' => (float) $l->debit, 'credit' => (float) $l->credit, 'balance' => $running,
-                    ];
-                });
-        }
+        $data = $this->ledgerData($request);
 
         return Inertia::render('BusinessSupport/Gl/Ledger', [
             'accounts' => BsAccount::where('is_postable', true)->orderBy('code')->get(['id', 'code', 'name']),
-            'account'  => $account ? ['id' => $account->id, 'code' => $account->code, 'name' => $account->name] : null,
-            'opening'  => $opening,
-            'rows'     => $rows,
-            'filters'  => ['account_id' => $accountId ?: '', 'from' => $request->input('from'), 'to' => $request->input('to')],
+            'ledgers'  => $data['ledgers'],
+            'filters'  => [
+                'from_code' => $data['from_code'], 'to_code' => $data['to_code'],
+                'from' => $data['from'], 'to' => $data['to'],
+            ],
         ]);
+    }
+
+    /** Export Buku Besar (range COA) ke Excel (.xls) mengikuti filter aktif. */
+    public function ledgerExport(Request $request): \Illuminate\Http\Response
+    {
+        abort_unless($request->user()?->canModule('gl'), 403);
+        $data = $this->ledgerData($request);
+        $file = 'Buku-Besar-'.($data['from_code'] ?: 'x').'-sd-'.($data['to_code'] ?: $data['from_code'] ?: 'x').'.xls';
+
+        return response('<html xmlns:x="urn:schemas-microsoft-com:office:excel"><head><meta charset="utf-8"></head><body>'
+            .$this->ledgerHtml($data).'</body></html>')
+            ->header('Content-Type', 'application/vnd.ms-excel; charset=UTF-8')
+            ->header('Content-Disposition', 'attachment; filename="'.$file.'"');
+    }
+
+    /**
+     * Data Buku Besar terfilter — dipakai bersama tampilan & export.
+     * Range akun postable dari kode `from_code` s/d `to_code` (salah satu boleh kosong = satu akun).
+     * Tiap akun: saldo awal (sebelum `from`) + mutasi periode + saldo berjalan.
+     */
+    private function ledgerData(Request $request): array
+    {
+        $fromCode = trim((string) $request->input('from_code', ''));
+        $toCode   = trim((string) $request->input('to_code', ''));
+        $from = $request->date('from');
+        $to   = $request->date('to');
+
+        $ledgers = [];
+        if ($fromCode !== '' || $toCode !== '') {
+            $lo = $fromCode !== '' ? $fromCode : $toCode;
+            $hi = $toCode !== '' ? $toCode : $fromCode;
+            if (strcmp($lo, $hi) > 0) {
+                [$lo, $hi] = [$hi, $lo]; // jaga urutan bila terbalik
+            }
+            $accounts = BsAccount::where('is_postable', true)
+                ->whereBetween('code', [$lo, $hi])->orderBy('code')->get(['id', 'code', 'name']);
+            foreach ($accounts as $a) {
+                $l = $this->accountLedger((int) $a->id, $from, $to);
+                // hanya akun yang ada mutasi ATAU saldo awal (hindari daftar akun kosong yang panjang)
+                if (! empty($l['rows']) || abs($l['opening']) > 0.005) {
+                    $ledgers[] = ['code' => $a->code, 'name' => $a->name] + $l;
+                }
+            }
+        }
+
+        return [
+            'from_code' => $fromCode, 'to_code' => $toCode,
+            'from' => $from?->toDateString(), 'to' => $to?->toDateString(),
+            'ledgers' => $ledgers,
+        ];
+    }
+
+    /** Buku besar satu akun: saldo awal + baris mutasi + total + saldo akhir. */
+    private function accountLedger(int $accountId, $from, $to): array
+    {
+        $opening = 0.0;
+        if ($from) {
+            $opening = (float) BsJournalLine::where('account_id', $accountId)
+                ->whereHas('journal', fn ($q) => $q->where('status', 'posted')->whereDate('journal_date', '<', $from))
+                ->selectRaw('COALESCE(SUM(debit-credit),0) as b')->value('b');
+        }
+        $running = $opening;
+        $rows = BsJournalLine::query()
+            ->where('account_id', $accountId)
+            ->whereHas('journal', function ($q) use ($from, $to) {
+                $q->where('status', 'posted');
+                if ($from) $q->whereDate('journal_date', '>=', $from);
+                if ($to) $q->whereDate('journal_date', '<=', $to);
+            })
+            ->with('journal:id,journal_number,journal_date,description')
+            ->get()
+            ->sortBy(fn ($l) => [$l->journal->journal_date, $l->id])
+            ->values()
+            ->map(function ($l) use (&$running) {
+                $running += (float) $l->debit - (float) $l->credit;
+
+                return [
+                    'date' => $l->journal->journal_date?->format('Y-m-d'),
+                    'number' => $l->journal->journal_number,
+                    'description' => $l->description ?: $l->journal->description,
+                    'debit' => (float) $l->debit, 'credit' => (float) $l->credit, 'balance' => $running,
+                ];
+            });
+
+        return [
+            'opening' => $opening, 'rows' => $rows->all(),
+            'total_debit' => (float) $rows->sum('debit'), 'total_credit' => (float) $rows->sum('credit'),
+            'closing' => $running,
+        ];
+    }
+
+    /** HTML tabel Buku Besar (per akun) untuk export Excel. */
+    private function ledgerHtml(array $data): string
+    {
+        $rp = fn ($v) => number_format((float) $v, 0, ',', '.');
+        $h = '<p><b>Buku Besar</b> — COA '.e($data['from_code'] ?: '-').' s/d '.e($data['to_code'] ?: ($data['from_code'] ?: '-'))
+            .' · Periode '.e($data['from'] ?? '-').' s/d '.e($data['to'] ?? '-').'</p>';
+        if (empty($data['ledgers'])) {
+            return $h.'<p>Tidak ada data.</p>';
+        }
+        foreach ($data['ledgers'] as $l) {
+            $h .= '<table border="1" cellspacing="0"><tr><td colspan="6"><b>'.e($l['code']).' — '.e($l['name']).'</b></td></tr>'
+                .'<tr><th>Tanggal</th><th>No. Jurnal</th><th>Keterangan</th><th>Debit</th><th>Kredit</th><th>Saldo</th></tr>'
+                .'<tr><td colspan="5">Saldo Awal</td><td align="right">'.$rp($l['opening']).'</td></tr>';
+            foreach ($l['rows'] as $r) {
+                $h .= '<tr><td>'.e($r['date']).'</td><td>'.e($r['number']).'</td><td>'.e($r['description']).'</td>'
+                    .'<td align="right">'.($r['debit'] > 0 ? $rp($r['debit']) : '').'</td>'
+                    .'<td align="right">'.($r['credit'] > 0 ? $rp($r['credit']) : '').'</td>'
+                    .'<td align="right">'.$rp($r['balance']).'</td></tr>';
+            }
+            $h .= '<tr><td colspan="3"><b>Total</b></td><td align="right"><b>'.$rp($l['total_debit']).'</b></td>'
+                .'<td align="right"><b>'.$rp($l['total_credit']).'</b></td><td align="right"><b>'.$rp($l['closing']).'</b></td></tr>'
+                .'</table><br />';
+        }
+
+        return $h;
     }
 
     /**

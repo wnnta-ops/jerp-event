@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, watch } from 'vue';
+import { ref, computed, watch, nextTick } from 'vue';
 import { useForm, Link } from '@inertiajs/vue3';
 import { ArrowLeft, ArrowRight, Save, HandCoins, Plus, Trash2, Check, Search } from 'lucide-vue-next';
 import Button from '@/Components/UI/Button.vue';
@@ -195,7 +195,18 @@ function prev() { if (step.value > 1) step.value--; }
 function submit() { form.post(route('bs.ap.store')); }
 const inputCls = 'h-9 w-full rounded-lg border border-neutral-300 bg-white px-3 text-sm dark:border-neutral-700 dark:bg-neutral-900';
 const dimCls = 'h-8 w-full rounded-md border border-neutral-300 bg-white px-2 text-xs dark:border-neutral-700 dark:bg-neutral-900';
-const cellArea = 'w-full rounded-md border border-neutral-300 bg-white px-2 py-1 text-xs dark:border-neutral-700 dark:bg-neutral-900';
+const cellArea = 'w-full resize-none overflow-hidden rounded-md border border-neutral-300 bg-white px-2 py-1 text-xs dark:border-neutral-700 dark:bg-neutral-900';
+// Textarea auto-tinggi: tinggi mengikuti jumlah karakter/baris isi — Keterangan tak terpotong.
+const vAutosize = {
+    mounted(el: HTMLTextAreaElement) {
+        const fit = () => { el.style.height = 'auto'; el.style.height = el.scrollHeight + 'px'; };
+        (el as any).__fit = fit;
+        el.addEventListener('input', fit);
+        nextTick(fit);
+    },
+    updated(el: HTMLTextAreaElement) { el.style.height = 'auto'; el.style.height = el.scrollHeight + 'px'; },
+    unmounted(el: HTMLTextAreaElement) { el.removeEventListener('input', (el as any).__fit); },
+};
 </script>
 <template>
     <div :class="['space-y-4', step === 4 ? 'max-w-none' : 'max-w-4xl']">
@@ -335,7 +346,7 @@ const cellArea = 'w-full rounded-md border border-neutral-300 bg-white px-2 py-1
                                     <div class="mt-0.5 break-words text-[11px] text-neutral-400" :title="accountName(l.account_id)">{{ accountName(l.account_id) || '—' }}</div>
                                 </td>
                                 <td class="px-2 py-2"><SearchSelect v-model="l.cost_center_id" :options="costCenters" placeholder="— cost center —" :no-truncate="true" /></td>
-                                <td class="px-2 py-2"><textarea v-model="l.description" rows="2" :class="cellArea" placeholder="Keterangan baris…"></textarea></td>
+                                <td class="px-2 py-2"><textarea v-model="l.description" v-autosize rows="1" :class="[cellArea,'min-h-8']" placeholder="Keterangan baris…"></textarea></td>
                                 <td class="px-2 py-2">
                                     <select v-model="l.currency" :class="dimCls"><option value="IDR">IDR</option><option value="USD">USD</option><option value="SGD">SGD</option><option value="EUR">EUR</option></select>
                                     <input v-model.number="l.kurs" type="number" step="0.0001" min="0" :class="[dimCls,'mt-1 text-right font-mono']" />
