@@ -16,7 +16,6 @@ const statusColor: Record<string,any> = { draft:'warning', approved:'success', c
 </script>
 <template>
     <div class="space-y-4">
-        <Link :href="route('bs.index')" class="inline-flex items-center gap-2 text-sm text-neutral-500 hover:text-neutral-800 dark:hover:text-neutral-200"><ArrowLeft class="h-4 w-4" /> Business Support</Link>
         <div class="flex items-center justify-between">
             <h1 class="flex items-center gap-2 text-2xl font-bold"><ShoppingCart class="h-6 w-6 text-primary-600" /> Purchase Order</h1>
             <Link :href="route('bs.po.create')"><Button><template #icon-left><Plus class="h-4 w-4" /></template>Buat PO</Button></Link>

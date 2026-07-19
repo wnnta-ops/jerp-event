@@ -1,10 +1,10 @@
 <script setup lang="ts">
 import { Link } from '@inertiajs/vue3';
-import { ArrowLeft, Database, Users, Truck, IdCard } from 'lucide-vue-next';
+import { ArrowLeft, Database, Truck, IdCard } from 'lucide-vue-next';
 import Badge from '@/Components/UI/Badge.vue';
 
 const props = defineProps<{
-    summary: { customers: number; customers_active: number; suppliers: number; suppliers_active: number; employees: number; employees_active: number };
+    summary: { suppliers: number; suppliers_active: number; employees: number; employees_active: number };
 }>();
 
 function r(name?: string | null, params?: Record<string, any>): string | null {
@@ -12,17 +12,10 @@ function r(name?: string | null, params?: Record<string, any>): string | null {
     try { return route(name, params); } catch { return null; }
 }
 
-// DATA CENTER — 3 sub-modul (Customer / Supplier / Employee Center). Print-Out di tiap center.
+// DATA CENTER — 2 sub-modul (Supplier / Employee Center). Print-Out di tiap center.
+// Customer Center DIHILANGKAN: data customer dikelola lewat sub-modul Customer di
+// Marketing & Sales (FO/J-ERP), tidak dikelola dua kali di Data Center.
 const menu: Array<{ group: string; icon: any; items: Array<{ label: string; route: string | null }> }> = [
-    { group: 'Customer Center', icon: Users, items: [
-        { label: 'Print-Out', route: r('bs.dc.customer.printout') },
-        { label: 'Customer', route: r('customers.index') },
-        { label: 'Registrasi Customer', route: r('customers.create') },
-        { label: 'Customer Info (CIF)', route: r('cif.index') },
-        { label: 'Merge Customer', route: r('customers.merge') },
-        { label: 'Upload Customer', route: r('customers.upload') },
-        { label: 'Repair Data Customer', route: r('bs.dc.customer.repair') },
-    ]},
     { group: 'Supplier Center', icon: Truck, items: [
         { label: 'Print-Out', route: r('bs.dc.supplier.printout') },
         { label: 'Supplier', route: r('bs.suppliers.index') },
@@ -51,10 +44,9 @@ const builtItems = menu.reduce((n, g) => n + g.items.filter(i => i.route).length
     <div class="space-y-5">
         <Link :href="route('dashboard')" class="inline-flex items-center gap-2 text-sm text-neutral-500 hover:text-neutral-800 dark:hover:text-neutral-200"><ArrowLeft class="h-4 w-4" /> Dashboard</Link>
         <h1 class="flex items-center gap-2 text-2xl font-bold"><Database class="h-6 w-6 text-primary-600" /> Data Center</h1>
-        <p class="text-sm text-neutral-500">Master data terpusat — Customer · Supplier · Employee Center ({{ totalItems }} sub-modul, {{ builtItems }} aktif).</p>
+        <p class="text-sm text-neutral-500">Master data terpusat — Supplier · Employee Center ({{ totalItems }} sub-modul, {{ builtItems }} aktif).</p>
 
-        <div class="grid gap-3 sm:grid-cols-3">
-            <div class="card p-4"><div class="flex items-center gap-2 text-xs uppercase text-neutral-400"><Users class="h-4 w-4" /> Customer</div><div class="mt-1 text-2xl font-bold">{{ summary.customers.toLocaleString('id-ID') }}</div><div class="text-xs text-neutral-500">{{ summary.customers_active }} aktif</div></div>
+        <div class="grid gap-3 sm:grid-cols-2">
             <div class="card p-4"><div class="flex items-center gap-2 text-xs uppercase text-neutral-400"><Truck class="h-4 w-4" /> Supplier</div><div class="mt-1 text-2xl font-bold">{{ summary.suppliers.toLocaleString('id-ID') }}</div><div class="text-xs text-neutral-500">{{ summary.suppliers_active }} aktif</div></div>
             <div class="card p-4"><div class="flex items-center gap-2 text-xs uppercase text-neutral-400"><IdCard class="h-4 w-4" /> Karyawan</div><div class="mt-1 text-2xl font-bold">{{ summary.employees.toLocaleString('id-ID') }}</div><div class="text-xs text-neutral-500">{{ summary.employees_active }} aktif</div></div>
         </div>

@@ -35,7 +35,6 @@ function pct(p: number, c: number) { return c > 0 ? Math.min(100, Math.round(p /
 </script>
 <template>
     <div class="space-y-4">
-        <Link :href="route('bs.index')" class="inline-flex items-center gap-2 text-sm text-neutral-500 hover:text-neutral-800 dark:hover:text-neutral-200"><ArrowLeft class="h-4 w-4" /> Business Support</Link>
         <div class="flex items-center justify-between">
             <h1 class="flex items-center gap-2 text-2xl font-bold"><HardHat class="h-6 w-6 text-amber-600" /> Kontraktor (SPK)</h1>
         </div>

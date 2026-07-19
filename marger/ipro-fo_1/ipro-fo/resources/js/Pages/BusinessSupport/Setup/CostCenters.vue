@@ -34,7 +34,6 @@ const inputCls = 'h-9 w-full rounded-lg border border-neutral-300 bg-white px-3 
 
 <template>
     <div class="space-y-4">
-        <Link :href="route('bs.index')" class="inline-flex items-center gap-2 text-sm text-neutral-500 hover:text-neutral-800 dark:hover:text-neutral-200"><ArrowLeft class="h-4 w-4" /> Business Support</Link>
         <div class="flex items-center justify-between">
             <h1 class="flex items-center gap-2 text-2xl font-bold"><Building2 class="h-6 w-6 text-primary-600" /> Cost Center / Divisi</h1>
             <Button @click="openCreate"><template #icon-left><Plus class="h-4 w-4" /></template>Tambah</Button>
