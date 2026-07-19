@@ -116,7 +116,7 @@ const inputCls = 'h-9 w-full rounded-lg border border-neutral-300 bg-white px-3 
             <div class="card grid gap-4 p-5 md:grid-cols-2">
                 <div><label class="mb-1 block text-xs font-medium text-neutral-500">Tanggal *</label><input v-model="form.trx_date" type="date" required :class="inputCls" /></div>
                 <div><label class="mb-1 block text-xs font-medium text-neutral-500">Referensi / No. Bukti</label><input v-model="form.reference" :class="inputCls" /></div>
-                <div><label class="mb-1 block text-xs font-medium text-neutral-500">{{ labels.cash }} *</label><SearchSelect v-model="form.cash_account_id" :options="cashAccounts" placeholder="— pilih rekening —" /><p v-if="form.errors.cash_account_id" class="mt-1 text-xs text-danger-500">{{ form.errors.cash_account_id }}</p></div>
+                <div><label class="mb-1 block text-xs font-medium text-neutral-500">{{ labels.cash }} *</label><SearchSelect v-model="form.cash_account_id" :options="cashAccounts" placeholder="— pilih rekening —" :no-truncate="true" /><p v-if="form.errors.cash_account_id" class="mt-1 text-xs text-danger-500">{{ form.errors.cash_account_id }}</p></div>
                 <div v-if="!isTransfer"><label class="mb-1 block text-xs font-medium text-neutral-500">{{ labels.payee }}</label><input v-model="form.payee" :class="inputCls" /></div>
                 <div class="md:col-span-2"><label class="mb-1 block text-xs font-medium text-neutral-500">Keterangan *</label><input v-model="form.description" required placeholder="mis. Pembayaran operasional kantor" :class="inputCls" /><p v-if="form.errors.description" class="mt-1 text-xs text-danger-500">{{ form.errors.description }}</p></div>
             </div>

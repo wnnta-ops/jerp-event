@@ -187,12 +187,25 @@ class JournalController extends Controller
         $from = $request->date('date_from') ?? now()->startOfMonth();
         $to   = $request->date('date_to')   ?? now()->endOfMonth();
 
+        // Filter rentang kode akun — dipakai saat export dari Buku Besar ("Dari COA .. Sampai COA").
+        $fromCode = trim((string) $request->input('from_code', ''));
+        $toCode   = trim((string) $request->input('to_code', ''));
+        $lo = $hi = '';
+        if ($fromCode !== '' || $toCode !== '') {
+            $lo = $fromCode !== '' ? $fromCode : $toCode;
+            $hi = $toCode !== '' ? $toCode : $fromCode;
+            if (strcmp($lo, $hi) > 0) {
+                [$lo, $hi] = [$hi, $lo];
+            }
+        }
+
         $journals = BsJournal::query()
             ->with(['lines.account:id,code,name', 'costCenter:id,code,name'])
             ->whereBetween('journal_date', [$from->toDateString(), $to->toDateString()])
             ->when($request->input('source'), fn ($q, $v) => $q->where('source', $v))
             ->when($request->input('status'), fn ($q, $v) => $q->where('status', $v))
             ->when($request->input('search'), fn ($q, $s) => $q->where(fn ($w) => $w->where('journal_number', 'like', "%{$s}%")->orWhere('description', 'like', "%{$s}%")->orWhere('reference', 'like', "%{$s}%")))
+            ->when($lo !== '', fn ($q) => $q->whereHas('lines.account', fn ($a) => $a->whereBetween('code', [$lo, $hi])))
             ->latest('journal_date')->latest('id')
             ->get();
 
@@ -214,6 +227,13 @@ class JournalController extends Controller
         $totalK = 0.0;
         foreach ($journals as $j) {
             foreach ($j->lines as $ln) {
+                // Bila export per rentang akun: hanya baris yang akunnya di dalam rentang.
+                if ($lo !== '') {
+                    $code = (string) $ln->account?->code;
+                    if ($code < $lo || $code > $hi) {
+                        continue;
+                    }
+                }
                 $totalD += (float) $ln->debit;
                 $totalK += (float) $ln->credit;
                 $h .= '<tr>'
