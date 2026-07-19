@@ -66,7 +66,8 @@ const inputCls = 'h-9 w-full rounded-lg border border-neutral-300 bg-white px-3 
         <!-- Rincian invoice. Nilai (DPP/PPN/PPh/total) & jurnal TERKUNCI; hanya metadata yang bisa diedit. -->
         <div v-if="!editing" class="card grid gap-4 p-5 text-sm md:grid-cols-3">
             <div><div class="text-neutral-500">Customer</div><div class="font-medium">{{ invoice.customer?.full_name ?? '—' }}</div></div>
-            <div><div class="text-neutral-500">Kategori</div><div class="font-medium">{{ invoice.category?.name ?? '—' }}</div></div>
+            <div><div class="text-neutral-500">No. SPR</div><div class="font-medium">{{ invoice.booking?.booking_number ?? '—' }}</div></div>
+            <div><div class="text-neutral-500">Unit</div><div class="font-medium">{{ invoice.booking?.unit?.unit_code ?? '—' }}</div></div>
             <div><div class="text-neutral-500">Tipe Transaksi</div><div class="font-medium">{{ trxLabel[invoice.trx_type] ?? invoice.trx_type }}</div></div>
             <div><div class="text-neutral-500">Tgl Invoice</div><div class="font-medium">{{ fmtDate(invoice.invoice_date) }}</div></div>
             <div><div class="text-neutral-500">Tgl Serah Tagih</div><div class="font-medium">{{ fmtDate(invoice.receive_date) }}</div></div>
