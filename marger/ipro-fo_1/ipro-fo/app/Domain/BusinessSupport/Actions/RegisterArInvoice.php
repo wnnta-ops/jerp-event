@@ -67,6 +67,8 @@ final class RegisterArInvoice
             $inv = BsArInvoice::create([
                 'invoice_number'        => $this->nextNumber($data['invoice_date'], $category?->code),
                 'customer_id'           => $data['customer_id'],
+                // SPR yang ditagih (opsional) — dasar pengelompokan di Rekonsiliasi Piutang.
+                'booking_id'            => $data['booking_id'] ?? null,
                 'category_id'           => $category?->id,
                 'customer_ref_no'       => $data['customer_ref_no'] ?? null,
                 'manual_no'             => $data['manual_no'] ?? null,

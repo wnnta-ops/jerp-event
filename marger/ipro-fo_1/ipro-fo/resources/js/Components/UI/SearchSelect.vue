@@ -113,7 +113,7 @@ watch(filtered, () => { if (activeIndex.value > filtered.value.length - 1) activ
         <button
             ref="trigger"
             type="button" :disabled="disabled" @click="toggle" @keydown="onKeydown"
-            class="flex h-9 w-full items-center justify-between rounded-lg border border-neutral-300 bg-white px-3 text-left text-sm disabled:cursor-not-allowed disabled:opacity-50 dark:border-neutral-700 dark:bg-neutral-900"
+            class="flex min-h-9 w-full items-center justify-between rounded-lg border border-neutral-300 bg-white px-3 py-1.5 text-left text-sm disabled:cursor-not-allowed disabled:opacity-50 dark:border-neutral-700 dark:bg-neutral-900"
             :class="open ? 'border-primary-400 ring-2 ring-primary-300/50' : ''"
         >
             <span :class="['min-w-0', noTruncate ? 'whitespace-normal break-words' : 'truncate', selected ? '' : 'text-neutral-400']">{{ selected ? labelOf(selected) : placeholder }}</span>
