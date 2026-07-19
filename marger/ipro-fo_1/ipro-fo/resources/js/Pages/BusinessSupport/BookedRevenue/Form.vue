@@ -22,11 +22,13 @@ function fmtNum(v: number) { return (Number(v) || 0).toLocaleString('id-ID'); } 
 // Baris unit (hanya yang BELUM pernah di-Booked Revenue) + state checklist & diskon (TERKUNCI dari SPR).
 const rows = reactive(props.units.map((u) => ({ ...u, checked: false, discount: Number(u.diskon) || 0 })));
 const selected = computed(() => rows.filter((r) => r.checked));
-// Nilai Revenue (DPP) = (Pricelist Gross SPR − Diskon/Free DP) ÷ 1,11.
+// Nilai Revenue (DPP) = (Pricelist Gross SPR − Diskon/Free DP) ÷ 1,11, DIBULATKAN ke rupiah penuh.
+// Nilai penjualan & PPN tidak pernah dicatat dalam sen — pembulatan dilakukan di sini agar angka
+// di layar, nilai tersimpan, dan baris jurnal memakai dasar yang sama persis.
 function revenueOf(r: { price: number; gross?: number; discount: number }) {
     const g = Number(r.gross ?? r.price) || 0;
     const d = Number(r.discount) || 0;
-    return Math.max(0, Math.round(((g - d) / 1.11) * 100) / 100);
+    return Math.max(0, Math.round((g - d) / 1.11));
 }
 const total = computed(() => selected.value.reduce((s, r) => s + revenueOf(r), 0));
 
@@ -47,27 +49,33 @@ function markTouched() { journalTouched = true; }
 const grossSum = computed(() => selected.value.reduce((s, r) => s + (Number(r.gross ?? r.price) || 0), 0));
 const diskonSum = computed(() => selected.value.reduce((s, r) => s + (Number(r.discount) || 0), 0));
 const nettSum = computed(() => grossSum.value - diskonSum.value);
-const dppSum = computed(() => Math.round((nettSum.value / 1.11) * 100) / 100);
-const ppnSprSum = computed(() => Math.round((dppSum.value * 0.11) * 100) / 100);
+// DPP dibulatkan ke rupiah; PPN diambil sebagai SISA (nett − DPP), bukan dibulatkan sendiri —
+// kalau keduanya dibulatkan terpisah, DPP + PPN bisa meleset 1 rupiah dari Nett dan jurnal
+// gagal balance. Dengan cara ini DPP + PPN = Nett secara identitas.
+const dppSum = computed(() => Math.round(nettSum.value / 1.11));
+const ppnSprSum = computed(() => nettSum.value - dppSum.value);
 // Pencairan Proses KPR dijumlahkan per UNIT terpilih (bukan total customer) → tidak menumpuk unit lain.
 const pencairanSum = computed(() => selected.value.reduce((s, r) => s + Number(props.pencairan?.[r.id] ?? 0), 0));
 // Peringatan: pencairan melebihi Nett → Piutang negatif (jurnal tak bisa diposting).
 const pencairanOver = computed(() => pencairanSum.value > nettSum.value + 0.005);
-const r2 = (x: number) => Math.round(x * 100) / 100;
+// Pembulatan baris jurnal ke rupiah penuh (bukan 2 desimal): nominal jurnal tidak pernah bersen,
+// dan kotak isian nominal pun hanya menerima digit. Baris terakhir (PPN Akan Diterbitkan) tetap
+// dihitung sebagai plug dari selisih, jadi balance tetap eksak berapa pun sisa pembulatannya.
+const rupiah = (x: number) => Math.round(x);
 
 // Jurnal Booked Revenue sesuai "Alur Jurnal Booked Revenue" (balance dijamin secara aljabar).
 function applyPrefill() {
     const gross = grossSum.value, diskon = diskonSum.value, penc = pencairanSum.value;
     const nett = gross - diskon;
     const um = penc / 1.11;                                  // UM Penjualan
-    const piutang = r2(nett - penc);                         // Piutang Usaha
-    const diskonPenjualan = r2(diskon / 1.11);              // Diskon Penjualan
-    const umPenjualan = r2(um);
-    const ppnKeluaranDebit = r2(um * 0.11);                 // PPN Keluaran (debit)
-    const penjualan = r2(gross / 1.11);                     // Penjualan
-    const ppnKeluaranCredit = r2((um / 1.11) * 0.11);      // PPN Keluaran (kredit)
+    const piutang = rupiah(nett - penc);                     // Piutang Usaha
+    const diskonPenjualan = rupiah(diskon / 1.11);          // Diskon Penjualan
+    const umPenjualan = rupiah(um);
+    const ppnKeluaranDebit = rupiah(um * 0.11);             // PPN Keluaran (debit)
+    const penjualan = rupiah(gross / 1.11);                 // Penjualan
+    const ppnKeluaranCredit = rupiah((um / 1.11) * 0.11);   // PPN Keluaran (kredit)
     const debitTotal = piutang + diskonPenjualan + umPenjualan + ppnKeluaranDebit;
-    const ppnPending = r2(debitTotal - penjualan - ppnKeluaranCredit); // PPN Keluaran Akan Diterbitkan (plug → balance persis)
+    const ppnPending = debitTotal - penjualan - ppnKeluaranCredit; // PPN Akan Diterbitkan (plug → balance persis; sudah bulat)
     // Clamp ≥0 tiap baris: pada kasus abnormal pencairan>nett, Piutang & plug bisa negatif — jadi 0 di layar
     // (baris negatif tetap dibuang saat submit), sehingga baris tampil = Total Debit/Kredit (yg juga di-clamp).
     // Normal (semua positif) → no-op. Journal tetap tak balance di kasus abnormal ⇒ submit nonaktif.
@@ -143,7 +151,10 @@ function submit() {
 const inputCls = 'h-10 w-full rounded-lg border border-neutral-300 bg-white px-3 text-sm dark:border-neutral-700 dark:bg-neutral-900';
 </script>
 <template>
-    <div class="mx-auto max-w-4xl space-y-4">
+    <!-- max-w-6xl (bukan 4xl): blok Jurnal Penambahan terbagi 2 kolom, dan pada 4xl sisa ruang
+         untuk nama COA hanya ~220px sehingga label seperti "20104040409 - PPN KELUARAN AKAN
+         DITERBITKAN" terpotong. -->
+    <div class="mx-auto max-w-6xl space-y-4">
         <Link :href="route('bs.booked-revenue.index')" class="inline-flex items-center gap-2 text-sm text-neutral-500 hover:text-neutral-800 dark:hover:text-neutral-200"><ArrowLeft class="h-4 w-4" /> Booked Revenue</Link>
         <h1 class="flex items-center gap-2 text-2xl font-bold"><CircleDollarSign class="h-6 w-6 text-primary-600" /> Booking Pendapatan Baru <span class="text-base font-normal text-neutral-400">(massal)</span></h1>
 
@@ -244,7 +255,7 @@ const inputCls = 'h-10 w-full rounded-lg border border-neutral-300 bg-white px-3
                         <div class="space-y-2">
                             <div v-for="(row, i) in debits" :key="'d' + i" class="flex items-center gap-2">
                                 <span class="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-emerald-50 text-[11px] font-bold text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-400">{{ i + 1 }}</span>
-                                <SearchSelect :model-value="row.account_id" :options="accounts" placeholder="— pilih / cari akun —" class="min-w-0 flex-1" @update:model-value="(v) => { row.account_id = v; markTouched(); }" />
+                                <SearchSelect :model-value="row.account_id" :options="accounts" placeholder="— pilih / cari akun —" no-truncate class="min-w-0 flex-1" @update:model-value="(v) => { row.account_id = v; markTouched(); }" />
                                 <div class="flex h-9 w-40 shrink-0 items-center rounded-lg border border-neutral-300 bg-white pl-2 pr-2.5 focus-within:border-primary-400 focus-within:ring-1 focus-within:ring-primary-400 dark:border-neutral-700 dark:bg-neutral-900">
                                     <span class="mr-1 text-xs text-neutral-400">Rp</span>
                                     <input :value="fmtNum(row.amount)" @input="onAmtInput(row, $event)" type="text" inputmode="numeric" placeholder="0" class="w-full bg-transparent text-right text-sm tabular-nums focus:outline-none" :class="(Number(row.amount) || 0) === 0 ? 'text-neutral-400' : 'text-neutral-900 dark:text-neutral-100'" />
@@ -261,7 +272,7 @@ const inputCls = 'h-10 w-full rounded-lg border border-neutral-300 bg-white px-3
                         <div class="space-y-2">
                             <div v-for="(row, i) in credits" :key="'c' + i" class="flex items-center gap-2">
                                 <span class="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-rose-50 text-[11px] font-bold text-rose-600 dark:bg-rose-900/30 dark:text-rose-400">{{ i + 1 }}</span>
-                                <SearchSelect :model-value="row.account_id" :options="accounts" placeholder="— pilih / cari akun —" class="min-w-0 flex-1" @update:model-value="(v) => { row.account_id = v; markTouched(); }" />
+                                <SearchSelect :model-value="row.account_id" :options="accounts" placeholder="— pilih / cari akun —" no-truncate class="min-w-0 flex-1" @update:model-value="(v) => { row.account_id = v; markTouched(); }" />
                                 <div class="flex h-9 w-40 shrink-0 items-center rounded-lg border border-neutral-300 bg-white pl-2 pr-2.5 focus-within:border-primary-400 focus-within:ring-1 focus-within:ring-primary-400 dark:border-neutral-700 dark:bg-neutral-900">
                                     <span class="mr-1 text-xs text-neutral-400">Rp</span>
                                     <input :value="fmtNum(row.amount)" @input="onAmtInput(row, $event)" type="text" inputmode="numeric" placeholder="0" class="w-full bg-transparent text-right text-sm tabular-nums focus:outline-none" :class="(Number(row.amount) || 0) === 0 ? 'text-neutral-400' : 'text-neutral-900 dark:text-neutral-100'" />

@@ -1,0 +1,217 @@
+<script setup lang="ts">
+import { ref, computed, watch } from 'vue';
+import { router, Link } from '@inertiajs/vue3';
+import { ArrowLeft, Scale, Search, FilterX, Printer, ChevronDown, ChevronRight, Undo2 } from 'lucide-vue-next';
+import Badge from '@/Components/UI/Badge.vue';
+import EmptyState from '@/Components/UI/EmptyState.vue';
+import TableTopScroll from '@/Components/UI/TableTopScroll.vue';
+
+type Inv = { id: number; number: string; date: string | null; description: string | null; total: number; paid: number; outstanding: number };
+type Um = { id: number; source_type: string; source_label: string; date: string | null; note: string | null; amount: number };
+type Row = {
+    row_key: string; booking_id: number | null; spr: string | null; unit: string | null; customer: string | null;
+    invoice_total: number; invoice_count: number; um_total: number; um_count: number;
+    sisa: number; invoices: Inv[]; ums: Um[];
+};
+const props = defineProps<{
+    rows: Row[];
+    filters: { search?: string | null; sisa?: string | null };
+    summary: { count: number; invoice: number; um: number; sisa: number };
+}>();
+
+function fmtRp(v: number) { return 'Rp ' + Number(v ?? 0).toLocaleString('id-ID'); }
+function fmtDate(d: string | null) { return d ? new Date(d).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'; }
+
+const search = ref(props.filters.search ?? '');
+const sisa = ref(props.filters.sisa ?? '');
+function applyFilter() {
+    selected.value = [];
+    router.get(route('bs.ar.rekonsiliasi.index'), {
+        search: search.value || undefined, sisa: sisa.value || undefined,
+    }, { preserveState: true, replace: true });
+}
+const hasFilter = computed(() => Boolean(search.value || sisa.value));
+function resetFilter() { search.value = ''; sisa.value = ''; applyFilter(); }
+
+// ── Pilih massal untuk penagihan ──
+const selected = ref<string[]>([]);
+const pageKeys = computed<string[]>(() => props.rows.map((r) => r.row_key));
+const allChecked = computed<boolean>({
+    get: () => pageKeys.value.length > 0 && pageKeys.value.every((k) => selected.value.includes(k)),
+    set: (v: boolean) => { selected.value = v ? [...pageKeys.value] : []; },
+});
+const selectedSisa = computed(() => props.rows.filter((r) => selected.value.includes(r.row_key)).reduce((s, r) => s + Number(r.sisa || 0), 0));
+
+// Daftar berubah (mis. sesudah membatalkan kompensasi, grup bisa lenyap karena isinya habis)
+// -> buang centang yang barisnya sudah tidak ada. MEMANGKAS, bukan mengosongkan: centang lain
+// yang masih sah harus tetap bertahan. Tanpa ini, "Cetak Surat Tagihan" mengirim key hantu
+// dan berakhir 404.
+watch(() => props.rows, (rows) => {
+    if (! selected.value.length) return;
+    const ada = new Set(rows.map((r) => r.row_key));
+    const tersisa = selected.value.filter((k) => ada.has(k));
+    if (tersisa.length !== selected.value.length) selected.value = tersisa;
+});
+const cbCls = 'h-4 w-4 rounded border-neutral-300 text-primary-600 focus:ring-primary-500 dark:border-neutral-600 dark:bg-neutral-900';
+
+// Rincian per SPR dibuka sesuai kebutuhan agar tabel induk tetap terbaca.
+const open = ref<string[]>([]);
+function toggle(key: string) {
+    open.value = open.value.includes(key) ? open.value.filter((k) => k !== key) : [...open.value, key];
+}
+
+// Batalkan kompensasi satu baris UM — mengembalikannya ke antrean UM Penjualan.
+// Tidak menyentuh jurnal (kompensasi memang tidak memposting jurnal).
+const membatalkan = ref(false);
+function batalKompensasi(u: Um) {
+    if (membatalkan.value) return;
+    if (! window.confirm(`Batalkan kompensasi ${u.source_label} sebesar ${fmtRp(u.amount)}?\n\nBaris ini akan kembali ke antrean UM Penjualan.`)) return;
+    membatalkan.value = true;
+    router.post(route('bs.ar.um.undo'), { ids: [u.id] }, {
+        preserveScroll: true,
+        onFinish: () => { membatalkan.value = false; },
+    });
+}
+</script>
+
+<template>
+    <div class="space-y-4">
+        <div>
+            <Link :href="route('bs.ar.um.index')" class="inline-flex items-center gap-2 text-sm text-neutral-500 hover:text-neutral-800 dark:hover:text-neutral-200"><ArrowLeft class="h-4 w-4" /> UM Penjualan</Link>
+            <h1 class="mt-1 flex items-center gap-2 text-2xl font-bold"><Scale class="h-6 w-6 text-primary-600" /> Rekonsiliasi Piutang</h1>
+            <p class="text-sm text-neutral-500">
+                Tagihan piutang disandingkan dengan UM Penjualan yang sudah dikompensasi, <strong>dikelompokkan per SPR</strong>.
+                <strong>Sisa Piutang = Total Invoice Piutang − Total UM Penjualan</strong>. Centang barisnya lalu klik
+                <strong>Cetak Surat Tagihan</strong> untuk menagih ke customer.
+            </p>
+            <p class="text-sm text-neutral-500">Nilai invoice yang dipakai adalah <strong>sisa berjalan</strong> (sudah dikurangi pembayaran yang masuk), bukan nilai penuh invoice.</p>
+        </div>
+
+        <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <div class="card p-4"><p class="text-xs uppercase text-neutral-400">Kelompok SPR</p><p class="mt-1 text-2xl font-bold">{{ summary.count }}</p></div>
+            <div class="card p-4"><p class="text-xs uppercase text-neutral-400">Total Invoice Piutang</p><p class="mt-1 text-xl font-bold">{{ fmtRp(summary.invoice) }}</p></div>
+            <div class="card p-4"><p class="text-xs uppercase text-neutral-400">Total UM Dikompensasi</p><p class="mt-1 text-xl font-bold text-warning-600">{{ fmtRp(summary.um) }}</p></div>
+            <div class="card p-4"><p class="text-xs uppercase text-neutral-400">Total Sisa Piutang</p><p class="mt-1 text-xl font-bold text-primary-600">{{ fmtRp(summary.sisa) }}</p></div>
+        </div>
+
+        <div v-if="selected.length" class="card sticky top-2 z-10 flex flex-wrap items-center gap-3 border-l-4 border-l-primary-500 p-3">
+            <span class="text-sm"><b>{{ selected.length }}</b> SPR dipilih · sisa <b class="tabular-nums">{{ fmtRp(selectedSisa) }}</b></span>
+            <div class="ml-auto flex flex-wrap gap-2">
+                <a :href="route('bs.ar.rekonsiliasi.tagihan', { keys: selected.join(',') })" target="_blank" rel="noopener"
+                   title="Cetak surat tagihan untuk SPR terpilih — 1 halaman per SPR."
+                   class="inline-flex items-center gap-1.5 rounded-lg bg-primary-600 px-3 py-2 text-sm font-semibold text-white hover:bg-primary-700"><Printer class="h-4 w-4" /> Cetak Surat Tagihan ({{ selected.length }})</a>
+                <button type="button" @click="selected = []" class="rounded-lg border border-neutral-300 px-3 py-2 text-sm font-medium text-neutral-600 hover:bg-neutral-50 dark:border-neutral-700 dark:text-neutral-300">Batal pilih</button>
+            </div>
+        </div>
+
+        <div class="card flex flex-wrap items-end gap-3 p-4">
+            <div class="min-w-[220px] flex-1">
+                <label class="mb-1 block text-[11px] font-medium uppercase text-neutral-400">Cari</label>
+                <div class="relative">
+                    <Search class="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-neutral-400" />
+                    <input v-model="search" @keyup.enter="applyFilter" @change="applyFilter" placeholder="No. SPR / unit / customer" class="h-9 w-full rounded-lg border border-neutral-300 bg-white pl-8 pr-3 text-sm dark:border-neutral-700 dark:bg-neutral-900" />
+                </div>
+            </div>
+            <div>
+                <label class="mb-1 block text-[11px] font-medium uppercase text-neutral-400">Sisa Piutang</label>
+                <select v-model="sisa" @change="applyFilter" class="h-9 rounded-lg border border-neutral-300 bg-white px-2 pr-6 text-sm dark:border-neutral-700 dark:bg-neutral-900">
+                    <option value="">Semua</option>
+                    <option value="ada">Masih ada sisa</option>
+                    <option value="lunas">Sudah nihil / lebih bayar</option>
+                </select>
+            </div>
+            <button v-if="hasFilter" type="button" @click="resetFilter" class="ml-auto inline-flex h-9 items-center gap-1.5 rounded-lg border border-neutral-300 px-3 text-sm font-medium text-neutral-600 hover:bg-neutral-50 dark:border-neutral-700 dark:text-neutral-300"><FilterX class="h-4 w-4" /> Reset filter</button>
+        </div>
+
+        <TableTopScroll v-if="rows.length">
+            <table class="w-full text-sm">
+                <thead class="bg-neutral-50 dark:bg-neutral-800">
+                    <tr class="text-left text-xs uppercase text-neutral-500">
+                        <th class="w-10 px-3 py-3"><input v-model="allChecked" type="checkbox" :class="cbCls" :disabled="!pageKeys.length" :title="allChecked ? 'Kosongkan pilihan' : 'Pilih semua baris'" /></th>
+                        <th class="w-8 px-2 py-3"></th>
+                        <th class="whitespace-nowrap px-4 py-3">No. SPR</th>
+                        <th class="whitespace-nowrap px-4 py-3">Unit</th>
+                        <th class="px-4 py-3">Customer</th>
+                        <th class="whitespace-nowrap px-4 py-3 text-right">Invoice Piutang</th>
+                        <th class="whitespace-nowrap px-4 py-3 text-right">UM Penjualan</th>
+                        <th class="whitespace-nowrap px-4 py-3 text-right">Sisa Piutang</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-neutral-200 dark:divide-neutral-800">
+                    <template v-for="r in rows" :key="r.row_key">
+                        <tr class="hover:bg-neutral-50 dark:hover:bg-neutral-800/50" :class="selected.includes(r.row_key) ? 'bg-primary-500/10' : ''">
+                            <td class="px-3 py-2.5"><input v-model="selected" type="checkbox" :value="r.row_key" :class="cbCls" title="Pilih untuk cetak surat tagihan" /></td>
+                            <td class="px-2 py-2.5">
+                                <button type="button" @click="toggle(r.row_key)" class="text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200" :title="open.includes(r.row_key) ? 'Sembunyikan rincian' : 'Lihat rincian'">
+                                    <component :is="open.includes(r.row_key) ? ChevronDown : ChevronRight" class="h-4 w-4" />
+                                </button>
+                            </td>
+                            <td class="whitespace-nowrap px-4 py-2.5 font-mono text-xs font-semibold">
+                                {{ r.spr ?? '—' }}
+                                <Badge v-if="!r.booking_id" variant="neutral" size="sm" class="ml-1">Tanpa SPR</Badge>
+                            </td>
+                            <td class="whitespace-nowrap px-4 py-2.5">{{ r.unit ?? '—' }}</td>
+                            <td class="px-4 py-2.5">{{ r.customer ?? '—' }}</td>
+                            <td class="whitespace-nowrap px-4 py-2.5 text-right font-mono">
+                                {{ fmtRp(r.invoice_total) }}
+                                <span class="block text-xs text-neutral-400">{{ r.invoice_count }} invoice</span>
+                            </td>
+                            <td class="whitespace-nowrap px-4 py-2.5 text-right font-mono text-warning-600">
+                                {{ fmtRp(r.um_total) }}
+                                <span class="block text-xs text-neutral-400">{{ r.um_count }} UM</span>
+                            </td>
+                            <td class="whitespace-nowrap px-4 py-2.5 text-right font-mono font-semibold" :class="r.sisa > 0 ? 'text-primary-600' : 'text-success-600'">{{ fmtRp(r.sisa) }}</td>
+                        </tr>
+                        <tr v-if="open.includes(r.row_key)" class="bg-neutral-50/70 dark:bg-neutral-900/40">
+                            <td colspan="8" class="px-6 py-3">
+                                <div class="grid gap-4 lg:grid-cols-2">
+                                    <div>
+                                        <p class="mb-1 text-xs font-semibold uppercase text-neutral-500">Invoice Piutang</p>
+                                        <table class="w-full text-xs">
+                                            <tbody>
+                                                <tr v-for="i in r.invoices" :key="'i' + i.id" class="border-b border-neutral-200 last:border-0 dark:border-neutral-800">
+                                                    <td class="py-1 pr-2 font-mono">{{ i.number }}</td>
+                                                    <td class="py-1 pr-2 text-neutral-500">{{ fmtDate(i.date) }}</td>
+                                                    <td class="py-1 pr-2 text-neutral-500"><span class="block max-w-[220px] truncate" :title="i.description ?? ''">{{ i.description ?? '—' }}</span></td>
+                                                    <td class="py-1 text-right font-mono">{{ fmtRp(i.outstanding) }}</td>
+                                                </tr>
+                                                <tr v-if="!r.invoices.length"><td colspan="4" class="py-1 text-neutral-400">Tidak ada invoice piutang</td></tr>
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                    <div>
+                                        <p class="mb-1 text-xs font-semibold uppercase text-neutral-500">UM Penjualan Dikompensasi</p>
+                                        <table class="w-full text-xs">
+                                            <tbody>
+                                                <tr v-for="u in r.ums" :key="'u' + u.id" class="border-b border-neutral-200 last:border-0 dark:border-neutral-800">
+                                                    <td class="py-1 pr-2">{{ u.source_label }}</td>
+                                                    <td class="py-1 pr-2 text-neutral-500">{{ fmtDate(u.date) }}</td>
+                                                    <td class="py-1 pr-2 text-neutral-500"><span class="block max-w-[200px] truncate" :title="u.note ?? ''">{{ u.note ?? '—' }}</span></td>
+                                                    <td class="py-1 text-right font-mono text-warning-600">{{ fmtRp(u.amount) }}</td>
+                                                    <td class="py-1 pl-2 text-right">
+                                                        <button type="button" @click="batalKompensasi(u)" :disabled="membatalkan"
+                                                                title="Batalkan kompensasi — baris kembali ke antrean UM Penjualan"
+                                                                class="text-neutral-400 hover:text-danger-600 disabled:opacity-40">
+                                                            <Undo2 class="h-3.5 w-3.5" />
+                                                        </button>
+                                                    </td>
+                                                </tr>
+                                                <tr v-if="!r.ums.length"><td colspan="4" class="py-1 text-neutral-400">Belum ada UM dikompensasi</td></tr>
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                            </td>
+                        </tr>
+                    </template>
+                </tbody>
+            </table>
+        </TableTopScroll>
+
+        <EmptyState v-else-if="hasFilter" title="Tidak ada hasil" description="Tidak ada SPR yang cocok dengan filter. Klik Reset filter untuk menampilkan semua." />
+        <EmptyState v-else title="Belum ada yang bisa direkonsiliasi"
+            description="Belum ada invoice piutang maupun UM Penjualan yang dikompensasi. Kompensasikan UM dulu di layar UM Penjualan.">
+            <template #icon><Scale class="h-12 w-12" /></template>
+        </EmptyState>
+    </div>
+</template>

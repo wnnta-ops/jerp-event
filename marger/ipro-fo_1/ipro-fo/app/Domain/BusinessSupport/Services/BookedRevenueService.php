@@ -42,8 +42,10 @@ final class BookedRevenueService
             throw new BusinessRuleException('Diskon/Free DP tidak boleh melebihi harga unit.', errorCode: 'BR_DISCOUNT_OVER');
         }
 
-        // Nilai Revenue (DPP) = (Harga − Diskon/Free DP) ÷ 1,11.
-        $amount = round(($gross - $discount) / 1.11, 2);
+        // Nilai Revenue (DPP) = (Harga − Diskon/Free DP) ÷ 1,11, DIBULATKAN ke rupiah penuh.
+        // Nilai penjualan tidak dicatat dalam sen; pembulatan di sini disamakan dengan layar
+        // (Form.vue revenueOf) supaya angka yang dilihat operator = angka yang tersimpan.
+        $amount = round(($gross - $discount) / 1.11);
         if ($amount <= 0) {
             throw new BusinessRuleException('Nilai revenue harus lebih dari 0 (cek harga & diskon).', errorCode: 'BR_ZERO');
         }
