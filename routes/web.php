@@ -131,6 +131,9 @@ Route::middleware('auth')->group(function () {
     Route::get('/fo/cetak/sp/{sp}', [ClosingPrintController::class, 'sp'])->name('fo.cetak.sp');
     Route::get('/fo/cetak/faktur/{fp}', [ClosingPrintController::class, 'fakturPenjualan'])->name('fo.cetak.faktur');
 
+    // FO — Laporan Penjualan (Penjualan Netto): export Excel, filter cluster/periode dari halaman Filament.
+    Route::get('/fo/laporan/penjualan/excel', [\App\Modules\FO\MarketingSales\Controllers\LaporanPenjualanController::class, 'excel'])->name('fo.laporan.penjualan.excel');
+
     // FO — cetak Permohonan Pengajuan BLT (1 dokumen, 3 halaman: Sales/Koordinator/Kantor).
     Route::get('/fo/cetak/pengajuan-blt', [\App\Modules\FO\Komisi\Controllers\BltPrintController::class, 'pengajuan'])->name('fo.cetak.pengajuan-blt');
     Route::get('/fo/cetak/pengajuan-komisi', [\App\Modules\FO\Komisi\Controllers\KomisiPrintController::class, 'pengajuan'])->name('fo.cetak.pengajuan-komisi');
