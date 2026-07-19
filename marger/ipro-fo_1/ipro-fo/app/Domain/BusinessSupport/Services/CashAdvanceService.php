@@ -112,6 +112,7 @@ final class CashAdvanceService
             $journal = $this->journal->post([
                 'journal_date' => $data['paid_date'],
                 'source'       => 'cash',
+                'status'       => 'posted', // Treasury: pembayaran panjar langsung posting → mutasi bank tercatat di Rekening Ledger.
                 'reference'    => $adv->advance_number,
                 'description'  => 'Pembayaran Bon Sementara — '.$adv->purpose.' ('.$adv->holder.')',
                 'created_by'   => $userId,
@@ -175,6 +176,7 @@ final class CashAdvanceService
             $journal = $this->journal->post([
                 'journal_date' => $data['realized_date'],
                 'source'       => 'cash',
+                'status'       => 'posted', // Treasury: realisasi panjar langsung posting → selisih kas & Uang Muka Op tercatat di ledger.
                 'reference'    => $adv->advance_number,
                 'description'  => 'Realisasi Bon Sementara '.$adv->advance_number,
                 'created_by'   => $userId,
@@ -244,6 +246,7 @@ final class CashAdvanceService
             $journal = $this->journal->post([
                 'journal_date' => $date,
                 'source'       => 'cash',
+                'status'       => 'posted', // Treasury: refund/reimburse panjar langsung posting → mutasi bank tercatat di Rekening Ledger.
                 'reference'    => $adv->advance_number,
                 'description'  => ($mode === 'refund' ? 'Refund' : 'Reimburse').' Bon Sementara '.$adv->advance_number,
                 'created_by'   => $userId,

@@ -479,6 +479,7 @@ class CashBookController extends Controller
                 return [
                     'id' => $r->id,
                     'trx_id' => $trxByJournal[$r->journal_id] ?? null,
+                    'journal_id' => $r->journal_id, // #3 — buka Detail Jurnal dari baris Rekening Ledger
                     'date' => (string) $r->journal_date, 'ref' => $r->reference ?: $r->journal_number,
                     'source' => $r->source, 'desc' => $r->description,
                     'debit' => (float) $r->debit, 'credit' => (float) $r->credit, 'balance' => round($running, 2),
@@ -666,6 +667,60 @@ class CashBookController extends Controller
         ]);
 
         return back()->with('success', "Pengeluaran {$cashTransaction->trx_number} ditolak.");
+    }
+
+    /** #13 — Setujui BEBERAPA pengeluaran sekaligus (jurnal diposting per transaksi). */
+    public function approveBulk(Request $request, RecordCashTransaction $action): RedirectResponse
+    {
+        abort_unless($request->user()?->can('businesssupport.approval.act'), 403);
+        $v = $request->validate([
+            'ids'   => ['required', 'array', 'min:1'],
+            'ids.*' => ['integer', 'exists:bs_cash_transactions,id'],
+        ]);
+        $ok = 0;
+        $skip = 0;
+        $fail = [];
+        foreach (array_unique($v['ids']) as $id) {
+            $t = BsCashTransaction::find($id);
+            if (! $t || $t->trx_type !== 'out' || $t->approval_status !== 'pending') {
+                $skip++;
+                continue;
+            }
+            $t->update(['approval_status' => 'approved', 'approved_by' => $request->user()->id, 'approved_at' => now()]);
+            try {
+                $action->postJournal($t, $request->user()->id);
+                $ok++;
+            } catch (BusinessRuleException $e) {
+                $fail[] = $t->trx_number;
+            }
+        }
+        $msg = "$ok pengeluaran disetujui.".($skip ? " $skip dilewati (bukan pending)." : '')
+            .($fail ? ' Gagal posting jurnal: '.implode(', ', array_slice($fail, 0, 8)).'.' : '');
+
+        return back()->with($ok ? 'success' : ($fail ? 'error' : 'warning'), $msg);
+    }
+
+    /** #13 — Tolak BEBERAPA pengeluaran sekaligus. */
+    public function rejectBulk(Request $request): RedirectResponse
+    {
+        abort_unless($request->user()?->can('businesssupport.approval.act'), 403);
+        $v = $request->validate([
+            'ids'   => ['required', 'array', 'min:1'],
+            'ids.*' => ['integer', 'exists:bs_cash_transactions,id'],
+        ]);
+        $ok = 0;
+        $skip = 0;
+        foreach (array_unique($v['ids']) as $id) {
+            $t = BsCashTransaction::find($id);
+            if (! $t || $t->trx_type !== 'out' || $t->approval_status !== 'pending') {
+                $skip++;
+                continue;
+            }
+            $t->update(['approval_status' => 'rejected', 'approved_by' => $request->user()->id, 'approved_at' => now()]);
+            $ok++;
+        }
+
+        return back()->with($ok ? 'success' : 'warning', "$ok pengeluaran ditolak.".($skip ? " $skip dilewati." : ''));
     }
 
     /** #129: Download mutasi rekening (mengikuti filter layar) ke Excel (.xls). */

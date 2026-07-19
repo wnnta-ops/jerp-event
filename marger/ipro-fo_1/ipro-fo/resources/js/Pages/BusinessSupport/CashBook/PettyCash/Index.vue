@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from 'vue';
+import { ref, computed } from 'vue';
 import { router, Link } from '@inertiajs/vue3';
 import { Wallet, Plus, Download } from 'lucide-vue-next';
 import Button from '@/Components/UI/Button.vue';
@@ -8,6 +8,9 @@ import EmptyState from '@/Components/UI/EmptyState.vue';
 const props = defineProps<{ transactions: any; saldo: number; summary: any; filters: Record<string, any>; warning?: string }>();
 const from = ref(props.filters.from ?? '');
 const to = ref(props.filters.to ?? '');
+// Tombol Tambah mengikuti konteks menu: "Kas Kecil Masuk" (type=in) → form top-up, "Keluar" (type=out) → form beban.
+const createHref = computed(() => route('bs.pettycash.create', { type: props.filters?.type || undefined }));
+const createLabel = computed(() => (props.filters?.type === 'in' ? 'Tambah Top Up' : props.filters?.type === 'out' ? 'Tambah Pengeluaran' : 'Tambah'));
 function applyFilter() {
     router.get(route('bs.pettycash.index'), { from: from.value || undefined, to: to.value || undefined }, { preserveState: true, replace: true });
 }
@@ -22,7 +25,7 @@ function fmtDate(d: string) { return d ? new Date(d).toLocaleDateString('id-ID',
             <div class="flex flex-wrap gap-2">
                 <!-- #8: unduh mutasi kas kecil sesuai filter periode -->
                 <a :href="route('bs.pettycash.export', { from: filters.from || undefined, to: filters.to || undefined })"><Button variant="secondary"><template #icon-left><Download class="h-4 w-4" /></template>Download Mutasi</Button></a>
-                <Link :href="route('bs.pettycash.create')"><Button><template #icon-left><Plus class="h-4 w-4" /></template>Tambah</Button></Link>
+                <Link :href="createHref"><Button><template #icon-left><Plus class="h-4 w-4" /></template>{{ createLabel }}</Button></Link>
             </div>
         </div>
         <div v-if="warning" class="rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-700 dark:bg-amber-900/20 dark:text-amber-300">{{ warning }}</div>

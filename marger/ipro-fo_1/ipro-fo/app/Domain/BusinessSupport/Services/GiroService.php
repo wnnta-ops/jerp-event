@@ -73,6 +73,7 @@ final class GiroService
             $journal = $this->journal->post([
                 'journal_date' => $giro->receive_date->toDateString(),
                 'source'       => 'cash',
+                'status'       => 'posted', // Treasury: penerimaan giro langsung posting → Piutang Giro terlihat di ledger.
                 'reference'    => $giro->giro_number,
                 'description'  => 'Terima Cek/Giro '.$giro->bank_name.' — '.$giro->drawer,
                 'created_by'   => $userId,
@@ -139,6 +140,7 @@ final class GiroService
             $journal = $this->journal->post([
                 'journal_date' => $date,
                 'source'       => 'cash',
+                'status'       => 'posted', // Treasury: kliring/tolakan giro langsung posting → mutasi bank tercatat di Rekening Ledger.
                 'reference'    => $giro->giro_number,
                 'description'  => $desc,
                 'created_by'   => $userId,

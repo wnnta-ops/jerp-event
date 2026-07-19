@@ -1,9 +1,10 @@
 <!-- Koreksi Budget Baru -->
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, ref, watch } from 'vue';
 import { Link, useForm } from '@inertiajs/vue3';
 import { ArrowLeft, Pencil } from 'lucide-vue-next';
 import Button from '@/Components/UI/Button.vue';
+import SearchSelect from '@/Components/UI/SearchSelect.vue';
 
 const props = defineProps<{
     year: number;
@@ -31,6 +32,19 @@ const form = useForm({
     note: '',
 });
 
+// Filter Cost Center (departemen) + COA — mempersempit daftar Budget master.
+const fCostCenter = ref('');
+const fAccount = ref('');
+const costCenters = computed(() => [...new Set(props.budgets.map((b: any) => b.cost_center).filter(Boolean))].sort().map((c: any) => ({ id: c, label: c })));
+const accounts = computed(() => [...new Set(props.budgets.map((b: any) => b.account).filter(Boolean))].sort().map((a: any) => ({ id: a, label: a })));
+const filteredBudgets = computed(() => props.budgets.filter((b: any) =>
+    (!fCostCenter.value || b.cost_center === fCostCenter.value)
+    && (!fAccount.value || b.account === fAccount.value)));
+// Reset pilihan bila tak lagi ada di daftar terfilter.
+watch([fCostCenter, fAccount], () => {
+    if (form.budget_id && !filteredBudgets.value.some((b: any) => b.id === form.budget_id)) form.budget_id = '';
+});
+
 const selected = computed(() => props.budgets.find((b: any) => b.id === form.budget_id));
 const selisih = computed(() => (selected.value ? Number(form.new_amount) - selected.value.amount : 0));
 
@@ -51,11 +65,22 @@ function submit() {
         </div>
 
         <form class="card space-y-4 p-4" @submit.prevent="submit">
+            <div class="grid gap-3 sm:grid-cols-2">
+                <div>
+                    <label class="mb-1 block text-sm font-medium">Filter Cost Center (Departemen)</label>
+                    <SearchSelect v-model="fCostCenter" :options="costCenters" placeholder="— semua cost center —" :no-truncate="true" />
+                </div>
+                <div>
+                    <label class="mb-1 block text-sm font-medium">Filter COA Budget</label>
+                    <SearchSelect v-model="fAccount" :options="accounts" placeholder="— semua COA —" :no-truncate="true" />
+                </div>
+            </div>
+
             <div>
-                <label class="mb-1 block text-sm font-medium">Budget master</label>
+                <label class="mb-1 block text-sm font-medium">Budget master <span class="text-xs font-normal text-neutral-400">({{ filteredBudgets.length }} anggaran)</span></label>
                 <select v-model="form.budget_id" :class="inputCls">
                     <option value="">— pilih —</option>
-                    <option v-for="b in props.budgets" :key="b.id" :value="b.id">{{ b.cost_center }} — {{ b.account }} ({{ fmtRp(b.amount) }})</option>
+                    <option v-for="b in filteredBudgets" :key="b.id" :value="b.id">{{ b.cost_center }} — {{ b.account }} ({{ fmtRp(b.amount) }})</option>
                 </select>
             </div>
 

@@ -727,6 +727,8 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
     Route::get('/business-support/cash-book-giro-calendar-pdf', [BsCashBookController::class, 'giroCalendarPdf'])->name('bs.cashbook.giro-calendar.pdf');        // #9
     // CB-3: Approval Pengeluaran Kas & Bank
     Route::get('/business-support/cash-book-approvals',        [BsCashBookController::class, 'approvals'])->name('bs.cashbook.approvals');
+    Route::post('/business-support/cash-book-approvals-bulk/approve', [BsCashBookController::class, 'approveBulk'])->name('bs.cashbook.approve-bulk'); // #13 setujui massal
+    Route::post('/business-support/cash-book-approvals-bulk/reject',  [BsCashBookController::class, 'rejectBulk'])->name('bs.cashbook.reject-bulk');   // #13 tolak massal
     Route::post('/business-support/cash-book-approvals/{cashTransaction}', [BsCashBookController::class, 'approve'])->name('bs.cashbook.approve');
     Route::post('/business-support/cash-book-approvals/{cashTransaction}/reject', [BsCashBookController::class, 'reject'])->name('bs.cashbook.reject'); // #160
     // Transaksi Bank — Approval Retensi (KPR) & Approval UTJ & DP (TTS→Kuitansi) + posting jurnal
