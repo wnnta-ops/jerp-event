@@ -697,6 +697,8 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
     Route::get('/business-support/receivable-rekonsiliasi/tagihan', [BsArRekonsiliasiController::class, 'printTagihan'])->name('bs.ar.rekonsiliasi.tagihan');
     // AR — kaitkan/lepas SPR pada invoice yang sudah tercatat (invoice lama ber-booking_id NULL).
     Route::patch('/business-support/receivable-spr/{invoice}', [BsArController::class, 'linkSpr'])->name('bs.ar.link-spr');
+    // AR — edit rincian invoice: HANYA metadata (nilai & jurnal terkunci).
+    Route::patch('/business-support/receivable-edit/{invoice}', [BsArController::class, 'update'])->name('bs.ar.update');
     Route::get('/business-support/receivable/{invoice}',      [BsArController::class, 'show'])->name('bs.ar.show');
     Route::post('/business-support/receivable/{invoice}/pay', [BsArController::class, 'pay'])->name('bs.ar.pay');
     Route::post('/business-support/receivable/{invoice}/reschedule', [BsArController::class, 'reschedule'])->name('bs.ar.reschedule');
@@ -1014,8 +1016,9 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
     Route::get('/business-support/booked-revenue/create',               [BsBookedRevenueController::class, 'create'])->name('bs.booked-revenue.create');
     Route::post('/business-support/booked-revenue',                      [BsBookedRevenueController::class, 'store'])->name('bs.booked-revenue.store');
     Route::get('/business-support/booked-revenue/{bookedRevenue}',       [BsBookedRevenueController::class, 'show'])->name('bs.booked-revenue.show');
-    Route::post('/business-support/booked-revenue/{bookedRevenue}/recognize', [BsBookedRevenueController::class, 'recognize'])->name('bs.booked-revenue.recognize');
-    Route::post('/business-support/booked-revenue/{bookedRevenue}/cancel',    [BsBookedRevenueController::class, 'cancel'])->name('bs.booked-revenue.cancel');
+    // Edit rincian — HANYA metadata (tanggal/referensi/keterangan). Nilai & jurnal terkunci;
+    // tidak ada lagi jalur "akui pendapatan" maupun "batalkan" (booking tak bisa dikembalikan).
+    Route::patch('/business-support/booked-revenue/{bookedRevenue}',     [BsBookedRevenueController::class, 'update'])->name('bs.booked-revenue.update');
     Route::get('/business-support/booked-revenue-control/bast', [BsBookedRevenueController::class, 'controlBast'])->name('bs.booked-revenue.control.bast');
     Route::get('/business-support/booked-revenue-control/ajb',  [BsBookedRevenueController::class, 'controlAjb'])->name('bs.booked-revenue.control.ajb');
     Route::get('/business-support/booked-revenue-control/fp',   [BsBookedRevenueController::class, 'controlFakturPajak'])->name('bs.booked-revenue.control.fp');
