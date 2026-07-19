@@ -8,6 +8,7 @@ use App\Domain\BusinessSupport\Models\BsAccount;
 use App\Domain\BusinessSupport\Models\BsCostCenter;
 use App\Domain\BusinessSupport\Models\BsFiscalPeriod;
 use App\Domain\BusinessSupport\Models\BsJournal;
+use App\Domain\BusinessSupport\Models\BsJournalLine;
 use App\Domain\BusinessSupport\Services\JournalPartyResolver;
 use App\Domain\BusinessSupport\Services\JournalService;
 use App\Exceptions\BusinessRuleException;
@@ -210,7 +211,8 @@ class JournalController extends Controller
             ->get();
 
         $e  = fn ($v) => htmlspecialchars((string) ($v ?? ''), ENT_QUOTES);
-        $rp = fn ($v) => number_format((float) ($v ?? 0), 2, ',', '.');
+        // Format angka ala legacy (gambar acuan): ribuan koma, tanpa desimal, 0 → "-".
+        $rp = fn ($v) => abs((float) ($v ?? 0)) < 0.005 ? '-' : number_format((float) $v, 0, '.', ',');
         $src = BsJournal::SOURCES;
         $st  = BsJournal::STATUSES;
 
@@ -218,42 +220,101 @@ class JournalController extends Controller
         // sekali untuk SELURUH jurnal periode ini (batch), bukan per baris → bukan N+1.
         $pihak = $party->forJournalIds($journals->pluck('id')->all());
 
-        // Urutan kolom: Kode Akun & Nama Akun paling kiri, lalu Pihak Terkait tepat setelah Sumber.
-        $h = '<table border="1"><tr style="background:#0f766e;color:#fff">'
-            .'<th>Kode Akun</th><th>Nama Akun</th>'
-            .'<th>No. Jurnal</th><th>Tanggal</th><th>Sumber</th><th>Pihak Terkait</th><th>Status</th><th>Keterangan</th><th>Referensi</th>'
-            .'<th>Cost Center</th><th>Keterangan Baris</th><th>Debit</th><th>Kredit</th></tr>';
-        $totalD = 0.0;
-        $totalK = 0.0;
+        // Kumpulkan semua baris (jurnal × baris) lalu urutkan PER COA: kode akun naik,
+        // di dalam akun tanggal terbaru dulu (sesuai format legacy), saldo berjalan kumulatif.
+        $rows = [];
         foreach ($journals as $j) {
             foreach ($j->lines as $ln) {
                 // Bila export per rentang akun: hanya baris yang akunnya di dalam rentang.
-                if ($lo !== '') {
-                    $code = (string) $ln->account?->code;
-                    if ($code < $lo || $code > $hi) {
-                        continue;
-                    }
+                $code = (string) $ln->account?->code;
+                if ($lo !== '' && ($code < $lo || $code > $hi)) {
+                    continue;
                 }
-                $totalD += (float) $ln->debit;
-                $totalK += (float) $ln->credit;
-                $h .= '<tr>'
-                    .'<td>'.$e($ln->account?->code).'</td>'
-                    .'<td>'.$e($ln->account?->name).'</td>'
-                    .'<td>'.$e($j->journal_number).'</td>'
-                    .'<td>'.$e(optional($j->journal_date)->toDateString()).'</td>'
-                    .'<td>'.$e($src[$j->source] ?? $j->source).'</td>'
-                    .'<td>'.$e($pihak[$j->id] ?? '').'</td>'
-                    .'<td>'.$e($st[$j->status] ?? $j->status).'</td>'
-                    .'<td>'.$e($j->description).'</td>'
-                    .'<td>'.$e($j->reference).'</td>'
-                    .'<td>'.$e($j->costCenter?->name).'</td>'
-                    .'<td>'.$e($ln->description).'</td>'
-                    .'<td>'.$rp($ln->debit).'</td>'
-                    .'<td>'.$rp($ln->credit).'</td>'
-                    .'</tr>';
+                $rows[] = [
+                    'code'   => $code,
+                    'name'   => (string) $ln->account?->name,
+                    'jno'    => $j->journal_number,
+                    'date'   => optional($j->journal_date)->toDateString(),
+                    'source' => $src[$j->source] ?? $j->source,
+                    'pihak'  => $pihak[$j->id] ?? '',
+                    'status' => $st[$j->status] ?? $j->status,
+                    'desc'   => $j->description,
+                    'ref'    => $j->reference,
+                    'cc'     => $j->costCenter?->name,
+                    'ldesc'  => $ln->description,
+                    'debit'  => (float) $ln->debit,
+                    'credit' => (float) $ln->credit,
+                    'jid'    => (int) $j->id,
+                    'lid'    => (int) $ln->id,
+                ];
             }
         }
-        $h .= '<tr style="font-weight:bold;background:#f1f5f9"><td colspan="11">TOTAL</td><td>'.$rp($totalD).'</td><td>'.$rp($totalK).'</td></tr></table>';
+        usort($rows, fn ($a, $b) => [$a['code'], $b['date'], $b['jid'], $b['lid']] <=> [$b['code'], $a['date'], $a['jid'], $a['lid']]);
+
+        // Saldo Awal per COA = akumulasi mutasi SEBELUM tanggal awal periode (ikut filter sumber/status/rentang akun).
+        $openings = BsJournalLine::query()
+            ->join('bs_journals as j', 'j.id', '=', 'bs_journal_lines.journal_id')
+            ->join('bs_accounts as a', 'a.id', '=', 'bs_journal_lines.account_id')
+            ->whereNull('j.deleted_at')
+            ->whereDate('j.journal_date', '<', $from->toDateString())
+            ->when($request->input('source'), fn ($q, $v) => $q->where('j.source', $v))
+            ->when($request->input('status'), fn ($q, $v) => $q->where('j.status', $v))
+            ->when($lo !== '', fn ($q) => $q->whereBetween('a.code', [$lo, $hi]))
+            ->groupBy('a.code')
+            ->selectRaw('a.code, COALESCE(SUM(bs_journal_lines.debit - bs_journal_lines.credit),0) as bal')
+            ->pluck('bal', 'code');
+
+        // Urutan kolom: Kode Akun & Nama Akun paling kiri, lalu Pihak Terkait tepat setelah Sumber,
+        // Saldo berjalan paling kanan. Tiap akhir COA: baris "Mutasi Saldo" + "Saldo Akhir".
+        $h = '<table border="1"><tr style="background:#0f766e;color:#fff">'
+            .'<th>Kode Akun</th><th>Nama Akun</th>'
+            .'<th>No. Jurnal</th><th>Tanggal</th><th>Sumber</th><th>Pihak Terkait</th><th>Status</th><th>Keterangan</th><th>Referensi</th>'
+            .'<th>Cost Center</th><th>Keterangan Baris</th><th>Debit</th><th>Kredit</th><th>Saldo</th></tr>';
+        $totalD = 0.0;
+        $totalK = 0.0;
+        $accD = $accK = $saldo = 0.0;
+        $prevCode = null;
+        $closeAcc = function () use (&$h, &$accD, &$accK, &$saldo, $rp): void {
+            $h .= '<tr style="font-weight:bold"><td colspan="11">Mutasi Saldo</td><td>'.$rp($accD).'</td><td>'.$rp($accK).'</td><td></td></tr>'
+                .'<tr style="font-weight:bold"><td colspan="11">Saldo Akhir</td><td></td><td></td><td>'.$rp($saldo).'</td></tr>';
+            $accD = $accK = $saldo = 0.0;
+        };
+        foreach ($rows as $r) {
+            if ($r['code'] !== $prevCode) {
+                if ($prevCode !== null) {
+                    $closeAcc();
+                }
+                // Buka blok COA: baris "Saldo Awal" (saldo sebelum periode), saldo berjalan mulai dari sini.
+                $saldo = (float) ($openings[$r['code']] ?? 0);
+                $h .= '<tr style="font-weight:bold"><td colspan="11">Saldo Awal</td><td>'.$rp(0).'</td><td>'.$rp(0).'</td><td>'.$rp($saldo).'</td></tr>';
+            }
+            $prevCode = $r['code'];
+            $accD   += $r['debit'];
+            $accK   += $r['credit'];
+            $saldo  += $r['debit'] - $r['credit'];
+            $totalD += $r['debit'];
+            $totalK += $r['credit'];
+            $h .= '<tr>'
+                .'<td>'.$e($r['code']).'</td>'
+                .'<td>'.$e($r['name']).'</td>'
+                .'<td>'.$e($r['jno']).'</td>'
+                .'<td>'.$e($r['date']).'</td>'
+                .'<td>'.$e($r['source']).'</td>'
+                .'<td>'.$e($r['pihak']).'</td>'
+                .'<td>'.$e($r['status']).'</td>'
+                .'<td>'.$e($r['desc']).'</td>'
+                .'<td>'.$e($r['ref']).'</td>'
+                .'<td>'.$e($r['cc']).'</td>'
+                .'<td>'.$e($r['ldesc']).'</td>'
+                .'<td>'.$rp($r['debit']).'</td>'
+                .'<td>'.$rp($r['credit']).'</td>'
+                .'<td>'.$rp($saldo).'</td>'
+                .'</tr>';
+        }
+        if ($prevCode !== null) {
+            $closeAcc();
+        }
+        $h .= '<tr style="font-weight:bold;background:#f1f5f9"><td colspan="11">TOTAL</td><td>'.$rp($totalD).'</td><td>'.$rp($totalK).'</td><td></td></tr></table>';
 
         $file = 'Detail-Transaksi-Jurnal-'.$from->format('Ymd').'-'.$to->format('Ymd').'.xls';
 
