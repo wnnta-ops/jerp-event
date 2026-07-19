@@ -564,17 +564,23 @@ class BookedRevenueController extends Controller
         $date = $v['date'];
         $ok = 0;
         $skip = 0;
+        $fail = [];
         foreach (array_unique($v['booking_ids']) as $bid) {
             $b = \App\Domain\Sales\Booking\Models\Booking::find($bid);
             if (! $b || \App\Domain\Legal\Bast\Models\BastDocument::where('booking_id', $bid)->exists()) {
                 $skip++;
                 continue;
             }
-            $issue->execute($b, $date);
-            $ok++;
+            try {
+                $issue->execute($b, $date);
+                $ok++;
+            } catch (BusinessRuleException $e) {
+                $fail[] = $b->booking_number;
+            }
         }
+        $msg = "$ok BAST diterbitkan (Sudah).".($skip ? " $skip dilewati (sudah ada)." : '').($fail ? ' Gagal (belum akad/lunas): '.implode(', ', array_slice($fail, 0, 8)).'.' : '');
 
-        return back()->with($ok ? 'success' : 'warning', "$ok BAST diterbitkan (Sudah).".($skip ? " $skip dilewati (sudah ada)." : ''));
+        return back()->with($ok ? 'success' : ($fail ? 'error' : 'warning'), $msg);
     }
 
     /** Terbitkan AJB (Sudah) utk booking terpilih — satuan / massal. Wajib lunas (dicek IssueAjb). */
@@ -645,5 +651,126 @@ class BookedRevenueController extends Controller
             'rows'    => $rows,
             'filters' => $request->only(['search']),
         ]);
+    }
+
+    /**
+     * Booked Revenue MASSAL — checklist unit yg sudah BAST + AJB, di-booking sekaligus.
+     * Tiap unit dibukukan SENDIRI (1 unit = 1 record + 1 jurnal) lewat bookMany(), dgn baris
+     * jurnal DETAIL yang IDENTIK dengan form satuan "Isi dari hitungan"
+     * (Piutang / Diskon Penjualan / UM Penjualan / PPN Keluaran / Penjualan / PPN Akan Diterbitkan).
+     * Boleh lintas-customer. Gross & diskon dari SPR (booking); UM dari pencairan KPR per booking.
+     * Unit yg sudah di-booking / belum BAST+AJB / jurnal tak balance (abnormal) dilewati/gagal,
+     * tak menggagalkan yang lain.
+     */
+    public function bookMassal(Request $request, BookedRevenueService $svc): RedirectResponse
+    {
+        abort_unless($request->user()?->canModule('ar'), 403);
+        $v = $request->validate([
+            'booking_ids'   => ['required', 'array', 'min:1'],
+            'booking_ids.*' => ['integer', 'exists:bookings,id'],
+            'booking_date'  => ['required', 'date'],
+        ]);
+
+        $bookedUnitIds = BsBookedRevenue::whereIn('status', ['booked', 'recognized'])
+            ->whereNotNull('unit_id')->distinct()->pluck('unit_id')->all();
+
+        // Akun default jurnal (sama sumbernya dgn prefill form) + pencairan KPR per booking (dasar UM).
+        $accCode = fn (string $key) => (int) (BsAccount::where('code', config("business_support.gl_accounts.{$key}"))->value('id') ?? 0);
+        $acc = [
+            'piutang'     => $accCode('receivable'),      'diskon'      => $accCode('sales_discount'),
+            'um'          => $accCode('unearned_revenue'), 'ppn_out'    => $accCode('ppn_out'),
+            'penjualan'   => $accCode('income'),          'ppn_pending' => $accCode('ppn_out_pending'),
+        ];
+        // Semua akun jurnal WAJIB ada di CoA — jangan posting jurnal dgn akun 0 (FK tak valid).
+        if (in_array(0, $acc, true)) {
+            return back()->with('error', 'Akun GL untuk jurnal Booked Revenue belum lengkap di CoA '
+                .'(Piutang / Diskon Penjualan / UM Penjualan / PPN Keluaran / Penjualan / PPN Akan Diterbitkan). '
+                .'Lengkapi dulu di General Ledger sebelum Booked Revenue massal.');
+        }
+        $bookingIds = array_values(array_unique($v['booking_ids']));
+        $pencairan = \App\Domain\BankLoan\Models\KprRealization::query()
+            ->join('kpr_applications', 'kpr_applications.id', '=', 'kpr_realizations.kpr_application_id')
+            ->where('kpr_applications.tenant_id', tenant_id())
+            ->whereNull('kpr_applications.deleted_at')
+            ->whereNull('kpr_realizations.approval_status')
+            ->whereIn('kpr_applications.booking_id', $bookingIds)
+            ->groupBy('kpr_applications.booking_id')
+            ->selectRaw('kpr_applications.booking_id AS bid, SUM(kpr_realizations.disbursed_amount) AS total')
+            ->pluck('total', 'bid');
+
+        $ok = 0;
+        $skip = 0;
+        $fail = [];
+        foreach ($bookingIds as $bid) {
+            $b = \App\Domain\Sales\Booking\Models\Booking::find($bid);
+            if (! $b || ! $b->unit_id || in_array($b->unit_id, $bookedUnitIds, true)) {
+                $skip++; // tak valid / unit sudah di-booking
+                continue;
+            }
+            // Syarat: unit sudah BAST DAN AJB (samakan dgn tombol satuan yg aktif bila keduanya terisi).
+            $hasBast = \App\Domain\Legal\Bast\Models\BastDocument::where('booking_id', $bid)->exists();
+            $hasAjb  = \App\Domain\Legal\Ajb\Models\AjbDocument::where('booking_id', $bid)->exists();
+            if (! $hasBast || ! $hasAjb) {
+                $fail[] = $b->booking_number;
+                continue;
+            }
+            $lines = $this->brJournalLines(
+                (float) ($b->base_price ?? 0), (float) ($b->discount_amount ?? 0), (float) ($pencairan[$bid] ?? 0), $acc,
+            );
+            try {
+                // 1 unit → 1 record + 1 jurnal (bookMany memvalidasi balance Dr=Cr via JournalService).
+                $svc->bookMany(
+                    ['booking_date' => $v['booking_date'], 'customer_id' => $b->customer_id, 'reference' => null, 'description' => null],
+                    [['unit_id' => $b->unit_id, 'discount' => (float) ($b->discount_amount ?? 0)]],
+                    $lines,
+                    $request->user()->id,
+                );
+                $ok++;
+            } catch (BusinessRuleException $e) {
+                $fail[] = $b->booking_number; // mis. jurnal tak balance (pencairan > nett)
+            }
+        }
+
+        $msg = "$ok unit di-booking revenue (jurnal detail: Piutang/Diskon/UM/PPN/Penjualan)."
+            .($skip ? " $skip dilewati (sudah di-booking / tak valid)." : '')
+            .($fail ? ' Gagal (belum BAST/AJB atau jurnal tak balance): '.implode(', ', array_slice($fail, 0, 8)).'.' : '');
+
+        return redirect()->route('bs.booked-revenue.index')
+            ->with($ok ? 'success' : ($fail ? 'error' : 'warning'), $msg);
+    }
+
+    /**
+     * Baris jurnal Booked Revenue — IDENTIK dengan form "Isi dari hitungan" (applyPrefill di Form.vue).
+     * Balance dijamin secara aljabar (PPN Akan Diterbitkan = plug). Baris ≤ 0 dibuang; bila pencairan
+     * > nett (abnormal), Piutang/plug negatif terbuang → jurnal tak balance → unit tsb gagal (dilewati).
+     *
+     * @param  array{piutang:int,diskon:int,um:int,ppn_out:int,penjualan:int,ppn_pending:int}  $acc
+     * @return array<int,array{account_id:int,debit:float|int,credit:float|int}>
+     */
+    private function brJournalLines(float $gross, float $diskon, float $penc, array $acc): array
+    {
+        $rup = static fn (float $x): int => (int) round($x);
+        $nett              = $gross - $diskon;
+        $um                = $penc / 1.11;                    // UM Penjualan (dari pencairan KPR)
+        $piutang           = $rup($nett - $penc);             // Piutang Usaha
+        $diskonPenjualan   = $rup($diskon / 1.11);            // Diskon Penjualan
+        $umPenjualan       = $rup($um);
+        $ppnKeluaranDebit  = $rup($um * 0.11);               // PPN Keluaran (debit)
+        $penjualan         = $rup($gross / 1.11);            // Penjualan
+        $ppnKeluaranCredit = $rup(($um / 1.11) * 0.11);     // PPN Keluaran (kredit)
+        $ppnPending        = ($piutang + $diskonPenjualan + $umPenjualan + $ppnKeluaranDebit)
+                             - $penjualan - $ppnKeluaranCredit; // PPN Akan Diterbitkan (plug → balance)
+
+        $raw = [
+            ['account_id' => $acc['piutang'],     'debit' => $piutang,          'credit' => 0],
+            ['account_id' => $acc['diskon'],      'debit' => $diskonPenjualan,  'credit' => 0],
+            ['account_id' => $acc['um'],          'debit' => $umPenjualan,      'credit' => 0],
+            ['account_id' => $acc['ppn_out'],     'debit' => $ppnKeluaranDebit, 'credit' => 0],
+            ['account_id' => $acc['penjualan'],   'debit' => 0, 'credit' => $penjualan],
+            ['account_id' => $acc['ppn_out'],     'debit' => 0, 'credit' => $ppnKeluaranCredit],
+            ['account_id' => $acc['ppn_pending'], 'debit' => 0, 'credit' => $ppnPending],
+        ];
+
+        return array_values(array_filter($raw, static fn ($l) => ($l['debit'] + $l['credit']) > 0));
     }
 }

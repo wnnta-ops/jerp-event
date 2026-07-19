@@ -312,7 +312,7 @@ const cellArea = 'w-full rounded-md border border-neutral-300 bg-white px-2 py-1
                 <div class="rounded-lg border border-neutral-200 dark:border-neutral-800">
                     <table class="w-full table-fixed border-collapse text-sm">
                         <colgroup>
-                            <col style="width:4%" /><col style="width:24%" /><col style="width:11%" /><col style="width:17%" /><col style="width:10%" /><col style="width:12%" /><col style="width:9%" /><col style="width:9%" /><col style="width:4%" />
+                            <col style="width:4%" /><col style="width:27%" /><col style="width:14%" /><col style="width:14%" /><col style="width:9%" /><col style="width:11%" /><col style="width:9%" /><col style="width:9%" /><col style="width:3%" />
                         </colgroup>
                         <thead class="bg-neutral-50 text-left text-[11px] uppercase tracking-wide text-neutral-500 dark:bg-neutral-800">
                             <tr>
@@ -331,10 +331,10 @@ const cellArea = 'w-full rounded-md border border-neutral-300 bg-white px-2 py-1
                             <tr v-for="(l,i) in form.journal_lines" :key="i" class="border-b border-neutral-100 align-top dark:border-neutral-800">
                                 <td class="px-2 py-2 font-mono text-neutral-400">{{ i+1 }}</td>
                                 <td class="px-2 py-2">
-                                    <SearchSelect v-model="l.account_id" :options="accounts" placeholder="— pilih akun —" />
-                                    <div class="mt-0.5 truncate text-[11px] text-neutral-400" :title="accountName(l.account_id)">{{ accountName(l.account_id) || '—' }}</div>
+                                    <SearchSelect v-model="l.account_id" :options="accounts" placeholder="— pilih akun —" :no-truncate="true" />
+                                    <div class="mt-0.5 break-words text-[11px] text-neutral-400" :title="accountName(l.account_id)">{{ accountName(l.account_id) || '—' }}</div>
                                 </td>
-                                <td class="px-2 py-2"><SearchSelect v-model="l.cost_center_id" :options="costCenters" placeholder="— cost center —" /></td>
+                                <td class="px-2 py-2"><SearchSelect v-model="l.cost_center_id" :options="costCenters" placeholder="— cost center —" :no-truncate="true" /></td>
                                 <td class="px-2 py-2"><textarea v-model="l.description" rows="2" :class="cellArea" placeholder="Keterangan baris…"></textarea></td>
                                 <td class="px-2 py-2">
                                     <select v-model="l.currency" :class="dimCls"><option value="IDR">IDR</option><option value="USD">USD</option><option value="SGD">SGD</option><option value="EUR">EUR</option></select>
