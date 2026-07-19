@@ -221,11 +221,47 @@ class ArInvoiceController extends Controller
         ]);
 
         return Inertia::render('BusinessSupport/Receivable/Show', [
-            'invoice'      => array_merge($invoice->toArray(), ['receivable_amount' => $invoice->receivable_amount]),
+            // Tanggal dikirim sebagai yyyy-mm-dd (toDateString), BUKAN ISO berwaktu dari toArray():
+            // cast 'date' pada tengah malam WIB berserialisasi jadi UTC "…T17:00:00Z" — memotong 10
+            // karakter darinya justru MUNDUR sehari, dan <input type=date> menolaknya. toDateString()
+            // memberi tanggal kalender yang benar (sama seperti baris daftar & Booked Revenue).
+            'invoice'      => array_merge($invoice->toArray(), [
+                'receivable_amount' => $invoice->receivable_amount,
+                'invoice_date'      => optional($invoice->invoice_date)->toDateString(),
+                'due_date'          => optional($invoice->due_date)->toDateString(),
+                'receive_date'      => optional($invoice->receive_date)->toDateString(),
+            ]),
             'outstanding'  => (float) $invoice->outstanding,
             'cashAccounts' => BsAccount::where('is_active', true)->where('is_postable', true)->where('code', 'like', '101010%')->orderBy('code')->get(['id', 'code', 'name']),
             'defaultCash'  => $this->accId('cash'),
         ]);
+    }
+
+    /**
+     * Edit rincian invoice piutang — HANYA metadata (tanggal, jatuh tempo, keterangan, no. ref).
+     *
+     * Nilai (DPP/PPN/PPh/total) dan jurnal pendaftaran yang sudah diposting SENGAJA terkunci —
+     * sama seperti Booked Revenue: tagihan tak bisa dikembalikan, hanya keterangannya yang dirapikan.
+     */
+    public function update(Request $request, BsArInvoice $invoice): RedirectResponse
+    {
+        abort_unless($request->user()?->canModule('ar'), 403);
+
+        $v = $request->validate([
+            'invoice_date'    => ['required', 'date'],
+            'due_date'        => ['nullable', 'date', 'after_or_equal:invoice_date'],
+            'description'     => ['required', 'string', 'max:255'],
+            'customer_ref_no' => ['nullable', 'string', 'max:80'],
+        ]);
+
+        $invoice->update([
+            'invoice_date'    => $v['invoice_date'],
+            'due_date'        => $v['due_date'] ?? null,
+            'description'     => $v['description'],
+            'customer_ref_no' => $v['customer_ref_no'] ?? null,
+        ]);
+
+        return back()->with('success', "Rincian {$invoice->invoice_number} diperbarui. Nilai & jurnal tidak berubah (terkunci).");
     }
 
     public function pay(Request $request, BsArInvoice $invoice, PayArInvoice $action): RedirectResponse

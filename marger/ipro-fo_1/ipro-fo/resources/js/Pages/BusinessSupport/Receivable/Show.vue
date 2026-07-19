@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue';
 import { useForm, Link } from '@inertiajs/vue3';
-import { ArrowLeft, Coins, Wallet, BookText, CalendarClock, Plus, Trash2 } from 'lucide-vue-next';
+import { ArrowLeft, Coins, Wallet, BookText, CalendarClock, Plus, Trash2, Pencil } from 'lucide-vue-next';
 import Button from '@/Components/UI/Button.vue';
 import Badge from '@/Components/UI/Badge.vue';
 
@@ -11,6 +11,26 @@ const props = defineProps<{
     cashAccounts: Array<any>;
     defaultCash: number | null;
 }>();
+
+// ── Edit metadata (nilai & jurnal TERKUNCI; hanya tanggal / jatuh tempo / keterangan / no. ref) ──
+// Tanggal dari controller (toArray) berbentuk ISO berwaktu ("2026-07-19T00:00:00…Z"); <input type=date>
+// hanya menerima "yyyy-mm-dd", jadi dipotong 10 char — kalau tidak, field tampil KOSONG dan tombol
+// Simpan terblokir (invoice_date required) meski operator hanya ingin merapikan keterangan.
+const ymd = (d: string | null | undefined) => (d ? String(d).slice(0, 10) : '');
+const editing = ref(false);
+const edit = useForm({
+    invoice_date: ymd(props.invoice.invoice_date),
+    due_date: ymd(props.invoice.due_date),
+    description: props.invoice.description ?? '',
+    customer_ref_no: props.invoice.customer_ref_no ?? '',
+});
+function simpanEdit() {
+    edit.patch(route('bs.ar.update', props.invoice.id), {
+        preserveScroll: true,
+        onSuccess: () => { editing.value = false; },
+    });
+}
+function batalEdit() { edit.reset(); edit.clearErrors(); editing.value = false; }
 
 const showPay = ref(false);
 const today = new Date().toISOString().slice(0, 10);
@@ -37,10 +57,14 @@ const inputCls = 'h-9 w-full rounded-lg border border-neutral-300 bg-white px-3 
         <Link :href="route('bs.ar.index')" class="inline-flex items-center gap-2 text-sm text-neutral-500 hover:text-neutral-800 dark:hover:text-neutral-200"><ArrowLeft class="h-4 w-4" /> Account Receivable</Link>
         <div class="flex items-center justify-between">
             <h1 class="flex items-center gap-2 font-mono text-2xl font-bold"><Coins class="h-6 w-6 text-success-600" /> {{ invoice.invoice_number }}</h1>
-            <Badge :variant="invoice.status === 'paid' ? 'success' : 'warning'">{{ invoice.status === 'paid' ? 'Lunas' : 'Open' }}</Badge>
+            <div class="flex items-center gap-2">
+                <Button v-if="!editing" variant="secondary" size="sm" @click="editing = true"><template #icon-left><Pencil class="h-4 w-4" /></template>Edit Rincian</Button>
+                <Badge :variant="invoice.status === 'paid' ? 'success' : 'warning'">{{ invoice.status === 'paid' ? 'Lunas' : 'Open' }}</Badge>
+            </div>
         </div>
 
-        <div class="card grid gap-4 p-5 text-sm md:grid-cols-3">
+        <!-- Rincian invoice. Nilai (DPP/PPN/PPh/total) & jurnal TERKUNCI; hanya metadata yang bisa diedit. -->
+        <div v-if="!editing" class="card grid gap-4 p-5 text-sm md:grid-cols-3">
             <div><div class="text-neutral-500">Customer</div><div class="font-medium">{{ invoice.customer?.full_name ?? '—' }}</div></div>
             <div><div class="text-neutral-500">Kategori</div><div class="font-medium">{{ invoice.category?.name ?? '—' }}</div></div>
             <div><div class="text-neutral-500">Tipe Transaksi</div><div class="font-medium">{{ trxLabel[invoice.trx_type] ?? invoice.trx_type }}</div></div>
@@ -51,6 +75,14 @@ const inputCls = 'h-9 w-full rounded-lg border border-neutral-300 bg-white px-3 
             <div v-if="invoice.manual_no"><div class="text-neutral-500">No. Manual</div><div class="font-medium">{{ invoice.manual_no }}</div></div>
             <div class="md:col-span-3"><div class="text-neutral-500">Keterangan</div><div class="font-medium">{{ invoice.description }}</div></div>
         </div>
+        <form v-else @submit.prevent="simpanEdit" class="card grid gap-4 p-5 text-sm md:grid-cols-2">
+            <p class="md:col-span-2 text-xs text-neutral-500">Nilai tagihan & jurnal terkunci — yang bisa diubah hanya tanggal, jatuh tempo, no. ref, dan keterangan.</p>
+            <div><label class="mb-1 block text-xs font-medium text-neutral-500">Tgl Invoice *</label><input v-model="edit.invoice_date" type="date" required :class="inputCls" /><p v-if="edit.errors.invoice_date" class="mt-1 text-xs text-danger-500">{{ edit.errors.invoice_date }}</p></div>
+            <div><label class="mb-1 block text-xs font-medium text-neutral-500">Jatuh Tempo</label><input v-model="edit.due_date" type="date" :class="inputCls" /><p v-if="edit.errors.due_date" class="mt-1 text-xs text-danger-500">{{ edit.errors.due_date }}</p></div>
+            <div><label class="mb-1 block text-xs font-medium text-neutral-500">No. Ref. Customer</label><input v-model="edit.customer_ref_no" maxlength="80" :class="inputCls" /></div>
+            <div><label class="mb-1 block text-xs font-medium text-neutral-500">Keterangan *</label><input v-model="edit.description" maxlength="255" required :class="inputCls" /><p v-if="edit.errors.description" class="mt-1 text-xs text-danger-500">{{ edit.errors.description }}</p></div>
+            <div class="md:col-span-2 flex gap-2"><Button type="submit" :disabled="edit.processing">Simpan</Button><button type="button" @click="batalEdit" class="rounded-lg border border-neutral-300 px-4 py-2 text-sm dark:border-neutral-700">Batal</button></div>
+        </form>
 
         <div class="card p-5">
             <div class="grid gap-2 text-sm sm:grid-cols-2">
