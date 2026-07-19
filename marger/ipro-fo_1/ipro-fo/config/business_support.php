@@ -50,6 +50,7 @@ return [
     'gl_accounts' => [
         'inventory'  => '10104010101', // Persediaan — Bangunan Siap Jual
         'payable'    => '20101010101', // Utang Usaha Supplier
+        'payable_customer' => '20101010102', // Utang Usaha Customer (uang muka/UTJ-DP customer) — BUKAN supplier
         'receivable' => '10102010101', // Piutang Usaha
         'income'     => '40101010101', // Penjualan Usaha
         'unearned_revenue' => '20106060601', // Uang Muka Penjualan (Pendapatan Diterima Dimuka) — Booked Revenue

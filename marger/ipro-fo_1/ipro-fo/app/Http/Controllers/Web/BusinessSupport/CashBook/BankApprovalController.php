@@ -690,8 +690,12 @@ class BankApprovalController extends Controller
         ];
 
         $accounts = $this->postableAccounts();
-        // #164 — default kredit = akun Hutang Usaha customer (editable di UI).
-        $payableGl = $accounts->first(fn ($a) => str_contains(mb_strtolower((string) $a->name), 'hutang usaha'))
+        // Default kredit UTJ/DP customer = akun UTANG USAHA CUSTOMER (BUKAN supplier), editable di UI.
+        // Cari akun customer secara spesifik (tangani ejaan "Utang"/"Hutang") → config payable_customer
+        // (20101010102) → terakhir baru config payable (supplier) bila akun customer benar-benar tak ada.
+        $payableGl = $accounts->first(fn ($a) => str_contains(mb_strtolower((string) $a->name), 'utang usaha customer')
+                || str_contains(mb_strtolower((string) $a->name), 'hutang usaha customer'))
+            ?? ($accounts->firstWhere('code', config('business_support.gl_accounts.payable_customer')))
             ?? ($accounts->firstWhere('code', config('business_support.gl_accounts.payable')));
 
         $tts = Tts::query()

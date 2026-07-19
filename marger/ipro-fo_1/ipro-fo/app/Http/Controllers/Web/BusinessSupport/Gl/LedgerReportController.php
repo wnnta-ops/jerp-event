@@ -31,21 +31,8 @@ class LedgerReportController extends Controller
         ]);
     }
 
-    /** Export Buku Besar (range COA) ke Excel (.xls) mengikuti filter aktif. */
-    public function ledgerExport(Request $request): \Illuminate\Http\Response
-    {
-        abort_unless($request->user()?->canModule('gl'), 403);
-        $data = $this->ledgerData($request);
-        $file = 'Buku-Besar-'.($data['from_code'] ?: 'x').'-sd-'.($data['to_code'] ?: $data['from_code'] ?: 'x').'.xls';
-
-        return response('<html xmlns:x="urn:schemas-microsoft-com:office:excel"><head><meta charset="utf-8"></head><body>'
-            .$this->ledgerHtml($data).'</body></html>')
-            ->header('Content-Type', 'application/vnd.ms-excel; charset=UTF-8')
-            ->header('Content-Disposition', 'attachment; filename="'.$file.'"');
-    }
-
     /**
-     * Data Buku Besar terfilter — dipakai bersama tampilan & export.
+     * Data Buku Besar terfilter — dipakai tampilan (export Excel via bs.gl.journal.export).
      * Range akun postable dari kode `from_code` s/d `to_code` (salah satu boleh kosong = satu akun).
      * Tiap akun: saldo awal (sebelum `from`) + mutasi periode + saldo berjalan.
      */
@@ -118,33 +105,6 @@ class LedgerReportController extends Controller
             'total_debit' => (float) $rows->sum('debit'), 'total_credit' => (float) $rows->sum('credit'),
             'closing' => $running,
         ];
-    }
-
-    /** HTML tabel Buku Besar (per akun) untuk export Excel. */
-    private function ledgerHtml(array $data): string
-    {
-        $rp = fn ($v) => number_format((float) $v, 0, ',', '.');
-        $h = '<p><b>Buku Besar</b> — COA '.e($data['from_code'] ?: '-').' s/d '.e($data['to_code'] ?: ($data['from_code'] ?: '-'))
-            .' · Periode '.e($data['from'] ?? '-').' s/d '.e($data['to'] ?? '-').'</p>';
-        if (empty($data['ledgers'])) {
-            return $h.'<p>Tidak ada data.</p>';
-        }
-        foreach ($data['ledgers'] as $l) {
-            $h .= '<table border="1" cellspacing="0"><tr><td colspan="6"><b>'.e($l['code']).' — '.e($l['name']).'</b></td></tr>'
-                .'<tr><th>Tanggal</th><th>No. Jurnal</th><th>Keterangan</th><th>Debit</th><th>Kredit</th><th>Saldo</th></tr>'
-                .'<tr><td colspan="5">Saldo Awal</td><td align="right">'.$rp($l['opening']).'</td></tr>';
-            foreach ($l['rows'] as $r) {
-                $h .= '<tr><td>'.e($r['date']).'</td><td>'.e($r['number']).'</td><td>'.e($r['description']).'</td>'
-                    .'<td align="right">'.($r['debit'] > 0 ? $rp($r['debit']) : '').'</td>'
-                    .'<td align="right">'.($r['credit'] > 0 ? $rp($r['credit']) : '').'</td>'
-                    .'<td align="right">'.$rp($r['balance']).'</td></tr>';
-            }
-            $h .= '<tr><td colspan="3"><b>Total</b></td><td align="right"><b>'.$rp($l['total_debit']).'</b></td>'
-                .'<td align="right"><b>'.$rp($l['total_credit']).'</b></td><td align="right"><b>'.$rp($l['closing']).'</b></td></tr>'
-                .'</table><br />';
-        }
-
-        return $h;
     }
 
     /**

@@ -29,7 +29,13 @@ const params = computed(() => ({
     to: to.value || undefined,
 }));
 function display() { router.get(route('bs.gl.ledger'), params.value, { preserveState: true, replace: true }); }
-const excelUrl = computed(() => route('bs.gl.ledger.export', params.value));
+// Excel = format "Detail Transaksi Jurnal" (Kode/Nama Akun, Pihak Terkait, dst) difilter rentang COA + periode.
+const excelUrl = computed(() => route('bs.gl.journal.export', {
+    from_code: fromCode.value || undefined,
+    to_code: toCode.value || undefined,
+    date_from: from.value || undefined,
+    date_to: to.value || undefined,
+}));
 
 function fmtRp(v: number) { return Number(v ?? 0).toLocaleString('id-ID'); }
 function fmtDate(d: string) { return d ? new Date(d).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'; }

@@ -4,6 +4,7 @@ import { useForm, Link } from '@inertiajs/vue3';
 import { ArrowLeft, FileText, CheckCircle2, XCircle } from 'lucide-vue-next';
 import Button from '@/Components/UI/Button.vue';
 import Badge from '@/Components/UI/Badge.vue';
+import SearchSelect from '@/Components/UI/SearchSelect.vue';
 
 const props = defineProps<{ giro: any; statuses: Record<string, string>; cashAccounts: Array<any>; defaultCash: number | null }>();
 const mode = ref<'' | 'clear' | 'bounce'>('');
@@ -50,7 +51,7 @@ const inputCls = 'h-9 w-full rounded-lg border border-neutral-300 bg-white px-3 
                 <h2 class="font-semibold">Kliring — Dr Bank · Cr Piutang Giro</h2>
                 <div class="grid gap-3 sm:grid-cols-2">
                     <div><label class="mb-1 block text-xs font-medium text-neutral-500">Tgl Cair *</label><input v-model="clearForm.settled_date" type="date" required :class="inputCls" /></div>
-                    <div><label class="mb-1 block text-xs font-medium text-neutral-500">Masuk ke Bank *</label><select v-model="clearForm.cash_account_id" required :class="inputCls"><option value="">— pilih —</option><option v-for="a in cashAccounts" :key="a.id" :value="a.id">{{ a.code }} - {{ a.name }}</option></select></div>
+                    <div><label class="mb-1 block text-xs font-medium text-neutral-500">Masuk ke Bank *</label><SearchSelect v-model="clearForm.cash_account_id" :options="cashAccounts" placeholder="— cari / pilih bank —" :no-truncate="true" /></div>
                 </div>
                 <div class="flex gap-2"><Button type="submit" :disabled="clearForm.processing">Konfirmasi Cair</Button><button type="button" @click="mode = ''" class="rounded-lg border border-neutral-300 px-4 py-2 text-sm dark:border-neutral-700">Batal</button></div>
             </form>

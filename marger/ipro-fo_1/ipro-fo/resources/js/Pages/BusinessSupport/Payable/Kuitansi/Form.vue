@@ -79,7 +79,7 @@ const inputCls = 'h-9 w-full rounded-lg border border-neutral-300 bg-white px-3 
                 <div><label class="mb-1 block text-xs font-medium text-neutral-500">Alat Transaksi *</label><select v-model="form.alat_transaksi" :class="inputCls"><option v-for="(label,val) in alat" :key="val" :value="val">{{ label }}</option></select></div>
                 <div>
                     <label class="mb-1 block text-xs font-medium text-neutral-500">Dari Kas/Bank *</label>
-                    <SearchSelect v-model="form.cash_account_id" :options="filteredCash" placeholder="— pilih kas / bank —" />
+                    <SearchSelect v-model="form.cash_account_id" :options="filteredCash" placeholder="— pilih kas / bank —" :no-truncate="true" />
                     <p class="mt-1 text-[11px] text-neutral-400">{{ form.alat_transaksi === 'tunai' ? 'Tunai: hanya Kas Operasional / Kas Kecil.' : 'Transfer / Cek-Giro: rekening bank.' }}</p>
                     <p v-if="form.errors.cash_account_id" class="mt-1 text-xs text-danger-500">{{ form.errors.cash_account_id }}</p>
                 </div>
