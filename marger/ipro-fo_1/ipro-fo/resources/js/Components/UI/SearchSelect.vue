@@ -60,7 +60,11 @@ function updatePos() {
     const ph = panel.value?.offsetHeight ?? 300;
     const spaceBelow = window.innerHeight - r.bottom;
     const openUp = spaceBelow < ph + 8 && r.top > spaceBelow;
-    pos.value = { left: r.left, top: openUp ? Math.max(4, r.top - ph - 4) : r.bottom + 4, width: r.width };
+    // Panel minimal 260px agar opsi (mis. "CC-FIN - Finance", "20101010101 - Utang Usaha Supplier")
+    // tak terpotong walau kolom triggernya sempit; lalu geser kiri bila melewati tepi kanan viewport.
+    const width = Math.min(Math.max(r.width, 260), window.innerWidth - 16);
+    const left = Math.max(8, Math.min(r.left, window.innerWidth - width - 8));
+    pos.value = { left, top: openUp ? Math.max(4, r.top - ph - 4) : r.bottom + 4, width };
 }
 function onViewportChange() { if (open.value) updatePos(); }
 
