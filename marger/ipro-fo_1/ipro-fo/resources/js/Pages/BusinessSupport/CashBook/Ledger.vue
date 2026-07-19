@@ -140,7 +140,10 @@ function saveClusters(row: any) {
                                 <span v-else class="cursor-not-allowed text-neutral-300 dark:text-neutral-600" title="Mutasi ini bukan transaksi kas (saldo awal / jurnal manual / hutang-piutang / bon sementara) — tidak ada Bukti Kas & Bank yang bisa dicetak.">—</span>
                             </td>
                             <td class="px-3 py-2 whitespace-nowrap">{{ fmtDate(row.date) }}</td>
-                            <td class="px-3 py-2 font-mono text-xs">{{ row.ref }}</td>
+                            <td class="px-3 py-2 font-mono text-xs">
+                                <Link v-if="row.journal_id" :href="route('bs.gl.journal.show', row.journal_id)" class="text-primary-600 hover:underline dark:text-primary-400" title="Buka Detail Jurnal transaksi ini">{{ row.ref }}</Link>
+                                <span v-else>{{ row.ref }}</span>
+                            </td>
                             <td class="px-3 py-2 text-neutral-500">{{ row.desc }}</td>
                             <td class="px-3 py-2 text-right font-mono">{{ row.debit ? fmtRp(row.debit) : '' }}</td>
                             <td class="px-3 py-2 text-right font-mono">{{ row.credit ? fmtRp(row.credit) : '' }}</td>

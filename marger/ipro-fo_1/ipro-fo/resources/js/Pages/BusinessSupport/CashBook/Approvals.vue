@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from 'vue';
+import { ref, computed } from 'vue';
 import { router, Link } from '@inertiajs/vue3';
 import { ArrowLeft, ShieldCheck, Check, X, ChevronDown, ChevronRight } from 'lucide-vue-next';
 import EmptyState from '@/Components/UI/EmptyState.vue';
@@ -20,6 +20,24 @@ function reject(r: any) { if (!confirm(`Tolak pengeluaran ${r.trx_number} sebesa
 const expanded = ref<Record<number, boolean>>({});
 function toggle(id: number) { expanded.value[id] = !expanded.value[id]; }
 
+// #13 — pilih beberapa BKK lalu setujui / tolak sekaligus.
+const selected = ref<number[]>([]);
+const pageIds = computed<number[]>(() => (props.rows?.data ?? []).map((r: any) => Number(r.id)));
+const allChecked = computed({
+    get: () => pageIds.value.length > 0 && pageIds.value.every((id) => selected.value.includes(id)),
+    set: (v: boolean) => { selected.value = v ? [...pageIds.value] : []; },
+});
+function bulkApprove() {
+    if (!selected.value.length) return;
+    if (!confirm(`Setujui ${selected.value.length} pengeluaran terpilih? Jurnal Pengeluaran diposting per transaksi.`)) return;
+    router.post(route('bs.cashbook.approve-bulk'), { ids: selected.value }, { preserveScroll: true, onSuccess: () => { selected.value = []; } });
+}
+function bulkReject() {
+    if (!selected.value.length) return;
+    if (!confirm(`Tolak ${selected.value.length} pengeluaran terpilih?`)) return;
+    router.post(route('bs.cashbook.reject-bulk'), { ids: selected.value }, { preserveScroll: true, onSuccess: () => { selected.value = []; } });
+}
+
 // ── AP (Registrasi Pengeluaran Kas & Bank (AP) — Kuitansi Hutang) ──
 function approveAp(r: any) { if (!confirm(`Setujui kuitansi ${r.kuitansi_number} sebesar Rp ${fmtRp(r.amount)}? Jurnal JAP akan otomatis terbentuk.`)) return; router.post(route('bs.ap.kuitansi.approve', r.id), {}, { preserveScroll: true }); }
 function rejectAp(r: any) { if (!confirm(`Tolak kuitansi ${r.kuitansi_number} sebesar Rp ${fmtRp(r.amount)}?`)) return; router.post(route('bs.ap.kuitansi.reject', r.id), {}, { preserveScroll: true }); }
@@ -39,14 +57,21 @@ function toggleAp(id: number) { expandedAp.value[id] = !expandedAp.value[id]; }
         <!-- ── REGISTRASI PENGELUARAN KAS & BANK (BKK) ── -->
         <div>
             <h2 class="mb-2 text-sm font-semibold uppercase tracking-wide text-neutral-500">Registrasi Pengeluaran Kas &amp; Bank</h2>
+            <div v-if="canApprove && selected.length" class="mb-2 flex flex-wrap items-center gap-2 rounded-lg border border-primary-200 bg-primary-50 px-3 py-2 dark:border-primary-500/30 dark:bg-primary-500/10">
+                <span class="text-sm font-semibold text-primary-800 dark:text-primary-300">{{ selected.length }} terpilih</span>
+                <button @click="bulkApprove" class="inline-flex items-center gap-1 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700"><Check class="h-3.5 w-3.5" /> Setujui Terpilih</button>
+                <button @click="bulkReject" class="inline-flex items-center gap-1 rounded-lg bg-danger-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-danger-700"><X class="h-3.5 w-3.5" /> Tolak Terpilih</button>
+                <button @click="selected = []" class="text-xs text-neutral-500 hover:text-neutral-800 dark:hover:text-neutral-200">Batal pilih</button>
+            </div>
             <div class="card overflow-x-auto">
                 <table class="w-full text-sm">
                     <thead class="bg-neutral-50 dark:bg-neutral-800"><tr class="text-left text-xs uppercase text-neutral-500">
-                        <th class="px-4 py-3 w-8"></th><th class="px-4 py-3">No (BKK)</th><th class="px-4 py-3">Tanggal</th><th class="px-4 py-3">Rekening</th><th class="px-4 py-3">Penerima/Keterangan</th><th class="px-4 py-3 text-right">Nominal</th><th class="px-4 py-3 text-right">Aksi</th>
+                        <th class="px-4 py-3 w-8 text-center"><input v-if="canApprove" type="checkbox" v-model="allChecked" class="h-4 w-4" title="Pilih semua" /></th><th class="px-4 py-3 w-8"></th><th class="px-4 py-3">No (BKK)</th><th class="px-4 py-3">Tanggal</th><th class="px-4 py-3">Rekening</th><th class="px-4 py-3">Penerima/Keterangan</th><th class="px-4 py-3 text-right">Nominal</th><th class="px-4 py-3 text-right">Aksi</th>
                     </tr></thead>
                     <tbody class="divide-y divide-neutral-200 dark:divide-neutral-800">
                         <template v-for="r in rows.data" :key="r.id">
-                            <tr>
+                            <tr :class="selected.includes(Number(r.id)) ? 'bg-primary-50/40 dark:bg-primary-500/5' : ''">
+                                <td class="px-4 py-2.5 text-center"><input v-if="canApprove" type="checkbox" :value="Number(r.id)" v-model="selected" class="h-4 w-4" /></td>
                                 <td class="px-4 py-2.5">
                                     <button @click="toggle(r.id)" class="rounded-lg p-1 text-neutral-400 hover:bg-neutral-100 hover:text-neutral-700 dark:hover:bg-neutral-800" :title="expanded[r.id] ? 'Tutup rincian' : 'Lihat rincian'">
                                         <ChevronDown v-if="expanded[r.id]" class="h-4 w-4" /><ChevronRight v-else class="h-4 w-4" />
@@ -66,7 +91,7 @@ function toggleAp(id: number) { expandedAp.value[id] = !expandedAp.value[id]; }
                                 </td>
                             </tr>
                             <tr v-if="expanded[r.id]" class="bg-neutral-50/70 dark:bg-neutral-800/40">
-                                <td></td>
+                                <td></td><td></td>
                                 <td colspan="6" class="px-4 py-3">
                                     <div class="rounded-lg border border-neutral-200 bg-white p-3 dark:border-neutral-700 dark:bg-neutral-900">
                                         <p class="mb-2 text-xs font-semibold uppercase text-neutral-500">Rincian Pengeluaran</p>

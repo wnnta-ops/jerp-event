@@ -14,15 +14,21 @@ use Illuminate\Support\Facades\DB;
 
 /**
  * #153 — Jurnal otomatis BG/Cek KELUAR (warkat perusahaan ke vendor/supplier).
- * Cermin dari GiroService (cek/giro masuk), arah berlawanan:
  *
- *   Diserahkan (beredar) : Dr Hutang Usaha            / Cr BG-Cek Beredar (liability)
- *   Dicairkan            : Dr BG-Cek Beredar          / Cr Bank
- *   Void (jika beredar)  : Dr BG-Cek Beredar          / Cr Hutang Usaha   (pembalik handover)
+ * #8 — Warkat PELUNASAN HUTANG SUPPLIER (ada baris invoice):
+ *   Diserahkan (beredar) : TANPA jurnal — hutang supplier TETAP TERBUKA (masih di daftar hutang).
+ *   Dicairkan            : Dr Hutang Usaha (per invoice) / Cr Bank — hutang baru LUNAS + kas keluar.
+ *   Void (belum cair)    : cukup tandai void (tidak ada yang perlu dibalik).
  *
- * Konservatif: jurnal HANYA terbentuk bila semua akun bisa diresolusi via
- * config('business_support.gl_accounts'). Bila tidak bisa → siklus tetap jalan,
- * jurnal dilewati (tidak melempar error). Tautan jurnal disimpan agar tidak double-posting.
+ * Warkat PIHAK KETIGA / non-AP (tanpa baris invoice) — tetap dua langkah:
+ *   Diserahkan (beredar) : Dr [akun debit] / Cr BG-Cek Beredar (liability)
+ *   Dicairkan            : Dr BG-Cek Beredar / Cr Bank
+ *   Void (jika beredar)  : Dr BG-Cek Beredar / Cr Hutang Usaha (pembalik handover)
+ *
+ * Semua jurnal treasury diposting langsung (status 'posted') agar mutasi bank/hutang
+ * langsung tampil di Rekening Ledger & Kartu Hutang tanpa menunggu approval GL.
+ * Konservatif: jurnal HANYA terbentuk bila akun bisa diresolusi via
+ * config('business_support.gl_accounts'). Bila tidak → siklus tetap jalan, jurnal dilewati.
  */
 final class OutgoingChequeService
 {
@@ -30,7 +36,10 @@ final class OutgoingChequeService
 
     /**
      * Diserahkan ke vendor → status beredar.
-     * Dr Hutang Usaha / Cr BG-Cek Beredar. Mengakui warkat sebagai liabilitas beredar.
+     *
+     * #8: Warkat pelunasan hutang supplier (ada baris invoice) → TIDAK melunasi hutang saat beredar
+     * (tidak ada jurnal, tidak ada pembayaran) — supplier tetap tampil di daftar hutang sampai warkat
+     * DICAIRKAN. Warkat pihak ketiga / non-AP → Dr [akun debit] / Cr BG-Cek Beredar.
      */
     public function handover(BsOutgoingCheque $cheque, string $handoverDate, ?int $userId = null, ?int $debitAccountId = null): BsOutgoingCheque
     {
@@ -42,19 +51,15 @@ final class OutgoingChequeService
                 return $cheque;
             }
 
-            $liability = $this->resolve('outgoing_cheque_liability');
-
-            // Bila warkat mereferensikan invoice hutang → LUNASI tiap invoice (sinkron Invoice Hutang
-            // & Kartu Hutang): Dr Hutang (per invoice) / Cr BG-Cek Beredar (total) + BsApPayment per invoice.
-            $lines = $liability
-                ? $cheque->lines()->whereNull('payment_id')->with('invoice')->get()
-                : new Collection();
-            if ($lines->isNotEmpty()) {
-                return $this->handoverSettleLines($cheque, $lines, $liability, $handoverDate, $userId);
+            // #8: warkat pelunasan hutang supplier → beredar TANPA jurnal; hutang lunas saat dicairkan.
+            $hasInvoiceLines = $cheque->lines()->whereNull('payment_id')->whereNotNull('ap_invoice_id')->exists();
+            if ($hasInvoiceLines) {
+                return $cheque;
             }
 
-            // Generic: Dr [akun debit] / Cr BG-Cek Beredar. Debit = akun yang dipilih (mis. Beban Pokok
-            // Penjualan untuk pihak ketiga), fallback Hutang Usaha untuk warkat hutang/legacy.
+            // Generic (pihak ketiga / non-AP): Dr [akun debit] / Cr BG-Cek Beredar. Debit = akun yang dipilih
+            // (mis. Beban Pokok Penjualan untuk pihak ketiga), fallback Hutang Usaha untuk warkat legacy.
+            $liability = $this->resolve('outgoing_cheque_liability');
             $amount = $this->amount($cheque);
             $debit  = $debitAccountId ?? $this->resolve('payable');
 
@@ -66,6 +71,7 @@ final class OutgoingChequeService
             $journal = $this->journal->post([
                 'journal_date' => $handoverDate,
                 'source'       => 'cash',
+                'status'       => 'posted', // Treasury: langsung posting.
                 'reference'    => $cheque->cheque_number,
                 'description'  => 'Serah '.$this->typeLabel($cheque).' '.$cheque->cheque_number.($cheque->payee ? ' — '.$cheque->payee : ''),
                 'created_by'   => $userId,
@@ -81,13 +87,13 @@ final class OutgoingChequeService
     }
 
     /**
-     * Pelunasan multi-invoice saat warkat diserahkan: Dr Hutang (per invoice, akun payable invoice) /
-     * Cr BG-Cek Beredar (total). Tiap invoice memperoleh BsApPayment + saldo berkurang (status paid/open),
-     * sehingga kartu hutang & seluruh modul AP ikut tersinkron. Kas riil keluar saat warkat DICAIRKAN.
+     * #8: Pelunasan multi-invoice saat warkat DICAIRKAN: Dr Hutang (per invoice, akun payable invoice) /
+     * Cr Bank (total). Tiap invoice memperoleh BsApPayment (kas = bank) + saldo berkurang (status paid/open),
+     * sehingga kartu hutang & seluruh modul AP ikut tersinkron. Hutang supplier baru LUNAS di sini.
      *
      * @param Collection<int,\App\Domain\BusinessSupport\Models\BsOutgoingChequeLine> $lines
      */
-    private function handoverSettleLines(BsOutgoingCheque $cheque, Collection $lines, int $liability, string $date, ?int $userId): BsOutgoingCheque
+    private function clearSettleLines(BsOutgoingCheque $cheque, Collection $lines, int $bank, string $date, ?int $userId): BsOutgoingCheque
     {
         $jl    = [];
         $rows  = [];
@@ -110,23 +116,24 @@ final class OutgoingChequeService
         }
 
         if (! $rows) {
-            return $cheque; // tidak ada baris valid → cukup tandai beredar
+            return $cheque; // tidak ada baris valid → cukup tandai cair
         }
-        $total  = round($total, 2);
-        $jl[]   = ['account_id' => $liability, 'debit' => 0, 'credit' => $total, 'description' => $this->typeLabel($cheque).' beredar'];
+        $total = round($total, 2);
+        $jl[]  = ['account_id' => $bank, 'debit' => 0, 'credit' => $total, 'description' => 'Bank keluar — pencairan '.$this->typeLabel($cheque)];
 
         $journal = $this->journal->post([
             'journal_date' => $date,
-            'source'       => 'ap',
+            'source'       => 'cash',
+            'status'       => 'posted', // Treasury: mutasi bank langsung tampil di Rekening Ledger.
             'reference'    => $cheque->cheque_number,
-            'description'  => 'Serah '.$this->typeLabel($cheque).' '.$cheque->cheque_number.' — pelunasan hutang supplier',
+            'description'  => 'Cair '.$this->typeLabel($cheque).' '.$cheque->cheque_number.' — pelunasan hutang supplier',
             'created_by'   => $userId,
         ], $jl);
 
         foreach ($rows as [$line, $inv, $amount]) {
             $pay = $inv->payments()->create([
                 'payment_date'    => $date,
-                'cash_account_id' => $liability, // offset BG-Cek Beredar; kas riil keluar saat dicairkan
+                'cash_account_id' => $bank, // kas riil keluar dari bank saat dicairkan
                 'amount'          => $amount,
                 'reference'       => $cheque->cheque_number,
                 'journal_id'      => $journal->id,
@@ -137,13 +144,16 @@ final class OutgoingChequeService
             $inv->update(['paid_amount' => $newPaid, 'status' => $newPaid >= $inv->payable_amount - 0.01 ? 'paid' : 'open']);
         }
 
-        $cheque->update(['handover_journal_id' => $journal->id]);
+        $cheque->update(['clear_journal_id' => $journal->id]);
 
         return $cheque;
     }
 
     /**
      * Dicairkan oleh vendor → status cair.
+     *
+     * #8: Warkat pelunasan hutang yang belum dilunasi → Dr Hutang (per invoice) / Cr Bank (lunasi hutang
+     * supplier + kas keluar). Warkat legacy (sudah masuk BG-Cek Beredar saat handover) / pihak ketiga →
      * Dr BG-Cek Beredar / Cr Bank. Bank: config outgoing_cheque_bank, fallback rekening penerbit warkat.
      */
     public function clear(BsOutgoingCheque $cheque, string $clearedDate, ?int $userId = null): BsOutgoingCheque
@@ -160,17 +170,29 @@ final class OutgoingChequeService
                 return $cheque;
             }
 
+            $bank = $this->resolve('outgoing_cheque_bank') ?? $cheque->bank_account_id;
+            if (! $bank) {
+                return $cheque; // tidak bisa diresolusi → lewati jurnal
+            }
+
+            // #8: warkat pelunasan hutang yang belum dilunasi (model baru) → lunasi hutang supplier SEKARANG.
+            $unpaid = $cheque->lines()->whereNull('payment_id')->whereNotNull('ap_invoice_id')->with('invoice')->get();
+            if ($unpaid->isNotEmpty()) {
+                return $this->clearSettleLines($cheque, $unpaid, (int) $bank, $clearedDate, $userId);
+            }
+
+            // Legacy (hutang sudah dilunasi ke BG-Cek Beredar saat handover) / pihak ketiga: Dr BG-Cek Beredar / Cr Bank.
             $amount    = $this->amount($cheque);
             $liability = $this->resolve('outgoing_cheque_liability');
-            $bank      = $this->resolve('outgoing_cheque_bank') ?? $cheque->bank_account_id;
 
-            if ($amount <= 0 || ! $liability || ! $bank) {
+            if ($amount <= 0 || ! $liability) {
                 return $cheque; // tidak bisa diresolusi → lewati jurnal
             }
 
             $journal = $this->journal->post([
                 'journal_date' => $clearedDate,
                 'source'       => 'cash',
+                'status'       => 'posted', // Treasury: mutasi bank langsung tampil di Rekening Ledger.
                 'reference'    => $cheque->cheque_number,
                 'description'  => 'Cair '.$this->typeLabel($cheque).' '.$cheque->cheque_number,
                 'created_by'   => $userId,
@@ -188,13 +210,14 @@ final class OutgoingChequeService
     /**
      * Void (batalkan warkat). Bila warkat sempat beredar & punya jurnal handover yang belum dibalik,
      * post pembalik: Dr BG-Cek Beredar / Cr Hutang Usaha (memulihkan hutang). Bila tidak ada jurnal
-     * handover (mis. masih available / akun tak teresolusi) → cukup tandai void tanpa jurnal.
+     * handover (mis. warkat pelunasan hutang yang belum cair, masih available, atau akun tak teresolusi)
+     * → cukup tandai void tanpa jurnal.
      */
     public function void(BsOutgoingCheque $cheque, ?string $reason = null, ?int $userId = null): BsOutgoingCheque
     {
         return DB::transaction(function () use ($cheque, $reason, $userId): BsOutgoingCheque {
-            // Bila warkat sudah melunasi invoice (ada baris terbayar) → UNWIND pelunasan + HAPUS jurnal serah
-            // (struktur jurnal dihapus, bukan jurnal balik) agar saldo hutang & seluruh modul AP pulih.
+            // Bila warkat sudah melunasi invoice (ada baris terbayar — legacy handover-settle) → UNWIND pelunasan
+            // + HAPUS jurnal serah agar saldo hutang & seluruh modul AP pulih.
             $settled = $cheque->lines()->whereNotNull('payment_id')->with('invoice')->get();
             if ($settled->isNotEmpty()) {
                 return $this->voidSettledLines($cheque, $settled, $reason);
@@ -223,6 +246,7 @@ final class OutgoingChequeService
             $journal = $this->journal->post([
                 'journal_date' => now()->toDateString(),
                 'source'       => 'cash',
+                'status'       => 'posted', // Treasury: pembalik langsung posting.
                 'reference'    => $cheque->cheque_number,
                 'description'  => 'Void '.$this->typeLabel($cheque).' '.$cheque->cheque_number.' (pembalik penyerahan)',
                 'created_by'   => $userId,
@@ -238,8 +262,9 @@ final class OutgoingChequeService
     }
 
     /**
-     * Void warkat yang sudah melunasi invoice: pulihkan saldo tiap invoice (paid_amount turun, status open),
-     * hapus BsApPayment, lalu HAPUS struktur jurnal serah (bukan jurnal balik). Diblokir bila periode CLOSED.
+     * Void warkat yang sudah melunasi invoice (legacy handover-settle): pulihkan saldo tiap invoice
+     * (paid_amount turun, status open), hapus BsApPayment, lalu HAPUS struktur jurnal serah. Diblokir bila
+     * periode CLOSED.
      *
      * @param Collection<int,\App\Domain\BusinessSupport\Models\BsOutgoingChequeLine> $settled
      */

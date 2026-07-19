@@ -416,10 +416,10 @@ class OutgoingChequeController extends Controller
             return back()->withInput()->with('error', $e->getMessage());
         }
 
-        return back()->with('success', 'BG/Cek ditandai sudah diserahkan ke supplier (beredar) — jurnal otomatis terbentuk.');
+        return back()->with('success', 'BG/Cek ditandai sudah diserahkan ke supplier (beredar). Hutang supplier tetap terbuka hingga warkat dicairkan.');
     }
 
-    /** Dicairkan oleh supplier/vendor → status cair. #153 jurnal otomatis: Dr BG-Cek Beredar / Cr Bank. */
+    /** Dicairkan oleh supplier/vendor → status cair. #8 jurnal otomatis: Dr Hutang / Cr Bank (pelunasan hutang saat cair) — legacy/pihak ketiga: Dr BG-Cek Beredar / Cr Bank. */
     public function clear(Request $request, BsOutgoingCheque $cheque, OutgoingChequeService $svc): RedirectResponse
     {
         abort_unless($request->user()?->canModule('cashbook'), 403);

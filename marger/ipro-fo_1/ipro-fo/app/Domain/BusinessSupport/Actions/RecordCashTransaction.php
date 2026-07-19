@@ -61,7 +61,9 @@ final class RecordCashTransaction
             // 'in' & 'transfer' selalu langsung berjurnal saat simpan.
             if ($type !== 'out' || ! empty($data['auto_post'])) {
                 $journal = $this->journal->post(
-                    $this->journalHeader($trx, $type, $userId),
+                    // Kas Kecil (auto_post) = dana float pra-otorisasi → jurnal langsung 'posted' agar
+                    // tampil di ledger Kas Kecil & Rekening Ledger tanpa menunggu approval GL.
+                    $this->journalHeader($trx, $type, $userId, posted: ! empty($data['auto_post'])),
                     $this->journalLines($trx, $lines, $type, $total),
                 );
 
@@ -217,15 +219,20 @@ final class RecordCashTransaction
     }
 
     /** @return array<string,mixed> */
-    private function journalHeader(BsCashTransaction $trx, string $type, ?int $userId, bool $edit = false): array
+    private function journalHeader(BsCashTransaction $trx, string $type, ?int $userId, bool $edit = false, bool $posted = false): array
     {
-        return [
+        $header = [
             'journal_date' => $trx->trx_date->toDateString(),
             'source'       => 'cash',
             'reference'    => $trx->trx_number,
             'description'  => BsCashTransaction::TYPES[$type].' — '.$trx->description.($edit ? ' (edit)' : ''),
             'created_by'   => $userId,
         ];
+        if ($posted) {
+            $header['status'] = 'posted'; // Kas Kecil (auto_post): langsung posting, tanpa antrian approval GL.
+        }
+
+        return $header;
     }
 
     /**

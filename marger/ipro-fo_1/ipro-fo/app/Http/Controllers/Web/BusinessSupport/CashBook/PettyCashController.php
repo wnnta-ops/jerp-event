@@ -206,8 +206,21 @@ class PettyCashController extends Controller
     private function pettyId(): int
     {
         $id = BsAccount::where('code', self::PETTY_CODE)->value('id');
-        abort_if(! $id, 500, 'Akun Kas Kecil (10101010102) belum tersedia. Jalankan migrasi.');
+        if ($id) {
+            return (int) $id;
+        }
 
-        return (int) $id;
+        // Self-heal: akun Kas Kecil belum terbentuk (mis. migrasi 000060 jalan sebelum tenant ada,
+        // atau akun terhapus). Buat idempoten di bawah induk "KAS" (101010101), meniru migrasi.
+        $parent = BsAccount::where('code', '101010101')->first(['id', 'tenant_id']);
+        abort_if(! $parent, 500, 'Akun induk Kas (101010101) belum tersedia — jalankan seeder Chart of Account terlebih dahulu.');
+
+        $petty = BsAccount::create([
+            'tenant_id' => $parent->tenant_id, 'code' => self::PETTY_CODE, 'name' => 'KAS KECIL',
+            'category_code' => '1', 'type' => 'asset', 'level' => 6, 'parent_code' => '101010101',
+            'parent_id' => $parent->id, 'normal_balance' => 'D', 'is_postable' => true, 'is_active' => true,
+        ]);
+
+        return (int) $petty->id;
     }
 }
