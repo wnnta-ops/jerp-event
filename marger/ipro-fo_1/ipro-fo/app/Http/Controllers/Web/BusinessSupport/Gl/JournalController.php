@@ -48,6 +48,7 @@ class JournalController extends Controller
             'defaultDetail' => $isDetail,
             'listRoute'     => $isDetail ? 'bs.gl.journal.detail' : 'bs.gl.journal.index',
             'title'         => $isDetail ? 'Detail Transaksi Jurnal' : 'Jurnal',
+            'canApprove'    => (bool) $request->user()?->can('businesssupport.approval.act'),
             'filters'  => array_merge(
                 $request->only(['source', 'status', 'search']),
                 ['date_from' => $from->toDateString(), 'date_to' => $to->toDateString()],

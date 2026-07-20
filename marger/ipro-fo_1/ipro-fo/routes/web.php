@@ -637,6 +637,9 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
     Route::post('/business-support/payable-kuitansi/{kuitansi}/void', [BsApKuitansiController::class, 'void'])->name('bs.ap.kuitansi.void');
     Route::post('/business-support/payable-kuitansi/{kuitansi}/approve', [BsApKuitansiController::class, 'approve'])->name('bs.ap.kuitansi.approve'); // approval pengeluaran (AP)
     Route::post('/business-support/payable-kuitansi/{kuitansi}/reject',  [BsApKuitansiController::class, 'reject'])->name('bs.ap.kuitansi.reject');
+    // Approval AP massal (setujui/tolak beberapa Kuitansi Hutang sekaligus dari Approval Pengeluaran Kas & Bank).
+    Route::post('/business-support/payable-kuitansi-bulk/approve', [BsApKuitansiController::class, 'approveBulk'])->name('bs.ap.kuitansi.approve-bulk');
+    Route::post('/business-support/payable-kuitansi-bulk/reject',  [BsApKuitansiController::class, 'rejectBulk'])->name('bs.ap.kuitansi.reject-bulk');
     // AP — Posting Invoice dari PO/SPK
     Route::get('/business-support/payable-posting',          [BsApPostingController::class, 'index'])->name('bs.ap.posting.index');
     Route::post('/business-support/payable-posting/po/{po}', [BsApPostingController::class, 'fromPo'])->name('bs.ap.posting.po');

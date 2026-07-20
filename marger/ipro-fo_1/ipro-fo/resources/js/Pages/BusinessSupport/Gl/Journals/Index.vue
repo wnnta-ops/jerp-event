@@ -1,12 +1,29 @@
 <script setup lang="ts">
-import { ref } from 'vue';
+import { ref, computed } from 'vue';
 import { router, Link } from '@inertiajs/vue3';
-import { Plus, ArrowLeft, FileText, ChevronDown, ListTree } from 'lucide-vue-next';
+import { Plus, ArrowLeft, FileText, ChevronDown, ListTree, Check } from 'lucide-vue-next';
 import Button from '@/Components/UI/Button.vue';
 import Badge from '@/Components/UI/Badge.vue';
 import EmptyState from '@/Components/UI/EmptyState.vue';
 
-const props = defineProps<{ journals: any; sources: Record<string, string>; statuses: Record<string, string>; filters: Record<string, any>; defaultDetail?: boolean; listRoute?: string; title?: string }>();
+const props = defineProps<{ journals: any; sources: Record<string, string>; statuses: Record<string, string>; filters: Record<string, any>; defaultDetail?: boolean; listRoute?: string; title?: string; canApprove?: boolean }>();
+
+// Approval jurnal langsung dari daftar: hanya jurnal berstatus Final (menunggu approval) yang bisa disetujui.
+const selected = ref<number[]>([]);
+const finalIds = computed<number[]>(() => (props.journals?.data ?? []).filter((j: any) => j.status === 'final').map((j: any) => Number(j.id)));
+const allChecked = computed({
+    get: () => finalIds.value.length > 0 && finalIds.value.every((id) => selected.value.includes(id)),
+    set: (v: boolean) => { selected.value = v ? [...finalIds.value] : []; },
+});
+function approveOne(j: any) {
+    if (!confirm(`Approve jurnal ${j.journal_number}? Jurnal menjadi efektif (posted) di GL.`)) return;
+    router.post(route('bs.gl.journal.approve', j.id), {}, { preserveScroll: true });
+}
+function bulkApprove() {
+    if (!selected.value.length) return;
+    if (!confirm(`Approve ${selected.value.length} jurnal terpilih? Semua menjadi efektif (posted) di GL.`)) return;
+    router.post(route('bs.gl.journal.approve-batch'), { ids: selected.value }, { preserveScroll: true, onSuccess: () => { selected.value = []; } });
+}
 const listRoute = props.listRoute ?? 'bs.gl.journal.index';
 const source = ref(props.filters.source ?? '');
 const statusFilter = ref(props.filters.status ?? '');
@@ -69,14 +86,22 @@ function isOpen(id: number) { return showDetail.value || open.value[id]; }
             </button>
         </div>
 
+        <!-- Bulk approval jurnal Final -->
+        <div v-if="canApprove && selected.length" class="flex flex-wrap items-center gap-2 rounded-lg border border-primary-200 bg-primary-50 px-3 py-2 dark:border-primary-500/30 dark:bg-primary-500/10">
+            <span class="text-sm font-semibold text-primary-800 dark:text-primary-300">{{ selected.length }} jurnal terpilih</span>
+            <button @click="bulkApprove" class="inline-flex items-center gap-1 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700"><Check class="h-3.5 w-3.5" /> Approve Terpilih</button>
+            <button @click="selected = []" class="text-xs text-neutral-500 hover:text-neutral-800 dark:hover:text-neutral-200">Batal pilih</button>
+        </div>
+
         <div class="card overflow-x-auto">
             <table class="w-full text-sm">
                 <thead class="bg-neutral-50 dark:bg-neutral-800"><tr class="text-left text-xs uppercase text-neutral-500">
-                    <th class="px-2 py-3 w-8"></th><th class="px-4 py-3">No. Jurnal</th><th class="px-4 py-3">Tanggal</th><th class="px-4 py-3">Sumber</th><th class="px-4 py-3">Keterangan</th><th class="px-4 py-3 text-center">Status</th><th class="px-4 py-3 text-center">Baris</th><th class="px-4 py-3 text-right">Nilai</th><th class="px-4 py-3 text-right"></th>
+                    <th class="px-2 py-3 w-8 text-center"><input v-if="canApprove" type="checkbox" v-model="allChecked" class="h-4 w-4" title="Pilih semua jurnal Final" /></th><th class="px-2 py-3 w-8"></th><th class="px-4 py-3">No. Jurnal</th><th class="px-4 py-3">Tanggal</th><th class="px-4 py-3">Sumber</th><th class="px-4 py-3">Keterangan</th><th class="px-4 py-3 text-center">Status</th><th class="px-4 py-3 text-center">Baris</th><th class="px-4 py-3 text-right">Nilai</th><th class="px-4 py-3 text-right"></th>
                 </tr></thead>
                 <tbody class="divide-y divide-neutral-200 dark:divide-neutral-800">
                     <template v-for="j in journals.data" :key="j.id">
-                        <tr class="hover:bg-neutral-50/60 dark:hover:bg-neutral-800/40">
+                        <tr class="hover:bg-neutral-50/60 dark:hover:bg-neutral-800/40" :class="selected.includes(Number(j.id)) ? 'bg-primary-50/40 dark:bg-primary-500/5' : ''">
+                            <td class="px-2 py-2.5 text-center"><input v-if="canApprove && j.status === 'final'" type="checkbox" :value="Number(j.id)" v-model="selected" class="h-4 w-4" /></td>
                             <td class="px-2 py-2.5 text-center"><button type="button" @click="toggle(j.id)" class="text-neutral-400 hover:text-primary-600"><ChevronDown class="h-4 w-4 transition-transform" :class="{ 'rotate-180': isOpen(j.id) }" /></button></td>
                             <td class="px-4 py-2.5 font-mono font-semibold">{{ j.journal_number }}</td>
                             <td class="px-4 py-2.5 whitespace-nowrap">{{ fmtDate(j.journal_date) }}</td>
@@ -85,10 +110,16 @@ function isOpen(id: number) { return showDetail.value || open.value[id]; }
                             <td class="px-4 py-2.5 text-center"><Badge :variant="statusBadge[j.status] ?? 'neutral'" size="sm">{{ statuses[j.status] ?? j.status }}</Badge></td>
                             <td class="px-4 py-2.5 text-center">{{ j.lines_count }}</td>
                             <td class="px-4 py-2.5 text-right font-mono">{{ fmtRp(j.total_debit) }}</td>
-                            <td class="px-4 py-2.5 text-right"><Link :href="route('bs.gl.journal.show', j.id)" class="text-primary-600 text-sm">Lihat →</Link></td>
+                            <td class="px-4 py-2.5 text-right">
+                                <div class="inline-flex items-center gap-2">
+                                    <button v-if="canApprove && j.status === 'final'" @click="approveOne(j)" class="inline-flex items-center gap-1 rounded-lg bg-emerald-600 px-2.5 py-1 text-xs font-semibold text-white hover:bg-emerald-700"><Check class="h-3.5 w-3.5" /> Approve</button>
+                                    <Link :href="route('bs.gl.journal.show', j.id)" class="text-primary-600 text-sm">Lihat →</Link>
+                                </div>
+                            </td>
                         </tr>
                         <!-- Rincian baris jurnal (akun debit/kredit) -->
                         <tr v-if="isOpen(j.id)" class="bg-neutral-50 dark:bg-neutral-900/40">
+                            <td></td>
                             <td></td>
                             <td colspan="8" class="px-4 py-2">
                                 <table class="w-full text-xs">
