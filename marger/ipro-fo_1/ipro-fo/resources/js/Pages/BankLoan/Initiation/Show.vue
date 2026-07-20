@@ -44,7 +44,7 @@ function stageComplete(key: string): boolean {
     }
     if (key === 'bi_checking') return biAllFilled.value && f.bi_checking.permintaan === 'lanjut_spr' && biNotesFilled.value;
     if (key === 'analisa') return !!f.analisa.result && analisaAllScored.value && !!(f.analisa.notes ?? '').trim();
-    if (key === 'profiling_berkas') return !!f.profiling_berkas.tanggal_lahir && !!f.profiling_berkas.domisili_pekerjaan && !!f.profiling_berkas.jabatan;
+    if (key === 'profiling_berkas') return !!f.profiling_berkas.tanggal_lahir && !!f.profiling_berkas.nama_perusahaan && !!f.profiling_berkas.domisili_pekerjaan && !!f.profiling_berkas.jabatan;
     if (key === 'profiling') return decidedBanks.value.length >= 1;
     return true;
 }
@@ -117,6 +117,8 @@ const f = reactive({
     // Prefill tanggal lahir dari Customer.dob; jabatan default dari kategori Collect Berkas.
     profiling_berkas: {
         tanggal_lahir: (s.profiling_berkas?.tanggal_lahir ?? init0.customer?.dob ?? '').slice(0, 10),
+        // #3 domisili pekerjaan dipecah: nama perusahaan (prefill dari Customer.employer_name) + alamat/lokasi kerja.
+        nama_perusahaan: s.profiling_berkas?.nama_perusahaan ?? init0.customer?.employer_name ?? '',
         domisili_pekerjaan: s.profiling_berkas?.domisili_pekerjaan ?? '',
         jabatan: s.profiling_berkas?.jabatan ?? (s.collect_berkas?.category === 'wirausaha' ? 'Wiraswasta' : (s.collect_berkas?.category === 'karyawan' ? 'Karyawan Swasta' : '')),
     },
@@ -439,6 +441,9 @@ function ageFromDob(dob: string): { years: number; months: number } | null {
     return { years: Math.floor(months / 12), months: months % 12 };
 }
 const pbUmur = computed(() => ageFromDob(f.profiling_berkas.tanggal_lahir));
+// #2: tanggal lahir (→umur) diambil otomatis dari NUP/pendaftaran (Customer.dob) & dikunci.
+// Bila NUP belum punya tanggal lahir, input dibiarkan manual sebagai fallback agar tahap tetap bisa lanjut.
+const dobFromNup = computed<string>(() => (init0.customer?.dob ?? '').slice(0, 10));
 // Domisili/tempat tinggal — dirakit dari alamat Customer (diisi saat NUP/pendaftaran).
 const pbDomisili = computed<string>(() => {
     const c: any = a.value.customer || {};
@@ -922,11 +927,14 @@ const analisaLabel: Record<string, string> = { layak: 'Layak', tidak_layak: 'Tid
                             <div class="rounded-xl border border-sky-200 bg-sky-50/50 p-4 dark:border-sky-900/40 dark:bg-sky-900/10">
                                 <div class="mb-2 flex items-center gap-2 text-sm font-semibold text-sky-700 dark:text-sky-300"><CalendarDays class="h-4 w-4" /> Umur Pemohon</div>
                                 <label class="mb-1 block text-xs font-medium text-neutral-500">Tanggal Lahir <span class="text-danger-500">*</span></label>
-                                <input v-model="f.profiling_berkas.tanggal_lahir" type="date" class="input-base" />
+                                <!-- #2: terkunci & otomatis dari NUP bila tersedia; manual hanya bila NUP belum ada tanggal lahir -->
+                                <input v-if="dobFromNup" :value="f.profiling_berkas.tanggal_lahir" type="date" class="input-base cursor-not-allowed bg-neutral-100 dark:bg-neutral-800" readonly />
+                                <input v-else v-model="f.profiling_berkas.tanggal_lahir" type="date" class="input-base" />
                                 <div class="mt-2 text-sm">
                                     <span v-if="pbUmur" class="font-semibold text-sky-700 dark:text-sky-300">{{ pbUmur.years }} tahun {{ pbUmur.months }} bulan</span>
                                     <span v-else class="text-neutral-400">— isi tanggal lahir untuk menghitung umur —</span>
                                 </div>
+                                <p class="mt-1 text-[11px]" :class="dobFromNup ? 'text-neutral-400' : 'text-warning-600'">{{ dobFromNup ? 'Otomatis dari NUP / pendaftaran (terkunci).' : 'Tanggal lahir belum ada di NUP — isi manual.' }}</p>
                             </div>
 
                             <!-- 2. Tempat tinggal / domisili -->
@@ -960,10 +968,14 @@ const analisaLabel: Record<string, string> = { layak: 'Layak', tidak_layak: 'Tid
                             </div>
                         </div>
 
-                        <!-- 5. Domisili pekerjaan (free text) + 6. Jabatan / pekerjaan -->
-                        <div class="grid gap-4 md:grid-cols-2">
+                        <!-- 5. Domisili pekerjaan dipecah: Nama Perusahaan + Alamat/Lokasi Tempat Kerja + 6. Jabatan -->
+                        <div class="grid gap-4 md:grid-cols-3">
                             <div>
-                                <label class="label-base">Domisili Pekerjaan <span class="text-danger-500">*</span></label>
+                                <label class="label-base">Nama Perusahaan Tempat Kerja <span class="text-danger-500">*</span></label>
+                                <input v-model="f.profiling_berkas.nama_perusahaan" type="text" class="input-base" placeholder="Nama perusahaan / tempat usaha…" />
+                            </div>
+                            <div>
+                                <label class="label-base">Alamat / Lokasi Tempat Kerja <span class="text-danger-500">*</span></label>
                                 <input v-model="f.profiling_berkas.domisili_pekerjaan" type="text" class="input-base" placeholder="Alamat / lokasi tempat bekerja…" />
                             </div>
                             <div>
@@ -975,7 +987,7 @@ const analisaLabel: Record<string, string> = { layak: 'Layak', tidak_layak: 'Tid
                             </div>
                         </div>
 
-                        <p v-if="!stageComplete('profiling_berkas')" class="text-xs text-warning-600">Lengkapi tanggal lahir, domisili pekerjaan, dan jabatan untuk lanjut ke Profiling Bank.</p>
+                        <p v-if="!stageComplete('profiling_berkas')" class="text-xs text-warning-600">Lengkapi tanggal lahir, nama perusahaan, alamat/lokasi tempat kerja, dan jabatan untuk lanjut ke Profiling Bank.</p>
                         <Button type="submit" :loading="saving" :disabled="!stageComplete('profiling_berkas')">Simpan &amp; Lanjut →</Button>
                     </form>
 

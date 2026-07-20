@@ -29,11 +29,16 @@ class JournalController extends Controller
         $to   = $request->date('date_to')   ?? now()->endOfMonth();
 
         $rows = BsJournal::query()
-            ->with(['lines.account:id,code,name', 'costCenter:id,code,name'])
+            ->with([
+                'lines.account:id,code,name', 'costCenter:id,code,name', 'createdBy:id,name',
+                // Riwayat status (append-only) — ditampilkan di rincian Detail Transaksi Jurnal.
+                'statusLogs' => fn ($q) => $q->with('user:id,name'),
+            ])
             ->withCount('lines')
             ->whereBetween('journal_date', [$from->toDateString(), $to->toDateString()])
             ->when($request->input('source'), fn ($q, $v) => $q->where('source', $v))
             ->when($request->input('status'), fn ($q, $v) => $q->where('status', $v))
+            ->when($request->input('created_by'), fn ($q, $v) => $q->where('created_by', $v))
             ->when($request->input('search'), fn ($q, $s) => $q->where(fn ($w) => $w->where('journal_number', 'like', "%{$s}%")->orWhere('description', 'like', "%{$s}%")->orWhere('reference', 'like', "%{$s}%")))
             ->latest('journal_date')->latest('id')
             ->paginate(50)->withQueryString();
@@ -41,16 +46,22 @@ class JournalController extends Controller
         // Master → "Jurnal" = ringkas (rincian tersembunyi). Query → "Detail Transaksi Jurnal" = rincian tampil.
         $isDetail = $request->routeIs('bs.gl.journal.detail');
 
+        // Daftar user penginput jurnal (untuk filter "User Input") — hanya yang benar-benar pernah menginput.
+        $creators = \App\Models\User::query()
+            ->whereIn('id', BsJournal::query()->whereNotNull('created_by')->distinct()->pluck('created_by'))
+            ->orderBy('name')->get(['id', 'name']);
+
         return Inertia::render('BusinessSupport/Gl/Journals/Index', [
             'journals'      => $rows,
             'sources'       => BsJournal::SOURCES,
             'statuses'      => BsJournal::STATUSES,
+            'creators'      => $creators,
             'defaultDetail' => $isDetail,
             'listRoute'     => $isDetail ? 'bs.gl.journal.detail' : 'bs.gl.journal.index',
             'title'         => $isDetail ? 'Detail Transaksi Jurnal' : 'Jurnal',
             'canApprove'    => (bool) $request->user()?->can('businesssupport.approval.act'),
             'filters'  => array_merge(
-                $request->only(['source', 'status', 'search']),
+                $request->only(['source', 'status', 'search', 'created_by']),
                 ['date_from' => $from->toDateString(), 'date_to' => $to->toDateString()],
             ),
         ]);
@@ -206,6 +217,7 @@ class JournalController extends Controller
             ->whereBetween('journal_date', [$from->toDateString(), $to->toDateString()])
             ->when($request->input('source'), fn ($q, $v) => $q->where('source', $v))
             ->when($request->input('status'), fn ($q, $v) => $q->where('status', $v))
+            ->when($request->input('created_by'), fn ($q, $v) => $q->where('created_by', $v))
             ->when($request->input('search'), fn ($q, $s) => $q->where(fn ($w) => $w->where('journal_number', 'like', "%{$s}%")->orWhere('description', 'like', "%{$s}%")->orWhere('reference', 'like', "%{$s}%")))
             ->when($lo !== '', fn ($q) => $q->whereHas('lines.account', fn ($a) => $a->whereBetween('code', [$lo, $hi])))
             ->latest('journal_date')->latest('id')

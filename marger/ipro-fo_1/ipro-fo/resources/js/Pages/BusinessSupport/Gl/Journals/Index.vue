@@ -6,7 +6,7 @@ import Button from '@/Components/UI/Button.vue';
 import Badge from '@/Components/UI/Badge.vue';
 import EmptyState from '@/Components/UI/EmptyState.vue';
 
-const props = defineProps<{ journals: any; sources: Record<string, string>; statuses: Record<string, string>; filters: Record<string, any>; defaultDetail?: boolean; listRoute?: string; title?: string; canApprove?: boolean }>();
+const props = defineProps<{ journals: any; sources: Record<string, string>; statuses: Record<string, string>; creators?: Array<{ id: number; name: string }>; filters: Record<string, any>; defaultDetail?: boolean; listRoute?: string; title?: string; canApprove?: boolean }>();
 
 // Approval jurnal langsung dari daftar: hanya jurnal berstatus Final (menunggu approval) yang bisa disetujui.
 const selected = ref<number[]>([]);
@@ -27,6 +27,7 @@ function bulkApprove() {
 const listRoute = props.listRoute ?? 'bs.gl.journal.index';
 const source = ref(props.filters.source ?? '');
 const statusFilter = ref(props.filters.status ?? '');
+const createdBy = ref(props.filters.created_by ?? '');
 const search = ref(props.filters.search ?? '');
 const dateFrom = ref(props.filters.date_from ?? '');
 const dateTo = ref(props.filters.date_to ?? '');
@@ -35,6 +36,7 @@ function display() {
     router.get(route(listRoute), {
         source: source.value || undefined,
         status: statusFilter.value || undefined,
+        created_by: createdBy.value || undefined,
         search: search.value || undefined,
         date_from: dateFrom.value || undefined,
         date_to: dateTo.value || undefined,
@@ -44,6 +46,7 @@ function exportExcel() {
     window.location.href = route('bs.gl.journal.export', {
         source: source.value || undefined,
         status: statusFilter.value || undefined,
+        created_by: createdBy.value || undefined,
         search: search.value || undefined,
         date_from: dateFrom.value || undefined,
         date_to: dateTo.value || undefined,
@@ -51,7 +54,11 @@ function exportExcel() {
 }
 function fmtRp(v: number) { return Number(v ?? 0).toLocaleString('id-ID'); }
 function fmtDate(d: string) { return d ? new Date(d).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'; }
+function fmtDateTime(d: string) { return d ? new Date(d).toLocaleString('id-ID', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—'; }
 const statusBadge: Record<string, any> = { draft: 'warning', final: 'info', posted: 'success' };
+// Label & warna aksi log status jurnal (append-only).
+const logActionLabel: Record<string, string> = { created: 'Dibuat', finalized: 'Difinalisasi', approved: 'Di-approve', unapproved: 'Batal approve', rejected: 'Dikembalikan ke Baru' };
+const logActionColor: Record<string, string> = { created: 'text-neutral-500', finalized: 'text-sky-600 dark:text-sky-400', approved: 'text-emerald-600 dark:text-emerald-400', unapproved: 'text-amber-600 dark:text-amber-400', rejected: 'text-danger-600 dark:text-danger-400' };
 
 // Rincian baris (akun debit/kredit) tiap jurnal. Default mengikuti mode halaman:
 //  Master → "Jurnal" = tersembunyi (ringkas); Query → "Detail Transaksi Jurnal" = tampil.
@@ -74,6 +81,7 @@ function isOpen(id: number) { return showDetail.value || open.value[id]; }
             <div><label class="mb-1 block text-xs font-medium text-neutral-500">Sampai Tanggal</label><input v-model="dateTo" type="date" class="h-9 rounded-lg border border-neutral-300 bg-white px-3 text-sm dark:border-neutral-700 dark:bg-neutral-900" /></div>
             <div><label class="mb-1 block text-xs font-medium text-neutral-500">Sumber</label><select v-model="source" class="h-9 rounded-lg border border-neutral-300 bg-white px-3 text-sm dark:border-neutral-700 dark:bg-neutral-900"><option value="">Semua Jenis</option><option v-for="(label, val) in sources" :key="val" :value="val">{{ label }}</option></select></div>
             <div><label class="mb-1 block text-xs font-medium text-neutral-500">Status</label><select v-model="statusFilter" class="h-9 rounded-lg border border-neutral-300 bg-white px-3 text-sm dark:border-neutral-700 dark:bg-neutral-900"><option value="">Semua</option><option v-for="(label, val) in statuses" :key="val" :value="val">{{ label }}</option></select></div>
+            <div><label class="mb-1 block text-xs font-medium text-neutral-500">User Input</label><select v-model="createdBy" class="h-9 rounded-lg border border-neutral-300 bg-white px-3 text-sm dark:border-neutral-700 dark:bg-neutral-900"><option value="">Semua User</option><option v-for="u in (creators ?? [])" :key="u.id" :value="u.id">{{ u.name }}</option></select></div>
             <div class="flex-1 min-w-[160px]"><label class="mb-1 block text-xs font-medium text-neutral-500">Cari</label><input v-model="search" placeholder="No. Jurnal / Keterangan / Ref" class="h-9 w-full rounded-lg border border-neutral-300 bg-white px-3 text-sm dark:border-neutral-700 dark:bg-neutral-900" @keyup.enter="display" /></div>
             <button @click="display" class="h-9 rounded-lg bg-primary-600 px-5 text-sm font-semibold text-white hover:bg-primary-700">Display</button>
             <button @click="exportExcel" class="h-9 rounded-lg bg-success-600 px-5 text-sm font-semibold text-white hover:bg-success-700">Excel</button>
@@ -138,6 +146,23 @@ function isOpen(id: number) { return showDetail.value || open.value[id]; }
                                         </tr>
                                     </tbody>
                                 </table>
+
+                                <!-- Riwayat Status (append-only): dibuat → finalisasi → approve → batal approve → reject. Tidak pernah hilang. -->
+                                <div class="mt-3 border-t border-neutral-200 pt-2 dark:border-neutral-800">
+                                    <p class="mb-1.5 flex items-center gap-1.5 text-xs font-semibold text-neutral-500">
+                                        <span>Riwayat Status</span>
+                                        <span class="text-neutral-400">· Input oleh {{ j.created_by?.name ?? '—' }}</span>
+                                    </p>
+                                    <ol v-if="(j.status_logs ?? []).length" class="space-y-1">
+                                        <li v-for="log in j.status_logs" :key="log.id" class="flex flex-wrap items-center gap-x-2 text-xs">
+                                            <span class="font-mono text-neutral-400">{{ fmtDateTime(log.created_at) }}</span>
+                                            <span class="font-semibold" :class="logActionColor[log.action] ?? 'text-neutral-600'">{{ logActionLabel[log.action] ?? log.action }}</span>
+                                            <span v-if="log.from_status" class="text-neutral-400">({{ statuses[log.from_status] ?? log.from_status }} → {{ statuses[log.to_status] ?? log.to_status }})</span>
+                                            <span class="text-neutral-500">oleh {{ log.user?.name ?? '—' }}</span>
+                                        </li>
+                                    </ol>
+                                    <p v-else class="text-xs text-neutral-400">Belum ada riwayat status untuk jurnal ini.</p>
+                                </div>
                             </td>
                         </tr>
                     </template>
