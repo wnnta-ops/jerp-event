@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue';
 import { useForm, Link } from '@inertiajs/vue3';
-import { ArrowLeft, Coins, Wallet, BookText, CalendarClock, Plus, Trash2, Pencil } from 'lucide-vue-next';
+import { ArrowLeft, Coins, Wallet, BookText, CalendarClock, Plus, Trash2, Pencil, Lock } from 'lucide-vue-next';
 import Button from '@/Components/UI/Button.vue';
 import Badge from '@/Components/UI/Badge.vue';
 
@@ -12,7 +12,18 @@ const props = defineProps<{
     defaultCash: number | null;
 }>();
 
-// ── Edit metadata (nilai & jurnal TERKUNCI; hanya tanggal / jatuh tempo / keterangan / no. ref) ──
+// ── Ladder nilai — rincian disamakan dengan "Sudah Booked Revenue" ──
+// Harga − Diskon/Free DP → DPP (Nilai Revenue) → PPN → Total. Harga & diskon tidak tersimpan di
+// invoice; datang dari Booked Revenue asal (NULL untuk invoice lama → baris Harga/Diskon disembunyikan).
+// Invoice piutang TIDAK punya jurnal sendiri (lahir dari Booked Revenue) — tidak ada jejak jurnal di sini.
+const hasGross = computed(() => props.invoice.gross_price != null);
+const total = computed(() => Number(props.invoice.total ?? 0));
+const dpp = computed(() => Number(props.invoice.dpp ?? 0));
+const ppn = computed(() => Number(props.invoice.ppn_amount ?? 0));
+const pph = computed(() => Number(props.invoice.pph_amount ?? 0));
+const netReceivable = computed(() => Number(props.invoice.receivable_amount ?? props.invoice.net_receivable ?? 0));
+
+// ── Edit metadata (nilai TERKUNCI; hanya tanggal / jatuh tempo / keterangan / no. ref) ──
 // Tanggal dari controller (toArray) berbentuk ISO berwaktu ("2026-07-19T00:00:00…Z"); <input type=date>
 // hanya menerima "yyyy-mm-dd", jadi dipotong 10 char — kalau tidak, field tampil KOSONG dan tombol
 // Simpan terblokir (invoice_date required) meski operator hanya ingin merapikan keterangan.
@@ -49,53 +60,102 @@ function submitResched() { resched.post(route('bs.ar.reschedule', props.invoice.
 
 const trxLabel: Record<string, string> = { normal: 'Normal', denda: 'Realisasi Denda', saldo_awal: 'Saldo Awal' };
 function fmtRp(v: number) { return 'Rp ' + Number(v ?? 0).toLocaleString('id-ID'); }
-function fmtDate(d: string) { return d ? new Date(d).toLocaleDateString('id-ID', { day:'2-digit', month:'long', year:'numeric' }) : '—'; }
+function fmtDate(d: string) { return d ? new Date(d).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'; }
 const inputCls = 'h-9 w-full rounded-lg border border-neutral-300 bg-white px-3 text-sm dark:border-neutral-700 dark:bg-neutral-900';
 </script>
 <template>
-    <div class="max-w-3xl space-y-4">
+    <div class="mx-auto max-w-3xl space-y-4">
         <Link :href="route('bs.ar.index')" class="inline-flex items-center gap-2 text-sm text-neutral-500 hover:text-neutral-800 dark:hover:text-neutral-200"><ArrowLeft class="h-4 w-4" /> Account Receivable</Link>
-        <div class="flex items-center justify-between">
-            <h1 class="flex items-center gap-2 font-mono text-2xl font-bold"><Coins class="h-6 w-6 text-success-600" /> {{ invoice.invoice_number }}</h1>
-            <div class="flex items-center gap-2">
-                <Button v-if="!editing" variant="secondary" size="sm" @click="editing = true"><template #icon-left><Pencil class="h-4 w-4" /></template>Edit Rincian</Button>
+
+        <div class="flex flex-wrap items-center justify-between gap-3">
+            <h1 class="flex items-center gap-2 font-mono text-2xl font-bold">
+                <Coins class="h-6 w-6 text-success-600" /> {{ invoice.invoice_number }}
                 <Badge :variant="invoice.status === 'paid' ? 'success' : 'warning'">{{ invoice.status === 'paid' ? 'Lunas' : 'Open' }}</Badge>
+            </h1>
+            <Button v-if="!editing" variant="secondary" @click="editing = true"><template #icon-left><Pencil class="h-4 w-4" /></template>Edit Rincian</Button>
+        </div>
+
+        <p class="flex items-center gap-1.5 rounded-lg bg-neutral-50 px-3 py-2 text-xs text-neutral-500 dark:bg-neutral-800">
+            <Lock class="h-3.5 w-3.5" /> Invoice ini lahir otomatis dari <strong>Booked Revenue</strong> dan tidak dibuat manual. Nilai terkunci; yang bisa diubah hanya tanggal, jatuh tempo, no. ref, dan keterangan.
+        </p>
+
+        <!-- Rincian — disamakan dengan Sudah Booked Revenue (ladder nilai + Customer & Unit) -->
+        <div class="grid gap-4 lg:grid-cols-3">
+            <!-- Nilai -->
+            <div class="card p-5 lg:col-span-1">
+                <div class="text-xs uppercase text-neutral-400">Total (termasuk PPN)</div>
+                <div class="mt-1 text-2xl font-bold text-primary-600">{{ fmtRp(total) }}</div>
+                <dl class="mt-3 space-y-1 text-sm">
+                    <div v-if="hasGross" class="flex justify-between"><dt class="text-neutral-500">Harga</dt><dd class="tabular-nums">{{ fmtRp(invoice.gross_price) }}</dd></div>
+                    <div v-if="hasGross" class="flex justify-between"><dt class="text-neutral-500">Diskon/Free DP</dt><dd class="tabular-nums text-danger-600">− {{ fmtRp(invoice.discount) }}</dd></div>
+                    <div class="flex justify-between" :class="hasGross ? 'border-t border-neutral-200 pt-1 dark:border-neutral-700' : ''"><dt class="text-neutral-500">DPP (Nilai Revenue)</dt><dd class="tabular-nums">{{ fmtRp(dpp) }}</dd></div>
+                    <div class="flex justify-between"><dt class="text-neutral-500">PPN</dt><dd class="tabular-nums">{{ fmtRp(ppn) }}</dd></div>
+                    <div class="flex justify-between border-t border-neutral-200 pt-1 font-semibold dark:border-neutral-700"><dt>Total</dt><dd class="tabular-nums text-primary-600">{{ fmtRp(total) }}</dd></div>
+                </dl>
+                <div class="mt-3 text-sm text-neutral-500">Tanggal: {{ fmtDate(invoice.invoice_date) }}</div>
+            </div>
+
+            <!-- Customer & Unit + edit metadata -->
+            <div class="card p-5 text-sm lg:col-span-2">
+                <div class="mb-2 font-semibold">Customer &amp; Unit</div>
+                <dl class="grid grid-cols-[130px_1fr] gap-y-1.5">
+                    <dt class="text-neutral-500">Customer</dt><dd><span v-if="invoice.customer"><span class="font-mono text-xs text-neutral-400">{{ invoice.customer.code }}</span> {{ invoice.customer.full_name }}</span><span v-else>—</span></dd>
+                    <dt class="text-neutral-500">Telepon</dt><dd>{{ invoice.customer?.phone || '—' }}</dd>
+                    <dt class="text-neutral-500">Email</dt><dd>{{ invoice.customer?.email || '—' }}</dd>
+                    <dt class="text-neutral-500">No. SPR</dt><dd class="font-mono">{{ invoice.booking?.booking_number ?? '—' }}</dd>
+                    <dt class="text-neutral-500">Unit</dt><dd class="font-mono">{{ invoice.booking?.unit?.unit_code ?? '—' }}</dd>
+                </dl>
+
+                <div class="mt-4 border-t border-neutral-200 pt-4 dark:border-neutral-700">
+                    <template v-if="!editing">
+                        <dl class="grid grid-cols-[130px_1fr] gap-y-1.5">
+                            <dt class="text-neutral-500">Tgl Invoice</dt><dd>{{ fmtDate(invoice.invoice_date) }}</dd>
+                            <template v-if="invoice.receive_date"><dt class="text-neutral-500">Tgl Serah Tagih</dt><dd>{{ fmtDate(invoice.receive_date) }}</dd></template>
+                            <dt class="text-neutral-500">Jatuh Tempo</dt><dd>{{ fmtDate(invoice.due_date) }}</dd>
+                            <template v-if="invoice.customer_ref_no"><dt class="text-neutral-500">No. Ref. Customer</dt><dd>{{ invoice.customer_ref_no }}</dd></template>
+                            <template v-if="invoice.manual_no"><dt class="text-neutral-500">No. Manual</dt><dd>{{ invoice.manual_no }}</dd></template>
+                            <template v-if="invoice.trx_type && invoice.trx_type !== 'normal'"><dt class="text-neutral-500">Tipe Transaksi</dt><dd>{{ trxLabel[invoice.trx_type] ?? invoice.trx_type }}</dd></template>
+                            <dt class="text-neutral-500">Keterangan</dt><dd>{{ invoice.description || '—' }}</dd>
+                        </dl>
+                    </template>
+                    <form v-else @submit.prevent="simpanEdit" class="space-y-3">
+                        <p class="text-xs text-neutral-400">Nilai tagihan terkunci — yang bisa diubah hanya tanggal, jatuh tempo, no. ref, dan keterangan.</p>
+                        <div>
+                            <label class="mb-1 block text-xs font-medium text-neutral-500">Tgl Invoice *</label>
+                            <input v-model="edit.invoice_date" type="date" required :class="inputCls" />
+                            <p v-if="edit.errors.invoice_date" class="mt-1 text-xs text-danger-500">{{ edit.errors.invoice_date }}</p>
+                        </div>
+                        <div>
+                            <label class="mb-1 block text-xs font-medium text-neutral-500">Jatuh Tempo</label>
+                            <input v-model="edit.due_date" type="date" :class="inputCls" />
+                            <p v-if="edit.errors.due_date" class="mt-1 text-xs text-danger-500">{{ edit.errors.due_date }}</p>
+                        </div>
+                        <div>
+                            <label class="mb-1 block text-xs font-medium text-neutral-500">No. Ref. Customer</label>
+                            <input v-model="edit.customer_ref_no" maxlength="80" :class="inputCls" />
+                        </div>
+                        <div>
+                            <label class="mb-1 block text-xs font-medium text-neutral-500">Keterangan *</label>
+                            <input v-model="edit.description" maxlength="255" required :class="inputCls" />
+                            <p v-if="edit.errors.description" class="mt-1 text-xs text-danger-500">{{ edit.errors.description }}</p>
+                        </div>
+                        <div class="flex gap-2">
+                            <Button type="submit" :disabled="edit.processing">Simpan</Button>
+                            <button type="button" @click="batalEdit" class="rounded-lg border border-neutral-300 px-4 py-2 text-sm dark:border-neutral-700">Batal</button>
+                        </div>
+                    </form>
+                </div>
             </div>
         </div>
 
-        <!-- Rincian invoice. Nilai (DPP/PPN/PPh/total) & jurnal TERKUNCI; hanya metadata yang bisa diedit. -->
-        <div v-if="!editing" class="card grid gap-4 p-5 text-sm md:grid-cols-3">
-            <div><div class="text-neutral-500">Customer</div><div class="font-medium">{{ invoice.customer?.full_name ?? '—' }}</div></div>
-            <div><div class="text-neutral-500">No. SPR</div><div class="font-medium">{{ invoice.booking?.booking_number ?? '—' }}</div></div>
-            <div><div class="text-neutral-500">Unit</div><div class="font-medium">{{ invoice.booking?.unit?.unit_code ?? '—' }}</div></div>
-            <div><div class="text-neutral-500">Tipe Transaksi</div><div class="font-medium">{{ trxLabel[invoice.trx_type] ?? invoice.trx_type }}</div></div>
-            <div><div class="text-neutral-500">Tgl Invoice</div><div class="font-medium">{{ fmtDate(invoice.invoice_date) }}</div></div>
-            <div><div class="text-neutral-500">Tgl Serah Tagih</div><div class="font-medium">{{ fmtDate(invoice.receive_date) }}</div></div>
-            <div><div class="text-neutral-500">Jatuh Tempo</div><div class="font-medium">{{ fmtDate(invoice.due_date) }}</div></div>
-            <div v-if="invoice.customer_ref_no"><div class="text-neutral-500">No. Ref. Customer</div><div class="font-medium">{{ invoice.customer_ref_no }}</div></div>
-            <div v-if="invoice.manual_no"><div class="text-neutral-500">No. Manual</div><div class="font-medium">{{ invoice.manual_no }}</div></div>
-            <div class="md:col-span-3"><div class="text-neutral-500">Keterangan</div><div class="font-medium">{{ invoice.description }}</div></div>
-        </div>
-        <form v-else @submit.prevent="simpanEdit" class="card grid gap-4 p-5 text-sm md:grid-cols-2">
-            <p class="md:col-span-2 text-xs text-neutral-500">Nilai tagihan & jurnal terkunci — yang bisa diubah hanya tanggal, jatuh tempo, no. ref, dan keterangan.</p>
-            <div><label class="mb-1 block text-xs font-medium text-neutral-500">Tgl Invoice *</label><input v-model="edit.invoice_date" type="date" required :class="inputCls" /><p v-if="edit.errors.invoice_date" class="mt-1 text-xs text-danger-500">{{ edit.errors.invoice_date }}</p></div>
-            <div><label class="mb-1 block text-xs font-medium text-neutral-500">Jatuh Tempo</label><input v-model="edit.due_date" type="date" :class="inputCls" /><p v-if="edit.errors.due_date" class="mt-1 text-xs text-danger-500">{{ edit.errors.due_date }}</p></div>
-            <div><label class="mb-1 block text-xs font-medium text-neutral-500">No. Ref. Customer</label><input v-model="edit.customer_ref_no" maxlength="80" :class="inputCls" /></div>
-            <div><label class="mb-1 block text-xs font-medium text-neutral-500">Keterangan *</label><input v-model="edit.description" maxlength="255" required :class="inputCls" /><p v-if="edit.errors.description" class="mt-1 text-xs text-danger-500">{{ edit.errors.description }}</p></div>
-            <div class="md:col-span-2 flex gap-2"><Button type="submit" :disabled="edit.processing">Simpan</Button><button type="button" @click="batalEdit" class="rounded-lg border border-neutral-300 px-4 py-2 text-sm dark:border-neutral-700">Batal</button></div>
-        </form>
-
+        <!-- Penagihan (fitur AR — di luar rincian Booked Revenue) -->
         <div class="card p-5">
             <div class="grid gap-2 text-sm sm:grid-cols-2">
-                <div class="flex justify-between"><span class="text-neutral-500">DPP</span><span class="font-mono">{{ fmtRp(invoice.dpp) }}</span></div>
-                <div class="flex justify-between"><span class="text-neutral-500">PPN ({{ invoice.ppn_pct }}%)</span><span class="font-mono">{{ fmtRp(invoice.ppn_amount) }}</span></div>
-                <div class="flex justify-between border-t border-neutral-200 pt-2 font-semibold dark:border-neutral-700"><span>Total Tagihan</span><span class="font-mono">{{ fmtRp(invoice.total) }}</span></div>
-                <div class="flex justify-between border-t border-neutral-200 pt-2 dark:border-neutral-700"><span class="text-neutral-500">PPh dipungut pelanggan ({{ invoice.pph_pct }}%)</span><span class="font-mono text-danger-600">{{ fmtRp(invoice.pph_amount) }}</span></div>
-                <div class="flex justify-between border-t border-neutral-200 pt-2 font-semibold dark:border-neutral-700"><span>Net Ditagih</span><span class="font-mono">{{ fmtRp(invoice.receivable_amount ?? invoice.net_receivable) }}</span></div>
+                <div v-if="pph > 0" class="flex justify-between"><span class="text-neutral-500">PPh dipungut pelanggan ({{ invoice.pph_pct }}%)</span><span class="font-mono text-danger-600">{{ fmtRp(pph) }}</span></div>
+                <div v-if="pph > 0" class="flex justify-between font-semibold"><span>Net Ditagih</span><span class="font-mono">{{ fmtRp(netReceivable) }}</span></div>
                 <div class="flex justify-between"><span class="text-neutral-500">Terbayar</span><span class="font-mono text-success-600">{{ fmtRp(invoice.paid_amount) }}</span></div>
                 <div class="flex justify-between sm:col-span-2 rounded-lg bg-neutral-50 px-3 py-2 font-bold dark:bg-neutral-800"><span>Sisa Piutang</span><span class="font-mono" :class="outstanding > 0 ? 'text-success-600' : 'text-neutral-400'">{{ fmtRp(outstanding) }}</span></div>
             </div>
-            <div v-if="invoice.journal_id" class="mt-3 text-xs text-neutral-400">Jurnal pendaftaran: #{{ invoice.journal_id }} (Dr Piutang<template v-if="Number(invoice.pph_amount) > 0"> + PPh dibayar dimuka</template> / Cr Pendapatan<template v-if="Number(invoice.ppn_amount) > 0"> + PPN Keluaran</template>)</div>
             <div v-if="invoice.status !== 'paid'" class="mt-4">
                 <Button v-if="!showPay" variant="primary" @click="showPay = true"><template #icon-left><Wallet class="h-4 w-4" /></template>Terima Pembayaran</Button>
                 <form v-else @submit.prevent="submitPay" class="grid gap-3 rounded-lg border border-neutral-200 p-4 dark:border-neutral-700 sm:grid-cols-2">
@@ -145,6 +205,9 @@ const inputCls = 'h-9 w-full rounded-lg border border-neutral-300 bg-white px-3 
                     </tr>
                 </tbody>
             </table>
+            <div v-else-if="!showResched" class="px-4 py-6 text-center text-sm text-neutral-400">
+                Tanpa termin — tagih penuh {{ fmtRp(outstanding) }} pada jatuh tempo {{ fmtDate(invoice.due_date) }}. Gunakan <b>Jadwal Ulang</b> untuk memecah menjadi beberapa termin.
+            </div>
 
             <!-- Editor jadwal ulang -->
             <form v-if="showResched" @submit.prevent="submitResched" class="space-y-3 border-t border-neutral-200 p-4 dark:border-neutral-800">
