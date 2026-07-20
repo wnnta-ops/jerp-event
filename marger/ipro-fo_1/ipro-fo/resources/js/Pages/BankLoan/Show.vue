@@ -496,6 +496,10 @@ const stageView = computed<StageView>(() => {
 // SP3K: form saat belum ada record (atau saat Edit). Akad: idem.
 const showSp3kForm = computed(() => a.status === 'sp3k');
 const showAkadForm = computed(() => a.status === 'akad' && (!a.akad || editAkad.value));
+// #4: Cetak SI dipindah ke Proses Akad — muncul hanya di tahap Akad setelah Tanggal Akad & Tempat (lokasi) akad dipilih.
+const akadPrintReady = computed(() => a.status === 'akad'
+    && !!(a.akad?.akad_at || akadForm.akad_at)
+    && !!(a.akad?.place || akadForm.place));
 // #167: form pencairan tampil di tahap Pencairan (disbursed/active) agar retensi/DAJAM masih bisa dicatat,
 // walau pencairan sudah 100% (canDisburse false). Input Nominal Cair-nya yang di-gate canDisburse.
 const showDisbForm = computed(() => (a.status === 'disbursed' || a.status === 'active') && (canDisburse.value || canAddRetention.value));
@@ -682,8 +686,8 @@ const historyNodes = computed<HistoryNode[]>(() => {
                 <div class="flex shrink-0 items-center gap-2">
                     <Badge :variant="stageView.badgeVariant">{{ stageView.badgeLabel }}</Badge>
                     <button v-if="canStepBack" type="button" @click="stepBack" class="inline-flex items-center gap-1 rounded border border-neutral-300 px-2 py-1 text-xs text-neutral-600 hover:bg-neutral-50 dark:border-neutral-700 dark:text-neutral-300" title="Kembali ke tahap sebelumnya untuk meninjau / mengedit">← Tahap Sebelumnya</button>
-                    <!-- Cetak SI sesuai format bank: BTN / BSN / BRI -->
-                    <div v-if="a.status === 'si'" class="inline-flex items-center gap-1.5 rounded-lg bg-primary-600 p-1.5 shadow-sm">
+                    <!-- #4: Cetak SI (format bank BTN/BSN/BRI) — pindah ke Proses Akad, muncul setelah Tanggal & Tempat akad dipilih. -->
+                    <div v-if="akadPrintReady" class="inline-flex items-center gap-1.5 rounded-lg bg-primary-600 p-1.5 shadow-sm">
                         <span class="flex items-center gap-1.5 pl-1 pr-0.5 text-sm font-bold text-white"><Printer class="h-4 w-4" /> Cetak SI</span>
                         <a :href="route('kpr.si-print', { kpr: a.id, bank: 'btn' })" target="_blank" class="rounded-md bg-white px-3 py-1.5 text-xs font-bold text-primary-700 hover:bg-primary-50">BTN</a>
                         <a :href="route('kpr.si-print', { kpr: a.id, bank: 'bsn' })" target="_blank" class="rounded-md bg-white px-3 py-1.5 text-xs font-bold text-primary-700 hover:bg-primary-50">BSN</a>
@@ -1000,7 +1004,7 @@ const historyNodes = computed<HistoryNode[]>(() => {
 
             <!-- SI (Surat Instruksi) → Lanjut ke Proses Akad -->
             <div v-if="a.status === 'si'" id="next-step-form" class="mt-5 border-t border-neutral-200 dark:border-neutral-800 pt-5">
-                <p class="mb-3 text-sm text-neutral-500">Surat Instruksi diterbitkan. Cetak di kanan atas bila perlu, lalu lanjut ke <strong>Proses Akad</strong>.</p>
+                <p class="mb-3 text-sm text-neutral-500">Surat Instruksi diterbitkan. Lanjut ke <strong>Proses Akad</strong> — tombol <strong>Cetak SI</strong> tersedia di sana setelah Tanggal &amp; Tempat akad dipilih.</p>
                 <Button size="lg" block variant="primary" @click="proceedSi">Lanjut ke Proses Akad →</Button>
             </div>
 

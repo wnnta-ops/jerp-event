@@ -586,11 +586,13 @@ class KprInitiationController extends Controller
             // Umur/domisili/sumber/penghasilan hanya ditampilkan (diturunkan dari Customer/NUP/Analisa) — tidak disimpan.
             $request->validate([
                 'data.tanggal_lahir'      => ['required', 'date'],
+                'data.nama_perusahaan'    => ['required', 'string', 'max:255'],
                 'data.domisili_pekerjaan' => ['required', 'string', 'max:255'],
                 'data.jabatan'            => ['required', 'string', 'in:PNS,Karyawan Swasta,Wiraswasta'],
             ], [], [
                 'data.tanggal_lahir'      => 'tanggal lahir',
-                'data.domisili_pekerjaan' => 'domisili pekerjaan',
+                'data.nama_perusahaan'    => 'nama perusahaan tempat kerja',
+                'data.domisili_pekerjaan' => 'alamat/lokasi tempat kerja',
                 'data.jabatan'            => 'jabatan',
             ]);
         }

@@ -6,6 +6,7 @@ namespace App\Domain\BusinessSupport\Services;
 
 use App\Domain\BusinessSupport\Models\BsFiscalPeriod;
 use App\Domain\BusinessSupport\Models\BsJournal;
+use App\Domain\BusinessSupport\Models\BsJournalStatusLog;
 use App\Exceptions\BusinessRuleException;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -127,6 +128,7 @@ final class JournalService
             foreach ($clean as $c) {
                 $journal->lines()->create($c);
             }
+            $this->logStatus($journal, 'created', null, $status, $header['created_by'] ?? null);
 
             return $journal;
         });
@@ -229,6 +231,7 @@ final class JournalService
         }
 
         $journal->update(['status' => 'final', 'finalized_at' => now(), 'total_debit' => $totalD, 'total_credit' => $totalK]);
+        $this->logStatus($journal, 'finalized', 'draft', 'final');
 
         return $journal;
     }
@@ -241,6 +244,7 @@ final class JournalService
             throw new BusinessRuleException('Hanya jurnal berstatus Final yang bisa di-approve.', errorCode: 'JOURNAL_NOT_FINAL');
         }
         $journal->update(['status' => 'posted', 'posted_at' => now(), 'approved_by' => $userId ?? auth()->id()]);
+        $this->logStatus($journal, 'approved', 'final', 'posted', $userId);
 
         return $journal;
     }
@@ -253,6 +257,7 @@ final class JournalService
             throw new BusinessRuleException('Hanya jurnal berstatus Approved yang bisa dibatalkan approval-nya.', errorCode: 'JOURNAL_NOT_POSTED');
         }
         $journal->update(['status' => 'final', 'posted_at' => null, 'approved_by' => null]);
+        $this->logStatus($journal, 'unapproved', 'posted', 'final');
 
         return $journal;
     }
@@ -264,9 +269,29 @@ final class JournalService
         if (! in_array($journal->status, ['final', 'posted'], true)) {
             throw new BusinessRuleException('Hanya jurnal Final/Approved yang bisa dikembalikan ke Baru.', errorCode: 'JOURNAL_NOT_REVERSIBLE');
         }
+        $from = (string) $journal->status;
         $journal->update(['status' => 'draft', 'finalized_at' => null, 'posted_at' => null, 'approved_by' => null]);
+        $this->logStatus($journal, 'rejected', $from, 'draft');
 
         return $journal;
+    }
+
+    /**
+     * Catat satu baris log status jurnal (append-only). Tidak pernah dihapus/di-update, sehingga
+     * riwayat dibuat → finalisasi → approve → batal approve → reject tetap utuh hingga closed.
+     */
+    private function logStatus(BsJournal $journal, string $action, ?string $from, ?string $to, ?int $userId = null, ?string $note = null): void
+    {
+        BsJournalStatusLog::create([
+            'tenant_id'   => $journal->tenant_id,
+            'journal_id'  => $journal->id,
+            'action'      => $action,
+            'from_status' => $from,
+            'to_status'   => $to,
+            'user_id'     => $userId ?? auth()->id(),
+            'note'        => $note,
+            'created_at'  => now(),
+        ]);
     }
 
     private function assertPeriodOpen(BsJournal $journal): void
