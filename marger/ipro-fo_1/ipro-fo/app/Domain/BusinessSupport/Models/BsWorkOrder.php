@@ -30,7 +30,9 @@ class BsWorkOrder extends Model
         'print_payload' => 'array',
     ];
 
-    public const JENIS = ['bangunan' => 'Bangunan', 'sarana_prasarana' => 'Sarana Prasarana', 'lain_lain' => 'Lain-lain'];
+    // Kategori kontrak SPK — dikunci sejak pembuatan (tak ada jalur ubah setelah tersimpan) karena
+    // saat penagihan kategori tidak boleh berubah. Key dipertahankan agar data lama tetap valid.
+    public const JENIS = ['bangunan' => 'Housing', 'sarana_prasarana' => 'Infrastruktur', 'lain_lain' => 'Lainnya'];
 
     public function project(): BelongsTo { return $this->belongsTo(BsProject::class, 'project_id'); }
     public function supplier(): BelongsTo { return $this->belongsTo(BsSupplier::class, 'supplier_id'); }

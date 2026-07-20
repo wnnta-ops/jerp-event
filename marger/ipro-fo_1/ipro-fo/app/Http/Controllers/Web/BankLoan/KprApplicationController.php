@@ -235,6 +235,23 @@ class KprApplicationController extends Controller
         // "Kategori Bank") TIDAK lagi menimpa di sini — datanya tetap tersimpan, hanya tak dipakai untuk pencairan.
         $effectiveTerms = $categories->mapWithKeys(fn ($c) => [(int) $c->id => (float) $c->percentage]);
 
+        // Default DAJAM Pajak PER-BANK (mis. BTN): term bank untuk kategori DAJAM Pajak (is_dajam + nama "Pajak")
+        // → dipakai form Pencairan untuk auto-isi nominal SSP/BPHTB. Nominal (amount) diprioritaskan; bila kosong,
+        // pakai persentase × plafon. Hanya nilai default; user tetap bisa mengubah manual.
+        $bankDajamTax = null;
+        $taxCat = $categories->first(fn ($c) => $c->is_dajam && stripos((string) $c->name, 'pajak') !== false);
+        if ($taxCat && $kpr->bank_partner_id) {
+            $term = \App\Domain\BankLoan\Models\BankRetentionTerm::where('bank_partner_id', $kpr->bank_partner_id)
+                ->where('retention_category_id', $taxCat->id)->first();
+            if ($term) {
+                $bankDajamTax = [
+                    'category_id' => (int) $taxCat->id,
+                    'percentage'  => (float) $term->percentage,
+                    'amount'      => $term->amount !== null ? (float) $term->amount : null,
+                ];
+            }
+        }
+
         $kpr->load([
             'booking.unit.unitType', 'customer', 'bank', 'documents', 'sp3k', 'akad',
             'realizations.retentions.releases', 'realizations.category:id,code,name', 'realizations.tts:id,tts_number,status',
@@ -293,6 +310,7 @@ class KprApplicationController extends Controller
                 ]),
             'retentionCategories' => $categories,
             'bankTerms'           => $effectiveTerms,
+            'bankDajamTax'        => $bankDajamTax, // default DAJAM Pajak per-bank (auto-isi SSP/BPHTB)
             // CTA "Buka Approval Retensi" hanya untuk user yg punya akses Cash Book.
             'canApproveRetensi'   => (bool) ($request->user()?->canModule('cashbook')),
             'hasRetention'        => $kpr->realizations->contains(fn ($r) => $r->retentions->isNotEmpty()),
@@ -555,6 +573,67 @@ class KprApplicationController extends Controller
         $kpr->update(['status' => $prev, 'timeline' => $timeline]); // hanya status mundur; record tahap (SP3K/Akad) dipertahankan
 
         return redirect()->route('kpr.show', $kpr)->with('success', "Kembali ke tahap {$prev->label()} — silakan tinjau/edit lalu lanjutkan kembali.");
+    }
+
+    /**
+     * Lompat langsung ke tahap manapun yang SUDAH pernah dicapai (dari klik nama tahap pada stepper),
+     * untuk ditinjau/diedit tanpa harus melewati tahap di antaranya. Non-destruktif: hanya status tampilan
+     * yang berpindah — record SP3K/Akad & process_stages dipertahankan. TERKUNCI setelah tahap Akad
+     * (customer sudah menentukan bank akad) → tahap sebelumnya tak dapat diedit lagi.
+     */
+    public function goStage(Request $request, KprApplication $kpr): RedirectResponse
+    {
+        $user = auth()->user();
+        abort_unless($user?->can('bankloan.akad.schedule') || $user?->can('bankloan.sp3k.register'), 403);
+
+        // Tahap yang bisa dinavigasi (sebelum Akad). Akad & sesudahnya = titik kunci, bukan tujuan navigasi.
+        $nav = ['submitted', 'wawancara', 'input_bank', 'verifikasi', 'analis', 'banding', 'sp3k', 'si'];
+        $target = (string) $request->input('stage');
+        $ti = array_search($target, $nav, true);
+        if ($ti === false) {
+            return back()->with('error', 'Tahap tujuan tidak valid.');
+        }
+
+        // Kunci: setelah proses mencapai Akad (bank akad ditentukan), tahap sebelumnya tidak dapat diedit.
+        if (in_array($kpr->status, [KprStatus::AkadDone, KprStatus::Disbursed, KprStatus::Active], true) || $kpr->akad()->exists()) {
+            return back()->with('error', 'Proses sudah pada tahap Akad — data tahap sebelumnya terkunci (tidak dapat diedit).');
+        }
+
+        // Hanya boleh membuka tahap yang sudah pernah dicapai (≤ tahap terjauh).
+        $map = [
+            'submitted' => KprStatus::Submitted, 'wawancara' => KprStatus::Wawancara,
+            'input_bank' => KprStatus::InputBank, 'verifikasi' => KprStatus::Verifikasi,
+            'analis' => KprStatus::Analis, 'banding' => KprStatus::Banding,
+            'sp3k' => KprStatus::Sp3kIssued, 'si' => KprStatus::Si,
+        ];
+        if ($ti > $this->furthestNavIndex($kpr, $nav)) {
+            return back()->with('error', 'Tahap tersebut belum dapat dibuka (belum pernah dicapai).');
+        }
+        if ($kpr->status === $map[$target]) {
+            return back(); // sudah di tahap tsb
+        }
+
+        $kpr->update(['status' => $map[$target]]);
+
+        return redirect()->route('kpr.show', $kpr)->with('success', 'Membuka tahap '.$map[$target]->label().' untuk ditinjau/diedit.');
+    }
+
+    /** Indeks tahap terjauh yang pernah dicapai (dari status + jejak data), agar navigasi maju/mundur hanya ke tahap yang valid. */
+    private function furthestNavIndex(KprApplication $kpr, array $nav): int
+    {
+        $idx = array_search($kpr->status->value, $nav, true);
+        $idx = $idx === false ? 0 : $idx;
+        $ps = $kpr->process_stages ?? [];
+        foreach (['wawancara', 'input_bank', 'verifikasi', 'analis', 'banding'] as $s) {
+            if (! empty($ps[$s])) {
+                $idx = max($idx, (int) array_search($s, $nav, true));
+            }
+        }
+        if ($kpr->sp3k()->exists()) {
+            $idx = max($idx, (int) array_search('sp3k', $nav, true));
+        }
+
+        return (int) $idx;
     }
 
     /** Catat cap waktu tahap yang SELESAI (untuk Laporan Durasi Proses). Idempotent — cap pertama dipertahankan. */
