@@ -160,4 +160,64 @@ class ApKuitansiController extends Controller
 
         return back()->with('success', "Kuitansi {$kuitansi->kuitansi_number} ditolak.");
     }
+
+    /** Setujui beberapa kuitansi AP sekaligus (dari Approval Pengeluaran Kas & Bank). Lewati yang bukan pending. */
+    public function approveBulk(Request $request, ApKuitansiService $svc): RedirectResponse
+    {
+        abort_unless($request->user()?->can('businesssupport.approval.act'), 403);
+        $v = $request->validate([
+            'ids'   => ['required', 'array', 'min:1'],
+            'ids.*' => ['integer', 'exists:bs_ap_kuitansis,id'],
+        ]);
+        $uid = $request->user()->id;
+        $ok = 0;
+        $skip = 0;
+        $fail = [];
+        foreach (array_unique($v['ids']) as $id) {
+            $k = BsApKuitansi::find($id);
+            if (! $k || $k->status !== 'pending') {
+                $skip++;
+                continue;
+            }
+            try {
+                $svc->approve($k, $uid);
+                $ok++;
+            } catch (BusinessRuleException $e) {
+                $fail[] = $k->kuitansi_number;
+            }
+        }
+        $msg = "$ok kuitansi disetujui.".($skip ? " $skip dilewati (bukan pending)." : '')
+            .($fail ? ' Gagal posting jurnal: '.implode(', ', array_slice($fail, 0, 8)).'.' : '');
+
+        return back()->with($ok ? 'success' : ($fail ? 'error' : 'warning'), $msg);
+    }
+
+    /** Tolak beberapa kuitansi AP sekaligus. Lewati yang bukan pending. */
+    public function rejectBulk(Request $request, ApKuitansiService $svc): RedirectResponse
+    {
+        abort_unless($request->user()?->can('businesssupport.approval.act'), 403);
+        $v = $request->validate([
+            'ids'   => ['required', 'array', 'min:1'],
+            'ids.*' => ['integer', 'exists:bs_ap_kuitansis,id'],
+        ]);
+        $uid = $request->user()->id;
+        $ok = 0;
+        $skip = 0;
+        foreach (array_unique($v['ids']) as $id) {
+            $k = BsApKuitansi::find($id);
+            if (! $k || $k->status !== 'pending') {
+                $skip++;
+                continue;
+            }
+            try {
+                $svc->reject($k, $uid);
+                $ok++;
+            } catch (BusinessRuleException $e) {
+                // lewati yang gagal; ringkas di pesan
+            }
+        }
+        $msg = "$ok kuitansi ditolak.".($skip ? " $skip dilewati (bukan pending)." : '');
+
+        return back()->with($ok ? 'success' : 'warning', $msg);
+    }
 }
