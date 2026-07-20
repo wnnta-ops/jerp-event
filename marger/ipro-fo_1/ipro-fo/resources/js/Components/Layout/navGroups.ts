@@ -57,10 +57,11 @@ export function navGroups(foUrl: string): NavGroup[] {
     },
     {
         title: 'Data Center',
-        icon: Database, color: '#0ea5e9', route: 'bs.dc.customer.center',
-        desc: 'Pusat data Customer, Supplier & Karyawan.',
+        icon: Database, color: '#0ea5e9', route: 'bs.dc.supplier.center',
+        // Customer Center DIHILANGKAN: data customer dikelola lewat sub-modul Customer di
+        // Marketing & Sales (FO/J-ERP), lalu disinkron ke BO — tidak dikelola dua kali di sini.
+        desc: 'Pusat data Supplier & Karyawan.',
         items: [
-            { label: 'Customer Center', icon: Users,  href: 'bs.dc.customer.center', permission: 'master.customer.view' },
             { label: 'Supplier Center', icon: Truck,  href: 'bs.dc.supplier.center', permission: ['businesssupport.view', 'datacenter.*'] },
             { label: 'Employee Center', icon: IdCard, href: 'bs.dc.employee.center', permission: ['businesssupport.view', 'datacenter.*'] },
         ],
@@ -232,13 +233,13 @@ export function navGroups(foUrl: string): NavGroup[] {
             { label: 'Invoice Piutang',     icon: Coins,            href: 'bs.ar.index',             permission: ['businesssupport.view', 'ar.*'] },
             { label: 'UM Penjualan',        icon: Wallet,           href: 'bs.ar.um.index',          permission: ['businesssupport.view', 'ar.*'] },
             { label: 'Rekonsiliasi Piutang', icon: Scale,           href: 'bs.ar.rekonsiliasi.index', permission: ['businesssupport.view', 'ar.*'] },
-            { label: 'Registrasi Piutang',  icon: ClipboardList,    href: 'bs.ar.create',            permission: ['businesssupport.view', 'ar.*'] },
+            // "Registrasi Piutang" & "Kategori Invoice" DIHILANGKAN: invoice piutang tidak dibuat
+            // manual lagi — dibentuk otomatis dari modul Booked Revenue saat unit di-booking.
             { label: 'Kuitansi Piutang',    icon: Receipt,          href: 'bs.ar.kuitansi.index',    permission: ['businesssupport.view', 'ar.*'] },
             { label: 'Memorial Piutang',    icon: BookText,         href: 'bs.ar.memorial.index',    permission: ['businesssupport.view', 'ar.*'] },
             { label: 'Kartu Piutang',       icon: LayoutList,       href: 'bs.ar.card',              permission: ['businesssupport.view', 'ar.*'] },
             { label: 'Aging Piutang',       icon: FileBarChart,     href: 'bs.ar.aging',             permission: ['businesssupport.view', 'ar.*'] },
             { label: 'Penghapusan Piutang', icon: Eraser,           href: 'bs.ar.penghapusan.index', permission: ['businesssupport.view', 'ar.*'] },
-            { label: 'Kategori Invoice',    icon: SlidersHorizontal,href: 'bs.ar.categories.index',  permission: ['businesssupport.view', 'ar.*'] },
         ],
     },
     {

@@ -19,7 +19,7 @@ class BsArInvoice extends Model
     protected $table = 'bs_ar_invoices';
     protected $fillable = [
         'tenant_id', 'invoice_number', 'invoice_date', 'receive_date', 'due_date', 'term_days', 'customer_id',
-        'booking_id',
+        'booking_id', 'booked_revenue_id',
         'category_id', 'customer_ref_no', 'tax_invoice_no', 'manual_no', 'trx_type',
         'income_account_id', 'receivable_account_id', 'description', 'transfer_detail', 'kurs',
         'dpp', 'ppn_pct', 'ppn_amount', 'ppn_mode', 'pph_mode', 'pph_pct', 'pph_amount', 'pph_account_id',
@@ -38,6 +38,8 @@ class BsArInvoice extends Model
     public function customer(): BelongsTo { return $this->belongsTo(Customer::class, 'customer_id'); }
     /** SPR yang ditagih invoice ini (opsional — invoice denda/saldo awal tidak punya SPR). */
     public function booking(): BelongsTo { return $this->belongsTo(Booking::class, 'booking_id'); }
+    /** Booked Revenue asal invoice ini (invoice kini selalu lahir dari booking; NULL utk data lama). */
+    public function bookedRevenue(): BelongsTo { return $this->belongsTo(BsBookedRevenue::class, 'booked_revenue_id'); }
     public function category(): BelongsTo { return $this->belongsTo(BsArCategory::class, 'category_id'); }
     public function payments(): HasMany { return $this->hasMany(BsArPayment::class, 'ar_invoice_id'); }
     public function lines(): HasMany { return $this->hasMany(BsArInvoiceLine::class, 'ar_invoice_id'); }

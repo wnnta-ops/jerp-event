@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\BusinessSupport\Services;
 
+use App\Domain\BusinessSupport\Actions\CreateArInvoiceFromBooking;
 use App\Domain\BusinessSupport\Models\BsAccount;
 use App\Domain\BusinessSupport\Models\BsBookedRevenue;
 use App\Domain\Master\Unit\Models\Unit;
@@ -12,15 +13,18 @@ use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 
 /**
- * Booked Revenue — pendapatan ter-booking per customer & unit (deferred + akui).
+ * Booked Revenue — pendapatan ter-booking per customer & unit.
  *
- *   Booking : Dr Piutang Usaha              / Cr Pendapatan Diterima Dimuka
- *   Akui    : Dr Pendapatan Diterima Dimuka / Cr Penjualan Usaha
- *   Batal   : Dr Pendapatan Diterima Dimuka / Cr Piutang Usaha (membalik booking)
+ * Booking memposting SATU jurnal manual lengkap dan, sekaligus (atomik), membentuk Invoice
+ * Piutang otomatis per unit (lihat CreateArInvoiceFromBooking) — invoice tidak dibuat manual
+ * lagi. Invoice tidak memposting jurnal sendiri (jurnal booking sudah mencatat Piutang).
  */
 final class BookedRevenueService
 {
-    public function __construct(private readonly JournalService $journal) {}
+    public function __construct(
+        private readonly JournalService $journal,
+        private readonly CreateArInvoiceFromBooking $arInvoice,
+    ) {}
 
     /**
      * Buat 1 record Booked Revenue (TANPA posting jurnal).
@@ -153,75 +157,18 @@ final class BookedRevenueService
 
             foreach ($records as $r) {
                 $r->update(['booking_journal_id' => $journal->id]);
+                // Invoice Piutang otomatis per unit — atomik dgn booking, TANPA jurnal baru
+                // (jurnal booking di atas sudah mencatat Piutang). Idempoten di dalam action.
+                $this->arInvoice->execute($r->refresh(), $userId);
             }
 
             return $records;
         });
     }
 
-    /** Akui pendapatan: reklas deferred → pendapatan penjualan. */
-    public function recognize(BsBookedRevenue $br, ?int $userId = null): BsBookedRevenue
-    {
-        if (! $br->isBooked()) {
-            throw new BusinessRuleException('Hanya Booked Revenue berstatus "booked" yang bisa diakui.', errorCode: 'BR_NOT_BOOKED');
-        }
-
-        return DB::transaction(function () use ($br, $userId): BsBookedRevenue {
-            $amount = round((float) $br->amount, 2);
-
-            $journal = $this->journal->post([
-                'journal_date'   => now()->toDateString(),
-                'source'         => 'memorial',
-                'reference'      => $br->br_number,
-                'description'    => 'Pengakuan Pendapatan — '.$this->label($br),
-                'cost_center_id' => $br->cost_center_id,
-                'created_by'     => $userId,
-            ], [
-                ['account_id' => $br->deferred_account_id, 'debit' => $amount, 'credit' => 0, 'description' => 'Reklas pendapatan diterima dimuka', 'cost_center_id' => $br->cost_center_id],
-                ['account_id' => $br->income_account_id, 'debit' => 0, 'credit' => $amount, 'description' => 'Penjualan usaha (diakui)', 'cost_center_id' => $br->cost_center_id],
-            ]);
-
-            $br->update([
-                'status'                 => 'recognized',
-                'recognized_at'          => now(),
-                'recognition_journal_id' => $journal->id,
-            ]);
-
-            return $br;
-        });
-    }
-
-    /** Batalkan booking: balik jurnal booking (Dr Deferred / Cr Piutang). */
-    public function cancel(BsBookedRevenue $br, ?int $userId = null): BsBookedRevenue
-    {
-        if (! $br->isBooked()) {
-            throw new BusinessRuleException('Hanya Booked Revenue berstatus "booked" yang bisa dibatalkan.', errorCode: 'BR_NOT_BOOKED');
-        }
-
-        return DB::transaction(function () use ($br, $userId): BsBookedRevenue {
-            $amount = round((float) $br->amount, 2);
-
-            $journal = $this->journal->post([
-                'journal_date'   => now()->toDateString(),
-                'source'         => 'memorial',
-                'reference'      => $br->br_number,
-                'description'    => 'Pembatalan Booked Revenue — '.$this->label($br),
-                'cost_center_id' => $br->cost_center_id,
-                'created_by'     => $userId,
-            ], [
-                ['account_id' => $br->deferred_account_id, 'debit' => $amount, 'credit' => 0, 'description' => 'Balik pendapatan diterima dimuka', 'cost_center_id' => $br->cost_center_id],
-                ['account_id' => $br->receivable_account_id, 'debit' => 0, 'credit' => $amount, 'description' => 'Balik piutang booked revenue', 'cost_center_id' => $br->cost_center_id],
-            ]);
-
-            $br->update([
-                'status'            => 'cancelled',
-                'cancelled_at'      => now(),
-                'cancel_journal_id' => $journal->id,
-            ]);
-
-            return $br;
-        });
-    }
+    // Akui Pendapatan & Batalkan DIHAPUS: jurnal manual saat booking sudah langsung mengkredit
+    // Penjualan Usaha (recognize lama jadi redundan), dan booking bersifat tidak bisa dikembalikan
+    // (tanpa jalur cancel). Rincian tetap bisa diedit metadata-nya lewat BookedRevenueController@update.
 
     /** Akun GL dari konfigurasi (kode → id), gagal jelas bila belum diset. */
     private function account(string $key): int

@@ -6,13 +6,16 @@ namespace App\Http\Controllers\Web\BusinessSupport\DataCenter;
 
 use App\Domain\BusinessSupport\Models\BsEmployee;
 use App\Domain\BusinessSupport\Models\BsSupplier;
-use App\Domain\Master\Customer\Models\Customer;
 use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Inertia\Response;
 
-/** DATA CENTER — hub gabungan Customer / Supplier / Employee Center. */
+/**
+ * DATA CENTER — hub gabungan Supplier / Employee Center.
+ * Customer Center DIHILANGKAN: data customer dikelola lewat sub-modul Customer di
+ * Marketing & Sales, tidak dikelola dua kali di sini.
+ */
 class DataCenterController extends Controller
 {
     public function hub(Request $request): Response
@@ -21,8 +24,6 @@ class DataCenterController extends Controller
 
         return Inertia::render('BusinessSupport/DataCenter/Hub', [
             'summary' => [
-                'customers'        => Customer::count(),
-                'customers_active' => Customer::where('status', 'active')->count(),
                 'suppliers'        => BsSupplier::count(),
                 'suppliers_active' => BsSupplier::where('is_active', true)->count(),
                 'employees'        => BsEmployee::count(),
@@ -31,11 +32,11 @@ class DataCenterController extends Controller
         ]);
     }
 
-    /** Landing per sub-modul/center (customer | supplier | employee). */
+    /** Landing per sub-modul/center (supplier | employee). */
     public function center(Request $request, string $center): Response
     {
         abort_unless($request->user()?->canModule('datacenter'), 403);
-        $titles = ['customer' => 'Customer Center', 'supplier' => 'Supplier Center', 'employee' => 'Employee Center'];
+        $titles = ['supplier' => 'Supplier Center', 'employee' => 'Employee Center'];
         abort_unless(isset($titles[$center]), 404);
 
         return Inertia::render('BusinessSupport/DataCenter/Center', [
@@ -44,11 +45,11 @@ class DataCenterController extends Controller
         ]);
     }
 
-    /** Print-Out per center (customer | supplier | employee). */
+    /** Print-Out per center (supplier | employee). */
     public function printout(Request $request, string $center): Response
     {
         abort_unless($request->user()?->canModule('datacenter'), 403);
-        $titles = ['customer' => 'Customer Center', 'supplier' => 'Supplier Center', 'employee' => 'Employee Center'];
+        $titles = ['supplier' => 'Supplier Center', 'employee' => 'Employee Center'];
         abort_unless(isset($titles[$center]), 404);
 
         return Inertia::render('BusinessSupport/DataCenter/PrintOut', [

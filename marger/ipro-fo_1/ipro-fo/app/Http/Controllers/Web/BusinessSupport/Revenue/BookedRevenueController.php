@@ -24,9 +24,14 @@ class BookedRevenueController extends Controller
     {
         abort_unless($request->user()?->canModule('ar'), 403);
 
-        $rows = BsBookedRevenue::query()
+        // Record 'cancelled' (data lama) DIKECUALIKAN: booking batal jurnalnya sudah dibalik,
+        // net-nol di buku besar — kalau ikut tampil ia terlihat sama dengan booking aktif (kolom
+        // Status kini dihapus) dan nilainya membengkakkan total. Sama seperti Invoice Penjualan
+        // yang juga menyaring status != cancelled.
+        $active = fn () => BsBookedRevenue::query()->where('status', '!=', 'cancelled');
+
+        $rows = $active()
             ->with(['customer:id,code,full_name', 'unit:id,unit_code'])
-            ->when($request->input('status'), fn ($q, $s) => $q->where('status', $s))
             ->when($request->input('search'), fn ($q, $s) => $q->where(fn ($w) => $w
                 ->where('br_number', 'like', "%{$s}%")
                 ->orWhere('reference', 'like', "%{$s}%")
@@ -36,30 +41,70 @@ class BookedRevenueController extends Controller
             ->latest('booking_date')->latest('id')
             ->paginate(50)->withQueryString();
 
-        $rows->getCollection()->transform(fn ($r) => [
-            'id'            => $r->id,
-            'br_number'     => $r->br_number,
-            'booking_date'  => $r->booking_date?->toDateString(),
-            'customer'      => $r->customer ? ['code' => $r->customer->code, 'name' => $r->customer->full_name] : null,
-            'unit'          => $r->unit?->unit_code,
-            'amount'        => (float) $r->amount,
-            'status'        => $r->status,
-            'recognized_at' => $r->recognized_at?->toDateString(),
-        ]);
+        // No. SPR di-resolve dari booking TERAKHIR per unit (BsBookedRevenue tidak menyimpan
+        // booking_id) — jembatan yang sama dipakai report() & create(). Di-batch agar tak N+1.
+        $sprByUnit = $this->sprByUnit($rows->getCollection()->pluck('unit_id')->filter()->unique()->all());
 
-        $sum = fn (string $status) => (float) BsBookedRevenue::where('status', $status)->sum('amount');
+        $rows->getCollection()->transform(fn ($r) => $this->row($r, $sprByUnit));
 
         return Inertia::render('BusinessSupport/BookedRevenue/Index', [
             'rows'    => $rows,
-            'filters' => $request->only(['search', 'status']),
+            'filters' => $request->only(['search']),
             'summary' => [
-                'booked_total'     => $sum('booked'),
-                'recognized_total' => $sum('recognized'),
-                'booked_count'     => BsBookedRevenue::where('status', 'booked')->count(),
-                'recognized_count' => BsBookedRevenue::where('status', 'recognized')->count(),
-                'cancelled_count'  => BsBookedRevenue::where('status', 'cancelled')->count(),
+                'count' => $active()->count(),
+                'total' => (float) $active()->sum('amount'),
             ],
         ]);
+    }
+
+    /**
+     * Satu baris daftar — rincian disamakan dengan Invoice Piutang (No. SPR, Unit, DPP, PPN, Total).
+     *   DPP   = amount (Nilai Revenue = nett ÷ 1,11)
+     *   Total = gross − diskon (nett, termasuk PPN)
+     *   PPN   = Total − DPP  (sisa, agar DPP + PPN = Total secara identitas)
+     *
+     * @param  array<int,string>  $sprByUnit
+     * @return array<string, mixed>
+     */
+    private function row(BsBookedRevenue $r, array $sprByUnit): array
+    {
+        $dpp   = (float) $r->amount;
+        $total = round((float) $r->gross_price - (float) $r->discount, 2);
+
+        return [
+            'id'           => $r->id,
+            'br_number'    => $r->br_number,
+            'booking_date' => $r->booking_date?->toDateString(),
+            'customer'     => $r->customer ? ['code' => $r->customer->code, 'name' => $r->customer->full_name] : null,
+            'spr'          => $r->unit_id ? ($sprByUnit[$r->unit_id] ?? null) : null,
+            'unit'         => $r->unit?->unit_code,
+            'description'  => $r->description,
+            'dpp'          => $dpp,
+            'ppn'          => round($total - $dpp, 2),
+            'total'        => $total,
+        ];
+    }
+
+    /**
+     * No. SPR (booking_number) dari booking TERAKHIR per unit, untuk sekumpulan unit sekaligus.
+     *
+     * @param  array<int,int>  $unitIds
+     * @return array<int,string>  unit_id => booking_number
+     */
+    private function sprByUnit(array $unitIds): array
+    {
+        if ($unitIds === []) {
+            return [];
+        }
+
+        return \App\Domain\Sales\Booking\Models\Booking::query()
+            ->whereIn('unit_id', $unitIds)
+            ->whereNull('deleted_at')
+            ->latest('id')
+            ->get(['id', 'unit_id', 'booking_number'])
+            ->groupBy('unit_id')
+            ->map(fn ($g) => $g->first()->booking_number)
+            ->all();
     }
 
     public function create(Request $request): Response
@@ -230,60 +275,54 @@ class BookedRevenueController extends Controller
         $bookedRevenue->load([
             'customer:id,code,full_name,phone,email',
             'unit:id,unit_code,base_price,current_price',
-            'deferredAccount:id,code,name',
             'bookingJournal:id,journal_number,journal_date,total_debit',
-            'recognitionJournal:id,journal_number,journal_date,total_debit',
         ]);
 
         return Inertia::render('BusinessSupport/BookedRevenue/Show', [
             'br' => [
-                'id'            => $bookedRevenue->id,
-                'br_number'     => $bookedRevenue->br_number,
-                'booking_date'  => $bookedRevenue->booking_date?->toDateString(),
-                'gross_price'   => (float) $bookedRevenue->gross_price,
-                'discount'      => (float) $bookedRevenue->discount,
-                'amount'        => (float) $bookedRevenue->amount,
-                'status'        => $bookedRevenue->status,
-                'reference'     => $bookedRevenue->reference,
-                'description'   => $bookedRevenue->description,
-                'recognized_at' => $bookedRevenue->recognized_at?->toDateString(),
-                'cancelled_at'  => $bookedRevenue->cancelled_at?->toDateString(),
-                'customer'      => $bookedRevenue->customer ? [
+                'id'           => $bookedRevenue->id,
+                'br_number'    => $bookedRevenue->br_number,
+                'booking_date' => $bookedRevenue->booking_date?->toDateString(),
+                'gross_price'  => (float) $bookedRevenue->gross_price,
+                'discount'     => (float) $bookedRevenue->discount,
+                'amount'       => (float) $bookedRevenue->amount,
+                'reference'    => $bookedRevenue->reference,
+                'description'  => $bookedRevenue->description,
+                'customer'     => $bookedRevenue->customer ? [
                     'code' => $bookedRevenue->customer->code, 'name' => $bookedRevenue->customer->full_name,
                     'phone' => $bookedRevenue->customer->phone, 'email' => $bookedRevenue->customer->email,
                 ] : null,
-                'unit'          => $bookedRevenue->unit?->unit_code,
-                'deferred'      => $bookedRevenue->deferredAccount ? $bookedRevenue->deferredAccount->code.' — '.$bookedRevenue->deferredAccount->name : null,
-                'booking_journal'     => $bookedRevenue->bookingJournal?->journal_number,
-                'recognition_journal' => $bookedRevenue->recognitionJournal?->journal_number,
+                'unit'            => $bookedRevenue->unit?->unit_code,
+                'booking_journal' => $bookedRevenue->bookingJournal?->journal_number,
             ],
         ]);
     }
 
-    public function recognize(Request $request, BsBookedRevenue $bookedRevenue, BookedRevenueService $svc): RedirectResponse
+    /**
+     * Edit rincian Booked Revenue — HANYA metadata (tanggal, referensi, keterangan).
+     *
+     * Nilai (harga/diskon/DPP/PPN) dan jurnal yang sudah diposting SENGAJA terkunci: booking
+     * bersifat tidak bisa dikembalikan, dan satu jurnal bisa dipakai bersama beberapa unit —
+     * mengubah nilai satu record akan membuat jurnal bersama itu tidak balance. Jadi di sini
+     * jurnal tidak pernah disentuh (keputusan pemilik proses).
+     */
+    public function update(Request $request, BsBookedRevenue $bookedRevenue): RedirectResponse
     {
         abort_unless($request->user()?->canModule('ar'), 403);
 
-        try {
-            $svc->recognize($bookedRevenue, $request->user()->id);
-        } catch (BusinessRuleException $e) {
-            return back()->with('error', $e->getMessage());
-        }
+        $v = $request->validate([
+            'booking_date' => ['required', 'date'],
+            'reference'    => ['nullable', 'string', 'max:150'],
+            'description'  => ['nullable', 'string', 'max:200'],
+        ]);
 
-        return back()->with('success', "Pendapatan {$bookedRevenue->br_number} diakui — jurnal otomatis (Dr Pendapatan Diterima Dimuka / Cr Penjualan Usaha).");
-    }
+        $bookedRevenue->update([
+            'booking_date' => $v['booking_date'],
+            'reference'    => $v['reference'] ?? null,
+            'description'  => $v['description'] ?? null,
+        ]);
 
-    public function cancel(Request $request, BsBookedRevenue $bookedRevenue, BookedRevenueService $svc): RedirectResponse
-    {
-        abort_unless($request->user()?->canModule('ar'), 403);
-
-        try {
-            $svc->cancel($bookedRevenue, $request->user()->id);
-        } catch (BusinessRuleException $e) {
-            return back()->with('error', $e->getMessage());
-        }
-
-        return back()->with('success', "Booked Revenue {$bookedRevenue->br_number} dibatalkan — jurnal balik diposting.");
+        return back()->with('success', "Rincian {$bookedRevenue->br_number} diperbarui. Nilai & jurnal tidak berubah (terkunci).");
     }
 
     // ── Report / Query: rekap keseluruhan Booked Revenue per unit ──
