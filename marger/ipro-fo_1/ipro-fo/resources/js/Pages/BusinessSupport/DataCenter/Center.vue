@@ -1,8 +1,8 @@
-<!-- Data Center: landing per sub-modul (Customer / Supplier / Employee Center) -->
+<!-- Data Center: landing per sub-modul (Supplier / Employee Center) -->
 <script setup lang="ts">
 import { computed } from 'vue';
 import { Link } from '@inertiajs/vue3';
-import { ArrowLeft, Users, Truck, IdCard } from 'lucide-vue-next';
+import { ArrowLeft, Truck, IdCard } from 'lucide-vue-next';
 import Badge from '@/Components/UI/Badge.vue';
 
 const props = defineProps<{ center: string; title: string }>();
@@ -12,19 +12,11 @@ function r(name?: string | null, params?: Record<string, any>): string | null {
     try { return route(name, params); } catch { return null; }
 }
 
-const icons: Record<string, any> = { customer: Users, supplier: Truck, employee: IdCard };
+// Customer Center DIHILANGKAN — data customer dikelola di sub-modul Customer (Marketing & Sales).
+const icons: Record<string, any> = { supplier: Truck, employee: IdCard };
 
 const items = computed<Array<{ label: string; route: string | null }>>(() => {
     const map: Record<string, Array<{ label: string; route: string | null }>> = {
-        customer: [
-            { label: 'Customer', route: r('customers.index') },
-            { label: 'Registrasi Customer', route: r('customers.create') },
-            { label: 'Customer Info (CIF)', route: r('cif.index') },
-            { label: 'Merge Customer', route: r('customers.merge') },
-            { label: 'Upload Customer', route: r('customers.upload') },
-            { label: 'Repair Data Customer', route: r('bs.dc.customer.repair') },
-            { label: 'Print-Out', route: r('bs.dc.customer.printout') },
-        ],
         supplier: [
             { label: 'Supplier', route: r('bs.suppliers.index') },
             { label: 'Laporan Master Supplier', route: r('bs.dc.supplier.report') },

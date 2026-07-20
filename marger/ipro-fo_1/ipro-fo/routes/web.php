@@ -10,7 +10,6 @@ use App\Http\Controllers\Web\BankLoan\MasterDataKprController;
 use App\Http\Controllers\Web\BankLoan\Setup\KprBankController;
 use App\Http\Controllers\Web\BankLoan\Setup\AnalisaAspectController;
 use App\Http\Controllers\Web\BankLoan\Setup\RetentionCategoryController;
-use App\Http\Controllers\Web\BusinessSupport\BusinessSupportController;
 use App\Http\Controllers\Web\BusinessSupport\Setup\AccountController as BsAccountController;
 use App\Http\Controllers\Web\BusinessSupport\Setup\CostCenterController as BsCostCenterController;
 use App\Http\Controllers\Web\BusinessSupport\Setup\CurrencyController as BsCurrencyController;
@@ -40,7 +39,6 @@ use App\Http\Controllers\Web\BusinessSupport\Payable\PostingInvoiceController as
 use App\Http\Controllers\Web\BusinessSupport\Payable\PenghapusanController as BsApPenghapusanController;
 use App\Http\Controllers\Web\BusinessSupport\Payable\ApBerkasController as BsApBerkasController;
 use App\Http\Controllers\Web\BusinessSupport\Receivable\ArInvoiceController as BsArController;
-use App\Http\Controllers\Web\BusinessSupport\Receivable\ArCategoryController as BsArCategoryController;
 use App\Http\Controllers\Web\BusinessSupport\Receivable\ArKuitansiController as BsArKuitansiController;
 use App\Http\Controllers\Web\BusinessSupport\Receivable\ArMemorialController as BsArMemorialController;
 use App\Http\Controllers\Web\BusinessSupport\Receivable\ArPenghapusanController as BsArPenghapusanController;
@@ -84,7 +82,7 @@ use App\Http\Controllers\Web\BusinessSupport\SubModuleSectionController as BsSec
 use App\Http\Controllers\Web\BusinessSupport\DataCenter\DataCenterController as BsDataCenterController;
 use App\Http\Controllers\Web\BusinessSupport\DataCenter\SupplierCenterController as BsSupplierCenterController;
 use App\Http\Controllers\Web\BusinessSupport\DataCenter\EmployeeCenterController as BsEmployeeCenterController;
-use App\Http\Controllers\Web\BusinessSupport\DataCenter\CustomerCenterController as BsCustomerCenterController;
+// CustomerCenterController DIHILANGKAN — Customer Center dikelola lewat sub-modul Customer (Marketing & Sales).
 use App\Http\Controllers\Web\BusinessSupport\Cogs\CogsSetupController as BsCogsSetupController;
 use App\Http\Controllers\Web\BusinessSupport\Cogs\CogsBudgetMutationController as BsCogsMutationController;
 use App\Http\Controllers\Web\BusinessSupport\Cogs\CogsRealizationController as BsCogsRealizationController;
@@ -428,7 +426,8 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
     Route::delete('/kpr/setup/berkas-tidak-lengkap/{category}',[\App\Http\Controllers\Web\BankLoan\Setup\BerkasIncompleteCategoryController::class, 'destroy'])->name('kpr.setup.berkas-tidak-lengkap.destroy');
 
     // ── BUSINESS SUPPORT (Back-Office Akuntansi) ───────────
-    Route::get('/business-support',                           [BusinessSupportController::class, 'index'])->name('bs.index');
+    // Halaman hub "Business Support" (bs.index) & Module (bs.module) DIHILANGKAN — navigasi antar
+    // modul lewat sidebar; back-link "← Business Support" ikut dibuang dari semua halaman.
     Route::get('/business-support/setup/accounts',            [BsAccountController::class, 'index'])->name('bs.accounts.index');
     Route::post('/business-support/setup/accounts',           [BsAccountController::class, 'store'])->name('bs.accounts.store');
     Route::put('/business-support/setup/accounts/{account}',  [BsAccountController::class, 'update'])->name('bs.accounts.update');
@@ -661,16 +660,11 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
     Route::post('/business-support/payable/{invoice}/pay',    [BsApController::class, 'pay'])->name('bs.ap.pay');
 
     // ── ACCOUNT RECEIVABLE (Piutang) ──
+    // Registrasi manual (create/store) & Kategori Invoice DIHILANGKAN: invoice piutang dibentuk
+    // otomatis dari Booked Revenue (lihat CreateArInvoiceFromBooking), tidak bisa ditambah manual.
     Route::get('/business-support/receivable',                [BsArController::class, 'index'])->name('bs.ar.index');
-    Route::get('/business-support/receivable/create',         [BsArController::class, 'create'])->name('bs.ar.create');
-    Route::post('/business-support/receivable',               [BsArController::class, 'store'])->name('bs.ar.store');
     Route::get('/business-support/receivable-aging',          [BsArController::class, 'aging'])->name('bs.ar.aging');
     Route::get('/business-support/receivable-kartu',          [BsArController::class, 'card'])->name('bs.ar.card');
-    // AR — Kategori Invoice (setup)
-    Route::get('/business-support/receivable-kategori',       [BsArCategoryController::class, 'index'])->name('bs.ar.categories.index');
-    Route::post('/business-support/receivable-kategori',      [BsArCategoryController::class, 'store'])->name('bs.ar.categories.store');
-    Route::put('/business-support/receivable-kategori/{category}', [BsArCategoryController::class, 'update'])->name('bs.ar.categories.update');
-    Route::delete('/business-support/receivable-kategori/{category}', [BsArCategoryController::class, 'destroy'])->name('bs.ar.categories.destroy');
     // AR — Kuitansi Piutang
     Route::get('/business-support/receivable-kuitansi',       [BsArKuitansiController::class, 'index'])->name('bs.ar.kuitansi.index');
     Route::get('/business-support/receivable-kuitansi/create', [BsArKuitansiController::class, 'create'])->name('bs.ar.kuitansi.create');
@@ -698,6 +692,8 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
     Route::get('/business-support/receivable-rekonsiliasi/tagihan', [BsArRekonsiliasiController::class, 'printTagihan'])->name('bs.ar.rekonsiliasi.tagihan');
     // AR — kaitkan/lepas SPR pada invoice yang sudah tercatat (invoice lama ber-booking_id NULL).
     Route::patch('/business-support/receivable-spr/{invoice}', [BsArController::class, 'linkSpr'])->name('bs.ar.link-spr');
+    // AR — edit rincian invoice: HANYA metadata (nilai & jurnal terkunci).
+    Route::patch('/business-support/receivable-edit/{invoice}', [BsArController::class, 'update'])->name('bs.ar.update');
     Route::get('/business-support/receivable/{invoice}',      [BsArController::class, 'show'])->name('bs.ar.show');
     Route::post('/business-support/receivable/{invoice}/pay', [BsArController::class, 'pay'])->name('bs.ar.pay');
     Route::post('/business-support/receivable/{invoice}/reschedule', [BsArController::class, 'reschedule'])->name('bs.ar.reschedule');
@@ -976,15 +972,12 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
     // ── DATA CENTER (modul mandiri; Customer + Supplier + Employee Center) ──
     Route::redirect('/data-center', '/business-support/data-center-hub')->name('datacenter.home');
     Route::get('/business-support/data-center-hub',            [BsDataCenterController::class, 'hub'])->name('bs.dc.home');
-    Route::get('/business-support/data-center/customer',       [BsDataCenterController::class, 'center'])->defaults('center', 'customer')->name('bs.dc.customer.center');
+    // Customer Center DIHILANGKAN (center/printout/repair) — data customer dikelola lewat sub-modul
+    // Customer di Marketing & Sales (customers.* / cif.*), tidak dikelola dua kali di Data Center.
     Route::get('/business-support/data-center/supplier',       [BsDataCenterController::class, 'center'])->defaults('center', 'supplier')->name('bs.dc.supplier.center');
     Route::get('/business-support/data-center/employee',       [BsDataCenterController::class, 'center'])->defaults('center', 'employee')->name('bs.dc.employee.center');
-    Route::get('/business-support/dc-customer-printout',       [BsDataCenterController::class, 'printout'])->defaults('center', 'customer')->name('bs.dc.customer.printout');
     Route::get('/business-support/dc-supplier-printout',       [BsDataCenterController::class, 'printout'])->defaults('center', 'supplier')->name('bs.dc.supplier.printout');
     Route::get('/business-support/dc-employee-printout',       [BsDataCenterController::class, 'printout'])->defaults('center', 'employee')->name('bs.dc.employee.printout');
-    // Customer Center — Repair (list/registrasi/merge/upload sudah di customers.*)
-    Route::get('/business-support/dc-customer-repair',         [BsCustomerCenterController::class, 'repair'])->name('bs.dc.customer.repair');
-    Route::post('/business-support/dc-customer-repair/run',    [BsCustomerCenterController::class, 'repairRun'])->name('bs.dc.customer.repair.run');
     // Supplier Center
     Route::get('/business-support/dc-supplier-report',         [BsSupplierCenterController::class, 'report'])->name('bs.dc.supplier.report');
     Route::get('/business-support/dc-supplier-merge',          [BsSupplierCenterController::class, 'mergeForm'])->name('bs.dc.supplier.merge');
@@ -1017,8 +1010,9 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
     Route::get('/business-support/booked-revenue/create',               [BsBookedRevenueController::class, 'create'])->name('bs.booked-revenue.create');
     Route::post('/business-support/booked-revenue',                      [BsBookedRevenueController::class, 'store'])->name('bs.booked-revenue.store');
     Route::get('/business-support/booked-revenue/{bookedRevenue}',       [BsBookedRevenueController::class, 'show'])->name('bs.booked-revenue.show');
-    Route::post('/business-support/booked-revenue/{bookedRevenue}/recognize', [BsBookedRevenueController::class, 'recognize'])->name('bs.booked-revenue.recognize');
-    Route::post('/business-support/booked-revenue/{bookedRevenue}/cancel',    [BsBookedRevenueController::class, 'cancel'])->name('bs.booked-revenue.cancel');
+    // Edit rincian — HANYA metadata (tanggal/referensi/keterangan). Nilai & jurnal terkunci;
+    // tidak ada lagi jalur "akui pendapatan" maupun "batalkan" (booking tak bisa dikembalikan).
+    Route::patch('/business-support/booked-revenue/{bookedRevenue}',     [BsBookedRevenueController::class, 'update'])->name('bs.booked-revenue.update');
     Route::get('/business-support/booked-revenue-control/bast', [BsBookedRevenueController::class, 'controlBast'])->name('bs.booked-revenue.control.bast');
     Route::get('/business-support/booked-revenue-control/ajb',  [BsBookedRevenueController::class, 'controlAjb'])->name('bs.booked-revenue.control.ajb');
     Route::get('/business-support/booked-revenue-control/fp',   [BsBookedRevenueController::class, 'controlFakturPajak'])->name('bs.booked-revenue.control.fp');
@@ -1118,8 +1112,6 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
     Route::post('/business-support/spk/{workOrder}/cancel',      [BsSpkController::class, 'cancel'])->name('bs.spk.cancel');
     Route::post('/business-support/spk/{workOrder}/material',    [BsSpkController::class, 'useMaterial'])->name('bs.spk.material');
     Route::post('/business-support/spk/{workOrder}/mutate-progress', [BsSpkController::class, 'mutateProgress'])->name('bs.spk.mutate-progress');
-
-    Route::get('/business-support/module/{key}',              [BusinessSupportController::class, 'module'])->name('bs.module');
 
     // ── BANK LOAN — INISIASI KPR (pra-kualifikasi 7 tahap → Draft KPR) ──
     Route::get('/kpr-inisiasi',                               [\App\Http\Controllers\Web\BankLoan\KprInitiationController::class, 'index'])->name('kpr.initiation.index');

@@ -56,17 +56,16 @@ function fmtDate(d: string | null) { return d ? new Date(d).toLocaleDateString('
 </script>
 <template>
     <div class="space-y-4">
-        <Link :href="route('bs.index')" class="inline-flex items-center gap-2 text-sm text-neutral-500 hover:text-neutral-800 dark:hover:text-neutral-200"><ArrowLeft class="h-4 w-4" /> Business Support</Link>
         <div class="flex items-center justify-between">
             <h1 class="flex items-center gap-2 text-2xl font-bold"><Coins class="h-6 w-6 text-success-600" /> Account Receivable <span class="text-base font-normal text-neutral-400">(Piutang Usaha)</span></h1>
+            <!-- "Kategori" & "Invoice" (registrasi manual) DIHILANGKAN: invoice piutang dibentuk
+                 otomatis dari Booked Revenue, tidak bisa ditambah manual. -->
             <div class="flex flex-wrap gap-2">
-                <Link :href="route('bs.ar.categories.index')" class="inline-flex h-9 items-center gap-1.5 rounded-lg border border-neutral-300 px-3 text-sm font-medium hover:bg-neutral-50 dark:border-neutral-700"><Tags class="h-4 w-4" /> Kategori</Link>
                 <Link :href="route('bs.ar.aging')" class="inline-flex h-9 items-center gap-1.5 rounded-lg border border-neutral-300 px-3 text-sm font-medium hover:bg-neutral-50 dark:border-neutral-700"><CalendarClock class="h-4 w-4" /> Aging</Link>
                 <Link :href="route('bs.ar.card')" class="inline-flex h-9 items-center gap-1.5 rounded-lg border border-neutral-300 px-3 text-sm font-medium hover:bg-neutral-50 dark:border-neutral-700"><BookText class="h-4 w-4" /> Kartu</Link>
                 <Link :href="route('bs.ar.memorial.index')" class="inline-flex h-9 items-center gap-1.5 rounded-lg border border-neutral-300 px-3 text-sm font-medium hover:bg-neutral-50 dark:border-neutral-700"><FileText class="h-4 w-4" /> Memorial</Link>
                 <Link :href="route('bs.ar.penghapusan.index')" class="inline-flex h-9 items-center gap-1.5 rounded-lg border border-neutral-300 px-3 text-sm font-medium hover:bg-neutral-50 dark:border-neutral-700"><Eraser class="h-4 w-4" /> Hapus</Link>
                 <Link :href="route('bs.ar.kuitansi.index')" class="inline-flex h-9 items-center gap-1.5 rounded-lg border border-neutral-300 px-3 text-sm font-medium hover:bg-neutral-50 dark:border-neutral-700"><ReceiptText class="h-4 w-4" /> Kuitansi</Link>
-                <Link :href="route('bs.ar.create')"><Button><template #icon-left><Plus class="h-4 w-4" /></template>Invoice</Button></Link>
             </div>
         </div>
 

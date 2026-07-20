@@ -9,6 +9,7 @@ use App\Domain\Master\Unit\Models\Unit;
 use App\Support\Traits\HasTenant;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
 /**
@@ -44,6 +45,9 @@ class BsBookedRevenue extends Model
     public function deferredAccount(): BelongsTo { return $this->belongsTo(BsAccount::class, 'deferred_account_id'); }
 
     public function bookingJournal(): BelongsTo { return $this->belongsTo(BsJournal::class, 'booking_journal_id'); }
+
+    /** Invoice Piutang yang dibentuk otomatis dari Booked Revenue ini (1:1). */
+    public function arInvoice(): HasOne { return $this->hasOne(BsArInvoice::class, 'booked_revenue_id'); }
 
     public function recognitionJournal(): BelongsTo { return $this->belongsTo(BsJournal::class, 'recognition_journal_id'); }
 

@@ -5,9 +5,7 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Web\BusinessSupport\Receivable;
 
 use App\Domain\BusinessSupport\Actions\PayArInvoice;
-use App\Domain\BusinessSupport\Actions\RegisterArInvoice;
 use App\Domain\BusinessSupport\Models\BsAccount;
-use App\Domain\BusinessSupport\Models\BsArCategory;
 use App\Domain\BusinessSupport\Models\BsArInvoice;
 use App\Domain\Master\Customer\Models\Customer;
 use App\Domain\Sales\Booking\Models\Booking;
@@ -137,95 +135,65 @@ class ArInvoiceController extends Controller
             : "Kaitan SPR pada invoice {$invoice->invoice_number} dilepas.");
     }
 
-    public function create(Request $request): Response
-    {
-        abort_unless($request->user()?->canModule('ar'), 403);
-
-        return Inertia::render('BusinessSupport/Receivable/Form', [
-            'customers'  => Customer::orderBy('full_name')->limit(1000)->get(['id', 'code', 'full_name']),
-            'categories' => BsArCategory::where('is_active', true)->with(['incomeAccount:id,code,name', 'receivableAccount:id,code,name'])->orderBy('name')->get()
-                ->map(fn ($c) => [
-                    'id' => $c->id, 'code' => $c->code, 'name' => $c->name,
-                    'income' => $c->incomeAccount?->code.' - '.$c->incomeAccount?->name,
-                    'receivable' => $c->receivableAccount?->code.' - '.$c->receivableAccount?->name,
-                ]),
-            'pphAccounts' => BsAccount::where('is_active', true)->where('is_postable', true)->where('code', 'like', '1010502%')->orderBy('code')->get(['id', 'code', 'name']),
-            'trxTypes'    => BsArInvoice::TRX_TYPES,
-            // Daftar SPR untuk dikaitkan ke invoice (opsional). Label memuat unit + customer supaya
-            // petugas tidak perlu menghafal nomor SPR.
-            'bookings'    => Booking::query()
-                ->with(['unit:id,unit_code', 'customer:id,full_name'])
-                ->latest('booking_date')->limit(1000)->get()
-                ->map(fn (Booking $b) => [
-                    'id'          => $b->id,
-                    'code'        => $b->booking_number,
-                    'name'        => trim(implode(' · ', array_filter([$b->unit?->unit_code, $b->customer?->full_name]))),
-                    'customer_id' => $b->customer_id,
-                ]),
-        ]);
-    }
-
-    public function store(Request $request, RegisterArInvoice $action): RedirectResponse
-    {
-        abort_unless($request->user()?->canModule('ar'), 403);
-
-        $v = $request->validate([
-            'customer_id'         => ['required', 'integer', 'exists:customers,id'],
-            // SPR opsional: invoice denda / saldo awal / tagihan non-unit memang tidak punya SPR.
-            // Bila diisi, barisnya ikut terhitung di Rekonsiliasi Piutang per SPR.
-            'booking_id'          => ['nullable', 'integer', 'exists:bookings,id'],
-            'category_id'         => ['required', 'integer', 'exists:bs_ar_categories,id'],
-            'trx_type'            => ['required', 'in:normal,denda,saldo_awal'],
-            'customer_ref_no'     => ['nullable', 'string', 'max:80'],
-            'manual_no'           => ['nullable', 'string', 'max:80'],
-            'invoice_date'        => ['required', 'date'],
-            'receive_date'        => ['nullable', 'date'],
-            'due_date'            => ['nullable', 'date', 'after_or_equal:invoice_date'],
-            'term_days'           => ['nullable', 'integer', 'min:0', 'max:3650'],
-            'description'         => ['required', 'string', 'max:255'],
-            'transfer_detail'     => ['nullable', 'string', 'max:255'],
-            'kurs'                => ['nullable', 'numeric', 'min:0'],
-            'dpp'                 => ['required', 'numeric', 'min:0.01'],
-            'ppn_mode'            => ['required', 'in:none,with'],
-            'ppn_pct'             => ['nullable', 'numeric', 'min:0', 'max:100'],
-            'pph_mode'            => ['required', 'in:none,withheld'],
-            'pph_pct'             => ['nullable', 'numeric', 'min:0', 'max:100'],
-            'pph_account_id'      => ['nullable', 'integer', 'exists:bs_accounts,id'],
-            'lines'                  => ['nullable', 'array'],
-            'lines.*.description'    => ['required_with:lines', 'string', 'max:200'],
-            'lines.*.qty'            => ['nullable', 'numeric', 'min:0'],
-            'lines.*.unit_price'     => ['nullable', 'numeric', 'min:0'],
-            'lines.*.amount'         => ['required_with:lines', 'numeric', 'min:0'],
-            'schedules'              => ['nullable', 'array'],
-            'schedules.*.due_date'   => ['required_with:schedules', 'date'],
-            'schedules.*.amount'     => ['required_with:schedules', 'numeric', 'min:0.01'],
-        ]);
-
-        try {
-            $inv = $action->execute($v, $request->user()->id);
-        } catch (BusinessRuleException $e) {
-            return back()->withInput()->with('error', $e->getMessage());
-        }
-
-        return redirect()->route('bs.ar.show', $inv)->with('success', "Tagihan piutang {$inv->invoice_number} tercatat — jurnal otomatis terbentuk.");
-    }
+    // create() & store() DIHILANGKAN: invoice piutang tidak dibuat manual lagi. Ia dibentuk otomatis
+    // saat unit di-booking di modul Booked Revenue (lihat CreateArInvoiceFromBooking) — satu sumber,
+    // tidak ada risiko piutang ganda maupun nilai yang menyimpang dari Booked Revenue.
 
     public function show(Request $request, BsArInvoice $invoice): Response
     {
         abort_unless($request->user()?->canModule('ar'), 403);
 
+        // Rincian disamakan dengan "Sudah Booked Revenue": tampilkan SPR + unit (turunan booking),
+        // bukan Kategori (konsep kategori invoice sudah dihapus).
         $invoice->load([
-            'customer:id,code,full_name', 'category:id,code,name',
+            'customer:id,code,full_name',
+            'booking:id,booking_number,unit_id', 'booking.unit:id,unit_code',
             'lines', 'schedules' => fn ($q) => $q->orderBy('installment_no'),
             'payments' => fn ($q) => $q->latest('payment_date')->latest('id'),
         ]);
 
         return Inertia::render('BusinessSupport/Receivable/Show', [
-            'invoice'      => array_merge($invoice->toArray(), ['receivable_amount' => $invoice->receivable_amount]),
+            // Tanggal dikirim sebagai yyyy-mm-dd (toDateString), BUKAN ISO berwaktu dari toArray():
+            // cast 'date' pada tengah malam WIB berserialisasi jadi UTC "…T17:00:00Z" — memotong 10
+            // karakter darinya justru MUNDUR sehari, dan <input type=date> menolaknya. toDateString()
+            // memberi tanggal kalender yang benar (sama seperti baris daftar & Booked Revenue).
+            'invoice'      => array_merge($invoice->toArray(), [
+                'receivable_amount' => $invoice->receivable_amount,
+                'invoice_date'      => optional($invoice->invoice_date)->toDateString(),
+                'due_date'          => optional($invoice->due_date)->toDateString(),
+                'receive_date'      => optional($invoice->receive_date)->toDateString(),
+            ]),
             'outstanding'  => (float) $invoice->outstanding,
             'cashAccounts' => BsAccount::where('is_active', true)->where('is_postable', true)->where('code', 'like', '101010%')->orderBy('code')->get(['id', 'code', 'name']),
             'defaultCash'  => $this->accId('cash'),
         ]);
+    }
+
+    /**
+     * Edit rincian invoice piutang — HANYA metadata (tanggal, jatuh tempo, keterangan, no. ref).
+     *
+     * Nilai (DPP/PPN/PPh/total) dan jurnal pendaftaran yang sudah diposting SENGAJA terkunci —
+     * sama seperti Booked Revenue: tagihan tak bisa dikembalikan, hanya keterangannya yang dirapikan.
+     */
+    public function update(Request $request, BsArInvoice $invoice): RedirectResponse
+    {
+        abort_unless($request->user()?->canModule('ar'), 403);
+
+        $v = $request->validate([
+            'invoice_date'    => ['required', 'date'],
+            'due_date'        => ['nullable', 'date', 'after_or_equal:invoice_date'],
+            'description'     => ['required', 'string', 'max:255'],
+            'customer_ref_no' => ['nullable', 'string', 'max:80'],
+        ]);
+
+        $invoice->update([
+            'invoice_date'    => $v['invoice_date'],
+            'due_date'        => $v['due_date'] ?? null,
+            'description'     => $v['description'],
+            'customer_ref_no' => $v['customer_ref_no'] ?? null,
+        ]);
+
+        return back()->with('success', "Rincian {$invoice->invoice_number} diperbarui. Nilai & jurnal tidak berubah (terkunci).");
     }
 
     public function pay(Request $request, BsArInvoice $invoice, PayArInvoice $action): RedirectResponse

@@ -139,7 +139,30 @@ const allFilteredChecked = computed(() => filtered.value.length > 0 && filtered.
 function toggleAll() { const v = !allFilteredChecked.value; filtered.value.forEach((r) => (r.checked = v)); }
 function openPicker() { search.value = ''; showPicker.value = true; }
 
+// Nama akun untuk pratinjau ("kode — nama").
+const accountById = computed<Record<number, string>>(() => {
+    const m: Record<number, string> = {};
+    for (const a of props.accounts) m[a.id] = `${a.code} — ${a.name}`;
+    return m;
+});
+
+// Susunan jurnal yang BENAR-BENAR akan diposting (baris terisi saja) — untuk pop-up konfirmasi,
+// supaya yang muncul sama persis dengan yang tercatat ke buku besar, bukan ringkasan lain.
+const journalPreview = computed(() => {
+    const out: Array<{ label: string; debit: number; credit: number }> = [];
+    for (const r of debits) if (r.account_id && (Number(r.amount) || 0) > 0) out.push({ label: accountById.value[r.account_id as number] ?? '—', debit: Number(r.amount), credit: 0 });
+    for (const r of credits) if (r.account_id && (Number(r.amount) || 0) > 0) out.push({ label: accountById.value[r.account_id as number] ?? '—', debit: 0, credit: Number(r.amount) });
+    return out;
+});
+
+// Konfirmasi memposting: tampilkan dulu susunan jurnal, baru kirim.
+const showConfirm = ref(false);
+function openConfirm() {
+    if (form.processing || !selected.value.length || !journalBalanced.value || filledLines.value < 2) return;
+    showConfirm.value = true;
+}
 function submit() {
+    showConfirm.value = false;
     form.transform((d: any) => ({
         ...d,
         units: selected.value.map((r) => ({ unit_id: r.id, discount: r.discount || 0 })),
@@ -158,7 +181,7 @@ const inputCls = 'h-10 w-full rounded-lg border border-neutral-300 bg-white px-3
         <Link :href="route('bs.booked-revenue.index')" class="inline-flex items-center gap-2 text-sm text-neutral-500 hover:text-neutral-800 dark:hover:text-neutral-200"><ArrowLeft class="h-4 w-4" /> Booked Revenue</Link>
         <h1 class="flex items-center gap-2 text-2xl font-bold"><CircleDollarSign class="h-6 w-6 text-primary-600" /> Booking Pendapatan Baru <span class="text-base font-normal text-neutral-400">(massal)</span></h1>
 
-        <form @submit.prevent="submit" class="space-y-4">
+        <form @submit.prevent="openConfirm" class="space-y-4">
             <!-- Header -->
             <div class="card space-y-4 p-6">
                 <div class="grid gap-4 sm:grid-cols-2">
@@ -306,6 +329,55 @@ const inputCls = 'h-10 w-full rounded-lg border border-neutral-300 bg-white px-3
                 <Button type="submit" :disabled="form.processing || !selected.length || !journalBalanced || filledLines < 2"><template #icon-left><Save class="h-4 w-4" /></template>Booking {{ selected.length || '' }} Unit &amp; Posting Jurnal</Button>
             </div>
         </form>
+
+        <!-- Modal: Konfirmasi Posting Jurnal — menampilkan SUSUNAN jurnal yang akan diposting,
+             persis seperti yang akan tercatat ke buku besar. -->
+        <Teleport to="body">
+            <div v-if="showConfirm" class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" @click.self="showConfirm = false">
+                <div class="flex max-h-[85vh] w-full max-w-2xl flex-col rounded-xl bg-white shadow-xl dark:bg-neutral-900">
+                    <div class="flex items-center justify-between border-b border-neutral-200 px-5 py-3 dark:border-neutral-800">
+                        <h2 class="flex items-center gap-2 text-lg font-bold"><BookText class="h-5 w-5 text-primary-600" /> Konfirmasi Posting Jurnal</h2>
+                        <button type="button" @click="showConfirm = false" class="text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200"><X class="h-5 w-5" /></button>
+                    </div>
+                    <div class="border-b border-neutral-200 px-5 py-3 text-sm text-neutral-500 dark:border-neutral-800">
+                        {{ selected.length }} unit · tanggal {{ form.booking_date }} · total revenue
+                        <span class="font-semibold text-primary-600">{{ fmtRp(total) }}</span>. Jurnal berikut akan
+                        diposting ke buku besar dan <strong>tidak bisa dikembalikan</strong>.
+                    </div>
+                    <div class="flex-1 overflow-y-auto px-5 py-3">
+                        <table class="w-full text-sm">
+                            <thead><tr class="text-left text-xs uppercase text-neutral-500">
+                                <th class="py-2">Akun</th><th class="py-2 text-right">Debit</th><th class="py-2 text-right">Kredit</th>
+                            </tr></thead>
+                            <tbody class="divide-y divide-neutral-100 dark:divide-neutral-800">
+                                <tr v-for="(l, i) in journalPreview" :key="i">
+                                    <td class="py-2 pr-3">{{ l.label }}</td>
+                                    <td class="py-2 text-right font-mono tabular-nums">{{ l.debit ? fmtRp(l.debit) : '' }}</td>
+                                    <td class="py-2 text-right font-mono tabular-nums">{{ l.credit ? fmtRp(l.credit) : '' }}</td>
+                                </tr>
+                            </tbody>
+                            <tfoot>
+                                <tr class="border-t-2 border-neutral-300 font-semibold dark:border-neutral-600">
+                                    <td class="py-2">Total</td>
+                                    <td class="py-2 text-right font-mono tabular-nums">{{ fmtRp(totalDebit) }}</td>
+                                    <td class="py-2 text-right font-mono tabular-nums">{{ fmtRp(totalCredit) }}</td>
+                                </tr>
+                            </tfoot>
+                        </table>
+                    </div>
+                    <div class="flex items-center justify-between gap-3 border-t border-neutral-200 px-5 py-3 dark:border-neutral-800">
+                        <span class="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-sm font-semibold"
+                              :class="journalBalanced ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300' : 'bg-rose-100 text-rose-700 dark:bg-rose-900/40 dark:text-rose-300'">
+                            <Check v-if="journalBalanced" class="h-4 w-4" /><Scale v-else class="h-4 w-4" /> {{ journalBalanced ? 'Balance' : 'Belum balance' }}
+                        </span>
+                        <div class="flex gap-2">
+                            <button type="button" @click="showConfirm = false" class="rounded-lg border border-neutral-300 px-4 py-2 text-sm dark:border-neutral-700">Batal</button>
+                            <Button type="button" :disabled="form.processing || !journalBalanced" @click="submit"><template #icon-left><Save class="h-4 w-4" /></template>Posting Jurnal</Button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </Teleport>
 
         <!-- Modal: Pilih Unit Rumah -->
         <Teleport to="body">

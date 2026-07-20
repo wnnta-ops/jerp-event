@@ -19,7 +19,6 @@ function switchMode(k: string) { router.get(route('bs.bulk.form', k)); }
     <div class="max-w-2xl space-y-4">
         <div class="flex items-center justify-between">
             <h1 class="flex items-center gap-2 text-2xl font-bold"><FileSpreadsheet class="h-6 w-6 text-primary-600" /> Upload Massal</h1>
-            <Link :href="route('bs.index')" class="inline-flex items-center gap-2 text-sm text-neutral-500 hover:text-neutral-800 dark:hover:text-neutral-200"><ArrowLeft class="h-4 w-4" /> Business Support</Link>
         </div>
         <div class="flex flex-wrap gap-2">
             <button v-for="m in modes" :key="m.key" @click="switchMode(m.key)" class="rounded-lg border px-3 py-1.5 text-sm font-medium" :class="mode === m.key ? 'border-primary-500 bg-primary-50 text-primary-700 dark:bg-primary-900/20 dark:text-primary-300' : 'border-neutral-300 dark:border-neutral-700'">{{ m.label }}</button>

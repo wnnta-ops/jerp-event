@@ -44,7 +44,6 @@ const inputCls = 'h-9 w-full rounded-lg border border-neutral-300 bg-white px-3 
 
 <template>
     <div class="space-y-4">
-        <Link :href="route('bs.index')" class="inline-flex items-center gap-2 text-sm text-neutral-500 hover:text-neutral-800 dark:hover:text-neutral-200"><ArrowLeft class="h-4 w-4" /> Business Support</Link>
         <h1 class="flex items-center gap-2 text-2xl font-bold"><Layers class="h-6 w-6 text-primary-600" /> Dimensi Jurnal</h1>
         <p class="text-sm text-neutral-500">Master dimensi analitik baris jurnal (Struktur) — dipakai pada Registrasi Invoice Hutang &amp; jurnal lainnya.</p>
 
