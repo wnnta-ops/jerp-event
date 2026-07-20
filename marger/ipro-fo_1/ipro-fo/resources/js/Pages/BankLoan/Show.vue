@@ -7,7 +7,7 @@ import Button from '@/Components/UI/Button.vue';
 import Input from '@/Components/UI/Input.vue';
 import MoneyInput from '@/Components/UI/MoneyInput.vue';
 
-const props = defineProps<{ app: any; identity?: any; siblings?: Array<any>; customerApps?: Array<any>; retentionCategories: Array<any>; bankTerms: Record<string, number>; canApproveRetensi?: boolean; hasRetention?: boolean; si?: any }>();
+const props = defineProps<{ app: any; identity?: any; siblings?: Array<any>; customerApps?: Array<any>; retentionCategories: Array<any>; bankTerms: Record<string, number>; bankDajamTax?: { category_id: number; percentage: number; amount: number | null } | null; canApproveRetensi?: boolean; hasRetention?: boolean; si?: any }>();
 const a = props.app;
 const showOtherApps = ref(false);
 
@@ -131,6 +131,18 @@ const isTaxDajam = computed(() => {
     return hay.includes('pajak') || hay.includes('ssp') || hay.includes('bphtb');
 });
 
+// #3: auto-isi nominal SSP/BPHTB dari DEFAULT DAJAM Pajak per-bank (mis. BTN) saat kategori DAJAM Pajak dipilih.
+// Prioritas nominal (amount); bila kosong pakai persentase × plafon. Hanya default — user tetap bisa mengubah.
+watch(isTaxDajam, (on) => {
+    if (!on) { disbForm.ssp_bphtb_amount = 0; return; }
+    const t = props.bankDajamTax;
+    if (!t || disbForm.retention_category_id !== t.category_id) return;
+    if (Number(disbForm.ssp_bphtb_amount) > 0) return; // jangan timpa input manual
+    disbForm.ssp_bphtb_amount = (t.amount != null && t.amount > 0)
+        ? Math.round(t.amount)
+        : Math.round(((Number(t.percentage) || 0) / 100) * plafon.value);
+});
+
 // #91/#100: Retensi / Pengurangan DAJAM TIDAK auto dari kategori — diisi manual oleh user.
 // #121: bisa lebih dari satu baris Retensi/DAJAM; totalnya menambah "Outstanding setelah".
 // Pilihan: default "Tanpa Retensi DAJAM" → input nominal & keterangan dinonaktifkan + dinolkan.
@@ -197,6 +209,30 @@ function stepBack() {
     if (!canStepBack.value) return;
     if (!confirm('Kembali ke tahap sebelumnya? Data tahap ini tetap tersimpan — Anda bisa meninjau/mengedit tahap sebelumnya lalu melanjutkan kembali.')) return;
     router.post(route('kpr.step-back', a.id), {}, { onSuccess: () => window.location.reload() });
+}
+
+// Navigasi bebas via stepper: klik nama tahap untuk lompat ke tahap manapun yang SUDAH dicapai (tinjau/edit),
+// tanpa melewati tahap di antaranya. Terkunci setelah Akad (bank akad sudah ditentukan).
+const navStages = ['submitted', 'wawancara', 'input_bank', 'verifikasi', 'analis', 'banding', 'sp3k', 'si'];
+const akadLocked = computed(() => curIdx() >= steps.indexOf('akad') || !!a.akad);
+const reachedNavIdx = computed(() => {
+    let m = curIdx();
+    const at = (s: string) => steps.indexOf(s);
+    const ps: any = a.process_stages ?? {};
+    for (const s of ['wawancara', 'input_bank', 'verifikasi', 'analis', 'banding']) if (ps[s]) m = Math.max(m, at(s));
+    if (a.sp3k) m = Math.max(m, at('sp3k'));
+    return m;
+});
+function canGoStage(i: number, s: string): boolean {
+    if (akadLocked.value) return false;
+    if (!navStages.includes(s)) return false;
+    if (s === 'banding' && bandingSkipped.value) return false;
+    if (i === curIdx()) return false;
+    return i <= reachedNavIdx.value;
+}
+function goStage(s: string) {
+    if (!confirm(`Buka tahap "${stepLabels[s]}" untuk ditinjau / diedit?`)) return;
+    router.post(route('kpr.go-stage', a.id), { stage: s }, { onSuccess: () => window.location.reload() });
 }
 
 // ── Tahap tambahan Proses KPR (Wawancara / Input Sistem Bank / Verifikasi / Analis / Banding) ──
@@ -582,17 +618,28 @@ const historyNodes = computed<HistoryNode[]>(() => {
             </div>
         </div>
 
-        <!-- Stepper (#62: tanpa In Review) -->
+        <!-- Stepper (#62: tanpa In Review). Klik nama tahap untuk lompat ke tahap yang sudah dicapai (tinjau/edit) — terkunci setelah Akad. -->
         <div class="card p-4">
             <div class="flex items-center gap-2 text-xs flex-wrap">
                 <div v-for="(s, i) in steps" :key="s" class="flex items-center gap-1">
                     <!-- Saat KPR LUNAS (active), tahap terakhir 'Lunas' jadi HIJAU (selesai), bukan primary.
                          Banding yang dilewati ditandai abu-abu + coret. -->
                     <span :class="['w-5 h-5 rounded-full flex items-center justify-center text-[10px]', stepDotClass(i, s)]">{{ i + 1 }}</span>
-                    <span :class="s === 'banding' && bandingSkipped ? 'text-neutral-300 line-through' : ''">{{ stepLabels[s] }}</span>
+                    <span
+                        :class="[
+                            s === 'banding' && bandingSkipped ? 'text-neutral-300 line-through' : '',
+                            canGoStage(i, s) ? 'cursor-pointer font-medium text-primary-600 hover:underline dark:text-primary-400' : '',
+                        ]"
+                        :title="canGoStage(i, s) ? 'Buka tahap ini untuk ditinjau / diedit' : (akadLocked && navStages.includes(s) ? 'Terkunci — proses sudah pada tahap Akad' : '')"
+                        @click="canGoStage(i, s) && goStage(s)"
+                    >{{ stepLabels[s] }}</span>
                     <span v-if="i < steps.length - 1" class="text-neutral-300">→</span>
                 </div>
             </div>
+            <p class="mt-2 text-[11px] text-neutral-400">
+                <template v-if="akadLocked">🔒 Proses sudah pada tahap Akad — data tahap sebelumnya terkunci (tidak dapat diedit).</template>
+                <template v-else>Klik nama tahap yang sudah dicapai untuk meninjau / mengedit tahap tersebut.</template>
+            </p>
         </div>
 
         <!-- Tambah SP3K Lain: semua Proses KPR nasabah → pilih untuk dibuka & dilanjutkan hingga SP3K -->
@@ -1102,6 +1149,9 @@ const historyNodes = computed<HistoryNode[]>(() => {
                             <div>
                                 <label class="block text-sm font-medium mb-1">Nominal Bayar SSP/BPHTB (Rp)</label>
                                 <MoneyInput v-model="disbForm.ssp_bphtb_amount" />
+                                <p v-if="bankDajamTax" class="mt-1 text-[11px] text-info-600 dark:text-info-400">
+                                    Terisi default DAJAM Pajak {{ a.bank?.name }}: {{ bankDajamTax.amount != null && bankDajamTax.amount > 0 ? fmtRp(bankDajamTax.amount) : bankDajamTax.percentage + '% × plafon' }} — dapat diubah.
+                                </p>
                             </div>
                         </div>
                     </div>
