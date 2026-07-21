@@ -143,14 +143,18 @@ class ArInvoiceController extends Controller
     {
         abort_unless($request->user()?->canModule('ar'), 403);
 
-        // Rincian disamakan dengan "Sudah Booked Revenue": tampilkan SPR + unit (turunan booking),
-        // bukan Kategori (konsep kategori invoice sudah dihapus).
+        // Rincian disamakan dengan "Sudah Booked Revenue": customer (+telepon/email), SPR + unit
+        // (turunan booking), serta ladder nilai Harga → Diskon → DPP → PPN → Total. Harga & diskon
+        // tidak tersimpan di invoice — diambil dari Booked Revenue asal.
         $invoice->load([
-            'customer:id,code,full_name',
+            'customer:id,code,full_name,phone,email',
             'booking:id,booking_number,unit_id', 'booking.unit:id,unit_code',
+            'bookedRevenue:id,gross_price,discount,amount',
             'lines', 'schedules' => fn ($q) => $q->orderBy('installment_no'),
             'payments' => fn ($q) => $q->latest('payment_date')->latest('id'),
         ]);
+
+        $br = $invoice->bookedRevenue;
 
         return Inertia::render('BusinessSupport/Receivable/Show', [
             // Tanggal dikirim sebagai yyyy-mm-dd (toDateString), BUKAN ISO berwaktu dari toArray():
@@ -162,6 +166,10 @@ class ArInvoiceController extends Controller
                 'invoice_date'      => optional($invoice->invoice_date)->toDateString(),
                 'due_date'          => optional($invoice->due_date)->toDateString(),
                 'receive_date'      => optional($invoice->receive_date)->toDateString(),
+                // Harga & diskon dari Booked Revenue asal (ladder rincian = Sudah Booked Revenue);
+                // NULL untuk invoice lama tanpa Booked Revenue — baris Harga/Diskon disembunyikan.
+                'gross_price'       => $br ? (float) $br->gross_price : null,
+                'discount'          => $br ? (float) $br->discount : null,
             ]),
             'outstanding'  => (float) $invoice->outstanding,
             'cashAccounts' => BsAccount::where('is_active', true)->where('is_postable', true)->where('code', 'like', '101010%')->orderBy('code')->get(['id', 'code', 'name']),
@@ -172,8 +180,9 @@ class ArInvoiceController extends Controller
     /**
      * Edit rincian invoice piutang — HANYA metadata (tanggal, jatuh tempo, keterangan, no. ref).
      *
-     * Nilai (DPP/PPN/PPh/total) dan jurnal pendaftaran yang sudah diposting SENGAJA terkunci —
-     * sama seperti Booked Revenue: tagihan tak bisa dikembalikan, hanya keterangannya yang dirapikan.
+     * Nilai (DPP/PPN/PPh/total) SENGAJA terkunci — sama seperti Booked Revenue asalnya: tagihan tak
+     * bisa dikembalikan, hanya keterangannya yang dirapikan. Invoice ini tidak punya jurnal sendiri
+     * (jurnal dicatat sekali saat booking di modul Booked Revenue), jadi tak ada jurnal yang disentuh.
      */
     public function update(Request $request, BsArInvoice $invoice): RedirectResponse
     {
@@ -193,7 +202,7 @@ class ArInvoiceController extends Controller
             'customer_ref_no' => $v['customer_ref_no'] ?? null,
         ]);
 
-        return back()->with('success', "Rincian {$invoice->invoice_number} diperbarui. Nilai & jurnal tidak berubah (terkunci).");
+        return back()->with('success', "Rincian {$invoice->invoice_number} diperbarui. Nilai tagihan tidak berubah (terkunci).");
     }
 
     public function pay(Request $request, BsArInvoice $invoice, PayArInvoice $action): RedirectResponse
