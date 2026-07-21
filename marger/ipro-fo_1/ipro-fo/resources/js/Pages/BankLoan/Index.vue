@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { Link, router } from '@inertiajs/vue3';
 import { ref, reactive, computed, watch, onMounted, onBeforeUnmount, nextTick } from 'vue';
-import { Plus, Download, Layers, Search, FilterX } from 'lucide-vue-next';
+import { Plus, Download, Layers, Search, FilterX, ChevronDown, ClipboardList, Landmark, Flag } from 'lucide-vue-next';
 import Button from '@/Components/UI/Button.vue';
 import Badge from '@/Components/UI/Badge.vue';
 import EmptyState from '@/Components/UI/EmptyState.vue';
@@ -68,6 +68,26 @@ const filtered = computed(() => filteredBase.value.filter((a) => !col.status.len
 const statusSummary = computed(() => props.statuses.map((s: any) => ({ ...s, count: filteredBase.value.filter((a) => dStatus(a) === s.label).length })));
 function toggleStatus(label: string) { const i = col.status.indexOf(label); if (i >= 0) col.status.splice(i, 1); else col.status.push(label); }
 
+// Ringkasan status dikelompokkan ke 3 tahap alur KPR (Pra → Di Bank → Pasca), masing-masing bisa
+// dibuka-tutup. Urutan status di tiap seksi mengikuti urutan enum (= urutan alur). Nilai `values`
+// memakai `value` status (bukan label) agar tahan perubahan teks label.
+const SECTION_DEFS = [
+    { key: 'pra',   title: 'Pra Proses KPR',     sub: 'Pengajuan awal',       icon: ClipboardList, iconCls: 'bg-neutral-100 text-neutral-500 dark:bg-neutral-800 dark:text-neutral-300', values: ['draft', 'submitted'] },
+    { key: 'bank',  title: 'Proses KPR di Bank', sub: 'Verifikasi & analisa', icon: Landmark,      iconCls: 'bg-sky-100 text-sky-600 dark:bg-sky-900/30 dark:text-sky-300',           values: ['wawancara', 'input_bank', 'verifikasi', 'analis', 'banding', 'in_review', 'sp3k', 'si', 'akad'] },
+    { key: 'pasca', title: 'Pasca Proses KPR',   sub: 'Hasil akhir',          icon: Flag,          iconCls: 'bg-emerald-100 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-300', values: ['disbursed', 'active', 'rejected', 'cancelled'] },
+];
+const openSec = reactive<Record<string, boolean>>({ pra: true, bank: true, pasca: true });
+function toggleSec(k: string) { openSec[k] = !openSec[k]; }
+const sections = computed(() => SECTION_DEFS.map((sec) => {
+    const items = statusSummary.value.filter((s: any) => sec.values.includes(s.value));
+    return {
+        ...sec,
+        items,
+        total: items.reduce((n: number, s: any) => n + s.count, 0),
+        active: items.some((s: any) => col.status.includes(s.label)),
+    };
+}));
+
 watch([optNo, optCust, optProject, optCluster, optUnit, optBank, optStatus], () => {
     const prune = (sel: string[], opts: string[]) => { const s = new Set(opts); return sel.filter((v) => s.has(v)); };
     col.no = prune(col.no, optNo.value); col.cust = prune(col.cust, optCust.value); col.project = prune(col.project, optProject.value);
@@ -104,15 +124,53 @@ watch(filtered, () => nextTick(updateWidth));
             </div>
         </div>
 
-        <!-- Ringkasan per Status General (mengikuti filter; klik utk saring status) -->
-        <div class="flex flex-wrap gap-2">
-            <button v-for="s in statusSummary" :key="s.value" type="button" @click="toggleStatus(s.label)"
-                class="card flex items-center gap-2 px-3 py-2 text-sm transition hover:bg-neutral-50 dark:hover:bg-neutral-800/50"
-                :class="col.status.includes(s.label) ? 'ring-2 ring-primary-400' : ''">
-                <span class="h-2.5 w-2.5 rounded-full" :class="dotClass(s.color)"></span>
-                <span class="text-xs text-neutral-500">{{ s.label }}</span>
-                <span class="text-base font-bold">{{ s.count }}</span>
-            </button>
+        <!-- Ringkasan status — 3 tahap alur KPR (Pra → Di Bank → Pasca), tiap seksi buka-tutup dgn
+             animasi. Bar distribusi tetap tampak walau ditutup. Klik chip status utk menyaring tabel
+             (facet, mengikuti filter kolom lain). -->
+        <div class="space-y-2">
+            <section v-for="sec in sections" :key="sec.key" class="card overflow-hidden transition-shadow hover:shadow-card-hover"
+                :class="sec.active ? 'ring-1 ring-primary-300 dark:ring-primary-500/40' : ''">
+                <button type="button" @click="toggleSec(sec.key)" class="flex w-full items-center gap-3 px-4 py-3 text-left">
+                    <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg" :class="sec.iconCls">
+                        <component :is="sec.icon" class="h-5 w-5" />
+                    </span>
+                    <span class="min-w-0">
+                        <span class="flex items-center gap-2">
+                            <span class="text-sm font-semibold">{{ sec.title }}</span>
+                            <span v-if="sec.active" class="rounded-full bg-primary-100 px-1.5 py-0.5 text-[10px] font-medium text-primary-700 dark:bg-primary-900/30 dark:text-primary-300">difilter</span>
+                        </span>
+                        <span class="block text-xs text-neutral-400">{{ sec.sub }}</span>
+                    </span>
+                    <span class="ml-auto flex items-center gap-3">
+                        <span class="text-right leading-none">
+                            <span class="block text-xl font-bold tabular-nums">{{ sec.total }}</span>
+                            <span class="mt-0.5 block text-[10px] uppercase tracking-wide text-neutral-400">proses</span>
+                        </span>
+                        <ChevronDown class="h-5 w-5 shrink-0 text-neutral-400 transition-transform duration-300" :class="openSec[sec.key] ? 'rotate-180' : ''" />
+                    </span>
+                </button>
+                <!-- Bar distribusi proporsi (selalu tampak, termasuk saat seksi ditutup) -->
+                <div class="flex h-1.5 gap-px overflow-hidden px-4 pb-3">
+                    <template v-for="s in sec.items" :key="s.value">
+                        <span v-if="s.count" class="h-full rounded-full" :class="dotClass(s.color)" :style="{ width: (s.count / Math.max(sec.total, 1) * 100) + '%' }" :title="`${s.label}: ${s.count}`"></span>
+                    </template>
+                    <span v-if="!sec.total" class="h-full w-full rounded-full bg-neutral-100 dark:bg-neutral-800"></span>
+                </div>
+                <!-- Chips (buka-tutup: animasi tinggi 0fr↔1fr + fade) -->
+                <div class="grid transition-all duration-300 ease-out" :class="openSec[sec.key] ? 'grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0'">
+                    <div class="overflow-hidden">
+                        <div class="grid grid-cols-[repeat(auto-fill,minmax(150px,1fr))] gap-2 border-t border-neutral-100 p-3 dark:border-neutral-800">
+                            <button v-for="s in sec.items" :key="s.value" type="button" @click="toggleStatus(s.label)"
+                                class="flex items-center gap-2.5 rounded-lg border px-3 py-2 text-left transition-all duration-150 hover:-translate-y-0.5 hover:shadow-card"
+                                :class="col.status.includes(s.label) ? 'border-primary-400 bg-primary-50/60 ring-1 ring-primary-400 dark:bg-primary-900/10' : 'border-neutral-200 hover:border-neutral-300 dark:border-neutral-700 dark:hover:border-neutral-600'">
+                                <span class="h-2.5 w-2.5 shrink-0 rounded-full" :class="dotClass(s.color)"></span>
+                                <span class="min-w-0 flex-1 text-xs leading-tight text-neutral-500">{{ s.label }}</span>
+                                <span class="text-lg font-bold tabular-nums" :class="s.count ? '' : 'text-neutral-300 dark:text-neutral-600'">{{ s.count }}</span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </section>
         </div>
 
         <div class="flex flex-wrap items-center gap-2">
