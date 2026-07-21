@@ -59,7 +59,7 @@ class PriceListResource extends Resource
 
         $schemeColumns = $schemes->map(function ($s) {
             return Tables\Columns\TextColumn::make('harga_skema_'.$s->id)
-                ->label($s->code.($s->tampil_siteplan ? ' ★' : ''))
+                ->label($s->name.($s->tampil_siteplan ? ' ★' : ''))
                 ->alignEnd()
                 ->state(function (Unit $record) use ($s) {
                     $pl = $record->pricelists->firstWhere('skema_id', $s->id);
