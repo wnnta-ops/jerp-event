@@ -24,7 +24,7 @@ class BsOutgoingCheque extends Model
         'tenant_id', 'cheque_number', 'cheque_type', 'bank_account_id', 'supplier_id', 'payee_type', 'payee', 'amount',
         'cheque_date', 'handover_date', 'cleared_date', 'signer_name', 'signer_name_2',
         'description', 'recipient_bank', 'recipient_account_no', 'void_date', 'void_reason',
-        'status', 'handover_journal_id', 'clear_journal_id', 'void_journal_id', 'created_by',
+        'status', 'handover_journal_id', 'clear_journal_id', 'clear_kuitansi_id', 'void_journal_id', 'created_by',
     ];
     protected $casts = [
         'amount' => 'decimal:2', 'cheque_date' => 'date', 'handover_date' => 'date',
@@ -49,6 +49,9 @@ class BsOutgoingCheque extends Model
     public function handoverJournal(): BelongsTo { return $this->belongsTo(BsJournal::class, 'handover_journal_id'); }
 
     public function clearJournal(): BelongsTo { return $this->belongsTo(BsJournal::class, 'clear_journal_id'); }
+
+    /** Kuitansi AP yang dibuat saat pencairan warkat (pelunasan hutang via BG/Cek → antrian approval). */
+    public function clearKuitansi(): BelongsTo { return $this->belongsTo(BsApKuitansi::class, 'clear_kuitansi_id'); }
 
     public function voidJournal(): BelongsTo { return $this->belongsTo(BsJournal::class, 'void_journal_id'); }
 }

@@ -438,7 +438,10 @@ class OutgoingChequeController extends Controller
             return back()->with('error', $e->getMessage());
         }
 
-        return back()->with('success', 'BG/Cek ditandai sudah dicairkan — jurnal otomatis terbentuk.');
+        // #8: warkat pelunasan hutang → kuitansi AP pending (antrian approval); non-AP → jurnal langsung.
+        return back()->with('success', $cheque->fresh()->clear_kuitansi_id
+            ? 'BG/Cek dicairkan — kuitansi pembayaran AP dibuat (tanggal bayar = tanggal pencairan) & masuk antrian Approval Pengeluaran Kas & Bank.'
+            : 'BG/Cek ditandai sudah dicairkan — jurnal otomatis terbentuk.');
     }
 
     /** #74 VOID — batalkan warkat. #153 bila sempat beredar, pembalik jurnal penyerahan diposting otomatis. */

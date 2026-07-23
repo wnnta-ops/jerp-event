@@ -17,7 +17,10 @@ use Illuminate\Support\Facades\DB;
  *
  * #8 — Warkat PELUNASAN HUTANG SUPPLIER (ada baris invoice):
  *   Diserahkan (beredar) : TANPA jurnal — hutang supplier TETAP TERBUKA (masih di daftar hutang).
- *   Dicairkan            : Dr Hutang Usaha (per invoice) / Cr Bank — hutang baru LUNAS + kas keluar.
+ *   Dicairkan            : buat KUITANSI AP status 'pending' (tanggal = TANGGAL PENCAIRAN, alat Cek/Giro)
+ *                          → masuk antrian APPROVAL PENGELUARAN KAS & BANK. Saat disetujui:
+ *                          jurnal JAP (Dr Hutang / Cr Bank) + payment dgn tanggal bayar = tanggal
+ *                          pencairan + invoice lunas.
  *   Void (belum cair)    : cukup tandai void (tidak ada yang perlu dibalik).
  *
  * Warkat PIHAK KETIGA / non-AP (tanpa baris invoice) — tetap dua langkah:
@@ -25,14 +28,16 @@ use Illuminate\Support\Facades\DB;
  *   Dicairkan            : Dr BG-Cek Beredar / Cr Bank
  *   Void (jika beredar)  : Dr BG-Cek Beredar / Cr Hutang Usaha (pembalik handover)
  *
- * Semua jurnal treasury diposting langsung (status 'posted') agar mutasi bank/hutang
- * langsung tampil di Rekening Ledger & Kartu Hutang tanpa menunggu approval GL.
- * Konservatif: jurnal HANYA terbentuk bila akun bisa diresolusi via
+ * Jurnal treasury non-AP diposting langsung (status 'posted') agar mutasi bank langsung
+ * tampil di Rekening Ledger. Konservatif: jurnal HANYA terbentuk bila akun bisa diresolusi via
  * config('business_support.gl_accounts'). Bila tidak → siklus tetap jalan, jurnal dilewati.
  */
 final class OutgoingChequeService
 {
-    public function __construct(private readonly JournalService $journal) {}
+    public function __construct(
+        private readonly JournalService $journal,
+        private readonly ApKuitansiService $kuitansi,
+    ) {}
 
     /**
      * Diserahkan ke vendor → status beredar.
@@ -87,64 +92,40 @@ final class OutgoingChequeService
     }
 
     /**
-     * #8: Pelunasan multi-invoice saat warkat DICAIRKAN: Dr Hutang (per invoice, akun payable invoice) /
-     * Cr Bank (total). Tiap invoice memperoleh BsApPayment (kas = bank) + saldo berkurang (status paid/open),
-     * sehingga kartu hutang & seluruh modul AP ikut tersinkron. Hutang supplier baru LUNAS di sini.
+     * #8: Warkat pelunasan hutang DICAIRKAN → buat KUITANSI AP status 'pending' (tanggal = tanggal
+     * pencairan, alat Cek/Giro, nomor BG tercantum). Kuitansi masuk antrian APPROVAL PENGELUARAN
+     * KAS & BANK; jurnal JAP + payment + pelunasan invoice terbentuk saat kuitansi DISETUJUI —
+     * dengan tanggal bayar = tanggal pencairan warkat.
      *
      * @param Collection<int,\App\Domain\BusinessSupport\Models\BsOutgoingChequeLine> $lines
      */
-    private function clearSettleLines(BsOutgoingCheque $cheque, Collection $lines, int $bank, string $date, ?int $userId): BsOutgoingCheque
+    private function clearCreateKuitansi(BsOutgoingCheque $cheque, Collection $lines, int $bank, string $date, ?int $userId): BsOutgoingCheque
     {
-        $jl    = [];
-        $rows  = [];
-        $total = 0.0;
-        foreach ($lines as $line) {
-            $inv = $line->invoice;
-            if (! $inv) {
-                throw new BusinessRuleException('Invoice baris BG/Cek tidak ditemukan.', errorCode: 'CHQ_INV_MISSING');
-            }
-            $amount = round((float) $line->amount, 2);
-            if ($amount <= 0) {
-                continue;
-            }
-            if ($amount > (float) $inv->outstanding + 0.01) {
-                throw new BusinessRuleException("Sisa hutang invoice {$inv->invoice_number} tidak cukup (mungkin sudah dibayar).", errorCode: 'CHQ_OVER');
-            }
-            $jl[]   = ['account_id' => $inv->payable_account_id, 'debit' => $amount, 'credit' => 0, 'description' => 'Pelunasan '.$inv->invoice_number];
-            $rows[] = [$line, $inv, $amount];
-            $total += $amount;
-        }
-
-        if (! $rows) {
+        $rows = $lines
+            ->filter(fn ($l) => $l->invoice && round((float) $l->amount, 2) > 0)
+            ->map(fn ($l) => ['ap_invoice_id' => (int) $l->ap_invoice_id, 'amount' => round((float) $l->amount, 2)])
+            ->values();
+        if ($rows->isEmpty()) {
             return $cheque; // tidak ada baris valid → cukup tandai cair
         }
-        $total = round($total, 2);
-        $jl[]  = ['account_id' => $bank, 'debit' => 0, 'credit' => $total, 'description' => 'Bank keluar — pencairan '.$this->typeLabel($cheque)];
 
-        $journal = $this->journal->post([
-            'journal_date' => $date,
-            'source'       => 'cash',
-            'status'       => 'posted', // Treasury: mutasi bank langsung tampil di Rekening Ledger.
-            'reference'    => $cheque->cheque_number,
-            'description'  => 'Cair '.$this->typeLabel($cheque).' '.$cheque->cheque_number.' — pelunasan hutang supplier',
-            'created_by'   => $userId,
-        ], $jl);
-
-        foreach ($rows as [$line, $inv, $amount]) {
-            $pay = $inv->payments()->create([
-                'payment_date'    => $date,
-                'cash_account_id' => $bank, // kas riil keluar dari bank saat dicairkan
-                'amount'          => $amount,
-                'reference'       => $cheque->cheque_number,
-                'journal_id'      => $journal->id,
-                'created_by'      => $userId,
-            ]);
-            $line->update(['payment_id' => $pay->id]);
-            $newPaid = round((float) $inv->paid_amount + $amount, 2);
-            $inv->update(['paid_amount' => $newPaid, 'status' => $newPaid >= $inv->payable_amount - 0.01 ? 'paid' : 'open']);
+        $supplierId = $cheque->supplier_id ?: $lines->first()->invoice?->supplier_id;
+        if (! $supplierId) {
+            throw new BusinessRuleException('Supplier warkat tidak ditemukan — tidak bisa membuat kuitansi pembayaran.', errorCode: 'CHQ_NO_SUPPLIER');
         }
 
-        $cheque->update(['clear_journal_id' => $journal->id]);
+        // Validasi sisa hutang & pembuatan kuitansi dilakukan ApKuitansiService::create (throw bila tak cukup).
+        $kui = $this->kuitansi->create([
+            'kuitansi_date'   => $date, // tanggal pencairan = tanggal bayar AP
+            'supplier_id'     => (int) $supplierId,
+            'cash_account_id' => $bank,
+            'alat_transaksi'  => 'giro',
+            'bg_number'       => $cheque->cheque_number,
+            'description'     => 'Pencairan '.$this->typeLabel($cheque).' '.$cheque->cheque_number.' — pelunasan hutang supplier',
+            'lines'           => $rows->all(),
+        ], $userId);
+
+        $cheque->update(['clear_kuitansi_id' => $kui->id]);
 
         return $cheque;
     }
@@ -152,9 +133,10 @@ final class OutgoingChequeService
     /**
      * Dicairkan oleh vendor → status cair.
      *
-     * #8: Warkat pelunasan hutang yang belum dilunasi → Dr Hutang (per invoice) / Cr Bank (lunasi hutang
-     * supplier + kas keluar). Warkat legacy (sudah masuk BG-Cek Beredar saat handover) / pihak ketiga →
-     * Dr BG-Cek Beredar / Cr Bank. Bank: config outgoing_cheque_bank, fallback rekening penerbit warkat.
+     * #8: Warkat pelunasan hutang yang belum dilunasi → buat Kuitansi AP 'pending' (tanggal = tanggal
+     * pencairan) → antrian Approval Pengeluaran Kas & Bank. Warkat legacy (sudah masuk BG-Cek Beredar
+     * saat handover) / pihak ketiga → Dr BG-Cek Beredar / Cr Bank. Bank: config outgoing_cheque_bank,
+     * fallback rekening penerbit warkat.
      */
     public function clear(BsOutgoingCheque $cheque, string $clearedDate, ?int $userId = null): BsOutgoingCheque
     {
@@ -165,8 +147,8 @@ final class OutgoingChequeService
                 'status'        => 'cleared',
             ]);
 
-            // Hindari double-posting bila sudah ada jurnal pencairan.
-            if ($cheque->clear_journal_id) {
+            // Hindari double-posting bila sudah ada jurnal/kuitansi pencairan.
+            if ($cheque->clear_journal_id || $cheque->clear_kuitansi_id) {
                 return $cheque;
             }
 
@@ -175,10 +157,10 @@ final class OutgoingChequeService
                 return $cheque; // tidak bisa diresolusi → lewati jurnal
             }
 
-            // #8: warkat pelunasan hutang yang belum dilunasi (model baru) → lunasi hutang supplier SEKARANG.
+            // #8: warkat pelunasan hutang yang belum dilunasi (model baru) → kuitansi AP pending (approval).
             $unpaid = $cheque->lines()->whereNull('payment_id')->whereNotNull('ap_invoice_id')->with('invoice')->get();
             if ($unpaid->isNotEmpty()) {
-                return $this->clearSettleLines($cheque, $unpaid, (int) $bank, $clearedDate, $userId);
+                return $this->clearCreateKuitansi($cheque, $unpaid, (int) $bank, $clearedDate, $userId);
             }
 
             // Legacy (hutang sudah dilunasi ke BG-Cek Beredar saat handover) / pihak ketiga: Dr BG-Cek Beredar / Cr Bank.
