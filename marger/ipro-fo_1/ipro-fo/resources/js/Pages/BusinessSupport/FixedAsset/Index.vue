@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { router, Link } from '@inertiajs/vue3';
 import { reactive, computed } from 'vue';
-import { Plus, ArrowLeft, Building, Play, Boxes, TrendingDown, Tag, Trash2, Layers } from 'lucide-vue-next';
+import { Plus, ArrowLeft, Building, Play, Boxes, TrendingDown, Tag, Trash2, Layers, Upload } from 'lucide-vue-next';
 import Button from '@/Components/UI/Button.vue';
 import Badge from '@/Components/UI/Badge.vue';
 import EmptyState from '@/Components/UI/EmptyState.vue';
@@ -42,6 +42,7 @@ const catTint: Record<string, string> = { bangunan: 'text-sky-600', kendaraan: '
             <h1 class="flex items-center gap-2 text-2xl font-bold"><Building class="h-6 w-6 text-primary-600" /> Aset Tetap <span class="text-base font-normal text-neutral-400">(Fixed Asset)</span></h1>
             <div class="flex gap-2">
                 <Link :href="route('bs.fa.run')"><Button variant="secondary"><template #icon-left><Play class="h-4 w-4" /></template>Jalankan Penyusutan</Button></Link>
+                <Link :href="route('bs.fa.upload.index')"><Button variant="secondary"><template #icon-left><Upload class="h-4 w-4" /></template>Upload Massal</Button></Link>
                 <Link :href="route('bs.fa.create')"><Button><template #icon-left><Plus class="h-4 w-4" /></template>Daftar Aset</Button></Link>
             </div>
         </div>

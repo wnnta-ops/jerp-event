@@ -11,6 +11,7 @@ const isEdit = computed(() => !!props.asset);
 const today = new Date().toISOString().slice(0, 10);
 const a = props.asset;
 const form = useForm<any>({
+    asset_number: a?.asset_number ?? '',
     name: a?.name ?? '', quantity: a?.quantity ?? '1 UNIT', category: a?.category ?? 'inventaris',
     // acquisition_date di-serialize server sebagai Y-m-d; slice pengaman bila datetime.
     acquisition_date: String(a?.acquisition_date ?? today).slice(0, 10),
@@ -34,6 +35,7 @@ const inputCls = 'h-9 w-full rounded-lg border border-neutral-300 bg-white px-3 
         </div>
         <form @submit.prevent="submit" class="space-y-4">
             <div class="card grid gap-4 p-5 md:grid-cols-2">
+                <div v-if="isEdit" class="md:col-span-2"><label class="mb-1 block text-xs font-medium text-neutral-500">No. Aset *</label><input v-model="form.asset_number" required placeholder="mis. MUP/AT/01/RK/GA" :class="[inputCls,'font-mono']" /><p v-if="form.errors.asset_number" class="mt-1 text-xs text-danger-500">{{ form.errors.asset_number }}</p></div>
                 <div class="md:col-span-2"><label class="mb-1 block text-xs font-medium text-neutral-500">Nama Aset *</label><input v-model="form.name" required placeholder="mis. Toyota Avanza B 1234 ABC" :class="inputCls" /><p v-if="form.errors.name" class="mt-1 text-xs text-danger-500">{{ form.errors.name }}</p></div>
                 <div><label class="mb-1 block text-xs font-medium text-neutral-500">Jumlah</label><input v-model="form.quantity" placeholder="mis. 1 UNIT / 1 SET" :class="inputCls" /></div>
                 <div><label class="mb-1 block text-xs font-medium text-neutral-500">Kategori *</label><select v-model="form.category" :class="inputCls"><option v-for="(label, val) in categories" :key="val" :value="val">{{ label }}</option></select></div>
