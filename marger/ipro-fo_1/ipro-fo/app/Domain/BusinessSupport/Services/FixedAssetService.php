@@ -35,7 +35,10 @@ final class FixedAssetService
             $cost  = round((float) $data['acquisition_cost'], 2);
 
             $asset = BsFixedAsset::create([
-                'asset_number'       => $this->nextNumber($data['acquisition_date']),
+                // Nomor aset bisa ditentukan (mis. upload massal / migrasi); bila kosong → auto-generate.
+                'asset_number'       => (isset($data['asset_number']) && trim((string) $data['asset_number']) !== '')
+                    ? trim((string) $data['asset_number'])
+                    : $this->nextNumber($data['acquisition_date']),
                 'name'               => $data['name'],
                 'quantity'           => $data['quantity'] ?? null,
                 'category'           => $data['category'],

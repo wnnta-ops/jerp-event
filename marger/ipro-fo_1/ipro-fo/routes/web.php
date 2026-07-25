@@ -61,6 +61,7 @@ use App\Http\Controllers\Web\BusinessSupport\CashBook\OutgoingChequeController a
 use App\Http\Controllers\Web\BusinessSupport\Sip\SipController as BsSipController;
 use App\Http\Controllers\Web\BusinessSupport\CashBook\BankRecController as BsBankRecController;
 use App\Http\Controllers\Web\BusinessSupport\FixedAsset\FixedAssetController as BsFaController;
+use App\Http\Controllers\Web\BusinessSupport\FixedAsset\FixedAssetUploadController as BsFaUploadController;
 use App\Http\Controllers\Web\BusinessSupport\Budget\BudgetController as BsBudgetController;
 use App\Http\Controllers\Web\BusinessSupport\Budget\BudgetUploadController as BsBudgetUploadController;
 use App\Http\Controllers\Web\BusinessSupport\Budget\BudgetAllocationController as BsBudgetAllocationController;
@@ -838,6 +839,10 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
     Route::get('/business-support/fixed-asset',                    [BsFaController::class, 'index'])->name('bs.fa.index');
     Route::get('/business-support/fixed-asset/create',            [BsFaController::class, 'create'])->name('bs.fa.create');
     Route::post('/business-support/fixed-asset',                   [BsFaController::class, 'store'])->name('bs.fa.store');
+    // Upload massal aset tetap (CSV/XLSX) + template.
+    Route::get('/business-support/fixed-asset-upload',            [BsFaUploadController::class, 'index'])->name('bs.fa.upload.index');
+    Route::get('/business-support/fixed-asset-upload/template',   [BsFaUploadController::class, 'template'])->name('bs.fa.upload.template');
+    Route::post('/business-support/fixed-asset-upload',           [BsFaUploadController::class, 'store'])->name('bs.fa.upload.store');
     Route::get('/business-support/fixed-asset/run',               [BsFaController::class, 'run'])->name('bs.fa.run');
     Route::post('/business-support/fixed-asset/run',              [BsFaController::class, 'runStore'])->name('bs.fa.run.store');
     Route::get('/business-support/fixed-asset-summary',           [BsFaController::class, 'summary'])->name('bs.fa.summary'); // report jadwal penyusutan
