@@ -35,17 +35,14 @@ class FixedAssetUploadController extends Controller
         ]);
     }
 
-    /** Unduh template CSV (kolom = template Java Core). */
-    public function template(Request $request): \Illuminate\Http\Response
+    /** Unduh template XLSX (format Java Core: header + contoh, tanggal dd-mmm-yy & angka ribuan). */
+    public function template(Request $request): \Symfony\Component\HttpFoundation\BinaryFileResponse
     {
         abort_unless($request->user()?->canModule('bs'), 403);
-        $csv = implode(',', self::COLS)."\n"
-            .'MUP/AT/01/RK/GA,RUKO AVENUE KAHURIPAN NIRWANA NO. 27,Bangunan,2023-12-29,1,2612612612,1000,240'."\n"
-            .',Toyota Avanza B 1234 ABC,Kendaraan,2024-06-01,1,250000000,0,96'."\n";
+        $path = resource_path('templates/template-aset-tetap.xlsx');
+        abort_unless(is_file($path), 404, 'Template tidak ditemukan.');
 
-        return response($csv)
-            ->header('Content-Type', 'text/csv; charset=UTF-8')
-            ->header('Content-Disposition', 'attachment; filename="Template-Upload-Aset-Tetap.csv"');
+        return response()->download($path, 'Template-Upload-Aset-Tetap.xlsx');
     }
 
     public function store(Request $request, FixedAssetService $svc): RedirectResponse
