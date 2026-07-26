@@ -152,7 +152,7 @@ class FixedAssetController extends Controller
         abort_unless($request->user()?->canModule('bs'), 403);
 
         $v = $request->validate([
-            'name'               => ['required', 'string', 'max:150'],
+            'name'               => ['required', 'string', 'max:1000'],
             'quantity'           => ['nullable', 'string', 'max:32'],
             'category'           => ['required', 'in:bangunan,kendaraan,inventaris,tanah'],
             'acquisition_date'   => ['required', 'date'],
@@ -211,7 +211,7 @@ class FixedAssetController extends Controller
         $v = $request->validate([
             // #Master: nomor aset tetap boleh diedit — wajib unik (abaikan diri sendiri & yang sudah dihapus).
             'asset_number'       => ['required', 'string', 'max:50', \Illuminate\Validation\Rule::unique('bs_fixed_assets', 'asset_number')->ignore($fixedAsset->id)->whereNull('deleted_at')],
-            'name'               => ['required', 'string', 'max:150'],
+            'name'               => ['required', 'string', 'max:1000'],
             'quantity'           => ['nullable', 'string', 'max:32'],
             'category'           => ['required', 'in:bangunan,kendaraan,inventaris,tanah'],
             'acquisition_date'   => ['required', 'date'],
