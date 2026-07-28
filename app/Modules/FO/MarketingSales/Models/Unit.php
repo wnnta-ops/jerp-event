@@ -129,6 +129,15 @@ class Unit extends TenantAwareModel
         $tahapKode = ($unit->tahap_id ? self::tahapKodeFor($unit->tahap_id) : null)
             ?? (trim((string) $unit->tahap) !== '' ? $unit->tahap : null);
 
+        // IDEMPOTEN: bila no_unit SUDAH berupa kode lengkap (berawalan {Lokasi}-{Tahap}-),
+        // pakai apa adanya — JANGAN tempel prefix lagi. Mencegah kode_unit dobel
+        // ('JRK3-004-JRK3-004-…') pada data lama/migrasi yang no_unit-nya menyimpan kode penuh.
+        $noUnit = trim((string) $unit->no_unit);
+        $prefix = implode('-', array_filter([$lokasiKode, $tahapKode], fn ($v) => $v !== null && trim((string) $v) !== ''));
+        if ($prefix !== '' && str_starts_with($noUnit, $prefix.'-')) {
+            return $noUnit;
+        }
+
         $parts = array_filter(
             [$lokasiKode, $tahapKode, $unit->blok, $unit->no_unit],
             fn ($v) => $v !== null && trim((string) $v) !== '',

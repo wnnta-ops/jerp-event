@@ -56,13 +56,16 @@ class EditSkema extends Page
 
         $rows = [];
         foreach ($this->record->lines as $l) {
+            // Basis ter-koreksi: bila basis KOSONG (data migrasi/dump legacy), tentukan dari kolom yang
+            // benar-benar berisi nilai — agar editor TIDAK menghapus nilai termin jadi 0 saat disimpan.
+            $basisEff = $l->basis ?: (($l->nominal !== null && $l->persen === null) ? 'NOMINAL' : 'PERSEN');
             $rows[] = [
                 'id' => $l->id,
                 'urutan' => $l->urutan,
                 'tipe' => $l->tipe,
                 'nama_termin' => $l->nama_termin,
-                'basis' => $l->basis ?: 'PERSEN',
-                'nilai' => ($l->basis === 'NOMINAL') ? (float) $l->nominal : (float) $l->persen,
+                'basis' => $basisEff,
+                'nilai' => $basisEff === 'NOMINAL' ? (float) $l->nominal : (float) $l->persen,
                 'jadwal_basis' => $l->jadwal_basis ?: 'BULAN',
                 'jadwal_nilai' => (int) $l->jadwal_nilai,
                 'setelah' => (int) $l->setelah,
