@@ -3,6 +3,7 @@
 namespace App\Filament\Fo\Pages;
 
 use App\Models\Bank;
+use App\Modules\BO\GeneralLedger\Models\ChartOfAccount;
 use App\Modules\FO\FinanceAR\Services\PembayaranService;
 use App\Modules\FO\MarketingSales\Models\KontrakTagihan;
 use Filament\Forms;
@@ -110,7 +111,17 @@ class PelunasanAngsuran extends Page implements HasForms, HasTable
                         Forms\Components\TextInput::make('nominal')->label('Nominal Bayar (Rp)')->numeric()->rupiah()->required()
                             ->helperText('Default = sisa tagihan. Boleh bayar sebagian (tak melebihi sisa).'),
                         Forms\Components\DatePicker::make('tgl')->label('Tgl Pembayaran')->default(now())->required(),
-                        Forms\Components\Select::make('bank_id')->label('Bank / Kas')->options(fn () => Bank::orderBy('name')->pluck('name', 'id'))->searchable()->required(),
+                        Forms\Components\Select::make('coa_kode')->label('Bank / Kas')
+                            // Akun bank/kas dari COA (bo_chart_of_accounts). Filter SEMANTIK (bukan prefix kode):
+                            // akun ASSET aktif non-header yang parent-nya header ber-nama mengandung "kas"/"bank".
+                            ->options(fn () => ChartOfAccount::query()
+                                ->where('is_header', false)->where('is_active', true)->where('tipe_akun', 'ASSET')
+                                ->whereIn('parent_kode', ChartOfAccount::query()
+                                    ->where('is_header', true)
+                                    ->where(fn ($q) => $q->whereRaw('LOWER(nama) LIKE ?', ['%kas%'])->orWhereRaw('LOWER(nama) LIKE ?', ['%bank%']))
+                                    ->pluck('kode'))
+                                ->orderBy('nama')->pluck('nama', 'kode'))
+                            ->searchable()->required(),
                         Forms\Components\TextInput::make('no_referensi')->label('No. Referensi / Transfer'),
                         Forms\Components\Textarea::make('keterangan')->label('Keterangan')->rows(2),
                     ])
@@ -118,7 +129,8 @@ class PelunasanAngsuran extends Page implements HasForms, HasTable
                         try {
                             $bkm = app(PembayaranService::class)->bayar($record, \App\Support\Rupiah::toFloat($data['nominal']), [
                                 'tgl' => $data['tgl'] ?? now()->toDateString(),
-                                'bank_id' => $data['bank_id'] ?? null,
+                                // Simpan tetap sebagai bank_id (dipetakan dari akun COA terpilih via nama).
+                                'bank_id' => self::bankIdForCoaKode($data['coa_kode'] ?? null),
                                 'no_referensi' => $data['no_referensi'] ?? null,
                                 'keterangan' => $data['keterangan'] ?? null,
                             ]);
@@ -136,5 +148,30 @@ class PelunasanAngsuran extends Page implements HasForms, HasTable
                     }),
             ])
             ->paginated([10, 25, 50]);
+    }
+
+    /**
+     * Petakan akun COA (kode) → bank_id master Bank via NAMA akun.
+     * Cari bank yang KODE-nya (BCA/MANDIRI/BNI/BRI/BTN/CIMB) muncul dalam nama akun
+     * (case-insensitive; mis. "Bank BCA" atau "BCA REK. 6155..." → id 1). Akun Kas
+     * (tanpa kode bank) → null. Service tetap simpan sebagai bank_id.
+     */
+    protected static function bankIdForCoaKode(?string $coaKode): ?int
+    {
+        if (! $coaKode) {
+            return null;
+        }
+        $nama = ChartOfAccount::query()->where('kode', $coaKode)->value('nama');
+        if (! $nama) {
+            return null;
+        }
+        $namaUpper = strtoupper($nama);
+        foreach (Bank::orderBy('name')->get(['id', 'code']) as $bank) {
+            if ($bank->code && str_contains($namaUpper, strtoupper($bank->code))) {
+                return (int) $bank->id;
+            }
+        }
+
+        return null;
     }
 }
