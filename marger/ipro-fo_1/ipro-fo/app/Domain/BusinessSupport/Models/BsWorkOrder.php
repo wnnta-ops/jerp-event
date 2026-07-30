@@ -18,7 +18,7 @@ class BsWorkOrder extends Model
     protected $fillable = [
         'tenant_id', 'project_id', 'spk_number', 'no_manual', 'spk_date', 'est_start', 'est_end',
         'supplier_id', 'cost_center_id', 'construction_account_id',
-        'title', 'jenis', 'releaser', 'pic_project', 'is_pkp',
+        'title', 'cluster', 'tahap', 'unit', 'jenis', 'releaser', 'pic_project', 'is_pkp',
         'contract_value', 'nominal_profit', 'addendum_value', 'retention_pct', 'advance_pct', 'ppn_pct', 'progress_value', 'material_used', 'progress_mutated', 'retention_held',
         'status', 'retention_released_at', 'cancelled_at', 'cancel_reason', 'notes', 'print_payload', 'created_by',
     ];

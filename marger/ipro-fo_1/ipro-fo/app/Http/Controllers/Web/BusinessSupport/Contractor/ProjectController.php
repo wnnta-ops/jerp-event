@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Web\BusinessSupport\Contractor;
 
+use App\Domain\BusinessSupport\Models\BsAccount;
 use App\Domain\BusinessSupport\Models\BsProject;
+use App\Domain\Foundation\Tenant\Models\Cluster;
 use App\Domain\Foundation\Tenant\Models\Project;
 use App\Domain\Master\Unit\Models\Unit;
 use App\Http\Controllers\Controller;
@@ -24,7 +26,19 @@ class ProjectController extends Controller
         abort_unless($request->user()?->canModule('contractor'), 403);
 
         return Inertia::render('BusinessSupport/Contractor/Project', [
-            'projects' => BsProject::orderBy('code')->get(['id', 'code', 'name', 'dept', 'is_active', 'notes']),
+            'projects' => BsProject::orderBy('code')->get([
+                'id', 'code', 'name', 'dept', 'cluster', 'tahap', 'unit', 'coa_account_id', 'is_active', 'notes',
+            ]),
+            // COA default project — filter SAMA dgn "Akun Konstruksi/CIP" di Register SPK
+            // (ContractorController::create): postable + (kode 10104x ATAU tipe expense).
+            'coaAccounts' => BsAccount::where('is_active', true)->where('is_postable', true)
+                ->where(fn ($q) => $q->where('code', 'like', '10104%')->orWhere('type', 'expense'))
+                ->orderBy('code')->get(['id', 'code', 'name']),
+            // Master untuk dropdown Cluster/Unit — di-scope client-side ke sales project yang
+            // kodenya cocok dgn kode project (fallback: tampilkan semua bila tak ada yg cocok).
+            'salesProjects' => Project::orderBy('code')->get(['id', 'code', 'name']),
+            'clusters'      => Cluster::orderBy('name')->get(['id', 'project_id', 'code', 'name']),
+            'units'         => Unit::orderBy('unit_code')->get(['id', 'project_id', 'cluster_id', 'unit_code']),
         ]);
     }
 
@@ -53,7 +67,7 @@ class ProjectController extends Controller
         }
 
         return Inertia::render('BusinessSupport/Contractor/ProjectDetail', [
-            'project'      => $project->only(['id', 'code', 'name', 'dept', 'notes']),
+            'project'      => $project->only(['id', 'code', 'name', 'dept', 'cluster', 'tahap', 'unit', 'coa_account_id', 'notes']),
             'salesProject' => $sales?->only(['id', 'code', 'name', 'location']),
             'rows'         => $rows,
             'summary'      => [
@@ -93,11 +107,15 @@ class ProjectController extends Controller
     private function validateData(Request $request): array
     {
         return $request->validate([
-            'code'      => ['required', 'string', 'max:30'],
-            'name'      => ['required', 'string', 'max:150'],
-            'dept'      => ['nullable', 'string', 'max:100'],
-            'is_active' => ['nullable', 'boolean'],
-            'notes'     => ['nullable', 'string', 'max:200'],
+            'code'           => ['required', 'string', 'max:30'],
+            'name'           => ['required', 'string', 'max:150'],
+            'dept'           => ['nullable', 'string', 'max:100'],
+            'cluster'        => ['nullable', 'string', 'max:100'],
+            'tahap'          => ['nullable', 'string', 'max:100'],
+            'unit'           => ['nullable', 'string', 'max:100'],
+            'coa_account_id' => ['nullable', 'integer', 'exists:bs_accounts,id'],
+            'is_active'      => ['nullable', 'boolean'],
+            'notes'          => ['nullable', 'string', 'max:200'],
         ]);
     }
 }

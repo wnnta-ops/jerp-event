@@ -87,7 +87,8 @@ class ContractorController extends Controller
         abort_unless($request->user()?->canModule('contractor'), 403);
 
         return Inertia::render('BusinessSupport/Contractor/Form', [
-            'projects'     => BsProject::where('is_active', true)->orderBy('code')->get(['id', 'code', 'name']),
+            'projects'     => BsProject::where('is_active', true)->orderBy('code')
+                ->get(['id', 'code', 'name', 'cluster', 'tahap', 'unit', 'coa_account_id']),
             'jenisOpts'    => BsWorkOrder::JENIS,
             'suppliers'    => BsSupplier::where('is_active', true)->orderBy('name')->get(['id', 'code', 'name', 'category']),
             'costCenters'  => BsCostCenter::where('is_active', true)->orderBy('code')->get(['id', 'code', 'name']),
@@ -114,7 +115,11 @@ class ContractorController extends Controller
             'supplier_id'             => ['required', 'integer', 'exists:bs_suppliers,id'],
             'cost_center_id'          => ['required', 'integer', 'exists:bs_cost_centers,id'],
             'construction_account_id' => ['required', 'integer', 'exists:bs_accounts,id'],
-            'title'                   => ['required', 'string', 'max:200'],
+            // Uraian Pekerjaan opsional — bila kosong dirangkai otomatis dari Cluster/Tahap/Unit.
+            'title'                   => ['nullable', 'string', 'max:200'],
+            'cluster'                 => ['nullable', 'string', 'max:100'],
+            'tahap'                   => ['nullable', 'string', 'max:100'],
+            'unit'                    => ['nullable', 'string', 'max:100'],
             'releaser'                => ['nullable', 'string', 'max:100'],
             'pic_project'             => ['nullable', 'string', 'max:100'],
             'is_pkp'                  => ['nullable', 'boolean'],
@@ -140,9 +145,38 @@ class ContractorController extends Controller
             'units.*.unit_price'      => ['nullable', 'numeric', 'min:0'],
         ]);
 
+        // Uraian Pekerjaan (title): pakai input manual bila ada; bila kosong rangkai dari Cluster/Tahap/Unit.
+        $v['title'] = trim((string) ($v['title'] ?? ''));
+        if ($v['title'] === '') {
+            $v['title'] = self::composeTitle($v['cluster'] ?? null, $v['tahap'] ?? null, $v['unit'] ?? null);
+        }
+        if ($v['title'] === '') {
+            return back()->withErrors(['title' => 'Uraian Pekerjaan wajib diisi (atau lengkapi Cluster/Tahap/Unit).'])->withInput();
+        }
+
         $wo = $svc->createSpk($v, $request->user()->id);
 
         return redirect()->route('bs.spk.show', $wo)->with('success', "SPK {$wo->spk_number} dibuat.");
+    }
+
+    /**
+     * Rangkai Uraian Pekerjaan otomatis dari scope SPK: "Cluster {x} Tahap {y} Unit {z}".
+     * Prefix "Cluster" tidak diulang bila label cluster sudah diawali kata itu (mis. "Cluster 5").
+     */
+    private static function composeTitle(?string $cluster, ?string $tahap, ?string $unit): string
+    {
+        $parts = [];
+        if (($c = trim((string) $cluster)) !== '') {
+            $parts[] = preg_match('/^cluster/i', $c) ? $c : "Cluster {$c}";
+        }
+        if (($t = trim((string) $tahap)) !== '') {
+            $parts[] = "Tahap {$t}";
+        }
+        if (($u = trim((string) $unit)) !== '') {
+            $parts[] = "Unit {$u}";
+        }
+
+        return implode(' ', $parts);
     }
 
     public function show(Request $request, BsWorkOrder $workOrder): Response
