@@ -18,11 +18,45 @@ const form = useForm<any>({
     spk_date: today, no_manual: '', est_start: '', est_end: '',
     project_id: '', jenis: '', supplier_id: '', cost_center_id: '',
     construction_account_id: props.defaultConstruction ?? '', title: '',
+    cluster: '', tahap: '', unit: '',
     releaser: '', pic_project: '', is_pkp: true,
     contract_value: 0, nominal_profit: 0, retention_pct: 5, advance_pct: 0, ppn_pct: 11, notes: '',
     items: [] as any[], terms: [] as any[],
     alloc_project_id: '', units: [] as any[],
 });
+// Uraian Pekerjaan otomatis dari scope SPK — "Cluster {x} Tahap {y} Unit {z}"
+// (prefix "Cluster" tak diulang bila label sudah diawali kata itu, mis. "Cluster 5").
+function composeTitle(cluster: any, tahap: any, unit: any): string {
+    const parts: string[] = [];
+    const c = String(cluster || '').trim();
+    if (c) parts.push(/^cluster/i.test(c) ? c : `Cluster ${c}`);
+    const t = String(tahap || '').trim();
+    if (t) parts.push(`Tahap ${t}`);
+    const u = String(unit || '').trim();
+    if (u) parts.push(`Unit ${u}`);
+    return parts.join(' ');
+}
+
+// Project terpilih (master) → sumber default Cluster/Tahap/Unit + COA.
+const selectedProject = computed(() => (props.projects || []).find((p: any) => String(p.id) === String(form.project_id)) || null);
+// Saat Project berganti: prefill COA + Cluster/Tahap/Unit; auto-isi Uraian bila masih kosong.
+watch(() => form.project_id, () => {
+    const p = selectedProject.value;
+    if (p && p.coa_account_id) form.construction_account_id = p.coa_account_id;
+    else if (!p) form.construction_account_id = props.defaultConstruction ?? '';
+    if (p) {
+        form.cluster = p.cluster ?? '';
+        form.tahap = p.tahap ?? '';
+        form.unit = p.unit ?? '';
+    }
+    if (!String(form.title || '').trim()) form.title = composeTitle(form.cluster, form.tahap, form.unit);
+});
+// Override manual Cluster/Tahap/Unit ikut memperbarui Uraian — HANYA bila Uraian masih kosong
+// (title yang diisi manual tidak ditimpa).
+watch([() => form.cluster, () => form.tahap, () => form.unit], () => {
+    if (!String(form.title || '').trim()) form.title = composeTitle(form.cluster, form.tahap, form.unit);
+});
+
 function fmtRp(v: number) { return 'Rp ' + Number(v ?? 0).toLocaleString('id-ID'); }
 function addItem() { form.items.push({ description: '', unit: '', qty: 1, unit_price: 0 }); }
 function rmItem(i: number) { form.items.splice(i, 1); }
@@ -69,13 +103,18 @@ const inputCls = 'h-9 w-full rounded-lg border border-neutral-300 bg-white px-3 
             <div class="card grid gap-4 p-5 md:grid-cols-2">
                 <div><label class="mb-1 block text-xs font-medium text-neutral-500">Tgl SPK <span class="text-danger-500">*</span></label><input v-model="form.spk_date" type="date" required :class="inputCls" /></div>
                 <div><label class="mb-1 block text-xs font-medium text-neutral-500">No. SPK <span class="text-danger-500">*</span></label><input v-model="form.no_manual" required placeholder="mis. 001/SPK/MUP-MUK/VII/2026" :class="inputCls" /><p v-if="form.errors.no_manual" class="mt-1 text-xs text-danger-500">{{ form.errors.no_manual }}</p></div>
-                <div><label class="mb-1 block text-xs font-medium text-neutral-500">Project <span class="text-danger-500">*</span></label><select v-model="form.project_id" required :class="inputCls"><option value="">—</option><option v-for="p in projects" :key="p.id" :value="p.id">{{ p.code }} - {{ p.name }}</option></select><p v-if="form.errors.project_id" class="mt-1 text-xs text-danger-500">{{ form.errors.project_id }}</p></div>
+                <div><label class="mb-1 block text-xs font-medium text-neutral-500">Project <span class="text-danger-500">*</span></label><select v-model="form.project_id" required :class="inputCls"><option value="">—</option><option v-for="p in projects" :key="p.id" :value="p.id">{{ p.code }} - {{ p.name }}</option></select><p v-if="form.errors.project_id" class="mt-1 text-xs text-danger-500">{{ form.errors.project_id }}</p><p v-else-if="selectedProject && (selectedProject.cluster || selectedProject.tahap || selectedProject.unit)" class="mt-1 text-[11px] text-neutral-400">Default: Cluster {{ selectedProject.cluster || '—' }} · Tahap {{ selectedProject.tahap || '—' }} · Unit {{ selectedProject.unit || '—' }}</p></div>
                 <div><label class="mb-1 block text-xs font-medium text-neutral-500">Kategori Kontrak <span class="text-danger-500">*</span></label><select v-model="form.jenis" required :class="inputCls"><option value="">—</option><option v-for="(lbl, key) in jenisOpts" :key="key" :value="key">{{ lbl }}</option></select><p v-if="form.errors.jenis" class="mt-1 text-xs text-danger-500">{{ form.errors.jenis }}</p><p v-else class="mt-1 text-[11px] text-neutral-400">Terkunci setelah SPK dibuat — tidak dapat diubah saat penagihan.</p></div>
                 <div><label class="mb-1 block text-xs font-medium text-neutral-500">Est. Mulai <span class="text-danger-500">*</span></label><input v-model="form.est_start" type="date" required :class="inputCls" /><p v-if="form.errors.est_start" class="mt-1 text-xs text-danger-500">{{ form.errors.est_start }}</p></div>
                 <div><label class="mb-1 block text-xs font-medium text-neutral-500">Est. Selesai <span class="text-danger-500">*</span></label><input v-model="form.est_end" type="date" required :class="inputCls" /><p v-if="form.errors.est_end" class="mt-1 text-xs text-danger-500">{{ form.errors.est_end }}</p></div>
                 <div><label class="mb-1 block text-xs font-medium text-neutral-500">Kontraktor <span class="text-danger-500">*</span></label><select v-model="form.supplier_id" required :class="inputCls"><option value="">— pilih —</option><option v-for="s in suppliers" :key="s.id" :value="s.id">{{ s.name }}<span v-if="s.category"> ({{ s.category }})</span></option></select><p v-if="form.errors.supplier_id" class="mt-1 text-xs text-danger-500">{{ form.errors.supplier_id }}</p></div>
                 <div><label class="mb-1 block text-xs font-medium text-neutral-500">Cost Center <span class="text-danger-500">*</span></label><select v-model="form.cost_center_id" required :class="inputCls"><option value="">—</option><option v-for="c in costCenters" :key="c.id" :value="c.id">{{ c.name }}</option></select><p v-if="form.errors.cost_center_id" class="mt-1 text-xs text-danger-500">{{ form.errors.cost_center_id }}</p></div>
-                <div class="md:col-span-2"><label class="mb-1 block text-xs font-medium text-neutral-500">Uraian Pekerjaan <span class="text-danger-500">*</span></label><input v-model="form.title" required placeholder="mis. Pekerjaan struktur Cluster 3 Tahap 5" :class="inputCls" /><p v-if="form.errors.title" class="mt-1 text-xs text-danger-500">{{ form.errors.title }}</p></div>
+                <div class="md:col-span-2 grid grid-cols-1 gap-3 sm:grid-cols-3">
+                    <div><label class="mb-1 block text-xs font-medium text-neutral-500">Cluster</label><input v-model="form.cluster" placeholder="mis. Cluster 5" :class="inputCls" /><p v-if="form.errors.cluster" class="mt-1 text-xs text-danger-500">{{ form.errors.cluster }}</p></div>
+                    <div><label class="mb-1 block text-xs font-medium text-neutral-500">Tahap</label><input v-model="form.tahap" placeholder="mis. 5" :class="inputCls" /><p v-if="form.errors.tahap" class="mt-1 text-xs text-danger-500">{{ form.errors.tahap }}</p></div>
+                    <div><label class="mb-1 block text-xs font-medium text-neutral-500">Unit</label><input v-model="form.unit" placeholder="mis. JRS5-001-III-33a" :class="inputCls" /><p v-if="form.errors.unit" class="mt-1 text-xs text-danger-500">{{ form.errors.unit }}</p></div>
+                </div>
+                <div class="md:col-span-2"><label class="mb-1 block text-xs font-medium text-neutral-500">Uraian Pekerjaan</label><input v-model="form.title" placeholder="Otomatis dari Cluster/Tahap/Unit bila dikosongkan" :class="inputCls" /><p v-if="form.errors.title" class="mt-1 text-xs text-danger-500">{{ form.errors.title }}</p><p v-else class="mt-1 text-[11px] text-neutral-400">Prefill dari Project; bila dikosongkan diisi otomatis "Cluster {x} Tahap {y} Unit {z}".</p></div>
                 <div><label class="mb-1 block text-xs font-medium text-neutral-500">Akun Konstruksi/CIP <span class="text-danger-500">*</span></label><select v-model="form.construction_account_id" required :class="inputCls"><option value="">— pilih —</option><option v-for="a in constructionAccounts" :key="a.id" :value="a.id">{{ a.code }} - {{ a.name }}</option></select></div>
                 <div><label class="mb-1 block text-xs font-medium text-neutral-500">Nilai Kontrak <span class="text-danger-500">*</span></label><input v-model.number="form.contract_value" type="number" step="1" min="1" required :class="[inputCls,'text-right font-mono']" /><p v-if="form.errors.contract_value" class="mt-1 text-xs text-danger-500">{{ form.errors.contract_value }}</p></div>
                 <div><label class="mb-1 block text-xs font-medium text-neutral-500">Nominal Profit</label><input v-model.number="form.nominal_profit" type="number" step="1" min="0" :class="[inputCls,'text-right font-mono']" /><p class="mt-1 text-[11px] text-neutral-400">Opsional — estimasi profit SPK.</p></div>

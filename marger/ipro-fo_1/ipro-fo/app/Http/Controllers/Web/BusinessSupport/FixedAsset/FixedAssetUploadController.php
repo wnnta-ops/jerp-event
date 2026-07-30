@@ -119,7 +119,29 @@ class FixedAssetUploadController extends Controller
             }
         }
 
+        // Otomatis posting saldo awal ke GL agar aset ter-upload langsung nyambung ke Neraca Saldo.
+        // Idempoten & aman: runOpeningBalance hanya menjurnal aset ber-acquire_journal_id NULL
+        // (yakni yang baru diupload di atas). Cutoff = akhir bulan lalu (saldo yang dibawa masuk).
+        $postedFa = 0;
+        $faError  = null;
+        if ($ok > 0) {
+            try {
+                $asOf     = Carbon::now()->subMonthNoOverflow()->endOfMonth()->toDateString();
+                $postedFa = (int) $svc->runOpeningBalance($asOf, $request->user()->id)['assets'];
+            } catch (\Throwable $e) {
+                // Aset sudah tersimpan; kegagalan posting saldo awal tidak membatalkan upload —
+                // bisa dijalankan ulang via: php artisan fa:opening-balance
+                $faError = $e->getMessage();
+            }
+        }
+
         $msg = "$ok aset tetap terupload.";
+        if ($postedFa > 0) {
+            $msg .= " $postedFa di antaranya diposting saldo awal ke GL.";
+        }
+        if ($faError !== null) {
+            $msg .= ' Namun posting saldo awal GL gagal ('.$faError.') — jalankan ulang: php artisan fa:opening-balance.';
+        }
         if ($failed) {
             return back()->with('error', $msg.' Gagal '.count($failed).': '.implode('; ', array_slice($failed, 0, 10)));
         }

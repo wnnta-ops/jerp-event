@@ -413,6 +413,158 @@ final class FixedAssetService
         });
     }
 
+    /**
+     * Saldo awal Aset Tetap → General Ledger, untuk aset upload massal / migrasi yang BELUM
+     * terhubung ke GL (mis. hasil register() tanpa sumber dana). Menjurnal, per PASANGAN AKUN
+     * (akun aset + akun akumulasi):
+     *   Dr Aset Tetap           = Σ harga perolehan
+     *   Cr Akumulasi Penyusutan = Σ akumulasi s/d $asOfDate   (hanya bila > 0 & akun tersedia)
+     *   Cr Laba Ditahan         = Σ nilai buku (perolehan − akumulasi)
+     * Jurnal WAJIB balance (Dr = Cr).
+     *
+     * KENAPA LANGSUNG 'posted': ini saldo awal SISTEM yang angkanya diturunkan dari data aset
+     * yang sudah tervalidasi — bukan input jurnal akuntansi baru yang perlu persetujuan manual.
+     * Neraca Saldo (LedgerReportController::trialBalance) hanya membaca baris ber-status 'posted',
+     * jadi jurnal diposting 'final' lalu langsung di-approve dalam transaksi yang sama.
+     *
+     * IDEMPOTEN & ANTI-DOBEL: hanya aset ber-`acquire_journal_id` NULL yang diproses. Aset yang
+     * sudah ber-GL (registrasi manual dengan sumber dana, atau sudah pernah opening) DILEWATI.
+     * Jalan 2× tidak menambah jurnal apa pun.
+     *
+     * @return array{assets:int, journals:int, total_cost:float, total_accum:float, by_category:array<string,array{assets:int,cost:float,accum:float}>}
+     */
+    public function runOpeningBalance(string $asOfDate, ?int $userId = null): array
+    {
+        return DB::transaction(function () use ($asOfDate, $userId): array {
+            $assets = BsFixedAsset::whereNull('acquire_journal_id')
+                ->whereNotIn('status', ['disposed', 'sold'])
+                ->where('acquisition_cost', '>', 0)
+                ->whereNull('deleted_at')
+                ->get();
+
+            // Kelompokkan per PASANGAN AKUN (aset + akumulasi) — pola runBatch(): dua aset
+            // berkategori sama bisa sah berakun beda (Edit Aset boleh ganti kategori TANPA remap
+            // akun), jadi kunci = pasangan akun agar nilai aset A tak salah-post ke akun aset B.
+            $groups = [];
+            foreach ($assets as $asset) {
+                if (! $asset->asset_account_id) {
+                    continue; // tanpa akun aset mustahil dijurnal — lewati
+                }
+                $groups[$asset->asset_account_id.'-'.($asset->accum_account_id ?? '0')][] = [
+                    'asset' => $asset,
+                    'accum' => $this->accumAsOf($asset, $asOfDate),
+                ];
+            }
+
+            if ($groups === []) {
+                return ['assets' => 0, 'journals' => 0, 'total_cost' => 0.0, 'total_accum' => 0.0, 'by_category' => []];
+            }
+
+            // Akun lawan ekuitas (Laba Ditahan) untuk nilai buku. Divalidasi hanya bila ada aset layak.
+            $offsetId = $this->accId(config('business_support.fixed_asset_disposal.opening_offset'));
+            if (! $offsetId) {
+                throw new BusinessRuleException('Akun lawan saldo awal (laba ditahan 80101010101) belum tersedia di Chart of Account.', errorCode: 'FA_NO_OFFSET');
+            }
+
+            $assetCount = 0; $journalCount = 0; $totalCost = 0.0; $totalAccum = 0.0; $byCategory = [];
+            foreach ($groups as $group) {
+                $first    = $group[0]['asset'];
+                $sumCost  = round(array_sum(array_map(fn ($g) => (float) $g['asset']->acquisition_cost, $group)), 2);
+                $sumAccum = round(array_sum(array_map(fn ($g) => (float) $g['accum'], $group)), 2);
+                if ($sumCost <= 0.009) {
+                    continue;
+                }
+                $book  = round($sumCost - $sumAccum, 2);
+                $label = $this->groupLabel($group);
+
+                $lines = [
+                    ['account_id' => $first->asset_account_id, 'debit' => $sumCost, 'credit' => 0, 'description' => 'Harga perolehan '.$label['name'].' ('.count($group).' aset)'],
+                ];
+                if ($sumAccum > 0.009 && $first->accum_account_id) {
+                    $lines[] = ['account_id' => $first->accum_account_id, 'debit' => 0, 'credit' => $sumAccum, 'description' => 'Akumulasi penyusutan '.$label['name']];
+                }
+                // Nilai buku ke Laba Ditahan. Bila $book = 0 (aset sudah tersusut penuh) baris ini
+                // bernilai 0 → otomatis dibuang JournalService::post(); jurnal tetap balance.
+                $lines[] = ['account_id' => $offsetId, 'debit' => 0, 'credit' => $book, 'description' => 'Nilai buku '.$label['name'].' (laba ditahan)'];
+
+                // status 'final' dipaksa agar approve() di bawah selalu sah, apa pun config auto_status.
+                $journal = $this->journal->post([
+                    'journal_date' => $asOfDate,
+                    'source'       => 'memorial',
+                    'reference'    => 'SALDOAWAL/FA/'.strtoupper($label['slug']),
+                    'description'  => 'Saldo awal aset tetap '.$label['name'].' — '.count($group).' aset (per '.$asOfDate.')',
+                    'created_by'   => $userId,
+                    'status'       => 'final',
+                ], $lines);
+                // Saldo awal sistem: langsung di-approve (posted) agar tampil di Neraca Saldo tanpa antre approval.
+                $this->journal->approve($journal, $userId);
+                $journalCount++;
+
+                foreach ($group as $g) {
+                    $asset = $g['asset'];
+                    $accum = round((float) $g['accum'], 2);
+
+                    $updates = ['acquire_journal_id' => $journal->id];
+                    if ($accum > 0.009) {
+                        $updates['accumulated_depreciation'] = $accum;
+                        $updates['last_depreciation_date']   = $asOfDate;
+                    }
+                    $asset->update($updates);
+
+                    // Jejak audit: entry "saldo awal" bila ada akumulasi & belum ada entry (mirip openingDepreciation()).
+                    if ($accum > 0.009 && ! $asset->entries()->exists()) {
+                        $d = Carbon::parse($asOfDate);
+                        $asset->entries()->create([
+                            'period_year'      => (int) $d->year,
+                            'period_month'     => (int) $d->month,
+                            'entry_date'       => $asOfDate,
+                            'amount'           => $accum,
+                            'book_value_after' => round((float) $asset->acquisition_cost - $accum, 2),
+                            'journal_id'       => $journal->id,
+                        ]);
+                    }
+
+                    $assetCount++;
+                    $totalCost  += (float) $asset->acquisition_cost;
+                    $totalAccum += $accum;
+
+                    $catName = BsFixedAsset::CATEGORIES[$asset->category] ?? (string) $asset->category;
+                    $byCategory[$catName]['assets'] = ($byCategory[$catName]['assets'] ?? 0) + 1;
+                    $byCategory[$catName]['cost']   = round(($byCategory[$catName]['cost'] ?? 0.0) + (float) $asset->acquisition_cost, 2);
+                    $byCategory[$catName]['accum']  = round(($byCategory[$catName]['accum'] ?? 0.0) + $accum, 2);
+                }
+            }
+
+            return [
+                'assets'      => $assetCount,
+                'journals'    => $journalCount,
+                'total_cost'  => round($totalCost, 2),
+                'total_accum' => round($totalAccum, 2),
+                'by_category' => $byCategory,
+            ];
+        });
+    }
+
+    /**
+     * Akumulasi penyusutan garis lurus SATU aset s/d $asOfDate. MENIRU persis rumus `accumAt`
+     * di FixedAssetController::computeSchedule: jumlah bulan penuh dari bulan perolehan s/d bulan
+     * cutoff (inklusif → +1) × penyusutan/bulan, dibatasi umur manfaat & dasar penyusutan.
+     * Tanah / aset tanpa penyusutan (monthly = 0) atau belum diperoleh per cutoff = 0.
+     */
+    private function accumAsOf(BsFixedAsset $asset, string $asOfDate): float
+    {
+        $end     = Carbon::parse($asOfDate);
+        $monthly = $asset->monthly_depreciation;
+        if ($monthly <= 0 || $asset->acquisition_date->gt($end)) {
+            return 0.0;
+        }
+        $months = ($end->year - $asset->acquisition_date->year) * 12
+            + ($end->month - $asset->acquisition_date->month) + 1;
+        $months = max(0, min($months, (int) $asset->useful_life_months));
+
+        return min(round($months * $monthly, 2), $asset->depreciable_base);
+    }
+
     private function guardDisposable(BsFixedAsset $asset): void
     {
         if (in_array($asset->status, ['disposed', 'sold'], true)) {
