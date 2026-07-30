@@ -108,7 +108,8 @@ class ApInvoiceController extends Controller
             'query'        => 'Query',
             'generate'     => 'Generate Invoice',
             'penyesuaian'  => 'Penyesuaian Invoice',
-            'posting-po'   => 'Posting Invoice PO',
+            // Kunci 'posting-po' dipertahankan (dipakai URL/section), hanya judulnya yang berubah.
+            'posting-po'   => 'Posting Invoice dari FO',
             'posting-spk'  => 'Posting Invoice SPK',
             'saldoawal'    => 'Saldo Awal',
         ];
