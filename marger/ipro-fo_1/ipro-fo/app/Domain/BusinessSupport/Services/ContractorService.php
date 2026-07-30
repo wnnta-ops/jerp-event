@@ -55,7 +55,6 @@ final class ContractorService
                 'title'                   => $data['title'],
                 'cluster'                 => $data['cluster'] ?? null,
                 'tahap'                   => $data['tahap'] ?? null,
-                'unit'                    => $data['unit'] ?? null,
                 'jenis'                   => $data['jenis'] ?? 'bangunan',
                 'releaser'                => $data['releaser'] ?? null,
                 'pic_project'             => $data['pic_project'] ?? null,
