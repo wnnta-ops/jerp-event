@@ -44,8 +44,8 @@ const menu: Array<{ group: string; items: Item[] }> = [
     { group: 'Penyesuaian Invoice', items: [
         { label: 'Penghapusan Nilai Hutang', route: r('bs.ap.penghapusan.index') },
     ]},
-    { group: 'Posting Invoice PO', items: [
-        { label: 'Posting Invoice', route: r('bs.ap.posting.index', { source: 'po' }) },
+    { group: 'Posting Invoice dari FO', items: [
+        { label: 'Posting Invoice dari FO', route: r('bs.ap.posting.index', { source: 'po' }) },
     ]},
     { group: 'Posting Invoice SPK', items: [
         { label: 'Posting Invoice', route: r('bs.ap.posting.index', { source: 'spk' }) },

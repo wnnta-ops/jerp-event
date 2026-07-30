@@ -40,7 +40,7 @@ final class ModuleMap
                 'desc'  => 'Hutang usaha: registrasi invoice hutang, penyesuaian, posting PO, pelunasan.',
                 'sections' => [
                     'Setup'    => ['Transaction Rule', 'Kategori Invoice', 'Repair Data'],
-                    'Transaksi'=> ['Registrasi Invoice Hutang', 'Penghapusan Nilai Hutang', 'Posting Invoice PO', 'Pelunasan Hutang'],
+                    'Transaksi'=> ['Registrasi Invoice Hutang', 'Penghapusan Nilai Hutang', 'Posting Invoice dari FO', 'Pelunasan Hutang'],
                     'Master'   => ['Invoice Hutang'],
                     'Laporan'  => ['Kartu Hutang', 'Aging Hutang'],
                 ],

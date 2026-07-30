@@ -7,7 +7,10 @@ import Button from '@/Components/UI/Button.vue';
 import Input from '@/Components/UI/Input.vue';
 import MoneyInput from '@/Components/UI/MoneyInput.vue';
 
-const props = defineProps<{ app: any; identity?: any; siblings?: Array<any>; customerApps?: Array<any>; retentionCategories: Array<any>; bankTerms: Record<string, number>; bankDajamTax?: { category_id: number; percentage: number; amount: number | null } | null; canApproveRetensi?: boolean; hasRetention?: boolean; si?: any }>();
+const props = defineProps<{ app: any; identity?: any; siblings?: Array<any>; customerApps?: Array<any>; retentionCategories: Array<any>; bankTerms: Record<string, number>; bankDajamTax?: { category_id: number; percentage: number; amount: number | null } | null; canApproveRetensi?: boolean; hasRetention?: boolean; si?: any;
+    /** Booked Revenue unit rumah ini — NULL bila unitnya belum di-booking pendapatannya. */
+    bookedRevenue?: { br_number: string; booking_date: string | null; amount: number; total: number } | null;
+}>();
 const a = props.app;
 const showOtherApps = ref(false);
 
@@ -120,7 +123,9 @@ const editingRecord = computed(() => (a.status === 'sp3k' && editSp3k.value) || 
 const sp3kForm = useForm<any>({ sp3k_date: a.sp3k?.sp3k_date ? String(a.sp3k.sp3k_date).slice(0, 10) : new Date().toISOString().slice(0, 10), approved_amount: a.sp3k?.approved_amount ?? a.plafon_requested });
 // Default Akad mengikuti SP3K yang dipilih: tanggal = tgl SP3K, tempat = Kantor bank (keduanya bisa diubah).
 const akadForm = useForm<any>({ akad_at: a.sp3k?.sp3k_date ? String(a.sp3k.sp3k_date).slice(0, 10) : new Date().toISOString().slice(0, 10), place: a.bank?.name ? 'Kantor ' + a.bank.name : '' });
-const disbForm = useForm<any>({ disbursed_at: new Date().toISOString().slice(0, 10), disbursed_amount: 0, dajam_lines: [{ retention_amount: 0, retention_note: '' }], retention_category_id: null, bank_account_id: null, ssp_bphtb_date: new Date().toISOString().slice(0, 10), ssp_bphtb_amount: 0 });
+// disbursement_scheme SENGAJA mulai null: jalur pencairan (BSN / SELAIN BSN) wajib dipilih
+// operator lebih dulu sebelum Catat Pencairan bisa ditekan (server juga memvalidasi).
+const disbForm = useForm<any>({ disbursed_at: new Date().toISOString().slice(0, 10), disbursed_amount: 0, dajam_lines: [{ retention_amount: 0, retention_note: '' }], retention_category_id: null, bank_account_id: null, disbursement_scheme: null, ssp_bphtb_date: new Date().toISOString().slice(0, 10), ssp_bphtb_amount: 0 });
 
 // #146: deteksi kategori "DAJAM Pajak" (is_dajam + nama mengandung "Pajak") → tampilkan input SSP/BPHTB.
 const selectedCategory = computed(() => (props.retentionCategories ?? []).find((c: any) => c.id === disbForm.retention_category_id) ?? null);
@@ -1091,6 +1096,36 @@ const historyNodes = computed<HistoryNode[]>(() => {
             <!-- Catat Pencairan (saat tahap Akad / Pencairan bertahap) -->
             <div v-if="showDisbForm" id="next-step-form" class="mt-5 border-t border-neutral-200 dark:border-neutral-800 pt-5">
                 <h3 class="font-semibold mb-3">{{ (a.realizations?.length ?? 0) === 0 ? 'Langkah Berikutnya — Catat Pencairan' : 'Catat Pencairan Lagi' }}</h3>
+
+                <!-- Penanda: unit rumah ini SUDAH Booked Revenue. Hanya muncul bila memang ada
+                     Booked Revenue untuk unitnya (prop bookedRevenue dari server). -->
+                <div v-if="bookedRevenue" class="mb-3 rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-2 dark:border-emerald-700/60 dark:bg-emerald-900/25">
+                    <div class="flex flex-wrap items-center gap-2 text-sm font-semibold text-emerald-800 dark:text-emerald-300">
+                        <CheckCircle2 class="h-4 w-4" /> Unit rumah ini SUDAH Booked Revenue
+                        <span class="rounded bg-emerald-100 px-1.5 py-0.5 font-mono text-xs text-emerald-800 dark:bg-emerald-800/40 dark:text-emerald-200">{{ bookedRevenue.br_number }}</span>
+                    </div>
+                    <div class="mt-0.5 text-xs text-emerald-700 dark:text-emerald-400">
+                        Pendapatan unit {{ si?.unit_code ?? '—' }} sudah diakui{{ bookedRevenue.booking_date ? ' pada ' + fmtDate(bookedRevenue.booking_date) : '' }} — Total {{ fmtRp(bookedRevenue.total) }}.
+                    </div>
+                </div>
+
+                <!-- Jalur pencairan WAJIB dipilih sebelum Catat Pencairan bisa ditekan. -->
+                <div class="mb-3 rounded-lg border px-3 py-2.5"
+                    :class="disbForm.disbursement_scheme ? 'border-neutral-200 dark:border-neutral-700' : 'border-warning-300 bg-warning-50 dark:border-warning-700 dark:bg-warning-900/20'">
+                    <label class="block text-sm font-medium">Jalur Pencairan <span class="text-danger-500">*</span></label>
+                    <div class="mt-1.5 inline-flex rounded-lg border border-neutral-300 p-0.5 dark:border-neutral-700">
+                        <button type="button" @click="disbForm.disbursement_scheme = 'bsn'"
+                            class="rounded-md px-4 py-1 text-xs font-medium transition"
+                            :class="disbForm.disbursement_scheme === 'bsn' ? 'bg-primary-600 text-white' : 'text-neutral-600 hover:bg-neutral-100 dark:text-neutral-300 dark:hover:bg-neutral-800'">BSN</button>
+                        <button type="button" @click="disbForm.disbursement_scheme = 'non_bsn'"
+                            class="rounded-md px-4 py-1 text-xs font-medium transition"
+                            :class="disbForm.disbursement_scheme === 'non_bsn' ? 'bg-primary-600 text-white' : 'text-neutral-600 hover:bg-neutral-100 dark:text-neutral-300 dark:hover:bg-neutral-800'">SELAIN BSN</button>
+                    </div>
+                    <p v-if="!disbForm.disbursement_scheme" class="mt-1.5 text-xs text-warning-700 dark:text-warning-400">
+                        Pilih <strong>BSN</strong> atau <strong>SELAIN BSN</strong> terlebih dahulu untuk dapat mencatat pencairan.
+                    </p>
+                    <p v-if="disbForm.errors.disbursement_scheme" class="mt-1 text-xs text-danger-600">{{ disbForm.errors.disbursement_scheme }}</p>
+                </div>
                 <div class="mb-3 rounded-lg bg-neutral-50 dark:bg-neutral-800 p-3 text-xs space-y-1">
                     <div class="flex justify-between"><span class="text-neutral-500">Plafon KPR:</span><span class="font-mono font-semibold">{{ fmtRp(plafon) }}</span></div>
                     <div class="flex justify-between"><span class="text-neutral-500">Outstanding:</span><span class="font-mono font-semibold">{{ fmtRp(liveOutstanding) }}</span></div>
@@ -1164,7 +1199,8 @@ const historyNodes = computed<HistoryNode[]>(() => {
                     <p v-if="hasDajam && !dajamOk" class="rounded-lg border border-warning-300 bg-warning-50 px-3 py-2 text-xs text-warning-700 dark:border-warning-700 dark:bg-warning-900/30 dark:text-warning-300">
                         ⚠ Lengkapi <strong>Nominal</strong> (lebih dari 0) &amp; <strong>Keterangan</strong> pada setiap baris Retensi / Pengurangan DAJAM.
                     </p>
-                    <Button type="submit" size="lg" block :loading="disbForm.processing" :disabled="exceedsPlafon || !canSubmitDisb || !dajamOk || !disbForm.retention_category_id" variant="success">{{ canDisburse ? 'Catat Pencairan + Auto-TTS →' : 'Catat Retensi / DAJAM →' }}</Button>
+                    <!-- Jalur pencairan (BSN / SELAIN BSN) ikut menggerbang tombol ini. -->
+                    <Button type="submit" size="lg" block :loading="disbForm.processing" :disabled="exceedsPlafon || !canSubmitDisb || !dajamOk || !disbForm.retention_category_id || !disbForm.disbursement_scheme" variant="success">{{ canDisburse ? 'Catat Pencairan + Auto-TTS →' : 'Catat Retensi / DAJAM →' }}</Button>
                 </form>
             </div>
 

@@ -322,7 +322,39 @@ class KprApplicationController extends Controller
                 'acc_kpr'   => (float) ($kpr->plafon_approved ?: $kpr->plafon_requested),
                 'free_dp'   => round(0.05 * (float) ($kpr->booking?->unit?->current_price ?: $kpr->booking?->unit?->base_price ?: 0), 2),
             ],
+            // Penanda "unit rumah ini SUDAH Booked Revenue" untuk proses pencairan KPR.
+            // NULL bila unitnya belum di-booking pendapatannya → penanda tidak ditampilkan.
+            'bookedRevenue' => $this->bookedRevenueOfUnit($kpr),
         ]);
+    }
+
+    /**
+     * Booked Revenue milik unit pada KPR ini (bila ada).
+     *
+     * Dicocokkan lewat unit_id booking — bukan customer — karena penandanya memang menyatakan
+     * "unit rumahnya sudah diakui sebagai pendapatan", terlepas dari siapa pembelinya.
+     * Record yang sudah dibatalkan diabaikan.
+     *
+     * @return array{br_number:string, booking_date:?string, amount:float, total:float}|null
+     */
+    private function bookedRevenueOfUnit(KprApplication $kpr): ?array
+    {
+        $unitId = $kpr->booking?->unit_id;
+        if (! $unitId) {
+            return null;
+        }
+
+        $br = \App\Domain\BusinessSupport\Models\BsBookedRevenue::where('unit_id', $unitId)
+            ->where('status', '!=', 'cancelled')
+            ->latest('booking_date')->latest('id')
+            ->first(['id', 'br_number', 'booking_date', 'gross_price', 'discount', 'amount']);
+
+        return $br ? [
+            'br_number'    => (string) $br->br_number,
+            'booking_date' => $br->booking_date?->toDateString(),
+            'amount'       => (float) $br->amount,                                            // DPP
+            'total'        => round((float) $br->gross_price - (float) $br->discount, 2),     // nett termasuk PPN
+        ] : null;
     }
 
     public function submit(KprApplication $kpr): RedirectResponse
@@ -1184,6 +1216,9 @@ class KprApplicationController extends Controller
             'retention_category_id' => 'required|integer|exists:retention_categories,id', // #66 — kategori retensi wajib
             'reference_no'          => 'nullable|string|max:255',
             'bank_account_id'       => 'nullable|integer|exists:bank_accounts,id',
+            // Jalur pencairan WAJIB dipilih lebih dulu (BSN / SELAIN BSN) — gerbang server
+            // yang mencerminkan tombol Catat Pencairan di Show.vue.
+            'disbursement_scheme'   => 'required|in:bsn,non_bsn',
             // #146 DAJAM Pajak — pembayaran SSP/BPHTB (mengurangi outstanding AR customer)
             'ssp_bphtb_date'        => 'nullable|date',
             'ssp_bphtb_amount'      => 'nullable|numeric|min:0',

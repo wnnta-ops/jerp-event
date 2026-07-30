@@ -60,12 +60,13 @@ function postBulk() {
 <template>
     <div class="space-y-4">
         <Link :href="route('bs.ap.index')" class="inline-flex items-center gap-2 text-sm text-neutral-500 hover:text-neutral-800 dark:hover:text-neutral-200"><ArrowLeft class="h-4 w-4" /> Account Payable</Link>
-        <h1 class="flex items-center gap-2 text-2xl font-bold"><FileInput class="h-6 w-6 text-danger-600" /> Posting Invoice</h1>
-        <p class="text-sm text-neutral-500">Terbitkan invoice hutang dari Purchase Order (penerimaan barang) atau progress SPK kontraktor. Hutang sudah terbukukan saat penerimaan/progress; invoice menjadi dokumen tagihan yang dibayar via Kuitansi.</p>
+        <h1 class="flex items-center gap-2 text-2xl font-bold"><FileInput class="h-6 w-6 text-danger-600" /> Posting Invoice dari FO</h1>
+        <p class="text-sm text-neutral-500">Terbitkan invoice hutang dari dokumen FO (penerimaan Purchase Order, refund, BLT, komisi, gimmick) atau progress SPK kontraktor. Hutang sudah terbukukan saat penerimaan/progress; invoice menjadi dokumen tagihan yang dibayar via Kuitansi.</p>
 
         <div class="card overflow-hidden">
             <div class="flex flex-wrap items-center gap-3 border-b border-neutral-200 px-4 py-3 dark:border-neutral-800">
-                <div class="flex items-center gap-2 font-semibold"><ShoppingCart class="h-5 w-5 text-primary-600" /> Dari Purchase Order (penerimaan)</div>
+                <!-- Bagian ini memuat seluruh dokumen asal FO: penerimaan PO, refund, BLT, komisi, gimmick. -->
+                <div class="flex items-center gap-2 font-semibold"><ShoppingCart class="h-5 w-5 text-primary-600" /> Dari FO</div>
                 <div class="ml-auto flex items-center gap-2">
                     <input v-model="q" type="text" placeholder="Cari dokumen / customer / supplier / sumber..."
                         class="h-9 w-64 max-w-full rounded-lg border border-neutral-300 bg-white px-3 text-sm focus:border-primary-500 focus:ring-1 focus:ring-primary-500 dark:border-neutral-700 dark:bg-neutral-800" />

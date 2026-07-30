@@ -16,7 +16,7 @@ class KprRealization extends Model
 
     protected $fillable = [
         'kpr_application_id', 'disbursed_at', 'disbursed_amount', 'retention_amount', 'retention_note',
-        'retention_category_id', 'reference_no', 'bank_account_id', 'tts_id',
+        'retention_category_id', 'reference_no', 'bank_account_id', 'disbursement_scheme', 'tts_id',
         'ssp_bphtb_date', 'ssp_bphtb_amount', 'ssp_tts_id', // #146 DAJAM Pajak: pembayaran SSP/BPHTB
         'journal_id', 'approval_status', 'reject_reason',   // Approval Retensi — baris PENCAIRAN (net) dijurnal ke GL
     ];
