@@ -42,6 +42,21 @@ class BsApInvoice extends Model
     public function schedules(): HasMany { return $this->hasMany(BsApInvoiceSchedule::class, 'ap_invoice_id'); }
     public function invoiceBerkas(): HasMany { return $this->hasMany(BsApInvoiceBerkas::class, 'ap_invoice_id'); }
 
+    /** Apakah invoice ini berasal dari Purchase Order. */
+    public function isFromPo(): bool { return $this->source_type === 'po' && $this->source_id !== null; }
+
+    /**
+     * Purchase Order asal invoice ini, atau NULL bila bukan dari PO.
+     *
+     * SENGAJA bukan relasi Eloquent: keterkaitan memakai pasangan generik source_type/source_id
+     * (source_id juga dipakai SPK/refund/batch), sehingga belongsTo polos pada source_id bisa
+     * salah menarik PO milik id sumber lain saat di-eager-load. Pengecekan source_type wajib.
+     */
+    public function purchaseOrder(): ?BsPurchaseOrder
+    {
+        return $this->isFromPo() ? BsPurchaseOrder::find($this->source_id) : null;
+    }
+
     /** Yang dibayar ke supplier = net_payable (total − PPh dipungut); fallback ke total untuk data lama. */
     public function getPayableAmountAttribute(): float
     {

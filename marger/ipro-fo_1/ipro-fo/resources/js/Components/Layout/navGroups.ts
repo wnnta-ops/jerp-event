@@ -102,9 +102,10 @@ export function navGroups(foUrl: string): NavGroup[] {
     {
         title: 'Purchasing',
         icon: ShoppingCart, color: '#f59e0b', route: 'bs.po.index',
-        desc: 'Purchase Order ke supplier.',
+        desc: 'Purchase Order ke supplier & rekapnya.',
         items: [
             { label: 'Purchase Order',     icon: ShoppingCart,  href: 'bs.po.index',           permission: ['businesssupport.view', 'bs.*'] },
+            { label: 'Report PO',          icon: ClipboardList, href: 'bs.po.report',          permission: ['businesssupport.view', 'bs.*'] },
         ],
     },
     {
@@ -275,8 +276,10 @@ export function navGroups(foUrl: string): NavGroup[] {
             { label: 'Penyesuaian Invoice', icon: Eraser, permission: ['businesssupport.view', 'ap.*'], children: [
                 { label: 'Penghapusan Nilai Hutang', href: 'bs.ap.penghapusan.index' },
             ]},
-            { label: 'Posting Invoice PO', icon: FileCheck, permission: ['businesssupport.view', 'ap.*'], children: [
-                { label: 'Posting Invoice', href: 'bs.ap.posting.index', params: { source: 'po' } },
+            // Sumber 'po' memuat seluruh dokumen asal FO (penerimaan PO, refund, BLT, komisi, gimmick),
+            // karena itu label memakai "dari FO" — bukan lagi khusus Purchase Order.
+            { label: 'Posting Invoice dari FO', icon: FileCheck, permission: ['businesssupport.view', 'ap.*'], children: [
+                { label: 'Posting Invoice dari FO', href: 'bs.ap.posting.index', params: { source: 'po' } },
             ]},
             { label: 'Posting Invoice SPK', icon: FileCheck, permission: ['businesssupport.view', 'ap.*'], children: [
                 { label: 'Posting Invoice', href: 'bs.ap.posting.index', params: { source: 'spk' } },

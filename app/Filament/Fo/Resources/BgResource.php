@@ -37,7 +37,10 @@ class BgResource extends Resource
             Forms\Components\DatePicker::make('tgl_bg')->label('Tgl BG'),
             Forms\Components\DatePicker::make('tgl_jatuh_tempo')->label('Jatuh Tempo'),
             Forms\Components\Select::make('customer_id')->label('Customer')->searchable()->live()
-                ->options(fn () => Customer::query()->limit(300)->pluck('full_name', 'id'))
+                // Server-side search: cari dari SELURUH Master Customer (bukan cuma 300 pertama).
+                ->getSearchResultsUsing(fn (string $search) => Customer::query()
+                    ->where('full_name', 'like', "%{$search}%")->orderBy('full_name')->limit(50)->pluck('full_name', 'id'))
+                ->getOptionLabelUsing(fn ($value) => Customer::find($value)?->full_name)
                 // Ganti customer → reset pilihan tagihan agar tak salah-tarik.
                 ->afterStateUpdated(fn (Forms\Set $set) => $set('tagihan_ref', null)),
             // Setelah Customer dipilih: pilih DP/Angsuran yang BELUM LUNAS → Nominal terisi otomatis (tetap bisa diedit).

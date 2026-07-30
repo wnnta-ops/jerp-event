@@ -51,6 +51,9 @@ final class RecordDisbursement
                 'retention_category_id' => $data['retention_category_id'] ?? null,
                 'reference_no'          => $data['reference_no']     ?? null,
                 'bank_account_id'       => $data['bank_account_id']  ?? null,
+                // Jalur pencairan: 'bsn' / 'non_bsn'. Wajib pada form satuan (Catat Pencairan);
+                // NULL untuk Pencairan Massal & data lama yang tidak memakainya.
+                'disbursement_scheme'   => $data['disbursement_scheme'] ?? null,
                 'ssp_bphtb_date'        => $data['ssp_bphtb_date']   ?? null, // #146
                 'ssp_bphtb_amount'      => $sspAmount,                        // #146
             ]);

@@ -27,11 +27,34 @@ const levelName: Record<number, string> = { 1: 'Kategori', 2: 'Sub Kategori', 3:
 
 const showModal = ref(false);
 const editingId = ref<number | null>(null);
+// Induk yang sedang ditambahi anak (dari tombol "+" per baris) — hanya untuk petunjuk di modal.
+const parentAcc = ref<any | null>(null);
 const form = useForm<any>({ code: '', name: '', type: 'asset', normal_balance: 'D', is_postable: true, is_active: true, cf_direct_category_id: null, cf_indirect_category_id: null, cost_center_id: null });
 
-function openCreate() { editingId.value = null; form.reset(); showModal.value = true; }
+function openCreate() { editingId.value = null; parentAcc.value = null; form.reset(); showModal.value = true; }
+
+/**
+ * Tambah COA dari baris — fungsinya SAMA dengan tombol "Tambah Akun" di pojok kanan atas
+ * (form & endpoint store yang sama), hanya saja kode diisi awal dengan kode induk baris ini
+ * supaya operator tinggal melanjutkan 2 digit berikutnya. Server menurunkan level & induk
+ * dari panjang kode (1/3/5/7/9/11 digit), jadi prefix inilah yang menentukan posisinya.
+ * Level 6 (11 digit) sudah paling bawah → tidak diberi prefix, murni tambah akun baru.
+ */
+function openCreateChild(a: any) {
+    editingId.value = null;
+    form.reset();
+    const canHaveChild = String(a.code ?? '').length < 11;
+    parentAcc.value = canHaveChild ? a : null;
+    if (canHaveChild) {
+        form.code = a.code;                       // prefix induk — operator melanjutkan 2 digit
+        form.type = a.type;                       // anak lazimnya mewarisi tipe & saldo normal induk
+        form.normal_balance = a.normal_balance;
+    }
+    showModal.value = true;
+}
 function openEdit(a: any) {
     editingId.value = a.id;
+    parentAcc.value = null;
     form.code = a.code; form.name = a.name; form.type = a.type; form.normal_balance = a.normal_balance;
     form.is_postable = !!a.is_postable; form.is_active = !!a.is_active;
     form.cf_direct_category_id = a.cf_direct_category_id ?? null;
@@ -110,8 +133,10 @@ const inputCls = 'h-9 w-full rounded-lg border border-neutral-300 bg-white px-3 
                             <span v-else class="text-neutral-300 dark:text-neutral-600">—</span>
                         </td>
                         <td class="px-4 py-2"><div class="flex justify-end gap-2">
-                            <button @click="openEdit(a)" class="text-primary-600 hover:text-primary-800"><Pencil class="h-4 w-4" /></button>
-                            <button @click="destroy(a)" class="text-danger-500 hover:text-danger-700"><Trash2 class="h-4 w-4" /></button>
+                            <button @click="openCreateChild(a)" class="text-emerald-600 hover:text-emerald-800"
+                                :title="String(a.code).length < 11 ? `Tambah COA di bawah ${a.code} — ${a.name}` : 'Tambah COA baru'"><Plus class="h-4 w-4" /></button>
+                            <button @click="openEdit(a)" class="text-primary-600 hover:text-primary-800" title="Edit akun"><Pencil class="h-4 w-4" /></button>
+                            <button @click="destroy(a)" class="text-danger-500 hover:text-danger-700" title="Hapus akun"><Trash2 class="h-4 w-4" /></button>
                         </div></td>
                     </tr>
                 </tbody>
@@ -123,6 +148,10 @@ const inputCls = 'h-9 w-full rounded-lg border border-neutral-300 bg-white px-3 
             <div v-if="showModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" @click.self="showModal = false">
                 <div class="w-full max-w-md rounded-xl bg-white p-6 shadow-xl dark:bg-neutral-900">
                     <h2 class="mb-4 text-lg font-bold">{{ editingId ? 'Edit' : 'Tambah' }} Akun</h2>
+                    <p v-if="parentAcc" class="mb-3 rounded-lg bg-emerald-50 px-3 py-2 text-xs text-emerald-700 dark:bg-emerald-900/25 dark:text-emerald-300">
+                        Menambah COA di bawah <span class="font-mono font-semibold">{{ parentAcc.code }}</span> — {{ parentAcc.name }}.
+                        Lanjutkan kode menjadi <span class="font-semibold">{{ String(parentAcc.code).length + 2 }} digit</span>.
+                    </p>
                     <form @submit.prevent="submit" class="space-y-3">
                         <div><label class="mb-1 block text-xs font-medium text-neutral-500">Kode Akun *</label><input v-model="form.code" required :class="inputCls" /><p class="mt-1 text-[11px] text-neutral-400">Panjang kode menentukan level (1/3/5/7/9/11 digit → Kategori…Detil Sub Transaksi).</p><p v-if="form.errors.code" class="mt-1 text-xs text-danger-500">{{ form.errors.code }}</p></div>
                         <div><label class="mb-1 block text-xs font-medium text-neutral-500">Nama Akun *</label><input v-model="form.name" required :class="inputCls" /><p v-if="form.errors.name" class="mt-1 text-xs text-danger-500">{{ form.errors.name }}</p></div>

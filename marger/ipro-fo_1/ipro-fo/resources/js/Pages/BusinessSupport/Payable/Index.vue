@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { router, Link } from '@inertiajs/vue3';
 import { ref, reactive, computed, watch, onMounted, onBeforeUnmount, nextTick } from 'vue';
-import { Plus, ArrowLeft, HandCoins, Search, CalendarClock, CalendarCheck, BookText, Tags, FileInput, ReceiptText, Eraser, FolderCheck, FileSpreadsheet, FilterX } from 'lucide-vue-next';
+import { Plus, ArrowLeft, HandCoins, Search, CalendarClock, CalendarCheck, BookText, Tags, FileInput, ReceiptText, Eraser, FolderCheck, FileSpreadsheet, FilterX, Printer } from 'lucide-vue-next';
 import Button from '@/Components/UI/Button.vue';
 import Badge from '@/Components/UI/Badge.vue';
 import EmptyState from '@/Components/UI/EmptyState.vue';
@@ -10,6 +10,7 @@ import ColumnFilter from '@/Components/UI/ColumnFilter.vue';
 type Row = {
     id: number; invoice_number: string; invoice_date: string | null; receive_date: string | null; due_date: string | null;
     supplier: { name: string } | null; customer: { name: string } | null; source_type: string | null; refund_source: string | null;
+    po_id: number | null;   // PO asal (source_type='po') — dasar tombol Cetak Purchase Order
     description: string | null; berkas_notes: string | null; berkas_finance_date: string | null;
     status: string; payable: number; sisa: number;
 };
@@ -69,11 +70,27 @@ const optStatus = computed(() => distinct(dStatus));
 const optBerkas = computed(() => distinct(dBerkas));
 const optBerkasFinance = computed(() => distinct(dBerkasFinance));
 
-// Filter global + checklist per-kolom (kosong = tampilkan semua). Semua di sisi klien.
+// Filter global + per-kolom. Tiap kolom punya DUA cara yang saling melengkapi:
+//   • txt[...]  → KETIK bebas (cocok "berisi") langsung di kotak kolom;
+//   • col[...]  → checklist nilai persis dari dropdown.
+// Keduanya di sisi klien; kosong = tampilkan semua.
 const search = ref('');
 const col = reactive<Record<string, string[]>>({ no: [], tgl: [], terima: [], supplier: [], sumber: [], ket: [], total: [], sisa: [], status: [], berkas: [], berkasFinance: [] });
-const hasFilter = computed(() => Boolean(search.value) || Object.values(col).some((a) => a.length));
-function resetFilter() { search.value = ''; (Object.keys(col) as Array<keyof typeof col>).forEach((k) => (col[k] = [])); }
+const txt = reactive<Record<string, string>>({ no: '', tgl: '', terima: '', supplier: '', sumber: '', ket: '', total: '', sisa: '', status: '', berkas: '', berkasFinance: '' });
+const hasFilter = computed(() => Boolean(search.value) || Object.values(col).some((a) => a.length) || Object.values(txt).some((v) => v.trim() !== ''));
+function resetFilter() {
+    search.value = '';
+    (Object.keys(col) as Array<keyof typeof col>).forEach((k) => (col[k] = []));
+    (Object.keys(txt) as Array<keyof typeof txt>).forEach((k) => (txt[k] = ''));
+}
+
+/** Lolos bila nilai tampilan mengandung teks yang diketik (case-insensitive). */
+function okTxt(key: string, val: string) {
+    const q = txt[key]?.trim().toLowerCase();
+    return !q || val.toLowerCase().includes(q);
+}
+/** Lolos bila tidak ada checklist, atau nilainya termasuk yang dicentang. */
+function okCol(key: string, val: string) { return !col[key].length || col[key].includes(val); }
 
 const filtered = computed<Row[]>(() => props.invoices.filter((r) => {
     if (search.value) {
@@ -81,19 +98,30 @@ const filtered = computed<Row[]>(() => props.invoices.filter((r) => {
         const hay = [dNo(r), dTgl(r), dTerima(r), dSupplier(r), dSumber(r), dKet(r), dTotal(r), dSisa(r), dStatus(r), dBerkas(r), dBerkasFinance(r)].join(' ').toLowerCase();
         if (!hay.includes(q)) return false;
     }
-    if (col.no.length && !col.no.includes(dNo(r))) return false;
-    if (col.tgl.length && !col.tgl.includes(dTgl(r))) return false;
-    if (col.terima.length && !col.terima.includes(dTerima(r))) return false;
-    if (col.supplier.length && !col.supplier.includes(dSupplier(r))) return false;
-    if (col.sumber.length && !col.sumber.includes(dSumber(r))) return false;
-    if (col.ket.length && !col.ket.includes(dKet(r))) return false;
-    if (col.total.length && !col.total.includes(dTotal(r))) return false;
-    if (col.sisa.length && !col.sisa.includes(dSisa(r))) return false;
-    if (col.status.length && !col.status.includes(dStatus(r))) return false;
-    if (col.berkas.length && !col.berkas.includes(dBerkas(r))) return false;
-    if (col.berkasFinance.length && !col.berkasFinance.includes(dBerkasFinance(r))) return false;
-    return true;
+    const pairs: Array<[string, string]> = [
+        ['no', dNo(r)], ['tgl', dTgl(r)], ['terima', dTerima(r)], ['supplier', dSupplier(r)], ['sumber', dSumber(r)],
+        ['ket', dKet(r)], ['total', dTotal(r)], ['sisa', dSisa(r)], ['status', dStatus(r)],
+        ['berkas', dBerkas(r)], ['berkasFinance', dBerkasFinance(r)],
+    ];
+    return pairs.every(([k, v]) => okCol(k, v) && okTxt(k, v));
 }));
+
+// ── Pilih baris (checklist kiri) untuk dicetak sebagai Purchase Order ──
+// Hanya invoice yang benar-benar lahir dari PO (punya po_id) yang bisa dicetak sebagai PO.
+const checked = reactive<Record<number, boolean>>({});
+const selectedRows = computed(() => filtered.value.filter((r) => checked[r.id]));
+const selectedPoIds = computed(() => selectedRows.value.map((r) => r.po_id).filter((v): v is number => !!v));
+const selectedNonPo = computed(() => selectedRows.value.length - selectedPoIds.value.length);
+const allChecked = computed<boolean>({
+    get: () => filtered.value.length > 0 && filtered.value.every((r) => checked[r.id]),
+    set: (v: boolean) => filtered.value.forEach((r) => (checked[r.id] = v)),
+});
+function clearSelection() { Object.keys(checked).forEach((k) => delete checked[Number(k)]); }
+/** Buka halaman cetak PO (editable) untuk seluruh PO dari baris yang dicentang. */
+function cetakPo() {
+    if (!selectedPoIds.value.length) return;
+    window.open(route('bs.po.print', { ids: selectedPoIds.value.join(',') }), '_blank');
+}
 
 // Ringkasan dari hasil filter (nett). Jatuh tempo dipisah relatif hari ini.
 const summary = computed(() => {
@@ -208,6 +236,12 @@ watch(filtered, () => nextTick(measure));
                 <Link :href="route('bs.ap.penghapusan.index')" class="inline-flex h-9 items-center gap-1.5 rounded-lg border border-neutral-300 px-3 text-sm font-medium hover:bg-neutral-50 dark:border-neutral-700"><Eraser class="h-4 w-4" /> Hapus</Link>
                 <Link :href="route('bs.ap.berkas.index')" class="inline-flex h-9 items-center gap-1.5 rounded-lg border border-neutral-300 px-3 text-sm font-medium hover:bg-neutral-50 dark:border-neutral-700"><FolderCheck class="h-4 w-4" /> Berkas</Link>
                 <button type="button" @click="exportExcel" title="Unduh sesuai tampilan terfilter (nilai nett)" class="inline-flex h-9 items-center gap-1.5 rounded-lg border border-emerald-300 bg-emerald-50 px-3 text-sm font-medium text-emerald-700 hover:bg-emerald-100 dark:border-emerald-700/50 dark:bg-emerald-900/30 dark:text-emerald-300"><FileSpreadsheet class="h-4 w-4" /> Excel</button>
+                <button type="button" @click="cetakPo" :disabled="!selectedPoIds.length"
+                    :title="selectedPoIds.length ? 'Cetak Purchase Order dari baris tercentang' : 'Centang dulu invoice yang berasal dari PO'"
+                    class="inline-flex h-9 items-center gap-1.5 rounded-lg border px-3 text-sm font-medium disabled:cursor-not-allowed disabled:opacity-40"
+                    :class="selectedPoIds.length ? 'border-primary-400 bg-primary-50 text-primary-700 hover:bg-primary-100 dark:border-primary-700/50 dark:bg-primary-900/30 dark:text-primary-300' : 'border-neutral-300 text-neutral-500 dark:border-neutral-700'">
+                    <Printer class="h-4 w-4" /> Cetak PO<span v-if="selectedPoIds.length"> ({{ selectedPoIds.length }})</span>
+                </button>
                 <Link :href="route('bs.ap.kuitansi.index')"><Button variant="secondary"><template #icon-left><ReceiptText class="h-4 w-4" /></template>Kuitansi</Button></Link>
                 <Link :href="route('bs.ap.create')"><Button><template #icon-left><Plus class="h-4 w-4" /></template>Invoice</Button></Link>
             </div>
@@ -247,6 +281,14 @@ watch(filtered, () => nextTick(measure));
             <button v-if="hasFilter" type="button" @click="resetFilter" class="inline-flex h-9 items-center gap-1.5 rounded-lg border border-neutral-300 px-3 text-sm font-medium text-neutral-600 hover:bg-neutral-50 dark:border-neutral-700 dark:text-neutral-300"><FilterX class="h-4 w-4" /> Reset filter</button>
         </div>
 
+        <!-- Info baris terpilih: berapa yang bisa dicetak sebagai PO, berapa yang bukan dari PO. -->
+        <div v-if="selectedRows.length" class="flex flex-wrap items-center gap-2 rounded-lg border border-primary-200 bg-primary-50/60 px-3 py-2 text-sm dark:border-primary-700/40 dark:bg-primary-900/15">
+            <span class="font-medium">{{ selectedRows.length }} baris dipilih</span>
+            <span v-if="selectedPoIds.length" class="text-primary-700 dark:text-primary-300">· {{ selectedPoIds.length }} bisa dicetak sebagai PO</span>
+            <span v-if="selectedNonPo" class="text-amber-700 dark:text-amber-400">· {{ selectedNonPo }} bukan dari PO (dilewati)</span>
+            <button type="button" @click="clearSelection" class="ml-auto text-xs text-neutral-500 underline hover:text-neutral-800 dark:hover:text-neutral-200">Bersihkan pilihan</button>
+        </div>
+
         <!-- Scrollbar horizontal ATAS (tersinkron) — muncul hanya saat tabel lebih lebar dari layar. -->
         <div v-show="overflow" ref="topScroll" @scroll="syncTop" class="overflow-x-auto rounded-lg border border-neutral-200 bg-neutral-50 dark:border-neutral-800 dark:bg-neutral-800/50">
             <div :style="{ width: contentWidth + 'px' }" class="h-2.5"></div>
@@ -256,27 +298,37 @@ watch(filtered, () => nextTick(measure));
             <table ref="tableEl" class="w-full text-sm">
                 <thead class="bg-neutral-50 dark:bg-neutral-800">
                     <tr class="text-left text-xs uppercase text-neutral-500">
+                        <th class="w-10 px-3 pt-3 pb-1.5 text-center" title="Centang untuk memilih baris yang akan dicetak sebagai Purchase Order">
+                            <input v-model="allChecked" type="checkbox" class="rounded border-neutral-300" @click.stop />
+                        </th>
                         <th class="whitespace-nowrap px-4 pt-3 pb-1.5">No. Invoice</th><th class="whitespace-nowrap px-4 pt-3 pb-1.5">Tanggal</th><th class="whitespace-nowrap px-4 pt-3 pb-1.5">Tgl. Diterima</th><th class="px-4 pt-3 pb-1.5">Supplier / Customer</th><th class="px-4 pt-3 pb-1.5">Sumber</th><th class="px-4 pt-3 pb-1.5">Keterangan</th>
                         <th class="whitespace-nowrap px-4 pt-3 pb-1.5 text-right">Total</th><th class="whitespace-nowrap px-4 pt-3 pb-1.5 text-right">Sisa</th><th class="px-4 pt-3 pb-1.5 text-center">Status</th><th class="px-4 pt-3 pb-1.5">Kelengkapan<br>Berkas</th>
                         <th class="whitespace-nowrap px-4 pt-3 pb-1.5" title="Tanggal berkas fisik diterima Finance — berbeda dari Tgl. Diterima (tagihan supplier masuk). Hanya Dept Finance yang boleh mengisi.">Berkas Diterima<br>Finance</th>
                     </tr>
-                    <!-- Filter checklist per-kolom (dropdown daftar nilai yang ada) -->
+                    <!-- Filter per-kolom: KETIK langsung di kotak (cocok "berisi"), atau klik panah
+                         untuk memilih nilai persis dari daftar. Keduanya bisa dipakai bersamaan. -->
                     <tr class="border-b border-neutral-200 dark:border-neutral-700">
-                        <th class="px-3 pb-2"><ColumnFilter v-model="col.no" :options="optNo" /></th>
-                        <th class="px-3 pb-2"><ColumnFilter v-model="col.tgl" :options="optTgl" /></th>
-                        <th class="px-3 pb-2"><ColumnFilter v-model="col.terima" :options="optTerima" /></th>
-                        <th class="px-3 pb-2"><ColumnFilter v-model="col.supplier" :options="optSupplier" /></th>
-                        <th class="px-3 pb-2"><ColumnFilter v-model="col.sumber" :options="optSumber" /></th>
-                        <th class="px-3 pb-2"><ColumnFilter v-model="col.ket" :options="optKet" /></th>
-                        <th class="px-3 pb-2"><ColumnFilter v-model="col.total" :options="optTotal" align="right" /></th>
-                        <th class="px-3 pb-2"><ColumnFilter v-model="col.sisa" :options="optSisa" align="right" /></th>
-                        <th class="px-3 pb-2"><ColumnFilter v-model="col.status" :options="optStatus" /></th>
-                        <th class="px-3 pb-2"><ColumnFilter v-model="col.berkas" :options="optBerkas" /></th>
-                        <th class="px-3 pb-2"><ColumnFilter v-model="col.berkasFinance" :options="optBerkasFinance" /></th>
+                        <th class="px-2 pb-2"></th>
+                        <th class="px-3 pb-2"><ColumnFilter v-model="col.no" v-model:text="txt.no" :options="optNo" /></th>
+                        <th class="px-3 pb-2"><ColumnFilter v-model="col.tgl" v-model:text="txt.tgl" :options="optTgl" /></th>
+                        <th class="px-3 pb-2"><ColumnFilter v-model="col.terima" v-model:text="txt.terima" :options="optTerima" /></th>
+                        <th class="px-3 pb-2"><ColumnFilter v-model="col.supplier" v-model:text="txt.supplier" :options="optSupplier" /></th>
+                        <th class="px-3 pb-2"><ColumnFilter v-model="col.sumber" v-model:text="txt.sumber" :options="optSumber" /></th>
+                        <th class="px-3 pb-2"><ColumnFilter v-model="col.ket" v-model:text="txt.ket" :options="optKet" /></th>
+                        <th class="px-3 pb-2"><ColumnFilter v-model="col.total" v-model:text="txt.total" :options="optTotal" align="right" /></th>
+                        <th class="px-3 pb-2"><ColumnFilter v-model="col.sisa" v-model:text="txt.sisa" :options="optSisa" align="right" /></th>
+                        <th class="px-3 pb-2"><ColumnFilter v-model="col.status" v-model:text="txt.status" :options="optStatus" /></th>
+                        <th class="px-3 pb-2"><ColumnFilter v-model="col.berkas" v-model:text="txt.berkas" :options="optBerkas" /></th>
+                        <th class="px-3 pb-2"><ColumnFilter v-model="col.berkasFinance" v-model:text="txt.berkasFinance" :options="optBerkasFinance" /></th>
                     </tr>
                 </thead>
                 <tbody class="divide-y divide-neutral-200 dark:divide-neutral-800">
-                    <tr v-for="r in filtered" :key="r.id" class="cursor-pointer hover:bg-neutral-50 dark:hover:bg-neutral-800/50" @click="router.get(route('bs.ap.show', r.id))">
+                    <tr v-for="r in filtered" :key="r.id" class="cursor-pointer hover:bg-neutral-50 dark:hover:bg-neutral-800/50" :class="checked[r.id] ? 'bg-primary-50/40 dark:bg-primary-900/10' : ''" @click="router.get(route('bs.ap.show', r.id))">
+                        <!-- .stop: mencentang tidak boleh ikut membuka rincian invoice -->
+                        <td class="px-3 py-2.5 text-center" @click.stop>
+                            <input v-model="checked[r.id]" type="checkbox" class="rounded border-neutral-300"
+                                :title="r.po_id ? 'Pilih untuk dicetak sebagai Purchase Order' : 'Invoice ini bukan dari PO — tidak bisa dicetak sebagai Purchase Order'" />
+                        </td>
                         <td class="whitespace-nowrap px-4 py-2.5 font-mono font-semibold">{{ r.invoice_number }}</td>
                         <td class="whitespace-nowrap px-4 py-2.5">{{ fmtDate(r.invoice_date) }}</td>
                         <td class="whitespace-nowrap px-4 py-2.5">{{ fmtDate(r.receive_date) }}</td>

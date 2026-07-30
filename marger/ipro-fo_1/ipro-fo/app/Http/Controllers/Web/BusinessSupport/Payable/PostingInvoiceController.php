@@ -289,7 +289,8 @@ class PostingInvoiceController extends Controller
         if (BsApInvoice::where('source_type', 'po')->where('source_id', $po->id)->exists()) {
             return back()->with('error', 'PO ini sudah diposting menjadi invoice.');
         }
-        $po->load('lines');
+        // item + satuan ikut dimuat: rincian invoice harus menampilkan barang & satuan seperti di PO.
+        $po->load('lines.item.uom');
         $value = round((float) $po->lines->sum(fn ($l) => (float) $l->qty_received * (float) $l->unit_price), 2);
         if ($value <= 0) {
             return back()->with('error', 'Belum ada barang diterima untuk PO ini.');
@@ -304,7 +305,7 @@ class PostingInvoiceController extends Controller
             'due_date' => $po->due_date?->toDateString() ?? now()->addDays(30)->toDateString(),
             'dpp' => $value, 'total' => $value, 'net_payable' => $value,
             'source_type' => 'po', 'source_id' => $po->id,
-        ], $request->user()->id);
+        ], $request->user()->id, $this->poLines($po));
 
         return redirect()->route('bs.ap.show', $inv)->with('success', "Invoice {$inv->invoice_number} diterbitkan dari PO {$po->po_number}.");
     }
@@ -335,14 +336,59 @@ class PostingInvoiceController extends Controller
     }
 
     /** @param array<string,mixed> $data */
-    private function makeInvoice(array $data, ?int $userId): BsApInvoice
+    /**
+     * @param  array<int,array{description:string,qty:float,unit_price:float,amount:float}>  $lines
+     *         Rincian tagihan. Diisi agar "rincian invoice hutang = rincian sumbernya" (PO/SPK),
+     *         bukan sekadar satu nilai gelondongan. Atomik bersama pembuatan invoice.
+     */
+    private function makeInvoice(array $data, ?int $userId, array $lines = []): BsApInvoice
     {
-        return DB::transaction(fn () => BsApInvoice::create(array_merge([
-            'invoice_number' => $this->nextNumber(),
-            'trx_type'       => 'normal',
-            'ppn_pct'        => 0, 'ppn_amount' => 0, 'ppn_mode' => 'none', 'pph_mode' => 'none', 'pph_pct' => 0, 'pph_amount' => 0,
-            'paid_amount'    => 0, 'status' => 'open', 'kurs' => 1, 'created_by' => $userId,
-        ], $data)));
+        return DB::transaction(function () use ($data, $userId, $lines): BsApInvoice {
+            $inv = BsApInvoice::create(array_merge([
+                'invoice_number' => $this->nextNumber(),
+                'trx_type'       => 'normal',
+                'ppn_pct'        => 0, 'ppn_amount' => 0, 'ppn_mode' => 'none', 'pph_mode' => 'none', 'pph_pct' => 0, 'pph_amount' => 0,
+                'paid_amount'    => 0, 'status' => 'open', 'kurs' => 1, 'created_by' => $userId,
+            ], $data));
+
+            foreach ($lines as $l) {
+                $inv->lines()->create($l);
+            }
+
+            return $inv;
+        });
+    }
+
+    /**
+     * Rincian PO → rincian invoice hutang, satu baris per baris PO.
+     *
+     * Qty memakai qty_received (yang benar-benar diterima) supaya JUMLAH baris persis sama dengan
+     * nilai invoice yang dihitung di fromPo(); pada penerimaan penuh angkanya identik dengan PO.
+     * Nama barang & satuan diambil dari master item agar tampilannya sama seperti rincian PO.
+     *
+     * @return array<int,array{description:string,qty:float,unit_price:float,amount:float}>
+     */
+    private function poLines(BsPurchaseOrder $po): array
+    {
+        $out = [];
+        foreach ($po->lines as $l) {
+            $qty = (float) $l->qty_received;
+            if ($qty <= 0) {
+                continue;                                  // belum diterima → belum ditagihkan
+            }
+            $price = (float) $l->unit_price;
+            $item  = $l->item;
+            $uom   = $item?->uom?->code ?? $item?->uom?->name;
+            $name  = trim(($item?->code ? $item->code.' - ' : '').($item?->name ?? 'Barang'));
+            $out[] = [
+                'description' => mb_substr(trim($name.($uom ? ' ('.$uom.')' : '')), 0, 200),
+                'qty'         => $qty,
+                'unit_price'  => $price,
+                'amount'      => round($qty * $price, 2),
+            ];
+        }
+
+        return $out;
     }
 
     private function nextNumber(): string
