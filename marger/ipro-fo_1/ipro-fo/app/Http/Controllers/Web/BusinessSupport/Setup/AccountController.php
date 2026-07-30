@@ -6,6 +6,7 @@ namespace App\Http\Controllers\Web\BusinessSupport\Setup;
 
 use App\Domain\BusinessSupport\Models\BsAccount;
 use App\Domain\BusinessSupport\Models\BsCashFlowCategory;
+use App\Domain\BusinessSupport\Models\BsCostCenter;
 use App\Http\Controllers\Controller;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -26,12 +27,12 @@ class AccountController extends Controller
         $type   = $request->input('type');
 
         $rows = BsAccount::query()
-            ->with(['cfDirectCategory:id,code,name', 'cfIndirectCategory:id,code,name'])
+            ->with(['cfDirectCategory:id,code,name', 'cfIndirectCategory:id,code,name', 'costCenter:id,code,name'])
             ->when($search, fn ($q, $s) => $q->where(fn ($w) => $w->where('code', 'like', "%{$s}%")->orWhere('name', 'like', "%{$s}%")))
             ->when($type, fn ($q, $v) => $q->where('type', $v))
             // Kelompokkan per kategori (head), level-1 header lebih dulu, lalu urut kode.
             ->orderByRaw("COALESCE(category_code, substr(code,1,1)) asc, case when level = 1 then '0' else code end asc")
-            ->get(['id', 'code', 'category_code', 'name', 'type', 'level', 'parent_code', 'normal_balance', 'is_postable', 'is_active', 'cf_direct_category_id', 'cf_indirect_category_id']);
+            ->get(['id', 'code', 'category_code', 'name', 'type', 'level', 'parent_code', 'normal_balance', 'is_postable', 'is_active', 'cf_direct_category_id', 'cf_indirect_category_id', 'cost_center_id']);
 
         $cfCats = fn (string $kind) => BsCashFlowCategory::where('kind', $kind)->where('is_active', true)
             ->orderBy('sort_order')->orderBy('code')->get(['id', 'code', 'name', 'activity']);
@@ -41,6 +42,7 @@ class AccountController extends Controller
             'types'       => BsAccount::TYPES,
             'cfDirect'    => $cfCats('direct'),
             'cfIndirect'  => $cfCats('indirect'),
+            'costCenters' => BsCostCenter::where('is_active', true)->orderBy('code')->get(['id', 'code', 'name']),
             'filters'     => ['search' => $search, 'type' => $type],
             'stats'       => [
                 'total'    => BsAccount::count(),
@@ -85,6 +87,7 @@ class AccountController extends Controller
             'is_active'      => ['boolean'],
             'cf_direct_category_id'   => ['nullable', 'integer', Rule::exists('bs_cash_flow_categories', 'id')->where('kind', 'direct')],
             'cf_indirect_category_id' => ['nullable', 'integer', Rule::exists('bs_cash_flow_categories', 'id')->where('kind', 'indirect')],
+            'cost_center_id'          => ['nullable', 'integer', 'exists:bs_cost_centers,id'],
         ]);
 
         // Turunkan level & parent dari kode hierarkis (1/3/5/7/9/11 digit).

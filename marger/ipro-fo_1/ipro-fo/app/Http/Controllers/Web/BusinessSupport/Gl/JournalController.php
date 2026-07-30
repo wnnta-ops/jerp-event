@@ -213,7 +213,7 @@ class JournalController extends Controller
         }
 
         $journals = BsJournal::query()
-            ->with(['lines.account:id,code,name', 'costCenter:id,code,name'])
+            ->with(['lines.account:id,code,name', 'lines.costCenter:id,code,name'])
             ->whereBetween('journal_date', [$from->toDateString(), $to->toDateString()])
             ->when($request->input('source'), fn ($q, $v) => $q->where('source', $v))
             ->when($request->input('status'), fn ($q, $v) => $q->where('status', $v))
@@ -253,7 +253,7 @@ class JournalController extends Controller
                     'status' => $st[$j->status] ?? $j->status,
                     'desc'   => $j->description,
                     'ref'    => $j->reference,
-                    'cc'     => $j->costCenter?->name,
+                    'cc'     => $ln->costCenter?->name, // cost center per baris (dikunci dari COA), bukan header
                     'ldesc'  => $ln->description,
                     'debit'  => (float) $ln->debit,
                     'credit' => (float) $ln->credit,
@@ -343,9 +343,64 @@ class JournalController extends Controller
         abort_unless($request->user()?->canModule('gl'), 403);
 
         return Inertia::render('BusinessSupport/Gl/Journals/Form', [
-            'accounts'    => BsAccount::where('is_active', true)->where('is_postable', true)->orderBy('code')->get(['id', 'code', 'name', 'type']),
+            'accounts'    => $this->postableAccounts(),
             'costCenters' => BsCostCenter::where('is_active', true)->orderBy('code')->get(['id', 'code', 'name']),
         ]);
+    }
+
+    /**
+     * Daftar akun postable untuk form jurnal — beserta cost center yang MELEKAT pada akun
+     * (cost_center_id + label). Cost center tiap baris jurnal diturunkan & dikunci dari sini.
+     *
+     * @return \Illuminate\Support\Collection<int,array<string,mixed>>
+     */
+    private function postableAccounts(): \Illuminate\Support\Collection
+    {
+        return BsAccount::query()
+            ->with('costCenter:id,code,name')
+            ->where('is_active', true)->where('is_postable', true)
+            ->orderBy('code')
+            ->get(['id', 'code', 'name', 'type', 'cost_center_id'])
+            ->map(fn (BsAccount $a) => [
+                'id'                => $a->id,
+                'code'              => $a->code,
+                'name'              => $a->name,
+                'type'              => $a->type,
+                'cost_center_id'    => $a->cost_center_id,
+                'cost_center_label' => $a->costCenter ? $a->costCenter->code.' - '.$a->costCenter->name : null,
+            ]);
+    }
+
+    /**
+     * Sisipkan cost_center_id ke tiap baris jurnal, DITURUNKAN dari COA akunnya (dikunci —
+     * tak bisa diubah per transaksi). Akun tanpa cost center → baris bercost center null.
+     * Ambil sekali (whereIn) agar bukan N+1.
+     *
+     * @param  array<int,array<string,mixed>>  $lines
+     * @return array<int,array<string,mixed>>
+     */
+    private function linesWithCostCenter(array $lines): array
+    {
+        $ccByAccount = BsAccount::whereIn('id', array_filter(array_column($lines, 'account_id')))
+            ->pluck('cost_center_id', 'id');
+
+        foreach ($lines as $i => $l) {
+            $lines[$i]['cost_center_id'] = $ccByAccount[(int) ($l['account_id'] ?? 0)] ?? null;
+        }
+
+        return $lines;
+    }
+
+    /** Cost center baris pertama yang punya (untuk mengisi ringkasan header lama). Null bila tak ada. */
+    private function firstCostCenter(array $lines): ?int
+    {
+        foreach ($lines as $l) {
+            if (! empty($l['cost_center_id'])) {
+                return (int) $l['cost_center_id'];
+            }
+        }
+
+        return null;
     }
 
     public function store(Request $request, JournalService $svc, \App\Domain\BusinessSupport\Services\BudgetGuardService $guard): RedirectResponse
@@ -356,7 +411,6 @@ class JournalController extends Controller
             'journal_date'   => ['required', 'date'],
             'reference'      => ['nullable', 'string', 'max:150'],
             'description'    => ['required', 'string', 'max:255'],
-            'cost_center_id' => ['required', 'integer', 'exists:bs_cost_centers,id'], // wajib (mandatory)
             'lines'                 => ['required', 'array', 'min:2'],
             'lines.*.account_id'    => ['required', 'integer', 'exists:bs_accounts,id'],
             'lines.*.debit'         => ['nullable', 'numeric', 'min:0'],
@@ -364,18 +418,22 @@ class JournalController extends Controller
             'lines.*.description'   => ['nullable', 'string', 'max:200'],
         ]);
 
+        // Cost center tiap baris diturunkan & dikunci dari COA akunnya (bukan dari header).
+        $lines      = $this->linesWithCostCenter($v['lines']);
+        $headerCc   = $this->firstCostCenter($lines);
+
         try {
             // Gerbang over-budget: tolak input bila baris menambah realisasi melewati anggaran (akun+cost center).
-            $guard->assertWithinBudget($v['lines'], (int) $v['cost_center_id'], $v['journal_date']);
+            $guard->assertWithinBudget($lines, null, $v['journal_date']);
             $journal = $svc->post([
                 'journal_date'   => $v['journal_date'],
                 'source'         => 'memorial',
                 'status'         => 'draft', // jurnal memorial manual mulai sebagai Baru
                 'reference'      => $v['reference'] ?? null,
                 'description'    => $v['description'],
-                'cost_center_id' => $v['cost_center_id'] ?? null,
+                'cost_center_id' => $headerCc, // ringkasan header = cost center baris pertama (bila ada)
                 'created_by'     => $request->user()->id,
-            ], $v['lines']);
+            ], $lines);
         } catch (BusinessRuleException $e) {
             return back()->withInput()->with('error', $e->getMessage());
         }
@@ -388,7 +446,8 @@ class JournalController extends Controller
         abort_unless($request->user()?->canModule('gl'), 403);
 
         return Inertia::render('BusinessSupport/Gl/Journals/Show', [
-            'journal'  => $journal->load(['lines.account:id,code,name', 'costCenter:id,code,name']),
+            // Cost center kini per baris (dikunci dari COA) → muat lines.costCenter, bukan cuma header.
+            'journal'  => $journal->load(['lines.account:id,code,name', 'lines.costCenter:id,code,name', 'costCenter:id,code,name']),
             'sources'  => BsJournal::SOURCES,
             'statuses' => BsJournal::STATUSES,
         ]);
@@ -408,7 +467,7 @@ class JournalController extends Controller
         }
 
         return Inertia::render('BusinessSupport/Gl/Journals/Form', [
-            'accounts'    => BsAccount::where('is_active', true)->where('is_postable', true)->orderBy('code')->get(['id', 'code', 'name', 'type']),
+            'accounts'    => $this->postableAccounts(),
             'costCenters' => BsCostCenter::where('is_active', true)->orderBy('code')->get(['id', 'code', 'name']),
             'editing'     => array_merge(
                 $journal->only(['id', 'journal_number', 'journal_date', 'reference', 'description', 'cost_center_id', 'source', 'status']),
@@ -426,7 +485,6 @@ class JournalController extends Controller
             'journal_date'        => ['required', 'date'],
             'reference'           => ['nullable', 'string', 'max:150'],
             'description'         => ['required', 'string', 'max:255'],
-            'cost_center_id'      => ['required', 'integer', 'exists:bs_cost_centers,id'], // wajib (mandatory)
             'lines'               => ['required', 'array', 'min:2'],
             'lines.*.account_id'  => ['required', 'integer', 'exists:bs_accounts,id'],
             'lines.*.debit'       => ['nullable', 'numeric', 'min:0'],
@@ -434,15 +492,19 @@ class JournalController extends Controller
             'lines.*.description' => ['nullable', 'string', 'max:200'],
         ]);
 
+        // Cost center tiap baris diturunkan & dikunci dari COA akunnya (bukan dari header).
+        $lines    = $this->linesWithCostCenter($v['lines']);
+        $headerCc = $this->firstCostCenter($lines);
+
         try {
             // Gerbang over-budget (kecualikan jurnal ini dari realisasi agar tak dihitung ganda saat edit).
-            $guard->assertWithinBudget($v['lines'], (int) $v['cost_center_id'], $v['journal_date'], $journal->id);
+            $guard->assertWithinBudget($lines, null, $v['journal_date'], $journal->id);
             $svc->update($journal, [
                 'journal_date'   => $v['journal_date'],
                 'reference'      => $v['reference'] ?? null,
                 'description'    => $v['description'],
-                'cost_center_id' => $v['cost_center_id'] ?? null,
-            ], $v['lines']);
+                'cost_center_id' => $headerCc, // ringkasan header = cost center baris pertama (bila ada)
+            ], $lines);
         } catch (BusinessRuleException $e) {
             return back()->withInput()->with('error', $e->getMessage());
         }

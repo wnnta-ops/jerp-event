@@ -119,7 +119,6 @@ class ContractorController extends Controller
             'title'                   => ['nullable', 'string', 'max:200'],
             'cluster'                 => ['nullable', 'string', 'max:100'],
             'tahap'                   => ['nullable', 'string', 'max:100'],
-            'unit'                    => ['nullable', 'string', 'max:100'],
             'releaser'                => ['nullable', 'string', 'max:100'],
             'pic_project'             => ['nullable', 'string', 'max:100'],
             'is_pkp'                  => ['nullable', 'boolean'],
@@ -148,10 +147,10 @@ class ContractorController extends Controller
         // Uraian Pekerjaan (title): pakai input manual bila ada; bila kosong rangkai dari Cluster/Tahap/Unit.
         $v['title'] = trim((string) ($v['title'] ?? ''));
         if ($v['title'] === '') {
-            $v['title'] = self::composeTitle($v['cluster'] ?? null, $v['tahap'] ?? null, $v['unit'] ?? null);
+            $v['title'] = self::composeTitle($v['cluster'] ?? null, $v['tahap'] ?? null);
         }
         if ($v['title'] === '') {
-            return back()->withErrors(['title' => 'Uraian Pekerjaan wajib diisi (atau lengkapi Cluster/Tahap/Unit).'])->withInput();
+            return back()->withErrors(['title' => 'Uraian Pekerjaan wajib diisi (atau lengkapi Cluster/Tahap).'])->withInput();
         }
 
         $wo = $svc->createSpk($v, $request->user()->id);
@@ -160,10 +159,10 @@ class ContractorController extends Controller
     }
 
     /**
-     * Rangkai Uraian Pekerjaan otomatis dari scope SPK: "Cluster {x} Tahap {y} Unit {z}".
+     * Rangkai Uraian Pekerjaan otomatis dari scope SPK: "Cluster {x} Tahap {y}".
      * Prefix "Cluster" tidak diulang bila label cluster sudah diawali kata itu (mis. "Cluster 5").
      */
-    private static function composeTitle(?string $cluster, ?string $tahap, ?string $unit): string
+    private static function composeTitle(?string $cluster, ?string $tahap): string
     {
         $parts = [];
         if (($c = trim((string) $cluster)) !== '') {
@@ -171,9 +170,6 @@ class ContractorController extends Controller
         }
         if (($t = trim((string) $tahap)) !== '') {
             $parts[] = "Tahap {$t}";
-        }
-        if (($u = trim((string) $unit)) !== '') {
-            $parts[] = "Unit {$u}";
         }
 
         return implode(' ', $parts);

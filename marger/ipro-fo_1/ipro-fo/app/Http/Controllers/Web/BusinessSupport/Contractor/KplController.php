@@ -7,6 +7,7 @@ namespace App\Http\Controllers\Web\BusinessSupport\Contractor;
 use App\Domain\BusinessSupport\Models\BsWorkOrder;
 use App\Domain\BusinessSupport\Models\BsWorkOrderProgress;
 use App\Domain\BusinessSupport\Services\ContractorService;
+use App\Domain\Foundation\Tenant\Models\Cluster;
 use App\Domain\Foundation\Tenant\Models\Project;
 use App\Domain\Master\Unit\Models\Unit;
 use App\Exceptions\BusinessRuleException;
@@ -165,7 +166,40 @@ class KplController extends Controller
     public function units(Request $request): JsonResponse
     {
         abort_unless($request->user()?->canModule('contractor'), 403);
-        $units = Unit::where('project_id', (int) $request->input('project_id'))->orderBy('unit_code')
+
+        $projectId = (int) $request->input('project_id');
+        $cluster   = trim((string) $request->input('cluster', ''));
+        $tahap     = trim((string) $request->input('tahap', ''));
+
+        $query = Unit::where('project_id', $projectId);
+
+        // Persempit ke Cluster + Tahap SPK. Cluster kosong → perilaku lama (project_id saja).
+        if ($cluster !== '') {
+            // Project menyimpan Cluster sbg LABEL → resolve ke cluster_id via master (name atau code).
+            $clusterIds = Cluster::where('project_id', $projectId)
+                ->where(fn ($q) => $q->whereRaw('LOWER(name) = ?', [mb_strtolower($cluster)])
+                    ->orWhereRaw('LOWER(code) = ?', [mb_strtolower($cluster)]))
+                ->pluck('id')->all();
+
+            // Cluster diisi tapi tak ada padanan di master → fallback project_id (jangan kosongkan hasil).
+            if ($clusterIds !== []) {
+                $query->whereIn('cluster_id', $clusterIds);
+
+                // Tahap = segmen ke-2 unit_code (mis. 'JRS5-001-III-33a' → '001'). Cocok persis
+                // ATAU numerik agnostik zero-pad ('5'~'005', '1'~'001'); tahap kosong → cluster saja.
+                if ($tahap !== '') {
+                    $seg2 = "SUBSTRING_INDEX(SUBSTRING_INDEX(unit_code, '-', 2), '-', -1)";
+                    $query->where(function ($w) use ($seg2, $tahap): void {
+                        $w->whereRaw("{$seg2} = ?", [$tahap]);
+                        if (ctype_digit($tahap)) {
+                            $w->orWhereRaw("({$seg2} REGEXP '^[0-9]+$' AND CAST({$seg2} AS UNSIGNED) = ?)", [(int) $tahap]);
+                        }
+                    });
+                }
+            }
+        }
+
+        $units = $query->orderBy('unit_code')
             ->get(['id', 'unit_code', 'current_price', 'base_price'])
             ->map(fn ($u) => ['id' => $u->id, 'unit_code' => $u->unit_code, 'price' => (float) ($u->current_price ?: $u->base_price ?: 0)])
             ->values();
