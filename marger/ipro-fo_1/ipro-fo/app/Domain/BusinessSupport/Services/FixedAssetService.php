@@ -418,7 +418,7 @@ final class FixedAssetService
      * terhubung ke GL (mis. hasil register() tanpa sumber dana). Menjurnal, per PASANGAN AKUN
      * (akun aset + akun akumulasi):
      *   Dr Aset Tetap           = Σ harga perolehan
-     *   Cr Akumulasi Penyusutan = Σ akumulasi s/d $asOfDate   (hanya bila > 0 & akun tersedia)
+     *   Cr Akumulasi Penyusutan = Σ akumulasi penyusutan TERSIMPAN (yang tampil di Daftar Aset; hanya bila > 0 & akun tersedia)
      *   Cr Laba Ditahan         = Σ nilai buku (perolehan − akumulasi)
      * Jurnal WAJIB balance (Dr = Cr).
      *
@@ -452,7 +452,11 @@ final class FixedAssetService
                 }
                 $groups[$asset->asset_account_id.'-'.($asset->accum_account_id ?? '0')][] = [
                     'asset' => $asset,
-                    'accum' => $this->accumAsOf($asset, $asOfDate),
+                    // Akumulasi = nilai TERSIMPAN di aset (dari migrasi/legacy) — sama persis dengan
+                    // yang dijumlahkan Daftar Aset (FixedAssetController::index). BUKAN dihitung ulang
+                    // garis-lurus: perhitungan garis-lurus `accumAt` hanya dipakai halaman Jadwal
+                    // (proyeksi teoretis) & nilainya jauh lebih besar, tak cocok dgn Daftar Aset.
+                    'accum' => round((float) $asset->accumulated_depreciation, 2),
                 ];
             }
 
@@ -543,26 +547,6 @@ final class FixedAssetService
                 'by_category' => $byCategory,
             ];
         });
-    }
-
-    /**
-     * Akumulasi penyusutan garis lurus SATU aset s/d $asOfDate. MENIRU persis rumus `accumAt`
-     * di FixedAssetController::computeSchedule: jumlah bulan penuh dari bulan perolehan s/d bulan
-     * cutoff (inklusif → +1) × penyusutan/bulan, dibatasi umur manfaat & dasar penyusutan.
-     * Tanah / aset tanpa penyusutan (monthly = 0) atau belum diperoleh per cutoff = 0.
-     */
-    private function accumAsOf(BsFixedAsset $asset, string $asOfDate): float
-    {
-        $end     = Carbon::parse($asOfDate);
-        $monthly = $asset->monthly_depreciation;
-        if ($monthly <= 0 || $asset->acquisition_date->gt($end)) {
-            return 0.0;
-        }
-        $months = ($end->year - $asset->acquisition_date->year) * 12
-            + ($end->month - $asset->acquisition_date->month) + 1;
-        $months = max(0, min($months, (int) $asset->useful_life_months));
-
-        return min(round($months * $monthly, 2), $asset->depreciable_base);
     }
 
     private function guardDisposable(BsFixedAsset $asset): void
