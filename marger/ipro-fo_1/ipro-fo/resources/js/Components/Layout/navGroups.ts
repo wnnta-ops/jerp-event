@@ -102,9 +102,10 @@ export function navGroups(foUrl: string): NavGroup[] {
     {
         title: 'Purchasing',
         icon: ShoppingCart, color: '#f59e0b', route: 'bs.po.index',
-        desc: 'Purchase Order ke supplier.',
+        desc: 'Purchase Order ke supplier & rekapnya.',
         items: [
             { label: 'Purchase Order',     icon: ShoppingCart,  href: 'bs.po.index',           permission: ['businesssupport.view', 'bs.*'] },
+            { label: 'Report PO',          icon: ClipboardList, href: 'bs.po.report',          permission: ['businesssupport.view', 'bs.*'] },
         ],
     },
     {

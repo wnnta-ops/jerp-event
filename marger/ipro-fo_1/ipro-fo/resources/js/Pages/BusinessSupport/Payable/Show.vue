@@ -7,6 +7,8 @@ import Badge from '@/Components/UI/Badge.vue';
 
 const props = defineProps<{
     invoice: any;
+    /** PO asal invoice (bila source_type='po') — dasar tombol "Cetak Purchase Order". */
+    purchaseOrder?: { id: number; po_number: string } | null;
     outstanding: number;
     cashAccounts: Array<any>;
     defaultCash: number | null;
@@ -59,6 +61,10 @@ const justCreated = computed(() => Boolean(usePage().props.flash?.created));
         <div class="flex items-center justify-between">
             <h1 class="flex items-center gap-2 font-mono text-2xl font-bold"><HandCoins class="h-6 w-6 text-danger-600" /> {{ invoice.invoice_number }}</h1>
             <div class="flex items-center gap-2">
+                <!-- Tautan ke PO asal: rincian invoice ini memang berasal dari PO tersebut. -->
+                <a v-if="purchaseOrder" :href="route('bs.po.print', { ids: purchaseOrder.id })" target="_blank" rel="noopener"
+                    :title="`Cetak Purchase Order ${purchaseOrder.po_number} (bisa diedit sebelum dicetak)`"
+                    class="inline-flex items-center gap-1.5 rounded-lg border border-primary-400 bg-primary-50 px-3 py-1.5 text-sm font-medium text-primary-700 hover:bg-primary-100 dark:border-primary-700/50 dark:bg-primary-900/30 dark:text-primary-300"><Printer class="h-4 w-4" /> Cetak Purchase Order</a>
                 <a :href="route('bs.ap.memo', invoice.id)" target="_blank" rel="noopener" class="inline-flex items-center gap-1.5 rounded-lg bg-danger-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-danger-700"><Printer class="h-4 w-4" /> Cetak Memo Internal</a>
                 <Badge :variant="invoice.status === 'paid' ? 'success' : 'warning'">{{ invoice.status === 'paid' ? 'Lunas' : 'Open' }}</Badge>
             </div>

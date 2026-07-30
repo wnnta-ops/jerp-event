@@ -35,7 +35,7 @@ class ApInvoiceController extends Controller
         // agar kotak summary mengikuti hasil filter. Total & Sisa = nett (setelah PPN & PPh).
         $rows = BsApInvoice::query()
             ->with(['supplier:id,name', 'customer:id,full_name'])
-            ->select(['id', 'invoice_number', 'invoice_date', 'receive_date', 'due_date', 'supplier_id', 'customer_id', 'source_type', 'refund_source', 'description', 'berkas_notes', 'berkas_finance_date', 'total', 'net_payable', 'paid_amount', 'status'])
+            ->select(['id', 'invoice_number', 'invoice_date', 'receive_date', 'due_date', 'supplier_id', 'customer_id', 'source_type', 'source_id', 'refund_source', 'description', 'berkas_notes', 'berkas_finance_date', 'total', 'net_payable', 'paid_amount', 'status'])
             ->latest('invoice_date')->latest('id')
             ->get()
             ->map(fn ($r) => [
@@ -47,6 +47,10 @@ class ApInvoiceController extends Controller
                 'supplier'       => $r->supplier ? ['name' => $r->supplier->name] : null,
                 'customer'       => $r->customer ? ['name' => $r->customer->full_name] : null, // refund: lawan = customer
                 'source_type'    => $r->source_type,    // po / spk / refund / null(manual)
+                // id PO asal (hanya bila source_type='po') — dipakai tombol "Cetak Purchase Order"
+                // pada baris terpilih. source_id sengaja tidak dikirim mentah agar tidak tertukar
+                // dengan id sumber lain (SPK/refund) yang memakai kolom yang sama.
+                'po_id'          => $r->source_type === 'po' ? $r->source_id : null,
                 'refund_source'  => $r->refund_source,  // SPR / SPRS / TRANSFER_ANONIM
                 'description'    => $r->description,
                 'berkas_notes'   => $r->berkas_notes,
@@ -367,8 +371,33 @@ class ApInvoiceController extends Controller
             ];
         }
 
+        // Rincian invoice = rincian Purchase Order. Invoice yang diposting dari PO menyalin baris PO
+        // saat dibuat (PostingInvoiceController::poLines). Untuk invoice LAMA yang terlanjur tanpa
+        // baris, rincian PO ditarik langsung sebagai cadangan tampilan — tanpa mengubah data.
+        $po = $invoice->purchaseOrder();
+        if ($po && $invoice->lines->isEmpty()) {
+            $po->load('lines.item.uom');
+            $fallback = $po->lines
+                ->filter(fn ($l) => (float) $l->qty_received > 0)
+                ->map(function ($l) {
+                    $qty  = (float) $l->qty_received;
+                    $uom  = $l->item?->uom?->code ?? $l->item?->uom?->name;
+                    $name = trim((($l->item?->code) ? $l->item->code.' - ' : '').($l->item?->name ?? 'Barang'));
+
+                    return [
+                        'description' => trim($name.($uom ? ' ('.$uom.')' : '')),
+                        'qty'         => $qty,
+                        'unit_price'  => (float) $l->unit_price,
+                        'amount'      => round($qty * (float) $l->unit_price, 2),
+                    ];
+                })->values();
+            $invoice->setRelation('lines', $fallback->map(fn ($l) => new \App\Domain\BusinessSupport\Models\BsApInvoiceLine($l)));
+        }
+
         return Inertia::render('BusinessSupport/Payable/Show', [
             'invoice'       => array_merge($invoice->toArray(), ['payable_amount' => $invoice->payable_amount]),
+            // Tautan ke PO asal — dipakai tombol "Cetak Purchase Order" pada rincian invoice.
+            'purchaseOrder' => $po ? ['id' => $po->id, 'po_number' => $po->po_number] : null,
             'journal'       => $journalData,
             'outstanding'   => (float) $invoice->outstanding,
             'cashAccounts'  => BsAccount::where('is_active', true)->where('is_postable', true)->where('code', 'like', '101010%')->orderBy('code')->get(['id', 'code', 'name']),

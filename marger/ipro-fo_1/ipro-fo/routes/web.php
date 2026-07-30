@@ -480,6 +480,12 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
     Route::post('/business-support/purchasing/po/{po}/revise',     [BsPoController::class, 'revise'])->name('bs.po.revise');
     Route::post('/business-support/purchasing/po/{po}/termin',     [BsPoController::class, 'postTermin'])->name('bs.po.termin');
     Route::post('/business-support/purchasing/po/{po}/adjust-ppn', [BsPoController::class, 'adjustPpn'])->name('bs.po.adjust-ppn');
+    // Cetak PO & Report PO — SENGAJA memakai segmen 'po-print'/'po-report' (bukan 'po/print'),
+    // karena route GET 'po/{po}' di atas akan menelan segmen apa pun sebagai id PO.
+    Route::get('/business-support/purchasing/po-print',            [BsPoController::class, 'print'])->name('bs.po.print');
+    Route::post('/business-support/purchasing/po-print/mark',      [BsPoController::class, 'markPrinted'])->name('bs.po.print.mark');
+    Route::post('/business-support/purchasing/po-print/{po}/save', [BsPoController::class, 'savePrintFormat'])->name('bs.po.print.save');
+    Route::get('/business-support/purchasing/po-report',           [BsPoController::class, 'report'])->name('bs.po.report');
 
     // ── GENERAL LEDGER (modul mandiri; /general-ledger → hub GL) ──
     Route::redirect('/general-ledger', '/business-support/gl')->name('gl.home');

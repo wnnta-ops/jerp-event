@@ -12,20 +12,32 @@ const props = withDefaults(defineProps<{
     options: string[];          // nilai unik yang ada (sudah dalam bentuk tampilan)
     placeholder?: string;
     align?: 'left' | 'right';
+    /**
+     * Filter KETIK (berisi/contains) untuk kolom ini. OPSIONAL & opt-in: bila prop `text`
+     * di-bind (v-model:text), pemicu berubah jadi kotak ketik + tombol panah. Bila tidak
+     * di-bind, komponen berperilaku persis seperti semula (tombol dropdown checklist saja),
+     * sehingga halaman lain yang memakai ColumnFilter tidak berubah.
+     */
+    text?: string;
 }>(), { placeholder: 'Semua', align: 'left' });
 
-const emit = defineEmits<{ (e: 'update:modelValue', v: string[]): void }>();
+const emit = defineEmits<{
+    (e: 'update:modelValue', v: string[]): void;
+    (e: 'update:text', v: string): void;
+}>();
+
+const typeable = computed(() => props.text !== undefined);
 
 const open = ref(false);
 const query = ref('');
 const root = ref<HTMLElement | null>(null);
-const trigger = ref<HTMLButtonElement | null>(null);
+const trigger = ref<HTMLElement | null>(null);   // <button> (mode lama) atau <div> (mode ketik)
 const panel = ref<HTMLElement | null>(null);
 const searchInput = ref<HTMLInputElement | null>(null);
 const pos = ref({ left: 0, top: 0, width: 0 });
 
 const selectedSet = computed(() => new Set(props.modelValue));
-const active = computed(() => props.modelValue.length > 0);
+const active = computed(() => props.modelValue.length > 0 || Boolean(props.text));
 const filtered = computed(() => {
     const q = query.value.trim().toLowerCase();
     return q ? props.options.filter((o) => (o ?? '').toLowerCase().includes(q)) : props.options;
@@ -48,7 +60,7 @@ function toggleAllVisible() {
     else filtered.value.forEach((o) => set.add(o));
     emit('update:modelValue', [...set]);
 }
-function clearAll() { emit('update:modelValue', []); }
+function clearAll() { emit('update:modelValue', []); if (typeable.value) emit('update:text', ''); }
 
 function updatePos() {
     const btn = trigger.value;
@@ -90,7 +102,20 @@ onBeforeUnmount(() => {
 
 <template>
     <div ref="root" class="relative">
-        <button ref="trigger" type="button" @click="toggle"
+        <!-- Mode KETIK (prop `text` di-bind): ketik untuk menyaring "berisi", panah untuk checklist. -->
+        <div v-if="typeable" ref="trigger"
+            class="flex h-7 w-full items-center gap-1 rounded border bg-white pl-2 pr-1 text-xs dark:bg-neutral-900"
+            :class="[active ? 'border-primary-400' : 'border-neutral-300 dark:border-neutral-700', open ? 'ring-2 ring-primary-300/50' : '']">
+            <input :value="text" @input="emit('update:text', ($event.target as HTMLInputElement).value)"
+                :placeholder="modelValue.length ? btnLabel : placeholder" type="text"
+                class="h-full w-full min-w-0 border-0 bg-transparent p-0 text-xs outline-none placeholder:text-neutral-400 focus:ring-0"
+                :class="active ? 'text-primary-700 dark:text-primary-300' : 'text-neutral-600 dark:text-neutral-300'" />
+            <button type="button" @click="toggle" :title="'Pilih dari daftar'" class="shrink-0 rounded p-0.5 hover:bg-neutral-100 dark:hover:bg-neutral-800">
+                <ChevronDown class="h-3.5 w-3.5" :class="active ? 'text-primary-500' : 'text-neutral-400'" />
+            </button>
+        </div>
+
+        <button v-else ref="trigger" type="button" @click="toggle"
             class="flex h-7 w-full items-center justify-between gap-1 rounded border bg-white px-2 text-xs font-normal dark:bg-neutral-900"
             :class="[active ? 'border-primary-400 text-primary-700 dark:text-primary-300' : 'border-neutral-300 text-neutral-500 dark:border-neutral-700', open ? 'ring-2 ring-primary-300/50' : '']">
             <span class="truncate">{{ btnLabel }}</span>

@@ -260,4 +260,214 @@ class PurchaseOrderController extends Controller
 
         return back()->with('success', "PO {$po->po_number} ditutup.");
     }
+
+    // ─────────────────────────── CETAK PURCHASE ORDER ───────────────────────────
+    // Format mengikuti lampiran PO-JI-2026-07-0074: kop MUP, blok Nomor/Sistem Pembayaran/
+    // Kepada Yth + Proyek/Kirim Ke/Tanggal Order/Pelaksanaan/Penerima, tabel barang, ringkasan
+    // Subtotal/PPN/TOTAL, Catatan, KONDISI PEMBELIAN, dan 3 kolom tanda tangan.
+    // Halaman cetak BISA DIEDIT; hasil editnya disimpan per-PO di kolom JSON print_meta.
+
+    /**
+     * Pratinjau + cetak satu atau BANYAK PO sekaligus (dipanggil dari daftar Invoice Hutang
+     * yang baris-barisnya dicentang). ids = daftar id PO dipisah koma.
+     */
+    public function print(Request $request): Response
+    {
+        // Modul 'ap' ikut diizinkan: pintu masuk utamanya adalah tombol "Cetak PO" pada daftar
+        // Invoice Hutang (halaman bermodul 'ap'). Tanpa ini, petugas AP yang tidak punya modul
+        // 'bs' akan menerima 403 di tab baru tanpa penjelasan. Ini jalur BACA/CETAK saja.
+        abort_unless($this->canPrint($request), 403);
+
+        $ids = collect(explode(',', (string) $request->query('ids')))
+            ->map(fn ($v) => (int) trim($v))->filter()->unique()->values();
+        abort_if($ids->isEmpty(), 404, 'Tidak ada Purchase Order yang dipilih.');
+
+        $orders = BsPurchaseOrder::with(['lines.item.uom', 'supplier', 'project'])
+            ->whereIn('id', $ids)->orderBy('po_date')->orderBy('id')->get();
+        abort_if($orders->isEmpty(), 404, 'Purchase Order tidak ditemukan.');
+
+        return Inertia::render('BusinessSupport/Purchasing/PurchaseOrders/Print', [
+            'orders' => $orders->map(fn (BsPurchaseOrder $po) => $this->printPayload($po))->values(),
+        ]);
+    }
+
+    /**
+     * Boleh melihat & mencetak PO: modul Purchasing ('bs') ATAU Account Payable ('ap'),
+     * karena cetak PO dipicu dari kedua modul tersebut. Menyimpan format tetap khusus 'bs'.
+     */
+    private function canPrint(Request $request): bool
+    {
+        $u = $request->user();
+
+        return (bool) ($u?->canModule('bs') || $u?->canModule('ap'));
+    }
+
+    /** Susun data cetak satu PO: nilai bawaan dari data PO, ditimpa hasil edit (print_meta). */
+    private function printPayload(BsPurchaseOrder $po): array
+    {
+        $co       = (array) config('business_support.company');
+        $coName   = (string) ($co['name'] ?? 'PT. MITRA USAHA PROPERTINDO');
+        $supplier = $po->supplier;
+
+        $items = $po->lines->map(function ($l) {
+            $item = $l->item;
+            $qty  = (float) $l->qty;
+
+            return [
+                'nama'  => trim((($item?->code) ? $item->code.' - ' : '').($item?->name ?? '')),
+                'sat'   => $item?->uom?->code ?? $item?->uom?->name ?? '',
+                'qty'   => $qty,
+                'harga' => (float) $l->unit_price,
+                'jumlah' => round($qty * (float) $l->unit_price, 2),
+            ];
+        })->values()->all();
+
+        $subtotal = round((float) collect($items)->sum('jumlah'), 2);
+        $ppnPct   = (float) $po->ppn_pct;
+        $ppn      = round($subtotal * $ppnPct / 100, 2);
+
+        // Nilai bawaan (dari data) — semuanya boleh diubah operator di halaman cetak.
+        $default = [
+            'nomor'             => $po->po_number,
+            'sistem_pembayaran' => $po->term_payment ?: 'Term Of Payment (TOP)',
+            'kepada'            => $supplier?->name ?? '',
+            'kepada_alamat'     => trim(implode(', ', array_filter([$supplier?->address, $supplier?->city]))),
+            'proyek'            => $po->project?->name ?? '',
+            'kirim_ke'          => $coName,
+            'kirim_alamat'      => (string) ($co['address'] ?? ''),
+            'tanggal_order'     => $po->po_date?->translatedFormat('d F Y') ?? '',
+            'pelaksanaan'       => $coName,
+            'penerima'          => '',
+            'items'             => $items,
+            'subtotal'          => $subtotal,
+            'ppn_pct'           => $ppnPct,
+            'ppn_amount'        => $ppn,
+            'total'             => round($subtotal + $ppn, 2),
+            'catatan'           => 'Harga Sudah termasuk PPN '.rtrim(rtrim(number_format($ppnPct, 2, ',', '.'), '0'), ',').'% & Ongkir',
+            'cara_pembayaran'   => $po->term_payment ?: 'Nett 30 hari',
+            'garansi'           => 'Keterangan tambahan terlampir dan menjadi satu kesatuan yang tidak terpisahkan dengan PO ini',
+            'kelengkapan'       => "Kwitansi asli (≥ 5 juta bermaterai) · Invoice (1 asli)\nSurat jalan (asli) · Faktur Pajak (2 lembar)\nSurat Pesanan Barang/PO (asli)",
+            'pengambilan'       => 'Pengambilan PO asli dan penyerahan tagihan di '.$coName.' RUKO AVENUE NO. 27, KAHURIPAN NIRWANA - SIDOARJO. Penyerahan berkas lengkap (invoice & faktur) setiap bulan pada periode tgl. 7, 8, 22 & 23',
+            'pembayaran'        => 'Pembayaran dilakukan dengan cara transfer',
+            'ttd'               => [
+                ['label' => 'Dibuat Oleh,', 'nama' => '', 'jabatan' => ''],
+                ['label' => 'Mengetahui,', 'nama' => '', 'jabatan' => 'General Manager'],
+                ['label' => 'Disetujui,', 'nama' => (string) ($co['signer_name'] ?? ''), 'jabatan' => (string) ($co['signer_title'] ?? 'Direktur')],
+            ],
+        ];
+
+        // Hasil edit yang tersimpan menimpa nilai bawaan — TAPI hanya field presentasi
+        // (lihat PRINT_META_KEYS). Nomor PO, baris barang, dan seluruh angka SELALU diambil
+        // ulang dari data PO agar cetakan tidak pernah membeku di nilai lama.
+        $meta = collect(is_array($po->print_meta) ? $po->print_meta : [])
+            ->only(self::PRINT_META_KEYS)->all();
+
+        return [
+            'id'          => $po->id,
+            'po_number'   => $po->po_number,
+            'printed_at'  => $po->printed_at?->toDateTimeString(),
+            'print_count' => (int) $po->print_count,
+            'form'        => array_replace($default, $meta),
+        ];
+    }
+
+    /**
+     * Field format cetak yang BOLEH disimpan (murni presentasi/keterangan).
+     *
+     * Sengaja TIDAK memuat: nomor, items, subtotal, ppn_pct, ppn_amount, total. Angka & baris
+     * barang harus selalu mengikuti data PO yang berlaku — kalau ikut disimpan, PO yang direvisi
+     * (bs.po.revise / adjust-ppn) akan tetap tercetak dengan baris & total lama, dan nomor PO
+     * bisa ditulis ulang jadi berbeda dari record. Operator tetap bebas mengubahnya di layar
+     * untuk cetakan saat itu; yang tidak diizinkan hanyalah membekukannya untuk selamanya.
+     */
+    private const PRINT_META_KEYS = [
+        'sistem_pembayaran', 'kepada', 'kepada_alamat', 'proyek', 'kirim_ke', 'kirim_alamat',
+        'tanggal_order', 'pelaksanaan', 'penerima', 'catatan', 'cara_pembayaran', 'garansi',
+        'kelengkapan', 'pengambilan', 'pembayaran', 'ttd',
+    ];
+
+    /** Simpan hasil edit format cetak (print_meta) — agar cetakan berikutnya tetap sama. */
+    public function savePrintFormat(Request $request, BsPurchaseOrder $po): RedirectResponse
+    {
+        abort_unless($request->user()?->canModule('bs'), 403);
+        $form = $request->validate(['form' => ['required', 'array']])['form'];
+        // Hanya field presentasi yang dipersistensi (lihat PRINT_META_KEYS).
+        $po->update(['print_meta' => collect($form)->only(self::PRINT_META_KEYS)->all()]);
+
+        return back()->with('success', "Format cetak PO {$po->po_number} disimpan.");
+    }
+
+    /**
+     * Catat bahwa PO benar-benar DICETAK (bukan sekadar dibuka) — sumber kolom
+     * "waktu cetak PO" pada Report PO.
+     */
+    public function markPrinted(Request $request): RedirectResponse
+    {
+        // Sama seperti print(): petugas AP juga mencetak, jadi jejak cetaknya harus ikut tercatat.
+        abort_unless($this->canPrint($request), 403);
+        $ids = collect($request->input('ids', []))->map(fn ($v) => (int) $v)->filter()->unique();
+        if ($ids->isEmpty()) {
+            return back();
+        }
+        BsPurchaseOrder::whereIn('id', $ids)->update([
+            'printed_at'  => now(),
+            'printed_by'  => $request->user()->id,
+            'print_count' => DB::raw('print_count + 1'),
+        ]);
+
+        return back();
+    }
+
+    // ─────────────────────────── REPORT PO ───────────────────────────
+
+    /** Laporan jumlah PO per supplier + rincian nomor PO, waktu dibuat, dan waktu dicetak. */
+    public function report(Request $request): Response
+    {
+        abort_unless($request->user()?->canModule('bs'), 403);
+
+        $orders = BsPurchaseOrder::query()
+            ->with(['supplier:id,code,name', 'project:id,name'])
+            ->when($request->input('from'), fn ($q, $v) => $q->whereDate('po_date', '>=', $v))
+            ->when($request->input('to'), fn ($q, $v) => $q->whereDate('po_date', '<=', $v))
+            ->orderBy('po_date')->orderBy('id')
+            ->get();
+
+        // Kelompokkan per supplier: jumlah PO + nilai + rincian tiap nomor PO.
+        $groups = $orders->groupBy(fn ($po) => $po->supplier_id ?? 0)
+            ->map(function ($list) {
+                $first = $list->first();
+
+                return [
+                    'supplier_id'   => $first->supplier_id,
+                    'supplier_code' => $first->supplier?->code,
+                    'supplier'      => $first->supplier?->name ?? '(tanpa supplier)',
+                    'po_count'      => $list->count(),
+                    'total'         => round((float) $list->sum(fn ($p) => (float) $p->total), 2),
+                    'printed_count' => $list->filter(fn ($p) => $p->printed_at !== null)->count(),
+                    'orders'        => $list->map(fn ($p) => [
+                        'id'          => $p->id,
+                        'po_number'   => $p->po_number,
+                        'po_date'     => $p->po_date?->toDateString(),
+                        'project'     => $p->project?->name,
+                        'status'      => $p->status,
+                        'total'       => round((float) $p->total, 2),
+                        'created_at'  => $p->created_at?->toDateTimeString(),   // waktu pembuatan PO
+                        'printed_at'  => $p->printed_at?->toDateTimeString(),   // waktu cetak PO
+                        'print_count' => (int) $p->print_count,
+                    ])->values(),
+                ];
+            })
+            ->sortByDesc('po_count')->values();
+
+        return Inertia::render('BusinessSupport/Purchasing/PurchaseOrders/Report', [
+            'groups'  => $groups,
+            'filters' => $request->only(['from', 'to']),
+            'summary' => [
+                'suppliers' => $groups->count(),
+                'po_count'  => $orders->count(),
+                'total'     => round((float) $orders->sum(fn ($p) => (float) $p->total), 2),
+                'printed'   => $orders->filter(fn ($p) => $p->printed_at !== null)->count(),
+            ],
+        ]);
+    }
 }
