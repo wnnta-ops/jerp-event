@@ -48,16 +48,17 @@ function act(name: string) { router.post(route(`bs.gl.journal.${name}`, props.jo
         </div>
         <div class="card overflow-hidden">
             <table class="w-full text-sm">
-                <thead class="bg-neutral-50 dark:bg-neutral-800"><tr class="text-left text-xs uppercase text-neutral-500"><th class="px-4 py-3">Akun</th><th class="px-4 py-3">Keterangan</th><th class="px-4 py-3 text-right">Debit</th><th class="px-4 py-3 text-right">Kredit</th></tr></thead>
+                <thead class="bg-neutral-50 dark:bg-neutral-800"><tr class="text-left text-xs uppercase text-neutral-500"><th class="px-4 py-3">Akun</th><th class="px-4 py-3">Cost Center</th><th class="px-4 py-3">Keterangan</th><th class="px-4 py-3 text-right">Debit</th><th class="px-4 py-3 text-right">Kredit</th></tr></thead>
                 <tbody class="divide-y divide-neutral-200 dark:divide-neutral-800">
                     <tr v-for="l in journal.lines" :key="l.id">
                         <td class="px-4 py-2.5"><span class="font-mono">{{ l.account?.code }}</span> {{ l.account?.name }}</td>
+                        <td class="px-4 py-2.5 text-neutral-500">{{ l.cost_center ? l.cost_center.code + ' - ' + l.cost_center.name : '—' }}</td>
                         <td class="px-4 py-2.5 text-neutral-500">{{ l.description ?? '—' }}</td>
                         <td class="px-4 py-2.5 text-right font-mono">{{ Number(l.debit) > 0 ? fmtRp(l.debit) : '' }}</td>
                         <td class="px-4 py-2.5 text-right font-mono">{{ Number(l.credit) > 0 ? fmtRp(l.credit) : '' }}</td>
                     </tr>
                 </tbody>
-                <tfoot class="bg-neutral-50 dark:bg-neutral-800 font-bold"><tr><td colspan="2" class="px-4 py-2 text-right">Total</td><td class="px-4 py-2 text-right font-mono">{{ fmtRp(journal.total_debit) }}</td><td class="px-4 py-2 text-right font-mono">{{ fmtRp(journal.total_credit) }}</td></tr></tfoot>
+                <tfoot class="bg-neutral-50 dark:bg-neutral-800 font-bold"><tr><td colspan="3" class="px-4 py-2 text-right">Total</td><td class="px-4 py-2 text-right font-mono">{{ fmtRp(journal.total_debit) }}</td><td class="px-4 py-2 text-right font-mono">{{ fmtRp(journal.total_credit) }}</td></tr></tfoot>
             </table>
         </div>
     </div>

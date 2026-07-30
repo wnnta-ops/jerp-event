@@ -11,6 +11,7 @@ const props = defineProps<{
     types: Record<string, string>;
     cfDirect: Array<{ id: number; code: string; name: string; activity: string }>;
     cfIndirect: Array<{ id: number; code: string; name: string; activity: string }>;
+    costCenters: Array<{ id: number; code: string; name: string }>;
     filters: Record<string, any>;
     stats: { total: number; postable: number };
 }>();
@@ -26,7 +27,7 @@ const levelName: Record<number, string> = { 1: 'Kategori', 2: 'Sub Kategori', 3:
 
 const showModal = ref(false);
 const editingId = ref<number | null>(null);
-const form = useForm<any>({ code: '', name: '', type: 'asset', normal_balance: 'D', is_postable: true, is_active: true, cf_direct_category_id: null, cf_indirect_category_id: null });
+const form = useForm<any>({ code: '', name: '', type: 'asset', normal_balance: 'D', is_postable: true, is_active: true, cf_direct_category_id: null, cf_indirect_category_id: null, cost_center_id: null });
 
 function openCreate() { editingId.value = null; form.reset(); showModal.value = true; }
 function openEdit(a: any) {
@@ -35,6 +36,7 @@ function openEdit(a: any) {
     form.is_postable = !!a.is_postable; form.is_active = !!a.is_active;
     form.cf_direct_category_id = a.cf_direct_category_id ?? null;
     form.cf_indirect_category_id = a.cf_indirect_category_id ?? null;
+    form.cost_center_id = a.cost_center_id ?? null;
     showModal.value = true;
 }
 function submit() {
@@ -77,6 +79,7 @@ const inputCls = 'h-9 w-full rounded-lg border border-neutral-300 bg-white px-3 
                     <tr class="text-left text-xs uppercase text-neutral-500">
                         <th class="px-4 py-3">Kode / Akun</th><th class="px-4 py-3">Level</th><th class="px-4 py-3">Tipe</th>
                         <th class="px-4 py-3 text-center">Normal</th><th class="px-4 py-3 text-center">Postable</th>
+                        <th class="px-4 py-3">Cost Center</th>
                         <th class="px-4 py-3">Cash Flow Direct</th><th class="px-4 py-3">Cash Flow Indirect</th>
                         <th class="px-4 py-3 text-right">Aksi</th>
                     </tr>
@@ -94,6 +97,10 @@ const inputCls = 'h-9 w-full rounded-lg border border-neutral-300 bg-white px-3 
                         <td class="px-4 py-2"><Badge v-if="a.is_postable" :variant="typeColor[a.type] ?? 'neutral'" size="sm">{{ types[a.type] }}</Badge></td>
                         <td class="px-4 py-2 text-center font-mono text-xs">{{ a.is_postable ? a.normal_balance : '' }}</td>
                         <td class="px-4 py-2 text-center">{{ a.is_postable ? '✓' : '—' }}</td>
+                        <td class="px-4 py-2 text-xs">
+                            <span v-if="a.cost_center" class="inline-flex items-center gap-1 whitespace-nowrap rounded bg-primary-50 px-1.5 py-0.5 text-primary-700 dark:bg-primary-900/25 dark:text-primary-300"><span class="font-mono">{{ a.cost_center.code }}</span> {{ a.cost_center.name }}</span>
+                            <span v-else class="text-neutral-300 dark:text-neutral-600">—</span>
+                        </td>
                         <td class="px-4 py-2 text-xs">
                             <span v-if="a.cf_direct_category" class="inline-flex items-center gap-1 whitespace-nowrap rounded bg-sky-50 px-1.5 py-0.5 text-sky-700 dark:bg-sky-900/25 dark:text-sky-300"><span class="font-mono">{{ a.cf_direct_category.code }}</span> {{ a.cf_direct_category.name }}</span>
                             <span v-else class="text-neutral-300 dark:text-neutral-600">—</span>
@@ -140,6 +147,15 @@ const inputCls = 'h-9 w-full rounded-lg border border-neutral-300 bg-white px-3 
                                 </select>
                                 <p v-if="form.errors.cf_indirect_category_id" class="mt-1 text-xs text-danger-500">{{ form.errors.cf_indirect_category_id }}</p>
                             </div>
+                        </div>
+                        <div>
+                            <label class="mb-1 block text-xs font-medium text-neutral-500">Cost Center</label>
+                            <select v-model="form.cost_center_id" :class="inputCls">
+                                <option :value="null">— tidak dipetakan —</option>
+                                <option v-for="c in costCenters" :key="c.id" :value="c.id">{{ c.code }} - {{ c.name }}</option>
+                            </select>
+                            <p class="mt-1 text-[11px] text-neutral-400">Dipakai otomatis & dikunci pada tiap baris Input Jurnal yang memakai akun ini.</p>
+                            <p v-if="form.errors.cost_center_id" class="mt-1 text-xs text-danger-500">{{ form.errors.cost_center_id }}</p>
                         </div>
                         <div class="flex gap-5">
                             <label class="flex items-center gap-2 text-sm"><input v-model="form.is_postable" type="checkbox" class="rounded" /> Bisa dijurnal</label>

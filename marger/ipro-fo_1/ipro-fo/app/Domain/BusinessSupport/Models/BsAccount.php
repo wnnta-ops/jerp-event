@@ -20,7 +20,7 @@ class BsAccount extends Model
 
     protected $fillable = [
         'tenant_id', 'code', 'category_code', 'name', 'type', 'level', 'parent_code', 'normal_balance', 'parent_id', 'is_postable', 'is_active',
-        'cf_direct_category_id', 'cf_indirect_category_id',
+        'cf_direct_category_id', 'cf_indirect_category_id', 'cost_center_id',
     ];
 
     /** Kategori (head) sebuah kode — biasanya digit pertama, kecuali pengelompokan eProperty. */
@@ -61,5 +61,11 @@ class BsAccount extends Model
     public function cfIndirectCategory(): BelongsTo
     {
         return $this->belongsTo(BsCashFlowCategory::class, 'cf_indirect_category_id');
+    }
+
+    /** Cost Center akun ini — diturunkan ke tiap baris jurnal (dikunci di Input Jurnal manual). */
+    public function costCenter(): BelongsTo
+    {
+        return $this->belongsTo(BsCostCenter::class, 'cost_center_id');
     }
 }
