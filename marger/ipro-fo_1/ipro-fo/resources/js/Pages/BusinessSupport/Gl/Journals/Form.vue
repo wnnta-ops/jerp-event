@@ -16,12 +16,13 @@ const e = props.editing;
 const form = useForm<any>(e ? {
     journal_date: String(e.journal_date).slice(0, 10), reference: e.reference ?? '', description: e.description ?? '',
     cost_center_id: e.cost_center_id ?? '',
-    lines: (e.lines ?? []).map((l: any) => ({ account_id: l.account_id, description: l.description ?? '', debit: Number(l.debit) || 0, credit: Number(l.credit) || 0 })),
+    lines: (e.lines ?? []).map((l: any) => ({ account_id: l.account_id, cost_center_id: l.cost_center_id ?? '', description: l.description ?? '', debit: Number(l.debit) || 0, credit: Number(l.credit) || 0 })),
 } : {
     journal_date: today, reference: '', description: '', cost_center_id: '',
-    lines: [{ account_id: '', description: '', debit: 0, credit: 0 }, { account_id: '', description: '', debit: 0, credit: 0 }],
+    lines: [{ account_id: '', cost_center_id: '', description: '', debit: 0, credit: 0 }, { account_id: '', cost_center_id: '', description: '', debit: 0, credit: 0 }],
 });
-function addLine() { form.lines.push({ account_id: '', description: '', debit: 0, credit: 0 }); }
+// Baris baru mewarisi cost center header sebagai titik awal — tetap bisa diganti per baris.
+function addLine() { form.lines.push({ account_id: '', cost_center_id: form.cost_center_id ?? '', description: '', debit: 0, credit: 0 }); }
 function removeLine(i: number) { form.lines.splice(i, 1); }
 
 const totalDebit = computed(() => form.lines.reduce((s: number, l: any) => s + (Number(l.debit) || 0), 0));
@@ -67,10 +68,12 @@ const inputCls = 'h-9 w-full rounded-lg border border-neutral-300 bg-white px-3 
                     <button type="button" @click="addLine" class="inline-flex items-center gap-1 rounded-lg border border-neutral-300 px-2.5 py-1.5 text-xs hover:bg-neutral-50 dark:border-neutral-700"><Plus class="h-3.5 w-3.5" /> Baris</button>
                 </div>
                 <table class="w-full text-sm">
-                    <thead class="text-left text-xs uppercase text-neutral-500"><tr><th class="py-2">Akun</th><th class="py-2">Keterangan</th><th class="w-36 py-2 text-right">Debit</th><th class="w-36 py-2 text-right">Kredit</th><th class="w-10"></th></tr></thead>
+                    <thead class="text-left text-xs uppercase text-neutral-500"><tr><th class="py-2">Akun</th><th class="py-2">Cost Center</th><th class="py-2">Keterangan</th><th class="w-36 py-2 text-right">Debit</th><th class="w-36 py-2 text-right">Kredit</th><th class="w-10"></th></tr></thead>
                     <tbody>
                         <tr v-for="(l, i) in form.lines" :key="i" class="border-t border-neutral-100 dark:border-neutral-800">
                             <td class="min-w-[240px] py-1.5 pr-2"><SearchSelect v-model="l.account_id" :options="accounts" placeholder="— pilih / ketik akun —" /></td>
+                            <!-- Cost center PER COA. Dikosongkan → ikut cost center header. -->
+                            <td class="min-w-[190px] py-1.5 pr-2"><SearchSelect v-model="l.cost_center_id" :options="costCenters" placeholder="— ikut header —" /></td>
                             <td class="py-1.5 pr-2"><input v-model="l.description" :class="inputCls" /></td>
                             <td class="py-1.5 pr-2"><input v-model.number="l.debit" type="number" step="1" min="0" :class="[inputCls,'text-right']" @input="l.debit && (l.credit = 0)" /></td>
                             <td class="py-1.5 pr-2"><input v-model.number="l.credit" type="number" step="1" min="0" :class="[inputCls,'text-right']" @input="l.credit && (l.debit = 0)" /></td>
@@ -78,7 +81,7 @@ const inputCls = 'h-9 w-full rounded-lg border border-neutral-300 bg-white px-3 
                         </tr>
                     </tbody>
                     <tfoot class="border-t-2 border-neutral-200 text-sm font-bold dark:border-neutral-700">
-                        <tr><td colspan="2" class="py-2 text-right text-neutral-500">Total</td><td class="py-2 text-right font-mono">{{ fmtRp(totalDebit) }}</td><td class="py-2 text-right font-mono">{{ fmtRp(totalCredit) }}</td><td></td></tr>
+                        <tr><td colspan="3" class="py-2 text-right text-neutral-500">Total</td><td class="py-2 text-right font-mono">{{ fmtRp(totalDebit) }}</td><td class="py-2 text-right font-mono">{{ fmtRp(totalCredit) }}</td><td></td></tr>
                     </tfoot>
                 </table>
                 <div class="mt-3 flex items-center gap-2 text-sm" :class="balanced ? 'text-success-600' : 'text-danger-600'">

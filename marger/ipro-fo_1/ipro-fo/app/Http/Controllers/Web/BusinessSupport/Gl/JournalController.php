@@ -244,6 +244,26 @@ class JournalController extends Controller
             ->header('Content-Disposition', 'attachment; filename="'.$file.'"');
     }
 
+    /**
+     * Lengkapi cost center tiap baris jurnal.
+     *
+     * Tiap COA boleh dibebankan ke cost center sendiri. Baris yang dikosongkan mewarisi cost
+     * center header, sehingga dimensi GL tidak pernah kosong dan perilaku jurnal lama (satu
+     * cost center untuk seluruh baris) tetap sama persis.
+     *
+     * @param  array<int,array<string,mixed>>  $lines
+     * @return array<int,array<string,mixed>>
+     */
+    private function withLineCostCenter(array $lines, int $headerCostCenterId): array
+    {
+        return array_map(function (array $l) use ($headerCostCenterId): array {
+            $cc = $l['cost_center_id'] ?? null;
+            $l['cost_center_id'] = $cc ? (int) $cc : $headerCostCenterId;
+
+            return $l;
+        }, $lines);
+    }
+
     public function create(Request $request): Response
     {
         abort_unless($request->user()?->canModule('gl'), 403);
@@ -265,14 +285,20 @@ class JournalController extends Controller
             'cost_center_id' => ['required', 'integer', 'exists:bs_cost_centers,id'], // wajib (mandatory)
             'lines'                 => ['required', 'array', 'min:2'],
             'lines.*.account_id'    => ['required', 'integer', 'exists:bs_accounts,id'],
+            // Cost center PER BARIS (opsional) — tiap COA boleh dibebankan ke cost center sendiri.
+            // Bila dikosongkan, dipakai cost center header sebagai bawaan (lihat withLineCostCenter).
+            'lines.*.cost_center_id' => ['nullable', 'integer', 'exists:bs_cost_centers,id'],
             'lines.*.debit'         => ['nullable', 'numeric', 'min:0'],
             'lines.*.credit'        => ['nullable', 'numeric', 'min:0'],
             'lines.*.description'   => ['nullable', 'string', 'max:200'],
         ]);
 
+        $lines = $this->withLineCostCenter($v['lines'], (int) $v['cost_center_id']);
+
         try {
-            // Gerbang over-budget: tolak input bila baris menambah realisasi melewati anggaran (akun+cost center).
-            $guard->assertWithinBudget($v['lines'], (int) $v['cost_center_id'], $v['journal_date']);
+            // Gerbang over-budget: tolak input bila baris menambah realisasi melewati anggaran
+            // (akun + cost center BARIS, dengan cost center header sebagai cadangan).
+            $guard->assertWithinBudget($lines, (int) $v['cost_center_id'], $v['journal_date']);
             $journal = $svc->post([
                 'journal_date'   => $v['journal_date'],
                 'source'         => 'memorial',
@@ -281,7 +307,7 @@ class JournalController extends Controller
                 'description'    => $v['description'],
                 'cost_center_id' => $v['cost_center_id'] ?? null,
                 'created_by'     => $request->user()->id,
-            ], $v['lines']);
+            ], $lines);
         } catch (BusinessRuleException $e) {
             return back()->withInput()->with('error', $e->getMessage());
         }
@@ -318,7 +344,9 @@ class JournalController extends Controller
             'costCenters' => BsCostCenter::where('is_active', true)->orderBy('code')->get(['id', 'code', 'name']),
             'editing'     => array_merge(
                 $journal->only(['id', 'journal_number', 'journal_date', 'reference', 'description', 'cost_center_id', 'source', 'status']),
-                ['lines' => $journal->lines()->get(['account_id', 'description', 'debit', 'credit'])->toArray()],
+                // cost_center_id per baris WAJIB ikut dimuat — tanpa ini, mengedit jurnal akan
+                // mengembalikan baris tanpa cost center dan diam-diam menimpanya dgn cost center header.
+                ['lines' => $journal->lines()->get(['account_id', 'cost_center_id', 'description', 'debit', 'credit'])->toArray()],
             ),
         ]);
     }
@@ -335,20 +363,24 @@ class JournalController extends Controller
             'cost_center_id'      => ['required', 'integer', 'exists:bs_cost_centers,id'], // wajib (mandatory)
             'lines'               => ['required', 'array', 'min:2'],
             'lines.*.account_id'  => ['required', 'integer', 'exists:bs_accounts,id'],
+            // Cost center per baris — lihat catatan pada store().
+            'lines.*.cost_center_id' => ['nullable', 'integer', 'exists:bs_cost_centers,id'],
             'lines.*.debit'       => ['nullable', 'numeric', 'min:0'],
             'lines.*.credit'      => ['nullable', 'numeric', 'min:0'],
             'lines.*.description' => ['nullable', 'string', 'max:200'],
         ]);
 
+        $lines = $this->withLineCostCenter($v['lines'], (int) $v['cost_center_id']);
+
         try {
             // Gerbang over-budget (kecualikan jurnal ini dari realisasi agar tak dihitung ganda saat edit).
-            $guard->assertWithinBudget($v['lines'], (int) $v['cost_center_id'], $v['journal_date'], $journal->id);
+            $guard->assertWithinBudget($lines, (int) $v['cost_center_id'], $v['journal_date'], $journal->id);
             $svc->update($journal, [
                 'journal_date'   => $v['journal_date'],
                 'reference'      => $v['reference'] ?? null,
                 'description'    => $v['description'],
                 'cost_center_id' => $v['cost_center_id'] ?? null,
-            ], $v['lines']);
+            ], $lines);
         } catch (BusinessRuleException $e) {
             return back()->withInput()->with('error', $e->getMessage());
         }
