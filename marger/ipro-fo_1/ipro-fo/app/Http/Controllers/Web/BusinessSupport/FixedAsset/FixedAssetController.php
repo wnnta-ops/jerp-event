@@ -35,20 +35,38 @@ class FixedAssetController extends Controller
             'status' => $a->status, 'pic' => $a->pic, 'location' => $a->location,
         ])->values();
 
-        $cost  = (float) $assets->sum(fn ($a) => (float) $a->acquisition_cost);
-        $accum = (float) $assets->sum(fn ($a) => (float) $a->accumulated_depreciation);
+        // SALDO MENGIKUTI NERACA SALDO (GL) — bukan penjumlahan kartu aset. Lihat glByCategory().
+        $gl = $this->glByCategory();
 
-        // Ringkasan per kategori.
+        // Ringkasan per kategori. Harga Perolehan & Akumulasi diambil dari saldo akun GL agar
+        // selalu sama dengan Neraca Saldo; jumlah unit tetap dari daftar aset (subledger).
         $byCategory = [];
         foreach (BsFixedAsset::CATEGORIES as $k => $label) {
             $grp = $assets->where('category', $k);
-            if ($grp->isEmpty()) {
+            $g   = $gl[$k] ?? ['cost' => 0.0, 'accum' => 0.0, 'asset_code' => null, 'accum_code' => null];
+            // Kategori tetap ditampilkan bila GL bersaldo walau belum ada kartu asetnya, supaya
+            // penjumlahan tabel selalu sama dengan total Neraca Saldo.
+            if ($grp->isEmpty() && (float) $g['cost'] === 0.0 && (float) $g['accum'] === 0.0) {
                 continue;
             }
-            $c  = (float) $grp->sum(fn ($a) => (float) $a->acquisition_cost);
-            $ac = (float) $grp->sum(fn ($a) => (float) $a->accumulated_depreciation);
-            $byCategory[] = ['key' => $k, 'label' => $label, 'count' => $grp->count(), 'cost' => $c, 'accum' => $ac, 'book' => $c - $ac];
+            $subCost  = (float) $grp->sum(fn ($a) => (float) $a->acquisition_cost);
+            $subAccum = (float) $grp->sum(fn ($a) => (float) $a->accumulated_depreciation);
+            $byCategory[] = [
+                'key' => $k, 'label' => $label, 'count' => $grp->count(),
+                'cost' => (float) $g['cost'], 'accum' => (float) $g['accum'],
+                'book' => round((float) $g['cost'] - (float) $g['accum'], 2),
+                // Kode akun sumber + nilai subledger & selisihnya (untuk penelusuran bila berbeda).
+                'asset_code'    => $g['asset_code'],
+                'accum_code'    => $g['accum_code'],
+                'sub_cost'      => $subCost,
+                'sub_accum'     => $subAccum,
+                'diff_cost'     => round((float) $g['cost'] - $subCost, 2),
+                'diff_accum'    => round((float) $g['accum'] - $subAccum, 2),
+            ];
         }
+
+        $cost  = round((float) collect($byCategory)->sum('cost'), 2);
+        $accum = round((float) collect($byCategory)->sum('accum'), 2);
 
         // Ringkasan per status.
         $byStatus = [];
@@ -77,6 +95,62 @@ class FixedAssetController extends Controller
                 'disposed_count'=> $assets->where('status', 'disposed')->count(),
             ],
         ]);
+    }
+
+    /**
+     * Saldo GL (Neraca Saldo) per kategori aset tetap — SUMBER TUNGGAL angka Harga Perolehan
+     * & Akumulasi Penyusutan pada Master/Overview Aset Tetap.
+     *
+     * Rumusnya SENGAJA disamakan persis dengan Neraca Saldo (LedgerReportController::trialBalanceData):
+     * Σ(debit − credit) atas baris jurnal berstatus 'posted'. Karena dihitung ulang setiap halaman
+     * dibuka, setiap jurnal baru (registrasi aset, penyusutan, penjualan/penghapusan, koreksi manual)
+     * LANGSUNG tercermin — master aset tetap tidak pernah lagi menyimpang dari neraca saldo.
+     *
+     * Pemetaan kategori → akun diambil dari config business_support.fixed_asset:
+     *   bangunan   → 10201010102 / akumulasi 10203030301
+     *   kendaraan  → 10201010103 / akumulasi 10203030302
+     *   inventaris → 10201010104 / akumulasi 10203030303
+     * Akun akumulasi bersaldo normal KREDIT, jadi tandanya dibalik agar tampil positif.
+     *
+     * @return array<string, array{cost:float, accum:float, asset_code:?string, accum_code:?string}>
+     */
+    private function glByCategory(): array
+    {
+        $map = (array) config('business_support.fixed_asset', []);
+
+        $codes = [];
+        foreach ($map as $acc) {
+            foreach (['asset', 'accum'] as $kind) {
+                if (! empty($acc[$kind])) {
+                    $codes[] = (string) $acc[$kind];
+                }
+            }
+        }
+        $idByCode = BsAccount::whereIn('code', array_values(array_unique($codes)))->pluck('id', 'code');
+
+        $net = $idByCode->isEmpty() ? collect() : \App\Domain\BusinessSupport\Models\BsJournalLine::query()
+            ->join('bs_journals', 'bs_journals.id', '=', 'bs_journal_lines.journal_id')
+            ->where('bs_journals.status', 'posted')
+            ->whereIn('bs_journal_lines.account_id', $idByCode->values()->all())
+            ->selectRaw('bs_journal_lines.account_id, COALESCE(SUM(bs_journal_lines.debit - bs_journal_lines.credit),0) as net')
+            ->groupBy('bs_journal_lines.account_id')
+            ->pluck('net', 'account_id');
+
+        $out = [];
+        foreach ($map as $cat => $acc) {
+            $assetId = ! empty($acc['asset']) ? ($idByCode[$acc['asset']] ?? null) : null;
+            $accumId = ! empty($acc['accum']) ? ($idByCode[$acc['accum']] ?? null) : null;
+
+            $out[(string) $cat] = [
+                'cost'       => $assetId ? round((float) ($net[$assetId] ?? 0), 2) : 0.0,
+                // dibalik: akumulasi penyusutan bersaldo kredit
+                'accum'      => $accumId ? round(-1 * (float) ($net[$accumId] ?? 0), 2) : 0.0,
+                'asset_code' => $acc['asset'] ?? null,
+                'accum_code' => $acc['accum'] ?? null,
+            ];
+        }
+
+        return $out;
     }
 
     /** Report Penjualan/Pelepasan Aset — aset terjual/dihapus + laba/rugi, filter tanggal pelepasan. */

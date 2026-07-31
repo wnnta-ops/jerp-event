@@ -62,15 +62,28 @@ const catTint: Record<string, string> = { bangunan: 'text-sky-600', kendaraan: '
         <!-- Ringkasan per kategori -->
         <div class="grid gap-4 lg:grid-cols-3">
             <div class="card overflow-hidden lg:col-span-2">
-                <div class="flex items-center gap-2 border-b border-neutral-200 px-4 py-3 text-sm font-semibold dark:border-neutral-800"><Layers class="h-4 w-4 text-primary-600" /> Ringkasan per Kategori</div>
+                <div class="flex flex-wrap items-center gap-2 border-b border-neutral-200 px-4 py-3 text-sm font-semibold dark:border-neutral-800">
+                    <Layers class="h-4 w-4 text-primary-600" /> Ringkasan per Kategori
+                    <span class="rounded bg-emerald-50 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300">sinkron Neraca Saldo</span>
+                </div>
                 <table class="w-full text-sm">
                     <thead class="bg-neutral-50 dark:bg-neutral-800"><tr class="text-left text-xs uppercase text-neutral-500"><th class="px-4 py-2.5">Kategori</th><th class="px-4 py-2.5 text-center">Jml</th><th class="px-4 py-2.5 text-right">Harga Perolehan</th><th class="px-4 py-2.5 text-right">Akumulasi</th><th class="px-4 py-2.5 text-right">Nilai Buku</th></tr></thead>
                     <tbody class="divide-y divide-neutral-200 dark:divide-neutral-800">
                         <tr v-for="c in byCategory" :key="c.key">
-                            <td class="px-4 py-2.5 font-medium" :class="catTint[c.key]">{{ c.label }}</td>
+                            <td class="px-4 py-2.5 font-medium" :class="catTint[c.key]">
+                                {{ c.label }}
+                                <span v-if="c.asset_code" class="ml-1 font-mono text-[10px] font-normal text-neutral-400">{{ c.asset_code }}<template v-if="c.accum_code"> · {{ c.accum_code }}</template></span>
+                            </td>
                             <td class="px-4 py-2.5 text-center">{{ c.count }}</td>
-                            <td class="px-4 py-2.5 text-right font-mono">{{ fmtRp(c.cost) }}</td>
-                            <td class="px-4 py-2.5 text-right font-mono text-danger-600">{{ fmtRp(c.accum) }}</td>
+                            <td class="px-4 py-2.5 text-right font-mono">
+                                {{ fmtRp(c.cost) }}
+                                <!-- Selisih terhadap penjumlahan kartu aset (subledger) — hanya tampil bila ada. -->
+                                <span v-if="Math.abs(Number(c.diff_cost ?? 0)) >= 1" class="block text-[10px] font-normal text-amber-600" :title="`Kartu aset: ${fmtRp(c.sub_cost)} — selisih ${fmtRp(c.diff_cost)}`">Δ kartu {{ fmtRp(c.diff_cost) }}</span>
+                            </td>
+                            <td class="px-4 py-2.5 text-right font-mono text-danger-600">
+                                {{ fmtRp(c.accum) }}
+                                <span v-if="Math.abs(Number(c.diff_accum ?? 0)) >= 1" class="block text-[10px] font-normal text-amber-600" :title="`Kartu aset: ${fmtRp(c.sub_accum)} — selisih ${fmtRp(c.diff_accum)}`">Δ kartu {{ fmtRp(c.diff_accum) }}</span>
+                            </td>
                             <td class="px-4 py-2.5 text-right font-mono font-semibold">{{ fmtRp(c.book) }}</td>
                         </tr>
                     </tbody>
