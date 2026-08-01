@@ -8,7 +8,6 @@ use App\Domain\BusinessSupport\Models\BsAccount;
 use App\Domain\BusinessSupport\Models\BsCostCenter;
 use App\Domain\BusinessSupport\Models\BsFiscalPeriod;
 use App\Domain\BusinessSupport\Models\BsJournal;
-use App\Domain\BusinessSupport\Models\BsJournalLine;
 use App\Domain\BusinessSupport\Services\JournalPartyResolver;
 use App\Domain\BusinessSupport\Services\JournalService;
 use App\Exceptions\BusinessRuleException;
@@ -29,16 +28,11 @@ class JournalController extends Controller
         $to   = $request->date('date_to')   ?? now()->endOfMonth();
 
         $rows = BsJournal::query()
-            ->with([
-                'lines.account:id,code,name', 'costCenter:id,code,name', 'createdBy:id,name',
-                // Riwayat status (append-only) — ditampilkan di rincian Detail Transaksi Jurnal.
-                'statusLogs' => fn ($q) => $q->with('user:id,name'),
-            ])
+            ->with(['lines.account:id,code,name', 'costCenter:id,code,name'])
             ->withCount('lines')
             ->whereBetween('journal_date', [$from->toDateString(), $to->toDateString()])
             ->when($request->input('source'), fn ($q, $v) => $q->where('source', $v))
             ->when($request->input('status'), fn ($q, $v) => $q->where('status', $v))
-            ->when($request->input('created_by'), fn ($q, $v) => $q->where('created_by', $v))
             ->when($request->input('search'), fn ($q, $s) => $q->where(fn ($w) => $w->where('journal_number', 'like', "%{$s}%")->orWhere('description', 'like', "%{$s}%")->orWhere('reference', 'like', "%{$s}%")))
             ->latest('journal_date')->latest('id')
             ->paginate(50)->withQueryString();
@@ -46,22 +40,15 @@ class JournalController extends Controller
         // Master → "Jurnal" = ringkas (rincian tersembunyi). Query → "Detail Transaksi Jurnal" = rincian tampil.
         $isDetail = $request->routeIs('bs.gl.journal.detail');
 
-        // Daftar user penginput jurnal (untuk filter "User Input") — hanya yang benar-benar pernah menginput.
-        $creators = \App\Models\User::query()
-            ->whereIn('id', BsJournal::query()->whereNotNull('created_by')->distinct()->pluck('created_by'))
-            ->orderBy('name')->get(['id', 'name']);
-
         return Inertia::render('BusinessSupport/Gl/Journals/Index', [
             'journals'      => $rows,
             'sources'       => BsJournal::SOURCES,
             'statuses'      => BsJournal::STATUSES,
-            'creators'      => $creators,
             'defaultDetail' => $isDetail,
             'listRoute'     => $isDetail ? 'bs.gl.journal.detail' : 'bs.gl.journal.index',
             'title'         => $isDetail ? 'Detail Transaksi Jurnal' : 'Jurnal',
-            'canApprove'    => (bool) $request->user()?->can('businesssupport.approval.act'),
             'filters'  => array_merge(
-                $request->only(['source', 'status', 'search', 'created_by']),
+                $request->only(['source', 'status', 'search']),
                 ['date_from' => $from->toDateString(), 'date_to' => $to->toDateString()],
             ),
         ]);
@@ -200,32 +187,17 @@ class JournalController extends Controller
         $from = $request->date('date_from') ?? now()->startOfMonth();
         $to   = $request->date('date_to')   ?? now()->endOfMonth();
 
-        // Filter rentang kode akun — dipakai saat export dari Buku Besar ("Dari COA .. Sampai COA").
-        $fromCode = trim((string) $request->input('from_code', ''));
-        $toCode   = trim((string) $request->input('to_code', ''));
-        $lo = $hi = '';
-        if ($fromCode !== '' || $toCode !== '') {
-            $lo = $fromCode !== '' ? $fromCode : $toCode;
-            $hi = $toCode !== '' ? $toCode : $fromCode;
-            if (strcmp($lo, $hi) > 0) {
-                [$lo, $hi] = [$hi, $lo];
-            }
-        }
-
         $journals = BsJournal::query()
-            ->with(['lines.account:id,code,name', 'lines.costCenter:id,code,name'])
+            ->with(['lines.account:id,code,name', 'costCenter:id,code,name'])
             ->whereBetween('journal_date', [$from->toDateString(), $to->toDateString()])
             ->when($request->input('source'), fn ($q, $v) => $q->where('source', $v))
             ->when($request->input('status'), fn ($q, $v) => $q->where('status', $v))
-            ->when($request->input('created_by'), fn ($q, $v) => $q->where('created_by', $v))
             ->when($request->input('search'), fn ($q, $s) => $q->where(fn ($w) => $w->where('journal_number', 'like', "%{$s}%")->orWhere('description', 'like', "%{$s}%")->orWhere('reference', 'like', "%{$s}%")))
-            ->when($lo !== '', fn ($q) => $q->whereHas('lines.account', fn ($a) => $a->whereBetween('code', [$lo, $hi])))
             ->latest('journal_date')->latest('id')
             ->get();
 
         $e  = fn ($v) => htmlspecialchars((string) ($v ?? ''), ENT_QUOTES);
-        // Format angka ala legacy (gambar acuan): ribuan koma, tanpa desimal, 0 → "-".
-        $rp = fn ($v) => abs((float) ($v ?? 0)) < 0.005 ? '-' : number_format((float) $v, 0, '.', ',');
+        $rp = fn ($v) => number_format((float) ($v ?? 0), 2, ',', '.');
         $src = BsJournal::SOURCES;
         $st  = BsJournal::STATUSES;
 
@@ -233,101 +205,35 @@ class JournalController extends Controller
         // sekali untuk SELURUH jurnal periode ini (batch), bukan per baris → bukan N+1.
         $pihak = $party->forJournalIds($journals->pluck('id')->all());
 
-        // Kumpulkan semua baris (jurnal × baris) lalu urutkan PER COA: kode akun naik,
-        // di dalam akun tanggal terbaru dulu (sesuai format legacy), saldo berjalan kumulatif.
-        $rows = [];
-        foreach ($journals as $j) {
-            foreach ($j->lines as $ln) {
-                // Bila export per rentang akun: hanya baris yang akunnya di dalam rentang.
-                $code = (string) $ln->account?->code;
-                if ($lo !== '' && ($code < $lo || $code > $hi)) {
-                    continue;
-                }
-                $rows[] = [
-                    'code'   => $code,
-                    'name'   => (string) $ln->account?->name,
-                    'jno'    => $j->journal_number,
-                    'date'   => optional($j->journal_date)->toDateString(),
-                    'source' => $src[$j->source] ?? $j->source,
-                    'pihak'  => $pihak[$j->id] ?? '',
-                    'status' => $st[$j->status] ?? $j->status,
-                    'desc'   => $j->description,
-                    'ref'    => $j->reference,
-                    'cc'     => $ln->costCenter?->name, // cost center per baris (dikunci dari COA), bukan header
-                    'ldesc'  => $ln->description,
-                    'debit'  => (float) $ln->debit,
-                    'credit' => (float) $ln->credit,
-                    'jid'    => (int) $j->id,
-                    'lid'    => (int) $ln->id,
-                ];
-            }
-        }
-        usort($rows, fn ($a, $b) => [$a['code'], $b['date'], $b['jid'], $b['lid']] <=> [$b['code'], $a['date'], $a['jid'], $a['lid']]);
-
-        // Saldo Awal per COA = akumulasi mutasi SEBELUM tanggal awal periode (ikut filter sumber/status/rentang akun).
-        $openings = BsJournalLine::query()
-            ->join('bs_journals as j', 'j.id', '=', 'bs_journal_lines.journal_id')
-            ->join('bs_accounts as a', 'a.id', '=', 'bs_journal_lines.account_id')
-            ->whereNull('j.deleted_at')
-            ->whereDate('j.journal_date', '<', $from->toDateString())
-            ->when($request->input('source'), fn ($q, $v) => $q->where('j.source', $v))
-            ->when($request->input('status'), fn ($q, $v) => $q->where('j.status', $v))
-            ->when($lo !== '', fn ($q) => $q->whereBetween('a.code', [$lo, $hi]))
-            ->groupBy('a.code')
-            ->selectRaw('a.code, COALESCE(SUM(bs_journal_lines.debit - bs_journal_lines.credit),0) as bal')
-            ->pluck('bal', 'code');
-
-        // Urutan kolom: Kode Akun & Nama Akun paling kiri, lalu Pihak Terkait tepat setelah Sumber,
-        // Saldo berjalan paling kanan. Tiap akhir COA: baris "Mutasi Saldo" + "Saldo Akhir".
+        // Urutan kolom: Kode Akun & Nama Akun paling kiri, lalu Pihak Terkait tepat setelah Sumber.
         $h = '<table border="1"><tr style="background:#0f766e;color:#fff">'
             .'<th>Kode Akun</th><th>Nama Akun</th>'
             .'<th>No. Jurnal</th><th>Tanggal</th><th>Sumber</th><th>Pihak Terkait</th><th>Status</th><th>Keterangan</th><th>Referensi</th>'
-            .'<th>Cost Center</th><th>Keterangan Baris</th><th>Debit</th><th>Kredit</th><th>Saldo</th></tr>';
+            .'<th>Cost Center</th><th>Keterangan Baris</th><th>Debit</th><th>Kredit</th></tr>';
         $totalD = 0.0;
         $totalK = 0.0;
-        $accD = $accK = $saldo = 0.0;
-        $prevCode = null;
-        $closeAcc = function () use (&$h, &$accD, &$accK, &$saldo, $rp): void {
-            $h .= '<tr style="font-weight:bold"><td colspan="11">Mutasi Saldo</td><td>'.$rp($accD).'</td><td>'.$rp($accK).'</td><td></td></tr>'
-                .'<tr style="font-weight:bold"><td colspan="11">Saldo Akhir</td><td></td><td></td><td>'.$rp($saldo).'</td></tr>';
-            $accD = $accK = $saldo = 0.0;
-        };
-        foreach ($rows as $r) {
-            if ($r['code'] !== $prevCode) {
-                if ($prevCode !== null) {
-                    $closeAcc();
-                }
-                // Buka blok COA: baris "Saldo Awal" (saldo sebelum periode), saldo berjalan mulai dari sini.
-                $saldo = (float) ($openings[$r['code']] ?? 0);
-                $h .= '<tr style="font-weight:bold"><td colspan="11">Saldo Awal</td><td>'.$rp(0).'</td><td>'.$rp(0).'</td><td>'.$rp($saldo).'</td></tr>';
+        foreach ($journals as $j) {
+            foreach ($j->lines as $ln) {
+                $totalD += (float) $ln->debit;
+                $totalK += (float) $ln->credit;
+                $h .= '<tr>'
+                    .'<td>'.$e($ln->account?->code).'</td>'
+                    .'<td>'.$e($ln->account?->name).'</td>'
+                    .'<td>'.$e($j->journal_number).'</td>'
+                    .'<td>'.$e(optional($j->journal_date)->toDateString()).'</td>'
+                    .'<td>'.$e($src[$j->source] ?? $j->source).'</td>'
+                    .'<td>'.$e($pihak[$j->id] ?? '').'</td>'
+                    .'<td>'.$e($st[$j->status] ?? $j->status).'</td>'
+                    .'<td>'.$e($j->description).'</td>'
+                    .'<td>'.$e($j->reference).'</td>'
+                    .'<td>'.$e($j->costCenter?->name).'</td>'
+                    .'<td>'.$e($ln->description).'</td>'
+                    .'<td>'.$rp($ln->debit).'</td>'
+                    .'<td>'.$rp($ln->credit).'</td>'
+                    .'</tr>';
             }
-            $prevCode = $r['code'];
-            $accD   += $r['debit'];
-            $accK   += $r['credit'];
-            $saldo  += $r['debit'] - $r['credit'];
-            $totalD += $r['debit'];
-            $totalK += $r['credit'];
-            $h .= '<tr>'
-                .'<td>'.$e($r['code']).'</td>'
-                .'<td>'.$e($r['name']).'</td>'
-                .'<td>'.$e($r['jno']).'</td>'
-                .'<td>'.$e($r['date']).'</td>'
-                .'<td>'.$e($r['source']).'</td>'
-                .'<td>'.$e($r['pihak']).'</td>'
-                .'<td>'.$e($r['status']).'</td>'
-                .'<td>'.$e($r['desc']).'</td>'
-                .'<td>'.$e($r['ref']).'</td>'
-                .'<td>'.$e($r['cc']).'</td>'
-                .'<td>'.$e($r['ldesc']).'</td>'
-                .'<td>'.$rp($r['debit']).'</td>'
-                .'<td>'.$rp($r['credit']).'</td>'
-                .'<td>'.$rp($saldo).'</td>'
-                .'</tr>';
         }
-        if ($prevCode !== null) {
-            $closeAcc();
-        }
-        $h .= '<tr style="font-weight:bold;background:#f1f5f9"><td colspan="11">TOTAL</td><td>'.$rp($totalD).'</td><td>'.$rp($totalK).'</td><td></td></tr></table>';
+        $h .= '<tr style="font-weight:bold;background:#f1f5f9"><td colspan="11">TOTAL</td><td>'.$rp($totalD).'</td><td>'.$rp($totalK).'</td></tr></table>';
 
         $file = 'Detail-Transaksi-Jurnal-'.$from->format('Ymd').'-'.$to->format('Ymd').'.xls';
 
@@ -338,69 +244,34 @@ class JournalController extends Controller
             ->header('Content-Disposition', 'attachment; filename="'.$file.'"');
     }
 
+    /**
+     * Lengkapi cost center tiap baris jurnal.
+     *
+     * Tiap COA boleh dibebankan ke cost center sendiri. Baris yang dikosongkan mewarisi cost
+     * center header, sehingga dimensi GL tidak pernah kosong dan perilaku jurnal lama (satu
+     * cost center untuk seluruh baris) tetap sama persis.
+     *
+     * @param  array<int,array<string,mixed>>  $lines
+     * @return array<int,array<string,mixed>>
+     */
+    private function withLineCostCenter(array $lines, int $headerCostCenterId): array
+    {
+        return array_map(function (array $l) use ($headerCostCenterId): array {
+            $cc = $l['cost_center_id'] ?? null;
+            $l['cost_center_id'] = $cc ? (int) $cc : $headerCostCenterId;
+
+            return $l;
+        }, $lines);
+    }
+
     public function create(Request $request): Response
     {
         abort_unless($request->user()?->canModule('gl'), 403);
 
         return Inertia::render('BusinessSupport/Gl/Journals/Form', [
-            'accounts'    => $this->postableAccounts(),
+            'accounts'    => BsAccount::where('is_active', true)->where('is_postable', true)->orderBy('code')->get(['id', 'code', 'name', 'type']),
             'costCenters' => BsCostCenter::where('is_active', true)->orderBy('code')->get(['id', 'code', 'name']),
         ]);
-    }
-
-    /**
-     * Daftar akun postable untuk form jurnal — beserta cost center yang MELEKAT pada akun
-     * (cost_center_id + label). Cost center tiap baris jurnal diturunkan & dikunci dari sini.
-     *
-     * @return \Illuminate\Support\Collection<int,array<string,mixed>>
-     */
-    private function postableAccounts(): \Illuminate\Support\Collection
-    {
-        return BsAccount::query()
-            ->with('costCenter:id,code,name')
-            ->where('is_active', true)->where('is_postable', true)
-            ->orderBy('code')
-            ->get(['id', 'code', 'name', 'type', 'cost_center_id'])
-            ->map(fn (BsAccount $a) => [
-                'id'                => $a->id,
-                'code'              => $a->code,
-                'name'              => $a->name,
-                'type'              => $a->type,
-                'cost_center_id'    => $a->cost_center_id,
-                'cost_center_label' => $a->costCenter ? $a->costCenter->code.' - '.$a->costCenter->name : null,
-            ]);
-    }
-
-    /**
-     * Sisipkan cost_center_id ke tiap baris jurnal, DITURUNKAN dari COA akunnya (dikunci —
-     * tak bisa diubah per transaksi). Akun tanpa cost center → baris bercost center null.
-     * Ambil sekali (whereIn) agar bukan N+1.
-     *
-     * @param  array<int,array<string,mixed>>  $lines
-     * @return array<int,array<string,mixed>>
-     */
-    private function linesWithCostCenter(array $lines): array
-    {
-        $ccByAccount = BsAccount::whereIn('id', array_filter(array_column($lines, 'account_id')))
-            ->pluck('cost_center_id', 'id');
-
-        foreach ($lines as $i => $l) {
-            $lines[$i]['cost_center_id'] = $ccByAccount[(int) ($l['account_id'] ?? 0)] ?? null;
-        }
-
-        return $lines;
-    }
-
-    /** Cost center baris pertama yang punya (untuk mengisi ringkasan header lama). Null bila tak ada. */
-    private function firstCostCenter(array $lines): ?int
-    {
-        foreach ($lines as $l) {
-            if (! empty($l['cost_center_id'])) {
-                return (int) $l['cost_center_id'];
-            }
-        }
-
-        return null;
     }
 
     public function store(Request $request, JournalService $svc, \App\Domain\BusinessSupport\Services\BudgetGuardService $guard): RedirectResponse
@@ -411,27 +282,30 @@ class JournalController extends Controller
             'journal_date'   => ['required', 'date'],
             'reference'      => ['nullable', 'string', 'max:150'],
             'description'    => ['required', 'string', 'max:255'],
+            'cost_center_id' => ['required', 'integer', 'exists:bs_cost_centers,id'], // wajib (mandatory)
             'lines'                 => ['required', 'array', 'min:2'],
             'lines.*.account_id'    => ['required', 'integer', 'exists:bs_accounts,id'],
+            // Cost center PER BARIS (opsional) — tiap COA boleh dibebankan ke cost center sendiri.
+            // Bila dikosongkan, dipakai cost center header sebagai bawaan (lihat withLineCostCenter).
+            'lines.*.cost_center_id' => ['nullable', 'integer', 'exists:bs_cost_centers,id'],
             'lines.*.debit'         => ['nullable', 'numeric', 'min:0'],
             'lines.*.credit'        => ['nullable', 'numeric', 'min:0'],
             'lines.*.description'   => ['nullable', 'string', 'max:200'],
         ]);
 
-        // Cost center tiap baris diturunkan & dikunci dari COA akunnya (bukan dari header).
-        $lines      = $this->linesWithCostCenter($v['lines']);
-        $headerCc   = $this->firstCostCenter($lines);
+        $lines = $this->withLineCostCenter($v['lines'], (int) $v['cost_center_id']);
 
         try {
-            // Gerbang over-budget: tolak input bila baris menambah realisasi melewati anggaran (akun+cost center).
-            $guard->assertWithinBudget($lines, null, $v['journal_date']);
+            // Gerbang over-budget: tolak input bila baris menambah realisasi melewati anggaran
+            // (akun + cost center BARIS, dengan cost center header sebagai cadangan).
+            $guard->assertWithinBudget($lines, (int) $v['cost_center_id'], $v['journal_date']);
             $journal = $svc->post([
                 'journal_date'   => $v['journal_date'],
                 'source'         => 'memorial',
                 'status'         => 'draft', // jurnal memorial manual mulai sebagai Baru
                 'reference'      => $v['reference'] ?? null,
                 'description'    => $v['description'],
-                'cost_center_id' => $headerCc, // ringkasan header = cost center baris pertama (bila ada)
+                'cost_center_id' => $v['cost_center_id'] ?? null,
                 'created_by'     => $request->user()->id,
             ], $lines);
         } catch (BusinessRuleException $e) {
@@ -446,8 +320,7 @@ class JournalController extends Controller
         abort_unless($request->user()?->canModule('gl'), 403);
 
         return Inertia::render('BusinessSupport/Gl/Journals/Show', [
-            // Cost center kini per baris (dikunci dari COA) → muat lines.costCenter, bukan cuma header.
-            'journal'  => $journal->load(['lines.account:id,code,name', 'lines.costCenter:id,code,name', 'costCenter:id,code,name']),
+            'journal'  => $journal->load(['lines.account:id,code,name', 'costCenter:id,code,name']),
             'sources'  => BsJournal::SOURCES,
             'statuses' => BsJournal::STATUSES,
         ]);
@@ -467,11 +340,13 @@ class JournalController extends Controller
         }
 
         return Inertia::render('BusinessSupport/Gl/Journals/Form', [
-            'accounts'    => $this->postableAccounts(),
+            'accounts'    => BsAccount::where('is_active', true)->where('is_postable', true)->orderBy('code')->get(['id', 'code', 'name', 'type']),
             'costCenters' => BsCostCenter::where('is_active', true)->orderBy('code')->get(['id', 'code', 'name']),
             'editing'     => array_merge(
                 $journal->only(['id', 'journal_number', 'journal_date', 'reference', 'description', 'cost_center_id', 'source', 'status']),
-                ['lines' => $journal->lines()->get(['account_id', 'description', 'debit', 'credit'])->toArray()],
+                // cost_center_id per baris WAJIB ikut dimuat — tanpa ini, mengedit jurnal akan
+                // mengembalikan baris tanpa cost center dan diam-diam menimpanya dgn cost center header.
+                ['lines' => $journal->lines()->get(['account_id', 'cost_center_id', 'description', 'debit', 'credit'])->toArray()],
             ),
         ]);
     }
@@ -485,25 +360,26 @@ class JournalController extends Controller
             'journal_date'        => ['required', 'date'],
             'reference'           => ['nullable', 'string', 'max:150'],
             'description'         => ['required', 'string', 'max:255'],
+            'cost_center_id'      => ['required', 'integer', 'exists:bs_cost_centers,id'], // wajib (mandatory)
             'lines'               => ['required', 'array', 'min:2'],
             'lines.*.account_id'  => ['required', 'integer', 'exists:bs_accounts,id'],
+            // Cost center per baris — lihat catatan pada store().
+            'lines.*.cost_center_id' => ['nullable', 'integer', 'exists:bs_cost_centers,id'],
             'lines.*.debit'       => ['nullable', 'numeric', 'min:0'],
             'lines.*.credit'      => ['nullable', 'numeric', 'min:0'],
             'lines.*.description' => ['nullable', 'string', 'max:200'],
         ]);
 
-        // Cost center tiap baris diturunkan & dikunci dari COA akunnya (bukan dari header).
-        $lines    = $this->linesWithCostCenter($v['lines']);
-        $headerCc = $this->firstCostCenter($lines);
+        $lines = $this->withLineCostCenter($v['lines'], (int) $v['cost_center_id']);
 
         try {
             // Gerbang over-budget (kecualikan jurnal ini dari realisasi agar tak dihitung ganda saat edit).
-            $guard->assertWithinBudget($lines, null, $v['journal_date'], $journal->id);
+            $guard->assertWithinBudget($lines, (int) $v['cost_center_id'], $v['journal_date'], $journal->id);
             $svc->update($journal, [
                 'journal_date'   => $v['journal_date'],
                 'reference'      => $v['reference'] ?? null,
                 'description'    => $v['description'],
-                'cost_center_id' => $headerCc, // ringkasan header = cost center baris pertama (bila ada)
+                'cost_center_id' => $v['cost_center_id'] ?? null,
             ], $lines);
         } catch (BusinessRuleException $e) {
             return back()->withInput()->with('error', $e->getMessage());

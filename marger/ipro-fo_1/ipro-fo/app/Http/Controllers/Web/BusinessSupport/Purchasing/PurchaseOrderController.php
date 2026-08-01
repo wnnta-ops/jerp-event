@@ -25,17 +25,35 @@ class PurchaseOrderController extends Controller
     {
         abort_unless($request->user()?->canModule('bs'), 403);
 
+        // Rincian & perilakunya disamakan dengan daftar Invoice Hutang (Account Payable):
+        // SELURUH baris dikirim ke klien, lalu pencarian global, filter per-kolom (ketik +
+        // checklist), ringkasan, dan ekspor Excel dihitung di sisi klien agar kotak ringkasan
+        // selalu mengikuti hasil filter — persis seperti Payable/Index.vue.
         $rows = BsPurchaseOrder::query()
-            ->with('supplier:id,code,name')
+            ->with(['supplier:id,code,name', 'project:id,name'])
             ->withCount('lines')
-            ->when($request->input('status'), fn ($q, $v) => $q->where('status', $v))
-            ->when($request->input('search'), fn ($q, $s) => $q->where('po_number', 'like', "%{$s}%"))
             ->latest('po_date')->latest('id')
-            ->paginate(50)->withQueryString();
+            ->get()
+            ->map(fn (BsPurchaseOrder $r) => [
+                'id'          => $r->id,
+                'po_number'   => $r->po_number,
+                'po_date'     => $r->po_date?->toDateString(),
+                'due_date'    => $r->due_date?->toDateString(),
+                'supplier'    => $r->supplier ? ['name' => $r->supplier->name] : null,
+                'project'     => $r->project?->name,
+                'po_type'     => $r->po_type,
+                'notes'       => $r->notes,
+                'lines_count' => (int) $r->lines_count,
+                'subtotal'    => round((float) $r->subtotal, 2),
+                'ppn_amount'  => round((float) $r->ppn_amount, 2),
+                'total'       => round((float) $r->total, 2),
+                'status'      => $r->status,
+                'printed_at'  => $r->printed_at?->toDateTimeString(),
+                'print_count' => (int) $r->print_count,
+            ]);
 
         return Inertia::render('BusinessSupport/Purchasing/PurchaseOrders/Index', [
-            'orders'  => $rows,
-            'filters' => $request->only(['status', 'search']),
+            'orders' => $rows,
         ]);
     }
 

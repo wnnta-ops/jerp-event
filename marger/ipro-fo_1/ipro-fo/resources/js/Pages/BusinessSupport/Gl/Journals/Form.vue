@@ -6,7 +6,7 @@ import Button from '@/Components/UI/Button.vue';
 import SearchSelect from '@/Components/UI/SearchSelect.vue';
 
 const props = defineProps<{
-    accounts: Array<{ id: number; code: string; name: string; type: string; cost_center_id: number | null; cost_center_label: string | null }>;
+    accounts: Array<{ id: number; code: string; name: string; type: string }>;
     costCenters: Array<{ id: number; code: string; name: string }>;
     editing?: any;
 }>();
@@ -15,20 +15,15 @@ const today = new Date().toISOString().slice(0, 10);
 const e = props.editing;
 const form = useForm<any>(e ? {
     journal_date: String(e.journal_date).slice(0, 10), reference: e.reference ?? '', description: e.description ?? '',
-    lines: (e.lines ?? []).map((l: any) => ({ account_id: l.account_id, description: l.description ?? '', debit: Number(l.debit) || 0, credit: Number(l.credit) || 0 })),
+    cost_center_id: e.cost_center_id ?? '',
+    lines: (e.lines ?? []).map((l: any) => ({ account_id: l.account_id, cost_center_id: l.cost_center_id ?? '', description: l.description ?? '', debit: Number(l.debit) || 0, credit: Number(l.credit) || 0 })),
 } : {
-    journal_date: today, reference: '', description: '',
-    lines: [{ account_id: '', description: '', debit: 0, credit: 0 }, { account_id: '', description: '', debit: 0, credit: 0 }],
+    journal_date: today, reference: '', description: '', cost_center_id: '',
+    lines: [{ account_id: '', cost_center_id: '', description: '', debit: 0, credit: 0 }, { account_id: '', cost_center_id: '', description: '', debit: 0, credit: 0 }],
 });
-function addLine() { form.lines.push({ account_id: '', description: '', debit: 0, credit: 0 }); }
+// Baris baru mewarisi cost center header sebagai titik awal — tetap bisa diganti per baris.
+function addLine() { form.lines.push({ account_id: '', cost_center_id: form.cost_center_id ?? '', description: '', debit: 0, credit: 0 }); }
 function removeLine(i: number) { form.lines.splice(i, 1); }
-
-// Cost center tiap baris otomatis MENGIKUTI akun terpilih & dikunci (diset dari Master COA) —
-// bukan lagi dipilih per transaksi. "—" bila akun belum dipetakan / belum dipilih.
-function costCenterLabel(accountId: number | string) {
-    const a = props.accounts.find((x) => String(x.id) === String(accountId));
-    return a?.cost_center_label ?? '—';
-}
 
 const totalDebit = computed(() => form.lines.reduce((s: number, l: any) => s + (Number(l.debit) || 0), 0));
 const totalCredit = computed(() => form.lines.reduce((s: number, l: any) => s + (Number(l.credit) || 0), 0));
@@ -37,7 +32,7 @@ const allAccountsSet = computed(() => form.lines.every((l: any) => !!l.account_i
 const userName = computed(() => (usePage().props as any).auth?.user?.name ?? '—');
 function fmtRp(v: number) { return Number(v ?? 0).toLocaleString('id-ID'); }
 function submit() {
-    if (!balanced.value) return;
+    if (!balanced.value || !form.cost_center_id) return;
     if (props.editing) form.put(route('bs.gl.journal.update', props.editing.id));
     else form.post(route('bs.gl.journal.store'));
 }
@@ -59,6 +54,7 @@ const inputCls = 'h-9 w-full rounded-lg border border-neutral-300 bg-white px-3 
                 <div><label class="mb-1 block text-xs font-medium text-neutral-500">Tanggal *</label><input v-model="form.journal_date" type="date" required :class="inputCls" /></div>
                 <div class="md:col-span-2"><label class="mb-1 block text-xs font-medium text-neutral-500">Keterangan *</label><input v-model="form.description" required :class="inputCls" /></div>
                 <div><label class="mb-1 block text-xs font-medium text-neutral-500">No. Manual</label><input v-model="form.reference" :class="inputCls" /></div>
+                <div><label class="mb-1 block text-xs font-medium text-neutral-500">Cost Center *</label><SearchSelect v-model="form.cost_center_id" :options="costCenters" placeholder="— pilih cost center —" /><p v-if="form.errors.cost_center_id" class="mt-1 text-xs text-danger-500">{{ form.errors.cost_center_id }}</p></div>
                 <div>
                     <label class="mb-1 block text-xs font-medium text-neutral-500">Dibuat oleh</label>
                     <input :value="userName" type="text" readonly disabled tabindex="-1" title="Otomatis dari user yang login — tidak dapat diubah"
@@ -76,10 +72,8 @@ const inputCls = 'h-9 w-full rounded-lg border border-neutral-300 bg-white px-3 
                     <tbody>
                         <tr v-for="(l, i) in form.lines" :key="i" class="border-t border-neutral-100 dark:border-neutral-800">
                             <td class="min-w-[240px] py-1.5 pr-2"><SearchSelect v-model="l.account_id" :options="accounts" placeholder="— pilih / ketik akun —" /></td>
-                            <td class="py-1.5 pr-2">
-                                <span class="inline-flex h-9 items-center whitespace-nowrap rounded-lg border border-neutral-200 bg-neutral-100 px-3 text-xs text-neutral-600 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-400"
-                                    title="Cost center mengikuti akun (dikunci dari Master COA)">{{ costCenterLabel(l.account_id) }}</span>
-                            </td>
+                            <!-- Cost center PER COA. Dikosongkan → ikut cost center header. -->
+                            <td class="min-w-[190px] py-1.5 pr-2"><SearchSelect v-model="l.cost_center_id" :options="costCenters" placeholder="— ikut header —" /></td>
                             <td class="py-1.5 pr-2"><input v-model="l.description" :class="inputCls" /></td>
                             <td class="py-1.5 pr-2"><input v-model.number="l.debit" type="number" step="1" min="0" :class="[inputCls,'text-right']" @input="l.debit && (l.credit = 0)" /></td>
                             <td class="py-1.5 pr-2"><input v-model.number="l.credit" type="number" step="1" min="0" :class="[inputCls,'text-right']" @input="l.credit && (l.debit = 0)" /></td>
@@ -99,7 +93,8 @@ const inputCls = 'h-9 w-full rounded-lg border border-neutral-300 bg-white px-3 
             </div>
 
             <div class="flex gap-2">
-                <Button type="submit" :disabled="form.processing || !balanced || !allAccountsSet"><template #icon-left><Save class="h-4 w-4" /></template>{{ editing ? 'Simpan Perubahan' : 'Posting Jurnal' }}</Button>
+                <Button type="submit" :disabled="form.processing || !balanced || !allAccountsSet || !form.cost_center_id"><template #icon-left><Save class="h-4 w-4" /></template>{{ editing ? 'Simpan Perubahan' : 'Posting Jurnal' }}</Button>
+                <span v-if="!form.cost_center_id" class="self-center text-xs text-danger-500">Pilih Cost Center dulu.</span>
                 <Link :href="route('bs.gl.journal.index')" class="rounded-lg border border-neutral-300 px-4 py-2 text-sm dark:border-neutral-700">Batal</Link>
             </div>
         </form>
