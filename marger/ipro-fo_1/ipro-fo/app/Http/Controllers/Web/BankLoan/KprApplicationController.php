@@ -26,6 +26,7 @@ use App\Exceptions\InvalidStateTransitionException;
 use App\Http\Controllers\Controller;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 use Inertia\Response;
 use Symfony\Component\HttpFoundation\Response as HttpResponse;
@@ -1128,6 +1129,10 @@ class KprApplicationController extends Controller
     {
         abort_unless($request->user()?->can('bankloan.disbursement.create'), 403);
 
+        // Jalur pencairan hanya WAJIB untuk unit yang sudah Booked Revenue (lihat aturan di bawah).
+        // Dihitung ulang di server — tidak bergantung pada kiriman klien.
+        $hasBookedRevenue = $this->bookedRevenueOfUnit($kpr) !== null;
+
         $data = $request->validate([
             'disbursed_at'          => 'required|date',
             // #167: nominal cair boleh 0 asal ada retensi/DAJAM (retensi menambah outstanding).
@@ -1137,9 +1142,10 @@ class KprApplicationController extends Controller
             'retention_category_id' => 'required|integer|exists:retention_categories,id', // #66 — kategori retensi wajib
             'reference_no'          => 'nullable|string|max:255',
             'bank_account_id'       => 'nullable|integer|exists:bank_accounts,id',
-            // Jalur pencairan WAJIB dipilih lebih dulu (BSN / SELAIN BSN) — gerbang server
-            // yang mencerminkan tombol Catat Pencairan di Show.vue.
-            'disbursement_scheme'   => 'required|in:bsn,non_bsn',
+            // Jalur pencairan (BSN / SELAIN BSN): WAJIB hanya bila unit rumahnya SUDAH Booked
+            // Revenue; bila belum, boleh dikosongkan dan pencairan tetap dapat dicatat.
+            // Mencerminkan gerbang tombol Catat Pencairan di Show.vue.
+            'disbursement_scheme'   => [Rule::requiredIf($hasBookedRevenue), 'nullable', 'in:bsn,non_bsn'],
             // #146 DAJAM Pajak — pembayaran SSP/BPHTB (mengurangi outstanding AR customer)
             'ssp_bphtb_date'        => 'nullable|date',
             'ssp_bphtb_amount'      => 'nullable|numeric|min:0',
