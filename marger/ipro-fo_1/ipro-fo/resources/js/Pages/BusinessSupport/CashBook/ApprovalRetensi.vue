@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { reactive, ref, computed, watch, onMounted } from 'vue';
 import { router, Link } from '@inertiajs/vue3';
-import { ArrowLeft, Landmark, RotateCcw, Plus, Undo2 } from 'lucide-vue-next';
+import { ArrowLeft, Landmark, RotateCcw, Plus, Undo2, CheckCircle2, TriangleAlert, ChevronDown, ArrowRightLeft, Receipt, Info } from 'lucide-vue-next';
 import Button from '@/Components/UI/Button.vue';
 import Badge from '@/Components/UI/Badge.vue';
 import EmptyState from '@/Components/UI/EmptyState.vue';
@@ -23,12 +23,24 @@ type Row = {
     // #147 — default per-baris (editable):
     default_debit_account_id: number | null; default_debit_account: string | null; bank_account_label: string | null;
     default_ppn: number; default_uang_muka: number;
+    // Booked Revenue & jalur pencairan — penentu bentuk jurnal (lihat "Aturan Jurnal" di atas tabel).
+    scheme: 'bsn' | 'non_bsn' | null; is_dajam_pajak: boolean;
+    br_number: string | null; br_booking_date: string | null; booked: boolean;
+    default_credit_mode: CreditMode;
+    default_piutang_account_id: number | null; default_piutang_account: string | null;
 };
 type AccountDefaults = {
     uang_muka_account_id: number | null; uang_muka_account: string | null;
     ppn_keluaran_account_id: number | null; ppn_keluaran_account: string | null;
+    piutang_account_id: number | null; piutang_account: string | null;
     ppn_rate_num: number; ppn_rate_den: number;
 };
+// Bentuk jurnal kredit — mengikuti "Jurnal Saat Retensi dan Booked Revenue.xlsx":
+//  split   → BELUM Booked Revenue: Dr Bank / Cr Uang Muka Penjualan + Cr PPN Keluaran (11/111)
+//  piutang → SUDAH Booked Revenue: Dr Bank / Cr Piutang Usaha (nilai penuh, tanpa PPN)
+//  deduct  → DAJAM Pajak jalur BSN: KEBALIKAN — Dr Uang Muka Penjualan / Cr Bank
+//  manual  → kredit tunggal bebas (pengecualian)
+type CreditMode = 'split' | 'piutang' | 'deduct' | 'manual';
 const props = defineProps<{ rows: Row[]; accounts: Acc[]; accountDefaults: AccountDefaults; initialCustomer?: string | null }>();
 
 // #162 — daftar akun lokal yang bisa di-refresh setelah quick-add akun GL baru.
@@ -44,6 +56,7 @@ type RetForm = {
     debit_account_id: any;
     uang_muka_account_id: any; uang_muka_amount: number;
     ppn_account_id: any; ppn_amount: number;
+    credit_mode: CreditMode; credit_account_id: any;
     processing: boolean;
 };
 // Dikunci per row_key (bukan id) — id retensi & pencairan bisa sama.
@@ -58,10 +71,59 @@ for (const r of props.rows) {
             uang_muka_amount: r.default_uang_muka ?? 0,
             ppn_account_id: props.accountDefaults.ppn_keluaran_account_id ?? '',
             ppn_amount: r.default_ppn ?? 0,
+            credit_mode: r.default_credit_mode ?? 'split',
+            credit_account_id: r.default_piutang_account_id ?? props.accountDefaults.piutang_account_id ?? '',
             processing: false,
         };
     }
 }
+
+// ── Booked Revenue & bentuk jurnal ────────────────────────────────────────
+// Dibandingkan terhadap TANGGAL JURNAL yang sedang dipilih (bukan sekadar "unit punya Booked
+// Revenue"), sehingga mengubah tanggal langsung mengubah bentuk jurnal — persis aturan server.
+function bookedOn(r: Row, date: string): boolean {
+    return Boolean(r.br_booking_date) && Boolean(date) && date >= (r.br_booking_date as string);
+}
+function isBooked(r: Row) { return bookedOn(r, forms[r.row_key]?.journal_date ?? ''); }
+
+const MODE_LABEL: Record<CreditMode, string> = {
+    split: 'Uang Muka + PPN', piutang: 'Piutang Usaha', deduct: 'Potongan DAJAM Pajak', manual: 'Manual',
+};
+const MODE_FORMULA: Record<CreditMode, string> = {
+    split: 'Dr Bank → Cr Uang Muka Penjualan + Cr PPN Keluaran (11/111)',
+    piutang: 'Dr Bank → Cr Piutang Usaha (nilai penuh, PPN sudah diakui saat Booked)',
+    deduct: 'Dr Uang Muka Penjualan → Cr Bank (dana ditahan, jurnal dibalik)',
+    manual: 'Dr Bank → Cr akun pilihan (nilai penuh)',
+};
+const MODE_TONE: Record<CreditMode, string> = {
+    split: 'bg-amber-50 text-amber-800 ring-amber-200 dark:bg-amber-950/40 dark:text-amber-200 dark:ring-amber-800/60',
+    piutang: 'bg-emerald-50 text-emerald-800 ring-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-200 dark:ring-emerald-800/60',
+    deduct: 'bg-rose-50 text-rose-800 ring-rose-200 dark:bg-rose-950/40 dark:text-rose-200 dark:ring-rose-800/60',
+    manual: 'bg-neutral-100 text-neutral-700 ring-neutral-200 dark:bg-neutral-800 dark:text-neutral-200 dark:ring-neutral-700',
+};
+
+// Mode yang boleh dipakai baris ini — cermin rambu di server (buildApprovalLines()).
+// Potongan (deduct) ditawarkan untuk jalur BSN; juga untuk baris DAJAM Pajak lama yang jalurnya
+// belum sempat direkam (disbursement_scheme kosong) agar tetap bisa dijurnal dengan benar.
+function allowedModes(r: Row): CreditMode[] {
+    if (isBooked(r)) return ['piutang', 'manual'];
+    const canDeduct = r.scheme === 'bsn' || (r.scheme === null && r.is_dajam_pajak);
+    return canDeduct ? ['split', 'deduct', 'manual'] : ['split', 'manual'];
+}
+// Mode efektif: pilihan operator bila masih sah, selain itu kembali ke default aturan.
+function modeOf(r: Row): CreditMode {
+    const f = forms[r.row_key];
+    if (f && allowedModes(r).includes(f.credit_mode)) return f.credit_mode;
+    if (isBooked(r)) return 'piutang';
+    return r.scheme === 'bsn' && r.is_dajam_pajak ? 'deduct' : 'split';
+}
+function setMode(r: Row, m: CreditMode) { forms[r.row_key].credit_mode = m; }
+// Tanggal jurnal berubah → mode ikut menyesuaikan status Booked Revenue pada tanggal baru.
+function onDateChange(r: Row) { forms[r.row_key].credit_mode = modeOf(r); }
+function schemeLabel(r: Row) { return r.scheme === 'bsn' ? 'BSN' : (r.scheme === 'non_bsn' ? 'SELAIN BSN' : 'Jalur belum dipilih'); }
+
+// Panel "Aturan Jurnal" (buka/tutup, transisi halus).
+const rulesOpen = ref(false);
 
 function fmtRp(v: number) { return 'Rp ' + Number(v ?? 0).toLocaleString('id-ID'); }
 function fmtDate(d: string | null) { return d ? new Date(d).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'; }
@@ -74,7 +136,11 @@ function postRoute(r: Row, action: 'post' | 'reject' | 'restore') {
 
 // Total kredit (Uang Muka + PPN) per baris; harus == nilai (retensi/pencairan) agar balance.
 function creditTotal(key: string) { const f = forms[key]; return Math.round(((Number(f.uang_muka_amount) || 0) + (Number(f.ppn_amount) || 0)) * 100) / 100; }
-function balanced(r: Row) { return Math.round((Number(r.amount) || 0) * 100) / 100 === creditTotal(r.row_key); }
+// Hanya mode split yang perlu dijumlah manual; mode lain selalu sebesar nilai baris.
+function balanced(r: Row) {
+    if (modeOf(r) !== 'split') return true;
+    return Math.round((Number(r.amount) || 0) * 100) / 100 === creditTotal(r.row_key);
+}
 
 // Hitung ulang split PPN-inklusif 11% dari nilai baris (tombol bantu, tetap bisa override manual).
 function recalcSplit(r: Row) {
@@ -89,7 +155,7 @@ function recalcSplit(r: Row) {
 function selisih(r: Row) { return Math.round(Math.abs((Number(r.amount) || 0) - creditTotal(r.row_key)) * 100) / 100; }
 
 // #162 — Quick-add akun GL baru langsung dari SearchSelect debit/kredit.
-type AddTarget = { rowKey: string; field: 'debit_account_id' | 'uang_muka_account_id' | 'ppn_account_id' };
+type AddTarget = { rowKey: string; field: 'debit_account_id' | 'uang_muka_account_id' | 'ppn_account_id' | 'credit_account_id' };
 const addTarget = ref<AddTarget | null>(null);
 const addForm = reactive({ code: '', name: '', type: 'asset', processing: false });
 const accTypes: Array<{ id: string; label: string }> = [
@@ -175,22 +241,36 @@ const countPencairan = computed(() => filtered.value.filter((r) => r.kind === 'p
 
 function approve(r: Row) {
     const f = forms[r.row_key];
+    const mode = modeOf(r);
     if (!f.debit_account_id) { alert('Pilih akun Debit (Bank) terlebih dahulu.'); return; }
-    if (!f.uang_muka_account_id && !f.ppn_account_id) { alert('Pilih akun kredit (Uang Muka Penjualan / PPN Keluaran).'); return; }
-    if (String(f.debit_account_id) === String(f.uang_muka_account_id) || String(f.debit_account_id) === String(f.ppn_account_id)) {
-        alert('Akun Debit tidak boleh sama dengan akun Kredit.'); return;
+
+    if (mode === 'split') {
+        if (!f.uang_muka_account_id && !f.ppn_account_id) { alert('Pilih akun kredit (Uang Muka Penjualan / PPN Keluaran).'); return; }
+        if (String(f.debit_account_id) === String(f.uang_muka_account_id) || String(f.debit_account_id) === String(f.ppn_account_id)) {
+            alert('Akun Debit tidak boleh sama dengan akun Kredit.'); return;
+        }
+        if (!balanced(r)) {
+            alert(`Tidak balance: total kredit (${fmtRp(creditTotal(r.row_key))}) harus sama dengan nilai (${fmtRp(r.amount)}).`); return;
+        }
+    } else if (mode === 'deduct') {
+        if (!f.uang_muka_account_id) { alert('Pilih akun Uang Muka Penjualan untuk potongan DAJAM Pajak.'); return; }
+        if (String(f.debit_account_id) === String(f.uang_muka_account_id)) { alert('Akun Uang Muka Penjualan tidak boleh sama dengan akun Bank.'); return; }
+    } else {
+        if (!f.credit_account_id) { alert(mode === 'piutang' ? 'Pilih akun Piutang Usaha untuk kredit.' : 'Pilih akun kredit.'); return; }
+        if (String(f.debit_account_id) === String(f.credit_account_id)) { alert('Akun Debit tidak boleh sama dengan akun Kredit.'); return; }
     }
-    if (!balanced(r)) {
-        alert(`Tidak balance: total kredit (${fmtRp(creditTotal(r.row_key))}) harus sama dengan nilai (${fmtRp(r.amount)}).`); return;
-    }
+
     f.processing = true;
     router.post(postRoute(r, 'post'), {
         journal_date: f.journal_date,
         debit_account_id: f.debit_account_id,
-        uang_muka_account_id: f.uang_muka_account_id || null,
-        uang_muka_amount: Number(f.uang_muka_amount) || 0,
-        ppn_account_id: f.ppn_account_id || null,
-        ppn_amount: Number(f.ppn_amount) || 0,
+        credit_mode: mode,
+        // Uang Muka dipakai dua mode: split (kredit) & deduct (debit, jurnal dibalik).
+        uang_muka_account_id: (mode === 'split' || mode === 'deduct') ? (f.uang_muka_account_id || null) : null,
+        uang_muka_amount: mode === 'split' ? (Number(f.uang_muka_amount) || 0) : 0,
+        ppn_account_id: mode === 'split' ? (f.ppn_account_id || null) : null,
+        ppn_amount: mode === 'split' ? (Number(f.ppn_amount) || 0) : 0,
+        credit_account_id: (mode === 'piutang' || mode === 'manual') ? (f.credit_account_id || null) : null,
     }, { onSuccess: () => window.location.reload(), onFinish: () => { f.processing = false; } });
 }
 
@@ -223,8 +303,57 @@ const hSelCls = 'h-7 w-52 rounded border border-neutral-300 bg-white px-2 text-x
         <Link :href="route('bs.cashbook.home')" class="inline-flex items-center gap-2 text-sm text-neutral-500 hover:text-neutral-800 dark:hover:text-neutral-200"><ArrowLeft class="h-4 w-4" /> Cash Book</Link>
         <div>
             <h1 class="flex items-center gap-2 text-2xl font-bold"><Landmark class="h-6 w-6 text-primary-600" /> Approval Retensi</h1>
-            <p class="text-sm text-neutral-500">Retensi <b>dan pencairan</b> dari Proses KPR. Setiap input pencairan otomatis masuk sebagai baris <span class="font-medium text-sky-600">Pencairan</span> (net = pencairan − retensi); retensi ditahan sebagai baris <span class="font-medium text-amber-600">Retensi</span>. Akun Debit (Bank akad) &amp; split Kredit (Uang Muka Penjualan + PPN Keluaran 11%) terisi otomatis — periksa/ubah lalu setujui. Jurnal GL otomatis terposting.</p>
+            <p class="text-sm text-neutral-500">Retensi <b>dan pencairan</b> dari Proses KPR. Setiap input pencairan otomatis masuk sebagai baris <span class="font-medium text-sky-600">Pencairan</span> (net = pencairan − retensi); retensi ditahan sebagai baris <span class="font-medium text-amber-600">Retensi</span>. Akun Debit (Bank akad) &amp; bentuk Kredit terisi otomatis mengikuti status <b>Booked Revenue</b> unit dan <b>jalur pencairan</b> (BSN / SELAIN BSN) — periksa/ubah lalu setujui. Jurnal GL otomatis terposting.</p>
             <p class="text-sm text-neutral-500">DAJAM yang masih <span class="font-medium text-amber-600">held</span> belum tampil di sini — uangnya masih ditahan. Baris DAJAM baru muncul setelah di-<b>Release</b> pada Proses KPR (sebagian maupun penuh).</p>
+        </div>
+
+        <!-- Aturan jurnal (buka/tutup) — matriks BSN × SELAIN BSN terhadap Booked Revenue. -->
+        <div class="overflow-hidden rounded-xl border border-neutral-200 bg-white transition-shadow duration-300 hover:shadow-sm dark:border-neutral-800 dark:bg-neutral-900">
+            <button type="button" @click="rulesOpen = !rulesOpen"
+                class="flex w-full items-center gap-2.5 px-4 py-3 text-left transition-colors duration-200 hover:bg-neutral-50 dark:hover:bg-neutral-800/60">
+                <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary-50 text-primary-600 dark:bg-primary-950/50 dark:text-primary-400"><Info class="h-4 w-4" /></span>
+                <span class="min-w-0 flex-1">
+                    <span class="block text-sm font-semibold">Aturan Jurnal — sebelum &amp; sesudah Booked Revenue</span>
+                    <span class="block text-xs text-neutral-500">Berlaku untuk jalur <b>BSN</b> (Bank Syariah Nasional / BTN Syariah) maupun <b>SELAIN BSN</b>.</span>
+                </span>
+                <ChevronDown class="h-4 w-4 shrink-0 text-neutral-400 transition-transform duration-300" :class="rulesOpen ? 'rotate-180' : ''" />
+            </button>
+            <Transition
+                enter-active-class="transition-all duration-300 ease-out" leave-active-class="transition-all duration-200 ease-in"
+                enter-from-class="max-h-0 opacity-0" enter-to-class="max-h-[42rem] opacity-100"
+                leave-from-class="max-h-[42rem] opacity-100" leave-to-class="max-h-0 opacity-0">
+                <div v-show="rulesOpen" class="overflow-hidden border-t border-neutral-200 dark:border-neutral-800">
+                    <div class="grid gap-3 p-4 sm:grid-cols-2">
+                        <div v-for="col in [
+                                { key: 'non_bsn', title: 'SELAIN BSN', sub: 'Booked Revenue setelah Topping Off', tone: 'ring-sky-200 dark:ring-sky-800/60', chip: 'bg-sky-100 text-sky-700 dark:bg-sky-950/60 dark:text-sky-300' },
+                                { key: 'bsn', title: 'BSN', sub: 'Booked Revenue setelah BAST + AJB', tone: 'ring-violet-200 dark:ring-violet-800/60', chip: 'bg-violet-100 text-violet-700 dark:bg-violet-950/60 dark:text-violet-300' },
+                            ]" :key="col.key" class="rounded-xl p-3 ring-1" :class="col.tone">
+                            <div class="mb-2.5 flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+                                <span class="rounded-md px-2 py-0.5 text-xs font-bold tracking-wide" :class="col.chip">{{ col.title }}</span>
+                                <span class="text-[11px] text-neutral-500">{{ col.sub }}</span>
+                            </div>
+                            <div class="space-y-2">
+                                <div class="rounded-lg px-2.5 py-2 ring-1" :class="MODE_TONE.split">
+                                    <div class="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wide"><TriangleAlert class="h-3.5 w-3.5 shrink-0" /> Sebelum Booked Revenue</div>
+                                    <div class="mt-1 text-[11px] leading-relaxed">Dr <b>Bank</b> (nilai cair)<br />Cr <b>Uang Muka Penjualan</b> (nilai ÷ 1,11) + Cr <b>PPN Keluaran</b> (nilai × 11/111)</div>
+                                </div>
+                                <div class="rounded-lg px-2.5 py-2 ring-1" :class="MODE_TONE.piutang">
+                                    <div class="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wide"><CheckCircle2 class="h-3.5 w-3.5 shrink-0" /> Sesudah Booked Revenue</div>
+                                    <div class="mt-1 text-[11px] leading-relaxed">Dr <b>Bank</b> (nilai cair)<br />Cr <b>Piutang Usaha</b> (nilai penuh — PPN sudah diakui pada jurnal Booked Revenue)</div>
+                                </div>
+                                <div v-if="col.key === 'bsn'" class="rounded-lg px-2.5 py-2 ring-1" :class="MODE_TONE.deduct">
+                                    <div class="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wide"><ArrowRightLeft class="h-3.5 w-3.5 shrink-0" /> Khusus BSN — DAJAM Pajak (potongan)</div>
+                                    <div class="mt-1 text-[11px] leading-relaxed">Dr <b>Uang Muka Penjualan</b> / Cr <b>Bank</b> — jurnal <b>dibalik</b> karena dana ditahan, bukan diterima.</div>
+                                </div>
+                                <div v-else class="rounded-lg border border-dashed border-neutral-200 px-2.5 py-2 text-[11px] text-neutral-400 dark:border-neutral-700">Tidak ada tahap potongan khusus.</div>
+                            </div>
+                        </div>
+                    </div>
+                    <p class="border-t border-neutral-100 px-4 py-2.5 text-[11px] text-neutral-500 dark:border-neutral-800">
+                        Penentu <b>sebelum/sesudah</b> adalah posisi <b>Tanggal Jurnal</b> baris ini terhadap tanggal Booked Revenue unit — mengubah tanggal otomatis mengubah bentuk jurnalnya.
+                    </p>
+                </div>
+            </Transition>
         </div>
 
         <div class="flex items-center justify-between">
@@ -237,11 +366,11 @@ const hSelCls = 'h-7 w-52 rounded border border-neutral-300 bg-white px-2 text-x
                 <thead class="bg-neutral-50 dark:bg-neutral-800">
                     <tr class="text-left text-xs uppercase text-neutral-500">
                         <th class="px-3 py-3">Customer / Unit</th>
-                        <th class="px-3 py-3">Jenis / Status</th>
+                        <th class="px-3 py-3 w-44">Jenis / Status</th>
                         <th class="px-3 py-3 text-right">Nilai</th>
                         <th class="px-3 py-3 w-36">Tgl Jurnal</th>
                         <th class="px-3 py-3 w-56">Akun Debit (Bank)</th>
-                        <th class="px-3 py-3 w-80">Akun Kredit (split)</th>
+                        <th class="px-3 py-3 w-[26rem]">Jurnal Kredit</th>
                         <th class="px-3 py-3 w-44 text-center">Aksi / Status</th>
                     </tr>
                     <!-- Filter melekat per-kolom -->
@@ -276,6 +405,23 @@ const hSelCls = 'h-7 w-52 rounded border border-neutral-300 bg-white px-2 text-x
                                     {{ r.akad_status === 'sudah' ? 'Sudah Akad' : (r.akad_status === 'batal' ? 'Batal Akad' : 'Belum Akad') }}
                                 </Badge>
                             </div>
+                            <!-- Penanda Booked Revenue & jalur pencairan — penentu bentuk jurnal. -->
+                            <div class="mt-1.5 flex flex-wrap gap-1">
+                                <span v-if="!r.journaled"
+                                    class="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10.5px] font-semibold ring-1 transition-colors duration-200"
+                                    :class="isBooked(r) ? 'bg-emerald-50 text-emerald-700 ring-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:ring-emerald-800/60' : 'bg-amber-50 text-amber-700 ring-amber-200 dark:bg-amber-950/40 dark:text-amber-300 dark:ring-amber-800/60'"
+                                    :title="r.br_number ? `${r.br_number} · ${fmtDate(r.br_booking_date)}` : 'Unit belum punya Booked Revenue'">
+                                    <component :is="isBooked(r) ? CheckCircle2 : TriangleAlert" class="h-3 w-3 shrink-0" />
+                                    {{ isBooked(r) ? 'SUDAH Booked' : 'BELUM Booked' }}
+                                </span>
+                                <span class="inline-flex items-center rounded-md px-1.5 py-0.5 text-[10.5px] font-semibold ring-1"
+                                    :class="r.scheme === 'bsn' ? 'bg-violet-50 text-violet-700 ring-violet-200 dark:bg-violet-950/40 dark:text-violet-300 dark:ring-violet-800/60'
+                                        : (r.scheme === 'non_bsn' ? 'bg-sky-50 text-sky-700 ring-sky-200 dark:bg-sky-950/40 dark:text-sky-300 dark:ring-sky-800/60'
+                                        : 'bg-neutral-100 text-neutral-500 ring-neutral-200 dark:bg-neutral-800 dark:text-neutral-400 dark:ring-neutral-700')">
+                                    {{ schemeLabel(r) }}
+                                </span>
+                            </div>
+                            <div v-if="r.br_number" class="mt-1 text-[10.5px] text-neutral-400">{{ r.br_number }} · {{ fmtDate(r.br_booking_date) }}</div>
                         </td>
                         <td class="px-3 py-3 text-right font-mono font-bold">{{ fmtRp(r.amount) }}</td>
                         <!-- Ditolak -->
@@ -286,7 +432,12 @@ const hSelCls = 'h-7 w-52 rounded border border-neutral-300 bg-white px-2 text-x
                         </template>
                         <!-- Belum dijurnal → form approve / tolak -->
                         <template v-else-if="!r.journaled">
-                            <td class="px-3 py-3"><input v-model="forms[r.row_key].journal_date" type="date" :class="inputCls" /></td>
+                            <td class="px-3 py-3">
+                                <input v-model="forms[r.row_key].journal_date" type="date" :class="inputCls" @change="onDateChange(r)" />
+                                <p v-if="r.br_booking_date" class="mt-1 text-[10.5px] leading-snug text-neutral-400">
+                                    Booked {{ fmtDate(r.br_booking_date) }} — tanggal ini menentukan bentuk jurnal.
+                                </p>
+                            </td>
                             <td class="px-3 py-3">
                                 <div class="flex items-center gap-1.5">
                                     <div class="flex-1"><SearchSelect v-model="forms[r.row_key].debit_account_id" :options="accountList" placeholder="Cari akun debit…" /></div>
@@ -296,23 +447,64 @@ const hSelCls = 'h-7 w-52 rounded border border-neutral-300 bg-white px-2 text-x
                             </td>
                             <td class="px-3 py-3">
                                 <div class="space-y-2">
-                                    <div class="grid grid-cols-[1fr,2rem,7rem] gap-1.5 items-center">
-                                        <SearchSelect v-model="forms[r.row_key].uang_muka_account_id" :options="accountList" placeholder="Uang Muka Penjualan…" />
-                                        <button type="button" @click="openAddAccount(r.row_key, 'uang_muka_account_id')" title="Tambah akun GL" class="flex h-9 w-8 items-center justify-center rounded-lg border border-neutral-300 text-neutral-500 hover:bg-neutral-50 hover:text-primary-600 dark:border-neutral-700 dark:hover:bg-neutral-800"><Plus class="h-4 w-4" /></button>
-                                        <MoneyInput v-model="forms[r.row_key].uang_muka_amount" />
+                                    <!-- Bentuk jurnal yang akan diposting untuk baris ini. -->
+                                    <div class="rounded-lg px-2.5 py-1.5 ring-1 transition-colors duration-300" :class="MODE_TONE[modeOf(r)]">
+                                        <div class="flex items-center gap-1.5 text-[11px] font-bold">
+                                            <component :is="modeOf(r) === 'deduct' ? ArrowRightLeft : (modeOf(r) === 'piutang' ? Receipt : Landmark)" class="h-3.5 w-3.5 shrink-0" />
+                                            {{ MODE_LABEL[modeOf(r)] }}
+                                        </div>
+                                        <div class="mt-0.5 text-[10.5px] leading-snug opacity-80">{{ MODE_FORMULA[modeOf(r)] }}</div>
                                     </div>
-                                    <div class="grid grid-cols-[1fr,2rem,7rem] gap-1.5 items-center">
-                                        <SearchSelect v-model="forms[r.row_key].ppn_account_id" :options="accountList" placeholder="PPN Keluaran…" />
-                                        <button type="button" @click="openAddAccount(r.row_key, 'ppn_account_id')" title="Tambah akun GL" class="flex h-9 w-8 items-center justify-center rounded-lg border border-neutral-300 text-neutral-500 hover:bg-neutral-50 hover:text-primary-600 dark:border-neutral-700 dark:hover:bg-neutral-800"><Plus class="h-4 w-4" /></button>
-                                        <MoneyInput v-model="forms[r.row_key].ppn_amount" />
+
+                                    <!-- Ganti bentuk jurnal (hanya kombinasi yang sah untuk status Booked Revenue baris ini). -->
+                                    <div class="inline-flex flex-wrap gap-0.5 rounded-lg bg-neutral-100 p-0.5 dark:bg-neutral-800">
+                                        <button v-for="m in allowedModes(r)" :key="m" type="button" @click="setMode(r, m)"
+                                            class="rounded-md px-2 py-1 text-[10.5px] font-semibold transition-all duration-200"
+                                            :class="modeOf(r) === m ? 'bg-white text-neutral-900 shadow-sm dark:bg-neutral-900 dark:text-white' : 'text-neutral-500 hover:text-neutral-800 dark:hover:text-neutral-200'">
+                                            {{ MODE_LABEL[m] }}
+                                        </button>
                                     </div>
-                                    <div class="flex items-center justify-between text-[11px]">
-                                        <button type="button" @click="recalcSplit(r)" class="text-primary-600 hover:underline">Hitung ulang 11%</button>
-                                        <span :class="balanced(r) ? 'text-success-600' : 'text-danger-600 font-semibold'">
-                                            Kredit: {{ fmtRp(creditTotal(r.row_key)) }}<span v-if="!balanced(r)"> ≠ {{ fmtRp(r.amount) }}</span>
-                                        </span>
-                                    </div>
-                                    <div v-if="selisih(r) > 0" class="text-[11px] font-semibold text-danger-600">Selisih: {{ fmtRp(selisih(r)) }}</div>
+
+                                    <!-- BELUM Booked Revenue → pecah Uang Muka + PPN Keluaran. -->
+                                    <template v-if="modeOf(r) === 'split'">
+                                        <div class="grid grid-cols-[1fr,2rem,7rem] gap-1.5 items-center">
+                                            <SearchSelect v-model="forms[r.row_key].uang_muka_account_id" :options="accountList" placeholder="Uang Muka Penjualan…" />
+                                            <button type="button" @click="openAddAccount(r.row_key, 'uang_muka_account_id')" title="Tambah akun GL" class="flex h-9 w-8 items-center justify-center rounded-lg border border-neutral-300 text-neutral-500 hover:bg-neutral-50 hover:text-primary-600 dark:border-neutral-700 dark:hover:bg-neutral-800"><Plus class="h-4 w-4" /></button>
+                                            <MoneyInput v-model="forms[r.row_key].uang_muka_amount" />
+                                        </div>
+                                        <div class="grid grid-cols-[1fr,2rem,7rem] gap-1.5 items-center">
+                                            <SearchSelect v-model="forms[r.row_key].ppn_account_id" :options="accountList" placeholder="PPN Keluaran…" />
+                                            <button type="button" @click="openAddAccount(r.row_key, 'ppn_account_id')" title="Tambah akun GL" class="flex h-9 w-8 items-center justify-center rounded-lg border border-neutral-300 text-neutral-500 hover:bg-neutral-50 hover:text-primary-600 dark:border-neutral-700 dark:hover:bg-neutral-800"><Plus class="h-4 w-4" /></button>
+                                            <MoneyInput v-model="forms[r.row_key].ppn_amount" />
+                                        </div>
+                                        <div class="flex items-center justify-between text-[11px]">
+                                            <button type="button" @click="recalcSplit(r)" class="text-primary-600 hover:underline">Hitung ulang 11%</button>
+                                            <span :class="balanced(r) ? 'text-success-600' : 'text-danger-600 font-semibold'">
+                                                Kredit: {{ fmtRp(creditTotal(r.row_key)) }}<span v-if="!balanced(r)"> ≠ {{ fmtRp(r.amount) }}</span>
+                                            </span>
+                                        </div>
+                                        <div v-if="selisih(r) > 0" class="text-[11px] font-semibold text-danger-600">Selisih: {{ fmtRp(selisih(r)) }}</div>
+                                    </template>
+
+                                    <!-- DAJAM Pajak jalur BSN → Dr Uang Muka Penjualan / Cr Bank (dibalik). -->
+                                    <template v-else-if="modeOf(r) === 'deduct'">
+                                        <div class="grid grid-cols-[1fr,2rem,7rem] gap-1.5 items-center">
+                                            <SearchSelect v-model="forms[r.row_key].uang_muka_account_id" :options="accountList" placeholder="Uang Muka Penjualan…" />
+                                            <button type="button" @click="openAddAccount(r.row_key, 'uang_muka_account_id')" title="Tambah akun GL" class="flex h-9 w-8 items-center justify-center rounded-lg border border-neutral-300 text-neutral-500 hover:bg-neutral-50 hover:text-primary-600 dark:border-neutral-700 dark:hover:bg-neutral-800"><Plus class="h-4 w-4" /></button>
+                                            <span class="text-right font-mono text-xs font-semibold">{{ fmtRp(r.amount) }}</span>
+                                        </div>
+                                        <p class="text-[10.5px] leading-snug text-neutral-500">Akun di atas berada di sisi <b>DEBIT</b>; akun Bank menjadi <b>KREDIT</b> sebesar nilai penuh.</p>
+                                    </template>
+
+                                    <!-- SUDAH Booked Revenue (atau manual) → kredit tunggal sebesar nilai penuh. -->
+                                    <template v-else>
+                                        <div class="grid grid-cols-[1fr,2rem,7rem] gap-1.5 items-center">
+                                            <SearchSelect v-model="forms[r.row_key].credit_account_id" :options="accountList" :placeholder="modeOf(r) === 'piutang' ? 'Piutang Usaha…' : 'Akun kredit…'" />
+                                            <button type="button" @click="openAddAccount(r.row_key, 'credit_account_id')" title="Tambah akun GL" class="flex h-9 w-8 items-center justify-center rounded-lg border border-neutral-300 text-neutral-500 hover:bg-neutral-50 hover:text-primary-600 dark:border-neutral-700 dark:hover:bg-neutral-800"><Plus class="h-4 w-4" /></button>
+                                            <span class="text-right font-mono text-xs font-semibold">{{ fmtRp(r.amount) }}</span>
+                                        </div>
+                                        <p v-if="modeOf(r) === 'piutang'" class="text-[10.5px] leading-snug text-neutral-500">Tanpa pecah PPN — PPN Keluaran sudah diakui seluruhnya pada jurnal Booked Revenue.</p>
+                                    </template>
                                 </div>
                             </td>
                             <td class="px-3 py-3 text-center">
