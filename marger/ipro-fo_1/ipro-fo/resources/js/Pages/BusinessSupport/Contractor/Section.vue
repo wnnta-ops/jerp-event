@@ -18,8 +18,6 @@ const titles: Record<string, string> = {
     master: 'Master',
     query: 'Query',
     spk: 'Surat Perintah Kerja',
-    sbo: 'Pemakaian Barang SBO',
-    mutasi: 'Mutasi Progress',
 };
 const sections = computed<Record<string, Item[]>>(() => ({
     setup: [
@@ -28,9 +26,7 @@ const sections = computed<Record<string, Item[]>>(() => ({
     master: [
         { label: 'Surat Perintah Kerja', route: r('bs.spk.index') },
         { label: 'Kontrol Progress Lapangan', route: r('bs.spk.kpl.index') },
-        { label: 'Pemakaian Barang SBO', route: r('bs.spk.material.index') },
         { label: 'Progress Retensi', route: r('bs.spk.retention.index') },
-        { label: 'Mutasi Progress Bangunan', route: r('bs.spk.mutation.index') },
     ],
     query: [
         { label: 'Rekap SPK', route: r('bs.spk.query.rekap') },
@@ -45,15 +41,6 @@ const sections = computed<Record<string, Item[]>>(() => ({
         { label: 'Addendum SPK (Tambah / Kurang)', route: r('bs.spk.addendum.form') },
         { label: 'Adjustment PPN', route: r('bs.spk.adjust-ppn.form') },
         { label: 'Pembatalan Surat Perintah Kerja', route: r('bs.spk.cancel.form') },
-    ],
-    sbo: [
-        { label: 'Pemakaian Barang', route: r('bs.spk.material.create') },
-        { label: 'Close SBO', route: r('bs.spk.material.close-form') },
-        { label: 'Pengembalian Sisa Pemakaian', route: r('bs.spk.material.return-form') },
-    ],
-    mutasi: [
-        { label: 'Registrasi Mutasi Progress Bangunan', route: r('bs.spk.mutation.create') },
-        { label: 'Approval Mutasi Progress Bangunan', route: r('bs.spk.mutation.approvals') },
     ],
 }));
 const items = computed<Item[]>(() => sections.value[props.section] ?? []);

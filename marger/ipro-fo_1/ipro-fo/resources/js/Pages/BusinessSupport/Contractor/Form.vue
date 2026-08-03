@@ -18,9 +18,9 @@ const form = useForm<any>({
     spk_date: today, no_manual: '', est_start: '', est_end: '',
     project_id: '', jenis: '', supplier_id: '', cost_center_id: '',
     construction_account_id: props.defaultConstruction ?? '', title: '',
-    cluster: '', tahap: '',
+    cluster: '', cluster_id: '', tahap: '',
     releaser: '', pic_project: '', is_pkp: true,
-    contract_value: 0, nominal_profit: 0, retention_pct: 5, advance_pct: 0, ppn_pct: 11, notes: '',
+    contract_value: 0, profit_pct: 0, retention_pct: 5, advance_pct: 0, ppn_pct: 11, notes: '',
     items: [] as any[], terms: [] as any[],
     alloc_project_id: '', units: [] as any[],
 });
@@ -61,6 +61,40 @@ function addTerm() { form.terms.push({ description: '', percentage: 0, amount: 0
 function rmTerm(i: number) { form.terms.splice(i, 1); }
 const itemsTotal = computed(() => form.items.reduce((s: number, it: any) => s + Number(it.qty || 0) * Number(it.unit_price || 0), 0));
 
+// ── Rekap harga SPK: Sub Total 1 → Profit (%) → Sub Total 2 → PPN → Total Harga ──
+// Sama dengan tabel Rincian Harga pada Cetak SPK & ContractorService::profitAmount (markup dari Sub Total 1).
+const profitAmt = computed(() => Math.round(itemsTotal.value * (Number(form.profit_pct) || 0) / 100));
+const subTotal2 = computed(() => itemsTotal.value + profitAmt.value);
+const ppnAmt = computed(() => (form.is_pkp ? Math.round(subTotal2.value * (Number(form.ppn_pct) || 0) / 100) : 0));
+const totalHarga = computed(() => subTotal2.value + ppnAmt.value);
+function applyTotalHarga() { form.contract_value = totalHarga.value; }
+
+// ── Cluster: dropdown dari master Cluster milik Project Sumber Unit (Sales) ──
+const clusters = ref<any[]>([]);
+async function loadClusters() {
+    clusters.value = [];
+    form.cluster_id = '';
+    if (!form.alloc_project_id) return;
+    try {
+        const res = await window.axios.get(route('bs.spk.kpl.clusters'), { params: { project_id: form.alloc_project_id } });
+        clusters.value = res.data.clusters || [];
+        // Cocokkan label Cluster bawaan Project (BO) ke master cluster (name atau code).
+        const label = String(form.cluster || '').trim().toLowerCase();
+        const hit = clusters.value.find((c: any) => String(c.name).toLowerCase() === label || String(c.code).toLowerCase() === label);
+        if (hit) form.cluster_id = hit.id;
+    } catch { /* ignore */ }
+}
+watch(() => form.alloc_project_id, loadClusters);
+const allocProjectName = computed(() => {
+    const p = (props.salesProjects || []).find((x: any) => String(x.id) === String(form.alloc_project_id));
+    return p?.name || '— belum dipilih —';
+});
+// Cluster dipilih → label ikut terisi (dipakai Uraian Pekerjaan & tersimpan di SPK).
+watch(() => form.cluster_id, () => {
+    const c = clusters.value.find((x: any) => String(x.id) === String(form.cluster_id));
+    if (c) form.cluster = c.name;
+});
+
 // ── Alokasi Unit & Porsi Kontrak (Detil Pekerjaan per unit) ──
 const allocLoading = ref(false);
 const bulkHarga = ref<number | string>('');
@@ -71,14 +105,15 @@ async function loadAllocUnits() {
     if (!form.alloc_project_id) return;
     allocLoading.value = true;
     try {
-        // Filter unit alokasi by Cluster + Tahap SPK (dari project terpilih; endpoint fallback ke project_id bila kosong).
-        const res = await window.axios.get(route('bs.spk.kpl.units'), { params: { project_id: form.alloc_project_id, cluster: form.cluster || '', tahap: form.tahap || '' } });
+        // Unit disaring ketat per Cluster terpilih (cluster_id) + Tahap. Tanpa cluster_id,
+        // endpoint jatuh ke pencocokan label lama.
+        const res = await window.axios.get(route('bs.spk.kpl.units'), { params: { project_id: form.alloc_project_id, cluster_id: form.cluster_id || '', cluster: form.cluster || '', tahap: form.tahap || '' } });
         if (seq !== allocSeq) return;
         form.units = (res.data.units || []).map((u: any) => ({ unit_id: u.id, unit_code: u.unit_code, price: Number(u.price || 0), unit_price: 0, checked: false }));
     } catch { /* ignore */ } finally { if (seq === allocSeq) allocLoading.value = false; }
 }
 // Muat ulang saat project sumber unit, Cluster, atau Tahap berubah (Cluster/Tahap ikut mem-filter unit).
-watch([() => form.alloc_project_id, () => form.cluster, () => form.tahap], loadAllocUnits);
+watch([() => form.alloc_project_id, () => form.cluster_id, () => form.cluster, () => form.tahap], loadAllocUnits);
 const allocChecked = computed(() => (form.units as any[]).filter((u) => u.checked));
 const allocTotal = computed(() => allocChecked.value.reduce((s: number, u: any) => s + (Number(u.unit_price) || 0), 0));
 const allAlloc = computed(() => (form.units as any[]).length > 0 && (form.units as any[]).every((u) => u.checked));
@@ -108,14 +143,30 @@ const inputCls = 'h-9 w-full rounded-lg border border-neutral-300 bg-white px-3 
                 <div><label class="mb-1 block text-xs font-medium text-neutral-500">Est. Selesai <span class="text-danger-500">*</span></label><input v-model="form.est_end" type="date" required :class="inputCls" /><p v-if="form.errors.est_end" class="mt-1 text-xs text-danger-500">{{ form.errors.est_end }}</p></div>
                 <div><label class="mb-1 block text-xs font-medium text-neutral-500">Kontraktor <span class="text-danger-500">*</span></label><select v-model="form.supplier_id" required :class="inputCls"><option value="">— pilih —</option><option v-for="s in suppliers" :key="s.id" :value="s.id">{{ s.name }}<span v-if="s.category"> ({{ s.category }})</span></option></select><p v-if="form.errors.supplier_id" class="mt-1 text-xs text-danger-500">{{ form.errors.supplier_id }}</p></div>
                 <div><label class="mb-1 block text-xs font-medium text-neutral-500">Cost Center <span class="text-danger-500">*</span></label><select v-model="form.cost_center_id" required :class="inputCls"><option value="">—</option><option v-for="c in costCenters" :key="c.id" :value="c.id">{{ c.name }}</option></select><p v-if="form.errors.cost_center_id" class="mt-1 text-xs text-danger-500">{{ form.errors.cost_center_id }}</p></div>
-                <div class="md:col-span-2 grid grid-cols-1 gap-3 sm:grid-cols-2">
-                    <div><label class="mb-1 block text-xs font-medium text-neutral-500">Cluster</label><input v-model="form.cluster" placeholder="mis. Cluster 5" :class="inputCls" /><p v-if="form.errors.cluster" class="mt-1 text-xs text-danger-500">{{ form.errors.cluster }}</p></div>
+                <div class="md:col-span-2 grid grid-cols-1 gap-3 sm:grid-cols-3">
+                    <div>
+                        <label class="mb-1 block text-xs font-medium text-neutral-500">Project Sumber Unit (Sales)</label>
+                        <select v-model="form.alloc_project_id" :class="inputCls"><option value="">— pilih project —</option><option v-for="p in salesProjects" :key="p.id" :value="p.id">{{ p.name }}</option></select>
+                        <p class="mt-1 text-[11px] text-neutral-400">Menentukan daftar Cluster &amp; unit rumah.</p>
+                    </div>
+                    <div>
+                        <label class="mb-1 block text-xs font-medium text-neutral-500">Cluster</label>
+                        <select v-if="clusters.length" v-model="form.cluster_id" :class="inputCls">
+                            <option value="">— pilih cluster —</option>
+                            <option v-for="c in clusters" :key="c.id" :value="c.id">{{ c.name }}</option>
+                        </select>
+                        <input v-else v-model="form.cluster" placeholder="mis. Cluster 5" :class="inputCls" />
+                        <p v-if="form.errors.cluster" class="mt-1 text-xs text-danger-500">{{ form.errors.cluster }}</p>
+                        <p v-else-if="!form.alloc_project_id" class="mt-1 text-[11px] text-neutral-400">Pilih Project Sumber Unit dulu.</p>
+                        <p v-else-if="!clusters.length" class="mt-1 text-[11px] text-warning-600">Project ini belum punya master Cluster — isi manual.</p>
+                        <p v-else class="mt-1 text-[11px] text-neutral-400">Unit yang muncul hanya milik cluster ini.</p>
+                    </div>
                     <div><label class="mb-1 block text-xs font-medium text-neutral-500">Tahap</label><input v-model="form.tahap" placeholder="mis. 5" :class="inputCls" /><p v-if="form.errors.tahap" class="mt-1 text-xs text-danger-500">{{ form.errors.tahap }}</p></div>
                 </div>
                 <div class="md:col-span-2"><label class="mb-1 block text-xs font-medium text-neutral-500">Uraian Pekerjaan</label><input v-model="form.title" placeholder="Otomatis dari Cluster/Tahap/Unit bila dikosongkan" :class="inputCls" /><p v-if="form.errors.title" class="mt-1 text-xs text-danger-500">{{ form.errors.title }}</p><p v-else class="mt-1 text-[11px] text-neutral-400">Prefill dari Project; bila dikosongkan diisi otomatis "Cluster {x} Tahap {y}".</p></div>
                 <div><label class="mb-1 block text-xs font-medium text-neutral-500">Akun Konstruksi/CIP <span class="text-danger-500">*</span></label><select v-model="form.construction_account_id" required :class="inputCls"><option value="">— pilih —</option><option v-for="a in constructionAccounts" :key="a.id" :value="a.id">{{ a.code }} - {{ a.name }}</option></select></div>
                 <div><label class="mb-1 block text-xs font-medium text-neutral-500">Nilai Kontrak <span class="text-danger-500">*</span></label><input v-model.number="form.contract_value" type="number" step="1" min="1" required :class="[inputCls,'text-right font-mono']" /><p v-if="form.errors.contract_value" class="mt-1 text-xs text-danger-500">{{ form.errors.contract_value }}</p></div>
-                <div><label class="mb-1 block text-xs font-medium text-neutral-500">Nominal Profit</label><input v-model.number="form.nominal_profit" type="number" step="1" min="0" :class="[inputCls,'text-right font-mono']" /><p class="mt-1 text-[11px] text-neutral-400">Opsional — estimasi profit SPK.</p></div>
+                <div><label class="mb-1 block text-xs font-medium text-neutral-500">Profit (%)</label><input v-model.number="form.profit_pct" type="number" step="0.01" min="0" max="100" :class="[inputCls,'text-right font-mono']" /><p v-if="form.errors.profit_pct" class="mt-1 text-xs text-danger-500">{{ form.errors.profit_pct }}</p><p v-else class="mt-1 text-[11px] text-neutral-400">Nominal dihitung dari Sub Total 1 (lihat rekap di bawah).</p></div>
                 <div class="grid grid-cols-2 gap-3 md:grid-cols-4 md:col-span-2">
                     <div><label class="mb-1 block text-xs font-medium text-neutral-500">Retensi (%) <span class="text-danger-500">*</span></label><input v-model.number="form.retention_pct" type="number" step="0.5" min="0" max="100" required :class="[inputCls,'text-right']" /></div>
                     <div><label class="mb-1 block text-xs font-medium text-neutral-500">Uang Muka (%) <span class="text-danger-500">*</span></label><input v-model.number="form.advance_pct" type="number" step="0.5" min="0" max="100" required :class="[inputCls,'text-right']" /></div>
@@ -145,6 +196,22 @@ const inputCls = 'h-9 w-full rounded-lg border border-neutral-300 bg-white px-3 
                     <tfoot><tr class="border-t border-neutral-200 font-semibold dark:border-neutral-700"><td colspan="4" class="py-1.5 text-right">Total BoQ</td><td class="py-1.5 text-right font-mono">{{ fmtRp(itemsTotal) }}</td><td></td></tr></tfoot>
                 </table>
                 <p v-else class="text-xs text-neutral-400">Opsional — rincian item pekerjaan. Total BoQ tidak wajib sama dengan nilai kontrak.</p>
+
+                <!-- Rekap harga — tampil persis seperti tabel Rincian Harga pada Cetak SPK -->
+                <div v-if="form.items.length" class="mt-4 rounded-lg border border-neutral-200 p-3 text-sm dark:border-neutral-800">
+                    <div class="mb-2 text-xs font-semibold uppercase text-neutral-500">Rekap Harga</div>
+                    <dl class="space-y-1">
+                        <div class="flex justify-between"><dt>Sub Total 1</dt><dd class="font-mono">{{ fmtRp(itemsTotal) }}</dd></div>
+                        <div class="flex justify-between"><dt>Profit {{ Number(form.profit_pct) || 0 }}%</dt><dd class="font-mono">{{ fmtRp(profitAmt) }}</dd></div>
+                        <div class="flex justify-between"><dt>Sub Total 2</dt><dd class="font-mono">{{ fmtRp(subTotal2) }}</dd></div>
+                        <div class="flex justify-between"><dt>PPN {{ form.is_pkp ? (Number(form.ppn_pct) || 0) : 0 }}%</dt><dd class="font-mono">{{ fmtRp(ppnAmt) }}</dd></div>
+                        <div class="flex justify-between border-t border-neutral-200 pt-1 font-semibold dark:border-neutral-700"><dt>Total Harga</dt><dd class="font-mono">{{ fmtRp(totalHarga) }}</dd></div>
+                    </dl>
+                    <div v-if="totalHarga !== Number(form.contract_value)" class="mt-2 flex items-center justify-between gap-2 rounded bg-warning-50 px-2 py-1.5 text-xs text-warning-700 dark:bg-warning-900/20 dark:text-warning-400">
+                        <span>Nilai Kontrak ({{ fmtRp(Number(form.contract_value) || 0) }}) berbeda dengan Total Harga.</span>
+                        <button type="button" @click="applyTotalHarga" class="shrink-0 rounded border border-warning-400 px-2 py-0.5 font-medium hover:bg-warning-100 dark:hover:bg-warning-900/40">Pakai Total Harga</button>
+                    </div>
+                </div>
             </div>
 
             <!-- Detil Pekerjaan per Unit (Alokasi Porsi Kontrak) -->
@@ -154,9 +221,10 @@ const inputCls = 'h-9 w-full rounded-lg border border-neutral-300 bg-white px-3 
                     <span class="text-xs text-neutral-400">{{ allocChecked.length }} unit dipilih · Total {{ fmtRp(allocTotal) }}</span>
                 </div>
                 <div class="mb-3 flex flex-wrap items-end gap-3">
-                    <div>
-                        <label class="mb-1 block text-xs font-medium text-neutral-500">Project Sumber Unit (Sales)</label>
-                        <select v-model="form.alloc_project_id" :class="inputCls" style="min-width: 240px"><option value="">— pilih project —</option><option v-for="p in salesProjects" :key="p.id" :value="p.id">{{ p.name }}</option></select>
+                    <div class="text-xs text-neutral-500">
+                        Sumber unit: <b>{{ allocProjectName }}</b>
+                        · Cluster <b>{{ form.cluster || '—' }}</b><span v-if="form.tahap"> · Tahap <b>{{ form.tahap }}</b></span>
+                        <div class="text-[11px] text-neutral-400">Ubah lewat Project Sumber Unit / Cluster di atas.</div>
                     </div>
                     <div v-if="form.units.length">
                         <label class="mb-1 block text-xs font-medium text-neutral-500">Set Harga Satuan (unit terpilih)</label>
@@ -183,8 +251,9 @@ const inputCls = 'h-9 w-full rounded-lg border border-neutral-300 bg-white px-3 
                         </tbody>
                     </table>
                 </div>
+                <p v-else-if="form.alloc_project_id && form.cluster_id" class="text-xs text-warning-600">Tidak ada unit terdaftar pada cluster ini<span v-if="form.tahap"> untuk Tahap {{ form.tahap }}</span>.</p>
                 <p v-else-if="form.alloc_project_id" class="text-xs text-warning-600">Project ini belum punya unit rumah.</p>
-                <p v-else class="text-xs text-neutral-400">Opsional — pilih project, centang unit, lalu isi <b>Harga Satuan (Porsi Kontrak)</b> per unit. Dipakai saat Registrasi KPL: <b>DPP = Harga Satuan × Progress%</b>.</p>
+                <p v-else class="text-xs text-neutral-400">Opsional — pilih Project Sumber Unit &amp; Cluster di atas, centang unit, lalu isi <b>Harga Satuan (Porsi Kontrak)</b> per unit. Dipakai saat Registrasi KPL: <b>DPP = Harga Satuan × Progress%</b>.</p>
             </div>
 
             <!-- Detil DP (Termin Pembayaran) -->

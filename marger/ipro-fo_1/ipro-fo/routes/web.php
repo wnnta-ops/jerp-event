@@ -71,12 +71,9 @@ use App\Http\Controllers\Web\BusinessSupport\Setup\BulkUploadController as BsBul
 use App\Http\Controllers\Web\BusinessSupport\Report\ProjectionController as BsProjectionController;
 use App\Http\Controllers\Web\BusinessSupport\Contractor\ContractorController as BsSpkController;
 use App\Http\Controllers\Web\BusinessSupport\Contractor\ProjectController as BsProjectController;
-use App\Http\Controllers\Web\BusinessSupport\Contractor\GenerateBastController as BsGenerateBastController;
 use App\Http\Controllers\Web\BusinessSupport\Contractor\SpkDraftController as BsSpkDraftController;
 use App\Http\Controllers\Web\BusinessSupport\Contractor\KplController as BsKplController;
 use App\Http\Controllers\Web\BusinessSupport\Contractor\RetentionController as BsRetentionController;
-use App\Http\Controllers\Web\BusinessSupport\Contractor\MaterialController as BsSbomatController;
-use App\Http\Controllers\Web\BusinessSupport\Contractor\MutationController as BsMutationController;
 use App\Http\Controllers\Web\BusinessSupport\Contractor\ContractorQueryController as BsContractorQueryController;
 use App\Http\Controllers\Web\BusinessSupport\Cogs\CogsController as BsCogsController;
 use App\Http\Controllers\Web\BusinessSupport\SubModuleSectionController as BsSectionController;
@@ -1059,18 +1056,13 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
     Route::put('/business-support/spk-draft',                    [BsSpkDraftController::class, 'update'])->name('bs.spk.draft.update');
     Route::delete('/business-support/spk-draft',                 [BsSpkDraftController::class, 'reset'])->name('bs.spk.draft.reset');
 
-    // Generate BAST (daftar unit + status BAST + import Excel)
-    Route::get('/business-support/spk-generate-bast',            [BsGenerateBastController::class, 'index'])->name('bs.spk.bast.index');
-    Route::get('/business-support/spk-generate-bast/template',   [BsGenerateBastController::class, 'importTemplate'])->name('bs.spk.bast.template');
-    Route::post('/business-support/spk-generate-bast/import',    [BsGenerateBastController::class, 'import'])->name('bs.spk.bast.import');
-    Route::delete('/business-support/spk-generate-bast/{bastUnit}', [BsGenerateBastController::class, 'destroy'])->name('bs.spk.bast.destroy');
-
     // Kontrol Progress Lapangan (KPL / opname)
     Route::get('/business-support/spk-kpl',                      [BsKplController::class, 'index'])->name('bs.spk.kpl.index');
     Route::get('/business-support/spk-kpl/create',              [BsKplController::class, 'create'])->name('bs.spk.kpl.create');
     // Registrasi massal per unit rumah (static path — HARUS sebelum route {progress}).
     Route::get('/business-support/spk-kpl/units',               [BsKplController::class, 'units'])->name('bs.spk.kpl.units');
     Route::get('/business-support/spk-kpl/spk-units',           [BsKplController::class, 'spkUnits'])->name('bs.spk.kpl.spk-units');
+    Route::get('/business-support/spk-kpl/clusters',            [BsKplController::class, 'clusters'])->name('bs.spk.kpl.clusters');
     Route::get('/business-support/spk-kpl/items',               [BsKplController::class, 'items'])->name('bs.spk.kpl.items');
     Route::get('/business-support/spk-kpl/import-template',     [BsKplController::class, 'importTemplate'])->name('bs.spk.kpl.import-template');
     Route::post('/business-support/spk-kpl/import',             [BsKplController::class, 'importParse'])->name('bs.spk.kpl.import');
@@ -1082,22 +1074,6 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
     Route::get('/business-support/spk-retention',               [BsRetentionController::class, 'index'])->name('bs.spk.retention.index');
     Route::get('/business-support/spk-retention/create',        [BsRetentionController::class, 'create'])->name('bs.spk.retention.create');
     Route::post('/business-support/spk-retention',              [BsRetentionController::class, 'store'])->name('bs.spk.retention.store');
-
-    // Pemakaian Barang SBO + Close + Pengembalian
-    Route::get('/business-support/spk-material',                [BsSbomatController::class, 'index'])->name('bs.spk.material.index');
-    Route::get('/business-support/spk-material/create',         [BsSbomatController::class, 'create'])->name('bs.spk.material.create');
-    Route::post('/business-support/spk-material',               [BsSbomatController::class, 'store'])->name('bs.spk.material.store');
-    Route::get('/business-support/spk-material/close',          [BsSbomatController::class, 'closeForm'])->name('bs.spk.material.close-form');
-    Route::post('/business-support/spk-material/close',         [BsSbomatController::class, 'close'])->name('bs.spk.material.close');
-    Route::get('/business-support/spk-material/return',         [BsSbomatController::class, 'returnForm'])->name('bs.spk.material.return-form');
-    Route::post('/business-support/spk-material/return',        [BsSbomatController::class, 'returnStore'])->name('bs.spk.material.return');
-
-    // Mutasi Progress Bangunan + Approval
-    Route::get('/business-support/spk-mutation',               [BsMutationController::class, 'index'])->name('bs.spk.mutation.index');
-    Route::get('/business-support/spk-mutation/create',        [BsMutationController::class, 'create'])->name('bs.spk.mutation.create');
-    Route::post('/business-support/spk-mutation',              [BsMutationController::class, 'store'])->name('bs.spk.mutation.store');
-    Route::get('/business-support/spk-mutation-approval',      [BsMutationController::class, 'approvals'])->name('bs.spk.mutation.approvals');
-    Route::post('/business-support/spk-mutation-approval',     [BsMutationController::class, 'approveBatch'])->name('bs.spk.mutation.approve-batch');
 
     // Addendum / Adjust PPN / Pembatalan (picker forms)
     Route::get('/business-support/spk-addendum',              [BsSpkController::class, 'pickerForm'])->defaults('action', 'addendum')->name('bs.spk.addendum.form');

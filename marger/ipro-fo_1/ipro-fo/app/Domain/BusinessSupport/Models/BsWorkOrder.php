@@ -19,13 +19,13 @@ class BsWorkOrder extends Model
         'tenant_id', 'project_id', 'spk_number', 'no_manual', 'spk_date', 'est_start', 'est_end',
         'supplier_id', 'cost_center_id', 'construction_account_id',
         'title', 'cluster', 'tahap', 'unit', 'jenis', 'releaser', 'pic_project', 'is_pkp',
-        'contract_value', 'nominal_profit', 'addendum_value', 'retention_pct', 'advance_pct', 'ppn_pct', 'progress_value', 'material_used', 'progress_mutated', 'retention_held',
+        'contract_value', 'nominal_profit', 'profit_pct', 'addendum_value', 'retention_pct', 'advance_pct', 'ppn_pct', 'progress_value', 'material_used', 'progress_mutated', 'retention_held',
         'status', 'retention_released_at', 'cancelled_at', 'cancel_reason', 'notes', 'print_payload', 'created_by',
     ];
     protected $casts = [
         'spk_date' => 'date', 'est_start' => 'date', 'est_end' => 'date', 'retention_released_at' => 'date', 'cancelled_at' => 'date',
         'is_pkp' => 'boolean',
-        'contract_value' => 'decimal:2', 'nominal_profit' => 'decimal:2', 'addendum_value' => 'decimal:2', 'retention_pct' => 'decimal:2', 'advance_pct' => 'decimal:2', 'ppn_pct' => 'decimal:2',
+        'contract_value' => 'decimal:2', 'nominal_profit' => 'decimal:2', 'profit_pct' => 'decimal:2', 'addendum_value' => 'decimal:2', 'retention_pct' => 'decimal:2', 'advance_pct' => 'decimal:2', 'ppn_pct' => 'decimal:2',
         'progress_value' => 'decimal:2', 'material_used' => 'decimal:2', 'progress_mutated' => 'decimal:2', 'retention_held' => 'decimal:2',
         'print_payload' => 'array',
     ];
