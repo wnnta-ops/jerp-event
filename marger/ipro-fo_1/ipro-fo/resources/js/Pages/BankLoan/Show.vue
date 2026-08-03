@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { Link, router, useForm, usePage } from '@inertiajs/vue3';
 import { ref, reactive, computed, watch } from 'vue';
-import { CheckCircle2, Plus, Printer, Search } from 'lucide-vue-next';
+import { CheckCircle2, Plus, Printer, Search, TriangleAlert } from 'lucide-vue-next';
 import Badge from '@/Components/UI/Badge.vue';
 import Button from '@/Components/UI/Button.vue';
 import Input from '@/Components/UI/Input.vue';
@@ -124,7 +124,7 @@ const sp3kForm = useForm<any>({ sp3k_date: a.sp3k?.sp3k_date ? String(a.sp3k.sp3
 // Default Akad mengikuti SP3K yang dipilih: tanggal = tgl SP3K, tempat = Kantor bank (keduanya bisa diubah).
 const akadForm = useForm<any>({ akad_at: a.sp3k?.sp3k_date ? String(a.sp3k.sp3k_date).slice(0, 10) : new Date().toISOString().slice(0, 10), place: a.bank?.name ? 'Kantor ' + a.bank.name : '' });
 // disbursement_scheme SENGAJA mulai null: jalur pencairan (BSN / SELAIN BSN) wajib dipilih
-// operator lebih dulu sebelum Catat Pencairan bisa ditekan (server juga memvalidasi).
+// operator lebih dulu HANYA bila unit rumahnya sudah Booked Revenue (server juga memvalidasi).
 const disbForm = useForm<any>({ disbursed_at: new Date().toISOString().slice(0, 10), disbursed_amount: 0, dajam_lines: [{ retention_amount: 0, retention_note: '' }], retention_category_id: null, bank_account_id: null, disbursement_scheme: null, ssp_bphtb_date: new Date().toISOString().slice(0, 10), ssp_bphtb_amount: 0 });
 
 // #146: deteksi kategori "DAJAM Pajak" (is_dajam + nama mengandung "Pajak") → tampilkan input SSP/BPHTB.
@@ -544,6 +544,12 @@ const akadPrintReady = computed(() => a.status === 'akad'
 // #167: form pencairan tampil di tahap Pencairan (disbursed/active) agar retensi/DAJAM masih bisa dicatat,
 // walau pencairan sudah 100% (canDisburse false). Input Nominal Cair-nya yang di-gate canDisburse.
 const showDisbForm = computed(() => (a.status === 'disbursed' || a.status === 'active') && (canDisburse.value || canAddRetention.value));
+
+/**
+ * Gerbang Jalur Pencairan: WAJIB dipilih hanya untuk unit yang SUDAH Booked Revenue.
+ * Unit yang belum Booked Revenue cukup diberi penanda — pencairan tetap boleh dicatat.
+ */
+const schemeOk = computed(() => !props.bookedRevenue || Boolean(disbForm.disbursement_scheme));
 
 // Chip ringkasan kumulatif (tumbuh tiap tahap selesai).
 const recapChips = computed<string[]>(() => {
@@ -1097,8 +1103,7 @@ const historyNodes = computed<HistoryNode[]>(() => {
             <div v-if="showDisbForm" id="next-step-form" class="mt-5 border-t border-neutral-200 dark:border-neutral-800 pt-5">
                 <h3 class="font-semibold mb-3">{{ (a.realizations?.length ?? 0) === 0 ? 'Langkah Berikutnya — Catat Pencairan' : 'Catat Pencairan Lagi' }}</h3>
 
-                <!-- Penanda: unit rumah ini SUDAH Booked Revenue. Hanya muncul bila memang ada
-                     Booked Revenue untuk unitnya (prop bookedRevenue dari server). -->
+                <!-- Penanda status Booked Revenue unit rumah — SELALU tampil, salah satu saja. -->
                 <div v-if="bookedRevenue" class="mb-3 rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-2 dark:border-emerald-700/60 dark:bg-emerald-900/25">
                     <div class="flex flex-wrap items-center gap-2 text-sm font-semibold text-emerald-800 dark:text-emerald-300">
                         <CheckCircle2 class="h-4 w-4" /> Unit rumah ini SUDAH Booked Revenue
@@ -1108,20 +1113,33 @@ const historyNodes = computed<HistoryNode[]>(() => {
                         Pendapatan unit {{ si?.unit_code ?? '—' }} sudah diakui{{ bookedRevenue.booking_date ? ' pada ' + fmtDate(bookedRevenue.booking_date) : '' }} — Total {{ fmtRp(bookedRevenue.total) }}.
                     </div>
                 </div>
+                <div v-else class="mb-3 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 dark:border-amber-700/60 dark:bg-amber-900/25">
+                    <div class="flex flex-wrap items-center gap-2 text-sm font-semibold text-amber-800 dark:text-amber-300">
+                        <TriangleAlert class="h-4 w-4" /> Unit rumah ini BELUM Booked Revenue
+                    </div>
+                    <div class="mt-0.5 text-xs text-amber-700 dark:text-amber-400">
+                        Pendapatan unit {{ si?.unit_code ?? '—' }} belum diakui. Pencairan tetap dapat dicatat — pilihan Jalur Pencairan belum diperlukan.
+                    </div>
+                </div>
 
-                <!-- Jalur pencairan WAJIB dipilih sebelum Catat Pencairan bisa ditekan. -->
+                <!-- Jalur pencairan: HANYA aktif & wajib bila unitnya sudah Booked Revenue.
+                     Bila belum, pilihannya dinonaktifkan dan Catat Pencairan tetap bisa ditekan. -->
                 <div class="mb-3 rounded-lg border px-3 py-2.5"
-                    :class="disbForm.disbursement_scheme ? 'border-neutral-200 dark:border-neutral-700' : 'border-warning-300 bg-warning-50 dark:border-warning-700 dark:bg-warning-900/20'">
-                    <label class="block text-sm font-medium">Jalur Pencairan <span class="text-danger-500">*</span></label>
+                    :class="!bookedRevenue ? 'border-neutral-200 opacity-60 dark:border-neutral-700'
+                        : (disbForm.disbursement_scheme ? 'border-neutral-200 dark:border-neutral-700' : 'border-warning-300 bg-warning-50 dark:border-warning-700 dark:bg-warning-900/20')">
+                    <label class="block text-sm font-medium">Jalur Pencairan <span v-if="bookedRevenue" class="text-danger-500">*</span></label>
                     <div class="mt-1.5 inline-flex rounded-lg border border-neutral-300 p-0.5 dark:border-neutral-700">
-                        <button type="button" @click="disbForm.disbursement_scheme = 'bsn'"
-                            class="rounded-md px-4 py-1 text-xs font-medium transition"
+                        <button type="button" :disabled="!bookedRevenue" @click="disbForm.disbursement_scheme = 'bsn'"
+                            class="rounded-md px-4 py-1 text-xs font-medium transition disabled:cursor-not-allowed"
                             :class="disbForm.disbursement_scheme === 'bsn' ? 'bg-primary-600 text-white' : 'text-neutral-600 hover:bg-neutral-100 dark:text-neutral-300 dark:hover:bg-neutral-800'">BSN</button>
-                        <button type="button" @click="disbForm.disbursement_scheme = 'non_bsn'"
-                            class="rounded-md px-4 py-1 text-xs font-medium transition"
+                        <button type="button" :disabled="!bookedRevenue" @click="disbForm.disbursement_scheme = 'non_bsn'"
+                            class="rounded-md px-4 py-1 text-xs font-medium transition disabled:cursor-not-allowed"
                             :class="disbForm.disbursement_scheme === 'non_bsn' ? 'bg-primary-600 text-white' : 'text-neutral-600 hover:bg-neutral-100 dark:text-neutral-300 dark:hover:bg-neutral-800'">SELAIN BSN</button>
                     </div>
-                    <p v-if="!disbForm.disbursement_scheme" class="mt-1.5 text-xs text-warning-700 dark:text-warning-400">
+                    <p v-if="!bookedRevenue" class="mt-1.5 text-xs text-neutral-500">
+                        Aktif setelah unit rumah di-<strong>Booked Revenue</strong>. Untuk saat ini tidak perlu dipilih.
+                    </p>
+                    <p v-else-if="!disbForm.disbursement_scheme" class="mt-1.5 text-xs text-warning-700 dark:text-warning-400">
                         Pilih <strong>BSN</strong> atau <strong>SELAIN BSN</strong> terlebih dahulu untuk dapat mencatat pencairan.
                     </p>
                     <p v-if="disbForm.errors.disbursement_scheme" class="mt-1 text-xs text-danger-600">{{ disbForm.errors.disbursement_scheme }}</p>
@@ -1199,8 +1217,8 @@ const historyNodes = computed<HistoryNode[]>(() => {
                     <p v-if="hasDajam && !dajamOk" class="rounded-lg border border-warning-300 bg-warning-50 px-3 py-2 text-xs text-warning-700 dark:border-warning-700 dark:bg-warning-900/30 dark:text-warning-300">
                         ⚠ Lengkapi <strong>Nominal</strong> (lebih dari 0) &amp; <strong>Keterangan</strong> pada setiap baris Retensi / Pengurangan DAJAM.
                     </p>
-                    <!-- Jalur pencairan (BSN / SELAIN BSN) ikut menggerbang tombol ini. -->
-                    <Button type="submit" size="lg" block :loading="disbForm.processing" :disabled="exceedsPlafon || !canSubmitDisb || !dajamOk || !disbForm.retention_category_id || !disbForm.disbursement_scheme" variant="success">{{ canDisburse ? 'Catat Pencairan + Auto-TTS →' : 'Catat Retensi / DAJAM →' }}</Button>
+                    <!-- Jalur pencairan menggerbang tombol ini HANYA bila unitnya sudah Booked Revenue. -->
+                    <Button type="submit" size="lg" block :loading="disbForm.processing" :disabled="exceedsPlafon || !canSubmitDisb || !dajamOk || !disbForm.retention_category_id || !schemeOk" variant="success">{{ canDisburse ? 'Catat Pencairan + Auto-TTS →' : 'Catat Retensi / DAJAM →' }}</Button>
                 </form>
             </div>
 
