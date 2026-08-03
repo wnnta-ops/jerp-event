@@ -36,9 +36,6 @@ class GmcMassal extends Page implements HasForms
     /** @var array<string,mixed>|null */
     public ?array $data = [];
 
-    /** @var array<int|string,string>|null Memo opsi SPR/Kontrak (sekali per request). */
-    protected ?array $kontrakOpts = null;
-
     /** @var array<string,string>|null Memo opsi Nama Gimmick dari BO (sekali per request). */
     protected ?array $gimmickOpts = null;
 
@@ -56,9 +53,16 @@ class GmcMassal extends Page implements HasForms
                 Forms\Components\Repeater::make('rows')->label('Daftar GMC')
                     ->schema([
                         Forms\Components\DatePicker::make('tgl')->label('Tgl')->default(now())->required(),
-                        // Opsi dari memo (dihitung sekali) → render cepat, tak query per baris.
-                        Forms\Components\Select::make('kontrak_id')->label('SPR / Kontrak (— Customer — Unit)')->required()
-                            ->options($this->kontrakOptions()),
+                        // Server-side search: ketik nama customer / no. SPR / kode unit → hasil muncul
+                        // (tak terbatas 300 pertama, mempercepat pencarian).
+                        Forms\Components\Select::make('kontrak_id')->label('SPR / Kontrak (— Customer — Unit)')->required()->searchable()
+                            ->getSearchResultsUsing(fn (string $search) => Kontrak::with(['customer', 'unit'])
+                                ->where(fn ($q) => $q->where('no_kontrak', 'like', "%{$search}%")
+                                    ->orWhereHas('customer', fn ($c) => $c->where('full_name', 'like', "%{$search}%"))
+                                    ->orWhereHas('unit', fn ($u) => $u->where('kode_unit', 'like', "%{$search}%")))
+                                ->latest('id')->limit(50)->get()
+                                ->mapWithKeys(fn ($k) => [$k->id => self::kontrakLabel($k)])->toArray())
+                            ->getOptionLabelUsing(fn ($value) => ($k = Kontrak::with(['customer', 'unit'])->find($value)) ? self::kontrakLabel($k) : null),
                         Forms\Components\Select::make('nama')->label('Nama Gimmick')->required()
                             ->options($this->gimmickOptions()),
                         Forms\Components\TextInput::make('nilai')->label('Nilai / Biaya (Rp)')->numeric()->rupiah()->default(0)->required(),
@@ -95,12 +99,10 @@ class GmcMassal extends Page implements HasForms
         $this->redirect(GmcResource::getUrl('index'));
     }
 
-    /** Opsi SPR/Kontrak — MEMOIZE per request (nama customer & unit di label). */
-    protected function kontrakOptions(): array
+    /** Label SPR/Kontrak: "No. SPR — Customer — Unit". */
+    private static function kontrakLabel(Kontrak $k): string
     {
-        return $this->kontrakOpts ??= Kontrak::with(['customer', 'unit'])->latest('id')->limit(300)->get()
-            ->mapWithKeys(fn ($k) => [$k->id => trim($k->no_kontrak.' — '.($k->customer?->full_name ?? '').' — '.($k->unit?->kode_unit ?? ''), ' —')])
-            ->toArray();
+        return trim($k->no_kontrak.' — '.($k->customer?->full_name ?? '').' — '.($k->unit?->kode_unit ?? ''), ' —');
     }
 
     /** Opsi Nama Gimmick dari master Kategori Gimmick BO — MEMOIZE per request (cross-DB sekali saja). */
