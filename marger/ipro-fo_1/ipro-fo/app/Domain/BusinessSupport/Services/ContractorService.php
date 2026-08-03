@@ -34,6 +34,32 @@ final class ContractorService
     }
 
     /**
+     * SUB TOTAL 1 tabel Rincian Harga = jumlah baris BoQ (qty × harga satuan).
+     * Tanpa baris BoQ, nilai kontrak dipakai sebagai basis (SPK lama/ringkas).
+     *
+     * @param array<int, array<string, mixed>> $items
+     */
+    public static function subTotal1(array $items, float $contractValue = 0.0): float
+    {
+        $sum = 0.0;
+        foreach ($items as $it) {
+            $sum += round((float) ($it['qty'] ?? 0), 2) * round((float) ($it['unit_price'] ?? 0), 2);
+        }
+
+        return round($sum > 0 ? $sum : $contractValue, 2);
+    }
+
+    /**
+     * Nominal profit dari persentase — basis MARKUP: Profit = SUB TOTAL 1 × %.
+     * (Sesuai SPK 083/Infra. Bila kelak dipakai basis MARGIN seperti SPK 076/Housing,
+     * cukup ganti rumus di sini: $base / (1 - $pct/100) - $base.)
+     */
+    public static function profitAmount(float $subTotal1, float $pct): float
+    {
+        return round($subTotal1 * $pct / 100, 2);
+    }
+
+    /**
      * @param array{spk_date:string, supplier_id:int, cost_center_id?:?int, construction_account_id:int, title:string,
      *   contract_value:float|int|string, retention_pct?:float|int|string, ppn_pct?:float|int|string, notes?:?string,
      *   project_id?:?int, jenis?:?string, est_start?:?string, est_end?:?string, is_pkp?:bool, releaser?:?string,
@@ -42,6 +68,8 @@ final class ContractorService
     public function createSpk(array $data, ?int $userId = null): BsWorkOrder
     {
         return DB::transaction(function () use ($data, $userId): BsWorkOrder {
+            $profitPct = round((float) ($data['profit_pct'] ?? 0), 2);
+
             $wo = BsWorkOrder::create([
                 'spk_number'              => $this->nextNumber($data['spk_date']),
                 'no_manual'               => $data['no_manual'] ?? null,
@@ -60,7 +88,11 @@ final class ContractorService
                 'pic_project'             => $data['pic_project'] ?? null,
                 'is_pkp'                  => $data['is_pkp'] ?? true,
                 'contract_value'          => round((float) $data['contract_value'], 2),
-                'nominal_profit'          => round((float) ($data['nominal_profit'] ?? 0), 2),
+                'profit_pct'              => $profitPct,
+                'nominal_profit'          => self::profitAmount(
+                    self::subTotal1($data['items'] ?? [], (float) $data['contract_value']),
+                    $profitPct,
+                ),
                 'retention_pct'           => round((float) ($data['retention_pct'] ?? 0), 2),
                 'advance_pct'             => round((float) ($data['advance_pct'] ?? 0), 2),
                 'ppn_pct'                 => round((float) ($data['ppn_pct'] ?? 0), 2),

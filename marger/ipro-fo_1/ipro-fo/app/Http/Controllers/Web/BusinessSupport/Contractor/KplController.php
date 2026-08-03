@@ -168,34 +168,43 @@ class KplController extends Controller
         abort_unless($request->user()?->canModule('contractor'), 403);
 
         $projectId = (int) $request->input('project_id');
+        $clusterId = (int) $request->input('cluster_id');
         $cluster   = trim((string) $request->input('cluster', ''));
         $tahap     = trim((string) $request->input('tahap', ''));
 
         $query = Unit::where('project_id', $projectId);
 
-        // Persempit ke Cluster + Tahap SPK. Cluster kosong → perilaku lama (project_id saja).
-        if ($cluster !== '') {
-            // Project menyimpan Cluster sbg LABEL → resolve ke cluster_id via master (name atau code).
+        // Tahap = segmen ke-2 unit_code (mis. 'JRS5-001-III-33a' → '001'). Cocok persis
+        // ATAU numerik agnostik zero-pad ('5'~'005', '1'~'001'); tahap kosong → cluster saja.
+        $filterTahap = function ($q) use ($tahap): void {
+            if ($tahap === '') {
+                return;
+            }
+            $seg2 = "SUBSTRING_INDEX(SUBSTRING_INDEX(unit_code, '-', 2), '-', -1)";
+            $q->where(function ($w) use ($seg2, $tahap): void {
+                $w->whereRaw("{$seg2} = ?", [$tahap]);
+                if (ctype_digit($tahap)) {
+                    $w->orWhereRaw("({$seg2} REGEXP '^[0-9]+$' AND CAST({$seg2} AS UNSIGNED) = ?)", [(int) $tahap]);
+                }
+            });
+        };
+
+        if ($clusterId > 0) {
+            // Cluster dipilih dari dropdown → HANYA unit terdaftar pada cluster itu.
+            // Sengaja tanpa fallback: cluster kosong unit harus tampil kosong, bukan seluruh project.
+            $query->where('cluster_id', $clusterId);
+            $filterTahap($query);
+        } elseif ($cluster !== '') {
+            // Jalur lama (cluster sbg LABEL teks) — resolve ke cluster_id via master (name atau code).
             $clusterIds = Cluster::where('project_id', $projectId)
                 ->where(fn ($q) => $q->whereRaw('LOWER(name) = ?', [mb_strtolower($cluster)])
                     ->orWhereRaw('LOWER(code) = ?', [mb_strtolower($cluster)]))
                 ->pluck('id')->all();
 
-            // Cluster diisi tapi tak ada padanan di master → fallback project_id (jangan kosongkan hasil).
+            // Label tak punya padanan di master → fallback project_id (jangan kosongkan hasil).
             if ($clusterIds !== []) {
                 $query->whereIn('cluster_id', $clusterIds);
-
-                // Tahap = segmen ke-2 unit_code (mis. 'JRS5-001-III-33a' → '001'). Cocok persis
-                // ATAU numerik agnostik zero-pad ('5'~'005', '1'~'001'); tahap kosong → cluster saja.
-                if ($tahap !== '') {
-                    $seg2 = "SUBSTRING_INDEX(SUBSTRING_INDEX(unit_code, '-', 2), '-', -1)";
-                    $query->where(function ($w) use ($seg2, $tahap): void {
-                        $w->whereRaw("{$seg2} = ?", [$tahap]);
-                        if (ctype_digit($tahap)) {
-                            $w->orWhereRaw("({$seg2} REGEXP '^[0-9]+$' AND CAST({$seg2} AS UNSIGNED) = ?)", [(int) $tahap]);
-                        }
-                    });
-                }
+                $filterTahap($query);
             }
         }
 
@@ -205,6 +214,23 @@ class KplController extends Controller
             ->values();
 
         return response()->json(['units' => $units, 'denom' => (float) $units->sum('price')]);
+    }
+
+    /**
+     * Daftar Cluster milik sebuah project (Sales) — sumber dropdown Cluster di Registrasi SPK.
+     * Unit pada Registrasi SPK disaring memakai cluster_id dari sini (lihat units()).
+     */
+    public function clusters(Request $request): JsonResponse
+    {
+        abort_unless($request->user()?->canModule('contractor'), 403);
+
+        $projectId = (int) $request->input('project_id');
+        $clusters  = $projectId > 0
+            ? Cluster::where('project_id', $projectId)->orderBy('name')->get(['id', 'code', 'name'])
+                ->map(fn ($c) => ['id' => $c->id, 'code' => (string) $c->code, 'name' => (string) $c->name])->values()
+            : collect();
+
+        return response()->json(['clusters' => $clusters]);
     }
 
     /** Item pekerjaan (BoQ) dari SPK — untuk prefill registrasi INFRA/LAIN-LAIN. */

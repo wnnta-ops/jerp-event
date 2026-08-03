@@ -16,8 +16,16 @@ class BsSpkDraft extends Model
 
     protected $table = 'bs_spk_drafts';
 
+    /** Kolom kepala dokumen (proyek_line … pihak2_teks) mengikuti draft SPK asli MUP. */
     protected $fillable = [
-        'tenant_id', 'judul', 'subjudul', 'tempat', 'pembukaan', 'pasals', 'updated_by',
+        'tenant_id', 'jenis', 'judul', 'subjudul', 'proyek_line', 'judul_pekerjaan',
+        'tempat', 'pembukaan', 'mukadimah', 'pihak1_teks', 'pihak2_teks', 'pasals', 'updated_by',
+    ];
+
+    /** Kolom isi template yang dipakai Cetak SPK (dipakai controller saat menyusun payload). */
+    public const CONTENT_FIELDS = [
+        'judul', 'subjudul', 'proyek_line', 'judul_pekerjaan', 'tempat',
+        'pembukaan', 'mukadimah', 'pihak1_teks', 'pihak2_teks', 'pasals',
     ];
 
     protected $casts = [

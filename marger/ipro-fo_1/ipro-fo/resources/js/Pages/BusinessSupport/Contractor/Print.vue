@@ -47,6 +47,9 @@ const jenisLabel = props.jenisOpts?.[s.jenis] ?? s.jenis ?? '—';
 const nilai = Number(s.contract_value) || 0;
 const durasi = daysBetween(s.est_start, s.est_end);
 const kota = props.company?.city || 'Sidoarjo';
+// Label scope SPK — "Cluster" tidak diulang bila label sudah diawali kata itu.
+const clusterLabel = s.cluster ? (/^cluster/i.test(String(s.cluster)) ? String(s.cluster) : `Cluster ${s.cluster}`) : '';
+const tahapLabel = s.tahap ? `Tahap ${s.tahap}` : '';
 
 // ── Substitusi placeholder untuk draft "Set Up SPK" ──
 const subMap: Record<string, string> = {
@@ -61,16 +64,31 @@ const subMap: Record<string, string> = {
     '{periode_note}': (s.est_start && s.est_end) ? `terhitung sejak ${fmtTgl(s.est_start)} sampai dengan ${fmtTgl(s.est_end)}` : 'sesuai jadwal pelaksanaan',
     '{dp}': String(Number(s.advance_pct) || 0),
     '{retensi}': String(Number(s.retention_pct) || 5),
+    '{profit}': String(Number(s.profit_pct) || 0),
     '{kota}': kota,
     '{tanggal}': fmtTgl(s.spk_date) || '……',
+    '{cluster}': clusterLabel,
+    '{tahap}': tahapLabel,
+    '{no_spk}': s.no_manual || s.spk_number || '',
+    '{kontraktor}': s.supplier?.name || '',
+    '{perusahaan}': props.company?.name || '',
+    '{ppn}': String(Number(s.ppn_pct) || 0),
+    '{mulai}': fmtTgl(s.est_start) || '……',
+    '{selesai}': fmtTgl(s.est_end) || '……',
 };
 function subst(t: any): string { return String(t ?? '').replace(/\{[a-z_]+\}/g, (m) => subMap[m] ?? m); }
+// Untuk baris kepala dokumen: placeholder kosong (mis. SPK tanpa Tahap) menyisakan
+// spasi ganda. TIDAK dipakai untuk badan pasal — indentasi daftar bertingkat harus utuh.
+function substTight(t: any): string {
+    return subst(t).replace(/[ \t]{2,}/g, ' ').replace(/ +([,.”)])/g, '$1').trim();
+}
 
 // ── Default pasal (bisa diedit / dihapus sebagian) ──
 function defaultPasals() {
     const d = props.draft;
     if (d?.pasals?.length) {
-        return d.pasals.map((p: any) => ({ title: subst(p.title), body: subst(p.body) }));
+        // `table` = tabel yang disisipkan di bawah pasal (diatur di Set Up SPK).
+        return d.pasals.map((p: any) => ({ title: subst(p.title), body: subst(p.body), table: p.table ?? '' }));
     }
     return [
         { title: 'PASAL 1 — LINGKUP PEKERJAAN', body:
@@ -78,10 +96,10 @@ function defaultPasals() {
             + (jenisLabel ? ` (jenis: ${jenisLabel})` : '')
             + (s.project?.name ? `, berlokasi pada proyek ${s.project.name}` : '')
             + `. Rincian lingkup pekerjaan tercantum pada Rincian Anggaran Biaya (RAB) yang menjadi bagian tidak terpisahkan dari Surat Perintah Kerja ini.` },
-        { title: 'PASAL 2 — NILAI PEKERJAAN', body:
+        { title: 'PASAL 2 — NILAI PEKERJAAN', table: 'rincian', body:
             `Nilai pekerjaan disepakati sebesar ${fmtRp(nilai)} (${capit(terbilang(nilai))} rupiah)`
             + (s.is_pkp ? `, sudah termasuk PPN ${Number(s.ppn_pct)}%` : ` (Non-PKP)`)
-            + `. Nilai tersebut bersifat lumpsum fixed price sesuai rincian pada RAB terlampir.` },
+            + `. Nilai tersebut bersifat lumpsum fixed price, sudah termasuk keuntungan/jasa dan pajak, dengan rincian sebagai berikut:` },
         { title: 'PASAL 3 — JANGKA WAKTU PELAKSANAAN', body:
             `Pekerjaan dilaksanakan dalam jangka waktu ${durasi || '……'} (${durasi ? capit(terbilang(durasi)) : '……'}) hari kalender`
             + (s.est_start && s.est_end ? `, terhitung sejak ${fmtTgl(s.est_start)} sampai dengan ${fmtTgl(s.est_end)}` : '')
@@ -111,21 +129,29 @@ function makeState() {
     return {
         judul: d?.judul || 'SURAT PERINTAH KERJA',
         subjudul: d?.subjudul || '(SPK)',
+        // Kepala dokumen mengikuti draft SPK asli: baris proyek + judul pekerjaan + "Antara/Dengan".
+        proyek_line: substTight(d?.proyek_line || ''),
+        judul_pekerjaan: substTight(d?.judul_pekerjaan || [s.title, clusterLabel, tahapLabel].filter(Boolean).join(' ')),
         nomor: s.no_manual || s.spk_number || '',
         tanggal: s.spk_date ?? '',
         tempat: d?.tempat || kota,
         pembukaan: d?.pembukaan
             ? subst(d.pembukaan)
             : `Pada hari ini ${fmtTgl(s.spk_date) || '……'}, bertempat di ${kota}, yang bertanda tangan di bawah ini:`,
+        mukadimah: substTight(d?.mukadimah || 'Kedua belah pihak sepakat mengikatkan diri dalam Surat Perjanjian Kerja dengan ketentuan sebagai berikut:'),
         pihak1: {
             nama: props.company?.signer_name || '', jabatan: props.company?.signer_title || 'Direktur',
             perusahaan: props.company?.name || '', alamat: props.company?.address || '',
+            teks: substTight(d?.pihak1_teks || ''),
         },
         pihak2: {
-            nama: s.supplier?.contact_person || s.supplier?.name || '', jabatan: 'Kontraktor Pelaksana',
+            nama: s.supplier?.contact_person || s.supplier?.name || '', jabatan: 'Direktur',
             perusahaan: s.supplier?.name || '', alamat: [s.supplier?.address, s.supplier?.city].filter(Boolean).join(', '),
             npwp: s.supplier?.npwp || '',
+            teks: substTight(d?.pihak2_teks || ''),
         },
+        saksi1: ['', ''],
+        saksi2: ['', ''],
         pasals: defaultPasals(),
         rincian: (s.items?.length ? s.items : [{}]).map((it: any) => ({
             uraian: it.description ?? '', volume: Number(it.qty) || 0, satuan: it.unit ?? '', harga: Number(it.unit_price) || 0,
@@ -133,18 +159,69 @@ function makeState() {
         termin: (s.terms?.length ? s.terms : []).map((t: any) => ({
             uraian: t.description ?? '', persen: Number(t.percentage) || 0, nilai: Number(t.amount) || 0, jatuh_tempo: t.due_date ?? '',
         })),
+        // Baris unit rumah (alokasi porsi kontrak SPK) — Lampiran "Rincian per Unit Rumah".
+        unitRows: (s.units ?? []).map((u: any) => ({
+            kode: u.unit_code || u.unit?.unit_code || '',
+            tipe: u.unit?.unit_type?.name || u.unit?.unit_type?.code || '',
+            harga: Number(u.unit_price) || 0,
+        })),
+        // Judul grup pada tabel Rincian Harga, mis. "Cluster 3 Tahap 3".
+        grup: [s.cluster ? (/^cluster/i.test(String(s.cluster)) ? s.cluster : `Cluster ${s.cluster}`) : '', s.tahap ? `Tahap ${s.tahap}` : ''].filter(Boolean).join(' ') || (s.project?.name ?? ''),
+        profit_pct: Number(s.profit_pct) || 0,
         showRincian: (s.items?.length ?? 0) > 0,
         showTermin: (s.terms?.length ?? 0) > 0,
+        showUnit: (s.units?.length ?? 0) > 0,
     };
 }
 
 // Seed dari dokumen tersimpan (print_payload per-SPK) bila ada; jika tidak, dari draft Set Up SPK.
 const hasSaved = props.saved && typeof props.saved === 'object' && Object.keys(props.saved).length > 0;
-const f = reactive<any>(hasSaved ? { ...makeState(), ...props.saved } : makeState());
+// Merge dangkal per-objek agar dokumen yang disimpan sebelum ada field baru
+// (mis. pihak*.teks) tetap mendapat nilai default, bukan undefined.
+function seedState() {
+    const base = makeState();
+    if (!hasSaved) return base;
+    const sv: any = props.saved;
+
+    return {
+        ...base, ...sv,
+        pihak1: { ...base.pihak1, ...(sv.pihak1 || {}) },
+        pihak2: { ...base.pihak2, ...(sv.pihak2 || {}) },
+    };
+}
+const f = reactive<any>(seedState());
 function resetAll() { if (confirm('Kembalikan seluruh isi SPK ke default (draft Set Up SPK)? Semua editan akan hilang.')) { Object.assign(f, makeState()); nextTick(autosizeAll); } }
 
 const rincianTotal = computed(() => f.rincian.reduce((sum: number, r: any) => sum + (Number(r.volume) || 0) * (Number(r.harga) || 0), 0));
 function rowJumlah(r: any) { return (Number(r.volume) || 0) * (Number(r.harga) || 0); }
+
+// ── Rekap tabel Rincian Harga (mengikuti format SPK: Sub Total 1 → Profit → Sub Total 2 → PPN → Total) ──
+// Basis profit = MARKUP dari Sub Total 1, sama dengan ContractorService::profitAmount di backend.
+const totalVolume = computed(() => f.rincian.reduce((n: number, r: any) => n + (Number(r.volume) || 0), 0));
+const profitAmt = computed(() => Math.round(rincianTotal.value * (Number(f.profit_pct) || 0) / 100));
+const subTotal2 = computed(() => rincianTotal.value + profitAmt.value);
+const ppnAmt = computed(() => (s.is_pkp ? Math.round(subTotal2.value * (Number(s.ppn_pct) || 0) / 100) : 0));
+const totalHarga = computed(() => subTotal2.value + ppnAmt.value);
+const unitTotal = computed(() => f.unitRows.reduce((n: number, u: any) => n + (Number(u.harga) || 0), 0));
+
+// Tabel yang sudah tampil di dalam pasal tidak diulang lagi sebagai lampiran.
+const inPasal = (kind: string) => computed(() => f.pasals.some((p: any) => p.table === kind));
+const rincianInPasal = inPasal('rincian');
+const terminInPasal = inPasal('termin');
+const unitInPasal = inPasal('unit');
+
+function addUnitRow() { f.unitRows.push({ kode: '', tipe: '', harga: 0 }); f.showUnit = true; }
+function delUnitRow(i: number) { f.unitRows.splice(i, 1); }
+
+// Nomor lampiran mengikuti yang benar-benar tercetak (tabel yang sudah masuk pasal tidak dihitung).
+const lampVisible = computed(() => {
+    const arr: string[] = [];
+    if (f.showRincian && !rincianInPasal.value) arr.push('rincian');
+    if (f.showUnit && f.unitRows.length && !unitInPasal.value) arr.push('unit');
+    if (f.showTermin && f.termin.length && !terminInPasal.value) arr.push('termin');
+    return arr;
+});
+function lampNo(kind: string) { return lampVisible.value.indexOf(kind) + 1; }
 function addRincian() { f.rincian.push({ uraian: '', volume: 0, satuan: '', harga: 0 }); }
 function delRincian(i: number) { f.rincian.splice(i, 1); }
 function addTermin() { f.termin.push({ uraian: '', persen: 0, nilai: 0, jatuh_tempo: '' }); }
@@ -192,8 +269,14 @@ function simpan() {
         <div class="spk-doc mx-auto bg-white text-neutral-900 shadow-lg">
             <!-- Judul -->
             <div class="text-center">
+                <input v-model="f.proyek_line" class="ed t-proyek" placeholder="PROYEK …" />
                 <input v-model="f.judul" class="ed t-title" />
                 <input v-model="f.subjudul" class="ed t-sub" />
+                <input v-model="f.judul_pekerjaan" class="ed t-pekerjaan" placeholder="PEMBANGUNAN …" />
+                <div class="mt-1 text-[13px]">Antara :</div>
+                <div class="text-[13px] font-semibold">{{ f.pihak1.perusahaan }}</div>
+                <div class="text-[13px]">Dengan :</div>
+                <div class="text-[13px] font-semibold">{{ f.pihak2.perusahaan }}</div>
                 <div class="mx-auto mt-1 h-[2px] w-40 bg-neutral-800"></div>
                 <div class="mt-2 flex items-center justify-center gap-2 text-[13px]">
                     <span>Nomor:</span><input v-model="f.nomor" class="ed t-nomor" />
@@ -211,6 +294,7 @@ function simpan() {
                         <tr><td></td><td class="align-top">Jabatan</td><td>:</td><td><input v-model="f.pihak1.jabatan" class="ed w-full" /> — <span class="font-semibold">{{ f.pihak1.perusahaan }}</span></td></tr>
                         <tr><td></td><td class="align-top">Alamat</td><td>:</td><td><input v-model="f.pihak1.alamat" class="ed w-full" /></td></tr>
                     </table>
+                    <textarea v-model="f.pihak1.teks" @input="autosize" class="ed block pl-8 text-justify" rows="1" placeholder="Paragraf kedudukan PIHAK PERTAMA (akta, dsb.)"></textarea>
                     <div class="mt-1 pl-8 italic">Selanjutnya disebut sebagai <b>PIHAK PERTAMA</b> (Pemberi Kerja).</div>
                 </div>
                 <div class="pihak">
@@ -220,27 +304,90 @@ function simpan() {
                         <tr><td></td><td class="align-top">Alamat</td><td>:</td><td><input v-model="f.pihak2.alamat" class="ed w-full" /></td></tr>
                         <tr><td></td><td class="align-top">NPWP</td><td>:</td><td><input v-model="f.pihak2.npwp" class="ed w-full" /></td></tr>
                     </table>
+                    <textarea v-model="f.pihak2.teks" @input="autosize" class="ed block pl-8 text-justify" rows="1" placeholder="Paragraf kedudukan PIHAK KEDUA (akta, dsb.)"></textarea>
                     <div class="mt-1 pl-8 italic">Selanjutnya disebut sebagai <b>PIHAK KEDUA</b> (Kontraktor Pelaksana).</div>
                 </div>
-                <p class="text-justify">Kedua belah pihak sepakat mengikatkan diri dalam Surat Perintah Kerja dengan ketentuan sebagai berikut:</p>
+                <textarea v-model="f.mukadimah" @input="autosize" class="ed block text-justify" rows="1"></textarea>
             </div>
 
             <!-- Pasal-pasal -->
             <div class="mt-3 space-y-3">
-                <div v-for="(p, i) in f.pasals" :key="i" class="pasal group">
+                <div v-for="(p, i) in f.pasals" :key="i" class="group" :class="{ pasal: !p.table }">
                     <div class="flex items-start gap-1">
                         <input v-model="p.title" class="ed p-title flex-1" />
                         <button @click="delPasal(i)" class="no-print mt-0.5 text-neutral-300 hover:text-danger-500" title="Hapus pasal"><Trash2 class="h-4 w-4" /></button>
                     </div>
                     <textarea v-model="p.body" @input="autosize" class="ed block text-justify" rows="1"></textarea>
+
+                    <!-- Tabel Rincian Harga di dalam pasal (mis. Pasal Nilai Pekerjaan) -->
+                    <div v-if="p.table === 'rincian'" class="mt-2">
+                        <table class="doc-table">
+                            <thead><tr><th>PEKERJAAN</th><th class="w-14">SAT.</th><th class="w-14">VOL.</th><th class="w-32">HARGA SATUAN</th><th class="w-36">JUMLAH HARGA</th><th class="no-print w-6"></th></tr></thead>
+                            <tbody>
+                                <tr><td colspan="5"><input v-model="f.grup" class="ed w-full font-bold" placeholder="mis. Cluster 3 Tahap 3" /></td><td class="no-print"></td></tr>
+                                <tr v-for="(r, ri) in f.rincian" :key="ri">
+                                    <td><input v-model="r.uraian" class="ed w-full" /></td>
+                                    <td><input v-model="r.satuan" class="ed w-full text-center" /></td>
+                                    <td><input v-model.number="r.volume" type="number" class="ed w-full text-right" /></td>
+                                    <td><input v-model.number="r.harga" type="number" class="ed w-full text-right" /></td>
+                                    <td class="text-right tabular-nums">Rp. {{ fmtRpNum(rowJumlah(r)) }}</td>
+                                    <td class="no-print text-center"><button @click="delRincian(ri)" class="text-neutral-300 hover:text-danger-500"><Trash2 class="h-3.5 w-3.5" /></button></td>
+                                </tr>
+                            </tbody>
+                            <tfoot>
+                                <tr class="font-bold"><td>TOTAL UNIT</td><td class="text-center">unit</td><td class="text-right tabular-nums">{{ totalVolume }}</td><td class="text-right">SUB TOTAL 1</td><td class="text-right tabular-nums">Rp. {{ fmtRpNum(rincianTotal) }}</td><td class="no-print"></td></tr>
+                                <tr><td colspan="4" class="text-right">PROFIT <input v-model.number="f.profit_pct" type="number" step="0.01" class="ed w-16 text-right" />%</td><td class="text-right tabular-nums">Rp. {{ fmtRpNum(profitAmt) }}</td><td class="no-print"></td></tr>
+                                <tr><td colspan="4" class="text-right">SUB TOTAL 2</td><td class="text-right tabular-nums">Rp. {{ fmtRpNum(subTotal2) }}</td><td class="no-print"></td></tr>
+                                <tr><td colspan="4" class="text-right">PPN {{ Number(s.ppn_pct) || 0 }}%</td><td class="text-right tabular-nums">Rp. {{ fmtRpNum(ppnAmt) }}</td><td class="no-print"></td></tr>
+                                <tr class="font-bold"><td colspan="4" class="text-right">TOTAL HARGA</td><td class="text-right tabular-nums">Rp. {{ fmtRpNum(totalHarga) }}</td><td class="no-print"></td></tr>
+                            </tfoot>
+                        </table>
+                        <button @click="addRincian" class="no-print mt-1 inline-flex items-center gap-1 text-xs text-primary-600"><Plus class="h-3.5 w-3.5" /> Baris</button>
+                    </div>
+
+                    <!-- Tabel Rincian per Unit Rumah di dalam pasal -->
+                    <div v-else-if="p.table === 'unit'" class="mt-2">
+                        <table class="doc-table">
+                            <thead><tr><th class="w-8">No</th><th>Kode Unit</th><th>Tipe</th><th class="w-40">Harga Borongan</th><th class="no-print w-6"></th></tr></thead>
+                            <tbody>
+                                <tr v-for="(u, ui) in f.unitRows" :key="ui">
+                                    <td class="text-center">{{ ui + 1 }}</td>
+                                    <td><input v-model="u.kode" class="ed w-full" /></td>
+                                    <td><input v-model="u.tipe" class="ed w-full" /></td>
+                                    <td><input v-model.number="u.harga" type="number" class="ed w-full text-right" /></td>
+                                    <td class="no-print text-center"><button @click="delUnitRow(ui)" class="text-neutral-300 hover:text-danger-500"><Trash2 class="h-3.5 w-3.5" /></button></td>
+                                </tr>
+                            </tbody>
+                            <tfoot><tr class="font-bold"><td colspan="3" class="text-right">TOTAL {{ f.unitRows.length }} UNIT</td><td class="text-right tabular-nums">Rp. {{ fmtRpNum(unitTotal) }}</td><td class="no-print"></td></tr></tfoot>
+                        </table>
+                        <button @click="addUnitRow" class="no-print mt-1 inline-flex items-center gap-1 text-xs text-primary-600"><Plus class="h-3.5 w-3.5" /> Baris</button>
+                    </div>
+
+                    <!-- Tabel Jadwal Termin di dalam pasal -->
+                    <div v-else-if="p.table === 'termin'" class="mt-2">
+                        <table class="doc-table">
+                            <thead><tr><th class="w-8">No</th><th>Uraian Termin</th><th class="w-16">%</th><th class="w-32">Nilai</th><th class="w-28">Jatuh Tempo</th><th class="no-print w-6"></th></tr></thead>
+                            <tbody>
+                                <tr v-for="(t, ti) in f.termin" :key="ti">
+                                    <td class="text-center">{{ ti + 1 }}</td>
+                                    <td><input v-model="t.uraian" class="ed w-full" /></td>
+                                    <td><input v-model.number="t.persen" type="number" class="ed w-full text-right" /></td>
+                                    <td><input v-model.number="t.nilai" type="number" class="ed w-full text-right" /></td>
+                                    <td><input v-model="t.jatuh_tempo" type="date" class="ed w-full" /></td>
+                                    <td class="no-print text-center"><button @click="delTermin(ti)" class="text-neutral-300 hover:text-danger-500"><Trash2 class="h-3.5 w-3.5" /></button></td>
+                                </tr>
+                            </tbody>
+                        </table>
+                        <button @click="addTermin" class="no-print mt-1 inline-flex items-center gap-1 text-xs text-primary-600"><Plus class="h-3.5 w-3.5" /> Baris</button>
+                    </div>
                 </div>
                 <button @click="addPasal" class="no-print inline-flex items-center gap-1 rounded-md border border-dashed border-neutral-300 px-3 py-1 text-xs text-neutral-500 hover:border-primary-400 hover:text-primary-600 dark:border-neutral-700"><Plus class="h-3.5 w-3.5" /> Tambah Pasal</button>
             </div>
 
             <!-- Lampiran: Rincian Anggaran Biaya (RAB) -->
-            <div v-if="f.showRincian" class="mt-5">
+            <div v-if="f.showRincian && !rincianInPasal" class="mt-5">
                 <div class="flex items-center justify-between">
-                    <div class="lamp-title">LAMPIRAN 1 — RINCIAN ANGGARAN BIAYA (RAB)</div>
+                    <div class="lamp-title">LAMPIRAN {{ lampNo('rincian') }} — RINCIAN ANGGARAN BIAYA (RAB)</div>
                     <button @click="addRincian" class="no-print inline-flex items-center gap-1 text-xs text-primary-600"><Plus class="h-3.5 w-3.5" /> Baris</button>
                 </div>
                 <table class="doc-table mt-1">
@@ -260,10 +407,34 @@ function simpan() {
                 </table>
             </div>
 
-            <!-- Lampiran: Jadwal Pembayaran Termin -->
-            <div v-if="f.showTermin && f.termin.length" class="mt-4">
+            <!-- Lampiran: Rincian per Unit Rumah (alokasi porsi kontrak per unit) -->
+            <div v-if="f.showUnit && f.unitRows.length && !unitInPasal" class="mt-4">
                 <div class="flex items-center justify-between">
-                    <div class="lamp-title">LAMPIRAN 2 — JADWAL PEMBAYARAN (TERMIN)</div>
+                    <div class="lamp-title">LAMPIRAN {{ lampNo('unit') }} — RINCIAN PER UNIT RUMAH</div>
+                    <button @click="addUnitRow" class="no-print inline-flex items-center gap-1 text-xs text-primary-600"><Plus class="h-3.5 w-3.5" /> Baris</button>
+                </div>
+                <div class="mt-1 text-[11px] text-neutral-500">
+                    SPK {{ f.nomor }} · {{ f.grup }}<span v-if="s.project?.name"> · {{ s.project.name }}</span><span v-if="s.supplier?.name"> · {{ s.supplier.name }}</span>
+                </div>
+                <table class="doc-table mt-1">
+                    <thead><tr><th class="w-8">No</th><th>Kode Unit</th><th>Tipe</th><th class="w-40">Harga Borongan</th><th class="no-print w-6"></th></tr></thead>
+                    <tbody>
+                        <tr v-for="(u, i) in f.unitRows" :key="i">
+                            <td class="text-center">{{ i + 1 }}</td>
+                            <td><input v-model="u.kode" class="ed w-full" /></td>
+                            <td><input v-model="u.tipe" class="ed w-full" /></td>
+                            <td><input v-model.number="u.harga" type="number" class="ed w-full text-right" /></td>
+                            <td class="no-print text-center"><button @click="delUnitRow(i)" class="text-neutral-300 hover:text-danger-500"><Trash2 class="h-3.5 w-3.5" /></button></td>
+                        </tr>
+                    </tbody>
+                    <tfoot><tr class="font-bold"><td colspan="3" class="text-right">TOTAL {{ f.unitRows.length }} UNIT</td><td class="text-right tabular-nums">{{ fmtRpNum(unitTotal) }}</td><td class="no-print"></td></tr></tfoot>
+                </table>
+            </div>
+
+            <!-- Lampiran: Jadwal Pembayaran Termin -->
+            <div v-if="f.showTermin && f.termin.length && !terminInPasal" class="mt-4">
+                <div class="flex items-center justify-between">
+                    <div class="lamp-title">LAMPIRAN {{ lampNo('termin') }} — JADWAL PEMBAYARAN (TERMIN)</div>
                     <button @click="addTermin" class="no-print inline-flex items-center gap-1 text-xs text-primary-600"><Plus class="h-3.5 w-3.5" /> Baris</button>
                 </div>
                 <table class="doc-table mt-1">
@@ -280,7 +451,8 @@ function simpan() {
                     </tbody>
                 </table>
             </div>
-            <button v-if="!f.showTermin || !f.termin.length" @click="f.showTermin = true; addTermin()" class="no-print mt-2 inline-flex items-center gap-1 rounded-md border border-dashed border-neutral-300 px-3 py-1 text-xs text-neutral-500 hover:text-primary-600 dark:border-neutral-700"><Plus class="h-3.5 w-3.5" /> Tambah Jadwal Termin</button>
+            <button v-if="!terminInPasal && (!f.showTermin || !f.termin.length)" @click="f.showTermin = true; addTermin()" class="no-print mt-2 inline-flex items-center gap-1 rounded-md border border-dashed border-neutral-300 px-3 py-1 text-xs text-neutral-500 hover:text-primary-600 dark:border-neutral-700"><Plus class="h-3.5 w-3.5" /> Tambah Jadwal Termin</button>
+            <button v-if="!unitInPasal && !f.unitRows.length" @click="addUnitRow()" class="no-print mt-2 ml-2 inline-flex items-center gap-1 rounded-md border border-dashed border-neutral-300 px-3 py-1 text-xs text-neutral-500 hover:text-primary-600 dark:border-neutral-700"><Plus class="h-3.5 w-3.5" /> Tambah Rincian per Unit</button>
 
             <!-- Tanda tangan -->
             <div class="ttd">
@@ -300,6 +472,22 @@ function simpan() {
                     <div>{{ f.pihak1.jabatan }}</div>
                 </div>
             </div>
+
+            <!-- Saksi (mengikuti draft SPK asli: 2 saksi di tiap sisi) -->
+            <div class="ttd mt-6 text-left">
+                <div>
+                    <div class="mb-1">Saksi:</div>
+                    <div v-for="(_, i) in f.saksi2" :key="'s2'+i" class="flex items-center gap-2">
+                        <span>{{ i + 1 }}.</span><input v-model="f.saksi2[i]" class="ed flex-1" />
+                    </div>
+                </div>
+                <div>
+                    <div class="mb-1">Saksi:</div>
+                    <div v-for="(_, i) in f.saksi1" :key="'s1'+i" class="flex items-center gap-2">
+                        <span>{{ i + 1 }}.</span><input v-model="f.saksi1[i]" class="ed flex-1" />
+                    </div>
+                </div>
+            </div>
         </div>
     </div>
 </template>
@@ -314,8 +502,10 @@ function simpan() {
 .spk-doc .ed:focus { border-bottom-color: #ff8c00; background: #fff7ed; }
 .spk-doc textarea.ed { width: 100%; resize: none; overflow: hidden; border-bottom: none; background: #fbfdff; border-radius: 3px; padding: 2px 4px; }
 .spk-doc textarea.ed:focus { background: #fff7ed; box-shadow: 0 0 0 1px #ffd8a8; }
+.spk-doc .t-proyek { text-align: center; font-size: 13px; font-weight: bold; letter-spacing: .5px; width: 90%; }
 .spk-doc .t-title { text-align: center; font-size: 20px; font-weight: bold; letter-spacing: 1px; width: 90%; }
 .spk-doc .t-sub { text-align: center; font-size: 13px; width: 40%; }
+.spk-doc .t-pekerjaan { text-align: center; font-size: 14px; font-weight: bold; width: 95%; }
 .spk-doc .t-nomor { text-align: center; font-weight: 600; width: 260px; }
 .spk-doc .p-title { font-weight: bold; font-size: 13.5px; letter-spacing: .3px; }
 .spk-doc .pihak-t td { padding: 1px 3px; vertical-align: top; }

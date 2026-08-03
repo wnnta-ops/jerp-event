@@ -399,9 +399,7 @@ export function navGroups(foUrl: string): NavGroup[] {
             { label: 'Master', icon: FileSignature, permission: ['businesssupport.view', 'contractor.*'], children: [
                 { label: 'Surat Perintah Kerja', href: 'bs.spk.index' },
                 { label: 'Kontrol Progress Lapangan', href: 'bs.spk.kpl.index' },
-                { label: 'Pemakaian Barang SBO', href: 'bs.spk.material.index' },
                 { label: 'Progress Retensi', href: 'bs.spk.retention.index' },
-                { label: 'Mutasi Progress Bangunan', href: 'bs.spk.mutation.index' },
             ]},
             { label: 'Query', icon: FileBarChart, permission: ['businesssupport.view', 'contractor.*'], children: [
                 { label: 'Rekap SPK', href: 'bs.spk.query.rekap' },
@@ -417,16 +415,6 @@ export function navGroups(foUrl: string): NavGroup[] {
                 { label: 'Adjustment PPN', href: 'bs.spk.adjust-ppn.form' },
                 { label: 'Pembatalan Surat Perintah Kerja', href: 'bs.spk.cancel.form' },
             ]},
-            { label: 'Pemakaian Barang SBO', icon: PackageMinus, permission: ['businesssupport.view', 'contractor.*'], children: [
-                { label: 'Pemakaian Barang', href: 'bs.spk.material.create' },
-                { label: 'Close SBO', href: 'bs.spk.material.close-form' },
-                { label: 'Pengembalian Sisa Pemakaian', href: 'bs.spk.material.return-form' },
-            ]},
-            { label: 'Mutasi Progress', icon: GitMerge, permission: ['businesssupport.view', 'contractor.*'], children: [
-                { label: 'Registrasi Mutasi Progress Bangunan', href: 'bs.spk.mutation.create' },
-                { label: 'Approval Mutasi Progress Bangunan', href: 'bs.spk.mutation.approvals' },
-            ]},
-            { label: 'Generate BAST', icon: FileCheck, href: 'bs.spk.bast.index', permission: ['businesssupport.view', 'contractor.*'] },
         ],
     },
     {

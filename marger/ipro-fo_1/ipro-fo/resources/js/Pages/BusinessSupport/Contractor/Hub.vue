@@ -6,7 +6,7 @@ import Button from '@/Components/UI/Button.vue';
 import Badge from '@/Components/UI/Badge.vue';
 
 const props = defineProps<{
-    summary: { contract: number; progress: number; retention: number; active: number; spk: number; mut_pending: number };
+    summary: { contract: number; progress: number; retention: number; active: number; spk: number };
 }>();
 
 function fmtRp(v: number) { return 'Rp ' + Number(v ?? 0).toLocaleString('id-ID'); }
@@ -23,9 +23,7 @@ const menu: Array<{ group: string; items: Array<{ label: string; route: string |
     { group: 'Master', items: [
         { label: 'Surat Perintah Kerja', route: r('bs.spk.index') },
         { label: 'Kontrol Progress Lapangan', route: r('bs.spk.kpl.index') },
-        { label: 'Pemakaian Barang SBO', route: r('bs.spk.material.index') },
         { label: 'Progress Retensi', route: r('bs.spk.retention.index') },
-        { label: 'Mutasi Progress Bangunan', route: r('bs.spk.mutation.index') },
     ]},
     { group: 'Query', items: [
         { label: 'Rekap SPK', route: r('bs.spk.query.rekap') },
@@ -40,15 +38,6 @@ const menu: Array<{ group: string; items: Array<{ label: string; route: string |
         { label: 'Addendum SPK (Tambah / Kurang)', route: r('bs.spk.addendum.form') },
         { label: 'Adjustment PPN', route: r('bs.spk.adjust-ppn.form') },
         { label: 'Pembatalan Surat Perintah Kerja', route: r('bs.spk.cancel.form') },
-    ]},
-    { group: 'Pemakaian Barang SBO', items: [
-        { label: 'Pemakaian Barang', route: r('bs.spk.material.create') },
-        { label: 'Close SBO', route: r('bs.spk.material.close-form') },
-        { label: 'Pengembalian Sisa Pemakaian', route: r('bs.spk.material.return-form') },
-    ]},
-    { group: 'Mutasi Progress', items: [
-        { label: 'Registrasi Mutasi Progress Bangunan', route: r('bs.spk.mutation.create') },
-        { label: 'Approval Mutasi Progress Bangunan', route: r('bs.spk.mutation.approvals') },
     ]},
 ];
 
@@ -72,7 +61,7 @@ function toggle(g: string) { open.value[g] = !open.value[g]; }
             <div class="card p-4"><div class="text-xs uppercase text-neutral-400">Nilai Kontrak</div><div class="mt-1 font-mono text-lg font-bold">{{ fmtRp(summary.contract) }}</div><div class="text-xs text-neutral-500">{{ summary.spk }} SPK</div></div>
             <div class="card p-4"><div class="text-xs uppercase text-neutral-400">Progress</div><div class="mt-1 font-mono text-lg font-bold text-primary-600">{{ fmtRp(summary.progress) }}</div></div>
             <div class="card p-4"><div class="text-xs uppercase text-neutral-400">Retensi Ditahan</div><div class="mt-1 font-mono text-lg font-bold text-amber-600">{{ fmtRp(summary.retention) }}</div></div>
-            <div class="card p-4"><div class="text-xs uppercase text-neutral-400">SPK Aktif</div><div class="mt-1 text-lg font-bold">{{ summary.active }}</div><div class="text-xs text-neutral-500">{{ summary.mut_pending }} mutasi menunggu approval</div></div>
+            <div class="card p-4"><div class="text-xs uppercase text-neutral-400">SPK Aktif</div><div class="mt-1 text-lg font-bold">{{ summary.active }}</div></div>
         </div>
 
         <div class="grid gap-3 md:grid-cols-2">

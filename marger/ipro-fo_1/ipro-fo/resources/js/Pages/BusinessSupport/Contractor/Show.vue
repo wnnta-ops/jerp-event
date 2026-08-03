@@ -105,7 +105,7 @@ const inputCls = 'h-9 w-full rounded-lg border border-neutral-300 bg-white px-3 
             <div><div class="text-neutral-500">Releaser</div><div class="font-medium">{{ spk.releaser ?? '—' }}</div></div>
             <div><div class="text-neutral-500">PIC Project</div><div class="font-medium">{{ spk.pic_project ?? '—' }}</div></div>
             <div><div class="text-neutral-500">Cost Center</div><div class="font-medium">{{ spk.cost_center?.name ?? '—' }}</div></div>
-            <div><div class="text-neutral-500">Nominal Profit</div><div class="font-medium">{{ Number(spk.nominal_profit) > 0 ? fmtRp(spk.nominal_profit) : '—' }}</div></div>
+            <div><div class="text-neutral-500">Profit</div><div class="font-medium">{{ Number(spk.profit_pct) > 0 ? Number(spk.profit_pct) + '%' : '—' }}<span v-if="Number(spk.nominal_profit) > 0" class="text-neutral-500"> · {{ fmtRp(spk.nominal_profit) }}</span></div></div>
             <div class="md:col-span-3"><div class="text-neutral-500">Pekerjaan</div><div class="font-medium">{{ spk.title }}</div></div>
         </div>
 

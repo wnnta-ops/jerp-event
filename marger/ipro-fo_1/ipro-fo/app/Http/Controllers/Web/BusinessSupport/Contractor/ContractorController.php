@@ -34,7 +34,6 @@ class ContractorController extends Controller
                 'retention'  => (float) BsWorkOrder::sum('retention_held'),
                 'active'     => BsWorkOrder::where('status', 'active')->count(),
                 'spk'        => BsWorkOrder::count(),
-                'mut_pending'=> \App\Domain\BusinessSupport\Models\BsWorkOrderProgressMutation::where('status', 'baru')->count(),
             ],
         ]);
     }
@@ -123,7 +122,8 @@ class ContractorController extends Controller
             'pic_project'             => ['nullable', 'string', 'max:100'],
             'is_pkp'                  => ['nullable', 'boolean'],
             'contract_value'          => ['required', 'numeric', 'min:0.01'],
-            'nominal_profit'          => ['nullable', 'numeric', 'min:0'],
+            // Profit diinput sebagai persentase; nominalnya dihitung ContractorService dari SUB TOTAL 1.
+            'profit_pct'              => ['nullable', 'numeric', 'min:0', 'max:100'],
             'retention_pct'           => ['required', 'numeric', 'min:0', 'max:100'],
             'advance_pct'             => ['required', 'numeric', 'min:0', 'max:100'],
             'ppn_pct'                 => ['required', 'numeric', 'min:0', 'max:100'],
@@ -215,15 +215,21 @@ class ContractorController extends Controller
             'project:id,code,name', 'costCenter:id,code,name',
             'items' => fn ($q) => $q->orderBy('seq')->orderBy('id'),
             'terms' => fn ($q) => $q->orderBy('seq')->orderBy('id'),
+            // Lampiran "Rincian per Unit Rumah" pada dokumen SPK.
+            'units' => fn ($q) => $q->with(['unit:id,unit_code,unit_type_id', 'unit.unitType:id,code,name'])->orderBy('seq')->orderBy('id'),
         ]);
 
-        $draft = \App\Domain\BusinessSupport\Models\BsSpkDraft::query()->first();
+        // Template mengikuti JENIS SPK (Housing / Infrastruktur / Lainnya); bila belum
+        // pernah disimpan, pakai default bawaan yang disalin dari draft SPK asli.
+        $jenis = (string) ($workOrder->jenis ?: 'bangunan');
+        $draft = SpkDraftController::findDraft($jenis);
 
         return Inertia::render('BusinessSupport/Contractor/Print', [
             'spk'       => $workOrder,
             'company'   => config('business_support.company'),
             'jenisOpts' => BsWorkOrder::JENIS,
-            'draft'     => $draft?->only(['judul', 'subjudul', 'tempat', 'pembukaan', 'pasals']),
+            'draft'     => $draft?->only(\App\Domain\BusinessSupport\Models\BsSpkDraft::CONTENT_FIELDS)
+                ?? SpkDraftController::defaultDraft($jenis),
             'saved'     => $workOrder->print_payload,
         ]);
     }
