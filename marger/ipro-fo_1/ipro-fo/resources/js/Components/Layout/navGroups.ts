@@ -85,7 +85,9 @@ export function navGroups(foUrl: string): NavGroup[] {
             { label: 'Transaction', icon: GitMerge, permission: 'bankloan.application.view', children: [
                 { label: 'Inisiasi KPR',                     href: 'kpr.initiation.index', permission: 'bankloan.application.view' },
                 { label: 'Proses KPR',                       href: 'kpr.index',            permission: 'bankloan.application.view' },
-                { label: 'Cek Scan KTP & NPWP (belum jadi)', href: 'kpr.scan.index',       permission: 'bankloan.application.view' },
+                // "Cek Scan KTP & NPWP" DIHILANGKAN dari menu (belum jadi). Route kpr.scan.*,
+                // controller, dan halamannya sengaja DIBIARKAN utuh — tinggal munculkan lagi
+                // barisnya di sini bila fiturnya sudah siap dipakai.
             ]},
             // Query/Report — master data & arsip Database KPR (Reject BI Checking / Reject Proses KPR).
             { label: 'Query/Report', icon: FileBarChart, permission: 'bankloan.application.view', children: [
