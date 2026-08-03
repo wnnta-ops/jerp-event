@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref } from 'vue';
 import { Link, router } from '@inertiajs/vue3';
-import { Plus, Pencil, Trash2, Landmark } from 'lucide-vue-next';
+import { Plus, Pencil, Trash2, Landmark, Link2 } from 'lucide-vue-next';
 import Button from '@/Components/UI/Button.vue';
 import Badge from '@/Components/UI/Badge.vue';
 import EmptyState from '@/Components/UI/EmptyState.vue';
@@ -75,7 +75,17 @@ function destroy(b: any) {
                         <td class="px-4 py-3">{{ b.branch ?? '—' }}</td>
                         <td class="px-4 py-3 font-mono text-xs">{{ b.account_no ?? '—' }}</td>
                         <td class="px-4 py-3 text-center">
-                            <Badge :variant="b.retention_terms_count ? 'info' : 'neutral'">{{ b.retention_terms_count }} kategori</Badge>
+                            <div class="flex flex-wrap items-center justify-center gap-1">
+                                <Badge :variant="b.retention_terms_count ? 'info' : 'neutral'">{{ b.retention_terms_count }} kategori</Badge>
+                                <!-- Kesiapan COA: akun Debit di Approval Retensi terisi otomatis bila sudah di-link-kan. -->
+                                <span v-if="b.retention_terms_count" class="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10.5px] font-semibold ring-1"
+                                    :class="b.retention_coa_count === b.retention_terms_count
+                                        ? 'bg-emerald-50 text-emerald-700 ring-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:ring-emerald-800/60'
+                                        : 'bg-amber-50 text-amber-700 ring-amber-200 dark:bg-amber-950/40 dark:text-amber-300 dark:ring-amber-800/60'"
+                                    :title="`${b.retention_coa_count} dari ${b.retention_terms_count} kategori sudah di-link-kan ke COA Bank`">
+                                    <Link2 class="h-3 w-3 shrink-0" /> {{ b.retention_coa_count }}/{{ b.retention_terms_count }} COA
+                                </span>
+                            </div>
                         </td>
                         <td class="px-4 py-3">
                             <div class="flex justify-end gap-2">

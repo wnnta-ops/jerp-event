@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Web\BusinessSupport\CashBook;
 
 use App\Domain\BankLoan\Enums\KprStatus;
+use App\Domain\BankLoan\Models\BankRetentionTerm;
 use App\Domain\BankLoan\Models\KprRealization;
 use App\Domain\BankLoan\Models\KprRetention;
 use App\Domain\BusinessSupport\Actions\ConvertUtjDpToUangMuka;
@@ -322,6 +323,56 @@ class BankApprovalController extends Controller
         return $cashCode ? $accounts->firstWhere('code', $cashCode) : null;
     }
 
+    /**
+     * COA Bank yang di-link-kan pada Set Up KPR → Kategori Bank (tab Retensi).
+     *
+     * Dipetakan per (bank_partner_id, retention_category_id). Selama ini akun Debit hanya
+     * DITEBAK dari nomor/nama rekening (mapBankAccountToGl()); dengan tautan ini akun Debit
+     * di Approval Retensi/Pencairan sudah pasti mengikuti setup banknya.
+     *
+     * @param  \Illuminate\Support\Collection<int,int|null>  $bankPartnerIds
+     * @return array{byPair: array<string,int>, byBank: array<int,int>}
+     */
+    private function bankTermAccountMap(Collection $bankPartnerIds): array
+    {
+        $ids = $bankPartnerIds->filter()->unique()->values();
+        if ($ids->isEmpty()) {
+            return ['byPair' => [], 'byBank' => []];
+        }
+
+        $terms = BankRetentionTerm::whereIn('bank_partner_id', $ids->all())
+            ->whereNotNull('gl_account_id')
+            ->get(['bank_partner_id', 'retention_category_id', 'gl_account_id']);
+
+        $byPair = [];
+        foreach ($terms as $t) {
+            $byPair[$t->bank_partner_id.'|'.$t->retention_category_id] = (int) $t->gl_account_id;
+        }
+
+        // Cadangan per bank untuk baris TANPA kategori (mis. pencairan umum): hanya dipakai bila
+        // SELURUH kategori bank itu menunjuk COA yang sama — kalau berbeda-beda, menebak salah
+        // satunya justru menyesatkan, jadi biarkan jatuh ke pemetaan nama/nomor rekening.
+        $byBank = [];
+        foreach ($terms->groupBy('bank_partner_id') as $bankId => $group) {
+            $distinct = $group->pluck('gl_account_id')->unique();
+            if ($distinct->count() === 1) {
+                $byBank[(int) $bankId] = (int) $distinct->first();
+            }
+        }
+
+        return ['byPair' => $byPair, 'byBank' => $byBank];
+    }
+
+    /** @param  array{byPair: array<string,int>, byBank: array<int,int>}  $map */
+    private function bankTermAccountFor(array $map, ?int $bankPartnerId, ?int $categoryId): ?int
+    {
+        if (! $bankPartnerId) {
+            return null;
+        }
+
+        return $map['byPair'][$bankPartnerId.'|'.$categoryId] ?? $map['byBank'][$bankPartnerId] ?? null;
+    }
+
     private function postJournal(Request $request, JournalService $svc, array $v, float $amount, string $ref, string $desc): \App\Domain\BusinessSupport\Models\BsJournal
     {
         return $svc->post([
@@ -415,15 +466,20 @@ class BankApprovalController extends Controller
 
         // Booked Revenue per unit — penentu bentuk jurnal (Uang Muka + PPN vs Piutang Usaha).
         $brMap = $this->bookedRevenueMap($retentions->pluck('realization.application.booking.unit_id'));
+        // COA Bank dari Set Up KPR → Kategori Bank — penentu akun Debit default.
+        $termMap = $this->bankTermAccountMap($retentions->pluck('realization.application.bank_partner_id'));
 
-        $retRows = $retentions->map(function ($r) use ($accounts, $banks, $defaults, $brMap) {
+        $retRows = $retentions->map(function ($r) use ($accounts, $banks, $defaults, $brMap, $termMap) {
             $j = $r->journal;
             $debit  = $j?->lines->first(fn ($l) => (float) $l->debit > 0);
             $credit = $j?->lines->first(fn ($l) => (float) $l->credit > 0);
 
-            // Default akun DEBIT = akun GL Bank tempat akad kredit (editable di UI).
+            // Default akun DEBIT = COA Bank dari Set Up Kategori Bank (bila di-link-kan);
+            // bila belum, jatuh ke tebakan dari nomor/nama rekening akad. Tetap editable di UI.
             $bankId   = $r->realization?->bank_account_id;
-            $bankGl   = $this->mapBankAccountToGl($bankId ? $banks->get($bankId) : null, $accounts);
+            $termAccId = $this->bankTermAccountFor($termMap, $r->realization?->application?->bank_partner_id, $r->realization?->retention_category_id);
+            $termAcc  = $termAccId ? $accounts->firstWhere('id', $termAccId) : null;
+            $bankGl   = $termAcc ?: $this->mapBankAccountToGl($bankId ? $banks->get($bankId) : null, $accounts);
             $amount   = (float) $r->amount;
             // PPN inklusif 11%: PPN Keluaran = round(amount * 11/111, 2); Uang Muka = sisa.
             $ppn      = round($amount * self::PPN_RATE_NUM / self::PPN_RATE_DEN, 2);
@@ -479,6 +535,8 @@ class BankApprovalController extends Controller
                 // #147 — default per-baris (editable):
                 'default_debit_account_id' => $bankGl?->id,
                 'default_debit_account'    => $bankGl ? $bankGl->code.' - '.$bankGl->name : null,
+                // 'bank_setup' = COA hasil Set Up Kategori Bank · 'auto' = tebakan nomor/nama rekening.
+                'debit_source'             => $termAcc ? 'bank_setup' : ($bankGl ? 'auto' : null),
                 'bank_account_label'       => ($bankId && $banks->get($bankId))
                     ? trim(($banks->get($bankId)->bank_name ?? '').' '.($banks->get($bankId)->account_number ?? ''))
                     : null,
@@ -513,15 +571,19 @@ class BankApprovalController extends Controller
         $rBankIds = $reals->pluck('bank_account_id')->filter()->unique()->values();
         $rBanks   = $rBankIds->isNotEmpty() ? BankAccount::whereIn('id', $rBankIds)->get()->keyBy('id') : collect();
         $rBrMap   = $this->bookedRevenueMap($reals->pluck('application.booking.unit_id'));
+        $rTermMap = $this->bankTermAccountMap($reals->pluck('application.bank_partner_id'));
 
-        $pencRows = $reals->map(function ($r) use ($accounts, $rBanks, $defaults, $rBrMap) {
+        $pencRows = $reals->map(function ($r) use ($accounts, $rBanks, $defaults, $rBrMap, $rTermMap) {
             $net    = round((float) $r->disbursed_amount - (float) $r->retention_amount, 2);
             $j      = $r->journal;
             $debit  = $j?->lines->first(fn ($l) => (float) $l->debit > 0);
             $credit = $j?->lines->first(fn ($l) => (float) $l->credit > 0);
 
             $bankId   = $r->bank_account_id;
-            $bankGl   = $this->mapBankAccountToGl($bankId ? $rBanks->get($bankId) : null, $accounts);
+            // COA Bank dari Set Up Kategori Bank lebih diutamakan daripada tebakan rekening.
+            $termAccId = $this->bankTermAccountFor($rTermMap, $r->application?->bank_partner_id, $r->retention_category_id);
+            $termAcc  = $termAccId ? $accounts->firstWhere('id', $termAccId) : null;
+            $bankGl   = $termAcc ?: $this->mapBankAccountToGl($bankId ? $rBanks->get($bankId) : null, $accounts);
             $ppn      = round($net * self::PPN_RATE_NUM / self::PPN_RATE_DEN, 2);
             $uangMuka = round($net - $ppn, 2);
 
@@ -572,6 +634,7 @@ class BankApprovalController extends Controller
                 'credit_account'    => $credit?->account ? $credit->account->code.' - '.$credit->account->name : null,
                 'default_debit_account_id' => $bankGl?->id,
                 'default_debit_account'    => $bankGl ? $bankGl->code.' - '.$bankGl->name : null,
+                'debit_source'             => $termAcc ? 'bank_setup' : ($bankGl ? 'auto' : null),
                 'bank_account_label'       => ($bankId && $rBanks->get($bankId))
                     ? trim(($rBanks->get($bankId)->bank_name ?? '').' '.($rBanks->get($bankId)->account_number ?? ''))
                     : null,

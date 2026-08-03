@@ -6,6 +6,7 @@ namespace App\Http\Controllers\Web\BankLoan\Setup;
 
 use App\Domain\BankLoan\Models\BankPartner;
 use App\Domain\BankLoan\Models\RetentionCategory;
+use App\Domain\BusinessSupport\Models\BsAccount;
 use App\Domain\Foundation\Tenant\Models\Project;
 use App\Http\Controllers\Controller;
 use Illuminate\Http\RedirectResponse;
@@ -26,7 +27,12 @@ class KprBankController extends Controller
 
         $rows = BankPartner::query()
             ->with('project:id,name')
-            ->withCount('retentionTerms')
+            // retention_coa_count: berapa kategori yang COA Bank-nya sudah di-link-kan —
+            // penanda cepat bank mana yang akun Debit-nya sudah otomatis di Approval Retensi.
+            ->withCount([
+                'retentionTerms',
+                'retentionTerms as retention_coa_count' => fn ($q) => $q->whereNotNull('gl_account_id'),
+            ])
             ->when($request->input('search'), fn ($q, $s) => $q->where(fn ($w) => $w->where('code', 'like', "%{$s}%")->orWhere('name', 'like', "%{$s}%")->orWhere('account_no', 'like', "%{$s}%")))
             ->when($request->input('project_id'), fn ($q, $v) => $q->where('project_id', $v))
             ->orderBy('name')
@@ -51,7 +57,7 @@ class KprBankController extends Controller
     {
         abort_unless($request->user()?->can('bankloan.setup.view'), 403);
 
-        return $this->form($bank->load('retentionTerms'));
+        return $this->form($bank->load('retentionTerms.glAccount:id,code,name'));
     }
 
     public function store(Request $request): RedirectResponse
@@ -118,19 +124,34 @@ class KprBankController extends Controller
                 $term = $existing->get($c->id);
 
                 return [
-                    'id'         => $c->id,
-                    'code'       => $c->code,
-                    'name'       => $c->name,
-                    'percentage' => (float) ($term->percentage ?? 0),
-                    'amount'     => $term && $term->amount !== null ? (float) $term->amount : null,
-                    'notes'      => $term->notes ?? null,
-                    'enabled'    => (bool) $term,
+                    'id'            => $c->id,
+                    'code'          => $c->code,
+                    'name'          => $c->name,
+                    'percentage'    => (float) ($term->percentage ?? 0),
+                    'amount'        => $term && $term->amount !== null ? (float) $term->amount : null,
+                    'notes'         => $term->notes ?? null,
+                    'enabled'       => (bool) $term,
+                    // COA Bank yang di-link-kan → default akun Debit di Approval Retensi.
+                    'gl_account_id' => $term?->gl_account_id,
                 ];
             }),
+            // Daftar COA untuk dipilih per kategori. Akun bertema Kas/Bank ditandai agar
+            // operator mudah menemukannya, tapi semua akun postable tetap boleh dipilih.
+            'accounts' => BsAccount::where('is_active', true)->where('is_postable', true)
+                ->orderBy('code')->get(['id', 'code', 'name', 'type'])
+                ->map(fn ($a) => [
+                    'id'      => $a->id,
+                    'code'    => $a->code,
+                    'name'    => $a->name,
+                    'is_bank' => $a->type === 'asset' && (
+                        str_contains(mb_strtolower((string) $a->name), 'bank')
+                        || str_contains(mb_strtolower((string) $a->name), 'kas')
+                    ),
+                ])->values(),
         ]);
     }
 
-    /** @return array{bank: array<string,mixed>, retentions: array<int,array<string,mixed>>} */
+    /** @return array{bank: array<string,mixed>, retentions: ?array<int,array<string,mixed>>} */
     private function validateData(Request $request): array
     {
         $v = $request->validate([
@@ -153,6 +174,7 @@ class KprBankController extends Controller
             'retentions.*.percentage'    => ['nullable', 'numeric', 'min:0', 'max:100'],
             'retentions.*.amount'        => ['nullable', 'numeric', 'min:0'],
             'retentions.*.notes'         => ['nullable', 'string', 'max:255'],
+            'retentions.*.gl_account_id' => ['nullable', 'integer', 'exists:bs_accounts,id'],
         ]);
 
         return [
@@ -160,13 +182,25 @@ class KprBankController extends Controller
                 'project_id', 'code', 'name', 'branch', 'account_no', 'account_name',
                 'address', 'city', 'notes', 'contact_person', 'phone', 'email', 'is_active',
             ])->all(),
-            'retentions' => $v['retentions'] ?? [],
+            // null (bukan []) bila kunci 'retentions' memang tidak dikirim — lihat syncTerms().
+            'retentions' => $request->has('retentions') ? ($v['retentions'] ?? []) : null,
         ];
     }
 
-    /** Sinkronkan ketentuan retensi: hanya yang enabled disimpan. */
-    private function syncTerms(BankPartner $bank, array $retentions): void
+    /**
+     * Sinkronkan ketentuan retensi: hanya yang enabled disimpan.
+     *
+     * $retentions === null berarti klien tidak mengirim daftarnya sama sekali → ketentuan yang
+     * ada DIBIARKAN. Tanpa penjaga ini, satu request yang hanya membawa identitas bank akan
+     * menghapus seluruh ketentuan retensi berikut tautan COA-nya tanpa jejak. Mengosongkan
+     * ketentuan tetap bisa: kirim daftar dengan semua kategori enabled = false.
+     */
+    private function syncTerms(BankPartner $bank, ?array $retentions): void
     {
+        if ($retentions === null) {
+            return;
+        }
+
         DB::transaction(function () use ($bank, $retentions): void {
             $bank->retentionTerms()->delete();
 
@@ -176,6 +210,7 @@ class KprBankController extends Controller
                 }
                 $bank->retentionTerms()->create([
                     'retention_category_id' => (int) $r['category_id'],
+                    'gl_account_id'         => ($r['gl_account_id'] ?? null) ? (int) $r['gl_account_id'] : null,
                     'percentage'            => (float) ($r['percentage'] ?? 0),
                     'amount'                => isset($r['amount']) && $r['amount'] !== null && $r['amount'] !== '' ? (float) $r['amount'] : null,
                     'notes'                 => $r['notes'] ?? null,
