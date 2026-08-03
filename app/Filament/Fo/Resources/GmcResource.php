@@ -39,8 +39,13 @@ class GmcResource extends Resource
             Forms\Components\DatePicker::make('tgl')->label('Tgl')->default(now()),
             // Mengikat No. SPR + Unit + Customer dari kontrak.
             Forms\Components\Select::make('kontrak_id')->label('SPR / Kontrak')->searchable()->live()->required()
-                ->options(fn () => Kontrak::with(['customer', 'unit'])->latest('id')->limit(300)->get()
+                ->getSearchResultsUsing(fn (string $search) => Kontrak::with(['customer', 'unit'])
+                    ->where(fn ($q) => $q->where('no_kontrak', 'like', "%{$search}%")
+                        ->orWhereHas('customer', fn ($c) => $c->where('full_name', 'like', "%{$search}%"))
+                        ->orWhereHas('unit', fn ($u) => $u->where('kode_unit', 'like', "%{$search}%")))
+                    ->latest('id')->limit(50)->get()
                     ->mapWithKeys(fn ($k) => [$k->id => trim($k->no_kontrak.' — '.($k->customer?->full_name ?? '').' — '.($k->unit?->kode_unit ?? ''), ' —')]))
+                ->getOptionLabelUsing(fn ($value) => ($k = Kontrak::with(['customer', 'unit'])->find($value)) ? trim($k->no_kontrak.' — '.($k->customer?->full_name ?? '').' — '.($k->unit?->kode_unit ?? ''), ' —') : null)
                 ->afterStateUpdated(function ($state, Forms\Set $set) {
                     $k = $state ? Kontrak::find($state) : null;
                     $set('customer_id', $k?->customer_id);
@@ -51,26 +56,25 @@ class GmcResource extends Resource
                 ->options(fn (Forms\Get $get) => Customer::whereKey($get('customer_id'))->pluck('full_name', 'id'))
                 ->disabled()->dehydrated()
                 ->helperText('Otomatis dari SPR/Kontrak — tak dapat diubah.'),
-            // Nama Gimmick diambil dari master "Kategori Gimmick" di BO (bs_gimmick_categories @ ipro_bo).
-            Forms\Components\Select::make('nama')->label('Nama Gimmick')->required()->searchable()
-                ->options(fn () => self::gimmickOptions())
-                ->helperText('Diambil dari master Kategori Gimmick (BO → Setup → Kategori Gimmick).'),
-            Forms\Components\TextInput::make('nilai')->label('Nilai / Biaya (Rp)')->numeric()->rupiah()->default(0)->required()
-                ->helperText('Untuk gimmick tunggal. Bila mengisi Rincian Komponen di bawah, nilai otomatis = jumlah rincian.'),
             Forms\Components\Textarea::make('keterangan')->label('Keterangan')->rows(2)->columnSpanFull(),
 
-            // Rincian komponen (opsional) — gimmick multi-supplier (mis. PPJB = Jasa Notaris + PNBP + Jasa CV).
+            // Rincian komponen (WAJIB, min 1) — nilai & nama GMC diturunkan dari komponen.
+            // Gimmick bisa multi-supplier (mis. PPJB = Jasa Notaris + PNBP + Jasa CV).
             Forms\Components\Repeater::make('items')
-                ->label('Rincian Komponen (opsional — untuk gimmick multi-supplier)')
+                ->label('Rincian Komponen (wajib — minimal 1)')
                 ->relationship()
+                ->required()
+                ->minItems(1)
                 ->schema([
-                    Forms\Components\TextInput::make('nama')->label('Nama Komponen')->required()->columnSpan(2),
+                    // Kategori Gimmick dari master BO (bs_gimmick_categories @ ipro_bo). Tak punya nilai → nilai tetap manual.
+                    Forms\Components\Select::make('nama')->label('Kategori Gimmick')->required()->searchable()
+                        ->options(fn () => self::gimmickOptions())->columnSpan(2),
                     Forms\Components\Select::make('supplier_id')->label('Supplier')->required()->searchable()
                         ->options(fn () => GmcItem::supplierOptions())->columnSpan(2),
                     Forms\Components\TextInput::make('nilai')->label('Nilai (Rp)')->numeric()->rupiah()->default(0)->required()->columnSpan(2),
                 ])
                 ->columns(6)->live()->addActionLabel('+ Tambah komponen')
-                ->helperText('Tiap komponen jadi hutang AP terpisah ke supplier-nya saat Posting BO. Kosongkan bila gimmick tunggal.')
+                ->helperText('Tiap komponen jadi hutang AP terpisah ke supplier-nya saat Posting BO. Total GMC = jumlah nilai komponen.')
                 ->columnSpanFull(),
             Forms\Components\Placeholder::make('total_rincian')->label('Total Rincian')
                 ->content(fn (Forms\Get $get) => 'Rp '.number_format(collect($get('items') ?? [])
@@ -86,6 +90,31 @@ class GmcResource extends Resource
         if ($record->items()->exists()) {
             $record->update(['nilai' => (float) $record->items()->sum('nilai')]);
         }
+    }
+
+    /**
+     * GMC.nama diturunkan dari kategori komponen (distinct) — field "Nama Gimmick"
+     * level-GMC sudah dihapus, nama kini digabung dari kategori tiap komponen.
+     */
+    public static function syncNamaFromItems(Gmc $record): void
+    {
+        $names = $record->items()->pluck('nama')->filter()->unique()->values();
+        if ($names->isNotEmpty()) {
+            $record->update(['nama' => $names->implode(', ')]);
+        }
+    }
+
+    /**
+     * Isi nama saat create (sebelum insert) dari rincian komponen agar kolom
+     * fo_gmc.nama (NOT NULL) terpenuhi; nilai akhir dikoreksi lagi oleh
+     * syncNamaFromItems() dari komponen yang sudah tersimpan.
+     */
+    protected static function fillNamaFromData(array $data): array
+    {
+        $names = collect($data['items'] ?? [])->pluck('nama')->filter()->unique()->values();
+        $data['nama'] = $names->isNotEmpty() ? $names->implode(', ') : ($data['nama'] ?? 'Gimmick');
+
+        return $data;
     }
 
     /**
@@ -110,7 +139,7 @@ class GmcResource extends Resource
                     (string) $r->no_gmc.'-'.$i,
                     (float) $it->nilai,
                     $custId, $custName, $tgl,
-                    trim('Gimmick '.$r->nama.' — '.$it->nama.$sprRef),
+                    trim('Gimmick '.$it->nama.$sprRef),
                     $it->supplier_id ? (int) $it->supplier_id : null,
                 );
             }
@@ -138,7 +167,12 @@ class GmcResource extends Resource
                 Tables\Filters\SelectFilter::make('status')->options(['DRAFT' => 'Draft', 'DIPROSES' => 'Diproses']),
             ])
             ->headerActions([
-                Tables\Actions\CreateAction::make()->after(fn (Gmc $record) => self::syncNilaiFromItems($record)),
+                Tables\Actions\CreateAction::make()
+                    ->mutateFormDataUsing(fn (array $data) => self::fillNamaFromData($data))
+                    ->after(function (Gmc $record) {
+                        self::syncNamaFromItems($record);
+                        self::syncNilaiFromItems($record);
+                    }),
                 self::gmcMassalAction(),
             ])
             ->actions([
@@ -157,7 +191,10 @@ class GmcResource extends Resource
                             \Filament\Notifications\Notification::make()->warning()->title('Gagal kirim ke BO')->body($e->getMessage())->persistent()->send();
                         }
                     }),
-                Tables\Actions\EditAction::make()->after(fn (Gmc $record) => self::syncNilaiFromItems($record)),
+                Tables\Actions\EditAction::make()->after(function (Gmc $record) {
+                    self::syncNamaFromItems($record);
+                    self::syncNilaiFromItems($record);
+                }),
                 Tables\Actions\DeleteAction::make(),
             ])
             ->bulkActions([
