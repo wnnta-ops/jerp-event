@@ -415,7 +415,8 @@ class FoPanelProvider extends PanelProvider
                     $item('TTS', '/fo/tts', 'heroicon-o-ticket', 'filament.fo.resources.tts.'),
                     $item('Pembayaran AR', '/fo/pembayaran-ar', 'heroicon-o-clipboard-document-list', 'filament.fo.pages.pembayaran-ar'),
                     $item('Pelunasan DP, Angsuran & TDP', '/fo/pelunasan-angsuran', 'heroicon-o-banknotes', 'filament.fo.pages.pelunasan-angsuran'),
-                    $item('Pengajuan KPR', '/fo/pengajuan-kpr', 'heroicon-o-building-library', 'filament.fo.pages.pengajuan-kpr'),
+                    // Menu "Pengajuan KPR" di-hide dari sidebar (permintaan). Page & route tetap ada (URL /fo/pengajuan-kpr).
+                    // $item('Pengajuan KPR', '/fo/pengajuan-kpr', 'heroicon-o-building-library', 'filament.fo.pages.pengajuan-kpr'),
                     $item('Kwitansi', '/fo/bkms', 'heroicon-o-banknotes', 'filament.fo.resources.bkms.'),
                     $item('Faktur Penjualan', '/fo/fps', 'heroicon-o-receipt-percent', 'filament.fo.resources.fps.'),
                     $item('Bilyet Giro', '/fo/bgs', 'heroicon-o-document-currency-dollar', 'filament.fo.resources.bgs.'),
