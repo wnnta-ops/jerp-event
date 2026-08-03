@@ -9,6 +9,7 @@ use App\Domain\BankLoan\Models\KprRealization;
 use App\Domain\BankLoan\Models\KprRetention;
 use App\Domain\BusinessSupport\Actions\ConvertUtjDpToUangMuka;
 use App\Domain\BusinessSupport\Models\BsAccount;
+use App\Domain\BusinessSupport\Models\BsBookedRevenue;
 use App\Domain\BusinessSupport\Models\BsFakturKeluaranEntry;
 use App\Domain\BusinessSupport\Services\JournalService;
 use App\Domain\Finance\Bank\Models\BankAccount;
@@ -18,6 +19,7 @@ use App\Http\Controllers\Controller;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
+use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -44,8 +46,10 @@ class BankApprovalController extends Controller
      *    (case-insensitive, mengandung frasa). Bila tak ketemu, fallback ke kode di
      *    config('business_support.gl_accounts.*') agar tetap konfigurabel.
      *
+     *  - "Piutang Usaha" dipakai saat unit SUDAH Booked Revenue (lihat buildApprovalLines()).
+     *
      * @param  \Illuminate\Support\Collection<int,\App\Domain\BusinessSupport\Models\BsAccount>  $accounts
-     * @return array{uang_muka_account_id:?int, uang_muka_account:?string, ppn_keluaran_account_id:?int, ppn_keluaran_account:?string, ppn_rate_num:int, ppn_rate_den:int}
+     * @return array{uang_muka_account_id:?int, uang_muka_account:?string, ppn_keluaran_account_id:?int, ppn_keluaran_account:?string, piutang_account_id:?int, piutang_account:?string, ppn_rate_num:int, ppn_rate_den:int}
      */
     private function retensiAccountDefaults(Collection $accounts): array
     {
@@ -62,14 +66,220 @@ class BankApprovalController extends Controller
 
         $uangMuka = $byName('uang muka penjualan', 'unearned_revenue');
         $ppnOut   = $byName('ppn keluaran', 'ppn_out');
+        $piutang  = $byName('piutang usaha', 'receivable');
 
         return [
             'uang_muka_account_id'    => $uangMuka?->id,
             'uang_muka_account'       => $uangMuka ? $uangMuka->code.' - '.$uangMuka->name : null,
             'ppn_keluaran_account_id' => $ppnOut?->id,
             'ppn_keluaran_account'    => $ppnOut ? $ppnOut->code.' - '.$ppnOut->name : null,
+            'piutang_account_id'      => $piutang?->id,
+            'piutang_account'         => $piutang ? $piutang->code.' - '.$piutang->name : null,
             'ppn_rate_num'            => self::PPN_RATE_NUM,
             'ppn_rate_den'            => self::PPN_RATE_DEN,
+        ];
+    }
+
+    // ── Booked Revenue & jalur pencairan (BSN / SELAIN BSN) ───────────────
+    //
+    // Sumber aturan: "Jurnal Saat Retensi dan Booked Revenue.xlsx" (sheet BOOKED SELAIN BSN &
+    // BOOKED BSN). Saat Approval Retensi/Pencairan, bentuk jurnal ditentukan oleh posisi
+    // tanggal jurnal terhadap tanggal Booked Revenue unit ybs:
+    //
+    //   SEBELUM Booked Revenue → Dr Bank / Cr Uang Muka Penjualan (nilai/1,11) + Cr PPN Keluaran (11/111)
+    //   SESUDAH Booked Revenue → Dr Bank / Cr Piutang Usaha (nilai penuh, TANPA pecah PPN — PPN sudah
+    //                            diakui seluruhnya pada jurnal Booked Revenue)
+    //
+    // Beda BSN vs SELAIN BSN bukan pada rumusnya, melainkan pada TITIK Booked Revenue-nya:
+    // SELAIN BSN booked setelah Topping Off, BSN setelah BAST+AJB — sehingga pada BSN lebih banyak
+    // tahap yang masih memakai Uang Muka + PPN. Khusus BSN ada tahap DAJAM PAJAK (potongan) yang
+    // jurnalnya KEBALIKAN: Dr Uang Muka Penjualan / Cr Bank.
+
+    /** Mode kredit yang dikenal Approval Retensi/Pencairan. */
+    private const CREDIT_MODES = ['split', 'piutang', 'deduct', 'manual'];
+
+    /**
+     * Booked Revenue TERBARU (non-batal) per unit — sekali query untuk semua baris.
+     *
+     * @param  \Illuminate\Support\Collection<int,int>  $unitIds
+     * @return \Illuminate\Support\Collection<int,\App\Domain\BusinessSupport\Models\BsBookedRevenue>
+     */
+    private function bookedRevenueMap(Collection $unitIds): Collection
+    {
+        $ids = $unitIds->filter()->unique()->values();
+        if ($ids->isEmpty()) {
+            return collect();
+        }
+
+        // Urut MENAIK lalu keyBy → yang tersimpan adalah baris terakhir (paling baru) per unit.
+        return BsBookedRevenue::whereIn('unit_id', $ids->all())
+            ->where('status', '!=', 'cancelled')
+            ->orderBy('booking_date')->orderBy('id')
+            ->get(['id', 'unit_id', 'br_number', 'booking_date', 'receivable_account_id'])
+            ->keyBy('unit_id');
+    }
+
+    /** Booked Revenue (non-batal) milik satu unit — dipakai saat posting. */
+    private function bookedRevenueOfUnit(?int $unitId): ?BsBookedRevenue
+    {
+        return $unitId
+            ? $this->bookedRevenueMap(collect([$unitId]))->get($unitId)
+            : null;
+    }
+
+    /**
+     * Apakah pada tanggal jurnal tsb unit SUDAH Booked Revenue?
+     * Dibandingkan terhadap TANGGAL BOOKING, bukan sekadar "ada/tidak ada record", agar baris lama
+     * (retensi yang terjadi sebelum booking dibuat) tetap dijurnal dengan bentuk yang benar.
+     */
+    private function isBookedOn(?BsBookedRevenue $br, ?string $journalDate): bool
+    {
+        $bookedAt = $br?->booking_date?->toDateString();
+
+        return $bookedAt !== null && $journalDate !== null && $journalDate !== '' && $journalDate >= $bookedAt;
+    }
+
+    /** Jalur pencairan: 'bsn' | 'non_bsn' | null. Disimpan saat Catat Pencairan; fallback tebak dari nama bank. */
+    private function schemeOf(?KprRealization $real, ?BankAccount $bank): ?string
+    {
+        $scheme = $real?->disbursement_scheme;
+        if ($scheme === 'bsn' || $scheme === 'non_bsn') {
+            return $scheme;
+        }
+
+        $name = mb_strtolower(trim((string) ($bank?->bank_name ?? '')));
+        if ($name === '') {
+            return null;
+        }
+
+        // BSN = Bank Syariah Nasional / BTN Syariah.
+        return (str_contains($name, 'bsn') || str_contains($name, 'syariah')) ? 'bsn' : 'non_bsn';
+    }
+
+    /** Tahap DAJAM PAJAK (SSP/BPHTB) — pada jalur BSN jurnalnya potongan (dibalik). */
+    private function isDajamPajak(?string $categoryCode, ?string $categoryName, ?string $note): bool
+    {
+        $hay = mb_strtolower(trim((string) $categoryCode.' '.(string) $categoryName.' '.(string) $note));
+
+        return str_contains($hay, 'dajam') && str_contains($hay, 'pajak');
+    }
+
+    /** Label mode kredit untuk pesan sukses. */
+    private function creditModeLabel(string $mode): string
+    {
+        return match ($mode) {
+            'piutang' => 'sudah Booked Revenue → kredit Piutang Usaha',
+            'deduct'  => 'potongan DAJAM Pajak jalur BSN → Dr Uang Muka / Cr Bank',
+            'manual'  => 'kredit tunggal manual',
+            default   => 'belum Booked Revenue → kredit Uang Muka + PPN',
+        };
+    }
+
+    /** Mode kredit default untuk sebuah baris approval. */
+    private function defaultCreditMode(bool $booked, ?string $scheme, bool $isDajamPajak): string
+    {
+        if ($booked) {
+            return 'piutang';
+        }
+
+        return ($scheme === 'bsn' && $isDajamPajak) ? 'deduct' : 'split';
+    }
+
+    /**
+     * Susun baris jurnal approval (retensi/pencairan) sesuai mode kredit & status Booked Revenue.
+     *
+     * @param  array<string,mixed>  $v  hasil validate()
+     * @return array{error:string}|array{lines:array<int,array<string,mixed>>, mode:string, dpp:float, ppn:float, faktur:bool}
+     */
+    private function buildApprovalLines(array $v, float $amount, bool $booked, string $suffix, string $desc, string $singleDesc): array
+    {
+        $amount = round($amount, 2);
+        $bankId = (int) $v['debit_account_id'];
+        $umId   = (int) ($v['uang_muka_account_id'] ?? 0);
+        $ppnId  = (int) ($v['ppn_account_id'] ?? 0);
+        $umAmt  = round((float) ($v['uang_muka_amount'] ?? 0), 2);
+        $ppnAmt = round((float) ($v['ppn_amount'] ?? 0), 2);
+        $crId   = (int) ($v['credit_account_id'] ?? 0);
+
+        // Kompatibilitas request lama (tanpa credit_mode): simpulkan dari isian yang dikirim.
+        $mode = $v['credit_mode'] ?? null;
+        if (! in_array($mode, self::CREDIT_MODES, true)) {
+            $mode = ($umAmt > 0 || $ppnAmt > 0) ? 'split' : ($crId > 0 ? 'manual' : 'split');
+        }
+
+        // Rambu akuntansi — mencegah PPN dobel & piutang yang belum lahir.
+        if ($mode === 'split' && $booked) {
+            return ['error' => 'Unit ini SUDAH Booked Revenue: kredit harus ke Piutang Usaha sebesar nilai penuh. Pecah Uang Muka + PPN hanya untuk yang BELUM Booked Revenue (PPN sudah diakui seluruhnya pada jurnal Booked Revenue).'];
+        }
+        if ($mode === 'piutang' && ! $booked) {
+            return ['error' => 'Unit ini BELUM Booked Revenue: kredit harus dipecah Uang Muka Penjualan + PPN Keluaran (11/111), bukan Piutang Usaha.'];
+        }
+        if ($mode === 'deduct' && $booked) {
+            return ['error' => 'Potongan DAJAM Pajak (jalur BSN) hanya berlaku SEBELUM Booked Revenue.'];
+        }
+
+        // DAJAM PAJAK jalur BSN — jurnal KEBALIKAN: Dr Uang Muka Penjualan / Cr Bank.
+        if ($mode === 'deduct') {
+            if ($umId <= 0) {
+                return ['error' => 'Pilih akun Uang Muka Penjualan untuk potongan DAJAM Pajak.'];
+            }
+            if ($umId === $bankId) {
+                return ['error' => 'Akun Uang Muka Penjualan tidak boleh sama dengan akun Bank.'];
+            }
+
+            return [
+                'lines' => [
+                    ['account_id' => $umId,   'debit' => $amount, 'credit' => 0,       'description' => 'Potongan DAJAM Pajak — '.$desc],
+                    ['account_id' => $bankId, 'debit' => 0,       'credit' => $amount, 'description' => 'Potongan DAJAM Pajak — '.$desc],
+                ],
+                'mode' => $mode, 'dpp' => 0.0, 'ppn' => 0.0, 'faktur' => false,
+            ];
+        }
+
+        // Sisanya: Dr Bank / Cr ... sebesar nilai baris.
+        $creditLines = [];
+        if ($mode === 'split') {
+            foreach ([[$umId, $umAmt, 'Uang Muka Penjualan'.$suffix], [$ppnId, $ppnAmt, 'PPN Keluaran'.$suffix]] as [$accId, $amt, $lineDesc]) {
+                if ($accId > 0 && $amt > 0) {
+                    $creditLines[] = ['account_id' => $accId, 'amount' => $amt, 'description' => $lineDesc];
+                }
+            }
+            if (! $creditLines) {
+                return ['error' => 'Tentukan akun & nominal Uang Muka Penjualan / PPN Keluaran.'];
+            }
+        } else { // 'piutang' | 'manual' — kredit tunggal sebesar nilai penuh.
+            if ($crId <= 0) {
+                return ['error' => $mode === 'piutang'
+                    ? 'Pilih akun Piutang Usaha untuk kredit.'
+                    : 'Tentukan minimal satu akun & nominal kredit (Uang Muka / PPN, atau akun kredit tunggal).'];
+            }
+            $creditLines[] = ['account_id' => $crId, 'amount' => $amount, 'description' => ($mode === 'piutang' ? 'Pelunasan Piutang Usaha'.$suffix : $singleDesc)];
+        }
+
+        $totalCredit = round(array_sum(array_column($creditLines, 'amount')), 2);
+        if ($totalCredit !== $amount) {
+            return ['error' => 'Total kredit ('.number_format($totalCredit, 2).') harus sama dengan nilai ('.number_format($amount, 2).').'];
+        }
+        foreach ($creditLines as $cl) {
+            if ($bankId === $cl['account_id']) {
+                return ['error' => 'Akun Debit tidak boleh sama dengan akun Kredit.'];
+            }
+        }
+
+        $lines = [['account_id' => $bankId, 'debit' => $amount, 'credit' => 0, 'description' => $desc]];
+        foreach ($creditLines as $cl) {
+            $lines[] = ['account_id' => $cl['account_id'], 'debit' => 0, 'credit' => $cl['amount'], 'description' => $cl['description']];
+        }
+
+        // Faktur Pajak Keluaran hanya untuk penerimaan yang MEMANG memicu PPN (sebelum Booked
+        // Revenue). Setelah Booked Revenue penerimaan = pelunasan piutang; fakturnya sudah terbit
+        // di jurnal Booked Revenue, jadi tidak dibuat entri baru agar tidak dobel lapor.
+        return [
+            'lines'  => $lines,
+            'mode'   => $mode,
+            'dpp'    => $mode === 'split' ? $umAmt : ($mode === 'manual' ? $amount : 0.0),
+            'ppn'    => $mode === 'split' ? $ppnAmt : 0.0,
+            'faktur' => $mode !== 'piutang',
         ];
     }
 
@@ -189,6 +399,8 @@ class BankApprovalController extends Controller
                 // #162 — UNIT (via booking) & tanggal akad untuk ditampilkan & default tgl jurnal.
                 'realization.application.booking.unit.unitType:id,code,name',
                 'realization.application.akad:id,kpr_application_id,akad_at',
+                // Kategori retensi dipakai untuk mengenali tahap DAJAM PAJAK (jalur BSN).
+                'realization.category:id,code,name,is_dajam',
                 'journal.lines.account:id,code,name',
             ])
             ->orderByRaw('journal_id IS NULL DESC') // belum dijurnal (pending) di atas
@@ -201,7 +413,10 @@ class BankApprovalController extends Controller
             ? BankAccount::whereIn('id', $bankIds)->get()->keyBy('id')
             : collect();
 
-        $retRows = $retentions->map(function ($r) use ($accounts, $banks, $defaults) {
+        // Booked Revenue per unit — penentu bentuk jurnal (Uang Muka + PPN vs Piutang Usaha).
+        $brMap = $this->bookedRevenueMap($retentions->pluck('realization.application.booking.unit_id'));
+
+        $retRows = $retentions->map(function ($r) use ($accounts, $banks, $defaults, $brMap) {
             $j = $r->journal;
             $debit  = $j?->lines->first(fn ($l) => (float) $l->debit > 0);
             $credit = $j?->lines->first(fn ($l) => (float) $l->credit > 0);
@@ -221,6 +436,16 @@ class BankApprovalController extends Controller
             $akadDate = optional($r->realization?->application?->akad?->akad_at)->toDateString();
             // Status akad dari Proses KPR; baris ber-status 'batal' disaring keluar (→ Rincian Batal Akad).
             $akadStat = $this->akadStatusFrom($r->realization?->application?->status?->value, $akadDate);
+
+            // Booked Revenue & jalur pencairan → bentuk jurnal default baris ini.
+            $br          = $brMap->get($r->realization?->application?->booking?->unit_id);
+            $defaultDate = $akadDate ?? optional($r->released_at ?? $r->realization?->disbursed_at)->toDateString();
+            $booked      = $this->isBookedOn($br, $defaultDate);
+            $scheme      = $this->schemeOf($r->realization, $bankId ? $banks->get($bankId) : null);
+            $cat         = $r->realization?->category;
+            $dajamPajak  = $this->isDajamPajak($cat?->code, $cat?->name, $r->claim_reason);
+            $piutangId   = $br?->receivable_account_id ?? $defaults['piutang_account_id'];
+            $piutangAcc  = $piutangId ? $accounts->firstWhere('id', (int) $piutangId) : null;
 
             return [
                 'id'                => $r->id,
@@ -259,6 +484,15 @@ class BankApprovalController extends Controller
                     : null,
                 'default_ppn'              => $ppn,
                 'default_uang_muka'        => $uangMuka,
+                // Booked Revenue & jalur pencairan (penentu bentuk jurnal).
+                'scheme'                   => $scheme,
+                'is_dajam_pajak'           => $dajamPajak,
+                'br_number'                => $br?->br_number,
+                'br_booking_date'          => $br?->booking_date?->toDateString(),
+                'booked'                   => $booked,
+                'default_credit_mode'      => $this->defaultCreditMode($booked, $scheme, $dajamPajak),
+                'default_piutang_account_id' => $piutangAcc?->id,
+                'default_piutang_account'    => $piutangAcc ? $piutangAcc->code.' - '.$piutangAcc->name : null,
             ];
         });
 
@@ -278,8 +512,9 @@ class BankApprovalController extends Controller
 
         $rBankIds = $reals->pluck('bank_account_id')->filter()->unique()->values();
         $rBanks   = $rBankIds->isNotEmpty() ? BankAccount::whereIn('id', $rBankIds)->get()->keyBy('id') : collect();
+        $rBrMap   = $this->bookedRevenueMap($reals->pluck('application.booking.unit_id'));
 
-        $pencRows = $reals->map(function ($r) use ($accounts, $rBanks) {
+        $pencRows = $reals->map(function ($r) use ($accounts, $rBanks, $defaults, $rBrMap) {
             $net    = round((float) $r->disbursed_amount - (float) $r->retention_amount, 2);
             $j      = $r->journal;
             $debit  = $j?->lines->first(fn ($l) => (float) $l->debit > 0);
@@ -297,6 +532,15 @@ class BankApprovalController extends Controller
             $kategori = $r->category?->name;
             // Status akad dari Proses KPR; baris ber-status 'batal' disaring keluar (→ Rincian Batal Akad).
             $akadStat = $this->akadStatusFrom($r->application?->status?->value, $akadDate);
+
+            // Booked Revenue & jalur pencairan → bentuk jurnal default baris ini.
+            $br          = $rBrMap->get($r->application?->booking?->unit_id);
+            $defaultDate = $akadDate ?? optional($r->disbursed_at)->toDateString();
+            $booked      = $this->isBookedOn($br, $defaultDate);
+            $scheme      = $this->schemeOf($r, $bankId ? $rBanks->get($bankId) : null);
+            $dajamPajak  = $this->isDajamPajak($r->category?->code, $kategori, $r->retention_note);
+            $piutangId   = $br?->receivable_account_id ?? $defaults['piutang_account_id'];
+            $piutangAcc  = $piutangId ? $accounts->firstWhere('id', (int) $piutangId) : null;
 
             return [
                 'id'                => $r->id,
@@ -333,6 +577,15 @@ class BankApprovalController extends Controller
                     : null,
                 'default_ppn'              => $ppn,
                 'default_uang_muka'        => $uangMuka,
+                // Booked Revenue & jalur pencairan (penentu bentuk jurnal).
+                'scheme'                   => $scheme,
+                'is_dajam_pajak'           => $dajamPajak,
+                'br_number'                => $br?->br_number,
+                'br_booking_date'          => $br?->booking_date?->toDateString(),
+                'booked'                   => $booked,
+                'default_credit_mode'      => $this->defaultCreditMode($booked, $scheme, $dajamPajak),
+                'default_piutang_account_id' => $piutangAcc?->id,
+                'default_piutang_account'    => $piutangAcc ? $piutangAcc->code.' - '.$piutangAcc->name : null,
             ];
         });
 
@@ -404,57 +657,35 @@ class BankApprovalController extends Controller
          *  - Kredit bisa DUA baris: Uang Muka Penjualan + PPN Keluaran (split inklusif 11%),
          *    atau satu baris kredit klasik (credit_account_id) bila approver memilih demikian.
          * Semua nilai editable; jurnal HARUS balance (debit = total kredit).
+         *
+         * credit_mode menentukan bentuk jurnal sesuai status Booked Revenue unit — lihat
+         * buildApprovalLines(): split (belum booked) · piutang (sudah booked) · deduct (DAJAM
+         * Pajak jalur BSN, jurnal dibalik) · manual (kredit tunggal bebas).
          */
         $v = $request->validate([
             'journal_date'            => ['required', 'date'],
             'debit_account_id'        => ['required', 'integer', 'exists:bs_accounts,id'],
+            'credit_mode'             => ['nullable', 'string', Rule::in(self::CREDIT_MODES)],
             // Split (mode default). Nullable agar mode kredit-tunggal tetap didukung.
             'uang_muka_account_id'    => ['nullable', 'integer', 'exists:bs_accounts,id'],
             'uang_muka_amount'        => ['nullable', 'numeric', 'min:0'],
             'ppn_account_id'          => ['nullable', 'integer', 'exists:bs_accounts,id'],
             'ppn_amount'              => ['nullable', 'numeric', 'min:0'],
-            // Mode kredit-tunggal (fallback / override manual).
+            // Mode kredit-tunggal (Piutang Usaha setelah Booked Revenue / override manual).
             'credit_account_id'       => ['nullable', 'integer', 'exists:bs_accounts,id'],
         ]);
 
-        // Susun baris kredit dari input yang terisi (amount > 0 & akun dipilih).
-        $creditLines = [];
-        $addCredit = function (?int $accId, $amt, string $desc) use (&$creditLines): void {
-            $accId = $accId ? (int) $accId : 0;
-            $amt   = round((float) $amt, 2);
-            if ($accId > 0 && $amt > 0) {
-                $creditLines[] = ['account_id' => $accId, 'amount' => $amt, 'description' => $desc];
-            }
-        };
-        $addCredit($v['uang_muka_account_id'] ?? null, $v['uang_muka_amount'] ?? 0, 'Uang Muka Penjualan'.$suffix);
-        $addCredit($v['ppn_account_id'] ?? null, $v['ppn_amount'] ?? 0, 'PPN Keluaran'.$suffix);
-        // Bila split kosong, pakai kredit tunggal sebesar total retensi.
-        if (! $creditLines && ! empty($v['credit_account_id'])) {
-            $addCredit((int) $v['credit_account_id'], $amount, 'Retensi pencairan KPR'.$suffix);
-        }
+        // Status Booked Revenue unit pada TANGGAL JURNAL yang dipilih → menentukan bentuk jurnal.
+        $booked = $this->isBookedOn(
+            $this->bookedRevenueOfUnit($app?->booking?->unit_id),
+            (string) $v['journal_date'],
+        );
 
-        if (! $creditLines) {
-            return back()->with('error', 'Tentukan minimal satu akun & nominal kredit (Uang Muka / PPN, atau akun kredit tunggal).');
+        $built = $this->buildApprovalLines($v, $amount, $booked, $suffix, $desc, 'Retensi pencairan KPR'.$suffix);
+        if (isset($built['error'])) {
+            return back()->with('error', $built['error']);
         }
-
-        $totalCredit = round(array_sum(array_column($creditLines, 'amount')), 2);
-        if ($totalCredit !== round($amount, 2)) {
-            return back()->with('error', 'Total kredit ('.number_format($totalCredit, 2).') harus sama dengan nominal retensi ('.number_format($amount, 2).').');
-        }
-
-        // Akun debit tidak boleh bertabrakan dengan akun kredit manapun.
-        foreach ($creditLines as $cl) {
-            if ((int) $v['debit_account_id'] === $cl['account_id']) {
-                return back()->with('error', 'Akun Debit tidak boleh sama dengan akun Kredit.');
-            }
-        }
-
-        $lines = [
-            ['account_id' => (int) $v['debit_account_id'], 'debit' => round($amount, 2), 'credit' => 0, 'description' => $desc],
-        ];
-        foreach ($creditLines as $cl) {
-            $lines[] = ['account_id' => $cl['account_id'], 'debit' => 0, 'credit' => $cl['amount'], 'description' => $cl['description']];
-        }
+        $lines = $built['lines'];
 
         try {
             $journal = $svc->post([
@@ -474,14 +705,13 @@ class BankApprovalController extends Controller
 
         // Selain GL: catat entri Faktur Pajak Keluaran (keterangan Retensi) — langsung aktif untuk
         // diisi Nomor Faktur Pajak di Verifikasi Faktur Pajak. DPP = Uang Muka, PPN = split 11%.
-        $entryPpn = round((float) ($v['ppn_amount'] ?? 0), 2);
-        $entryDpp = round((float) ($v['uang_muka_amount'] ?? 0), 2);
-        if ($entryDpp <= 0 && $entryPpn <= 0) {
-            $entryDpp = round($amount, 2); // mode kredit-tunggal: seluruh nominal dianggap DPP
+        // Dilewati saat kredit ke Piutang Usaha (sudah Booked Revenue): PPN-nya sudah terbit pada
+        // jurnal Booked Revenue, sehingga entri baru akan dobel lapor.
+        if ($built['faktur']) {
+            $this->recordFakturKeluaranEntry($request, 'retensi', $retention->id, $app?->customer_id, $app?->booking_id, $v['journal_date'], $built['dpp'], $built['ppn'], $amount, $journal->id, true);
         }
-        $this->recordFakturKeluaranEntry($request, 'retensi', $retention->id, $app?->customer_id, $app?->booking_id, $v['journal_date'], $entryDpp, $entryPpn, $amount, $journal->id, true);
 
-        return back()->with('success', "Retensi disetujui & jurnal {$journal->journal_number} terposting.");
+        return back()->with('success', "Retensi disetujui & jurnal {$journal->journal_number} terposting (".$this->creditModeLabel($built['mode']).').');
     }
 
     /** Tolak approval Retensi (belum dijurnal) → approval_status 'rejected' + alasan. */
@@ -569,6 +799,7 @@ class BankApprovalController extends Controller
         $v = $request->validate([
             'journal_date'         => ['required', 'date'],
             'debit_account_id'     => ['required', 'integer', 'exists:bs_accounts,id'],
+            'credit_mode'          => ['nullable', 'string', Rule::in(self::CREDIT_MODES)],
             'uang_muka_account_id' => ['nullable', 'integer', 'exists:bs_accounts,id'],
             'uang_muka_amount'     => ['nullable', 'numeric', 'min:0'],
             'ppn_account_id'       => ['nullable', 'integer', 'exists:bs_accounts,id'],
@@ -576,40 +807,17 @@ class BankApprovalController extends Controller
             'credit_account_id'    => ['nullable', 'integer', 'exists:bs_accounts,id'],
         ]);
 
-        // Susun baris kredit (Uang Muka + PPN split, atau kredit tunggal) — sama seperti retensiPost.
-        $creditLines = [];
-        $addCredit = function (?int $accId, $amt, string $desc) use (&$creditLines): void {
-            $accId = $accId ? (int) $accId : 0;
-            $amt   = round((float) $amt, 2);
-            if ($accId > 0 && $amt > 0) {
-                $creditLines[] = ['account_id' => $accId, 'amount' => $amt, 'description' => $desc];
-            }
-        };
-        $addCredit($v['uang_muka_account_id'] ?? null, $v['uang_muka_amount'] ?? 0, 'Uang Muka Penjualan'.$suffix);
-        $addCredit($v['ppn_account_id'] ?? null, $v['ppn_amount'] ?? 0, 'PPN Keluaran'.$suffix);
-        if (! $creditLines && ! empty($v['credit_account_id'])) {
-            $addCredit((int) $v['credit_account_id'], $amount, 'Pencairan KPR'.$suffix);
-        }
-        if (! $creditLines) {
-            return back()->with('error', 'Tentukan minimal satu akun & nominal kredit (Uang Muka / PPN, atau akun kredit tunggal).');
-        }
+        // Bentuk jurnal mengikuti status Booked Revenue unit pada tanggal jurnal — sama seperti retensiPost.
+        $booked = $this->isBookedOn(
+            $this->bookedRevenueOfUnit($app?->booking?->unit_id),
+            (string) $v['journal_date'],
+        );
 
-        $totalCredit = round(array_sum(array_column($creditLines, 'amount')), 2);
-        if ($totalCredit !== round($amount, 2)) {
-            return back()->with('error', 'Total kredit ('.number_format($totalCredit, 2).') harus sama dengan nominal pencairan net ('.number_format($amount, 2).').');
+        $built = $this->buildApprovalLines($v, $amount, $booked, $suffix, $desc, 'Pencairan KPR'.$suffix);
+        if (isset($built['error'])) {
+            return back()->with('error', $built['error']);
         }
-        foreach ($creditLines as $cl) {
-            if ((int) $v['debit_account_id'] === $cl['account_id']) {
-                return back()->with('error', 'Akun Debit tidak boleh sama dengan akun Kredit.');
-            }
-        }
-
-        $lines = [
-            ['account_id' => (int) $v['debit_account_id'], 'debit' => round($amount, 2), 'credit' => 0, 'description' => $desc],
-        ];
-        foreach ($creditLines as $cl) {
-            $lines[] = ['account_id' => $cl['account_id'], 'debit' => 0, 'credit' => $cl['amount'], 'description' => $cl['description']];
-        }
+        $lines = $built['lines'];
 
         try {
             $journal = $svc->post([
@@ -627,14 +835,12 @@ class BankApprovalController extends Controller
         $realization->update(['journal_id' => $journal->id, 'approval_status' => null, 'reject_reason' => null]);
 
         // Faktur Pajak Keluaran (keterangan 'Pencairan KPR') — langsung aktif, DPP = Uang Muka, PPN = split 11%.
-        $entryPpn = round((float) ($v['ppn_amount'] ?? 0), 2);
-        $entryDpp = round((float) ($v['uang_muka_amount'] ?? 0), 2);
-        if ($entryDpp <= 0 && $entryPpn <= 0) {
-            $entryDpp = round($amount, 2);
+        // Dilewati saat kredit ke Piutang Usaha (sudah Booked Revenue) — PPN sudah terbit saat Booked.
+        if ($built['faktur']) {
+            $this->recordFakturKeluaranEntry($request, 'pencairan', $realization->id, $app?->customer_id, $app?->booking_id, $v['journal_date'], $built['dpp'], $built['ppn'], $amount, $journal->id, true);
         }
-        $this->recordFakturKeluaranEntry($request, 'pencairan', $realization->id, $app?->customer_id, $app?->booking_id, $v['journal_date'], $entryDpp, $entryPpn, $amount, $journal->id, true);
 
-        return back()->with('success', "Pencairan disetujui & jurnal {$journal->journal_number} terposting.");
+        return back()->with('success', "Pencairan disetujui & jurnal {$journal->journal_number} terposting (".$this->creditModeLabel($built['mode']).').');
     }
 
     /** Tolak approval Pencairan (belum dijurnal) → approval_status 'rejected' + alasan. */
