@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Web\BankLoan;
 
+use App\Domain\BusinessSupport\Models\BsGimmickCategory;
 use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -109,6 +110,8 @@ class MasterDataKprController extends Controller
         $sp3k       = $this->sp3kByApplication(array_values($appIdByBooking));
         $pencairan  = $this->pencairanByApplication(array_values($appIdByBooking));
         $inisiasi   = $this->initiationByBooking($ids);
+        // Rincian Biaya hasil posting GMC (FO → Posting Invoice dari FO → invoice hutang).
+        $biaya      = $this->biayaByBooking($ids);
 
         $rows = [];
         $no = 0;
@@ -166,15 +169,10 @@ class MasterDataKprController extends Controller
                 'dp'              => array_map(fn ($l) => $sch['dp'][$l] ?? null, self::DP_LABELS),
                 // Collection Retensi (8 slot sesuai urutan RETENSI_COLS)
                 'retensi'         => array_map(fn ($col) => ($retensi[$b->id][$col['key']] ?? null), self::RETENSI_COLS),
-                // Rincian Biaya
-                'biaya'           => [
-                    'kpr'   => null,
-                    'ht'    => null,
-                    'ppjb'  => null,
-                    'ssp'   => $real && $real->ssp_bphtb_amount !== null ? ['t' => $this->d($real->ssp_bphtb_date), 'n' => (float) $real->ssp_bphtb_amount] : null,
-                    'bphtb' => null, // saat ini SSP & BPHTB tergabung di kolom SSP
-                    'ajb'   => null,
-                ],
+                // Rincian Biaya — dari GMC yang sudah diposting jadi Invoice Hutang di BO
+                // (bs_kpr_biaya_entries, lewat Kategori Gimmick). SSP tetap punya cadangan dari
+                // realisasi pencairan (DAJAM Pajak) bila belum ada entri gimmick-nya.
+                'biaya'           => $this->biayaCells($biaya[$b->id] ?? [], $real),
             ];
         }
 
@@ -188,6 +186,52 @@ class MasterDataKprController extends Controller
     private function retensiHeaders(): array
     {
         return array_map(fn ($c) => $c['label'], self::RETENSI_COLS);
+    }
+
+    /**
+     * Rincian Biaya per booking dari bs_kpr_biaya_entries — biaya gimmick yang SUDAH terbit
+     * invoice hutangnya di BO. Beberapa entri pada kolom yang sama DIJUMLAH (mis. "BIAYA HT" +
+     * "BIAYA HT SEBAGIAN"), tanggalnya memakai yang terbaru.
+     *
+     * @param  array<int,int>  $ids
+     * @return array<int,array<string,array{t:?string,n:float}>>
+     */
+    private function biayaByBooking(array $ids): array
+    {
+        $rows = DB::table('bs_kpr_biaya_entries')
+            ->whereIn('booking_id', $ids)
+            ->orderBy('tgl')->orderBy('id')
+            ->get(['booking_id', 'biaya_key', 'tgl', 'nominal']);
+
+        $map = [];
+        foreach ($rows as $r) {
+            $cell = $map[$r->booking_id][$r->biaya_key] ?? ['t' => null, 'n' => 0.0];
+            $cell['n'] += (float) $r->nominal;
+            $cell['t'] = $this->d($r->tgl) ?? $cell['t'];   // urut menaik → tanggal terakhir menang
+            $map[$r->booking_id][$r->biaya_key] = $cell;
+        }
+
+        return $map;
+    }
+
+    /**
+     * Susun 6 sel Rincian Biaya. Kolom SSP tetap punya cadangan dari realisasi pencairan
+     * (DAJAM Pajak / SSP-BPHTB) supaya data lama tidak hilang saat belum ada GMC-nya.
+     *
+     * @param  array<string,array{t:?string,n:float}>  $entries
+     * @return array<string,array{t:?string,n:float}|null>
+     */
+    private function biayaCells(array $entries, ?object $real): array
+    {
+        $out = [];
+        foreach (array_keys(BsGimmickCategory::KPR_BIAYA_COLUMNS) as $key) {
+            $out[$key] = $entries[$key] ?? null;
+        }
+        if ($out['ssp'] === null && $real && $real->ssp_bphtb_amount !== null) {
+            $out['ssp'] = ['t' => $this->d($real->ssp_bphtb_date), 'n' => (float) $real->ssp_bphtb_amount];
+        }
+
+        return $out;
     }
 
     /** Free DP per booking dari booking_discounts (reason mengandung "FREE DP"/"FREEDP"). */

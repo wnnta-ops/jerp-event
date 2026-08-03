@@ -100,6 +100,11 @@ class GmcResource extends Resource
         $custId = $r->customer_id ? (int) $r->customer_id : null;
         $custName = $r->customer?->full_name;
         $tgl = $r->tgl?->toDateString();
+        // Nama gimmick = Kategori Gimmick BO → menentukan akun jurnal (boleh multi debit/kredit)
+        // & kolom Rincian Biaya Master Data KPR. No. SPR + unit menautkan biaya ke barisnya.
+        $nama = (string) $r->nama;
+        $noKontrak = $r->kontrak?->no_kontrak;
+        $foUnitId = $r->kontrak?->unit_id ? (int) $r->kontrak->unit_id : null;
         $items = $r->items;
 
         if ($items->isNotEmpty()) {
@@ -110,13 +115,14 @@ class GmcResource extends Resource
                     (string) $r->no_gmc.'-'.$i,
                     (float) $it->nilai,
                     $custId, $custName, $tgl,
-                    trim('Gimmick '.$r->nama.' — '.$it->nama.$sprRef),
+                    trim('Gimmick '.$nama.' — '.$it->nama.$sprRef),
                     $it->supplier_id ? (int) $it->supplier_id : null,
+                    $nama, $noKontrak, $foUnitId,
                 );
             }
         } else {
             $poster->queueGmc((string) $r->no_gmc, (float) $r->nilai, $custId, $custName, $tgl,
-                trim('Gimmick '.$r->nama.$sprRef));
+                trim('Gimmick '.$nama.$sprRef), null, $nama, $noKontrak, $foUnitId);
         }
 
         $r->update(['status' => 'DIPROSES']);
