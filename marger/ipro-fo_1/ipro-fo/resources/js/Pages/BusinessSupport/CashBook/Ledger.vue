@@ -72,15 +72,30 @@ function saveCf(row: any) {
     }, { preserveState: true, preserveScroll: true });
 }
 
-// #2 — Pembagian cluster: expand/collapse + edit baris + simpan.
+// #2 — Pembagian cash flow: expand/collapse + edit baris + simpan.
 const expanded = ref<Set<number>>(new Set());
 function toggle(id: number) { const s = new Set(expanded.value); s.has(id) ? s.delete(id) : s.add(id); expanded.value = s; }
 function addSplit(row: any) { row.clusters.push({ cluster_id: props.clusters[0]?.id ?? null, amount: 0, note: '' }); }
 function removeSplit(row: any, i: number) { row.clusters.splice(i, 1); }
 function sumSplits(row: any) { return (row.clusters ?? []).reduce((s: number, c: any) => s + (Number(c.amount) || 0), 0); }
 function mutAmount(row: any) { return Number(row.debit) || Number(row.credit) || 0; }
+
+/**
+ * Pembagian cash flow WAJIB pas dengan nilai mutasi jurnalnya (debit ATAU kredit baris itu).
+ * Boleh dikosongkan sama sekali (berarti pembagian dihapus); tetapi bila ada isinya, jumlahnya
+ * harus persis sama — kalau tidak, angka arus kas per cluster tidak akan pernah cocok dengan
+ * mutasi kas yang sebenarnya. Server memvalidasi hal yang sama (CashBookController::ledgerClusters).
+ */
+function splitRows(row: any) { return (row.clusters ?? []).filter((c: any) => c.cluster_id); }
+function splitBalanced(row: any) {
+    const n = splitRows(row).length;
+    return n === 0 || Math.abs(sumSplits(row) - mutAmount(row)) < 1;
+}
+function splitDiff(row: any) { return sumSplits(row) - mutAmount(row); }
+
 const savingCluster = ref<number | null>(null);
 function saveClusters(row: any) {
+    if (!splitBalanced(row)) return;   // gerbang klien; server tetap menjaga
     savingCluster.value = row.id;
     router.post(route('bs.cashbook.ledger.clusters'), {
         journal_line_id: row.id,
@@ -151,16 +166,16 @@ function saveClusters(row: any) {
                                 <button type="button" @click="toggle(row.id)"
                                         class="inline-flex items-center gap-1 rounded-lg border px-2.5 py-1.5 text-xs font-semibold transition"
                                         :class="expanded.has(row.id) ? 'border-primary-500 bg-primary-500 text-white' : (row.clusters.length ? 'border-primary-300 text-primary-700 hover:bg-primary-50 dark:border-primary-700 dark:text-primary-300' : 'border-neutral-300 text-neutral-600 hover:bg-neutral-50 dark:border-neutral-700 dark:text-neutral-300')">
-                                    <component :is="expanded.has(row.id) ? ChevronDown : ChevronRight" class="h-3.5 w-3.5" /><Layers class="h-3.5 w-3.5" /> PEMBAGIAN CLUSTER
+                                    <component :is="expanded.has(row.id) ? ChevronDown : ChevronRight" class="h-3.5 w-3.5" /><Layers class="h-3.5 w-3.5" /> PEMBAGIAN CASH FLOW
                                     <span v-if="row.clusters.length" class="ml-0.5 rounded-full bg-white/25 px-1.5 text-[10px]">{{ row.clusters.length }}</span>
                                 </button>
                             </td>
                         </tr>
-                        <!-- Rincian pembagian cluster (bisa hide/tampil) -->
+                        <!-- Rincian pembagian cash flow (bisa hide/tampil) -->
                         <tr v-if="expanded.has(row.id)">
                             <td colspan="10" class="bg-neutral-50 px-4 py-3 dark:bg-neutral-800/40">
                                 <div class="mb-2 flex flex-wrap items-center justify-between gap-2">
-                                    <p class="flex items-center gap-2 text-sm font-semibold"><Layers class="h-4 w-4 text-primary-600" /> Pembagian Biaya per Cluster <span class="text-xs font-normal text-neutral-500">— nilai mutasi Rp {{ fmtRp(mutAmount(row)) }}</span></p>
+                                    <p class="flex items-center gap-2 text-sm font-semibold"><Layers class="h-4 w-4 text-primary-600" /> Pembagian Biaya per Cash Flow <span class="text-xs font-normal text-neutral-500">— nilai mutasi Rp {{ fmtRp(mutAmount(row)) }}</span></p>
                                     <button type="button" @click="toggle(row.id)" class="text-xs text-neutral-500 hover:text-neutral-800 dark:hover:text-neutral-200">Sembunyikan ▲</button>
                                 </div>
                                 <div class="space-y-2">
@@ -170,13 +185,20 @@ function saveClusters(row: any) {
                                         <input v-model="c.note" placeholder="Keterangan (opsional)" class="h-8 min-w-[160px] flex-1 rounded-md border border-neutral-300 bg-white px-2 text-xs dark:border-neutral-700 dark:bg-neutral-900" />
                                         <button type="button" @click="removeSplit(row, i)" class="rounded-md border border-danger-300 p-1.5 text-danger-600 hover:bg-danger-50 dark:border-danger-700"><Trash2 class="h-3.5 w-3.5" /></button>
                                     </div>
-                                    <p v-if="!row.clusters.length" class="text-xs italic text-neutral-400">Belum ada pembagian. Klik "Tambah Cluster" untuk membagi biaya mutasi ini ke beberapa cluster.</p>
+                                    <p v-if="!row.clusters.length" class="text-xs italic text-neutral-400">Belum ada pembagian. Klik "Tambah Cash Flow" untuk membagi biaya mutasi ini ke beberapa cluster.</p>
+                                    <!-- Penjaga: total pembagian harus persis sama dengan nilai mutasi jurnalnya. -->
+                                    <p v-if="!splitBalanced(row)" class="rounded-md border border-danger-300 bg-danger-50 px-2.5 py-1.5 text-xs text-danger-700 dark:border-danger-700 dark:bg-danger-900/25 dark:text-danger-300">
+                                        Total pembagian <b class="font-mono">Rp {{ fmtRp(sumSplits(row)) }}</b> belum sama dengan nilai mutasi <b class="font-mono">Rp {{ fmtRp(mutAmount(row)) }}</b>
+                                        (selisih <b class="font-mono">Rp {{ fmtRp(Math.abs(splitDiff(row))) }}</b> {{ splitDiff(row) > 0 ? 'kelebihan' : 'kurang' }}). Samakan dulu agar bisa disimpan.
+                                    </p>
                                 </div>
                                 <div class="mt-3 flex flex-wrap items-center justify-between gap-2">
-                                    <button type="button" @click="addSplit(row)" class="inline-flex items-center gap-1 rounded-lg border border-dashed border-neutral-300 px-3 py-1.5 text-xs font-medium text-neutral-600 hover:bg-neutral-100 dark:border-neutral-700 dark:text-neutral-300"><Plus class="h-3.5 w-3.5" /> Tambah Cluster</button>
+                                    <button type="button" @click="addSplit(row)" class="inline-flex items-center gap-1 rounded-lg border border-dashed border-neutral-300 px-3 py-1.5 text-xs font-medium text-neutral-600 hover:bg-neutral-100 dark:border-neutral-700 dark:text-neutral-300"><Plus class="h-3.5 w-3.5" /> Tambah Cash Flow</button>
                                     <div class="flex items-center gap-3">
-                                        <span class="text-xs text-neutral-500">Total split: <b class="font-mono" :class="Math.abs(sumSplits(row) - mutAmount(row)) < 1 ? 'text-success-600' : 'text-warning-600'">Rp {{ fmtRp(sumSplits(row)) }}</b> / Rp {{ fmtRp(mutAmount(row)) }}</span>
-                                        <button type="button" @click="saveClusters(row)" :disabled="savingCluster === row.id" class="inline-flex items-center gap-1.5 rounded-lg bg-primary-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-primary-700 disabled:opacity-60"><Save class="h-3.5 w-3.5" /> {{ savingCluster === row.id ? 'Menyimpan…' : 'Simpan Pembagian' }}</button>
+                                        <span class="text-xs text-neutral-500">Total pembagian: <b class="font-mono" :class="splitBalanced(row) ? 'text-success-600' : 'text-danger-600'">Rp {{ fmtRp(sumSplits(row)) }}</b> / Rp {{ fmtRp(mutAmount(row)) }}</span>
+                                        <button type="button" @click="saveClusters(row)" :disabled="savingCluster === row.id || !splitBalanced(row)"
+                                                :title="splitBalanced(row) ? 'Simpan pembagian cash flow' : 'Total pembagian harus sama dengan nilai mutasi jurnal'"
+                                                class="inline-flex items-center gap-1.5 rounded-lg bg-primary-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-primary-700 disabled:cursor-not-allowed disabled:opacity-60"><Save class="h-3.5 w-3.5" /> {{ savingCluster === row.id ? 'Menyimpan…' : 'Simpan Pembagian' }}</button>
                                     </div>
                                 </div>
                             </td>

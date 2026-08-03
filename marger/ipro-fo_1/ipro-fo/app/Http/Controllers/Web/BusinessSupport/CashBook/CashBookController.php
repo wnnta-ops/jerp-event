@@ -528,9 +528,34 @@ class CashBookController extends Controller
             'journal_line_id'     => ['required', 'integer', 'exists:bs_journal_lines,id'],
             'splits'              => ['array'],
             'splits.*.cluster_id' => ['required', 'integer', 'exists:clusters,id'],
-            'splits.*.amount'     => ['required', 'numeric'],
+            // Nominal tidak boleh negatif: nilai minus bisa dipakai menutupi selisih secara semu
+            // sehingga total terlihat pas padahal pembagiannya tidak masuk akal.
+            'splits.*.amount'     => ['required', 'numeric', 'min:0'],
             'splits.*.note'       => ['nullable', 'string', 'max:255'],
         ]);
+
+        // PENJAGA UTAMA: total pembagian cash flow WAJIB sama dengan nilai mutasi baris jurnalnya.
+        // Tanpa ini, laporan arus kas per cluster bisa menyimpang dari mutasi kas yang sebenarnya.
+        // Daftar kosong tetap diizinkan — artinya pembagian dihapus.
+        $splits = $v['splits'] ?? [];
+        if ($splits !== []) {
+            $line = \App\Domain\BusinessSupport\Models\BsJournalLine::find($v['journal_line_id']);
+            // Cast ke float DULU baru dipilih: kolom decimal dikembalikan sebagai string "0.00"
+            // yang bernilai TRUTHY di PHP, sehingga `$line->debit ?: $line->credit` akan salah
+            // memilih 0 untuk mutasi sisi kredit.
+            $debit    = round((float) ($line?->debit ?? 0), 2);
+            $credit   = round((float) ($line?->credit ?? 0), 2);
+            $mutation = $debit > 0 ? $debit : $credit;
+            $total    = round((float) array_sum(array_map(static fn ($s) => (float) $s['amount'], $splits)), 2);
+            if (abs($total - $mutation) >= 0.01) {
+                $rp = static fn ($x) => 'Rp '.number_format((float) $x, 2, ',', '.');
+
+                throw \Illuminate\Validation\ValidationException::withMessages([
+                    'splits' => 'Total pembagian cash flow ('.$rp($total).') harus sama dengan nilai mutasi jurnal ('.$rp($mutation).'). Selisih '.$rp(abs($total - $mutation)).'.',
+                ]);
+            }
+        }
+
         $tenantId = tenant_id() ?? default_tenant_id();
         \DB::transaction(function () use ($v, $tenantId): void {
             \App\Domain\BusinessSupport\Models\BsLedgerClusterSplit::where('journal_line_id', $v['journal_line_id'])->forceDelete();
@@ -545,7 +570,7 @@ class CashBookController extends Controller
             }
         });
 
-        return back()->with('success', 'Pembagian cluster mutasi disimpan.');
+        return back()->with('success', 'Pembagian cash flow mutasi disimpan.');
     }
 
     /** Kalender Cek Giro — jatuh tempo cek/giro masuk & keluar per bulan. */
