@@ -112,7 +112,7 @@
             @forelse ($clusters as $c)
                 <button wire:click="selectCluster({{ $c['lokasi_id'] }})"
                         class="pu-cluster text-left text-white px-5 py-5"
-                        style="background: linear-gradient(135deg, #06b6d4 0%, #0e7490 100%);">
+                        style="background: #ff8c00;">
                     <div class="text-xs uppercase tracking-wider opacity-80">{{ $c['project_name'] }}</div>
                     <div class="text-xl font-bold mt-1 leading-tight">{{ $c['label'] }}</div>
                     <div class="mt-4 grid grid-cols-3 gap-2 text-center text-xs">

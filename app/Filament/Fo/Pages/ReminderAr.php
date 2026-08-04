@@ -37,13 +37,13 @@ class ReminderAr extends Page
 
         return [
             ['label' => 'Total Piutang (AR)', 'value' => $this->rp($outstanding), 'icon' => 'heroicon-o-banknotes',
-                'grad' => 'linear-gradient(135deg,#6366f1,#4338ca)', 'sub' => 'Sisa tagihan belum lunas'],
+                'grad' => '#ff8c00', 'sub' => 'Sisa tagihan belum lunas'],
             ['label' => 'Jatuh Tempo Bulan Ini', 'value' => $this->rp($jatuhTempo), 'icon' => 'heroicon-o-calendar-days',
-                'grad' => 'linear-gradient(135deg,#f59e0b,#b45309)', 'sub' => now()->isoFormat('MMMM Y')],
+                'grad' => '#ff8c00', 'sub' => now()->isoFormat('MMMM Y')],
             ['label' => 'Collection Bulan Ini', 'value' => $this->rp($collection), 'icon' => 'heroicon-o-arrow-trending-up',
-                'grad' => 'linear-gradient(135deg,#10b981,#047857)', 'sub' => 'Total BKM (kas masuk)'],
+                'grad' => '#ff8c00', 'sub' => 'Total BKM (kas masuk)'],
             ['label' => 'TTS Belum Posting', 'value' => number_format($ttsPending), 'icon' => 'heroicon-o-ticket',
-                'grad' => 'linear-gradient(135deg,#ef4444,#b91c1c)', 'sub' => 'Perlu Buka Kuitansi'],
+                'grad' => '#ff8c00', 'sub' => 'Perlu Buka Kuitansi'],
         ];
     }
 

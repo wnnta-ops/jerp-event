@@ -44,7 +44,7 @@ class MarketingHome extends Page
 
     public function getHubGradient(): string
     {
-        return 'linear-gradient(90deg, #f97316 0%, #f43f5e 50%, #a855f7 100%)';
+        return '#ff8c00';
     }
 
     /**
@@ -58,7 +58,7 @@ class MarketingHome extends Page
                 'sub' => 'Data customer + kartu QR',
                 'url' => url('/fo/sales'),
                 'icon' => 'M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5 5 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z',
-                'gradient' => 'linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%)',
+                'gradient' => '#ff8c00',
                 'count' => fn () => Customer::count(),
                 'count_label' => 'customer',
             ],
@@ -67,7 +67,7 @@ class MarketingHome extends Page
                 'sub' => 'Booking unit (UTJ)',
                 'url' => url('/fo/reservasis'),
                 'icon' => 'M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z',
-                'gradient' => 'linear-gradient(135deg, #ec4899 0%, #be185d 100%)',
+                'gradient' => '#ff8c00',
                 'count' => fn () => Reservasi::where('status', 'AKTIF')->count(),
                 'count_label' => 'aktif',
             ],
@@ -76,7 +76,7 @@ class MarketingHome extends Page
                 'sub' => 'Kontrak penjualan + cetak SPR',
                 'url' => url('/fo/kontraks'),
                 'icon' => 'M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z',
-                'gradient' => 'linear-gradient(135deg, #f97316 0%, #ea580c 100%)',
+                'gradient' => '#ff8c00',
                 'count' => fn () => Kontrak::count(),
                 'count_label' => 'kontrak',
             ],

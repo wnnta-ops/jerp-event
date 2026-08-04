@@ -173,28 +173,28 @@
 
         /* ── Tema "Java Core System" (mirip dashboard ipro-fo): kartu GELAP +
               aksen oranye, bukan gradien warna-warni. ──────────────────────── */
+        /* Kartu tile: ORANGE SOLID satu warna (brand JC) — tanpa gradasi, tampilan modern flat. */
         .fo-tile {
-            background: linear-gradient(150deg, #1e293b 0%, #0f172a 100%) !important;
-            background-size: 100% 100% !important;
-            border: 1px solid rgba(255,140,0,.16);
-            box-shadow: 0 4px 14px rgba(0,0,0,.28), inset 0 1px 0 rgba(255,255,255,.04) !important;
+            background: #ff8c00 !important;
+            border: 1px solid rgba(255,255,255,.22);
+            box-shadow: 0 4px 14px rgba(0,0,0,.18), inset 0 1px 0 rgba(255,255,255,.12) !important;
             animation: foFadeUp .5s cubic-bezier(.34,1.56,.64,1) backwards !important;
         }
         .fo-tile:hover {
-            border-color: rgba(255,140,0,.55);
-            box-shadow: 0 16px 34px -10px rgba(0,0,0,.55), 0 0 0 1px rgba(255,140,0,.3) !important;
+            border-color: rgba(255,255,255,.45);
+            box-shadow: 0 16px 34px -10px rgba(0,0,0,.45), 0 0 0 1px rgba(255,255,255,.25) !important;
             filter: none !important;
         }
         .fo-icon {
-            background: linear-gradient(135deg, #ffa733 0%, #ff8c00 100%) !important;
-            border: 1px solid rgba(255,255,255,.25) !important;
-            box-shadow: 0 6px 16px -4px rgba(255,140,0,.55) !important;
+            background: rgba(255,255,255,.22) !important;
+            border: 1px solid rgba(255,255,255,.35) !important;
+            box-shadow: 0 6px 16px -4px rgba(0,0,0,.28) !important;
         }
-        .fo-tile:hover .fo-icon { background: linear-gradient(135deg, #ffb84d 0%, #ff9a1a 100%) !important; }
-        .fo-orb-a { background: rgba(255,140,0,.10) !important; }
-        .fo-orb-b { background: rgba(0,0,0,.18) !important; }
-        .fo-shine { background: linear-gradient(115deg, transparent 35%, rgba(255,140,0,.16) 50%, transparent 65%) !important; }
-        .fo-sparkle { background: #ffb84d !important; }
+        .fo-tile:hover .fo-icon { background: rgba(255,255,255,.32) !important; }
+        .fo-orb-a { background: rgba(255,255,255,.14) !important; }
+        .fo-orb-b { background: rgba(0,0,0,.14) !important; }
+        .fo-shine { background: linear-gradient(115deg, transparent 35%, rgba(255,255,255,.30) 50%, transparent 65%) !important; }
+        .fo-sparkle { background: #fff !important; }
         .fo-label-wrap > div { color: #f1f5f9 !important; }
         /* Tile nonaktif tetap redup */
         .fo-tile.disabled { filter: grayscale(.5) brightness(.8) !important; }
@@ -207,7 +207,7 @@
             background: #ffffff; border: 1px solid #e5e7eb; box-shadow: 0 1px 3px rgba(0,0,0,.07);
             animation: foFadeUp .5s cubic-bezier(.34,1.56,.64,1) backwards; }
         .dark .jc-stat { background: linear-gradient(150deg, #1e293b 0%, #0f172a 100%); border-color: rgba(255,140,0,.16); box-shadow: 0 4px 14px rgba(0,0,0,.25); }
-        .jc-stat-accent, .dark .jc-stat-accent { background: linear-gradient(135deg, #ffa733 0%, #ff8c00 100%) !important; border-color: rgba(255,255,255,.25); box-shadow: 0 10px 26px -8px rgba(255,140,0,.5); }
+        .jc-stat-accent, .dark .jc-stat-accent { background: #ff8c00 !important; border-color: rgba(255,255,255,.25); box-shadow: 0 10px 26px -8px rgba(255,140,0,.5); }
         .jc-stat-top { display: flex; align-items: center; justify-content: space-between; margin-bottom: .5rem; }
         .jc-stat-label { font-size: .72rem; font-weight: 600; color: #6b7280; }
         .jc-stat-accent .jc-stat-label { color: rgba(255,255,255,.92); }
@@ -229,7 +229,7 @@
         .dark .jc-panel-title { color: #f1f5f9; }
         .jc-chart { display: flex; align-items: flex-end; gap: .6rem; height: 180px; padding-top: .5rem; }
         .jc-bar-col { flex: 1; display: flex; flex-direction: column; align-items: center; gap: .4rem; height: 100%; justify-content: flex-end; }
-        .jc-bar { width: 100%; max-width: 46px; border-radius: 6px 6px 0 0; background: linear-gradient(180deg, #ffa733 0%, #ff8c00 100%); min-height: 4px; transition: height .4s; }
+        .jc-bar { width: 100%; max-width: 46px; border-radius: 6px 6px 0 0; background: #ff8c00; min-height: 4px; transition: height .4s; }
         .jc-bar-label { font-size: .7rem; color: #6b7280; }
         .dark .jc-bar-label { color: #94a3b8; }
         .jc-pipe { display: flex; flex-direction: column; gap: .7rem; }
@@ -237,7 +237,7 @@
         .jc-pipe-label { width: 96px; color: #6b7280; flex-shrink: 0; }
         .dark .jc-pipe-label { color: #94a3b8; }
         .jc-pipe-bar-wrap { flex: 1; height: 8px; border-radius: 999px; background: rgba(255,140,0,.12); overflow: hidden; }
-        .jc-pipe-bar { display: block; height: 100%; border-radius: 999px; background: linear-gradient(90deg, #ffa733, #ff8c00); }
+        .jc-pipe-bar { display: block; height: 100%; border-radius: 999px; background: #ff8c00; }
         .jc-pipe-count { width: 36px; text-align: right; font-weight: 700; color: #111827; }
         .dark .jc-pipe-count { color: #f1f5f9; }
     </style>
@@ -247,8 +247,7 @@
         <div class="fo-header text-xs uppercase tracking-wider text-gray-500 dark:text-gray-400">
             {{ now()->translatedFormat('l, d F Y') }} · {{ now()->format('H:i') }} WIB
         </div>
-        <h1 class="fo-header text-xl md:text-3xl font-bold mt-1 bg-clip-text text-transparent"
-            style="background-image: linear-gradient(90deg, #ffc266 0%, #ff8c00 45%, #ff7a00 100%);">
+        <h1 class="fo-header text-xl md:text-3xl font-bold mt-1" style="color:#ff8c00;">
             {{ $salam }}, {{ $firstName }} 👋
         </h1>
         <p class="fo-header-sub text-sm text-gray-500 dark:text-gray-400 mt-0.5">

@@ -20,12 +20,12 @@
         @keyframes aiIn { from { opacity:0; transform:translateY(10px); } to { opacity:1; transform:none; } }
         .ai-av { flex:none; width:2rem; height:2rem; border-radius:50%; display:grid; place-items:center;
             font-size:.78rem; font-weight:800; box-shadow:0 1px 3px rgba(0,0,0,.18); }
-        .ai-av-a { background:linear-gradient(135deg,#ffbf69 0%,#ff8c00 55%,#ff6a00 100%); color:#fff; }
+        .ai-av-a { background:#ff8c00; color:#fff; }
         .ai-av-u { background:rgba(148,163,184,.28); color:#e2e8f0; }
         .ai-bubble-a { max-width:82%; background:rgba(148,163,184,.14); border:1px solid rgba(148,163,184,.18);
             padding:.6rem .9rem; border-radius:.25rem 1rem 1rem 1rem; line-height:1.55; }
         .dark .ai-bubble-a { background:rgba(148,163,184,.12); }
-        .ai-bubble-u { max-width:80%; background:linear-gradient(135deg,#ff9e3d,#ff7a00); color:#fff;
+        .ai-bubble-u { max-width:80%; background:#ff8c00; color:#fff;
             padding:.6rem .9rem; border-radius:1rem 1rem .25rem 1rem; box-shadow:0 2px 8px rgba(255,122,0,.22); }
 
         /* Typing dots */
@@ -49,7 +49,7 @@
         .ai-inputbar textarea { flex:1; resize:none; border:0; background:transparent; outline:none; color:inherit;
             font:inherit; line-height:1.5; max-height:140px; padding:.35rem 0; }
         .ai-send { flex:none; width:2.4rem; height:2.4rem; border-radius:50%; border:0; cursor:pointer;
-            display:grid; place-items:center; color:#fff; background:linear-gradient(135deg,#ff9e3d,#ff7a00);
+            display:grid; place-items:center; color:#fff; background:#ff8c00;
             box-shadow:0 2px 8px rgba(255,122,0,.3); transition:.15s; }
         .ai-send:hover { filter:brightness(1.06); transform:translateY(-1px); }
         .ai-send:disabled { opacity:.5; cursor:not-allowed; transform:none; }
