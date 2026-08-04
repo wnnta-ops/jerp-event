@@ -19,7 +19,7 @@ class BsLedgerClusterSplit extends Model
 
     protected $table = 'bs_ledger_cluster_splits';
 
-    protected $fillable = ['tenant_id', 'journal_line_id', 'cluster_id', 'amount', 'note'];
+    protected $fillable = ['tenant_id', 'journal_line_id', 'cluster_id', 'cf_category_id', 'amount', 'note'];
 
     protected $casts = ['amount' => 'decimal:2'];
 

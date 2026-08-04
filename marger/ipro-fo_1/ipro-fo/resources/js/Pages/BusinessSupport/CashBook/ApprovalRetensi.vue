@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { reactive, ref, computed, watch, onMounted } from 'vue';
 import { router, Link } from '@inertiajs/vue3';
-import { ArrowLeft, Landmark, RotateCcw, Plus, Undo2, CheckCircle2, TriangleAlert, ChevronDown, ArrowRightLeft, Receipt, Info } from 'lucide-vue-next';
+import { ArrowLeft, Landmark, RotateCcw, Plus, Undo2, CheckCircle2, TriangleAlert, ChevronDown, ArrowRightLeft, Receipt, Info, Link2, Wand2 } from 'lucide-vue-next';
 import Button from '@/Components/UI/Button.vue';
 import Badge from '@/Components/UI/Badge.vue';
 import EmptyState from '@/Components/UI/EmptyState.vue';
@@ -22,6 +22,8 @@ type Row = {
     debit_account_id: number | null; debit_account: string | null; credit_account_id: number | null; credit_account: string | null;
     // #147 — default per-baris (editable):
     default_debit_account_id: number | null; default_debit_account: string | null; bank_account_label: string | null;
+    // 'bank_setup' = COA hasil Set Up KPR → Kategori Bank · 'auto' = tebakan dari nomor/nama rekening.
+    debit_source: 'bank_setup' | 'auto' | null;
     default_ppn: number; default_uang_muka: number;
     // Booked Revenue & jalur pencairan — penentu bentuk jurnal (lihat "Aturan Jurnal" di atas tabel).
     scheme: 'bsn' | 'non_bsn' | null; is_dajam_pajak: boolean;
@@ -443,6 +445,13 @@ const hSelCls = 'h-7 w-52 rounded border border-neutral-300 bg-white px-2 text-x
                                     <div class="flex-1"><SearchSelect v-model="forms[r.row_key].debit_account_id" :options="accountList" placeholder="Cari akun debit…" /></div>
                                     <button type="button" @click="openAddAccount(r.row_key, 'debit_account_id')" title="Tambah akun GL" class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-neutral-300 text-neutral-500 hover:bg-neutral-50 hover:text-primary-600 dark:border-neutral-700 dark:hover:bg-neutral-800"><Plus class="h-4 w-4" /></button>
                                 </div>
+                                <!-- Asal akun Debit: tertaut dari Set Up Kategori Bank, atau tebakan rekening. -->
+                                <p v-if="r.debit_source === 'bank_setup'" class="mt-1 inline-flex items-center gap-1 rounded-md bg-emerald-50 px-1.5 py-0.5 text-[10.5px] font-semibold text-emerald-700 ring-1 ring-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:ring-emerald-800/60">
+                                    <Link2 class="h-3 w-3 shrink-0" /> COA dari Set Up Kategori Bank
+                                </p>
+                                <p v-else-if="r.debit_source === 'auto'" class="mt-1 inline-flex items-center gap-1 text-[10.5px] text-neutral-400" title="Belum ada COA yang di-link-kan pada Set Up KPR → Kategori Bank untuk kategori ini">
+                                    <Wand2 class="h-3 w-3 shrink-0" /> Ditebak dari rekening akad
+                                </p>
                                 <p v-if="r.bank_account_label" class="mt-1 text-[11px] text-neutral-400">Bank akad: {{ r.bank_account_label }}</p>
                             </td>
                             <td class="px-3 py-3">

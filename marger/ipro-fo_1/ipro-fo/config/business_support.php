@@ -47,6 +47,28 @@ return [
         'auto_status' => env('GL_JOURNAL_AUTO_STATUS', 'final'),
     ],
 
+    /*
+     |--------------------------------------------------------------------------
+     | Pajak KPR — pencadangan SSP & BPHTB
+     |--------------------------------------------------------------------------
+     | Dipakai SI Pencadangan Pajak (Cetak SI jalur BSN). Rumusnya mengikuti
+     | "list pajak" yang dipakai Finance:
+     |
+     |   DPP   = Harga Jual / 1,11        (harga jual sudah termasuk PPN 11%)
+     |   SSP   = DPP × 2,5%
+     |   BPHTB = (DPP − NJOPTKP) × 5%     (NJOPTKP = pengurang, per daerah)
+     |   TOTAL = SSP + BPHTB
+     |
+     | Ditaruh di config karena tarif & NJOPTKP berubah mengikuti aturan daerah/tahun —
+     | mengubahnya tidak boleh perlu ubah kode.
+     */
+    'pajak_kpr' => [
+        'dpp_divisor'    => 1.11,        // harga jual → DPP (PPN 11% inklusif)
+        'ssp_rate'       => 0.025,       // 2,5% dari DPP
+        'bphtb_rate'     => 0.05,        // 5% dari (DPP − NJOPTKP)
+        'bphtb_njoptkp'  => 80_000_000,  // pengurang BPHTB
+    ],
+
     'gl_accounts' => [
         'inventory'  => '10104010101', // Persediaan — Bangunan Siap Jual
         'payable'    => '20101010101', // Utang Usaha Supplier

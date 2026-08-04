@@ -99,7 +99,16 @@ function postBulk() {
                             </select>
                         </td>
                         <td class="px-4 py-2.5">
-                            <span class="rounded bg-sky-100 px-2 py-0.5 text-[11px] font-semibold text-sky-700 dark:bg-sky-900/40 dark:text-sky-300">{{ it.sumber_label }}</span>
+                            <div class="flex flex-wrap items-center gap-1">
+                                <span class="rounded bg-sky-100 px-2 py-0.5 text-[11px] font-semibold text-sky-700 dark:bg-sky-900/40 dark:text-sky-300">{{ it.sumber_label }}</span>
+                                <!-- Rantai GMC: kategori gimmick → kolom Rincian Biaya Master Data KPR → SPR yang dibiayai. -->
+                                <span v-if="it.kategori" class="rounded bg-violet-100 px-2 py-0.5 text-[11px] font-semibold text-violet-700 dark:bg-violet-900/40 dark:text-violet-300">{{ it.kategori }}</span>
+                                <span v-if="it.akun_pecah > 2" class="rounded bg-neutral-100 px-2 py-0.5 text-[11px] font-semibold text-neutral-600 dark:bg-neutral-800 dark:text-neutral-300">{{ it.akun_pecah }} akun</span>
+                            </div>
+                            <div v-if="it.biaya_label || it.spr" class="mt-1 flex flex-wrap items-center gap-1">
+                                <span v-if="it.biaya_label" class="rounded bg-emerald-100 px-2 py-0.5 text-[11px] font-semibold text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300">→ {{ it.biaya_label }}</span>
+                                <span v-if="it.spr" class="font-mono text-[11px] text-neutral-400">{{ it.spr }}</span>
+                            </div>
                             <div v-if="it.keterangan" class="mt-1 text-xs text-neutral-500">{{ it.keterangan }}</div>
                         </td>
                         <td class="px-4 py-2.5 text-right font-mono">{{ fmtRp(it.amount) }}</td>

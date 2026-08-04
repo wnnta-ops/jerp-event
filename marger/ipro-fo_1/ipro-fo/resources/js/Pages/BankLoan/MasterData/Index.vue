@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue';
-import { FileSpreadsheet, FilterX } from 'lucide-vue-next';
+import { FileSpreadsheet, FilterX, Download } from 'lucide-vue-next';
 
 const props = defineProps<{ rows: Array<any>; retensiCols: Array<string>; prosesCols: Array<string> }>();
 
@@ -117,6 +117,50 @@ const tdCls = (c: Col) => [
     c.align === 'r' ? 'text-right' : '',
     c.mono ? 'font-mono' : '',
 ];
+
+// ── Unduh Excel ──────────────────────────────────────────────────────────
+// Susunan kolom dikirim dari sini (satu sumber kebenaran ada di `groups` di atas), jadi isi
+// berkasnya tak mungkin melenceng dari tabel di layar — menambah kolom otomatis ikut terunduh.
+// Yang diunduh SELURUH baris Master Data KPR, bukan hanya yang lolos filter layar.
+const downloading = ref(false);
+function unduhExcel() {
+    if (downloading.value) return;
+    downloading.value = true;
+
+    const cols = flatCols.value;
+    const payload = {
+        sheet: 'Master Data KPR',
+        groups: groups.value.map((g) => ({ label: g.label, span: g.items.reduce((a, i) => a + i.cols.length, 0) })),
+        // Kolom "No" berdiri sendiri di depan seluruh grup.
+        headers: ['No', ...cols.map((c) => c.label)],
+        numeric: [false, ...cols.map((c) => !!c.num)],
+        rows: props.rows.map((r, i) => [i + 1, ...cols.map((c) => {
+            const v = c.get(r);
+            return v === null || v === undefined ? '' : v;
+        })]),
+    };
+
+    // POST natif lewat <form> tersembunyi: unduhan file tidak bisa lewat Inertia (butuh
+    // navigasi browser agar dialog "Save as" muncul).
+    const form = document.createElement('form');
+    form.method = 'POST';
+    form.action = route('kpr.master-data.export');
+    form.style.display = 'none';
+    const add = (name: string, value: string) => {
+        const el = document.createElement('input');
+        el.type = 'hidden'; el.name = name; el.value = value;
+        form.appendChild(el);
+    };
+    add('_token', document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') ?? '');
+    // SATU field JSON, bukan satu input per sel: PHP membatasi max_input_vars (default 1000)
+    // dan akan MEMOTONG kiriman tanpa error — tabel ini punya puluhan ribu sel.
+    add('payload', JSON.stringify(payload));
+
+    document.body.appendChild(form);
+    form.submit();
+    // Halaman tidak berpindah saat mengunduh, jadi status tombol dipulihkan sendiri.
+    window.setTimeout(() => { form.remove(); downloading.value = false; }, 2500);
+}
 </script>
 
 <template>
@@ -127,8 +171,17 @@ const tdCls = (c: Col) => [
                 class="inline-flex items-center gap-1.5 rounded-lg border border-neutral-300 px-2.5 py-1.5 text-xs font-medium text-neutral-600 hover:bg-neutral-50 dark:border-neutral-700 dark:text-neutral-300">
                 <FilterX class="h-3.5 w-3.5" /> Bersihkan filter ({{ activeFilters.length + (q ? 1 : 0) }})
             </button>
-            <input v-model="q" type="text" placeholder="Cari semua kolom…"
-                class="ml-auto h-9 w-72 max-w-full rounded-lg border border-neutral-300 bg-white px-3 text-sm focus:border-primary-500 focus:ring-1 focus:ring-primary-500 dark:border-neutral-700 dark:bg-neutral-800" />
+            <div class="ml-auto flex flex-wrap items-center gap-2">
+                <input v-model="q" type="text" placeholder="Cari semua kolom…"
+                    class="h-9 w-72 max-w-full rounded-lg border border-neutral-300 bg-white px-3 text-sm focus:border-primary-500 focus:ring-1 focus:ring-primary-500 dark:border-neutral-700 dark:bg-neutral-800" />
+                <button type="button" @click="unduhExcel" :disabled="downloading || !rows.length"
+                    :title="`Unduh seluruh ${rows.length} baris Master Data KPR ke Excel (filter layar tidak memengaruhi isi berkas)`"
+                    class="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-lg bg-emerald-600 px-3 text-sm font-semibold text-white shadow-sm transition-all duration-200 hover:bg-emerald-700 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50">
+                    <Download class="h-4 w-4" :class="downloading ? 'animate-bounce' : ''" />
+                    {{ downloading ? 'Menyiapkan…' : 'Unduh Excel' }}
+                    <span class="rounded bg-white/20 px-1.5 py-0.5 text-[10.5px] font-bold tabular-nums">{{ rows.length }}</span>
+                </button>
+            </div>
         </div>
         <p class="text-sm text-neutral-500">
             Rekap per-SPR: Master Unit, Data KPR, <strong>Proses KPR</strong> (tanggal &amp; summary tiap tahap), Collection UTJ &amp; DP, Collection Retensi, dan Rincian Biaya.

@@ -6,6 +6,8 @@ namespace App\Http\Controllers\Web\BusinessSupport\Payable;
 
 use App\Domain\BusinessSupport\Models\BsAccount;
 use App\Domain\BusinessSupport\Models\BsApInvoice;
+use App\Domain\BusinessSupport\Models\BsGimmickCategory;
+use App\Domain\BusinessSupport\Models\BsKprBiayaEntry;
 use App\Domain\BusinessSupport\Models\BsPurchaseOrder;
 use App\Domain\BusinessSupport\Models\BsSupplier;
 use App\Domain\BusinessSupport\Models\BsWorkOrder;
@@ -52,24 +54,36 @@ class PostingInvoiceController extends Controller
         // section "Dari Purchase Order". Klik "Posting Invoice" → terbit hutang AP. Badge per
         // baris = SUMBER: refund (per jenis SPR/SPRS/Transfer Anonim), Komisi, atau BLT.
         $refundLabel = ['SPR' => 'SPR', 'SPRS' => 'SPRS', 'TRANSFER_ANONIM' => 'Transfer Anonim'];
-        $refunds = DB::table('bs_ap_refund_queue')->where('status', 'pending')
-            ->orderByDesc('id')->limit(300)->get()
-            ->map(fn ($r) => [
-                'id'           => $r->id,
-                'refund_no'    => $r->refund_no,
-                'customer'     => $r->customer_name,
-                'sumber_label' => match ($r->kind) {
-                    'refund' => 'Refund: '.($refundLabel[$r->refund_source] ?? (string) $r->refund_source),
-                    'komisi' => 'Komisi',
-                    'blt'    => 'BLT',
-                    'gmc'    => 'GMC',
-                    default  => (string) $r->kind,
-                },
-                'amount'       => (float) $r->amount,
-                'tgl'          => $r->tgl_refund,
-                'keterangan'   => $r->keterangan, // mis. GMC → nama gimmick ("Gimmick BPHTB — SPR ...")
-                'supplier_id'  => $r->supplier_id ? (int) $r->supplier_id : null, // GMC komponen → prefill supplier
-            ])->values();
+        $queue = DB::table('bs_ap_refund_queue')->where('status', 'pending')
+            ->orderByDesc('id')->limit(300)->get();
+
+        // Nama kategori gimmick & nomor SPR untuk ditampilkan di antrian.
+        $catNames = BsGimmickCategory::whereIn('id', $queue->pluck('gimmick_category_id')->filter()->unique()->all())
+            ->pluck('code', 'id');
+        $bookingNos = DB::table('bookings')->whereIn('id', $queue->pluck('booking_id')->filter()->unique()->all())
+            ->pluck('booking_number', 'id');
+
+        $refunds = $queue->map(fn ($r) => [
+            'id'           => $r->id,
+            'refund_no'    => $r->refund_no,
+            'customer'     => $r->customer_name,
+            'sumber_label' => match ($r->kind) {
+                'refund' => 'Refund: '.($refundLabel[$r->refund_source] ?? (string) $r->refund_source),
+                'komisi' => 'Komisi',
+                'blt'    => 'BLT',
+                'gmc'    => 'GMC',
+                default  => (string) $r->kind,
+            },
+            'amount'       => (float) $r->amount,
+            'tgl'          => $r->tgl_refund,
+            'keterangan'   => $r->keterangan, // mis. GMC → nama gimmick ("Gimmick BPHTB — SPR ...")
+            'supplier_id'  => $r->supplier_id ? (int) $r->supplier_id : null, // GMC komponen → prefill supplier
+            // Rantai GMC: kategori gimmick → kolom Rincian Biaya Master Data KPR → SPR yang dibiayai.
+            'kategori'     => ($r->gimmick_category_id ?? null) ? ($catNames[$r->gimmick_category_id] ?? null) : null,
+            'biaya_label'  => ($r->kpr_biaya_key ?? null) ? (BsGimmickCategory::KPR_BIAYA_COLUMNS[$r->kpr_biaya_key] ?? null) : null,
+            'spr'          => ($r->booking_id ?? null) ? ($bookingNos[$r->booking_id] ?? null) : null,
+            'akun_pecah'   => count(is_string($r->account_split ?? null) ? (json_decode($r->account_split, true) ?: []) : []),
+        ])->values();
 
         // Master supplier (Data Center → Supplier Center) untuk dropdown kolom Supplier.
         $suppliers = BsSupplier::query()->where('is_active', true)->orderBy('name')
@@ -168,7 +182,8 @@ class PostingInvoiceController extends Controller
                 'source_type'        => 'batch', 'source_id' => null,
             ], $userId);
 
-            // Baris detail invoice + baris jurnal per item (Dr beban/lawan · Cr hutang).
+            // Baris detail invoice + baris jurnal per item (Dr beban/lawan · Cr hutang;
+            // bisa lebih dari sepasang bila Kategori Gimmick-nya multi-akun).
             $jLines = [];
             foreach ($prepared as $p) {
                 DB::table('bs_ap_invoice_lines')->insert([
@@ -178,8 +193,9 @@ class PostingInvoiceController extends Controller
                     'unit_price'    => $p['amount'],
                     'amount'        => $p['amount'],
                 ]);
-                $jLines[] = ['account_id' => $p['offset'], 'debit' => $p['amount'], 'credit' => 0, 'description' => $p['desc']];
-                $jLines[] = ['account_id' => $p['payable'], 'debit' => 0, 'credit' => $p['amount'], 'description' => $p['hutangLabel'].' — '.$p['desc']];
+                foreach ($this->journalLinesOf($p) as $line) {
+                    $jLines[] = $line;
+                }
             }
 
             $j = $journal->post([
@@ -191,6 +207,8 @@ class PostingInvoiceController extends Controller
             foreach ($prepared as $p) {
                 DB::table('bs_ap_refund_queue')->where('id', $p['row']->id)
                     ->update(['status' => 'posted', 'ap_invoice_id' => $inv->id, 'posted_at' => now(), 'updated_at' => now()]);
+                // Tiap item tetap tercatat sendiri-sendiri ke Rincian Biaya Master Data KPR.
+                $this->recordKprBiaya($p['row'], $inv, $p['amount']);
             }
 
             return $inv;
@@ -207,7 +225,11 @@ class PostingInvoiceController extends Controller
     /**
      * Resolusi akun + deskripsi 1 baris antrian (tanpa menulis DB).
      *
-     * @return array{ok:bool, amount?:float, payable?:int, offset?:int, desc?:string, hutangLabel?:string, date?:string, error?:string}
+     * Untuk GMC, akun berasal dari Kategori Gimmick dan bisa PECAH ke beberapa akun per sisi
+     * (account_split, diisi FO saat Posting BO). Bila tidak ada pecahan, dipakai sepasang akun
+     * tunggal seperti sebelumnya.
+     *
+     * @return array{ok:bool, amount?:float, payable?:int, offset?:int, debitLines?:array<int,array{account_id:int,amount:float}>, creditLines?:array<int,array{account_id:int,amount:float}>, desc?:string, hutangLabel?:string, date?:string, error?:string}
      */
     private function prepRefundRow(object $row): array
     {
@@ -215,11 +237,18 @@ class PostingInvoiceController extends Controller
             return ['ok' => false, 'error' => "{$row->refund_no}: sudah diposting"];
         }
 
-        // Akun BO sudah di-resolve J-ERP (coa_map) saat masuk antrian; fallback payable generik.
+        // Akun BO sudah di-resolve J-ERP (Kategori Gimmick / coa_map) saat masuk antrian;
+        // fallback payable generik.
         $payable = $row->payable_account_id ?: BsAccount::where('code', config('business_support.gl_accounts.payable'))->value('id');
         $offset = $row->offset_account_id ?: $payable;
         if (! $payable || ! $offset || (int) $payable === (int) $offset) {
             return ['ok' => false, 'error' => "{$row->refund_no}: akun hutang/lawan belum ter-set"];
+        }
+
+        $amount = round((float) $row->amount, 2);
+        $split  = $this->splitFromQueue($row, $amount, (int) $offset, (int) $payable);
+        if (isset($split['error'])) {
+            return ['ok' => false, 'error' => "{$row->refund_no}: {$split['error']}"];
         }
 
         $jenis = ['SPR' => 'SPR', 'SPRS' => 'SPRS', 'TRANSFER_ANONIM' => 'Transfer Anonim'][$row->refund_source] ?? (string) $row->refund_source;
@@ -233,13 +262,133 @@ class PostingInvoiceController extends Controller
 
         return [
             'ok'          => true,
-            'amount'      => round((float) $row->amount, 2),
+            'amount'      => $amount,
             'payable'     => (int) $payable,
             'offset'      => (int) $offset,
+            'debitLines'  => $split['debit'],
+            'creditLines' => $split['credit'],
             'desc'        => $desc,
             'hutangLabel' => $hutangLabel,
             'date'        => $row->tgl_refund ?: now()->toDateString(),
         ];
+    }
+
+    /**
+     * Pecahan akun untuk satu baris antrian.
+     *
+     * account_split (dari Kategori Gimmick) berisi [{side, account_id, portion}]. Sisi yang tidak
+     * punya pecahan memakai akun tunggalnya. Sisa pembulatan dilempar ke baris TERBESAR supaya
+     * total debit & kredit tetap persis sama dengan nilai antrian — jurnal tidak boleh pincang.
+     *
+     * @return array{debit:array<int,array{account_id:int,amount:float}>, credit:array<int,array{account_id:int,amount:float}>}|array{error:string}
+     */
+    private function splitFromQueue(object $row, float $amount, int $offset, int $payable): array
+    {
+        $raw = $row->account_split ?? null;
+        $rows = is_string($raw) ? (json_decode($raw, true) ?: []) : (is_array($raw) ? $raw : []);
+
+        $bySide = ['debit' => [], 'credit' => []];
+        foreach ($rows as $r) {
+            $side = (string) ($r['side'] ?? '');
+            $accId = (int) ($r['account_id'] ?? 0);
+            $portion = (float) ($r['portion'] ?? 0);
+            if (isset($bySide[$side]) && $accId > 0 && $portion > 0) {
+                $bySide[$side][] = ['account_id' => $accId, 'portion' => $portion];
+            }
+        }
+
+        $out = [];
+        foreach (['debit' => $offset, 'credit' => $payable] as $side => $fallback) {
+            $parts = $bySide[$side] ?: [['account_id' => $fallback, 'portion' => 100.0]];
+            $out[$side] = $this->allocate($amount, $parts);
+        }
+
+        // Satu akun tak boleh muncul di kedua sisi — nilainya akan saling meniadakan.
+        $dup = array_intersect(array_column($out['debit'], 'account_id'), array_column($out['credit'], 'account_id'));
+        if ($dup) {
+            return ['error' => 'akun yang sama ada di sisi debit & kredit pada Kategori Gimmick'];
+        }
+
+        return $out;
+    }
+
+    /**
+     * Bagi $amount menurut porsi; selisih pembulatan ditambahkan ke baris terbesar.
+     *
+     * @param  array<int,array{account_id:int,portion:float}>  $parts
+     * @return array<int,array{account_id:int,amount:float}>
+     */
+    private function allocate(float $amount, array $parts): array
+    {
+        $totalPortion = array_sum(array_column($parts, 'portion'));
+        if ($totalPortion <= 0) {
+            return [['account_id' => (int) $parts[0]['account_id'], 'amount' => round($amount, 2)]];
+        }
+
+        $out = [];
+        foreach ($parts as $p) {
+            $out[] = ['account_id' => (int) $p['account_id'], 'amount' => round($amount * (float) $p['portion'] / $totalPortion, 2)];
+        }
+
+        $diff = round($amount - array_sum(array_column($out, 'amount')), 2);
+        if (abs($diff) >= 0.01) {
+            $maxIdx = 0;
+            foreach ($out as $i => $o) {
+                if ($o['amount'] > $out[$maxIdx]['amount']) {
+                    $maxIdx = $i;
+                }
+            }
+            $out[$maxIdx]['amount'] = round($out[$maxIdx]['amount'] + $diff, 2);
+        }
+
+        return array_values(array_filter($out, fn ($o) => $o['amount'] > 0.009));
+    }
+
+    /**
+     * Baris jurnal dari pecahan akun 1 item antrian.
+     *
+     * @param  array<string,mixed>  $p  hasil prepRefundRow()
+     * @return array<int,array<string,mixed>>
+     */
+    private function journalLinesOf(array $p): array
+    {
+        $lines = [];
+        foreach ($p['debitLines'] as $d) {
+            $lines[] = ['account_id' => $d['account_id'], 'debit' => $d['amount'], 'credit' => 0, 'description' => $p['desc']];
+        }
+        foreach ($p['creditLines'] as $c) {
+            $lines[] = ['account_id' => $c['account_id'], 'debit' => 0, 'credit' => $c['amount'], 'description' => $p['hutangLabel'].' — '.$p['desc']];
+        }
+
+        return $lines;
+    }
+
+    /**
+     * Catat biaya ke Rincian Biaya Master Data KPR — hanya bila antrian membawa SPR (booking_id)
+     * dan kategorinya ditautkan ke salah satu kolom biaya. Idempoten via (source_type, source_ref)
+     * sehingga posting ulang / batch tidak menggandakan angka.
+     */
+    private function recordKprBiaya(object $row, BsApInvoice $invoice, float $amount): void
+    {
+        $key = $row->kpr_biaya_key ?? null;
+        $bookingId = (int) ($row->booking_id ?? 0);
+        if (! $key || ! $bookingId || ! array_key_exists($key, BsGimmickCategory::KPR_BIAYA_COLUMNS)) {
+            return;
+        }
+
+        BsKprBiayaEntry::updateOrCreate(
+            ['source_type' => (string) $row->kind, 'source_ref' => (string) $row->refund_no],
+            [
+                'booking_id'          => $bookingId,
+                'biaya_key'           => $key,
+                'tgl'                 => $row->tgl_refund ?: $invoice->invoice_date->toDateString(),
+                'nominal'             => round($amount, 2),
+                'source_id'           => $row->id,
+                'ap_invoice_id'       => $invoice->id,
+                'gimmick_category_id' => $row->gimmick_category_id ? (int) $row->gimmick_category_id : null,
+                'description'         => $row->keterangan,
+            ],
+        );
     }
 
     /**
@@ -257,6 +406,8 @@ class PostingInvoiceController extends Controller
         $inv = DB::transaction(function () use ($row, $supplierId, $p, $journal, $userId) {
             $inv = $this->makeInvoice([
                 'supplier_id' => $supplierId, 'customer_id' => $row->customer_id,
+                // unit_id dari antrian GMC → invoice tertaut ke unit/SPR yang dibiayai.
+                'unit_id' => $row->unit_id ?? null,
                 'expense_account_id' => $p['offset'], 'payable_account_id' => $p['payable'],
                 'description' => $p['desc'], 'invoice_date' => $p['date'], 'receive_date' => $p['date'], 'due_date' => $p['date'],
                 'dpp' => $p['amount'], 'total' => $p['amount'], 'net_payable' => $p['amount'],
@@ -264,17 +415,18 @@ class PostingInvoiceController extends Controller
             ], $userId);
 
             // Jurnal pengakuan: Dr lawan (beban/titipan) / Cr Hutang (refund/komisi/blt).
+            // Untuk GMC ber-Kategori Gimmick multi-akun, tiap sisi bisa lebih dari satu baris.
             $j = $journal->post([
                 'journal_date' => $inv->invoice_date->toDateString(), 'source' => 'ap',
                 'reference' => $inv->invoice_number, 'description' => 'AP — '.$p['desc'], 'created_by' => $userId,
-            ], [
-                ['account_id' => $p['offset'], 'debit' => $p['amount'], 'credit' => 0, 'description' => $p['desc']],
-                ['account_id' => $p['payable'], 'debit' => 0, 'credit' => $p['amount'], 'description' => $p['hutangLabel']],
-            ]);
+            ], $this->journalLinesOf($p));
             $inv->update(['journal_id' => $j->id]);
 
             DB::table('bs_ap_refund_queue')->where('id', $row->id)
                 ->update(['status' => 'posted', 'ap_invoice_id' => $inv->id, 'posted_at' => now(), 'updated_at' => now()]);
+
+            // Rincian Biaya Master Data KPR ikut terisi otomatis.
+            $this->recordKprBiaya($row, $inv, $p['amount']);
 
             return $inv;
         });
