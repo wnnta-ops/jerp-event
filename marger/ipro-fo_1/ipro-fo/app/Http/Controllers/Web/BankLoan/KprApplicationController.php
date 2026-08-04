@@ -409,6 +409,10 @@ class KprApplicationController extends Controller
 
         // Simpan & Lanjut: butuh tahap lengkap (tanggal selesai + field wajib).
         if (! $complete) {
+            if ($stage === 'verifikasi' && ($clean['wawancara2_mode'] ?? null) === null) {
+                return back()->with('error', 'Pilih dulu jalur verifikasi: "Melalui Wawancara Kedua" atau "Tanpa Wawancara Kedua".');
+            }
+
             return back()->with('error', 'Lengkapi tanggal selesai (dan field wajib) sebelum lanjut ke tahap berikutnya.');
         }
 
@@ -464,13 +468,28 @@ class KprApplicationController extends Controller
         }
 
         if ($stage === 'verifikasi') {
+            // OTS WAJIB. Wawancara Kedua opsional: bank menentukan lewat wawancara2_mode
+            // ('dengan' = harus dijalani, 'tanpa' = dilewati). Mode wajib dipilih sebelum lanjut.
             [$ots, $okO, $badO] = $block((array) ($data['ots'] ?? []));
             [$w2, $okW, $badW] = $block((array) ($data['wawancara2'] ?? []));
-            if ($badO || $badW) {
-                return [['ots' => $ots, 'wawancara2' => $w2], false, 'Tanggal selesai tidak boleh sebelum tanggal mulai.'];
+            $mode = in_array($data['wawancara2_mode'] ?? null, ['dengan', 'tanpa'], true) ? $data['wawancara2_mode'] : null;
+
+            // Jalur "tanpa": tanggal/catatan wawancara kedua sengaja DIKOSONGKAN agar rekap
+            // (timeline, Master Data KPR) tidak terlanjur melaporkan wawancara yang tak pernah ada.
+            if ($mode === 'tanpa') {
+                $w2 = ['started_at' => null, 'notes' => null, 'finished_at' => null];
+                $okW = false;
+                $badW = false;
             }
 
-            return [['ots' => $ots, 'wawancara2' => $w2], $okO && $okW, null];
+            $clean = ['ots' => $ots, 'wawancara2' => $w2, 'wawancara2_mode' => $mode];
+            if ($badO || $badW) {
+                return [$clean, false, 'Tanggal selesai tidak boleh sebelum tanggal mulai.'];
+            }
+
+            $complete = $okO && ($mode === 'tanpa' || ($mode === 'dengan' && $okW));
+
+            return [$clean, $complete, null];
         }
 
         if ($stage === 'analis') {

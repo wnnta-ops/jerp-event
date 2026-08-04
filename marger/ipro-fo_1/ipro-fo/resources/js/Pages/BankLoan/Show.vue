@@ -214,6 +214,9 @@ const proc = reactive<any>({
     verifikasi: {
         ots:        { started_at: dstr(ps.verifikasi?.ots?.started_at),        notes: ps.verifikasi?.ots?.notes ?? '',        finished_at: dstr(ps.verifikasi?.ots?.finished_at) },
         wawancara2: { started_at: dstr(ps.verifikasi?.wawancara2?.started_at), notes: ps.verifikasi?.wawancara2?.notes ?? '', finished_at: dstr(ps.verifikasi?.wawancara2?.finished_at) },
+        // Jalur wawancara kedua: 'dengan' | 'tanpa' | null (belum dipilih).
+        // Data lama belum punya penanda ini — bila wawancara keduanya sudah selesai, artinya memang dilalui.
+        wawancara2_mode: (ps.verifikasi?.wawancara2_mode ?? (ps.verifikasi?.wawancara2?.finished_at ? 'dengan' : null)),
     },
     analis:  { started_at: dstr(ps.analis?.started_at),  notes: ps.analis?.notes ?? '',  berkas_tambahan: ps.analis?.berkas_tambahan ?? '',  finished_at: dstr(ps.analis?.finished_at),  banding: !!ps.analis?.banding },
     banding: { jenis: ps.banding?.jenis ?? '', jenis_lain: ps.banding?.jenis_lain ?? '', started_at: dstr(ps.banding?.started_at), notes: ps.banding?.notes ?? '', berkas_tambahan: ps.banding?.berkas_tambahan ?? '', finished_at: dstr(ps.banding?.finished_at) },
@@ -231,7 +234,27 @@ function saveProc(stage: string, advance: boolean) {
 const okBlock = (b: any) => !!b?.finished_at && (!b.started_at || b.finished_at >= b.started_at);
 const wawancaraOk = computed(() => okBlock(proc.wawancara));
 const inputBankOk = computed(() => okBlock(proc.input_bank));
-const verifikasiOk = computed(() => okBlock(proc.verifikasi.ots) && okBlock(proc.verifikasi.wawancara2));
+// Verifikasi: OTS WAJIB; Wawancara Kedua hanya wajib bila jalur "Melalui Wawancara Kedua" dipilih.
+const otsOk = computed(() => okBlock(proc.verifikasi.ots));
+const wawancara2Mode = computed(() => proc.verifikasi.wawancara2_mode as 'dengan' | 'tanpa' | null);
+const pakaiWawancara2 = computed(() => wawancara2Mode.value === 'dengan');
+const wawancara2Ok = computed(() => okBlock(proc.verifikasi.wawancara2));
+const verifikasiOk = computed(() => otsOk.value
+    && wawancara2Mode.value !== null
+    && (wawancara2Mode.value === 'tanpa' || wawancara2Ok.value));
+// Alasan tombol "Simpan & Lanjut" masih mati — ditampilkan apa adanya agar operator tak menebak.
+const verifikasiHint = computed(() => {
+    if (wawancara2Mode.value === null) return 'Pilih dulu jalur verifikasi: Melalui Wawancara Kedua atau Tanpa Wawancara Kedua.';
+    if (!otsOk.value) return 'Isi Tanggal Selesai OTS (wajib) untuk mengaktifkan "Simpan & Lanjut".';
+    if (pakaiWawancara2.value && !wawancara2Ok.value) return 'Isi Tanggal Selesai Wawancara Kedua untuk mengaktifkan "Simpan & Lanjut".';
+    return '';
+});
+function setWawancara2Mode(m: 'dengan' | 'tanpa') {
+    proc.verifikasi.wawancara2_mode = m;
+    // Jalur "tanpa": kosongkan isian wawancara kedua supaya rekap tidak melaporkan
+    // wawancara yang tak pernah terjadi (server juga mengosongkannya saat menyimpan).
+    if (m === 'tanpa') Object.assign(proc.verifikasi.wawancara2, { started_at: '', notes: '', finished_at: '' });
+}
 const analisOk = computed(() => okBlock(proc.analis));
 const bandingOk = computed(() => okBlock(proc.banding) && !!proc.banding.jenis && !(proc.banding.jenis === 'lain_lain' && !String(proc.banding.jenis_lain ?? '').trim()));
 const BANDING_JENIS = [
@@ -395,7 +418,7 @@ const stageView = computed<StageView>(() => {
     };
     if (st === 'verifikasi') return {
         title: 'Proses Verifikasi — OTS & Wawancara Kedua', badgeVariant: 'warning', badgeLabel: 'Verifikasi',
-        intro: 'Dua sub-proses: OTS dan Wawancara Kedua. Isi tanggal mulai, update & kendala, dan tanggal selesai masing-masing. Lalu lanjut ke Proses Analis.',
+        intro: 'OTS wajib dilakukan. Wawancara Kedua opsional — pilih "Melalui Wawancara Kedua" untuk mengisinya, atau "Tanpa Wawancara Kedua" untuk langsung lanjut ke Proses Analis.',
         edit: null, rows: [], showProgress: false, mode: 'rows',
     };
     if (st === 'analis') return {
@@ -537,7 +560,8 @@ const historyNodes = computed<HistoryNode[]>(() => {
     const pst = a.process_stages ?? {};
     if (has('wawancara') && pst.wawancara) nodes.push({ key: 'wawancara', label: 'Wawancara', date: fmtDate(pst.wawancara?.finished_at), summary: pst.wawancara?.notes || 'Wawancara selesai', dot: 'warning' });
     if (has('input_bank') && pst.input_bank) nodes.push({ key: 'input_bank', label: 'Input Sistem Bank', date: fmtDate(pst.input_bank?.finished_at), summary: pst.input_bank?.notes || 'Input sistem bank selesai', dot: 'warning' });
-    if (has('verifikasi') && (pst.verifikasi?.ots || pst.verifikasi?.wawancara2)) nodes.push({ key: 'verifikasi', label: 'Proses Verifikasi', date: fmtDate(pst.verifikasi?.wawancara2?.finished_at || pst.verifikasi?.ots?.finished_at), summary: 'OTS & Wawancara Kedua selesai', dot: 'warning' });
+    // Ringkasannya mengikuti jalur yang dipilih — wawancara kedua bisa saja memang dilewati.
+    if (has('verifikasi') && (pst.verifikasi?.ots || pst.verifikasi?.wawancara2)) nodes.push({ key: 'verifikasi', label: 'Proses Verifikasi', date: fmtDate(pst.verifikasi?.wawancara2?.finished_at || pst.verifikasi?.ots?.finished_at), summary: pst.verifikasi?.wawancara2?.finished_at ? 'OTS & Wawancara Kedua selesai' : 'OTS selesai — tanpa wawancara kedua', dot: 'warning' });
     if (has('analis') && pst.analis) nodes.push({ key: 'analis', label: 'Proses Analis', date: fmtDate(pst.analis?.finished_at), summary: pst.analis?.banding ? 'Analis selesai · perlu Banding' : 'Analis selesai', dot: 'warning' });
     if (has('banding') && bandingUsed.value) nodes.push({ key: 'banding', label: 'Proses Banding', date: fmtDate(pst.banding?.finished_at), summary: `${bandingJenisLabel(pst.banding?.jenis)} — selesai`, dot: 'warning' });
     if (has('sp3k') && a.sp3k) nodes.push({ key: 'sp3k', label: 'SP3K', date: fmtDate(a.sp3k.sp3k_date), summary: `No. ${a.sp3k.sp3k_number} · ${fmtRp(a.sp3k.approved_amount)}`, dot: 'info', edit: 'sp3k' });
@@ -920,8 +944,14 @@ const historyNodes = computed<HistoryNode[]>(() => {
 
             <!-- Tahap: Proses Verifikasi (OTS + Wawancara Kedua) -->
             <div v-if="a.status === 'verifikasi'" id="next-step-form" class="mt-5 space-y-4 border-t border-neutral-200 pt-5 dark:border-neutral-800">
-                <div class="space-y-3 rounded-lg border border-neutral-200 p-3 dark:border-neutral-700">
-                    <h4 class="text-sm font-semibold">1. OTS (On The Spot)</h4>
+                <!-- 1. OTS — WAJIB -->
+                <div class="space-y-3 rounded-lg border p-3 transition-colors duration-300"
+                    :class="otsOk ? 'border-success-300 bg-success-50/40 dark:border-success-800 dark:bg-success-950/15' : 'border-neutral-200 dark:border-neutral-700'">
+                    <div class="flex flex-wrap items-center gap-2">
+                        <h4 class="text-sm font-semibold">1. OTS (On The Spot)</h4>
+                        <span class="rounded-md bg-danger-50 px-1.5 py-0.5 text-[10.5px] font-bold uppercase tracking-wide text-danger-600 ring-1 ring-danger-200 dark:bg-danger-950/40 dark:text-danger-300 dark:ring-danger-800/60">Wajib</span>
+                        <span v-if="otsOk" class="ml-auto inline-flex items-center gap-1 text-[11px] font-semibold text-success-600 dark:text-success-400"><CheckCircle2 class="h-3.5 w-3.5" /> Selesai</span>
+                    </div>
                     <div class="grid gap-3 sm:grid-cols-2">
                         <Input v-model="proc.verifikasi.ots.started_at" type="date" label="Tanggal Mulai OTS" />
                         <Input v-model="proc.verifikasi.ots.finished_at" type="date" label="Tanggal Selesai OTS" />
@@ -931,22 +961,66 @@ const historyNodes = computed<HistoryNode[]>(() => {
                         <textarea v-model="proc.verifikasi.ots.notes" rows="2" class="w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-900" placeholder="Hasil & kendala OTS…"></textarea>
                     </div>
                 </div>
-                <div class="space-y-3 rounded-lg border border-neutral-200 p-3 dark:border-neutral-700">
-                    <h4 class="text-sm font-semibold">2. Wawancara Kedua</h4>
-                    <div class="grid gap-3 sm:grid-cols-2">
-                        <Input v-model="proc.verifikasi.wawancara2.started_at" type="date" label="Tanggal Mulai Wawancara Kedua" />
-                        <Input v-model="proc.verifikasi.wawancara2.finished_at" type="date" label="Tanggal Selesai Wawancara Kedua" />
+
+                <!-- 2. Jalur wawancara kedua — OPSIONAL, ditentukan bank -->
+                <div class="rounded-lg border p-3 transition-colors duration-300"
+                    :class="wawancara2Mode === null ? 'border-warning-300 bg-warning-50/50 dark:border-warning-700 dark:bg-warning-950/20' : 'border-neutral-200 dark:border-neutral-700'">
+                    <div class="flex flex-wrap items-center gap-2">
+                        <h4 class="text-sm font-semibold">2. Wawancara Kedua</h4>
+                        <span class="rounded-md bg-neutral-100 px-1.5 py-0.5 text-[10.5px] font-bold uppercase tracking-wide text-neutral-500 ring-1 ring-neutral-200 dark:bg-neutral-800 dark:text-neutral-400 dark:ring-neutral-700">Opsional</span>
                     </div>
-                    <div>
-                        <label class="mb-1 block text-sm font-medium">Update Proses &amp; Kendala Wawancara Kedua</label>
-                        <textarea v-model="proc.verifikasi.wawancara2.notes" rows="2" class="w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-900" placeholder="Hasil & kendala wawancara kedua…"></textarea>
+                    <p class="mt-0.5 text-xs text-neutral-500">Tidak semua bank meminta wawancara kedua — pilih jalurnya dulu.</p>
+
+                    <div class="mt-2.5 grid gap-2 sm:grid-cols-2">
+                        <button v-for="m in ([
+                                { id: 'dengan', title: 'Melalui Wawancara Kedua', desc: 'Lanjut mengisi tanggal & kendala wawancara kedua.' },
+                                { id: 'tanpa', title: 'Tanpa Wawancara Kedua', desc: 'Dilewati — cukup OTS, langsung bisa lanjut ke Proses Analis.' },
+                            ] as const)" :key="m.id" type="button" @click="setWawancara2Mode(m.id)"
+                            class="rounded-xl border p-2.5 text-left transition-all duration-200"
+                            :class="wawancara2Mode === m.id
+                                ? 'border-primary-500 bg-primary-50 ring-1 ring-primary-500 dark:bg-primary-950/30'
+                                : 'border-neutral-200 hover:border-primary-300 hover:bg-neutral-50 dark:border-neutral-700 dark:hover:bg-neutral-800/60'">
+                            <div class="flex items-center gap-1.5">
+                                <span class="flex h-4 w-4 shrink-0 items-center justify-center rounded-full border-2 transition-colors duration-200"
+                                    :class="wawancara2Mode === m.id ? 'border-primary-600' : 'border-neutral-300 dark:border-neutral-600'">
+                                    <span v-if="wawancara2Mode === m.id" class="h-2 w-2 rounded-full bg-primary-600"></span>
+                                </span>
+                                <span class="text-sm font-semibold">{{ m.title }}</span>
+                            </div>
+                            <!-- 1.375rem = lebar bulatan radio (h-4) + gap-1.5, agar teks sejajar judul. -->
+                            <p class="mt-0.5 pl-[1.375rem] text-[11px] leading-snug text-neutral-500">{{ m.desc }}</p>
+                        </button>
                     </div>
+
+                    <!-- Isian wawancara kedua hanya muncul pada jalur "Melalui Wawancara Kedua". -->
+                    <Transition
+                        enter-active-class="transition-all duration-300 ease-out" leave-active-class="transition-all duration-200 ease-in"
+                        enter-from-class="max-h-0 opacity-0" enter-to-class="max-h-[28rem] opacity-100"
+                        leave-from-class="max-h-[28rem] opacity-100" leave-to-class="max-h-0 opacity-0">
+                        <div v-show="pakaiWawancara2" class="overflow-hidden">
+                            <div class="mt-3 space-y-3 border-t border-neutral-200 pt-3 dark:border-neutral-700">
+                                <div class="grid gap-3 sm:grid-cols-2">
+                                    <Input v-model="proc.verifikasi.wawancara2.started_at" type="date" label="Tanggal Mulai Wawancara Kedua" />
+                                    <Input v-model="proc.verifikasi.wawancara2.finished_at" type="date" label="Tanggal Selesai Wawancara Kedua" />
+                                </div>
+                                <div>
+                                    <label class="mb-1 block text-sm font-medium">Update Proses &amp; Kendala Wawancara Kedua</label>
+                                    <textarea v-model="proc.verifikasi.wawancara2.notes" rows="2" class="w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-900" placeholder="Hasil & kendala wawancara kedua…"></textarea>
+                                </div>
+                            </div>
+                        </div>
+                    </Transition>
+                    <p v-if="wawancara2Mode === 'tanpa'" class="mt-2.5 inline-flex items-center gap-1.5 rounded-lg bg-neutral-100 px-2.5 py-1.5 text-[11px] text-neutral-600 dark:bg-neutral-800 dark:text-neutral-300">
+                        <CheckCircle2 class="h-3.5 w-3.5 shrink-0 text-success-600 dark:text-success-400" />
+                        Dilewati — tanggal &amp; catatan wawancara kedua tidak disimpan.
+                    </p>
                 </div>
+
                 <div class="flex flex-wrap gap-2">
                     <Button type="button" variant="secondary" :loading="savingProc" @click="saveProc('verifikasi', false)">Simpan Progres</Button>
                     <Button type="button" variant="primary" :loading="savingProc" :disabled="!verifikasiOk" @click="saveProc('verifikasi', true)">Simpan &amp; Lanjut → Proses Analis</Button>
                 </div>
-                <p v-if="!verifikasiOk" class="text-xs text-warning-600">Isi Tanggal Selesai kedua sub-proses (OTS &amp; Wawancara Kedua) untuk mengaktifkan "Simpan &amp; Lanjut".</p>
+                <p v-if="verifikasiHint" class="text-xs text-warning-600">{{ verifikasiHint }}</p>
             </div>
 
             <!-- Tahap: Proses Analis -->

@@ -436,10 +436,13 @@ class MasterDataKprController extends Controller
                     $s = $txt($x['notes'] ?? null);
                     break;
                 case 'verifikasi':
+                    // Wawancara kedua opsional: bila jalurnya "tanpa", tandai eksplisit supaya
+                    // kolom kosong tidak terbaca sebagai "belum dikerjakan".
                     $t = $this->d($verif['wawancara2']['finished_at'] ?? $verif['ots']['finished_at'] ?? $tl['verifikasi'] ?? null);
                     $s = $txt(
                         ($verif['ots']['notes'] ?? null) ? 'OTS: '.$verif['ots']['notes'] : null,
                         ($verif['wawancara2']['notes'] ?? null) ? 'Wwc-2: '.$verif['wawancara2']['notes'] : null,
+                        ($verif['wawancara2_mode'] ?? null) === 'tanpa' ? 'tanpa wawancara kedua' : null,
                     );
                     break;
                 case 'analis':
