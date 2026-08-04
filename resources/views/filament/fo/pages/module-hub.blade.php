@@ -22,10 +22,6 @@
             0%, 100% { transform: translateY(0) rotate(0); }
             50%      { transform: translateY(-6px) rotate(-3deg); }
         }
-        @keyframes lhGradientShift {
-            0%, 100% { background-position: 0% 50%; }
-            50%      { background-position: 100% 50%; }
-        }
         @keyframes lhPulseDot {
             0%   { box-shadow: 0 0 0 0 rgba(239,68,68,.55); }
             70%  { box-shadow: 0 0 0 12px rgba(239,68,68,0); }
@@ -43,9 +39,7 @@
             position: relative;
             overflow: hidden;
             border-radius: 1.25rem;
-            background-size: 220% 220%;
-            animation: lhFadeUp .6s cubic-bezier(.34,1.56,.64,1) backwards,
-                       lhGradientShift 9s ease-in-out infinite;
+            animation: lhFadeUp .6s cubic-bezier(.34,1.56,.64,1) backwards;
             transition: transform .35s cubic-bezier(.34,1.56,.64,1),
                         box-shadow .35s ease-out,
                         filter .35s ease-out;
@@ -165,8 +159,8 @@
             <span>›</span>
             <span>{{ $breadcrumb }}</span>
         </div>
-        <h1 class="lh-header text-2xl md:text-4xl font-bold mt-1 bg-clip-text text-transparent"
-            style="background-image: {{ $titleGradient }};">
+        {{-- $titleGradient kini berisi warna solid (orange brand) — dipakai sebagai color biasa. --}}
+        <h1 class="lh-header text-2xl md:text-4xl font-bold mt-1" style="color: {{ $titleGradient }};">
             {{ $title }}
         </h1>
         <p class="lh-header-sub text-sm text-gray-500 dark:text-gray-400 mt-1">
@@ -185,7 +179,7 @@
             @endphp
             <a href="{{ $t['url'] }}"
                class="lh-tile {{ $comingSoon ? 'coming-soon' : '' }}"
-               style="background: {{ $t['gradient'] }}; background-size: 220% 220%;"
+               style="background: {{ $t['gradient'] }};"
                @if ($comingSoon) onclick="event.preventDefault();" aria-disabled="true" @endif>
 
                 <div class="lh-orb-a"></div>
