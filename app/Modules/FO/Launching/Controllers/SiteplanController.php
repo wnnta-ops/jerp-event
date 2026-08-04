@@ -279,8 +279,8 @@ class SiteplanController
 
         return [
             'url' => Storage::disk('public')->url($project->siteplan_image_path),
-            'width' => (int) ($project->siteplan_width ?: 2000),
-            'height' => (int) ($project->siteplan_height ?: 1200),
+            // Self-heal dimensi kosong dari ukuran natural gambar — lihat Lokasi::siteplanDims().
+            ...Lokasi::siteplanDims($project->siteplan_image_path, (int) $project->siteplan_width, (int) $project->siteplan_height),
         ];
     }
 }

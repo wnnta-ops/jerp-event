@@ -185,7 +185,9 @@
                            style="border-color: var(--gray-300);"
                            placeholder="Mis. NUP-00001"
                            @keyup.enter="manualScan()">
-                    <button @click="manualScan()" class="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 transition">Cari</button>
+                    <button @click="manualScan()" class="rounded-lg px-4 py-2 text-sm font-semibold transition"
+                            style="background:#2563eb; color:#fff;"
+                            onmouseover="this.style.background='#1d4ed8'" onmouseout="this.style.background='#2563eb'">Cari</button>
                 </div>
                 @if ($pickError)
                     <div class="mt-3 rounded-lg border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-700">{{ $pickError }}</div>
@@ -206,7 +208,11 @@
                         @endif
                     </div>
                 </div>
-                <button wire:click="startChoosing" class="mt-4 w-full rounded-lg bg-emerald-600 px-4 py-3 text-sm font-bold text-white hover:bg-emerald-700 transition shadow-md">🏠 Pilih Unit (2 menit)</button>
+                {{-- Warna via inline style (bukan bg-emerald-*): kelas Tailwind di blade custom
+                     tak ikut ter-compile di CSS panel → tombol jadi putih-di-putih pada mode terang. --}}
+                <button wire:click="startChoosing" class="mt-4 w-full rounded-lg px-4 py-3 text-sm font-bold transition shadow-md"
+                        style="background:#059669; color:#fff;"
+                        onmouseover="this.style.background='#047857'" onmouseout="this.style.background='#059669'">🏠 Pilih Unit (2 menit)</button>
                 <button wire:click="resetToScan" class="mt-2 w-full rounded-lg border px-4 py-2 text-sm hover:bg-gray-50 dark:hover:bg-slate-800 transition" style="border-color: var(--gray-300);">Scan Ulang</button>
             </div>
 
@@ -234,7 +240,9 @@
                     <p class="text-xs text-gray-500" x-text="confirmUnitAlamat"></p>
                     <div class="flex gap-2 mt-5">
                         <button @click="confirmUnitId = null" class="flex-1 rounded-lg border px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-slate-800 transition" style="border-color: var(--gray-300);">Batal</button>
-                        <button @click="doConfirm()" class="flex-1 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-bold text-white hover:bg-emerald-700 transition">✓ Yakin</button>
+                        <button @click="doConfirm()" class="flex-1 rounded-lg px-4 py-2 text-sm font-bold transition"
+                                style="background:#059669; color:#fff;"
+                                onmouseover="this.style.background='#047857'" onmouseout="this.style.background='#059669'">✓ Yakin</button>
                     </div>
                 </div>
             </div>
@@ -255,7 +263,9 @@
                     <p class="text-sm text-gray-600 dark:text-gray-300 mt-1">
                         Alamat: <strong>{{ $pickedUnitAlamat }}</strong>
                     </p>
-                    <button wire:click="resetToScan" class="mt-5 w-full rounded-lg bg-blue-600 px-6 py-3 text-base font-bold text-white hover:bg-blue-700 transition shadow-lg">
+                    <button wire:click="resetToScan" class="mt-5 w-full rounded-lg px-6 py-3 text-base font-bold transition shadow-lg"
+                            style="background:#2563eb; color:#fff;"
+                            onmouseover="this.style.background='#1d4ed8'" onmouseout="this.style.background='#2563eb'">
                         DONE
                     </button>
                 </div>
@@ -324,16 +334,29 @@
                     this.frameW = W; this.frameH = H;
                     const bounds = [[0, 0], [H, W]];
 
-                    this.map = L.map('pu-map', { crs: L.CRS.Simple, minZoom: -4, maxZoom: 4, zoomSnap: 0.25, attributionControl: false });
+                    // Zoom BERTAHAP & halus: zoomSnap 0 → tak "loncat" ke kelipatan level;
+                    // zoomDelta .25 → tombol +/- & keyboard melangkah kecil; wheel butuh
+                    // lebih banyak px per level → scroll terasa mulus, bukan meloncat.
+                    this.map = L.map('pu-map', {
+                        crs: L.CRS.Simple, minZoom: -4, maxZoom: 4,
+                        zoomSnap: 0, zoomDelta: 0.25, wheelPxPerZoomLevel: 240,
+                        attributionControl: false,
+                    });
 
-                    if (sp) {
-                        L.imageOverlay(sp.url, bounds).addTo(this.map);
-                    } else {
-                        L.imageOverlay('https://placehold.co/'+W+'x'+H+'/1e293b/64748b?text=Siteplan+Belum+Diupload', bounds, { opacity: .85 }).addTo(this.map);
-                    }
+                    const overlay = sp
+                        ? L.imageOverlay(sp.url, bounds).addTo(this.map)
+                        : L.imageOverlay('https://placehold.co/'+W+'x'+H+'/1e293b/64748b?text=Siteplan+Belum+Diupload', bounds, { opacity: .85 }).addTo(this.map);
                     this.map.fitBounds(bounds);
                     this.baseZoom = this.map.getZoom();
                     this.map.on('zoomend', () => this.updateSoldScale());
+
+                    // AKAR BUG "koordinat geser saat zoom": animasi zoom yang TERPOTONG
+                    // (scroll wheel cepat / pan di tengah animasi) meninggalkan transform
+                    // scale BASI di elemen <img> overlay — Leaflet baru membersihkannya
+                    // di event zoom lengkap berikutnya, dan pan tidak pernah. Akibatnya
+                    // GAMBAR tertinggal dari pane polygon/stempel → terlihat "geser",
+                    // kadang pulih sendiri. Paksa sinkron ulang tiap gerakan selesai.
+                    this.map.on('zoomend moveend viewreset', () => { if (overlay._reset) overlay._reset(); });
 
                     // PENTING (beda dgn /siteplan yang full-page statik): di dalam
                     // panel Filament + mode fullscreen, ukuran #pu-map bisa berubah

@@ -56,9 +56,32 @@ class Lokasi extends TenantAwareModel
 
         return [
             'url' => Storage::disk('public')->url($src->siteplan_image_path),
-            'width' => (int) ($src->siteplan_width ?: 2000),
-            'height' => (int) ($src->siteplan_height ?: 1200),
+            ...self::siteplanDims($src->siteplan_image_path, (int) $src->siteplan_width, (int) $src->siteplan_height),
         ];
+    }
+
+    /**
+     * Dimensi kerangka siteplan. Kolom width/height kosong/0 dulu ditebak 2000×1200 —
+     * hampir pasti beda dari kerangka digitasi koordinat → polygon/stempel tersebar
+     * keluar gambar (bug Pilih Unit). Kini self-heal: baca dimensi ASLI file gambar
+     * (kerangka digitasi = ukuran natural gambar). Kolom terisi tetap dihormati.
+     *
+     * @return array{width:int,height:int}
+     */
+    public static function siteplanDims(string $imagePath, int $width, int $height): array
+    {
+        if ($width < 1 || $height < 1) {
+            try {
+                $file = Storage::disk('public')->path($imagePath);
+                if (is_file($file) && ($size = @getimagesize($file)) && $size[0] > 0 && $size[1] > 0) {
+                    return ['width' => $size[0], 'height' => $size[1]];
+                }
+            } catch (\Throwable) {
+                // fallback di bawah
+            }
+        }
+
+        return ['width' => $width ?: 2000, 'height' => $height ?: 1200];
     }
 
     /**
