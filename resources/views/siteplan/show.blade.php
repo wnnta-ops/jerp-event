@@ -290,7 +290,8 @@
                     let rows = [];
                     if (Array.isArray(u.pricelist) && u.pricelist.length) {
                         rows = u.pricelist.map(p => ({
-                            label: (p.skema_code || p.skema_name || p.cara_bayar || '').toString().toUpperCase(),
+                            // Tampilkan NAMA skema (CASH/KPR/INHOUSE), bukan kode angka (1/2/3).
+                            label: (p.skema_name || p.cara_bayar || p.skema_code || '').toString().toUpperCase(),
                             price: Number(p.price) || 0,
                         }));
                     } else if (u.harga > 0) {

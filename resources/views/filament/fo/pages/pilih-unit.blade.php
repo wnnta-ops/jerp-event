@@ -328,8 +328,19 @@
                     // gambar/koordinat "loncat". ResizeObserver memanggil invalidateSize
                     // tiap kontainer berubah ukuran → Leaflet selalu tahu ukuran asli.
                     if (window.ResizeObserver) {
-                        this._ro = new ResizeObserver(() => {
-                            if (this.map) this.map.invalidateSize({ animate: false });
+                        // Hanya sinkronkan ukuran saat kontainer BENAR-BENAR berubah, dan
+                        // pan:false (JANGAN re-center) + skip saat animasi zoom. invalidateSize()
+                        // default pan:true → tiap dipanggil menggeser view utk pertahankan center;
+                        // di panel Filament (fullscreen + backdrop-filter yang repaint) ini terpicu
+                        // berulang saat zoom → koordinat "loncat". /siteplan publik tak punya
+                        // ResizeObserver → makanya stabil.
+                        let lastW = 0, lastH = 0;
+                        this._ro = new ResizeObserver((entries) => {
+                            if (!this.map || this.map._animatingZoom) return;
+                            const r = entries[0].contentRect;
+                            if (Math.abs(r.width - lastW) < 1 && Math.abs(r.height - lastH) < 1) return;
+                            lastW = r.width; lastH = r.height;
+                            this.map.invalidateSize({ animate: false, pan: false });
                         });
                         this._ro.observe(document.getElementById('pu-map'));
                     }
@@ -530,7 +541,8 @@
                     let rows = [];
                     if (Array.isArray(unit.pricelist) && unit.pricelist.length) {
                         rows = unit.pricelist.map(p => ({
-                            label: (p.skema_code || p.skema_name || p.cara_bayar || '').toString().toUpperCase(),
+                            // Tampilkan NAMA skema (CASH/KPR/INHOUSE), bukan kode angka (1/2/3).
+                            label: (p.skema_name || p.cara_bayar || p.skema_code || '').toString().toUpperCase(),
                             price: Number(p.price) || 0,
                         }));
                     } else if (unit.harga > 0) {
