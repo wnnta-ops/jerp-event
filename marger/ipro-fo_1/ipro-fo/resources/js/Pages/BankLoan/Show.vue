@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { Link, router, useForm, usePage } from '@inertiajs/vue3';
 import { ref, reactive, computed, watch } from 'vue';
-import { CheckCircle2, Plus, Printer, Search, TriangleAlert } from 'lucide-vue-next';
+import { CheckCircle2, Landmark, Plus, Printer, Search, TriangleAlert } from 'lucide-vue-next';
 import Badge from '@/Components/UI/Badge.vue';
 import Button from '@/Components/UI/Button.vue';
 import Input from '@/Components/UI/Input.vue';
@@ -10,9 +10,13 @@ import MoneyInput from '@/Components/UI/MoneyInput.vue';
 const props = defineProps<{ app: any; identity?: any; siblings?: Array<any>; customerApps?: Array<any>; retentionCategories: Array<any>; bankTerms: Record<string, number>; canApproveRetensi?: boolean; hasRetention?: boolean; si?: any;
     /** Booked Revenue unit rumah ini — NULL bila unitnya belum di-booking pendapatannya. */
     bookedRevenue?: { br_number: string; booking_date: string | null; amount: number; total: number } | null;
+    /** Format SI yang dipakai tombol Cetak SI pada tahap SI (mengikuti bank KPR ini). */
+    siFormat?: { bank: string; label: string; ready: boolean };
 }>();
 const a = props.app;
 const showOtherApps = ref(false);
+// Format SI tahap 9 — dipakai panel Cetak SI; aman bila server belum mengirimnya.
+const siFormat = computed(() => props.siFormat ?? { bank: a.bank?.name ?? 'Bank belum dipilih', label: '', ready: false });
 
 // #item4 — keputusan Lanjut/Batal (gerbang ke akad). Salinan reaktif lokal agar kolom berubah SEKETIKA (optimistic).
 const sibRows = ref<any[]>((props.siblings ?? []).map((s: any) => ({ ...s })));
@@ -717,13 +721,6 @@ const historyNodes = computed<HistoryNode[]>(() => {
                 <div class="flex shrink-0 items-center gap-2">
                     <Badge :variant="stageView.badgeVariant">{{ stageView.badgeLabel }}</Badge>
                     <button v-if="canStepBack" type="button" @click="stepBack" class="inline-flex items-center gap-1 rounded border border-neutral-300 px-2 py-1 text-xs text-neutral-600 hover:bg-neutral-50 dark:border-neutral-700 dark:text-neutral-300" title="Kembali ke tahap sebelumnya untuk meninjau / mengedit">← Tahap Sebelumnya</button>
-                    <!-- Cetak SI sesuai format bank: BTN / BSN / BRI -->
-                    <div v-if="a.status === 'si'" class="inline-flex items-center gap-1.5 rounded-lg bg-primary-600 p-1.5 shadow-sm">
-                        <span class="flex items-center gap-1.5 pl-1 pr-0.5 text-sm font-bold text-white"><Printer class="h-4 w-4" /> Cetak SI</span>
-                        <a :href="route('kpr.si-print', { kpr: a.id, bank: 'btn' })" target="_blank" class="rounded-md bg-white px-3 py-1.5 text-xs font-bold text-primary-700 hover:bg-primary-50">BTN</a>
-                        <a :href="route('kpr.si-print', { kpr: a.id, bank: 'bsn' })" target="_blank" class="rounded-md bg-white px-3 py-1.5 text-xs font-bold text-primary-700 hover:bg-primary-50">BSN</a>
-                        <a :href="route('kpr.si-print', { kpr: a.id, bank: 'bri' })" target="_blank" class="rounded-md bg-white px-3 py-1.5 text-xs font-bold text-primary-700 hover:bg-primary-50">BRI</a>
-                    </div>
                     <button v-if="mayDecideKpr && ['submitted', 'in_review', 'wawancara', 'input_bank', 'verifikasi', 'analis', 'banding', 'sp3k'].includes(a.status)" type="button" @click="reject" class="text-xs px-2 py-1 rounded border border-danger-300 text-danger-600 hover:bg-danger-50 dark:border-danger-700">Tolak Proses KPR</button>
                     <!-- Batal: tersedia di rincian tiap tahap; nonaktif sejak Akad / Pencairan / Lunas.
                          Di tahap Akad pembatalan (pindah bank) dilakukan lewat panel "Keputusan KPR" di atas. -->
@@ -1083,9 +1080,47 @@ const historyNodes = computed<HistoryNode[]>(() => {
                 <p v-if="!bandingOk" class="text-xs text-warning-600">Pilih Jenis Banding (isi keterangan bila "Lain-Lain") &amp; Tanggal Selesai (≥ Tanggal Mulai) untuk lanjut.</p>
             </div>
 
-            <!-- SI (Surat Instruksi) → Lanjut ke Proses Akad -->
-            <div v-if="a.status === 'si'" id="next-step-form" class="mt-5 border-t border-neutral-200 dark:border-neutral-800 pt-5">
-                <p class="mb-3 text-sm text-neutral-500">Surat Instruksi diterbitkan. Cetak di kanan atas bila perlu, lalu lanjut ke <strong>Proses Akad</strong>.</p>
+            <!-- SI (Surat Instruksi) → Cetak SI lalu lanjut ke Proses Akad -->
+            <div v-if="a.status === 'si'" id="next-step-form" class="mt-5 space-y-4 border-t border-neutral-200 dark:border-neutral-800 pt-5">
+                <!-- Cetak SI ada DI TAHAP INI (tahap 9), memakai Format SI milik bank pada KPR ini. -->
+                <div class="rounded-xl p-4 ring-1 transition-colors duration-300"
+                    :class="siFormat.ready
+                        ? 'bg-primary-50/60 ring-primary-200 dark:bg-primary-950/25 dark:ring-primary-800/60'
+                        : 'bg-amber-50/60 ring-amber-200 dark:bg-amber-950/25 dark:ring-amber-800/60'">
+                    <div class="flex flex-wrap items-start justify-between gap-3">
+                        <div class="min-w-0">
+                            <h3 class="flex items-center gap-2 text-sm font-semibold"><Printer class="h-4 w-4 text-primary-600" /> Cetak Surat Instruksi</h3>
+                            <p class="mt-0.5 text-xs text-neutral-500">
+                                Formatnya otomatis mengikuti bank KPR ini — diatur di <b>Set Up KPR → Kategori Bank → Format SI</b>.
+                            </p>
+                            <div class="mt-2 flex flex-wrap items-center gap-1.5">
+                                <span class="inline-flex items-center gap-1 rounded-md bg-white px-2 py-1 text-[11px] font-semibold text-neutral-700 ring-1 ring-neutral-200 dark:bg-neutral-900 dark:text-neutral-200 dark:ring-neutral-700">
+                                    <Landmark class="h-3 w-3 shrink-0" /> {{ siFormat.bank }}
+                                </span>
+                                <span v-if="siFormat.ready" class="inline-flex items-center gap-1 rounded-md bg-emerald-50 px-2 py-1 text-[11px] font-semibold text-emerald-700 ring-1 ring-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:ring-emerald-800/60">
+                                    <CheckCircle2 class="h-3 w-3 shrink-0" /> {{ siFormat.label }}
+                                </span>
+                                <span v-else class="inline-flex items-center gap-1 rounded-md bg-amber-50 px-2 py-1 text-[11px] font-semibold text-amber-700 ring-1 ring-amber-200 dark:bg-amber-950/40 dark:text-amber-300 dark:ring-amber-800/60">
+                                    <TriangleAlert class="h-3 w-3 shrink-0" /> Belum ada Format SI — memakai surat generik
+                                </span>
+                            </div>
+                        </div>
+                        <a :href="route('kpr.si-print', { kpr: a.id })" target="_blank"
+                            class="inline-flex h-10 shrink-0 items-center gap-2 rounded-lg bg-primary-600 px-4 text-sm font-bold text-white shadow-sm transition-all duration-200 hover:bg-primary-700 active:scale-[0.98]">
+                            <Printer class="h-4 w-4" /> Cetak SI
+                        </a>
+                    </div>
+                    <!-- Jalur pengecualian: cetak dengan format bank lain tanpa mengubah setup. -->
+                    <details class="mt-3 border-t border-neutral-200/70 pt-2 dark:border-neutral-700/60">
+                        <summary class="cursor-pointer text-[11px] font-medium text-neutral-500 hover:text-neutral-700 dark:hover:text-neutral-300">Cetak dengan format lain (sekali pakai)</summary>
+                        <div class="mt-2 flex flex-wrap gap-1.5">
+                            <a v-for="f in (['btn', 'bsn', 'bri'] as const)" :key="f" :href="route('kpr.si-print', { kpr: a.id, bank: f })" target="_blank"
+                                class="rounded-md border border-neutral-300 bg-white px-2.5 py-1 text-[11px] font-bold uppercase text-neutral-600 hover:bg-neutral-50 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-300 dark:hover:bg-neutral-800">{{ f }}</a>
+                        </div>
+                    </details>
+                </div>
+
+                <p class="text-sm text-neutral-500">Surat Instruksi diterbitkan. Setelah dicetak, lanjut ke <strong>Proses Akad</strong>.</p>
                 <Button size="lg" block variant="primary" @click="proceedSi">Lanjut ke Proses Akad →</Button>
             </div>
 

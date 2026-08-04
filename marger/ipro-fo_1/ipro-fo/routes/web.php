@@ -414,6 +414,9 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
     Route::get('/kpr/setup/bank/create',          [KprBankController::class, 'create'])->name('kpr.setup.bank.create');
     Route::post('/kpr/setup/bank',                [KprBankController::class, 'store'])->name('kpr.setup.bank.store');
     Route::get('/kpr/setup/bank/{bank}/edit',     [KprBankController::class, 'edit'])->name('kpr.setup.bank.edit');
+    // Format SI: contoh format siap sunting + pratinjau sebelum disimpan.
+    Route::get('/kpr/setup/bank-si-starter',      [KprBankController::class, 'siStarter'])->name('kpr.setup.bank.si-starter');
+    Route::post('/kpr/setup/bank/{bank}/si-preview', [KprBankController::class, 'siPreview'])->name('kpr.setup.bank.si-preview');
     Route::put('/kpr/setup/bank/{bank}',          [KprBankController::class, 'update'])->name('kpr.setup.bank.update');
     Route::delete('/kpr/setup/bank/{bank}',       [KprBankController::class, 'destroy'])->name('kpr.setup.bank.destroy');
 

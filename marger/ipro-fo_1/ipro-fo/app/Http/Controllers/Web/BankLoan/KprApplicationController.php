@@ -305,6 +305,8 @@ class KprApplicationController extends Controller
                 'acc_kpr'   => (float) ($kpr->plafon_approved ?: $kpr->plafon_requested),
                 'free_dp'   => round(0.05 * (float) ($kpr->booking?->unit?->current_price ?: $kpr->booking?->unit?->base_price ?: 0), 2),
             ],
+            // Format SI yang akan dipakai tombol Cetak SI pada tahap SI — mengikuti bank KPR ini.
+            'siFormat' => $this->siFormatInfo($kpr),
             // Penanda "unit rumah ini SUDAH Booked Revenue" untuk proses pencairan KPR.
             // NULL bila unitnya belum di-booking pendapatannya → penanda tidak ditampilkan.
             'bookedRevenue' => $this->bookedRevenueOfUnit($kpr),
@@ -623,10 +625,18 @@ class KprApplicationController extends Controller
     {
         abort_unless($request->user()?->can('bankloan.application.view'), 403);
 
-        // Cetak SI sesuai format bank (BTN / BSN / BRI) bila diminta.
-        $bank = strtolower(trim((string) $request->string('bank', '')));
-        if (in_array($bank, ['btn', 'bsn', 'bri'], true)) {
-            return response($this->siBankLetters($kpr, $bank))->header('Content-Type', 'text/html');
+        // Format SI mengikuti BANK pada KPR ini (Set Up KPR → Kategori Bank → Format SI).
+        // ?bank= hanya dipakai bila operator sengaja memilih format lain / untuk pratinjau.
+        $override = strtolower(trim((string) $request->string('bank', '')));
+        $body = $this->siBodyFor($kpr, $override);
+        if ($body !== null) {
+            $label = $this->siFormatLabel($kpr, $override);
+
+            return response($this->siDoc(
+                'SI '.$label.' — '.$kpr->application_number,
+                'Cetak SI '.$label,
+                $body,
+            ))->header('Content-Type', 'text/html');
         }
 
         $kpr->load(['customer', 'bank:id,name']);
@@ -729,8 +739,14 @@ class KprApplicationController extends Controller
             .$body.'</body></html>';
     }
 
-    /** Surat SI satu KPR sesuai format bank — HTML isi saja (tanpa <html>), agar bisa digabung massal. */
-    private function siLetterBody(KprApplication $kpr, string $bank): string
+    /**
+     * Nilai-nilai yang dipakai surat SI — SATU sumber untuk format bawaan (siLetterBody) maupun
+     * format hasil suntingan operator (placeholder {{...}} pada bank_partners.si_template),
+     * supaya keduanya tidak pernah menampilkan angka/nama yang berbeda.
+     *
+     * @return array<string,mixed>
+     */
+    private function siVars(KprApplication $kpr): array
     {
         $kpr->load([
             'customer', 'bank:id,name',
@@ -741,27 +757,227 @@ class KprApplicationController extends Controller
         $c  = $kpr->customer;
         $u  = $kpr->booking?->unit;
         $co = config('business_support.company');
-        $e  = fn ($v) => htmlspecialchars((string) ($v ?? ''), ENT_QUOTES);
         $fill = '.............................';
         $mn = ['', 'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
         $roman = ['', 'I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X', 'XI', 'XII'];
         $today = now();
-        $tglInd = $today->day.' '.$mn[$today->month].' '.$today->year;
-        $rp    = fn ($x) => 'Rp. '.number_format((float) $x, 0, ',', '.').',-';
-        $terb  = fn ($x) => ucfirst($this->terbilang($x)).' rupiah';
-
-        $name  = strtoupper(trim((string) $c?->full_name));
-        $addr  = strtoupper(trim((string) implode(', ', array_filter([$c?->address_line, $c?->address_rt_rw, $c?->kelurahan, $c?->kecamatan, $c?->city, $c?->province])), ', ')) ?: $fill;
-        $perum = $u?->cluster?->name ?: 'Java Residence Cluster 3';
-        $unit  = strtoupper(trim((string) $u?->unit_code)) ?: $fill;
-        $tipe  = strtoupper(trim((string) $u?->unitType?->name)) ?: $fill;
         $kprAmt = (float) ($kpr->plafon_approved ?: $kpr->plafon_requested);
-        $umAmt  = round(0.05 * (float) ($u?->current_price ?: $u?->base_price ?: 0), 2);
-        $akadTgl = $kpr->akad?->akad_at ? ($kpr->akad->akad_at->day.' '.$mn[$kpr->akad->akad_at->month].' '.$kpr->akad->akad_at->year) : $fill;
-        $signer = $co['signer_name'] ?? 'Rachmat Suhendra';
-        $sTitle = $co['signer_title'] ?? 'Direktur';
-        $coName = $co['name'] ?? 'PT. MITRA USAHA PROPERTINDO';
-        $notaris = 'Ayu Militansia Brillyanti, SH., M.KN, Perum Pondok Jati Blok BO No 4 Sidoarjo, Jawa Timur';
+
+        return [
+            'c' => $c, 'u' => $u, 'co' => $co, 'fill' => $fill, 'mn' => $mn, 'roman' => $roman, 'today' => $today,
+            'tglInd'  => $today->day.' '.$mn[$today->month].' '.$today->year,
+            'name'    => strtoupper(trim((string) $c?->full_name)),
+            'addr'    => strtoupper(trim((string) implode(', ', array_filter([$c?->address_line, $c?->address_rt_rw, $c?->kelurahan, $c?->kecamatan, $c?->city, $c?->province])), ', ')) ?: $fill,
+            'perum'   => $u?->cluster?->name ?: 'Java Residence Cluster 3',
+            'unit'    => strtoupper(trim((string) $u?->unit_code)) ?: $fill,
+            'tipe'    => strtoupper(trim((string) $u?->unitType?->name)) ?: $fill,
+            'kprAmt'  => $kprAmt,
+            'umAmt'   => round(0.05 * (float) ($u?->current_price ?: $u?->base_price ?: 0), 2),
+            'akadTgl' => $kpr->akad?->akad_at ? ($kpr->akad->akad_at->day.' '.$mn[$kpr->akad->akad_at->month].' '.$kpr->akad->akad_at->year) : $fill,
+            'signer'  => $co['signer_name'] ?? 'Rachmat Suhendra',
+            'sTitle'  => $co['signer_title'] ?? 'Direktur',
+            'coName'  => $co['name'] ?? 'PT. MITRA USAHA PROPERTINDO',
+            'notaris' => 'Ayu Militansia Brillyanti, SH., M.KN, Perum Pondok Jati Blok BO No 4 Sidoarjo, Jawa Timur',
+        ];
+    }
+
+    /**
+     * Daftar placeholder Format SI beserta keterangannya — ditampilkan di Set Up Bank → Format SI
+     * agar operator tahu persis token apa saja yang tersedia saat menyunting formatnya.
+     *
+     * @return array<string,string>
+     */
+    public static function siPlaceholderDocs(): array
+    {
+        return [
+            'nama'                 => 'Nama customer (huruf kapital)',
+            'alamat'               => 'Alamat lengkap customer',
+            'no_ktp'               => 'Nomor identitas customer',
+            'no_hp'                => 'Nomor handphone customer',
+            'no_kpr'               => 'Nomor pengajuan KPR',
+            'bank'                 => 'Nama bank pemberi KPR',
+            'unit'                 => 'Kode unit rumah',
+            'tipe'                 => 'Tipe rumah',
+            'perumahan'            => 'Nama cluster/perumahan',
+            'plafon'               => 'Plafon KPR (Rp. 000.000,-)',
+            'plafon_terbilang'     => 'Plafon KPR dalam huruf',
+            'uang_muka'            => 'Uang muka (Rp. 000.000,-)',
+            'uang_muka_terbilang'  => 'Uang muka dalam huruf',
+            'tgl_akad'             => 'Tanggal akad',
+            'tanggal'              => 'Tanggal hari ini (mis. 4 Agustus 2026)',
+            'bulan_romawi'         => 'Bulan berjalan dalam angka romawi (untuk nomor surat)',
+            'tahun'                => 'Tahun berjalan',
+            'perusahaan'           => 'Nama perusahaan developer',
+            'alamat_perusahaan'    => 'Alamat perusahaan',
+            'penandatangan'        => 'Nama penandatangan',
+            'jabatan'              => 'Jabatan penandatangan',
+            'notaris'              => 'Nama & alamat notaris',
+        ];
+    }
+
+    /**
+     * Contoh format SI siap sunting — dipakai tombol "Muat Contoh Format" di Set Up Bank.
+     * Strukturnya kop → nomor/hal → tujuan → isi → tanda tangan, memakai kelas CSS yang sudah
+     * disediakan siDoc() (.letter/.kop/.hdr/.kv/.sign) sehingga langsung rapi saat dicetak.
+     */
+    public static function siStarterTemplate(): string
+    {
+        return <<<'HTML'
+<div class="letter">
+  <div class="kop">
+    <div class="co">{{perusahaan}}</div>
+    <div class="ad">{{alamat_perusahaan}}</div>
+  </div>
+
+  <div class="right">Sidoarjo, {{tanggal}}</div>
+
+  <div class="hdr">
+    <div class="kv"><span class="k">Nomor</span><span class="c">:</span><span class="v">.../FIN/SI/OUT/{{bulan_romawi}}/{{tahun}}</span></div>
+    <div class="kv"><span class="k">Hal</span><span class="c">:</span><span class="v">Surat Instruksi</span></div>
+    <div class="kv"><span class="k">Lamp</span><span class="c">:</span><span class="v">-</span></div>
+  </div>
+
+  <div class="to">Kepada,<br>Pimpinan {{bank}}<br>di Tempat</div>
+
+  <p>Dengan hormat,</p>
+  <p>Sehubungan dengan permohonan kredit pemilikan rumah atas nama nasabah berikut, dengan ini kami
+     {{perusahaan}} selaku developer {{perumahan}} menerangkan bahwa:</p>
+
+  <div class="kv"><span class="k">Nama</span><span class="c">:</span><span class="v">{{nama}}</span></div>
+  <div class="kv"><span class="k">No. KTP</span><span class="c">:</span><span class="v">{{no_ktp}}</span></div>
+  <div class="kv"><span class="k">Alamat</span><span class="c">:</span><span class="v">{{alamat}}</span></div>
+  <div class="kv"><span class="k">No. KPR</span><span class="c">:</span><span class="v">{{no_kpr}}</span></div>
+  <div class="kv"><span class="k">Unit</span><span class="c">:</span><span class="v">{{unit}} — Tipe {{tipe}}</span></div>
+  <div class="kv"><span class="k">Plafon</span><span class="c">:</span><span class="v">{{plafon}} ({{plafon_terbilang}})</span></div>
+  <div class="kv"><span class="k">Uang Muka</span><span class="c">:</span><span class="v">{{uang_muka}} ({{uang_muka_terbilang}})</span></div>
+  <div class="kv"><span class="k">Tanggal Akad</span><span class="c">:</span><span class="v">{{tgl_akad}}</span></div>
+
+  <p>Demikian surat ini kami buat dengan sebenar-benarnya untuk dipergunakan sebagaimana mestinya.
+     Atas perhatian dan kerja samanya kami ucapkan terima kasih.</p>
+
+  <div class="sign">
+    Hormat Kami,<br>{{perusahaan}}
+    <div class="nm">{{penandatangan}}</div>
+    {{jabatan}}
+  </div>
+</div>
+HTML;
+    }
+
+    /**
+     * Pratinjau format SI (dipakai Set Up Bank). Bila ada KPR sungguhan dari bank tsb, itulah
+     * yang dipakai supaya operator melihat data nyata; kalau belum ada, dipakai contoh nilai.
+     */
+    public function siTemplatePreview(?KprApplication $kpr, string $template): string
+    {
+        if ($kpr) {
+            return $this->siDoc('Pratinjau Format SI', 'Cetak Pratinjau', $this->renderSiTemplate($template, $kpr));
+        }
+
+        $sample = [
+            'nama' => 'SARRA AMANDA SINAGA', 'alamat' => 'JL. CONTOH NO. 1, SIDOARJO, JAWA TIMUR',
+            'no_ktp' => '3578056406970001', 'no_hp' => '081200000000', 'no_kpr' => 'KPR/JRES/2608/00002',
+            'bank' => 'Bank Contoh', 'unit' => 'JRK3-004-XV-7', 'tipe' => 'CALADI',
+            'perumahan' => 'Java Residence Cluster 3', 'plafon' => 'Rp. 433.300.000,-',
+            'plafon_terbilang' => 'Empat ratus tiga puluh tiga juta tiga ratus ribu rupiah',
+            'uang_muka' => 'Rp. 30.950.000,-', 'uang_muka_terbilang' => 'Tiga puluh juta sembilan ratus lima puluh ribu rupiah',
+            'tgl_akad' => '4 Agustus 2026', 'tanggal' => now()->day.' '.['', 'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'][now()->month].' '.now()->year,
+            'bulan_romawi' => ['', 'I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X', 'XI', 'XII'][now()->month],
+            'tahun' => (string) now()->year,
+            'perusahaan' => config('business_support.company.name', 'PT. MITRA USAHA PROPERTINDO'),
+            'alamat_perusahaan' => config('business_support.company.address', 'Sidoarjo, Jawa Timur'),
+            'penandatangan' => config('business_support.company.signer_name', 'Rachmat Suhendra'),
+            'jabatan' => config('business_support.company.signer_title', 'Direktur'),
+            'notaris' => 'Ayu Militansia Brillyanti, SH., M.KN, Sidoarjo',
+        ];
+        $template = preg_replace('/\{\{\s*([a-z_]+)\s*\}\}/i', '{{$1}}', $template) ?? $template;
+        $html = str_replace(array_map(fn ($k) => '{{'.$k.'}}', array_keys($sample)), array_values($sample), $template);
+
+        return $this->siDoc('Pratinjau Format SI (contoh data)', 'Cetak Pratinjau',
+            '<div style="background:#fef3c7;border:1px solid #f59e0b;padding:6px 10px;margin-bottom:12px;font-size:11px">'
+            .'Belum ada KPR pada bank ini — pratinjau memakai <b>contoh data</b>.</div>'.$html);
+    }
+
+    /** Pratinjau FORMAT BAWAAN (btn/bsn/bri) — dipakai Set Up Bank saat belum ada suntingan. */
+    public function siBuiltinPreviewDoc(KprApplication $kpr, string $format): string
+    {
+        return $this->siDoc(
+            'Pratinjau Format SI '.strtoupper($format),
+            'Cetak Pratinjau',
+            '<div style="background:#dbeafe;border:1px solid #3b82f6;padding:6px 10px;margin-bottom:12px;font-size:11px">'
+            .'Ini <b>format bawaan '.strtoupper($format).'</b> — yang tercetak selama belum ada Format SI hasil suntingan.</div>'
+            .$this->siLetterBody($kpr, $format),
+        );
+    }
+
+    /**
+     * Nilai tiap placeholder untuk satu KPR. Seluruh nilai di-escape HTML: format SI ditulis
+     * operator, jadi data customer tidak boleh bisa menyuntikkan markup ke dalam surat.
+     *
+     * @return array<string,string>
+     */
+    private function siPlaceholderValues(KprApplication $kpr): array
+    {
+        $v = $this->siVars($kpr);
+        $e = fn ($x) => htmlspecialchars((string) ($x ?? ''), ENT_QUOTES);
+        $rp = fn ($x) => 'Rp. '.number_format((float) $x, 0, ',', '.').',-';
+        $terb = fn ($x) => ucfirst($this->terbilang($x)).' rupiah';
+
+        return [
+            'nama'                => $e($v['name']),
+            'alamat'              => $e($v['addr']),
+            'no_ktp'              => $e($v['c']?->id_number),
+            'no_hp'               => $e($v['c']?->phone),
+            'no_kpr'              => $e($kpr->application_number),
+            'bank'                => $e($kpr->bank?->name),
+            'unit'                => $e($v['unit']),
+            'tipe'                => $e($v['tipe']),
+            'perumahan'           => $e($v['perum']),
+            'plafon'              => $e($rp($v['kprAmt'])),
+            'plafon_terbilang'    => $e($terb($v['kprAmt'])),
+            'uang_muka'           => $e($rp($v['umAmt'])),
+            'uang_muka_terbilang' => $e($terb($v['umAmt'])),
+            'tgl_akad'            => $e($v['akadTgl']),
+            'tanggal'             => $e($v['tglInd']),
+            'bulan_romawi'        => $e($v['roman'][$v['today']->month]),
+            'tahun'               => $e((string) $v['today']->year),
+            'perusahaan'          => $e($v['coName']),
+            'alamat_perusahaan'   => $e($v['co']['address'] ?? 'Sidoarjo, Jawa Timur'),
+            'penandatangan'       => $e($v['signer']),
+            'jabatan'             => $e($v['sTitle']),
+            'notaris'             => $e($v['notaris']),
+        ];
+    }
+
+    /**
+     * Isi format SI hasil suntingan operator dengan data KPR. Placeholder yang tidak dikenal
+     * SENGAJA dibiarkan apa adanya supaya salah ketik langsung kelihatan di hasil cetak,
+     * bukan hilang tanpa jejak.
+     */
+    private function renderSiTemplate(string $template, KprApplication $kpr): string
+    {
+        $values = $this->siPlaceholderValues($kpr);
+        $search = array_map(fn ($k) => '{{'.$k.'}}', array_keys($values));
+
+        // Toleransi spasi: {{ nama }} diperlakukan sama dengan {{nama}}.
+        $template = preg_replace('/\{\{\s*([a-z_]+)\s*\}\}/i', '{{$1}}', $template) ?? $template;
+
+        return str_replace($search, array_values($values), $template);
+    }
+
+    /** Surat SI satu KPR sesuai format bank — HTML isi saja (tanpa <html>), agar bisa digabung massal. */
+    private function siLetterBody(KprApplication $kpr, string $bank): string
+    {
+        [
+            'c' => $c, 'u' => $u, 'co' => $co, 'fill' => $fill, 'mn' => $mn, 'roman' => $roman, 'today' => $today,
+            'tglInd' => $tglInd, 'name' => $name, 'addr' => $addr, 'perum' => $perum, 'unit' => $unit, 'tipe' => $tipe,
+            'kprAmt' => $kprAmt, 'umAmt' => $umAmt, 'akadTgl' => $akadTgl,
+            'signer' => $signer, 'sTitle' => $sTitle, 'coName' => $coName, 'notaris' => $notaris,
+        ] = $this->siVars($kpr);
+
+        $e = fn ($v) => htmlspecialchars((string) ($v ?? ''), ENT_QUOTES);
+        $rp   = fn ($x) => 'Rp. '.number_format((float) $x, 0, ',', '.').',-';
+        $terb = fn ($x) => ucfirst($this->terbilang($x)).' rupiah';
 
         $kop  = '<div class="kop"><div class="co">'.$e($coName).'</div><div class="ad">'.$e($co['address'] ?? 'Sidoarjo, Jawa Timur').'</div></div>';
         $hdr  = fn ($no, $hal, $lamp = '-') => '<div class="hdr">'
@@ -883,6 +1099,69 @@ class KprApplicationController extends Controller
     }
 
     /**
+     * Isi surat SI satu KPR sesuai format BANK-nya; null bila banknya belum punya format
+     * (pemanggil boleh jatuh ke surat SI generik).
+     *
+     * Urutan: $override manual → format hasil suntingan operator (si_template) → format bawaan
+     * (si_format). Suntingan operator selalu menang atas bawaan.
+     */
+    private function siBodyFor(KprApplication $kpr, string $override = ''): ?string
+    {
+        $partner = $this->siPartnerOf($kpr);
+
+        if ($override === '' && $partner && trim((string) $partner->si_template) !== '') {
+            return $this->renderSiTemplate((string) $partner->si_template, $kpr);
+        }
+        if ($override === '' && $partner) {
+            $override = strtolower(trim((string) $partner->si_format));
+        }
+
+        return array_key_exists($override, BankPartner::SI_FORMATS) ? $this->siLetterBody($kpr, $override) : null;
+    }
+
+    /**
+     * Ringkasan format SI untuk ditampilkan di tahap SI (halaman Proses KPR).
+     *
+     * @return array{bank:string, label:string, ready:bool}
+     */
+    private function siFormatInfo(KprApplication $kpr): array
+    {
+        $partner = $this->siPartnerOf($kpr);
+        $custom  = $partner && trim((string) $partner->si_template) !== '';
+        $builtin = strtolower(trim((string) $partner?->si_format));
+
+        return [
+            'bank'  => $partner?->name ?: ($kpr->bank?->name ?: 'Bank belum dipilih'),
+            'label' => $custom ? 'Format khusus bank ini' : (BankPartner::SI_FORMATS[$builtin] ?? ''),
+            'ready' => $custom || array_key_exists($builtin, BankPartner::SI_FORMATS),
+        ];
+    }
+
+    /** Label format untuk judul & tombol cetak. */
+    private function siFormatLabel(KprApplication $kpr, string $override = ''): string
+    {
+        if ($override !== '') {
+            return strtoupper($override);
+        }
+        $partner = $this->siPartnerOf($kpr);
+
+        return $partner?->name ?: strtoupper((string) $partner?->si_format);
+    }
+
+    /** @var array<int,\App\Domain\BankLoan\Models\BankPartner|null> cache bank per request (cetak massal) */
+    private array $siPartnerCache = [];
+
+    private function siPartnerOf(KprApplication $kpr): ?BankPartner
+    {
+        $id = (int) ($kpr->bank_partner_id ?? 0);
+        if ($id <= 0) {
+            return null;
+        }
+
+        return $this->siPartnerCache[$id] ??= BankPartner::find($id, ['id', 'name', 'si_format', 'si_template']);
+    }
+
+    /**
      * Cetak SI MASSAL (Pencairan Retensi Massal) — satu surat per customer terpilih, format
      * identik dengan SI pada tahap SI di Proses KPR. Antar surat otomatis page-break
      * (CSS .letter{page-break-after:always}), jadi sekali cetak untuk banyak customer.
@@ -891,9 +1170,10 @@ class KprApplicationController extends Controller
     {
         abort_unless($request->user()?->can('bankloan.application.view'), 403);
 
-        $bank = strtolower(trim((string) $request->string('bank', 'btn')));
-        if (! in_array($bank, ['btn', 'bsn', 'bri'], true)) {
-            $bank = 'btn';
+        // Kosong = ikut format bank masing-masing KPR (boleh campur bank dalam satu cetakan).
+        $bank = strtolower(trim((string) $request->string('bank', '')));
+        if (! array_key_exists($bank, BankPartner::SI_FORMATS)) {
+            $bank = '';
         }
 
         $ids = array_values(array_unique(array_filter(array_map('intval', (array) $request->input('ids', [])))));
@@ -908,11 +1188,29 @@ class KprApplicationController extends Controller
                 ->header('Content-Type', 'text/html');
         }
 
-        $body = $apps->map(fn (KprApplication $k) => $this->siLetterBody($k, $bank))->implode('');
+        // Tiap surat memakai format banknya sendiri; KPR yang banknya belum punya format dilewati
+        // agar tidak tercetak surat kosong/salah format tanpa disadari.
+        $skipped = [];
+        $body = $apps->map(function (KprApplication $k) use ($bank, &$skipped) {
+            $b = $this->siBodyFor($k, $bank);
+            if ($b === null) {
+                $skipped[] = $k->application_number;
+            }
+
+            return $b ?? '';
+        })->implode('');
+
+        if ($skipped) {
+            $body .= '<div class="letter" style="text-align:center;color:#b45309">'
+                .'<p><b>'.count($skipped).' KPR dilewati</b> — banknya belum punya Format SI di Set Up KPR → Kategori Bank:</p>'
+                .'<p>'.htmlspecialchars(implode(', ', $skipped), ENT_QUOTES).'</p></div>';
+        }
+
+        $label = $bank !== '' ? strtoupper($bank) : 'per Bank';
 
         return response($this->siDoc(
-            'SI '.strtoupper($bank).' — Massal ('.$apps->count().' customer)',
-            'Cetak SI '.strtoupper($bank).' — '.$apps->count().' Customer',
+            'SI '.$label.' — Massal ('.$apps->count().' customer)',
+            'Cetak SI '.$label.' — '.$apps->count().' Customer',
             $body,
         ))->header('Content-Type', 'text/html');
     }

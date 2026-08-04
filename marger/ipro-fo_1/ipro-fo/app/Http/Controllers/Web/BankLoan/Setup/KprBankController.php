@@ -5,13 +5,17 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Web\BankLoan\Setup;
 
 use App\Domain\BankLoan\Models\BankPartner;
+use App\Domain\BankLoan\Models\KprApplication;
 use App\Domain\BankLoan\Models\RetentionCategory;
 use App\Domain\BusinessSupport\Models\BsAccount;
 use App\Domain\Foundation\Tenant\Models\Project;
 use App\Http\Controllers\Controller;
+use App\Http\Controllers\Web\BankLoan\KprApplicationController;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Http\Response as HttpResponse;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -92,6 +96,45 @@ class KprBankController extends Controller
         return back()->with('success', "Bank {$name} dihapus.");
     }
 
+    /**
+     * Pratinjau Format SI SEBELUM disimpan — dirender memakai KPR terbaru pada bank ini bila ada,
+     * kalau belum ada memakai contoh data. Dibuka di tab baru dari tab "Format SI".
+     */
+    public function siPreview(Request $request, BankPartner $bank): HttpResponse
+    {
+        abort_unless($request->user()?->can('bankloan.setup.view'), 403);
+
+        $v = $request->validate(['si_template' => ['nullable', 'string', 'max:200000']]);
+        $template = trim((string) ($v['si_template'] ?? ''));
+
+        $kpr = KprApplication::where('bank_partner_id', $bank->id)->latest('id')->first()
+            ?? KprApplication::latest('id')->first();
+
+        $kprCtl = app(KprApplicationController::class);
+
+        // Kosong = belum ada suntingan → tunjukkan hasil FORMAT BAWAAN, yaitu yang benar-benar
+        // akan tercetak untuk bank ini.
+        if ($template === '') {
+            $format = strtolower(trim((string) $bank->si_format));
+            if (! array_key_exists($format, BankPartner::SI_FORMATS) || ! $kpr) {
+                return response('<p style="font-family:sans-serif;padding:24px">Bank ini belum punya Format SI bawaan, atau belum ada data KPR untuk dipratinjau.</p>')
+                    ->header('Content-Type', 'text/html');
+            }
+
+            return response($kprCtl->siBuiltinPreviewDoc($kpr, $format))->header('Content-Type', 'text/html');
+        }
+
+        return response($kprCtl->siTemplatePreview($kpr, $template))->header('Content-Type', 'text/html');
+    }
+
+    /** Contoh format SI siap sunting (tombol "Muat Contoh Format"). */
+    public function siStarter(Request $request): HttpResponse
+    {
+        abort_unless($request->user()?->can('bankloan.setup.view'), 403);
+
+        return response(KprApplicationController::siStarterTemplate())->header('Content-Type', 'text/plain; charset=UTF-8');
+    }
+
     // ── Helpers ──
 
     private function form(?BankPartner $bank): Response
@@ -118,7 +161,13 @@ class KprBankController extends Controller
                 'phone'        => $bank->phone,
                 'email'        => $bank->email,
                 'is_active'    => $bank->is_active,
+                // Format SI: bawaan (btn/bsn/bri) + versi suntingan operator.
+                'si_format'    => $bank->si_format,
+                'si_template'  => $bank->si_template,
             ] : null,
+            // Bahan tab "Format SI".
+            'siFormats'      => collect(BankPartner::SI_FORMATS)->map(fn ($label, $id) => ['id' => $id, 'label' => $label])->values(),
+            'siPlaceholders' => collect(KprApplicationController::siPlaceholderDocs())->map(fn ($desc, $key) => ['key' => $key, 'desc' => $desc])->values(),
             'projects'   => Project::orderBy('name')->get(['id', 'name']),
             'categories' => $categories->map(function ($c) use ($existing) {
                 $term = $existing->get($c->id);
@@ -168,6 +217,9 @@ class KprBankController extends Controller
             'phone'           => ['nullable', 'string', 'max:30'],
             'email'           => ['nullable', 'email', 'max:150'],
             'is_active'       => ['boolean'],
+            // Format SI. si_template boleh panjang (satu berkas HTML surat).
+            'si_format'       => ['nullable', 'string', Rule::in(array_keys(BankPartner::SI_FORMATS))],
+            'si_template'     => ['nullable', 'string', 'max:200000'],
             'retentions'                 => ['nullable', 'array'],
             'retentions.*.category_id'   => ['required', 'integer', 'exists:retention_categories,id'],
             'retentions.*.enabled'       => ['boolean'],
@@ -181,6 +233,7 @@ class KprBankController extends Controller
             'bank' => collect($v)->only([
                 'project_id', 'code', 'name', 'branch', 'account_no', 'account_name',
                 'address', 'city', 'notes', 'contact_person', 'phone', 'email', 'is_active',
+                'si_format', 'si_template',
             ])->all(),
             // null (bukan []) bila kunci 'retentions' memang tidak dikirim — lihat syncTerms().
             'retentions' => $request->has('retentions') ? ($v['retentions'] ?? []) : null,
