@@ -484,7 +484,7 @@ class CashBookController extends Controller
                     'debit' => (float) $r->debit, 'credit' => (float) $r->credit, 'balance' => round($running, 2),
                     'cf_direct_category_id' => $tag?->cf_direct_category_id,
                     'cf_indirect_category_id' => $tag?->cf_indirect_category_id,
-                    'clusters' => ($splits[$r->id] ?? collect())->map(fn ($s) => ['cluster_id' => $s->cluster_id, 'amount' => (float) $s->amount, 'note' => $s->note])->values(),
+                    'clusters' => ($splits[$r->id] ?? collect())->map(fn ($s) => ['cluster_id' => $s->cluster_id, 'cf_category_id' => $s->cf_category_id, 'amount' => (float) $s->amount, 'note' => $s->note])->values(),
                 ];
             });
         }
@@ -500,6 +500,10 @@ class CashBookController extends Controller
             'cfDirect'  => \App\Domain\BusinessSupport\Models\BsCashFlowCategory::where('kind', 'direct')->where('is_active', true)->orderBy('sort_order')->orderBy('name')->get(['id', 'code', 'name', 'activity']),
             'cfIndirect' => \App\Domain\BusinessSupport\Models\BsCashFlowCategory::where('kind', 'indirect')->where('is_active', true)->orderBy('sort_order')->orderBy('name')->get(['id', 'code', 'name', 'activity']),
             'clusters'  => \App\Domain\Foundation\Tenant\Models\Cluster::orderBy('name')->get(['id', 'code', 'name']),
+            // Kategori arus kas (modul Cash Flow) — pilihan per baris pembagian; inilah yang
+            // membuat mutasi ini ikut terhitung pada Report Cashflow.
+            'cfCategories' => \App\Domain\BusinessSupport\Models\BsCfCategory::where('is_active', true)
+                ->orderBy('sort_order')->orderBy('id')->get(['id', 'code', 'name', 'section', 'group_name']),
         ]);
     }
 
@@ -528,6 +532,9 @@ class CashBookController extends Controller
             'journal_line_id'     => ['required', 'integer', 'exists:bs_journal_lines,id'],
             'splits'              => ['array'],
             'splits.*.cluster_id' => ['required', 'integer', 'exists:clusters,id'],
+            // Kategori arus kas (modul Cash Flow) — inilah yang membuat pembagian ini ikut
+            // terhitung di Report Cashflow. Opsional agar pembagian lama tetap bisa disimpan.
+            'splits.*.cf_category_id' => ['nullable', 'integer', 'exists:bs_cf_categories,id'],
             // Nominal tidak boleh negatif: nilai minus bisa dipakai menutupi selisih secara semu
             // sehingga total terlihat pas padahal pembagiannya tidak masuk akal.
             'splits.*.amount'     => ['required', 'numeric', 'min:0'],
@@ -564,6 +571,7 @@ class CashBookController extends Controller
                     'tenant_id'       => $tenantId,
                     'journal_line_id' => $v['journal_line_id'],
                     'cluster_id'      => (int) $s['cluster_id'],
+                    'cf_category_id'  => ($s['cf_category_id'] ?? null) ? (int) $s['cf_category_id'] : null,
                     'amount'          => round((float) $s['amount'], 2),
                     'note'            => $s['note'] ?? null,
                 ]);

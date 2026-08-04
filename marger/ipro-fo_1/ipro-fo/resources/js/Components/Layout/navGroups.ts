@@ -354,6 +354,13 @@ export function navGroups(foUrl: string): NavGroup[] {
             { label: 'Transaksi Cek Giro Keluar', icon: FileText, permission: ['businesssupport.view', 'cashbook.*'], children: [
                 { label: 'Data BG/Cek Keluar', href: 'bs.cheque-out.index' },
             ]},
+            // Modul Cash Flow: kategorinya menjadi pilihan "Pembagian Biaya per Cash Flow" di
+            // Rekening Ledger, dan Report Cashflow merekap pembagian tersebut.
+            { label: 'Cash Flow', icon: BarChart3, permission: ['businesssupport.view', 'cashbook.*'], children: [
+                { label: 'Set Up Kategori', href: 'bs.cashflow.categories' },
+                { label: 'Set Up Rumus', href: 'bs.cashflow.formulas' },
+                { label: 'Report Cashflow', href: 'bs.cashflow.report' },
+            ]},
         ],
     },
     {
