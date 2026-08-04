@@ -15,7 +15,21 @@ const props = defineProps<{
     cfDirect: Array<{ id: number; code: string; name: string; activity: string }>;
     cfIndirect: Array<{ id: number; code: string; name: string; activity: string }>;
     clusters: Array<{ id: number; code: string; name: string }>;
+    /** Kategori arus kas (modul Cash Flow) — penentu baris mana di Report Cashflow. */
+    cfCategories?: Array<{ id: number; code: string; name: string; section: string; group_name: string | null }>;
 }>();
+
+// Kategori dikelompokkan per seksi agar pilihannya tidak jadi daftar panjang tanpa konteks.
+const SECTION_LABEL: Record<string, string> = { inflow_ops: 'CASH IN OPS', outflow: 'CASH OUT', inflow_non_ops: 'CASH IN NON OPS' };
+const cfGrouped = computed(() => {
+    const out: Array<{ label: string; items: Array<{ id: number; label: string }> }> = [];
+    for (const sec of ['inflow_ops', 'outflow', 'inflow_non_ops']) {
+        const items = (props.cfCategories ?? []).filter(c => c.section === sec)
+            .map(c => ({ id: c.id, label: (c.group_name ? `${c.group_name} · ` : '') + c.name }));
+        if (items.length) out.push({ label: SECTION_LABEL[sec] ?? sec, items });
+    }
+    return out;
+});
 
 const account = ref(props.accountId ?? '');
 const from = ref(props.filters.from ?? '');
@@ -75,7 +89,7 @@ function saveCf(row: any) {
 // #2 — Pembagian cash flow: expand/collapse + edit baris + simpan.
 const expanded = ref<Set<number>>(new Set());
 function toggle(id: number) { const s = new Set(expanded.value); s.has(id) ? s.delete(id) : s.add(id); expanded.value = s; }
-function addSplit(row: any) { row.clusters.push({ cluster_id: props.clusters[0]?.id ?? null, amount: 0, note: '' }); }
+function addSplit(row: any) { row.clusters.push({ cluster_id: props.clusters[0]?.id ?? null, cf_category_id: null, amount: 0, note: '' }); }
 function removeSplit(row: any, i: number) { row.clusters.splice(i, 1); }
 function sumSplits(row: any) { return (row.clusters ?? []).reduce((s: number, c: any) => s + (Number(c.amount) || 0), 0); }
 function mutAmount(row: any) { return Number(row.debit) || Number(row.credit) || 0; }
@@ -99,7 +113,7 @@ function saveClusters(row: any) {
     savingCluster.value = row.id;
     router.post(route('bs.cashbook.ledger.clusters'), {
         journal_line_id: row.id,
-        splits: (row.clusters ?? []).filter((c: any) => c.cluster_id).map((c: any) => ({ cluster_id: c.cluster_id, amount: Number(c.amount) || 0, note: c.note || '' })),
+        splits: (row.clusters ?? []).filter((c: any) => c.cluster_id).map((c: any) => ({ cluster_id: c.cluster_id, cf_category_id: c.cf_category_id || null, amount: Number(c.amount) || 0, note: c.note || '' })),
     }, { preserveState: true, preserveScroll: true, onFinish: () => (savingCluster.value = null) });
 }
 </script>
@@ -183,11 +197,24 @@ function saveClusters(row: any) {
                                 </div>
                                 <div class="space-y-2">
                                     <div v-for="(c, i) in row.clusters" :key="i" class="flex flex-wrap items-center gap-2">
-                                        <select v-model="c.cluster_id" class="h-8 min-w-[180px] flex-1 rounded-md border border-neutral-300 bg-white px-2 text-xs dark:border-neutral-700 dark:bg-neutral-900"><option :value="null" disabled>— pilih cluster —</option><option v-for="cl in clusters" :key="cl.id" :value="cl.id">{{ cl.code }} — {{ cl.name }}</option></select>
-                                        <input v-model.number="c.amount" type="number" placeholder="Nominal" class="h-8 w-36 rounded-md border border-neutral-300 bg-white px-2 text-right text-xs font-mono dark:border-neutral-700 dark:bg-neutral-900" />
-                                        <input v-model="c.note" placeholder="Keterangan (opsional)" class="h-8 min-w-[160px] flex-1 rounded-md border border-neutral-300 bg-white px-2 text-xs dark:border-neutral-700 dark:bg-neutral-900" />
+                                        <select v-model="c.cluster_id" class="h-8 min-w-[160px] flex-1 rounded-md border border-neutral-300 bg-white px-2 text-xs dark:border-neutral-700 dark:bg-neutral-900"><option :value="null" disabled>— pilih cluster —</option><option v-for="cl in clusters" :key="cl.id" :value="cl.id">{{ cl.code }} — {{ cl.name }}</option></select>
+                                        <!-- Kategori Cash Flow: penentu baris mana angka ini muncul di Report Cashflow. -->
+                                        <select v-model="c.cf_category_id"
+                                            :class="['h-8 min-w-[200px] flex-1 rounded-md border px-2 text-xs dark:bg-neutral-900',
+                                                c.cf_category_id ? 'border-emerald-300 dark:border-emerald-700' : 'border-amber-300 bg-amber-50/60 dark:border-amber-700 dark:bg-amber-950/20']"
+                                            title="Kategori Cash Flow — menentukan baris pada Report Cashflow">
+                                            <option :value="null">— kategori cash flow —</option>
+                                            <optgroup v-for="g in cfGrouped" :key="g.label" :label="g.label">
+                                                <option v-for="o in g.items" :key="o.id" :value="o.id">{{ o.label }}</option>
+                                            </optgroup>
+                                        </select>
+                                        <input v-model.number="c.amount" type="number" placeholder="Nominal" class="h-8 w-32 rounded-md border border-neutral-300 bg-white px-2 text-right text-xs font-mono dark:border-neutral-700 dark:bg-neutral-900" />
+                                        <input v-model="c.note" placeholder="Keterangan (opsional)" class="h-8 min-w-[140px] flex-1 rounded-md border border-neutral-300 bg-white px-2 text-xs dark:border-neutral-700 dark:bg-neutral-900" />
                                         <button type="button" @click="removeSplit(row, i)" class="rounded-md border border-danger-300 p-1.5 text-danger-600 hover:bg-danger-50 dark:border-danger-700"><Trash2 class="h-3.5 w-3.5" /></button>
                                     </div>
+                                    <p v-if="row.clusters.length && row.clusters.some((c: any) => !c.cf_category_id)" class="text-[11px] text-amber-700 dark:text-amber-400">
+                                        Baris tanpa <b>kategori cash flow</b> tetap tersimpan, tapi tidak ikut terhitung di Report Cashflow.
+                                    </p>
                                     <p v-if="!row.clusters.length" class="text-xs italic text-neutral-400">Belum ada pembagian. Klik "Tambah Cash Flow" untuk membagi biaya mutasi ini ke beberapa cluster.</p>
                                     <!-- Penjaga: total pembagian harus persis sama dengan nilai mutasi jurnalnya. -->
                                     <p v-if="!splitBalanced(row)" class="rounded-md border border-danger-300 bg-danger-50 px-2.5 py-1.5 text-xs text-danger-700 dark:border-danger-700 dark:bg-danger-900/25 dark:text-danger-300">

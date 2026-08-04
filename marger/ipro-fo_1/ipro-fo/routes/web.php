@@ -51,6 +51,7 @@ use App\Http\Controllers\Web\BusinessSupport\Tax\SptPajakController as BsSptCont
 use App\Http\Controllers\Web\BusinessSupport\Gl\PeriodClosingController as BsClosingController;
 use App\Http\Controllers\Web\BusinessSupport\Gl\RepairDataController as BsRepairController;
 use App\Http\Controllers\Web\BusinessSupport\CashBook\CashBookController as BsCashBookController;
+use App\Http\Controllers\Web\BusinessSupport\CashBook\CashFlowPlanController as BsCashFlowPlanController;
 use App\Http\Controllers\Web\BusinessSupport\CashBook\CashOpeningController as BsCashOpeningController;
 use App\Http\Controllers\Web\BusinessSupport\CashBook\CashRepairController as BsCashRepairController;
 use App\Http\Controllers\Web\BusinessSupport\CashBook\CashAdvanceController as BsAdvanceController;
@@ -399,6 +400,8 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
     // ── BANK LOAN ──────────────────────────────────────────
     // Master Data KPR — rekap per-SPR (harus SEBELUM /kpr/{kpr} agar tidak tertangkap wildcard).
     Route::get('/kpr/master-data',                [MasterDataKprController::class, 'index'])->name('kpr.master-data.index');
+    // Unduh Excel: susunan kolom dikirim halamannya (POST) agar isinya persis sama dengan layar.
+    Route::post('/kpr/master-data/export',        [MasterDataKprController::class, 'export'])->name('kpr.master-data.export');
 
     // SETTING KPR (harus SEBELUM /kpr/{kpr} agar tidak tertangkap wildcard).
     Route::get('/kpr/setup/retensi',              [RetentionCategoryController::class, 'index'])->name('kpr.setup.retensi.index');
@@ -410,6 +413,9 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
     Route::get('/kpr/setup/bank/create',          [KprBankController::class, 'create'])->name('kpr.setup.bank.create');
     Route::post('/kpr/setup/bank',                [KprBankController::class, 'store'])->name('kpr.setup.bank.store');
     Route::get('/kpr/setup/bank/{bank}/edit',     [KprBankController::class, 'edit'])->name('kpr.setup.bank.edit');
+    // Format SI: contoh format siap sunting + pratinjau sebelum disimpan.
+    Route::get('/kpr/setup/bank-si-starter',      [KprBankController::class, 'siStarter'])->name('kpr.setup.bank.si-starter');
+    Route::post('/kpr/setup/bank/{bank}/si-preview', [KprBankController::class, 'siPreview'])->name('kpr.setup.bank.si-preview');
     Route::put('/kpr/setup/bank/{bank}',          [KprBankController::class, 'update'])->name('kpr.setup.bank.update');
     Route::delete('/kpr/setup/bank/{bank}',       [KprBankController::class, 'destroy'])->name('kpr.setup.bank.destroy');
 
@@ -725,6 +731,16 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
     Route::get('/business-support/cash-book-ledger-pdf',       [BsCashBookController::class, 'ledgerPdf'])->name('bs.cashbook.ledger.pdf');           // #9
     Route::post('/business-support/cash-book-ledger/cf',        [BsCashBookController::class, 'ledgerCf'])->name('bs.cashbook.ledger.cf');             // tag arus kas per mutasi
     Route::post('/business-support/cash-book-ledger/clusters',  [BsCashBookController::class, 'ledgerClusters'])->name('bs.cashbook.ledger.clusters'); // pembagian cluster per mutasi
+
+    // ── Modul CASH FLOW (Cash Book): Set Up Kategori · Set Up Rumus · Report Cashflow ──
+    Route::get('/business-support/cash-flow/kategori',            [BsCashFlowPlanController::class, 'categories'])->name('bs.cashflow.categories');
+    Route::post('/business-support/cash-flow/kategori',           [BsCashFlowPlanController::class, 'categoryStore'])->name('bs.cashflow.categories.store');
+    Route::put('/business-support/cash-flow/kategori/{category}', [BsCashFlowPlanController::class, 'categoryUpdate'])->name('bs.cashflow.categories.update');
+    Route::delete('/business-support/cash-flow/kategori/{category}', [BsCashFlowPlanController::class, 'categoryDestroy'])->name('bs.cashflow.categories.destroy');
+    Route::get('/business-support/cash-flow/rumus',               [BsCashFlowPlanController::class, 'formulas'])->name('bs.cashflow.formulas');
+    Route::put('/business-support/cash-flow/rumus/{formula}',     [BsCashFlowPlanController::class, 'formulaUpdate'])->name('bs.cashflow.formulas.update');
+    Route::get('/business-support/cash-flow/report',              [BsCashFlowPlanController::class, 'report'])->name('bs.cashflow.report');
+    Route::post('/business-support/cash-flow/report',             [BsCashFlowPlanController::class, 'reportSave'])->name('bs.cashflow.report.save');
     Route::get('/business-support/cash-book-giro-calendar',    [BsCashBookController::class, 'giroCalendar'])->name('bs.cashbook.giro-calendar');
     Route::get('/business-support/cash-book-giro-calendar-excel', [BsCashBookController::class, 'giroCalendarExcel'])->name('bs.cashbook.giro-calendar.excel'); // #9
     Route::get('/business-support/cash-book-giro-calendar-pdf', [BsCashBookController::class, 'giroCalendarPdf'])->name('bs.cashbook.giro-calendar.pdf');        // #9

@@ -72,25 +72,128 @@ class IproApPoster
      * GMC (gimmick/promo developer, mengikat SPR/customer) → antrian (kind=gmc).
      * $supplierId (bs_suppliers.id) diisi untuk komponen GMC multi-supplier → di
      * Posting Invoice BO dropdown supplier terisi otomatis.
+     *
+     * Akun jurnalnya diambil dari master Kategori Gimmick BO ($gimmickName = bs_gimmick_categories.name)
+     * — boleh banyak akun debit & kredit, masing-masing berporsi. Kategori juga membawa kolom
+     * Rincian Biaya Master Data KPR, dan $noKontrak/$foUnitId menautkan biaya ini ke SPR & unitnya,
+     * sehingga sesudah invoice terbit di BO rekap Master Data KPR ikut terisi otomatis.
+     * Bila kategorinya tidak ketemu, dipakai akun bawaan lama supaya posting tetap jalan.
      */
-    public function queueGmc(string $noGmc, float $amount, ?int $foCustomerId = null, ?string $custName = null, ?string $tgl = null, ?string $ket = null, ?int $supplierId = null): ?int
-    {
+    public function queueGmc(
+        string $noGmc,
+        float $amount,
+        ?int $foCustomerId = null,
+        ?string $custName = null,
+        ?string $tgl = null,
+        ?string $ket = null,
+        ?int $supplierId = null,
+        ?string $gimmickName = null,
+        ?string $noKontrak = null,
+        ?int $foUnitId = null,
+    ): ?int {
         $amount = round($amount, 2);
         if ($amount <= 0 || trim($noGmc) === '') {
             return null;
         }
 
+        $cat = $gimmickName ? $this->gimmickCategory($gimmickName) : null;
+        $split = $cat ? $this->gimmickSplit((int) $cat->id) : [];
+        $firstOf = function (string $side) use ($split): ?int {
+            foreach ($split as $s) {
+                if ($s['side'] === $side) {
+                    return (int) $s['account_id'];
+                }
+            }
+
+            return null;
+        };
+
         return $this->enqueue('gmc', $noGmc, null, [
-            'customer_id'        => $foCustomerId ? $this->iproCustomerIdByFo($foCustomerId) : null,
-            'customer_name'      => $custName,
-            'refund_source'      => null,
-            'amount'             => $amount,
-            'supplier_id'        => $supplierId,
-            'payable_account_id' => $this->acc('2.1.01.004'), // Hutang/Titipan
-            'offset_account_id'  => $this->acc('5.9.01.001'), // Beban promosi/gimmick
-            'tgl_refund'         => $tgl,
-            'keterangan'         => $ket ?: ('Gimmick '.$noGmc),
+            'customer_id'         => $foCustomerId ? $this->iproCustomerIdByFo($foCustomerId) : null,
+            'customer_name'       => $custName,
+            'refund_source'       => null,
+            'amount'              => $amount,
+            'supplier_id'         => $supplierId,
+            'gimmick_category_id' => $cat?->id,
+            'kpr_biaya_key'       => $cat?->kpr_biaya_key,
+            'booking_id'          => $noKontrak ? $this->iproBookingIdByNoKontrak($noKontrak) : null,
+            'unit_id'             => $foUnitId ? $this->iproUnitIdByFo($foUnitId) : null,
+            'account_split'       => $split ? json_encode($split) : null,
+            'payable_account_id'  => $firstOf('credit') ?? $this->acc('2.1.01.004'), // Hutang/Titipan
+            'offset_account_id'   => $firstOf('debit') ?? $this->acc('5.9.01.001'),  // Beban promosi/gimmick
+            'tgl_refund'          => $tgl,
+            'keterangan'          => $ket ?: ('Gimmick '.$noGmc),
         ]);
+    }
+
+    /** Kategori Gimmick BO berdasarkan nama (yang dipilih di form GMC). */
+    private function gimmickCategory(string $name): ?object
+    {
+        $name = trim($name);
+        if ($name === '') {
+            return null;
+        }
+
+        return $this->db()->table('bs_gimmick_categories')
+            ->where('tenant_id', $this->tenantId)->where('is_active', 1)
+            ->where('name', $name)
+            ->first(['id', 'kpr_biaya_key', 'debit_account_id', 'payable_account_id']);
+    }
+
+    /**
+     * Pecahan akun kategori: [{side, account_id, portion}]. Bila tabel multi-akun belum terisi
+     * (mis. BO belum dimigrasi), jatuh ke pasangan akun tunggal pada headernya.
+     *
+     * @return array<int,array{side:string, account_id:int, portion:float}>
+     */
+    private function gimmickSplit(int $categoryId): array
+    {
+        try {
+            $rows = $this->db()->table('bs_gimmick_category_accounts')
+                ->where('gimmick_category_id', $categoryId)
+                ->orderBy('side')->orderBy('sort_order')->orderBy('id')
+                ->get(['side', 'account_id', 'portion']);
+        } catch (\Throwable $e) {
+            $rows = collect();
+        }
+
+        if ($rows->isEmpty()) {
+            $cat = $this->db()->table('bs_gimmick_categories')->where('id', $categoryId)
+                ->first(['debit_account_id', 'payable_account_id']);
+            $out = [];
+            foreach ([['debit', $cat?->debit_account_id], ['credit', $cat?->payable_account_id]] as [$side, $accId]) {
+                if ($accId) {
+                    $out[] = ['side' => $side, 'account_id' => (int) $accId, 'portion' => 100.0];
+                }
+            }
+
+            return $out;
+        }
+
+        return $rows->map(fn ($r) => [
+            'side' => (string) $r->side, 'account_id' => (int) $r->account_id, 'portion' => (float) $r->portion,
+        ])->all();
+    }
+
+    /** Id booking ipro_bo dari No. SPR/kontrak FO (bookings.booking_number = fo_kontrak.no_kontrak). */
+    private function iproBookingIdByNoKontrak(string $noKontrak): ?int
+    {
+        $id = $this->db()->table('bookings')
+            ->where('tenant_id', $this->tenantId)->where('booking_number', trim($noKontrak))->value('id');
+
+        return $id ? (int) $id : null;
+    }
+
+    /** Id unit ipro_bo dari id unit FO (via unit_code = fo_units.kode_unit). */
+    private function iproUnitIdByFo(int $foUnitId): ?int
+    {
+        $code = DB::table('fo_units')->where('id', $foUnitId)->value('kode_unit');
+        if (! $code) {
+            return null;
+        }
+        $id = $this->db()->table('units')->where('unit_code', $code)->value('id');
+
+        return $id ? (int) $id : null;
     }
 
     /** Komisi/BLT → hutang insentif: Beban Komisi (5.2.01.001) / Hutang Komisi (2.1.01.001). */

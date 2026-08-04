@@ -9,10 +9,13 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 /**
  * Ketentuan retensi sebuah bank untuk satu Kategori Retensi (mis. BTN → PONDASI 30%).
+ *
+ * gl_account_id = COA Bank yang di-link-kan; menjadi default akun Debit saat pencairan/retensi
+ * masuk Approval Retensi (lihat BankApprovalController::bankTermAccountMap()).
  */
 class BankRetentionTerm extends Model
 {
-    protected $fillable = ['bank_partner_id', 'retention_category_id', 'percentage', 'amount', 'notes'];
+    protected $fillable = ['bank_partner_id', 'retention_category_id', 'gl_account_id', 'percentage', 'amount', 'notes'];
 
     protected $casts = [
         'percentage' => 'decimal:2',
@@ -27,5 +30,11 @@ class BankRetentionTerm extends Model
     public function category(): BelongsTo
     {
         return $this->belongsTo(RetentionCategory::class, 'retention_category_id');
+    }
+
+    /** COA Bank yang di-link-kan untuk kategori ini. */
+    public function glAccount(): BelongsTo
+    {
+        return $this->belongsTo(\App\Domain\BusinessSupport\Models\BsAccount::class, 'gl_account_id');
     }
 }

@@ -4,11 +4,15 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Web\BankLoan;
 
+use App\Domain\BusinessSupport\Models\BsGimmickCategory;
 use App\Http\Controllers\Controller;
+use App\Support\Export\SimpleXlsxWriter;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
+use Symfony\Component\HttpFoundation\BinaryFileResponse;
 
 /**
  * Master Data KPR — rekap satu-baris-per-SPR (booking KPR) yang menggabungkan:
@@ -109,6 +113,8 @@ class MasterDataKprController extends Controller
         $sp3k       = $this->sp3kByApplication(array_values($appIdByBooking));
         $pencairan  = $this->pencairanByApplication(array_values($appIdByBooking));
         $inisiasi   = $this->initiationByBooking($ids);
+        // Rincian Biaya hasil posting GMC (FO → Posting Invoice dari FO → invoice hutang).
+        $biaya      = $this->biayaByBooking($ids);
 
         $rows = [];
         $no = 0;
@@ -166,15 +172,10 @@ class MasterDataKprController extends Controller
                 'dp'              => array_map(fn ($l) => $sch['dp'][$l] ?? null, self::DP_LABELS),
                 // Collection Retensi (8 slot sesuai urutan RETENSI_COLS)
                 'retensi'         => array_map(fn ($col) => ($retensi[$b->id][$col['key']] ?? null), self::RETENSI_COLS),
-                // Rincian Biaya
-                'biaya'           => [
-                    'kpr'   => null,
-                    'ht'    => null,
-                    'ppjb'  => null,
-                    'ssp'   => $real && $real->ssp_bphtb_amount !== null ? ['t' => $this->d($real->ssp_bphtb_date), 'n' => (float) $real->ssp_bphtb_amount] : null,
-                    'bphtb' => null, // saat ini SSP & BPHTB tergabung di kolom SSP
-                    'ajb'   => null,
-                ],
+                // Rincian Biaya — dari GMC yang sudah diposting jadi Invoice Hutang di BO
+                // (bs_kpr_biaya_entries, lewat Kategori Gimmick). SSP tetap punya cadangan dari
+                // realisasi pencairan (DAJAM Pajak) bila belum ada entri gimmick-nya.
+                'biaya'           => $this->biayaCells($biaya[$b->id] ?? [], $real),
             ];
         }
 
@@ -188,6 +189,130 @@ class MasterDataKprController extends Controller
     private function retensiHeaders(): array
     {
         return array_map(fn ($c) => $c['label'], self::RETENSI_COLS);
+    }
+
+    /**
+     * Unduh Excel — SELURUH isi Master Data KPR.
+     *
+     * Susunan kolom dikirim oleh halamannya (satu sumber kebenaran ada di Index.vue), jadi isi
+     * berkas Excel selalu persis sama dengan tabel di layar; menambah kolom di layar otomatis
+     * ikut terunduh tanpa perlu menyalin definisi kolom ke sini.
+     */
+    public function export(Request $request): BinaryFileResponse
+    {
+        abort_unless($request->user()?->can('bankloan.application.view'), 403);
+
+        // Susunannya datang sebagai SATU field JSON — bukan satu input per sel. PHP membatasi
+        // max_input_vars (default 1000) dan memotong kiriman diam-diam; tabel ini punya
+        // puluhan ribu sel sehingga bentuk array biasa akan terpotong tanpa pesan error.
+        $decoded = json_decode((string) $request->input('payload', ''), true);
+        if (! is_array($decoded)) {
+            throw ValidationException::withMessages(['payload' => 'Data unduhan tidak terbaca.']);
+        }
+
+        $v = validator($decoded, [
+            'sheet'            => ['nullable', 'string', 'max:31'],
+            'groups'           => ['required', 'array', 'min:1', 'max:50'],
+            'groups.*.label'   => ['required', 'string', 'max:120'],
+            'groups.*.span'    => ['required', 'integer', 'min:1', 'max:400'],
+            'headers'          => ['required', 'array', 'min:1', 'max:400'],
+            'headers.*'        => ['nullable', 'string', 'max:200'],
+            'numeric'          => ['nullable', 'array', 'max:400'],
+            'rows'             => ['required', 'array', 'max:5000'],
+            'rows.*'           => ['array', 'max:400'],
+        ])->validate();
+
+        $headers = array_values($v['headers']);
+        $numeric = array_values($v['numeric'] ?? []);
+        $colCount = count($headers);
+
+        // Kolom pertama ("No") berdiri sendiri; sisanya harus tertutup rapat oleh grup.
+        // Tanpa penjagaan ini, selisih satu kolom membuat header grup melenceng diam-diam.
+        $spanTotal = array_sum(array_map(fn ($g) => (int) $g['span'], $v['groups']));
+        if ($spanTotal + 1 !== $colCount) {
+            throw ValidationException::withMessages([
+                'groups' => "Susunan kolom tidak cocok: total lebar grup {$spanTotal} + 1 kolom No ≠ {$colCount} kolom.",
+            ]);
+        }
+
+        // Lebar kolom: dari panjang judulnya, dibatasi agar tabel tetap terbaca.
+        $widths = [];
+        foreach ($headers as $i => $h) {
+            $widths[$i] = min(38, max(10, mb_strlen((string) $h) + 2));
+        }
+
+        $writer = new SimpleXlsxWriter(
+            sheetName: $v['sheet'] ?? 'Master Data KPR',
+            colWidths: $widths,
+            freezeRows: 4,          // judul + meta + header grup + header kolom
+            freezeCols: 2,          // No & No. SPR tetap terlihat saat digulir ke kanan
+            autoFilterRow: 4,
+        );
+
+        $writer->addTitle('MASTER DATA KPR', $colCount);
+        $writer->addMeta('Diunduh '.now()->translatedFormat('d F Y H:i').' · '.count($v['rows']).' baris · '.($request->user()?->name ?? ''), $colCount);
+        // Kolom "No" berdiri sendiri di depan grup-grup.
+        $writer->addGroupHeader(array_map(fn ($g) => ['label' => $g['label'], 'span' => (int) $g['span']], $v['groups']), 1, ['NO']);
+        $writer->addHeader(array_map(fn ($h) => (string) ($h ?? ''), $headers));
+
+        $numericFlags = [];
+        for ($i = 0; $i < $colCount; $i++) {
+            $numericFlags[$i] = ! empty($numeric[$i]);
+        }
+        foreach ($v['rows'] as $row) {
+            $writer->addRow(array_values((array) $row), $numericFlags);
+        }
+
+        $path = tempnam(sys_get_temp_dir(), 'mdkpr').'.xlsx';
+        $writer->save($path);
+
+        return response()->download($path, 'Master-Data-KPR-'.now()->format('Ymd-Hi').'.xlsx')->deleteFileAfterSend(true);
+    }
+
+    /**
+     * Rincian Biaya per booking dari bs_kpr_biaya_entries — biaya gimmick yang SUDAH terbit
+     * invoice hutangnya di BO. Beberapa entri pada kolom yang sama DIJUMLAH (mis. "BIAYA HT" +
+     * "BIAYA HT SEBAGIAN"), tanggalnya memakai yang terbaru.
+     *
+     * @param  array<int,int>  $ids
+     * @return array<int,array<string,array{t:?string,n:float}>>
+     */
+    private function biayaByBooking(array $ids): array
+    {
+        $rows = DB::table('bs_kpr_biaya_entries')
+            ->whereIn('booking_id', $ids)
+            ->orderBy('tgl')->orderBy('id')
+            ->get(['booking_id', 'biaya_key', 'tgl', 'nominal']);
+
+        $map = [];
+        foreach ($rows as $r) {
+            $cell = $map[$r->booking_id][$r->biaya_key] ?? ['t' => null, 'n' => 0.0];
+            $cell['n'] += (float) $r->nominal;
+            $cell['t'] = $this->d($r->tgl) ?? $cell['t'];   // urut menaik → tanggal terakhir menang
+            $map[$r->booking_id][$r->biaya_key] = $cell;
+        }
+
+        return $map;
+    }
+
+    /**
+     * Susun 6 sel Rincian Biaya. Kolom SSP tetap punya cadangan dari realisasi pencairan
+     * (DAJAM Pajak / SSP-BPHTB) supaya data lama tidak hilang saat belum ada GMC-nya.
+     *
+     * @param  array<string,array{t:?string,n:float}>  $entries
+     * @return array<string,array{t:?string,n:float}|null>
+     */
+    private function biayaCells(array $entries, ?object $real): array
+    {
+        $out = [];
+        foreach (array_keys(BsGimmickCategory::KPR_BIAYA_COLUMNS) as $key) {
+            $out[$key] = $entries[$key] ?? null;
+        }
+        if ($out['ssp'] === null && $real && $real->ssp_bphtb_amount !== null) {
+            $out['ssp'] = ['t' => $this->d($real->ssp_bphtb_date), 'n' => (float) $real->ssp_bphtb_amount];
+        }
+
+        return $out;
     }
 
     /** Free DP per booking dari booking_discounts (reason mengandung "FREE DP"/"FREEDP"). */
@@ -392,10 +517,13 @@ class MasterDataKprController extends Controller
                     $s = $txt($x['notes'] ?? null);
                     break;
                 case 'verifikasi':
+                    // Wawancara kedua opsional: bila jalurnya "tanpa", tandai eksplisit supaya
+                    // kolom kosong tidak terbaca sebagai "belum dikerjakan".
                     $t = $this->d($verif['wawancara2']['finished_at'] ?? $verif['ots']['finished_at'] ?? $tl['verifikasi'] ?? null);
                     $s = $txt(
                         ($verif['ots']['notes'] ?? null) ? 'OTS: '.$verif['ots']['notes'] : null,
                         ($verif['wawancara2']['notes'] ?? null) ? 'Wwc-2: '.$verif['wawancara2']['notes'] : null,
+                        ($verif['wawancara2_mode'] ?? null) === 'tanpa' ? 'tanpa wawancara kedua' : null,
                     );
                     break;
                 case 'analis':

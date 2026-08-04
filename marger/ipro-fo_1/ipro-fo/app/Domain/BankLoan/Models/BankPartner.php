@@ -15,9 +15,18 @@ class BankPartner extends Model
 {
     use HasTenant, SoftDeletes;
 
+    /** Format SI bawaan yang tersedia (kode → label). */
+    public const SI_FORMATS = [
+        'btn' => 'Format BTN',
+        'bsn' => 'Format BSN',
+        'bri' => 'Format BRI',
+    ];
+
     protected $fillable = [
         'tenant_id', 'project_id', 'code', 'name', 'branch', 'account_no', 'account_name',
         'address', 'city', 'notes', 'contact_person', 'phone', 'email', 'is_active',
+        // Format Surat Instruksi: bawaan (btn/bsn/bri) + versi suntingan operator.
+        'si_format', 'si_template',
     ];
 
     protected $casts = ['is_active' => 'boolean'];
