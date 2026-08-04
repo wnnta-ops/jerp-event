@@ -763,6 +763,21 @@ class KprApplicationController extends Controller
         $today = now();
         $kprAmt = (float) ($kpr->plafon_approved ?: $kpr->plafon_requested);
 
+        // Pencadangan pajak (SSP & BPHTB) — rumus "list pajak" Finance, lihat
+        // config('business_support.pajak_kpr'). Harga jual = harga NETT setelah diskon.
+        $p = (array) config('business_support.pajak_kpr');
+        $hargaJual = (float) ($kpr->booking?->total_price ?: $u?->current_price ?: $u?->base_price ?: 0);
+        $dpp      = $hargaJual > 0 ? $hargaJual / (float) ($p['dpp_divisor'] ?? 1.11) : 0.0;
+        $sspRaw   = $dpp * (float) ($p['ssp_rate'] ?? 0.025);
+        // BPHTB tidak boleh negatif saat DPP di bawah NJOPTKP (rumah murah) — nol, bukan minus.
+        $bphtbRaw = max(0.0, $dpp - (float) ($p['bphtb_njoptkp'] ?? 80000000)) * (float) ($p['bphtb_rate'] ?? 0.05);
+        $ssp      = round($sspRaw, 2);
+        $bphtb    = round($bphtbRaw, 2);
+        // TOTAL dijumlah dari nilai BELUM dibulatkan lalu dibulatkan sekali — sama seperti
+        // berkas "list pajak" (=M+N atas sel yang belum dibulatkan). Menjumlah angka yang
+        // sudah dibulatkan bisa meleset satu sen dari daftar Finance.
+        $pajakTot = round($sspRaw + $bphtbRaw, 2);
+
         return [
             'c' => $c, 'u' => $u, 'co' => $co, 'fill' => $fill, 'mn' => $mn, 'roman' => $roman, 'today' => $today,
             'tglInd'  => $today->day.' '.$mn[$today->month].' '.$today->year,
@@ -774,6 +789,11 @@ class KprApplicationController extends Controller
             'kprAmt'  => $kprAmt,
             'umAmt'   => round(0.05 * (float) ($u?->current_price ?: $u?->base_price ?: 0), 2),
             'akadTgl' => $kpr->akad?->akad_at ? ($kpr->akad->akad_at->day.' '.$mn[$kpr->akad->akad_at->month].' '.$kpr->akad->akad_at->year) : $fill,
+            'hargaJual' => $hargaJual,
+            'dpp'      => round($dpp, 2),
+            'ssp'      => $ssp,
+            'bphtb'    => $bphtb,
+            'pajakTot' => $pajakTot,
             'signer'  => $co['signer_name'] ?? 'Rachmat Suhendra',
             'sTitle'  => $co['signer_title'] ?? 'Direktur',
             'coName'  => $co['name'] ?? 'PT. MITRA USAHA PROPERTINDO',
@@ -796,13 +816,21 @@ class KprApplicationController extends Controller
             'no_hp'                => 'Nomor handphone customer',
             'no_kpr'               => 'Nomor pengajuan KPR',
             'bank'                 => 'Nama bank pemberi KPR',
+            'bank_cabang'          => 'Cabang bank (dari Set Up Kategori Bank)',
+            'bank_alamat'          => 'Alamat bank (dari Set Up Kategori Bank)',
             'unit'                 => 'Kode unit rumah',
             'tipe'                 => 'Tipe rumah',
             'perumahan'            => 'Nama cluster/perumahan',
             'plafon'               => 'Plafon KPR (Rp. 000.000,-)',
             'plafon_terbilang'     => 'Plafon KPR dalam huruf',
+            'setengah_plafon'      => 'Separuh plafon KPR — untuk surat pencairan 50%/50%',
             'uang_muka'            => 'Uang muka (Rp. 000.000,-)',
             'uang_muka_terbilang'  => 'Uang muka dalam huruf',
+            'harga_jual'           => 'Harga jual nett unit',
+            'dpp'                  => 'DPP = harga jual ÷ 1,11',
+            'ssp'                  => 'SSP = DPP × 2,5% (otomatis)',
+            'bphtb'                => 'BPHTB = (DPP − NJOPTKP) × 5% (otomatis)',
+            'total_pajak'          => 'Total pencadangan pajak = SSP + BPHTB',
             'tgl_akad'             => 'Tanggal akad',
             'tanggal'              => 'Tanggal hari ini (mis. 4 Agustus 2026)',
             'bulan_romawi'         => 'Bulan berjalan dalam angka romawi (untuk nomor surat)',
@@ -877,10 +905,14 @@ HTML;
         $sample = [
             'nama' => 'SARRA AMANDA SINAGA', 'alamat' => 'JL. CONTOH NO. 1, SIDOARJO, JAWA TIMUR',
             'no_ktp' => '3578056406970001', 'no_hp' => '081200000000', 'no_kpr' => 'KPR/JRES/2608/00002',
-            'bank' => 'Bank Contoh', 'unit' => 'JRK3-004-XV-7', 'tipe' => 'CALADI',
+            'bank' => 'Bank Contoh', 'bank_cabang' => 'KC Contoh', 'bank_alamat' => 'Jl. Contoh No. 1, Surabaya',
+            'unit' => 'JRK3-004-XV-7', 'tipe' => 'CALADI',
             'perumahan' => 'Java Residence Cluster 3', 'plafon' => 'Rp. 433.300.000,-',
             'plafon_terbilang' => 'Empat ratus tiga puluh tiga juta tiga ratus ribu rupiah',
+            'setengah_plafon' => 'Rp. 216.650.000,-',
             'uang_muka' => 'Rp. 30.950.000,-', 'uang_muka_terbilang' => 'Tiga puluh juta sembilan ratus lima puluh ribu rupiah',
+            'harga_jual' => 'Rp. 465.000.000,-', 'dpp' => 'Rp. 418.918.919,-',
+            'ssp' => 'Rp. 10.472.973,-', 'bphtb' => 'Rp. 16.945.946,-', 'total_pajak' => 'Rp. 27.418.919,-',
             'tgl_akad' => '4 Agustus 2026', 'tanggal' => now()->day.' '.['', 'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'][now()->month].' '.now()->year,
             'bulan_romawi' => ['', 'I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X', 'XI', 'XII'][now()->month],
             'tahun' => (string) now()->year,
@@ -922,6 +954,7 @@ HTML;
         $e = fn ($x) => htmlspecialchars((string) ($x ?? ''), ENT_QUOTES);
         $rp = fn ($x) => 'Rp. '.number_format((float) $x, 0, ',', '.').',-';
         $terb = fn ($x) => ucfirst($this->terbilang($x)).' rupiah';
+        $partner = $this->siPartnerOf($kpr);
 
         return [
             'nama'                => $e($v['name']),
@@ -929,14 +962,22 @@ HTML;
             'no_ktp'              => $e($v['c']?->id_number),
             'no_hp'               => $e($v['c']?->phone),
             'no_kpr'              => $e($kpr->application_number),
-            'bank'                => $e($kpr->bank?->name),
+            'bank'                => $e($partner?->name ?: $kpr->bank?->name),
+            'bank_cabang'         => $e($partner?->branch),
+            'bank_alamat'         => $e(trim((string) ($partner?->address ?: '')).(($partner?->city) ? ', '.$partner->city : '')),
             'unit'                => $e($v['unit']),
             'tipe'                => $e($v['tipe']),
             'perumahan'           => $e($v['perum']),
             'plafon'              => $e($rp($v['kprAmt'])),
             'plafon_terbilang'    => $e($terb($v['kprAmt'])),
+            'setengah_plafon'     => $e($rp(round($v['kprAmt'] / 2, 2))),
             'uang_muka'           => $e($rp($v['umAmt'])),
             'uang_muka_terbilang' => $e($terb($v['umAmt'])),
+            'harga_jual'          => $e($rp($v['hargaJual'])),
+            'dpp'                 => $e($rp($v['dpp'])),
+            'ssp'                 => $e($rp($v['ssp'])),
+            'bphtb'               => $e($rp($v['bphtb'])),
+            'total_pajak'         => $e($rp($v['pajakTot'])),
             'tgl_akad'            => $e($v['akadTgl']),
             'tanggal'             => $e($v['tglInd']),
             'bulan_romawi'        => $e($v['roman'][$v['today']->month]),
@@ -973,6 +1014,7 @@ HTML;
             'tglInd' => $tglInd, 'name' => $name, 'addr' => $addr, 'perum' => $perum, 'unit' => $unit, 'tipe' => $tipe,
             'kprAmt' => $kprAmt, 'umAmt' => $umAmt, 'akadTgl' => $akadTgl,
             'signer' => $signer, 'sTitle' => $sTitle, 'coName' => $coName, 'notaris' => $notaris,
+            'ssp' => $sspAmt, 'bphtb' => $bphtbAmt, 'pajakTot' => $pajakTot,
         ] = $this->siVars($kpr);
 
         $e = fn ($v) => htmlspecialchars((string) ($v ?? ''), ENT_QUOTES);
@@ -1048,8 +1090,14 @@ HTML;
                 $rdate().$hdr($noStr('BSN.DIPO'), 'SI Pencadangan Pajak').$to($bsnTo)
                 .'<p>Dengan hormat,</p>'
                 .'<p>Sehubungan dengan permohonan Kredit di '.$e($perum).', maka dengan ini kami '.$e($coName).' selaku developer mohon untuk dicairkan pencadangan pajak atas nama customer sebagai berikut:</p>'
+                // SSP & BPHTB dihitung otomatis dari harga jual (lihat siVars) — tidak lagi
+                // titik-titik yang harus diketik manual. Kalau harga jualnya belum ada,
+                // kembali ke titik-titik supaya tidak mencetak angka nol yang menyesatkan.
                 .'<table class="pajak"><tr><th>UNIT</th><th>NAMA</th><th>SSP</th><th>BPHTB</th><th>TOTAL</th></tr>'
-                .'<tr><td>'.$e($unit).'</td><td>'.$e($name).'</td><td>'.$fill.'</td><td>'.$fill.'</td><td>'.$fill.'</td></tr></table>'
+                .'<tr><td>'.$e($unit).'</td><td>'.$e($name).'</td>'
+                .'<td>'.($pajakTot > 0 ? $rp($sspAmt) : $fill).'</td>'
+                .'<td>'.($pajakTot > 0 ? $rp($bphtbAmt) : $fill).'</td>'
+                .'<td>'.($pajakTot > 0 ? $rp($pajakTot) : $fill).'</td></tr></table>'
                 .'<p>Kami mohon untuk pencadangan pajak dengan rincian di atas dan sisa dana KPR tersebut mohon untuk dicairkan ke rekening:</p>'
                 .$kv('Atas nama', $coName).$kv('No. Rekening', '1000069747')
                 .'<p>Demikian permohonan ini, atas perhatian dan kerjasamanya kami ucapkan terimakasih.</p>'.$sign(false)
@@ -1158,7 +1206,7 @@ HTML;
             return null;
         }
 
-        return $this->siPartnerCache[$id] ??= BankPartner::find($id, ['id', 'name', 'si_format', 'si_template']);
+        return $this->siPartnerCache[$id] ??= BankPartner::find($id, ['id', 'name', 'branch', 'address', 'city', 'si_format', 'si_template']);
     }
 
     /**
