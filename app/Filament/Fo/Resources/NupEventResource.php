@@ -35,11 +35,6 @@ class NupEventResource extends Resource
                 Forms\Components\DateTimePicker::make('open_registration_at')->label('Buka pendaftaran'),
                 Forms\Components\DateTimePicker::make('close_registration_at')->label('Tutup pendaftaran'),
                 Forms\Components\TextInput::make('kuota')->label('Kuota')->numeric()->default(0),
-                Forms\Components\TextInput::make('booking_fee')->label('Booking fee')->numeric()->rupiah()->default(0),
-                Forms\Components\Select::make('status')->label('Status')->options([
-                    'DRAFT' => 'Draft', 'OPEN' => 'Buka pendaftaran', 'CLOSED' => 'Tutup pendaftaran',
-                    'EXECUTED' => 'Sudah dilaksanakan', 'BATAL' => 'Batal',
-                ])->default('DRAFT')->required(),
                 Forms\Components\Textarea::make('keterangan')->rows(2)->columnSpanFull(),
             ]),
         ]);
@@ -54,15 +49,31 @@ class NupEventResource extends Resource
             Tables\Columns\TextColumn::make('tgl_launching')->label('Tgl launching')->date('d M Y')->sortable(),
             Tables\Columns\TextColumn::make('kuota')->label('Kuota')->numeric()->alignEnd(),
             Tables\Columns\TextColumn::make('registrations_count')->counts('registrations')->label('Pendaftar')->alignEnd(),
-            Tables\Columns\TextColumn::make('booking_fee')->label('BF')->money('IDR', divideBy: 0)->alignEnd()->toggleable(),
-            Tables\Columns\TextColumn::make('status')->label('Status')->badge()->color(fn (?string $state) => match ($state) {
+            Tables\Columns\TextColumn::make('effective_status')->label('Status')->badge()->color(fn (?string $state) => match ($state) {
                 'DRAFT' => 'gray', 'OPEN' => 'success', 'CLOSED' => 'warning',
                 'EXECUTED' => 'primary', 'BATAL' => 'danger', default => 'gray',
             }),
         ])->filters([
-            Tables\Filters\SelectFilter::make('status')->options([
-                'DRAFT' => 'Draft', 'OPEN' => 'Open', 'CLOSED' => 'Closed', 'EXECUTED' => 'Executed', 'BATAL' => 'Batal',
-            ]),
+            Tables\Filters\SelectFilter::make('status')->label('Status')->options([
+                'OPEN' => 'Buka pendaftaran', 'CLOSED' => 'Tutup pendaftaran', 'DRAFT' => 'Belum buka',
+            ])->query(function ($query, array $data) {
+                $value = $data['value'] ?? null;
+                $now = now();
+                if ($value === 'OPEN') {
+                    return $query->openNow();
+                }
+                if ($value === 'CLOSED') {
+                    return $query->whereNotIn('status', ['EXECUTED', 'BATAL'])
+                        ->whereNotNull('close_registration_at')
+                        ->where('close_registration_at', '<', $now);
+                }
+                if ($value === 'DRAFT') {
+                    return $query->whereNotIn('status', ['EXECUTED', 'BATAL'])
+                        ->where(fn ($w) => $w->whereNull('open_registration_at')->orWhere('open_registration_at', '>', $now));
+                }
+
+                return $query;
+            }),
             Tables\Filters\SelectFilter::make('project_id')->relationship('project', 'name')->label('Proyek'),
         ])->actions([
             Tables\Actions\EditAction::make(),

@@ -99,7 +99,7 @@ class Dashboard extends BaseDashboard
                 'url' => url('/fo/launching'),
                 'icon' => 'M5 19l3-3m6-6l3-3m-9 9c2-5 7-10 12-9 1 5-4 10-9 12l-3-3z',
                 'gradient' => 'linear-gradient(135deg, #06b6d4 0%, #0e7490 100%)',
-                'count' => fn () => NupEvent::where('status', 'OPEN')->count(),
+                'count' => fn () => NupEvent::openNow()->count(),
                 'count_label' => 'event aktif',
             ],
             [
