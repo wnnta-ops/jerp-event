@@ -401,6 +401,8 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
     // ── BANK LOAN ──────────────────────────────────────────
     // Master Data KPR — rekap per-SPR (harus SEBELUM /kpr/{kpr} agar tidak tertangkap wildcard).
     Route::get('/kpr/master-data',                [MasterDataKprController::class, 'index'])->name('kpr.master-data.index');
+    // Unduh Excel: susunan kolom dikirim halamannya (POST) agar isinya persis sama dengan layar.
+    Route::post('/kpr/master-data/export',        [MasterDataKprController::class, 'export'])->name('kpr.master-data.export');
 
     // SETTING KPR (harus SEBELUM /kpr/{kpr} agar tidak tertangkap wildcard).
     Route::get('/kpr/setup/retensi',              [RetentionCategoryController::class, 'index'])->name('kpr.setup.retensi.index');

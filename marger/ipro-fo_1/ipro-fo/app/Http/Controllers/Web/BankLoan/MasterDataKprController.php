@@ -6,10 +6,13 @@ namespace App\Http\Controllers\Web\BankLoan;
 
 use App\Domain\BusinessSupport\Models\BsGimmickCategory;
 use App\Http\Controllers\Controller;
+use App\Support\Export\SimpleXlsxWriter;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
+use Symfony\Component\HttpFoundation\BinaryFileResponse;
 
 /**
  * Master Data KPR — rekap satu-baris-per-SPR (booking KPR) yang menggabungkan:
@@ -186,6 +189,84 @@ class MasterDataKprController extends Controller
     private function retensiHeaders(): array
     {
         return array_map(fn ($c) => $c['label'], self::RETENSI_COLS);
+    }
+
+    /**
+     * Unduh Excel — SELURUH isi Master Data KPR.
+     *
+     * Susunan kolom dikirim oleh halamannya (satu sumber kebenaran ada di Index.vue), jadi isi
+     * berkas Excel selalu persis sama dengan tabel di layar; menambah kolom di layar otomatis
+     * ikut terunduh tanpa perlu menyalin definisi kolom ke sini.
+     */
+    public function export(Request $request): BinaryFileResponse
+    {
+        abort_unless($request->user()?->can('bankloan.application.view'), 403);
+
+        // Susunannya datang sebagai SATU field JSON — bukan satu input per sel. PHP membatasi
+        // max_input_vars (default 1000) dan memotong kiriman diam-diam; tabel ini punya
+        // puluhan ribu sel sehingga bentuk array biasa akan terpotong tanpa pesan error.
+        $decoded = json_decode((string) $request->input('payload', ''), true);
+        if (! is_array($decoded)) {
+            throw ValidationException::withMessages(['payload' => 'Data unduhan tidak terbaca.']);
+        }
+
+        $v = validator($decoded, [
+            'sheet'            => ['nullable', 'string', 'max:31'],
+            'groups'           => ['required', 'array', 'min:1', 'max:50'],
+            'groups.*.label'   => ['required', 'string', 'max:120'],
+            'groups.*.span'    => ['required', 'integer', 'min:1', 'max:400'],
+            'headers'          => ['required', 'array', 'min:1', 'max:400'],
+            'headers.*'        => ['nullable', 'string', 'max:200'],
+            'numeric'          => ['nullable', 'array', 'max:400'],
+            'rows'             => ['required', 'array', 'max:5000'],
+            'rows.*'           => ['array', 'max:400'],
+        ])->validate();
+
+        $headers = array_values($v['headers']);
+        $numeric = array_values($v['numeric'] ?? []);
+        $colCount = count($headers);
+
+        // Kolom pertama ("No") berdiri sendiri; sisanya harus tertutup rapat oleh grup.
+        // Tanpa penjagaan ini, selisih satu kolom membuat header grup melenceng diam-diam.
+        $spanTotal = array_sum(array_map(fn ($g) => (int) $g['span'], $v['groups']));
+        if ($spanTotal + 1 !== $colCount) {
+            throw ValidationException::withMessages([
+                'groups' => "Susunan kolom tidak cocok: total lebar grup {$spanTotal} + 1 kolom No ≠ {$colCount} kolom.",
+            ]);
+        }
+
+        // Lebar kolom: dari panjang judulnya, dibatasi agar tabel tetap terbaca.
+        $widths = [];
+        foreach ($headers as $i => $h) {
+            $widths[$i] = min(38, max(10, mb_strlen((string) $h) + 2));
+        }
+
+        $writer = new SimpleXlsxWriter(
+            sheetName: $v['sheet'] ?? 'Master Data KPR',
+            colWidths: $widths,
+            freezeRows: 4,          // judul + meta + header grup + header kolom
+            freezeCols: 2,          // No & No. SPR tetap terlihat saat digulir ke kanan
+            autoFilterRow: 4,
+        );
+
+        $writer->addTitle('MASTER DATA KPR', $colCount);
+        $writer->addMeta('Diunduh '.now()->translatedFormat('d F Y H:i').' · '.count($v['rows']).' baris · '.($request->user()?->name ?? ''), $colCount);
+        // Kolom "No" berdiri sendiri di depan grup-grup.
+        $writer->addGroupHeader(array_map(fn ($g) => ['label' => $g['label'], 'span' => (int) $g['span']], $v['groups']), 1, ['NO']);
+        $writer->addHeader(array_map(fn ($h) => (string) ($h ?? ''), $headers));
+
+        $numericFlags = [];
+        for ($i = 0; $i < $colCount; $i++) {
+            $numericFlags[$i] = ! empty($numeric[$i]);
+        }
+        foreach ($v['rows'] as $row) {
+            $writer->addRow(array_values((array) $row), $numericFlags);
+        }
+
+        $path = tempnam(sys_get_temp_dir(), 'mdkpr').'.xlsx';
+        $writer->save($path);
+
+        return response()->download($path, 'Master-Data-KPR-'.now()->format('Ymd-Hi').'.xlsx')->deleteFileAfterSend(true);
     }
 
     /**
