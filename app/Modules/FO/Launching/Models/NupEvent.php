@@ -35,4 +35,44 @@ class NupEvent extends TenantAwareModel
     {
         return $this->hasMany(NupRegistration::class, 'nup_event_id');
     }
+
+    /**
+     * Status efektif diturunkan dari tanggal buka/tutup pendaftaran.
+     * State terminal (EXECUTED/BATAL) tetap dihormati bila kelak di-set.
+     */
+    public function getEffectiveStatusAttribute(): string
+    {
+        if (in_array($this->status, ['EXECUTED', 'BATAL'], true)) {
+            return $this->status;
+        }
+
+        $now = now();
+
+        if ($this->open_registration_at === null) {
+            return 'DRAFT';
+        }
+
+        if ($now->lt($this->open_registration_at)) {
+            return 'DRAFT';
+        }
+
+        if ($this->close_registration_at !== null && $now->gt($this->close_registration_at)) {
+            return 'CLOSED';
+        }
+
+        return 'OPEN';
+    }
+
+    /**
+     * Event yang SEDANG buka pendaftaran (turunan waktu, bukan kolom status).
+     */
+    public function scopeOpenNow($query)
+    {
+        $now = now();
+
+        return $query->whereNotIn('status', ['EXECUTED', 'BATAL'])
+            ->whereNotNull('open_registration_at')
+            ->where('open_registration_at', '<=', $now)
+            ->where(fn ($w) => $w->whereNull('close_registration_at')->orWhere('close_registration_at', '>=', $now));
+    }
 }
