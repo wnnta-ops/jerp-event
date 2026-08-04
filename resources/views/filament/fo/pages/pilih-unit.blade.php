@@ -280,6 +280,8 @@
                 soldMarkers: {}, // unitId → L.Marker (stempel SOLD)
                 soldStamps: [], // elemen <span> stempel aktif (untuk reskala saat zoom)
                 baseZoom: 0,    // zoom saat fit → acuan skala stempel
+                frameW: 1500,   // kerangka koordinat peta (px digitasi) — diisi initLeaflet
+                frameH: 1000,
 
                 confirmUnitId: null,
                 confirmUnitLabel: '',
@@ -306,8 +308,20 @@
                     if (!window.L || !document.getElementById('pu-map')) return;
 
                     const sp = this.siteplan;
-                    const W = sp ? sp.width : 1500;
-                    const H = sp ? sp.height : 1000;
+                    let W = sp ? sp.width : 1500;
+                    let H = sp ? sp.height : 1000;
+                    if (!sp) {
+                        // Cluster TANPA gambar siteplan: kerangka fallback statis (1500×1000)
+                        // hampir pasti beda dari kerangka digitasi koordinat → polygon & stempel
+                        // tersebar keluar placeholder. Pakai rentang koordinat unit/blok sebagai
+                        // kerangka supaya layout tetap koheren.
+                        let mx = 0, my = 0;
+                        const scan = cs => (cs || []).forEach(p => { mx = Math.max(mx, p[0]); my = Math.max(my, p[1]); });
+                        this.units.forEach(u => scan(u.siteplan_coords));
+                        (this.blocks || []).forEach(b => scan(b.coords));
+                        if (mx > 0 && my > 0) { W = Math.ceil(mx * 1.02); H = Math.ceil(my * 1.02); }
+                    }
+                    this.frameW = W; this.frameH = H;
                     const bounds = [[0, 0], [H, W]];
 
                     this.map = L.map('pu-map', { crs: L.CRS.Simple, minZoom: -4, maxZoom: 4, zoomSnap: 0.25, attributionControl: false });
@@ -357,9 +371,8 @@
                 },
 
                 toLatLng(x, y) {
-                    const sp = this.siteplan;
-                    const H = sp ? sp.height : 1000;
-                    return [H - y, x];
+                    // frameH di-set initLeaflet — WAJIB sama dgn H bounds peta.
+                    return [this.frameH - y, x];
                 },
 
                 renderPolygons() {
