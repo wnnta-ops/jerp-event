@@ -1154,6 +1154,9 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
     // ── BANK LOAN ──────────────────────────────────────────
     Route::get('/kpr',                                        [KprApplicationController::class, 'index'])->name('kpr.index');
     Route::get('/kpr/create',                                 [KprApplicationController::class, 'create'])->name('kpr.create');
+    // Akad Massal — segmen statis, HARUS sebelum /kpr/{kpr}.
+    Route::get('/kpr/akad-massal',                            [KprApplicationController::class, 'akadBulk'])->name('kpr.akad-bulk');
+    Route::post('/kpr/akad-massal',                           [KprApplicationController::class, 'akadBulkStore'])->name('kpr.akad-bulk.store');
     Route::get('/kpr/pencairan-massal',                       [KprApplicationController::class, 'disbursementBulk'])->name('kpr.disbursement-bulk'); // Pencairan Retensi (Massal)
     // Cetak SI massal — HARUS sebelum /kpr/{kpr} agar segmen statis tidak tertangkap sebagai id.
     Route::get('/kpr/si-print-massal',                        [KprApplicationController::class, 'siPrintBulk'])->name('kpr.si-print-bulk');
