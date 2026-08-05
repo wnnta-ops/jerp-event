@@ -79,7 +79,7 @@ return [
         'base_url' => env('QONTAK_BASE_URL', 'https://service-chat.qontak.com/api/open/v1'),
         'language' => env('QONTAK_LANGUAGE', 'id'),
         'template_utj' => env('QONTAK_TEMPLATE_UTJ'),               // template tagihan UTJ
-        'template_konfirmasi' => env('QONTAK_TEMPLATE_KONFIRMASI'), // template konfirmasi No NUP terbit
+        'template_konfirmasi' => env('QONTAK_TEMPLATE_NUP_APPROVAL'), // template konfirmasi No NUP terbit (setelah approval)
     ],
 
 ];
