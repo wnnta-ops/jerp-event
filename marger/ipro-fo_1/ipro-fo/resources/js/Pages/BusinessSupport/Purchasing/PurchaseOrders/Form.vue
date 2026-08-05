@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue';
 import { useForm, Link } from '@inertiajs/vue3';
-import { ArrowLeft, Plus, Trash2, Save } from 'lucide-vue-next';
+import { ArrowLeft, Plus, Trash2, Save, ClipboardCheck } from 'lucide-vue-next';
 import Button from '@/Components/UI/Button.vue';
 
 const props = defineProps<{
@@ -9,13 +9,22 @@ const props = defineProps<{
     items: Array<{ id: number; code: string; name: string }>;
     projects: Array<{ id: number; name: string }>;
     ppn_default: number;
+    /** FPB yang disetujui, bila PO ini dibuat dari permintaan tersebut. */
+    fpb?: { id: number; number: string; notes: string | null; lines: Array<{ item_id: number; qty: number; spec: string | null }> } | null;
 }>();
 
 const today = new Date().toISOString().slice(0, 10);
 const form = useForm<any>({
-    supplier_id: '', project_id: '', po_date: today, due_date: '', po_type: 'barang', term_payment: '',
-    ppn_pct: props.ppn_default, pph_pct: 0, notes: '',
-    lines: [{ item_id: '', qty: 1, unit_price: 0 }],
+    supplier_id: '', project_id: '',
+    // Ditautkan ke FPB asalnya supaya permintaan itu tidak dijadikan PO dua kali.
+    material_request_id: props.fpb?.id ?? '',
+    po_date: today, due_date: '', po_type: 'barang', term_payment: '',
+    ppn_pct: props.ppn_default, pph_pct: 0,
+    notes: props.fpb ? `Dari FPB ${props.fpb.number}${props.fpb.notes ? ' — ' + props.fpb.notes : ''}` : '',
+    // Baris diisi awal dari FPB (item & qty); harga satuan tetap diisi operator saat negosiasi.
+    lines: props.fpb?.lines?.length
+        ? props.fpb.lines.map(l => ({ item_id: l.item_id, qty: l.qty, unit_price: 0 }))
+        : [{ item_id: '', qty: 1, unit_price: 0 }],
 });
 function addLine() { form.lines.push({ item_id: '', qty: 1, unit_price: 0 }); }
 function removeLine(i: number) { form.lines.splice(i, 1); }
@@ -32,6 +41,14 @@ const inputCls = 'h-9 w-full rounded-lg border border-neutral-300 bg-white px-3 
             <h1 class="text-2xl font-bold">Buat Purchase Order</h1>
             <Link :href="route('bs.po.index')" class="inline-flex items-center gap-2 text-sm text-neutral-500 hover:text-neutral-800 dark:hover:text-neutral-200"><ArrowLeft class="h-4 w-4" /> Kembali</Link>
         </div>
+
+        <!-- Berasal dari FPB yang disetujui: barisnya sudah terisi, tinggal supplier & harga. -->
+        <div v-if="fpb" class="flex flex-wrap items-center gap-2 rounded-xl bg-primary-50/70 px-4 py-3 text-sm ring-1 ring-primary-200 dark:bg-primary-950/25 dark:ring-primary-800/60">
+            <ClipboardCheck class="h-4 w-4 shrink-0 text-primary-600" />
+            <span>Dilanjutkan dari FPB <b class="font-mono">{{ fpb.number }}</b> — {{ fpb.lines.length }} baris permintaan sudah diisikan.</span>
+            <span class="text-xs text-neutral-500">Lengkapi supplier &amp; harga satuannya.</span>
+        </div>
+
         <form @submit.prevent="submit" class="space-y-4">
             <div class="card grid gap-4 p-5 md:grid-cols-3">
                 <div><label class="mb-1 block text-xs font-medium text-neutral-500">Supplier *</label><select v-model="form.supplier_id" required :class="inputCls"><option value="">— pilih —</option><option v-for="s in suppliers" :key="s.id" :value="s.id">{{ s.code }} - {{ s.name }}</option></select><p v-if="form.errors.supplier_id" class="mt-1 text-xs text-danger-500">{{ form.errors.supplier_id }}</p></div>
