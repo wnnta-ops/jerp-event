@@ -303,7 +303,9 @@ export function navGroups(foUrl: string): NavGroup[] {
         desc: 'Kas, Bank, Giro, Bon Sementara & approval.',
         items: [
             { label: 'General Function', icon: FileText, permission: ['businesssupport.view', 'cashbook.*'], children: [
-                { label: 'Print-Out', href: 'bs.cashbook.printhub' },
+                // Satu-satunya anak grup ini; namanya disamakan dengan grupnya agar tidak
+                // terbaca sebagai dua tingkat berbeda ("General Function → Print-Out").
+                { label: 'General Function', href: 'bs.cashbook.printhub' },
             ]},
             { label: 'Setup', icon: SlidersHorizontal, permission: ['businesssupport.view', 'cashbook.*'], children: [
                 { label: 'Transaction Rule', href: 'bs.gl.transaction-rule.index', params: { source: 'cash' } },
