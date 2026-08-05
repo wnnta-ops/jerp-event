@@ -738,6 +738,7 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
     Route::get('/business-support/cash-flow/rumus',               [BsCashFlowPlanController::class, 'formulas'])->name('bs.cashflow.formulas');
     Route::put('/business-support/cash-flow/rumus/{formula}',     [BsCashFlowPlanController::class, 'formulaUpdate'])->name('bs.cashflow.formulas.update');
     Route::get('/business-support/cash-flow/report',              [BsCashFlowPlanController::class, 'report'])->name('bs.cashflow.report');
+    Route::get('/business-support/cash-flow/report/excel',        [BsCashFlowPlanController::class, 'reportExcel'])->name('bs.cashflow.report.excel');
     Route::post('/business-support/cash-flow/report',             [BsCashFlowPlanController::class, 'reportSave'])->name('bs.cashflow.report.save');
     Route::get('/business-support/cash-book-giro-calendar',    [BsCashBookController::class, 'giroCalendar'])->name('bs.cashbook.giro-calendar');
     Route::get('/business-support/cash-book-giro-calendar-excel', [BsCashBookController::class, 'giroCalendarExcel'])->name('bs.cashbook.giro-calendar.excel'); // #9
