@@ -32,7 +32,9 @@ class QontakWhatsAppGateway implements WhatsAppGatewayInterface
         $params = [];
         foreach (array_values($bodyParams) as $i => $value) {
             $key = (string) ($i + 1);
-            $params[] = ['key' => $key, 'value' => $key, 'value_text' => (string) $value];
+            // 'value' = NAMA variabel internal Qontak — WAJIB 2-16 char
+            // (angka/huruf kecil/underscore). '1' saja ditolak 422 → pakai 'p1'.
+            $params[] = ['key' => $key, 'value' => 'p'.$key, 'value_text' => (string) $value];
         }
 
         $parameters = ['body' => $params];
