@@ -104,8 +104,11 @@ export function navGroups(foUrl: string): NavGroup[] {
     {
         title: 'Purchasing',
         icon: ShoppingCart, color: '#f59e0b', route: 'bs.po.index',
-        desc: 'Purchase Order ke supplier & rekapnya.',
+        desc: 'Permintaan pembelian (FPB), Purchase Order ke supplier & rekapnya.',
         items: [
+            // FPB ada di ATAS Purchase Order: permintaan pembelian adalah langkah SEBELUM PO,
+            // jadi urutan sidebar mengikuti urutan prosesnya (FPB disetujui → jadi PO).
+            { label: 'FPB (Permintaan)',   icon: ClipboardList, href: 'bs.fpb.index',          permission: ['businesssupport.view', 'bs.*'] },
             { label: 'Purchase Order',     icon: ShoppingCart,  href: 'bs.po.index',           permission: ['businesssupport.view', 'bs.*'] },
             { label: 'Report PO',          icon: ClipboardList, href: 'bs.po.report',          permission: ['businesssupport.view', 'bs.*'] },
         ],
@@ -113,10 +116,11 @@ export function navGroups(foUrl: string): NavGroup[] {
     {
         title: 'Inventory',
         icon: Boxes, color: '#eab308', route: 'bs.items.index',
-        desc: 'Item/stok, FPB, penerimaan & pengeluaran barang.',
+        desc: 'Item/stok, penerimaan & pengeluaran barang.',
         items: [
             { label: 'Item / Stok',        icon: Boxes,         href: 'bs.items.index',        permission: ['businesssupport.view', 'bs.*'] },
-            { label: 'FPB (Permintaan)',   icon: ClipboardList, href: 'bs.fpb.index',          permission: ['businesssupport.view', 'bs.*'] },
+            // FPB (Permintaan) dipindah ke modul Purchasing — permintaan pembelian adalah
+            // langkah awal proses pembelian, bukan pergerakan stok.
             { label: 'Penerimaan Barang',  icon: PackagePlus,   href: 'bs.receipt.index',      permission: ['businesssupport.view', 'bs.*'] },
             { label: 'Pengeluaran Barang', icon: PackageMinus,  href: 'bs.issue.index',        permission: ['businesssupport.view', 'bs.*'] },
             { label: 'Kartu Stok',         icon: LayoutList,    href: 'bs.stockcard.index',    permission: ['businesssupport.view', 'bs.*'] },
@@ -251,7 +255,9 @@ export function navGroups(foUrl: string): NavGroup[] {
         desc: 'Invoice & pembayaran hutang supplier.',
         items: [
             { label: 'General Function', icon: FileText, permission: ['businesssupport.view', 'ap.*'], children: [
-                { label: 'Print-Out', href: 'bs.ap.printhub' },
+                // Satu-satunya anak grup ini; namanya disamakan dengan grupnya agar tidak
+                // terbaca sebagai dua tingkat berbeda ("General Function → Print-Out").
+                { label: 'General Function', href: 'bs.ap.printhub' },
             ]},
             { label: 'Setup', icon: SlidersHorizontal, permission: ['businesssupport.view', 'ap.*'], children: [
                 { label: 'Transaction Rule', href: 'bs.gl.transaction-rule.index', params: { source: 'ap' } },
