@@ -45,7 +45,7 @@ class BltPrintController extends Controller
 
         if ($request->boolean('pdf') && class_exists(Browsershot::class)) {
             $html = view('pdf.fo.blt-pengajuan', $data)->render();
-            $pdf = Browsershot::html($html)->format('A4')->landscape()->pdf();
+            $pdf = Browsershot::html($html)->noSandbox()->addChromiumArguments(['disable-dev-shm-usage'])->format('A4')->landscape()->pdf();
 
             return new Response($pdf, 200, [
                 'Content-Type' => 'application/pdf',
