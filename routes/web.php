@@ -68,6 +68,13 @@ Route::middleware(['throttle:120,1', 'signed'])
     ->get('/nup/sprs/{registration}', [ClosingPrintController::class, 'sprs'])
     ->name('fo.cetak.sprs');
 
+// PDF SPRS TANPA query string (token HMAC di path) — utk header dokumen WA:
+// Qontak/Meta menolak URL dokumen yang mengandung '?','&','=' (signed URL gagal 422).
+Route::middleware(['throttle:120,1'])
+    ->get('/nup/sprs/{registration}/{hash}.pdf', [ClosingPrintController::class, 'sprsPdf'])
+    ->where('hash', '[0-9a-f]{64}')
+    ->name('fo.cetak.sprs-pdf');
+
 // Public site plan viewer (marketing — customer & sales). Read-only.
 Route::middleware(['throttle:120,1'])
     ->prefix('siteplan')->name('siteplan.')
