@@ -73,6 +73,25 @@ class ClosingPrintController extends Controller
     }
 
     /**
+     * Token path untuk URL PDF SPRS TANPA query string. Qontak/Meta menolak URL
+     * dokumen WA yang mengandung '?','&','=' — signed URL biasa tak bisa dipakai.
+     * HMAC dgn APP_KEY → sekuat signature bawaan, tapi aman di path.
+     */
+    public static function sprsPdfHash(int $registrationId): string
+    {
+        return hash_hmac('sha256', 'sprs-pdf:'.$registrationId, (string) config('app.key'));
+    }
+
+    /** PDF SPRS via path-token (tanpa query string) — dipakai header dokumen WA. */
+    public function sprsPdf(NupRegistration $registration, string $hash): mixed
+    {
+        abort_unless(hash_equals(self::sprsPdfHash($registration->id), $hash), 403);
+        request()->merge(['pdf' => 1]); // paksa jalur PDF di render()
+
+        return $this->sprs($registration);
+    }
+
+    /**
      * Cetak SPRS dari Kontrak (tahap SPRS) — dipakai tombol "Cetak SPRS" di daftar SPRS.
      * Cari NupRegistration terkait via reservasi; bila tak ada (SPRS dibuat manual),
      * bentuk objek registrasi sementara dari kontrak agar template tetap lengkap.

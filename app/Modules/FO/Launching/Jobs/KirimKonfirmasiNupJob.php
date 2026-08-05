@@ -74,9 +74,13 @@ class KirimKonfirmasiNupJob implements ShouldQueue
             $sales = $r->agent?->sales_label ?: ($r->ref_sales_name ?: '-');
             $nik = $r->nik ?: ($r->customer?->nik ?: '-');
 
-            // URL PDF publik (signed; pdf=1 ikut ditandatangani). Meta/Qontak
-            // mengunduhnya saat mengirim — butuh Chromium di server (INSTALL_CHROMIUM=true).
-            $sprsPdfUrl = URL::signedRoute('fo.cetak.sprs', ['registration' => $r->id, 'pdf' => 1]);
+            // URL PDF publik TANPA query string (token HMAC di path) — Qontak/Meta
+            // menolak URL dokumen ber-query ('?','&','=') dgn 422. Butuh Chromium
+            // di server (INSTALL_CHROMIUM=true).
+            $sprsPdfUrl = route('fo.cetak.sprs-pdf', [
+                'registration' => $r->id,
+                'hash' => \App\Modules\FO\MarketingSales\Controllers\ClosingPrintController::sprsPdfHash($r->id),
+            ]);
 
             $gateway->sendTemplate(
                 toNumber: $phone,
