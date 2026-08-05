@@ -65,7 +65,8 @@ class NupConfirmationMail extends Mailable
         try {
             $reg->loadMissing(['customer', 'agent']);
             $html = view('pdf.fo.sprs', ['reg' => $reg])->render();
-            $pdf = Browsershot::html($html)->format('A4')->pdf();
+            // noSandbox + disable-dev-shm: wajib utk Chromium di dalam container.
+            $pdf = Browsershot::html($html)->noSandbox()->addChromiumArguments(['disable-dev-shm-usage'])->format('A4')->pdf();
 
             return [
                 Attachment::fromData(fn () => $pdf, 'SPRS-'.($reg->no_nup ?: $reg->id).'.pdf')

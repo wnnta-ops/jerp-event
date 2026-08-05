@@ -180,6 +180,17 @@ RUN mkdir -p storage/framework/{sessions,views,cache,testing} \
     && chown -R www-data:www-data storage bootstrap/cache \
     && chmod -R 775 storage bootstrap/cache
 
+# Node.js + puppeteer utk Browsershot — Chromium SAJA tidak cukup: Browsershot
+# menjalankan skrip Node yang me-require paket `puppeteer`. Dipasang di root app
+# (/var/www/html/node_modules) agar resolvable dari vendor/spatie/browsershot.
+# PUPPETEER_SKIP_DOWNLOAD sudah di-set → npm TIDAK mengunduh Chrome sendiri
+# (pakai system chromium via PUPPETEER_EXECUTABLE_PATH).
+RUN if [ "$INSTALL_CHROMIUM" = "true" ]; then \
+        apk add --no-cache nodejs npm \
+        && npm install puppeteer --omit=dev --no-audit --no-fund --no-save \
+        && rm -rf /root/.npm /var/cache/apk/*; \
+    fi
+
 # Entrypoint + healthcheck
 COPY docker/php/entrypoint.sh /usr/local/bin/entrypoint.sh
 COPY docker/php/healthcheck.sh /usr/local/bin/healthcheck.sh

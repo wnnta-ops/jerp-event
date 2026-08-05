@@ -22,7 +22,7 @@ class QontakWhatsAppGateway implements WhatsAppGatewayInterface
         private readonly string $languageCode = 'id',
     ) {}
 
-    public function sendTemplate(string $toNumber, string $toName, string $templateId, array $bodyParams = []): bool
+    public function sendTemplate(string $toNumber, string $toName, string $templateId, array $bodyParams = [], ?string $documentUrl = null, ?string $documentFilename = null): bool
     {
         $to = $this->normalizeNumber($toNumber);
         if ($to === '' || $templateId === '' || $this->channelIntegrationId === '') {
@@ -35,6 +35,19 @@ class QontakWhatsAppGateway implements WhatsAppGatewayInterface
             $params[] = ['key' => $key, 'value' => $key, 'value_text' => (string) $value];
         }
 
+        $parameters = ['body' => $params];
+        // Header dokumen (PDF) — hanya utk template yang dibuat dengan Header: Document.
+        // URL harus publik (Meta/Qontak mengunduhnya saat mengirim).
+        if ($documentUrl !== null && $documentUrl !== '') {
+            $parameters['header'] = [
+                'format' => 'DOCUMENT',
+                'params' => [
+                    ['key' => 'url', 'value' => $documentUrl],
+                    ['key' => 'filename', 'value' => $documentFilename ?: 'dokumen.pdf'],
+                ],
+            ];
+        }
+
         $response = Http::withToken($this->accessToken)
             ->acceptJson()
             ->post($this->baseUrl.'/broadcasts/whatsapp/direct', [
@@ -43,7 +56,7 @@ class QontakWhatsAppGateway implements WhatsAppGatewayInterface
                 'message_template_id' => $templateId,
                 'channel_integration_id' => $this->channelIntegrationId,
                 'language' => ['code' => $this->languageCode],
-                'parameters' => ['body' => $params],
+                'parameters' => $parameters,
             ]);
 
         if ($response->failed()) {

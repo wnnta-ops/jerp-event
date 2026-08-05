@@ -10,13 +10,14 @@ use Illuminate\Support\Facades\Log;
  */
 class NullWhatsAppGateway implements WhatsAppGatewayInterface
 {
-    public function sendTemplate(string $toNumber, string $toName, string $templateId, array $bodyParams = []): bool
+    public function sendTemplate(string $toNumber, string $toName, string $templateId, array $bodyParams = [], ?string $documentUrl = null, ?string $documentFilename = null): bool
     {
         Log::channel('single')->info('[WA stub] template tidak dikirim (Qontak belum dikonfigurasi)', [
             'to' => $toNumber,
             'name' => $toName,
             'template' => $templateId,
             'params' => $bodyParams,
+            'document' => $documentUrl ? ($documentFilename.' <'.$documentUrl.'>') : null,
         ]);
 
         return false;

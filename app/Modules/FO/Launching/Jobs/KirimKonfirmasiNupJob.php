@@ -66,13 +66,17 @@ class KirimKonfirmasiNupJob implements ShouldQueue
         $tglLaunching = optional($r->event?->tgl_launching)->translatedFormat('d M Y') ?? '-';
 
         if ($r->urutan !== null) {
-            // Approved → template konfirmasi (7 variabel, dokumen SPRS+Kwitansi
-            // dilampirkan di EMAIL, bukan di WA). Urutan parameter HARUS cocok
-            // dgn template Qontak:
+            // Approved → template konfirmasi (7 variabel) + LAMPIRAN PDF SPRS
+            // sebagai header dokumen (template Qontak WAJIB dibuat dengan
+            // Header: Document). Urutan parameter HARUS cocok dgn template:
             //   {{1}}Nama {{2}}Project {{3}}Event {{4}}No.NUP {{5}}No.Telp {{6}}NIK {{7}}Sales/Agen
             $project = $r->projectPref?->name ?? '-';
             $sales = $r->agent?->sales_label ?: ($r->ref_sales_name ?: '-');
             $nik = $r->nik ?: ($r->customer?->nik ?: '-');
+
+            // URL PDF publik (signed; pdf=1 ikut ditandatangani). Meta/Qontak
+            // mengunduhnya saat mengirim — butuh Chromium di server (INSTALL_CHROMIUM=true).
+            $sprsPdfUrl = URL::signedRoute('fo.cetak.sprs', ['registration' => $r->id, 'pdf' => 1]);
 
             $gateway->sendTemplate(
                 toNumber: $phone,
@@ -87,6 +91,8 @@ class KirimKonfirmasiNupJob implements ShouldQueue
                     (string) $nik,
                     (string) $sales,
                 ],
+                documentUrl: $sprsPdfUrl,
+                documentFilename: 'SPRS-'.($r->no_nup ?: $r->id).'.pdf',
             );
 
             return;
