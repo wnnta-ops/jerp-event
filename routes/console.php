@@ -10,12 +10,18 @@ Artisan::command('inspire', function () {
 })->purpose('Display an inspiring quote');
 
 /*
- * Collection: penagihan otomatis harian — DIKONTROL toggle "Kirim Otomatis via
- * WhatsApp" di Setup Termin SP (default MATI; command keluar tanpa mengirim
- * bila toggle mati). Saat nyala pun HANYA WhatsApp — email peringatan selalu
- * manual dari halaman Collection (insiden email massal, permintaan user).
+ * Collection: penagihan otomatis harian — channel DIKONTROL toggle Email/WA di
+ * Setup Termin SP; KEDUANYA DEFAULT MATI = tidak ada kiriman otomatis sama
+ * sekali (insiden email massal — nyalakan sadar bila ingin otomatis). Jam kirim
+ * ikut setting "Jam kirim otomatis" (dibaca ulang tiap schedule:run → perubahan
+ * dari Setup langsung berlaku). Try/catch: settings belum ada sebelum migrate.
  */
-Schedule::command('collection:run')->dailyAt('08:00')->withoutOverlapping();
+try {
+    $jamKirim = substr((string) (app(\App\Settings\CollectionSettings::class)->auto_kirim_jam ?: '08:00'), 0, 5);
+} catch (Throwable) {
+    $jamKirim = '08:00';
+}
+Schedule::command('collection:run')->dailyAt($jamKirim)->withoutOverlapping();
 
 // Lepas unit yang masa hold-nya habis (tak ada transfer cocok) → TERSEDIA.
 Schedule::command('hold:release')->everyTenMinutes()->withoutOverlapping();

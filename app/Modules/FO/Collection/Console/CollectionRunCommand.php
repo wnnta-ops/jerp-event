@@ -9,35 +9,36 @@ use Illuminate\Console\Command;
 use Illuminate\Support\Carbon;
 
 /**
- * Penagihan massal via CLI — pindai kontrak SPR, kirim reminder pra-jatuh-tempo
+ * Penagihan otomatis harian: pindai kontrak SPR, kirim reminder pra-jatuh-tempo
  * & Surat Peringatan I/II/III sesuai Termin SP. Idempotent — tiap (tagihan,
- * jenis) hanya dikirim sekali.
+ * jenis) hanya dikirim sekali. Dijadwalkan harian (routes/console.php).
  *
- * TIDAK DIJADWALKAN (permintaan — insiden email massal ke customer): reminder
- * & SP dikirim MANUAL lewat tombol Kirim di halaman Collection. Command ini
- * hanya untuk pemakaian manual eksplisit dari CLI, dan channel-nya WA SAJA —
- * email tidak pernah dikirim dari sini.
+ * Channel mengikuti toggle Email/WA di Setup Termin SP — KEDUANYA DEFAULT MATI
+ * (insiden email massal ke customer): selama keduanya mati, command keluar
+ * tanpa mengirim apa pun; pengiriman hanya lewat tombol Kirim manual.
  */
 class CollectionRunCommand extends Command
 {
     protected $signature = 'collection:run {--dry : Hanya tampilkan tanpa mengirim}';
 
-    protected $description = 'Kirim reminder pra-jatuh-tempo & Surat Peringatan (SP I/II/III) via WA — email hanya manual';
+    protected $description = 'Kirim reminder & Surat Peringatan (SP I/II/III) sesuai toggle channel Setup Termin SP (default mati = tidak ada kiriman)';
 
     public function handle(CollectionService $svc, CollectionSettings $set): int
     {
         $dry = (bool) $this->option('dry');
         $today = Carbon::today();
 
-        // Saklar dari Setup Termin SP — default MATI. --dry boleh jalan untuk pratinjau.
-        if (! $set->auto_kirim_wa && ! $dry) {
-            $this->warn('Kirim Otomatis MATI (Setup Termin SP) — tidak ada yang dikirim. Nyalakan toggle "Kirim Otomatis via WhatsApp" bila ingin otomatis.');
+        // Channel ikut toggle Setup Termin SP — keduanya MATI (default) = tidak ada
+        // pengiriman otomatis sama sekali. --dry tetap boleh untuk pratinjau.
+        $autoChannels = array_values(array_filter([
+            $set->channel_email ? 'EMAIL' : null,
+            $set->channel_wa ? 'WA' : null,
+        ]));
+        if ($autoChannels === [] && ! $dry) {
+            $this->warn('Kedua channel (Email & WA) MATI di Setup Termin SP — tidak ada pengiriman otomatis. Kirim manual lewat halaman Collection, atau nyalakan toggle bila ingin otomatis.');
 
             return self::SUCCESS;
         }
-
-        // Otomatis = WA SAJA (email manual dari halaman Collection).
-        $autoChannels = ['WA'];
 
         $kontraks = Kontrak::query()
             ->where('tahap', 'SPR')
