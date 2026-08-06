@@ -273,11 +273,14 @@ class PilihUnit extends Page
                 // No. Unit kanonik (Lokasi-Tahap-Blok-Nomer) dari model.
                 $kode = $u->kode_unit ?: $u->label;
 
-                // Hanya skema yang cocok lokasi+tahap unit ini (skema CASH tahap 001
-                // tak muncul di unit tahap 004) + harga > 0.
+                // SAMA dgn /siteplan publik: hanya skema "Tampil di Site Plan" + cocok
+                // lokasi+tahap unit ini (skema CASH tahap 001 tak muncul di unit
+                // tahap 004) + harga > 0. Tanpa filter tampil_siteplan, popup memuat
+                // SEMUA skema (mis. 7 kartu) — beda dari siteplan publik.
                 $pricelist = $u->pricelists
                     ->filter(fn ($p) => $p->skema !== null
                         && (float) $p->price_list > 0
+                        && $p->skema->tampil_siteplan
                         && $p->skema->appliesToScope($u->lokasi_id, $u->tahap_id))
                     ->map(fn ($p) => [
                         'skema_code' => $p->skema->code,
