@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue';
 import { router, useForm, Link, usePage } from '@inertiajs/vue3';
-import { ArrowLeft, Check, Lock, FileEdit, Banknote, Percent, Plus, Trash2 } from 'lucide-vue-next';
+import { ArrowLeft, Check, Lock, FileEdit, Banknote, Percent, Plus, Trash2, Printer } from 'lucide-vue-next';
 import Button from '@/Components/UI/Button.vue';
 import Badge from '@/Components/UI/Badge.vue';
 import SearchSelect from '@/Components/UI/SearchSelect.vue';
@@ -50,6 +50,12 @@ const inputCls = 'h-9 w-full rounded-lg border border-neutral-300 bg-white px-3 
             <h1 class="font-mono text-2xl font-bold">{{ order.po_number }}<span v-if="order.revision_count > 0" class="ml-2 align-middle text-xs font-normal text-neutral-400">rev. {{ order.revision_count }}</span></h1>
             <div class="flex items-center gap-3">
                 <Badge :variant="statusColor[order.status]" dot>{{ order.status }}</Badge>
+                <!-- Cetak PO: format surat pesanan resmi, dibuka di tab baru & bisa disunting
+                     sebelum dicetak (halaman yang sama dipakai Cetak PO massal dari daftar). -->
+                <a :href="route('bs.po.print', { ids: order.id })" target="_blank"
+                    class="inline-flex h-9 items-center gap-1.5 rounded-lg border border-primary-300 bg-white px-3 text-sm font-semibold text-primary-700 shadow-sm transition-all duration-200 hover:bg-primary-50 active:scale-[0.98] dark:border-primary-800 dark:bg-neutral-900 dark:text-primary-300 dark:hover:bg-primary-950/40">
+                    <Printer class="h-4 w-4" /> Cetak PO
+                </a>
                 <Button v-if="order.status==='draft' && can.includes('businesssupport.approval.act')" @click="approve"><template #icon-left><Check class="h-4 w-4" /></template>Approve</Button>
                 <Button v-if="order.status==='approved' && can.includes('businesssupport.approval.act')" variant="secondary" @click="close"><template #icon-left><Lock class="h-4 w-4" /></template>Close</Button>
             </div>

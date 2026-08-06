@@ -54,18 +54,64 @@ class PurchaseOrderController extends Controller
 
         return Inertia::render('BusinessSupport/Purchasing/PurchaseOrders/Index', [
             'orders' => $rows,
+            // FPB yang SUDAH DISETUJUI tapi belum dijadikan PO — muncul di halaman ini agar
+            // permintaan yang lolos approval langsung bisa diteruskan jadi Purchase Order.
+            'pendingFpb' => $this->pendingFpb(),
         ]);
+    }
+
+    /**
+     * FPB berstatus approved yang belum punya PO.
+     *
+     * @return array<int,array<string,mixed>>
+     */
+    private function pendingFpb(): array
+    {
+        $used = BsPurchaseOrder::whereNotNull('material_request_id')->pluck('material_request_id')->all();
+
+        return \App\Domain\BusinessSupport\Models\BsMaterialRequest::query()
+            ->where('status', 'approved')
+            ->whereNotIn('id', $used)
+            ->with(['lines.item:id,code,name'])
+            ->latest('request_date')->latest('id')->limit(100)->get()
+            ->map(fn ($mr) => [
+                'id'         => $mr->id,
+                'number'     => $mr->mr_number,
+                'date'       => $mr->request_date?->toDateString(),
+                'notes'      => $mr->notes,
+                'line_count' => $mr->lines->count(),
+                'items'      => $mr->lines->map(fn ($l) => trim(((string) $l->item?->code ? $l->item->code.' - ' : '').(string) $l->item?->name))->filter()->take(3)->values()->all(),
+            ])->values()->all();
     }
 
     public function create(Request $request): Response
     {
         abort_unless($request->user()?->canModule('bs'), 403);
 
+        // Datang dari FPB yang disetujui → baris PO diisi awal dari baris FPB-nya.
+        $fpb = null;
+        if ($id = (int) $request->integer('fpb')) {
+            $mr = \App\Domain\BusinessSupport\Models\BsMaterialRequest::with('lines.item:id,code,name')->find($id);
+            if ($mr && $mr->status === 'approved') {
+                $fpb = [
+                    'id'     => $mr->id,
+                    'number' => $mr->mr_number,
+                    'notes'  => $mr->notes,
+                    'lines'  => $mr->lines->map(fn ($l) => [
+                        'item_id' => $l->item_id,
+                        'qty'     => (float) $l->qty,
+                        'spec'    => $l->spec,
+                    ])->values()->all(),
+                ];
+            }
+        }
+
         return Inertia::render('BusinessSupport/Purchasing/PurchaseOrders/Form', [
             'suppliers' => BsSupplier::where('is_active', true)->orderBy('name')->get(['id', 'code', 'name']),
             'items'     => BsItem::where('is_active', true)->orderBy('name')->get(['id', 'code', 'name']),
             'projects'  => Project::orderBy('name')->get(['id', 'name']),
             'ppn_default' => (float) config('domain.tax.ppn_default_pct', 11),
+            'fpb'       => $fpb,
         ]);
     }
 
@@ -76,6 +122,7 @@ class PurchaseOrderController extends Controller
         $v = $request->validate([
             'supplier_id'  => ['required', 'integer', 'exists:bs_suppliers,id'],
             'project_id'   => ['nullable', 'integer', 'exists:projects,id'],
+            'material_request_id' => ['nullable', 'integer', 'exists:bs_material_requests,id'],
             'po_date'      => ['required', 'date'],
             'due_date'     => ['nullable', 'date'],
             'po_type'      => ['nullable', 'in:barang,jasa'],
@@ -100,6 +147,8 @@ class PurchaseOrderController extends Controller
             $po = BsPurchaseOrder::create([
                 'supplier_id'  => $v['supplier_id'],
                 'project_id'   => $v['project_id'] ?? null,
+                // Tautan ke FPB asalnya: sekali dipakai, FPB itu hilang dari daftar "siap jadi PO".
+                'material_request_id' => $v['material_request_id'] ?? null,
                 'po_number'    => app(StockService::class)->nextNumber('PO', BsPurchaseOrder::class, 'po_date'),
                 'po_date'      => $v['po_date'],
                 'due_date'     => $v['due_date'] ?? null,

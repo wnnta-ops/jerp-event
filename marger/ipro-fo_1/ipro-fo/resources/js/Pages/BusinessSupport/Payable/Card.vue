@@ -32,7 +32,7 @@ const summaryTotals = computed(() => {
 </script>
 <template>
     <div class="space-y-4">
-        <Link :href="route('bs.ap.printhub')" class="inline-flex items-center gap-2 text-sm text-neutral-500 hover:text-neutral-800 dark:hover:text-neutral-200"><ArrowLeft class="h-4 w-4" /> Print-Out AP</Link>
+        <Link :href="route('bs.ap.printhub')" class="inline-flex items-center gap-2 text-sm text-neutral-500 hover:text-neutral-800 dark:hover:text-neutral-200"><ArrowLeft class="h-4 w-4" /> General Function — Account Payable</Link>
         <div class="flex flex-wrap items-center justify-between gap-2">
             <h1 class="flex items-center gap-2 text-2xl font-bold"><BookText class="h-6 w-6 text-danger-600" /> Kartu Hutang</h1>
             <div class="flex gap-1 rounded-lg border border-neutral-300 p-0.5 text-sm dark:border-neutral-700">

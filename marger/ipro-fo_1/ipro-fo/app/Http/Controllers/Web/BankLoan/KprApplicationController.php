@@ -26,6 +26,7 @@ use App\Exceptions\InvalidStateTransitionException;
 use App\Http\Controllers\Controller;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -106,6 +107,109 @@ class KprApplicationController extends Controller
     }
 
     /** Form Pencairan Retensi (Massal) — semua KPR yang sudah AKAD & masih ada sisa plafon, di-checklist & input pencairan. */
+    /** Tahap "Pra Proses KPR" yang boleh diikutkan Akad Massal. */
+    private const AKAD_BULK_FROM = [KprStatus::Draft, KprStatus::Submitted];
+
+    /**
+     * AKAD MASSAL — daftar calon dari Pra Proses KPR (Draft & Submitted).
+     *
+     * Untuk nasabah yang akadnya dilakukan serentak, tahapan di bank (Wawancara → Input Sistem
+     * Bank → Verifikasi → Analis → Banding → SP3K) memang tidak dijalani satu per satu; prosesnya
+     * langsung ke SI supaya Surat Instruksi bisa dicetak sesuai bank masing-masing.
+     */
+    public function akadBulk(Request $request): Response
+    {
+        abort_unless($request->user()?->can('bankloan.application.create'), 403);
+
+        $rows = KprApplication::query()
+            ->whereIn('status', array_map(fn (KprStatus $s) => $s->value, self::AKAD_BULK_FROM))
+            ->with([
+                'customer:id,full_name',
+                'bank:id,name',
+                'booking:id,booking_number,unit_id',
+                'booking.unit:id,unit_code',
+            ])
+            ->orderBy('id')
+            ->get()
+            ->map(fn (KprApplication $k) => [
+                'id'       => $k->id,
+                'number'   => $k->application_number,
+                'customer' => $k->customer?->full_name,
+                'unit'     => $k->booking?->unit?->unit_code,
+                'spr'      => $k->booking?->booking_number,
+                'bank'     => $k->bank?->name,
+                'status'   => $k->status->value,
+                'plafon'   => (float) ($k->plafon_approved ?: $k->plafon_requested),
+                // Bank tanpa Format SI → SI-nya nanti memakai surat generik; ditandai di layar.
+                'si_ready' => $this->siFormatInfo($k)['ready'],
+            ])->values();
+
+        return Inertia::render('BankLoan/AkadBulk', [
+            'rows' => $rows,
+        ]);
+    }
+
+    /**
+     * Jalankan Akad Massal: status LANGSUNG ke SI (tahap 9).
+     *
+     * Lompatan ini SENGAJA tidak lewat assertCanTransitionTo(): alur normal memang tidak
+     * mengizinkan Submitted → SI, dan penjaga itu harus tetap ketat untuk proses satuan.
+     * Di sini lompatannya eksplisit, dibatasi hanya dari Draft/Submitted, dan tahap yang
+     * dilewati DICAP di timeline (akad_massal + tanggalnya) supaya jejaknya tidak hilang.
+     */
+    public function akadBulkStore(Request $request): RedirectResponse
+    {
+        abort_unless($request->user()?->can('bankloan.application.create'), 403);
+
+        $v = $request->validate([
+            'ids'   => ['required', 'array', 'min:1'],
+            'ids.*' => ['required', 'integer'],
+            'note'  => ['nullable', 'string', 'max:255'],
+        ]);
+
+        $allowed = array_map(fn (KprStatus $s) => $s->value, self::AKAD_BULK_FROM);
+        $apps = KprApplication::whereIn('id', $v['ids'])->get();
+
+        $done = [];
+        $skip = [];
+        DB::transaction(function () use ($apps, $allowed, $v, &$done, &$skip): void {
+            foreach ($apps as $kpr) {
+                if (! in_array($kpr->status->value, $allowed, true)) {
+                    $skip[] = $kpr->application_number.' ('.$kpr->status->value.')';
+
+                    continue;
+                }
+
+                $tl = $kpr->timeline ?? [];
+                $stamp = now()->toIso8601String();
+                // Tahap yang dilewati ikut dicap agar rekap & Master Data KPR tidak kosong
+                // melompong, dan jelas bahwa semuanya terjadi lewat Akad Massal.
+                foreach (['submitted', 'wawancara', 'input_bank', 'verifikasi', 'analis', 'sp3k', 'si'] as $stage) {
+                    $tl[$stage] ??= $stamp;
+                }
+                $tl['akad_massal'] = $stamp;
+                $tl['akad_massal_note'] = $v['note'] ?? 'Akad massal — tahapan di bank dilewati.';
+
+                $kpr->timeline = $tl;
+                $kpr->status = KprStatus::Si;
+                $kpr->save();
+
+                $done[] = $kpr->application_number;
+            }
+        });
+
+        if (! $done) {
+            return back()->with('error', 'Tidak ada KPR yang bisa diproses.'.($skip ? ' Dilewati: '.implode(', ', $skip) : ''));
+        }
+
+        $msg = count($done).' KPR masuk tahap SI — Surat Instruksi siap dicetak sesuai bank masing-masing.';
+        if ($skip) {
+            $msg .= ' Dilewati (bukan Pra Proses KPR): '.implode(', ', $skip).'.';
+        }
+
+        return redirect()->route('kpr.akad-bulk')->with('success', $msg);
+    }
+
     public function disbursementBulk(): Response
     {
         abort_unless(auth()->user()?->can('bankloan.disbursement.create'), 403);

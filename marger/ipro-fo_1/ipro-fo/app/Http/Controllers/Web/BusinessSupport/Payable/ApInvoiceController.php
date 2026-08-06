@@ -305,8 +305,16 @@ class ApInvoiceController extends Controller
             // Gerbang over-budget: tolak bila baris jurnal (Dr akun ber-anggaran + cost center) melewati anggaran.
             $budgetGuard->assertWithinBudget($v['journal_lines'] ?? [], null, $v['invoice_date']);
             $inv = $action->execute($v, $request->user()->id);
+            // "Simpan & Buat Jurnal" sekaligus menerbitkan Purchase Order-nya, supaya pembelian
+            // yang tagihannya masuk lebih dulu tetap punya dokumen pesanan. Data yang tidak ada
+            // di invoice (no. PO, master barang) dibangkitkan sistem — lihat actionnya.
+            $po = app(\App\Domain\BusinessSupport\Actions\GeneratePoFromApInvoice::class)->execute($inv, $request->user()->id);
         } catch (BusinessRuleException $e) {
             return back()->withInput()->with('error', $e->getMessage());
+        }
+
+        if ($po) {
+            session()->flash('success', "Invoice {$inv->invoice_number} tersimpan & Purchase Order {$po->po_number} dibuat otomatis.");
         }
 
         // Langsung tampilkan halaman cetak Memo Internal setelah simpan.

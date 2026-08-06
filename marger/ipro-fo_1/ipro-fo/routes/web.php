@@ -740,6 +740,7 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
     Route::get('/business-support/cash-flow/rumus',               [BsCashFlowPlanController::class, 'formulas'])->name('bs.cashflow.formulas');
     Route::put('/business-support/cash-flow/rumus/{formula}',     [BsCashFlowPlanController::class, 'formulaUpdate'])->name('bs.cashflow.formulas.update');
     Route::get('/business-support/cash-flow/report',              [BsCashFlowPlanController::class, 'report'])->name('bs.cashflow.report');
+    Route::get('/business-support/cash-flow/report/excel',        [BsCashFlowPlanController::class, 'reportExcel'])->name('bs.cashflow.report.excel');
     Route::post('/business-support/cash-flow/report',             [BsCashFlowPlanController::class, 'reportSave'])->name('bs.cashflow.report.save');
     Route::get('/business-support/cash-book-giro-calendar',    [BsCashBookController::class, 'giroCalendar'])->name('bs.cashbook.giro-calendar');
     Route::get('/business-support/cash-book-giro-calendar-excel', [BsCashBookController::class, 'giroCalendarExcel'])->name('bs.cashbook.giro-calendar.excel'); // #9
@@ -1142,6 +1143,9 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
     // ── BANK LOAN ──────────────────────────────────────────
     Route::get('/kpr',                                        [KprApplicationController::class, 'index'])->name('kpr.index');
     Route::get('/kpr/create',                                 [KprApplicationController::class, 'create'])->name('kpr.create');
+    // Akad Massal — segmen statis, HARUS sebelum /kpr/{kpr}.
+    Route::get('/kpr/akad-massal',                            [KprApplicationController::class, 'akadBulk'])->name('kpr.akad-bulk');
+    Route::post('/kpr/akad-massal',                           [KprApplicationController::class, 'akadBulkStore'])->name('kpr.akad-bulk.store');
     Route::get('/kpr/pencairan-massal',                       [KprApplicationController::class, 'disbursementBulk'])->name('kpr.disbursement-bulk'); // Pencairan Retensi (Massal)
     // Cetak SI massal — HARUS sebelum /kpr/{kpr} agar segmen statis tidak tertangkap sebagai id.
     Route::get('/kpr/si-print-massal',                        [KprApplicationController::class, 'siPrintBulk'])->name('kpr.si-print-bulk');
