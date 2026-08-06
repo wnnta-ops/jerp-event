@@ -68,10 +68,9 @@ class CollectionSettings extends Settings
 
     public int $sp_due_days;            // tenggat pelunasan (jatuh tempo = tgl surat + n hari)
 
-    // Saklar pengiriman OTOMATIS harian (collection:run terjadwal). Default MATI
-    // (insiden email massal). Otomatis = WA SAJA — email selalu manual dari
-    // halaman Collection, apa pun nilai saklar ini.
-    public bool $auto_kirim_wa;
+    // Jam pengiriman otomatis harian (format HH:MM, default 08:00) — dibaca
+    // penjadwal di routes/console.php. Berlaku hanya bila channel Email/WA nyala.
+    public string $auto_kirim_jam;
 
     public static function group(): string
     {

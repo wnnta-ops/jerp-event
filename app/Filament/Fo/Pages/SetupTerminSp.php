@@ -44,7 +44,7 @@ class SetupTerminSp extends Page implements HasForms
             'pembatalan_overdue_days' => $s->pembatalan_overdue_days,
             'channel_email' => $s->channel_email,
             'channel_wa' => $s->channel_wa,
-            'auto_kirim_wa' => $s->auto_kirim_wa,
+            'auto_kirim_jam' => $s->auto_kirim_jam,
         ]);
     }
 
@@ -66,16 +66,15 @@ class SetupTerminSp extends Page implements HasForms
                     ->helperText('Pembatalan TIDAK otomatis — hanya ditandai. Proses batal lewat menu Pembatalan Kontrak (approval).'),
             ]),
 
-            Forms\Components\Section::make('Channel pengiriman (tombol Kirim manual)')->columns(2)->schema([
-                Forms\Components\Toggle::make('channel_email')->label('Kirim via Email'),
-                Forms\Components\Toggle::make('channel_wa')->label('Kirim via WhatsApp'),
-            ]),
-
-            Forms\Components\Section::make('Pengiriman otomatis harian')->schema([
-                Forms\Components\Toggle::make('auto_kirim_wa')
-                    ->label('Kirim Otomatis via WhatsApp (jam 08:00)')
-                    ->helperText('MATI = tidak ada pengiriman otomatis sama sekali (default). NYALA = reminder & SP dikirim otomatis tiap pagi via WhatsApp SAJA — email tidak pernah dikirim otomatis, selalu manual dari halaman Collection.'),
-            ]),
+            Forms\Components\Section::make('Channel pengiriman')
+                ->description('Mengatur DUA hal sekaligus: (1) channel pengiriman OTOMATIS harian pada jam terpilih, dan (2) centangan awal pada modal tombol Kirim manual di halaman Collection. Keduanya MATI = TIDAK ADA pengiriman otomatis sama sekali (default) — kirim hanya manual.')
+                ->columns(2)->schema([
+                    Forms\Components\Toggle::make('channel_email')->label('Kirim via Email'),
+                    Forms\Components\Toggle::make('channel_wa')->label('Kirim via WhatsApp'),
+                    Forms\Components\TimePicker::make('auto_kirim_jam')->label('Jam kirim otomatis')
+                        ->seconds(false)->required()
+                        ->helperText('Pengiriman otomatis berjalan sekali sehari pada jam ini (bila ada channel yang nyala). Perubahan jam berlaku otomatis, tanpa restart.'),
+                ]),
         ]);
     }
 
@@ -87,6 +86,8 @@ class SetupTerminSp extends Page implements HasForms
     public function save(): void
     {
         $data = $this->form->getState();
+        // TimePicker bisa mengembalikan HH:MM:SS — simpan HH:MM (format dailyAt).
+        $data['auto_kirim_jam'] = substr((string) ($data['auto_kirim_jam'] ?? '08:00'), 0, 5);
         $s = app(CollectionSettings::class);
         foreach ($data as $key => $value) {
             $s->{$key} = $value;
