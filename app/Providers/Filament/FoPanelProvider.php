@@ -423,6 +423,7 @@ class FoPanelProvider extends PanelProvider
                     $item('Refund / CB', '/fo/refunds', 'heroicon-o-arrow-uturn-left', 'filament.fo.resources.refunds.'),
                     $item('GMC (Gimmick)', '/fo/gmcs', 'heroicon-o-gift', 'filament.fo.resources.gmcs.'),
                     $item('Setup Hold', '/fo/setup-hold', 'heroicon-o-pause-circle', 'filament.fo.pages.setup-hold'),
+                    $item('Report Xendit', '/fo/report-xendit', 'heroicon-o-credit-card', 'filament.fo.pages.report-xendit'),
                     $item('Dashboard AR', '/fo/reminder-ar', 'heroicon-o-presentation-chart-line', 'filament.fo.pages.reminder-ar'),
                 ],
             ],
