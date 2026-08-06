@@ -337,9 +337,14 @@
                     // Zoom BERTAHAP & halus: zoomSnap 0 → tak "loncat" ke kelipatan level;
                     // zoomDelta .25 → tombol +/- & keyboard melangkah kecil; wheel butuh
                     // lebih banyak px per level → scroll terasa mulus, bukan meloncat.
+                    // zoomAnimation:false → MATIKAN animasi zoom: animasi yang terpotong
+                    // (scroll cepat/pan) meninggalkan transform scale basi di elemen gambar
+                    // → gambar "geser" dari koordinat (insiden berulang di production).
+                    // Tanpa animasi, seluruh kelas bug itu mustahil terjadi.
                     this.map = L.map('pu-map', {
                         crs: L.CRS.Simple, minZoom: -4, maxZoom: 4,
                         zoomSnap: 0, zoomDelta: 0.25, wheelPxPerZoomLevel: 240,
+                        zoomAnimation: false,
                         attributionControl: false,
                     });
 

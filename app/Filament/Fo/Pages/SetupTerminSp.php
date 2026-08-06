@@ -44,6 +44,7 @@ class SetupTerminSp extends Page implements HasForms
             'pembatalan_overdue_days' => $s->pembatalan_overdue_days,
             'channel_email' => $s->channel_email,
             'channel_wa' => $s->channel_wa,
+            'auto_kirim_wa' => $s->auto_kirim_wa,
         ]);
     }
 
@@ -65,9 +66,15 @@ class SetupTerminSp extends Page implements HasForms
                     ->helperText('Pembatalan TIDAK otomatis — hanya ditandai. Proses batal lewat menu Pembatalan Kontrak (approval).'),
             ]),
 
-            Forms\Components\Section::make('Channel pengiriman')->columns(2)->schema([
+            Forms\Components\Section::make('Channel pengiriman (tombol Kirim manual)')->columns(2)->schema([
                 Forms\Components\Toggle::make('channel_email')->label('Kirim via Email'),
                 Forms\Components\Toggle::make('channel_wa')->label('Kirim via WhatsApp'),
+            ]),
+
+            Forms\Components\Section::make('Pengiriman otomatis harian')->schema([
+                Forms\Components\Toggle::make('auto_kirim_wa')
+                    ->label('Kirim Otomatis via WhatsApp (jam 08:00)')
+                    ->helperText('MATI = tidak ada pengiriman otomatis sama sekali (default). NYALA = reminder & SP dikirim otomatis tiap pagi via WhatsApp SAJA — email tidak pernah dikirim otomatis, selalu manual dari halaman Collection.'),
             ]),
         ]);
     }

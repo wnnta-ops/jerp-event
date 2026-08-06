@@ -9,20 +9,35 @@ use Illuminate\Console\Command;
 use Illuminate\Support\Carbon;
 
 /**
- * Penagihan otomatis: pindai kontrak SPR, kirim reminder pra-jatuh-tempo &
- * Surat Peringatan I/II/III sesuai Termin SP (via Email/WA). Idempotent —
- * tiap (tagihan, jenis) hanya dikirim sekali. Jadwalkan harian (routes/console.php).
+ * Penagihan massal via CLI — pindai kontrak SPR, kirim reminder pra-jatuh-tempo
+ * & Surat Peringatan I/II/III sesuai Termin SP. Idempotent — tiap (tagihan,
+ * jenis) hanya dikirim sekali.
+ *
+ * TIDAK DIJADWALKAN (permintaan — insiden email massal ke customer): reminder
+ * & SP dikirim MANUAL lewat tombol Kirim di halaman Collection. Command ini
+ * hanya untuk pemakaian manual eksplisit dari CLI, dan channel-nya WA SAJA —
+ * email tidak pernah dikirim dari sini.
  */
 class CollectionRunCommand extends Command
 {
     protected $signature = 'collection:run {--dry : Hanya tampilkan tanpa mengirim}';
 
-    protected $description = 'Kirim reminder pra-jatuh-tempo & Surat Peringatan (SP I/II/III) untuk AR kontrak SPR';
+    protected $description = 'Kirim reminder pra-jatuh-tempo & Surat Peringatan (SP I/II/III) via WA — email hanya manual';
 
     public function handle(CollectionService $svc, CollectionSettings $set): int
     {
         $dry = (bool) $this->option('dry');
         $today = Carbon::today();
+
+        // Saklar dari Setup Termin SP — default MATI. --dry boleh jalan untuk pratinjau.
+        if (! $set->auto_kirim_wa && ! $dry) {
+            $this->warn('Kirim Otomatis MATI (Setup Termin SP) — tidak ada yang dikirim. Nyalakan toggle "Kirim Otomatis via WhatsApp" bila ingin otomatis.');
+
+            return self::SUCCESS;
+        }
+
+        // Otomatis = WA SAJA (email manual dari halaman Collection).
+        $autoChannels = ['WA'];
 
         $kontraks = Kontrak::query()
             ->where('tahap', 'SPR')
@@ -44,7 +59,7 @@ class CollectionRunCommand extends Command
                         && ! $svc->sudahKirim($t->id, 'REMINDER')) {
                         $this->line("REMINDER · {$kontrak->no_kontrak} · {$t->nama_tagihan} (H-{$hSampaiJT})");
                         if (! $dry) {
-                            $svc->kirim($kontrak, $t, 'REMINDER', null, 0);
+                            $svc->kirim($kontrak, $t, 'REMINDER', $autoChannels, 0);
                         }
                         $reminder++;
                     }
@@ -57,7 +72,7 @@ class CollectionRunCommand extends Command
                 if ($target && ! $svc->sudahKirim($t->id, $target)) {
                     $this->line("{$target} · {$kontrak->no_kontrak} · {$t->nama_tagihan} (telat {$telat} hari)");
                     if (! $dry) {
-                        $svc->kirim($kontrak, $t, $target, null, $telat);
+                        $svc->kirim($kontrak, $t, $target, $autoChannels, $telat);
                     }
                     $sp++;
                 }

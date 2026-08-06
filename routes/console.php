@@ -10,9 +10,10 @@ Artisan::command('inspire', function () {
 })->purpose('Display an inspiring quote');
 
 /*
- * Collection: penagihan otomatis harian — reminder pra-jatuh-tempo & Surat
- * Peringatan I/II/III untuk AR kontrak SPR (lihat CollectionRunCommand). Butuh
- * scheduler aktif (php artisan schedule:work / cron `schedule:run`).
+ * Collection: penagihan otomatis harian — DIKONTROL toggle "Kirim Otomatis via
+ * WhatsApp" di Setup Termin SP (default MATI; command keluar tanpa mengirim
+ * bila toggle mati). Saat nyala pun HANYA WhatsApp — email peringatan selalu
+ * manual dari halaman Collection (insiden email massal, permintaan user).
  */
 Schedule::command('collection:run')->dailyAt('08:00')->withoutOverlapping();
 
