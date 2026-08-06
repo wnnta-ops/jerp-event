@@ -27,7 +27,7 @@ const groups: Array<{ group: string; items: Array<{ label: string; route: string
 <template>
     <div class="max-w-3xl space-y-5">
         <Link :href="route('bs.cashbook.home')" class="inline-flex items-center gap-2 text-sm text-neutral-500 hover:text-neutral-800 dark:hover:text-neutral-200"><ArrowLeft class="h-4 w-4" /> Cash Book</Link>
-        <h1 class="flex items-center gap-2 text-2xl font-bold"><Printer class="h-6 w-6 text-primary-600" /> Print-Out</h1>
+        <h1 class="flex items-center gap-2 text-2xl font-bold"><Printer class="h-6 w-6 text-primary-600" /> General Function</h1>
         <p class="text-sm text-neutral-500">Pilih laporan kas/bank untuk ditampilkan, lalu cetak/unduh dari halamannya.</p>
 
         <div class="grid gap-4 sm:grid-cols-2">

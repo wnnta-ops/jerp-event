@@ -39,9 +39,36 @@ class GoodsIssueController extends Controller
 
         return Inertia::render('BusinessSupport/Inventory/GoodsIssues/Form', [
             'warehouses' => BsWarehouse::where('is_active', true)->orderBy('code')->get(['id', 'code', 'name']),
-            'items'      => BsItem::where('is_active', true)->orderBy('name')->get(['id', 'code', 'name']),
+            'items'      => BsItem::where('is_active', true)->with('uom:id,code,name')->orderBy('name')->get(['id', 'code', 'name', 'uom_id'])
+                ->map(fn ($i) => ['id' => $i->id, 'code' => $i->code, 'name' => $i->name, 'uom' => $i->uom?->code ?: $i->uom?->name])->values(),
             'materialRequests' => BsMaterialRequest::where('status', 'approved')->latest('request_date')->limit(50)->get(['id', 'mr_number']),
+            // Saldo stok per (gudang, item) — dipakai layar untuk menampilkan sisa stok &
+            // mencegah pengeluaran melebihi saldo sebelum dikirim ke server.
+            'balances'   => $this->balances(),
         ]);
+    }
+
+    /**
+     * Saldo stok berjalan per gudang & item (hanya yang saldonya masih ada).
+     *
+     * Dihitung dari kartu stok (bs_stock_movements) dengan rumus yang sama dengan
+     * StockService::balance(), tapi sekali query untuk seluruh kombinasi — bukan per item —
+     * supaya halaman tidak perlu bolak-balik ke server saat gudang/item diganti.
+     *
+     * @return array<int,array{warehouse_id:int, item_id:int, qty:float}>
+     */
+    private function balances(): array
+    {
+        return DB::table('bs_stock_movements')
+            ->groupBy('warehouse_id', 'item_id')
+            ->havingRaw('COALESCE(SUM(CASE WHEN direction = ? THEN qty ELSE -qty END), 0) > 0', ['in'])
+            ->selectRaw('warehouse_id, item_id, COALESCE(SUM(CASE WHEN direction = ? THEN qty ELSE -qty END), 0) as qty', ['in'])
+            ->get()
+            ->map(fn ($r) => [
+                'warehouse_id' => (int) $r->warehouse_id,
+                'item_id'      => (int) $r->item_id,
+                'qty'          => (float) $r->qty,
+            ])->values()->all();
     }
 
     public function store(Request $request, StockService $stock): RedirectResponse

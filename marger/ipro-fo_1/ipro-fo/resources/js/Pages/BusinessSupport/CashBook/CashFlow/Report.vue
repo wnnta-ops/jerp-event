@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, reactive, computed } from 'vue';
 import { router, Link } from '@inertiajs/vue3';
-import { ArrowLeft, BarChart3, Save, Info, ChevronDown, TriangleAlert } from 'lucide-vue-next';
+import { ArrowLeft, BarChart3, Save, Info, ChevronDown, ChevronRight, TriangleAlert, FileSpreadsheet } from 'lucide-vue-next';
 import Button from '@/Components/UI/Button.vue';
 
 type Cell = { wnpb: number; projection: number; actual: number };
@@ -80,6 +80,31 @@ function simpan() {
     });
 }
 
+// Rincian tiap baris Nett = kategori penyusunnya menurut Set Up Kategori, mengikuti rumus
+// di controller: Nett Ops = CASH IN OPS − CASH OUT, Nett Non Ops = CASH IN NON OPS.
+const OWNER: Record<string, 'nett_ops' | 'nett_non_ops'> = {
+    inflow_ops: 'nett_ops',
+    outflow: 'nett_ops',
+    inflow_non_ops: 'nett_non_ops',
+};
+const NETT_ROWS: Array<{ key: string; label: string; drill: boolean; hint: string }> = [
+    { key: 'nett_ops', label: 'Nett Cashplan Ops', drill: true, hint: 'CASH IN OPS − CASH OUT' },
+    { key: 'nett_non_ops', label: 'Nett Cashplan Non Ops', drill: true, hint: 'CASH IN NON OPS' },
+    { key: 'nett', label: 'Nett Cashflow', drill: false, hint: '' },
+];
+const detail = computed<Record<string, Row[]>>(() => {
+    const d: Record<string, Row[]> = { nett_ops: [], nett_non_ops: [] };
+    for (const r of props.rows) {
+        const owner = OWNER[r.section];
+        if (owner) d[owner].push(r);
+    }
+    return d;
+});
+const catCount = (k: string) => (detail.value[k] ?? []).filter(r => r.kind === 'category').length;
+const openRow = reactive<Record<string, boolean>>({ nett_ops: false, nett_non_ops: false });
+
+const excelUrl = computed(() => route('bs.cashflow.report.excel', { year: props.year, upto: props.upto }));
+
 const rp = (v: number) => (Number(v) || 0).toLocaleString('id-ID', { maximumFractionDigits: 0 });
 const rpSigned = (v: number) => (Number(v) || 0) < 0 ? `(${rp(Math.abs(v))})` : rp(v);
 const numCls = (v: number) => (Number(v) || 0) < 0 ? 'text-danger-600 dark:text-danger-400' : '';
@@ -94,7 +119,7 @@ const inCls = 'h-7 w-full rounded border border-neutral-200 bg-white px-1 text-r
         <div class="flex flex-wrap items-end justify-between gap-3">
             <div>
                 <h1 class="flex items-center gap-2 text-2xl font-bold"><BarChart3 class="h-6 w-6 text-primary-600" /> Report Cashflow</h1>
-                <p class="mt-0.5 text-sm text-neutral-500">Rekap transaksi yang sudah dikelompokkan lewat <b>Simpan Pembagian</b> di Rekening Ledger. Kolom <b>Actual</b> otomatis; <b>WPNB</b> &amp; <b>Proyeksi</b> diisi di sini.</p>
+                <p class="mt-0.5 text-sm text-neutral-500">Rekap transaksi yang sudah dikelompokkan lewat <b>Simpan Pembagian</b> di Rekening Ledger. Kolom <b>Actual</b> otomatis; <b>WPNB</b> &amp; <b>Proyeksi</b> diisi di sini. Klik <b>Nett Cashplan Ops</b> / <b>Non Ops</b> untuk membuka rincian kategorinya.</p>
             </div>
             <div class="flex flex-wrap items-end gap-2">
                 <div>
@@ -108,6 +133,10 @@ const inCls = 'h-7 w-full rounded border border-neutral-200 bg-white px-1 text-r
                     </select>
                 </div>
                 <Button variant="secondary" @click="reload">Tampilkan</Button>
+                <!-- Unduhan mengikuti periode yang SEDANG tampil, bukan isian yang belum di-"Tampilkan". -->
+                <a :href="excelUrl" class="inline-flex h-9 items-center gap-2 rounded-lg border border-emerald-300 bg-emerald-50 px-3 text-sm font-medium text-emerald-700 transition-colors duration-200 hover:bg-emerald-100 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300 dark:hover:bg-emerald-900/50">
+                    <FileSpreadsheet class="h-4 w-4" /> Unduh Excel
+                </a>
                 <Button :disabled="!dirty" :loading="saving" @click="simpan"><template #icon-left><Save class="h-4 w-4" /></template>Simpan Angka</Button>
             </div>
         </div>
@@ -157,44 +186,61 @@ const inCls = 'h-7 w-full rounded border border-neutral-200 bg-white px-1 text-r
                     </tr>
                 </thead>
                 <tbody class="divide-y divide-neutral-100 dark:divide-neutral-800">
-                    <template v-for="(r, ri) in rows" :key="ri">
-                        <!-- Judul seksi -->
-                        <tr v-if="r.kind === 'section'" :class="SECTION_TONE[r.section]">
-                            <td class="sticky left-0 z-10 border border-neutral-200 px-3 py-1.5 text-[11px] font-bold tracking-wide dark:border-neutral-700" :class="SECTION_TONE[r.section]">{{ r.label }}</td>
-                            <td :colspan="months.length * 4 + 2" class="border border-neutral-200 dark:border-neutral-700"></td>
-                        </tr>
-                        <!-- Sub-judul grup -->
-                        <tr v-else-if="r.kind === 'group'" class="bg-neutral-100 dark:bg-neutral-800/70">
-                            <td class="sticky left-0 z-10 border border-neutral-200 bg-neutral-100 px-3 py-1 text-[11px] font-bold uppercase tracking-wide text-neutral-600 dark:border-neutral-700 dark:bg-neutral-800/70 dark:text-neutral-300">{{ r.label }}</td>
-                            <td :colspan="months.length * 4 + 2" class="border border-neutral-200 dark:border-neutral-700"></td>
-                        </tr>
-                        <!-- Baris kategori -->
-                        <tr v-else class="transition-colors duration-150 hover:bg-primary-50/40 dark:hover:bg-primary-950/15">
-                            <td class="sticky left-0 z-10 border border-neutral-200 bg-white px-3 py-1 dark:border-neutral-700 dark:bg-neutral-900">{{ r.label }}</td>
-                            <template v-for="(m, mi) in months" :key="ri+'-'+m">
-                                <td class="border border-neutral-200 p-0.5 dark:border-neutral-700"><input :value="cellVal(r, mi, 'wnpb')" @input="setCell(r, mi, 'wnpb', ($event.target as HTMLInputElement).value)" type="number" step="any" :class="inCls" /></td>
-                                <td class="border border-neutral-200 p-0.5 dark:border-neutral-700"><input :value="cellVal(r, mi, 'projection')" @input="setCell(r, mi, 'projection', ($event.target as HTMLInputElement).value)" type="number" step="any" :class="inCls" /></td>
-                                <td class="border border-neutral-200 px-2 py-1 text-right font-mono tabular-nums" :class="numCls(r.cells?.[mi]?.actual ?? 0)">{{ rpSigned(r.cells?.[mi]?.actual ?? 0) }}</td>
-                                <td class="border border-neutral-200 px-2 py-1 text-right font-mono tabular-nums text-neutral-500" :class="numCls(gapOf(r, mi))">{{ rpSigned(gapOf(r, mi)) }}</td>
+                    <!-- Ringkasan; dua baris Nett bisa dibuka ke bawah untuk melihat kategori penyusunnya. -->
+                    <template v-for="nr in NETT_ROWS" :key="'n'+nr.key">
+                        <tr class="bg-neutral-50 font-semibold dark:bg-neutral-800/50">
+                            <td class="sticky left-0 z-10 border border-neutral-200 bg-neutral-50 p-0 dark:border-neutral-700 dark:bg-neutral-800/50">
+                                <button v-if="nr.drill" type="button" @click="openRow[nr.key] = !openRow[nr.key]"
+                                    class="flex w-full items-center gap-1.5 px-3 py-1.5 text-left transition-colors duration-150 hover:bg-primary-100/70 dark:hover:bg-primary-950/40">
+                                    <component :is="openRow[nr.key] ? ChevronDown : ChevronRight" class="h-3.5 w-3.5 shrink-0 text-primary-600" />
+                                    <span>{{ nr.label }}</span>
+                                    <span class="ml-auto rounded-full bg-neutral-200 px-1.5 py-px text-[9.5px] font-medium tabular-nums text-neutral-600 dark:bg-neutral-700 dark:text-neutral-300">{{ catCount(nr.key) }}</span>
+                                </button>
+                                <span v-else class="block px-3 py-1.5">{{ nr.label }}</span>
+                            </td>
+                            <template v-for="(s, si) in summary" :key="'n'+nr.key+si">
+                                <td class="border border-neutral-200 px-2 py-1 text-right font-mono tabular-nums" :class="numCls(s.wnpb[nr.key])">{{ rpSigned(s.wnpb[nr.key]) }}</td>
+                                <td class="border border-neutral-200 px-2 py-1 text-right font-mono tabular-nums" :class="numCls(s.projection[nr.key])">{{ rpSigned(s.projection[nr.key]) }}</td>
+                                <td class="border border-neutral-200 px-2 py-1 text-right font-mono tabular-nums" :class="numCls(s.actual[nr.key])">{{ rpSigned(s.actual[nr.key]) }}</td>
+                                <td class="border border-neutral-200 px-2 py-1 text-right font-mono tabular-nums text-neutral-500" :class="numCls(s.projection[nr.key] - s.actual[nr.key])">{{ rpSigned(s.projection[nr.key] - s.actual[nr.key]) }}</td>
                             </template>
-                            <td class="border border-neutral-200 bg-primary-50/60 px-2 py-1 text-right font-mono font-semibold tabular-nums dark:border-neutral-700 dark:bg-primary-950/25" :class="numCls(r.total_ytd ?? 0)">{{ rpSigned(r.total_ytd ?? 0) }}</td>
-                            <td class="border border-neutral-200 bg-primary-50/60 px-2 py-1 text-right font-mono tabular-nums dark:border-neutral-700 dark:bg-primary-950/25" :class="numCls(r.total_multi ?? 0)">{{ rpSigned(r.total_multi ?? 0) }}</td>
+                            <td class="border border-neutral-200 bg-primary-50/60 px-2 py-1 text-right font-mono tabular-nums dark:border-neutral-700 dark:bg-primary-950/25" :class="numCls(summary.reduce((a, s) => a + s.actual[nr.key], 0))">{{ rpSigned(summary.reduce((a, s) => a + s.actual[nr.key], 0)) }}</td>
+                            <td class="border border-neutral-200 bg-primary-50/60 dark:border-neutral-700 dark:bg-primary-950/25"></td>
                         </tr>
-                    </template>
 
-                    <!-- Ringkasan -->
-                    <tr v-for="(lbl, k) in ({ nett_ops: 'Nett Cashplan Ops', nett_non_ops: 'Nett Cashplan Non Ops', nett: 'Nett Cashflow' } as Record<string,string>)" :key="'n'+k"
-                        class="bg-neutral-50 font-semibold dark:bg-neutral-800/50">
-                        <td class="sticky left-0 z-10 border border-neutral-200 bg-neutral-50 px-3 py-1.5 dark:border-neutral-700 dark:bg-neutral-800/50">{{ lbl }}</td>
-                        <template v-for="(s, si) in summary" :key="'n'+k+si">
-                            <td class="border border-neutral-200 px-2 py-1 text-right font-mono tabular-nums" :class="numCls(s.wnpb[k])">{{ rpSigned(s.wnpb[k]) }}</td>
-                            <td class="border border-neutral-200 px-2 py-1 text-right font-mono tabular-nums" :class="numCls(s.projection[k])">{{ rpSigned(s.projection[k]) }}</td>
-                            <td class="border border-neutral-200 px-2 py-1 text-right font-mono tabular-nums" :class="numCls(s.actual[k])">{{ rpSigned(s.actual[k]) }}</td>
-                            <td class="border border-neutral-200 px-2 py-1 text-right font-mono tabular-nums text-neutral-500" :class="numCls(s.projection[k] - s.actual[k])">{{ rpSigned(s.projection[k] - s.actual[k]) }}</td>
+                        <!-- Rincian: seksi → grup → kategori, persis susunan Set Up Kategori. -->
+                        <template v-if="nr.drill && openRow[nr.key]">
+                            <tr v-if="!detail[nr.key].length">
+                                <td :colspan="months.length * 4 + 3" class="border border-neutral-200 bg-amber-50 px-3 py-2 text-[11px] text-amber-800 dark:border-neutral-700 dark:bg-amber-950/30 dark:text-amber-200">
+                                    Belum ada kategori pada {{ nr.hint }}. Tambahkan lewat <b>Cash Flow → Set Up Kategori</b>.
+                                </td>
+                            </tr>
+                            <template v-for="(r, ri) in detail[nr.key]" :key="nr.key+'-'+ri">
+                                <!-- Judul seksi -->
+                                <tr v-if="r.kind === 'section'" :class="SECTION_TONE[r.section]">
+                                    <td class="sticky left-0 z-10 border border-neutral-200 py-1.5 pl-7 pr-3 text-[11px] font-bold tracking-wide dark:border-neutral-700" :class="SECTION_TONE[r.section]">{{ r.label }}</td>
+                                    <td :colspan="months.length * 4 + 2" class="border border-neutral-200 dark:border-neutral-700"></td>
+                                </tr>
+                                <!-- Sub-judul grup -->
+                                <tr v-else-if="r.kind === 'group'" class="bg-neutral-100 dark:bg-neutral-800/70">
+                                    <td class="sticky left-0 z-10 border border-neutral-200 bg-neutral-100 py-1 pl-9 pr-3 text-[11px] font-bold uppercase tracking-wide text-neutral-600 dark:border-neutral-700 dark:bg-neutral-800/70 dark:text-neutral-300">{{ r.label }}</td>
+                                    <td :colspan="months.length * 4 + 2" class="border border-neutral-200 dark:border-neutral-700"></td>
+                                </tr>
+                                <!-- Baris kategori -->
+                                <tr v-else class="transition-colors duration-150 hover:bg-primary-50/40 dark:hover:bg-primary-950/15">
+                                    <td class="sticky left-0 z-10 border border-neutral-200 bg-white py-1 pl-11 pr-3 dark:border-neutral-700 dark:bg-neutral-900">{{ r.label }}</td>
+                                    <template v-for="(m, mi) in months" :key="nr.key+'-'+ri+'-'+m">
+                                        <td class="border border-neutral-200 p-0.5 dark:border-neutral-700"><input :value="cellVal(r, mi, 'wnpb')" @input="setCell(r, mi, 'wnpb', ($event.target as HTMLInputElement).value)" type="number" step="any" :class="inCls" /></td>
+                                        <td class="border border-neutral-200 p-0.5 dark:border-neutral-700"><input :value="cellVal(r, mi, 'projection')" @input="setCell(r, mi, 'projection', ($event.target as HTMLInputElement).value)" type="number" step="any" :class="inCls" /></td>
+                                        <td class="border border-neutral-200 px-2 py-1 text-right font-mono tabular-nums" :class="numCls(r.cells?.[mi]?.actual ?? 0)">{{ rpSigned(r.cells?.[mi]?.actual ?? 0) }}</td>
+                                        <td class="border border-neutral-200 px-2 py-1 text-right font-mono tabular-nums text-neutral-500" :class="numCls(gapOf(r, mi))">{{ rpSigned(gapOf(r, mi)) }}</td>
+                                    </template>
+                                    <td class="border border-neutral-200 bg-primary-50/60 px-2 py-1 text-right font-mono font-semibold tabular-nums dark:border-neutral-700 dark:bg-primary-950/25" :class="numCls(r.total_ytd ?? 0)">{{ rpSigned(r.total_ytd ?? 0) }}</td>
+                                    <td class="border border-neutral-200 bg-primary-50/60 px-2 py-1 text-right font-mono tabular-nums dark:border-neutral-700 dark:bg-primary-950/25" :class="numCls(r.total_multi ?? 0)">{{ rpSigned(r.total_multi ?? 0) }}</td>
+                                </tr>
+                            </template>
                         </template>
-                        <td class="border border-neutral-200 bg-primary-50/60 px-2 py-1 text-right font-mono tabular-nums dark:border-neutral-700 dark:bg-primary-950/25" :class="numCls(summary.reduce((a, s) => a + s.actual[k], 0))">{{ rpSigned(summary.reduce((a, s) => a + s.actual[k], 0)) }}</td>
-                        <td class="border border-neutral-200 bg-primary-50/60 dark:border-neutral-700 dark:bg-primary-950/25"></td>
-                    </tr>
+                    </template>
 
                     <!-- Saldo (mengikuti angka AKTUAL) -->
                     <tr v-for="row in ([
@@ -223,6 +269,7 @@ const inCls = 'h-7 w-full rounded border border-neutral-200 bg-white px-1 text-r
 
         <p class="text-[11px] text-neutral-500">
             <b>Beginning Balance</b> bulan pertama diambil dari posisi kas/bank menurut jurnal sebelum 1 Januari {{ year }} (Rp {{ rp(opening) }}), bukan diinput ulang — supaya tidak pernah berbeda dengan pembukuan. Bulan berikutnya = Ending Balance bulan sebelumnya.
+            Rincian kategori berada di dalam baris <b>Nett Cashplan Ops</b> (CASH IN OPS − CASH OUT) dan <b>Nett Cashplan Non Ops</b> (CASH IN NON OPS); <b>WPNB</b> &amp; <b>Proyeksi</b> disunting setelah rinciannya dibuka. Berkas <b>Unduh Excel</b> selalu memuat seluruh rincian, walaupun di layar sedang tertutup.
         </p>
     </div>
 </template>

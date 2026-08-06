@@ -7,7 +7,7 @@
  */
 import { router, Link } from '@inertiajs/vue3';
 import { ref, reactive, computed, watch, onMounted, onBeforeUnmount, nextTick } from 'vue';
-import { Plus, ShoppingCart, Search, FileSpreadsheet, FilterX, Printer, ClipboardList, CircleDollarSign, PackageCheck } from 'lucide-vue-next';
+import { Plus, ShoppingCart, Search, FileSpreadsheet, FilterX, Printer, ClipboardList, CircleDollarSign, PackageCheck, ClipboardCheck } from 'lucide-vue-next';
 import Button from '@/Components/UI/Button.vue';
 import Badge from '@/Components/UI/Badge.vue';
 import EmptyState from '@/Components/UI/EmptyState.vue';
@@ -19,7 +19,9 @@ type Row = {
     lines_count: number; subtotal: number; ppn_amount: number; total: number; status: string;
     printed_at: string | null; print_count: number;
 };
-const props = defineProps<{ orders: Row[] }>();
+type Fpb = { id: number; number: string; date: string | null; notes: string | null; line_count: number; items: string[] };
+const props = defineProps<{ orders: Row[]; pendingFpb?: Fpb[] }>();
+const pendingFpb = computed(() => props.pendingFpb ?? []);
 
 function fmtRp(v: number) { return 'Rp ' + Number(v ?? 0).toLocaleString('id-ID'); }
 function fmtDate(d: string | null) { return d ? new Date(d).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'; }
@@ -201,6 +203,31 @@ watch(filtered, () => nextTick(measure));
                     <Printer class="h-4 w-4" /> Cetak PO<span v-if="selectedIds.length"> ({{ selectedIds.length }})</span>
                 </button>
                 <Link :href="route('bs.po.create')"><Button><template #icon-left><Plus class="h-4 w-4" /></template>Buat PO</Button></Link>
+            </div>
+        </div>
+
+        <!-- FPB yang sudah DISETUJUI & belum jadi PO — lanjutkan langsung dari sini. -->
+        <div v-if="pendingFpb.length" class="rounded-xl bg-white p-4 ring-1 ring-primary-200 dark:bg-neutral-900 dark:ring-primary-800/60">
+            <div class="mb-2.5 flex flex-wrap items-center justify-between gap-2">
+                <h2 class="flex items-center gap-2 text-sm font-semibold">
+                    <ClipboardCheck class="h-4 w-4 text-primary-600" /> FPB Disetujui — siap dijadikan PO
+                    <span class="rounded-md bg-primary-100 px-1.5 py-0.5 text-[11px] font-bold text-primary-700 dark:bg-primary-950/60 dark:text-primary-300">{{ pendingFpb.length }}</span>
+                </h2>
+                <Link :href="route('bs.fpb.index')" class="text-xs font-medium text-primary-600 hover:underline">Lihat semua FPB →</Link>
+            </div>
+            <div class="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                <div v-for="f in pendingFpb" :key="f.id"
+                    class="flex items-start justify-between gap-3 rounded-lg bg-primary-50/60 p-3 ring-1 ring-primary-100 transition-shadow duration-200 hover:shadow-sm dark:bg-primary-950/25 dark:ring-primary-900/50">
+                    <div class="min-w-0">
+                        <div class="font-mono text-xs font-bold">{{ f.number }}</div>
+                        <div class="text-[11px] text-neutral-500">{{ f.date }} · {{ f.line_count }} baris</div>
+                        <div class="mt-0.5 truncate text-[11px] text-neutral-500" :title="f.items.join(' · ')">{{ f.items.join(' · ') || '—' }}</div>
+                    </div>
+                    <Link :href="route('bs.po.create', { fpb: f.id })"
+                        class="inline-flex h-7 shrink-0 items-center gap-1 rounded-lg bg-primary-600 px-2.5 text-[11px] font-semibold text-white transition-all duration-200 hover:bg-primary-700 active:scale-[0.98]">
+                        <Plus class="h-3 w-3" /> Buat PO
+                    </Link>
+                </div>
             </div>
         </div>
 

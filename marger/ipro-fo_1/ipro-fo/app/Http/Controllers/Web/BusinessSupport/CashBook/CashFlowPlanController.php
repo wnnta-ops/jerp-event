@@ -10,12 +10,14 @@ use App\Domain\BusinessSupport\Models\BsCfFigure;
 use App\Domain\BusinessSupport\Models\BsCfFormula;
 use App\Domain\BusinessSupport\Models\BsCfPeriodSetting;
 use App\Http\Controllers\Controller;
+use App\Support\Export\SimpleXlsxWriter;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 use Inertia\Response;
+use Symfony\Component\HttpFoundation\BinaryFileResponse;
 
 /**
  * Modul CASH FLOW (Cash Book) — Set Up Kategori, Set Up Rumus, dan Report Cashflow.
@@ -133,8 +135,153 @@ class CashFlowPlanController extends Controller
     {
         abort_unless($request->user()?->canModule('cashbook'), 403);
 
+        [$year, $upto] = $this->reportPeriod($request);
+        $data = $this->reportData($year, $upto);
+
+        return Inertia::render('BusinessSupport/CashBook/CashFlow/Report', $data + [
+            'year'      => $year,
+            'upto'      => $upto,
+            'formulas'  => BsCfFormula::orderBy('sort_order')->get(['code', 'name', 'expression', 'description']),
+            'hasSplits' => DB::table('bs_ledger_cluster_splits')->whereNotNull('cf_category_id')->exists(),
+        ]);
+    }
+
+    /**
+     * Unduh Excel — isinya SAMA PERSIS dengan yang tampil di layar karena keduanya memakai
+     * reportData() yang sama; tidak ada perhitungan kedua yang bisa menyimpang diam-diam.
+     * Rincian kategori selalu ikut terunduh, walaupun di layar sedang tertutup.
+     */
+    public function reportExcel(Request $request): BinaryFileResponse
+    {
+        abort_unless($request->user()?->canModule('cashbook'), 403);
+
+        [$year, $upto] = $this->reportPeriod($request);
+        ['months' => $months, 'rows' => $rows, 'summary' => $summary, 'opening' => $opening] = $this->reportData($year, $upto);
+
+        $MON = [1 => 'JANUARI', 'FEBRUARI', 'MARET', 'APRIL', 'MEI', 'JUNI', 'JULI', 'AGUSTUS', 'SEPTEMBER', 'OKTOBER', 'NOVEMBER', 'DESEMBER'];
+        $subs = ['WPNB', 'Proyeksi', 'Actual', 'Gap'];
+        $colCount = 1 + count($months) * 4 + 2;
+
+        $widths = [0 => 42];
+        for ($i = 1; $i < $colCount; $i++) {
+            $widths[$i] = 14;
+        }
+
+        $writer = new SimpleXlsxWriter(
+            sheetName: 'Report Cashflow '.$year,
+            colWidths: $widths,
+            freezeRows: 4,   // judul + meta + header bulan + header sub-kolom
+            freezeCols: 1,   // kolom Kategori tetap terlihat saat digulir ke kanan
+        );
+
+        $writer->addTitle('REPORT CASHFLOW '.$year, $colCount);
+        $writer->addMeta(
+            'Periode Januari–'.ucfirst(mb_strtolower($MON[$upto])).' '.$year
+            .' · diunduh '.now()->translatedFormat('d F Y H:i').' · '.($request->user()?->name ?? '')
+            .' · Actual berasal dari Simpan Pembagian di Rekening Ledger'
+            .' · baris saldo hanya punya satu angka per bulan sehingga ditulis di kolom Actual',
+            $colCount,
+        );
+
+        $groups = array_map(fn ($m) => ['label' => $MON[$m].' '.$year, 'span' => 4], $months);
+        $groups[] = ['label' => 'TOTAL '.$year, 'span' => 1];
+        $groups[] = ['label' => 'TOTAL 2022–'.$year, 'span' => 1];
+        $writer->addGroupHeader($groups, 1, ['KATEGORI']);
+
+        $head = ['KATEGORI'];
+        foreach ($months as $m) {
+            foreach ($subs as $s) {
+                $head[] = $s;
+            }
+        }
+        $head[] = 'Total '.$year;
+        $head[] = 'Total 2022–'.$year;
+        $writer->addHeader($head);
+
+        // Kolom pertama teks, sisanya angka.
+        $num = array_fill(0, $colCount, true);
+        $num[0] = false;
+
+        foreach ($rows as $r) {
+            if (($r['kind'] ?? '') !== 'category') {
+                // Judul seksi / sub-judul grup: satu baris label saja, seperti di layar.
+                $writer->addRow([$r['label']], $num);
+
+                continue;
+            }
+            $line = [$r['label']];
+            foreach ($months as $mi => $m) {
+                $c = $r['cells'][$mi] ?? ['wnpb' => 0, 'projection' => 0, 'actual' => 0];
+                $line[] = $c['wnpb'];
+                $line[] = $c['projection'];
+                $line[] = $c['actual'];
+                $line[] = round($c['projection'] - $c['actual'], 2);   // Gap = Proyeksi − Actual (rumus 7)
+            }
+            $line[] = $r['total_ytd'] ?? 0;
+            $line[] = $r['total_multi'] ?? 0;
+            $writer->addRow($line, $num);
+        }
+
+        foreach (['nett_ops' => 'Nett Cashplan Ops', 'nett_non_ops' => 'Nett Cashplan Non Ops', 'nett' => 'Nett Cashflow'] as $k => $label) {
+            $line = [$label];
+            foreach ($summary as $s) {
+                $line[] = $s['wnpb'][$k];
+                $line[] = $s['projection'][$k];
+                $line[] = $s['actual'][$k];
+                $line[] = round($s['projection'][$k] - $s['actual'][$k], 2);
+            }
+            $line[] = round(array_sum(array_map(fn ($s) => (float) $s['actual'][$k], $summary)), 2);
+            $line[] = null;
+            $writer->addRow($line, $num);
+        }
+
+        foreach (['beginning' => 'Beginning Balance', 'ending' => 'Ending Balance', 'blokir_angsuran' => 'Blokir Angsuran Loan',
+            'effective' => 'Effective Balance', 'buffer' => 'Buffer', 'nett_effective' => 'Nett Effective Balance'] as $k => $label) {
+            $line = [$label];
+            foreach ($summary as $s) {
+                // Satu angka per bulan → ditaruh di kolom Actual, tiga kolom lain dikosongkan.
+                $line[] = null;
+                $line[] = null;
+                $line[] = $s[$k];
+                $line[] = null;
+            }
+            $line[] = null;
+            $line[] = null;
+            $writer->addRow($line, $num);
+        }
+
+        $writer->addRow([]);
+        $writer->addMeta(
+            'Beginning Balance bulan pertama diambil dari posisi kas/bank menurut jurnal sebelum 1 Januari '.$year
+            .' (Rp '.number_format($opening, 0, ',', '.').'), bukan diinput ulang. Bulan berikutnya = Ending Balance bulan sebelumnya.',
+            $colCount,
+        );
+
+        $path = tempnam(sys_get_temp_dir(), 'cfrep').'.xlsx';
+        $writer->save($path);
+
+        return response()->download($path, 'Report-Cashflow-'.$year.'-sd-'.str_pad((string) $upto, 2, '0', STR_PAD_LEFT).'-'.now()->format('Ymd-Hi').'.xlsx')
+            ->deleteFileAfterSend(true);
+    }
+
+    /** @return array{0:int,1:int} [tahun, s/d bulan] */
+    private function reportPeriod(Request $request): array
+    {
         $year = (int) ($request->integer('year') ?: now()->year);
+        $year = min(2100, max(2000, $year));
         $upto = min(12, max(1, (int) ($request->integer('upto') ?: ($year === now()->year ? now()->month : 12))));
+
+        return [$year, $upto];
+    }
+
+    /**
+     * Inti laporan: baris kategori + ringkasan per bulan. Dipakai bersama oleh tampilan layar
+     * dan unduhan Excel supaya angkanya tidak mungkin berbeda.
+     *
+     * @return array{months:array<int,int>, rows:array<int,array<string,mixed>>, summary:array<int,array<string,mixed>>, opening:float}
+     */
+    private function reportData(int $year, int $upto): array
+    {
         $months = range(1, $upto);
 
         $categories = BsCfCategory::where('is_active', true)->orderBy('sort_order')->orderBy('id')->get();
@@ -221,16 +368,7 @@ class CashFlowPlanController extends Controller
             $begin = $end;
         }
 
-        return Inertia::render('BusinessSupport/CashBook/CashFlow/Report', [
-            'year'      => $year,
-            'upto'      => $upto,
-            'months'    => $months,
-            'rows'      => $rows,
-            'summary'   => $summary,
-            'opening'   => round($opening, 2),
-            'formulas'  => BsCfFormula::orderBy('sort_order')->get(['code', 'name', 'expression', 'description']),
-            'hasSplits' => DB::table('bs_ledger_cluster_splits')->whereNotNull('cf_category_id')->exists(),
-        ]);
+        return ['months' => $months, 'rows' => $rows, 'summary' => $summary, 'opening' => round($opening, 2)];
     }
 
     /** Simpan angka manual (WPNB / Proyeksi per kategori-bulan, Blokir Angsuran & Buffer per bulan). */
