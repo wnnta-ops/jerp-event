@@ -21,18 +21,29 @@ type Group = {
 
 const props = defineProps<{
     groups: Group[];
-    filters: { from?: string; to?: string };
+    filters: { supplier?: string; from?: string; to?: string };
+    chosen: boolean;
+    supplierOptions: Array<{ id: string; label: string; code: string | null }>;
     summary: { suppliers: number; po_count: number; total: number; printed: number };
 }>();
 
+const supplier = ref(props.filters.supplier ?? '');
 const from = ref(props.filters.from ?? '');
 const to = ref(props.filters.to ?? '');
 const search = ref('');
 
 function applyRange() {
-    router.get(route('bs.po.report'), { from: from.value || undefined, to: to.value || undefined }, { preserveState: true, replace: true });
+    router.get(route('bs.po.report'), {
+        supplier: supplier.value || undefined,
+        from: from.value || undefined,
+        to: to.value || undefined,
+    }, { preserveState: true, replace: true });
 }
-function resetRange() { from.value = ''; to.value = ''; search.value = ''; applyRange(); }
+function resetRange() { supplier.value = ''; from.value = ''; to.value = ''; search.value = ''; applyRange(); }
+const labelSupplier = computed(() => {
+    if (props.filters.supplier === 'all') return 'Semua Supplier';
+    return props.supplierOptions.find(s => s.id === props.filters.supplier)?.label ?? '';
+});
 
 function fmtRp(v: number) { return 'Rp ' + Number(v ?? 0).toLocaleString('id-ID'); }
 function fmtDate(d: string | null) { return d ? new Date(d).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'; }
@@ -97,12 +108,12 @@ const inputCls = 'h-9 rounded-lg border border-neutral-300 bg-white px-3 text-sm
         <div class="flex flex-wrap items-center justify-between gap-2">
             <h1 class="flex items-center gap-2 text-2xl font-bold"><ClipboardList class="h-6 w-6 text-primary-600" /> Report PO <span class="text-base font-normal text-neutral-400">(Rekap Purchase Order per Supplier)</span></h1>
             <div class="flex flex-wrap gap-2">
-                <button type="button" @click="exportExcel" class="inline-flex h-9 items-center gap-1.5 rounded-lg border border-emerald-300 bg-emerald-50 px-3 text-sm font-medium text-emerald-700 hover:bg-emerald-100 dark:border-emerald-700/50 dark:bg-emerald-900/30 dark:text-emerald-300"><FileSpreadsheet class="h-4 w-4" /> Excel</button>
+                <button type="button" @click="exportExcel" :disabled="!chosen || !filtered.length" title="Pilih supplier dan tampilkan dulu" class="inline-flex h-9 items-center gap-1.5 rounded-lg border border-emerald-300 bg-emerald-50 px-3 text-sm font-medium text-emerald-700 hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-40 dark:border-emerald-700/50 dark:bg-emerald-900/30 dark:text-emerald-300"><FileSpreadsheet class="h-4 w-4" /> Excel</button>
                 <Link :href="route('bs.po.index')" class="inline-flex h-9 items-center gap-1.5 rounded-lg border border-neutral-300 px-3 text-sm font-medium hover:bg-neutral-50 dark:border-neutral-700">Purchase Order</Link>
             </div>
         </div>
 
-        <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <div v-if="chosen" class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
             <div class="card border-l-4 border-primary-500 p-4"><div class="text-xs uppercase text-neutral-400">Jumlah Supplier</div><div class="mt-1 text-xl font-bold">{{ summary.suppliers }}</div></div>
             <div class="card border-l-4 border-sky-500 p-4"><div class="text-xs uppercase text-neutral-400">Jumlah PO</div><div class="mt-1 text-xl font-bold">{{ summary.po_count }}</div></div>
             <div class="card border-l-4 border-emerald-500 p-4"><div class="text-xs uppercase text-neutral-400">Nilai PO</div><div class="mt-1 text-lg font-bold text-emerald-600">{{ fmtRp(summary.total) }}</div></div>
@@ -110,19 +121,37 @@ const inputCls = 'h-9 rounded-lg border border-neutral-300 bg-white px-3 text-sm
         </div>
 
         <div class="card flex flex-wrap items-end gap-3 p-4">
+            <!-- Supplier dipilih lebih dulu; tanpa itu laporan tidak menampilkan apa pun. -->
+            <div class="min-w-[240px]">
+                <label class="mb-1 block text-xs font-medium text-neutral-500">Supplier *</label>
+                <select v-model="supplier" :class="[inputCls, 'w-full']">
+                    <option value="">— pilih supplier —</option>
+                    <option value="all">Semua Supplier</option>
+                    <option v-for="s in supplierOptions" :key="s.id" :value="s.id">{{ s.label }}<template v-if="s.code"> ({{ s.code }})</template></option>
+                </select>
+            </div>
             <div class="relative min-w-[220px] flex-1">
-                <label class="mb-1 block text-xs font-medium text-neutral-500">Cari supplier / no. PO / proyek</label>
+                <label class="mb-1 block text-xs font-medium text-neutral-500">Cari no. PO / proyek</label>
                 <Search class="pointer-events-none absolute left-3 top-[34px] h-4 w-4 -translate-y-1/2 text-neutral-400" />
-                <input v-model="search" type="text" placeholder="Ketik untuk menyaring…" :class="[inputCls, 'w-full pl-9']" />
+                <input v-model="search" type="text" :disabled="!chosen" placeholder="Ketik untuk menyaring…" :class="[inputCls, 'w-full pl-9 disabled:opacity-50']" />
             </div>
             <div><label class="mb-1 block text-xs font-medium text-neutral-500">Dari Tgl PO</label><input v-model="from" type="date" :class="inputCls" /></div>
             <div><label class="mb-1 block text-xs font-medium text-neutral-500">Sampai</label><input v-model="to" type="date" :class="inputCls" /></div>
-            <button @click="applyRange" class="h-9 rounded-lg bg-primary-600 px-5 text-sm font-semibold text-white hover:bg-primary-700">Display</button>
-            <button v-if="from || to || search" @click="resetRange" class="inline-flex h-9 items-center gap-1.5 rounded-lg border border-neutral-300 px-3 text-sm font-medium text-neutral-600 hover:bg-neutral-50 dark:border-neutral-700"><FilterX class="h-4 w-4" /> Reset</button>
+            <button @click="applyRange" :disabled="!supplier" title="Pilih supplier terlebih dahulu" class="h-9 rounded-lg bg-primary-600 px-5 text-sm font-semibold text-white hover:bg-primary-700 disabled:cursor-not-allowed disabled:opacity-40">Display</button>
+            <button v-if="supplier || from || to || search" @click="resetRange" class="inline-flex h-9 items-center gap-1.5 rounded-lg border border-neutral-300 px-3 text-sm font-medium text-neutral-600 hover:bg-neutral-50 dark:border-neutral-700"><FilterX class="h-4 w-4" /> Reset</button>
         </div>
 
+        <!-- Belum memilih supplier → tidak ada data yang ditarik maupun ditampilkan. -->
+        <div v-if="!chosen" class="card flex flex-col items-center gap-2 px-6 py-12 text-center">
+            <ClipboardList class="h-8 w-8 text-neutral-300 dark:text-neutral-600" />
+            <p class="font-semibold">Pilih supplier terlebih dahulu</p>
+            <p class="max-w-md text-sm text-neutral-500">Tentukan supplier pada kotak di atas — atau pilih <b>Semua Supplier</b> untuk seluruhnya — lalu klik <b>Display</b> untuk menampilkan rekap PO-nya.</p>
+        </div>
+
+        <p v-else class="text-xs text-neutral-500">Menampilkan <b>{{ labelSupplier }}</b><template v-if="filters.from || filters.to"> · PO {{ filters.from || '…' }} s/d {{ filters.to || '…' }}</template>.</p>
+
         <!-- Satu kartu per supplier: jumlah PO + rincian nomor PO -->
-        <div v-for="g in filtered" :key="g.supplier_id ?? 'none'" class="card overflow-hidden">
+        <div v-for="g in (chosen ? filtered : [])" :key="g.supplier_id ?? 'none'" class="card overflow-hidden">
             <button type="button" @click="toggle(g.supplier_id ?? 'none')" class="flex w-full items-center gap-3 px-4 py-3 text-left hover:bg-neutral-50 dark:hover:bg-neutral-800/50">
                 <span class="min-w-0">
                     <span class="block font-semibold">{{ g.supplier }}<span v-if="g.supplier_code" class="ml-2 font-mono text-xs text-neutral-400">{{ g.supplier_code }}</span></span>
@@ -165,7 +194,9 @@ const inputCls = 'h-9 rounded-lg border border-neutral-300 bg-white px-3 text-sm
             </div>
         </div>
 
-        <EmptyState v-if="!groups.length" title="Belum ada Purchase Order" description="Report akan terisi setelah ada PO yang dibuat." />
-        <EmptyState v-else-if="!filtered.length" title="Tidak ada hasil" description="Tidak ada supplier / PO yang cocok dengan pencarian." />
+        <template v-if="chosen">
+            <EmptyState v-if="!groups.length" title="Tidak ada PO" description="Supplier ini belum punya Purchase Order pada rentang tanggal yang dipilih." />
+            <EmptyState v-else-if="!filtered.length" title="Tidak ada hasil" description="Tidak ada PO yang cocok dengan pencarian." />
+        </template>
     </div>
 </template>
