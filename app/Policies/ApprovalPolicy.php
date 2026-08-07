@@ -4,14 +4,19 @@ namespace App\Policies;
 
 use App\Models\User;
 use App\Modules\FO\Approval\Models\Approval;
+use App\Modules\FO\Approval\Models\ApprovalSetup;
 
 /**
  * Otorisasi Approval — SIAPA boleh bertindak (bukan validasi STATE; state dicek
  * di ApprovalService). Konfigurasi di config/approval.php.
  *
  *  - super_admin selalu boleh (override administratif).
- *  - Aktor wajib punya permission `.approve` sesuai jenis (config jenis_permission).
- *  - Persetujuan FINAL (L2/GM) hanya oleh role di config('approval.final_roles').
+ *  - SETUP APPROVAL (menu Approval > Setup Approval): bila user L1/L2 DITUNJUK
+ *    untuk jenis tsb, HANYA user itu yang berhak pada levelnya (penunjukan =
+ *    pemberian hak, permission granular tak lagi dicek). Separation of duties
+ *    tetap berlaku.
+ *  - Tanpa penunjukan: aktor wajib punya permission `.approve` sesuai jenis
+ *    (config jenis_permission); persetujuan FINAL hanya role final_roles.
  *  - Separation of duties: pemohon tak boleh menyetujui sendiri; approver L1 tak
  *    boleh sekaligus jadi approver final (kecuali APPROVAL_ALLOW_SELF=true).
  */
@@ -34,11 +39,23 @@ class ApprovalPolicy
 
     public function approveLevel1(User $user, Approval $a): bool
     {
+        // Ada user L1 yang DITUNJUK → hanya dia (penunjukan = pemberian hak).
+        if ($assigned = ApprovalSetup::forJenis($a->jenis)?->level1_user_id) {
+            return $this->notRequester($user, $a) && (int) $user->id === (int) $assigned;
+        }
+
         return $this->notRequester($user, $a) && $this->canActOnJenis($user, $a);
     }
 
     public function approveLevel2(User $user, Approval $a): bool
     {
+        // Ada user L2 yang DITUNJUK → hanya dia (SoD tetap berlaku).
+        if ($assigned = ApprovalSetup::forJenis($a->jenis)?->level2_user_id) {
+            return $this->notRequester($user, $a)
+                && $this->notLevel1Approver($user, $a)
+                && (int) $user->id === (int) $assigned;
+        }
+
         return $this->notRequester($user, $a)
             && $this->notLevel1Approver($user, $a)
             && $this->canActOnJenis($user, $a)
@@ -47,6 +64,13 @@ class ApprovalPolicy
 
     public function reject(User $user, Approval $a): bool
     {
+        // Penunjukan per level: yang berhak menolak = user yang ditunjuk pada level itu.
+        $setup = ApprovalSetup::forJenis($a->jenis);
+        $assigned = (int) $a->current_level === 1 ? $setup?->level1_user_id : $setup?->level2_user_id;
+        if ($assigned) {
+            return (int) $user->id === (int) $assigned;
+        }
+
         if (! $this->canActOnJenis($user, $a)) {
             return false;
         }

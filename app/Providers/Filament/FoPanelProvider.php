@@ -286,6 +286,7 @@ class FoPanelProvider extends PanelProvider
             'approval-customize' => 'approval',
             'approval-blt' => 'approval',
             'approval-komisi' => 'approval',
+            'setup-approval' => 'approval',
             'approval-log' => 'approval',
             // NUP (Setup + Event + Pendaftaran + Verifikasi Data)
             'nup-tipes' => 'nup',
@@ -455,6 +456,7 @@ class FoPanelProvider extends PanelProvider
                     $item('Approval Customize', '/fo/approval-customize', 'heroicon-o-wrench-screwdriver', 'filament.fo.resources.approval-customize.'),
                     $item('Approval BLT', '/fo/approval-blt', 'heroicon-o-banknotes', 'filament.fo.resources.approval-blt.'),
                     $item('Approval Komisi', '/fo/approval-komisi', 'heroicon-o-receipt-percent', 'filament.fo.resources.approval-komisi.'),
+                    $item('Setup Approval', '/fo/setup-approval', 'heroicon-o-user-plus', 'filament.fo.pages.setup-approval'),
                     $item('Log File', '/fo/approval-log', 'heroicon-o-document-text', 'filament.fo.pages.approval-log'),
                 ],
             ],
