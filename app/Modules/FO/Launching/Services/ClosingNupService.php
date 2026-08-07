@@ -18,7 +18,8 @@ use RuntimeException;
  * Closing NUP — naik kontrak dari NUP yang sudah Pilih Unit (punya Reservasi AKTIF).
  *
  * Membuat:
- *  1. Kontrak (mengikat unit + skema cara bayar + sales) → unit TERJUAL, reservasi NAIK_KONTRAK.
+ *  1. Kontrak LANGSUNG tahap SPR (final — TIDAK lewat SPRS; jalur Booked tetap SPRS)
+ *     → unit TERJUAL, reservasi NAIK_KONTRAK, Faktur Penjualan terbit.
  *  2. TTS (Tanda Terima Sementara) untuk UTJ yang sudah dibayar → siap "Buka Kuitansi".
  *
  * UTJ yang sudah dibayar via Xendit SUDAH diposting ke jurnal (markPaid), maka TTS-nya
@@ -90,6 +91,9 @@ class ClosingNupService
                 'dp_persen' => $dpPersen,
                 'dp_amount' => $dpAmount,
                 'status' => 'AKTIF',
+                // Closing NUP LANGSUNG SPR (final), tidak transit di SPRS — kontrak
+                // tampil di menu SPR (Final), bukan SPRS (permintaan).
+                'tahap' => 'SPR',
                 'keterangan' => 'Closing NUP '.$reg->no_nup.' — skema '.$skema->code,
             ]);
 
@@ -99,6 +103,10 @@ class ClosingNupService
             // SPR terbentuk → bentuk otomatis Jadwal Tagihan (skema bayar),
             // Jadwal Komisi (skema komisi), & Gimmick (master).
             app(KontrakGeneratorService::class)->all($kontrak);
+
+            // Tahap SPR (final) → Faktur Penjualan terbit — selaras promoteToSpr /
+            // tombol "Simpan sebagai SPR" (idempotent: skip bila sudah ada).
+            \App\Modules\FO\FinanceAR\Services\FakturPenjualanService::ensureForKontrak($kontrak);
 
             // TTS untuk UTJ yang sudah dibayar → siap dibuka jadi kwitansi.
             $tts = Tts::create([
