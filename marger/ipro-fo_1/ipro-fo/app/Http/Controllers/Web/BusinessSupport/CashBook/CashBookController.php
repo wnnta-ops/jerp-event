@@ -484,7 +484,8 @@ class CashBookController extends Controller
                     'debit' => (float) $r->debit, 'credit' => (float) $r->credit, 'balance' => round($running, 2),
                     'cf_direct_category_id' => $tag?->cf_direct_category_id,
                     'cf_indirect_category_id' => $tag?->cf_indirect_category_id,
-                    'clusters' => ($splits[$r->id] ?? collect())->map(fn ($s) => ['cluster_id' => $s->cluster_id, 'cf_category_id' => $s->cf_category_id, 'amount' => (float) $s->amount, 'note' => $s->note])->values(),
+                    // Pembagian per KATEGORI cash flow; cluster tidak lagi dipakai di layar ini.
+                    'clusters' => ($splits[$r->id] ?? collect())->map(fn ($s) => ['cf_category_id' => $s->cf_category_id, 'amount' => (float) $s->amount, 'note' => $s->note])->values(),
                 ];
             });
         }
@@ -499,7 +500,6 @@ class CashBookController extends Controller
             // Pilihan kategori arus kas (dari Setup GL) + cluster untuk anotasi per-mutasi.
             'cfDirect'  => \App\Domain\BusinessSupport\Models\BsCashFlowCategory::where('kind', 'direct')->where('is_active', true)->orderBy('sort_order')->orderBy('name')->get(['id', 'code', 'name', 'activity']),
             'cfIndirect' => \App\Domain\BusinessSupport\Models\BsCashFlowCategory::where('kind', 'indirect')->where('is_active', true)->orderBy('sort_order')->orderBy('name')->get(['id', 'code', 'name', 'activity']),
-            'clusters'  => \App\Domain\Foundation\Tenant\Models\Cluster::orderBy('name')->get(['id', 'code', 'name']),
             // Kategori arus kas (modul Cash Flow) — pilihan per baris pembagian; inilah yang
             // membuat mutasi ini ikut terhitung pada Report Cashflow.
             'cfCategories' => \App\Domain\BusinessSupport\Models\BsCfCategory::where('is_active', true)
@@ -531,14 +531,21 @@ class CashBookController extends Controller
         $v = $request->validate([
             'journal_line_id'     => ['required', 'integer', 'exists:bs_journal_lines,id'],
             'splits'              => ['array'],
-            'splits.*.cluster_id' => ['required', 'integer', 'exists:clusters,id'],
-            // Kategori arus kas (modul Cash Flow) — inilah yang membuat pembagian ini ikut
-            // terhitung di Report Cashflow. Opsional agar pembagian lama tetap bisa disimpan.
-            'splits.*.cf_category_id' => ['nullable', 'integer', 'exists:bs_cf_categories,id'],
+            // Cluster TIDAK lagi diminta — pembagian ditentukan oleh kategori cash flow saja.
+            // Kategori jadi WAJIB: tanpa itu pembagian tidak menggolongkan apa pun dan hanya
+            // akan jadi angka menggantung yang tidak pernah muncul di Report Cashflow.
+            'splits.*.cf_category_id' => ['required', 'integer', 'exists:bs_cf_categories,id'],
             // Nominal tidak boleh negatif: nilai minus bisa dipakai menutupi selisih secara semu
             // sehingga total terlihat pas padahal pembagiannya tidak masuk akal.
             'splits.*.amount'     => ['required', 'numeric', 'min:0'],
             'splits.*.note'       => ['nullable', 'string', 'max:255'],
+        ], [
+            // Aplikasi ini belum memuat terjemahan validasi bawaan — tanpa pesan ini
+            // operator hanya melihat "validation.required".
+            'splits.*.cf_category_id.required' => 'Setiap baris pembagian harus punya kategori cash flow.',
+            'splits.*.cf_category_id.exists'   => 'Kategori cash flow yang dipilih tidak ditemukan.',
+            'splits.*.amount.required'         => 'Nominal pembagian wajib diisi.',
+            'splits.*.amount.min'              => 'Nominal pembagian tidak boleh minus.',
         ]);
 
         // PENJAGA UTAMA: total pembagian cash flow WAJIB sama dengan nilai mutasi baris jurnalnya.
@@ -570,8 +577,8 @@ class CashBookController extends Controller
                 \App\Domain\BusinessSupport\Models\BsLedgerClusterSplit::create([
                     'tenant_id'       => $tenantId,
                     'journal_line_id' => $v['journal_line_id'],
-                    'cluster_id'      => (int) $s['cluster_id'],
-                    'cf_category_id'  => ($s['cf_category_id'] ?? null) ? (int) $s['cf_category_id'] : null,
+                    'cluster_id'      => null,   // tidak lagi dipakai; kolomnya disimpan untuk data lama
+                    'cf_category_id'  => (int) $s['cf_category_id'],
                     'amount'          => round((float) $s['amount'], 2),
                     'note'            => $s['note'] ?? null,
                 ]);
