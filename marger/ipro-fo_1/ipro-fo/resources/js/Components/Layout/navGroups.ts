@@ -124,10 +124,10 @@ export function navGroups(foUrl: string): NavGroup[] {
         icon: Building, color: '#06b6d4', route: 'bs.fa.index',
         desc: 'Registrasi & penyusutan aset tetap.',
         items: [
-            { label: 'Overview Aset', icon: Building, href: 'bs.fa.index', permission: ['businesssupport.view', 'bs.*'] },
-            { label: 'Master', icon: BookText, permission: ['businesssupport.view', 'bs.*'], children: [
-                { label: 'Master Aset Tetap', href: 'bs.fa.index' },
-            ] },
+            // Grup "Master" dihapus: satu-satunya isinya ("Master Aset Tetap") menunjuk
+            // route yang SAMA PERSIS dengan Overview di bawah ini (bs.fa.index), jadi hanya
+            // menggandakan halaman yang sama di dua tempat.
+            { label: 'Overview Aset Tetap', icon: Building, href: 'bs.fa.index', permission: ['businesssupport.view', 'bs.*'] },
             { label: 'Report / Query', icon: FileBarChart, permission: ['businesssupport.view', 'bs.*'], children: [
                 { label: 'Summary Aset', href: 'bs.fa.summary' },
                 { label: 'Penjualan Aset', href: 'bs.fa.penjualan' },
