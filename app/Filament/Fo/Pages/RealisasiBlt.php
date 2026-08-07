@@ -51,17 +51,21 @@ class RealisasiBlt extends Page implements HasTable
                 Tables\Actions\Action::make('cetak')->label('Cetak')->icon('heroicon-o-printer')->color('gray')->button()
                     ->url(fn (Blt $r) => route('fo.cetak.pengajuan-blt', ['pengajuan' => $r->no_pengajuan]))
                     ->openUrlInNewTab(),
-                // Posting BO: kirim batch (Total NETT) ke antrian Posting Invoice BO (Sumber: BLT).
+                // Posting BO: kirim batch BRUTO + PPh + NETT → struktur AP lengkap
+                // (Debit prepaid bruto · Kredit Hutang PPh 23 · Kredit hutang nett).
                 Tables\Actions\Action::make('postingBo')->label('Posting BO')->icon('heroicon-o-paper-airplane')->color('success')->button()
                     ->requiresConfirmation()
                     ->modalHeading('Posting BLT ke BO')
-                    ->modalDescription(fn (Blt $r) => 'Kirim batch '.$r->no_pengajuan.' ('.$r->jml.' BLT, NETT Rp '.number_format((float) $r->total_nett, 0, ',', '.').') ke Posting Invoice BO. Jadi hutang AP setelah diposting di BO.')
+                    ->modalDescription(fn (Blt $r) => 'Kirim batch '.$r->no_pengajuan.' ('.$r->jml.' BLT — Bruto Rp '.number_format((float) $r->total_nilai, 0, ',', '.').' · PPh Rp '.number_format((float) $r->total_pph, 0, ',', '.').' · NETT Rp '.number_format((float) $r->total_nett, 0, ',', '.').') ke Posting Invoice BO. Jadi hutang AP setelah diposting di BO.')
                     ->action(function (Blt $r) {
                         try {
                             app(\App\Modules\BO\IproBridge\Services\IproApPoster::class)->queueBlt(
                                 (string) $r->no_pengajuan,
-                                (float) $r->total_nett,
+                                (float) $r->total_nilai, // BRUTO — dipecah PPh + NETT via account_split
                                 $r->tgl_bayar ? \Illuminate\Support\Carbon::parse($r->tgl_bayar)->toDateString() : null,
+                                'BLT '.$r->no_pengajuan.' ('.$r->jml.' unit) — PPh Rp '.number_format((float) $r->total_pph, 0, ',', '.').' · NETT Rp '.number_format((float) $r->total_nett, 0, ',', '.'),
+                                (float) $r->total_pph,
+                                (float) $r->total_nett,
                             );
                             Notification::make()->success()->title('BLT dikirim ke Posting Invoice BO')
                                 ->body('Batch '.$r->no_pengajuan.' menunggu diposting di BO → Posting Invoice (Sumber: BLT).')->send();
