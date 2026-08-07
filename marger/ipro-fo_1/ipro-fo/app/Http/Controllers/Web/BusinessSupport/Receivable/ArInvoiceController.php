@@ -13,6 +13,7 @@ use App\Exceptions\BusinessRuleException;
 use App\Http\Controllers\Controller;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -301,11 +302,46 @@ class ArInvoiceController extends Controller
             });
         }
 
+        // Saldo piutang per customer = Σ total invoice − Σ penerimaan. Rumusnya sengaja
+        // SAMA PERSIS dengan saldo berjalan kartu di atas (debit invoice − kredit terima)
+        // supaya daftar "punya saldo" tidak pernah berbeda dengan angka yang tampil.
+        $totalInvoice = DB::table('bs_ar_invoices')->whereNull('deleted_at')
+            ->groupBy('customer_id')->selectRaw('customer_id, COALESCE(SUM(total),0) as t')
+            ->pluck('t', 'customer_id');
+        $totalTerima = DB::table('bs_ar_payments as p')
+            ->join('bs_ar_invoices as i', 'i.id', '=', 'p.ar_invoice_id')
+            ->whereNull('i.deleted_at')
+            ->groupBy('i.customer_id')->selectRaw('i.customer_id, COALESCE(SUM(p.amount),0) as t')
+            ->pluck('t', 'customer_id');
+
+        $saldo = [];
+        foreach ($totalInvoice as $cid => $t) {
+            $s = round((float) $t - (float) ($totalTerima[$cid] ?? 0), 2);
+            if ($s > 0.005) {   // lunas & lebih bayar tidak dianggap "punya saldo"
+                $saldo[(int) $cid] = $s;
+            }
+        }
+
+        $saldoOnly = $request->boolean('saldo');
+        // Customer yang sedang dibuka tetap ditahan di daftar walau saldonya nol — kalau tidak,
+        // kotak pilihan jadi kosong padahal kartunya masih tampil di bawah.
+        $idFilter = $customerId ? array_unique([...array_keys($saldo), $customerId]) : array_keys($saldo);
+
+        $customers = Customer::when($saldoOnly, fn ($q) => $q->whereIn('id', $idFilter))
+            ->orderBy('full_name')->limit(500)->get(['id', 'code', 'full_name'])
+            ->map(fn ($c) => [
+                'id' => $c->id, 'code' => $c->code, 'full_name' => $c->full_name,
+                'balance' => $saldo[(int) $c->id] ?? 0.0,
+            ])->values();
+
         return Inertia::render('BusinessSupport/Receivable/Card', [
-            'customers'  => Customer::orderBy('full_name')->limit(500)->get(['id', 'code', 'full_name']),
+            'customers'  => $customers,
             'customerId' => $customerId,
             'entries'    => $entries,
             'outstanding'=> $entries->isNotEmpty() ? $entries->last()['balance'] : 0,
+            'saldoOnly'  => $saldoOnly,
+            'withBalance'=> count($saldo),
+            'totalCustomer' => Customer::count(),
         ]);
     }
 
