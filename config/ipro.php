@@ -79,4 +79,16 @@ return [
         '5.9.01.001' => 181,  // Beban memo        → BEBAN PROMOSI PENJUALAN (cek akuntan!)
         '5.9.01.002' => 181,  // Beban proses KPR  → BEBAN PROMOSI PENJUALAN (cek akuntan!)
     ],
+
+    // Akun (bs_accounts.id ipro_bo) untuk STRUKTUR AP Komisi/BLT dari FO:
+    //   Debit  prepaid = BRUTO nilai komisi/BLT
+    //   Kredit pph     = Σ PPh per unit (HUTANG PPH PASAL 23)
+    //   Kredit nett    = bruto − PPh (hutang komisi/BLT ke sales)
+    // ⚠️ 'prepaid' & 'nett' CEK AKUNTAN — belum ada akun khusus "Komisi Dibayar
+    // Dimuka"/"Hutang Komisi" di COA BO; sementara dipetakan best-effort.
+    'incentive_accounts' => [
+        'prepaid' => (int) env('IPRO_INCENTIVE_PREPAID_ID', 183), // KOMISI/INSENTIF PENJUALAN (50201010103)
+        'pph' => (int) env('IPRO_INCENTIVE_PPH_ID', 123),         // HUTANG PPH PASAL 23 (20104040403)
+        'nett' => (int) env('IPRO_INCENTIVE_NETT_ID', 130),       // UANG MUKA PENJUALAN (cek akuntan!)
+    ],
 ];

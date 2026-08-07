@@ -57,15 +57,15 @@ class IproApPoster
     }
 
     /** Realisasi Komisi (batch per No. Pengajuan) → antrian (kind=komisi). */
-    public function queueKomisi(string $noPengajuan, float $amount, ?string $tgl = null, ?string $ket = null): ?int
+    public function queueKomisi(string $noPengajuan, float $amount, ?string $tgl = null, ?string $ket = null, float $pph = 0.0, float $nett = 0.0): ?int
     {
-        return $this->queueIncentive('komisi', $noPengajuan, $amount, $tgl, $ket ?: ('Komisi '.$noPengajuan));
+        return $this->queueIncentive('komisi', $noPengajuan, $amount, $tgl, $ket ?: ('Komisi '.$noPengajuan), $pph, $nett);
     }
 
     /** Realisasi BLT (batch per No. Pengajuan) → antrian (kind=blt). */
-    public function queueBlt(string $noPengajuan, float $amount, ?string $tgl = null, ?string $ket = null): ?int
+    public function queueBlt(string $noPengajuan, float $amount, ?string $tgl = null, ?string $ket = null, float $pph = 0.0, float $nett = 0.0): ?int
     {
-        return $this->queueIncentive('blt', $noPengajuan, $amount, $tgl, $ket ?: ('BLT '.$noPengajuan));
+        return $this->queueIncentive('blt', $noPengajuan, $amount, $tgl, $ket ?: ('BLT '.$noPengajuan), $pph, $nett);
     }
 
     /**
@@ -196,12 +196,35 @@ class IproApPoster
         return $id ? (int) $id : null;
     }
 
-    /** Komisi/BLT → hutang insentif: Beban Komisi (5.2.01.001) / Hutang Komisi (2.1.01.001). */
-    private function queueIncentive(string $kind, string $noPengajuan, float $amount, ?string $tgl, ?string $ket): ?int
+    /**
+     * Komisi/BLT → antrian dengan STRUKTUR LENGKAP (selaras GMC):
+     *   Debit  Prepaid/Beban Komisi-BLT  = BRUTO (nilai BLT/komisi)
+     *   Kredit Hutang PPh 23             = Σ PPh per unit
+     *   Kredit Hutang Komisi/BLT (NETT)  = bruto − PPh
+     * account_split memakai porsi = NOMINAL asli — allocate() BO menormalkan per
+     * sisi (amount × porsi/total porsi) sehingga nilai jurnal persis; selisih
+     * pembulatan jatuh ke baris terbesar (NETT). Tanpa pph/nett (caller lama)
+     * → fallback sepasang akun tunggal seperti dulu.
+     */
+    private function queueIncentive(string $kind, string $noPengajuan, float $amount, ?string $tgl, ?string $ket, float $pph = 0.0, float $nett = 0.0): ?int
     {
         $amount = round($amount, 2);
         if ($amount <= 0 || trim($noPengajuan) === '') {
             return null;
+        }
+
+        $accs = (array) config('ipro.incentive_accounts', []);
+        $accPrepaid = (int) ($accs['prepaid'] ?? 0) ?: $this->acc('5.2.01.001');
+        $accPph = (int) ($accs['pph'] ?? 0) ?: null;
+        $accNett = (int) ($accs['nett'] ?? 0) ?: $this->acc('2.1.01.001');
+
+        $split = null;
+        if ($pph > 0 && $nett > 0 && $accPph && $accPrepaid && $accNett) {
+            $split = [
+                ['side' => 'debit', 'account_id' => (int) $accPrepaid, 'portion' => 100.0],
+                ['side' => 'credit', 'account_id' => (int) $accPph, 'portion' => round($pph, 2)],
+                ['side' => 'credit', 'account_id' => (int) $accNett, 'portion' => round($nett, 2)],
+            ];
         }
 
         return $this->enqueue($kind, $noPengajuan, null, [
@@ -209,8 +232,9 @@ class IproApPoster
             'customer_name'      => null,
             'refund_source'      => null,
             'amount'             => $amount,
-            'payable_account_id' => $this->acc('2.1.01.001'), // Hutang komisi/insentif
-            'offset_account_id'  => $this->acc('5.2.01.001'), // Beban komisi/insentif
+            'account_split'      => $split ? json_encode($split) : null,
+            'payable_account_id' => $accNett,    // Hutang komisi/insentif (nett)
+            'offset_account_id'  => $accPrepaid, // Prepaid/Beban komisi-insentif
             'tgl_refund'         => $tgl,
             'keterangan'         => $ket,
         ]);

@@ -252,12 +252,18 @@ class PostingInvoiceController extends Controller
         }
 
         $jenis = ['SPR' => 'SPR', 'SPRS' => 'SPRS', 'TRANSFER_ANONIM' => 'Transfer Anonim'][$row->refund_source] ?? (string) $row->refund_source;
-        $desc = match ($row->kind) {
-            'komisi' => 'Komisi '.$row->refund_no,
-            'blt'    => 'BLT '.$row->refund_no,
-            'gmc'    => 'Gimmick '.$row->refund_no.($row->customer_name ? ' — '.$row->customer_name : ''),
-            default  => 'Refund '.$row->refund_no.($row->customer_name ? ' — '.$row->customer_name : '').' ('.$jenis.')',
-        };
+        // Keterangan baris jurnal PAKAI keterangan antrian dari FO (kaya konteks:
+        // kategori/komponen/SPR — sama dgn yang tampil di daftar Posting Invoice).
+        // Susunan lama hanya fallback bila antrian tak membawa keterangan.
+        $desc = trim((string) ($row->keterangan ?? ''));
+        if ($desc === '') {
+            $desc = match ($row->kind) {
+                'komisi' => 'Komisi '.$row->refund_no,
+                'blt'    => 'BLT '.$row->refund_no,
+                'gmc'    => 'Gimmick '.$row->refund_no.($row->customer_name ? ' — '.$row->customer_name : ''),
+                default  => 'Refund '.$row->refund_no.($row->customer_name ? ' — '.$row->customer_name : '').' ('.$jenis.')',
+            };
+        }
         $hutangLabel = ['komisi' => 'Hutang Komisi', 'blt' => 'Hutang BLT', 'gmc' => 'Hutang Gimmick'][$row->kind] ?? 'Hutang Refund';
 
         return [
