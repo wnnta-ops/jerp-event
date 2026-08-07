@@ -22,16 +22,24 @@ class MaterialRequestController extends Controller
     {
         abort_unless($request->user()?->canModule('bs'), 403);
 
+        $status = (string) $request->input('status', '');
+
         $rows = BsMaterialRequest::query()
             ->with('costCenter:id,code,name')
             ->withCount('lines')
-            ->when($request->input('status'), fn ($q, $v) => $q->where('status', $v))
+            ->when($status !== '', fn ($q) => $q->where('status', $status))
+            // FPB yang SUDAH DISETUJUI pindah ke Purchase Order — tindak lanjutnya di sana,
+            // bukan di sini. Tetap bisa dilihat bila statusnya dipilih sendiri lewat filter,
+            // supaya riwayatnya tidak jadi tidak terjangkau.
+            ->when($status !== 'approved', fn ($q) => $q->where('status', '!=', 'approved'))
             ->latest('request_date')->latest('id')
             ->paginate(50)->withQueryString();
 
         return Inertia::render('BusinessSupport/Inventory/MaterialRequests/Index', [
             'requests' => $rows,
             'filters'  => $request->only(['status']),
+            // Berapa yang sudah berpindah, supaya operator tahu ke mana perginya.
+            'approvedCount' => BsMaterialRequest::where('status', 'approved')->count(),
         ]);
     }
 
