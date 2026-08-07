@@ -254,28 +254,45 @@ class ArInvoiceController extends Controller
 
         $today  = now()->startOfDay();
         $rows   = [];
-        $totals = ['current' => 0.0, 'd30' => 0.0, 'd60' => 0.0, 'd90' => 0.0, 'd90p' => 0.0, 'total' => 0.0];
+        $totals = ['d30' => 0.0, 'd60' => 0.0, 'd90' => 0.0, 'd90p' => 0.0, 'total' => 0.0];
+        // Invoice yang BELUM jatuh tempo tidak masuk aging — belum ada umur tunggakannya.
+        // Jumlahnya tetap dihitung untuk catatan kaki supaya jelas ke mana perginya.
+        $belumJt = 0.0;
+        $belumJtCount = 0;
 
-        BsArInvoice::with('customer:id,code,full_name')->where('status', 'open')->get()->each(function ($inv) use (&$rows, &$totals, $today): void {
-            $out = (float) $inv->outstanding;
-            if ($out <= 0.009) {
-                return;
-            }
-            $ref     = $inv->due_date ?? $inv->invoice_date;
-            $overdue = $ref && $ref->lt($today) ? $ref->diffInDays($today) : 0;
-            $bucket  = $overdue <= 0 ? 'current' : ($overdue <= 30 ? 'd30' : ($overdue <= 60 ? 'd60' : ($overdue <= 90 ? 'd90' : 'd90p')));
+        BsArInvoice::with('customer:id,code,full_name')->where('status', 'open')->get()
+            ->each(function ($inv) use (&$rows, &$totals, &$belumJt, &$belumJtCount, $today): void {
+                $out = (float) $inv->outstanding;
+                if ($out <= 0.009) {
+                    return;
+                }
+                $ref     = $inv->due_date ?? $inv->invoice_date;
+                $overdue = $ref && $ref->lt($today) ? $ref->diffInDays($today) : 0;
+                if ($overdue <= 0) {
+                    $belumJt += $out;
+                    $belumJtCount++;
 
-            $key = $inv->customer_id;
-            $rows[$key] ??= ['name' => $inv->customer?->full_name ?? '—', 'current' => 0, 'd30' => 0, 'd60' => 0, 'd90' => 0, 'd90p' => 0, 'total' => 0];
-            $rows[$key][$bucket] += $out;
-            $rows[$key]['total'] += $out;
-            $totals[$bucket]     += $out;
-            $totals['total']     += $out;
-        });
+                    return;
+                }
+                $bucket = $overdue <= 30 ? 'd30' : ($overdue <= 60 ? 'd60' : ($overdue <= 90 ? 'd90' : 'd90p'));
+
+                $key = $inv->customer_id;
+                $rows[$key] ??= ['name' => $inv->customer?->full_name ?? '—', 'd30' => 0, 'd60' => 0, 'd90' => 0, 'd90p' => 0, 'total' => 0, 'max_overdue' => 0];
+                $rows[$key][$bucket] += $out;
+                $rows[$key]['total'] += $out;
+                $rows[$key]['max_overdue'] = max($rows[$key]['max_overdue'], $overdue);
+                $totals[$bucket]     += $out;
+                $totals['total']     += $out;
+            });
+
+        // Tunggakan terbesar di atas — yang paling perlu ditindaklanjuti terbaca lebih dulu.
+        $rows = array_values($rows);
+        usort($rows, fn ($a, $b) => $b['total'] <=> $a['total']);
 
         return Inertia::render('BusinessSupport/Receivable/Aging', [
-            'rows'   => array_values($rows),
+            'rows'   => $rows,
             'totals' => $totals,
+            'belumJt' => ['amount' => round($belumJt, 2), 'count' => $belumJtCount],
         ]);
     }
 
