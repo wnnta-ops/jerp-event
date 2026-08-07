@@ -217,7 +217,8 @@ export function navGroups(foUrl: string): NavGroup[] {
             { label: 'Rekonsiliasi Piutang', icon: Scale,           href: 'bs.ar.rekonsiliasi.index', permission: ['businesssupport.view', 'ar.*'] },
             // "Registrasi Piutang" & "Kategori Invoice" DIHILANGKAN: invoice piutang tidak dibuat
             // manual lagi — dibentuk otomatis dari modul Booked Revenue saat unit di-booking.
-            { label: 'Kuitansi Piutang',    icon: Receipt,          href: 'bs.ar.kuitansi.index',    permission: ['businesssupport.view', 'ar.*'] },
+            // "Kuitansi Piutang" DIHAPUS dari sidebar (permintaan user). Route & halamannya
+            // sengaja TIDAK dihapus supaya kuitansi yang sudah pernah dibuat tetap terjangkau.
             { label: 'Memorial Piutang',    icon: BookText,         href: 'bs.ar.memorial.index',    permission: ['businesssupport.view', 'ar.*'] },
             { label: 'Kartu Piutang',       icon: LayoutList,       href: 'bs.ar.card',              permission: ['businesssupport.view', 'ar.*'] },
             { label: 'Aging Piutang',       icon: FileBarChart,     href: 'bs.ar.aging',             permission: ['businesssupport.view', 'ar.*'] },

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { router, Link } from '@inertiajs/vue3';
 import { ref, computed } from 'vue';
-import { Plus, ArrowLeft, Coins, Search, CalendarClock, BookText, Tags, ReceiptText, FileText, Eraser, Printer } from 'lucide-vue-next';
+import { Plus, ArrowLeft, Coins, Search, CalendarClock, BookText, Tags, FileText, Eraser, Printer } from 'lucide-vue-next';
 import Button from '@/Components/UI/Button.vue';
 import Badge from '@/Components/UI/Badge.vue';
 import EmptyState from '@/Components/UI/EmptyState.vue';
@@ -65,7 +65,7 @@ function fmtDate(d: string | null) { return d ? new Date(d).toLocaleDateString('
                 <Link :href="route('bs.ar.card')" class="inline-flex h-9 items-center gap-1.5 rounded-lg border border-neutral-300 px-3 text-sm font-medium hover:bg-neutral-50 dark:border-neutral-700"><BookText class="h-4 w-4" /> Kartu</Link>
                 <Link :href="route('bs.ar.memorial.index')" class="inline-flex h-9 items-center gap-1.5 rounded-lg border border-neutral-300 px-3 text-sm font-medium hover:bg-neutral-50 dark:border-neutral-700"><FileText class="h-4 w-4" /> Memorial</Link>
                 <Link :href="route('bs.ar.penghapusan.index')" class="inline-flex h-9 items-center gap-1.5 rounded-lg border border-neutral-300 px-3 text-sm font-medium hover:bg-neutral-50 dark:border-neutral-700"><Eraser class="h-4 w-4" /> Hapus</Link>
-                <Link :href="route('bs.ar.kuitansi.index')" class="inline-flex h-9 items-center gap-1.5 rounded-lg border border-neutral-300 px-3 text-sm font-medium hover:bg-neutral-50 dark:border-neutral-700"><ReceiptText class="h-4 w-4" /> Kuitansi</Link>
+                <!-- Tombol "Kuitansi" dihapus bersama sub-modulnya (permintaan user). -->
             </div>
         </div>
 
