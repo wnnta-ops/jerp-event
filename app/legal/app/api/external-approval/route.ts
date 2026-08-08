@@ -1,4 +1,5 @@
 import { NextRequest } from "next/server";
+import { timingSafeEqual } from "crypto";
 import { prisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
@@ -9,11 +10,19 @@ export const runtime = "nodejs";
  * physical-original checkout that is "pending_external". Open-ended seam.
  *
  * POST { code | requestId, decision: "approved" | "rejected", note?, by? }
- * Header: x-approval-secret (required iff EXTERNAL_APPROVAL_SECRET is set).
+ * Header: x-approval-secret (WAJIB — endpoint ini publik di middleware).
+ *
+ * FAIL-CLOSED: bila EXTERNAL_APPROVAL_SECRET belum diset, TOLAK semua request
+ * (jangan buka gerbang approval legal ke publik). Perbandingan timing-safe.
  */
 export async function POST(req: NextRequest) {
-  const secret = process.env.EXTERNAL_APPROVAL_SECRET;
-  if (secret && req.headers.get("x-approval-secret") !== secret) {
+  const secret = process.env.EXTERNAL_APPROVAL_SECRET ?? "";
+  if (secret === "") {
+    return new Response("Server misconfigured: EXTERNAL_APPROVAL_SECRET belum diset", { status: 500 });
+  }
+  const a = Buffer.from(req.headers.get("x-approval-secret") ?? "");
+  const b = Buffer.from(secret);
+  if (a.length !== b.length || !timingSafeEqual(a, b)) {
     return new Response("Forbidden", { status: 403 });
   }
 
