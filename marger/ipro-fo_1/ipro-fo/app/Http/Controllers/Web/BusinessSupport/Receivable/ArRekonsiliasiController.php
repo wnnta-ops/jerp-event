@@ -30,22 +30,12 @@ class ArRekonsiliasiController extends Controller
     {
         abort_unless($request->user()?->canModule('ar'), 403);
 
-        $search = trim((string) $request->input('search', ''));
-        $sisa   = (string) $request->input('sisa', ''); // '' | 'ada' | 'lunas'
-
-        $rows = $this->groups()
-            ->when($search !== '', fn (Collection $c) => $c->filter(
-                fn (array $g) => str_contains(mb_strtolower(implode(' ', [
-                    $g['spr'] ?? '', $g['unit'] ?? '', $g['customer'] ?? '',
-                ])), mb_strtolower($search))
-            ))
-            ->when($sisa === 'ada', fn (Collection $c) => $c->filter(fn (array $g) => $g['sisa'] > 0.009))
-            ->when($sisa === 'lunas', fn (Collection $c) => $c->filter(fn (array $g) => $g['sisa'] <= 0.009))
-            ->values();
+        // Tidak ada penyaringan di server: pencarian, filter per kolom, dan pengurutan
+        // seluruhnya dikerjakan di klien atas data lengkap ini.
+        $rows = $this->groups();
 
         return Inertia::render('BusinessSupport/Receivable/Rekonsiliasi', [
             'rows'    => $rows,
-            'filters' => ['search' => $search ?: null, 'sisa' => $sisa ?: null],
             'summary' => [
                 'count'   => $rows->count(),
                 'invoice' => round((float) $rows->sum('invoice_total'), 2),

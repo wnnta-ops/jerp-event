@@ -27,20 +27,19 @@ class ArInvoiceController extends Controller
             // Rincian disamakan dengan layar "Sudah Booked Revenue": selain data akuntansi,
             // barisnya harus menunjukkan SPR + unit yang ditagih. Keduanya turunan booking.
             ->with(['customer:id,code,full_name', 'booking:id,booking_number,unit_id', 'booking.unit:id,unit_code,unit_type_id', 'booking.unit.unitType:id,name'])
-            ->when($request->input('status'), fn ($q, $v) => $q->where('status', $v))
-            ->when($request->input('search'), fn ($q, $s) => $q->where(fn ($w) => $w->where('invoice_number', 'like', "%{$s}%")
-                ->orWhere('description', 'like', "%{$s}%")
-                ->orWhereHas('booking', fn ($b) => $b->where('booking_number', 'like', "%{$s}%"))
-                ->orWhereHas('booking.unit', fn ($u) => $u->where('unit_code', 'like', "%{$s}%"))))
+            // Tidak ada lagi penyaringan di server: pencarian, filter per kolom, dan pengurutan
+            // seluruhnya dikerjakan di klien atas data lengkap di bawah ini.
             ->latest('invoice_date')->latest('id')
-            ->paginate(50)->withQueryString();
+            // SELURUH baris dikirim ke klien — sama dengan daftar Invoice Hutang (AP) & Purchase
+            // Order. Filter per-kolom dan pengurutan dihitung di sisi klien, jadi paginasi server
+            // justru menyesatkan: penyaringan hanya akan mengenai 50 baris yang kebetulan tampil.
+            ->get()
+            ->map(fn (BsArInvoice $r) => $this->row($r))
+            ->values();
 
-        $rows->getCollection()->transform(fn (BsArInvoice $r) => $this->row($r));
-
-        // SPR yang bisa dipilih untuk baris di HALAMAN INI saja (dikelompokkan per customer).
-        // Dibatasi ke customer yang benar-benar tampil supaya payload tidak membawa seluruh
-        // booking hanya untuk mengisi dropdown yang jarang dipakai.
-        $customerIds = $rows->getCollection()->pluck('customer_id')->filter()->unique()->values();
+        // SPR yang bisa dipilih (dikelompokkan per customer), dibatasi ke customer yang
+        // benar-benar tampil supaya payload tidak membawa seluruh booking.
+        $customerIds = $rows->pluck('customer_id')->filter()->unique()->values();
         $sprOptions = $customerIds->isEmpty() ? [] : Booking::query()
             ->whereIn('customer_id', $customerIds)
             ->with('unit:id,unit_code')
@@ -54,7 +53,6 @@ class ArInvoiceController extends Controller
         return Inertia::render('BusinessSupport/Receivable/Index', [
             'invoices'   => $rows,
             'sprOptions' => $sprOptions,
-            'filters'  => $request->only(['status', 'search']),
             'summary'  => [
                 // Basis HARUS sama dengan kolom "Sisa" per baris (accessor outstanding), yaitu
                 // net_receivable − dibayar. Memakai total − dibayar membuat kartu tidak pernah
