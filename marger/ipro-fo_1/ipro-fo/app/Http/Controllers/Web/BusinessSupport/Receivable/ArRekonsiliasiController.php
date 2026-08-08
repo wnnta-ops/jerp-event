@@ -105,6 +105,12 @@ class ArRekonsiliasiController extends Controller
                 'spr'           => $booking?->booking_number,
                 'unit'          => $booking?->unit?->unit_code,
                 'customer'      => $customer?->full_name,
+                // SELURUH nama customer yang menyumbang baris ke grup ini. Satu SPR bisa
+                // memuat baris atas nama customer BERBEDA (mis. pengalihan/ganti nama
+                // pembeli). Dulu hanya nama pertama yang disimpan, sehingga customer lain
+                // ikut terhitung nominalnya tetapi namanya tidak pernah muncul di layar —
+                // dicari pun tidak ketemu.
+                'customers'     => [],
                 'invoice_total' => 0.0,
                 'invoice_count' => 0,
                 'um_total'      => 0.0,
@@ -114,9 +120,17 @@ class ArRekonsiliasiController extends Controller
             ];
         };
 
+        $catatNama = function (string $key, $customer) use (&$grup): void {
+            $nama = trim((string) ($customer?->full_name ?? ''));
+            if ($nama !== '' && ! in_array($nama, $grup[$key]['customers'], true)) {
+                $grup[$key]['customers'][] = $nama;
+            }
+        };
+
         foreach ($invoices as $inv) {
             $key = $kunci($inv->booking_id, $inv->customer_id);
             $siapkan($key, $inv->booking_id, $inv->booking, $inv->customer);
+            $catatNama($key, $inv->customer);
             // Yang direkonsiliasi adalah SISA tagihan (sudah dikurangi pembayaran), bukan nilai
             // penuh invoice — kalau memakai total, pembayaran yang masuk lewat kuitansi tidak
             // terlihat dan sisa piutang jadi kelebihan hitung.
@@ -125,6 +139,7 @@ class ArRekonsiliasiController extends Controller
             $grup[$key]['invoice_count']++;
             $grup[$key]['invoices'][] = [
                 'id'          => $inv->id,
+                'customer'    => $inv->customer?->full_name,
                 'number'      => $inv->invoice_number,
                 'date'        => optional($inv->invoice_date)->toDateString(),
                 'description' => $inv->description,
@@ -140,11 +155,13 @@ class ArRekonsiliasiController extends Controller
         foreach ($ums as $um) {
             $key = $kunci($um->booking_id, $um->customer_id);
             $siapkan($key, $um->booking_id, $um->booking, $um->customer);
+            $catatNama($key, $um->customer);
             $nilai = round((float) $um->amount, 2);
             $grup[$key]['um_total'] += $nilai;
             $grup[$key]['um_count']++;
             $grup[$key]['ums'][] = [
                 'id'           => $um->id,
+                'customer'     => $um->customer?->full_name,
                 'source_type'  => $um->source_type,
                 'source_label' => $um->source_label,
                 'date'         => optional($um->compensated_at)->toDateString(),
@@ -161,6 +178,12 @@ class ArRekonsiliasiController extends Controller
                 $g['invoice_total'] = round($g['invoice_total'], 2);
                 $g['um_total']      = round($g['um_total'], 2);
                 $g['sisa']          = round($g['invoice_total'] - $g['um_total'], 2);
+                sort($g['customers']);
+                // Nama utama = nama yang menempel pada SPR-nya; bila kosong, pakai nama
+                // pertama yang ada supaya baris tidak pernah tampil tanpa nama.
+                $g['customer'] = $g['customer'] ?: ($g['customers'][0] ?? null);
+                // Penanda: satu SPR berisi baris atas nama lebih dari satu customer.
+                $g['multi_customer'] = count($g['customers']) > 1;
 
                 return $g;
             })
@@ -250,7 +273,10 @@ class ArRekonsiliasiController extends Controller
             .'</tr></table>'
             .'<div class="title">SURAT TAGIHAN</div>'
             .'<table class="meta">'
-            .'<tr><td class="k">Kepada Yth.</td><td>: '.$e($g['customer'] ?: '—').'</td></tr>'
+            // Bila SPR-nya memuat baris atas nama lebih dari satu customer, SEMUA namanya
+            // ditulis — surat tagihan tidak boleh dialamatkan ke satu orang saja padahal
+            // isinya juga memuat angka milik orang lain.
+            .'<tr><td class="k">Kepada Yth.</td><td>: '.$e(implode(' / ', $g['customers']) ?: ($g['customer'] ?: '—')).'</td></tr>'
             .'<tr><td class="k">No. SPR</td><td>: '.$e($g['spr'] ?: '—').'</td></tr>'
             .'<tr><td class="k">Unit</td><td>: '.$e($g['unit'] ?: '—').'</td></tr>'
             .'</table>'

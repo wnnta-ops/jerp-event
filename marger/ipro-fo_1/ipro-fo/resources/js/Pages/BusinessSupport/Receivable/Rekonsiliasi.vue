@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue';
 import { router, Link } from '@inertiajs/vue3';
-import { ArrowLeft, Scale, Search, FilterX, Printer, ChevronDown, ChevronRight, Undo2 } from 'lucide-vue-next';
+import { ArrowLeft, Scale, Search, FilterX, Printer, ChevronDown, ChevronRight, Undo2, TriangleAlert } from 'lucide-vue-next';
 import Badge from '@/Components/UI/Badge.vue';
 import EmptyState from '@/Components/UI/EmptyState.vue';
 import TableTopScroll from '@/Components/UI/TableTopScroll.vue';
@@ -9,10 +9,11 @@ import ColumnFilter from '@/Components/UI/ColumnFilter.vue';
 import SortableTh from '@/Components/UI/SortableTh.vue';
 import { useTableColumns } from '@/Composables/useTableColumns';
 
-type Inv = { id: number; number: string; date: string | null; description: string | null; total: number; paid: number; outstanding: number };
-type Um = { id: number; source_type: string; source_label: string; date: string | null; note: string | null; amount: number };
+type Inv = { id: number; customer: string | null; number: string; date: string | null; description: string | null; total: number; paid: number; outstanding: number };
+type Um = { id: number; customer: string | null; source_type: string; source_label: string; date: string | null; note: string | null; amount: number };
 type Row = {
     row_key: string; booking_id: number | null; spr: string | null; unit: string | null; customer: string | null;
+    customers: string[]; multi_customer: boolean;
     invoice_total: number; invoice_count: number; um_total: number; um_count: number;
     sisa: number; invoices: Inv[]; ums: Um[];
 };
@@ -29,7 +30,9 @@ const semua = computed(() => props.rows ?? []);
 const T = useTableColumns<Row>(semua, [
     { key: 'spr',      value: (r) => r.spr ?? 'Tanpa SPR' },
     { key: 'unit',     value: (r) => r.unit ?? '—' },
-    { key: 'customer', value: (r) => r.customer ?? '—' },
+    // Memakai SELURUH nama pada grup, bukan nama utamanya saja — kalau tidak, customer
+    // kedua pada satu SPR tidak akan pernah ketemu walaupun namanya diketik persis.
+    { key: 'customer', value: (r) => (r.customers?.length ? r.customers.join(' · ') : (r.customer ?? '—')) },
     { key: 'invoice',  value: (r) => fmtRp(r.invoice_total), sort: (r) => Number(r.invoice_total) || 0 },
     { key: 'um',       value: (r) => fmtRp(r.um_total),      sort: (r) => Number(r.um_total) || 0 },
     { key: 'sisa',     value: (r) => fmtRp(r.sisa),          sort: (r) => Number(r.sisa) || 0 },
@@ -157,7 +160,19 @@ function batalKompensasi(u: Um) {
                                 <Badge v-if="!r.booking_id" variant="neutral" size="sm" class="ml-1">Tanpa SPR</Badge>
                             </td>
                             <td class="whitespace-nowrap px-4 py-2.5">{{ r.unit ?? '—' }}</td>
-                            <td class="px-4 py-2.5">{{ r.customer ?? '—' }}</td>
+                            <td class="px-4 py-2.5">
+                                <div>{{ r.customer ?? '—' }}</div>
+                                <!-- Satu SPR bisa memuat baris atas nama customer lain (mis. pengalihan
+                                     pembeli). Namanya WAJIB ikut tampil, kalau tidak angkanya terhitung
+                                     tapi orangnya tidak pernah ketemu saat dicari. -->
+                                <div v-if="r.multi_customer" class="mt-0.5 flex flex-wrap items-center gap-1">
+                                    <span class="inline-flex items-center gap-1 rounded-full bg-amber-50 px-1.5 py-px text-[10px] font-semibold text-amber-700 ring-1 ring-amber-200 dark:bg-amber-950/30 dark:text-amber-300 dark:ring-amber-800/60"
+                                        title="SPR ini memuat baris atas nama lebih dari satu customer">
+                                        <TriangleAlert class="h-2.5 w-2.5" /> {{ r.customers.length }} nama
+                                    </span>
+                                    <span v-for="n in r.customers.filter((x) => x !== r.customer)" :key="n" class="text-[11px] text-neutral-500">{{ n }}</span>
+                                </div>
+                            </td>
                             <td class="whitespace-nowrap px-4 py-2.5 text-right font-mono">
                                 {{ fmtRp(r.invoice_total) }}
                                 <span class="block text-xs text-neutral-400">{{ r.invoice_count }} invoice</span>
@@ -177,11 +192,13 @@ function batalKompensasi(u: Um) {
                                             <tbody>
                                                 <tr v-for="i in r.invoices" :key="'i' + i.id" class="border-b border-neutral-200 last:border-0 dark:border-neutral-800">
                                                     <td class="py-1 pr-2 font-mono">{{ i.number }}</td>
+                                                    <!-- Nama per baris: menjawab "punya siapa" saat satu SPR memuat beberapa nama. -->
+                                                    <td class="py-1 pr-2" :class="i.customer && i.customer !== r.customer ? 'font-medium text-amber-700 dark:text-amber-400' : 'text-neutral-500'">{{ i.customer ?? '—' }}</td>
                                                     <td class="py-1 pr-2 text-neutral-500">{{ fmtDate(i.date) }}</td>
                                                     <td class="py-1 pr-2 text-neutral-500"><span class="block max-w-[220px] truncate" :title="i.description ?? ''">{{ i.description ?? '—' }}</span></td>
                                                     <td class="py-1 text-right font-mono">{{ fmtRp(i.outstanding) }}</td>
                                                 </tr>
-                                                <tr v-if="!r.invoices.length"><td colspan="4" class="py-1 text-neutral-400">Tidak ada invoice piutang</td></tr>
+                                                <tr v-if="!r.invoices.length"><td colspan="5" class="py-1 text-neutral-400">Tidak ada invoice piutang</td></tr>
                                             </tbody>
                                         </table>
                                     </div>
@@ -191,6 +208,8 @@ function batalKompensasi(u: Um) {
                                             <tbody>
                                                 <tr v-for="u in r.ums" :key="'u' + u.id" class="border-b border-neutral-200 last:border-0 dark:border-neutral-800">
                                                     <td class="py-1 pr-2">{{ u.source_label }}</td>
+                                                    <!-- Nama per baris: menjawab "punya siapa" saat satu SPR memuat beberapa nama. -->
+                                                    <td class="py-1 pr-2" :class="u.customer && u.customer !== r.customer ? 'font-medium text-amber-700 dark:text-amber-400' : 'text-neutral-500'">{{ u.customer ?? '—' }}</td>
                                                     <td class="py-1 pr-2 text-neutral-500">{{ fmtDate(u.date) }}</td>
                                                     <td class="py-1 pr-2 text-neutral-500"><span class="block max-w-[200px] truncate" :title="u.note ?? ''">{{ u.note ?? '—' }}</span></td>
                                                     <td class="py-1 text-right font-mono text-warning-600">{{ fmtRp(u.amount) }}</td>
