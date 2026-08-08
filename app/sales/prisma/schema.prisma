@@ -1,0 +1,343 @@
+// Java Sales Hub — event-based single source of truth.
+// Two core records (Deal + Unit) + reference tables + an append-only
+// PipelineEvent ledger from which every report/KPI is DERIVED.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------- enums ----------------
+enum Role {
+  SALES
+  COLLECTION
+  MANAGEMENT
+}
+
+enum Channel {
+  SITE
+  PAMERAN
+  JANJIAN
+}
+
+enum StatusLead {
+  HOT
+  WARM
+  COLD
+}
+
+enum Stage {
+  WI // 0
+  FOLLOW_UP // 1
+  NUP // 2
+  UTJ // 3
+  SPR // 4  (last stage owned by Sales)
+  ACC // 5
+  AKAD // 6
+  REALISASI // 7
+}
+
+enum CaraBayar {
+  KPR
+  CASH
+}
+
+enum UnitStatus {
+  OPEN_STOCK
+  HOLD
+  PROSES
+  REALISASI
+  CASH_LUNAS
+  BATAL
+}
+
+enum BatalKategori {
+  UTJ
+  SPR
+  WAITING_LIST
+}
+
+enum BatalAlasan {
+  KOL_2
+  KOL_5
+  REJECT_BANK
+  BATAL_SEPIHAK
+  MASALAH_KELUARGA
+  SKEMA_BAYAR
+  OTHER
+}
+
+enum RefundStatus {
+  NONE
+  PENDING
+  DONE
+}
+
+enum EventType {
+  WI
+  FOLLOW_UP
+  NUP
+  UTJ
+  SPR
+  ACC
+  AKAD
+  REALISASI
+  BATAL
+  WAITING_LIST
+  STATUS_OVERRIDE
+}
+
+enum TargetScope {
+  ANNUAL
+  MONTHLY
+  TEAM_WEEK
+  TEAM_MONTH
+}
+
+enum TargetMetric {
+  UNIT
+  NUP
+  SPR
+}
+
+// ---------------- auth ----------------
+model User {
+  id           String   @id @default(uuid())
+  name         String
+  email        String   @unique
+  passwordHash String
+  role         Role     @default(SALES)
+  salesId      String?  @unique
+  sales        Sales?   @relation(fields: [salesId], references: [id])
+  createdAt    DateTime @default(now())
+}
+
+// ---------------- reference / hierarchy (multi-project) ----------------
+model Project {
+  id       String    @id @default(uuid())
+  name     String
+  code     String    @unique
+  clusters Cluster[]
+}
+
+model Cluster {
+  id        String     @id @default(uuid())
+  projectId String
+  project   Project    @relation(fields: [projectId], references: [id])
+  name      String
+  phases    Phase[]
+  types     UnitType[]
+  deals     Deal[]
+
+  @@unique([projectId, name])
+}
+
+model Phase {
+  id        String  @id @default(uuid())
+  clusterId String
+  cluster   Cluster @relation(fields: [clusterId], references: [id])
+  name      String // THP: I, II, III, IV
+  units     Unit[]
+  deals     Deal[]
+
+  @@unique([clusterId, name])
+}
+
+model UnitType {
+  id        String  @id @default(uuid())
+  clusterId String
+  cluster   Cluster @relation(fields: [clusterId], references: [id])
+  name      String
+  units     Unit[]
+  deals     Deal[]
+
+  @@unique([clusterId, name])
+}
+
+model Team {
+  id      String   @id @default(uuid())
+  name    String   @unique
+  sales   Sales[]
+  targets Target[]
+}
+
+model Sales {
+  id     String  @id @default(uuid())
+  name   String  @unique
+  teamId String?
+  team   Team?   @relation(fields: [teamId], references: [id])
+  deals  Deal[]
+  user   User?
+}
+
+model Coordinator {
+  id        String               @id @default(uuid())
+  name      String               @unique
+  rotations RotationAssignment[]
+  deals     Deal[]
+}
+
+model Agency {
+  id        String               @id @default(uuid())
+  name      String               @unique
+  rotations RotationAssignment[]
+  deals     Deal[]
+}
+
+// effective-dated history so past reports resolve the coordinator valid at the time
+model RotationAssignment {
+  id            String      @id @default(uuid())
+  agencyId      String
+  agency        Agency      @relation(fields: [agencyId], references: [id])
+  coordinatorId String
+  coordinator   Coordinator @relation(fields: [coordinatorId], references: [id])
+  effectiveFrom DateTime
+  effectiveTo   DateTime?
+
+  @@index([agencyId, effectiveFrom])
+}
+
+model Bank {
+  id    String @id @default(uuid())
+  name  String @unique
+  deals Deal[]
+}
+
+model Promo {
+  id    String @id @default(uuid())
+  name  String @unique
+  deals Deal[]
+}
+
+model Target {
+  id     String       @id @default(uuid())
+  scope  TargetScope
+  metric TargetMetric
+  period String // "2026", "2026-06", "2026-W23"
+  teamId String?
+  team   Team?        @relation(fields: [teamId], references: [id])
+  value  Int
+
+  @@unique([scope, metric, period, teamId])
+}
+
+// ---------------- CORE RECORD 1: Unit ----------------
+model Unit {
+  id             String     @id @default(uuid())
+  code           String     @unique // "JRK3 IV No.5"
+  phaseId        String
+  phase          Phase      @relation(fields: [phaseId], references: [id])
+  unitTypeId     String
+  unitType       UnitType   @relation(fields: [unitTypeId], references: [id])
+  block          String?
+  no             String?
+  harga          Decimal?
+  status         UnitStatus @default(OPEN_STOCK)
+  statusOverride Boolean    @default(false)
+  currentDealId  String?    @unique
+  tglSprCetak    DateTime?
+  tglUtj         DateTime?
+  tglAkad        DateTime?
+  deals          Deal[]
+
+  @@index([status])
+}
+
+// ---------------- CORE RECORD 2: Deal (Customer) ----------------
+model Deal {
+  id              String         @id @default(uuid())
+  nama            String
+  channel         Channel        @default(SITE)
+  pameranLokasi   String?
+  sumberInformasi String?
+  agencyId        String
+  agency          Agency         @relation(fields: [agencyId], references: [id])
+  salesId         String
+  sales           Sales          @relation(fields: [salesId], references: [id])
+  // DERIVED snapshot from RotationAssignment at tanggalWi — never typed by users.
+  coordinatorId   String?
+  coordinator     Coordinator?   @relation(fields: [coordinatorId], references: [id])
+  clusterId       String?
+  cluster         Cluster?       @relation(fields: [clusterId], references: [id])
+  phaseId         String?
+  phase           Phase?         @relation(fields: [phaseId], references: [id])
+  unitTypeId      String?
+  unitType        UnitType?      @relation(fields: [unitTypeId], references: [id])
+  statusLead      StatusLead     @default(COLD)
+  stage           Stage          @default(WI) // projection of latest event
+  tanggalWi       DateTime
+  fuCount         Int            @default(0)
+  unitId          String?
+  unit            Unit?          @relation(fields: [unitId], references: [id])
+  caraBayar       CaraBayar?
+  bankId          String?
+  bank            Bank?          @relation(fields: [bankId], references: [id])
+  promoId         String?
+  promo           Promo?         @relation(fields: [promoId], references: [id])
+  tglNup          DateTime?
+  tglUtj          DateTime?
+  tglSpr          DateTime?
+  tglAcc          DateTime?
+  tglAkad         DateTime?
+  tglRealisasi    DateTime?
+  waitingList     Boolean        @default(false)
+  batal           Boolean        @default(false)
+  batalKategori   BatalKategori?
+  batalAlasan     BatalAlasan?
+  batalTanggal    DateTime?
+  refundStatus    RefundStatus   @default(NONE)
+  refundAmount    Decimal?
+  catatan         String?
+  followUps       FollowUp[]
+  events          PipelineEvent[]
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  @@index([stage])
+  @@index([tanggalWi])
+}
+
+model FollowUp {
+  id         String     @id @default(uuid())
+  dealId     String
+  deal       Deal       @relation(fields: [dealId], references: [id])
+  date       DateTime
+  note       String
+  statusLead StatusLead
+  actorId    String
+  createdAt  DateTime   @default(now())
+}
+
+// ---------------- LEDGER (source of truth for reports + audit) ----------------
+model PipelineEvent {
+  id        String    @id @default(uuid())
+  dealId    String
+  deal      Deal      @relation(fields: [dealId], references: [id])
+  unitId    String?
+  type      EventType
+  eventDate DateTime // the WIB day the event happened
+  fromStage Stage?
+  toStage   Stage?
+  actorId   String
+  meta      Json?
+  createdAt DateTime  @default(now())
+
+  @@index([type, eventDate])
+  @@index([dealId])
+}
+
+// ---------------- audit for reference-data edits ----------------
+model AuditLog {
+  id        String   @id @default(uuid())
+  actorId   String
+  entity    String
+  entityId  String
+  action    String
+  before    Json?
+  after     Json?
+  createdAt DateTime @default(now())
+}

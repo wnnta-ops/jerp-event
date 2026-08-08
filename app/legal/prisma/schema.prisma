@@ -1,0 +1,328 @@
+// LDCMS / Legal module — data model (spec §3).
+//
+// NOTE ON SQLite: the dev database is SQLite, which Prisma does not allow to use
+// native enums, Json columns, or scalar lists. So:
+//   * every "enum" field is a String, with the allowed values enforced by Zod in
+//     lib/validation.ts (the single source of truth, shared client + server).
+//   * the "array" fields from the spec are modelled as relations:
+//       file_urls       -> DocumentFile[]
+//       related_doc_ids -> DocumentRelation (self-relation, both directions)
+// Moving to PostgreSQL later: convert the String fields to native enums; the
+// relations carry over unchanged.
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model User {
+  id         String  @id @default(cuid())
+  name       String
+  email      String  @unique
+  role       String // Role: LEGAL_PIC | HEAD_OF_LEGAL | GENERAL_MANAGER | DIRECTOR | REQUESTER
+  department String?
+  initials   String?
+  isActive   Boolean @default(true)
+  passwordHash String? // bcrypt hash for email+password login
+
+  picDocuments      Document[]         @relation("DocPic")
+  uploadedDocuments Document[]         @relation("DocUploader")
+  editedDocuments   Document[]         @relation("DocEditor")
+  documentEvents    DocumentEvent[]    @relation("EventActor")
+  templates         DocumentTemplate[] @relation("TemplateCreator")
+  timelineSections  TimelineSection[]  @relation("TLSectionCreator")
+  timelineChecks    TimelineCheckpoint[] @relation("TLCheckpointActor")
+  timelineMoves     TimelineMove[]     @relation("TLMoveActor")
+  timelineItems     TimelineItem[]  @relation("TimelinePic")
+  accessRequests    AccessRequest[] @relation("ReqRequester")
+  fulfilledRequests AccessRequest[] @relation("ReqFulfiller")
+  approvalSteps     ApprovalStep[]  @relation("StepApprover")
+  auditEntries      AuditEntry[]    @relation("AuditActor")
+
+  createdAt DateTime @default(now())
+}
+
+model Document {
+  id        String @id @default(cuid())
+  docType   String // DocType enum (lib/validation.ts)
+  title     String
+  docNumber String?
+
+  scope   String // "unit" | "development" | "entity" — derived from docType
+  cluster String?
+  blok    String?
+  unitNo  String?
+
+  entityName String? // the PT/company for entity-scoped docs (PKS, Akta Pendirian, RUPS, …)
+  buyerName  String?
+
+  status    String // DocStatus enum
+  issueDate  DateTime?
+  expiryDate DateTime? // required for Izin & KPR — feeds the timeline
+
+  // PIC = owner of the next action (≠ uploader).
+  picId String
+  pic   User   @relation("DocPic", fields: [picId], references: [id])
+
+  uploadedById String
+  uploadedBy   User   @relation("DocUploader", fields: [uploadedById], references: [id])
+  uploadedAt   DateTime @default(now())
+
+  // Last manual edit (status/expiry) by Legal — for accountability.
+  lastEditedById String?
+  lastEditedBy   User?   @relation("DocEditor", fields: [lastEditedById], references: [id])
+
+  originalLocation       String // OriginalLocation enum — where the wet-ink original sits
+  originalLocationDetail String? // detail for the chosen location (kode / nama bank / nama notaris / nama pembeli)
+
+  // Template-only.
+  version           String?
+  isCurrentApproved Boolean @default(false)
+
+  // Extra metadata (category-specific).
+  objectLocation String? // Lokasi objek (perizinan/sertifikasi)
+  landArea       String? // Luas lahan
+  notes          String? // Catatan lain
+  description    String? // Deskripsi
+  // Korporasi
+  boardStructure    String? // Susunan pengurus
+  authorizedCapital String? // Modal dasar (Rp)
+  issuedCapital     String? // Modal ditempatkan (Rp)
+  shareholders      String? // JSON: [{ name, percentage }]
+  // Perjanjian
+  parties           String? // JSON: [{ name, entity }] — pihak-pihak dalam perjanjian
+
+  // Reminder pembaruan dokumen (per-dokumen) — feeds alerts/timeline.
+  reminderDate DateTime?
+  reminderNote String?
+
+  accessLevel String // AccessLevel enum — gates visibility + approval-chain length
+
+  files          DocumentFile[]
+  events         DocumentEvent[]
+  relationsFrom  DocumentRelation[] @relation("RelFrom")
+  relationsTo    DocumentRelation[] @relation("RelTo")
+  timelineItems  TimelineItem[]
+  accessRequests AccessRequest[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([docType])
+  @@index([status])
+  @@index([cluster])
+}
+
+// Per-document history log — every manual change (edit, lokasi fisik, ganti
+// berkas, reminder) is appended here so the directory shows who & when.
+model DocumentEvent {
+  id         String   @id @default(cuid())
+  documentId String
+  document   Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  actorId    String?
+  actor      User?    @relation("EventActor", fields: [actorId], references: [id])
+  action     String // created | edit | location_change | file_replace | reminder
+  detail     String? // human-readable summary, e.g. "Lokasi fisik: Brankas kantor → BPN"
+  createdAt  DateTime @default(now())
+
+  @@index([documentId])
+}
+
+// ── Timeline legal: editable Gantt per section, tiap item punya 4 checkpoint ──
+// (Tanda Terima → Survey Lokasi → Rapat → Product). Progress mengisi kotak;
+// 4/4 = DONE. `targetMonth` = patokan tenggat/telat di kolom bulan.
+model TimelineSection {
+  id          String          @id @default(cuid())
+  title       String
+  cluster     Int? // nomor cluster (manual, angka saja) — dasar filter cluster
+  productType String? // jenis produk (manual) — dasar filter jenis produk
+  range       String          @default("2026")
+  months      String // JSON array label bulan, mis. ["Jan",...,"Des"]
+  order       Int             @default(0)
+  createdById String?
+  createdBy   User?           @relation("TLSectionCreator", fields: [createdById], references: [id])
+  createdAt   DateTime        @default(now())
+  entries     TimelineEntry[]
+}
+
+model TimelineEntry {
+  id          String               @id @default(cuid())
+  sectionId   String
+  section     TimelineSection      @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+  name          String
+  badan         String? // SERTIPIKASI | PERIZINAN | CORPORATE (dasar checkpoint dokumen)
+  jenisDokumen  String? // jenis dokumen dalam badan → menentukan daftar checkpoint
+  status        String             @default("") // Express | Proses | On Target | Delay | Eksternal | —
+  durasi        String             @default("")
+  progressMonth Int? // index bulan kotak progres (On progress / Done / Telat)
+  targetMonth   Int? // index bulan kotak Target (tenggat, amber statis)
+  order       Int                  @default(0)
+  createdAt   DateTime             @default(now())
+  updatedAt   DateTime             @updatedAt
+  checkpoints TimelineCheckpoint[]
+  moves       TimelineMove[]
+
+  @@index([sectionId])
+}
+
+// Log pemindahan jadwal (drag & drop kotak target ke bulan lain).
+model TimelineMove {
+  id        String        @id @default(cuid())
+  entryId   String
+  entry     TimelineEntry @relation(fields: [entryId], references: [id], onDelete: Cascade)
+  fromMonth Int?
+  toMonth   Int?
+  byId      String?
+  by        User?         @relation("TLMoveActor", fields: [byId], references: [id])
+  createdAt DateTime      @default(now())
+
+  @@index([entryId])
+}
+
+model TimelineCheckpoint {
+  id        String        @id @default(cuid())
+  entryId   String
+  entry     TimelineEntry @relation(fields: [entryId], references: [id], onDelete: Cascade)
+  step      String // tanda_terima | survey_lokasi | rapat | product
+  order     Int // 0..3
+  done      Boolean       @default(false)
+  doneById  String?
+  doneBy    User?         @relation("TLCheckpointActor", fields: [doneById], references: [id])
+  doneAt    DateTime?
+  note      String?
+  proofData Bytes? // file bukti (disimpan di DB → jalan di laptop & Vercel)
+  proofName String?
+  proofMime String?
+
+  @@index([entryId])
+}
+
+// Reusable .docx templates for repetitive legal documents ("Draft Dokumen").
+// The uploaded .docx (with {{placeholder}} tags) is stored as bytes; `fields`
+// is the JSON list of detected placeholders driving the fill-in form.
+model DocumentTemplate {
+  id          String   @id @default(cuid())
+  name        String
+  fileName    String
+  data        Bytes // the .docx template
+  fields      String // JSON: [{ key, label }]
+  createdById String?
+  createdBy   User?    @relation("TemplateCreator", fields: [createdById], references: [id])
+  createdAt   DateTime @default(now())
+}
+
+// One row per uploaded file (scan, signed copy, …). Replaces the file_urls array.
+model DocumentFile {
+  id         String   @id @default(cuid())
+  documentId String
+  document   Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  url        String // web path, e.g. /uploads/<docId>/<file>
+  fileName   String
+  label      String? // optional: "scan", "signed copy", …
+  size       Int?
+  mimeType   String?
+  uploadedAt DateTime @default(now())
+}
+
+// Feature 3 — unifies everything with a date. `expiry` items are derived from
+// documents at read time (always in sync); `work` items (and any manual items)
+// live here. `linkedDocId` threads an item back to its document.
+model TimelineItem {
+  id              String    @id @default(cuid())
+  itemType        String // "work" (blue) | "expiry" (amber)
+  title           String
+  description     String? // short detail shown in the week view block
+  date            DateTime // the day it lands on
+  startMinutes    Int? // minutes from midnight — work items only (time-blocked)
+  durationMinutes Int? // work items only
+  linkedDocId     String?
+  linkedDoc       Document? @relation(fields: [linkedDocId], references: [id], onDelete: SetNull)
+  unit            String?
+  picId           String?
+  pic             User?     @relation("TimelinePic", fields: [picId], references: [id])
+  status          String    @default("open") // open | done | overdue
+  createdAt       DateTime  @default(now())
+
+  @@index([date])
+}
+
+// Feature 4 — a department requests a document; it routes through a sequential,
+// tiered approval chain. The spec's `chain` and `audit_log` arrays are modelled
+// as the related ApprovalStep[] and AuditEntry[] tables (SQLite has no JSON).
+model AccessRequest {
+  id            String    @id @default(cuid())
+  code          String    @unique // human ref, e.g. DR-0142
+  // Requests are described manually, NOT tied to a directory document.
+  requestedItem String    @default("") // free-text: what document the requester needs
+  requestedType String? // optional category (DocType), for the PIC's context
+  docId         String? // optional fulfillment link to a directory doc
+  document      Document? @relation(fields: [docId], references: [id], onDelete: SetNull)
+  requesterId   String
+  requester     User      @relation("ReqRequester", fields: [requesterId], references: [id])
+  dept          String
+  purpose       String
+  accessType    String // view | download | checkout_original
+  neededBy      DateTime
+  status        String    @default("pending") // pending | approved | rejected | fulfilled
+  currentStep   Int       @default(0) // index of the pending approver
+
+  // Fulfillment — Legal PIC attaches/hands over the document after full approval.
+  fulfilledAt       DateTime?
+  fulfilledById     String?
+  fulfilledBy       User?     @relation("ReqFulfiller", fields: [fulfilledById], references: [id])
+  fulfilledFileUrl  String?
+  fulfilledFileName String?
+  fulfilledNote     String?
+
+  steps ApprovalStep[]
+  audit AuditEntry[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([status])
+}
+
+// One ordered node in a request's chain.
+model ApprovalStep {
+  id         String        @id @default(cuid())
+  requestId  String
+  request    AccessRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  order      Int
+  role       String // LEGAL_PIC | HEAD_OF_LEGAL | GENERAL_MANAGER | DIRECTOR
+  approverId String?
+  approver   User?         @relation("StepApprover", fields: [approverId], references: [id])
+  decision   String? // approved | rejected | null
+  decidedAt  DateTime?
+  note       String?
+  notifiedAt DateTime?
+
+  @@unique([requestId, order])
+}
+
+// Append-only log — for releasing legal documents this trail is the whole point.
+model AuditEntry {
+  id        String        @id @default(cuid())
+  requestId String
+  request   AccessRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  actorId   String?
+  actor     User?         @relation("AuditActor", fields: [actorId], references: [id])
+  action    String // created | approved | rejected | notified | auto_approved
+  detail    String?
+  createdAt DateTime @default(now())
+}
+
+// Threads documents (PPJB -> AJB -> sertifikat). Replaces related_doc_ids.
+model DocumentRelation {
+  id     String   @id @default(cuid())
+  fromId String
+  toId   String
+  from   Document @relation("RelFrom", fields: [fromId], references: [id], onDelete: Cascade)
+  to     Document @relation("RelTo", fields: [toId], references: [id], onDelete: Cascade)
+
+  @@unique([fromId, toId])
+}

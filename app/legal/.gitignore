@@ -1,0 +1,21 @@
+/node_modules
+/.next
+/out
+/build
+next-env.d.ts
+*.tsbuildinfo
+
+# prisma / sqlite
+/prisma/*.db
+/prisma/*.db-journal
+
+# env
+.env
+
+# uploaded files (keep the folder, ignore contents)
+/public/uploads/*
+!/public/uploads/.gitkeep
+
+# Private request documents (gated via /api/request-doc)
+storage/
+VERCEL_ENV.txt

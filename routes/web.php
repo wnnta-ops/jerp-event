@@ -18,6 +18,14 @@ Route::get('/sso/to-bo', [SsoController::class, 'toBo'])
     ->middleware(['web', 'auth'])
     ->name('sso.to-bo');
 
+// SSO token-handoff → app portal Legal & Sales (Next.js /legal & /sales).
+Route::get('/sso/to-legal', [SsoController::class, 'toLegal'])
+    ->middleware(['web', 'auth'])
+    ->name('sso.to-legal');
+Route::get('/sso/to-sales', [SsoController::class, 'toSales'])
+    ->middleware(['web', 'auth'])
+    ->name('sso.to-sales');
+
 // ─────────────────────────────────────────────────────────────────────────
 // Subdomain publik OPSIONAL (env NUP_DOMAIN / SITEPLAN_DOMAIN). Didefinisikan
 // SEBELUM route global "/" agar cocok lebih dulu saat host = subdomain tsb.

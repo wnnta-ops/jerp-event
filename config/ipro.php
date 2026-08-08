@@ -52,6 +52,13 @@ return [
     'sso_secret' => env('SSO_SHARED_SECRET'),
     'bo_url'     => rtrim(env('IPRO_BO_URL', 'http://localhost:8090'), '/'),
 
+    // App portal Legal & Sales (Next.js di compose yang sama, path /legal & /sales
+    // di balik jerp-nginx). URL HARUS yang bisa dijangkau BROWSER (bukan nama
+    // service internal). Secret dibagikan ke kedua container via PORTAL_SSO_SECRET.
+    'portal_sso_secret' => env('PORTAL_SSO_SECRET', env('SSO_SHARED_SECRET')),
+    'legal_url' => rtrim(env('PORTAL_LEGAL_URL', env('APP_URL', 'http://localhost:8080').'/legal'), '/'),
+    'sales_url' => rtrim(env('PORTAL_SALES_URL', env('APP_URL', 'http://localhost:8080').'/sales'), '/'),
+
     // ── Posting GL FO → ipro_bo ────────────────────────────────────────────────
     'gl_enabled' => (bool) env('IPRO_GL_ENABLED', true),
     // Status jurnal hasil posting FO. DRAFT = belum final → akuntan verifikasi dulu
