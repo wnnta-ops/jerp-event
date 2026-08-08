@@ -68,7 +68,7 @@ function simpanSpr(r: Row, value: string) {
 <template>
     <div class="space-y-4">
         <div class="flex items-center justify-between">
-            <h1 class="flex items-center gap-2 text-2xl font-bold"><Coins class="h-6 w-6 text-success-600" /> Account Receivable <span class="text-base font-normal text-neutral-400">(Piutang Usaha)</span></h1>
+            <h1 class="flex items-center gap-2 text-2xl font-bold"><Coins class="h-6 w-6 text-success-600" /> Piutang Usaha <span class="text-base font-normal text-neutral-400">(Booked)</span></h1>
             <!-- "Kategori" & "Invoice" (registrasi manual) DIHILANGKAN: invoice piutang dibentuk
                  otomatis dari Booked Revenue, tidak bisa ditambah manual. -->
             <div class="flex flex-wrap gap-2">

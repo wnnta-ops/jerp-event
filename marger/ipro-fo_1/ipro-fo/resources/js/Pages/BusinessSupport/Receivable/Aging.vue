@@ -38,7 +38,7 @@ const cellCls = (r: Row, k: string) => (val(r, k) > 0 ? 'font-medium' : 'text-ne
 
 <template>
     <div class="space-y-4">
-        <Link :href="route('bs.ar.index')" class="inline-flex items-center gap-2 text-sm text-neutral-500 hover:text-neutral-800 dark:hover:text-neutral-200"><ArrowLeft class="h-4 w-4" /> Account Receivable</Link>
+        <Link :href="route('bs.ar.index')" class="inline-flex items-center gap-2 text-sm text-neutral-500 hover:text-neutral-800 dark:hover:text-neutral-200"><ArrowLeft class="h-4 w-4" /> Piutang Usaha (Booked)</Link>
 
         <div>
             <h1 class="flex items-center gap-2 text-2xl font-bold"><CalendarClock class="h-6 w-6 text-success-600" /> Aging Piutang</h1>

@@ -98,7 +98,7 @@ export function navGroups(foUrl: string): NavGroup[] {
         ],
     },
     // Grup "Business Support" dibubarkan: Purchase Order → Purchasing; Item/FPB/Penerimaan/
-    // Pengeluaran/Kartu Stok → Inventory; Account Receivable → grup mandiri (dekat Account Payable).
+    // Pengeluaran/Kartu Stok → Inventory; Piutang Usaha (Booked) → grup mandiri (dekat Account Payable).
     // Overview, Proyeksi Hutang/Piutang & Payroll dihapus dari menu — halamannya tetap ada:
     // Proyeksi duplikat di grup Account Payable, Payroll via Data Center → Employee Center → Karyawan.
     {
@@ -208,7 +208,7 @@ export function navGroups(foUrl: string): NavGroup[] {
         ],
     },
     {
-        title: 'Account Receivable',
+        title: 'Piutang Usaha (Booked)',
         icon: Coins, color: '#3b82f6', route: 'bs.ar.index',
         desc: 'Invoice, kuitansi & kartu piutang customer.',
         items: [

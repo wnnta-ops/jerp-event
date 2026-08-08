@@ -4,7 +4,7 @@ import { computed, reactive, ref, type ComputedRef, type Ref } from 'vue';
  * Perkakas tabel per-kolom: FILTER (ketik "berisi" + checklist nilai) sekaligus URUT.
  *
  * Dipakai bersama komponen ColumnFilter. Dibuat sebagai composable karena tiga layar
- * Account Receivable (Invoice Piutang, UM Penjualan, Rekonsiliasi Piutang) butuh perilaku
+ * Piutang Usaha (Booked) — Invoice Piutang, UM Penjualan, Rekonsiliasi Piutang — butuh perilaku
  * yang sama persis — kalau disalin bertiga, perbaikan di satu tempat gampang terlewat
  * di dua tempat lain.
  *
