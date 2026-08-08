@@ -1,0 +1,12 @@
+import { withAuth } from "next-auth/middleware";
+
+// Halaman login pakai path LENGKAP /sales/login (middleware membangun URL redirect
+// dari origin tanpa basePath — default /api/auth/signin akan 404 di root domain).
+export default withAuth({ pages: { signIn: "/sales/login" } });
+
+// Protect all app routes; the API/auth, SSO handoff, login and static assets are excluded.
+export const config = {
+  matcher: [
+    "/((?!api/auth|api/sso|login|_next/static|_next/image|favicon.ico).*)",
+  ],
+};

@@ -1,0 +1,81 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Design tokens copied verbatim from the reference HTML mockups (visual truth). */
+:root {
+  --color-background-primary: #ffffff;
+  --color-background-secondary: #f4f3ee;
+  --color-background-tertiary: #faf9f5;
+  --color-background-info: #e6f1fb;
+  --color-background-success: #eaf3de;
+  --color-background-warning: #faeeda;
+  --color-background-danger: #fcebeb;
+  --color-text-primary: #1c1b18;
+  --color-text-secondary: #5f5e5a;
+  --color-text-tertiary: #8a8980;
+  --color-text-info: #185fa5;
+  --color-text-success: #3b6d11;
+  --color-text-warning: #854f0b;
+  --color-text-danger: #a32d2d;
+  --color-border-tertiary: rgba(0, 0, 0, 0.12);
+  --color-border-secondary: rgba(0, 0, 0, 0.22);
+  --color-border-info: #85b7eb;
+  --color-border-success: #97c459;
+  --color-border-warning: #ef9f27;
+  --color-border-danger: #f09595;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --color-background-primary: #262624;
+    --color-background-secondary: #1f1e1c;
+    --color-background-tertiary: #191917;
+    --color-background-info: #0c447c;
+    --color-background-success: #27500a;
+    --color-background-warning: #633806;
+    --color-background-danger: #791f1f;
+    --color-text-primary: #f5f4ef;
+    --color-text-secondary: #b4b2a9;
+    --color-text-tertiary: #888780;
+    --color-text-info: #85b7eb;
+    --color-text-success: #97c459;
+    --color-text-warning: #fac775;
+    --color-text-danger: #f09595;
+    --color-border-tertiary: rgba(255, 255, 255, 0.14);
+    --color-border-secondary: rgba(255, 255, 255, 0.24);
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  background: var(--color-background-tertiary);
+  color: var(--color-text-primary);
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  line-height: 1.5;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+/* Inputs inherit the token palette so dark mode just works. */
+input,
+select,
+textarea,
+button {
+  font-family: inherit;
+  color: var(--color-text-primary);
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: var(--color-text-tertiary);
+}

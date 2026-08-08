@@ -19,6 +19,7 @@ volumes:
   mysql-data:
   redis-data:
   meili-data:
+  pg-data:          # PostgreSQL — DB app portal Legal & Sales (Next.js + Prisma)
   # Produksi (base): image immutable + named volume untuk data yang persist.
   # Dev meng-override volume ini dgn bind-mount source (docker-compose.override.yml).
   storage:
@@ -348,3 +349,74 @@ services:
       timeout: 5s
       retries: 5
       start_period: 20s
+
+  # ───────────────────────────────────────────────────────────────────
+  # PostgreSQL — DB untuk app portal Legal & Sales (Next.js + Prisma).
+  # Dua database dibuat oleh init script (docker/postgres/init).
+  # ───────────────────────────────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    container_name: jerp-pg
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${PG_USER:-jerp}
+      POSTGRES_PASSWORD: ${PG_PASSWORD:-pgsecret}
+      POSTGRES_DB: ${PG_DB:-jerp}
+      TZ: Asia/Jakarta
+    volumes:
+      - pg-data:/var/lib/postgresql/data
+      - ./docker/postgres/init:/docker-entrypoint-initdb.d:ro
+    networks:
+      - jerp
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
+  # ───────────────────────────────────────────────────────────────────
+  # Legal — app portal (Next.js 14 + Prisma/Postgres), diakses via
+  # jerp-nginx path /legal. Login lewat SSO J-ERP (/sso/to-legal).
+  # ───────────────────────────────────────────────────────────────────
+  legal:
+    build:
+      context: ./app/legal
+      dockerfile: Dockerfile
+    image: jerp/legal:${APP_VERSION:-latest}
+    container_name: jerp-legal
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql://${PG_USER:-jerp}:${PG_PASSWORD:-pgsecret}@postgres:5432/legal
+      AUTH_SECRET: ${LEGAL_AUTH_SECRET:-dev-legal-secret-change-me}
+      JERP_SSO_SECRET: ${PORTAL_SSO_SECRET:-dev-portal-sso-secret}
+      REQUEST_DOCS_DIR: /tmp/request-docs
+      NODE_ENV: production
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - jerp
+
+  # ───────────────────────────────────────────────────────────────────
+  # Sales — Java Sales Hub (Next.js 15 + NextAuth + Prisma/Postgres),
+  # diakses via jerp-nginx path /sales. Login lewat SSO J-ERP (/sso/to-sales).
+  # ───────────────────────────────────────────────────────────────────
+  sales:
+    build:
+      context: ./app/sales
+      dockerfile: Dockerfile
+    image: jerp/sales:${APP_VERSION:-latest}
+    container_name: jerp-sales
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql://${PG_USER:-jerp}:${PG_PASSWORD:-pgsecret}@postgres:5432/sales
+      NEXTAUTH_SECRET: ${SALES_NEXTAUTH_SECRET:-dev-sales-secret-change-me}
+      NEXTAUTH_URL: ${SALES_NEXTAUTH_URL:-http://localhost:8081/sales/api/auth}
+      JERP_SSO_SECRET: ${PORTAL_SSO_SECRET:-dev-portal-sso-secret}
+      NODE_ENV: production
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - jerp

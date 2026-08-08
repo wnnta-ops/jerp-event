@@ -57,6 +57,20 @@
             'bg'    => 'oklch(0.55 0.20 300)',
             'path'  => 'M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.86 9.86 0 01-4-.8L3 20l1.3-3.9A7.9 7.9 0 013 12c0-4.418 4.03-8 9-8s9 3.582 9 8z',
         ],
+        [
+            'href'  => '/sso/to-legal',
+            'label' => 'Legal',
+            'desc'  => 'Direktori dokumen legal, timeline tenggat, permintaan akses & approval berjenjang.',
+            'bg'    => 'oklch(0.55 0.15 250)',
+            'path'  => 'M12 3l8 4v5c0 5-3.4 8-8 9-4.6-1-8-4-8-9V7l8-4zM9 12l2 2 4-4',
+        ],
+        [
+            'href'  => '/sso/to-sales',
+            'label' => 'Sales',
+            'desc'  => 'Java Sales Hub — pipeline deal, unit, KPI & laporan penjualan.',
+            'bg'    => 'oklch(0.62 0.17 145)',
+            'path'  => 'M3 3v18h18M7 14l4-4 3 3 5-6',
+        ],
     ];
 @endphp
 

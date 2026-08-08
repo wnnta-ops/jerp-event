@@ -1,0 +1,74 @@
+import { getSession } from "@/lib/auth";
+import { prisma } from "@/lib/prisma";
+import { getFormOptions } from "@/lib/options";
+import { NewWalkInButton } from "@/components/forms/NewWalkInButton";
+import { PipelineClient, type PipelineDeal } from "@/components/pipeline/PipelineClient";
+import { can } from "@/lib/rbac";
+
+export const dynamic = "force-dynamic";
+
+export default async function PipelinePage() {
+  const session = (await getSession())!;
+  const role = session.user.role;
+
+  const [rows, options] = await Promise.all([
+    prisma.deal.findMany({
+      where: { batal: false },
+      orderBy: { updatedAt: "desc" },
+      take: 2000,
+      select: {
+        id: true,
+        nama: true,
+        channel: true,
+        stage: true,
+        statusLead: true,
+        catatan: true,
+        agency: { select: { name: true } },
+        sales: { select: { name: true } },
+        coordinator: { select: { name: true } },
+        cluster: { select: { name: true } },
+        unitType: { select: { name: true } },
+        unit: { select: { code: true } },
+        bank: { select: { name: true } },
+      },
+    }),
+    getFormOptions(),
+  ]);
+
+  const deals: PipelineDeal[] = rows.map((d) => ({
+    id: d.id,
+    nama: d.nama,
+    channel: d.channel,
+    stage: d.stage,
+    statusLead: d.statusLead,
+    agency: d.agency.name,
+    sales: d.sales.name,
+    koor: d.coordinator?.name ?? "-",
+    cluster: d.cluster?.name ?? "-",
+    type: d.unitType?.name ?? "-",
+    unit: d.unit?.code ?? null,
+    bank: d.bank?.name ?? null,
+    catatan: d.catatan,
+  }));
+
+  return (
+    <>
+      <div className="h2">Customer Pipeline</div>
+      <div className="lead">
+        1 customer = 1 record, jalan 8 tahap. Kolom bertanda <b>Sales</b> (0–4, s/d SPR) &amp;{" "}
+        <b>Collection</b> (5–7: ACC → Akad → Realisasi). Semua tahap ditampilkan — pakai filter
+        Tahap / Sales / Koor untuk menyaring.
+      </div>
+      <div className="actions">
+        {can.inputSalesStages(role) ? (
+          <NewWalkInButton options={options} label="＋ Customer baru (Walk-In)" />
+        ) : (
+          <button className="btn" disabled>
+            ＋ Customer baru (Walk-In)
+          </button>
+        )}
+      </div>
+      <PipelineClient deals={deals} role={role} />
+    </>
+  );
+}

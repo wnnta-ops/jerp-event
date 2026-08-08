@@ -16,11 +16,33 @@ class SsoController
 {
     public function toBo(): RedirectResponse
     {
+        $token = $this->makeToken((string) config('ipro.sso_secret'));
+
+        return redirect(config('ipro.bo_url') . '/sso/consume?token=' . urlencode($token));
+    }
+
+    /** Portal → app Legal (Next.js, path /legal) — verifikasi di /legal/api/sso. */
+    public function toLegal(): RedirectResponse
+    {
+        $token = $this->makeToken((string) config('ipro.portal_sso_secret'));
+
+        return redirect(rtrim((string) config('ipro.legal_url'), '/') . '/api/sso?token=' . urlencode($token));
+    }
+
+    /** Portal → app Sales (Next.js, path /sales) — verifikasi di /sales/api/sso. */
+    public function toSales(): RedirectResponse
+    {
+        $token = $this->makeToken((string) config('ipro.portal_sso_secret'));
+
+        return redirect(rtrim((string) config('ipro.sales_url'), '/') . '/api/sso?token=' . urlencode($token));
+    }
+
+    /** Token handoff HMAC (payload base64 + tanda tangan), umur 60 detik, nonce sekali pakai. */
+    private function makeToken(string $secret): string
+    {
         $user = Auth::user();
         abort_unless($user, 403);
-
-        $secret = (string) config('ipro.sso_secret');
-        abort_if($secret === '', 500, 'SSO_SHARED_SECRET belum diset.');
+        abort_if($secret === '', 500, 'Shared secret SSO belum diset.');
 
         $payload = base64_encode((string) json_encode([
             'email' => $user->email,
@@ -28,9 +50,7 @@ class SsoController
             'jti'   => bin2hex(random_bytes(16)),   // nonce: token hanya boleh dipakai sekali
             'exp'   => now()->addSeconds(60)->timestamp,
         ]));
-        $sig = hash_hmac('sha256', $payload, $secret);
-        $token = $payload . '.' . $sig;
 
-        return redirect(config('ipro.bo_url') . '/sso/consume?token=' . urlencode($token));
+        return $payload . '.' . hash_hmac('sha256', $payload, $secret);
     }
 }

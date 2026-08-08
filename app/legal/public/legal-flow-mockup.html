@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Legal Module — Alur Lengkap (end-to-end flow)</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@2.47.0/tabler-icons.min.css">
+<style>
+:root{
+--color-background-primary:#ffffff;--color-background-secondary:#f4f3ee;--color-background-tertiary:#faf9f5;
+--color-background-info:#E6F1FB;--color-background-success:#EAF3DE;--color-background-warning:#FAEEDA;--color-background-danger:#FCEBEB;
+--color-text-primary:#1c1b18;--color-text-secondary:#5F5E5A;--color-text-tertiary:#8a8980;
+--color-text-info:#185FA5;--color-text-success:#3B6D11;--color-text-warning:#854F0B;--color-text-danger:#A32D2D;
+--color-border-tertiary:rgba(0,0,0,0.12);--color-border-secondary:rgba(0,0,0,0.22);
+--color-border-info:#85B7EB;--color-border-success:#97C459;--color-border-warning:#EF9F27;--color-border-danger:#F09595;
+--r-md:8px;--r-lg:12px;--r-xl:16px;
+--font:system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;
+}
+@media (prefers-color-scheme: dark){:root{
+--color-background-primary:#262624;--color-background-secondary:#1f1e1c;--color-background-tertiary:#191917;
+--color-background-info:#0C447C;--color-background-success:#27500A;--color-background-warning:#633806;--color-background-danger:#791F1F;
+--color-text-primary:#f5f4ef;--color-text-secondary:#b4b2a9;--color-text-tertiary:#888780;
+--color-text-info:#85B7EB;--color-text-success:#97C459;--color-text-warning:#FAC775;--color-text-danger:#F09595;
+--color-border-tertiary:rgba(255,255,255,0.14);--color-border-secondary:rgba(255,255,255,0.24);
+}}
+*{box-sizing:border-box;}
+body{font-family:var(--font);background:var(--color-background-tertiary);color:var(--color-text-primary);margin:0;padding:24px 16px 80px;line-height:1.5;}
+.wrap{max-width:880px;margin:0 auto;}
+h1{font-size:24px;font-weight:500;margin:0 0 4px;}
+.sub{font-size:13px;color:var(--color-text-secondary);margin:0 0 18px;}
+.legend{display:flex;gap:14px;flex-wrap:wrap;font-size:12px;color:var(--color-text-secondary);margin-bottom:22px;}
+.legend b{font-weight:500;}
+.flowmap{display:flex;flex-wrap:wrap;align-items:center;gap:6px;background:var(--color-background-secondary);border-radius:var(--r-lg);padding:12px 14px;margin-bottom:8px;}
+.fm{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:500;padding:6px 10px;border-radius:var(--r-md);background:var(--color-background-primary);border:0.5px solid var(--color-border-tertiary);color:var(--color-text-primary);text-decoration:none;}
+.fm .n{width:16px;height:16px;border-radius:50%;background:var(--color-background-info);color:var(--color-text-info);display:inline-flex;align-items:center;justify-content:center;font-size:10px;}
+.fm i.sep{color:var(--color-text-tertiary);font-size:14px;}
+.arrow{display:flex;justify-content:center;color:var(--color-text-tertiary);font-size:22px;margin:2px 0;}
+.step{background:var(--color-background-primary);border:0.5px solid var(--color-border-tertiary);border-radius:var(--r-lg);padding:16px 18px;}
+.shead{display:flex;align-items:flex-start;gap:12px;margin-bottom:12px;}
+.snum{width:30px;height:30px;flex:none;border-radius:50%;background:var(--color-background-info);color:var(--color-text-info);display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:600;}
+.stitle{font-size:16px;font-weight:500;margin:0;}
+.scap{font-size:12px;color:var(--color-text-secondary);margin:2px 0 0;}
+.badge-built{font-size:10px;font-weight:600;padding:2px 7px;border-radius:var(--r-md);background:var(--color-background-success);color:var(--color-text-success);white-space:nowrap;}
+.badge-new{font-size:10px;font-weight:600;padding:2px 7px;border-radius:var(--r-md);background:var(--color-background-warning);color:var(--color-text-warning);white-space:nowrap;}
+.mock{border:0.5px solid var(--color-border-tertiary);border-radius:var(--r-md);background:var(--color-background-tertiary);padding:12px;}
+.row{display:flex;align-items:center;gap:8px;}
+.tbadge{font-size:10px;font-weight:500;padding:1px 6px;border-radius:var(--r-md);background:var(--color-background-secondary);color:var(--color-text-secondary);border:0.5px solid var(--color-border-tertiary);}
+.pill{font-size:11px;font-weight:500;padding:2px 8px;border-radius:var(--r-md);}
+.p-info{background:var(--color-background-info);color:var(--color-text-info);}
+.p-success{background:var(--color-background-success);color:var(--color-text-success);}
+.p-warning{background:var(--color-background-warning);color:var(--color-text-warning);}
+.p-danger{background:var(--color-background-danger);color:var(--color-text-danger);}
+.p-neutral{background:var(--color-background-secondary);color:var(--color-text-secondary);}
+.av{width:24px;height:24px;border-radius:50%;background:var(--color-background-info);color:var(--color-text-info);display:inline-flex;align-items:center;justify-content:center;font-size:10px;font-weight:500;flex:none;}
+.fld{border:0.5px solid var(--color-border-secondary);border-radius:var(--r-md);padding:7px 9px;font-size:12px;background:var(--color-background-primary);display:flex;justify-content:space-between;align-items:center;}
+.lbl{font-size:11px;font-weight:500;color:var(--color-text-secondary);display:block;margin-bottom:4px;}
+.req{color:var(--color-text-danger);}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
+.note{font-size:11px;color:var(--color-text-tertiary);margin-top:8px;display:flex;gap:6px;align-items:flex-start;}
+.note i{color:var(--color-text-info);margin-top:1px;}
+.btn{display:inline-flex;align-items:center;gap:5px;font-size:12px;font-weight:500;padding:6px 11px;border-radius:var(--r-md);border:0.5px solid var(--color-border-secondary);background:var(--color-background-info);color:var(--color-text-info);}
+.muted{color:var(--color-text-tertiary);}
+.dot{width:7px;height:7px;border-radius:50%;display:inline-block;flex:none;}
+.work{background:var(--color-text-info);}.exp{background:var(--color-text-warning);}
+table{width:100%;border-collapse:collapse;}
+td,th{text-align:left;padding:7px 6px;font-size:12px;vertical-align:top;}
+th{font-size:10px;font-weight:500;color:var(--color-text-tertiary);}
+tr+tr td{border-top:0.5px solid var(--color-border-tertiary);}
+.qnode{width:14px;height:14px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:8px;flex:none;}
+.chainline{width:12px;height:1px;background:var(--color-border-tertiary);}
+.handoff{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--color-text-info);background:var(--color-background-info);border-radius:var(--r-md);padding:8px 11px;margin-top:10px;font-weight:500;}
+</style>
+</head>
+<body>
+<div class="wrap">
+<h1>Legal Module — alur lengkap</h1>
+<p class="sub">Mockup satu halaman yang menyambung seluruh perjalanan pengguna, dari unggah dokumen sampai pelepasan akses. Truth visual untuk meninjau alur sebelum membangun Fitur 4.</p>
+<div class="legend">
+  <span><span class="badge-built">SUDAH DIBANGUN</span> &nbsp;Fitur 1–3 (sudah jalan di app)</span>
+  <span><span class="badge-new">RANCANGAN</span> &nbsp;Fitur 4 (permintaan & persetujuan akses — belum dibangun)</span>
+</div>
+
+<div class="flowmap">
+  <a class="fm" href="#s1"><span class="n">1</span> Unggah</a><i class="ti ti-chevron-right sep"></i>
+  <a class="fm" href="#s2"><span class="n">2</span> Direktori</a><i class="ti ti-chevron-right sep"></i>
+  <a class="fm" href="#s3"><span class="n">3</span> Cari</a><i class="ti ti-chevron-right sep"></i>
+  <a class="fm" href="#s4"><span class="n">4</span> Detail</a><i class="ti ti-chevron-right sep"></i>
+  <a class="fm" href="#s5"><span class="n">5</span> Minta akses</a><i class="ti ti-chevron-right sep"></i>
+  <a class="fm" href="#s6"><span class="n">6</span> Persetujuan</a><i class="ti ti-chevron-right sep"></i>
+  <a class="fm" href="#s7"><span class="n">7</span> Antrian</a><i class="ti ti-chevron-right sep"></i>
+  <a class="fm" href="#s8"><span class="n">8</span> Timeline</a>
+</div>
+
+<!-- STEP 1 -->
+<div class="step" id="s1">
+  <div class="shead">
+    <div class="snum">1</div>
+    <div style="flex:1;"><h2 class="stitle">Unggah dokumen — validasi wajib <span class="badge-built">SUDAH DIBANGUN</span></h2>
+    <p class="scap">Pintu masuk data. Kolom menyesuaikan jenis dokumen; simpan diblokir bila kolom wajib kosong. Data bersih di sini menghidupkan pencarian, timeline, dan izin akses.</p></div>
+  </div>
+  <div class="mock">
+    <div class="grid2">
+      <div><span class="lbl">Jenis dokumen <span class="req">*</span></span><div class="fld">PPJB <i class="ti ti-chevron-down muted"></i></div></div>
+      <div><span class="lbl">Status <span class="req">*</span></span><div class="fld">Menunggu tanda tangan <i class="ti ti-chevron-down muted"></i></div></div>
+      <div><span class="lbl">Cluster <span class="req">*</span></span><div class="fld">Cluster Melati</div></div>
+      <div><span class="lbl">Blok / unit <span class="req">*</span></span><div class="fld">Blok A · A-12</div></div>
+      <div><span class="lbl">PIC <span class="req">*</span></span><div class="fld">Rina Sari <i class="ti ti-chevron-down muted"></i></div></div>
+      <div><span class="lbl">Tingkat akses <span class="req">*</span></span><div class="fld">Legal saja <i class="ti ti-chevron-down muted"></i></div></div>
+    </div>
+    <div class="note"><i class="ti ti-wand"></i>Transaksi (PPJB/AJB/Sertifikat/KPR) → wajib unit. Izin → wajib tanggal kedaluwarsa. Template → wajib versi.</div>
+  </div>
+</div>
+<div class="arrow"><i class="ti ti-arrow-down"></i></div>
+
+<!-- STEP 2 -->
+<div class="step" id="s2">
+  <div class="shead"><div class="snum">2</div>
+    <div style="flex:1;"><h2 class="stitle">Direktori — tab, filter, kedaluwarsa <span class="badge-built">SUDAH DIBANGUN</span></h2>
+    <p class="scap">Semua dokumen jadi satu tabel selalu-segar. Status membawa warna; tab memisah transaksi dari master & template; pintasan "akan kedaluwarsa ≤30 hari".</p></div>
+  </div>
+  <div class="mock">
+    <div class="row" style="justify-content:space-between;border-bottom:0.5px solid var(--color-border-tertiary);padding-bottom:6px;margin-bottom:8px;">
+      <div class="row" style="gap:14px;font-size:12px;"><b style="border-bottom:2px solid var(--color-text-info);padding-bottom:6px;">Semua</b><span class="muted">Transaksi</span><span class="muted">Master &amp; izin</span><span class="muted">Template</span></div>
+      <span class="pill p-warning"><i class="ti ti-clock"></i> 2 akan kedaluwarsa ≤30 hari</span>
+    </div>
+    <table>
+      <tr><th style="width:42%;">Dokumen</th><th>Unit</th><th>Status</th><th>Tanggal kunci</th></tr>
+      <tr><td><span class="tbadge">PPJB</span> &nbsp;PPJB — Unit A-12<div class="muted" style="font-size:11px;">045/PPJB/VI/2026 · Dewi · 5 Jun</div></td><td>Cluster Melati<div class="muted" style="font-size:11px;">Blok A · A-12</div></td><td><span class="pill p-info">Menunggu ttd</span></td><td class="muted">Terbit 2 Jun</td></tr>
+      <tr><td><span class="tbadge">KPR</span> &nbsp;KPR approval — BCA<div class="muted" style="font-size:11px;">BCA-2026-3391 · Dewi · 1 Jun</div></td><td>Cluster Anggrek<div class="muted" style="font-size:11px;">Blok C · C-03</div></td><td><span class="pill p-warning">Akan kedaluwarsa</span></td><td style="color:var(--color-text-warning);font-weight:500;">Penawaran s/d 14 Jun</td></tr>
+      <tr><td><span class="tbadge">Izin</span> &nbsp;PBG — Java Residence<div class="muted" style="font-size:11px;">PBG/2021/0098 · Rina · 12 Jan</div></td><td>Seluruh development<div class="muted" style="font-size:11px;">Tingkat developer</div></td><td><span class="pill p-warning">Akan kedaluwarsa</span></td><td style="color:var(--color-text-warning);font-weight:500;">Kedaluwarsa 30 Jun</td></tr>
+    </table>
+  </div>
+</div>
+<div class="arrow"><i class="ti ti-arrow-down"></i></div>
+
+<!-- STEP 3 -->
+<div class="step" id="s3">
+  <div class="shead"><div class="snum">3</div>
+    <div style="flex:1;"><h2 class="stitle">Pencarian pintar — entitas <span class="badge-built">SUDAH DIBANGUN</span></h2>
+    <p class="scap">Satu kotak mencari semua metadata. Saran dikelompokkan (Pembeli / Unit / Dokumen); memilih pembeli/unit menarik <b>seluruh berkasnya</b> dalam urutan alur.</p></div>
+  </div>
+  <div class="mock">
+    <div class="fld" style="border-color:var(--color-border-secondary);box-shadow:0 0 0 3px var(--color-background-info);"><span><i class="ti ti-search muted"></i> &nbsp;agus</span></div>
+    <div style="background:var(--color-background-primary);border:0.5px solid var(--color-border-tertiary);border-radius:var(--r-md);margin-top:6px;overflow:hidden;">
+      <div style="font-size:10px;font-weight:600;color:var(--color-text-tertiary);padding:8px 10px 3px;">PEMBELI</div>
+      <div class="row" style="padding:7px 10px;background:var(--color-background-info);"><span class="av">AW</span><div style="flex:1;"><div style="font-size:13px;font-weight:500;">Agus Wibowo</div><div class="muted" style="font-size:11px;">Cluster Anggrek · Blok C · C-03</div></div><span style="font-size:11px;font-weight:500;color:var(--color-text-info);">2 dokumen</span></div>
+      <div class="row" style="padding:8px 10px;color:var(--color-text-info);border-top:0.5px solid var(--color-border-tertiary);"><i class="ti ti-arrow-right"></i><span style="font-size:12px;font-weight:500;">Lihat semua 2 dokumen milik Agus Wibowo</span></div>
+    </div>
+    <div class="note"><i class="ti ti-stack-2"></i>Retrieval entitas memfilter tabel: PPJB → KPR → AJB → Sertifikat. Hanya metadata (tanpa OCR di v1).</div>
+  </div>
+</div>
+<div class="arrow"><i class="ti ti-arrow-down"></i></div>
+
+<!-- STEP 4 -->
+<div class="step" id="s4">
+  <div class="shead"><div class="snum">4</div>
+    <div style="flex:1;"><h2 class="stitle">Drawer detail → titik mulai "Minta akses" <span class="badge-built">SUDAH DIBANGUN</span></h2>
+    <p class="scap">Klik baris membuka drawer: metadata lengkap, pratinjau berkas, lokasi original fisik, dan rantai dokumen terkait. Tombol <b>Minta akses</b> memulai Fitur 4.</p></div>
+  </div>
+  <div class="mock">
+    <div class="row" style="justify-content:space-between;"><div class="row"><span class="tbadge">Sertifikat</span><span class="pill p-success">Aktif</span></div><i class="ti ti-x muted"></i></div>
+    <div style="font-size:15px;font-weight:500;margin:6px 0 10px;">SHGB — Unit B-07</div>
+    <div class="grid2" style="font-size:12px;gap:8px 16px;">
+      <div><div class="muted" style="font-size:11px;">Lokasi original fisik</div><b>Bank (agunan KPR)</b></div>
+      <div><div class="muted" style="font-size:11px;">Tingkat akses</div><b>Pimpinan</b></div>
+      <div><div class="muted" style="font-size:11px;">Dokumen terkait</div><b>AJB — Unit B-07</b></div>
+      <div><div class="muted" style="font-size:11px;">PIC</div><b>Andi Pratama</b></div>
+    </div>
+    <div class="handoff"><i class="ti ti-key"></i> Minta akses <span class="muted" style="font-weight:400;">→ memulai alur permintaan (Fitur 4)</span></div>
+  </div>
+</div>
+<div class="arrow"><i class="ti ti-arrow-down"></i></div>
+
+<!-- STEP 5 -->
+<div class="step" id="s5">
+  <div class="shead"><div class="snum">5</div>
+    <div style="flex:1;"><h2 class="stitle">Form permintaan akses <span class="badge-new">RANCANGAN</span></h2>
+    <p class="scap">Pemohon (Sales/Finance/Marketing) mengisi tujuan, jenis akses, dan butuh-sebelum. Jenis akses + tingkat dokumen menentukan panjang rantai persetujuan.</p></div>
+  </div>
+  <div class="mock">
+    <div class="grid2">
+      <div><span class="lbl">Dokumen</span><div class="fld">SHGB — Unit B-07</div></div>
+      <div><span class="lbl">Jenis akses <span class="req">*</span></span><div class="fld">Checkout · original fisik <i class="ti ti-chevron-down muted"></i></div></div>
+      <div style="grid-column:1/-1;"><span class="lbl">Tujuan <span class="req">*</span></span><div class="fld">Berkas pencairan KPR (BCA)</div></div>
+      <div><span class="lbl">Butuh sebelum <span class="req">*</span></span><div class="fld">12 Jun 2026</div></div>
+      <div><span class="lbl">Pemohon</span><div class="fld">Andi Pratama · Finance</div></div>
+    </div>
+    <div class="note"><i class="ti ti-route"></i>Rantai ditentukan otomatis: <b>view/download dokumen "Legal saja"</b> → PIC + Head of Legal · <b>checkout original / sensitif tinggi</b> → PIC → Head of Legal → GM → Direktur.</div>
+  </div>
+</div>
+<div class="arrow"><i class="ti ti-arrow-down"></i></div>
+
+<!-- STEP 6 -->
+<div class="step" id="s6">
+  <div class="shead"><div class="snum">6</div>
+    <div style="flex:1;"><h2 class="stitle">Rantai persetujuan berjenjang <span class="badge-new">RANCANGAN</span></h2>
+    <p class="scap">Sekuensial, panjang bervariasi menurut sensitivitas. Notifikasi otomatis saat giliran tiba + tombol "Notify" manual. Tolak → mati, kembali ke pemohon dengan alasan. Semua tercatat (audit).</p></div>
+  </div>
+  <div class="mock">
+    <div class="row" style="justify-content:space-between;margin-bottom:10px;"><b style="font-size:13px;">Permintaan #DR-0142</b><span class="pill p-warning">Menunggu Head of Legal · 1 dari 3</span></div>
+    <!-- chain steps -->
+    <div style="display:flex;flex-direction:column;gap:0;">
+      <div class="row" style="gap:10px;align-items:flex-start;"><span class="qnode" style="background:var(--color-background-success);color:var(--color-text-success);"><i class="ti ti-check"></i></span><div style="padding-bottom:10px;"><div class="muted" style="font-size:11px;">Legal PIC</div><b style="font-size:13px;">Rina Sari</b> <span class="muted" style="font-size:11px;">· disetujui</span></div></div>
+      <div class="row" style="gap:10px;align-items:flex-start;"><span class="qnode" style="background:var(--color-text-info);"></span><div style="padding-bottom:10px;"><div class="muted" style="font-size:11px;">Head of Legal</div><b style="font-size:13px;">Budi Hartono</b> <span style="font-size:11px;color:var(--color-text-info);">· menunggu persetujuan</span>
+        <div class="row" style="margin-top:7px;gap:7px;"><span class="btn" style="background:var(--color-background-success);color:var(--color-text-success);border-color:var(--color-border-success);"><i class="ti ti-check"></i>Setujui</span><span class="btn" style="background:transparent;color:var(--color-text-danger);border-color:var(--color-border-danger);"><i class="ti ti-x"></i>Tolak</span><span class="btn" style="background:transparent;color:var(--color-text-info);border-color:var(--color-border-info);"><i class="ti ti-bell"></i>Notify Budi</span></div></div></div>
+      <div class="row" style="gap:10px;align-items:flex-start;"><span class="qnode" style="border:1.5px solid var(--color-border-tertiary);color:var(--color-text-tertiary);"><i class="ti ti-lock" style="font-size:8px;"></i></span><div><div class="muted" style="font-size:11px;">General Manager</div><b style="font-size:13px;">Sari Wijaya</b> <span class="muted" style="font-size:11px;">· belum tercapai</span></div></div>
+    </div>
+    <div class="note"><i class="ti ti-history"></i>Jejak audit append-only: siapa menyetujui apa & kapan. Untuk pelepasan dokumen legal, log inilah inti rantai.</div>
+  </div>
+</div>
+<div class="arrow"><i class="ti ti-arrow-down"></i></div>
+
+<!-- STEP 7 -->
+<div class="step" id="s7">
+  <div class="shead"><div class="snum">7</div>
+    <div style="flex:1;"><h2 class="stitle">Antrian permintaan (ranked) <span class="badge-new">RANCANGAN</span></h2>
+    <p class="scap">Ikhtisar semua permintaan berjalan: dokumen, pemohon, posisi rantai (macet di siapa), waktu tunggu, tombol nudge. Diurut dengan aturan yang sama: terlambat/hari ini → paling cepat butuh → paling lama menunggu.</p></div>
+  </div>
+  <div class="mock">
+    <div class="row" style="justify-content:space-between;background:var(--color-background-primary);border:0.5px solid var(--color-border-tertiary);border-radius:var(--r-md);padding:10px 12px;margin-bottom:8px;">
+      <div style="flex:1;"><div class="row" style="gap:6px;"><b style="font-size:13px;">Formulir disclosure · Anggrek</b></div><div class="muted" style="font-size:11px;">Marketing · Rio Santoso · View</div>
+        <div class="row" style="gap:4px;margin-top:6px;align-items:center;"><span class="qnode" style="background:var(--color-background-success);color:var(--color-text-success);font-size:7px;"><i class="ti ti-check"></i></span><span class="chainline"></span><span class="qnode" style="background:var(--color-background-success);color:var(--color-text-success);font-size:7px;"><i class="ti ti-check"></i></span><span class="chainline"></span><span class="qnode" style="background:var(--color-text-info);"></span><span class="muted" style="font-size:11px;margin-left:6px;">macet di direktur · 4 jam menunggu</span></div></div>
+      <div style="text-align:right;"><span class="pill p-warning">butuh 10 Jun</span><div style="margin-top:6px;"><span class="btn" style="background:transparent;"><i class="ti ti-bell"></i>Notify</span></div></div>
+    </div>
+    <div class="row" style="justify-content:space-between;background:var(--color-background-primary);border:0.5px solid var(--color-border-tertiary);border-radius:var(--r-md);padding:10px 12px;">
+      <div style="flex:1;"><b style="font-size:13px;">SHGB certificate · B-07</b><div class="muted" style="font-size:11px;">Finance · Andi Pratama · Checkout original</div>
+        <div class="row" style="gap:4px;margin-top:6px;align-items:center;"><span class="qnode" style="background:var(--color-text-info);"></span><span class="chainline"></span><span class="qnode" style="border:1px solid var(--color-border-tertiary);"></span><span class="chainline"></span><span class="qnode" style="border:1px solid var(--color-border-tertiary);"></span><span class="muted" style="font-size:11px;margin-left:6px;">macet di head of legal · 2 hari menunggu</span></div></div>
+      <div style="text-align:right;"><span class="pill p-warning">butuh 12 Jun</span><div style="margin-top:6px;"><span class="btn" style="background:transparent;"><i class="ti ti-bell"></i>Notify</span></div></div>
+    </div>
+    <div class="note"><i class="ti ti-filter"></i>Filter "menunggu saya" + status kosong ("semua beres") & sibuk dirancang sejak awal.</div>
+  </div>
+</div>
+<div class="arrow"><i class="ti ti-arrow-down"></i></div>
+
+<!-- STEP 8 -->
+<div class="step" id="s8">
+  <div class="shead"><div class="snum">8</div>
+    <div style="flex:1;"><h2 class="stitle">Timeline & alert deadline <span class="badge-built">SUDAH DIBANGUN</span> <span class="badge-new">ALERT: RANCANGAN</span></h2>
+    <p class="scap">Biru = kerja, kuning = kedaluwarsa. Item kedaluwarsa diturunkan dari dokumen (selalu sinkron). Dua kotak ranked memakai aturan urut yang sama dengan antrian persetujuan.</p></div>
+  </div>
+  <div class="mock">
+    <div class="grid2">
+      <div class="mock" style="background:var(--color-background-primary);">
+        <div class="row" style="gap:6px;margin-bottom:6px;"><span class="dot work"></span><b style="font-size:12px;">Deadline terdekat</b></div>
+        <div style="font-size:12px;">Tanda tangan AJB · B-07 <span class="muted">— 8 Jun · <b style="color:var(--color-text-primary);">hari ini</b></span></div>
+        <div style="font-size:12px;">Janji temu notaris <span class="muted">— 9 Jun · besok</span></div>
+      </div>
+      <div class="mock" style="background:var(--color-background-primary);">
+        <div class="row" style="gap:6px;margin-bottom:6px;"><span class="dot exp"></span><b style="font-size:12px;">Dokumen kedaluwarsa</b></div>
+        <div style="font-size:12px;">KPR offer · C-03 <span class="muted">— 14 Jun · dalam 6 hari</span></div>
+        <div style="font-size:12px;">PBG permit <span class="muted">— 30 Jun · dalam 22 hari</span></div>
+      </div>
+    </div>
+    <div class="note"><i class="ti ti-bell-ringing"></i><b>Alert (rancangan):</b> auto-notify PIC pada 90/60/30 hari sebelum jatuh tempo; eskalasi item terlambat ke pimpinan. Email/push di-stub di balik satu antarmuka.</div>
+  </div>
+</div>
+
+<div style="margin-top:24px;background:var(--color-background-secondary);border-radius:var(--r-lg);padding:14px 16px;font-size:12px;color:var(--color-text-secondary);">
+  <b style="color:var(--color-text-primary);">Benang merah:</b> data bersih saat <b>unggah</b> (1) menghidupkan <b>direktori</b> (2) + <b>pencarian</b> (3); <b>drawer</b> (4) memunculkan "Minta akses" yang mengalir ke <b>form</b> (5) → <b>rantai berjenjang</b> (6) → <b>antrian</b> (7). Aturan urut deadline yang sama dipakai antrian (7) dan <b>timeline</b> (8) — ditulis sekali di <code>lib/ranking.ts</code>. <code>access_level</code> menentukan visibilitas <i>dan</i> panjang rantai persetujuan.
+</div>
+
+</div>
+</body>
+</html>
