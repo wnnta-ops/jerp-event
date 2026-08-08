@@ -352,9 +352,9 @@ export function navGroups(foUrl: string): NavGroup[] {
         icon: PiggyBank, color: '#d946ef', route: 'bs.budget.index',
         desc: 'Anggaran, alokasi & koreksi budget.',
         items: [
-            { label: 'General Function', icon: FileText, permission: ['businesssupport.view', 'budget.*'], children: [
-                { label: 'Print-Out', href: 'bs.budget.printhub' },
-            ]},
+            // Grup "General Function → Print-Out" DIHAPUS: isinya hanya daftar tautan ke
+            // keempat laporan yang SUDAH ada satu per satu di grup "Query" di bawah ini,
+            // jadi hanya menambah satu lompatan tanpa menambah apa pun.
             { label: 'Master', icon: BookText, permission: ['businesssupport.view', 'budget.*'], children: [
                 { label: 'Budget Control', href: 'bs.budget.index' },
                 { label: 'Alokasi Budget Control', href: 'bs.budget.allocation.index' },
