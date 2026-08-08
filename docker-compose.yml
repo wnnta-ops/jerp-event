@@ -390,6 +390,9 @@ services:
       DATABASE_URL: postgresql://${PG_USER:-jerp}:${PG_PASSWORD:-pgsecret}@postgres:5432/legal
       AUTH_SECRET: ${LEGAL_AUTH_SECRET:-dev-legal-secret-change-me}
       JERP_SSO_SECRET: ${PORTAL_SSO_SECRET:-dev-portal-sso-secret}
+      # Secret callback approval eksternal (GM→Direktur→Owner). Endpoint fail-closed:
+      # tanpa nilai ini, /api/external-approval menolak semua request.
+      EXTERNAL_APPROVAL_SECRET: ${LEGAL_EXTERNAL_APPROVAL_SECRET:-dev-legal-extapproval-secret}
       REQUEST_DOCS_DIR: /tmp/request-docs
       NODE_ENV: production
     depends_on:
