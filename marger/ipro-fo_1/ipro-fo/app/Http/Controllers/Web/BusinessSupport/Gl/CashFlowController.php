@@ -145,10 +145,17 @@ class CashFlowController extends Controller
 
         $clusterBreakdown = \App\Domain\BusinessSupport\Models\BsLedgerClusterSplit::query()
             ->whereIn('journal_line_id', $cashLineIds)
-            ->join('clusters', 'clusters.id', '=', 'bs_ledger_cluster_splits.cluster_id')
+            // LEFT JOIN: sejak Pembagian Biaya per Cash Flow tidak lagi meminta cluster,
+            // pembagian baru ber-cluster NULL. Dengan INNER JOIN baris itu akan hilang
+            // diam-diam sehingga rinciannya tidak lagi menjumlah ke nilai mutasi.
+            ->leftJoin('clusters', 'clusters.id', '=', 'bs_ledger_cluster_splits.cluster_id')
             ->groupBy('clusters.id', 'clusters.code', 'clusters.name')
             ->selectRaw('clusters.code, clusters.name, COALESCE(SUM(bs_ledger_cluster_splits.amount),0) as total')
-            ->get()->map(fn ($r) => ['code' => $r->code, 'name' => $r->name, 'total' => (float) $r->total])->values();
+            ->get()->map(fn ($r) => [
+                'code'  => $r->code ?? '—',
+                'name'  => $r->name ?? '(tanpa cluster)',
+                'total' => (float) $r->total,
+            ])->values();
 
         $taggedBy = fn (string $col) => \App\Domain\BusinessSupport\Models\BsLedgerCfTag::query()
             ->whereIn('journal_line_id', $cashLineIds)->whereNotNull($col)
