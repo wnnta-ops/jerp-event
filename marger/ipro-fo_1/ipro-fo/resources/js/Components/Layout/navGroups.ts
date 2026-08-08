@@ -98,34 +98,9 @@ export function navGroups(foUrl: string): NavGroup[] {
         ],
     },
     // Grup "Business Support" dibubarkan: Purchase Order → Purchasing; Item/FPB/Penerimaan/
-    // Pengeluaran/Kartu Stok → Inventory; Account Receivable → grup mandiri (dekat Account Payable).
+    // Pengeluaran/Kartu Stok → Inventory; Piutang Usaha (Booked) → grup mandiri (dekat Account Payable).
     // Overview, Proyeksi Hutang/Piutang & Payroll dihapus dari menu — halamannya tetap ada:
     // Proyeksi duplikat di grup Account Payable, Payroll via Data Center → Employee Center → Karyawan.
-    {
-        title: 'Purchasing',
-        icon: ShoppingCart, color: '#f59e0b', route: 'bs.po.index',
-        desc: 'Permintaan pembelian (FPB), Purchase Order ke supplier & rekapnya.',
-        items: [
-            // FPB ada di ATAS Purchase Order: permintaan pembelian adalah langkah SEBELUM PO,
-            // jadi urutan sidebar mengikuti urutan prosesnya (FPB disetujui → jadi PO).
-            { label: 'FPB (Permintaan)',   icon: ClipboardList, href: 'bs.fpb.index',          permission: ['businesssupport.view', 'bs.*'] },
-            { label: 'Purchase Order',     icon: ShoppingCart,  href: 'bs.po.index',           permission: ['businesssupport.view', 'bs.*'] },
-            { label: 'Report PO',          icon: ClipboardList, href: 'bs.po.report',          permission: ['businesssupport.view', 'bs.*'] },
-        ],
-    },
-    {
-        title: 'Inventory',
-        icon: Boxes, color: '#eab308', route: 'bs.items.index',
-        desc: 'Item/stok, penerimaan & pengeluaran barang.',
-        items: [
-            { label: 'Item / Stok',        icon: Boxes,         href: 'bs.items.index',        permission: ['businesssupport.view', 'bs.*'] },
-            // FPB (Permintaan) dipindah ke modul Purchasing — permintaan pembelian adalah
-            // langkah awal proses pembelian, bukan pergerakan stok.
-            { label: 'Penerimaan Barang',  icon: PackagePlus,   href: 'bs.receipt.index',      permission: ['businesssupport.view', 'bs.*'] },
-            { label: 'Pengeluaran Barang', icon: PackageMinus,  href: 'bs.issue.index',        permission: ['businesssupport.view', 'bs.*'] },
-            { label: 'Kartu Stok',         icon: LayoutList,    href: 'bs.stockcard.index',    permission: ['businesssupport.view', 'bs.*'] },
-        ],
-    },
     {
         title: 'Booked Revenue',
         icon: CircleDollarSign, color: '#14b8a6', route: 'bs.booked-revenue.index',
@@ -149,10 +124,10 @@ export function navGroups(foUrl: string): NavGroup[] {
         icon: Building, color: '#06b6d4', route: 'bs.fa.index',
         desc: 'Registrasi & penyusutan aset tetap.',
         items: [
-            { label: 'Overview Aset', icon: Building, href: 'bs.fa.index', permission: ['businesssupport.view', 'bs.*'] },
-            { label: 'Master', icon: BookText, permission: ['businesssupport.view', 'bs.*'], children: [
-                { label: 'Master Aset Tetap', href: 'bs.fa.index' },
-            ] },
+            // Grup "Master" dihapus: satu-satunya isinya ("Master Aset Tetap") menunjuk
+            // route yang SAMA PERSIS dengan Overview di bawah ini (bs.fa.index), jadi hanya
+            // menggandakan halaman yang sama di dua tempat.
+            { label: 'Overview Aset Tetap', icon: Building, href: 'bs.fa.index', permission: ['businesssupport.view', 'bs.*'] },
             { label: 'Report / Query', icon: FileBarChart, permission: ['businesssupport.view', 'bs.*'], children: [
                 { label: 'Summary Aset', href: 'bs.fa.summary' },
                 { label: 'Penjualan Aset', href: 'bs.fa.penjualan' },
@@ -233,7 +208,7 @@ export function navGroups(foUrl: string): NavGroup[] {
         ],
     },
     {
-        title: 'Account Receivable',
+        title: 'Piutang Usaha (Booked)',
         icon: Coins, color: '#3b82f6', route: 'bs.ar.index',
         desc: 'Invoice, kuitansi & kartu piutang customer.',
         items: [
@@ -242,7 +217,8 @@ export function navGroups(foUrl: string): NavGroup[] {
             { label: 'Rekonsiliasi Piutang', icon: Scale,           href: 'bs.ar.rekonsiliasi.index', permission: ['businesssupport.view', 'ar.*'] },
             // "Registrasi Piutang" & "Kategori Invoice" DIHILANGKAN: invoice piutang tidak dibuat
             // manual lagi — dibentuk otomatis dari modul Booked Revenue saat unit di-booking.
-            { label: 'Kuitansi Piutang',    icon: Receipt,          href: 'bs.ar.kuitansi.index',    permission: ['businesssupport.view', 'ar.*'] },
+            // "Kuitansi Piutang" DIHAPUS dari sidebar (permintaan user). Route & halamannya
+            // sengaja TIDAK dihapus supaya kuitansi yang sudah pernah dibuat tetap terjangkau.
             { label: 'Memorial Piutang',    icon: BookText,         href: 'bs.ar.memorial.index',    permission: ['businesssupport.view', 'ar.*'] },
             { label: 'Kartu Piutang',       icon: LayoutList,       href: 'bs.ar.card',              permission: ['businesssupport.view', 'ar.*'] },
             { label: 'Aging Piutang',       icon: FileBarChart,     href: 'bs.ar.aging',             permission: ['businesssupport.view', 'ar.*'] },
@@ -482,6 +458,33 @@ export function navGroups(foUrl: string): NavGroup[] {
     // ── FO (Legal / Komisi) DINONAKTIFKAN — dikelola di J-ERP. ───────────────────
     // ── Grup "Approval", "Reports" & "Setup Sales" DIHAPUS dari sidebar (permintaan user).
     //    Route & halamannya sengaja TIDAK dihapus — hanya tak lagi tampil di menu.
+    // Purchasing & Inventory diletakkan setelah COGS dan sebelum Security (permintaan user):
+    // modul akuntansi berurutan lebih dulu, baru rantai pembelian–persediaan, lalu sistem.
+    {
+        title: 'Purchasing',
+        icon: ShoppingCart, color: '#f59e0b', route: 'bs.po.index',
+        desc: 'Permintaan pembelian (FPB), Purchase Order ke supplier & rekapnya.',
+        items: [
+            // FPB ada di ATAS Purchase Order: permintaan pembelian adalah langkah SEBELUM PO,
+            // jadi urutan sidebar mengikuti urutan prosesnya (FPB disetujui → jadi PO).
+            { label: 'FPB (Permintaan)',   icon: ClipboardList, href: 'bs.fpb.index',          permission: ['businesssupport.view', 'bs.*'] },
+            { label: 'Purchase Order',     icon: ShoppingCart,  href: 'bs.po.index',           permission: ['businesssupport.view', 'bs.*'] },
+            { label: 'Report PO',          icon: ClipboardList, href: 'bs.po.report',          permission: ['businesssupport.view', 'bs.*'] },
+        ],
+    },
+    {
+        title: 'Inventory',
+        icon: Boxes, color: '#eab308', route: 'bs.items.index',
+        desc: 'Item/stok, penerimaan & pengeluaran barang.',
+        items: [
+            { label: 'Item / Stok',        icon: Boxes,         href: 'bs.items.index',        permission: ['businesssupport.view', 'bs.*'] },
+            // FPB (Permintaan) dipindah ke modul Purchasing — permintaan pembelian adalah
+            // langkah awal proses pembelian, bukan pergerakan stok.
+            { label: 'Penerimaan Barang',  icon: PackagePlus,   href: 'bs.receipt.index',      permission: ['businesssupport.view', 'bs.*'] },
+            { label: 'Pengeluaran Barang', icon: PackageMinus,  href: 'bs.issue.index',        permission: ['businesssupport.view', 'bs.*'] },
+            { label: 'Kartu Stok',         icon: LayoutList,    href: 'bs.stockcard.index',    permission: ['businesssupport.view', 'bs.*'] },
+        ],
+    },
     {
         title: 'Security',
         icon: ShieldCheck, color: '#ef4444', route: 'security.index',

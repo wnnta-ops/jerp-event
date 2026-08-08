@@ -1,46 +1,54 @@
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue';
 import { router, Link } from '@inertiajs/vue3';
-import { ArrowLeft, Scale, Search, FilterX, Printer, ChevronDown, ChevronRight, Undo2 } from 'lucide-vue-next';
+import { ArrowLeft, Scale, Search, FilterX, Printer, ChevronDown, ChevronRight, Undo2, TriangleAlert } from 'lucide-vue-next';
 import Badge from '@/Components/UI/Badge.vue';
 import EmptyState from '@/Components/UI/EmptyState.vue';
 import TableTopScroll from '@/Components/UI/TableTopScroll.vue';
+import ColumnFilter from '@/Components/UI/ColumnFilter.vue';
+import SortableTh from '@/Components/UI/SortableTh.vue';
+import { useTableColumns } from '@/Composables/useTableColumns';
 
-type Inv = { id: number; number: string; date: string | null; description: string | null; total: number; paid: number; outstanding: number };
-type Um = { id: number; source_type: string; source_label: string; date: string | null; note: string | null; amount: number };
+type Inv = { id: number; customer: string | null; number: string; date: string | null; description: string | null; total: number; paid: number; outstanding: number };
+type Um = { id: number; customer: string | null; source_type: string; source_label: string; date: string | null; note: string | null; amount: number };
 type Row = {
     row_key: string; booking_id: number | null; spr: string | null; unit: string | null; customer: string | null;
+    customers: string[]; multi_customer: boolean;
     invoice_total: number; invoice_count: number; um_total: number; um_count: number;
     sisa: number; invoices: Inv[]; ums: Um[];
 };
 const props = defineProps<{
     rows: Row[];
-    filters: { search?: string | null; sisa?: string | null };
     summary: { count: number; invoice: number; um: number; sisa: number };
 }>();
 
 function fmtRp(v: number) { return 'Rp ' + Number(v ?? 0).toLocaleString('id-ID'); }
 function fmtDate(d: string | null) { return d ? new Date(d).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'; }
 
-const search = ref(props.filters.search ?? '');
-const sisa = ref(props.filters.sisa ?? '');
-function applyFilter() {
-    selected.value = [];
-    router.get(route('bs.ar.rekonsiliasi.index'), {
-        search: search.value || undefined, sisa: sisa.value || undefined,
-    }, { preserveState: true, replace: true });
-}
-const hasFilter = computed(() => Boolean(search.value || sisa.value));
-function resetFilter() { search.value = ''; sisa.value = ''; applyFilter(); }
+// Filter & urut per kolom, seluruhnya di sisi klien — server sudah mengirim semua baris.
+const semua = computed(() => props.rows ?? []);
+const T = useTableColumns<Row>(semua, [
+    { key: 'spr',      value: (r) => r.spr ?? 'Tanpa SPR' },
+    { key: 'unit',     value: (r) => r.unit ?? '—' },
+    // Memakai SELURUH nama pada grup, bukan nama utamanya saja — kalau tidak, customer
+    // kedua pada satu SPR tidak akan pernah ketemu walaupun namanya diketik persis.
+    { key: 'customer', value: (r) => (r.customers?.length ? r.customers.join(' · ') : (r.customer ?? '—')) },
+    { key: 'invoice',  value: (r) => fmtRp(r.invoice_total), sort: (r) => Number(r.invoice_total) || 0 },
+    { key: 'um',       value: (r) => fmtRp(r.um_total),      sort: (r) => Number(r.um_total) || 0 },
+    { key: 'sisa',     value: (r) => fmtRp(r.sisa),          sort: (r) => Number(r.sisa) || 0 },
+]);
+const rows = T.result;
 
 // ── Pilih massal untuk penagihan ──
 const selected = ref<string[]>([]);
-const pageKeys = computed<string[]>(() => props.rows.map((r) => r.row_key));
+// Hanya baris yang SEDANG TAMPIL — kalau memakai seluruh data, mencentang kotak kepala
+// akan diam-diam ikut memilih baris yang tersaring keluar lalu ikut tercetak.
+const pageKeys = computed<string[]>(() => rows.value.map((r) => r.row_key));
 const allChecked = computed<boolean>({
     get: () => pageKeys.value.length > 0 && pageKeys.value.every((k) => selected.value.includes(k)),
     set: (v: boolean) => { selected.value = v ? [...pageKeys.value] : []; },
 });
-const selectedSisa = computed(() => props.rows.filter((r) => selected.value.includes(r.row_key)).reduce((s, r) => s + Number(r.sisa || 0), 0));
+const selectedSisa = computed(() => semua.value.filter((r) => selected.value.includes(r.row_key)).reduce((s, r) => s + Number(r.sisa || 0), 0));
 
 // Daftar berubah (mis. sesudah membatalkan kompensasi, grup bisa lenyap karena isinya habis)
 // -> buang centang yang barisnya sudah tidak ada. MEMANGKAS, bukan mengosongkan: centang lain
@@ -104,37 +112,38 @@ function batalKompensasi(u: Um) {
             </div>
         </div>
 
-        <div class="card flex flex-wrap items-end gap-3 p-4">
-            <div class="min-w-[220px] flex-1">
-                <label class="mb-1 block text-[11px] font-medium uppercase text-neutral-400">Cari</label>
-                <div class="relative">
-                    <Search class="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-neutral-400" />
-                    <input v-model="search" @keyup.enter="applyFilter" @change="applyFilter" placeholder="No. SPR / unit / customer" class="h-9 w-full rounded-lg border border-neutral-300 bg-white pl-8 pr-3 text-sm dark:border-neutral-700 dark:bg-neutral-900" />
-                </div>
+        <div class="card flex flex-wrap items-center gap-3 p-4">
+            <div class="relative min-w-[220px] flex-1">
+                <Search class="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-neutral-400" />
+                <input v-model="T.search.value" placeholder="Cari semua kolom…" class="h-9 w-full rounded-lg border border-neutral-300 bg-white pl-8 pr-3 text-sm dark:border-neutral-700 dark:bg-neutral-900" />
             </div>
-            <div>
-                <label class="mb-1 block text-[11px] font-medium uppercase text-neutral-400">Sisa Piutang</label>
-                <select v-model="sisa" @change="applyFilter" class="h-9 rounded-lg border border-neutral-300 bg-white px-2 pr-6 text-sm dark:border-neutral-700 dark:bg-neutral-900">
-                    <option value="">Semua</option>
-                    <option value="ada">Masih ada sisa</option>
-                    <option value="lunas">Sudah nihil / lebih bayar</option>
-                </select>
-            </div>
-            <button v-if="hasFilter" type="button" @click="resetFilter" class="ml-auto inline-flex h-9 items-center gap-1.5 rounded-lg border border-neutral-300 px-3 text-sm font-medium text-neutral-600 hover:bg-neutral-50 dark:border-neutral-700 dark:text-neutral-300"><FilterX class="h-4 w-4" /> Reset filter</button>
+            <button v-if="T.hasFilter.value" type="button" @click="T.reset()" class="inline-flex h-9 items-center gap-1.5 rounded-lg border border-neutral-300 px-3 text-sm font-medium text-neutral-600 hover:bg-neutral-50 dark:border-neutral-700 dark:text-neutral-300"><FilterX class="h-4 w-4" /> Reset filter</button>
         </div>
 
         <TableTopScroll v-if="rows.length">
             <table class="w-full text-sm">
                 <thead class="bg-neutral-50 dark:bg-neutral-800">
-                    <tr class="text-left text-xs uppercase text-neutral-500">
-                        <th class="w-10 px-3 py-3"><input v-model="allChecked" type="checkbox" :class="cbCls" :disabled="!pageKeys.length" :title="allChecked ? 'Kosongkan pilihan' : 'Pilih semua baris'" /></th>
-                        <th class="w-8 px-2 py-3"></th>
-                        <th class="whitespace-nowrap px-4 py-3">No. SPR</th>
-                        <th class="whitespace-nowrap px-4 py-3">Unit</th>
-                        <th class="px-4 py-3">Customer</th>
-                        <th class="whitespace-nowrap px-4 py-3 text-right">Invoice Piutang</th>
-                        <th class="whitespace-nowrap px-4 py-3 text-right">UM Penjualan</th>
-                        <th class="whitespace-nowrap px-4 py-3 text-right">Sisa Piutang</th>
+                    <!-- Baris 1: label kolom — diklik untuk mengurutkan. -->
+                    <tr class="text-left">
+                        <th class="w-10 px-3 pb-1 pt-3"><input v-model="allChecked" type="checkbox" :class="cbCls" :disabled="!pageKeys.length" :title="allChecked ? 'Kosongkan pilihan' : 'Pilih semua baris yang tampil'" /></th>
+                        <th class="w-8 px-2 pb-1 pt-3"></th>
+                        <th class="whitespace-nowrap px-4 pb-1 pt-3"><SortableTh label="No. SPR" :state="T.sortState('spr')" @sort="T.toggleSort('spr')" /></th>
+                        <th class="whitespace-nowrap px-4 pb-1 pt-3"><SortableTh label="Unit" :state="T.sortState('unit')" @sort="T.toggleSort('unit')" /></th>
+                        <th class="px-4 pb-1 pt-3"><SortableTh label="Customer" :state="T.sortState('customer')" @sort="T.toggleSort('customer')" /></th>
+                        <th class="whitespace-nowrap px-4 pb-1 pt-3"><SortableTh label="Invoice Piutang" align="right" :state="T.sortState('invoice')" @sort="T.toggleSort('invoice')" /></th>
+                        <th class="whitespace-nowrap px-4 pb-1 pt-3"><SortableTh label="UM Penjualan" align="right" :state="T.sortState('um')" @sort="T.toggleSort('um')" /></th>
+                        <th class="whitespace-nowrap px-4 pb-1 pt-3"><SortableTh label="Sisa Piutang" align="right" :state="T.sortState('sisa')" @sort="T.toggleSort('sisa')" /></th>
+                    </tr>
+                    <!-- Baris 2: filter per kolom — ketik untuk mencari, panah untuk memilih dari daftar. -->
+                    <tr>
+                        <th class="px-3 pb-2"></th>
+                        <th class="px-2 pb-2"></th>
+                        <th class="px-2 pb-2"><ColumnFilter v-model="T.col.spr" v-model:text="T.txt.spr" :options="T.options.value.spr" /></th>
+                        <th class="px-2 pb-2"><ColumnFilter v-model="T.col.unit" v-model:text="T.txt.unit" :options="T.options.value.unit" /></th>
+                        <th class="px-2 pb-2"><ColumnFilter v-model="T.col.customer" v-model:text="T.txt.customer" :options="T.options.value.customer" /></th>
+                        <th class="px-2 pb-2"><ColumnFilter v-model="T.col.invoice" v-model:text="T.txt.invoice" :options="T.options.value.invoice" align="right" /></th>
+                        <th class="px-2 pb-2"><ColumnFilter v-model="T.col.um" v-model:text="T.txt.um" :options="T.options.value.um" align="right" /></th>
+                        <th class="px-2 pb-2"><ColumnFilter v-model="T.col.sisa" v-model:text="T.txt.sisa" :options="T.options.value.sisa" align="right" /></th>
                     </tr>
                 </thead>
                 <tbody class="divide-y divide-neutral-200 dark:divide-neutral-800">
@@ -151,7 +160,19 @@ function batalKompensasi(u: Um) {
                                 <Badge v-if="!r.booking_id" variant="neutral" size="sm" class="ml-1">Tanpa SPR</Badge>
                             </td>
                             <td class="whitespace-nowrap px-4 py-2.5">{{ r.unit ?? '—' }}</td>
-                            <td class="px-4 py-2.5">{{ r.customer ?? '—' }}</td>
+                            <td class="px-4 py-2.5">
+                                <div>{{ r.customer ?? '—' }}</div>
+                                <!-- Satu SPR bisa memuat baris atas nama customer lain (mis. pengalihan
+                                     pembeli). Namanya WAJIB ikut tampil, kalau tidak angkanya terhitung
+                                     tapi orangnya tidak pernah ketemu saat dicari. -->
+                                <div v-if="r.multi_customer" class="mt-0.5 flex flex-wrap items-center gap-1">
+                                    <span class="inline-flex items-center gap-1 rounded-full bg-amber-50 px-1.5 py-px text-[10px] font-semibold text-amber-700 ring-1 ring-amber-200 dark:bg-amber-950/30 dark:text-amber-300 dark:ring-amber-800/60"
+                                        title="SPR ini memuat baris atas nama lebih dari satu customer">
+                                        <TriangleAlert class="h-2.5 w-2.5" /> {{ r.customers.length }} nama
+                                    </span>
+                                    <span v-for="n in r.customers.filter((x) => x !== r.customer)" :key="n" class="text-[11px] text-neutral-500">{{ n }}</span>
+                                </div>
+                            </td>
                             <td class="whitespace-nowrap px-4 py-2.5 text-right font-mono">
                                 {{ fmtRp(r.invoice_total) }}
                                 <span class="block text-xs text-neutral-400">{{ r.invoice_count }} invoice</span>
@@ -171,11 +192,13 @@ function batalKompensasi(u: Um) {
                                             <tbody>
                                                 <tr v-for="i in r.invoices" :key="'i' + i.id" class="border-b border-neutral-200 last:border-0 dark:border-neutral-800">
                                                     <td class="py-1 pr-2 font-mono">{{ i.number }}</td>
+                                                    <!-- Nama per baris: menjawab "punya siapa" saat satu SPR memuat beberapa nama. -->
+                                                    <td class="py-1 pr-2" :class="i.customer && i.customer !== r.customer ? 'font-medium text-amber-700 dark:text-amber-400' : 'text-neutral-500'">{{ i.customer ?? '—' }}</td>
                                                     <td class="py-1 pr-2 text-neutral-500">{{ fmtDate(i.date) }}</td>
                                                     <td class="py-1 pr-2 text-neutral-500"><span class="block max-w-[220px] truncate" :title="i.description ?? ''">{{ i.description ?? '—' }}</span></td>
                                                     <td class="py-1 text-right font-mono">{{ fmtRp(i.outstanding) }}</td>
                                                 </tr>
-                                                <tr v-if="!r.invoices.length"><td colspan="4" class="py-1 text-neutral-400">Tidak ada invoice piutang</td></tr>
+                                                <tr v-if="!r.invoices.length"><td colspan="5" class="py-1 text-neutral-400">Tidak ada invoice piutang</td></tr>
                                             </tbody>
                                         </table>
                                     </div>
@@ -185,6 +208,8 @@ function batalKompensasi(u: Um) {
                                             <tbody>
                                                 <tr v-for="u in r.ums" :key="'u' + u.id" class="border-b border-neutral-200 last:border-0 dark:border-neutral-800">
                                                     <td class="py-1 pr-2">{{ u.source_label }}</td>
+                                                    <!-- Nama per baris: menjawab "punya siapa" saat satu SPR memuat beberapa nama. -->
+                                                    <td class="py-1 pr-2" :class="u.customer && u.customer !== r.customer ? 'font-medium text-amber-700 dark:text-amber-400' : 'text-neutral-500'">{{ u.customer ?? '—' }}</td>
                                                     <td class="py-1 pr-2 text-neutral-500">{{ fmtDate(u.date) }}</td>
                                                     <td class="py-1 pr-2 text-neutral-500"><span class="block max-w-[200px] truncate" :title="u.note ?? ''">{{ u.note ?? '—' }}</span></td>
                                                     <td class="py-1 text-right font-mono text-warning-600">{{ fmtRp(u.amount) }}</td>
@@ -208,7 +233,9 @@ function batalKompensasi(u: Um) {
             </table>
         </TableTopScroll>
 
-        <EmptyState v-else-if="hasFilter" title="Tidak ada hasil" description="Tidak ada SPR yang cocok dengan filter. Klik Reset filter untuk menampilkan semua." />
+        <p v-if="rows.length" class="text-xs text-neutral-500">Menampilkan {{ rows.length }} dari {{ semua.length }} kelompok SPR<span v-if="T.hasFilter.value"> (tersaring)</span>.</p>
+
+        <EmptyState v-else-if="T.hasFilter.value" title="Tidak ada hasil" description="Tidak ada SPR yang cocok dengan filter. Klik Reset filter untuk menampilkan semua." />
         <EmptyState v-else title="Belum ada yang bisa direkonsiliasi"
             description="Belum ada invoice piutang maupun UM Penjualan yang dikompensasi. Kompensasikan UM dulu di layar UM Penjualan.">
             <template #icon><Scale class="h-12 w-12" /></template>

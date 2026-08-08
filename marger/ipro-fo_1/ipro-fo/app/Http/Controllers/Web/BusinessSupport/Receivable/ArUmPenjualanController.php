@@ -40,22 +40,12 @@ class ArUmPenjualanController extends Controller
     {
         abort_unless($request->user()?->canModule('ar'), 403);
 
-        $search = trim((string) $request->input('search', ''));
-        $source = (string) $request->input('source', '');
-
-        $rows = $this->availableRows()
-            ->when($source !== '', fn (Collection $c) => $c->where('source_type', $source))
-            ->when($search !== '', fn (Collection $c) => $c->filter(
-                fn (array $r) => str_contains(mb_strtolower(implode(' ', [
-                    $r['customer'] ?? '', $r['unit'] ?? '', $r['spr'] ?? '', $r['note'] ?? '',
-                ])), mb_strtolower($search))
-            ))
-            ->values();
+        // Tidak ada penyaringan di server: pencarian, filter per kolom, dan pengurutan
+        // seluruhnya dikerjakan di klien atas data lengkap ini.
+        $rows = $this->availableRows();
 
         return Inertia::render('BusinessSupport/Receivable/UmPenjualan', [
             'rows'    => $rows,
-            'filters' => ['search' => $search ?: null, 'source' => $source ?: null],
-            'sources' => BsArUmCompensation::SOURCES,
             'summary' => [
                 'count' => $rows->count(),
                 'total' => round((float) $rows->sum('total'), 2),

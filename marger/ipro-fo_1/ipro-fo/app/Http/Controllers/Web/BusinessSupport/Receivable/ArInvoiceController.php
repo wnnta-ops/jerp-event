@@ -13,6 +13,7 @@ use App\Exceptions\BusinessRuleException;
 use App\Http\Controllers\Controller;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -26,20 +27,19 @@ class ArInvoiceController extends Controller
             // Rincian disamakan dengan layar "Sudah Booked Revenue": selain data akuntansi,
             // barisnya harus menunjukkan SPR + unit yang ditagih. Keduanya turunan booking.
             ->with(['customer:id,code,full_name', 'booking:id,booking_number,unit_id', 'booking.unit:id,unit_code,unit_type_id', 'booking.unit.unitType:id,name'])
-            ->when($request->input('status'), fn ($q, $v) => $q->where('status', $v))
-            ->when($request->input('search'), fn ($q, $s) => $q->where(fn ($w) => $w->where('invoice_number', 'like', "%{$s}%")
-                ->orWhere('description', 'like', "%{$s}%")
-                ->orWhereHas('booking', fn ($b) => $b->where('booking_number', 'like', "%{$s}%"))
-                ->orWhereHas('booking.unit', fn ($u) => $u->where('unit_code', 'like', "%{$s}%"))))
+            // Tidak ada lagi penyaringan di server: pencarian, filter per kolom, dan pengurutan
+            // seluruhnya dikerjakan di klien atas data lengkap di bawah ini.
             ->latest('invoice_date')->latest('id')
-            ->paginate(50)->withQueryString();
+            // SELURUH baris dikirim ke klien — sama dengan daftar Invoice Hutang (AP) & Purchase
+            // Order. Filter per-kolom dan pengurutan dihitung di sisi klien, jadi paginasi server
+            // justru menyesatkan: penyaringan hanya akan mengenai 50 baris yang kebetulan tampil.
+            ->get()
+            ->map(fn (BsArInvoice $r) => $this->row($r))
+            ->values();
 
-        $rows->getCollection()->transform(fn (BsArInvoice $r) => $this->row($r));
-
-        // SPR yang bisa dipilih untuk baris di HALAMAN INI saja (dikelompokkan per customer).
-        // Dibatasi ke customer yang benar-benar tampil supaya payload tidak membawa seluruh
-        // booking hanya untuk mengisi dropdown yang jarang dipakai.
-        $customerIds = $rows->getCollection()->pluck('customer_id')->filter()->unique()->values();
+        // SPR yang bisa dipilih (dikelompokkan per customer), dibatasi ke customer yang
+        // benar-benar tampil supaya payload tidak membawa seluruh booking.
+        $customerIds = $rows->pluck('customer_id')->filter()->unique()->values();
         $sprOptions = $customerIds->isEmpty() ? [] : Booking::query()
             ->whereIn('customer_id', $customerIds)
             ->with('unit:id,unit_code')
@@ -53,7 +53,6 @@ class ArInvoiceController extends Controller
         return Inertia::render('BusinessSupport/Receivable/Index', [
             'invoices'   => $rows,
             'sprOptions' => $sprOptions,
-            'filters'  => $request->only(['status', 'search']),
             'summary'  => [
                 // Basis HARUS sama dengan kolom "Sisa" per baris (accessor outstanding), yaitu
                 // net_receivable − dibayar. Memakai total − dibayar membuat kartu tidak pernah
@@ -253,28 +252,45 @@ class ArInvoiceController extends Controller
 
         $today  = now()->startOfDay();
         $rows   = [];
-        $totals = ['current' => 0.0, 'd30' => 0.0, 'd60' => 0.0, 'd90' => 0.0, 'd90p' => 0.0, 'total' => 0.0];
+        $totals = ['d30' => 0.0, 'd60' => 0.0, 'd90' => 0.0, 'd90p' => 0.0, 'total' => 0.0];
+        // Invoice yang BELUM jatuh tempo tidak masuk aging — belum ada umur tunggakannya.
+        // Jumlahnya tetap dihitung untuk catatan kaki supaya jelas ke mana perginya.
+        $belumJt = 0.0;
+        $belumJtCount = 0;
 
-        BsArInvoice::with('customer:id,code,full_name')->where('status', 'open')->get()->each(function ($inv) use (&$rows, &$totals, $today): void {
-            $out = (float) $inv->outstanding;
-            if ($out <= 0.009) {
-                return;
-            }
-            $ref     = $inv->due_date ?? $inv->invoice_date;
-            $overdue = $ref && $ref->lt($today) ? $ref->diffInDays($today) : 0;
-            $bucket  = $overdue <= 0 ? 'current' : ($overdue <= 30 ? 'd30' : ($overdue <= 60 ? 'd60' : ($overdue <= 90 ? 'd90' : 'd90p')));
+        BsArInvoice::with('customer:id,code,full_name')->where('status', 'open')->get()
+            ->each(function ($inv) use (&$rows, &$totals, &$belumJt, &$belumJtCount, $today): void {
+                $out = (float) $inv->outstanding;
+                if ($out <= 0.009) {
+                    return;
+                }
+                $ref     = $inv->due_date ?? $inv->invoice_date;
+                $overdue = $ref && $ref->lt($today) ? $ref->diffInDays($today) : 0;
+                if ($overdue <= 0) {
+                    $belumJt += $out;
+                    $belumJtCount++;
 
-            $key = $inv->customer_id;
-            $rows[$key] ??= ['name' => $inv->customer?->full_name ?? '—', 'current' => 0, 'd30' => 0, 'd60' => 0, 'd90' => 0, 'd90p' => 0, 'total' => 0];
-            $rows[$key][$bucket] += $out;
-            $rows[$key]['total'] += $out;
-            $totals[$bucket]     += $out;
-            $totals['total']     += $out;
-        });
+                    return;
+                }
+                $bucket = $overdue <= 30 ? 'd30' : ($overdue <= 60 ? 'd60' : ($overdue <= 90 ? 'd90' : 'd90p'));
+
+                $key = $inv->customer_id;
+                $rows[$key] ??= ['name' => $inv->customer?->full_name ?? '—', 'd30' => 0, 'd60' => 0, 'd90' => 0, 'd90p' => 0, 'total' => 0, 'max_overdue' => 0];
+                $rows[$key][$bucket] += $out;
+                $rows[$key]['total'] += $out;
+                $rows[$key]['max_overdue'] = max($rows[$key]['max_overdue'], $overdue);
+                $totals[$bucket]     += $out;
+                $totals['total']     += $out;
+            });
+
+        // Tunggakan terbesar di atas — yang paling perlu ditindaklanjuti terbaca lebih dulu.
+        $rows = array_values($rows);
+        usort($rows, fn ($a, $b) => $b['total'] <=> $a['total']);
 
         return Inertia::render('BusinessSupport/Receivable/Aging', [
-            'rows'   => array_values($rows),
+            'rows'   => $rows,
             'totals' => $totals,
+            'belumJt' => ['amount' => round($belumJt, 2), 'count' => $belumJtCount],
         ]);
     }
 
@@ -301,11 +317,46 @@ class ArInvoiceController extends Controller
             });
         }
 
+        // Saldo piutang per customer = Σ total invoice − Σ penerimaan. Rumusnya sengaja
+        // SAMA PERSIS dengan saldo berjalan kartu di atas (debit invoice − kredit terima)
+        // supaya daftar "punya saldo" tidak pernah berbeda dengan angka yang tampil.
+        $totalInvoice = DB::table('bs_ar_invoices')->whereNull('deleted_at')
+            ->groupBy('customer_id')->selectRaw('customer_id, COALESCE(SUM(total),0) as t')
+            ->pluck('t', 'customer_id');
+        $totalTerima = DB::table('bs_ar_payments as p')
+            ->join('bs_ar_invoices as i', 'i.id', '=', 'p.ar_invoice_id')
+            ->whereNull('i.deleted_at')
+            ->groupBy('i.customer_id')->selectRaw('i.customer_id, COALESCE(SUM(p.amount),0) as t')
+            ->pluck('t', 'customer_id');
+
+        $saldo = [];
+        foreach ($totalInvoice as $cid => $t) {
+            $s = round((float) $t - (float) ($totalTerima[$cid] ?? 0), 2);
+            if ($s > 0.005) {   // lunas & lebih bayar tidak dianggap "punya saldo"
+                $saldo[(int) $cid] = $s;
+            }
+        }
+
+        $saldoOnly = $request->boolean('saldo');
+        // Customer yang sedang dibuka tetap ditahan di daftar walau saldonya nol — kalau tidak,
+        // kotak pilihan jadi kosong padahal kartunya masih tampil di bawah.
+        $idFilter = $customerId ? array_unique([...array_keys($saldo), $customerId]) : array_keys($saldo);
+
+        $customers = Customer::when($saldoOnly, fn ($q) => $q->whereIn('id', $idFilter))
+            ->orderBy('full_name')->limit(500)->get(['id', 'code', 'full_name'])
+            ->map(fn ($c) => [
+                'id' => $c->id, 'code' => $c->code, 'full_name' => $c->full_name,
+                'balance' => $saldo[(int) $c->id] ?? 0.0,
+            ])->values();
+
         return Inertia::render('BusinessSupport/Receivable/Card', [
-            'customers'  => Customer::orderBy('full_name')->limit(500)->get(['id', 'code', 'full_name']),
+            'customers'  => $customers,
             'customerId' => $customerId,
             'entries'    => $entries,
             'outstanding'=> $entries->isNotEmpty() ? $entries->last()['balance'] : 0,
+            'saldoOnly'  => $saldoOnly,
+            'withBalance'=> count($saldo),
+            'totalCustomer' => Customer::count(),
         ]);
     }
 

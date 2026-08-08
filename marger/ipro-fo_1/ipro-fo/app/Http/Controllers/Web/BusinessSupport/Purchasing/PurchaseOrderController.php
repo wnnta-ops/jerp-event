@@ -492,12 +492,26 @@ class PurchaseOrderController extends Controller
     {
         abort_unless($request->user()?->canModule('bs'), 403);
 
-        $orders = BsPurchaseOrder::query()
-            ->with(['supplier:id,code,name', 'project:id,name'])
-            ->when($request->input('from'), fn ($q, $v) => $q->whereDate('po_date', '>=', $v))
-            ->when($request->input('to'), fn ($q, $v) => $q->whereDate('po_date', '<=', $v))
-            ->orderBy('po_date')->orderBy('id')
-            ->get();
+        // Supplier dipilih LEBIH DULU; selama belum dipilih laporan tidak menarik data
+        // sama sekali. 'all' = seluruh supplier, selain itu id supplier.
+        $supplier = trim((string) $request->input('supplier', ''));
+        $chosen = $supplier !== '';
+
+        $orders = $chosen
+            ? BsPurchaseOrder::query()
+                ->with(['supplier:id,code,name', 'project:id,name'])
+                ->when($supplier !== 'all', fn ($q) => $q->where('supplier_id', (int) $supplier))
+                ->when($request->input('from'), fn ($q, $v) => $q->whereDate('po_date', '>=', $v))
+                ->when($request->input('to'), fn ($q, $v) => $q->whereDate('po_date', '<=', $v))
+                ->orderBy('po_date')->orderBy('id')
+                ->get()
+            : BsPurchaseOrder::query()->whereRaw('1 = 0')->get();
+
+        // Pilihan supplier dibatasi pada yang benar-benar punya PO — supaya tidak ada
+        // pilihan yang pasti kosong. Tidak terpengaruh rentang tanggal agar daftarnya stabil.
+        $dipakai = BsPurchaseOrder::query()->distinct()->pluck('supplier_id');
+        $supplierOptions = BsSupplier::whereIn('id', $dipakai)->orderBy('name')->get(['id', 'code', 'name'])
+            ->map(fn ($s) => ['id' => (string) $s->id, 'label' => $s->name, 'code' => $s->code])->values();
 
         // Kelompokkan per supplier: jumlah PO + nilai + rincian tiap nomor PO.
         $groups = $orders->groupBy(fn ($po) => $po->supplier_id ?? 0)
@@ -528,7 +542,9 @@ class PurchaseOrderController extends Controller
 
         return Inertia::render('BusinessSupport/Purchasing/PurchaseOrders/Report', [
             'groups'  => $groups,
-            'filters' => $request->only(['from', 'to']),
+            'filters' => ['supplier' => $supplier, 'from' => $request->input('from'), 'to' => $request->input('to')],
+            'chosen'  => $chosen,
+            'supplierOptions' => $supplierOptions,
             'summary' => [
                 'suppliers' => $groups->count(),
                 'po_count'  => $orders->count(),

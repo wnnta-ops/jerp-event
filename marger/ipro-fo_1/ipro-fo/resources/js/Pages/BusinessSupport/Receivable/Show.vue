@@ -65,7 +65,7 @@ const inputCls = 'h-9 w-full rounded-lg border border-neutral-300 bg-white px-3 
 </script>
 <template>
     <div class="mx-auto max-w-3xl space-y-4">
-        <Link :href="route('bs.ar.index')" class="inline-flex items-center gap-2 text-sm text-neutral-500 hover:text-neutral-800 dark:hover:text-neutral-200"><ArrowLeft class="h-4 w-4" /> Account Receivable</Link>
+        <Link :href="route('bs.ar.index')" class="inline-flex items-center gap-2 text-sm text-neutral-500 hover:text-neutral-800 dark:hover:text-neutral-200"><ArrowLeft class="h-4 w-4" /> Piutang Usaha (Booked)</Link>
 
         <div class="flex flex-wrap items-center justify-between gap-3">
             <h1 class="flex items-center gap-2 font-mono text-2xl font-bold">

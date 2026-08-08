@@ -99,7 +99,7 @@ class FixedAssetController extends Controller
 
     /**
      * Saldo GL (Neraca Saldo) per kategori aset tetap — SUMBER TUNGGAL angka Harga Perolehan
-     * & Akumulasi Penyusutan pada Master/Overview Aset Tetap.
+     * & Akumulasi Penyusutan pada Overview Aset Tetap.
      *
      * Rumusnya SENGAJA disamakan persis dengan Neraca Saldo (LedgerReportController::trialBalanceData):
      * Σ(debit − credit) atas baris jurnal berstatus 'posted'. Karena dihitung ulang setiap halaman
