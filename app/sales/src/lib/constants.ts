@@ -24,6 +24,7 @@ export const ROLE_LABEL: Record<Role, string> = {
   SALES: "Sales / Koordinator",
   COLLECTION: "Collection",
   MANAGEMENT: "Management",
+  SYSADMIN: "Sysadmin (IT)",
 };
 
 export const STATUS_LEAD_LABEL: Record<string, string> = {

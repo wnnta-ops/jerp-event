@@ -66,7 +66,10 @@ export type AccessLevel = (typeof ACCESS_LEVELS)[number];
 export const SCOPES = ["unit", "development", "entity"] as const;
 export type Scope = (typeof SCOPES)[number];
 
-export const ROLES = ["LEGAL_PIC", "HEAD_OF_LEGAL", "GENERAL_MANAGER", "DIRECTOR", "REQUESTER"] as const;
+// SYSADMIN = akun kontrol IT (di luar peran bisnis) — akses & wewenang penuh:
+// lihat semua + boleh menyetujui langkah manapun (override). Lihat lib/access
+// / requests/actions untuk bypass otorisasinya.
+export const ROLES = ["SYSADMIN", "LEGAL_PIC", "HEAD_OF_LEGAL", "GENERAL_MANAGER", "DIRECTOR", "REQUESTER"] as const;
 export type Role = (typeof ROLES)[number];
 
 /** Unit-scoped types — per-kavling "split" docs (require cluster/blok/unit). */
@@ -174,6 +177,7 @@ export const ACCESS_LEVEL_LABELS: Record<AccessLevel, string> = {
 };
 
 export const ROLE_LABELS: Record<Role, string> = {
+  SYSADMIN: "Sysadmin (IT)",
   LEGAL_PIC: "Legal PIC",
   HEAD_OF_LEGAL: "Head of Legal",
   GENERAL_MANAGER: "General Manager",

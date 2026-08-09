@@ -16,6 +16,7 @@ enum Role {
   SALES
   COLLECTION
   MANAGEMENT
+  SYSADMIN // akun kontrol IT (di luar peran bisnis) — akses & wewenang penuh
 }
 
 enum Channel {

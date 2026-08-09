@@ -41,7 +41,7 @@ export function CollectionClient({ deals, role }: { deals: CollDeal[]; role: Rol
     refundAmount: "",
   });
 
-  const canEdit = role === "COLLECTION" || role === "MANAGEMENT";
+  const canEdit = role === "COLLECTION" || role === "MANAGEMENT" || role === "SYSADMIN";
 
   const filtered = useMemo(() => {
     if (!q.trim()) return deals;
