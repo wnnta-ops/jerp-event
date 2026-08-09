@@ -352,9 +352,9 @@ export function navGroups(foUrl: string): NavGroup[] {
         icon: PiggyBank, color: '#d946ef', route: 'bs.budget.index',
         desc: 'Anggaran, alokasi & koreksi budget.',
         items: [
-            { label: 'General Function', icon: FileText, permission: ['businesssupport.view', 'budget.*'], children: [
-                { label: 'Print-Out', href: 'bs.budget.printhub' },
-            ]},
+            // Grup "General Function → Print-Out" DIHAPUS: isinya hanya daftar tautan ke
+            // keempat laporan yang SUDAH ada satu per satu di grup "Query" di bawah ini,
+            // jadi hanya menambah satu lompatan tanpa menambah apa pun.
             { label: 'Master', icon: BookText, permission: ['businesssupport.view', 'budget.*'], children: [
                 { label: 'Budget Control', href: 'bs.budget.index' },
                 { label: 'Alokasi Budget Control', href: 'bs.budget.allocation.index' },
@@ -412,12 +412,13 @@ export function navGroups(foUrl: string): NavGroup[] {
     },
     {
         title: 'COGS',
-        icon: Boxes, color: '#84cc16', route: 'bs.cogs.printhub',
+        // Kartu modul mendarat di halaman hub-nya, BUKAN lagi di Print-Out yang sudah dihapus
+        // dari menu — kalau tidak, pintu depan modul justru menuju halaman yang ditiadakan.
+        icon: Boxes, color: '#84cc16', route: 'bs.cogs.home',
         desc: 'HPP RealCost & budget proyek.',
         items: [
-            { label: 'General Function', icon: FileText, permission: ['businesssupport.view', 'cogs.*'], children: [
-                { label: 'Print-Out', href: 'bs.cogs.printhub' },
-            ]},
+            // Grup "General Function → Print-Out" DIHAPUS: isinya hanya daftar tautan ke
+            // keenam laporan yang SUDAH ada satu per satu di grup "Query" di bawah ini.
             { label: 'Setup', icon: SlidersHorizontal, permission: ['businesssupport.view', 'cogs.*'], children: [
                 { label: 'Lokasi', href: 'bs.cogs.location.index' },
                 { label: 'Ketentuan', href: 'bs.cogs.provision.index' },

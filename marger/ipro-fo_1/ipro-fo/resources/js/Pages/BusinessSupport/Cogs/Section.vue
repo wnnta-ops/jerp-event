@@ -14,7 +14,6 @@ function r(name?: string | null, params?: Record<string, any>): string | null {
 
 type Item = { label: string; route: string | null; summary?: string | null };
 const titles: Record<string, string> = {
-    'general': 'General Function',
     'setup': 'Setup',
     'master': 'Master',
     'query': 'Query',
@@ -23,9 +22,7 @@ const titles: Record<string, string> = {
     'saldo-awal': 'Saldo Awal Realisasi',
 };
 const sections = computed<Record<string, Item[]>>(() => ({
-    'general': [
-        { label: 'Print-Out', route: r('bs.cogs.printhub') },
-    ],
+    // Seksi "general" dihapus bersama Print-Out — lihat catatan di Hub.vue.
     'setup': [
         { label: 'Lokasi', route: r('bs.cogs.location.index') },
         { label: 'Ketentuan', route: r('bs.cogs.provision.index') },
