@@ -89,6 +89,7 @@ export function chainSummary(accessLevel: AccessLevel, accessType: AccessType): 
   const roles = chainRolesFor(accessLevel, accessType);
   if (roles.length === 0) return "Tanpa persetujuan (Sales-visible)";
   const names: Record<Role, string> = {
+    SYSADMIN: "Sysadmin",
     LEGAL_PIC: "PIC",
     HEAD_OF_LEGAL: "Head of Legal",
     GENERAL_MANAGER: "GM",
