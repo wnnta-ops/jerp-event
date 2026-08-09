@@ -17,9 +17,8 @@ function r(name?: string | null, params?: Record<string, any>): string | null {
 
 // Sub-modul COGS â€” dikelompokkan persis seperti menu eProperty BO (/COGS/).
 const menu: Array<{ group: string; items: Array<{ label: string; route: string | null; summary?: string | null }> }> = [
-    { group: 'General Function', items: [
-        { label: 'Print-Out', route: r('bs.cogs.printhub') },
-    ]},
+    // "General Function → Print-Out" dihapus: isinya hanya tautan ke laporan yang sudah
+    // ada satu per satu di grup Query.
     { group: 'Setup', items: [
         { label: 'Lokasi', route: r('bs.cogs.location.index') },
         { label: 'Ketentuan', route: r('bs.cogs.provision.index') },

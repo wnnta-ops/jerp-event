@@ -17,9 +17,8 @@ function r(name?: string | null, params?: Record<string, any>): string | null {
 
 // Sub-modul Budget Control â€” dikelompokkan persis seperti menu eProperty BO (/BC/).
 const menu: Array<{ group: string; items: Array<{ label: string; route: string | null; summary?: string | null }> }> = [
-    { group: 'General Function', items: [
-        { label: 'Print-Out', route: r('bs.budget.printhub') },
-    ]},
+    // "General Function → Print-Out" dihapus: isinya hanya tautan ke laporan yang sudah
+    // ada satu per satu di grup Query.
     { group: 'Master', items: [
         { label: 'Budget Control', route: r('bs.budget.index') },
         { label: 'Alokasi Budget Control', route: r('bs.budget.allocation.index') },
