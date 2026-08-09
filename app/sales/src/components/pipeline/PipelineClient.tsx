@@ -148,7 +148,7 @@ export function PipelineClient({ deals, role }: { deals: PipelineDeal[]; role: R
 
   const idx = sel ? STAGE_INDEX[sel.stage] : 0;
   const targets = sel ? allowedTargets(role, sel.stage) : [];
-  const canFu = sel ? (role === "SALES" || role === "MANAGEMENT") && idx < SALES_MAX_INDEX : false;
+  const canFu = sel ? (role === "SALES" || role === "MANAGEMENT" || role === "SYSADMIN") && idx < SALES_MAX_INDEX : false;
 
   return (
     <>

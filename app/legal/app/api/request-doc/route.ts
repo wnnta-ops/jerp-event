@@ -7,7 +7,7 @@ import { REQUEST_DOCS_DIR as PRIVATE_ROOT } from "@/lib/storage";
 
 export const dynamic = "force-dynamic";
 
-const APPROVER_ROLES = new Set(["LEGAL_PIC", "HEAD_OF_LEGAL", "GENERAL_MANAGER", "DIRECTOR"]);
+const APPROVER_ROLES = new Set(["SYSADMIN", "LEGAL_PIC", "HEAD_OF_LEGAL", "GENERAL_MANAGER", "DIRECTOR"]);
 const MIME: Record<string, string> = {
   ".pdf": "application/pdf", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png",
 };

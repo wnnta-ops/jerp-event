@@ -189,7 +189,8 @@ export function RequestDetail({ req, actingId, actingRole }: { req: RequestView;
             const state = s.decision === "approved" ? "done" : s.decision === "rejected" ? "rejected" : req.status === "pending" && i === req.currentStep ? "current" : "waiting";
             const { node } = nodeStyle(state);
             // Only the specifically-assigned approver may act (not just any role-holder).
-            const canDecide = req.status === "pending" && i === req.currentStep && (s.approverId ? actingId === s.approverId : (s.approverName != null && actingRole === s.role));
+            // SYSADMIN (IT) boleh memutuskan langkah aktif manapun (override).
+            const canDecide = req.status === "pending" && i === req.currentStep && (actingRole === "SYSADMIN" || (s.approverId ? actingId === s.approverId : (s.approverName != null && actingRole === s.role)));
             const isPicUpload = s.role === "LEGAL_PIC" && !req.hasDoc; // PIC approves by uploading
             // For a physical checkout, the last in-app node connects down to the external segment.
             const isLast = i === req.steps.length - 1 && !physical;

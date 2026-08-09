@@ -110,7 +110,8 @@ export async function approveWithDocument(requestId: string, formData: FormData)
   const step = req.steps[req.currentStep];
   if (!step) return { ok: false, error: "Tidak ada langkah aktif." };
   if (step.role !== "LEGAL_PIC") return { ok: false, error: "Unggah dokumen hanya pada langkah Legal PIC." };
-  const allowed = step.approverId ? acting.id === step.approverId : step.role === acting.role;
+  // SYSADMIN (IT) boleh bertindak di langkah manapun (override).
+  const allowed = acting.role === "SYSADMIN" || (step.approverId ? acting.id === step.approverId : step.role === acting.role);
   if (!allowed) return { ok: false, error: "Bukan giliran Anda — permintaan ini ditugaskan ke Legal PIC lain." };
 
   const file = formData.get("file");
@@ -166,7 +167,8 @@ export async function decideStep(requestId: string, decision: "approved" | "reje
   // Only the SPECIFICALLY ASSIGNED approver may decide (role is only a fallback
   // when the step has no assigned person). So another holder of the same role
   // (e.g. a different Legal PIC) cannot act on someone else's step.
-  const allowed = step.approverId ? acting.id === step.approverId : step.role === acting.role;
+  // SYSADMIN (IT) di-kecualikan: boleh memutuskan langkah manapun (override).
+  const allowed = acting.role === "SYSADMIN" || (step.approverId ? acting.id === step.approverId : step.role === acting.role);
   if (!allowed) {
     return { ok: false, error: "Bukan giliran Anda untuk memutuskan langkah ini." };
   }

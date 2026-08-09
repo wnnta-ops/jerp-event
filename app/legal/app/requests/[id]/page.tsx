@@ -27,7 +27,7 @@ export default async function RequestDetailPage({ params }: { params: { id: stri
     : null;
 
   // Visibility: approvers (Legal + leadership) always; requester only once released (approved).
-  const APPROVER_ROLES = ["LEGAL_PIC", "HEAD_OF_LEGAL", "GENERAL_MANAGER", "DIRECTOR"];
+  const APPROVER_ROLES = ["SYSADMIN", "LEGAL_PIC", "HEAD_OF_LEGAL", "GENERAL_MANAGER", "DIRECTOR"];
   const isApprover = acting ? APPROVER_ROLES.includes(acting.role) : false;
   const isRequesterReleased = acting?.id === req.requesterId && req.status === "approved";
   const canSeeDoc = !!req.fulfilledFileUrl && (isApprover || isRequesterReleased);

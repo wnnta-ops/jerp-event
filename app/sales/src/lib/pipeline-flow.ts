@@ -19,7 +19,7 @@ export function allowedTargets(role: Role, current: Stage): Stage[] {
   const targets = TRANSITIONS[current];
   return targets.filter((t) => {
     const ti = STAGE_INDEX[t];
-    if (role === "MANAGEMENT") return true;
+    if (role === "SYSADMIN" || role === "MANAGEMENT") return true; // IT/manajemen: penuh
     // Sales own moves that land at or before SPR (idx <= 4).
     if (role === "SALES") return ti <= SALES_MAX_INDEX;
     // Collection own moves that land after SPR.
