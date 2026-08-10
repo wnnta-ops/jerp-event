@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { StatusBadge, TypeBadge, Avatar } from "./ui";
 import { NewRequestModal } from "./new-request-modal";
 import { formatDateID, keyDate } from "@/lib/format";
+import { withBase } from "@/lib/base-path";
 import { deleteDocument } from "@/app/documents/actions";
 import {
   ACCESS_LEVEL_LABELS,
@@ -50,9 +51,9 @@ function FilePreview({ url, mimeType }: { url: string; mimeType: string | null }
     >
       {isImage ? (
         // eslint-disable-next-line @next/next/no-img-element
-        <img src={url} alt="" className="h-full w-full object-contain" />
+        <img src={withBase(url)} alt="" className="h-full w-full object-contain" />
       ) : (
-        <iframe src={url} title="preview" className="h-full w-full" style={{ border: "none" }} />
+        <iframe src={withBase(url)} title="preview" className="h-full w-full" style={{ border: "none" }} />
       )}
     </div>
   );
@@ -64,7 +65,7 @@ function renderDescription(text: string) {
   return tokens.map((tok, i) => {
     if (/^https?:\/\/\S+$/.test(tok) || /^\/(uploads|documents)\/\S+$/.test(tok)) {
       return (
-        <a key={i} href={tok} target="_blank" rel="noreferrer" style={{ color: "var(--color-text-info)", textDecoration: "underline", wordBreak: "break-all" }}>
+        <a key={i} href={withBase(tok)} target="_blank" rel="noreferrer" style={{ color: "var(--color-text-info)", textDecoration: "underline", wordBreak: "break-all" }}>
           {tok}
         </a>
       );
@@ -303,7 +304,7 @@ export function DocumentDrawer({
                     {doc.files.map((f, i) => (
                       <a
                         key={i}
-                        href={f.url}
+                        href={withBase(f.url)}
                         target="_blank"
                         rel="noreferrer"
                         className="flex items-center gap-2 rounded-md px-2.5 py-2 text-[12px]"

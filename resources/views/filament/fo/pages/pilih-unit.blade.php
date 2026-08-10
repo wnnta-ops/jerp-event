@@ -305,6 +305,13 @@
                         if (v === 'scan') { this.scanLocked = false; window.__puLastScan = null; this.startScanner(); } else this.stopScanner();
                         if (v === 'choosing') this.startTimer(); else this.stopTimer();
                         this.refreshPolygonStyles();
+                        // Ganti fase = round-trip Livewire yang mem-MORPH DOM. Sesudah morph,
+                        // pane gambar & pane koordinat/SVG Leaflet kadang lepas sinkron →
+                        // saat itu zoom seolah hanya menggeser gambar, koordinat diam
+                        // (bug "waktu timer jalan"). Paksa re-sinkron penuh: recalc ukuran
+                        // lalu 'viewreset' → SEMUA layer (imageOverlay + renderer SVG)
+                        // reposisi ulang dari state peta terkini, jadi kembali sejajar.
+                        this.$nextTick(() => this.resyncMap());
                     });
 
                     // Error/timeout kini tampil sebagai notifikasi Filament (toast),
@@ -471,6 +478,14 @@
                     }).addTo(this.map);
                     marker._stampEl = stamp;
                     this.soldMarkers[unit.id] = marker;
+                    this.updateSoldScale();
+                },
+
+                /** Paksa Leaflet menyejajarkan ulang gambar & koordinat (dipakai sesudah morph fase). */
+                resyncMap() {
+                    if (!this.map) return;
+                    this.map.invalidateSize({ animate: false, pan: false });
+                    this.map.fire('viewreset'); // reposisi SEMUA layer dari state peta kini
                     this.updateSoldScale();
                 },
 

@@ -43,19 +43,23 @@ class ReportXenditController
         $th = 'style="background:#1d70c9;color:#fff"';
         $h .= '<table border="1"><tr>'
             .'<th '.$th.'>No.</th><th '.$th.'>Tgl Daftar</th><th '.$th.'>No NUP</th><th '.$th.'>Customer</th>'
-            .'<th '.$th.'>Event</th><th '.$th.'>Ref Xendit</th><th '.$th.'>Nilai UTJ</th><th '.$th.'>Status</th>'
-            .'<th '.$th.'>Tgl Bayar</th><th '.$th.'>Pencocokan</th>'
+            .'<th '.$th.'>Event</th><th '.$th.'>Ref Xendit</th><th '.$th.'>Nilai UTJ</th><th '.$th.'>Transfer Xendit</th>'
+            .'<th '.$th.'>Selisih</th><th '.$th.'>Status</th><th '.$th.'>Tgl Bayar</th><th '.$th.'>Pencocokan</th>'
             .'</tr>';
 
+        $reconLabel = [
+            'SIMULASI' => 'SIMULASI', 'SESUAI' => 'SESUAI (KLOP)', 'SELISIH' => 'SELISIH',
+            'PERLU SINKRON' => 'PERLU SINKRON', 'TIDAK DIBAYAR' => 'TIDAK DIBAYAR', 'MENUNGGU' => 'MENUNGGU',
+        ];
         $totalLunas = 0.0;
         foreach ($rows as $i => $r) {
-            $fake = str_starts_with((string) $r->xendit_invoice_id, 'fake_');
             $paid = $r->isUtjPaid();
             if ($paid) {
                 $totalLunas += (float) $r->utj_amount;
             }
             $status = $paid ? 'LUNAS' : ($r->xendit_status ?: 'PENDING');
-            $cocok = $fake ? 'SIMULASI' : ($paid ? 'KLOP' : ($r->xendit_status === 'EXPIRED' ? 'TIDAK DIBAYAR' : 'MENUNGGU'));
+            $recon = $r->reconStatus();
+            $selisih = $r->xenditSelisih();
 
             $h .= '<tr>'
                 .'<td>'.($i + 1).'</td>'
@@ -65,14 +69,16 @@ class ReportXenditController
                 .'<td>'.$e($r->event?->name ?: '-').'</td>'
                 .'<td>'.$e($r->xendit_external_id).'</td>'
                 .'<td style="mso-number-format:\'#,##0\'">'.$n($r->utj_amount).'</td>'
+                .'<td style="mso-number-format:\'#,##0\'">'.($r->xendit_paid_amount !== null ? $n($r->xendit_paid_amount) : '-').'</td>'
+                .'<td style="mso-number-format:\'#,##0\'">'.($selisih === null ? '-' : $n($selisih)).'</td>'
                 .'<td>'.$e($status).'</td>'
                 .'<td>'.$e($r->xendit_paid_at?->format('d/m/Y H:i') ?: '-').'</td>'
-                .'<td>'.$e($cocok).'</td>'
+                .'<td>'.$e($reconLabel[$recon] ?? $recon).'</td>'
                 .'</tr>';
         }
 
         $h .= '<tr style="font-weight:bold;background:#e2e8f0"><td colspan="6">TOTAL NOMINAL LUNAS</td>'
-            .'<td>'.$n($totalLunas).'</td><td colspan="3">'.count($rows).' invoice</td></tr>'
+            .'<td>'.$n($totalLunas).'</td><td colspan="5">'.count($rows).' invoice</td></tr>'
             .'</table>';
 
         $file = 'Report-Xendit-'.(($v['from'] ?? null) ?: 'awal').'-sd-'.(($v['to'] ?? null) ?: 'sekarang').'.xls';
