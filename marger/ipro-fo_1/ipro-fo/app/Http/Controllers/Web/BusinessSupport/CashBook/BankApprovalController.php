@@ -170,15 +170,34 @@ class BankApprovalController extends Controller
     {
         return match ($mode) {
             'piutang' => 'sudah Booked Revenue → kredit Piutang Usaha',
-            'deduct'  => 'potongan DAJAM Pajak jalur BSN → Dr Uang Muka / Cr Bank',
+            'deduct'  => 'retensi DAJAM ditahan (uang keluar) → Dr Uang Muka / Cr Bank',
             'manual'  => 'kredit tunggal manual',
             default   => 'belum Booked Revenue → kredit Uang Muka + PPN',
         };
     }
 
-    /** Mode kredit default untuk sebuah baris approval. */
-    private function defaultCreditMode(bool $booked, ?string $scheme, bool $isDajamPajak): string
+    /**
+     * Mode kredit default untuk sebuah baris approval.
+     *
+     * BARIS RETENSI DAJAM (penahanan) SELALU 'deduct'. Retensi berarti uang KELUAR dari
+     * rekening kita dan ditahan sebagai uang muka pelanggan, jadi jurnalnya kebalikan
+     * pencairan: Dr Uang Muka Penjualan / Cr Bank sebesar NILAI PENUH — tanpa pecahan PPN.
+     * PPN baru diakui saat porsinya DILEPAS (lihat baris kind='release'), bukan saat ditahan;
+     * memecah PPN di sini membuat PPN diakui atas uang yang belum jadi hak perusahaan.
+     *
+     * Sebelumnya 'deduct' hanya dipakai bila kategorinya kebetulan bernama "DAJAM … PAJAK"
+     * pada jalur BSN — kategori seperti "TANAH MATANG 50%" lolos ke 'split' sehingga
+     * penahanan tercatat sebagai uang MASUK. Itulah jurnal keliru yang dilaporkan.
+     */
+    private function defaultCreditMode(bool $booked, ?string $scheme, bool $isDajamPajak, string $kind = ''): string
     {
+        if ($kind === 'retensi') {
+            return 'deduct';
+        }
+        // Porsi retensi yang DILEPAS = uang masuk kembali → jurnal pencairan biasa.
+        if ($kind === 'release') {
+            return $booked ? 'piutang' : 'split';
+        }
         if ($booked) {
             return 'piutang';
         }
@@ -215,14 +234,15 @@ class BankApprovalController extends Controller
         if ($mode === 'piutang' && ! $booked) {
             return ['error' => 'Unit ini BELUM Booked Revenue: kredit harus dipecah Uang Muka Penjualan + PPN Keluaran (11/111), bukan Piutang Usaha.'];
         }
-        if ($mode === 'deduct' && $booked) {
-            return ['error' => 'Potongan DAJAM Pajak (jalur BSN) hanya berlaku SEBELUM Booked Revenue.'];
-        }
-
-        // DAJAM PAJAK jalur BSN — jurnal KEBALIKAN: Dr Uang Muka Penjualan / Cr Bank.
+        // RETENSI / POTONGAN DAJAM — jurnal KEBALIKAN: Dr Uang Muka Penjualan / Cr Bank,
+        // sebesar NILAI PENUH tanpa pecahan PPN (uang keluar & ditahan).
+        //
+        // Larangan "hanya sebelum Booked Revenue" DICABUT: penahanan DAJAM tetap uang keluar
+        // walau pendapatannya sudah diakui, jadi memaksanya jadi Dr Bank justru membalik arah
+        // kas yang sebenarnya.
         if ($mode === 'deduct') {
             if ($umId <= 0) {
-                return ['error' => 'Pilih akun Uang Muka Penjualan untuk potongan DAJAM Pajak.'];
+                return ['error' => 'Pilih akun Uang Muka Penjualan untuk retensi/potongan DAJAM.'];
             }
             if ($umId === $bankId) {
                 return ['error' => 'Akun Uang Muka Penjualan tidak boleh sama dengan akun Bank.'];
@@ -230,8 +250,8 @@ class BankApprovalController extends Controller
 
             return [
                 'lines' => [
-                    ['account_id' => $umId,   'debit' => $amount, 'credit' => 0,       'description' => 'Potongan DAJAM Pajak — '.$desc],
-                    ['account_id' => $bankId, 'debit' => 0,       'credit' => $amount, 'description' => 'Potongan DAJAM Pajak — '.$desc],
+                    ['account_id' => $umId,   'debit' => $amount, 'credit' => 0,       'description' => 'Retensi DAJAM ditahan — '.$desc],
+                    ['account_id' => $bankId, 'debit' => 0,       'credit' => $amount, 'description' => 'Retensi DAJAM ditahan — '.$desc],
                 ],
                 'mode' => $mode, 'dpp' => 0.0, 'ppn' => 0.0, 'faktur' => false,
             ];
@@ -548,7 +568,9 @@ class BankApprovalController extends Controller
                 'br_number'                => $br?->br_number,
                 'br_booking_date'          => $br?->booking_date?->toDateString(),
                 'booked'                   => $booked,
-                'default_credit_mode'      => $this->defaultCreditMode($booked, $scheme, $dajamPajak),
+                // Penahanan DAJAM = uang KELUAR → ditandai merah di layar.
+                'is_retensi_dajam'         => true,
+                'default_credit_mode'      => $this->defaultCreditMode($booked, $scheme, $dajamPajak, 'retensi'),
                 'default_piutang_account_id' => $piutangAcc?->id,
                 'default_piutang_account'    => $piutangAcc ? $piutangAcc->code.' - '.$piutangAcc->name : null,
             ];
@@ -646,7 +668,8 @@ class BankApprovalController extends Controller
                 'br_number'                => $br?->br_number,
                 'br_booking_date'          => $br?->booking_date?->toDateString(),
                 'booked'                   => $booked,
-                'default_credit_mode'      => $this->defaultCreditMode($booked, $scheme, $dajamPajak),
+                'is_retensi_dajam'         => false,
+                'default_credit_mode'      => $this->defaultCreditMode($booked, $scheme, $dajamPajak, 'pencairan'),
                 'default_piutang_account_id' => $piutangAcc?->id,
                 'default_piutang_account'    => $piutangAcc ? $piutangAcc->code.' - '.$piutangAcc->name : null,
             ];

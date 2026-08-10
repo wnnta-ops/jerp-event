@@ -27,6 +27,8 @@ type Row = {
     default_ppn: number; default_uang_muka: number;
     // Booked Revenue & jalur pencairan — penentu bentuk jurnal (lihat "Aturan Jurnal" di atas tabel).
     scheme: 'bsn' | 'non_bsn' | null; is_dajam_pajak: boolean;
+    /** Baris penahanan retensi DAJAM — uang KELUAR, ditandai merah. */
+    is_retensi_dajam?: boolean;
     br_number: string | null; br_booking_date: string | null; booked: boolean;
     default_credit_mode: CreditMode;
     default_piutang_account_id: number | null; default_piutang_account: string | null;
@@ -89,12 +91,12 @@ function bookedOn(r: Row, date: string): boolean {
 function isBooked(r: Row) { return bookedOn(r, forms[r.row_key]?.journal_date ?? ''); }
 
 const MODE_LABEL: Record<CreditMode, string> = {
-    split: 'Uang Muka + PPN', piutang: 'Piutang Usaha', deduct: 'Potongan DAJAM Pajak', manual: 'Manual',
+    split: 'Uang Muka + PPN', piutang: 'Piutang Usaha', deduct: 'Retensi DAJAM (uang keluar)', manual: 'Manual',
 };
 const MODE_FORMULA: Record<CreditMode, string> = {
     split: 'Dr Bank → Cr Uang Muka Penjualan + Cr PPN Keluaran (11/111)',
     piutang: 'Dr Bank → Cr Piutang Usaha (nilai penuh, PPN sudah diakui saat Booked)',
-    deduct: 'Dr Uang Muka Penjualan → Cr Bank (dana ditahan, jurnal dibalik)',
+    deduct: 'Dr Uang Muka Penjualan → Cr Bank (nilai penuh, tanpa PPN — uang keluar & ditahan)',
     manual: 'Dr Bank → Cr akun pilihan (nilai penuh)',
 };
 const MODE_TONE: Record<CreditMode, string> = {
@@ -108,12 +110,16 @@ const MODE_TONE: Record<CreditMode, string> = {
 // Potongan (deduct) ditawarkan untuk jalur BSN; juga untuk baris DAJAM Pajak lama yang jalurnya
 // belum sempat direkam (disbursement_scheme kosong) agar tetap bisa dijurnal dengan benar.
 function allowedModes(r: Row): CreditMode[] {
+    // PENAHANAN RETENSI DAJAM = uang KELUAR → hanya 'deduct' (Dr Uang Muka / Cr Bank),
+    // nilai penuh tanpa pecahan PPN. Mode lain akan membalik arah kasnya.
+    if (r.is_retensi_dajam) return ['deduct'];
     if (isBooked(r)) return ['piutang', 'manual'];
     const canDeduct = r.scheme === 'bsn' || (r.scheme === null && r.is_dajam_pajak);
     return canDeduct ? ['split', 'deduct', 'manual'] : ['split', 'manual'];
 }
 // Mode efektif: pilihan operator bila masih sah, selain itu kembali ke default aturan.
 function modeOf(r: Row): CreditMode {
+    if (r.is_retensi_dajam) return 'deduct';
     const f = forms[r.row_key];
     if (f && allowedModes(r).includes(f.credit_mode)) return f.credit_mode;
     if (isBooked(r)) return 'piutang';
@@ -391,14 +397,20 @@ const hSelCls = 'h-7 w-52 rounded border border-neutral-300 bg-white px-2 text-x
                 </thead>
                 <tbody class="divide-y divide-neutral-200 dark:divide-neutral-800 align-top">
                     <tr v-if="!filtered.length"><td colspan="7" class="px-3 py-10"><EmptyState title="Tidak ada baris sesuai filter" description="Ubah kriteria filter di atas." /></td></tr>
-                    <tr v-for="r in filtered" :key="r.row_key">
-                        <td class="px-3 py-3">
+                    <!-- Baris penahanan retensi DAJAM diberi rona & garis kiri MERAH: uang keluar. -->
+                    <tr v-for="r in filtered" :key="r.row_key"
+                        :class="r.is_retensi_dajam ? 'bg-danger-50/40 dark:bg-danger-950/20' : ''">
+                        <td class="px-3 py-3" :class="r.is_retensi_dajam ? 'border-l-4 border-danger-500' : ''">
                             <div class="font-semibold">{{ r.customer ?? '—' }}</div>
                             <div class="text-xs font-medium text-neutral-600 dark:text-neutral-300">{{ r.unit_info ?? r.unit_code ?? '—' }}</div>
                             <div class="text-[11px] text-neutral-400">{{ r.kpr_number ?? '—' }}<span v-if="r.note"> · {{ r.note }}</span><span v-if="r.released_at"> · dilepas {{ fmtDate(r.released_at) }}</span></div>
                         </td>
                         <td class="px-3 py-3">
-                            <Badge size="sm" :variant="r.kind === 'pencairan' ? 'info' : 'primary'">{{ r.kind === 'pencairan' ? 'Pencairan' : 'Retensi' }}</Badge>
+                            <Badge size="sm" :variant="r.kind === 'pencairan' ? 'info' : 'danger'">{{ r.kind === 'pencairan' ? 'Pencairan' : 'Retensi DAJAM' }}</Badge>
+                            <div v-if="r.is_retensi_dajam" class="mt-1 inline-flex items-center gap-1 rounded-md bg-danger-100 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-danger-700 dark:bg-danger-950/60 dark:text-danger-300"
+                                title="Uang KELUAR dari rekening & ditahan sebagai uang muka pelanggan">
+                                ↓ uang keluar
+                            </div>
                             <div v-if="r.kind === 'retensi'" class="mt-1"><Badge size="sm" :variant="r.status === 'released' ? 'success' : 'warning'">{{ r.status }}</Badge></div>
                             <!-- Status akad dari Proses KPR. Baris "Batal" tidak muncul di sini —
                                  dipindah ke modul Rincian Batal Akad (kecuali yang telanjur dijurnal). -->
@@ -425,7 +437,8 @@ const hSelCls = 'h-7 w-52 rounded border border-neutral-300 bg-white px-2 text-x
                             </div>
                             <div v-if="r.br_number" class="mt-1 text-[10.5px] text-neutral-400">{{ r.br_number }} · {{ fmtDate(r.br_booking_date) }}</div>
                         </td>
-                        <td class="px-3 py-3 text-right font-mono font-bold">{{ fmtRp(r.amount) }}</td>
+                        <!-- Nominal retensi DAJAM merah + tanda minus: arah kasnya keluar. -->
+                        <td class="px-3 py-3 text-right font-mono font-bold" :class="r.is_retensi_dajam ? 'text-danger-600 dark:text-danger-400' : ''">{{ r.is_retensi_dajam ? '(' + fmtRp(r.amount) + ')' : fmtRp(r.amount) }}</td>
                         <!-- Ditolak -->
                         <template v-if="r.rejected">
                             <td class="px-3 py-3 text-xs">{{ fmtDate(r.rejected_at) }}</td>

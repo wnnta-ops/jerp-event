@@ -160,8 +160,24 @@ const isTaxDajam = computed(() => {
 // Pilihan: default "Tanpa Retensi DAJAM" → input nominal & keterangan dinonaktifkan + dinolkan.
 const hasDajam = ref(false);
 watch(hasDajam, (on) => { if (!on) disbForm.dajam_lines = [{ retention_amount: 0, retention_note: '' }]; });
+
+/**
+ * GERBANG UTAMA: Retensi DAJAM hanya ada pada jalur BSN.
+ * Selama jalur belum dipilih ATAU dipilih SELAIN BSN, pilihan "Tanpa/Terdapat Retensi DAJAM"
+ * dimatikan dan tidak bisa diteruskan ke isian DAJAM berikutnya.
+ */
+const dajamAllowed = computed(() => disbForm.disbursement_scheme === 'bsn');
+// Pindah ke SELAIN BSN (atau kembali kosong) → paksa balik ke "Tanpa Retensi DAJAM" & bersihkan
+// isiannya, supaya nominal yang terlanjur diketik tidak ikut terkirim diam-diam.
+watch(dajamAllowed, (boleh) => {
+    if (! boleh) {
+        hasDajam.value = false;
+        disbForm.dajam_lines = [{ retention_amount: 0, retention_note: '' }];
+    }
+});
 // #167: saat pencairan sudah 100% (retensi-only), aktifkan input Retensi/DAJAM otomatis — itu satu-satunya yang bisa dicatat.
-watch(() => canAddRetention.value && !canDisburse.value, (retentionOnly) => { if (retentionOnly) hasDajam.value = true; }, { immediate: true });
+// Hanya berlaku pada jalur BSN; di luar itu retensi memang tidak tersedia.
+watch(() => canAddRetention.value && !canDisburse.value && dajamAllowed.value, (retentionOnly) => { if (retentionOnly) hasDajam.value = true; }, { immediate: true });
 const totalRetention = computed(() => hasDajam.value ? disbForm.dajam_lines.reduce((s: number, l: any) => s + (Number(l.retention_amount) || 0), 0) : 0);
 function addDajamLine() { if (hasDajam.value) disbForm.dajam_lines.push({ retention_amount: 0, retention_note: '' }); }
 function removeDajamLine(i: number) { if (disbForm.dajam_lines.length > 1) disbForm.dajam_lines.splice(i, 1); }
@@ -1252,22 +1268,38 @@ const historyNodes = computed<HistoryNode[]>(() => {
                     </div>
                     <!-- #91/#100/#121: retensi/DAJAM — pilihan Tanpa / Terdapat (default Tanpa → input dinonaktifkan) -->
                     <div class="space-y-2">
-                        <label class="block text-sm font-medium">Retensi / Pengurangan DAJAM</label>
-                        <div class="inline-flex rounded-lg border border-neutral-300 p-0.5 dark:border-neutral-700">
-                            <button type="button" @click="hasDajam = false" class="rounded-md px-3 py-1 text-xs font-medium transition" :class="!hasDajam ? 'bg-primary-600 text-white' : 'text-neutral-600 hover:bg-neutral-100 dark:text-neutral-300 dark:hover:bg-neutral-800'">Tanpa Retensi DAJAM</button>
-                            <button type="button" @click="hasDajam = true" class="rounded-md px-3 py-1 text-xs font-medium transition" :class="hasDajam ? 'bg-primary-600 text-white' : 'text-neutral-600 hover:bg-neutral-100 dark:text-neutral-300 dark:hover:bg-neutral-800'">Terdapat Retensi DAJAM</button>
+                        <label class="block text-sm font-medium">
+                            Retensi / Pengurangan DAJAM
+                            <span class="ml-1 text-[11px] font-normal text-neutral-400">— hanya untuk jalur BSN</span>
+                        </label>
+                        <!-- Gerbang: tombolnya mati sampai Jalur Pencairan dipilih BSN. -->
+                        <div class="inline-flex rounded-lg border p-0.5 transition-colors duration-200"
+                            :class="dajamAllowed ? 'border-neutral-300 dark:border-neutral-700' : 'border-neutral-200 bg-neutral-50 dark:border-neutral-800 dark:bg-neutral-800/40'">
+                            <button type="button" :disabled="!dajamAllowed" @click="hasDajam = false"
+                                class="rounded-md px-3 py-1 text-xs font-medium transition disabled:cursor-not-allowed disabled:opacity-40"
+                                :class="!hasDajam && dajamAllowed ? 'bg-primary-600 text-white' : 'text-neutral-600 hover:bg-neutral-100 dark:text-neutral-300 dark:hover:bg-neutral-800'">Tanpa Retensi DAJAM</button>
+                            <button type="button" :disabled="!dajamAllowed" @click="hasDajam = true"
+                                class="rounded-md px-3 py-1 text-xs font-medium transition disabled:cursor-not-allowed disabled:opacity-40"
+                                :class="hasDajam && dajamAllowed ? 'bg-primary-600 text-white' : 'text-neutral-600 hover:bg-neutral-100 dark:text-neutral-300 dark:hover:bg-neutral-800'">Terdapat Retensi DAJAM</button>
                         </div>
-                        <div class="space-y-3" :class="{ 'opacity-50': !hasDajam }">
+                        <p v-if="!dajamAllowed" class="flex items-start gap-1.5 rounded-lg bg-neutral-50 px-3 py-2 text-[11px] text-neutral-500 ring-1 ring-neutral-200 dark:bg-neutral-800/50 dark:ring-neutral-700">
+                            <TriangleAlert class="mt-px h-3.5 w-3.5 shrink-0 text-neutral-400" />
+                            <span>
+                                <template v-if="!disbForm.disbursement_scheme">Pilih <b>Jalur Pencairan</b> di atas terlebih dahulu.</template>
+                                <template v-else>Jalur <b>SELAIN BSN</b> tidak mengenal Retensi DAJAM — pilihan ini dimatikan dan isiannya tidak dikirim.</template>
+                            </span>
+                        </p>
+                        <div class="space-y-3" :class="{ 'opacity-50': !hasDajam || !dajamAllowed }">
                             <div v-for="(dl, di) in disbForm.dajam_lines" :key="di" class="space-y-2 rounded-lg border border-neutral-200 p-3 dark:border-neutral-700">
                                 <div class="flex items-center justify-between">
                                     <label class="block text-sm font-medium">Retensi / Pengurangan DAJAM (Rp) <span v-if="hasDajam" class="text-danger-500">*</span></label>
                                     <button v-if="hasDajam && disbForm.dajam_lines.length > 1" type="button" @click="removeDajamLine(di)" class="rounded border border-danger-300 px-2 py-0.5 text-xs text-danger-600 hover:bg-danger-50 dark:border-danger-700">Hapus</button>
                                 </div>
-                                <MoneyInput v-model="dl.retention_amount" :disabled="!hasDajam" />
+                                <MoneyInput v-model="dl.retention_amount" :disabled="!hasDajam || !dajamAllowed" />
                                 <p v-if="hasDajam && !(Number(dl.retention_amount) > 0)" class="text-xs text-danger-600">Nominal wajib diisi (lebih dari 0).</p>
                                 <div>
                                     <label class="mb-1 block text-sm font-medium">Keterangan Retensi / DAJAM <span v-if="hasDajam" class="text-danger-500">*</span></label>
-                                    <Input v-model="dl.retention_note" :disabled="!hasDajam" placeholder="mis. potongan biaya provisi / DAJAM apa" />
+                                    <Input v-model="dl.retention_note" :disabled="!hasDajam || !dajamAllowed" placeholder="mis. potongan biaya provisi / DAJAM apa" />
                                     <p v-if="hasDajam && !String(dl.retention_note ?? '').trim()" class="mt-1 text-xs text-danger-600">Keterangan wajib diisi.</p>
                                 </div>
                             </div>
