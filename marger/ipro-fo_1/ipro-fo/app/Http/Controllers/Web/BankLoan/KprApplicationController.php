@@ -828,7 +828,12 @@ class KprApplicationController extends Controller
             .'.right{text-align:right;margin-bottom:6px}.hdr{margin:8px 0}.to{margin:12px 0}'
             .'.kv{display:flex;margin:1px 0}.kv .k{width:150px;flex:0 0 150px}.kv .c{width:12px;flex:0 0 12px}.kv .v{flex:1}'
             .'p{margin:9px 0;text-align:justify}'
-            .'table.pajak{border-collapse:collapse;margin:10px 0;font-size:11px;width:100%}table.pajak th,table.pajak td{border:1px solid #111;padding:4px 6px;text-align:center}'
+            .'table.pajak,table.tbl{border-collapse:collapse;margin:10px 0;font-size:11px;width:100%}'
+            .'table.pajak th,table.pajak td,table.tbl th,table.tbl td{border:1px solid #111;padding:4px 6px;text-align:center}'
+            // Kolom nominal pada tabel termin pencairan rata kanan; butuh selektor lebih
+            // spesifik karena aturan di atas memaksa rata tengah untuk seluruh sel.
+            .'table.pajak td.r,table.tbl td.r{text-align:right}'
+            .'.title{text-align:center;font-weight:bold;font-size:15px;text-decoration:underline;margin:14px 0}'
             .'.sign{margin-top:34px}.sign .nm{font-weight:bold;text-decoration:underline;margin-top:62px}'
             .'.print{text-align:right;margin-bottom:12px}button{padding:8px 16px;font-size:13px;cursor:pointer}@media print{.print{display:none}}';
 
@@ -922,6 +927,11 @@ class KprApplicationController extends Controller
             'plafon'               => 'Plafon KPR (Rp. 000.000,-)',
             'plafon_terbilang'     => 'Plafon KPR dalam huruf',
             'setengah_plafon'      => 'Separuh plafon KPR — untuk surat pencairan 50%/50%',
+            'plafon_10'            => '10% plafon KPR — termin pencairan',
+            'plafon_20'            => '20% plafon KPR — termin pencairan',
+            'plafon_30'            => '30% plafon KPR — termin pencairan',
+            'plafon_40'            => '40% plafon KPR — termin pencairan',
+            'plafon_90'            => '90% plafon KPR — porsi giro operasional',
             'uang_muka'            => 'Uang muka (Rp. 000.000,-)',
             'uang_muka_terbilang'  => 'Uang muka dalam huruf',
             'harga_jual'           => 'Harga jual nett unit',
@@ -1069,6 +1079,14 @@ HTML;
             'plafon'              => $e($rp($v['kprAmt'])),
             'plafon_terbilang'    => $e($terb($v['kprAmt'])),
             'setengah_plafon'     => $e($rp(round($v['kprAmt'] / 2, 2))),
+            // Termin pencairan: tiap bank punya pembagian sendiri (BNI 30/20/40/10 lalu
+            // transfer 90/10; Mandiri 50/50). Disediakan sebagai placeholder siap pakai
+            // karena format SI tidak bisa berhitung sendiri.
+            'plafon_10'           => $e($rp(round($v['kprAmt'] * 0.10, 2))),
+            'plafon_20'           => $e($rp(round($v['kprAmt'] * 0.20, 2))),
+            'plafon_30'           => $e($rp(round($v['kprAmt'] * 0.30, 2))),
+            'plafon_40'           => $e($rp(round($v['kprAmt'] * 0.40, 2))),
+            'plafon_90'           => $e($rp(round($v['kprAmt'] * 0.90, 2))),
             'uang_muka'           => $e($rp($v['umAmt'])),
             'uang_muka_terbilang' => $e($terb($v['umAmt'])),
             'harga_jual'          => $e($rp($v['hargaJual'])),
