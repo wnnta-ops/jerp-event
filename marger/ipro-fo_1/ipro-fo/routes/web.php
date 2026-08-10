@@ -853,6 +853,7 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
 
     // ── ASET TETAP (Fixed Asset) ──
     Route::get('/business-support/fixed-asset',                    [BsFaController::class, 'index'])->name('bs.fa.index');
+    Route::get('/business-support/fixed-asset/export',            [BsFaController::class, 'indexExport'])->name('bs.fa.export');
     Route::get('/business-support/fixed-asset/create',            [BsFaController::class, 'create'])->name('bs.fa.create');
     Route::post('/business-support/fixed-asset',                   [BsFaController::class, 'store'])->name('bs.fa.store');
     Route::get('/business-support/fixed-asset/run',               [BsFaController::class, 'run'])->name('bs.fa.run');

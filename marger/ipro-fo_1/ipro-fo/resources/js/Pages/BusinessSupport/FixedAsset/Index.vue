@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { router, Link } from '@inertiajs/vue3';
 import { reactive, computed } from 'vue';
-import { Plus, ArrowLeft, Building, Play, Boxes, TrendingDown, Tag, Trash2, Layers } from 'lucide-vue-next';
+import { Plus, ArrowLeft, Building, Play, Boxes, TrendingDown, Tag, Trash2, Layers, FileSpreadsheet } from 'lucide-vue-next';
 import Button from '@/Components/UI/Button.vue';
 import Badge from '@/Components/UI/Badge.vue';
 import EmptyState from '@/Components/UI/EmptyState.vue';
@@ -40,7 +40,12 @@ const catTint: Record<string, string> = { bangunan: 'text-sky-600', kendaraan: '
     <div class="space-y-4">
         <div class="flex items-center justify-between">
             <h1 class="flex items-center gap-2 text-2xl font-bold"><Building class="h-6 w-6 text-primary-600" /> Aset Tetap <span class="text-base font-normal text-neutral-400">(Fixed Asset)</span></h1>
-            <div class="flex gap-2">
+            <div class="flex flex-wrap gap-2">
+                <!-- Unduhan memuat SELURUH aset & ringkasan per kategori, bukan hanya yang tersaring. -->
+                <a :href="route('bs.fa.export')" title="Unduh ringkasan per kategori + seluruh daftar aset ke Excel"
+                   class="inline-flex h-9 items-center gap-1.5 rounded-lg border border-emerald-300 bg-emerald-50 px-3 text-sm font-medium text-emerald-700 transition-colors duration-200 hover:bg-emerald-100 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300 dark:hover:bg-emerald-900/50">
+                    <FileSpreadsheet class="h-4 w-4" /> Download Excel
+                </a>
                 <Link :href="route('bs.fa.run')"><Button variant="secondary"><template #icon-left><Play class="h-4 w-4" /></template>Jalankan Penyusutan</Button></Link>
                 <Link :href="route('bs.fa.create')"><Button><template #icon-left><Plus class="h-4 w-4" /></template>Daftar Aset</Button></Link>
             </div>
