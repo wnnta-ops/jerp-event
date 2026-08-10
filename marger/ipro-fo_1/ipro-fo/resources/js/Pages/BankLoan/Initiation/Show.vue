@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { Link, router } from '@inertiajs/vue3';
 import { ref, reactive, computed, watch } from 'vue';
-import { ArrowLeft, ArrowRight, Check, Lock, ChevronRight, Download, User, Users, CalendarDays, MapPin, Megaphone, Wallet } from 'lucide-vue-next';
+import { ArrowLeft, ArrowRight, Check, Lock, Pencil, ChevronRight, Download, User, Users, CalendarDays, MapPin, Megaphone, Wallet } from 'lucide-vue-next';
 import Button from '@/Components/UI/Button.vue';
 import Input from '@/Components/UI/Input.vue';
 import Badge from '@/Components/UI/Badge.vue';
@@ -409,8 +409,21 @@ function markSprsDoc(key: 'ktp_pemohon' | 'npwp_pemohon' | 'ktp_pasangan' | 'npw
     const checked = (f.sprs as any)[key + '_received'];
     (f.sprs as any)[key + '_received_at'] = checked ? new Date().toISOString() : null;
 }
+/**
+ * Status pernikahan DIKUNCI setelah tahap SPRS disimpan ("Simpan & Lanjut → BI Checking"),
+ * karena angka ini menentukan jumlah dokumen wajib dan ikut tersimpan ke profil customer —
+ * berubah diam-diam sesudahnya membuat checklist yang sudah dicentang jadi tidak sesuai.
+ * Tombol "Edit" membuka kuncinya bila memang perlu diperbaiki.
+ */
+const maritalUnlocked = ref(false);
+const maritalLocked = computed(() => Boolean(a.value.stages?.sprs?.done) && ! maritalUnlocked.value);
+const maritalSavedLabel = computed<string>(() => ({
+    belum_menikah: 'Belum Menikah', sudah_menikah: 'Sudah Menikah',
+} as Record<string, string>)[a.value.stages?.sprs?.marital_status ?? ''] ?? '');
+
 // Status pernikahan menentukan jumlah dokumen wajib (belum: 2, sudah: 4). Pindah ke "belum" → bersihkan data pasangan.
 function setSprsMarital(status: 'belum_menikah' | 'sudah_menikah') {
+    if (maritalLocked.value) return;   // gerbang klien; server tetap penjaga terakhir
     f.sprs.marital_status = status;
     if (status === 'belum_menikah') {
         f.sprs.ktp_pasangan_received = false;
@@ -641,12 +654,32 @@ const analisaLabel: Record<string, string> = { layak: 'Layak', tidak_layak: 'Tid
                         <!-- Status pernikahan pemohon — WAJIB dipilih dulu; menentukan 2 vs 4 dokumen wajib -->
                         <div class="rounded-lg border border-neutral-200 p-4 dark:border-neutral-700 space-y-2">
                             <div class="flex flex-wrap items-center justify-between gap-2">
-                                <p class="text-sm font-semibold">Status Pernikahan Pemohon</p>
-                                <span v-if="custMaritalLabel" class="text-xs text-neutral-500">Data customer: <span class="font-medium text-neutral-700 dark:text-neutral-300">{{ custMaritalLabel }}</span></span>
+                                <p class="flex items-center gap-1.5 text-sm font-semibold">
+                                    Status Pernikahan Pemohon
+                                    <span v-if="maritalLocked" title="Terkunci setelah SPRS disimpan — klik Edit untuk mengubah"
+                                        class="inline-flex items-center gap-1 rounded-md bg-neutral-100 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-neutral-500 dark:bg-neutral-800 dark:text-neutral-400">
+                                        <Lock class="h-3 w-3" /> terkunci
+                                    </span>
+                                </p>
+                                <div class="flex flex-wrap items-center gap-2">
+                                    <span v-if="custMaritalLabel" class="text-xs text-neutral-500">Data customer: <span class="font-medium text-neutral-700 dark:text-neutral-300">{{ custMaritalLabel }}</span></span>
+                                    <button v-if="maritalLocked" type="button" @click="maritalUnlocked = true"
+                                        class="inline-flex items-center gap-1 rounded-lg border border-primary-300 px-2.5 py-1 text-xs font-semibold text-primary-700 transition-colors duration-200 hover:bg-primary-50 dark:border-primary-700 dark:text-primary-300 dark:hover:bg-primary-950/40">
+                                        <Pencil class="h-3 w-3" /> Edit
+                                    </button>
+                                    <button v-else-if="a.stages?.sprs?.done" type="button" @click="maritalUnlocked = false; f.sprs.marital_status = a.stages?.sprs?.marital_status ?? f.sprs.marital_status"
+                                        class="inline-flex items-center gap-1 rounded-lg border border-neutral-300 px-2.5 py-1 text-xs font-medium text-neutral-600 hover:bg-neutral-50 dark:border-neutral-700 dark:text-neutral-300">
+                                        Batal ubah
+                                    </button>
+                                </div>
                             </div>
-                            <div class="grid gap-2 sm:grid-cols-2">
-                                <button type="button" @click="setSprsMarital('belum_menikah')"
-                                    class="flex items-center gap-3 rounded-lg border p-3 text-left transition"
+                            <p v-if="maritalLocked" class="text-[11px] text-neutral-500">
+                                Tersimpan sebagai <b>{{ maritalSavedLabel || '—' }}</b> dan sudah ikut tercatat pada profil customer.
+                                Mengubahnya dapat mengubah jumlah dokumen wajib — klik <b>Edit</b> bila memang perlu diperbaiki.
+                            </p>
+                            <div class="grid gap-2 sm:grid-cols-2" :class="maritalLocked ? 'opacity-60' : ''">
+                                <button type="button" @click="setSprsMarital('belum_menikah')" :disabled="maritalLocked"
+                                    class="flex items-center gap-3 rounded-lg border p-3 text-left transition disabled:cursor-not-allowed"
                                     :class="f.sprs.marital_status === 'belum_menikah' ? 'border-primary-500 bg-primary-50 ring-1 ring-primary-500 dark:bg-primary-900/20' : 'border-neutral-200 hover:border-neutral-300 dark:border-neutral-700'">
                                     <span class="grid h-9 w-9 shrink-0 place-items-center rounded-full" :class="f.sprs.marital_status === 'belum_menikah' ? 'bg-primary-500 text-white' : 'bg-neutral-100 text-neutral-500 dark:bg-neutral-800'"><User class="h-5 w-5" /></span>
                                     <span class="min-w-0">
@@ -655,8 +688,8 @@ const analisaLabel: Record<string, string> = { layak: 'Layak', tidak_layak: 'Tid
                                     </span>
                                     <Check v-if="f.sprs.marital_status === 'belum_menikah'" class="ml-auto h-5 w-5 shrink-0 text-primary-600" />
                                 </button>
-                                <button type="button" @click="setSprsMarital('sudah_menikah')"
-                                    class="flex items-center gap-3 rounded-lg border p-3 text-left transition"
+                                <button type="button" @click="setSprsMarital('sudah_menikah')" :disabled="maritalLocked"
+                                    class="flex items-center gap-3 rounded-lg border p-3 text-left transition disabled:cursor-not-allowed"
                                     :class="f.sprs.marital_status === 'sudah_menikah' ? 'border-primary-500 bg-primary-50 ring-1 ring-primary-500 dark:bg-primary-900/20' : 'border-neutral-200 hover:border-neutral-300 dark:border-neutral-700'">
                                     <span class="grid h-9 w-9 shrink-0 place-items-center rounded-full" :class="f.sprs.marital_status === 'sudah_menikah' ? 'bg-primary-500 text-white' : 'bg-neutral-100 text-neutral-500 dark:bg-neutral-800'"><Users class="h-5 w-5" /></span>
                                     <span class="min-w-0">
