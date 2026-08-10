@@ -9,11 +9,13 @@ use App\Domain\BusinessSupport\Models\BsFixedAsset;
 use App\Domain\BusinessSupport\Services\FixedAssetService;
 use App\Exceptions\BusinessRuleException;
 use App\Http\Controllers\Controller;
+use App\Support\Export\SimpleXlsxWriter;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Inertia\Inertia;
 use Inertia\Response;
+use Symfony\Component\HttpFoundation\BinaryFileResponse;
 
 class FixedAssetController extends Controller
 {
@@ -25,6 +27,96 @@ class FixedAssetController extends Controller
     {
         abort_unless($request->user()?->canModule('bs'), 403);
 
+        return Inertia::render('BusinessSupport/FixedAsset/Index', $this->overviewData());
+    }
+
+    /**
+     * Unduh Excel Overview Aset Tetap — isinya SAMA PERSIS dengan yang tampil di layar
+     * karena keduanya memakai overviewData() yang sama; tidak ada perhitungan kedua yang
+     * bisa menyimpang diam-diam.
+     *
+     * Memakai SimpleXlsxWriter (xlsx sungguhan), bukan helper xls() lama di kelas ini yang
+     * sebenarnya HTML bernama .xls — Excel memunculkan peringatan "format & ekstensi tidak
+     * cocok" saat membukanya. Dua ekspor lama sengaja tidak ikut diubah di sini.
+     */
+    public function indexExport(Request $request): BinaryFileResponse
+    {
+        abort_unless($request->user()?->canModule('bs'), 403);
+
+        $d = $this->overviewData();
+        $kategori = $d['byCategory'];
+        $aset = $d['assets'];
+        $s = $d['summary'];
+
+        $kolom = ['No. Aset', 'Nama Aset', 'Kategori', 'Tgl Perolehan', 'Harga Perolehan',
+            'Akumulasi Penyusutan', 'Nilai Buku', 'Status', 'PIC', 'Lokasi'];
+
+        // Baris kepala daftar aset harus diketahui SEBELUM writer dibuat (freeze & autofilter
+        // dipasang di konstruktor), dan letaknya bergeser mengikuti banyaknya kategori:
+        //   1 judul · 2 meta · 3 kosong · 4 judul ringkasan · 5 kepala ringkasan
+        //   6..(5+N) baris kategori · (6+N) TOTAL · (7+N) kosong · (8+N) "DAFTAR ASET"
+        //   (9+N) kepala daftar aset  ← di sinilah freeze & autofilter dipasang
+        $barisKepala = 9 + count($kategori);
+
+        $writer = new SimpleXlsxWriter(
+            sheetName: 'Aset Tetap',
+            colWidths: [0 => 18, 1 => 38, 2 => 20, 3 => 14, 4 => 20, 5 => 20, 6 => 20, 7 => 14, 8 => 18, 9 => 22],
+            freezeRows: $barisKepala,
+            freezeCols: 2,
+            autoFilterRow: $barisKepala,
+        );
+
+        $writer->addTitle('ASET TETAP (FIXED ASSET)', count($kolom));
+        $writer->addMeta(
+            'Diunduh '.now()->translatedFormat('d F Y H:i').' · '.($request->user()?->name ?? '')
+            .' · '.$s['count'].' aset · Harga Perolehan Rp '.number_format($s['cost'], 2, ',', '.')
+            .' · Akumulasi Rp '.number_format($s['accum'], 2, ',', '.')
+            .' · Nilai Buku Rp '.number_format($s['book_value'], 2, ',', '.')
+            .' · Penyusutan '.$s['dep_year'].' Rp '.number_format($s['dep_this_year'], 2, ',', '.')
+            .' · Terjual '.$s['sold_count'].' · Dihapus '.$s['disposed_count'],
+            count($kolom),
+        );
+        $writer->addRow([]);
+
+        // ── Ringkasan per kategori (angkanya dari GL/Neraca Saldo, sama dengan layar) ──
+        $writer->addRow(['RINGKASAN PER KATEGORI — mengikuti Neraca Saldo (GL)']);
+        $writer->addHeader(['Kategori', 'Akun Perolehan', 'Akun Akumulasi', 'Jumlah Aset', 'Harga Perolehan', 'Akumulasi', 'Nilai Buku', 'Selisih Kartu (Perolehan)', 'Selisih Kartu (Akumulasi)']);
+        $numKat = [false, false, false, true, true, true, true, true, true];
+        foreach ($kategori as $k) {
+            $writer->addRow([
+                $k['label'], $k['asset_code'], $k['accum_code'], $k['count'],
+                $k['cost'], $k['accum'], $k['book'], $k['diff_cost'], $k['diff_accum'],
+            ], $numKat);
+        }
+        $writer->addRow(['TOTAL', null, null, $s['count'], $s['cost'], $s['accum'], $s['book_value'], null, null], $numKat);
+        $writer->addRow([]);
+
+        // ── Daftar aset ──
+        $writer->addRow(['DAFTAR ASET']);
+        $writer->addHeader($kolom);
+        $num = [false, false, false, false, true, true, true, false, false, false];
+        foreach ($aset as $a) {
+            $writer->addRow([
+                $a['asset_number'], $a['name'], $a['category_label'], $a['acquisition_date'],
+                $a['acquisition_cost'], $a['accumulated_depreciation'], $a['book_value'],
+                self::STATUSES[$a['status']] ?? $a['status'], $a['pic'], $a['location'],
+            ], $num);
+        }
+
+        $path = tempnam(sys_get_temp_dir(), 'aset').'.xlsx';
+        $writer->save($path);
+
+        return response()->download($path, 'Aset-Tetap-'.now()->format('Ymd-Hi').'.xlsx')->deleteFileAfterSend(true);
+    }
+
+    /**
+     * Inti Overview Aset Tetap. Dipakai bersama oleh tampilan layar dan unduhan Excel
+     * supaya angkanya tidak mungkin berbeda.
+     *
+     * @return array<string, mixed>
+     */
+    private function overviewData(): array
+    {
         $assets = BsFixedAsset::orderBy('category')->latest('acquisition_date')->latest('id')->get();
 
         $rows = $assets->map(fn ($a) => [
@@ -77,7 +169,7 @@ class FixedAssetController extends Controller
 
         $year = (int) now()->year;
 
-        return Inertia::render('BusinessSupport/FixedAsset/Index', [
+        return [
             'assets'     => $rows,
             'categories' => BsFixedAsset::CATEGORIES,
             'statuses'   => self::STATUSES,
@@ -94,7 +186,7 @@ class FixedAssetController extends Controller
                 'sold_proceeds' => (float) $assets->where('status', 'sold')->sum(fn ($a) => (float) $a->disposal_proceeds),
                 'disposed_count'=> $assets->where('status', 'disposed')->count(),
             ],
-        ]);
+        ];
     }
 
     /**
