@@ -126,9 +126,10 @@ class PilihUnitService
                 'registration' => $reg->refresh(),
                 'unit' => $unit->refresh(),
                 'reservasi' => $reservasi->refresh(),
-                // Format "Lokasi Blok Nomer" (mis. "JRK3 XVI 18") — jelas cluster +
-                // blok + nomer. Bagian kosong dilewati supaya tak ada spasi ganda.
-                'unit_label' => trim(implode(' ', array_filter([$unit->lokasi?->kode, $unit->blok, $unit->no_unit]))) ?: $unit->label,
+                // No. Unit kanonik saja (mis. "JRK3-003-XVIII-12") — sama dgn yang
+                // tampil di popup siteplan. JANGAN tempel kode lokasi di depan:
+                // no_unit sudah memuat kode cluster → jadi dobel ("JRK3 JRK3-...").
+                'unit_label' => $unit->kode_unit ?: $unit->label,
             ];
         });
 
