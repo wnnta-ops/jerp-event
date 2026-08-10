@@ -11,11 +11,15 @@ const LINKS = [
   { href: "/sheet", label: "Lembar Data", icon: "ti-table" },
 ];
 
-export function NavLinks() {
+// Menu khusus pengelola user — hanya tampil bila boleh (sinkron canManageUsers).
+const ADMIN_LINK = { href: "/users", label: "User", icon: "ti-users" };
+
+export function NavLinks({ canManageUsers = false }: { canManageUsers?: boolean }) {
   const pathname = usePathname();
+  const links = canManageUsers ? [...LINKS, ADMIN_LINK] : LINKS;
   return (
     <nav className="flex items-center gap-1">
-      {LINKS.map((l) => {
+      {links.map((l) => {
         const active = l.href === "/" ? pathname === "/" : pathname.startsWith(l.href);
         return (
           <Link

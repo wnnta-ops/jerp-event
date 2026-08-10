@@ -6,8 +6,18 @@ import { signOut } from "next-auth/react";
 import { useState } from "react";
 import type { Role } from "@prisma/client";
 import { ROLE_LABEL } from "@/lib/constants";
+import { canManageUsers } from "@/lib/user-access";
 
-const NAV = [
+type NavItem = { href: string; label: string; ic: string; tag?: string };
+type NavGroup = { group: string; items: NavItem[] };
+
+// Grup menu khusus pengelola user — hanya tampil bila boleh (canManageUsers).
+const ADMIN_GROUP: NavGroup = {
+  group: "Administrasi",
+  items: [{ href: "/users", label: "Manajemen User", ic: "👥" }],
+};
+
+const NAV: NavGroup[] = [
   {
     group: "Kerja Harian",
     items: [
@@ -44,6 +54,7 @@ const TITLES: Record<string, [string, string]> = {
   "/stock": ["Stock Unit", "Inventori rumah"],
   "/rotasi": ["Rotasi & Bendera", "Koordinator & agen"],
   "/collection": ["Collection", "Progress akad"],
+  "/users": ["Manajemen User", "Tambah/ubah user & hak akses"],
 };
 
 export function Shell({
@@ -58,6 +69,7 @@ export function Shell({
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
   const [title, crumb] = TITLES[pathname] ?? ["Java Sales Hub", ""];
+  const nav = canManageUsers(user.role) ? [...NAV, ADMIN_GROUP] : NAV;
 
   return (
     <div className="app">
@@ -70,7 +82,7 @@ export function Shell({
             <small>Internal system</small>
           </div>
         </div>
-        {NAV.map((g) => (
+        {nav.map((g) => (
           <div key={g.group}>
             <div className="navgroup">{g.group}</div>
             <ul className="nav">

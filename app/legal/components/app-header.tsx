@@ -4,6 +4,7 @@ import { loadAlertsFor } from "@/lib/alerts";
 import { initialsOf } from "@/lib/utils";
 import { UserMenu } from "./user-menu";
 import { NavLinks } from "./nav-links";
+import { canManageUsers } from "@/lib/user-access";
 
 export async function AppHeader() {
   const acting = await getActingUser();
@@ -34,7 +35,7 @@ export async function AppHeader() {
           </span>
         </Link>
         <span className="mx-1 hidden h-4 w-px sm:inline-block" style={{ background: "var(--color-border-tertiary)" }} />
-        <NavLinks />
+        <NavLinks canManageUsers={canManageUsers(acting.role)} />
       </div>
       <div className="flex items-center gap-3">
         <Link href="/alerts" aria-label="Pemberitahuan" className="relative inline-flex h-8 w-8 items-center justify-center rounded-md" style={{ color: "var(--color-text-secondary)" }} title="Pemberitahuan">

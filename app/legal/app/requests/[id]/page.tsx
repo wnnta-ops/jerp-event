@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { getActingUser } from "@/lib/current-user";
 import { initialsOf } from "@/lib/utils";
+import { withBase } from "@/lib/base-path";
 import { RequestDetail, type RequestView } from "@/components/request-detail";
 
 export const dynamic = "force-dynamic";
@@ -31,7 +32,7 @@ export default async function RequestDetailPage({ params }: { params: { id: stri
   const isApprover = acting ? APPROVER_ROLES.includes(acting.role) : false;
   const isRequesterReleased = acting?.id === req.requesterId && req.status === "approved";
   const canSeeDoc = !!req.fulfilledFileUrl && (isApprover || isRequesterReleased);
-  const docUrl = canSeeDoc ? `/api/request-doc?id=${req.id}` : null;
+  const docUrl = canSeeDoc ? withBase(`/api/request-doc?id=${req.id}`) : null;
 
   const view: RequestView = {
     id: req.id,
