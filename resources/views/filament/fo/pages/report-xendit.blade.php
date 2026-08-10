@@ -14,7 +14,8 @@
         @media (min-width: 640px)  { .rx-filter { grid-template-columns: repeat(2, minmax(0,1fr)); } }
         @media (min-width: 1024px) { .rx-filter { grid-template-columns: repeat(6, minmax(0,1fr)); } .rx-span2 { grid-column: span 2 / span 2; } }
         .rx-stats { display: grid; gap: .75rem; grid-template-columns: repeat(2, minmax(0,1fr)); }
-        @media (min-width: 768px)  { .rx-stats { grid-template-columns: repeat(5, minmax(0,1fr)); } }
+        @media (min-width: 768px)  { .rx-stats { grid-template-columns: repeat(4, minmax(0,1fr)); } }
+        @media (min-width: 1280px) { .rx-stats { grid-template-columns: repeat(7, minmax(0,1fr)); } }
     </style>
 
     {{-- Filter --}}
@@ -53,8 +54,9 @@
             </div>
         </div>
         <p class="mt-2 text-xs text-gray-500 dark:text-gray-400">
-            Sinkron mengecek invoice <b>PENDING</b> (maks {{ \App\Filament\Fo\Pages\ReportXendit::SYNC_LIMIT }}/klik) langsung ke Xendit —
-            yang sudah dibayar otomatis ditandai LUNAS (kwitansi &amp; jurnal ikut terbentuk). Baris "SIMULASI" = invoice era uji coba (bukan Xendit asli).
+            Sinkron menarik data langsung dari Xendit (maks {{ \App\Filament\Fo\Pages\ReportXendit::SYNC_LIMIT }}/klik): invoice <b>PENDING</b> yang sudah dibayar
+            ditandai LUNAS (kwitansi &amp; jurnal ikut terbentuk), sekaligus mengambil <b>nilai transfer</b> Xendit untuk rekonsiliasi.
+            <b>SESUAI (KLOP)</b> = nilai transfer Xendit sama dengan nilai UTJ sistem; <b>SELISIH</b> = berbeda. Baris "SIMULASI" = invoice uji coba (bukan Xendit asli).
         </p>
     </div>
 
@@ -64,6 +66,8 @@
             ['Total Invoice', number_format($sum['total']), 'text-gray-900 dark:text-white'],
             ['Lunas', number_format($sum['paid']), 'text-emerald-600 dark:text-emerald-400'],
             ['Nominal Lunas', $rp($sum['paid_rp']), 'text-emerald-600 dark:text-emerald-400'],
+            ['Sesuai (Klop)', number_format($sum['sesuai']), 'text-emerald-600 dark:text-emerald-400'],
+            ['Selisih', number_format($sum['selisih']), $sum['selisih'] > 0 ? 'text-red-600 dark:text-red-400' : 'text-gray-500 dark:text-gray-400'],
             ['Pending', number_format($sum['pending']), 'text-amber-600 dark:text-amber-400'],
             ['Expired / Simulasi', number_format($sum['expired']).' / '.number_format($sum['simulasi']), 'text-gray-500 dark:text-gray-400'],
         ] as [$label, $val, $cls])
@@ -94,6 +98,8 @@
                         <th class="px-2 py-2">Event</th>
                         <th class="px-2 py-2">Ref Xendit</th>
                         <th class="px-2 py-2 text-right">Nilai UTJ</th>
+                        <th class="px-2 py-2 text-right">Transfer Xendit</th>
+                        <th class="px-2 py-2 text-right">Selisih</th>
                         <th class="px-2 py-2">Status</th>
                         <th class="px-2 py-2">Tgl Bayar</th>
                         <th class="px-2 py-2">Pencocokan</th>
@@ -102,8 +108,18 @@
                 <tbody class="divide-y divide-gray-100 dark:divide-white/5">
                     @forelse ($rows as $i => $r)
                         @php
-                            $fake = str_starts_with((string) $r->xendit_invoice_id, 'fake_');
+                            $fake = $r->isXenditSimulasi();
                             $paid = $r->isUtjPaid();
+                            $recon = $r->reconStatus();
+                            $selisih = $r->xenditSelisih();
+                            $reconBadge = match ($recon) {
+                                'SIMULASI' => ['bg-gray-100 text-gray-600 dark:bg-white/10 dark:text-gray-300', 'SIMULASI'],
+                                'SESUAI' => ['bg-emerald-100 text-emerald-800 dark:bg-emerald-500/20 dark:text-emerald-300', 'SESUAI (KLOP)'],
+                                'SELISIH' => ['bg-red-100 text-red-700 dark:bg-red-500/20 dark:text-red-300', 'SELISIH'],
+                                'PERLU SINKRON' => ['bg-sky-100 text-sky-800 dark:bg-sky-500/20 dark:text-sky-300', 'PERLU SINKRON'],
+                                'TIDAK DIBAYAR' => ['bg-gray-100 text-gray-600 dark:bg-white/10 dark:text-gray-300', 'TIDAK DIBAYAR'],
+                                default => ['bg-amber-100 text-amber-800 dark:bg-amber-500/20 dark:text-amber-300', 'MENUNGGU'],
+                            };
                         @endphp
                         <tr class="hover:bg-gray-50 dark:hover:bg-white/5">
                             <td class="{{ $tdTxt }}">{{ $i + 1 }}</td>
@@ -113,6 +129,10 @@
                             <td class="{{ $tdTxt }}">{{ $r->event?->name ?: '—' }}</td>
                             <td class="{{ $tdTxt }} font-mono">{{ $r->xendit_external_id }}</td>
                             <td class="{{ $tdNum }}">{{ $rp($r->utj_amount) }}</td>
+                            <td class="{{ $tdNum }}">{{ $r->xendit_paid_amount !== null ? $rp($r->xendit_paid_amount) : '—' }}</td>
+                            <td class="{{ $tdNum }} {{ $selisih && abs($selisih) >= 0.01 ? 'text-red-600 dark:text-red-400 font-semibold' : '' }}">
+                                {{ $selisih === null ? '—' : ($selisih == 0 ? '0' : ($selisih > 0 ? '+' : '−').number_format(abs($selisih), 0, ',', '.')) }}
+                            </td>
                             <td class="{{ $tdTxt }}">
                                 @if ($paid) {!! $badge('bg-emerald-100 text-emerald-800 dark:bg-emerald-500/20 dark:text-emerald-300', 'LUNAS') !!}
                                 @elseif ($r->xendit_status === 'EXPIRED') {!! $badge('bg-red-100 text-red-700 dark:bg-red-500/20 dark:text-red-300', 'EXPIRED') !!}
@@ -120,16 +140,10 @@
                                 @endif
                             </td>
                             <td class="{{ $tdTxt }}">{{ $r->xendit_paid_at?->format('d/m/Y H:i') ?: '—' }}</td>
-                            <td class="{{ $tdTxt }}">
-                                @if ($fake) {!! $badge('bg-gray-100 text-gray-600 dark:bg-white/10 dark:text-gray-300', 'SIMULASI') !!}
-                                @elseif ($paid) {!! $badge('bg-emerald-100 text-emerald-800 dark:bg-emerald-500/20 dark:text-emerald-300', 'KLOP') !!}
-                                @elseif ($r->xendit_status === 'EXPIRED') {!! $badge('bg-gray-100 text-gray-600 dark:bg-white/10 dark:text-gray-300', 'TIDAK DIBAYAR') !!}
-                                @else {!! $badge('bg-amber-100 text-amber-800 dark:bg-amber-500/20 dark:text-amber-300', 'MENUNGGU') !!}
-                                @endif
-                            </td>
+                            <td class="{{ $tdTxt }}">{!! $badge($reconBadge[0], $reconBadge[1]) !!}</td>
                         </tr>
                     @empty
-                        <tr><td colspan="10" class="px-3 py-8 text-center text-gray-500">Tidak ada invoice pada filter ini.</td></tr>
+                        <tr><td colspan="12" class="px-3 py-8 text-center text-gray-500">Tidak ada invoice pada filter ini.</td></tr>
                     @endforelse
                 </tbody>
             </table>

@@ -31,7 +31,7 @@ class NupRegistration extends TenantAwareModel
         'keterangan',
         // Verifikasi Data / UTJ
         'verif_status', 'is_hold', 'hold_reason', 'utj_amount',
-        'xendit_external_id', 'xendit_invoice_id', 'xendit_invoice_url', 'xendit_status', 'xendit_paid_at',
+        'xendit_external_id', 'xendit_invoice_id', 'xendit_invoice_url', 'xendit_status', 'xendit_paid_at', 'xendit_paid_amount',
         'verified_by', 'verified_at', 'is_manual_approve', 'verif_note',
     ];
 
@@ -56,6 +56,7 @@ class NupRegistration extends TenantAwareModel
         'booking_fee_paid' => 'decimal:2',
         'utj_amount' => 'decimal:2',
         'xendit_paid_at' => 'datetime',
+        'xendit_paid_amount' => 'decimal:2',
         'verified_at' => 'datetime',
         'is_manual_approve' => 'boolean',
         'is_hold' => 'boolean',
@@ -67,6 +68,40 @@ class NupRegistration extends TenantAwareModel
     public function isUtjPaid(): bool
     {
         return $this->xendit_status === 'PAID' || $this->verif_status === self::VERIF_PAID;
+    }
+
+    public function isXenditSimulasi(): bool
+    {
+        return str_starts_with((string) $this->xendit_invoice_id, 'fake_');
+    }
+
+    /** Selisih nilai transfer Xendit − nilai UTJ sistem (null bila nilai transfer belum ditarik). */
+    public function xenditSelisih(): ?float
+    {
+        if ($this->xendit_paid_amount === null) {
+            return null;
+        }
+
+        return round((float) $this->xendit_paid_amount - (float) $this->utj_amount, 2);
+    }
+
+    /**
+     * Status rekonsiliasi Xendit ↔ UTJ:
+     *  SIMULASI · MENUNGGU · TIDAK DIBAYAR · PERLU SINKRON · SESUAI · SELISIH.
+     */
+    public function reconStatus(): string
+    {
+        if ($this->isXenditSimulasi()) {
+            return 'SIMULASI';
+        }
+        if (! $this->isUtjPaid()) {
+            return $this->xendit_status === 'EXPIRED' ? 'TIDAK DIBAYAR' : 'MENUNGGU';
+        }
+        if ($this->xendit_paid_amount === null) {
+            return 'PERLU SINKRON';
+        }
+
+        return abs((float) $this->xenditSelisih()) < 0.01 ? 'SESUAI' : 'SELISIH';
     }
 
     public function canSelectUnit(): bool

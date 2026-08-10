@@ -96,8 +96,8 @@ class ReportXendit extends Page
      */
     public function getSummary(): array
     {
-        $all = $this->baseQuery()->get(['id', 'utj_amount', 'xendit_status', 'xendit_invoice_id', 'verif_status']);
-        $fake = $all->filter(fn ($r) => str_starts_with((string) $r->xendit_invoice_id, 'fake_'));
+        $all = $this->baseQuery()->get(['id', 'utj_amount', 'xendit_status', 'xendit_invoice_id', 'verif_status', 'xendit_paid_amount']);
+        $fake = $all->filter(fn ($r) => $r->isXenditSimulasi());
         $paid = $all->filter(fn ($r) => $r->isUtjPaid());
 
         return [
@@ -107,6 +107,9 @@ class ReportXendit extends Page
             'pending' => $all->where('xendit_status', 'PENDING')->count(),
             'expired' => $all->where('xendit_status', 'EXPIRED')->count(),
             'simulasi' => $fake->count(),
+            // Rekonsiliasi nilai transfer Xendit ↔ UTJ.
+            'sesuai' => $all->filter(fn ($r) => $r->reconStatus() === 'SESUAI')->count(),
+            'selisih' => $all->filter(fn ($r) => $r->reconStatus() === 'SELISIH')->count(),
         ];
     }
 
@@ -124,14 +127,17 @@ class ReportXendit extends Page
             return;
         }
 
+        // Ambil: (a) yang PENDING → cek apakah sudah dibayar, dan (b) yang sudah LUNAS
+        // tapi nilai transfernya belum ditarik → backfill untuk rekonsiliasi.
         $regs = $this->baseQuery()
-            ->where('xendit_status', 'PENDING')
+            ->where(fn (Builder $q) => $q->where('xendit_status', 'PENDING')
+                ->orWhere(fn (Builder $w) => $w->where('xendit_status', 'PAID')->whereNull('xendit_paid_amount')))
             ->where(fn (Builder $q) => $q->whereNull('xendit_invoice_id')
                 ->orWhere('xendit_invoice_id', 'not like', 'fake\_%'))
             ->limit(self::SYNC_LIMIT)->get();
 
         $svc = app(VerifikasiNupService::class);
-        $cek = $lunas = $expired = $tidakAda = 0;
+        $cek = $lunas = $expired = $tidakAda = $sesuai = $selisih = 0;
 
         foreach ($regs as $reg) {
             $inv = Http::withBasicAuth($key, '')
@@ -146,9 +152,19 @@ class ReportXendit extends Page
             }
             $cek++;
             $st = strtoupper((string) ($inv['status'] ?? ''));
+            // Nilai transfer aktual yang diterima Xendit (untuk rekonsiliasi vs UTJ).
+            $paidAmount = $inv['paid_amount'] ?? $inv['amount'] ?? null;
+
             if (in_array($st, ['PAID', 'SETTLED'], true)) {
-                $svc->markPaid($reg);
-                $lunas++;
+                if (! $reg->isUtjPaid()) {
+                    $svc->markPaid($reg);
+                    $lunas++;
+                }
+                if ($paidAmount !== null) {
+                    $reg->forceFill(['xendit_paid_amount' => (float) $paidAmount])->save();
+                    $reg->refresh();
+                    ($reg->reconStatus() === 'SESUAI') ? $sesuai++ : $selisih++;
+                }
             } elseif ($st === 'EXPIRED') {
                 $reg->update(['xendit_status' => 'EXPIRED']);
                 $expired++;
@@ -157,6 +173,7 @@ class ReportXendit extends Page
 
         Notification::make()->success()->title('Sinkron Xendit selesai')
             ->body("Dicek: {$cek} invoice · Ditandai LUNAS: {$lunas} · Expired: {$expired}"
+                ." · Rekonsiliasi — Sesuai: {$sesuai}, Selisih: {$selisih}"
                 .($tidakAda ? " · Tidak ditemukan di Xendit: {$tidakAda}" : ''))
             ->send();
     }
