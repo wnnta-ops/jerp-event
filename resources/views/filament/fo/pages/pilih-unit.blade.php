@@ -129,19 +129,25 @@
         </div>
     @else
         {{-- ──────────────── STEP 2+: Siteplan + scanner (FULL LAYAR) ──────────────── --}}
-        {{-- x-data WAJIB statik: kalau memuat data yang berubah (phase, regNoNup, …)
-             string x-data berubah tiap update → Alpine bikin instance baru → polygon
-             & timer beda instance. Data dinamis dibaca via $wire. --}}
+        {{-- x-data WAJIB KONSTAN — tanpa data sama sekali. Dulu payload (units/blocks/
+             siteplan) ikut di x-data; begitu isinya berubah antar render (mis. status
+             unit berubah oleh operator lain saat launching), string x-data berubah →
+             morph Livewire membuat instance Alpine BARU → initLeaflet jalan lagi →
+             Leaflet melempar "Map container is already initialized" → instance baru
+             pegang map=null → zoom hanya menggerakkan gambar, koordinat/polygon diam
+             (bug produksi). Payload pindah ke <script data-pu-payload> (wire:ignore)
+             di bawah; data dinamis lain tetap dibaca via $wire. --}}
         <div class="pu-stage pu-fullscreen"
              wire:key="pu-stage"
-             x-data="pilihUnitState({
-                 units: @js($units),
-                 blocks: @js($blocks),
-                 siteplan: @js($siteplan),
-                 projectId: @js($this->projectId),
-             })"
+             x-data="pilihUnitState()"
              x-init="init()"
              x-effect="phase = $wire.phase">
+
+            {{-- JANGAN pakai @json di sini: direktifnya memecah argumen pada koma
+                 (slot flags/depth) → array literal terpotong → ParseError. JSON_HEX_TAG
+                 wajib: literal "<" di inline script memicu false-positive
+                 MultipleRootElements Livewire (500). --}}
+            <script type="application/json" data-pu-payload wire:ignore>{!! json_encode(['units' => $units, 'blocks' => $blocks, 'siteplan' => $siteplan, 'projectId' => $this->projectId], JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT) !!}</script>
 
             {{-- Siteplan full (Leaflet). wire:ignore → Livewire tak men-morph DOM
                  yang disuntik Leaflet (kalau tidak, map hilang tiap scan/aksi). --}}
@@ -274,13 +280,13 @@
     @endif
 
     <script>
-        function pilihUnitState(initial) {
+        function pilihUnitState() {
             return {
                 phase: 'scan',          // disinkron dari server via x-effect="phase = $wire.phase"
-                units: initial.units,
-                blocks: initial.blocks || [],
-                siteplan: initial.siteplan,
-                projectId: initial.projectId,
+                units: [],              // diisi init() dari <script data-pu-payload>
+                blocks: [],
+                siteplan: null,
+                projectId: null,
 
                 scannerOn: false, scannerInstance: null, manualCode: '', scanLocked: false,
                 timerSec: 120, timerId: null, timerDisplay: '02:00',
@@ -298,6 +304,19 @@
                 confirmUnitAlamat: '',
 
                 init() {
+                    // Payload dari <script data-pu-payload> — BUKAN argumen x-data,
+                    // supaya string x-data konstan (lihat komentar elemen .pu-stage).
+                    try {
+                        const p = JSON.parse(this.$el.querySelector('[data-pu-payload]').textContent);
+                        this.units = p.units || [];
+                        this.blocks = p.blocks || [];
+                        this.siteplan = p.siteplan || null;
+                        this.projectId = (p.projectId !== undefined) ? p.projectId : null;
+                    } catch (e) { console.error('Pilih Unit: payload gagal dibaca', e); }
+                    // Penanda instance TERBARU. Instance lama (mis. sesudah Ganti
+                    // Cluster) memakai epoch usang → pekerjaan tertundanya berhenti
+                    // sendiri, tak mengganggu instance yang hidup.
+                    this._epoch = window.__puEpoch = (window.__puEpoch || 0) + 1;
                     this.$nextTick(() => this.initLeaflet());
                     this.initRealtime();
 
@@ -323,6 +342,28 @@
 
                 initLeaflet() {
                     if (!window.L || !document.getElementById('pu-map')) return;
+
+                    // Leaflet 1.9.4: tooltip sticky yang sudah tertutup kadang masih
+                    // menerima event zoom/move (race saat wheel-zoom sambil hover unit)
+                    // → this._map null → THROW di dalam fire() → listener lain pada
+                    // event yang sama BATAL dieksekusi → layer tidak reposisi →
+                    // gambar/koordinat lepas sinkron (insiden berulang di produksi).
+                    // Guard global sekali: abaikan update tooltip yang map-nya nihil.
+                    if (!window.__puTooltipPatched) {
+                        window.__puTooltipPatched = true;
+                        ['_updatePosition', '_animateZoom'].forEach((fn) => {
+                            const orig = L.Tooltip.prototype[fn];
+                            if (orig) L.Tooltip.prototype[fn] = function (...a) { if (!this._map) return; return orig.apply(this, a); };
+                        });
+                    }
+
+                    // Benteng anti double-init: kalau komponen sempat dibuat ulang,
+                    // map lama masih menempel di #pu-map → L.map() melempar "Map
+                    // container is already initialized" dan komponen baru lumpuh
+                    // (map=null; tooltip yatim error latLngToLayerPoint). Buang map
+                    // lama + ResizeObserver-nya, lalu init bersih dari nol.
+                    if (window.__puMapObj) { try { window.__puMapObj.remove(); } catch (e) {} window.__puMapObj = null; }
+                    if (window.__puRO) { try { window.__puRO.disconnect(); } catch (e) {} window.__puRO = null; }
 
                     const sp = this.siteplan;
                     let W = sp ? sp.width : 1500;
@@ -354,6 +395,7 @@
                         zoomAnimation: false,
                         attributionControl: false,
                     });
+                    window.__puMapObj = this.map; // ref global utk benteng anti double-init
 
                     const overlay = sp
                         ? L.imageOverlay(sp.url, bounds).addTo(this.map)
@@ -392,6 +434,7 @@
                             this.map.invalidateSize({ animate: false, pan: false });
                         });
                         this._ro.observe(document.getElementById('pu-map'));
+                        window.__puRO = this._ro; // ref global — diputus saat re-init
                     }
 
                     this.renderPolygons();
@@ -524,11 +567,24 @@
                 // belum siap saat init (module deferred), jadi poll sampai tersedia.
                 initRealtime(attempt = 0) {
                     if (!this.projectId) return;
+                    // Instance MATI dilarang menyentuh Echo. Poll di bawah memakai
+                    // setTimeout yang tak bisa dibatalkan saat komponen dihancurkan
+                    // (Ganti Cluster); tanpa penjaga ini retry milik cluster lama bisa
+                    // (a) membajak __puOnUnitStatus ke instance mati → peta tak pernah
+                    // update, atau (b) meng-leave channel cluster yang SEDANG aktif →
+                    // real-time mati senyap sampai reload.
+                    if (window.__puEpoch !== this._epoch) return;
+                    // Handler lewat window → kalau komponen sempat dibuat ulang cukup
+                    // ganti target; langganan channel TIDAK digandakan (callback dobel).
+                    window.__puOnUnitStatus = (id, st) => this.applyStatusChange(id, st);
+                    if (window.__puEchoProject === this.projectId) return;
                     if (window.Echo) {
+                        if (window.__puEchoProject != null) window.Echo.leave('siteplan.' + window.__puEchoProject);
                         window.Echo.channel('siteplan.' + this.projectId)
                             .listen('.unit.status.changed', (e) => {
-                                if (e && e.unit_id) this.applyStatusChange(e.unit_id, e.new_status);
+                                if (e && e.unit_id && window.__puOnUnitStatus) window.__puOnUnitStatus(e.unit_id, e.new_status);
                             });
+                        window.__puEchoProject = this.projectId;
                         return;
                     }
                     if (attempt < 40) setTimeout(() => this.initRealtime(attempt + 1), 250);
