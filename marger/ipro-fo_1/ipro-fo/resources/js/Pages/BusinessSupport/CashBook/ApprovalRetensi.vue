@@ -112,14 +112,15 @@ const MODE_TONE: Record<CreditMode, string> = {
 function allowedModes(r: Row): CreditMode[] {
     // PENAHANAN RETENSI DAJAM = uang KELUAR → hanya 'deduct' (Dr Uang Muka / Cr Bank),
     // nilai penuh tanpa pecahan PPN. Mode lain akan membalik arah kasnya.
-    if (r.is_retensi_dajam) return isBooked(r) ? ['piutang'] : ['deduct'];
+    // Retensi DAJAM tidak terpengaruh Booked Revenue — selalu Dr Uang Muka / Cr Bank.
+    if (r.is_retensi_dajam) return ['deduct'];
     if (isBooked(r)) return ['piutang', 'manual'];
     const canDeduct = r.scheme === 'bsn' || (r.scheme === null && r.is_dajam_pajak);
     return canDeduct ? ['split', 'deduct', 'manual'] : ['split', 'manual'];
 }
 // Mode efektif: pilihan operator bila masih sah, selain itu kembali ke default aturan.
 function modeOf(r: Row): CreditMode {
-    if (r.is_retensi_dajam) return isBooked(r) ? 'piutang' : 'deduct';
+    if (r.is_retensi_dajam) return 'deduct';
     const f = forms[r.row_key];
     if (f && allowedModes(r).includes(f.credit_mode)) return f.credit_mode;
     if (isBooked(r)) return 'piutang';
