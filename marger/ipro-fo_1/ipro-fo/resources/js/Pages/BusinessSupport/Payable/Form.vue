@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue';
 import { useForm, Link } from '@inertiajs/vue3';
-import { ArrowLeft, ArrowRight, Save, HandCoins, Plus, Trash2, Check, Search } from 'lucide-vue-next';
+import { ArrowLeft, ArrowRight, Save, HandCoins, Plus, Trash2, Check, Search, Copy, ClipboardPaste } from 'lucide-vue-next';
 import Button from '@/Components/UI/Button.vue';
 import MoneyInput from '@/Components/UI/MoneyInput.vue';
 import SearchSelect from '@/Components/UI/SearchSelect.vue';
@@ -137,6 +137,45 @@ function removeSchedule(i: number) { form.schedules.splice(i, 1); }
 
 function accountLabel(id: number) { const a = props.accounts.find((x: any) => x.id === id); return a ? `${a.code} — ${a.name}` : '—'; }
 function accountName(id: number | null) { const a = props.accounts.find((x: any) => x.id === id); return a ? a.name : ''; }
+function accountByCode(code: string) { return props.accounts.find((x: any) => String(x.code) === code); }
+
+// ── Salin / Tempel akun antar baris jurnal ────────────────────────────────
+// Akun sering berulang di beberapa baris. Tombol kecil di kolom Account menyalin
+// "KODE - NAMA" lalu menempelkannya ke baris lain tanpa perlu mencari ulang di dropdown.
+// Papan klip internal (copiedAccountId) dipakai lebih dulu; papan klip sistem menjadi
+// cadangan agar akun juga bisa ditempel dari/ke halaman & aplikasi lain.
+const copiedAccountId = ref<number | null>(null);
+const copiedAccountLabel = ref('');
+const copyFlash = ref<number | null>(null);   // indeks baris yang baru disalin (umpan balik singkat)
+const pasteFlash = ref<number | null>(null);
+
+async function copyAccount(l: any, i: number) {
+    if (!l.account_id) return;
+    copiedAccountId.value = l.account_id;
+    copiedAccountLabel.value = accountLabel(l.account_id);
+    // Papan klip sistem bersifat "usaha terbaik" — bisa ditolak browser tanpa HTTPS/izin.
+    try { await navigator.clipboard?.writeText(copiedAccountLabel.value); } catch { /* abaikan */ }
+    copyFlash.value = i;
+    setTimeout(() => { if (copyFlash.value === i) copyFlash.value = null; }, 1200);
+}
+
+async function pasteAccount(l: any, i: number) {
+    let id = copiedAccountId.value;
+    if (!id) {
+        // Belum ada yang disalin di halaman ini → coba baca papan klip sistem,
+        // cocokkan dengan KODE akun di awal teks ("10201010102 - BANGUNAN").
+        try {
+            const txt = (await navigator.clipboard?.readText())?.trim() ?? '';
+            const code = (txt.match(/^\s*([0-9]{3,})/) || [])[1];
+            const acc = code ? accountByCode(code) : undefined;
+            if (acc) { id = acc.id; copiedAccountId.value = acc.id; copiedAccountLabel.value = accountLabel(acc.id); }
+        } catch { /* abaikan */ }
+    }
+    if (!id) return;
+    l.account_id = id;
+    pasteFlash.value = i;
+    setTimeout(() => { if (pasteFlash.value === i) pasteFlash.value = null; }, 1200);
+}
 function costCenterLabel(id: number | null) { if (!id) return ''; const c = props.costCenters.find((x: any) => x.id === id); return c ? c.code : ''; }
 function dimSummary(l: any) {
     const parts = [costCenterLabel(l.cost_center_id)].filter(Boolean);
@@ -304,11 +343,17 @@ const cellArea = 'w-full rounded-md border border-neutral-300 bg-white px-2 py-1
         <div v-show="step === 4" class="space-y-4">
             <!-- Struktur Jurnal — tabel padat (mirip layout eProperty BO) -->
             <div class="card p-5">
-                <div class="mb-1 flex items-center justify-between">
+                <div class="mb-1 flex items-center justify-between gap-2">
                     <h2 class="font-semibold">Struktur Jurnal (Dr / Cr)</h2>
-                    <button type="button" @click="recalcJournal" class="inline-flex items-center gap-1 rounded-lg border border-neutral-300 px-2.5 py-1.5 text-xs hover:bg-neutral-50 dark:border-neutral-700">Hitung ulang</button>
+                    <div class="flex items-center gap-2">
+                        <!-- Isi papan klip akun — supaya jelas apa yang akan tertempel. -->
+                        <span v-if="copiedAccountLabel" class="inline-flex max-w-[18rem] items-center gap-1 truncate rounded-md bg-primary-50 px-2 py-1 text-[11px] font-medium text-primary-700 dark:bg-primary-950/50 dark:text-primary-300" :title="copiedAccountLabel">
+                            <Copy class="h-3 w-3 shrink-0" /> <span class="truncate">{{ copiedAccountLabel }}</span>
+                        </span>
+                        <button type="button" @click="recalcJournal" class="inline-flex items-center gap-1 rounded-lg border border-neutral-300 px-2.5 py-1.5 text-xs hover:bg-neutral-50 dark:border-neutral-700">Hitung ulang</button>
+                    </div>
                 </div>
-                <p class="mb-2 text-[11px] text-neutral-400">Tips: Kosongkan kolom Account &amp; Nilai Transaksi untuk mengabaikan baris tersebut saat proses. Total Debit harus sama dengan Total Kredit.</p>
+                <p class="mb-2 text-[11px] text-neutral-400">Tips: Kosongkan kolom Account &amp; Nilai Transaksi untuk mengabaikan baris tersebut saat proses. Total Debit harus sama dengan Total Kredit. Tombol <b>salin</b> &amp; <b>tempel</b> kecil di bawah kolom Account dipakai untuk memakai ulang akun yang sama di baris lain.</p>
                 <div class="rounded-lg border border-neutral-200 dark:border-neutral-800">
                     <table class="w-full table-fixed border-collapse text-sm">
                         <colgroup>
@@ -332,7 +377,22 @@ const cellArea = 'w-full rounded-md border border-neutral-300 bg-white px-2 py-1
                                 <td class="px-2 py-2 font-mono text-neutral-400">{{ i+1 }}</td>
                                 <td class="px-2 py-2">
                                     <SearchSelect v-model="l.account_id" :options="accounts" placeholder="— pilih akun —" />
-                                    <div class="mt-0.5 truncate text-[11px] text-neutral-400" :title="accountName(l.account_id)">{{ accountName(l.account_id) || '—' }}</div>
+                                    <div class="mt-0.5 flex items-center gap-1">
+                                        <!-- Salin / tempel akun antar baris — akun kerap berulang. -->
+                                        <button type="button" @click="copyAccount(l, i)" :disabled="!l.account_id"
+                                            :title="l.account_id ? 'Salin akun: ' + accountLabel(l.account_id) : 'Pilih akun dulu'"
+                                            class="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded border transition-colors duration-200 disabled:cursor-not-allowed disabled:opacity-30"
+                                            :class="copyFlash === i ? 'border-success-500 bg-success-50 text-success-600 dark:bg-success-900/30' : 'border-neutral-300 text-neutral-400 hover:border-primary-500 hover:text-primary-600 dark:border-neutral-700'">
+                                            <Check v-if="copyFlash === i" class="h-3 w-3" /><Copy v-else class="h-3 w-3" />
+                                        </button>
+                                        <button type="button" @click="pasteAccount(l, i)"
+                                            :title="copiedAccountLabel ? 'Tempel akun: ' + copiedAccountLabel : 'Tempel akun dari papan klip'"
+                                            class="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded border transition-colors duration-200"
+                                            :class="pasteFlash === i ? 'border-success-500 bg-success-50 text-success-600 dark:bg-success-900/30' : 'border-neutral-300 text-neutral-400 hover:border-primary-500 hover:text-primary-600 dark:border-neutral-700'">
+                                            <Check v-if="pasteFlash === i" class="h-3 w-3" /><ClipboardPaste v-else class="h-3 w-3" />
+                                        </button>
+                                        <span class="truncate text-[11px] text-neutral-400" :title="accountName(l.account_id)">{{ accountName(l.account_id) || '—' }}</span>
+                                    </div>
                                 </td>
                                 <td class="px-2 py-2"><SearchSelect v-model="l.cost_center_id" :options="costCenters" placeholder="— cost center —" /></td>
                                 <td class="px-2 py-2"><textarea v-model="l.description" rows="2" :class="cellArea" placeholder="Keterangan baris…"></textarea></td>
