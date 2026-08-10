@@ -192,7 +192,10 @@ class BankApprovalController extends Controller
     private function defaultCreditMode(bool $booked, ?string $scheme, bool $isDajamPajak, string $kind = ''): string
     {
         if ($kind === 'retensi') {
-            return 'deduct';
+            // SESUDAH Booked Revenue: Dr Bank / Cr Piutang Usaha sebesar nilai retensinya
+            // (tanpa PPN — PPN sudah diakui seluruhnya pada jurnal Booked Revenue).
+            // SEBELUM Booked Revenue: uang keluar & ditahan → Dr Uang Muka / Cr Bank.
+            return $booked ? 'piutang' : 'deduct';
         }
         // Porsi retensi yang DILEPAS = uang masuk kembali → jurnal pencairan biasa.
         if ($kind === 'release') {
