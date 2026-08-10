@@ -107,22 +107,26 @@ class KprApplicationController extends Controller
     }
 
     /** Form Pencairan Retensi (Massal) — semua KPR yang sudah AKAD & masih ada sisa plafon, di-checklist & input pencairan. */
-    /** Tahap "Pra Proses KPR" yang boleh diikutkan Akad Massal. */
-    private const AKAD_BULK_FROM = [KprStatus::Draft, KprStatus::Submitted];
+    /**
+     * Tahap "Pra Proses KPR" yang ditawarkan pada layar Akad Massal (cetak SI massal).
+     * Ini hanya menentukan ISI DAFTAR — statusnya tidak pernah diubah oleh layar itu.
+     */
+    private const AKAD_BULK_CANDIDATES = [KprStatus::Draft, KprStatus::Submitted];
 
     /**
-     * AKAD MASSAL — daftar calon dari Pra Proses KPR (Draft & Submitted).
+     * AKAD MASSAL — CETAK SI SECARA MASSAL untuk nasabah yang akadnya serentak.
      *
-     * Untuk nasabah yang akadnya dilakukan serentak, tahapan di bank (Wawancara → Input Sistem
-     * Bank → Verifikasi → Analis → Banding → SP3K) memang tidak dijalani satu per satu; prosesnya
-     * langsung ke SI supaya Surat Instruksi bisa dicetak sesuai bank masing-masing.
+     * PENTING: layar ini TIDAK mengubah status KPR apa pun. Proses KPR tetap berjalan seperti
+     * biasa (Wawancara → Input Sistem Bank → Verifikasi → Analis → SP3K → SI); yang dimassalkan
+     * HANYA pencetakan Surat Instruksinya. Setelah dicetak, tiap KPR diberi cap "SI dicetak
+     * massal" yang muncul pada tahap SI di Proses KPR-nya masing-masing.
      */
     public function akadBulk(Request $request): Response
     {
         abort_unless($request->user()?->can('bankloan.application.create'), 403);
 
         $rows = KprApplication::query()
-            ->whereIn('status', array_map(fn (KprStatus $s) => $s->value, self::AKAD_BULK_FROM))
+            ->whereIn('status', array_map(fn (KprStatus $s) => $s->value, self::AKAD_BULK_CANDIDATES))
             ->with([
                 'customer:id,full_name',
                 'bank:id,name',
@@ -142,6 +146,9 @@ class KprApplicationController extends Controller
                 'plafon'   => (float) ($k->plafon_approved ?: $k->plafon_requested),
                 // Bank tanpa Format SI → SI-nya nanti memakai surat generik; ditandai di layar.
                 'si_ready' => $this->siFormatInfo($k)['ready'],
+                // Cap cetak massal sebelumnya — supaya tidak tercetak dua kali tanpa disadari.
+                'si_bulk_at'    => $k->timeline['si_bulk_printed_at'] ?? null,
+                'si_bulk_count' => (int) ($k->timeline['si_bulk_count'] ?? 0),
             ])->values();
 
         return Inertia::render('BankLoan/AkadBulk', [
@@ -150,12 +157,13 @@ class KprApplicationController extends Controller
     }
 
     /**
-     * Jalankan Akad Massal: status LANGSUNG ke SI (tahap 9).
+     * Catat bahwa SI KPR terpilih SUDAH DICETAK MASSAL.
      *
-     * Lompatan ini SENGAJA tidak lewat assertCanTransitionTo(): alur normal memang tidak
-     * mengizinkan Submitted → SI, dan penjaga itu harus tetap ketat untuk proses satuan.
-     * Di sini lompatannya eksplisit, dibatasi hanya dari Draft/Submitted, dan tahap yang
-     * dilewati DICAP di timeline (akad_massal + tanggalnya) supaya jejaknya tidak hilang.
+     * TIDAK menyentuh status maupun tahapan — proses KPR berjalan seperti biasa. Yang disimpan
+     * hanya cap di timeline, lalu ditampilkan pada tahap SI di Proses KPR supaya operator tahu
+     * suratnya sudah pernah ikut cetak massal dan tidak mencetaknya dua kali.
+     *
+     * Dipanggil oleh layar Akad Massal SESUDAH berkas cetaknya dibuka (kpr.si-print-bulk).
      */
     public function akadBulkStore(Request $request): RedirectResponse
     {
@@ -167,47 +175,33 @@ class KprApplicationController extends Controller
             'note'  => ['nullable', 'string', 'max:255'],
         ]);
 
-        $allowed = array_map(fn (KprStatus $s) => $s->value, self::AKAD_BULK_FROM);
         $apps = KprApplication::whereIn('id', $v['ids'])->get();
+        if ($apps->isEmpty()) {
+            return back()->with('error', 'Data KPR tidak ditemukan.');
+        }
 
-        $done = [];
-        $skip = [];
-        DB::transaction(function () use ($apps, $allowed, $v, &$done, &$skip): void {
+        $stamp = now()->toIso8601String();
+        $oleh = $request->user()?->name;
+
+        DB::transaction(function () use ($apps, $v, $stamp, $oleh): void {
             foreach ($apps as $kpr) {
-                if (! in_array($kpr->status->value, $allowed, true)) {
-                    $skip[] = $kpr->application_number.' ('.$kpr->status->value.')';
-
-                    continue;
-                }
-
                 $tl = $kpr->timeline ?? [];
-                $stamp = now()->toIso8601String();
-                // Tahap yang dilewati ikut dicap agar rekap & Master Data KPR tidak kosong
-                // melompong, dan jelas bahwa semuanya terjadi lewat Akad Massal.
-                foreach (['submitted', 'wawancara', 'input_bank', 'verifikasi', 'analis', 'sp3k', 'si'] as $stage) {
-                    $tl[$stage] ??= $stamp;
+                $tl['si_bulk_printed_at'] = $stamp;
+                $tl['si_bulk_printed_by'] = $oleh;
+                $tl['si_bulk_count'] = (int) ($tl['si_bulk_count'] ?? 0) + 1;
+                if (($v['note'] ?? '') !== '') {
+                    $tl['si_bulk_note'] = $v['note'];
                 }
-                $tl['akad_massal'] = $stamp;
-                $tl['akad_massal_note'] = $v['note'] ?? 'Akad massal — tahapan di bank dilewati.';
-
+                // Status & tahapan SENGAJA tidak disentuh.
                 $kpr->timeline = $tl;
-                $kpr->status = KprStatus::Si;
                 $kpr->save();
-
-                $done[] = $kpr->application_number;
             }
         });
 
-        if (! $done) {
-            return back()->with('error', 'Tidak ada KPR yang bisa diproses.'.($skip ? ' Dilewati: '.implode(', ', $skip) : ''));
-        }
-
-        $msg = count($done).' KPR masuk tahap SI — Surat Instruksi siap dicetak sesuai bank masing-masing.';
-        if ($skip) {
-            $msg .= ' Dilewati (bukan Pra Proses KPR): '.implode(', ', $skip).'.';
-        }
-
-        return redirect()->route('kpr.akad-bulk')->with('success', $msg);
+        return redirect()->route('kpr.akad-bulk')->with(
+            'success',
+            'SI '.$apps->count().' KPR dicetak massal & ditandai. Prosesnya tetap berjalan seperti biasa — tandanya muncul pada tahap SI di Proses KPR masing-masing.',
+        );
     }
 
     public function disbursementBulk(): Response
@@ -913,7 +907,12 @@ class KprApplicationController extends Controller
             .'.right{text-align:right;margin-bottom:6px}.hdr{margin:8px 0}.to{margin:12px 0}'
             .'.kv{display:flex;margin:1px 0}.kv .k{width:150px;flex:0 0 150px}.kv .c{width:12px;flex:0 0 12px}.kv .v{flex:1}'
             .'p{margin:9px 0;text-align:justify}'
-            .'table.pajak{border-collapse:collapse;margin:10px 0;font-size:11px;width:100%}table.pajak th,table.pajak td{border:1px solid #111;padding:4px 6px;text-align:center}'
+            .'table.pajak,table.tbl{border-collapse:collapse;margin:10px 0;font-size:11px;width:100%}'
+            .'table.pajak th,table.pajak td,table.tbl th,table.tbl td{border:1px solid #111;padding:4px 6px;text-align:center}'
+            // Kolom nominal pada tabel termin pencairan rata kanan; butuh selektor lebih
+            // spesifik karena aturan di atas memaksa rata tengah untuk seluruh sel.
+            .'table.pajak td.r,table.tbl td.r{text-align:right}'
+            .'.title{text-align:center;font-weight:bold;font-size:15px;text-decoration:underline;margin:14px 0}'
             .'.sign{margin-top:34px}.sign .nm{font-weight:bold;text-decoration:underline;margin-top:62px}'
             .'.print{text-align:right;margin-bottom:12px}button{padding:8px 16px;font-size:13px;cursor:pointer}@media print{.print{display:none}}';
 
@@ -1007,6 +1006,11 @@ class KprApplicationController extends Controller
             'plafon'               => 'Plafon KPR (Rp. 000.000,-)',
             'plafon_terbilang'     => 'Plafon KPR dalam huruf',
             'setengah_plafon'      => 'Separuh plafon KPR — untuk surat pencairan 50%/50%',
+            'plafon_10'            => '10% plafon KPR — termin pencairan',
+            'plafon_20'            => '20% plafon KPR — termin pencairan',
+            'plafon_30'            => '30% plafon KPR — termin pencairan',
+            'plafon_40'            => '40% plafon KPR — termin pencairan',
+            'plafon_90'            => '90% plafon KPR — porsi giro operasional',
             'uang_muka'            => 'Uang muka (Rp. 000.000,-)',
             'uang_muka_terbilang'  => 'Uang muka dalam huruf',
             'harga_jual'           => 'Harga jual nett unit',
@@ -1154,6 +1158,14 @@ HTML;
             'plafon'              => $e($rp($v['kprAmt'])),
             'plafon_terbilang'    => $e($terb($v['kprAmt'])),
             'setengah_plafon'     => $e($rp(round($v['kprAmt'] / 2, 2))),
+            // Termin pencairan: tiap bank punya pembagian sendiri (BNI 30/20/40/10 lalu
+            // transfer 90/10; Mandiri 50/50). Disediakan sebagai placeholder siap pakai
+            // karena format SI tidak bisa berhitung sendiri.
+            'plafon_10'           => $e($rp(round($v['kprAmt'] * 0.10, 2))),
+            'plafon_20'           => $e($rp(round($v['kprAmt'] * 0.20, 2))),
+            'plafon_30'           => $e($rp(round($v['kprAmt'] * 0.30, 2))),
+            'plafon_40'           => $e($rp(round($v['kprAmt'] * 0.40, 2))),
+            'plafon_90'           => $e($rp(round($v['kprAmt'] * 0.90, 2))),
             'uang_muka'           => $e($rp($v['umAmt'])),
             'uang_muka_terbilang' => $e($terb($v['umAmt'])),
             'harga_jual'          => $e($rp($v['hargaJual'])),

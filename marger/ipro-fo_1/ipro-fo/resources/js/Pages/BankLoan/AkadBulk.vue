@@ -9,6 +9,7 @@ import EmptyState from '@/Components/UI/EmptyState.vue';
 type Row = {
     id: number; number: string; customer: string | null; unit: string | null; spr: string | null;
     bank: string | null; status: string; plafon: number; si_ready: boolean;
+    si_bulk_at: string | null; si_bulk_count: number;
 };
 const props = defineProps<{ rows: Row[] }>();
 
@@ -32,17 +33,27 @@ const allChecked = computed<boolean>({
     set: (v: boolean) => { for (const r of filtered.value) checked.value[r.id] = v; },
 });
 
-function proses() {
+/**
+ * Cetak SI massal: buka berkas cetaknya di tab baru, lalu catat capnya.
+ * TIDAK mengubah status/tahapan KPR apa pun — proses KPR berjalan seperti biasa.
+ */
+function cetakMassal() {
     const n = selectedIds.value.length;
     if (!n) return;
-    if (!confirm(`Proses Akad Massal untuk ${n} KPR?\n\nTahapan di bank (Wawancara → Input Sistem Bank → Verifikasi → Analis → SP3K) DILEWATI; statusnya langsung menjadi SI sehingga Surat Instruksi bisa dicetak.`)) return;
+    if (!confirm(`Cetak SI massal untuk ${n} KPR?\n\nSurat Instruksi tercetak satu halaman per customer sesuai format bank masing-masing.\nStatus & tahapan KPR TIDAK berubah — prosesnya tetap berjalan seperti biasa.`)) return;
+
+    // Dibuka lebih dulu supaya masih terhitung sebagai akibat langsung klik (tidak diblokir popup).
+    window.open(route('kpr.si-print-bulk', { ids: selectedIds.value }), '_blank', 'noopener');
+
     processing.value = true;
     router.post(route('kpr.akad-bulk.store'), { ids: selectedIds.value, note: note.value || undefined }, {
+        preserveScroll: true,
         onFinish: () => { processing.value = false; checked.value = {}; },
     });
 }
 
 const fmtRp = (v: number) => 'Rp ' + Number(v ?? 0).toLocaleString('id-ID');
+const fmtWaktu = (d: string | null) => (d ? new Date(d).toLocaleString('id-ID', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '');
 const cbCls = 'h-4 w-4 rounded border-neutral-300 text-primary-600 focus:ring-primary-500 dark:border-neutral-600 dark:bg-neutral-900';
 </script>
 
@@ -53,22 +64,22 @@ const cbCls = 'h-4 w-4 rounded border-neutral-300 text-primary-600 focus:ring-pr
         <div>
             <h1 class="flex items-center gap-2 text-2xl font-bold"><Users class="h-6 w-6 text-primary-600" /> Akad Massal</h1>
             <p class="mt-0.5 text-sm text-neutral-500">
-                Pilih nasabah dari <b>Pra Proses KPR</b> (Draft &amp; Submitted) yang akadnya dilakukan serentak.
-                Statusnya <b>langsung ke tahap SI</b> — tahapan di bank dilewati — sehingga Surat Instruksi bisa dicetak sesuai bank masing-masing.
+                Pilih nasabah dari <b>Pra Proses KPR</b> (Draft &amp; Submitted) yang akadnya dilakukan serentak, lalu
+                <b>cetak Surat Instruksinya sekaligus</b> — satu halaman per customer, sesuai format bank masing-masing.
             </p>
         </div>
 
-        <!-- Alur singkat, supaya jelas apa yang dilewati -->
-        <div class="flex flex-wrap items-center gap-1.5 rounded-xl bg-white px-4 py-3 text-[11px] font-semibold ring-1 ring-neutral-200 dark:bg-neutral-900 dark:ring-neutral-800">
-            <span class="rounded-md bg-primary-100 px-2 py-1 text-primary-700 dark:bg-primary-950/50 dark:text-primary-300">Submitted</span>
+        <!-- Penegasan: yang massal HANYA cetak SI-nya. -->
+        <div class="flex flex-wrap items-center gap-2 rounded-xl bg-white px-4 py-3 text-[11px] ring-1 ring-neutral-200 dark:bg-neutral-900 dark:ring-neutral-800">
+            <span class="inline-flex items-center gap-1.5 font-semibold text-success-700 dark:text-success-300">
+                <CheckCircle2 class="h-3.5 w-3.5" /> Yang dimassalkan hanya <b>cetak SI</b>
+            </span>
             <ArrowRight class="h-3.5 w-3.5 text-neutral-300" />
-            <span class="rounded-md bg-neutral-100 px-2 py-1 text-neutral-400 line-through dark:bg-neutral-800">Wawancara</span>
-            <span class="rounded-md bg-neutral-100 px-2 py-1 text-neutral-400 line-through dark:bg-neutral-800">Input Sistem Bank</span>
-            <span class="rounded-md bg-neutral-100 px-2 py-1 text-neutral-400 line-through dark:bg-neutral-800">Verifikasi</span>
-            <span class="rounded-md bg-neutral-100 px-2 py-1 text-neutral-400 line-through dark:bg-neutral-800">Analis</span>
-            <span class="rounded-md bg-neutral-100 px-2 py-1 text-neutral-400 line-through dark:bg-neutral-800">SP3K</span>
+            <span class="text-neutral-500">
+                Status &amp; tahapan KPR <b>tidak berubah</b> — Wawancara → Input Sistem Bank → Verifikasi → Analis → SP3K → SI tetap dijalani seperti biasa.
+            </span>
             <ArrowRight class="h-3.5 w-3.5 text-neutral-300" />
-            <span class="rounded-md bg-success-100 px-2 py-1 text-success-700 dark:bg-success-950/50 dark:text-success-300">SI — Cetak Surat Instruksi</span>
+            <span class="text-neutral-500">Yang sudah dicetak diberi tanda, dan tandanya muncul pada <b>tahap SI</b> di Proses KPR-nya.</span>
         </div>
 
         <!-- Ringkasan pilihan + aksi -->
@@ -93,9 +104,9 @@ const cbCls = 'h-4 w-4 rounded border-neutral-300 text-primary-600 focus:ring-pr
                         <label class="mb-1 block text-[11px] font-medium text-neutral-500">Keterangan (opsional)</label>
                         <input v-model="note" placeholder="mis. Akad massal batch Agustus" class="h-9 w-64 max-w-full rounded-lg border border-neutral-300 bg-white px-3 text-sm dark:border-neutral-700 dark:bg-neutral-900" />
                     </div>
-                    <Button :disabled="!selectedIds.length" :loading="processing" @click="proses">
-                        <template #icon-left><CheckCircle2 class="h-4 w-4" /></template>
-                        Proses Akad Massal
+                    <Button :disabled="!selectedIds.length" :loading="processing" @click="cetakMassal">
+                        <template #icon-left><Printer class="h-4 w-4" /></template>
+                        Cetak SI Massal
                     </Button>
                 </div>
             </div>
@@ -114,6 +125,7 @@ const cbCls = 'h-4 w-4 rounded border-neutral-300 text-primary-600 focus:ring-pr
                         <th class="px-4 py-3">Bank</th>
                         <th class="px-4 py-3 text-right">Plafon</th>
                         <th class="px-4 py-3 text-center">Tahap</th>
+                        <th class="px-4 py-3 text-center">Cetak SI Massal</th>
                     </tr>
                 </thead>
                 <tbody class="divide-y divide-neutral-200 dark:divide-neutral-800">
@@ -139,16 +151,24 @@ const cbCls = 'h-4 w-4 rounded border-neutral-300 text-primary-600 focus:ring-pr
                         </td>
                         <td class="px-4 py-2.5 text-right font-mono tabular-nums">{{ fmtRp(r.plafon) }}</td>
                         <td class="px-4 py-2.5 text-center"><Badge size="sm" :variant="r.status === 'submitted' ? 'info' : 'neutral'">{{ r.status }}</Badge></td>
+                        <td class="px-4 py-2.5 text-center">
+                            <span v-if="r.si_bulk_at" :title="'Terakhir dicetak massal ' + fmtWaktu(r.si_bulk_at)"
+                                class="inline-flex items-center gap-1 rounded-md bg-emerald-50 px-2 py-1 text-[10.5px] font-semibold text-emerald-700 ring-1 ring-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:ring-emerald-800/60">
+                                <CheckCircle2 class="h-3 w-3 shrink-0" /> sudah<template v-if="r.si_bulk_count > 1"> ({{ r.si_bulk_count }}×)</template>
+                            </span>
+                            <span v-else class="text-[11px] text-neutral-400">—</span>
+                        </td>
                     </tr>
                 </tbody>
             </table>
             <EmptyState v-if="!filtered.length" title="Tidak ada KPR pada Pra Proses KPR"
-                description="Akad Massal hanya untuk KPR berstatus Draft atau Submitted. Buat Proses KPR baru lebih dulu." />
+                description="Daftar ini memuat KPR berstatus Draft atau Submitted. Buat Proses KPR baru lebih dulu." />
         </div>
 
         <p class="flex items-start gap-1.5 text-[11px] text-neutral-500">
             <Printer class="mt-0.5 h-3.5 w-3.5 shrink-0" />
-            Setelah diproses, buka Proses KPR masing-masing pada tahap <b>SI</b> untuk mencetak Surat Instruksi — formatnya otomatis mengikuti bank KPR tersebut.
+            Surat tercetak di tab baru, satu halaman per customer. Bank yang belum punya <b>Format SI</b> ikut ditandai pada lembar terakhir dan suratnya tidak dicetak —
+            aturlah dulu di <b>Set Up KPR → Kategori Bank → Format SI</b>. Cetak SI satuan tetap tersedia pada tahap <b>SI</b> di Proses KPR masing-masing.
         </p>
     </div>
 </template>
