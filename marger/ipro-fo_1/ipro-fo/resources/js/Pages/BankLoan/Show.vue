@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { Link, router, useForm, usePage } from '@inertiajs/vue3';
 import { ref, reactive, computed, watch } from 'vue';
-import { CheckCircle2, Landmark, Plus, Printer, Search, TriangleAlert } from 'lucide-vue-next';
+import { CheckCircle2, Landmark, Plus, Printer, Search, TriangleAlert, Users } from 'lucide-vue-next';
 import Badge from '@/Components/UI/Badge.vue';
 import Button from '@/Components/UI/Button.vue';
 import Input from '@/Components/UI/Input.vue';
@@ -17,6 +17,21 @@ const a = props.app;
 const showOtherApps = ref(false);
 // Format SI tahap 9 — dipakai panel Cetak SI; aman bila server belum mengirimnya.
 const siFormat = computed(() => props.siFormat ?? { bank: a.bank?.name ?? 'Bank belum dipilih', label: '', ready: false });
+
+// Cap dari layar Akad Massal — SI KPR ini pernah ikut CETAK MASSAL. Hanya penanda:
+// status & tahapan KPR tidak pernah diubah oleh layar itu.
+const siBulk = computed(() => {
+    const tl: Record<string, any> = a.timeline ?? {};
+    const at = tl.si_bulk_printed_at ?? null;
+
+    return {
+        at,
+        waktu: at ? new Date(at).toLocaleString('id-ID', { day: '2-digit', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '',
+        oleh: tl.si_bulk_printed_by ?? '',
+        note: tl.si_bulk_note ?? '',
+        count: Number(tl.si_bulk_count ?? 0),
+    };
+});
 
 // #item4 — keputusan Lanjut/Batal (gerbang ke akad). Salinan reaktif lokal agar kolom berubah SEKETIKA (optimistic).
 const sibRows = ref<any[]>((props.siblings ?? []).map((s: any) => ({ ...s })));
@@ -1103,7 +1118,16 @@ const historyNodes = computed<HistoryNode[]>(() => {
                                 <span v-else class="inline-flex items-center gap-1 rounded-md bg-amber-50 px-2 py-1 text-[11px] font-semibold text-amber-700 ring-1 ring-amber-200 dark:bg-amber-950/40 dark:text-amber-300 dark:ring-amber-800/60">
                                     <TriangleAlert class="h-3 w-3 shrink-0" /> Belum ada Format SI — memakai surat generik
                                 </span>
+                                <!-- Tanda dari layar Akad Massal: SI-nya sudah pernah ikut cetak massal. -->
+                                <span v-if="siBulk.at" :title="'Dicetak massal ' + siBulk.waktu + (siBulk.oleh ? ' oleh ' + siBulk.oleh : '')"
+                                    class="inline-flex items-center gap-1 rounded-md bg-primary-50 px-2 py-1 text-[11px] font-semibold text-primary-700 ring-1 ring-primary-200 dark:bg-primary-950/40 dark:text-primary-300 dark:ring-primary-800/60">
+                                    <Users class="h-3 w-3 shrink-0" /> Sudah cetak SI massal<template v-if="siBulk.count > 1"> ({{ siBulk.count }}×)</template>
+                                </span>
                             </div>
+                            <p v-if="siBulk.at" class="mt-2 text-[11px] text-neutral-500">
+                                Surat Instruksi KPR ini sudah ikut <b>cetak SI massal</b> pada {{ siBulk.waktu }}<template v-if="siBulk.oleh"> oleh <b>{{ siBulk.oleh }}</b></template><template v-if="siBulk.note"> — {{ siBulk.note }}</template>.
+                                Tombol di samping tetap bisa dipakai bila perlu cetak ulang.
+                            </p>
                         </div>
                         <a :href="route('kpr.si-print', { kpr: a.id })" target="_blank"
                             class="inline-flex h-10 shrink-0 items-center gap-2 rounded-lg bg-primary-600 px-4 text-sm font-bold text-white shadow-sm transition-all duration-200 hover:bg-primary-700 active:scale-[0.98]">
