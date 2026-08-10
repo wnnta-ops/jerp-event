@@ -8,6 +8,7 @@ use App\Domain\BankLoan\Enums\KprStatus;
 use App\Domain\BankLoan\Models\BankRetentionTerm;
 use App\Domain\BankLoan\Models\KprRealization;
 use App\Domain\BankLoan\Models\KprRetention;
+use App\Domain\BankLoan\Models\KprRetentionRelease;
 use App\Domain\BusinessSupport\Actions\ConvertUtjDpToUangMuka;
 use App\Domain\BusinessSupport\Models\BsAccount;
 use App\Domain\BusinessSupport\Models\BsBookedRevenue;
@@ -449,7 +450,12 @@ class BankApprovalController extends Controller
         BsFakturKeluaranEntry::updateOrCreate(
             ['source_type' => $type, 'source_id' => $sourceId],
             [
-                'keterangan'  => $type === 'retensi' ? 'Retensi' : ($type === 'pencairan' ? 'Pencairan KPR' : 'UTJ & DP'),
+                'keterangan'  => match ($type) {
+                    'retensi'         => 'Retensi',
+                    'retensi_release' => 'Pelepasan Retensi',
+                    'pencairan'       => 'Pencairan KPR',
+                    default           => 'UTJ & DP',
+                },
                 'customer_id' => $customerId,
                 'booking_id'  => $bookingId,
                 'doc_date'    => $docDate,
@@ -479,6 +485,7 @@ class BankApprovalController extends Controller
                 'realization.application.akad:id,kpr_application_id,akad_at',
                 // Kategori retensi dipakai untuk mengenali tahap DAJAM PAJAK (jalur BSN).
                 'realization.category:id,code,name,is_dajam',
+                'releases.journal.lines.account:id,code,name',
                 'journal.lines.account:id,code,name',
             ])
             ->orderByRaw('journal_id IS NULL DESC') // belum dijurnal (pending) di atas
@@ -582,6 +589,94 @@ class BankApprovalController extends Controller
                 'default_piutang_account'    => $piutangAcc ? $piutangAcc->code.' - '.$piutangAcc->name : null,
             ];
         });
+
+        // ── Baris PELEPASAN DAJAM — SATU BARIS PER TRANCHE ────────────────────────────────
+        // Retensi yang dilepas bertahap menghasilkan beberapa baris; masing-masing dijurnal &
+        // disetujui SENDIRI-SENDIRI (ketentuan pemilik proses). Jurnalnya menempel di
+        // kpr_retention_releases.journal_id, terpisah dari jurnal pencadangannya.
+        $releaseRows = collect();
+        foreach ($retentions as $ret) {
+            $rz = $ret->realization;
+            $bankId    = $rz?->bank_account_id;
+            $termAccId = $this->bankTermAccountFor($termMap, $rz?->application?->bank_partner_id, $rz?->retention_category_id);
+            $termAcc   = $termAccId ? $accounts->firstWhere('id', $termAccId) : null;
+            $bankGl    = $termAcc ?: $this->mapBankAccountToGl($bankId ? $banks->get($bankId) : null, $accounts);
+            $unit      = $rz?->application?->booking?->unit;
+            $unitType  = $unit?->unitType;
+            $akadDate  = optional($rz?->application?->akad?->akad_at)->toDateString();
+            $akadStat  = $this->akadStatusFrom($rz?->application?->status?->value, $akadDate);
+            $br        = $brMap->get($rz?->application?->booking?->unit_id);
+            $scheme    = $this->schemeOf($rz, $bankId ? $banks->get($bankId) : null);
+            $piutangId = $br?->receivable_account_id ?? $defaults['piutang_account_id'];
+            $piutangAcc = $piutangId ? $accounts->firstWhere('id', (int) $piutangId) : null;
+
+            $trancheTotal = $ret->releases->count();
+            $retAmount    = round((float) $ret->amount, 2);
+            $cumulative   = 0.0;
+
+            foreach ($ret->releases as $i => $rel) {
+                $amount  = round((float) $rel->amount, 2);
+                $cumulative = round($cumulative + $amount, 2);
+                $tgl     = optional($rel->released_at)->toDateString();
+                // Bentuk jurnal tranche ditentukan Booked Revenue PADA TANGGAL PELEPASANNYA.
+                $booked  = $this->isBookedOn($br, $tgl ?? $akadDate);
+                $ppn     = round($amount * self::PPN_RATE_NUM / self::PPN_RATE_DEN, 2);
+                $j       = $rel->journal;
+                $debit   = $j?->lines->first(fn ($l) => (float) $l->debit > 0);
+                $credit  = $j?->lines->first(fn ($l) => (float) $l->credit > 0);
+
+                $releaseRows->push([
+                    'id'                => $rel->id,
+                    'kind'              => 'release',
+                    'akad_status'       => $akadStat['status'],
+                    'row_key'           => 'release-'.$rel->id,
+                    'amount'            => $amount,
+                    'status'            => 'released',
+                    'released_at'       => $tgl,
+                    'retention_date'    => $tgl,
+                    'akad_date'         => $akadDate,
+                    'kpr_number'        => $rz?->application?->application_number,
+                    'unit_code'         => $unit?->unit_code,
+                    'unit_info'         => $unitType ? trim((string) ($unitType->code ?: $unitType->name)) : null,
+                    'customer'          => $rz?->application?->customer?->full_name,
+                    'note'              => trim('Pelepasan DAJAM'.($rel->reason ? ' — '.$rel->reason : '')),
+                    'rejected'          => $rel->approval_status === 'rejected',
+                    'reject_reason'     => $rel->reject_reason,
+                    'rejected_at'       => optional($rel->rejected_at)->toDateTimeString(),
+                    'journaled'         => (bool) $rel->journal_id,
+                    'journal_id'        => $rel->journal_id,
+                    'journal_number'    => $j?->journal_number,
+                    'journal_date'      => optional($j?->journal_date)->toDateString(),
+                    'debit_account_id'  => $debit?->account_id,
+                    'debit_account'     => $debit?->account ? $debit->account->code.' - '.$debit->account->name : null,
+                    'credit_account_id' => $credit?->account_id,
+                    'credit_account'    => $credit?->account ? $credit->account->code.' - '.$credit->account->name : null,
+                    'default_debit_account_id' => $bankGl?->id,
+                    'default_debit_account'    => $bankGl ? $bankGl->code.' - '.$bankGl->name : null,
+                    'bank_account_label'       => $bankId ? optional($banks->get($bankId))->account_name : null,
+                    'debit_source'      => $termAcc ? 'bank_setup' : ($bankGl ? 'auto' : null),
+                    'default_ppn'       => $ppn,
+                    'default_uang_muka' => round($amount - $ppn, 2),
+                    'scheme'            => $scheme,
+                    'is_dajam_pajak'    => false,
+                    'is_retensi_dajam'  => false,
+                    'br_number'         => $br?->br_number,
+                    'br_booking_date'   => $br?->booking_date?->toDateString(),
+                    'booked'            => $booked,
+                    'default_credit_mode'        => $this->defaultCreditMode($booked, $scheme, false, 'release'),
+                    'default_piutang_account_id' => $piutangAcc?->id,
+                    'default_piutang_account'    => $piutangAcc ? $piutangAcc->code.' - '.$piutangAcc->name : null,
+                    // Konteks induk — dipakai layar untuk menyusun tranche sebagai anak dari
+                    // baris pencadangannya (indent + progres "sudah dilepas dari total retensi").
+                    'parent_key'        => 'retensi-'.$ret->id,
+                    'tranche_index'     => $i + 1,
+                    'tranche_count'     => $trancheTotal,
+                    'retention_amount'  => $retAmount,
+                    'released_cum'      => $cumulative,
+                    'retention_sisa'    => round(max($retAmount - $cumulative, 0), 2),
+                ]);
+            }
+        }
 
         // ── Baris PENCAIRAN (net = disbursed − retention) — setiap input pencairan KPR ikut masuk
         //    approval, dijurnal DR Bank / CR Uang Muka Penjualan + PPN (sama seperti retensi). Net TTS
@@ -691,7 +786,7 @@ class BankApprovalController extends Controller
         // 'partial' (sebagian dilepas) atau 'released' (lepas penuh). Sama seperti aturan batal
         // akad, yang telanjur dijurnal tetap tampil sebagai riwayat agar jurnal tidak hilang
         // dari layar.
-        $rows = $retRows->concat($pencRows)
+        $rows = $retRows->concat($releaseRows)->concat($pencRows)
             ->reject(fn ($x) => $x['akad_status'] === 'batal' && ! $x['journaled'])
             ->reject(fn ($x) => $x['kind'] === 'retensi' && $x['status'] === 'held' && ! $x['journaled'])
             ->sortBy(fn ($x) => ($x['journaled'] ? 1_000_000_000_000 : 0) - $x['id'])
@@ -805,6 +900,114 @@ class BankApprovalController extends Controller
         }
 
         return back()->with('success', "Retensi disetujui & jurnal {$journal->journal_number} terposting (".$this->creditModeLabel($built['mode']).').');
+    }
+
+    /**
+     * Setujui & jurnal SATU TRANCHE pelepasan DAJAM.
+     *
+     * Sengaja terpisah dari retensiPost(): tiap pelepasan punya jurnal & approval sendiri,
+     * sehingga pelepasan bertahap tidak lagi saling menimpa. Bentuk jurnalnya mengikuti
+     * Booked Revenue PADA TANGGAL JURNAL tranche ini:
+     *   belum booked → Dr Bank / Cr Uang Muka + Cr PPN Keluaran (11/111)
+     *   sudah booked → Dr Bank / Cr Piutang Usaha (tanpa PPN)
+     */
+    public function releasePost(Request $request, KprRetentionRelease $release, JournalService $svc): RedirectResponse
+    {
+        abort_unless($request->user()?->can('businesssupport.approval.act'), 403);
+
+        if ($release->journal_id) {
+            return back()->with('error', 'Pelepasan DAJAM ini sudah dijurnal.');
+        }
+        if ($release->approval_status === 'rejected') {
+            return back()->with('error', 'Pelepasan ini ditolak — pulihkan dulu sebelum disetujui/dijurnal.');
+        }
+        $amount = round((float) $release->amount, 2);
+        if ($amount <= 0) {
+            return back()->with('error', 'Nominal pelepasan tidak valid.');
+        }
+
+        $release->loadMissing([
+            'retention.realization.application.customer:id,full_name',
+            'retention.realization.application.booking.unit:id,unit_code',
+        ]);
+        $app    = $release->retention?->realization?->application;
+        $ref    = $app?->application_number ?? "RELEASE-{$release->id}";
+        $suffix = $this->descSuffix($app?->customer?->full_name, $app?->booking?->unit?->unit_code);
+        $desc   = "Pelepasan DAJAM KPR {$ref}".$suffix;
+
+        $v = $request->validate([
+            'journal_date'         => ['required', 'date'],
+            'debit_account_id'     => ['required', 'integer', 'exists:bs_accounts,id'],
+            'credit_mode'          => ['nullable', 'string', Rule::in(self::CREDIT_MODES)],
+            'uang_muka_account_id' => ['nullable', 'integer', 'exists:bs_accounts,id'],
+            'uang_muka_amount'     => ['nullable', 'numeric', 'min:0'],
+            'ppn_account_id'       => ['nullable', 'integer', 'exists:bs_accounts,id'],
+            'ppn_amount'           => ['nullable', 'numeric', 'min:0'],
+            'credit_account_id'    => ['nullable', 'integer', 'exists:bs_accounts,id'],
+        ]);
+
+        $booked = $this->isBookedOn(
+            $this->bookedRevenueOfUnit($app?->booking?->unit_id),
+            (string) $v['journal_date'],
+        );
+
+        // Pelepasan = uang MASUK; 'deduct' (jurnal dibalik) tidak berlaku di sini.
+        if (($v['credit_mode'] ?? null) === 'deduct') {
+            return back()->with('error', 'Pelepasan DAJAM adalah uang masuk — mode potongan tidak berlaku.');
+        }
+
+        $built = $this->buildApprovalLines($v, $amount, $booked, $suffix, $desc, 'Pelepasan DAJAM'.$suffix);
+        if (isset($built['error'])) {
+            return back()->with('error', $built['error']);
+        }
+
+        try {
+            $journal = $svc->post([
+                'journal_date' => $v['journal_date'],
+                'source'       => 'cash',
+                'status'       => 'posted',
+                'reference'    => $ref,
+                'description'  => $desc,
+                'created_by'   => $request->user()->id,
+            ], $built['lines']);
+        } catch (BusinessRuleException $e) {
+            return back()->with('error', $e->getMessage());
+        }
+
+        $release->update(['journal_id' => $journal->id, 'approval_status' => null, 'reject_reason' => null, 'rejected_at' => null]);
+
+        // PPN pelepasan wajib dilaporkan — hanya bila memang ada PPN (belum Booked Revenue).
+        // source_type TERSENDIRI ('retensi_release', source_id = id tranche): tiap pelepasan punya
+        // entri faktur sendiri, tidak saling menimpa, dan tidak bentrok id dengan induk retensinya.
+        if ($built['faktur']) {
+            $this->recordFakturKeluaranEntry($request, 'retensi_release', $release->id, $app?->customer_id, $app?->booking_id, $v['journal_date'], $built['dpp'], $built['ppn'], $amount, $journal->id, true);
+        }
+
+        return back()->with('success', "Pelepasan DAJAM disetujui & jurnal {$journal->journal_number} terposting (".$this->creditModeLabel($built['mode']).').');
+    }
+
+    /** Tolak SATU TRANCHE pelepasan DAJAM (belum dijurnal). */
+    public function releaseReject(Request $request, KprRetentionRelease $release): RedirectResponse
+    {
+        abort_unless($request->user()?->can('businesssupport.approval.act'), 403);
+
+        if ($release->journal_id) {
+            return back()->with('error', 'Pelepasan ini sudah dijurnal — tidak bisa ditolak.');
+        }
+        $v = $request->validate(['reason' => ['required', 'string', 'max:500']]);
+        $release->update(['approval_status' => 'rejected', 'reject_reason' => $v['reason'], 'rejected_at' => now()]);
+
+        return back()->with('success', 'Pelepasan DAJAM ditolak.');
+    }
+
+    /** Pulihkan pelepasan DAJAM yang ditolak → kembali menunggu approval. */
+    public function releaseRestore(Request $request, KprRetentionRelease $release): RedirectResponse
+    {
+        abort_unless($request->user()?->can('businesssupport.approval.act'), 403);
+
+        $release->update(['approval_status' => null, 'reject_reason' => null, 'rejected_at' => null]);
+
+        return back()->with('success', 'Pelepasan DAJAM dipulihkan — menunggu approval kembali.');
     }
 
     /** Tolak approval Retensi (belum dijurnal) → approval_status 'rejected' + alasan. */

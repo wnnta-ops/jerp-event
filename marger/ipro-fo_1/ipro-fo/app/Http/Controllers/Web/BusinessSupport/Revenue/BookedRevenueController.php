@@ -400,7 +400,8 @@ class BookedRevenueController extends Controller
             ->get(['id', 'booking_id', 'issued_at', 'total', 'fp_number'])->groupBy('booking_id')->map(fn ($g) => $g->sortByDesc('issued_at')->first());
         $entries = \App\Domain\BusinessSupport\Models\BsFakturKeluaranEntry::whereIn('booking_id', $bookingIds)
             ->get(['id', 'booking_id', 'source_type', 'doc_date', 'total']);
-        $retByBooking = $entries->where('source_type', 'retensi')->groupBy('booking_id');
+        // 'retensi' (approval retensi lama) + 'retensi_release' (per tranche pelepasan DAJAM).
+        $retByBooking = $entries->whereIn('source_type', ['retensi', 'retensi_release'])->groupBy('booking_id');
         $utjByBooking = $entries->where('source_type', 'utj_dp')->groupBy('booking_id');
 
         $rows = $brs->map(function ($br) use ($bookingByUnit, $bast, $ajb, $fp, $retByBooking, $utjByBooking) {
