@@ -645,27 +645,31 @@ class ApInvoiceController extends Controller
         // #BPP — tabel No. Account / Uraian / Jumlah mengikuti Struktur Jurnal:
         //   • semua akun jurnal KECUALI Utang Usaha Supplier (akun payable),
         //   • Debit bernilai PLUS, Kredit bernilai MINUS,
-        //   • nilai Utang Usaha Supplier dijadikan TOTAL akhir (net dibayar ke supplier).
+        //   • TOTAL = penjumlahan SELURUH rincian yang tercetak di atasnya.
         $payableId = (int) ($invoice->payable_account_id ?? 0);
         $jlines = $invoice->journal_id
             ? \App\Domain\BusinessSupport\Models\BsJournalLine::with('account:id,code,name')
                 ->where('journal_id', $invoice->journal_id)->orderBy('id')->get()
             : collect();
-        $payableLine = $jlines->first(fn ($l) => (int) $l->account_id === $payableId);
-        $totalPay    = $payableLine ? ((float) $payableLine->credit - (float) $payableLine->debit) : $net;
         // Nilai minus diberi tanda '-'; nilai positif (debit) tanpa tanda '+'.
-        $signFmt     = fn (float $n) => ($n < 0 ? '- Rp. ' : 'Rp. ').number_format(abs($n), 2, ',', '.');
+        $signFmt = fn (float $n) => ($n < 0 ? '- Rp. ' : 'Rp. ').number_format(abs($n), 2, ',', '.');
 
         $bppRows  = '';
         $bppCount = 0;
+        // Total dijumlahkan dari baris yang BENAR-BENAR dicetak, bukan diambil dari baris Utang
+        // Usaha Supplier. Satu invoice bisa punya BEBERAPA baris utang (mis. gimmick per customer);
+        // mengambil baris pertama saja membuat total tercetak hanya sebesar rincian pertama.
+        $totalPay = 0.0;
         foreach ($jlines as $l) {
             if ((int) $l->account_id === $payableId) {
-                continue; // Utang Usaha Supplier → masuk ke baris Total
+                continue; // Utang Usaha Supplier → lawan jurnalnya, tidak dirinci
             }
             $amt = (float) $l->debit > 0 ? (float) $l->debit : -(float) $l->credit; // Debit + , Kredit −
             $bppRows .= '<tr><td>'.$e($l->account?->code ?: '-').'</td><td>'.$e($l->description ?: $invoice->description).'</td><td class="r">'.$signFmt($amt).'</td></tr>';
+            $totalPay += $amt;
             $bppCount++;
         }
+        $totalPay = round($totalPay, 2);
         if ($bppCount === 0) { // fallback data lama tanpa jurnal: baris hutang tunggal.
             $bppRows = '<tr><td>'.$ePayAcc.'</td><td>'.$eDesc.'</td><td class="r">'.$rp($net).'</td></tr>';
             $bppCount = 1;
