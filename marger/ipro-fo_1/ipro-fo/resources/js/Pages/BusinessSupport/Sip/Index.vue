@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { ref } from 'vue';
+import { ref, computed } from 'vue';
 import { router, Link } from '@inertiajs/vue3';
-import { Plus, ArrowLeft, ClipboardList, Search } from 'lucide-vue-next';
+import { Plus, ClipboardList, CalendarRange, RotateCcw } from 'lucide-vue-next';
 import Button from '@/Components/UI/Button.vue';
 import Badge from '@/Components/UI/Badge.vue';
 import EmptyState from '@/Components/UI/EmptyState.vue';
@@ -9,13 +9,24 @@ import EmptyState from '@/Components/UI/EmptyState.vue';
 const props = defineProps<{
     sips: any;
     statuses: Record<string, string>;
-    filters: { status?: string; search?: string };
+    filters: { status?: string | null; date_from?: string | null; date_to?: string | null };
     summary: { pending: number; approved: number; total: number };
 }>();
 
-const search = ref(props.filters.search ?? '');
+// Filter PERIODE Tanggal SIP — menggantikan kolom pencarian teks.
+const dateFrom = ref(props.filters.date_from ?? '');
+const dateTo = ref(props.filters.date_to ?? '');
 const status = ref(props.filters.status ?? '');
-function applyFilter() { router.get(route('bs.sip.index'), { search: search.value || undefined, status: status.value || undefined }, { preserveState: true, replace: true }); }
+const adaFilter = computed(() => Boolean(dateFrom.value || dateTo.value || status.value));
+
+function applyFilter() {
+    router.get(route('bs.sip.index'), {
+        date_from: dateFrom.value || undefined,
+        date_to: dateTo.value || undefined,
+        status: status.value || undefined,
+    }, { preserveState: true, replace: true });
+}
+function resetFilter() { dateFrom.value = ''; dateTo.value = ''; status.value = ''; applyFilter(); }
 function fmtRp(v: number) { return 'Rp ' + Number(v ?? 0).toLocaleString('id-ID'); }
 function fmtDate(d: string) { return d ? new Date(d).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'; }
 const badge: Record<string, any> = { submitted: 'info', printed: 'warning', approved: 'success', cancelled: 'danger' };
@@ -33,14 +44,29 @@ const badge: Record<string, any> = { submitted: 'info', printed: 'warning', appr
             <div class="card p-4"><div class="text-xs uppercase text-neutral-400">Total Nilai SIP</div><div class="mt-1 text-xl font-bold">{{ fmtRp(summary.total) }}</div></div>
         </div>
 
-        <div class="flex flex-wrap items-center gap-2">
-            <div class="relative flex-1 min-w-48">
-                <Search class="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-neutral-400" />
-                <input v-model="search" @keyup.enter="applyFilter" placeholder="Cari no. SIP / judul…" class="h-9 w-full rounded-lg border border-neutral-300 bg-white pl-9 pr-3 text-sm dark:border-neutral-700 dark:bg-neutral-900" />
+        <!-- Filter periode Tanggal SIP: periode awal → periode akhir. -->
+        <div class="flex flex-wrap items-end gap-2">
+            <div class="flex items-end gap-2 rounded-lg border border-neutral-200 bg-white px-3 py-2 dark:border-neutral-800 dark:bg-neutral-900">
+                <CalendarRange class="mb-2 h-4 w-4 shrink-0 text-neutral-400" />
+                <div>
+                    <label class="mb-1 block text-[11px] font-medium text-neutral-500">Periode Awal</label>
+                    <input v-model="dateFrom" type="date" :max="dateTo || undefined" @change="applyFilter"
+                        class="h-9 rounded-lg border border-neutral-300 bg-white px-2 text-sm dark:border-neutral-700 dark:bg-neutral-900" />
+                </div>
+                <span class="mb-2 text-neutral-400">—</span>
+                <div>
+                    <label class="mb-1 block text-[11px] font-medium text-neutral-500">Periode Akhir</label>
+                    <input v-model="dateTo" type="date" :min="dateFrom || undefined" @change="applyFilter"
+                        class="h-9 rounded-lg border border-neutral-300 bg-white px-2 text-sm dark:border-neutral-700 dark:bg-neutral-900" />
+                </div>
             </div>
             <select v-model="status" @change="applyFilter" class="h-9 rounded-lg border border-neutral-300 bg-white px-3 text-sm dark:border-neutral-700 dark:bg-neutral-900">
                 <option value="">Semua status</option><option v-for="(label, val) in statuses" :key="val" :value="val">{{ label }}</option>
             </select>
+            <button v-if="adaFilter" type="button" @click="resetFilter"
+                class="inline-flex h-9 items-center gap-1.5 rounded-lg border border-neutral-300 px-3 text-xs font-medium text-neutral-600 hover:bg-neutral-50 dark:border-neutral-700 dark:text-neutral-300 dark:hover:bg-neutral-800">
+                <RotateCcw class="h-3.5 w-3.5" /> Reset Filter
+            </button>
         </div>
 
         <div class="card overflow-x-auto">
@@ -59,7 +85,9 @@ const badge: Record<string, any> = { submitted: 'info', printed: 'warning', appr
                     </tr>
                 </tbody>
             </table>
-            <EmptyState v-if="!sips.data?.length" title="Belum ada SIP" description="Klik Buat SIP untuk mengajukan instruksi pembayaran tagihan & bon per bank sumber." />
+            <!-- Kosong karena filter ≠ kosong karena belum ada data — jangan sampai tertukar. -->
+            <EmptyState v-if="!sips.data?.length && adaFilter" title="Tidak ada SIP pada periode ini" description="Ubah periode awal / akhir atau status, atau klik Reset Filter." />
+            <EmptyState v-else-if="!sips.data?.length" title="Belum ada SIP" description="Klik Buat SIP untuk mengajukan instruksi pembayaran tagihan & bon per bank sumber." />
         </div>
     </div>
 </template>

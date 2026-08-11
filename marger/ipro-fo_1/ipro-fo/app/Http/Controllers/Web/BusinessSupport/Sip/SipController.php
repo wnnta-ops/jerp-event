@@ -28,17 +28,23 @@ class SipController extends Controller
     {
         abort_unless($request->user()?->canModule('bs'), 403);
 
+        // Filter PERIODE atas Tanggal SIP (sip_date). Tanggal tak berformat diabaikan agar
+        // ketikan setengah jadi tidak mengosongkan daftar. Bila periode awal melewati periode
+        // akhir, keduanya ditukar — lebih menolong daripada memulangkan daftar kosong.
+        [$from, $to] = $this->periodeFilter($request->input('date_from'), $request->input('date_to'));
+
         $rows = BsSip::query()
             ->with('cashAccount:id,code,name')
             ->when($request->input('status'), fn ($q, $v) => $q->where('status', $v))
-            ->when($request->input('search'), fn ($q, $s) => $q->where(fn ($w) => $w->where('sip_number', 'like', "%{$s}%")->orWhere('title', 'like', "%{$s}%")))
+            ->when($from, fn ($q, $v) => $q->whereDate('sip_date', '>=', $v))
+            ->when($to, fn ($q, $v) => $q->whereDate('sip_date', '<=', $v))
             ->latest('sip_date')->latest('id')
             ->paginate(50)->withQueryString();
 
         return Inertia::render('BusinessSupport/Sip/Index', [
             'sips'     => $rows,
             'statuses' => BsSip::STATUSES,
-            'filters'  => $request->only(['status', 'search']),
+            'filters'  => ['status' => $request->input('status'), 'date_from' => $from, 'date_to' => $to],
             'summary'  => [
                 // #111: belum disetujui semua pihak (Diajukan/Dicetak) vs sudah Disetujui.
                 'pending'  => BsSip::whereIn('status', ['submitted', 'printed'])->count(),
@@ -46,6 +52,35 @@ class SipController extends Controller
                 'total'    => (float) BsSip::whereIn('status', ['submitted', 'printed', 'approved'])->sum('total'),
             ],
         ]);
+    }
+
+    /**
+     * Normalisasi periode awal & akhir.
+     *
+     * Hanya menerima tanggal berformat Y-m-d yang benar-benar ada di kalender; selain itu
+     * dianggap tidak diisi. Periode awal yang melewati periode akhir ditukar posisinya.
+     *
+     * @return array{0:?string,1:?string}
+     */
+    private function periodeFilter(mixed $from, mixed $to): array
+    {
+        $bersih = function (mixed $v): ?string {
+            $v = is_string($v) ? trim($v) : '';
+            if ($v === '') {
+                return null;
+            }
+            $d = \DateTimeImmutable::createFromFormat('!Y-m-d', $v);
+
+            return ($d && $d->format('Y-m-d') === $v) ? $v : null;
+        };
+
+        $from = $bersih($from);
+        $to = $bersih($to);
+        if ($from && $to && $from > $to) {
+            [$from, $to] = [$to, $from];
+        }
+
+        return [$from, $to];
     }
 
     public function create(Request $request): Response
