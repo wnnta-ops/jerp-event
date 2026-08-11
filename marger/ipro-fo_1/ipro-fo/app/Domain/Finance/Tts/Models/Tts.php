@@ -23,7 +23,12 @@ class Tts extends Model
         'tenant_id', 'project_id', 'tts_number', 'customer_id', 'booking_id',
         'amount', 'payment_method', 'received_date', 'bank_account_id',
         'reference_no', 'status', 'notes', 'received_by', 'posted_by', 'posted_at', 'journal_id',
+        // null = Approval UTJ · 'dp' = Approval DP (Pelunasan DP, Angsuran & Tambah DP)
+        'approval_source',
     ];
+
+    /** Asal penerimaan → menentukan submodul approval mana yang menampilkannya. */
+    public const SOURCE_DP = 'dp';
 
     protected $casts = [
         'received_date' => 'date',

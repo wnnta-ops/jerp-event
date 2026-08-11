@@ -445,12 +445,13 @@ class BankApprovalController extends Controller
      *  - retensi → langsung aktif (boleh isi nomor FP).
      *  - utj_dp  → belum aktif; aktif setelah "Konversi ke Uang Muka Penjualan".
      */
-    private function recordFakturKeluaranEntry(Request $request, string $type, int $sourceId, ?int $customerId, ?int $bookingId, string $docDate, float $dpp, float $ppn, float $total, int $journalId, bool $active): void
+    private function recordFakturKeluaranEntry(Request $request, string $type, int $sourceId, ?int $customerId, ?int $bookingId, string $docDate, float $dpp, float $ppn, float $total, int $journalId, bool $active, ?string $keterangan = null): void
     {
         BsFakturKeluaranEntry::updateOrCreate(
             ['source_type' => $type, 'source_id' => $sourceId],
             [
-                'keterangan'  => match ($type) {
+                // $keterangan diisi pemanggil bila asalnya perlu disebut (mis. dari Approval DP).
+                'keterangan'  => $keterangan ?? match ($type) {
                     'retensi'         => 'Retensi',
                     'retensi_release' => 'Pelepasan Retensi',
                     'pencairan'       => 'Pencairan KPR',
@@ -1171,9 +1172,45 @@ class BankApprovalController extends Controller
     }
 
     // ── Approval UTJ & DP (TTS yang sudah diposting ke Kuitansi) ──────────
-    public function utjdpIndex(Request $request): Response
+    /**
+     * Approval DP — penerimaan yang berasal dari "Pelunasan DP, Angsuran & Tambah DP" (FO).
+     *
+     * Mesinnya sama persis dengan Approval UTJ; yang membedakan hanya SUMBER barisnya
+     * (tts_receipts.approval_source = 'dp'), sehingga dua submodul ini tidak pernah saling
+     * menampilkan baris yang sama dan tidak ada penerimaan yang dijurnal dua kali.
+     */
+    public function dpIndex(Request $request): Response
+    {
+        return $this->utjdpIndex($request, Tts::SOURCE_DP);
+    }
+
+    public function dpPost(Request $request, Tts $tts, JournalService $svc): RedirectResponse
+    {
+        return $this->utjdpPost($request, $tts, $svc, Tts::SOURCE_DP);
+    }
+
+    public function dpReject(Request $request, Tts $tts): RedirectResponse
+    {
+        return $this->utjdpReject($request, $tts);
+    }
+
+    public function dpRestore(Request $request, Tts $tts): RedirectResponse
+    {
+        return $this->utjdpRestore($request, $tts);
+    }
+
+    /**
+     * @param  ?string  $source  null = Approval UTJ (semua yang BUKAN 'dp') · 'dp' = Approval DP
+     */
+    public function utjdpIndex(Request $request, ?string $source = null): Response
     {
         abort_unless($request->user()?->canModule('cashbook'), 403);
+
+        // Pemisah dua submodul: Approval UTJ mengambil sisanya (termasuk data lama yang
+        // approval_source-nya masih NULL), Approval DP hanya yang bertanda 'dp'.
+        $bySource = fn ($q) => $source === Tts::SOURCE_DP
+            ? $q->where('approval_source', Tts::SOURCE_DP)
+            : $q->where(fn ($w) => $w->whereNull('approval_source')->orWhere('approval_source', '!=', Tts::SOURCE_DP));
 
         // Tab: 'pending' = posted BELUM dijurnal (menunggu approval); 'tanpa_unit' =
         // sudah dijurnal TAPI tanpa unit (journal_id ada, booking_id null — mis. Transfer
@@ -1186,9 +1223,9 @@ class BankApprovalController extends Controller
         $notKprDisb = fn ($q) => $q->where(fn ($w) => $w->whereNull('reference_no')->orWhere('reference_no', 'not like', 'KPR-DISB-%'));
 
         $counts = [
-            'pending'    => Tts::where('status', 'posted')->whereNull('journal_id')->where($notKprDisb)->count(),
-            'tanpa_unit' => Tts::where('status', 'posted')->whereNotNull('journal_id')->whereNull('booking_id')->count(),
-            'rejected'   => Tts::where('status', 'rejected')->count(),
+            'pending'    => Tts::where($bySource)->where('status', 'posted')->whereNull('journal_id')->where($notKprDisb)->count(),
+            'tanpa_unit' => Tts::where($bySource)->where('status', 'posted')->whereNotNull('journal_id')->whereNull('booking_id')->count(),
+            'rejected'   => Tts::where($bySource)->where('status', 'rejected')->count(),
         ];
 
         $accounts = $this->postableAccounts();
@@ -1197,6 +1234,7 @@ class BankApprovalController extends Controller
             ?? ($accounts->firstWhere('code', config('business_support.gl_accounts.payable')));
 
         $tts = Tts::query()
+            ->where($bySource)
             ->when($tab === 'rejected', fn ($q) => $q->where('status', 'rejected'))
             ->when($tab === 'tanpa_unit', fn ($q) => $q->where('status', 'posted')->whereNotNull('journal_id')->whereNull('booking_id'))
             ->when($tab === 'pending', fn ($q) => $q->where('status', 'posted')->whereNull('journal_id')->where($notKprDisb))
@@ -1262,11 +1300,21 @@ class BankApprovalController extends Controller
             ];
         });
 
+        $isDp = $source === Tts::SOURCE_DP;
+
         return Inertia::render('BusinessSupport/CashBook/ApprovalUtjDp', [
             'rows'     => $rows,
             'accounts' => $accounts,
             'tab'      => $tab,
             'counts'   => $counts,
+            // Satu halaman dipakai dua submodul; judul, penjelasan & endpoint mengikuti sumbernya.
+            'variant'  => $isDp ? 'dp' : 'utj',
+            'title'    => $isDp ? 'Approval DP' : 'Approval UTJ',
+            'subtitle' => $isDp
+                ? 'Penerimaan dari Pelunasan DP, Angsuran & Tambah DP (FO) — masuk ke sini otomatis begitu "Terima Pembayaran" diklik. Setujui & Posting akan meneruskannya ke Approval UM Penjualan.'
+                : 'Penerimaan UTJ, transfer anonim & kwitansi umum. Setujui & Posting akan meneruskannya ke Approval UM Penjualan.',
+            'routeBase' => $isDp ? 'bs.cashbook.approval-dp' : 'bs.cashbook.approval-utjdp',
+            'indexRoute' => $isDp ? 'bs.cashbook.approval-dp' : 'bs.cashbook.approval-utjdp',
         ]);
     }
 
@@ -1300,7 +1348,8 @@ class BankApprovalController extends Controller
         return back()->with('success', "TTS {$tts->tts_number} dipulihkan ke daftar menunggu approval.");
     }
 
-    public function utjdpPost(Request $request, Tts $tts, JournalService $svc): RedirectResponse
+    /** @param  ?string  $source  'dp' bila disetujui dari submodul Approval DP. */
+    public function utjdpPost(Request $request, Tts $tts, JournalService $svc, ?string $source = null): RedirectResponse
     {
         abort_unless($request->user()?->can('businesssupport.approval.act'), 403);
 
@@ -1314,9 +1363,12 @@ class BankApprovalController extends Controller
 
         $v = $this->validateJournalInput($request);
 
+        $isDp = $source === Tts::SOURCE_DP || $tts->approval_source === Tts::SOURCE_DP;
+
         // Keterangan baris jurnal: sertakan nama customer & nomor unit rumah.
         $tts->loadMissing(['customer:id,full_name', 'booking.unit:id,unit_code']);
-        $desc = "Approval UTJ/DP TTS {$tts->tts_number}".$this->descSuffix($tts->customer?->full_name, $tts->booking?->unit?->unit_code);
+        $label = $isDp ? 'Approval DP' : 'Approval UTJ';
+        $desc = "{$label} TTS {$tts->tts_number}".$this->descSuffix($tts->customer?->full_name, $tts->booking?->unit?->unit_code);
 
         try {
             $journal = $this->postJournal($request, $svc, $v, $amount, $tts->tts_number, $desc);
@@ -1329,9 +1381,12 @@ class BankApprovalController extends Controller
         // Selain GL: catat entri Faktur Pajak Keluaran (keterangan UTJ & DP) — BELUM aktif; nomor
         // Faktur Pajak baru bisa diisi setelah "Konversi ke Uang Muka Penjualan". DPP/PPN diisi 0
         // dulu (dana masih di Hutang Usaha); di-split saat konversi.
-        $this->recordFakturKeluaranEntry($request, 'utj_dp', $tts->id, $tts->customer_id, $tts->booking_id, $v['journal_date'], 0.0, 0.0, $amount, $journal->id, false);
+        // source_type tetap 'utj_dp' supaya barisnya masuk daftar Approval UM Penjualan yang sama;
+        // ASAL-nya dibedakan lewat keterangan, sehingga di sana terbaca datang dari Approval DP.
+        $this->recordFakturKeluaranEntry($request, 'utj_dp', $tts->id, $tts->customer_id, $tts->booking_id, $v['journal_date'], 0.0, 0.0, $amount, $journal->id, false,
+            $isDp ? 'DP / Angsuran / TDP (Approval DP)' : null);
 
-        return back()->with('success', "UTJ/DP disetujui & jurnal {$journal->journal_number} terposting.");
+        return back()->with('success', "{$label} disetujui & jurnal {$journal->journal_number} terposting — lanjut ke Approval UM Penjualan.");
     }
 
     /* ══════════════════ APPROVAL UM PENJUALAN ══════════════════

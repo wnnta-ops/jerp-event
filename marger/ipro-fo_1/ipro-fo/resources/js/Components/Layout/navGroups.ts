@@ -322,7 +322,9 @@ export function navGroups(foUrl: string): NavGroup[] {
                 { label: 'Penerimaan Bank', href: 'bs.cashbook.create', params: { type: 'in' } },
                 { label: 'Approval Retensi', href: 'bs.cashbook.approval-retensi' },
                 { label: 'Approval UM Penjualan', href: 'bs.cashbook.approval-um' },
-                { label: 'Approval UTJ & DP', href: 'bs.cashbook.approval-utjdp' },
+                { label: 'Approval UTJ', href: 'bs.cashbook.approval-utjdp' },
+                // Penerimaan dari Pelunasan DP, Angsuran & Tambah DP (FO) — masuk otomatis.
+                { label: 'Approval DP', href: 'bs.cashbook.approval-dp' },
             ]},
             { label: 'Transaksi Bon Sementara', icon: HandCoins, permission: ['businesssupport.view', 'cashbook.*'], children: [
                 { label: 'Pengeluaran Bon Sementara', href: 'bs.advance.payments' },
