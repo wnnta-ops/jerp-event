@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { format } from "date-fns";
 import { id as idLocale } from "date-fns/locale";
+import { withBase } from "@/lib/base-path";
 import { StatusBadge, TypeBadge, Avatar } from "./ui";
 import { DocumentDrawer } from "./document-drawer";
 import { keyDate, isExpiringSoon, daysUntil } from "@/lib/format";
@@ -300,7 +301,7 @@ export function DirectoryTable({ docs, canEdit = false }: { docs: DocRow[]; canE
         </div>
         <div className="mb-1.5 flex items-center gap-2">
           <a
-            href={`/api/export?tab=${tab}`}
+            href={withBase(`/api/export?tab=${tab}`)}
             title={tab === "all" ? "Export semua tab (5 sheet)" : "Export tab ini ke Excel"}
             className="inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-[13px] font-medium"
             style={{ border: "0.5px solid var(--color-border-secondary)", color: "var(--color-text-secondary)" }}

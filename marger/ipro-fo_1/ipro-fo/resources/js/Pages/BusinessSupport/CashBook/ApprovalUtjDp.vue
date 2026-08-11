@@ -18,10 +18,17 @@ type Row = {
     default_debit_account_id: number | null; default_credit_account_id: number | null;
     reject_reason: string | null; rejected_at: string | null;
 };
-const props = defineProps<{ rows: Row[]; accounts: Acc[]; tab: string; counts: { pending: number; tanpa_unit: number; rejected: number } }>();
+const props = defineProps<{
+    rows: Row[]; accounts: Acc[]; tab: string; counts: { pending: number; tanpa_unit: number; rejected: number };
+    // Halaman ini dipakai DUA submodul: Approval UTJ & Approval DP. Judul, penjelasan, dan
+    // seluruh endpoint mengikuti prop di bawah supaya tidak ada aksi yang salah alamat.
+    variant?: 'utj' | 'dp'; title?: string; subtitle?: string; routeBase?: string; indexRoute?: string;
+}>();
+const rb = computed(() => props.routeBase ?? 'bs.cashbook.approval-utjdp');
+const judul = computed(() => props.title ?? 'Approval UTJ');
 
 const isRejected = computed(() => props.tab === 'rejected');
-function switchTab(tab: string) { if (tab !== props.tab) router.get(route('bs.cashbook.approval-utjdp'), { tab }, { preserveScroll: true }); }
+function switchTab(tab: string) { if (tab !== props.tab) router.get(route(props.indexRoute ?? 'bs.cashbook.approval-utjdp'), { tab }, { preserveScroll: true }); }
 
 function todayStr() { return new Date().toISOString().slice(0, 10); }
 const forms = reactive<Record<number, { journal_date: string; debit_account_id: any; credit_account_id: any; processing: boolean }>>({});
@@ -115,7 +122,7 @@ function approve(id: number) {
     if (!f.debit_account_id || !f.credit_account_id) { alert('Pilih akun Debit & Kredit terlebih dahulu.'); return; }
     if (String(f.debit_account_id) === String(f.credit_account_id)) { alert('Akun Debit & Kredit tidak boleh sama.'); return; }
     f.processing = true;
-    router.post(route('bs.cashbook.approval-utjdp.post', id), {
+    router.post(route(`${rb.value}.post`, id), {
         journal_date: f.journal_date, debit_account_id: f.debit_account_id, credit_account_id: f.credit_account_id,
     }, { onSuccess: () => window.location.reload(), onFinish: () => { f.processing = false; } });
 }
@@ -125,7 +132,7 @@ function reject(id: number) {
     if (!confirm('Tolak TTS UTJ/DP ini? TTS akan ditandai rejected.')) return;
     const reason = window.prompt('Alasan penolakan (opsional):', '') ?? '';
     const f = forms[id]; f.processing = true;
-    router.post(route('bs.cashbook.approval-utjdp.reject', id), { reason },
+    router.post(route(`${rb.value}.reject`, id), { reason },
         { onSuccess: () => window.location.reload(), onFinish: () => { f.processing = false; } });
 }
 
@@ -134,7 +141,7 @@ const restoring = ref<number | null>(null);
 function restore(id: number) {
     if (!confirm('Pulihkan TTS ini ke daftar Menunggu Approval? Status kembali menjadi posted.')) return;
     restoring.value = id;
-    router.post(route('bs.cashbook.approval-utjdp.restore', id), {},
+    router.post(route(`${rb.value}.restore`, id), {},
         { onSuccess: () => window.location.reload(), onFinish: () => { restoring.value = null; } });
 }
 
@@ -147,8 +154,8 @@ const hSelCls = 'h-7 w-52 rounded border border-neutral-300 bg-white px-2 text-x
     <div class="space-y-4">
         <Link :href="route('bs.cashbook.home')" class="inline-flex items-center gap-2 text-sm text-neutral-500 hover:text-neutral-800 dark:hover:text-neutral-200"><ArrowLeft class="h-4 w-4" /> Cash Book</Link>
         <div>
-            <h1 class="flex items-center gap-2 text-2xl font-bold"><Landmark class="h-6 w-6 text-primary-600" /> Approval UTJ &amp; DP</h1>
-            <p class="text-sm text-neutral-500">TTS yang sudah diposting ke Kuitansi. Untuk yang belum dijurnal: pilih akun Debit &amp; Kredit lalu setujui — jurnal GL otomatis terposting.</p>
+            <h1 class="flex items-center gap-2 text-2xl font-bold"><Landmark class="h-6 w-6 text-primary-600" /> {{ judul }}</h1>
+            <p class="text-sm text-neutral-500">{{ subtitle ?? 'TTS yang sudah diposting ke Kuitansi. Untuk yang belum dijurnal: pilih akun Debit & Kredit lalu setujui — jurnal GL otomatis terposting.' }}</p>
         </div>
 
         <!-- Tab: Menunggu Approval / Ditolak -->

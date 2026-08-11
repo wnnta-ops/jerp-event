@@ -11,6 +11,7 @@ use App\Domain\BusinessSupport\Models\BsCfFormula;
 use App\Domain\BusinessSupport\Models\BsCfPeriodSetting;
 use App\Http\Controllers\Controller;
 use App\Support\Export\SimpleXlsxWriter;
+use App\Support\Xlsx\SimpleXlsx;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -174,10 +175,15 @@ class CashFlowPlanController extends Controller
             freezeCols: 1,   // kolom Kategori tetap terlihat saat digulir ke kanan
         );
 
-        $writer->addTitle('REPORT CASHFLOW '.$year, $colCount);
+        // Satuan mengikuti layar: JUTAAN RUPIAH. Berkas ini dan Report Cashflow harus terbaca
+        // sama, jangan sampai orang membandingkan dua angka yang ternyata beda satuan.
+        $jt = fn ($v) => $v === null ? null : round(((float) $v) / 1_000_000, 2);
+
+        $writer->addTitle('REPORT CASHFLOW '.$year.' (DALAM JUTAAN RUPIAH)', $colCount);
         $writer->addMeta(
             'Periode Januari–'.ucfirst(mb_strtolower($MON[$upto])).' '.$year
             .' · diunduh '.now()->translatedFormat('d F Y H:i').' · '.($request->user()?->name ?? '')
+            .' · SELURUH ANGKA DALAM JUTAAN RUPIAH (2.000 = Rp 2.000.000.000)'
             .' · Actual berasal dari Simpan Pembagian di Rekening Ledger'
             .' · baris saldo hanya punya satu angka per bulan sehingga ditulis di kolom Actual',
             $colCount,
@@ -212,25 +218,25 @@ class CashFlowPlanController extends Controller
             $line = [$r['label']];
             foreach ($months as $mi => $m) {
                 $c = $r['cells'][$mi] ?? ['wnpb' => 0, 'projection' => 0, 'actual' => 0];
-                $line[] = $c['wnpb'];
-                $line[] = $c['projection'];
-                $line[] = $c['actual'];
-                $line[] = round($c['projection'] - $c['actual'], 2);   // Gap = Proyeksi − Actual (rumus 7)
+                $line[] = $jt($c['wnpb']);
+                $line[] = $jt($c['projection']);
+                $line[] = $jt($c['actual']);
+                $line[] = $jt($c['projection'] - $c['actual']);   // Gap = Proyeksi − Actual (rumus 7)
             }
-            $line[] = $r['total_ytd'] ?? 0;
-            $line[] = $r['total_multi'] ?? 0;
+            $line[] = $jt($r['total_ytd'] ?? 0);
+            $line[] = $jt($r['total_multi'] ?? 0);
             $writer->addRow($line, $num);
         }
 
         foreach (['nett_ops' => 'Nett Cashplan Ops', 'nett_non_ops' => 'Nett Cashplan Non Ops', 'nett' => 'Nett Cashflow'] as $k => $label) {
             $line = [$label];
             foreach ($summary as $s) {
-                $line[] = $s['wnpb'][$k];
-                $line[] = $s['projection'][$k];
-                $line[] = $s['actual'][$k];
-                $line[] = round($s['projection'][$k] - $s['actual'][$k], 2);
+                $line[] = $jt($s['wnpb'][$k]);
+                $line[] = $jt($s['projection'][$k]);
+                $line[] = $jt($s['actual'][$k]);
+                $line[] = $jt($s['projection'][$k] - $s['actual'][$k]);
             }
-            $line[] = round(array_sum(array_map(fn ($s) => (float) $s['actual'][$k], $summary)), 2);
+            $line[] = $jt(array_sum(array_map(fn ($s) => (float) $s['actual'][$k], $summary)));
             $line[] = null;
             $writer->addRow($line, $num);
         }
@@ -242,7 +248,7 @@ class CashFlowPlanController extends Controller
                 // Satu angka per bulan → ditaruh di kolom Actual, tiga kolom lain dikosongkan.
                 $line[] = null;
                 $line[] = null;
-                $line[] = $s[$k];
+                $line[] = $jt($s[$k]);
                 $line[] = null;
             }
             $line[] = null;
@@ -406,6 +412,225 @@ class CashFlowPlanController extends Controller
         });
 
         return back()->with('success', 'Angka WPNB / Proyeksi & pengaturan bulan disimpan.');
+    }
+
+    // ── Import massal angka cashflow periode sebelumnya ───────────────────
+
+    /** Judul kolom template import — dipakai saat menulis maupun membaca berkas. */
+    private const IMPORT_HEADER = [
+        'KODE KATEGORI', 'NAMA KATEGORI', 'TAHUN', 'BULAN', 'WPNB (RUPIAH PENUH)', 'PROYEKSI (RUPIAH PENUH)',
+    ];
+
+    /**
+     * Unduh template import — sudah terisi SELURUH kategori aktif × 12 bulan untuk tahun yang
+     * diminta, beserta angka yang sudah tersimpan. Jadi berkas ini sekaligus berfungsi sebagai
+     * salinan tahun berjalan: unduh → sunting di Excel → unggah kembali.
+     *
+     * Kolom TAHUN sengaja ada di tiap baris supaya SATU berkas bisa memuat BEBERAPA tahun
+     * sekaligus — persis kebutuhan "import periode sebelumnya" yang biasanya lebih dari setahun.
+     */
+    public function reportTemplate(Request $request): \Symfony\Component\HttpFoundation\Response
+    {
+        abort_unless($request->user()?->canModule('cashbook'), 403);
+
+        $year = (int) ($request->integer('year') ?: now()->year);
+        $categories = BsCfCategory::where('is_active', true)->orderBy('sort_order')->orderBy('id')->get();
+        $figures = $this->figuresByCategoryMonth($year, $categories->pluck('id')->all());
+
+        $rows = [self::IMPORT_HEADER];
+        foreach ($categories as $c) {
+            for ($m = 1; $m <= 12; $m++) {
+                $f = $figures[$c->id][$m] ?? null;
+                $rows[] = [
+                    (string) $c->code,
+                    (string) $c->name,
+                    $year,
+                    $m,
+                    (float) ($f['wnpb'] ?? 0),
+                    (float) ($f['projection'] ?? 0),
+                ];
+            }
+        }
+
+        // Berkas tanpa kategori pun tetap punya satu baris contoh, supaya bentuknya terlihat.
+        if ($categories->isEmpty()) {
+            $rows[] = ['CONTOH-01', 'Nama kategori sesuai Set Up Kategori', $year, 1, 0, 0];
+        }
+
+        return response(SimpleXlsx::toString($rows), 200, [
+            'Content-Type'        => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            'Content-Disposition' => 'attachment; filename="Template-Import-Cashflow-'.$year.'.xlsx"',
+        ]);
+    }
+
+    /**
+     * Import massal WPNB & Proyeksi dari .xlsx/.xls/.csv.
+     *
+     * Kategori diresolusi dari KODE (bila kosong, dari NAMA). Angka ditulis dengan updateOrCreate
+     * pada kunci (tenant, kategori, tahun, bulan) sehingga meng-import ulang berkas yang sama
+     * memperbarui baris yang ada — tidak pernah menggandakan.
+     *
+     * Nilai dibaca sebagai RUPIAH PENUH, sama seperti yang tersimpan di basis data. Tampilan
+     * Report Cashflow yang bersatuan jutaan tidak mengubah isi berkas import.
+     */
+    public function reportImport(Request $request): RedirectResponse
+    {
+        abort_unless($request->user()?->can('businesssupport.setup.manage'), 403);
+        $request->validate(['file' => ['required', 'file', 'max:8192']]);
+
+        $upload = $request->file('file');
+        $ext = strtolower((string) $upload->getClientOriginalExtension());
+
+        try {
+            if (in_array($ext, ['xlsx', 'xls'], true)) {
+                $rows = SimpleXlsx::rows($upload->getRealPath());
+            } elseif (in_array($ext, ['csv', 'txt'], true)) {
+                // $escape diisi eksplisit — sejak PHP 8.4 nilai bawaannya dideprekasi.
+                $rows = array_map(
+                    fn ($l) => str_getcsv($l, ',', '"', '\\'),
+                    file($upload->getRealPath(), FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) ?: [],
+                );
+            } else {
+                return back()->with('error', 'Format file harus .xlsx, .xls, atau .csv. Unduh template untuk format yang benar.');
+            }
+        } catch (\Throwable $e) {
+            return back()->with('error', 'File tidak dapat dibaca: '.$e->getMessage());
+        }
+
+        $rows = array_values(array_filter((array) $rows, fn ($r) => is_array($r) && trim(implode('', array_map('strval', $r))) !== ''));
+        if (count($rows) < 2) {
+            return back()->with('error', 'File kosong atau hanya berisi baris header.');
+        }
+
+        $header = array_map(fn ($h) => strtoupper(trim((string) $h)), array_shift($rows));
+        $find = function (callable $pred) use ($header): ?int {
+            foreach ($header as $i => $h) {
+                if ($pred($h)) {
+                    return $i;
+                }
+            }
+
+            return null;
+        };
+
+        $iCode = $find(fn ($h) => str_contains($h, 'KODE'));
+        $iName = $find(fn ($h) => str_contains($h, 'NAMA') || str_contains($h, 'KATEGORI') && ! str_contains($h, 'KODE'));
+        $iYear = $find(fn ($h) => str_contains($h, 'TAHUN') || str_contains($h, 'YEAR'));
+        $iMon = $find(fn ($h) => str_contains($h, 'BULAN') || str_contains($h, 'MONTH'));
+        $iWnpb = $find(fn ($h) => str_contains($h, 'WPNB') || str_contains($h, 'WNPB'));
+        $iProj = $find(fn ($h) => str_contains($h, 'PROYEKSI') || str_contains($h, 'PROJECTION'));
+
+        $missing = [];
+        if ($iCode === null && $iName === null) { $missing[] = 'Kode/Nama Kategori'; }
+        if ($iYear === null) { $missing[] = 'Tahun'; }
+        if ($iMon === null) { $missing[] = 'Bulan'; }
+        if ($iWnpb === null && $iProj === null) { $missing[] = 'WPNB / Proyeksi'; }
+        if ($missing) {
+            return back()->with('error', 'Kolom wajib tidak ditemukan: '.implode(', ', $missing).'. Unduh template untuk format yang benar.');
+        }
+
+        // Peta kategori: kode & nama sama-sama diterima, dicocokkan tanpa peduli besar-kecil huruf.
+        $categories = BsCfCategory::get(['id', 'code', 'name']);
+        $byCode = $categories->keyBy(fn ($c) => mb_strtoupper(trim((string) $c->code)));
+        $byName = $categories->keyBy(fn ($c) => mb_strtoupper(trim((string) $c->name)));
+
+        // Terima "2000000", "1234567.89", "1.234.567,89", "Rp 2.000.000", dan "(1.000)" (negatif).
+        $angka = function (?string $v): float {
+            $v = trim((string) $v);
+            if ($v === '') {
+                return 0.0;
+            }
+            $negatif = str_starts_with($v, '(') && str_ends_with($v, ')');
+            $v = preg_replace('/[^0-9.,\-]/', '', $v) ?? '';   // buang "Rp", spasi, dsb.
+            if ($v === '') {
+                return 0.0;
+            }
+
+            $adaKoma = str_contains($v, ',');
+            $adaTitik = str_contains($v, '.');
+            if ($adaKoma && $adaTitik) {
+                // Format Indonesia: titik ribuan, koma desimal.
+                $v = str_replace(['.', ','], ['', '.'], $v);
+            } elseif ($adaKoma) {
+                $v = str_replace(',', '.', $v);
+            } elseif ($adaTitik) {
+                // Titik saja bisa berarti ribuan ("2.000.000") atau desimal ("1234.56").
+                // Dianggap RIBUAN bila tiap kelompok setelah titik pertama tepat 3 digit —
+                // dengan begitu "2.000.000" → 2000000 sementara "1234.56" tetap desimal.
+                $bagian = explode('.', $v);
+                $ribuan = count($bagian) > 1;
+                foreach (array_slice($bagian, 1) as $b) {
+                    if (! preg_match('/^\d{3}$/', $b)) {
+                        $ribuan = false;
+                        break;
+                    }
+                }
+                if ($ribuan) {
+                    $v = implode('', $bagian);
+                }
+            }
+
+            $n = (float) $v;
+
+            return $negatif ? -abs($n) : $n;
+        };
+
+        $tenantId = tenant_id() ?? default_tenant_id();
+        $masuk = 0;
+        $lewat = [];
+        $tahunSet = [];
+
+        DB::transaction(function () use ($rows, $iCode, $iName, $iYear, $iMon, $iWnpb, $iProj, $byCode, $byName, $angka, $tenantId, &$masuk, &$lewat, &$tahunSet): void {
+            foreach ($rows as $n => $r) {
+                $baris = $n + 2;   // +1 header, +1 karena manusia menghitung dari 1
+                $code = $iCode !== null ? mb_strtoupper(trim((string) ($r[$iCode] ?? ''))) : '';
+                $name = $iName !== null ? mb_strtoupper(trim((string) ($r[$iName] ?? ''))) : '';
+                $cat = ($code !== '' ? $byCode->get($code) : null) ?? ($name !== '' ? $byName->get($name) : null);
+                if (! $cat) {
+                    $lewat[] = "baris {$baris}: kategori '".($code ?: $name)."' tidak dikenal";
+
+                    continue;
+                }
+
+                $year = (int) preg_replace('/\D/', '', (string) ($r[$iYear] ?? ''));
+                $month = (int) preg_replace('/\D/', '', (string) ($r[$iMon] ?? ''));
+                if ($year < 2000 || $year > 2100) {
+                    $lewat[] = "baris {$baris}: tahun '{$year}' di luar 2000–2100";
+
+                    continue;
+                }
+                if ($month < 1 || $month > 12) {
+                    $lewat[] = "baris {$baris}: bulan '{$month}' harus 1–12";
+
+                    continue;
+                }
+
+                BsCfFigure::updateOrCreate(
+                    ['tenant_id' => $tenantId, 'cf_category_id' => (int) $cat->id, 'period_year' => $year, 'period_month' => $month],
+                    [
+                        'wnpb'       => round($iWnpb !== null ? $angka($r[$iWnpb] ?? null) : 0, 2),
+                        'projection' => round($iProj !== null ? $angka($r[$iProj] ?? null) : 0, 2),
+                    ],
+                );
+                $masuk++;
+                $tahunSet[$year] = true;
+            }
+        });
+
+        if ($masuk === 0) {
+            return back()->with('error', 'Tidak ada baris yang bisa diimport. '.($lewat ? implode('; ', array_slice($lewat, 0, 5)) : ''));
+        }
+
+        ksort($tahunSet);
+        $msg = "{$masuk} baris angka cashflow diimport (tahun ".implode(', ', array_keys($tahunSet)).').';
+        if ($lewat) {
+            // Sebutkan yang dilewati — jangan sampai berkas terpotong diam-diam dianggap sukses penuh.
+            $msg .= ' '.count($lewat).' baris dilewati: '.implode('; ', array_slice($lewat, 0, 5)).(count($lewat) > 5 ? ' …' : '');
+
+            return back()->with('error', $msg);
+        }
+
+        return back()->with('success', $msg);
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────

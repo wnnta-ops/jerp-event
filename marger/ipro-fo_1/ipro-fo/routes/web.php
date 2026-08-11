@@ -54,6 +54,7 @@ use App\Http\Controllers\Web\BusinessSupport\CashBook\CashBookController as BsCa
 use App\Http\Controllers\Web\BusinessSupport\CashBook\CashFlowPlanController as BsCashFlowPlanController;
 use App\Http\Controllers\Web\BusinessSupport\CashBook\CashOpeningController as BsCashOpeningController;
 use App\Http\Controllers\Web\BusinessSupport\CashBook\CashRepairController as BsCashRepairController;
+use App\Http\Controllers\Web\BusinessSupport\CashBook\SignatureBarcodeController as BsSignatureBarcodeController;
 use App\Http\Controllers\Web\BusinessSupport\CashBook\CashAdvanceController as BsAdvanceController;
 use App\Http\Controllers\Web\BusinessSupport\CashBook\BankApprovalController as BsBankApprovalController;
 use App\Http\Controllers\Web\BusinessSupport\CashBook\PettyCashController as BsPettyCashController;
@@ -725,6 +726,12 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
     Route::delete('/business-support/cash-book-saldo-awal/{cashTransaction}', [BsCashOpeningController::class, 'destroy'])->name('bs.cashbook.opening.destroy');
     Route::get('/business-support/cash-book-repair',           [BsCashRepairController::class, 'index'])->name('bs.cashbook.repair.index');
     Route::post('/business-support/cash-book-repair/run',      [BsCashRepairController::class, 'run'])->name('bs.cashbook.repair.run');
+    // Set Up Barcode — barcode tanda tangan yang dipakai pada Persetujuan (TTD) SIP.
+    Route::get('/business-support/cash-book-signature-barcode',            [BsSignatureBarcodeController::class, 'index'])->name('bs.cashbook.signature-barcode.index');
+    Route::get('/business-support/cash-book-signature-barcode/preview',    [BsSignatureBarcodeController::class, 'preview'])->name('bs.cashbook.signature-barcode.preview');
+    Route::post('/business-support/cash-book-signature-barcode',           [BsSignatureBarcodeController::class, 'store'])->name('bs.cashbook.signature-barcode.store');
+    Route::put('/business-support/cash-book-signature-barcode/{barcode}',  [BsSignatureBarcodeController::class, 'update'])->name('bs.cashbook.signature-barcode.update');
+    Route::delete('/business-support/cash-book-signature-barcode/{barcode}', [BsSignatureBarcodeController::class, 'destroy'])->name('bs.cashbook.signature-barcode.destroy');
     // CB-2: Rekening Ledger + Kalender Cek Giro
     Route::get('/business-support/cash-book-ledger',           [BsCashBookController::class, 'ledger'])->name('bs.cashbook.ledger');
     Route::get('/business-support/cash-book-ledger-excel',     [BsCashBookController::class, 'ledgerExcel'])->name('bs.cashbook.ledger.excel');       // #9
@@ -742,6 +749,9 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
     Route::get('/business-support/cash-flow/report',              [BsCashFlowPlanController::class, 'report'])->name('bs.cashflow.report');
     Route::get('/business-support/cash-flow/report/excel',        [BsCashFlowPlanController::class, 'reportExcel'])->name('bs.cashflow.report.excel');
     Route::post('/business-support/cash-flow/report',             [BsCashFlowPlanController::class, 'reportSave'])->name('bs.cashflow.report.save');
+    // Import massal angka cashflow periode sebelumnya (WPNB & Proyeksi) + templatenya.
+    Route::get('/business-support/cash-flow/report/template',     [BsCashFlowPlanController::class, 'reportTemplate'])->name('bs.cashflow.report.template');
+    Route::post('/business-support/cash-flow/report/import',      [BsCashFlowPlanController::class, 'reportImport'])->name('bs.cashflow.report.import');
     Route::get('/business-support/cash-book-giro-calendar',    [BsCashBookController::class, 'giroCalendar'])->name('bs.cashbook.giro-calendar');
     Route::get('/business-support/cash-book-giro-calendar-excel', [BsCashBookController::class, 'giroCalendarExcel'])->name('bs.cashbook.giro-calendar.excel'); // #9
     Route::get('/business-support/cash-book-giro-calendar-pdf', [BsCashBookController::class, 'giroCalendarPdf'])->name('bs.cashbook.giro-calendar.pdf');        // #9
@@ -769,6 +779,11 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
     Route::post('/business-support/cash-book-approval-utjdp/{tts}',           [BsBankApprovalController::class, 'utjdpPost'])->name('bs.cashbook.approval-utjdp.post');
     Route::post('/business-support/cash-book-approval-utjdp/{tts}/reject',    [BsBankApprovalController::class, 'utjdpReject'])->name('bs.cashbook.approval-utjdp.reject');
     Route::post('/business-support/cash-book-approval-utjdp/{tts}/restore',   [BsBankApprovalController::class, 'utjdpRestore'])->name('bs.cashbook.approval-utjdp.restore'); // pulihkan TTS ditolak
+    // Approval DP — penerimaan dari Pelunasan DP, Angsuran & Tambah DP (FO).
+    Route::get('/business-support/cash-book-approval-dp',                     [BsBankApprovalController::class, 'dpIndex'])->name('bs.cashbook.approval-dp');
+    Route::post('/business-support/cash-book-approval-dp/{tts}',              [BsBankApprovalController::class, 'dpPost'])->name('bs.cashbook.approval-dp.post');
+    Route::post('/business-support/cash-book-approval-dp/{tts}/reject',       [BsBankApprovalController::class, 'dpReject'])->name('bs.cashbook.approval-dp.reject');
+    Route::post('/business-support/cash-book-approval-dp/{tts}/restore',      [BsBankApprovalController::class, 'dpRestore'])->name('bs.cashbook.approval-dp.restore');
     // Approval UM Penjualan — lanjutan UTJ & DP: konversi ke Uang Muka Penjualan (Dr Hutang Usaha / Cr Uang Muka + PPN)
     // Rincian Batal Akad — KPR batal/ditolak; disaring keluar dari antrean approval.
     Route::get('/business-support/batal-akad',                                [\App\Http\Controllers\Web\BusinessSupport\BatalAkadController::class, 'index'])->name('bs.batal-akad.index');

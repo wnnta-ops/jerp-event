@@ -281,6 +281,7 @@ const bankTheoreticalMax = computed(() => {
 });
 // Indeks tahap Analisa (untuk tombol lompat dari Profiling).
 const analisaStageIdx = computed(() => stageList.value.findIndex((s) => s.key === 'analisa'));
+const sprsStageIdx = computed(() => stageList.value.findIndex((s) => s.key === 'sprs'));
 // Sinkronkan 2 rekomendasi teratas ke form Profiling agar ikut tersimpan.
 watch(bankRekom, (v) => {
     f.profiling.bank_analisa_1 = v.find((b) => b.rekom === 1)?.name ?? '';
@@ -436,6 +437,17 @@ function setSprsMarital(status: 'belum_menikah' | 'sudah_menikah') {
 }
 // Petunjuk status pernikahan dari data customer (tidak mengunci pilihan operator).
 const custMaritalLabel = computed<string>(() => (({ menikah: 'Menikah', belum_menikah: 'Belum Menikah', cerai: 'Cerai', lain_lain: 'Lain-lain' } as Record<string, string>)[a.value.customer?.marital_status ?? ''] ?? ''));
+
+// ── Status pernikahan pada Profiling Customer ─────────────────────────────
+// HANYA menampilkan hasil pilihan di tahap SPRS; tidak ada isian kedua di sini supaya
+// tidak pernah ada dua tempat yang isinya bisa berbeda. Bila SPRS belum diisi, dipakai
+// status pada profil customer sebagai cadangan (mis. data lama / hasil pendaftaran).
+const pbMarital = computed<{ label: string; sumber: string } | null>(() => {
+    const sprs = maritalSavedLabel.value;
+    if (sprs) return { label: sprs, sumber: 'Pilihan pada tahap SPRS' };
+    if (custMaritalLabel.value) return { label: custMaritalLabel.value, sumber: 'Profil customer (NUP / pendaftaran)' };
+    return null;
+});
 // Pesan pemandu tombol Simpan sesuai status pernikahan & kelengkapan checklist.
 const sprsHint = computed<string>(() => {
     if (!f.sprs.marital_status) return 'Pilih status pernikahan pemohon (Belum / Sudah Menikah) terlebih dahulu.';
@@ -998,6 +1010,23 @@ const analisaLabel: Record<string, string> = { layak: 'Layak', tidak_layak: 'Tid
                                 <p v-else class="text-sm text-neutral-400">— belum ada penilaian penghasilan di tahap Analisa —</p>
                                 <p v-if="pbMonthlyIncome > 0" class="mt-2 border-t border-amber-200/60 pt-2 text-xs text-neutral-500 dark:border-amber-900/40">Penghasilan tercatat: <b class="font-mono">{{ fmtRp(pbMonthlyIncome) }}</b> / bln</p>
                                 <p class="mt-1 text-[11px] text-neutral-400">Sumber: slip gaji / RPC pada Analisa BI Checking &amp; Berkas</p>
+                            </div>
+
+                            <!-- 5. Status pernikahan — hasil pilihan tahap SPRS (tampil saja, bukan isian). -->
+                            <div class="rounded-xl border border-rose-200 bg-rose-50/50 p-4 md:col-span-2 dark:border-rose-900/40 dark:bg-rose-900/10">
+                                <div class="mb-2 flex items-center gap-2 text-sm font-semibold text-rose-700 dark:text-rose-300"><Users class="h-4 w-4" /> Status Pernikahan</div>
+                                <div class="flex flex-wrap items-center justify-between gap-2">
+                                    <div>
+                                        <span v-if="pbMarital" class="inline-flex rounded-full bg-rose-100 px-3 py-1 text-sm font-semibold text-rose-700 dark:bg-rose-900/40 dark:text-rose-200">{{ pbMarital.label }}</span>
+                                        <span v-else class="text-sm text-neutral-400">— belum dipilih pada tahap SPRS —</span>
+                                        <p class="mt-2 text-[11px] text-neutral-400">Sumber: {{ pbMarital?.sumber ?? 'pilihan "Status Pernikahan Pemohon" pada tahap SPRS' }}</p>
+                                    </div>
+                                    <!-- Diubah di SPRS, bukan di sini — satu tempat saja agar tidak berbeda isinya. -->
+                                    <button type="button" @click="openStage = sprsStageIdx"
+                                        class="inline-flex items-center gap-1 rounded-lg border border-rose-300 px-2.5 py-1 text-xs font-semibold text-rose-700 transition-colors duration-200 hover:bg-rose-100 dark:border-rose-800 dark:text-rose-300 dark:hover:bg-rose-950/40">
+                                        <Pencil class="h-3 w-3" /> Ubah di SPRS
+                                    </button>
+                                </div>
                             </div>
                         </div>
 

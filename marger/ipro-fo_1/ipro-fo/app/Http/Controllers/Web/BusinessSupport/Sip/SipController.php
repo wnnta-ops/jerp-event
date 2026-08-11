@@ -28,17 +28,23 @@ class SipController extends Controller
     {
         abort_unless($request->user()?->canModule('bs'), 403);
 
+        // Filter PERIODE atas Tanggal SIP (sip_date). Tanggal tak berformat diabaikan agar
+        // ketikan setengah jadi tidak mengosongkan daftar. Bila periode awal melewati periode
+        // akhir, keduanya ditukar — lebih menolong daripada memulangkan daftar kosong.
+        [$from, $to] = $this->periodeFilter($request->input('date_from'), $request->input('date_to'));
+
         $rows = BsSip::query()
             ->with('cashAccount:id,code,name')
             ->when($request->input('status'), fn ($q, $v) => $q->where('status', $v))
-            ->when($request->input('search'), fn ($q, $s) => $q->where(fn ($w) => $w->where('sip_number', 'like', "%{$s}%")->orWhere('title', 'like', "%{$s}%")))
+            ->when($from, fn ($q, $v) => $q->whereDate('sip_date', '>=', $v))
+            ->when($to, fn ($q, $v) => $q->whereDate('sip_date', '<=', $v))
             ->latest('sip_date')->latest('id')
             ->paginate(50)->withQueryString();
 
         return Inertia::render('BusinessSupport/Sip/Index', [
             'sips'     => $rows,
             'statuses' => BsSip::STATUSES,
-            'filters'  => $request->only(['status', 'search']),
+            'filters'  => ['status' => $request->input('status'), 'date_from' => $from, 'date_to' => $to],
             'summary'  => [
                 // #111: belum disetujui semua pihak (Diajukan/Dicetak) vs sudah Disetujui.
                 'pending'  => BsSip::whereIn('status', ['submitted', 'printed'])->count(),
@@ -46,6 +52,60 @@ class SipController extends Controller
                 'total'    => (float) BsSip::whereIn('status', ['submitted', 'printed', 'approved'])->sum('total'),
             ],
         ]);
+    }
+
+    /**
+     * Barcode tanda tangan per SLOT persetujuan yang sudah ditandatangani.
+     *
+     * @return array<string,string>  slot → SVG (hanya slot yang penyetujunya punya barcode aktif)
+     */
+    private function approvalBarcodes(BsSip $sip, int $moduleWidth = 2, int $height = 34): array
+    {
+        $approvals = $sip->approvals ?? [];
+        $byUser = \App\Domain\BusinessSupport\Models\BsSignatureBarcode::svgMapFor(
+            array_map(fn ($a) => (int) ($a['approved_by'] ?? 0), array_values($approvals)),
+            $moduleWidth,
+            $height,
+        );
+
+        $out = [];
+        foreach ($approvals as $slot => $ap) {
+            $svg = $byUser[(int) ($ap['approved_by'] ?? 0)] ?? null;
+            if ($svg) {
+                $out[$slot] = $svg;
+            }
+        }
+
+        return $out;
+    }
+
+    /**
+     * Normalisasi periode awal & akhir.
+     *
+     * Hanya menerima tanggal berformat Y-m-d yang benar-benar ada di kalender; selain itu
+     * dianggap tidak diisi. Periode awal yang melewati periode akhir ditukar posisinya.
+     *
+     * @return array{0:?string,1:?string}
+     */
+    private function periodeFilter(mixed $from, mixed $to): array
+    {
+        $bersih = function (mixed $v): ?string {
+            $v = is_string($v) ? trim($v) : '';
+            if ($v === '') {
+                return null;
+            }
+            $d = \DateTimeImmutable::createFromFormat('!Y-m-d', $v);
+
+            return ($d && $d->format('Y-m-d') === $v) ? $v : null;
+        };
+
+        $from = $bersih($from);
+        $to = $bersih($to);
+        if ($from && $to && $from > $to) {
+            [$from, $to] = [$to, $from];
+        }
+
+        return [$from, $to];
     }
 
     public function create(Request $request): Response
@@ -137,6 +197,10 @@ class SipController extends Controller
             'sip'      => $sip->load(['cashAccount:id,code,name', 'lines.cashAccount:id,code,name']),
             'statuses' => BsSip::STATUSES,
             'signers'  => BsSip::SIGNERS,
+            // Slot yang sudah disetujui ditampilkan sebagai BARCODE tanda tangan penyetujunya,
+            // bukan namanya. Peta ini: slot → SVG barcode (kosong bila penyetuju belum punya
+            // barcode di Cash Book → Setup → Set Up Barcode; layar akan jatuh kembali ke nama).
+            'barcodes' => $this->approvalBarcodes($sip),
         ]);
     }
 
@@ -329,7 +393,11 @@ class SipController extends Controller
         }
 
         // 4 blok tanda tangan ← 7 SIGNERS: Dibuat(1) / Diperiksa(3) / Diketahui(2) / Disetujui(1).
+        // Slot yang sudah disetujui dicetak dengan BARCODE tanda tangan penyetujunya; slot yang
+        // belum (atau penyetujunya belum punya barcode) ruangnya dibiarkan kosong utk tanda
+        // tangan basah — nama tetap tercetak di baris bawah seperti sebelumnya.
         $approvals = $sip->approvals ?? [];
+        $barcodes = $this->approvalBarcodes($sip, 1, 26);
         $signGroups = [
             'Dibuat'    => ['staf_finance'],
             'Diperiksa' => ['spv_finance', 'manager_finance', 'gm'],
@@ -337,11 +405,13 @@ class SipController extends Controller
             'Disetujui' => ['boy_arifin'],
         ];
         $headCells = '';
+        $signCells = '';
         $nameCells = '';
         foreach ($signGroups as $title => $slots) {
             $headCells .= '<td colspan="'.count($slots).'" class="sg-title">'.$e($title).'</td>';
             foreach ($slots as $slot) {
                 $ap = $approvals[$slot] ?? null;
+                $signCells .= '<td class="sg-bc">'.((string) ($barcodes[$slot] ?? '')).'</td>';
                 $nameCells .= '<td class="sg-name">'.$e($ap['name'] ?? BsSip::SIGNERS[$slot]).'</td>';
             }
         }
@@ -369,6 +439,8 @@ class SipController extends Controller
             table.signs td{border:none;text-align:center;padding:2px 6px}
             .sg-title{font-weight:normal;text-align:left !important}
             .sg-space td{height:60px}
+            .sg-bc{vertical-align:bottom;text-align:center;overflow:hidden}
+            .sg-bc svg{max-width:100%;height:auto}
             .sg-name{vertical-align:bottom}
             @media print{.noprint{display:none}}</style></head><body><div class="frame">
             <div class="tophead">
@@ -390,7 +462,7 @@ class SipController extends Controller
             Demikian permohonan pembayaran ini kami sampaikan, Terima Kasih</div>
             <table class="signs">
                 <tr>'.$headCells.'</tr>
-                <tr class="sg-space"><td colspan="7"></td></tr>
+                <tr class="sg-space">'.$signCells.'</tr>
                 <tr>'.$nameCells.'</tr>
             </table>
             </div>

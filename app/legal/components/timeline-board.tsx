@@ -8,6 +8,7 @@ import {
 } from "@/app/timeline/actions";
 import { STATUS_OPTIONS, statusTone, TONE_BG, TONE_FG, checkpointLabel } from "@/lib/timeline";
 import { BADAN, jenisForBadan, checkpointsFor, badanLabel } from "@/lib/timeline-checkpoints";
+import { withBase } from "@/lib/base-path";
 
 export type CheckpointView = {
   id: string; order: number; step: string; done: boolean;
@@ -558,7 +559,7 @@ function CheckpointRow({ cp }: { cp: CheckpointView }) {
         <div className="flex flex-wrap items-center gap-2 text-[11px]">
           <input type="file" onChange={(e) => setFile(e.target.files?.[0] ?? null)} className="text-[11px]" style={{ maxWidth: 200 }} />
           {cp.proofName && (
-            <a href={`/api/timeline/proof/${cp.id}`} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1" style={{ color: "var(--color-text-info)" }}>
+            <a href={withBase(`/api/timeline/proof/${cp.id}`)} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1" style={{ color: "var(--color-text-info)" }}>
               <i className="ti ti-paperclip" /> {cp.proofName}
             </a>
           )}

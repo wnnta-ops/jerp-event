@@ -667,7 +667,11 @@ class IproMasterSync
      * null. BO memilih akun Debit/Kredit lalu menyetujui → jurnal GL terbentuk di sana.
      * Idempoten via tts_number = no_bkm; tak menimpa bila sudah dijurnal (sudah di-approve).
      */
-    public function pushBkmToApproval(object $bkm): ?int
+    /**
+     * @param  ?string  $approvalSource  'dp' → tampil di BO "Approval DP" (Pelunasan DP, Angsuran
+     *                                   & Tambah DP); null → "Approval UTJ" seperti sebelumnya.
+     */
+    public function pushBkmToApproval(object $bkm, ?string $approvalSource = null): ?int
     {
         $now = Carbon::now();
         $bookingId = null;
@@ -691,6 +695,11 @@ class IproMasterSync
             'received_by'    => $this->userId(),
             'updated_at'     => $now,
         ];
+        // Penanda submodul approval di BO. Hanya diisi bila memang ada nilainya, supaya
+        // pemanggil lama (Kwitansi → Posting BO) tetap masuk Approval UTJ apa adanya.
+        if ($approvalSource !== null) {
+            $data['approval_source'] = $approvalSource;
+        }
 
         $existing = $this->db()->table('tts_receipts')
             ->where('tenant_id', $this->tenantId)->where('tts_number', (string) $bkm->no_bkm)->first();

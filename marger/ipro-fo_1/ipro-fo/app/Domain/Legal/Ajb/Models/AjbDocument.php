@@ -12,8 +12,8 @@ class AjbDocument extends Model
 {
     use HasTenant;
 
-    protected $fillable = ['tenant_id', 'booking_id', 'ajb_number', 'signed_at', 'notary_name', 'file_path', 'status'];
-    protected $casts    = ['signed_at' => 'date'];
+    protected $fillable = ['tenant_id', 'booking_id', 'ajb_number', 'signed_at', 'amount', 'notary_name', 'file_path', 'status'];
+    protected $casts    = ['signed_at' => 'date', 'amount' => 'decimal:2'];
 
     public function booking(): BelongsTo { return $this->belongsTo(\App\Domain\Sales\Booking\Models\Booking::class); }
 }
