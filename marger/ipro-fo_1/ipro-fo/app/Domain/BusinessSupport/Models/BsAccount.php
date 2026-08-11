@@ -36,6 +36,8 @@ class BsAccount extends Model
         'level'       => 'integer',
         'is_postable' => 'boolean',
         'is_active'   => 'boolean',
+        // Akun boleh dijurnal TANPA cost center (lihat CoaTanpaCostCenterSeeder).
+        'cost_center_optional' => 'boolean',
     ];
 
     public const TYPES = [
