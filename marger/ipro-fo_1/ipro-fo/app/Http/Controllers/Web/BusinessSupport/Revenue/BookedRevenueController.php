@@ -500,34 +500,102 @@ class BookedRevenueController extends Controller
      * Control AJB — gabungan dokumen AJB terbit (SUDAH) + booking SPR final tanpa AJB (BELUM).
      * Baris BELUM bisa di-"Sudah"-kan (terbitkan AJB, wajib lunas) satuan / massal.
      */
+    /**
+     * Detail AJB — SATU BARIS PER SPR FINAL, bukan per dokumen AJB.
+     *
+     * Basisnya seluruh SPR Final di Marketing & Sales supaya tidak ada nomor SPR yang terlewat;
+     * kolom Notaris / No. AJB / Tanggal / Nominal diambil dari modul Legal dan HANYA ditampilkan
+     * untuk unit yang sudah BAST. Keterangan terisi sendiri: "SUDAH BAST" bila ketiga kolom AJB
+     * (nomor, tanggal, nominal) lengkap, selain itu "BELUM BAST".
+     */
     public function controlAjb(Request $request): Response
     {
         abort_unless($request->user()?->canModule('ar'), 403);
 
-        $docs = \App\Domain\Legal\Ajb\Models\AjbDocument::query()
+        $bookings = $this->finalBookings()->orderBy('id')->get();
+
+        // Dokumen AJB milik booking DI LUAR daftar SPR final tetap ikut ditampilkan — dokumen yang
+        // sudah terbit tidak boleh hilang diam-diam hanya karena status SPR-nya berubah.
+        $ajb = \App\Domain\Legal\Ajb\Models\AjbDocument::query()
             ->with(['booking.customer:id,full_name,code', 'booking.unit:id,unit_code'])
-            ->latest('signed_at')->latest('id')->get();
-        $doneBookingIds = $docs->pluck('booking_id')->filter()->unique()->all();
-        $belum = $this->finalBookings()->whereNotIn('id', $doneBookingIds)->orderByDesc('id')->get();
-
-        $rows = collect();
-        foreach ($docs as $d) {
-            $rows->push([
-                'id' => $d->id, 'kind' => 'sudah', 'booking_id' => $d->booking_id, 'number' => $d->ajb_number,
-                'date' => $d->signed_at?->toDateString(), 'spr' => $d->booking?->booking_number,
-                'customer' => $d->booking?->customer?->full_name, 'unit' => $d->booking?->unit?->unit_code, 'extra' => $d->notary_name,
-            ]);
+            ->get()->keyBy('booking_id');
+        $luar = $ajb->keys()->diff($bookings->pluck('id'))->all();
+        if ($luar) {
+            $bookings = $bookings->concat(
+                \App\Domain\Sales\Booking\Models\Booking::whereIn('id', $luar)
+                    ->with(['customer:id,full_name,code', 'unit:id,unit_code'])->get()
+            );
         }
-        foreach ($belum as $b) {
-            $rows->push([
-                'id' => null, 'kind' => 'belum', 'booking_id' => $b->id, 'number' => null, 'date' => null,
-                'spr' => $b->booking_number, 'customer' => $b->customer?->full_name, 'unit' => $b->unit?->unit_code, 'extra' => null,
-            ]);
-        }
-        $rows = $this->filterDocRows($rows, $request->input('search'));
 
-        return $this->renderDocControl($request, 'ajb', 'Detail AJB', 'Akta Jual Beli (akta notaris)', 'Notaris', $rows, $belum,
-            'bs.booked-revenue.control.ajb.issue', true);
+        // BAST menentukan boleh-tidaknya kolom AJB ditampilkan.
+        $bast = \App\Domain\Legal\Bast\Models\BastDocument::whereIn('booking_id', $bookings->pluck('id'))
+            ->get(['booking_id', 'bast_number', 'handed_over_at'])->keyBy('booking_id');
+
+        // Unit yang sudah masuk Booked Revenue → tombol Posting tidak perlu muncul lagi.
+        $sudahBooked = BsBookedRevenue::whereIn('status', ['booked', 'recognized'])
+            ->whereNotNull('unit_id')->distinct()->pluck('unit_id')->flip();
+
+        $rows = $bookings->map(function ($b) use ($ajb, $bast, $sudahBooked) {
+            $d = $ajb->get($b->id);
+            $sudahBast = $bast->has($b->id);
+
+            // Kolom AJB hanya untuk yang sudah BAST (ketentuan pemilik proses).
+            $no  = $sudahBast ? ($d?->ajb_number ?: null) : null;
+            $tgl = $sudahBast ? ($d?->signed_at?->toDateString() ?: null) : null;
+            $nom = $sudahBast && $d?->amount !== null ? (float) $d->amount : null;
+            $not = $sudahBast ? ($d?->notary_name ?: null) : null;
+
+            $lengkap = $no !== null && $tgl !== null && $nom !== null;
+
+            return [
+                'booking_id'   => $b->id,
+                'ajb_id'       => $d?->id,
+                'spr'          => $b->booking_number,
+                'customer'     => $b->customer?->full_name,
+                'unit'         => $b->unit?->unit_code,
+                'unit_id'      => $b->unit_id,
+                'notaris'      => $not,
+                'ajb_number'   => $no,
+                'ajb_date'     => $tgl,
+                'ajb_amount'   => $nom,
+                'keterangan'   => $lengkap ? 'SUDAH BAST' : 'BELUM BAST',
+                'sudah_bast'   => $sudahBast,
+                'bast_number'  => $bast->get($b->id)?->bast_number,
+                // Tombol Posting Booked Revenue hanya berguna bila datanya lengkap & belum diposting.
+                'can_posting'  => $lengkap && ! $sudahBooked->has($b->unit_id),
+                'sudah_booked' => $sudahBooked->has($b->unit_id),
+            ];
+        });
+
+        if ($s = trim((string) $request->input('search'))) {
+            $rows = $rows->filter(fn ($r) => stripos(implode(' ', [
+                $r['spr'], $r['customer'], $r['unit'], $r['ajb_number'], $r['notaris'],
+            ]), $s) !== false);
+        }
+        if (($f = $request->input('status')) === 'sudah' || $f === 'belum') {
+            $rows = $rows->filter(fn ($r) => $f === 'sudah' ? $r['keterangan'] === 'SUDAH BAST' : $r['keterangan'] === 'BELUM BAST');
+        }
+        // BELUM di atas (perlu tindakan), lalu urut nomor SPR.
+        $rows = $rows->sortBy([
+            fn ($a, $b) => ($a['keterangan'] === 'BELUM BAST' ? 0 : 1) <=> ($b['keterangan'] === 'BELUM BAST' ? 0 : 1),
+            fn ($a, $b) => strcmp((string) $a['spr'], (string) $b['spr']),
+        ])->values();
+
+        $semua = $bookings->count();
+
+        return Inertia::render('BusinessSupport/BookedRevenue/DetailAjb', [
+            'rows'    => $rows,
+            'filters' => $request->only(['search', 'status']),
+            'summary' => [
+                'total' => $semua,
+                'sudah' => $rows->where('keterangan', 'SUDAH BAST')->count(),
+                'belum' => $rows->where('keterangan', 'BELUM BAST')->count(),
+            ],
+            // Modal Input Massal AJB: SPR final yang belum punya dokumen AJB.
+            'belumBookings' => $bookings->filter(fn ($b) => ! $ajb->has($b->id))
+                ->map(fn ($b) => ['booking_id' => $b->id, 'spr' => $b->booking_number, 'unit' => $b->unit?->unit_code, 'customer' => $b->customer?->full_name])
+                ->values(),
+        ]);
     }
 
     /** Filter baris control (no dokumen / SPR / customer / unit). */
@@ -626,9 +694,12 @@ class BookedRevenueController extends Controller
             'booking_ids.*' => ['integer', 'exists:bookings,id'],
             'date'          => ['required', 'date'],
             'notary_name'   => ['required', 'string', 'max:150'],
+            // Nominal AJB opsional; bila kosong dipakai nilai transaksi booking-nya.
+            'amount'        => ['nullable', 'numeric', 'min:0'],
         ]);
         $date = $v['date'];
         $notary = trim((string) $v['notary_name']);
+        $amount = isset($v['amount']) && $v['amount'] !== null ? (float) $v['amount'] : null;
         $ok = 0;
         $skip = 0;
         $fail = [];
@@ -639,7 +710,7 @@ class BookedRevenueController extends Controller
                 continue;
             }
             try {
-                $issue->execute($b, $notary, $date);
+                $issue->execute($b, $notary, $date, $amount);
                 $ok++;
             } catch (BusinessRuleException $e) {
                 $fail[] = $b->booking_number;
