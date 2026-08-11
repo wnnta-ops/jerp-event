@@ -1326,6 +1326,133 @@ HTML;
                 .'<p>Demikian permohonan ini kami sampaikan, atas bantuan dan kerjasamanya kami ucapkan terimakasih.</p>'.$sign(true)
             );
             $letters[] = $keterangan('BRI.SDA');
+        } elseif ($bank === 'mandiri') {
+            // Format SI Bank Mandiri — 6 surat, mengikuti berkas "SI MANDIRI.docx".
+            $mdrTo = ['PT. Bank Mandiri', 'KC. Gentengkali Surabaya', 'Jl. Gentengkali No. 93 – 95, Surabaya'];
+            $mdrKet = fn ($hal, $isi) => $wrap(
+                $hdr($noStr('MNDR'), $hal, '1')
+                .'<p>Yang bertanda tangan dibawah ini :</p>'
+                .$kv('Nama', $signer).$kv('Jabatan', $sTitle.' '.$coName)
+                .'<p>Dalam hal ini bertindak berdasarkan jabatannya selaku pihak berwenang dari '.$e($coName).', berkedudukan di Sidoarjo, dengan ini menerangkan sebagai berikut:</p>'
+                .$kv('NAMA', $name).$kv('ALAMAT RUMAH', $unit).$kv('TIPE', $tipe)
+                .$kv('DESA', 'TERUNGKULON').$kv('KECAMATAN', 'KRIAN').$kv('KABUPATEN', 'SIDOARJO')
+                .'<p>'.$isi.'</p>'
+                .'<p>Demikian Surat Keterangan ini dibuat untuk dipergunakan sebagaimana perlunya.</p>'
+                .$rdate().$sign(false)
+            );
+
+            $letters[] = $wrap(
+                $rdate().$hdr($noStr('MNDR'), 'Pemberitahuan Lunas Uang Muka').$to($mdrTo)
+                .'<p>Dengan hormat,</p>'
+                .'<p>Sehubungan dengan permohonan kredit perumahan '.$e($perum).', kami selaku developer menerangkan bahwa debitur atas nama :</p>'
+                .$kv('NAMA', $name).$kv('UNIT', $unit).$kv('TIPE', $tipe)
+                .'<p>Telah melakukan Pelunasan Uang Muka sebesar '.$rp($umAmt).' ('.$e($terb($umAmt)).').</p>'
+                .'<p>Demikian pemberitahuan ini di buat dengan sebenar benarnya, atas perhatian dan kerjasamanya kami ucapkan terimakasih.</p>'.$sign(false)
+            );
+            $letters[] = $wrap(
+                $hdr($noStr('MNDR'), 'Claim Fee KPR').$to($mdrTo)
+                .'<p>Dengan hormat,</p>'
+                .'<p>Sehubungan dengan telah dilaksanakan proses kredit KPR konsumen atas nama '.$e($name).' Unit '.$e($unit).' pada tanggal ('.$e($akadTgl).') sebesar '.$rp($kprAmt).'</p>'
+                .'<p>Maka dengan ini mohon agar Insentif/Fee KPR dapat dicairkan ke:</p>'
+                .$kv('Nama', $signer).$kv('No. Rek', '14-000-1131815-2 (MANDIRI)')
+                .'<p>Demikian permohonan ini kami sampaikan, atas bantuan dan kerjasamanya kami ucapkan terimakasih.</p>'.$sign(true)
+            );
+            $letters[] = $mdrKet('Keterangan Proses Pembangunan Rumah',
+                'Bahwa untuk pembangunan rumah tersebut masih dalam proses dan akan diselesaikan dalam jangka waktu 12 (dua belas) bulan sejak surat keterangan ini dibuat.');
+            $letters[] = $mdrKet('Keterangan Proses Penyelesaian Legalitas Sertifikat dan IMB',
+                'Bahwa untuk sertifikat pecahan dan IMB rumah tersebut masih dalam proses dan akan kami serahkan kepada pihak Bank Mandiri dalam jangka waktu 12 (dua belas) bulan sejak surat keterangan ini dibuat.');
+            $letters[] = $wrap(
+                '<div class="right">Tanggal '.$e($tglInd).'</div>'.$hdr($noStr('MNDR'), 'Laporan Penilaian Progress Pembangunan').$to($mdrTo)
+                .$kv('Nama Penilai', $coName).$kv('Nama Debitur', $name)
+                .$kv('Alamat Agunan', $unit).$kv('Tanggal Penilaian', $tglInd)
+                .'<p>Adapun laporan penilaian progress pembangunan sebagai berikut :</p>'
+                .'<table class="pajak"><tr><th>No</th><th>Pencairan</th><th>Selesai</th><th>Belum Selesai</th></tr>'
+                .'<tr><td>1</td><td>Tanah Matang</td><td></td><td></td></tr>'
+                .'<tr><td>2</td><td>Pondasi</td><td></td><td></td></tr>'
+                .'<tr><td>3</td><td>Topping Off</td><td></td><td></td></tr>'
+                .'<tr><td>4</td><td>Bangunan Selesai</td><td></td><td></td></tr></table>'
+                .'<p>V centang sesuai progress</p>'
+                .$rdate().$sign(true)
+            );
+            $letters[] = $wrap(
+                '<div class="right">Tanggal '.$e($akadTgl).'</div>'.$hdr($noStr('MNDR'), 'Pemberitahuan Pencairan Dana KPR').$to($mdrTo)
+                .'<p>Sehubungan dengan telah dilaksanakannya akad kredit pada tanggal ('.$e($akadTgl).') atas nama:</p>'
+                .$kv('Nama', $name).$kv('Alamat Rumah', $unit).$kv('KPR', $rp($kprAmt))
+                .'<p>'.$lokasi.' Maka atas realisasi akad kredit diatas, bersama ini kami mohon kepada Bank PT. Bank Mandiri Kantor Cabang Gentengkali Surabaya untuk dapat mencairkan dana tersebut ke Rekening kami, adapun rinciannya sebagai berikut :</p>'
+                .'<p>Atas pencairan dana tersebut mohon di transfer ke rekening Bank Mandiri kami:</p>'
+                .$kv('Atas nama', $coName)
+                .$kv('No. Rekening', '141-00-9988886-9 (Giro Operasional)').$kv('Sebesar 50%', $rp(round(0.5 * $kprAmt, 0)))
+                .$kv('No. Rekening', '141-00-8858868-6 (Giro Escrow)').$kv('Sebesar 50%', $rp(round(0.5 * $kprAmt, 0)))
+                .'<p>Demikian permohonan ini, atas bantuan dan kerjasamanya kami ucapkan terimakasih.</p>'.$sign(true)
+            );
+        } elseif ($bank === 'bni') {
+            // Format SI Bank BNI — 6 surat, mengikuti berkas "SI BNI.docx".
+            $bniTo = ['PT. Bank Negara Indonesia (BNI)', 'Cabang Graha Pangeran', 'Jl. Ahmad Yani No.286, Surabaya'];
+            $bniKet = fn ($hal, $isi) => $wrap(
+                $hdr($noStr('BNI.GP'), $hal)
+                .'<p>Yang bertanda tangan dibawah ini :</p>'
+                .$kv('Nama', $signer).$kv('Jabatan', $sTitle.' '.$coName)
+                .'<p>Dalam hal ini bertindak berdasarkan jabatannya selaku pihak berwenang dari '.$e($coName).', berkedudukan di Sidoarjo, dengan ini menerangkan sebagai berikut:</p>'
+                .$kv('NAMA', $name).$kv('ALAMAT RUMAH', $unit).$kv('TIPE', $tipe)
+                .$kv('DESA', 'TERUNGKULON').$kv('KECAMATAN', 'KRIAN').$kv('KABUPATEN', 'SIDOARJO')
+                .'<p>'.$isi.'</p>'
+                .'<p>Demikian Surat Keterangan ini dibuat untuk dipergunakan sebagaimana perlunya.</p>'
+                .$rdate().$sign(false)
+            );
+            // Termin pencairan BNI: 30% tanah matang · 20% pondasi · 40% topping off · 10% BAST.
+            $t30 = round(0.30 * $kprAmt, 0);
+            $t20 = round(0.20 * $kprAmt, 0);
+            $t40 = round(0.40 * $kprAmt, 0);
+            $t10 = round(0.10 * $kprAmt, 0);
+            $num = fn ($x) => number_format((float) $x, 0, ',', '.');
+
+            $letters[] = $wrap(
+                $rdate().$hdr($noStr('BNI.GP'), 'Pemberitahuan Lunas Uang Muka').$to($bniTo)
+                .'<p>Dengan hormat,</p>'
+                .'<p>Sehubungan dengan permohonan kredit perumahan '.$e($perum).', kami selaku developer menerangkan bahwa debitur atas nama :</p>'
+                .$kv('NAMA', $name).$kv('UNIT', $unit).$kv('TIPE', $tipe)
+                .'<p>Telah melakukan Pelunasan Uang Muka sebesar '.$rp($umAmt).' ('.$e($terb($umAmt)).').</p>'
+                .'<p>Demikian pemberitahuan ini di buat dengan sebenar benarnya, atas perhatian dan kerjasamanya kami ucapkan terimakasih.</p>'.$sign(true)
+            );
+            $letters[] = $wrap(
+                '<div class="right">Tanggal '.$e($akadTgl).'</div>'.$hdr($noStr('BNI.GP'), 'Pemberitahuan Pencairan Dana KPR').$to($bniTo)
+                .'<p>Sehubungan dengan telah dilaksanakannya akad kredit pada tanggal ('.$e($akadTgl).') atas nama:</p>'
+                .$kv('Nama', $name).$kv('Alamat Rumah', $unit).$kv('KPR', $rp($kprAmt))
+                .'<p>'.$lokasi.' Maka atas realisasi akad kredit diatas, bersama ini kami mohon kepada Bank BNI Cabang Graha Pangeran Surabaya untuk dapat mencairkan dana tersebut ke Rekening kami, adapun rinciannya sebagai berikut :</p>'
+                .'<table class="pajak"><tr><th>No</th><th>Pencairan</th><th>%</th><th>Nominal pencairan</th><th>KPR</th><th>Keterangan</th></tr>'
+                .'<tr><td>1</td><td>Tanah Matang</td><td>30%</td><td>'.$num($t30).'</td><td>'.$num($kprAmt).'</td><td>Giro Umum</td></tr>'
+                .'<tr><td>2</td><td>Pondasi</td><td>20%</td><td>'.$num($t20).'</td><td></td><td>Giro Umum</td></tr>'
+                .'<tr><td>3</td><td>Topping Off</td><td>40%</td><td>'.$num($t40).'</td><td></td><td>Giro Umum</td></tr>'
+                .'<tr><td>4</td><td>BAST &amp; Sertifikat IMB</td><td>10%</td><td>'.$num($t10).'</td><td></td><td>Giro Escrow</td></tr>'
+                .'<tr><th colspan="3">Total</th><th colspan="3">'.$num($kprAmt).'</th></tr></table>'
+                .'<p>Atas pencairan dana tersebut mohon di transfer ke rekening Bank BNI kami:</p>'
+                .$kv('Atas nama', $coName)
+                .$kv('No. Rekening', '141 337 5985 (Giro Operasional)').$kv('Sebesar 90%', $rp(round(0.9 * $kprAmt, 0)))
+                .$kv('No. Rekening', '188 688 8512 (Giro Escrow)').$kv('Sebesar 10%', $rp($t10))
+                .'<p>Demikian permohonan ini, atas bantuan dan kerjasamanya kami ucapkan terimakasih.</p>'.$sign(true)
+            );
+            $letters[] = $wrap(
+                $hdr($noStr('BNI.GP'), 'Claim Fee KPR').$to($bniTo)
+                .'<p>Dengan hormat,</p>'
+                .'<p>Sehubungan dengan telah dilaksanakan proses kredit KPR konsumen atas nama '.$e($name).' Unit '.$e($unit).' pada tanggal ('.$e($akadTgl).') sebesar '.$rp($kprAmt).'</p>'
+                .'<p>Maka dengan ini mohon agar Insentif/Fee KPR dapat dicairkan ke:</p>'
+                .$kv('Nama', $signer).$kv('No. Rek', '8820233332 (BNI)')
+                .'<p>Demikian permohonan ini kami sampaikan, atas bantuan dan kerjasamanya kami ucapkan terimakasih.</p>'.$sign(true)
+            );
+            $letters[] = $bniKet('Keterangan Proses Pembangunan Rumah',
+                'Bahwa untuk pembangunan rumah tersebut masih dalam proses dan akan diselesaikan dalam jangka waktu 18 (delapan belas) bulan sejak surat keterangan ini dibuat.');
+            $letters[] = $bniKet('Keterangan Proses Penyelesaian Legalitas Sertifikat &amp; IMB',
+                'Bahwa untuk sertifikat pecahan rumah tersebut masih dalam proses, yang akan dilakukan pemecahan sertifikat induk pada notaris rekanan BNI yang tidak terdapat blacklist dari BNI dan IMB akan kami serahkan kepada pihak Bank BNI dalam jangka waktu 18 (delapan belas) bulan sejak surat keterangan ini dibuat.');
+            $letters[] = $wrap(
+                '<div class="title" style="text-align:center;font-weight:bold;text-decoration:underline">SURAT KETERANGAN</div>'
+                .'<p>Yang bertandatangan di bawah ini :</p>'
+                .$kv('Nama', $signer).$kv('No. KTP', '3515162210870001')
+                .$kv('Alamat', 'Tebel Barat RT005/001 Desa Tebel Gedangan Sidoarjo')
+                .$kv('Jabatan', $sTitle.' '.$coName)
+                .'<p>Dengan ini menyatakan biaya biaya pajak yang timbul pada saat penandatangan PPJB atas rumah yang berada di perumahan '.$e($unit).' '.$e($tipe).', yang berlokasi Kelurahan Terungkulon, Kecamatan Krian Sidoarjo, menjadi tanggung jawab '.$e($coName).'. Apabila ada pajak – pajak yang timbul lebih besar dari biaya yang telah disepakati di awal baik pajak penjual (PPH) maupun pajak pembeli (BPHTB), maka selisih atau kekurangan biaya tersebut akan menjadi tanggung jawab '.$e($coName).'</p>'
+                .'<p>Demikian surat pernyataan ini kami buat, Atas perhatian dan kerjasama yang baik disampaikan terima kasih.</p>'
+                .$rdate().$sign(false)
+            );
         }
 
         return implode('', $letters);

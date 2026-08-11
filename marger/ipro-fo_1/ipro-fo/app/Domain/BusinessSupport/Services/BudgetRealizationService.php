@@ -20,6 +20,9 @@ final class BudgetRealizationService
     /** Cache tanda (+1/−1) per akun agar tidak query berulang saat loop banyak budget. */
     private array $signCache = [];
 
+    /** @var array<int,bool> account_id → boleh tanpa cost center */
+    private array $optionalCache = [];
+
     public function total(int $year, int $accountId, ?int $costCenterId = null, ?string $from = null, ?string $to = null, ?int $excludeJournalId = null): float
     {
         $raw = (float) $this->base($year, $accountId, $costCenterId, $from, $to, $excludeJournalId)
@@ -54,8 +57,13 @@ final class BudgetRealizationService
             // Untuk gerbang over-budget saat EDIT jurnal: kecualikan jurnal itu sendiri agar tak dihitung ganda.
             ->when($excludeJournalId, fn ($q, $id) => $q->where('bs_journals.id', '!=', $id))
             ->where('bs_journal_lines.account_id', $accountId)
-            // Cost center efektif = baris (mis. AP set per-baris) → fallback header (jurnal memorial set di header).
-            ->when($costCenterId, fn ($q) => $q->whereRaw('COALESCE(bs_journal_lines.cost_center_id, bs_journals.cost_center_id) = ?', [$costCenterId]))
+            // Cost center efektif = baris (mis. AP set per-baris) → fallback header (jurnal memorial
+            // set di header). KECUALI akun yang boleh tanpa cost center: barisnya hanya dihitung bila
+            // cost center-nya memang diisi, supaya nilai yang sengaja dikosongkan tidak terhitung
+            // sebagai realisasi cost center header.
+            ->when($costCenterId, fn ($q) => $this->costCenterOptional($accountId)
+                ? $q->where('bs_journal_lines.cost_center_id', $costCenterId)
+                : $q->whereRaw('COALESCE(bs_journal_lines.cost_center_id, bs_journals.cost_center_id) = ?', [$costCenterId]))
             // Filter tanggal opsional (Realisasi Budget per periode): batasi tanggal jurnal.
             ->when($from, fn ($q, $d) => $q->whereDate('bs_journals.journal_date', '>=', $d))
             ->when($to, fn ($q, $d) => $q->whereDate('bs_journals.journal_date', '<=', $d));
@@ -65,6 +73,16 @@ final class BudgetRealizationService
     public function contribution(int $accountId, float $debit, float $credit): float
     {
         return round($this->sign($accountId) * ($debit - $credit), 2);
+    }
+
+    /** Akun ini boleh dijurnal tanpa cost center? (lihat CoaTanpaCostCenterSeeder) */
+    private function costCenterOptional(int $accountId): bool
+    {
+        if (! array_key_exists($accountId, $this->optionalCache)) {
+            $this->optionalCache[$accountId] = (bool) BsAccount::whereKey($accountId)->value('cost_center_optional');
+        }
+
+        return $this->optionalCache[$accountId];
     }
 
     /** +1 utk akun debit-normal (Aset/Beban), −1 utk akun credit-normal (Kewajiban/Modal/Pendapatan). */

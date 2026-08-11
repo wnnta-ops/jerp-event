@@ -4,7 +4,13 @@ import { useForm, router, Link, usePage } from '@inertiajs/vue3';
 import { ArrowLeft, ClipboardList, Printer, Ban, Check, Pencil } from 'lucide-vue-next';
 import Badge from '@/Components/UI/Badge.vue';
 
-const props = defineProps<{ sip: any; statuses: Record<string, string>; signers: Record<string, string> }>();
+const props = defineProps<{
+    sip: any; statuses: Record<string, string>; signers: Record<string, string>;
+    // slot → SVG barcode tanda tangan penyetuju (lihat Cash Book → Setup → Set Up Barcode).
+    barcodes?: Record<string, string>;
+}>();
+/** Barcode TTD slot ini; kosong bila penyetujunya belum punya barcode. */
+const bc = (key: string) => props.barcodes?.[key] ?? '';
 const approveForm = useForm<any>({ slot: '' });
 const rejectForm = useForm<any>({ reason: '' });
 const showReject = ref(false);
@@ -135,7 +141,11 @@ function printUrl() { return route('bs.sip.print', props.sip.id); }
                 <div v-for="(label, key) in signers" :key="key" class="rounded-lg border border-neutral-200 p-3 text-center text-sm dark:border-neutral-700">
                     <div class="text-xs font-medium text-neutral-500">{{ label }}</div>
                     <template v-if="sip.approvals?.[key]">
-                        <div class="mt-2 flex items-center justify-center gap-1 font-medium text-success-600"><Check class="h-4 w-4" /> {{ sip.approvals[key].name }}</div>
+                        <!-- Sudah disetujui → yang tampil TANDA TANGAN BARCODE, bukan nama.
+                             Nama hanya dipakai bila penyetuju belum punya barcode. -->
+                        <div v-if="bc(key)" class="mt-2 flex justify-center text-neutral-900 dark:text-neutral-100" v-html="bc(key)"
+                            :title="'TTD ' + sip.approvals[key].name"></div>
+                        <div v-else class="mt-2 flex items-center justify-center gap-1 font-medium text-success-600"><Check class="h-4 w-4" /> {{ sip.approvals[key].name }}</div>
                         <div class="text-[10px] text-neutral-400">{{ String(sip.approvals[key].approved_at).slice(0, 10) }}</div>
                     </template>
                     <button v-else-if="['submitted','printed'].includes(sip.status) && canApprove(key)" type="button" :disabled="approveForm.processing" @click="approve(key)" class="mt-2 rounded-lg border border-primary-300 px-3 py-1 text-xs font-medium text-primary-600 hover:bg-primary-50 dark:border-primary-700">Setujui</button>

@@ -66,9 +66,21 @@ class PembayaranService
                 'keterangan' => $opts['keterangan'] ?? ('Pembayaran '.$tagihan->nama_tagihan.' — '.$kontrak->no_kontrak),
             ]);
 
-            // GL TIDAK auto-posting lagi. Pelunasan dikirim ke BO "Approval UTJ & DP" lewat
-            // tombol "Posting BO" di daftar Kwitansi → jurnal GL terbentuk saat BO memilih
-            // akun Debit/Kredit & menyetujui (cegah jurnal dobel).
+            // GL TIDAK auto-posting di FO. Pelunasan DP / Angsuran / Tambah DP langsung dikirim
+            // ke BO "Approval DP" begitu pembayaran diterima — operator tidak perlu menekan
+            // "Posting BO" lagi di daftar Kwitansi. Jurnal GL tetap baru terbentuk saat BO
+            // memilih akun Debit/Kredit & menyetujui, jadi tidak ada jurnal dobel.
+            //
+            // Kegagalan pengiriman TIDAK membatalkan pembayarannya: kwitansi sudah sah terbit,
+            // dan baris ini masih bisa dikirim ulang lewat tombol "Posting BO" pada Kwitansi.
+            try {
+                app(\App\Modules\BO\IproBridge\Services\IproMasterSync::class)
+                    ->pushBkmToApproval($bkm, 'dp');
+                $bkm->forceFill(['bo_posted_at' => now()])->save();
+            } catch (\Throwable $e) {
+                report($e);
+            }
+
             return $bkm;
         });
     }

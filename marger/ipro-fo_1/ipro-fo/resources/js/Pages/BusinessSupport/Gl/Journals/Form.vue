@@ -6,10 +6,21 @@ import Button from '@/Components/UI/Button.vue';
 import SearchSelect from '@/Components/UI/SearchSelect.vue';
 
 const props = defineProps<{
-    accounts: Array<{ id: number; code: string; name: string; type: string }>;
+    // cost_center_optional = akun boleh dijurnal TANPA cost center (mis. bank, piutang,
+    // akumulasi penyusutan, utang) — lihat CoaTanpaCostCenterSeeder.
+    accounts: Array<{ id: number; code: string; name: string; type: string; cost_center_optional?: boolean }>;
     costCenters: Array<{ id: number; code: string; name: string }>;
     editing?: any;
 }>();
+
+/** Akun ini boleh tanpa cost center? */
+function ccOptional(accountId: any) {
+    return !!props.accounts.find((a) => a.id === Number(accountId))?.cost_center_optional;
+}
+function accLabel(accountId: any) {
+    const a = props.accounts.find((x) => x.id === Number(accountId));
+    return a ? `${a.code} - ${a.name}` : '';
+}
 
 const today = new Date().toISOString().slice(0, 10);
 const e = props.editing;
@@ -29,10 +40,21 @@ const totalDebit = computed(() => form.lines.reduce((s: number, l: any) => s + (
 const totalCredit = computed(() => form.lines.reduce((s: number, l: any) => s + (Number(l.credit) || 0), 0));
 const balanced = computed(() => Math.abs(totalDebit.value - totalCredit.value) < 0.005 && totalDebit.value > 0);
 const allAccountsSet = computed(() => form.lines.every((l: any) => !!l.account_id));
+// Akun yang WAJIB cost center tetapi barisnya kosong DAN header juga kosong — cermin rambu server.
+const kurangCc = computed<string[]>(() => {
+    const out = new Set<string>();
+    for (const l of form.lines as any[]) {
+        if (!l.account_id) continue;
+        if (l.cost_center_id || form.cost_center_id) continue;
+        if (ccOptional(l.account_id)) continue;
+        out.add(accLabel(l.account_id));
+    }
+    return [...out];
+});
 const userName = computed(() => (usePage().props as any).auth?.user?.name ?? '—');
 function fmtRp(v: number) { return Number(v ?? 0).toLocaleString('id-ID'); }
 function submit() {
-    if (!balanced.value || !form.cost_center_id) return;
+    if (!balanced.value || kurangCc.value.length) return;
     if (props.editing) form.put(route('bs.gl.journal.update', props.editing.id));
     else form.post(route('bs.gl.journal.store'));
 }
@@ -54,7 +76,12 @@ const inputCls = 'h-9 w-full rounded-lg border border-neutral-300 bg-white px-3 
                 <div><label class="mb-1 block text-xs font-medium text-neutral-500">Tanggal *</label><input v-model="form.journal_date" type="date" required :class="inputCls" /></div>
                 <div class="md:col-span-2"><label class="mb-1 block text-xs font-medium text-neutral-500">Keterangan *</label><input v-model="form.description" required :class="inputCls" /></div>
                 <div><label class="mb-1 block text-xs font-medium text-neutral-500">No. Manual</label><input v-model="form.reference" :class="inputCls" /></div>
-                <div><label class="mb-1 block text-xs font-medium text-neutral-500">Cost Center *</label><SearchSelect v-model="form.cost_center_id" :options="costCenters" placeholder="— pilih cost center —" /><p v-if="form.errors.cost_center_id" class="mt-1 text-xs text-danger-500">{{ form.errors.cost_center_id }}</p></div>
+                <div>
+                    <label class="mb-1 block text-xs font-medium text-neutral-500">Cost Center</label>
+                    <SearchSelect v-model="form.cost_center_id" :options="costCenters" placeholder="— tanpa cost center —" />
+                    <p v-if="form.errors.cost_center_id" class="mt-1 text-xs text-danger-500">{{ form.errors.cost_center_id }}</p>
+                    <p v-else class="mt-1 text-[11px] text-neutral-400">Menjadi bawaan baris yang dikosongkan. Sebagian akun neraca boleh tanpa cost center.</p>
+                </div>
                 <div>
                     <label class="mb-1 block text-xs font-medium text-neutral-500">Dibuat oleh</label>
                     <input :value="userName" type="text" readonly disabled tabindex="-1" title="Otomatis dari user yang login — tidak dapat diubah"
@@ -72,8 +99,13 @@ const inputCls = 'h-9 w-full rounded-lg border border-neutral-300 bg-white px-3 
                     <tbody>
                         <tr v-for="(l, i) in form.lines" :key="i" class="border-t border-neutral-100 dark:border-neutral-800">
                             <td class="min-w-[240px] py-1.5 pr-2"><SearchSelect v-model="l.account_id" :options="accounts" placeholder="— pilih / ketik akun —" /></td>
-                            <!-- Cost center PER COA. Dikosongkan → ikut cost center header. -->
-                            <td class="min-w-[190px] py-1.5 pr-2"><SearchSelect v-model="l.cost_center_id" :options="costCenters" placeholder="— ikut header —" /></td>
+                            <!-- Cost center PER COA. Dikosongkan → ikut cost center header, KECUALI
+                                 akun yang memang boleh tanpa cost center: dibiarkan kosong apa adanya. -->
+                            <td class="min-w-[190px] py-1.5 pr-2">
+                                <SearchSelect v-model="l.cost_center_id" :options="costCenters"
+                                    :placeholder="ccOptional(l.account_id) ? '— tanpa cost center —' : '— ikut header —'" />
+                                <p v-if="ccOptional(l.account_id)" class="mt-0.5 text-[10.5px] text-neutral-400">Boleh dikosongkan</p>
+                            </td>
                             <td class="py-1.5 pr-2"><input v-model="l.description" :class="inputCls" /></td>
                             <td class="py-1.5 pr-2"><input v-model.number="l.debit" type="number" step="1" min="0" :class="[inputCls,'text-right']" @input="l.debit && (l.credit = 0)" /></td>
                             <td class="py-1.5 pr-2"><input v-model.number="l.credit" type="number" step="1" min="0" :class="[inputCls,'text-right']" @input="l.credit && (l.debit = 0)" /></td>
@@ -93,8 +125,10 @@ const inputCls = 'h-9 w-full rounded-lg border border-neutral-300 bg-white px-3 
             </div>
 
             <div class="flex gap-2">
-                <Button type="submit" :disabled="form.processing || !balanced || !allAccountsSet || !form.cost_center_id"><template #icon-left><Save class="h-4 w-4" /></template>{{ editing ? 'Simpan Perubahan' : 'Posting Jurnal' }}</Button>
-                <span v-if="!form.cost_center_id" class="self-center text-xs text-danger-500">Pilih Cost Center dulu.</span>
+                <Button type="submit" :disabled="form.processing || !balanced || !allAccountsSet || kurangCc.length > 0"><template #icon-left><Save class="h-4 w-4" /></template>{{ editing ? 'Simpan Perubahan' : 'Posting Jurnal' }}</Button>
+                <span v-if="kurangCc.length" class="self-center text-xs text-danger-500">
+                    Cost center wajib diisi untuk akun: {{ kurangCc.join(', ') }}.
+                </span>
                 <Link :href="route('bs.gl.journal.index')" class="rounded-lg border border-neutral-300 px-4 py-2 text-sm dark:border-neutral-700">Batal</Link>
             </div>
         </form>

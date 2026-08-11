@@ -286,6 +286,8 @@ export function navGroups(foUrl: string): NavGroup[] {
             { label: 'Setup', icon: SlidersHorizontal, permission: ['businesssupport.view', 'cashbook.*'], children: [
                 { label: 'Transaction Rule', href: 'bs.gl.transaction-rule.index', params: { source: 'cash' } },
                 { label: 'Rekening', href: 'rekening.index' },
+                // Barcode tanda tangan yang dipakai pada Persetujuan (TTD) SIP.
+                { label: 'Set Up Barcode', href: 'bs.cashbook.signature-barcode.index' },
                 { label: 'Repair Data', href: 'bs.cashbook.repair.index' },
             ]},
             { label: 'Master', icon: Wallet, permission: ['businesssupport.view', 'cashbook.*'], children: [
@@ -320,7 +322,9 @@ export function navGroups(foUrl: string): NavGroup[] {
                 { label: 'Penerimaan Bank', href: 'bs.cashbook.create', params: { type: 'in' } },
                 { label: 'Approval Retensi', href: 'bs.cashbook.approval-retensi' },
                 { label: 'Approval UM Penjualan', href: 'bs.cashbook.approval-um' },
-                { label: 'Approval UTJ & DP', href: 'bs.cashbook.approval-utjdp' },
+                { label: 'Approval UTJ', href: 'bs.cashbook.approval-utjdp' },
+                // Penerimaan dari Pelunasan DP, Angsuran & Tambah DP (FO) — masuk otomatis.
+                { label: 'Approval DP', href: 'bs.cashbook.approval-dp' },
             ]},
             { label: 'Transaksi Bon Sementara', icon: HandCoins, permission: ['businesssupport.view', 'cashbook.*'], children: [
                 { label: 'Pengeluaran Bon Sementara', href: 'bs.advance.payments' },
