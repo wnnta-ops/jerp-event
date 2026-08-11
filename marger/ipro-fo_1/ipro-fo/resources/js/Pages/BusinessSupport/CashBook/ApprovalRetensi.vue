@@ -14,7 +14,7 @@ type Acc = { id: number; code: string; name: string; type?: string };
 type Row = {
     // #171 — dua jenis baris: 'retensi' (KprRetention) & 'pencairan' (KprRealization, net). row_key
     // unik lintas jenis (id bisa bertabrakan antar tabel) → dipakai utk :key, forms & state.
-    id: number; kind: 'retensi' | 'pencairan'; row_key: string;
+    id: number; kind: 'retensi' | 'pencairan' | 'release'; row_key: string;
     amount: number; status: string; released_at: string | null; retention_date: string | null; akad_date: string | null; kpr_number: string | null; unit_code: string | null; unit_info: string | null; customer: string | null; note: string | null;
     akad_status?: 'sudah' | 'belum' | 'batal';
     rejected: boolean; reject_reason: string | null; rejected_at: string | null;
@@ -27,9 +27,14 @@ type Row = {
     default_ppn: number; default_uang_muka: number;
     // Booked Revenue & jalur pencairan — penentu bentuk jurnal (lihat "Aturan Jurnal" di atas tabel).
     scheme: 'bsn' | 'non_bsn' | null; is_dajam_pajak: boolean;
+    /** Baris penahanan retensi DAJAM — uang KELUAR, ditandai merah. */
+    is_retensi_dajam?: boolean;
     br_number: string | null; br_booking_date: string | null; booked: boolean;
     default_credit_mode: CreditMode;
     default_piutang_account_id: number | null; default_piutang_account: string | null;
+    // Hanya pada kind='release' — konteks tranche terhadap baris pencadangan induknya.
+    parent_key?: string; tranche_index?: number; tranche_count?: number;
+    retention_amount?: number; released_cum?: number; retention_sisa?: number;
 };
 type AccountDefaults = {
     uang_muka_account_id: number | null; uang_muka_account: string | null;
@@ -89,12 +94,12 @@ function bookedOn(r: Row, date: string): boolean {
 function isBooked(r: Row) { return bookedOn(r, forms[r.row_key]?.journal_date ?? ''); }
 
 const MODE_LABEL: Record<CreditMode, string> = {
-    split: 'Uang Muka + PPN', piutang: 'Piutang Usaha', deduct: 'Potongan DAJAM Pajak', manual: 'Manual',
+    split: 'Uang Muka + PPN', piutang: 'Piutang Usaha', deduct: 'Retensi DAJAM (uang keluar)', manual: 'Manual',
 };
 const MODE_FORMULA: Record<CreditMode, string> = {
     split: 'Dr Bank → Cr Uang Muka Penjualan + Cr PPN Keluaran (11/111)',
     piutang: 'Dr Bank → Cr Piutang Usaha (nilai penuh, PPN sudah diakui saat Booked)',
-    deduct: 'Dr Uang Muka Penjualan → Cr Bank (dana ditahan, jurnal dibalik)',
+    deduct: 'Dr Uang Muka Penjualan → Cr Bank (nilai penuh, tanpa PPN — uang keluar & ditahan)',
     manual: 'Dr Bank → Cr akun pilihan (nilai penuh)',
 };
 const MODE_TONE: Record<CreditMode, string> = {
@@ -108,12 +113,17 @@ const MODE_TONE: Record<CreditMode, string> = {
 // Potongan (deduct) ditawarkan untuk jalur BSN; juga untuk baris DAJAM Pajak lama yang jalurnya
 // belum sempat direkam (disbursement_scheme kosong) agar tetap bisa dijurnal dengan benar.
 function allowedModes(r: Row): CreditMode[] {
+    // PENAHANAN RETENSI DAJAM = uang KELUAR → hanya 'deduct' (Dr Uang Muka / Cr Bank),
+    // nilai penuh tanpa pecahan PPN. Mode lain akan membalik arah kasnya.
+    // Retensi DAJAM tidak terpengaruh Booked Revenue — selalu Dr Uang Muka / Cr Bank.
+    if (r.is_retensi_dajam) return ['deduct'];
     if (isBooked(r)) return ['piutang', 'manual'];
     const canDeduct = r.scheme === 'bsn' || (r.scheme === null && r.is_dajam_pajak);
     return canDeduct ? ['split', 'deduct', 'manual'] : ['split', 'manual'];
 }
 // Mode efektif: pilihan operator bila masih sah, selain itu kembali ke default aturan.
 function modeOf(r: Row): CreditMode {
+    if (r.is_retensi_dajam) return 'deduct';
     const f = forms[r.row_key];
     if (f && allowedModes(r).includes(f.credit_mode)) return f.credit_mode;
     if (isBooked(r)) return 'piutang';
@@ -132,7 +142,9 @@ function fmtDate(d: string | null) { return d ? new Date(d).toLocaleDateString('
 
 // Nama route approval sesuai jenis baris (retensi → KprRetention, pencairan → KprRealization).
 function postRoute(r: Row, action: 'post' | 'reject' | 'restore') {
-    const base = r.kind === 'pencairan' ? 'bs.cashbook.approval-realization' : 'bs.cashbook.approval-retensi';
+    // Tiap pelepasan DAJAM punya endpoint sendiri — approval-nya terpisah per tranche.
+    const base = r.kind === 'pencairan' ? 'bs.cashbook.approval-realization'
+        : (r.kind === 'release' ? 'bs.cashbook.approval-release' : 'bs.cashbook.approval-retensi');
     return route(`${base}.${action}`, r.id);
 }
 
@@ -240,6 +252,40 @@ const filtered = computed(() => props.rows.filter((r) => {
 // Ringkasan kecil: berapa retensi vs pencairan yang tampil.
 const countRetensi = computed(() => filtered.value.filter((r) => r.kind === 'retensi').length);
 const countPencairan = computed(() => filtered.value.filter((r) => r.kind === 'pencairan').length);
+const countRelease = computed(() => filtered.value.filter((r) => r.kind === 'release').length);
+
+// ── Susunan INDUK → ANAK ──────────────────────────────────────────────────
+// Tiap tranche pelepasan ditempelkan tepat di bawah baris pencadangan (retensi) asalnya,
+// supaya "uang keluar" dan cicilan "uang masuk"-nya terbaca sebagai satu rangkaian.
+const ordered = computed<Row[]>(() => {
+    const rows = filtered.value;
+    const byParent = new Map<string, Row[]>();
+    for (const r of rows) {
+        if (r.kind !== 'release') continue;
+        const k = r.parent_key ?? '';
+        if (!byParent.has(k)) byParent.set(k, []);
+        byParent.get(k)!.push(r);
+    }
+    const out: Row[] = [];
+    const attached = new Set<string>();
+    for (const r of rows) {
+        if (r.kind === 'release') continue;
+        out.push(r);
+        const kids = r.kind === 'retensi' ? byParent.get(r.row_key) : undefined;
+        if (kids) { out.push(...kids); attached.add(r.row_key); }
+    }
+    // Tranche yang induknya tersaring keluar tetap ditampilkan — jangan hilang diam-diam.
+    for (const [k, kids] of byParent) { if (!attached.has(k)) out.push(...kids); }
+    return out;
+});
+// Apakah baris ini anak yang induknya ikut tampil (→ diberi indent & garis penghubung).
+function isChild(r: Row) { return r.kind === 'release' && ordered.value.some((x) => x.kind === 'retensi' && x.row_key === r.parent_key); }
+// Persentase retensi yang sudah dilepas s/d tranche ini — untuk bar progres tipis.
+function tranchePct(r: Row) {
+    const total = Number(r.retention_amount) || 0;
+    if (total <= 0) return 0;
+    return Math.min(100, Math.round(((Number(r.released_cum) || 0) / total) * 100));
+}
 
 function approve(r: Row) {
     const f = forms[r.row_key];
@@ -278,7 +324,7 @@ function approve(r: Row) {
 
 // Tolak (belum dijurnal) → status ditolak + alasan (mirror Approval UTJ & DP).
 function reject(r: Row) {
-    const label = r.kind === 'pencairan' ? 'pencairan' : 'retensi';
+    const label = r.kind === 'pencairan' ? 'pencairan' : (r.kind === 'release' ? 'pelepasan DAJAM' : 'retensi');
     if (!confirm(`Tolak ${label} ini? Akan ditandai ditolak (tidak dijurnal).`)) return;
     const reason = window.prompt('Alasan penolakan (opsional):', '') ?? '';
     const f = forms[r.row_key]; if (f) f.processing = true;
@@ -288,7 +334,7 @@ function reject(r: Row) {
 // Pulihkan yang ditolak → kembali menunggu approval.
 const restoring = ref<string | null>(null);
 function restore(r: Row) {
-    const label = r.kind === 'pencairan' ? 'pencairan' : 'retensi';
+    const label = r.kind === 'pencairan' ? 'pencairan' : (r.kind === 'release' ? 'pelepasan DAJAM' : 'retensi');
     if (!confirm(`Pulihkan ${label} ini ke daftar menunggu approval?`)) return;
     restoring.value = r.row_key;
     router.post(postRoute(r, 'restore'), {},
@@ -307,6 +353,7 @@ const hSelCls = 'h-7 w-52 rounded border border-neutral-300 bg-white px-2 text-x
             <h1 class="flex items-center gap-2 text-2xl font-bold"><Landmark class="h-6 w-6 text-primary-600" /> Approval Retensi</h1>
             <p class="text-sm text-neutral-500">Retensi <b>dan pencairan</b> dari Proses KPR. Setiap input pencairan otomatis masuk sebagai baris <span class="font-medium text-sky-600">Pencairan</span> (net = pencairan − retensi); retensi ditahan sebagai baris <span class="font-medium text-amber-600">Retensi</span>. Akun Debit (Bank akad) &amp; bentuk Kredit terisi otomatis mengikuti status <b>Booked Revenue</b> unit dan <b>jalur pencairan</b> (BSN / SELAIN BSN) — periksa/ubah lalu setujui. Jurnal GL otomatis terposting.</p>
             <p class="text-sm text-neutral-500">DAJAM yang masih <span class="font-medium text-amber-600">held</span> belum tampil di sini — uangnya masih ditahan. Baris DAJAM baru muncul setelah di-<b>Release</b> pada Proses KPR (sebagian maupun penuh).</p>
+            <p class="text-sm text-neutral-500"><b>Retensi yang dilepas bertahap</b>: tiap pelepasan tampil sebagai baris <span class="font-medium text-success-600">anak</span> di bawah pencadangannya, dengan <b>jurnal &amp; approval sendiri-sendiri</b> — menyetujui satu tranche tidak menyentuh tranche lain.</p>
         </div>
 
         <!-- Aturan jurnal (buka/tutup) — matriks BSN × SELAIN BSN terhadap Booked Revenue. -->
@@ -359,7 +406,7 @@ const hSelCls = 'h-7 w-52 rounded border border-neutral-300 bg-white px-2 text-x
         </div>
 
         <div class="flex items-center justify-between">
-            <p class="text-xs text-neutral-500">{{ filtered.length }} dari {{ rows.length }} baris · <span class="text-sky-600">{{ countPencairan }} pencairan</span> · <span class="text-amber-600">{{ countRetensi }} retensi</span></p>
+            <p class="text-xs text-neutral-500">{{ filtered.length }} dari {{ rows.length }} baris · <span class="text-sky-600">{{ countPencairan }} pencairan</span> · <span class="text-danger-600">{{ countRetensi }} retensi DAJAM</span> · <span class="text-success-600">{{ countRelease }} pelepasan DAJAM</span></p>
             <button @click="resetFilter" class="inline-flex items-center gap-1.5 rounded-lg border border-neutral-300 px-3 py-1.5 text-xs font-medium text-neutral-600 hover:bg-neutral-50 dark:border-neutral-700 dark:text-neutral-300"><RotateCcw class="h-3.5 w-3.5" /> Reset Filter</button>
         </div>
 
@@ -379,7 +426,7 @@ const hSelCls = 'h-7 w-52 rounded border border-neutral-300 bg-white px-2 text-x
                     <tr class="border-t border-neutral-100 dark:border-neutral-800/60">
                         <th class="px-2 py-2"><div class="flex min-w-[12rem] flex-col gap-1"><SearchSelect v-model="fCustomer" :options="customerOptions" placeholder="Semua customer" /><SearchSelect v-model="fUnit" :options="unitOptions" placeholder="Semua unit" /></div></th>
                         <th class="px-2 py-2"><div class="flex min-w-[10rem] flex-col gap-1">
-                            <select v-model="fKind" :class="hSelCls"><option value="">Semua jenis</option><option value="pencairan">Pencairan</option><option value="retensi">Retensi</option></select>
+                            <select v-model="fKind" :class="hSelCls"><option value="">Semua jenis</option><option value="pencairan">Pencairan</option><option value="retensi">Retensi DAJAM</option><option value="release">Pelepasan DAJAM</option></select>
                             <select v-model="fStatus" :class="hSelCls"><option value="">Semua status</option><option value="pencairan">Pencairan</option><option value="held">Held</option><option value="partial">Partial</option><option value="released">Released</option></select>
                         </div></th>
                         <th class="px-2 py-2"><div class="min-w-[10rem]"><SearchSelect v-model="fNilai" :options="nilaiOptions" placeholder="Semua nilai" /></div></th>
@@ -390,15 +437,44 @@ const hSelCls = 'h-7 w-52 rounded border border-neutral-300 bg-white px-2 text-x
                     </tr>
                 </thead>
                 <tbody class="divide-y divide-neutral-200 dark:divide-neutral-800 align-top">
-                    <tr v-if="!filtered.length"><td colspan="7" class="px-3 py-10"><EmptyState title="Tidak ada baris sesuai filter" description="Ubah kriteria filter di atas." /></td></tr>
-                    <tr v-for="r in filtered" :key="r.row_key">
-                        <td class="px-3 py-3">
-                            <div class="font-semibold">{{ r.customer ?? '—' }}</div>
-                            <div class="text-xs font-medium text-neutral-600 dark:text-neutral-300">{{ r.unit_info ?? r.unit_code ?? '—' }}</div>
-                            <div class="text-[11px] text-neutral-400">{{ r.kpr_number ?? '—' }}<span v-if="r.note"> · {{ r.note }}</span><span v-if="r.released_at"> · dilepas {{ fmtDate(r.released_at) }}</span></div>
+                    <tr v-if="!ordered.length"><td colspan="7" class="px-3 py-10"><EmptyState title="Tidak ada baris sesuai filter" description="Ubah kriteria filter di atas." /></td></tr>
+                    <!-- Pencadangan DAJAM: rona & garis kiri MERAH (uang keluar).
+                         Tranche pelepasan: baris ANAK — menjorok, garis kiri HIJAU (uang masuk). -->
+                    <tr v-for="r in ordered" :key="r.row_key"
+                        :class="r.is_retensi_dajam ? 'bg-danger-50/40 dark:bg-danger-950/20'
+                            : (isChild(r) ? 'bg-success-50/30 dark:bg-success-950/10' : '')">
+                        <td class="px-3 py-3"
+                            :class="r.is_retensi_dajam ? 'border-l-4 border-danger-500' : (isChild(r) ? 'border-l-4 border-success-500' : '')">
+                            <div :class="isChild(r) ? 'pl-4 border-l border-dashed border-success-300 dark:border-success-800' : ''">
+                                <div v-if="r.kind === 'release'" class="mb-0.5 flex flex-wrap items-center gap-1.5">
+                                    <span class="inline-flex items-center rounded-md bg-success-100 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-success-700 dark:bg-success-950/60 dark:text-success-300">
+                                        Tranche {{ r.tranche_index }}/{{ r.tranche_count }}
+                                    </span>
+                                    <span class="text-[10px] font-semibold text-success-700 dark:text-success-400">↑ uang masuk</span>
+                                </div>
+                                <div class="font-semibold" :class="isChild(r) ? 'text-sm' : ''">{{ r.customer ?? '—' }}</div>
+                                <div class="text-xs font-medium text-neutral-600 dark:text-neutral-300">{{ r.unit_info ?? r.unit_code ?? '—' }}</div>
+                                <div class="text-[11px] text-neutral-400">{{ r.kpr_number ?? '—' }}<span v-if="r.note"> · {{ r.note }}</span><span v-if="r.released_at"> · dilepas {{ fmtDate(r.released_at) }}</span></div>
+                                <!-- Progres pelepasan terhadap nilai retensi induknya. -->
+                                <div v-if="r.kind === 'release' && (r.retention_amount ?? 0) > 0" class="mt-1.5 max-w-[15rem]">
+                                    <div class="h-1.5 overflow-hidden rounded-full bg-neutral-200 dark:bg-neutral-800">
+                                        <div class="h-full rounded-full bg-success-500 transition-all duration-500" :style="{ width: tranchePct(r) + '%' }"></div>
+                                    </div>
+                                    <div class="mt-0.5 flex justify-between text-[10px] text-neutral-500">
+                                        <span>Dilepas {{ fmtRp(r.released_cum ?? 0) }} / {{ fmtRp(r.retention_amount ?? 0) }}</span>
+                                        <span :class="(r.retention_sisa ?? 0) > 0 ? 'text-danger-600 dark:text-danger-400' : 'text-success-600'">
+                                            {{ (r.retention_sisa ?? 0) > 0 ? 'sisa ' + fmtRp(r.retention_sisa ?? 0) : 'lunas' }}
+                                        </span>
+                                    </div>
+                                </div>
+                            </div>
                         </td>
                         <td class="px-3 py-3">
-                            <Badge size="sm" :variant="r.kind === 'pencairan' ? 'info' : 'primary'">{{ r.kind === 'pencairan' ? 'Pencairan' : 'Retensi' }}</Badge>
+                            <Badge size="sm" :variant="r.kind === 'pencairan' ? 'info' : (r.kind === 'release' ? 'success' : 'danger')">{{ r.kind === 'pencairan' ? 'Pencairan' : (r.kind === 'release' ? 'Pelepasan DAJAM' : 'Retensi DAJAM') }}</Badge>
+                            <div v-if="r.is_retensi_dajam" class="mt-1 inline-flex items-center gap-1 rounded-md bg-danger-100 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-danger-700 dark:bg-danger-950/60 dark:text-danger-300"
+                                title="Uang KELUAR dari rekening & ditahan sebagai uang muka pelanggan">
+                                ↓ uang keluar
+                            </div>
                             <div v-if="r.kind === 'retensi'" class="mt-1"><Badge size="sm" :variant="r.status === 'released' ? 'success' : 'warning'">{{ r.status }}</Badge></div>
                             <!-- Status akad dari Proses KPR. Baris "Batal" tidak muncul di sini —
                                  dipindah ke modul Rincian Batal Akad (kecuali yang telanjur dijurnal). -->
@@ -425,7 +501,12 @@ const hSelCls = 'h-7 w-52 rounded border border-neutral-300 bg-white px-2 text-x
                             </div>
                             <div v-if="r.br_number" class="mt-1 text-[10.5px] text-neutral-400">{{ r.br_number }} · {{ fmtDate(r.br_booking_date) }}</div>
                         </td>
-                        <td class="px-3 py-3 text-right font-mono font-bold">{{ fmtRp(r.amount) }}</td>
+                        <!-- Arah kas terbaca dari warna: retensi merah & dalam kurung (keluar),
+                             pelepasan hijau ber-tanda + (masuk kembali). -->
+                        <td class="px-3 py-3 text-right font-mono font-bold"
+                            :class="r.is_retensi_dajam ? 'text-danger-600 dark:text-danger-400' : (r.kind === 'release' ? 'text-success-700 dark:text-success-400' : '')">
+                            {{ r.is_retensi_dajam ? '(' + fmtRp(r.amount) + ')' : (r.kind === 'release' ? '+ ' + fmtRp(r.amount) : fmtRp(r.amount)) }}
+                        </td>
                         <!-- Ditolak -->
                         <template v-if="r.rejected">
                             <td class="px-3 py-3 text-xs">{{ fmtDate(r.rejected_at) }}</td>

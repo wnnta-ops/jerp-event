@@ -182,9 +182,12 @@ class PostingInvoiceController extends Controller
                 'source_type'        => 'batch', 'source_id' => null,
             ], $userId);
 
-            // Baris detail invoice + baris jurnal per item (Dr beban/lawan · Cr hutang;
-            // bisa lebih dari sepasang bila Kategori Gimmick-nya multi-akun).
+            // Baris detail invoice + baris jurnal DEBIT per item (bisa lebih dari satu bila
+            // Kategori Gimmick-nya multi-akun). Sisi KREDIT tidak dibuat per item: seluruh item
+            // diakumulasikan menjadi SATU baris Utang Usaha Supplier di akhir, sehingga jurnal
+            // invoice gabungan berbentuk banyak rincian debit dengan satu rincian kredit.
             $jLines = [];
+            $debitTotal = 0.0;
             foreach ($prepared as $p) {
                 DB::table('bs_ap_invoice_lines')->insert([
                     'ap_invoice_id' => $inv->id,
@@ -193,10 +196,19 @@ class PostingInvoiceController extends Controller
                     'unit_price'    => $p['amount'],
                     'amount'        => $p['amount'],
                 ]);
-                foreach ($this->journalLinesOf($p) as $line) {
-                    $jLines[] = $line;
+                foreach ($p['debitLines'] as $d) {
+                    $jLines[] = ['account_id' => $d['account_id'], 'debit' => $d['amount'], 'credit' => 0, 'description' => $p['desc']];
+                    $debitTotal += (float) $d['amount'];
                 }
             }
+            // Nilainya diambil dari penjumlahan baris debit yang BENAR-BENAR dibuat, supaya
+            // jurnal dijamin balance walau ada pembulatan pecahan akun per item.
+            $jLines[] = [
+                'account_id'  => $first['payable'],
+                'debit'       => 0,
+                'credit'      => round($debitTotal, 2),
+                'description' => 'Utang Usaha Supplier — '.$inv->invoice_number,
+            ];
 
             $j = $journal->post([
                 'journal_date' => $inv->invoice_date->toDateString(), 'source' => 'ap',
@@ -237,10 +249,14 @@ class PostingInvoiceController extends Controller
             return ['ok' => false, 'error' => "{$row->refund_no}: sudah diposting"];
         }
 
-        // Akun BO sudah di-resolve J-ERP (Kategori Gimmick / coa_map) saat masuk antrian;
-        // fallback payable generik.
-        $payable = $row->payable_account_id ?: BsAccount::where('code', config('business_support.gl_accounts.payable'))->value('id');
-        $offset = $row->offset_account_id ?: $payable;
+        // AKUN KREDIT SELURUH INVOICE HUTANG = Utang Usaha Supplier (ketentuan pemilik proses).
+        // Sebelumnya diambil dari Kategori Gimmick (bs_ap_refund_queue.payable_account_id), sehingga
+        // invoice bisa mengkredit akun lain — mis. Uang Muka Penjualan. Sisi kredit kini SELALU satu
+        // akun ini; pengaturan kredit pada Kategori Gimmick tidak lagi menentukan akunnya.
+        $payable = BsAccount::where('code', config('business_support.gl_accounts.payable'))->value('id');
+        // Akun lawan (sisi DEBIT) tetap wajib ter-set di antrian; tanpa itu baris ditolak seperti
+        // sebelumnya — jangan sampai jatuh ke akun hutang dan mendebit akun yang keliru.
+        $offset = $row->offset_account_id ?: null;
         if (! $payable || ! $offset || (int) $payable === (int) $offset) {
             return ['ok' => false, 'error' => "{$row->refund_no}: akun hutang/lawan belum ter-set"];
         }
@@ -282,9 +298,11 @@ class PostingInvoiceController extends Controller
     /**
      * Pecahan akun untuk satu baris antrian.
      *
-     * account_split (dari Kategori Gimmick) berisi [{side, account_id, portion}]. Sisi yang tidak
-     * punya pecahan memakai akun tunggalnya. Sisa pembulatan dilempar ke baris TERBESAR supaya
-     * total debit & kredit tetap persis sama dengan nilai antrian — jurnal tidak boleh pincang.
+     * account_split (dari Kategori Gimmick) berisi [{side, account_id, portion}]. Yang dipakai HANYA
+     * pecahan sisi DEBIT — sisi kredit selalu satu baris Utang Usaha Supplier sebesar nilai penuh,
+     * sehingga bentuk jurnalnya "banyak rincian debit, satu rincian kredit". Sisa pembulatan debit
+     * dilempar ke baris TERBESAR supaya total debit tetap persis sama dengan nilai antrian —
+     * jurnal tidak boleh pincang.
      *
      * @return array{debit:array<int,array{account_id:int,amount:float}>, credit:array<int,array{account_id:int,amount:float}>}|array{error:string}
      */
@@ -293,26 +311,24 @@ class PostingInvoiceController extends Controller
         $raw = $row->account_split ?? null;
         $rows = is_string($raw) ? (json_decode($raw, true) ?: []) : (is_array($raw) ? $raw : []);
 
-        $bySide = ['debit' => [], 'credit' => []];
+        $debitParts = [];
         foreach ($rows as $r) {
-            $side = (string) ($r['side'] ?? '');
             $accId = (int) ($r['account_id'] ?? 0);
             $portion = (float) ($r['portion'] ?? 0);
-            if (isset($bySide[$side]) && $accId > 0 && $portion > 0) {
-                $bySide[$side][] = ['account_id' => $accId, 'portion' => $portion];
+            if ((string) ($r['side'] ?? '') === 'debit' && $accId > 0 && $portion > 0) {
+                $debitParts[] = ['account_id' => $accId, 'portion' => $portion];
             }
         }
 
-        $out = [];
-        foreach (['debit' => $offset, 'credit' => $payable] as $side => $fallback) {
-            $parts = $bySide[$side] ?: [['account_id' => $fallback, 'portion' => 100.0]];
-            $out[$side] = $this->allocate($amount, $parts);
-        }
+        $out = [
+            'debit'  => $this->allocate($amount, $debitParts ?: [['account_id' => $offset, 'portion' => 100.0]]),
+            // Sisi kredit TIDAK dipecah: satu baris Utang Usaha Supplier sebesar nilai penuh.
+            'credit' => [['account_id' => $payable, 'amount' => round($amount, 2)]],
+        ];
 
-        // Satu akun tak boleh muncul di kedua sisi — nilainya akan saling meniadakan.
-        $dup = array_intersect(array_column($out['debit'], 'account_id'), array_column($out['credit'], 'account_id'));
-        if ($dup) {
-            return ['error' => 'akun yang sama ada di sisi debit & kredit pada Kategori Gimmick'];
+        // Akun Utang Usaha Supplier tak boleh ikut muncul di sisi debit — nilainya saling meniadakan.
+        if (in_array($payable, array_column($out['debit'], 'account_id'), true)) {
+            return ['error' => 'akun Utang Usaha Supplier dipakai juga di sisi debit pada Kategori Gimmick'];
         }
 
         return $out;
@@ -351,7 +367,8 @@ class PostingInvoiceController extends Controller
     }
 
     /**
-     * Baris jurnal dari pecahan akun 1 item antrian.
+     * Baris jurnal dari pecahan akun 1 item antrian: beberapa baris DEBIT + SATU baris KREDIT
+     * Utang Usaha Supplier (creditLines selalu berisi tepat satu baris — lihat splitFromQueue).
      *
      * @param  array<string,mixed>  $p  hasil prepRefundRow()
      * @return array<int,array<string,mixed>>
