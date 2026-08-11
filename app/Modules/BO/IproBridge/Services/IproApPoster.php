@@ -59,13 +59,71 @@ class IproApPoster
     /** Realisasi Komisi (batch per No. Pengajuan) → antrian (kind=komisi). */
     public function queueKomisi(string $noPengajuan, float $amount, ?string $tgl = null, ?string $ket = null): ?int
     {
-        return $this->queueIncentive('komisi', $noPengajuan, $amount, $tgl, $ket ?: ('Komisi '.$noPengajuan));
+        return $this->queueIncentive(
+            'komisi', $noPengajuan, $amount, $tgl, $ket ?: ('Komisi '.$noPengajuan),
+            $this->pembeliUnitBatch(\App\Modules\FO\Komisi\Models\Komisi::class, $noPengajuan),
+        );
     }
 
     /** Realisasi BLT (batch per No. Pengajuan) → antrian (kind=blt). */
     public function queueBlt(string $noPengajuan, float $amount, ?string $tgl = null, ?string $ket = null): ?int
     {
-        return $this->queueIncentive('blt', $noPengajuan, $amount, $tgl, $ket ?: ('BLT '.$noPengajuan));
+        return $this->queueIncentive(
+            'blt', $noPengajuan, $amount, $tgl, $ket ?: ('BLT '.$noPengajuan),
+            $this->pembeliUnitBatch(\App\Modules\FO\Komisi\Models\Blt::class, $noPengajuan),
+        );
+    }
+
+    /**
+     * Nama pembeli & blok/unit untuk satu batch No. Pengajuan (komisi / BLT).
+     *
+     * Satu pengajuan bisa mencakup beberapa kontrak, jadi hasilnya berupa ringkasan: pasangan
+     * "NAMA-UNIT" dipisah koma, dibatasi 3 pasang pertama lalu "dst." supaya keterangan jurnal
+     * tidak menjadi paragraf. Dipakai BO untuk melengkapi keterangan Struktur Jurnal.
+     *
+     * @param  class-string  $model  model batch (Komisi / Blt) — sama-sama punya relasi kontrak
+     * @return array{customer_name:?string, unit_label:?string}
+     */
+    private function pembeliUnitBatch(string $model, string $noPengajuan): array
+    {
+        try {
+            $rows = $model::query()->where('no_pengajuan', $noPengajuan)
+                ->with(['kontrak.customer:id,full_name', 'kontrak.unit:id,kode_unit,blok,no_unit'])
+                ->get();
+        } catch (\Throwable) {
+            return ['customer_name' => null, 'unit_label' => null];
+        }
+
+        $nama = [];
+        $unit = [];
+        foreach ($rows as $r) {
+            $k = $r->kontrak;
+            if ($n = trim((string) ($k?->customer?->full_name ?? ''))) {
+                $nama[$n] = true;
+            }
+            $u = $k?->unit;
+            $label = trim((string) ($u?->kode_unit ?: trim(($u?->blok ? $u->blok.' / ' : '').($u?->no_unit ?? ''))));
+            if ($label !== '') {
+                $unit[$label] = true;
+            }
+        }
+
+        return [
+            'customer_name' => $this->ringkas(array_keys($nama)),
+            'unit_label'    => $this->ringkas(array_keys($unit)),
+        ];
+    }
+
+    /** Gabung maksimal 3 nilai; sisanya diringkas "dst." agar keterangan tetap pendek. */
+    private function ringkas(array $items, int $max = 3): ?string
+    {
+        if (! $items) {
+            return null;
+        }
+        $head = array_slice($items, 0, $max);
+        $sisa = count($items) - count($head);
+
+        return implode(', ', $head).($sisa > 0 ? ' dst. ('.count($items).')' : '');
     }
 
     /**
@@ -197,22 +255,32 @@ class IproApPoster
     }
 
     /** Komisi/BLT → hutang insentif: Beban Komisi (5.2.01.001) / Hutang Komisi (2.1.01.001). */
-    private function queueIncentive(string $kind, string $noPengajuan, float $amount, ?string $tgl, ?string $ket): ?int
+    /** @param array{customer_name:?string, unit_label:?string} $pembeli nama pembeli & blok/unit batch ini */
+    private function queueIncentive(string $kind, string $noPengajuan, float $amount, ?string $tgl, ?string $ket, array $pembeli = []): ?int
     {
         $amount = round($amount, 2);
         if ($amount <= 0 || trim($noPengajuan) === '') {
             return null;
         }
 
+        // Nama pembeli & blok/unit ikut dikirim supaya keterangan Struktur Jurnal di BO bisa
+        // menyebutkan MILIK SIAPA komisi/BLT ini — sebelumnya hanya bernomor pengajuan saja.
+        // unit_label dititipkan ke kolom keterangan (queue tidak punya kolom unit untuk batch
+        // lintas-kontrak) dengan penanda "· Unit: " agar BO bisa membacanya kembali.
+        $ketFull = trim((string) $ket);
+        if ($u = trim((string) ($pembeli['unit_label'] ?? ''))) {
+            $ketFull .= ' · Unit: '.$u;
+        }
+
         return $this->enqueue($kind, $noPengajuan, null, [
             'customer_id'        => null,
-            'customer_name'      => null,
+            'customer_name'      => $pembeli['customer_name'] ?? null,
             'refund_source'      => null,
             'amount'             => $amount,
             'payable_account_id' => $this->acc('2.1.01.001'), // Hutang komisi/insentif
             'offset_account_id'  => $this->acc('5.2.01.001'), // Beban komisi/insentif
             'tgl_refund'         => $tgl,
-            'keterangan'         => $ket,
+            'keterangan'         => $ketFull !== '' ? $ketFull : $ket,
         ]);
     }
 

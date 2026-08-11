@@ -268,12 +268,19 @@ class PostingInvoiceController extends Controller
         }
 
         $jenis = ['SPR' => 'SPR', 'SPRS' => 'SPRS', 'TRANSFER_ANONIM' => 'Transfer Anonim'][$row->refund_source] ?? (string) $row->refund_source;
+        // Keterangan dasar. Untuk komisi & BLT dipakai `keterangan` dari antrian bila ada — di
+        // situlah FO menaruh rincian batch (jumlah unit, PPh, NETT). Bila kosong, kembali ke
+        // bentuk lama sehingga data lama tetap terbaca sama.
+        $ketAntrian = trim((string) ($row->keterangan ?? ''));
         $desc = match ($row->kind) {
-            'komisi' => 'Komisi '.$row->refund_no,
-            'blt'    => 'BLT '.$row->refund_no,
+            'komisi' => $ketAntrian !== '' ? $ketAntrian : 'Komisi '.$row->refund_no,
+            'blt'    => $ketAntrian !== '' ? $ketAntrian : 'BLT '.$row->refund_no,
             'gmc'    => 'Gimmick '.$row->refund_no.($row->customer_name ? ' — '.$row->customer_name : ''),
             default  => 'Refund '.$row->refund_no.($row->customer_name ? ' — '.$row->customer_name : '').' ('.$jenis.')',
         };
+        // Lengkapi dengan NAMA PEMBELI & BLOK/UNIT — tanpa ini keterangan jurnal hanya bernomor
+        // dokumen, sehingga tidak terbaca komisi/BLT/gimmick ini milik pembeli & rumah yang mana.
+        $desc = $this->lengkapiPembeliUnit($desc, $row);
         $hutangLabel = ['komisi' => 'Hutang Komisi', 'blt' => 'Hutang BLT', 'gmc' => 'Hutang Gimmick'][$row->kind] ?? 'Hutang Refund';
 
         return [
@@ -287,6 +294,43 @@ class PostingInvoiceController extends Controller
             'hutangLabel' => $hutangLabel,
             'date'        => $row->tgl_refund ?: now()->toDateString(),
         ];
+    }
+
+    /**
+     * Tambahkan NAMA PEMBELI dan BLOK/UNIT ke keterangan jurnal.
+     *
+     * Sumbernya:
+     *  - gmc  → antrian membawa customer_name & unit_id (SPR yang dibiayai).
+     *  - komisi/blt → antrian membawa customer_name, dan blok/unit dititipkan di dalam
+     *    `keterangan` bertanda "· Unit: " oleh sisi FO (satu pengajuan bisa lintas kontrak,
+     *    jadi tidak muat di kolom unit_id tunggal).
+     *
+     * Nama yang sudah tercantum di keterangan tidak ditulis ulang, supaya tidak dobel.
+     */
+    private function lengkapiPembeliUnit(string $desc, object $row): string
+    {
+        // Titipan "· Unit: …" dipindahkan ke belakang sebagai bagian format "-NAMA-UNIT",
+        // jadi dilepas dulu dari badan keterangan agar tidak tertulis dua kali.
+        $unit = '';
+        if (preg_match('/\s*·\s*Unit:\s*(.+)$/u', $desc, $m)) {
+            $unit = trim($m[1]);
+            $desc = trim(preg_replace('/\s*·\s*Unit:\s*.+$/u', '', $desc) ?? $desc);
+        }
+        if ($unit === '' && ! empty($row->unit_id)) {
+            $u = DB::table('units')->where('id', $row->unit_id)->first(['unit_code']);
+            $unit = trim((string) ($u->unit_code ?? ''));
+        }
+
+        $tambahan = [];
+        $nama = trim((string) ($row->customer_name ?? ''));
+        if ($nama !== '' && ! str_contains(mb_strtolower($desc), mb_strtolower($nama))) {
+            $tambahan[] = $nama;
+        }
+        if ($unit !== '' && ! str_contains(mb_strtolower($desc), mb_strtolower($unit))) {
+            $tambahan[] = $unit;
+        }
+
+        return $tambahan ? $desc.'-'.implode('-', $tambahan) : $desc;
     }
 
     /**
