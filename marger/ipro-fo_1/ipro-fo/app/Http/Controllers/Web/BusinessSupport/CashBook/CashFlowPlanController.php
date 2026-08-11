@@ -174,10 +174,15 @@ class CashFlowPlanController extends Controller
             freezeCols: 1,   // kolom Kategori tetap terlihat saat digulir ke kanan
         );
 
-        $writer->addTitle('REPORT CASHFLOW '.$year, $colCount);
+        // Satuan mengikuti layar: JUTAAN RUPIAH. Berkas ini dan Report Cashflow harus terbaca
+        // sama, jangan sampai orang membandingkan dua angka yang ternyata beda satuan.
+        $jt = fn ($v) => $v === null ? null : round(((float) $v) / 1_000_000, 2);
+
+        $writer->addTitle('REPORT CASHFLOW '.$year.' (DALAM JUTAAN RUPIAH)', $colCount);
         $writer->addMeta(
             'Periode Januari–'.ucfirst(mb_strtolower($MON[$upto])).' '.$year
             .' · diunduh '.now()->translatedFormat('d F Y H:i').' · '.($request->user()?->name ?? '')
+            .' · SELURUH ANGKA DALAM JUTAAN RUPIAH (2.000 = Rp 2.000.000.000)'
             .' · Actual berasal dari Simpan Pembagian di Rekening Ledger'
             .' · baris saldo hanya punya satu angka per bulan sehingga ditulis di kolom Actual',
             $colCount,
@@ -212,25 +217,25 @@ class CashFlowPlanController extends Controller
             $line = [$r['label']];
             foreach ($months as $mi => $m) {
                 $c = $r['cells'][$mi] ?? ['wnpb' => 0, 'projection' => 0, 'actual' => 0];
-                $line[] = $c['wnpb'];
-                $line[] = $c['projection'];
-                $line[] = $c['actual'];
-                $line[] = round($c['projection'] - $c['actual'], 2);   // Gap = Proyeksi − Actual (rumus 7)
+                $line[] = $jt($c['wnpb']);
+                $line[] = $jt($c['projection']);
+                $line[] = $jt($c['actual']);
+                $line[] = $jt($c['projection'] - $c['actual']);   // Gap = Proyeksi − Actual (rumus 7)
             }
-            $line[] = $r['total_ytd'] ?? 0;
-            $line[] = $r['total_multi'] ?? 0;
+            $line[] = $jt($r['total_ytd'] ?? 0);
+            $line[] = $jt($r['total_multi'] ?? 0);
             $writer->addRow($line, $num);
         }
 
         foreach (['nett_ops' => 'Nett Cashplan Ops', 'nett_non_ops' => 'Nett Cashplan Non Ops', 'nett' => 'Nett Cashflow'] as $k => $label) {
             $line = [$label];
             foreach ($summary as $s) {
-                $line[] = $s['wnpb'][$k];
-                $line[] = $s['projection'][$k];
-                $line[] = $s['actual'][$k];
-                $line[] = round($s['projection'][$k] - $s['actual'][$k], 2);
+                $line[] = $jt($s['wnpb'][$k]);
+                $line[] = $jt($s['projection'][$k]);
+                $line[] = $jt($s['actual'][$k]);
+                $line[] = $jt($s['projection'][$k] - $s['actual'][$k]);
             }
-            $line[] = round(array_sum(array_map(fn ($s) => (float) $s['actual'][$k], $summary)), 2);
+            $line[] = $jt(array_sum(array_map(fn ($s) => (float) $s['actual'][$k], $summary)));
             $line[] = null;
             $writer->addRow($line, $num);
         }
@@ -242,7 +247,7 @@ class CashFlowPlanController extends Controller
                 // Satu angka per bulan → ditaruh di kolom Actual, tiga kolom lain dikosongkan.
                 $line[] = null;
                 $line[] = null;
-                $line[] = $s[$k];
+                $line[] = $jt($s[$k]);
                 $line[] = null;
             }
             $line[] = null;

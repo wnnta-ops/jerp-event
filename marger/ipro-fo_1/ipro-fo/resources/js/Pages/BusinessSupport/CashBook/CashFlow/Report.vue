@@ -29,20 +29,39 @@ const upto = ref(props.upto);
 function reload() { router.get(route('bs.cashflow.report'), { year: year.value, upto: upto.value }, { preserveState: false }); }
 
 // Angka manual (WPNB / Proyeksi per kategori-bulan, Blokir & Buffer per bulan) disunting inline.
+// Yang DIKETIK operator bersatuan JUTAAN, yang DISIMPAN tetap rupiah penuh.
+const JT = 1_000_000;
+const jtToRp = (v: any) => Math.round((Number(v) || 0) * JT);
+// Penyangga ketikan mentah: selama kotak masih difokus, teks apa adanya yang ditampilkan,
+// supaya mengetik "2," / "2,5" tidak dipangkas oleh pembulatan saat render ulang.
+const raw = reactive<Record<string, string>>({});
+function onType(k: string, v: string, simpan: (v: string) => void) { raw[k] = v; simpan(v); }
+function onBlur(k: string) { delete raw[k]; }
+
 const edit = reactive<Record<string, number>>({});
 const key = (catId: number, m: number, f: 'wnpb' | 'projection') => `${catId}:${m}:${f}`;
 function cellVal(r: Row, mi: number, f: 'wnpb' | 'projection') {
     const k = key(r.id!, props.months[mi], f);
     return k in edit ? edit[k] : (r.cells?.[mi]?.[f] ?? 0);
 }
-function setCell(r: Row, mi: number, f: 'wnpb' | 'projection', v: any) { edit[key(r.id!, props.months[mi], f)] = Number(v) || 0; }
+function setCell(r: Row, mi: number, f: 'wnpb' | 'projection', v: any) { edit[key(r.id!, props.months[mi], f)] = jtToRp(v); }
 // Gap = Proyeksi − Aktual (rumus 7), memakai angka yang sedang diketik agar langsung terlihat.
 function gapOf(r: Row, mi: number) { return cellVal(r, mi, 'projection') - (r.cells?.[mi]?.actual ?? 0); }
 
 const setEdit = reactive<Record<string, number>>({});
 const skey = (m: number, f: 'blokir_angsuran' | 'buffer') => `${m}:${f}`;
 function setVal(s: SumRow, f: 'blokir_angsuran' | 'buffer') { const k = skey(s.month, f); return k in setEdit ? setEdit[k] : s[f]; }
-function setSet(s: SumRow, f: 'blokir_angsuran' | 'buffer', v: any) { setEdit[skey(s.month, f)] = Number(v) || 0; }
+function setSet(s: SumRow, f: 'blokir_angsuran' | 'buffer', v: any) { setEdit[skey(s.month, f)] = jtToRp(v); }
+
+// Nilai yang DITAMPILKAN di kotak isian — dalam jutaan, atau teks mentah selama diketik.
+function cellInput(r: Row, mi: number, f: 'wnpb' | 'projection') {
+    const k = key(r.id!, props.months[mi], f);
+    return k in raw ? raw[k] : String((cellVal(r, mi, f) || 0) / JT);
+}
+function setInput(s: SumRow, f: 'blokir_angsuran' | 'buffer') {
+    const k = skey(s.month, f);
+    return k in raw ? raw[k] : String((Number(setVal(s, f)) || 0) / JT);
+}
 
 const dirty = computed(() => Object.keys(edit).length > 0 || Object.keys(setEdit).length > 0);
 const saving = ref(false);
@@ -105,8 +124,15 @@ const openRow = reactive<Record<string, boolean>>({ nett_ops: false, nett_non_op
 
 const excelUrl = computed(() => route('bs.cashflow.report.excel', { year: props.year, upto: props.upto }));
 
-const rp = (v: number) => (Number(v) || 0).toLocaleString('id-ID', { maximumFractionDigits: 0 });
+// ── Satuan tampilan: JUTAAN RUPIAH ────────────────────────────────────────
+// Angka disimpan di basis data tetap dalam RUPIAH PENUH; yang berubah hanya satuan yang
+// dilihat & diketik operator. 2.000.000.000 tampil sebagai 2.000. Dua angka di belakang
+// koma dipertahankan supaya nilai kecil (mis. Rp 465.615 → 0,47) tidak menyusut jadi "0".
+const JUTA = 1_000_000;
+const rp = (v: number) => ((Number(v) || 0) / JUTA).toLocaleString('id-ID', { maximumFractionDigits: 2 });
 const rpSigned = (v: number) => (Number(v) || 0) < 0 ? `(${rp(Math.abs(v))})` : rp(v);
+/** Rupiah penuh — hanya untuk kalimat penjelas yang memang berawalan "Rp". */
+const rpFull = (v: number) => (Number(v) || 0).toLocaleString('id-ID', { maximumFractionDigits: 0 });
 const numCls = (v: number) => (Number(v) || 0) < 0 ? 'text-danger-600 dark:text-danger-400' : '';
 const showRumus = ref(false);
 const inCls = 'h-7 w-full rounded border border-neutral-200 bg-white px-1 text-right font-mono text-[11px] tabular-nums focus:border-primary-500 focus:ring-1 focus:ring-primary-500 dark:border-neutral-700 dark:bg-neutral-900';
@@ -171,7 +197,10 @@ const inCls = 'h-7 w-full rounded border border-neutral-200 bg-white px-1 text-r
             <table class="min-w-max text-xs">
                 <thead>
                     <tr class="bg-neutral-100 text-[11px] font-bold uppercase text-neutral-600 dark:bg-neutral-800 dark:text-neutral-300">
-                        <th rowspan="2" class="sticky left-0 z-10 border border-neutral-200 bg-neutral-100 px-3 py-2 text-left dark:border-neutral-700 dark:bg-neutral-800" style="min-width:15rem">Kategori</th>
+                        <th rowspan="2" class="sticky left-0 z-10 border border-neutral-200 bg-neutral-100 px-3 py-2 text-left dark:border-neutral-700 dark:bg-neutral-800" style="min-width:15rem">
+                            Kategori
+                            <span class="block text-[9.5px] font-medium normal-case text-primary-600 dark:text-primary-400">seluruh angka dalam jutaan rupiah</span>
+                        </th>
                         <th v-for="m in months" :key="'h'+m" colspan="4" class="border border-neutral-200 px-2 py-2 dark:border-neutral-700">{{ MON[m] }} {{ year }}</th>
                         <th rowspan="2" class="border border-neutral-200 bg-primary-50 px-2 py-2 dark:border-neutral-700 dark:bg-primary-950/40">Total<br>{{ year }}</th>
                         <th rowspan="2" class="border border-neutral-200 bg-primary-50 px-2 py-2 dark:border-neutral-700 dark:bg-primary-950/40">Total<br>2022–{{ year }}</th>
@@ -230,8 +259,8 @@ const inCls = 'h-7 w-full rounded border border-neutral-200 bg-white px-1 text-r
                                 <tr v-else class="transition-colors duration-150 hover:bg-primary-50/40 dark:hover:bg-primary-950/15">
                                     <td class="sticky left-0 z-10 border border-neutral-200 bg-white py-1 pl-11 pr-3 dark:border-neutral-700 dark:bg-neutral-900">{{ r.label }}</td>
                                     <template v-for="(m, mi) in months" :key="nr.key+'-'+ri+'-'+m">
-                                        <td class="border border-neutral-200 p-0.5 dark:border-neutral-700"><input :value="cellVal(r, mi, 'wnpb')" @input="setCell(r, mi, 'wnpb', ($event.target as HTMLInputElement).value)" type="number" step="any" :class="inCls" /></td>
-                                        <td class="border border-neutral-200 p-0.5 dark:border-neutral-700"><input :value="cellVal(r, mi, 'projection')" @input="setCell(r, mi, 'projection', ($event.target as HTMLInputElement).value)" type="number" step="any" :class="inCls" /></td>
+                                        <td class="border border-neutral-200 p-0.5 dark:border-neutral-700"><input :value="cellInput(r, mi, 'wnpb')" @input="onType(key(r.id!, m, 'wnpb'), ($event.target as HTMLInputElement).value, v => setCell(r, mi, 'wnpb', v))" @blur="onBlur(key(r.id!, m, 'wnpb'))" type="number" step="any" :class="inCls" title="dalam jutaan rupiah" /></td>
+                                        <td class="border border-neutral-200 p-0.5 dark:border-neutral-700"><input :value="cellInput(r, mi, 'projection')" @input="onType(key(r.id!, m, 'projection'), ($event.target as HTMLInputElement).value, v => setCell(r, mi, 'projection', v))" @blur="onBlur(key(r.id!, m, 'projection'))" type="number" step="any" :class="inCls" title="dalam jutaan rupiah" /></td>
                                         <td class="border border-neutral-200 px-2 py-1 text-right font-mono tabular-nums" :class="numCls(r.cells?.[mi]?.actual ?? 0)">{{ rpSigned(r.cells?.[mi]?.actual ?? 0) }}</td>
                                         <td class="border border-neutral-200 px-2 py-1 text-right font-mono tabular-nums text-neutral-500" :class="numCls(gapOf(r, mi))">{{ rpSigned(gapOf(r, mi)) }}</td>
                                     </template>
@@ -257,7 +286,7 @@ const inCls = 'h-7 w-full rounded border border-neutral-200 bg-white px-1 text-r
                         <template v-for="(s, si) in summary" :key="row.key+si">
                             <!-- Saldo hanya punya satu angka per bulan → dimerge melintasi 4 sub-kolom. -->
                             <td colspan="4" class="border border-neutral-200 px-2 py-1 text-right font-mono tabular-nums dark:border-neutral-700">
-                                <input v-if="row.input" :value="setVal(s, row.input)" @input="setSet(s, row.input, ($event.target as HTMLInputElement).value)" type="number" step="any" :class="inCls" />
+                                <input v-if="row.input" :value="setInput(s, row.input)" @input="onType(skey(s.month, row.input), ($event.target as HTMLInputElement).value, v => setSet(s, row.input, v))" @blur="onBlur(skey(s.month, row.input))" type="number" step="any" :class="inCls" title="dalam jutaan rupiah" />
                                 <span v-else :class="numCls((s as any)[row.key])">{{ rpSigned((s as any)[row.key]) }}</span>
                             </td>
                         </template>
@@ -268,7 +297,8 @@ const inCls = 'h-7 w-full rounded border border-neutral-200 bg-white px-1 text-r
         </div>
 
         <p class="text-[11px] text-neutral-500">
-            <b>Beginning Balance</b> bulan pertama diambil dari posisi kas/bank menurut jurnal sebelum 1 Januari {{ year }} (Rp {{ rp(opening) }}), bukan diinput ulang — supaya tidak pernah berbeda dengan pembukuan. Bulan berikutnya = Ending Balance bulan sebelumnya.
+            <b>Seluruh angka pada tabel ini bersatuan JUTAAN RUPIAH</b> — 2.000 berarti Rp 2.000.000.000. Kolom <b>WPNB</b> &amp; <b>Proyeksi</b> serta <b>Blokir Angsuran Loan</b> &amp; <b>Buffer</b> juga diketik dalam jutaan (boleh berkoma, mis. 2,5 = Rp 2.500.000); yang tersimpan di pembukuan tetap rupiah penuh.
+            <b>Beginning Balance</b> bulan pertama diambil dari posisi kas/bank menurut jurnal sebelum 1 Januari {{ year }} (Rp {{ rpFull(opening) }}), bukan diinput ulang — supaya tidak pernah berbeda dengan pembukuan. Bulan berikutnya = Ending Balance bulan sebelumnya.
             Rincian kategori berada di dalam baris <b>Nett Cashplan Ops</b> (CASH IN OPS − CASH OUT) dan <b>Nett Cashplan Non Ops</b> (CASH IN NON OPS); <b>WPNB</b> &amp; <b>Proyeksi</b> disunting setelah rinciannya dibuka. Berkas <b>Unduh Excel</b> selalu memuat seluruh rincian, walaupun di layar sedang tertutup.
         </p>
     </div>
