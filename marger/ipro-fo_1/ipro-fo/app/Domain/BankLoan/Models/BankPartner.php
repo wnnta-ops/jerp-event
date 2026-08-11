@@ -17,9 +17,11 @@ class BankPartner extends Model
 
     /** Format SI bawaan yang tersedia (kode → label). */
     public const SI_FORMATS = [
-        'btn' => 'Format BTN',
-        'bsn' => 'Format BSN',
-        'bri' => 'Format BRI',
+        'btn'     => 'Format BTN',
+        'bsn'     => 'Format BSN',
+        'bri'     => 'Format BRI',
+        'mandiri' => 'Format Mandiri',
+        'bni'     => 'Format BNI',
     ];
 
     protected $fillable = [
