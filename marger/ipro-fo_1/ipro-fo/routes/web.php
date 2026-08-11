@@ -747,6 +747,9 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
     Route::get('/business-support/cash-flow/report',              [BsCashFlowPlanController::class, 'report'])->name('bs.cashflow.report');
     Route::get('/business-support/cash-flow/report/excel',        [BsCashFlowPlanController::class, 'reportExcel'])->name('bs.cashflow.report.excel');
     Route::post('/business-support/cash-flow/report',             [BsCashFlowPlanController::class, 'reportSave'])->name('bs.cashflow.report.save');
+    // Import massal angka cashflow periode sebelumnya (WPNB & Proyeksi) + templatenya.
+    Route::get('/business-support/cash-flow/report/template',     [BsCashFlowPlanController::class, 'reportTemplate'])->name('bs.cashflow.report.template');
+    Route::post('/business-support/cash-flow/report/import',      [BsCashFlowPlanController::class, 'reportImport'])->name('bs.cashflow.report.import');
     Route::get('/business-support/cash-book-giro-calendar',    [BsCashBookController::class, 'giroCalendar'])->name('bs.cashbook.giro-calendar');
     Route::get('/business-support/cash-book-giro-calendar-excel', [BsCashBookController::class, 'giroCalendarExcel'])->name('bs.cashbook.giro-calendar.excel'); // #9
     Route::get('/business-support/cash-book-giro-calendar-pdf', [BsCashBookController::class, 'giroCalendarPdf'])->name('bs.cashbook.giro-calendar.pdf');        // #9

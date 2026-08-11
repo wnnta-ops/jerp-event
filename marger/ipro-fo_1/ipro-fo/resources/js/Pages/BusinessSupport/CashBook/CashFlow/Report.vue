@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, reactive, computed } from 'vue';
-import { router, Link } from '@inertiajs/vue3';
-import { ArrowLeft, BarChart3, Save, Info, ChevronDown, ChevronRight, TriangleAlert, FileSpreadsheet } from 'lucide-vue-next';
+import { router, Link, useForm } from '@inertiajs/vue3';
+import { ArrowLeft, BarChart3, Save, Info, ChevronDown, ChevronRight, TriangleAlert, FileSpreadsheet, Upload, Download, X } from 'lucide-vue-next';
 import Button from '@/Components/UI/Button.vue';
 
 type Cell = { wnpb: number; projection: number; actual: number };
@@ -136,6 +136,21 @@ const rpFull = (v: number) => (Number(v) || 0).toLocaleString('id-ID', { maximum
 const numCls = (v: number) => (Number(v) || 0) < 0 ? 'text-danger-600 dark:text-danger-400' : '';
 const showRumus = ref(false);
 const inCls = 'h-7 w-full rounded border border-neutral-200 bg-white px-1 text-right font-mono text-[11px] tabular-nums focus:border-primary-500 focus:ring-1 focus:ring-primary-500 dark:border-neutral-700 dark:bg-neutral-900';
+
+// ── Import massal angka periode sebelumnya ────────────────────────────────
+// Templatenya sudah terisi seluruh kategori × 12 bulan untuk tahun yang sedang tampil,
+// jadi berkas yang sama bisa dipakai: unduh → sunting di Excel → unggah kembali.
+const openImport = ref(false);
+const importForm = useForm<{ file: File | null }>({ file: null });
+const templateUrl = computed(() => route('bs.cashflow.report.template', { year: props.year }));
+function pilihBerkas(e: Event) { importForm.file = (e.target as HTMLInputElement).files?.[0] ?? null; }
+function kirimImport() {
+    if (!importForm.file) return;
+    importForm.post(route('bs.cashflow.report.import'), {
+        forceFormData: true,
+        onSuccess: () => { openImport.value = false; importForm.reset(); router.reload(); },
+    });
+}
 </script>
 
 <template>
@@ -163,6 +178,10 @@ const inCls = 'h-7 w-full rounded border border-neutral-200 bg-white px-1 text-r
                 <a :href="excelUrl" class="inline-flex h-9 items-center gap-2 rounded-lg border border-emerald-300 bg-emerald-50 px-3 text-sm font-medium text-emerald-700 transition-colors duration-200 hover:bg-emerald-100 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300 dark:hover:bg-emerald-900/50">
                     <FileSpreadsheet class="h-4 w-4" /> Unduh Excel
                 </a>
+                <button type="button" @click="openImport = true"
+                    class="inline-flex h-9 items-center gap-2 rounded-lg border border-sky-300 bg-sky-50 px-3 text-sm font-medium text-sky-700 transition-colors duration-200 hover:bg-sky-100 dark:border-sky-800 dark:bg-sky-950/40 dark:text-sky-300 dark:hover:bg-sky-900/50">
+                    <Upload class="h-4 w-4" /> Import Data
+                </button>
                 <Button :disabled="!dirty" :loading="saving" @click="simpan"><template #icon-left><Save class="h-4 w-4" /></template>Simpan Angka</Button>
             </div>
         </div>
@@ -295,6 +314,59 @@ const inCls = 'h-7 w-full rounded border border-neutral-200 bg-white px-1 text-r
                 </tbody>
             </table>
         </div>
+
+        <!-- Import massal angka periode sebelumnya -->
+        <Teleport to="body">
+            <div v-if="openImport" class="fixed inset-0 z-[200] flex items-center justify-center bg-black/40 p-4" @click.self="openImport = false">
+                <div class="w-full max-w-lg rounded-xl bg-white p-5 shadow-xl dark:bg-neutral-900">
+                    <div class="mb-3 flex items-center justify-between">
+                        <h3 class="text-base font-semibold">Import Data Cashflow</h3>
+                        <button type="button" @click="openImport = false" class="text-neutral-400 hover:text-neutral-700"><X class="h-4 w-4" /></button>
+                    </div>
+
+                    <div class="space-y-3 text-sm">
+                        <p class="text-neutral-500">
+                            Mengisi <b>WPNB</b> &amp; <b>Proyeksi</b> secara massal untuk periode sebelumnya. Kolom
+                            <b>Actual</b> tidak ikut diimport karena angkanya berasal dari <b>Simpan Pembagian</b> di
+                            Rekening Ledger.
+                        </p>
+
+                        <a :href="templateUrl" class="inline-flex h-9 items-center gap-2 rounded-lg border border-emerald-300 bg-emerald-50 px-3 text-sm font-medium text-emerald-700 hover:bg-emerald-100 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300">
+                            <Download class="h-4 w-4" /> Unduh Template ({{ year }})
+                        </a>
+                        <p class="text-[11px] text-neutral-400">
+                            Template sudah terisi seluruh kategori × 12 bulan beserta angka yang tersimpan — tinggal
+                            disunting lalu diunggah kembali. Kolom <b>TAHUN</b> ada di tiap baris, jadi satu berkas
+                            boleh memuat <b>beberapa tahun sekaligus</b>.
+                        </p>
+
+                        <div class="rounded-lg bg-amber-50 px-3 py-2 text-[11px] text-amber-800 ring-1 ring-amber-200 dark:bg-amber-950/30 dark:text-amber-200 dark:ring-amber-800/60">
+                            Angka pada berkas import ditulis <b>RUPIAH PENUH</b> (mis. 2000000000), bukan jutaan —
+                            berbeda dengan satuan yang ditampilkan di tabel.
+                        </div>
+
+                        <div>
+                            <label class="mb-1 block text-xs font-medium text-neutral-500">Berkas (.xlsx / .xls / .csv)</label>
+                            <input type="file" accept=".xlsx,.xls,.csv,.txt" @change="pilihBerkas"
+                                class="w-full rounded-lg border border-neutral-300 bg-white p-2 text-sm dark:border-neutral-700 dark:bg-neutral-900" />
+                            <p v-if="importForm.errors.file" class="mt-1 text-xs text-danger-600">{{ importForm.errors.file }}</p>
+                        </div>
+
+                        <p class="text-[11px] text-neutral-400">
+                            Kategori dicocokkan dari <b>Kode</b> (atau Nama bila kode kosong). Meng-import ulang berkas
+                            yang sama akan <b>memperbarui</b> angka pada kategori-bulan yang sama, tidak menggandakan.
+                        </p>
+                    </div>
+
+                    <div class="mt-4 flex justify-end gap-2">
+                        <Button size="sm" variant="secondary" :disabled="importForm.processing" @click="openImport = false">Batal</Button>
+                        <Button size="sm" variant="primary" :disabled="!importForm.file" :loading="importForm.processing" @click="kirimImport">
+                            <template #icon-left><Upload class="h-4 w-4" /></template>Import
+                        </Button>
+                    </div>
+                </div>
+            </div>
+        </Teleport>
 
         <p class="text-[11px] text-neutral-500">
             <b>Seluruh angka pada tabel ini bersatuan JUTAAN RUPIAH</b> — 2.000 berarti Rp 2.000.000.000. Kolom <b>WPNB</b> &amp; <b>Proyeksi</b> serta <b>Blokir Angsuran Loan</b> &amp; <b>Buffer</b> juga diketik dalam jutaan (boleh berkoma, mis. 2,5 = Rp 2.500.000); yang tersimpan di pembukuan tetap rupiah penuh.
