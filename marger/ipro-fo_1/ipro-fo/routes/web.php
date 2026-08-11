@@ -54,6 +54,7 @@ use App\Http\Controllers\Web\BusinessSupport\CashBook\CashBookController as BsCa
 use App\Http\Controllers\Web\BusinessSupport\CashBook\CashFlowPlanController as BsCashFlowPlanController;
 use App\Http\Controllers\Web\BusinessSupport\CashBook\CashOpeningController as BsCashOpeningController;
 use App\Http\Controllers\Web\BusinessSupport\CashBook\CashRepairController as BsCashRepairController;
+use App\Http\Controllers\Web\BusinessSupport\CashBook\SignatureBarcodeController as BsSignatureBarcodeController;
 use App\Http\Controllers\Web\BusinessSupport\CashBook\CashAdvanceController as BsAdvanceController;
 use App\Http\Controllers\Web\BusinessSupport\CashBook\BankApprovalController as BsBankApprovalController;
 use App\Http\Controllers\Web\BusinessSupport\CashBook\PettyCashController as BsPettyCashController;
@@ -723,6 +724,12 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
     Route::delete('/business-support/cash-book-saldo-awal/{cashTransaction}', [BsCashOpeningController::class, 'destroy'])->name('bs.cashbook.opening.destroy');
     Route::get('/business-support/cash-book-repair',           [BsCashRepairController::class, 'index'])->name('bs.cashbook.repair.index');
     Route::post('/business-support/cash-book-repair/run',      [BsCashRepairController::class, 'run'])->name('bs.cashbook.repair.run');
+    // Set Up Barcode — barcode tanda tangan yang dipakai pada Persetujuan (TTD) SIP.
+    Route::get('/business-support/cash-book-signature-barcode',            [BsSignatureBarcodeController::class, 'index'])->name('bs.cashbook.signature-barcode.index');
+    Route::get('/business-support/cash-book-signature-barcode/preview',    [BsSignatureBarcodeController::class, 'preview'])->name('bs.cashbook.signature-barcode.preview');
+    Route::post('/business-support/cash-book-signature-barcode',           [BsSignatureBarcodeController::class, 'store'])->name('bs.cashbook.signature-barcode.store');
+    Route::put('/business-support/cash-book-signature-barcode/{barcode}',  [BsSignatureBarcodeController::class, 'update'])->name('bs.cashbook.signature-barcode.update');
+    Route::delete('/business-support/cash-book-signature-barcode/{barcode}', [BsSignatureBarcodeController::class, 'destroy'])->name('bs.cashbook.signature-barcode.destroy');
     // CB-2: Rekening Ledger + Kalender Cek Giro
     Route::get('/business-support/cash-book-ledger',           [BsCashBookController::class, 'ledger'])->name('bs.cashbook.ledger');
     Route::get('/business-support/cash-book-ledger-excel',     [BsCashBookController::class, 'ledgerExcel'])->name('bs.cashbook.ledger.excel');       // #9

@@ -286,6 +286,8 @@ export function navGroups(foUrl: string): NavGroup[] {
             { label: 'Setup', icon: SlidersHorizontal, permission: ['businesssupport.view', 'cashbook.*'], children: [
                 { label: 'Transaction Rule', href: 'bs.gl.transaction-rule.index', params: { source: 'cash' } },
                 { label: 'Rekening', href: 'rekening.index' },
+                // Barcode tanda tangan yang dipakai pada Persetujuan (TTD) SIP.
+                { label: 'Set Up Barcode', href: 'bs.cashbook.signature-barcode.index' },
                 { label: 'Repair Data', href: 'bs.cashbook.repair.index' },
             ]},
             { label: 'Master', icon: Wallet, permission: ['businesssupport.view', 'cashbook.*'], children: [

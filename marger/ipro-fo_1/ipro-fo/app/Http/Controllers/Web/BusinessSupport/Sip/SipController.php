@@ -55,6 +55,31 @@ class SipController extends Controller
     }
 
     /**
+     * Barcode tanda tangan per SLOT persetujuan yang sudah ditandatangani.
+     *
+     * @return array<string,string>  slot → SVG (hanya slot yang penyetujunya punya barcode aktif)
+     */
+    private function approvalBarcodes(BsSip $sip, int $moduleWidth = 2, int $height = 34): array
+    {
+        $approvals = $sip->approvals ?? [];
+        $byUser = \App\Domain\BusinessSupport\Models\BsSignatureBarcode::svgMapFor(
+            array_map(fn ($a) => (int) ($a['approved_by'] ?? 0), array_values($approvals)),
+            $moduleWidth,
+            $height,
+        );
+
+        $out = [];
+        foreach ($approvals as $slot => $ap) {
+            $svg = $byUser[(int) ($ap['approved_by'] ?? 0)] ?? null;
+            if ($svg) {
+                $out[$slot] = $svg;
+            }
+        }
+
+        return $out;
+    }
+
+    /**
      * Normalisasi periode awal & akhir.
      *
      * Hanya menerima tanggal berformat Y-m-d yang benar-benar ada di kalender; selain itu
@@ -172,6 +197,10 @@ class SipController extends Controller
             'sip'      => $sip->load(['cashAccount:id,code,name', 'lines.cashAccount:id,code,name']),
             'statuses' => BsSip::STATUSES,
             'signers'  => BsSip::SIGNERS,
+            // Slot yang sudah disetujui ditampilkan sebagai BARCODE tanda tangan penyetujunya,
+            // bukan namanya. Peta ini: slot → SVG barcode (kosong bila penyetuju belum punya
+            // barcode di Cash Book → Setup → Set Up Barcode; layar akan jatuh kembali ke nama).
+            'barcodes' => $this->approvalBarcodes($sip),
         ]);
     }
 
@@ -330,13 +359,21 @@ class SipController extends Controller
             $rows .= '<tr class="sub"><td colspan="5" class="r">Total — '.$bankLabel.'</td><td class="r">'.$rp($sub).'</td></tr>';
         }
 
+        // Slot yang sudah disetujui dicetak dengan BARCODE tanda tangan penyetujunya. Bila
+        // penyetuju belum punya barcode, namanya dipakai kembali agar dokumen tetap sah dibaca.
         $approvals = $sip->approvals ?? [];
+        $barcodes = $this->approvalBarcodes($sip, 1, 26);
         $signs = '';
         foreach (BsSip::SIGNERS as $key => $label) {
             $ap = $approvals[$key] ?? null;
+            $bc = $barcodes[$key] ?? null;
             $name = $ap ? $e($ap['name']) : '(__________)';
+            $space = $bc
+                ? '<div class="sign-space sign-bc">'.$bc.'</div>'
+                : '<div class="sign-space"></div>';
             $date = $ap ? '<div class="muted" style="font-size:8px">'.$e(substr((string) $ap['approved_at'], 0, 10)).'</div>' : '';
-            $signs .= '<div class="sign-box"><div class="sign-label">'.$e($label).'</div><div class="sign-space"></div><div class="sign-name">'.$name.'</div>'.$date.'</div>';
+            $signs .= '<div class="sign-box"><div class="sign-label">'.$e($label).'</div>'.$space
+                .'<div class="sign-name">'.($bc ? '' : $name).'</div>'.$date.'</div>';
         }
 
         return '<!DOCTYPE html><html lang="id"><head><meta charset="utf-8"><title>'.$e($sip->sip_number).'</title><style>
@@ -348,7 +385,8 @@ class SipController extends Controller
             .r{text-align:right;font-variant-numeric:tabular-nums}.c{text-align:center}.tot{font-weight:bold;background:#f1f5f9}
             .grp{background:#e2e8f0;font-weight:600}.sub{background:#f8fafc;font-weight:600}
             .signs{display:grid;grid-template-columns:repeat(7,1fr);gap:6px;margin-top:24px}
-            .sign-box{text-align:center;font-size:9px}.sign-label{font-weight:600;margin-bottom:2px}.sign-space{height:38px}.sign-name{border-top:1px solid #1f2937;padding-top:2px}
+            .sign-box{text-align:center;font-size:9px}.sign-label{font-weight:600;margin-bottom:2px}.sign-space{height:38px}.sign-name{border-top:1px solid #1f2937;padding-top:2px;min-height:12px}
+            .sign-bc{display:flex;align-items:flex-end;justify-content:center;overflow:hidden}.sign-bc svg{max-width:100%;height:auto}
             @media print{.noprint{display:none}}</style></head><body>
             <div class="head"><div><h1>STANDING INSTRUCTION PAYMENT (SIP)</h1><div class="muted">'.$e($co).'</div></div>
             <div class="muted" style="text-align:right">No: '.$e($sip->sip_number).'<br>Cetak: '.$e($now).'</div></div>
