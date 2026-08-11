@@ -450,6 +450,21 @@ class KprInitiationController extends Controller
                 $data['npwp_pasangan_received_at'] = null;
             }
             $data['marital_status'] = $marital;
+
+            // PROFIL CUSTOMER ikut diperbarui: status pernikahan dipilih sekali di SPRS, lalu
+            // dipakai juga oleh Data Customer. Tanpa ini operator harus mengetik ulang hal yang
+            // sama di dua tempat dan keduanya gampang berbeda.
+            //
+            // ISTILAHNYA BERBEDA: SPRS memakai 'sudah_menikah', sedangkan enum customer
+            // (MaritalStatus) memakai 'menikah'. Tanpa pemetaan ini penyimpanan akan gagal
+            // dengan ValueError karena nilainya bukan anggota enum.
+            $custStatus = $marital === 'sudah_menikah'
+                ? \App\Domain\Master\Customer\Enums\MaritalStatus::Menikah
+                : \App\Domain\Master\Customer\Enums\MaritalStatus::BelumMenikah;
+            $cust = $initiation->customer;
+            if ($cust && $cust->marital_status !== $custStatus) {
+                $cust->forceFill(['marital_status' => $custStatus])->save();
+            }
         }
 
         // ── Collect Berkas: kategori (karyawan/wirausaha) + checklist per-item (lengkap/tidak_lengkap) + catatan.
