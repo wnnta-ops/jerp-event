@@ -49,9 +49,22 @@ class ClosingNup extends Page implements HasForms, HasTable
     #[On('bukaKwitansi')]
     public function bukaKwitansi(int $ttsId): void
     {
-        $tts = Tts::find($ttsId);
+        // KEAMANAN: metode Livewire publik bisa dipanggil langsung dari browser
+        // dengan id sembarang. Tanpa batasan, siapa pun yang membuka halaman ini
+        // dapat memaksa TTS APA PUN menjadi kwitansi (BKM + jurnal ikut terbentuk).
+        // Karena itu hanya TTS milik alur Closing NUP yang boleh: jenis BOOKING,
+        // terikat kontrak, dan belum dibatalkan. Batas tenant sudah otomatis dari
+        // global scope TenantAwareModel.
+        $tts = Tts::query()
+            ->whereKey($ttsId)
+            ->where('jenis_pembayaran', 'BOOKING')
+            ->whereNotNull('kontrak_id')
+            ->where('status', '!=', 'BATAL')
+            ->first();
+
         if (! $tts) {
-            Notification::make()->danger()->title('TTS tidak ditemukan')->send();
+            Notification::make()->danger()->title('TTS tidak ditemukan')
+                ->body('Kwitansi hanya bisa dibuka untuk TTS booking dari Closing NUP.')->send();
 
             return;
         }
