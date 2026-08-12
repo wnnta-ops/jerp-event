@@ -195,6 +195,8 @@
 
             const toLatLng = (x, y) => [H - y, x];
 
+            const isHold = (s) => String(s || '').toUpperCase() === 'HOLD';
+
             // Stempel per status: SOLD (terjual/lunas), BOOKING, atau HOLD. null = tanpa stempel.
             const stampFor = (s) => (s === 'TERJUAL' || s === 'LUNAS')
                 ? { text: 'SOLD', cls: '' }
@@ -246,16 +248,27 @@
                 const st = statusStyle(u.status);
                 const latlngs = u.siteplan_coords.map(p => toLatLng(p[0], p[1]));
 
-                // Transparent by default → siteplan stays clean. Faint highlight on hover.
-                const poly = L.polygon(latlngs, { color: st.stroke, weight: 0, fill: true, fillColor: st.fill, fillOpacity: 0 }).addTo(map);
-                poly.bindTooltip(u.label, { direction: 'center', sticky: true });
-                poly.on('mouseover', () => poly.setStyle({ weight: 2, color: statusStyle(u.status).stroke, fillOpacity: 0.18 }));
-                poly.on('mouseout', () => poly.setStyle({ weight: 0, fillOpacity: 0 }));
+                // Unit HOLD (ditahan sales) ditutup BLOK HITAM pekat & non-interaktif —
+                // tak bisa diklik, tanpa tooltip/popup, dan tanpa stempel (tertutup blok).
+                const hold = isHold(u.status);
 
-                const entry = { u, poly, marker: null, stampEl: null };
+                // Transparent by default → siteplan stays clean. Faint highlight on hover.
+                const poly = L.polygon(latlngs, hold
+                    ? { color: '#000000', weight: 1, fill: true, fillColor: '#000000', fillOpacity: 0.92, interactive: false }
+                    : { color: st.stroke, weight: 0, fill: true, fillColor: st.fill, fillOpacity: 0 }
+                ).addTo(map);
+
+                if (!hold) {
+                    poly.bindTooltip(u.label, { direction: 'center', sticky: true });
+                    poly.on('mouseover', () => poly.setStyle({ weight: 2, color: statusStyle(u.status).stroke, fillOpacity: 0.18 }));
+                    poly.on('mouseout', () => poly.setStyle({ weight: 0, fillOpacity: 0 }));
+                }
+
+                const entry = { u, poly, marker: null, stampEl: null, hold };
                 byId[u.id] = entry;
 
-                if (stampFor(u.status)) addSoldStamp(entry);
+                if (!hold && stampFor(u.status)) addSoldStamp(entry);
+                if (hold) return; // tanpa handler klik
 
                 poly.on('click', () => {
                     const cur = statusStyle(u.status); // status terkini (bisa berubah real-time)
@@ -362,6 +375,22 @@
                 const entry = byId[unitId];
                 if (!entry) return;
                 entry.u.status = newStatus;
+
+                // Masuk/keluar HOLD mengubah INTERAKTIVITAS layer, dan itu tak bisa diubah
+                // setelah layer dibuat → gambar ulang. Tanpa ini, unit yang baru di-HOLD
+                // tetap bisa diklik (atau sebaliknya, yang hold-nya dibuka tetap mati).
+                if (!!entry.hold !== isHold(newStatus)) {
+                    const u = entry.u;
+                    removeSoldStamp(entry);
+                    map.removeLayer(entry.poly);
+                    delete byId[unitId];
+                    renderUnit(u);
+                    updateSoldScale();
+                    recomputeStats();
+
+                    return;
+                }
+
                 const st = statusStyle(newStatus);
                 entry.poly.setStyle({ color: st.stroke, fillColor: st.fill });
                 // Remove dulu lalu pasang ulang → teks stempel ikut berubah saat

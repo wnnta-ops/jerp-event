@@ -15,7 +15,7 @@
                 <span class="inline-flex items-center gap-1"><span class="w-3 h-3 rounded-sm" style="background-color: oklch(0.65 0.18 145);"></span> TERSEDIA</span>
                 <span class="inline-flex items-center gap-1"><span class="w-3 h-3 rounded-sm" style="background-color: oklch(0.78 0.18 75);"></span> BOOKING</span>
                 <span class="inline-flex items-center gap-1"><span class="w-3 h-3 rounded-sm" style="background-color: oklch(0.55 0.18 250);"></span> TERJUAL</span>
-                <span class="inline-flex items-center gap-1"><span class="w-3 h-3 rounded-sm" style="background-color: oklch(0.60 0.22 25);"></span> BATAL/HOLD</span>
+                <span class="inline-flex items-center gap-1"><span class="w-3 h-3 rounded-sm" style="background-color: #111111;"></span> HOLD</span>
             </div>
         </div>
 
@@ -39,7 +39,11 @@
                                     'TERSEDIA' => 'oklch(0.65 0.18 145)',
                                     'BOOKING' => 'oklch(0.78 0.18 75)',
                                     'TERJUAL', 'LUNAS' => 'oklch(0.55 0.18 250)',
-                                    'BATAL', 'HOLD' => 'oklch(0.60 0.22 25)',
+                                    // HOLD = blok hitam, seragam dgn siteplan & Pilih Unit.
+                                    // Status 'BATAL' TIDAK ada pada unit: kontrak yang
+                                    // dibatalkan mengembalikan unitnya ke TERSEDIA
+                                    // (ApprovalExecutionService), jadi tak perlu warnanya.
+                                    'HOLD' => '#111111',
                                     default => 'oklch(0.70 0 0)',
                                 };
                                 $clickable = in_array($u->status, ['TERSEDIA', 'BOOKING']);
