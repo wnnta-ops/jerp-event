@@ -3,6 +3,9 @@
 namespace App\Filament\Fo\Pages;
 
 use App\Modules\FO\Adminjual\Models\Skema;
+use App\Modules\FO\FinanceAR\Models\Bkm;
+use App\Modules\FO\FinanceAR\Models\Tts;
+use App\Modules\FO\FinanceAR\Services\TtsToBkmService;
 use App\Modules\FO\Komisi\Models\Agent;
 use App\Modules\FO\Launching\Models\NupRegistration;
 use App\Modules\FO\Launching\Services\ClosingNupService;
@@ -16,6 +19,7 @@ use Filament\Tables;
 use Filament\Tables\Concerns\InteractsWithTable;
 use Filament\Tables\Contracts\HasTable;
 use Filament\Tables\Table;
+use Livewire\Attributes\On;
 
 /**
  * "Closing NUP" — naik kontrak. List NUP yang sudah Pilih Unit (punya reservasi
@@ -36,6 +40,41 @@ class ClosingNup extends Page implements HasForms, HasTable
     protected static string $view = 'filament.fo.pages.closing-nup';
 
     protected static bool $shouldRegisterNavigation = false;
+
+    /**
+     * Buka Kuitansi (TTS → BKM) langsung dari Closing NUP, lalu tawarkan Cetak
+     * Kwitansi — operator hari-H tak perlu berpindah ke Finance AR → TTS.
+     * Idempoten: TTS yang sudah jadi BKM hanya menampilkan tombol cetaknya.
+     */
+    #[On('bukaKwitansi')]
+    public function bukaKwitansi(int $ttsId): void
+    {
+        $tts = Tts::find($ttsId);
+        if (! $tts) {
+            Notification::make()->danger()->title('TTS tidak ditemukan')->send();
+
+            return;
+        }
+
+        try {
+            $bkm = $tts->bkm_id ? Bkm::find($tts->bkm_id) : TtsToBkmService::convert($tts);
+            if (! $bkm) {
+                throw new \RuntimeException('Kwitansi gagal dibuat.');
+            }
+
+            Notification::make()->success()
+                ->title('Kwitansi '.$bkm->no_bkm.' siap')
+                ->body($tts->bkm_id ? 'Kwitansi untuk TTS ini sudah pernah dibuka.' : 'TTS '.$tts->no_tts.' berhasil dibuka menjadi kwitansi.')
+                ->actions([
+                    NotificationAction::make('cetak_kwitansi')->label('Cetak Kwitansi')->button()
+                        ->url(route('fo.cetak.kwitansi', $bkm), shouldOpenInNewTab: true),
+                ])
+                ->persistent()
+                ->send();
+        } catch (\Throwable $e) {
+            Notification::make()->danger()->title('Gagal buka kwitansi')->body($e->getMessage())->send();
+        }
+    }
 
     public function table(Table $table): Table
     {
@@ -113,8 +152,11 @@ class ClosingNup extends Page implements HasForms, HasTable
                             Notification::make()
                                 ->success()
                                 ->title('Closing berhasil — Kontrak '.$result['kontrak']->no_kontrak)
-                                ->body('TTS '.$result['tts']->no_tts.' dibuat. Buka kwitansi di menu Finance AR → TTS (aksi "Buka Kuitansi").')
+                                ->body('TTS '.$result['tts']->no_tts.' dibuat. Kwitansi bisa dibuka langsung dari sini.')
                                 ->actions([
+                                    // Buka kwitansi TANPA pindah ke Finance AR → TTS.
+                                    NotificationAction::make('buka_kwitansi')->label('Buka Kwitansi')->button()
+                                        ->dispatch('bukaKwitansi', [$result['tts']->id]),
                                     NotificationAction::make('spr')->label('Cetak SPR')
                                         ->url(route('fo.cetak.spr', $result['kontrak']), shouldOpenInNewTab: true),
                                     NotificationAction::make('jadwal')->label('Jadwal Pembayaran')
