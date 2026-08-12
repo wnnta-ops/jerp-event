@@ -18,6 +18,7 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -523,7 +524,7 @@ class PostingInvoiceController extends Controller
      */
     private function recordKprBiaya(object $row, BsApInvoice $invoice, float $amount): void
     {
-        $key = $row->kpr_biaya_key ?? null;
+        $key = $this->kprBiayaKeyAktif($row);
         $bookingId = (int) ($row->booking_id ?? 0);
         if (! $key || ! $bookingId || ! array_key_exists($key, BsGimmickCategory::KPR_BIAYA_COLUMNS)) {
             return;
@@ -542,6 +543,50 @@ class PostingInvoiceController extends Controller
                 'description'         => $row->keterangan,
             ],
         );
+    }
+
+    /**
+     * Kolom Rincian Biaya Master Data KPR yang BERLAKU untuk satu baris antrean.
+     *
+     * MENGAPA DIBACA ULANG DARI KATEGORINYA, BUKAN DARI ANTREAN.
+     * FO memotret kpr_biaya_key ke bs_ap_refund_queue pada saat baris masuk antrean
+     * (IproApPoster). Potret itu ikut membeku: bila operator baru memetakan Kategori
+     * Gimmick ke kolom Master Data KPR SESUDAH gimmick-nya mengantre — urutan yang
+     * justru paling lazim, karena pemetaan biasanya dirapikan belakangan — baris lama
+     * selamanya bernilai NULL dan Master Data KPR tidak pernah terisi walau operator
+     * sudah mengaturnya. Itulah sebabnya kolom Rincian Biaya bisa tampak "0/6 terpetakan"
+     * padahal kategorinya sudah disetel.
+     *
+     * Maka yang menentukan adalah keadaan kategori PADA SAAT POSTING:
+     *   1. kategori ditemukan  -> ikuti pemetaan kategori saat ini, dan hormati
+     *                             sakelar "Sinkron ke Master Data KPR" (sync_kpr).
+     *      Sakelar mati = operator sengaja menghentikan sinkron; potret lama TIDAK
+     *      boleh menghidupkannya kembali diam-diam.
+     *   2. kategori tidak ada  -> baru jatuh ke potret antrean, supaya baris lawas
+     *                             (mis. kategorinya sudah dihapus) tetap tercatat
+     *                             seperti perilaku sebelumnya.
+     */
+    private function kprBiayaKeyAktif(object $row): ?string
+    {
+        $categoryId = (int) ($row->gimmick_category_id ?? 0);
+        $snapshot = ($row->kpr_biaya_key ?? null) ?: null;
+
+        if ($categoryId <= 0) {
+            return $snapshot;
+        }
+
+        $cat = BsGimmickCategory::query()->whereKey($categoryId)->first(['id', 'kpr_biaya_key', 'sync_kpr']);
+        if (! $cat) {
+            return $snapshot;
+        }
+
+        // Kolom sync_kpr baru ada sejak migrasi 2026_08_12; instalasi yang belum
+        // bermigrasi diperlakukan seperti sebelumnya — terpetakan berarti sinkron.
+        $sinkron = Schema::hasColumn('bs_gimmick_categories', 'sync_kpr')
+            ? (bool) $cat->sync_kpr
+            : (bool) $cat->kpr_biaya_key;
+
+        return $sinkron ? (($cat->kpr_biaya_key ?: null)) : null;
     }
 
     /**

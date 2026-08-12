@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue';
+import { ref, computed, watch } from 'vue';
 import { router, useForm, Link } from '@inertiajs/vue3';
 import { Plus, Pencil, Trash2, ArrowLeft, Tags, Search, X, CheckCircle2, TriangleAlert, TrendingDown, TrendingUp, Table2 } from 'lucide-vue-next';
 import Button from '@/Components/UI/Button.vue';
@@ -10,7 +10,7 @@ import SearchSelect from '@/Components/UI/SearchSelect.vue';
 type AccRow = { account_id: number | string; portion: number; label?: string | null };
 type Cat = {
     id: number; code: string; name: string; is_active: boolean;
-    kpr_biaya_key: string | null; kpr_biaya_label: string | null;
+    kpr_biaya_key: string | null; kpr_biaya_label: string | null; sync_kpr: boolean;
     debit_account_id: number | null; payable_account_id: number | null;
     debit: string; payable: string;
     debits: AccRow[]; credits: AccRow[];
@@ -32,14 +32,22 @@ const showModal = ref(false);
 const editingId = ref<number | null>(null);
 const blankRow = (id: number | string = ''): AccRow => ({ account_id: id, portion: 100 });
 const form = useForm<any>({
-    code: '', name: '', kpr_biaya_key: '', is_active: true,
+    code: '', name: '', kpr_biaya_key: '', sync_kpr: true, is_active: true,
     debits: [blankRow()], credits: [blankRow(props.defaultPayable ?? '')],
 });
+
+// Nama kolom tujuan, dipakai pada keterangan sakelar sinkron.
+const labelKolomKpr = computed(() => props.kprBiayaColumns.find((k) => k.id === form.kpr_biaya_key)?.label ?? '—');
+
+// Melepas kolom tujuan otomatis mematikan sinkron: menyimpan sync_kpr=true tanpa kolom
+// hanya akan menyesatkan, dan server memang menolaknya juga.
+watch(() => form.kpr_biaya_key, (k) => { if (! k) form.sync_kpr = false; });
 
 function openCreate() {
     editingId.value = null;
     form.reset();
     form.kpr_biaya_key = '';
+    form.sync_kpr = true;   // kategori baru: begitu kolomnya dipilih, langsung sinkron
     form.debits = [blankRow()];
     form.credits = [blankRow(props.defaultPayable ?? '')];
     showModal.value = true;
@@ -47,7 +55,7 @@ function openCreate() {
 function openEdit(c: Cat) {
     editingId.value = c.id;
     Object.assign(form, {
-        code: c.code, name: c.name, kpr_biaya_key: c.kpr_biaya_key ?? '', is_active: !!c.is_active,
+        code: c.code, name: c.name, kpr_biaya_key: c.kpr_biaya_key ?? '', sync_kpr: !!c.sync_kpr, is_active: !!c.is_active,
         // Kategori lama (satu akun) tetap terbuka rapi sebagai satu baris 100%.
         debits: c.debits.length ? c.debits.map((d) => ({ account_id: d.account_id, portion: d.portion })) : [blankRow(c.debit_account_id ?? '')],
         credits: c.credits.length ? c.credits.map((d) => ({ account_id: d.account_id, portion: d.portion })) : [blankRow(c.payable_account_id ?? '')],
@@ -161,7 +169,14 @@ const sides: Array<{ key: 'debits' | 'credits'; title: string; hint: string; ton
                         <td class="px-4 py-2.5 font-mono text-xs font-semibold">{{ c.code }}</td>
                         <td class="px-4 py-2.5">{{ c.name }}</td>
                         <td class="px-4 py-2.5">
-                            <span v-if="c.kpr_biaya_label" class="inline-flex items-center gap-1 rounded-md bg-primary-50 px-1.5 py-0.5 text-[10.5px] font-semibold text-primary-700 ring-1 ring-primary-200 dark:bg-primary-950/40 dark:text-primary-300 dark:ring-primary-800/60">{{ c.kpr_biaya_label }}</span>
+                            <!-- Terpetakan tapi sinkronnya mati harus terlihat berbeda: kolomnya
+                                 memang dipilih, tetapi tidak akan pernah terisi dari kategori ini. -->
+                            <span v-if="c.kpr_biaya_label" class="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10.5px] font-semibold ring-1"
+                                  :class="c.sync_kpr
+                                      ? 'bg-primary-50 text-primary-700 ring-primary-200 dark:bg-primary-950/40 dark:text-primary-300 dark:ring-primary-800/60'
+                                      : 'bg-neutral-100 text-neutral-500 ring-neutral-200 line-through dark:bg-neutral-800 dark:text-neutral-400 dark:ring-neutral-700'"
+                                  :title="c.sync_kpr ? 'Sinkron ke Master Data KPR aktif' : 'Sinkron ke Master Data KPR dimatikan — kolom ini tidak akan terisi'">{{ c.kpr_biaya_label }}</span>
+                            <span v-if="c.kpr_biaya_label && !c.sync_kpr" class="text-[10.5px] font-semibold text-neutral-400">sinkron mati</span>
                             <span v-else class="text-[11px] text-neutral-400">—</span>
                         </td>
                         <td v-for="side in (['debits','credits'] as const)" :key="side" class="px-4 py-2.5">
@@ -195,8 +210,40 @@ const sides: Array<{ key: 'debits' | 'credits'; title: string; hint: string; ton
                                     <option value="">— tidak ditautkan —</option>
                                     <option v-for="k in kprBiayaColumns" :key="k.id" :value="k.id">{{ k.label }}</option>
                                 </select>
-                                <p class="mt-1 text-[11px] text-neutral-400">Biaya GMC kategori ini otomatis mengisi kolom tsb setelah invoice terbit.</p>
+                                <p class="mt-1 text-[11px] text-neutral-400">Kolom tujuan di Master Data KPR yang akan diisi biaya kategori ini.</p>
                             </div>
+                        </div>
+
+                        <!-- Sakelar sinkron. Ditaruh sebagai kotak tersendiri, bukan sekadar centang
+                             kecil, karena inilah yang menentukan apakah angka gimmick benar-benar
+                             sampai ke Master Data KPR. Mati kalau kolom tujuannya belum dipilih —
+                             tanpa kolom, tidak ada yang bisa diisi. -->
+                        <div class="mt-3 rounded-lg border px-3 py-2.5"
+                             :class="form.kpr_biaya_key
+                                 ? 'border-primary-200 bg-primary-50/60 dark:border-primary-900 dark:bg-primary-900/15'
+                                 : 'border-neutral-200 bg-neutral-50 dark:border-neutral-800 dark:bg-neutral-800/40'">
+                            <label class="flex items-start gap-2.5" :class="form.kpr_biaya_key ? 'cursor-pointer' : 'cursor-not-allowed opacity-60'">
+                                <input v-model="form.sync_kpr" type="checkbox" :disabled="!form.kpr_biaya_key"
+                                       class="mt-0.5 h-4 w-4 rounded border-neutral-300 text-primary-600 focus:ring-primary-500" />
+                                <span class="text-sm">
+                                    <span class="font-semibold">Sinkron ke Master Data KPR</span>
+                                    <span class="mt-0.5 block text-[11px] font-normal text-neutral-500">
+                                        <template v-if="!form.kpr_biaya_key">
+                                            Pilih kolom Rincian Biaya di atas dulu — tanpa kolom tujuan, tidak ada yang bisa diisi.
+                                        </template>
+                                        <template v-else-if="form.sync_kpr">
+                                            Setiap kali gimmick kategori ini diposting dari
+                                            <b>Posting Invoice dari FO</b>, nominalnya otomatis masuk ke kolom
+                                            <b>{{ labelKolomKpr }}</b> pada Master Data KPR — termasuk gimmick yang
+                                            sudah mengantre sebelum pemetaan ini dibuat.
+                                        </template>
+                                        <template v-else>
+                                            Sinkron dimatikan. Kolom <b>{{ labelKolomKpr }}</b> tidak akan terisi dari
+                                            kategori ini, walau kolomnya sudah dipilih.
+                                        </template>
+                                    </span>
+                                </span>
+                            </label>
                         </div>
 
                         <!-- Multi akun per sisi -->

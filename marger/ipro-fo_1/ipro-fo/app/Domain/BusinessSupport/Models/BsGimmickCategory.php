@@ -39,8 +39,8 @@ class BsGimmickCategory extends Model
     ];
 
     protected $table = 'bs_gimmick_categories';
-    protected $fillable = ['tenant_id', 'code', 'name', 'kpr_biaya_key', 'debit_account_id', 'payable_account_id', 'is_active'];
-    protected $casts = ['is_active' => 'boolean'];
+    protected $fillable = ['tenant_id', 'code', 'name', 'kpr_biaya_key', 'sync_kpr', 'debit_account_id', 'payable_account_id', 'is_active'];
+    protected $casts = ['is_active' => 'boolean', 'sync_kpr' => 'boolean'];
 
     public function debitAccount(): BelongsTo { return $this->belongsTo(BsAccount::class, 'debit_account_id'); }
     public function payableAccount(): BelongsTo { return $this->belongsTo(BsAccount::class, 'payable_account_id'); }
