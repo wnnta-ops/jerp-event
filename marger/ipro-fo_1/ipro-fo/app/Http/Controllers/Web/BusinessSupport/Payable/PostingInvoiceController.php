@@ -176,6 +176,7 @@ class PostingInvoiceController extends Controller
         // Supplier WAJIB dipilih (integrasi Supplier Center) — jadi hutang AP tertaut supplier.
         $validated = $request->validate([
             'supplier_id' => ['required', 'integer', Rule::exists('bs_suppliers', 'id')],
+            'due_date'    => self::ATURAN_JATUH_TEMPO,
         ]);
 
         $row = DB::table('bs_ap_refund_queue')->where('id', $queue)->first();
@@ -183,7 +184,10 @@ class PostingInvoiceController extends Controller
             return back()->with('error', 'Antrian tidak ditemukan atau sudah diposting.');
         }
 
-        $res = $this->issueFromRefundRow($row, (int) $validated['supplier_id'], $journal, (int) $request->user()->id);
+        $res = $this->issueFromRefundRow(
+            $row, (int) $validated['supplier_id'], $journal, (int) $request->user()->id,
+            $validated['due_date'] ?? null,
+        );
         if (! $res['ok']) {
             return back()->with('error', $res['error']);
         }
@@ -206,6 +210,7 @@ class PostingInvoiceController extends Controller
             'items'               => ['required', 'array', 'min:1'],
             'items.*.id'          => ['required', 'integer'],
             'items.*.supplier_id' => ['required', 'integer', Rule::exists('bs_suppliers', 'id')],
+            'due_date'            => self::ATURAN_JATUH_TEMPO,
         ]);
 
         // GERBANG SUPPLIER SERAGAM — harus di sini, sebelum satu baris pun ditulis.
@@ -258,9 +263,12 @@ class PostingInvoiceController extends Controller
         }
 
         $total = round(array_sum(array_column($prepared, 'amount')), 2);
+        // Cadangan = tanggal invoice, persis perilaku sebelum kolom jatuh tempo ada.
+        $tglInvoice = now()->toDateString();
+        $jatuhTempo = $this->jatuhTempo($request, $tglInvoice, $tglInvoice);
         $userId = (int) $request->user()->id;
 
-        $inv = DB::transaction(function () use ($prepared, $total, $journal, $userId) {
+        $inv = DB::transaction(function () use ($prepared, $total, $journal, $userId, $tglInvoice, $jatuhTempo) {
             $first = $prepared[0];
             $inv = $this->makeInvoice([
                 'supplier_id'        => $first['supplier_id'],
@@ -268,9 +276,9 @@ class PostingInvoiceController extends Controller
                 'expense_account_id' => $first['offset'],
                 'payable_account_id' => $first['payable'],
                 'description'        => 'Invoice hutang gabungan ('.count($prepared).' item)',
-                'invoice_date'       => now()->toDateString(),
-                'receive_date'       => now()->toDateString(),
-                'due_date'           => now()->toDateString(),
+                'invoice_date'       => $tglInvoice,
+                'receive_date'       => $tglInvoice,
+                'due_date'           => $jatuhTempo,
                 'dpp'                => $total, 'total' => $total, 'net_payable' => $total,
                 'source_type'        => 'batch', 'source_id' => null,
             ], $userId);
@@ -594,20 +602,45 @@ class PostingInvoiceController extends Controller
      *
      * @return array{ok:bool, invoice?:BsApInvoice, error?:string}
      */
-    private function issueFromRefundRow(object $row, int $supplierId, JournalService $journal, int $userId): array
+    /**
+     * Tanggal jatuh tempo yang berlaku untuk sebuah posting.
+     *
+     * Diisi operator pada layar posting (Dari FO / Purchase Order / SPK). Bila tidak diisi,
+     * dipakai cadangan yang selama ini berlaku pada jalur masing-masing — jadi menambahkan
+     * kolom ini tidak mengubah perilaku posting yang sudah ada.
+     *
+     * Jatuh tempo TIDAK boleh mendahului tanggal invoice: tagihan yang jatuh tempo sebelum
+     * terbit akan langsung terbaca menunggak di Aging Hutang, padahal belum apa-apa.
+     */
+    private function jatuhTempo(Request $request, string $tglInvoice, string $cadangan): string
+    {
+        $isian = trim((string) $request->input('due_date', ''));
+        if ($isian === '') {
+            return $cadangan;
+        }
+
+        return $isian < $tglInvoice ? $tglInvoice : $isian;
+    }
+
+    /** Aturan validasi bersama untuk kolom jatuh tempo pada layar posting. */
+    private const ATURAN_JATUH_TEMPO = ['nullable', 'date'];
+
+    private function issueFromRefundRow(object $row, int $supplierId, JournalService $journal, int $userId, ?string $dueDate = null): array
     {
         $p = $this->prepRefundRow($row);
         if (! $p['ok']) {
             return $p;
         }
 
-        $inv = DB::transaction(function () use ($row, $supplierId, $p, $journal, $userId) {
+        $inv = DB::transaction(function () use ($row, $supplierId, $p, $journal, $userId, $dueDate) {
             $inv = $this->makeInvoice([
                 'supplier_id' => $supplierId, 'customer_id' => $row->customer_id,
                 // unit_id dari antrian GMC → invoice tertaut ke unit/SPR yang dibiayai.
                 'unit_id' => $row->unit_id ?? null,
                 'expense_account_id' => $p['offset'], 'payable_account_id' => $p['payable'],
-                'description' => $p['desc'], 'invoice_date' => $p['date'], 'receive_date' => $p['date'], 'due_date' => $p['date'],
+                'description' => $p['desc'], 'invoice_date' => $p['date'], 'receive_date' => $p['date'],
+                // Cadangan = tanggal invoice, persis perilaku sebelum kolom jatuh tempo ada.
+                'due_date' => $dueDate && $dueDate >= $p['date'] ? $dueDate : $p['date'],
                 'dpp' => $p['amount'], 'total' => $p['amount'], 'net_payable' => $p['amount'],
                 'source_type' => $row->kind, 'source_id' => $row->refund_id, 'refund_source' => $row->refund_source,
             ], $userId);
@@ -649,10 +682,15 @@ class PostingInvoiceController extends Controller
         $payable = \App\Domain\BusinessSupport\Models\BsAccount::where('code', config('business_support.gl_accounts.payable'))->value('id');
         $debit   = \App\Domain\BusinessSupport\Models\BsAccount::where('code', config('business_support.gl_accounts.inventory'))->value('id');
 
+        $request->validate(['due_date' => self::ATURAN_JATUH_TEMPO]);
+        $tglInvoice = now()->toDateString();
+        // Cadangan = jatuh tempo dokumen PO-nya, lalu 30 hari — persis perilaku sebelumnya.
+        $cadangan = $po->due_date?->toDateString() ?? now()->addDays(30)->toDateString();
+
         $inv = $this->makeInvoice([
             'supplier_id' => $po->supplier_id, 'expense_account_id' => $debit, 'payable_account_id' => $payable,
-            'description' => 'Invoice dari PO '.$po->po_number, 'invoice_date' => now()->toDateString(),
-            'due_date' => $po->due_date?->toDateString() ?? now()->addDays(30)->toDateString(),
+            'description' => 'Invoice dari PO '.$po->po_number, 'invoice_date' => $tglInvoice,
+            'due_date' => $this->jatuhTempo($request, $tglInvoice, $cadangan),
             'dpp' => $value, 'total' => $value, 'net_payable' => $value,
             'source_type' => 'po', 'source_id' => $po->id,
         ], $request->user()->id, $this->poLines($po));
@@ -667,13 +705,17 @@ class PostingInvoiceController extends Controller
         if ($progress->status !== 'unpaid' || BsApInvoice::where('source_type', 'spk')->where('source_id', $progress->id)->exists()) {
             return back()->with('error', 'Progress ini sudah diposting / dibayar.');
         }
+        $request->validate(['due_date' => self::ATURAN_JATUH_TEMPO]);
+        $tglInvoice = now()->toDateString();
+
         $wo = $progress->workOrder;
         $payable = \App\Domain\BusinessSupport\Models\BsAccount::where('code', config('business_support.gl_accounts.payable'))->value('id');
 
         $inv = $this->makeInvoice([
             'supplier_id' => $wo->supplier_id, 'expense_account_id' => $wo->construction_account_id, 'payable_account_id' => $payable,
             'category_id' => null, 'description' => 'Invoice SPK '.$wo->spk_number.' — '.$progress->description,
-            'invoice_date' => now()->toDateString(), 'due_date' => now()->addDays(30)->toDateString(),
+            'invoice_date' => $tglInvoice,
+            'due_date' => $this->jatuhTempo($request, $tglInvoice, now()->addDays(30)->toDateString()),
             'dpp' => (float) $progress->progress_value, 'ppn_amount' => (float) $progress->ppn_amount,
             'total' => round((float) $progress->progress_value + (float) $progress->ppn_amount, 2),
             'net_payable' => (float) $progress->net_payable, 'journal_id' => $progress->journal_id,

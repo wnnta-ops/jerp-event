@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { router, Link } from '@inertiajs/vue3';
 import { ref, computed, watch } from 'vue';
-import { ArrowLeft, FileInput, TriangleAlert, Receipt } from 'lucide-vue-next';
+import { ArrowLeft, FileInput, TriangleAlert, Receipt, CalendarClock } from 'lucide-vue-next';
 import Button from '@/Components/UI/Button.vue';
 import EmptyState from '@/Components/UI/EmptyState.vue';
 
@@ -17,6 +17,17 @@ const supplierSel = ref<Record<number, number | ''>>({});
 const checked = ref<Record<number, boolean>>({});
 // Pencarian/filter tabel (client-side).
 const q = ref('');
+// Jatuh tempo ditetapkan SEBELUM invoice terbit — berlaku untuk posting satuan maupun
+// gabungan dari layar ini. Kosongkan untuk memakai cadangan lama (sama dengan tanggal
+// invoice). Nilai ini yang tercetak di Bukti Permohonan Pembayaran dan menentukan umur
+// tagihan pada Aging Hutang.
+const jatuhTempo = ref('');
+function fmtTgl(v: string) {
+    return v ? new Date(v + 'T00:00:00').toLocaleDateString('id-ID', { day: '2-digit', month: 'long', year: 'numeric' }) : '';
+}
+const kalimatJatuhTempo = computed(() => jatuhTempo.value
+    ? `Jatuh tempo ${fmtTgl(jatuhTempo.value)}.`
+    : 'Jatuh tempo mengikuti tanggal invoice (belum ditetapkan).');
 
 // Prefill supplier untuk baris yang sudah membawa supplier (mis. komponen GMC multi-supplier).
 // watch immediate → jalan saat setup & tiap data di-reload (Inertia). Number() agar cocok dgn opsi.
@@ -87,8 +98,10 @@ function postRefund(id: number) {
             + 'Samakan dulu pilihan suppliernya, atau lepas centangnya agar bisa diposting sendiri.');
         return;
     }
-    if (confirm('Terbitkan invoice hutang dari item ini? Akan masuk ke Account Payable.'))
-        router.post(route('bs.ap.posting.refund', id), { supplier_id }, { preserveScroll: true });
+    if (confirm(`Terbitkan invoice hutang dari item ini? Akan masuk ke Account Payable.
+
+${kalimatJatuhTempo.value}`))
+        router.post(route('bs.ap.posting.refund', id), { supplier_id, due_date: jatuhTempo.value || null }, { preserveScroll: true });
 }
 function postBulk() {
     const ids = selectedIds.value;
@@ -103,9 +116,12 @@ function postBulk() {
         return;
     }
     if (! confirm(`Gabungkan ${ids.length} item jadi 1 Invoice Hutang untuk ${namaSupplier(supplierTerpilih.value[0])}? `
-        + 'Tiap item jadi baris + struktur jurnal. Masuk ke Account Payable.')) return;
+        + 'Tiap item jadi baris + struktur jurnal. Masuk ke Account Payable.'
+        + `
+
+${kalimatJatuhTempo.value}`)) return;
     const items = ids.map((id) => ({ id, supplier_id: rowSupplier(id) }));
-    router.post(route('bs.ap.posting.bulk-refund'), { items }, { preserveScroll: true });
+    router.post(route('bs.ap.posting.bulk-refund'), { items, due_date: jatuhTempo.value || null }, { preserveScroll: true });
 }
 </script>
 <template>
@@ -119,7 +135,15 @@ function postBulk() {
                 <!-- Antrean posting FO: refund, BLT, komisi, gimmick. Hanya baris di sinilah yang
                      bisa dicentang untuk digabung jadi satu invoice hutang. -->
                 <div class="flex items-center gap-2 font-semibold"><Receipt class="h-5 w-5 text-primary-600" /> Dari FO</div>
-                <div class="ml-auto flex items-center gap-2">
+                <div class="ml-auto flex flex-wrap items-center gap-2">
+                    <!-- Jatuh tempo ditetapkan sebelum invoice terbit; berlaku untuk posting
+                         satuan maupun gabungan, dan tercetak di Bukti Permohonan Pembayaran. -->
+                    <label class="flex items-center gap-2 text-sm">
+                        <CalendarClock class="h-4 w-4 text-neutral-400" />
+                        <span class="text-neutral-500">Tgl. Jatuh Tempo</span>
+                        <input v-model="jatuhTempo" type="date"
+                            class="h-9 rounded-lg border border-neutral-300 bg-white px-2 text-sm focus:border-primary-500 focus:ring-1 focus:ring-primary-500 dark:border-neutral-700 dark:bg-neutral-800" />
+                    </label>
                     <input v-model="q" type="text" placeholder="Cari dokumen / customer / sumber / keterangan..."
                         class="h-9 w-64 max-w-full rounded-lg border border-neutral-300 bg-white px-3 text-sm focus:border-primary-500 focus:ring-1 focus:ring-primary-500 dark:border-neutral-700 dark:bg-neutral-800" />
                     <Button v-if="selectedIds.length" size="sm" variant="warning"
@@ -128,6 +152,10 @@ function postBulk() {
                             @click="postBulk">Posting Massal ({{ selectedIds.length }})</Button>
                 </div>
             </div>
+
+            <p class="border-b border-neutral-200 bg-neutral-50 px-4 py-2 text-[11.5px] text-neutral-500 dark:border-neutral-800 dark:bg-neutral-800/40">
+                Dikosongkan berarti jatuh tempo mengikuti tanggal invoice — tagihan langsung terbaca jatuh tempo hari itu juga pada Aging Hutang.
+            </p>
 
             <!-- Pemberitahuan gerbang "satu supplier". Muncul hanya saat pilihannya memang bentrok. -->
             <div v-if="konflikSupplier"
