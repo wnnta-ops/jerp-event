@@ -24,6 +24,8 @@ volumes:
   # Dev meng-override volume ini dgn bind-mount source (docker-compose.override.yml).
   storage:
   bootstrap-cache:
+  legal-uploads:    # Legal — berkas dokumen yang diunggah (public/uploads)
+  legal-docs:       # Legal — berkas pemenuhan Permintaan (privat, di luar public/)
 
 x-app-env: &app-env
   APP_NAME: "Java Core"
@@ -393,8 +395,16 @@ services:
       # Secret callback approval eksternal (GM→Direktur→Owner). Endpoint fail-closed:
       # tanpa nilai ini, /api/external-approval menolak semua request.
       EXTERNAL_APPROVAL_SECRET: ${LEGAL_EXTERNAL_APPROVAL_SECRET:-dev-legal-extapproval-secret}
-      REQUEST_DOCS_DIR: /tmp/request-docs
+      # Berkas pemenuhan Permintaan. JANGAN /tmp — isinya lenyap tiap container
+      # dibuat ulang (dan bisa dibersihkan OS). Diarahkan ke named volume.
+      REQUEST_DOCS_DIR: /app/storage/request-docs
       NODE_ENV: production
+    volumes:
+      # Berkas dokumen legal ditulis ke DISK container, bukan DB. Tanpa named
+      # volume, SETIAP rebuild/recreate (mis. up-portal.sh) menghapus seluruh
+      # dokumen yang sudah diunggah.
+      - legal-uploads:/app/public/uploads
+      - legal-docs:/app/storage/request-docs
     depends_on:
       postgres:
         condition: service_healthy

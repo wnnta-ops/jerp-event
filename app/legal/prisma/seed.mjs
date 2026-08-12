@@ -138,7 +138,11 @@ async function main() {
         uploadedById: byEmail[by],
         files: {
           create: [
-            { url: "/uploads/seed/placeholder.pdf", fileName: `${rest.title}.pdf`, label: "scan", mimeType: "application/pdf", size: 102400 },
+            // public/seed/placeholder.pdf IKUT DI-COMMIT & ter-bake ke image, jadi
+            // tautannya selalu hidup. Jangan arahkan ke /uploads/: folder itu
+            // gitignored + tidak punya volume, sehingga berkasnya tak pernah ada
+            // di server → semua dokumen contoh 404 saat dibuka.
+            { url: "/seed/placeholder.pdf", fileName: `${rest.title}.pdf`, label: "scan", mimeType: "application/pdf", size: 102400 },
           ],
         },
       },
