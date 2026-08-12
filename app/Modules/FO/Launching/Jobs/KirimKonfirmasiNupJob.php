@@ -66,13 +66,19 @@ class KirimKonfirmasiNupJob implements ShouldQueue
         $tglLaunching = optional($r->event?->tgl_launching)->translatedFormat('d M Y') ?? '-';
 
         if ($r->urutan !== null) {
-            // Approved → template konfirmasi (7 variabel) + LAMPIRAN PDF SPRS
+            // Approved → template konfirmasi (6 variabel) + LAMPIRAN PDF SPRS
             // sebagai header dokumen (template Qontak WAJIB dibuat dengan
-            // Header: Document). Urutan parameter HARUS cocok dgn template:
-            //   {{1}}Nama {{2}}Project {{3}}Event {{4}}No.NUP {{5}}No.Telp {{6}}NIK {{7}}Sales/Agen
-            $project = $r->projectPref?->name ?? '-';
+            // Header: Document). Urutan parameter HARUS PERSIS sama dgn template:
+            //   {{1}} Nama · {{2}} Nama acara · {{3}} No urut NUP
+            //   {{4}} No telepon · {{5}} NIK · {{6}} Sales/Agen
+            // ({{1}} & {{2}} muncul dua kali di badan template — tetap satu parameter.)
+            // JANGAN kirim 7 parameter (dulu ada "Project" terpisah): Qontak menolak
+            // seluruh pesan dgn 422 "Message Template has 6 variable".
             $sales = $r->agent?->sales_label ?: ($r->ref_sales_name ?: '-');
             $nik = $r->nik ?: ($r->customer?->nik ?: '-');
+            // {{2}} dipakai pada "Acara Pilih Unit {{2}}" → nama EVENT; nama project
+            // hanya dipakai bila event tak punya nama.
+            $namaAcara = $eventName !== '-' ? $eventName : ($r->projectPref?->name ?? '-');
 
             // URL PDF publik TANPA query string (token HMAC di path) — Qontak/Meta
             // menolak URL dokumen ber-query ('?','&','=') dgn 422. Butuh Chromium
@@ -87,13 +93,12 @@ class KirimKonfirmasiNupJob implements ShouldQueue
                 toName: (string) $r->nama_pendaftar,
                 templateId: (string) config('services.qontak.template_konfirmasi'),
                 bodyParams: [
-                    (string) $r->nama_pendaftar,
-                    $project,
-                    $eventName,
-                    (string) $r->no_nup,
-                    $phone,
-                    (string) $nik,
-                    (string) $sales,
+                    (string) $r->nama_pendaftar,  // {{1}} Nama
+                    $namaAcara,                   // {{2}} Nama acara / pilih unit
+                    (string) $r->no_nup,          // {{3}} No urut NUP
+                    $phone,                       // {{4}} No telepon
+                    (string) $nik,                // {{5}} NIK
+                    (string) $sales,              // {{6}} Sales/Agen
                 ],
                 documentUrl: $sprsPdfUrl,
                 documentFilename: 'SPRS-'.($r->no_nup ?: $r->id).'.pdf',
