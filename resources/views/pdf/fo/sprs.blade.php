@@ -13,6 +13,10 @@
         .head .src { border: 1px solid #111; width: 170px; height: 58px; font-size: 10px; }
         .head .src .lbl { border-bottom: 1px solid #111; text-align: center; font-weight: 700; padding: 3px; }
         .head .src .val { padding: 4px 6px; min-height: 30px; }
+        .head .right { display: flex; gap: 8px; align-items: flex-start; }
+        .qr { text-align: center; width: 68px; }
+        .qr svg { width: 58px; height: 58px; display: block; margin: 0 auto; }
+        .qr .code { font-size: 7px; font-weight: 700; letter-spacing: .2px; margin-top: 1px; }
         .brand { width: 130px; font-weight: 800; color: #ea7a1d; font-size: 16px; line-height: 1.05; }
         table.f { width: 100%; border-collapse: collapse; margin-top: 12px; }
         table.f td { padding: 1.5px 4px; vertical-align: top; }
@@ -86,9 +90,19 @@
             <div class="pt">PT. MITRA USAHA PROPERTINDO</div>
             <div class="ttl">FORMULIR SURAT PEMESANAN RUMAH SEMENTARA</div>
         </div>
-        <div class="src">
-            <div class="lbl">Sumber Informasi</div>
-            <div class="val">{{ $sumberInfo !== '—' ? $sumberInfo : '' }}</div>
+        <div class="right">
+            {{-- QR Customer: ditunjukkan saat Aktivasi NUP & Pilih Unit hari-H.
+                 Isinya KODE customer, bukan data pribadi. --}}
+            @if (! empty($qrSvg))
+                <div class="qr">
+                    {!! $qrSvg !!}
+                    <div class="code">{{ $custCode }}</div>
+                </div>
+            @endif
+            <div class="src">
+                <div class="lbl">Sumber Informasi</div>
+                <div class="val">{{ $sumberInfo !== '—' ? $sumberInfo : '' }}</div>
+            </div>
         </div>
     </div>
 

@@ -9,6 +9,7 @@ use App\Modules\FO\FinanceAR\Models\Fp;
 use App\Modules\FO\FinanceAR\Models\Tts;
 use App\Modules\FO\Launching\Models\NupRegistration;
 use App\Modules\FO\MarketingSales\Models\Kontrak;
+use App\Modules\FO\MarketingSales\Services\CustomerQrService;
 use App\Settings\CollectionSettings;
 use App\Support\Terbilang;
 use Illuminate\Http\Response;
@@ -120,7 +121,18 @@ class ClosingPrintController extends Controller
                 ->where('jenis_pembayaran', 'BOOKING')->orderBy('id')->first()
             : null;
 
-        return ['reg' => $reg, 'kontrak' => $kontrak, 'tts' => $tts];
+        // QR Customer ikut tercetak di SPRS → customer cukup menunjukkan lembar ini
+        // saat Aktivasi NUP & Pilih Unit (tak perlu kartu terpisah). Isi QR = KODE
+        // customer, bukan data pribadi. ensureCode() menerbitkan kode bila kosong.
+        $qrSvg = null;
+        $custCode = null;
+        if ($cust = $reg->customer) {
+            $qr = app(CustomerQrService::class);
+            $custCode = $qr->ensureCode($cust);          // untuk dibaca manusia
+            $qrSvg = $qr->svg($qr->payload($cust), 200); // isi QR: "CUST:<kode>"
+        }
+
+        return ['reg' => $reg, 'kontrak' => $kontrak, 'tts' => $tts, 'qrSvg' => $qrSvg, 'custCode' => $custCode];
     }
 
     /** Objek NupRegistration sementara (tak disimpan) dari Kontrak untuk render SPRS. */
