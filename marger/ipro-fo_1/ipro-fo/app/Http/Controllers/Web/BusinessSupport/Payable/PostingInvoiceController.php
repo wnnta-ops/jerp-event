@@ -139,6 +139,30 @@ class PostingInvoiceController extends Controller
             'items.*.supplier_id' => ['required', 'integer', Rule::exists('bs_suppliers', 'id')],
         ]);
 
+        // GERBANG SUPPLIER SERAGAM — harus di sini, sebelum satu baris pun ditulis.
+        //
+        // Satu invoice hutang gabungan hanya punya SATU supplier di kepalanya (lihat makeInvoice
+        // di bawah yang memakai supplier item pertama). Kalau item dari supplier berbeda ikut
+        // digabung, item milik supplier lain akan tertagih ke supplier yang pertama — salah
+        // orang, dan baru ketahuan saat kuitansi dibayar. Karena itu ditolak, bukan diperbaiki
+        // diam-diam: aplikasi tidak boleh menebak supplier mana yang dimaksud pengguna.
+        //
+        // Layar juga sudah mematikan tombolnya, tapi penjagaan itu tidak cukup — permintaan
+        // bisa datang tanpa lewat layar.
+        $supplierIds = array_values(array_unique(array_map(
+            static fn (array $i): int => (int) $i['supplier_id'],
+            $validated['items'],
+        )));
+
+        if (count($supplierIds) > 1) {
+            $nama = BsSupplier::whereIn('id', $supplierIds)
+                ->orderBy('name')->pluck('name')->implode(', ');
+
+            return back()->with('error', 'Posting gabungan dibatalkan: item terpilih berasal dari '
+                .count($supplierIds).' supplier berbeda ('.$nama.'). Satu invoice hutang gabungan '
+                .'hanya boleh untuk satu supplier — samakan dulu pilihan suppliernya, atau posting terpisah.');
+        }
+
         // Siapkan tiap baris (resolusi akun + deskripsi). Yang gagal/terposting dilewati.
         $prepared = [];
         $errors = [];
