@@ -38,6 +38,66 @@ class AktivasiNup extends Page implements HasForms, HasTable
 
     protected static bool $shouldRegisterNavigation = false;
 
+    /** Kode hasil scan QR / ketik manual (No. NUP atau "CUST:<kode>"). */
+    public string $scanKode = '';
+
+    /**
+     * Aktivasi lewat QR Customer / No. NUP — meja reception tinggal memindai,
+     * tak perlu mencari baris di tabel.
+     *
+     * QR customer berawalan "CUST:" DIPAKSA dicari sebagai kode customer; tanpa itu
+     * kode customer yang berupa angka bisa tertukar dengan No. NUP milik orang lain.
+     */
+    public function aktivasiByScan(): void
+    {
+        $kode = trim($this->scanKode);
+        $this->scanKode = '';
+        if ($kode === '') {
+            return;
+        }
+
+        $q = NupRegistration::query()->with(['customer', 'unit']);
+        $prefix = CustomerQrService::PREFIX;
+
+        if (str_starts_with(strtoupper($kode), $prefix)) {
+            $kodeCust = trim(substr($kode, strlen($prefix)));
+            $reg = (clone $q)->whereHas('customer', fn (Builder $c) => $c->where('code', $kodeCust))
+                ->where('verif_status', NupRegistration::VERIF_APPROVED)
+                ->orderByDesc('id')->first();
+            $labelCari = 'QR customer '.$kodeCust;
+        } else {
+            $reg = (clone $q)->where('no_nup', $kode)->first()
+                ?: (clone $q)->whereHas('customer', fn (Builder $c) => $c->where('code', $kode))
+                    ->where('verif_status', NupRegistration::VERIF_APPROVED)
+                    ->orderByDesc('id')->first();
+            $labelCari = $kode;
+        }
+
+        if (! $reg) {
+            Notification::make()->danger()->title('Tidak ditemukan')
+                ->body($labelCari.' tidak cocok dengan NUP mana pun yang sudah APPROVED.')->send();
+
+            return;
+        }
+
+        $nama = $reg->customer?->full_name ?: $reg->nama_pendaftar;
+
+        if ($reg->status === 'CHECK_IN') {
+            Notification::make()->warning()->title('Sudah aktivasi')
+                ->body($nama.' (NUP '.$reg->no_nup.') sudah check-in — silakan lanjut Pilih Unit.')->send();
+
+            return;
+        }
+
+        try {
+            app(AktivasiNupService::class)->aktivasi($reg);
+            Notification::make()->success()->title('Aktivasi berhasil')
+                ->body($nama.' — NUP '.$reg->no_nup.' siap Pilih Unit.')->send();
+        } catch (\Throwable $e) {
+            Notification::make()->danger()->title('Aktivasi gagal')->body($e->getMessage())->send();
+        }
+    }
+
     public function table(Table $table): Table
     {
         return $table
@@ -129,7 +189,9 @@ class AktivasiNup extends Page implements HasForms, HasTable
                         return view('filament.fo.customer-qr-modal', [
                             'customer' => $customer,
                             'code' => $code,
-                            'svg' => $qr->svg($code, 240),
+                            // Isi QR memakai payload berawalan "CUST:" — tanpa itu, kode
+                            // customer berupa angka bisa tertukar dengan No. NUP saat dipindai.
+                            'svg' => $qr->svg($qr->payload($customer), 240),
                             'noNup' => $r->no_nup,
                         ]);
                     }),
