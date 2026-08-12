@@ -30,6 +30,16 @@
         <div class="grid gap-3" style="grid-template-columns: minmax(0,240px) minmax(0,1fr);">
             <div wire:ignore id="an-scanner" style="aspect-ratio:4/3; border-radius:.6rem; overflow:hidden; background:#0f172a; border:1px solid rgba(255,255,255,.15);"></div>
             <div>
+                {{-- Pemilih kamera (webcam USB tambahan) — muncul bila kamera >1. --}}
+                <div class="mb-2" x-show="cameras.length > 1" x-cloak>
+                    <select x-model="camId" @change="gantiKamera()"
+                            class="w-full rounded-lg border px-2 py-1.5 text-xs" style="border-color: var(--gray-300);">
+                        <option value="">Kamera bawaan (belakang)</option>
+                        <template x-for="c in cameras" :key="c.id">
+                            <option :value="c.id" x-text="c.label"></option>
+                        </template>
+                    </select>
+                </div>
                 <p class="text-xs text-gray-500 mb-2">Arahkan QR customer ke kamera — NUP langsung diaktivasi. Atau ketik manual:</p>
                 <div class="flex gap-2">
                     <input type="text" wire:model="scanKode" @keyup.enter="$wire.aktivasiByScan()"
@@ -50,14 +60,37 @@
         function aktivasiScanState() {
             return {
                 on: false, inst: null, lock: false,
-                init() { this.$nextTick(() => this.start()); },
+                // Pemilihan kamera (mendukung webcam USB tambahan); pilihan diingat
+                // per komputer & dibagi dgn halaman Pilih Unit (kunci sama).
+                cameras: [], camId: '',
+                init() {
+                    try { this.camId = localStorage.getItem('pu_cam_id') || ''; } catch (e) {}
+                    this.$nextTick(() => this.start());
+                },
+                async muatKamera() {
+                    if (!window.Html5Qrcode) return;
+                    try {
+                        const list = await Html5Qrcode.getCameras();
+                        this.cameras = (list || []).map((c, i) => ({ id: c.id, label: c.label || ('Kamera ' + (i + 1)) }));
+                        if (this.camId && !this.cameras.some(c => c.id === this.camId)) this.camId = '';
+                    } catch (e) { /* izin belum diberikan */ }
+                },
+                async gantiKamera() {
+                    try { localStorage.setItem('pu_cam_id', this.camId || ''); } catch (e) {}
+                    await this.stop();
+                    await this.start();
+                },
                 async start() {
                     if (this.on || !window.Html5Qrcode) return;
                     try {
                         this.inst = new Html5Qrcode('an-scanner');
-                        await this.inst.start({ facingMode: 'environment' }, { fps: 10, qrbox: 220 },
+                        // Kamera pilihan operator (mis. webcam USB); bila belum memilih,
+                        // pakai kamera belakang seperti semula.
+                        const sumber = this.camId ? { deviceId: { exact: this.camId } } : { facingMode: 'environment' };
+                        await this.inst.start(sumber, { fps: 10, qrbox: 220 },
                             (teks) => this.onScan(teks), () => {});
                         this.on = true;
+                        this.muatKamera();
                     } catch (e) { console.warn('Scanner Aktivasi NUP gagal start:', e); }
                 },
                 async stop() {

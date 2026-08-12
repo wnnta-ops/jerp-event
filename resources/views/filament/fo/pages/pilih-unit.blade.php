@@ -184,6 +184,20 @@
                     </button>
                 </div>
                 <div id="pu-scanner"></div>
+
+                {{-- Pemilih kamera: mendukung WEBCAM USB tambahan. Baru muncul bila
+                     terdeteksi lebih dari satu kamera. Pilihan diingat per komputer. --}}
+                <div class="mt-2" x-show="cameras.length > 1" x-cloak>
+                    <select x-model="camId" @change="gantiKamera()"
+                            class="w-full rounded-lg border px-2 py-1.5 text-xs"
+                            style="border-color: var(--gray-300);">
+                        <option value="">Kamera bawaan (belakang)</option>
+                        <template x-for="c in cameras" :key="c.id">
+                            <option :value="c.id" x-text="c.label"></option>
+                        </template>
+                    </select>
+                </div>
+
                 <p class="text-xs text-gray-500 mt-3">Arahkan barcode customer ke kamera. Atau ketik manual:</p>
                 <div class="flex gap-2 mt-2">
                     <input x-model="manualCode" type="text"
@@ -310,6 +324,10 @@
                 projectId: null,
 
                 scannerOn: false, scannerInstance: null, manualCode: '', scanLocked: false,
+                // Pemilihan kamera (mendukung webcam USB tambahan). Pilihan disimpan
+                // di localStorage agar operator cukup memilih sekali per komputer.
+                cameras: [], camId: '',
+                camTersimpan: (() => { try { return localStorage.getItem('pu_cam_id') || ''; } catch (e) { return ''; } })(),
                 timerSec: 120, timerId: null, timerDisplay: '02:00',
 
                 map: null,
@@ -334,6 +352,7 @@
                         this.siteplan = p.siteplan || null;
                         this.projectId = (p.projectId !== undefined) ? p.projectId : null;
                     } catch (e) { console.error('Pilih Unit: payload gagal dibaca', e); }
+                    this.camId = this.camTersimpan; // kamera pilihan terakhir operator
                     // Penanda instance TERBARU. Instance lama (mis. sesudah Ganti
                     // Cluster) memakai epoch usang → pekerjaan tertundanya berhenti
                     // sendiri, tak mengganggu instance yang hidup.
@@ -772,17 +791,44 @@
                     this.$wire.call('pickUnit', id);
                 },
 
+                /**
+                 * Daftar kamera yang terpasang (termasuk WEBCAM USB tambahan).
+                 * Dipanggil sesudah kamera menyala — getCameras() baru mengembalikan
+                 * label perangkat setelah izin kamera diberikan.
+                 */
+                async muatKamera() {
+                    if (!window.Html5Qrcode) return;
+                    try {
+                        const list = await Html5Qrcode.getCameras();
+                        this.cameras = (list || []).map((c, i) => ({ id: c.id, label: c.label || ('Kamera ' + (i + 1)) }));
+                        if (!this.camId && this.cameras.length) {
+                            this.camId = this.cameras.some(c => c.id === this.camTersimpan) ? this.camTersimpan : '';
+                        }
+                    } catch (e) { /* izin belum diberikan — daftar diisi setelah start */ }
+                },
+
+                /** Ganti kamera: simpan pilihan lalu nyalakan ulang scanner. */
+                async gantiKamera() {
+                    try { localStorage.setItem('pu_cam_id', this.camId || ''); } catch (e) {}
+                    await this.stopScanner();
+                    await this.startScanner();
+                },
+
                 async startScanner() {
                     if (this.scannerOn || !window.Html5Qrcode) return;
                     try {
                         this.scannerInstance = new Html5Qrcode('pu-scanner');
+                        // Pakai kamera pilihan operator bila ada (mis. webcam USB);
+                        // bila belum memilih, jatuh ke kamera belakang seperti semula.
+                        const sumber = this.camId ? { deviceId: { exact: this.camId } } : { facingMode: 'environment' };
                         await this.scannerInstance.start(
-                            { facingMode: 'environment' },
+                            sumber,
                             { fps: 10, qrbox: 250 },
                             (decoded) => this.onScanned(decoded),
                             () => {},
                         );
                         this.scannerOn = true;
+                        this.muatKamera();
                     } catch (e) { console.warn('Scanner gagal start:', e); }
                 },
                 async stopScanner() {
