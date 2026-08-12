@@ -38,10 +38,20 @@ class PostingInvoiceController extends Controller
 
         $pos = BsPurchaseOrder::whereIn('status', ['approved', 'closed'])->whereNotIn('id', $invoicedPo)
             ->with(['supplier:id,code,name', 'lines'])->latest('po_date')->limit(100)->get()
-            ->map(fn ($po) => [
-                'id' => $po->id, 'po_number' => $po->po_number, 'supplier' => $po->supplier?->name,
-                'received_value' => round((float) $po->lines->sum(fn ($l) => (float) $l->qty_received * (float) $l->unit_price), 2),
-            ])->filter(fn ($p) => $p['received_value'] > 0.009)->values();
+            ->map(function ($po) {
+                // Uraian singkat sejajar kolom "Uraian" pada kartu Progress SPK: berapa baris
+                // barang yang sudah diterima dari seluruh baris PO — itulah yang menentukan
+                // nilai yang boleh diinvoice. Catatan PO dipakai bila memang diisi.
+                $diterima = $po->lines->filter(fn ($l) => (float) $l->qty_received > 0)->count();
+                $catatan  = trim((string) ($po->notes ?? ''));
+
+                return [
+                    'id' => $po->id, 'po_number' => $po->po_number, 'supplier' => $po->supplier?->name,
+                    'po_date' => $po->po_date?->toDateString(),
+                    'uraian' => $catatan !== '' ? $catatan : $diterima.' dari '.$po->lines->count().' baris barang diterima',
+                    'received_value' => round((float) $po->lines->sum(fn ($l) => (float) $l->qty_received * (float) $l->unit_price), 2),
+                ];
+            })->filter(fn ($p) => $p['received_value'] > 0.009)->values();
 
         $progress = BsWorkOrderProgress::where('status', 'unpaid')->whereNotIn('id', $invoicedSpk)
             ->whereHas('workOrder')->with('workOrder.supplier:id,code,name')->latest('progress_date')->limit(100)->get()

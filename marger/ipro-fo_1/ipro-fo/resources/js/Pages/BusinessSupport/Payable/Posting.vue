@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { router, Link } from '@inertiajs/vue3';
 import { ref, computed, watch } from 'vue';
-import { ArrowLeft, FileInput, ShoppingCart, HardHat, TriangleAlert } from 'lucide-vue-next';
+import { ArrowLeft, FileInput, ShoppingCart, HardHat, TriangleAlert, Receipt } from 'lucide-vue-next';
 import Button from '@/Components/UI/Button.vue';
 import EmptyState from '@/Components/UI/EmptyState.vue';
 
@@ -25,7 +25,8 @@ function matches(row: any, fields: string[]): boolean {
     if (! s) return true;
     return fields.some((f) => String(row[f] ?? '').toLowerCase().includes(s));
 }
-const filteredPos = computed(() => props.pos.filter((p) => matches(p, ['po_number', 'supplier'])));
+// Kotak pencarian hanya menyaring antrean FO. Purchase Order punya kartunya sendiri —
+// sebentuk dengan kartu Progress SPK Kontraktor yang juga tidak berkotak pencarian.
 const filteredRefunds = computed(() => props.refunds.filter((it) => matches(it, ['refund_no', 'customer', 'sumber_label', 'keterangan'])));
 
 const selectedIds = computed(() => props.refunds.filter((it) => checked.value[it.id]).map((it) => it.id));
@@ -111,12 +112,40 @@ function postBulk() {
         <h1 class="flex items-center gap-2 text-2xl font-bold"><FileInput class="h-6 w-6 text-danger-600" /> Posting Invoice dari FO</h1>
         <p class="text-sm text-neutral-500">Terbitkan invoice hutang dari dokumen FO (penerimaan Purchase Order, refund, BLT, komisi, gimmick) atau progress SPK kontraktor. Hutang sudah terbukukan saat penerimaan/progress; invoice menjadi dokumen tagihan yang dibayar via Kuitansi.</p>
 
+        <!-- ══ Dari Purchase Order ══
+             Berdiri sendiri, sebentuk dengan kartu Progress SPK Kontraktor. Dulu baris PO
+             menumpang di tabel "Dari FO" yang berkolom centang, supplier, dan sumber — padahal
+             PO tidak pernah dicentang untuk digabung dan suppliernya sudah pasti dari dokumen
+             PO-nya, sehingga tiga kolom itu selalu kosong dan hanya menyesatkan pembaca. -->
+        <div class="card overflow-hidden">
+            <div class="flex items-center gap-2 border-b border-neutral-200 px-4 py-3 font-semibold dark:border-neutral-800">
+                <ShoppingCart class="h-5 w-5 text-primary-600" /> Dari Purchase Order
+            </div>
+            <table v-if="pos.length" class="w-full text-sm">
+                <thead class="bg-neutral-50 dark:bg-neutral-800"><tr class="text-left text-xs uppercase text-neutral-500"><th class="px-4 py-2.5">No. PO</th><th class="px-4 py-2.5">Supplier</th><th class="px-4 py-2.5">Uraian</th><th class="px-4 py-2.5 text-right">Nilai Diterima</th><th class="px-4 py-2.5 text-right">Aksi</th></tr></thead>
+                <tbody class="divide-y divide-neutral-200 dark:divide-neutral-800">
+                    <tr v-for="p in pos" :key="'po-' + p.id">
+                        <td class="px-4 py-2.5 font-mono font-semibold">
+                            {{ p.po_number }}
+                            <span v-if="p.po_date" class="ml-1 font-sans text-[11px] font-normal text-neutral-400">{{ p.po_date }}</span>
+                        </td>
+                        <td class="px-4 py-2.5">{{ p.supplier ?? '—' }}</td>
+                        <td class="px-4 py-2.5 text-neutral-500">{{ p.uraian }}</td>
+                        <td class="px-4 py-2.5 text-right font-mono">{{ fmtRp(p.received_value) }}</td>
+                        <td class="px-4 py-2.5 text-right"><Button size="sm" @click="postPo(p.id)">Generate Invoice</Button></td>
+                    </tr>
+                </tbody>
+            </table>
+            <EmptyState v-else title="Tidak ada Purchase Order siap diposting" description="PO berstatus disetujui/tutup yang barangnya sudah diterima dan belum diinvoice akan tampil di sini." />
+        </div>
+
         <div class="card overflow-hidden">
             <div class="flex flex-wrap items-center gap-3 border-b border-neutral-200 px-4 py-3 dark:border-neutral-800">
-                <!-- Bagian ini memuat seluruh dokumen asal FO: penerimaan PO, refund, BLT, komisi, gimmick. -->
-                <div class="flex items-center gap-2 font-semibold"><ShoppingCart class="h-5 w-5 text-primary-600" /> Dari FO</div>
+                <!-- Antrean posting FO: refund, BLT, komisi, gimmick. Hanya baris di sinilah yang
+                     bisa dicentang untuk digabung jadi satu invoice hutang. -->
+                <div class="flex items-center gap-2 font-semibold"><Receipt class="h-5 w-5 text-primary-600" /> Dari FO</div>
                 <div class="ml-auto flex items-center gap-2">
-                    <input v-model="q" type="text" placeholder="Cari dokumen / customer / supplier / sumber..."
+                    <input v-model="q" type="text" placeholder="Cari dokumen / customer / sumber / keterangan..."
                         class="h-9 w-64 max-w-full rounded-lg border border-neutral-300 bg-white px-3 text-sm focus:border-primary-500 focus:ring-1 focus:ring-primary-500 dark:border-neutral-700 dark:bg-neutral-800" />
                     <Button v-if="selectedIds.length" size="sm" variant="warning"
                             :disabled="! bolehPostingMassal"
@@ -144,18 +173,9 @@ function postBulk() {
                 <TriangleAlert class="mt-0.5 h-4 w-4 shrink-0" />
                 <p>Masih ada {{ belumPilihSupplier.length }} baris terpilih yang suppliernya belum dipilih.</p>
             </div>
-            <table v-if="pos.length || refunds.length" class="w-full text-sm">
+            <table v-if="refunds.length" class="w-full text-sm">
                 <thead class="bg-neutral-50 dark:bg-neutral-800"><tr class="text-left text-xs uppercase text-neutral-500"><th class="px-4 py-2.5 w-10"><input type="checkbox" v-model="allChecked" class="h-4 w-4 rounded border-neutral-300 text-primary-600 focus:ring-primary-500" title="Pilih semua" /></th><th class="px-4 py-2.5">No. Dokumen</th><th class="px-4 py-2.5">Customer</th><th class="px-4 py-2.5">Supplier</th><th class="px-4 py-2.5">Sumber</th><th class="px-4 py-2.5 text-right">Nilai</th><th class="px-4 py-2.5 text-right">Aksi</th></tr></thead>
                 <tbody class="divide-y divide-neutral-200 dark:divide-neutral-800">
-                    <tr v-for="p in filteredPos" :key="'po-' + p.id">
-                        <td class="px-4 py-2.5"></td>
-                        <td class="px-4 py-2.5 font-mono font-semibold">{{ p.po_number }}</td>
-                        <td class="px-4 py-2.5 text-neutral-400">—</td>
-                        <td class="px-4 py-2.5">{{ p.supplier ?? '—' }}</td>
-                        <td class="px-4 py-2.5"><span class="rounded bg-neutral-100 px-2 py-0.5 text-[11px] font-semibold text-neutral-600 dark:bg-neutral-700 dark:text-neutral-300">PO</span></td>
-                        <td class="px-4 py-2.5 text-right font-mono">{{ fmtRp(p.received_value) }}</td>
-                        <td class="px-4 py-2.5 text-right"><Button size="sm" @click="postPo(p.id)">Generate Invoice</Button></td>
-                    </tr>
                     <tr v-for="it in filteredRefunds" :key="'rf-' + it.id">
                         <td class="px-4 py-2.5"><input type="checkbox" v-model="checked[it.id]" class="h-4 w-4 rounded border-neutral-300 text-primary-600 focus:ring-primary-500" /></td>
                         <td class="px-4 py-2.5 font-mono font-semibold">{{ it.refund_no }}</td>
@@ -190,12 +210,12 @@ function postBulk() {
                                     @click="postRefund(it.id)">Posting Invoice</Button>
                         </td>
                     </tr>
-                    <tr v-if="! filteredPos.length && ! filteredRefunds.length">
+                    <tr v-if="! filteredRefunds.length">
                         <td colspan="7" class="px-4 py-6 text-center text-sm text-neutral-500">Tidak ada hasil untuk "{{ q }}".</td>
                     </tr>
                 </tbody>
             </table>
-            <EmptyState v-else title="Tidak ada PO / refund siap diposting" description="PO dengan barang diterima, atau refund dari Finance AR yang belum diinvoice, akan tampil di sini." />
+            <EmptyState v-else title="Tidak ada antrean FO siap diposting" description="Refund, BLT, komisi, dan gimmick dari FO yang belum diinvoice akan tampil di sini." />
         </div>
 
         <div class="card overflow-hidden">
