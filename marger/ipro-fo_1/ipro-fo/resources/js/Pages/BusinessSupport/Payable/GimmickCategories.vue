@@ -108,7 +108,7 @@ function accLabel(id: number | string) {
 const inputCls = 'h-9 w-full rounded-lg border border-neutral-300 bg-white px-3 text-sm dark:border-neutral-700 dark:bg-neutral-900';
 const sides: Array<{ key: 'debits' | 'credits'; title: string; hint: string; tone: string; icon: any }> = [
     { key: 'debits', title: 'Akun Debit', hint: 'Beban / aset yang menampung biaya gimmick', tone: 'ring-sky-200 dark:ring-sky-800/60', icon: TrendingDown },
-    { key: 'credits', title: 'Akun Kredit', hint: 'Hutang / lawan yang menampung kewajibannya', tone: 'ring-rose-200 dark:ring-rose-800/60', icon: TrendingUp },
+    { key: 'credits', title: 'Akun Kredit', hint: 'Hutang / lawan yang menampung kewajibannya', tone: 'ring-neutral-200 dark:ring-neutral-700', icon: TrendingUp },
 ];
 </script>
 <template>
@@ -119,8 +119,9 @@ const sides: Array<{ key: 'debits' | 'credits'; title: string; hint: string; ton
             <Button @click="openCreate"><template #icon-left><Plus class="h-4 w-4" /></template>Kategori</Button>
         </div>
         <p class="text-sm text-neutral-500">
-            Kategori menentukan akun debit &amp; kredit otomatis untuk pencatatan biaya gimmick — masing-masing sisi boleh <b>lebih dari satu akun</b> dengan porsi persen.
-            Kategori yang ditautkan ke kolom <b>Rincian Biaya</b> akan otomatis mengisi <b>Master Data KPR</b> begitu GMC-nya diposting dari FO.
+            Kategori menentukan <b>akun debit</b> untuk pencatatan biaya gimmick — boleh <b>lebih dari satu akun</b> dengan porsi persen.
+            Sisi kredit sudah dibakukan: seluruh invoice hutang mengkredit <b>satu akun Utang Usaha Supplier</b>.
+            Kategori yang ditautkan ke kolom <b>Rincian Biaya</b> dan sinkronnya hidup akan otomatis mengisi <b>Master Data KPR</b> begitu GMC-nya diposting dari FO.
         </p>
 
         <!-- Cakupan kolom Rincian Biaya Master Data KPR -->
@@ -253,6 +254,15 @@ const sides: Array<{ key: 'debits' | 'credits'; title: string; hint: string; ton
                                     <div class="min-w-0">
                                         <div class="flex items-center gap-1.5 text-sm font-semibold"><component :is="s.icon" class="h-4 w-4 shrink-0" /> {{ s.title }} *</div>
                                         <p class="text-[11px] text-neutral-500">{{ s.hint }}</p>
+                                        <!-- Sisi kredit tidak lagi menentukan akun: PostingInvoiceController::splitFromQueue()
+                                             hanya membaca sisi DEBIT dari account_split, sedangkan sisi kredit SELALU satu
+                                             akun Utang Usaha Supplier dari config. Dikatakan apa adanya di sini supaya
+                                             operator tidak mengira setelan ini akan mengubah jurnalnya. -->
+                                        <p v-if="s.key === 'credits'" class="mt-1 rounded-md bg-amber-50 px-2 py-1 text-[11px] leading-relaxed text-amber-800 ring-1 ring-amber-200 dark:bg-amber-950/30 dark:text-amber-200 dark:ring-amber-800/60">
+                                            <b>Tidak lagi menentukan akun.</b> Sejak sisi kredit invoice hutang dibakukan,
+                                            seluruh invoice mengkredit <b>satu akun Utang Usaha Supplier</b> — setelan di sini
+                                            hanya tersimpan sebagai catatan, tidak dipakai saat posting.
+                                        </p>
                                     </div>
                                     <button type="button" @click="addRow(s.key)" class="inline-flex h-7 shrink-0 items-center gap-1 rounded-lg border border-neutral-300 bg-white px-2 text-[11px] font-semibold text-neutral-600 transition-colors duration-200 hover:bg-neutral-50 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-300 dark:hover:bg-neutral-800"><Plus class="h-3 w-3" /> Akun</button>
                                 </div>
