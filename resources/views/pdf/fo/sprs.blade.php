@@ -199,7 +199,10 @@
         $kwNo = $tts?->no_tts ?: (($reg->xendit_external_id ?: $reg->no_nup) ?: ('NUP-' . $reg->id));
         $kwAmount = (float) ($tts?->amount ?: ($tandaJadi ?: $reg->utj_amount));
         $kwTgl = $tts?->tgl_terima ?: ($reg->xendit_paid_at ?: now());
-        $kwUntuk = $tts?->no_referensi ?: ('Uang Tanda Jadi (UTJ) — NUP ' . ($reg->no_nup ?: $reg->id));
+        // no_nup sudah berformat "NUP-00011" → awalan "NUP" JANGAN ditambahkan lagi
+        // (dulu tercetak dobel: "NUP NUP-00011").
+        $kwRef = $reg->no_nup ?: ('NUP-' . $reg->id);
+        $kwUntuk = $tts?->no_referensi ?: ('Uang Tanda Jadi (UTJ) — ' . $kwRef);
         $terbilang = \App\Support\Terbilang::rupiah($kwAmount);
     @endphp
     <div style="page-break-before: always;"></div>
