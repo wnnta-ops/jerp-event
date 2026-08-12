@@ -16,9 +16,12 @@ const W = 560, P = { l: 144, r: 16 }, BH = 24, GP = 10, PT = 6;
 const H = computed(() => PT * 2 + props.rows.length * (BH + GP));
 const IW = W - P.l - P.r;
 
+// Jaring pengaman terakhir: nilai negatif akan menggeser kursor x mundur sehingga segmen
+// berikutnya tumpang tindih — batangnya salah gambar, bukan sekadar jelek. Controller sudah
+// menjepitnya, tapi komponen ini tidak boleh bergantung pada itu.
 const nilai = (r: BarisTumpuk, k: string): number => {
     const v = r[k];
-    return typeof v === 'number' && Number.isFinite(v) ? v : 0;
+    return typeof v === 'number' && Number.isFinite(v) && v > 0 ? v : 0;
 };
 
 const total = computed(() => props.rows.map((r) => props.keys.reduce((a, k) => a + nilai(r, k.k), 0)));

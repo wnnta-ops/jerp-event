@@ -5,14 +5,24 @@
 import { computed } from 'vue';
 import { S, md, maxAman, kosong } from './viz';
 
-const props = defineProps<{ rows: Array<{ n: string; c: number; v: number }> }>();
+// total: tampilkan baris penjumlahan di bawah batang.
+//
+// MATIKAN untuk deret berupa TAHAPAN (corong). BAST → AJB → Booked Revenue adalah tiga
+// tahap atas unit yang SAMA, jadi menjumlahkannya menghitung uang yang sama sampai tiga
+// kali — 2 unit senilai Rp 800 juta akan tampil sebagai "Total tercatat Rp 2,4 M".
+// Penjumlahan hanya sah bila deretnya benar-benar terpisah satu sama lain.
+const props = withDefaults(defineProps<{
+    rows: Array<{ n: string; c: number; v: number }>;
+    total?: boolean;
+}>(), { total: true });
 
 const W = 330, P = { l: 12, r: 12, t: 4 }, BH = 20, ROW = 46;
-const H = computed(() => P.t + props.rows.length * ROW + 30);
+const H = computed(() => P.t + props.rows.length * ROW + (props.total ? 30 : 4));
 const IW = W - P.l - P.r;
 const puncak = computed(() => maxAman(props.rows.map((r) => r.v)));
 const hampa = computed(() => kosong(props.rows.map((r) => r.v)));
-const total = computed(() => props.rows.reduce((a, r) => a + (Number.isFinite(r.v) ? r.v : 0), 0));
+// dinamai `jumlah`, bukan `total`, karena `total` kini nama prop sakelarnya
+const jumlah = computed(() => props.rows.reduce((a, r) => a + (Number.isFinite(r.v) ? r.v : 0), 0));
 const yTotal = computed(() => P.t + props.rows.length * ROW + 4);
 
 const bar = computed(() => props.rows.map((r, i) => ({
@@ -36,9 +46,11 @@ const bar = computed(() => props.rows.map((r, i) => ({
                     <title>{{ b.n }} (setahun): {{ b.teks }}</title>
                 </rect>
             </g>
-            <line :x1="P.l" :x2="W - P.r" :y1="yTotal" :y2="yTotal" class="ax" />
-            <text :x="P.l" :y="yTotal + 18" class="dlab">Total tercatat</text>
-            <text :x="W - P.r" :y="yTotal + 18" text-anchor="end" class="vlab">{{ md(total) }}</text>
+            <template v-if="total">
+                <line :x1="P.l" :x2="W - P.r" :y1="yTotal" :y2="yTotal" class="ax" />
+                <text :x="P.l" :y="yTotal + 18" class="dlab">Total tercatat</text>
+                <text :x="W - P.r" :y="yTotal + 18" text-anchor="end" class="vlab">{{ md(jumlah) }}</text>
+            </template>
         </svg>
     </div>
 </template>

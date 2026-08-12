@@ -27,20 +27,31 @@ const props = withDefaults(defineProps<{
 const W = 560, BH = 22, GP = 8, PT = 6;
 const H = computed(() => PT * 2 + props.rows.length * (BH + GP));
 const IW = computed(() => W - props.talangKiri - props.talangKanan);
-const puncak = computed(() => maxAman(props.rows.map((r) => r.v)));
+// Skala memakai NILAI MUTLAK supaya baris bersaldo negatif (mis. rekening berposisi kredit)
+// tetap punya panjang batang yang sebanding. Tanpa ini, maxAman() hanya melihat nilai
+// terbesar >= 0; bila semua baris negatif pembaginya jatuh ke 1 dan seluruh batang meletus
+// melewati bingkai.
+const puncak = computed(() => maxAman(props.rows.map((r) => Math.abs(r.v))));
 const hampa = computed(() => kosong(props.rows.map((r) => r.v)));
 
 function label(v: number): string {
     return props.hitung ? `${v.toLocaleString('id-ID')}${props.satuan ? ' ' + props.satuan : ''}` : rp(v);
 }
 
-const bar = computed(() => props.rows.map((r, i) => ({
-    n: r.n,
-    y: PT + i * (BH + GP),
-    w: Math.max(3, IW.value * r.v / puncak.value),
-    fill: props.flat ?? props.ramp[Math.min(5, 1 + (props.kunci ? (props.kunci[i] ?? i) : i))],
-    teks: label(r.v),
-})));
+const bar = computed(() => props.rows.map((r, i) => {
+    const minus = r.v < 0;
+    return {
+        n: r.n,
+        y: PT + i * (BH + GP),
+        w: Math.max(3, IW.value * Math.abs(r.v) / puncak.value),
+        // Saldo negatif memakai warna kritis, bukan corak ramp: itu keadaan yang perlu
+        // menonjol, dan warnanya selalu berpasangan dengan angka bertanda minus di sebelahnya
+        // sehingga tidak pernah warna saja yang membawa arti.
+        fill: minus ? 'var(--viz-crit)' : (props.flat ?? props.ramp[Math.min(5, 1 + (props.kunci ? (props.kunci[i] ?? i) : i))]),
+        teks: label(r.v),
+        minus,
+    };
+}));
 </script>
 
 <template>
@@ -50,9 +61,10 @@ const bar = computed(() => props.rows.map((r, i) => ({
             <g v-for="b in bar" :key="b.n">
                 <text :x="talangKiri - 10" :y="b.y + BH / 2 + 4" text-anchor="end" class="dlab">{{ b.n }}</text>
                 <rect data-mark :x="talangKiri" :y="b.y" :width="b.w.toFixed(1)" :height="BH" rx="4" :fill="b.fill">
-                    <title>{{ b.n }}: {{ b.teks }}</title>
+                    <title>{{ b.n }}: {{ b.teks }}{{ b.minus ? ' (posisi kredit)' : '' }}</title>
                 </rect>
-                <text :x="(talangKiri + b.w + 8).toFixed(1)" :y="b.y + BH / 2 + 4" class="vlab">{{ b.teks }}</text>
+                <text :x="(talangKiri + b.w + 8).toFixed(1)" :y="b.y + BH / 2 + 4" class="vlab"
+                      :fill="b.minus ? 'var(--viz-crit)' : undefined">{{ b.teks }}</text>
             </g>
         </svg>
     </div>

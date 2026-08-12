@@ -20,7 +20,16 @@ class DashboardController extends Controller
     public function __invoke(Request $request): Response
     {
         $user = $request->user();
-        $bulan = $this->monthLabels(8);
+
+        // Tahun dicetak di KEDUA ujung bila rentangnya melintasi pergantian tahun. Menempelkan
+        // satu tahun di belakang rentang akan berbohong mulai September: "Jan–Agu 2026" masih
+        // benar, tetapi "Agu–Mar 2026" tidak — bulan Mar-nya sudah 2027.
+        $bulanCarbon = $this->months(8);
+        $awal  = $bulanCarbon[0];
+        $akhir = $bulanCarbon[count($bulanCarbon) - 1];
+        $labelPeriode = $awal->year === $akhir->year
+            ? self::MONTHS_ID[$awal->month].'–'.self::MONTHS_ID[$akhir->month].' '.$awal->year
+            : self::MONTHS_ID[$awal->month].' '.$awal->year.'–'.self::MONTHS_ID[$akhir->month].' '.$akhir->year;
 
         return Inertia::render('Dashboard/Index', [
             'greeting' => [
@@ -31,7 +40,7 @@ class DashboardController extends Controller
             'periode' => [
                 // Rentang batang bulanan; ditulis di kepala halaman supaya pembaca tahu
                 // angka yang dilihatnya mencakup periode apa.
-                'label'   => $bulan[0].'–'.$bulan[count($bulan) - 1].' '.now()->year,
+                'label'   => $labelPeriode,
                 'project' => (string) (DB::table('projects')->value('name') ?? 'Semua Project'),
             ],
             'charts' => $this->charts(),
@@ -137,9 +146,44 @@ class DashboardController extends Controller
             ? 'CASE WHEN i.net_receivable > 0 THEN i.net_receivable ELSE i.total END'
             : 'i.total';
 
+        // UANG MUKA TERKOMPENSASI ikut mengurangi sisa piutang. Ini bukan tambahan hiasan:
+        // ArRekonsiliasiController mendefinisikan Sisa Piutang = Σ Invoice − Σ Pembayaran
+        // − Σ UM terkompensasi. Tanpa suku ketiga, kartu ini melaporkan customer masih
+        // berhutang padahal uang mukanya sudah dipakai menutup tagihan — persis selisih
+        // yang membuat dashboard dan halaman rekonsiliasi resmi bercerita beda.
+        $adaUm = Schema::hasTable('bs_ar_um_compensations')
+            && Schema::hasColumn('bs_ar_um_compensations', 'booking_id')
+            && Schema::hasColumn('bs_ar_um_compensations', 'amount')
+            && Schema::hasColumn($t, 'booking_id');
+
         // GREATEST(...,0): faktur yang kelebihan bayar tidak boleh membuat sisa jadi minus.
-        $sisa     = "SUM(GREATEST({$tagih} - COALESCE(i.paid_amount,0), 0))";
-        $terbayar = 'SUM(COALESCE(i.paid_amount,0))';
+        //
+        // Faktur diringkas PER BOOKING lebih dulu, baru UM dikurangkan. Kalau UM di-join
+        // langsung ke tabel faktur, satu UM akan tergandakan sebanyak jumlah faktur booking
+        // itu; kalau dikurangkan dengan MAX() di tingkat cluster, hanya UM terbesar dalam
+        // cluster yang terpakai. Meringkas per booking dulu membuat tiap UM terpakai
+        // tepat sekali.
+        // Alias sub-query sengaja DIBEDAKAN dari alias hasil akhir (terbayar/sisa): MySQL
+        // menyelesaikan nama di ORDER BY terhadap kolom sumber lebih dulu, sehingga nama
+        // yang sama membuat ORDER BY menunjuk kolom sub-query yang tidak teragregasi dan
+        // ditolak only_full_group_by.
+        $perBooking = DB::table($t.' as i')
+            ->selectRaw(
+                'i.booking_id,'
+                .' SUM(COALESCE(i.paid_amount,0)) AS bayar_bk,'
+                ." SUM(GREATEST({$tagih} - COALESCE(i.paid_amount,0), 0)) AS sisa_bk"
+            )
+            ->when(Schema::hasColumn($t, 'deleted_at'), fn ($w) => $w->whereNull('i.deleted_at'))
+            ->groupBy('i.booking_id');
+
+        // UM yang terpakai dibatasi sebesar sisa tagihannya (LEAST): kelebihan uang muka
+        // bukan "terbayar", dan tidak boleh membuat sisa piutang jadi minus.
+        $sisa     = 'SUM(GREATEST(f.sisa_bk - COALESCE(um.dipakai, 0), 0))';
+        $terbayar = 'SUM(f.bayar_bk + LEAST(COALESCE(um.dipakai, 0), f.sisa_bk))';
+        if (! $adaUm) {
+            $sisa     = 'SUM(f.sisa_bk)';
+            $terbayar = 'SUM(f.bayar_bk)';
+        }
 
         // Rantai cluster hanya dipasang bila SEMUA tabel perantaranya ada; bila tidak,
         // grafik tetap tampil sebagai satu ember daripada gagal total.
@@ -150,15 +194,26 @@ class DashboardController extends Controller
 
         $label = $adaRantai ? "COALESCE(c.name, 'Tanpa cluster')" : "'Semua'";
 
-        $q = DB::table($t.' as i')
+        $q = DB::query()->fromSub($perBooking, 'f')
             ->selectRaw("{$label} AS n, {$terbayar} AS terbayar, {$sisa} AS sisa")
             ->groupByRaw($label)
             ->orderByRaw('(terbayar + sisa) DESC')
-            ->limit(6);
+            ->limit(5);
+
+        if ($adaUm) {
+            $umPerBooking = DB::table('bs_ar_um_compensations')
+                ->selectRaw('booking_id, SUM(COALESCE(amount,0)) AS dipakai')
+                ->when(
+                    Schema::hasColumn('bs_ar_um_compensations', 'deleted_at'),
+                    fn ($w) => $w->whereNull('deleted_at')
+                )
+                ->groupBy('booking_id');
+            $q->leftJoinSub($umPerBooking, 'um', fn ($j) => $j->on('um.booking_id', '=', 'f.booking_id'));
+        }
 
         if ($adaRantai) {
             $q->leftJoin('bookings as b', function ($j) {
-                $j->on('b.id', '=', 'i.booking_id');
+                $j->on('b.id', '=', 'f.booking_id');
                 if (Schema::hasColumn('bookings', 'deleted_at')) {
                     $j->whereNull('b.deleted_at');
                 }
@@ -175,10 +230,6 @@ class DashboardController extends Controller
                     $j->whereNull('c.deleted_at');
                 }
             });
-        }
-
-        if (Schema::hasColumn($t, 'deleted_at')) {
-            $q->whereNull('i.deleted_at');
         }
 
         $rows = [];
@@ -268,20 +319,22 @@ class DashboardController extends Controller
         // seluruh baris berarti MENGALIKAN HPP dengan jumlah periode yang pernah di-generate.
         // Konvensi repo memang mengambil satu baris terakhir per unit — lihat
         // CogsQueryController::hppUnit() yang groupBy('unit_id') lalu sortByDesc('id')->first().
+        //
+        // Dipilih dengan ROW_NUMBER, BUKAN sub-query skalar berkorelasi. Dua sebabnya:
+        //  - kinerja: sub-query berkorelasi dijalankan MySQL sekali PER BARIS induk, jadi
+        //    biayanya tumbuh kuadratik seiring bertambahnya periode;
+        //  - kebenaran: korelasi `h3.unit_id = h2.unit_id` tidak pernah benar untuk unit_id
+        //    NULL (logika tiga-nilai), sehingga baris HPP tanpa unit HILANG seluruhnya.
+        //    Window function tidak memakai perbandingan kesetaraan, jadi baris itu tetap
+        //    terpilih lalu jatuh ke ember 'Tanpa cluster'.
         $punyaPeriode = Schema::hasColumn($t, 'period_year') && Schema::hasColumn($t, 'period_month');
+        $urut = $punyaPeriode ? 'period_year DESC, period_month DESC, id DESC' : 'id DESC';
 
-        $terakhir = DB::table($t.' as h2')
-            ->selectRaw('h2.unit_id, MAX(h2.id) AS id')
-            ->when(Schema::hasColumn($t, 'deleted_at'), fn ($w) => $w->whereNull('h2.deleted_at'))
-            ->when($punyaPeriode, fn ($w) => $w->whereRaw(
-                '(h2.period_year, h2.period_month) = (
-                     SELECT h3.period_year, h3.period_month FROM '.$t.' AS h3
-                     WHERE h3.unit_id = h2.unit_id'
-                     .(Schema::hasColumn($t, 'deleted_at') ? ' AND h3.deleted_at IS NULL' : '').'
-                     ORDER BY h3.period_year DESC, h3.period_month DESC, h3.id DESC LIMIT 1
-                 )'
-            ))
-            ->groupBy('h2.unit_id');
+        $berperingkat = DB::table($t)
+            ->selectRaw("id, ROW_NUMBER() OVER (PARTITION BY unit_id ORDER BY {$urut}) AS rn")
+            ->when(Schema::hasColumn($t, 'deleted_at'), fn ($w) => $w->whereNull('deleted_at'));
+
+        $terakhir = DB::query()->fromSub($berperingkat, 'r')->select('r.id')->where('r.rn', 1);
 
         $q = DB::table($t.' as h')
             ->joinSub($terakhir, 'p', fn ($j) => $j->on('p.id', '=', 'h.id'))
@@ -711,13 +764,21 @@ class DashboardController extends Controller
             ->selectRaw("a.name AS nama, {$saldo} AS saldo")
             ->groupBy('a.id', 'a.name')
             // Rekening yang bermutasi tapi berakhir nol tidak punya batang untuk digambar.
+            // Saldo NEGATIF (posisi kredit) TETAP ditampilkan — itu keadaan yang justru perlu
+            // dilihat; VizHBars menggambarnya ke arah berlawanan dengan warna kritis.
             ->havingRaw("{$saldo} <> 0")
-            ->orderByRaw("{$saldo} DESC")
+            ->orderByRaw("ABS({$saldo}) DESC")
             ->limit(8);
 
         // Hanya jurnal sah yang boleh membentuk saldo (lihat catatan STATUS JURNAL di atas).
         if (Schema::hasColumn('bs_journals', 'status')) {
             $q->where('j.status', 'posted');
+        }
+        // Batas tanggal disamakan dengan CashBookController::balances(): saldo "akhir" berarti
+        // sampai HARI INI. Tanpa ini, jurnal bertanggal ke depan — yang sah dibuat untuk
+        // transaksi terjadwal — akan membuat kartu ini melaporkan saldo yang belum ada.
+        if (Schema::hasColumn('bs_journals', 'journal_date')) {
+            $q->whereDate('j.journal_date', '<=', now()->toDateString());
         }
         // bs_journal_lines memang tidak punya deleted_at; penjagaannya tetap ditulis per tabel
         // supaya penambahan kolom itu kelak langsung ikut terhormat tanpa mengubah kode ini.
@@ -821,7 +882,11 @@ class DashboardController extends Controller
             // sedangkan header realized_amount-nya masih 0 — misalnya hasil impor atau tambal data —
             // tetap terhitung. Susunan COALESCE menyesuaikan kolom yang benar-benar tersedia.
             $nilai = match (true) {
-                $adaRincian && $adaHeader => 'SUM(COALESCE(ln.realisasi, a.realized_amount, 0))',
+                // COALESCE saja tidak cukup: ia hanya mundur ke header saat rincian NULL.
+                // Bon yang punya baris rincian bernilai 0 (baru dibuat, belum diisi) akan
+                // membuat 0 itu menang atas realisasi header yang sudah terisi, sehingga
+                // pertanggungjawaban yang nyata hilang dari batang.
+                $adaRincian && $adaHeader => 'SUM(CASE WHEN COALESCE(ln.realisasi, 0) > 0 THEN ln.realisasi ELSE COALESCE(a.realized_amount, 0) END)',
                 $adaRincian               => 'SUM(COALESCE(ln.realisasi, 0))',
                 default                   => 'SUM(COALESCE(a.realized_amount, 0))',
             };
@@ -1068,10 +1133,23 @@ class DashboardController extends Controller
         // ekuitas. Tanpa ini tinggi batang AKTIVA dan PASIVA tidak akan pernah sama.
         $labaBerjalan = $saldoKredit('pendapatan') - $saldoDebet('beban');
 
+        // BATANG BERTUMPUK TIDAK BISA MENGGAMBARKAN ANGKA NEGATIF: lebarnya sebanding
+        // dengan nilai, dan segmen negatif akan menggeser kursor x mundur sehingga segmen
+        // berikutnya tumpang tindih — batangnya salah gambar, bukan sekadar jelek.
+        // Keadaan ini nyata: rugi berjalan yang melampaui ekuitas membuat 'Tetap / Ekuitas'
+        // pada PASIVA jadi negatif; saldo aktiva pun bisa kredit pada data yang belum rapi.
+        //
+        // Karena itu nilainya dijepit ke nol untuk DIGAMBAR. Angkanya tidak hilang: tooltip
+        // tiap segmen memakai nilai yang dijepit ini juga, jadi tidak ada yang berbohong —
+        // yang tidak digambar hanyalah arah negatifnya, dan itu memang di luar kemampuan
+        // bentuk grafik ini. Kalau ekuitas negatif perlu terbaca, ia layak jadi kartunya
+        // sendiri (kolom divergen), bukan dipaksakan ke tumpukan.
+        $jepit = static fn (float $v): float => round(max(0.0, $v), 2);
+
         return [
             'rows' => [
-                ['n' => 'AKTIVA', 'a' => round($saldoDebet('aktiva_lancar'), 2), 'b' => round($saldoDebet('aktiva_tetap'), 2)],
-                ['n' => 'PASIVA', 'a' => round($saldoKredit('kewajiban'), 2),    'b' => round($saldoKredit('ekuitas') + $labaBerjalan, 2)],
+                ['n' => 'AKTIVA', 'a' => $jepit($saldoDebet('aktiva_lancar')), 'b' => $jepit($saldoDebet('aktiva_tetap'))],
+                ['n' => 'PASIVA', 'a' => $jepit($saldoKredit('kewajiban')),    'b' => $jepit($saldoKredit('ekuitas') + $labaBerjalan)],
             ],
             'keys' => $keys,
         ];
@@ -1252,13 +1330,20 @@ class DashboardController extends Controller
 
         // 1) Plafon per cost center. havingRaw membuang cost center berplafon 0 di sisi DB
         //    supaya layar tak pernah membagi dengan nol.
+        //    Anggaran TANPA cost center tidak dibuang: BudgetController memvalidasi
+        //    cost_center_id sebagai nullable, jadi menyaringnya keluar akan menyembunyikan
+        //    plafon yang benar-benar ada. Dikumpulkan ke satu ember bernama, sejalan dengan
+        //    pola 'Tanpa cluster' pada Grafik 11/12/17/18. LEFT JOIN, bukan JOIN, agar baris
+        //    ber-cost_center_id NULL tidak lenyap di tingkat join.
+        //    Sentinel 0 dipakai untuk "tanpa cost center" supaya baris itu tetap punya kunci
+        //    yang bisa dicocokkan dengan realisasinya, tanpa bergantung pada perbandingan NULL.
         $plafon = DB::table('bs_budgets as bg')
-            ->join('bs_cost_centers as cc', 'cc.id', '=', 'bg.cost_center_id')
-            ->select('bg.cost_center_id as cc_id', 'cc.name as cc_name')
+            ->leftJoin('bs_cost_centers as cc', 'cc.id', '=', 'bg.cost_center_id')
+            ->selectRaw('COALESCE(bg.cost_center_id, 0) as cc_id')
+            ->selectRaw("COALESCE(cc.name, 'Tanpa cost center') as cc_name")
             ->selectRaw('COALESCE(SUM(bg.amount), 0) as plafon')
             ->where('bg.year', $year)
-            ->whereNotNull('bg.cost_center_id')
-            ->groupBy('bg.cost_center_id', 'cc.name')
+            ->groupByRaw("COALESCE(bg.cost_center_id, 0), COALESCE(cc.name, 'Tanpa cost center')")
             ->havingRaw('COALESCE(SUM(bg.amount), 0) > 0')
             ->orderByDesc(DB::raw('SUM(bg.amount)'))
             ->limit(6); // enam cost center berplafon terbesar
@@ -1326,11 +1411,14 @@ class DashboardController extends Controller
             : $ccEfektif;
 
         // Hanya pasangan akun+cost center yang dianggarkan yang boleh dihitung sebagai realisasi.
+        // cost_center_id NULL dinormalkan ke sentinel 0 di kedua sisi perbandingan, sejalan
+        // dengan kunci yang dipakai daftar plafon — tanpa itu, anggaran tanpa cost center
+        // tidak akan pernah berpasangan dengan jurnalnya (NULL = NULL bernilai UNKNOWN).
         $anggaran = DB::table('bs_budgets')
-            ->select('cost_center_id', 'account_id')
+            ->selectRaw('COALESCE(cost_center_id, 0) as cost_center_id, account_id')
             ->where('year', $year)
-            ->whereIn('cost_center_id', $ccIds)
-            ->groupBy('cost_center_id', 'account_id');
+            ->whereIn(DB::raw('COALESCE(cost_center_id, 0)'), $ccIds)
+            ->groupByRaw('COALESCE(cost_center_id, 0), account_id');
 
         if (Schema::hasColumn('bs_budgets', 'status')) {
             $anggaran->where('status', 'approved');
@@ -1341,7 +1429,7 @@ class DashboardController extends Controller
             ->join('bs_accounts as a', 'a.id', '=', 'jl.account_id')
             ->joinSub($anggaran, 'b', function ($join) use ($ccExpr) {
                 $join->on('b.account_id', '=', 'jl.account_id')
-                    ->whereRaw($ccExpr.' = b.cost_center_id');
+                    ->whereRaw('COALESCE('.$ccExpr.', 0) = b.cost_center_id');
             })
             ->where('j.period_year', $year)
             ->groupBy('b.cost_center_id')
@@ -1397,17 +1485,25 @@ class DashboardController extends Controller
             return ['rows' => []];
         }
 
-        $adaAddendum = Schema::hasColumn($t, 'addendum_value');
-        $nilaiSpk = 'COALESCE(w.contract_value,0)'.($adaAddendum ? ' + COALESCE(w.addendum_value,0)' : '');
-
-        $q = DB::table($t.' as w')->selectRaw(
-            "COALESCE(d.cluster_name, 'Tanpa Cluster') AS n, COUNT(*) AS jml, SUM({$nilaiSpk}) AS nilai"
-        );
+        // contract_value SUDAH memuat addendum: ContractorService::addendum() menulis
+        // contract_value = lama + delta sekaligus menumpuknya di addendum_value. Menjumlah
+        // keduanya menghitung addendum DUA KALI dan membuat nilai di kartu ini melebihi
+        // nilai kontrak yang dipajang modul Contractor Management.
+        $nilaiSpk = 'COALESCE(w.contract_value,0)';
 
         $bisaCluster = Schema::hasTable('bs_work_order_units')
             && Schema::hasColumn('bs_work_order_units', 'unit_id')
             && Schema::hasTable('units') && Schema::hasColumn('units', 'cluster_id')
             && Schema::hasTable('clusters') && Schema::hasColumn('clusters', 'name');
+
+        // Ekspresi label harus ikut berubah saat tabel clusternya tidak ada: kalau tetap
+        // menyebut d.cluster_name sementara sub-query 'd' tidak pernah di-join, MySQL
+        // melempar "Unknown column" — struktur kosong yang dijanjikan malah jadi error.
+        $labelCluster = $bisaCluster ? "COALESCE(d.cluster_name, 'Tanpa Cluster')" : "'Tanpa Cluster'";
+
+        $q = DB::table($t.' as w')->selectRaw(
+            "{$labelCluster} AS n, COUNT(*) AS jml, SUM({$nilaiSpk}) AS nilai"
+        );
 
         if ($bisaCluster) {
             // Porsi tiap cluster dalam satu SPK, lalu ambil yang terbesar (window function,
@@ -1426,20 +1522,25 @@ class DashboardController extends Controller
             );
 
             $q->leftJoinSub($dominan, 'd', fn ($j) => $j->on('d.work_order_id', '=', 'w.id')->where('d.rn', '=', 1));
-        } else {
-            $q->selectRaw('NULL AS dummy_cluster');   // tidak dipakai; ekspresi n jatuh ke 'Tanpa Cluster'
         }
 
         if (Schema::hasColumn($t, 'deleted_at')) {
             $q->whereNull('w.deleted_at');
         }
         // SPK batal tidak lagi menjadi pekerjaan berjalan, jadi tidak ikut dihitung.
+        // SPK 'closed' TETAP dihitung: retensinya sudah dilepas tapi pekerjaannya nyata dan
+        // nilainya tetap bagian dari beban cluster. Label panel di layar karena itu berbunyi
+        // "JUMLAH SPK (TIDAK BATAL)", bukan "AKTIF" — supaya tidak menjanjikan angka yang
+        // sama dengan ringkasan 'active' pada modul Contractor Management.
         if (Schema::hasColumn($t, 'status')) {
             $q->where('w.status', '!=', 'cancelled');
         }
 
+        // Batas 5 baris, BUKAN 6: ramp oranye hanya punya 6 langkah dan indeks 0 dilewati
+        // (langkah terpucat tidak lolos ambang kontras), jadi baris ke-6 akan berwarna kembar
+        // dengan baris ke-5. Sejalan pula dengan Grafik 12 & 18 yang juga membatasi 5.
         $rows = [];
-        foreach ($q->groupByRaw("COALESCE(d.cluster_name, 'Tanpa Cluster')")->orderByRaw('nilai DESC')->limit(6)->get() as $r) {
+        foreach ($q->groupByRaw($labelCluster)->orderByRaw('nilai DESC')->limit(5)->get() as $r) {
             $rows[] = ['n' => (string) $r->n, 'jml' => (int) $r->jml, 'nilai' => round((float) $r->nilai, 2)];
         }
 
@@ -1567,11 +1668,21 @@ class DashboardController extends Controller
     }
 
     /**
-     * Grafik 13 — Summary Retensi: nilai ditahan vs dilepas per bulan (8 bulan terakhir).
+     * Grafik 13 — Summary Retensi KONTRAKTOR: nilai ditahan vs dilepas per bulan.
      *
-     * "Ditahan" memakai tanggal pencatatan retensinya, "dilepas" memakai released_at dan
-     * baru jatuh ke created_at bila tanggal lepasnya belum terisi. Pelepasan yang DITOLAK
-     * saat approval tidak dihitung sebagai dilepas — uangnya memang tidak keluar.
+     * SUMBERNYA RETENSI KONTRAKTOR, BUKAN RETENSI KPR. Kartu ini duduk di antara Grafik 11
+     * dan 12 dengan tanda modul "CONTRACTOR MGT", jadi angkanya harus berasal dari SPK:
+     *  - ditahan : bs_work_order_progress.retention_amount, dibulankan pada tanggal progres.
+     *              Di situlah ContractorService menahan retensi tiap kali progres dicatat
+     *              (lihat penambahan retention_held pada baris 188 & 396 servicenya).
+     *  - dilepas : bs_work_orders.retention_held yang dilepas, dibulankan pada
+     *              retention_released_at — yang diisi releaseRetention() saat SPK ditutup.
+     *
+     * Dua tabel kpr_retentions/kpr_retention_releases yang dipakai sebelumnya adalah retensi
+     * pencairan KPR milik modul Bank Loan — perkara yang sama sekali berbeda, dan angkanya
+     * tidak akan pernah cocok dengan Summary Retensi di modul Contractor Management.
+     *
+     * Pelepasan yang DITOLAK saat approval tidak dihitung — uangnya memang tidak keluar.
      *
      * @return array{labels: array<int, string>, series: array<int, array{n: string, c: int, v: array<int, float>}>}
      */
@@ -1580,8 +1691,10 @@ class DashboardController extends Controller
         $labels = $this->monthLabels(8);
         $bulan  = $this->months(8);
 
-        $ditahan = $this->bulananJumlah('kpr_retentions', 'created_at', 'amount', $bulan);
-        $dilepas = $this->bulananJumlah('kpr_retention_releases', 'released_at', 'amount', $bulan, 'approval_status');
+        $ditahan = $this->bulananJumlah('bs_work_order_progress', 'progress_date', 'retention_amount', $bulan);
+        // retention_held disetel 0 saat dilepas, jadi nilainya diambil dari sisi progres:
+        // total retensi SPK yang tanggal lepasnya jatuh di bulan itu.
+        $dilepas = $this->retensiSpkDilepas($bulan);
 
         // Dua-duanya kosong → jangan tampilkan deretan nol yang menyaru data.
         if (array_sum($ditahan) <= 0 && array_sum($dilepas) <= 0) {
@@ -1592,6 +1705,55 @@ class DashboardController extends Controller
             ['n' => 'Ditahan', 'c' => 7, 'v' => $ditahan],
             ['n' => 'Dilepas', 'c' => 2, 'v' => $dilepas],
         ]];
+    }
+
+    /**
+     * Retensi SPK yang DILEPAS per bulan.
+     *
+     * retention_held di-nol-kan saat pelepasan, jadi nilainya tidak bisa dibaca dari sana
+     * setelah kejadian. Yang dipakai adalah jumlah retensi yang pernah ditahan pada seluruh
+     * progres SPK itu, dibulankan pada tanggal pelepasannya.
+     *
+     * @param  array<int, Carbon>  $bulan
+     * @return array<int, float>
+     */
+    private function retensiSpkDilepas(array $bulan): array
+    {
+        $ember = array_fill(0, count($bulan), 0.0);
+
+        if (! Schema::hasTable('bs_work_orders')
+            || ! Schema::hasColumn('bs_work_orders', 'retention_released_at')
+            || ! Schema::hasTable('bs_work_order_progress')
+            || ! Schema::hasColumn('bs_work_order_progress', 'retention_amount')
+            || ! Schema::hasColumn('bs_work_order_progress', 'work_order_id')) {
+            return $ember;
+        }
+
+        $mulai = $bulan[0]->copy()->startOfMonth();
+
+        $q = DB::table('bs_work_orders as w')
+            ->join('bs_work_order_progress as p', 'p.work_order_id', '=', 'w.id')
+            ->selectRaw("DATE_FORMAT(w.retention_released_at, '%Y-%m') AS bln, SUM(COALESCE(p.retention_amount,0)) AS nilai")
+            ->whereNotNull('w.retention_released_at')
+            ->where('w.retention_released_at', '>=', $mulai)
+            ->groupByRaw("DATE_FORMAT(w.retention_released_at, '%Y-%m')");
+
+        if (Schema::hasColumn('bs_work_orders', 'deleted_at')) {
+            $q->whereNull('w.deleted_at');
+        }
+
+        $peta = [];
+        foreach ($bulan as $i => $m) {
+            $peta[$m->format('Y-m')] = $i;
+        }
+        foreach ($q->get() as $r) {
+            $i = $peta[(string) $r->bln] ?? null;
+            if ($i !== null) {
+                $ember[$i] = round((float) $r->nilai, 2);
+            }
+        }
+
+        return $ember;
     }
 
     /**
@@ -1688,9 +1850,9 @@ class DashboardController extends Controller
             // Urutan c 0/1/2 dikunci: layar memilih warna seri berdasarkan angka ini,
             // bukan berdasarkan nama seri — jangan ditukar urutannya.
             'series' => [
-                ['n' => 'BAST',        'c' => 0, 'unit' => $bast['unit'],   'nilai' => $bast['nilai']],
-                ['n' => 'AJB',         'c' => 1, 'unit' => $ajb['unit'],    'nilai' => $ajb['nilai']],
-                ['n' => 'Booked Rev.', 'c' => 2, 'unit' => $booked['unit'], 'nilai' => $booked['nilai']],
+                ['n' => 'BAST',        'c' => 0, 'unit' => $bast['unit'],   'nilai' => $bast['nilai'],   'unit_tahunan' => $bast['unit_tahunan']],
+                ['n' => 'AJB',         'c' => 1, 'unit' => $ajb['unit'],    'nilai' => $ajb['nilai'],    'unit_tahunan' => $ajb['unit_tahunan']],
+                ['n' => 'Booked Rev.', 'c' => 2, 'unit' => $booked['unit'], 'nilai' => $booked['nilai'], 'unit_tahunan' => $booked['unit_tahunan']],
             ],
         ];
     }
@@ -1712,7 +1874,7 @@ class DashboardController extends Controller
      */
     private function serahTerimaSeri(string $table, string $dateCol, ?string $amountCol, array $months): array
     {
-        $kosong = ['unit' => array_fill(0, count($months), 0), 'nilai' => 0.0];
+        $kosong = ['unit' => array_fill(0, count($months), 0), 'nilai' => 0.0, 'unit_tahunan' => 0];
 
         if ($months === [] || ! Schema::hasTable($table) || ! Schema::hasColumn($table, $dateCol)) {
             return $kosong;
@@ -1741,12 +1903,21 @@ class DashboardController extends Controller
         }
 
         // (b) Kartu nilai — rentang tersendiri: 1 Januari s/d 31 Desember tahun ini.
+        //
+        // JUMLAH UNIT TAHUNAN IKUT DIHITUNG DI SINI, tidak boleh diturunkan dengan
+        // menjumlahkan ember bulanan di layar: ember bulanan di-dedupe per (unit, BULAN),
+        // sehingga satu unit yang dokumennya terbit ulang di bulan berbeda muncul pada dua
+        // batang dan akan terhitung dua kali. Dihitung di sini, unit dan rupiah memakai
+        // rentang DAN granularitas dedupe yang sama — dua angka pada kartu yang sama tidak
+        // lagi saling membantah.
         $nilai = 0.0;
+        $unitTahunan = 0;
         foreach ($this->serahTerimaAgregat($table, $dateCol, $amountCol, now()->startOfYear(), now()->endOfYear(), false) as $r) {
             $nilai += (float) $r->nilai;
+            $unitTahunan += (int) $r->unit;
         }
 
-        return ['unit' => $unit, 'nilai' => $nilai];
+        return ['unit' => $unit, 'nilai' => $nilai, 'unit_tahunan' => $unitTahunan];
     }
 
     /**

@@ -19,7 +19,7 @@ import { ORA, TAHAP, S, type Seri, type Kunci, type Baris, type BarisTumpuk } fr
 
 interface Bulanan { labels: string[]; series: Seri[] }
 interface Tumpuk { rows: BarisTumpuk[]; keys: Kunci[] }
-interface SeriGabungan { n: string; c: number; unit: number[]; nilai: number }
+interface SeriGabungan { n: string; c: number; unit: number[]; nilai: number; unit_tahunan: number }
 
 const props = defineProps<{
     greeting?: { name: string | null; last_login_at: string | null; last_login_ip: string | null };
@@ -54,9 +54,10 @@ const spkNilai: Baris[] = c.spk.rows.map((r) => ({ n: r.n, v: r.nilai }));
 /** Grafik gabungan: deret bulanan (unit) dan ringkasan tahunan (nilai) dari sumber yang sama. */
 const brUnit: Seri[] = c.bast_ajb_br.series.map((s) => ({ n: s.n, c: s.c, v: s.unit }));
 const brNilai = c.bast_ajb_br.series.map((s) => ({ n: s.n, c: s.c, v: s.nilai }));
-const brTotalUnit = c.bast_ajb_br.series.map((s) => ({
-    n: s.n, total: s.unit.reduce((a, b) => a + b, 0),
-}));
+// Total unit setahun DIAMBIL DARI CONTROLLER, bukan dijumlahkan dari ember bulanan:
+// ember bulanan di-dedupe per (unit, bulan), sehingga satu unit yang dokumennya terbit
+// ulang di bulan berbeda akan terhitung dua kali dan membantah angka rupiah di sebelahnya.
+const brTotalUnit = c.bast_ajb_br.series.map((s) => ({ n: s.n, total: s.unit_tahunan }));
 
 function fmtDateTime(iso: string | null | undefined): string {
     if (!iso) return '—';
@@ -146,7 +147,7 @@ function fmtDateTime(iso: string | null | undefined): string {
                     <h2 class="text-sm font-bold">5 · Bon Sementara / Kasbon</h2>
                     <span class="text-[10.5px] font-bold tracking-wide text-neutral-400">CASH BOOK</span>
                 </div>
-                <p class="text-xs text-neutral-500 mt-0.5 mb-2.5">Pengajuan vs pertanggungjawaban per bulan.</p>
+                <p class="text-xs text-neutral-500 mt-0.5 mb-2.5">Pengajuan vs pertanggungjawaban per bulan — sumbu dalam <b>juta rupiah</b>.</p>
                 <VizGrouped :labels="c.kasbon.labels" :series="c.kasbon.series" />
             </section>
 
@@ -177,7 +178,7 @@ function fmtDateTime(iso: string | null | undefined): string {
                     <h2 class="text-sm font-bold">8 · Summary Laba Rugi</h2>
                     <span class="text-[10.5px] font-bold tracking-wide text-neutral-400">GENERAL LEDGER</span>
                 </div>
-                <p class="text-xs text-neutral-500 mt-0.5 mb-2.5">Laba (biru) atau rugi (merah) tiap bulan, diukur dari garis nol.</p>
+                <p class="text-xs text-neutral-500 mt-0.5 mb-2.5">Laba (biru) atau rugi (merah) tiap bulan, diukur dari garis nol — sumbu dalam <b>juta rupiah</b>.</p>
                 <VizDiverging :labels="c.laba_rugi.labels" :vals="c.laba_rugi.vals" />
             </section>
 
@@ -213,7 +214,7 @@ function fmtDateTime(iso: string | null | undefined): string {
                 </p>
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
-                        <p class="text-[10.5px] font-bold tracking-wide text-neutral-400 mb-1">JUMLAH SPK AKTIF</p>
+                        <p class="text-[10.5px] font-bold tracking-wide text-neutral-400 mb-1">JUMLAH SPK (TIDAK BATAL)</p>
                         <VizHBars :rows="spkJumlah" :ramp="ORA" :kunci="kunciSpk" hitung satuan="SPK" :talang-kiri="96" :talang-kanan="78" />
                     </div>
                     <div>
@@ -239,7 +240,7 @@ function fmtDateTime(iso: string | null | undefined): string {
                     <h2 class="text-sm font-bold">13 · Summary Retensi</h2>
                     <span class="text-[10.5px] font-bold tracking-wide text-neutral-400">CONTRACTOR MGT</span>
                 </div>
-                <p class="text-xs text-neutral-500 mt-0.5 mb-2.5">Retensi ditahan vs yang sudah dilepas per bulan.</p>
+                <p class="text-xs text-neutral-500 mt-0.5 mb-2.5">Retensi SPK ditahan vs yang sudah dilepas per bulan — sumbu dalam <b>juta rupiah</b>.</p>
                 <VizGrouped :labels="c.retensi.labels" :series="c.retensi.series" />
             </section>
 
@@ -262,7 +263,7 @@ function fmtDateTime(iso: string | null | undefined): string {
                     </div>
                     <div>
                         <p class="text-[10.5px] font-bold tracking-wide text-neutral-400 mb-1">RINGKASAN TAHUNAN — NILAI</p>
-                        <VizYearTotals :rows="brNilai" />
+                        <VizYearTotals :rows="brNilai" :total="false" />
                         <p class="mt-2.5 text-[11.5px] text-neutral-600 dark:text-neutral-300 leading-relaxed">
                             Total unit setahun —
                             <template v-for="(t, i) in brTotalUnit" :key="t.n">

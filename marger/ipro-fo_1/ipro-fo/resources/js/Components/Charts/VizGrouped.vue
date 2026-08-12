@@ -19,7 +19,13 @@ const IW = W - P.l - P.r;
 const IH = computed(() => props.tinggi - P.t - P.b);
 const semua = computed(() => props.series.flatMap((s) => s.v));
 const hampa = computed(() => kosong(semua.value));
-const puncak = computed(() => maxAman(semua.value) * 1.15);
+// Pada sumbu jumlah (unit/berkas), puncak dibulatkan ke atas ke kelipatan 4 supaya keempat
+// garis kisi jatuh pada bilangan bulat. Tanpa itu, 5 unit × 1,15 menghasilkan tick "1,4375"
+// yang dicetak Math.round() sebagai 1 — dua garis kisi bisa berlabel angka yang sama.
+const puncak = computed(() => {
+    const m = maxAman(semua.value) * 1.15;
+    return props.unitAxis ? Math.max(4, Math.ceil(m / 4) * 4) : m;
+});
 
 const garis = computed(() => [0, 1, 2, 3, 4].map((i) => {
     const y = P.t + IH.value * i / 4;
