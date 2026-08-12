@@ -37,8 +37,50 @@ export interface NavGroup {
     route?: string;     // route landing kartu; bila kosong → pakai sub-modul pertama yang dapat diakses
 }
 
+/**
+ * URUTAN MODUL pada sidebar & Menu Utama — satu-satunya sumber kebenaran urutan.
+ *
+ * Ditaruh sebagai daftar terpisah, bukan dengan memindah-mindah blok definisinya:
+ * blok tiap modul panjangnya puluhan baris, dan memindahkannya berisiko menggeser
+ * sub-menu ke modul yang salah. Mengubah urutan cukup menata ulang daftar di bawah.
+ * Grup tanpa judul (Menu Utama) selalu paling atas; modul yang belum tercantum di
+ * sini ikut di belakang mengikuti urutan definisinya — tidak pernah hilang.
+ */
+export const MODULE_ORDER: string[] = [
+    'Master',
+    'Data Center',
+    'KPR',
+    'Account Payable',
+    'Cash Book',
+    'General Ledger',
+    'Aset Tetap',
+    'Budget Control',
+    'Contractor Management',
+    'Booked Revenue',
+    'Piutang Usaha (Booked)',
+    'COGS',
+    'Purchasing',
+    'Inventory',
+    'Security',
+    'System',
+];
+
+/** Urutkan grup mengikuti MODULE_ORDER; yang tak tercantum ditaruh di belakang. */
+function sortByModuleOrder(groups: NavGroup[]): NavGroup[] {
+    const rank = (g: NavGroup) => {
+        if (!g.title) return -1;                      // grup Menu Utama selalu teratas
+        const i = MODULE_ORDER.indexOf(g.title);
+        return i === -1 ? MODULE_ORDER.length : i;    // modul baru → ekor daftar
+    };
+
+    return groups
+        .map((g, i) => ({ g, i }))                    // simpan posisi asal…
+        .sort((a, b) => rank(a.g) - rank(b.g) || a.i - b.i)  // …agar pengurutan stabil
+        .map((x) => x.g);
+}
+
 export function navGroups(foUrl: string): NavGroup[] {
-    return [
+    return sortByModuleOrder([
     {
         title: '',
         items: [
@@ -525,5 +567,5 @@ export function navGroups(foUrl: string): NavGroup[] {
             { label: 'Konfigurasi Sistem', icon: SlidersHorizontal, href: 'settings.config.index', permission: 'system.setup.parameter' },
         ],
     },
-    ];
+    ]);
 }
