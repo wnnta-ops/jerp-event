@@ -347,8 +347,8 @@ const cellArea = 'w-full rounded-md border border-neutral-300 bg-white px-2 py-1
                     <h2 class="font-semibold">Struktur Jurnal (Dr / Cr)</h2>
                     <div class="flex items-center gap-2">
                         <!-- Isi papan klip akun — supaya jelas apa yang akan tertempel. -->
-                        <span v-if="copiedAccountLabel" class="inline-flex max-w-[18rem] items-center gap-1 truncate rounded-md bg-primary-50 px-2 py-1 text-[11px] font-medium text-primary-700 dark:bg-primary-950/50 dark:text-primary-300" :title="copiedAccountLabel">
-                            <Copy class="h-3 w-3 shrink-0" /> <span class="truncate">{{ copiedAccountLabel }}</span>
+                        <span v-if="copiedAccountLabel" class="inline-flex max-w-[22rem] items-center gap-1.5 truncate rounded-lg border border-sky-300 bg-sky-50 px-2.5 py-1.5 text-xs font-semibold text-sky-800 dark:border-sky-800 dark:bg-sky-950/50 dark:text-sky-200" :title="copiedAccountLabel">
+                            <Copy class="h-3.5 w-3.5 shrink-0" /> <span class="shrink-0 font-normal text-sky-600 dark:text-sky-400">Tersalin:</span> <span class="truncate">{{ copiedAccountLabel }}</span>
                         </span>
                         <button type="button" @click="recalcJournal" class="inline-flex items-center gap-1 rounded-lg border border-neutral-300 px-2.5 py-1.5 text-xs hover:bg-neutral-50 dark:border-neutral-700">Hitung ulang</button>
                     </div>
@@ -357,7 +357,8 @@ const cellArea = 'w-full rounded-md border border-neutral-300 bg-white px-2 py-1
                 <div class="rounded-lg border border-neutral-200 dark:border-neutral-800">
                     <table class="w-full table-fixed border-collapse text-sm">
                         <colgroup>
-                            <col style="width:4%" /><col style="width:24%" /><col style="width:11%" /><col style="width:17%" /><col style="width:10%" /><col style="width:12%" /><col style="width:9%" /><col style="width:9%" /><col style="width:4%" />
+                            <!-- Kolom Account dilebarkan: memuat pemilih akun + tombol Salin/Tempel berlabel. -->
+                            <col style="width:4%" /><col style="width:27%" /><col style="width:10%" /><col style="width:15%" /><col style="width:10%" /><col style="width:12%" /><col style="width:9%" /><col style="width:9%" /><col style="width:4%" />
                         </colgroup>
                         <thead class="bg-neutral-50 text-left text-[11px] uppercase tracking-wide text-neutral-500 dark:bg-neutral-800">
                             <tr>
@@ -377,21 +378,29 @@ const cellArea = 'w-full rounded-md border border-neutral-300 bg-white px-2 py-1
                                 <td class="px-2 py-2 font-mono text-neutral-400">{{ i+1 }}</td>
                                 <td class="px-2 py-2">
                                     <SearchSelect v-model="l.account_id" :options="accounts" placeholder="— pilih akun —" />
-                                    <div class="mt-0.5 flex items-center gap-1">
-                                        <!-- Salin / tempel akun antar baris — akun kerap berulang. -->
+                                    <!-- Salin / tempel akun antar baris — akun kerap berulang.
+                                         Tombolnya BERLABEL & berwarna: versi ikon 20px sebelumnya
+                                         nyaris tak terbaca dan mudah terlewat operator. -->
+                                    <div class="mt-1 flex flex-wrap items-center gap-1.5">
                                         <button type="button" @click="copyAccount(l, i)" :disabled="!l.account_id"
                                             :title="l.account_id ? 'Salin akun: ' + accountLabel(l.account_id) : 'Pilih akun dulu'"
-                                            class="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded border transition-colors duration-200 disabled:cursor-not-allowed disabled:opacity-30"
-                                            :class="copyFlash === i ? 'border-success-500 bg-success-50 text-success-600 dark:bg-success-900/30' : 'border-neutral-300 text-neutral-400 hover:border-primary-500 hover:text-primary-600 dark:border-neutral-700'">
-                                            <Check v-if="copyFlash === i" class="h-3 w-3" /><Copy v-else class="h-3 w-3" />
+                                            class="inline-flex h-7 shrink-0 items-center gap-1 rounded-md border px-2 text-[11px] font-semibold transition-colors duration-200 disabled:cursor-not-allowed disabled:border-neutral-200 disabled:bg-neutral-50 disabled:text-neutral-300 dark:disabled:border-neutral-800 dark:disabled:bg-neutral-900 dark:disabled:text-neutral-600"
+                                            :class="copyFlash === i
+                                                ? 'border-success-500 bg-success-500 text-white'
+                                                : 'border-sky-300 bg-sky-50 text-sky-700 hover:bg-sky-100 dark:border-sky-800 dark:bg-sky-950/40 dark:text-sky-300 dark:hover:bg-sky-900/50'">
+                                            <Check v-if="copyFlash === i" class="h-3.5 w-3.5" /><Copy v-else class="h-3.5 w-3.5" />
+                                            {{ copyFlash === i ? 'Tersalin' : 'Salin' }}
                                         </button>
                                         <button type="button" @click="pasteAccount(l, i)"
                                             :title="copiedAccountLabel ? 'Tempel akun: ' + copiedAccountLabel : 'Tempel akun dari papan klip'"
-                                            class="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded border transition-colors duration-200"
-                                            :class="pasteFlash === i ? 'border-success-500 bg-success-50 text-success-600 dark:bg-success-900/30' : 'border-neutral-300 text-neutral-400 hover:border-primary-500 hover:text-primary-600 dark:border-neutral-700'">
-                                            <Check v-if="pasteFlash === i" class="h-3 w-3" /><ClipboardPaste v-else class="h-3 w-3" />
+                                            class="inline-flex h-7 shrink-0 items-center gap-1 rounded-md border px-2 text-[11px] font-semibold transition-colors duration-200"
+                                            :class="pasteFlash === i
+                                                ? 'border-success-500 bg-success-500 text-white'
+                                                : 'border-primary-300 bg-primary-50 text-primary-700 hover:bg-primary-100 dark:border-primary-800 dark:bg-primary-950/40 dark:text-primary-300 dark:hover:bg-primary-900/50'">
+                                            <Check v-if="pasteFlash === i" class="h-3.5 w-3.5" /><ClipboardPaste v-else class="h-3.5 w-3.5" />
+                                            {{ pasteFlash === i ? 'Tertempel' : 'Tempel' }}
                                         </button>
-                                        <span class="truncate text-[11px] text-neutral-400" :title="accountName(l.account_id)">{{ accountName(l.account_id) || '—' }}</span>
+                                        <span class="min-w-0 flex-1 truncate text-[11px] text-neutral-500 dark:text-neutral-400" :title="accountName(l.account_id)">{{ accountName(l.account_id) || '—' }}</span>
                                     </div>
                                 </td>
                                 <td class="px-2 py-2"><SearchSelect v-model="l.cost_center_id" :options="costCenters" placeholder="— cost center —" /></td>
