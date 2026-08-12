@@ -137,6 +137,36 @@ class SkemaResource extends Resource
                     }
                 }),
         ])->bulkActions([
+            // Aktif/nonaktif massal: menonaktifkan skema lama (mis. hasil migrasi
+            // "OLD …") sebelumnya harus satu per satu lewat Ubah — melelahkan untuk
+            // puluhan baris. Skema nonaktif otomatis hilang dari pilihan (Closing NUP,
+            // Booked, Price List), sedangkan kontrak yang sudah memakainya TIDAK
+            // terpengaruh. Ditaruh di luar grup agar langsung terlihat saat mencentang.
+            Tables\Actions\BulkAction::make('nonaktifkan')
+                ->label('Nonaktifkan')
+                ->icon('heroicon-o-x-circle')
+                ->color('danger')
+                ->requiresConfirmation()
+                ->modalHeading('Nonaktifkan skema terpilih?')
+                ->modalDescription('Skema nonaktif tidak lagi muncul di pilihan (Closing NUP, Booked, Price List). Kontrak yang sudah memakainya tetap utuh.')
+                ->action(function (Collection $records) {
+                    $n = Skema::whereKey($records->pluck('id'))->update(['is_active' => false]);
+                    Notification::make()->success()->title($n.' skema dinonaktifkan')->send();
+                })
+                ->deselectRecordsAfterCompletion(),
+
+            Tables\Actions\BulkAction::make('aktifkan')
+                ->label('Aktifkan')
+                ->icon('heroicon-o-check-circle')
+                ->color('success')
+                ->requiresConfirmation()
+                ->modalHeading('Aktifkan skema terpilih?')
+                ->action(function (Collection $records) {
+                    $n = Skema::whereKey($records->pluck('id'))->update(['is_active' => true]);
+                    Notification::make()->success()->title($n.' skema diaktifkan')->send();
+                })
+                ->deselectRecordsAfterCompletion(),
+
             Tables\Actions\BulkActionGroup::make([
                 Tables\Actions\DeleteBulkAction::make()
                     ->before(function (Collection $records, Tables\Actions\DeleteBulkAction $action) {
