@@ -34,3 +34,13 @@ Thumbs.db
 
 # Catatan kerja Claude Code (bukan bagian aplikasi J-ERP)
 /memory
+
+# Data migrasi & dump DB (berisi data customer ASLI — JANGAN pernah di-commit).
+# Dikunci per-pola supaya tetap aman walau folder diganti nama (ops-test/migrasi/dll).
+ops-test/
+migrasi/
+docs/Migrasi/
+*.sql.gz
+*.tgz
+*.bak
+IPRO_DL_*.sql
