@@ -84,8 +84,22 @@
         $tglSurat = $k?->tgl_kontrak ?: now();
     @endphp
 
+    {{-- Logo di-embed base64 supaya ikut tercetak di PDF (Browsershot tak selalu
+         bisa mengambil berkas lewat URL). Bila berkas hilang → fallback teks. --}}
+    @php
+        $logoPath = public_path('images/logo/logo-cop.png');
+        $logoSrc = is_file($logoPath)
+            ? 'data:'.(@mime_content_type($logoPath) ?: 'image/png').';base64,'.base64_encode((string) file_get_contents($logoPath))
+            : null;
+    @endphp
+
     <div class="head">
-        <div class="brand">JAVA<br>RESIDENCE</div>
+        {{-- KIRI ATAS: logo Java Residence. --}}
+        @if ($logoSrc)
+            <img src="{{ $logoSrc }}" alt="Java Residence" style="max-width:150px; max-height:58px; object-fit:contain;">
+        @else
+            <div class="brand">JAVA<br>RESIDENCE</div>
+        @endif
         <div class="co">
             <div class="pt">PT. MITRA USAHA PROPERTINDO</div>
             <div class="ttl">FORMULIR SURAT PEMESANAN RUMAH SEMENTARA</div>
