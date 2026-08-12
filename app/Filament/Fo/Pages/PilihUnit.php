@@ -63,6 +63,17 @@ class PilihUnit extends Page
 
     public ?string $regPilihanUnit3 = null;
 
+    /** Referensi dari Verifikasi Data — ditampilkan sesudah scan barcode. */
+    public ?string $regRefSales = null;
+
+    public ?string $regRefPhone = null;
+
+    public ?string $regSumberData = null;
+
+    public ?string $regEvent = null;
+
+    public ?string $regCaraBayar = null;
+
     /** Hasil pemilihan unit (popup). */
     public ?string $pickedUnitLabel = null;
 
@@ -132,6 +143,14 @@ class PilihUnit extends Page
         $this->regPilihanUnit1 = $reg->pilihan_unit_1;
         $this->regPilihanUnit2 = $reg->pilihan_unit_2;
         $this->regPilihanUnit3 = $reg->pilihan_unit_3;
+
+        // Referensi (dari Verifikasi Data) — supaya operator hari-H tahu unit ini
+        // datang lewat sales/agen mana tanpa membuka menu lain.
+        $this->regRefSales = $reg->agent?->sales_label ?: ($reg->agent?->name ?: ($reg->ref_sales_name ?: null));
+        $this->regRefPhone = $reg->ref_sales_phone ?: ($reg->agent?->phone ?: null);
+        $this->regSumberData = $c?->sumber_data_label ?: null;
+        $this->regEvent = $reg->event?->name ?: null;
+        $this->regCaraBayar = $reg->cara_bayar ?: null;
 
         $this->phase = 'customer';
         $this->dispatch('nup-customer-loaded', noNup: $reg->no_nup, name: $this->regCustomerName);
@@ -213,6 +232,11 @@ class PilihUnit extends Page
         $this->regPilihanUnit1 = null;
         $this->regPilihanUnit2 = null;
         $this->regPilihanUnit3 = null;
+        $this->regRefSales = null;
+        $this->regRefPhone = null;
+        $this->regSumberData = null;
+        $this->regEvent = null;
+        $this->regCaraBayar = null;
         $this->pickedUnitLabel = null;
         $this->pickedUnitAlamat = null;
         $this->pickError = null;
