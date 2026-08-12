@@ -650,7 +650,12 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
     Route::post('/business-support/payable-kuitansi/{kuitansi}/approve', [BsApKuitansiController::class, 'approve'])->name('bs.ap.kuitansi.approve'); // approval pengeluaran (AP)
     Route::post('/business-support/payable-kuitansi/{kuitansi}/reject',  [BsApKuitansiController::class, 'reject'])->name('bs.ap.kuitansi.reject');
     // AP — Posting Invoice dari PO/SPK
+    // Tiga sub modul terpisah — satu layar satu sumber dokumen. Sengaja tidak digabung:
+    // hanya antrean FO yang punya kotak centang & posting massal, sedangkan PO dan SPK
+    // sudah membawa suppliernya dari dokumen asal.
     Route::get('/business-support/payable-posting',          [BsApPostingController::class, 'index'])->name('bs.ap.posting.index');
+    Route::get('/business-support/payable-posting/po',       [BsApPostingController::class, 'poIndex'])->name('bs.ap.posting.po.index');
+    Route::get('/business-support/payable-posting/spk',      [BsApPostingController::class, 'spkIndex'])->name('bs.ap.posting.spk.index');
     Route::post('/business-support/payable-posting/po/{po}', [BsApPostingController::class, 'fromPo'])->name('bs.ap.posting.po');
     Route::post('/business-support/payable-posting/spk/{progress}', [BsApPostingController::class, 'fromSpk'])->name('bs.ap.posting.spk');
     Route::post('/business-support/payable-posting/refund/{queue}', [BsApPostingController::class, 'fromRefund'])->name('bs.ap.posting.refund');

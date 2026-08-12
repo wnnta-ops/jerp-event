@@ -1,11 +1,15 @@
 <script setup lang="ts">
 import { router, Link } from '@inertiajs/vue3';
 import { ref, computed, watch } from 'vue';
-import { ArrowLeft, FileInput, ShoppingCart, HardHat, TriangleAlert, Receipt } from 'lucide-vue-next';
+import { ArrowLeft, FileInput, TriangleAlert, Receipt } from 'lucide-vue-next';
 import Button from '@/Components/UI/Button.vue';
 import EmptyState from '@/Components/UI/EmptyState.vue';
 
-const props = defineProps<{ pos: Array<any>; progress: Array<any>; refunds: Array<any>; suppliers: Array<any> }>();
+// Sub modul "Posting Invoice dari FO" — HANYA antrean FO (refund, BLT, komisi, gimmick).
+// Purchase Order dan progress SPK punya sub modulnya sendiri. Inilah satu-satunya layar
+// posting yang punya kotak centang & Posting Massal, karena hanya antrean FO yang bisa
+// digabung jadi satu invoice hutang — dan hanya di sinilah supplier perlu dipilih.
+const props = defineProps<{ refunds: Array<any>; suppliers: Array<any> }>();
 
 // Supplier terpilih per baris antrean (wajib dipilih sebelum Posting Invoice).
 const supplierSel = ref<Record<number, number | ''>>({});
@@ -36,8 +40,6 @@ const allChecked = computed({
 });
 
 function fmtRp(v: number) { return 'Rp ' + Number(v ?? 0).toLocaleString('id-ID'); }
-function postPo(id: number) { if (confirm('Terbitkan invoice hutang dari PO ini?')) router.post(route('bs.ap.posting.po', id), {}, { preserveScroll: true }); }
-function postSpk(id: number) { if (confirm('Terbitkan invoice hutang dari progress SPK ini?')) router.post(route('bs.ap.posting.spk', id), {}, { preserveScroll: true }); }
 // Supplier efektif: pilihan dropdown, atau supplier bawaan baris (GMC komponen) sbg fallback.
 function rowSupplier(id: number) {
     return supplierSel.value[id] || props.refunds.find((r) => r.id === id)?.supplier_id || '';
@@ -110,34 +112,7 @@ function postBulk() {
     <div class="space-y-4">
         <Link :href="route('bs.ap.index')" class="inline-flex items-center gap-2 text-sm text-neutral-500 hover:text-neutral-800 dark:hover:text-neutral-200"><ArrowLeft class="h-4 w-4" /> Account Payable</Link>
         <h1 class="flex items-center gap-2 text-2xl font-bold"><FileInput class="h-6 w-6 text-danger-600" /> Posting Invoice dari FO</h1>
-        <p class="text-sm text-neutral-500">Terbitkan invoice hutang dari dokumen FO (penerimaan Purchase Order, refund, BLT, komisi, gimmick) atau progress SPK kontraktor. Hutang sudah terbukukan saat penerimaan/progress; invoice menjadi dokumen tagihan yang dibayar via Kuitansi.</p>
-
-        <!-- ══ Dari Purchase Order ══
-             Berdiri sendiri, sebentuk dengan kartu Progress SPK Kontraktor. Dulu baris PO
-             menumpang di tabel "Dari FO" yang berkolom centang, supplier, dan sumber — padahal
-             PO tidak pernah dicentang untuk digabung dan suppliernya sudah pasti dari dokumen
-             PO-nya, sehingga tiga kolom itu selalu kosong dan hanya menyesatkan pembaca. -->
-        <div class="card overflow-hidden">
-            <div class="flex items-center gap-2 border-b border-neutral-200 px-4 py-3 font-semibold dark:border-neutral-800">
-                <ShoppingCart class="h-5 w-5 text-primary-600" /> Dari Purchase Order
-            </div>
-            <table v-if="pos.length" class="w-full text-sm">
-                <thead class="bg-neutral-50 dark:bg-neutral-800"><tr class="text-left text-xs uppercase text-neutral-500"><th class="px-4 py-2.5">No. PO</th><th class="px-4 py-2.5">Supplier</th><th class="px-4 py-2.5">Uraian</th><th class="px-4 py-2.5 text-right">Nilai Diterima</th><th class="px-4 py-2.5 text-right">Aksi</th></tr></thead>
-                <tbody class="divide-y divide-neutral-200 dark:divide-neutral-800">
-                    <tr v-for="p in pos" :key="'po-' + p.id">
-                        <td class="px-4 py-2.5 font-mono font-semibold">
-                            {{ p.po_number }}
-                            <span v-if="p.po_date" class="ml-1 font-sans text-[11px] font-normal text-neutral-400">{{ p.po_date }}</span>
-                        </td>
-                        <td class="px-4 py-2.5">{{ p.supplier ?? '—' }}</td>
-                        <td class="px-4 py-2.5 text-neutral-500">{{ p.uraian }}</td>
-                        <td class="px-4 py-2.5 text-right font-mono">{{ fmtRp(p.received_value) }}</td>
-                        <td class="px-4 py-2.5 text-right"><Button size="sm" @click="postPo(p.id)">Generate Invoice</Button></td>
-                    </tr>
-                </tbody>
-            </table>
-            <EmptyState v-else title="Tidak ada Purchase Order siap diposting" description="PO berstatus disetujui/tutup yang barangnya sudah diterima dan belum diinvoice akan tampil di sini." />
-        </div>
+        <p class="text-sm text-neutral-500">Terbitkan invoice hutang dari antrean dokumen FO — refund, BLT, komisi, dan gimmick. Hutang sudah terbukukan di FO; invoice menjadi dokumen tagihan yang dibayar via Kuitansi. Beberapa item milik <b>supplier yang sama</b> dapat dicentang lalu digabung menjadi satu invoice. Penerimaan Purchase Order dan progress SPK kontraktor ada pada sub modulnya masing-masing.</p>
 
         <div class="card overflow-hidden">
             <div class="flex flex-wrap items-center gap-3 border-b border-neutral-200 px-4 py-3 dark:border-neutral-800">
@@ -216,23 +191,6 @@ function postBulk() {
                 </tbody>
             </table>
             <EmptyState v-else title="Tidak ada antrean FO siap diposting" description="Refund, BLT, komisi, dan gimmick dari FO yang belum diinvoice akan tampil di sini." />
-        </div>
-
-        <div class="card overflow-hidden">
-            <div class="flex items-center gap-2 border-b border-neutral-200 px-4 py-3 font-semibold dark:border-neutral-800"><HardHat class="h-5 w-5 text-amber-600" /> Dari Progress SPK Kontraktor</div>
-            <table v-if="progress.length" class="w-full text-sm">
-                <thead class="bg-neutral-50 dark:bg-neutral-800"><tr class="text-left text-xs uppercase text-neutral-500"><th class="px-4 py-2.5">No. SPK</th><th class="px-4 py-2.5">Kontraktor</th><th class="px-4 py-2.5">Uraian</th><th class="px-4 py-2.5 text-right">Net Bayar</th><th class="px-4 py-2.5 text-right">Aksi</th></tr></thead>
-                <tbody class="divide-y divide-neutral-200 dark:divide-neutral-800">
-                    <tr v-for="p in progress" :key="p.id">
-                        <td class="px-4 py-2.5 font-mono font-semibold">{{ p.spk_number }}</td>
-                        <td class="px-4 py-2.5">{{ p.supplier }}</td>
-                        <td class="px-4 py-2.5 text-neutral-500">{{ p.description }}</td>
-                        <td class="px-4 py-2.5 text-right font-mono">{{ fmtRp(p.net_payable) }}</td>
-                        <td class="px-4 py-2.5 text-right"><Button size="sm" @click="postSpk(p.id)">Generate Invoice</Button></td>
-                    </tr>
-                </tbody>
-            </table>
-            <EmptyState v-else title="Tidak ada progress SPK siap diposting" description="Progress SPK belum dibayar & belum diinvoice akan tampil di sini." />
         </div>
     </div>
 </template>

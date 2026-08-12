@@ -304,11 +304,18 @@ export function navGroups(foUrl: string): NavGroup[] {
             ]},
             // Sumber 'po' memuat seluruh dokumen asal FO (penerimaan PO, refund, BLT, komisi, gimmick),
             // karena itu label memakai "dari FO" — bukan lagi khusus Purchase Order.
+            // Tiga sub modul terpisah, masing-masing satu sumber dokumen. Dulu ketiganya
+            // menunjuk rute yang sama (bs.ap.posting.index) dengan params `source` yang
+            // tidak pernah dibaca controller, jadi "Posting Invoice SPK" sebenarnya membuka
+            // layar yang persis sama dengan "Posting Invoice dari FO".
             { label: 'Posting Invoice dari FO', icon: FileCheck, permission: ['businesssupport.view', 'ap.*'], children: [
-                { label: 'Posting Invoice dari FO', href: 'bs.ap.posting.index', params: { source: 'po' } },
+                { label: 'Posting Invoice dari FO', href: 'bs.ap.posting.index' },
             ]},
-            { label: 'Posting Invoice SPK', icon: FileCheck, permission: ['businesssupport.view', 'ap.*'], children: [
-                { label: 'Posting Invoice', href: 'bs.ap.posting.index', params: { source: 'spk' } },
+            { label: 'Posting Invoice dari Purchase Order', icon: ShoppingCart, permission: ['businesssupport.view', 'ap.*'], children: [
+                { label: 'Posting Invoice dari Purchase Order', href: 'bs.ap.posting.po.index' },
+            ]},
+            { label: 'Posting Invoice SPK', icon: HardHat, permission: ['businesssupport.view', 'ap.*'], children: [
+                { label: 'Posting Invoice SPK', href: 'bs.ap.posting.spk.index' },
             ]},
             { label: 'Saldo Awal', icon: Coins, permission: ['businesssupport.view', 'ap.*'], children: [
                 { label: 'Saldo Awal', href: 'bs.ap.opening.index' },

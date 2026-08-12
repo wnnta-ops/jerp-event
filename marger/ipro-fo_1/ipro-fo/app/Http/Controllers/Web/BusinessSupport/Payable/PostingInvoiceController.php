@@ -29,14 +29,54 @@ use Inertia\Response;
  */
 class PostingInvoiceController extends Controller
 {
+    /**
+     * Sub modul "Posting Invoice dari FO" — HANYA antrean FO
+     * (refund, BLT, komisi, gimmick). Purchase Order dan progress SPK punya
+     * sub modulnya sendiri; ketiganya sengaja tidak lagi berbagi satu layar
+     * karena alur, kolom, dan aturan posting-nya berbeda:
+     * hanya antrean FO yang bisa dicentang untuk digabung jadi satu invoice.
+     */
     public function index(Request $request): Response
     {
         abort_unless($request->user()?->canModule('ap'), 403);
 
-        $invoicedPo  = BsApInvoice::where('source_type', 'po')->pluck('source_id')->all();
-        $invoicedSpk = BsApInvoice::where('source_type', 'spk')->pluck('source_id')->all();
+        return Inertia::render('BusinessSupport/Payable/Posting', [
+            'refunds'   => $this->antreanFo(),
+            'suppliers' => $this->daftarSupplier(),
+        ]);
+    }
 
-        $pos = BsPurchaseOrder::whereIn('status', ['approved', 'closed'])->whereNotIn('id', $invoicedPo)
+    /** Sub modul "Posting Invoice dari Purchase Order" — HANYA PO yang barangnya sudah diterima. */
+    public function poIndex(Request $request): Response
+    {
+        abort_unless($request->user()?->canModule('ap'), 403);
+
+        return Inertia::render('BusinessSupport/Payable/PostingPo', [
+            'pos' => $this->antreanPo(),
+        ]);
+    }
+
+    /** Sub modul "Posting Invoice SPK" — HANYA progress SPK kontraktor yang belum dibayar. */
+    public function spkIndex(Request $request): Response
+    {
+        abort_unless($request->user()?->canModule('ap'), 403);
+
+        return Inertia::render('BusinessSupport/Payable/PostingSpk', [
+            'progress' => $this->antreanSpk(),
+        ]);
+    }
+
+    /**
+     * PO siap diinvoice: berstatus disetujui/tutup, belum pernah diinvoice, dan
+     * barangnya benar-benar sudah diterima (nilai penerimaan > 0).
+     *
+     * @return \Illuminate\Support\Collection<int, array<string, mixed>>
+     */
+    private function antreanPo(): \Illuminate\Support\Collection
+    {
+        $invoicedPo = BsApInvoice::where('source_type', 'po')->pluck('source_id')->all();
+
+        return BsPurchaseOrder::whereIn('status', ['approved', 'closed'])->whereNotIn('id', $invoicedPo)
             ->with(['supplier:id,code,name', 'lines'])->latest('po_date')->limit(100)->get()
             ->map(function ($po) {
                 // Uraian singkat sejajar kolom "Uraian" pada kartu Progress SPK: berapa baris
@@ -52,17 +92,34 @@ class PostingInvoiceController extends Controller
                     'received_value' => round((float) $po->lines->sum(fn ($l) => (float) $l->qty_received * (float) $l->unit_price), 2),
                 ];
             })->filter(fn ($p) => $p['received_value'] > 0.009)->values();
+    }
 
-        $progress = BsWorkOrderProgress::where('status', 'unpaid')->whereNotIn('id', $invoicedSpk)
+    /**
+     * Progress SPK siap diinvoice: belum dibayar dan belum pernah diinvoice.
+     *
+     * @return \Illuminate\Support\Collection<int, array<string, mixed>>
+     */
+    private function antreanSpk(): \Illuminate\Support\Collection
+    {
+        $invoicedSpk = BsApInvoice::where('source_type', 'spk')->pluck('source_id')->all();
+
+        return BsWorkOrderProgress::where('status', 'unpaid')->whereNotIn('id', $invoicedSpk)
             ->whereHas('workOrder')->with('workOrder.supplier:id,code,name')->latest('progress_date')->limit(100)->get()
             ->map(fn ($p) => [
                 'id' => $p->id, 'spk_number' => $p->workOrder?->spk_number, 'supplier' => $p->workOrder?->supplier?->name,
                 'description' => $p->description, 'net_payable' => (float) $p->net_payable,
-            ]);
+            ])->values();
+    }
 
-        // Antrian posting FO (J-ERP) — DITAMPUNG (pending) SEBELUM jadi hutang; tampil di dalam
-        // section "Dari Purchase Order". Klik "Posting Invoice" → terbit hutang AP. Badge per
-        // baris = SUMBER: refund (per jenis SPR/SPRS/Transfer Anonim), Komisi, atau BLT.
+    /**
+     * Antrian posting FO (J-ERP) — DITAMPUNG (pending) SEBELUM jadi hutang.
+     * Klik "Posting Invoice" → terbit hutang AP. Badge per baris = SUMBER:
+     * refund (per jenis SPR/SPRS/Transfer Anonim), Komisi, BLT, atau GMC.
+     *
+     * @return \Illuminate\Support\Collection<int, array<string, mixed>>
+     */
+    private function antreanFo(): \Illuminate\Support\Collection
+    {
         $refundLabel = ['SPR' => 'SPR', 'SPRS' => 'SPRS', 'TRANSFER_ANONIM' => 'Transfer Anonim'];
         $queue = DB::table('bs_ap_refund_queue')->where('status', 'pending')
             ->orderByDesc('id')->limit(300)->get();
@@ -73,7 +130,7 @@ class PostingInvoiceController extends Controller
         $bookingNos = DB::table('bookings')->whereIn('id', $queue->pluck('booking_id')->filter()->unique()->all())
             ->pluck('booking_number', 'id');
 
-        $refunds = $queue->map(fn ($r) => [
+        return $queue->map(fn ($r) => [
             'id'           => $r->id,
             'refund_no'    => $r->refund_no,
             'customer'     => $r->customer_name,
@@ -94,19 +151,20 @@ class PostingInvoiceController extends Controller
             'spr'          => ($r->booking_id ?? null) ? ($bookingNos[$r->booking_id] ?? null) : null,
             'akun_pecah'   => count(is_string($r->account_split ?? null) ? (json_decode($r->account_split, true) ?: []) : []),
         ])->values();
+    }
 
-        // Master supplier (Data Center → Supplier Center) untuk dropdown kolom Supplier.
-        $suppliers = BsSupplier::query()->where('is_active', true)->orderBy('name')
+    /**
+     * Master supplier (Data Center → Supplier Center) untuk dropdown kolom Supplier.
+     * Hanya dibutuhkan layar FO: PO dan SPK sudah membawa suppliernya dari dokumen asal.
+     *
+     * @return \Illuminate\Support\Collection<int, array<string, mixed>>
+     */
+    private function daftarSupplier(): \Illuminate\Support\Collection
+    {
+        return BsSupplier::query()->where('is_active', true)->orderBy('name')
             ->get(['id', 'code', 'name'])
             ->map(fn ($s) => ['id' => $s->id, 'label' => trim(($s->code ? $s->code.' — ' : '').$s->name)])
             ->values();
-
-        return Inertia::render('BusinessSupport/Payable/Posting', [
-            'pos'       => $pos,
-            'progress'  => $progress,
-            'refunds'   => $refunds,
-            'suppliers' => $suppliers,
-        ]);
     }
 
     /** Terbitkan invoice hutang dari 1 baris antrian (refund/komisi/blt/gmc) → masuk Account Payable. */
