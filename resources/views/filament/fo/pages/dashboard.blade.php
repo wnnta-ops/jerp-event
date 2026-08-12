@@ -2,8 +2,8 @@
     @php
         $tiles = $this->getTiles();
         $user = auth()->user();
-        // Jam aplikasi disimpan UTC (config app.timezone), jadi WAJIB dikonversi
-        // sebelum ditampilkan — tanpa ini jam & salam meleset 7 jam.
+        // Dipatok WIB secara eksplisit supaya jam & salam tetap benar walau
+        // APP_TIMEZONE di suatu server belum di-set (fallback Laravel = UTC).
         $nowWib = now()->setTimezone('Asia/Jakarta');
         $hour = (int) $nowWib->format('H');
         $salam = $hour < 11 ? 'Selamat pagi' : ($hour < 15 ? 'Selamat siang' : ($hour < 19 ? 'Selamat sore' : 'Selamat malam'));
