@@ -12,8 +12,9 @@ class ListKontraks extends ListRecords
 
     protected function getHeaderActions(): array
     {
-        return [
-            Actions\CreateAction::make(),
-        ];
+        // Tanpa tombol "Buat SPRS": SPRS TIDAK dibuat manual, melainkan terbit dari
+        // alur Pilih Unit / Verifikasi Booked. Membuatnya manual melewatkan reservasi,
+        // jadwal tagihan, dan jejak NUP-nya.
+        return [];
     }
 }
