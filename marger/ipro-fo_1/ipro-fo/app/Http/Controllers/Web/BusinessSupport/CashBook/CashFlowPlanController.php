@@ -418,8 +418,11 @@ class CashFlowPlanController extends Controller
 
     /** Judul kolom template import — dipakai saat menulis maupun membaca berkas. */
     private const IMPORT_HEADER = [
-        'KODE KATEGORI', 'NAMA KATEGORI', 'TAHUN', 'BULAN', 'WPNB (RUPIAH PENUH)', 'PROYEKSI (RUPIAH PENUH)',
+        'KODE KATEGORI', 'NAMA KATEGORI', 'TAHUN', 'BULAN', 'WPNB (JUTAAN RUPIAH)', 'PROYEKSI (JUTAAN RUPIAH)',
     ];
+
+    /** Pengali satuan berkas import: isi berkas dalam JUTAAN, tersimpan dalam rupiah penuh. */
+    private const JUTA = 1_000_000;
 
     /**
      * Unduh template import — sudah terisi SELURUH kategori aktif × 12 bulan untuk tahun yang
@@ -441,13 +444,15 @@ class CashFlowPlanController extends Controller
         foreach ($categories as $c) {
             for ($m = 1; $m <= 12; $m++) {
                 $f = $figures[$c->id][$m] ?? null;
+                // Ditulis dalam JUTAAN — satuan yang sama dengan tabel Report Cashflow, supaya
+                // angka yang dilihat di layar dan yang disunting di berkas tidak berbeda satuan.
                 $rows[] = [
                     (string) $c->code,
                     (string) $c->name,
                     $year,
                     $m,
-                    (float) ($f['wnpb'] ?? 0),
-                    (float) ($f['projection'] ?? 0),
+                    round(((float) ($f['wnpb'] ?? 0)) / self::JUTA, 6),
+                    round(((float) ($f['projection'] ?? 0)) / self::JUTA, 6),
                 ];
             }
         }
@@ -470,8 +475,12 @@ class CashFlowPlanController extends Controller
      * pada kunci (tenant, kategori, tahun, bulan) sehingga meng-import ulang berkas yang sama
      * memperbarui baris yang ada — tidak pernah menggandakan.
      *
-     * Nilai dibaca sebagai RUPIAH PENUH, sama seperti yang tersimpan di basis data. Tampilan
-     * Report Cashflow yang bersatuan jutaan tidak mengubah isi berkas import.
+     * SATUAN: berkas ditulis dalam JUTAAN rupiah — sama dengan tabel Report Cashflow — lalu
+     * dikalikan sejuta saat disimpan (basis data tetap menyimpan rupiah penuh).
+     *
+     * Berkas TEMPLATE LAMA yang judul kolomnya bertulis "RUPIAH PENUH" tetap dibaca sebagai
+     * rupiah penuh. Tanpa pengecualian ini, mengunggah berkas lama akan menggandakan angkanya
+     * sejuta kali TANPA terlihat. Satuan yang dipakai selalu disebut pada pesan hasil import.
      */
     public function reportImport(Request $request): RedirectResponse
     {
@@ -519,6 +528,12 @@ class CashFlowPlanController extends Controller
         $iMon = $find(fn ($h) => str_contains($h, 'BULAN') || str_contains($h, 'MONTH'));
         $iWnpb = $find(fn ($h) => str_contains($h, 'WPNB') || str_contains($h, 'WNPB'));
         $iProj = $find(fn ($h) => str_contains($h, 'PROYEKSI') || str_contains($h, 'PROJECTION'));
+
+        // Satuan berkas: JUTAAN (baku, sesuai template baru). Berkas template LAMA yang judul
+        // kolomnya bertulis "RUPIAH PENUH" tetap dibaca apa adanya — kalau tidak, angkanya
+        // akan tergandakan sejuta kali tanpa terlihat.
+        $judulNilai = trim(($iWnpb !== null ? $header[$iWnpb] : '').' '.($iProj !== null ? $header[$iProj] : ''));
+        $satuanJuta = ! str_contains($judulNilai, 'RUPIAH PENUH');
 
         $missing = [];
         if ($iCode === null && $iName === null) { $missing[] = 'Kode/Nama Kategori'; }
@@ -580,7 +595,7 @@ class CashFlowPlanController extends Controller
         $lewat = [];
         $tahunSet = [];
 
-        DB::transaction(function () use ($rows, $iCode, $iName, $iYear, $iMon, $iWnpb, $iProj, $byCode, $byName, $angka, $tenantId, &$masuk, &$lewat, &$tahunSet): void {
+        DB::transaction(function () use ($rows, $iCode, $iName, $iYear, $iMon, $iWnpb, $iProj, $byCode, $byName, $angka, $tenantId, $satuanJuta, &$masuk, &$lewat, &$tahunSet): void {
             foreach ($rows as $n => $r) {
                 $baris = $n + 2;   // +1 header, +1 karena manusia menghitung dari 1
                 $code = $iCode !== null ? mb_strtoupper(trim((string) ($r[$iCode] ?? ''))) : '';
@@ -605,11 +620,13 @@ class CashFlowPlanController extends Controller
                     continue;
                 }
 
+                // Isi berkas JUTAAN → disimpan rupiah penuh.
+                $kali = $satuanJuta ? self::JUTA : 1;
                 BsCfFigure::updateOrCreate(
                     ['tenant_id' => $tenantId, 'cf_category_id' => (int) $cat->id, 'period_year' => $year, 'period_month' => $month],
                     [
-                        'wnpb'       => round($iWnpb !== null ? $angka($r[$iWnpb] ?? null) : 0, 2),
-                        'projection' => round($iProj !== null ? $angka($r[$iProj] ?? null) : 0, 2),
+                        'wnpb'       => round(($iWnpb !== null ? $angka($r[$iWnpb] ?? null) : 0) * $kali, 2),
+                        'projection' => round(($iProj !== null ? $angka($r[$iProj] ?? null) : 0) * $kali, 2),
                     ],
                 );
                 $masuk++;
@@ -622,7 +639,10 @@ class CashFlowPlanController extends Controller
         }
 
         ksort($tahunSet);
-        $msg = "{$masuk} baris angka cashflow diimport (tahun ".implode(', ', array_keys($tahunSet)).').';
+        // Satuan yang dipakai SELALU disebut — salah satuan langsung ketahuan operator.
+        $satuan = $satuanJuta ? 'jutaan rupiah' : 'rupiah penuh';
+        $msg = "{$masuk} baris angka cashflow diimport (tahun ".implode(', ', array_keys($tahunSet))
+            .", dibaca dalam {$satuan}).";
         if ($lewat) {
             // Sebutkan yang dilewati — jangan sampai berkas terpotong diam-diam dianggap sukses penuh.
             $msg .= ' '.count($lewat).' baris dilewati: '.implode('; ', array_slice($lewat, 0, 5)).(count($lewat) > 5 ? ' …' : '');
