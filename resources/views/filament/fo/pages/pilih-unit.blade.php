@@ -61,6 +61,18 @@
         .sp-pc .lab { font-size:9.5px; font-weight:800; letter-spacing:.4px; color:#2563eb; margin-bottom:4px; }
         .sp-pc .cur { font-size:8px; font-weight:700; color:#94a3b8; line-height:1; }
         .sp-pc .amt { font-size:12px; font-weight:800; color:#0f172a; line-height:1.15; white-space:nowrap; }
+        /* Dropdown kamera: appearance dimatikan + panah digambar sendiri, sebab
+           gambar panah bawaan Filament ter-ubin bila background di-override.
+           color-scheme dark → daftar pilihan native ikut gelap (kalau tidak,
+           teksnya gelap di atas putih & tak terbaca). */
+        .pu-cam-select { width:100%; border-radius:8px; padding:6px 28px 6px 10px; font-size:12px;
+            border:1px solid rgb(203 213 225); background-color:#fff; color:#0f172a;
+            appearance:none; -webkit-appearance:none; -moz-appearance:none;
+            background-image:url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20' stroke='%236b7280' stroke-width='1.75'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' d='M6 8l4 4 4-4'/%3E%3C/svg%3E");
+            background-repeat:no-repeat; background-position:right 8px center; background-size:16px; }
+        .dark .pu-cam-select { background-color:rgba(255,255,255,.06); border-color:rgba(255,255,255,.18); color:#e5e7eb; color-scheme:dark; }
+        .dark .pu-cam-select option { background-color:#1e293b; color:#e5e7eb; }
+
         .pu-pilih-btn { margin-top:13px; width:100%; padding:10px 12px; border-radius:10px; background:#2563eb; color:#fff; font-weight:700; font-size:13px; border:0; cursor:pointer; }
         .pu-pilih-btn:hover { background:#1d4ed8; }
         .pu-pilih-btn:disabled { background:#94a3b8; cursor:not-allowed; }
@@ -188,9 +200,7 @@
                 {{-- Pemilih kamera: mendukung WEBCAM USB tambahan. Baru muncul bila
                      terdeteksi lebih dari satu kamera. Pilihan diingat per komputer. --}}
                 <div class="mt-2" x-show="cameras.length > 1" x-cloak>
-                    <select x-model="camId" @change="gantiKamera()"
-                            class="w-full rounded-lg border px-2 py-1.5 text-xs"
-                            style="border-color: var(--gray-300);">
+                    <select x-model="camId" @change="gantiKamera()" class="pu-cam-select">
                         <option value="">Kamera bawaan (belakang)</option>
                         <template x-for="c in cameras" :key="c.id">
                             <option :value="c.id" x-text="c.label"></option>

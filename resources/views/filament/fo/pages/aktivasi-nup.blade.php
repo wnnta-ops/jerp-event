@@ -21,7 +21,7 @@
     {{-- Gaya ditulis sendiri (bukan kelas Tailwind grid-*) karena kelas grid tidak
          ter-compile di CSS panel Filament — pola yang sama dipakai halaman FO lain. --}}
     <style>
-        .an-scan { max-width: 880px; border-radius: .9rem; overflow: hidden;
+        .an-scan { max-width: 880px; margin-left: auto; margin-right: auto; border-radius: .9rem; overflow: hidden;
             background: #fff; border: 1px solid rgb(229 231 235); box-shadow: 0 1px 2px rgb(0 0 0 / .04); }
         .dark .an-scan { background: rgba(255,255,255,.03); border-color: rgba(255,255,255,.1); }
 
@@ -52,6 +52,22 @@
             border: 1px solid rgb(209 213 219); background: #fff; color: #111827; }
         .dark .an-scan__field { background: rgba(255,255,255,.04); border-color: rgba(255,255,255,.15); color: #e5e7eb; }
         .an-scan__field:focus { outline: none; border-color: #ea580c; box-shadow: 0 0 0 3px rgb(234 88 12 / .15); }
+        /* Select butuh penanganan khusus:
+           1) Filament memasang gambar panah lewat background-image. Properti
+              `background` (shorthand) di .an-scan__field mereset background-repeat
+              jadi `repeat`, sehingga panahnya TER-UBIN berderet. Karena itu di sini
+              appearance dimatikan & panah digambar sendiri sekali saja.
+           2) Di tema gelap, daftar pilihan native memakai warna sistem sehingga
+              teksnya gelap di atas putih (tak terbaca). color-scheme + warna
+              option eksplisit membuatnya ikut gelap. */
+        .an-scan__select { appearance: none; -webkit-appearance: none; -moz-appearance: none;
+            padding-right: 2rem;
+            background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20' stroke='%236b7280' stroke-width='1.75'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' d='M6 8l4 4 4-4'/%3E%3C/svg%3E");
+            background-repeat: no-repeat; background-position: right .5rem center; background-size: 1.1rem; }
+        .dark .an-scan__select { color-scheme: dark;
+            background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20' stroke='%2394a3b8' stroke-width='1.75'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' d='M6 8l4 4 4-4'/%3E%3C/svg%3E"); }
+        .dark .an-scan__select option { background-color: #1e293b; color: #e5e7eb; }
+
         .an-scan__row { display: flex; gap: .5rem; }
         .an-scan__btn { white-space: nowrap; border-radius: .55rem; padding: .5rem 1.1rem; font-size: .8125rem;
             font-weight: 700; background: #059669; color: #fff; }
@@ -84,7 +100,7 @@
                 {{-- Pemilih kamera (webcam USB tambahan) — muncul bila kamera >1. --}}
                 <div x-show="cameras.length > 1" x-cloak>
                     <div class="an-scan__label" style="margin-bottom:.25rem;">Kamera</div>
-                    <select x-model="camId" @change="gantiKamera()" class="an-scan__field">
+                    <select x-model="camId" @change="gantiKamera()" class="an-scan__field an-scan__select">
                         <option value="">Kamera bawaan</option>
                         <template x-for="c in cameras" :key="c.id">
                             <option :value="c.id" x-text="c.label"></option>
