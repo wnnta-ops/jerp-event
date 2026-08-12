@@ -25,7 +25,22 @@ class QontakWhatsAppGateway implements WhatsAppGatewayInterface
     public function sendTemplate(string $toNumber, string $toName, string $templateId, array $bodyParams = [], ?string $documentUrl = null, ?string $documentFilename = null): bool
     {
         $to = $this->normalizeNumber($toNumber);
-        if ($to === '' || $templateId === '' || $this->channelIntegrationId === '') {
+        // Dulu di sini hanya `return false` — WA tak terkirim TANPA jejak apa pun,
+        // sehingga penyebabnya (env template/channel kosong) mustahil dilacak.
+        // Sekarang alasannya dicatat eksplisit.
+        $kurang = [];
+        if ($to === '') {
+            $kurang[] = 'nomor tujuan kosong/tidak valid ('.$toNumber.')';
+        }
+        if ($templateId === '') {
+            $kurang[] = 'message_template_id kosong — cek QONTAK_TEMPLATE_UTJ / QONTAK_TEMPLATE_NUP_APPROVAL di .env';
+        }
+        if ($this->channelIntegrationId === '') {
+            $kurang[] = 'channel_integration_id kosong — cek QONTAK_CHANNEL_INTEGRATION_ID di .env';
+        }
+        if ($kurang !== []) {
+            Log::channel('single')->warning('[Qontak WA] pesan DILEWATI', ['sebab' => $kurang]);
+
             return false;
         }
 
