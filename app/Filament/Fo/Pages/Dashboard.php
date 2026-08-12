@@ -168,7 +168,7 @@ class Dashboard extends BaseDashboard
                 ['label' => 'Unit Tersedia', 'value' => number_format($unitTersedia, 0, ',', '.'),
                  'sub' => 'dari ' . number_format($totalUnit, 0, ',', '.') . ' unit', 'accent' => false,
                  'icon' => 'M3 12l9-9 9 9M5 10v10h14V10'],
-                ['label' => 'Booking Aktif', 'value' => number_format($bookingAktif, 0, ',', '.'),
+                ['label' => 'Kontrak Aktif', 'value' => number_format($bookingAktif, 0, ',', '.'),
                  'sub' => 'kontrak booking/aktif', 'accent' => false,
                  'icon' => 'M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2'],
                 ['label' => 'Penerimaan Bln Ini', 'value' => 'Rp ' . $this->shortRupiah($penerimaan),
