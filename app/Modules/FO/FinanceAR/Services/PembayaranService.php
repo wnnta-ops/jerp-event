@@ -27,6 +27,12 @@ class PembayaranService
     ];
 
     /**
+     * Alasan gagalnya kiriman ke BO pada pemanggilan bayar() terakhir; null bila berhasil.
+     * Dibaca layar untuk memberitahu operator, supaya kegagalan tidak lewat tanpa disadari.
+     */
+    public ?string $lastBoError = null;
+
+    /**
      * Catat pembayaran atas satu baris tagihan → terbit Kwitansi (BKM).
      *
      * @param  array<string,mixed>  $opts  tgl, bank_id, no_referensi, keterangan
@@ -42,6 +48,8 @@ class PembayaranService
         if ($nominal <= 0) {
             throw new RuntimeException('Nominal pembayaran harus lebih dari 0.');
         }
+
+        $this->lastBoError = null;
 
         return DB::transaction(function () use ($tagihan, $nominal, $opts) {
             $tagihan->pelunasan = (float) $tagihan->pelunasan + $nominal;
@@ -76,6 +84,21 @@ class PembayaranService
             try {
                 app(\App\Modules\BO\IproBridge\Services\IproMasterSync::class)
                     ->pushBkmToApproval($bkm, 'dp');
+            } catch (\Throwable $e) {
+                report($e);
+                // bo_posted_at SENGAJA dibiarkan kosong → tombol "Posting BO" pada daftar
+                // Kwitansi tetap tersedia untuk mengirim ulang. Alasannya dititipkan agar
+                // layar bisa memberitahu operator, bukan gagal diam-diam sementara
+                // notifikasinya tetap berbunyi "Pembayaran diterima".
+                $this->lastBoError = $e->getMessage();
+
+                return $bkm;
+            }
+
+            // Penstempelan DIPISAH dari pengiriman: bila kolom penanda belum ada / gagal ditulis,
+            // barisnya SUDAH sampai di BO — jangan sampai operator diberi tahu "belum sampai"
+            // lalu mengirim ulang. Pengiriman ulang sendiri idempoten (kunci nomor kwitansi).
+            try {
                 $bkm->forceFill(['bo_posted_at' => now()])->save();
             } catch (\Throwable $e) {
                 report($e);

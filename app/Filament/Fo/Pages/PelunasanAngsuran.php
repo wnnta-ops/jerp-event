@@ -116,20 +116,38 @@ class PelunasanAngsuran extends Page implements HasForms, HasTable
                     ])
                     ->action(function (KontrakTagihan $record, array $data) {
                         try {
-                            $bkm = app(PembayaranService::class)->bayar($record, \App\Support\Rupiah::toFloat($data['nominal']), [
+                            $svc = app(PembayaranService::class);
+                            $bkm = $svc->bayar($record, \App\Support\Rupiah::toFloat($data['nominal']), [
                                 'tgl' => $data['tgl'] ?? now()->toDateString(),
                                 'bank_id' => $data['bank_id'] ?? null,
                                 'no_referensi' => $data['no_referensi'] ?? null,
                                 'keterangan' => $data['keterangan'] ?? null,
                             ]);
-                            Notification::make()->success()
-                                ->title('Pembayaran diterima — Kwitansi '.$bkm->no_bkm)
-                                ->body('Sisa '.$record->fresh()->nama_tagihan.' kini Rp '.number_format((float) $record->fresh()->sisa, 0, ',', '.').'.')
-                                ->actions([
-                                    \Filament\Notifications\Actions\Action::make('cetak')->label('Cetak Kwitansi')
-                                        ->url(route('fo.cetak.kwitansi', $bkm), shouldOpenInNewTab: true),
-                                ])
-                                ->persistent()->send();
+                            $sisa = 'Sisa '.$record->fresh()->nama_tagihan.' kini Rp '.number_format((float) $record->fresh()->sisa, 0, ',', '.').'.';
+
+                            // Hasil kiriman ke BO IKUT DIBERITAHUKAN. Sebelumnya kegagalan kiriman
+                            // hanya masuk log sementara notifikasinya tetap berbunyi "Pembayaran
+                            // diterima" — operator tidak tahu barisnya tak sampai ke Approval DP.
+                            if ($svc->lastBoError === null) {
+                                Notification::make()->success()
+                                    ->title('Pembayaran diterima — Kwitansi '.$bkm->no_bkm)
+                                    ->body($sisa.' Sudah terkirim ke BO → Cash Book → Approval DP.')
+                                    ->actions([
+                                        \Filament\Notifications\Actions\Action::make('cetak')->label('Cetak Kwitansi')
+                                            ->url(route('fo.cetak.kwitansi', $bkm), shouldOpenInNewTab: true),
+                                    ])
+                                    ->persistent()->send();
+                            } else {
+                                Notification::make()->warning()
+                                    ->title('Pembayaran diterima — Kwitansi '.$bkm->no_bkm.' (BELUM sampai ke BO)')
+                                    ->body($sisa.' Kiriman ke Approval DP gagal: '.$svc->lastBoError
+                                        .' Kwitansinya tetap sah — kirim ulang lewat menu Kwitansi → tombol "Posting BO".')
+                                    ->actions([
+                                        \Filament\Notifications\Actions\Action::make('cetak')->label('Cetak Kwitansi')
+                                            ->url(route('fo.cetak.kwitansi', $bkm), shouldOpenInNewTab: true),
+                                    ])
+                                    ->persistent()->send();
+                            }
                         } catch (\Throwable $e) {
                             Notification::make()->danger()->title('Gagal')->body($e->getMessage())->persistent()->send();
                         }

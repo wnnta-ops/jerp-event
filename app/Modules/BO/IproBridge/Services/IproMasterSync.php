@@ -50,6 +50,21 @@ class IproMasterSync
         return DB::connection($this->conn);
     }
 
+    /** Apakah BO sudah punya kolom penanda submodul approval? (di-cache per proses) */
+    private ?bool $hasApprovalSource = null;
+
+    private function boHasApprovalSource(): bool
+    {
+        return $this->hasApprovalSource ??= (function (): bool {
+            try {
+                return \Illuminate\Support\Facades\Schema::connection($this->conn)
+                    ->hasColumn('tts_receipts', 'approval_source');
+            } catch (\Throwable) {
+                return false;
+            }
+        })();
+    }
+
     /** User default ipro_bo (created_by/received_by). Lazy — jangan query saat boot singleton. */
     private function userId(): int
     {
@@ -697,7 +712,11 @@ class IproMasterSync
         ];
         // Penanda submodul approval di BO. Hanya diisi bila memang ada nilainya, supaya
         // pemanggil lama (Kwitansi → Posting BO) tetap masuk Approval UTJ apa adanya.
-        if ($approvalSource !== null) {
+        //
+        // Kolomnya dicek dulu: bila BO belum menjalankan migrasi approval_source, kiriman TETAP
+        // masuk (jatuh ke Approval UTJ) alih-alih gagal total dan pembayarannya tidak sampai
+        // ke BO sama sekali.
+        if ($approvalSource !== null && $this->boHasApprovalSource()) {
             $data['approval_source'] = $approvalSource;
         }
 
