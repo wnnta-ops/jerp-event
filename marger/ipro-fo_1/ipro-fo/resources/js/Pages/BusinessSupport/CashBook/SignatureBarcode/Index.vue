@@ -70,7 +70,7 @@ const inputCls = 'h-9 w-full rounded-lg border border-neutral-300 bg-white px-3 
                 <h1 class="flex items-center gap-2 text-2xl font-bold"><ScanBarcode class="h-6 w-6 text-primary-600" /> Set Up Barcode</h1>
                 <p class="mt-0.5 max-w-3xl text-sm text-neutral-500">
                     Barcode tanda tangan per pengguna. Begitu seorang pengguna menyetujui salah satu slot
-                    <b>Persetujuan (TTD)</b> pada <b>SIP</b>, yang tampil &amp; tercetak adalah barcode ini —
+                    <b>Persetujuan (TTD)</b> pada <b>SIP</b>, yang tampil &amp; tercetak adalah <b>QR Code</b> ini —
                     bukan namanya. Pengguna yang belum punya barcode tetap tampil sebagai nama.
                 </p>
             </div>
@@ -82,7 +82,7 @@ const inputCls = 'h-9 w-full rounded-lg border border-neutral-300 bg-white px-3 
                 <thead class="bg-neutral-50 dark:bg-neutral-800"><tr class="text-left text-xs uppercase text-neutral-500">
                     <th class="px-4 py-3">Pengguna</th>
                     <th class="px-4 py-3">Kode</th>
-                    <th class="px-4 py-3">Barcode Tanda Tangan</th>
+                    <th class="px-4 py-3">QR Tanda Tangan</th>
                     <th class="px-4 py-3">Keterangan</th>
                     <th class="px-4 py-3 text-center">Status</th>
                     <th class="px-4 py-3 text-center">Aksi</th>
@@ -121,15 +121,22 @@ const inputCls = 'h-9 w-full rounded-lg border border-neutral-300 bg-white px-3 
 
                     <div class="space-y-3">
                         <div>
-                            <label class="mb-1 block text-xs font-medium text-neutral-500">Pengguna</label>
+                            <label class="mb-1 block text-xs font-medium text-neutral-500">
+                                Pengguna <span class="text-danger-500">*</span>
+                                <span class="ml-1 font-normal text-neutral-400">({{ pilihanUser.length }} tersedia)</span>
+                            </label>
                             <SearchSelect v-model="form.user_id" :options="pilihanUser" placeholder="— pilih pengguna —" />
                             <p v-if="form.errors.user_id" class="mt-1 text-xs text-danger-600">{{ form.errors.user_id }}</p>
+                            <!-- Dibedakan: benar-benar tidak ada pengguna vs semuanya sudah punya barcode. -->
+                            <p v-else-if="!users.length" class="mt-1 text-xs text-danger-600">Belum ada pengguna terdaftar di sistem.</p>
+                            <p v-else-if="!pilihanUser.length" class="mt-1 text-xs text-amber-600">Semua pengguna sudah punya barcode — ubah yang sudah ada.</p>
+                            <p v-else class="mt-1 text-[11px] text-neutral-400">Ketik untuk mencari nama atau email pengguna.</p>
                         </div>
                         <div>
                             <label class="mb-1 block text-xs font-medium text-neutral-500">Kode Barcode</label>
                             <input v-model="form.code" type="text" maxlength="64" :class="inputCls" placeholder="mis. TTD-SPVFIN-001" />
                             <p v-if="form.errors.code" class="mt-1 text-xs text-danger-600">{{ form.errors.code }}</p>
-                            <p v-else class="mt-1 text-[11px] text-neutral-400">Huruf, angka, dan tanda baca biasa. Kode ini yang dibaca pemindai.</p>
+                            <p v-else class="mt-1 text-[11px] text-neutral-400">Huruf, angka, dan tanda baca biasa. Kode ini yang dibaca pemindai QR.</p>
                         </div>
                         <div>
                             <label class="mb-1 block text-xs font-medium text-neutral-500">Keterangan (opsional)</label>
@@ -144,7 +151,7 @@ const inputCls = 'h-9 w-full rounded-lg border border-neutral-300 bg-white px-3 
                         <div class="rounded-lg border border-dashed border-neutral-300 p-3 text-center dark:border-neutral-700">
                             <div class="mb-1 text-[11px] font-medium text-neutral-500">Pratinjau</div>
                             <div v-if="preview" class="flex justify-center text-neutral-900 dark:text-neutral-100" v-html="preview"></div>
-                            <div v-else-if="form.code && !previewOk" class="text-xs text-danger-600">Kode ini tidak bisa dibentuk menjadi barcode.</div>
+                            <div v-else-if="form.code && !previewOk" class="text-xs text-danger-600">Kode ini tidak bisa dibentuk menjadi QR Code.</div>
                             <div v-else class="text-xs text-neutral-400">Ketik kode untuk melihat barcode-nya.</div>
                         </div>
                     </div>

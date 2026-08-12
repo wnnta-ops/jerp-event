@@ -59,13 +59,12 @@ class SipController extends Controller
      *
      * @return array<string,string>  slot → SVG (hanya slot yang penyetujunya punya barcode aktif)
      */
-    private function approvalBarcodes(BsSip $sip, int $moduleWidth = 2, int $height = 34): array
+    private function approvalBarcodes(BsSip $sip, int $moduleSize = 3): array
     {
         $approvals = $sip->approvals ?? [];
         $byUser = \App\Domain\BusinessSupport\Models\BsSignatureBarcode::svgMapFor(
             array_map(fn ($a) => (int) ($a['approved_by'] ?? 0), array_values($approvals)),
-            $moduleWidth,
-            $height,
+            $moduleSize,
         );
 
         $out = [];
@@ -362,7 +361,8 @@ class SipController extends Controller
         // Slot yang sudah disetujui dicetak dengan BARCODE tanda tangan penyetujunya. Bila
         // penyetuju belum punya barcode, namanya dipakai kembali agar dokumen tetap sah dibaca.
         $approvals = $sip->approvals ?? [];
-        $barcodes = $this->approvalBarcodes($sip, 1, 26);
+        // Modul kecil (2 px) agar QR yang berbentuk kotak muat di kotak TTD yang sempit.
+        $barcodes = $this->approvalBarcodes($sip, 2);
         $signs = '';
         foreach (BsSip::SIGNERS as $key => $label) {
             $ap = $approvals[$key] ?? null;
@@ -385,8 +385,10 @@ class SipController extends Controller
             .r{text-align:right;font-variant-numeric:tabular-nums}.c{text-align:center}.tot{font-weight:bold;background:#f1f5f9}
             .grp{background:#e2e8f0;font-weight:600}.sub{background:#f8fafc;font-weight:600}
             .signs{display:grid;grid-template-columns:repeat(7,1fr);gap:6px;margin-top:24px}
-            .sign-box{text-align:center;font-size:9px}.sign-label{font-weight:600;margin-bottom:2px}.sign-space{height:38px}.sign-name{border-top:1px solid #1f2937;padding-top:2px;min-height:12px}
-            .sign-bc{display:flex;align-items:flex-end;justify-content:center;overflow:hidden}.sign-bc svg{max-width:100%;height:auto}
+            .sign-box{text-align:center;font-size:9px}.sign-label{font-weight:600;margin-bottom:2px}.sign-space{height:52px}.sign-name{border-top:1px solid #1f2937;padding-top:2px;min-height:12px}
+            /* QR berbentuk KOTAK — ruang TTD ditinggikan & gambarnya dibatasi tinggi kotak. */
+            .sign-bc{display:flex;align-items:flex-end;justify-content:center;overflow:hidden}
+            .sign-bc svg{max-width:100%;max-height:52px;height:auto;width:auto}
             @media print{.noprint{display:none}}</style></head><body>
             <div class="head"><div><h1>STANDING INSTRUCTION PAYMENT (SIP)</h1><div class="muted">'.$e($co).'</div></div>
             <div class="muted" style="text-align:right">No: '.$e($sip->sip_number).'<br>Cetak: '.$e($now).'</div></div>
