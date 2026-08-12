@@ -112,13 +112,15 @@
     {{-- ════════════ HALAMAN 1 ════════════ --}}
     <div class="page">
         <div class="head">
-            {!! $logoTag('mup.png', '<div class="logo">M</div>', 'max-width:120px; max-height:64px;') !!}
+            {{-- KIRI: logo MUP (perusahaan). --}}
+            {!! $logoTag('MUP.png', '<div class="logo">M</div>', 'max-width:70px; max-height:64px;') !!}
             <div class="co">
                 <div class="ttl">SURAT PEMESANAN RUMAH{{ ($kontrak->tahap ?? 'SPRS') === 'SPR' ? '' : ' SEMENTARA' }}</div>
                 <div class="no">Nomor : {{ $kontrak->no_kontrak }}</div>
                 <div class="no">Tanggal : {{ optional($kontrak->tgl_kontrak)->format('d M Y') }}</div>
             </div>
-            {!! $logoTag('java-residence.png', '<div class="brand">JAVA<br>RESIDENCE</div>', 'max-width:140px; max-height:64px;') !!}
+            {{-- KANAN ATAS: logo Java Residence (daun + wordmark). --}}
+            {!! $logoTag('logo-cop.png', '<div class="brand">JAVA<br>RESIDENCE</div>', 'max-width:150px; max-height:60px; object-fit:contain;') !!}
         </div>
 
         <p style="margin-top:14px;">Yang Bertanda Tangan Di bawah Ini :</p>
