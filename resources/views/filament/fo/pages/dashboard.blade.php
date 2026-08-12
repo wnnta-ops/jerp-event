@@ -2,7 +2,10 @@
     @php
         $tiles = $this->getTiles();
         $user = auth()->user();
-        $hour = (int) now()->format('H');
+        // Dipatok WIB secara eksplisit supaya jam & salam tetap benar walau
+        // APP_TIMEZONE di suatu server belum di-set (fallback Laravel = UTC).
+        $nowWib = now()->setTimezone('Asia/Jakarta');
+        $hour = (int) $nowWib->format('H');
         $salam = $hour < 11 ? 'Selamat pagi' : ($hour < 15 ? 'Selamat siang' : ($hour < 19 ? 'Selamat sore' : 'Selamat malam'));
         $firstName = \Illuminate\Support\Str::before($user?->full_name ?? $user?->name ?? 'Yogi', ' ');
     @endphp
@@ -245,7 +248,7 @@
     {{-- ── Welcome header ──────────────────────────────────────── --}}
     <div class="mb-5 md:mb-6">
         <div class="fo-header text-xs uppercase tracking-wider text-gray-500 dark:text-gray-400">
-            {{ now()->translatedFormat('l, d F Y') }} · {{ now()->format('H:i') }} WIB
+            {{ $nowWib->translatedFormat('l, d F Y') }} · {{ $nowWib->format('H:i') }} WIB
         </div>
         <h1 class="fo-header text-xl md:text-3xl font-bold mt-1" style="color:#ff8c00;">
             {{ $salam }}, {{ $firstName }} 👋

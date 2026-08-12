@@ -65,7 +65,16 @@ return [
     |
     */
 
-    'timezone' => 'UTC',
+    /*
+     * Dibaca dari APP_TIMEZONE (.env = Asia/Jakarta). Sebelumnya dipaku 'UTC'
+     * sehingga setelan .env diabaikan dan SELURUH jam aplikasi tampil 7 jam
+     * lebih awal.
+     *
+     * FORWARD-ONLY: data lama tetap tersimpan dalam UTC dan TIDAK digeser.
+     * Konsekuensinya jam pada record lama tampil 7 jam lebih awal; record baru
+     * sudah benar. Jangan lakukan migrasi/backfill kolom datetime.
+     */
+    'timezone' => env('APP_TIMEZONE', 'UTC'),
 
     /*
     |--------------------------------------------------------------------------
