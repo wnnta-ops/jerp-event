@@ -279,7 +279,6 @@ const bankTheoreticalMax = computed(() => {
 });
 // Indeks tahap Analisa (untuk tombol lompat dari Profiling).
 const analisaStageIdx = computed(() => stageList.value.findIndex((s) => s.key === 'analisa'));
-const sprsStageIdx = computed(() => stageList.value.findIndex((s) => s.key === 'sprs'));
 // Sinkronkan 2 rekomendasi teratas ke form Profiling agar ikut tersimpan.
 watch(bankRekom, (v) => {
     f.profiling.bank_analisa_1 = v.find((b) => b.rekom === 1)?.name ?? '';
@@ -1007,17 +1006,12 @@ const analisaLabel: Record<string, string> = { layak: 'Layak', tidak_layak: 'Tid
                             <!-- 5. Status pernikahan — hasil pilihan tahap SPRS (tampil saja, bukan isian). -->
                             <div class="rounded-xl border border-rose-200 bg-rose-50/50 p-4 md:col-span-2 dark:border-rose-900/40 dark:bg-rose-900/10">
                                 <div class="mb-2 flex items-center gap-2 text-sm font-semibold text-rose-700 dark:text-rose-300"><Users class="h-4 w-4" /> Status Pernikahan</div>
-                                <div class="flex flex-wrap items-center justify-between gap-2">
-                                    <div>
-                                        <span v-if="pbMarital" class="inline-flex rounded-full bg-rose-100 px-3 py-1 text-sm font-semibold text-rose-700 dark:bg-rose-900/40 dark:text-rose-200">{{ pbMarital.label }}</span>
-                                        <span v-else class="text-sm text-neutral-400">— belum dipilih pada tahap SPRS —</span>
-                                        <p class="mt-2 text-[11px] text-neutral-400">Sumber: {{ pbMarital?.sumber ?? 'pilihan "Status Pernikahan Pemohon" pada tahap SPRS' }}</p>
-                                    </div>
-                                    <!-- Diubah di SPRS, bukan di sini — satu tempat saja agar tidak berbeda isinya. -->
-                                    <button type="button" @click="openStage = sprsStageIdx"
-                                        class="inline-flex items-center gap-1 rounded-lg border border-rose-300 px-2.5 py-1 text-xs font-semibold text-rose-700 transition-colors duration-200 hover:bg-rose-100 dark:border-rose-800 dark:text-rose-300 dark:hover:bg-rose-950/40">
-                                        <Pencil class="h-3 w-3" /> Ubah di SPRS
-                                    </button>
+                                <!-- HANYA menampilkan. Status pernikahan ditentukan di tahap SPRS dan tidak
+                                     dapat diubah dari sini, supaya tidak ada dua tempat yang bisa berbeda. -->
+                                <div>
+                                    <span v-if="pbMarital" class="inline-flex rounded-full bg-rose-100 px-3 py-1 text-sm font-semibold text-rose-700 dark:bg-rose-900/40 dark:text-rose-200">{{ pbMarital.label }}</span>
+                                    <span v-else class="text-sm text-neutral-400">— belum dipilih pada tahap SPRS —</span>
+                                    <p class="mt-2 text-[11px] text-neutral-400">Sumber: {{ pbMarital?.sumber ?? 'pilihan "Status Pernikahan Pemohon" pada tahap SPRS' }}</p>
                                 </div>
                             </div>
                         </div>
