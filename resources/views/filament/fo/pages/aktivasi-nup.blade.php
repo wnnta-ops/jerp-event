@@ -49,8 +49,11 @@
         .an-scan__label { font-size: .7rem; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; color: #6b7280; }
         .dark .an-scan__label { color: #94a3b8; }
         .an-scan__field { width: 100%; border-radius: .55rem; padding: .5rem .7rem; font-size: .8125rem;
-            border: 1px solid rgb(209 213 219); background: #fff; color: #111827; }
-        .dark .an-scan__field { background: rgba(255,255,255,.04); border-color: rgba(255,255,255,.15); color: #e5e7eb; }
+            border: 1px solid rgb(209 213 219); background-color: #fff; color: #111827; }
+        /* WAJIB background-color, BUKAN shorthand `background`: shorthand mereset
+           background-image & background-repeat, dan karena selektor .dark lebih
+           spesifik daripada .an-scan__select, panah select jadi ter-ubin di tema gelap. */
+        .dark .an-scan__field { background-color: rgba(255,255,255,.04); border-color: rgba(255,255,255,.15); color: #e5e7eb; }
         .an-scan__field:focus { outline: none; border-color: #ea580c; box-shadow: 0 0 0 3px rgb(234 88 12 / .15); }
         /* Select butuh penanganan khusus:
            1) Filament memasang gambar panah lewat background-image. Properti
