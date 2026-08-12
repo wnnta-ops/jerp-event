@@ -78,6 +78,10 @@ docker compose exec app php artisan cache:clear
 docker compose exec app php artisan optimize:clear
 docker compose down                                 # stop (data di named volume tetap)
 docker compose down -v                              # stop + HAPUS data (hati-hati!)
+
+
+docker container prune -f       # hapus semua container yang sudah berhenti (termasuk yang ber-hash)
+
 ```
 
 ## Backup data
@@ -146,3 +150,15 @@ docker compose exec app php artisan db:seed --class=MasterDataSeeder --force
 docker compose exec app php artisan db:seed --class=AccessMatrixSeeder --force
 
 (MasterDataSeeder = numerator SALES/BLT/PH/PU/dll; AccessMatrixSeeder = 114 permission untuk matrix Grup Akses.)
+
+
+
+
+bash marger/up-fo.sh
+bash marger/down-fo.sh
+
+bash marger/up-bo.sh
+bash marger/down-bo.sh
+
+bash marger/up-portal.sh
+bash marger/down-portal.sh
