@@ -18,28 +18,111 @@
     <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"
             integrity="sha384-c9d8RFSL+u3exBOJ4Yp3HUJXS4znl9f+z66d1y54ig+ea249SpqR+w1wyvXz/lk+"
             crossorigin="anonymous"></script>
-    <div wire:ignore.self class="mb-4 rounded-xl p-4"
-         style="background: var(--gray-50, rgb(249 250 251)); border: 1px solid var(--gray-200, rgb(229 231 235));"
-         x-data="aktivasiScanState()" x-init="init()">
-        <div class="flex items-center justify-between gap-3 mb-3">
-            <div class="text-sm font-semibold">📷 Scan QR Customer / Barcode NUP</div>
-            <button type="button" @click="toggle()" class="text-xs hover:underline" style="color:#60a5fa;">
+    {{-- Gaya ditulis sendiri (bukan kelas Tailwind grid-*) karena kelas grid tidak
+         ter-compile di CSS panel Filament — pola yang sama dipakai halaman FO lain. --}}
+    <style>
+        .an-scan { max-width: 880px; margin-left: auto; margin-right: auto; border-radius: .9rem; overflow: hidden;
+            background: #fff; border: 1px solid rgb(229 231 235); box-shadow: 0 1px 2px rgb(0 0 0 / .04); }
+        .dark .an-scan { background: rgba(255,255,255,.03); border-color: rgba(255,255,255,.1); }
+
+        .an-scan__head { display: flex; align-items: center; justify-content: space-between; gap: .75rem;
+            padding: .7rem 1rem; border-bottom: 1px solid rgb(243 244 246); }
+        .dark .an-scan__head { border-color: rgba(255,255,255,.08); }
+        .an-scan__title { display: flex; align-items: center; gap: .5rem; font-size: .875rem; font-weight: 600; }
+        .an-scan__dot { width: .5rem; height: .5rem; border-radius: 999px; background: #9ca3af; flex: 0 0 auto; }
+        .an-scan__dot.on { background: #10b981; box-shadow: 0 0 0 3px rgb(16 185 129 / .18); }
+        .an-scan__toggle { font-size: .75rem; font-weight: 600; color: #ea580c; padding: .3rem .6rem;
+            border-radius: .5rem; border: 1px solid rgb(254 215 170); background: rgb(255 247 237); }
+        .dark .an-scan__toggle { background: rgba(234,88,12,.12); border-color: rgba(234,88,12,.35); color: #fdba74; }
+        .an-scan__toggle:hover { filter: brightness(.97); }
+
+        .an-scan__body { display: grid; gap: 1rem; padding: 1rem; grid-template-columns: 240px minmax(0,1fr); }
+        @media (max-width: 720px) { .an-scan__body { grid-template-columns: minmax(0,1fr); } }
+
+        .an-scan__cam { position: relative; aspect-ratio: 4/3; border-radius: .7rem; overflow: hidden;
+            background: #0b1220; border: 1px solid rgba(255,255,255,.12); }
+        .an-scan__cam video, .an-scan__cam canvas { width: 100% !important; height: 100% !important; object-fit: cover; display: block; }
+        .an-scan__camoff { position: absolute; inset: 0; display: grid; place-items: center; gap: .25rem;
+            color: #94a3b8; font-size: .75rem; text-align: center; padding: .5rem; }
+
+        .an-scan__ctl { display: flex; flex-direction: column; gap: .6rem; }
+        .an-scan__label { font-size: .7rem; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; color: #6b7280; }
+        .dark .an-scan__label { color: #94a3b8; }
+        .an-scan__field { width: 100%; border-radius: .55rem; padding: .5rem .7rem; font-size: .8125rem;
+            border: 1px solid rgb(209 213 219); background-color: #fff; color: #111827; }
+        /* WAJIB background-color, BUKAN shorthand `background`: shorthand mereset
+           background-image & background-repeat, dan karena selektor .dark lebih
+           spesifik daripada .an-scan__select, panah select jadi ter-ubin di tema gelap. */
+        .dark .an-scan__field { background-color: rgba(255,255,255,.04); border-color: rgba(255,255,255,.15); color: #e5e7eb; }
+        .an-scan__field:focus { outline: none; border-color: #ea580c; box-shadow: 0 0 0 3px rgb(234 88 12 / .15); }
+        /* Select butuh penanganan khusus:
+           1) Filament memasang gambar panah lewat background-image. Properti
+              `background` (shorthand) di .an-scan__field mereset background-repeat
+              jadi `repeat`, sehingga panahnya TER-UBIN berderet. Karena itu di sini
+              appearance dimatikan & panah digambar sendiri sekali saja.
+           2) Di tema gelap, daftar pilihan native memakai warna sistem sehingga
+              teksnya gelap di atas putih (tak terbaca). color-scheme + warna
+              option eksplisit membuatnya ikut gelap. */
+        .an-scan__select { appearance: none; -webkit-appearance: none; -moz-appearance: none;
+            padding-right: 2rem;
+            background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20' stroke='%236b7280' stroke-width='1.75'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' d='M6 8l4 4 4-4'/%3E%3C/svg%3E");
+            background-repeat: no-repeat; background-position: right .5rem center; background-size: 1.1rem; }
+        .dark .an-scan__select { color-scheme: dark;
+            background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20' stroke='%2394a3b8' stroke-width='1.75'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' d='M6 8l4 4 4-4'/%3E%3C/svg%3E"); }
+        .dark .an-scan__select option { background-color: #1e293b; color: #e5e7eb; }
+
+        .an-scan__row { display: flex; gap: .5rem; }
+        .an-scan__btn { white-space: nowrap; border-radius: .55rem; padding: .5rem 1.1rem; font-size: .8125rem;
+            font-weight: 700; background: #059669; color: #fff; }
+        .an-scan__btn:hover { background: #047857; }
+        .an-scan__btn:disabled { opacity: .6; cursor: not-allowed; }
+        .an-scan__hint { font-size: .75rem; color: #6b7280; line-height: 1.45; }
+        .dark .an-scan__hint { color: #94a3b8; }
+    </style>
+
+    <div wire:ignore.self class="an-scan mb-5" x-data="aktivasiScanState()" x-init="init()">
+        <div class="an-scan__head">
+            <div class="an-scan__title">
+                <span class="an-scan__dot" :class="on ? 'on' : ''"></span>
+                Scan QR Customer / Barcode NUP
+            </div>
+            <button type="button" @click="toggle()" class="an-scan__toggle">
                 <span x-text="on ? 'Matikan kamera' : 'Hidupkan kamera'"></span>
             </button>
         </div>
-        <div class="grid gap-3" style="grid-template-columns: minmax(0,240px) minmax(0,1fr);">
-            <div wire:ignore id="an-scanner" style="aspect-ratio:4/3; border-radius:.6rem; overflow:hidden; background:#0f172a; border:1px solid rgba(255,255,255,.15);"></div>
-            <div>
-                <p class="text-xs text-gray-500 mb-2">Arahkan QR customer ke kamera — NUP langsung diaktivasi. Atau ketik manual:</p>
-                <div class="flex gap-2">
-                    <input type="text" wire:model="scanKode" @keyup.enter="$wire.aktivasiByScan()"
-                           placeholder="Mis. NUP-00001 atau CUST:123"
-                           class="flex-1 rounded-lg border px-3 py-2 text-sm" style="border-color: var(--gray-300);">
-                    <button type="button" wire:click="aktivasiByScan" wire:loading.attr="disabled"
-                            class="rounded-lg px-4 py-2 text-sm font-semibold" style="background:#059669; color:#fff;">
-                        Aktivasi
-                    </button>
+
+        <div class="an-scan__body">
+            <div class="an-scan__cam">
+                <div wire:ignore id="an-scanner" style="width:100%; height:100%;"></div>
+                <div class="an-scan__camoff" x-show="!on" x-cloak>
+                    <div>Kamera mati</div>
                 </div>
+            </div>
+
+            <div class="an-scan__ctl">
+                {{-- Pemilih kamera (webcam USB tambahan) — muncul bila kamera >1. --}}
+                <div x-show="cameras.length > 1" x-cloak>
+                    <div class="an-scan__label" style="margin-bottom:.25rem;">Kamera</div>
+                    <select x-model="camId" @change="gantiKamera()" class="an-scan__field an-scan__select">
+                        <option value="">Kamera bawaan</option>
+                        <template x-for="c in cameras" :key="c.id">
+                            <option :value="c.id" x-text="c.label"></option>
+                        </template>
+                    </select>
+                </div>
+
+                <div>
+                    <div class="an-scan__label" style="margin-bottom:.25rem;">Atau ketik manual</div>
+                    <div class="an-scan__row">
+                        <input type="text" wire:model="scanKode" @keyup.enter="$wire.aktivasiByScan()"
+                               placeholder="Mis. NUP-00001 atau CUST:123" class="an-scan__field">
+                        <button type="button" wire:click="aktivasiByScan" wire:loading.attr="disabled" class="an-scan__btn">
+                            Aktivasi
+                        </button>
+                    </div>
+                </div>
+
+                <p class="an-scan__hint">Arahkan QR customer ke kamera — NUP <strong>langsung diaktivasi</strong> tanpa perlu mencari barisnya di tabel.</p>
             </div>
         </div>
     </div>
@@ -50,14 +133,37 @@
         function aktivasiScanState() {
             return {
                 on: false, inst: null, lock: false,
-                init() { this.$nextTick(() => this.start()); },
+                // Pemilihan kamera (mendukung webcam USB tambahan); pilihan diingat
+                // per komputer & dibagi dgn halaman Pilih Unit (kunci sama).
+                cameras: [], camId: '',
+                init() {
+                    try { this.camId = localStorage.getItem('pu_cam_id') || ''; } catch (e) {}
+                    this.$nextTick(() => this.start());
+                },
+                async muatKamera() {
+                    if (!window.Html5Qrcode) return;
+                    try {
+                        const list = await Html5Qrcode.getCameras();
+                        this.cameras = (list || []).map((c, i) => ({ id: c.id, label: c.label || ('Kamera ' + (i + 1)) }));
+                        if (this.camId && !this.cameras.some(c => c.id === this.camId)) this.camId = '';
+                    } catch (e) { /* izin belum diberikan */ }
+                },
+                async gantiKamera() {
+                    try { localStorage.setItem('pu_cam_id', this.camId || ''); } catch (e) {}
+                    await this.stop();
+                    await this.start();
+                },
                 async start() {
                     if (this.on || !window.Html5Qrcode) return;
                     try {
                         this.inst = new Html5Qrcode('an-scanner');
-                        await this.inst.start({ facingMode: 'environment' }, { fps: 10, qrbox: 220 },
+                        // Kamera pilihan operator (mis. webcam USB); bila belum memilih,
+                        // pakai kamera belakang seperti semula.
+                        const sumber = this.camId ? { deviceId: { exact: this.camId } } : { facingMode: 'environment' };
+                        await this.inst.start(sumber, { fps: 10, qrbox: 220 },
                             (teks) => this.onScan(teks), () => {});
                         this.on = true;
+                        this.muatKamera();
                     } catch (e) { console.warn('Scanner Aktivasi NUP gagal start:', e); }
                 },
                 async stop() {

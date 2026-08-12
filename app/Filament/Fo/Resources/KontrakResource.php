@@ -649,11 +649,20 @@ class KontrakResource extends Resource
         );
     }
 
+    /**
+     * SPRS tidak boleh dibuat manual — terbit dari alur Pilih Unit / Verifikasi
+     * Booked. canCreate() false menutup rutenya sekaligus, bukan hanya
+     * menyembunyikan tombolnya, supaya /create tak bisa dibuka lewat URL.
+     */
+    public static function canCreate(): bool
+    {
+        return false;
+    }
+
     public static function getPages(): array
     {
         return [
             'index' => Pages\ListKontraks::route('/'),
-            'create' => Pages\CreateKontrak::route('/create'),
             'edit' => Pages\EditKontrak::route('/{record}/edit'),
         ];
     }

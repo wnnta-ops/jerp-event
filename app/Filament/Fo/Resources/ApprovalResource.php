@@ -15,6 +15,7 @@ use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Relations\MorphTo;
 use Illuminate\Support\Str;
 
 class ApprovalResource extends Resource
@@ -36,9 +37,20 @@ class ApprovalResource extends Resource
 
     public static function getEloquentQuery(): Builder
     {
-        $q = parent::getEloquentQuery();
+        $q = parent::getEloquentQuery()
+            // Subject Kontrak beserta SPR/customer/unit di-eager-load: kolom tabel
+            // membacanya per baris, tanpa ini jadi N+1.
+            ->with(['subject' => function (MorphTo $morphTo) {
+                $morphTo->morphWith([Kontrak::class => ['reservasi', 'customer', 'unit']]);
+            }]);
 
         return static::$jenisScope ? $q->where('jenis', static::$jenisScope) : $q;
+    }
+
+    /** Subject sebagai Kontrak (null bila jenisnya tak terikat kontrak, mis. BLT/Komisi). */
+    protected static function kontrakOf(Approval $r): ?Kontrak
+    {
+        return $r->subject instanceof Kontrak ? $r->subject : null;
     }
 
     public static function form(Form $form): Form
@@ -309,17 +321,26 @@ class ApprovalResource extends Resource
 
     public static function table(Table $table): Table
     {
+        // FORMAT APPROVAL (berlaku di SEMUA menu approval):
+        //   No. SPR · Tanggal SPR · Nama User · No. Unit · Status · Detail.
+        // Kolom "Jenis" hanya ditambahkan pada daftar gabungan (tanpa jenisScope),
+        // karena di menu per-jenis isinya selalu sama.
         return $table->columns([
-            Tables\Columns\TextColumn::make('no_approval')->label('No')->badge()->color('primary')->searchable()->sortable(),
-            Tables\Columns\TextColumn::make('tgl_approval')->label('Tgl')->date('d M Y')->sortable(),
-            Tables\Columns\TextColumn::make('jenis')->label('Jenis')->badge(),
-            Tables\Columns\TextColumn::make('subject_type')
-                ->label('Subject')
-                ->formatStateUsing(fn (?string $state) => $state ? class_basename($state) : '—')
-                ->toggleable(),
-            Tables\Columns\TextColumn::make('subject_id')->label('ID')->toggleable(),
-            Tables\Columns\TextColumn::make('amount_dampak')->label('Dampak')->money('IDR', divideBy: 0)->alignEnd()->toggleable(),
-            Tables\Columns\TextColumn::make('requester.full_name')->label('Pemohon')->toggleable(),
+            Tables\Columns\TextColumn::make('no_spr')->label('No. SPR')->badge()->color('primary')
+                ->state(fn (Approval $r) => static::kontrakOf($r)?->reservasi?->no_reservasi ?? '—'),
+
+            Tables\Columns\TextColumn::make('tgl_spr')->label('Tanggal SPR')
+                ->state(fn (Approval $r) => optional(static::kontrakOf($r)?->reservasi?->tgl_reservasi)->format('d M Y') ?? '—'),
+
+            Tables\Columns\TextColumn::make('nama_user')->label('Nama User')->wrap()
+                ->state(fn (Approval $r) => static::kontrakOf($r)?->customer?->full_name ?? '—'),
+
+            Tables\Columns\TextColumn::make('no_unit')->label('No. Unit')
+                ->state(fn (Approval $r) => ($u = static::kontrakOf($r)?->unit) ? ($u->kode_unit ?: $u->no_unit ?: '—') : '—'),
+
+            Tables\Columns\TextColumn::make('jenis')->label('Jenis')->badge()
+                ->visible(fn () => blank(static::$jenisScope)),
+
             Tables\Columns\TextColumn::make('status')->label('Status')->badge()
                 ->formatStateUsing(fn (Approval $r) => $r->status === 'PENDING'
                     ? 'PENDING · '.(ApprovalService::isSingleLevel($r->jenis) ? 'GM' : 'L'.$r->current_level)
