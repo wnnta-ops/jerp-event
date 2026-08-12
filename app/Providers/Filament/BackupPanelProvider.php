@@ -27,7 +27,7 @@ class BackupPanelProvider extends PanelProvider
             ->id('backup')
             ->path('backup')
             ->brandName('Java Core · Backup')
-            ->favicon(asset('favicon.svg'))
+            ->favicon(asset('images/logo/logo-daun.png'))
             ->login()
             ->colors([
                 'primary' => Color::Cyan,

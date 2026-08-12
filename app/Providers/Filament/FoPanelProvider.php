@@ -30,7 +30,7 @@ class FoPanelProvider extends PanelProvider
             ->id('fo')
             ->path('fo')
             ->brandName('Java Core System')
-            ->favicon(asset('favicon.svg'))
+            ->favicon(asset('images/logo/logo-daun.png'))
             // TANPA ->login(): tamu yg buka /fo diarahkan ke /login (Livewire) — satu
             // pintu login untuk seluruh J-ERP. /fo/login dihapus.
             // Warna brand mengikuti ipro-fo (oranye hangat #ff8c00 / Java Core).

@@ -26,7 +26,7 @@ class BoPanelProvider extends PanelProvider
             ->id('bo')
             ->path('bo')
             ->brandName('Java Core · Back Office')
-            ->favicon(asset('favicon.svg'))
+            ->favicon(asset('images/logo/logo-daun.png'))
             ->login()
             ->colors([
                 'primary' => Color::Blue,
