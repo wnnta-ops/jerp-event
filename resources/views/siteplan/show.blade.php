@@ -50,7 +50,7 @@
         .info-card .line .p { color: #64748b; font-variant-numeric: tabular-nums; text-align: right; min-width: 64px; }
         .info-card .ready .v { color: #16a34a; }
         .info-card .sold  .v { color: #dc2626; }
-        .info-card .hold  .v { color: #d97706; }
+        .info-card .hold  .v { color: #7c3aed; }
 
         .leaflet-tooltip.sp-block-label { background:transparent; color:#fff; border:0; box-shadow:none; font-weight:800; font-size:15px; letter-spacing:.5px; text-shadow:0 1px 4px rgba(0,0,0,.95); }
 
@@ -73,8 +73,8 @@
             border: .75px solid #fff; box-shadow: 0 1px 2px rgba(0,0,0,.5);
             white-space: nowrap; text-shadow: 0 1px 1px rgba(0,0,0,.25);
         }
-        .sold-stamp.booking { background: #d97706; }   /* BOOKING */
-        .sold-stamp.hold { background: #ea580c; }      /* HOLD */
+        .sold-stamp.booking { background: #d97706; }   /* BOOKING (amber) */
+        .sold-stamp.hold { background: #7c3aed; }      /* HOLD (ungu — dibedakan dari SOLD/BOOKED) */
 
         /* Popup — Design C: kartu terang + harga sejajar (modern) */
         .leaflet-popup-content-wrapper { background:#fff; color:#0f172a; border-radius:16px; padding:0; box-shadow:0 20px 50px rgba(15,23,42,.25); border:1px solid #e2e8f0; }
@@ -163,7 +163,7 @@
             switch (status) {
                 case 'TERSEDIA': return { stroke:'#10b981', fill:'#34d399', badge:'#16a34a', label:'TERSEDIA' };
                 case 'BOOKING':  return { stroke:'#f59e0b', fill:'#fbbf24', badge:'#d97706', label:'BOOKING' };
-                case 'HOLD':     return { stroke:'#f97316', fill:'#fb923c', badge:'#ea580c', label:'HOLD' };
+                case 'HOLD':     return { stroke:'#7c3aed', fill:'#a78bfa', badge:'#7c3aed', label:'HOLD' };
                 case 'TERJUAL':
                 case 'LUNAS':    return { stroke:'#475569', fill:'#94a3b8', badge:'#dc2626', label:'SOLD' };
                 default:         return { stroke:'#94a3b8', fill:'#cbd5e1', badge:'#64748b', label:(status||'-') };
