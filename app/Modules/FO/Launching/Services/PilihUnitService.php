@@ -7,6 +7,7 @@ use App\Modules\FO\Launching\Models\NupRegistration;
 use App\Modules\FO\MarketingSales\Models\Customer;
 use App\Modules\FO\MarketingSales\Models\Reservasi;
 use App\Modules\FO\MarketingSales\Models\Unit;
+use App\Modules\FO\MarketingSales\Services\CustomerQrService;
 use App\Services\Numerator\NumeratorServiceInterface;
 use Illuminate\Support\Facades\DB;
 use RuntimeException;
@@ -38,13 +39,28 @@ class PilihUnitService
             throw new RuntimeException('Barcode kosong.');
         }
 
-        $reg = NupRegistration::with(['customer', 'event', 'projectPref'])
+        // QR Customer selalu berawalan "CUST:" → PASTI dicari sebagai kode customer,
+        // tak pernah diadu dengan no_nup. Tanpa ini, kode customer berupa angka yang
+        // kebetulan sama dengan sebuah No. NUP akan mengenali ORANG YANG SALAH.
+        $kodeCustomer = null;
+        if (str_starts_with(strtoupper($code), CustomerQrService::PREFIX)) {
+            $kodeCustomer = trim(substr($code, strlen(CustomerQrService::PREFIX)));
+            if ($kodeCustomer === '') {
+                throw new RuntimeException('QR customer tidak valid (kode kosong).');
+            }
+        }
+
+        $reg = $kodeCustomer !== null ? null : NupRegistration::with(['customer', 'event', 'projectPref'])
             ->where('no_nup', $code)
             ->first();
 
         // Bukan no_nup → coba sebagai kode customer (QR Master Customer).
         if (! $reg) {
-            $customer = Customer::query()->where('code', $code)->first();
+            $cari = $kodeCustomer ?? $code;
+            $customer = Customer::query()->where('code', $cari)->first();
+            if ($kodeCustomer !== null && ! $customer) {
+                throw new RuntimeException("Customer dengan kode {$kodeCustomer} tidak ditemukan.");
+            }
             if ($customer) {
                 $reg = NupRegistration::with(['customer', 'event', 'projectPref'])
                     ->where('customer_id', $customer->id)
@@ -52,7 +68,7 @@ class PilihUnitService
                     ->orderByDesc('id')
                     ->first();
                 if (! $reg) {
-                    throw new RuntimeException("Customer {$code} belum punya NUP yang APPROVED.");
+                    throw new RuntimeException("Customer {$cari} belum punya NUP yang APPROVED.");
                 }
             }
         }

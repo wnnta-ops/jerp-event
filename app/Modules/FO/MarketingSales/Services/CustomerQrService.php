@@ -30,10 +30,19 @@ class CustomerQrService
         return (string) $customer->code;
     }
 
-    /** Payload yang ditanam di QR (kode customer). */
+    /** Awalan penanda payload QR customer. */
+    public const PREFIX = 'CUST:';
+
+    /**
+     * Payload yang ditanam di QR: "CUST:<kode>".
+     *
+     * WAJIB berawalan. Kode customer hasil migrasi berupa ANGKA (1, 2, 3, …) dan
+     * 304 di antaranya sama persis dengan No. NUP; tanpa awalan, pemindaian yang
+     * mencocokkan No. NUP lebih dulu bisa mengenali QR sebagai CUSTOMER LAIN.
+     */
     public function payload(Customer $customer): string
     {
-        return $this->ensureCode($customer);
+        return self::PREFIX.$this->ensureCode($customer);
     }
 
     /** Render QR sebagai SVG inline (tanpa butuh imagick). */

@@ -26,7 +26,7 @@ class BankloanPanelProvider extends PanelProvider
             ->id('bankloan')
             ->path('bankloan')
             ->brandName('Java Core · Bank Loan (KPR)')
-            ->favicon(asset('favicon.svg'))
+            ->favicon(asset('images/logo/logo-daun.png'))
             ->login()
             ->colors([
                 'primary' => Color::Teal,

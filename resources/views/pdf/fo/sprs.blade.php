@@ -13,6 +13,10 @@
         .head .src { border: 1px solid #111; width: 170px; height: 58px; font-size: 10px; }
         .head .src .lbl { border-bottom: 1px solid #111; text-align: center; font-weight: 700; padding: 3px; }
         .head .src .val { padding: 4px 6px; min-height: 30px; }
+        .head .right { display: flex; gap: 8px; align-items: flex-start; }
+        .qr { text-align: center; width: 68px; }
+        .qr svg { width: 58px; height: 58px; display: block; margin: 0 auto; }
+        .qr .code { font-size: 7px; font-weight: 700; letter-spacing: .2px; margin-top: 1px; }
         .brand { width: 130px; font-weight: 800; color: #ea7a1d; font-size: 16px; line-height: 1.05; }
         table.f { width: 100%; border-collapse: collapse; margin-top: 12px; }
         table.f td { padding: 1.5px 4px; vertical-align: top; }
@@ -80,15 +84,39 @@
         $tglSurat = $k?->tgl_kontrak ?: now();
     @endphp
 
+    {{-- Logo di-embed base64 supaya ikut tercetak di PDF (Browsershot tak selalu
+         bisa mengambil berkas lewat URL). Bila berkas hilang → fallback teks. --}}
+    @php
+        $logoPath = public_path('images/logo/logo-cop.png');
+        $logoSrc = is_file($logoPath)
+            ? 'data:'.(@mime_content_type($logoPath) ?: 'image/png').';base64,'.base64_encode((string) file_get_contents($logoPath))
+            : null;
+    @endphp
+
     <div class="head">
-        <div class="brand">JAVA<br>RESIDENCE</div>
+        {{-- KIRI ATAS: logo Java Residence. --}}
+        @if ($logoSrc)
+            <img src="{{ $logoSrc }}" alt="Java Residence" style="max-width:150px; max-height:58px; object-fit:contain;">
+        @else
+            <div class="brand">JAVA<br>RESIDENCE</div>
+        @endif
         <div class="co">
             <div class="pt">PT. MITRA USAHA PROPERTINDO</div>
             <div class="ttl">FORMULIR SURAT PEMESANAN RUMAH SEMENTARA</div>
         </div>
-        <div class="src">
-            <div class="lbl">Sumber Informasi</div>
-            <div class="val">{{ $sumberInfo !== '—' ? $sumberInfo : '' }}</div>
+        <div class="right">
+            {{-- QR Customer: ditunjukkan saat Aktivasi NUP & Pilih Unit hari-H.
+                 Isinya KODE customer, bukan data pribadi. --}}
+            @if (! empty($qrSvg))
+                <div class="qr">
+                    {!! $qrSvg !!}
+                    <div class="code">{{ $custCode }}</div>
+                </div>
+            @endif
+            <div class="src">
+                <div class="lbl">Sumber Informasi</div>
+                <div class="val">{{ $sumberInfo !== '—' ? $sumberInfo : '' }}</div>
+            </div>
         </div>
     </div>
 
@@ -171,7 +199,10 @@
         $kwNo = $tts?->no_tts ?: (($reg->xendit_external_id ?: $reg->no_nup) ?: ('NUP-' . $reg->id));
         $kwAmount = (float) ($tts?->amount ?: ($tandaJadi ?: $reg->utj_amount));
         $kwTgl = $tts?->tgl_terima ?: ($reg->xendit_paid_at ?: now());
-        $kwUntuk = $tts?->no_referensi ?: ('Uang Tanda Jadi (UTJ) — NUP ' . ($reg->no_nup ?: $reg->id));
+        // no_nup sudah berformat "NUP-00011" → awalan "NUP" JANGAN ditambahkan lagi
+        // (dulu tercetak dobel: "NUP NUP-00011").
+        $kwRef = $reg->no_nup ?: ('NUP-' . $reg->id);
+        $kwUntuk = $tts?->no_referensi ?: ('Uang Tanda Jadi (UTJ) — ' . $kwRef);
         $terbilang = \App\Support\Terbilang::rupiah($kwAmount);
     @endphp
     <div style="page-break-before: always;"></div>

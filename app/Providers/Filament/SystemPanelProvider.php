@@ -27,7 +27,7 @@ class SystemPanelProvider extends PanelProvider
             ->id('system')
             ->path('system')
             ->brandName('Java Core · System')
-            ->favicon(asset('favicon.svg'))
+            ->favicon(asset('images/logo/logo-daun.png'))
             ->login()
             ->colors([
                 'primary' => Color::Indigo,

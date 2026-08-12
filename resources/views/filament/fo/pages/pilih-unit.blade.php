@@ -213,6 +213,27 @@
                             <div><div class="text-gray-500">Preferensi</div><div class="font-semibold text-xs">{{ collect([$regPilihanUnit1, $regPilihanUnit2, $regPilihanUnit3])->filter()->implode(' · ') }}</div></div>
                         @endif
                     </div>
+
+                    {{-- Referensi dari Verifikasi Data — operator hari-H tak perlu buka menu lain. --}}
+                    @if ($regRefSales || $regSumberData || $regEvent || $regCaraBayar)
+                        <div class="mt-3 pt-2" style="border-top:1px dashed var(--gray-300);">
+                            <div class="text-xs uppercase tracking-wider text-gray-500 mb-1">Referensi</div>
+                            <div class="grid grid-cols-2 gap-2 text-xs">
+                                @if ($regRefSales)
+                                    <div><div class="text-gray-500">Sales / Agen</div><div class="font-semibold">{{ $regRefSales }}{{ $regRefPhone ? ' · '.$regRefPhone : '' }}</div></div>
+                                @endif
+                                @if ($regSumberData)
+                                    <div><div class="text-gray-500">Sumber Info</div><div class="font-semibold">{{ $regSumberData }}</div></div>
+                                @endif
+                                @if ($regEvent)
+                                    <div><div class="text-gray-500">Event</div><div class="font-semibold">{{ $regEvent }}</div></div>
+                                @endif
+                                @if ($regCaraBayar)
+                                    <div><div class="text-gray-500">Cara Bayar</div><div class="font-semibold">{{ $regCaraBayar }}</div></div>
+                                @endif
+                            </div>
+                        </div>
+                    @endif
                 </div>
                 {{-- Warna via inline style (bukan bg-emerald-*): kelas Tailwind di blade custom
                      tak ikut ter-compile di CSS panel → tombol jadi putih-di-putih pada mode terang. --}}
@@ -454,23 +475,7 @@
                 },
 
                 renderPolygons() {
-                    this.units.forEach(u => {
-                        if (!Array.isArray(u.siteplan_coords) || u.siteplan_coords.length < 3) return;
-                        const latlngs = u.siteplan_coords.map(p => this.toLatLng(p[0], p[1]));
-                        const color = this.colorForStatus(u.status);
-                        // Transparan (meniru /siteplan): polygon tak menutupi gambar,
-                        // hanya highlight tipis saat hover + popup saat klik.
-                        const poly = L.polygon(latlngs, {
-                            color: color.stroke, weight: 0, fillColor: color.fill, fillOpacity: 0,
-                        }).addTo(this.map);
-                        poly.bindTooltip(u.label, { direction: 'center', className: '', permanent: false, sticky: true });
-                        poly.on('mouseover', () => poly.setStyle({ weight: 2, fillOpacity: 0.18 }));
-                        poly.on('mouseout', () => poly.setStyle({ weight: 0, fillOpacity: 0 }));
-                        poly.on('click', () => this.showUnitPopup(u, poly));
-                        this.polygons[u.id] = poly;
-
-                        this.applySoldStamp(u, poly);
-                    });
+                    this.units.forEach(u => this.addPolygon(u));
 
                     // Blok area (penanda tahap, tidak terikat unit) — menutup area belum dibuka.
                     this.blockPolys = [];
@@ -488,6 +493,42 @@
                         const self = this;
                         this.map.on('zoomend', () => (self.blockPolys || []).forEach(bp => { const tt = bp.getTooltip(); if (tt) tt.setLatLng(bp.getBounds().getCenter()); }));
                     }
+                },
+
+                /** Unit HOLD = ditahan sales, TIDAK boleh dipilih siapa pun hari-H. */
+                isHold(u) {
+                    return String(u?.status || '').toUpperCase() === 'HOLD';
+                },
+
+                /**
+                 * Gambar SATU polygon unit. Unit HOLD ditutup BLOK HITAM pekat dan
+                 * dibuat non-interaktif (interactive:false) — tak bisa diklik, tak
+                 * memunculkan tooltip/popup, jadi mustahil terpilih. Unit lain tetap
+                 * transparan (hanya highlight tipis saat hover).
+                 */
+                addPolygon(u) {
+                    if (!Array.isArray(u.siteplan_coords) || u.siteplan_coords.length < 3) return;
+                    const latlngs = u.siteplan_coords.map(p => this.toLatLng(p[0], p[1]));
+                    const hold = this.isHold(u);
+                    const color = this.colorForStatus(u.status);
+
+                    const poly = L.polygon(latlngs, hold
+                        ? { color: '#000000', weight: 1, fillColor: '#000000', fillOpacity: 0.92, interactive: false }
+                        : { color: color.stroke, weight: 0, fillColor: color.fill, fillOpacity: 0 }
+                    ).addTo(this.map);
+
+                    if (!hold) {
+                        poly.bindTooltip(u.label, { direction: 'center', className: '', permanent: false, sticky: true });
+                        poly.on('mouseover', () => poly.setStyle({ weight: 2, fillOpacity: 0.18 }));
+                        poly.on('mouseout', () => poly.setStyle({ weight: 0, fillOpacity: 0 }));
+                        poly.on('click', () => this.showUnitPopup(u, poly));
+                    }
+                    this.polygons[u.id] = poly;
+                    poly._puHold = hold;
+
+                    // Stempel status tidak dipasang di unit HOLD — tertutup blok hitam.
+                    if (!hold) this.applySoldStamp(u, poly);
+                    return poly;
                 },
 
                 /** Teks + kelas stempel per status (null = tanpa stempel). */
@@ -556,6 +597,12 @@
                     Object.entries(this.polygons).forEach(([id, p]) => {
                         const u = this.units.find(x => x.id == id);
                         if (!u) return;
+                        // Unit HOLD: blok hitamnya JANGAN ditimpa warna status & jangan
+                        // diberi stempel — biar tetap tertutup rapat.
+                        if (this.isHold(u)) {
+                            p.setStyle({ color: '#000000', weight: 1, fillColor: '#000000', fillOpacity: 0.92 });
+                            return;
+                        }
                         const c = this.colorForStatus(u.status);
                         p.setStyle({ color: c.stroke, fillColor: c.fill });
                         this.applySoldStamp(u, p);
@@ -595,6 +642,26 @@
                     if (u) u.status = newStatus;
                     const poly = this.polygons[unitId];
                     if (!poly) return;
+
+                    // Masuk/keluar HOLD mengubah INTERAKTIVITAS layer, dan itu tak bisa
+                    // diubah setelah layer dibuat → gambar ulang polygonnya. Tanpa ini,
+                    // unit yang baru di-HOLD tetap bisa diklik (atau sebaliknya, unit
+                    // yang hold-nya dibuka tetap mati).
+                    const holdSekarang = String(newStatus || '').toUpperCase() === 'HOLD';
+                    if (!!poly._puHold !== holdSekarang) {
+                        const unit = u || { id: unitId, status: newStatus, siteplan_coords: null };
+                        if (unit.siteplan_coords) {
+                            this.removeSoldStamp?.(unitId);
+                            const old = this.soldMarkers[unitId];
+                            if (old) { this.map.removeLayer(old); delete this.soldMarkers[unitId]; }
+                            this.map.removeLayer(poly);
+                            delete this.polygons[unitId];
+                            this.addPolygon(unit);
+                            this.updateSoldScale();
+                            return;
+                        }
+                    }
+
                     const c = this.colorForStatus(newStatus);
                     poly.setStyle({ color: c.stroke, fillColor: c.fill });
                     this.applySoldStamp({ id: unitId, status: newStatus }, poly);

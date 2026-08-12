@@ -7,8 +7,8 @@
     <meta name="csrf-token" content="{{ csrf_token() }}">
 
     <title>{{ $title ?? 'Pendaftaran NUP' }} · {{ config('app.name') }}</title>
-    <link rel="icon" href="{{ asset('favicon.svg') }}" type="image/svg+xml">
-    <link rel="alternate icon" href="{{ asset('favicon.ico') }}">
+    <link rel="icon" href="{{ asset('images/logo/logo-daun.png') }}" type="image/png">
+    <link rel="apple-touch-icon" href="{{ asset('images/logo/logo-daun.png') }}">
 
     <link rel="preconnect" href="https://rsms.me/">
     <link rel="stylesheet" href="https://rsms.me/inter/inter.css">
@@ -78,8 +78,11 @@
 
 <header style="background: #F37321; border-bottom: 1px solid #d9641a;">
     <div class="flex items-center gap-3 px-4 md:px-8 py-3 max-w-screen-xl mx-auto">
-        <span class="inline-grid place-items-center w-7 h-7 rounded font-bold text-sm"
-              style="background-color: #ffffff; color: #F37321;">{{ strtoupper(substr($systemName ?? 'NUP SYSTEM', 0, 1)) }}</span>
+        {{-- Logo daun Java Residence — dipakai NUP & Booked (layout ini dipakai keduanya). --}}
+        <span class="inline-grid place-items-center w-7 h-7 rounded" style="background-color: #ffffff;">
+            <img src="{{ asset('images/logo/logo-daun.png') }}" alt="{{ $systemName ?? 'NUP SYSTEM' }}"
+                 width="20" height="20" style="width:20px; height:20px; object-fit:contain; display:block;">
+        </span>
         <span class="text-sm font-semibold tracking-wide" style="color: #ffffff;">{{ $systemName ?? 'NUP SYSTEM' }}</span>
     </div>
 </header>
