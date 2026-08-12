@@ -1,4 +1,4 @@
-// Struktur navigasi bersama — dipakai Sidebar (kiri) & Menu Utama pada Dashboard.
+// Struktur navigasi bersama — dipakai Sidebar (kiri) & kartu modul pada Dashboard Back Office.
 // Sumber tunggal daftar modul & sub-modul agar keduanya selalu sinkron.
 import {
     LayoutDashboard, Users, Building2, ClipboardList, Wallet, FileText, Receipt, ReceiptText, FileSignature,
@@ -25,25 +25,25 @@ export interface NavItem {
 
 /**
  * Satu grup = satu MODUL. Selain dipakai Sidebar, metadata di bawah menjadi sumber
- * kartu modul pada "Menu Utama" (Dashboard) — sehingga menambah/menghapus/mengubah
+ * kartu modul pada "Dashboard Back Office" — sehingga menambah/menghapus/mengubah
  * modul cukup di file ini saja dan kedua tampilan otomatis ikut berubah.
  */
 export interface NavGroup {
     title: string;      // judul grup = nama modul (dipakai mencocokkan kartu ↔ sub-modul)
     items: NavItem[];
-    icon?: any;         // ikon kartu Menu Utama
+    icon?: any;         // ikon kartu Dashboard Back Office
     color?: string;     // warna aksen kartu
     desc?: string;      // deskripsi singkat pada kartu
     route?: string;     // route landing kartu; bila kosong → pakai sub-modul pertama yang dapat diakses
 }
 
 /**
- * URUTAN MODUL pada sidebar & Menu Utama — satu-satunya sumber kebenaran urutan.
+ * URUTAN MODUL pada sidebar & Dashboard Back Office — satu-satunya sumber kebenaran urutan.
  *
  * Ditaruh sebagai daftar terpisah, bukan dengan memindah-mindah blok definisinya:
  * blok tiap modul panjangnya puluhan baris, dan memindahkannya berisiko menggeser
  * sub-menu ke modul yang salah. Mengubah urutan cukup menata ulang daftar di bawah.
- * Grup tanpa judul (Menu Utama) selalu paling atas; modul yang belum tercantum di
+ * Grup tanpa judul (Dashboard Back Office) selalu paling atas; modul yang belum tercantum di
  * sini ikut di belakang mengikuti urutan definisinya — tidak pernah hilang.
  */
 export const MODULE_ORDER: string[] = [
@@ -68,7 +68,7 @@ export const MODULE_ORDER: string[] = [
 /** Urutkan grup mengikuti MODULE_ORDER; yang tak tercantum ditaruh di belakang. */
 function sortByModuleOrder(groups: NavGroup[]): NavGroup[] {
     const rank = (g: NavGroup) => {
-        if (!g.title) return -1;                      // grup Menu Utama selalu teratas
+        if (!g.title) return -1;                      // grup Dashboard Back Office selalu teratas
         const i = MODULE_ORDER.indexOf(g.title);
         return i === -1 ? MODULE_ORDER.length : i;    // modul baru → ekor daftar
     };
@@ -84,7 +84,7 @@ export function navGroups(foUrl: string): NavGroup[] {
     {
         title: '',
         items: [
-            { label: 'Menu Utama', icon: LayoutDashboard, href: 'dashboard' },
+            { label: 'Dashboard Back Office', icon: LayoutDashboard, href: 'dashboard' },
             // Menu silang → kembali ke hub/dashboard utama J-ERP (URL dari env via Inertia config.fo_url).
             { label: 'Kembali ke Dashboard Utama', icon: Building2, external: foUrl + '/dashboard' },
         ],
