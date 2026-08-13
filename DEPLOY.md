@@ -51,16 +51,74 @@ erp.domain-anda/app/* {
 }
 ```
 
-## Update versi (deploy berikutnya)
+## Deploy harian (update dari git)
+
+Sistem ini berisi **tiga aplikasi** yang bisa di-deploy TERPISAH. Jangan pakai
+`docker compose up -d --build` polos — itu menyentuh semuanya sekaligus (termasuk
+database) dan lebih lama.
+
+### Langkah 1 — tarik kode & lihat apa yang berubah
 
 ```bash
-cd jerp
+cd ~/docker/jerp
 git pull
-docker compose up -d --build      # rebuild image + entrypoint migrate otomatis
+git diff --name-only HEAD@{1} HEAD | cut -d/ -f1-2 | sort -u   # folder apa saja yang berubah
 ```
 
-> Catatan: migrasi jalan otomatis (`migrate --force`). Seed TIDAK diulang (hanya saat DB kosong).
-> Set `AUTO_MIGRATE=false` / `AUTO_SEED=false` di `.env` untuk mematikan bila ingin manual.
+### Langkah 2 — jalankan skrip sesuai folder yang berubah
+
+| Folder yang berubah | Aplikasi | Perintah |
+|---|---|---|
+| `app/`, `resources/`, `config/`, `database/`, `routes/` | **FO** (J-ERP) | `bash marger/up-fo.sh` |
+| `marger/ipro-fo_1/...` | **BO** (ipro-fo) | `bash marger/up-bo.sh` |
+| `app/legal/`, `app/sales/` | **Portal** Legal & Sales | `bash marger/up-portal.sh` |
+
+Kalau dua-duanya berubah, jalankan dua-duanya (boleh berurutan). Ketiga skrip
+**TIDAK menyentuh database MySQL** — container DB tidak di-restart.
+
+Yang sudah dikerjakan otomatis oleh skrip:
+
+- **up-fo.sh** — build image (autoloader kelas baru ikut ter-regenerasi), naikkan
+  `app/nginx/horizon/scheduler/reverb`, `migrate --force`, restart nginx.
+- **up-bo.sh** — build image, `composer install`, `migrate --force`, build aset Vue
+  (`npm run build`), `config:cache`, restart nginx BO.
+- **up-portal.sh** — build image Legal & Sales, naikkan postgres+legal+sales,
+  `prisma db push`, restart nginx.
+
+### Langkah 3 — pastikan hidup
+
+```bash
+docker compose ps                       # semua service harus "Up" (bukan Restarting)
+curl -I -s localhost:8081/login | head -1   # FO   → 200
+curl -I -s localhost:8090/login | head -1   # BO   → 200/302
+docker compose logs --tail=50 app       # cek tak ada error saat boot
+```
+
+### Kapan butuh langkah TAMBAHAN
+
+| Situasi | Perintah tambahan |
+|---|---|
+| Mengubah **`.env`** | `docker exec jerp-app php artisan config:clear` lalu `docker restart jerp-app jerp-horizon jerp-scheduler` |
+| Hanya `docker restart jerp-app` (tanpa skrip) | Wajib `config:clear` dulu — config di-cache, nilai lama masih terpakai |
+| Ubah kode **job/queue** (WA, email, sinkron BO) | `docker restart jerp-horizon` — job jalan di worker, BUKAN di web |
+| Ubah **jadwal** (collection, backup) | `docker restart jerp-scheduler` |
+| Ubah kode BO tanpa rebuild | `docker exec ipro-fo-app kill -USR2 1` (reload PHP; hindari restart yang sering zombie) |
+
+> **Catatan penting:** migrasi FO jalan otomatis lewat skrip. Seed TIDAK pernah
+> diulang (hanya saat DB kosong). `AUTO_MIGRATE=false` / `AUTO_SEED=false` di
+> `.env` untuk mematikannya.
+
+### Kalau gagal / ingin kembali ke versi sebelumnya
+
+```bash
+git log --oneline -5            # cari commit sebelumnya
+git checkout <commit-sebelumnya>
+bash marger/up-fo.sh            # atau up-bo.sh / up-portal.sh sesuai yang tadi
+```
+
+Migrasi TIDAK otomatis mundur. Bila versi bermasalah membawa migrasi dan perlu
+dibatalkan: `docker exec jerp-app php artisan migrate:rollback --step=1 --force`
+(cek dulu isi migrasinya — tidak semua aman dimundurkan).
 
 ## Perintah berguna
 
