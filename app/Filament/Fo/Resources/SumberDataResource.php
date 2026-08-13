@@ -35,10 +35,27 @@ class SumberDataResource extends Resource
     public static function form(Form $form): Form
     {
         return $form->schema([
+            // Kode diisikan otomatis SAAT MENGETIK nama supaya nilainya kelihatan dan
+            // ikut divalidasi. Sebelumnya kode dibiarkan kosong lalu dibentuk model saat
+            // menyimpan, sehingga bentrok unique(tenant_id, kode) baru meledak di
+            // database sebagai 500 — bukan pesan yang bisa dibaca operator.
             Forms\Components\TextInput::make('nama')->label('Nama')->required()->maxLength(100)
+                ->live(onBlur: true)
+                ->afterStateUpdated(function (Forms\Set $set, Forms\Get $get, ?string $state): void {
+                    if (blank($get('kode'))) {
+                        $set('kode', SumberData::kodeDari($state));
+                    }
+                })
                 ->helperText('Tampil di dropdown Sumber Data pada form pendaftaran NUP/Booked.'),
             Forms\Components\TextInput::make('kode')->label('Kode')->maxLength(32)
                 ->placeholder('Otomatis dari nama')
+                // ignoreRecord: saat Ubah, kode milik baris itu sendiri tidak dianggap bentrok.
+                // Baris terhapus (soft delete) TETAP memakai kodenya di indeks unik —
+                // karena itu pesannya menyebut kemungkinan tersebut.
+                ->unique(ignoreRecord: true)
+                ->validationMessages([
+                    'unique' => 'Kode ini sudah dipakai sumber data lain (mungkin yang sudah dihapus). Pakai kode berbeda.',
+                ])
                 ->helperText('Nilai yang tersimpan (stabil). Kosongkan → otomatis dari nama. Hindari ubah bila sudah dipakai.'),
             Forms\Components\TextInput::make('urutan')->label('Urutan')->numeric()->default(0)
                 ->helperText('Angka kecil tampil lebih dulu.'),
@@ -63,13 +80,22 @@ class SumberDataResource extends Resource
             ->headerActions([
                 Tables\Actions\CreateAction::make()->label('Tambah Sumber Data'),
             ])
+            // HAPUS PERMANEN, bukan soft delete. Baris yang di-soft-delete tetap
+            // menempati unique(tenant_id, kode) sehingga membuat ulang nama yang sama
+            // ditolak database — operator menghapus semua isi, layar kosong, tapi
+            // "Instagram" tetap tak bisa ditambahkan lagi tanpa penjelasan apa pun.
+            // Aman: fo_customers.sumber_data menyimpan KODE berupa teks, bukan kunci
+            // asing, jadi pendaftaran lama tetap terbaca walau masternya dihapus.
             ->actions([
                 Tables\Actions\EditAction::make(),
-                Tables\Actions\DeleteAction::make(),
+                Tables\Actions\DeleteAction::make()
+                    ->modalDescription('Sumber data ini dihapus permanen. Pendaftaran lama tidak terpengaruh — nilainya sudah tersimpan sebagai teks.')
+                    ->action(fn (SumberData $record) => $record->forceDelete()),
             ])
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([
-                    Tables\Actions\DeleteBulkAction::make(),
+                    Tables\Actions\DeleteBulkAction::make()
+                        ->action(fn ($records) => $records->each->forceDelete()),
                 ]),
             ]);
     }

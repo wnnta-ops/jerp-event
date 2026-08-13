@@ -399,11 +399,14 @@
         <p class="nup-disclaimer mb-5">*Disclaimer — Preferensi unit hanya digunakan untuk kebutuhan database informasi perusahaan dan tidak mempengaruhi pilihan unit yang dipilih saat acara berlangsung.</p>
 
         <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+            {{-- Pilihan 3 OPSIONAL: tanda bintang hanya untuk 1 & 2. --}}
             @foreach ([1, 2, 3] as $i)
                 <div>
-                    <label class="nup-label">Pilihan Unit {{ $i }} <span class="nup-required">*</span></label>
+                    <label class="nup-label">Pilihan Unit {{ $i }}
+                        @if ($i < 3) <span class="nup-required">*</span> @endif
+                    </label>
                     <input wire:model="pilihan_unit_{{ $i }}" type="text" class="nup-input"
-                           placeholder="contoh: Blok A/12, Cendana 03, dll.">
+                           placeholder="New Avero IV 1">
                     @error('pilihan_unit_'.$i) <span class="nup-error">{{ $message }}</span> @enderror
                 </div>
             @endforeach
