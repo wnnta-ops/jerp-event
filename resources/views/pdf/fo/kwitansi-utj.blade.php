@@ -69,7 +69,7 @@
     <div class="judul"><div>KWITANSI</div></div>
 
     <table class="f">
-        <tr><td class="k">NOMOR</td><td class="s">:</td><td>{{ $kwNo }}</td></tr>
+        <tr><td class="k">NOMOR TRANSFER</td><td class="s">:</td><td>{{ $kwNo }}</td></tr>
         <tr><td class="k">TELAH DITERIMA DARI</td><td class="s">:</td><td>{{ $nama ?: '—' }}</td></tr>
         <tr><td class="k">UANG SEJUMLAH</td><td class="s">:</td><td><i>{{ $terbilang }}</i></td></tr>
         <tr><td class="k">UNTUK PEMBAYARAN</td><td class="s">:</td><td>{{ $kwUntuk }}</td></tr>

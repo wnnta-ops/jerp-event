@@ -45,7 +45,13 @@ return [
             'port' => env('MAIL_PORT', 2525),
             'username' => env('MAIL_USERNAME'),
             'password' => env('MAIL_PASSWORD'),
-            'timeout' => null,
+            // Batas waktu WAJIB. Tanpa ini (null = tak terbatas) sambungan SMTP yang
+            // menggantung menahan job sampai pekerja antrean membunuhnya dengan
+            // TimeoutExceededException — jobnya masuk failed_jobs tanpa menyebut SMTP
+            // sama sekali, dan pekerjaan lain di job yang sama (mis. kirim WhatsApp)
+            // ikut tidak pernah dijalankan. Dengan batas ini kegagalannya cepat,
+            // bernama jelas, dan hanya mematikan pengiriman emailnya saja.
+            'timeout' => (int) env('MAIL_TIMEOUT', 15),
             'local_domain' => env('MAIL_EHLO_DOMAIN', parse_url((string) env('APP_URL', 'http://localhost'), PHP_URL_HOST)),
         ],
 
