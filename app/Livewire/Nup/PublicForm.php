@@ -162,8 +162,14 @@ class PublicForm extends Component
 
     public function mount(): void
     {
+        // openNow(): buka/tutup ditentukan TANGGAL, bukan kolom `status`. Form Ubah
+        // Event tidak punya isian status sama sekali, jadi kolom itu selamanya
+        // 'DRAFT' untuk acara yang dibuat lewat panel — dulu form ini menyaring
+        // kolom mentah tsb sehingga pendaftaran SELALU ditolak walau panel dan
+        // dashboard menampilkan acaranya OPEN. Scope yang sama sudah dipakai
+        // Dashboard, filter Event Launching, dan ApprovalSetup.
         $this->nup_event_id = NupEvent::query()
-            ->whereIn('status', ['OPEN'])
+            ->openNow()
             ->orderBy('tgl_launching')
             ->value('id');
     }
@@ -297,6 +303,12 @@ class PublicForm extends Component
     protected function messages(): array
     {
         return [
+            // nup_event_id diisi otomatis di mount() dari acara berstatus OPEN. Kosong
+            // berarti TIDAK ADA acara yang dibuka — bukan kelalaian customer. Pesan
+            // bawaan "The nup event id field is required" menyebut nama kolom yang
+            // tidak ada di layar, jadi customer tak tahu apa yang harus diperbaiki.
+            'nup_event_id.required' => 'Pendaftaran sudah ditutup — acara launching saat ini sudah berakhir.',
+            'nup_event_id.exists' => 'Pendaftaran sudah ditutup — acara launching saat ini sudah berakhir.',
             'pernyataan_setuju.accepted' => 'Anda harus menyatakan data benar.',
             'nik.digits' => 'NIK harus 16 digit.',
             'spouse_nik.digits' => 'NIK pasangan harus 16 digit.',
@@ -458,7 +470,7 @@ class PublicForm extends Component
         }
 
         return view('livewire.nup.public-form', [
-            'events' => NupEvent::query()->whereIn('status', ['OPEN'])->orderBy('tgl_launching')->get(),
+            'events' => NupEvent::query()->openNow()->orderBy('tgl_launching')->get(),
             'tipeNupOptions' => $tipeNupOptions,
             'bankOptions' => $bankOptions,
             'projects' => Project::query()->where('is_active', true)->orderBy('name')->get(),
