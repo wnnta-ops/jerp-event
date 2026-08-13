@@ -205,11 +205,11 @@ class PublicForm extends Component
             'ref_sales_name' => ['required', 'string', 'max:255'],
             'ref_sales_phone' => ['required', 'string', 'max:32'],
 
-            'ktp_file' => ['required', 'file', 'mimes:jpg,jpeg,png,pdf', 'max:5120'],
-            'npwp_file' => ['required', 'file', 'mimes:jpg,jpeg,png,pdf', 'max:5120'],
-            'ktp_pasangan_file' => ['nullable', 'file', 'mimes:jpg,jpeg,png,pdf', 'max:5120'],
-            'npwp_pasangan_file' => ['nullable', 'file', 'mimes:jpg,jpeg,png,pdf', 'max:5120'],
-            'bukti_transfer_file' => ['required', 'file', 'mimes:jpg,jpeg,png,pdf', 'max:5120'],
+            'ktp_file' => ['required', 'file', 'mimes:jpg,jpeg,png,pdf', 'max:10240'],
+            'npwp_file' => ['required', 'file', 'mimes:jpg,jpeg,png,pdf', 'max:10240'],
+            'ktp_pasangan_file' => ['nullable', 'file', 'mimes:jpg,jpeg,png,pdf', 'max:10240'],
+            'npwp_pasangan_file' => ['nullable', 'file', 'mimes:jpg,jpeg,png,pdf', 'max:10240'],
+            'bukti_transfer_file' => ['required', 'file', 'mimes:jpg,jpeg,png,pdf', 'max:10240'],
 
             'pernyataan_setuju' => ['accepted'],
             'sumber_data' => ['nullable', 'string', 'max:64'],

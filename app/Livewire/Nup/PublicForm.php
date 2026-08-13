@@ -246,9 +246,9 @@ class PublicForm extends Component
             'pilihan_unit_2' => ['nullable', 'string', 'max:255'],
             'pilihan_unit_3' => ['nullable', 'string', 'max:255'],
 
-            'ktp_file' => ['required', 'file', 'mimes:jpg,jpeg,png,pdf', 'max:5120'],         // 5 MB
-            'npwp_file' => ['required', 'file', 'mimes:jpg,jpeg,png,pdf', 'max:5120'],
-            'ktp_pasangan_file' => ['nullable', 'file', 'mimes:jpg,jpeg,png,pdf', 'max:5120'],
+            'ktp_file' => ['required', 'file', 'mimes:jpg,jpeg,png,pdf', 'max:10240'],         // 10 MB
+            'npwp_file' => ['required', 'file', 'mimes:jpg,jpeg,png,pdf', 'max:10240'],
+            'ktp_pasangan_file' => ['nullable', 'file', 'mimes:jpg,jpeg,png,pdf', 'max:10240'],
 
             'pernyataan_setuju' => ['accepted'],
             'sumber_data' => ['nullable', 'string', 'max:64'],
@@ -262,7 +262,7 @@ class PublicForm extends Component
             'nik.digits' => 'NIK harus 16 digit.',
             'spouse_nik.digits' => 'NIK pasangan harus 16 digit.',
             'ktp_file.required' => 'Foto KTP wajib di-upload.',
-            'ktp_file.max' => 'Foto KTP maksimum 5 MB.',
+            'ktp_file.max' => 'Foto KTP maksimum 10 MB.',
         ];
     }
 
