@@ -3,6 +3,7 @@
 namespace App\Modules\FO\Launching\Services;
 
 use App\Modules\FO\Launching\Jobs\KirimKonfirmasiNupJob;
+use App\Modules\FO\Launching\Jobs\KirimKwitansiUtjJob;
 use App\Modules\FO\Launching\Models\NupRegistration;
 use App\Modules\FO\MarketingSales\Models\Customer;
 use App\Modules\FO\MarketingSales\Models\Reservasi;
@@ -78,7 +79,7 @@ class VerifikasiNupService
             return $reg; // already paid — no-op
         }
 
-        return DB::transaction(function () use ($reg) {
+        $reg = DB::transaction(function () use ($reg) {
             $reg->update([
                 'xendit_status' => 'PAID',
                 'xendit_paid_at' => now(),
@@ -101,6 +102,14 @@ class VerifikasiNupService
 
             return $reg->refresh();
         });
+
+        // Kwitansi UTJ ke customer (WA + email). DI LUAR transaksi dengan sengaja:
+        // notifikasi tidak boleh ikut membatalkan pencatatan pembayaran bila gagal,
+        // dan job tidak boleh jalan sebelum datanya benar-benar tersimpan.
+        // Aman dari kiriman ganda: markPaid() sudah no-op bila status PAID.
+        KirimKwitansiUtjJob::dispatch($reg->id);
+
+        return $reg;
     }
 
     /**

@@ -89,6 +89,49 @@ class ClosingPrintController extends Controller
     }
 
     /**
+     * KWITANSI UTJ — dokumen SATU HALAMAN, terbit hanya setelah pembayaran Xendit
+     * berhasil. Berbeda dari kwitansi BKM (yang butuh BKM/kontrak) dan dari halaman
+     * kwitansi di SPRS: pada tahap ini kontrak belum ada, jadi datanya murni dari
+     * pendaftaran NUP + hasil pembayaran Xendit.
+     */
+    public function kwitansiUtj(NupRegistration $registration): mixed
+    {
+        return $this->render('pdf.fo.kwitansi-utj', self::kwitansiUtjData($registration),
+            self::namaBerkasKwitansiUtj($registration));
+    }
+
+    /** Data view kwitansi UTJ — satu sumber untuk cetak, WA, dan email. */
+    public static function kwitansiUtjData(NupRegistration $registration): array
+    {
+        $registration->load(['customer', 'event', 'projectPref']);
+
+        return ['reg' => $registration];
+    }
+
+    /** Nama berkas kwitansi UTJ: KWITANSI-<external id Xendit>, tanpa karakter jalur. */
+    public static function namaBerkasKwitansiUtj(NupRegistration $reg): string
+    {
+        $nomor = (string) ($reg->xendit_external_id ?: ($reg->no_nup ?: $reg->id));
+
+        return 'KWITANSI-'.trim(preg_replace('/[^A-Za-z0-9._-]+/', '-', $nomor), '-');
+    }
+
+    /** Token path kwitansi UTJ — alasan sama seperti sprsPdfHash() di bawah. */
+    public static function kwitansiUtjPdfHash(int $registrationId): string
+    {
+        return hash_hmac('sha256', 'kwitansi-utj-pdf:'.$registrationId, (string) config('app.key'));
+    }
+
+    /** PDF kwitansi UTJ via path-token (tanpa query string) — header dokumen WA. */
+    public function kwitansiUtjPdf(NupRegistration $registration, string $hash): mixed
+    {
+        abort_unless(hash_equals(self::kwitansiUtjPdfHash($registration->id), $hash), 403);
+        request()->merge(['pdf' => 1]);
+
+        return $this->kwitansiUtj($registration);
+    }
+
+    /**
      * Token path untuk URL PDF SPRS TANPA query string. Qontak/Meta menolak URL
      * dokumen WA yang mengandung '?','&','=' — signed URL biasa tak bisa dipakai.
      * HMAC dgn APP_KEY → sekuat signature bawaan, tapi aman di path.

@@ -80,6 +80,10 @@ return [
         'language' => env('QONTAK_LANGUAGE', 'id'),
         'template_utj' => env('QONTAK_TEMPLATE_UTJ'),               // template tagihan UTJ
         'template_konfirmasi' => env('QONTAK_TEMPLATE_NUP_APPROVAL'), // template konfirmasi No NUP terbit (setelah approval)
+        // Template "pembayaran UTJ diterima" + LAMPIRAN kwitansi (Header: Document).
+        // 3 variabel: {{1}} nama, {{2}} nominal (tanpa "Rp"), {{3}} nama acara.
+        // Kosong → WA dilewati diam-diam (email tetap terkirim), dicatat di log.
+        'template_utj_paid' => env('QONTAK_TEMPLATE_UTJ_PAID'),
     ],
 
 ];
