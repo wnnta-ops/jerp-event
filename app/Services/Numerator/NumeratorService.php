@@ -118,10 +118,22 @@ class NumeratorService implements NumeratorServiceInterface
         return $row->format;
     }
 
-    /** Format default untuk kode yang belum terdaftar (bulanan, reset tiap bulan). */
+    /**
+     * Format default untuk kode yang belum terdaftar (bulanan, reset tiap bulan).
+     *
+     * KWI dikecualikan: nomor kwitansi meneruskan penomoran sistem lama
+     * (00400/KWI/6/2026) supaya nomor di kwitansi, di dashboard Xendit, dan di
+     * arsip lama memakai bentuk yang sama. Ditaruh di sini — BUKAN sebagai migrasi
+     * penyisip baris — agar tidak mengulang kegagalan register_spr_numerator yang
+     * memutus rantai migrasi di database baru (tabel tenants masih kosong saat
+     * migrate berjalan). Formatnya tetap bisa diubah di System → Penomoran.
+     */
     private function defaultFormat(string $code): string
     {
-        return $code.'-{YYYY}{MM}-{seq:5}';
+        return match ($code) {
+            'KWI' => '{seq:5}/KWI/{M}/{YYYY}',
+            default => $code.'-{YYYY}{MM}-{seq:5}',
+        };
     }
 
     private function periodFor(string $format, Carbon $now): string
@@ -136,10 +148,14 @@ class NumeratorService implements NumeratorServiceInterface
 
     private function render(string $format, int $seq, Carbon $now): string
     {
+        // {M} = bulan TANPA nol di depan (6, bukan 06) — dipakai format kwitansi
+        // warisan sistem lama: 00400/KWI/6/2026. strtr mencocokkan kunci terpanjang
+        // lebih dulu, jadi {MM} tidak ikut terpotong oleh {M}.
         $out = strtr($format, [
             '{YYYY}' => $now->format('Y'),
             '{YY}' => $now->format('y'),
             '{MM}' => $now->format('m'),
+            '{M}' => $now->format('n'),
             '{DD}' => $now->format('d'),
         ]);
 

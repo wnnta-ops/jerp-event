@@ -38,7 +38,12 @@ class VerifikasiNupService
         }
 
         // Referensi pembayaran khusus Xendit — BUKAN no_nup (no_nup terbit saat approval).
-        $externalId = $reg->xendit_external_id ?: 'UTJ-NUP-'.$reg->id;
+        // Memakai penomoran KWI (00400/KWI/6/2026) meneruskan bentuk sistem lama, dan
+        // nomor yang SAMA dipakai sebagai external_id sehingga kwitansi, dashboard
+        // Xendit, dan pencocokan webhook semuanya merujuk satu nomor.
+        // FORWARD-ONLY: yang sudah punya external_id tetap memakai nilai lamanya —
+        // menggantinya akan memutus pencocokan webhook untuk invoice yang sudah terbit.
+        $externalId = $reg->xendit_external_id ?: $this->numerator->next('KWI');
 
         $invoice = $this->xendit->createInvoice(
             externalId: $externalId,
