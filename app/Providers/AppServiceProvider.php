@@ -37,6 +37,14 @@ class AppServiceProvider extends ServiceProvider
 {
     public function register(): void
     {
+        // HTTPS dipaksa di fase register(), BUKAN boot(): PanelProvider Filament
+        // memanggil panel() (→ favicon(asset(...))) saat register, sebelum boot()
+        // mana pun jalan & sebelum TrustProxies dipasang. Kalau di boot() → URL
+        // favicon terkunci http:// dan diblokir browser sebagai mixed content.
+        if ($this->app->environment('production')) {
+            URL::forceScheme('https');
+        }
+
         // Guard GLOBAL anti-"resurrection" baris repeater (bug Livewire 3.8). WAJIB di
         // fase register() agar masuk daftar SEBELUM Livewire mem-boot ComponentHookRegistry
         // (kalau di boot() → terlambat, hook tak pernah dipasang). Lihat App\Support\Livewire.
@@ -110,10 +118,6 @@ class AppServiceProvider extends ServiceProvider
 
     public function boot(): void
     {
-        if ($this->app->environment('production')) {
-            URL::forceScheme('https');
-        }
-
         // Audit autentikasi (login/logout/gagal/terkunci) → Audit Log
         Event::subscribe(LogAuthenticationActivity::class);
 
