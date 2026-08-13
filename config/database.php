@@ -79,11 +79,17 @@ return [
         // di ipro_bo. Default mengikuti koneksi mysql utama.
         'ipro_bo' => [
             'driver' => 'mysql',
-            'host' => env('IPRO_DB_HOST', env('DB_HOST', '127.0.0.1')),
-            'port' => env('IPRO_DB_PORT', env('DB_PORT', '3306')),
-            'database' => env('IPRO_DB_DATABASE', 'ipro_bo'),
-            'username' => env('IPRO_DB_USERNAME', env('DB_USERNAME', 'jerp')),
-            'password' => env('IPRO_DB_PASSWORD', env('DB_PASSWORD', '')),
+            // Dipakai ?: (BUKAN argumen kedua env()) dengan sengaja. .env.example
+            // mengirim IPRO_DB_* dalam keadaan KOSONG yang artinya "ikut koneksi
+            // utama". env('X', default) hanya memakai default bila kuncinya TIDAK
+            // ADA; bila ada tapi kosong hasilnya '' — koneksi ipro_bo jadi tanpa
+            // host/username sehingga SELURUH jembatan FO→BO mati diam-diam
+            // (sync master, posting GL, kiriman ke Approval UTJ/DP).
+            'host' => env('IPRO_DB_HOST') ?: env('DB_HOST', '127.0.0.1'),
+            'port' => env('IPRO_DB_PORT') ?: env('DB_PORT', '3306'),
+            'database' => env('IPRO_DB_DATABASE') ?: 'ipro_bo',
+            'username' => env('IPRO_DB_USERNAME') ?: env('DB_USERNAME', 'jerp'),
+            'password' => env('IPRO_DB_PASSWORD') ?: env('DB_PASSWORD', ''),
             'charset' => 'utf8mb4',
             'collation' => 'utf8mb4_unicode_ci',
             'prefix' => '',
