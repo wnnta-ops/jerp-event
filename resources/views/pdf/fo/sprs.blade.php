@@ -196,13 +196,19 @@
     {{-- ════════════ HALAMAN 2 — KWITANSI ════════════ --}}
     @php
         $tts = $tts ?? null;
-        $kwNo = $tts?->no_tts ?: (($reg->xendit_external_id ?: $reg->no_nup) ?: ('NUP-' . $reg->id));
+        // Kata "NUP" DIBUANG dari tampilan kwitansi: pada tahap ini pembayarannya
+        // masih UTJ, belum terbit NUP. Yang dibuang hanya yang TERCETAK — nomor
+        // aslinya (mis. xendit_external_id "UTJ-NUP-332") tetap utuh di database
+        // karena dipakai mencocokkan webhook Xendit.
+        // Pemisah menggantung di ujung ("… (UTJ) —") ikut dibersihkan.
+        $tanpaNup = fn (?string $v) => rtrim(trim(preg_replace('/\bNUP-?\s*/i', '', (string) $v)), " -–—·:");
+
+        $kwNo = $tanpaNup($tts?->no_tts ?: (($reg->xendit_external_id ?: $reg->no_nup) ?: ('NUP-' . $reg->id)));
         $kwAmount = (float) ($tts?->amount ?: ($tandaJadi ?: $reg->utj_amount));
         $kwTgl = $tts?->tgl_terima ?: ($reg->xendit_paid_at ?: now());
-        // no_nup sudah berformat "NUP-00011" → awalan "NUP" JANGAN ditambahkan lagi
-        // (dulu tercetak dobel: "NUP NUP-00011").
-        $kwRef = $reg->no_nup ?: ('NUP-' . $reg->id);
-        $kwUntuk = $tts?->no_referensi ?: ('Uang Tanda Jadi (UTJ) — ' . $kwRef);
+        // Keterangan pembayaran TANPA nomor NUP — pada tahap ini pembayarannya masih
+        // Uang Tanda Jadi, nomor NUP baru terbit setelah verifikasi disetujui.
+        $kwUntuk = $tanpaNup($tts?->no_referensi) ?: 'Uang Tanda Jadi (UTJ)';
         $terbilang = \App\Support\Terbilang::rupiah($kwAmount);
     @endphp
     <div style="page-break-before: always;"></div>
