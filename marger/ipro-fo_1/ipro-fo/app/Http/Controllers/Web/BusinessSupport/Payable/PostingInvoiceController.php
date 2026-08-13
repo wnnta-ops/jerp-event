@@ -18,6 +18,7 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -29,30 +30,97 @@ use Inertia\Response;
  */
 class PostingInvoiceController extends Controller
 {
+    /**
+     * Sub modul "Posting Invoice dari FO" — HANYA antrean FO
+     * (refund, BLT, komisi, gimmick). Purchase Order dan progress SPK punya
+     * sub modulnya sendiri; ketiganya sengaja tidak lagi berbagi satu layar
+     * karena alur, kolom, dan aturan posting-nya berbeda:
+     * hanya antrean FO yang bisa dicentang untuk digabung jadi satu invoice.
+     */
     public function index(Request $request): Response
     {
         abort_unless($request->user()?->canModule('ap'), 403);
 
-        $invoicedPo  = BsApInvoice::where('source_type', 'po')->pluck('source_id')->all();
+        return Inertia::render('BusinessSupport/Payable/Posting', [
+            'refunds'   => $this->antreanFo(),
+            'suppliers' => $this->daftarSupplier(),
+        ]);
+    }
+
+    /** Sub modul "Posting Invoice dari Purchase Order" — HANYA PO yang barangnya sudah diterima. */
+    public function poIndex(Request $request): Response
+    {
+        abort_unless($request->user()?->canModule('ap'), 403);
+
+        return Inertia::render('BusinessSupport/Payable/PostingPo', [
+            'pos' => $this->antreanPo(),
+        ]);
+    }
+
+    /** Sub modul "Posting Invoice SPK" — HANYA progress SPK kontraktor yang belum dibayar. */
+    public function spkIndex(Request $request): Response
+    {
+        abort_unless($request->user()?->canModule('ap'), 403);
+
+        return Inertia::render('BusinessSupport/Payable/PostingSpk', [
+            'progress' => $this->antreanSpk(),
+        ]);
+    }
+
+    /**
+     * PO siap diinvoice: berstatus disetujui/tutup, belum pernah diinvoice, dan
+     * barangnya benar-benar sudah diterima (nilai penerimaan > 0).
+     *
+     * @return \Illuminate\Support\Collection<int, array<string, mixed>>
+     */
+    private function antreanPo(): \Illuminate\Support\Collection
+    {
+        $invoicedPo = BsApInvoice::where('source_type', 'po')->pluck('source_id')->all();
+
+        return BsPurchaseOrder::whereIn('status', ['approved', 'closed'])->whereNotIn('id', $invoicedPo)
+            ->with(['supplier:id,code,name', 'lines'])->latest('po_date')->limit(100)->get()
+            ->map(function ($po) {
+                // Uraian singkat sejajar kolom "Uraian" pada kartu Progress SPK: berapa baris
+                // barang yang sudah diterima dari seluruh baris PO — itulah yang menentukan
+                // nilai yang boleh diinvoice. Catatan PO dipakai bila memang diisi.
+                $diterima = $po->lines->filter(fn ($l) => (float) $l->qty_received > 0)->count();
+                $catatan  = trim((string) ($po->notes ?? ''));
+
+                return [
+                    'id' => $po->id, 'po_number' => $po->po_number, 'supplier' => $po->supplier?->name,
+                    'po_date' => $po->po_date?->toDateString(),
+                    'uraian' => $catatan !== '' ? $catatan : $diterima.' dari '.$po->lines->count().' baris barang diterima',
+                    'received_value' => round((float) $po->lines->sum(fn ($l) => (float) $l->qty_received * (float) $l->unit_price), 2),
+                ];
+            })->filter(fn ($p) => $p['received_value'] > 0.009)->values();
+    }
+
+    /**
+     * Progress SPK siap diinvoice: belum dibayar dan belum pernah diinvoice.
+     *
+     * @return \Illuminate\Support\Collection<int, array<string, mixed>>
+     */
+    private function antreanSpk(): \Illuminate\Support\Collection
+    {
         $invoicedSpk = BsApInvoice::where('source_type', 'spk')->pluck('source_id')->all();
 
-        $pos = BsPurchaseOrder::whereIn('status', ['approved', 'closed'])->whereNotIn('id', $invoicedPo)
-            ->with(['supplier:id,code,name', 'lines'])->latest('po_date')->limit(100)->get()
-            ->map(fn ($po) => [
-                'id' => $po->id, 'po_number' => $po->po_number, 'supplier' => $po->supplier?->name,
-                'received_value' => round((float) $po->lines->sum(fn ($l) => (float) $l->qty_received * (float) $l->unit_price), 2),
-            ])->filter(fn ($p) => $p['received_value'] > 0.009)->values();
-
-        $progress = BsWorkOrderProgress::where('status', 'unpaid')->whereNotIn('id', $invoicedSpk)
+        return BsWorkOrderProgress::where('status', 'unpaid')->whereNotIn('id', $invoicedSpk)
             ->whereHas('workOrder')->with('workOrder.supplier:id,code,name')->latest('progress_date')->limit(100)->get()
             ->map(fn ($p) => [
                 'id' => $p->id, 'spk_number' => $p->workOrder?->spk_number, 'supplier' => $p->workOrder?->supplier?->name,
                 'description' => $p->description, 'net_payable' => (float) $p->net_payable,
-            ]);
+            ])->values();
+    }
 
-        // Antrian posting FO (J-ERP) — DITAMPUNG (pending) SEBELUM jadi hutang; tampil di dalam
-        // section "Dari Purchase Order". Klik "Posting Invoice" → terbit hutang AP. Badge per
-        // baris = SUMBER: refund (per jenis SPR/SPRS/Transfer Anonim), Komisi, atau BLT.
+    /**
+     * Antrian posting FO (J-ERP) — DITAMPUNG (pending) SEBELUM jadi hutang.
+     * Klik "Posting Invoice" → terbit hutang AP. Badge per baris = SUMBER:
+     * refund (per jenis SPR/SPRS/Transfer Anonim), Komisi, BLT, atau GMC.
+     *
+     * @return \Illuminate\Support\Collection<int, array<string, mixed>>
+     */
+    private function antreanFo(): \Illuminate\Support\Collection
+    {
         $refundLabel = ['SPR' => 'SPR', 'SPRS' => 'SPRS', 'TRANSFER_ANONIM' => 'Transfer Anonim'];
         $queue = DB::table('bs_ap_refund_queue')->where('status', 'pending')
             ->orderByDesc('id')->limit(300)->get();
@@ -63,7 +131,7 @@ class PostingInvoiceController extends Controller
         $bookingNos = DB::table('bookings')->whereIn('id', $queue->pluck('booking_id')->filter()->unique()->all())
             ->pluck('booking_number', 'id');
 
-        $refunds = $queue->map(fn ($r) => [
+        return $queue->map(fn ($r) => [
             'id'           => $r->id,
             'refund_no'    => $r->refund_no,
             'customer'     => $r->customer_name,
@@ -84,19 +152,20 @@ class PostingInvoiceController extends Controller
             'spr'          => ($r->booking_id ?? null) ? ($bookingNos[$r->booking_id] ?? null) : null,
             'akun_pecah'   => count(is_string($r->account_split ?? null) ? (json_decode($r->account_split, true) ?: []) : []),
         ])->values();
+    }
 
-        // Master supplier (Data Center → Supplier Center) untuk dropdown kolom Supplier.
-        $suppliers = BsSupplier::query()->where('is_active', true)->orderBy('name')
+    /**
+     * Master supplier (Data Center → Supplier Center) untuk dropdown kolom Supplier.
+     * Hanya dibutuhkan layar FO: PO dan SPK sudah membawa suppliernya dari dokumen asal.
+     *
+     * @return \Illuminate\Support\Collection<int, array<string, mixed>>
+     */
+    private function daftarSupplier(): \Illuminate\Support\Collection
+    {
+        return BsSupplier::query()->where('is_active', true)->orderBy('name')
             ->get(['id', 'code', 'name'])
             ->map(fn ($s) => ['id' => $s->id, 'label' => trim(($s->code ? $s->code.' — ' : '').$s->name)])
             ->values();
-
-        return Inertia::render('BusinessSupport/Payable/Posting', [
-            'pos'       => $pos,
-            'progress'  => $progress,
-            'refunds'   => $refunds,
-            'suppliers' => $suppliers,
-        ]);
     }
 
     /** Terbitkan invoice hutang dari 1 baris antrian (refund/komisi/blt/gmc) → masuk Account Payable. */
@@ -107,6 +176,7 @@ class PostingInvoiceController extends Controller
         // Supplier WAJIB dipilih (integrasi Supplier Center) — jadi hutang AP tertaut supplier.
         $validated = $request->validate([
             'supplier_id' => ['required', 'integer', Rule::exists('bs_suppliers', 'id')],
+            'due_date'    => self::ATURAN_JATUH_TEMPO,
         ]);
 
         $row = DB::table('bs_ap_refund_queue')->where('id', $queue)->first();
@@ -114,7 +184,10 @@ class PostingInvoiceController extends Controller
             return back()->with('error', 'Antrian tidak ditemukan atau sudah diposting.');
         }
 
-        $res = $this->issueFromRefundRow($row, (int) $validated['supplier_id'], $journal, (int) $request->user()->id);
+        $res = $this->issueFromRefundRow(
+            $row, (int) $validated['supplier_id'], $journal, (int) $request->user()->id,
+            $validated['due_date'] ?? null,
+        );
         if (! $res['ok']) {
             return back()->with('error', $res['error']);
         }
@@ -137,7 +210,32 @@ class PostingInvoiceController extends Controller
             'items'               => ['required', 'array', 'min:1'],
             'items.*.id'          => ['required', 'integer'],
             'items.*.supplier_id' => ['required', 'integer', Rule::exists('bs_suppliers', 'id')],
+            'due_date'            => self::ATURAN_JATUH_TEMPO,
         ]);
+
+        // GERBANG SUPPLIER SERAGAM — harus di sini, sebelum satu baris pun ditulis.
+        //
+        // Satu invoice hutang gabungan hanya punya SATU supplier di kepalanya (lihat makeInvoice
+        // di bawah yang memakai supplier item pertama). Kalau item dari supplier berbeda ikut
+        // digabung, item milik supplier lain akan tertagih ke supplier yang pertama — salah
+        // orang, dan baru ketahuan saat kuitansi dibayar. Karena itu ditolak, bukan diperbaiki
+        // diam-diam: aplikasi tidak boleh menebak supplier mana yang dimaksud pengguna.
+        //
+        // Layar juga sudah mematikan tombolnya, tapi penjagaan itu tidak cukup — permintaan
+        // bisa datang tanpa lewat layar.
+        $supplierIds = array_values(array_unique(array_map(
+            static fn (array $i): int => (int) $i['supplier_id'],
+            $validated['items'],
+        )));
+
+        if (count($supplierIds) > 1) {
+            $nama = BsSupplier::whereIn('id', $supplierIds)
+                ->orderBy('name')->pluck('name')->implode(', ');
+
+            return back()->with('error', 'Posting gabungan dibatalkan: item terpilih berasal dari '
+                .count($supplierIds).' supplier berbeda ('.$nama.'). Satu invoice hutang gabungan '
+                .'hanya boleh untuk satu supplier — samakan dulu pilihan suppliernya, atau posting terpisah.');
+        }
 
         // Siapkan tiap baris (resolusi akun + deskripsi). Yang gagal/terposting dilewati.
         $prepared = [];
@@ -165,9 +263,12 @@ class PostingInvoiceController extends Controller
         }
 
         $total = round(array_sum(array_column($prepared, 'amount')), 2);
+        // Cadangan = tanggal invoice, persis perilaku sebelum kolom jatuh tempo ada.
+        $tglInvoice = now()->toDateString();
+        $jatuhTempo = $this->jatuhTempo($request, $tglInvoice, $tglInvoice);
         $userId = (int) $request->user()->id;
 
-        $inv = DB::transaction(function () use ($prepared, $total, $journal, $userId) {
+        $inv = DB::transaction(function () use ($prepared, $total, $journal, $userId, $tglInvoice, $jatuhTempo) {
             $first = $prepared[0];
             $inv = $this->makeInvoice([
                 'supplier_id'        => $first['supplier_id'],
@@ -175,9 +276,9 @@ class PostingInvoiceController extends Controller
                 'expense_account_id' => $first['offset'],
                 'payable_account_id' => $first['payable'],
                 'description'        => 'Invoice hutang gabungan ('.count($prepared).' item)',
-                'invoice_date'       => now()->toDateString(),
-                'receive_date'       => now()->toDateString(),
-                'due_date'           => now()->toDateString(),
+                'invoice_date'       => $tglInvoice,
+                'receive_date'       => $tglInvoice,
+                'due_date'           => $jatuhTempo,
                 'dpp'                => $total, 'total' => $total, 'net_payable' => $total,
                 'source_type'        => 'batch', 'source_id' => null,
             ], $userId);
@@ -434,7 +535,7 @@ class PostingInvoiceController extends Controller
      */
     private function recordKprBiaya(object $row, BsApInvoice $invoice, float $amount): void
     {
-        $key = $row->kpr_biaya_key ?? null;
+        $key = $this->kprBiayaKeyAktif($row);
         $bookingId = (int) ($row->booking_id ?? 0);
         if (! $key || ! $bookingId || ! array_key_exists($key, BsGimmickCategory::KPR_BIAYA_COLUMNS)) {
             return;
@@ -456,24 +557,93 @@ class PostingInvoiceController extends Controller
     }
 
     /**
+     * Kolom Rincian Biaya Master Data KPR yang BERLAKU untuk satu baris antrean.
+     *
+     * MENGAPA DIBACA ULANG DARI KATEGORINYA, BUKAN DARI ANTREAN.
+     * FO memotret kpr_biaya_key ke bs_ap_refund_queue pada saat baris masuk antrean
+     * (IproApPoster). Potret itu ikut membeku: bila operator baru memetakan Kategori
+     * Gimmick ke kolom Master Data KPR SESUDAH gimmick-nya mengantre — urutan yang
+     * justru paling lazim, karena pemetaan biasanya dirapikan belakangan — baris lama
+     * selamanya bernilai NULL dan Master Data KPR tidak pernah terisi walau operator
+     * sudah mengaturnya. Itulah sebabnya kolom Rincian Biaya bisa tampak "0/6 terpetakan"
+     * padahal kategorinya sudah disetel.
+     *
+     * Maka yang menentukan adalah keadaan kategori PADA SAAT POSTING:
+     *   1. kategori ditemukan  -> ikuti pemetaan kategori saat ini, dan hormati
+     *                             sakelar "Sinkron ke Master Data KPR" (sync_kpr).
+     *      Sakelar mati = operator sengaja menghentikan sinkron; potret lama TIDAK
+     *      boleh menghidupkannya kembali diam-diam.
+     *   2. kategori tidak ada  -> baru jatuh ke potret antrean, supaya baris lawas
+     *                             (mis. kategorinya sudah dihapus) tetap tercatat
+     *                             seperti perilaku sebelumnya.
+     */
+    private function kprBiayaKeyAktif(object $row): ?string
+    {
+        $categoryId = (int) ($row->gimmick_category_id ?? 0);
+        $snapshot = ($row->kpr_biaya_key ?? null) ?: null;
+
+        if ($categoryId <= 0) {
+            return $snapshot;
+        }
+
+        $cat = BsGimmickCategory::query()->whereKey($categoryId)->first(['id', 'kpr_biaya_key', 'sync_kpr']);
+        if (! $cat) {
+            return $snapshot;
+        }
+
+        // Kolom sync_kpr baru ada sejak migrasi 2026_08_12; instalasi yang belum
+        // bermigrasi diperlakukan seperti sebelumnya — terpetakan berarti sinkron.
+        $sinkron = Schema::hasColumn('bs_gimmick_categories', 'sync_kpr')
+            ? (bool) $cat->sync_kpr
+            : (bool) $cat->kpr_biaya_key;
+
+        return $sinkron ? (($cat->kpr_biaya_key ?: null)) : null;
+    }
+
+    /**
      * Terbitkan 1 invoice AP dari 1 baris antrian (posting satuan) + jurnal pengakuan.
      *
      * @return array{ok:bool, invoice?:BsApInvoice, error?:string}
      */
-    private function issueFromRefundRow(object $row, int $supplierId, JournalService $journal, int $userId): array
+    /**
+     * Tanggal jatuh tempo yang berlaku untuk sebuah posting.
+     *
+     * Diisi operator pada layar posting (Dari FO / Purchase Order / SPK). Bila tidak diisi,
+     * dipakai cadangan yang selama ini berlaku pada jalur masing-masing — jadi menambahkan
+     * kolom ini tidak mengubah perilaku posting yang sudah ada.
+     *
+     * Jatuh tempo TIDAK boleh mendahului tanggal invoice: tagihan yang jatuh tempo sebelum
+     * terbit akan langsung terbaca menunggak di Aging Hutang, padahal belum apa-apa.
+     */
+    private function jatuhTempo(Request $request, string $tglInvoice, string $cadangan): string
+    {
+        $isian = trim((string) $request->input('due_date', ''));
+        if ($isian === '') {
+            return $cadangan;
+        }
+
+        return $isian < $tglInvoice ? $tglInvoice : $isian;
+    }
+
+    /** Aturan validasi bersama untuk kolom jatuh tempo pada layar posting. */
+    private const ATURAN_JATUH_TEMPO = ['nullable', 'date'];
+
+    private function issueFromRefundRow(object $row, int $supplierId, JournalService $journal, int $userId, ?string $dueDate = null): array
     {
         $p = $this->prepRefundRow($row);
         if (! $p['ok']) {
             return $p;
         }
 
-        $inv = DB::transaction(function () use ($row, $supplierId, $p, $journal, $userId) {
+        $inv = DB::transaction(function () use ($row, $supplierId, $p, $journal, $userId, $dueDate) {
             $inv = $this->makeInvoice([
                 'supplier_id' => $supplierId, 'customer_id' => $row->customer_id,
                 // unit_id dari antrian GMC → invoice tertaut ke unit/SPR yang dibiayai.
                 'unit_id' => $row->unit_id ?? null,
                 'expense_account_id' => $p['offset'], 'payable_account_id' => $p['payable'],
-                'description' => $p['desc'], 'invoice_date' => $p['date'], 'receive_date' => $p['date'], 'due_date' => $p['date'],
+                'description' => $p['desc'], 'invoice_date' => $p['date'], 'receive_date' => $p['date'],
+                // Cadangan = tanggal invoice, persis perilaku sebelum kolom jatuh tempo ada.
+                'due_date' => $dueDate && $dueDate >= $p['date'] ? $dueDate : $p['date'],
                 'dpp' => $p['amount'], 'total' => $p['amount'], 'net_payable' => $p['amount'],
                 'source_type' => $row->kind, 'source_id' => $row->refund_id, 'refund_source' => $row->refund_source,
             ], $userId);
@@ -515,10 +685,15 @@ class PostingInvoiceController extends Controller
         $payable = \App\Domain\BusinessSupport\Models\BsAccount::where('code', config('business_support.gl_accounts.payable'))->value('id');
         $debit   = \App\Domain\BusinessSupport\Models\BsAccount::where('code', config('business_support.gl_accounts.inventory'))->value('id');
 
+        $request->validate(['due_date' => self::ATURAN_JATUH_TEMPO]);
+        $tglInvoice = now()->toDateString();
+        // Cadangan = jatuh tempo dokumen PO-nya, lalu 30 hari — persis perilaku sebelumnya.
+        $cadangan = $po->due_date?->toDateString() ?? now()->addDays(30)->toDateString();
+
         $inv = $this->makeInvoice([
             'supplier_id' => $po->supplier_id, 'expense_account_id' => $debit, 'payable_account_id' => $payable,
-            'description' => 'Invoice dari PO '.$po->po_number, 'invoice_date' => now()->toDateString(),
-            'due_date' => $po->due_date?->toDateString() ?? now()->addDays(30)->toDateString(),
+            'description' => 'Invoice dari PO '.$po->po_number, 'invoice_date' => $tglInvoice,
+            'due_date' => $this->jatuhTempo($request, $tglInvoice, $cadangan),
             'dpp' => $value, 'total' => $value, 'net_payable' => $value,
             'source_type' => 'po', 'source_id' => $po->id,
         ], $request->user()->id, $this->poLines($po));
@@ -533,13 +708,17 @@ class PostingInvoiceController extends Controller
         if ($progress->status !== 'unpaid' || BsApInvoice::where('source_type', 'spk')->where('source_id', $progress->id)->exists()) {
             return back()->with('error', 'Progress ini sudah diposting / dibayar.');
         }
+        $request->validate(['due_date' => self::ATURAN_JATUH_TEMPO]);
+        $tglInvoice = now()->toDateString();
+
         $wo = $progress->workOrder;
         $payable = \App\Domain\BusinessSupport\Models\BsAccount::where('code', config('business_support.gl_accounts.payable'))->value('id');
 
         $inv = $this->makeInvoice([
             'supplier_id' => $wo->supplier_id, 'expense_account_id' => $wo->construction_account_id, 'payable_account_id' => $payable,
             'category_id' => null, 'description' => 'Invoice SPK '.$wo->spk_number.' — '.$progress->description,
-            'invoice_date' => now()->toDateString(), 'due_date' => now()->addDays(30)->toDateString(),
+            'invoice_date' => $tglInvoice,
+            'due_date' => $this->jatuhTempo($request, $tglInvoice, now()->addDays(30)->toDateString()),
             'dpp' => (float) $progress->progress_value, 'ppn_amount' => (float) $progress->ppn_amount,
             'total' => round((float) $progress->progress_value + (float) $progress->ppn_amount, 2),
             'net_payable' => (float) $progress->net_payable, 'journal_id' => $progress->journal_id,

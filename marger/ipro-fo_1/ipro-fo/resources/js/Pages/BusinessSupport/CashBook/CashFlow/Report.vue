@@ -340,9 +340,10 @@ function kirimImport() {
                             boleh memuat <b>beberapa tahun sekaligus</b>.
                         </p>
 
-                        <div class="rounded-lg bg-amber-50 px-3 py-2 text-[11px] text-amber-800 ring-1 ring-amber-200 dark:bg-amber-950/30 dark:text-amber-200 dark:ring-amber-800/60">
-                            Angka pada berkas import ditulis <b>RUPIAH PENUH</b> (mis. 2000000000), bukan jutaan —
-                            berbeda dengan satuan yang ditampilkan di tabel.
+                        <div class="rounded-lg bg-emerald-50 px-3 py-2 text-[11px] text-emerald-800 ring-1 ring-emerald-200 dark:bg-emerald-950/30 dark:text-emerald-200 dark:ring-emerald-800/60">
+                            Angka pada berkas import ditulis dalam <b>JUTAAN RUPIAH</b> — sama dengan satuan tabel di
+                            layar. Contoh: <b>2.000</b> berarti Rp 2.000.000.000; boleh berkoma (2,5 = Rp 2.500.000).
+                            Berkas template lama yang judul kolomnya bertulis "RUPIAH PENUH" tetap dibaca apa adanya.
                         </div>
 
                         <div>

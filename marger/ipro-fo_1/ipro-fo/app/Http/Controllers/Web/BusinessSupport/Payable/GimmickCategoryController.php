@@ -46,6 +46,7 @@ class GimmickCategoryController extends Controller
                     'id' => $c->id, 'code' => $c->code, 'name' => $c->name, 'is_active' => $c->is_active,
                     'kpr_biaya_key'   => $c->kpr_biaya_key,
                     'kpr_biaya_label' => $c->kpr_biaya_key ? (BsGimmickCategory::KPR_BIAYA_COLUMNS[$c->kpr_biaya_key] ?? null) : null,
+                    'sync_kpr'        => (bool) $c->sync_kpr,
                     // Akun utama (baris pertama tiap sisi) — dipertahankan untuk pembaca lama.
                     'debit_account_id' => $c->debit_account_id, 'payable_account_id' => $c->payable_account_id,
                     'debit'   => $c->debitAccount?->code.' - '.$c->debitAccount?->name,
@@ -58,7 +59,10 @@ class GimmickCategoryController extends Controller
         // Cakupan kolom Rincian Biaya Master Data KPR — supaya ketahuan kalau ada yang terlewat.
         // SENGAJA lepas dari filter pencarian: kalau dihitung dari daftar yang tersaring, mengetik
         // di kotak cari akan membuat kolom yang sebenarnya sudah terpetakan terlihat "belum ada".
-        $mapped = BsGimmickCategory::whereNotNull('kpr_biaya_key')
+        // Hanya kategori yang sinkronnya HIDUP yang boleh dihitung menutupi sebuah kolom:
+        // kategori terpetakan tapi sinkronnya dimatikan tidak akan pernah mengisi kolom itu,
+        // jadi menghitungnya akan membuat cakupan tampak aman padahal tidak.
+        $mapped = BsGimmickCategory::whereNotNull('kpr_biaya_key')->where('sync_kpr', true)
             ->orderBy('code')->get(['code', 'kpr_biaya_key'])->groupBy('kpr_biaya_key');
         $coverage = collect(BsGimmickCategory::KPR_BIAYA_COLUMNS)
             ->map(fn ($label, $key) => [
@@ -119,6 +123,7 @@ class GimmickCategoryController extends Controller
             'code'          => ['required', 'string', 'max:40', Rule::unique('bs_gimmick_categories', 'code')->ignore($id)->where('tenant_id', tenant_id())],
             'name'          => ['required', 'string', 'max:150'],
             'kpr_biaya_key' => ['nullable', 'string', Rule::in(array_keys(BsGimmickCategory::KPR_BIAYA_COLUMNS))],
+            'sync_kpr'      => ['boolean'],
             'is_active'     => ['boolean'],
             // Multi-akun per sisi; menggantikan pasangan akun tunggal yang lama.
             'debits'               => ['required', 'array', 'min:1'],
@@ -155,6 +160,9 @@ class GimmickCategoryController extends Controller
             'code'               => $v['code'],
             'name'               => $v['name'],
             'kpr_biaya_key'      => $v['kpr_biaya_key'] ?? null,
+            // Sinkron hanya mungkin bila kolom tujuannya dipilih — tanpa kolom, tak ada
+            // yang bisa diisi, jadi sakelarnya dipaksa mati agar tidak menyesatkan di layar.
+            'sync_kpr'           => ($v['kpr_biaya_key'] ?? null) ? (bool) ($v['sync_kpr'] ?? true) : false,
             'is_active'          => $v['is_active'] ?? true,
             'debit_account_id'   => (int) $v['debits'][0]['account_id'],
             'payable_account_id' => (int) $v['credits'][0]['account_id'],
