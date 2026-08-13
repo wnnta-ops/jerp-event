@@ -1,4 +1,4 @@
-// Struktur navigasi bersama — dipakai Sidebar (kiri) & Menu Utama pada Dashboard.
+// Struktur navigasi bersama — dipakai Sidebar (kiri) & kartu modul pada Dashboard Back Office.
 // Sumber tunggal daftar modul & sub-modul agar keduanya selalu sinkron.
 import {
     LayoutDashboard, Users, Building2, ClipboardList, Wallet, FileText, Receipt, ReceiptText, FileSignature,
@@ -25,24 +25,66 @@ export interface NavItem {
 
 /**
  * Satu grup = satu MODUL. Selain dipakai Sidebar, metadata di bawah menjadi sumber
- * kartu modul pada "Menu Utama" (Dashboard) — sehingga menambah/menghapus/mengubah
+ * kartu modul pada "Dashboard Back Office" — sehingga menambah/menghapus/mengubah
  * modul cukup di file ini saja dan kedua tampilan otomatis ikut berubah.
  */
 export interface NavGroup {
     title: string;      // judul grup = nama modul (dipakai mencocokkan kartu ↔ sub-modul)
     items: NavItem[];
-    icon?: any;         // ikon kartu Menu Utama
+    icon?: any;         // ikon kartu Dashboard Back Office
     color?: string;     // warna aksen kartu
     desc?: string;      // deskripsi singkat pada kartu
     route?: string;     // route landing kartu; bila kosong → pakai sub-modul pertama yang dapat diakses
 }
 
+/**
+ * URUTAN MODUL pada sidebar & Dashboard Back Office — satu-satunya sumber kebenaran urutan.
+ *
+ * Ditaruh sebagai daftar terpisah, bukan dengan memindah-mindah blok definisinya:
+ * blok tiap modul panjangnya puluhan baris, dan memindahkannya berisiko menggeser
+ * sub-menu ke modul yang salah. Mengubah urutan cukup menata ulang daftar di bawah.
+ * Grup tanpa judul (Dashboard Back Office) selalu paling atas; modul yang belum tercantum di
+ * sini ikut di belakang mengikuti urutan definisinya — tidak pernah hilang.
+ */
+export const MODULE_ORDER: string[] = [
+    'Master',
+    'Data Center',
+    'KPR',
+    'Account Payable',
+    'Cash Book',
+    'General Ledger',
+    'Aset Tetap',
+    'Budget Control',
+    'Contractor Management',
+    'Booked Revenue',
+    'Piutang Usaha (Booked)',
+    'COGS',
+    'Purchasing',
+    'Inventory',
+    'Security',
+    'System',
+];
+
+/** Urutkan grup mengikuti MODULE_ORDER; yang tak tercantum ditaruh di belakang. */
+function sortByModuleOrder(groups: NavGroup[]): NavGroup[] {
+    const rank = (g: NavGroup) => {
+        if (!g.title) return -1;                      // grup Dashboard Back Office selalu teratas
+        const i = MODULE_ORDER.indexOf(g.title);
+        return i === -1 ? MODULE_ORDER.length : i;    // modul baru → ekor daftar
+    };
+
+    return groups
+        .map((g, i) => ({ g, i }))                    // simpan posisi asal…
+        .sort((a, b) => rank(a.g) - rank(b.g) || a.i - b.i)  // …agar pengurutan stabil
+        .map((x) => x.g);
+}
+
 export function navGroups(foUrl: string): NavGroup[] {
-    return [
+    return sortByModuleOrder([
     {
         title: '',
         items: [
-            { label: 'Menu Utama', icon: LayoutDashboard, href: 'dashboard' },
+            { label: 'Dashboard Back Office', icon: LayoutDashboard, href: 'dashboard' },
             // Menu silang → kembali ke hub/dashboard utama J-ERP (URL dari env via Inertia config.fo_url).
             { label: 'Kembali ke Dashboard Utama', icon: Building2, external: foUrl + '/dashboard' },
         ],
@@ -262,11 +304,18 @@ export function navGroups(foUrl: string): NavGroup[] {
             ]},
             // Sumber 'po' memuat seluruh dokumen asal FO (penerimaan PO, refund, BLT, komisi, gimmick),
             // karena itu label memakai "dari FO" — bukan lagi khusus Purchase Order.
+            // Tiga sub modul terpisah, masing-masing satu sumber dokumen. Dulu ketiganya
+            // menunjuk rute yang sama (bs.ap.posting.index) dengan params `source` yang
+            // tidak pernah dibaca controller, jadi "Posting Invoice SPK" sebenarnya membuka
+            // layar yang persis sama dengan "Posting Invoice dari FO".
             { label: 'Posting Invoice dari FO', icon: FileCheck, permission: ['businesssupport.view', 'ap.*'], children: [
-                { label: 'Posting Invoice dari FO', href: 'bs.ap.posting.index', params: { source: 'po' } },
+                { label: 'Posting Invoice dari FO', href: 'bs.ap.posting.index' },
             ]},
-            { label: 'Posting Invoice SPK', icon: FileCheck, permission: ['businesssupport.view', 'ap.*'], children: [
-                { label: 'Posting Invoice', href: 'bs.ap.posting.index', params: { source: 'spk' } },
+            { label: 'Posting Invoice dari Purchase Order', icon: ShoppingCart, permission: ['businesssupport.view', 'ap.*'], children: [
+                { label: 'Posting Invoice dari Purchase Order', href: 'bs.ap.posting.po.index' },
+            ]},
+            { label: 'Posting Invoice SPK', icon: HardHat, permission: ['businesssupport.view', 'ap.*'], children: [
+                { label: 'Posting Invoice SPK', href: 'bs.ap.posting.spk.index' },
             ]},
             { label: 'Saldo Awal', icon: Coins, permission: ['businesssupport.view', 'ap.*'], children: [
                 { label: 'Saldo Awal', href: 'bs.ap.opening.index' },
@@ -513,5 +562,5 @@ export function navGroups(foUrl: string): NavGroup[] {
             { label: 'Konfigurasi Sistem', icon: SlidersHorizontal, href: 'settings.config.index', permission: 'system.setup.parameter' },
         ],
     },
-    ];
+    ]);
 }

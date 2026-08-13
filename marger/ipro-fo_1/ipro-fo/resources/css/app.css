@@ -22,3 +22,56 @@
 /* Sonner toast custom */
 :root { --normal-bg: theme('colors.white'); --normal-text: theme('colors.neutral.900'); }
 .dark { --normal-bg: theme('colors.neutral.800'); --normal-text: theme('colors.neutral.50'); }
+
+/* ══════════════════════════════════════════════════════════════════════════
+   Palet grafik Dashboard Back Office.
+
+   Setiap nilai di bawah SUDAH DIUJI dengan pemeriksa buta warna terhadap
+   permukaan asli aplikasi — kartu terang #ffffff dan kartu gelap #0f172a
+   (neutral-900) — dan lolos seluruh gerbang di KEDUA mode. Mode gelap bukan
+   pembalikan otomatis: langkahnya dipilih tersendiri untuk permukaan gelap.
+   Jangan mengubah hex di sini tanpa menjalankan ulang pemeriksa itu.
+
+   Dua isian pada mode terang berada di bawah 3:1 terhadap putih
+   (kuning 2,17:1 dan magenta 2,69:1). Itu sah HANYA karena tiap batang
+   memakai label langsung — jangan hapus labelnya.
+   ══════════════════════════════════════════════════════════════════════════ */
+.viz {
+    /* delapan slot kategorikal — urutannya adalah mekanisme keamanan buta warna */
+    --viz-s1: #2a78d6; --viz-s2: #eb6834; --viz-s3: #1baf7a; --viz-s4: #eda100;
+    --viz-s5: #e87ba4; --viz-s6: #008300; --viz-s7: #4a3aa7; --viz-s8: #e34948;
+    /* ramp biru satu rona (besaran berurut) — pucat → pekat */
+    --viz-seq1: #cde2fb; --viz-seq2: #9ec5f4; --viz-seq3: #5598e7;
+    --viz-seq4: #2a78d6; --viz-seq5: #1c5cab; --viz-seq6: #104281;
+    /* ramp oranye satu rona (Aging Hutang, SPK per Cluster) — pucat → pekat */
+    --viz-o1: #f9a34a; --viz-o2: #f2802a; --viz-o3: #dd5f12;
+    --viz-o4: #b8450b; --viz-o5: #8f3308; --viz-o6: #6b2606;
+    /* status — tidak pernah dipakai sebagai warna deret */
+    --viz-good: #0ca30c; --viz-warn: #fab219; --viz-crit: #d03b3b;
+    /* tinta & garis bantu */
+    --viz-ink: #0b0b0b; --viz-ink2: #52514e; --viz-muted: #898781;
+    --viz-grid: #e1e0d9; --viz-axis: #c3c2b7; --viz-track: #eceae4;
+}
+.dark .viz {
+    --viz-s1: #3987e5; --viz-s2: #d95926; --viz-s3: #199e70; --viz-s4: #c98500;
+    --viz-s5: #d55181; --viz-s6: #008300; --viz-s7: #9085e9; --viz-s8: #e66767;
+    /* pada permukaan gelap, besaran yang makin besar justru makin TERANG */
+    --viz-seq1: #184f95; --viz-seq2: #256abf; --viz-seq3: #2a78d6;
+    --viz-seq4: #5598e7; --viz-seq5: #86b6ef; --viz-seq6: #cde2fb;
+    --viz-o1: #96380a; --viz-o2: #b8450b; --viz-o3: #dd5f12;
+    --viz-o4: #f2802a; --viz-o5: #fbaf5d; --viz-o6: #ffd0a1;
+    --viz-ink: #ffffff; --viz-ink2: #c3c2b7; --viz-muted: #8b8f98;
+    --viz-grid: #1e293b; --viz-axis: #334155; --viz-track: #1e293b;
+}
+
+.viz svg { display: block; width: 100%; height: auto; }
+.viz .tick   { font-size: 10.5px; fill: var(--viz-muted); }
+.viz .dlab   { font-size: 10.5px; fill: var(--viz-ink2); font-weight: 600; }
+.viz .vlab   { font-size: 11px;   fill: var(--viz-ink);  font-weight: 700; }
+.viz .pct    { fill: var(--viz-muted); font-weight: 600; }
+.viz .no     { fill: var(--viz-muted); font-weight: 800; font-size: 10px; }
+.viz .seglab { font-size: 10px; fill: #fff; font-weight: 700; }
+.viz .gl     { stroke: var(--viz-grid); stroke-width: 1; }
+.viz .ax     { stroke: var(--viz-axis); stroke-width: 1; }
+/* sorot ringan saat kursor di atas satu tanda — tooltip-nya dari <title> bawaan SVG */
+.viz [data-mark]:hover { opacity: .78; }

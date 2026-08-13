@@ -584,6 +584,13 @@ class ApInvoiceController extends Controller
         $created = $e(now()->translatedFormat('d-m-Y H.i.s'));
         $eNo     = $e($invoice->invoice_number);
         $eTgl    = $e(optional($invoice->invoice_date)->translatedFormat('d F Y'));
+        // Jatuh tempo dari invoice — diisi saat Registrasi Invoice Hutang, dan sejak sekarang
+        // juga saat posting dari FO / SPK / Purchase Order. Tanda '-' bila memang belum ada,
+        // supaya barisnya tetap tercetak dan ketiadaannya terbaca sebagai keadaan, bukan
+        // sebagai baris yang lupa dipasang.
+        $eJatuhTempo = $invoice->due_date
+            ? $e($invoice->due_date->translatedFormat('d F Y'))
+            : '-';
         $eDesc   = $e($invoice->description);
         $eDari   = $e($user?->name ?? '-');
         $eSupNm  = $e($sup?->name ?? '-');
@@ -774,7 +781,8 @@ table.sum td{padding:2px 6px;border:1px solid #333}table.sum .tot{font-weight:bo
     <td style="width:70px"></td>
   </tr></table>
   <table class="meta" style="margin-top:8px">
-    <tr><td class="lbl">Diajukan Tanggal</td><td class="sep">:</td><td>{$eTgl}</td></tr>
+    <tr><td class="lbl">Tanggal Pengajuan</td><td class="sep">:</td><td>{$eTgl}</td></tr>
+    <tr><td class="lbl">Tanggal Jatuh Tempo</td><td class="sep">:</td><td>{$eJatuhTempo}</td></tr>
     <tr><td class="lbl">Dibayarkan Kepada</td><td class="sep">:</td><td>{$eSupNm}</td></tr>
     <tr><td class="lbl">Departemen</td><td class="sep">:</td><td>{$eDept}</td></tr>
   </table>

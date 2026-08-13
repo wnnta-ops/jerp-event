@@ -7,7 +7,7 @@ namespace App\Http\Controllers\Web\BusinessSupport\CashBook;
 use App\Domain\BusinessSupport\Models\BsSignatureBarcode;
 use App\Http\Controllers\Controller;
 use App\Models\User;
-use App\Support\Barcode\Code128;
+use App\Support\Barcode\QrCode;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
@@ -85,8 +85,8 @@ class SignatureBarcodeController extends Controller
         $code = trim((string) $request->input('code', ''));
 
         return response()->json([
-            'ok'  => Code128::isEncodable($code),
-            'svg' => Code128::svg($code),
+            'ok'  => QrCode::isEncodable($code),
+            'svg' => QrCode::svg($code),
         ]);
     }
 

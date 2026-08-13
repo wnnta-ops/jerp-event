@@ -59,13 +59,12 @@ class SipController extends Controller
      *
      * @return array<string,string>  slot → SVG (hanya slot yang penyetujunya punya barcode aktif)
      */
-    private function approvalBarcodes(BsSip $sip, int $moduleWidth = 2, int $height = 34): array
+    private function approvalBarcodes(BsSip $sip, int $moduleSize = 3): array
     {
         $approvals = $sip->approvals ?? [];
         $byUser = \App\Domain\BusinessSupport\Models\BsSignatureBarcode::svgMapFor(
             array_map(fn ($a) => (int) ($a['approved_by'] ?? 0), array_values($approvals)),
-            $moduleWidth,
-            $height,
+            $moduleSize,
         );
 
         $out = [];
@@ -333,140 +332,72 @@ class SipController extends Controller
             ->where('code', 'like', '101010%')->orderBy('code')->get(['id', 'code', 'name']);
     }
 
-    /**
-     * Print out SIP mengikuti format legacy "Standing Instruction Payment":
-     * logo + judul terpusat (Periode + No), blok Kepada/Dari/Tembusan/Tanggal Pengajuan,
-     * kalimat permohonan TRANSFER + rekening sumber, tabel rincian (Nama Rekening, Bank,
-     * Nomor Rekening, Amount, kolom Y/N, Peruntukan, Status), catatan kaki, dan 4 blok tanda tangan
-     * (Dibuat/Diperiksa/Diketahui/Disetujui — memetakan 7 SIGNERS).
-     * Routing Kepada/Dari/Tembusan bisa dioverride via config('business_support.sip').
-     */
     private function renderPrint(BsSip $sip): string
     {
         $e  = fn ($s) => htmlspecialchars((string) $s, ENT_QUOTES, 'UTF-8');
-        $n  = fn ($x) => number_format((float) $x, 0, '.', ',');
+        $rp = fn ($n) => 'Rp '.number_format((float) $n, 0, ',', '.');
         $co = (string) config('business_support.company.name', 'PT. Mitra Usaha Propertindo');
-        $cfg = (array) config('business_support.sip', []);
-        $kepada   = (string) ($cfg['kepada'] ?? 'BA, MW');
-        $dari     = (string) ($cfg['dari'] ?? 'PS');
-        $tembusan = (string) ($cfg['tembusan'] ?? 'RS');
+        $now = now()->translatedFormat('d F Y H:i');
+        // #114: bank sumber bisa lebih dari satu — daftar bank distinct di header + grup per bank di tabel.
+        $bankList = $sip->lines->map(fn ($l) => $l->cashAccount ? $l->cashAccount->code.' — '.$l->cashAccount->name : null)->filter()->unique()->values();
+        $bank = $bankList->isNotEmpty() ? $e($bankList->implode('   |   ')) : ($e($sip->cashAccount?->code).' — '.$e($sip->cashAccount?->name));
 
-        // Nomor rekening sumber = deret digit terpanjang pada nama akun (mis. "BCA REK. 6155428914");
-        // nama rekening = nama akun tanpa deret digit + nama perusahaan.
-        $accNo = function ($acc): string {
-            preg_match_all('/\d{6,}/', (string) ($acc?->name), $m);
-            return $m[0] ? (string) end($m[0]) : '-';
-        };
-        $accLabel = function ($acc) use ($co): string {
-            $nm = trim((string) preg_replace('/\s*(REK\.?|NO\.?)?\s*\d{6,}\s*/i', ' ', (string) ($acc?->name)));
-            return trim(($nm !== '' ? $nm : (string) ($acc?->name)).' '.$co);
-        };
-
-        // #114/#123: bank sumber bisa lebih dari satu — satu seksi (rekening + tabel + total) per bank.
-        $sections = '';
+        // #123: total per bank sumber, TANPA grand total lintas bank.
+        $rows = '';
+        $no = 0;
         foreach ($sip->lines->groupBy('cash_account_id') as $glines) {
-            $acc = $glines->first()->cashAccount ?: $sip->cashAccount;
-            $rows = '';
+            $acc = $glines->first()->cashAccount;
+            $bankLabel = $acc ? $e($acc->code).' — '.$e($acc->name) : 'Bank Sumber';
             $sub = 0.0;
+            $rows .= '<tr class="grp"><td colspan="6">Bank Sumber: '.$bankLabel.'</td></tr>';
             foreach ($glines as $l) {
+                $no++;
                 $sub += (float) $l->amount;
-                $rows .= '<tr>'
-                    .'<td>'.$e($l->dest_account_name ?: $l->payee_name).'</td>'
-                    .'<td class="c">'.$e($l->dest_bank_name ?: '-').'</td>'
-                    .'<td class="c">'.$e($l->dest_account_no ?: '-').'</td>'
-                    .'<td class="r">'.$n($l->amount).'</td>'
-                    .'<td class="c yn"></td>'
-                    .'<td>'.$e($l->description).'</td>'
-                    .'<td class="c st"></td>'
-                    .'</tr>';
+                $rows .= '<tr><td class="c">'.$no.'</td><td>'.$e($l->payee_name).'</td><td>'.$e($l->dest_bank_name).'</td><td>'.$e($l->dest_account_no).'</td><td>'.$e($l->description).'</td><td class="r">'.$rp($l->amount).'</td></tr>';
             }
-            $sections .= '<div class="sec">'
-                .'<table class="plain"><tr><td class="lbl">dari Rekening</td><td>'.$e($accLabel($acc)).'</td></tr>'
-                .'<tr><td class="lbl">Nomor Rekening</td><td>'.$e($accNo($acc)).'</td></tr></table>'
-                .'<div style="margin:2px 0 4px">dengan rincian pembayaran sebagai berikut :</div>'
-                .'<table class="grid"><thead><tr>'
-                .'<th style="width:17%">Nama Rekening</th><th style="width:8%">Bank</th><th style="width:12%">Nomor Rekening</th>'
-                .'<th style="width:10%">Amount</th><th style="width:5%">Y/N*</th><th>Peruntukan/Keterangan</th><th style="width:6%">Status</th>'
-                .'</tr></thead><tbody>'.$rows
-                .'<tr class="tot"><td colspan="3" style="border:none"></td><td class="r">'.$n($sub).'</td><td colspan="3" style="border:none"></td></tr>'
-                .'</tbody></table></div>';
+            $rows .= '<tr class="sub"><td colspan="5" class="r">Total — '.$bankLabel.'</td><td class="r">'.$rp($sub).'</td></tr>';
         }
 
-        // 4 blok tanda tangan ← 7 SIGNERS: Dibuat(1) / Diperiksa(3) / Diketahui(2) / Disetujui(1).
-        // Slot yang sudah disetujui dicetak dengan BARCODE tanda tangan penyetujunya; slot yang
-        // belum (atau penyetujunya belum punya barcode) ruangnya dibiarkan kosong utk tanda
-        // tangan basah — nama tetap tercetak di baris bawah seperti sebelumnya.
+        // Slot yang sudah disetujui dicetak dengan BARCODE tanda tangan penyetujunya. Bila
+        // penyetuju belum punya barcode, namanya dipakai kembali agar dokumen tetap sah dibaca.
         $approvals = $sip->approvals ?? [];
-        $barcodes = $this->approvalBarcodes($sip, 1, 26);
-        $signGroups = [
-            'Dibuat'    => ['staf_finance'],
-            'Diperiksa' => ['spv_finance', 'manager_finance', 'gm'],
-            'Diketahui' => ['direksi', 'moch_winarto'],
-            'Disetujui' => ['boy_arifin'],
-        ];
-        $headCells = '';
-        $signCells = '';
-        $nameCells = '';
-        foreach ($signGroups as $title => $slots) {
-            $headCells .= '<td colspan="'.count($slots).'" class="sg-title">'.$e($title).'</td>';
-            foreach ($slots as $slot) {
-                $ap = $approvals[$slot] ?? null;
-                $signCells .= '<td class="sg-bc">'.((string) ($barcodes[$slot] ?? '')).'</td>';
-                $nameCells .= '<td class="sg-name">'.$e($ap['name'] ?? BsSip::SIGNERS[$slot]).'</td>';
-            }
+        // Modul kecil (2 px) agar QR yang berbentuk kotak muat di kotak TTD yang sempit.
+        $barcodes = $this->approvalBarcodes($sip, 2);
+        $signs = '';
+        foreach (BsSip::SIGNERS as $key => $label) {
+            $ap = $approvals[$key] ?? null;
+            $bc = $barcodes[$key] ?? null;
+            $name = $ap ? $e($ap['name']) : '(__________)';
+            $space = $bc
+                ? '<div class="sign-space sign-bc">'.$bc.'</div>'
+                : '<div class="sign-space"></div>';
+            $date = $ap ? '<div class="muted" style="font-size:8px">'.$e(substr((string) $ap['approved_at'], 0, 10)).'</div>' : '';
+            $signs .= '<div class="sign-box"><div class="sign-label">'.$e($label).'</div>'.$space
+                .'<div class="sign-name">'.($bc ? '' : $name).'</div>'.$date.'</div>';
         }
-
-        $periode = $sip->title ?: optional($sip->sip_date)->translatedFormat('d F Y');
 
         return '<!DOCTYPE html><html lang="id"><head><meta charset="utf-8"><title>'.$e($sip->sip_number).'</title><style>
-            @page{size:A4 landscape;margin:10mm 12mm}*{box-sizing:border-box}
-            body{font-family:Arial,"Segoe UI",sans-serif;font-size:11px;color:#111;margin:0}
-            .frame{border:1.5px solid #111;padding:10px 14px;min-height:186mm}
-            .tophead{display:flex;align-items:flex-start;gap:10px}
-            .logo{width:56px;height:46px;background:#f97316;color:#fff;font-weight:800;font-size:28px;display:flex;align-items:center;justify-content:center}
-            .title{flex:1;text-align:center;line-height:1.55;padding-right:56px}
-            .title b{font-size:12.5px;letter-spacing:.2px}
-            hr.dbl{border:0;border-top:4px double #111;margin:6px 0}
-            table.plain{border-collapse:collapse;font-size:11px;margin:2px 0}table.plain td{padding:1px 6px 1px 0;vertical-align:top}
-            table.plain td.lbl{width:130px}
-            table.grid{border-collapse:collapse;width:100%;font-size:10.5px;margin:2px 0 6px}
-            table.grid th,table.grid td{border:1px solid #111;padding:3px 5px;text-align:left;vertical-align:top}
-            table.grid thead th{text-align:center;font-weight:bold}
-            .r{text-align:right;font-variant-numeric:tabular-nums}.c{text-align:center}
-            tr.tot td{font-weight:bold;border:none;border-top:1.5px solid #111;padding:3px 5px}
-            .foot{font-size:10px;margin-top:4px}
-            table.signs{border-collapse:collapse;width:100%;margin-top:14px;font-size:11px}
-            table.signs td{border:none;text-align:center;padding:2px 6px}
-            .sg-title{font-weight:normal;text-align:left !important}
-            .sg-space td{height:60px}
-            .sg-bc{vertical-align:bottom;text-align:center;overflow:hidden}
-            .sg-bc svg{max-width:100%;height:auto}
-            .sg-name{vertical-align:bottom}
-            @media print{.noprint{display:none}}</style></head><body><div class="frame">
-            <div class="tophead">
-                <div class="logo">M</div>
-                <div class="title"><b>STANDING INSTRUCTION PAYMENT</b><br>Periode : '.$e($periode).'<br>No :&nbsp;&nbsp;'.$e($sip->sip_number).'</div>
-            </div>
-            <hr class="dbl">
-            <table class="plain">
-                <tr><td class="lbl">Kepada Yth</td><td>'.$e($kepada).'</td></tr>
-                <tr><td class="lbl">Dari</td><td>'.$e($dari).'</td></tr>
-                <tr><td class="lbl">Tembusan</td><td>'.$e($tembusan).'</td></tr>
-                <tr><td class="lbl">Tanggal Pengajuan</td><td>'.$e(optional($sip->sip_date)->format('d/m/Y')).'</td></tr>
-            </table>
-            <hr class="dbl">
-            <div style="margin:6px 0 2px">Dengan Hormat,</div>
-            <div>Bersama ini kami sampaikan list permohonan pembayaran <b>TRANSFER</b></div>
-            '.$sections.'
-            <div class="foot">*) Mohon untuk diberikan keterangan Y (Untuk payment yang diapprove untuk dibayar) atau N (Untuk payment yang ditunda/didiscuss lebih lanjut), jika ada.<br>
-            Demikian permohonan pembayaran ini kami sampaikan, Terima Kasih</div>
-            <table class="signs">
-                <tr>'.$headCells.'</tr>
-                <tr class="sg-space">'.$signCells.'</tr>
-                <tr>'.$nameCells.'</tr>
-            </table>
-            </div>
-            <button class="noprint" onclick="window.print()" style="margin-top:10px;padding:6px 14px">Cetak / Simpan PDF</button>
+            @page{size:A4 landscape;margin:12mm}*{box-sizing:border-box}body{font-family:"Segoe UI",Arial,sans-serif;font-size:11px;color:#1f2937;margin:0}
+            h1{font-size:16px;margin:0 0 2px}.muted{color:#6b7280;font-size:10px}
+            .head{border-bottom:2px solid #1f2937;padding-bottom:6px;margin-bottom:8px;display:flex;justify-content:space-between}
+            dl{display:grid;grid-template-columns:120px 1fr;gap:1px 8px;margin:6px 0}dt{color:#6b7280}
+            table{border-collapse:collapse;width:100%;margin:6px 0;font-size:10px}th,td{border:1px solid #cbd5e1;padding:4px 6px;text-align:left}
+            .r{text-align:right;font-variant-numeric:tabular-nums}.c{text-align:center}.tot{font-weight:bold;background:#f1f5f9}
+            .grp{background:#e2e8f0;font-weight:600}.sub{background:#f8fafc;font-weight:600}
+            .signs{display:grid;grid-template-columns:repeat(7,1fr);gap:6px;margin-top:24px}
+            .sign-box{text-align:center;font-size:9px}.sign-label{font-weight:600;margin-bottom:2px}.sign-space{height:52px}.sign-name{border-top:1px solid #1f2937;padding-top:2px;min-height:12px}
+            /* QR berbentuk KOTAK — ruang TTD ditinggikan & gambarnya dibatasi tinggi kotak. */
+            .sign-bc{display:flex;align-items:flex-end;justify-content:center;overflow:hidden}
+            .sign-bc svg{max-width:100%;max-height:52px;height:auto;width:auto}
+            @media print{.noprint{display:none}}</style></head><body>
+            <div class="head"><div><h1>STANDING INSTRUCTION PAYMENT (SIP)</h1><div class="muted">'.$e($co).'</div></div>
+            <div class="muted" style="text-align:right">No: '.$e($sip->sip_number).'<br>Cetak: '.$e($now).'</div></div>
+            <dl><dt>Tanggal</dt><dd>'.$e(optional($sip->sip_date)->translatedFormat('d F Y')).'</dd>
+            <dt>Bank Sumber</dt><dd>'.$bank.'</dd>
+            <dt>Judul / Ket.</dt><dd>'.$e($sip->title ?: $sip->description ?: '-').'</dd></dl>
+            <table><thead><tr><th class="c">No</th><th>Nama Penerima</th><th>Bank Tujuan</th><th>No. Rekening</th><th>Keterangan</th><th class="r">Nominal</th></tr></thead><tbody>'.$rows.'</tbody></table>
+            <div class="signs">'.$signs.'</div>
+            <button class="noprint" onclick="window.print()" style="margin-top:12px;padding:6px 14px">Cetak</button>
             <script>window.onload=function(){setTimeout(function(){window.print()},300)}</script></body></html>';
     }
 }
