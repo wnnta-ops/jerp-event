@@ -283,7 +283,7 @@
                     @error('spouse_email') <span class="nup-error">{{ $message }}</span> @enderror
                 </div>
                 <div>
-                    <label class="nup-label">Upload KTP (Maks. 5MB)</label>
+                    <label class="nup-label">Upload KTP (Maks. 10MB)</label>
                     <input type="file" wire:model="ktp_pasangan_file" accept=".jpg,.jpeg,.png,.pdf" class="nup-input" style="padding:0.375rem 0.5rem;">
                     <div wire:loading wire:target="ktp_pasangan_file" class="text-xs mt-1" style="color:#2563eb;">Mengunggah…</div>
                     @if ($ktp_pasangan_file && ! $errors->has('ktp_pasangan_file'))
@@ -458,7 +458,7 @@
 
         <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
-                <label class="nup-label">Upload KTP Customer (Maks. 5MB) <span class="nup-required">*</span></label>
+                <label class="nup-label">Upload KTP Customer (Maks. 10MB) <span class="nup-required">*</span></label>
                 <input type="file" wire:model="ktp_file" accept=".jpg,.jpeg,.png,.pdf" class="nup-input" style="padding:0.375rem 0.5rem;">
                 <div wire:loading wire:target="ktp_file" class="text-xs mt-1" style="color:#2563eb;">Mengunggah…</div>
                 @if ($ktp_file && ! $errors->has('ktp_file'))
@@ -467,7 +467,7 @@
                 @error('ktp_file') <span class="nup-error">{{ $message }}</span> @enderror
             </div>
             <div>
-                <label class="nup-label">Upload NPWP Customer (Maks. 5MB) <span class="nup-required">*</span></label>
+                <label class="nup-label">Upload NPWP Customer (Maks. 10MB) <span class="nup-required">*</span></label>
                 <input type="file" wire:model="npwp_file" accept=".jpg,.jpeg,.png,.pdf" class="nup-input" style="padding:0.375rem 0.5rem;">
                 <div wire:loading wire:target="npwp_file" class="text-xs mt-1" style="color:#2563eb;">Mengunggah…</div>
                 @if ($npwp_file && ! $errors->has('npwp_file'))

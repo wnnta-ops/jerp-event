@@ -532,7 +532,7 @@
     {{-- ── Upload Berkas (semua dokumen dijadikan satu di sini) ───── --}}
     <div class="nup-card mb-4">
         <h2 class="nup-section-title mb-1"><span class="nup-section-dot"></span>Upload Berkas <span class="nup-required">*</span></h2>
-        <p class="nup-disclaimer mb-4">Semua berkas maks. 5MB — format JPG, PNG, atau PDF.</p>
+        <p class="nup-disclaimer mb-4">Semua berkas maks. 10MB — format JPG, PNG, atau PDF.</p>
 
         <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
