@@ -281,7 +281,8 @@ class PublicForm extends Component
             'preferensi_unit_id' => ['required', 'integer', Rule::exists('fo_preferensi_unit', 'id')->where('is_active', true)],
             'pilihan_unit_1' => ['required', 'string', 'max:255'],
             'pilihan_unit_2' => ['required', 'string', 'max:255'],
-            'pilihan_unit_3' => ['required', 'string', 'max:255'],
+            // Pilihan ke-3 OPSIONAL — cukup dua pilihan yang wajib.
+            'pilihan_unit_3' => ['nullable', 'string', 'max:255'],
 
             'ktp_file' => ['required', 'file', 'mimes:jpg,jpeg,png,pdf', 'max:10240'],         // 10 MB
             'npwp_file' => ['required', 'file', 'mimes:jpg,jpeg,png,pdf', 'max:10240'],
