@@ -215,8 +215,9 @@
         </div>
 
         <div class="mb-2">
+            <label class="nup-label">Status Pernikahan <span class="nup-required">*</span></label>
             <div class="flex flex-wrap gap-4">
-                @foreach (['KAWIN' => 'Menikah', 'CERAI' => 'Cerai', 'BELUM' => 'Belum Menikah', 'LAIN' => 'Lain-lain'] as $val => $lbl)
+                @foreach (['KAWIN' => 'Menikah', 'CERAI' => 'Cerai', 'BELUM' => 'Belum Menikah'] as $val => $lbl)
                     <label class="nup-toggle-row text-sm cursor-pointer">
                         <span class="nup-switch">
                             <input type="radio" wire:model.live="marital_status" value="{{ $val }}">
@@ -265,9 +266,11 @@
                 </div>
             </div>
 
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+            {{-- Upload KTP pasangan TIDAK di sini — disatukan dengan berkas customer
+                 di kartu paling bawah (muncul otomatis saat status Menikah). --}}
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
                 <div>
-                    <label class="nup-label">Nomor HP</label>
+                    <label class="nup-label">Nomor HP <span class="nup-required">*</span></label>
                     <div class="flex">
                         <span class="inline-flex items-center px-3 border border-r-0 text-sm"
                               style="background:#f3f4f6; border-color:#d1d5db; color:#4b5563; border-top-left-radius:6px; border-bottom-left-radius:6px;">+62</span>
@@ -278,29 +281,20 @@
                     @error('spouse_phone') <span class="nup-error">{{ $message }}</span> @enderror
                 </div>
                 <div>
-                    <label class="nup-label">Email Aktif</label>
+                    <label class="nup-label">Email Aktif <span class="nup-required">*</span></label>
                     <input wire:model="spouse_email" type="email" class="nup-input" placeholder="Alamat Email Aktif">
                     @error('spouse_email') <span class="nup-error">{{ $message }}</span> @enderror
-                </div>
-                <div>
-                    <label class="nup-label">Upload KTP (Maks. 10MB)</label>
-                    <input type="file" wire:model="ktp_pasangan_file" accept=".jpg,.jpeg,.png,.pdf" class="nup-input" style="padding:0.375rem 0.5rem;">
-                    <div wire:loading wire:target="ktp_pasangan_file" class="text-xs mt-1" style="color:#2563eb;">Mengunggah…</div>
-                    @if ($ktp_pasangan_file && ! $errors->has('ktp_pasangan_file'))
-                        <div class="text-xs mt-1" style="color:#16a34a;">✓ {{ method_exists($ktp_pasangan_file, 'getClientOriginalName') ? $ktp_pasangan_file->getClientOriginalName() : 'Terunggah' }}</div>
-                    @endif
-                    @error('ktp_pasangan_file') <span class="nup-error">{{ $message }}</span> @enderror
                 </div>
             </div>
 
             <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div>
-                    <label class="nup-label">Tempat Lahir</label>
+                    <label class="nup-label">Tempat Lahir <span class="nup-required">*</span></label>
                     <input wire:model="spouse_birth_place" type="text" class="nup-input" placeholder="Tempat Lahir">
                     @error('spouse_birth_place') <span class="nup-error">{{ $message }}</span> @enderror
                 </div>
                 <div>
-                    <label class="nup-label">Tanggal Lahir</label>
+                    <label class="nup-label">Tanggal Lahir <span class="nup-required">*</span></label>
                     <div wire:ignore>
                         <input type="text" class="nup-input" placeholder="dd/mm/yyyy" autocomplete="off" x-data
                                x-init="flatpickr($el, { dateFormat:'Y-m-d', altInput:true, altFormat:'d/m/Y', altInputClass:'nup-input', allowInput:true, maxDate:'today', onChange:(s,str)=>$wire.set('spouse_birth_date', str, false) })">
@@ -308,7 +302,7 @@
                     @error('spouse_birth_date') <span class="nup-error">{{ $message }}</span> @enderror
                 </div>
                 <div>
-                    <label class="nup-label">Pekerjaan</label>
+                    <label class="nup-label">Pekerjaan <span class="nup-required">*</span></label>
                     <input wire:model="spouse_occupation" type="text" class="nup-input" placeholder="Pekerjaan">
                     @error('spouse_occupation') <span class="nup-error">{{ $message }}</span> @enderror
                 </div>
@@ -362,18 +356,20 @@
                     @error('mail_city') <span class="nup-error">{{ $message }}</span> @enderror
                 </div>
                 <div>
-                    <label class="nup-label">Kecamatan</label>
+                    <label class="nup-label">Kecamatan <span class="nup-required">*</span></label>
                     <select x-model="kecId" @change="onKec()" class="nup-input" :disabled="!kabId">
                         <option value="">— Pilih</option>
                         <template x-for="d in districts" :key="d.id"><option :value="d.id" x-text="d.name"></option></template>
                     </select>
+                    @error('mail_kecamatan') <span class="nup-error">{{ $message }}</span> @enderror
                 </div>
                 <div>
-                    <label class="nup-label">Kelurahan</label>
+                    <label class="nup-label">Kelurahan <span class="nup-required">*</span></label>
                     <select x-model="kelId" @change="onKel()" class="nup-input" :disabled="!kecId">
                         <option value="">— Pilih</option>
                         <template x-for="v in villages" :key="v.id"><option :value="v.id" x-text="v.name"></option></template>
                     </select>
+                    @error('mail_kelurahan') <span class="nup-error">{{ $message }}</span> @enderror
                 </div>
             </div>
         @else
@@ -386,22 +382,26 @@
         <h2 class="nup-section-title mb-4"><span class="nup-section-dot"></span>Preferensi Unit <span class="nup-required">*</span></h2>
 
         <div class="flex flex-wrap gap-2 mb-3">
-            @foreach ($budgetOptions as $val => $lbl)
-                {{-- wire:model DEFERRED (bukan .live): klik pill TIDAK memicu round-trip
-                     Livewire → tak ada morph → dropdown wilayah (option dirender Alpine)
-                     tak ke-reset. Styling aktif via CSS :has(input:checked). --}}
-                <label class="nup-pill {{ in_array($val, $pilihan_budget) ? 'active' : '' }}">
-                    <input type="checkbox" wire:model="pilihan_budget" value="{{ $val }}" class="hidden">
-                    {{ $lbl }}
+            {{-- PILIH SATU (radio, bukan checkbox). wire:model DEFERRED: klik pill tak
+                 memicu round-trip Livewire → tak ada morph → dropdown wilayah (option
+                 dirender Alpine) tak ke-reset. Styling aktif via CSS :has(input:checked). --}}
+            @foreach ($preferensiUnitOptions as $p)
+                <label class="nup-pill {{ (int) $preferensi_unit_id === $p->id ? 'active' : '' }}">
+                    <input type="radio" wire:model="preferensi_unit_id" value="{{ $p->id }}" class="hidden">
+                    {{ $p->nama }}
                 </label>
             @endforeach
+            @if ($preferensiUnitOptions->isEmpty())
+                <span class="text-xs" style="color:#6b7280;">Belum ada pilihan preferensi unit — atur di FO → NUP → Setup Preferensi Unit.</span>
+            @endif
         </div>
+        @error('preferensi_unit_id') <span class="nup-error">{{ $message }}</span> @enderror
         <p class="nup-disclaimer mb-5">*Disclaimer — Preferensi unit hanya digunakan untuk kebutuhan database informasi perusahaan dan tidak mempengaruhi pilihan unit yang dipilih saat acara berlangsung.</p>
 
         <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
             @foreach ([1, 2, 3] as $i)
                 <div>
-                    <label class="nup-label">Pilihan Unit {{ $i }}</label>
+                    <label class="nup-label">Pilihan Unit {{ $i }} <span class="nup-required">*</span></label>
                     <input wire:model="pilihan_unit_{{ $i }}" type="text" class="nup-input"
                            placeholder="contoh: Blok A/12, Cendana 03, dll.">
                     @error('pilihan_unit_'.$i) <span class="nup-error">{{ $message }}</span> @enderror
@@ -446,7 +446,8 @@
             </div>
             <div>
                 <label class="nup-label">Cara Bayar <span class="nup-required">*</span></label>
-                <select wire:model="cara_bayar" class="nup-input">
+                {{-- .live: pilih KPR → dropdown Bank Pilihan muncul (lihat di bawah). --}}
+                <select wire:model.live="cara_bayar" class="nup-input">
                     <option value="">— Pilih</option>
                     <option value="CASH">Cash</option>
                     <option value="CASH_BERTAHAP">Cash Bertahap</option>
@@ -456,7 +457,26 @@
             </div>
         </div>
 
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {{-- Bank Pilihan — KHUSUS KPR. Opsi mengikuti cluster + tahap dari Jenis
+             Tipe NUP yang dipilih (master Setup Bank). --}}
+        @if ($cara_bayar === 'KPR')
+            <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
+                <div>
+                    <label class="nup-label">Bank Pilihan <span class="nup-required">*</span></label>
+                    <select wire:model="bank_id" class="nup-input" @disabled($bankOptions->isEmpty())>
+                        <option value="">{{ $bankOptions->isEmpty() ? '— Belum ada bank untuk tipe NUP ini' : '— Pilih' }}</option>
+                        @foreach ($bankOptions as $b)
+                            <option value="{{ $b->id }}">{{ $b->nama }}</option>
+                        @endforeach
+                    </select>
+                    @error('bank_id') <span class="nup-error">{{ $message }}</span> @enderror
+                </div>
+            </div>
+        @endif
+
+        {{-- Semua berkas jadi satu di sini. KTP pasangan ikut muncul (dan wajib)
+             begitu status pernikahan = Menikah, jadi kolomnya 3. --}}
+        <div class="grid grid-cols-1 {{ $marital_status === 'KAWIN' ? 'md:grid-cols-3' : 'md:grid-cols-2' }} gap-4">
             <div>
                 <label class="nup-label">Upload KTP Customer (Maks. 10MB) <span class="nup-required">*</span></label>
                 <input type="file" wire:model="ktp_file" accept=".jpg,.jpeg,.png,.pdf" class="nup-input" style="padding:0.375rem 0.5rem;">
@@ -475,6 +495,17 @@
                 @endif
                 @error('npwp_file') <span class="nup-error">{{ $message }}</span> @enderror
             </div>
+            @if ($marital_status === 'KAWIN')
+                <div>
+                    <label class="nup-label">Upload KTP Pasangan (Maks. 10MB) <span class="nup-required">*</span></label>
+                    <input type="file" wire:model="ktp_pasangan_file" accept=".jpg,.jpeg,.png,.pdf" class="nup-input" style="padding:0.375rem 0.5rem;">
+                    <div wire:loading wire:target="ktp_pasangan_file" class="text-xs mt-1" style="color:#2563eb;">Mengunggah…</div>
+                    @if ($ktp_pasangan_file && ! $errors->has('ktp_pasangan_file'))
+                        <div class="text-xs mt-1" style="color:#16a34a;">✓ {{ method_exists($ktp_pasangan_file, 'getClientOriginalName') ? $ktp_pasangan_file->getClientOriginalName() : 'Terunggah' }}</div>
+                    @endif
+                    @error('ktp_pasangan_file') <span class="nup-error">{{ $message }}</span> @enderror
+                </div>
+            @endif
         </div>
 
         <p class="text-xs mt-3" style="color:#dc2626;">*) Wajib diisi</p>
