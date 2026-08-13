@@ -21,6 +21,25 @@
         };
     @endphp
 
+    {{-- Panel kemajuan restore. Restore berjalan sebagai proses terpisah supaya tidak
+         diputus reverse proxy pada 100 detik; blok ini yang memberi tahu operator
+         bahwa prosesnya masih hidup — tanpanya ia akan menekan Restore berulang kali. --}}
+    @php $bkLog = $this->restoreLog(); @endphp
+    @if ($this->restoreBerjalan() || $bkLog !== '')
+        <div wire:poll.5s
+             style="border:1px solid rgba(120,120,120,.35); border-radius:.6rem; padding:.9rem 1rem; margin-bottom:1rem;
+                    background:{{ $this->restoreBerjalan() ? 'rgba(234,122,29,.08)' : 'rgba(34,197,94,.08)' }}">
+            <div style="font-weight:700; margin-bottom:.35rem;">
+                @if ($this->restoreBerjalan())
+                    Restore sedang berjalan — jangan tutup halaman, jangan ulangi perintah restore.
+                @else
+                    Restore selesai. Muat ulang halaman untuk melihat data terbaru.
+                @endif
+            </div>
+            <pre style="margin:0; font-size:.75rem; line-height:1.35; white-space:pre-wrap; opacity:.85;">{{ $bkLog }}</pre>
+        </div>
+    @endif
+
     <style>
         .bk-stats { display:grid; grid-template-columns:repeat(3,1fr); gap:.9rem; }
         @media(max-width:820px){ .bk-stats{ grid-template-columns:repeat(2,1fr); } }
