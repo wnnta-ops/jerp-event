@@ -150,7 +150,9 @@
                                 <td><span class="bk-date">{{ $row['date'] }}</span></td>
                                 <td style="text-align:right">
                                     <x-filament::button size="sm" color="success" icon="heroicon-o-arrow-down-tray"
-                                        wire:click="download('{{ $row['disk'] }}', @js($row['path']))">
+                                        {{-- Jalur di-base64: nama berkas backup memuat spasi & tanda kutip yang
+                                             memutus atribut HTML sehingga Alpine gagal mem-parse ekspresinya. --}}
+                                        wire:click="download('{{ $row['disk'] }}', '{{ base64_encode($row['path']) }}')">
                                         Download
                                     </x-filament::button>
                                 </td>

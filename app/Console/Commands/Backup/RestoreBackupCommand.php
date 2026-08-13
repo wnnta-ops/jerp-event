@@ -24,9 +24,10 @@ class RestoreBackupCommand extends Command
         {path : Path relatif file .zip backup pada disk}
         {--disk= : Disk backup (default dari config backup)}
         {--force : Lewati konfirmasi interaktif}
-        {--no-safety-backup : Lewati backup darurat sebelum restore}';
+        {--no-safety-backup : Lewati backup darurat sebelum restore}
+        {--only-db : Jangan pulihkan berkas, database saja}';
 
-    protected $description = 'Restore database (FO + BO) dari file backup zip (MENIMPA data saat ini).';
+    protected $description = 'Restore database (FO + BO) + berkas storage dari file backup zip (MENIMPA data saat ini).';
 
     public function handle(): int
     {
@@ -145,6 +146,15 @@ class RestoreBackupCommand extends Command
             }
         }
 
+        // ── Pulihkan BERKAS (storage/app) ──────────────────────────────────────
+        // Tanpa ini, restore hanya mengembalikan database sementara berkas yang
+        // diunggah setelah backup (KTP/NPWP, siteplan) tetap tertinggal — data dan
+        // berkas jadi tidak sinkron: baris pendaftaran hilang, lampirannya masih ada.
+        $fileHasil = ['pulih' => 0, 'lewat' => 0];
+        if (! $this->option('only-db')) {
+            $fileHasil = $this->pulihkanBerkas($zip);
+        }
+
         $zip->close();
         @unlink($tmpZip);
 
@@ -155,7 +165,74 @@ class RestoreBackupCommand extends Command
         }
 
         $this->info("Restore selesai dari {$path} → database: ".implode(', ', $restored).'.');
+        if (! $this->option('only-db')) {
+            $this->info("Berkas dipulihkan: {$fileHasil['pulih']}".($fileHasil['lewat'] > 0 ? " (dilewati: {$fileHasil['lewat']})" : ''));
+        }
 
         return self::SUCCESS;
+    }
+
+    /**
+     * Salin kembali isi storage/app dari dalam zip.
+     *
+     * Spatie menyimpan berkas memakai jalur absolut tanpa garis miring depan,
+     * mis. "var/www/html/storage/app/nup/1/ktp.jpg". Yang dicari adalah entri di
+     * bawah storage/app, lalu ditulis ulang ke lokasi yang sama.
+     *
+     * MENIMPA berkas bernama sama, tetapi TIDAK menghapus berkas yang tidak ada di
+     * backup — sengaja: menghapus isi storage berarti menghancurkan berkas yang sah
+     * bila seseorang salah memilih arsip. Sisa berkas yatim dibersihkan manual.
+     *
+     * @return array{pulih:int,lewat:int}
+     */
+    private function pulihkanBerkas(\ZipArchive $zip): array
+    {
+        $tujuanRoot = rtrim(storage_path('app'), '/\\');
+        // Cocokkan dari ruas "storage/app/" agar tetap jalan meski jalur absolut
+        // server backup berbeda dengan server tempat restore dijalankan.
+        $penanda = 'storage/app/';
+        $pulih = 0;
+        $lewat = 0;
+
+        for ($i = 0; $i < $zip->numFiles; $i++) {
+            $entri = (string) $zip->getNameIndex($i);
+
+            if (str_ends_with($entri, '/') || preg_match('#\.sql$#i', $entri)) {
+                continue;
+            }
+
+            $pos = strpos($entri, $penanda);
+            if ($pos === false) {
+                continue; // di luar storage/app (mis. db-dumps) — bukan urusan kita
+            }
+
+            $relatif = substr($entri, $pos + strlen($penanda));
+
+            // Tolak jalur yang mencoba keluar dari storage/app.
+            if ($relatif === '' || str_contains($relatif, '..')) {
+                $lewat++;
+
+                continue;
+            }
+
+            $tujuan = $tujuanRoot.'/'.$relatif;
+            $dir = dirname($tujuan);
+            if (! is_dir($dir) && ! @mkdir($dir, 0775, true) && ! is_dir($dir)) {
+                $lewat++;
+
+                continue;
+            }
+
+            $isi = $zip->getFromIndex($i);
+            if ($isi === false || @file_put_contents($tujuan, $isi) === false) {
+                $lewat++;
+
+                continue;
+            }
+
+            $pulih++;
+        }
+
+        return ['pulih' => $pulih, 'lewat' => $lewat];
     }
 }

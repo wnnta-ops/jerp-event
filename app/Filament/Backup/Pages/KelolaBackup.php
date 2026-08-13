@@ -82,8 +82,17 @@ class KelolaBackup extends Page
     }
 
     /** Unduh satu file backup .zip dari disk tujuan. */
-    public function download(string $disk, string $path)
+    /**
+     * $path dikirim ter-base64 DENGAN SENGAJA. Nama berkas backup memuat spasi dan
+     * garis miring; dioper apa adanya lewat atribut wire:click, tanda kutip di
+     * dalamnya memutus atribut HTML sehingga Alpine gagal mem-parse ekspresinya
+     * ("Invalid or unexpected token") dan tombol Download mati total. Base64 hanya
+     * berisi [A-Za-z0-9+/=] sehingga aman di atribut mana pun.
+     */
+    public function download(string $disk, string $pathB64)
     {
+        $path = (string) base64_decode($pathB64, true);
+
         abort_unless(
             str_ends_with(strtolower($path), '.zip') && Storage::disk($disk)->exists($path),
             404,
@@ -158,12 +167,25 @@ class KelolaBackup extends Page
                         ->helperText('Folder dibuat otomatis di disk backup. Contoh: gladi-2026-06-12.')
                         ->rule('regex:/^[A-Za-z0-9_\-\/]+$/')
                         ->validationMessages(['regex' => 'Hanya huruf, angka, -, _, / yang diizinkan.']),
+                    // Untuk gladi, KESELURUHAN adalah pilihan yang benar: restore hanya
+                    // bisa mengembalikan apa yang ada di dalam arsip. Snapshot DB saja
+                    // membuat berkas unggahan selama gladi tertinggal dan tidak sinkron
+                    // dengan data yang sudah dikembalikan.
+                    Select::make('scope')->label('Cakupan')->required()->default('FULL')
+                        ->options([
+                            'FULL' => 'Keseluruhan — database + berkas (disarankan untuk gladi)',
+                            'DB_ALL' => 'Database saja (FO + BO)',
+                            'DB_FO' => 'Database FO saja',
+                            'DB_BO' => 'Database BO saja',
+                            'APP' => 'Berkas saja',
+                        ])
+                        ->helperText('Restore hanya dapat mengembalikan yang tersimpan di arsip ini.'),
                 ])
                 ->action(function (array $data) {
                     $folder = trim($data['folder']);
                     try {
                         config(['backup.backup.name' => $folder]);
-                        Artisan::call('backup:run');  // backup penuh (DB + file); --only-db adalah flag, jangan kirim nilai
+                        Artisan::call('backup:scoped', ['scope' => $data['scope'] ?? 'FULL']);
                         Notification::make()->title('Snapshot gladi dibuat')->body('Tersimpan di folder: '.$folder)->success()->send();
                         $this->refreshList();
                     } catch (\Throwable $e) {
@@ -176,8 +198,8 @@ class KelolaBackup extends Page
                 ->label('Restore')
                 ->icon('heroicon-o-arrow-uturn-left')
                 ->color('danger')
-                ->modalHeading('Restore Database (menimpa data saat ini)')
-                ->modalDescription('Seluruh isi database akan DITIMPA oleh backup terpilih. Pastikan ini saat yang tepat (mis. setelah gladi kotor).')
+                ->modalHeading('Restore (menimpa data saat ini)')
+                ->modalDescription('Database DITIMPA oleh backup terpilih, dan berkas storage dikembalikan bila arsipnya memuat berkas. Berkas yang tidak ada di arsip TIDAK dihapus. Pastikan ini saat yang tepat (mis. setelah gladi kotor).')
                 ->modalSubmitActionLabel('Restore Sekarang')
                 ->form([
                     Select::make('backup')->label('Pilih file backup')->required()->searchable()
