@@ -63,8 +63,11 @@ class NupConfirmationMail extends Mailable
         }
 
         try {
-            $reg->loadMissing(['customer', 'agent']);
-            $html = view('pdf.fo.sprs', ['reg' => $reg])->render();
+            // Data view HARUS lewat sprsData(): dulu di sini dioper ['reg' => $reg]
+            // saja, sehingga $qrSvg/$tts/$kontrak kosong dan PDF di email keluar tanpa
+            // halaman QR serta tanpa data kontrak/kwitansi — padahal PDF yang sama di
+            // WA (lewat controller) lengkap.
+            $html = view('pdf.fo.sprs', \App\Modules\FO\MarketingSales\Controllers\ClosingPrintController::sprsData($reg))->render();
             // noSandbox + disable-dev-shm: wajib utk Chromium di dalam container.
             $pdf = Browsershot::html($html)->noSandbox()->addChromiumArguments(['disable-dev-shm-usage'])->format('A4')->pdf();
 

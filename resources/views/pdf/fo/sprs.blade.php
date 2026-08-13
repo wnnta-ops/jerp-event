@@ -14,9 +14,12 @@
         .head .src .lbl { border-bottom: 1px solid #111; text-align: center; font-weight: 700; padding: 3px; }
         .head .src .val { padding: 4px 6px; min-height: 30px; }
         .head .right { display: flex; gap: 8px; align-items: flex-start; }
-        .qr { text-align: center; width: 68px; }
-        .qr svg { width: 58px; height: 58px; display: block; margin: 0 auto; }
-        .qr .code { font-size: 7px; font-weight: 700; letter-spacing: .2px; margin-top: 1px; }
+        /* Halaman 3 — QR Customer, seluruhnya rata tengah. */
+        .qrpage { text-align: center; margin-top: 90px; }
+        .qrpage svg { width: 260px; height: 260px; display: block; margin: 0 auto; }
+        .qrpage .nama { font-size: 18px; font-weight: 800; margin-top: 18px; letter-spacing: .3px; }
+        .qrpage .event { font-size: 13px; font-weight: 700; margin-top: 6px; }
+        .qrpage .ket { font-size: 12px; margin-top: 12px; }
         .brand { width: 130px; font-weight: 800; color: #ea7a1d; font-size: 16px; line-height: 1.05; }
         table.f { width: 100%; border-collapse: collapse; margin-top: 12px; }
         table.f td { padding: 1.5px 4px; vertical-align: top; }
@@ -50,14 +53,16 @@
         $ut = $unit?->unitType;
 
         $nama = $c?->full_name ?: $reg->nama_pendaftar;
+        // Nama acara launching — dicetak di halaman QR agar petugas tahu QR ini untuk
+        // acara yang mana (satu customer bisa ikut lebih dari satu launching).
+        $namaEvent = $reg->event?->name ?: '';
         $alamat = $c?->alamatRingkas() ?: ($reg->keterangan ?: '—');
-        // Marketing yang TERCETAK ke customer = sales FREE-TEXT (nama + telp) dari NUP.
-        // Master sales (agent) hanya fallback bila tak ada free-text (mis. kontrak langsung).
+        // Marketing yang TERCETAK ke customer = sales FREE-TEXT dari NUP. Master sales
+        // (agent) hanya fallback bila tak ada free-text (mis. kontrak langsung).
+        // Nomor telepon sales SENGAJA tidak diambil — tanda tangan hanya memuat nama.
         $sales = $k?->ref_sales_name ?: ($reg->ref_sales_name
             ?: ($k?->agent?->sales_label ?: ($k?->agent?->name
             ?: ($reg->agent?->sales_label ?: '—'))));
-        $salesPhone = $k?->ref_sales_phone ?: ($reg->ref_sales_phone
-            ?: ($k?->agent?->phone ?: ($k?->agent?->whatsapp ?: '')));
         // Sumber Informasi = Sumber Data pemasaran (master) yang dipilih saat daftar.
         $sumberInfo = $c?->sumber_data_label ?: '—';
 
@@ -79,7 +84,12 @@
         $hargaMengikat = $k ? $rp($k->total_kontrak) : '';
         $tandaJadi = (float) ($k?->reservasi?->booking_fee ?: ($reg->booking_fee_paid ?: $reg->utj_amount));
         $totalUM = (float) ($k?->dp_amount ?: 0);
-        $email = $c?->email ?: '';
+        // Email pendaftaran didahulukan atas email master customer — urutan yang SAMA
+        // dengan pengiriman konfirmasi (KirimKonfirmasiNupJob), supaya alamat yang
+        // tercetak di SPRS memang alamat yang dikirimi berkasnya. Ini juga yang
+        // membuat "Edit SPRS" cukup mengubah data pendaftaran, tanpa menyentuh
+        // master customer yang dipakai bersama pendaftaran/kontrak lain.
+        $email = $reg->email ?: ($c?->email ?: '');
         $catatan = $k?->keterangan ?: ($reg->keterangan ?: '');
         $tglSurat = $k?->tgl_kontrak ?: now();
     @endphp
@@ -105,14 +115,10 @@
             <div class="ttl">FORMULIR SURAT PEMESANAN RUMAH SEMENTARA</div>
         </div>
         <div class="right">
-            {{-- QR Customer: ditunjukkan saat Aktivasi NUP & Pilih Unit hari-H.
-                 Isinya KODE customer, bukan data pribadi. --}}
-            @if (! empty($qrSvg))
-                <div class="qr">
-                    {!! $qrSvg !!}
-                    <div class="code">{{ $custCode }}</div>
-                </div>
-            @endif
+            {{-- QR Customer dipindah ke HALAMAN 3 (lihat bagian bawah berkas ini):
+                 dicetak besar & di tengah agar mudah dipindai petugas saat Aktivasi
+                 NUP / Pilih Unit. Di kop ukurannya 58px — terlalu kecil untuk dipindai
+                 andal dari layar HP maupun hasil cetak. --}}
             <div class="src">
                 <div class="lbl">Sumber Informasi</div>
                 <div class="val">{{ $sumberInfo !== '—' ? $sumberInfo : '' }}</div>
@@ -189,26 +195,21 @@
 
     <div class="sign">
         <div class="c"><div class="line">{{ $nama ?: '' }}<br>Pembeli</div></div>
-        <div class="c"><div class="line">{{ $sales }}@if($salesPhone)<br><span style="font-weight:400;font-size:10px;">{{ $salesPhone }}</span>@endif<br>Marketing</div></div>
+        {{-- Tanpa nomor telepon: kolom tanda tangan cukup nama sales + jabatan. --}}
+        <div class="c"><div class="line">{{ $sales }}<br>Marketing</div></div>
         <div class="c"><div class="line">PT. MUP</div></div>
     </div>
 
     {{-- ════════════ HALAMAN 2 — KWITANSI ════════════ --}}
     @php
         $tts = $tts ?? null;
-        // Kata "NUP" DIBUANG dari tampilan kwitansi: pada tahap ini pembayarannya
-        // masih UTJ, belum terbit NUP. Yang dibuang hanya yang TERCETAK — nomor
-        // aslinya (mis. xendit_external_id "UTJ-NUP-332") tetap utuh di database
-        // karena dipakai mencocokkan webhook Xendit.
-        // Pemisah menggantung di ujung ("… (UTJ) —") ikut dibersihkan.
-        $tanpaNup = fn (?string $v) => rtrim(trim(preg_replace('/\bNUP-?\s*/i', '', (string) $v)), " -–—·:");
-
-        $kwNo = $tanpaNup($tts?->no_tts ?: (($reg->xendit_external_id ?: $reg->no_nup) ?: ('NUP-' . $reg->id)));
+        $kwNo = $tts?->no_tts ?: (($reg->xendit_external_id ?: $reg->no_nup) ?: ('NUP-' . $reg->id));
         $kwAmount = (float) ($tts?->amount ?: ($tandaJadi ?: $reg->utj_amount));
         $kwTgl = $tts?->tgl_terima ?: ($reg->xendit_paid_at ?: now());
-        // Keterangan pembayaran TANPA nomor NUP — pada tahap ini pembayarannya masih
-        // Uang Tanda Jadi, nomor NUP baru terbit setelah verifikasi disetujui.
-        $kwUntuk = $tanpaNup($tts?->no_referensi) ?: 'Uang Tanda Jadi (UTJ)';
+        // no_nup sudah berformat "NUP-00011" → awalan "NUP" JANGAN ditambahkan lagi
+        // (dulu tercetak dobel: "NUP NUP-00011").
+        $kwRef = $reg->no_nup ?: ('NUP-' . $reg->id);
+        $kwUntuk = $tts?->no_referensi ?: ('Uang Tanda Jadi (UTJ) — ' . $kwRef);
         $terbilang = \App\Support\Terbilang::rupiah($kwAmount);
     @endphp
     <div style="page-break-before: always;"></div>
@@ -224,6 +225,23 @@
     <div style="text-align:right; margin-top:14px;">SIDOARJO, {{ $tgl($kwTgl) }}</div>
     <div style="margin-top:18px; display:inline-block; border:1px solid #111; padding:8px 16px; font-weight:800; font-size:14px;">JUMLAH &nbsp; {{ $rp($kwAmount) }}</div>
     <div style="text-align:right; margin-top:30px;">Finance<br><span style="display:inline-block; border-top:1px solid #111; width:160px; margin-top:36px;"></span></div>
+
+    {{-- ════════════ HALAMAN 3 — QR CUSTOMER ════════════
+         Dipisah ke halamannya sendiri supaya bisa dicetak besar: petugas memindainya
+         dari kertas/HP saat Aktivasi NUP & Pilih Unit. Isi QR = KODE customer, bukan
+         data pribadi (lihat CustomerQrService). Halaman ini hanya terbit bila QR-nya
+         ada — kalau customer belum punya kode, halaman kosong tidak dicetak. --}}
+    @if (! empty($qrSvg))
+        <div style="page-break-before: always;"></div>
+        <div class="qrpage">
+            {!! $qrSvg !!}
+            <div class="nama">{{ $nama ?: '—' }}</div>
+            @if ($namaEvent)
+                <div class="event">{{ $namaEvent }}</div>
+            @endif
+            <div class="ket">Barcode ini Digunakan Untuk Memudahkan Proses Pemilihan Unit.</div>
+        </div>
+    @endif
 
     <div class="actions">
         <a class="btn" href="javascript:window.print()">Cetak</a>
