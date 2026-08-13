@@ -28,13 +28,94 @@ nano .env
 #   REVERB_APP_KEY/SECRET=<acak>  MEILISEARCH_KEY=<acak>
 #   APP_KEY=  (BIARKAN KOSONG — auto-generate saat boot pertama)
 
-# 4. Jalankan — build image + auto key:generate + migrate + seed
-docker compose up -d --build
+# 4. .env KEDUA untuk BO (aplikasi ipro-fo) — WAJIB, DB_PASSWORD harus SAMA dgn .env root
+cp marger/ipro-fo_1/ipro-fo/.env.example marger/ipro-fo_1/ipro-fo/.env
+nano marger/ipro-fo_1/ipro-fo/.env       # minimal: APP_ENV, APP_DEBUG=false, DB_PASSWORD
+
+# 5. Naikkan FO + BO sekaligus — PAKAI INI, JANGAN up-fo.sh/up-bo.sh
+#    deploy.sh mengurus hal yang TIDAK dilakukan skrip harian:
+#      network shared-db · sambungkan jerp-mysql ke sana · BUAT database ipro_bo
+#      + grant · tunggu DB siap · migrate+seed FO & BO · backfill data FO→BO
+bash marger/deploy.sh
+
+# 6. Naikkan Portal Legal & Sales (database legal & sales dibuat otomatis)
+bash marger/up-portal.sh
 ```
+
+> **Jangan pakai `up-fo.sh` / `up-bo.sh` di server baru.** Keduanya skrip **harian**
+> yang menganggap network `shared-db` dan database `ipro_bo` sudah ada. Di server
+> kosong `up-bo.sh` langsung gagal: `network shared-db not found`.
+> Deploy ulang tanpa menimpa data: `SEED=0 bash marger/deploy.sh`.
+
+Bila perlu membuat database BO manual (mis. `deploy.sh` berhenti di langkah 5/11):
+
+```bash
+docker network create shared-db                    # sekali saja
+docker network connect shared-db jerp-mysql        # agar BO bisa lihat jerp-mysql
+
+docker exec jerp-mysql sh -c 'mysql -uroot -p"$MYSQL_ROOT_PASSWORD" -e "
+  CREATE DATABASE IF NOT EXISTS ipro_bo CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+  GRANT ALL ON ipro_bo.* TO \"jerp\"@\"%\";
+  GRANT SELECT ON jerp.* TO \"jerp\"@\"%\";
+  FLUSH PRIVILEGES;"'
+```
+
+`GRANT SELECT ON jerp.*` diperlukan karena beberapa query BO membaca lintas-database
+ke tabel FO. Tanpa itu sebagian laporan BO error "SELECT command denied".
 
 Boot pertama, entrypoint container `app` otomatis: `key:generate` (kalau APP_KEY kosong) →
 `migrate --force` → `db:seed` (hanya bila DB kosong) → `storage:link` → cache prime.
 Pantau: `docker compose logs -f app`.
+
+### Kunci .env yang WAJIB diisi di server baru
+
+| Kunci | Kenapa penting |
+|---|---|
+| `APP_KEY` | Biarkan **kosong** — dibuat otomatis saat boot pertama |
+| `DB_PASSWORD`, `MYSQL_ROOT_PASSWORD` | Password DB. `DB_PASSWORD` harus **sama** di `.env` root & `.env` BO |
+| `IPRO_DB_*` | Boleh dibiarkan kosong → otomatis ikut koneksi utama (database `ipro_bo`) |
+| `PG_USER`, `PG_PASSWORD` | Database portal Legal & Sales |
+| `PORTAL_SSO_SECRET` | Sekali-login dari J-ERP ke Legal/Sales. Isi acak, samakan untuk semua app |
+| `LEGAL_AUTH_SECRET`, `LEGAL_EXTERNAL_APPROVAL_SECRET` | Sesi & persetujuan eksternal Legal. **Kosong = endpoint approval menolak semua** |
+| `SALES_NEXTAUTH_SECRET`, `SALES_NEXTAUTH_URL` | Login Sales. URL = `https://<domain>/sales/api/auth` |
+| `REVERB_*`, `VITE_REVERB_HOST` | Peta unit real-time. **Ditanam saat build** — ubah nilainya = wajib build ulang |
+| `XENDIT_SECRET_KEY`, `XENDIT_WEBHOOK_TOKEN` | Pembayaran UTJ. Token webhook harus cocok dgn yang di dashboard Xendit |
+| `QONTAK_*` | WhatsApp. **Jumlah variabel template harus cocok** dengan template di Qontak, kalau tidak seluruh pesan ditolak 422 |
+| `INSTALL_CHROMIUM=true` | Perlu untuk PDF (SPRS dikirim via email & WA) |
+
+Buat nilai acak: `openssl rand -hex 32`
+
+### Langkah 9 — akun & data awal
+
+```bash
+# Akun sysadmin portal Legal & Sales (ganti GANTI_PASSWORD)
+docker exec jerp-legal node -e "const{PrismaClient}=require('@prisma/client');const b=require('bcryptjs');const p=new PrismaClient();(async()=>{const h=b.hashSync('GANTI_PASSWORD',10);await p.user.upsert({where:{email:'sysadmin@javaresidence.com'},update:{role:'SYSADMIN',isActive:true},create:{name:'IT Sysadmin',email:'sysadmin@javaresidence.com',passwordHash:h,role:'SYSADMIN',isActive:true}});console.log('ok');await p.\$disconnect()})()"
+
+# Seed contoh portal — HANYA saat pertama, MENIMPA data
+docker exec jerp-legal npm run db:seed
+docker exec jerp-sales npx tsx prisma/seed.ts
+```
+
+### Langkah 10 — pastikan semuanya hidup
+
+```bash
+docker compose ps                                    # semua "Up", tidak ada "Restarting"
+curl -I -s localhost:8081/login | head -1            # FO     → 200
+curl -I -s localhost:8090/login | head -1            # BO     → 200/302
+curl -I -s localhost:8081/legal/login | head -1      # Legal  → 200
+curl -I -s localhost:8081/sales/login | head -1      # Sales  → 200
+
+# Jembatan FO→BO tersambung? (paling sering luput di server baru)
+docker exec jerp-app php artisan tinker --execute="
+  \$c=config('database.connections.ipro_bo');
+  echo 'host='.\$c['host'].' db='.\$c['database'].PHP_EOL;
+  try { DB::connection('ipro_bo')->getPdo(); echo 'ipro_bo: BERHASIL'; }
+  catch (Throwable \$e) { echo 'ipro_bo GAGAL: '.\$e->getMessage(); }"
+```
+
+Kalau `ipro_bo GAGAL` → database belum dibuat (langkah 6) atau `DB_PASSWORD` beda antara
+`.env` root dan `.env` BO. **Jangan diabaikan**: sinkron master, posting jurnal, dan kiriman
+ke Approval UTJ/DP semuanya lewat koneksi ini.
 
 ## Reverse proxy + TLS (host)
 
@@ -51,16 +132,74 @@ erp.domain-anda/app/* {
 }
 ```
 
-## Update versi (deploy berikutnya)
+## Deploy harian (update dari git)
+
+Sistem ini berisi **tiga aplikasi** yang bisa di-deploy TERPISAH. Jangan pakai
+`docker compose up -d --build` polos — itu menyentuh semuanya sekaligus (termasuk
+database) dan lebih lama.
+
+### Langkah 1 — tarik kode & lihat apa yang berubah
 
 ```bash
-cd jerp
+cd ~/docker/jerp
 git pull
-docker compose up -d --build      # rebuild image + entrypoint migrate otomatis
+git diff --name-only HEAD@{1} HEAD | cut -d/ -f1-2 | sort -u   # folder apa saja yang berubah
 ```
 
-> Catatan: migrasi jalan otomatis (`migrate --force`). Seed TIDAK diulang (hanya saat DB kosong).
-> Set `AUTO_MIGRATE=false` / `AUTO_SEED=false` di `.env` untuk mematikan bila ingin manual.
+### Langkah 2 — jalankan skrip sesuai folder yang berubah
+
+| Folder yang berubah | Aplikasi | Perintah |
+|---|---|---|
+| `app/`, `resources/`, `config/`, `database/`, `routes/` | **FO** (J-ERP) | `bash marger/up-fo.sh` |
+| `marger/ipro-fo_1/...` | **BO** (ipro-fo) | `bash marger/up-bo.sh` |
+| `app/legal/`, `app/sales/` | **Portal** Legal & Sales | `bash marger/up-portal.sh` |
+
+Kalau dua-duanya berubah, jalankan dua-duanya (boleh berurutan). Ketiga skrip
+**TIDAK menyentuh database MySQL** — container DB tidak di-restart.
+
+Yang sudah dikerjakan otomatis oleh skrip:
+
+- **up-fo.sh** — build image (autoloader kelas baru ikut ter-regenerasi), naikkan
+  `app/nginx/horizon/scheduler/reverb`, `migrate --force`, restart nginx.
+- **up-bo.sh** — build image, `composer install`, `migrate --force`, build aset Vue
+  (`npm run build`), `config:cache`, restart nginx BO.
+- **up-portal.sh** — build image Legal & Sales, naikkan postgres+legal+sales,
+  `prisma db push`, restart nginx.
+
+### Langkah 3 — pastikan hidup
+
+```bash
+docker compose ps                       # semua service harus "Up" (bukan Restarting)
+curl -I -s localhost:8081/login | head -1   # FO   → 200
+curl -I -s localhost:8090/login | head -1   # BO   → 200/302
+docker compose logs --tail=50 app       # cek tak ada error saat boot
+```
+
+### Kapan butuh langkah TAMBAHAN
+
+| Situasi | Perintah tambahan |
+|---|---|
+| Mengubah **`.env`** | `docker exec jerp-app php artisan config:clear` lalu `docker restart jerp-app jerp-horizon jerp-scheduler` |
+| Hanya `docker restart jerp-app` (tanpa skrip) | Wajib `config:clear` dulu — config di-cache, nilai lama masih terpakai |
+| Ubah kode **job/queue** (WA, email, sinkron BO) | `docker restart jerp-horizon` — job jalan di worker, BUKAN di web |
+| Ubah **jadwal** (collection, backup) | `docker restart jerp-scheduler` |
+| Ubah kode BO tanpa rebuild | `docker exec ipro-fo-app kill -USR2 1` (reload PHP; hindari restart yang sering zombie) |
+
+> **Catatan penting:** migrasi FO jalan otomatis lewat skrip. Seed TIDAK pernah
+> diulang (hanya saat DB kosong). `AUTO_MIGRATE=false` / `AUTO_SEED=false` di
+> `.env` untuk mematikannya.
+
+### Kalau gagal / ingin kembali ke versi sebelumnya
+
+```bash
+git log --oneline -5            # cari commit sebelumnya
+git checkout <commit-sebelumnya>
+bash marger/up-fo.sh            # atau up-bo.sh / up-portal.sh sesuai yang tadi
+```
+
+Migrasi TIDAK otomatis mundur. Bila versi bermasalah membawa migrasi dan perlu
+dibatalkan: `docker exec jerp-app php artisan migrate:rollback --step=1 --force`
+(cek dulu isi migrasinya — tidak semua aman dimundurkan).
 
 ## Perintah berguna
 

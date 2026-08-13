@@ -70,7 +70,7 @@ class ClosingPrintController extends Controller
             : null;
 
         return $this->render('pdf.fo.sprs', $this->sprsViewData($registration, $kontrak),
-            'SPRS-'.($registration->no_nup ?: $registration->id));
+            self::namaBerkasSprs($registration));
     }
 
     /**
@@ -114,6 +114,17 @@ class ClosingPrintController extends Controller
      * @param  array<string,mixed>  ...
      * @return array<string,mixed>
      */
+    /**
+     * Nama berkas SPRS: "SPRS-00013" — kata "NUP" dibuang supaya tidak jadi
+     * "SPRS-NUP-00013". Nomor aslinya di database tetap utuh.
+     */
+    public static function namaBerkasSprs(NupRegistration $reg): string
+    {
+        $nomor = trim(preg_replace('/\bNUP-?\s*/i', '', (string) ($reg->no_nup ?: $reg->id)));
+
+        return 'SPRS-'.($nomor !== '' ? $nomor : $reg->id);
+    }
+
     private function sprsViewData(NupRegistration $reg, ?Kontrak $kontrak): array
     {
         $tts = $kontrak

@@ -69,7 +69,7 @@ class NupConfirmationMail extends Mailable
             $pdf = Browsershot::html($html)->noSandbox()->addChromiumArguments(['disable-dev-shm-usage'])->format('A4')->pdf();
 
             return [
-                Attachment::fromData(fn () => $pdf, 'SPRS-'.($reg->no_nup ?: $reg->id).'.pdf')
+                Attachment::fromData(fn () => $pdf, \App\Modules\FO\MarketingSales\Controllers\ClosingPrintController::namaBerkasSprs($reg).'.pdf')
                     ->withMime('application/pdf'),
             ];
         } catch (Throwable $e) {

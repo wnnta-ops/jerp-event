@@ -101,7 +101,7 @@ class KirimKonfirmasiNupJob implements ShouldQueue
                     (string) $sales,              // {{6}} Sales/Agen
                 ],
                 documentUrl: $sprsPdfUrl,
-                documentFilename: 'SPRS-'.($r->no_nup ?: $r->id).'.pdf',
+                documentFilename: \App\Modules\FO\MarketingSales\Controllers\ClosingPrintController::namaBerkasSprs($r).'.pdf',
             );
 
             return;
