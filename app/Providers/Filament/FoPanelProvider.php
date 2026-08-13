@@ -290,6 +290,9 @@ class FoPanelProvider extends PanelProvider
             'approval-log' => 'approval',
             // NUP (Setup + Event + Pendaftaran + Verifikasi Data)
             'nup-tipes' => 'nup',
+            'setup-bank' => 'nup',
+            'setup-preferensi-unit' => 'nup',
+            'data-preferensi-unit' => 'nup',
             'nup-events' => 'nup',
             'nup-registrations' => 'nup',
             'verifikasi-nups' => 'nup',
@@ -465,6 +468,9 @@ class FoPanelProvider extends PanelProvider
                 'icon' => 'heroicon-o-queue-list',
                 'items' => [
                     $item('Setup NUP', '/fo/nup-tipes', 'heroicon-o-adjustments-horizontal', 'filament.fo.resources.nup-tipes.'),
+                    $item('Setup Bank', '/fo/setup-bank', 'heroicon-o-building-library', 'filament.fo.resources.setup-bank.'),
+                    $item('Setup Preferensi Unit', '/fo/setup-preferensi-unit', 'heroicon-o-home-modern', 'filament.fo.resources.setup-preferensi-unit.'),
+                    $item('Data Preferensi Unit', '/fo/data-preferensi-unit', 'heroicon-o-clipboard-document-list', 'filament.fo.resources.data-preferensi-unit.'),
                     $item('Event Launching', '/fo/nup-events', 'heroicon-o-megaphone', 'filament.fo.resources.nup-events.'),
                     $item('Pendaftaran NUP', '/fo/nup-registrations', 'heroicon-o-queue-list', 'filament.fo.resources.nup-registrations.'),
                     $item('Verifikasi Data', '/fo/verifikasi-nups', 'heroicon-o-clipboard-document-check', 'filament.fo.resources.verifikasi-nups.'),

@@ -11,6 +11,7 @@ use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Facades\URL;
 use Illuminate\Support\HtmlString;
 
 class VerifikasiNupResource extends Resource
@@ -63,6 +64,8 @@ class VerifikasiNupResource extends Resource
                 Tables\Columns\TextColumn::make('cara_bayar')->label('Cara Bayar')->badge()->placeholder('—'),
                 Tables\Columns\TextColumn::make('tipe_nup')->label('Tipe NUP')->placeholder('—')->toggleable(),
                 Tables\Columns\TextColumn::make('utj_amount')->label('Nilai UTJ')->money('IDR', divideBy: 0)->alignEnd(),
+                // Bank Pilihan (KPR) — snapshot nama saat mendaftar.
+                Tables\Columns\TextColumn::make('bank_nama')->label('Bank')->badge()->color('gray')->placeholder('—')->searchable(),
                 Tables\Columns\TextColumn::make('pilihan_unit_1')->label('Pilihan 1')->placeholder('—')->wrap(),
                 Tables\Columns\TextColumn::make('pilihan_unit_2')->label('Pilihan 2')->placeholder('—')->wrap()->toggleable(),
                 Tables\Columns\TextColumn::make('pilihan_unit_3')->label('Pilihan 3')->placeholder('—')->wrap()->toggleable(),
@@ -109,6 +112,51 @@ class VerifikasiNupResource extends Resource
                         ->url(fn (NupRegistration $r) => route('fo.customer.file', [$r->customer_id, 'ktp_pasangan']).'?download=1')
                         ->visible(fn (NupRegistration $r) => (bool) $r->customer?->ktp_pasangan_file_path),
                 ])->label('Berkas')->icon('heroicon-o-paper-clip')->button()->color('gray'),
+
+                // Cetak SPRS — SENGAJA tersedia sejak sebelum approve, supaya berkasnya
+                // bisa dicetak dan ditandatangani customer lebih dulu. Sebelum approve
+                // nomor NUP memang belum terbit, jadi kolom nomor di dokumen masih kosong;
+                // itu diterima karena penomoran baru sah setelah verifikasi disetujui.
+                // Signed URL: rute SPRS memang publik (customer membukanya tanpa login),
+                // jadi tautannya harus bertanda tangan seperti yang dikirim ke customer.
+                Tables\Actions\Action::make('cetak_sprs')
+                    ->label('Cetak SPRS')->icon('heroicon-o-printer')->color('info')
+                    ->url(fn (NupRegistration $r) => URL::signedRoute('fo.cetak.sprs', ['registration' => $r->id]))
+                    ->openUrlInNewTab(),
+
+                // Edit SPRS — HANYA email & no. telepon. Dua kolom ini yang sering keliru
+                // diketik customer di form publik dan membuat kiriman SPRS tidak sampai.
+                // Kolom lain (nama, NIK, alamat, pilihan unit, nominal) TIDAK dibuka di
+                // sini: itu data pendaftaran yang jadi dasar verifikasi, bukan sekadar
+                // tampilan dokumen. Perubahan ditulis ke data PENDAFTARAN saja, tidak ke
+                // master customer — satu customer bisa punya beberapa pendaftaran/kontrak
+                // dan tidak boleh ikut berubah gara-gara koreksi satu berkas.
+                Tables\Actions\Action::make('edit_sprs')
+                    ->label('Edit SPRS')->icon('heroicon-o-pencil-square')->color('warning')
+                    ->modalHeading('Edit SPRS — Email & Telepon')
+                    ->modalDescription('Hanya email dan nomor telepon yang bisa diubah. Data lain mengikuti pendaftaran.')
+                    ->modalSubmitActionLabel('Simpan')
+                    ->fillForm(fn (NupRegistration $r) => [
+                        'email' => $r->email ?: $r->customer?->email,
+                        'phone' => $r->phone ?: $r->customer?->mobile,
+                    ])
+                    ->form([
+                        Forms\Components\TextInput::make('email')->label('Email')
+                            ->email()->required()->maxLength(255),
+                        Forms\Components\TextInput::make('phone')->label('No. Telepon / HP')
+                            ->tel()->required()->maxLength(32),
+                    ])
+                    ->action(function (NupRegistration $r, array $data): void {
+                        $r->update([
+                            'email' => $data['email'],
+                            'phone' => $data['phone'],
+                        ]);
+
+                        \Filament\Notifications\Notification::make()
+                            ->title('SPRS diperbarui')
+                            ->body('Email & telepon pendaftaran diubah. Cetak ulang SPRS untuk melihat hasilnya.')
+                            ->success()->send();
+                    }),
 
                 Tables\Actions\Action::make('paymentXendit')
                     ->label('Payment Xendit')->icon('heroicon-o-credit-card')->color('primary')

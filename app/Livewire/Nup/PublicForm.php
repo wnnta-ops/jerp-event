@@ -5,8 +5,10 @@ namespace App\Livewire\Nup;
 use App\Models\Project;
 use App\Modules\FO\Adminjual\Models\SumberData;
 use App\Modules\FO\Komisi\Models\Agent;
+use App\Modules\FO\Launching\Models\Bank;
 use App\Modules\FO\Launching\Models\NupEvent;
 use App\Modules\FO\Launching\Models\NupTipe;
+use App\Modules\FO\Launching\Models\PreferensiUnit;
 use App\Modules\FO\Launching\Services\NupRegistrationService;
 use App\Services\Recaptcha\RecaptchaVerifier;
 use App\Settings\FoSettings;
@@ -111,6 +113,10 @@ class PublicForm extends Component
 
     public ?string $cara_bayar = null;
 
+    // Bank Pilihan (master Setup Bank). Dropdown HANYA muncul & wajib saat
+    // cara_bayar = KPR; opsinya menyusut ke cluster+tahap milik Jenis Tipe NUP.
+    public ?int $bank_id = null;
+
     // Sales dari master /fo/agents. ref_sales_name menyimpan label "Nama - Agensi"
     // (snapshot utk SPRS/SPR); agent_id menyimpan FK utk komisi/BLT.
     public ?int $agent_id = null;
@@ -119,7 +125,15 @@ class PublicForm extends Component
 
     public ?string $ref_sales_phone = null;
 
-    /** @var array<int,string> */
+    // Preferensi Unit — SATU pilihan dari master Setup Preferensi Unit.
+    public ?int $preferensi_unit_id = null;
+
+    /**
+     * Kolom lama multi-pilih (hardcoded RUMAH_200JT dst). Tidak lagi diisi form,
+     * dipertahankan agar pendaftaran lama tetap terbaca apa adanya.
+     *
+     * @var array<int,string>
+     */
     public array $pilihan_budget = [];
 
     // Free-text referensi — bukan FK ke fo_units (pemilihan unit aktual baru
@@ -170,6 +184,21 @@ class PublicForm extends Component
     public function updatedProjectPrefId(): void
     {
         $this->nup_tipe_id = null;
+        $this->bank_id = null;
+    }
+
+    // Ganti Tipe NUP → daftar bank ikut berubah (cluster+tahap berbeda).
+    public function updatedNupTipeId(): void
+    {
+        $this->bank_id = null;
+    }
+
+    // Bank hanya relevan untuk KPR; pindah ke cara bayar lain → buang pilihannya.
+    public function updatedCaraBayar(): void
+    {
+        if ($this->cara_bayar !== 'KPR') {
+            $this->bank_id = null;
+        }
     }
 
     /**
@@ -196,22 +225,28 @@ class PublicForm extends Component
             'project_pref_id' => ['required', 'exists:projects,id'],
             'full_name' => ['required', 'string', 'max:255'],
             'nik' => ['required', 'string', 'digits:16'],
-            'npwp' => ['nullable', 'string', 'max:32'],
-            'birth_place' => ['nullable', 'string', 'max:255'],
-            'birth_date' => ['nullable', 'date', 'before:today'],
+            // SEMUA field yang tampil di form WAJIB diisi. gender/religion/phone/
+            // postal_code TIDAK dirender di form publik (diisi tim FO belakangan),
+            // jadi tetap nullable — kalau diwajibkan, form mustahil dikirim.
+            'npwp' => ['required', 'string', 'max:32'],
+            'birth_place' => ['required', 'string', 'max:255'],
+            'birth_date' => ['required', 'date', 'before:today'],
             'gender' => ['nullable', Rule::in(['L', 'P'])],
-            'marital_status' => ['nullable', Rule::in(['BELUM', 'KAWIN', 'CERAI'])],
+            // Enum fo_customers.marital_status hanya menerima 3 nilai ini — pilihan
+            // "Lain-lain" dibuang dari form karena mustahil tersimpan.
+            'marital_status' => ['required', Rule::in(['BELUM', 'KAWIN', 'CERAI'])],
             'religion' => ['nullable', 'string', 'max:32'],
-            'occupation' => ['nullable', 'string', 'max:255'],
+            'occupation' => ['required', 'string', 'max:255'],
             'mobile' => ['required', 'string', 'min:8', 'max:32'],
             'phone' => ['nullable', 'string', 'max:32'],
             'show_secondary_phone' => ['boolean'],
-            'secondary_phone' => ['nullable', 'string', 'max:32'],
+            // Nomor kedua wajib begitu toggle "Tambah Nomor" dinyalakan.
+            'secondary_phone' => ['nullable', 'required_if:show_secondary_phone,true', 'string', 'max:32'],
             'email' => ['required', 'email', 'max:255'],
-            'jalan' => ['nullable', 'string', 'max:255'],
-            'rt_rw' => ['nullable', 'string', 'max:16'],
-            'kelurahan' => ['nullable', 'string', 'max:255'],
-            'kecamatan' => ['nullable', 'string', 'max:255'],
+            'jalan' => ['required', 'string', 'max:255'],
+            'rt_rw' => ['required', 'string', 'max:16'],
+            'kelurahan' => ['required', 'string', 'max:255'],
+            'kecamatan' => ['required', 'string', 'max:255'],
             'city' => ['required', 'string', 'max:255'],
             'province' => ['required', 'string', 'max:255'],
             'postal_code' => ['nullable', 'string', 'max:16'],
@@ -219,39 +254,42 @@ class PublicForm extends Component
             'mail_address' => ['nullable', 'required_if:mail_same_as_ktp,false', 'string'],
             'mail_city' => ['nullable', 'required_if:mail_same_as_ktp,false', 'string'],
             'mail_province' => ['nullable', 'required_if:mail_same_as_ktp,false', 'string'],
-            'mail_kecamatan' => ['nullable', 'string', 'max:255'],
-            'mail_kelurahan' => ['nullable', 'string', 'max:255'],
+            'mail_kecamatan' => ['nullable', 'required_if:mail_same_as_ktp,false', 'string', 'max:255'],
+            'mail_kelurahan' => ['nullable', 'required_if:mail_same_as_ktp,false', 'string', 'max:255'],
             'mail_postal_code' => ['nullable', 'string', 'max:16'],
 
             'spouse_full_name' => ['nullable', 'required_if:marital_status,KAWIN', 'string', 'max:255'],
             'spouse_nik' => ['nullable', 'required_if:marital_status,KAWIN', 'string', 'digits:16'],
-            'spouse_email' => ['nullable', 'email'],
-            'spouse_phone' => ['nullable', 'string', 'max:32'],
-            'spouse_birth_place' => ['nullable', 'string'],
-            'spouse_birth_date' => ['nullable', 'date'],
-            'spouse_occupation' => ['nullable', 'string'],
+            // Seluruh data pasangan wajib begitu status Menikah dipilih.
+            'spouse_email' => ['nullable', 'required_if:marital_status,KAWIN', 'email'],
+            'spouse_phone' => ['nullable', 'required_if:marital_status,KAWIN', 'string', 'max:32'],
+            'spouse_birth_place' => ['nullable', 'required_if:marital_status,KAWIN', 'string'],
+            'spouse_birth_date' => ['nullable', 'required_if:marital_status,KAWIN', 'date', 'before:today'],
+            'spouse_occupation' => ['nullable', 'required_if:marital_status,KAWIN', 'string'],
             'spouse_address_same_as_pemohon' => ['boolean'],
             'spouse_address' => ['nullable', 'required_if:spouse_address_same_as_pemohon,false', 'string'],
 
             'nup_tipe_id' => ['required', 'integer', Rule::exists('fo_nup_tipe', 'id')->where('project_id', $this->project_pref_id)],
             'tipe_nup' => ['nullable', 'string', 'max:64'],
-            'cara_bayar' => ['nullable', 'string', 'max:32'],
+            'cara_bayar' => ['required', 'string', 'max:32'],
+            // Bank Pilihan wajib HANYA untuk KPR (dropdown-nya juga hanya muncul di situ).
+            'bank_id' => ['nullable', 'required_if:cara_bayar,KPR', 'integer', Rule::exists('fo_banks', 'id')->where('is_active', true)],
             'agent_id' => ['nullable', 'exists:fo_agents,id'],
-            'ref_sales_name' => ['nullable', 'string', 'max:255'],
-            'ref_sales_phone' => ['nullable', 'string', 'max:32'],
+            'ref_sales_name' => ['required', 'string', 'max:255'],
+            'ref_sales_phone' => ['required', 'string', 'max:32'],
 
-            'pilihan_budget' => ['nullable', 'array'],
-            'pilihan_budget.*' => ['string', Rule::in(['RUMAH_200JT', 'RUMAH_400JT', 'RUMAH_600JT', 'RUMAH_800JT', 'RUKO'])],
-            'pilihan_unit_1' => ['nullable', 'string', 'max:255'],
-            'pilihan_unit_2' => ['nullable', 'string', 'max:255'],
-            'pilihan_unit_3' => ['nullable', 'string', 'max:255'],
+            'preferensi_unit_id' => ['required', 'integer', Rule::exists('fo_preferensi_unit', 'id')->where('is_active', true)],
+            'pilihan_unit_1' => ['required', 'string', 'max:255'],
+            'pilihan_unit_2' => ['required', 'string', 'max:255'],
+            'pilihan_unit_3' => ['required', 'string', 'max:255'],
 
             'ktp_file' => ['required', 'file', 'mimes:jpg,jpeg,png,pdf', 'max:10240'],         // 10 MB
             'npwp_file' => ['required', 'file', 'mimes:jpg,jpeg,png,pdf', 'max:10240'],
-            'ktp_pasangan_file' => ['nullable', 'file', 'mimes:jpg,jpeg,png,pdf', 'max:10240'],
+            // KTP pasangan wajib bila Menikah — field-nya menyatu di blok berkas bawah.
+            'ktp_pasangan_file' => ['nullable', 'required_if:marital_status,KAWIN', 'file', 'mimes:jpg,jpeg,png,pdf', 'max:10240'],
 
             'pernyataan_setuju' => ['accepted'],
-            'sumber_data' => ['nullable', 'string', 'max:64'],
+            'sumber_data' => ['required', 'string', 'max:64'],
         ];
     }
 
@@ -263,6 +301,11 @@ class PublicForm extends Component
             'spouse_nik.digits' => 'NIK pasangan harus 16 digit.',
             'ktp_file.required' => 'Foto KTP wajib di-upload.',
             'ktp_file.max' => 'Foto KTP maksimum 10 MB.',
+            'npwp_file.required' => 'Foto NPWP wajib di-upload.',
+            'ktp_pasangan_file.required_if' => 'Foto KTP pasangan wajib di-upload untuk status Menikah.',
+            'bank_id.required_if' => 'Bank pilihan wajib dipilih untuk pembayaran KPR.',
+            'preferensi_unit_id.required' => 'Pilih salah satu preferensi unit.',
+            'secondary_phone.required_if' => 'Nomor HP kedua wajib diisi (matikan "Tambah Nomor" bila tidak ada).',
         ];
     }
 
@@ -295,6 +338,14 @@ class PublicForm extends Component
         // Resolve Jenis Tipe NUP terpilih → nama + nilai UTJ yang mengikat.
         $tipe = NupTipe::find($this->nup_tipe_id);
         $this->tipe_nup = $tipe?->nama;
+
+        // Bank hanya disimpan untuk KPR; nama-nya di-snapshot agar data lama tak
+        // ikut berubah bila master Setup Bank diedit/dihapus.
+        $bank = $this->cara_bayar === 'KPR' && $this->bank_id ? Bank::find($this->bank_id) : null;
+
+        // Preferensi Unit — nama ikut di-snapshot supaya rekap "Data Preferensi
+        // Unit" tetap utuh walau master-nya nanti diubah/dihapus.
+        $preferensi = $this->preferensi_unit_id ? PreferensiUnit::find($this->preferensi_unit_id) : null;
 
         try {
             $service->register(
@@ -342,10 +393,13 @@ class PublicForm extends Component
                     'spouse_address' => $this->spouse_address,
                     'tipe_nup' => $this->tipe_nup,
                     'cara_bayar' => $this->cara_bayar,
+                    'bank_id' => $bank?->id,
+                    'bank_nama' => $bank?->nama,
                     'agent_id' => $this->agent_id,
                     'ref_sales_name' => $this->ref_sales_name,
                     'ref_sales_phone' => $this->ref_sales_phone,
-                    'pilihan_budget' => array_values($this->pilihan_budget),
+                    'preferensi_unit_id' => $preferensi?->id,
+                    'preferensi_unit_nama' => $preferensi?->nama,
                     'pilihan_unit_1' => $this->pilihan_unit_1,
                     'pilihan_unit_2' => $this->pilihan_unit_2,
                     'pilihan_unit_3' => $this->pilihan_unit_3,
@@ -383,19 +437,35 @@ class PublicForm extends Component
                 ->get(['id', 'nama', 'nilai_utj'])
             : collect();
 
+        // Opsi Bank hanya dihitung saat KPR. Disaring ke cluster+tahap milik Jenis
+        // Tipe NUP terpilih; bank tanpa cluster/tahap = berlaku se-project.
+        $bankOptions = collect();
+        if ($this->cara_bayar === 'KPR' && $this->project_pref_id) {
+            $tipe = $this->nup_tipe_id ? NupTipe::find($this->nup_tipe_id) : null;
+
+            $bankOptions = Bank::query()
+                ->where('project_id', $this->project_pref_id)
+                ->where('is_active', true)
+                ->when($tipe?->lokasi_id, fn ($q, $lokasiId) => $q->where(
+                    fn ($w) => $w->whereNull('lokasi_id')->orWhere('lokasi_id', $lokasiId)
+                ))
+                ->when($tipe?->tahap_id, fn ($q, $tahapId) => $q->where(
+                    fn ($w) => $w->whereNull('tahap_id')->orWhere('tahap_id', $tahapId)
+                ))
+                ->orderBy('urutan')->orderBy('nama')
+                ->get(['id', 'nama']);
+        }
+
         return view('livewire.nup.public-form', [
             'events' => NupEvent::query()->whereIn('status', ['OPEN'])->orderBy('tgl_launching')->get(),
             'tipeNupOptions' => $tipeNupOptions,
+            'bankOptions' => $bankOptions,
             'projects' => Project::query()->where('is_active', true)->orderBy('name')->get(),
             'agents' => Agent::query()->where('is_active', true)->salesPicker()->orderBy('name')->get(),
             'sumberDataOptions' => SumberData::query()->where('is_active', true)->orderBy('urutan')->orderBy('nama')->get(),
-            'budgetOptions' => [
-                'RUMAH_200JT' => 'Rumah 200 Jutaan',
-                'RUMAH_400JT' => 'Rumah 400 Jutaan',
-                'RUMAH_600JT' => 'Rumah 600 Jutaan',
-                'RUMAH_800JT' => 'Rumah 800 — 999 Jutaan',
-                'RUKO' => 'RUKO',
-            ],
+            // Pilihan Preferensi Unit dari master Setup Preferensi Unit.
+            'preferensiUnitOptions' => PreferensiUnit::query()->where('is_active', true)
+                ->orderBy('urutan')->orderBy('nama')->get(['id', 'nama']),
             'settings' => app(FoSettings::class),
         ])->layout('layouts.nup-public', ['title' => 'Pendaftaran NUP']);
     }

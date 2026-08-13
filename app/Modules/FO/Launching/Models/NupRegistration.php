@@ -23,8 +23,8 @@ class NupRegistration extends TenantAwareModel
         'tgl_daftar', 'tgl_check_in', 'tgl_payment',
         'booking_fee_paid', 'tts_id', 'transfer_anonim_id', 'unit_id', 'reservasi_id',
         'status', 'channel', 'recaptcha_score',
-        'ref_sales_name', 'ref_sales_phone', 'tipe_nup', 'cara_bayar',
-        'preferensi_unit', 'pilihan_budget',
+        'ref_sales_name', 'ref_sales_phone', 'tipe_nup', 'cara_bayar', 'bank_id', 'bank_nama',
+        'preferensi_unit', 'pilihan_budget', 'preferensi_unit_id', 'preferensi_unit_nama',
         'pilihan_unit_1', 'pilihan_unit_2', 'pilihan_unit_3', 'rekomendasi_unit',
         'pernyataan_setuju',
         'ip_address', 'user_agent', 'bukti_transfer_path',
@@ -138,6 +138,18 @@ class NupRegistration extends TenantAwareModel
     public function agent(): BelongsTo
     {
         return $this->belongsTo(Agent::class);
+    }
+
+    /** Bank Pilihan (KPR) dari master Setup Bank. Nama-nya di-snapshot di bank_nama. */
+    public function bank(): BelongsTo
+    {
+        return $this->belongsTo(Bank::class);
+    }
+
+    /** Preferensi Unit (satu pilihan) dari master Setup Preferensi Unit. */
+    public function preferensiUnit(): BelongsTo
+    {
+        return $this->belongsTo(PreferensiUnit::class, 'preferensi_unit_id');
     }
 
     public function customer(): BelongsTo

@@ -4,6 +4,8 @@ namespace App\Modules\FO\Launching\Models;
 
 use App\Models\Concerns\TenantAwareModel;
 use App\Models\Project;
+use App\Modules\FO\MarketingSales\Models\Lokasi;
+use App\Modules\FO\MarketingSales\Models\Tahap;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 /**
@@ -15,7 +17,8 @@ class NupTipe extends TenantAwareModel
     protected $table = 'fo_nup_tipe';
 
     protected $fillable = [
-        'tenant_id', 'project_id', 'nama', 'nilai_utj', 'keterangan', 'is_active',
+        'tenant_id', 'project_id', 'lokasi_id', 'tahap_id',
+        'nama', 'nilai_utj', 'keterangan', 'is_active',
     ];
 
     protected $casts = [
@@ -26,5 +29,16 @@ class NupTipe extends TenantAwareModel
     public function project(): BelongsTo
     {
         return $this->belongsTo(Project::class);
+    }
+
+    /** Cluster tipe ini — penyaring dropdown "Bank Pilihan" di form NUP publik. */
+    public function lokasi(): BelongsTo
+    {
+        return $this->belongsTo(Lokasi::class);
+    }
+
+    public function tahap(): BelongsTo
+    {
+        return $this->belongsTo(Tahap::class);
     }
 }

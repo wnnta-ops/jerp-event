@@ -63,14 +63,29 @@ class ClosingPrintController extends Controller
      */
     public function sprs(NupRegistration $registration): mixed
     {
-        $registration->load(['customer', 'agent']);
+        return $this->render('pdf.fo.sprs', self::sprsData($registration),
+            self::namaBerkasSprs($registration));
+    }
+
+    /**
+     * Data lengkap untuk view SPRS — SATU sumber untuk semua jalur cetak/kirim.
+     *
+     * WAJIB dipakai siapa pun yang me-render 'pdf.fo.sprs'. Sebelumnya lampiran
+     * email membangun sendiri dengan hanya ['reg' => $reg], sehingga $qrSvg, $tts,
+     * dan $kontrak tak pernah terisi: PDF di email keluar TANPA halaman QR dan
+     * tanpa data kontrak/kwitansi, sementara PDF yang sama di WA (lewat controller)
+     * lengkap. Dijadikan static+public agar tak ada lagi jalur yang menyusun
+     * sendiri dan diam-diam kehilangan data.
+     */
+    public static function sprsData(NupRegistration $registration): array
+    {
+        $registration->load(['customer', 'agent', 'event']);
         $kontrak = $registration->reservasi_id
             ? Kontrak::with(['customer', 'unit.unitType', 'unit.lokasi', 'skema.lines', 'agent', 'reservasi', 'gimmicks'])
                 ->where('reservasi_id', $registration->reservasi_id)->orderByDesc('id')->first()
             : null;
 
-        return $this->render('pdf.fo.sprs', $this->sprsViewData($registration, $kontrak),
-            self::namaBerkasSprs($registration));
+        return self::sprsViewData($registration, $kontrak);
     }
 
     /**
@@ -102,12 +117,12 @@ class ClosingPrintController extends Controller
         $kontrak->load(['customer', 'unit.unitType', 'unit.lokasi', 'skema.lines', 'agent', 'reservasi', 'gimmicks']);
         $reg = NupRegistration::query()->where('reservasi_id', $kontrak->reservasi_id)->orderByDesc('id')->first();
         if ($reg) {
-            $reg->load(['customer', 'agent']);
+            $reg->load(['customer', 'agent', 'event']);
         } else {
             $reg = $this->regDariKontrak($kontrak);
         }
 
-        return $this->render('pdf.fo.sprs', $this->sprsViewData($reg, $kontrak), 'SPRS-'.$kontrak->no_kontrak);
+        return $this->render('pdf.fo.sprs', self::sprsViewData($reg, $kontrak), 'SPRS-'.$kontrak->no_kontrak);
     }
 
     /**
@@ -125,7 +140,7 @@ class ClosingPrintController extends Controller
         return 'SPRS-'.($nomor !== '' ? $nomor : $reg->id);
     }
 
-    private function sprsViewData(NupRegistration $reg, ?Kontrak $kontrak): array
+    private static function sprsViewData(NupRegistration $reg, ?Kontrak $kontrak): array
     {
         $tts = $kontrak
             ? Tts::query()->where('kontrak_id', $kontrak->id)
