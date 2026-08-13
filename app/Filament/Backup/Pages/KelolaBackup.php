@@ -102,6 +102,80 @@ class KelolaBackup extends Page
         return Storage::disk($disk)->download($path, basename($path));
     }
 
+    /** Berkas penanda & log restore latar belakang. */
+    private function lockPath(): string
+    {
+        return storage_path('app/backup-temp/restore.lock');
+    }
+
+    private function logPath(): string
+    {
+        return storage_path('logs/restore.log');
+    }
+
+    /**
+     * Jalankan restore sebagai proses TERPISAH yang lepas dari permintaan HTTP.
+     *
+     * Restore database besar memakan lebih dari 100 detik dan reverse proxy
+     * (Cloudflare) memutus permintaannya dengan 504 — operasinya sendiri sebenarnya
+     * berjalan terus, tetapi operator tidak punya cara tahu hasilnya, lalu menekan
+     * Restore lagi dan memicu dua restore bersamaan.
+     *
+     * Antrean SENGAJA tidak dipakai: retry_after Redis 90 detik dan batas pekerja
+     * Horizon 60 detik akan menjadwalkan ulang job yang masih berjalan, sehingga
+     * restore panjang justru dijalankan berkali-kali secara bersamaan.
+     */
+    private function jalankanRestoreLatar(string $disk, string $path, bool $safety): void
+    {
+        $lock = $this->lockPath();
+        if (is_file($lock)) {
+            throw new \RuntimeException('Masih ada restore yang berjalan. Tunggu sampai selesai.');
+        }
+
+        @mkdir(dirname($lock), 0775, true);
+        file_put_contents($lock, json_encode([
+            'path' => $path, 'disk' => $disk, 'mulai' => now()->toDateTimeString(),
+        ], JSON_UNESCAPED_SLASHES));
+
+        $log = $this->logPath();
+        @file_put_contents($log, '['.now()->toDateTimeString()."] MULAI restore: {$path}\n");
+
+        $artisan = base_path('artisan');
+        $opsi = $safety ? '' : ' --no-safety-backup';
+        $inner = sprintf(
+            'php %s backup:restore %s --disk=%s --force%s >> %s 2>&1; echo "[$(date +%%F\ %%T)] SELESAI exit=$?" >> %s; rm -f %s',
+            escapeshellarg($artisan),
+            escapeshellarg($path),
+            escapeshellarg($disk),
+            $opsi,
+            escapeshellarg($log),
+            escapeshellarg($log),
+            escapeshellarg($lock),
+        );
+
+        // setsid + & : proses tetap hidup setelah PHP-FPM menutup permintaan ini.
+        @exec('setsid sh -c '.escapeshellarg($inner).' > /dev/null 2>&1 &');
+    }
+
+    /** Dipanggil wire:poll di blade — true selama restore masih berjalan. */
+    public function restoreBerjalan(): bool
+    {
+        return is_file($this->lockPath());
+    }
+
+    /** Beberapa baris terakhir log restore, untuk ditampilkan di halaman. */
+    public function restoreLog(): string
+    {
+        $log = $this->logPath();
+        if (! is_file($log)) {
+            return '';
+        }
+
+        $baris = @file($log, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) ?: [];
+
+        return implode("\n", array_slice($baris, -12));
+    }
+
     protected function getHeaderActions(): array
     {
         return [
@@ -216,21 +290,13 @@ class KelolaBackup extends Page
                 ->action(function (array $data) {
                     [$disk, $path] = explode('|', $data['backup'], 2);
                     try {
-                        $code = Artisan::call('backup:restore', array_filter([
-                            'path' => $path,
-                            '--disk' => $disk,
-                            '--force' => true,
-                            '--no-safety-backup' => ! ($data['safety'] ?? true),
-                        ], fn ($v) => $v !== false && $v !== null));
-                        $out = trim(Artisan::output());
-                        if ($code === 0) {
-                            Notification::make()->title('Restore selesai')->body($out ?: 'Database dipulihkan.')->success()->persistent()->send();
-                        } else {
-                            Notification::make()->title('Restore gagal')->body($out ?: 'Lihat log.')->danger()->persistent()->send();
-                        }
-                        $this->refreshList();
+                        $this->jalankanRestoreLatar($disk, $path, (bool) ($data['safety'] ?? true));
+                        Notification::make()
+                            ->title('Restore dimulai')
+                            ->body('Berjalan di latar belakang. Kemajuannya muncul di halaman ini — jangan menutup atau mengulang perintah restore.')
+                            ->info()->persistent()->send();
                     } catch (\Throwable $e) {
-                        Notification::make()->title('Restore gagal')->body($e->getMessage())->danger()->persistent()->send();
+                        Notification::make()->title('Restore gagal dimulai')->body($e->getMessage())->danger()->persistent()->send();
                     }
                 }),
 
