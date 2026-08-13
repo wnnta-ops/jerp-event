@@ -185,9 +185,24 @@ RUN mkdir -p storage/framework/{sessions,views,cache,testing} \
 # (/var/www/html/node_modules) agar resolvable dari vendor/spatie/browsershot.
 # PUPPETEER_SKIP_DOWNLOAD sudah di-set → npm TIDAK mengunduh Chrome sendiri
 # (pakai system chromium via PUPPETEER_EXECUTABLE_PATH).
+# COBA-ULANG WAJIB: dari sebagian server, unduhan ke registry.npmjs.org sporadis
+# ETIMEDOUT (jaringan keluar tidak stabil untuk transfer besar). Tanpa ini satu
+# kegagalan mematikan SELURUH build image FO — padahal percobaan berikutnya
+# biasanya lolos tanpa ada yang diubah. Selain loop, batas waktu & coba-ulang
+# bawaan npm dilonggarkan supaya gangguan sesaat tidak langsung dianggap gagal.
+# Subshell + `exit 0`: berhasil → keluar subshell 0 → pembersihan cache jalan.
+# Kelima percobaan gagal → subshell `exit 1` → build BERHENTI. Jangan diganti
+# `break`: image tanpa puppeteer tetap terbangun dan kegagalannya baru ketahuan
+# saat PDF/lampiran SPRS diam-diam tak pernah terkirim.
 RUN if [ "$INSTALL_CHROMIUM" = "true" ]; then \
         apk add --no-cache nodejs npm \
-        && npm install puppeteer --omit=dev --no-audit --no-fund --no-save \
+        && ( for i in 1 2 3 4 5; do \
+               npm install puppeteer --omit=dev --no-audit --no-fund --no-save \
+                 --fetch-retries=5 --fetch-retry-maxtimeout=120000 --fetch-timeout=600000 \
+               && exit 0; \
+               echo "[coba-ulang] npm install puppeteer gagal (percobaan \$i/5) — ulang dalam 15 detik"; \
+               sleep 15; \
+             done; echo "[coba-ulang] npm install puppeteer gagal 5x"; exit 1 ) \
         && rm -rf /root/.npm /var/cache/apk/*; \
     fi
 
