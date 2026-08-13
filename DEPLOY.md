@@ -32,20 +32,36 @@ nano .env
 cp marger/ipro-fo_1/ipro-fo/.env.example marger/ipro-fo_1/ipro-fo/.env
 nano marger/ipro-fo_1/ipro-fo/.env       # minimal: APP_ENV, APP_DEBUG=false, DB_PASSWORD
 
-# 5. Naikkan FO — build + key:generate + migrate + seed
-bash marger/up-fo.sh
+# 5. Naikkan FO + BO sekaligus — PAKAI INI, JANGAN up-fo.sh/up-bo.sh
+#    deploy.sh mengurus hal yang TIDAK dilakukan skrip harian:
+#      network shared-db · sambungkan jerp-mysql ke sana · BUAT database ipro_bo
+#      + grant · tunggu DB siap · migrate+seed FO & BO · backfill data FO→BO
+bash marger/deploy.sh
 
-# 6. Buat database BO (TIDAK dibuat otomatis — MySQL hanya bikin database `jerp`)
-docker exec jerp-mysql sh -c 'mysql -uroot -p"$MYSQL_ROOT_PASSWORD" -e "
-  CREATE DATABASE IF NOT EXISTS ipro_bo CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-  GRANT ALL ON ipro_bo.* TO \"jerp\"@\"%\"; FLUSH PRIVILEGES;"'
-
-# 7. Naikkan BO — build + composer + migrate + build aset Vue
-bash marger/up-bo.sh
-
-# 8. Naikkan Portal Legal & Sales (database legal & sales dibuat otomatis)
+# 6. Naikkan Portal Legal & Sales (database legal & sales dibuat otomatis)
 bash marger/up-portal.sh
 ```
+
+> **Jangan pakai `up-fo.sh` / `up-bo.sh` di server baru.** Keduanya skrip **harian**
+> yang menganggap network `shared-db` dan database `ipro_bo` sudah ada. Di server
+> kosong `up-bo.sh` langsung gagal: `network shared-db not found`.
+> Deploy ulang tanpa menimpa data: `SEED=0 bash marger/deploy.sh`.
+
+Bila perlu membuat database BO manual (mis. `deploy.sh` berhenti di langkah 5/11):
+
+```bash
+docker network create shared-db                    # sekali saja
+docker network connect shared-db jerp-mysql        # agar BO bisa lihat jerp-mysql
+
+docker exec jerp-mysql sh -c 'mysql -uroot -p"$MYSQL_ROOT_PASSWORD" -e "
+  CREATE DATABASE IF NOT EXISTS ipro_bo CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+  GRANT ALL ON ipro_bo.* TO \"jerp\"@\"%\";
+  GRANT SELECT ON jerp.* TO \"jerp\"@\"%\";
+  FLUSH PRIVILEGES;"'
+```
+
+`GRANT SELECT ON jerp.*` diperlukan karena beberapa query BO membaca lintas-database
+ke tabel FO. Tanpa itu sebagian laporan BO error "SELECT command denied".
 
 Boot pertama, entrypoint container `app` otomatis: `key:generate` (kalau APP_KEY kosong) →
 `migrate --force` → `db:seed` (hanya bila DB kosong) → `storage:link` → cache prime.
