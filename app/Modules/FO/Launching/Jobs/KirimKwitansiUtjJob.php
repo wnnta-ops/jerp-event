@@ -47,22 +47,27 @@ class KirimKwitansiUtjJob implements ShouldQueue
             return;
         }
 
-        // Email dan WA DIPISAH try/catch: kegagalan satu kanal tidak boleh
-        // membatalkan yang lain. Job ini dipicu dari markPaid() — kalau seluruh
-        // job gagal dan di-retry, pembayaran bisa dikabari berulang.
-        if ($email = $r->email ?: $r->customer?->email) {
-            try {
-                Mail::to($email)->send(new KwitansiUtjMail($r));
-            } catch (\Throwable $e) {
-                Log::warning('Kwitansi UTJ: email gagal untuk NUP #'.$r->id.' — '.$e->getMessage());
-            }
-        }
-
+        // WHATSAPP DULU, BARU EMAIL — urutan ini disengaja. Pengiriman email lewat
+        // SMTP bisa menggantung sampai pekerja antrean membunuh seluruh job; kalau
+        // email didahulukan, WhatsApp tidak akan pernah sempat dikirim dan customer
+        // tidak menerima apa pun. WA memakai HTTP API yang jauh lebih cepat gagal.
+        //
+        // Keduanya DIPISAH try/catch: kegagalan satu kanal tidak membatalkan yang
+        // lain. Job ini dipicu dari markPaid() yang sudah no-op bila status PAID,
+        // jadi tidak ada kiriman ganda.
         if ($phone = $r->phone ?: $r->customer?->mobile) {
             try {
                 $this->kirimWhatsApp($phone, $r);
             } catch (\Throwable $e) {
                 Log::warning('Kwitansi UTJ: WA gagal untuk NUP #'.$r->id.' — '.$e->getMessage());
+            }
+        }
+
+        if ($email = $r->email ?: $r->customer?->email) {
+            try {
+                Mail::to($email)->send(new KwitansiUtjMail($r));
+            } catch (\Throwable $e) {
+                Log::warning('Kwitansi UTJ: email gagal untuk NUP #'.$r->id.' — '.$e->getMessage());
             }
         }
     }

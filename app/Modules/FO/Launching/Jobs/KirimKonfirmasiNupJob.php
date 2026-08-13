@@ -10,6 +10,7 @@ use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\URL;
 
@@ -48,14 +49,28 @@ class KirimKonfirmasiNupJob implements ShouldQueue
             ? URL::signedRoute('fo.cetak.sprs', ['registration' => $registration->id])
             : null;
 
-        // Email (saat approved → lampirkan SPRS PDF + tautan).
-        if ($email = $registration->email ?: $registration->customer?->email) {
-            Mail::to($email)->send(new NupConfirmationMail($registration, $sprsUrl));
+        // WHATSAPP DULU, BARU EMAIL — urutan ini disengaja setelah job ini terbukti
+        // mati oleh TimeoutExceededException di SocketStream SMTP: sambungan email
+        // menggantung, pekerja antrean membunuh seluruh job, dan WhatsApp tidak
+        // pernah sempat dikirim. Customer akhirnya tidak menerima apa pun.
+        //
+        // Keduanya DIPISAH try/catch supaya satu kanal yang gagal tidak menjatuhkan
+        // yang lain, dan job tidak masuk failed_jobs hanya karena satu kanal mati.
+        if ($phone = $registration->phone ?: $registration->customer?->mobile) {
+            try {
+                $this->dispatchWhatsApp($phone, $registration, $sprsUrl);
+            } catch (\Throwable $e) {
+                Log::warning('Konfirmasi NUP: WA gagal untuk NUP #'.$registration->id.' — '.$e->getMessage());
+            }
         }
 
-        // WhatsApp via Mekari Qontak (template-based; di-skip aman bila belum dikonfigurasi).
-        if ($phone = $registration->phone ?: $registration->customer?->mobile) {
-            $this->dispatchWhatsApp($phone, $registration, $sprsUrl);
+        // Email (saat approved → lampirkan SPRS PDF + tautan).
+        if ($email = $registration->email ?: $registration->customer?->email) {
+            try {
+                Mail::to($email)->send(new NupConfirmationMail($registration, $sprsUrl));
+            } catch (\Throwable $e) {
+                Log::warning('Konfirmasi NUP: email gagal untuk NUP #'.$registration->id.' — '.$e->getMessage());
+            }
         }
     }
 
