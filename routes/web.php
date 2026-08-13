@@ -83,6 +83,18 @@ Route::middleware(['throttle:120,1'])
     ->where('hash', '[0-9a-f]{64}')
     ->name('fo.cetak.sprs-pdf');
 
+// KWITANSI UTJ — dikirim ke customer via WA & email setelah pembayaran Xendit
+// berhasil. Pola sama dengan SPRS: signed URL untuk dilihat/diunduh customer,
+// dan varian path-token tanpa query string untuk header dokumen WA.
+Route::middleware(['throttle:120,1', 'signed'])
+    ->get('/nup/kwitansi/{registration}', [ClosingPrintController::class, 'kwitansiUtj'])
+    ->name('fo.cetak.kwitansi-utj');
+
+Route::middleware(['throttle:120,1'])
+    ->get('/nup/kwitansi/{registration}/{hash}.pdf', [ClosingPrintController::class, 'kwitansiUtjPdf'])
+    ->where('hash', '[0-9a-f]{64}')
+    ->name('fo.cetak.kwitansi-utj-pdf');
+
 // Public site plan viewer (marketing — customer & sales). Read-only.
 Route::middleware(['throttle:120,1'])
     ->prefix('siteplan')->name('siteplan.')
