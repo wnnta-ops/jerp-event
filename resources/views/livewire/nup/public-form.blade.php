@@ -406,7 +406,7 @@
                         @if ($i < 3) <span class="nup-required">*</span> @endif
                     </label>
                     <input wire:model="pilihan_unit_{{ $i }}" type="text" class="nup-input"
-                           placeholder="New Avero IV 1">
+                           placeholder="New Avero 7.5 X 12, New Avelin 6 X 12, New Avero Premium 7.5 X 12">
                     @error('pilihan_unit_'.$i) <span class="nup-error">{{ $message }}</span> @enderror
                 </div>
             @endforeach
