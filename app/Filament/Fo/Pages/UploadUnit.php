@@ -78,6 +78,19 @@ class UploadUnit extends Page implements HasForms
 
     public function submit(): void
     {
+        // DIAGNOSTIK: catat isi state MENTAH sebelum getState() memvalidasi.
+        // Validasi menolak dengan "field is required" padahal berkas terbukti
+        // terunggah utuh dan lolos aturan yang sama saat diuji terpisah — jadi
+        // yang perlu dilihat adalah apa yang benar-benar ada di $this->data.
+        $mentah = $this->data['file'] ?? null;
+        \Illuminate\Support\Facades\Log::info('[upload-unit] state sebelum validasi', [
+            'kunci_data' => array_keys($this->data ?? []),
+            'tipe_file' => get_debug_type($mentah),
+            'isi_file' => is_array($mentah)
+                ? array_map(fn ($v) => get_debug_type($v), $mentah)
+                : (is_string($mentah) ? $mentah : null),
+        ]);
+
         $data = $this->form->getState();
 
         $filePath = $this->jalurBerkas($data['file'] ?? null);
