@@ -6,6 +6,7 @@ use App\Modules\FO\Adminjual\Exports\PriceListTemplateExport;
 use App\Modules\FO\Adminjual\Imports\PriceListImport;
 use App\Modules\FO\Adminjual\Models\Skema;
 use Filament\Actions\Action;
+use App\Filament\Fo\Pages\Concerns\MembacaBerkasUnggahan;
 use Filament\Forms;
 use Filament\Forms\Concerns\InteractsWithForms;
 use Filament\Forms\Contracts\HasForms;
@@ -19,6 +20,7 @@ use Maatwebsite\Excel\Facades\Excel;
 class UploadPriceList extends Page implements HasForms
 {
     use InteractsWithForms;
+    use MembacaBerkasUnggahan;
 
     protected static ?string $navigationIcon = 'heroicon-o-arrow-up-tray';
 
@@ -74,7 +76,7 @@ class UploadPriceList extends Page implements HasForms
                     Forms\Components\FileUpload::make('file')
                         ->label('File Excel (.xlsx/.xls/.csv)')
                         ->required()
-                        ->disk('local')->directory('imports/pricelists')
+                        ->storeFiles(false)
                         ->acceptedFileTypes([
                             'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
                             'application/vnd.ms-excel',
@@ -88,7 +90,15 @@ class UploadPriceList extends Page implements HasForms
     public function submit(): void
     {
         $data = $this->form->getState();
-        $filePath = Storage::disk('local')->path($data['file']);
+
+        $filePath = $this->jalurBerkas($data['file'] ?? null);
+        if ($filePath === null) {
+            Notification::make()->title('Berkas tidak terbaca')
+                ->body('Unggah ulang berkasnya, lalu tunggu sampai kotak unggahan berwarna hijau sebelum menekan tombol.')
+                ->danger()->send();
+
+            return;
+        }
 
         $import = new PriceListImport;
         try {

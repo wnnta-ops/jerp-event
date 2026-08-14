@@ -24,11 +24,32 @@ class NupEventResource extends Resource
 
     protected static ?string $pluralModelLabel = 'Event Launching (NUP)';
 
+    /**
+     * Sertakan event yang sudah dihapus supaya bisa dilihat & dipulihkan.
+     *
+     * NupEvent mewarisi SoftDeletes dari TenantAwareModel: baris yang dihapus tetap
+     * ada di database dan MASIH menempati unique(tenant_id, code). Tanpa ini, event
+     * terhapus tak terlihat di mana pun namun kodenya tak bisa dipakai lagi —
+     * "sudah dihapus tapi kodenya masih dianggap terpakai" tanpa penjelasan.
+     */
+    public static function getEloquentQuery(): \Illuminate\Database\Eloquent\Builder
+    {
+        return parent::getEloquentQuery()
+            ->withoutGlobalScopes([\Illuminate\Database\Eloquent\SoftDeletingScope::class]);
+    }
+
     public static function form(Form $form): Form
     {
         return $form->schema([
             Forms\Components\Section::make('Event')->columns(2)->schema([
-                Forms\Components\TextInput::make('code')->label('Kode event')->required()->maxLength(32)->unique(ignoreRecord: true),
+                // Pesan unik menyebut kemungkinan bentrok dengan event TERHAPUS: aturan
+                // unique menanyai tabel apa adanya, sehingga baris ber-deleted_at pun
+                // tetap dianggap memakai kode itu.
+                Forms\Components\TextInput::make('code')->label('Kode event')->required()->maxLength(32)
+                    ->unique(ignoreRecord: true)
+                    ->validationMessages([
+                        'unique' => 'Kode ini sudah dipakai event lain — mungkin event yang sudah dihapus. Buka filter "Data terhapus" untuk memulihkannya, atau pakai kode berbeda.',
+                    ]),
                 Forms\Components\TextInput::make('name')->label('Nama event')->required()->maxLength(255),
                 Forms\Components\Select::make('project_id')->label('Proyek')->relationship('project', 'name')->required()->searchable()->preload(),
                 Forms\Components\DatePicker::make('tgl_launching')->label('Tgl launching')->required(),
@@ -54,6 +75,9 @@ class NupEventResource extends Resource
                 'EXECUTED' => 'primary', 'BATAL' => 'danger', default => 'gray',
             }),
         ])->filters([
+            // Bawaannya menyembunyikan yang terhapus; pilih "Terhapus" untuk melihat &
+            // memulihkannya — termasuk event yang kodenya masih menyandera kode baru.
+            Tables\Filters\TrashedFilter::make()->label('Data terhapus'),
             Tables\Filters\SelectFilter::make('status')->label('Status')->options([
                 'OPEN' => 'Buka pendaftaran', 'CLOSED' => 'Tutup pendaftaran', 'DRAFT' => 'Belum buka',
             ])->query(function ($query, array $data) {
@@ -77,8 +101,66 @@ class NupEventResource extends Resource
             Tables\Filters\SelectFilter::make('project_id')->relationship('project', 'name')->label('Proyek'),
         ])->actions([
             Tables\Actions\EditAction::make(),
+
+            // HAPUS PERMANEN, dijaga oleh keterikatan data.
+            //
+            // Soft delete di sini menyesatkan: baris terhapus tetap menempati
+            // unique(tenant_id, code), sehingga event "sudah dihapus" tapi kodenya tak
+            // bisa dipakai lagi — tanpa penjelasan apa pun.
+            //
+            // Hapus permanen TIDAK boleh membabi buta: fo_nup_registrations memakai
+            // cascadeOnDelete, jadi tanpa penjagaan ini menghapus satu event akan ikut
+            // memusnahkan SELURUH pendaftaran NUP di bawahnya beserta nomor urut yang
+            // sudah terbit. Karena itu event yang masih punya pendaftar DITOLAK.
+            Tables\Actions\DeleteAction::make()
+                ->modalHeading('Hapus event ini?')
+                ->modalDescription('Event dihapus permanen. Hanya bisa dilakukan bila belum ada pendaftaran NUP pada event ini.')
+                ->action(function (NupEvent $record) {
+                    $jml = $record->registrations()->withoutGlobalScopes()->count();
+
+                    if ($jml > 0) {
+                        \Filament\Notifications\Notification::make()
+                            ->title('Tidak bisa dihapus')
+                            ->body("Event ini sudah punya {$jml} pendaftaran NUP. Hapus atau pindahkan pendaftarannya lebih dulu.")
+                            ->danger()->persistent()->send();
+
+                        return;
+                    }
+
+                    $record->forceDelete();
+
+                    \Filament\Notifications\Notification::make()
+                        ->title('Event dihapus')
+                        ->body('Kode event kini bebas dipakai lagi.')
+                        ->success()->send();
+                }),
         ])->bulkActions([
-            Tables\Actions\BulkActionGroup::make([Tables\Actions\DeleteBulkAction::make()]),
+            // Samakan perilakunya dengan hapus satuan. Bila dibiarkan soft delete,
+            // hapus massal akan menyisakan baris yang menyandera kode event lagi.
+            Tables\Actions\BulkActionGroup::make([
+                Tables\Actions\DeleteBulkAction::make()
+                    ->modalDescription('Event dihapus permanen. Event yang sudah punya pendaftaran NUP akan dilewati.')
+                    ->action(function (\Illuminate\Support\Collection $records) {
+                        $hapus = 0;
+                        $lewat = [];
+
+                        foreach ($records as $record) {
+                            if ($record->registrations()->withoutGlobalScopes()->exists()) {
+                                $lewat[] = $record->code;
+
+                                continue;
+                            }
+                            $record->forceDelete();
+                            $hapus++;
+                        }
+
+                        \Filament\Notifications\Notification::make()
+                            ->title($hapus.' event dihapus')
+                            ->body($lewat === [] ? 'Kode event kini bebas dipakai lagi.'
+                                : 'Dilewati karena sudah punya pendaftaran: '.implode(', ', $lewat))
+                            ->{$lewat === [] ? 'success' : 'warning'}()->persistent()->send();
+                    }),
+            ]),
         ])->defaultSort('tgl_launching', 'desc');
     }
 
