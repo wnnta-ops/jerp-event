@@ -164,6 +164,10 @@ Route::middleware('auth')->group(function () {
     // FO — Report Xendit (Finance AR): export Excel pencocokan pembayaran UTJ <-> customer.
     Route::get('/fo/report/xendit/excel', [\App\Modules\FO\Launching\Controllers\ReportXenditController::class, 'excel'])->name('fo.report.xendit.excel');
 
+    // FO — Report NUP (modul NUP): rekap pendaftaran + kolom penjualan (Sales, Agent,
+    // Cara Bayar, Bank, Pilihan Unit). Memuat pendaftaran TANPA invoice juga.
+    Route::get('/fo/report/nup/excel', [\App\Modules\FO\Launching\Controllers\ReportNupController::class, 'excel'])->name('fo.report.nup.excel');
+
     // FO — cetak Permohonan Pengajuan BLT (1 dokumen, 3 halaman: Sales/Koordinator/Kantor).
     Route::get('/fo/cetak/pengajuan-blt', [\App\Modules\FO\Komisi\Controllers\BltPrintController::class, 'pengajuan'])->name('fo.cetak.pengajuan-blt');
     Route::get('/fo/cetak/pengajuan-komisi', [\App\Modules\FO\Komisi\Controllers\KomisiPrintController::class, 'pengajuan'])->name('fo.cetak.pengajuan-komisi');
