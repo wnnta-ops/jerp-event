@@ -1,4 +1,12 @@
-# Persetujuan Login SSH lewat Telegram
+# Persetujuan & Pemantauan SSH lewat Telegram
+
+Tiga hal, memakai satu bot dan satu berkas konfigurasi:
+
+| Berkas | Kegunaan | Menghalangi login? |
+|---|---|---|
+| `ssh-approval.sh` | Tombol **Izinkan / Tolak** sebelum login diterima | Ya — inilah gerbangnya |
+| `ssh-notify.sh` | Kabar sesi **dibuka** & **ditutup** | Tidak, selalu lolos |
+| `ssh-watch-failed.sh` | Ringkasan percobaan login **gagal** | Tidak, hanya memantau |
 
 Setiap login SSH mengirim pesan Telegram berisi tombol **Izinkan / Tolak**. Sesi
 baru terbuka setelah tombol Izinkan ditekan.
@@ -28,8 +36,10 @@ curl -s "https://api.telegram.org/bot<TOKEN>/getUpdates" | jq '.result[].message
 ```bash
 sudo apt update && sudo apt install -y jq curl
 
-sudo cp ops/ssh-telegram-approval/ssh-approval.sh /usr/local/bin/ssh-approval.sh
-sudo chmod 700 /usr/local/bin/ssh-approval.sh
+sudo cp ops/ssh-telegram-approval/ssh-approval.sh     /usr/local/bin/ssh-approval.sh
+sudo cp ops/ssh-telegram-approval/ssh-notify.sh       /usr/local/bin/ssh-notify.sh
+sudo cp ops/ssh-telegram-approval/ssh-watch-failed.sh /usr/local/bin/ssh-watch-failed.sh
+sudo chmod 700 /usr/local/bin/ssh-approval.sh /usr/local/bin/ssh-notify.sh /usr/local/bin/ssh-watch-failed.sh
 sudo mkdir -p /var/lib/ssh-approval
 ```
 
@@ -44,6 +54,10 @@ TIMEOUT_DETIK=60
 # Tanpa ini, tugas terjadwal ikut menunggu manusia lalu gagal diam-diam.
 BYPASS_USERS=""
 BYPASS_HOSTS="127.0.0.1 ::1"
+# Pemberitahuan (tidak pernah menghalangi login) — set 0 untuk mematikan.
+NOTIFY_SESSION=1
+NOTIFY_FAILED=1
+FAILED_WINDOW_DETIK=120
 EOF
 sudo chmod 600 /etc/ssh-approval.conf
 ```
@@ -68,6 +82,28 @@ berbasis kunci melewatinya — pemeriksaan bisa terlewati diam-diam.
 sudo cp /etc/pam.d/sshd /root/pam-sshd.bak     # cadangan untuk pemulihan
 echo 'account required pam_exec.so quiet /usr/local/bin/ssh-approval.sh' | sudo tee -a /etc/pam.d/sshd
 ```
+
+Pemberitahuan sesi dibuka/ditutup — `optional`, BUKAN `required`, dengan sengaja:
+gagal mengirim kabar tidak boleh menggagalkan sesi yang sah.
+
+```bash
+echo 'session optional pam_exec.so quiet /usr/local/bin/ssh-notify.sh' | sudo tee -a /etc/pam.d/sshd
+```
+
+## 4b. Pemantau percobaan gagal
+
+Percobaan gagal tidak pernah sampai ke tahap session PAM, jadi butuh pemantau
+journal tersendiri:
+
+```bash
+sudo cp ops/ssh-telegram-approval/ssh-watch-failed.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now ssh-watch-failed
+systemctl status ssh-watch-failed --no-pager | head -5
+```
+
+Uji tanpa mengganggu apa pun — coba login dengan kata sandi salah dari perangkat
+lain, lalu tunggu sampai jendela pengumpulan (`FAILED_WINDOW_DETIK`) berakhir.
 
 ## 5. Uji dari terminal BARU — jangan tutup sesi yang sedang berjalan
 
@@ -104,6 +140,15 @@ saling mencuri jawaban. Skrip memakai lock agar antre, bukan bentrok.
 
 **Jangan pasang webhook pada bot yang sama.** Webhook dan `getUpdates` tidak bisa
 dipakai bersamaan; salah satunya akan berhenti menerima.
+
+**Percobaan gagal DIRINGKAS, bukan dikirim satu per satu.** Satu serangan brute
+force menghasilkan ribuan baris dalam hitungan menit; satu pesan per kejadian akan
+menenggelamkan permintaan persetujuan yang justru penting, dan bot bisa kena batas
+laju Telegram. Ringkasannya dikelompokkan per IP beserta jumlah percobaannya.
+
+**Pemantau gagal hanya melapor, tidak memblokir.** Untuk benar-benar menutup pintu
+bagi penyerang yang mencoba berulang, pasang `fail2ban` — keduanya saling
+melengkapi, bukan menggantikan.
 
 **Ini bukan pengganti dasar keamanan lain.** Yang berdampak lebih besar: matikan
 login kata sandi (`PasswordAuthentication no`) setelah kunci SSH terbukti jalan,
