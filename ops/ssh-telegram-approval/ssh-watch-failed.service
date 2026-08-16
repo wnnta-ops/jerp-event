@@ -1,0 +1,19 @@
+[Unit]
+Description=Pantau percobaan login SSH gagal, kirim ringkasan ke Telegram
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/ssh-watch-failed.sh
+Restart=always
+RestartSec=10
+# Layanan ini hanya membaca journal & memanggil Telegram — tidak perlu hak
+# apa pun di luar itu.
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+
+[Install]
+WantedBy=multi-user.target
