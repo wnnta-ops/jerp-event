@@ -42,7 +42,7 @@ class ReportNupController
 
         $th = 'style="background:#1d70c9;color:#fff"';
         $h .= '<table border="1"><tr>'
-            .'<th '.$th.'>No.</th><th '.$th.'>Tgl Daftar</th><th '.$th.'>No NUP</th><th '.$th.'>Customer</th>'
+            .'<th '.$th.'>No.</th><th '.$th.'>Tgl Daftar</th><th '.$th.'>No NUP</th><th '.$th.'>Customer</th><th '.$th.'>No. Telp</th>'
             .'<th '.$th.'>Sales</th><th '.$th.'>Agent</th><th '.$th.'>Cara Bayar</th><th '.$th.'>Bank</th>'
             .'<th '.$th.'>Pilihan Unit</th><th '.$th.'>Ref Xendit</th><th '.$th.'>Nilai UTJ</th>'
             .'<th '.$th.'>Transfer Xendit</th><th '.$th.'>Selisih</th><th '.$th.'>Status</th>'
@@ -62,6 +62,7 @@ class ReportNupController
                 .'<td>'.$e($r->created_at?->format('d/m/Y H:i')).'</td>'
                 .'<td>'.$e($r->no_nup ?: '-').'</td>'
                 .'<td>'.$e($r->customer?->full_name ?: $r->nama_pendaftar).'</td>'
+                .'<td>'.$e($r->phone ?: ($r->customer?->mobile ?: '-')).'</td>'
                 .'<td>'.$e($r->ref_sales_name ?: '-').'</td>'
                 .'<td>'.$e($r->agent?->name ?: '-').'</td>'
                 .'<td>'.$e($r->cara_bayar ?: '-').'</td>'
@@ -77,7 +78,7 @@ class ReportNupController
                 .'</tr>';
         }
 
-        $h .= '<tr style="font-weight:bold;background:#e2e8f0"><td colspan="10">TOTAL NOMINAL MASUK</td>'
+        $h .= '<tr style="font-weight:bold;background:#e2e8f0"><td colspan="11">TOTAL NOMINAL MASUK</td>'
             .'<td>'.$n($totalLunas).'</td><td colspan="5">'.count($rows).' pendaftaran</td></tr>'
             .'</table>';
 

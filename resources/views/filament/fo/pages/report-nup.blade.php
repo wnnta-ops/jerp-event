@@ -98,6 +98,7 @@
                         <th class="px-2 py-2">Tgl Daftar</th>
                         <th class="px-2 py-2">No NUP</th>
                         <th class="px-2 py-2">Customer</th>
+                        <th class="px-2 py-2">No. Telp</th>
                         <th class="px-2 py-2">Sales</th>
                         <th class="px-2 py-2">Agent</th>
                         <th class="px-2 py-2">Cara Bayar</th>
@@ -131,6 +132,9 @@
                             <td class="{{ $tdTxt }}">{{ $r->created_at?->format('d/m/Y H:i') }}</td>
                             <td class="{{ $tdTxt }} font-semibold">{{ $r->no_nup ?: '-' }}</td>
                             <td class="{{ $tdTxt }}">{{ $r->customer?->full_name ?: $r->nama_pendaftar }}</td>
+                            {{-- Telepon pendaftaran didahulukan atas master customer: itu nomor
+                                 yang benar-benar dipakai mengirim WA untuk pendaftaran ini. --}}
+                            <td class="{{ $tdTxt }} font-mono">{{ $r->phone ?: ($r->customer?->mobile ?: '-') }}</td>
                             <td class="{{ $tdTxt }}">{{ $r->ref_sales_name ?: '-' }}</td>
                             <td class="{{ $tdTxt }}">{{ $r->agent?->name ?: '-' }}</td>
                             <td class="{{ $tdTxt }}">{{ $r->cara_bayar ?: '-' }}</td>
@@ -151,7 +155,7 @@
                             <td class="{{ $tdTxt }}">{!! $badge($reconCls, $recon) !!}</td>
                         </tr>
                     @empty
-                        <tr><td colspan="16" class="px-4 py-10 text-center text-gray-500 dark:text-gray-400">
+                        <tr><td colspan="17" class="px-4 py-10 text-center text-gray-500 dark:text-gray-400">
                             Tidak ada pendaftaran pada rentang ini.
                         </td></tr>
                     @endforelse
