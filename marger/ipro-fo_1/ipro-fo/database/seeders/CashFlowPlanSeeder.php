@@ -108,6 +108,13 @@ class CashFlowPlanSeeder extends Seeder
             '(total inflow ops)+(total inflow non ops)-(total outflow)'],
         ['ending_balance', 'Ending Balance', 'beginning balance + nett cashflow',
             'beginning balance + nett cashflow'],
+        // Dua saldo turunan di bawah sudah lama dihitung mesin laporan tetapi belum pernah
+        // tercantum di katalog rumus, sehingga panel "Rumus yang dipakai laporan ini" tidak
+        // menerangkannya sama sekali.
+        ['effective_balance', 'Effective Balance', 'ending balance - blokir angsuran loan',
+            'ending balance dikurangi Blokir Angsuran Loan bulan bersangkutan — saldo yang benar-benar bebas dipakai setelah angsuran pinjaman disisihkan'],
+        ['nett_effective_balance', 'Nett Effective Balance', 'effective balance - buffer',
+            'effective balance dikurangi Buffer bulan bersangkutan — saldo yang tersisa setelah cadangan pengaman disisihkan'],
         ['aktual', 'aktual', 'Σ Pembagian Cash Flow pada bulan bersangkutan',
             'angka aktual per kategori pada bulan bersangkutan yg didapatkan setelah ada klasifikasi transaksi bank/kas'],
         ['proyeksi', 'proyeksi', 'Input proyeksi cashplan per kategori/bulan',
