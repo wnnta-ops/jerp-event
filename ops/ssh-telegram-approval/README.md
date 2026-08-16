@@ -153,3 +153,36 @@ melengkapi, bukan menggantikan.
 **Ini bukan pengganti dasar keamanan lain.** Yang berdampak lebih besar: matikan
 login kata sandi (`PasswordAuthentication no`) setelah kunci SSH terbukti jalan,
 dan pasang `fail2ban`.
+
+---
+
+## Bila suatu saat mengganti port SSH
+
+Ubuntu 22.10+ menjalankan sshd lewat **socket activation**, sehingga mengubah
+`Port` di `sshd_config` TIDAK berpengaruh sama sekali. Yang menentukan adalah
+`ssh.socket`:
+
+```bash
+sudo mkdir -p /etc/systemd/system/ssh.socket.d
+sudo nano /etc/systemd/system/ssh.socket.d/override.conf
+```
+
+```
+[Socket]
+ListenStream=
+ListenStream=0.0.0.0:22
+ListenStream=[::]:22
+ListenStream=0.0.0.0:2392
+ListenStream=[::]:2392
+```
+
+**Sebutkan alamat IPv4 secara eksplisit.** Menulis `ListenStream=2392` saja hanya
+menghasilkan socket IPv6, dan pada server ini socket IPv6 TIDAK menerima koneksi
+IPv4 — akibatnya port tampak "mendengarkan" tapi setiap sambungan ke alamat IPv4
+ditolak. Kesalahan ini pernah terjadi dan sempat memutus akses SSH dari luar
+(port 22 ikut hilang dari IPv4 karena baris `ListenStream=` mengosongkan daftar
+bawaan lebih dulu).
+
+Urutan amannya: tambahkan port baru **berdampingan** dengan 22 → `daemon-reload`
++ `restart ssh.socket` → pastikan `status` menampilkan `0.0.0.0` untuk KEDUA port
+→ uji dari terminal baru → baru hapus baris port 22.
