@@ -457,7 +457,11 @@ class CashBookController extends Controller
                 ->when($from, fn ($q) => $q->whereDate('bs_journals.journal_date', '>=', $from))
                 ->when($to, fn ($q) => $q->whereDate('bs_journals.journal_date', '<=', $to))
                 ->orderBy('bs_journals.journal_date')->orderBy('bs_journal_lines.id')
-                ->get(['bs_journal_lines.id', 'bs_journal_lines.journal_id', 'bs_journals.journal_date', 'bs_journals.journal_number', 'bs_journals.reference', 'bs_journals.source', 'bs_journal_lines.description', 'bs_journal_lines.debit', 'bs_journal_lines.credit']);
+                // bs_journals.description ikut diambil: keterangan baris jurnal sering hanya
+                // menyebut nomor dokumen ("Transfer bon sementara BON/2608/0006"), sedangkan
+                // keterangan KEPALA jurnal-lah yang menerangkan perkaranya — mis. "Pembayaran
+                // Bon Sementara — Kasbon olahraga (Andi Wijaya — Manager Finance)".
+                ->get(['bs_journal_lines.id', 'bs_journal_lines.journal_id', 'bs_journals.journal_date', 'bs_journals.journal_number', 'bs_journals.reference', 'bs_journals.source', 'bs_journals.description as journal_description', 'bs_journal_lines.description', 'bs_journal_lines.debit', 'bs_journal_lines.credit']);
 
             // Anotasi per-mutasi: tag kategori arus kas + pembagian cluster (di-load sekali).
             $lineIds = $rows->pluck('id');
@@ -476,11 +480,18 @@ class CashBookController extends Controller
                 $running += (float) $r->debit - (float) $r->credit;
                 $tag = $cfTags[$r->id] ?? null;
 
+                // Keterangan kepala jurnal hanya dikirim bila BERBEDA dari keterangan barisnya —
+                // kalau sama persis, mencetaknya dua kali cuma menggandakan kalimat yang sama.
+                $ketBaris  = trim((string) $r->description);
+                $ketJurnal = trim((string) $r->journal_description);
+
                 return [
                     'id' => $r->id,
+                    'journal_id' => $r->journal_id,   // tujuan pranala nomor referensi
                     'trx_id' => $trxByJournal[$r->journal_id] ?? null,
                     'date' => (string) $r->journal_date, 'ref' => $r->reference ?: $r->journal_number,
-                    'source' => $r->source, 'desc' => $r->description,
+                    'source' => $r->source, 'desc' => $ketBaris,
+                    'journal_desc' => ($ketJurnal !== '' && $ketJurnal !== $ketBaris) ? $ketJurnal : null,
                     'debit' => (float) $r->debit, 'credit' => (float) $r->credit, 'balance' => round($running, 2),
                     'cf_direct_category_id' => $tag?->cf_direct_category_id,
                     'cf_indirect_category_id' => $tag?->cf_indirect_category_id,

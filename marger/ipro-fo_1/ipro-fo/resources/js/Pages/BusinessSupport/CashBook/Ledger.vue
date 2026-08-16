@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, watch, computed } from 'vue';
 import { router, Link } from '@inertiajs/vue3';
-import { ArrowLeft, BookOpen, FileSpreadsheet, Printer, Layers, Plus, Trash2, ChevronDown, ChevronRight, Save } from 'lucide-vue-next';
+import { ArrowLeft, BookOpen, FileSpreadsheet, Printer, Layers, Plus, Trash2, ChevronDown, ChevronRight, Save, ExternalLink } from 'lucide-vue-next';
 import EmptyState from '@/Components/UI/EmptyState.vue';
 import SearchSelect from '@/Components/UI/SearchSelect.vue';
 import MoneyInput from '@/Components/UI/MoneyInput.vue';
@@ -30,6 +30,17 @@ const cfGrouped = computed(() => {
     }
     return out;
 });
+
+/**
+ * Daftar rata untuk pemilih yang bisa dicari.
+ *
+ * SearchSelect tidak mengenal <optgroup>, jadi nama seksi (CASH IN OPS / CASH OUT / …)
+ * ditempelkan ke depan label. Itu bukan sekadar penambal: karena SearchSelect mencocokkan
+ * teks label, mengetik "cash out promosi" jadi ikut menemukan kategorinya — sesuatu yang
+ * tidak mungkin dilakukan pada <select> ber-optgroup.
+ */
+const cfOptions = computed(() =>
+    cfGrouped.value.flatMap((g) => g.items.map((o) => ({ id: o.id, label: `${g.label} · ${o.label}` }))));
 
 const account = ref(props.accountId ?? '');
 const from = ref(props.filters.from ?? '');
@@ -175,8 +186,24 @@ function saveClusters(row: any) {
                                 <span v-else class="cursor-not-allowed text-neutral-300 dark:text-neutral-600" title="Mutasi ini bukan transaksi kas (saldo awal / jurnal manual / hutang-piutang / bon sementara) — tidak ada Bukti Kas & Bank yang bisa dicetak.">—</span>
                             </td>
                             <td class="px-3 py-2 whitespace-nowrap">{{ fmtDate(row.date) }}</td>
-                            <td class="px-3 py-2 font-mono text-xs">{{ row.ref }}</td>
-                            <td class="px-3 py-2 text-neutral-500">{{ row.desc }}</td>
+                            <td class="px-3 py-2 font-mono text-xs">
+                                <!-- Dibuka di TAB BARU: menelusuri satu jurnal tidak boleh membuang
+                                     posisi kerja di layar ini — filter rekening/periode, centang
+                                     bukti kas, dan rincian pembagian yang sedang dibuka. -->
+                                <a v-if="row.journal_id" :href="route('bs.gl.journal.show', row.journal_id)"
+                                   target="_blank" rel="noopener"
+                                   class="inline-flex items-center gap-1 rounded text-primary-700 underline decoration-dotted underline-offset-2 hover:text-primary-900 hover:decoration-solid dark:text-primary-300 dark:hover:text-primary-200"
+                                   :title="`Buka detail jurnal ${row.ref} di tab baru`">
+                                    {{ row.ref }}<ExternalLink class="h-3 w-3 shrink-0 opacity-60" />
+                                </a>
+                                <span v-else>{{ row.ref }}</span>
+                            </td>
+                            <td class="px-3 py-2 text-neutral-500">
+                                {{ row.desc }}
+                                <!-- Keterangan kepala jurnal: baris jurnal sering hanya menyebut
+                                     nomor dokumen, sedangkan perkaranya ada di keterangan jurnal. -->
+                                <span v-if="row.journal_desc" class="mt-0.5 block text-xs text-neutral-400">{{ row.journal_desc }}</span>
+                            </td>
                             <td class="px-3 py-2 text-right font-mono">{{ row.debit ? fmtRp(row.debit) : '' }}</td>
                             <td class="px-3 py-2 text-right font-mono">{{ row.credit ? fmtRp(row.credit) : '' }}</td>
                             <td class="px-3 py-2 text-right font-mono font-semibold">{{ fmtRp(row.balance) }}</td>
@@ -200,16 +227,15 @@ function saveClusters(row: any) {
                                 </div>
                                 <div class="space-y-2">
                                     <div v-for="(c, i) in row.clusters" :key="i" class="flex flex-wrap items-center gap-2">
-                                        <!-- Kategori Cash Flow: penentu baris mana angka ini muncul di Report Cashflow. -->
-                                        <select v-model="c.cf_category_id"
-                                            :class="['h-8 min-w-[240px] flex-[2] rounded-md border px-2 text-xs dark:bg-neutral-900',
-                                                c.cf_category_id ? 'border-emerald-300 dark:border-emerald-700' : 'border-amber-300 bg-amber-50/60 dark:border-amber-700 dark:bg-amber-950/20']"
-                                            title="Kategori Cash Flow — menentukan baris pada Report Cashflow">
-                                            <option :value="null">— kategori cash flow —</option>
-                                            <optgroup v-for="g in cfGrouped" :key="g.label" :label="g.label">
-                                                <option v-for="o in g.items" :key="o.id" :value="o.id">{{ o.label }}</option>
-                                            </optgroup>
-                                        </select>
+                                        <!-- Kategori Cash Flow: penentu baris mana angka ini muncul di Report Cashflow.
+                                             Dapat DICARI dengan mengetik — daftarnya panjang, dan nama seksi
+                                             ikut dijadikan bagian label sehingga "cash out promosi" pun mencocok. -->
+                                        <div :class="['min-w-[240px] flex-[2] rounded-md',
+                                                c.cf_category_id ? 'ring-1 ring-emerald-300 dark:ring-emerald-700' : 'ring-1 ring-amber-300 dark:ring-amber-700']"
+                                            title="Kategori Cash Flow — menentukan baris pada Report Cashflow. Ketik untuk mencari.">
+                                            <SearchSelect v-model="c.cf_category_id" :options="cfOptions"
+                                                placeholder="— kategori cash flow —" no-truncate />
+                                        </div>
                                         <!-- Nominal dengan pemisah ribuan (1.000.000). -->
                                         <MoneyInput v-model="c.amount" placeholder="Nominal" class="!h-8 !w-36 !px-2 !text-xs" />
                                         <input v-model="c.note" placeholder="Keterangan (opsional)" class="h-8 min-w-[140px] flex-1 rounded-md border border-neutral-300 bg-white px-2 text-xs dark:border-neutral-700 dark:bg-neutral-900" />
