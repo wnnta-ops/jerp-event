@@ -8,7 +8,9 @@ set -euo pipefail
 # ── Sesuaikan path bila perlu ────────────────────────────────────────────────
 JERP_DIR="${JERP_DIR:-$(pwd)}"                            # folder J-ERP (ada docker-compose.yml)
 IPRO_DIR="${IPRO_DIR:-$JERP_DIR/marger/ipro-fo_1/ipro-fo}"
-IPRO_FILES="-f docker-compose.yml -f docker-compose.override.yml -f docker-compose.shared.yml"
+# prod.yml PALING AKHIR: menutup port Redis/Meili/Reverb/MinIO/Mailpit yang
+# diterbitkan setelan dev ke 0.0.0.0. Urutan -f menentukan, yang belakangan menang.
+IPRO_FILES="-f docker-compose.yml -f docker-compose.override.yml -f docker-compose.shared.yml -f docker-compose.prod.yml"
 # J-ERP: base + prod override → mysql/redis/meili TIDAK di-expose ke host (aman), nginx tetap 8081.
 # Override utk lokal: JERP_COMPOSE_FILE=docker-compose.yml:docker-compose.override.yml
 JERP_COMPOSE_FILE="${JERP_COMPOSE_FILE:-docker-compose.yml:docker-compose.prod.yml}"

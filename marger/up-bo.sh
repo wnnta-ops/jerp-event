@@ -5,7 +5,9 @@
 set -euo pipefail
 JERP_DIR="${JERP_DIR:-$(cd "$(dirname "$0")/.." && pwd)}"
 IPRO_DIR="$JERP_DIR/marger/ipro-fo_1/ipro-fo"
-IPRO_FILES="-f docker-compose.yml -f docker-compose.override.yml -f docker-compose.shared.yml"
+# prod.yml PALING AKHIR: menutup port Redis/Meili/Reverb/MinIO/Mailpit yang
+# diterbitkan setelan dev ke 0.0.0.0. Urutan -f menentukan, yang belakangan menang.
+IPRO_FILES="-f docker-compose.yml -f docker-compose.override.yml -f docker-compose.shared.yml -f docker-compose.prod.yml"
 
 cd "$IPRO_DIR"
 echo "==> 1/4 build & up BO (app + nginx + redis) — mysql TIDAK disentuh"

@@ -1,0 +1,46 @@
+# ═══════════════════════════════════════════════════════════════════
+# ipro-fo (BO) — OVERRIDE PRODUKSI / VPS
+#
+# Di-merge PALING AKHIR, di atas docker-compose.override.yml (yang berisi
+# pemetaan port untuk DEV). Urutan -f menentukan: yang belakangan menang.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.override.yml \
+#                  -f docker-compose.shared.yml -f docker-compose.prod.yml up -d
+#
+# ── Kenapa file ini ada ──────────────────────────────────────────────
+# Tanpa ini, setelan DEV ikut terpakai di server dan menerbitkan Redis,
+# Meilisearch, Reverb, MinIO, serta Mailpit ke 0.0.0.0 — terjangkau dari
+# internet. Yang paling berbahaya Redis: image redis:7-alpine dijalankan
+# TANPA requirepass, sehingga siapa pun yang menemukan portnya bisa membaca
+# seluruh isinya, menghapusnya, dan pada banyak kasus menulis berkas ke server
+# lewat perintah Redis. Redis terbuka tanpa sandi adalah salah satu jalan masuk
+# yang paling sering dipakai pemindai otomatis.
+#
+# Menutupnya TIDAK bisa lewat ufw: port yang diterbitkan Docker ditulis
+# langsung ke iptables pada rantai yang diproses lebih dulu, sehingga aturan
+# ufw dilewati. Satu-satunya cara yang benar adalah tidak menerbitkannya.
+#
+# Semua layanan ini tetap saling terhubung lewat jaringan internal container —
+# tidak ada yang rusak, hanya tidak lagi terbuka ke luar.
+#
+# nginx SENGAJA tetap diterbitkan di 8090: itulah pintu yang diteruskan
+# Nginx Proxy Manager ke BO.
+#
+# Butuh Docker Compose v2.24+ (tag !reset).
+# ═══════════════════════════════════════════════════════════════════
+
+services:
+  redis:
+    ports: !reset []
+
+  meilisearch:
+    ports: !reset []
+
+  reverb:
+    ports: !reset []
+
+  minio:
+    ports: !reset []
+
+  mailpit:
+    ports: !reset []
