@@ -343,8 +343,16 @@ class CashBookController extends Controller
             'defaultType'     => $cashTransaction->trx_type,
             // #148: saat edit, kunci jenis ke jenis transaksi yang sudah ada (tidak boleh diubah).
             'allowedTypes'    => [$cashTransaction->trx_type],
+            // trx_date DITULIS ULANG sebagai string Y-m-d.
+            //
+            // Model::only() mengambil nilai lewat getAttribute(), jadi yang keluar adalah objek
+            // Carbon — dan json_encode() atas Carbon memakai serialisasi Carbon sendiri (ISO
+            // UTC), MELEWATI format cast pada model. Di zona Asia/Jakarta (UTC+7), tanggal
+            // 2026-08-16 terkirim sebagai "2026-08-15T17:00:00Z" dan layar membacanya
+            // 15 Agustus — tanggal mundur sehari setiap kali dokumen dibuka untuk diedit.
             'editing'         => array_merge(
-                $cashTransaction->only(['id', 'trx_type', 'trx_date', 'cash_account_id', 'counter_account_id', 'amount', 'payee', 'description', 'reference']),
+                $cashTransaction->only(['id', 'trx_type', 'cash_account_id', 'counter_account_id', 'amount', 'payee', 'description', 'reference']),
+                ['trx_date' => $cashTransaction->trx_date?->toDateString()],
                 ['lines' => $cashTransaction->lines()->get(['account_id', 'amount', 'description'])->toArray()],
             ),
         ]);
