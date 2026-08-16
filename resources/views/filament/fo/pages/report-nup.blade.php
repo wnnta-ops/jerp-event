@@ -71,16 +71,6 @@
         @endforeach
     </div>
 
-    @if ($sum['tanpa_invoice'] > 0)
-        {{-- Peringatan yang berdiri sendiri: pendaftaran tanpa invoice berarti customer
-             TIDAK punya tautan bayar, dan itu tidak terlihat di layar mana pun. --}}
-        <div class="rounded-xl border border-red-300 bg-red-50 p-4 text-sm text-red-800 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-300">
-            <b>{{ number_format($sum['tanpa_invoice']) }} pendaftaran tanpa invoice Xendit.</b>
-            Customer tersebut tidak menerima tautan pembayaran — biasanya karena alamat email yang diketik tidak sah.
-            Perbaiki emailnya lewat <b>Verifikasi Data → Edit SPRS</b>, lalu terbitkan tagihannya dengan <b>Payment Xendit</b>.
-        </div>
-    @endif
-
     {{-- Tabel --}}
     <div class="rounded-xl bg-white shadow-sm ring-1 ring-gray-950/5 dark:bg-gray-900 dark:ring-white/10">
         <div class="border-b border-gray-200 px-4 py-3 dark:border-white/10">
@@ -94,23 +84,23 @@
             <table class="w-full text-xs">
                 <thead>
                     <tr class="border-b border-gray-200 bg-gray-50 text-left text-gray-600 dark:border-white/10 dark:bg-white/5 dark:text-gray-300">
-                        <th class="px-2 py-2">No.</th>
-                        <th class="px-2 py-2">Tgl Daftar</th>
-                        <th class="px-2 py-2">No NUP</th>
-                        <th class="px-2 py-2">Customer</th>
-                        <th class="px-2 py-2">No. Telp</th>
-                        <th class="px-2 py-2">Sales</th>
-                        <th class="px-2 py-2">Agent</th>
-                        <th class="px-2 py-2">Cara Bayar</th>
-                        <th class="px-2 py-2">Bank</th>
-                        <th class="px-2 py-2">Pilihan Unit</th>
-                        <th class="px-2 py-2">Ref Xendit</th>
-                        <th class="px-2 py-2 text-right">Nilai UTJ</th>
-                        <th class="px-2 py-2 text-right">Transfer Xendit</th>
-                        <th class="px-2 py-2 text-right">Selisih</th>
-                        <th class="px-2 py-2">Status</th>
-                        <th class="px-2 py-2">Tgl Bayar</th>
-                        <th class="px-2 py-2">Pencocokan</th>
+                        <th class="px-2 py-2 whitespace-nowrap">No.</th>
+                        <th class="px-2 py-2 whitespace-nowrap">Tgl Daftar</th>
+                        <th class="px-2 py-2 whitespace-nowrap">No NUP</th>
+                        <th class="px-2 py-2 whitespace-nowrap">Customer</th>
+                        <th class="px-2 py-2 whitespace-nowrap">No. Telp</th>
+                        <th class="px-2 py-2 whitespace-nowrap">Sales</th>
+                        <th class="px-2 py-2 whitespace-nowrap">Agent</th>
+                        <th class="px-2 py-2 whitespace-nowrap">Cara Bayar</th>
+                        <th class="px-2 py-2 whitespace-nowrap">Bank</th>
+                        <th class="px-2 py-2 whitespace-nowrap">Pilihan Unit</th>
+                        <th class="px-2 py-2 whitespace-nowrap">Ref Xendit</th>
+                        <th class="px-2 py-2 text-right whitespace-nowrap">Nilai UTJ</th>
+                        <th class="px-2 py-2 text-right whitespace-nowrap">Transfer Xendit</th>
+                        <th class="px-2 py-2 text-right whitespace-nowrap">Selisih</th>
+                        <th class="px-2 py-2 whitespace-nowrap">Status</th>
+                        <th class="px-2 py-2 whitespace-nowrap">Tgl Bayar</th>
+                        <th class="px-2 py-2 whitespace-nowrap">Pencocokan</th>
                     </tr>
                 </thead>
                 <tbody class="divide-y divide-gray-100 dark:divide-white/5">
@@ -139,7 +129,7 @@
                             <td class="{{ $tdTxt }}">{{ $r->agent?->name ?: '-' }}</td>
                             <td class="{{ $tdTxt }}">{{ $r->cara_bayar ?: '-' }}</td>
                             <td class="{{ $tdTxt }}">{{ $r->bank?->nama ?: ($r->bank_nama ?: '-') }}</td>
-                            <td class="px-2 py-1.5">{{ \App\Filament\Fo\Pages\ReportNup::pilihanUnit($r) }}</td>
+                            <td class="{{ $tdTxt }}">{{ \App\Filament\Fo\Pages\ReportNup::pilihanUnit($r) }}</td>
                             <td class="{{ $tdTxt }} font-mono">{{ $r->xendit_external_id ?: '-' }}</td>
                             <td class="{{ $tdNum }}">{{ number_format((float) $r->utj_amount, 0, ',', '.') }}</td>
                             <td class="{{ $tdNum }}">{{ $r->xendit_paid_amount !== null ? number_format((float) $r->xendit_paid_amount, 0, ',', '.') : '-' }}</td>
