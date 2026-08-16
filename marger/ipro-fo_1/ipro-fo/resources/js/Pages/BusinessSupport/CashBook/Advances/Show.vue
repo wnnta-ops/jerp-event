@@ -6,7 +6,7 @@ import Button from '@/Components/UI/Button.vue';
 import Badge from '@/Components/UI/Badge.vue';
 import SearchSelect from '@/Components/UI/SearchSelect.vue';
 
-const props = defineProps<{ advance: any; expenseAccounts: Array<any>; cashAccounts: Array<any>; signers?: Record<string, string>; requiredSigners?: string[]; fullyApproved?: boolean; canApprove?: boolean; canEditDocDate?: boolean }>();
+const props = defineProps<{ advance: any; expenseAccounts: Array<any>; costCenters: Array<any>; cashAccounts: Array<any>; signers?: Record<string, string>; requiredSigners?: string[]; fullyApproved?: boolean; canApprove?: boolean; canEditDocDate?: boolean }>();
 const showForm = ref(false);
 // #125: simpan tanggal terima dokumen (hanya finance) tanpa berpindah halaman.
 function saveDocDate(e: Event) {
@@ -23,7 +23,7 @@ function canApproveSlot(key: string): boolean {
 }
 const today = new Date().toISOString().slice(0, 10);
 // defer_settlement selalu true: penyelesaian sisa/kekurangan ditangani dept Finance (Refund/Reimburse).
-const form = useForm<any>({ realized_date: today, defer_settlement: true, lines: [{ expense_account_id: '', description: '', amount: 0 }] });
+const form = useForm<any>({ realized_date: today, defer_settlement: true, lines: [{ expense_account_id: '', cost_center_id: '', description: '', amount: 0 }] });
 const settleForm = useForm<any>({ settle_date: today, cash_account_id: '' });
 // #49: pembayaran oleh Finance (tanggal transfer + sumber bank/kas) → jurnal terbentuk.
 const payForm = useForm<any>({ paid_date: today, cash_account_id: '' });
@@ -33,7 +33,7 @@ const statusVariant: Record<string, any> = { requested: 'info', outstanding: 'wa
 
 const realized = computed(() => form.lines.reduce((s: number, l: any) => s + (Number(l.amount) || 0), 0));
 const settlement = computed(() => Number(props.advance.amount) - realized.value); // + kembali / - nombok
-function addLine() { form.lines.push({ expense_account_id: '', description: '', amount: 0 }); }
+function addLine() { form.lines.push({ expense_account_id: '', cost_center_id: '', description: '', amount: 0 }); }
 function removeLine(i: number) { form.lines.splice(i, 1); }
 function submit() { form.post(route('bs.advance.realize', props.advance.id), { onSuccess: () => { showForm.value = false; } }); }
 function doRefund() { if (confirm('Catat pengembalian sisa panjar ke kas?')) settleForm.post(route('bs.advance.refund', props.advance.id)); }
@@ -51,7 +51,7 @@ function backToIndex() {
 }
 </script>
 <template>
-    <div class="max-w-3xl space-y-4">
+    <div class="max-w-5xl space-y-4">
         <button type="button" @click="backToIndex" class="inline-flex items-center gap-2 rounded-lg border border-neutral-300 bg-white px-3 py-1.5 text-sm font-medium text-neutral-700 hover:bg-neutral-50 dark:border-neutral-600 dark:bg-neutral-800 dark:text-neutral-200"><ArrowLeft class="h-4 w-4" /> Kembali ke Bon Sementara</button>
         <div class="flex flex-wrap items-center justify-between gap-2">
             <h1 class="flex items-center gap-2 font-mono text-2xl font-bold"><Wallet class="h-6 w-6 text-amber-600" /> {{ advance.advance_number }}</h1>
@@ -99,11 +99,21 @@ function backToIndex() {
             <h2 class="mb-3 flex items-center gap-2 font-semibold"><ClipboardCheck class="h-5 w-5 text-success-600" /> Realisasi {{ fmtDate(advance.realized_date) }}</h2>
             <table class="w-full text-sm">
                 <tbody class="divide-y divide-neutral-100 dark:divide-neutral-800">
-                    <tr v-for="l in advance.lines" :key="l.id"><td class="py-1.5">{{ l.expense_account?.code }} {{ l.expense_account?.name }}</td><td class="py-1.5 text-neutral-500">{{ l.description }}</td><td class="py-1.5 text-right font-mono">{{ fmtRp(l.amount) }}</td></tr>
+                    <tr v-for="l in advance.lines" :key="l.id">
+                        <td class="py-1.5">{{ l.expense_account?.code }} {{ l.expense_account?.name }}</td>
+                        <!-- Cost center ikut ditampilkan supaya terbaca anggaran mana yang terpakai;
+                             bon lama tidak punya isian ini, jadi ditandai '—' apa adanya. -->
+                        <td class="py-1.5 text-neutral-500">
+                            <span v-if="l.cost_center" class="rounded bg-neutral-100 px-1.5 py-0.5 text-[11px] font-semibold text-neutral-600 dark:bg-neutral-800 dark:text-neutral-300">{{ l.cost_center.code }} · {{ l.cost_center.name }}</span>
+                            <span v-else class="text-neutral-300 dark:text-neutral-600">—</span>
+                        </td>
+                        <td class="py-1.5 text-neutral-500">{{ l.description }}</td>
+                        <td class="py-1.5 text-right font-mono">{{ fmtRp(l.amount) }}</td>
+                    </tr>
                 </tbody>
                 <tfoot class="border-t border-neutral-200 font-semibold dark:border-neutral-700">
-                    <tr><td colspan="2" class="py-1.5 text-right">Total Realisasi</td><td class="py-1.5 text-right font-mono">{{ fmtRp(advance.realized_amount) }}</td></tr>
-                    <tr v-if="advance.settlement_status !== 'pending'"><td colspan="2" class="py-1.5 text-right" :class="advance.settlement >= 0 ? 'text-success-600' : 'text-danger-600'">{{ advance.settlement >= 0 ? 'Dikembalikan ke kas (Refund)' : 'Reimburse (diganti dari kas)' }}</td><td class="py-1.5 text-right font-mono">{{ fmtRp(Math.abs(advance.settlement)) }}</td></tr>
+                    <tr><td colspan="3" class="py-1.5 text-right">Total Realisasi</td><td class="py-1.5 text-right font-mono">{{ fmtRp(advance.realized_amount) }}</td></tr>
+                    <tr v-if="advance.settlement_status !== 'pending'"><td colspan="3" class="py-1.5 text-right" :class="advance.settlement >= 0 ? 'text-success-600' : 'text-danger-600'">{{ advance.settlement >= 0 ? 'Dikembalikan ke kas (Refund)' : 'Reimburse (diganti dari kas)' }}</td><td class="py-1.5 text-right font-mono">{{ fmtRp(Math.abs(advance.settlement)) }}</td></tr>
                 </tfoot>
             </table>
             <div v-if="advance.settlement_status === 'pending'" class="mt-3 space-y-2 rounded-lg bg-amber-50 px-4 py-3 dark:bg-amber-900/20">
@@ -144,17 +154,41 @@ function backToIndex() {
                     <h2 class="font-semibold">Realisasi Bon Sementara</h2>
                     <input :value="today" type="date" readonly title="Tanggal realisasi dikunci pada hari ini" :class="[inputCls,'w-auto cursor-not-allowed bg-neutral-100 dark:bg-neutral-800']" />
                 </div>
-                <table class="w-full text-sm">
-                    <thead class="text-left text-xs uppercase text-neutral-500"><tr><th class="py-1">Akun Beban</th><th class="py-1">Keterangan</th><th class="w-36 py-1 text-right">Jumlah</th><th class="w-8"></th></tr></thead>
+                <!-- Lebar kolom ditetapkan lewat <colgroup>, bukan diserahkan ke isi sel.
+                     Akun Beban paling lebar (38%) karena isinya "kode - nama akun" yang panjang
+                     dan paling sering memotong; nama akun yang terpotong membuat operator
+                     harus menerka akun mana yang sedang dipilihnya. Tabel di-scroll mendatar
+                     pada layar sempit agar kolomnya tidak saling menghimpit. -->
+                <div class="overflow-x-auto">
+                <table class="w-full min-w-[880px] text-sm">
+                    <colgroup>
+                        <col style="width:38%"><col style="width:20%"><col style="width:24%">
+                        <col style="width:14%"><col style="width:4%">
+                    </colgroup>
+                    <thead class="text-left text-xs uppercase text-neutral-500"><tr>
+                        <th class="py-1">Akun Beban</th>
+                        <th class="py-1">Cost Center</th>
+                        <th class="py-1">Keterangan</th>
+                        <th class="py-1 text-right">Jumlah</th>
+                        <th></th>
+                    </tr></thead>
                     <tbody>
                         <tr v-for="(l, i) in form.lines" :key="i">
-                            <td class="py-1 pr-2"><SearchSelect :model-value="l.expense_account_id" :options="expenseAccounts" placeholder="— cari akun —" @update:model-value="(v) => l.expense_account_id = v" /></td>
+                            <td class="py-1 pr-2"><SearchSelect :model-value="l.expense_account_id" :options="expenseAccounts" placeholder="— cari akun —" no-truncate @update:model-value="(v) => l.expense_account_id = v" /></td>
+                            <!-- Cost center menentukan anggaran mana yang terpakai; boleh kosong
+                                 untuk beban yang memang tidak dianggarkan per cost center. -->
+                            <td class="py-1 pr-2"><SearchSelect :model-value="l.cost_center_id" :options="costCenters" placeholder="— tanpa cost center —" @update:model-value="(v) => l.cost_center_id = v" /></td>
                             <td class="py-1 pr-2"><input v-model="l.description" :class="inputCls" /></td>
                             <td class="py-1 pr-2"><input v-model.number="l.amount" type="number" step="1" min="0" :class="[inputCls,'text-right']" /></td>
                             <td class="py-1 text-center"><button type="button" @click="removeLine(i)" :disabled="form.lines.length===1" class="text-danger-500 disabled:opacity-30"><Trash2 class="h-4 w-4" /></button></td>
                         </tr>
                     </tbody>
                 </table>
+                </div>
+                <p class="text-xs text-neutral-400">
+                    <b>Cost Center</b> menentukan anggaran mana yang terpakai — beban tanpa cost center tidak akan
+                    muncul sebagai realisasi di Budget Control.
+                </p>
                 <button type="button" @click="addLine" class="inline-flex items-center gap-1 rounded-lg border border-neutral-300 px-2.5 py-1.5 text-xs hover:bg-neutral-50 dark:border-neutral-700"><Plus class="h-3.5 w-3.5" /> Baris</button>
                 <div class="space-y-1 rounded-lg bg-neutral-50 p-3 text-sm dark:bg-neutral-800">
                     <div class="flex justify-between"><span>Nominal</span><span class="font-mono">{{ fmtRp(advance.amount) }}</span></div>
