@@ -1,12 +1,64 @@
 <script setup lang="ts">
-import { ref } from 'vue';
+import { ref, computed, watch } from 'vue';
 import { router, Link } from '@inertiajs/vue3';
-import { Plus, ArrowLeft, FileText, ChevronDown, ListTree } from 'lucide-vue-next';
+import { Plus, ArrowLeft, FileText, ChevronDown, ListTree, Layers } from 'lucide-vue-next';
 import Button from '@/Components/UI/Button.vue';
 import Badge from '@/Components/UI/Badge.vue';
 import EmptyState from '@/Components/UI/EmptyState.vue';
 
-const props = defineProps<{ journals: any; sources: Record<string, string>; statuses: Record<string, string>; filters: Record<string, any>; defaultDetail?: boolean; listRoute?: string; title?: string }>();
+const props = defineProps<{ journals: any; sources: Record<string, string>; statuses: Record<string, string>; filters: Record<string, any>; defaultDetail?: boolean; listRoute?: string; title?: string; canApprove?: boolean }>();
+
+/* ── Aksi massal ────────────────────────────────────────────────────────────
+   Empat aksi, masing-masing SATU LANGKAH pada rantai Baru → Final → Approved.
+   Tidak ada yang melompati dua tahap: jurnal Approved harus dibatalkan approval-nya
+   dulu (kembali Final) sebelum finalisasinya bisa dibatalkan.
+
+   `dari` = status yang boleh ikut. Baris berstatus lain sengaja tidak bisa dicentang
+   untuk aksi itu — lebih jujur daripada membiarkannya dicentang lalu ditolak server. */
+type Aksi = { key: string; label: string; dari: string; jadi: string; rute: string; izin: 'gl' | 'approval'; nada: string };
+const AKSI: Aksi[] = [
+    { key: 'finalisasi',       label: 'Finalisasi Massal',        dari: 'draft',  jadi: 'final',  rute: 'bs.gl.journal.finalize-batch',        izin: 'gl',       nada: 'bg-primary-600 hover:bg-primary-700 text-white' },
+    { key: 'approve',          label: 'Approve Massal',           dari: 'final',  jadi: 'posted', rute: 'bs.gl.journal.approve-batch',         izin: 'approval', nada: 'bg-success-600 hover:bg-success-700 text-white' },
+    { key: 'batal-approve',    label: 'Cancel Approved Massal',   dari: 'posted', jadi: 'final',  rute: 'bs.gl.journal.cancel-batch',          izin: 'approval', nada: 'border border-neutral-300 hover:bg-neutral-50 dark:border-neutral-700' },
+    { key: 'batal-finalisasi', label: 'Cancel Finalisasi Massal', dari: 'final',  jadi: 'draft',  rute: 'bs.gl.journal.cancel-finalize-batch', izin: 'gl',       nada: 'border border-neutral-300 hover:bg-neutral-50 dark:border-neutral-700' },
+];
+
+const aksiKey = ref<string>('finalisasi');
+const aksi = computed<Aksi>(() => AKSI.find((a) => a.key === aksiKey.value) ?? AKSI[0]);
+const aksiTersedia = computed(() => AKSI.filter((a) => a.izin === 'gl' || props.canApprove));
+
+const dipilih = ref<number[]>([]);
+/** Baris yang statusnya cocok dengan aksi terpilih — hanya ini yang bisa dicentang. */
+const bisaDipilih = computed<number[]>(() =>
+    (props.journals?.data ?? []).filter((j: any) => j.status === aksi.value.dari).map((j: any) => Number(j.id)));
+function bolehPilih(j: any) { return j.status === aksi.value.dari; }
+
+// Ganti aksi → centang lama tidak lagi relevan (statusnya beda).
+watch(aksiKey, () => { dipilih.value = []; });
+// Halaman/filter berubah → buang centang yang barisnya sudah tidak ada.
+watch(() => props.journals, () => {
+    const ada = new Set(bisaDipilih.value);
+    dipilih.value = dipilih.value.filter((id) => ada.has(id));
+});
+
+const semuaTercentang = computed<boolean>({
+    get: () => bisaDipilih.value.length > 0 && bisaDipilih.value.every((id) => dipilih.value.includes(id)),
+    set: (v: boolean) => { dipilih.value = v ? [...bisaDipilih.value] : []; },
+});
+
+const memproses = ref(false);
+function jalankanAksi() {
+    if (! dipilih.value.length || memproses.value) return;
+    const a = aksi.value;
+    const pesan = `${a.label}: ${dipilih.value.length} jurnal akan berubah dari `
+        + `${props.statuses[a.dari] ?? a.dari} menjadi ${props.statuses[a.jadi] ?? a.jadi}.\n\nLanjutkan?`;
+    if (! confirm(pesan)) return;
+    memproses.value = true;
+    router.post(route(a.rute), { ids: dipilih.value }, {
+        preserveScroll: true,
+        onFinish: () => { memproses.value = false; dipilih.value = []; },
+    });
+}
 const listRoute = props.listRoute ?? 'bs.gl.journal.index';
 const source = ref(props.filters.source ?? '');
 const statusFilter = ref(props.filters.status ?? '');
@@ -69,15 +121,45 @@ function isOpen(id: number) { return showDetail.value || open.value[id]; }
             </button>
         </div>
 
+        <!-- ══ Aksi massal ══
+             Pilih aksinya DULU, baru centang barisnya: tiap aksi hanya berlaku untuk satu
+             status asal, jadi daftar yang bisa dicentang ikut berubah mengikuti pilihan.
+             Urutan ini mencegah operator mencentang belasan baris lalu ditolak semuanya. -->
+        <div class="card p-3">
+            <div class="flex flex-wrap items-center gap-3">
+                <div class="flex items-center gap-2 text-sm font-semibold"><Layers class="h-4 w-4 text-primary-600" /> Aksi Massal</div>
+                <select v-model="aksiKey" class="h-9 rounded-lg border border-neutral-300 bg-white px-3 text-sm dark:border-neutral-700 dark:bg-neutral-900">
+                    <option v-for="a in aksiTersedia" :key="a.key" :value="a.key">{{ a.label }}</option>
+                </select>
+                <span class="rounded-md bg-neutral-100 px-2 py-1 text-xs text-neutral-600 dark:bg-neutral-800 dark:text-neutral-300">
+                    {{ statuses[aksi.dari] ?? aksi.dari }} → {{ statuses[aksi.jadi] ?? aksi.jadi }}
+                </span>
+                <span class="text-xs text-neutral-500">
+                    {{ dipilih.length }} terpilih · {{ bisaDipilih.length }} bisa dipilih di halaman ini
+                </span>
+                <button type="button" @click="jalankanAksi" :disabled="!dipilih.length || memproses"
+                        class="ml-auto inline-flex h-9 items-center gap-1.5 rounded-lg px-4 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-40"
+                        :class="aksi.nada">
+                    {{ memproses ? 'Memproses…' : aksi.label }}<span v-if="dipilih.length"> ({{ dipilih.length }})</span>
+                </button>
+            </div>
+            <p class="mt-2 text-[11.5px] leading-relaxed text-neutral-500">
+                Setiap aksi bergerak <b>satu tahap</b> pada rantai Baru → Final → Approved.
+                Jurnal <b>Approved tidak bisa langsung kembali ke Baru</b>: batalkan approval-nya dulu
+                (Approved → Final), baru finalisasinya dibatalkan (Final → Baru).
+                Baris yang statusnya tidak cocok dengan aksi terpilih tidak dapat dicentang.
+            </p>
+        </div>
+
         <div class="card overflow-x-auto">
             <table class="w-full text-sm">
                 <thead class="bg-neutral-50 dark:bg-neutral-800"><tr class="text-left text-xs uppercase text-neutral-500">
-                    <th class="px-2 py-3 w-8"></th><th class="px-4 py-3">No. Jurnal</th><th class="px-4 py-3">Tanggal</th><th class="px-4 py-3">Sumber</th><th class="px-4 py-3">Keterangan</th><th class="px-4 py-3 text-center">Status</th><th class="px-4 py-3 text-center">Baris</th><th class="px-4 py-3 text-right">Nilai</th><th class="px-4 py-3 text-right"></th>
+                    <th class="px-2 py-3 w-8"><input v-model="semuaTercentang" type="checkbox" :disabled="!bisaDipilih.length" class="h-4 w-4 rounded border-neutral-300 text-primary-600 focus:ring-primary-500" :title="bisaDipilih.length ? 'Pilih semua yang berstatus ' + (statuses[aksi.dari] ?? aksi.dari) : 'Tidak ada jurnal berstatus ' + (statuses[aksi.dari] ?? aksi.dari) + ' di halaman ini'" /></th><th class="px-2 py-3 w-8"></th><th class="px-4 py-3">No. Jurnal</th><th class="px-4 py-3">Tanggal</th><th class="px-4 py-3">Sumber</th><th class="px-4 py-3">Keterangan</th><th class="px-4 py-3 text-center">Status</th><th class="px-4 py-3 text-center">Baris</th><th class="px-4 py-3 text-right">Nilai</th><th class="px-4 py-3 text-right"></th>
                 </tr></thead>
                 <tbody class="divide-y divide-neutral-200 dark:divide-neutral-800">
                     <template v-for="j in journals.data" :key="j.id">
                         <tr class="hover:bg-neutral-50/60 dark:hover:bg-neutral-800/40">
-                            <td class="px-2 py-2.5 text-center"><button type="button" @click="toggle(j.id)" class="text-neutral-400 hover:text-primary-600"><ChevronDown class="h-4 w-4 transition-transform" :class="{ 'rotate-180': isOpen(j.id) }" /></button></td>
+                            <td class="px-2 py-2.5 text-center"><input v-if="bolehPilih(j)" v-model="dipilih" type="checkbox" :value="Number(j.id)" class="h-4 w-4 rounded border-neutral-300 text-primary-600 focus:ring-primary-500" /><span v-else class="cursor-not-allowed text-neutral-300 dark:text-neutral-600" :title="'Aksi ini hanya untuk jurnal berstatus ' + (statuses[aksi.dari] ?? aksi.dari)">—</span></td><td class="px-2 py-2.5 text-center"><button type="button" @click="toggle(j.id)" class="text-neutral-400 hover:text-primary-600"><ChevronDown class="h-4 w-4 transition-transform" :class="{ 'rotate-180': isOpen(j.id) }" /></button></td>
                             <td class="px-4 py-2.5 font-mono font-semibold">{{ j.journal_number }}</td>
                             <td class="px-4 py-2.5 whitespace-nowrap">{{ fmtDate(j.journal_date) }}</td>
                             <td class="px-4 py-2.5"><Badge variant="info" size="sm">{{ sources[j.source] ?? j.source }}</Badge></td>
@@ -90,7 +172,7 @@ function isOpen(id: number) { return showDetail.value || open.value[id]; }
                         <!-- Rincian baris jurnal (akun debit/kredit) -->
                         <tr v-if="isOpen(j.id)" class="bg-neutral-50 dark:bg-neutral-900/40">
                             <td></td>
-                            <td colspan="8" class="px-4 py-2">
+                            <td colspan="9" class="px-4 py-2">
                                 <table class="w-full text-xs">
                                     <thead><tr class="text-left text-neutral-400"><th class="py-1 pl-2">Akun</th><th class="py-1">Keterangan Baris</th><th class="py-1 text-right">Debit</th><th class="py-1 text-right pr-2">Kredit</th></tr></thead>
                                     <tbody>
