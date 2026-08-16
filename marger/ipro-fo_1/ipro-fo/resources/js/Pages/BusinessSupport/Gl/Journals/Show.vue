@@ -35,7 +35,12 @@ function act(name: string) { router.post(route(`bs.gl.journal.${name}`, props.jo
             <div class="ml-auto flex gap-2">
                 <Button v-if="journal.status==='draft'" size="sm" @click="act('finalize')"><template #icon-left><FileCheck2 class="h-4 w-4" /></template>Finalisasi</Button>
                 <Button v-if="journal.status==='final'" size="sm" @click="act('approve')"><template #icon-left><CheckCircle2 class="h-4 w-4" /></template>Approve</Button>
-                <button v-if="journal.status==='final' || journal.status==='posted'" @click="act('reject')" class="inline-flex h-8 items-center gap-1.5 rounded-lg border border-neutral-300 px-3 text-sm font-medium hover:bg-neutral-50 dark:border-neutral-700"><Undo2 class="h-4 w-4" /> Kembalikan ke Baru</button>
+                <!-- Mundur SATU LANGKAH saja, mengikuti rantai Baru → Final → Approved.
+                     Approved TIDAK boleh langsung ke Baru: approval-nya dibatalkan dulu
+                     (Approved → Final), baru finalisasinya (Final → Baru). Melompati dua tahap
+                     menghapus jejak persetujuan tanpa satu pun langkah yang mencatatnya. -->
+                <button v-if="journal.status==='posted'" @click="act('unapprove')" class="inline-flex h-8 items-center gap-1.5 rounded-lg border border-neutral-300 px-3 text-sm font-medium hover:bg-neutral-50 dark:border-neutral-700" title="Approved → Final"><Undo2 class="h-4 w-4" /> Batalkan Approval</button>
+                <button v-if="journal.status==='final'" @click="act('reject')" class="inline-flex h-8 items-center gap-1.5 rounded-lg border border-neutral-300 px-3 text-sm font-medium hover:bg-neutral-50 dark:border-neutral-700" title="Final → Baru"><Undo2 class="h-4 w-4" /> Batalkan Finalisasi</button>
             </div>
         </div>
         <p v-if="journal.status!=='posted'" class="-mt-2 text-xs text-amber-600">Jurnal hanya efektif di Neraca Saldo / Laporan Keuangan setelah berstatus <b>Approved</b>.</p>

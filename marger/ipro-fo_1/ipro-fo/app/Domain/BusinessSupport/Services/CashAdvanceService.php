@@ -144,6 +144,10 @@ final class CashAdvanceService
             }
             $lines = collect($data['lines'])->map(fn ($l) => [
                 'expense_account_id' => (int) $l['expense_account_id'],
+                // Cost center per baris — inilah yang membuat beban bon sementara bisa
+                // dipasangkan dengan anggarannya oleh BudgetRealizationService. Tanpa ini,
+                // belanja yang nyata terjadi tidak pernah muncul sebagai realisasi anggaran.
+                'cost_center_id'     => ($l['cost_center_id'] ?? null) ? (int) $l['cost_center_id'] : null,
                 'description'        => $l['description'] ?? 'Realisasi',
                 'amount'             => round((float) $l['amount'], 2),
             ])->filter(fn ($l) => $l['amount'] > 0)->values();
@@ -158,7 +162,10 @@ final class CashAdvanceService
             // Jurnal realisasi.
             $jl = [];
             foreach ($lines as $l) {
-                $jl[] = ['account_id' => $l['expense_account_id'], 'debit' => $l['amount'], 'credit' => 0, 'description' => $l['description']];
+                // cost_center_id diteruskan ke bs_journal_lines — di situlah Budget Control
+                // membacanya; menyimpannya hanya di baris bon tidak akan berpengaruh apa pun.
+                $jl[] = ['account_id' => $l['expense_account_id'], 'cost_center_id' => $l['cost_center_id'],
+                    'debit' => $l['amount'], 'credit' => 0, 'description' => $l['description']];
             }
             if ($defer) {
                 // Settlement ditunda → kredit Uang Muka sebatas realisasi; sisa (± settlement) diselesaikan via Refund/Reimburse.

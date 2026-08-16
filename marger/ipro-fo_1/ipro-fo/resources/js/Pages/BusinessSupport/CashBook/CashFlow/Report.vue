@@ -53,6 +53,35 @@ const skey = (m: number, f: 'blokir_angsuran' | 'buffer') => `${m}:${f}`;
 function setVal(s: SumRow, f: 'blokir_angsuran' | 'buffer') { const k = skey(s.month, f); return k in setEdit ? setEdit[k] : s[f]; }
 function setSet(s: SumRow, f: 'blokir_angsuran' | 'buffer', v: any) { setEdit[skey(s.month, f)] = jtToRp(v); }
 
+/**
+ * DUA SALDO TURUNAN — dihitung di layar, bukan sekadar menampilkan angka server.
+ *
+ *   Effective Balance      = Ending Balance   − Blokir Angsuran Loan
+ *   Nett Effective Balance = Effective Balance − Buffer
+ *
+ * Rumusnya sama persis dengan yang dipakai CashFlowPlanController saat menyimpan, tetapi
+ * memakai angka yang SEDANG DIKETIK. Sebelumnya keduanya membaca nilai kiriman server,
+ * jadi mengetik Blokir atau Buffer tidak menggerakkan apa pun sampai ditekan "Simpan
+ * Angka" dan halaman termuat ulang — akibatnya rumusnya tampak tidak berlaku.
+ *
+ * Baris Beginning/Ending sengaja TIDAK ikut dihitung ulang di sini: keduanya berantai dari
+ * mutasi aktual pembukuan, bukan dari angka yang diketik, dan Blokir/Buffer memang tidak
+ * mengubahnya.
+ */
+function effectiveOf(s: SumRow) {
+    return (Number(s.ending) || 0) - (Number(setVal(s, 'blokir_angsuran')) || 0);
+}
+function nettEffectiveOf(s: SumRow) {
+    return effectiveOf(s) - (Number(setVal(s, 'buffer')) || 0);
+}
+/** Angka yang ditampilkan untuk sebuah baris saldo. */
+function saldoVal(s: SumRow, key: string) {
+    if (key === 'effective') return effectiveOf(s);
+    if (key === 'nett_effective') return nettEffectiveOf(s);
+    if (key === 'blokir_angsuran' || key === 'buffer') return Number(setVal(s, key)) || 0;
+    return Number((s as any)[key]) || 0;
+}
+
 // Nilai yang DITAMPILKAN di kotak isian — dalam jutaan, atau teks mentah selama diketik.
 function cellInput(r: Row, mi: number, f: 'wnpb' | 'projection') {
     const k = key(r.id!, props.months[mi], f);
@@ -306,7 +335,11 @@ function kirimImport() {
                             <!-- Saldo hanya punya satu angka per bulan → dimerge melintasi 4 sub-kolom. -->
                             <td colspan="4" class="border border-neutral-200 px-2 py-1 text-right font-mono tabular-nums dark:border-neutral-700">
                                 <input v-if="row.input" :value="setInput(s, row.input)" @input="onType(skey(s.month, row.input), ($event.target as HTMLInputElement).value, v => setSet(s, row.input, v))" @blur="onBlur(skey(s.month, row.input))" type="number" step="any" :class="inCls" title="dalam jutaan rupiah" />
-                                <span v-else :class="numCls((s as any)[row.key])">{{ rpSigned((s as any)[row.key]) }}</span>
+                                <!-- Effective & Nett Effective dihitung dari angka yang sedang diketik,
+                                     jadi mengetik Blokir/Buffer langsung menggerakkan keduanya. -->
+                                <span v-else :class="numCls(saldoVal(s, row.key))"
+                                      :title="row.key === 'effective' ? 'Ending Balance − Blokir Angsuran Loan'
+                                            : (row.key === 'nett_effective' ? 'Effective Balance − Buffer' : undefined)">{{ rpSigned(saldoVal(s, row.key)) }}</span>
                             </td>
                         </template>
                         <td colspan="2" class="border border-neutral-200 bg-primary-50/60 dark:border-neutral-700 dark:bg-primary-950/25"></td>

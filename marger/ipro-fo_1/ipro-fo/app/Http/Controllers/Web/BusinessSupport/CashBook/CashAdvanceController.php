@@ -530,8 +530,11 @@ class CashAdvanceController extends Controller
         abort_unless($request->user()?->canModule('cashbook'), 403);
 
         return Inertia::render('BusinessSupport/CashBook/Advances/Show', [
-            'advance'         => $advance->load(['cashAccount:id,code,name', 'lines.expenseAccount:id,code,name']),
+            'advance'         => $advance->load(['cashAccount:id,code,name', 'lines.expenseAccount:id,code,name', 'lines.costCenter:id,code,name']),
             'expenseAccounts' => BsAccount::where('is_active', true)->where('is_postable', true)->whereIn('type', ['expense', 'asset'])->orderBy('code')->get(['id', 'code', 'name', 'type']),
+            // Cost center per baris realisasi → diteruskan ke jurnal, dibaca Budget Control.
+            'costCenters'     => \App\Domain\BusinessSupport\Models\BsCostCenter::where('is_active', true)
+                ->orderBy('code')->get(['id', 'code', 'name']),
             'cashAccounts'    => $this->cashAccounts(),
             'signers'         => BsCashAdvance::SIGNERS,                                       // #127
             'requiredSigners' => $advance->requiredSigners(),                                  // #127
@@ -550,6 +553,9 @@ class CashAdvanceController extends Controller
             'defer_settlement'         => ['nullable', 'boolean'],
             'lines'                    => ['required', 'array', 'min:1'],
             'lines.*.expense_account_id' => ['required', 'integer', 'exists:bs_accounts,id'],
+            // Nullable: tidak semua beban bercost center, sejalan dengan BudgetController
+            // yang juga memvalidasinya nullable.
+            'lines.*.cost_center_id'   => ['nullable', 'integer', 'exists:bs_cost_centers,id'],
             'lines.*.description'      => ['nullable', 'string', 'max:200'],
             'lines.*.amount'           => ['required', 'numeric', 'min:0.01'],
         ]);

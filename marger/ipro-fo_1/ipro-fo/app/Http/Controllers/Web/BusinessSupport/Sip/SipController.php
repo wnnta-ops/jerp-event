@@ -15,6 +15,8 @@ use App\Http\Controllers\Controller;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response as HttpResponse;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -248,7 +250,11 @@ class SipController extends Controller
     public function print(Request $request, BsSip $sip): HttpResponse
     {
         abort_unless($request->user()?->canModule('bs'), 403);
-        $sip->load(['cashAccount:id,code,name', 'lines.cashAccount:id,code,name']);
+        // sourceable ikut dimuat: departemen pengaju dibaca dari dokumen asalnya
+        // (bon sementara punya department_id; invoice hutang lewat pembuatnya).
+        $sip->load(['cashAccount:id,code,name', 'lines.cashAccount:id,code,name', 'lines.sourceable']);
+
+        $this->tetapkanNomorCetak($sip);
 
         // #111: cetak menandai 'Dicetak' selama belum disetujui semua pihak; jika sudah lengkap tetap 'Disetujui'.
         if (! $sip->isFullyApproved() && ! in_array($sip->status, ['cancelled', 'rejected'], true)) {
@@ -332,6 +338,90 @@ class SipController extends Controller
             ->where('code', 'like', '101010%')->orderBy('code')->get(['id', 'code', 'name']);
     }
 
+    /**
+     * Tetapkan nomor cetak SIP sekali seumur dokumen: NNN/FIN/MITRA-SI/{romawi}/{tahun}.
+     *
+     * Urutannya per TAHUN SIP DIAJUKAN (sip_date), bukan per tahun berjalan — mencetak ulang
+     * SIP tahun lalu tidak boleh menyerobot nomor tahun ini.
+     *
+     * Dikunci lockForUpdate: dua orang menekan Cetak bersamaan pada dokumen berbeda akan
+     * membaca nomor terakhir yang sama dan menerbitkan nomor kembar. Unique index pada
+     * (tenant_id, print_year, print_seq) menjadi penjaga terakhirnya.
+     */
+    private function tetapkanNomorCetak(BsSip $sip): void
+    {
+        if ($sip->print_seq && $sip->print_year) {
+            return;   // sudah bernomor — tidak pernah diganti
+        }
+        if (! Schema::hasColumn('bs_sips', 'print_seq')) {
+            return;   // instalasi belum bermigrasi: cetak tetap jalan, nomornya kosong
+        }
+
+        $tahun = (int) (optional($sip->sip_date)->year ?: now()->year);
+
+        DB::transaction(function () use ($sip, $tahun) {
+            $terakhir = (int) BsSip::where('print_year', $tahun)
+                ->lockForUpdate()->max('print_seq');
+            $sip->forceFill(['print_seq' => $terakhir + 1, 'print_year' => $tahun])->save();
+        });
+    }
+
+    /** Label untuk baris yang departemen pengajunya tidak diketahui. */
+    private const TANPA_DEPT = 'Tanpa Departemen';
+
+    /**
+     * Departemen pengaju tiap baris SIP → [sip_line_id => nama departemen].
+     *
+     * Dua sumber, dua jalur:
+     *  · Bon Sementara  — punya department_id sendiri (dipilih saat pengajuan bon).
+     *  · Invoice Hutang — TIDAK punya kolom departemen. Ditelusuri lewat pembuatnya:
+     *    users.employee_nip → bs_employees.nik → bs_hr_departments. Rantai yang sama
+     *    dipakai Bukti Permohonan Pembayaran untuk mengisi barisnya "Departemen", jadi
+     *    kedua dokumen menyebut departemen yang sama untuk invoice yang sama.
+     *
+     * Semua dibaca sekali (dua query lookup), bukan per baris — SIP bisa memuat puluhan baris.
+     *
+     * @return array<int, string>
+     */
+    private function departemenPerBaris(BsSip $sip): array
+    {
+        $lines = $sip->lines;
+
+        // 1) Bon sementara → department_id langsung.
+        $advIds = $lines->where('sourceable_type', BsCashAdvance::class)->pluck('sourceable_id')->filter()->unique();
+        $deptBon = [];
+        if ($advIds->isNotEmpty() && Schema::hasColumn('bs_cash_advances', 'department_id')) {
+            $deptBon = DB::table('bs_cash_advances as a')
+                ->leftJoin('bs_hr_departments as d', 'd.id', '=', 'a.department_id')
+                ->whereIn('a.id', $advIds)
+                ->pluck('d.name', 'a.id')->all();
+        }
+
+        // 2) Invoice hutang → lewat pembuatnya.
+        $invIds = $lines->where('sourceable_type', BsApInvoice::class)->pluck('sourceable_id')->filter()->unique();
+        $deptInv = [];
+        if ($invIds->isNotEmpty() && Schema::hasColumn('bs_ap_invoices', 'created_by')) {
+            $deptInv = DB::table('bs_ap_invoices as i')
+                ->leftJoin('users as u', 'u.id', '=', 'i.created_by')
+                ->leftJoin('bs_employees as e', 'e.nik', '=', 'u.employee_nip')
+                ->leftJoin('bs_hr_departments as d', 'd.id', '=', 'e.department_id')
+                ->whereIn('i.id', $invIds)
+                ->pluck('d.name', 'i.id')->all();
+        }
+
+        $out = [];
+        foreach ($lines as $l) {
+            $nama = match ($l->sourceable_type) {
+                BsCashAdvance::class => $deptBon[$l->sourceable_id] ?? null,
+                BsApInvoice::class   => $deptInv[$l->sourceable_id] ?? null,
+                default              => null,
+            };
+            $out[$l->id] = trim((string) $nama) !== '' ? (string) $nama : self::TANPA_DEPT;
+        }
+
+        return $out;
+    }
+
     private function renderPrint(BsSip $sip): string
     {
         $e  = fn ($s) => htmlspecialchars((string) $s, ENT_QUOTES, 'UTF-8');
@@ -342,20 +432,45 @@ class SipController extends Controller
         $bankList = $sip->lines->map(fn ($l) => $l->cashAccount ? $l->cashAccount->code.' — '.$l->cashAccount->name : null)->filter()->unique()->values();
         $bank = $bankList->isNotEmpty() ? $e($bankList->implode('   |   ')) : ($e($sip->cashAccount?->code).' — '.$e($sip->cashAccount?->name));
 
-        // #123: total per bank sumber, TANPA grand total lintas bank.
+        // Pengelompokan DUA TINGKAT: departemen pengaju (luar) → bank sumber (dalam).
+        //
+        // Departemen di luar karena itulah yang diminta pembaca dokumen: siapa yang mengajukan
+        // tagihan/bon ini. Bank sumber DIPERTAHANKAN di dalam berikut subtotalnya (#123) —
+        // bank yang mengeksekusi instruksi ini butuh total per rekening sumber, dan membuangnya
+        // demi pengelompokan baru akan merusak kegunaan dokumennya sebagai instruksi bayar.
+        $departemen = $this->departemenPerBaris($sip);
+
+        // Nomor cetak resmi dokumen ini. Ditonjolkan di atas nomor dokumen internal
+        // (SIP/MUP/..) karena inilah nomor yang dirujuk bank dan penyetuju.
+        $nomorCetak = $sip->printNumber()
+            ? '<div style="font-size:12px;font-weight:700;color:#1f2937">'.$e($sip->printNumber()).'</div>'
+            : '';
+
         $rows = '';
         $no = 0;
-        foreach ($sip->lines->groupBy('cash_account_id') as $glines) {
-            $acc = $glines->first()->cashAccount;
-            $bankLabel = $acc ? $e($acc->code).' — '.$e($acc->name) : 'Bank Sumber';
-            $sub = 0.0;
-            $rows .= '<tr class="grp"><td colspan="6">Bank Sumber: '.$bankLabel.'</td></tr>';
-            foreach ($glines as $l) {
-                $no++;
-                $sub += (float) $l->amount;
-                $rows .= '<tr><td class="c">'.$no.'</td><td>'.$e($l->payee_name).'</td><td>'.$e($l->dest_bank_name).'</td><td>'.$e($l->dest_account_no).'</td><td>'.$e($l->description).'</td><td class="r">'.$rp($l->amount).'</td></tr>';
+        $perDept = $sip->lines->groupBy(fn ($l) => $departemen[$l->id] ?? self::TANPA_DEPT);
+        // Departemen bernama lebih dulu, "Tanpa Departemen" selalu di ekor.
+        $perDept = $perDept->sortKeys()->sortBy(fn ($v, $k) => $k === self::TANPA_DEPT ? 1 : 0);
+
+        foreach ($perDept as $namaDept => $dlines) {
+            $totalDept = 0.0;
+            $rows .= '<tr class="dept"><td colspan="6">DEPARTEMEN: '.$e($namaDept).'</td></tr>';
+
+            foreach ($dlines->groupBy('cash_account_id') as $glines) {
+                $acc = $glines->first()->cashAccount;
+                $bankLabel = $acc ? $e($acc->code).' — '.$e($acc->name) : 'Bank Sumber';
+                $sub = 0.0;
+                $rows .= '<tr class="grp"><td colspan="6">Bank Sumber: '.$bankLabel.'</td></tr>';
+                foreach ($glines as $l) {
+                    $no++;
+                    $sub += (float) $l->amount;
+                    $rows .= '<tr><td class="c">'.$no.'</td><td>'.$e($l->payee_name).'</td><td>'.$e($l->dest_bank_name).'</td><td>'.$e($l->dest_account_no).'</td><td>'.$e($l->description).'</td><td class="r">'.$rp($l->amount).'</td></tr>';
+                }
+                $rows .= '<tr class="sub"><td colspan="5" class="r">Total — '.$bankLabel.'</td><td class="r">'.$rp($sub).'</td></tr>';
+                $totalDept += $sub;
             }
-            $rows .= '<tr class="sub"><td colspan="5" class="r">Total — '.$bankLabel.'</td><td class="r">'.$rp($sub).'</td></tr>';
+
+            $rows .= '<tr class="deptsub"><td colspan="5" class="r">Total Departemen — '.$e($namaDept).'</td><td class="r">'.$rp($totalDept).'</td></tr>';
         }
 
         // Slot yang sudah disetujui dicetak dengan BARCODE tanda tangan penyetujunya. Bila
@@ -384,6 +499,9 @@ class SipController extends Controller
             table{border-collapse:collapse;width:100%;margin:6px 0;font-size:10px}th,td{border:1px solid #cbd5e1;padding:4px 6px;text-align:left}
             .r{text-align:right;font-variant-numeric:tabular-nums}.c{text-align:center}.tot{font-weight:bold;background:#f1f5f9}
             .grp{background:#e2e8f0;font-weight:600}.sub{background:#f8fafc;font-weight:600}
+            /* Departemen = pengelompokan terluar, dibuat paling menonjol supaya terbaca lebih dulu daripada bank sumber. */
+            .dept{background:#1f2937;color:#fff;font-weight:700;letter-spacing:.03em}
+            .deptsub{background:#e2e8f0;font-weight:700;border-top:2px solid #1f2937}
             .signs{display:grid;grid-template-columns:repeat(7,1fr);gap:6px;margin-top:24px}
             .sign-box{text-align:center;font-size:9px}.sign-label{font-weight:600;margin-bottom:2px}.sign-space{height:52px}.sign-name{border-top:1px solid #1f2937;padding-top:2px;min-height:12px}
             /* QR berbentuk KOTAK — ruang TTD ditinggikan & gambarnya dibatasi tinggi kotak. */
@@ -391,7 +509,7 @@ class SipController extends Controller
             .sign-bc svg{max-width:100%;max-height:52px;height:auto;width:auto}
             @media print{.noprint{display:none}}</style></head><body>
             <div class="head"><div><h1>STANDING INSTRUCTION PAYMENT (SIP)</h1><div class="muted">'.$e($co).'</div></div>
-            <div class="muted" style="text-align:right">No: '.$e($sip->sip_number).'<br>Cetak: '.$e($now).'</div></div>
+            <div class="muted" style="text-align:right">'.$nomorCetak.'No. Dokumen: '.$e($sip->sip_number).'<br>Cetak: '.$e($now).'</div></div>
             <dl><dt>Tanggal</dt><dd>'.$e(optional($sip->sip_date)->translatedFormat('d F Y')).'</dd>
             <dt>Bank Sumber</dt><dd>'.$bank.'</dd>
             <dt>Judul / Ket.</dt><dd>'.$e($sip->title ?: $sip->description ?: '-').'</dd></dl>

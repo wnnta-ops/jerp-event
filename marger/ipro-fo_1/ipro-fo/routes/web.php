@@ -507,7 +507,10 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
     Route::put('/business-support/gl/journal/{journal}',      [BsJournalController::class, 'update'])->name('bs.gl.journal.update'); // #54
     Route::post('/business-support/gl/journal/{journal}/finalize', [BsJournalController::class, 'finalize'])->name('bs.gl.journal.finalize');
     Route::post('/business-support/gl/journal/{journal}/approve',  [BsJournalController::class, 'approve'])->name('bs.gl.journal.approve');
+    // reject = Final → Baru (batal finalisasi) · unapprove = Approved → Final (batal approval).
+    // Dipisah sengaja: satu tombol per satu langkah, tidak ada yang melompati dua tahap.
     Route::post('/business-support/gl/journal/{journal}/reject',   [BsJournalController::class, 'reject'])->name('bs.gl.journal.reject');
+    Route::post('/business-support/gl/journal/{journal}/unapprove', [BsJournalController::class, 'unapprove'])->name('bs.gl.journal.unapprove');
     // Master → Jurnal (ringkas) vs Query → Detail Transaksi Jurnal (rincian) — controller sama, mode beda by route.
     Route::get('/business-support/gl/journal-detail',          [BsJournalController::class, 'index'])->name('bs.gl.journal.detail');
     // Finalisasi Jurnal (daftar Baru per periode + batch finalisasi) & Approval Jurnal (grid batch Final→Approved).
@@ -515,7 +518,14 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
     Route::post('/business-support/gl/journal-finalize-batch', [BsJournalController::class, 'finalizeBatch'])->name('bs.gl.journal.finalize-batch');
     Route::get('/business-support/gl/journal-approval',        [BsJournalController::class, 'approval'])->name('bs.gl.journal.approval');
     Route::post('/business-support/gl/journal-approve-batch',  [BsJournalController::class, 'approveBatch'])->name('bs.gl.journal.approve-batch');
+    // Empat aksi massal, masing-masing SATU langkah pada rantai Baru → Final → Approved:
+    //   finalize-batch        Baru     → Final
+    //   approve-batch         Final    → Approved
+    //   cancel-batch          Approved → Final     (batal approval)
+    //   cancel-finalize-batch Final    → Baru      (batal finalisasi)
+    // Tidak ada aksi yang melompati dua tahap sekaligus.
     Route::post('/business-support/gl/journal-cancel-batch',   [BsJournalController::class, 'cancelBatch'])->name('bs.gl.journal.cancel-batch');
+    Route::post('/business-support/gl/journal-cancel-finalize-batch', [BsJournalController::class, 'cancelFinalizeBatch'])->name('bs.gl.journal.cancel-finalize-batch');
     Route::get('/business-support/gl/journal-import',         [BsJournalImportController::class, 'form'])->name('bs.gl.journal.import');
     Route::get('/business-support/gl/journal-import/template', [BsJournalImportController::class, 'template'])->name('bs.gl.journal.import.template');
     Route::post('/business-support/gl/journal-import',        [BsJournalImportController::class, 'store'])->name('bs.gl.journal.import.store');

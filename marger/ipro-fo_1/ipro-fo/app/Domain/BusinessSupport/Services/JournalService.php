@@ -262,12 +262,27 @@ final class JournalService
         return $journal;
     }
 
-    /** Final/Approved → Baru (buka kembali; hanya bila periode belum closed). */
+    /**
+     * Final → Baru (batal finalisasi). SATU LANGKAH SAJA.
+     *
+     * Jurnal Approved TIDAK boleh langsung kembali ke Baru: statusnya harus dibatalkan
+     * approval-nya lebih dulu (unapprove: Approved → Final), baru finalisasinya dibatalkan
+     * (reject: Final → Baru). Melompati dua tahap sekaligus menghapus jejak persetujuan
+     * tanpa ada satu pun langkah yang mencatat bahwa persetujuan itu pernah dicabut —
+     * dan jurnal yang sudah efektif di buku besar bisa berubah jadi draft yang bebas
+     * disunting hanya dengan satu klik.
+     */
     public function reject(BsJournal $journal): BsJournal
     {
         $this->assertPeriodOpen($journal);
-        if (! in_array($journal->status, ['final', 'posted'], true)) {
-            throw new BusinessRuleException('Hanya jurnal Final/Approved yang bisa dikembalikan ke Baru.', errorCode: 'JOURNAL_NOT_REVERSIBLE');
+        if ($journal->status === 'posted') {
+            throw new BusinessRuleException(
+                'Jurnal Approved tidak bisa langsung dikembalikan ke Baru. Batalkan approval-nya dulu (Approved → Final), baru finalisasinya dibatalkan.',
+                errorCode: 'JOURNAL_SKIP_STEP',
+            );
+        }
+        if ($journal->status !== 'final') {
+            throw new BusinessRuleException('Hanya jurnal Final yang bisa dikembalikan ke Baru.', errorCode: 'JOURNAL_NOT_REVERSIBLE');
         }
         $from = (string) $journal->status;
         $journal->update(['status' => 'draft', 'finalized_at' => null, 'posted_at' => null, 'approved_by' => null]);
