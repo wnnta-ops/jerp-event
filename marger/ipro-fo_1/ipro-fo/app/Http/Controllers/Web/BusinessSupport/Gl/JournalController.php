@@ -47,6 +47,8 @@ class JournalController extends Controller
             'defaultDetail' => $isDetail,
             'listRoute'     => $isDetail ? 'bs.gl.journal.detail' : 'bs.gl.journal.index',
             'title'         => $isDetail ? 'Detail Transaksi Jurnal' : 'Jurnal',
+            // Aksi massal Approve / Cancel Approved hanya untuk yang berwenang menyetujui.
+            'canApprove'    => (bool) $request->user()?->can('businesssupport.approval.act'),
             'filters'  => array_merge(
                 $request->only(['source', 'status', 'search']),
                 ['date_from' => $from->toDateString(), 'date_to' => $to->toDateString()],
@@ -143,7 +145,22 @@ class JournalController extends Controller
     {
         abort_unless($request->user()?->can('businesssupport.approval.act'), 403);
 
-        return $this->batch($request, fn (BsJournal $j) => $svc->unapprove($j), 'dibatalkan approval-nya');
+        return $this->batch($request, fn (BsJournal $j) => $svc->unapprove($j), 'dibatalkan approval-nya (kembali Final)');
+    }
+
+    /**
+     * Batch batal finalisasi: final → draft.
+     *
+     * Jurnal Approved sengaja TIDAK ikut: rantainya satu langkah demi satu langkah, jadi
+     * approval-nya harus dibatalkan lebih dulu. JournalService::reject() menolaknya dengan
+     * pesan yang menerangkan urutannya, dan penolakan itu terhitung sebagai "gagal" di
+     * ringkasan batch — operator tahu persis berapa yang tidak ikut dan mengapa.
+     */
+    public function cancelFinalizeBatch(Request $request, JournalService $svc): RedirectResponse
+    {
+        abort_unless($request->user()?->canModule('gl'), 403);
+
+        return $this->batch($request, fn (BsJournal $j) => $svc->reject($j), 'dibatalkan finalisasinya (kembali Baru)');
     }
 
     /**
@@ -474,11 +491,20 @@ class JournalController extends Controller
         return $this->transition(fn () => $svc->approve($journal, $request->user()->id), $journal, 'Jurnal di-approve — efektif di GL.');
     }
 
+    /** Final → Baru (batal finalisasi). Jurnal Approved ditolak service-nya. */
     public function reject(Request $request, BsJournal $journal, JournalService $svc): RedirectResponse
+    {
+        abort_unless($request->user()?->canModule('gl'), 403);
+
+        return $this->transition(fn () => $svc->reject($journal), $journal, 'Finalisasi dibatalkan — jurnal kembali ke Baru.');
+    }
+
+    /** Approved → Final (batal approval). Langkah WAJIB sebelum bisa kembali ke Baru. */
+    public function unapprove(Request $request, BsJournal $journal, JournalService $svc): RedirectResponse
     {
         abort_unless($request->user()?->can('businesssupport.approval.act'), 403);
 
-        return $this->transition(fn () => $svc->reject($journal), $journal, 'Jurnal dikembalikan ke Baru.');
+        return $this->transition(fn () => $svc->unapprove($journal), $journal, 'Approval dibatalkan — jurnal kembali ke Final.');
     }
 
     private function transition(callable $fn, BsJournal $journal, string $message): RedirectResponse

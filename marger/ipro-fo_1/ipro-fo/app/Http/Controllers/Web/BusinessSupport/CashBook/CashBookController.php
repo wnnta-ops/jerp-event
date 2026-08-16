@@ -343,8 +343,16 @@ class CashBookController extends Controller
             'defaultType'     => $cashTransaction->trx_type,
             // #148: saat edit, kunci jenis ke jenis transaksi yang sudah ada (tidak boleh diubah).
             'allowedTypes'    => [$cashTransaction->trx_type],
+            // trx_date DITULIS ULANG sebagai string Y-m-d.
+            //
+            // Model::only() mengambil nilai lewat getAttribute(), jadi yang keluar adalah objek
+            // Carbon — dan json_encode() atas Carbon memakai serialisasi Carbon sendiri (ISO
+            // UTC), MELEWATI format cast pada model. Di zona Asia/Jakarta (UTC+7), tanggal
+            // 2026-08-16 terkirim sebagai "2026-08-15T17:00:00Z" dan layar membacanya
+            // 15 Agustus — tanggal mundur sehari setiap kali dokumen dibuka untuk diedit.
             'editing'         => array_merge(
-                $cashTransaction->only(['id', 'trx_type', 'trx_date', 'cash_account_id', 'counter_account_id', 'amount', 'payee', 'description', 'reference']),
+                $cashTransaction->only(['id', 'trx_type', 'cash_account_id', 'counter_account_id', 'amount', 'payee', 'description', 'reference']),
+                ['trx_date' => $cashTransaction->trx_date?->toDateString()],
                 ['lines' => $cashTransaction->lines()->get(['account_id', 'amount', 'description'])->toArray()],
             ),
         ]);
@@ -457,7 +465,11 @@ class CashBookController extends Controller
                 ->when($from, fn ($q) => $q->whereDate('bs_journals.journal_date', '>=', $from))
                 ->when($to, fn ($q) => $q->whereDate('bs_journals.journal_date', '<=', $to))
                 ->orderBy('bs_journals.journal_date')->orderBy('bs_journal_lines.id')
-                ->get(['bs_journal_lines.id', 'bs_journal_lines.journal_id', 'bs_journals.journal_date', 'bs_journals.journal_number', 'bs_journals.reference', 'bs_journals.source', 'bs_journal_lines.description', 'bs_journal_lines.debit', 'bs_journal_lines.credit']);
+                // bs_journals.description ikut diambil: keterangan baris jurnal sering hanya
+                // menyebut nomor dokumen ("Transfer bon sementara BON/2608/0006"), sedangkan
+                // keterangan KEPALA jurnal-lah yang menerangkan perkaranya — mis. "Pembayaran
+                // Bon Sementara — Kasbon olahraga (Andi Wijaya — Manager Finance)".
+                ->get(['bs_journal_lines.id', 'bs_journal_lines.journal_id', 'bs_journals.journal_date', 'bs_journals.journal_number', 'bs_journals.reference', 'bs_journals.source', 'bs_journals.description as journal_description', 'bs_journal_lines.description', 'bs_journal_lines.debit', 'bs_journal_lines.credit']);
 
             // Anotasi per-mutasi: tag kategori arus kas + pembagian cluster (di-load sekali).
             $lineIds = $rows->pluck('id');
@@ -476,12 +488,19 @@ class CashBookController extends Controller
                 $running += (float) $r->debit - (float) $r->credit;
                 $tag = $cfTags[$r->id] ?? null;
 
+                // Keterangan kepala jurnal hanya dikirim bila BERBEDA dari keterangan barisnya —
+                // kalau sama persis, mencetaknya dua kali cuma menggandakan kalimat yang sama.
+                $ketBaris  = trim((string) $r->description);
+                $ketJurnal = trim((string) $r->journal_description);
+
                 return [
                     'id' => $r->id,
+                    'journal_id' => $r->journal_id,   // tujuan pranala nomor referensi
                     'trx_id' => $trxByJournal[$r->journal_id] ?? null,
                     'journal_id' => $r->journal_id, // #3 — buka Detail Jurnal dari baris Rekening Ledger
                     'date' => (string) $r->journal_date, 'ref' => $r->reference ?: $r->journal_number,
-                    'source' => $r->source, 'desc' => $r->description,
+                    'source' => $r->source, 'desc' => $ketBaris,
+                    'journal_desc' => ($ketJurnal !== '' && $ketJurnal !== $ketBaris) ? $ketJurnal : null,
                     'debit' => (float) $r->debit, 'credit' => (float) $r->credit, 'balance' => round($running, 2),
                     'cf_direct_category_id' => $tag?->cf_direct_category_id,
                     'cf_indirect_category_id' => $tag?->cf_indirect_category_id,

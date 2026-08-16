@@ -19,10 +19,28 @@ class BsSip extends Model
 
     protected $table = 'bs_sips';
     protected $fillable = [
-        'tenant_id', 'sip_number', 'sip_date', 'title', 'cash_account_id',
+        'tenant_id', 'sip_number', 'print_seq', 'print_year', 'sip_date', 'title', 'cash_account_id',
         'description', 'total', 'status', 'approvals', 'created_by',
         'rejection_reason', 'rejected_by', 'rejected_at', // #122
     ];
+
+    /** Angka Romawi bulan 1–12, untuk nomor cetak SIP. */
+    public const ROMAWI = [1 => 'I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X', 'XI', 'XII'];
+
+    /**
+     * Nomor cetak: NNN/FIN/MITRA-SI/{bulan romawi}/{tahun}, mengikuti tanggal SIP diajukan.
+     * Kosong bila belum pernah dicetak — penomorannya ditetapkan saat pencetakan pertama.
+     */
+    public function printNumber(): ?string
+    {
+        if (! $this->print_seq || ! $this->print_year) {
+            return null;
+        }
+        $bulan = (int) (optional($this->sip_date)->month ?: 1);
+
+        return str_pad((string) $this->print_seq, 3, '0', STR_PAD_LEFT)
+            .'/FIN/MITRA-SI/'.(self::ROMAWI[$bulan] ?? 'I').'/'.$this->print_year;
+    }
     protected $casts = [
         'sip_date'    => 'date',
         'total'       => 'decimal:2',

@@ -14,7 +14,14 @@ const props = defineProps<{
     editing?: any;
 }>();
 
-const today = new Date().toISOString().slice(0, 10);
+// Tanggal HARI INI menurut jam pengguna, bukan UTC.
+// toISOString() mengubahnya ke UTC lebih dulu; di Jakarta (UTC+7) itu berarti setiap
+// transaksi yang dibuat sebelum pukul 07.00 akan tertanggal KEMARIN.
+const today = (() => {
+    const d = new Date();
+    const p = (n: number) => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+})();
 const e = props.editing;
 
 type Line = { account_id: number | string; amount: number; description: string };

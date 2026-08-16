@@ -20,7 +20,19 @@ class BsCashTransaction extends Model
         'amount', 'payee', 'description', 'reference', 'journal_id', 'created_by',
         'approval_status', 'approved_by', 'approved_at',
     ];
-    protected $casts = ['trx_date' => 'date', 'amount' => 'decimal:2', 'approved_at' => 'datetime'];
+    /**
+     * trx_date memakai format 'date:Y-m-d', BUKAN 'date' saja.
+     *
+     * Cast 'date' polos diserialisasi Laravel ke ISO-8601 dalam UTC. Aplikasi ini berzona
+     * Asia/Jakarta (UTC+7), sehingga tanggal 2026-08-16 keluar sebagai
+     * "2026-08-15T17:00:00.000000Z" — dan layar yang memotong 10 karakter pertama membaca
+     * 15 Agustus. Tanggal transaksi kas jadi mundur sehari setiap kali dokumen dibuka untuk
+     * diedit, dan ikut tersimpan mundur bila operator menekan Simpan tanpa memperbaikinya.
+     *
+     * Kolomnya memang DATE (tanpa jam), jadi memformatnya Y-m-d bukan sekadar tambalan:
+     * itulah bentuk yang jujur mewakili isinya, dan langsung cocok dengan <input type="date">.
+     */
+    protected $casts = ['trx_date' => 'date:Y-m-d', 'amount' => 'decimal:2', 'approved_at' => 'datetime'];
 
     public const TYPES = [
         'in'       => 'Kas Masuk (BKM)',
