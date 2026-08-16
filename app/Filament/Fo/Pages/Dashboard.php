@@ -193,11 +193,18 @@ class Dashboard extends BaseDashboard
         return number_format($n, 0, ',', '.');
     }
 
-    /** Pipeline penjualan: NUP → Hold → Booking → Kontrak → Lunas + Batal. */
+    /** Pipeline penjualan: NUP → NUP Terbayar → Hold → Booking → Kontrak → Lunas + Batal. */
     public function getPipeline(): array
     {
         return Cache::remember($this->cacheKey('pipeline'), 120, fn (): array => [
             ['label' => 'NUP',           'count' => NupRegistration::count()],
+            // UTJ sudah masuk. Memakai kedua penanda seperti isUtjPaid(): xendit_status
+            // PAID (dari webhook/sinkron) ATAU verif_status PAID (approve manual saat
+            // pembayaran dicek langsung di Xendit). Menghitung salah satunya saja
+            // membuat angkanya kurang tanpa ada yang menyadari.
+            ['label' => 'NUP Terbayar',  'count' => NupRegistration::where(fn ($q) => $q
+                ->where('xendit_status', 'PAID')
+                ->orWhere('verif_status', NupRegistration::VERIF_PAID))->count()],
             ['label' => 'Hold Unit',     'count' => Unit::where('status', 'HOLD')->count()],
             ['label' => 'Booking',       'count' => Kontrak::where('status', 'BOOKING')->count()],
             ['label' => 'Kontrak Aktif', 'count' => Kontrak::where('status', 'AKTIF')->count()],
