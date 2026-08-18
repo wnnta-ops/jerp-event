@@ -25,7 +25,7 @@ const cfGrouped = computed(() => {
     const out: Array<{ label: string; items: Array<{ id: number; label: string }> }> = [];
     for (const sec of ['inflow_ops', 'outflow', 'inflow_non_ops']) {
         const items = (props.cfCategories ?? []).filter(c => c.section === sec)
-            .map(c => ({ id: c.id, label: (c.group_name ? `${c.group_name} · ` : '') + c.name }));
+            .map(c => ({ id: c.id, label: (c.group_name ? `${c.group_name} - ` : '') + c.name }));
         if (items.length) out.push({ label: SECTION_LABEL[sec] ?? sec, items });
     }
     return out;
@@ -40,7 +40,7 @@ const cfGrouped = computed(() => {
  * tidak mungkin dilakukan pada <select> ber-optgroup.
  */
 const cfOptions = computed(() =>
-    cfGrouped.value.flatMap((g) => g.items.map((o) => ({ id: o.id, label: `${g.label} · ${o.label}` }))));
+    cfGrouped.value.flatMap((g) => g.items.map((o) => ({ id: o.id, label: `${g.label} - ${o.label}` }))));
 
 const account = ref(props.accountId ?? '');
 const from = ref(props.filters.from ?? '');
