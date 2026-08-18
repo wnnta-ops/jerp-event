@@ -272,11 +272,6 @@ export function navGroups(foUrl: string): NavGroup[] {
         icon: Receipt, color: '#f43f5e', route: 'bs.ap.index',
         desc: 'Invoice & pembayaran hutang supplier.',
         items: [
-            { label: 'General Function', icon: FileText, permission: ['businesssupport.view', 'ap.*'], children: [
-                // Satu-satunya anak grup ini; namanya disamakan dengan grupnya agar tidak
-                // terbaca sebagai dua tingkat berbeda ("General Function → Print-Out").
-                { label: 'General Function', href: 'bs.ap.printhub' },
-            ]},
             { label: 'Setup', icon: SlidersHorizontal, permission: ['businesssupport.view', 'ap.*'], children: [
                 { label: 'Transaction Rule', href: 'bs.gl.transaction-rule.index', params: { source: 'ap' } },
                 { label: 'Kategori Invoice', href: 'bs.ap.categories.index' },
@@ -295,6 +290,9 @@ export function navGroups(foUrl: string): NavGroup[] {
                 { label: 'Kartu Pembayaran Hutang', href: 'bs.ap.payment-card' },
                 { label: 'Laporan Invoice Hutang', href: 'bs.ap.report' },
                 { label: 'Laporan Penghapusan Hutang', href: 'bs.ap.penghapusan.report' },
+                // Dipindah ke sini dari grup "General Function" yang dihapus: isinya laporan,
+                // dan tempatnya laporan di modul ini adalah Query.
+                { label: 'Rekap PPh Dipotong', href: 'bs.tax.pph' },
             ]},
             { label: 'Generate Invoice', icon: ClipboardList, permission: ['businesssupport.view', 'ap.*'], children: [
                 { label: 'Registrasi Invoice Hutang', href: 'bs.ap.create' },

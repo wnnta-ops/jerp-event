@@ -616,9 +616,8 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
     // ── ACCOUNT PAYABLE (Hutang) — modul mandiri; /account-payable → hub AP ──
     Route::redirect('/account-payable', '/business-support/payable-hub')->name('ap.home');
     Route::get('/business-support/payable-hub',               [BsApController::class, 'hub'])->name('bs.ap.home');
-    Route::get('/business-support/payable-print-out',         [BsApController::class, 'printHub'])->name('bs.ap.printhub');
     Route::get('/business-support/payable-section/{section}',  [BsApController::class, 'section'])
-        ->whereIn('section', ['general', 'setup', 'master', 'query', 'generate', 'penyesuaian', 'posting-po', 'posting-spk', 'saldoawal'])
+        ->whereIn('section', ['setup', 'master', 'query', 'generate', 'penyesuaian', 'posting-po', 'posting-spk', 'saldoawal'])
         ->name('bs.ap.section');
     Route::get('/business-support/payable',                   [BsApController::class, 'index'])->name('bs.ap.index');
     Route::get('/business-support/payable-export',            [BsApController::class, 'export'])->name('bs.ap.export');

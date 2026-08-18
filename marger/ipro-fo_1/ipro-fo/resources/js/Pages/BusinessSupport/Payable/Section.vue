@@ -14,9 +14,6 @@ function r(name?: string | null, params?: Record<string, any>): string | null {
 
 type Item = { label: string; route: string | null; summary?: string | null };
 const sections = computed<Record<string, Item[]>>(() => ({
-    general: [
-        { label: 'General Function', route: r('bs.ap.printhub') },
-    ],
     setup: [
         { label: 'Transaction Rule', route: r('bs.gl.transaction-rule.index', { source: 'ap' }) },
         { label: 'Kategori Invoice', route: r('bs.ap.categories.index') },
@@ -33,6 +30,7 @@ const sections = computed<Record<string, Item[]>>(() => ({
         { label: 'Proyeksi Hutang', route: r('bs.projection', { mode: 'hutang' }), summary: r('bs.projection', { mode: 'hutang', view: 'summary' }) },
         { label: 'Kartu Pembayaran Hutang', route: r('bs.ap.payment-card') },
         { label: 'Laporan Invoice Hutang', route: r('bs.ap.report') },
+        { label: 'Rekap PPh Dipotong', route: r('bs.tax.pph') },
     ],
     generate: [
         { label: 'Registrasi Invoice Hutang', route: r('bs.ap.create') },
