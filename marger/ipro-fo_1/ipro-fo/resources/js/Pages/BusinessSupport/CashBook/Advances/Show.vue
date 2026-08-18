@@ -35,13 +35,54 @@ const realized = computed(() => form.lines.reduce((s: number, l: any) => s + (Nu
 const settlement = computed(() => Number(props.advance.amount) - realized.value); // + kembali / - nombok
 function addLine() { form.lines.push({ expense_account_id: '', cost_center_id: '', description: '', amount: 0 }); }
 function removeLine(i: number) { form.lines.splice(i, 1); }
-function submit() { form.post(route('bs.advance.realize', props.advance.id), { onSuccess: () => { showForm.value = false; } }); }
+// Gerbangnya dipasang DUA kali, bukan sekali di tombol saja: menekan Enter di kolom teks
+// memicu pengiriman implisit, dan itu tidak melewati tombolnya.
+function submit() {
+    if (!bisaSimpan.value) return;
+    form.post(route('bs.advance.realize', props.advance.id), { onSuccess: () => { showForm.value = false; } });
+}
+
+/**
+ * Kelengkapan baris realisasi — penentu hidup-matinya tombol "Simpan Realisasi".
+ *
+ * Cost center SENGAJA tidak ikut diwajibkan: "— tanpa cost center —" adalah pilihan yang
+ * memang disediakan untuk beban yang tidak dianggarkan per cost center, akibatnya sudah
+ * diterangkan tepat di bawah tabel, dan server pun memvalidasinya nullable sejalan dengan
+ * BudgetController. Mewajibkannya di sini akan mematikan pilihan itu diam-diam.
+ *
+ * Keterangan diwajibkan meski server membolehkannya kosong. Itu memang lebih ketat
+ * daripada server, dan tidak apa-apa: gerbang ini menolong operator melengkapi isian,
+ * bukan menggantikan validasi. Yang tidak boleh justru kebalikannya — melonggarkan
+ * di layar apa yang akan ditolak server.
+ */
+function kurangnya(l: any): string[] {
+    const k: string[] = [];
+    if (!l.expense_account_id) k.push('akun beban');
+    if (!String(l.description ?? '').trim()) k.push('keterangan');
+    if (!(Number(l.amount) > 0)) k.push('jumlah');
+
+    return k;
+}
+const barisKurang = computed(() => form.lines
+    .map((l: any, i: number) => ({ no: i + 1, kurang: kurangnya(l) }))
+    .filter((b: any) => b.kurang.length));
+const bisaSimpan = computed(() => form.lines.length > 0 && barisKurang.value.length === 0);
+const alasanKunci = computed(() => (barisKurang.value.length
+    ? 'Lengkapi dulu — ' + barisKurang.value.map((b: any) => `baris ${b.no}: ${b.kurang.join(', ')}`).join('; ')
+    : 'Simpan realisasi bon sementara'));
 function doRefund() { if (confirm('Catat pengembalian sisa panjar ke kas?')) settleForm.post(route('bs.advance.refund', props.advance.id)); }
 function doReimburse() { if (confirm('Catat penggantian kekurangan panjar dari kas?')) settleForm.post(route('bs.advance.reimburse', props.advance.id)); }
 
 function fmtRp(v: number) { return 'Rp ' + Number(v ?? 0).toLocaleString('id-ID'); }
 function fmtDate(d: string) { return d ? new Date(d).toLocaleDateString('id-ID', { day:'2-digit', month:'long', year:'numeric' }) : '—'; }
 const inputCls = 'h-9 w-full rounded-lg border border-neutral-300 bg-white px-3 text-sm dark:border-neutral-700 dark:bg-neutral-900';
+// Penanda "belum diisi" adalah kelas PENGGANTI, bukan tambahan. Dua kelas Tailwind yang
+// bertabrakan (border-neutral-300 vs border-amber-400) tidak ditentukan pemenangnya oleh
+// urutan di atribut, melainkan oleh urutan di berkas CSS — menumpuknya akan tampak jalan
+// di satu tempat lalu diam-diam gagal di tempat lain.
+const inputKurang = 'h-9 w-full rounded-lg border border-amber-400 bg-amber-50/50 px-3 text-sm dark:border-amber-500/60 dark:bg-amber-900/10';
+/** Cincin kuning pada SearchSelect — aditif, jadi aman ditumpuk di atas bingkainya. */
+const pilihKurang = 'rounded-lg ring-2 ring-amber-300 dark:ring-amber-500/40';
 
 // #80: navigasi kembali yang anti-gagal — pakai router.visit, fallback ke URL literal bila route() gagal resolve.
 function backToIndex() {
@@ -174,12 +215,12 @@ function backToIndex() {
                     </tr></thead>
                     <tbody>
                         <tr v-for="(l, i) in form.lines" :key="i">
-                            <td class="py-1 pr-2"><SearchSelect :model-value="l.expense_account_id" :options="expenseAccounts" placeholder="— cari akun —" no-truncate @update:model-value="(v) => l.expense_account_id = v" /></td>
+                            <td class="py-1 pr-2"><SearchSelect :model-value="l.expense_account_id" :options="expenseAccounts" placeholder="— cari akun —" no-truncate :class="l.expense_account_id ? '' : pilihKurang" @update:model-value="(v) => l.expense_account_id = v" /></td>
                             <!-- Cost center menentukan anggaran mana yang terpakai; boleh kosong
                                  untuk beban yang memang tidak dianggarkan per cost center. -->
                             <td class="py-1 pr-2"><SearchSelect :model-value="l.cost_center_id" :options="costCenters" placeholder="— tanpa cost center —" @update:model-value="(v) => l.cost_center_id = v" /></td>
-                            <td class="py-1 pr-2"><input v-model="l.description" :class="inputCls" /></td>
-                            <td class="py-1 pr-2"><input v-model.number="l.amount" type="number" step="1" min="0" :class="[inputCls,'text-right']" /></td>
+                            <td class="py-1 pr-2"><input v-model="l.description" :class="String(l.description ?? '').trim() ? inputCls : inputKurang" /></td>
+                            <td class="py-1 pr-2"><input v-model.number="l.amount" type="number" step="1" min="0" :class="[Number(l.amount) > 0 ? inputCls : inputKurang,'text-right']" /></td>
                             <td class="py-1 text-center"><button type="button" @click="removeLine(i)" :disabled="form.lines.length===1" class="text-danger-500 disabled:opacity-30"><Trash2 class="h-4 w-4" /></button></td>
                         </tr>
                     </tbody>
@@ -196,7 +237,17 @@ function backToIndex() {
                     <div class="flex justify-between border-t border-neutral-200 pt-1 font-semibold dark:border-neutral-700" :class="settlement >= 0 ? 'text-success-700' : 'text-danger-600'"><span>{{ settlement >= 0 ? 'Sisa dikembalikan ke kas (Refund)' : 'Kekurangan (Reimburse)' }}</span><span class="font-mono">{{ fmtRp(Math.abs(settlement)) }}</span></div>
                 </div>
                 <p class="text-xs text-neutral-400">Penyelesaian sisa/kekurangan ditangani dept Finance lewat tombol <b>Refund</b> / <b>Reimburse</b> setelah dana ditransfer.</p>
-                <div class="flex gap-2"><Button type="submit" :disabled="form.processing">Simpan Realisasi</Button><button type="button" @click="showForm = false" class="rounded-lg border border-neutral-300 px-4 py-2 text-sm dark:border-neutral-700">Batal</button></div>
+                <!-- Tombol mati selama masih ada baris yang belum lengkap. Alasannya WAJIB
+                     terbaca: tombol mati tanpa keterangan membuat operator menebak-nebak
+                     apa yang kurang, apalagi bila barisnya sudah banyak. -->
+                <p v-if="barisKurang.length" class="text-xs text-amber-700 dark:text-amber-400">
+                    Lengkapi dulu sebelum bisa disimpan —
+                    <template v-for="(b, i) in barisKurang" :key="b.no"><span v-if="i">; </span><b>baris {{ b.no }}</b>: {{ b.kurang.join(', ') }}</template>.
+                </p>
+                <div class="flex gap-2">
+                    <span :title="alasanKunci"><Button type="submit" :disabled="form.processing || !bisaSimpan">Simpan Realisasi</Button></span>
+                    <button type="button" @click="showForm = false" class="rounded-lg border border-neutral-300 px-4 py-2 text-sm dark:border-neutral-700">Batal</button>
+                </div>
             </form>
         </div>
     </div>
