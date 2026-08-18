@@ -1,12 +1,24 @@
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue';
 import { router, Link } from '@inertiajs/vue3';
-import { Plus, ArrowLeft, FileText, ChevronDown, ListTree, Layers } from 'lucide-vue-next';
+import { Plus, ArrowLeft, FileText, ChevronDown, ListTree, Layers, Lock } from 'lucide-vue-next';
 import Button from '@/Components/UI/Button.vue';
 import Badge from '@/Components/UI/Badge.vue';
 import EmptyState from '@/Components/UI/EmptyState.vue';
 
-const props = defineProps<{ journals: any; sources: Record<string, string>; statuses: Record<string, string>; filters: Record<string, any>; defaultDetail?: boolean; listRoute?: string; title?: string; canApprove?: boolean }>();
+const props = defineProps<{ journals: any; sources: Record<string, string>; statuses: Record<string, string>; filters: Record<string, any>; defaultDetail?: boolean; listRoute?: string; title?: string; canApprove?: boolean; jumlahStatus?: Record<string, number>; tahunRekap?: number }>();
+
+/* Rekap per status untuk rentang yang sedang tampil. Angkanya dihitung server dengan aturan
+   yang SAMA PERSIS dengan General Function — jurnal pada periode tertutup masuk Closed dan
+   tidak ikut dihitung sebagai Baru/Final/Approved — lalu tiap angka menautkan ke sana. */
+const REKAP: Array<{ k: string; label: string; nada: string }> = [
+    { k: 'baru',     label: 'Jurnal Baru',     nada: 'bg-primary-50 text-primary-700 ring-primary-200 dark:bg-primary-900/20 dark:text-primary-300 dark:ring-primary-800' },
+    { k: 'final',    label: 'Jurnal Final',    nada: 'bg-amber-50 text-amber-700 ring-amber-200 dark:bg-amber-900/20 dark:text-amber-300 dark:ring-amber-800' },
+    { k: 'approved', label: 'Jurnal Approved', nada: 'bg-success-50 text-success-700 ring-success-200 dark:bg-success-900/20 dark:text-success-300 dark:ring-success-800' },
+    { k: 'closed',   label: 'Jurnal Closed',   nada: 'bg-neutral-100 text-neutral-600 ring-neutral-200 dark:bg-neutral-800 dark:text-neutral-300 dark:ring-neutral-700' },
+];
+const rekap = computed(() => REKAP.map((r) => ({ ...r, n: props.jumlahStatus?.[r.k] ?? 0 })));
+const adaRekap = computed(() => !! props.jumlahStatus);
 
 /* ── Aksi massal ────────────────────────────────────────────────────────────
    SETIAP jurnal bisa dicentang, apa pun statusnya. Aksinya tidak lagi dipilih lebih dulu
@@ -42,8 +54,18 @@ const RANTAI: Record<string, string[]> = {
 
 const dipilih = ref<number[]>([]);
 const barisHalaman = computed<any[]>(() => props.journals?.data ?? []);
-/** Semua baris bisa dicentang sekarang — tidak ada lagi baris yang dikunci. */
-const bisaDipilih = computed<number[]>(() => barisHalaman.value.map((j: any) => Number(j.id)));
+
+/**
+ * Jurnal pada periode yang sudah CLOSED tidak bisa diubah sama sekali — bukan sekadar
+ * "belum boleh": JournalService menolaknya lewat assertPeriodOpen(), jadi menawarkan kotak
+ * centangnya hanya akan berakhir pada penolakan. Satu-satunya jalan mengubahnya adalah
+ * membatalkan closing periodenya dulu (General Function → Cancel Closing) sehingga periode
+ * itu kembali OPEN.
+ */
+function terkunci(j: any) { return !! j?.period_closed; }
+/** Semua baris bisa dicentang, KECUALI yang periodenya sudah ditutup. */
+const bisaDipilih = computed<number[]>(() =>
+    barisHalaman.value.filter((j: any) => ! terkunci(j)).map((j: any) => Number(j.id)));
 
 // Halaman/filter berubah → buang centang yang barisnya sudah tidak ada.
 watch(() => props.journals, () => {
@@ -155,6 +177,17 @@ function isOpen(id: number) { return showDetail.value || open.value[id]; }
             <button @click="exportExcel" class="h-9 rounded-lg bg-success-600 px-5 text-sm font-semibold text-white hover:bg-success-700">Excel</button>
         </div>
 
+        <!-- Rekap per status. Tiap angka menautkan ke General Function, layar yang memuat
+             hitungan yang sama untuk SETAHUN penuh beserta status closing tiap bulannya. -->
+        <div v-if="adaRekap" class="flex flex-wrap items-center gap-2">
+            <Link v-for="r in rekap" :key="r.k" :href="route('bs.gl.printhub', { year: tahunRekap })"
+                  class="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium ring-1 transition hover:brightness-95"
+                  :class="r.nada" :title="r.label + ': ' + r.n + ' jurnal pada rentang ini — buka General Function ' + tahunRekap">
+                {{ r.label }} <b class="text-sm">{{ r.n }}</b>
+            </Link>
+            <span class="text-[11px] text-neutral-400">Klik untuk membuka General Function {{ tahunRekap }}.</span>
+        </div>
+
         <div class="flex items-center justify-between">
             <p class="text-xs text-neutral-500">Periode <span class="font-medium">{{ fmtDate(filters.date_from) }}</span> s/d <span class="font-medium">{{ fmtDate(filters.date_to) }}</span> · {{ journals.total }} jurnal</p>
             <button @click="showDetail = !showDetail" class="inline-flex items-center gap-1.5 rounded-lg border border-neutral-300 px-3 py-1.5 text-xs font-medium text-neutral-600 hover:bg-neutral-50 dark:border-neutral-700 dark:text-neutral-300">
@@ -219,7 +252,7 @@ function isOpen(id: number) { return showDetail.value || open.value[id]; }
                 <tbody class="divide-y divide-neutral-200 dark:divide-neutral-800">
                     <template v-for="j in journals.data" :key="j.id">
                         <tr class="hover:bg-neutral-50/60 dark:hover:bg-neutral-800/40">
-                            <td class="px-2 py-2.5 text-center"><input v-model="dipilih" type="checkbox" :value="Number(j.id)" class="h-4 w-4 rounded border-neutral-300 text-primary-600 focus:ring-primary-500" :title="'Pilih jurnal ' + j.journal_number" /></td><td class="px-2 py-2.5 text-center"><button type="button" @click="toggle(j.id)" class="text-neutral-400 hover:text-primary-600"><ChevronDown class="h-4 w-4 transition-transform" :class="{ 'rotate-180': isOpen(j.id) }" /></button></td>
+                            <td class="px-2 py-2.5 text-center"><input v-if="!terkunci(j)" v-model="dipilih" type="checkbox" :value="Number(j.id)" class="h-4 w-4 rounded border-neutral-300 text-primary-600 focus:ring-primary-500" :title="'Pilih jurnal ' + j.journal_number" /><Lock v-else class="mx-auto h-3.5 w-3.5 text-neutral-300 dark:text-neutral-600" title="Periode sudah closed — jurnalnya tidak bisa diubah. Batalkan closing periodenya dulu di General Function." /></td><td class="px-2 py-2.5 text-center"><button type="button" @click="toggle(j.id)" class="text-neutral-400 hover:text-primary-600"><ChevronDown class="h-4 w-4 transition-transform" :class="{ 'rotate-180': isOpen(j.id) }" /></button></td>
                             <td class="px-4 py-2.5 font-mono font-semibold">{{ j.journal_number }}</td>
                             <td class="px-4 py-2.5 whitespace-nowrap">{{ fmtDate(j.journal_date) }}</td>
                             <td class="px-4 py-2.5"><Badge variant="info" size="sm">{{ sources[j.source] ?? j.source }}</Badge></td>
