@@ -27,12 +27,26 @@ class BsSip extends Model
     /** Angka Romawi bulan 1–12, untuk nomor cetak SIP. */
     public const ROMAWI = [1 => 'I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X', 'XI', 'XII'];
 
+    /** Format nomor SIP: NNN/FIN/MITRA-SI/{bulan romawi}/{tahun}. */
+    private const POLA_NOMOR = '#^\d{3}/FIN/MITRA-SI/[IVX]+/\d{4}$#';
+
     /**
-     * Nomor cetak: NNN/FIN/MITRA-SI/{bulan romawi}/{tahun}, mengikuti tanggal SIP diajukan.
-     * Kosong bila belum pernah dicetak — penomorannya ditetapkan saat pencetakan pertama.
+     * Nomor cetak: NNN/FIN/MITRA-SI/{bulan romawi}/{tahun}.
+     *
+     * SIP yang dibuat sejak penomorannya disatukan sudah menyimpan nomor ini apa adanya di
+     * `sip_number`, dan nomor itulah yang dikembalikan — BUKAN disusun ulang. Menyusun ulang
+     * berarti bulannya dibaca dari sip_date setiap kali dicetak, sehingga mengedit tanggal
+     * SIP akan diam-diam menggeser nomor cetaknya menjauh dari nomor dokumennya: persis
+     * ketidakcocokan yang hendak dihapus.
+     *
+     * SIP lama (nomornya masih berformat SIP/MUP/…) tetap menyusunnya dari print_seq +
+     * print_year seperti semula, dan kosong bila memang belum pernah dicetak.
      */
     public function printNumber(): ?string
     {
+        if (preg_match(self::POLA_NOMOR, (string) $this->sip_number)) {
+            return $this->sip_number;
+        }
         if (! $this->print_seq || ! $this->print_year) {
             return null;
         }
