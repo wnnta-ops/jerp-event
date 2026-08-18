@@ -183,7 +183,7 @@ final class RegisterApInvoice
                 if ($ppn > 0) {
                     $ppnAcc = BsAccount::where('code', config('business_support.gl_accounts.ppn_in'))->value('id');
                     if ($ppnAcc) {
-                        $jl[] = ['account_id' => $ppnAcc, 'debit' => $ppn, 'credit' => 0, 'description' => 'PPN Masukan'];
+                        $jl[] = ['account_id' => $ppnAcc, 'debit' => $ppn, 'credit' => 0, 'description' => $this->ketPajak('PPN Masukan', $inv)];
                     } else {
                         $jl[0]['debit'] = $total; // gabung bila akun PPN tak ada
                     }
@@ -199,7 +199,7 @@ final class RegisterApInvoice
                     // Cr Hutang PPh <jenis> (lawan Biaya PPh ditanggung).
                     $jl[] = ['account_id' => $pphAcc, 'debit' => 0, 'credit' => $pphJournal, 'description' => 'Hutang PPh ditanggung'];
                 } elseif ($pphMode === 'withheld' && $pph > 0 && $pphAcc) {
-                    $jl[] = ['account_id' => $pphAcc, 'debit' => 0, 'credit' => $pph, 'description' => 'PPh dipotong'];
+                    $jl[] = ['account_id' => $pphAcc, 'debit' => 0, 'credit' => $pph, 'description' => $this->ketPajak($this->pasalPph($pphAcc, $inv).' dipotong', $inv)];
                 } elseif ($pphMode === 'withheld' && $pph > 0) {
                     // Dipotong tanpa akun PPh → kembalikan ke hutang supplier agar balance
                     $jl[count($jl) - 1]['credit'] = $total;
@@ -238,5 +238,43 @@ final class RegisterApInvoice
         } while (BsApInvoice::withTrashed()->where('invoice_number', $number)->exists());
 
         return $number;
+    }
+
+    /**
+     * Tempelkan uraian tagihan ke keterangan baris pajak.
+     *
+     * Sama dengan yang dilakukan layar Registrasi Invoice Hutang. Tanpa ini, baris PPN & PPh
+     * di General Ledger hanya berbunyi "PPN Masukan" / "PPh dipotong" — benar, tetapi tidak
+     * memberi tahu tagihan mana, sehingga menelusurinya harus lewat nomor jurnal.
+     */
+    private function ketPajak(string $teks, BsApInvoice $inv): string
+    {
+        $uraian = trim((string) ($inv->description ?? ""));
+
+        return $uraian !== "" ? $teks." — ".$uraian : $teks;
+    }
+
+    /**
+     * Pasal PPh dibaca dari NAMA AKUN yang dipilih, bukan dari kolom jenis PPh.
+     *
+     * Akunlah yang menentukan ke mana angkanya bermuara: "HUTANG PPH PASAL 23" adalah utang
+     * PPh 23 apa pun yang tertulis di kolom jenisnya. Bila keduanya berbeda, keterangan yang
+     * mengikuti akun-lah yang cocok dengan buku besarnya.
+     */
+    private function pasalPph(?int $accountId, BsApInvoice $inv): string
+    {
+        $nama = strtoupper((string) BsAccount::whereKey($accountId)->value("name"));
+        // 4 ayat 2 diperiksa DULU: namanya memuat angka 4 dan 2 yang bisa tertangkap pola lain.
+        if (preg_match("/PASAL\\s*4|4\\s*\\(?\\s*2|4\\s*AYAT/", $nama)) {
+            return "PPh Pasal 4(2)";
+        }
+        if (preg_match("/\\b21\\b/", $nama)) {
+            return "PPh Pasal 21";
+        }
+        if (preg_match("/\\b23\\b/", $nama)) {
+            return "PPh Pasal 23";
+        }
+
+        return match ((string) $inv->pph_type) { "pph21" => "PPh Pasal 21", "pph23" => "PPh Pasal 23", "pph4_2" => "PPh Pasal 4(2)", default => "PPh" };
     }
 }
