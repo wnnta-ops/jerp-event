@@ -19,7 +19,6 @@ type Item = { label: string; route: string | null; summary?: string | null };
 // 9 sub-modul AP — persis menu eProperty BO (Acc. Payable). Detail muncul saat sub-modul diklik.
 const menu: Array<{ group: string; items: Item[] }> = [
     { group: 'Setup', items: [
-        { label: 'Transaction Rule', route: r('bs.gl.transaction-rule.index', { source: 'ap' }) },
         { label: 'Kategori Invoice', route: r('bs.ap.categories.index') },
         { label: 'Repair Data', route: r('bs.ap.repair.index') },
         { label: 'Kelengkapan Berkas', route: r('bs.ap.berkas.index') },

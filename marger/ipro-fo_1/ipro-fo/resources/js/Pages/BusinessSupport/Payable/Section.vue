@@ -15,7 +15,6 @@ function r(name?: string | null, params?: Record<string, any>): string | null {
 type Item = { label: string; route: string | null; summary?: string | null };
 const sections = computed<Record<string, Item[]>>(() => ({
     setup: [
-        { label: 'Transaction Rule', route: r('bs.gl.transaction-rule.index', { source: 'ap' }) },
         { label: 'Kategori Invoice', route: r('bs.ap.categories.index') },
         { label: 'Repair Data', route: r('bs.ap.repair.index') },
         { label: 'Kelengkapan Berkas', route: r('bs.ap.berkas.index') },

@@ -14,7 +14,6 @@ use App\Http\Controllers\Web\BusinessSupport\Setup\AccountController as BsAccoun
 use App\Http\Controllers\Web\BusinessSupport\Setup\CostCenterController as BsCostCenterController;
 use App\Http\Controllers\Web\BusinessSupport\Setup\CurrencyController as BsCurrencyController;
 use App\Http\Controllers\Web\BusinessSupport\Setup\CashFlowSetupController as BsCashFlowSetupController;
-use App\Http\Controllers\Web\BusinessSupport\Setup\TransactionRuleController as BsTransactionRuleController;
 use App\Http\Controllers\Web\BusinessSupport\Setup\JournalDimensionController as BsJournalDimensionController;
 use App\Http\Controllers\Web\BusinessSupport\Setup\SupplierController as BsSupplierController;
 use App\Http\Controllers\Web\BusinessSupport\Inventory\SetupMasterController as BsInvSetupController;
@@ -565,12 +564,6 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
     Route::delete('/business-support/gl/cf-mapping/{mapping}', [BsCashFlowSetupController::class, 'destroyMapping'])->name('bs.gl.cf-mapping.destroy');
 
     // ── GL SETUP: Transaction Rule (pemetaan transaksi → jurnal otomatis) ──
-    Route::get('/business-support/gl/transaction-rules',         [BsTransactionRuleController::class, 'index'])->name('bs.gl.transaction-rule.index');
-    Route::get('/business-support/gl/transaction-rules/create',  [BsTransactionRuleController::class, 'create'])->name('bs.gl.transaction-rule.create');
-    Route::post('/business-support/gl/transaction-rules',        [BsTransactionRuleController::class, 'store'])->name('bs.gl.transaction-rule.store');
-    Route::get('/business-support/gl/transaction-rules/{rule}/edit', [BsTransactionRuleController::class, 'edit'])->name('bs.gl.transaction-rule.edit');
-    Route::put('/business-support/gl/transaction-rules/{rule}',  [BsTransactionRuleController::class, 'update'])->name('bs.gl.transaction-rule.update');
-    Route::delete('/business-support/gl/transaction-rules/{rule}', [BsTransactionRuleController::class, 'destroy'])->name('bs.gl.transaction-rule.destroy');
 
     // ── GL S4: Repair Data · Confirm Saldo Awal · Late Closing ──
     Route::get('/business-support/gl/repair-data',           [BsRepairController::class, 'index'])->name('bs.gl.repair.index');

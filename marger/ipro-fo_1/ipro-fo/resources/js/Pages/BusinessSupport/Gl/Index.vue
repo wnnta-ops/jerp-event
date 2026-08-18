@@ -38,7 +38,6 @@ const menu: Array<{ group: string; items: Array<{ label: string; route: string |
         { label: 'General Function', route: r('bs.gl.printhub') },
     ]},
     { group: 'Setup', items: [
-        { label: 'Transaction Rule', route: r('bs.gl.transaction-rule.index') },
         { label: 'Multi Currency', route: r('bs.gl.currency.index') },
         { label: 'Kurs Sistem', route: r('bs.gl.kurs.index') },
         { label: 'Repair Data', route: r('bs.gl.repair.index') },

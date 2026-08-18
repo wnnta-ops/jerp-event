@@ -190,7 +190,6 @@ export function navGroups(foUrl: string): NavGroup[] {
                 { label: 'General Function', href: 'bs.gl.printhub' },
             ]},
             { label: 'Setup', icon: SlidersHorizontal, permission: ['businesssupport.view', 'gl.*'], children: [
-                { label: 'Transaction Rule', href: 'bs.gl.transaction-rule.index' },
                 { label: 'Multi Currency', href: 'bs.gl.currency.index' },
                 { label: 'Kurs Sistem', href: 'bs.gl.kurs.index' },
                 { label: 'Repair Data', href: 'bs.gl.repair.index' },
@@ -273,7 +272,6 @@ export function navGroups(foUrl: string): NavGroup[] {
         desc: 'Invoice & pembayaran hutang supplier.',
         items: [
             { label: 'Setup', icon: SlidersHorizontal, permission: ['businesssupport.view', 'ap.*'], children: [
-                { label: 'Transaction Rule', href: 'bs.gl.transaction-rule.index', params: { source: 'ap' } },
                 { label: 'Kategori Invoice', href: 'bs.ap.categories.index' },
                 { label: 'Kategori Gimmick', href: 'bs.gimmick.categories.index' },
                 { label: 'Repair Data', href: 'bs.ap.repair.index' },
@@ -331,7 +329,6 @@ export function navGroups(foUrl: string): NavGroup[] {
                 { label: 'General Function', href: 'bs.cashbook.printhub' },
             ]},
             { label: 'Setup', icon: SlidersHorizontal, permission: ['businesssupport.view', 'cashbook.*'], children: [
-                { label: 'Transaction Rule', href: 'bs.gl.transaction-rule.index', params: { source: 'cash' } },
                 { label: 'Rekening', href: 'rekening.index' },
                 // Barcode tanda tangan yang dipakai pada Persetujuan (TTD) SIP.
                 { label: 'Set Up Barcode', href: 'bs.cashbook.signature-barcode.index' },

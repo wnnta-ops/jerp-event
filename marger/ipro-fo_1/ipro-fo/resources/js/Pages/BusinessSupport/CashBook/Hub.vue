@@ -21,7 +21,6 @@ const menu: Array<{ group: string; items: Array<{ label: string; route: string |
         { label: 'General Function', route: r('bs.cashbook.printhub') },
     ]},
     { group: 'Setup', items: [
-        { label: 'Transaction Rule', route: r('bs.gl.transaction-rule.index', { source: 'cash' }) },
         { label: 'Rekening', route: r('rekening.index') },
         { label: 'Repair Data', route: r('bs.cashbook.repair.index') },
     ]},
