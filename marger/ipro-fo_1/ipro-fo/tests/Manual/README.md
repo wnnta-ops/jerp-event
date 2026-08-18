@@ -26,6 +26,7 @@ Exit code 0 bila semuanya lolos.
 | --- | --- |
 | `uji-sip-penomoran-departemen.php` | Penomoran SIP satu-nomor (`NNN/FIN/MITRA-SI/{romawi}/{tahun}`): pengambilan urutan dari `MAX(print_seq)`, urutan lanjut dalam satu tahun, mulai ulang saat ganti tahun, dan SIP terhapus yang **tidak** membebaskan nomornya. Lalu tiga jalur pencarian departemen per baris cetakan: bon sementara → `department_id`-nya, invoice → departemen pembuat invoice, dan cadangan → departemen pembuat SIP. |
 | `uji-jurnal-rekap-periode-closed.php` | Penanda `period_closed` per baris pada Detail Transaksi Jurnal, dan rekap jumlah per status. Termasuk penegasan bahwa keempat angkanya **sama persis** dengan `totals` milik General Function untuk tahun yang sama, bahwa rekap mengabaikan filter Status tapi menghormati filter tanggal & pencarian. |
+| `uji-realisasi-bon-cost-center.php` | Rantai penuh Cost Center pada Realisasi Bon Sementara: tersimpan di `bs_journal_lines.cost_center_id`, lalu terbaca `BudgetRealizationService` sebagai realisasi pada (akun, cost center) yang tepat — dan **tidak** menambah cost center lain. Termasuk penolakan server saat cost center dikosongkan atau diisi id yang tidak ada di master, beserta penegasan bahwa bonnya tidak berubah status dan tidak ada realisasi anggaran yang terbentuk dari percobaan yang ditolak. |
 
 ## Catatan saat menulis skrip serupa
 

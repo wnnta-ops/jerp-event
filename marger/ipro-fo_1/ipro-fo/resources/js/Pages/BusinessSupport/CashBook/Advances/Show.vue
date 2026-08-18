@@ -45,19 +45,21 @@ function submit() {
 /**
  * Kelengkapan baris realisasi — penentu hidup-matinya tombol "Simpan Realisasi".
  *
- * Cost center SENGAJA tidak ikut diwajibkan: "— tanpa cost center —" adalah pilihan yang
- * memang disediakan untuk beban yang tidak dianggarkan per cost center, akibatnya sudah
- * diterangkan tepat di bawah tabel, dan server pun memvalidasinya nullable sejalan dengan
- * BudgetController. Mewajibkannya di sini akan mematikan pilihan itu diam-diam.
+ * COST CENTER WAJIB. Ia yang menentukan anggaran mana yang terpakai: nilainya diteruskan ke
+ * bs_journal_lines.cost_center_id, lalu dibaca BudgetRealizationService untuk mencocokkan
+ * realisasi dengan plafon per (akun, cost center). Baris tanpa cost center tetap jadi beban
+ * di GL tetapi TIDAK PERNAH muncul sebagai realisasi di Budget Control — anggarannya seolah
+ * tidak pernah terpakai. Server memvalidasinya required juga, jadi gerbang ini tidak lebih
+ * longgar maupun lebih ketat daripada servernya.
  *
- * Keterangan diwajibkan meski server membolehkannya kosong. Itu memang lebih ketat
- * daripada server, dan tidak apa-apa: gerbang ini menolong operator melengkapi isian,
- * bukan menggantikan validasi. Yang tidak boleh justru kebalikannya — melonggarkan
- * di layar apa yang akan ditolak server.
+ * Keterangan diwajibkan meski server membolehkannya kosong. Lebih ketat daripada server tidak
+ * masalah: gerbang layar menolong operator melengkapi isian, bukan menggantikan validasi.
+ * Yang tidak boleh justru kebalikannya — melonggarkan di layar apa yang akan ditolak server.
  */
 function kurangnya(l: any): string[] {
     const k: string[] = [];
     if (!l.expense_account_id) k.push('akun beban');
+    if (!l.cost_center_id) k.push('cost center');
     if (!String(l.description ?? '').trim()) k.push('keterangan');
     if (!(Number(l.amount) > 0)) k.push('jumlah');
 
@@ -216,9 +218,9 @@ function backToIndex() {
                     <tbody>
                         <tr v-for="(l, i) in form.lines" :key="i">
                             <td class="py-1 pr-2"><SearchSelect :model-value="l.expense_account_id" :options="expenseAccounts" placeholder="— cari akun —" no-truncate :class="l.expense_account_id ? '' : pilihKurang" @update:model-value="(v) => l.expense_account_id = v" /></td>
-                            <!-- Cost center menentukan anggaran mana yang terpakai; boleh kosong
-                                 untuk beban yang memang tidak dianggarkan per cost center. -->
-                            <td class="py-1 pr-2"><SearchSelect :model-value="l.cost_center_id" :options="costCenters" placeholder="— tanpa cost center —" @update:model-value="(v) => l.cost_center_id = v" /></td>
+                            <!-- Cost center WAJIB: dialah yang menghubungkan baris ini ke plafon
+                                 anggarannya di Budget Control. -->
+                            <td class="py-1 pr-2"><SearchSelect :model-value="l.cost_center_id" :options="costCenters" placeholder="— pilih cost center —" :class="l.cost_center_id ? '' : pilihKurang" @update:model-value="(v) => l.cost_center_id = v" /></td>
                             <td class="py-1 pr-2"><input v-model="l.description" :class="String(l.description ?? '').trim() ? inputCls : inputKurang" /></td>
                             <td class="py-1 pr-2"><input v-model.number="l.amount" type="number" step="1" min="0" :class="[Number(l.amount) > 0 ? inputCls : inputKurang,'text-right']" /></td>
                             <td class="py-1 text-center"><button type="button" @click="removeLine(i)" :disabled="form.lines.length===1" class="text-danger-500 disabled:opacity-30"><Trash2 class="h-4 w-4" /></button></td>
@@ -227,8 +229,9 @@ function backToIndex() {
                 </table>
                 </div>
                 <p class="text-xs text-neutral-400">
-                    <b>Cost Center</b> menentukan anggaran mana yang terpakai — beban tanpa cost center tidak akan
-                    muncul sebagai realisasi di Budget Control.
+                    <b>Cost Center wajib diisi</b> — dialah yang menghubungkan tiap baris ke plafon anggarannya,
+                    sehingga realisasi ini langsung terbaca di <b>Budget Control</b>. Baris tanpa cost center akan
+                    tetap menjadi beban di GL tetapi anggarannya seolah tidak pernah terpakai.
                 </p>
                 <button type="button" @click="addLine" class="inline-flex items-center gap-1 rounded-lg border border-neutral-300 px-2.5 py-1.5 text-xs hover:bg-neutral-50 dark:border-neutral-700"><Plus class="h-3.5 w-3.5" /> Baris</button>
                 <div class="space-y-1 rounded-lg bg-neutral-50 p-3 text-sm dark:bg-neutral-800">
