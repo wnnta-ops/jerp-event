@@ -40,6 +40,21 @@ class BsAccount extends Model
         'cost_center_optional' => 'boolean',
     ];
 
+    /**
+     * Enam tingkatan bagan akun eProperty, dari yang paling tinggi ke paling rendah.
+     *
+     * Panjang kode mengikuti levelnya: 2 x level - 1 digit (1, 3, 5, 7, 9, 11), sebab tiap
+     * turun satu tingkat menambah dua digit di belakang kode induknya.
+     */
+    public const LEVELS = [
+        1 => 'Kategori',
+        2 => 'Sub Kategori',
+        3 => 'Ledger',
+        4 => 'Detil',
+        5 => 'Detil Transaksi',
+        6 => 'Detil Sub Transaksi',
+    ];
+
     public const TYPES = [
         'asset'     => 'Aktiva',
         'liability' => 'Kewajiban',
