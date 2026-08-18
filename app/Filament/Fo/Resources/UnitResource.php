@@ -55,11 +55,31 @@ class UnitResource extends Resource
                         ->preload(),
                     Forms\Components\TextInput::make('cluster')->label('Cluster')->maxLength(255),
                     Forms\Components\TextInput::make('blok')->label('Blok')->maxLength(16),
+                    // Bentrok kombinasi Lokasi+Tahap+Blok+Nomer diperiksa DI SINI, bukan
+                    // dibiarkan sampai ke database. Tanpa ini, memindahkan unit ke blok
+                    // yang nomornya sudah terpakai berakhir sebagai halaman 500 tanpa
+                    // penjelasan — operator tidak tahu unit mana yang bentrok.
                     Forms\Components\TextInput::make('no_unit')
                         ->label('Nomer')
                         ->required()
                         ->maxLength(32)
-                        ->helperText('No. Unit otomatis: Lokasi-Tahap-Blok-Nomer.'),
+                        ->helperText('No. Unit otomatis: Lokasi-Tahap-Blok-Nomer.')
+                        ->rule(function (Forms\Get $get, ?Unit $record) {
+                            return function (string $attribute, $value, \Closure $fail) use ($get, $record) {
+                                $bentrok = Unit::query()
+                                    ->where('lokasi_id', $get('lokasi_id'))
+                                    ->where('tahap_id', $get('tahap_id'))
+                                    ->where('blok', $get('blok'))
+                                    ->where('no_unit', $value)
+                                    ->when($record, fn ($q) => $q->whereKeyNot($record->getKey()))
+                                    ->first();
+
+                                if ($bentrok) {
+                                    $fail('Nomer ini sudah dipakai unit '.$bentrok->kode_unit
+                                        .' ('.$bentrok->status.'). Pakai nomer lain, atau pindahkan unit tersebut lebih dulu.');
+                                }
+                            };
+                        }),
                     Forms\Components\Placeholder::make('kode_unit_preview')
                         ->label('No. Unit (otomatis)')
                         ->content(fn (?Unit $record) => $record?->kode_unit ?: '— tersimpan otomatis saat disimpan —'),
