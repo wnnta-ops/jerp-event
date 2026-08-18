@@ -62,14 +62,26 @@ class GimmickCategoryController extends Controller
         // Hanya kategori yang sinkronnya HIDUP yang boleh dihitung menutupi sebuah kolom:
         // kategori terpetakan tapi sinkronnya dimatikan tidak akan pernah mengisi kolom itu,
         // jadi menghitungnya akan membuat cakupan tampak aman padahal tidak.
-        $mapped = BsGimmickCategory::whereNotNull('kpr_biaya_key')->where('sync_kpr', true)
-            ->orderBy('code')->get(['code', 'kpr_biaya_key'])->groupBy('kpr_biaya_key');
+        // Cakupan dihitung dari TAUTANNYA: begitu sebuah kolom punya kategori, ia tidak lagi
+        // diperingatkan. Sakelar sinkron tidak lagi ikut menentukan cakupan — peringatan
+        // "belum ada kategori" seharusnya menjawab pertanyaan "kolom ini sudah dipegang
+        // siapa?", bukan "apakah sudah jalan?". Pertanyaan kedua tetap dijawab, tapi di baris
+        // kategorinya sendiri lewat penanda sinkron — di sanalah sakelarnya bisa dihidupkan.
+        $mapped = BsGimmickCategory::whereNotNull('kpr_biaya_key')
+            ->orderBy('code')->get(['code', 'kpr_biaya_key', 'sync_kpr'])->groupBy('kpr_biaya_key');
         $coverage = collect(BsGimmickCategory::KPR_BIAYA_COLUMNS)
-            ->map(fn ($label, $key) => [
-                'key'        => $key,
-                'label'      => $label,
-                'categories' => collect($mapped->get($key, []))->pluck('code')->values()->all(),
-            ])->values();
+            ->map(function ($label, $key) use ($mapped) {
+                $isi = collect($mapped->get($key, []));
+
+                return [
+                    'key'        => $key,
+                    'label'      => $label,
+                    'categories' => $isi->pluck('code')->values()->all(),
+                    // Berapa di antaranya yang sinkronnya benar-benar hidup — dipakai layar
+                    // untuk membedakan "sudah dipegang" dari "sudah akan terisi".
+                    'aktif'      => $isi->where('sync_kpr', true)->count(),
+                ];
+            })->values();
 
         return Inertia::render('BusinessSupport/Payable/GimmickCategories', [
             'categories' => $rows,
