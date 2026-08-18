@@ -9,12 +9,23 @@ import EmptyState from '@/Components/UI/EmptyState.vue';
 const props = defineProps<{ journals: any; sources: Record<string, string>; statuses: Record<string, string>; filters: Record<string, any>; defaultDetail?: boolean; listRoute?: string; title?: string; canApprove?: boolean }>();
 
 /* ── Aksi massal ────────────────────────────────────────────────────────────
-   Empat aksi, masing-masing SATU LANGKAH pada rantai Baru → Final → Approved.
-   Tidak ada yang melompati dua tahap: jurnal Approved harus dibatalkan approval-nya
-   dulu (kembali Final) sebelum finalisasinya bisa dibatalkan.
+   SETIAP jurnal bisa dicentang, apa pun statusnya. Aksinya tidak lagi dipilih lebih dulu
+   dari daftar — ia DISIMPULKAN dari status baris yang tercentang:
 
-   `dari` = status yang boleh ikut. Baris berstatus lain sengaja tidak bisa dicentang
-   untuk aksi itu — lebih jujur daripada membiarkannya dicentang lalu ditolak server. */
+       semua Baru      → Finalisasi Massal
+       semua Final     → Approve Massal          (mundurnya: Cancel Finalisasi Massal)
+       semua Approved  → Cancel Approved Massal
+       status campuran → tidak ada aksi; layar meminta pilihannya dipersempit
+
+   Alasannya: satu perintah massal hanya sah untuk satu status asal. Dulu hal itu dijaga
+   dengan mematikan centang pada baris yang tidak cocok, sehingga orang harus menebak aksi
+   mana yang membuka baris yang ingin dikerjakannya. Sekarang urutannya dibalik — centang
+   dulu, tombolnya menyesuaikan — dan pembatasan yang sama tetap ditegakkan lewat
+   permintaan mempersempit pilihan saat statusnya tercampur.
+
+   Tetap tidak ada yang melompati dua tahap pada rantai Baru → Final → Approved: jurnal
+   Approved harus dibatalkan approval-nya dulu (kembali Final) sebelum finalisasinya bisa
+   dibatalkan. Server menegakkan aturan yang sama; layar ini hanya mendahuluinya. */
 type Aksi = { key: string; label: string; dari: string; jadi: string; rute: string; izin: 'gl' | 'approval'; nada: string };
 const AKSI: Aksi[] = [
     { key: 'finalisasi',       label: 'Finalisasi Massal',        dari: 'draft',  jadi: 'final',  rute: 'bs.gl.journal.finalize-batch',        izin: 'gl',       nada: 'bg-primary-600 hover:bg-primary-700 text-white' },
@@ -22,24 +33,52 @@ const AKSI: Aksi[] = [
     { key: 'batal-approve',    label: 'Cancel Approved Massal',   dari: 'posted', jadi: 'final',  rute: 'bs.gl.journal.cancel-batch',          izin: 'approval', nada: 'border border-neutral-300 hover:bg-neutral-50 dark:border-neutral-700' },
     { key: 'batal-finalisasi', label: 'Cancel Finalisasi Massal', dari: 'final',  jadi: 'draft',  rute: 'bs.gl.journal.cancel-finalize-batch', izin: 'gl',       nada: 'border border-neutral-300 hover:bg-neutral-50 dark:border-neutral-700' },
 ];
-
-const aksiKey = ref<string>('finalisasi');
-const aksi = computed<Aksi>(() => AKSI.find((a) => a.key === aksiKey.value) ?? AKSI[0]);
-const aksiTersedia = computed(() => AKSI.filter((a) => a.izin === 'gl' || props.canApprove));
+/** Urutan aksi per status asal — yang pertama jadi tombol utama, sisanya tombol pendamping. */
+const RANTAI: Record<string, string[]> = {
+    draft:  ['finalisasi'],
+    final:  ['approve', 'batal-finalisasi'],
+    posted: ['batal-approve'],
+};
 
 const dipilih = ref<number[]>([]);
-/** Baris yang statusnya cocok dengan aksi terpilih — hanya ini yang bisa dicentang. */
-const bisaDipilih = computed<number[]>(() =>
-    (props.journals?.data ?? []).filter((j: any) => j.status === aksi.value.dari).map((j: any) => Number(j.id)));
-function bolehPilih(j: any) { return j.status === aksi.value.dari; }
+const barisHalaman = computed<any[]>(() => props.journals?.data ?? []);
+/** Semua baris bisa dicentang sekarang — tidak ada lagi baris yang dikunci. */
+const bisaDipilih = computed<number[]>(() => barisHalaman.value.map((j: any) => Number(j.id)));
 
-// Ganti aksi → centang lama tidak lagi relevan (statusnya beda).
-watch(aksiKey, () => { dipilih.value = []; });
 // Halaman/filter berubah → buang centang yang barisnya sudah tidak ada.
 watch(() => props.journals, () => {
     const ada = new Set(bisaDipilih.value);
     dipilih.value = dipilih.value.filter((id) => ada.has(id));
 });
+
+/** Status apa saja yang tercentang, beserta id-nya. */
+const perStatus = computed<Record<string, number[]>>(() => {
+    const set = new Set(dipilih.value);
+    const out: Record<string, number[]> = {};
+    for (const j of barisHalaman.value) {
+        if (! set.has(Number(j.id))) continue;
+        (out[j.status] ??= []).push(Number(j.id));
+    }
+
+    return out;
+});
+const statusTerpilih = computed<string[]>(() => Object.keys(perStatus.value));
+const campuran = computed(() => statusTerpilih.value.length > 1);
+
+const bolehAksi = (a: Aksi) => a.izin === 'gl' || !! props.canApprove;
+/** Aksi yang sah untuk pilihan sekarang — kosong bila belum memilih atau statusnya campuran. */
+const aksiCocok = computed<Aksi[]>(() => {
+    if (campuran.value || statusTerpilih.value.length !== 1) return [];
+
+    return (RANTAI[statusTerpilih.value[0]] ?? [])
+        .map((k) => AKSI.find((a) => a.key === k))
+        .filter((a): a is Aksi => !! a && bolehAksi(a));
+});
+const aksiUtama = computed<Aksi | null>(() => aksiCocok.value[0] ?? null);
+const aksiLain = computed<Aksi[]>(() => aksiCocok.value.slice(1));
+
+/** Sisakan hanya baris berstatus tertentu — jalan keluar satu klik dari pilihan campuran. */
+function sisakan(status: string) { dipilih.value = [...(perStatus.value[status] ?? [])]; }
 
 const semuaTercentang = computed<boolean>({
     get: () => bisaDipilih.value.length > 0 && bisaDipilih.value.every((id) => dipilih.value.includes(id)),
@@ -47,14 +86,16 @@ const semuaTercentang = computed<boolean>({
 });
 
 const memproses = ref(false);
-function jalankanAksi() {
-    if (! dipilih.value.length || memproses.value) return;
-    const a = aksi.value;
-    const pesan = `${a.label}: ${dipilih.value.length} jurnal akan berubah dari `
+function jalankanAksi(a: Aksi | null) {
+    if (! a || ! dipilih.value.length || memproses.value) return;
+    // Penjaga terakhir di layar: jangan pernah mengirim id berstatus lain ke rute aksi ini.
+    const ids = perStatus.value[a.dari] ?? [];
+    if (ids.length !== dipilih.value.length) return;
+    const pesan = `${a.label}: ${ids.length} jurnal akan berubah dari `
         + `${props.statuses[a.dari] ?? a.dari} menjadi ${props.statuses[a.jadi] ?? a.jadi}.\n\nLanjutkan?`;
     if (! confirm(pesan)) return;
     memproses.value = true;
-    router.post(route(a.rute), { ids: dipilih.value }, {
+    router.post(route(a.rute), { ids }, {
         preserveScroll: true,
         onFinish: () => { memproses.value = false; dipilih.value = []; },
     });
@@ -122,44 +163,63 @@ function isOpen(id: number) { return showDetail.value || open.value[id]; }
         </div>
 
         <!-- ══ Aksi massal ══
-             Pilih aksinya DULU, baru centang barisnya: tiap aksi hanya berlaku untuk satu
-             status asal, jadi daftar yang bisa dicentang ikut berubah mengikuti pilihan.
-             Urutan ini mencegah operator mencentang belasan baris lalu ditolak semuanya. -->
+             Centang dulu, tombolnya menyesuaikan sendiri: semua Baru → Finalisasi Massal,
+             semua Final → Approve Massal, semua Approved → Cancel Approved Massal. Bila
+             status yang tercentang tercampur, tidak ada tombol aksi — layar meminta
+             pilihannya dipersempit, sebab satu perintah massal hanya sah untuk satu
+             status asal. -->
         <div class="card p-3">
             <div class="flex flex-wrap items-center gap-3">
                 <div class="flex items-center gap-2 text-sm font-semibold"><Layers class="h-4 w-4 text-primary-600" /> Aksi Massal</div>
-                <select v-model="aksiKey" class="h-9 rounded-lg border border-neutral-300 bg-white px-3 text-sm dark:border-neutral-700 dark:bg-neutral-900">
-                    <option v-for="a in aksiTersedia" :key="a.key" :value="a.key">{{ a.label }}</option>
-                </select>
-                <span class="rounded-md bg-neutral-100 px-2 py-1 text-xs text-neutral-600 dark:bg-neutral-800 dark:text-neutral-300">
-                    {{ statuses[aksi.dari] ?? aksi.dari }} → {{ statuses[aksi.jadi] ?? aksi.jadi }}
-                </span>
                 <span class="text-xs text-neutral-500">
-                    {{ dipilih.length }} terpilih · {{ bisaDipilih.length }} bisa dipilih di halaman ini
+                    {{ dipilih.length }} terpilih dari {{ bisaDipilih.length }} jurnal di halaman ini
                 </span>
-                <button type="button" @click="jalankanAksi" :disabled="!dipilih.length || memproses"
-                        class="ml-auto inline-flex h-9 items-center gap-1.5 rounded-lg px-4 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-40"
-                        :class="aksi.nada">
-                    {{ memproses ? 'Memproses…' : aksi.label }}<span v-if="dipilih.length"> ({{ dipilih.length }})</span>
+                <span v-if="aksiUtama" class="rounded-md bg-neutral-100 px-2 py-1 text-xs text-neutral-600 dark:bg-neutral-800 dark:text-neutral-300">
+                    {{ statuses[aksiUtama.dari] ?? aksiUtama.dari }} → {{ statuses[aksiUtama.jadi] ?? aksiUtama.jadi }}
+                </span>
+
+                <div class="ml-auto flex flex-wrap items-center gap-2">
+                    <button v-for="a in aksiLain" :key="a.key" type="button" @click="jalankanAksi(a)" :disabled="memproses"
+                            class="inline-flex h-9 items-center gap-1.5 rounded-lg px-3 text-sm font-medium transition disabled:cursor-not-allowed disabled:opacity-40"
+                            :class="a.nada">{{ a.label }}</button>
+                    <button type="button" @click="jalankanAksi(aksiUtama)" :disabled="!aksiUtama || memproses"
+                            class="inline-flex h-9 items-center gap-1.5 rounded-lg px-4 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-40"
+                            :class="aksiUtama ? aksiUtama.nada : 'border border-neutral-300 dark:border-neutral-700'">
+                        {{ memproses ? 'Memproses…' : (aksiUtama ? aksiUtama.label : 'Pilih jurnalnya dulu') }}<span v-if="aksiUtama && dipilih.length"> ({{ dipilih.length }})</span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Rule 3: pilihan bercampur → minta dipersempit, lengkap dengan jalan keluar satu klik. -->
+            <div v-if="campuran" class="mt-2 flex flex-wrap items-center gap-2 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:bg-amber-900/20 dark:text-amber-300">
+                <span>Status yang Anda centang bercampur, padahal satu perintah massal hanya berlaku untuk <b>satu status</b>. Persempit dulu:</span>
+                <button v-for="s in statusTerpilih" :key="s" type="button" @click="sisakan(s)"
+                        class="inline-flex h-7 items-center rounded-md border border-amber-300 bg-white px-2.5 font-semibold text-amber-800 hover:bg-amber-100 dark:border-amber-600/50 dark:bg-transparent dark:text-amber-200">
+                    Sisakan {{ statuses[s] ?? s }} saja ({{ perStatus[s].length }})
                 </button>
             </div>
+            <p v-else-if="dipilih.length && !aksiUtama" class="mt-2 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:bg-amber-900/20 dark:text-amber-300">
+                Tidak ada aksi massal yang tersedia untuk jurnal berstatus
+                <b>{{ statuses[statusTerpilih[0]] ?? statusTerpilih[0] }}</b> dengan wewenang Anda saat ini.
+            </p>
             <p class="mt-2 text-[11.5px] leading-relaxed text-neutral-500">
+                Centang jurnalnya, tombol aksinya menyesuaikan sendiri: semua <b>Baru</b> → Finalisasi Massal,
+                semua <b>Final</b> → Approve Massal, semua <b>Approved</b> → Cancel Approved Massal.
                 Setiap aksi bergerak <b>satu tahap</b> pada rantai Baru → Final → Approved.
                 Jurnal <b>Approved tidak bisa langsung kembali ke Baru</b>: batalkan approval-nya dulu
                 (Approved → Final), baru finalisasinya dibatalkan (Final → Baru).
-                Baris yang statusnya tidak cocok dengan aksi terpilih tidak dapat dicentang.
             </p>
         </div>
 
         <div class="card overflow-x-auto">
             <table class="w-full text-sm">
                 <thead class="bg-neutral-50 dark:bg-neutral-800"><tr class="text-left text-xs uppercase text-neutral-500">
-                    <th class="px-2 py-3 w-8"><input v-model="semuaTercentang" type="checkbox" :disabled="!bisaDipilih.length" class="h-4 w-4 rounded border-neutral-300 text-primary-600 focus:ring-primary-500" :title="bisaDipilih.length ? 'Pilih semua yang berstatus ' + (statuses[aksi.dari] ?? aksi.dari) : 'Tidak ada jurnal berstatus ' + (statuses[aksi.dari] ?? aksi.dari) + ' di halaman ini'" /></th><th class="px-2 py-3 w-8"></th><th class="px-4 py-3">No. Jurnal</th><th class="px-4 py-3">Tanggal</th><th class="px-4 py-3">Sumber</th><th class="px-4 py-3">Keterangan</th><th class="px-4 py-3 text-center">Status</th><th class="px-4 py-3 text-center">Baris</th><th class="px-4 py-3 text-right">Nilai</th><th class="px-4 py-3 text-right"></th>
+                    <th class="px-2 py-3 w-8"><input v-model="semuaTercentang" type="checkbox" :disabled="!bisaDipilih.length" class="h-4 w-4 rounded border-neutral-300 text-primary-600 focus:ring-primary-500" title="Pilih semua jurnal di halaman ini" /></th><th class="px-2 py-3 w-8"></th><th class="px-4 py-3">No. Jurnal</th><th class="px-4 py-3">Tanggal</th><th class="px-4 py-3">Sumber</th><th class="px-4 py-3">Keterangan</th><th class="px-4 py-3 text-center">Status</th><th class="px-4 py-3 text-center">Baris</th><th class="px-4 py-3 text-right">Nilai</th><th class="px-4 py-3 text-right"></th>
                 </tr></thead>
                 <tbody class="divide-y divide-neutral-200 dark:divide-neutral-800">
                     <template v-for="j in journals.data" :key="j.id">
                         <tr class="hover:bg-neutral-50/60 dark:hover:bg-neutral-800/40">
-                            <td class="px-2 py-2.5 text-center"><input v-if="bolehPilih(j)" v-model="dipilih" type="checkbox" :value="Number(j.id)" class="h-4 w-4 rounded border-neutral-300 text-primary-600 focus:ring-primary-500" /><span v-else class="cursor-not-allowed text-neutral-300 dark:text-neutral-600" :title="'Aksi ini hanya untuk jurnal berstatus ' + (statuses[aksi.dari] ?? aksi.dari)">—</span></td><td class="px-2 py-2.5 text-center"><button type="button" @click="toggle(j.id)" class="text-neutral-400 hover:text-primary-600"><ChevronDown class="h-4 w-4 transition-transform" :class="{ 'rotate-180': isOpen(j.id) }" /></button></td>
+                            <td class="px-2 py-2.5 text-center"><input v-model="dipilih" type="checkbox" :value="Number(j.id)" class="h-4 w-4 rounded border-neutral-300 text-primary-600 focus:ring-primary-500" :title="'Pilih jurnal ' + j.journal_number" /></td><td class="px-2 py-2.5 text-center"><button type="button" @click="toggle(j.id)" class="text-neutral-400 hover:text-primary-600"><ChevronDown class="h-4 w-4 transition-transform" :class="{ 'rotate-180': isOpen(j.id) }" /></button></td>
                             <td class="px-4 py-2.5 font-mono font-semibold">{{ j.journal_number }}</td>
                             <td class="px-4 py-2.5 whitespace-nowrap">{{ fmtDate(j.journal_date) }}</td>
                             <td class="px-4 py-2.5"><Badge variant="info" size="sm">{{ sources[j.source] ?? j.source }}</Badge></td>
