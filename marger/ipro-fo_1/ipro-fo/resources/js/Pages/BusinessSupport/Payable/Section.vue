@@ -17,7 +17,6 @@ const sections = computed<Record<string, Item[]>>(() => ({
     setup: [
         { label: 'Kategori Invoice', route: r('bs.ap.categories.index') },
         { label: 'Repair Data', route: r('bs.ap.repair.index') },
-        { label: 'Kelengkapan Berkas', route: r('bs.ap.berkas.index') },
     ],
     master: [
         { label: 'Invoice Hutang', route: r('bs.ap.index') },

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { router, Link } from '@inertiajs/vue3';
 import { ref, reactive, computed, watch, onMounted, onBeforeUnmount, nextTick } from 'vue';
-import { Plus, ArrowLeft, HandCoins, Search, CalendarClock, CalendarCheck, BookText, Tags, FileInput, ReceiptText, Eraser, FolderCheck, FileSpreadsheet, FilterX, Printer } from 'lucide-vue-next';
+import { Plus, ArrowLeft, HandCoins, Search, CalendarClock, CalendarCheck, BookText, Tags, FileInput, ReceiptText, Eraser, FileSpreadsheet, FilterX, Printer } from 'lucide-vue-next';
 import Button from '@/Components/UI/Button.vue';
 import Badge from '@/Components/UI/Badge.vue';
 import EmptyState from '@/Components/UI/EmptyState.vue';
@@ -234,7 +234,6 @@ watch(filtered, () => nextTick(measure));
                 <Link :href="route('bs.ap.card')" class="inline-flex h-9 items-center gap-1.5 rounded-lg border border-neutral-300 px-3 text-sm font-medium hover:bg-neutral-50 dark:border-neutral-700"><BookText class="h-4 w-4" /> Kartu</Link>
                 <Link :href="route('bs.ap.posting.index')" class="inline-flex h-9 items-center gap-1.5 rounded-lg border border-neutral-300 px-3 text-sm font-medium hover:bg-neutral-50 dark:border-neutral-700"><FileInput class="h-4 w-4" /> Posting</Link>
                 <Link :href="route('bs.ap.penghapusan.index')" class="inline-flex h-9 items-center gap-1.5 rounded-lg border border-neutral-300 px-3 text-sm font-medium hover:bg-neutral-50 dark:border-neutral-700"><Eraser class="h-4 w-4" /> Hapus</Link>
-                <Link :href="route('bs.ap.berkas.index')" class="inline-flex h-9 items-center gap-1.5 rounded-lg border border-neutral-300 px-3 text-sm font-medium hover:bg-neutral-50 dark:border-neutral-700"><FolderCheck class="h-4 w-4" /> Berkas</Link>
                 <button type="button" @click="exportExcel" title="Unduh sesuai tampilan terfilter (nilai nett)" class="inline-flex h-9 items-center gap-1.5 rounded-lg border border-emerald-300 bg-emerald-50 px-3 text-sm font-medium text-emerald-700 hover:bg-emerald-100 dark:border-emerald-700/50 dark:bg-emerald-900/30 dark:text-emerald-300"><FileSpreadsheet class="h-4 w-4" /> Excel</button>
                 <button type="button" @click="cetakPo" :disabled="!selectedPoIds.length"
                     :title="selectedPoIds.length ? 'Cetak Purchase Order dari baris tercentang' : 'Centang dulu invoice yang berasal dari PO'"

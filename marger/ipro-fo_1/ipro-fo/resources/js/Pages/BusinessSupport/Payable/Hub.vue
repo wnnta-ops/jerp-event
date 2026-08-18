@@ -21,7 +21,6 @@ const menu: Array<{ group: string; items: Item[] }> = [
     { group: 'Setup', items: [
         { label: 'Kategori Invoice', route: r('bs.ap.categories.index') },
         { label: 'Repair Data', route: r('bs.ap.repair.index') },
-        { label: 'Kelengkapan Berkas', route: r('bs.ap.berkas.index') },
     ]},
     { group: 'Master', items: [
         { label: 'Invoice Hutang', route: r('bs.ap.index') },

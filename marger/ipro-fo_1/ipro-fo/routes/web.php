@@ -36,7 +36,6 @@ use App\Http\Controllers\Web\BusinessSupport\Payable\GimmickCategoryController a
 use App\Http\Controllers\Web\BusinessSupport\Payable\ApKuitansiController as BsApKuitansiController;
 use App\Http\Controllers\Web\BusinessSupport\Payable\PostingInvoiceController as BsApPostingController;
 use App\Http\Controllers\Web\BusinessSupport\Payable\PenghapusanController as BsApPenghapusanController;
-use App\Http\Controllers\Web\BusinessSupport\Payable\ApBerkasController as BsApBerkasController;
 use App\Http\Controllers\Web\BusinessSupport\Receivable\ArInvoiceController as BsArController;
 use App\Http\Controllers\Web\BusinessSupport\Receivable\ArKuitansiController as BsArKuitansiController;
 use App\Http\Controllers\Web\BusinessSupport\Receivable\ArMemorialController as BsArMemorialController;
@@ -667,11 +666,6 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
     Route::get('/business-support/payable-penghapusan-report', [BsApPenghapusanController::class, 'report'])->name('bs.ap.penghapusan.report'); // Laporan Penghapusan Hutang (rincian + history)
     Route::post('/business-support/payable-penghapusan/{invoice}', [BsApPenghapusanController::class, 'store'])->name('bs.ap.penghapusan.store');
     // AP — Kelengkapan Berkas (setup + toggle per invoice)
-    Route::get('/business-support/payable-berkas',           [BsApBerkasController::class, 'index'])->name('bs.ap.berkas.index');
-    Route::post('/business-support/payable-berkas',          [BsApBerkasController::class, 'store'])->name('bs.ap.berkas.store');
-    Route::put('/business-support/payable-berkas/{berkas}',  [BsApBerkasController::class, 'update'])->name('bs.ap.berkas.update');
-    Route::delete('/business-support/payable-berkas/{berkas}', [BsApBerkasController::class, 'destroy'])->name('bs.ap.berkas.destroy');
-    Route::post('/business-support/payable-berkas/{invoice}/{berkas}/toggle', [BsApBerkasController::class, 'toggle'])->name('bs.ap.berkas.toggle');
     Route::get('/business-support/payable/{invoice}',         [BsApController::class, 'show'])->name('bs.ap.show');
     Route::get('/business-support/payable/{invoice}/memo',    [BsApController::class, 'memo'])->name('bs.ap.memo'); // cetak Memo Internal + Bukti Permohonan Pembayaran
     Route::post('/business-support/payable/{invoice}/berkas-notes', [BsApController::class, 'updateBerkasNotes'])->name('bs.ap.berkas-notes'); // catatan kelengkapan berkas (free-text)

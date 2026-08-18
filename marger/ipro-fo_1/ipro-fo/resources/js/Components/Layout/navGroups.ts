@@ -275,7 +275,6 @@ export function navGroups(foUrl: string): NavGroup[] {
                 { label: 'Kategori Invoice', href: 'bs.ap.categories.index' },
                 { label: 'Kategori Gimmick', href: 'bs.gimmick.categories.index' },
                 { label: 'Repair Data', href: 'bs.ap.repair.index' },
-                { label: 'Kelengkapan Berkas', href: 'bs.ap.berkas.index' },
             ]},
             { label: 'Master', icon: BookText, permission: ['businesssupport.view', 'ap.*'], children: [
                 { label: 'Invoice Hutang', href: 'bs.ap.index' },
