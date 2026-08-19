@@ -73,6 +73,7 @@ BANTUAN=$(cat <<'BANTUAN_EOF'
 `/promote` — naikkan dev ke main, lalu push
 `/logs fo` · `/logs bo` — 30 baris log terakhir
 `/backup` — backup penuh (DB + berkas)
+`/backups` — daftar backup yang ada + sisa ruang disk
 
 Konflik merge TIDAK diselesaikan otomatis — bot membatalkan dan melapor.
 BANTUAN_EOF
@@ -89,6 +90,21 @@ echo "bo belum di dev  : $(git rev-list --count origin/dev..origin/bo 2>/dev/nul
 echo "dev belum di main: $(git rev-list --count origin/main..origin/dev 2>/dev/null) commit"
 echo
 docker ps --format "{{.Names}} {{.Status}}" | head -12
+EOF
+)
+
+CMD_BACKUPS=$(cat <<'EOF'
+# Folder tujuan bisa diubah lewat Pengaturan Backup di aplikasi, jadi dibaca dari
+# config yang sudah dipakai aplikasi — bukan ditulis mati di sini.
+ROOT=$(docker exec jerp-app php artisan tinker        --execute='echo config("filesystems.disks.backup_target.root");' 2>/dev/null        | tr -d '' | tail -1)
+case "$ROOT" in /*) : ;; *) ROOT=/var/www/html/storage/app/backups ;; esac
+echo "folder : $ROOT"
+docker exec jerp-app sh -c "du -sh '$ROOT' 2>/dev/null" | awk '{print "terpakai: "$1}'
+# Sisa ruang ikut ditampilkan: penyebab backup gagal yang paling sering adalah
+# disk penuh, dan itu baru ketahuan saat backup dibutuhkan kalau tidak dipantau.
+df -h /var/lib/docker | awk 'NR==2 {print "sisa disk: "$4" ("$5" terpakai)"}'
+echo "---"
+docker exec jerp-app sh -c "cd '$ROOT' 2>/dev/null && ls -lht */*.zip 2>/dev/null | head -12"     | awk '{ $1=""; $2=""; $3=""; $4=""; sub(/^ +/,""); print }'
 EOF
 )
 
@@ -238,6 +254,14 @@ ${HASIL}
             kirim "$CHAT" "Backup penuh (DB + berkas) dimulai…"
             HASIL=$(jalankan 'docker exec jerp-app php artisan backup:scoped FULL 2>&1 | tail -12')
             kirim "$CHAT" "*Backup*
+\`\`\`
+${HASIL}
+\`\`\`"
+            ;;
+
+        /backups)
+            HASIL=$(jalankan "$CMD_BACKUPS")
+            kirim "$CHAT" "*Daftar backup*
 \`\`\`
 ${HASIL}
 \`\`\`"
