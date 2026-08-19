@@ -636,6 +636,8 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
     Route::post('/business-support/payable-kategori',         [BsApCategoryController::class, 'store'])->name('bs.ap.categories.store');
     Route::put('/business-support/payable-kategori/{category}', [BsApCategoryController::class, 'update'])->name('bs.ap.categories.update');
     Route::delete('/business-support/payable-kategori/{category}', [BsApCategoryController::class, 'destroy'])->name('bs.ap.categories.destroy');
+    Route::get('/business-support/payable-kategori/format-impor', [BsApCategoryController::class, 'template'])->name('bs.ap.categories.template');
+    Route::post('/business-support/payable-kategori/impor',       [BsApCategoryController::class, 'import'])->name('bs.ap.categories.import');
     // AP — Kategori Gimmick (setup) — fungsi sama dengan Kategori Invoice
     Route::get('/business-support/gimmick-kategori',          [BsGimmickCategoryController::class, 'index'])->name('bs.gimmick.categories.index');
     Route::post('/business-support/gimmick-kategori',         [BsGimmickCategoryController::class, 'store'])->name('bs.gimmick.categories.store');

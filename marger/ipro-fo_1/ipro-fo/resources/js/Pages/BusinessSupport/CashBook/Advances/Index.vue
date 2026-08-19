@@ -40,6 +40,26 @@ const tabCount = computed<Record<TabKey, number>>(() => ({
 }));
 const statusLabel: Record<string, string> = { requested: 'Diajukan', outstanding: 'Outstanding', realized: 'Realized' };
 function statusVariant(s: string) { return s === 'realized' ? 'success' : (s === 'requested' ? 'info' : 'warning'); }
+
+/**
+ * Cara bon yang SUDAH direalisasi diselesaikan — dibaca dari settlement = nominal − realisasi,
+ * tanda yang sama dengan yang dipakai tab Refund/Reimburse di halaman ini, jadi baris dan tab
+ * tidak akan pernah menyebut hal yang berbeda untuk bon yang sama.
+ *
+ *   settlement > 0 → realisasi lebih KECIL → sisanya dikembalikan ke kas  → Refund
+ *   settlement < 0 → realisasi lebih BESAR → kekurangannya diganti kas    → Reimburse
+ *   settlement = 0 → pengajuan & realisasi sama nilainya                  → Match
+ *
+ * Hanya berlaku untuk status realized: bon yang belum direalisasi belum punya selisih apa pun.
+ */
+type Selesai = { key: 'refund' | 'reimburse' | 'match'; label: string; nada: string; ket: string };
+function penyelesaian(r: any): Selesai | null {
+    if (r?.status !== 'realized') return null;
+    const s = Number(r.settlement ?? 0);
+    if (s > 0) return { key: 'refund', label: 'Refund', nada: 'bg-sky-50 text-sky-700 ring-sky-200 dark:bg-sky-900/25 dark:text-sky-300 dark:ring-sky-800/60', ket: 'Sisa ' + fmtRp(s) + ' dikembalikan ke kas' };
+    if (s < 0) return { key: 'reimburse', label: 'Reimburse', nada: 'bg-amber-50 text-amber-700 ring-amber-200 dark:bg-amber-900/25 dark:text-amber-300 dark:ring-amber-800/60', ket: 'Kekurangan ' + fmtRp(Math.abs(s)) + ' diganti dari kas' };
+    return { key: 'match', label: 'Match', nada: 'bg-emerald-50 text-emerald-700 ring-emerald-200 dark:bg-emerald-900/25 dark:text-emerald-300 dark:ring-emerald-800/60', ket: 'Pengajuan & realisasi sama nilainya' };
+}
 </script>
 <template>
     <div class="space-y-4">
@@ -101,7 +121,17 @@ function statusVariant(s: string) { return s === 'realized' ? 'success' : (s ===
                             <td class="px-4 py-2.5">{{ r.holder }}</td>
                             <td class="px-4 py-2.5 text-neutral-500">{{ r.purpose }}</td>
                             <td class="px-4 py-2.5 text-right font-mono">{{ fmtRp(r.amount) }}</td>
-                            <td class="px-4 py-2.5 text-center"><Badge :variant="statusVariant(r.status)" size="sm">{{ statusLabel[r.status] ?? r.status }}</Badge></td>
+                            <td class="px-4 py-2.5 text-center">
+                                <div class="flex flex-wrap items-center justify-center gap-1">
+                                    <Badge :variant="statusVariant(r.status)" size="sm">{{ statusLabel[r.status] ?? r.status }}</Badge>
+                                    <!-- Penanda cara penyelesaian, hanya untuk bon yang sudah direalisasi.
+                                         Nominal selisihnya ditaruh di tooltip, bukan di badge: kolomnya sempit
+                                         dan yang dicari sekilas adalah JENISnya, bukan angkanya. -->
+                                    <span v-if="penyelesaian(r)" :title="penyelesaian(r)!.ket"
+                                          class="inline-flex items-center rounded-md px-1.5 py-0.5 text-[10.5px] font-semibold ring-1"
+                                          :class="penyelesaian(r)!.nada">{{ penyelesaian(r)!.label }}</span>
+                                </div>
+                            </td>
                             <td class="px-4 py-2.5 text-center" @click.stop>
                                 <input v-if="canEditDocDate" type="date" :value="r.received_document_date" @change="saveDocDate(r, $event)" class="h-8 rounded border border-neutral-300 bg-white px-2 text-xs dark:border-neutral-700 dark:bg-neutral-900" />
                                 <span v-else class="text-neutral-500">{{ r.received_document_date ? fmtDate(r.received_document_date) : '—' }}</span>
