@@ -32,6 +32,13 @@ akibatnya **tidak ada yang bisa login SSH sama sekali**.
 — bukan token akun penuh. Tanpa itu, kedua perintah gagal saat push (deploy dan
 status tetap jalan).
 
+**`/mergebo` dan `/promote` tidak memindahkan cabang aktif server.** Keduanya
+bekerja di *worktree* sementara, lalu push langsung ke `origin`. Checkout produksi
+tetap di `main`. Ini penting: kalau merge dikerjakan dengan `git checkout dev` di
+tempat, setiap `/deploy` sesudahnya akan mem-build kode `dev` di server produksi
+tanpa ada tanda apa pun. Untuk benar-benar menaikkan kode ke server, urutannya
+tetap `/mergebo` → `/promote` → `/pull` → `/deploy`.
+
 **Konflik merge tidak pernah diselesaikan bot.** Bila `/mergebo` atau `/promote`
 menemui konflik, bot membatalkan dan melapor berkas mana yang bentrok. Tidak ada
 yang berubah. Konflik butuh penilaian manusia atas kode mana yang benar.
@@ -76,7 +83,7 @@ sudo mkdir -p /var/lib/deploy-bot && sudo chown ptmup:ptmup /var/lib/deploy-bot
 
 ```bash
 sudo tee /etc/deploy-bot.conf >/dev/null <<'EOF'
-BOT_TOKEN="TOKEN_BOT_DEPLOY_BARU"
+BOT_TOKEN="8716665652:AAEMsCJ9J2DVZ9xgd_fJe6XulD-ZE3x4vKE"
 # HANYA chat ini yang dilayani. Dipisah spasi atau koma.
 ALLOWED_CHATS="7599732703"
 REPO_DIR="/home/ptmup/docker/jerp"
