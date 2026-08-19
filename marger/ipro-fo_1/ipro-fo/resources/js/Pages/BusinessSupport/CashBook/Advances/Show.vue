@@ -99,7 +99,10 @@ function backToIndex() {
         <div class="flex flex-wrap items-center justify-between gap-2">
             <h1 class="flex items-center gap-2 font-mono text-2xl font-bold"><Wallet class="h-6 w-6 text-amber-600" /> {{ advance.advance_number }}</h1>
             <div class="flex items-center gap-2">
-                <a :href="route('bs.advance.print', advance.id)" target="_blank" rel="noopener" class="inline-flex items-center gap-1.5 rounded-lg border border-neutral-300 bg-white px-3 py-1.5 text-sm font-medium text-neutral-700 hover:bg-neutral-50 dark:border-neutral-600 dark:bg-neutral-800 dark:text-neutral-200"><Printer class="h-4 w-4" /> {{ advance.status === 'requested' ? 'Cetak Pengajuan' : 'Cetak Pengeluaran' }}</a>
+                <!-- Bon yang SUDAH direalisasi tidak lagi menawarkan cetak pengeluaran: yang berlaku
+                     baginya adalah Cetak Realisasi di sebelah. Membiarkan keduanya membuat dua dokumen
+                     berbeda beredar untuk satu bon yang sama. -->
+                <a v-if="advance.status !== 'realized'" :href="route('bs.advance.print', advance.id)" target="_blank" rel="noopener" class="inline-flex items-center gap-1.5 rounded-lg border border-neutral-300 bg-white px-3 py-1.5 text-sm font-medium text-neutral-700 hover:bg-neutral-50 dark:border-neutral-600 dark:bg-neutral-800 dark:text-neutral-200"><Printer class="h-4 w-4" /> {{ advance.status === 'requested' ? 'Cetak Pengajuan' : 'Cetak Pengeluaran' }}</a>
                 <a v-if="advance.status === 'realized'" :href="route('bs.advance.print-realisasi', advance.id)" target="_blank" rel="noopener" class="inline-flex items-center gap-1.5 rounded-lg border border-success-300 bg-success-50 px-3 py-1.5 text-sm font-medium text-success-700 hover:bg-success-100 dark:border-success-700/50 dark:bg-success-900/30 dark:text-success-300"><Printer class="h-4 w-4" /> Cetak Realisasi</a>
                 <Badge :variant="statusVariant[advance.status] ?? 'neutral'">{{ statusLabel[advance.status] ?? advance.status }}</Badge>
             </div>

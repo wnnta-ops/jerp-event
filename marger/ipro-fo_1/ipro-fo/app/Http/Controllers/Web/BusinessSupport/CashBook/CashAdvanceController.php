@@ -690,6 +690,9 @@ class CashAdvanceController extends Controller
 
         $settlement = (float) $advance->settlement;       // + = sisa dikembalikan (refund) / − = kekurangan (reimburse)
         $total      = abs($settlement);
+        // Reimburse hanya bila realisasi MELEBIHI pengajuan. Refund dan Match memakai formulir
+        // yang sama — pada Match selisihnya nol, dan formulir refund-lah yang dipakai.
+        $isReimburse = $settlement < 0;
         $terbilang  = strtoupper(trim(preg_replace('/\s+/', ' ', terbilang((int) round($total)))).' rupiah');
         $tgl        = optional($advance->realized_date)->format('d-m-Y') ?: '-';
         $dept       = $advance->department?->name ?: '-';
@@ -717,7 +720,7 @@ class CashAdvanceController extends Controller
             .'table.sign td{border-left:1px solid #333;padding:4px 6px}table.sign td:first-child{border-left:0}'
             .'tr.sl td{vertical-align:top;height:14px}tr.ss td{height:70px}tr.sr td{vertical-align:bottom;text-align:center;font-weight:600}';
 
-        $body = '<div class="cb">Created By eProperty ('.$e($printDate).')</div>'
+        $body = '<div class="cb">Created By Java Core ('.$e($printDate).')</div>'
             .'<table class="hd"><tr>'
             .'<td style="width:72px"><img class="logo" src="'.$logo.'" alt="logo"></td>'
             .'<td style="text-align:center"><span class="title">REALISASI BON SEMENTARA</span>'
@@ -737,14 +740,15 @@ class CashAdvanceController extends Controller
             .'</tr></table>'
             .'<table class="grid"><thead><tr><th>No.Account</th><th>Uraian Pembayaran</th><th class="r">Jumlah</th></tr></thead>'
             .'<tbody>'.$rows.'</tbody>'
-            .'<tfoot><tr><td class="vc">No. Voucher</td><td><span class="vc">'.$e($voucher).'</span><span class="tlbl">Total</span></td>'
-            .'<td class="r"><b>'.$amt($total).'</b></td></tr></tfoot></table>'
+            // Reimburse = perusahaan MASIH berhutang ke pemegang bon, jadi totalnya ditulis dalam
+            // kurung persis seperti lampirannya — tanda baca itulah yang membedakan "diterima kembali"
+            // dari "harus dibayarkan", dan artinya hilang begitu kurungnya dibuang.
+            .'<tfoot><tr><td class="vc">No. Voucher'.($isReimburse ? '' : ' : -').'</td>'
+            .'<td><span class="vc">'.$e($voucher).'</span><span class="tlbl">Total</span></td>'
+            .'<td class="r"><b>'.($isReimburse ? '(Rp. '.$amt($total).')' : 'Rp. '.$amt($total)).'</b></td></tr></tfoot></table>'
+            .'<div>No. Cek / BG : -</div>'
             .'<div class="terbilang">Terbilang : '.$e($terbilang).'</div>'
-            .'<table class="sign">'
-            .'<tr class="sl"><td>Diajukan Oleh,</td><td>Di Verifikasi Oleh,</td><td colspan="3" style="text-align:center">Di Setujui Oleh,</td><td>Di Terima Oleh,</td></tr>'
-            .'<tr class="ss"><td></td><td></td><td></td><td></td><td></td><td></td></tr>'
-            .'<tr class="sr"><td>SPV/Manager Dept</td><td>Manager Accounting</td><td>Manager Finance</td><td>General Manager</td><td>Direksi</td><td>'.$e($holder).'</td></tr>'
-            .'</table>';
+            .$this->blokTtdRealisasi($isReimburse, $holder);
 
         return '<!DOCTYPE html><html lang="id"><head><meta charset="utf-8"><title>'.$e($advance->advance_number).' — Realisasi</title>'
             .'<style>'.$css.'</style></head><body>'.$body
@@ -808,5 +812,43 @@ class CashAdvanceController extends Controller
     private function departments()
     {
         return BsHrDepartment::where('is_active', true)->orderBy('name')->get(['id', 'code', 'name']);
+    }
+
+    /**
+     * Blok tanda tangan cetakan Realisasi Bon Sementara.
+     *
+     * Kedua formulir lampiran berbeda justru di sini, dan bedanya bermakna:
+     *   · REFUND / MATCH — empat judul, kolom terakhir ditandatangani PERUSAHAAN, sebab uangnya
+     *     kembali MASUK ke kas dan perusahaanlah yang menerima;
+     *   · REIMBURSE — lima judul (bertambah "Di Bayarkan Oleh,"), dan dua kolom terakhir menjadi
+     *     Finance yang membayarkan serta pemegang bon yang menerima uangnya.
+     */
+    private function blokTtdRealisasi(bool $isReimburse, string $holder): string
+    {
+        $e = fn ($x) => htmlspecialchars((string) $x, ENT_QUOTES, "UTF-8");
+        $co = (string) config("business_support.company.name", "PT. Mitra Usaha Propertindo");
+
+        $judul = $isReimburse
+            ? [["Diajukan Oleh,", 1], ["Di Verifikasi Oleh,", 1], ["Di Setujui Oleh,", 3], ["Di Bayarkan Oleh,", 1], ["Di Terima Oleh,", 1]]
+            : [["Diajukan Oleh,", 1], ["Di Verifikasi Oleh,", 1], ["Di Setujui Oleh,", 3], ["Di Terima Oleh,", 1]];
+        $peran = $isReimburse
+            ? ["SPV/Manager Dept.", "Manager Accounting", "Manager Finance", "General Manager", "Direksi", "Finance", $holder]
+            : ["SPV/Manager Dept.", "Manager Accounting", "Manager Finance", "General Manager", "Direksi", $co];
+
+        $barisJudul = "";
+        foreach ($judul as [$teks, $span]) {
+            $barisJudul .= "<td colspan=\"".$span."\"".($span > 1 ? " style=\"text-align:center\"" : "").">".$e($teks)."</td>";
+        }
+        $barisKosong = str_repeat("<td></td>", count($peran));
+        $barisPeran = "";
+        foreach ($peran as $p) {
+            $barisPeran .= "<td>".$e($p)."</td>";
+        }
+
+        return "<table class=\"sign\">"
+            ."<tr class=\"sl\">".$barisJudul."</tr>"
+            ."<tr class=\"ss\">".$barisKosong."</tr>"
+            ."<tr class=\"sr\">".$barisPeran."</tr>"
+            ."</table>";
     }
 }
