@@ -1,14 +1,24 @@
 <script setup lang="ts">
-import { Link } from '@inertiajs/vue3';
-import { ArrowLeft, TrendingUp } from 'lucide-vue-next';
+import { ref } from 'vue';
+import { router, Link } from '@inertiajs/vue3';
+import { ArrowLeft, TrendingUp, FileSpreadsheet } from 'lucide-vue-next';
 
 type Row = { kind: string; label: string; amount: number | null };
 const props = defineProps<{
     company: string;
     as_of: string;
+    // Laba rugi menyatakan hasil SELAMA satu periode, jadi rentangnya yang dipilih.
+    periode: string;
+    date_from: string;
+    date_to: string;
     rows: Row[];
     net_profit: number;
 }>();
+
+const dari = ref(props.date_from);
+const sampai = ref(props.date_to);
+function display() { router.get(route('bs.gl.incomestatement'), { date_from: dari.value, date_to: sampai.value }, { preserveState: true, replace: true, preserveScroll: true }); }
+function excel() { window.location.href = route('bs.gl.incomestatement.export', { date_from: dari.value, date_to: sampai.value }); }
 
 function fmt(v: number | null) {
     const n = Number(v ?? 0);
@@ -23,7 +33,19 @@ function fmt(v: number | null) {
         <div class="flex flex-wrap items-center justify-between gap-2">
             <div>
                 <h1 class="flex items-center gap-2 text-2xl font-bold"><TrendingUp class="h-6 w-6 text-success-600" /> Laporan Laba Rugi</h1>
-                <p class="mt-0.5 text-sm text-neutral-500">{{ company }} &middot; Untuk periode s.d. {{ as_of }}</p>
+                <p class="mt-0.5 text-sm text-neutral-500">{{ company }} &middot; Periode {{ periode }}</p>
+            </div>
+            <div class="flex flex-wrap items-end gap-2">
+                <div>
+                    <label class="mb-1 block text-[10px] uppercase text-neutral-400">Dari Tanggal</label>
+                    <input v-model="dari" type="date" class="h-9 rounded-lg border border-neutral-300 bg-white px-3 text-sm dark:border-neutral-700 dark:bg-neutral-900" />
+                </div>
+                <div>
+                    <label class="mb-1 block text-[10px] uppercase text-neutral-400">Sampai Tanggal</label>
+                    <input v-model="sampai" type="date" class="h-9 rounded-lg border border-neutral-300 bg-white px-3 text-sm dark:border-neutral-700 dark:bg-neutral-900" />
+                </div>
+                <button @click="display" class="h-9 rounded-lg bg-primary-600 px-5 text-sm font-semibold text-white hover:bg-primary-700">Display</button>
+                <button @click="excel" class="inline-flex h-9 items-center gap-1.5 rounded-lg bg-success-600 px-4 text-sm font-semibold text-white hover:bg-success-700"><FileSpreadsheet class="h-4 w-4" /> Excel</button>
             </div>
         </div>
 

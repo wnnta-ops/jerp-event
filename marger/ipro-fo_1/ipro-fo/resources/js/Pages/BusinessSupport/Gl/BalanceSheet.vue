@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { computed } from 'vue';
-import { Link } from '@inertiajs/vue3';
-import { ArrowLeft, Scale } from 'lucide-vue-next';
+import { computed, ref } from 'vue';
+import { router, Link } from '@inertiajs/vue3';
+import { ArrowLeft, Scale, FileSpreadsheet } from 'lucide-vue-next';
 import Badge from '@/Components/UI/Badge.vue';
 
 type Line = { name: string; amount: number };
@@ -9,6 +9,8 @@ type Group = { name: string; code: string; total: number; lines: Line[] };
 const props = defineProps<{
     company: string;
     as_of: string;
+    // Neraca menyatakan posisi pada SATU tanggal, jadi tanggalnya yang dipilih.
+    as_of_date: string;
     assets: Group[];
     liabilities: Group[];
     equity: Group[];
@@ -22,6 +24,10 @@ function fmt(v: number) {
     return n < 0 ? `(${s})` : s;
 }
 const balanced = computed(() => Math.abs(props.total_assets - props.total_passiva) < 1);
+
+const asOf = ref(props.as_of_date);
+function display() { router.get(route('bs.gl.balancesheet'), { as_of: asOf.value }, { preserveState: true, replace: true, preserveScroll: true }); }
+function excel() { window.location.href = route('bs.gl.balancesheet.export', { as_of: asOf.value }); }
 </script>
 <template>
     <div class="space-y-4">
@@ -32,7 +38,15 @@ const balanced = computed(() => Math.abs(props.total_assets - props.total_passiv
                 <h1 class="flex items-center gap-2 text-2xl font-bold"><Scale class="h-6 w-6 text-primary-600" /> Neraca</h1>
                 <p class="mt-0.5 text-sm text-neutral-500">{{ company }} &middot; Per {{ as_of }}</p>
             </div>
-            <Badge :variant="balanced ? 'success' : 'danger'" dot>{{ balanced ? 'Balance' : 'Tidak Balance' }}</Badge>
+            <div class="flex flex-wrap items-end gap-2">
+                <div>
+                    <label class="mb-1 block text-[10px] uppercase text-neutral-400">Per Tanggal</label>
+                    <input v-model="asOf" type="date" @change="display" class="h-9 rounded-lg border border-neutral-300 bg-white px-3 text-sm dark:border-neutral-700 dark:bg-neutral-900" />
+                </div>
+                <button @click="display" class="h-9 rounded-lg bg-primary-600 px-5 text-sm font-semibold text-white hover:bg-primary-700">Display</button>
+                <button @click="excel" class="inline-flex h-9 items-center gap-1.5 rounded-lg bg-success-600 px-4 text-sm font-semibold text-white hover:bg-success-700"><FileSpreadsheet class="h-4 w-4" /> Excel</button>
+                <Badge :variant="balanced ? 'success' : 'danger'" dot>{{ balanced ? 'Balance' : 'Tidak Balance' }}</Badge>
+            </div>
         </div>
 
         <div class="grid gap-5 lg:grid-cols-2">
