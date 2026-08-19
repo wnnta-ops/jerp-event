@@ -85,7 +85,7 @@ echo "lokal            : $(git log --oneline -1)"
 echo "origin/dev       : $(git log --oneline -1 origin/dev)"
 echo "origin/main      : $(git log --oneline -1 origin/main)"
 echo "origin/bo        : $(git log --oneline -1 origin/bo)"
-echo "bo belum di dev  : $(git rev-list --count dev..origin/bo 2>/dev/null) commit"
+echo "bo belum di dev  : $(git rev-list --count origin/dev..origin/bo 2>/dev/null) commit"
 echo "dev belum di main: $(git rev-list --count origin/main..origin/dev 2>/dev/null) commit"
 echo
 docker ps --format "{{.Names}} {{.Status}}" | head -12
@@ -94,21 +94,29 @@ EOF
 
 CMD_MERGEBO=$(cat <<'EOF'
 git fetch origin bo dev --quiet
-git checkout dev --quiet 2>&1
-git pull --ff-only --quiet 2>&1
-JML=$(git rev-list --count dev..origin/bo)
+JML=$(git rev-list --count origin/dev..origin/bo)
 if [ "$JML" = "0" ]; then echo "tidak ada commit baru di bo"; exit 0; fi
 echo "$JML commit dari bo:"
-git log --oneline dev..origin/bo | head -10
+git log --oneline origin/dev..origin/bo | head -10
 echo "---"
+# Dikerjakan di WORKTREE SEMENTARA, bukan dengan checkout di tempat. Server ini
+# berada di cabang main untuk produksi; memindahkannya ke dev membuat setiap
+# /deploy berikutnya menjalankan kode dev tanpa ada tanda apa pun.
+W=$(mktemp -d)
+git worktree add --detach "$W" origin/dev --quiet
+cd "$W"
 if git merge --no-ff origin/bo -m "Merge bo lewat bot deploy" 2>&1 | tail -3; then
-    git push origin dev 2>&1 | tail -2
+    git push origin HEAD:dev 2>&1 | tail -2
+    KODE=0
 else
     echo "KONFLIK — merge DIBATALKAN, tidak ada yang berubah:"
     git diff --name-only --diff-filter=U
     git merge --abort
-    exit 1
+    KODE=1
 fi
+cd - >/dev/null
+git worktree remove "$W" --force
+exit $KODE
 EOF
 )
 
