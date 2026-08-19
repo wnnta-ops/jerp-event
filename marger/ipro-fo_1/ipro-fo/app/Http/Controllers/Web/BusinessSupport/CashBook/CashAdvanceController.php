@@ -8,6 +8,7 @@ use App\Domain\BusinessSupport\Models\BsAccount;
 use App\Domain\BusinessSupport\Models\BsCashAdvance;
 use App\Domain\BusinessSupport\Models\BsEmployee;
 use App\Domain\BusinessSupport\Models\BsHrDepartment;
+use App\Domain\BusinessSupport\Print\PengajuanKasbonPrinter;
 use App\Domain\BusinessSupport\Models\BsJournal;
 use App\Domain\BusinessSupport\Services\CashAdvanceService;
 use App\Exceptions\BusinessRuleException;
@@ -615,13 +616,28 @@ class CashAdvanceController extends Controller
         return redirect()->route('bs.advance.show', $advance)->with('success', 'Reimburse kekurangan panjar tercatat — jurnal otomatis terbentuk.');
     }
 
-    /** Cetak bukti PENGELUARAN bon sementara (auto-print). */
+    /**
+     * Cetak bon sementara (auto-print).
+     *
+     * PENGAJUAN memakai formulir eProperty yang sudah dipakai selama ini, dipilih menurut
+     * nominalnya: di bawah Rp 1 juta → "KAS BON" satu halaman; mulai Rp 1 juta → "Bukti
+     * Permohonan Pembayaran" + "Memo Internal". Ambangnya sama dengan yang dipakai rantai
+     * persetujuan bon, sehingga formulir yang tercetak selalu sejalan dengan siapa yang
+     * menandatanganinya.
+     *
+     * Bon yang SUDAH dibayar tetap memakai bukti pengeluaran lama — dokumen itu menerangkan
+     * pengeluarannya, bukan pengajuannya.
+     */
     public function print(Request $request, BsCashAdvance $advance): HttpResponse
     {
         abort_unless($request->user()?->canModule('cashbook'), 403);
-        $advance->load('cashAccount:id,code,name');
+        $advance->load(['cashAccount:id,code,name', 'department:id,code,name']);
 
-        return response($this->renderPrint($advance, 'pengeluaran'))->header('Content-Type', 'text/html; charset=UTF-8');
+        $html = $advance->status === 'requested'
+            ? app(PengajuanKasbonPrinter::class)->render($advance)
+            : $this->renderPrint($advance, 'pengeluaran');
+
+        return response($html)->header('Content-Type', 'text/html; charset=UTF-8');
     }
 
     /** Cetak bukti REALISASI bon sementara (auto-print) — format eProperty (logo + jurnal rincian + ttd). */
