@@ -37,6 +37,47 @@ class JournalController extends Controller
             ->latest('journal_date')->latest('id')
             ->paginate(50)->withQueryString();
 
+        // ── Periode yang sudah ditutup ──────────────────────────────────────────────
+        //
+        // Jurnal pada periode CLOSED tidak boleh diubah sama sekali — JournalService sudah
+        // menolaknya lewat assertPeriodOpen(), tapi layar tidak boleh menawarkan sesuatu yang
+        // pasti ditolak. Baris semacam itu ditandai di sini supaya kotak centangnya hilang
+        // dan aksi massal tidak pernah menyentuhnya. Satu-satunya jalan mengubahnya adalah
+        // membatalkan closing-nya dulu (General Function → Cancel Closing) sehingga periodenya
+        // kembali OPEN.
+        $tutup = BsFiscalPeriod::where('status', 'closed')->get(['year', 'month'])
+            ->map(fn ($p) => ((int) $p->year).'-'.((int) $p->month))->flip();
+        $ditutup = fn ($j) => $tutup->has(((int) $j->period_year).'-'.((int) $j->period_month));
+
+        $rows->getCollection()->transform(function ($j) use ($ditutup) {
+            $j->period_closed = $ditutup($j);
+
+            return $j;
+        });
+
+        // ── Jumlah per status untuk rentang yang sedang ditampilkan ─────────────────
+        //
+        // Aturan hitungnya SAMA PERSIS dengan General Function: jurnal pada periode tertutup
+        // masuk kolom Closed dan TIDAK ikut dihitung sebagai Baru/Final/Approved. Kalau
+        // aturannya berbeda, dua layar yang saling bertautan akan menyebut angka berbeda untuk
+        // data yang sama — persis kebingungan yang hendak dihilangkan.
+        $rekap = BsJournal::query()
+            ->whereBetween('journal_date', [$from->toDateString(), $to->toDateString()])
+            ->when($request->input('source'), fn ($q, $v) => $q->where('source', $v))
+            ->when($request->input('search'), fn ($q, $s) => $q->where(fn ($w) => $w->where('journal_number', 'like', "%{$s}%")->orWhere('description', 'like', "%{$s}%")->orWhere('reference', 'like', "%{$s}%")))
+            ->selectRaw('period_year, period_month, status, COUNT(*) AS c')
+            ->groupBy('period_year', 'period_month', 'status')->get();
+
+        $jumlah = ['baru' => 0, 'final' => 0, 'approved' => 0, 'closed' => 0];
+        foreach ($rekap as $r) {
+            if ($ditutup($r)) {
+                $jumlah['closed'] += (int) $r->c;
+
+                continue;
+            }
+            $jumlah[match ($r->status) { 'final' => 'final', 'posted' => 'approved', default => 'baru' }] += (int) $r->c;
+        }
+
         // Master → "Jurnal" = ringkas (rincian tersembunyi). Query → "Detail Transaksi Jurnal" = rincian tampil.
         $isDetail = $request->routeIs('bs.gl.journal.detail');
 
@@ -44,6 +85,9 @@ class JournalController extends Controller
             'journals'      => $rows,
             'sources'       => BsJournal::SOURCES,
             'statuses'      => BsJournal::STATUSES,
+            // Rekap per status + tahun yang dirujuk, untuk tautan balik ke General Function.
+            'jumlahStatus'  => $jumlah,
+            'tahunRekap'    => (int) $to->year,
             'defaultDetail' => $isDetail,
             'listRoute'     => $isDetail ? 'bs.gl.journal.detail' : 'bs.gl.journal.index',
             'title'         => $isDetail ? 'Detail Transaksi Jurnal' : 'Jurnal',

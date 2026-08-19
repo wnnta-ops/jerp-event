@@ -10,6 +10,7 @@ const props = defineProps<{
     employees: any;
     filters: { search?: string; status?: string };
     costCenters: Array<any>;
+    departments: Array<any>;
     summary: { active: number; payroll: number };
 }>();
 
@@ -20,11 +21,11 @@ function fmtRp(v: number) { return 'Rp ' + Number(v ?? 0).toLocaleString('id-ID'
 
 const showModal = ref(false);
 const editingId = ref<number | null>(null);
-const form = useForm<any>({ nik: '', name: '', position: '', cost_center_id: '', join_date: '', base_salary: 0, allowance: 0, bank_name: '', bank_account: '', is_active: true });
+const form = useForm<any>({ nik: '', name: '', position: '', department_id: '', cost_center_id: '', join_date: '', base_salary: 0, allowance: 0, bank_name: '', bank_account: '', is_active: true });
 function openCreate() { editingId.value = null; form.reset(); showModal.value = true; }
 function openEdit(e: any) {
     editingId.value = e.id;
-    Object.assign(form, { nik: e.nik ?? '', name: e.name, position: e.position ?? '', cost_center_id: e.cost_center_id ?? '', join_date: e.join_date ? e.join_date.slice(0,10) : '', base_salary: Number(e.base_salary), allowance: Number(e.allowance), bank_name: e.bank_name ?? '', bank_account: e.bank_account ?? '', is_active: !!e.is_active });
+    Object.assign(form, { nik: e.nik ?? '', name: e.name, position: e.position ?? '', department_id: e.department_id ?? '', cost_center_id: e.cost_center_id ?? '', join_date: e.join_date ? e.join_date.slice(0,10) : '', base_salary: Number(e.base_salary), allowance: Number(e.allowance), bank_name: e.bank_name ?? '', bank_account: e.bank_account ?? '', is_active: !!e.is_active });
     showModal.value = true;
 }
 function submit() {
@@ -57,14 +58,14 @@ const inputCls = 'h-9 w-full rounded-lg border border-neutral-300 bg-white px-3 
         <div class="card overflow-x-auto">
             <table class="w-full text-sm">
                 <thead class="bg-neutral-50 dark:bg-neutral-800"><tr class="text-left text-xs uppercase text-neutral-500">
-                    <th class="px-4 py-3">NIK</th><th class="px-4 py-3">Nama</th><th class="px-4 py-3">Jabatan</th><th class="px-4 py-3">Divisi</th><th class="px-4 py-3 text-right">Gaji Pokok</th><th class="px-4 py-3 text-right">Tunjangan</th><th class="px-4 py-3 text-center">Status</th><th class="px-4 py-3 text-right">Aksi</th>
+                    <th class="px-4 py-3">NIK</th><th class="px-4 py-3">Nama</th><th class="px-4 py-3">Jabatan</th><th class="px-4 py-3">Departemen</th><th class="px-4 py-3 text-right">Gaji Pokok</th><th class="px-4 py-3 text-right">Tunjangan</th><th class="px-4 py-3 text-center">Status</th><th class="px-4 py-3 text-right">Aksi</th>
                 </tr></thead>
                 <tbody class="divide-y divide-neutral-200 dark:divide-neutral-800">
                     <tr v-for="e in employees.data" :key="e.id">
                         <td class="px-4 py-2.5 font-mono text-xs">{{ e.nik ?? '—' }}</td>
                         <td class="px-4 py-2.5 font-medium">{{ e.name }}</td>
                         <td class="px-4 py-2.5">{{ e.position ?? '—' }}</td>
-                        <td class="px-4 py-2.5 text-neutral-500">{{ e.cost_center?.name ?? '—' }}</td>
+                        <td class="px-4 py-2.5 text-neutral-500">{{ e.department?.name ?? '—' }}</td>
                         <td class="px-4 py-2.5 text-right font-mono">{{ fmtRp(e.base_salary) }}</td>
                         <td class="px-4 py-2.5 text-right font-mono">{{ fmtRp(e.allowance) }}</td>
                         <td class="px-4 py-2.5 text-center"><Badge :variant="e.is_active ? 'success' : 'neutral'" size="sm">{{ e.is_active ? 'Aktif' : 'Nonaktif' }}</Badge></td>
@@ -83,7 +84,18 @@ const inputCls = 'h-9 w-full rounded-lg border border-neutral-300 bg-white px-3 
                         <div><label class="mb-1 block text-xs font-medium text-neutral-500">NIK</label><input v-model="form.nik" :class="inputCls" /></div>
                         <div><label class="mb-1 block text-xs font-medium text-neutral-500">Nama *</label><input v-model="form.name" required :class="inputCls" /></div>
                         <div><label class="mb-1 block text-xs font-medium text-neutral-500">Jabatan</label><input v-model="form.position" :class="inputCls" /></div>
-                        <div><label class="mb-1 block text-xs font-medium text-neutral-500">Divisi</label><select v-model="form.cost_center_id" :class="inputCls"><option value="">—</option><option v-for="c in costCenters" :key="c.id" :value="c.id">{{ c.name }}</option></select></div>
+                        <!-- Departemen — SATU sumber dengan Pengajuan Bon Sementara, SIP, dan Bukti Permohonan
+                             Pembayaran. Dulu isian ini terikat cost_center_id, tabel yang sama sekali
+                             berbeda, sehingga department_id karyawan selalu kosong dan ketiga layar itu
+                             tidak pernah bisa mengisi departemennya sendiri. -->
+                        <div>
+                            <label class="mb-1 block text-xs font-medium text-neutral-500">Departemen</label>
+                            <select v-model="form.department_id" :class="inputCls">
+                                <option value="">—</option>
+                                <option v-for="d in departments" :key="d.id" :value="d.id">{{ d.name }}</option>
+                            </select>
+                            <p class="mt-1 text-[11px] text-neutral-400">Terpakai otomatis pada Pengajuan Bon Sementara karyawan ini.</p>
+                        </div>
                         <div><label class="mb-1 block text-xs font-medium text-neutral-500">Tgl Masuk</label><input v-model="form.join_date" type="date" :class="inputCls" /></div>
                         <div><label class="mb-1 block text-xs font-medium text-neutral-500">Gaji Pokok *</label><input v-model.number="form.base_salary" type="number" step="1" min="0" required :class="[inputCls,'text-right font-mono']" /></div>
                         <div><label class="mb-1 block text-xs font-medium text-neutral-500">Tunjangan</label><input v-model.number="form.allowance" type="number" step="1" min="0" :class="[inputCls,'text-right font-mono']" /></div>

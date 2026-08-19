@@ -141,6 +141,15 @@ watch(filtered, () => { if (activeIndex.value > filtered.value.length - 1) activ
                         @keydown="onKeydown"
                     />
                 </div>
+                <!-- Berapa pilihan yang ADA di balik panel ini.
+                     Panelnya hanya setinggi enam baris dan terbuka pada urutan aslinya, jadi daftar
+                     panjang terbaca seolah pendek: 265 akun CoA tampil sebagai lima akun kas & bank
+                     yang kebetulan berkode paling kecil. Satu baris hitungan menjawab pertanyaan
+                     "apakah akun saya ada di sini?" tanpa memaksa orang menggulir seluruh daftar. -->
+                <div v-if="options.length > 8" class="border-b border-neutral-100 px-3 py-1 text-[11px] text-neutral-400 dark:border-neutral-800">
+                    <template v-if="query.trim()">{{ filtered.length }} dari {{ options.length }} pilihan</template>
+                    <template v-else>{{ options.length }} pilihan — ketik untuk menyaring, gulir untuk melihat semuanya</template>
+                </div>
                 <ul class="max-h-60 overflow-y-auto py-1 text-sm">
                     <li v-if="!filtered.length" class="px-3 py-2 text-center text-neutral-400">Tidak ada hasil</li>
                     <li

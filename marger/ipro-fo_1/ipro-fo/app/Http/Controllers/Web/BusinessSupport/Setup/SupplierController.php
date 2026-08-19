@@ -46,14 +46,26 @@ class SupplierController extends Controller
         return back()->with('success', "Supplier ditambahkan (kode {$data['code']}).");
     }
 
-    /** Kode supplier berurutan: SUP-0001, SUP-0002, … (anti-duplikat). */
+    /**
+     * Kode supplier berikutnya: MENERUSKAN nomor SP tertinggi yang ada — SP.00765, SP.00766, …
+     *
+     * Data supplier dari software lama memakai pola SP.##### dan berhenti di SP.00764. Kode
+     * baru melanjutkan deret itu, bukan memulai deret sendiri, supaya satu master supplier
+     * tidak berisi dua gaya penomoran dan orang tidak perlu mengingat mana yang lama.
+     *
+     * Perbandingannya ANGKA (CAST), bukan teks: diurutkan sebagai teks, "SP.00764" kalah oleh
+     * "SP.0099" dan nomor berikutnya akan menabrak kode yang sudah terpakai.
+     *
+     * Kode gaya lama SUP-#### yang mungkin tersisa dari data contoh sengaja tidak ikut
+     * dihitung — kalau ikut, satu baris SUP-9999 akan menyeret seluruh deret SP.
+     */
     private function nextCode(): string
     {
-        $last = BsSupplier::withTrashed()->where('code', 'like', 'SUP-%')->orderByRaw('LENGTH(code) DESC')->orderByDesc('code')->value('code');
-        $n    = $last ? ((int) substr((string) $last, 4)) + 1 : 1;
+        $n = (int) BsSupplier::withTrashed()->where('code', 'like', 'SP.%')
+            ->selectRaw('MAX(CAST(SUBSTRING(code, 4) AS UNSIGNED)) AS n')->value('n');
         do {
-            $code = 'SUP-'.str_pad((string) $n, 4, '0', STR_PAD_LEFT);
             $n++;
+            $code = 'SP.'.str_pad((string) $n, 5, '0', STR_PAD_LEFT);
         } while (BsSupplier::withTrashed()->where('code', $code)->exists());
 
         return $code;
@@ -93,6 +105,12 @@ class SupplierController extends Controller
             'email'             => ['nullable', 'email', 'max:150'],
             'address'           => ['nullable', 'string', 'max:255'],
             'city'              => ['nullable', 'string', 'max:100'],
+            'business_name'     => ['nullable', 'string', 'max:255'],
+            'phone2'            => ['nullable', 'string', 'max:30'],
+            'fax'               => ['nullable', 'string', 'max:30'],
+            'address_billing'   => ['nullable', 'string', 'max:255'],
+            'address_mail'      => ['nullable', 'string', 'max:255'],
+            'address_identity'  => ['nullable', 'string', 'max:255'],
             'npwp'              => ['required', 'digits:16'],
             'bank_name'         => ['required', 'string', 'max:64'],
             'bank_account_no'   => ['required', 'string', 'max:64'],

@@ -190,7 +190,6 @@ export function navGroups(foUrl: string): NavGroup[] {
                 { label: 'General Function', href: 'bs.gl.printhub' },
             ]},
             { label: 'Setup', icon: SlidersHorizontal, permission: ['businesssupport.view', 'gl.*'], children: [
-                { label: 'Transaction Rule', href: 'bs.gl.transaction-rule.index' },
                 { label: 'Multi Currency', href: 'bs.gl.currency.index' },
                 { label: 'Kurs Sistem', href: 'bs.gl.kurs.index' },
                 { label: 'Repair Data', href: 'bs.gl.repair.index' },
@@ -272,17 +271,10 @@ export function navGroups(foUrl: string): NavGroup[] {
         icon: Receipt, color: '#f43f5e', route: 'bs.ap.index',
         desc: 'Invoice & pembayaran hutang supplier.',
         items: [
-            { label: 'General Function', icon: FileText, permission: ['businesssupport.view', 'ap.*'], children: [
-                // Satu-satunya anak grup ini; namanya disamakan dengan grupnya agar tidak
-                // terbaca sebagai dua tingkat berbeda ("General Function → Print-Out").
-                { label: 'General Function', href: 'bs.ap.printhub' },
-            ]},
             { label: 'Setup', icon: SlidersHorizontal, permission: ['businesssupport.view', 'ap.*'], children: [
-                { label: 'Transaction Rule', href: 'bs.gl.transaction-rule.index', params: { source: 'ap' } },
                 { label: 'Kategori Invoice', href: 'bs.ap.categories.index' },
                 { label: 'Kategori Gimmick', href: 'bs.gimmick.categories.index' },
                 { label: 'Repair Data', href: 'bs.ap.repair.index' },
-                { label: 'Kelengkapan Berkas', href: 'bs.ap.berkas.index' },
             ]},
             { label: 'Master', icon: BookText, permission: ['businesssupport.view', 'ap.*'], children: [
                 { label: 'Invoice Hutang', href: 'bs.ap.index' },
@@ -295,6 +287,9 @@ export function navGroups(foUrl: string): NavGroup[] {
                 { label: 'Kartu Pembayaran Hutang', href: 'bs.ap.payment-card' },
                 { label: 'Laporan Invoice Hutang', href: 'bs.ap.report' },
                 { label: 'Laporan Penghapusan Hutang', href: 'bs.ap.penghapusan.report' },
+                // Dipindah ke sini dari grup "General Function" yang dihapus: isinya laporan,
+                // dan tempatnya laporan di modul ini adalah Query.
+                { label: 'Rekap PPh Dipotong', href: 'bs.tax.pph' },
             ]},
             { label: 'Generate Invoice', icon: ClipboardList, permission: ['businesssupport.view', 'ap.*'], children: [
                 { label: 'Registrasi Invoice Hutang', href: 'bs.ap.create' },
@@ -333,7 +328,6 @@ export function navGroups(foUrl: string): NavGroup[] {
                 { label: 'General Function', href: 'bs.cashbook.printhub' },
             ]},
             { label: 'Setup', icon: SlidersHorizontal, permission: ['businesssupport.view', 'cashbook.*'], children: [
-                { label: 'Transaction Rule', href: 'bs.gl.transaction-rule.index', params: { source: 'cash' } },
                 { label: 'Rekening', href: 'rekening.index' },
                 // Barcode tanda tangan yang dipakai pada Persetujuan (TTD) SIP.
                 { label: 'Set Up Barcode', href: 'bs.cashbook.signature-barcode.index' },

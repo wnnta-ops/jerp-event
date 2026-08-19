@@ -48,6 +48,24 @@ export function jt(n: number): string {
     return (n / 1e6).toLocaleString('id-ID', { maximumFractionDigits: 1 });
 }
 
+/**
+ * Rupiah disingkat bertingkat — dipakai label nilai pada grafik KOLOM, di mana satu
+ * slot kolom hanya selebar ~60px: "Rp 3.220.470.100" tidak muat, "Rp 3,22 M" muat.
+ * Nilai penuhnya tidak hilang — tetap dicetak utuh pada tooltip tiap kolom.
+ *
+ * Tandanya diletakkan SESUDAH "Rp" (Rp -1,9 M), mengikuti kebiasaan yang sudah dipakai
+ * rp() supaya satu angka minus terbaca sama di seluruh dashboard.
+ */
+export function rpRingkas(n: number): string {
+    const a = Math.abs(n);
+    const t = n < 0 ? '-' : '';
+    const f = (v: number, d: number) => v.toLocaleString('id-ID', { maximumFractionDigits: d });
+    if (a >= 1e9) return 'Rp ' + t + f(a / 1e9, 2) + ' M';
+    if (a >= 1e6) return 'Rp ' + t + f(a / 1e6, a >= 1e8 ? 0 : 1) + ' jt';
+    if (a >= 1e3) return 'Rp ' + t + f(a / 1e3, 0) + ' rb';
+    return 'Rp ' + t + f(a, 0);
+}
+
 /** Nilai besar dalam miliar: "18,9 M". */
 export function md(n: number): string {
     return (n / 1e9).toLocaleString('id-ID', { maximumFractionDigits: 2 }) + ' M';

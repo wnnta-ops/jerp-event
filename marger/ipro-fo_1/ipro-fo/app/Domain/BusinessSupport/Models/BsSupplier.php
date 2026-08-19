@@ -21,6 +21,8 @@ class BsSupplier extends Model
     protected $fillable = [
         'tenant_id', 'code', 'name', 'category', 'category_id', 'contact_person', 'phone', 'email',
         'address', 'city', 'npwp', 'bank_name', 'bank_account_no', 'bank_account_name', 'is_active',
+        // Kolom pendamping dari Data Supplier software lama.
+        'business_name', 'phone2', 'fax', 'address_billing', 'address_mail', 'address_identity',
     ];
 
     protected $casts = ['is_active' => 'boolean'];

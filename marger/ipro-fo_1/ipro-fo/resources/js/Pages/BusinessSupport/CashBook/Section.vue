@@ -30,7 +30,6 @@ const sections = computed<Record<string, Item[]>>(() => ({
         { label: 'General Function', route: r('bs.cashbook.printhub') },
     ],
     'setup': [
-        { label: 'Transaction Rule', route: r('bs.gl.transaction-rule.index', { source: 'cash' }) },
         { label: 'Rekening', route: r('rekening.index') },
         { label: 'Repair Data', route: r('bs.cashbook.repair.index') },
     ],

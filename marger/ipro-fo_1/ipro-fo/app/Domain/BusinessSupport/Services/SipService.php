@@ -24,9 +24,16 @@ final class SipService
     {
         return DB::transaction(function () use ($data, $userId): BsSip {
             $c = $this->composeLines($data);
+            $nomor = $this->nextNumber($data['sip_date']);
 
             $sip = BsSip::create([
-                'sip_number'      => $this->nextNumber($data['sip_date']),
+                'sip_number'      => $nomor['number'],
+                // Urutan & tahunnya ikut disimpan: dua kolom inilah yang dijaga unique index,
+                // dan dari sinilah SIP lama (yang nomornya masih format SIP/MUP/...) menyusun
+                // nomor cetaknya. Dengan diisi sejak awal, nomor dokumen dan nomor cetak
+                // TIDAK PERNAH lagi menjadi dua angka yang berbeda.
+                'print_seq'       => $nomor['seq'],
+                'print_year'      => $nomor['year'],
                 'sip_date'        => $data['sip_date'],
                 'title'           => $data['title'] ?? null,
                 'cash_account_id' => (int) $data['cash_account_id'],
@@ -210,16 +217,35 @@ final class SipService
         return $sip;
     }
 
-    private function nextNumber(string $date): string
+    /**
+     * Nomor SIP: NNN/FIN/MITRA-SI/{bulan romawi}/{tahun} — SATU nomor untuk dokumen ini.
+     *
+     * Dulu ada dua: sip_number berformat SIP/MUP/26/VIII/00007 diterbitkan saat SIP dibuat,
+     * dan nomor cetak 001/FIN/MITRA-SI/VIII/2026 diterbitkan lagi saat pertama kali dicetak.
+     * Satu dokumen dengan dua nomor memaksa orang merekonsiliasi keduanya setiap kali
+     * dokumennya dirujuk. Sekarang nomornya satu, diterbitkan sekali di sini.
+     *
+     * Urutannya per TAHUN SIP DIAJUKAN (sip_date), bukan tahun berjalan — SIP bertanggal
+     * tahun lalu tidak boleh menyerobot urutan tahun ini.
+     *
+     * Urutan dibaca dari MAX(print_seq) di dalam transaksi ber-lockForUpdate, bukan dari
+     * COUNT(*) seperti sebelumnya: menghitung baris membuat nomor terpakai ulang begitu ada
+     * satu SIP terhapus, dan dua pembuatan bersamaan membaca hitungan yang sama. Unique index
+     * (tenant_id, print_year, print_seq) tetap menjadi penjaga terakhirnya.
+     *
+     * @return array{number: string, seq: int, year: int}
+     */
+    private function nextNumber(string $date): array
     {
         $d = Carbon::parse($date);
-        $roman = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X', 'XI', 'XII'][$d->month - 1];
-        $seq = BsSip::withTrashed()->whereYear('sip_date', $d->year)->count() + 1;
-        do {
-            $number = sprintf('SIP/MUP/%s/%s/%05d', $d->format('y'), $roman, $seq);
-            $seq++;
-        } while (BsSip::withTrashed()->where('sip_number', $number)->exists());
+        $tahun = (int) $d->year;
 
-        return $number;
+        $seq = (int) BsSip::withTrashed()->where('print_year', $tahun)->lockForUpdate()->max('print_seq') + 1;
+
+        return [
+            'number' => sprintf('%03d/FIN/MITRA-SI/%s/%d', $seq, BsSip::ROMAWI[$d->month] ?? 'I', $tahun),
+            'seq'    => $seq,
+            'year'   => $tahun,
+        ];
     }
 }
