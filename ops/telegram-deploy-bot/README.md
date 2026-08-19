@@ -12,6 +12,7 @@ depan komputer.
 | `/promote` | Naikkan `dev` → `main`, lalu push |
 | `/logs fo` · `bo` | 30 baris log terakhir |
 | `/backup` | Backup penuh (DB + berkas) |
+| `/backups` | Daftar backup yang ada, ukurannya, dan sisa ruang disk |
 
 Bot menjalankan **perintah tetap** yang tertulis di skrip — bukan shell bebas.
 Bocornya token berarti orang lain bisa memicu deploy, tetapi tidak bisa
