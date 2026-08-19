@@ -130,7 +130,7 @@
     "code": "10203",
     "name": "AKUMULASI PENYUSUTAN ASET TETAP BERWUJUD",
     "type": "asset",
-    "normal_balance": "D",
+    "normal_balance": "K",
     "is_postable": false,
     "parent_code": "102"
   },
@@ -139,7 +139,7 @@
     "code": "10204",
     "name": "AKUMULASI AMORTISASI ASET TETAP TIDAK BERWUJUD",
     "type": "asset",
-    "normal_balance": "D",
+    "normal_balance": "K",
     "is_postable": false,
     "parent_code": "102"
   },
@@ -337,7 +337,7 @@
     "code": "1020303",
     "name": "AKUMULASI PENYUSUTAN ASET TETAP BERWUJUD",
     "type": "asset",
-    "normal_balance": "D",
+    "normal_balance": "K",
     "is_postable": false,
     "parent_code": "10203"
   },
@@ -346,7 +346,7 @@
     "code": "1020404",
     "name": "AKUMULASI AMORTISASI ASET TETAP TIDAK BERWUJUD",
     "type": "asset",
-    "normal_balance": "D",
+    "normal_balance": "K",
     "is_postable": false,
     "parent_code": "10204"
   },
@@ -544,7 +544,7 @@
     "code": "102030303",
     "name": "AKUMULASI PENYUSUTAN ASET TETAP BERWUJUD",
     "type": "asset",
-    "normal_balance": "D",
+    "normal_balance": "K",
     "is_postable": false,
     "parent_code": "1020303"
   },
@@ -553,7 +553,7 @@
     "code": "102040404",
     "name": "AKUMULASI AMORTISASI ASET TETAP TIDAK BERWUJUD",
     "type": "asset",
-    "normal_balance": "D",
+    "normal_balance": "K",
     "is_postable": false,
     "parent_code": "1020404"
   },
@@ -1768,7 +1768,7 @@
     "code": "10203030301",
     "name": "AKUMULASI PENYUSUTAN BANGUNAN",
     "type": "asset",
-    "normal_balance": "D",
+    "normal_balance": "K",
     "is_postable": true,
     "parent_code": "102030303"
   },
@@ -1777,7 +1777,7 @@
     "code": "10203030302",
     "name": "AKUMULASI PENYUSUTAN KENDARAAN",
     "type": "asset",
-    "normal_balance": "D",
+    "normal_balance": "K",
     "is_postable": true,
     "parent_code": "102030303"
   },
@@ -1786,7 +1786,7 @@
     "code": "10203030303",
     "name": "AKUMULASI PENYUSUTAN INVENTARIS KANTOR",
     "type": "asset",
-    "normal_balance": "D",
+    "normal_balance": "K",
     "is_postable": true,
     "parent_code": "102030303"
   },
@@ -1795,7 +1795,7 @@
     "code": "10203030304",
     "name": "AKUMULASI PENYUSUTAN BANGUNAN TIDAK PERMANEN",
     "type": "asset",
-    "normal_balance": "D",
+    "normal_balance": "K",
     "is_postable": true,
     "parent_code": "102030303"
   },
@@ -1804,7 +1804,7 @@
     "code": "10204040401",
     "name": "AKUMULASI AMORTISASI SOFTWARE",
     "type": "asset",
-    "normal_balance": "D",
+    "normal_balance": "K",
     "is_postable": true,
     "parent_code": "102040404"
   },
@@ -1813,7 +1813,7 @@
     "code": "10204040402",
     "name": "AKUMULASI AMORTISASI HAK PATEN",
     "type": "asset",
-    "normal_balance": "D",
+    "normal_balance": "K",
     "is_postable": true,
     "parent_code": "102040404"
   },
@@ -1822,7 +1822,7 @@
     "code": "10204040403",
     "name": "AKUMULASI AMORTISASI ASET TETAP TIDAK BERWUJUD LAINNYA",
     "type": "asset",
-    "normal_balance": "D",
+    "normal_balance": "K",
     "is_postable": true,
     "parent_code": "102040404"
   },

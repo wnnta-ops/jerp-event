@@ -168,10 +168,75 @@ final class CoaImporter
             }
         }
 
+        $this->turunkanSaldoNormal($akun);
+
         // Induk selalu ditulis sebelum anaknya.
         usort($akun, fn ($x, $y) => $x['level'] <=> $y['level'] ?: strcmp($x['code'], $y['code']));
 
         return ['akun' => $akun, 'galat' => $galat];
+    }
+
+    /**
+     * Isi saldo normal yang dikosongkan berkas: dari ANAK-anaknya dulu, baru dari induk.
+     *
+     * Akun header adalah rangkuman turunannya, bukan salinan induknya. "AKUMULASI PENYUSUTAN
+     * ASET TETAP BERWUJUD" bercabang dari ASET yang bersaldo D, tetapi seluruh isinya —
+     * akumulasi penyusutan bangunan, kendaraan, inventaris — bersaldo K karena sifatnya
+     * mengurangi aset. Menurunkannya dari induk saja membuat kepala cabang berlawanan arah
+     * dengan seluruh isinya, dan laporan yang memberi tanda dari kolom ini (Neraca Komparasi,
+     * Neraca Multi Periode, budget vs realisasi) akan membacanya terbalik.
+     *
+     * Hanya berlaku bila SELURUH anaknya searah. Cabang bercampur seperti ASET TETAP — yang
+     * memuat harga perolehan (D) sekaligus akumulasi penyusutan (K) — dibiarkan mengikuti
+     * induknya, karena nilai bersihnya memang bersaldo debit.
+     *
+     * Baris yang menyebutkan D/K sendiri TIDAK pernah diubah: berkas operator selalu menang.
+     *
+     * @param  array<int, array<string, mixed>>  $akun  diubah di tempat
+     */
+    private function turunkanSaldoNormal(array &$akun): void
+    {
+        $indeks = [];
+        $anak = [];
+        foreach ($akun as $i => $a) {
+            $indeks[$a['code']] = $i;
+            if ($a['parent_code'] !== null) {
+                $anak[$a['parent_code']][] = $i;
+            }
+        }
+
+        // Bawah ke atas: tingkat terdalam lebih dulu, supaya anak sudah bernilai saat
+        // induknya dihitung.
+        for ($lvl = count(self::LEVEL); $lvl >= 1; $lvl--) {
+            foreach ($akun as $i => $a) {
+                if ($a['level'] !== $lvl || $akun[$i]['normal_balance'] !== null) {
+                    continue;
+                }
+                $arah = [];
+                foreach ($anak[$a['code']] ?? [] as $j) {
+                    if ($akun[$j]['normal_balance'] !== null) {
+                        $arah[$akun[$j]['normal_balance']] = true;
+                    }
+                }
+                if (count($arah) === 1) {
+                    $akun[$i]['normal_balance'] = array_key_first($arah);
+                }
+            }
+        }
+
+        // Atas ke bawah: yang masih kosong ikut induknya. Sisanya (akun puncak, atau akun
+        // yang induknya cuma ada di database) ditinggal kosong dan diselesaikan tulis().
+        for ($lvl = 2; $lvl <= count(self::LEVEL); $lvl++) {
+            foreach ($akun as $i => $a) {
+                if ($a['level'] !== $lvl || $akun[$i]['normal_balance'] !== null) {
+                    continue;
+                }
+                $p = $indeks[$a['parent_code']] ?? null;
+                if ($p !== null && $akun[$p]['normal_balance'] !== null) {
+                    $akun[$i]['normal_balance'] = $akun[$p]['normal_balance'];
+                }
+            }
+        }
     }
 
     /**

@@ -109,6 +109,89 @@ $cek('KAS OPERASIONAL tertelusur sampai ASET (6 tingkat)',
     $rantai === ['10101010101', '101010101', '1010101', '10101', '101', '1'],
     implode(' > ', $rantai));
 
+echo "\n=== 2b. Saldo normal akun kontra-aset ===\n";
+
+// Akumulasi penyusutan & amortisasi mengurangi aset, jadi lazimnya bersaldo KREDIT walaupun
+// bercabang dari ASET yang bersaldo debit. Kolom ini memberi TANDA pada Neraca Komparasi,
+// Neraca Multi Periode, dan pembandingan budget vs realisasi — salah arah di sini membuat
+// angkanya terbaca terbalik, bukan sekadar salah label.
+$kontra = BsAccount::whereIn('code', [
+    '10203', '1020303', '102030303', '10203030301', '10203030302', '10203030303', '10203030304',
+    '10204', '1020404', '102040404', '10204040401', '10204040402', '10204040403',
+])->get()->keyBy('code');
+
+$cek('ketigabelas akun akumulasi ada semua', $kontra->count() === 13, (string) $kontra->count());
+$salahArah = $kontra->filter(fn ($a) => $a->normal_balance !== 'K')->pluck('code')->all();
+$cek('seluruh cabang akumulasi bersaldo normal K — daun maupun headernya',
+    $salahArah === [], implode(',', $salahArah));
+
+// Kepala cabang yang isinya bercampur harus TETAP debit: nilai bersih aset tetap (harga
+// perolehan dikurangi akumulasi penyusutan) memang bersaldo debit.
+foreach (['1' => 'ASET', '102' => 'ASET TETAP'] as $kode => $nama) {
+    $a = BsAccount::where('code', $kode)->first();
+    $cek("{$kode} {$nama} tetap bersaldo normal D", $a?->normal_balance === 'D', $a?->normal_balance ?? '-');
+}
+
+$kMenurutBerkas = collect($data)->where('normal_balance', 'K')->pluck('code')->sort()->values()->all();
+$cek('berkas sumber menandai tepat 13 akun sebagai K', count($kMenurutBerkas) === 13, (string) count($kMenurutBerkas));
+
+$kDiDb = BsAccount::whereIn('code', array_column($data, 'code'))
+    ->where('normal_balance', 'K')->pluck('code')->sort()->values()->all();
+$cek('akun bersaldo K di bagan akun sama persis dengan berkas', $kDiDb === $kMenurutBerkas,
+    implode(',', array_diff($kDiDb, $kMenurutBerkas)).' / '.implode(',', array_diff($kMenurutBerkas, $kDiDb)));
+
+// Aturan penurunannya: berkas yang HANYA menyebut K pada baris level 6 tetap harus
+// menghasilkan header K juga — itulah yang membuat unggahan lampiran mentah lewat layar
+// memberi hasil yang sama dengan berkas data yang sudah terselesaikan.
+$mentah = [
+    ['3', '10203', 'AKUMULASI PENYUSUTAN ASET TETAP BERWUJUD', 'Ledger', '180', '', '', '', '', ''],
+    ['4', '1020303', 'AKUMULASI PENYUSUTAN ASET TETAP BERWUJUD', 'Detil', '180', '', '', '', '', ''],
+    ['5', '102030303', 'AKUMULASI PENYUSUTAN ASET TETAP BERWUJUD', 'Detil Transaksi', '180', '', '', '', '', ''],
+    ['6', '10203030301', 'AKUMULASI PENYUSUTAN BANGUNAN', 'Detil Sub Transaksi', 'Aktiva', 'K', '√', '', '', ''],
+    ['6', '10203030302', 'AKUMULASI PENYUSUTAN KENDARAAN', 'Detil Sub Transaksi', 'Aktiva', 'K', '√', '', '', ''],
+];
+$hMentah = $importer->baca($mentah);
+$arah = collect($hMentah['akun'])->pluck('normal_balance', 'code')->all();
+$cek('header ikut anaknya saat kolom Normal-nya dikosongkan',
+    $hMentah['galat'] === [] && $arah === [
+        '10203' => 'K', '1020303' => 'K', '102030303' => 'K',
+        '10203030301' => 'K', '10203030302' => 'K',
+    ], json_encode($arah).' galat='.json_encode($hMentah['galat']));
+
+// Anak yang campur arah TIDAK boleh menyeret induknya.
+$campur = $importer->baca([
+    ['5', '102010101', 'HARGA PEROLEHAN', 'Detil Transaksi', '180', '', '', '', '', ''],
+    ['6', '10201010101', 'TANAH', 'Detil Sub Transaksi', 'Aktiva', 'D', '√', '', '', ''],
+    ['6', '10201010102', 'UJI KONTRA', 'Detil Sub Transaksi', 'Aktiva', 'K', '√', '', '', ''],
+]);
+$arahCampur = collect($campur['akun'])->pluck('normal_balance', 'code')->all();
+// Sengaja TIDAK memakai ?? di sini: nilainya memang null, dan ?? akan menyamakan "bernilai
+// null" dengan "kuncinya tidak ada" sehingga pemeriksaannya jadi tidak berarti.
+$cek('induk beranak campur tidak ikut salah satu anaknya',
+    array_key_exists('102010101', $arahCampur) && $arahCampur['102010101'] === null,
+    json_encode($arahCampur));
+
+// Yang ditinggal kosong itu diselesaikan tulis() dari induk yang sudah ada di bagan akun —
+// bukan dibiarkan kosong sampai ke database.
+DB::beginTransaction();
+try {
+    $importer->tulis($campur['akun']);
+    $indukDb = BsAccount::where('code', '1020101')->value('normal_balance');
+    $cek('tulis() mengisinya dari induk yang sudah ada di bagan akun',
+        BsAccount::where('code', '102010101')->value('normal_balance') === $indukDb,
+        'induk '.$indukDb.' vs '.BsAccount::where('code', '102010101')->value('normal_balance'));
+} finally {
+    DB::rollBack();
+}
+
+// Baris yang menyebutkan arahnya sendiri tidak boleh ditimpa aturan penurunan.
+$eksplisit = $importer->baca([
+    ['5', '102030303', 'AKUMULASI PENYUSUTAN ASET TETAP BERWUJUD', 'Detil Transaksi', '', 'D', '', '', '', ''],
+    ['6', '10203030301', 'AKUMULASI PENYUSUTAN BANGUNAN', 'Detil Sub Transaksi', 'Aktiva', 'K', '√', '', '', ''],
+]);
+$cek('arah yang ditulis operator tidak ditimpa turunan anaknya',
+    collect($eksplisit['akun'])->firstWhere('code', '102030303')['normal_balance'] === 'D');
+
 echo "\n=== 3. Angka format \"180\" tidak pernah jadi tipe ===\n";
 
 $tipe = BsAccount::whereIn('code', array_column($data, 'code'))->distinct()->pluck('type')->all();
@@ -161,7 +244,7 @@ try {
     $sebelum = BsAccount::count();
     $baris = array_map(fn ($a) => [
         (string) $a['level'], (string) $a['code'], (string) $a['name'],
-        CoaImporter::LEVEL[(int) $a['level']], 'Aktiva', 'D',
+        CoaImporter::LEVEL[(int) $a['level']], 'Aktiva', (string) $a['normal_balance'],
         $a['level'] === 6 ? '√' : '', '', '', '',
     ], $data);
     $ulang = $importer->tulis($importer->baca($baris)['akun']);

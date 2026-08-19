@@ -47,7 +47,7 @@ const KOLOM_IMPOR = [
     { nama: 'akun', ket: 'Nama akun.', contoh: 'KAS OPERASIONAL' },
     { nama: 'nama_level', ket: 'Nama tingkatan. Boleh kosong; bila diisi harus cocok.', contoh: 'Detil Sub Transaksi' },
     { nama: 'tipe', ket: 'Aktiva / Kewajiban / Ekuitas / Pendapatan / Beban. Kosong = ikut induk.', contoh: 'Aktiva' },
-    { nama: 'normal', ket: 'D atau K. Kosong = ikut induk.', contoh: 'D' },
+    { nama: 'normal', ket: 'D atau K. Kosong = ikut akun turunannya bila seragam, kalau tidak ikut induk.', contoh: 'D' },
     { nama: 'postable', ket: 'Diabaikan — hanya level 6 yang bisa dijurnal.', contoh: '\u221a' },
     { nama: 'cost_center', ket: 'Diterima tapi tidak disimpan (belum ada kolomnya).', contoh: '' },
     { nama: 'cash_flow_direct', ket: 'KODE kategori cash flow direct. Boleh kosong.', contoh: '' },
