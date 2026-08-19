@@ -126,6 +126,8 @@
          Site Plan (siteplan_show_info). Pengunjung tak melihat checklist. ── --}}
     @if ($showInfo ?? true)
     <div class="info-wrap">
+        <button type="button" class="info-toggle" id="info-toggle"
+                aria-expanded="true" aria-controls="info-body">Sembunyikan Informasi</button>
         <div class="info-body" id="info-body">
             @forelse ($tahapStats as $t)
                 <div class="info-card" data-key="{{ $t['lokasi'] }}|{{ $t['tahap'] }}">
@@ -203,13 +205,29 @@
                 : (s === 'BOOKING' ? { text: 'BOOKED', cls: ' booking' }
                 : (s === 'HOLD' ? { text: 'HOLD', cls: ' hold' } : null));
 
-            // Stempel SOLD ikut skala zoom: di zoom paling jauh (fit) ukurannya kecil,
-            // membesar proporsional saat zoom-in supaya selalu pas dengan kavling.
+            // Stempel diskalakan terhadap LEBAR KAVLING dalam piksel gambar, bukan
+            // terhadap zoom awal. Zoom awal berasal dari fitBounds sehingga berbeda
+            // menurut lebar layar: di HP nilainya jauh lebih kecil, kavlingnya ikut
+            // mengecil, tetapi stempel tetap dipatok 6px pada zoom itu — hasilnya
+            // stempel lebih besar daripada kavlingnya dan siteplan tertutup total.
+            // Diikat ke ukuran kavling, proporsinya sama di layar mana pun.
             const soldStamps = [];
-            const baseZoom = map.getZoom();
+            const lebarKavling = (() => {
+                const w = UNITS
+                    .filter(u => Array.isArray(u.siteplan_coords) && u.siteplan_coords.length >= 3)
+                    .map(u => { const xs = u.siteplan_coords.map(p => p[0]); return Math.max(...xs) - Math.min(...xs); })
+                    .filter(v => v > 0).sort((a, b) => a - b);
+                return w.length ? w[Math.floor(w.length / 2)] : 40;   // median, tahan kavling ganjil
+            })();
             const updateSoldScale = () => {
-                const k = Math.pow(2, map.getZoom() - baseZoom);
-                soldStamps.forEach(s => { s.style.transform = 'translate(-50%, -50%) rotate(-12deg) scale(' + k.toFixed(3) + ')'; });
+                const lebarLayar = lebarKavling * Math.pow(2, map.getZoom());
+                soldStamps.forEach(s => {
+                    // Lebar asli diukur sekali; teks stempel berbeda panjang
+                    // (SOLD/BOOKED/HOLD) sehingga tiap stempel butuh acuannya sendiri.
+                    if (!s._asli && s.offsetWidth) s._asli = s.offsetWidth;
+                    const k = (lebarLayar * 0.78) / (s._asli || 24);
+                    s.style.transform = 'translate(-50%, -50%) rotate(-12deg) scale(' + k.toFixed(3) + ')';
+                });
             };
             map.on('zoomend', updateSoldScale);
 
@@ -446,6 +464,23 @@
                 if (attempt < 40) setTimeout(() => subscribeRealtime(attempt + 1), 250);
             })(0);
         }
+
+        // ── Buka/tutup panel informasi ──
+        // Di layar sempit panel ini menutupi hampir seluruh siteplan, jadi bawaannya
+        // tertutup di HP dan terbuka di layar lebar. Di luar blok SITEPLAN supaya
+        // tetap berfungsi walau siteplan belum diupload.
+        (function () {
+            const tombol = document.getElementById('info-toggle');
+            const isi = document.getElementById('info-body');
+            if (!tombol || !isi) return;
+            const setel = (tampil) => {
+                isi.classList.toggle('hidden', !tampil);
+                tombol.textContent = tampil ? 'Sembunyikan Informasi' : 'Tampilkan Informasi';
+                tombol.setAttribute('aria-expanded', tampil ? 'true' : 'false');
+            };
+            setel(window.matchMedia('(min-width: 769px)').matches);
+            tombol.addEventListener('click', () => setel(isi.classList.contains('hidden')));
+        })();
     </script>
 </body>
 </html>
