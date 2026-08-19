@@ -57,19 +57,35 @@ Chat id Anda (dan/atau grup) didapat dengan cara yang sama seperti bot persetuju
 ## 2. Kredensial GitHub di server
 
 GitHub → Settings → Developer settings → **Fine-grained tokens** → repo ini saja,
-izin **Contents: Read and write**.
+izin **Contents: Read and write**, dengan tanggal kedaluwarsa (jangan "No expiration").
+
+Dipasang sebagai user **`ptmup`** — bot berjalan sebagai user itu, bukan root:
 
 ```bash
 cd ~/docker/jerp
-git remote set-url origin https://<USERNAME>:<TOKEN>@github.com/arieyogian/jerp.git
-git config --global user.name "Deploy Bot"
+git remote set-url origin https://github.com/arieyogian/jerp.git
+
+git config --global credential.helper store
+printf 'https://arieyogian:github_pat_TOKEN_ANDA@github.com
+' > ~/.git-credentials
+chmod 600 ~/.git-credentials
+
+git config --global user.name  "Deploy Bot"
 git config --global user.email "deploy@javaresidence.com"
 ```
 
-URL remote memuat token, jadi `.git/config` harus tertutup:
+**Jangan menempelkan token ke dalam URL remote.** Bot meneruskan keluaran git ke
+Telegram, dan pesan error `git push` sering memuat URL remote secara utuh — token
+akan tercetak di riwayat chat sekaligus di journald. Dengan credential helper,
+`git remote -v` tetap bersih dan token hanya ada di satu berkas ber-mode 600.
+
+Uji sebelum dipakai lewat bot:
+
 ```bash
-chmod 600 .git/config
+git fetch origin && git push origin main --dry-run
 ```
+
+`Everything up-to-date` tanpa ditanyai username/password berarti sudah benar.
 
 ## 3. Pasang
 

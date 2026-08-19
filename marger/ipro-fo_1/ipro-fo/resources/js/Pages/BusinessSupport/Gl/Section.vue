@@ -32,7 +32,6 @@ const sections = computed<Record<string, Item[]>>(() => ({
         { label: 'General Function', route: r('bs.gl.printhub') },
     ],
     'setup': [
-        { label: 'Transaction Rule', route: r('bs.gl.transaction-rule.index') },
         { label: 'Multi Currency', route: r('bs.gl.currency.index') },
         { label: 'Kurs Sistem', route: r('bs.gl.kurs.index') },
         { label: 'Repair Data', route: r('bs.gl.repair.index') },

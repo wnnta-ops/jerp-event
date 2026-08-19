@@ -43,7 +43,7 @@ const inputCls = 'h-9 w-full rounded-lg border border-neutral-300 bg-white px-3 
                         <td class="px-4 py-2.5"><span class="font-mono text-xs text-neutral-400">{{ m.account?.code }}</span> {{ m.account?.name }}</td>
                         <td class="px-4 py-2.5">
                             <select :value="m.category_id" @change="changeCategory(m, ($event.target as HTMLSelectElement).value as any)" :class="inputCls">
-                                <option v-for="c in categories" :key="c.id" :value="c.id">{{ c.code }} · {{ c.name }}</option>
+                                <option v-for="c in categories" :key="c.id" :value="c.id">{{ c.code }} - {{ c.name }}</option>
                             </select>
                         </td>
                         <td class="px-4 py-2.5"><Badge variant="neutral" size="sm">{{ activityLabel[m.category?.activity] ?? '—' }}</Badge></td>
@@ -61,7 +61,7 @@ const inputCls = 'h-9 w-full rounded-lg border border-neutral-300 bg-white px-3 
                     <form @submit.prevent="submit" class="space-y-3">
                         <div><label class="mb-1 block text-xs font-medium text-neutral-500">Akun (ketik kode / nama) *</label><SearchSelect v-model="form.account_id" :options="accounts" placeholder="— cari akun —" /><p v-if="form.errors.account_id" class="mt-1 text-xs text-danger-500">{{ form.errors.account_id }}</p></div>
                         <div><label class="mb-1 block text-xs font-medium text-neutral-500">Kategori Arus Kas *</label>
-                            <select v-model="form.category_id" required :class="inputCls"><option value="">— pilih —</option><option v-for="c in categories" :key="c.id" :value="c.id">{{ c.code }} · {{ c.name }}</option></select>
+                            <select v-model="form.category_id" required :class="inputCls"><option value="">— pilih —</option><option v-for="c in categories" :key="c.id" :value="c.id">{{ c.code }} - {{ c.name }}</option></select>
                         </div>
                         <p class="text-xs text-neutral-400">Satu akun hanya bisa dipetakan ke satu kategori. Menyimpan akun yang sudah ada akan menimpa mapping lama.</p>
                         <div class="flex justify-end gap-2 pt-2">

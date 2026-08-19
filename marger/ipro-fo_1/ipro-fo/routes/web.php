@@ -14,7 +14,6 @@ use App\Http\Controllers\Web\BusinessSupport\Setup\AccountController as BsAccoun
 use App\Http\Controllers\Web\BusinessSupport\Setup\CostCenterController as BsCostCenterController;
 use App\Http\Controllers\Web\BusinessSupport\Setup\CurrencyController as BsCurrencyController;
 use App\Http\Controllers\Web\BusinessSupport\Setup\CashFlowSetupController as BsCashFlowSetupController;
-use App\Http\Controllers\Web\BusinessSupport\Setup\TransactionRuleController as BsTransactionRuleController;
 use App\Http\Controllers\Web\BusinessSupport\Setup\JournalDimensionController as BsJournalDimensionController;
 use App\Http\Controllers\Web\BusinessSupport\Setup\SupplierController as BsSupplierController;
 use App\Http\Controllers\Web\BusinessSupport\Inventory\SetupMasterController as BsInvSetupController;
@@ -37,7 +36,6 @@ use App\Http\Controllers\Web\BusinessSupport\Payable\GimmickCategoryController a
 use App\Http\Controllers\Web\BusinessSupport\Payable\ApKuitansiController as BsApKuitansiController;
 use App\Http\Controllers\Web\BusinessSupport\Payable\PostingInvoiceController as BsApPostingController;
 use App\Http\Controllers\Web\BusinessSupport\Payable\PenghapusanController as BsApPenghapusanController;
-use App\Http\Controllers\Web\BusinessSupport\Payable\ApBerkasController as BsApBerkasController;
 use App\Http\Controllers\Web\BusinessSupport\Receivable\ArInvoiceController as BsArController;
 use App\Http\Controllers\Web\BusinessSupport\Receivable\ArKuitansiController as BsArKuitansiController;
 use App\Http\Controllers\Web\BusinessSupport\Receivable\ArMemorialController as BsArMemorialController;
@@ -564,12 +562,6 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
     Route::delete('/business-support/gl/cf-mapping/{mapping}', [BsCashFlowSetupController::class, 'destroyMapping'])->name('bs.gl.cf-mapping.destroy');
 
     // ── GL SETUP: Transaction Rule (pemetaan transaksi → jurnal otomatis) ──
-    Route::get('/business-support/gl/transaction-rules',         [BsTransactionRuleController::class, 'index'])->name('bs.gl.transaction-rule.index');
-    Route::get('/business-support/gl/transaction-rules/create',  [BsTransactionRuleController::class, 'create'])->name('bs.gl.transaction-rule.create');
-    Route::post('/business-support/gl/transaction-rules',        [BsTransactionRuleController::class, 'store'])->name('bs.gl.transaction-rule.store');
-    Route::get('/business-support/gl/transaction-rules/{rule}/edit', [BsTransactionRuleController::class, 'edit'])->name('bs.gl.transaction-rule.edit');
-    Route::put('/business-support/gl/transaction-rules/{rule}',  [BsTransactionRuleController::class, 'update'])->name('bs.gl.transaction-rule.update');
-    Route::delete('/business-support/gl/transaction-rules/{rule}', [BsTransactionRuleController::class, 'destroy'])->name('bs.gl.transaction-rule.destroy');
 
     // ── GL S4: Repair Data · Confirm Saldo Awal · Late Closing ──
     Route::get('/business-support/gl/repair-data',           [BsRepairController::class, 'index'])->name('bs.gl.repair.index');
@@ -615,9 +607,8 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
     // ── ACCOUNT PAYABLE (Hutang) — modul mandiri; /account-payable → hub AP ──
     Route::redirect('/account-payable', '/business-support/payable-hub')->name('ap.home');
     Route::get('/business-support/payable-hub',               [BsApController::class, 'hub'])->name('bs.ap.home');
-    Route::get('/business-support/payable-print-out',         [BsApController::class, 'printHub'])->name('bs.ap.printhub');
     Route::get('/business-support/payable-section/{section}',  [BsApController::class, 'section'])
-        ->whereIn('section', ['general', 'setup', 'master', 'query', 'generate', 'penyesuaian', 'posting-po', 'posting-spk', 'saldoawal'])
+        ->whereIn('section', ['setup', 'master', 'query', 'generate', 'penyesuaian', 'posting-po', 'posting-spk', 'saldoawal'])
         ->name('bs.ap.section');
     Route::get('/business-support/payable',                   [BsApController::class, 'index'])->name('bs.ap.index');
     Route::get('/business-support/payable-export',            [BsApController::class, 'export'])->name('bs.ap.export');
@@ -677,11 +668,6 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
     Route::get('/business-support/payable-penghapusan-report', [BsApPenghapusanController::class, 'report'])->name('bs.ap.penghapusan.report'); // Laporan Penghapusan Hutang (rincian + history)
     Route::post('/business-support/payable-penghapusan/{invoice}', [BsApPenghapusanController::class, 'store'])->name('bs.ap.penghapusan.store');
     // AP — Kelengkapan Berkas (setup + toggle per invoice)
-    Route::get('/business-support/payable-berkas',           [BsApBerkasController::class, 'index'])->name('bs.ap.berkas.index');
-    Route::post('/business-support/payable-berkas',          [BsApBerkasController::class, 'store'])->name('bs.ap.berkas.store');
-    Route::put('/business-support/payable-berkas/{berkas}',  [BsApBerkasController::class, 'update'])->name('bs.ap.berkas.update');
-    Route::delete('/business-support/payable-berkas/{berkas}', [BsApBerkasController::class, 'destroy'])->name('bs.ap.berkas.destroy');
-    Route::post('/business-support/payable-berkas/{invoice}/{berkas}/toggle', [BsApBerkasController::class, 'toggle'])->name('bs.ap.berkas.toggle');
     Route::get('/business-support/payable/{invoice}',         [BsApController::class, 'show'])->name('bs.ap.show');
     Route::get('/business-support/payable/{invoice}/memo',    [BsApController::class, 'memo'])->name('bs.ap.memo'); // cetak Memo Internal + Bukti Permohonan Pembayaran
     Route::post('/business-support/payable/{invoice}/berkas-notes', [BsApController::class, 'updateBerkasNotes'])->name('bs.ap.berkas-notes'); // catatan kelengkapan berkas (free-text)

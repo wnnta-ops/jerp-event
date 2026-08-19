@@ -40,7 +40,6 @@ class BsApInvoice extends Model
     public function payments(): HasMany { return $this->hasMany(BsApPayment::class, 'ap_invoice_id'); }
     public function lines(): HasMany { return $this->hasMany(BsApInvoiceLine::class, 'ap_invoice_id'); }
     public function schedules(): HasMany { return $this->hasMany(BsApInvoiceSchedule::class, 'ap_invoice_id'); }
-    public function invoiceBerkas(): HasMany { return $this->hasMany(BsApInvoiceBerkas::class, 'ap_invoice_id'); }
 
     /** Apakah invoice ini berasal dari Purchase Order. */
     public function isFromPo(): bool { return $this->source_type === 'po' && $this->source_id !== null; }

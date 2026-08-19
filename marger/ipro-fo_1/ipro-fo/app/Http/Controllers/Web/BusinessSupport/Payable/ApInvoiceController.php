@@ -90,13 +90,6 @@ class ApInvoiceController extends Controller
     }
 
     /** Print-Out — hub cetak laporan hutang. */
-    public function printHub(Request $request): Response
-    {
-        abort_unless($request->user()?->canModule('ap'), 403);
-
-        return Inertia::render('BusinessSupport/Payable/PrintHub');
-    }
-
     /** Landing per sub-modul AP (grup BO) — detail item muncul di halaman ini. */
     public function section(Request $request, string $section): Response
     {

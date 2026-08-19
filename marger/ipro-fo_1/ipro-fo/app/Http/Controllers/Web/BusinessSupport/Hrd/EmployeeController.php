@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Web\BusinessSupport\Hrd;
 
 use App\Domain\BusinessSupport\Models\BsCostCenter;
+use App\Domain\BusinessSupport\Models\BsHrDepartment;
 use App\Domain\BusinessSupport\Models\BsEmployee;
 use App\Http\Controllers\Controller;
 use Illuminate\Http\RedirectResponse;
@@ -19,7 +20,9 @@ class EmployeeController extends Controller
         abort_unless($request->user()?->canModule('datacenter'), 403);
 
         $rows = BsEmployee::query()
-            ->with('costCenter:id,code,name')
+            // Departemen ikut dimuat: kolom pada layar kini menampilkan DEPARTEMEN, sumber yang
+            // sama dengan Pengajuan Bon Sementara, SIP, dan Bukti Permohonan Pembayaran.
+            ->with(['costCenter:id,code,name', 'department:id,code,name'])
             ->when($request->input('search'), fn ($q, $s) => $q->where(fn ($w) => $w->where('name', 'like', "%{$s}%")->orWhere('nik', 'like', "%{$s}%")->orWhere('position', 'like', "%{$s}%")))
             ->when($request->input('status') !== null && $request->input('status') !== '', fn ($q) => $q->where('is_active', $request->input('status') === 'active'))
             ->orderBy('name')->paginate(50)->withQueryString();
@@ -28,6 +31,7 @@ class EmployeeController extends Controller
             'employees'   => $rows,
             'filters'     => $request->only(['search', 'status']),
             'costCenters' => BsCostCenter::where('is_active', true)->orderBy('code')->get(['id', 'code', 'name']),
+            'departments' => BsHrDepartment::where('is_active', true)->orderBy('code')->get(['id', 'code', 'name']),
             'summary'     => [
                 'active'  => BsEmployee::where('is_active', true)->count(),
                 'payroll' => (float) BsEmployee::where('is_active', true)->sum(\Illuminate\Support\Facades\DB::raw('base_salary + allowance')),
@@ -67,6 +71,7 @@ class EmployeeController extends Controller
             'name'           => ['required', 'string', 'max:150'],
             'position'       => ['nullable', 'string', 'max:100'],
             'cost_center_id' => ['nullable', 'integer', 'exists:bs_cost_centers,id'],
+            'department_id'  => ['nullable', 'integer', 'exists:bs_hr_departments,id'],
             'join_date'      => ['nullable', 'date'],
             'base_salary'    => ['required', 'numeric', 'min:0'],
             'allowance'      => ['nullable', 'numeric', 'min:0'],

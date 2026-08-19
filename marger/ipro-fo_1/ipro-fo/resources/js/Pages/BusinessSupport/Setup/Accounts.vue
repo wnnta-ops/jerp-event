@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { ref } from 'vue';
+import { ref, computed } from 'vue';
+import SearchSelect from '@/Components/UI/SearchSelect.vue';
 import { router, useForm, Link } from '@inertiajs/vue3';
 import { Plus, Pencil, Trash2, BookOpen, ArrowLeft, Search } from 'lucide-vue-next';
 import Button from '@/Components/UI/Button.vue';
@@ -14,6 +15,8 @@ const props = defineProps<{
     costCenters: Array<{ id: number; code: string; name: string }>;
     filters: Record<string, any>;
     stats: { total: number; postable: number };
+    levels?: Record<number, string>;
+    parentOptions?: Array<{ id: number; code: string; name: string; level: number }>;
 }>();
 
 const search = ref(props.filters.search ?? '');
@@ -23,39 +26,86 @@ function display() {
 }
 
 const typeColor: Record<string, any> = { asset: 'info', liability: 'warning', equity: 'primary', income: 'success', expense: 'danger' };
-const levelName: Record<number, string> = { 1: 'Kategori', 2: 'Sub Kategori', 3: 'Ledger', 4: 'Detil', 5: 'Detil Transaksi', 6: 'Detil Sub Transaksi' };
+const levelName = computed<Record<number, string>>(() => props.levels ?? { 1: 'Kategori', 2: 'Sub Kategori', 3: 'Ledger', 4: 'Detil', 5: 'Detil Transaksi', 6: 'Detil Sub Transaksi' });
+const daftarLevel = computed(() => Object.entries(levelName.value).map(([n, label]) => ({ n: Number(n), label })));
 
 const showModal = ref(false);
 const editingId = ref<number | null>(null);
 // Induk yang sedang ditambahi anak (dari tombol "+" per baris) — hanya untuk petunjuk di modal.
 const parentAcc = ref<any | null>(null);
-const form = useForm<any>({ code: '', name: '', type: 'asset', normal_balance: 'D', is_postable: true, is_active: true, cf_direct_category_id: null, cf_indirect_category_id: null, cost_center_id: null });
+const form = useForm<any>({ code: '', name: '', level: 1, parent_id: null, type: 'asset', normal_balance: 'D', is_postable: false, is_active: true, cf_direct_category_id: null, cf_indirect_category_id: null, cost_center_id: null });
 
-function openCreate() { editingId.value = null; parentAcc.value = null; form.reset(); showModal.value = true; }
+/** Panjang kode yang dituntut level: tiap turun satu tingkat menambah dua digit. */
+const panjangKode = computed(() => 2 * Number(form.level || 1) - 1);
+/** Calon induk = akun satu tingkat DI ATAS level yang dipilih. Level 1 tidak punya induk. */
+const calonInduk = computed(() => Number(form.level) <= 1
+    ? []
+    : (props.parentOptions ?? []).filter((a: any) => Number(a.level) === Number(form.level) - 1));
+const indukTerpilih = computed(() => (props.parentOptions ?? []).find((a: any) => String(a.id) === String(form.parent_id)) ?? null);
 
 /**
- * Tambah COA dari baris — fungsinya SAMA dengan tombol "Tambah Akun" di pojok kanan atas
- * (form & endpoint store yang sama), hanya saja kode diisi awal dengan kode induk baris ini
- * supaya operator tinggal melanjutkan 2 digit berikutnya. Server menurunkan level & induk
- * dari panjang kode (1/3/5/7/9/11 digit), jadi prefix inilah yang menentukan posisinya.
- * Level 6 (11 digit) sudah paling bawah → tidak diberi prefix, murni tambah akun baru.
+ * Ganti level → isian induk & kode disesuaikan.
+ *
+ * Induk dibuang bila levelnya tidak lagi cocok: menyisakannya akan mengirim pasangan
+ * level/induk yang pasti ditolak server, dan operator harus menebak sendiri mana yang salah.
+ * Kode diisi ulang dengan kode induk sebagai awalan supaya tinggal melanjutkan dua digit.
+ */
+function gantiLevel() {
+    if (indukTerpilih.value && Number(indukTerpilih.value.level) !== Number(form.level) - 1) {
+        form.parent_id = null;
+    }
+    // Level 6 (Detil Sub Transaksi) adalah satu-satunya tingkat yang dijurnal; usulkan itu
+    // sebagai bawaan, tetapi tetap biarkan bisa diubah — datanya boleh punya perkecualian.
+    form.is_postable = Number(form.level) === 6;
+    ikutiInduk();
+}
+/** Kode selalu MELANJUTKAN kode induk — awalannya diisikan, ekornya milik operator. */
+function ikutiInduk() {
+    const kode = String(indukTerpilih.value?.code ?? '');
+    if (! kode) return;
+    form.code = String(form.code ?? '').startsWith(kode) ? form.code : kode;
+}
+
+function openCreate() {
+    editingId.value = null;
+    parentAcc.value = null;
+    form.reset();
+    form.clearErrors();
+    showModal.value = true;
+}
+
+/**
+ * Tambah COA dari baris — form & endpoint yang SAMA dengan tombol "Tambah Akun" di pojok
+ * kanan atas, hanya saja level, induk, dan awalan kodenya sudah terisi dari baris ini.
+ * Level 6 sudah paling bawah → tombolnya tidak menawarkan anak.
  */
 function openCreateChild(a: any) {
     editingId.value = null;
     form.reset();
-    const canHaveChild = String(a.code ?? '').length < 11;
-    parentAcc.value = canHaveChild ? a : null;
-    if (canHaveChild) {
-        form.code = a.code;                       // prefix induk — operator melanjutkan 2 digit
+    form.clearErrors();
+    const bisaBeranak = Number(a.level ?? 6) < 6;
+    parentAcc.value = bisaBeranak ? a : null;
+    if (bisaBeranak) {
+        form.level = Number(a.level) + 1;
+        form.parent_id = a.id;
+        form.code = a.code;                       // awalan induk — operator melanjutkan 2 digit
         form.type = a.type;                       // anak lazimnya mewarisi tipe & saldo normal induk
         form.normal_balance = a.normal_balance;
+        form.is_postable = Number(a.level) + 1 === 6;
     }
     showModal.value = true;
 }
 function openEdit(a: any) {
     editingId.value = a.id;
     parentAcc.value = null;
+    form.clearErrors();
     form.code = a.code; form.name = a.name; form.type = a.type; form.normal_balance = a.normal_balance;
+    form.level = Number(a.level ?? 1);
+    // parent_id lama bisa kosong pada akun yang dibuat sebelum induknya diwajibkan — dicari
+    // ulang dari parent_code supaya form tidak memaksa operator memilih ulang tanpa sebab.
+    form.parent_id = a.parent_id
+        ?? (props.parentOptions ?? []).find((p: any) => String(p.code) === String(a.parent_code))?.id
+        ?? null;
     form.is_postable = !!a.is_postable; form.is_active = !!a.is_active;
     form.cf_direct_category_id = a.cf_direct_category_id ?? null;
     form.cf_indirect_category_id = a.cf_indirect_category_id ?? null;
@@ -153,7 +203,40 @@ const inputCls = 'h-9 w-full rounded-lg border border-neutral-300 bg-white px-3 
                         Lanjutkan kode menjadi <span class="font-semibold">{{ String(parentAcc.code).length + 2 }} digit</span>.
                     </p>
                     <form @submit.prevent="submit" class="space-y-3">
-                        <div><label class="mb-1 block text-xs font-medium text-neutral-500">Kode Akun *</label><input v-model="form.code" required :class="inputCls" /><p class="mt-1 text-[11px] text-neutral-400">Panjang kode menentukan level (1/3/5/7/9/11 digit → Kategori…Detil Sub Transaksi).</p><p v-if="form.errors.code" class="mt-1 text-xs text-danger-500">{{ form.errors.code }}</p></div>
+                        <div class="grid grid-cols-2 gap-3">
+                            <div>
+                                <label class="mb-1 block text-xs font-medium text-neutral-500">Level *</label>
+                                <select v-model.number="form.level" :class="inputCls" @change="gantiLevel">
+                                    <option v-for="l in daftarLevel" :key="l.n" :value="l.n">{{ l.n }} · {{ l.label }}</option>
+                                </select>
+                                <p class="mt-1 text-[11px] text-neutral-400">Tingkat 1 paling tinggi, 6 paling rendah.</p>
+                                <p v-if="form.errors.level" class="mt-1 text-xs text-danger-500">{{ form.errors.level }}</p>
+                            </div>
+                            <div>
+                                <label class="mb-1 block text-xs font-medium text-neutral-500">
+                                    Induk<span v-if="form.level > 1"> *</span>
+                                </label>
+                                <SearchSelect v-if="form.level > 1" v-model="form.parent_id" :options="calonInduk"
+                                              placeholder="— pilih induk —" no-truncate @update:model-value="ikutiInduk" />
+                                <div v-else class="flex h-9 items-center rounded-lg border border-dashed border-neutral-300 px-3 text-xs text-neutral-400 dark:border-neutral-700">
+                                    Level 1 adalah puncak — tanpa induk
+                                </div>
+                                <p class="mt-1 text-[11px] text-neutral-400">
+                                    Harus akun berlevel {{ form.level > 1 ? (form.level - 1) + ' · ' + (levelName[form.level - 1] ?? '') : '—' }}.
+                                </p>
+                                <p v-if="form.errors.parent_id" class="mt-1 text-xs text-danger-500">{{ form.errors.parent_id }}</p>
+                            </div>
+                        </div>
+                        <div>
+                            <label class="mb-1 block text-xs font-medium text-neutral-500">Kode Akun *</label>
+                            <input v-model="form.code" required :class="inputCls" />
+                            <p class="mt-1 text-[11px]" :class="String(form.code || '').length === panjangKode ? 'text-neutral-400' : 'text-amber-600'">
+                                Level {{ form.level }} ({{ levelName[form.level] }}) → <b>{{ panjangKode }} digit</b>.
+                                <template v-if="indukTerpilih">Melanjutkan kode induk <b>{{ indukTerpilih.code }}</b> — tambahkan 2 digit di belakangnya.</template>
+                                <span class="ml-1">Terisi {{ String(form.code || '').length }} digit.</span>
+                            </p>
+                            <p v-if="form.errors.code" class="mt-1 text-xs text-danger-500">{{ form.errors.code }}</p>
+                        </div>
                         <div><label class="mb-1 block text-xs font-medium text-neutral-500">Nama Akun *</label><input v-model="form.name" required :class="inputCls" /><p v-if="form.errors.name" class="mt-1 text-xs text-danger-500">{{ form.errors.name }}</p></div>
                         <div class="grid grid-cols-2 gap-3">
                             <div><label class="mb-1 block text-xs font-medium text-neutral-500">Tipe *</label><select v-model="form.type" :class="inputCls"><option v-for="(label, val) in types" :key="val" :value="val">{{ label }}</option></select></div>

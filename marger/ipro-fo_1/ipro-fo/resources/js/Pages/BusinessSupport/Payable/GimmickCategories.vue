@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue';
 import { router, useForm, Link } from '@inertiajs/vue3';
-import { Plus, Pencil, Trash2, ArrowLeft, Tags, Search, X, CheckCircle2, TriangleAlert, TrendingDown, TrendingUp, Table2 } from 'lucide-vue-next';
+import { Plus, Pencil, Trash2, ArrowLeft, Tags, Search, X, TriangleAlert, TrendingDown, TrendingUp, Table2 } from 'lucide-vue-next';
 import Button from '@/Components/UI/Button.vue';
 import Badge from '@/Components/UI/Badge.vue';
 import EmptyState from '@/Components/UI/EmptyState.vue';
@@ -98,8 +98,8 @@ function submit() {
 function destroy(c: Cat) { if (confirm(`Hapus kategori ${c.code}?`)) router.delete(route('bs.gimmick.categories.destroy', c.id), { preserveScroll: true }); }
 
 // Cakupan kolom Rincian Biaya — "jangan ada yang terlewat".
-const coveredCount = computed(() => props.kprBiayaCoverage.filter((c) => c.categories.length).length);
-const allCovered = computed(() => coveredCount.value === props.kprBiayaCoverage.length);
+const belumTertaut = computed(() => props.kprBiayaCoverage.filter((c) => ! c.categories.length));
+
 
 function accLabel(id: number | string) {
     const a = props.accounts.find((x) => String(x.id) === String(id));
@@ -124,33 +124,27 @@ const sides: Array<{ key: 'debits' | 'credits'; title: string; hint: string; ton
             Kategori yang ditautkan ke kolom <b>Rincian Biaya</b> dan sinkronnya hidup akan otomatis mengisi <b>Master Data KPR</b> begitu GMC-nya diposting dari FO.
         </p>
 
-        <!-- Cakupan kolom Rincian Biaya Master Data KPR -->
-        <div class="card p-4">
+        <!-- Cakupan kolom Rincian Biaya Master Data KPR.
+             Isinya HANYA kolom yang belum punya kategori: panel ini sebuah daftar pekerjaan,
+             bukan laporan. Kolom yang sudah ditautkan tidak perlu diingatkan lagi, dan begitu
+             keenamnya tertaut panelnya hilang sama sekali — layar tidak menyisakan peringatan
+             yang tidak lagi menuntut tindakan apa pun. -->
+        <div v-if="belumTertaut.length" class="card p-4">
             <div class="mb-3 flex flex-wrap items-center justify-between gap-2">
                 <h2 class="flex items-center gap-2 text-sm font-semibold"><Table2 class="h-4 w-4 text-primary-600" /> Cakupan Rincian Biaya — Master Data KPR</h2>
-                <span class="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-semibold ring-1"
-                    :class="allCovered
-                        ? 'bg-emerald-50 text-emerald-700 ring-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:ring-emerald-800/60'
-                        : 'bg-amber-50 text-amber-700 ring-amber-200 dark:bg-amber-950/40 dark:text-amber-300 dark:ring-amber-800/60'">
-                    <component :is="allCovered ? CheckCircle2 : TriangleAlert" class="h-3 w-3" />
-                    {{ coveredCount }}/{{ kprBiayaCoverage.length }} kolom terpetakan
+                <span class="inline-flex items-center gap-1 rounded-md bg-amber-50 px-2 py-1 text-[11px] font-semibold text-amber-700 ring-1 ring-amber-200 dark:bg-amber-950/40 dark:text-amber-300 dark:ring-amber-800/60">
+                    <TriangleAlert class="h-3 w-3" />
+                    {{ belumTertaut.length }} dari {{ kprBiayaCoverage.length }} kolom belum tertaut
                 </span>
             </div>
             <div class="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-                <div v-for="c in kprBiayaCoverage" :key="c.key"
-                    class="rounded-xl px-3 py-2.5 ring-1 transition-colors duration-200"
-                    :class="c.categories.length
-                        ? 'bg-emerald-50/60 ring-emerald-200 dark:bg-emerald-950/25 dark:ring-emerald-800/50'
-                        : 'bg-amber-50/60 ring-amber-200 dark:bg-amber-950/25 dark:ring-amber-800/50'">
+                <div v-for="c in belumTertaut" :key="c.key"
+                    class="rounded-xl bg-amber-50/60 px-3 py-2.5 ring-1 ring-amber-200 dark:bg-amber-950/25 dark:ring-amber-800/50">
                     <div class="flex items-center gap-1.5 text-xs font-bold tracking-wide">
-                        <component :is="c.categories.length ? CheckCircle2 : TriangleAlert" class="h-3.5 w-3.5 shrink-0"
-                            :class="c.categories.length ? 'text-emerald-600 dark:text-emerald-400' : 'text-amber-600 dark:text-amber-400'" />
+                        <TriangleAlert class="h-3.5 w-3.5 shrink-0 text-amber-600 dark:text-amber-400" />
                         {{ c.label }}
                     </div>
-                    <div v-if="c.categories.length" class="mt-1.5 flex flex-wrap gap-1">
-                        <span v-for="code in c.categories" :key="code" class="rounded bg-white/70 px-1.5 py-0.5 font-mono text-[10.5px] font-semibold text-neutral-700 ring-1 ring-neutral-200 dark:bg-neutral-900/60 dark:text-neutral-200 dark:ring-neutral-700">{{ code }}</span>
-                    </div>
-                    <p v-else class="mt-1 text-[11px] text-amber-700 dark:text-amber-400">Belum ada kategori — kolom ini tidak akan pernah terisi.</p>
+                    <p class="mt-1 text-[11px] text-amber-700 dark:text-amber-400">Belum ada kategori — kolom ini tidak akan pernah terisi.</p>
                 </div>
             </div>
         </div>
@@ -161,7 +155,7 @@ const sides: Array<{ key: 'debits' | 'credits'; title: string; hint: string; ton
             <table class="w-full min-w-[64rem] text-sm">
                 <thead class="bg-neutral-50 dark:bg-neutral-800"><tr class="text-left text-xs uppercase text-neutral-500">
                     <th class="px-4 py-3">Kode</th><th class="px-4 py-3">Keterangan</th>
-                    <th class="px-4 py-3 w-40">Kolom Biaya KPR</th>
+                    <th class="px-4 py-3 w-40">Sinkronisasi Gimmick</th>
                     <th class="px-4 py-3">Akun Debit</th><th class="px-4 py-3">Akun Kredit</th>
                     <th class="px-4 py-3 text-center">Status</th><th class="px-4 py-3 text-right">Aksi</th>
                 </tr></thead>
@@ -177,7 +171,12 @@ const sides: Array<{ key: 'debits' | 'credits'; title: string; hint: string; ton
                                       ? 'bg-primary-50 text-primary-700 ring-primary-200 dark:bg-primary-950/40 dark:text-primary-300 dark:ring-primary-800/60'
                                       : 'bg-neutral-100 text-neutral-500 ring-neutral-200 line-through dark:bg-neutral-800 dark:text-neutral-400 dark:ring-neutral-700'"
                                   :title="c.sync_kpr ? 'Sinkron ke Master Data KPR aktif' : 'Sinkron ke Master Data KPR dimatikan — kolom ini tidak akan terisi'">{{ c.kpr_biaya_label }}</span>
-                            <span v-if="c.kpr_biaya_label && !c.sync_kpr" class="text-[10.5px] font-semibold text-neutral-400">sinkron mati</span>
+                            <!-- Keadaan sinkronnya dikatakan pada KEDUA keadaan, bukan hanya saat
+                                 mati. Sesudah panel cakupan hanya menampilkan kolom yang belum
+                                 tertaut, penanda inilah satu-satunya tempat yang memberi tahu
+                                 bahwa sebuah kolom sudah dipegang tetapi belum akan terisi. -->
+                            <span v-if="c.kpr_biaya_label && c.sync_kpr" class="text-[10.5px] font-semibold text-primary-600 dark:text-primary-400">sinkron</span>
+                            <span v-else-if="c.kpr_biaya_label" class="text-[10.5px] font-semibold text-amber-600 dark:text-amber-400">belum disinkronkan</span>
                             <span v-else class="text-[11px] text-neutral-400">—</span>
                         </td>
                         <td v-for="side in (['debits','credits'] as const)" :key="side" class="px-4 py-2.5">

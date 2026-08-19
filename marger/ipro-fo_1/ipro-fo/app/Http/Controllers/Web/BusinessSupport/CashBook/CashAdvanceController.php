@@ -553,9 +553,14 @@ class CashAdvanceController extends Controller
             'defer_settlement'         => ['nullable', 'boolean'],
             'lines'                    => ['required', 'array', 'min:1'],
             'lines.*.expense_account_id' => ['required', 'integer', 'exists:bs_accounts,id'],
-            // Nullable: tidak semua beban bercost center, sejalan dengan BudgetController
-            // yang juga memvalidasinya nullable.
-            'lines.*.cost_center_id'   => ['nullable', 'integer', 'exists:bs_cost_centers,id'],
+            // WAJIB. Cost center inilah yang menentukan anggaran mana yang terpakai: ia
+            // diteruskan ke bs_journal_lines.cost_center_id, lalu dibaca BudgetRealizationService
+            // untuk mencocokkan realisasi dengan plafon per (akun, cost center). Baris realisasi
+            // tanpa cost center tetap menjadi beban di GL tetapi TIDAK PERNAH muncul sebagai
+            // realisasi di Budget Control — anggarannya seolah tidak pernah terpakai. Karena itu
+            // di sini ia diwajibkan, berbeda dari BudgetController yang memang boleh
+            // menganggarkan lintas cost center.
+            'lines.*.cost_center_id'   => ['required', 'integer', 'exists:bs_cost_centers,id'],
             'lines.*.description'      => ['nullable', 'string', 'max:200'],
             'lines.*.amount'           => ['required', 'numeric', 'min:0.01'],
         ]);

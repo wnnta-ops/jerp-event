@@ -105,6 +105,37 @@ const pphJournal = computed(() => {
 // Jurnal Ditanggung tetap mencatat Dr Biaya PPh / Cr Hutang PPh (pakai pphJournal).
 const pph = computed(() => (form.pph_mode === 'borne' ? 0 : pphJournal.value));
 const PPH_LABELS: Record<string, string> = { pph21: 'PPh 21', pph23: 'PPh 23', pph4_2: 'PPh Pasal 4(2)' };
+
+/**
+ * Uraian tagihan yang ikut ditempelkan ke keterangan baris PPN & PPh.
+ *
+ * Diambil dari keterangan invoice; bila kosong, dari baris Detil Tagihan pertama. Tanpa ini,
+ * baris PPN dan PPh di General Ledger hanya berbunyi "PPN Masukan" dan "PPh dipotong" —
+ * benar tapi tidak memberi tahu tagihan mana, sehingga menelusurinya harus lewat nomor jurnal.
+ */
+const uraianTagihan = computed(() => {
+    const d = String(form.description ?? '').trim();
+    return d || String(form.lines?.[0]?.description ?? '').trim();
+});
+const denganUraian = (teks: string) => (uraianTagihan.value ? teks + ' — ' + uraianTagihan.value : teks);
+
+/**
+ * Pasal PPh dibaca dari NAMA AKUN yang dipilih, bukan dari jenis PPh di atasnya.
+ *
+ * Akunlah yang menentukan ke mana angkanya bermuara — "HUTANG PPH PASAL 23" adalah utang
+ * PPh 23 apa pun yang tertulis di kolom jenis. Kalau keduanya berbeda, keterangan yang
+ * mengikuti akun-lah yang cocok dengan buku besarnya. Jenis PPh tetap dipakai sebagai
+ * cadangan bila nama akunnya tidak menyebut pasal apa pun.
+ */
+function pasalPph(accountId: any): string {
+    const a = (props.pphAccounts ?? []).find((x: any) => String(x.id) === String(accountId));
+    const n = String(a?.name ?? '').toUpperCase();
+    // 4 ayat 2 diperiksa DULU: namanya memuat angka 4 dan 2, yang bisa tertangkap pola lain.
+    if (/PASAL\s*4|4\s*\(?\s*2|4\s*AYAT/.test(n)) return 'PPh Pasal 4(2)';
+    if (/\b21\b/.test(n)) return 'PPh Pasal 21';
+    if (/\b23\b/.test(n)) return 'PPh Pasal 23';
+    return PPH_LABELS[form.pph_type] || 'PPh';
+}
 const pphLabel = computed(() => form.pph_mode === 'borne' ? 'PPh ditanggung' : 'PPh dipotong');
 const total = computed(() => dppR.value + ppn.value);
 // Dipotong → PPh dipotong dari pembayaran supplier (net = total − PPh).
@@ -199,13 +230,13 @@ function defaultJournal() {
     const c = category.value;
     const out: any[] = [];
     if (c?.debit_id) out.push(mkJournalLine(c.debit_id, form.description || '', dppR.value, 'debit'));
-    if (form.ppn_mode === 'with' && ppn.value > 0 && props.ppnAccount?.id) out.push(mkJournalLine(props.ppnAccount.id, 'PPN Masukan', ppn.value, 'debit'));
+    if (form.ppn_mode === 'with' && ppn.value > 0 && props.ppnAccount?.id) out.push(mkJournalLine(props.ppnAccount.id, denganUraian('PPN Masukan'), ppn.value, 'debit'));
     // PPh DITANGGUNG: Dr Biaya PPh <jenis> (beban perusahaan) — akun default bisa diubah; supplier tetap dibayar penuh.
-    if (form.pph_mode === 'borne' && pphJournal.value > 0 && props.pphBorneExpense?.id) out.push(mkJournalLine(props.pphBorneExpense.id, 'Biaya ' + (PPH_LABELS[form.pph_type] || 'PPh') + ' ditanggung', pphJournal.value, 'debit'));
+    if (form.pph_mode === 'borne' && pphJournal.value > 0 && props.pphBorneExpense?.id) out.push(mkJournalLine(props.pphBorneExpense.id, denganUraian('Biaya ' + pasalPph(form.pph_account_id) + ' ditanggung'), pphJournal.value, 'debit'));
     // Hutang ke supplier: Dipungut → net (DPP+PPN−PPh) ; Ditanggung → penuh (DPP+PPN).
     if (c?.payable_id) out.push(mkJournalLine(c.payable_id, 'Hutang ' + (supplier.value?.name || 'supplier'), form.pph_mode === 'borne' ? total.value : net.value, 'credit'));
     // Cr Hutang PPh <jenis>: Dipotong (dari net supplier) & Ditanggung (lawan Biaya PPh) — pakai pphJournal.
-    if (pphOn.value && pphJournal.value > 0 && form.pph_account_id) out.push(mkJournalLine(Number(form.pph_account_id), form.pph_mode === 'borne' ? 'Hutang ' + (PPH_LABELS[form.pph_type] || 'PPh') + ' ditanggung' : 'PPh dipotong', pphJournal.value, 'credit'));
+    if (pphOn.value && pphJournal.value > 0 && form.pph_account_id) out.push(mkJournalLine(Number(form.pph_account_id), denganUraian(form.pph_mode === 'borne' ? 'Hutang ' + pasalPph(form.pph_account_id) + ' ditanggung' : pasalPph(form.pph_account_id) + ' dipotong'), pphJournal.value, 'credit'));
     return out;
 }
 function addJournalLine() { form.journal_lines.push(mkJournalLine(null, '', 0, 'debit')); }
