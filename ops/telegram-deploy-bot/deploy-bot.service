@@ -1,0 +1,20 @@
+[Unit]
+Description=Bot Telegram deploy J-ERP (status, pull, deploy, merge, promote)
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+# Dijalankan sebagai PEMILIK REPO, bukan root: bot hanya perlu git + docker,
+# dan menjalankannya sebagai root berarti bocornya token bot = akses root.
+User=ptmup
+Group=ptmup
+SupplementaryGroups=docker
+ExecStart=/usr/local/bin/deploy-bot.sh
+Restart=always
+RestartSec=10
+NoNewPrivileges=yes
+PrivateTmp=yes
+
+[Install]
+WantedBy=multi-user.target
