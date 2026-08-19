@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\BusinessSupport\Models;
 
+use App\Domain\Foundation\Tenant\Models\Cluster;
 use App\Support\Traits\HasTenant;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -39,11 +40,19 @@ class BsGimmickCategory extends Model
     ];
 
     protected $table = 'bs_gimmick_categories';
-    protected $fillable = ['tenant_id', 'code', 'name', 'kpr_biaya_key', 'sync_kpr', 'debit_account_id', 'payable_account_id', 'is_active'];
+    protected $fillable = ['tenant_id', 'cluster_id', 'code', 'name', 'kpr_biaya_key', 'sync_kpr', 'debit_account_id', 'payable_account_id', 'is_active'];
     protected $casts = ['is_active' => 'boolean', 'sync_kpr' => 'boolean'];
 
     public function debitAccount(): BelongsTo { return $this->belongsTo(BsAccount::class, 'debit_account_id'); }
     public function payableAccount(): BelongsTo { return $this->belongsTo(BsAccount::class, 'payable_account_id'); }
+
+    /**
+     * Cluster tempat kategori ini berlaku. KOSONG berarti berlaku untuk semua cluster —
+     * kategori semacam itu dipakai sebagai cadangan ketika sebuah cluster belum punya
+     * kategori sendiri, sehingga menambah cluster tidak pernah membuat gimmick yang sudah
+     * berjalan kehilangan akunnya.
+     */
+    public function cluster(): BelongsTo { return $this->belongsTo(Cluster::class, 'cluster_id'); }
 
     /** Seluruh akun kategori ini (debit & kredit), urut tampil. */
     public function accounts(): HasMany

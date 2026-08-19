@@ -130,6 +130,12 @@ class PostingInvoiceController extends Controller
             ->pluck('code', 'id');
         $bookingNos = DB::table('bookings')->whereIn('id', $queue->pluck('booking_id')->filter()->unique()->all())
             ->pluck('booking_number', 'id');
+        // Cluster yang dipotret FO saat baris masuk antrean. Sejak Kategori Gimmick bercluster,
+        // dua kategori boleh bernama sama dengan akun berbeda — tanpa menyebut clusternya, orang
+        // yang memposting tidak punya cara melihat kategori mana yang sebenarnya terpakai.
+        $clusterNames = DB::table('clusters')
+            ->whereIn('id', $queue->pluck('cluster_id')->filter()->unique()->all())
+            ->pluck('code', 'id');
 
         return $queue->map(fn ($r) => [
             'id'           => $r->id,
@@ -148,6 +154,7 @@ class PostingInvoiceController extends Controller
             'supplier_id'  => $r->supplier_id ? (int) $r->supplier_id : null, // GMC komponen → prefill supplier
             // Rantai GMC: kategori gimmick → kolom Rincian Biaya Master Data KPR → SPR yang dibiayai.
             'kategori'     => ($r->gimmick_category_id ?? null) ? ($catNames[$r->gimmick_category_id] ?? null) : null,
+            'cluster'      => ($r->cluster_id ?? null) ? ($clusterNames[$r->cluster_id] ?? null) : null,
             'biaya_label'  => ($r->kpr_biaya_key ?? null) ? (BsGimmickCategory::KPR_BIAYA_COLUMNS[$r->kpr_biaya_key] ?? null) : null,
             'spr'          => ($r->booking_id ?? null) ? ($bookingNos[$r->booking_id] ?? null) : null,
             'akun_pecah'   => count(is_string($r->account_split ?? null) ? (json_decode($r->account_split, true) ?: []) : []),

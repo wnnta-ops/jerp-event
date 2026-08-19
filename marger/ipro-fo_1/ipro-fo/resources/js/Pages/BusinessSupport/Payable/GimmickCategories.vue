@@ -11,6 +11,7 @@ type AccRow = { account_id: number | string; portion: number; label?: string | n
 type Cat = {
     id: number; code: string; name: string; is_active: boolean;
     kpr_biaya_key: string | null; kpr_biaya_label: string | null; sync_kpr: boolean;
+    cluster_id: number | null; cluster_label: string | null;
     debit_account_id: number | null; payable_account_id: number | null;
     debit: string; payable: string;
     debits: AccRow[]; credits: AccRow[];
@@ -22,7 +23,11 @@ const props = defineProps<{
     defaultPayable: number | null;
     // Kolom Rincian Biaya pada Master Data KPR + cakupannya (kategori mana mengisi kolom mana).
     kprBiayaColumns: Array<{ id: string; label: string }>;
-    kprBiayaCoverage: Array<{ key: string; label: string; categories: string[] }>;
+    kprBiayaCoverage: Array<{ key: string; label: string; categories: string[]; aktif: number;
+        semua_cluster: boolean; cluster_isi: string[]; cluster_kosong: string[] }>;
+    // Cluster tempat kategori berlaku. Satu jenis biaya yang sama bisa dibebankan ke akun
+    // berbeda per cluster, sementara di Master Data KPR semuanya bermuara ke satu kolom.
+    clusters: Array<{ id: number; code: string; name: string; label: string }>;
 }>();
 
 const search = ref(props.filters.search ?? '');
@@ -32,7 +37,7 @@ const showModal = ref(false);
 const editingId = ref<number | null>(null);
 const blankRow = (id: number | string = ''): AccRow => ({ account_id: id, portion: 100 });
 const form = useForm<any>({
-    code: '', name: '', kpr_biaya_key: '', sync_kpr: true, is_active: true,
+    cluster_id: '', code: '', name: '', kpr_biaya_key: '', sync_kpr: true, is_active: true,
     debits: [blankRow()], credits: [blankRow(props.defaultPayable ?? '')],
 });
 
@@ -46,6 +51,7 @@ watch(() => form.kpr_biaya_key, (k) => { if (! k) form.sync_kpr = false; });
 function openCreate() {
     editingId.value = null;
     form.reset();
+    form.cluster_id = '';
     form.kpr_biaya_key = '';
     form.sync_kpr = true;   // kategori baru: begitu kolomnya dipilih, langsung sinkron
     form.debits = [blankRow()];
@@ -55,7 +61,7 @@ function openCreate() {
 function openEdit(c: Cat) {
     editingId.value = c.id;
     Object.assign(form, {
-        code: c.code, name: c.name, kpr_biaya_key: c.kpr_biaya_key ?? '', sync_kpr: !!c.sync_kpr, is_active: !!c.is_active,
+        cluster_id: c.cluster_id ?? '', code: c.code, name: c.name, kpr_biaya_key: c.kpr_biaya_key ?? '', sync_kpr: !!c.sync_kpr, is_active: !!c.is_active,
         // Kategori lama (satu akun) tetap terbuka rapi sebagai satu baris 100%.
         debits: c.debits.length ? c.debits.map((d) => ({ account_id: d.account_id, portion: d.portion })) : [blankRow(c.debit_account_id ?? '')],
         credits: c.credits.length ? c.credits.map((d) => ({ account_id: d.account_id, portion: d.portion })) : [blankRow(c.payable_account_id ?? '')],
@@ -98,7 +104,11 @@ function submit() {
 function destroy(c: Cat) { if (confirm(`Hapus kategori ${c.code}?`)) router.delete(route('bs.gimmick.categories.destroy', c.id), { preserveScroll: true }); }
 
 // Cakupan kolom Rincian Biaya — "jangan ada yang terlewat".
-const belumTertaut = computed(() => props.kprBiayaCoverage.filter((c) => ! c.categories.length));
+// Sebuah kolom baru benar-benar aman kalau SETIAP cluster punya kategori untuk kolom itu —
+// entah lewat kategori clusternya sendiri, atau lewat kategori tanpa cluster yang berlaku
+// untuk semuanya. Tanpa ini, satu kategori saja sudah membuat kolomnya hilang dari daftar
+// pekerjaan padahal cluster lain masih akan kosong saat GMC-nya diposting.
+const belumTertaut = computed(() => props.kprBiayaCoverage.filter((c) => ! c.categories.length || c.cluster_kosong.length));
 
 
 function accLabel(id: number | string) {
@@ -144,7 +154,14 @@ const sides: Array<{ key: 'debits' | 'credits'; title: string; hint: string; ton
                         <TriangleAlert class="h-3.5 w-3.5 shrink-0 text-amber-600 dark:text-amber-400" />
                         {{ c.label }}
                     </div>
-                    <p class="mt-1 text-[11px] text-amber-700 dark:text-amber-400">Belum ada kategori — kolom ini tidak akan pernah terisi.</p>
+                    <!-- Dua keadaan yang berbeda dikatakan berbeda: sama sekali belum dipegang,
+                         atau sudah dipegang sebagian cluster tetapi ada cluster yang terlewat. -->
+                    <p v-if="!c.categories.length" class="mt-1 text-[11px] text-amber-700 dark:text-amber-400">Belum ada kategori — kolom ini tidak akan pernah terisi.</p>
+                    <p v-else class="mt-1 text-[11px] text-amber-700 dark:text-amber-400">
+                        Belum ada kategori untuk cluster
+                        <b>{{ c.cluster_kosong.join(", ") }}</b> — GMC dari cluster itu tidak akan mengisi kolom ini.
+                        <span v-if="c.cluster_isi.length" class="block text-amber-600/80 dark:text-amber-500/80">Sudah dipegang: {{ c.cluster_isi.join(", ") }}.</span>
+                    </p>
                 </div>
             </div>
         </div>
@@ -155,6 +172,7 @@ const sides: Array<{ key: 'debits' | 'credits'; title: string; hint: string; ton
             <table class="w-full min-w-[64rem] text-sm">
                 <thead class="bg-neutral-50 dark:bg-neutral-800"><tr class="text-left text-xs uppercase text-neutral-500">
                     <th class="px-4 py-3">Kode</th><th class="px-4 py-3">Keterangan</th>
+                    <th class="px-4 py-3">Cluster</th>
                     <th class="px-4 py-3 w-40">Sinkronisasi Gimmick</th>
                     <th class="px-4 py-3">Akun Debit</th><th class="px-4 py-3">Akun Kredit</th>
                     <th class="px-4 py-3 text-center">Status</th><th class="px-4 py-3 text-right">Aksi</th>
@@ -163,6 +181,12 @@ const sides: Array<{ key: 'debits' | 'credits'; title: string; hint: string; ton
                     <tr v-for="c in categories" :key="c.id">
                         <td class="px-4 py-2.5 font-mono text-xs font-semibold">{{ c.code }}</td>
                         <td class="px-4 py-2.5">{{ c.name }}</td>
+                        <td class="px-4 py-2.5">
+                            <!-- Tanpa cluster berarti berlaku untuk semua cluster; dikatakan
+                                 apa adanya, bukan dibiarkan kosong seperti data yang belum diisi. -->
+                            <span v-if="c.cluster_label" class="inline-flex items-center gap-1 rounded-md bg-sky-50 px-1.5 py-0.5 text-[10.5px] font-semibold text-sky-700 ring-1 ring-sky-200 dark:bg-sky-950/40 dark:text-sky-300 dark:ring-sky-800/60">{{ c.cluster_label }}</span>
+                            <span v-else class="text-[11px] text-neutral-400">Semua cluster</span>
+                        </td>
                         <td class="px-4 py-2.5">
                             <!-- Terpetakan tapi sinkronnya mati harus terlihat berbeda: kolomnya
                                  memang dipilih, tetapi tidak akan pernah terisi dari kategori ini. -->
@@ -201,6 +225,19 @@ const sides: Array<{ key: 'debits' | 'credits'; title: string; hint: string; ton
                 <div class="w-full max-w-3xl rounded-xl bg-white p-6 shadow-xl dark:bg-neutral-900">
                     <h2 class="mb-4 text-lg font-bold">{{ editingId ? 'Edit' : 'Tambah' }} Kategori Gimmick</h2>
                     <form @submit.prevent="submit" class="space-y-4">
+                        <div>
+                            <label class="mb-1 block text-xs font-medium text-neutral-500">Cluster</label>
+                            <select v-model="form.cluster_id" :class="inputCls">
+                                <option value="">— semua cluster —</option>
+                                <option v-for="cl in clusters" :key="cl.id" :value="cl.id">{{ cl.label }}</option>
+                            </select>
+                            <p class="mt-1 text-[11px] text-neutral-400">
+                                Akun gimmick berbeda per cluster, tetapi tetap bermuara ke satu kolom Rincian Biaya.
+                                Dikosongkan = berlaku untuk semua cluster, dan dipakai sebagai cadangan bila sebuah
+                                cluster belum punya kategori sendiri.
+                            </p>
+                            <p v-if="form.errors.cluster_id" class="mt-1 text-xs text-danger-500">{{ form.errors.cluster_id }}</p>
+                        </div>
                         <div class="grid gap-3 sm:grid-cols-3">
                             <div><label class="mb-1 block text-xs font-medium text-neutral-500">Kode *</label><input v-model="form.code" required placeholder="mis. GMC-VOUCHER" :class="inputCls" /><p v-if="form.errors.code" class="mt-1 text-xs text-danger-500">{{ form.errors.code }}</p></div>
                             <div><label class="mb-1 block text-xs font-medium text-neutral-500">Keterangan *</label><input v-model="form.name" required :class="inputCls" /><p v-if="form.errors.name" class="mt-1 text-xs text-danger-500">{{ form.errors.name }}</p></div>

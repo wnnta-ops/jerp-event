@@ -8,6 +8,7 @@ use App\Modules\FO\FinanceAR\Models\Refund;
 use Illuminate\Database\ConnectionInterface;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 
 /**
  * Posting FO → ANTRIAN Posting Invoice BO (ipro_bo.bs_ap_refund_queue), status 'pending'.
@@ -25,6 +26,17 @@ class IproApPoster
     private string $conn;
     private int $tenantId;
 
+    /**
+     * Memo "kolom ini sudah ada?" per (tabel, kolom) di BO.
+     *
+     * FO dan BO dipasang terpisah, jadi FO bisa saja sudah membawa kolom baru sementara BO
+     * belum dimigrasi. Menanyakannya sekali per kolom membuat Posting BO tetap jalan pada BO
+     * lama alih-alih gagal seluruhnya, tanpa menanyakan skema berulang kali per baris.
+     *
+     * @var array<string,bool>
+     */
+    private array $adaKolom = [];
+
     public function __construct()
     {
         $this->conn = (string) config('ipro.connection', 'ipro_bo');
@@ -34,6 +46,17 @@ class IproApPoster
     private function db(): ConnectionInterface
     {
         return DB::connection($this->conn);
+    }
+
+    private function punyaKolom(string $tabel, string $kolom): bool
+    {
+        return $this->adaKolom[$tabel.'.'.$kolom] ??= (function () use ($tabel, $kolom): bool {
+            try {
+                return Schema::connection($this->conn)->hasColumn($tabel, $kolom);
+            } catch (\Throwable $e) {
+                return false;
+            }
+        })();
     }
 
     /** Refund FO → antrian (kind=refund), per jenis sumber. */
@@ -148,13 +171,18 @@ class IproApPoster
         ?string $gimmickName = null,
         ?string $noKontrak = null,
         ?int $foUnitId = null,
+        ?int $foLokasiId = null,
     ): ?int {
         $amount = round($amount, 2);
         if ($amount <= 0 || trim($noGmc) === '') {
             return null;
         }
 
-        $cat = $gimmickName ? $this->gimmickCategory($gimmickName) : null;
+        // Cluster BO dari Lokasi FO — master yang sama, dicerminkan IproMasterSync sebagai
+        // `clusters` berkode FOL-{id}. Kategori Gimmick dicari per cluster karena jenis biaya
+        // yang sama bisa dibebankan ke akun berbeda di tiap cluster.
+        $clusterId = $foLokasiId ? $this->iproClusterIdByFoLokasi($foLokasiId) : null;
+        $cat = $gimmickName ? $this->gimmickCategory($gimmickName, $clusterId) : null;
         $split = $cat ? $this->gimmickSplit((int) $cat->id) : [];
         $firstOf = function (string $side) use ($split): ?int {
             foreach ($split as $s) {
@@ -166,7 +194,16 @@ class IproApPoster
             return null;
         };
 
-        return $this->enqueue('gmc', $noGmc, null, [
+        // Potret cluster saat baris masuk antrean — sepola dengan kpr_biaya_key. Tanpa ini,
+        // layar Posting Invoice hanya melihat nama kategori, dan sejak kategori bercluster dua
+        // kategori boleh bernama sama. Kolomnya disertakan HANYA bila BO sudah punya: memaksakan
+        // kolom yang belum ada akan menggagalkan seluruh Posting BO, bukan sekadar kehilangan
+        // satu keterangan.
+        $jejakCluster = $this->punyaKolom('bs_ap_refund_queue', 'cluster_id')
+            ? ['cluster_id' => $clusterId]
+            : [];
+
+        return $this->enqueue('gmc', $noGmc, null, $jejakCluster + [
             'customer_id'         => $foCustomerId ? $this->iproCustomerIdByFo($foCustomerId) : null,
             'customer_name'       => $custName,
             'refund_source'       => null,
@@ -184,18 +221,59 @@ class IproApPoster
         ]);
     }
 
-    /** Kategori Gimmick BO berdasarkan nama (yang dipilih di form GMC). */
-    private function gimmickCategory(string $name): ?object
+    /**
+     * Kategori Gimmick BO berdasarkan nama (yang dipilih di form GMC) DAN clusternya.
+     *
+     * Kategori milik clusternya sendiri selalu menang; bila cluster itu belum punya kategori
+     * untuk nama tersebut, dipakai kategori tanpa cluster yang berlaku untuk semua cluster.
+     * Urutan itulah yang membuat penambahan cluster tidak pernah mematikan gimmick yang sudah
+     * berjalan, sekaligus membuat akun khusus per cluster benar-benar terpakai begitu dibuat.
+     */
+    private function gimmickCategory(string $name, ?int $clusterId = null): ?object
     {
         $name = trim($name);
         if ($name === '') {
             return null;
         }
 
-        return $this->db()->table('bs_gimmick_categories')
+        $kolom = ['id', 'kpr_biaya_key', 'debit_account_id', 'payable_account_id'];
+        $dasar = fn () => $this->db()->table('bs_gimmick_categories')
             ->where('tenant_id', $this->tenantId)->where('is_active', 1)
-            ->where('name', $name)
-            ->first(['id', 'kpr_biaya_key', 'debit_account_id', 'payable_account_id']);
+            ->where('name', $name);
+
+        // Kolom cluster_id bisa belum ada bila BO belum dimigrasi — jangan sampai pencarian
+        // kategori gagal total hanya karena kolomnya belum turun.
+        $bercluster = $this->punyaKolom('bs_gimmick_categories', 'cluster_id');
+        if (! $bercluster) {
+            return $dasar()->first($kolom);
+        }
+
+        if ($clusterId) {
+            $milikCluster = $dasar()->where('cluster_id', $clusterId)->first($kolom);
+            if ($milikCluster) {
+                return $milikCluster;
+            }
+        }
+
+        return $dasar()->whereNull('cluster_id')->first($kolom);
+    }
+
+    /**
+     * Cluster ipro_bo dari Lokasi FO. Kodenya FOL-{id} — kesepakatan yang sama dengan
+     * IproMasterSync::iproClusterId(), sumber tunggal yang menciptakan cluster itu.
+     */
+    private function iproClusterIdByFoLokasi(int $foLokasiId): ?int
+    {
+        try {
+            $id = $this->db()->table('clusters')
+                ->where('tenant_id', $this->tenantId)
+                ->where('code', 'FOL-'.$foLokasiId)
+                ->value('id');
+
+            return $id ? (int) $id : null;
+        } catch (\Throwable $e) {
+            return null;
+        }
     }
 
     /**
