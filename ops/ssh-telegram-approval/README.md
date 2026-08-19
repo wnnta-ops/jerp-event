@@ -48,6 +48,9 @@ Berkas konfigurasi (berisi token — **jangan** masuk git):
 ```bash
 sudo tee /etc/ssh-approval.conf >/dev/null <<'EOF'
 BOT_TOKEN="123456:ABC..."
+# Boleh BEBERAPA tujuan, dipisah spasi atau koma — chat pribadi, grup, atau
+# campuran. Pesan dikirim ke semuanya; jawaban dari SALAH SATU sudah menentukan.
+# Semua orang di daftar ini bisa memberi akses SSH ke server.
 CHAT_ID="123456789"
 TIMEOUT_DETIK=60
 # Akun otomatis yang TIDAK perlu persetujuan (rsync backup, pemantauan).
@@ -137,6 +140,10 @@ Untuk pekerjaan otomatis, masukkan akunnya ke `BYPASS_USERS`.
 **Satu permintaan pada satu waktu.** Telegram `getUpdates` bersifat merusak —
 update yang sudah diambil hilang dari antrean — sehingga dua login bersamaan bisa
 saling mencuri jawaban. Skrip memakai lock agar antre, bukan bentrok.
+
+**Chat id grup didapat lewat `my_chat_member`** saat bot ditambahkan ke grup,
+atau dengan menambahkan @RawDataBot sebentar lalu mengeluarkannya. Mengirim pesan
+biasa ke grup tidak cukup bila mode privasi bot masih menyala.
 
 **Jangan pasang webhook pada bot yang sama.** Webhook dan `getUpdates` tidak bisa
 dipakai bersamaan; salah satunya akan berhenti menerima.
