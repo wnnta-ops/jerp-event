@@ -437,6 +437,8 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
     Route::post('/business-support/setup/accounts',           [BsAccountController::class, 'store'])->name('bs.accounts.store');
     Route::put('/business-support/setup/accounts/{account}',  [BsAccountController::class, 'update'])->name('bs.accounts.update');
     Route::delete('/business-support/setup/accounts/{account}', [BsAccountController::class, 'destroy'])->name('bs.accounts.destroy');
+    Route::get('/business-support/setup/accounts/format-impor', [BsAccountController::class, 'template'])->name('bs.accounts.template');
+    Route::post('/business-support/setup/accounts/impor',       [BsAccountController::class, 'import'])->name('bs.accounts.import');
     Route::get('/business-support/setup/cost-centers',        [BsCostCenterController::class, 'index'])->name('bs.cost-centers.index');
     Route::post('/business-support/setup/cost-centers',       [BsCostCenterController::class, 'store'])->name('bs.cost-centers.store');
     Route::put('/business-support/setup/cost-centers/{costCenter}', [BsCostCenterController::class, 'update'])->name('bs.cost-centers.update');

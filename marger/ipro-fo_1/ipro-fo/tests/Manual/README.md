@@ -30,6 +30,11 @@ Exit code 0 bila semuanya lolos.
 | `uji-coa-level-induk.php` | Level & Induk pada Tambah/Edit Akun: level dipilih (bukan diterka panjang kode), induk wajib dan harus tepat satu tingkat di atas, kode harus sepanjang levelnya dan melanjutkan kode induk, `parent_id` tersimpan, dan level akun yang sudah beranak tidak bisa dipindah. |
 | `uji-gimmick-cakupan.php` | Cakupan Rincian Biaya pada Setup Kategori Gimmick: kolom hilang dari daftar belum-tertaut begitu ditautkan (walau sinkronnya mati), `aktif` tetap membedakan "sudah dipegang" dari "sudah akan terisi", dan penanda sinkron per baris. |
 | `uji-impor-supplier.php` | Hasil `supplier:impor-legacy`: 757 supplier cocok baris-per-baris dengan berkas sumber di 11 kolom, koreksi NPWP yang nyasar ke kolom Nama Bisnis benar-benar terjadi, dan kode berikutnya meneruskan SP.00764 → SP.00765 (dibandingkan sebagai angka, sehingga kode berangka kecil maupun kode gaya lama SUP- tidak menggeser deret). |
+| `uji-cetak-pengajuan-kasbon.php` | Pemilihan formulir Cetak Pengajuan bon sementara berdasar nominal: ≥ Rp 1 juta memakai formulir KAS BON, di bawahnya memakai BPP + Memo. Termasuk batas persisnya (Rp 999.999 vs Rp 1.000.000) dan terbilang yang tercetak. |
+| `uji-penyelesaian-bon.cjs` | Penentuan cara penyelesaian bon sementara (Refund / Reimburse / Match) langsung dari binding komponen Vue-nya: realisasi < pengajuan → Refund, > → Reimburse, sama → Match. |
+| `uji-cetak-realisasi-kasbon.php` | Formulir Cetak Realisasi mengikuti cara penyelesaiannya — Refund & Match memakai formulir REFUND, Reimburse memakai formulir REIMBURSE — beserta baris "No. Cek / BG" dan hilangnya tombol Cetak Pengeluaran setelah bon direalisasi. |
+| `uji-impor-kategori-invoice.php` | Impor Kategori Invoice: kolom format, penolakan menyeluruh saat ada baris cacat, dan pencocokan lewat kode sehingga impor ulang tidak menggandakan kategori. |
+| `uji-impor-coa.php` | Impor Chart of Account dari lampiran "COA Aktiva": 204 akun cocok persis (nama, level, tipe, saldo normal), rantai `parent_id` utuh dari level 1 sampai 6, angka format `180` tidak pernah tersimpan sebagai tipe, hanya level 6 yang bisa dijurnal, berkas cacat ditolak seluruhnya, impor ulang tidak menggandakan, dan berkas "Unduh Format" bisa diunggah balik apa adanya. |
 
 ## Catatan saat menulis skrip serupa
 

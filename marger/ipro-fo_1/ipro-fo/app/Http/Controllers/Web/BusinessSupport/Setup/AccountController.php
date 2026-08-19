@@ -9,6 +9,8 @@ use App\Domain\BusinessSupport\Models\BsCashFlowCategory;
 use App\Http\Controllers\Controller;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use App\Domain\BusinessSupport\Import\CoaImporter;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
@@ -144,5 +146,80 @@ class AccountController extends Controller
         $data['category_code'] = BsAccount::categoryOf($data['code']);
 
         return $data;
+    }
+
+    /**
+     * Unduh contoh format impor Chart of Account.
+     *
+     * Kolomnya mengikuti lampiran "COA Aktiva" apa adanya, sehingga berkas yang sudah ada
+     * di tangan operator bisa langsung dipakai tanpa disusun ulang. Baris contohnya diambil
+     * dari akun NYATA bila ada — supaya kode & tingkatan pada contoh memang berlaku di sini.
+     */
+    public function template(Request $request): StreamedResponse
+    {
+        abort_unless($request->user()?->canModule('gl'), 403);
+
+        // Contohnya sengaja SATU RANTAI penuh level 1 sampai 6, bukan enam akun teratas:
+        // hanya rantai yang memperlihatkan bagaimana kode anak melanjutkan kode induknya,
+        // dan hanya baris level 6 yang memperlihatkan kolom Postable terisi.
+        $rantai = BsAccount::where('is_postable', true)->where('level', 6)->orderBy('code')->first();
+        $urut   = [];
+        while ($rantai) {
+            array_unshift($urut, $rantai);
+            $rantai = $rantai->parent_id ? BsAccount::find($rantai->parent_id) : null;
+        }
+        if ($urut === []) {
+            $urut = BsAccount::orderBy('level')->orderBy('code')->limit(6)->get()->all();
+        }
+
+        $contoh = collect($urut)->map(fn ($a) => [
+            $a->level, $a->code, $a->name, BsAccount::LEVELS[(int) $a->level] ?? '',
+            // Tipe ditulis dengan kata Indonesia seperti pada lampiran, bukan nilai kolomnya.
+            BsAccount::TYPES[$a->type] ?? $a->type,
+            $a->normal_balance, $a->is_postable ? '√' : '', '', '', '',
+        ])->all();
+
+        return response()->streamDownload(function () use ($contoh) {
+            $out = fopen("php://output", "w");
+            // BOM supaya Excel membaca tanda centang & huruf beraksen dengan benar.
+            fwrite($out, chr(0xEF).chr(0xBB).chr(0xBF));
+            fputcsv($out, CoaImporter::KOLOM, ",", chr(34), "");
+            foreach ($contoh as $b) {
+                fputcsv($out, $b, ",", chr(34), "");
+            }
+            fclose($out);
+        }, "format-impor-coa.csv", ["Content-Type" => "text/csv; charset=UTF-8"]);
+    }
+
+    /**
+     * Impor Chart of Account dari CSV.
+     *
+     * Pemeriksaan & penulisannya diserahkan ke CoaImporter — perkakas yang sama dengan
+     * perintah `coa:impor`, jadi berkas yang ditolak di sini juga ditolak di sana.
+     * Bila ada satu baris pun yang salah, TIDAK ADA yang ditulis.
+     */
+    public function import(Request $request, CoaImporter $importer): RedirectResponse
+    {
+        abort_unless($request->user()?->can('businesssupport.setup.manage'), 403);
+        $request->validate(["berkas" => ["required", "file", "mimes:csv,txt", "max:4096"]]);
+
+        $baris = $importer->csv((string) file_get_contents($request->file("berkas")->getRealPath()));
+        if ($baris === []) {
+            return back()->with("error", "Berkas impor kosong.");
+        }
+
+        $hasil = $importer->baca($baris);
+        if ($hasil["galat"] !== []) {
+            return back()->with("error", "Impor dibatalkan, tidak ada data yang diubah — "
+                .implode(" ", array_slice($hasil["galat"], 0, 5))
+                .(count($hasil["galat"]) > 5 ? " (dan ".(count($hasil["galat"]) - 5)." galat lain)" : ""));
+        }
+        if ($hasil["akun"] === []) {
+            return back()->with("error", "Tidak ada baris yang bisa diimpor dari berkas itu.");
+        }
+
+        $t = $importer->tulis($hasil["akun"]);
+
+        return back()->with("success", "Impor selesai — {$t['baru']} akun baru, {$t['ubah']} diperbarui.");
     }
 }
