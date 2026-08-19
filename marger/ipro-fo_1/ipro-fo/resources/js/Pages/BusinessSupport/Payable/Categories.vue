@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref } from 'vue';
 import { router, useForm, Link } from '@inertiajs/vue3';
-import { Plus, Pencil, Trash2, ArrowLeft, Tags, Search } from 'lucide-vue-next';
+import { Plus, Pencil, Trash2, ArrowLeft, Tags, Search, Upload, Download, FileSpreadsheet } from 'lucide-vue-next';
 import Button from '@/Components/UI/Button.vue';
 import Badge from '@/Components/UI/Badge.vue';
 import EmptyState from '@/Components/UI/EmptyState.vue';
@@ -18,6 +18,32 @@ const search = ref(props.filters.search ?? '');
 function applyFilter() { router.get(route('bs.ap.categories.index'), { search: search.value || undefined }, { preserveState: true, replace: true }); }
 
 const showModal = ref(false);
+
+/* ── Impor kategori ──────────────────────────────────────────────────────────
+   Berkas CSV berkolom: kode, keterangan, akun_debit, akun_hutang, aktif.
+   Akun ditulis sebagai KODE akun, bukan id — kode itulah yang terbaca operator di layar
+   maupun di bagan akun, sedangkan id hanya bermakna di dalam basis data ini.
+   Server memeriksa SELURUH berkas lebih dulu: bila ada satu baris pun yang salah, tidak
+   ada yang ditulis. */
+const showImport = ref(false);
+const berkas = ref<File | null>(null);
+const imporForm = useForm<any>({ berkas: null });
+const KOLOM = [
+    { nama: 'kode', ket: 'Kode kategori, penanda unik. Yang sudah ada akan DIPERBARUI.', contoh: 'BIAYA-LISTRIK' },
+    { nama: 'keterangan', ket: 'Nama kategori yang tampil di layar.', contoh: 'BIAYA LISTRIK KANTOR' },
+    { nama: 'akun_debit', ket: 'KODE akun beban/aset yang didebit.', contoh: '50302020217' },
+    { nama: 'akun_hutang', ket: 'KODE akun hutang yang dikredit.', contoh: '20101010101' },
+    { nama: 'aktif', ket: '1 atau kosong = aktif; 0 / tidak = nonaktif.', contoh: '1' },
+];
+function pilihBerkas(e: Event) { berkas.value = (e.target as HTMLInputElement).files?.[0] ?? null; }
+function kirimImpor() {
+    if (!berkas.value) return;
+    imporForm.berkas = berkas.value;
+    imporForm.post(route('bs.ap.categories.import'), {
+        forceFormData: true,
+        onSuccess: () => { showImport.value = false; berkas.value = null; imporForm.reset(); },
+    });
+}
 const editingId = ref<number | null>(null);
 const form = useForm<any>({ code: '', name: '', debit_account_id: '', payable_account_id: props.defaultPayable ?? '', is_active: true });
 function openCreate() { editingId.value = null; form.reset(); form.payable_account_id = props.defaultPayable ?? ''; showModal.value = true; }
@@ -38,7 +64,10 @@ const inputCls = 'h-9 w-full rounded-lg border border-neutral-300 bg-white px-3 
         <Link :href="route('bs.ap.index')" class="inline-flex items-center gap-2 text-sm text-neutral-500 hover:text-neutral-800 dark:hover:text-neutral-200"><ArrowLeft class="h-4 w-4" /> Account Payable</Link>
         <div class="flex items-center justify-between">
             <h1 class="flex items-center gap-2 text-2xl font-bold"><Tags class="h-6 w-6 text-danger-600" /> Setup Kategori Invoice <span class="text-base font-normal text-neutral-400">({{ categories.length }})</span></h1>
-            <Button @click="openCreate"><template #icon-left><Plus class="h-4 w-4" /></template>Kategori</Button>
+            <div class="flex items-center gap-2">
+                <button type="button" @click="showImport = true" class="inline-flex h-9 items-center gap-1.5 rounded-lg border border-neutral-300 bg-white px-3 text-sm font-medium text-neutral-700 hover:bg-neutral-50 dark:border-neutral-600 dark:bg-neutral-800 dark:text-neutral-200"><Upload class="h-4 w-4" /> Import</button>
+                <Button @click="openCreate"><template #icon-left><Plus class="h-4 w-4" /></template>Kategori</Button>
+            </div>
         </div>
         <p class="text-sm text-neutral-500">Kategori menentukan akun debit otomatis saat input invoice hutang. Akun hutang biasanya Utang Usaha Supplier.</p>
 
@@ -86,5 +115,49 @@ const inputCls = 'h-9 w-full rounded-lg border border-neutral-300 bg-white px-3 
                 </div>
             </div>
         </Teleport>
+    
+        <!-- Impor: formatnya diterangkan DI DALAM dialognya, bukan di dokumen terpisah —
+             orang yang sedang mengimpor tidak perlu mencari-cari kolom apa saja yang dituntut. -->
+        <div v-if="showImport" class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" @click.self="showImport = false">
+            <div class="w-full max-w-2xl rounded-xl bg-white p-5 shadow-xl dark:bg-neutral-900">
+                <h2 class="mb-1 flex items-center gap-2 text-lg font-bold"><Upload class="h-5 w-5 text-primary-600" /> Import Kategori Invoice</h2>
+                <p class="mb-3 text-sm text-neutral-500">Berkas <b>CSV</b>. Kategori dicocokkan lewat <b>kode</b> — yang sudah ada diperbarui, yang belum dibuat.</p>
+
+                <div class="mb-3 overflow-hidden rounded-lg border border-neutral-200 dark:border-neutral-700">
+                    <table class="w-full text-left text-xs">
+                        <thead class="bg-neutral-50 text-neutral-500 dark:bg-neutral-800"><tr>
+                            <th class="px-3 py-2">Kolom</th><th class="px-3 py-2">Keterangan</th><th class="px-3 py-2">Contoh</th>
+                        </tr></thead>
+                        <tbody class="divide-y divide-neutral-200 dark:divide-neutral-800">
+                            <tr v-for="k in KOLOM" :key="k.nama">
+                                <td class="px-3 py-2 font-mono font-semibold">{{ k.nama }}</td>
+                                <td class="px-3 py-2 text-neutral-500">{{ k.ket }}</td>
+                                <td class="px-3 py-2 font-mono text-neutral-400">{{ k.contoh }}</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <p class="mb-3 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:bg-amber-900/20 dark:text-amber-300">
+                    Seluruh berkas diperiksa dulu. Bila ada satu baris pun yang salah, <b>tidak ada</b> yang tersimpan —
+                    perbaiki berkasnya lalu unggah ulang.
+                </p>
+
+                <div class="flex flex-wrap items-center gap-2">
+                    <a :href="route('bs.ap.categories.template')" class="inline-flex h-9 items-center gap-1.5 rounded-lg border border-neutral-300 px-3 text-sm font-medium hover:bg-neutral-50 dark:border-neutral-700"><Download class="h-4 w-4" /> Unduh Format</a>
+                    <label class="inline-flex h-9 flex-1 cursor-pointer items-center gap-2 rounded-lg border border-dashed border-neutral-300 px-3 text-sm text-neutral-500 hover:bg-neutral-50 dark:border-neutral-700">
+                        <FileSpreadsheet class="h-4 w-4" />
+                        <span>{{ berkas ? berkas.name : 'Pilih berkas CSV…' }}</span>
+                        <input type="file" accept=".csv,text/csv" class="hidden" @change="pilihBerkas" />
+                    </label>
+                </div>
+                <p v-if="imporForm.errors.berkas" class="mt-1 text-xs text-danger-500">{{ imporForm.errors.berkas }}</p>
+
+                <div class="mt-4 flex justify-end gap-2">
+                    <button type="button" @click="showImport = false" class="rounded-lg border border-neutral-300 px-4 py-2 text-sm dark:border-neutral-700">Batal</button>
+                    <Button :disabled="!berkas || imporForm.processing" @click="kirimImpor">{{ imporForm.processing ? 'Mengimpor…' : 'Import' }}</Button>
+                </div>
+            </div>
+        </div>
     </div>
 </template>
