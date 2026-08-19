@@ -5,9 +5,12 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Web\BusinessSupport\Gl;
 
 use App\Domain\BusinessSupport\Models\BsAccount;
+use App\Domain\BusinessSupport\Models\BsBudget;
 use App\Domain\BusinessSupport\Models\BsCostCenter;
 use App\Domain\BusinessSupport\Models\BsFiscalPeriod;
 use App\Domain\BusinessSupport\Models\BsJournal;
+use App\Domain\BusinessSupport\Models\BsJournalLine;
+use App\Domain\BusinessSupport\Services\BudgetRealizationService;
 use App\Domain\BusinessSupport\Services\JournalPartyResolver;
 use App\Domain\BusinessSupport\Services\JournalService;
 use App\Exceptions\BusinessRuleException;
@@ -19,6 +22,170 @@ use Inertia\Response;
 
 class JournalController extends Controller
 {
+    /** Keterangan anggaran per jurnal — nilainya dipakai bersama layar & saringannya. */
+    public const BUDGET_STATUSES = [
+        'over'  => 'Over Budget',
+        'under' => 'Under Budget',
+        'none'  => 'Tanpa Anggaran',
+    ];
+
+    /**
+     * Tentukan keterangan anggaran tiap jurnal pada satu halaman.
+     *
+     * Realisasi dihitung dengan BudgetRealizationService — perkakas yang sama dengan halaman
+     * Budget Control dan gerbang over-budget — supaya angka yang dirujuk keterangan ini persis
+     * angka yang terbaca di Master Budget.
+     *
+     * Hanya (akun + cost center) yang benar-benar punya anggaran disetujui yang ditanya
+     * realisasinya, jadi jumlah kueri mengikuti banyaknya anggaran yang tersentuh halaman ini,
+     * bukan banyaknya baris jurnalnya.
+     *
+     * @param  \Illuminate\Support\Collection<int, \App\Domain\BusinessSupport\Models\BsJournal>  $jurnal
+     * @return array{status: array<int,string>, catatan: array<int,?string>}
+     */
+    private function statusAnggaran($jurnal, BudgetRealizationService $realisasi): array
+    {
+        // Pasangan (tahun, akun, cost center efektif) yang disentuh halaman ini.
+        $pasangan = [];
+        foreach ($jurnal as $j) {
+            foreach ($j->lines as $l) {
+                $cc = $l->cost_center_id ?: $j->cost_center_id;
+                $pasangan[((int) $j->period_year).'|'.((int) $l->account_id).'|'.((int) ($cc ?: 0))] = true;
+            }
+        }
+        if ($pasangan === []) {
+            return ['status' => [], 'catatan' => []];
+        }
+
+        $tahun = [];
+        $akun = [];
+        foreach (array_keys($pasangan) as $k) {
+            [$t, $a] = explode('|', $k);
+            $tahun[(int) $t] = true;
+            $akun[(int) $a] = true;
+        }
+
+        // Anggaran disetujui yang menyangkut akun-akun itu — termasuk anggaran lintas cost
+        // center (cost_center_id kosong), yang berlaku untuk cost center mana pun.
+        $anggaran = BsBudget::whereIn('year', array_keys($tahun))
+            ->whereIn('account_id', array_keys($akun))
+            ->where('status', 'approved')
+            ->get(['id', 'year', 'account_id', 'cost_center_id', 'amount']);
+        if ($anggaran->isEmpty()) {
+            return ['status' => [], 'catatan' => []];
+        }
+
+        $namaAkun = BsAccount::whereIn('id', $anggaran->pluck('account_id')->unique())
+            ->pluck('name', 'id');
+        $rp = fn ($v) => 'Rp '.number_format((float) $v, 0, ',', '.');
+
+        // Realisasi dihitung SEKALI per anggaran, lalu dipakai ulang oleh semua jurnal yang
+        // menyentuhnya.
+        $lewat = [];
+        foreach ($anggaran as $b) {
+            $cc = $b->cost_center_id ? (int) $b->cost_center_id : null;
+            $pakai = $realisasi->total((int) $b->year, (int) $b->account_id, $cc);
+            $plafon = round((float) $b->amount, 2);
+            $lewat[$b->id] = [
+                'year' => (int) $b->year, 'account_id' => (int) $b->account_id, 'cc' => $cc,
+                'over' => round($pakai, 2) > $plafon + 0.001,
+                'teks' => ($namaAkun[$b->account_id] ?? ('Akun #'.$b->account_id))
+                    .': anggaran '.$rp($plafon).', realisasi '.$rp($pakai)
+                    .' → sisa '.$rp($plafon - $pakai),
+            ];
+        }
+
+        $status = [];
+        $catatan = [];
+        foreach ($jurnal as $j) {
+            $adaAnggaran = false;
+            $adaLewat = false;
+            $pesan = [];
+            foreach ($j->lines as $l) {
+                $cc = (int) ($l->cost_center_id ?: $j->cost_center_id ?: 0);
+                foreach ($lewat as $b) {
+                    $cocok = $b['year'] === (int) $j->period_year
+                        && $b['account_id'] === (int) $l->account_id
+                        // Anggaran lintas cost center berlaku untuk cost center mana pun.
+                        && ($b['cc'] === null || $b['cc'] === $cc);
+                    if (! $cocok) {
+                        continue;
+                    }
+                    $adaAnggaran = true;
+                    if ($b['over']) {
+                        $adaLewat = true;
+                        $pesan[$b['teks']] = true;
+                    }
+                }
+            }
+
+            // Satu baris yang melewati anggaran sudah cukup membuat jurnalnya over: itulah
+            // baris yang akan ditolak gerbangnya bila jurnal serupa diinput lagi.
+            $status[$j->id] = $adaLewat ? 'over' : ($adaAnggaran ? 'under' : 'none');
+            $catatan[$j->id] = $pesan ? implode(' · ', array_keys($pesan)) : null;
+        }
+
+        return ['status' => $status, 'catatan' => $catatan];
+    }
+
+    /**
+     * Saring daftar jurnal berdasarkan keterangan anggarannya.
+     *
+     * Keterangan itu hasil hitungan, bukan kolom, jadi ia tidak bisa langsung di-WHERE.
+     * Yang disaring adalah PASANGAN (tahun + akun + cost center) yang anggarannya sudah
+     * terlampaui: sebuah jurnal ikut "Over Budget" bila salah satu barisnya menyentuh
+     * pasangan itu — persis baris yang akan ditolak gerbang over-budget.
+     *
+     * Hanya dijalankan saat saringannya dipakai, karena ia menghitung realisasi seluruh
+     * anggaran disetujui pada rentang tahun yang tampil.
+     */
+    private function saringAnggaran($q, string $status, $from, $to)
+    {
+        $realisasi = app(BudgetRealizationService::class);
+        $anggaran = BsBudget::whereBetween('year', [(int) $from->year, (int) $to->year])
+            ->where('status', 'approved')
+            ->get(['id', 'year', 'account_id', 'cost_center_id', 'amount']);
+
+        $semua = [];
+        $lewat = [];
+        foreach ($anggaran as $b) {
+            $cc = $b->cost_center_id ? (int) $b->cost_center_id : null;
+            $p = ['year' => (int) $b->year, 'account_id' => (int) $b->account_id, 'cc' => $cc];
+            $semua[] = $p;
+            if (round($realisasi->total((int) $b->year, (int) $b->account_id, $cc), 2) > round((float) $b->amount, 2) + 0.001) {
+                $lewat[] = $p;
+            }
+        }
+
+        // Cocokkan satu baris jurnal dengan salah satu pasangan. Cost center efektif dibaca
+        // sama dengan BudgetRealizationService: baris dulu, baru header.
+        $cocok = function ($pasangan) {
+            return function ($l) use ($pasangan) {
+                $l->where(function ($w) use ($pasangan) {
+                    foreach ($pasangan as $p) {
+                        $w->orWhere(function ($x) use ($p) {
+                            $x->whereRaw('bs_journals.period_year = ?', [$p['year']])
+                                ->where('bs_journal_lines.account_id', $p['account_id']);
+                            if ($p['cc'] !== null) {
+                                $x->whereRaw('COALESCE(bs_journal_lines.cost_center_id, bs_journals.cost_center_id) = ?', [$p['cc']]);
+                            }
+                        });
+                    }
+                });
+            };
+        };
+
+        return match ($status) {
+            // Tidak ada anggaran yang terlampaui → tidak ada jurnal yang bisa disebut over.
+            'over'  => $lewat === [] ? $q->whereRaw('1 = 0') : $q->whereHas('lines', $cocok($lewat)),
+            'under' => $semua === [] ? $q->whereRaw('1 = 0')
+                : $q->whereHas('lines', $cocok($semua))
+                    ->when($lewat !== [], fn ($x) => $x->whereDoesntHave('lines', $cocok($lewat))),
+            'none'  => $semua === [] ? $q : $q->whereDoesntHave('lines', $cocok($semua)),
+            default => $q,
+        };
+    }
+
     public function index(Request $request): Response
     {
         abort_unless($request->user()?->canModule('gl'), 403);
@@ -27,13 +194,39 @@ class JournalController extends Controller
         $from = $request->date('date_from') ?? now()->startOfMonth();
         $to   = $request->date('date_to')   ?? now()->endOfMonth();
 
-        $rows = BsJournal::query()
+        // ── Filter per kolom ────────────────────────────────────────────────────────
+        //
+        // Tiap kolom di layar punya saringannya sendiri, termasuk kolom rincian (Akun &
+        // Keterangan Baris). Semuanya dikumpulkan di SATU tempat dan dipakai ulang oleh
+        // query daftar maupun rekap, supaya angka rekap tidak pernah menghitung baris yang
+        // tidak ditampilkan.
+        //
+        // Status SENGAJA tidak ikut di sini: rekap memang harus menyebutkan jumlah SETIAP
+        // status pada rentang ini, jadi menyaringnya lebih dulu akan membuat tiga dari empat
+        // angkanya selalu nol.
+        $saring = function ($q) use ($request, $from, $to) {
+            return $q
+                ->when($request->input('source'), fn ($x, $v) => $x->where('source', $v))
+                ->when($request->input('f_number'), fn ($x, $v) => $x->where('journal_number', $v))
+                ->when($request->input('f_date'), fn ($x, $v) => $x->whereDate('journal_date', $v))
+                ->when($request->input('f_desc'), fn ($x, $v) => $x->where('description', $v))
+                ->when($request->input('f_lines'), fn ($x, $v) => $x->has('lines', '=', (int) $v))
+                ->when($request->filled('f_debit'), fn ($x) => $x->where('total_debit', (float) $request->input('f_debit')))
+                ->when($request->filled('f_credit'), fn ($x) => $x->where('total_credit', (float) $request->input('f_credit')))
+                // Saringan rincian menjaring JURNALNYA, bukan barisnya: sebuah jurnal ikut
+                // tampil bila salah satu barisnya cocok, dan seluruh barisnya tetap
+                // ditampilkan supaya debit & kreditnya tetap seimbang di layar.
+                ->when($request->input('f_account'), fn ($x, $v) => $x->whereHas('lines', fn ($l) => $l->where('account_id', (int) $v)))
+                ->when($request->input('f_line_desc'), fn ($x, $v) => $x->whereHas('lines', fn ($l) => $l->where('description', $v)))
+                ->when($request->input('f_budget'), fn ($x, $v) => $this->saringAnggaran($x, (string) $v, $from, $to))
+                ->when($request->input('search'), fn ($x, $s) => $x->where(fn ($w) => $w->where('journal_number', 'like', "%{$s}%")->orWhere('description', 'like', "%{$s}%")->orWhere('reference', 'like', "%{$s}%")));
+        };
+
+        $rows = $saring(BsJournal::query()
             ->with(['lines.account:id,code,name', 'costCenter:id,code,name'])
             ->withCount('lines')
-            ->whereBetween('journal_date', [$from->toDateString(), $to->toDateString()])
-            ->when($request->input('source'), fn ($q, $v) => $q->where('source', $v))
+            ->whereBetween('journal_date', [$from->toDateString(), $to->toDateString()]))
             ->when($request->input('status'), fn ($q, $v) => $q->where('status', $v))
-            ->when($request->input('search'), fn ($q, $s) => $q->where(fn ($w) => $w->where('journal_number', 'like', "%{$s}%")->orWhere('description', 'like', "%{$s}%")->orWhere('reference', 'like', "%{$s}%")))
             ->latest('journal_date')->latest('id')
             ->paginate(50)->withQueryString();
 
@@ -61,10 +254,8 @@ class JournalController extends Controller
         // masuk kolom Closed dan TIDAK ikut dihitung sebagai Baru/Final/Approved. Kalau
         // aturannya berbeda, dua layar yang saling bertautan akan menyebut angka berbeda untuk
         // data yang sama — persis kebingungan yang hendak dihilangkan.
-        $rekap = BsJournal::query()
-            ->whereBetween('journal_date', [$from->toDateString(), $to->toDateString()])
-            ->when($request->input('source'), fn ($q, $v) => $q->where('source', $v))
-            ->when($request->input('search'), fn ($q, $s) => $q->where(fn ($w) => $w->where('journal_number', 'like', "%{$s}%")->orWhere('description', 'like', "%{$s}%")->orWhere('reference', 'like', "%{$s}%")))
+        $rekap = $saring(BsJournal::query()
+            ->whereBetween('journal_date', [$from->toDateString(), $to->toDateString()]))
             ->selectRaw('period_year, period_month, status, COUNT(*) AS c')
             ->groupBy('period_year', 'period_month', 'status')->get();
 
@@ -77,6 +268,73 @@ class JournalController extends Controller
             }
             $jumlah[match ($r->status) { 'final' => 'final', 'posted' => 'approved', default => 'baru' }] += (int) $r->c;
         }
+
+        // ── Over / Under Budget per jurnal ──────────────────────────────────────────
+        //
+        // Aturannya SAMA PERSIS dengan gerbang yang menolak input (BudgetGuardService):
+        // anggaran yang dipakai hanya yang berstatus disetujui, dicocokkan per
+        // (tahun + akun + cost center), dan cost center efektif tiap baris = cost center
+        // barisnya, jatuh ke cost center header bila kosong. Kalau layar memakai aturan
+        // sendiri, ia akan menyebut "Under Budget" pada jurnal yang justru ditolak gerbangnya.
+        //
+        // Ada TIGA keadaan, bukan dua. Jurnal yang tak satu pun barisnya punya anggaran
+        // TIDAK diberi keterangan hijau: mengatakan "Under Budget" pada sesuatu yang tak
+        // beranggaran berarti menjanjikan pengawasan yang sebenarnya tidak ada.
+        $anggaran = $this->statusAnggaran($rows->getCollection(), app(BudgetRealizationService::class));
+        $rows->getCollection()->transform(function ($j) use ($anggaran) {
+            $j->budget_status = $anggaran['status'][$j->id] ?? null;
+            $j->budget_note   = $anggaran['catatan'][$j->id] ?? null;
+
+            return $j;
+        });
+
+        // ── Isi pilihan tiap saringan kolom ─────────────────────────────────────────
+        //
+        // Dihitung dari RENTANG TANGGALnya saja, LEPAS dari saringan kolom lain. Kalau
+        // pilihannya ikut disaring, memilih satu kolom akan mengosongkan pilihan kolom
+        // lain dan orang tidak lagi bisa mengubah pikirannya tanpa mengosongkan semuanya.
+        //
+        // Dibatasi supaya rentang setahun pada bagan yang ramai tidak mengirim puluhan ribu
+        // baris ke layar. Batasnya disebutkan ke layar, bukan disembunyikan — daftar yang
+        // diam-diam terpotong akan terbaca sebagai "nilainya memang tidak ada".
+        $BATAS = 500;
+        $dalamRentang = fn () => BsJournal::query()
+            ->whereBetween('journal_date', [$from->toDateString(), $to->toDateString()]);
+
+        $daftar = function ($kolom) use ($dalamRentang, $BATAS) {
+            return $dalamRentang()->whereNotNull($kolom)->where($kolom, '!=', '')
+                ->distinct()->orderBy($kolom)->limit($BATAS)->pluck($kolom)
+                ->map(fn ($v) => ['id' => (string) $v, 'label' => (string) $v])->values();
+        };
+
+        $idJurnal = $dalamRentang()->select('id');
+        $opsi = [
+            'number'    => $daftar('journal_number'),
+            'date'      => $dalamRentang()->distinct()->orderByDesc('journal_date')->limit($BATAS)
+                ->pluck('journal_date')
+                ->map(fn ($v) => ['id' => \Illuminate\Support\Carbon::parse($v)->toDateString(),
+                    'label' => \Illuminate\Support\Carbon::parse($v)->translatedFormat('d M Y')])->values(),
+            'desc'      => $daftar('description'),
+            'lines'     => BsJournalLine::whereIn('journal_id', $idJurnal)
+                ->selectRaw('journal_id, COUNT(*) c')->groupBy('journal_id')->pluck('c')
+                ->unique()->sort()->values()
+                ->map(fn ($v) => ['id' => (string) $v, 'label' => $v.' baris'])->values(),
+            'debit'     => $dalamRentang()->where('total_debit', '>', 0)->distinct()
+                ->orderByDesc('total_debit')->limit($BATAS)->pluck('total_debit')
+                ->map(fn ($v) => ['id' => (string) (float) $v, 'label' => number_format((float) $v, 2, ',', '.')])->values(),
+            'credit'    => $dalamRentang()->where('total_credit', '>', 0)->distinct()
+                ->orderByDesc('total_credit')->limit($BATAS)->pluck('total_credit')
+                ->map(fn ($v) => ['id' => (string) (float) $v, 'label' => number_format((float) $v, 2, ',', '.')])->values(),
+            // Akun & Keterangan Baris diambil dari baris jurnal pada rentang yang sama.
+            'account'   => BsAccount::whereIn('id', BsJournalLine::whereIn('journal_id', $idJurnal)
+                ->distinct()->pluck('account_id'))
+                ->orderBy('code')->limit($BATAS)->get(['id', 'code', 'name'])
+                ->map(fn ($a) => ['id' => (string) $a->id, 'label' => $a->code.' — '.$a->name])->values(),
+            'line_desc' => BsJournalLine::whereIn('journal_id', $idJurnal)
+                ->whereNotNull('description')->where('description', '!=', '')
+                ->distinct()->orderBy('description')->limit($BATAS)->pluck('description')
+                ->map(fn ($v) => ['id' => (string) $v, 'label' => (string) $v])->values(),
+        ];
 
         // Master → "Jurnal" = ringkas (rincian tersembunyi). Query → "Detail Transaksi Jurnal" = rincian tampil.
         $isDetail = $request->routeIs('bs.gl.journal.detail');
@@ -93,8 +351,18 @@ class JournalController extends Controller
             'title'         => $isDetail ? 'Detail Transaksi Jurnal' : 'Jurnal',
             // Aksi massal Approve / Cancel Approved hanya untuk yang berwenang menyetujui.
             'canApprove'    => (bool) $request->user()?->can('businesssupport.approval.act'),
+            // Isi pilihan tiap saringan kolom + batasnya, supaya layar bisa mengatakan
+            // terus terang kalau daftarnya terpotong.
+            'opsiKolom'     => $opsi,
+            'batasOpsi'     => $BATAS,
+            // Keterangan anggaran + pilihan saringannya.
+            'budgetStatuses' => self::BUDGET_STATUSES,
             'filters'  => array_merge(
-                $request->only(['source', 'status', 'search']),
+                $request->only([
+                    'source', 'status', 'search',
+                    'f_number', 'f_date', 'f_desc', 'f_lines', 'f_debit', 'f_credit',
+                    'f_account', 'f_line_desc', 'f_budget',
+                ]),
                 ['date_from' => $from->toDateString(), 'date_to' => $to->toDateString()],
             ),
         ]);
