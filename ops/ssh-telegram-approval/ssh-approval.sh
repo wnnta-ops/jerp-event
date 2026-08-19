@@ -80,17 +80,33 @@ _Tanpa jawaban dalam ${TIMEOUT_DETIK} detik, login ditolak._"
 KEYBOARD=$(jq -nc --arg ok "ok:$NONCE" --arg no "no:$NONCE" \
   '{inline_keyboard:[[{text:"✅ Izinkan",callback_data:$ok},{text:"⛔ Tolak",callback_data:$no}]]}')
 
-KIRIM=$(curl -sS --max-time 15 -X POST "${API}/sendMessage" \
-  --data-urlencode "chat_id=${CHAT_ID}" \
-  --data-urlencode "text=${TEKS}" \
-  --data-urlencode "parse_mode=Markdown" \
-  --data-urlencode "reply_markup=${KEYBOARD}" 2>/dev/null)
+# CHAT_ID boleh memuat BEBERAPA tujuan, dipisah spasi atau koma — beberapa chat
+# pribadi, grup, atau campuran. Pesan dikirim ke semuanya dan jawaban dari SALAH
+# SATU sudah menentukan hasilnya, supaya tidak macet menunggu orang yang kebetulan
+# sedang tidak memegang HP.
+CHATS=()
+MSG_IDS=()
+for c in $(printf '%s' "$CHAT_ID" | tr ',' ' '); do
+    KIRIM=$(curl -sS --max-time 15 -X POST "${API}/sendMessage" \
+      --data-urlencode "chat_id=${c}" \
+      --data-urlencode "text=${TEKS}" \
+      --data-urlencode "parse_mode=Markdown" \
+      --data-urlencode "reply_markup=${KEYBOARD}" 2>/dev/null)
 
-if [ "$(printf '%s' "$KIRIM" | jq -r '.ok // false')" != "true" ]; then
-    log "TOLAK $USER_LOGIN dari $FROM_HOST: gagal kirim Telegram"
+    if [ "$(printf '%s' "$KIRIM" | jq -r '.ok // false')" = "true" ]; then
+        CHATS+=("$c")
+        MSG_IDS+=("$(printf '%s' "$KIRIM" | jq -r '.result.message_id')")
+    else
+        log "peringatan: gagal kirim ke chat ${c}"
+    fi
+done
+
+# Gagal ke SEMUA tujuan = tolak. Bila sebagian berhasil, proses tetap lanjut —
+# cukup satu orang yang bisa memutuskan.
+if [ "${#CHATS[@]}" -eq 0 ]; then
+    log "TOLAK $USER_LOGIN dari $FROM_HOST: gagal kirim Telegram ke semua tujuan"
     exit 1
 fi
-MSG_ID=$(printf '%s' "$KIRIM" | jq -r '.result.message_id')
 
 # Satu penunggu pada satu waktu: getUpdates bersifat merusak (update yang sudah
 # diambil hilang dari antrean), jadi dua login bersamaan bisa saling mencuri
@@ -99,9 +115,13 @@ mkdir -p "$(dirname "$OFFSET_FILE")" 2>/dev/null
 exec 9>"$LOCK"
 flock -w "$TIMEOUT_DETIK" 9 || { log "TOLAK $USER_LOGIN: menunggu giliran terlalu lama"; exit 1; }
 
+# Daftar chat yang berhak menjawab, sebagai JSON untuk dipakai jq di bawah.
+IZIN=$(printf '%s\n' "${CHATS[@]}" | jq -R . | jq -sc .)
+
 OFFSET=$(cat "$OFFSET_FILE" 2>/dev/null || echo 0)
 BATAS=$(( $(date +%s) + TIMEOUT_DETIK ))
 HASIL=""
+OLEH=""
 
 while [ "$(date +%s)" -lt "$BATAS" ]; do
     SISA=$(( BATAS - $(date +%s) ))
@@ -114,14 +134,24 @@ while [ "$(date +%s)" -lt "$BATAS" ]; do
     BARU=$(printf '%s' "$UP" | jq -r '[.result[].update_id] | max // empty')
     [ -n "$BARU" ] && { OFFSET=$((BARU + 1)); echo "$OFFSET" > "$OFFSET_FILE"; }
 
-    DATA=$(printf '%s' "$UP" | jq -r --arg n "$NONCE" \
-        '.result[].callback_query | select(.data == "ok:\($n)" or .data == "no:\($n)") | .data' | head -1)
-    CBID=$(printf '%s' "$UP" | jq -r --arg n "$NONCE" \
-        '.result[].callback_query | select(.data == "ok:\($n)" or .data == "no:\($n)") | .id' | head -1)
+    # Hanya terima jawaban dari chat yang memang DIKIRIMI. Tombol dari chat lain
+    # (mis. bot yang sama dipakai keperluan lain) tidak boleh menentukan siapa
+    # yang berhak masuk ke server.
+    PILIH=$(printf '%s' "$UP" | jq -r --arg n "$NONCE" --argjson izin "$IZIN" \
+        '[ .result[].callback_query
+           | select(.data == "ok:\($n)" or .data == "no:\($n)")
+           | select((.message.chat.id | tostring) as $c | ($izin | index($c)) != null) ]
+         | first // empty
+         | [.data, .id, (.from.first_name // .from.username // "?")] | @tsv')
 
-    if [ -n "$DATA" ]; then
+    if [ -n "$PILIH" ]; then
+        DATA=$(printf '%s' "$PILIH" | cut -f1)
+        CBID=$(printf '%s' "$PILIH" | cut -f2)
+        OLEH=$(printf '%s' "$PILIH" | cut -f3)
+
         [ -n "$CBID" ] && curl -sS --max-time 10 -X POST "${API}/answerCallbackQuery" \
             --data-urlencode "callback_query_id=${CBID}" >/dev/null 2>&1
+
         HASIL="${DATA%%:*}"
         break
     fi
@@ -130,23 +160,27 @@ done
 flock -u 9
 
 if [ "$HASIL" = "ok" ]; then
-    AKHIR="✅ *Login DIIZINKAN*"
+    AKHIR="✅ *Login DIIZINKAN* oleh ${OLEH}"
     KODE=0
 elif [ "$HASIL" = "no" ]; then
-    AKHIR="⛔ *Login DITOLAK*"
+    AKHIR="⛔ *Login DITOLAK* oleh ${OLEH}"
     KODE=1
 else
     AKHIR="⏱ *Login DITOLAK* — tidak ada jawaban dalam ${TIMEOUT_DETIK} detik"
     KODE=1
 fi
 
-curl -sS --max-time 10 -X POST "${API}/editMessageText" \
-  --data-urlencode "chat_id=${CHAT_ID}" \
-  --data-urlencode "message_id=${MSG_ID}" \
-  --data-urlencode "parse_mode=Markdown" \
-  --data-urlencode "text=${TEKS}
+# Perbarui SEMUA pesan yang terkirim, supaya penerima lain tahu perkaranya sudah
+# diputuskan dan tidak menekan tombol pada permintaan yang sudah kedaluwarsa.
+for i in "${!CHATS[@]}"; do
+    curl -sS --max-time 10 -X POST "${API}/editMessageText" \
+      --data-urlencode "chat_id=${CHATS[$i]}" \
+      --data-urlencode "message_id=${MSG_IDS[$i]}" \
+      --data-urlencode "parse_mode=Markdown" \
+      --data-urlencode "text=${TEKS}
 
 ${AKHIR}" >/dev/null 2>&1
+done
 
-log "$([ $KODE -eq 0 ] && echo IZINKAN || echo TOLAK) $USER_LOGIN dari $FROM_HOST"
+log "$([ $KODE -eq 0 ] && echo IZINKAN || echo TOLAK) $USER_LOGIN dari $FROM_HOST${OLEH:+ (oleh $OLEH)}"
 exit $KODE
