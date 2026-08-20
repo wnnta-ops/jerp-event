@@ -3,7 +3,8 @@
 // Yang diperiksa bukan tampilannya melainkan ARTI bentuknya: lebar batang harus sebanding
 // dengan jumlahnya, pita penghubung harus benar-benar menyambungkan tepi batang atas ke
 // tepi batang bawah (itulah yang membuatnya terbaca satu aliran), selisih antar tahap harus
-// jumlah mutlak — bukan persen — dan nama tahap tidak boleh dipenggal.
+// jumlah mutlak dengan katanya — bukan persen, dan bukan angka bertanda minus — serta nama
+// tahap tidak boleh dipenggal.
 //
 // Jalankan:  node tests/Manual/uji-corong-kpr.cjs .
 const fs = require('fs');
@@ -102,14 +103,18 @@ async function main() {
         }
         cek('tiap pita bertepi sama dengan batang yang dihubungkannya', nyambung, rincian);
 
-        console.log('\n=== 3. Selisih ditulis sebagai JUMLAH, bukan persen ===');
-        cek('selisih tahap 1→2 = −11', p[0].teks === '−11', p[0].teks);
-        cek('selisih tahap 5→6 = −7', p[4].teks === '−7', p[4].teks);
+        console.log('\n=== 3. Selisih berbunyi "sedang proses n", bukan angka minus ===');
+        // Berkasnya tidak hilang — ia masih dikerjakan di tahap atasnya. Tanda minus
+        // menyiratkan kehilangan, jadi tidak boleh muncul di mana pun.
+        cek('selisih tahap 1→2 berbunyi "sedang proses 11"', p[0].teks === 'sedang proses 11', p[0].teks);
+        cek('selisih tahap 5→6 berbunyi "sedang proses 7"', p[4].teks === 'sedang proses 7', p[4].teks);
+        cek('tidak ada tanda minus di label mana pun',
+            !p.some((x) => x.teks.includes('−') || x.teks.includes('-')), p.map((x) => x.teks).join(' | '));
         cek('tidak ada tanda persen di mana pun',
             !p.some((x) => x.teks.includes('%')) && !t.some((x) => x.teks.includes('%')));
         cek('penurunan ditandai turun', p.every((x) => x.turun === true));
-        cek('keterangan pita menyebut berapa yang tertahan dan di mana',
-            p[0].judul.includes('11 berkas tertahan di SPRS'), p[0].judul);
+        cek('keterangan pita menyebut berapa yang sedang proses dan di mana',
+            p[0].judul.includes('11 berkas sedang proses di SPRS'), p[0].judul);
 
         console.log('\n=== 4. Nama tahap tidak dipenggal ===');
         cek('"Profiling Customer" tercetak utuh',
@@ -130,7 +135,8 @@ async function main() {
             Math.abs(t[0].w - (560 - 168 - 62)) < 0.5, String(t[0].w));
         cek('lebar Pencairan : Diajukan = 13 : 40',
             Math.abs(t[5].w / t[0].w - 13 / 40) < 0.01, (t[5].w / t[0].w).toFixed(3));
-        cek('selisih terbesar ada di Akad → Pencairan (−9)', p[4].teks === '−9', p[4].teks);
+        cek('selisih terbesar ada di Akad → Pencairan (sedang proses 9)',
+            p[4].teks === 'sedang proses 9', p[4].teks);
         cek('"SP3K Terbit" tercetak utuh', t[2].nama === 'SP3K Terbit', t[2].nama);
         scope.stop();
     }
@@ -141,7 +147,7 @@ async function main() {
         const { b, scope } = jalankan({ rows: [{ n: 'A', v: 10 }, { n: 'B', v: 25 }] });
         const p = b.pita.value[0];
         cek('tahap yang bertambah ditandai naik, bukan turun', p.turun === false);
-        cek('selisihnya bertanda plus', p.teks === '+15', p.teks);
+        cek('pertambahan berbunyi "masuk 15"', p.teks === 'masuk 15', p.teks);
         cek('keterangannya menyebut masuk, bukan tertahan',
             p.judul.includes('15 berkas masuk di B'), p.judul);
         scope.stop();

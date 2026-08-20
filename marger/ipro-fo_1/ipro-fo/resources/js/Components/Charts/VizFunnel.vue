@@ -114,15 +114,22 @@ const pita = computed(() => tahap.value.slice(0, -1).map((a, i) => {
             'L' + n(b.x + b.w) + ',' + n(yB), 'L' + n(b.x) + ',' + n(yB), 'Z'].join(' '),
         fill: a.fill,
         yTeks: yA + (yB - yA) / 2 + 3,
-        // Selisih ditulis sebagai jumlah, bukan persen: "−11" bisa langsung dicocokkan
-        // dengan sebelas berkas yang tertahan; "−37%" masih harus dihitung balik dulu.
-        teks: selisih === 0 ? '' : (selisih < 0 ? '−' : '+') + Math.abs(selisih).toLocaleString('id-ID'),
+        // Selisih ditulis sebagai JUMLAH dengan katanya, bukan angka bertanda.
+        //
+        // Dulu "−11". Tanda minus di sini keliru: berkasnya tidak hilang dan tidak gagal,
+        // ia masih SEDANG DIPROSES di tahap atasnya dan akan menyusul ke tahap berikutnya.
+        // "sedang proses 11" mengatakan keadaan yang sebenarnya, dan angkanya tetap bisa
+        // langsung dicocokkan dengan sebelas berkas itu — hal yang tidak bisa dilakukan
+        // kalau ditulis sebagai persen.
+        teks: selisih === 0
+            ? ''
+            : (selisih < 0 ? 'sedang proses ' : 'masuk ') + Math.abs(selisih).toLocaleString('id-ID'),
         turun: selisih < 0,
         judul: selisih === 0
             ? a.nama + ' → ' + b.nama + ': tidak ada perubahan jumlah'
             : a.nama + ' → ' + b.nama + ': '
                 + (selisih < 0
-                    ? Math.abs(selisih).toLocaleString('id-ID') + ' ' + props.satuan + ' tertahan di ' + a.nama
+                    ? Math.abs(selisih).toLocaleString('id-ID') + ' ' + props.satuan + ' sedang proses di ' + a.nama
                     : selisih.toLocaleString('id-ID') + ' ' + props.satuan + ' masuk di ' + b.nama),
     };
 }));
@@ -155,8 +162,10 @@ const pita = computed(() => tahap.value.slice(0, -1).map((a, i) => {
 
 <style scoped>
 /* Selisih antar tahap sengaja lebih redup daripada angka tahapnya: ia keterangan
-   pelengkap, bukan angka utama yang dicari pembacanya. */
-.viz :deep(.drop) { font-size: 10px; font-weight: 700; }
-.viz :deep(.drop.turun) { fill: var(--viz-crit); }
-.viz :deep(.drop.naik) { fill: var(--viz-muted); }
+   pelengkap, bukan angka utama yang dicari pembacanya.
+
+   Warnanya NETRAL, bukan merah. Merah menandakan kegagalan, sedangkan "sedang proses"
+   adalah keadaan kerja yang normal — berkasnya sedang dikerjakan, bukan hilang. Memakai
+   merah sambil menulis "sedang proses" akan mengirim dua pesan yang bertentangan. */
+.viz :deep(.drop) { font-size: 10px; font-weight: 700; fill: var(--viz-muted); }
 </style>
