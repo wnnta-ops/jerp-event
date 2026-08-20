@@ -33,6 +33,8 @@ class FoSettings extends Settings
 
     public ?string $nup_public_maintenance_note;
 
+    public ?string $nup_public_maintenance_bypass;
+
     // Siteplan Live (acara NUP)
     public bool $siteplanlive_show_stock;
 

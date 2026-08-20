@@ -78,6 +78,12 @@ class PengaturanFo extends Page implements HasForms
                 Forms\Components\TimePicker::make('nup_public_maintenance_end')
                     ->label('Selesai pukul')->seconds(false)->format('H:i')
                     ->visible(fn (Forms\Get $get) => (bool) $get('nup_public_maintenance')),
+                Forms\Components\TextInput::make('nup_public_maintenance_bypass')
+                    ->label('Kode akses tim (untuk menguji saat pemeliharaan)')
+                    ->helperText('Buka formulir dengan ?kode=ISI-INI. Kosongkan berarti tak ada yang bisa melewati.')
+                    ->maxLength(64)
+                    ->visible(fn (Forms\Get $get) => (bool) $get('nup_public_maintenance'))
+                    ->columnSpanFull(),
                 Forms\Components\TextInput::make('nup_public_maintenance_note')
                     ->label('Keterangan tambahan (opsional)')
                     ->placeholder('mis. Mohon mendaftar kembali setelah jam tersebut.')

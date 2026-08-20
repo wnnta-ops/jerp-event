@@ -170,9 +170,12 @@ class PublicForm extends Component
 
     public ?string $maintenanceNote = null;
 
+    /** Penanda sesi bahwa pengunjung ini sudah lolos kode akses pemeliharaan. */
+    private const KUNCI_LEWAT = 'nup_maintenance_bypass';
+
     public function mount(FoSettings $settings): void
     {
-        $this->maintenance = (bool) $settings->nup_public_maintenance;
+        $this->maintenance = (bool) $settings->nup_public_maintenance && ! $this->bolehLewat($settings);
         $this->maintenanceStart = $settings->nup_public_maintenance_start;
         $this->maintenanceEnd = $settings->nup_public_maintenance_end;
         $this->maintenanceNote = $settings->nup_public_maintenance_note;
@@ -191,6 +194,35 @@ class PublicForm extends Component
             ->openNow()
             ->orderBy('tgl_launching')
             ->value('id');
+    }
+
+    /**
+     * Kode akses tim saat pemeliharaan. Dicocokkan dari ?kode= lalu DIINGAT di
+     * sesi: permintaan Livewire berikutnya menuju /livewire/update tanpa membawa
+     * query string, jadi tanpa sesi pengunjung akan terlempar ke halaman
+     * pemeliharaan begitu mengetik isian pertama.
+     */
+    private function bolehLewat(FoSettings $settings): bool
+    {
+        $kode = trim((string) ($settings->nup_public_maintenance_bypass ?? ''));
+
+        if ($kode === '') {
+            return false;   // tak diisi = tak ada yang bisa melewati
+        }
+
+        if (session()->get(self::KUNCI_LEWAT) === $kode) {
+            return true;
+        }
+
+        // hash_equals: pembandingan panjang tetap, supaya kode tak bisa ditebak
+        // huruf demi huruf lewat selisih waktu jawaban.
+        if (hash_equals($kode, trim((string) request()->query('kode', '')))) {
+            session()->put(self::KUNCI_LEWAT, $kode);
+
+            return true;
+        }
+
+        return false;
     }
 
     // Hilangkan pesan error "required" yang masih tersisa dari submit sebelumnya
@@ -346,7 +378,7 @@ class PublicForm extends Component
         // Diperiksa ulang di sisi server: pengunjung yang sudah membuka formulir
         // sebelum pemeliharaan menyala masih memegang halaman lama dan bisa
         // menekan Daftar. Tanpa penjaga ini, pendaftarannya tetap masuk.
-        if ((bool) $settings->nup_public_maintenance) {
+        if ((bool) $settings->nup_public_maintenance && ! $this->bolehLewat($settings)) {
             $this->maintenance = true;
             $this->maintenanceStart = $settings->nup_public_maintenance_start;
             $this->maintenanceEnd = $settings->nup_public_maintenance_end;
