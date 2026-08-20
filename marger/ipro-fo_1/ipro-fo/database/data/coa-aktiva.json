@@ -1,0 +1,1838 @@
+[
+  {
+    "level": 1,
+    "code": "1",
+    "name": "ASET",
+    "type": "asset",
+    "normal_balance": "D",
+    "is_postable": false,
+    "parent_code": null
+  },
+  {
+    "level": 2,
+    "code": "101",
+    "name": "ASET LANCAR",
+    "type": "asset",
+    "normal_balance": "D",
+    "is_postable": false,
+    "parent_code": "1"
+  },
+  {
+    "level": 2,
+    "code": "102",
+    "name": "ASET TETAP",
+    "type": "asset",
+    "normal_balance": "D",
+    "is_postable": false,
+    "parent_code": "1"
+  },
+  {
+    "level": 2,
+    "code": "103",
+    "name": "ASET TIDAK LANCAR LAINNYA",
+    "type": "asset",
+    "normal_balance": "D",
+    "is_postable": false,
+    "parent_code": "1"
+  },
+  {
+    "level": 3,
+    "code": "10101",
+    "name": "KAS DAN SETARA KAS",
+    "type": "asset",
+    "normal_balance": "D",
+    "is_postable": false,
+    "parent_code": "101"
+  },
+  {
+    "level": 3,
+    "code": "10102",
+    "name": "PIUTANG USAHA",
+    "type": "asset",
+    "normal_balance": "D",
+    "is_postable": false,
+    "parent_code": "101"
+  },
+  {
+    "level": 3,
+    "code": "10103",
+    "name": "PIUTANG LAIN-LAIN",
+    "type": "asset",
+    "normal_balance": "D",
+    "is_postable": false,
+    "parent_code": "101"
+  },
+  {
+    "level": 3,
+    "code": "10104",
+    "name": "PERSEDIAAN",
+    "type": "asset",
+    "normal_balance": "D",
+    "is_postable": false,
+    "parent_code": "101"
+  },
+  {
+    "level": 3,
+    "code": "10105",
+    "name": "PAJAK DIBAYAR DIMUKA",
+    "type": "asset",
+    "normal_balance": "D",
+    "is_postable": false,
+    "parent_code": "101"
+  },
+  {
+    "level": 3,
+    "code": "10106",
+    "name": "BIAYA DIBAYAR DIMUKA",
+    "type": "asset",
+    "normal_balance": "D",
+    "is_postable": false,
+    "parent_code": "101"
+  },
+  {
+    "level": 3,
+    "code": "10107",
+    "name": "UANG MUKA PEMBELIAN",
+    "type": "asset",
+    "normal_balance": "D",
+    "is_postable": false,
+    "parent_code": "101"
+  },
+  {
+    "level": 3,
+    "code": "10108",
+    "name": "KAS DAN SETARA KAS YANG DIBATASI PENGGUNAANNYA",
+    "type": "asset",
+    "normal_balance": "D",
+    "is_postable": false,
+    "parent_code": "101"
+  },
+  {
+    "level": 3,
+    "code": "10201",
+    "name": "ASET TETAP BERWUJUD",
+    "type": "asset",
+    "normal_balance": "D",
+    "is_postable": false,
+    "parent_code": "102"
+  },
+  {
+    "level": 3,
+    "code": "10202",
+    "name": "ASET TETAP TIDAK BERWUJUD",
+    "type": "asset",
+    "normal_balance": "D",
+    "is_postable": false,
+    "parent_code": "102"
+  },
+  {
+    "level": 3,
+    "code": "10203",
+    "name": "AKUMULASI PENYUSUTAN ASET TETAP BERWUJUD",
+    "type": "asset",
+    "normal_balance": "K",
+    "is_postable": false,
+    "parent_code": "102"
+  },
+  {
+    "level": 3,
+    "code": "10204",
+    "name": "AKUMULASI AMORTISASI ASET TETAP TIDAK BERWUJUD",
+    "type": "asset",
+    "normal_balance": "K",
+    "is_postable": false,
+    "parent_code": "102"
+  },
+  {
+    "level": 3,
+    "code": "10301",
+    "name": "ASET TIDAK LANCAR LAINNYA",
+    "type": "asset",
+    "normal_balance": "D",
+    "is_postable": false,
+    "parent_code": "103"
+  },
+  {
+    "level": 4,
+    "code": "1010101",
+    "name": "KAS",
+    "type": "asset",
+    "normal_balance": "D",
+    "is_postable": false,
+    "parent_code": "10101"
+  },
+  {
+    "level": 4,
+    "code": "1010102",
+    "name": "BANK",
+    "type": "asset",
+    "normal_balance": "D",
+    "is_postable": false,
+    "parent_code": "10101"
+  },
+  {
+    "level": 4,
+    "code": "1010103",
+    "name": "DEPOSITO",
+    "type": "asset",
+    "normal_balance": "D",
+    "is_postable": false,
+    "parent_code": "10101"
+  },
+  {
+    "level": 4,
+    "code": "1010104",
+    "name": "INVESTASI JANGKA PENDEK",
+    "type": "asset",
+    "normal_balance": "D",
+    "is_postable": false,
+    "parent_code": "10101"
+  },
+  {
+    "level": 4,
+    "code": "1010201",
+    "name": "PIUTANG USAHA",
+    "type": "asset",
+    "normal_balance": "D",
+    "is_postable": false,
+    "parent_code": "10102"
+  },
+  {
+    "level": 4,
+    "code": "1010301",
+    "name": "PIUTANG LAIN-LAIN",
+    "type": "asset",
+    "normal_balance": "D",
+    "is_postable": false,
+    "parent_code": "10103"
+  },
+  {
+    "level": 4,
+    "code": "1010401",
+    "name": "PERSEDIAAN",
+    "type": "asset",
+    "normal_balance": "D",
+    "is_postable": false,
+    "parent_code": "10104"
+  },
+  {
+    "level": 4,
+    "code": "1010501",
+    "name": "PPN",
+    "type": "asset",
+    "normal_balance": "D",
+    "is_postable": false,
+    "parent_code": "10105"
+  },
+  {
+    "level": 4,
+    "code": "1010502",
+    "name": "PPH",
+    "type": "asset",
+    "normal_balance": "D",
+    "is_postable": false,
+    "parent_code": "10105"
+  },
+  {
+    "level": 4,
+    "code": "1010503",
+    "name": "PAJAK DIBAYAR DIMUKA",
+    "type": "asset",
+    "normal_balance": "D",
+    "is_postable": false,
+    "parent_code": "10105"
+  },
+  {
+    "level": 4,
+    "code": "1010601",
+    "name": "ASURANSI DIBAYAR DIMUKA",
+    "type": "asset",
+    "normal_balance": "D",
+    "is_postable": false,
+    "parent_code": "10106"
+  },
+  {
+    "level": 4,
+    "code": "1010602",
+    "name": "SEWA DIBAYAR DIMUKA",
+    "type": "asset",
+    "normal_balance": "D",
+    "is_postable": false,
+    "parent_code": "10106"
+  },
+  {
+    "level": 4,
+    "code": "1010603",
+    "name": "PREPAID",
+    "type": "asset",
+    "normal_balance": "D",
+    "is_postable": false,
+    "parent_code": "10106"
+  },
+  {
+    "level": 4,
+    "code": "1010604",
+    "name": "BIAYA DIBAYAR DIMUKA LAINNYA",
+    "type": "asset",
+    "normal_balance": "D",
+    "is_postable": false,
+    "parent_code": "10106"
+  },
+  {
+    "level": 4,
+    "code": "1010701",
+    "name": "UANG MUKA PEMBELIAN",
+    "type": "asset",
+    "normal_balance": "D",
+    "is_postable": false,
+    "parent_code": "10107"
+  },
+  {
+    "level": 4,
+    "code": "1010702",
+    "name": "UANG MUKA KONSTRUKSI",
+    "type": "asset",
+    "normal_balance": "D",
+    "is_postable": false,
+    "parent_code": "10107"
+  },
+  {
+    "level": 4,
+    "code": "1010703",
+    "name": "UANG MUKA LAINNYA",
+    "type": "asset",
+    "normal_balance": "D",
+    "is_postable": false,
+    "parent_code": "10107"
+  },
+  {
+    "level": 4,
+    "code": "1010801",
+    "name": "DANA ESCROW",
+    "type": "asset",
+    "normal_balance": "D",
+    "is_postable": false,
+    "parent_code": "10108"
+  },
+  {
+    "level": 4,
+    "code": "1020101",
+    "name": "ASET TETAP BERWUJUD",
+    "type": "asset",
+    "normal_balance": "D",
+    "is_postable": false,
+    "parent_code": "10201"
+  },
+  {
+    "level": 4,
+    "code": "1020202",
+    "name": "ASET TETAP TIDAK BERWUJUD",
+    "type": "asset",
+    "normal_balance": "D",
+    "is_postable": false,
+    "parent_code": "10202"
+  },
+  {
+    "level": 4,
+    "code": "1020303",
+    "name": "AKUMULASI PENYUSUTAN ASET TETAP BERWUJUD",
+    "type": "asset",
+    "normal_balance": "K",
+    "is_postable": false,
+    "parent_code": "10203"
+  },
+  {
+    "level": 4,
+    "code": "1020404",
+    "name": "AKUMULASI AMORTISASI ASET TETAP TIDAK BERWUJUD",
+    "type": "asset",
+    "normal_balance": "K",
+    "is_postable": false,
+    "parent_code": "10204"
+  },
+  {
+    "level": 4,
+    "code": "1030101",
+    "name": "ASET TIDAK LANCAR LAINNYA",
+    "type": "asset",
+    "normal_balance": "D",
+    "is_postable": false,
+    "parent_code": "10301"
+  },
+  {
+    "level": 5,
+    "code": "101010101",
+    "name": "KAS",
+    "type": "asset",
+    "normal_balance": "D",
+    "is_postable": false,
+    "parent_code": "1010101"
+  },
+  {
+    "level": 5,
+    "code": "101010202",
+    "name": "BANK",
+    "type": "asset",
+    "normal_balance": "D",
+    "is_postable": false,
+    "parent_code": "1010102"
+  },
+  {
+    "level": 5,
+    "code": "101010303",
+    "name": "DEPOSITO",
+    "type": "asset",
+    "normal_balance": "D",
+    "is_postable": false,
+    "parent_code": "1010103"
+  },
+  {
+    "level": 5,
+    "code": "101010404",
+    "name": "INVESTASI JANGKA PENDEK",
+    "type": "asset",
+    "normal_balance": "D",
+    "is_postable": false,
+    "parent_code": "1010104"
+  },
+  {
+    "level": 5,
+    "code": "101020101",
+    "name": "PIUTANG USAHA",
+    "type": "asset",
+    "normal_balance": "D",
+    "is_postable": false,
+    "parent_code": "1010201"
+  },
+  {
+    "level": 5,
+    "code": "101030101",
+    "name": "PIUTANG LAIN-LAIN",
+    "type": "asset",
+    "normal_balance": "D",
+    "is_postable": false,
+    "parent_code": "1010301"
+  },
+  {
+    "level": 5,
+    "code": "101040101",
+    "name": "PERSEDIAAN",
+    "type": "asset",
+    "normal_balance": "D",
+    "is_postable": false,
+    "parent_code": "1010401"
+  },
+  {
+    "level": 5,
+    "code": "101050101",
+    "name": "PPN",
+    "type": "asset",
+    "normal_balance": "D",
+    "is_postable": false,
+    "parent_code": "1010501"
+  },
+  {
+    "level": 5,
+    "code": "101050202",
+    "name": "PPH",
+    "type": "asset",
+    "normal_balance": "D",
+    "is_postable": false,
+    "parent_code": "1010502"
+  },
+  {
+    "level": 5,
+    "code": "101050203",
+    "name": "PAJAK DIBAYAR DIMUKA",
+    "type": "asset",
+    "normal_balance": "D",
+    "is_postable": false,
+    "parent_code": "1010502"
+  },
+  {
+    "level": 5,
+    "code": "101060101",
+    "name": "ASURANSI DIBAYAR DIMUKA",
+    "type": "asset",
+    "normal_balance": "D",
+    "is_postable": false,
+    "parent_code": "1010601"
+  },
+  {
+    "level": 5,
+    "code": "101060202",
+    "name": "SEWA DIBAYAR DIMUKA",
+    "type": "asset",
+    "normal_balance": "D",
+    "is_postable": false,
+    "parent_code": "1010602"
+  },
+  {
+    "level": 5,
+    "code": "101060303",
+    "name": "PREPAID",
+    "type": "asset",
+    "normal_balance": "D",
+    "is_postable": false,
+    "parent_code": "1010603"
+  },
+  {
+    "level": 5,
+    "code": "101060404",
+    "name": "BIAYA DIBAYAR DIMUKA LAINNYA",
+    "type": "asset",
+    "normal_balance": "D",
+    "is_postable": false,
+    "parent_code": "1010604"
+  },
+  {
+    "level": 5,
+    "code": "101070101",
+    "name": "UANG MUKA PEMBELIAN",
+    "type": "asset",
+    "normal_balance": "D",
+    "is_postable": false,
+    "parent_code": "1010701"
+  },
+  {
+    "level": 5,
+    "code": "101070202",
+    "name": "UANG MUKA KONSTRUKSI",
+    "type": "asset",
+    "normal_balance": "D",
+    "is_postable": false,
+    "parent_code": "1010702"
+  },
+  {
+    "level": 5,
+    "code": "101070303",
+    "name": "UANG MUKA LAINNYA",
+    "type": "asset",
+    "normal_balance": "D",
+    "is_postable": false,
+    "parent_code": "1010703"
+  },
+  {
+    "level": 5,
+    "code": "101080101",
+    "name": "DANA ESCROW",
+    "type": "asset",
+    "normal_balance": "D",
+    "is_postable": false,
+    "parent_code": "1010801"
+  },
+  {
+    "level": 5,
+    "code": "102010101",
+    "name": "ASET TETAP BERWUJUD",
+    "type": "asset",
+    "normal_balance": "D",
+    "is_postable": false,
+    "parent_code": "1020101"
+  },
+  {
+    "level": 5,
+    "code": "102020202",
+    "name": "ASET TETAP TIDAK BERWUJUD",
+    "type": "asset",
+    "normal_balance": "D",
+    "is_postable": false,
+    "parent_code": "1020202"
+  },
+  {
+    "level": 5,
+    "code": "102030303",
+    "name": "AKUMULASI PENYUSUTAN ASET TETAP BERWUJUD",
+    "type": "asset",
+    "normal_balance": "K",
+    "is_postable": false,
+    "parent_code": "1020303"
+  },
+  {
+    "level": 5,
+    "code": "102040404",
+    "name": "AKUMULASI AMORTISASI ASET TETAP TIDAK BERWUJUD",
+    "type": "asset",
+    "normal_balance": "K",
+    "is_postable": false,
+    "parent_code": "1020404"
+  },
+  {
+    "level": 5,
+    "code": "103010101",
+    "name": "ASET TIDAK LANCAR LAINNYA",
+    "type": "asset",
+    "normal_balance": "D",
+    "is_postable": false,
+    "parent_code": "1030101"
+  },
+  {
+    "level": 6,
+    "code": "10101010101",
+    "name": "KAS OPERASIONAL",
+    "type": "asset",
+    "normal_balance": "D",
+    "is_postable": true,
+    "parent_code": "101010101"
+  },
+  {
+    "level": 6,
+    "code": "10101020201",
+    "name": "BTN REK.393-01-30-000374-9",
+    "type": "asset",
+    "normal_balance": "D",
+    "is_postable": true,
+    "parent_code": "101010202"
+  },
+  {
+    "level": 6,
+    "code": "10101020202",
+    "name": "BNI REK. 1413375985",
+    "type": "asset",
+    "normal_balance": "D",
+    "is_postable": true,
+    "parent_code": "101010202"
+  },
+  {
+    "level": 6,
+    "code": "10101020203",
+    "name": "BNI REK. 1436224713",
+    "type": "asset",
+    "normal_balance": "D",
+    "is_postable": true,
+    "parent_code": "101010202"
+  },
+  {
+    "level": 6,
+    "code": "10101020204",
+    "name": "BCA REK. 6155428914",
+    "type": "asset",
+    "normal_balance": "D",
+    "is_postable": true,
+    "parent_code": "101010202"
+  },
+  {
+    "level": 6,
+    "code": "10101020205",
+    "name": "BCA REK. 6155899909",
+    "type": "asset",
+    "normal_balance": "D",
+    "is_postable": true,
+    "parent_code": "101010202"
+  },
+  {
+    "level": 6,
+    "code": "10101020206",
+    "name": "BRI REK. 0086 01 003982302",
+    "type": "asset",
+    "normal_balance": "D",
+    "is_postable": true,
+    "parent_code": "101010202"
+  },
+  {
+    "level": 6,
+    "code": "10101020207",
+    "name": "BTN SYARIAH REK. 1000001709",
+    "type": "asset",
+    "normal_balance": "D",
+    "is_postable": true,
+    "parent_code": "101010202"
+  },
+  {
+    "level": 6,
+    "code": "10101020208",
+    "name": "BCA REK. 7205529888",
+    "type": "asset",
+    "normal_balance": "D",
+    "is_postable": true,
+    "parent_code": "101010202"
+  },
+  {
+    "level": 6,
+    "code": "10101020209",
+    "name": "BPR DELTA ARTHA PERSERODA REK. 1011228765",
+    "type": "asset",
+    "normal_balance": "D",
+    "is_postable": true,
+    "parent_code": "101010202"
+  },
+  {
+    "level": 6,
+    "code": "10101020210",
+    "name": "MANDIRI REK. 141-00-9988886-9",
+    "type": "asset",
+    "normal_balance": "D",
+    "is_postable": true,
+    "parent_code": "101010202"
+  },
+  {
+    "level": 6,
+    "code": "10101020211",
+    "name": "BCA REK. 7205990666",
+    "type": "asset",
+    "normal_balance": "D",
+    "is_postable": true,
+    "parent_code": "101010202"
+  },
+  {
+    "level": 6,
+    "code": "10101020212",
+    "name": "BCA REK. 7205836888",
+    "type": "asset",
+    "normal_balance": "D",
+    "is_postable": true,
+    "parent_code": "101010202"
+  },
+  {
+    "level": 6,
+    "code": "10101020213",
+    "name": "BTN ESCROW REK. 00000393-01-32-000-398-1",
+    "type": "asset",
+    "normal_balance": "D",
+    "is_postable": true,
+    "parent_code": "101010202"
+  },
+  {
+    "level": 6,
+    "code": "10101020214",
+    "name": "BTN REK 00000393-01-66-000279-2",
+    "type": "asset",
+    "normal_balance": "D",
+    "is_postable": true,
+    "parent_code": "101010202"
+  },
+  {
+    "level": 6,
+    "code": "10101020215",
+    "name": "BSI Rek 1227888888",
+    "type": "asset",
+    "normal_balance": "D",
+    "is_postable": true,
+    "parent_code": "101010202"
+  },
+  {
+    "level": 6,
+    "code": "10101020216",
+    "name": "BTN REK.393-01-88-444888-5",
+    "type": "asset",
+    "normal_balance": "D",
+    "is_postable": true,
+    "parent_code": "101010202"
+  },
+  {
+    "level": 6,
+    "code": "10101020288",
+    "name": "XENDIT",
+    "type": "asset",
+    "normal_balance": "D",
+    "is_postable": true,
+    "parent_code": "101010202"
+  },
+  {
+    "level": 6,
+    "code": "10101020289",
+    "name": "BALANCING ACCOUNT",
+    "type": "asset",
+    "normal_balance": "D",
+    "is_postable": true,
+    "parent_code": "101010202"
+  },
+  {
+    "level": 6,
+    "code": "10101020299",
+    "name": "AYAT (POS) SILANG",
+    "type": "asset",
+    "normal_balance": "D",
+    "is_postable": true,
+    "parent_code": "101010202"
+  },
+  {
+    "level": 6,
+    "code": "10101030301",
+    "name": "DEPOSITO",
+    "type": "asset",
+    "normal_balance": "D",
+    "is_postable": true,
+    "parent_code": "101010303"
+  },
+  {
+    "level": 6,
+    "code": "10101040401",
+    "name": "REKSADANA",
+    "type": "asset",
+    "normal_balance": "D",
+    "is_postable": true,
+    "parent_code": "101010404"
+  },
+  {
+    "level": 6,
+    "code": "10102010101",
+    "name": "PIUTANG USAHA",
+    "type": "asset",
+    "normal_balance": "D",
+    "is_postable": true,
+    "parent_code": "101020101"
+  },
+  {
+    "level": 6,
+    "code": "10103010101",
+    "name": "PIUTANG PEMEGANG SAHAM",
+    "type": "asset",
+    "normal_balance": "D",
+    "is_postable": true,
+    "parent_code": "101030101"
+  },
+  {
+    "level": 6,
+    "code": "10103010102",
+    "name": "PIUTANG KARYAWAN",
+    "type": "asset",
+    "normal_balance": "D",
+    "is_postable": true,
+    "parent_code": "101030101"
+  },
+  {
+    "level": 6,
+    "code": "10103010103",
+    "name": "PIUTANG LAINNYA",
+    "type": "asset",
+    "normal_balance": "D",
+    "is_postable": true,
+    "parent_code": "101030101"
+  },
+  {
+    "level": 6,
+    "code": "10104010101",
+    "name": "BANGUNAN SIAP JUAL",
+    "type": "asset",
+    "normal_balance": "D",
+    "is_postable": true,
+    "parent_code": "101040101"
+  },
+  {
+    "level": 6,
+    "code": "10104010102",
+    "name": "PROYEK DALAM PENYELESAIAN CLUSTER 1",
+    "type": "asset",
+    "normal_balance": "D",
+    "is_postable": true,
+    "parent_code": "101040101"
+  },
+  {
+    "level": 6,
+    "code": "10104010103",
+    "name": "PROYEK DALAM PENYELESAIAN CLUSTER 2",
+    "type": "asset",
+    "normal_balance": "D",
+    "is_postable": true,
+    "parent_code": "101040101"
+  },
+  {
+    "level": 6,
+    "code": "10104010104",
+    "name": "PROYEK DALAM PENYELESAIAN CLUSTER 3",
+    "type": "asset",
+    "normal_balance": "D",
+    "is_postable": true,
+    "parent_code": "101040101"
+  },
+  {
+    "level": 6,
+    "code": "10104010105",
+    "name": "PROYEK DALAM PENYELESAIAN CLUSTER 5",
+    "type": "asset",
+    "normal_balance": "D",
+    "is_postable": true,
+    "parent_code": "101040101"
+  },
+  {
+    "level": 6,
+    "code": "10104010106",
+    "name": "PROYEK DALAM PENYELESAIAN CLUSTER 5 EXT",
+    "type": "asset",
+    "normal_balance": "D",
+    "is_postable": true,
+    "parent_code": "101040101"
+  },
+  {
+    "level": 6,
+    "code": "10104010107",
+    "name": "PROYEK DALAM PENYELESAIAN CLUSTER 3 TAHAP 5",
+    "type": "asset",
+    "normal_balance": "D",
+    "is_postable": true,
+    "parent_code": "101040101"
+  },
+  {
+    "level": 6,
+    "code": "10104010108",
+    "name": "PROYEK DALAM PENYELESAIAN CLUSTER 6",
+    "type": "asset",
+    "normal_balance": "D",
+    "is_postable": true,
+    "parent_code": "101040101"
+  },
+  {
+    "level": 6,
+    "code": "10104010121",
+    "name": "TANAH DALAM PENGEMBANGAN",
+    "type": "asset",
+    "normal_balance": "D",
+    "is_postable": true,
+    "parent_code": "101040101"
+  },
+  {
+    "level": 6,
+    "code": "10104010131",
+    "name": "CIP TANAH C3 KRIAN",
+    "type": "asset",
+    "normal_balance": "D",
+    "is_postable": true,
+    "parent_code": "101040101"
+  },
+  {
+    "level": 6,
+    "code": "10104010132",
+    "name": "CIP HOUSING C3 KRIAN",
+    "type": "asset",
+    "normal_balance": "D",
+    "is_postable": true,
+    "parent_code": "101040101"
+  },
+  {
+    "level": 6,
+    "code": "10104010133",
+    "name": "CIP INFRASTRUKTUR C3 KRIAN",
+    "type": "asset",
+    "normal_balance": "D",
+    "is_postable": true,
+    "parent_code": "101040101"
+  },
+  {
+    "level": 6,
+    "code": "10104010134",
+    "name": "CIP LICENSE & PERMIT C3 KRIAN",
+    "type": "asset",
+    "normal_balance": "D",
+    "is_postable": true,
+    "parent_code": "101040101"
+  },
+  {
+    "level": 6,
+    "code": "10104010135",
+    "name": "CIP LAIN-LAIN C3 KRIAN",
+    "type": "asset",
+    "normal_balance": "D",
+    "is_postable": true,
+    "parent_code": "101040101"
+  },
+  {
+    "level": 6,
+    "code": "10104010136",
+    "name": "CIP TANAH C5 SUKODONO",
+    "type": "asset",
+    "normal_balance": "D",
+    "is_postable": true,
+    "parent_code": "101040101"
+  },
+  {
+    "level": 6,
+    "code": "10104010137",
+    "name": "CIP HOUSING C5 SUKODONO",
+    "type": "asset",
+    "normal_balance": "D",
+    "is_postable": true,
+    "parent_code": "101040101"
+  },
+  {
+    "level": 6,
+    "code": "10104010138",
+    "name": "CIP INFRASTRUKTUR C5 SUKODONO",
+    "type": "asset",
+    "normal_balance": "D",
+    "is_postable": true,
+    "parent_code": "101040101"
+  },
+  {
+    "level": 6,
+    "code": "10104010139",
+    "name": "CIP LICENSE & PERMIT C5 SUKODONO",
+    "type": "asset",
+    "normal_balance": "D",
+    "is_postable": true,
+    "parent_code": "101040101"
+  },
+  {
+    "level": 6,
+    "code": "10104010140",
+    "name": "CIP LAIN-LAIN C5 SUKODONO",
+    "type": "asset",
+    "normal_balance": "D",
+    "is_postable": true,
+    "parent_code": "101040101"
+  },
+  {
+    "level": 6,
+    "code": "10104010141",
+    "name": "CIP TANAH C2 KRIAN",
+    "type": "asset",
+    "normal_balance": "D",
+    "is_postable": true,
+    "parent_code": "101040101"
+  },
+  {
+    "level": 6,
+    "code": "10104010142",
+    "name": "CIP HOUSING C2 KRIAN",
+    "type": "asset",
+    "normal_balance": "D",
+    "is_postable": true,
+    "parent_code": "101040101"
+  },
+  {
+    "level": 6,
+    "code": "10104010143",
+    "name": "CIP INFRASTRUKTUR C2 KRIAN",
+    "type": "asset",
+    "normal_balance": "D",
+    "is_postable": true,
+    "parent_code": "101040101"
+  },
+  {
+    "level": 6,
+    "code": "10104010144",
+    "name": "CIP LICENSE & PERMIT C2 KRIAN",
+    "type": "asset",
+    "normal_balance": "D",
+    "is_postable": true,
+    "parent_code": "101040101"
+  },
+  {
+    "level": 6,
+    "code": "10104010145",
+    "name": "CIP LAIN-LAIN C2 KRIAN",
+    "type": "asset",
+    "normal_balance": "D",
+    "is_postable": true,
+    "parent_code": "101040101"
+  },
+  {
+    "level": 6,
+    "code": "10104010146",
+    "name": "CIP TANAH C5 EXT SUKODONO",
+    "type": "asset",
+    "normal_balance": "D",
+    "is_postable": true,
+    "parent_code": "101040101"
+  },
+  {
+    "level": 6,
+    "code": "10104010147",
+    "name": "CIP HOUSING C5 EXT SUKODONO",
+    "type": "asset",
+    "normal_balance": "D",
+    "is_postable": true,
+    "parent_code": "101040101"
+  },
+  {
+    "level": 6,
+    "code": "10104010148",
+    "name": "CIP INFRASTRUKTUR C5 EXT SUKODONO",
+    "type": "asset",
+    "normal_balance": "D",
+    "is_postable": true,
+    "parent_code": "101040101"
+  },
+  {
+    "level": 6,
+    "code": "10104010149",
+    "name": "CIP LICENSE & PERMIT C5 EXT SUKODONO",
+    "type": "asset",
+    "normal_balance": "D",
+    "is_postable": true,
+    "parent_code": "101040101"
+  },
+  {
+    "level": 6,
+    "code": "10104010150",
+    "name": "CIP LAIN-LAIN C5 EXT SUKODONO",
+    "type": "asset",
+    "normal_balance": "D",
+    "is_postable": true,
+    "parent_code": "101040101"
+  },
+  {
+    "level": 6,
+    "code": "10104010151",
+    "name": "CIP TANAH C3 TAHAP 5 KRIAN",
+    "type": "asset",
+    "normal_balance": "D",
+    "is_postable": true,
+    "parent_code": "101040101"
+  },
+  {
+    "level": 6,
+    "code": "10104010152",
+    "name": "CIP HOUSING C3 TAHAP 5 KRIAN",
+    "type": "asset",
+    "normal_balance": "D",
+    "is_postable": true,
+    "parent_code": "101040101"
+  },
+  {
+    "level": 6,
+    "code": "10104010153",
+    "name": "CIP INFRASTRUKTUR C3 TAHAP 5 KRIAN",
+    "type": "asset",
+    "normal_balance": "D",
+    "is_postable": true,
+    "parent_code": "101040101"
+  },
+  {
+    "level": 6,
+    "code": "10104010154",
+    "name": "CIP LICENSE & PERMIT C3 TAHAP 5 KRIAN",
+    "type": "asset",
+    "normal_balance": "D",
+    "is_postable": true,
+    "parent_code": "101040101"
+  },
+  {
+    "level": 6,
+    "code": "10104010155",
+    "name": "CIP LAIN-LAIN C3 TAHAP 5 KRIAN",
+    "type": "asset",
+    "normal_balance": "D",
+    "is_postable": true,
+    "parent_code": "101040101"
+  },
+  {
+    "level": 6,
+    "code": "10104010156",
+    "name": "CIP TANAH C6",
+    "type": "asset",
+    "normal_balance": "D",
+    "is_postable": true,
+    "parent_code": "101040101"
+  },
+  {
+    "level": 6,
+    "code": "10104010157",
+    "name": "CIP HOUSING C6",
+    "type": "asset",
+    "normal_balance": "D",
+    "is_postable": true,
+    "parent_code": "101040101"
+  },
+  {
+    "level": 6,
+    "code": "10104010158",
+    "name": "CIP INFRASTRUKTUR C6",
+    "type": "asset",
+    "normal_balance": "D",
+    "is_postable": true,
+    "parent_code": "101040101"
+  },
+  {
+    "level": 6,
+    "code": "10104010159",
+    "name": "CIP LICENSE & PERMIT C6",
+    "type": "asset",
+    "normal_balance": "D",
+    "is_postable": true,
+    "parent_code": "101040101"
+  },
+  {
+    "level": 6,
+    "code": "10104010160",
+    "name": "CIP LAIN-LAIN C6",
+    "type": "asset",
+    "normal_balance": "D",
+    "is_postable": true,
+    "parent_code": "101040101"
+  },
+  {
+    "level": 6,
+    "code": "10104010198",
+    "name": "PERSEDIAAN LAIN-LAIN",
+    "type": "asset",
+    "normal_balance": "D",
+    "is_postable": true,
+    "parent_code": "101040101"
+  },
+  {
+    "level": 6,
+    "code": "10104010199",
+    "name": "NURSERY ESTATE",
+    "type": "asset",
+    "normal_balance": "D",
+    "is_postable": true,
+    "parent_code": "101040101"
+  },
+  {
+    "level": 6,
+    "code": "10105010101",
+    "name": "PPN MASUKAN",
+    "type": "asset",
+    "normal_balance": "D",
+    "is_postable": true,
+    "parent_code": "101050101"
+  },
+  {
+    "level": 6,
+    "code": "10105010102",
+    "name": "PPN MASUKAN BELUM DIKREDITKAN",
+    "type": "asset",
+    "normal_balance": "D",
+    "is_postable": true,
+    "parent_code": "101050101"
+  },
+  {
+    "level": 6,
+    "code": "10105020201",
+    "name": "PPH 23",
+    "type": "asset",
+    "normal_balance": "D",
+    "is_postable": true,
+    "parent_code": "101050202"
+  },
+  {
+    "level": 6,
+    "code": "10105020202",
+    "name": "PPH 4 AYAT 2",
+    "type": "asset",
+    "normal_balance": "D",
+    "is_postable": true,
+    "parent_code": "101050202"
+  },
+  {
+    "level": 6,
+    "code": "10105020203",
+    "name": "PPH 25",
+    "type": "asset",
+    "normal_balance": "D",
+    "is_postable": true,
+    "parent_code": "101050202"
+  },
+  {
+    "level": 6,
+    "code": "10105020204",
+    "name": "PPH 21",
+    "type": "asset",
+    "normal_balance": "D",
+    "is_postable": true,
+    "parent_code": "101050202"
+  },
+  {
+    "level": 6,
+    "code": "10105020301",
+    "name": "DEPOSIT PAJAK",
+    "type": "asset",
+    "normal_balance": "D",
+    "is_postable": true,
+    "parent_code": "101050203"
+  },
+  {
+    "level": 6,
+    "code": "10106010101",
+    "name": "ASURANSI DIBAYAR DIMUKA",
+    "type": "asset",
+    "normal_balance": "D",
+    "is_postable": true,
+    "parent_code": "101060101"
+  },
+  {
+    "level": 6,
+    "code": "10106020201",
+    "name": "SEWA DIBAYAR DIMUKA",
+    "type": "asset",
+    "normal_balance": "D",
+    "is_postable": true,
+    "parent_code": "101060202"
+  },
+  {
+    "level": 6,
+    "code": "10106030301",
+    "name": "PREPAID BIAYA SALES & MARKETING (PROMOSI,BLT,KOMISI)-JRK C.1",
+    "type": "asset",
+    "normal_balance": "D",
+    "is_postable": true,
+    "parent_code": "101060303"
+  },
+  {
+    "level": 6,
+    "code": "10106030302",
+    "name": "PREPAID BIAYA KPR (KPR, HT, PBB)-JRK C.1",
+    "type": "asset",
+    "normal_balance": "D",
+    "is_postable": true,
+    "parent_code": "101060303"
+  },
+  {
+    "level": 6,
+    "code": "10106030303",
+    "name": "PREPAID BIAYA NOTARIS (PPJB, AJB)-JRK C.1",
+    "type": "asset",
+    "normal_balance": "D",
+    "is_postable": true,
+    "parent_code": "101060303"
+  },
+  {
+    "level": 6,
+    "code": "10106030304",
+    "name": "PREPAID BIAYA PAJAK (BPHTB, PPH FINAL)-JRK C.1",
+    "type": "asset",
+    "normal_balance": "D",
+    "is_postable": true,
+    "parent_code": "101060303"
+  },
+  {
+    "level": 6,
+    "code": "10106030305",
+    "name": "PREPAID BIAYA SALES & MARKETING (PROMOSI,BLT,KOMISI)-JRK C.2",
+    "type": "asset",
+    "normal_balance": "D",
+    "is_postable": true,
+    "parent_code": "101060303"
+  },
+  {
+    "level": 6,
+    "code": "10106030306",
+    "name": "PREPAID BIAYA KPR (KPR, HT, PBB)-JRK C.2",
+    "type": "asset",
+    "normal_balance": "D",
+    "is_postable": true,
+    "parent_code": "101060303"
+  },
+  {
+    "level": 6,
+    "code": "10106030307",
+    "name": "PREPAID BIAYA NOTARIS (PPJB, AJB)-JRK C.2",
+    "type": "asset",
+    "normal_balance": "D",
+    "is_postable": true,
+    "parent_code": "101060303"
+  },
+  {
+    "level": 6,
+    "code": "10106030308",
+    "name": "PREPAID BIAYA PAJAK (BPHTB, PPH FINAL)-JRK C.2",
+    "type": "asset",
+    "normal_balance": "D",
+    "is_postable": true,
+    "parent_code": "101060303"
+  },
+  {
+    "level": 6,
+    "code": "10106030309",
+    "name": "PREPAID BIAYA SALES & MARKETING (PROMOSI,BLT,KOMISI)-JRK C.3",
+    "type": "asset",
+    "normal_balance": "D",
+    "is_postable": true,
+    "parent_code": "101060303"
+  },
+  {
+    "level": 6,
+    "code": "10106030310",
+    "name": "PREPAID BIAYA KPR (KPR, HT, PBB)-JRK C.3",
+    "type": "asset",
+    "normal_balance": "D",
+    "is_postable": true,
+    "parent_code": "101060303"
+  },
+  {
+    "level": 6,
+    "code": "10106030311",
+    "name": "PREPAID BIAYA NOTARIS (PPJB, AJB)-JRK C.3",
+    "type": "asset",
+    "normal_balance": "D",
+    "is_postable": true,
+    "parent_code": "101060303"
+  },
+  {
+    "level": 6,
+    "code": "10106030312",
+    "name": "PREPAID BIAYA PAJAK (BPHTB, PPH FINAL)-JRK C.3",
+    "type": "asset",
+    "normal_balance": "D",
+    "is_postable": true,
+    "parent_code": "101060303"
+  },
+  {
+    "level": 6,
+    "code": "10106030313",
+    "name": "PREPAID BIAYA SALES & MARKETING (PROMOSI,BLT,KOMISI)-JRK C.5",
+    "type": "asset",
+    "normal_balance": "D",
+    "is_postable": true,
+    "parent_code": "101060303"
+  },
+  {
+    "level": 6,
+    "code": "10106030314",
+    "name": "PREPAID BIAYA KPR (KPR, HT, PBB)-JRK C.5",
+    "type": "asset",
+    "normal_balance": "D",
+    "is_postable": true,
+    "parent_code": "101060303"
+  },
+  {
+    "level": 6,
+    "code": "10106030315",
+    "name": "PREPAID BIAYA NOTARIS (PPJB, AJB)-JRK C.5",
+    "type": "asset",
+    "normal_balance": "D",
+    "is_postable": true,
+    "parent_code": "101060303"
+  },
+  {
+    "level": 6,
+    "code": "10106030316",
+    "name": "PREPAID BIAYA PAJAK (BPHTB, PPH FINAL)-JRK C.5",
+    "type": "asset",
+    "normal_balance": "D",
+    "is_postable": true,
+    "parent_code": "101060303"
+  },
+  {
+    "level": 6,
+    "code": "10106030317",
+    "name": "PREPAID BIAYA SALES & MARKETING (PROMOSI)-JRK C.5 EXT",
+    "type": "asset",
+    "normal_balance": "D",
+    "is_postable": true,
+    "parent_code": "101060303"
+  },
+  {
+    "level": 6,
+    "code": "10106030318",
+    "name": "PREPAID BIAYA KPR (KPR, HT, PBB)-JRK C.5 EXT",
+    "type": "asset",
+    "normal_balance": "D",
+    "is_postable": true,
+    "parent_code": "101060303"
+  },
+  {
+    "level": 6,
+    "code": "10106030319",
+    "name": "PREPAID BIAYA NOTARIS (PPJB, AJB)-JRK C.5 EXT",
+    "type": "asset",
+    "normal_balance": "D",
+    "is_postable": true,
+    "parent_code": "101060303"
+  },
+  {
+    "level": 6,
+    "code": "10106030320",
+    "name": "PREPAID BIAYA PAJAK (BPHTB, PPH FINAL)-JRK C.5 EXT",
+    "type": "asset",
+    "normal_balance": "D",
+    "is_postable": true,
+    "parent_code": "101060303"
+  },
+  {
+    "level": 6,
+    "code": "10106030321",
+    "name": "PREPAID PROMOSI & KOMISI - JRK C.2",
+    "type": "asset",
+    "normal_balance": "D",
+    "is_postable": true,
+    "parent_code": "101060303"
+  },
+  {
+    "level": 6,
+    "code": "10106030322",
+    "name": "PREPAID PROMOSI & KOMISI - JRK C.3",
+    "type": "asset",
+    "normal_balance": "D",
+    "is_postable": true,
+    "parent_code": "101060303"
+  },
+  {
+    "level": 6,
+    "code": "10106030323",
+    "name": "PREPAID PROMOSI & KOMISI - JRK C.1",
+    "type": "asset",
+    "normal_balance": "D",
+    "is_postable": true,
+    "parent_code": "101060303"
+  },
+  {
+    "level": 6,
+    "code": "10106030324",
+    "name": "PREPAID PROMOSI & KOMISI - JRK C.5",
+    "type": "asset",
+    "normal_balance": "D",
+    "is_postable": true,
+    "parent_code": "101060303"
+  },
+  {
+    "level": 6,
+    "code": "10106030325",
+    "name": "PREPAID BLT & KOMISI - JRK C.5 EXT",
+    "type": "asset",
+    "normal_balance": "D",
+    "is_postable": true,
+    "parent_code": "101060303"
+  },
+  {
+    "level": 6,
+    "code": "10106030326",
+    "name": "PREPAID BLT & KOMISI - JRK C3T5",
+    "type": "asset",
+    "normal_balance": "D",
+    "is_postable": true,
+    "parent_code": "101060303"
+  },
+  {
+    "level": 6,
+    "code": "10106030327",
+    "name": "PREPAID BIAYA SALES & MARKETING (PROMOSI)-JRK C6",
+    "type": "asset",
+    "normal_balance": "D",
+    "is_postable": true,
+    "parent_code": "101060303"
+  },
+  {
+    "level": 6,
+    "code": "10106030328",
+    "name": "PREPAID BIAYA KPR (KPR, HT, PBB)-JRK C6",
+    "type": "asset",
+    "normal_balance": "D",
+    "is_postable": true,
+    "parent_code": "101060303"
+  },
+  {
+    "level": 6,
+    "code": "10106030329",
+    "name": "PREPAID BIAYA NOTARIS (PPJB, AJB)-JRK C6",
+    "type": "asset",
+    "normal_balance": "D",
+    "is_postable": true,
+    "parent_code": "101060303"
+  },
+  {
+    "level": 6,
+    "code": "10106030330",
+    "name": "PREPAID BIAYA PAJAK (BPHTB, PPH FINAL)-JRK C6",
+    "type": "asset",
+    "normal_balance": "D",
+    "is_postable": true,
+    "parent_code": "101060303"
+  },
+  {
+    "level": 6,
+    "code": "10106030331",
+    "name": "PREPAID BLT & KOMISI - JRK C6",
+    "type": "asset",
+    "normal_balance": "D",
+    "is_postable": true,
+    "parent_code": "101060303"
+  },
+  {
+    "level": 6,
+    "code": "10106030351",
+    "name": "PREPAID BIAYA SALES & MARKETING (PROMOSI)-JRK C3T5",
+    "type": "asset",
+    "normal_balance": "D",
+    "is_postable": true,
+    "parent_code": "101060303"
+  },
+  {
+    "level": 6,
+    "code": "10106030352",
+    "name": "PREPAID BIAYA KPR (KPR, HT, PBB)-JRK C3T5",
+    "type": "asset",
+    "normal_balance": "D",
+    "is_postable": true,
+    "parent_code": "101060303"
+  },
+  {
+    "level": 6,
+    "code": "10106030353",
+    "name": "PREPAID BIAYA NOTARIS (PPJB, AJB)-JRK C3T5",
+    "type": "asset",
+    "normal_balance": "D",
+    "is_postable": true,
+    "parent_code": "101060303"
+  },
+  {
+    "level": 6,
+    "code": "10106030354",
+    "name": "PREPAID BIAYA PAJAK (BPHTB, PPH FINAL)-JRK C3T5",
+    "type": "asset",
+    "normal_balance": "D",
+    "is_postable": true,
+    "parent_code": "101060303"
+  },
+  {
+    "level": 6,
+    "code": "10106040401",
+    "name": "BIAYA KONSTRUKSI DIBAYAR DIMUKA",
+    "type": "asset",
+    "normal_balance": "D",
+    "is_postable": true,
+    "parent_code": "101060404"
+  },
+  {
+    "level": 6,
+    "code": "10106040402",
+    "name": "BIAYA ADMINISTRASI DIBAYAR DIMUKA",
+    "type": "asset",
+    "normal_balance": "D",
+    "is_postable": true,
+    "parent_code": "101060404"
+  },
+  {
+    "level": 6,
+    "code": "10106040403",
+    "name": "BIAYA DIBAYAR DIMUKA LAINNYA",
+    "type": "asset",
+    "normal_balance": "D",
+    "is_postable": true,
+    "parent_code": "101060404"
+  },
+  {
+    "level": 6,
+    "code": "10107010101",
+    "name": "UANG MUKA PEMBELIAN TANAH",
+    "type": "asset",
+    "normal_balance": "D",
+    "is_postable": true,
+    "parent_code": "101070101"
+  },
+  {
+    "level": 6,
+    "code": "10107010102",
+    "name": "UANG MUKA PEMBELIAN",
+    "type": "asset",
+    "normal_balance": "D",
+    "is_postable": true,
+    "parent_code": "101070101"
+  },
+  {
+    "level": 6,
+    "code": "10107020201",
+    "name": "UANG MUKA KONSTRUKSI",
+    "type": "asset",
+    "normal_balance": "D",
+    "is_postable": true,
+    "parent_code": "101070202"
+  },
+  {
+    "level": 6,
+    "code": "10107030301",
+    "name": "UANG MUKA PENYELESAIAN RETENSI",
+    "type": "asset",
+    "normal_balance": "D",
+    "is_postable": true,
+    "parent_code": "101070303"
+  },
+  {
+    "level": 6,
+    "code": "10107030302",
+    "name": "UANG MUKA PAYROLL DEPOSIT",
+    "type": "asset",
+    "normal_balance": "D",
+    "is_postable": true,
+    "parent_code": "101070303"
+  },
+  {
+    "level": 6,
+    "code": "10107030303",
+    "name": "UANG MUKA OPERASIONAL",
+    "type": "asset",
+    "normal_balance": "D",
+    "is_postable": true,
+    "parent_code": "101070303"
+  },
+  {
+    "level": 6,
+    "code": "10108010101",
+    "name": "DANA ESCROW BTN",
+    "type": "asset",
+    "normal_balance": "D",
+    "is_postable": true,
+    "parent_code": "101080101"
+  },
+  {
+    "level": 6,
+    "code": "10108010102",
+    "name": "DANA ESCROW BRI",
+    "type": "asset",
+    "normal_balance": "D",
+    "is_postable": true,
+    "parent_code": "101080101"
+  },
+  {
+    "level": 6,
+    "code": "10108010103",
+    "name": "DANA ESCROW BTN SYARIAH",
+    "type": "asset",
+    "normal_balance": "D",
+    "is_postable": true,
+    "parent_code": "101080101"
+  },
+  {
+    "level": 6,
+    "code": "10108010104",
+    "name": "DANA ESCROW BNI",
+    "type": "asset",
+    "normal_balance": "D",
+    "is_postable": true,
+    "parent_code": "101080101"
+  },
+  {
+    "level": 6,
+    "code": "10108010105",
+    "name": "DANA ESCROW MANDIRI",
+    "type": "asset",
+    "normal_balance": "D",
+    "is_postable": true,
+    "parent_code": "101080101"
+  },
+  {
+    "level": 6,
+    "code": "10201010101",
+    "name": "TANAH",
+    "type": "asset",
+    "normal_balance": "D",
+    "is_postable": true,
+    "parent_code": "102010101"
+  },
+  {
+    "level": 6,
+    "code": "10201010102",
+    "name": "BANGUNAN",
+    "type": "asset",
+    "normal_balance": "D",
+    "is_postable": true,
+    "parent_code": "102010101"
+  },
+  {
+    "level": 6,
+    "code": "10201010103",
+    "name": "KENDARAAN",
+    "type": "asset",
+    "normal_balance": "D",
+    "is_postable": true,
+    "parent_code": "102010101"
+  },
+  {
+    "level": 6,
+    "code": "10201010104",
+    "name": "INVENTARIS KANTOR",
+    "type": "asset",
+    "normal_balance": "D",
+    "is_postable": true,
+    "parent_code": "102010101"
+  },
+  {
+    "level": 6,
+    "code": "10201010105",
+    "name": "BANGUNAN TIDAK PERMANEN",
+    "type": "asset",
+    "normal_balance": "D",
+    "is_postable": true,
+    "parent_code": "102010101"
+  },
+  {
+    "level": 6,
+    "code": "10202020201",
+    "name": "SOFTWARE",
+    "type": "asset",
+    "normal_balance": "D",
+    "is_postable": true,
+    "parent_code": "102020202"
+  },
+  {
+    "level": 6,
+    "code": "10202020202",
+    "name": "HAK PATEN",
+    "type": "asset",
+    "normal_balance": "D",
+    "is_postable": true,
+    "parent_code": "102020202"
+  },
+  {
+    "level": 6,
+    "code": "10202020203",
+    "name": "ASET TETAP TIDAK BERWUJUD LAINNYA",
+    "type": "asset",
+    "normal_balance": "D",
+    "is_postable": true,
+    "parent_code": "102020202"
+  },
+  {
+    "level": 6,
+    "code": "10203030301",
+    "name": "AKUMULASI PENYUSUTAN BANGUNAN",
+    "type": "asset",
+    "normal_balance": "K",
+    "is_postable": true,
+    "parent_code": "102030303"
+  },
+  {
+    "level": 6,
+    "code": "10203030302",
+    "name": "AKUMULASI PENYUSUTAN KENDARAAN",
+    "type": "asset",
+    "normal_balance": "K",
+    "is_postable": true,
+    "parent_code": "102030303"
+  },
+  {
+    "level": 6,
+    "code": "10203030303",
+    "name": "AKUMULASI PENYUSUTAN INVENTARIS KANTOR",
+    "type": "asset",
+    "normal_balance": "K",
+    "is_postable": true,
+    "parent_code": "102030303"
+  },
+  {
+    "level": 6,
+    "code": "10203030304",
+    "name": "AKUMULASI PENYUSUTAN BANGUNAN TIDAK PERMANEN",
+    "type": "asset",
+    "normal_balance": "K",
+    "is_postable": true,
+    "parent_code": "102030303"
+  },
+  {
+    "level": 6,
+    "code": "10204040401",
+    "name": "AKUMULASI AMORTISASI SOFTWARE",
+    "type": "asset",
+    "normal_balance": "K",
+    "is_postable": true,
+    "parent_code": "102040404"
+  },
+  {
+    "level": 6,
+    "code": "10204040402",
+    "name": "AKUMULASI AMORTISASI HAK PATEN",
+    "type": "asset",
+    "normal_balance": "K",
+    "is_postable": true,
+    "parent_code": "102040404"
+  },
+  {
+    "level": 6,
+    "code": "10204040403",
+    "name": "AKUMULASI AMORTISASI ASET TETAP TIDAK BERWUJUD LAINNYA",
+    "type": "asset",
+    "normal_balance": "K",
+    "is_postable": true,
+    "parent_code": "102040404"
+  },
+  {
+    "level": 6,
+    "code": "10301010101",
+    "name": "ASET DALAM PENYELESAIAN",
+    "type": "asset",
+    "normal_balance": "D",
+    "is_postable": true,
+    "parent_code": "103010101"
+  }
+]

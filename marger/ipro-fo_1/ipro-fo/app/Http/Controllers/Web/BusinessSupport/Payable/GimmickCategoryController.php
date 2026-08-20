@@ -6,6 +6,7 @@ namespace App\Http\Controllers\Web\BusinessSupport\Payable;
 
 use App\Domain\BusinessSupport\Models\BsAccount;
 use App\Domain\BusinessSupport\Models\BsGimmickCategory;
+use App\Domain\Foundation\Tenant\Models\Cluster;
 use App\Http\Controllers\Controller;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -32,9 +33,11 @@ class GimmickCategoryController extends Controller
     {
         abort_unless($request->user()?->canModule('ap'), 403);
 
-        $rows = BsGimmickCategory::with(['debitAccount:id,code,name', 'payableAccount:id,code,name', 'accounts.account:id,code,name'])
+        $rows = BsGimmickCategory::with(['debitAccount:id,code,name', 'payableAccount:id,code,name', 'accounts.account:id,code,name', 'cluster:id,code,name'])
             ->when($request->input('search'), fn ($q, $s) => $q->where(fn ($w) => $w->where('code', 'like', "%{$s}%")->orWhere('name', 'like', "%{$s}%")))
-            ->orderBy('name')->get()
+            // Kategori sejenis dari cluster berbeda berdampingan, supaya perbedaan akunnya
+            // langsung terbaca alih-alih harus dicari di dua tempat pada daftar.
+            ->orderBy('name')->orderByRaw('cluster_id is not null')->orderBy('cluster_id')->get()
             ->map(function ($c) {
                 $side = fn (string $s) => $c->accounts->where('side', $s)->values()->map(fn ($a) => [
                     'account_id' => $a->account_id,
@@ -44,6 +47,9 @@ class GimmickCategoryController extends Controller
 
                 return [
                     'id' => $c->id, 'code' => $c->code, 'name' => $c->name, 'is_active' => $c->is_active,
+                    // Cluster kosong = berlaku untuk semua cluster (cadangan).
+                    'cluster_id'    => $c->cluster_id,
+                    'cluster_label' => $c->cluster ? trim($c->cluster->code.' — '.$c->cluster->name) : null,
                     'kpr_biaya_key'   => $c->kpr_biaya_key,
                     'kpr_biaya_label' => $c->kpr_biaya_key ? (BsGimmickCategory::KPR_BIAYA_COLUMNS[$c->kpr_biaya_key] ?? null) : null,
                     'sync_kpr'        => (bool) $c->sync_kpr,
@@ -56,6 +62,11 @@ class GimmickCategoryController extends Controller
                 ];
             });
 
+        // Cluster yang ada, dipakai baik oleh pilihan di form maupun oleh hitungan cakupan.
+        $clusters = Cluster::orderBy('code')->get(['id', 'code', 'name'])
+            ->map(fn ($c) => ['id' => $c->id, 'code' => $c->code, 'name' => $c->name,
+                'label' => trim($c->code.' — '.$c->name)]);
+
         // Cakupan kolom Rincian Biaya Master Data KPR — supaya ketahuan kalau ada yang terlewat.
         // SENGAJA lepas dari filter pencarian: kalau dihitung dari daftar yang tersaring, mengetik
         // di kotak cari akan membuat kolom yang sebenarnya sudah terpetakan terlihat "belum ada".
@@ -67,11 +78,19 @@ class GimmickCategoryController extends Controller
         // "belum ada kategori" seharusnya menjawab pertanyaan "kolom ini sudah dipegang
         // siapa?", bukan "apakah sudah jalan?". Pertanyaan kedua tetap dijawab, tapi di baris
         // kategorinya sendiri lewat penanda sinkron — di sanalah sakelarnya bisa dihidupkan.
+        //
+        // Sejak kategori bercluster, cakupannya dihitung PER CLUSTER: satu kategori tidak lagi
+        // otomatis membuat kolomnya aman, karena cluster lain bisa saja belum punya kategori
+        // sendiri. Kategori tanpa cluster berlaku untuk semua cluster, jadi ia menutup sisanya.
         $mapped = BsGimmickCategory::whereNotNull('kpr_biaya_key')
-            ->orderBy('code')->get(['code', 'kpr_biaya_key', 'sync_kpr'])->groupBy('kpr_biaya_key');
+            ->orderBy('code')->get(['code', 'kpr_biaya_key', 'sync_kpr', 'cluster_id'])->groupBy('kpr_biaya_key');
         $coverage = collect(BsGimmickCategory::KPR_BIAYA_COLUMNS)
-            ->map(function ($label, $key) use ($mapped) {
+            ->map(function ($label, $key) use ($mapped, $clusters) {
                 $isi = collect($mapped->get($key, []));
+                // Cluster yang sudah punya kategori sendiri untuk kolom ini.
+                $terpegang = $isi->pluck('cluster_id')->filter()->unique();
+                // Kategori tanpa cluster berlaku untuk semua cluster, jadi ia menutup sisanya.
+                $adaCadangan = $isi->whereNull('cluster_id')->isNotEmpty();
 
                 return [
                     'key'        => $key,
@@ -80,6 +99,14 @@ class GimmickCategoryController extends Controller
                     // Berapa di antaranya yang sinkronnya benar-benar hidup — dipakai layar
                     // untuk membedakan "sudah dipegang" dari "sudah akan terisi".
                     'aktif'      => $isi->where('sync_kpr', true)->count(),
+                    // Cluster yang belum terpegang DAN tidak tertutup kategori cadangan.
+                    // Inilah yang membuat kolom terlihat aman padahal satu cluster terlewat:
+                    // tanpa rincian ini, satu kategori saja sudah membuat kolomnya hijau.
+                    'semua_cluster'  => $adaCadangan,
+                    'cluster_isi'    => $clusters->whereIn('id', $terpegang->all())->pluck('code')->values()->all(),
+                    'cluster_kosong' => $adaCadangan || $isi->isEmpty()
+                        ? []
+                        : $clusters->whereNotIn('id', $terpegang->all())->pluck('code')->values()->all(),
                 ];
             })->values();
 
@@ -88,6 +115,7 @@ class GimmickCategoryController extends Controller
             'filters'    => $request->only('search'),
             // Hanya akun transaksi (is_postable) — CoA induk/header tidak ditampilkan.
             'accounts'   => BsAccount::where('is_active', true)->where('is_postable', true)->orderBy('code')->get(['id', 'code', 'name', 'type']),
+            'clusters'         => $clusters,
             'defaultPayable'   => BsAccount::where('code', config('business_support.gl_accounts.payable'))->value('id'),
             'kprBiayaColumns'  => collect(BsGimmickCategory::KPR_BIAYA_COLUMNS)->map(fn ($label, $key) => ['id' => $key, 'label' => $label])->values(),
             'kprBiayaCoverage' => $coverage,
@@ -131,8 +159,16 @@ class GimmickCategoryController extends Controller
     /** @return array<string,mixed> */
     private function data(Request $request, ?int $id = null): array
     {
+        // Kode unik PER CLUSTER: "BIAYA KPR" boleh ada di tiap cluster dengan akun sendiri,
+        // tetapi tidak boleh dua kali di cluster yang sama. Kategori tanpa cluster (cadangan
+        // untuk semua cluster) juga hanya boleh satu per kode.
+        $clusterId = $request->input('cluster_id') ?: null;
+
         $v = $request->validate([
-            'code'          => ['required', 'string', 'max:40', Rule::unique('bs_gimmick_categories', 'code')->ignore($id)->where('tenant_id', tenant_id())],
+            'cluster_id'    => ['nullable', 'integer', 'exists:clusters,id'],
+            'code'          => ['required', 'string', 'max:40', Rule::unique('bs_gimmick_categories', 'code')
+                ->ignore($id)->where('tenant_id', tenant_id())
+                ->where(fn ($q) => $clusterId === null ? $q->whereNull('cluster_id') : $q->where('cluster_id', $clusterId))],
             'name'          => ['required', 'string', 'max:150'],
             'kpr_biaya_key' => ['nullable', 'string', Rule::in(array_keys(BsGimmickCategory::KPR_BIAYA_COLUMNS))],
             'sync_kpr'      => ['boolean'],
@@ -169,6 +205,7 @@ class GimmickCategoryController extends Controller
     private function headerOf(array $v): array
     {
         return [
+            'cluster_id'         => $v['cluster_id'] ?? null,
             'code'               => $v['code'],
             'name'               => $v['name'],
             'kpr_biaya_key'      => $v['kpr_biaya_key'] ?? null,

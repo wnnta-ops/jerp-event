@@ -70,7 +70,7 @@
 .viz .vlab   { font-size: 11px;   fill: var(--viz-ink);  font-weight: 700; }
 .viz .pct    { fill: var(--viz-muted); font-weight: 600; }
 .viz .no     { fill: var(--viz-muted); font-weight: 800; font-size: 10px; }
-.viz .seglab { font-size: 10px; fill: #fff; font-weight: 700; }
+.viz .seglab { font-size: 11px; fill: #fff; font-weight: 700; }
 .viz .gl     { stroke: var(--viz-grid); stroke-width: 1; }
 .viz .ax     { stroke: var(--viz-axis); stroke-width: 1; }
 /* sorot ringan saat kursor di atas satu tanda — tooltip-nya dari <title> bawaan SVG */

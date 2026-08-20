@@ -7,11 +7,13 @@ namespace App\Http\Controllers\Web\BusinessSupport\Gl;
 use App\Domain\BusinessSupport\Models\BsAccount;
 use App\Domain\BusinessSupport\Models\BsBudget;
 use App\Domain\BusinessSupport\Models\BsJournalLine;
+use App\Exports\SheetXlsx;
 use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
 use Inertia\Response;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class LedgerReportController extends Controller
 {
@@ -315,8 +317,72 @@ class LedgerReportController extends Controller
     {
         abort_unless($request->user()?->canModule('gl'), 403);
 
-        $year  = $request->integer('year') ?: null;
-        $leaf  = $this->accountBalances($year);
+        return Inertia::render('BusinessSupport/Gl/BalanceSheet', $this->balanceSheetData($request));
+    }
+
+    /** Export Neraca ke Excel (.xlsx) — per tanggal yang sedang ditampilkan. */
+    public function balanceSheetExport(Request $request): StreamedResponse
+    {
+        abort_unless($request->user()?->canModule('gl'), 403);
+
+        $d = $this->balanceSheetData($request);
+        $rows = [
+            ['NERACA'],
+            [$d['company']],
+            ['Per '.$d['as_of']],
+            [],
+            ['ASET', '', 'KEWAJIBAN & EKUITAS', ''],
+        ];
+
+        // Kedua sisi disandingkan berdampingan, sama seperti di layar: neraca dibaca dengan
+        // membandingkan kiri dan kanan, jadi menumpuknya ke bawah akan mengubah cara bacanya.
+        $kiri = $this->ratakanNeraca($d['assets']);
+        $kanan = $this->ratakanNeraca(array_merge($d['liabilities'], $d['equity']));
+        $n = max(count($kiri), count($kanan));
+        for ($i = 0; $i < $n; $i++) {
+            $rows[] = [
+                $kiri[$i][0] ?? '', $kiri[$i][1] ?? null,
+                $kanan[$i][0] ?? '', $kanan[$i][1] ?? null,
+            ];
+        }
+        $rows[] = ['JUMLAH AKTIVA', (float) $d['total_assets'], 'JUMLAH PASSIVA', (float) $d['total_passiva']];
+
+        return (new SheetXlsx($rows, 5, 'Neraca'))
+            ->toResponse('Neraca-'.str_replace(' ', '-', $d['as_of']).'.xlsx');
+    }
+
+    /**
+     * Ratakan grup neraca menjadi baris [label, nilai] — grup, barisnya, lalu sub-totalnya.
+     *
+     * @param  array<int,array<string,mixed>>  $groups
+     * @return array<int,array{0:string,1:?float}>
+     */
+    private function ratakanNeraca(array $groups): array
+    {
+        $out = [];
+        foreach ($groups as $g) {
+            $out[] = [$g['name'], null];
+            foreach ($g['lines'] as $l) {
+                $out[] = ['    '.$l['name'], (float) $l['amount']];
+            }
+            $out[] = ['Jumlah '.$g['name'], (float) $g['total']];
+            $out[] = ['', null];
+        }
+
+        return $out;
+    }
+
+    /**
+     * Data Neraca — dipakai bersama layar & export supaya keduanya tidak pernah berbeda.
+     *
+     * @return array<string,mixed>
+     */
+    private function balanceSheetData(Request $request): array
+    {
+        // Neraca menyatakan posisi pada SATU TANGGAL, jadi saldonya kumulatif sampai tanggal
+        // itu — bukan aktivitas satu tahun. Karena itu tanggalnya yang dipilih, bukan tahunnya.
+        $asOf  = $request->date('as_of') ?? now();
+        $leaf  = $this->accountBalances(null, null, $asOf->toDateString());
         $nodes = BsAccount::whereIn('level', [2, 3])->orderBy('code')->get(['code', 'name', 'level']);
 
         $sum = fn (string $prefix) => (float) $leaf->reduce(
@@ -374,15 +440,16 @@ class LedgerReportController extends Controller
         $grand       = fn (array $g) => (float) array_sum(array_map(fn ($x) => $x['total'], $g));
         $totalAssets = $grand($assets);
 
-        return Inertia::render('BusinessSupport/Gl/BalanceSheet', [
+        return [
             'company'       => $this->companyName(),
-            'as_of'         => now()->translatedFormat('d F Y'),
+            'as_of'         => $asOf->translatedFormat('d F Y'),
+            'as_of_date'    => $asOf->toDateString(),
             'assets'        => $assets,
             'liabilities'   => $liabilities,
             'equity'        => $equity,
             'total_assets'  => $totalAssets,
             'total_passiva' => $grand($liabilities) + $grand($equity),
-        ]);
+        ];
     }
 
     /** Laporan Laba Rugi (Income Statement) — berkategori sesuai format eProperty. */
@@ -390,8 +457,44 @@ class LedgerReportController extends Controller
     {
         abort_unless($request->user()?->canModule('gl'), 403);
 
-        $year  = $request->integer('year') ?: null;
-        $leaf  = $this->accountBalances($year);
+        return Inertia::render('BusinessSupport/Gl/IncomeStatement', $this->incomeStatementData($request));
+    }
+
+    /** Export Laporan Laba Rugi ke Excel (.xlsx) — periode yang sedang ditampilkan. */
+    public function incomeStatementExport(Request $request): StreamedResponse
+    {
+        abort_unless($request->user()?->canModule('gl'), 403);
+
+        $d = $this->incomeStatementData($request);
+        $rows = [
+            ['LAPORAN LABA RUGI'],
+            [$d['company']],
+            ['Periode '.$d['periode']],
+            [],
+            ['Keterangan', 'Nilai'],
+        ];
+        foreach ($d['rows'] as $r) {
+            // Baris bertingkat diberi jorokan supaya susunannya tetap terbaca di Excel,
+            // tempat warna & tebal-tipisnya tidak ikut terbawa.
+            $jorok = match ($r['kind']) { 'line' => '        ', 'group' => '    ', default => '' };
+            $rows[] = [$jorok.$r['label'], $r['amount'] === null ? null : (float) $r['amount']];
+        }
+
+        return (new SheetXlsx($rows, 5, 'Laba Rugi'))
+            ->toResponse('Laba-Rugi-'.$d['date_from'].'-sd-'.$d['date_to'].'.xlsx');
+    }
+
+    /**
+     * Data Laporan Laba Rugi — dipakai bersama layar & export.
+     *
+     * @return array<string,mixed>
+     */
+    private function incomeStatementData(Request $request): array
+    {
+        // Laba rugi menyatakan hasil SELAMA satu periode, jadi yang dipilih rentang tanggalnya.
+        // Bawaannya awal tahun berjalan s/d hari ini — periode yang paling sering dilihat.
+        [$from, $to] = $this->rentang($request);
+        $leaf  = $this->accountBalances(null, $from->toDateString(), $to->toDateString());
         $nodes = BsAccount::where('level', 3)->orderBy('code')->get(['code', 'name']);
 
         $sum = fn (string $prefix) => (float) $leaf->reduce(
@@ -464,12 +567,33 @@ class LedgerReportController extends Controller
         $add('subtotal2', 'JUMLAH PENDAPATAN DAN BEBAN LAIN', $netLain);
         $add('total', 'LABA RUGI NETTO', $netProfit);
 
-        return Inertia::render('BusinessSupport/Gl/IncomeStatement', [
+        return [
             'company'    => $this->companyName(),
-            'as_of'      => now()->translatedFormat('d F Y'),
+            'as_of'      => $to->translatedFormat('d F Y'),
+            'periode'    => $from->translatedFormat('d F Y').' s/d '.$to->translatedFormat('d F Y'),
+            'date_from'  => $from->toDateString(),
+            'date_to'    => $to->toDateString(),
             'rows'       => $rows,
             'net_profit' => $netProfit,
-        ]);
+        ];
+    }
+
+    /**
+     * Rentang tanggal laporan periodik: dari–sampai, bawaan awal tahun berjalan s/d hari ini.
+     *
+     * Satu tempat untuk semua laporan laba rugi, supaya bawaan & nama parameternya tidak
+     * berbeda dari satu layar ke layar lain.
+     *
+     * @return array{0:\Illuminate\Support\Carbon,1:\Illuminate\Support\Carbon}
+     */
+    private function rentang(Request $request): array
+    {
+        $to   = $request->date('date_to') ?? now();
+        $from = $request->date('date_from') ?? $to->copy()->startOfYear();
+
+        // Rentang terbalik diperlakukan sebagai salah ketik dan dibetulkan, bukan dibiarkan
+        // memulangkan laporan kosong yang terbaca seperti "tidak ada transaksi".
+        return $from->lessThanOrEqualTo($to) ? [$from, $to] : [$to, $from];
     }
 
     /**
@@ -480,27 +604,83 @@ class LedgerReportController extends Controller
     {
         abort_unless($request->user()?->canModule('gl'), 403);
 
-        $year = $request->integer('year') ?: (int) now()->year;
+        return Inertia::render('BusinessSupport/Gl/IncomeVsBudget', $this->incomeVsBudgetData($request));
+    }
 
-        // Realisasi: net (debit-credit) per kode dari jurnal posted pada period_year.
+    /** Export Laba Rugi vs Budget ke Excel (.xlsx) — periode yang sedang ditampilkan. */
+    public function incomeVsBudgetExport(Request $request): StreamedResponse
+    {
+        abort_unless($request->user()?->canModule('gl'), 403);
+
+        $d = $this->incomeVsBudgetData($request);
+        $rows = [
+            ['LABA RUGI VS BUDGET'],
+            [$d['company']],
+            ['Periode '.$d['periode']],
+            [$d['budget_note']],
+            [],
+            ['Keterangan', 'Realisasi', 'Realisasi %', 'Budget', 'Budget %', 'Variance'],
+        ];
+        foreach ($d['rows'] as $r) {
+            $jorok = match ($r['kind']) { 'line' => '        ', 'group' => '    ', default => '' };
+            $rows[] = [
+                $jorok.$r['label'],
+                $r['realisasi'] === null ? null : (float) $r['realisasi'],
+                $r['realisasi_pct'] === null ? null : round((float) $r['realisasi_pct'], 2),
+                $r['budget'] === null ? null : (float) $r['budget'],
+                $r['budget_pct'] === null ? null : round((float) $r['budget_pct'], 2),
+                $r['variance'] === null ? null : (float) $r['variance'],
+            ];
+        }
+
+        return (new SheetXlsx($rows, 6, 'LR vs Budget'))
+            ->toResponse('Laba-Rugi-vs-Budget-'.$d['date_from'].'-sd-'.$d['date_to'].'.xlsx');
+    }
+
+    /**
+     * Data Laba Rugi vs Budget — dipakai bersama layar & export.
+     *
+     * @return array<string,mixed>
+     */
+    private function incomeVsBudgetData(Request $request): array
+    {
+        [$from, $to] = $this->rentang($request);
+
+        // Realisasi: aktivitas pada RENTANG TANGGAL yang dipilih, bukan setahun penuh.
         $realByCode = [];
-        foreach ($this->accountBalances($year) as $x) {
+        foreach ($this->accountBalances(null, $from->toDateString(), $to->toDateString()) as $x) {
             $realByCode[$x['code']] = (float) $x['net'];
         }
 
-        // Budget: jumlah tahunan per akun × arah normal (D → +, K → −) supaya sekonvensi net jurnal.
+        // Budget: jumlah per akun × arah normal (D → +, K → −) supaya sekonvensi net jurnal.
         $accts    = BsAccount::query()->get(['id', 'code', 'normal_balance']);
         $codeById = $accts->pluck('code', 'id');
         $signById = $accts->mapWithKeys(fn ($a) => [$a->id => $a->normal_balance === 'D' ? 1.0 : -1.0]);
+
+        // Anggaran DIPRORATA ke bulan-bulan yang tersentuh rentangnya. Membandingkan realisasi
+        // satu triwulan dengan anggaran setahun penuh akan selalu terlihat "hemat 75%" —
+        // angka yang menyesatkan, bukan sekadar kurang tepat. Bulan yang tercakup sebagian
+        // dihitung sebanding jumlah harinya.
+        $bulanDipakai = $this->bobotBulan($from, $to);
+        $tahunTersentuh = array_keys($bulanDipakai);
+
         $budByCode = [];
-        foreach (BsBudget::where('year', $year)->where('status', '!=', 'rejected')->get() as $b) {
+        foreach (BsBudget::whereIn('year', $tahunTersentuh)->where('status', '!=', 'rejected')->get() as $b) {
             $code = $codeById[$b->account_id] ?? null;
             if (! $code) {
                 continue;
             }
-            // Total tahunan: pakai amount (eksak) bila terisi, jika tidak jumlahkan breakdown bulanan.
-            $annual = abs((float) $b->amount) > 0.001 ? (float) $b->amount : (float) array_sum($b->monthsArray());
-            $budByCode[$code] = ($budByCode[$code] ?? 0.0) + ($signById[$b->account_id] ?? 1.0) * $annual;
+            $perBulan = $b->monthsArray();
+            $adaBulanan = array_sum($perBulan) > 0.001;
+            $tahunan = abs((float) $b->amount) > 0.001 ? (float) $b->amount : (float) array_sum($perBulan);
+
+            $porsi = 0.0;
+            foreach ($bulanDipakai[(int) $b->year] ?? [] as $m => $bobot) {
+                // Ada rincian bulanan → pakai angka bulan itu; kalau tidak, sebar rata 1/12.
+                $porsi += $bobot * ($adaBulanan ? (float) ($perBulan[$m] ?? 0) : $tahunan / 12);
+            }
+
+            $budByCode[$code] = ($budByCode[$code] ?? 0.0) + ($signById[$b->account_id] ?? 1.0) * $porsi;
         }
 
         $sumR  = fn (string $p) => $this->sumPrefix($realByCode, $p);
@@ -586,14 +766,51 @@ class LedgerReportController extends Controller
         $push('subtotal2', 'JUMLAH PENDAPATAN DAN BEBAN LAIN', $R['netLain'], $B['netLain']);
         $push('total', 'LABA RUGI NETTO', $R['net'], $B['net']);
 
-        return Inertia::render('BusinessSupport/Gl/IncomeVsBudget', [
+        $penuh = count($bulanDipakai) === 1 && count(reset($bulanDipakai)) === 12
+            && ! in_array(false, array_map(fn ($b) => abs($b - 1.0) < 0.0001, reset($bulanDipakai)), true);
+
+        return [
             'company'    => $this->companyName(),
-            'year'       => $year,
-            'as_of'      => now()->translatedFormat('d F Y'),
+            'year'       => (int) $to->year,
+            'as_of'      => $to->translatedFormat('d F Y'),
+            'periode'    => $from->translatedFormat('d F Y').' s/d '.$to->translatedFormat('d F Y'),
+            'date_from'  => $from->toDateString(),
+            'date_to'    => $to->toDateString(),
             'rows'       => $rows,
             'totals'     => ['realisasi' => $R['net'], 'budget' => $B['net'], 'variance' => $R['net'] - $B['net']],
             'has_budget' => array_sum(array_map('abs', $budByCode)) > 0.001,
-        ]);
+            // Dikatakan terus terang apakah angka budgetnya utuh setahun atau diprorata,
+            // supaya pembacanya tahu terhadap apa realisasinya dibandingkan.
+            'budget_note' => $penuh
+                ? 'Budget setahun penuh.'
+                : 'Budget diprorata ke bulan yang tercakup periode ini (bulan yang tercakup sebagian dihitung sebanding jumlah harinya).',
+        ];
+    }
+
+    /**
+     * Bobot tiap bulan yang tersentuh rentang [from..to]: 1.0 bila bulan itu tercakup penuh,
+     * pecahan bila hanya sebagian.
+     *
+     * @return array<int, array<int, float>> tahun → bulan → bobot
+     */
+    private function bobotBulan(\Illuminate\Support\Carbon $from, \Illuminate\Support\Carbon $to): array
+    {
+        $out = [];
+        $kursor = $from->copy()->startOfMonth();
+        while ($kursor->lessThanOrEqualTo($to)) {
+            $awalBulan = $kursor->copy()->startOfMonth();
+            $akhirBulan = $kursor->copy()->endOfMonth();
+            $mulai = $from->greaterThan($awalBulan) ? $from : $awalBulan;
+            $henti = $to->lessThan($akhirBulan) ? $to : $akhirBulan;
+
+            $hariBulan = (int) $awalBulan->daysInMonth;
+            $hariPakai = $mulai->diffInDays($henti) + 1;
+            $out[(int) $kursor->year][(int) $kursor->month] = round(min(1.0, $hariPakai / $hariBulan), 6);
+
+            $kursor->addMonthNoOverflow();
+        }
+
+        return $out;
     }
 
     /** Σ nilai di $map untuk kode berawalan $prefix. @param array<string,float> $map */
@@ -617,12 +834,19 @@ class LedgerReportController extends Controller
     }
 
     /** Saldo per akun = Σ(debit-credit). @return \Illuminate\Support\Collection<int,array<string,mixed>> */
-    private function accountBalances(?int $year)
+    private function accountBalances(?int $year, ?string $from = null, ?string $to = null)
     {
         $lines = BsJournalLine::query()
             ->join('bs_journals', 'bs_journals.id', '=', 'bs_journal_lines.journal_id')
             ->where('bs_journals.status', 'posted')
             ->when($year, fn ($q) => $q->where('bs_journals.period_year', $year))
+            // Batas tanggal dipakai dua cara yang berbeda dan keduanya benar:
+            //  - Neraca hanya memberi $to → saldo KUMULATIF sejak awal sampai tanggal itu,
+            //    karena neraca menyatakan posisi pada satu titik waktu.
+            //  - Laba Rugi memberi $from dan $to → AKTIVITAS dalam rentang itu saja,
+            //    karena laba rugi menyatakan hasil selama satu periode.
+            ->when($from, fn ($q, $d) => $q->whereDate('bs_journals.journal_date', '>=', $d))
+            ->when($to, fn ($q, $d) => $q->whereDate('bs_journals.journal_date', '<=', $d))
             ->selectRaw('bs_journal_lines.account_id, COALESCE(SUM(debit-credit),0) as net')
             ->groupBy('bs_journal_lines.account_id')
             ->pluck('net', 'account_id');

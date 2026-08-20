@@ -5,6 +5,7 @@ namespace App\Modules\FO\FinanceAR\Models;
 use App\Models\Concerns\TenantAwareModel;
 use App\Modules\FO\MarketingSales\Models\Customer;
 use App\Modules\FO\MarketingSales\Models\Kontrak;
+use App\Modules\FO\MarketingSales\Models\Lokasi;
 use App\Services\Numerator\NumeratorService;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -22,7 +23,7 @@ class Gmc extends TenantAwareModel
     protected $table = 'fo_gmc';
 
     protected $fillable = [
-        'tenant_id', 'no_gmc', 'tgl', 'kontrak_id', 'customer_id',
+        'tenant_id', 'no_gmc', 'tgl', 'kontrak_id', 'customer_id', 'lokasi_id',
         'nama', 'nilai', 'keterangan', 'status',
     ];
 
@@ -49,6 +50,24 @@ class Gmc extends TenantAwareModel
     public function customer(): BelongsTo
     {
         return $this->belongsTo(Customer::class);
+    }
+
+    /**
+     * Cluster GMC ini — di FO clusternya adalah master Lokasi (fo_lokasi), master yang sama
+     * yang dicerminkan ke BO sebagai `clusters`. Menentukan Kategori Gimmick mana yang
+     * dipakai saat Posting BO, karena akun tiap cluster bisa berbeda.
+     */
+    public function lokasi(): BelongsTo
+    {
+        return $this->belongsTo(Lokasi::class);
+    }
+
+    /** Cluster bawaan sebuah GMC: dari unit pada SPR/kontraknya. */
+    public function lokasiDariKontrak(): ?int
+    {
+        $id = $this->kontrak?->unit?->lokasi_id;
+
+        return $id ? (int) $id : null;
     }
 
     /** Rincian komponen (opsional). Bila diisi, GMC pecah per komponen saat Posting BO. */
