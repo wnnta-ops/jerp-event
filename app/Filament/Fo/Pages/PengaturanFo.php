@@ -64,6 +64,26 @@ class PengaturanFo extends Page implements HasForms
             Forms\Components\Section::make('NUP Public')->columns(2)->schema([
                 Forms\Components\Toggle::make('recaptcha_enabled')->label('Aktifkan reCAPTCHA v3'),
                 Forms\Components\TextInput::make('recaptcha_min_score')->label('Skor minimum reCAPTCHA')->numeric()->step(0.01),
+
+                // Menutup pintu masuk TANPA menyentuh acara launching. Menutup acara
+                // mengubah arti datanya; ini hanya menahan pendaftar baru sementara.
+                Forms\Components\Toggle::make('nup_public_maintenance')
+                    ->label('Mode pemeliharaan (formulir publik ditutup)')
+                    ->helperText('Pengunjung melihat halaman pemberitahuan, bukan formulir.')
+                    ->live()
+                    ->columnSpanFull(),
+                Forms\Components\TimePicker::make('nup_public_maintenance_start')
+                    ->label('Mulai pukul')->seconds(false)->format('H:i')
+                    ->visible(fn (Forms\Get $get) => (bool) $get('nup_public_maintenance')),
+                Forms\Components\TimePicker::make('nup_public_maintenance_end')
+                    ->label('Selesai pukul')->seconds(false)->format('H:i')
+                    ->visible(fn (Forms\Get $get) => (bool) $get('nup_public_maintenance')),
+                Forms\Components\TextInput::make('nup_public_maintenance_note')
+                    ->label('Keterangan tambahan (opsional)')
+                    ->placeholder('mis. Mohon mendaftar kembali setelah jam tersebut.')
+                    ->maxLength(200)
+                    ->visible(fn (Forms\Get $get) => (bool) $get('nup_public_maintenance'))
+                    ->columnSpanFull(),
             ]),
 
             Forms\Components\Section::make('Notifikasi')->schema([
