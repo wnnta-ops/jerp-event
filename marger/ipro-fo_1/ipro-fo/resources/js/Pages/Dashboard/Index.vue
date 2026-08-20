@@ -208,7 +208,7 @@ function fmtDateTime(iso: string | null | undefined): string {
                     Jumlah <b>berkas</b> yang lolos tiap tahap, dibaca dari atas ke bawah. Corongnya
                     menyempit karena tahap berikutnya adalah <b>bagian dari</b> tahap sebelumnya — berkas
                     yang sama, bukan kelompok yang berdiri sendiri. Angka di antara dua tahap adalah
-                    jumlah berkas yang <b>tertahan</b> di tahap atasnya.
+                    jumlah berkas yang <b>sedang proses</b> di tahap atasnya.
                 </p>
                 <VizFunnel :rows="c.inisiasi_kpr.rows" :warna="TAHAP" satuan="berkas" />
                 <VizTotal :items="totalInisiasi" />
@@ -223,7 +223,7 @@ function fmtDateTime(iso: string | null | undefined): string {
                 <p class="text-xs text-neutral-500 mt-0.5 mb-2.5 leading-relaxed">
                     Jumlah <b>berkas</b> pada tiap posisi pipeline bank, satu aliran dari atas ke bawah.
                     Tahap 1 di sini menyambung dari tahap 6 grafik sebelumnya. Angka di antara dua tahap
-                    adalah jumlah berkas yang <b>tertahan</b> di tahap atasnya.
+                    adalah jumlah berkas yang <b>sedang proses</b> di tahap atasnya.
                 </p>
                 <VizFunnel :rows="c.proses_kpr.rows" :warna="TAHAP" satuan="berkas" />
                 <VizTotal :items="totalProses" />
