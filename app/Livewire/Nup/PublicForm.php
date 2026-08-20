@@ -160,8 +160,27 @@ class PublicForm extends Component
     // baru diterbitkan setelah tim verifikasi menyetujui data (lihat VerifikasiNupService::approve).
     public bool $submitted = false;
 
-    public function mount(): void
+    // Mode pemeliharaan — menutup pintu masuk TANPA menyentuh acara launching.
+    // Menutup acara mengubah arti datanya; ini hanya menahan pendaftar sementara.
+    public bool $maintenance = false;
+
+    public ?string $maintenanceStart = null;
+
+    public ?string $maintenanceEnd = null;
+
+    public ?string $maintenanceNote = null;
+
+    public function mount(FoSettings $settings): void
     {
+        $this->maintenance = (bool) $settings->nup_public_maintenance;
+        $this->maintenanceStart = $settings->nup_public_maintenance_start;
+        $this->maintenanceEnd = $settings->nup_public_maintenance_end;
+        $this->maintenanceNote = $settings->nup_public_maintenance_note;
+
+        if ($this->maintenance) {
+            return;   // acara tak perlu dimuat; formulirnya memang tak dirender
+        }
+
         // openNow(): buka/tutup ditentukan TANGGAL, bukan kolom `status`. Form Ubah
         // Event tidak punya isian status sama sekali, jadi kolom itu selamanya
         // 'DRAFT' untuk acara yang dibuat lewat panel — dulu form ini menyaring
@@ -324,6 +343,18 @@ class PublicForm extends Component
 
     public function submit(NupRegistrationService $service, RecaptchaVerifier $recaptcha, FoSettings $settings): void
     {
+        // Diperiksa ulang di sisi server: pengunjung yang sudah membuka formulir
+        // sebelum pemeliharaan menyala masih memegang halaman lama dan bisa
+        // menekan Daftar. Tanpa penjaga ini, pendaftarannya tetap masuk.
+        if ((bool) $settings->nup_public_maintenance) {
+            $this->maintenance = true;
+            $this->maintenanceStart = $settings->nup_public_maintenance_start;
+            $this->maintenanceEnd = $settings->nup_public_maintenance_end;
+            $this->maintenanceNote = $settings->nup_public_maintenance_note;
+
+            return;
+        }
+
         try {
             $this->validate();
         } catch (ValidationException $e) {
@@ -441,6 +472,13 @@ class PublicForm extends Component
 
     public function render()
     {
+        // Saat pemeliharaan, formulirnya tidak dirender sama sekali — tak ada
+        // gunanya memuat daftar acara, agen, bank, dan tipe unit.
+        if ($this->maintenance) {
+            return view('livewire.nup.public-form')
+                ->layout('layouts.nup-public', ['title' => 'Pemeliharaan Sistem']);
+        }
+
         // Opsi Jenis Tipe NUP dari master Setup NUP, sesuai project yang dipilih.
         $tipeNupOptions = $this->project_pref_id
             ? NupTipe::query()

@@ -1,5 +1,35 @@
 <div>
-    @if ($submitted)
+    @if ($maintenance)
+        {{-- Pemeliharaan — formulir ditutup sementara dari Pengaturan FO. --}}
+        <div class="nup-card max-w-xl mx-auto text-center">
+            <div class="mx-auto mb-4 w-14 h-14 rounded-full grid place-items-center" style="background:#fef3c7;">
+                <svg class="w-7 h-7" style="color:#d97706;" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.2"
+                          d="M12 8v5m0 3h.01M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+                </svg>
+            </div>
+            <h1 class="text-xl font-semibold mb-2" style="color:#111827;">Sistem Sedang Dalam Pemeliharaan</h1>
+
+            @if ($maintenanceStart && $maintenanceEnd)
+                <p class="text-sm mb-4" style="color:#6b7280;">
+                    Pendaftaran NUP tidak dapat diakses pada pukul
+                    <strong style="color:#111827;">{{ $maintenanceStart }}&ndash;{{ $maintenanceEnd }} {{ now()->format('T') }}</strong>.
+                </p>
+            @else
+                <p class="text-sm mb-4" style="color:#6b7280;">
+                    Pendaftaran NUP untuk sementara tidak dapat diakses.
+                </p>
+            @endif
+
+            @if ($maintenanceNote)
+                <div class="rounded-lg p-4 text-left" style="background:#fffbeb; border:1px solid #fde68a;">
+                    <p class="text-sm" style="color:#92400e;">{{ $maintenanceNote }}</p>
+                </div>
+            @endif
+
+            <p class="text-xs mt-4" style="color:#6b7280;">Mohon maaf atas ketidaknyamanannya. Silakan coba kembali setelah waktu tersebut.</p>
+        </div>
+    @elseif ($submitted)
         {{-- Success state — nomor urut NUP belum diterbitkan; menunggu verifikasi tim. --}}
         <div class="nup-card max-w-xl mx-auto text-center">
             <div class="mx-auto mb-4 w-14 h-14 rounded-full grid place-items-center" style="background:#dcfce7;">

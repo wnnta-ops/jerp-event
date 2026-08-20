@@ -24,6 +24,15 @@ class FoSettings extends Settings
 
     public string $notification_email;
 
+    // Formulir NUP publik — pemeliharaan
+    public bool $nup_public_maintenance;
+
+    public ?string $nup_public_maintenance_start;
+
+    public ?string $nup_public_maintenance_end;
+
+    public ?string $nup_public_maintenance_note;
+
     // Siteplan Live (acara NUP)
     public bool $siteplanlive_show_stock;
 
