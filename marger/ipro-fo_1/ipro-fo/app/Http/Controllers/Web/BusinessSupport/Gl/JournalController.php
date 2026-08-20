@@ -26,7 +26,7 @@ class JournalController extends Controller
     public const BUDGET_STATUSES = [
         'over'  => 'Over Budget',
         'under' => 'Under Budget',
-        'none'  => 'Tanpa Anggaran',
+        'none'  => 'Non Budget',
     ];
 
     /**
@@ -90,7 +90,7 @@ class JournalController extends Controller
                 'year' => (int) $b->year, 'account_id' => (int) $b->account_id, 'cc' => $cc,
                 // Over = realisasi sudah MELEBIHI anggaran. Under = realisasi masih lebih
                 // kecil daripada anggaran. Keduanya sama-sama BERANGGARAN — itu yang
-                // membedakannya dari "Tanpa Anggaran", yang memang tidak punya anggaran
+                // membedakannya dari "Non Budget", yang memang tidak punya anggaran
                 // sama sekali sehingga tidak ada yang bisa dilampaui maupun disisakan.
                 'over'  => $pakai > $plafon + 0.001,
                 'sisa'  => round($plafon - $pakai, 2),

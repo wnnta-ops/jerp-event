@@ -129,7 +129,7 @@ try {
     $cek('keterangan over menyebut anggaran & realisasinya',
         str_contains($catatan, '1.000.000') && str_contains($catatan, '1.500.000'), $catatan);
     // Under Budget HARUS membawa angkanya juga. Kalau tidak, ia hanya berbeda warna dari
-    // Tanpa Anggaran, padahal keduanya keadaan yang berbeda: yang satu punya anggaran dan
+    // Non Budget, padahal keduanya keadaan yang berbeda: yang satu punya anggaran dan
     // masih bersisa, yang satu memang tidak punya anggaran sama sekali.
     $catatanUnder = (string) ($baris['UJI/UNDER/1']->budget_note ?? '');
     $cek('keterangan under menyebut anggaran, realisasi, dan sisanya',
@@ -149,6 +149,14 @@ try {
     $cek('layar mengirim pilihan saringan anggaran',
         ($props['budgetStatuses'] ?? []) === JournalController::BUDGET_STATUSES,
         json_encode($props['budgetStatuses'] ?? null));
+
+    // Label ketiganya ditegaskan di sini supaya tidak diam-diam berubah: keduanya dipakai
+    // sekaligus oleh badge di kolom Anggaran DAN oleh pilihan saringannya, jadi salah satu
+    // yang bergeser akan membuat keduanya menyebut hal yang sama dengan nama berbeda.
+    $cek('label ketiga keadaan sesuai yang disepakati',
+        JournalController::BUDGET_STATUSES === [
+            'over' => 'Over Budget', 'under' => 'Under Budget', 'none' => 'Non Budget',
+        ], json_encode(JournalController::BUDGET_STATUSES));
 
     echo "\n=== 1b. Under Budget menyebut anggaran yang paling sempit ===\n";
 

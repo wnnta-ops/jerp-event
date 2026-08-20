@@ -411,7 +411,7 @@ function isOpen(id: number) { return showDetail.value || open.value[id]; }
                             <td class="px-4 py-2.5 text-right font-mono font-semibold tabular-nums">{{ fmtRp(j.total_credit) }}</td>
                             <!-- Over MAUPUN Under sama-sama membawa angkanya sendiri: anggaran,
                                  realisasi, dan sisanya. "Under Budget" tanpa menyebut anggaran
-                                 mana yang dipatuhi hanya berbeda WARNA dari "Tanpa Anggaran",
+                                 mana yang dipatuhi hanya berbeda WARNA dari "Non Budget",
                                  padahal keduanya keadaan yang berbeda — yang satu beranggaran
                                  dan masih bersisa, yang satu memang tidak punya anggaran. -->
                             <td class="px-4 py-2.5 text-center">
@@ -479,7 +479,7 @@ function isOpen(id: number) { return showDetail.value || open.value[id]; }
                 sudah <b>melebihi</b> anggaran itu; input baru pada akun &amp; cost center tersebut <b>ditolak</b> sistem.
                 <span class="font-semibold text-success-600 dark:text-success-400">Under Budget</span> — akunnya <b>punya anggaran</b> dan realisasinya
                 masih <b>lebih kecil</b> daripada anggaran, jadi masih ada sisa dan input masih diterima.
-                <span class="font-semibold">Tanpa Anggaran</span> — akunnya <b>memang belum punya anggaran</b> disetujui sama sekali, jadi tidak ada
+                <span class="font-semibold">Non Budget</span> — akunnya <b>memang belum punya anggaran</b> disetujui sama sekali, jadi tidak ada
                 yang dilampaui maupun disisakan. Ketiganya berlainan: arahkan kursor ke labelnya untuk melihat anggaran, realisasi, dan sisanya.
             </p>
             <p v-if="adaYangTerpotong" class="border-t border-neutral-200 px-4 py-2 text-[11px] text-neutral-400 dark:border-neutral-800">
