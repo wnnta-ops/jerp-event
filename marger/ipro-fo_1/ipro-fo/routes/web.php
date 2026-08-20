@@ -435,6 +435,8 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
     Route::post('/business-support/setup/accounts',           [BsAccountController::class, 'store'])->name('bs.accounts.store');
     Route::put('/business-support/setup/accounts/{account}',  [BsAccountController::class, 'update'])->name('bs.accounts.update');
     Route::delete('/business-support/setup/accounts/{account}', [BsAccountController::class, 'destroy'])->name('bs.accounts.destroy');
+    Route::get('/business-support/setup/accounts/format-impor', [BsAccountController::class, 'template'])->name('bs.accounts.template');
+    Route::post('/business-support/setup/accounts/impor',       [BsAccountController::class, 'import'])->name('bs.accounts.import');
     Route::get('/business-support/setup/cost-centers',        [BsCostCenterController::class, 'index'])->name('bs.cost-centers.index');
     Route::post('/business-support/setup/cost-centers',       [BsCostCenterController::class, 'store'])->name('bs.cost-centers.store');
     Route::put('/business-support/setup/cost-centers/{costCenter}', [BsCostCenterController::class, 'update'])->name('bs.cost-centers.update');
@@ -528,6 +530,7 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
     Route::get('/business-support/gl/journal-import/template', [BsJournalImportController::class, 'template'])->name('bs.gl.journal.import.template');
     Route::post('/business-support/gl/journal-import',        [BsJournalImportController::class, 'store'])->name('bs.gl.journal.import.store');
     Route::get('/business-support/gl/laporan-lanjutan',       [BsGlExtraController::class, 'index'])->name('bs.gl.extra');
+    Route::get('/business-support/gl/laporan-lanjutan/export',[BsGlExtraController::class, 'export'])->name('bs.gl.extra.export');
     Route::get('/business-support/gl/buku-besar',             [BsLedgerController::class, 'ledger'])->name('bs.gl.ledger');
     // Excel Buku Besar memakai export "Detail Transaksi Jurnal" (bs.gl.journal.export) dgn filter rentang COA.
     Route::get('/business-support/gl/neraca-saldo',           [BsLedgerController::class, 'trialBalance'])->name('bs.gl.trialbalance');
@@ -535,10 +538,14 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
     Route::get('/business-support/gl/neraca-saldo/print',     [BsLedgerController::class, 'trialBalancePrint'])->name('bs.gl.trialbalance.print');
     Route::get('/business-support/gl/laporan-keuangan',       [BsLedgerController::class, 'financials'])->name('bs.gl.financials');
     Route::get('/business-support/gl/neraca',                 [BsLedgerController::class, 'balanceSheet'])->name('bs.gl.balancesheet');
+    Route::get('/business-support/gl/neraca/export',          [BsLedgerController::class, 'balanceSheetExport'])->name('bs.gl.balancesheet.export');
     Route::get('/business-support/gl/laba-rugi',              [BsLedgerController::class, 'incomeStatement'])->name('bs.gl.incomestatement');
+    Route::get('/business-support/gl/laba-rugi/export',       [BsLedgerController::class, 'incomeStatementExport'])->name('bs.gl.incomestatement.export');
     Route::get('/business-support/gl/laba-rugi-vs-budget',    [BsLedgerController::class, 'incomeVsBudget'])->name('bs.gl.lr-budget');
+    Route::get('/business-support/gl/laba-rugi-vs-budget/export', [BsLedgerController::class, 'incomeVsBudgetExport'])->name('bs.gl.lr-budget.export');
     Route::get('/business-support/gl/arus-kas',               [BsCashFlowController::class, 'index'])->name('bs.gl.cashflow');
     Route::get('/business-support/gl/neraca-lajur',           [BsComparativeController::class, 'worksheet'])->name('bs.gl.worksheet');
+    Route::get('/business-support/gl/neraca-lajur/export',    [BsComparativeController::class, 'worksheetExport'])->name('bs.gl.worksheet.export');
     Route::get('/business-support/gl/komparasi',              [BsComparativeController::class, 'comparative'])->name('bs.gl.comparative');
 
     // ── GL SETUP: Multi Currency + Kurs Sistem ──

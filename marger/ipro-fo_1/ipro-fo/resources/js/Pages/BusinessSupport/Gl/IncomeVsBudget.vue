@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref } from 'vue';
 import { router, Link } from '@inertiajs/vue3';
-import { ArrowLeft, Scale } from 'lucide-vue-next';
+import { ArrowLeft, Scale, FileSpreadsheet } from 'lucide-vue-next';
 
 type Row = {
     kind: string; label: string;
@@ -12,13 +12,19 @@ const props = defineProps<{
     company: string;
     year: number;
     as_of: string;
+    periode: string;
+    date_from: string;
+    date_to: string;
+    budget_note: string;
     rows: Row[];
     totals: { realisasi: number; budget: number; variance: number };
     has_budget: boolean;
 }>();
 
-const yearInput = ref(props.year);
-function display() { router.get(route('bs.gl.lr-budget'), { year: yearInput.value }, { preserveState: true, replace: true, preserveScroll: true }); }
+const dari = ref(props.date_from);
+const sampai = ref(props.date_to);
+function display() { router.get(route('bs.gl.lr-budget'), { date_from: dari.value, date_to: sampai.value }, { preserveState: true, replace: true, preserveScroll: true }); }
+function excel() { window.location.href = route('bs.gl.lr-budget.export', { date_from: dari.value, date_to: sampai.value }); }
 
 function fmt(v: number | null) {
     if (v === null || v === undefined) return '';
@@ -48,14 +54,19 @@ const showVals = (r: Row) => r.kind !== 'header' && r.kind !== 'group';
         <div class="flex flex-wrap items-end justify-between gap-3">
             <div>
                 <h1 class="flex items-center gap-2 text-2xl font-bold"><Scale class="h-6 w-6 text-primary-600" /> Laba Rugi vs Budget</h1>
-                <p class="mt-0.5 text-sm text-neutral-500">{{ company }} &middot; Tahun {{ year }} &middot; per {{ as_of }}</p>
+                <p class="mt-0.5 text-sm text-neutral-500">{{ company }} &middot; Periode {{ periode }}</p>
             </div>
             <div class="flex items-end gap-2">
                 <div>
-                    <label class="mb-1 block text-[10px] uppercase text-neutral-400">Tahun</label>
-                    <input v-model.number="yearInput" type="number" @keyup.enter="display" class="h-9 w-28 rounded-lg border border-neutral-300 bg-white px-3 text-sm dark:border-neutral-700 dark:bg-neutral-900" />
+                    <label class="mb-1 block text-[10px] uppercase text-neutral-400">Dari Tanggal</label>
+                    <input v-model="dari" type="date" class="h-9 rounded-lg border border-neutral-300 bg-white px-3 text-sm dark:border-neutral-700 dark:bg-neutral-900" />
+                </div>
+                <div>
+                    <label class="mb-1 block text-[10px] uppercase text-neutral-400">Sampai Tanggal</label>
+                    <input v-model="sampai" type="date" class="h-9 rounded-lg border border-neutral-300 bg-white px-3 text-sm dark:border-neutral-700 dark:bg-neutral-900" />
                 </div>
                 <button @click="display" class="h-9 rounded-lg bg-emerald-600 px-5 text-sm font-semibold text-white hover:bg-emerald-700">Display</button>
+                <button @click="excel" class="inline-flex h-9 items-center gap-1.5 rounded-lg bg-success-600 px-4 text-sm font-semibold text-white hover:bg-success-700"><FileSpreadsheet class="h-4 w-4" /> Excel</button>
             </div>
         </div>
 
@@ -94,6 +105,12 @@ const showVals = (r: Row) => r.kind !== 'header' && r.kind !== 'group';
                 </tbody>
             </table>
         </div>
-        <p class="text-xs text-neutral-400">Variance = Realisasi − Budget. % = terhadap Jumlah Pendapatan Usaha (common-size) per kolom. Budget diambil dari akun P/L pada modul Budget Control (status ≠ ditolak).</p>
+        <p class="text-xs text-neutral-400">
+            Variance = Realisasi − Budget. % = terhadap Jumlah Pendapatan Usaha (common-size) per kolom.
+            Budget diambil dari akun P/L pada modul Budget Control (status ≠ ditolak).
+            <!-- Prorata disebutkan terus terang: tanpa itu, realisasi satu triwulan yang
+                 dibandingkan dengan anggaran setahun akan selalu terlihat "hemat". -->
+            <span class="font-medium text-neutral-500 dark:text-neutral-400">{{ budget_note }}</span>
+        </p>
     </div>
 </template>

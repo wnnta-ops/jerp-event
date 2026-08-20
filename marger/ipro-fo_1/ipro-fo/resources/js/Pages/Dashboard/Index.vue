@@ -9,6 +9,7 @@
 // menampilkan keadaan kosong apa adanya — tidak ada angka contoh di layar ini.
 import { Head } from '@inertiajs/vue3';
 import VizColumns from '@/Components/Charts/VizColumns.vue';
+import VizFunnel from '@/Components/Charts/VizFunnel.vue';
 import VizGrouped from '@/Components/Charts/VizGrouped.vue';
 import VizHBars from '@/Components/Charts/VizHBars.vue';
 import VizHStack from '@/Components/Charts/VizHStack.vue';
@@ -204,11 +205,12 @@ function fmtDateTime(iso: string | null | undefined): string {
                     <span class="text-[10.5px] font-bold tracking-wide text-neutral-400">KPR</span>
                 </div>
                 <p class="text-xs text-neutral-500 mt-0.5 mb-2.5 leading-relaxed">
-                    Jumlah <b>berkas</b> yang lolos tiap tahap — kolom yang memendek ke kanan
-                    memperlihatkan di tahap mana berkas tertahan. Tiap tahap punya warnanya sendiri;
-                    urutannya dibaca dari nomor dan posisi kolom, kiri ke kanan.
+                    Jumlah <b>berkas</b> yang lolos tiap tahap, dibaca dari atas ke bawah. Corongnya
+                    menyempit karena tahap berikutnya adalah <b>bagian dari</b> tahap sebelumnya — berkas
+                    yang sama, bukan kelompok yang berdiri sendiri. Angka di antara dua tahap adalah
+                    jumlah berkas yang <b>tertahan</b> di tahap atasnya.
                 </p>
-                <VizColumns :rows="c.inisiasi_kpr.rows" :warna="TAHAP" nomor hitung satuan="berkas" />
+                <VizFunnel :rows="c.inisiasi_kpr.rows" :warna="TAHAP" satuan="berkas" />
                 <VizTotal :items="totalInisiasi" />
             </section>
 
@@ -219,10 +221,11 @@ function fmtDateTime(iso: string | null | undefined): string {
                     <span class="text-[10.5px] font-bold tracking-wide text-neutral-400">KPR</span>
                 </div>
                 <p class="text-xs text-neutral-500 mt-0.5 mb-2.5 leading-relaxed">
-                    Jumlah <b>berkas</b> pada tiap posisi pipeline bank. Tahap 1 di sini menyambung
-                    dari tahap 6 grafik sebelumnya.
+                    Jumlah <b>berkas</b> pada tiap posisi pipeline bank, satu aliran dari atas ke bawah.
+                    Tahap 1 di sini menyambung dari tahap 6 grafik sebelumnya. Angka di antara dua tahap
+                    adalah jumlah berkas yang <b>tertahan</b> di tahap atasnya.
                 </p>
-                <VizColumns :rows="c.proses_kpr.rows" :warna="TAHAP" nomor hitung satuan="berkas" />
+                <VizFunnel :rows="c.proses_kpr.rows" :warna="TAHAP" satuan="berkas" />
                 <VizTotal :items="totalProses" />
             </section>
 

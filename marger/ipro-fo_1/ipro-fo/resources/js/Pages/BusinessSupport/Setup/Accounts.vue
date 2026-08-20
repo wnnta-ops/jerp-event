@@ -2,7 +2,7 @@
 import { ref, computed } from 'vue';
 import SearchSelect from '@/Components/UI/SearchSelect.vue';
 import { router, useForm, Link } from '@inertiajs/vue3';
-import { Plus, Pencil, Trash2, BookOpen, ArrowLeft, Search } from 'lucide-vue-next';
+import { Plus, Pencil, Trash2, BookOpen, ArrowLeft, Search, Upload, Download, FileSpreadsheet } from 'lucide-vue-next';
 import Button from '@/Components/UI/Button.vue';
 import Badge from '@/Components/UI/Badge.vue';
 import EmptyState from '@/Components/UI/EmptyState.vue';
@@ -30,6 +30,39 @@ const levelName = computed<Record<number, string>>(() => props.levels ?? { 1: 'K
 const daftarLevel = computed(() => Object.entries(levelName.value).map(([n, label]) => ({ n: Number(n), label })));
 
 const showModal = ref(false);
+
+/* ── Impor Chart of Account ───────────────────────────────────────────────────
+   Kolomnya mengikuti lampiran COA apa adanya, sehingga berkas yang sudah ada di tangan
+   operator bisa langsung dipakai tanpa disusun ulang.
+
+   Level ditentukan oleh KOLOM level, dan kodenya wajib sepanjang 2 x level - 1 digit —
+   aturan yang sama dengan form Tambah Akun, ditegakkan server lewat CoaImporter.
+   Seluruh berkas diperiksa dulu: bila ada satu baris pun yang salah, tidak ada yang
+   ditulis. */
+const showImport = ref(false);
+const berkas = ref<File | null>(null);
+const imporForm = useForm<any>({ berkas: null });
+const KOLOM_IMPOR = [
+    { nama: 'level', ket: 'Angka 1–6. Menentukan tingkatan akun.', contoh: '6' },
+    { nama: 'kode', ket: 'Penanda unik. Panjangnya harus 2 × level − 1 digit.', contoh: '10101010101' },
+    { nama: 'akun', ket: 'Nama akun.', contoh: 'KAS OPERASIONAL' },
+    { nama: 'nama_level', ket: 'Nama tingkatan. Boleh kosong; bila diisi harus cocok.', contoh: 'Detil Sub Transaksi' },
+    { nama: 'tipe', ket: 'Aktiva / Kewajiban / Ekuitas / Pendapatan / Beban. Kosong = ikut induk.', contoh: 'Aktiva' },
+    { nama: 'normal', ket: 'D atau K. Kosong = ikut akun turunannya bila seragam, kalau tidak ikut induk.', contoh: 'D' },
+    { nama: 'postable', ket: 'Diabaikan — hanya level 6 yang bisa dijurnal.', contoh: '\u221a' },
+    { nama: 'cost_center', ket: 'Diterima tapi tidak disimpan (belum ada kolomnya).', contoh: '' },
+    { nama: 'cash_flow_direct', ket: 'KODE kategori cash flow direct. Boleh kosong.', contoh: '' },
+    { nama: 'cash_flow_indirect', ket: 'KODE kategori cash flow indirect. Boleh kosong.', contoh: '' },
+];
+function pilihBerkas(e: Event) { berkas.value = (e.target as HTMLInputElement).files?.[0] ?? null; }
+function kirimImpor() {
+    if (!berkas.value) return;
+    imporForm.berkas = berkas.value;
+    imporForm.post(route('bs.accounts.import'), {
+        forceFormData: true,
+        onSuccess: () => { showImport.value = false; berkas.value = null; imporForm.reset(); },
+    });
+}
 const editingId = ref<number | null>(null);
 // Induk yang sedang ditambahi anak (dari tombol "+" per baris) — hanya untuk petunjuk di modal.
 const parentAcc = ref<any | null>(null);
@@ -130,7 +163,10 @@ const inputCls = 'h-9 w-full rounded-lg border border-neutral-300 bg-white px-3 
                 <h1 class="flex items-center gap-2 text-2xl font-bold"><BookOpen class="h-6 w-6 text-primary-600" /> Chart of Account</h1>
                 <p class="text-sm text-neutral-500">Struktur 6 level eProperty: Kategori › Sub Kategori › Ledger › Detil › Detil Transaksi › Detil Sub Transaksi (postable). <span class="font-medium">{{ stats.total }} akun · {{ stats.postable }} postable.</span></p>
             </div>
-            <Button @click="openCreate"><template #icon-left><Plus class="h-4 w-4" /></template>Tambah Akun</Button>
+            <div class="flex items-center gap-2">
+                <button type="button" @click="showImport = true" class="inline-flex h-9 items-center gap-1.5 rounded-lg border border-neutral-300 bg-white px-3 text-sm font-medium text-neutral-700 hover:bg-neutral-50 dark:border-neutral-600 dark:bg-neutral-800 dark:text-neutral-200"><Upload class="h-4 w-4" /> Import</button>
+                <Button @click="openCreate"><template #icon-left><Plus class="h-4 w-4" /></template>Tambah Akun</Button>
+            </div>
         </div>
 
         <div class="card flex flex-wrap items-end gap-3 p-4">
@@ -281,5 +317,50 @@ const inputCls = 'h-9 w-full rounded-lg border border-neutral-300 bg-white px-3 
                 </div>
             </div>
         </Teleport>
+    
+        <!-- Impor: formatnya diterangkan DI DALAM dialognya — orang yang sedang mengimpor
+             tidak perlu mencari dokumen lain untuk tahu kolom apa saja yang dituntut. -->
+        <div v-if="showImport" class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" @click.self="showImport = false">
+            <div class="max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-xl bg-white p-5 shadow-xl dark:bg-neutral-900">
+                <h2 class="mb-1 flex items-center gap-2 text-lg font-bold"><Upload class="h-5 w-5 text-primary-600" /> Import Chart of Account</h2>
+                <p class="mb-3 text-sm text-neutral-500">Berkas <b>CSV</b>. Akun dicocokkan lewat <b>kode</b> — yang sudah ada diperbarui, yang belum dibuat. Induk ditentukan dari kodenya sendiri (dua digit terakhir dibuang).</p>
+
+                <div class="mb-3 overflow-hidden rounded-lg border border-neutral-200 dark:border-neutral-700">
+                    <table class="w-full text-left text-xs">
+                        <thead class="bg-neutral-50 text-neutral-500 dark:bg-neutral-800"><tr>
+                            <th class="px-3 py-2">Kolom</th><th class="px-3 py-2">Keterangan</th><th class="px-3 py-2">Contoh</th>
+                        </tr></thead>
+                        <tbody class="divide-y divide-neutral-200 dark:divide-neutral-800">
+                            <tr v-for="k in KOLOM_IMPOR" :key="k.nama">
+                                <td class="px-3 py-2 font-mono font-semibold">{{ k.nama }}</td>
+                                <td class="px-3 py-2 text-neutral-500">{{ k.ket }}</td>
+                                <td class="px-3 py-2 font-mono text-neutral-400">{{ k.contoh || '—' }}</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <p class="mb-3 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:bg-amber-900/20 dark:text-amber-300">
+                    Panjang kode harus sesuai levelnya (1/3/5/7/9/11 digit) dan induknya harus ada — di berkas yang sama
+                    atau sudah di bagan akun. Seluruh berkas diperiksa dulu; bila ada satu baris pun yang salah,
+                    <b>tidak ada</b> yang tersimpan.
+                </p>
+
+                <div class="flex flex-wrap items-center gap-2">
+                    <a :href="route('bs.accounts.template')" class="inline-flex h-9 items-center gap-1.5 rounded-lg border border-neutral-300 px-3 text-sm font-medium hover:bg-neutral-50 dark:border-neutral-700"><Download class="h-4 w-4" /> Unduh Format</a>
+                    <label class="inline-flex h-9 flex-1 cursor-pointer items-center gap-2 rounded-lg border border-dashed border-neutral-300 px-3 text-sm text-neutral-500 hover:bg-neutral-50 dark:border-neutral-700">
+                        <FileSpreadsheet class="h-4 w-4" />
+                        <span>{{ berkas ? berkas.name : 'Pilih berkas CSV…' }}</span>
+                        <input type="file" accept=".csv,text/csv" class="hidden" @change="pilihBerkas" />
+                    </label>
+                </div>
+                <p v-if="imporForm.errors.berkas" class="mt-1 text-xs text-danger-500">{{ imporForm.errors.berkas }}</p>
+
+                <div class="mt-4 flex justify-end gap-2">
+                    <button type="button" @click="showImport = false" class="rounded-lg border border-neutral-300 px-4 py-2 text-sm dark:border-neutral-700">Batal</button>
+                    <Button :disabled="!berkas || imporForm.processing" @click="kirimImpor">{{ imporForm.processing ? 'Mengimpor…' : 'Import' }}</Button>
+                </div>
+            </div>
+        </div>
     </div>
 </template>

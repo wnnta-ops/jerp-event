@@ -197,6 +197,10 @@ ${kalimatJatuhTempo.value}`)) return;
                                 <span class="rounded bg-sky-100 px-2 py-0.5 text-[11px] font-semibold text-sky-700 dark:bg-sky-900/40 dark:text-sky-300">{{ it.sumber_label }}</span>
                                 <!-- Rantai GMC: kategori gimmick → kolom Rincian Biaya Master Data KPR → SPR yang dibiayai. -->
                                 <span v-if="it.kategori" class="rounded bg-violet-100 px-2 py-0.5 text-[11px] font-semibold text-violet-700 dark:bg-violet-900/40 dark:text-violet-300">{{ it.kategori }}</span>
+                                <!-- Sejak Kategori Gimmick bercluster, dua kategori boleh bernama sama
+                                     dengan akun berbeda. Clusternya disebutkan supaya terbaca kategori
+                                     cluster mana yang dipotret FO saat baris ini mengantre. -->
+                                <span v-if="it.cluster" class="rounded bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-700 dark:bg-amber-900/40 dark:text-amber-300">{{ it.cluster }}</span>
                                 <span v-if="it.akun_pecah > 2" class="rounded bg-neutral-100 px-2 py-0.5 text-[11px] font-semibold text-neutral-600 dark:bg-neutral-800 dark:text-neutral-300">{{ it.akun_pecah }} akun</span>
                             </div>
                             <div v-if="it.biaya_label || it.spr" class="mt-1 flex flex-wrap items-center gap-1">

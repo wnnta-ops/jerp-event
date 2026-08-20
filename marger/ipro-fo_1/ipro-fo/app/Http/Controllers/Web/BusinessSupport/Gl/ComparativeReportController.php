@@ -6,12 +6,14 @@ namespace App\Http\Controllers\Web\BusinessSupport\Gl;
 
 use App\Domain\BusinessSupport\Models\BsAccount;
 use App\Domain\BusinessSupport\Models\BsJournalLine;
+use App\Exports\SheetXlsx;
 use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
 use Inertia\Response;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class ComparativeReportController extends Controller
 {
@@ -20,6 +22,50 @@ class ComparativeReportController extends Controller
     {
         abort_unless($request->user()?->canModule('gl'), 403);
 
+        return Inertia::render('BusinessSupport/Gl/Worksheet', $this->worksheetData($request));
+    }
+
+    /** Export Neraca Lajur ke Excel (.xlsx) — tahun yang sedang ditampilkan. */
+    public function worksheetExport(Request $request): StreamedResponse
+    {
+        abort_unless($request->user()?->canModule('gl'), 403);
+
+        $d = $this->worksheetData($request);
+        $rows = [
+            ['NERACA LAJUR (WORKSHEET)'],
+            ['Tahun '.$d['year']],
+            [],
+            // Header dua tingkat, sama seperti di layar: pasangan Debit/Kredit ada tiga,
+            // dan tanpa baris pengelompokannya orang harus menghitung kolom sendiri.
+            ['Kode', 'Akun', 'Neraca Saldo', '', 'Laba Rugi', '', 'Neraca', ''],
+            ['', '', 'Debit', 'Kredit', 'Debit', 'Kredit', 'Debit', 'Kredit'],
+        ];
+        foreach ($d['rows'] as $r) {
+            $rows[] = [
+                $r['code'], $r['name'],
+                (float) $r['ns_d'], (float) $r['ns_k'],
+                (float) $r['lr_d'], (float) $r['lr_k'],
+                (float) $r['nrc_d'], (float) $r['nrc_k'],
+            ];
+        }
+        $t = $d['totals'];
+        $rows[] = ['', 'JUMLAH',
+            (float) $t['ns_d'], (float) $t['ns_k'],
+            (float) $t['lr_d'], (float) $t['lr_k'],
+            (float) $t['nrc_d'], (float) $t['nrc_k']];
+        $rows[] = ['', 'LABA (RUGI) BERSIH', null, null, null, (float) $d['netProfit'], null, (float) $d['netProfit']];
+
+        return (new SheetXlsx($rows, 5, 'Neraca Lajur', ['A4:A5', 'B4:B5', 'C4:D4', 'E4:F4', 'G4:H4']))
+            ->toResponse('Neraca-Lajur-'.$d['year'].'.xlsx');
+    }
+
+    /**
+     * Data Neraca Lajur — dipakai bersama layar & export.
+     *
+     * @return array<string,mixed>
+     */
+    private function worksheetData(Request $request): array
+    {
         $year = (int) $request->integer('year', (int) now()->year);
 
         $net = BsJournalLine::query()
@@ -54,12 +100,12 @@ class ComparativeReportController extends Controller
 
         $netProfit = $tot['lr_k'] - $tot['lr_d']; // pendapatan - beban
 
-        return Inertia::render('BusinessSupport/Gl/Worksheet', [
+        return [
             'year'      => $year,
             'rows'      => $rows,
             'totals'    => $tot,
             'netProfit' => $netProfit,
-        ]);
+        ];
     }
 
     /** Komparasi bulanan: Laba Rugi & Neraca per bulan dalam satu tahun. */
