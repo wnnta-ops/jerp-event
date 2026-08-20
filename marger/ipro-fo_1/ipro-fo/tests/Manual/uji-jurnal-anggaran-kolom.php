@@ -128,12 +128,65 @@ try {
     $catatan = (string) ($baris['UJI/OVER/1']->budget_note ?? '');
     $cek('keterangan over menyebut anggaran & realisasinya',
         str_contains($catatan, '1.000.000') && str_contains($catatan, '1.500.000'), $catatan);
-    $cek('jurnal under tidak membawa catatan pelanggaran',
-        ($baris['UJI/UNDER/1']->budget_note ?? null) === null);
+    // Under Budget HARUS membawa angkanya juga. Kalau tidak, ia hanya berbeda warna dari
+    // Tanpa Anggaran, padahal keduanya keadaan yang berbeda: yang satu punya anggaran dan
+    // masih bersisa, yang satu memang tidak punya anggaran sama sekali.
+    $catatanUnder = (string) ($baris['UJI/UNDER/1']->budget_note ?? '');
+    $cek('keterangan under menyebut anggaran, realisasi, dan sisanya',
+        str_contains($catatanUnder, '10.000.000')
+        && str_contains($catatanUnder, '2.000.000')
+        && str_contains($catatanUnder, '8.000.000'), $catatanUnder);
+    $cek('jurnal tanpa anggaran TIDAK membawa angka apa pun',
+        ($baris['UJI/TANPA/1']->budget_note ?? null) === null,
+        (string) ($baris['UJI/TANPA/1']->budget_note ?? 'null'));
+    $cek('ketiganya benar-benar berlainan',
+        count(array_unique([
+            $baris['UJI/OVER/1']->budget_status,
+            $baris['UJI/UNDER/1']->budget_status,
+            $baris['UJI/TANPA/1']->budget_status,
+        ])) === 3);
 
     $cek('layar mengirim pilihan saringan anggaran',
         ($props['budgetStatuses'] ?? []) === JournalController::BUDGET_STATUSES,
         json_encode($props['budgetStatuses'] ?? null));
+
+    echo "\n=== 1b. Under Budget menyebut anggaran yang paling sempit ===\n";
+
+    // Satu jurnal bisa menyentuh beberapa anggaran sekaligus. Yang disebut harus anggaran
+    // dengan SISA PALING SEDIKIT — anggaran itulah yang paling dulu menolak input berikutnya.
+    $akSempit = BsAccount::where('is_postable', true)->where('type', 'expense')
+        ->whereNotIn('id', [$akOver->id, $akUnder->id, $akTanpa->id])->orderBy('code')->first();
+    if ($akSempit) {
+        BsBudget::create(['doc_no' => 'UJI-SEMPIT', 'year' => $tahun, 'account_id' => $akSempit->id,
+            'cost_center_id' => $cc->id, 'amount' => 2_100_000, 'status' => 'approved']);
+
+        $lawan = BsAccount::where('is_postable', true)->where('type', 'liability')->first();
+        $jDua = BsJournal::create([
+            'cost_center_id' => $cc->id, 'journal_number' => 'UJI/DUA/1',
+            'journal_date' => "{$tahun}-03-10", 'period_year' => $tahun, 'period_month' => 3,
+            'source' => 'memorial', 'description' => 'UJI ANGGARAN DUA', 'status' => 'final',
+            'total_debit' => 4_000_000, 'total_credit' => 4_000_000,
+        ]);
+        // Menyentuh dua akun beranggaran: sisa 8.000.000 dan sisa 100.000.
+        $jDua->lines()->create(['account_id' => $akUnder->id, 'cost_center_id' => $cc->id, 'debit' => 0, 'credit' => 0, 'description' => 'sentuh anggaran longgar']);
+        $jDua->lines()->create(['account_id' => $akSempit->id, 'cost_center_id' => $cc->id, 'debit' => 2_000_000, 'credit' => 0, 'description' => 'sentuh anggaran sempit']);
+        $jDua->lines()->create(['account_id' => $lawan->id, 'debit' => 0, 'credit' => 2_000_000, 'description' => 'lawan']);
+
+        $pDua = $layar(['date_from' => $dari, 'date_to' => $sampai]);
+        $bDua = $isi($pDua)->keyBy('journal_number');
+        $cek('jurnal yang menyentuh dua anggaran tetap under',
+            ($bDua['UJI/DUA/1']->budget_status ?? null) === 'under',
+            (string) ($bDua['UJI/DUA/1']->budget_status ?? 'null'));
+        $cek('yang disebut adalah anggaran bersisa paling sedikit (100.000)',
+            str_contains((string) ($bDua['UJI/DUA/1']->budget_note ?? ''), '100.000'),
+            (string) ($bDua['UJI/DUA/1']->budget_note ?? ''));
+
+        $jDua->lines()->delete();
+        $jDua->forceDelete();
+        BsBudget::where('doc_no', 'UJI-SEMPIT')->delete();
+    } else {
+        echo "  (dilewati — akun beban uji tidak cukup)\n";
+    }
 
     echo "\n=== 2. Hanya anggaran disetujui yang dipakai ===\n";
 

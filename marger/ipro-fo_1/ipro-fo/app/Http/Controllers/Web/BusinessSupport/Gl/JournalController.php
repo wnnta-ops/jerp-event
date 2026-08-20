@@ -81,15 +81,20 @@ class JournalController extends Controller
 
         // Realisasi dihitung SEKALI per anggaran, lalu dipakai ulang oleh semua jurnal yang
         // menyentuhnya.
-        $lewat = [];
+        $dipakai = [];
         foreach ($anggaran as $b) {
             $cc = $b->cost_center_id ? (int) $b->cost_center_id : null;
-            $pakai = $realisasi->total((int) $b->year, (int) $b->account_id, $cc);
+            $pakai = round($realisasi->total((int) $b->year, (int) $b->account_id, $cc), 2);
             $plafon = round((float) $b->amount, 2);
-            $lewat[$b->id] = [
+            $dipakai[$b->id] = [
                 'year' => (int) $b->year, 'account_id' => (int) $b->account_id, 'cc' => $cc,
-                'over' => round($pakai, 2) > $plafon + 0.001,
-                'teks' => ($namaAkun[$b->account_id] ?? ('Akun #'.$b->account_id))
+                // Over = realisasi sudah MELEBIHI anggaran. Under = realisasi masih lebih
+                // kecil daripada anggaran. Keduanya sama-sama BERANGGARAN — itu yang
+                // membedakannya dari "Tanpa Anggaran", yang memang tidak punya anggaran
+                // sama sekali sehingga tidak ada yang bisa dilampaui maupun disisakan.
+                'over'  => $pakai > $plafon + 0.001,
+                'sisa'  => round($plafon - $pakai, 2),
+                'teks'  => ($namaAkun[$b->account_id] ?? ('Akun #'.$b->account_id))
                     .': anggaran '.$rp($plafon).', realisasi '.$rp($pakai)
                     .' → sisa '.$rp($plafon - $pakai),
             ];
@@ -98,12 +103,13 @@ class JournalController extends Controller
         $status = [];
         $catatan = [];
         foreach ($jurnal as $j) {
-            $adaAnggaran = false;
             $adaLewat = false;
-            $pesan = [];
+            $pesanLewat = [];
+            $palingSempit = null;   // anggaran dengan sisa terkecil di antara yang belum lewat
+
             foreach ($j->lines as $l) {
                 $cc = (int) ($l->cost_center_id ?: $j->cost_center_id ?: 0);
-                foreach ($lewat as $b) {
+                foreach ($dipakai as $b) {
                     $cocok = $b['year'] === (int) $j->period_year
                         && $b['account_id'] === (int) $l->account_id
                         // Anggaran lintas cost center berlaku untuk cost center mana pun.
@@ -111,18 +117,31 @@ class JournalController extends Controller
                     if (! $cocok) {
                         continue;
                     }
-                    $adaAnggaran = true;
                     if ($b['over']) {
                         $adaLewat = true;
-                        $pesan[$b['teks']] = true;
+                        $pesanLewat[$b['teks']] = true;
+                    } elseif ($palingSempit === null || $b['sisa'] < $palingSempit['sisa']) {
+                        $palingSempit = $b;
                     }
                 }
             }
 
             // Satu baris yang melewati anggaran sudah cukup membuat jurnalnya over: itulah
             // baris yang akan ditolak gerbangnya bila jurnal serupa diinput lagi.
-            $status[$j->id] = $adaLewat ? 'over' : ($adaAnggaran ? 'under' : 'none');
-            $catatan[$j->id] = $pesan ? implode(' · ', array_keys($pesan)) : null;
+            if ($adaLewat) {
+                $status[$j->id] = 'over';
+                $catatan[$j->id] = implode(' · ', array_keys($pesanLewat));
+
+                continue;
+            }
+
+            // Under Budget juga MEMBAWA ANGKANYA. Tanpa itu, "Under Budget" dan "Tanpa
+            // Anggaran" hanya berbeda warna, dan orang tidak punya cara melihat anggaran
+            // mana yang sedang dipatuhi — padahal justru itu bedanya. Bila satu jurnal
+            // menyentuh beberapa anggaran, yang disebut adalah yang sisanya PALING SEDIKIT:
+            // anggaran itulah yang paling dulu menolak input berikutnya.
+            $status[$j->id] = $palingSempit !== null ? 'under' : 'none';
+            $catatan[$j->id] = $palingSempit['teks'] ?? null;
         }
 
         return ['status' => $status, 'catatan' => $catatan];
