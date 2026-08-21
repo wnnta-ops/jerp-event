@@ -17,19 +17,20 @@ class DashboardController extends Controller
     /** Nama bulan singkat (ID). */
     private const MONTHS_ID = [1 => 'Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
 
+    /**
+     * Batas jumlah batang pada grafik bulanan.
+     *
+     * Rentang boleh sepanjang apa pun, tetapi 120 batang di kartu selebar setengah layar
+     * tidak lagi bisa dibaca. Yang dipotong adalah bulan-bulan TERAWAL, dan pemotongannya
+     * dikatakan di kepala halaman — bukan didiamkan.
+     */
+    private const MAKS_BULAN = 36;
+
     public function __invoke(Request $request): Response
     {
         $user = $request->user();
 
-        // Tahun dicetak di KEDUA ujung bila rentangnya melintasi pergantian tahun. Menempelkan
-        // satu tahun di belakang rentang akan berbohong mulai September: "Jan–Agu 2026" masih
-        // benar, tetapi "Agu–Mar 2026" tidak — bulan Mar-nya sudah 2027.
-        $bulanCarbon = $this->months(8);
-        $awal  = $bulanCarbon[0];
-        $akhir = $bulanCarbon[count($bulanCarbon) - 1];
-        $labelPeriode = $awal->year === $akhir->year
-            ? self::MONTHS_ID[$awal->month].'–'.self::MONTHS_ID[$akhir->month].' '.$awal->year
-            : self::MONTHS_ID[$awal->month].' '.$awal->year.'–'.self::MONTHS_ID[$akhir->month].' '.$akhir->year;
+        $p = $this->periode($request);
 
         return Inertia::render('Dashboard/Index', [
             'greeting' => [
@@ -40,11 +41,122 @@ class DashboardController extends Controller
             'periode' => [
                 // Rentang batang bulanan; ditulis di kepala halaman supaya pembaca tahu
                 // angka yang dilihatnya mencakup periode apa.
-                'label'   => $labelPeriode,
+                'label'   => $p['label'],
+                'awal'    => $p['awal']->toDateString(),
+                'akhir'   => $p['akhir']->toDateString(),
+                'bulan'   => count($p['bulan']),
+                // Rentang yang terlalu panjang dipotong agar batang bulanannya masih terbaca.
+                // Pemotongannya DIKATAKAN, bukan didiamkan: grafik yang diam-diam memendek
+                // terbaca sebagai "datanya memang segitu".
+                'dipotong'  => $p['dipotong'],
+                'maks_bulan' => self::MAKS_BULAN,
                 'project' => (string) (DB::table('projects')->value('name') ?? 'Semua Project'),
             ],
-            'charts' => $this->charts(),
+            'charts' => $this->charts($p),
         ]);
+    }
+
+    /**
+     * Rentang periode dashboard: tanggal awal, tanggal akhir, dan bulan-bulan di antaranya.
+     *
+     * Bawaannya SAMA PERSIS dengan perilaku sebelum periode bisa dipilih — delapan bulan
+     * terakhir sampai hari ini — sehingga membuka dashboard tanpa memilih apa pun
+     * memberikan angka yang sama seperti dulu.
+     *
+     * Rentang terbalik (awal > akhir) diperlakukan sebagai salah ketik dan ditukar, bukan
+     * dibiarkan memulangkan dashboard kosong yang terbaca seperti "tidak ada transaksi".
+     *
+     * @return array{awal: Carbon, akhir: Carbon, bulan: array<int, Carbon>, label: string, dipotong: bool}
+     */
+    private function periode(Request $request): array
+    {
+        $akhir = $request->date('date_to') ?? now();
+        $awal  = $request->date('date_from') ?? $akhir->copy()->startOfMonth()->subMonths(7);
+        if ($awal->greaterThan($akhir)) {
+            [$awal, $akhir] = [$akhir, $awal];
+        }
+        $awal  = $awal->startOfDay();
+        $akhir = $akhir->endOfDay();
+
+        // Bulan yang tersentuh rentangnya — inilah sumbu waktu seluruh grafik bulanan.
+        $bulan = [];
+        $kursor = $awal->copy()->startOfMonth();
+        while ($kursor->lessThanOrEqualTo($akhir)) {
+            $bulan[] = $kursor->copy();
+            $kursor->addMonthNoOverflow();
+        }
+        if ($bulan === []) {
+            $bulan[] = $awal->copy()->startOfMonth();
+        }
+
+        // Rentang sangat panjang dipotong pada bulan-bulan TERAKHIR: yang paling sering
+        // dicari orang adalah keadaan terkini, bukan awal rentangnya.
+        $dipotong = count($bulan) > self::MAKS_BULAN;
+        if ($dipotong) {
+            $bulan = array_slice($bulan, -self::MAKS_BULAN);
+        }
+
+        $b1 = $bulan[0];
+        $b2 = $bulan[count($bulan) - 1];
+        // Tahun dicetak di KEDUA ujung bila rentangnya melintasi pergantian tahun. Menempelkan
+        // satu tahun di belakang rentang akan berbohong mulai September: "Jan–Agu 2026" masih
+        // benar, tetapi "Agu–Mar 2026" tidak — bulan Mar-nya sudah 2027.
+        $label = $b1->year === $b2->year
+            ? self::MONTHS_ID[$b1->month].'–'.self::MONTHS_ID[$b2->month].' '.$b1->year
+            : self::MONTHS_ID[$b1->month].' '.$b1->year.'–'.self::MONTHS_ID[$b2->month].' '.$b2->year;
+
+        return ['awal' => $awal, 'akhir' => $akhir, 'bulan' => $bulan, 'label' => $label, 'dipotong' => $dipotong];
+    }
+
+    /**
+     * Saring ALIRAN: hanya baris yang tanggalnya jatuh di dalam rentang periode.
+     *
+     * Kolomnya diperiksa dulu — di lingkungan yang migrasinya belum penuh, kolom yang hilang
+     * harus berarti "tidak disaring", bukan QueryException yang menjatuhkan seluruh dashboard.
+     * Itu pola yang sudah berlaku di seluruh controller ini.
+     *
+     * @param  array{awal: Carbon, akhir: Carbon, bulan: array<int, Carbon>, label: string, dipotong: bool}  $p
+     */
+    private function dalamPeriode(\Illuminate\Database\Query\Builder $q, string $kolom, array $p, string $tabel, string $alias = ''): void
+    {
+        if (! Schema::hasColumn($tabel, $kolom)) {
+            return;
+        }
+        $q->whereBetween(($alias !== '' ? $alias.'.' : '').$kolom, [$p['awal'], $p['akhir']]);
+    }
+
+    /**
+     * Saring POSISI: hanya baris yang tanggalnya SUDAH terjadi pada tanggal akhir periode.
+     *
+     * Dipakai kartu yang menyatakan keadaan pada satu titik waktu — saldo, aging, neraca,
+     * aset tetap, progres. Batas bawahnya sengaja tidak ada: saldo hari ini dibentuk juga
+     * oleh transaksi sebelum periode, dan membuangnya membuat angkanya salah.
+     *
+     * @param  array{awal: Carbon, akhir: Carbon, bulan: array<int, Carbon>, label: string, dipotong: bool}  $p
+     */
+    private function sampaiPeriode(\Illuminate\Database\Query\Builder $q, string $kolom, array $p, string $tabel, string $alias = ''): void
+    {
+        if (! Schema::hasColumn($tabel, $kolom)) {
+            return;
+        }
+        $q->whereDate(($alias !== '' ? $alias.'.' : '').$kolom, '<=', $p['akhir']->toDateString());
+    }
+
+    /**
+     * Label sumbu bulan. Tahun ikut dicetak bila rentangnya melintasi tahun — tanpa itu,
+     * "Jan" pada rentang dua tahun tidak bisa dibedakan Jan yang mana.
+     *
+     * @param  array<int, Carbon>  $bulan
+     * @return array<int, string>
+     */
+    private function labelBulan(array $bulan): array
+    {
+        $lintasTahun = $bulan[0]->year !== $bulan[count($bulan) - 1]->year;
+
+        return array_map(
+            fn (Carbon $m) => self::MONTHS_ID[$m->month].($lintasTahun ? " '".substr((string) $m->year, 2) : ''),
+            $bulan,
+        );
     }
 
     /**
@@ -55,27 +167,42 @@ class DashboardController extends Controller
      * WAJIB ada walau isinya kosong. Tiap method sudah mengembalikan struktur kosong yang
      * jujur bila tabelnya belum berisi; layar menampilkan keadaan kosong, bukan angka contoh.
      *
+     * Periode dipakai dengan DUA cara yang berbeda, dan keduanya benar:
+     *
+     *   ALIRAN  — kartu yang mengukur kejadian SELAMA periode (corong KPR, penolakan, bon,
+     *             laba rugi, SPK, serah terima, retensi) disaring pada rentang awal–akhir.
+     *   POSISI  — kartu yang menyatakan keadaan PADA SATU TITIK waktu (saldo rekening,
+     *             aging hutang, neraca, aset tetap, progres lapangan) memakai TANGGAL AKHIR
+     *             sebagai tanggal potretnya. Menyaringnya dengan rentang akan membuang saldo
+     *             yang terbentuk sebelum periode dan angkanya jadi salah, bukan sekadar sempit.
+     *
+     * Dua kartu SENGAJA tidak mengikuti periode karena tidak punya dimensi waktu yang jujur:
+     * Rekonsiliasi Piutang (sisa piutang berjalan, bukan kejadian) dan Summary HPP (baris HPP
+     * terakhir per unit, apa pun kapan di-generate). Memaksakan rentang pada keduanya hanya
+     * akan mengubah artinya diam-diam.
+     *
+     * @param  array{awal: Carbon, akhir: Carbon, bulan: array<int, Carbon>, label: string, dipotong: bool}  $p
      * @return array<string, mixed>
      */
-    private function charts(): array
+    private function charts(array $p): array
     {
         return [
-            'inisiasi_kpr' => $this->chartInisiasiKpr(),        // 1
-            'proses_kpr'   => $this->chartProsesKpr(),          // 2
-            'penolakan'    => $this->chartPenolakanKpr(),       // 3
-            'rekening'     => $this->chartSaldoRekeningKas(),   // 4
-            'kasbon'       => $this->chartBonSementara(),       // 5
-            'aging'        => $this->chartAgingHutang(),        // 6
-            'neraca'       => $this->chartSummaryNeraca(),      // 7
-            'laba_rugi'    => $this->chartSummaryLabaRugi(),    // 8
-            'aset_tetap'   => $this->chartAsetTetap(),          // 9
-            'budget'       => $this->chartRealisasiBudget(),    // 10
-            'spk'          => $this->chartSpkPerCluster(),      // 11
-            'progress'     => $this->chartProgressLapangan(),   // 12
-            'retensi'      => $this->chartSummaryRetensi(),     // 13
-            'bast_ajb_br'  => $this->chartBastAjbBooked(),      // 14–16
-            'piutang'      => $this->chartRekonsiliasiPiutang(), // 17
-            'hpp'          => $this->chartSummaryHpp(),         // 18
+            'inisiasi_kpr' => $this->chartInisiasiKpr($p),      // 1
+            'proses_kpr'   => $this->chartProsesKpr($p),        // 2
+            'penolakan'    => $this->chartPenolakanKpr($p),     // 3
+            'rekening'     => $this->chartSaldoRekeningKas($p), // 4
+            'kasbon'       => $this->chartBonSementara($p),     // 5
+            'aging'        => $this->chartAgingHutang($p),      // 6
+            'neraca'       => $this->chartSummaryNeraca($p),    // 7
+            'laba_rugi'    => $this->chartSummaryLabaRugi($p),  // 8
+            'aset_tetap'   => $this->chartAsetTetap($p),        // 9
+            'budget'       => $this->chartRealisasiBudget($p),  // 10
+            'spk'          => $this->chartSpkPerCluster($p),    // 11
+            'progress'     => $this->chartProgressLapangan($p), // 12
+            'retensi'      => $this->chartSummaryRetensi($p),   // 13
+            'bast_ajb_br'  => $this->chartBastAjbBooked($p),    // 14–16
+            'piutang'      => $this->chartRekonsiliasiPiutang(), // 17 — tanpa dimensi waktu
+            'hpp'          => $this->chartSummaryHpp(),         // 18 — tanpa dimensi waktu
         ];
     }
 
@@ -85,23 +212,6 @@ class DashboardController extends Controller
 
     // ── Helper umum ───────────────────────────────────────────
 
-
-    /** @return array<int, Carbon> */
-    private function months(int $n): array
-    {
-        $list = [];
-        for ($i = $n - 1; $i >= 0; $i--) {
-            $list[] = now()->startOfMonth()->subMonths($i);
-        }
-
-        return $list;
-    }
-
-    /** @return array<int, string> */
-    private function monthLabels(int $n): array
-    {
-        return array_map(fn (Carbon $m) => self::MONTHS_ID[$m->month], $this->months($n));
-    }
 
 
     // ── Grafik KPR ────────────────────────────────────────────────────────────
@@ -397,7 +507,7 @@ class DashboardController extends Controller
      *
      * @return array{rows: array<int, array{n: string, v: int}>}
      */
-    private function chartInisiasiKpr(): array
+    private function chartInisiasiKpr(array $p): array
     {
         $tahap = [
             ['n' => 'SPRS',               'min' => 1],
@@ -418,6 +528,9 @@ class DashboardController extends Controller
         if (Schema::hasColumn('kpr_initiations', 'deleted_at')) {
             $q->whereNull('deleted_at');
         }
+        // ALIRAN: corong ini mengukur berkas yang MASUK pada periode itu, jadi disaring pada
+        // tanggal berkasnya dibuat — bukan pada tahap yang sedang dijalaninya sekarang.
+        $this->dalamPeriode($q, 'created_at', $p, 'kpr_initiations');
 
         /** @var array<int, int> $perTahap */
         $perTahap = [];
@@ -477,7 +590,7 @@ class DashboardController extends Controller
      *
      * @return array{rows: array<int, array{n: string, v: int}>}
      */
-    private function chartProsesKpr(): array
+    private function chartProsesKpr(array $p): array
     {
         if (! Schema::hasTable('kpr_applications') || ! Schema::hasColumn('kpr_applications', 'status')) {
             return ['rows' => []];
@@ -511,6 +624,8 @@ class DashboardController extends Controller
         ];
 
         $sub = DB::table('kpr_applications as a')->selectRaw(implode(', ', $pilih));
+        // ALIRAN: berkas yang MASUK pipeline pada periode itu.
+        $this->dalamPeriode($sub, 'created_at', $p, 'kpr_applications', 'a');
         if (Schema::hasColumn('kpr_applications', 'deleted_at')) {
             $sub->whereNull('a.deleted_at');
         }
@@ -609,12 +724,13 @@ class DashboardController extends Controller
      *
      * @return array{labels: array<int, string>, series: array<int, array{n: string, c: int, v: array<int, int>}>}
      */
-    private function chartPenolakanKpr(): array
+    private function chartPenolakanKpr(array $p): array
     {
-        $bulan  = $this->months(8);
-        $labels = array_map(fn (Carbon $m) => self::MONTHS_ID[$m->month], $bulan);
+        $bulan  = $p['bulan'];
+        $labels = $this->labelBulan($bulan);
         $kunci  = array_map(fn (Carbon $m) => $m->format('Y-m'), $bulan);
         $mulai  = $bulan[0]->copy()->startOfMonth();
+        $henti  = $p['akhir'];
 
         $ke = fn (array $ember): array => array_map(
             static fn (string $k) => (int) ($ember[$k] ?? 0),
@@ -624,8 +740,8 @@ class DashboardController extends Controller
         return [
             'labels' => $labels,
             'series' => [
-                ['n' => 'Reject BI Checking', 'c' => 7, 'v' => $ke($this->emberRejectBi($mulai))],
-                ['n' => 'Reject Proses KPR',  'c' => 1, 'v' => $ke($this->emberRejectProses($mulai))],
+                ['n' => 'Reject BI Checking', 'c' => 7, 'v' => $ke($this->emberRejectBi($mulai, $henti))],
+                ['n' => 'Reject Proses KPR',  'c' => 1, 'v' => $ke($this->emberRejectProses($mulai, $henti))],
             ],
         ];
     }
@@ -635,7 +751,7 @@ class DashboardController extends Controller
      *
      * @return array<string, int>
      */
-    private function emberRejectBi(Carbon $mulai): array
+    private function emberRejectBi(Carbon $mulai, Carbon $henti): array
     {
         if (! Schema::hasTable('kpr_initiations') || ! Schema::hasColumn('kpr_initiations', 'status')) {
             return [];
@@ -649,7 +765,7 @@ class DashboardController extends Controller
 
         $q = DB::table('kpr_initiations')
             ->where('status', 'rejected')
-            ->where('updated_at', '>=', $mulai)
+            ->whereBetween('updated_at', [$mulai, $henti])
             ->select(DB::raw($ym.' AS ym'), DB::raw('COUNT(*) AS jml'))
             ->groupBy(DB::raw($ym));
         if (Schema::hasColumn('kpr_initiations', 'deleted_at')) {
@@ -669,7 +785,7 @@ class DashboardController extends Controller
      *
      * @return array<string, int>
      */
-    private function emberRejectProses(Carbon $mulai): array
+    private function emberRejectProses(Carbon $mulai, Carbon $henti): array
     {
         if (! Schema::hasTable('kpr_applications') || ! Schema::hasColumn('kpr_applications', 'status')) {
             return [];
@@ -681,7 +797,7 @@ class DashboardController extends Controller
 
         $q = DB::table('kpr_applications')
             ->where('status', 'rejected')
-            ->where('updated_at', '>=', $mulai)
+            ->whereBetween('updated_at', [$mulai, $henti])
             ->select(DB::raw($ym.' AS ym'), DB::raw('COUNT(*) AS jml'))
             ->groupBy(DB::raw($ym));
         if (Schema::hasColumn('kpr_applications', 'deleted_at')) {
@@ -713,7 +829,7 @@ class DashboardController extends Controller
     //         'kasbon'   => $this->chartBonSementara(),      // → c.kasbon.labels & .series
     //     ],
     //
-    // Helper months()/monthLabels()/MONTHS_ID SUDAH ada di controller — tidak diduplikasi.
+    // Helper periode()/labelBulan()/MONTHS_ID SUDAH ada di controller — tidak diduplikasi.
     // ══════════════════════════════════════════════════════════════
 
     /**
@@ -736,7 +852,7 @@ class DashboardController extends Controller
      *
      * @return array{rows: array<int, array{n: string, v: float}>}
      */
-    private function chartSaldoRekeningKas(): array
+    private function chartSaldoRekeningKas(array $p): array
     {
         // Gerbang skema: SETIAP tabel dan SETIAP kolom yang dirujuk diperiksa lebih dulu. Di
         // lingkungan yang migrasinya belum penuh, kolom yang hilang harus berujung kartu kosong —
@@ -778,7 +894,7 @@ class DashboardController extends Controller
         // sampai HARI INI. Tanpa ini, jurnal bertanggal ke depan — yang sah dibuat untuk
         // transaksi terjadwal — akan membuat kartu ini melaporkan saldo yang belum ada.
         if (Schema::hasColumn('bs_journals', 'journal_date')) {
-            $q->whereDate('j.journal_date', '<=', now()->toDateString());
+            $q->whereDate('j.journal_date', '<=', $p['akhir']->toDateString());
         }
         // bs_journal_lines memang tidak punya deleted_at; penjagaannya tetap ditulis per tabel
         // supaya penambahan kolom itu kelak langsung ikut terhormat tanpa mengubah kode ini.
@@ -824,13 +940,15 @@ class DashboardController extends Controller
      *
      * @return array{labels: array<int, string>, series: array<int, array{n: string, c: int, v: array<int, float>}>}
      */
-    private function chartBonSementara(): array
+    private function chartBonSementara(array $p): array
     {
-        $n = 8;
+        $months = $p['bulan'];
+        $n = count($months);
+        $labels = $this->labelBulan($months);
         // Label bulan tetap dikirim walau datanya kosong — semua grafik bulanan di dashboard
         // ini berperilaku sama (bandingkan chartPenolakanKpr & chartSummaryRetensi), sehingga
         // sumbu waktunya konsisten dan komponen menampilkan keadaan kosong dari `series`.
-        $kosong = ['labels' => $this->monthLabels($n), 'series' => []];
+        $kosong = ['labels' => $labels, 'series' => []];
 
         // Gerbang skema deret 1: tanpa advance_date tidak ada bucket, tanpa amount tidak ada nilai.
         if (! Schema::hasTable('bs_cash_advances')
@@ -838,9 +956,10 @@ class DashboardController extends Controller
             return $kosong;
         }
 
-        $months = $this->months($n);
-        $start  = $months[0]->copy()->startOfMonth()->toDateString();
-        $end    = $months[$n - 1]->copy()->endOfMonth()->toDateString();
+        // Bulan pertama & terakhir dipotong pada tanggal yang dipilih, bukan pada batas
+        // bulannya — kalau tidak, memilih 10–20 Agustus akan tetap menghitung sebulan penuh.
+        $start = max($months[0]->copy()->startOfMonth(), $p['awal'])->toDateString();
+        $end   = min($months[$n - 1]->copy()->endOfMonth(), $p['akhir'])->toDateString();
 
         // Peta 'Y-m' → indeks bucket, supaya hasil GROUP BY tinggal ditempatkan tanpa loop bersarang.
         $posisi = [];
@@ -922,7 +1041,7 @@ class DashboardController extends Controller
         }
 
         return [
-            'labels' => $this->monthLabels($n),
+            'labels' => $labels,
             'series' => [
                 ['n' => 'Diajukan', 'c' => 3, 'v' => $diajukan],
                 ['n' => 'Dipertanggungjawabkan', 'c' => 2, 'v' => $dipertj],
@@ -980,7 +1099,7 @@ class DashboardController extends Controller
      *
      * @return array{rows: array<int, array{n: string, v: float}>}
      */
-    private function chartAgingHutang(): array
+    private function chartAgingHutang(array $p): array
     {
         $labels = ['Belum jatuh tempo', '1-30 hari', '31-60 hari', '61-90 hari', '> 90 hari'];
         $vals   = array_fill(0, 5, 0.0);
@@ -1014,7 +1133,10 @@ class DashboardController extends Controller
                 default           => 'invoice_date',
             };
 
-            $today = now()->toDateString();
+            // Umur dihitung terhadap TANGGAL AKHIR periode, bukan hari ini: kartu ini potret
+            // posisi hutang pada tanggal itu, dan memakai hari ini akan membuat periode lampau
+            // melaporkan umur yang lebih tua daripada yang sebenarnya waktu itu.
+            $today = $p['akhir']->toDateString();
 
             // Umur dihitung di sisi DB agar cukup SATU query agregat, bukan loop per faktur.
             // Acuan yang tetap NULL (skema hanya punya due_date dan isinya kosong) tidak bisa
@@ -1066,7 +1188,7 @@ class DashboardController extends Controller
      *
      * @return array{rows: array<int, array{n: string, a: float, b: float}>, keys: array<int, array{k: string, n: string, c: int}>}
      */
-    private function chartSummaryNeraca(): array
+    private function chartSummaryNeraca(array $p): array
     {
         $keys = [
             ['k' => 'a', 'n' => 'Lancar / Kewajiban', 'c' => 0],
@@ -1108,6 +1230,10 @@ class DashboardController extends Controller
                     ELSE 'lainnya' END as gol,
                 SUM(jl.debit) as d, SUM(jl.credit) as k")
             ->groupBy('gol');
+
+        // POSISI: neraca menyatakan keadaan PADA satu tanggal, jadi seluruh jurnal sampai
+        // tanggal akhir ikut membentuknya — termasuk yang jauh sebelum periode dipilih.
+        $this->sampaiPeriode($q, 'journal_date', $p, 'bs_journals', 'j');
 
         if (Schema::hasColumn('bs_journals', 'status')) {
             $q->where('j.status', 'posted');
@@ -1164,10 +1290,10 @@ class DashboardController extends Controller
      *
      * @return array{labels: array<int, string>, vals: array<int, float>}
      */
-    private function chartSummaryLabaRugi(): array
+    private function chartSummaryLabaRugi(array $p): array
     {
-        $months = $this->months(8);
-        $labels = array_map(fn (Carbon $m): string => self::MONTHS_ID[$m->month], $months);
+        $months = $p['bulan'];
+        $labels = $this->labelBulan($months);
         $vals   = array_fill(0, count($months), 0.0);
 
         $siap = Schema::hasTable('bs_journal_lines') && Schema::hasTable('bs_journals') && Schema::hasTable('bs_accounts')
@@ -1240,7 +1366,7 @@ class DashboardController extends Controller
      *
      * @return array{rows: array<int, array{n: string, a: float, b: float}>, keys: array<int, array{k: string, n: string, c: int}>}
      */
-    private function chartAsetTetap(): array
+    private function chartAsetTetap(array $p): array
     {
         // Legenda tetap dikirim walau baris kosong supaya layar bisa menggambar kerangka grafiknya.
         $keys = [
@@ -1275,6 +1401,9 @@ class DashboardController extends Controller
         if (Schema::hasColumn('bs_fixed_assets', 'deleted_at')) {
             $q->whereNull('deleted_at');
         }
+        // POSISI: hanya aset yang SUDAH diperoleh pada tanggal akhir periode. Aset yang
+        // dibeli sesudahnya belum ada di neraca tanggal itu.
+        $this->sampaiPeriode($q, 'acquisition_date', $p, 'bs_fixed_assets');
         // Aset terjual/dihapus sudah keluar dari neraca, jadi tidak lagi punya nilai buku untuk dipajang.
         if (Schema::hasColumn('bs_fixed_assets', 'status')) {
             $q->whereNotIn('status', ['sold', 'disposed']);
@@ -1316,7 +1445,7 @@ class DashboardController extends Controller
      *
      * @return array{rows: array<int, array{n: string, real: float, plafon: float}>}
      */
-    private function chartRealisasiBudget(): array
+    private function chartRealisasiBudget(array $p): array
     {
         // Semua kolom yang dirujuk query plafon dijaga di sini: lingkungan yang migrasinya belum
         // lengkap harus dapat struktur kosong, bukan QueryException.
@@ -1326,7 +1455,10 @@ class DashboardController extends Controller
             return ['rows' => []];
         }
 
-        $year = (int) now()->year;
+        // Anggaran disusun per TAHUN, jadi yang dipakai tahun dari tanggal akhir periode —
+        // bukan tahun berjalan. Memilih periode 2025 lalu membandingkannya dengan anggaran
+        // 2026 adalah perbandingan yang tidak setara.
+        $year = (int) $p['akhir']->year;
 
         // 1) Plafon per cost center. havingRaw membuang cost center berplafon 0 di sisi DB
         //    supaya layar tak pernah membagi dengan nol.
@@ -1478,7 +1610,7 @@ class DashboardController extends Controller
      *
      * @return array{rows: array<int, array{n: string, jml: int, nilai: float}>}
      */
-    private function chartSpkPerCluster(): array
+    private function chartSpkPerCluster(array $p): array
     {
         $t = 'bs_work_orders';
         if (! Schema::hasTable($t) || ! Schema::hasColumn($t, 'contract_value')) {
@@ -1527,6 +1659,9 @@ class DashboardController extends Controller
         if (Schema::hasColumn($t, 'deleted_at')) {
             $q->whereNull('w.deleted_at');
         }
+        // ALIRAN: SPK yang TERBIT pada periode itu — diukur dari tanggal SPK-nya, bukan
+        // dari kapan progresnya dicatat.
+        $this->dalamPeriode($q, 'spk_date', $p, $t, 'w');
         // SPK batal tidak lagi menjadi pekerjaan berjalan, jadi tidak ikut dihitung.
         // SPK 'closed' TETAP dihitung: retensinya sudah dilepas tapi pekerjaannya nyata dan
         // nilainya tetap bagian dari beban cluster. Label panel di layar karena itu berbunyi
@@ -1569,7 +1704,7 @@ class DashboardController extends Controller
      *
      * @return array{rows: array<int, array<string, mixed>>, keys: array<int, array{k: string, n: string, c: int}>}
      */
-    private function chartProgressLapangan(): array
+    private function chartProgressLapangan(array $p): array
     {
         $keys = [
             ['k' => 'a', 'n' => 'Tanah Matang', 'c' => 0],
@@ -1600,6 +1735,12 @@ class DashboardController extends Controller
                 ->selectRaw('pr.work_order_id, pu.unit_id, SUM(COALESCE(pu.progress_pct,0)) AS pct')
                 ->groupBy('pr.work_order_id', 'pu.unit_id')
             : null;
+        // POSISI: tahap yang sudah tercapai PADA tanggal akhir periode. Progres sesudahnya
+        // belum boleh ikut, dan progres sebelum periode tetap harus ikut — tanpa itu unit
+        // yang selesai tahun lalu akan terbaca mundur ke 'Tanah Matang'.
+        if ($perPasangan !== null) {
+            $this->sampaiPeriode($perPasangan, 'progress_date', $p, 'bs_work_order_progress', 'pr');
+        }
 
         // Tingkat 2 — tahap sebuah unit = akumulasi TERTINGGI di antara SPK yang menggarapnya.
         $perUnit = $perPasangan
@@ -1686,10 +1827,10 @@ class DashboardController extends Controller
      *
      * @return array{labels: array<int, string>, series: array<int, array{n: string, c: int, v: array<int, float>}>}
      */
-    private function chartSummaryRetensi(): array
+    private function chartSummaryRetensi(array $p): array
     {
-        $labels = $this->monthLabels(8);
-        $bulan  = $this->months(8);
+        $bulan  = $p['bulan'];
+        $labels = $this->labelBulan($bulan);
 
         $ditahan = $this->bulananJumlah('bs_work_order_progress', 'progress_date', 'retention_amount', $bulan);
         // retention_held disetel 0 saat dilepas, jadi nilainya diambil dari sisi progres:
@@ -1829,9 +1970,9 @@ class DashboardController extends Controller
      *
      * @return array{labels: array<int, string>, series: array<int, array<string, mixed>>}
      */
-    private function chartBastAjbBooked(): array
+    private function chartBastAjbBooked(array $p): array
     {
-        $months = $this->months(8);
+        $months = $p['bulan'];
 
         // Sumber unit BAST = bast_documents: hanya tabel ini yang menyimpan TANGGAL
         // serah terima (handed_over_at) dan tautan booking_id. bs_bast_units sengaja
@@ -1844,7 +1985,7 @@ class DashboardController extends Controller
         $booked = $this->serahTerimaSeri('bs_booked_revenues', 'booking_date', 'amount', $months);
 
         return [
-            'labels' => array_map(fn (Carbon $m) => self::MONTHS_ID[$m->month], $months),
+            'labels' => $this->labelBulan($months),
             // Nama kunci n/c/unit/nilai mengikuti antarmuka SeriGabungan di
             // resources/js/Pages/Dashboard/Index.vue — jangan diganti namanya.
             // Urutan c 0/1/2 dikunci: layar memilih warna seri berdasarkan angka ini,
@@ -1902,7 +2043,9 @@ class DashboardController extends Controller
             $unit[$i] = (int) $r->unit;
         }
 
-        // (b) Kartu nilai — rentang tersendiri: 1 Januari s/d 31 Desember tahun ini.
+        // (b) Kartu nilai — rentang tersendiri: SATU TAHUN PENUH pada tahun periode yang
+        // dipilih (bukan tahun berjalan), supaya melihat periode 2025 tidak memulangkan
+        // angka tahunan 2026.
         //
         // JUMLAH UNIT TAHUNAN IKUT DIHITUNG DI SINI, tidak boleh diturunkan dengan
         // menjumlahkan ember bulanan di layar: ember bulanan di-dedupe per (unit, BULAN),
@@ -1912,7 +2055,8 @@ class DashboardController extends Controller
         // lagi saling membantah.
         $nilai = 0.0;
         $unitTahunan = 0;
-        foreach ($this->serahTerimaAgregat($table, $dateCol, $amountCol, now()->startOfYear(), now()->endOfYear(), false) as $r) {
+        $tahun = $akhir->copy();
+        foreach ($this->serahTerimaAgregat($table, $dateCol, $amountCol, $tahun->copy()->startOfYear(), $tahun->copy()->endOfYear(), false) as $r) {
             $nilai += (float) $r->nilai;
             $unitTahunan += (int) $r->unit;
         }
