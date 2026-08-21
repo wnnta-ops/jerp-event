@@ -27,7 +27,10 @@ class BackupStats extends BaseWidget
 
                 $newest = $destination->newestBackup();
                 if ($newest && (! $latest || $newest->date()->gt($latest))) {
-                    $latest = $newest->date();
+                    // Spatie menyusun tanggalnya dari mtime tanpa menyebut zona waktu,
+                    // jadi hasilnya UTC. Tanpa konversi, backup jam 00:00 WIB tampil
+                    // 17:00 hari sebelumnya — seolah jadwalnya meleset 7 jam.
+                    $latest = $newest->date()->setTimezone(config('app.timezone'));
                 }
 
                 $disksUsed[] = $disk;

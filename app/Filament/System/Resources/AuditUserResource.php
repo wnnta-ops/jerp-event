@@ -61,7 +61,7 @@ class AuditUserResource extends Resource
                     ->toggleable(),
                 Tables\Columns\TextColumn::make('last_activity')
                     ->label('Aktif terakhir')
-                    ->formatStateUsing(fn (?int $state): string => $state ? Carbon::createFromTimestamp($state)->diffForHumans() : '—')
+                    ->formatStateUsing(fn (?int $state): string => $state ? Carbon::createFromTimestamp($state, config('app.timezone'))->diffForHumans() : '—')
                     ->sortable(),
                 Tables\Columns\IconColumn::make('is_current')
                     ->label('Sesi ini')

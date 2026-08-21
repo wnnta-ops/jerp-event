@@ -58,8 +58,7 @@ class BackupScheduleResource extends Resource
                             'DB_ALL' => 'Database FO + BO',
                             'DB_FO' => 'Database FO saja (jerp)',
                             'DB_BO' => 'Database BO saja (ipro_bo)',
-                            'APP' => 'APP saja (file, tanpa DB)',
-                            'FULL' => 'Lengkap (APP + DB FO + BO)',
+                            'FULL' => 'Database FO + BO + Berkas (lengkap)',
                         ])->default('DB_ALL')
                         ->helperText('Pilih apa yang di-backup: database tertentu, file aplikasi, atau lengkap.'),
                 ]),
