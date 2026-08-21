@@ -1,12 +1,16 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue';
 import axios from 'axios';
-import { Link } from '@inertiajs/vue3';
+import { Link, usePage } from '@inertiajs/vue3';
 
 const props = defineProps<{
     project: { id: number; code: string; name: string; meta: any };
     units: { data: any[] };
 }>();
+
+// Master unit ada di FO, jadi tautan kembalinya menyeberang aplikasi.
+const page = usePage();
+const foUrl: string = ((page.props as any).config?.fo_url ?? '');
 
 const filter   = ref<string>('');
 const hovered  = ref<any>(null);
@@ -40,7 +44,8 @@ async function onDrop(unit: any, e: DragEvent) {
     <div class="space-y-4">
         <div class="flex items-center justify-between">
             <div>
-                <Link :href="route('units.index')" class="text-sm text-neutral-500 hover:text-primary-600">← Kembali</Link>
+                <!-- Master unit ada di FO, jadi tautan kembalinya menyeberang aplikasi. -->
+                <a :href="foUrl + '/fo/units'" class="text-sm text-neutral-500 hover:text-primary-600">← Unit (FO)</a>
                 <h1 class="text-2xl font-bold">Site Plan · {{ project.name }}</h1>
             </div>
             <div class="flex gap-2">

@@ -116,7 +116,6 @@ use App\Http\Controllers\Web\Legal\ImbController;
 use App\Http\Controllers\Web\Legal\PpjbController;
 use App\Http\Controllers\Web\Legal\SertifikatController;
 use App\Http\Controllers\Web\Master\SiteplanController;
-use App\Http\Controllers\Web\Master\UnitController;
 use App\Http\Controllers\Web\PdfController;
 use App\Http\Controllers\Web\Sales\BookingController;
 use App\Http\Controllers\Web\Sales\ContractController;
@@ -262,7 +261,6 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
     Route::get('/cif/{customer}',  [\App\Http\Controllers\Web\CustomerInformationController::class, 'show'])->name('cif.show');
     Route::get('/cif/{customer}/print', [\App\Http\Controllers\Web\CustomerInformationController::class, 'print'])->name('cif.print');
     Route::get('/cif/{customer}/excel', [\App\Http\Controllers\Web\CustomerInformationController::class, 'excel'])->name('cif.excel');
-    Route::resource('units',     UnitController::class);
     Route::get('/projects/{project}/siteplan',                [SiteplanController::class, 'show'])->name('siteplan.show');
     Route::put('/projects/{project}/siteplan/{unit}',         [SiteplanController::class, 'update'])->name('siteplan.update');
 
