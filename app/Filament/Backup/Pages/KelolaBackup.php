@@ -68,7 +68,10 @@ class KelolaBackup extends Page
                         'location' => $location, // path lokasi absolut (pengganti nama disk di tabel)
                         'bytes' => $bytes,      // ukuran mentah — untuk total & sort di view
                         'size' => self::humanSize($bytes),
-                        'date' => Carbon::createFromTimestamp($ts)->translatedFormat('d M Y H:i'),
+                        // Carbon 3 mengembalikan UTC bila zona waktunya tak disebut, sedangkan
+                        // nama berkas memakai zona aplikasi. Tanpa ini, backup jam 00:00 WIB
+                        // tampil sebagai 17:00 hari sebelumnya dan jadwalnya terlihat salah.
+                        'date' => Carbon::createFromTimestamp($ts, config('app.timezone'))->translatedFormat('d M Y H:i'),
                         'ts' => $ts,
                     ];
                 }
@@ -251,7 +254,6 @@ class KelolaBackup extends Page
                             'DB_ALL' => 'Database saja (FO + BO)',
                             'DB_FO' => 'Database FO saja',
                             'DB_BO' => 'Database BO saja',
-                            'APP' => 'Berkas saja',
                         ])
                         ->helperText('Restore hanya dapat mengembalikan yang tersimpan di arsip ini.'),
                 ])
