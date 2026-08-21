@@ -10,18 +10,22 @@ const emit = defineEmits<{ (e: 'update:open', value: boolean): void }>();
 
 const page = usePage();
 const perms = computed<string[]>(() => (page.props as any).auth?.user?.permissions ?? []);
+// Alamat FO untuk entri yang menyeberang aplikasi (mis. master Unit).
+const foUrl: string = ((page.props as any).config?.fo_url ?? '');
 function can(p?: string): boolean { return !p || perms.value.includes(p); }
 function safeRoute(name: string): string | null {
     try { return (route as any)(name); } catch { return null; }
 }
 
 /* ── Daftar halaman untuk navigasi cepat (permission-aware) ── */
-const NAV: { label: string; route: string; group: string; perm?: string }[] = [
+// `url` dipakai untuk halaman yang berada di APLIKASI LAIN — alamatnya absolut dan tidak
+// bisa dibentuk route() milik BO.
+const NAV: { label: string; route?: string; url?: string; group: string; perm?: string }[] = [
     { label: 'Dashboard', route: 'dashboard', group: 'Umum' },
     { label: 'Kalkulator', route: 'calculator.index', group: 'Umum' },
     { label: 'Customer', route: 'customers.index', group: 'Master', perm: 'master.customer.view' },
     { label: 'Tambah Customer', route: 'customers.create', group: 'Master', perm: 'master.customer.create' },
-    { label: 'Unit', route: 'units.index', group: 'Master', perm: 'master.unit.view' },
+    { label: 'Unit', url: foUrl + '/fo/units', group: 'Master', perm: 'master.unit.view' },
     { label: 'Hold Unit', route: 'holds.index', group: 'Sales', perm: 'sales.hold.view' },
     { label: 'NUP', route: 'nup.index', group: 'Sales', perm: 'sales.nup.view' },
     { label: 'Booking', route: 'bookings.index', group: 'Sales', perm: 'sales.booking.view' },
@@ -55,7 +59,7 @@ const NAV: { label: string; route: string; group: string; perm?: string }[] = [
 
 const navItems = computed(() =>
     NAV.filter((n) => can(n.perm))
-        .map((n) => ({ label: n.label, group: n.group, url: safeRoute(n.route) }))
+        .map((n) => ({ label: n.label, group: n.group, url: n.url ?? (n.route ? safeRoute(n.route) : null) }))
         .filter((n): n is { label: string; group: string; url: string } => !!n.url),
 );
 

@@ -16,15 +16,19 @@ Cara yang dipakai: container sekali pakai + database uji sendiri.
 ```bash
 docker run -d --name jerp-verify --network jerp_jerp \
   -v "$PWD/.env:/var/www/html/.env" jerp/app:latest sleep infinity
-docker cp ./app jerp-verify:/var/www/html/
+docker cp ./app      jerp-verify:/var/www/html/
+docker cp ./config   jerp-verify:/var/www/html/     # WAJIB — lihat catatan di bawah
 docker cp ./database jerp-verify:/var/www/html/
-docker cp ./tests/Manual jerp-verify:/var/www/html/tests/
+docker cp ./tests    jerp-verify:/var/www/html/
 # autoloader image dibangun authoritative — kelas baru tak akan terlihat tanpa ini
 docker exec jerp-verify sed -i 's/setClassMapAuthoritative(true)/setClassMapAuthoritative(false)/' \
   /var/www/html/vendor/composer/autoload_real.php
+# config yang ter-cache di dalam image menang atas config/ yang baru disalin
+docker exec jerp-verify rm -f /var/www/html/bootstrap/cache/config.php
 docker exec jerp-mysql sh -c 'mysql -uroot -p"$MYSQL_ROOT_PASSWORD" -e "CREATE DATABASE IF NOT EXISTS jerp_verify; GRANT ALL ON jerp_verify.* TO \"jerp\"@\"%\";"'
 docker exec -e DB_DATABASE=jerp_verify jerp-verify php artisan migrate --force
 docker exec -e DB_DATABASE=jerp_verify jerp-verify php artisan tinker /var/www/html/tests/Manual/<berkas>.php
+docker rm -f jerp-verify      # sekali pakai — jangan ditinggal hidup
 ```
 
 > Di Git Bash pada Windows, awali `docker` dengan `MSYS_NO_PATHCONV=1` supaya jalur
@@ -33,11 +37,28 @@ docker exec -e DB_DATABASE=jerp_verify jerp-verify php artisan tinker /var/www/h
 `DB_DATABASE` sebagai variabel lingkungan **menang** atas `.env` (Dotenv tidak menimpa
 variabel yang sudah ada), jadi database kerja tidak tersentuh.
 
+### Kenapa `config/` ikut disalin dan cache-nya dihapus
+
+Kedua langkah itu kelihatan berlebihan, tetapi tanpa keduanya uji yang menyeberang ke
+database BO gagal dengan pesan yang menyesatkan:
+
+```
+SQLSTATE[HY000] [2002] No such file or directory (Connection: ipro_bo, Host: , Port: , …)
+```
+
+`Host:` kosong, bukan salah. `config/database.php` di dalam image masih versi lama yang
+memakai `env('IPRO_DB_HOST', default)`; padahal `.env` mengirim kunci itu dalam keadaan
+**kosong** yang artinya "ikut koneksi utama". `env('X', default)` hanya memakai default bila
+kuncinya TIDAK ADA — bila ada tapi kosong, hasilnya `''`, dan koneksi `ipro_bo` jadi tanpa
+host. Versi di repo sudah membetulkannya dengan `env('IPRO_DB_HOST') ?: env('DB_HOST', …)`,
+jadi `config/` harus ikut disalin — dan `bootstrap/cache/config.php` bawaan image harus
+dihapus, sebab config yang ter-cache menang atas berkas yang baru disalin.
+
 ## Isinya
 
 | Berkas | Yang diperiksa |
 | --- | --- |
-| `uji-gmc-cluster.php` | Cluster pada GMC: tersimpan apa adanya, GMC tanpa cluster jatuh ke cluster unit pada SPR-nya, dan Posting BO meneruskan cluster itu sehingga kategori gimmick yang terpakai — beserta akun debitnya — memang milik cluster tersebut. Termasuk penegasan bahwa konvensi kode cluster `FOL-{id}` sama antara `IproMasterSync` dan `IproApPoster`. |
+| `uji-gmc-cluster.php` | Cluster pada GMC: DITURUNKAN dari unit pada SPR (tidak lagi dipilih di layar) dan dibetulkan bila yang tersimpan berbeda dari SPR-nya, dan Posting BO meneruskan cluster itu sehingga kategori gimmick yang terpakai — beserta akun debitnya — memang milik cluster tersebut. Termasuk penegasan bahwa konvensi kode cluster `FOL-{id}` sama antara `IproMasterSync` dan `IproApPoster`. |
 
 ## Catatan saat menulis skrip serupa
 
