@@ -8,7 +8,8 @@
  *
  * Yang diperiksa:
  *   1. Skema — fo_gmc.lokasi_id ada.
- *   2. GMC menyimpan clusternya, dan GMC lama tanpa cluster jatuh ke unit pada SPR-nya.
+ *   2. Cluster GMC DITURUNKAN dari unit pada SPR-nya — tidak lagi dipilih di layar — dan
+ *      dibetulkan bila yang tersimpan berbeda dari SPR-nya.
  *   3. Posting BO meneruskan cluster itu ke antrean BO, dan kategori yang terpakai adalah
  *      kategori milik cluster tersebut — bukan kategori cluster lain.
  *   4. Cluster FO → cluster BO dipetakan lewat kode FOL-{id}, kesepakatan yang sama dengan
@@ -84,12 +85,16 @@ try {
     $kontrakA = Kontrak::create(['tenant_id' => 1, 'no_kontrak' => 'UJI-SPR-A', 'unit_id' => $unitA->id,
         'customer_id' => $customerId, 'tgl_kontrak' => now()->toDateString()]);
 
+    // Cluster tidak lagi ditanyakan di layar; ia DITURUNKAN dari unit pada SPR tiap kali GMC
+    // disimpan. Kalau yang tersimpan berbeda dari SPR-nya, yang salah adalah yang tersimpan.
     $gmcPunyaCluster = Gmc::create([
         'tgl' => now(), 'kontrak_id' => $kontrakA->id, 'lokasi_id' => $lokB->id,
         'nama' => 'UJI GIMMICK CLUSTER', 'nilai' => 1_000_000, 'status' => 'DRAFT',
     ]);
-    $cek('cluster yang dipilih tersimpan apa adanya',
-        (int) $gmcPunyaCluster->fresh()->lokasi_id === (int) $lokB->id);
+    \App\Filament\Fo\Resources\GmcResource::isiCluster($gmcPunyaCluster);
+    $cek('cluster yang berbeda dari SPR dibetulkan mengikuti SPR-nya',
+        (int) $gmcPunyaCluster->fresh()->lokasi_id === (int) $lokA->id,
+        'dapat '.$gmcPunyaCluster->fresh()->lokasi_id.' harusnya '.$lokA->id);
 
     $gmcTanpaCluster = Gmc::create([
         'tgl' => now(), 'kontrak_id' => $kontrakA->id,
@@ -101,12 +106,20 @@ try {
     $cek('GMC tanpa cluster jatuh ke cluster unit pada SPR-nya',
         $gmcTanpaCluster->lokasiDariKontrak() === (int) $lokA->id,
         (string) $gmcTanpaCluster->lokasiDariKontrak());
+    // Dan begitu disimpan lewat layar, clusternya benar-benar dicatat.
+    \App\Filament\Fo\Resources\GmcResource::isiCluster($gmcTanpaCluster);
+    $cek('menyimpan GMC mengisi clusternya dari SPR',
+        (int) $gmcTanpaCluster->fresh()->lokasi_id === (int) $lokA->id,
+        (string) $gmcTanpaCluster->fresh()->lokasi_id);
 
     $gmcTanpaKontrak = Gmc::create([
         'tgl' => now(), 'nama' => 'UJI GIMMICK CLUSTER', 'nilai' => 1_000_000, 'status' => 'DRAFT',
     ]);
     $cek('GMC tanpa SPR tidak memaksakan cluster apa pun',
         $gmcTanpaKontrak->lokasiDariKontrak() === null);
+    \App\Filament\Fo\Resources\GmcResource::isiCluster($gmcTanpaKontrak);
+    $cek('GMC tanpa SPR tetap dibiarkan tanpa cluster saat disimpan',
+        $gmcTanpaKontrak->fresh()->lokasi_id === null);
 
     echo "\n=== 3. Posting BO meneruskan clusternya ===\n";
 
@@ -143,11 +156,25 @@ try {
     $katA = $buatKat($clusterBoA, (int) $akun[0]->id, 'UJI-CL-A');
     $katB = $buatKat($clusterBoB, (int) $akun[1]->id, 'UJI-CL-B');
 
-    // Posting GMC yang clusternya dipilih sendiri (lokasi B).
-    $noGmcUji[] = (string) $gmcPunyaCluster->no_gmc;
-    \App\Filament\Fo\Resources\GmcResource::postGmcToBo($gmcPunyaCluster);
+    // GMC pada SPR yang unitnya berada di cluster B. Clusternya tidak dipilih sama sekali —
+    // seluruhnya ditentukan unit pada SPR-nya, dan itulah yang diuji di sini.
+    $unitB = Unit::create(['tenant_id' => 1, 'project_id' => $projectId, 'lokasi_id' => $lokB->id,
+        'blok' => 'UB', 'no_unit' => '01']);
+    $kontrakB = Kontrak::create(['tenant_id' => 1, 'no_kontrak' => 'UJI-SPR-B', 'unit_id' => $unitB->id,
+        'customer_id' => $customerId, 'tgl_kontrak' => now()->toDateString()]);
+    $gmcB = Gmc::create([
+        'tgl' => now(), 'kontrak_id' => $kontrakB->id,
+        'nama' => 'UJI GIMMICK CLUSTER', 'nilai' => 1_000_000, 'status' => 'DRAFT',
+    ]);
+    \App\Filament\Fo\Resources\GmcResource::isiCluster($gmcB);
+    $cek('GMC pada SPR cluster B mendapat cluster B tanpa dipilih',
+        (int) $gmcB->fresh()->lokasi_id === (int) $lokB->id,
+        (string) $gmcB->fresh()->lokasi_id);
+
+    $noGmcUji[] = (string) $gmcB->no_gmc;
+    \App\Filament\Fo\Resources\GmcResource::postGmcToBo($gmcB);
     $barisB = $bo->table('bs_ap_refund_queue')->where('kind', 'gmc')
-        ->where('refund_no', $gmcPunyaCluster->no_gmc)->first();
+        ->where('refund_no', $gmcB->no_gmc)->first();
 
     $cek('baris antrean terbentuk', $barisB !== null);
     $cek('cluster ikut tercatat di antrean', (int) ($barisB->cluster_id ?? 0) === $clusterBoB,
@@ -174,7 +201,7 @@ try {
         (int) $barisA->offset_account_id !== (int) $barisB->offset_account_id);
 
     $cek('status GMC berubah jadi DIPROSES',
-        $gmcPunyaCluster->fresh()->status === 'DIPROSES' && $gmcTanpaCluster->fresh()->status === 'DIPROSES');
+        $gmcB->fresh()->status === 'DIPROSES' && $gmcTanpaCluster->fresh()->status === 'DIPROSES');
 
     // Bersihkan sisa di BO (beda database — tidak ikut rollback FO).
     $bo->table('bs_gimmick_category_accounts')->whereIn('gimmick_category_id', [$katA, $katB])->delete();

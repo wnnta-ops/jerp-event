@@ -45,7 +45,11 @@ class SearchController extends Controller
         if ($user?->can('master.unit.view')) {
             $out = $out->concat(
                 Unit::query()->where('unit_code', 'like', $like)->limit(5)->get(['id', 'unit_code', 'status'])
-                    ->map(fn ($u) => ['type' => 'unit', 'label' => "{$u->unit_code} (".$this->str($u->status).')', 'url' => route('units.show', $u->id)])
+                    // Master unit ada di FO. Id unit di BO adalah id CERMIN hasil sinkronisasi,
+                    // bukan id FO, jadi tautannya tidak boleh memakai id — ia membuka daftar unit
+                    // FO yang sudah tersaring pada kode unitnya.
+                    ->map(fn ($u) => ['type' => 'unit', 'label' => "{$u->unit_code} (".$this->str($u->status).')',
+                        'url' => config('sso.fo_url').'/fo/units?tableSearch='.urlencode((string) $u->unit_code)])
             );
         }
 

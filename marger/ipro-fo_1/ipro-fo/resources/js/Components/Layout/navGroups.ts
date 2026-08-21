@@ -91,10 +91,14 @@ export function navGroups(foUrl: string): NavGroup[] {
     },
     {
         title: 'Master',
-        icon: Building2, color: '#ff8c00', route: 'units.index',
-        desc: 'Data unit & master properti.',
+        icon: Building2, color: '#ff8c00',
+        desc: 'Data unit & master properti — dikelola di FO.',
         items: [
-            { label: 'Unit',     icon: Building2, href: 'units.index',     permission: 'master.unit.view' },
+            // Master unit HANYA ada di FO (Setup Sales → Unit). Dulu BO punya layar
+            // masternya sendiri, dan dua tempat memasukkan unit untuk data yang sama
+            // adalah dua tempat yang bisa berbeda isinya. Tabel `units` di BO tetap ada
+            // sebagai cermin hasil sinkronisasi, tetapi tidak lagi disunting dari sini.
+            { label: 'Unit', icon: Building2, external: foUrl + '/fo/units', permission: 'master.unit.view' },
         ],
     },
     {
