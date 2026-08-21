@@ -47,6 +47,9 @@ return [
                     // timeout). File dokumen customer (storage/app/private) tetap ikut.
                     storage_path('app/backups'),
                     storage_path('app/backup-temp'),
+                    // PDF SPRS hasil render — bisa dibuat ulang kapan saja dari data,
+                    // jadi tak ada gunanya menggemukkan backup harian.
+                    storage_path('app/sprs-cache'),
                 ],
 
                 /*

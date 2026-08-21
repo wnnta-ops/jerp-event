@@ -103,6 +103,20 @@ class KirimKonfirmasiNupJob implements ShouldQueue
                 'hash' => \App\Modules\FO\MarketingSales\Controllers\ClosingPrintController::sprsPdfHash($r->id),
             ]);
 
+            // Render PDF-nya DULU di sini, selagi kita di antrean dan waktu tak
+            // jadi soal. Kalau dibiarkan dirender saat Qontak mengunduh, satu
+            // permintaan makan ~4,6 detik dan menabrak batas waktu pengunduh
+            // media — gagalnya muncul sebagai "Media upload error", bukan sebagai
+            // error di sisi kita, sehingga sulit ditelusuri.
+            try {
+                \App\Modules\FO\MarketingSales\Controllers\ClosingPrintController::pdfSprsTersimpan($r);
+            } catch (\Throwable $e) {
+                Log::channel('single')->warning('[NUP] gagal menyiapkan PDF SPRS lebih dulu', [
+                    'registration_id' => $r->id,
+                    'pesan' => $e->getMessage(),
+                ]);
+            }
+
             $gateway->sendTemplate(
                 toNumber: $phone,
                 toName: (string) $r->nama_pendaftar,
