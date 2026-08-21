@@ -37,7 +37,7 @@ variabel yang sudah ada), jadi database kerja tidak tersentuh.
 
 | Berkas | Yang diperiksa |
 | --- | --- |
-| `uji-gmc-cluster.php` | Cluster pada GMC: tersimpan apa adanya, GMC tanpa cluster jatuh ke cluster unit pada SPR-nya, dan Posting BO meneruskan cluster itu sehingga kategori gimmick yang terpakai — beserta akun debitnya — memang milik cluster tersebut. Termasuk penegasan bahwa konvensi kode cluster `FOL-{id}` sama antara `IproMasterSync` dan `IproApPoster`. |
+| `uji-gmc-cluster.php` | Cluster pada GMC: DITURUNKAN dari unit pada SPR (tidak lagi dipilih di layar) dan dibetulkan bila yang tersimpan berbeda dari SPR-nya, dan Posting BO meneruskan cluster itu sehingga kategori gimmick yang terpakai — beserta akun debitnya — memang milik cluster tersebut. Termasuk penegasan bahwa konvensi kode cluster `FOL-{id}` sama antara `IproMasterSync` dan `IproApPoster`. |
 
 ## Catatan saat menulis skrip serupa
 

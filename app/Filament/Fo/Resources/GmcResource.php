@@ -7,7 +7,6 @@ use App\Modules\FO\FinanceAR\Models\Gmc;
 use App\Modules\FO\FinanceAR\Models\GmcItem;
 use App\Modules\FO\MarketingSales\Models\Customer;
 use App\Modules\FO\MarketingSales\Models\Kontrak;
-use App\Modules\FO\MarketingSales\Models\Lokasi;
 use Filament\Forms;
 use Filament\Forms\Form;
 use Filament\Resources\Resource;
@@ -43,11 +42,8 @@ class GmcResource extends Resource
                 ->options(fn () => Kontrak::with(['customer', 'unit'])->latest('id')->limit(300)->get()
                     ->mapWithKeys(fn ($k) => [$k->id => trim($k->no_kontrak.' — '.($k->customer?->full_name ?? '').' — '.($k->unit?->kode_unit ?? ''), ' —')]))
                 ->afterStateUpdated(function ($state, Forms\Set $set) {
-                    $k = $state ? Kontrak::with('unit')->find($state) : null;
+                    $k = $state ? Kontrak::find($state) : null;
                     $set('customer_id', $k?->customer_id);
-                    // Cluster diusulkan dari unit pada SPR — unit hanya berdiri di satu cluster,
-                    // jadi menebaknya dari sana jauh lebih jarang salah daripada memilih manual.
-                    $set('lokasi_id', $k?->unit?->lokasi_id);
                 })
                 ->helperText('Mengikat No. SPR, Unit, & Customer dari kontrak.'),
             // Read-only: Customer mengikuti SPR/Kontrak (di-set otomatis di atas) agar tak salah pilih.
@@ -55,11 +51,10 @@ class GmcResource extends Resource
                 ->options(fn (Forms\Get $get) => Customer::whereKey($get('customer_id'))->pluck('full_name', 'id'))
                 ->disabled()->dehydrated()
                 ->helperText('Otomatis dari SPR/Kontrak — tak dapat diubah.'),
-            // Cluster (FO: master Lokasi) — menentukan Kategori Gimmick mana yang dipakai saat
-            // Posting BO, karena akun tiap cluster bisa berbeda walau kolom Rincian Biaya-nya sama.
-            Forms\Components\Select::make('lokasi_id')->label('Cluster')->searchable()
-                ->options(fn () => self::lokasiOptions())
-                ->helperText('Terisi otomatis dari unit pada SPR; boleh diganti. Menentukan akun gimmick di BO — dikosongkan berarti memakai kategori yang berlaku untuk semua cluster.'),
+            // Cluster TIDAK ditanyakan: unit pada SPR hanya berdiri di satu cluster, jadi
+            // menanyakannya lagi hanya membuka peluang jawaban yang berbeda dari SPR-nya.
+            // Nilainya tetap dicatat — diisi dari unit SPR saat GMC disimpan (lihat isiCluster).
+
             // Nama Gimmick diambil dari master "Kategori Gimmick" di BO (bs_gimmick_categories @ ipro_bo).
             Forms\Components\Select::make('nama')->label('Nama Gimmick')->required()->searchable()
                 ->options(fn () => self::gimmickOptions())
@@ -94,6 +89,25 @@ class GmcResource extends Resource
     {
         if ($record->items()->exists()) {
             $record->update(['nilai' => (float) $record->items()->sum('nilai')]);
+        }
+    }
+
+    /**
+     * Catat cluster GMC dari unit pada SPR-nya.
+     *
+     * Clusternya tetap DISIMPAN meski tidak lagi ditanyakan di form: Posting BO memakainya
+     * untuk memilih Kategori Gimmick yang benar, dan menyimpannya di GMC membuat baris antrean
+     * BO bisa ditelusuri balik tanpa perlu menyusuri SPR → unit → lokasi lagi.
+     *
+     * Nilainya DITURUNKAN ULANG tiap kali GMC disimpan (buat maupun sunting). Karena tidak lagi
+     * dipilih manusia, satu-satunya kebenaran adalah unit pada SPR-nya — kalau isinya berbeda,
+     * yang salah adalah yang tersimpan, bukan SPR-nya.
+     */
+    public static function isiCluster(Gmc $record): void
+    {
+        $lokasi = $record->lokasiDariKontrak();
+        if ($lokasi && (int) $record->lokasi_id !== $lokasi) {
+            $record->update(['lokasi_id' => $lokasi]);
         }
     }
 
@@ -148,7 +162,9 @@ class GmcResource extends Resource
                 Tables\Columns\TextColumn::make('kontrak.no_kontrak')->label('No. SPR')->placeholder('—')->searchable(),
                 Tables\Columns\TextColumn::make('kontrak.unit.kode_unit')->label('Unit')->placeholder('—')->searchable(),
                 Tables\Columns\TextColumn::make('customer.full_name')->label('Customer')->placeholder('—')->limit(22),
-                Tables\Columns\TextColumn::make('lokasi.nama')->label('Cluster')->placeholder('semua cluster')->limit(22)->toggleable(),
+                // Cluster hanya DITAMPILKAN, tidak lagi dipilih — isinya datang dari unit pada
+                // SPR-nya. Kosong berarti SPR itu belum punya unit atau unitnya belum berlokasi.
+                Tables\Columns\TextColumn::make('lokasi.nama')->label('Cluster')->placeholder('—')->limit(22)->toggleable(),
                 Tables\Columns\TextColumn::make('nama')->label('Gimmick')->limit(28),
                 Tables\Columns\TextColumn::make('nilai')->label('Nilai')->money('IDR'),
                 Tables\Columns\TextColumn::make('status')->label('Status')->badge()->color(fn (?string $state) => $state === 'DIPROSES' ? 'warning' : 'gray'),
@@ -157,7 +173,10 @@ class GmcResource extends Resource
                 Tables\Filters\SelectFilter::make('status')->options(['DRAFT' => 'Draft', 'DIPROSES' => 'Diproses']),
             ])
             ->headerActions([
-                Tables\Actions\CreateAction::make()->after(fn (Gmc $record) => self::syncNilaiFromItems($record)),
+                Tables\Actions\CreateAction::make()->after(function (Gmc $record) {
+                    self::isiCluster($record);
+                    self::syncNilaiFromItems($record);
+                }),
                 self::gmcMassalAction(),
             ])
             ->actions([
@@ -176,7 +195,10 @@ class GmcResource extends Resource
                             \Filament\Notifications\Notification::make()->warning()->title('Gagal kirim ke BO')->body($e->getMessage())->persistent()->send();
                         }
                     }),
-                Tables\Actions\EditAction::make()->after(fn (Gmc $record) => self::syncNilaiFromItems($record)),
+                Tables\Actions\EditAction::make()->after(function (Gmc $record) {
+                    self::isiCluster($record);
+                    self::syncNilaiFromItems($record);
+                }),
                 Tables\Actions\DeleteAction::make(),
             ])
             ->bulkActions([
@@ -209,13 +231,6 @@ class GmcResource extends Resource
                     ->deselectRecordsAfterCompletion(),
             ])
             ->defaultSort('id', 'desc');
-    }
-
-    /** Opsi Cluster = master Lokasi FO — master yang sama yang dicerminkan ke `clusters` BO. */
-    private static function lokasiOptions(): array
-    {
-        return Lokasi::query()->where('is_active', true)->orderBy('kode')->get(['id', 'kode', 'nama'])
-            ->mapWithKeys(fn ($l) => [$l->id => trim($l->kode.' — '.$l->nama, ' —')])->toArray();
     }
 
     /** Opsi Nama Gimmick dari master Kategori Gimmick BO (bs_gimmick_categories @ ipro_bo). */
