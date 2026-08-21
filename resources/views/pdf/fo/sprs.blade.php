@@ -19,6 +19,7 @@
         .qrpage svg { width: 260px; height: 260px; display: block; margin: 0 auto; }
         .qrpage .nama { font-size: 18px; font-weight: 800; margin-top: 18px; letter-spacing: .3px; }
         .qrpage .event { font-size: 13px; font-weight: 700; margin-top: 6px; }
+        .qrpage .nup { font-size: 16px; font-weight: 800; margin-top: 8px; letter-spacing: .8px; }
         .qrpage .ket { font-size: 12px; margin-top: 12px; }
         .brand { width: 130px; font-weight: 800; color: #ea7a1d; font-size: 16px; line-height: 1.05; }
         table.f { width: 100%; border-collapse: collapse; margin-top: 12px; }
@@ -115,7 +116,7 @@
             <div class="ttl">FORMULIR SURAT PEMESANAN RUMAH SEMENTARA</div>
         </div>
         <div class="right">
-            {{-- QR Customer dipindah ke HALAMAN 3 (lihat bagian bawah berkas ini):
+            {{-- QR Customer dipindah ke HALAMAN 2 (lihat bagian bawah berkas ini):
                  dicetak besar & di tengah agar mudah dipindai petugas saat Aktivasi
                  NUP / Pilih Unit. Di kop ukurannya 58px — terlalu kecil untuk dipindai
                  andal dari layar HP maupun hasil cetak. --}}
@@ -200,33 +201,7 @@
         <div class="c"><div class="line">PT. MUP</div></div>
     </div>
 
-    {{-- ════════════ HALAMAN 2 — KWITANSI ════════════ --}}
-    @php
-        $tts = $tts ?? null;
-        $kwNo = $tts?->no_tts ?: (($reg->xendit_external_id ?: $reg->no_nup) ?: ('NUP-' . $reg->id));
-        $kwAmount = (float) ($tts?->amount ?: ($tandaJadi ?: $reg->utj_amount));
-        $kwTgl = $tts?->tgl_terima ?: ($reg->xendit_paid_at ?: now());
-        // no_nup sudah berformat "NUP-00011" → awalan "NUP" JANGAN ditambahkan lagi
-        // (dulu tercetak dobel: "NUP NUP-00011").
-        $kwRef = $reg->no_nup ?: ('NUP-' . $reg->id);
-        $kwUntuk = $tts?->no_referensi ?: ('Uang Tanda Jadi (UTJ) — ' . $kwRef);
-        $terbilang = \App\Support\Terbilang::rupiah($kwAmount);
-    @endphp
-    <div style="page-break-before: always;"></div>
-    <div style="border-bottom:2px solid #111; padding-bottom:10px; text-align:center; margin-top:6px;">
-        <div style="font-weight:800; font-size:13px;">KWITANSI</div>
-    </div>
-    <table class="f" style="margin-top:18px;">
-        <tr><td class="k" style="width:180px;">NOMOR</td><td class="s">:</td><td>{{ $kwNo }}</td></tr>
-        <tr><td class="k">TELAH DITERIMA DARI</td><td class="s">:</td><td>{{ $nama ?: '—' }}</td></tr>
-        <tr><td class="k">UANG SEJUMLAH</td><td class="s">:</td><td><i>{{ $terbilang }}</i></td></tr>
-        <tr><td class="k">UNTUK PEMBAYARAN</td><td class="s">:</td><td>{{ $kwUntuk }}</td></tr>
-    </table>
-    <div style="text-align:right; margin-top:14px;">SIDOARJO, {{ $tgl($kwTgl) }}</div>
-    <div style="margin-top:18px; display:inline-block; border:1px solid #111; padding:8px 16px; font-weight:800; font-size:14px;">JUMLAH &nbsp; {{ $rp($kwAmount) }}</div>
-    <div style="text-align:right; margin-top:30px;">Finance<br><span style="display:inline-block; border-top:1px solid #111; width:160px; margin-top:36px;"></span></div>
-
-    {{-- ════════════ HALAMAN 3 — QR CUSTOMER ════════════
+    {{-- ════════════ HALAMAN 2 — QR CUSTOMER ════════════
          Dipisah ke halamannya sendiri supaya bisa dicetak besar: petugas memindainya
          dari kertas/HP saat Aktivasi NUP & Pilih Unit. Isi QR = KODE customer, bukan
          data pribadi (lihat CustomerQrService). Halaman ini hanya terbit bila QR-nya
@@ -238,6 +213,12 @@
             <div class="nama">{{ $nama ?: '—' }}</div>
             @if ($namaEvent)
                 <div class="event">{{ $namaEvent }}</div>
+            @endif
+            {{-- No NUP menemani QR: petugas Pilih Unit sering perlu mencocokkannya
+                 dengan daftar antrean, dan mengetik nomor lebih cepat daripada
+                 memindai ulang bila pemindainya bermasalah. --}}
+            @if ($reg->no_nup)
+                <div class="nup">{{ $reg->no_nup }}</div>
             @endif
             <div class="ket">Barcode ini Digunakan Untuk Memudahkan Proses Pemilihan Unit.</div>
         </div>

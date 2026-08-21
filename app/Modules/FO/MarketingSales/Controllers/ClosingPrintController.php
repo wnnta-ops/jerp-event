@@ -13,6 +13,7 @@ use App\Modules\FO\MarketingSales\Services\CustomerQrService;
 use App\Settings\CollectionSettings;
 use App\Support\Terbilang;
 use Illuminate\Http\Response;
+use Illuminate\Support\Facades\Storage;
 use Spatie\Browsershot\Browsershot;
 
 /**
@@ -145,9 +146,45 @@ class ClosingPrintController extends Controller
     public function sprsPdf(NupRegistration $registration, string $hash): mixed
     {
         abort_unless(hash_equals(self::sprsPdfHash($registration->id), $hash), 403);
-        request()->merge(['pdf' => 1]); // paksa jalur PDF di render()
 
-        return $this->sprs($registration);
+        // Dilayani dari berkas jadi, BUKAN dirender saat diminta. Render Chromium
+        // memakan ~4,6 detik tiap permintaan, sementara pengunduh media WhatsApp
+        // menyerah di sekitar 5 detik — itulah "Media upload error" yang muncul
+        // kadang-kadang di log Qontak. Content-Length juga wajib: sebagian
+        // pengunduh menolak media yang panjangnya tak disebutkan.
+        $isi = self::pdfSprsTersimpan($registration);
+
+        return new Response($isi, 200, [
+            'Content-Type' => 'application/pdf',
+            'Content-Length' => (string) strlen($isi),
+            'Content-Disposition' => 'inline; filename="'.self::namaBerkasSprs($registration).'.pdf"',
+        ]);
+    }
+
+    /**
+     * Isi PDF SPRS, dirender sekali lalu disimpan.
+     *
+     * Kunci berkasnya memuat `updated_at` registrasi, jadi suntingan SPRS
+     * (mis. ubah email/telepon) otomatis menghasilkan berkas baru — tidak ada
+     * cache basi yang harus dihapus manual.
+     */
+    public static function pdfSprsTersimpan(NupRegistration $registration): string
+    {
+        $jalur = 'sprs-cache/'.$registration->id.'-'
+            .(optional($registration->updated_at)->timestamp ?: 0).'.pdf';
+
+        $disk = Storage::disk('local');
+        if ($disk->exists($jalur)) {
+            return (string) $disk->get($jalur);
+        }
+
+        $html = view('pdf.fo.sprs', self::sprsData($registration))->render();
+        $pdf = Browsershot::html($html)->noSandbox()
+            ->addChromiumArguments(['disable-dev-shm-usage'])->format('A4')->pdf();
+
+        $disk->put($jalur, $pdf);
+
+        return $pdf;
     }
 
     /**
