@@ -63,13 +63,13 @@ class NupConfirmationMail extends Mailable
         }
 
         try {
-            // Data view HARUS lewat sprsData(): dulu di sini dioper ['reg' => $reg]
-            // saja, sehingga $qrSvg/$tts/$kontrak kosong dan PDF di email keluar tanpa
-            // halaman QR serta tanpa data kontrak/kwitansi — padahal PDF yang sama di
-            // WA (lewat controller) lengkap.
-            $html = view('pdf.fo.sprs', \App\Modules\FO\MarketingSales\Controllers\ClosingPrintController::sprsData($reg))->render();
-            // noSandbox + disable-dev-shm: wajib utk Chromium di dalam container.
-            $pdf = Browsershot::html($html)->noSandbox()->addChromiumArguments(['disable-dev-shm-usage'])->format('A4')->pdf();
+            // SATU sumber PDF dengan lampiran WhatsApp — bukan render tersendiri.
+            // Dulu bagian ini menyusun view-nya sendiri dan diam-diam kehilangan
+            // $qrSvg/$tts/$kontrak, sehingga PDF di email berbeda isi dengan PDF
+            // yang sama di WA. Memanggil satu fungsi membuat perbedaan itu mustahil
+            // terulang, sekaligus menghemat satu render Chromium (~4,6 detik) karena
+            // berkasnya sudah disiapkan lebih dulu oleh job pengiriman.
+            $pdf = \App\Modules\FO\MarketingSales\Controllers\ClosingPrintController::pdfSprsTersimpan($reg);
 
             return [
                 Attachment::fromData(fn () => $pdf, \App\Modules\FO\MarketingSales\Controllers\ClosingPrintController::namaBerkasSprs($reg).'.pdf')
