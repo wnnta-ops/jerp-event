@@ -74,6 +74,51 @@ class RoleResource extends Resource
             ->map(fn ($k) => str_replace('~', '.', $k))->values()->all();
     }
 
+    /**
+     * Semua nama izin yang PUNYA kotak centang di matriks ini.
+     *
+     * Dipakai untuk melindungi izin yang tak terwakili di sini. Matriks ini hanya
+     * memuat 330 izin, sedangkan sistem punya 380 — sisanya milik matriks BO yang
+     * terpisah. Karena penyimpanan memakai syncPermissions() yang MENGGANTI seluruh
+     * daftar, menekan Simpan di sini akan menghapus izin BO sebuah peran tanpa
+     * peringatan apa pun. Yang di luar matriks harus dipertahankan apa adanya.
+     *
+     * @return array<int,string>
+     */
+    public static function namaIzinDiMatriks(): array
+    {
+        $cfg = config('access_matrix');
+        $nama = [];
+
+        foreach ($cfg['modules'] as $areas) {
+            foreach (array_keys($areas) as $area) {
+                foreach (array_keys($cfg['actions']) as $aksi) {
+                    $nama[] = $area.'.'.$aksi;
+                }
+            }
+        }
+
+        return $nama;
+    }
+
+    /**
+     * Gabungkan centang dari matriks dengan izin lama yang tak terwakili di sini.
+     *
+     * @param  \Illuminate\Support\Collection<int,\Spatie\Permission\Models\Permission>  $izinLama
+     * @param  array<int,string>  $terpilih
+     * @return array<int,string>
+     */
+    public static function gabungIzin($izinLama, array $terpilih): array
+    {
+        $diMatriks = self::namaIzinDiMatriks();
+
+        $diluarMatriks = collect($izinLama)->pluck('name')
+            ->reject(fn (string $n) => in_array($n, $diMatriks, true))
+            ->all();
+
+        return array_values(array_unique(array_merge($terpilih, $diluarMatriks)));
+    }
+
     public static function table(Table $table): Table
     {
         return $table
