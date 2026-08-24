@@ -124,6 +124,17 @@ class VerifikasiNupResource extends Resource
                     ->url(fn (NupRegistration $r) => URL::signedRoute('fo.cetak.sprs', ['registration' => $r->id]))
                     ->openUrlInNewTab(),
 
+                // SPR Bank — cetakan untuk berkas pengajuan ke bank. Halaman cetak
+                // saja: bisa disunting di layar lalu dicetak, tidak menyimpan apa pun.
+                Tables\Actions\Action::make('cetak_spr_bank')
+                    ->label('Cetak SPR Bank')->icon('heroicon-o-building-library')->color('info')
+                    ->url(fn (NupRegistration $r) => URL::signedRoute('fo.cetak.spr-bank', ['registration' => $r->id]))
+                    ->openUrlInNewTab()
+                    // Hanya setelah APPROVED. Sebelum itu No NUP belum terbit, jadi
+                    // nomor suratnya jatuh ke id pendaftaran dan halaman QR tak dicetak —
+                    // berkas yang belum layak diserahkan ke bank.
+                    ->visible(fn (NupRegistration $r) => $r->verif_status === 'APPROVED'),
+
                 // Edit SPRS — HANYA email & no. telepon. Dua kolom ini yang sering keliru
                 // diketik customer di form publik dan membuat kiriman SPRS tidak sampai.
                 // Kolom lain (nama, NIK, alamat, pilihan unit, nominal) TIDAK dibuka di
