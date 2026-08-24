@@ -32,7 +32,7 @@
 
         <p>Hormat Kami,<br>Direktur<br><strong>PT Mitra Usaha Propertindo</strong></p>
 
-        <p style="margin-top:16px; font-size:13px; color:#374151;"><em>Note: Harap membawa Dokumen terlampir di email ini (SPRS &amp; Kwitansi) pada saat Acara Pilih Unit {{ trim($proj.' '.$ev) }}.</em></p>
+        <p style="margin-top:16px; font-size:13px; color:#374151;"><em>Note: Harap membawa Dokumen terlampir ini dan kwitansi pada saat acara pilih unit {{ trim($proj.' '.$ev) }}.</em></p>
 
         @if (! empty($sprsUrl))
             <p style="margin-top:14px;"><a href="{{ $sprsUrl }}" style="display:inline-block; background:#2563eb; color:#fff; padding:10px 18px; border-radius:8px; text-decoration:none; font-weight:600;">Lihat / Unduh SPRS + Kwitansi</a></p>
