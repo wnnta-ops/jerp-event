@@ -28,6 +28,8 @@ class PetakanAksesCommand extends Command
      */
     private const USULAN = [
         'super_admin' => ['*'],
+        // 'sup' = superuser, akses penuh (dikonfirmasi pemilik sistem).
+        'sup' => ['*'],
         'it' => ['*'],
         'direktur' => ['fo.', 'bo.', 'bankloan.', 'panel.fo', 'panel.bo'],
         'auditor' => ['fo.', 'bo.', 'panel.fo', 'panel.bo'],
