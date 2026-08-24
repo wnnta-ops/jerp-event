@@ -23,9 +23,17 @@ class FixedAssetController extends Controller
     private const STATUSES = ['active' => 'Aktif', 'fully_depreciated' => 'Habis Susut', 'sold' => 'Terjual', 'disposed' => 'Dihapus'];
 
     /** Overview Aset — ringkasan seluruh modul Aset Tetap + daftar aset (filter per-kolom di client). */
+    /*
+     * Penjaga di kelas ini semula canModule('bs') — cukup punya izin bs.* APA PUN.
+     * Artinya orang yang hanya diberi bs.sip.view otomatis bisa membuka Aset Tetap
+     * dan memposting saldo awal ke buku besar. Izin bs.asset.* sudah lama ada di
+     * tabel dan sudah tampil di Grup Akses BO; yang kurang hanyalah controller ini
+     * memeriksanya. Aksi tulis memakai izin aksinya masing-masing (dispose/sell/
+     * opening/depreciate/run), bukan satu izin borongan.
+     */
     public function index(Request $request): Response
     {
-        abort_unless($request->user()?->canModule('bs'), 403);
+        abort_unless($request->user()?->can('bs.asset.view'), 403);
 
         return Inertia::render('BusinessSupport/FixedAsset/Index', $this->overviewData());
     }
@@ -41,7 +49,7 @@ class FixedAssetController extends Controller
      */
     public function indexExport(Request $request): BinaryFileResponse
     {
-        abort_unless($request->user()?->canModule('bs'), 403);
+        abort_unless($request->user()?->can('bs.asset.view'), 403);
 
         $d = $this->overviewData();
         $kategori = $d['byCategory'];
@@ -248,7 +256,7 @@ class FixedAssetController extends Controller
     /** Report Penjualan/Pelepasan Aset — aset terjual/dihapus + laba/rugi, filter tanggal pelepasan. */
     public function penjualan(Request $request): Response
     {
-        abort_unless($request->user()?->canModule('bs'), 403);
+        abort_unless($request->user()?->can('bs.asset.view'), 403);
         $rows = $this->penjualanRows($request);
 
         return Inertia::render('BusinessSupport/FixedAsset/Penjualan', [
@@ -291,7 +299,7 @@ class FixedAssetController extends Controller
     /** Export Excel Penjualan Aset (mengikuti filter). */
     public function penjualanExport(Request $request): \Illuminate\Http\Response
     {
-        abort_unless($request->user()?->canModule('bs'), 403);
+        abort_unless($request->user()?->can('bs.asset.view'), 403);
         $rows = $this->penjualanRows($request)->map(fn ($r) => [
             $r['asset_number'], $r['name'], $r['category_label'], $r['acquisition_date'], $r['cost'], $r['accum'], $r['book'],
             $r['disposed_date'], $r['disposal_type'] === 'sold' || $r['status'] === 'sold' ? 'Jual' : 'Hapus', $r['proceeds'], $r['gain'],
@@ -303,7 +311,7 @@ class FixedAssetController extends Controller
 
     public function create(Request $request): Response
     {
-        abort_unless($request->user()?->canModule('bs'), 403);
+        abort_unless($request->user()?->can('bs.asset.create'), 403);
 
         return Inertia::render('BusinessSupport/FixedAsset/Form', [
             'categories'      => BsFixedAsset::CATEGORIES,
@@ -315,7 +323,7 @@ class FixedAssetController extends Controller
 
     public function store(Request $request, FixedAssetService $svc): RedirectResponse
     {
-        abort_unless($request->user()?->canModule('bs'), 403);
+        abort_unless($request->user()?->can('bs.asset.create'), 403);
 
         $v = $request->validate([
             'name'               => ['required', 'string', 'max:1000'],
@@ -342,7 +350,7 @@ class FixedAssetController extends Controller
     /** Form edit master aset — semua komponen (memakai halaman Form yang sama, mode edit). */
     public function edit(Request $request, BsFixedAsset $fixedAsset): Response
     {
-        abort_unless($request->user()?->canModule('bs'), 403);
+        abort_unless($request->user()?->can('bs.asset.view'), 403);
 
         return Inertia::render('BusinessSupport/FixedAsset/Form', [
             'categories'      => BsFixedAsset::CATEGORIES,
@@ -372,7 +380,7 @@ class FixedAssetController extends Controller
      */
     public function update(Request $request, BsFixedAsset $fixedAsset): RedirectResponse
     {
-        abort_unless($request->user()?->canModule('bs'), 403);
+        abort_unless($request->user()?->can('bs.asset.create'), 403);
 
         $v = $request->validate([
             // #Master: nomor aset tetap boleh diedit — wajib unik (abaikan diri sendiri & yang sudah dihapus).
@@ -406,7 +414,7 @@ class FixedAssetController extends Controller
 
     public function show(Request $request, BsFixedAsset $fixedAsset): Response
     {
-        abort_unless($request->user()?->canModule('bs'), 403);
+        abort_unless($request->user()?->can('bs.asset.view'), 403);
 
         return Inertia::render('BusinessSupport/FixedAsset/Show', [
             'asset'   => array_merge(
@@ -425,7 +433,7 @@ class FixedAssetController extends Controller
 
     public function dispose(Request $request, BsFixedAsset $fixedAsset, FixedAssetService $svc): RedirectResponse
     {
-        abort_unless($request->user()?->canModule('bs'), 403);
+        abort_unless($request->user()?->can('bs.asset.dispose'), 403);
 
         $v = $request->validate([
             'disposed_date' => ['required', 'date'],
@@ -443,7 +451,7 @@ class FixedAssetController extends Controller
 
     public function sell(Request $request, BsFixedAsset $fixedAsset, FixedAssetService $svc): RedirectResponse
     {
-        abort_unless($request->user()?->canModule('bs'), 403);
+        abort_unless($request->user()?->can('bs.asset.sell'), 403);
 
         $v = $request->validate([
             'disposed_date'   => ['required', 'date'],
@@ -463,7 +471,7 @@ class FixedAssetController extends Controller
 
     public function opening(Request $request, BsFixedAsset $fixedAsset, FixedAssetService $svc): RedirectResponse
     {
-        abort_unless($request->user()?->canModule('bs'), 403);
+        abort_unless($request->user()?->can('bs.asset.opening'), 403);
 
         $v = $request->validate([
             'as_of_date' => ['required', 'date'],
@@ -481,7 +489,7 @@ class FixedAssetController extends Controller
 
     public function depreciate(Request $request, BsFixedAsset $fixedAsset, FixedAssetService $svc): RedirectResponse
     {
-        abort_unless($request->user()?->canModule('bs'), 403);
+        abort_unless($request->user()?->can('bs.asset.depreciate'), 403);
 
         // Rentang periode: bulan awal (year/month) s/d bulan akhir (end_year/end_month).
         // end_* opsional → bila kosong, hanya 1 bulan (kompatibel perilaku lama). Idempoten per bulan.
@@ -525,7 +533,7 @@ class FixedAssetController extends Controller
 
     public function run(Request $request): Response
     {
-        abort_unless($request->user()?->canModule('bs'), 403);
+        abort_unless($request->user()?->can('bs.asset.view'), 403);
 
         return Inertia::render('BusinessSupport/FixedAsset/Run', [
             'now'      => ['year' => (int) now()->year, 'month' => (int) now()->month],
@@ -535,7 +543,7 @@ class FixedAssetController extends Controller
 
     public function runStore(Request $request, FixedAssetService $svc): RedirectResponse
     {
-        abort_unless($request->user()?->canModule('bs'), 403);
+        abort_unless($request->user()?->can('bs.asset.run'), 403);
 
         $v = $request->validate([
             'year'  => ['required', 'integer', 'min:2000', 'max:2100'],
@@ -561,7 +569,7 @@ class FixedAssetController extends Controller
      */
     public function summary(Request $request): Response
     {
-        abort_unless($request->user()?->canModule('bs'), 403);
+        abort_unless($request->user()?->can('bs.asset.view'), 403);
         $d = $this->computeSchedule($request);
 
         return Inertia::render('BusinessSupport/FixedAsset/Summary', [
@@ -577,7 +585,7 @@ class FixedAssetController extends Controller
     /** Export Excel Summary Aset — jadwal penyusutan diratakan (flatten) per periode. */
     public function summaryExport(Request $request): \Illuminate\Http\Response
     {
-        abort_unless($request->user()?->canModule('bs'), 403);
+        abort_unless($request->user()?->can('bs.asset.view'), 403);
         $d = $this->computeSchedule($request);
 
         $header = ['No', 'Nama Aset', 'Jumlah', 'Nomer', 'Tanggal', 'Harga', 'Masa Manfaat (bln)', 'PIC', 'Lokasi', 'Peny./Bulan'];

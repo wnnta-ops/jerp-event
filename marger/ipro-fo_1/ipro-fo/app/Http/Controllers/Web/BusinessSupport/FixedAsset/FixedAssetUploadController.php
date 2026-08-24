@@ -27,7 +27,7 @@ class FixedAssetUploadController extends Controller
 
     public function index(Request $request): Response
     {
-        abort_unless($request->user()?->canModule('bs'), 403);
+        abort_unless($request->user()?->can('bs.bulk-import.manage'), 403);
 
         return Inertia::render('BusinessSupport/FixedAsset/Upload', [
             'header'     => self::COLS,
@@ -38,7 +38,7 @@ class FixedAssetUploadController extends Controller
     /** Unduh template XLSX (format Java Core: header + contoh, tanggal dd-mmm-yy & angka ribuan). */
     public function template(Request $request): \Symfony\Component\HttpFoundation\BinaryFileResponse
     {
-        abort_unless($request->user()?->canModule('bs'), 403);
+        abort_unless($request->user()?->can('bs.bulk-import.manage'), 403);
         $path = resource_path('templates/template-aset-tetap.xlsx');
         abort_unless(is_file($path), 404, 'Template tidak ditemukan.');
 

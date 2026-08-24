@@ -37,10 +37,40 @@ class RoleResource extends Resource
                 Forms\Components\TextInput::make('guard_name')->label('Guard')->default('web')->disabled()->dehydrated(),
             ]),
 
+            // Akses modul dipisah dari matriks aksi karena bentuknya memang lain:
+            // ia menjawab "boleh masuk pintunya?", bukan "boleh melakukan apa di
+            // dalamnya?". Tanpa bagian ini, ketujuh izin modul hanya bisa diberikan
+            // lewat CLI — ada di database tetapi tak punya satu pun kotak centang.
+            Forms\Components\Section::make('Akses Modul (Dashboard)')
+                ->description('Menentukan kartu mana yang tampil di halaman pilih modul — sekaligus menjaga rutenya, bukan sekadar menyembunyikan kartunya.')
+                ->schema([Forms\Components\Grid::make(4)->schema(self::modulCheckbox())]),
+
             Forms\Components\Section::make('Hak Akses (Permission)')
                 ->description('Centang aksi per menu. Index=Lihat, Store=Buat, Update=Ubah, Destroy=Hapus, Print=Cetak, Approve. Tiap modul/menu punya akses sendiri.')
                 ->schema(self::permissionMatrix()),
         ]);
+    }
+
+    /** @return array<int,Component> Satu kotak per modul dashboard. */
+    public static function modulCheckbox(): array
+    {
+        $label = [
+            'fo' => 'Front Office',
+            'bo' => 'Back Office',
+            'backup' => 'Backup',
+            'ai' => 'Asisten AI',
+            'legal' => 'Legal',
+            'sales' => 'Sales',
+            'system' => 'System',
+        ];
+
+        $kotak = [];
+        foreach ((array) config('akses.modul', []) as $kunci => $izin) {
+            $kotak[] = Forms\Components\Checkbox::make('m.'.str_replace('.', '~', $izin))
+                ->label($label[$kunci] ?? $kunci);
+        }
+
+        return $kotak;
     }
 
     /** @return array<int,Component> Section per modul, baris area × 6 aksi. */
@@ -96,6 +126,13 @@ class RoleResource extends Resource
                     $nama[] = $area.'.'.$aksi;
                 }
             }
+        }
+
+        // Izin modul kini PUNYA kotak, jadi ia harus dihitung sebagai bagian matriks.
+        // Kalau tidak, melepas centangnya tidak akan mencabut apa pun — ia akan
+        // dianggap "izin di luar matriks" lalu dipertahankan diam-diam.
+        foreach ((array) config('akses.modul', []) as $izin) {
+            $nama[] = $izin;
         }
 
         return $nama;
