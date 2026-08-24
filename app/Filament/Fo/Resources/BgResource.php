@@ -2,6 +2,7 @@
 
 namespace App\Filament\Fo\Resources;
 
+use App\Filament\Concerns\MematuhiIzin;
 use App\Filament\Fo\Resources\BgResource\Pages;
 use App\Modules\FO\FinanceAR\Models\Bg;
 use App\Modules\FO\MarketingSales\Models\Customer;
@@ -15,6 +16,8 @@ use Illuminate\Support\Facades\DB;
 
 class BgResource extends Resource
 {
+    use MematuhiIzin;
+
     protected static ?string $model = Bg::class;
 
     protected static ?string $navigationIcon = 'heroicon-o-document-currency-dollar';

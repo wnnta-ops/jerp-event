@@ -2,6 +2,7 @@
 
 namespace App\Filament\Fo\Resources;
 
+use App\Filament\Concerns\MematuhiIzin;
 use App\Filament\Fo\Resources\ReportSprBankResource\Pages;
 use App\Modules\FO\Launching\Models\SprBankPrint;
 use Filament\Resources\Resource;
@@ -19,6 +20,8 @@ use Illuminate\Support\Facades\URL;
  */
 class ReportSprBankResource extends Resource
 {
+    use MematuhiIzin;
+
     protected static ?string $model = SprBankPrint::class;
 
     protected static ?string $navigationIcon = 'heroicon-o-building-library';

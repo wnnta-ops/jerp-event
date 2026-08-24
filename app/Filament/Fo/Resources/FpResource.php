@@ -2,6 +2,7 @@
 
 namespace App\Filament\Fo\Resources;
 
+use App\Filament\Concerns\MematuhiIzin;
 use App\Filament\Fo\Resources\FpResource\Pages;
 use App\Models\Project;
 use App\Modules\FO\FinanceAR\Models\Fp;
@@ -14,6 +15,8 @@ use Filament\Tables\Table;
 
 class FpResource extends Resource
 {
+    use MematuhiIzin;
+
     protected static ?string $model = Fp::class;
 
     protected static ?string $navigationIcon = 'heroicon-o-receipt-percent';

@@ -2,6 +2,7 @@
 
 namespace App\Filament\Fo\Resources;
 
+use App\Filament\Concerns\MematuhiIzin;
 use App\Filament\Fo\Resources\NupTipeResource\Pages;
 use App\Modules\FO\Launching\Models\NupTipe;
 use App\Modules\FO\MarketingSales\Models\Lokasi;
@@ -19,6 +20,8 @@ use Filament\Tables\Table;
  */
 class NupTipeResource extends Resource
 {
+    use MematuhiIzin;
+
     protected static ?string $model = NupTipe::class;
 
     protected static ?string $navigationIcon = 'heroicon-o-adjustments-horizontal';

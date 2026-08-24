@@ -2,6 +2,7 @@
 
 namespace App\Filament\Fo\Resources;
 
+use App\Filament\Concerns\MematuhiIzin;
 use App\Filament\Fo\Resources\CustomerResource\Pages;
 use App\Modules\FO\Launching\Models\NupRegistration;
 use App\Modules\FO\MarketingSales\Models\Customer;
@@ -16,6 +17,8 @@ use Illuminate\Support\HtmlString;
 
 class CustomerResource extends Resource
 {
+    use MematuhiIzin;
+
     protected static ?string $model = Customer::class;
 
     // URL modul Sales: daftar customer tampil di /fo/sales (bukan /fo/customers).

@@ -2,6 +2,7 @@
 
 namespace App\Filament\Fo\Resources;
 
+use App\Filament\Concerns\MematuhiIzin;
 use App\Filament\Fo\Resources\VerifikasiBookedResource\Pages;
 use App\Modules\FO\Booked\Services\BookedVerificationService;
 use App\Modules\FO\FinanceAR\Models\TransferAnonim;
@@ -20,6 +21,8 @@ use Illuminate\Database\Eloquent\Builder;
  */
 class VerifikasiBookedResource extends Resource
 {
+    use MematuhiIzin;
+
     protected static ?string $model = NupRegistration::class;
 
     protected static ?string $navigationIcon = 'heroicon-o-clipboard-document-check';

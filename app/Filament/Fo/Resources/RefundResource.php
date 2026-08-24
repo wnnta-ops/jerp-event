@@ -2,6 +2,7 @@
 
 namespace App\Filament\Fo\Resources;
 
+use App\Filament\Concerns\MematuhiIzin;
 use App\Filament\Fo\Resources\RefundResource\Pages;
 use App\Models\Bank;
 use App\Modules\FO\FinanceAR\Models\Refund;
@@ -18,6 +19,8 @@ use Filament\Tables\Table;
 
 class RefundResource extends Resource
 {
+    use MematuhiIzin;
+
     protected static ?string $model = Refund::class;
 
     protected static ?string $navigationIcon = 'heroicon-o-arrow-uturn-left';

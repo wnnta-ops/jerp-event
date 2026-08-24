@@ -2,6 +2,7 @@
 
 namespace App\Filament\Fo\Resources;
 
+use App\Filament\Concerns\MematuhiIzin;
 use App\Filament\Fo\Resources\NupEventResource\Pages;
 use App\Modules\FO\Launching\Models\NupEvent;
 use Filament\Forms;
@@ -12,6 +13,8 @@ use Filament\Tables\Table;
 
 class NupEventResource extends Resource
 {
+    use MematuhiIzin;
+
     protected static ?string $model = NupEvent::class;
 
     protected static ?string $navigationIcon = 'heroicon-o-megaphone';

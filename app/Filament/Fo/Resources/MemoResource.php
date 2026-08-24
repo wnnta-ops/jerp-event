@@ -2,6 +2,7 @@
 
 namespace App\Filament\Fo\Resources;
 
+use App\Filament\Concerns\MematuhiIzin;
 use App\Filament\Fo\Resources\MemoResource\Pages;
 use App\Modules\FO\FinanceAR\Models\Memo;
 use Filament\Forms;
@@ -13,6 +14,8 @@ use Filament\Tables\Table;
 
 class MemoResource extends Resource
 {
+    use MematuhiIzin;
+
     protected static ?string $model = Memo::class;
 
     protected static ?string $navigationIcon = 'heroicon-o-document-currency-dollar';

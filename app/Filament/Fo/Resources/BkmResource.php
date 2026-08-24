@@ -2,6 +2,7 @@
 
 namespace App\Filament\Fo\Resources;
 
+use App\Filament\Concerns\MematuhiIzin;
 use App\Filament\Fo\Resources\BkmResource\Pages;
 use App\Modules\FO\FinanceAR\Models\Bkm;
 use Filament\Forms;
@@ -13,6 +14,8 @@ use Filament\Tables\Table;
 
 class BkmResource extends Resource
 {
+    use MematuhiIzin;
+
     protected static ?string $model = Bkm::class;
 
     protected static ?string $navigationIcon = 'heroicon-o-banknotes';
