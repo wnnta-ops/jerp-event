@@ -474,6 +474,7 @@ class FoPanelProvider extends PanelProvider
                     $item('Event Launching', '/fo/nup-events', 'heroicon-o-megaphone', 'filament.fo.resources.nup-events.'),
                     $item('Pendaftaran NUP', '/fo/nup-registrations', 'heroicon-o-queue-list', 'filament.fo.resources.nup-registrations.'),
                     $item('Verifikasi Data', '/fo/verifikasi-nups', 'heroicon-o-clipboard-document-check', 'filament.fo.resources.verifikasi-nups.'),
+                    $item('Report SPR Bank', '/fo/report-spr-bank', 'heroicon-o-building-library', 'filament.fo.resources.report-spr-bank.'),
                     $item('Report NUP', '/fo/report-nup', 'heroicon-o-document-chart-bar', 'filament.fo.pages.report-nup'),
                 ],
             ],

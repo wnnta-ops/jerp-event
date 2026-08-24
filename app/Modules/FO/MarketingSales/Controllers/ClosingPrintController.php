@@ -8,11 +8,15 @@ use App\Modules\FO\FinanceAR\Models\Bkm;
 use App\Modules\FO\FinanceAR\Models\Fp;
 use App\Modules\FO\FinanceAR\Models\Tts;
 use App\Modules\FO\Launching\Models\NupRegistration;
+use App\Modules\FO\Launching\Models\SprBankPrint;
 use App\Modules\FO\MarketingSales\Models\Kontrak;
 use App\Modules\FO\MarketingSales\Services\CustomerQrService;
 use App\Settings\CollectionSettings;
 use App\Support\Terbilang;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
 use Illuminate\Http\Response;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Storage;
 use Spatie\Browsershot\Browsershot;
 
@@ -162,9 +166,105 @@ class ClosingPrintController extends Controller
         $angka = (int) preg_replace('/\D+/', '', (string) ($registration->no_nup ?: ''));
         $urut = str_pad((string) ($angka ?: $registration->id), 3, '0', STR_PAD_LEFT);
 
-        return view('pdf.fo.spr-bank', self::sprsData($registration) + [
-            'noSurat' => $urut.'/SPR/NUP/'.$romawi[(int) $kini->format('n')].'/'.$kini->format('Y'),
+        $noSurat = $urut.'/SPR/NUP/'.$romawi[(int) $kini->format('n')].'/'.$kini->format('Y');
+
+        $catatan = SprBankPrint::where('nup_registration_id', $registration->id)->first();
+        // Dua-duanya baca-saja; bedanya `cetak` langsung membuka dialog cetak.
+        $cetakLangsung = request()->boolean('cetak');
+        $hanyaLihat = $cetakLangsung || request()->boolean('preview');
+
+        $view = view('pdf.fo.spr-bank', self::sprsData($registration) + [
+            'noSurat' => $catatan?->no_surat ?: $noSurat,
+            // Preview menampilkan lembar yang BENAR-BENAR dicetak, bukan formulir yang
+            // dibangun ulang dari data: sebagian kolomnya diisi tangan di layar dan
+            // tidak tersimpan di tabel mana pun.
+            'isiTersimpan' => $catatan?->isi_html,
+            'hanyaLihat' => $hanyaLihat,
+            'cetakLangsung' => $cetakLangsung,
+            'skripCetak' => self::SKRIP_CETAK,
         ]);
+
+        if (! $hanyaLihat) {
+            return $view;
+        }
+
+        // HANYA halaman pratinjau yang menampilkan HTML kiriman peramban, dan hanya
+        // di sinilah CSP ini dipasang. `script-src 'none'` membuat sisa suntikan
+        // apa pun tidak bisa dieksekusi — penyaring regex di bersihkanHtml() gampang
+        // ditembus (mutasi HTML, atribut terpisah baris, entitas), jadi ia tidak
+        // boleh menjadi satu-satunya pertahanan. Halaman sunting sengaja TIDAK
+        // pernah merender isi tersimpan, sehingga skripnya sendiri tetap boleh jalan.
+        return response($view->render(), 200, [
+            'Content-Security-Policy' => implode('; ', [
+                "default-src 'none'",
+                "img-src 'self' data:",
+                "style-src 'unsafe-inline'",   // seluruh gaya cetak inline di halaman
+                "font-src data:",
+                // Bukan 'none' saat cetak langsung, melainkan sidik jari SATU skrip
+                // yang kita tulis sendiri. Skrip suntikan tidak akan cocok sidiknya,
+                // jadi tetap tak bisa jalan — sementara dialog cetak tetap terbuka.
+                $cetakLangsung
+                    ? "script-src 'sha256-".base64_encode(hash('sha256', self::SKRIP_CETAK, true))."'"
+                    : "script-src 'none'",
+                "base-uri 'none'",
+                "form-action 'none'",
+            ]),
+            'X-Content-Type-Options' => 'nosniff',
+        ]);
+    }
+
+    /**
+     * Simpan isi halaman SPR Bank saat tombol Cetak ditekan, lalu catat cetakannya.
+     *
+     * Dipanggil dari halaman itu sendiri sesaat sebelum dialog cetak terbuka.
+     * Pencatatan dipindah ke sini — bukan saat halaman dibuka — supaya "sudah
+     * dicetak" berarti seseorang benar-benar menekan Cetak, bukan sekadar membuka
+     * lalu menutupnya kembali.
+     */
+    public function simpanSprBank(Request $request, NupRegistration $registration): JsonResponse
+    {
+        $data = $request->validate(['isi' => ['required', 'string', 'max:2000000']]);
+        $kini = now();
+
+        $catatan = SprBankPrint::firstOrNew(['nup_registration_id' => $registration->id]);
+        $catatan->no_surat = $catatan->no_surat ?: (string) $request->input('no_surat', '-');
+        $catatan->isi_html = self::bersihkanHtml($data['isi']);
+        $catatan->jumlah_cetak = ($catatan->exists ? $catatan->jumlah_cetak : 0) + 1;
+        $catatan->pertama_cetak_at ??= $kini;
+        $catatan->terakhir_cetak_at = $kini;
+        $catatan->terakhir_cetak_by = Auth::id();
+        $catatan->save();
+
+        return response()->json(['ok' => true, 'jumlah_cetak' => $catatan->jumlah_cetak]);
+    }
+
+    /**
+     * Buang unsur yang bisa mengeksekusi kode dari HTML kiriman halaman.
+     *
+     * Isinya datang dari peramban dan ditampilkan kembali kepada petugas lain, jadi
+     * tanpa ini satu orang bisa menitipkan skrip yang berjalan di sesi rekannya.
+     * Ini penyaring kasar — cukup untuk menutup jalur yang jelas pada perkakas
+     * internal — bukan pembersih HTML yang lengkap.
+     */
+    /**
+     * Skrip pembuka dialog cetak pada mode "cetak langsung". Isinya harus PERSIS
+     * sama dengan yang dirender Blade — CSP mengizinkannya lewat sidik jari
+     * SHA-256, jadi satu spasi berbeda saja membuatnya diblokir.
+     */
+    private const SKRIP_CETAK = 'window.print();';
+
+    private static function bersihkanHtml(string $html): string
+    {
+        // 1) Buang elemen yang bisa mengeksekusi atau memuat sesuatu, beserta isinya.
+        $html = preg_replace('#<\s*(script|iframe|object|embed|link|meta)\b[^>]*>.*?<\s*/\s*\1\s*>#is', '', (string) $html);
+        // 2) Buang bentuk tunggalnya (tanpa penutup).
+        $html = preg_replace('#<\s*(script|iframe|object|embed|link|meta)\b[^>]*/?>#i', '', (string) $html);
+        // 3) Buang penangan kejadian: onclick, onerror, onload, dan sejenisnya.
+        $html = preg_replace('#\son[a-z]+\s*=\s*(?:"[^"]*"|\'[^\']*\'|[^\s>]+)#i', '', (string) $html);
+        // 4) Buang tautan berskema javascript:.
+        $html = preg_replace('#\s(?:href|src)\s*=\s*(?:"javascript:[^"]*"|\'javascript:[^\']*\')#i', '', (string) $html);
+
+        return (string) $html;
     }
 
     public function sprsPdf(NupRegistration $registration, string $hash): mixed
