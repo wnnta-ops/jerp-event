@@ -272,7 +272,7 @@
         tombol.disabled = true;
         tombol.textContent = 'Menyimpan…';
         try {
-            await fetch(@json(route('fo.cetak.spr-bank.simpan', ['registration' => $reg->id])), {
+            await fetch(@json($urlSimpan), {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',

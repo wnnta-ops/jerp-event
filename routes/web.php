@@ -84,9 +84,14 @@ Route::middleware(['throttle:120,1', 'signed'])
     ->name('fo.cetak.spr-bank');
 
 // Simpan isi halaman SPR Bank + catat cetakannya. Dipanggil halaman itu sendiri
-// sesaat sebelum dialog cetak terbuka. Butuh login: yang dikirim adalah HTML dari
-// peramban yang nanti ditampilkan lagi ke petugas lain.
-Route::middleware(['auth', 'throttle:60,1'])
+// sesaat sebelum dialog cetak terbuka.
+//
+// 'signed' WAJIB, bukan sekadar 'auth': tanpa tanda tangan, pengguna mana pun yang
+// sudah login bisa mengirim HTML untuk id pendaftaran mana pun — termasuk milik
+// pelanggan yang tidak boleh ia lihat — dan HTML itu ditampilkan kembali kepada
+// petugas lain. Tanda tangannya hanya bisa dibuat server, dan hanya disematkan pada
+// halaman cetak yang tautannya sendiri terbit dari tombol di panel.
+Route::middleware(['auth', 'signed', 'throttle:60,1'])
     ->post('/nup/spr-bank/{registration}/simpan', [ClosingPrintController::class, 'simpanSprBank'])
     ->name('fo.cetak.spr-bank.simpan');
 

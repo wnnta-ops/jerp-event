@@ -18,6 +18,7 @@ use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\URL;
 use Spatie\Browsershot\Browsershot;
 
 /**
@@ -182,6 +183,8 @@ class ClosingPrintController extends Controller
             'hanyaLihat' => $hanyaLihat,
             'cetakLangsung' => $cetakLangsung,
             'skripCetak' => self::SKRIP_CETAK,
+            // Bertanda tangan: lihat alasannya di definisi rutenya.
+            'urlSimpan' => URL::signedRoute('fo.cetak.spr-bank.simpan', ['registration' => $registration->id]),
         ]);
 
         if (! $hanyaLihat) {
@@ -223,6 +226,11 @@ class ClosingPrintController extends Controller
      */
     public function simpanSprBank(Request $request, NupRegistration $registration): JsonResponse
     {
+        // Penjaga yang sama dengan tombol "Cetak SPR Bank" di Verifikasi Data.
+        // Tanpa ini, tanda tangan yang sah untuk satu pendaftaran tetap bisa dipakai
+        // menyimpan lembar bagi pendaftaran yang belum layak diserahkan ke bank.
+        abort_unless($registration->verif_status === 'APPROVED', 403);
+
         $data = $request->validate(['isi' => ['required', 'string', 'max:2000000']]);
         $kini = now();
 
