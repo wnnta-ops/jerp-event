@@ -22,8 +22,9 @@ izin pun**; menyalakan penegakan sekarang mengunci mereka pada hari kerja
 berikutnya, dan satu-satunya pemulihan cepat adalah mematikan seluruh penegakan —
 kembali ke titik nol.
 
-Peran `super_admin` **selalu** lolos, sebagai jalan masuk terakhir bila pemetaan
-ternyata keliru.
+Peran `super_admin` dan `sup` **selalu** lolos — keduanya superuser, dan itulah
+jalan masuk terakhir bila pemetaan ternyata keliru. `sup` dipakai 7 akun, termasuk
+pemilik sistem, jadi jaring pengaman itu memang perlu ada di sana.
 
 ## Urutan yang aman
 
@@ -59,12 +60,9 @@ docker exec jerp-app php artisan akses:petakan --terapkan # simpan
 Usulannya diturunkan dari **nama peran**, jadi ia tebakan awal — bukan kebenaran.
 Sandingkan dengan hasil langkah 2 sebelum diterapkan.
 
-**13 peran tidak punya usulan** karena namanya tidak mengisyaratkan pekerjaannya:
-`art`, `default`, `estate`, `koor`, `mg`, `po3`, `pos1`–`pos5`, `sup`.
+**12 peran tidak punya usulan** karena namanya tidak mengisyaratkan pekerjaannya:
+`art`, `default`, `estate`, `koor`, `mg`, `po3`, `pos1`–`pos5`.
 Peran seperti itu **dibiarkan apa adanya**, bukan dikosongkan.
-
-> `sup` termasuk di antaranya, dan beberapa akun memakai peran itu. Petakan
-> sebelum menyalakan mode TEGAK, atau mereka ikut terkunci.
 
 ### 4. Baru nyalakan penegakan
 

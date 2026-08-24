@@ -21,7 +21,7 @@ return [
     | Peran yang SELALU lolos. Jaring pengaman supaya masih ada jalan masuk
     | kalau pemetaan izin ternyata keliru.
     */
-    'peran_super' => ['super_admin'],
+    'peran_super' => ['super_admin', 'sup'],
 
     /*
     | Izin yang dibutuhkan untuk membuka tiap panel. Sebelumnya panel hanya
