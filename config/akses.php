@@ -36,6 +36,21 @@ return [
     ],
 
     /*
+    | Izin per modul di dashboard pemilih (/dashboard). Dipakai untuk MENYEMBUNYIKAN
+    | kartunya sekaligus MENJAGA rutenya — menyembunyikan kartu saja hanya kosmetik,
+    | karena alamat seperti /sso/to-legal tetap bisa diketik langsung.
+    */
+    'modul' => [
+        'fo' => 'panel.fo',
+        'bo' => 'panel.bo',
+        'backup' => 'panel.backup',
+        'system' => 'panel.system',
+        'ai' => 'panel.ai',
+        'legal' => 'panel.legal',
+        'sales' => 'panel.sales',
+    ],
+
+    /*
     | Awalan izin per resource Filament, ditulis sebagai nama kelas pendek.
     | Resource yang TIDAK tercantum di sini tidak ditegakkan sama sekali (dan
     | dilaporkan `akses:audit` sebagai belum berpenjaga) — dibiarkan longgar
