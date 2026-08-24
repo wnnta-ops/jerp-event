@@ -2,6 +2,7 @@
 <html lang="id">
 <head>
     <meta charset="utf-8">
+    <meta name="csrf-token" content="{{ csrf_token() }}">
     <title>SPR Bank — {{ $reg->no_nup ?: $reg->nama_pendaftar }}</title>
     <style>
         * { box-sizing: border-box; }
@@ -120,13 +121,24 @@
     @endphp
 
 
-    <div class="bar">
-        <span class="grow">Lengkapi kolom yang masih kosong (Blok No. / LT&nbsp;/&nbsp;LB / Peruntukan / Harga Mengikat / Nama Bank),
-              lalu klik <strong>Cetak</strong>. Seluruh teks di halaman ini dapat diedit. Suntingan tidak disimpan.</span>
-        <button type="button" class="cetak" onclick="window.print()">Cetak</button>
-    </div>
+    @unless ($hanyaLihat)
+        <div class="bar">
+            <span class="grow">Lengkapi kolom yang masih kosong (Blok No. / LT&nbsp;/&nbsp;LB / Peruntukan / Harga Mengikat / Nama Bank),
+                  lalu klik <strong>Cetak</strong>. Seluruh teks di halaman ini dapat diedit dan akan tersimpan saat dicetak.</span>
+            <button type="button" class="cetak" id="tombol-cetak">Cetak</button>
+        </div>
+    @elseif (! $cetakLangsung)
+        <div class="bar">
+            <span class="grow">Pratinjau lembar yang sudah dicetak. Halaman ini <strong>tidak dapat diedit</strong> —
+                  untuk mengubahnya, cetak ulang dari <strong>Verifikasi Data</strong>.
+                  Tekan <strong>Ctrl&nbsp;+&nbsp;P</strong> untuk mencetak.</span>
+        </div>
+    @endunless
 
-    <div contenteditable="true">
+    <div id="dokumen" @unless ($hanyaLihat) contenteditable="true" @endunless>
+    @if ($hanyaLihat && $isiTersimpan)
+        {!! $isiTersimpan !!}
+    @else
     <div class="head">
         @if ($logoSrc)
             <img src="{{ $logoSrc }}" alt="Java Residence" style="max-width:150px; max-height:58px; object-fit:contain;">
@@ -242,6 +254,43 @@
         </div>
     @endif
 
+    @endif
     </div>
+
+@if ($cetakLangsung)
+<script>{{ $skripCetak }}</script>
+@endif
+
+@unless ($hanyaLihat)
+<script>
+    // Isi halaman dikirim ke server SEBELUM dialog cetak dibuka, dan sengaja
+    // di-await: dialog cetak menghentikan JavaScript, jadi permintaan yang belum
+    // selesai akan terputus dan suntingannya hilang.
+    document.getElementById('tombol-cetak').addEventListener('click', async function () {
+        const tombol = this;
+        const dokumen = document.getElementById('dokumen');
+        tombol.disabled = true;
+        tombol.textContent = 'Menyimpan…';
+        try {
+            await fetch(@json(route('fo.cetak.spr-bank.simpan', ['registration' => $reg->id])), {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content,
+                    'Accept': 'application/json',
+                },
+                body: JSON.stringify({ isi: dokumen.innerHTML, no_surat: @json($noSurat) }),
+            });
+        } catch (e) {
+            // Gagal menyimpan tidak boleh menggagalkan cetak — kertasnya tetap
+            // dibutuhkan; yang hilang hanya kemampuan melihat ulang nanti.
+            console.error('Gagal menyimpan isi SPR Bank:', e);
+        }
+        tombol.disabled = false;
+        tombol.textContent = 'Cetak';
+        window.print();
+    });
+</script>
+@endunless
 </body>
 </html>
