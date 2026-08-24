@@ -16,6 +16,7 @@ class SsoController
 {
     public function toBo(): RedirectResponse
     {
+        $this->pastikanBoleh('bo');
         $token = $this->makeToken((string) config('ipro.sso_secret'));
 
         return redirect(config('ipro.bo_url') . '/sso/consume?token=' . urlencode($token));
@@ -24,6 +25,7 @@ class SsoController
     /** Portal → app Legal (Next.js, path /legal) — verifikasi di /legal/api/sso. */
     public function toLegal(): RedirectResponse
     {
+        $this->pastikanBoleh('legal');
         $token = $this->makeToken((string) config('ipro.portal_sso_secret'));
 
         return redirect(rtrim((string) config('ipro.legal_url'), '/') . '/api/sso?token=' . urlencode($token));
@@ -32,9 +34,21 @@ class SsoController
     /** Portal → app Sales (Next.js, path /sales) — verifikasi di /sales/api/sso. */
     public function toSales(): RedirectResponse
     {
+        $this->pastikanBoleh('sales');
         $token = $this->makeToken((string) config('ipro.portal_sso_secret'));
 
         return redirect(rtrim((string) config('ipro.sales_url'), '/') . '/api/sso?token=' . urlencode($token));
+    }
+
+    /**
+     * Rutenya hanya dijaga `auth` — itu cuma menjawab "sudah login?", bukan "boleh
+     * masuk portal ini?". Tanpa pemeriksaan ini, siapa pun yang punya akun bisa
+     * mengetik /sso/to-legal dan menerima token handoff yang sah untuk portal Legal.
+     * Menyembunyikan kartunya di dashboard tidak menutup apa pun.
+     */
+    private function pastikanBoleh(string $modul): void
+    {
+        abort_unless(\App\Support\Akses::boleh(config('akses.modul.'.$modul)), 403);
     }
 
     /** Token handoff HMAC (payload base64 + tanda tangan), umur 60 detik, nonce sekali pakai. */

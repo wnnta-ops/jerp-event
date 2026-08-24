@@ -31,6 +31,7 @@
     $modules = [
         [
             'href'  => '/fo',
+            'izin'  => config('akses.modul.fo'),
             'label' => 'Front Office',
             'desc'  => 'Marketing, Finance AR, Collection, Legal, Launching, Komisi.',
             'bg'    => 'var(--color-brand-600)',
@@ -38,6 +39,7 @@
         ],
         [
             'href'  => '/sso/to-bo',
+            'izin'  => config('akses.modul.bo'),
             'label' => 'Back Office',
             'desc'  => 'Akuntansi + Bank Loan/KPR terintegrasi: GL, AR, AP, Cash & Bank, Inventory, COGS, Budget, Proses KPR. (Java Core System)',
             'bg'    => 'oklch(0.72 0.17 55)',
@@ -45,6 +47,7 @@
         ],
         [
             'href'  => '/backup',
+            'izin'  => config('akses.modul.backup'),
             'label' => 'Backup',
             'desc'  => 'Manajemen backup database (pengganti TuxArch).',
             'bg'    => 'oklch(0.55 0.18 180)',
@@ -52,6 +55,7 @@
         ],
         [
             'href'  => '/fo/asisten-ai',
+            'izin'  => config('akses.modul.ai'),
             'label' => 'Asisten AI',
             'desc'  => 'Tanya-jawab & cari data customer; hasil pencarian bisa diunduh sebagai Excel.',
             'bg'    => 'oklch(0.55 0.20 300)',
@@ -59,6 +63,7 @@
         ],
         [
             'href'  => '/sso/to-legal',
+            'izin'  => config('akses.modul.legal'),
             'label' => 'Legal',
             'desc'  => 'Direktori dokumen legal, timeline tenggat, permintaan akses & approval berjenjang.',
             'bg'    => 'oklch(0.55 0.15 250)',
@@ -66,12 +71,25 @@
         ],
         [
             'href'  => '/sso/to-sales',
+            'izin'  => config('akses.modul.sales'),
             'label' => 'Sales',
             'desc'  => 'Java Sales Hub — pipeline deal, unit, KPI & laporan penjualan.',
             'bg'    => 'oklch(0.62 0.17 145)',
             'path'  => 'M3 3v18h18M7 14l4-4 3 3 5-6',
         ],
     ];
+
+    // Kartu yang tidak boleh diakses DISEMBUNYIKAN. Dalam mode lapor
+    // (AKSES_TEGAKKAN=false) Akses::boleh() selalu true, jadi tak ada yang hilang —
+    // penyembunyian menyala bersamaan dengan penegakan, disengaja: menyembunyikan
+    // kartu sebelum peran dipetakan hanya menyisakan dashboard kosong bagi
+    // pengguna yang izinnya belum sempat ditinjau.
+    $modules = array_values(array_filter(
+        $modules,
+        fn (array $m) => \App\Support\Akses::boleh($m['izin'] ?? null, $user)
+    ));
+
+    $bolehSystem = \App\Support\Akses::boleh(config('akses.modul.system'), $user);
 @endphp
 
 <header class="sticky top-0 z-30 border-b backdrop-blur"
@@ -96,6 +114,7 @@
                 </svg>
             </button>
 
+            @if ($bolehSystem)
             <a href="/system" title="System"
                class="inline-flex items-center justify-center w-10 h-10 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800">
                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -103,6 +122,7 @@
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
                 </svg>
             </a>
+            @endif
 
             <div class="hidden md:flex items-center gap-2 px-2">
                 <div class="w-8 h-8 rounded-full grid place-items-center text-sm font-semibold text-white"

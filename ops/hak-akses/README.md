@@ -73,6 +73,23 @@ lalu `docker restart jerp-app`.
 
 Kalau ada yang terkunci: kembalikan ke `false`, restart, dan sistem pulih seketika.
 
+## Dashboard pemilih modul
+
+Kartu di `/dashboard` (Front Office, Back Office, Backup, Asisten AI, Legal, Sales)
+dan ikon System **disembunyikan** bila penggunanya tidak berhak.
+
+Menyembunyikan kartu saja hanya kosmetik, jadi rutenya ikut dijaga: `/sso/to-legal`,
+`/sso/to-sales`, dan `/sso/to-bo` sebelumnya hanya bermiddleware `auth` — siapa pun
+yang punya akun bisa mengetik alamatnya dan menerima token handoff yang sah untuk
+portal Legal. Kini ketiganya memeriksa izin modulnya dan menolak dengan 403.
+
+Izinnya: `panel.fo`, `panel.bo`, `panel.backup`, `panel.system`, `panel.ai`,
+`panel.legal`, `panel.sales` — dibuat otomatis oleh `akses:petakan`.
+
+Penyembunyian menyala **bersamaan** dengan penegakan. Dalam mode lapor semua kartu
+tetap tampil; itu disengaja, karena menyembunyikan kartu sebelum peran dipetakan
+hanya menyisakan dashboard kosong bagi pengguna yang izinnya belum ditinjau.
+
 ## Cakupan saat ini
 
 **21 dari 92 resource** sudah dipetakan ke izin (`config/akses.php`). Sisanya

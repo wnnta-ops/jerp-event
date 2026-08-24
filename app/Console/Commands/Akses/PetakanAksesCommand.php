@@ -31,20 +31,20 @@ class PetakanAksesCommand extends Command
         // 'sup' = superuser, akses penuh (dikonfirmasi pemilik sistem).
         'sup' => ['*'],
         'it' => ['*'],
-        'direktur' => ['fo.', 'bo.', 'bankloan.', 'panel.fo', 'panel.bo'],
-        'auditor' => ['fo.', 'bo.', 'panel.fo', 'panel.bo'],
-        'finance_manager' => ['fo.tts', 'fo.bkm', 'fo.bg', 'fo.memo', 'fo.fp', 'fo.refund', 'fo.va', 'fo.transfer_anonim', 'bo.', 'panel.fo', 'panel.bo'],
+        'direktur' => ['fo.', 'bo.', 'bankloan.', 'panel.'],
+        'auditor' => ['fo.', 'bo.', 'panel.fo', 'panel.bo', 'panel.legal', 'panel.sales'],
+        'finance_manager' => ['fo.tts', 'fo.bkm', 'fo.bg', 'fo.memo', 'fo.fp', 'fo.refund', 'fo.va', 'fo.transfer_anonim', 'bo.', 'panel.fo', 'panel.bo', 'panel.ai'],
         'finance_staff' => ['fo.tts', 'fo.bkm', 'fo.bg', 'fo.memo', 'fo.fp', 'fo.va', 'panel.fo'],
         'fin' => ['fo.tts', 'fo.bkm', 'fo.bg', 'fo.memo', 'fo.fp', 'fo.va', 'panel.fo'],
         'acc' => ['bo.', 'panel.bo'],
         'accounting' => ['bo.', 'panel.bo'],
-        'sales_manager' => ['fo.nup', 'fo.verifikasi_nup', 'fo.verifikasi_booked', 'fo.customer', 'fo.reservasi', 'fo.kontrak', 'fo.spr', 'fo.pilih_unit', 'fo.aktivasi_nup', 'fo.closing_nup', 'panel.fo'],
-        'sales_staff' => ['fo.nup', 'fo.customer', 'fo.reservasi', 'fo.pilih_unit', 'panel.fo'],
-        'mkt' => ['fo.nup', 'fo.customer', 'fo.reservasi', 'fo.pilih_unit', 'panel.fo'],
+        'sales_manager' => ['fo.nup', 'fo.verifikasi_nup', 'fo.verifikasi_booked', 'fo.customer', 'fo.reservasi', 'fo.kontrak', 'fo.spr', 'fo.pilih_unit', 'fo.aktivasi_nup', 'fo.closing_nup', 'panel.fo', 'panel.sales', 'panel.ai'],
+        'sales_staff' => ['fo.nup', 'fo.customer', 'fo.reservasi', 'fo.pilih_unit', 'panel.fo', 'panel.sales'],
+        'mkt' => ['fo.nup', 'fo.customer', 'fo.reservasi', 'fo.pilih_unit', 'panel.fo', 'panel.sales'],
         'kasir_launching' => ['fo.nup', 'fo.aktivasi_nup', 'fo.pilih_unit', 'fo.tts', 'panel.fo'],
         'collector' => ['fo.customer', 'fo.kontrak', 'panel.fo'],
-        'legal_staff' => ['fo.kontrak', 'fo.customer', 'panel.fo'],
-        'lgl' => ['fo.kontrak', 'fo.customer', 'panel.fo'],
+        'legal_staff' => ['fo.kontrak', 'fo.customer', 'panel.fo', 'panel.legal'],
+        'lgl' => ['fo.kontrak', 'fo.customer', 'panel.fo', 'panel.legal'],
         'kpr' => ['bankloan.', 'fo.kontrak', 'panel.fo'],
         'kpr_officer' => ['bankloan.', 'fo.kontrak', 'panel.fo'],
         'hrga' => ['bo.hr', 'panel.bo'],
@@ -110,7 +110,12 @@ class PetakanAksesCommand extends Command
 
     private function buatIzinPanel(): void
     {
-        foreach ((array) config('akses.panel') as $izin) {
+        $daftar = array_merge(
+            array_values((array) config('akses.panel', [])),
+            array_values((array) config('akses.modul', [])),
+        );
+
+        foreach (array_unique($daftar) as $izin) {
             Permission::findOrCreate($izin, 'web');
         }
     }
