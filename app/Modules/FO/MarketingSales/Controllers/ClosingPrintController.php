@@ -143,6 +143,30 @@ class ClosingPrintController extends Controller
     }
 
     /** PDF SPRS via path-token (tanpa query string) — dipakai header dokumen WA. */
+    /**
+     * SPR Bank — cetakan untuk berkas pengajuan ke bank.
+     *
+     * HALAMAN CETAK SAJA. Tidak menulis apa pun ke database, tidak menyentuh SPRS
+     * yang sudah ada, dan SENGAJA tidak memakai NumeratorService: memanggilnya akan
+     * memakai satu nomor urut sungguhan padahal ini sekadar cetakan yang boleh
+     * diulang berkali-kali. Nomor surat disusun dari urutan NUP dan bisa disunting
+     * langsung di halaman sebelum dicetak.
+     */
+    public function sprBank(NupRegistration $registration): mixed
+    {
+        $romawi = ['', 'I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X', 'XI', 'XII'];
+        $kini = now();
+        // Mengikuti No NUP, bukan kolom `urutan`: keduanya bisa berbeda, dan yang
+        // dipegang customer serta tercetak di berkas lain adalah No NUP.
+        // "NUP-00001" → 1 → "001".
+        $angka = (int) preg_replace('/\D+/', '', (string) ($registration->no_nup ?: ''));
+        $urut = str_pad((string) ($angka ?: $registration->id), 3, '0', STR_PAD_LEFT);
+
+        return view('pdf.fo.spr-bank', self::sprsData($registration) + [
+            'noSurat' => $urut.'/SPR/NUP/'.$romawi[(int) $kini->format('n')].'/'.$kini->format('Y'),
+        ]);
+    }
+
     public function sprsPdf(NupRegistration $registration, string $hash): mixed
     {
         abort_unless(hash_equals(self::sprsPdfHash($registration->id), $hash), 403);

@@ -76,6 +76,13 @@ Route::middleware(['throttle:120,1', 'signed'])
     ->get('/nup/sprs/{registration}', [ClosingPrintController::class, 'sprs'])
     ->name('fo.cetak.sprs');
 
+// SPR Bank — cetakan untuk berkas pengajuan ke bank, dibuka dari Verifikasi Data.
+// Halaman ini bisa disunting di layar lalu dicetak; TIDAK menyimpan apa pun.
+// Signed URL, pola pengamanan sama dengan SPRS.
+Route::middleware(['throttle:120,1', 'signed'])
+    ->get('/nup/spr-bank/{registration}', [ClosingPrintController::class, 'sprBank'])
+    ->name('fo.cetak.spr-bank');
+
 // PDF SPRS TANPA query string (token HMAC di path) — utk header dokumen WA:
 // Qontak/Meta menolak URL dokumen yang mengandung '?','&','=' (signed URL gagal 422).
 Route::middleware(['throttle:120,1'])
