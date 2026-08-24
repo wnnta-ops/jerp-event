@@ -2,6 +2,7 @@
 
 namespace App\Filament\Fo\Resources;
 
+use App\Filament\Concerns\MematuhiIzin;
 use App\Filament\Fo\Resources\VerifikasiNupResource\Pages;
 use App\Modules\FO\Launching\Models\NupRegistration;
 use App\Modules\FO\Launching\Services\VerifikasiNupService;
@@ -16,6 +17,8 @@ use Illuminate\Support\HtmlString;
 
 class VerifikasiNupResource extends Resource
 {
+    use MematuhiIzin;
+
     protected static ?string $model = NupRegistration::class;
 
     // Hanya pendaftaran NUP (launching); Booked Manual punya menu verifikasi sendiri.

@@ -2,6 +2,7 @@
 
 namespace App\Filament\Fo\Resources;
 
+use App\Filament\Concerns\MematuhiIzin;
 use App\Filament\Fo\Resources\TransferAnonimResource\Pages;
 use App\Models\Bank;
 use App\Modules\FO\FinanceAR\Models\Refund;
@@ -15,6 +16,8 @@ use Filament\Tables\Table;
 
 class TransferAnonimResource extends Resource
 {
+    use MematuhiIzin;
+
     protected static ?string $model = TransferAnonim::class;
 
     protected static ?string $navigationIcon = 'heroicon-o-question-mark-circle';

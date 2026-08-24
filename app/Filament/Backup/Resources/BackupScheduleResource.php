@@ -2,6 +2,7 @@
 
 namespace App\Filament\Backup\Resources;
 
+use App\Filament\Concerns\MematuhiIzin;
 use App\Filament\Backup\Resources\BackupScheduleResource\Pages;
 use App\Models\BackupSchedule;
 use Filament\Forms;
@@ -12,6 +13,8 @@ use Filament\Tables\Table;
 
 class BackupScheduleResource extends Resource
 {
+    use MematuhiIzin;
+
     protected static ?string $model = BackupSchedule::class;
 
     protected static ?string $navigationIcon = 'heroicon-o-clock';

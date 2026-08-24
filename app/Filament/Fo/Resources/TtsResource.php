@@ -2,6 +2,7 @@
 
 namespace App\Filament\Fo\Resources;
 
+use App\Filament\Concerns\MematuhiIzin;
 use App\Filament\Fo\Resources\TtsResource\Pages;
 use App\Modules\FO\FinanceAR\Models\Tts;
 use App\Modules\FO\FinanceAR\Services\TtsToBkmService;
@@ -16,6 +17,8 @@ use Filament\Tables\Table;
 
 class TtsResource extends Resource
 {
+    use MematuhiIzin;
+
     protected static ?string $model = Tts::class;
 
     protected static ?string $navigationIcon = 'heroicon-o-ticket';

@@ -2,6 +2,7 @@
 
 namespace App\Filament\Fo\Resources;
 
+use App\Filament\Concerns\MematuhiIzin;
 use App\Filament\Fo\Resources\NupRegistrationResource\Pages;
 use App\Modules\FO\Launching\Models\NupRegistration;
 use Filament\Forms;
@@ -14,6 +15,8 @@ use Illuminate\Database\Eloquent\Builder;
 
 class NupRegistrationResource extends Resource
 {
+    use MematuhiIzin;
+
     protected static ?string $model = NupRegistration::class;
 
     // Daftar pendaftaran NUP (launching) saja; Booked Manual terpisah.

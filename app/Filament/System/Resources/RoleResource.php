@@ -2,6 +2,7 @@
 
 namespace App\Filament\System\Resources;
 
+use App\Filament\Concerns\MematuhiIzin;
 use App\Filament\System\Resources\RoleResource\Pages;
 use Filament\Forms;
 use Filament\Forms\Components\Component;
@@ -14,6 +15,8 @@ use Spatie\Permission\Models\Role;
 
 class RoleResource extends Resource
 {
+    use MematuhiIzin;
+
     protected static ?string $model = Role::class;
 
     protected static ?string $navigationIcon = 'heroicon-o-shield-check';

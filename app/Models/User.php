@@ -76,8 +76,25 @@ class User extends Authenticatable implements FilamentUser
      * Filament gate — every authenticated user may enter any panel for now.
      * Tighten later via role checks (e.g. only `it_admin` can enter System).
      */
+    /**
+     * Gerbang panel.
+     *
+     * Sebelumnya hanya memeriksa is_active — artinya SETIAP pengguna aktif bisa
+     * membuka semua panel, termasuk System (kelola pengguna & peran) dan Backup
+     * (restore database). 61 akun, 39 peran, satu pintu.
+     *
+     * Izinnya diperiksa lewat Akses agar sakelar MODE LAPOR ikut berlaku di sini:
+     * selama pemetaan peran belum ditinjau, yang seharusnya ditolak hanya dicatat,
+     * tidak benar-benar mengunci orang.
+     */
     public function canAccessPanel(Panel $panel): bool
     {
-        return (bool) $this->is_active;
+        if (! $this->is_active) {
+            return false;
+        }
+
+        $izin = config('akses.panel.'.$panel->getId());
+
+        return \App\Support\Akses::boleh($izin, $this);
     }
 }

@@ -2,6 +2,7 @@
 
 namespace App\Filament\Fo\Resources;
 
+use App\Filament\Concerns\MematuhiIzin;
 use App\Filament\Fo\Resources\KontrakResource\Pages;
 use App\Modules\FO\Adminjual\Models\Gimmick;
 use App\Modules\FO\Adminjual\Models\Skema;
@@ -20,6 +21,8 @@ use Illuminate\Support\HtmlString;
 
 class KontrakResource extends Resource
 {
+    use MematuhiIzin;
+
     protected static ?string $model = Kontrak::class;
 
     // Menu SPRS hanya menampilkan kontrak tahap SPRS; yang sudah final ada di menu SPR.

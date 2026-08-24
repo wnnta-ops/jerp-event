@@ -2,6 +2,7 @@
 
 namespace App\Filament\Fo\Resources;
 
+use App\Filament\Concerns\MematuhiIzin;
 use App\Filament\Fo\Resources\ReservasiResource\Pages;
 use App\Modules\FO\MarketingSales\Models\Reservasi;
 use App\Modules\FO\MarketingSales\Models\Unit;
@@ -13,6 +14,8 @@ use Filament\Tables\Table;
 
 class ReservasiResource extends Resource
 {
+    use MematuhiIzin;
+
     protected static ?string $model = Reservasi::class;
 
     protected static ?string $navigationIcon = 'heroicon-o-bookmark';

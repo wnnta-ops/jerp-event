@@ -2,6 +2,7 @@
 
 namespace App\Filament\Fo\Resources;
 
+use App\Filament\Concerns\MematuhiIzin;
 use App\Filament\Fo\Resources\UnitResource\Pages;
 use App\Modules\FO\MarketingSales\Models\Tahap;
 use App\Modules\FO\MarketingSales\Models\Unit;
@@ -13,6 +14,8 @@ use Filament\Tables\Table;
 
 class UnitResource extends Resource
 {
+    use MematuhiIzin;
+
     protected static ?string $model = Unit::class;
 
     protected static ?string $navigationIcon = 'heroicon-o-home-modern';
