@@ -51,3 +51,18 @@ try {
 } catch (Throwable) {
     // Tabel backup_schedules belum ada (sebelum migrate) — lewati penjadwalan.
 }
+
+/*
+ * Rekonsiliasi master Lokasi FO → cluster BO, tiap jam.
+ *
+ * Sinkron utamanya berbasis peristiwa (Lokasi::saved/deleted/restored di BoServiceProvider),
+ * jadi biasanya tidak ada yang tersisa untuk dikerjakan di sini. Yang dijaga adalah keadaan
+ * yang tak terpantau: antrean mati, IPRO_SYNC_ENABLED sempat dimatikan, atau job gagal sampai
+ * kehabisan retry. Tanpa jaring ini, operator menambah cluster di FO, tidak melihatnya di BO,
+ * lalu menyimpulkan BO-nya rusak — padahal cukup satu sinkron yang terlewat.
+ *
+ * Biayanya beberapa puluh SELECT dan ia idempoten, jadi aman berjalan sesering ini.
+ */
+if (config('ipro.sync_enabled', true)) {
+    Schedule::command('ipro:backfill lokasi')->hourly()->withoutOverlapping()->runInBackground();
+}

@@ -259,16 +259,31 @@ class IproApPoster
     }
 
     /**
-     * Cluster ipro_bo dari Lokasi FO. Kodenya FOL-{id} — kesepakatan yang sama dengan
-     * IproMasterSync::iproClusterId(), sumber tunggal yang menciptakan cluster itu.
+     * Cluster ipro_bo dari Lokasi FO — kesepakatan yang sama dengan IproMasterSync::syncLokasi(),
+     * sumber tunggal yang menciptakan cluster itu.
+     *
+     * Dicari lewat fo_lokasi_id lebih dulu. Kode BUKAN lagi kunci: sejak cluster memakai kode
+     * Lokasi yang sesungguhnya ("JRK3") agar cocok dengan Master Unit, kode itu ikut berubah
+     * setiap kali operator memperbaikinya di FO — mencarinya dengan kode akan membuat posting
+     * berhenti menemukan cluster tepat pada saat namanya dirapikan.
+     *
+     * Jalur 'FOL-{id}' dipertahankan sebagai cadangan untuk BO yang belum dimigrasi.
+     *
+     * Pencarian mengabaikan cluster yang ditandai terhapus: Lokasi yang sudah dinonaktifkan di
+     * FO tidak boleh lagi menarik kategori gimmick bercluster — lebih baik jatuh ke kategori
+     * cadangan daripada membebankan ke akun cluster yang sudah pensiun.
      */
     private function iproClusterIdByFoLokasi(int $foLokasiId): ?int
     {
         try {
-            $id = $this->db()->table('clusters')
-                ->where('tenant_id', $this->tenantId)
-                ->where('code', 'FOL-'.$foLokasiId)
-                ->value('id');
+            $dasar = fn () => $this->db()->table('clusters')
+                ->where('tenant_id', $this->tenantId)->whereNull('deleted_at');
+
+            $id = $this->punyaKolom('clusters', 'fo_lokasi_id')
+                ? $dasar()->where('fo_lokasi_id', $foLokasiId)->value('id')
+                : null;
+
+            $id ??= $dasar()->where('code', 'FOL-'.$foLokasiId)->value('id');
 
             return $id ? (int) $id : null;
         } catch (\Throwable $e) {

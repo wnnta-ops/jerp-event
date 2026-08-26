@@ -13,6 +13,7 @@ use App\Modules\FO\FinanceAR\Models\TransferAnonim;
 use App\Modules\FO\FinanceAR\Models\Tts;
 use App\Modules\FO\MarketingSales\Models\Customer;
 use App\Modules\FO\MarketingSales\Models\Kontrak;
+use App\Modules\FO\MarketingSales\Models\Lokasi;
 use App\Modules\FO\MarketingSales\Models\Unit;
 use App\Modules\FO\Shared\Events\FoFinancialEvent;
 use Illuminate\Support\Facades\Event;
@@ -52,9 +53,21 @@ class BoServiceProvider extends ServiceProvider
     {
         // Sync ASINKRON: dispatch job SETELAH transaksi FO commit (afterCommit) →
         // tak menambah latensi simpan, retry + outbox bila gagal. QUEUE=sync pun aman.
-        $dispatch = function (string $method, $model): void {
-            SyncFoToIproJob::dispatch($method, $model::class, $model->getKey())->afterCommit();
+        $dispatch = function (string $method, $model, bool $withTrashed = false): void {
+            SyncFoToIproJob::dispatch($method, $model::class, $model->getKey(), $withTrashed)->afterCommit();
         };
+
+        // Master Lokasi (Setup Unit) = "cluster" di BO. Disinkronkan SENDIRI, bukan lagi
+        // sebagai efek samping sinkron unit: Lokasi yang belum punya satu unit pun tetap harus
+        // muncul sebagai pilihan Cluster di Setup Kategori Gimmick, persis seperti ia muncul
+        // di FO. Selama ia menumpang syncUnit(), sebuah cluster baru tidak akan pernah lahir
+        // sampai ada unit pertama yang diunggah ke sana.
+        //
+        // Ketiga peristiwa diperlukan: runSoftDelete() TIDAK memicu `saved`, jadi tanpa
+        // `deleted` sebuah Lokasi yang dinonaktifkan di FO akan terus ditawarkan di BO.
+        Lokasi::saved(fn ($m) => $dispatch('syncLokasi', $m));
+        Lokasi::deleted(fn ($m) => $dispatch('syncLokasi', $m, true));
+        Lokasi::restored(fn ($m) => $dispatch('syncLokasi', $m, true));
 
         Customer::saved(fn ($m) => $dispatch('syncCustomer', $m));
         Unit::saved(fn ($m) => $dispatch('syncUnit', $m));

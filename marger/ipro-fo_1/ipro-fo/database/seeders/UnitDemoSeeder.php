@@ -29,6 +29,18 @@ class UnitDemoSeeder extends Seeder
 
         $clusters = Cluster::where('project_id', $project->id)->orderBy('code')->get();
 
+        // Sejak cluster tidak lagi di-seed (ia cerminan master Lokasi FO), seeder ini biasanya
+        // tidak menghasilkan apa pun. Dikatakan apa adanya — loop kosong yang diam membuat
+        // "kenapa tidak ada unit demo?" jadi teka-teki yang harus dilacak ke seeder lain.
+        if ($clusters->isEmpty()) {
+            $this->command?->warn(
+                'UnitDemoSeeder dilewati: belum ada cluster. '
+                .'Cluster berasal dari FO — jalankan `php artisan ipro:backfill lokasi` di aplikasi FO.'
+            );
+
+            return;
+        }
+
         $statusPool = ['available', 'available', 'available', 'hold', 'booked'];
         $counter = 0;
 
