@@ -231,6 +231,25 @@ const showDetail = ref(props.defaultDetail ?? false);
 const open = ref<Record<number, boolean>>({});
 function toggle(id: number) { open.value[id] = !open.value[id]; }
 function isOpen(id: number) { return showDetail.value || open.value[id]; }
+
+/**
+ * Baris yang digambar untuk satu jurnal — satu baris tabel per BARIS JURNAL.
+ *
+ * Rincian tertutup (atau jurnalnya memang belum punya baris) → satu baris ringkas, ditandai
+ * null. Baris ringkas itulah yang membawa TOTAL jurnalnya di kolom Debit & Kredit, sehingga
+ * kedua kolom tidak pernah kosong walau rinciannya disembunyikan.
+ *
+ * Inilah yang membuat kolom Debit & Kredit cukup SATU pasang: dulu ada sepasang pada kepala
+ * jurnal dan sepasang lagi pada rinciannya, dua-duanya berjudul sama, dan mata harus
+ * memutuskan sendiri mana yang sedang dibacanya.
+ */
+function barisTampil(j: any): any[] {
+    const baris = isOpen(j?.id) ? (j?.lines ?? []) : [];
+
+    return baris.length ? baris : [null];
+}
+/** Berapa baris tabel yang ditempati satu jurnal — dipakai rowspan kolom miliknya. */
+function rentangBaris(j: any) { return barisTampil(j).length; }
 </script>
 <template>
     <div class="space-y-4">
@@ -323,26 +342,27 @@ function isOpen(id: number) { return showDetail.value || open.value[id]; }
         </div>
 
         <!-- ══ Tabel ══
-             Rincian baris TIDAK lagi memakai tabel sendiri di dalam sel. Dulu begitu, dan
-             akibatnya kolom Akun / Keterangan Baris / Debit / Kredit punya grid sendiri yang
-             tidak pernah sejajar dengan No. Jurnal / Tanggal / Sumber / Keterangan / Nilai di
-             atasnya — mata harus melompat tiap kali berpindah dari kepala jurnal ke isinya.
+             Satu baris tabel = satu BARIS JURNAL, memanjang ke kanan:
 
-             Sekarang semuanya SATU tabel dengan satu grid kolom:
+               No. Jurnal │ Tanggal │ Sumber │ Keterangan │ Status │ Baris │ Anggaran │ COA │ Nama Akun │ Keterangan Baris │ Debit │ Kredit
 
-               No. Jurnal  Tanggal  Sumber │ Keterangan       │ Status  Baris │  Debit   Kredit
-               └────────── Akun ──────────┘ └Keterangan Baris┘                └ Debit ┘└Kredit┘
+             Kolom milik jurnalnya memakai rowspan — ditulis sekali, membentang menaungi
+             baris-barisnya — jadi bentuknya sama persis dengan berkas Excel yang diekspor
+             halaman ini, dan angkanya bisa dibaca lurus tanpa berpindah tingkat.
 
-             Kolom "Nilai" yang dulu satu dipecah menjadi Debit & Kredit, sehingga angka pada
-             kepala jurnal berdiri tepat di atas angka barisnya dan penjumlahannya bisa
-             diperiksa dengan menyusuri satu kolom lurus ke bawah. -->
+             Sebelumnya rincian digambar sebagai baris bertingkat di bawah kepala jurnal, dengan
+             kepala kolomnya sendiri. Akibatnya ada DUA pasang kolom Debit & Kredit yang
+             berjudul sama — satu milik jurnal, satu milik baris — dan mata harus memutuskan
+             sendiri mana yang sedang dibacanya. Kini cukup satu pasang: saat rincian dibuka ia
+             memuat angka per baris, saat ditutup ia memuat total jurnalnya. -->
         <div class="card overflow-x-auto">
-            <table class="w-full min-w-[78rem] table-fixed text-sm">
+            <table class="w-full min-w-[96rem] table-fixed text-sm">
                 <colgroup>
                     <col class="w-10" /><col class="w-10" />
-                    <col class="w-[13rem]" /><col class="w-[7.5rem]" /><col class="w-[9rem]" />
-                    <col /><col class="w-[7rem]" /><col class="w-[5rem]" />
-                    <col class="w-[10rem]" /><col class="w-[10rem]" /><col class="w-[8.5rem]" /><col class="w-[5.5rem]" />
+                    <col class="w-[12rem]" /><col class="w-[7.5rem]" /><col class="w-[8rem]" />
+                    <col class="w-[15rem]" /><col class="w-[7rem]" /><col class="w-[4.5rem]" /><col class="w-[8.5rem]" />
+                    <col class="w-[9rem]" /><col /><col class="w-[12rem]" />
+                    <col class="w-[9rem]" /><col class="w-[9rem]" /><col class="w-[5.5rem]" />
                 </colgroup>
                 <thead class="bg-neutral-50 dark:bg-neutral-800">
                     <tr class="text-left text-xs uppercase tracking-wide text-neutral-500">
@@ -354,18 +374,20 @@ function isOpen(id: number) { return showDetail.value || open.value[id]; }
                         <th class="px-4 py-3">Keterangan</th>
                         <th class="px-4 py-3 text-center">Status</th>
                         <th class="px-4 py-3 text-center">Baris</th>
+                        <th class="px-4 py-3 text-center">Anggaran</th>
+                        <th class="px-4 py-3">COA</th>
+                        <th class="px-4 py-3">Nama Akun</th>
+                        <th class="px-4 py-3">Keterangan Baris</th>
                         <th class="px-4 py-3 text-right">Debit</th>
                         <th class="px-4 py-3 text-right">Kredit</th>
-                        <th class="px-4 py-3 text-center">Anggaran</th>
                         <th class="px-4 py-3"></th>
                     </tr>
 
                     <!-- ══ SARINGAN KOLOM ══
-                         Satu saringan untuk SETIAP kolom, semuanya dropdown yang bisa diketik
-                         untuk mencari. Dua baris, karena kolom rincian berbagi grid yang sama
-                         dengan kolom induknya: baris pertama menyaring kepala jurnal, baris
-                         kedua menyaring isinya — masing-masing tepat di bawah kolom yang
-                         disaringnya, bukan di bilah terpisah yang harus dicocokkan sendiri. -->
+                         Satu baris saja, satu saringan tepat di bawah kolom yang disaringnya.
+                         Dulu dua baris ("Sar." dan "Rinci") karena kolom rincian menumpang grid
+                         kolom induknya — Akun harus dijejalkan ke bawah No. Jurnal/Tanggal/Sumber.
+                         Sejak tiap kolom berdiri sendiri, penjejalan itu tidak diperlukan lagi. -->
                     <tr class="border-t border-neutral-200 bg-white/60 dark:border-neutral-700 dark:bg-neutral-900/40">
                         <th class="px-2 py-2"></th>
                         <th class="px-2 py-2 text-[10px] font-semibold uppercase text-neutral-400">Sar.</th>
@@ -375,99 +397,79 @@ function isOpen(id: number) { return showDetail.value || open.value[id]; }
                         <th class="px-2 py-2"><SearchSelect :model-value="kolomFilter.f_desc" :options="opsi('desc')" option-value="id" placeholder="Semua" no-truncate @update:model-value="(v) => pilihKolom('f_desc', v)" /></th>
                         <th class="px-2 py-2"><SearchSelect :model-value="statusFilter" :options="opsiStatus" option-value="id" placeholder="Semua" no-truncate @update:model-value="(v) => { statusFilter = v ?? ''; display(); }" /></th>
                         <th class="px-2 py-2"><SearchSelect :model-value="kolomFilter.f_lines" :options="opsi('lines')" option-value="id" placeholder="Semua" no-truncate @update:model-value="(v) => pilihKolom('f_lines', v)" /></th>
+                        <th class="px-2 py-2"><SearchSelect :model-value="kolomFilter.f_budget" :options="opsiAnggaran" option-value="id" placeholder="Semua" no-truncate @update:model-value="(v) => pilihKolom('f_budget', v)" /></th>
+                        <!-- Satu saringan untuk akun, menaungi COA dan Nama Akun: keduanya dua sisi
+                             dari nilai yang sama, jadi dua kotak akan saling membatalkan. -->
+                        <th class="px-2 py-2" colspan="2"><SearchSelect :model-value="kolomFilter.f_account" :options="opsi('account')" option-value="id" placeholder="Semua Akun" no-truncate @update:model-value="(v) => pilihKolom('f_account', v)" /></th>
+                        <th class="px-2 py-2"><SearchSelect :model-value="kolomFilter.f_line_desc" :options="opsi('line_desc')" option-value="id" placeholder="Semua Keterangan" no-truncate @update:model-value="(v) => pilihKolom('f_line_desc', v)" /></th>
                         <th class="px-2 py-2"><SearchSelect :model-value="kolomFilter.f_debit" :options="opsi('debit')" option-value="id" placeholder="Semua" no-truncate @update:model-value="(v) => pilihKolom('f_debit', v)" /></th>
                         <th class="px-2 py-2"><SearchSelect :model-value="kolomFilter.f_credit" :options="opsi('credit')" option-value="id" placeholder="Semua" no-truncate @update:model-value="(v) => pilihKolom('f_credit', v)" /></th>
-                        <th class="px-2 py-2"><SearchSelect :model-value="kolomFilter.f_budget" :options="opsiAnggaran" option-value="id" placeholder="Semua" no-truncate @update:model-value="(v) => pilihKolom('f_budget', v)" /></th>
                         <th class="px-2 py-2"></th>
                     </tr>
-                    <tr class="bg-white/60 dark:bg-neutral-900/40">
-                        <th class="px-2 py-2"></th>
-                        <th class="px-2 py-2 text-[10px] font-semibold uppercase text-neutral-400">Rinci</th>
-                        <th class="px-2 pb-2.5" colspan="3"><SearchSelect :model-value="kolomFilter.f_account" :options="opsi('account')" option-value="id" placeholder="Semua Akun" no-truncate @update:model-value="(v) => pilihKolom('f_account', v)" /></th>
-                        <th class="px-2 pb-2.5"><SearchSelect :model-value="kolomFilter.f_line_desc" :options="opsi('line_desc')" option-value="id" placeholder="Semua Keterangan Baris" no-truncate @update:model-value="(v) => pilihKolom('f_line_desc', v)" /></th>
-                        <th class="px-2 pb-2.5 text-center text-[10px] font-normal normal-case text-neutral-400" colspan="2">menjaring jurnalnya</th>
-                        <th class="px-2 pb-2.5" colspan="4"></th>
+                    <!-- Apa yang sebenarnya disaring, dikatakan apa adanya. Akun & Keterangan Baris
+                         menjaring JURNALNYA (seluruh barisnya tetap tampil agar debit & kreditnya
+                         tetap seimbang), sedangkan Debit & Kredit mencocokkan TOTAL jurnalnya —
+                         bukan angka per baris yang tertera di kolom itu saat rincian dibuka. -->
+                    <tr class="bg-white/60 text-[10px] font-normal normal-case text-neutral-400 dark:bg-neutral-900/40">
+                        <th class="px-2 pb-2.5" colspan="9"></th>
+                        <th class="px-2 pb-2.5 text-center" colspan="3">menjaring jurnalnya</th>
+                        <th class="px-2 pb-2.5 text-center" colspan="2">mencocokkan total jurnalnya</th>
+                        <th class="px-2 pb-2.5"></th>
                     </tr>
                 </thead>
-
                 <tbody class="divide-y divide-neutral-200 dark:divide-neutral-800">
+                    <!-- Satu baris = satu BARIS JURNAL. Kolom milik jurnalnya (No. Jurnal s/d
+                         Anggaran) memakai rowspan sehingga ditulis sekali dan membentang menaungi
+                         baris-barisnya — sama seperti berkas Excel yang diekspor halaman ini. -->
                     <template v-for="j in journals.data" :key="j.id">
-                        <!-- Kepala jurnal -->
-                        <tr class="align-top hover:bg-neutral-50/60 dark:hover:bg-neutral-800/40" :class="isOpen(j.id) ? 'bg-neutral-50/40 dark:bg-neutral-800/20' : ''">
-                            <td class="px-2 py-2.5 text-center">
-                                <input v-if="!terkunci(j)" v-model="dipilih" type="checkbox" :value="Number(j.id)" class="h-4 w-4 rounded border-neutral-300 text-primary-600 focus:ring-primary-500" :title="'Pilih jurnal ' + j.journal_number" />
-                                <Lock v-else class="mx-auto h-3.5 w-3.5 text-neutral-300 dark:text-neutral-600" title="Periode sudah closed — jurnalnya tidak bisa diubah. Batalkan closing periodenya dulu di General Function." />
-                            </td>
-                            <td class="px-2 py-2.5 text-center"><button type="button" @click="toggle(j.id)" class="text-neutral-400 hover:text-primary-600"><ChevronDown class="h-4 w-4 transition-transform" :class="{ 'rotate-180': isOpen(j.id) }" /></button></td>
-                            <td class="px-4 py-2.5 font-mono font-semibold break-words">{{ j.journal_number }}</td>
-                            <td class="px-4 py-2.5">{{ fmtDate(j.journal_date) }}</td>
-                            <td class="px-4 py-2.5"><Badge variant="info" size="sm">{{ sources[j.source] ?? j.source }}</Badge></td>
-                            <!-- Keterangan dibiarkan MEMBUNGKUS, tidak dipotong: keterangan jurnal
-                                 adalah satu-satunya penjelasan mengapa jurnalnya ada. -->
-                            <td class="px-4 py-2.5 whitespace-normal break-words">{{ j.description }}<span v-if="j.reference" class="mt-0.5 block text-xs text-neutral-400">Ref: {{ j.reference }}</span></td>
-                            <td class="px-4 py-2.5 text-center"><Badge :variant="statusBadge[j.status] ?? 'neutral'" size="sm">{{ statuses[j.status] ?? j.status }}</Badge></td>
-                            <td class="px-4 py-2.5 text-center tabular-nums">{{ j.lines_count }}</td>
-                            <td class="px-4 py-2.5 text-right font-mono font-semibold tabular-nums">{{ fmtRp(j.total_debit) }}</td>
-                            <td class="px-4 py-2.5 text-right font-mono font-semibold tabular-nums">{{ fmtRp(j.total_credit) }}</td>
-                            <!-- Over MAUPUN Under sama-sama membawa angkanya sendiri: anggaran,
-                                 realisasi, dan sisanya. "Under Budget" tanpa menyebut anggaran
-                                 mana yang dipatuhi hanya berbeda WARNA dari "Non Budget",
-                                 padahal keduanya keadaan yang berbeda — yang satu beranggaran
-                                 dan masih bersisa, yang satu memang tidak punya anggaran. -->
-                            <td class="px-4 py-2.5 text-center">
-                                <span v-if="j.budget_status" class="inline-block rounded-md px-2 py-0.5 text-[11px] font-semibold ring-1"
-                                      :class="NADA_ANGGARAN[j.budget_status]"
-                                      :title="j.budget_note ?? 'Tidak ada anggaran disetujui untuk akun & cost center pada jurnal ini — tidak ada yang membatasi.'">
-                                    {{ budgetStatuses?.[j.budget_status] ?? j.budget_status }}
-                                </span>
-                                <span v-else class="text-[11px] text-neutral-400">—</span>
-                            </td>
-                            <td class="px-4 py-2.5 text-right"><Link :href="route('bs.gl.journal.show', j.id)" class="whitespace-nowrap text-sm text-primary-600 hover:text-primary-800">Lihat →</Link></td>
-                        </tr>
+                        <tr v-for="(ln, i) in barisTampil(j)" :key="ln?.id ?? ('ringkas-' + j.id)"
+                            class="align-top hover:bg-neutral-50/60 dark:hover:bg-neutral-800/40"
+                            :class="ln && barisCocok(ln) ? 'bg-amber-50 dark:bg-amber-900/20' : ''">
+                            <template v-if="i === 0">
+                                <td class="px-2 py-2.5 text-center" :rowspan="rentangBaris(j)">
+                                    <input v-if="!terkunci(j)" v-model="dipilih" type="checkbox" :value="Number(j.id)" class="h-4 w-4 rounded border-neutral-300 text-primary-600 focus:ring-primary-500" :title="'Pilih jurnal ' + j.journal_number" />
+                                    <Lock v-else class="mx-auto h-3.5 w-3.5 text-neutral-300 dark:text-neutral-600" title="Periode sudah closed — jurnalnya tidak bisa diubah. Batalkan closing periodenya dulu di General Function." />
+                                </td>
+                                <td class="px-2 py-2.5 text-center" :rowspan="rentangBaris(j)"><button type="button" @click="toggle(j.id)" class="text-neutral-400 hover:text-primary-600" :title="isOpen(j.id) ? 'Sembunyikan rincian jurnal ini' : 'Tampilkan rincian jurnal ini'"><ChevronDown class="h-4 w-4 transition-transform" :class="{ 'rotate-180': isOpen(j.id) }" /></button></td>
+                                <td class="px-4 py-2.5 font-mono font-semibold break-words" :rowspan="rentangBaris(j)">{{ j.journal_number }}</td>
+                                <td class="px-4 py-2.5" :rowspan="rentangBaris(j)">{{ fmtDate(j.journal_date) }}</td>
+                                <td class="px-4 py-2.5" :rowspan="rentangBaris(j)"><Badge variant="info" size="sm">{{ sources[j.source] ?? j.source }}</Badge></td>
+                                <!-- Keterangan dibiarkan MEMBUNGKUS, tidak dipotong: keterangan jurnal
+                                     adalah satu-satunya penjelasan mengapa jurnalnya ada. -->
+                                <td class="px-4 py-2.5 whitespace-normal break-words" :rowspan="rentangBaris(j)">{{ j.description }}<span v-if="j.reference" class="mt-0.5 block text-xs text-neutral-400">Ref: {{ j.reference }}</span></td>
+                                <td class="px-4 py-2.5 text-center" :rowspan="rentangBaris(j)"><Badge :variant="statusBadge[j.status] ?? 'neutral'" size="sm">{{ statuses[j.status] ?? j.status }}</Badge></td>
+                                <!-- Total jurnalnya menumpang di sini sebagai keterangan, bukan sebagai
+                                     kolom Debit/Kredit kedua: dua pasang kolom bernama sama membuat
+                                     mata harus memutuskan mana yang sedang dibacanya. -->
+                                <td class="px-4 py-2.5 text-center tabular-nums" :rowspan="rentangBaris(j)"
+                                    :title="'Total jurnal — debit ' + fmtRp(j.total_debit) + ' · kredit ' + fmtRp(j.total_credit)">{{ j.lines_count }}</td>
+                                <!-- Over MAUPUN Under sama-sama membawa angkanya sendiri: anggaran,
+                                     realisasi, dan sisanya. "Under Budget" tanpa menyebut anggaran
+                                     mana yang dipatuhi hanya berbeda WARNA dari "Non Budget",
+                                     padahal keduanya keadaan yang berbeda — yang satu beranggaran
+                                     dan masih bersisa, yang satu memang tidak punya anggaran. -->
+                                <td class="px-4 py-2.5 text-center" :rowspan="rentangBaris(j)">
+                                    <span v-if="j.budget_status" class="inline-block rounded-md px-2 py-0.5 text-[11px] font-semibold ring-1"
+                                          :class="NADA_ANGGARAN[j.budget_status]"
+                                          :title="j.budget_note ?? 'Tidak ada anggaran disetujui untuk akun & cost center pada jurnal ini — tidak ada yang membatasi.'">
+                                        {{ budgetStatuses?.[j.budget_status] ?? j.budget_status }}
+                                    </span>
+                                    <span v-else class="text-[11px] text-neutral-400">—</span>
+                                </td>
+                            </template>
 
-                        <!-- Kepala rincian — nama kolomnya berdiri tepat di atas isinya, dan
-                             tepat di bawah kolom induk yang sepadan. -->
-                        <tr v-if="isOpen(j.id)" class="bg-primary-50/40 text-[11px] uppercase tracking-wide text-neutral-500 dark:bg-primary-900/10">
-                            <td class="px-2"></td>
-                            <td class="px-2"></td>
-                            <td class="border-l-2 border-primary-300 px-4 pt-2 pb-1 dark:border-primary-700" colspan="3">Akun</td>
-                            <td class="px-4 pt-2 pb-1">Keterangan Baris</td>
-                            <td class="px-4" colspan="2"></td>
-                            <td class="px-4 pt-2 pb-1 text-right">Debit</td>
-                            <td class="px-4 pt-2 pb-1 text-right">Kredit</td>
-                            <td></td>
-                            <td></td>
-                        </tr>
-
-                        <!-- Baris rincian -->
-                        <tr v-for="ln in (isOpen(j.id) ? (j.lines ?? []) : [])" :key="ln.id"
-                            class="align-top bg-primary-50/40 text-xs dark:bg-primary-900/10"
-                            :class="barisCocok(ln) ? 'bg-amber-50 dark:bg-amber-900/20' : ''">
-                            <td class="px-2"></td>
-                            <td class="px-2"></td>
-                            <td class="border-l-2 border-primary-300 px-4 py-1.5 font-mono whitespace-normal break-words dark:border-primary-700" colspan="3">
-                                <span class="font-semibold">{{ ln.account?.code }}</span>
-                                <span class="text-neutral-500 dark:text-neutral-400"> — {{ ln.account?.name }}</span>
+                            <!-- Kolom milik BARISNYA. Saat rincian ditutup, ln kosong dan yang tampil
+                                 total jurnalnya — sehingga Debit & Kredit tidak pernah kosong. -->
+                            <td class="px-4 py-2.5 font-mono whitespace-normal break-words">{{ ln ? (ln.account?.code ?? '—') : '' }}</td>
+                            <td class="px-4 py-2.5 whitespace-normal break-words text-neutral-600 dark:text-neutral-300">{{ ln ? (ln.account?.name ?? '—') : '' }}</td>
+                            <td class="px-4 py-2.5 whitespace-normal break-words text-neutral-600 dark:text-neutral-300">
+                                <span v-if="ln">{{ ln.description ?? '—' }}</span>
+                                <span v-else class="text-[11px] text-neutral-400">{{ isOpen(j.id) ? 'Jurnal ini belum punya baris' : 'Rincian disembunyikan — total jurnal' }}</span>
                             </td>
-                            <td class="px-4 py-1.5 whitespace-normal break-words text-neutral-600 dark:text-neutral-300">{{ ln.description ?? '—' }}</td>
-                            <td class="px-4" colspan="2"></td>
-                            <td class="px-4 py-1.5 text-right font-mono tabular-nums">{{ Number(ln.debit) > 0 ? fmtRp(ln.debit) : '' }}</td>
-                            <td class="px-4 py-1.5 text-right font-mono tabular-nums">{{ Number(ln.credit) > 0 ? fmtRp(ln.credit) : '' }}</td>
-                            <td></td>
-                            <td></td>
-                        </tr>
+                            <td class="px-4 py-2.5 text-right font-mono tabular-nums" :class="ln ? '' : 'font-semibold'">{{ ln ? (Number(ln.debit) > 0 ? fmtRp(ln.debit) : '') : fmtRp(j.total_debit) }}</td>
+                            <td class="px-4 py-2.5 text-right font-mono tabular-nums" :class="ln ? '' : 'font-semibold'">{{ ln ? (Number(ln.credit) > 0 ? fmtRp(ln.credit) : '') : fmtRp(j.total_credit) }}</td>
 
-                        <!-- Total rincian — berdiri di kolom yang SAMA dengan total pada kepala
-                             jurnal, sehingga cocok/tidaknya bisa dibaca lurus ke atas. -->
-                        <tr v-if="isOpen(j.id)" class="bg-primary-50/40 text-xs font-semibold dark:bg-primary-900/10">
-                            <td class="px-2"></td>
-                            <td class="px-2"></td>
-                            <td class="border-l-2 border-primary-300 border-t border-t-neutral-300 px-4 py-1.5 dark:border-primary-700 dark:border-t-neutral-700" colspan="4">Total</td>
-                            <td class="border-t border-neutral-300 px-4 dark:border-neutral-700" colspan="2"></td>
-                            <td class="border-t border-neutral-300 px-4 py-1.5 text-right font-mono tabular-nums dark:border-neutral-700">{{ fmtRp(j.total_debit) }}</td>
-                            <td class="border-t border-neutral-300 px-4 py-1.5 text-right font-mono tabular-nums dark:border-neutral-700">{{ fmtRp(j.total_credit) }}</td>
-                            <td class="border-t border-neutral-300 dark:border-neutral-700"></td>
-                            <td class="border-t border-neutral-300 dark:border-neutral-700"></td>
+                            <td v-if="i === 0" class="px-4 py-2.5 text-right" :rowspan="rentangBaris(j)"><Link :href="route('bs.gl.journal.show', j.id)" class="whitespace-nowrap text-sm text-primary-600 hover:text-primary-800">Lihat →</Link></td>
                         </tr>
                     </template>
                 </tbody>
