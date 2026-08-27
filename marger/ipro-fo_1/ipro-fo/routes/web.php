@@ -1056,6 +1056,9 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
 
     // ── BOOKED REVENUE (pendapatan ter-booking per customer & unit) ──
     Route::get('/business-support/booked-revenue',                       [BsBookedRevenueController::class, 'index'])->name('bs.booked-revenue.index');
+    // Ekspor daftar Sudah Booked Revenue. Didaftarkan SEBELUM /{bookedRevenue} supaya
+    // "export" tidak tertangkap wildcard-nya dan dicari sebagai id.
+    Route::get('/business-support/booked-revenue/export',                [BsBookedRevenueController::class, 'export'])->name('bs.booked-revenue.export');
     Route::get('/business-support/booked-revenue/create',               [BsBookedRevenueController::class, 'create'])->name('bs.booked-revenue.create');
     Route::post('/business-support/booked-revenue',                      [BsBookedRevenueController::class, 'store'])->name('bs.booked-revenue.store');
     Route::get('/business-support/booked-revenue/{bookedRevenue}',       [BsBookedRevenueController::class, 'show'])->name('bs.booked-revenue.show');

@@ -31,7 +31,10 @@ class BookedRevenueController extends Controller
         $active = fn () => BsBookedRevenue::query()->where('status', '!=', 'cancelled');
 
         $rows = $active()
-            ->with(['customer:id,code,full_name', 'unit:id,unit_code'])
+            // Jurnal ikut dimuat di sini, bukan dibaca per baris: daftar ini berisi 50 baris
+            // per halaman, jadi membacanya belakangan berarti 100 kueri tambahan.
+            ->with(['customer:id,code,full_name', 'unit:id,unit_code',
+                'bookingJournal:id,journal_number', 'recognitionJournal:id,journal_number'])
             ->when($request->input('search'), fn ($q, $s) => $q->where(fn ($w) => $w
                 ->where('br_number', 'like', "%{$s}%")
                 ->orWhere('reference', 'like', "%{$s}%")
@@ -82,7 +85,29 @@ class BookedRevenueController extends Controller
             'dpp'          => $dpp,
             'ppn'          => round($total - $dpp, 2),
             'total'        => $total,
+            // Jurnal yang terbit dari BR ini. DUA-duanya disebut bila ada: jurnal Booking
+            // (saat BR dibuat, mengakui piutang & pendapatan diterima dimuka) dan jurnal
+            // Pengakuan (saat pendapatannya benar-benar diakui). Keduanya bernomor berbeda,
+            // dan menampilkan salah satunya saja membuat yang lain seolah tidak pernah ada.
+            'journals'     => $this->journalsOf($r),
         ];
+    }
+
+    /**
+     * Nomor jurnal yang terbit dari sebuah Booked Revenue, berikut idnya untuk ditautkan.
+     *
+     * @return array<int,array{id:int, number:string, jenis:string}>
+     */
+    private function journalsOf(BsBookedRevenue $r): array
+    {
+        return array_values(array_filter([
+            $r->bookingJournal
+                ? ['id' => (int) $r->bookingJournal->id, 'number' => (string) $r->bookingJournal->journal_number, 'jenis' => 'Booking']
+                : null,
+            $r->recognitionJournal
+                ? ['id' => (int) $r->recognitionJournal->id, 'number' => (string) $r->recognitionJournal->journal_number, 'jenis' => 'Pengakuan']
+                : null,
+        ]));
     }
 
     /**
@@ -341,6 +366,82 @@ class BookedRevenueController extends Controller
             'summary'  => $summary,
             'statuses' => ['booked', 'recognized', 'cancelled'],
         ]);
+    }
+
+    /**
+     * Ekspor daftar Sudah Booked Revenue ke Excel.
+     *
+     * Memakai saringan pencarian yang SAMA dengan layarnya, tetapi TANPA paginasi — berkas
+     * yang hanya berisi 50 baris pertama akan terbaca sebagai "memang segitu datanya", dan
+     * jumlahnya tidak akan cocok dengan kartu ringkasan di layar.
+     *
+     * Formatnya HTML bertipe vnd.ms-excel, sama dengan ekspor Detail Transaksi Jurnal — satu
+     * pola untuk seluruh tombol Excel di aplikasi ini.
+     */
+    public function export(Request $request): \Illuminate\Http\Response
+    {
+        abort_unless($request->user()?->canModule('ar'), 403);
+
+        $rows = BsBookedRevenue::query()
+            ->where('status', '!=', 'cancelled')
+            ->with(['customer:id,code,full_name', 'unit:id,unit_code',
+                'bookingJournal:id,journal_number', 'recognitionJournal:id,journal_number'])
+            ->when($request->input('search'), fn ($q, $s) => $q->where(fn ($w) => $w
+                ->where('br_number', 'like', "%{$s}%")
+                ->orWhere('reference', 'like', "%{$s}%")
+                ->orWhere('description', 'like', "%{$s}%")
+                ->orWhereHas('customer', fn ($c) => $c->where('full_name', 'like', "%{$s}%")->orWhere('code', 'like', "%{$s}%"))
+                ->orWhereHas('unit', fn ($u) => $u->where('unit_code', 'like', "%{$s}%"))))
+            ->latest('booking_date')->latest('id')
+            ->get();
+
+        $sprByUnit = $this->sprByUnit($rows->pluck('unit_id')->filter()->unique()->all());
+
+        $e  = fn ($v) => htmlspecialchars((string) ($v ?? ''), ENT_QUOTES);
+        $rp = fn ($v) => number_format((float) ($v ?? 0), 2, ',', '.');
+
+        $h = '<table border="1"><tr style="background:#c2410c;color:#fff">'
+            .'<th>No. BR</th><th>Tanggal</th><th>Kode Customer</th><th>Customer</th><th>No. SPR</th><th>Unit</th>'
+            .'<th>No. Jurnal</th><th>Keterangan</th><th>DPP</th><th>PPN</th><th>Total</th></tr>';
+
+        $tDpp = 0.0;
+        $tPpn = 0.0;
+        $tTot = 0.0;
+        foreach ($rows as $r) {
+            $b = $this->row($r, $sprByUnit);
+            $tDpp += (float) $b['dpp'];
+            $tPpn += (float) $b['ppn'];
+            $tTot += (float) $b['total'];
+
+            // Jenisnya ikut ditulis: dua nomor tanpa keterangan tidak bisa dibedakan mana
+            // jurnal booking dan mana jurnal pengakuan.
+            $jurnal = implode(' · ', array_map(fn ($j) => $j['number'].' ('.$j['jenis'].')', $b['journals']));
+
+            $h .= '<tr>'
+                .'<td>'.$e($b['br_number']).'</td>'
+                .'<td>'.$e($b['booking_date']).'</td>'
+                .'<td>'.$e($b['customer']['code'] ?? '').'</td>'
+                .'<td>'.$e($b['customer']['name'] ?? '').'</td>'
+                .'<td>'.$e($b['spr']).'</td>'
+                .'<td>'.$e($b['unit']).'</td>'
+                .'<td>'.$e($jurnal).'</td>'
+                .'<td>'.$e($b['description']).'</td>'
+                .'<td>'.$rp($b['dpp']).'</td>'
+                .'<td>'.$rp($b['ppn']).'</td>'
+                .'<td>'.$rp($b['total']).'</td>'
+                .'</tr>';
+        }
+        $h .= '<tr style="font-weight:bold;background:#f1f5f9"><td colspan="8">TOTAL ('.$rows->count().' record)</td>'
+            .'<td>'.$rp($tDpp).'</td><td>'.$rp($tPpn).'</td><td>'.$rp($tTot).'</td></tr></table>';
+
+        $file = 'Sudah-Booked-Revenue-'.now()->format('Ymd-His').'.xls';
+
+        return response('<html xmlns:x="urn:schemas-microsoft-com:office:excel"><head><meta charset="utf-8"></head><body>'
+            .'<h3>SUDAH BOOKED REVENUE</h3>'
+            .($request->input('search') ? '<p>Pencarian: '.$e($request->input('search')).'</p>' : '')
+            .$h.'</body></html>')
+            ->header('Content-Type', 'application/vnd.ms-excel; charset=UTF-8')
+            ->header('Content-Disposition', 'attachment; filename="'.$file.'"');
     }
 
     public function reportExport(Request $request): StreamedResponse
