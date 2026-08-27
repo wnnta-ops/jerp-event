@@ -42,6 +42,11 @@ class PeriodClosingController extends Controller
             ->selectRaw('j.period_month month, a.type, COALESCE(SUM(jl.credit)-SUM(jl.debit),0) net')
             ->get();
 
+        // Jurnal yang belum Approved per bulan. Dikirim ke layar supaya penghalang closing
+        // terbaca SEBELUM tombolnya ditekan — penolakan yang baru muncul sesudah diklik
+        // memaksa operator menebak bulan mana yang bermasalah dan berapa banyak sisanya.
+        $belum = app(PeriodClosingService::class)->belumApprovedPerBulan($year);
+
         $months = [];
         for ($m = 1; $m <= 12; $m++) {
             $income  = (float) ($rows->where('month', $m)->where('type', 'income')->first()->net ?? 0);
@@ -50,6 +55,8 @@ class PeriodClosingController extends Controller
                 'month' => $m, 'income' => round($income, 2), 'expense' => round($expense, 2),
                 'profit' => round($income - $expense, 2),
                 'status' => $statuses[$m] ?? 'open', 'closed_at' => $closedAt[$m] ?? null,
+                'baru'   => $belum[$m]['baru'],
+                'final'  => $belum[$m]['final'],
             ];
         }
 
@@ -190,7 +197,14 @@ class PeriodClosingController extends Controller
     {
         abort_unless($request->user()?->can('businesssupport.approval.act'), 403);
         $v = $request->validate(['year' => ['required', 'integer'], 'month' => ['required', 'integer', 'min:1', 'max:12']]);
-        $svc->closePeriod($v['year'], $v['month']);
+
+        try {
+            $svc->closePeriod($v['year'], $v['month']);
+        } catch (BusinessRuleException $e) {
+            // Jurnal yang belum Approved — pesannya menyebutkan jumlahnya, jadi diteruskan
+            // apa adanya alih-alih diganti kalimat umum.
+            return back()->with('error', $e->getMessage());
+        }
 
         return back()->with('success', "Periode {$v['month']}/{$v['year']} ditutup (dikunci).");
     }
@@ -301,7 +315,13 @@ class PeriodClosingController extends Controller
             'note'  => ['nullable', 'string', 'max:255'],
         ]);
 
-        $period = $svc->closePeriod($v['year'], $v['month']);
+        try {
+            $period = $svc->closePeriod($v['year'], $v['month']);
+        } catch (BusinessRuleException $e) {
+            // Late Closing tetap penguncian periode, jadi syaratnya sama: Late Closing menjawab
+            // "terlambat ditutup", bukan "boleh ditutup walau jurnalnya belum selesai".
+            return back()->with('error', $e->getMessage());
+        }
         $period->update(['late_closed' => true, 'late_note' => $v['note'] ?? null]);
 
         return back()->with('success', "Periode {$v['month']}/{$v['year']} ditutup (Late Closing).");

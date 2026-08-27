@@ -21,10 +21,84 @@ final class PeriodClosingService
     /** Kunci satu periode bulanan (status=closed). */
     public function closePeriod(int $year, int $month): BsFiscalPeriod
     {
+        $this->pastikanSemuaApproved($year, $month);
+
         $period = $this->journal->ensurePeriod($year, $month);
         $period->update(['status' => 'closed', 'closed_at' => now()]);
 
         return $period;
+    }
+
+    /**
+     * Periode tidak boleh dikunci selama masih ada jurnal yang belum Approved.
+     *
+     * Menutup periode berarti mengunci jurnalnya dari pengeditan. Jurnal Baru (draft) dan
+     * Jurnal Final belum efektif di General Ledger — angkanya belum masuk laporan mana pun.
+     * Mengunci periode saat keduanya masih ada akan membekukan mereka dalam keadaan setengah
+     * jadi: tidak terhitung di laporan, tetapi juga tidak bisa lagi di-approve maupun
+     * diperbaiki tanpa membatalkan closing-nya lebih dulu. Laporan periode itu lalu terlihat
+     * sah dan final padahal ada transaksi yang tertinggal di luar hitungan.
+     *
+     * Diperiksa di sini, BUKAN di controller, supaya seluruh pintu penutupan terjaga sama —
+     * Closing Fiskal, Late Closing, dan penguncian 12 bulan pada Tutup Buku tahunan. Penjaga
+     * yang bisa dilewati dengan menekan tombol lain bukan penjaga.
+     */
+    private function pastikanSemuaApproved(int $year, int $month): void
+    {
+        $jumlah = BsJournal::query()
+            ->where('period_year', $year)->where('period_month', $month)
+            ->whereIn('status', ['draft', 'final'])
+            ->selectRaw('status, COUNT(*) AS jml')
+            ->groupBy('status')->pluck('jml', 'status');
+
+        $baru  = (int) ($jumlah['draft'] ?? 0);
+        $final = (int) ($jumlah['final'] ?? 0);
+        if ($baru === 0 && $final === 0) {
+            return;
+        }
+
+        // Jumlahnya disebutkan supaya operator tahu seberapa besar pekerjaannya, dan yang
+        // bernilai nol tidak ikut disebut — "0 Jurnal Final" hanya menambah kebingungan.
+        $bagian = [];
+        if ($baru > 0) {
+            $bagian[] = "{$baru} Jurnal Baru";
+        }
+        if ($final > 0) {
+            $bagian[] = "{$final} Jurnal Final";
+        }
+
+        throw new BusinessRuleException(
+            "Periode {$month}/{$year} belum bisa ditutup: masih ada ".implode(' dan ', $bagian)
+            .'. Semuanya harus menjadi Jurnal Approved lebih dulu agar closing bisa dilakukan.',
+            errorCode: 'PERIOD_HAS_UNAPPROVED',
+        );
+    }
+
+    /**
+     * Berapa jurnal yang belum Approved pada tiap bulan sebuah tahun.
+     *
+     * Dipakai layar Closing Fiskal untuk mengatakannya SEBELUM tombolnya ditekan — penolakan
+     * yang baru muncul sesudah diklik memaksa operator menebak bulan mana yang bermasalah.
+     *
+     * @return array<int,array{baru:int,final:int}> berindeks bulan 1..12
+     */
+    public function belumApprovedPerBulan(int $year): array
+    {
+        $rows = BsJournal::query()
+            ->where('period_year', $year)
+            ->whereIn('status', ['draft', 'final'])
+            ->selectRaw('period_month AS bulan, status, COUNT(*) AS jml')
+            ->groupBy('period_month', 'status')->get();
+
+        $out = [];
+        for ($m = 1; $m <= 12; $m++) {
+            $out[$m] = [
+                'baru'  => (int) ($rows->first(fn ($r) => (int) $r->bulan === $m && $r->status === 'draft')->jml ?? 0),
+                'final' => (int) ($rows->first(fn ($r) => (int) $r->bulan === $m && $r->status === 'final')->jml ?? 0),
+            ];
+        }
+
+        return $out;
     }
 
     /** Buka kembali periode (status=open). */
