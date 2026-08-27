@@ -108,7 +108,12 @@ const inpTight = 'w-full border-0 bg-transparent px-1 py-0.5 text-[10pt] focus:b
 
             <!-- Kop -->
             <div class="mb-3 flex items-start justify-between gap-4">
-                <img src="/images/mup-letterhead.jpeg" alt="" class="h-16 object-contain" />
+                <!-- Logo persegi, BUKAN mup-letterhead.jpeg. Berkas itu satu lembar kop A4 utuh
+                     (2482×3511, lengkap dengan cap air sehalaman dan bilah alamat di kaki);
+                     memasangnya sebagai <img> setinggi 64px memampatkan seluruh halaman itu
+                     menjadi sepotong oranye setinggi beberapa piksel — logonya praktis lenyap.
+                     Kop hanya butuh logonya saja. -->
+                <img src="/images/mup-logo.jpeg" alt="PT. Mitra Usaha Propertindo" class="h-16 w-16 object-contain" />
                 <h1 class="text-2xl font-bold tracking-wide">Purchase Order</h1>
             </div>
             <hr class="mb-3 border-neutral-400" />

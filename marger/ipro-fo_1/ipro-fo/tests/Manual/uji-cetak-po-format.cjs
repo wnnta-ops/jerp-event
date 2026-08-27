@@ -127,6 +127,17 @@ async function main() {
         inputAngka.filter((t) => ! t.includes('print:hidden')).join(' | ').slice(0, 160));
     cek('PPN tercetak menyatu sebagai "PPN 11%"', teks.includes('PPN 11%'), 'tidak ditemukan');
 
+    console.log('\n=== 2b. Logo kop ===');
+
+    const img = (html.match(/<img[^>]*>/g) || []).join(' ');
+    // mup-letterhead.jpeg adalah lembar kop A4 utuh (2482×3511, lengkap cap air sehalaman dan
+    // bilah alamat di kaki). Dipasang sebagai <img> setinggi 64px, seluruh halaman itu mampat
+    // jadi sepotong oranye setinggi beberapa piksel dan logonya praktis lenyap.
+    cek('memakai berkas logo, bukan lembar kop A4', img.includes('/images/mup-logo.jpeg'), img.slice(0, 140));
+    cek('lembar kop A4 tidak dipakai sebagai logo', ! img.includes('mup-letterhead'), img.slice(0, 140));
+    cek('digambar persegi supaya tidak gepeng', /h-16[^"]*w-16|w-16[^"]*h-16/.test(img), img.slice(0, 140));
+    cek('punya teks alternatif', /alt="[^"]+"/.test(img), img.slice(0, 140));
+
     console.log('\n=== 3. Kolom tabel sama dengan lampiran ===');
 
     const th = [...html.matchAll(/<th[^>]*>([^<]*)<\/th>/g)].map((m) => m[1].trim()).filter(Boolean);
