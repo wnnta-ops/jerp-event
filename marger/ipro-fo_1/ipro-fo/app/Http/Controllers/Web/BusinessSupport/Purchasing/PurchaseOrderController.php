@@ -380,7 +380,7 @@ class PurchaseOrderController extends Controller
             ->map(fn ($v) => (int) trim($v))->filter()->unique()->values();
         abort_if($ids->isEmpty(), 404, 'Tidak ada Purchase Order yang dipilih.');
 
-        $orders = BsPurchaseOrder::with(['lines.item.uom', 'supplier', 'project'])
+        $orders = BsPurchaseOrder::with(['lines.item.uom', 'supplier', 'project', 'creator:id,name'])
             ->whereIn('id', $ids)->orderBy('po_date')->orderBy('id')->get();
         abort_if($orders->isEmpty(), 404, 'Purchase Order tidak ditemukan.');
 
@@ -448,10 +448,18 @@ class PurchaseOrderController extends Controller
             'pengambilan'       => 'Pengambilan PO asli dan penyerahan tagihan di '.$coName.' RUKO AVENUE NO. 27, KAHURIPAN NIRWANA - SIDOARJO. Penyerahan berkas lengkap (invoice & faktur) setiap bulan pada periode tgl. 7, 8, 22 & 23',
             'pembayaran'        => 'Pembayaran dilakukan dengan cara transfer',
             'ttd'               => [
-                ['label' => 'Dibuat Oleh,', 'nama' => '', 'jabatan' => ''],
+                // "Dibuat Oleh" diisi pembuat PO-nya sendiri — pada lampiran acuan kolom ini
+                // memang bernama orang, dan membiarkannya kosong memaksa operator mengetik
+                // ulang namanya tiap kali mencetak.
+                ['label' => 'Dibuat Oleh,', 'nama' => (string) ($po->creator?->name ?? ''), 'jabatan' => ''],
                 ['label' => 'Mengetahui,', 'nama' => '', 'jabatan' => 'General Manager'],
                 ['label' => 'Disetujui,', 'nama' => (string) ($co['signer_name'] ?? ''), 'jabatan' => (string) ($co['signer_title'] ?? 'Direktur')],
             ],
+            // Blok penerimaan di kaki dokumen: pihak supplier menandatangani bahwa PO ini
+            // disetujui dan diterima. Ada pada lampiran acuan dan sebelumnya belum tercetak,
+            // sehingga lembar yang dikirim ke supplier tidak punya tempat tanda tangannya.
+            'diterima_label'    => 'Disetujui dan diterima',
+            'diterima_nama'     => $supplier?->name ?? '',
         ];
 
         // Hasil edit yang tersimpan menimpa nilai bawaan — TAPI hanya field presentasi
@@ -481,7 +489,7 @@ class PurchaseOrderController extends Controller
     private const PRINT_META_KEYS = [
         'sistem_pembayaran', 'kepada', 'kepada_alamat', 'proyek', 'kirim_ke', 'kirim_alamat',
         'tanggal_order', 'pelaksanaan', 'penerima', 'catatan', 'cara_pembayaran', 'garansi',
-        'kelengkapan', 'pengambilan', 'pembayaran', 'ttd',
+        'kelengkapan', 'pengambilan', 'pembayaran', 'ttd', 'diterima_label', 'diterima_nama',
     ];
 
     /** Simpan hasil edit format cetak (print_meta) — agar cetakan berikutnya tetap sama. */

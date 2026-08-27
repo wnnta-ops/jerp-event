@@ -25,6 +25,7 @@ type Form = {
     subtotal: number; ppn_pct: number; ppn_amount: number; total: number;
     catatan: string; cara_pembayaran: string; garansi: string; kelengkapan: string;
     pengambilan: string; pembayaran: string; ttd: Ttd[];
+    diterima_label: string; diterima_nama: string;
 };
 type Order = { id: number; po_number: string; printed_at: string | null; print_count: number; form: Form };
 
@@ -36,7 +37,11 @@ const forms = reactive<Record<number, Form>>(
 );
 
 const num = (v: unknown) => Number(v ?? 0);
-function fmt(v: unknown) { return num(v).toLocaleString('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
+// Lampiran acuan menulis angka sebagai 4,237,500.00 — ribuan koma, desimal titik, DUA angka
+// di belakang koma termasuk untuk QTY (3.00). Ini format rumah dokumen tersebut, bukan
+// format id-ID; memakai id-ID membuat 4.237.500,00 yang tidak sama dengan lembar yang
+// selama ini dipegang supplier.
+function fmt(v: unknown) { return num(v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
 
 /** Total selalu dihitung ulang dari baris agar tidak pernah bentrok dengan angka yang diedit. */
 function recalc(id: number) {
@@ -111,18 +116,18 @@ const inpTight = 'w-full border-0 bg-transparent px-1 py-0.5 text-[10pt] focus:b
             <!-- Blok identitas: kiri (supplier) & kanan (proyek/kirim) -->
             <div class="grid grid-cols-2 gap-x-8 gap-y-1 text-[11pt]">
                 <div class="space-y-1">
-                    <div class="grid grid-cols-[130px_1fr] items-baseline"><span>Nomor</span><input v-model="forms[o.id].nomor" :class="inp" /></div>
-                    <div class="grid grid-cols-[130px_1fr] items-baseline"><span>Sistem Pembayaran</span><input v-model="forms[o.id].sistem_pembayaran" :class="inp" /></div>
-                    <div class="grid grid-cols-[130px_1fr] items-baseline"><span>Kepada Yth,</span><input v-model="forms[o.id].kepada" :class="[inp,'font-semibold']" /></div>
-                    <div class="grid grid-cols-[130px_1fr] items-start"><span></span><textarea v-model="forms[o.id].kepada_alamat" rows="2" :class="[inp,'resize-none']"></textarea></div>
+                    <div class="grid grid-cols-[130px_8px_1fr] items-baseline"><span>Nomor</span><span>:</span><input v-model="forms[o.id].nomor" :class="inp" /></div>
+                    <div class="grid grid-cols-[130px_8px_1fr] items-baseline"><span>Sistem Pembayaran</span><span>:</span><input v-model="forms[o.id].sistem_pembayaran" :class="inp" /></div>
+                    <div class="grid grid-cols-[130px_8px_1fr] items-baseline"><span>Kepada Yth,</span><span>:</span><input v-model="forms[o.id].kepada" :class="[inp,'font-semibold']" /></div>
+                    <div class="grid grid-cols-[130px_8px_1fr] items-start"><span></span><span>:</span><textarea v-model="forms[o.id].kepada_alamat" rows="2" :class="[inp,'resize-none']"></textarea></div>
                 </div>
                 <div class="space-y-1">
-                    <div class="grid grid-cols-[120px_1fr] items-baseline"><span>PROYEK</span><input v-model="forms[o.id].proyek" :class="inp" /></div>
-                    <div class="grid grid-cols-[120px_1fr] items-baseline"><span>KIRIM KE</span><input v-model="forms[o.id].kirim_ke" :class="inp" /></div>
-                    <div class="grid grid-cols-[120px_1fr] items-start"><span></span><textarea v-model="forms[o.id].kirim_alamat" rows="2" :class="[inp,'resize-none']"></textarea></div>
-                    <div class="grid grid-cols-[120px_1fr] items-baseline"><span>TANGGAL ORDER</span><input v-model="forms[o.id].tanggal_order" :class="inp" /></div>
-                    <div class="grid grid-cols-[120px_1fr] items-baseline"><span>Pelaksanaan</span><input v-model="forms[o.id].pelaksanaan" :class="inp" /></div>
-                    <div class="grid grid-cols-[120px_1fr] items-baseline"><span>PENERIMA</span><input v-model="forms[o.id].penerima" :class="inp" /></div>
+                    <div class="grid grid-cols-[120px_8px_1fr] items-baseline"><span>PROYEK</span><span>:</span><input v-model="forms[o.id].proyek" :class="inp" /></div>
+                    <div class="grid grid-cols-[120px_8px_1fr] items-baseline"><span>KIRIM KE</span><span>:</span><input v-model="forms[o.id].kirim_ke" :class="inp" /></div>
+                    <div class="grid grid-cols-[120px_8px_1fr] items-start"><span></span><span>:</span><textarea v-model="forms[o.id].kirim_alamat" rows="2" :class="[inp,'resize-none']"></textarea></div>
+                    <div class="grid grid-cols-[120px_8px_1fr] items-baseline"><span>TANGGAL ORDER</span><span>:</span><input v-model="forms[o.id].tanggal_order" :class="inp" /></div>
+                    <div class="grid grid-cols-[120px_8px_1fr] items-baseline"><span>Pelaksanaan</span><span>:</span><input v-model="forms[o.id].pelaksanaan" :class="inp" /></div>
+                    <div class="grid grid-cols-[120px_8px_1fr] items-baseline"><span>PENERIMA</span><span>:</span><input v-model="forms[o.id].penerima" :class="inp" /></div>
                 </div>
             </div>
 
@@ -144,8 +149,17 @@ const inpTight = 'w-full border-0 bg-transparent px-1 py-0.5 text-[10pt] focus:b
                         <td class="border border-neutral-400 px-2 py-1 text-center">{{ i + 1 }}</td>
                         <td class="border border-neutral-400 px-1 py-0.5"><input v-model="it.nama" :class="inpTight" /></td>
                         <td class="border border-neutral-400 px-1 py-0.5"><input v-model="it.sat" :class="[inpTight,'text-center']" /></td>
-                        <td class="border border-neutral-400 px-1 py-0.5"><input v-model.number="it.qty" @input="recalc(o.id)" type="number" step="0.01" :class="[inpTight,'text-right']" /></td>
-                        <td class="border border-neutral-400 px-1 py-0.5"><input v-model.number="it.harga" @input="recalc(o.id)" type="number" step="0.01" :class="[inpTight,'text-right']" /></td>
+                        <!-- Saat mencetak, kotak angka diganti teks berformat: input type=number
+                             mencetak apa adanya ("3", bukan "3.00") dan pada sebagian browser
+                             ikut membawa panah pengatur nilainya ke atas kertas. -->
+                        <td class="border border-neutral-400 px-1 py-0.5 text-right">
+                            <input v-model.number="it.qty" @input="recalc(o.id)" type="number" step="0.01" :class="[inpTight,'text-right','print:hidden']" />
+                            <span class="hidden font-mono print:inline">{{ fmt(it.qty) }}</span>
+                        </td>
+                        <td class="border border-neutral-400 px-1 py-0.5 text-right">
+                            <input v-model.number="it.harga" @input="recalc(o.id)" type="number" step="0.01" :class="[inpTight,'text-right','print:hidden']" />
+                            <span class="hidden font-mono print:inline">{{ fmt(it.harga) }}</span>
+                        </td>
                         <td class="border border-neutral-400 px-2 py-1 text-right font-mono">{{ fmt(it.jumlah) }}</td>
                         <td class="border-0 text-center print:hidden"><button type="button" @click="removeItem(o.id, i)" class="text-danger-500 hover:text-danger-700"><Trash2 class="h-3.5 w-3.5" /></button></td>
                     </tr>
@@ -160,7 +174,12 @@ const inpTight = 'w-full border-0 bg-transparent px-1 py-0.5 text-[10pt] focus:b
                     </tr>
                     <tr>
                         <td colspan="4" class="border-0"></td>
-                        <td class="border border-neutral-400 px-2 py-1 text-right">PPN <input v-model.number="forms[o.id].ppn_pct" @input="recalc(o.id)" type="number" step="0.01" class="w-14 border-0 bg-transparent p-0 text-right text-[10pt] focus:ring-0" />%</td>
+                        <!-- Lampiran menulisnya menyatu: "PPN 11%". Kotak angkanya hanya untuk
+                             menyunting di layar. -->
+                        <td class="border border-neutral-400 px-2 py-1 text-right">
+                            <span class="print:hidden">PPN <input v-model.number="forms[o.id].ppn_pct" @input="recalc(o.id)" type="number" step="0.01" class="w-14 border-0 bg-transparent p-0 text-right text-[10pt] focus:ring-0 print:hidden" />%</span>
+                            <span class="hidden print:inline">PPN {{ Number(forms[o.id].ppn_pct) }}%</span>
+                        </td>
                         <td class="border border-neutral-400 px-2 py-1 text-right font-mono">{{ fmt(forms[o.id].ppn_amount) }}</td>
                         <td class="border-0 print:hidden"></td>
                     </tr>
@@ -178,16 +197,48 @@ const inpTight = 'w-full border-0 bg-transparent px-1 py-0.5 text-[10pt] focus:b
             <!-- Kondisi pembelian -->
             <div class="mt-4 text-[10pt]">
                 <div class="font-bold underline">KONDISI PEMBELIAN</div>
-                <ol class="mt-1 list-decimal space-y-1 pl-5">
-                    <li><span>Cara Pembayaran : </span><input v-model="forms[o.id].cara_pembayaran" :class="[inp,'inline-block w-[60%] text-[10pt]']" /></li>
-                    <li><span>Garansi :</span><textarea v-model="forms[o.id].garansi" rows="2" :class="[inp,'resize-none text-[10pt]']"></textarea></li>
-                    <li><span>Kelengkapan Tagihan :</span><textarea v-model="forms[o.id].kelengkapan" rows="3" :class="[inp,'resize-none text-[10pt]']"></textarea></li>
-                    <li><textarea v-model="forms[o.id].pengambilan" rows="3" :class="[inp,'resize-none text-[10pt]']"></textarea></li>
-                    <li><input v-model="forms[o.id].pembayaran" :class="[inp,'text-[10pt]']" /></li>
+                <!-- Nomor & isinya berdampingan lewat grid, BUKAN <ol><li>.
+                     Textarea adalah elemen blok: di dalam <li> ia turun ke baris berikutnya dan
+                     menyisakan nomornya sendirian di baris kosong — itulah "4." kosong yang
+                     selama ini tercetak, sementara isi butir 4 terbaca seolah bagian butir 3. -->
+                <ol class="mt-1 space-y-1">
+                    <li class="grid grid-cols-[1.5rem_1fr] items-start">
+                        <span>1.</span>
+                        <div><span>Cara Pembayaran : </span><input v-model="forms[o.id].cara_pembayaran" :class="[inp,'inline-block w-[60%] text-[10pt]']" /></div>
+                    </li>
+                    <li class="grid grid-cols-[1.5rem_1fr] items-start">
+                        <span>2.</span>
+                        <div><span>Garansi :</span><textarea v-model="forms[o.id].garansi" rows="2" :class="[inp,'resize-none text-[10pt]']"></textarea></div>
+                    </li>
+                    <li class="grid grid-cols-[1.5rem_1fr] items-start">
+                        <span>3.</span>
+                        <div>
+                            <span>Kelengkapan Tagihan :</span>
+                            <textarea v-model="forms[o.id].kelengkapan" rows="3" :class="[inp,'resize-none text-[10pt]','print:hidden']"></textarea>
+                            <!-- Pada lampiran, tiap baris kelengkapan berdiri dalam dua kolom.
+                                 Pemisahnya "·" pada teks tersimpan dipakai sebagai batas kolom,
+                                 sehingga yang disunting tetap satu kotak teks biasa. -->
+                            <div class="hidden print:block">
+                                <div v-for="(b, bi) in forms[o.id].kelengkapan.split('\n')" :key="bi"
+                                     class="grid grid-cols-2 gap-x-4">
+                                    <span>{{ b.split('·')[0]?.trim() }}</span>
+                                    <span>{{ b.split('·')[1]?.trim() }}</span>
+                                </div>
+                            </div>
+                        </div>
+                    </li>
+                    <li class="grid grid-cols-[1.5rem_1fr] items-start">
+                        <span>4.</span>
+                        <div><textarea v-model="forms[o.id].pengambilan" rows="3" :class="[inp,'resize-none text-[10pt]']"></textarea></div>
+                    </li>
+                    <li class="grid grid-cols-[1.5rem_1fr] items-start">
+                        <span>5.</span>
+                        <div><input v-model="forms[o.id].pembayaran" :class="[inp,'text-[10pt]']" /></div>
+                    </li>
                 </ol>
             </div>
 
-            <!-- Tanda tangan -->
+            <!-- Tanda tangan pihak perusahaan -->
             <div class="mt-8 grid grid-cols-3 gap-6 text-center text-[10pt]">
                 <div v-for="(t, i) in forms[o.id].ttd" :key="i">
                     <input v-model="t.label" :class="[inp,'text-center text-[10pt]']" />
@@ -195,6 +246,15 @@ const inpTight = 'w-full border-0 bg-transparent px-1 py-0.5 text-[10pt] focus:b
                     <input v-model="t.nama" :class="[inp,'text-center font-semibold uppercase text-[10pt]']" />
                     <input v-model="t.jabatan" :class="[inp,'text-center text-[9pt]']" />
                 </div>
+            </div>
+
+            <!-- Penerimaan oleh supplier. Ada pada lampiran acuan dan sebelumnya tidak pernah
+                 tercetak, sehingga lembar yang dikirim ke supplier tidak punya tempat tanda
+                 tangannya dan pengembalian PO bertanda tangan tidak bisa ditagih. -->
+            <div class="mt-6 text-[10pt]">
+                <input v-model="forms[o.id].diterima_label" :class="[inp,'w-[40%] text-[10pt]']" />
+                <div class="h-20"></div>
+                <input v-model="forms[o.id].diterima_nama" :class="[inp,'w-[40%] font-semibold uppercase text-[10pt]']" />
             </div>
         </div>
     </div>
