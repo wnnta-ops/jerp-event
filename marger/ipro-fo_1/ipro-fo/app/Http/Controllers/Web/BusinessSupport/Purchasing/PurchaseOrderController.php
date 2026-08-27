@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Web\BusinessSupport\Purchasing;
 
 use App\Domain\BusinessSupport\Models\BsAccount;
+use App\Domain\BusinessSupport\Models\BsApInvoice;
 use App\Domain\BusinessSupport\Models\BsItem;
 use App\Domain\BusinessSupport\Models\BsPurchaseOrder;
 use App\Domain\BusinessSupport\Models\BsSupplier;
@@ -29,6 +30,24 @@ class PurchaseOrderController extends Controller
         // SELURUH baris dikirim ke klien, lalu pencarian global, filter per-kolom (ketik +
         // checklist), ringkasan, dan ekspor Excel dihitung di sisi klien agar kotak ringkasan
         // selalu mengikuti hasil filter — persis seperti Payable/Index.vue.
+        // Invoice Hutang yang bertaut ke PO, diambil SEKALI untuk seluruh daftar.
+        //
+        // source_type WAJIB ikut disaring: pasangannya generik — source_id yang sama juga
+        // dipakai SPK, refund, dan batch, sehingga mencocokkan source_id saja akan menarik
+        // dokumen milik jenis sumber lain dan menempelkannya ke PO yang kebetulan berid sama.
+        // Alasan yang sama membuat ini SENGAJA bukan relasi Eloquent (lihat BsApInvoice.php).
+        //
+        // Tanpa whereIn('source_id', ...): daftar PO memang mengirim seluruh baris, jadi
+        // himpunan hasilnya identik sementara klausa IN raksasa hanya menambah beban.
+        // Invoice yang dihapus otomatis tersingkir lewat SoftDeletes — tagihan yang sudah
+        // tidak ada memang tidak boleh lagi menempel pada PO-nya.
+        $invoicePerPo = BsApInvoice::query()
+            ->where('source_type', 'po')
+            ->whereNotNull('source_id')
+            ->orderBy('invoice_date')->orderBy('id')
+            ->get(['id', 'source_id', 'invoice_number', 'description'])
+            ->groupBy(fn ($i) => (int) $i->source_id);
+
         $rows = BsPurchaseOrder::query()
             ->with(['supplier:id,code,name', 'project:id,name'])
             ->withCount('lines')
@@ -42,7 +61,19 @@ class PurchaseOrderController extends Controller
                 'supplier'    => $r->supplier ? ['name' => $r->supplier->name] : null,
                 'project'     => $r->project?->name,
                 'po_type'     => $r->po_type,
+                // notes TETAP dikirim walau kolomnya di daftar diganti Invoice Hutang —
+                // ia masih dipakai tooltip sel dan kolom "Catatan PO" pada ekspor Excel,
+                // supaya tidak ada catatan yang lenyap dari jalur mana pun.
                 'notes'       => $r->notes,
+                // Satu PO bisa punya lebih dari satu invoice (penagihan bertahap): tidak ada
+                // UNIQUE yang mencegahnya, jadi dikirim sebagai daftar dan layar yang
+                // memutuskan cara menyingkatnya — bukan diam-diam menampilkan yang pertama.
+                'ap_invoices' => ($invoicePerPo[$r->id] ?? collect())
+                    ->map(fn ($i) => [
+                        'id'          => (int) $i->id,
+                        'number'      => (string) $i->invoice_number,
+                        'description' => $i->description,
+                    ])->values()->all(),
                 'lines_count' => (int) $r->lines_count,
                 'subtotal'    => round((float) $r->subtotal, 2),
                 'ppn_amount'  => round((float) $r->ppn_amount, 2),
