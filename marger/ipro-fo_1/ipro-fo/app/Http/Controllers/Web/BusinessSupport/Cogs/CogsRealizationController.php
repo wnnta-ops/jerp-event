@@ -64,10 +64,21 @@ class CogsRealizationController extends Controller
         $year = (int) date('Y', strtotime($v['realization_date']));
         BsCogsRealization::create(array_merge($v, [
             'tenant_id' => tenant_id(), 'year' => $year,
-            'doc_no'    => 'CG.SAR/'.date('y', strtotime($v['realization_date'])).'/'.str_pad((string) (BsCogsRealization::whereYear('realization_date', $year)->count() + 1), 5, '0', STR_PAD_LEFT),
+            'doc_no'    => app(\App\Domain\BusinessSupport\Services\BoNumberService::class)
+                ->next('CG.SAR', \Illuminate\Support\Carbon::parse($v['realization_date']), [], fn () => $this->nextDocNoLama($v, $year)),
             'created_by' => $request->user()->id,
         ]));
 
         return to_route('bs.cogs.realization.index')->with('success', 'Saldo awal / realisasi tercatat.');
+    }
+
+    /**
+     * Cara lama — dipakai bila master numerator tidak bisa dipakai.
+     *
+     * @param  array<string,mixed>  $v
+     */
+    private function nextDocNoLama(array $v, int $year): string
+    {
+        return 'CG.SAR/'.date('y', strtotime($v['realization_date'])).'/'.str_pad((string) (BsCogsRealization::whereYear('realization_date', $year)->count() + 1), 5, '0', STR_PAD_LEFT);
     }
 }

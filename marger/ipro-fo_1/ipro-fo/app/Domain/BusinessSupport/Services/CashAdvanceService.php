@@ -264,6 +264,13 @@ final class CashAdvanceService
 
     private function nextNumber(string $date): string
     {
+        return app(\App\Domain\BusinessSupport\Services\BoNumberService::class)
+            ->next('BON', Carbon::parse($date), [], fn () => $this->nextNumberLama($date));
+    }
+
+    /** Cara lama — dipakai bila master numerator tidak bisa dipakai. */
+    private function nextNumberLama(string $date): string
+    {
         $d     = Carbon::parse($date);
         $count = BsCashAdvance::withTrashed()->whereYear('advance_date', $d->year)->count() + 1;
 

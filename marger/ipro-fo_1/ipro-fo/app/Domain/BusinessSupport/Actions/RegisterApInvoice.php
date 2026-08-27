@@ -228,6 +228,13 @@ final class RegisterApInvoice
     /** Format eProperty: AP.INV/{KATEGORI}/MUP/{yy}/{bulan-romawi}/{seq}. */
     private function nextNumber(string $date, ?string $catCode = null): string
     {
+        return app(\App\Domain\BusinessSupport\Services\BoNumberService::class)
+            ->next('AP.INV', Carbon::parse($date), ['KATEGORI' => $catCode ?: 'UMUM'], fn () => $this->nextNumberLama($date, $catCode));
+    }
+
+    /** Cara lama — dipakai bila master numerator tidak bisa dipakai. */
+    private function nextNumberLama(string $date, ?string $catCode = null): string
+    {
         $d     = Carbon::parse($date);
         $roman = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X', 'XI', 'XII'][$d->month - 1];
         $cat   = $catCode ?: 'UMUM';

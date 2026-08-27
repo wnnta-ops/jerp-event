@@ -792,6 +792,13 @@ class PostingInvoiceController extends Controller
 
     private function nextNumber(): string
     {
+        return app(\App\Domain\BusinessSupport\Services\BoNumberService::class)
+            ->next('AP', null, [], fn () => $this->nextNumberLama());
+    }
+
+    /** Cara lama — dipakai bila master numerator tidak bisa dipakai. */
+    private function nextNumberLama(): string
+    {
         $d   = now();
         $seq = BsApInvoice::withTrashed()->whereYear('invoice_date', $d->year)->count() + 1;
         do {

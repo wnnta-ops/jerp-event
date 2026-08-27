@@ -13,7 +13,7 @@ class Numerator extends Model
     use HasFactory, HasTenant;
 
     protected $fillable = [
-        'tenant_id', 'project_id', 'code', 'prefix', 'format',
+        'tenant_id', 'project_id', 'scope', 'code', 'prefix', 'format',
         'seq_padding', 'reset_strategy', 'current_period', 'current_seq',
     ];
 }

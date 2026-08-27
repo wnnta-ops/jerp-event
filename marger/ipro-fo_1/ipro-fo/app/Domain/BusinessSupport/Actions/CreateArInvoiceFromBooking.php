@@ -88,6 +88,13 @@ final class CreateArInvoiceFromBooking
     /** Nomor invoice — pola sama dengan penomoran AR lama, segmen kategori 'BR' (dari Booked Revenue). */
     private function nextNumber(string $date): string
     {
+        return app(\App\Domain\BusinessSupport\Services\BoNumberService::class)
+            ->next('AR.INV', Carbon::parse($date), [], fn () => $this->nextNumberLama($date));
+    }
+
+    /** Cara lama — dipakai bila master numerator tidak bisa dipakai. */
+    private function nextNumberLama(string $date): string
+    {
         $d     = Carbon::parse($date);
         $roman = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X', 'XI', 'XII'][$d->month - 1];
         $seq   = BsArInvoice::withTrashed()->whereYear('invoice_date', $d->year)->count() + 1;

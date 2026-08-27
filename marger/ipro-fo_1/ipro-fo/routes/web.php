@@ -122,6 +122,7 @@ use App\Http\Controllers\Web\Sales\ContractController;
 use App\Http\Controllers\Web\Sales\ExceptionController;
 use App\Http\Controllers\Web\Sales\HoldController;
 use App\Http\Controllers\Web\Sales\NupController;
+use App\Http\Controllers\Web\Settings\BoNumeratorController;
 use App\Http\Controllers\Web\Settings\NumeratorController;
 use App\Http\Controllers\Web\Settings\ParameterController;
 use App\Http\Controllers\Web\Settings\RoleController as SettingRoleController;
@@ -1303,6 +1304,15 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
         Route::get('/numerators',                             [NumeratorController::class, 'index'])->name('numerators.index');
         Route::get('/numerators/{code}/preview',              [NumeratorController::class, 'preview'])->name('numerators.preview');
         Route::put('/numerators/{numerator}',                 [NumeratorController::class, 'update'])->name('numerators.update');
+
+        // Numerator Back Office — daftar terpisah dari numerator Front Office di atas.
+        // Rute /preview didaftarkan SEBELUM {bo_numerator} supaya "preview" tidak tertangkap
+        // wildcard-nya dan dicari sebagai id.
+        Route::get('/bo-numerators',                          [BoNumeratorController::class, 'index'])->name('bo-numerators.index');
+        Route::get('/bo-numerators/{code}/preview',           [BoNumeratorController::class, 'preview'])->name('bo-numerators.preview');
+        Route::post('/bo-numerators',                         [BoNumeratorController::class, 'store'])->name('bo-numerators.store');
+        Route::put('/bo-numerators/{bo_numerator}',           [BoNumeratorController::class, 'update'])->name('bo-numerators.update');
+        Route::delete('/bo-numerators/{bo_numerator}',        [BoNumeratorController::class, 'destroy'])->name('bo-numerators.destroy');
 
         Route::get('/parameters',                             [ParameterController::class, 'index'])->name('parameters.index');
         Route::put('/parameters',                             [ParameterController::class, 'update'])->name('parameters.update');
