@@ -74,7 +74,7 @@ class BatalAkadController extends Controller
         $n = fn ($v) => '<td>'.number_format((float) ($v ?? 0), 2, ',', '.').'</td>';
 
         $h = '<table border="1"><tr style="background:#c2410c;color:#fff">'
-            .'<th>No</th><th>No. KPR</th><th>Customer</th><th>Unit</th><th>No. SPR</th><th>Bank</th>'
+            .'<th>No</th><th>Customer</th><th>No. KPR</th><th>Unit</th><th>No. SPR</th><th>Bank</th>'
             .'<th>Status</th><th>Tgl Batal</th><th>Tahap Sebelum Batal</th><th>Sempat Akad</th>'
             .'<th>Tgl Akad</th><th>Alasan</th><th>Plafon</th></tr>';
 
@@ -83,7 +83,7 @@ class BatalAkadController extends Controller
         foreach ($rows as $r) {
             $no++;
             $plafon += (float) $r['plafon'];
-            $h .= '<tr>'.$t($no).$t($r['kpr_number']).$t($r['customer']).$t($r['unit']).$t($r['booking'])
+            $h .= '<tr>'.$t($no).$t($r['customer']).$t($r['kpr_number']).$t($r['unit']).$t($r['booking'])
                 .$t($r['bank']).$t($r['status_label']).$t($r['batal_at']).$t($r['tahap_sebelum'])
                 .$t($r['sempat_akad'] ? 'Sudah' : 'Belum').$t($r['akad_at']).$t($r['alasan'])
                 .$n($r['plafon']).'</tr>';
@@ -129,6 +129,10 @@ class BatalAkadController extends Controller
             return [
                 'id'            => $k->id,
                 'kpr_number'    => $k->application_number,
+                // Layar menggabungkan pengajuan per customer. Kuncinya id, BUKAN nama: dua
+                // orang berbeda yang kebetulan bernama sama akan tergabung jadi satu baris,
+                // dan pembatalan milik orang lain terbaca sebagai miliknya.
+                'customer_id'   => $k->customer_id,
                 'customer'      => $k->customer?->full_name,
                 'unit'          => $k->booking?->unit?->unit_code,
                 'booking'       => $k->booking?->booking_number,
