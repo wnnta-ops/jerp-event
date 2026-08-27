@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { reactive, watch } from 'vue';
 import { router, Link } from '@inertiajs/vue3';
-import { ArrowLeft, FileBarChart, Download, Home, CheckCircle2, Stamp, Receipt, FileCheck } from 'lucide-vue-next';
+import { ArrowLeft, FileBarChart, Home, CheckCircle2, Stamp, Receipt, FileCheck, FileSpreadsheet } from 'lucide-vue-next';
 import Badge from '@/Components/UI/Badge.vue';
 import EmptyState from '@/Components/UI/EmptyState.vue';
 
@@ -41,7 +41,7 @@ const g5 = 'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/20 dark:text-emer
                 <h1 class="flex items-center gap-2 text-2xl font-bold"><FileBarChart class="h-6 w-6 text-primary-600" /> Report / Query Booked Revenue</h1>
                 <p class="text-sm text-neutral-500">Rekap milestone per unit — BAST · AJB · Retensi · UTJ &amp; DP · Faktur Pajak.</p>
             </div>
-            <a :href="route('bs.booked-revenue.report.export', { search: filters.search, status: filters.status })" class="inline-flex h-9 items-center gap-1.5 rounded-lg border border-neutral-300 px-3 text-sm font-medium hover:bg-neutral-50 dark:border-neutral-700"><Download class="h-4 w-4" /> Export CSV</a>
+            <a :href="route('bs.booked-revenue.report.export', { search: filters.search, status: filters.status })" class="inline-flex h-9 items-center gap-1.5 rounded-lg bg-success-600 px-4 text-sm font-semibold text-white hover:bg-success-700"><FileSpreadsheet class="h-4 w-4" /> Excel</a>
         </div>
 
         <!-- Ringkasan -->

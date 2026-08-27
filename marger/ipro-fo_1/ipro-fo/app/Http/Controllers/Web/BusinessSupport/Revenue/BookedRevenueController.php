@@ -16,7 +16,6 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Inertia\Response;
-use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class BookedRevenueController extends Controller
 {
@@ -444,27 +443,62 @@ class BookedRevenueController extends Controller
             ->header('Content-Disposition', 'attachment; filename="'.$file.'"');
     }
 
-    public function reportExport(Request $request): StreamedResponse
+    /**
+     * Ekspor Report / Query Booked Revenue ke Excel.
+     *
+     * Dulu CSV. Diganti agar seragam dengan seluruh tombol Excel di aplikasi ini — dan karena
+     * CSV membuat nomor dokumen panjang (No. Faktur Pajak) dibaca Excel sebagai angka lalu
+     * berubah jadi notasi ilmiah. Nama rutenya TIDAK berubah, jadi tidak ada tautan yang putus.
+     */
+    public function reportExport(Request $request): \Illuminate\Http\Response
     {
         abort_unless($request->user()?->canModule('ar'), 403);
 
-        [$rows] = $this->reportRows($request);
-        $header = ['Unit', 'Cluster', 'Customer', 'No. BR', 'Tgl BR', 'Nilai BR', 'Status',
-            'Tgl BAST', 'Tgl AJB', 'Notaris', 'Tgl Retensi', 'Nominal Retensi',
-            'Tgl UTJ&DP', 'Nominal UTJ&DP', 'Tgl Faktur Pajak', 'Nominal Faktur Pajak', 'No. Faktur Pajak'];
+        [$rows, $summary] = $this->reportRows($request);
 
-        return response()->streamDownload(function () use ($header, $rows): void {
-            $out = fopen('php://output', 'wb');
-            fputcsv($out, $header);
-            foreach ($rows as $r) {
-                fputcsv($out, [
-                    $r['unit'], $r['cluster'], $r['customer'], $r['br_number'], $r['br_date'], $r['br_amount'], $r['br_status'],
-                    $r['bast_date'], $r['ajb_date'], $r['ajb_notary'], $r['retensi_date'], $r['retensi_amount'],
-                    $r['utjdp_date'], $r['utjdp_amount'], $r['fp_date'], $r['fp_amount'], $r['fp_number'],
-                ]);
-            }
-            fclose($out);
-        }, 'booked-revenue-report.csv', ['Content-Type' => 'text/csv']);
+        // Kode Customer ikut dibawa — CSV lama melewatkannya, padahal ia yang dipakai
+        // mencocokkan baris dengan data pelanggan di luar aplikasi.
+        $h = $this->xlsHead(['Unit', 'Cluster', 'Customer', 'Kode Customer', 'No. BR', 'Tgl BR', 'Nilai BR', 'Status',
+            'Tgl BAST', 'Tgl AJB', 'Notaris AJB', 'Tgl Retensi', 'Nominal Retensi',
+            'Tgl UTJ&DP', 'Nominal UTJ&DP', 'Tgl Faktur Pajak', 'Nominal Faktur Pajak', 'No. Faktur Pajak']);
+
+        foreach ($rows as $r) {
+            $h .= '<tr>'
+                .$this->xlsText($r['unit'])
+                .$this->xlsText($r['cluster'])
+                .$this->xlsText($r['customer'])
+                .$this->xlsText($r['customer_code'] ?? '')
+                .$this->xlsText($r['br_number'])
+                .$this->xlsText($r['br_date'])
+                .$this->xlsNum($r['br_amount'])
+                .$this->xlsText($r['br_status'])
+                .$this->xlsText($r['bast_date'])
+                .$this->xlsText($r['ajb_date'])
+                .$this->xlsText($r['ajb_notary'])
+                .$this->xlsText($r['retensi_date'])
+                .$this->xlsNum($r['retensi_amount'])
+                .$this->xlsText($r['utjdp_date'])
+                .$this->xlsNum($r['utjdp_amount'])
+                .$this->xlsText($r['fp_date'])
+                .$this->xlsNum($r['fp_amount'])
+                .$this->xlsText($r['fp_number'])
+                .'</tr>';
+        }
+
+        // Keempat angkanya sama persis dengan baris total di layar, diambil dari ringkasan
+        // yang sama — bukan dijumlah ulang dengan aturan sendiri.
+        $h .= '<tr style="font-weight:bold;background:#f1f5f9">'
+            .'<td colspan="6">Total ('.$summary['units'].' unit)</td>'
+            .$this->xlsNum($summary['br_total'])
+            .'<td colspan="5"></td>'
+            .$this->xlsNum($summary['retensi_total'])
+            .'<td></td>'
+            .$this->xlsNum($summary['utjdp_total'])
+            .'<td></td>'
+            .$this->xlsNum($summary['fp_total'])
+            .'<td></td></tr></table>';
+
+        return $this->xlsResponse('Report-Booked-Revenue', 'REPORT / QUERY BOOKED REVENUE', $h, $request->input('search'));
     }
 
     /**
@@ -571,6 +605,55 @@ class BookedRevenueController extends Controller
     {
         abort_unless($request->user()?->canModule('ar'), 403);
 
+        [$rows, $belum] = $this->bastRows($request);
+
+        return $this->renderDocControl($request, 'bast', 'Detail BAST', 'Berita Acara Serah Terima (serah terima unit)', null, $rows, $belum,
+            'bs.booked-revenue.control.bast.issue', false);
+    }
+
+    /** Ekspor Detail BAST — baris yang sama dengan layarnya. */
+    public function exportControlBast(Request $request): \Illuminate\Http\Response
+    {
+        abort_unless($request->user()?->canModule('ar'), 403);
+
+        [$rows] = $this->bastRows($request);
+        // Saringan Sudah/Belum di layar tidak pernah masuk URL, jadi tombolnya yang
+        // mengirimkannya. Tanpa ini berkasnya berisi lebih banyak baris daripada yang
+        // sedang dilihat operator.
+        if ($kind = $request->input('kind')) {
+            $rows = $rows->where('kind', $kind)->values();
+        }
+
+        $h = $this->xlsHead(['No. Dokumen', 'No. SPR', 'Tanggal', 'Customer', 'Unit', 'Status', 'Outstanding (hari)']);
+        foreach ($rows as $r) {
+            // Umur dihitung di SERVER. Layar menghitungnya dengan Date.now() peramban, dan
+            // di sekitar tengah malam keduanya bisa berbeda satu hari; yang tercetak di
+            // berkas harus mengikuti zona waktu aplikasi.
+            $umur = $r['date'] ? \Illuminate\Support\Carbon::parse($r['date'])->diffInDays(now()) : null;
+            $h .= '<tr>'
+                .$this->xlsText($r['number'])
+                .$this->xlsText($r['spr'])
+                .$this->xlsText($r['date'])
+                .$this->xlsText($r['customer'])
+                .$this->xlsText($r['unit'])
+                .$this->xlsText($r['kind'] === 'sudah' ? 'Sudah BAST' : 'Belum BAST')
+                .$this->xlsText($umur === null ? '—' : (string) $umur)
+                .'</tr>';
+        }
+        $h .= $this->xlsTotal('TOTAL — '.$rows->count().' record ('
+            .$rows->where('kind', 'sudah')->count().' sudah, '.$rows->where('kind', 'belum')->count().' belum)', 7)
+            .'</table>';
+
+        return $this->xlsResponse('Detail-BAST', 'DETAIL BAST', $h, $request->input('search'));
+    }
+
+    /**
+     * Baris Detail BAST — sudah & belum, sesudah disaring pencarian.
+     *
+     * @return array{0:\Illuminate\Support\Collection<int,array<string,mixed>>, 1:\Illuminate\Support\Collection<int,mixed>}
+     */
+    private function bastRows(Request $request): array
+    {
         $docs = \App\Domain\Legal\Bast\Models\BastDocument::query()
             ->with(['booking.customer:id,full_name,code', 'booking.unit:id,unit_code'])
             ->latest('handed_over_at')->latest('id')->get();
@@ -591,10 +674,7 @@ class BookedRevenueController extends Controller
                 'spr' => $b->booking_number, 'customer' => $b->customer?->full_name, 'unit' => $b->unit?->unit_code, 'extra' => null,
             ]);
         }
-        $rows = $this->filterDocRows($rows, $request->input('search'));
-
-        return $this->renderDocControl($request, 'bast', 'Detail BAST', 'Berita Acara Serah Terima (serah terima unit)', null, $rows, $belum,
-            'bs.booked-revenue.control.bast.issue', false);
+        return [$this->filterDocRows($rows, $request->input('search')), $belum];
     }
 
     /**
@@ -609,9 +689,16 @@ class BookedRevenueController extends Controller
      * untuk unit yang sudah BAST. Keterangan terisi sendiri: "SUDAH BAST" bila ketiga kolom AJB
      * (nomor, tanggal, nominal) lengkap, selain itu "BELUM BAST".
      */
-    public function controlAjb(Request $request): Response
+    /**
+     * Baris Detail AJB — sesudah saringan pencarian & status, beserta cacah & daftar modal.
+     *
+     * Diangkat jadi helper supaya layar dan ekspornya membaca dari SATU sumber; menyalinnya
+     * ke jalur ekspor berarti dua daftar yang perlahan berbeda tanpa ada yang menyadarinya.
+     *
+     * @return array{0:\Illuminate\Support\Collection<int,array<string,mixed>>, 1:int, 2:\Illuminate\Support\Collection<int,mixed>}
+     */
+    private function ajbRows(Request $request): array
     {
-        abort_unless($request->user()?->canModule('ar'), 403);
 
         $bookings = $this->finalBookings()->orderBy('id')->get();
 
@@ -682,7 +769,21 @@ class BookedRevenueController extends Controller
             fn ($a, $b) => strcmp((string) $a['spr'], (string) $b['spr']),
         ])->values();
 
-        $semua = $bookings->count();
+        return [
+            $rows,
+            $bookings->count(),
+            // Modal Input Massal AJB: SPR final yang belum punya dokumen AJB.
+            $bookings->filter(fn ($b) => ! $ajb->has($b->id))
+                ->map(fn ($b) => ['booking_id' => $b->id, 'spr' => $b->booking_number, 'unit' => $b->unit?->unit_code, 'customer' => $b->customer?->full_name])
+                ->values(),
+        ];
+    }
+
+    public function controlAjb(Request $request): Response
+    {
+        abort_unless($request->user()?->canModule('ar'), 403);
+
+        [$rows, $semua, $belumBookings] = $this->ajbRows($request);
 
         return Inertia::render('BusinessSupport/BookedRevenue/DetailAjb', [
             'rows'    => $rows,
@@ -692,11 +793,43 @@ class BookedRevenueController extends Controller
                 'sudah' => $rows->where('keterangan', 'SUDAH BAST')->count(),
                 'belum' => $rows->where('keterangan', 'BELUM BAST')->count(),
             ],
-            // Modal Input Massal AJB: SPR final yang belum punya dokumen AJB.
-            'belumBookings' => $bookings->filter(fn ($b) => ! $ajb->has($b->id))
-                ->map(fn ($b) => ['booking_id' => $b->id, 'spr' => $b->booking_number, 'unit' => $b->unit?->unit_code, 'customer' => $b->customer?->full_name])
-                ->values(),
+            'belumBookings' => $belumBookings,
         ]);
+    }
+
+    /** Ekspor Detail AJB — baris yang sama dengan layarnya, sesudah saringan yang sama. */
+    public function exportControlAjb(Request $request): \Illuminate\Http\Response
+    {
+        abort_unless($request->user()?->canModule('ar'), 403);
+
+        [$rows] = $this->ajbRows($request);
+
+        $h = $this->xlsHead(['No Urut', 'No SPR', 'Nama Customer', 'Unit Rumah', 'Notaris', 'No AJB',
+            'Tanggal AJB', 'Nominal AJB', 'Keterangan', 'Status Posting']);
+        $no = 0;
+        $total = 0.0;
+        foreach ($rows as $r) {
+            $no++;
+            $total += (float) ($r['ajb_amount'] ?? 0);
+            $h .= '<tr>'
+                .$this->xlsText($no)
+                .$this->xlsText($r['spr'])
+                .$this->xlsText($r['customer'])
+                .$this->xlsText($r['unit'])
+                .$this->xlsText($r['notaris'])
+                .$this->xlsText($r['ajb_number'])
+                .$this->xlsText($r['ajb_date'])
+                .$this->xlsNum($r['ajb_amount'])
+                .$this->xlsText($r['keterangan'])
+                .$this->xlsText($r['sudah_booked'] ? 'Sudah Diposting' : ($r['can_posting'] ? 'Bisa Posting' : 'Lengkapi AJB dulu'))
+                .'</tr>';
+        }
+        // Cacahnya diambil SESUDAH saringan. summary.total di layar dihitung sebelum
+        // disaring, jadi memakainya di sini akan membuat baris TOTAL menyebut angka yang
+        // lebih besar daripada jumlah baris yang benar-benar ada di berkasnya.
+        $h .= $this->xlsTotal('TOTAL — '.$rows->count().' record', 7, [$total], 2).'</table>';
+
+        return $this->xlsResponse('Detail-AJB', 'DETAIL AJB', $h, $request->input('search'));
     }
 
     /** Filter baris control (no dokumen / SPR / customer / unit). */
@@ -827,6 +960,51 @@ class BookedRevenueController extends Controller
     {
         abort_unless($request->user()?->canModule('ar'), 403);
 
+        return Inertia::render('BusinessSupport/BookedRevenue/BelumBooked', [
+            'rows'    => $this->belumBookedRows($request),
+            'filters' => $request->only(['search']),
+        ]);
+    }
+
+    /** Ekspor Belum Booked Revenue — baris yang sama dengan layarnya. */
+    public function belumBookedExport(Request $request): \Illuminate\Http\Response
+    {
+        abort_unless($request->user()?->canModule('ar'), 403);
+
+        $rows = $this->belumBookedRows($request);
+        // Rumus "siap booking" DISALIN dari layarnya (BelumBooked.vue): kedua tanggal terisi.
+        // Kalau dihitung dengan aturan lain, angka di berkas dan di layar akan berbeda tanpa
+        // ada yang tahu mana yang benar.
+        $siap = fn (array $r) => ! empty($r['ajb_date']) && ! empty($r['bast_date']);
+
+        $h = $this->xlsHead(['No', 'No. SPR', 'Unit Rumah', 'Nama Customer', 'Tgl AJB', 'Tgl BAST', 'Siap Booking']);
+        foreach ($rows as $r) {
+            $h .= '<tr>'
+                .$this->xlsText($r['no'])
+                .$this->xlsText($r['spr'])
+                .$this->xlsText($r['unit'])
+                .$this->xlsText($r['customer'])
+                .$this->xlsText($r['ajb_date'])
+                .$this->xlsText($r['bast_date'])
+                .$this->xlsText($siap($r) ? 'Ya' : 'Belum')
+                .'</tr>';
+        }
+        $h .= $this->xlsTotal('TOTAL — '.$rows->count().' record, '.$rows->filter($siap)->count().' siap di-booking', 7)
+            .'</table>';
+
+        return $this->xlsResponse('Belum-Booked-Revenue', 'BELUM BOOKED REVENUE', $h, $request->input('search'));
+    }
+
+    /**
+     * Baris Belum Booked Revenue — unit yang sudah punya BAST/AJB tetapi belum di-booking.
+     *
+     * Diangkat jadi helper supaya layar dan ekspornya membaca dari SATU sumber. Menyalinnya
+     * ke jalur ekspor berarti dua daftar yang perlahan berbeda tanpa ada yang menyadarinya.
+     *
+     * @return \Illuminate\Support\Collection<int,array<string,mixed>>
+     */
+    private function belumBookedRows(Request $request): \Illuminate\Support\Collection
+    {
         $bookedUnitIds = BsBookedRevenue::whereIn('status', ['booked', 'recognized'])
             ->whereNotNull('unit_id')->distinct()->pluck('unit_id')->all();
 
@@ -842,7 +1020,7 @@ class BookedRevenueController extends Controller
                 ->orWhereHas('unit', fn ($u) => $u->where('unit_code', 'like', "%{$s}%"))))
             ->orderByDesc('id')->get();
 
-        $rows = $bookings->values()->map(fn ($b, $i) => [
+        return $bookings->values()->map(fn ($b, $i) => [
             'no'         => $i + 1,
             'booking_id' => $b->id,
             'unit_id'    => $b->unit_id,
@@ -852,10 +1030,68 @@ class BookedRevenueController extends Controller
             'ajb_date'   => $ajb->get($b->id)?->signed_at?->toDateString(),
             'bast_date'  => $bast->get($b->id)?->handed_over_at?->toDateString(),
         ]);
+    }
 
-        return Inertia::render('BusinessSupport/BookedRevenue/BelumBooked', [
-            'rows'    => $rows,
-            'filters' => $request->only(['search']),
-        ]);
+    // ─────────────────────────────────────────────────────────────────────────
+    // Perkakas bersama ekspor Excel.
+    //
+    // Semua tombol Excel di aplikasi ini memulangkan HTML bertipe vnd.ms-excel — bukan .xlsx
+    // sungguhan. Dikumpulkan di sini supaya kedelapan layar modul ini memakai bentuk yang
+    // sama persis: satu perubahan gaya berlaku untuk semuanya, dan tidak ada layar yang
+    // diam-diam berbeda.
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /** @param array<int,string> $judul */
+    private function xlsHead(array $judul): string
+    {
+        return '<table border="1"><tr style="background:#c2410c;color:#fff">'
+            .implode('', array_map(fn ($j) => '<th>'.htmlspecialchars($j, ENT_QUOTES).'</th>', $judul))
+            .'</tr>';
+    }
+
+    /**
+     * Sel TEKS. mso-number-format '\@' memaksa Excel membacanya sebagai teks — tanpa itu
+     * nomor dokumen panjang (No. Faktur Pajak, NPWP, No. SPR) berubah jadi notasi ilmiah
+     * dan nol di depannya hilang.
+     */
+    private function xlsText(mixed $v): string
+    {
+        return '<td style="mso-number-format:\'\@\'">'.htmlspecialchars((string) ($v ?? ''), ENT_QUOTES).'</td>';
+    }
+
+    /** Sel ANGKA, dipisah titik-ribuan koma-desimal seperti ekspor lain di aplikasi ini. */
+    private function xlsNum(mixed $v): string
+    {
+        return '<td>'.number_format((float) ($v ?? 0), 2, ',', '.').'</td>';
+    }
+
+    /**
+     * Baris TOTAL: label membentang, lalu angka-angkanya, lalu sel kosong penutup.
+     *
+     * $bentang + jumlah angka + $kosong HARUS sama dengan jumlah judul kolom. Baris total yang
+     * kurang lebar tidak merusak berkasnya — ia hanya menggeser angkanya ke kolom yang salah,
+     * dan Excel tetap membukanya tanpa keluhan.
+     *
+     * @param array<int,mixed> $angka
+     */
+    private function xlsTotal(string $label, int $bentang, array $angka = [], int $kosong = 0): string
+    {
+        return '<tr style="font-weight:bold;background:#f1f5f9"><td colspan="'.$bentang.'">'
+            .htmlspecialchars($label, ENT_QUOTES).'</td>'
+            .implode('', array_map(fn ($a) => $this->xlsNum($a), $angka))
+            .str_repeat('<td></td>', $kosong)
+            .'</tr>';
+    }
+
+    private function xlsResponse(string $namaBerkas, string $judul, string $tabel, ?string $cari = null): \Illuminate\Http\Response
+    {
+        $berkas = $namaBerkas.'-'.now()->format('Ymd-His').'.xls';
+
+        return response('<html xmlns:x="urn:schemas-microsoft-com:office:excel"><head><meta charset="utf-8"></head><body>'
+            .'<h3>'.htmlspecialchars($judul, ENT_QUOTES).'</h3>'
+            .($cari ? '<p>Pencarian: '.htmlspecialchars($cari, ENT_QUOTES).'</p>' : '')
+            .$tabel.'</body></html>')
+            ->header('Content-Type', 'application/vnd.ms-excel; charset=UTF-8')
+            ->header('Content-Disposition', 'attachment; filename="'.$berkas.'"');
     }
 }

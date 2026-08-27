@@ -34,6 +34,36 @@ class FakturPajakController extends Controller
         abort_unless($request->user()?->canModule('tax'), 403);
         [$year, $month] = $this->period($request);
 
+        $rows = $this->keluaranRows($year, $month);
+
+        return Inertia::render('BusinessSupport/Tax/Keluaran', [
+            'rows'    => $rows,
+            'period'  => ['year' => $year, 'month' => $month],
+            'totals'  => [
+                // Dihitung dari daftar gabungannya, bukan dari ketiga koleksi sumber. Nilainya
+                // sama persis — tiap baris membawa 'source'-nya sendiri dan ketiga sumber itu
+                // tidak pernah memakai nilai source yang sama.
+                'dpp' => round($rows->sum('dpp'), 2), 'ppn' => round($rows->sum('ppn'), 2), 'count' => $rows->count(),
+                'ar_ppn' => round($rows->where('source', 'ar')->sum('ppn'), 2),
+                'prop_ppn' => round($rows->where('source', 'properti')->sum('ppn'), 2),
+                'ret_ppn' => round($rows->where('source', 'retensi')->sum('ppn'), 2),
+                'utj_ppn' => round($rows->where('source', 'utj_dp')->sum('ppn'), 2),
+                'penc_ppn' => round($rows->where('source', 'pencairan')->sum('ppn'), 2),
+            ],
+        ]);
+    }
+
+    /**
+     * Baris Faktur Pajak Keluaran satu masa pajak — gabungan TIGA sumber, terurut tanggal.
+     *
+     * Diangkat jadi helper supaya layar dan ekspornya membaca dari SATU sumber. Sebelumnya
+     * ekspor CSV merakit ulang daftarnya sendiri dan MELEWATKAN entri Approval (retensi,
+     * UTJ & DP, pencairan) — berkasnya diam-diam kekurangan baris dibanding layarnya.
+     *
+     * @return \Illuminate\Support\Collection<int,array<string,mixed>>
+     */
+    private function keluaranRows(int $year, int $month): \Illuminate\Support\Collection
+    {
         // Sumber 1: Invoice Piutang (AR) ber-PPN — NSFP bisa diedit.
         $arRows = BsArInvoice::with('customer:id,full_name,npwp,npwp_name')
             ->where('ppn_amount', '>', 0)
@@ -76,17 +106,75 @@ class FakturPajakController extends Controller
 
         $rows = $arRows->concat($propRows)->concat($entryRows)->sortBy('invoice_date')->values();
 
-        return Inertia::render('BusinessSupport/Tax/Keluaran', [
-            'rows'    => $rows,
-            'period'  => ['year' => $year, 'month' => $month],
-            'totals'  => [
-                'dpp' => round($rows->sum('dpp'), 2), 'ppn' => round($rows->sum('ppn'), 2), 'count' => $rows->count(),
-                'ar_ppn' => round($arRows->sum('ppn'), 2), 'prop_ppn' => round($propRows->sum('ppn'), 2),
-                'ret_ppn' => round($entryRows->where('source', 'retensi')->sum('ppn'), 2),
-                'utj_ppn' => round($entryRows->where('source', 'utj_dp')->sum('ppn'), 2),
-                'penc_ppn' => round($entryRows->where('source', 'pencairan')->sum('ppn'), 2),
-            ],
-        ]);
+        return $arRows->concat($propRows)->concat($entryRows)->sortBy('invoice_date')->values();
+    }
+
+    /**
+     * Ekspor Faktur Pajak Keluaran ke Excel.
+     *
+     * Bentuknya HTML bertipe vnd.ms-excel, BUKAN .xlsx seperti saudaranya Faktur Masukan:
+     * XlsxExport berbasis SATU query Eloquent, sedangkan layar ini menggabungkan tiga sumber
+     * (Invoice Piutang, Penjualan Properti, dan Entri Approval) lalu mengurutkannya bersama.
+     * Memaksakannya ke satu query berarti menulis ulang penggabungan itu di tempat kedua.
+     *
+     * Saringan kolom di layar dihitung di sisi peramban dan tidak pernah masuk URL, jadi
+     * berkas ini berisi SELURUH masa pajak yang dipilih. Itu dikatakan di judul lembarnya,
+     * bukan didiamkan.
+     */
+    public function exportKeluaranXlsx(Request $request): \Illuminate\Http\Response
+    {
+        abort_unless($request->user()?->canModule('tax'), 403);
+        [$year, $month] = $this->period($request);
+
+        $rows = $this->keluaranRows($year, $month);
+
+        $e = fn ($v) => htmlspecialchars((string) ($v ?? ''), ENT_QUOTES);
+        // Kolom identitas dipaksa dibaca sebagai teks — tanpa itu Nomor Seri Faktur Pajak dan
+        // NPWP yang panjang berubah jadi notasi ilmiah dan nol depannya hilang.
+        $t = fn ($v) => '<td style="mso-number-format:\'\@\'">'.$e($v).'</td>';
+        $n = fn ($v) => '<td>'.number_format((float) ($v ?? 0), 2, ',', '.').'</td>';
+
+        $sumber = [
+            'ar'        => 'Invoice Piutang (AR)',
+            'properti'  => 'Penjualan Properti',
+            'retensi'   => 'Approval Retensi',
+            'dajam'     => 'Pelepasan DAJAM',
+            'pencairan' => 'Approval Pencairan',
+            'utj_dp'    => 'Approval UTJ & DP',
+        ];
+
+        $h = '<table border="1"><tr style="background:#c2410c;color:#fff">'
+            .'<th>No. Faktur Pajak</th><th>Sumber</th><th>Tanggal</th><th>NPWP</th><th>Nama</th>'
+            .'<th>No. Dokumen / Unit</th><th>DPP</th><th>PPN</th><th>Status Konversi</th></tr>';
+
+        foreach ($rows as $r) {
+            $konversi = ! isset($r['is_entry'])
+                ? '—'
+                : (($r['converted'] ?? false) ? 'Sudah dikonversi' : (($r['is_active'] ?? false) ? 'Aktif' : 'Belum dikonversi'));
+
+            $h .= '<tr>'
+                .$t($r['tax_invoice_no'])
+                .$t($sumber[$r['source']] ?? $r['source'])
+                .$t($r['invoice_date'])
+                .$t($r['npwp'])
+                .$t($r['partner'])
+                .$t($r['doc_no'])
+                .$n($r['dpp'])
+                .$n($r['ppn'])
+                .$t($konversi)
+                .'</tr>';
+        }
+        $h .= '<tr style="font-weight:bold;background:#f1f5f9"><td colspan="6">Total ('.$rows->count().' baris)</td>'
+            .$n($rows->sum('dpp')).$n($rows->sum('ppn')).'<td></td></tr></table>';
+
+        $file = 'Faktur-Pajak-Keluaran-'.sprintf('%04d-%02d', $year, $month).'-'.now()->format('Ymd-His').'.xls';
+
+        return response('<html xmlns:x="urn:schemas-microsoft-com:office:excel"><head><meta charset="utf-8"></head><body>'
+            .'<h3>FAKTUR PAJAK KELUARAN</h3>'
+            .'<p>Masa pajak: '.sprintf('%02d/%04d', $month, $year).' — seluruh baris masa ini (saringan kolom di layar tidak diterapkan).</p>'
+            .$h.'</body></html>')
+            ->header('Content-Type', 'application/vnd.ms-excel; charset=UTF-8')
+            ->header('Content-Disposition', 'attachment; filename="'.$file.'"');
     }
 
     /** Faktur Pajak Masukan — PPN atas pembelian (AP). */
@@ -300,20 +388,19 @@ class FakturPajakController extends Controller
         abort_unless($request->user()?->canModule('tax'), 403);
         [$year, $month] = $this->period($request);
 
-        $ar = BsArInvoice::with('customer:id,full_name,npwp,npwp_name')->where('ppn_amount', '>', 0)
-            ->whereYear('invoice_date', $year)->whereMonth('invoice_date', $month)->orderBy('invoice_date')->get()
-            ->map(fn ($i) => [
-                $i->tax_invoice_no ?? '', $i->invoice_date?->format('Y-m-d'), 'AR Invoice', $i->customer?->npwp ?: '',
-                $i->customer?->npwp_name ?: $i->customer?->full_name, $i->invoice_number, (float) $i->dpp, (float) $i->ppn_amount,
-            ]);
-        $prop = FakturPajak::with('customer:id,full_name,npwp,npwp_name')->where('ppn', '>', 0)
-            ->whereYear('issued_at', $year)->whereMonth('issued_at', $month)->orderBy('issued_at')->get()
-            ->map(fn ($f) => [
-                $f->fp_number, $f->issued_at?->format('Y-m-d'), 'Penjualan Properti', $f->customer?->npwp ?: '',
-                $f->customer?->npwp_name ?: $f->customer?->full_name, $f->fp_number, (float) $f->dpp, (float) $f->ppn,
-            ]);
+        // Dulu merakit ulang daftarnya sendiri dari DUA sumber saja, sehingga seluruh entri
+        // Approval (retensi, UTJ & DP, pencairan) tidak pernah ikut — berkasnya diam-diam
+        // kekurangan baris dibanding layarnya. Kini membaca daftar yang sama.
+        $sumber = [
+            'ar' => 'AR Invoice', 'properti' => 'Penjualan Properti', 'retensi' => 'Approval Retensi',
+            'dajam' => 'Pelepasan DAJAM', 'pencairan' => 'Approval Pencairan', 'utj_dp' => 'Approval UTJ & DP',
+        ];
+        $rows = $this->keluaranRows($year, $month)->map(fn (array $r) => [
+            $r['tax_invoice_no'] ?? '', $r['invoice_date'], $sumber[$r['source']] ?? $r['source'],
+            $r['npwp'], $r['partner'], $r['doc_no'], (float) $r['dpp'], (float) $r['ppn'],
+        ]);
 
-        return $this->csv("faktur-keluaran-{$year}-{$month}.csv", ['No Faktur Pajak', 'Tgl', 'Sumber', 'NPWP', 'Nama', 'No Dokumen', 'DPP', 'PPN'], $ar->concat($prop));
+        return $this->csv("faktur-keluaran-{$year}-{$month}.csv", ['No Faktur Pajak', 'Tgl', 'Sumber', 'NPWP', 'Nama', 'No Dokumen', 'DPP', 'PPN'], $rows);
     }
 
     public function exportMasukan(Request $request): StreamedResponse

@@ -590,6 +590,7 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
     Route::get('/business-support/faktur-pajak/export/keluaran', [BsTaxController::class, 'exportKeluaran'])->name('bs.tax.export.keluaran');
     Route::get('/business-support/faktur-pajak/export/masukan',  [BsTaxController::class, 'exportMasukan'])->name('bs.tax.export.masukan');
     Route::get('/business-support/faktur-pajak/export/masukan/xlsx', [BsTaxController::class, 'exportMasukanXlsx'])->name('bs.tax.export.masukan.xlsx'); // #4 tarik Excel FP masukan
+    Route::get('/business-support/faktur-pajak/export/keluaran/xlsx', [BsTaxController::class, 'exportKeluaranXlsx'])->name('bs.tax.export.keluaran.xlsx'); // Excel FP keluaran (gabungan 3 sumber)
     // Cetak DJP (HTML print) + e-Faktur export
     Route::get('/business-support/faktur-pajak/cetak/spt-ppn',       [BsSptController::class, 'cetakPpn'])->name('bs.tax.cetak.ppn');
     Route::get('/business-support/faktur-pajak/cetak/buku-pembantu', [BsSptController::class, 'bukuPembantu'])->name('bs.tax.cetak.buku');
@@ -791,6 +792,7 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
     // Approval UM Penjualan — lanjutan UTJ & DP: konversi ke Uang Muka Penjualan (Dr Hutang Usaha / Cr Uang Muka + PPN)
     // Rincian Batal Akad — KPR batal/ditolak; disaring keluar dari antrean approval.
     Route::get('/business-support/batal-akad',                                [\App\Http\Controllers\Web\BusinessSupport\BatalAkadController::class, 'index'])->name('bs.batal-akad.index');
+    Route::get('/business-support/batal-akad/export',                         [\App\Http\Controllers\Web\BusinessSupport\BatalAkadController::class, 'export'])->name('bs.batal-akad.export');
     Route::get('/business-support/cash-book-approval-um',                     [BsBankApprovalController::class, 'umIndex'])->name('bs.cashbook.approval-um');
     Route::post('/business-support/cash-book-approval-um/{entry}',            [BsBankApprovalController::class, 'umPost'])->name('bs.cashbook.approval-um.post');
     Route::get('/business-support/cash-book',                  [BsCashBookController::class, 'index'])->name('bs.cashbook.index');
@@ -1066,9 +1068,12 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
     // tidak ada lagi jalur "akui pendapatan" maupun "batalkan" (booking tak bisa dikembalikan).
     Route::patch('/business-support/booked-revenue/{bookedRevenue}',     [BsBookedRevenueController::class, 'update'])->name('bs.booked-revenue.update');
     Route::get('/business-support/booked-revenue-control/bast', [BsBookedRevenueController::class, 'controlBast'])->name('bs.booked-revenue.control.bast');
+    Route::get('/business-support/booked-revenue-control/bast/export', [BsBookedRevenueController::class, 'exportControlBast'])->name('bs.booked-revenue.control.bast.export');
     Route::get('/business-support/booked-revenue-control/ajb',  [BsBookedRevenueController::class, 'controlAjb'])->name('bs.booked-revenue.control.ajb');
+    Route::get('/business-support/booked-revenue-control/ajb/export', [BsBookedRevenueController::class, 'exportControlAjb'])->name('bs.booked-revenue.control.ajb.export');
     Route::get('/business-support/booked-revenue-control/fp',   [BsBookedRevenueController::class, 'controlFakturPajak'])->name('bs.booked-revenue.control.fp');
     Route::get('/business-support/belum-booked-revenue',        [BsBookedRevenueController::class, 'belumBooked'])->name('bs.booked-revenue.belum'); // pipeline: sudah BAST/AJB, belum di-booking
+    Route::get('/business-support/belum-booked-revenue/export', [BsBookedRevenueController::class, 'belumBookedExport'])->name('bs.booked-revenue.belum.export');
     Route::post('/business-support/booked-revenue-control/bast/issue', [BsBookedRevenueController::class, 'issueBast'])->name('bs.booked-revenue.control.bast.issue'); // terbitkan BAST (Sudah) satuan/massal
     Route::post('/business-support/booked-revenue-control/ajb/issue',  [BsBookedRevenueController::class, 'issueAjb'])->name('bs.booked-revenue.control.ajb.issue'); // terbitkan AJB (Sudah) satuan/massal
     // Report / Query: rekap keseluruhan Booked Revenue per unit (BAST/AJB/Retensi/UTJ&DP/Faktur Pajak). Path terpisah agar tidak tertangkap wildcard {bookedRevenue}.
@@ -1078,6 +1083,7 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
     // (bukan di bawah /booked-revenue/) agar tidak tertangkap wildcard {bookedRevenue} di atas.
     Route::get('/business-support/invoice-penjualan',            [BsSalesInvoiceController::class, 'index'])->name('bs.sales-invoice.index');
     Route::get('/business-support/invoice-penjualan/print-bulk', [BsSalesInvoiceController::class, 'printBulk'])->name('bs.sales-invoice.print-bulk'); // HARUS di atas /{bookedRevenue}
+    Route::get('/business-support/invoice-penjualan/export',     [BsSalesInvoiceController::class, 'export'])->name('bs.sales-invoice.export'); // HARUS di atas /{bookedRevenue}
     Route::get('/business-support/invoice-penjualan/{bookedRevenue}', [BsSalesInvoiceController::class, 'print'])->name('bs.sales-invoice.print');
 
     // ── CONTRACTOR MANAGEMENT (modul mandiri; /contractor-management → hub) ──

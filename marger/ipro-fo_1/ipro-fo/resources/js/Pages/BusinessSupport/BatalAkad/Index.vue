@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue';
 import { Link } from '@inertiajs/vue3';
-import { TriangleAlert, RotateCcw, ArrowLeft } from 'lucide-vue-next';
+import { TriangleAlert, RotateCcw, ArrowLeft, FileSpreadsheet } from 'lucide-vue-next';
 import Badge from '@/Components/UI/Badge.vue';
 import EmptyState from '@/Components/UI/EmptyState.vue';
 import ScrollTopButton from '@/Components/UI/ScrollTopButton.vue';
@@ -17,6 +17,17 @@ const props = defineProps<{ rows: Row[]; totals: { count: number; cancelled: num
 
 const f = ref({ q: '', status: '', akad: '' });
 function resetFilter() { f.value = { q: '', status: '', akad: '' }; }
+
+/* Saringan halaman ini murni di sisi peramban dan tidak pernah masuk URL, jadi tombol
+   ekspornya yang mengirimkannya. Tanpa itu berkasnya berisi lebih banyak baris daripada
+   yang sedang dilihat operator. */
+function exportExcel() {
+    window.location.href = route('bs.batal-akad.export', {
+        q: f.value.q || undefined,
+        status: f.value.status || undefined,
+        akad: f.value.akad || undefined,
+    });
+}
 const filtered = computed(() => {
     const s = f.value.q.trim().toLowerCase();
     return props.rows.filter((r) => {
@@ -38,6 +49,10 @@ const fCls = 'h-7 w-full rounded border border-neutral-300 bg-white px-2 text-xs
         <div>
             <Link :href="route('bs.booked-revenue.index')" class="inline-flex items-center gap-2 text-sm text-neutral-500 hover:text-neutral-800 dark:hover:text-neutral-200"><ArrowLeft class="h-4 w-4" /> Booked Revenue</Link>
             <h1 class="mt-1 flex items-center gap-2 text-2xl font-bold"><TriangleAlert class="h-6 w-6 text-danger-600" /> Rincian Batal Akad</h1>
+            <button type="button" @click="exportExcel"
+                    class="inline-flex h-9 items-center gap-1.5 rounded-lg bg-success-600 px-4 text-sm font-semibold text-white hover:bg-success-700">
+                <FileSpreadsheet class="h-4 w-4" /> Excel
+            </button>
             <p class="text-sm text-neutral-500">
                 Customer yang Proses KPR-nya <strong>dibatalkan</strong> atau <strong>ditolak</strong>. Baris ini sengaja
                 <strong>dikeluarkan dari antrean</strong> Approval Retensi &amp; Approval UM Penjualan agar tidak ikut disetujui —

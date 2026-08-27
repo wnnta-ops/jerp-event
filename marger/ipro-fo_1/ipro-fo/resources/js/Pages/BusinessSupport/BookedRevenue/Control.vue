@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { reactive, ref, computed, watch } from 'vue';
 import { router, Link } from '@inertiajs/vue3';
-import { ArrowLeft, FileCheck, Stamp, Receipt, ClipboardCheck, ListChecks, Plus, Check } from 'lucide-vue-next';
+import { ArrowLeft, FileCheck, Stamp, Receipt, ClipboardCheck, ListChecks, Plus, Check, FileSpreadsheet } from 'lucide-vue-next';
 import Button from '@/Components/UI/Button.vue';
 import Badge from '@/Components/UI/Badge.vue';
 import EmptyState from '@/Components/UI/EmptyState.vue';
@@ -44,6 +44,19 @@ function outstandingDays(d: string): number { return Math.max(0, Math.floor((Dat
 // Filter pencarian (server). Filter Sudah/Belum (client) khusus BAST/AJB.
 const f = reactive({ search: props.filters.search ?? '' });
 const kindFilter = ref('');
+
+/* Komponen ini dipakai DUA layar: Detail BAST dan Verifikasi Faktur Pajak. Hanya BAST
+   yang punya rute ekspor, jadi tombolnya muncul bersyarat — tombol polos akan membuat
+   route() melempar di layar Faktur Pajak. */
+const ruteEkspor: Record<string, string> = { bast: 'bs.booked-revenue.control.bast.export' };
+const bisaEkspor = computed(() => !! ruteEkspor[props.type]);
+function exportExcel() {
+    // Saringan Sudah/Belum tidak pernah masuk URL, jadi ikut dikirim dari state.
+    window.location.href = route(ruteEkspor[props.type], {
+        search: props.filters?.search || undefined,
+        kind: kindFilter.value || undefined,
+    });
+}
 let t: any;
 watch(f, (val) => {
     clearTimeout(t);
@@ -89,7 +102,13 @@ const cardTints = ['text-primary-600', 'text-emerald-600', 'text-amber-600', 'te
                 <h1 class="flex items-center gap-2 text-2xl font-bold"><component :is="icon" class="h-6 w-6 text-primary-600" /> {{ title }}</h1>
                 <p class="text-sm text-neutral-500">{{ subtitle }} — monitoring dokumen per unit &amp; customer.</p>
             </div>
-            <Button v-if="isDoc && (belumBookings?.length ?? 0) > 0" @click="openBulk"><template #icon-left><Plus class="h-4 w-4" /></template>Input Massal {{ docLabel }}</Button>
+            <div class="flex items-center gap-2">
+                <button v-if="bisaEkspor" type="button" @click="exportExcel"
+                        class="inline-flex h-9 items-center gap-1.5 rounded-lg bg-success-600 px-4 text-sm font-semibold text-white hover:bg-success-700">
+                    <FileSpreadsheet class="h-4 w-4" /> Excel
+                </button>
+                <Button v-if="isDoc && (belumBookings?.length ?? 0) > 0" @click="openBulk"><template #icon-left><Plus class="h-4 w-4" /></template>Input Massal {{ docLabel }}</Button>
+            </div>
         </div>
 
         <!-- Ringkasan: total + per status/kind -->
