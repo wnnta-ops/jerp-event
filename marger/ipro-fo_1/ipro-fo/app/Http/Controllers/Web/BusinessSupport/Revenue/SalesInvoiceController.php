@@ -59,6 +59,56 @@ class SalesInvoiceController extends Controller
         ]);
     }
 
+    /**
+     * Ekspor Invoice Penjualan ke Excel.
+     *
+     * Memakai saringan yang SAMA dengan layar tetapi TANPA paginasi: berkas yang berisi 50
+     * baris pertama akan terbaca sebagai "memang segitu datanya", dan jumlahnya tidak akan
+     * cocok dengan kartu ringkasan yang menghitung seluruh hasil filter.
+     */
+    public function export(Request $request): \Illuminate\Http\Response
+    {
+        abort_unless($request->user()?->canModule('ar'), 403);
+
+        $rows = $this->withRelations($this->query($request))->get();
+        $spr  = $this->sprMap($rows);
+
+        $e  = fn ($v) => htmlspecialchars((string) ($v ?? ''), ENT_QUOTES);
+        // mso-number-format '\@' memaksa Excel membaca kolom identitas sebagai teks — tanpa
+        // itu No. Invoice/No. SPR yang panjang berubah jadi notasi ilmiah.
+        $t  = fn ($v) => '<td style="mso-number-format:\'\@\'">'.$e($v).'</td>';
+        $n  = fn ($v) => '<td>'.number_format((float) ($v ?? 0), 2, ',', '.').'</td>';
+        $label = ['booked' => 'Booked', 'recognized' => 'Diakui'];
+
+        $h = '<table border="1"><tr style="background:#c2410c;color:#fff">'
+            .'<th>No</th><th>No. Invoice</th><th>Tanggal</th><th>Customer</th><th>Unit / Deskripsi</th>'
+            .'<th>No. SPR</th><th>No. BR</th><th>Status</th><th>Harga Nett</th><th>PPN</th><th>Grand Total</th></tr>';
+
+        $no = 0;
+        $grand = 0.0;
+        foreach ($rows as $r) {
+            $b = $this->row($r, $spr[$this->pairKey($r)] ?? null);
+            $no++;
+            $grand += (float) $b['grand_total'];
+            $h .= '<tr>'.$t($no).$t($b['invoice_number']).$t($b['invoice_date']).$t($b['customer'])
+                .$t($b['unit_desc'] ?: $b['unit']).$t($b['spr']).$t($b['br_number'])
+                .$t($label[$b['status']] ?? $b['status'])
+                .$n($b['nett']).$n($b['ppn']).$n($b['grand_total'])
+                .'</tr>';
+        }
+        $h .= '<tr style="font-weight:bold;background:#f1f5f9"><td colspan="10">TOTAL — '.$no.' unit</td>'
+            .$n($grand).'</tr></table>';
+
+        $file = 'Invoice-Penjualan-'.now()->format('Ymd-His').'.xls';
+
+        return response('<html xmlns:x="urn:schemas-microsoft-com:office:excel"><head><meta charset="utf-8"></head><body>'
+            .'<h3>INVOICE PENJUALAN</h3>'
+            .($request->input('search') ? '<p>Pencarian: '.$e($request->input('search')).'</p>' : '')
+            .$h.'</body></html>')
+            ->header('Content-Type', 'application/vnd.ms-excel; charset=UTF-8')
+            ->header('Content-Disposition', 'attachment; filename="'.$file.'"');
+    }
+
     /** Cetak massal — 1 invoice per halaman, dalam satu dokumen. */
     public function printBulk(Request $request): \Illuminate\Http\Response
     {

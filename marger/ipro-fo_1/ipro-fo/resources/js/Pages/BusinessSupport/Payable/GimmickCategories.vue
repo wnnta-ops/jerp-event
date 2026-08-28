@@ -27,7 +27,10 @@ const props = defineProps<{
         semua_cluster: boolean; cluster_isi: string[]; cluster_kosong: string[] }>;
     // Cluster tempat kategori berlaku. Satu jenis biaya yang sama bisa dibebankan ke akun
     // berbeda per cluster, sementara di Master Data KPR semuanya bermuara ke satu kolom.
-    clusters: Array<{ id: number; code: string; name: string; label: string }>;
+    // Cerminan master Lokasi di FO (Setup Unit → Lokasi) — BO tidak punya master cluster
+    // sendiri. `nonaktif` = Lokasinya sudah dihapus di FO tetapi masih dirujuk kategori, jadi
+    // ia tetap ditawarkan agar kategori lama tidak kehilangan clusternya saat disimpan ulang.
+    clusters: Array<{ id: number; code: string; name: string; label: string; nonaktif: boolean }>;
 }>();
 
 const search = ref(props.filters.search ?? '');
@@ -184,7 +187,13 @@ const sides: Array<{ key: 'debits' | 'credits'; title: string; hint: string; ton
                         <td class="px-4 py-2.5">
                             <!-- Tanpa cluster berarti berlaku untuk semua cluster; dikatakan
                                  apa adanya, bukan dibiarkan kosong seperti data yang belum diisi. -->
-                            <span v-if="c.cluster_label" class="inline-flex items-center gap-1 rounded-md bg-sky-50 px-1.5 py-0.5 text-[10.5px] font-semibold text-sky-700 ring-1 ring-sky-200 dark:bg-sky-950/40 dark:text-sky-300 dark:ring-sky-800/60">{{ c.cluster_label }}</span>
+                            <!-- Amber untuk cluster yang Lokasinya sudah dihapus di FO: ia masih
+                                 dipakai kategori ini, jadi tidak boleh terbaca sama dengan cluster
+                                 yang masih hidup. -->
+                            <span v-if="c.cluster_label"
+                                  :class="c.cluster_label.includes('(nonaktif di FO)')
+                                      ? 'inline-flex items-center gap-1 rounded-md bg-amber-50 px-1.5 py-0.5 text-[10.5px] font-semibold text-amber-700 ring-1 ring-amber-200 dark:bg-amber-950/40 dark:text-amber-300 dark:ring-amber-800/60'
+                                      : 'inline-flex items-center gap-1 rounded-md bg-sky-50 px-1.5 py-0.5 text-[10.5px] font-semibold text-sky-700 ring-1 ring-sky-200 dark:bg-sky-950/40 dark:text-sky-300 dark:ring-sky-800/60'">{{ c.cluster_label }}</span>
                             <span v-else class="text-[11px] text-neutral-400">Semua cluster</span>
                         </td>
                         <td class="px-4 py-2.5">
@@ -227,14 +236,23 @@ const sides: Array<{ key: 'debits' | 'credits'; title: string; hint: string; ton
                     <form @submit.prevent="submit" class="space-y-4">
                         <div>
                             <label class="mb-1 block text-xs font-medium text-neutral-500">Cluster</label>
-                            <select v-model="form.cluster_id" :class="inputCls">
-                                <option value="">— semua cluster —</option>
+                            <!-- Daftarnya cerminan master Lokasi di FO, jadi kosong berarti FO
+                                 memang belum punya Lokasi — bukan layar ini yang rusak. Dikatakan
+                                 di tempat operator mencarinya, lengkap dengan jalannya. -->
+                            <select v-model="form.cluster_id" :class="inputCls" :disabled="! clusters.length">
+                                <option v-if="clusters.length" value="">— semua cluster —</option>
+                                <option v-else value="">Belum ada cluster — tambahkan di FO → Setup Unit → Lokasi</option>
                                 <option v-for="cl in clusters" :key="cl.id" :value="cl.id">{{ cl.label }}</option>
                             </select>
                             <p class="mt-1 text-[11px] text-neutral-400">
                                 Akun gimmick berbeda per cluster, tetapi tetap bermuara ke satu kolom Rincian Biaya.
                                 Dikosongkan = berlaku untuk semua cluster, dan dipakai sebagai cadangan bila sebuah
                                 cluster belum punya kategori sendiri.
+                            </p>
+                            <p class="mt-1 text-[11px] text-neutral-400">
+                                Daftar cluster mengikuti <b class="font-semibold text-neutral-500 dark:text-neutral-400">Setup Unit → Lokasi</b>
+                                di Front Office — sama dengan yang tampil di Master Unit. Menambah cluster atau
+                                mengganti namanya dilakukan di sana; perubahannya menyusul ke sini otomatis.
                             </p>
                             <p v-if="form.errors.cluster_id" class="mt-1 text-xs text-danger-500">{{ form.errors.cluster_id }}</p>
                         </div>

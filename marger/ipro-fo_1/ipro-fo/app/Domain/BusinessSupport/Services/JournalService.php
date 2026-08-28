@@ -19,6 +19,22 @@ final class JournalService
 {
     public function nextNumber(string $source, Carbon $date): string
     {
+        $code = match ($source) {
+            'saldo_awal' => 'JSA',
+            'ar'         => 'JAR',
+            'ap'         => 'JAP',
+            'cash'       => 'JKB',
+            'inventory'  => 'JINV',
+            default      => 'JM', // memorial
+        };
+
+        return app(\App\Domain\BusinessSupport\Services\BoNumberService::class)
+            ->next($code, $date, [], fn () => $this->nextNumberLama($source, $date));
+    }
+
+    /** Cara lama — dipakai bila master numerator tidak bisa dipakai. */
+    private function nextNumberLama(string $source, Carbon $date): string
+    {
         $prefix = match ($source) {
             'saldo_awal' => 'JSA',
             'ar'         => 'JAR',

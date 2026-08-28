@@ -265,6 +265,20 @@ final class RecordCashTransaction
 
     private function nextNumber(string $type, string $date): string
     {
+        // Cabang default 'CB' tidak punya baris master — untuk itu tetap cara lama.
+        $code = match ($type) { 'in' => 'BKM', 'out' => 'BKK', 'transfer' => 'TRF', default => null };
+
+        if ($code === null) {
+            return $this->nextNumberLama($type, $date);
+        }
+
+        return app(\App\Domain\BusinessSupport\Services\BoNumberService::class)
+            ->next($code, Carbon::parse($date), [], fn () => $this->nextNumberLama($type, $date));
+    }
+
+    /** Cara lama — dipakai bila master numerator tidak bisa dipakai. */
+    private function nextNumberLama(string $type, string $date): string
+    {
         $prefix = match ($type) { 'in' => 'BKM', 'out' => 'BKK', 'transfer' => 'TRF', default => 'CB' };
         $d      = Carbon::parse($date);
         $count  = BsCashTransaction::withTrashed()->where('trx_type', $type)->whereYear('trx_date', $d->year)->count() + 1;

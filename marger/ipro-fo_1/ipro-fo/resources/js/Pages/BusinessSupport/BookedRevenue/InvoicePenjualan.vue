@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue';
 import { router, Link } from '@inertiajs/vue3';
-import { ArrowLeft, Receipt, Printer, Search, FilterX } from 'lucide-vue-next';
+import { ArrowLeft, Receipt, Printer, Search, FilterX, FileSpreadsheet } from 'lucide-vue-next';
 import Badge from '@/Components/UI/Badge.vue';
 import EmptyState from '@/Components/UI/EmptyState.vue';
 import TableTopScroll from '@/Components/UI/TableTopScroll.vue';
@@ -25,6 +25,14 @@ const statusLabel: Record<string, string> = { booked: 'Booked', recognized: 'Dia
 // Filter server-side (mengikuti pola layar Sudah Booked Revenue).
 const search = ref(props.filters.search ?? '');
 const status = ref(props.filters.status ?? '');
+
+/* Ekspor memakai saringan yang sama dengan layar, tetapi TANPA paginasi — jumlah
+   barisnya cocok dengan kartu ringkasan, bukan dengan halaman yang kebetulan terbuka. */
+function exportExcel() {
+    window.location.href = route('bs.sales-invoice.export', {
+        search: search.value || undefined, status: status.value || undefined,
+    });
+}
 function applyFilter() {
     selected.value = []; // hasil filter berubah → centang lama bisa tak lagi tampil
     router.get(route('bs.sales-invoice.index'), {
@@ -53,6 +61,10 @@ const cbCls = 'h-4 w-4 rounded border-neutral-300 text-primary-600 focus:ring-pr
         <div>
             <Link :href="route('bs.booked-revenue.index')" class="inline-flex items-center gap-2 text-sm text-neutral-500 hover:text-neutral-800 dark:hover:text-neutral-200"><ArrowLeft class="h-4 w-4" /> Booked Revenue</Link>
             <h1 class="mt-1 flex items-center gap-2 text-2xl font-bold"><Receipt class="h-6 w-6 text-primary-600" /> Invoice Penjualan</h1>
+            <button type="button" @click="exportExcel"
+                    class="inline-flex h-9 items-center gap-1.5 rounded-lg bg-success-600 px-4 text-sm font-semibold text-white hover:bg-success-700">
+                <FileSpreadsheet class="h-4 w-4" /> Excel
+            </button>
             <p class="text-sm text-neutral-500">
                 Rincian yang <strong>sudah Booked Revenue</strong>. Centang barisnya lalu cetak Invoice Penjualan
                 secara massal — 1 invoice per halaman. Tanggal invoice memakai <strong>tanggal Booked Revenue</strong>,

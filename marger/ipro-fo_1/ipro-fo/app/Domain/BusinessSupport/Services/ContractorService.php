@@ -825,6 +825,13 @@ final class ContractorService
 
     private function nextNumber(string $date): string
     {
+        return app(\App\Domain\BusinessSupport\Services\BoNumberService::class)
+            ->next('SPK', Carbon::parse($date), [], fn () => $this->nextNumberLama($date));
+    }
+
+    /** Cara lama — dipakai bila master numerator tidak bisa dipakai. */
+    private function nextNumberLama(string $date): string
+    {
         $d     = Carbon::parse($date);
         $count = BsWorkOrder::withTrashed()->whereYear('spk_date', $d->year)->count() + 1;
 
@@ -832,6 +839,13 @@ final class ContractorService
     }
 
     private function nextKplNumber(string $date): string
+    {
+        return app(\App\Domain\BusinessSupport\Services\BoNumberService::class)
+            ->next('PNP.KPL', Carbon::parse($date), [], fn () => $this->nextKplNumberLama($date));
+    }
+
+    /** Cara lama — dipakai bila master numerator tidak bisa dipakai. */
+    private function nextKplNumberLama(string $date): string
     {
         $d     = Carbon::parse($date);
         $count = BsWorkOrderProgress::whereYear('progress_date', $d->year)->count() + 1;

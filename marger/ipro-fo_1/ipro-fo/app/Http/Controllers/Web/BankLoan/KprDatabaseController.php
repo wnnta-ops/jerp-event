@@ -121,6 +121,10 @@ class KprDatabaseController extends Controller
             ->map(fn (KprApplication $r) => [
                 'id'          => $r->id,
                 'number'      => $r->application_number,
+                // Layar menggabungkan pengajuan per customer. Kuncinya id, BUKAN nama:
+                // dua orang berbeda yang kebetulan bernama sama akan tergabung jadi satu
+                // baris, dan penolakan milik orang lain terbaca sebagai miliknya.
+                'customer_id' => $r->customer_id,
                 'customer'    => $r->customer?->full_name,
                 'bank'        => $r->bank?->name,
                 'unit'        => $r->booking?->unit?->unit_code,
@@ -174,9 +178,9 @@ class KprDatabaseController extends Controller
 
         $e = fn ($v) => htmlspecialchars((string) ($v ?? ''), ENT_QUOTES);
         $h = '<table border="1" cellspacing="0"><tr style="background:#fde68a;font-weight:bold">'
-            .'<th>No. KPR</th><th>Customer</th><th>Bank</th><th>Unit</th><th>Ditolak di Tahap</th><th>Alasan Penolakan</th><th>Tgl Ditolak</th></tr>';
+            .'<th>Customer</th><th>No. KPR</th><th>Bank</th><th>Unit</th><th>Ditolak di Tahap</th><th>Alasan Penolakan</th><th>Tgl Ditolak</th></tr>';
         foreach ($rows as $r) {
-            $h .= '<tr><td>'.$e($r->application_number).'</td><td>'.$e($r->customer?->full_name ?: '—').'</td><td>'.$e($r->bank?->name ?: '—').'</td>'
+            $h .= '<tr><td>'.$e($r->customer?->full_name ?: '—').'</td><td>'.$e($r->application_number).'</td><td>'.$e($r->bank?->name ?: '—').'</td>'
                 .'<td>'.$e($r->booking?->unit?->unit_code ?: '—').'</td><td>'.$e($r->sp3k ? 'SP3K' : 'Submitted').'</td>'
                 .'<td>'.$e($r->reject_reason ?: '—').'</td><td>'.$e(optional($r->decided_at)->toDateString() ?: '—').'</td></tr>';
         }

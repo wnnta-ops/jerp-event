@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, reactive, computed } from 'vue';
 import { router, Link, useForm } from '@inertiajs/vue3';
-import { ArrowLeft, Stamp, Plus, Search, RotateCcw, X, ArrowRight, Check } from 'lucide-vue-next';
+import { ArrowLeft, Stamp, Plus, Search, RotateCcw, X, ArrowRight, Check, FileSpreadsheet } from 'lucide-vue-next';
 import Button from '@/Components/UI/Button.vue';
 import Badge from '@/Components/UI/Badge.vue';
 import EmptyState from '@/Components/UI/EmptyState.vue';
@@ -23,6 +23,13 @@ const props = defineProps<{
 
 const search = ref(props.filters.search ?? '');
 const status = ref(props.filters.status ?? '');
+
+/* Kedua saringan sudah ada di URL, jadi ekspornya cukup meneruskannya. */
+function exportExcel() {
+    window.location.href = route('bs.booked-revenue.control.ajb.export', {
+        search: search.value || undefined, status: status.value || undefined,
+    });
+}
 function terapkan() {
     router.get(route('bs.booked-revenue.control.ajb'),
         { search: search.value || undefined, status: status.value || undefined },
@@ -66,6 +73,10 @@ const inputCls = 'h-9 w-full rounded-lg border border-neutral-300 bg-white px-3 
         <div class="flex flex-wrap items-start justify-between gap-3">
             <div>
                 <h1 class="flex items-center gap-2 text-2xl font-bold"><Stamp class="h-6 w-6 text-primary-600" /> Detail AJB</h1>
+            <button type="button" @click="exportExcel"
+                    class="inline-flex h-9 items-center gap-1.5 rounded-lg bg-success-600 px-4 text-sm font-semibold text-white hover:bg-success-700">
+                <FileSpreadsheet class="h-4 w-4" /> Excel
+            </button>
                 <p class="mt-0.5 max-w-4xl text-sm text-neutral-500">
                     Satu baris untuk <b>setiap No. SPR (Final)</b> di Marketing &amp; Sales. Kolom <b>Notaris</b>,
                     <b>No. AJB</b>, <b>Tanggal</b> &amp; <b>Nominal</b> berasal dari modul <b>Legal</b> dan hanya

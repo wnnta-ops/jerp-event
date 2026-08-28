@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Modules\BO\IproBridge\Services;
 
 use Illuminate\Database\ConnectionInterface;
+use Illuminate\Database\QueryException;
 use Illuminate\Encryption\Encrypter;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -29,8 +30,21 @@ class IproMasterSync
     private int $projectId;
     private ?int $userId = null;
 
-    /** @var array<string,int|null> memo hasil lookup id (cluster/type/scheme) per run */
+    /**
+     * @var array<string,int|null> memo hasil lookup id (cluster/type/scheme).
+     *
+     * CATATAN: servis ini di-singleton (BoServiceProvider) dan worker Horizon berumur panjang,
+     * jadi memo ini bertahan jauh melampaui satu job. Karena itu hanya HASIL BERHASIL yang
+     * boleh disimpan di sini — memo yang berisi kegagalan sesaat akan dipakai ulang berjam-jam.
+     */
     private array $memo = [];
+
+    /**
+     * True bila unit terakhir punya lokasi_id tetapi clusternya GAGAL dipecahkan — dibedakan
+     * dari unit yang memang tidak punya lokasi. Tanpa pembedaan ini, satu kegagalan sesaat
+     * akan menimpa cluster_id yang sudah benar di BO dengan NULL, sambil melapor sukses.
+     */
+    private bool $clusterTakTerpecahkan = false;
 
     public function __construct()
     {
@@ -298,7 +312,7 @@ class IproMasterSync
         $data = [
             'tenant_id'     => $this->tenantId,
             'project_id'    => $this->projectId,
-            'cluster_id'    => $this->iproClusterId($u),     // dari FO lokasi (fo_lokasi.nama)
+            'cluster_id'    => $this->iproClusterId($u),     // cerminan master Lokasi FO (Setup Unit)
             'unit_type_id'  => $this->iproUnitTypeId($u),    // dari fo_unit_types (name + LT/LB)
             'base_price'    => $u->harga_jual ?? 0,
             'current_price' => $u->harga_jual ?? 0,
@@ -318,6 +332,15 @@ class IproMasterSync
             ->where('project_id', $this->projectId)->where('unit_code', $code)->first();
 
         if ($existing) {
+            // Cluster yang GAGAL dipecahkan tidak boleh menimpa cluster_id yang sudah benar.
+            // Membiarkannya berarti satu kedipan koneksi ke tabel clusters cukup untuk
+            // mengosongkan cluster setiap unit yang tersentuh sesudahnya — dan job tetap
+            // melapor sukses, jadi tidak ada retry maupun baris fo_sync_failures yang
+            // memberitahu. Unit yang memang tanpa lokasi tetap dikosongkan seperti biasa.
+            if ($this->clusterTakTerpecahkan) {
+                unset($data['cluster_id']);
+            }
+
             $this->db()->table('units')->where('id', $existing->id)->update($data);
 
             return (int) $existing->id;
@@ -329,9 +352,236 @@ class IproMasterSync
         return (int) $this->db()->table('units')->insertGetId($data);
     }
 
-    /** Cluster ipro_bo dari FO lokasi (fo_lokasi.nama). Upsert by (project_id, code). */
+    /** Apakah BO sudah punya kolom identitas Lokasi di tabel clusters? (di-cache per proses) */
+    private ?bool $boPunyaFoLokasiId = null;
+
+    private function boHasFoLokasiId(): bool
+    {
+        if ($this->boPunyaFoLokasiId !== null) {
+            return $this->boPunyaFoLokasiId;
+        }
+
+        try {
+            $ada = \Illuminate\Support\Facades\Schema::connection($this->conn)
+                ->hasColumn('clusters', 'fo_lokasi_id');
+        } catch (\Throwable $e) {
+            // SENGAJA tidak di-cache. Servis ini singleton dan worker Horizon hidup berjam-jam
+            // (horizon.maxTime = 0), jadi meng-cache "false" hasil koneksi yang sekejap
+            // berkedip akan mengunci worker itu di jalur warisan sampai ia mati — dan jalur
+            // warisan membuat cluster KEDUA berkode FOL-{id} untuk Lokasi yang clusternya
+            // sudah ada, dua-duanya hidup dan bernama sama di dalam satu dropdown.
+            report($e);
+
+            return false;
+        }
+
+        return $this->boPunyaFoLokasiId = $ada;
+    }
+
+    /**
+     * Upsert satu master Lokasi FO → ipro_bo.clusters, dan pulangkan id cluster-nya.
+     *
+     * Inilah satu-satunya penulis tabel clusters. Cluster di BO bukan master tersendiri: ia
+     * cerminan Setup Unit → Lokasi di FO, yang memang disebut "cluster" di seluruh kode FO.
+     * Karena itu operator memilih cluster di BO dari daftar yang sama persis dengan yang ia
+     * lihat di Master Unit.
+     *
+     * Kuncinya fo_lokasi_id, BUKAN kode. Kode Lokasi boleh diubah operator kapan saja; kalau
+     * ia dipakai sebagai kunci, mengganti "JRK3" menjadi "JRK-3" akan melahirkan cluster baru
+     * dan seluruh kategori gimmick yang menunjuk yang lama menggantung tanpa pemberitahuan.
+     *
+     * SELALU memperbarui code & name — bukan sekadar menyisipkan bila belum ada. Versi
+     * sebelumnya pulang lebih awal begitu barisnya ketemu, sehingga ganti nama di FO tidak
+     * pernah sampai ke BO dan kedua layar perlahan berbeda tanpa ada yang menyadarinya.
+     *
+     * Pencarian SENGAJA tidak menyaring deleted_at: baris yang sudah ditandai terhapus tetap
+     * memakan indeks unik, jadi mengabaikannya hanya akan menghasilkan tabrakan 1062 berulang
+     * alih-alih menghidupkan kembali cluster yang Lokasinya dipulihkan di FO.
+     *
+     * @param  object  $l  baris fo_lokasi (id, kode, nama, deleted_at)
+     */
+    public function syncLokasi(object $l): int
+    {
+        $lokasiId = (int) ($l->id ?? 0);
+        if ($lokasiId <= 0) {
+            throw new \RuntimeException('Lokasi tanpa id tidak bisa disinkronkan ke BO.');
+        }
+
+        // Kode & nama wajib ada. Mengarang "Cluster 7" seperti versi sebelumnya membuat BO
+        // menampilkan cluster yang tidak pernah ada di FO — persis kekeliruan yang sedang
+        // diperbaiki. Lebih baik gagal dan tercatat.
+        $kode = trim((string) ($l->kode ?? ''));
+        $nama = trim((string) ($l->nama ?? ''));
+        if ($kode === '' || $nama === '') {
+            throw new \RuntimeException("Lokasi #{$lokasiId} belum punya kode/nama, tidak bisa jadi cluster di BO.");
+        }
+
+        $now = Carbon::now();
+        $memoKey = 'cluster:' . $lokasiId;
+        // clusters.code hanya 32 karakter, sama dengan batas kode Lokasi di FO — dipotong
+        // untuk berjaga bila batas FO dilonggarkan kelak.
+        $label = [
+            'name'       => $nama,
+            'deleted_at' => $l->deleted_at ?? null,
+            'updated_at' => $now,
+        ];
+
+        // BO belum dimigrasi (dua repo, dua jadwal rilis): pakai jalur kunci lama supaya
+        // sinkron unit tidak ikut mati — tapi tetap dengan pembaruan label.
+        if (! $this->boHasFoLokasiId()) {
+            return $this->memo[$memoKey] = $this->upsertClusterWarisan($lokasiId, $label, $now);
+        }
+
+        for ($percobaan = 0; $percobaan < 3; $percobaan++) {
+            // Kode dihitung ULANG tiap putaran: pada dua Lokasi yang kodenya bertukar, putaran
+            // pertama menemukan kodenya masih dipegang saudaranya dan putaran berikutnya
+            // menemukannya sudah bebas. Tanpa perhitungan ulang, keadaan itu tidak pernah
+            // konvergen — kedua Lokasi terkunci pada kode yang salah selamanya.
+            $label['code'] = $this->kodeClusterAman($lokasiId, $kode);
+
+            try {
+                // 1 · Sudah pernah disinkronkan — perbarui labelnya.
+                $ada = $this->db()->table('clusters')
+                    ->where('tenant_id', $this->tenantId)->where('fo_lokasi_id', $lokasiId)->value('id');
+                if ($ada) {
+                    // UPDATE ini WAJIB di dalam try: mengganti kode ke kode yang sedang dipegang
+                    // baris lain melempar 1062 juga, bukan hanya INSERT.
+                    $this->db()->table('clusters')->where('id', $ada)->update($label);
+
+                    return $this->memo[$memoKey] = (int) $ada;
+                }
+
+                // 2 · Baris warisan hasil sinkron lama (code 'FOL-{id}') — diadopsi, bukan
+                //     dikembari, supaya kategori gimmick yang menunjuknya tetap sah. Baris
+                //     yang sudah ditandai terhapus pun diadopsi: itu memang cluster yang sama.
+                $warisan = $this->db()->table('clusters')
+                    ->where('tenant_id', $this->tenantId)->where('project_id', $this->projectId)
+                    ->where('code', 'FOL-'.$lokasiId)->whereNull('fo_lokasi_id')->value('id');
+
+                // 3 · Baris berkode sama yang belum berpemilik — diadopsi supaya cluster yang
+                //     dibuat manual dengan kode benar tidak kembar. DI SINI deleted_at DISARING:
+                //     baris yang sengaja dipensiunkan (mis. cluster contoh) tidak boleh hidup
+                //     kembali hanya karena sebuah Lokasi baru kebetulan berkode sama — ia akan
+                //     membawa serta seluruh unit lama yang masih menunjuknya.
+                $warisan ??= $this->db()->table('clusters')
+                    ->where('tenant_id', $this->tenantId)->where('project_id', $this->projectId)
+                    ->where('code', $label['code'])->whereNull('fo_lokasi_id')
+                    ->whereNull('deleted_at')->value('id');
+
+                if ($warisan) {
+                    $this->db()->table('clusters')->where('id', $warisan)
+                        ->update($label + ['fo_lokasi_id' => $lokasiId]);
+
+                    return $this->memo[$memoKey] = (int) $warisan;
+                }
+
+                // 4 · Benar-benar baru.
+                return $this->memo[$memoKey] = (int) $this->db()->table('clusters')->insertGetId(
+                    $label + [
+                        'tenant_id' => $this->tenantId, 'project_id' => $this->projectId,
+                        'fo_lokasi_id' => $lokasiId, 'created_at' => $now,
+                    ]
+                );
+            } catch (QueryException $e) {
+                // HANYA 1062 (kunci kembar) yang boleh dicoba ulang. SQLSTATE 23000 mencakup
+                // seluruh pelanggaran integritas — termasuk FK (1452) akibat IPRO_TENANT_ID /
+                // IPRO_PROJECT_ID yang salah. Menelannya akan mengganti galat yang menyebut
+                // tabel & nilainya dengan tuduhan konkurensi yang menyesatkan.
+                if ((int) ($e->errorInfo[1] ?? 0) !== 1062) {
+                    throw $e;
+                }
+            }
+        }
+
+        throw new \RuntimeException("Cluster untuk Lokasi #{$lokasiId} gagal disinkronkan setelah tiga percobaan.");
+    }
+
+    /**
+     * Kode cluster yang dijamin tidak menabrak unique(project_id, code).
+     *
+     * clusters.code unik per project, sedangkan fo_lokasi.kode hanya unik per project FO —
+     * dan seluruh project FO dilipat ke satu config('ipro.project_id'). Dua Lokasi berkode
+     * sama dari project FO berbeda karena itu bisa bertabrakan, begitu pula dua Lokasi yang
+     * kodenya saling ditukar sementara BO tertinggal beberapa sinkron.
+     *
+     * Yang kalah TIDAK dibiarkan gagal — cluster tetap dibuat dengan kode disambiguasi,
+     * sebab cluster yang tidak pernah lahir berarti Lokasi itu tidak pernah muncul di pilihan
+     * Cluster, persis penyakit yang sedang disembuhkan. Bentuknya "{kode}#{id lokasi}" supaya
+     * masih terbaca operator, dan tabrakannya dilaporkan agar bisa dibereskan di FO.
+     */
+    private function kodeClusterAman(int $lokasiId, string $kode): string
+    {
+        $kode = mb_substr($kode, 0, 32);
+
+        // Kodenya terpakai bila ada baris lain yang mendudukinya DAN tidak akan kita adopsi:
+        //   - milik Lokasi lain, atau
+        //   - tak bertuan tetapi sudah ditandai terhapus — baris pensiunan sengaja tidak
+        //     diadopsi (ia membawa serta unit-unit lama yang masih menunjuknya), sehingga ia
+        //     menduduki kodenya tanpa pernah bisa dipakai. Tanpa memperhitungkannya, INSERT
+        //     menabrak unique(project_id, code) berulang sampai menyerah, dan Lokasi itu tak
+        //     pernah muncul di pilihan Cluster.
+        // Baris tak bertuan yang masih hidup TIDAK dihitung terpakai: ia justru diadopsi.
+        $terpakai = $this->db()->table('clusters')
+            ->where('project_id', $this->projectId)->where('code', $kode)
+            ->where(fn ($q) => $q
+                ->where(fn ($w) => $w->whereNotNull('fo_lokasi_id')->where('fo_lokasi_id', '!=', $lokasiId))
+                ->orWhere(fn ($w) => $w->whereNull('fo_lokasi_id')->whereNotNull('deleted_at')))
+            ->exists();
+
+        if (! $terpakai) {
+            return $kode;
+        }
+
+        $akhiran = '#'.$lokasiId;
+        $alternatif = mb_substr($kode, 0, 32 - mb_strlen($akhiran)).$akhiran;
+        report(new \RuntimeException(
+            "Kode cluster '{$kode}' sudah dipakai Lokasi lain di project ipro_bo yang sama; "
+            ."Lokasi #{$lokasiId} dipakaikan '{$alternatif}'."
+        ));
+
+        return $alternatif;
+    }
+
+    /**
+     * Jalur kunci lama (code 'FOL-{id}') untuk BO yang belum punya kolom fo_lokasi_id.
+     * Tetap memperbarui nama — itu perbaikan yang berlaku bahkan sebelum BO dimigrasi.
+     *
+     * @param  array<string,mixed>  $label
+     */
+    private function upsertClusterWarisan(int $lokasiId, array $label, Carbon $now): int
+    {
+        $code = 'FOL-' . $lokasiId;
+        $ada = $this->db()->table('clusters')
+            ->where('project_id', $this->projectId)->where('code', $code)->value('id');
+
+        if ($ada) {
+            // Kode dibiarkan 'FOL-{id}' — ia masih kunci satu-satunya di skema lama; hanya
+            // nama & status hapusnya yang boleh ikut FO.
+            $this->db()->table('clusters')->where('id', $ada)
+                ->update(['name' => $label['name'], 'deleted_at' => $label['deleted_at'], 'updated_at' => $now]);
+
+            return (int) $ada;
+        }
+
+        return (int) $this->db()->table('clusters')->insertGetId([
+            'tenant_id' => $this->tenantId, 'project_id' => $this->projectId,
+            'code' => $code, 'name' => $label['name'],
+            'deleted_at' => $label['deleted_at'], 'created_at' => $now, 'updated_at' => $now,
+        ]);
+    }
+
+    /**
+     * Cluster ipro_bo untuk sebuah unit FO — pembungkus tipis di atas syncLokasi().
+     *
+     * Kegagalan sengaja ditelan menjadi null: cluster adalah atribut pelengkap unit, dan
+     * menggagalkan seluruh sinkron unit hanya karena Lokasinya bermasalah akan menahan data
+     * yang jauh lebih penting (harga, status, tipe) di antrean.
+     */
     private function iproClusterId(object $u): ?int
     {
+        // Dibedakan tegas dari "unit ini memang tanpa lokasi": lihat $clusterTakTerpecahkan.
+        $this->clusterTakTerpecahkan = false;
+
         $lokasiId = $u->lokasi_id ?? null;
         if (! $lokasiId) {
             return null;
@@ -340,20 +590,25 @@ class IproMasterSync
         if (array_key_exists($memoKey, $this->memo)) {
             return $this->memo[$memoKey];
         }
-        $nama = DB::table('fo_lokasi')->where('id', $lokasiId)->value('nama') ?: ('Cluster ' . $lokasiId);
-        $code = 'FOL-' . $lokasiId;
-        $now = Carbon::now();
 
-        $existing = $this->db()->table('clusters')
-            ->where('project_id', $this->projectId)->where('code', $code)->value('id');
-        if ($existing) {
-            return $this->memo[$memoKey] = (int) $existing;
+        $lokasi = DB::table('fo_lokasi')->where('id', $lokasiId)->first();
+        if (! $lokasi) {
+            $this->clusterTakTerpecahkan = true;
+
+            return null;
         }
 
-        return $this->memo[$memoKey] = (int) $this->db()->table('clusters')->insertGetId([
-            'tenant_id' => $this->tenantId, 'project_id' => $this->projectId,
-            'code' => $code, 'name' => $nama, 'created_at' => $now, 'updated_at' => $now,
-        ]);
+        try {
+            return $this->syncLokasi($lokasi);
+        } catch (\Throwable $e) {
+            report($e);
+            // Kegagalan TIDAK di-memo. Servis ini singleton di worker berumur panjang; sekali
+            // sebuah kegagalan sesaat tersimpan, setiap unit berikutnya dari Lokasi yang sama
+            // akan memakai jawaban basi itu tanpa mencoba lagi.
+            $this->clusterTakTerpecahkan = true;
+
+            return null;
+        }
     }
 
     /** Unit type ipro_bo dari fo_unit_types (name + LT/LB). Upsert by (project_id, code). */

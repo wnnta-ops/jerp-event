@@ -31,18 +31,31 @@ class SyncFoToIproJob implements ShouldQueue
 
     public int $backoff = 10;
 
-    /** @param class-string $modelClass */
+    /**
+     * @param  class-string  $modelClass
+     * @param  bool  $withTrashed  ikut memuat baris yang sudah ditandai terhapus. Diperlukan
+     *                             untuk peristiwa `deleted`: tanpa ini find() memulangkan null
+     *                             tepat pada saat penghapusannya justru harus diteruskan ke BO,
+     *                             sehingga master yang dinonaktifkan di FO tetap hidup di BO.
+     *                             Bernilai bawaan supaya payload antrean lama tetap terbaca.
+     */
     public function __construct(
         public string $method,
         public string $modelClass,
         public int|string $modelId,
+        public bool $withTrashed = false,
     ) {}
 
     public function handle(IproMasterSync $sync): void
     {
-        $model = $this->modelClass::find($this->modelId);
+        $q = $this->modelClass::query();
+        if ($this->withTrashed && method_exists($this->modelClass, 'bootSoftDeletes')) {
+            $q->withTrashed();
+        }
+
+        $model = $q->find($this->modelId);
         if (! $model) {
-            return; // sumber FO sudah dihapus — tidak ada yang disinkron
+            return; // sumber FO sudah dihapus permanen — tidak ada yang disinkron
         }
 
         $sync->{$this->method}($model);

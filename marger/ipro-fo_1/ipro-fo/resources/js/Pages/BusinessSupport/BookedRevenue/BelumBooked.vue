@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { reactive, ref, computed, watch } from 'vue';
 import { router, Link } from '@inertiajs/vue3';
-import { ArrowLeft, CircleDollarSign, ArrowRight, CheckCircle2 } from 'lucide-vue-next';
+import { ArrowLeft, CircleDollarSign, ArrowRight, CheckCircle2, FileSpreadsheet } from 'lucide-vue-next';
 import EmptyState from '@/Components/UI/EmptyState.vue';
 
 type Row = { no: number; booking_id: number; unit_id: number | null; spr: string | null; unit: string | null; customer: string | null; ajb_date: string | null; bast_date: string | null };
@@ -14,6 +14,12 @@ function fmtDate(d: string | null) { return d ? new Date(d).toLocaleDateString('
 // Booked Revenue hanya aktif bila tanggal BAST DAN tanggal AJB sudah terisi keduanya.
 const ready = (r: { bast_date: string | null; ajb_date: string | null }) => !!(r.bast_date && r.ajb_date);
 const f = reactive({ search: props.filters.search ?? '' });
+
+/* Ekspor mengikuti kata pencarian yang sedang berlaku, supaya berkasnya berisi persis
+   apa yang sedang dilihat. */
+function exportExcel() {
+    window.location.href = route('bs.booked-revenue.belum.export', { search: f.search || undefined });
+}
 let t: any;
 watch(f, (val) => { clearTimeout(t); t = setTimeout(() => router.get(route('bs.booked-revenue.belum'), { search: val.search || undefined }, { preserveState: true, replace: true }), 300); });
 const inputCls = 'h-9 rounded-lg border border-neutral-300 bg-white px-3 text-sm dark:border-neutral-700 dark:bg-neutral-900';
@@ -45,6 +51,10 @@ function submitMassal() {
         <Link :href="route('bs.booked-revenue.index')" class="inline-flex items-center gap-2 text-sm text-neutral-500 hover:text-neutral-800 dark:hover:text-neutral-200"><ArrowLeft class="h-4 w-4" /> Sudah Booked Revenue</Link>
         <div>
             <h1 class="flex items-center gap-2 text-2xl font-bold"><CircleDollarSign class="h-6 w-6 text-amber-500" /> Belum Booked Revenue</h1>
+            <button type="button" @click="exportExcel"
+                    class="inline-flex h-9 items-center gap-1.5 rounded-lg bg-success-600 px-4 text-sm font-semibold text-white hover:bg-success-700">
+                <FileSpreadsheet class="h-4 w-4" /> Excel
+            </button>
             <p class="text-sm text-neutral-500">Unit yang sudah <b>BAST</b> atau <b>AJB</b> namun belum di-booking pendapatannya. Tombol <b>Booked Revenue</b> aktif setelah tanggal BAST &amp; AJB terisi keduanya. Centang beberapa unit siap untuk <b>Booked Revenue Massal</b>.</p>
         </div>
 

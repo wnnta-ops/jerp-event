@@ -18,11 +18,18 @@ final class NumeratorService
      *
      * @throws BusinessRuleException
      */
-    public function next(string $code, array $context = []): string
+    /**
+     * @param  string  $scope  'fo' untuk dokumen Front Office, 'bo' untuk Back Office. Kedua
+     *                         kelompok punya daftar kodenya sendiri dan tidak saling
+     *                         menimpa — tanpa pemisahan ini, kode yang kebetulan sama
+     *                         (mis. FP) akan berbagi satu deret nomor.
+     */
+    public function next(string $code, array $context = [], string $scope = 'fo'): string
     {
-        return DB::transaction(function () use ($code, $context) {
+        return DB::transaction(function () use ($code, $context, $scope) {
             $numerator = Numerator::query()
                 ->where('code', $code)
+                ->where('scope', $scope)
                 ->when(isset($context['project_id']), fn ($q) => $q->where('project_id', $context['project_id']))
                 ->lockForUpdate()
                 ->first();
@@ -65,18 +72,20 @@ final class NumeratorService
     /**
      * Preview tanpa increment (untuk display di UI).
      */
-    public function preview(string $code, array $context = []): string
+    public function preview(string $code, array $context = [], string $scope = 'fo'): string
     {
-        $numerator = Numerator::query()->where('code', $code)->first();
+        $numerator = Numerator::query()->where('code', $code)->where('scope', $scope)->first();
         if (! $numerator) {
             return "{$code}-PREVIEW";
         }
         $nextSeq = $numerator->current_seq + 1;
 
         return $this->format(
-            $numerator->format,
+            $numerator->format ?: config('domain.numerator.fallback_format'),
             array_merge([
-                'PREFIX' => $numerator->prefix,
+                'PREFIX'  => $numerator->prefix,
+                'PROJECT' => '',
+                'COMPANY' => '',
                 'YYYY'   => now()->format('Y'),
                 'YY'     => now()->format('y'),
                 'MM'     => now()->format('m'),

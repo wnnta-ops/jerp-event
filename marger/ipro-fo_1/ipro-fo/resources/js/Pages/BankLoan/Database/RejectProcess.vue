@@ -6,7 +6,7 @@ import Badge from '@/Components/UI/Badge.vue';
 import EmptyState from '@/Components/UI/EmptyState.vue';
 import ColumnFilter from '@/Components/UI/ColumnFilter.vue';
 
-type Row = { id: number; number: string; customer: string | null; bank: string | null; unit: string | null; stage: string; reason: string | null; rejected_at: string | null };
+type Row = { id: number; number: string; customer_id: number | null; customer: string | null; bank: string | null; unit: string | null; stage: string; reason: string | null; rejected_at: string | null };
 const props = defineProps<{ records: Row[] }>();
 
 function fmtDate(d: string | null) { return d ? new Date(d).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'; }
@@ -61,6 +61,26 @@ watch([optNo, optCust, optBank, optUnit, optStage, optReason, optTgl], () => {
     col.unit = prune(col.unit, optUnit.value); col.stage = prune(col.stage, optStage.value); col.reason = prune(col.reason, optReason.value); col.tgl = prune(col.tgl, optTgl.value);
 });
 
+/* Pengajuan digabungkan per CUSTOMER: satu nama berdiri sekali, membentang menaungi seluruh
+   penolakannya. Sebelumnya satu customer dengan lima penolakan tampil sebagai lima baris
+   yang namanya berulang, dan tidak ada cara melihat bahwa kelimanya orang yang sama.
+
+   Kuncinya customer_id, BUKAN nama. Dua orang berbeda yang kebetulan bernama sama akan
+   tergabung jadi satu baris kalau namanya yang dipakai, dan penolakan milik orang lain
+   terbaca sebagai miliknya. Baris tanpa customer dikelompokkan sendiri per baris (kunci
+   memakai id pengajuannya) supaya tidak saling menempel. */
+type Grup = { key: string; nama: string; rows: Row[] };
+const grouped = computed<Grup[]>(() => {
+    const peta = new Map<string, Grup>();
+    for (const r of filtered.value) {
+        const key = r.customer_id != null ? 'c' + r.customer_id : 'x' + r.id;
+        if (! peta.has(key)) peta.set(key, { key, nama: dCust(r), rows: [] });
+        peta.get(key)!.rows.push(r);
+    }
+
+    return [...peta.values()];
+});
+
 // Pilih baris (massal) — Set id reaktif (Vue 3 melacak mutasi Set).
 const selected = ref<Set<number>>(new Set());
 const allFilteredSelected = computed(() => filtered.value.length > 0 && filtered.value.every((r) => selected.value.has(r.id)));
@@ -69,6 +89,14 @@ function toggleAll() {
     if (allFilteredSelected.value) filtered.value.forEach((r) => selected.value.delete(r.id));
     else filtered.value.forEach((r) => selected.value.add(r.id));
 }
+/** Semua penolakan satu customer tercentang? */
+function grupTercentang(g: Grup) { return g.rows.every((r) => selected.value.has(r.id)); }
+/** Centang / lepas seluruh penolakan satu customer — inilah gunanya dikelompokkan. */
+function toggleGrup(g: Grup) {
+    if (grupTercentang(g)) g.rows.forEach((r) => selected.value.delete(r.id));
+    else g.rows.forEach((r) => selected.value.add(r.id));
+}
+
 function printBulk() {
     if (!selected.value.size) return;
     const url = route('kpr.database.reject-kpr.memo-form', { ids: [...selected.value].join(',') });
@@ -104,16 +132,27 @@ function downloadExcel() {
 
         <div class="card overflow-x-auto">
             <table class="w-full text-sm">
+                <colgroup>
+                    <col class="w-10" /><col class="w-[15rem]" /><col class="w-[11rem]" />
+                    <col class="w-[12rem]" /><col class="w-[11rem]" /><col class="w-[8rem]" />
+                    <col /><col class="w-[8rem]" /><col class="w-[12rem]" />
+                </colgroup>
                 <thead class="bg-neutral-50 dark:bg-neutral-800">
                     <tr class="text-left text-xs uppercase text-neutral-500">
                         <th class="px-3 pt-3 pb-1.5"><input type="checkbox" :checked="allFilteredSelected" @change="toggleAll" class="h-4 w-4 accent-danger-600" title="Pilih semua (hasil filter)" /></th>
-                        <th class="whitespace-nowrap px-3 pt-3 pb-1.5">No. KPR</th><th class="px-3 pt-3 pb-1.5">Customer</th><th class="px-3 pt-3 pb-1.5">Bank</th><th class="px-3 pt-3 pb-1.5">Unit</th><th class="px-3 pt-3 pb-1.5 text-center">Ditolak di Tahap</th><th class="px-3 pt-3 pb-1.5">Alasan Penolakan</th><th class="whitespace-nowrap px-3 pt-3 pb-1.5">Tgl Ditolak</th><th class="px-3 pt-3 pb-1.5 text-center">Aksi</th>
+                        <th class="px-3 pt-3 pb-1.5">Customer</th>
+                        <th class="whitespace-nowrap px-3 pt-3 pb-1.5">No. KPR</th>
+                        <th class="px-3 pt-3 pb-1.5">Bank</th><th class="px-3 pt-3 pb-1.5">Unit</th>
+                        <th class="px-3 pt-3 pb-1.5 text-center">Ditolak di Tahap</th>
+                        <th class="px-3 pt-3 pb-1.5">Alasan Penolakan</th>
+                        <th class="whitespace-nowrap px-3 pt-3 pb-1.5">Tgl Ditolak</th>
+                        <th class="px-3 pt-3 pb-1.5 text-center">Aksi</th>
                     </tr>
-                    <!-- Filter checklist per-kolom -->
+                    <!-- Filter checklist per-kolom — urutannya mengikuti kolomnya. -->
                     <tr class="border-b border-neutral-200 dark:border-neutral-700">
                         <th class="px-3 pb-2"></th>
-                        <th class="px-3 pb-2"><ColumnFilter v-model="col.no" :options="optNo" /></th>
                         <th class="px-3 pb-2"><ColumnFilter v-model="col.cust" :options="optCust" /></th>
+                        <th class="px-3 pb-2"><ColumnFilter v-model="col.no" :options="optNo" /></th>
                         <th class="px-3 pb-2"><ColumnFilter v-model="col.bank" :options="optBank" /></th>
                         <th class="px-3 pb-2"><ColumnFilter v-model="col.unit" :options="optUnit" /></th>
                         <th class="px-3 pb-2"><ColumnFilter v-model="col.stage" :options="optStage" /></th>
@@ -122,17 +161,44 @@ function downloadExcel() {
                         <th class="px-3 pb-2"></th>
                     </tr>
                 </thead>
-                <tbody class="divide-y divide-neutral-200 dark:divide-neutral-800 align-top">
-                    <tr v-for="r in filtered" :key="r.id" :class="selected.has(r.id) ? 'bg-danger-50/40 dark:bg-danger-900/10' : ''">
-                        <td class="px-3 py-3"><input type="checkbox" :checked="selected.has(r.id)" @change="toggleRow(r.id)" class="h-4 w-4 accent-danger-600" /></td>
-                        <td class="whitespace-nowrap px-3 py-3"><Link :href="route('kpr.show', r.id)" class="font-mono text-xs text-primary-700 hover:underline dark:text-primary-300">{{ r.number }}</Link></td>
-                        <td class="px-3 py-3 font-medium">{{ r.customer ?? '—' }}</td>
-                        <td class="px-3 py-3">{{ r.bank ?? '—' }}</td>
-                        <td class="px-3 py-3">{{ r.unit ?? '—' }}</td>
-                        <td class="px-3 py-3 text-center"><Badge size="sm" :variant="r.stage === 'SP3K' ? 'info' : 'warning'">{{ r.stage }}</Badge></td>
-                        <td class="px-3 py-3"><span v-if="r.reason" class="text-neutral-700 dark:text-neutral-200">{{ r.reason }}</span><span v-else class="text-xs italic text-neutral-400">— tanpa alasan —</span></td>
-                        <td class="whitespace-nowrap px-3 py-3">{{ fmtDate(r.rejected_at) }}</td>
-                        <td class="px-3 py-3 text-center whitespace-nowrap">
+                <!-- Satu <tbody> per customer: garis pemisah tebal hanya jatuh ANTAR customer,
+                     sehingga batas kelompoknya terbaca tanpa perlu warna selang-seling. -->
+                <tbody v-for="g in grouped" :key="g.key"
+                       class="border-t-2 border-neutral-200 align-top dark:border-neutral-700">
+                    <tr v-for="(r, i) in g.rows" :key="r.id"
+                        :class="selected.has(r.id) ? 'bg-danger-50/40 dark:bg-danger-900/10' : ''">
+                        <td class="px-3 py-3" :class="i > 0 ? 'border-t border-neutral-100 dark:border-neutral-800' : ''">
+                            <input type="checkbox" :checked="selected.has(r.id)" @change="toggleRow(r.id)" class="h-4 w-4 accent-danger-600" />
+                        </td>
+
+                        <!-- Nama ditulis SEKALI, membentang menaungi seluruh penolakannya. -->
+                        <td v-if="i === 0" :rowspan="g.rows.length"
+                            class="px-3 py-3 font-medium bg-neutral-50/60 dark:bg-neutral-800/40">
+                            <div class="flex items-start gap-2">
+                                <!-- Mencentang seluruh penolakan satu customer sekaligus — inilah
+                                     gunanya dikelompokkan: Memo Rekom Batal biasanya dibuat untuk
+                                     semua pengajuan orang yang sama. -->
+                                <input type="checkbox" :checked="grupTercentang(g)" @change="toggleGrup(g)"
+                                       class="mt-0.5 h-3.5 w-3.5 accent-danger-600"
+                                       :title="'Pilih semua ' + g.rows.length + ' penolakan ' + g.nama" />
+                                <div class="min-w-0">
+                                    <span class="block break-words">{{ g.nama }}</span>
+                                    <!-- Jumlahnya disebut supaya yang berulang langsung terlihat,
+                                         bukan harus dihitung sendiri dari tinggi barisnya. -->
+                                    <span v-if="g.rows.length > 1"
+                                          class="mt-1 inline-block rounded-md bg-danger-100 px-1.5 py-0.5 text-[10.5px] font-semibold text-danger-700 dark:bg-danger-900/40 dark:text-danger-300">{{ g.rows.length }}× ditolak</span>
+                                    <span v-else class="mt-1 block text-[10.5px] text-neutral-400">1 penolakan</span>
+                                </div>
+                            </div>
+                        </td>
+
+                        <td class="whitespace-nowrap px-3 py-3" :class="i > 0 ? 'border-t border-neutral-100 dark:border-neutral-800' : ''"><Link :href="route('kpr.show', r.id)" class="font-mono text-xs text-primary-700 hover:underline dark:text-primary-300">{{ r.number }}</Link></td>
+                        <td class="px-3 py-3" :class="i > 0 ? 'border-t border-neutral-100 dark:border-neutral-800' : ''">{{ r.bank ?? '—' }}</td>
+                        <td class="px-3 py-3" :class="i > 0 ? 'border-t border-neutral-100 dark:border-neutral-800' : ''">{{ r.unit ?? '—' }}</td>
+                        <td class="px-3 py-3 text-center" :class="i > 0 ? 'border-t border-neutral-100 dark:border-neutral-800' : ''"><Badge size="sm" :variant="r.stage === 'SP3K' ? 'info' : 'warning'">{{ r.stage }}</Badge></td>
+                        <td class="px-3 py-3" :class="i > 0 ? 'border-t border-neutral-100 dark:border-neutral-800' : ''"><span v-if="r.reason" class="text-neutral-700 dark:text-neutral-200">{{ r.reason }}</span><span v-else class="text-xs italic text-neutral-400">— tanpa alasan —</span></td>
+                        <td class="whitespace-nowrap px-3 py-3" :class="i > 0 ? 'border-t border-neutral-100 dark:border-neutral-800' : ''">{{ fmtDate(r.rejected_at) }}</td>
+                        <td class="px-3 py-3 text-center whitespace-nowrap" :class="i > 0 ? 'border-t border-neutral-100 dark:border-neutral-800' : ''">
                             <a :href="route('kpr.database.reject-kpr.memo-form', { ids: r.id })" target="_blank" rel="noopener" class="inline-flex items-center gap-1.5 rounded-lg border border-danger-300 bg-danger-50 px-3 py-1.5 text-xs font-medium text-danger-700 hover:bg-danger-100 dark:border-danger-700/50 dark:bg-danger-900/30 dark:text-danger-300"><Printer class="h-3.5 w-3.5" /> Memo Rekom Batal</a>
                         </td>
                     </tr>

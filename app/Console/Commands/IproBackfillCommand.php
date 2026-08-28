@@ -10,19 +10,40 @@ use Illuminate\Support\Facades\DB;
 
 /**
  * Backfill master FO J-ERP → BO ipro-fo (ipro_bo).
- *   php artisan ipro:backfill            (customers + units)
+ *   php artisan ipro:backfill            (semuanya, berurutan)
+ *   php artisan ipro:backfill lokasi     (master Lokasi = "cluster" di BO)
  *   php artisan ipro:backfill customers
  *   php artisan ipro:backfill units
+ *
+ * Sekaligus berfungsi sebagai rekonsiliasi: aman diulang, dan mengonvergensikan apa pun yang
+ * hilang karena antrean mati atau sinkron dimatikan sementara — tanpa perlu tahu sebabnya.
  */
 class IproBackfillCommand extends Command
 {
-    protected $signature = 'ipro:backfill {entity=all : customers|units|spr|tts|all}';
+    protected $signature = 'ipro:backfill {entity=all : lokasi|customers|units|spr|tts|kpr|all}';
 
-    protected $description = 'Sinkron data FO (J-ERP) ke BO ipro-fo (ipro_bo): customer, unit, SPR(booking), TTS';
+    protected $description = 'Sinkron data FO (J-ERP) ke BO ipro-fo (ipro_bo): Lokasi(cluster), customer, unit, SPR(booking), TTS, KPR';
 
     public function handle(IproMasterSync $sync): int
     {
         $entity = (string) $this->argument('entity');
+
+        // Lokasi DULUAN pada mode `all`: unit menunjuk cluster, jadi menyinkronkannya belakangan
+        // berarti gelombang unit pertama tersimpan dengan cluster_id kosong.
+        if (in_array($entity, ['lokasi', 'all'], true)) {
+            $n = 0;
+            // Query builder, jadi Lokasi yang ditandai terhapus pun ikut terbaca — statusnya
+            // memang harus diteruskan supaya cluster yang dipensiunkan di FO ikut pensiun di BO.
+            foreach (DB::table('fo_lokasi')->orderBy('id')->cursor() as $l) {
+                try {
+                    $sync->syncLokasi($l);
+                    $n++;
+                } catch (\Throwable $e) {
+                    $this->error("lokasi {$l->id}: {$e->getMessage()}");
+                }
+            }
+            $this->info("Lokasi(cluster): {$n} disinkron ke ipro_bo");
+        }
 
         if (in_array($entity, ['customers', 'all'], true)) {
             $n = 0;

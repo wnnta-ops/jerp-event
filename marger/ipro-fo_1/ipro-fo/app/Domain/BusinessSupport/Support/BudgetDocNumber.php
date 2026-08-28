@@ -18,6 +18,13 @@ final class BudgetDocNumber
 {
     public static function next(string $prefix, string $table, int $year, ?string $project = null, ?string $date = null): string
     {
+        return app(\App\Domain\BusinessSupport\Services\BoNumberService::class)
+            ->next($prefix, $date ? Carbon::parse($date) : null, ['PROJ' => $project ?: 'JR'], fn () => self::nextLama($prefix, $table, $year, $project, $date));
+    }
+
+    /** Cara lama — dipakai bila master numerator tidak bisa dipakai. */
+    private static function nextLama(string $prefix, string $table, int $year, ?string $project = null, ?string $date = null): string
+    {
         $d       = $date ? Carbon::parse($date) : Carbon::now();
         $company = 'MUP';
         $proj    = $project ?: 'JR';

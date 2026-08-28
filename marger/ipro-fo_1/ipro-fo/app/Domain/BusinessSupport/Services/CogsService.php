@@ -67,6 +67,13 @@ final class CogsService
 
     private function nextNumber(string $date): string
     {
+        return app(\App\Domain\BusinessSupport\Services\BoNumberService::class)
+            ->next('HPP', Carbon::parse($date), [], fn () => $this->nextNumberLama($date));
+    }
+
+    /** Cara lama — dipakai bila master numerator tidak bisa dipakai. */
+    private function nextNumberLama(string $date): string
+    {
         $d     = Carbon::parse($date);
         $count = BsCogsRecognition::withTrashed()->whereYear('recognition_date', $d->year)->count() + 1;
 
@@ -241,6 +248,13 @@ final class CogsService
     }
 
     private function nextCogsId(int $year, int $month): string
+    {
+        return app(\App\Domain\BusinessSupport\Services\BoNumberService::class)
+            ->next('COGS', Carbon::parse(sprintf('%04d-%02d-01', $year, $month)), [], fn () => $this->nextCogsIdLama($year, $month));
+    }
+
+    /** Cara lama — dipakai bila master numerator tidak bisa dipakai. */
+    private function nextCogsIdLama(int $year, int $month): string
     {
         $count = BsCogsHpp::whereYear('created_at', $year)->count() + 1;
 
