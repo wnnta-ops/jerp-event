@@ -1,11 +1,14 @@
 <script setup lang="ts">
 import { Link } from '@inertiajs/vue3';
-import { Users, Shield, Hash, Settings } from 'lucide-vue-next';
+import { Users, Shield, Hash, Settings, Calculator } from 'lucide-vue-next';
 
 const cards = [
     { title: 'Users',      icon: Users,    href: 'settings.users.index',     desc: 'Kelola user, role, akses' },
     { title: 'Roles',      icon: Shield,   href: 'settings.roles.index',     desc: 'Konfigurasi role & permission' },
-    { title: 'Numerator',  icon: Hash,     href: 'settings.numerators.index',desc: 'Format penomoran dokumen' },
+    { title: 'Numerator',  icon: Hash,     href: 'settings.numerators.index',desc: 'Format penomoran dokumen Front Office' },
+    // Dipisah dari Numerator di atas: dua daftar berbeda, dan dicampur berarti memilah 52
+    // baris untuk menemukan satu.
+    { title: 'Numerator Back Office', icon: Calculator, href: 'settings.bo-numerators.index', desc: 'Format penomoran dokumen akuntansi (jurnal, PO, hutang, piutang, kas, SPK, aset, COGS, budget)' },
     { title: 'Parameter',  icon: Settings, href: 'settings.parameters.index',desc: 'PPN, denda, hold default, dll' },
 ];
 </script>

@@ -18,6 +18,13 @@ final class StockService
     /** Nomor dokumen: PREFIX/JRES/ym/0001 (urut per tahun). */
     public function nextNumber(string $prefix, string $modelClass, string $dateColumn): string
     {
+        return app(\App\Domain\BusinessSupport\Services\BoNumberService::class)
+            ->next($prefix, null, [], fn () => $this->nextNumberLama($prefix, $modelClass, $dateColumn));
+    }
+
+    /** Cara lama — dipakai bila master numerator tidak bisa dipakai. */
+    private function nextNumberLama(string $prefix, string $modelClass, string $dateColumn): string
+    {
         $year = now()->year;
         $count = $modelClass::withTrashed()->whereYear($dateColumn, $year)->count() + 1;
 

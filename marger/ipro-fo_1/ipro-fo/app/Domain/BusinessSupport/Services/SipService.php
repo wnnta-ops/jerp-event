@@ -242,8 +242,18 @@ final class SipService
 
         $seq = (int) BsSip::withTrashed()->where('print_year', $tahun)->lockForUpdate()->max('print_seq') + 1;
 
+        // BENTUK nomornya mengikuti Settings → Numerator Back Office (kode SIP), sedangkan
+        // URUTANNYA tetap dari print_seq di atas. Master hanya punya satu penghitung yang
+        // kembali ke 1 menurut tahun berjalan; SIP menghitungnya per TAHUN CETAK dan dijaga
+        // indeks unik (tenant_id, print_year, print_seq) — dua hal yang tidak bisa
+        // dipertukarkan tanpa membuat SIP bertanggal mundur menabrak nomor tahun lain.
+        $number = app(\App\Domain\BusinessSupport\Services\BoNumberService::class)->render(
+            'SIP', $d, $seq, [],
+            fn () => sprintf('%03d/FIN/MITRA-SI/%s/%d', $seq, BsSip::ROMAWI[$d->month] ?? 'I', $tahun),
+        );
+
         return [
-            'number' => sprintf('%03d/FIN/MITRA-SI/%s/%d', $seq, BsSip::ROMAWI[$d->month] ?? 'I', $tahun),
+            'number' => $number,
             'seq'    => $seq,
             'year'   => $tahun,
         ];

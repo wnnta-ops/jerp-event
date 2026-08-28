@@ -44,7 +44,11 @@ class LokasiResource extends Resource
                     ->unique(ignoreRecord: true, modifyRuleUsing: fn (Unique $rule, Forms\Get $get) => $rule->where('project_id', $get('project_id')))
                     ->validationMessages(['unique' => 'Kode Lokasi ini sudah ada untuk project tsb. Untuk menambah fase, pakai menu Tahap.'])
                     ->helperText('Dipakai sebagai segmen pertama No. Unit (Lokasi-Tahap-Blok-Nomer). Satu kode per cluster.'),
-                Forms\Components\TextInput::make('nama')->label('Nama Lokasi')->required()->maxLength(255),
+                Forms\Components\TextInput::make('nama')->label('Nama Lokasi')->required()->maxLength(255)
+                    // Operator perlu tahu bahwa layar ini punya pembaca kedua: kalau tidak, ia
+                    // akan mencari-cari tempat menambah cluster di Back Office — yang memang
+                    // tidak ada, karena BO sepenuhnya mengikuti daftar ini.
+                    ->helperText('Kode & nama ini yang muncul sebagai pilihan Cluster di Back Office (Setup Kategori Gimmick). Perubahannya menyusul otomatis.'),
                 Forms\Components\Toggle::make('is_active')->label('Aktif')->default(true)->inline(false),
             ]),
         ]);

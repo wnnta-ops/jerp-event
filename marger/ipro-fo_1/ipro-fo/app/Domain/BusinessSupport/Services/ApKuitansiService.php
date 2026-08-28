@@ -192,6 +192,13 @@ final class ApKuitansiService
     /** AP.KUI/MUP/yy/[bulan-romawi]/00001 */
     private function nextNumber(string $date): string
     {
+        return app(\App\Domain\BusinessSupport\Services\BoNumberService::class)
+            ->next('AP.KUI', \Illuminate\Support\Carbon::parse($date), [], fn () => $this->nextNumberLama($date));
+    }
+
+    /** Cara lama — dipakai bila master numerator tidak bisa dipakai. */
+    private function nextNumberLama(string $date): string
+    {
         $d = Carbon::parse($date);
         $roman = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X', 'XI', 'XII'][$d->month - 1];
         $seq = BsApKuitansi::withTrashed()->whereYear('kuitansi_date', $d->year)->count() + 1;

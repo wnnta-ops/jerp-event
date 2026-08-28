@@ -29,11 +29,15 @@ class ProjectSeeder extends Seeder
             ],
         );
 
-        foreach (['A', 'B', 'C'] as $code) {
-            Cluster::updateOrCreate(
-                ['project_id' => $project->id, 'code' => "C-{$code}"],
-                ['tenant_id' => $tenant->id, 'name' => "Cluster {$code}"],
-            );
-        }
+        // Cluster TIDAK di-seed lagi.
+        //
+        // Cluster adalah cerminan master Lokasi di FO (Setup Unit → Lokasi) dan satu-satunya
+        // penulisnya IproMasterSync::syncLokasi() di FO. "Cluster A/B/C" yang dulu di-seed di
+        // sini muncul sebagai pilihan pada Setup Kategori Gimmick — tiga cluster yang tidak
+        // pernah ada di Master Unit. Kategori yang telanjur ditautkan ke salah satunya tidak
+        // akan pernah cocok saat Posting Invoice dari FO, karena FO hanya mengenal Lokasi yang
+        // sesungguhnya, sehingga biayanya diam-diam jatuh ke kategori cadangan.
+        //
+        // Isi daftarnya dengan:  php artisan ipro:backfill lokasi   (dijalankan DI FO)
     }
 }

@@ -7,7 +7,8 @@
 //
 // Semua angka datang dari DashboardController. Bila tabelnya masih kosong, kartunya
 // menampilkan keadaan kosong apa adanya — tidak ada angka contoh di layar ini.
-import { Head } from '@inertiajs/vue3';
+import { ref } from 'vue';
+import { Head, router } from '@inertiajs/vue3';
 import VizColumns from '@/Components/Charts/VizColumns.vue';
 import VizFunnel from '@/Components/Charts/VizFunnel.vue';
 import VizGrouped from '@/Components/Charts/VizGrouped.vue';
@@ -25,7 +26,14 @@ interface SeriGabungan { n: string; c: number; unit: number[]; nilai: number; un
 
 const props = defineProps<{
     greeting?: { name: string | null; last_login_at: string | null; last_login_ip: string | null };
-    periode: { label: string; project: string };
+    periode: {
+        label: string; project: string;
+        // Rentang yang sedang berlaku, dikembalikan server supaya kotak tanggalnya
+        // menampilkan apa yang benar-benar dipakai — termasuk saat rentangnya ditukar
+        // karena terbalik.
+        awal: string; akhir: string;
+        bulan: number; dipotong: boolean; maks_bulan: number;
+    };
     charts: {
         inisiasi_kpr: { rows: Baris[] };
         proses_kpr: { rows: Baris[] };
@@ -45,6 +53,21 @@ const props = defineProps<{
         hpp: Tumpuk;
     };
 }>();
+
+/* Rentang periode. Nilai awalnya datang dari server — bukan dihitung ulang di layar —
+   supaya kotak tanggalnya selalu memperlihatkan rentang yang BENAR-BENAR dipakai,
+   termasuk saat server menukar rentang yang terbalik. */
+const awal = ref(props.periode.awal);
+const akhir = ref(props.periode.akhir);
+const BAWAAN = { awal: props.periode.awal, akhir: props.periode.akhir };
+const berubah = ref(false);
+
+function muat(dari: string, sampai: string) {
+    router.get(route('dashboard'), { date_from: dari, date_to: sampai },
+        { preserveState: true, preserveScroll: true, replace: true });
+}
+function terapkan() { berubah.value = true; muat(awal.value, akhir.value); }
+function bawaan() { berubah.value = false; muat('', ''); }
 
 const c = props.charts;
 
@@ -187,13 +210,34 @@ function fmtDateTime(iso: string | null | undefined): string {
                 </p>
             </div>
             <div class="flex flex-wrap gap-2">
-                <span class="inline-flex h-8 items-center gap-1.5 rounded-lg border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 px-3 text-[13px] text-neutral-500">
-                    Periode <b class="font-semibold text-neutral-800 dark:text-neutral-100">{{ periode.label }}</b>
-                </span>
+                <div class="inline-flex h-8 items-center gap-1.5 rounded-lg border border-neutral-200 bg-white px-2 text-[13px] text-neutral-500 dark:border-neutral-800 dark:bg-neutral-900">
+                    <span class="pl-1">Periode</span>
+                    <input v-model="awal" type="date" aria-label="Periode awal"
+                           class="h-6 rounded border border-neutral-200 bg-transparent px-1.5 text-[12.5px] text-neutral-800 dark:border-neutral-700 dark:text-neutral-100" />
+                    <span class="text-neutral-400">s/d</span>
+                    <input v-model="akhir" type="date" aria-label="Periode akhir"
+                           class="h-6 rounded border border-neutral-200 bg-transparent px-1.5 text-[12.5px] text-neutral-800 dark:border-neutral-700 dark:text-neutral-100" />
+                    <button type="button" @click="terapkan"
+                            class="h-6 rounded bg-primary-600 px-2.5 text-[12px] font-semibold text-white hover:bg-primary-700">Terapkan</button>
+                    <button v-if="berubah" type="button" @click="bawaan" title="Kembali ke bawaan: delapan bulan terakhir"
+                            class="h-6 rounded px-1.5 text-[12px] font-medium text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200">Bawaan</button>
+                </div>
                 <span class="inline-flex h-8 items-center gap-1.5 rounded-lg border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 px-3 text-[13px] text-neutral-500">
                     Project <b class="font-semibold text-neutral-800 dark:text-neutral-100">{{ periode.project }}</b>
                 </span>
             </div>
+        </div>
+
+        <!-- Cara periode dibaca tiap kartu SENGAJA dikatakan: dua kartu memang tidak bisa
+             mengikutinya, dan diam soal itu akan membuat angkanya disangka sudah tersaring. -->
+        <div class="-mt-1 text-[11.5px] leading-relaxed text-neutral-400">
+            <span class="font-medium text-neutral-500 dark:text-neutral-400">{{ periode.label }}</span>
+            — kartu <b>aliran</b> (corong KPR, penolakan, bon, laba rugi, SPK, serah terima, retensi) menghitung kejadian di dalam rentang;
+            kartu <b>posisi</b> (saldo rekening, aging, neraca, aset tetap, progres) memotret keadaan per <b>{{ periode.akhir }}</b>.
+            Rekonsiliasi Piutang &amp; Summary HPP tidak mengikuti periode — keduanya menyatakan keadaan berjalan, bukan kejadian.
+            <span v-if="periode.dipotong" class="font-medium text-amber-600 dark:text-amber-400">
+                Rentangnya lebih panjang daripada {{ periode.maks_bulan }} bulan, jadi grafik bulanan menampilkan {{ periode.maks_bulan }} bulan terakhirnya saja.
+            </span>
         </div>
 
         <!-- ══ Kisi 12 kolom ══ -->

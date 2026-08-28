@@ -6,6 +6,8 @@ namespace App\Http\Controllers\Web\BusinessSupport\Gl;
 
 use App\Domain\BusinessSupport\Models\BsFiscalPeriod;
 use App\Domain\BusinessSupport\Models\BsJournal;
+use App\Domain\BusinessSupport\Services\PeriodClosingService;
+use App\Exceptions\BusinessRuleException;
 use App\Http\Controllers\Controller;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -147,15 +149,23 @@ class GeneralLedgerController extends Controller
         ]);
     }
 
-    public function closePeriod(Request $request): RedirectResponse
+    /**
+     * Kunci periode dari layar General Ledger.
+     *
+     * Dulu menulis sendiri ke bs_fiscal_periods — dua tempat berbeda yang melakukan hal yang
+     * sama, dan syarat "jurnalnya harus sudah Approved" hanya berlaku di salah satunya.
+     * Sekarang keduanya menempuh PeriodClosingService, jadi tidak ada pintu yang lolos.
+     */
+    public function closePeriod(Request $request, PeriodClosingService $svc): RedirectResponse
     {
         abort_unless($request->user()?->can('businesssupport.approval.act'), 403);
         $v = $request->validate(['year' => ['required', 'integer'], 'month' => ['required', 'integer', 'min:1', 'max:12']]);
 
-        BsFiscalPeriod::updateOrCreate(
-            ['tenant_id' => tenant_id(), 'year' => $v['year'], 'month' => $v['month']],
-            ['status' => 'closed', 'closed_at' => now()],
-        );
+        try {
+            $svc->closePeriod($v['year'], $v['month']);
+        } catch (BusinessRuleException $e) {
+            return back()->with('error', $e->getMessage());
+        }
 
         return back()->with('success', "Periode {$v['year']}/{$v['month']} ditutup (CLOSED).");
     }

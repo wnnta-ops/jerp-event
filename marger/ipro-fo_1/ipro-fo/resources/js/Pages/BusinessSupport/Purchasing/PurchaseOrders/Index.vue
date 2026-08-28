@@ -16,6 +16,9 @@ import ColumnFilter from '@/Components/UI/ColumnFilter.vue';
 type Row = {
     id: number; po_number: string; po_date: string | null; due_date: string | null;
     supplier: { name: string } | null; project: string | null; po_type: string | null; notes: string | null;
+    // Satu PO bisa ditagih bertahap, jadi invoicenya JAMAK. Tidak ada UNIQUE di database
+    // yang mencegahnya, sehingga menampilkan yang pertama saja akan menyembunyikan tagihan.
+    ap_invoices: Array<{ id: number; number: string; description: string | null }>;
     lines_count: number; subtotal: number; ppn_amount: number; total: number; status: string;
     printed_at: string | null; print_count: number;
 };
@@ -35,7 +38,18 @@ const dTgl = (r: Row) => fmtDate(r.po_date);
 const dTempo = (r: Row) => fmtDate(r.due_date);
 const dSupplier = (r: Row) => r.supplier?.name ?? '—';
 const dProyek = (r: Row) => r.project ?? '—';
-const dKet = (r: Row) => r.notes ?? '';
+// Teks PENUH — dipakai pencarian global, checklist filter, dan ekspor Excel. Sengaja bukan
+// versi yang dipendekkan: kalau tidak, mengetik nomor invoice KEDUA tidak akan menemukan
+// barisnya padahal invoicenya ada di sana.
+const invText = (i: Row['ap_invoices'][number]) => (i.description ? `${i.number} — ${i.description}` : i.number);
+const dInv = (r: Row) => (r.ap_invoices ?? []).map(invText).join(' ; ') || '—';
+// Teks SEL layar — hanya yang pertama, sisanya dihitung. Nilai checklist tetap memakai dInv,
+// sesuai aturan bahwa pilihan filter harus identik dengan nilai yang dicocokkan okCol.
+const dInvShort = (r: Row) => {
+    const a = r.ap_invoices ?? [];
+    if (!a.length) return '—';
+    return a.length === 1 ? invText(a[0]) : `${invText(a[0])} (+${a.length - 1} lagi)`;
+};
 const dItem = (r: Row) => String(r.lines_count ?? 0);
 const dTotal = (r: Row) => fmtRp(r.total);
 const dStatus = (r: Row) => statusLabel[r.status] ?? r.status;
@@ -51,7 +65,7 @@ const optTgl = computed(() => distinct(dTgl));
 const optTempo = computed(() => distinct(dTempo));
 const optSupplier = computed(() => distinct(dSupplier));
 const optProyek = computed(() => distinct(dProyek));
-const optKet = computed(() => distinct(dKet));
+const optInv = computed(() => distinct(dInv));
 const optItem = computed(() => distinct(dItem));
 const optTotal = computed(() => distinct(dTotal));
 const optStatus = computed(() => distinct(dStatus));
@@ -59,8 +73,8 @@ const optCetak = computed(() => distinct(dCetak));
 
 // Filter global + per-kolom. Tiap kolom punya DUA cara: ketik bebas (txt) & checklist (col).
 const search = ref('');
-const col = reactive<Record<string, string[]>>({ no: [], tgl: [], tempo: [], supplier: [], proyek: [], ket: [], item: [], total: [], status: [], cetak: [] });
-const txt = reactive<Record<string, string>>({ no: '', tgl: '', tempo: '', supplier: '', proyek: '', ket: '', item: '', total: '', status: '', cetak: '' });
+const col = reactive<Record<string, string[]>>({ no: [], tgl: [], tempo: [], supplier: [], proyek: [], inv: [], item: [], total: [], status: [], cetak: [] });
+const txt = reactive<Record<string, string>>({ no: '', tgl: '', tempo: '', supplier: '', proyek: '', inv: '', item: '', total: '', status: '', cetak: '' });
 const hasFilter = computed(() => Boolean(search.value) || Object.values(col).some((a) => a.length) || Object.values(txt).some((v) => v.trim() !== ''));
 function resetFilter() {
     search.value = '';
@@ -76,12 +90,12 @@ function okCol(key: string, val: string) { return !col[key].length || col[key].i
 const filtered = computed<Row[]>(() => props.orders.filter((r) => {
     if (search.value) {
         const q = search.value.toLowerCase();
-        const hay = [dNo(r), dTgl(r), dTempo(r), dSupplier(r), dProyek(r), dKet(r), dItem(r), dTotal(r), dStatus(r), dCetak(r)].join(' ').toLowerCase();
+        const hay = [dNo(r), dTgl(r), dTempo(r), dSupplier(r), dProyek(r), dInv(r), dItem(r), dTotal(r), dStatus(r), dCetak(r)].join(' ').toLowerCase();
         if (!hay.includes(q)) return false;
     }
     const pairs: Array<[string, string]> = [
         ['no', dNo(r)], ['tgl', dTgl(r)], ['tempo', dTempo(r)], ['supplier', dSupplier(r)], ['proyek', dProyek(r)],
-        ['ket', dKet(r)], ['item', dItem(r)], ['total', dTotal(r)], ['status', dStatus(r)], ['cetak', dCetak(r)],
+        ['inv', dInv(r)], ['item', dItem(r)], ['total', dTotal(r)], ['status', dStatus(r)], ['cetak', dCetak(r)],
     ];
     return pairs.every(([k, v]) => okCol(k, v) && okTxt(k, v));
 }));
@@ -113,10 +127,10 @@ const summary = computed(() => {
 });
 
 // Bila data berubah, buang nilai filter yang sudah tak ada agar tabel tidak diam-diam kosong.
-watch([optNo, optTgl, optTempo, optSupplier, optProyek, optKet, optItem, optTotal, optStatus, optCetak], () => {
+watch([optNo, optTgl, optTempo, optSupplier, optProyek, optInv, optItem, optTotal, optStatus, optCetak], () => {
     const prune = (sel: string[], opts: string[]) => { const s = new Set(opts); return sel.filter((v) => s.has(v)); };
     col.no = prune(col.no, optNo.value); col.tgl = prune(col.tgl, optTgl.value); col.tempo = prune(col.tempo, optTempo.value);
-    col.supplier = prune(col.supplier, optSupplier.value); col.proyek = prune(col.proyek, optProyek.value); col.ket = prune(col.ket, optKet.value);
+    col.supplier = prune(col.supplier, optSupplier.value); col.proyek = prune(col.proyek, optProyek.value); col.inv = prune(col.inv, optInv.value);
     col.item = prune(col.item, optItem.value); col.total = prune(col.total, optTotal.value); col.status = prune(col.status, optStatus.value);
     col.cetak = prune(col.cetak, optCetak.value);
 });
@@ -127,13 +141,13 @@ function exportExcel() {
     const num = (v: number) => Number(v ?? 0).toLocaleString('id-ID');
     const body = filtered.value.map((r) => '<tr>'
         + `<td>${esc(r.po_number)}</td><td>${esc(fmtDate(r.po_date))}</td><td>${esc(fmtDate(r.due_date))}</td>`
-        + `<td>${esc(r.supplier?.name ?? '')}</td><td>${esc(r.project ?? '')}</td><td>${esc(r.notes ?? '')}</td>`
+        + `<td>${esc(r.supplier?.name ?? '')}</td><td>${esc(r.project ?? '')}</td><td>${esc(dInv(r))}</td><td>${esc(r.notes ?? '')}</td>`
         + `<td>${r.lines_count}</td><td>${esc(num(r.subtotal))}</td><td>${esc(num(r.ppn_amount))}</td><td>${esc(num(r.total))}</td>`
         + `<td>${esc(statusLabel[r.status] ?? r.status)}</td><td>${esc(fmtDateTime(r.printed_at))}</td>`
         + '</tr>').join('');
     const html = '<html xmlns:x="urn:schemas-microsoft-com:office:excel"><head><meta charset="utf-8"></head><body>'
         + '<table border="1"><tr style="background:#c2410c;color:#fff">'
-        + '<th>No. PO</th><th>Tanggal</th><th>Jatuh Tempo</th><th>Supplier</th><th>Proyek</th><th>Keterangan</th><th>Item</th><th>Subtotal</th><th>PPN</th><th>Total</th><th>Status</th><th>Waktu Dicetak</th>'
+        + '<th>No. PO</th><th>Tanggal</th><th>Jatuh Tempo</th><th>Supplier</th><th>Proyek</th><th>Invoice Hutang</th><th>Catatan PO</th><th>Item</th><th>Subtotal</th><th>PPN</th><th>Total</th><th>Status</th><th>Waktu Dicetak</th>'
         + `</tr>${body}</table></body></html>`;
     const url = URL.createObjectURL(new Blob([html], { type: 'application/vnd.ms-excel' }));
     const a = document.createElement('a');
@@ -260,7 +274,12 @@ watch(filtered, () => nextTick(measure));
                         <th class="whitespace-nowrap px-4 pt-3 pb-1.5">Jatuh Tempo</th>
                         <th class="px-4 pt-3 pb-1.5">Supplier</th>
                         <th class="px-4 pt-3 pb-1.5">Proyek</th>
-                        <th class="px-4 pt-3 pb-1.5">Keterangan</th>
+                        <!-- Judulnya membawa keterangan sendiri: PO lama yang dibuat sebelum
+                             penautan otomatis ada akan kosong walau sebenarnya sudah ditagih,
+                             dan kolom kosong yang tak dijelaskan mudah dibaca sebagai
+                             "belum diinvoice" — kesimpulan yang bisa memicu tagih dobel. -->
+                        <th class="px-4 pt-3 pb-1.5"
+                            title="Invoice Hutang yang tertaut ke PO ini. PO lama yang dibuat sebelum penautan otomatis berlaku akan tampil kosong meski sudah ditagih — periksa di modul Invoice Hutang.">Invoice Hutang</th>
                         <th class="px-4 pt-3 pb-1.5 text-center">Item</th>
                         <th class="whitespace-nowrap px-4 pt-3 pb-1.5 text-right">Total</th>
                         <th class="px-4 pt-3 pb-1.5 text-center">Status</th>
@@ -274,7 +293,7 @@ watch(filtered, () => nextTick(measure));
                         <th class="px-3 pb-2"><ColumnFilter v-model="col.tempo" v-model:text="txt.tempo" :options="optTempo" /></th>
                         <th class="px-3 pb-2"><ColumnFilter v-model="col.supplier" v-model:text="txt.supplier" :options="optSupplier" /></th>
                         <th class="px-3 pb-2"><ColumnFilter v-model="col.proyek" v-model:text="txt.proyek" :options="optProyek" /></th>
-                        <th class="px-3 pb-2"><ColumnFilter v-model="col.ket" v-model:text="txt.ket" :options="optKet" /></th>
+                        <th class="px-3 pb-2"><ColumnFilter v-model="col.inv" v-model:text="txt.inv" :options="optInv" /></th>
                         <th class="px-3 pb-2"><ColumnFilter v-model="col.item" v-model:text="txt.item" :options="optItem" /></th>
                         <th class="px-3 pb-2"><ColumnFilter v-model="col.total" v-model:text="txt.total" :options="optTotal" align="right" /></th>
                         <th class="px-3 pb-2"><ColumnFilter v-model="col.status" v-model:text="txt.status" :options="optStatus" /></th>
@@ -292,7 +311,14 @@ watch(filtered, () => nextTick(measure));
                         <td class="whitespace-nowrap px-4 py-2.5">{{ fmtDate(r.due_date) }}</td>
                         <td class="whitespace-nowrap px-4 py-2.5">{{ r.supplier?.name ?? '—' }}</td>
                         <td class="px-4 py-2.5 text-neutral-500"><span class="block max-w-[200px] truncate" :title="r.project ?? ''">{{ r.project ?? '—' }}</span></td>
-                        <td class="px-4 py-2.5 text-neutral-500"><span class="block max-w-[220px] truncate" :title="r.notes ?? ''">{{ r.notes }}</span></td>
+                        <!-- 320px, bukan 220px: nomor invoicenya sendiri sudah ~40 karakter,
+                             dan memotong nomor dokumen justru kegagalan yang sedang dibetulkan.
+                             Tooltipnya membawa seluruh invoice DAN catatan PO, supaya catatan
+                             yang dulu menempati kolom ini tidak lenyap dari daftar. -->
+                        <td class="px-4 py-2.5 text-neutral-500">
+                            <span class="block max-w-[320px] truncate font-mono text-xs"
+                                  :title="dInv(r) + (r.notes ? '\nCatatan PO: ' + r.notes : '')">{{ dInvShort(r) }}</span>
+                        </td>
                         <td class="px-4 py-2.5 text-center">{{ r.lines_count }}</td>
                         <td class="whitespace-nowrap px-4 py-2.5 text-right font-mono">{{ fmtRp(r.total) }}</td>
                         <td class="px-4 py-2.5 text-center"><Badge :variant="statusColor[r.status] ?? 'neutral'" size="sm">{{ statusLabel[r.status] ?? r.status }}</Badge></td>

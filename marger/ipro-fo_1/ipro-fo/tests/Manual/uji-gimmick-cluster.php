@@ -53,15 +53,6 @@ $cek('keunikan lama (tenant, kode) sudah dilepas',
     ! isset($indeks['bs_gimmick_categories_tenant_id_code_unique']),
     implode(',', array_keys($indeks->all())));
 
-$clusters = Cluster::orderBy('code')->get();
-$cek('ada minimal dua cluster untuk diuji', $clusters->count() >= 2, (string) $clusters->count());
-if ($clusters->count() < 2) {
-    echo "\n  Tidak bisa lanjut tanpa dua cluster.\n";
-
-    return;
-}
-[$cA, $cB] = [$clusters[0], $clusters[1]];
-
 // Dua akun debit berbeda, supaya bisa dibuktikan akun cluster yang benar yang terpakai.
 $akun = BsAccount::where('is_postable', true)->where('is_active', true)->orderBy('code')->limit(3)->get();
 $cek('ada tiga akun postable untuk diuji', $akun->count() === 3, (string) $akun->count());
@@ -90,6 +81,27 @@ $poster = new class
 
 DB::beginTransaction();
 try {
+    // Cluster uji dibuat SENDIRI, tidak memungut dua cluster pertama yang kebetulan ada.
+    // Sejak cluster menjadi cerminan master Lokasi FO, isinya tergantung berapa Lokasi yang
+    // dipunyai FO — di mesin yang baru hanya satu, dan uji ini akan berhenti sebelum menguji
+    // apa pun. Keduanya ikut di-rollback bersama transaksi ini.
+    $projectId = (int) (Cluster::withTrashed()->value('project_id') ?: 1);
+    $buatCluster = fn (string $kode) => Cluster::create([
+        'project_id' => $projectId, 'code' => $kode, 'name' => 'Cluster Uji '.$kode,
+    ]);
+    $cA = $buatCluster('UJI-A');
+    $cB = $buatCluster('UJI-B');
+    // Cluster ketiga SENGAJA dibiarkan tanpa kategori — dialah yang membuktikan perilaku
+    // cadangan. Sebelumnya ia dipungut lewat indeks ketiga dari daftar cluster, yang berarti
+    // ia bisa saja mengenai cluster yang justru sudah punya kategori dan pemeriksaannya
+    // menjadi bohong.
+    $cC = $buatCluster('UJI-C');
+    $clusters = Cluster::orderBy('code')->get();
+
+    $cek('dua cluster uji terbentuk', $cA->exists && $cB->exists && $cA->id !== $cB->id);
+    $cek('keduanya terbaca di daftar cluster', $clusters->whereIn('id', [$cA->id, $cB->id])->count() === 2,
+        (string) $clusters->count());
+
     // Kolom 'kpr' di bagan nyata sudah dipegang kategori tanpa cluster. Kategori itu adalah
     // cadangan yang sah, jadi selama ia ada tidak akan pernah ada cluster yang dianggap
     // kosong — dan bagian 5 tidak akan menguji apa pun. Tautannya dilepas dulu di dalam
@@ -143,20 +155,15 @@ try {
     $cek('cluster B dapat kategori cluster B',
         $poster->cari($nama, (int) $cB->id)?->id === $katB->id);
 
-    $cC = $clusters->count() > 2 ? $clusters[2] : null;
-    if ($cC) {
-        $cek('cluster tanpa kategori sendiri belum dapat apa-apa (belum ada cadangan)',
-            $poster->cari($nama, (int) $cC->id) === null);
-    }
+    $cek('cluster tanpa kategori sendiri belum dapat apa-apa (belum ada cadangan)',
+        $poster->cari($nama, (int) $cC->id) === null);
 
     // Cadangan: kategori tanpa cluster, berlaku untuk semua cluster.
     $katUmum = $buat(null, (int) $akunKredit->id);
     $cek('kategori clusternya tetap menang walau cadangan sudah ada',
         $poster->cari($nama, (int) $cA->id)?->id === $katA->id);
-    if ($cC) {
-        $cek('cluster tanpa kategori sendiri jatuh ke cadangan',
-            $poster->cari($nama, (int) $cC->id)?->id === $katUmum->id);
-    }
+    $cek('cluster tanpa kategori sendiri jatuh ke cadangan',
+        $poster->cari($nama, (int) $cC->id)?->id === $katUmum->id);
     $cek('GMC tanpa cluster memakai cadangan',
         $poster->cari($nama, null)?->id === $katUmum->id);
 
@@ -209,6 +216,56 @@ try {
         $c2['isi'] === collect([$cA->code, $cB->code])->sort()->values()->all()
         || $c2['isi'] === [$cA->code, $cB->code],
         json_encode($c2['isi']));
+
+    echo "\n=== 5b. Lokasi dihapus di FO tidak mengunci kategorinya ===\n";
+
+    // Urutan yang benar-benar terjadi: kategori dibuat untuk sebuah cluster, lalu Lokasinya
+    // dihapus di FO sehingga clusternya ikut ditandai terhapus. Sesudah itu operator membuka
+    // kategori tersebut untuk mengganti NAMANYA saja. Bila validasi cluster_id menolak cluster
+    // yang sudah dipensiunkan tanpa kecuali, kategori itu terkunci total — nama, akun, porsi,
+    // semuanya ikut gagal karena kolom yang tidak ia sentuh.
+    $cA->delete();
+
+    $ctl = app(App\Http\Controllers\Web\BusinessSupport\Payable\GimmickCategoryController::class);
+    $pengguna = App\Models\User::query()->get()
+        ->first(fn ($u) => $u->can('businesssupport.setup.manage'));
+    $cek('ada pengguna berwenang untuk menguji simpan', $pengguna !== null);
+
+    if ($pengguna) {
+        $muatan = [
+            'cluster_id' => $katA->cluster_id, 'code' => $katA->code,
+            'name' => $katA->name.' (DIUBAH)', 'kpr_biaya_key' => $katA->kpr_biaya_key,
+            'sync_kpr' => true, 'is_active' => true,
+            'debits'  => [['account_id' => $akunA->id, 'portion' => 100]],
+            'credits' => [['account_id' => $akunKredit->id, 'portion' => 100]],
+        ];
+        $req = Illuminate\Http\Request::create('/x', 'POST', $muatan);
+        $req->setUserResolver(fn () => $pengguna);
+
+        $pesan = '';
+        try {
+            $ctl->update($req, $katA);
+        } catch (Illuminate\Validation\ValidationException $e) {
+            $pesan = json_encode($e->errors());
+        }
+        $cek('kategori dengan cluster nonaktif masih bisa disimpan ulang', $pesan === '', $pesan);
+        $cek('perubahan namanya benar-benar tersimpan',
+            $katA->fresh()->name === $muatan['name'], (string) $katA->fresh()->name);
+        $cek('clusternya tidak diam-diam berubah jadi "semua cluster"',
+            (int) $katA->fresh()->cluster_id === (int) $cA->id);
+
+        // Cluster nonaktif tetap DITOLAK sebagai pilihan BARU — kelonggarannya hanya untuk
+        // cluster yang memang sudah tersimpan pada kategori itu.
+        $req2 = Illuminate\Http\Request::create('/x', 'POST', ['cluster_id' => $cA->id] + $muatan + ['code' => 'UJI-BARU']);
+        $req2->setUserResolver(fn () => $pengguna);
+        $ditolak = false;
+        try {
+            $ctl->store($req2);
+        } catch (Illuminate\Validation\ValidationException $e) {
+            $ditolak = array_key_exists('cluster_id', $e->errors());
+        }
+        $cek('kategori BARU tetap dilarang memilih cluster nonaktif', $ditolak);
+    }
 } finally {
     DB::rollBack();
 }

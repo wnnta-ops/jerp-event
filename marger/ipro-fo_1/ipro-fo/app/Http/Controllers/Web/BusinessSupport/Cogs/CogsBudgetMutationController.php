@@ -69,11 +69,22 @@ class CogsBudgetMutationController extends Controller
         $year = (int) date('Y', strtotime($v['mutation_date']));
         BsCogsBudgetMutation::create(array_merge($v, [
             'tenant_id' => tenant_id(), 'year' => $year, 'status' => 'baru',
-            'doc_no'    => 'CG.MUT/'.date('y', strtotime($v['mutation_date'])).'/'.str_pad((string) (BsCogsBudgetMutation::whereYear('mutation_date', $year)->count() + 1), 5, '0', STR_PAD_LEFT),
+            'doc_no'    => app(\App\Domain\BusinessSupport\Services\BoNumberService::class)
+                ->next('CG.MUT', \Illuminate\Support\Carbon::parse($v['mutation_date']), [], fn () => $this->nextDocNoLama($v, $year)),
             'created_by' => $request->user()->id,
         ]));
 
         return to_route('bs.cogs.mutation.index')->with('success', 'Mutasi budget diajukan (menunggu approval).');
+    }
+
+    /**
+     * Cara lama — dipakai bila master numerator tidak bisa dipakai.
+     *
+     * @param  array<string,mixed>  $v
+     */
+    private function nextDocNoLama(array $v, int $year): string
+    {
+        return 'CG.MUT/'.date('y', strtotime($v['mutation_date'])).'/'.str_pad((string) (BsCogsBudgetMutation::whereYear('mutation_date', $year)->count() + 1), 5, '0', STR_PAD_LEFT);
     }
 
     public function approvals(Request $request): Response

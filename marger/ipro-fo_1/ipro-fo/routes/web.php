@@ -120,6 +120,7 @@ use App\Http\Controllers\Web\Sales\ContractController;
 use App\Http\Controllers\Web\Sales\ExceptionController;
 use App\Http\Controllers\Web\Sales\HoldController;
 use App\Http\Controllers\Web\Sales\NupController;
+use App\Http\Controllers\Web\Settings\BoNumeratorController;
 use App\Http\Controllers\Web\Settings\NumeratorController;
 use App\Http\Controllers\Web\Settings\ParameterController;
 use App\Http\Controllers\Web\Settings\RoleController as SettingRoleController;
@@ -589,6 +590,7 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
     Route::get('/business-support/faktur-pajak/export/keluaran', [BsTaxController::class, 'exportKeluaran'])->name('bs.tax.export.keluaran');
     Route::get('/business-support/faktur-pajak/export/masukan',  [BsTaxController::class, 'exportMasukan'])->name('bs.tax.export.masukan');
     Route::get('/business-support/faktur-pajak/export/masukan/xlsx', [BsTaxController::class, 'exportMasukanXlsx'])->name('bs.tax.export.masukan.xlsx'); // #4 tarik Excel FP masukan
+    Route::get('/business-support/faktur-pajak/export/keluaran/xlsx', [BsTaxController::class, 'exportKeluaranXlsx'])->name('bs.tax.export.keluaran.xlsx'); // Excel FP keluaran (gabungan 3 sumber)
     // Cetak DJP (HTML print) + e-Faktur export
     Route::get('/business-support/faktur-pajak/cetak/spt-ppn',       [BsSptController::class, 'cetakPpn'])->name('bs.tax.cetak.ppn');
     Route::get('/business-support/faktur-pajak/cetak/buku-pembantu', [BsSptController::class, 'bukuPembantu'])->name('bs.tax.cetak.buku');
@@ -795,6 +797,7 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
     // Approval UM Penjualan — lanjutan UTJ & DP: konversi ke Uang Muka Penjualan (Dr Hutang Usaha / Cr Uang Muka + PPN)
     // Rincian Batal Akad — KPR batal/ditolak; disaring keluar dari antrean approval.
     Route::get('/business-support/batal-akad',                                [\App\Http\Controllers\Web\BusinessSupport\BatalAkadController::class, 'index'])->name('bs.batal-akad.index');
+    Route::get('/business-support/batal-akad/export',                         [\App\Http\Controllers\Web\BusinessSupport\BatalAkadController::class, 'export'])->name('bs.batal-akad.export');
     Route::get('/business-support/cash-book-approval-um',                     [BsBankApprovalController::class, 'umIndex'])->name('bs.cashbook.approval-um');
     Route::post('/business-support/cash-book-approval-um/{entry}',            [BsBankApprovalController::class, 'umPost'])->name('bs.cashbook.approval-um.post');
     Route::get('/business-support/cash-book',                  [BsCashBookController::class, 'index'])->name('bs.cashbook.index');
@@ -1064,6 +1067,9 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
 
     // ── BOOKED REVENUE (pendapatan ter-booking per customer & unit) ──
     Route::get('/business-support/booked-revenue',                       [BsBookedRevenueController::class, 'index'])->name('bs.booked-revenue.index');
+    // Ekspor daftar Sudah Booked Revenue. Didaftarkan SEBELUM /{bookedRevenue} supaya
+    // "export" tidak tertangkap wildcard-nya dan dicari sebagai id.
+    Route::get('/business-support/booked-revenue/export',                [BsBookedRevenueController::class, 'export'])->name('bs.booked-revenue.export');
     Route::get('/business-support/booked-revenue/create',               [BsBookedRevenueController::class, 'create'])->name('bs.booked-revenue.create');
     Route::post('/business-support/booked-revenue',                      [BsBookedRevenueController::class, 'store'])->name('bs.booked-revenue.store');
     Route::get('/business-support/booked-revenue/{bookedRevenue}',       [BsBookedRevenueController::class, 'show'])->name('bs.booked-revenue.show');
@@ -1071,9 +1077,12 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
     // tidak ada lagi jalur "akui pendapatan" maupun "batalkan" (booking tak bisa dikembalikan).
     Route::patch('/business-support/booked-revenue/{bookedRevenue}',     [BsBookedRevenueController::class, 'update'])->name('bs.booked-revenue.update');
     Route::get('/business-support/booked-revenue-control/bast', [BsBookedRevenueController::class, 'controlBast'])->name('bs.booked-revenue.control.bast');
+    Route::get('/business-support/booked-revenue-control/bast/export', [BsBookedRevenueController::class, 'exportControlBast'])->name('bs.booked-revenue.control.bast.export');
     Route::get('/business-support/booked-revenue-control/ajb',  [BsBookedRevenueController::class, 'controlAjb'])->name('bs.booked-revenue.control.ajb');
+    Route::get('/business-support/booked-revenue-control/ajb/export', [BsBookedRevenueController::class, 'exportControlAjb'])->name('bs.booked-revenue.control.ajb.export');
     Route::get('/business-support/booked-revenue-control/fp',   [BsBookedRevenueController::class, 'controlFakturPajak'])->name('bs.booked-revenue.control.fp');
     Route::get('/business-support/belum-booked-revenue',        [BsBookedRevenueController::class, 'belumBooked'])->name('bs.booked-revenue.belum'); // pipeline: sudah BAST/AJB, belum di-booking
+    Route::get('/business-support/belum-booked-revenue/export', [BsBookedRevenueController::class, 'belumBookedExport'])->name('bs.booked-revenue.belum.export');
     Route::post('/business-support/belum-booked-revenue/massal', [BsBookedRevenueController::class, 'bookMassal'])->name('bs.booked-revenue.book-massal'); // booked revenue massal (checklist, auto-jurnal per unit)
     Route::post('/business-support/booked-revenue-control/bast/issue', [BsBookedRevenueController::class, 'issueBast'])->name('bs.booked-revenue.control.bast.issue'); // terbitkan BAST (Sudah) satuan/massal
     Route::post('/business-support/booked-revenue-control/ajb/issue',  [BsBookedRevenueController::class, 'issueAjb'])->name('bs.booked-revenue.control.ajb.issue'); // terbitkan AJB (Sudah) satuan/massal
@@ -1084,6 +1093,7 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
     // (bukan di bawah /booked-revenue/) agar tidak tertangkap wildcard {bookedRevenue} di atas.
     Route::get('/business-support/invoice-penjualan',            [BsSalesInvoiceController::class, 'index'])->name('bs.sales-invoice.index');
     Route::get('/business-support/invoice-penjualan/print-bulk', [BsSalesInvoiceController::class, 'printBulk'])->name('bs.sales-invoice.print-bulk'); // HARUS di atas /{bookedRevenue}
+    Route::get('/business-support/invoice-penjualan/export',     [BsSalesInvoiceController::class, 'export'])->name('bs.sales-invoice.export'); // HARUS di atas /{bookedRevenue}
     Route::get('/business-support/invoice-penjualan/{bookedRevenue}', [BsSalesInvoiceController::class, 'print'])->name('bs.sales-invoice.print');
 
     // ── CONTRACTOR MANAGEMENT (modul mandiri; /contractor-management → hub) ──
@@ -1283,6 +1293,15 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
         Route::get('/numerators',                             [NumeratorController::class, 'index'])->name('numerators.index');
         Route::get('/numerators/{code}/preview',              [NumeratorController::class, 'preview'])->name('numerators.preview');
         Route::put('/numerators/{numerator}',                 [NumeratorController::class, 'update'])->name('numerators.update');
+
+        // Numerator Back Office — daftar terpisah dari numerator Front Office di atas.
+        // Rute /preview didaftarkan SEBELUM {bo_numerator} supaya "preview" tidak tertangkap
+        // wildcard-nya dan dicari sebagai id.
+        Route::get('/bo-numerators',                          [BoNumeratorController::class, 'index'])->name('bo-numerators.index');
+        Route::get('/bo-numerators/{code}/preview',           [BoNumeratorController::class, 'preview'])->name('bo-numerators.preview');
+        Route::post('/bo-numerators',                         [BoNumeratorController::class, 'store'])->name('bo-numerators.store');
+        Route::put('/bo-numerators/{bo_numerator}',           [BoNumeratorController::class, 'update'])->name('bo-numerators.update');
+        Route::delete('/bo-numerators/{bo_numerator}',        [BoNumeratorController::class, 'destroy'])->name('bo-numerators.destroy');
 
         Route::get('/parameters',                             [ParameterController::class, 'index'])->name('parameters.index');
         Route::put('/parameters',                             [ParameterController::class, 'update'])->name('parameters.update');

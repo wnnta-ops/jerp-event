@@ -98,6 +98,13 @@ final class ApMemorialService
 
     private function nextNumber(string $date): string
     {
+        return app(\App\Domain\BusinessSupport\Services\BoNumberService::class)
+            ->next('AP.MEMO', \Illuminate\Support\Carbon::parse($date), [], fn () => $this->nextNumberLama($date));
+    }
+
+    /** Cara lama — dipakai bila master numerator tidak bisa dipakai. */
+    private function nextNumberLama(string $date): string
+    {
         $d   = Carbon::parse($date);
         $seq = BsApMemorial::withTrashed()->whereYear('memorial_date', $d->year)->count() + 1;
         do {

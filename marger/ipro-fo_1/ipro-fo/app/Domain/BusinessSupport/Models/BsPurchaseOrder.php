@@ -32,5 +32,8 @@ class BsPurchaseOrder extends Model
 
     public function lines(): HasMany { return $this->hasMany(BsPurchaseOrderLine::class, 'purchase_order_id'); }
     public function supplier(): BelongsTo { return $this->belongsTo(BsSupplier::class, 'supplier_id'); }
+
+    /** Pembuat PO — dipakai mengisi kolom "Dibuat Oleh" pada lembar cetak. */
+    public function creator(): BelongsTo { return $this->belongsTo(\App\Models\User::class, 'created_by'); }
     public function project(): BelongsTo { return $this->belongsTo(\App\Domain\Foundation\Tenant\Models\Project::class, 'project_id'); }
 }

@@ -33,7 +33,11 @@ class GimmickCategoryController extends Controller
     {
         abort_unless($request->user()?->canModule('ap'), 403);
 
-        $rows = BsGimmickCategory::with(['debitAccount:id,code,name', 'payableAccount:id,code,name', 'accounts.account:id,code,name', 'cluster:id,code,name'])
+        // cluster dimuat withTrashed: kategori yang menunjuk cluster sudah dipensiunkan akan
+        // memulangkan relasi kosong bila disaring, sehingga barisnya berbohong "Semua cluster"
+        // padahal cluster_id-nya terisi dan posting justru tidak lagi menemukannya.
+        $rows = BsGimmickCategory::with(['debitAccount:id,code,name', 'payableAccount:id,code,name', 'accounts.account:id,code,name',
+            'cluster' => fn ($q) => $q->withTrashed()->select('id', 'code', 'name', 'deleted_at')])
             ->when($request->input('search'), fn ($q, $s) => $q->where(fn ($w) => $w->where('code', 'like', "%{$s}%")->orWhere('name', 'like', "%{$s}%")))
             // Kategori sejenis dari cluster berbeda berdampingan, supaya perbedaan akunnya
             // langsung terbaca alih-alih harus dicari di dua tempat pada daftar.
@@ -49,7 +53,11 @@ class GimmickCategoryController extends Controller
                     'id' => $c->id, 'code' => $c->code, 'name' => $c->name, 'is_active' => $c->is_active,
                     // Cluster kosong = berlaku untuk semua cluster (cadangan).
                     'cluster_id'    => $c->cluster_id,
-                    'cluster_label' => $c->cluster ? trim($c->cluster->code.' — '.$c->cluster->name) : null,
+                    // Akhiran dikatakan apa adanya: cluster yang sudah dihapus di FO tidak boleh
+                    // terbaca sama seperti cluster yang masih hidup.
+                    'cluster_label' => $c->cluster
+                        ? trim($c->cluster->code.' — '.$c->cluster->name).($c->cluster->trashed() ? ' (nonaktif di FO)' : '')
+                        : null,
                     'kpr_biaya_key'   => $c->kpr_biaya_key,
                     'kpr_biaya_label' => $c->kpr_biaya_key ? (BsGimmickCategory::KPR_BIAYA_COLUMNS[$c->kpr_biaya_key] ?? null) : null,
                     'sync_kpr'        => (bool) $c->sync_kpr,
@@ -62,10 +70,27 @@ class GimmickCategoryController extends Controller
                 ];
             });
 
-        // Cluster yang ada, dipakai baik oleh pilihan di form maupun oleh hitungan cakupan.
-        $clusters = Cluster::orderBy('code')->get(['id', 'code', 'name'])
+        // Daftar cluster BUKAN master milik BO — ia cerminan master Lokasi di FO
+        // (Setup Unit → Lokasi), yang di FO memang disebut cluster dan tampil di Master Unit.
+        // Karena itu tidak ada layar tambah cluster di sini; menambahnya dilakukan di FO.
+        $dipakai = BsGimmickCategory::whereNotNull('cluster_id')->distinct()->pluck('cluster_id');
+
+        // Pilihan = cluster hidup DITAMBAH cluster yang masih dirujuk kategori mana pun.
+        // Tanpa yang kedua, kategori yang menunjuk cluster sudah dipensiunkan akan dibuka
+        // dengan pilihan kosong, dan menyimpannya kembali diam-diam mengubahnya menjadi
+        // "berlaku semua cluster" — kategori itu lalu menyerap GMC dari seluruh cluster.
+        $clusters = Cluster::withTrashed()
+            ->where(fn ($q) => $q->whereNull('deleted_at')->orWhereIn('id', $dipakai))
+            ->orderBy('code')->get(['id', 'code', 'name', 'deleted_at'])
             ->map(fn ($c) => ['id' => $c->id, 'code' => $c->code, 'name' => $c->name,
-                'label' => trim($c->code.' — '.$c->name)]);
+                'nonaktif' => $c->trashed(),
+                'label' => trim($c->code.' — '.$c->name).($c->trashed() ? ' (nonaktif di FO)' : '')]);
+
+        // Cakupan hanya boleh menghitung cluster yang masih hidup: cluster yang sudah
+        // dipensiunkan di FO akan selamanya diteriaki "belum ada kategori" padahal memang
+        // tidak akan pernah ada, dan peringatan yang tidak bisa dituntaskan akan diabaikan
+        // orang — termasuk saat ia akhirnya benar.
+        $clusterHidup = $clusters->reject(fn ($c) => $c['nonaktif'])->values();
 
         // Cakupan kolom Rincian Biaya Master Data KPR — supaya ketahuan kalau ada yang terlewat.
         // SENGAJA lepas dari filter pencarian: kalau dihitung dari daftar yang tersaring, mengetik
@@ -85,7 +110,7 @@ class GimmickCategoryController extends Controller
         $mapped = BsGimmickCategory::whereNotNull('kpr_biaya_key')
             ->orderBy('code')->get(['code', 'kpr_biaya_key', 'sync_kpr', 'cluster_id'])->groupBy('kpr_biaya_key');
         $coverage = collect(BsGimmickCategory::KPR_BIAYA_COLUMNS)
-            ->map(function ($label, $key) use ($mapped, $clusters) {
+            ->map(function ($label, $key) use ($mapped, $clusterHidup) {
                 $isi = collect($mapped->get($key, []));
                 // Cluster yang sudah punya kategori sendiri untuk kolom ini.
                 $terpegang = $isi->pluck('cluster_id')->filter()->unique();
@@ -103,10 +128,10 @@ class GimmickCategoryController extends Controller
                     // Inilah yang membuat kolom terlihat aman padahal satu cluster terlewat:
                     // tanpa rincian ini, satu kategori saja sudah membuat kolomnya hijau.
                     'semua_cluster'  => $adaCadangan,
-                    'cluster_isi'    => $clusters->whereIn('id', $terpegang->all())->pluck('code')->values()->all(),
+                    'cluster_isi'    => $clusterHidup->whereIn('id', $terpegang->all())->pluck('code')->values()->all(),
                     'cluster_kosong' => $adaCadangan || $isi->isEmpty()
                         ? []
-                        : $clusters->whereNotIn('id', $terpegang->all())->pluck('code')->values()->all(),
+                        : $clusterHidup->whereNotIn('id', $terpegang->all())->pluck('code')->values()->all(),
                 ];
             })->values();
 
@@ -164,8 +189,36 @@ class GimmickCategoryController extends Controller
         // untuk semua cluster) juga hanya boleh satu per kode.
         $clusterId = $request->input('cluster_id') ?: null;
 
+        // Cluster yang SEDANG tersimpan pada kategori ini — dipakai memberi kelonggaran pada
+        // validasi di bawah supaya kategori lama tidak terkunci saat Lokasinya dihapus di FO.
+        $clusterTersimpan = $id ? BsGimmickCategory::whereKey($id)->value('cluster_id') : null;
+
         $v = $request->validate([
-            'cluster_id'    => ['nullable', 'integer', 'exists:clusters,id'],
+            // exists:clusters,id yang polos meloloskan cluster milik tenant lain, yang lalu
+            // tampil sebagai "Semua cluster" di daftar padahal cluster_id-nya terisi — dan
+            // posting tidak akan pernah menemukannya lagi, sehingga biayanya jatuh ke kategori
+            // cadangan tanpa satu pun peringatan.
+            //
+            // Cluster yang sudah dipensiunkan ditolak untuk pilihan BARU, tetapi yang SEDANG
+            // tersimpan pada kategori ini tetap diloloskan. Tanpa pengecualian itu, menghapus
+            // satu Lokasi di FO mengunci setiap kategori yang menunjuknya: mengganti namanya
+            // saja pun gagal, karena kolom yang tidak disentuh operator ikut divalidasi.
+            'cluster_id'    => ['nullable', 'integer', function ($attr, $value, $gagal) use ($clusterTersimpan) {
+                if ($value === null) {
+                    return;   // tanpa cluster = berlaku semua cluster, itu sah
+                }
+                // Batas tenant datang dari TenantScope milik model, bukan dari
+                // ->where('tenant_id', tenant_id()): helper itu memulangkan null di luar
+                // konteks request (console, job, webhook), dan filter "tenant_id IS NULL"
+                // menolak SEMUA cluster — layarnya jadi buntu di tempat yang tidak terduga.
+                $sah = Cluster::withTrashed()->whereKey($value)
+                    ->where(fn ($q) => $q->whereNull('deleted_at')
+                        ->when($clusterTersimpan, fn ($w) => $w->orWhere('id', $clusterTersimpan)))
+                    ->exists();
+                if (! $sah) {
+                    $gagal('Cluster yang dipilih tidak ada, atau Lokasinya sudah dihapus di FO.');
+                }
+            }],
             'code'          => ['required', 'string', 'max:40', Rule::unique('bs_gimmick_categories', 'code')
                 ->ignore($id)->where('tenant_id', tenant_id())
                 ->where(fn ($q) => $clusterId === null ? $q->whereNull('cluster_id') : $q->where('cluster_id', $clusterId))],
