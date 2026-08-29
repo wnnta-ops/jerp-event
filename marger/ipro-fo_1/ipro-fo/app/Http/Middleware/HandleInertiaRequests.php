@@ -47,6 +47,11 @@ final class HandleInertiaRequests extends Middleware
                 'warning' => fn () => $request->session()->get('warning'),
                 'info'    => fn () => $request->session()->get('info'),
                 'created' => fn () => $request->session()->get('created'),
+                // Hasil import massal: jumlah baru/diperbarui/dilewati + galat per baris.
+                // Dibawa terpisah dari 'error' karena daftar galatnya bisa puluhan baris —
+                // memampatkannya jadi satu kalimat toast akan menyembunyikan sebagian besarnya,
+                // dan justru baris yang gagal itulah yang perlu dibetulkan operator.
+                'import'  => fn () => $request->session()->get('import'),
             ],
             'config' => [
                 'currency'   => config('domain.currency'),

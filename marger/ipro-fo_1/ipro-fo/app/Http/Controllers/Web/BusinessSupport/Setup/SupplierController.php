@@ -6,8 +6,11 @@ namespace App\Http\Controllers\Web\BusinessSupport\Setup;
 
 use App\Domain\BusinessSupport\Models\BsSupplier;
 use App\Http\Controllers\Controller;
+use App\Support\Import\TabelImpor;
+use App\Support\Xlsx\SimpleXlsx;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -85,6 +88,240 @@ class SupplierController extends Controller
         $supplier->delete();
 
         return back()->with('success', 'Supplier dihapus.');
+    }
+
+    // ── Import massal ────────────────────────────────────────────────────────────────────────
+
+    /**
+     * Kolom template import, urut. Kunci = nama kolom di tabel, nilai = judul di berkas.
+     *
+     * Judulnya dicocokkan sebagai KATA KUNCI, bukan harus persis: berkas yang dikirim orang
+     * lapangan hampir tidak pernah memakai judul yang sama persis, dan menolak seluruh berkas
+     * karena "Telepon" ditulis "No. Telp" membuat fiturnya tidak terpakai.
+     *
+     * @var array<string,array{0:string,1:array<int,string>,2:array<int,string>}>
+     */
+    private const KOLOM = [
+        'code'              => ['Kode', ['KODE', 'CODE'], []],
+        'name'              => ['Nama Supplier', ['NAMA SUPPLIER', 'NAMA VENDOR', 'NAMA', 'SUPPLIER', 'VENDOR'], ['BANK', 'USAHA', 'REKENING', 'KONTAK', 'KODE', 'CODE']],
+        'category'          => ['Kategori', ['KATEGORI', 'CATEGORY', 'JENIS'], []],
+        'contact_person'    => ['Kontak Person', ['KONTAK', 'CONTACT', 'PIC', 'NARAHUBUNG'], []],
+        'phone'             => ['Telepon', ['TELEPON', 'TELP', 'PHONE', 'HP', 'HANDPHONE'], ['2', 'II', 'ALT']],
+        'phone2'            => ['Telepon 2', ['TELEPON 2', 'TELP 2', 'PHONE 2', 'TELEPON ALT'], []],
+        'fax'               => ['Fax', ['FAX', 'FAKS'], []],
+        'email'             => ['Email', ['EMAIL', 'E-MAIL', 'SUREL'], []],
+        'address'           => ['Alamat', ['ALAMAT', 'ADDRESS'], ['TAGIH', 'SURAT', 'IDENTITAS', 'BILLING', 'MAIL']],
+        'city'              => ['Kota', ['KOTA', 'CITY', 'KABUPATEN'], []],
+        'business_name'     => ['Nama Usaha', ['NAMA USAHA', 'BADAN USAHA', 'BUSINESS'], []],
+        'npwp'              => ['NPWP', ['NPWP'], []],
+        'bank_name'         => ['Nama Bank', ['NAMA BANK', 'BANK'], ['REKENING', 'ATAS NAMA', 'NO']],
+        'bank_account_no'   => ['No. Rekening', ['NO REKENING', 'NO. REKENING', 'NOMOR REKENING', 'REKENING', 'ACCOUNT NO'], ['ATAS NAMA', 'NAMA REK']],
+        'bank_account_name' => ['Atas Nama Rekening', ['ATAS NAMA', 'NAMA REKENING', 'PEMILIK REKENING'], []],
+        'is_active'         => ['Status (Aktif/Nonaktif)', ['STATUS', 'AKTIF', 'ACTIVE'], []],
+    ];
+
+    /** Unduh template .xlsx berisi judul kolom + satu baris contoh. */
+    public function importTemplate(Request $request): \Illuminate\Http\Response
+    {
+        abort_unless($request->user()?->canModule('datacenter'), 403);
+
+        $judul  = array_map(fn (array $k) => $k[0], array_values(self::KOLOM));
+        $contoh = [
+            '', 'CV Contoh Sejahtera', 'material', 'Budi', '031-1234567', '0811-2345678', '031-7654321',
+            'kontak@contoh.co.id', 'Jl. Contoh No. 1', 'Surabaya', 'CV Contoh Sejahtera',
+            '1234567890123456', 'BCA', '1234567890', 'CV Contoh Sejahtera', 'Aktif',
+        ];
+        $catatan = array_fill(0, count($judul), '');
+        $catatan[0] = 'CONTOH — hapus baris ini. Kode boleh dikosongkan; sistem membuatkan nomor berurutan.';
+
+        $bin = SimpleXlsx::toString([$judul, $contoh, $catatan]);
+
+        return response($bin, 200, [
+            'Content-Type'        => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            'Content-Disposition' => 'attachment; filename="Template-Import-Supplier.xlsx"',
+        ]);
+    }
+
+    /**
+     * Import massal supplier dari .xlsx / .xls / .csv.
+     *
+     * Baris yang bermasalah DILAPORKAN satu per satu beserta nomor barisnya, tidak dibuang
+     * diam-diam. Import massal yang hanya berkata "120 supplier diproses" atas berkas berisi
+     * 200 baris menyembunyikan 80 kegagalan, dan tak seorang pun akan mencarinya.
+     *
+     * NPWP & data bank TIDAK diwajibkan di sini — berbeda dengan form manualnya. Itu keputusan
+     * sadar: dari 762 supplier yang sudah ada, seluruhnya belum punya data bank dan 308 belum
+     * punya NPWP. Mewajibkannya akan menolak hampir seluruh berkas data lama. Yang datang
+     * belum lengkap tetap dihitung dan disebut jumlahnya di hasil.
+     */
+    public function import(Request $request): RedirectResponse
+    {
+        abort_unless($request->user()?->can('businesssupport.setup.manage'), 403);
+        $request->validate([
+            'file' => ['required', 'file', 'max:8192'],
+            // Bawaannya PERBARUI, bukan lewati: berkas perbaikan data adalah alasan paling
+            // sering orang mengimpor ulang.
+            'mode' => ['nullable', 'in:perbarui,lewati'],
+        ]);
+
+        try {
+            $rows = TabelImpor::baca($request->file('file'));
+        } catch (\Throwable $e) {
+            return back()->with('error', $e->getMessage());
+        }
+        if (count($rows) < 2) {
+            return back()->with('error', 'File kosong atau hanya berisi baris header.');
+        }
+
+        $header = TabelImpor::header(array_shift($rows));
+        $idx = [];
+        $dipakai = [];
+        foreach (self::KOLOM as $field => [$judul, $kunci, $kecuali]) {
+            // Kolom yang sudah diklaim field sebelumnya tidak boleh dipakai lagi — urutan
+            // KOLOM menentukan siapa yang lebih berhak. Kode disebut lebih dulu daripada Nama,
+            // jadi judul "KODE SUPPLIER" menjadi Kode dan tidak lagi tertangkap sebagai Nama.
+            $i = TabelImpor::kolom($header, $kunci, $kecuali, $dipakai);
+            $idx[$field] = $i;
+            if ($i !== null) {
+                $dipakai[$i] = true;
+            }
+        }
+        if ($idx['name'] === null) {
+            return back()->with('error', 'Kolom "Nama Supplier" tidak ditemukan pada baris pertama. Unduh template untuk format yang benar.');
+        }
+
+        $mode = $request->input('mode', 'perbarui');
+
+        // Dimuat SEKALI; mencari per baris akan jadi N query untuk berkas ribuan baris.
+        $adaKode = BsSupplier::withTrashed()->pluck('id', 'code')
+            ->mapWithKeys(fn ($id, $code) => [strtoupper(trim((string) $code)) => $id])->all();
+
+        $baru = 0;
+        $ubah = 0;
+        $lewat = 0;
+        $tanpaBank = 0;
+        $tanpaNpwp = 0;
+        $galat = [];
+        $siap  = [];
+        $kodeDipakai = [];
+
+        foreach ($rows as $n => $r) {
+            $barisNo = $n + 2; // baris 1 = header
+            $get = fn (string $f) => TabelImpor::sel($r, $idx[$f]);
+
+            $nama = $get('name');
+            if ($nama === '') {
+                $galat[] = "Baris {$barisNo}: Nama Supplier kosong.";
+                $lewat++;
+
+                continue;
+            }
+
+            $npwp = preg_replace('/\D/', '', $get('npwp')) ?: null;
+            if ($npwp !== null && strlen($npwp) !== 16) {
+                $galat[] = "Baris {$barisNo}: NPWP '{$get('npwp')}' bukan 16 angka.";
+                $lewat++;
+
+                continue;
+            }
+            $email = $get('email');
+            if ($email !== '' && ! filter_var($email, FILTER_VALIDATE_EMAIL)) {
+                $galat[] = "Baris {$barisNo}: Email '{$email}' tidak valid.";
+                $lewat++;
+
+                continue;
+            }
+
+            $kode = strtoupper($get('code'));
+            if ($kode !== '' && isset($kodeDipakai[$kode])) {
+                $galat[] = "Baris {$barisNo}: kode '{$kode}' muncul dua kali dalam berkas ini.";
+                $lewat++;
+
+                continue;
+            }
+
+            $adaId = $kode !== '' ? ($adaKode[$kode] ?? null) : null;
+            if ($adaId !== null && $mode === 'lewati') {
+                $galat[] = "Baris {$barisNo}: kode '{$kode}' sudah ada — dilewati sesuai pilihan.";
+                $lewat++;
+
+                continue;
+            }
+
+            $data = [
+                'name'              => mb_substr($nama, 0, 150),
+                'category'          => $get('category') ?: null,
+                'contact_person'    => $get('contact_person') ?: null,
+                'phone'             => $get('phone') ?: null,
+                'phone2'            => $get('phone2') ?: null,
+                'fax'               => $get('fax') ?: null,
+                'email'             => $email ?: null,
+                'address'           => $get('address') ?: null,
+                'city'              => $get('city') ?: null,
+                'business_name'     => $get('business_name') ?: null,
+                'npwp'              => $npwp,
+                'bank_name'         => $get('bank_name') ?: null,
+                'bank_account_no'   => $get('bank_account_no') ?: null,
+                'bank_account_name' => $get('bank_account_name') ?: null,
+                'is_active'         => TabelImpor::boolean($get('is_active')) ?? true,
+            ];
+
+            // Kolom yang memang tidak ada di berkas TIDAK ikut menimpa data lama dengan NULL.
+            // Berkas berisi dua kolom (kode + nama) untuk membetulkan ejaan tidak boleh
+            // menghapus NPWP dan rekening yang sudah tersimpan.
+            if ($adaId !== null) {
+                foreach ($data as $f => $v) {
+                    if ($f !== 'name' && $idx[$f] === null) {
+                        unset($data[$f]);
+                    }
+                }
+            }
+
+            if (($data['bank_account_no'] ?? null) === null) {
+                $tanpaBank++;
+            }
+            if ($npwp === null) {
+                $tanpaNpwp++;
+            }
+
+            if ($kode !== '') {
+                $kodeDipakai[$kode] = true;
+            }
+            $siap[] = ['id' => $adaId, 'code' => $kode, 'data' => $data];
+            $adaId !== null ? $ubah++ : $baru++;
+        }
+
+        if ($siap === []) {
+            return back()
+                ->with('error', 'Tidak ada baris yang bisa diimpor.')
+                ->with('import', ['baru' => 0, 'ubah' => 0, 'lewat' => $lewat, 'galat' => $galat]);
+        }
+
+        DB::transaction(function () use ($siap): void {
+            foreach ($siap as $s) {
+                if ($s['id'] !== null) {
+                    BsSupplier::withTrashed()->whereKey($s['id'])->first()?->fill($s['data'])->save();
+
+                    continue;
+                }
+                // Kode dibuat lewat nextCode() yang sama dengan tombol Tambah Supplier, bukan
+                // count()+1: dua petugas mengimpor bersamaan dengan count()+1 akan menghasilkan
+                // kode kembar, dan kolomnya UNIQUE — simpanannya ditolak, bukan diam-diam dobel.
+                BsSupplier::create($s['data'] + ['code' => $s['code'] !== '' ? $s['code'] : $this->nextCode()]);
+            }
+        });
+
+        $pesan = "Import selesai: {$baru} supplier baru, {$ubah} diperbarui".($lewat ? ", {$lewat} dilewati" : '').'.';
+
+        return back()
+            ->with($lewat ? 'warning' : 'success', $pesan)
+            ->with('import', [
+                'baru' => $baru, 'ubah' => $ubah, 'lewat' => $lewat, 'galat' => $galat,
+                'catatan' => array_values(array_filter([
+                    $tanpaBank ? "{$tanpaBank} baris tanpa data rekening bank — form Edit Supplier mewajibkannya, jadi baris itu perlu dilengkapi sebelum bisa disimpan ulang lewat layar." : null,
+                    $tanpaNpwp ? "{$tanpaNpwp} baris tanpa NPWP." : null,
+                ])),
+            ]);
     }
 
     /** @return array<string,mixed> */

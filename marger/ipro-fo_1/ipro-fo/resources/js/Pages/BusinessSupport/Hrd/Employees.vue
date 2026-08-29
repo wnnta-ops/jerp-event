@@ -5,6 +5,13 @@ import { Plus, Pencil, Trash2, ArrowLeft, Users, Search, Banknote } from 'lucide
 import Button from '@/Components/UI/Button.vue';
 import Badge from '@/Components/UI/Badge.vue';
 import EmptyState from '@/Components/UI/EmptyState.vue';
+import ImportMassal from '@/Components/UI/ImportMassal.vue';
+
+// Judul kolom template import — SATU sumber dengan EmployeeController::KOLOM.
+const KOLOM_IMPOR = [
+    'NIK', 'Nama Karyawan', 'Jabatan', 'Departemen', 'Cost Center', 'Tgl Masuk',
+    'Gaji Pokok', 'Tunjangan', 'Nama Bank', 'No. Rekening', 'Status (Aktif/Nonaktif)',
+];
 
 const props = defineProps<{
     employees: any;
@@ -41,6 +48,8 @@ const inputCls = 'h-9 w-full rounded-lg border border-neutral-300 bg-white px-3 
             <h1 class="flex items-center gap-2 text-2xl font-bold"><Users class="h-6 w-6 text-primary-600" /> Employee Center <span class="text-base font-normal text-neutral-400">(HRD)</span></h1>
             <div class="flex gap-2">
                 <Link :href="route('bs.payroll.index')"><Button variant="secondary"><template #icon-left><Banknote class="h-4 w-4" /></template>Payroll</Button></Link>
+                <ImportMassal post-route="bs.employees.import" template-route="bs.employees.import.template" entitas="Karyawan"
+                              :kolom="KOLOM_IMPOR" :wajib="['Nama Karyawan', 'Gaji Pokok']" />
                 <Button @click="openCreate"><template #icon-left><Plus class="h-4 w-4" /></template>Karyawan</Button>
             </div>
         </div>

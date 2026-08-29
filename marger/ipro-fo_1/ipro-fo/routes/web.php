@@ -450,6 +450,8 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
     Route::post('/business-support/setup/suppliers',          [BsSupplierController::class, 'store'])->name('bs.suppliers.store');
     Route::put('/business-support/setup/suppliers/{supplier}',[BsSupplierController::class, 'update'])->name('bs.suppliers.update');
     Route::delete('/business-support/setup/suppliers/{supplier}', [BsSupplierController::class, 'destroy'])->name('bs.suppliers.destroy');
+    Route::get('/business-support/setup/suppliers/import-template', [BsSupplierController::class, 'importTemplate'])->name('bs.suppliers.import.template'); // import massal: unduh format .xlsx
+    Route::post('/business-support/setup/suppliers/import',         [BsSupplierController::class, 'import'])->name('bs.suppliers.import');                 // import massal dari excel/csv
     // Inventory — setup masters (uom/category/warehouse)
     Route::get('/business-support/inventory/setup/{kind}',          [BsInvSetupController::class, 'index'])->name('bs.inv.setup.index');
     Route::post('/business-support/inventory/setup/{kind}',         [BsInvSetupController::class, 'store'])->name('bs.inv.setup.store');
@@ -951,6 +953,8 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
     Route::post('/business-support/employees',                    [BsEmployeeController::class, 'store'])->name('bs.employees.store');
     Route::put('/business-support/employees/{employee}',         [BsEmployeeController::class, 'update'])->name('bs.employees.update');
     Route::delete('/business-support/employees/{employee}',      [BsEmployeeController::class, 'destroy'])->name('bs.employees.destroy');
+    Route::get('/business-support/employees/import-template',    [BsEmployeeController::class, 'importTemplate'])->name('bs.employees.import.template'); // import massal: unduh format .xlsx
+    Route::post('/business-support/employees/import',            [BsEmployeeController::class, 'import'])->name('bs.employees.import');                 // import massal dari excel/csv
     Route::get('/business-support/payroll',                       [BsPayrollController::class, 'index'])->name('bs.payroll.index');
     Route::post('/business-support/payroll',                      [BsPayrollController::class, 'store'])->name('bs.payroll.store');
     Route::get('/business-support/payroll/{payroll}',           [BsPayrollController::class, 'show'])->name('bs.payroll.show');
