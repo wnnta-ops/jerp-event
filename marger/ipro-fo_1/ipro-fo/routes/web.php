@@ -629,6 +629,8 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
     Route::get('/business-support/payable-aging-pdf',         [BsApController::class, 'agingExportPdf'])->name('bs.ap.aging.export-pdf');   // #139
     Route::get('/business-support/payable-aging-excel',       [BsApController::class, 'agingExportExcel'])->name('bs.ap.aging.export-excel'); // #139
     Route::get('/business-support/payable-kartu',             [BsApController::class, 'card'])->name('bs.ap.card');
+    Route::get('/business-support/payable-kartu-excel',       [BsApController::class, 'cardExportExcel'])->name('bs.ap.card.export-excel');
+    Route::get('/business-support/payable-kartu-pdf',         [BsApController::class, 'cardExportPdf'])->name('bs.ap.card.export-pdf');
     Route::get('/business-support/payable-kartu-bayar',       [BsApController::class, 'paymentCard'])->name('bs.ap.payment-card');
     Route::get('/business-support/payable-kartu-bayar-excel', [BsApController::class, 'paymentCardExportExcel'])->name('bs.ap.payment-card.export-excel');
     Route::get('/business-support/payable-kartu-bayar-pdf',   [BsApController::class, 'paymentCardExportPdf'])->name('bs.ap.payment-card.export-pdf');

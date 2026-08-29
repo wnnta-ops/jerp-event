@@ -1038,6 +1038,24 @@ HTML;
     {
         abort_unless($request->user()?->canModule('ap'), 403);
 
+        $d = $this->computeCard($request);
+
+        return Inertia::render('BusinessSupport/Payable/Card', $d);
+    }
+
+    /**
+     * Hitungan Kartu Hutang — SATU sumber untuk layar, Excel, dan PDF.
+     *
+     * Sengaja tidak disalin ke masing-masing ekspor. Kartu Hutang memakai basis NET
+     * (net_payable, setelah PPN & PPh) dengan cutoff s/d date_to, dan angkanya harus sama
+     * persis dengan Aging Hutang. Salinan yang terpisah akan menyimpang perlahan setiap kali
+     * salah satunya disesuaikan — dan berkas ekspor yang berbeda dari layarnya tidak akan
+     * ketahuan sampai ada yang menjumlahkan ulang dengan tangan.
+     *
+     * @return array<string,mixed>
+     */
+    private function computeCard(Request $request): array
+    {
         $view = $request->input('view') === 'summary' ? 'summary' : 'detail';
         $supplierId = $request->integer('supplier_id') ?: null;
         // #138: filter periode — invoice by invoice_date, pembayaran by payment_date.
@@ -1104,7 +1122,7 @@ HTML;
 
         $closing = $entries->isNotEmpty() ? (float) $entries->last()['balance'] : $openingBalance;
 
-        return Inertia::render('BusinessSupport/Payable/Card', [
+        return [
             'view'           => $view,
             'suppliers'      => BsSupplier::orderBy('name')->get(['id', 'code', 'name']),
             'supplierId'     => $supplierId,
@@ -1114,7 +1132,127 @@ HTML;
             'openingBalance' => round((float) $openingBalance, 2),
             'summary'        => $summary,
             'outstanding'    => round((float) $closing, 2), // = Saldo Akhir Detail (sinkron dgn Outstanding Summary)
-        ]);
+        ];
+    }
+
+    /**
+     * Kartu Hutang → Excel.
+     *
+     * Memakai computeCard() yang SAMA dengan layarnya, jadi angkanya tidak mungkin berbeda.
+     */
+    public function cardExportExcel(Request $request): \Illuminate\Http\Response
+    {
+        abort_unless($request->user()?->canModule('ap'), 403);
+
+        $d   = $this->computeCard($request);
+        $sup = $d['supplierId'] ? $d['suppliers']->firstWhere('id', $d['supplierId']) : null;
+
+        $e  = fn ($s) => htmlspecialchars((string) $s, ENT_QUOTES, 'UTF-8');
+        $rp = fn ($n) => number_format((float) $n, 0, ',', '.');
+        // Kolom identitas dipaksa jadi TEKS: tanpa ini Excel membaca "AP/2608/0012" sebagai
+        // tanggal atau memangkas nol di depannya.
+        $t = fn ($v) => '<td style="mso-number-format:\'\@\'">'.$e($v).'</td>';
+
+        $periode = ($d['dateFrom'] ? $e($d['dateFrom']).' s/d ' : 'sampai ').$e($d['dateTo'] ?: now()->toDateString());
+        $judul   = $sup ? $e($sup->code.' — '.$sup->name) : 'SEMUA SUPPLIER';
+
+        $h = '<table border="1">'
+            .'<tr><td colspan="6" style="font-weight:bold">KARTU HUTANG — '.$judul.'</td></tr>'
+            .'<tr><td colspan="6">Periode: '.$periode.'</td></tr>'
+            .'<tr><td colspan="6">Tagihan &amp; Bayar ditampilkan NET (setelah PPN &amp; PPh).</td></tr>'
+            .'<tr><td colspan="6"></td></tr>';
+
+        if ($d['view'] === 'summary') {
+            $h .= '<tr style="background:#b91c1c;color:#fff"><th>No</th><th>Supplier</th><th>Tertagih</th><th>Terbayar</th><th>Outstanding</th><th></th></tr>';
+            $no = 0;
+            foreach ($d['summary'] as $r) {
+                $no++;
+                $h .= '<tr>'.$t($no).$t($r['name']).'<td>'.$rp($r['invoiced']).'</td><td>'.$rp($r['paid']).'</td><td>'.$rp($r['outstanding']).'</td><td></td></tr>';
+            }
+            $h .= '<tr style="font-weight:bold;background:#e2e8f0"><td colspan="4">TOTAL OUTSTANDING</td><td>'
+                .$rp(collect($d['summary'])->sum('outstanding')).'</td><td></td></tr>';
+        } else {
+            $h .= '<tr style="background:#b91c1c;color:#fff"><th>Tanggal</th><th>Referensi</th><th>Keterangan</th><th>Bayar</th><th>Tagihan</th><th>Saldo</th></tr>'
+                .'<tr>'.$t('').$t('').$t('Saldo Awal').'<td></td><td></td><td>'.$rp($d['openingBalance']).'</td></tr>';
+            foreach ($d['entries'] as $r) {
+                $h .= '<tr>'.$t($r['date']).$t($r['ref']).$t($r['desc'])
+                    .'<td>'.($r['debit'] > 0 ? $rp($r['debit']) : '').'</td>'
+                    .'<td>'.($r['credit'] > 0 ? $rp($r['credit']) : '').'</td>'
+                    .'<td>'.$rp($r['balance']).'</td></tr>';
+            }
+            $h .= '<tr style="font-weight:bold;background:#e2e8f0"><td colspan="3">SALDO HUTANG</td>'
+                .'<td>'.$rp(collect($d['entries'])->sum('debit')).'</td>'
+                .'<td>'.$rp(collect($d['entries'])->sum('credit')).'</td>'
+                .'<td>'.$rp($d['outstanding']).'</td></tr>';
+        }
+        $h .= '</table>';
+
+        $file = 'Kartu-Hutang-'.($sup ? preg_replace('/[^A-Za-z0-9]+/', '-', (string) $sup->code).'-' : '').now()->format('Ymd-His').'.xls';
+
+        return response('<html xmlns:x="urn:schemas-microsoft-com:office:excel"><head><meta charset="utf-8"></head><body>'.$h.'</body></html>')
+            ->header('Content-Type', 'application/vnd.ms-excel; charset=UTF-8')
+            ->header('Content-Disposition', 'attachment; filename="'.$file.'"');
+    }
+
+    /** Kartu Hutang → HTML siap-cetak (PDF), auto-print. Pola sama dengan Aging Hutang. */
+    public function cardExportPdf(Request $request): \Illuminate\Http\Response
+    {
+        abort_unless($request->user()?->canModule('ap'), 403);
+
+        $d   = $this->computeCard($request);
+        $sup = $d['supplierId'] ? $d['suppliers']->firstWhere('id', $d['supplierId']) : null;
+
+        $e   = fn ($s) => htmlspecialchars((string) $s, ENT_QUOTES, 'UTF-8');
+        $rp  = fn ($n) => number_format((float) $n, 0, ',', '.');
+        $co  = (string) config('business_support.company.name', 'PT. Mitra Usaha Propertindo');
+        $now = now()->translatedFormat('d F Y H:i');
+        $periode = ($d['dateFrom'] ? $e($d['dateFrom']).' s/d ' : 'sampai ').$e($d['dateTo'] ?: now()->toDateString());
+        $judul   = $sup ? $e($sup->code.' — '.$sup->name) : 'Semua Supplier';
+
+        if ($d['view'] === 'summary') {
+            $baris = '';
+            foreach ($d['summary'] as $r) {
+                $baris .= '<tr><td>'.$e($r['name']).'</td><td class="r">'.$rp($r['invoiced']).'</td><td class="r">'.$rp($r['paid']).'</td><td class="r">'.$rp($r['outstanding']).'</td></tr>';
+            }
+            if ($baris === '') {
+                $baris = '<tr><td colspan="4" class="muted" style="text-align:center">Tidak ada hutang outstanding.</td></tr>';
+            }
+            $tabel = '<table><thead><tr><th>Supplier</th><th class="r">Tertagih</th><th class="r">Terbayar</th><th class="r">Outstanding</th></tr></thead>'
+                .'<tbody>'.$baris.'</tbody>'
+                .'<tfoot><tr class="tot"><td>TOTAL</td><td class="r"></td><td class="r"></td><td class="r">'.$rp(collect($d['summary'])->sum('outstanding')).'</td></tr></tfoot></table>';
+        } else {
+            $baris = '<tr><td></td><td></td><td>Saldo Awal</td><td class="r"></td><td class="r"></td><td class="r">'.$rp($d['openingBalance']).'</td></tr>';
+            foreach ($d['entries'] as $r) {
+                $baris .= '<tr><td>'.$e($r['date']).'</td><td>'.$e($r['ref']).'</td><td>'.$e($r['desc']).'</td>'
+                    .'<td class="r">'.($r['debit'] > 0 ? $rp($r['debit']) : '').'</td>'
+                    .'<td class="r">'.($r['credit'] > 0 ? $rp($r['credit']) : '').'</td>'
+                    .'<td class="r">'.$rp($r['balance']).'</td></tr>';
+            }
+            $tabel = '<table><thead><tr><th>Tanggal</th><th>Referensi</th><th>Keterangan</th><th class="r">Bayar</th><th class="r">Tagihan</th><th class="r">Saldo</th></tr></thead>'
+                .'<tbody>'.$baris.'</tbody>'
+                .'<tfoot><tr class="tot"><td colspan="3">SALDO HUTANG</td>'
+                .'<td class="r">'.$rp(collect($d['entries'])->sum('debit')).'</td>'
+                .'<td class="r">'.$rp(collect($d['entries'])->sum('credit')).'</td>'
+                .'<td class="r">'.$rp($d['outstanding']).'</td></tr></tfoot></table>';
+        }
+
+        $html = '<!DOCTYPE html><html lang="id"><head><meta charset="utf-8"><title>Kartu Hutang</title><style>
+            @page{size:A4;margin:14mm}*{box-sizing:border-box}body{font-family:"Segoe UI",Arial,sans-serif;font-size:11px;color:#1f2937;margin:0}
+            h1{font-size:16px;margin:0 0 2px;color:#b91c1c}h3{font-size:12px;margin:14px 0 4px;color:#991b1b}
+            .head{border-bottom:2px solid #b91c1c;padding-bottom:8px;margin-bottom:12px;display:flex;justify-content:space-between;align-items:flex-start}
+            .muted{color:#6b7280;font-size:10px}table{border-collapse:collapse;width:100%;margin:4px 0;font-size:10px}
+            th,td{border:1px solid #cbd5e1;padding:4px 6px;text-align:left}.r{text-align:right;font-variant-numeric:tabular-nums}
+            thead th{background:#f1f5f9}.tot{font-weight:bold;background:#e2e8f0}
+            @media print{.noprint{display:none}}</style></head><body>
+            <div class="head"><div><h1>KARTU HUTANG</h1><div class="muted">'.$e($co).'</div></div>
+            <div class="muted" style="text-align:right">Periode: '.$periode.'<br>Cetak: '.$e($now).'</div></div>
+            <h3>'.$judul.'</h3>
+            <div class="muted">Tagihan &amp; Bayar ditampilkan NET (setelah PPN &amp; PPh); basis &amp; cutoff sama dengan Aging Hutang.</div>
+            '.$tabel.'
+            <button class="noprint" onclick="window.print()" style="margin-top:14px;padding:6px 14px">Cetak</button>
+            <script>window.onload=function(){setTimeout(function(){window.print()},300)}</script></body></html>';
+
+        return response($html)->header('Content-Type', 'text/html; charset=UTF-8');
     }
 
     /** Kartu Pembayaran Hutang — riwayat pembayaran (BsApPayment) per supplier. */
