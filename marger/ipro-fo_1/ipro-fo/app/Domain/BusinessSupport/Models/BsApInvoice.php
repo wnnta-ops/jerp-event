@@ -33,7 +33,18 @@ class BsApInvoice extends Model
 
     public const TRX_TYPES = ['normal' => 'Normal', 'denda' => 'Realisasi Denda', 'saldo_awal' => 'Saldo Awal'];
 
-    public function supplier(): BelongsTo { return $this->belongsTo(BsSupplier::class, 'supplier_id'); }
+    /**
+     * Supplier pemilik hutang ini — TERMASUK yang sudah dihapus (soft delete).
+     *
+     * Tanpa withTrashed(), menghapus supplier membuat relasi ini memulangkan null dan seluruh
+     * hutangnya berkumpul di baris "—" pada Aging Hutang: satu angka gelondongan milik siapa
+     * pun yang supplier-nya hilang, tidak bisa ditagih dan tidak bisa ditelusuri. Id-nya masih
+     * tersimpan rapi; yang hilang hanya namanya, dan itu tidak perlu terjadi.
+     *
+     * Menghapus supplier yang masih memegang hutang kini DITOLAK (SupplierController::destroy),
+     * jadi ini menangani data yang sudah terlanjur terhapus sebelum larangan itu ada.
+     */
+    public function supplier(): BelongsTo { return $this->belongsTo(BsSupplier::class, 'supplier_id')->withTrashed(); }
     public function category(): BelongsTo { return $this->belongsTo(BsApCategory::class, 'category_id'); }
     public function unit(): BelongsTo { return $this->belongsTo(\App\Domain\Master\Unit\Models\Unit::class, 'unit_id'); }
     public function customer(): BelongsTo { return $this->belongsTo(\App\Domain\Master\Customer\Models\Customer::class, 'customer_id'); }

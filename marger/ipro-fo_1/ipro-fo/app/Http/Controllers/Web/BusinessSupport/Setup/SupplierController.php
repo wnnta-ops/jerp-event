@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Web\BusinessSupport\Setup;
 
+use App\Domain\BusinessSupport\Models\BsApInvoice;
 use App\Domain\BusinessSupport\Models\BsSupplier;
 use App\Http\Controllers\Controller;
 use App\Support\Import\TabelImpor;
@@ -82,9 +83,32 @@ class SupplierController extends Controller
         return back()->with('success', 'Supplier diperbarui.');
     }
 
+    /**
+     * Hapus supplier — DITOLAK bila ia masih memegang hutang.
+     *
+     * Menghapus supplier tidak menghapus invoicenya; yang terjadi hanyalah relasinya
+     * memulangkan null, sehingga hutang itu muncul di Aging Hutang sebagai baris "—".
+     * Baris itu menggabungkan hutang milik SIAPA PUN yang supplier-nya hilang jadi satu
+     * angka gelondongan: tidak bisa ditagih, dan tidak ada yang tahu itu milik siapa.
+     * Kesalahannya ditolak di sini, bukan muncul sebagai baris tanpa nama berbulan kemudian.
+     */
     public function destroy(Request $request, BsSupplier $supplier): RedirectResponse
     {
         abort_unless($request->user()?->can('businesssupport.setup.manage'), 403);
+
+        // Termasuk invoice yang sudah lunas: namanya tetap dibutuhkan riwayat Kartu Hutang,
+        // dan foreign key di basis data juga menolak penghapusan permanennya.
+        $jml = BsApInvoice::withTrashed()->where('supplier_id', $supplier->id)->count();
+        if ($jml > 0) {
+            $belum = BsApInvoice::where('supplier_id', $supplier->id)
+                ->whereColumn('paid_amount', '<', 'total')->count();
+
+            return back()->with('error',
+                "Supplier {$supplier->code} tidak bisa dihapus — masih tertaut {$jml} invoice hutang"
+                .($belum > 0 ? " ({$belum} di antaranya belum lunas)" : '')
+                .'. Nonaktifkan saja lewat Edit bila tidak dipakai lagi; menghapusnya akan membuat hutang itu kehilangan nama pemiliknya di Aging Hutang.');
+        }
+
         $supplier->delete();
 
         return back()->with('success', 'Supplier dihapus.');

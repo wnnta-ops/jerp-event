@@ -877,6 +877,32 @@ HTML;
      *
      * @return array{0:array<int,array<string,mixed>>,1:array<string,float>,2:array<int,array<string,mixed>>,3:\Illuminate\Support\Carbon,4:?string}
      */
+    /**
+     * Nama supplier untuk laporan hutang — tidak pernah kosong.
+     *
+     * Sejak migrasi 2026_08_29_100000, supplier_id WAJIB terisi dan ber-foreign key, dan
+     * relasinya memuat supplier yang sudah dihapus sekalipun. Jadi nama kosong seharusnya
+     * mustahil. Kalau toh terjadi, id-nya DISEBUT — bukan diganti "—" yang membuat hutang
+     * milik banyak pihak menyatu jadi satu baris tak bernama yang tidak bisa ditelusuri.
+     */
+    private function namaSupplier(?object $inv): string
+    {
+        $s = $inv?->supplier;
+        if ($s === null) {
+            return $inv?->supplier_id ? 'Supplier #'.$inv->supplier_id.' (tidak ditemukan)' : 'TANPA SUPPLIER';
+        }
+        // Supplier terhapus tetap disebut namanya, dengan penanda supaya jelas kenapa ia
+        // tidak muncul lagi di daftar pilihan.
+        //
+        // deleted_at dibaca lewat getAttributes(), BUKAN $s->deleted_at: aplikasi ini berjalan
+        // dengan mode atribut ketat, sehingga membaca kolom yang tidak ikut ter-select melempar
+        // exception dan MENJATUHKAN SELURUH layar Aging. Satu eager-load yang lupa menyebut
+        // deleted_at tidak boleh berakibat sebesar itu — di sini ia cukup kehilangan penandanya.
+        $terhapus = ($s->getAttributes()['deleted_at'] ?? null) !== null;
+
+        return $terhapus ? $s->name.' (dihapus)' : (string) $s->name;
+    }
+
     private function computeAging(?string $dateTo = null, ?string $dateFrom = null): array
     {
         $asOf  = $dateTo ? \Illuminate\Support\Carbon::parse($dateTo)->startOfDay() : now()->startOfDay();
@@ -890,7 +916,7 @@ HTML;
         // (setelah PPN & PPh) − Σ(pembayaran s/d tanggal acuan). TANPA filter status (status = kondisi
         // KINI, bukan posisi per-tanggal) → angka per-supplier sama persis dgn Saldo Hutang Kartu.
         $asOfStr = $asOf->toDateString();
-        BsApInvoice::with(['supplier:id,code,name', 'payments' => fn ($q) => $q->whereDate('payment_date', '<=', $asOfStr)])
+        BsApInvoice::with(['supplier:id,code,name,deleted_at', 'payments' => fn ($q) => $q->whereDate('payment_date', '<=', $asOfStr)])
             ->when($from, fn ($q, $v) => $q->whereDate('invoice_date', '>=', $v))
             ->whereDate('invoice_date', '<=', $asOfStr)
             ->get()->each(function ($inv) use (&$rows, &$details, &$totals, $asOf, $bucketLabel): void {
@@ -904,14 +930,14 @@ HTML;
                 $bucket  = $overdue <= 0 ? 'current' : ($overdue <= 30 ? 'd30' : ($overdue <= 60 ? 'd60' : ($overdue <= 90 ? 'd90' : 'd90p')));
 
                 $key = $inv->supplier_id;
-                $rows[$key] ??= ['name' => $inv->supplier?->name ?? '—', 'current' => 0, 'd30' => 0, 'd60' => 0, 'd90' => 0, 'd90p' => 0, 'total' => 0];
+                $rows[$key] ??= ['name' => $this->namaSupplier($inv), 'current' => 0, 'd30' => 0, 'd60' => 0, 'd90' => 0, 'd90p' => 0, 'total' => 0];
                 $rows[$key][$bucket] += $out;
                 $rows[$key]['total'] += $out;
                 $totals[$bucket]     += $out;
                 $totals['total']     += $out;
 
                 $details[] = [
-                    'supplier'    => $inv->supplier?->name ?? '—',
+                    'supplier'    => $this->namaSupplier($inv),
                     'invoice_no'  => $inv->invoice_number,
                     'due_date'    => $ref?->toDateString(),
                     'overdue'     => $overdue,
@@ -1057,7 +1083,7 @@ HTML;
         // Summary: rekap per supplier dgn basis & cutoff IDENTIK dengan Detail → Outstanding == Saldo Hutang.
         $summary = collect();
         if ($view === 'summary') {
-            $invs = BsApInvoice::with(['supplier:id,code,name', 'payments' => fn ($q) => $q->when($dateTo, fn ($w, $v) => $w->whereDate('payment_date', '<=', $v))])
+            $invs = BsApInvoice::with(['supplier:id,code,name,deleted_at', 'payments' => fn ($q) => $q->when($dateTo, fn ($w, $v) => $w->whereDate('payment_date', '<=', $v))])
                 ->when($supplierId, fn ($q, $v) => $q->where('supplier_id', $v))
                 ->when($dateTo, fn ($q, $v) => $q->whereDate('invoice_date', '<=', $v))
                 ->get();
@@ -1066,7 +1092,7 @@ HTML;
                     $tertagih = round((float) $g->sum(fn ($i) => (float) $i->payable_amount), 2);          // NET tagihan
                     $terbayar = round((float) $g->sum(fn ($i) => (float) $i->payments->sum('amount')), 2); // NET dibayar s/d date_to
                     return [
-                        'name'        => $g->first()->supplier?->name ?? '—',
+                        'name'        => $this->namaSupplier($g->first()),
                         'invoiced'    => $tertagih,
                         'paid'        => $terbayar,
                         'outstanding' => round($tertagih - $terbayar, 2),
