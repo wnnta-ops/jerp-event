@@ -201,8 +201,8 @@ class DashboardController extends Controller
             'progress'     => $this->chartProgressLapangan($p), // 12
             'retensi'      => $this->chartSummaryRetensi($p),   // 13
             'bast_ajb_br'  => $this->chartBastAjbBooked($p),    // 14–16
-            'piutang'      => $this->chartRekonsiliasiPiutang(), // 17 — tanpa dimensi waktu
-            'hpp'          => $this->chartSummaryHpp(),         // 18 — tanpa dimensi waktu
+            'piutang'      => $this->chartRekonsiliasiPiutang($p), // 17
+            'hpp'          => $this->chartSummaryHpp($p),         // 18
         ];
     }
 
@@ -238,7 +238,7 @@ class DashboardController extends Controller
      *
      * @return array{rows: array<int, array{n: string, a: float, b: float}>, keys: array<int, array{k: string, n: string, c: int}>}
      */
-    private function chartRekonsiliasiPiutang(): array
+    private function chartRekonsiliasiPiutang(array $p): array
     {
         $keys = [
             ['k' => 'a', 'n' => 'Terbayar',     'c' => 2],
@@ -286,6 +286,17 @@ class DashboardController extends Controller
             ->when(Schema::hasColumn($t, 'deleted_at'), fn ($w) => $w->whereNull('i.deleted_at'))
             ->groupBy('i.booking_id');
 
+        // Kartu POSISI: hanya faktur yang sudah terbit sampai tanggal akhir periode.
+        //
+        // BATAS YANG PERLU DIKETAHUI: paid_amount adalah kolom berjalan, bukan catatan
+        // bertanggal, jadi "Terbayar" di sini adalah pembayaran SAMPAI HARI INI atas faktur
+        // yang terbit sampai tanggal akhir — bukan posisi pembayaran pada tanggal itu.
+        // Memakai bs_ar_payments memang bisa dipotong per tanggal, tetapi pelunasan juga
+        // masuk lewat kuitansi & memorial yang tidak menulis baris di sana (lihat catatan di
+        // atas), sehingga hasilnya justru melaporkan sisa piutang lebih besar dari kenyataan.
+        // Dari dua ketidaksempurnaan, yang dipilih adalah yang tidak mengarang angka.
+        $this->sampaiPeriode($perBooking, 'invoice_date', $p, $t, 'i');
+
         // UM yang terpakai dibatasi sebesar sisa tagihannya (LEAST): kelebihan uang muka
         // bukan "terbayar", dan tidak boleh membuat sisa piutang jadi minus.
         $sisa     = 'SUM(GREATEST(f.sisa_bk - COALESCE(um.dipakai, 0), 0))';
@@ -318,6 +329,10 @@ class DashboardController extends Controller
                     fn ($w) => $w->whereNull('deleted_at')
                 )
                 ->groupBy('booking_id');
+            // Kompensasi yang terjadi SETELAH tanggal akhir belum boleh mengurangi sisa
+            // piutang pada tanggal itu — kalau ikut, kartunya melaporkan piutang sudah
+            // tertutup padahal pada tanggal yang diminta belum.
+            $this->sampaiPeriode($umPerBooking, 'compensated_at', $p, 'bs_ar_um_compensations');
             $q->leftJoinSub($umPerBooking, 'um', fn ($j) => $j->on('um.booking_id', '=', 'f.booking_id'));
         }
 
@@ -378,7 +393,7 @@ class DashboardController extends Controller
      *
      * @return array{rows: array<int, array{n: string, a: float, b: float, c: float}>, keys: array<int, array{k: string, n: string, c: int}>}
      */
-    private function chartSummaryHpp(): array
+    private function chartSummaryHpp(array $p): array
     {
         $keys = [
             ['k' => 'a', 'n' => 'Tanah',      'c' => 0],
@@ -443,6 +458,20 @@ class DashboardController extends Controller
         $berperingkat = DB::table($t)
             ->selectRaw("id, ROW_NUMBER() OVER (PARTITION BY unit_id ORDER BY {$urut}) AS rn")
             ->when(Schema::hasColumn($t, 'deleted_at'), fn ($w) => $w->whereNull('deleted_at'));
+
+        // ── MENGIKUTI PERIODE ───────────────────────────────────────────────────────────
+        // Tabelnya sudah bergrain (unit_id, period_year, period_month), jadi periodenya tidak
+        // perlu kolom tanggal baru: yang diambil adalah HPP terakhir per unit SAMPAI masa
+        // akhir periode. Memilih periode lampau kini menunjukkan HPP sebagaimana tercatat
+        // saat itu, bukan HPP terbaru hari ini — dan unit yang HPP-nya baru di-generate
+        // setelah periode itu memang belum muncul, sebagaimana mestinya.
+        //
+        // Perbandingannya (tahun*12 + bulan) supaya batas tahunnya benar; membandingkan tahun
+        // dan bulan secara terpisah akan ikut membawa Desember tahun berikutnya.
+        if ($punyaPeriode) {
+            $batas = ((int) $p['akhir']->year) * 12 + (int) $p['akhir']->month;
+            $berperingkat->whereRaw('(period_year * 12 + period_month) <= ?', [$batas]);
+        }
 
         $terakhir = DB::query()->fromSub($berperingkat, 'r')->select('r.id')->where('r.rn', 1);
 
@@ -1492,7 +1521,7 @@ class DashboardController extends Controller
             return ['rows' => []];
         }
 
-        $real = $this->realisasiPerCostCenter($year, $baris->pluck('cc_id')->all());
+        $real = $this->realisasiPerCostCenter($year, $baris->pluck('cc_id')->all(), (int) $p['akhir']->month);
 
         $rows = [];
         foreach ($baris as $r) {
@@ -1513,7 +1542,10 @@ class DashboardController extends Controller
      * @param  array<int, int|string>  $ccIds
      * @return array<int, float>
      */
-    private function realisasiPerCostCenter(int $year, array $ccIds): array
+    /**
+     * @param  int  $sampaiBulan  bulan terakhir yang ikut dihitung (1–12).
+     */
+    private function realisasiPerCostCenter(int $year, array $ccIds, int $sampaiBulan = 12): array
     {
         // Penjagaan kolom lengkap — sengaja disebut satu per satu supaya kolom yang belum ada di
         // lingkungan tertentu berujung pada struktur kosong, bukan QueryException.
@@ -1565,6 +1597,18 @@ class DashboardController extends Controller
             })
             ->where('j.period_year', $year)
             ->groupBy('b.cost_center_id')
+            // Realisasi dipotong pada BULAN AKHIR periode, bukan setahun penuh: memilih
+            // periode s/d Maret lalu membandingkannya dengan realisasi Desember membuat
+            // "Sisa" tampak jauh lebih kecil daripada keadaan pada tanggal yang diminta.
+            //
+            // Batas bawahnya sengaja TIDAK dipasang. Plafon anggaran bersifat tahunan, jadi
+            // sisanya hanya bermakna terhadap realisasi sejak awal tahun; memotong dari
+            // tanggal awal periode akan menghasilkan "Sisa" yang lebih besar daripada yang
+            // sebenarnya tersedia — angka yang terlihat wajar dan menyesatkan.
+            ->when(
+                $sampaiBulan < 12 && Schema::hasColumn('bs_journals', 'period_month'),
+                fn ($w) => $w->where('j.period_month', '<=', $sampaiBulan)
+            )
             ->select('b.cost_center_id as cc_id')
             // Akun bersaldo normal kredit dibalik tandanya supaya pemakaian anggaran selalu positif.
             ->selectRaw('COALESCE(SUM(CASE WHEN a.type IN (?, ?, ?) THEN jl.credit - jl.debit ELSE jl.debit - jl.credit END), 0) as v', ['liability', 'equity', 'income']);
@@ -1748,12 +1792,27 @@ class DashboardController extends Controller
             : null;
 
         // Populasi unit: gabungan unit yang dialokasikan dan unit yang punya catatan progres.
+        //
+        // POPULASINYA IKUT DIPOTONG PERIODE. Tanpa itu, unit dari SPK yang baru terbit tahun
+        // 2026 tetap muncul saat operator memilih periode 2019 — semuanya jatuh ke ember
+        // "Tanah Matang" karena progresnya belum ada, sehingga kartunya menampilkan angka
+        // yang sama persis untuk periode mana pun dan terlihat seolah memang begitu keadaannya.
+        // Unit hanya "ada" sejak SPK yang menggarapnya terbit.
         $populasi = null;
         if ($adaAlokasi) {
-            $populasi = DB::table('bs_work_order_units')->select('unit_id')->distinct();
+            $populasi = DB::table('bs_work_order_units as wu')->select('wu.unit_id')->distinct();
+            if (Schema::hasTable('bs_work_orders') && Schema::hasColumn('bs_work_orders', 'spk_date')) {
+                $populasi->join('bs_work_orders as wo', 'wo.id', '=', 'wu.work_order_id');
+                $this->sampaiPeriode($populasi, 'spk_date', $p, 'bs_work_orders', 'wo');
+                if (Schema::hasColumn('bs_work_orders', 'deleted_at')) {
+                    $populasi->whereNull('wo.deleted_at');
+                }
+            }
         }
         if ($adaProgres) {
-            $dariProgres = DB::table('bs_work_order_progress_units')->select('unit_id')->distinct();
+            $dariProgres = DB::table('bs_work_order_progress_units as pgu')->select('pgu.unit_id')->distinct()
+                ->join('bs_work_order_progress as pg', 'pg.id', '=', 'pgu.progress_id');
+            $this->sampaiPeriode($dariProgres, 'progress_date', $p, 'bs_work_order_progress', 'pg');
             $populasi = $populasi ? $populasi->union($dariProgres) : $dariProgres;
         }
         if (! $populasi) {

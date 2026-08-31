@@ -228,13 +228,15 @@ function fmtDateTime(iso: string | null | undefined): string {
             </div>
         </div>
 
-        <!-- Cara periode dibaca tiap kartu SENGAJA dikatakan: dua kartu memang tidak bisa
-             mengikutinya, dan diam soal itu akan membuat angkanya disangka sudah tersaring. -->
+        <!-- Cara periode dibaca tiap kartu SENGAJA dikatakan. Ke-18 kartu kini mengikutinya,
+             tetapi CARANYA berbeda menurut sifat angkanya — dan diam soal itu akan membuat
+             kartu posisi disangka menghitung kejadian di dalam rentang. -->
         <div class="-mt-1 text-[11.5px] leading-relaxed text-neutral-400">
             <span class="font-medium text-neutral-500 dark:text-neutral-400">{{ periode.label }}</span>
-            — kartu <b>aliran</b> (corong KPR, penolakan, bon, laba rugi, SPK, serah terima, retensi) menghitung kejadian di dalam rentang;
-            kartu <b>posisi</b> (saldo rekening, aging, neraca, aset tetap, progres) memotret keadaan per <b>{{ periode.akhir }}</b>.
-            Rekonsiliasi Piutang &amp; Summary HPP tidak mengikuti periode — keduanya menyatakan keadaan berjalan, bukan kejadian.
+            — <b>seluruh 18 kartu mengikuti periode</b>, dengan cara yang sesuai sifat angkanya:
+            kartu <b>aliran</b> (corong KPR, penolakan, bon, laba rugi, SPK, serah terima, retensi) menghitung kejadian di dalam rentang;
+            kartu <b>posisi</b> (saldo rekening, aging, neraca, aset tetap, progres, rekonsiliasi piutang, HPP) memotret keadaan per <b>{{ periode.akhir }}</b>.
+            Realisasi Budget dibandingkan dengan plafon <b>tahunan</b>, jadi realisasinya dihitung sejak awal tahun s/d <b>{{ periode.akhir }}</b>.
             <span v-if="periode.dipotong" class="font-medium text-amber-600 dark:text-amber-400">
                 Rentangnya lebih panjang daripada {{ periode.maks_bulan }} bulan, jadi grafik bulanan menampilkan {{ periode.maks_bulan }} bulan terakhirnya saja.
             </span>
