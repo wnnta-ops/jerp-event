@@ -14,17 +14,23 @@ use App\Domain\BusinessSupport\Models\BsEmployee;
  *   · di BAWAH  → satu halaman "KAS BON";
  *   · MULAI dari 1 juta → dua halaman: "BUKTI PERMOHONAN PEMBAYARAN" + "MEMO INTERNAL".
  *
- * Ambang ini SAMA dengan yang sudah dipakai rantai persetujuan bon ("Nominal ≤ Rp 1 juta →
- * tanpa Moch Winarto & Boy Arifin"), jadi formulir yang tercetak selalu sejalan dengan
- * siapa yang tanda tangan — bukan dua aturan berbeda untuk satu dokumen yang sama.
+ * Ambang ini MENGACU ke konstanta rantai persetujuan bon (BsCashAdvance::APPROVAL_THRESHOLD),
+ * jadi formulir yang tercetak selalu sejalan dengan siapa yang tanda tangan — bukan dua
+ * aturan berbeda untuk satu dokumen yang sama.
  *
- * Tepat Rp 1.000.000 memakai formulir BESAR. Batas dinyatakan sekali sebagai konstanta,
- * supaya tidak ada dua tempat yang bisa berbeda pendapat soal "di atas 1 juta".
+ * Nominal TEPAT Rp 1.000.000 memakai formulir BESAR dan 9 jenjang persetujuan.
  */
 final class PengajuanKasbonPrinter
 {
-    /** Nominal mulai dari angka ini memakai BPP + Memo Internal. */
-    public const AMBANG_BESAR = 1_000_000;
+    /**
+     * Nominal mulai dari angka ini memakai BPP + Memo Internal.
+     *
+     * MENGACU ke ambang rantai persetujuan, bukan angka tersendiri: formulir yang tercetak
+     * harus selalu sejalan dengan siapa yang tanda tangan. Dua konstanta terpisah pernah
+     * membuat keduanya berbeda pendapat soal nominal TEPAT 1 juta — formulirnya besar
+     * (9 kotak tanda tangan) sementara rantai persetujuannya hanya meminta 7 orang.
+     */
+    public const AMBANG_BESAR = BsCashAdvance::APPROVAL_THRESHOLD;
 
     public function render(BsCashAdvance $advance): string
     {
@@ -88,6 +94,10 @@ final class PengajuanKasbonPrinter
             .'.kotak{display:inline-block;width:11px;height:11px;border:1px solid #000;margin-right:5px;vertical-align:-1px}'
             .'.ttd{margin-top:26px;width:100%}.ttd td{border:0;text-align:center;font-size:11px;vertical-align:top}'
             .'.ttd .ruang{height:62px}'
+            .'.kop td{border:0;vertical-align:middle;padding:0 0 0 8px}'
+            .'.kop td:first-child{padding-left:0}'
+            .'.logo{width:56px;height:56px;object-fit:contain;display:block}'
+            .'hr.garis{border:0;border-top:1.5px solid #000;margin:6px 0 10px}'
             .'.cap{font-size:10px;text-align:right;color:#000}'
             .'.hal{page-break-after:always}'
             .'@page{size:A4 portrait;margin:12mm}'
@@ -109,12 +119,35 @@ final class PengajuanKasbonPrinter
         return '<td><div>'.$this->e($atas).'</div><div class="ruang"></div><div>'.$this->e($bawah).'</div></td>';
     }
 
+    /**
+     * Kop berlogo — dipakai KETIGA halaman (KAS BON, BPP, Memo Internal).
+     *
+     * Dijadikan satu tempat supaya logo, nama, dan alamat tidak bisa berbeda antar halaman
+     * dalam satu berkas cetak yang sama.
+     *
+     * Berkasnya mup-logo.jpeg, BUKAN mup-letterhead.jpeg. Yang kedua adalah satu lembar kop
+     * A4 utuh 2482×3511; memakainya sebagai logo membuat kopnya tampil sebagai serpihan
+     * oranye setinggi beberapa piksel — persis kekeliruan yang sudah pernah terjadi pada
+     * cetak Purchase Order.
+     *
+     * @param  string  $kanan  isi sudut kanan kop (judul besar / keterangan cetak)
+     */
+    private function kop(string $kanan = ''): string
+    {
+        $co     = (string) config('business_support.company.name', 'PT Mitra Usaha Propertindo');
+        $alamat = (string) config('business_support.company.address', 'Sidoarjo, Jawa Timur');
+
+        return '<table class="nb kop"><tr>'
+            .'<td style="width:64px"><img class="logo" src="/images/mup-logo.jpeg" alt="'.$this->e($co).'"></td>'
+            .'<td><div class="co">'.$this->e($co).'</div><div class="alamat">'.$this->e($alamat).'</div></td>'
+            .'<td style="text-align:right;vertical-align:top">'.$kanan.'</td>'
+            .'</tr></table><hr class="garis">';
+    }
+
     // ── Formulir KECIL: KAS BON (di bawah Rp 1 juta) ─────────────────────────────
 
     private function kecil(BsCashAdvance $advance): string
     {
-        $co      = (string) config('business_support.company.name', 'PT Mitra Usaha Propertindo');
-        $alamat  = (string) config('business_support.company.address', 'Sidoarjo, Jawa Timur');
         $p       = $this->penerima($advance);
         $nominal = (float) $advance->amount;
 
@@ -131,9 +164,7 @@ final class PengajuanKasbonPrinter
             $selTtd .= $this->kotakTtd($atas, $bawah);
         }
 
-        $isi = '<div style="display:flex;justify-content:space-between;align-items:flex-start">'
-            .'<div><div class="co">'.$this->e($co).'</div><div class="alamat">'.$this->e($alamat).'</div></div>'
-            .'<div style="font-size:20px;font-weight:700">KAS BON</div></div>'
+        $isi = $this->kop('<div style="font-size:20px;font-weight:700">KAS BON</div>')
 
             .'<table class="nb" style="margin:14px 0 8px"><tr>'
             .'<td style="width:55%"><table class="nb">'
@@ -205,7 +236,7 @@ final class PengajuanKasbonPrinter
         $pilihan = fn (string $t) => '<div style="margin-bottom:3px"><span class="kotak"></span>'.$this->e($t).'</div>';
 
         return '<div class="hal">'
-            .'<div class="cap">Created By Java Core System ('.$this->e(now()->format('d-m-Y H.i.s')).')</div>'
+            .$this->kop('<div class="cap">Created By Java Core System ('.$this->e(now()->format('d-m-Y H.i.s')).')</div>')
             .'<div class="judul">BUKTI PERMOHONAN PEMBAYARAN</div>'
 
             .'<table class="nb" style="margin-bottom:8px"><tr>'
@@ -250,7 +281,7 @@ final class PengajuanKasbonPrinter
         $keperluan = (string) $advance->purpose;
 
         return '<div>'
-            .'<div class="cap">Created By Java Core System ('.$this->e(now()->format('d-m-Y H.i.s')).')</div>'
+            .$this->kop('<div class="cap">Created By Java Core System ('.$this->e(now()->format('d-m-Y H.i.s')).')</div>')
             .'<div class="judul" style="margin-bottom:2px">MEMO INTERNAL</div>'
             .'<div style="text-align:center;margin-bottom:12px">No : '.$this->e($advance->advance_number).'</div>'
 
