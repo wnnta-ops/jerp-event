@@ -356,12 +356,25 @@ function rentangBaris(j: any) { return barisTampil(j).length; }
              sendiri mana yang sedang dibacanya. Kini cukup satu pasang: saat rincian dibuka ia
              memuat angka per baris, saat ditutup ia memuat total jurnalnya. -->
         <div class="card overflow-x-auto">
-            <table class="w-full min-w-[96rem] table-fixed text-sm">
+            <!-- LEBAR MINIMUM TABEL WAJIB >= JUMLAH LEBAR KOLOMNYA.
+                 Sebelumnya tabelnya min-w-[96rem] (1536px) sementara colgroup-nya menuntut
+                 1792px, dan Nama Akun adalah SATU-SATUNYA kolom tanpa lebar — jadi dialah yang
+                 menanggung seluruh kekurangan itu dan tergencet sampai nyaris nol. Dipadu
+                 break-words, hasilnya nama akun tercetak satu huruf per baris
+                 ("N G U S A H A S U P P L I E R") dan kepala kolomnya saling menimpa.
+
+                 Jumlah sekarang: 40+40+192+120+128+240+112+72+136+144+256+256+144+144+88 = 2112px
+                 = 132rem. Kartunya sudah overflow-x-auto, jadi layar sempit MENGGESER — bukan
+                 menggencet satu kolom sampai tak terbaca. -->
+            <table class="w-full min-w-[132rem] table-fixed text-sm">
                 <colgroup>
                     <col class="w-10" /><col class="w-10" />
                     <col class="w-[12rem]" /><col class="w-[7.5rem]" /><col class="w-[8rem]" />
                     <col class="w-[15rem]" /><col class="w-[7rem]" /><col class="w-[4.5rem]" /><col class="w-[8.5rem]" />
-                    <col class="w-[9rem]" /><col /><col class="w-[12rem]" />
+                    <!-- Nama Akun & Keterangan Baris: dua kolom berisi teks terpanjang di tabel
+                         ini (mis. "PENYELESAIAN BIAYA KONSTRUKSI JRK CLUSTER 3 KRIAN"), jadi
+                         keduanya diberi porsi terbesar — bukan sisa. -->
+                    <col class="w-[9rem]" /><col class="w-[16rem]" /><col class="w-[16rem]" />
                     <col class="w-[9rem]" /><col class="w-[9rem]" /><col class="w-[5.5rem]" />
                 </colgroup>
                 <thead class="bg-neutral-50 dark:bg-neutral-800">
@@ -460,8 +473,8 @@ function rentangBaris(j: any) { return barisTampil(j).length; }
 
                             <!-- Kolom milik BARISNYA. Saat rincian ditutup, ln kosong dan yang tampil
                                  total jurnalnya — sehingga Debit & Kredit tidak pernah kosong. -->
-                            <td class="px-4 py-2.5 font-mono whitespace-normal break-words">{{ ln ? (ln.account?.code ?? '—') : '' }}</td>
-                            <td class="px-4 py-2.5 whitespace-normal break-words text-neutral-600 dark:text-neutral-300">{{ ln ? (ln.account?.name ?? '—') : '' }}</td>
+                            <td class="px-4 py-2.5 align-top font-mono whitespace-normal break-words">{{ ln ? (ln.account?.code ?? '—') : '' }}</td>
+                            <td class="px-4 py-2.5 align-top whitespace-normal break-words text-neutral-600 dark:text-neutral-300">{{ ln ? (ln.account?.name ?? '—') : '' }}</td>
                             <td class="px-4 py-2.5 whitespace-normal break-words text-neutral-600 dark:text-neutral-300">
                                 <span v-if="ln">{{ ln.description ?? '—' }}</span>
                                 <span v-else class="text-[11px] text-neutral-400">{{ isOpen(j.id) ? 'Jurnal ini belum punya baris' : 'Rincian disembunyikan — total jurnal' }}</span>
