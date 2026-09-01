@@ -51,20 +51,51 @@ class RealisasiKomisi extends Page implements HasTable
                 Tables\Actions\Action::make('cetak')->label('Cetak')->icon('heroicon-o-printer')->color('gray')->button()
                     ->url(fn (Komisi $r) => route('fo.cetak.pengajuan-komisi', ['pengajuan' => $r->no_pengajuan]))
                     ->openUrlInNewTab(),
-                // Posting BO: kirim batch (Total NETT) ke antrian Posting Invoice BO (Sumber: Komisi).
+                // Posting BO: kirim SETIAP komisi di dalam batch ke antrian Posting Invoice BO
+                // (Sumber: Komisi) — satu baris antrian per komisi, bukan satu ringkasan per batch.
+                //
+                // Baris tabel ini hasil GROUP BY no_pengajuan, jadi $r hanya memuat agregatnya;
+                // rincian per pembeli diambil ulang di sini. Yang dikirim NILAI BRUTO + PPh-nya
+                // terpisah, supaya BO bisa menjurnal beban sebesar bruto, hutang ke penerima
+                // sebesar nett, dan sisanya hutang PPh 23.
                 Tables\Actions\Action::make('postingBo')->label('Posting BO')->icon('heroicon-o-paper-airplane')->color('success')->button()
                     ->requiresConfirmation()
                     ->modalHeading('Posting Komisi ke BO')
-                    ->modalDescription(fn (Komisi $r) => 'Kirim batch '.$r->no_pengajuan.' ('.$r->jml.' komisi, NETT Rp '.number_format((float) $r->total_nett, 0, ',', '.').') ke Posting Invoice BO. Jadi hutang AP setelah diposting di BO.')
+                    ->modalDescription(fn (Komisi $r) => 'Kirim '.$r->jml.' komisi pada batch '.$r->no_pengajuan.' (nilai Rp '.number_format((float) $r->total_komisi, 0, ',', '.').', PPh Rp '.number_format((float) $r->total_pph, 0, ',', '.').', NETT Rp '.number_format((float) $r->total_nett, 0, ',', '.').') ke Posting Invoice BO. Setiap komisi menjadi satu baris tersendiri — tidak ada yang digabung. Jadi hutang AP setelah diposting di BO.')
                     ->action(function (Komisi $r) {
                         try {
-                            app(\App\Modules\BO\IproBridge\Services\IproApPoster::class)->queueKomisi(
-                                (string) $r->no_pengajuan,
-                                (float) $r->total_nett,
-                                $r->tgl_bayar ? \Illuminate\Support\Carbon::parse($r->tgl_bayar)->toDateString() : null,
-                            );
-                            Notification::make()->success()->title('Komisi dikirim ke Posting Invoice BO')
-                                ->body('Batch '.$r->no_pengajuan.' menunggu diposting di BO → Posting Invoice (Sumber: Komisi).')->send();
+                            $poster = app(\App\Modules\BO\IproBridge\Services\IproApPoster::class);
+                            $rows = Komisi::query()->where('no_pengajuan', $r->no_pengajuan)->where('status', 'PAID')
+                                ->with(['kontrak.customer:id,full_name', 'kontrak.unit:id,kode_unit,blok,no_unit'])
+                                ->orderBy('id')->get();
+
+                            $ok = 0;
+                            $lewat = [];
+                            foreach ($rows as $k) {
+                                $u = $k->kontrak?->unit;
+                                $unit = trim((string) ($u?->kode_unit ?: trim((string) ($u?->blok ? $u->blok.' / ' : '').($u?->no_unit ?? ''))));
+                                $id = $poster->queueKomisiRow(
+                                    (string) $r->no_pengajuan,
+                                    (string) ($k->no_komisi ?: $k->id),
+                                    (float) $k->amount,
+                                    (float) $k->pph_amount,
+                                    $k->kontrak?->customer?->full_name,
+                                    $unit ?: null,
+                                    $k->tgl_bayar ? \Illuminate\Support\Carbon::parse($k->tgl_bayar)->toDateString() : null,
+                                );
+                                // Baris yang ditolak jangan hilang diam-diam — operator harus tahu
+                                // komisi mana yang tidak sampai ke BO, karena itulah selisih hutangnya.
+                                $id ? $ok++ : $lewat[] = (string) ($k->no_komisi ?: $k->id);
+                            }
+
+                            if ($lewat) {
+                                Notification::make()->warning()->title($ok.' dari '.$rows->count().' komisi dikirim ke BO')
+                                    ->body('Tidak terkirim (nilai tidak wajar / PPh melebihi nilainya): '.implode(', ', $lewat).'. Perbaiki di Detail/Edit lalu Posting BO lagi.')
+                                    ->persistent()->send();
+                            } else {
+                                Notification::make()->success()->title($ok.' komisi dikirim ke Posting Invoice BO')
+                                    ->body('Batch '.$r->no_pengajuan.' menunggu diposting di BO → Posting Invoice (Sumber: Komisi).')->send();
+                            }
                         } catch (\Throwable $e) {
                             Notification::make()->warning()->title('Gagal kirim ke BO')->body($e->getMessage())->persistent()->send();
                         }
