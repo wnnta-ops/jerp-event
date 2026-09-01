@@ -98,6 +98,91 @@ class IproApPoster
     }
 
     /**
+     * Antrekan SATU baris BLT (satu pembeli / satu unit / satu jenjang).
+     *
+     * KENAPA PER BARIS, BUKAN PER BATCH: queueBlt() di atas mengirim satu baris berisi TOTAL
+     * NETT seluruh batch, dengan nama pembeli & unit diringkas jadi satu untai
+     * ("DIDIK KEMBUNG, REYZA FERNANDYA…"). Akibatnya satu pengajuan berisi tiga BLT hanya
+     * melahirkan SATU invoice hutang: tidak bisa ditelusuri milik siapa, dan tidak bisa
+     * dibayarkan ke rekening masing-masing penerima. Dengan per baris, tiap BLT jadi barisnya
+     * sendiri di Posting Invoice dan tidak ada yang tertinggal.
+     *
+     * PECAHAN KREDIT dikirim dari sini karena PPh-nya dipotong di FO: nilai bruto diakui
+     * sebagai beban komisi, tetapi yang menjadi hutang ke penerima hanya NETT — sisanya
+     * hutang PPh 23 ke negara. Tanpa pecahan ini jurnalnya mengkredit Utang Usaha sebesar
+     * bruto, dan potongan PPh-nya hilang dari buku besar meski tercetak di permohonannya.
+     *
+     * Akun disebut lewat KODE, bukan id: id akun hanya bermakna di basis data BO, dan
+     * menuliskannya di FO membuat kedua sisi harus tetap sepakat selamanya tanpa ada yang
+     * memeriksa. Kodenya yang stabil.
+     *
+     * @param  string  $noPengajuan  no. pengajuan batch-nya (untuk penelusuran)
+     * @param  string  $noBlt        no. BLT baris ini — dipakai membentuk refund_no unik
+     * @param  string  $jenis        'Sales' / 'Koordinator' / 'Kantor'
+     * @param  float   $bruto        NILAI BLT sebelum potongan
+     * @param  float   $pph          PPh yang dipotong (0 = tanpa potongan)
+     * @param  string  $pembeli      NAMA PEMBELI pada permohonannya
+     * @param  string  $unit         BLOK/KAV
+     */
+    public function queueBltRow(
+        string $noPengajuan,
+        string $noBlt,
+        string $jenis,
+        float $bruto,
+        float $pph,
+        ?string $pembeli,
+        ?string $unit,
+        ?string $tgl = null,
+    ): ?int {
+        $bruto = round($bruto, 2);
+        $pph   = round(max(0.0, $pph), 2);
+        if ($bruto <= 0 || trim($noPengajuan) === '') {
+            return null;
+        }
+        // PPh tidak boleh melebihi brutonya — bila terjadi, yang salah datanya, dan
+        // meneruskannya akan melahirkan jurnal dengan Utang Usaha negatif.
+        if ($pph > $bruto) {
+            return null;
+        }
+        $nett = round($bruto - $pph, 2);
+
+        // Keterangan mengikuti bentuk yang dipakai permohonan BLT: jenis, nomor pengajuan,
+        // lalu pembeli & blok/kavlingnya.
+        $ket = trim('BLT '.$jenis.' '.$noPengajuan
+            .($pembeli ? ' '.trim($pembeli) : '')
+            .($unit ? ', '.trim($unit) : ''));
+
+        // Sisi kredit: Utang Usaha sebesar NETT + Hutang PPh 23 sebesar potongannya.
+        // Baris PPh hanya ikut bila memang ada potongannya — BLT tanpa PPh tetap berjurnal
+        // dua baris seperti biasa, bukan tiga baris yang salah satunya nol.
+        $kredit = [[
+            'side' => 'credit', 'role' => 'payable', 'code' => '20101010101',
+            'amount' => $nett, 'label' => 'Hutang Usaha',
+        ]];
+        if ($pph > 0) {
+            // role=pph dibaca BO untuk mengisi kolom PPh pada invoice hutangnya, sehingga
+            // sisa tagihan di AP (net_payable) sama dengan kredit Utang Usaha di jurnalnya.
+            // Ditandai peran, bukan ditebak dari nama akun/labelnya.
+            $kredit[] = [
+                'side' => 'credit', 'role' => 'pph', 'code' => '20104040403',
+                'amount' => $pph, 'label' => 'Hutang PPh 23',
+            ];
+        }
+
+        return $this->enqueue('blt', $noPengajuan.'#'.$noBlt, null, [
+            'customer_id'        => null,
+            'customer_name'      => $pembeli ?: null,
+            'refund_source'      => null,
+            'amount'             => $bruto,
+            'payable_account_id' => $this->acc('2.1.01.001'),
+            'offset_account_id'  => $this->acc('5.2.01.001'), // Beban komisi/insentif
+            'account_split'      => json_encode($kredit),
+            'tgl_refund'         => $tgl,
+            'keterangan'         => $ket,
+        ]);
+    }
+
+    /**
      * Nama pembeli & blok/unit untuk satu batch No. Pengajuan (komisi / BLT).
      *
      * Satu pengajuan bisa mencakup beberapa kontrak, jadi hasilnya berupa ringkasan: pasangan

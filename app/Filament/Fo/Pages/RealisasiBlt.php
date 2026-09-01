@@ -51,20 +51,52 @@ class RealisasiBlt extends Page implements HasTable
                 Tables\Actions\Action::make('cetak')->label('Cetak')->icon('heroicon-o-printer')->color('gray')->button()
                     ->url(fn (Blt $r) => route('fo.cetak.pengajuan-blt', ['pengajuan' => $r->no_pengajuan]))
                     ->openUrlInNewTab(),
-                // Posting BO: kirim batch (Total NETT) ke antrian Posting Invoice BO (Sumber: BLT).
+                // Posting BO: kirim SETIAP BLT di dalam batch ke antrian Posting Invoice BO
+                // (Sumber: BLT) — satu baris antrian per BLT, bukan satu ringkasan per batch.
+                //
+                // Baris tabel ini hasil GROUP BY no_pengajuan, jadi $r hanya memuat agregatnya;
+                // rincian per pembeli diambil ulang di sini. Yang dikirim NILAI BRUTO + PPh-nya
+                // terpisah, supaya BO bisa menjurnal beban sebesar bruto, hutang ke penerima
+                // sebesar nett, dan sisanya hutang PPh.
                 Tables\Actions\Action::make('postingBo')->label('Posting BO')->icon('heroicon-o-paper-airplane')->color('success')->button()
                     ->requiresConfirmation()
                     ->modalHeading('Posting BLT ke BO')
-                    ->modalDescription(fn (Blt $r) => 'Kirim batch '.$r->no_pengajuan.' ('.$r->jml.' BLT, NETT Rp '.number_format((float) $r->total_nett, 0, ',', '.').') ke Posting Invoice BO. Jadi hutang AP setelah diposting di BO.')
+                    ->modalDescription(fn (Blt $r) => 'Kirim '.$r->jml.' BLT pada batch '.$r->no_pengajuan.' (nilai Rp '.number_format((float) $r->total_nilai, 0, ',', '.').', PPh Rp '.number_format((float) $r->total_pph, 0, ',', '.').', NETT Rp '.number_format((float) $r->total_nett, 0, ',', '.').') ke Posting Invoice BO. Setiap BLT menjadi satu baris tersendiri — tidak ada yang digabung. Jadi hutang AP setelah diposting di BO.')
                     ->action(function (Blt $r) {
                         try {
-                            app(\App\Modules\BO\IproBridge\Services\IproApPoster::class)->queueBlt(
-                                (string) $r->no_pengajuan,
-                                (float) $r->total_nett,
-                                $r->tgl_bayar ? \Illuminate\Support\Carbon::parse($r->tgl_bayar)->toDateString() : null,
-                            );
-                            Notification::make()->success()->title('BLT dikirim ke Posting Invoice BO')
-                                ->body('Batch '.$r->no_pengajuan.' menunggu diposting di BO → Posting Invoice (Sumber: BLT).')->send();
+                            $poster = app(\App\Modules\BO\IproBridge\Services\IproApPoster::class);
+                            $rows = Blt::query()->where('no_pengajuan', $r->no_pengajuan)->where('status', 'PAID')
+                                ->with(['kontrak.customer:id,full_name', 'kontrak.unit:id,kode_unit,blok,no_unit'])
+                                ->orderByRaw("FIELD(level_type,'SALES','KOORDINATOR','KANTOR')")->orderBy('id')->get();
+
+                            $ok = 0;
+                            $lewat = [];
+                            foreach ($rows as $b) {
+                                $u = $b->kontrak?->unit;
+                                $unit = trim((string) ($u?->kode_unit ?: trim((string) ($u?->blok ? $u->blok.' / ' : '').($u?->no_unit ?? ''))));
+                                $id = $poster->queueBltRow(
+                                    (string) $r->no_pengajuan,
+                                    (string) ($b->no_blt ?: $b->id),
+                                    ucfirst(strtolower((string) $b->level_type)),
+                                    (float) $b->nilai_blt,
+                                    (float) $b->pph_amount,
+                                    $b->kontrak?->customer?->full_name,
+                                    $unit ?: null,
+                                    $b->tgl_bayar ? \Illuminate\Support\Carbon::parse($b->tgl_bayar)->toDateString() : null,
+                                );
+                                // Baris yang ditolak jangan hilang diam-diam — operator harus tahu
+                                // BLT mana yang tidak sampai ke BO, karena itulah selisih hutangnya.
+                                $id ? $ok++ : $lewat[] = (string) ($b->no_blt ?: $b->id);
+                            }
+
+                            if ($lewat) {
+                                Notification::make()->warning()->title($ok.' dari '.$rows->count().' BLT dikirim ke BO')
+                                    ->body('Tidak terkirim (nilai tidak wajar / PPh melebihi nilainya): '.implode(', ', $lewat).'. Perbaiki di Detail/Edit lalu Posting BO lagi.')
+                                    ->persistent()->send();
+                            } else {
+                                Notification::make()->success()->title($ok.' BLT dikirim ke Posting Invoice BO')
+                                    ->body('Batch '.$r->no_pengajuan.' menunggu diposting di BO → Posting Invoice (Sumber: BLT).')->send();
+                            }
                         } catch (\Throwable $e) {
                             Notification::make()->warning()->title('Gagal kirim ke BO')->body($e->getMessage())->persistent()->send();
                         }

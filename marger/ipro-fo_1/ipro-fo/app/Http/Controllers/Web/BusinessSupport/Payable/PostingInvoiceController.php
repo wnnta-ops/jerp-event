@@ -270,12 +270,18 @@ class PostingInvoiceController extends Controller
         }
 
         $total = round(array_sum(array_column($prepared, 'amount')), 2);
+        // PPh yang dipotong di sumbernya, dijumlahkan dari item yang membawanya (BLT).
+        $totalPph = round(array_sum(array_column($prepared, 'pph')), 2);
+        $akunPph = null;
+        foreach ($prepared as $p) {
+            $akunPph ??= $p['pphAccount'];
+        }
         // Cadangan = tanggal invoice, persis perilaku sebelum kolom jatuh tempo ada.
         $tglInvoice = now()->toDateString();
         $jatuhTempo = $this->jatuhTempo($request, $tglInvoice, $tglInvoice);
         $userId = (int) $request->user()->id;
 
-        $inv = DB::transaction(function () use ($prepared, $total, $journal, $userId, $tglInvoice, $jatuhTempo) {
+        $inv = DB::transaction(function () use ($prepared, $total, $totalPph, $akunPph, $journal, $userId, $tglInvoice, $jatuhTempo) {
             $first = $prepared[0];
             $inv = $this->makeInvoice([
                 'supplier_id'        => $first['supplier_id'],
@@ -286,16 +292,28 @@ class PostingInvoiceController extends Controller
                 'invoice_date'       => $tglInvoice,
                 'receive_date'       => $tglInvoice,
                 'due_date'           => $jatuhTempo,
-                'dpp'                => $total, 'total' => $total, 'net_payable' => $total,
+                'dpp'                => $total, 'total' => $total,
+                // NET = total − PPh yang dipotong di sumbernya (BLT). Item tanpa PPh menyumbang 0,
+                // jadi invoice gabungan lama tetap net_payable = total seperti sebelumnya.
+                'net_payable'        => round($total - $totalPph, 2),
+                'pph_mode'           => $totalPph > 0 ? 'withheld' : 'none',
+                'pph_base'           => $totalPph > 0 ? $total : 0,
+                'pph_pct'            => $totalPph > 0 && $total > 0 ? round($totalPph / $total * 100, 2) : 0,
+                'pph_amount'         => $totalPph,
+                'pph_account_id'     => $akunPph,
                 'source_type'        => 'batch', 'source_id' => null,
             ], $userId);
 
             // Baris detail invoice + baris jurnal DEBIT per item (bisa lebih dari satu bila
-            // Kategori Gimmick-nya multi-akun). Sisi KREDIT tidak dibuat per item: seluruh item
-            // diakumulasikan menjadi SATU baris Utang Usaha Supplier di akhir, sehingga jurnal
-            // invoice gabungan berbentuk banyak rincian debit dengan satu rincian kredit.
+            // Kategori Gimmick-nya multi-akun).
+            //
+            // Sisi KREDIT: item yang membawa rincian kreditnya sendiri (BLT — hutang ke penerima
+            // dan hutang PPh-nya terpisah) ditulis PER ITEM, karena rincian itulah yang membuat
+            // potongan pajaknya terbaca di buku besar. Item lain — seluruh sumber lama —
+            // diakumulasikan menjadi SATU baris Utang Usaha Supplier di akhir, persis seperti
+            // sebelumnya, sehingga invoice gabungan komisi/gimmick tidak berubah bentuknya.
             $jLines = [];
-            $debitTotal = 0.0;
+            $debitPolos = 0.0;
             foreach ($prepared as $p) {
                 DB::table('bs_ap_invoice_lines')->insert([
                     'ap_invoice_id' => $inv->id,
@@ -304,19 +322,45 @@ class PostingInvoiceController extends Controller
                     'unit_price'    => $p['amount'],
                     'amount'        => $p['amount'],
                 ]);
+                $debitItem = 0.0;
                 foreach ($p['debitLines'] as $d) {
                     $jLines[] = ['account_id' => $d['account_id'], 'debit' => $d['amount'], 'credit' => 0, 'description' => $p['desc']];
-                    $debitTotal += (float) $d['amount'];
+                    $debitItem += (float) $d['amount'];
+                }
+
+                // Rincian kredit sendiri? Kenali dari adanya label per baris — itu yang hanya
+                // dimiliki antrian yang memang mengirim rinciannya.
+                $punyaRincian = false;
+                foreach ($p['creditLines'] as $c) {
+                    if (trim((string) ($c['label'] ?? '')) !== '') {
+                        $punyaRincian = true;
+                        break;
+                    }
+                }
+                if ($punyaRincian) {
+                    foreach ($p['creditLines'] as $c) {
+                        $label = trim((string) ($c['label'] ?? ''));
+                        $jLines[] = [
+                            'account_id'  => $c['account_id'],
+                            'debit'       => 0,
+                            'credit'      => $c['amount'],
+                            'description' => $label !== '' ? $label.' '.$p['desc'] : $p['hutangLabel'].' — '.$p['desc'],
+                        ];
+                    }
+                } else {
+                    $debitPolos += $debitItem;
                 }
             }
             // Nilainya diambil dari penjumlahan baris debit yang BENAR-BENAR dibuat, supaya
             // jurnal dijamin balance walau ada pembulatan pecahan akun per item.
-            $jLines[] = [
-                'account_id'  => $first['payable'],
-                'debit'       => 0,
-                'credit'      => round($debitTotal, 2),
-                'description' => 'Utang Usaha Supplier — '.$inv->invoice_number,
-            ];
+            if ($debitPolos > 0.009) {
+                $jLines[] = [
+                    'account_id'  => $first['payable'],
+                    'debit'       => 0,
+                    'credit'      => round($debitPolos, 2),
+                    'description' => 'Utang Usaha Supplier — '.$inv->invoice_number,
+                ];
+            }
 
             $j = $journal->post([
                 'journal_date' => $inv->invoice_date->toDateString(), 'source' => 'ap',
@@ -391,6 +435,19 @@ class PostingInvoiceController extends Controller
         $desc = $this->lengkapiPembeliUnit($desc, $row);
         $hutangLabel = ['komisi' => 'Hutang Komisi', 'blt' => 'Hutang BLT', 'gmc' => 'Hutang Gimmick'][$row->kind] ?? 'Hutang Refund';
 
+        // PPh yang dipotong di sumbernya (BLT) — dikenali dari peran barisnya, bukan nama akunnya.
+        // Nilainya dipakai mengisi kolom PPh invoice supaya SISA TAGIHAN di AP (net_payable)
+        // sama dengan kredit Utang Usaha di jurnalnya. Tanpa ini invoice-nya menagih bruto
+        // sementara jurnalnya mengakui nett — Aging Hutang dan Buku Besar beda angka.
+        $pph = 0.0;
+        $pphAccount = null;
+        foreach ($split['credit'] as $c) {
+            if (($c['role'] ?? null) === 'pph') {
+                $pph += (float) $c['amount'];
+                $pphAccount ??= (int) $c['account_id'];
+            }
+        }
+
         return [
             'ok'          => true,
             'amount'      => $amount,
@@ -400,6 +457,8 @@ class PostingInvoiceController extends Controller
             'creditLines' => $split['credit'],
             'desc'        => $desc,
             'hutangLabel' => $hutangLabel,
+            'pph'         => round($pph, 2),
+            'pphAccount'  => $pphAccount,
             'date'        => $row->tgl_refund ?: now()->toDateString(),
         ];
     }
@@ -444,13 +503,22 @@ class PostingInvoiceController extends Controller
     /**
      * Pecahan akun untuk satu baris antrian.
      *
-     * account_split (dari Kategori Gimmick) berisi [{side, account_id, portion}]. Yang dipakai HANYA
-     * pecahan sisi DEBIT — sisi kredit selalu satu baris Utang Usaha Supplier sebesar nilai penuh,
-     * sehingga bentuk jurnalnya "banyak rincian debit, satu rincian kredit". Sisa pembulatan debit
-     * dilempar ke baris TERBESAR supaya total debit tetap persis sama dengan nilai antrian —
-     * jurnal tidak boleh pincang.
+     * account_split (dari Kategori Gimmick) berisi [{side, account_id, portion}]. Untuk sisi DEBIT
+     * yang dipakai porsinya; sisa pembulatan dilempar ke baris TERBESAR supaya total debit tetap
+     * persis sama dengan nilai antrian — jurnal tidak boleh pincang.
      *
-     * @return array{debit:array<int,array{account_id:int,amount:float}>, credit:array<int,array{account_id:int,amount:float}>}|array{error:string}
+     * SISI KREDIT pada dasarnya TIDAK dipecah: satu baris Utang Usaha Supplier sebesar nilai
+     * penuh. Pengecualiannya hanya bila antriannya SENDIRI membawa rincian kredit — dipakai BLT,
+     * yang PPh-nya dipotong di FO sehingga hutang ke penerima hanya sebesar NETT dan sisanya
+     * hutang PPh. Rincian itu berbentuk [{side:'credit', role, code|account_id, amount, label}]
+     * dengan amount MUTLAK (rupiah), bukan porsi: nilai potongannya sudah dihitung dan dicetak di
+     * permohonannya, jadi tidak boleh dihitung ulang di sini dan berbeda seangka dua.
+     *
+     * Rinciannya ditolak bila jumlahnya tidak persis sama dengan nilai antrian, atau ada akun yang
+     * tak dikenal. Menerima yang meleset berarti melahirkan jurnal tak balance atau membuang
+     * selisihnya diam-diam — dua-duanya lebih buruk daripada satu baris gagal yang terlihat.
+     *
+     * @return array{debit:array<int,array{account_id:int,amount:float}>, credit:array<int,array{account_id:int,amount:float,label?:string,role?:string}>}|array{error:string}
      */
     private function splitFromQueue(object $row, float $amount, int $offset, int $payable): array
     {
@@ -458,23 +526,60 @@ class PostingInvoiceController extends Controller
         $rows = is_string($raw) ? (json_decode($raw, true) ?: []) : (is_array($raw) ? $raw : []);
 
         $debitParts = [];
+        $creditParts = [];
         foreach ($rows as $r) {
-            $accId = (int) ($r['account_id'] ?? 0);
-            $portion = (float) ($r['portion'] ?? 0);
-            if ((string) ($r['side'] ?? '') === 'debit' && $accId > 0 && $portion > 0) {
-                $debitParts[] = ['account_id' => $accId, 'portion' => $portion];
+            $side = (string) ($r['side'] ?? '');
+            if ($side === 'debit') {
+                $accId = (int) ($r['account_id'] ?? 0);
+                $portion = (float) ($r['portion'] ?? 0);
+                if ($accId > 0 && $portion > 0) {
+                    $debitParts[] = ['account_id' => $accId, 'portion' => $portion];
+                }
+
+                continue;
             }
+            if ($side !== 'credit') {
+                continue;
+            }
+
+            // Akun boleh disebut lewat KODE — itulah yang dipakai sisi FO, karena id akun
+            // hanya bermakna di basis data ini.
+            $accId = (int) ($r['account_id'] ?? 0);
+            $kode = trim((string) ($r['code'] ?? ''));
+            if ($accId <= 0 && $kode !== '') {
+                $accId = (int) (BsAccount::where('code', $kode)->value('id') ?? 0);
+                if ($accId <= 0) {
+                    return ['error' => "akun kredit {$kode} tidak ada di Bagan Akun"];
+                }
+            }
+            $nilai = round((float) ($r['amount'] ?? 0), 2);
+            if ($accId <= 0 || $nilai <= 0) {
+                continue;
+            }
+            $creditParts[] = [
+                'account_id' => $accId,
+                'amount'     => $nilai,
+                'label'      => trim((string) ($r['label'] ?? '')) ?: null,
+                'role'       => trim((string) ($r['role'] ?? '')) ?: null,
+            ];
+        }
+
+        if ($creditParts && abs(array_sum(array_column($creditParts, 'amount')) - $amount) >= 0.01) {
+            return ['error' => 'rincian kredit tidak sama dengan nilai antriannya'];
         }
 
         $out = [
             'debit'  => $this->allocate($amount, $debitParts ?: [['account_id' => $offset, 'portion' => 100.0]]),
-            // Sisi kredit TIDAK dipecah: satu baris Utang Usaha Supplier sebesar nilai penuh.
-            'credit' => [['account_id' => $payable, 'amount' => round($amount, 2)]],
+            'credit' => $creditParts ?: [['account_id' => $payable, 'amount' => round($amount, 2)]],
         ];
 
-        // Akun Utang Usaha Supplier tak boleh ikut muncul di sisi debit — nilainya saling meniadakan.
-        if (in_array($payable, array_column($out['debit'], 'account_id'), true)) {
-            return ['error' => 'akun Utang Usaha Supplier dipakai juga di sisi debit pada Kategori Gimmick'];
+        // Akun kredit tak boleh ikut muncul di sisi debit — nilainya saling meniadakan, dan
+        // jurnalnya jadi mengakui hutang yang langsung dihapusnya sendiri.
+        $bentrok = array_intersect(array_column($out['credit'], 'account_id'), array_column($out['debit'], 'account_id'));
+        if ($bentrok) {
+            $nama = BsAccount::whereIn('id', $bentrok)->pluck('name')->implode(', ');
+
+            return ['error' => 'akun '.($nama ?: 'hutang').' dipakai di sisi debit sekaligus kredit'];
         }
 
         return $out;
@@ -513,8 +618,13 @@ class PostingInvoiceController extends Controller
     }
 
     /**
-     * Baris jurnal dari pecahan akun 1 item antrian: beberapa baris DEBIT + SATU baris KREDIT
-     * Utang Usaha Supplier (creditLines selalu berisi tepat satu baris — lihat splitFromQueue).
+     * Baris jurnal dari pecahan akun 1 item antrian: beberapa baris DEBIT + satu atau lebih baris
+     * KREDIT (lihat splitFromQueue — lebih dari satu hanya bila antriannya membawa rinciannya).
+     *
+     * Keterangan sisi kredit: baris yang membawa label sendiri memakai "<label> <keterangan>"
+     * (mis. "Hutang PPh 23 BLT Sales …") — bentuk yang diminta pemilik proses. Baris tanpa label —
+     * yaitu SEMUA sumber lama — tetap "<Hutang X> — <keterangan>" persis seperti sebelumnya,
+     * supaya jurnal komisi & gimmick yang sudah ada tidak berubah bentuknya.
      *
      * @param  array<string,mixed>  $p  hasil prepRefundRow()
      * @return array<int,array<string,mixed>>
@@ -526,7 +636,13 @@ class PostingInvoiceController extends Controller
             $lines[] = ['account_id' => $d['account_id'], 'debit' => $d['amount'], 'credit' => 0, 'description' => $p['desc']];
         }
         foreach ($p['creditLines'] as $c) {
-            $lines[] = ['account_id' => $c['account_id'], 'debit' => 0, 'credit' => $c['amount'], 'description' => $p['hutangLabel'].' — '.$p['desc']];
+            $label = trim((string) ($c['label'] ?? ''));
+            $lines[] = [
+                'account_id'  => $c['account_id'],
+                'debit'       => 0,
+                'credit'      => $c['amount'],
+                'description' => $label !== '' ? $label.' '.$p['desc'] : $p['hutangLabel'].' — '.$p['desc'],
+            ];
         }
 
         return $lines;
@@ -648,7 +764,15 @@ class PostingInvoiceController extends Controller
                 'description' => $p['desc'], 'invoice_date' => $p['date'], 'receive_date' => $p['date'],
                 // Cadangan = tanggal invoice, persis perilaku sebelum kolom jatuh tempo ada.
                 'due_date' => $dueDate && $dueDate >= $p['date'] ? $dueDate : $p['date'],
-                'dpp' => $p['amount'], 'total' => $p['amount'], 'net_payable' => $p['amount'],
+                // NET = nilai − PPh dipotong. Untuk sumber tanpa PPh, $p['pph'] = 0 dan
+                // ketiga angkanya tetap sama seperti sebelumnya.
+                'dpp' => $p['amount'], 'total' => $p['amount'],
+                'net_payable' => round($p['amount'] - $p['pph'], 2),
+                'pph_mode' => $p['pph'] > 0 ? 'withheld' : 'none',
+                'pph_base' => $p['pph'] > 0 ? $p['amount'] : 0,
+                'pph_pct' => $p['pph'] > 0 && $p['amount'] > 0 ? round($p['pph'] / $p['amount'] * 100, 2) : 0,
+                'pph_amount' => $p['pph'],
+                'pph_account_id' => $p['pphAccount'],
                 'source_type' => $row->kind, 'source_id' => $row->refund_id, 'refund_source' => $row->refund_source,
             ], $userId);
 
