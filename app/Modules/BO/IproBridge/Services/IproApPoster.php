@@ -109,7 +109,7 @@ class IproApPoster
      *
      * PECAHAN KREDIT dikirim dari sini karena PPh-nya dipotong di FO: nilai bruto diakui
      * sebagai beban komisi, tetapi yang menjadi hutang ke penerima hanya NETT — sisanya
-     * hutang PPh 23 ke negara. Tanpa pecahan ini jurnalnya mengkredit Utang Usaha sebesar
+     * hutang PPh ke negara. Tanpa pecahan ini jurnalnya mengkredit Utang Usaha sebesar
      * bruto, dan potongan PPh-nya hilang dari buku besar meski tercetak di permohonannya.
      *
      * Akun disebut lewat KODE, bukan id: id akun hanya bermakna di basis data BO, dan
@@ -152,9 +152,16 @@ class IproApPoster
             .($pembeli ? ' '.trim($pembeli) : '')
             .($unit ? ', '.trim($unit) : ''));
 
-        // Sisi kredit: Utang Usaha sebesar NETT + Hutang PPh 23 sebesar potongannya.
+        // Sisi kredit: Utang Usaha sebesar NETT + Hutang PPh 21 sebesar potongannya.
         // Baris PPh hanya ikut bila memang ada potongannya — BLT tanpa PPh tetap berjurnal
         // dua baris seperti biasa, bukan tiga baris yang salah satunya nol.
+        //
+        // AKUNNYA PPh PASAL 21 (20104040402), bukan Pasal 23. BLT jenjang Sales & Koordinator
+        // memang dipotong PPh 21 2,5% — lihat BltCalculatorService yang menandainya 'PPh21'.
+        // Rincian contoh dari akuntansi sempat menaruhnya di akun Pasal 23; itu yang dikoreksi
+        // di sini. Catatan untuk kemudian: jenjang KANTOR dihitung PPh 23 2% oleh kalkulator
+        // yang sama, jadi bila jenjang itu mulai dipakai, akunnya perlu mengikuti pph_jenis
+        // masing-masing baris (Pasal 21 → 20104040402, Pasal 23 → 20104040403).
         $kredit = [[
             'side' => 'credit', 'role' => 'payable', 'code' => '20101010101',
             'amount' => $nett, 'label' => 'Hutang Usaha',
@@ -164,8 +171,8 @@ class IproApPoster
             // sisa tagihan di AP (net_payable) sama dengan kredit Utang Usaha di jurnalnya.
             // Ditandai peran, bukan ditebak dari nama akun/labelnya.
             $kredit[] = [
-                'side' => 'credit', 'role' => 'pph', 'code' => '20104040403',
-                'amount' => $pph, 'label' => 'Hutang PPh 23',
+                'side' => 'credit', 'role' => 'pph', 'code' => '20104040402',
+                'amount' => $pph, 'label' => 'Hutang PPh 21',
             ];
         }
 

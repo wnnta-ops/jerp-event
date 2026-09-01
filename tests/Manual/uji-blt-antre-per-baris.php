@@ -154,10 +154,10 @@ try {
             return $a;
         };
         $split = json_decode((string) $r->account_split, true) ?: [];
-        $cek($no.': rincian kredit = Utang Usaha (nett) + Hutang PPh 23 (potongan)',
+        $cek($no.': rincian kredit = Utang Usaha (nett) + Hutang PPh 21 (potongan)',
             $rapikan($split) === $rapikan([
                 ['side' => 'credit', 'role' => 'payable', 'code' => '20101010101', 'amount' => $bruto - $pph, 'label' => 'Hutang Usaha'],
-                ['side' => 'credit', 'role' => 'pph', 'code' => '20104040403', 'amount' => $pph, 'label' => 'Hutang PPh 23'],
+                ['side' => 'credit', 'role' => 'pph', 'code' => '20104040402', 'amount' => $pph, 'label' => 'Hutang PPh 21'],
             ]),
             (string) $r->account_split);
         $cek($no.': jumlah rincian kredit = nilai antriannya',

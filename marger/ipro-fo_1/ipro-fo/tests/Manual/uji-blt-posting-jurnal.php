@@ -22,6 +22,12 @@ declare(strict_types=1);
  * debit, dan kredit. Dua jalur posting diuji: satuan (fromRefund) dan gabungan (bulkRefund),
  * karena keduanya membangun sisi kredit dengan kode yang berbeda.
  *
+ * SATU HAL SENGAJA BERBEDA DARI EXCEL-NYA: akun potongan pajaknya. Excel menaruhnya di
+ * 20104040403 HUTANG PPH PASAL 23, sedangkan BLT jenjang Sales & Koordinator memang dipotong
+ * PPh 21 2,5% (BltCalculatorService menandainya 'PPh21'). Atas keputusan pemilik proses,
+ * yang dipakai 20104040402 HUTANG PPH PASAL 21 — dan itulah yang dijaga di sini. Sisa
+ * jurnalnya tetap persis seperti Excel-nya.
+ *
  * Diuji juga bahwa sumber LAMA (gimmick/komisi tanpa rincian kredit) tidak ikut berubah, dan
  * bahwa rincian kredit yang tidak sama dengan nilai antriannya DITOLAK — bukan dibulatkan
  * diam-diam menjadi jurnal pincang.
@@ -62,7 +68,7 @@ $akun = fn (string $kode) => (int) DB::table('bs_accounts')->where('code', $kode
 
 $KOMISI = $akun('50201010103');   // KOMISI/INSENTIF PENJUALAN
 $UTANG  = $akun('20101010101');   // UTANG USAHA SUPPLIER
-$PPH23  = $akun('20104040403');   // HUTANG PPH PASAL 23
+$PPH21  = $akun('20104040402');   // HUTANG PPH PASAL 21
 
 DB::beginTransaction();
 
@@ -71,8 +77,8 @@ try {
     $user   = \App\Models\User::query()->find($userId);
     auth()->setUser($user);
 
-    if (! $KOMISI || ! $UTANG || ! $PPH23) {
-        throw new RuntimeException('akun 50201010103 / 20101010101 / 20104040403 tidak ada di Bagan Akun');
+    if (! $KOMISI || ! $UTANG || ! $PPH21) {
+        throw new RuntimeException('akun 50201010103 / 20101010101 / 20104040402 tidak ada di Bagan Akun');
     }
 
     $sup = BsSupplier::create(['code' => 'UJI-BLT-1', 'name' => 'UJI Penerima BLT', 'is_active' => true]);
@@ -96,7 +102,7 @@ try {
         $nett = round($bruto - $pph, 2);
         $split = [['side' => 'credit', 'role' => 'payable', 'code' => '20101010101', 'amount' => $nett, 'label' => 'Hutang Usaha']];
         if ($pph > 0) {
-            $split[] = ['side' => 'credit', 'role' => 'pph', 'code' => '20104040403', 'amount' => $pph, 'label' => 'Hutang PPh 23'];
+            $split[] = ['side' => 'credit', 'role' => 'pph', 'code' => '20104040402', 'amount' => $pph, 'label' => 'Hutang PPh 21'];
         }
 
         return (int) DB::table('bs_ap_refund_queue')->insertGetId([
@@ -117,14 +123,14 @@ try {
     }
 
     /** Harapan 3 baris jurnal untuk satu BLT — bentuk yang diminta Excel-nya. */
-    $harapan = function (array $b) use ($PENGAJUAN, $KOMISI, $UTANG, $PPH23) {
+    $harapan = function (array $b) use ($PENGAJUAN, $KOMISI, $UTANG, $PPH21) {
         [$jenis, $pembeli, $unit, $bruto, $pph] = $b;
         $ket = 'BLT '.$jenis.' '.$PENGAJUAN.' '.$pembeli.', '.$unit;
 
         return [
             [$KOMISI, $ket,                       $bruto, 0.0],
             [$UTANG,  'Hutang Usaha '.$ket,       0.0,    round($bruto - $pph, 2)],
-            [$PPH23,  'Hutang PPh 23 '.$ket,      0.0,    $pph],
+            [$PPH21,  'Hutang PPh 21 '.$ket,      0.0,    $pph],
         ];
     };
 
@@ -196,7 +202,7 @@ try {
             'net_payable='.$inv->net_payable.' kredit='.$kreditUtang);
         $cek('BLT '.($i + 1).': PPh tercatat di invoice-nya',
             round((float) $inv->pph_amount, 2) === $pph && $inv->pph_mode === 'withheld'
-                && (int) $inv->pph_account_id === $PPH23,
+                && (int) $inv->pph_account_id === $PPH21,
             'pph_amount='.$inv->pph_amount.' mode='.$inv->pph_mode);
         $cek('BLT '.($i + 1).': total tetap BRUTO (beban diakui penuh)',
             round((float) $inv->total, 2) === $bruto, 'total='.$inv->total);
@@ -287,7 +293,7 @@ try {
         'account_split' => json_encode([
             ['side' => 'credit', 'role' => 'payable', 'code' => '20101010101', 'amount' => 900000, 'label' => 'Hutang Usaha'],
             // sengaja kurang 50.000 dari nilai antriannya
-            ['side' => 'credit', 'role' => 'pph', 'code' => '20104040403', 'amount' => 50000, 'label' => 'Hutang PPh 23'],
+            ['side' => 'credit', 'role' => 'pph', 'code' => '20104040402', 'amount' => 50000, 'label' => 'Hutang PPh 21'],
         ]),
         'tgl_refund' => '2026-09-01', 'keterangan' => 'UJI meleset',
         'status' => 'pending', 'created_at' => now(), 'updated_at' => now(),

@@ -622,7 +622,7 @@ class PostingInvoiceController extends Controller
      * KREDIT (lihat splitFromQueue — lebih dari satu hanya bila antriannya membawa rinciannya).
      *
      * Keterangan sisi kredit: baris yang membawa label sendiri memakai "<label> <keterangan>"
-     * (mis. "Hutang PPh 23 BLT Sales …") — bentuk yang diminta pemilik proses. Baris tanpa label —
+     * (mis. "Hutang PPh 21 BLT Sales …") — bentuk yang diminta pemilik proses. Baris tanpa label —
      * yaitu SEMUA sumber lama — tetap "<Hutang X> — <keterangan>" persis seperti sebelumnya,
      * supaya jurnal komisi & gimmick yang sudah ada tidak berubah bentuknya.
      *
