@@ -34,7 +34,7 @@ class BsCashAdvance extends Model
         'realized'    => 'Realized',
     ];
 
-    /** #127 — slot approval berjenjang (urut). Moch Winarto & Boy Arifin hanya untuk pengajuan > Rp 1 juta. */
+    /** #127 — slot approval berjenjang (urut). Moch Winarto & Boy Arifin hanya untuk pengajuan MULAI Rp 1 juta. */
     public const SIGNERS = [
         'pengaju'            => 'Pengaju (User Dept)',
         'spv_manager_dept'   => 'SPV / Manager Dept',
@@ -47,13 +47,28 @@ class BsCashAdvance extends Model
         'manager_finance'    => 'Manager Finance',
     ];
 
+    /**
+     * Nominal MULAI dari angka ini memakai rantai penuh 9 jenjang.
+     *
+     * Dipakai juga oleh PengajuanKasbonPrinter untuk memilih formulir cetaknya, supaya
+     * jumlah kotak tanda tangan pada kertas selalu sama dengan jumlah persetujuan yang
+     * benar-benar diminta aplikasi.
+     */
     public const APPROVAL_THRESHOLD = 1_000_000;
 
-    /** Slot approval yang DIPERLUKAN bon ini — drop Moch Winarto & Boy Arifin bila nominal ≤ 1 juta. */
+    /**
+     * Slot approval yang DIPERLUKAN bon ini — Moch Winarto & Boy Arifin dilepas hanya bila
+     * nominalnya DI BAWAH Rp 1 juta.
+     *
+     * Perbandingannya '<', bukan '<='. Nominal tepat Rp 1.000.000 ikut rantai penuh 9 jenjang:
+     * sebelumnya ia hanya meminta 7 persetujuan sementara formulir cetaknya sudah memakai
+     * bentuk besar berkotak 9 — kertas dan aplikasi menuntut orang yang berbeda untuk bon
+     * yang sama, dan tidak ada galat apa pun yang menandainya.
+     */
     public function requiredSigners(): array
     {
         $keys = array_keys(self::SIGNERS);
-        if ((float) $this->amount <= self::APPROVAL_THRESHOLD) {
+        if ((float) $this->amount < self::APPROVAL_THRESHOLD) {
             $keys = array_values(array_diff($keys, ['moch_winarto', 'boy_arifin']));
         }
 

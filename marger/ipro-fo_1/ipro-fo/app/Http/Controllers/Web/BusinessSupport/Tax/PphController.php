@@ -7,7 +7,9 @@ namespace App\Http\Controllers\Web\BusinessSupport\Tax;
 use App\Domain\BusinessSupport\Models\BsAccount;
 use App\Domain\BusinessSupport\Models\BsApInvoice;
 use App\Domain\BusinessSupport\Models\BsArInvoice;
-use App\Domain\BusinessSupport\Models\BsPayrollRun;
+use App\Domain\BusinessSupport\Models\BsJournal;
+use App\Domain\BusinessSupport\Services\BukuBesarDokumen;
+use App\Domain\BusinessSupport\Services\JournalPartyResolver;
 use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -25,6 +27,11 @@ use Inertia\Response;
  */
 class PphController extends Controller
 {
+    public function __construct(
+        private readonly BukuBesarDokumen $bb,
+        private readonly JournalPartyResolver $party,
+    ) {}
+
     private const ARTICLES = [
         '20104040402' => 'PPh Pasal 21',
         '20104040403' => 'PPh Pasal 23',
@@ -37,77 +44,142 @@ class PphController extends Controller
         abort_unless($request->user()?->canModule('tax'), 403);
         [$year, $month] = $this->period($request);
 
-        // Peta akun id → kode untuk klasifikasi pasal.
-        $codeById = BsAccount::whereIn('code', array_keys(self::ARTICLES))->pluck('code', 'id');
+        $d = $this->hitung($year, $month);
 
-        // Sumber AP (withholding atas pembayaran ke supplier).
-        $apRows = BsApInvoice::with('supplier:id,code,name')->where('pph_amount', '>', 0)
-            ->whereYear('invoice_date', $year)->whereMonth('invoice_date', $month)
-            ->orderBy('invoice_date')->get()
-            ->map(function ($i) use ($codeById) {
-                $code = $codeById[$i->pph_account_id] ?? '20104040403';
-                return [
-                    'source' => 'AP', 'date' => $i->invoice_date?->format('Y-m-d'), 'partner' => $i->supplier?->name ?? '—',
-                    'doc_no' => $i->invoice_number, 'article' => self::ARTICLES[$code] ?? 'PPh Pasal 23',
-                    'base' => (float) $i->dpp, 'pph' => (float) $i->pph_amount,
-                ];
-            });
+        return Inertia::render('BusinessSupport/Tax/Pph', $d);
+    }
 
-        // Sumber Payroll (PPh 21 dipotong dari gaji).
-        $payRows = BsPayrollRun::where('period_year', $year)->where('period_month', $month)
-            ->withSum('lines as pph21_total', 'pph21')->get()
-            ->filter(fn ($r) => (float) $r->pph21_total > 0)
-            ->map(fn ($r) => [
-                'source' => 'Payroll', 'date' => $r->run_date?->format('Y-m-d'), 'partner' => 'Karyawan ('.$r->run_number.')',
-                'doc_no' => $r->run_number, 'article' => 'PPh Pasal 21', 'base' => (float) $r->total_bruto, 'pph' => (float) $r->pph21_total,
-            ]);
+    /**
+     * Rekap PPh dipotong — DIGERAKKAN BUKU BESAR, satu sumber untuk layar & ekspor.
+     *
+     * KENAPA DARI BUKU BESAR: versi sebelumnya membaca kolom bs_ap_invoices.pph_amount dan
+     * bs_payroll_run_lines.pph21. Itu membuat sebagian pemotongan MUSTAHIL muncul — jalur
+     * Posting Invoice (komisi/GMC, PO, SPK) memaku pph_amount = 0 pada setiap invoice yang
+     * dibuatnya (PostingInvoiceController::makeInvoice), padahal jurnalnya tetap mengkredit
+     * akun Hutang PPh. Akibatnya kartu PPh 23 bisa berbunyi "Rp 0" sementara barisnya jelas
+     * ada di Detail Transaksi Jurnal, dan tabelnya kosong tanpa satu pun galat.
+     *
+     * Akun Hutang PPh adalah CATATAN RESMI kewajiban setor. Membacanya langsung membuat rekap
+     * ini sama dengan Detail Transaksi Jurnal untuk keempat akun itu — bukan mendekati, tetapi
+     * sama karena dihitung dari angka yang sama.
+     *
+     * @return array<string,mixed>
+     */
+    private function hitung(int $year, int $month): array
+    {
+        $akun     = BsAccount::whereIn('code', array_keys(self::ARTICLES))->get(['id', 'code', 'name']);
+        $codeById = $akun->pluck('code', 'id');
+        $idByCode = $akun->pluck('id', 'code');
 
-        $rows = $apRows->concat($payRows)->sortBy('date')->values();
+        $dari = sprintf('%04d-%02d-01', $year, $month);
+        $sampai = date('Y-m-t', strtotime($dari));
 
-        // Total per pasal.
+        $lines = $this->bb->lines($akun->pluck('id')->map(fn ($v) => (int) $v)->all(), $dari, $sampai);
+
+        $journalIds = $lines->pluck('journal_id')->map(fn ($v) => (int) $v)->unique()->values()->all();
+        $dokumen    = $this->bb->documentsFor($journalIds);
+        // Nama pihak memakai resolver yang sudah dipakai Detail Transaksi Jurnal — supaya
+        // "Lawan Transaksi" di sini sama dengan "Pihak Terkait" di sana untuk jurnal yang sama.
+        $pihak = $this->party->forJournalIds($journalIds);
+
+        // DPP hanya tersedia bila dokumennya invoice hutang; untuk jalur lain memang tidak ada
+        // angka DPP tersimpan, dan mengarangnya (mis. membalik dari tarif) akan menghasilkan
+        // angka yang tidak ada di dokumen mana pun.
+        $apIds = collect($dokumen)->filter(fn ($x) => $x['type'] === 'ap_invoice')->pluck('id')->unique()->values()->all();
+        $dpp   = $apIds === [] ? collect() : BsApInvoice::whereIn('id', $apIds)->pluck('dpp', 'id');
+
+        $rows = $lines->map(function ($l) use ($codeById, $dokumen, $pihak, $dpp) {
+            $j    = $l->journal;
+            $doc  = $dokumen[(int) $l->journal_id] ?? null;
+            $kode = (string) ($codeById[$l->account_id] ?? '');
+            $nilai = round((float) $l->credit - (float) $l->debit, 2);
+
+            return [
+                'source'         => $doc['label'] ?? (BsJournal::SOURCES[$j?->source] ?? 'Jurnal'),
+                'date'           => optional($j?->journal_date)->format('Y-m-d'),
+                'partner'        => $pihak[(int) $l->journal_id] ?? '—',
+                'doc_no'         => $doc['number'] ?? ($j?->reference ?: $j?->journal_number),
+                'article'        => self::ARTICLES[$kode] ?? $kode,
+                'account_code'   => $kode,
+                'base'           => ($doc && $doc['type'] === 'ap_invoice') ? (float) ($dpp[$doc['id']] ?? 0) : null,
+                'pph'            => $nilai,
+                'journal_id'     => (int) $l->journal_id,
+                'journal_number' => $j?->journal_number,
+                'status'         => (string) ($j?->status ?? ''),
+                'status_label'   => BsJournal::STATUSES[$j?->status] ?? (string) ($j?->status ?? '—'),
+                // Hanya jurnal Approved yang efektif jadi kewajiban setor; yang belum tetap
+                // DITAMPILKAN supaya rinciannya sama dengan Detail Transaksi Jurnal, tetapi
+                // tidak ikut menaikkan angka SPT.
+                'efektif'        => ($j?->status ?? '') === 'posted',
+            ];
+        })->sortBy('date')->values();
+
         $byArticle = [];
+        $belum     = [];
         foreach (self::ARTICLES as $label) {
-            $byArticle[$label] = round($rows->where('article', $label)->sum('pph'), 2);
+            $sepasal = $rows->where('article', $label);
+            $byArticle[$label] = round((float) $sepasal->where('efektif', true)->sum('pph'), 2);
+            $belum[$label]     = round((float) $sepasal->where('efektif', false)->sum('pph'), 2);
         }
 
         // PPh Dibayar Dimuka (kredit pajak) dari AR — dipungut pelanggan.
-        $prepaid = (float) BsArInvoice::where('pph_amount', '>', 0)->whereYear('invoice_date', $year)->whereMonth('invoice_date', $month)->sum('pph_amount');
+        $prepaid = (float) BsArInvoice::where('pph_amount', '>', 0)
+            ->whereYear('invoice_date', $year)->whereMonth('invoice_date', $month)->sum('pph_amount');
 
-        // Cross-check GL: kredit (terutang) mutasi akun Hutang PPh masa ini.
+        // Cross-check GL tetap dihitung TERPISAH lewat query sendiri, bukan diambil dari
+        // $byArticle. Kalau disamakan begitu saja, kartunya akan selalu bercentang hijau —
+        // termasuk ketika perhitungan di atas rusak, dan justru itu yang perlu ketahuan.
         $gl = [];
         foreach (self::ARTICLES as $code => $label) {
             $gl[$label] = $this->accCreditMutation($code, $year, $month);
         }
 
-        return Inertia::render('BusinessSupport/Tax/Pph', [
-            'period'    => ['year' => $year, 'month' => $month],
-            'rows'      => $rows,
-            'byArticle' => $byArticle,
+        return [
+            'period'        => ['year' => $year, 'month' => $month],
+            'rows'          => $rows,
+            'byArticle'     => $byArticle,
+            'belumApproved' => $belum,
             'totalTerutang' => round(array_sum($byArticle), 2),
-            'prepaid'   => round($prepaid, 2),
-            'gl'        => $gl,
-        ]);
+            'prepaid'       => round($prepaid, 2),
+            'gl'            => $gl,
+            // Dipakai layar untuk menaut ke Detail Transaksi Jurnal per akun, membawa rentang
+            // tanggal masa pajaknya — layar tujuan berbawaan "bulan berjalan", jadi tanpa
+            // rentang ini tautannya mendarat di masa yang salah.
+            'akun'          => $akun->map(fn ($a) => [
+                'id' => (int) $a->id, 'code' => $a->code, 'name' => $a->name,
+                'article' => self::ARTICLES[$a->code] ?? $a->code,
+            ])->values(),
+            'periode'       => ['from' => $dari, 'to' => $sampai],
+        ];
     }
 
+    /**
+     * Ekspor CSV — memakai hitung() yang SAMA dengan layarnya.
+     *
+     * Sebelumnya ekspor ini punya query sendiri yang menyalin logika layar. Salinan itu ikut
+     * mewarisi cacatnya (pemotongan dari jalur Posting Invoice tidak pernah terbaca) DAN bisa
+     * menyimpang sendiri saat salah satunya disesuaikan — tanpa satu pun galat, karena berkas
+     * dan layar sama-sama masuk akal dilihat sendiri-sendiri.
+     */
     public function export(Request $request): StreamedResponse
     {
         abort_unless($request->user()?->canModule('tax'), 403);
         [$year, $month] = $this->period($request);
-        $codeById = BsAccount::whereIn('code', array_keys(self::ARTICLES))->pluck('code', 'id');
 
-        $ap = BsApInvoice::with('supplier:id,name')->where('pph_amount', '>', 0)
-            ->whereYear('invoice_date', $year)->whereMonth('invoice_date', $month)->orderBy('invoice_date')->get()
-            ->map(fn ($i) => ['AP', $i->invoice_date?->format('Y-m-d'), $i->supplier?->name, $i->invoice_number,
-                self::ARTICLES[$codeById[$i->pph_account_id] ?? '20104040403'] ?? 'PPh Pasal 23', (float) $i->dpp, (float) $i->pph_amount]);
-        $pay = BsPayrollRun::where('period_year', $year)->where('period_month', $month)->withSum('lines as pph21_total', 'pph21')->get()
-            ->filter(fn ($r) => (float) $r->pph21_total > 0)
-            ->map(fn ($r) => ['Payroll', $r->run_date?->format('Y-m-d'), 'Karyawan', $r->run_number, 'PPh Pasal 21', (float) $r->total_bruto, (float) $r->pph21_total]);
+        $rows = collect($this->hitung($year, $month)['rows']);
 
-        return response()->streamDownload(function () use ($ap, $pay): void {
+        return response()->streamDownload(function () use ($rows): void {
             $out = fopen('php://output', 'wb');
-            fputcsv($out, ['Sumber', 'Tgl', 'Lawan Transaksi', 'No Dokumen', 'Pasal', 'DPP/Bruto', 'PPh']);
-            foreach ($ap->concat($pay) as $r) {
-                fputcsv($out, $r);
+            fputcsv($out, ['Sumber', 'Tgl', 'Lawan Transaksi', 'No Dokumen', 'Pasal', 'Akun', 'No Jurnal', 'Status', 'DPP/Bruto', 'PPh']);
+            foreach ($rows as $r) {
+                fputcsv($out, [
+                    $r['source'], $r['date'], $r['partner'], $r['doc_no'], $r['article'],
+                    $r['account_code'], $r['journal_number'], $r['status_label'],
+                    // DPP dikosongkan apa adanya bila dokumennya bukan invoice hutang —
+                    // menuliskan 0 akan terbaca sebagai "DPP-nya nol", bukan "tidak tersedia".
+                    $r['base'] === null ? '' : $r['base'],
+                    $r['pph'],
+                ]);
             }
             fclose($out);
         }, "rekap-pph-{$year}-{$month}.csv", ['Content-Type' => 'text/csv']);
@@ -130,6 +202,11 @@ class PphController extends Controller
         }
         $r = DB::table('bs_journal_lines')->join('bs_journals', 'bs_journals.id', '=', 'bs_journal_lines.journal_id')
             ->where('bs_journals.status', 'posted')->where('bs_journal_lines.account_id', $id)
+            // Jurnal yang sudah dihapus TIDAK ikut. Query ini memakai DB::table, jadi global
+            // scope soft delete tidak berlaku — tanpa baris ini, jurnal terhapus tetap
+            // dihitung di sini padahal rincian rekapnya (lewat Eloquent) membuangnya, dan
+            // centang hijau pada kartunya hilang tanpa sebab yang bisa dijelaskan operator.
+            ->whereNull('bs_journals.deleted_at')
             ->whereYear('bs_journals.journal_date', $year)->whereMonth('bs_journals.journal_date', $month)
             ->selectRaw('COALESCE(SUM(credit),0) c, COALESCE(SUM(debit),0) d')->first();
 

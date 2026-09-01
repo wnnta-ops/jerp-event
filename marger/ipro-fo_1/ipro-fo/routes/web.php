@@ -448,6 +448,8 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
     Route::post('/business-support/setup/suppliers',          [BsSupplierController::class, 'store'])->name('bs.suppliers.store');
     Route::put('/business-support/setup/suppliers/{supplier}',[BsSupplierController::class, 'update'])->name('bs.suppliers.update');
     Route::delete('/business-support/setup/suppliers/{supplier}', [BsSupplierController::class, 'destroy'])->name('bs.suppliers.destroy');
+    Route::get('/business-support/setup/suppliers/import-template', [BsSupplierController::class, 'importTemplate'])->name('bs.suppliers.import.template'); // import massal: unduh format .xlsx
+    Route::post('/business-support/setup/suppliers/import',         [BsSupplierController::class, 'import'])->name('bs.suppliers.import');                 // import massal dari excel/csv
     // Inventory — setup masters (uom/category/warehouse)
     Route::get('/business-support/inventory/setup/{kind}',          [BsInvSetupController::class, 'index'])->name('bs.inv.setup.index');
     Route::post('/business-support/inventory/setup/{kind}',         [BsInvSetupController::class, 'store'])->name('bs.inv.setup.store');
@@ -626,6 +628,8 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
     Route::get('/business-support/payable-aging-pdf',         [BsApController::class, 'agingExportPdf'])->name('bs.ap.aging.export-pdf');   // #139
     Route::get('/business-support/payable-aging-excel',       [BsApController::class, 'agingExportExcel'])->name('bs.ap.aging.export-excel'); // #139
     Route::get('/business-support/payable-kartu',             [BsApController::class, 'card'])->name('bs.ap.card');
+    Route::get('/business-support/payable-kartu-excel',       [BsApController::class, 'cardExportExcel'])->name('bs.ap.card.export-excel');
+    Route::get('/business-support/payable-kartu-pdf',         [BsApController::class, 'cardExportPdf'])->name('bs.ap.card.export-pdf');
     Route::get('/business-support/payable-kartu-bayar',       [BsApController::class, 'paymentCard'])->name('bs.ap.payment-card');
     Route::get('/business-support/payable-kartu-bayar-excel', [BsApController::class, 'paymentCardExportExcel'])->name('bs.ap.payment-card.export-excel');
     Route::get('/business-support/payable-kartu-bayar-pdf',   [BsApController::class, 'paymentCardExportPdf'])->name('bs.ap.payment-card.export-pdf');
@@ -959,6 +963,8 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
     Route::post('/business-support/employees',                    [BsEmployeeController::class, 'store'])->name('bs.employees.store');
     Route::put('/business-support/employees/{employee}',         [BsEmployeeController::class, 'update'])->name('bs.employees.update');
     Route::delete('/business-support/employees/{employee}',      [BsEmployeeController::class, 'destroy'])->name('bs.employees.destroy');
+    Route::get('/business-support/employees/import-template',    [BsEmployeeController::class, 'importTemplate'])->name('bs.employees.import.template'); // import massal: unduh format .xlsx
+    Route::post('/business-support/employees/import',            [BsEmployeeController::class, 'import'])->name('bs.employees.import');                 // import massal dari excel/csv
     Route::get('/business-support/payroll',                       [BsPayrollController::class, 'index'])->name('bs.payroll.index');
     Route::post('/business-support/payroll',                      [BsPayrollController::class, 'store'])->name('bs.payroll.store');
     Route::get('/business-support/payroll/{payroll}',           [BsPayrollController::class, 'show'])->name('bs.payroll.show');

@@ -5,6 +5,15 @@ import { Plus, Pencil, Trash2, Truck, ArrowLeft } from 'lucide-vue-next';
 import Button from '@/Components/UI/Button.vue';
 import Badge from '@/Components/UI/Badge.vue';
 import EmptyState from '@/Components/UI/EmptyState.vue';
+import ImportMassal from '@/Components/UI/ImportMassal.vue';
+
+// Judul kolom template import — SATU sumber dengan SupplierController::KOLOM. Kalau keduanya
+// berbeda, keterangan di layar menjanjikan kolom yang tidak dikenali servernya.
+const KOLOM_IMPOR = [
+    'Kode', 'Nama Supplier', 'Kategori', 'Kontak Person', 'Telepon', 'Telepon 2', 'Fax', 'Email',
+    'Alamat', 'Kota', 'Nama Usaha', 'NPWP', 'Nama Bank', 'No. Rekening', 'Atas Nama Rekening',
+    'Status (Aktif/Nonaktif)',
+];
 
 const props = defineProps<{ suppliers: any; filters: Record<string, any> }>();
 
@@ -40,7 +49,11 @@ const inputCls = 'h-9 w-full rounded-lg border border-neutral-300 bg-white px-3 
     <div class="space-y-4">
         <div class="flex items-center justify-between">
             <h1 class="flex items-center gap-2 text-2xl font-bold"><Truck class="h-6 w-6 text-primary-600" /> Supplier / Vendor</h1>
-            <Button @click="openCreate"><template #icon-left><Plus class="h-4 w-4" /></template>Tambah Supplier</Button>
+            <div class="flex flex-wrap items-center gap-2">
+                <ImportMassal post-route="bs.suppliers.import" template-route="bs.suppliers.import.template" entitas="Supplier"
+                              :kolom="KOLOM_IMPOR" :wajib="['Nama Supplier']" />
+                <Button @click="openCreate"><template #icon-left><Plus class="h-4 w-4" /></template>Tambah Supplier</Button>
+            </div>
         </div>
 
         <div class="card flex items-end gap-3 p-4">
