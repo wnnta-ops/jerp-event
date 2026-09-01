@@ -118,7 +118,8 @@ class IproApPoster
      *
      * @param  string  $noPengajuan  no. pengajuan batch-nya (untuk penelusuran)
      * @param  string  $noBlt        no. BLT baris ini — dipakai membentuk refund_no unik
-     * @param  string  $jenis        'Sales' / 'Koordinator' / 'Kantor'
+     * @param  string  $jenis        'Sales' / 'Koordinator' / 'Kantor' — ikut menentukan akun
+     *                               potongan pajaknya (Kantor → PPh 23, selainnya → PPh 21)
      * @param  float   $bruto        NILAI BLT sebelum potongan
      * @param  float   $pph          PPh yang dipotong (0 = tanpa potongan)
      * @param  string  $pembeli      NAMA PEMBELI pada permohonannya
@@ -152,16 +153,21 @@ class IproApPoster
             .($pembeli ? ' '.trim($pembeli) : '')
             .($unit ? ', '.trim($unit) : ''));
 
-        // Sisi kredit: Utang Usaha sebesar NETT + Hutang PPh 21 sebesar potongannya.
+        // AKUN POTONGAN PAJAK MENGIKUTI JENJANG BLT-NYA, sejalan dengan pasal yang benar-benar
+        // dipotong oleh BltCalculatorService:
+        //   Sales & Koordinator → PPh 21 2,5%  → 20104040402 HUTANG PPH PASAL 21
+        //   Kantor              → PPh 23 2%    → 20104040403 HUTANG PPH PASAL 23
+        //
+        // Jenjang selain Kantor dianggap PPh 21: kalkulatornya hanya mengenal tiga jenjang, dan
+        // dua di antaranya PPh 21. Yang TIDAK boleh terjadi adalah baris tanpa akun sama sekali
+        // — potongannya lenyap dari buku besar, persis keadaan yang diperbaiki commit 3217c4b.
+        $kantor   = strtoupper(trim($jenis)) === 'KANTOR';
+        $kodePph  = $kantor ? '20104040403' : '20104040402';
+        $labelPph = $kantor ? 'Hutang PPh 23' : 'Hutang PPh 21';
+
+        // Sisi kredit: Utang Usaha sebesar NETT + Hutang PPh sebesar potongannya.
         // Baris PPh hanya ikut bila memang ada potongannya — BLT tanpa PPh tetap berjurnal
         // dua baris seperti biasa, bukan tiga baris yang salah satunya nol.
-        //
-        // AKUNNYA PPh PASAL 21 (20104040402), bukan Pasal 23. BLT jenjang Sales & Koordinator
-        // memang dipotong PPh 21 2,5% — lihat BltCalculatorService yang menandainya 'PPh21'.
-        // Rincian contoh dari akuntansi sempat menaruhnya di akun Pasal 23; itu yang dikoreksi
-        // di sini. Catatan untuk kemudian: jenjang KANTOR dihitung PPh 23 2% oleh kalkulator
-        // yang sama, jadi bila jenjang itu mulai dipakai, akunnya perlu mengikuti pph_jenis
-        // masing-masing baris (Pasal 21 → 20104040402, Pasal 23 → 20104040403).
         $kredit = [[
             'side' => 'credit', 'role' => 'payable', 'code' => '20101010101',
             'amount' => $nett, 'label' => 'Hutang Usaha',
@@ -171,8 +177,8 @@ class IproApPoster
             // sisa tagihan di AP (net_payable) sama dengan kredit Utang Usaha di jurnalnya.
             // Ditandai peran, bukan ditebak dari nama akun/labelnya.
             $kredit[] = [
-                'side' => 'credit', 'role' => 'pph', 'code' => '20104040402',
-                'amount' => $pph, 'label' => 'Hutang PPh 21',
+                'side' => 'credit', 'role' => 'pph', 'code' => $kodePph,
+                'amount' => $pph, 'label' => $labelPph,
             ];
         }
 

@@ -65,19 +65,27 @@ try {
     $PENGAJUAN = 'UJI-BLTPENG-1';
     $LAIN      = 'UJI-BLTPENG-2';
 
-    // [no_blt, level_type, bruto, pph]
+    // [no_blt, level_type, bruto, pph, kode akun PPh, label PPh]
+    //
+    // Ketiga jenjang ikut diuji dalam SATU pengajuan, karena di situlah salahnya paling mudah
+    // terjadi: satu klik menangani ketiganya sekaligus, dan potongan Kantor memakai pasal yang
+    // berbeda dari dua jenjang lainnya. Persentasenya mengikuti BltCalculatorService —
+    // Sales & Koordinator PPh 21 2,5%, Kantor PPh 23 2%.
     $isi = [
-        ['UJI-BLT-1', 'SALES',       25000000.0, 625000.0],
-        ['UJI-BLT-2', 'SALES',       25000000.0, 625000.0],
-        ['UJI-BLT-3', 'KOORDINATOR',  2500000.0,  62500.0],
+        ['UJI-BLT-1', 'SALES',       25000000.0, 625000.0, '20104040402', 'Hutang PPh 21'],
+        ['UJI-BLT-2', 'SALES',       25000000.0, 625000.0, '20104040402', 'Hutang PPh 21'],
+        ['UJI-BLT-3', 'KOORDINATOR',  2500000.0,  62500.0, '20104040402', 'Hutang PPh 21'],
+        ['UJI-BLT-4', 'KANTOR',      10000000.0, 200000.0, '20104040403', 'Hutang PPh 23'],
     ];
     $buat = function (string $pengajuan, array $b) use ($tenantId, $kontrakId) {
         [$no, $level, $bruto, $pph] = $b;
+        $kantor = $level === 'KANTOR';
 
         return Blt::create([
             'tenant_id' => $tenantId, 'no_blt' => $no, 'no_pengajuan' => $pengajuan,
             'tgl_blt' => '2026-09-01', 'kontrak_id' => $kontrakId, 'level_type' => $level,
-            'nilai_blt' => $bruto, 'pph_jenis' => 'PPh21', 'pph_persen' => 2.5,
+            'nilai_blt' => $bruto, 'pph_jenis' => $kantor ? 'PPh23' : 'PPh21',
+            'pph_persen' => $kantor ? 2.0 : 2.5,
             'pph_amount' => $pph, 'ppn_amount' => 0, 'nett' => $bruto - $pph,
             'status' => 'PAID', 'tgl_bayar' => '2026-09-01',
         ]);
@@ -100,8 +108,8 @@ try {
     $barisLayar = Blt::query()->whereNotNull('no_pengajuan')->where('status', 'PAID')
         ->selectRaw('MIN(id) as id, no_pengajuan, COUNT(*) as jml, SUM(nilai_blt) as total_nilai, SUM(pph_amount) as total_pph, SUM(nett) as total_nett, MAX(tgl_bayar) as tgl_bayar')
         ->groupBy('no_pengajuan')->having('no_pengajuan', '=', $PENGAJUAN)->first();
-    $cek('layar meringkas 3 BLT jadi satu baris pengajuan', (int) ($barisLayar->jml ?? 0) === 3,
-        'jml='.($barisLayar->jml ?? '?'));
+    $cek('layar meringkas '.count($isi).' BLT jadi satu baris pengajuan',
+        (int) ($barisLayar->jml ?? 0) === count($isi), 'jml='.($barisLayar->jml ?? '?'));
 
     // Aksi tombolnya dijalankan apa adanya — closure diambil dari definisi tabel halamannya,
     // jadi yang diuji benar-benar kode yang jalan saat tombolnya diklik.
@@ -112,8 +120,8 @@ try {
     $aksi->record($barisLayar)->call();
 
     $baris = $antrian($PENGAJUAN);
-    $cek('3 BLT → 3 baris antrian BO (tidak ada yang digabung/tertinggal)', count($baris) === 3,
-        'dapat '.count($baris).' baris');
+    $cek(count($isi).' BLT → '.count($isi).' baris antrian BO (tidak ada yang digabung/tertinggal)',
+        count($baris) === count($isi), 'dapat '.count($baris).' baris');
     $cek('pengajuan lain tidak ikut terkirim', count($antrian($LAIN)) === 0);
 
     echo "\n=== 2. Isi tiap baris antrian lengkap ===\n";
@@ -123,7 +131,7 @@ try {
         $perNo[substr((string) $r->refund_no, strlen($PENGAJUAN) + 1)] = $r;
     }
     foreach ($isi as $b) {
-        [$no, $level, $bruto, $pph] = $b;
+        [$no, $level, $bruto, $pph, $kodePph, $labelPph] = $b;
         $r = $perNo[$no] ?? null;
         if (! $r) {
             $cek('antrian untuk '.$no.' ada', false, 'refund_no yang ada: '.implode(', ', array_keys($perNo)));
@@ -154,10 +162,10 @@ try {
             return $a;
         };
         $split = json_decode((string) $r->account_split, true) ?: [];
-        $cek($no.': rincian kredit = Utang Usaha (nett) + Hutang PPh 21 (potongan)',
+        $cek($no.' ('.$level.'): rincian kredit = Utang Usaha (nett) + '.$labelPph.' (potongan)',
             $rapikan($split) === $rapikan([
                 ['side' => 'credit', 'role' => 'payable', 'code' => '20101010101', 'amount' => $bruto - $pph, 'label' => 'Hutang Usaha'],
-                ['side' => 'credit', 'role' => 'pph', 'code' => '20104040402', 'amount' => $pph, 'label' => 'Hutang PPh 21'],
+                ['side' => 'credit', 'role' => 'pph', 'code' => $kodePph, 'amount' => $pph, 'label' => $labelPph],
             ]),
             (string) $r->account_split);
         $cek($no.': jumlah rincian kredit = nilai antriannya',
@@ -169,8 +177,8 @@ try {
     // Operator mengklik ulang karena ragu adalah hal biasa. Yang tidak boleh terjadi:
     // hutangnya bertambah dua kali lipat.
     $aksi->record($barisLayar)->call();
-    $cek('tetap 3 baris antrian setelah klik kedua', count($antrian($PENGAJUAN)) === 3,
-        'dapat '.count($antrian($PENGAJUAN)).' baris');
+    $cek('tetap '.count($isi).' baris antrian setelah klik kedua',
+        count($antrian($PENGAJUAN)) === count($isi), 'dapat '.count($antrian($PENGAJUAN)).' baris');
 
     echo "\n=== 4. BLT tak wajar tidak dikirim diam-diam ===\n";
 
@@ -180,7 +188,32 @@ try {
     $cek('nilai nol ditolak',
         $poster->queueBltRow('UJI-BLTPENG-3', 'UJI-BLT-Y', 'Sales', 0, 0, 'X', 'U-1') === null);
 
-    echo "\n=== 5. BLT tanpa potongan PPh tetap terkirim ===\n";
+    echo "\n=== 5. Pemetaan jenjang → pasal PPh, apa pun penulisannya ===\n";
+
+    // Jenjang datang dari level_type lewat ucfirst(strtolower()), tetapi pemetaannya tidak
+    // boleh bergantung pada bentuk penulisan itu — cukup satu perubahan kecil di pemanggilnya
+    // untuk membuat semua potongan Kantor diam-diam masuk akun Pasal 21.
+    $kodeUntuk = function (string $jenis, string $noBlt) use ($poster, $boConn) {
+        $id = $poster->queueBltRow('UJI-BLTPENG-5', $noBlt, $jenis, 10000000, 200000, 'PEMBELI J', 'U-5');
+        $r = DB::connection($boConn)->table('bs_ap_refund_queue')->where('id', $id)->first();
+        foreach (json_decode((string) ($r->account_split ?? ''), true) ?: [] as $x) {
+            if (($x['role'] ?? '') === 'pph') {
+                return (string) ($x['code'] ?? '').' '.(string) ($x['label'] ?? '');
+            }
+        }
+
+        return '(tanpa baris PPh)';
+    };
+    foreach (['Kantor' => 'k1', 'KANTOR' => 'k2', 'kantor' => 'k3', ' Kantor ' => 'k4'] as $jenis => $no) {
+        $cek('jenjang "'.$jenis.'" → Hutang PPh Pasal 23',
+            $kodeUntuk($jenis, $no) === '20104040403 Hutang PPh 23', $kodeUntuk($jenis, $no.'b'));
+    }
+    foreach (['Sales' => 's1', 'Koordinator' => 'o1'] as $jenis => $no) {
+        $cek('jenjang "'.$jenis.'" → Hutang PPh Pasal 21',
+            $kodeUntuk($jenis, $no) === '20104040402 Hutang PPh 21', $kodeUntuk($jenis, $no.'b'));
+    }
+
+    echo "\n=== 6. BLT tanpa potongan PPh tetap terkirim ===\n";
 
     $idTanpaPph = $poster->queueBltRow('UJI-BLTPENG-4', 'UJI-BLT-Z', 'Kantor', 5000000, 0, 'PEMBELI Z', 'U-9');
     $cek('BLT tanpa PPh tetap masuk antrian', $idTanpaPph !== null);

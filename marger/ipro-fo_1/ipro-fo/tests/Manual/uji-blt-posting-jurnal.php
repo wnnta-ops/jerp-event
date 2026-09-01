@@ -22,10 +22,12 @@ declare(strict_types=1);
  * debit, dan kredit. Dua jalur posting diuji: satuan (fromRefund) dan gabungan (bulkRefund),
  * karena keduanya membangun sisi kredit dengan kode yang berbeda.
  *
- * SATU HAL SENGAJA BERBEDA DARI EXCEL-NYA: akun potongan pajaknya. Excel menaruhnya di
- * 20104040403 HUTANG PPH PASAL 23, sedangkan BLT jenjang Sales & Koordinator memang dipotong
- * PPh 21 2,5% (BltCalculatorService menandainya 'PPh21'). Atas keputusan pemilik proses,
- * yang dipakai 20104040402 HUTANG PPH PASAL 21 — dan itulah yang dijaga di sini. Sisa
+ * SATU HAL SENGAJA BERBEDA DARI EXCEL-NYA: akun potongan pajaknya. Excel menaruh SEMUA
+ * potongan di 20104040403 HUTANG PPH PASAL 23. Yang berlaku, sesuai keputusan pemilik proses
+ * dan sejalan dengan BltCalculatorService:
+ *   Sales & Koordinator → PPh 21 2,5% → 20104040402 HUTANG PPH PASAL 21
+ *   Kantor              → PPh 23 2%   → 20104040403 HUTANG PPH PASAL 23
+ * Kedua jenjang itu diuji — Sales & Koordinator pada bagian 2, Kantor pada bagian 8. Sisa
  * jurnalnya tetap persis seperti Excel-nya.
  *
  * Diuji juga bahwa sumber LAMA (gimmick/komisi tanpa rincian kredit) tidak ikut berubah, dan
@@ -68,7 +70,8 @@ $akun = fn (string $kode) => (int) DB::table('bs_accounts')->where('code', $kode
 
 $KOMISI = $akun('50201010103');   // KOMISI/INSENTIF PENJUALAN
 $UTANG  = $akun('20101010101');   // UTANG USAHA SUPPLIER
-$PPH21  = $akun('20104040402');   // HUTANG PPH PASAL 21
+$PPH21  = $akun('20104040402');   // HUTANG PPH PASAL 21 — jenjang Sales & Koordinator
+$PPH23  = $akun('20104040403');   // HUTANG PPH PASAL 23 — jenjang Kantor
 
 DB::beginTransaction();
 
@@ -77,8 +80,8 @@ try {
     $user   = \App\Models\User::query()->find($userId);
     auth()->setUser($user);
 
-    if (! $KOMISI || ! $UTANG || ! $PPH21) {
-        throw new RuntimeException('akun 50201010103 / 20101010101 / 20104040402 tidak ada di Bagan Akun');
+    if (! $KOMISI || ! $UTANG || ! $PPH21 || ! $PPH23) {
+        throw new RuntimeException('akun 50201010103 / 20101010101 / 20104040402 / 20104040403 tidak ada di Bagan Akun');
     }
 
     $sup = BsSupplier::create(['code' => 'UJI-BLT-1', 'name' => 'UJI Penerima BLT', 'is_active' => true]);
@@ -336,6 +339,44 @@ try {
     $cek('kode akun yang tidak ada di Bagan Akun ditolak',
         DB::table('bs_ap_refund_queue')->where('id', $idAkunHilang)->value('status') !== 'posted');
     $cek('penolakan kode akun asing rapi', $ledak === null, (string) $ledak);
+
+    // ═════════════════════════════════════════════════════════════════════════════════════
+    echo "\n=== 8. Jenjang KANTOR mendarat di Hutang PPh Pasal 23 ===\n";
+
+    // Sales & Koordinator dipotong PPh 21, Kantor dipotong PPh 23 — dua pasal berbeda dalam
+    // satu jenis dokumen yang sama. Sisi BO tidak boleh "tahu" pasalnya sendiri: ia harus
+    // memakai akun yang disebut antriannya. Yang diuji di sini justru itu — bahwa akun kredit
+    // PPh mengikuti antriannya, bukan sebuah tetapan di sisi BO.
+    $idKantor = (int) DB::table('bs_ap_refund_queue')->insertGetId([
+        'tenant_id' => $tenantId, 'kind' => 'blt', 'refund_no' => $PENGAJUAN.'#BLT-UJI-KANTOR',
+        'customer_name' => 'DIDIK KEMBUNG', 'amount' => 10000000,
+        'payable_account_id' => $UTANG, 'offset_account_id' => $KOMISI,
+        'account_split' => json_encode([
+            ['side' => 'credit', 'role' => 'payable', 'code' => '20101010101', 'amount' => 9800000, 'label' => 'Hutang Usaha'],
+            ['side' => 'credit', 'role' => 'pph', 'code' => '20104040403', 'amount' => 200000, 'label' => 'Hutang PPh 23'],
+        ]),
+        'tgl_refund' => '2026-09-01',
+        'keterangan' => 'BLT Kantor '.$PENGAJUAN.' DIDIK KEMBUNG, JRK3-004-XVI-11',
+        'status' => 'pending', 'created_at' => now(), 'updated_at' => now(),
+    ]);
+    $posting($idKantor);
+    $invKantor = BsApInvoice::find((int) DB::table('bs_ap_refund_queue')->where('id', $idKantor)->value('ap_invoice_id'));
+    $ketKantor = 'BLT Kantor '.$PENGAJUAN.' DIDIK KEMBUNG, JRK3-004-XVI-11';
+    $mauKantor = [
+        [$KOMISI, $ketKantor,                        10000000.0, 0.0],
+        [$UTANG,  'Hutang Usaha '.$ketKantor,        0.0,        9800000.0],
+        [$PPH23,  'Hutang PPh 23 '.$ketKantor,       0.0,        200000.0],
+    ];
+    $dapatKantor = $invKantor ? $barisJurnal($invKantor) : [];
+    $cek('jurnal BLT Kantor mengkredit HUTANG PPH PASAL 23', $dapatKantor === $mauKantor,
+        "\n        dapat  : ".json_encode($dapatKantor, JSON_UNESCAPED_UNICODE)
+        ."\n        harusnya: ".json_encode($mauKantor, JSON_UNESCAPED_UNICODE));
+    $cek('kolom PPh invoice-nya menunjuk akun Pasal 23',
+        (int) ($invKantor->pph_account_id ?? 0) === $PPH23
+            && round((float) ($invKantor->pph_amount ?? 0), 2) === 200000.0,
+        'pph_account_id='.($invKantor->pph_account_id ?? '?'));
+    $cek('akun Pasal 21 tidak ikut terpakai pada jurnal Kantor',
+        ! in_array($PPH21, array_column($dapatKantor, 0), true));
 
     echo "\n".str_repeat('─', 78)."\n";
     echo $gagal === 0 ? "SEMUA LULUS ({$lulus})\n" : "GAGAL: {$gagal}, lulus: {$lulus}\n";
