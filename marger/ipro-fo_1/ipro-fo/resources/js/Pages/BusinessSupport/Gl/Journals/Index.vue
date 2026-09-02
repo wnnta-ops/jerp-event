@@ -346,9 +346,10 @@ function rentangBaris(j: any) { return barisTampil(j).length; }
 
                No. Jurnal │ Tanggal │ Sumber │ Keterangan │ Status │ Baris │ Anggaran │ COA │ Nama Akun │ Keterangan Baris │ Debit │ Kredit
 
-             Kolom milik jurnalnya memakai rowspan — ditulis sekali, membentang menaungi
-             baris-barisnya — jadi bentuknya sama persis dengan berkas Excel yang diekspor
-             halaman ini, dan angkanya bisa dibaca lurus tanpa berpindah tingkat.
+             Kolom milik jurnalnya DIULANG pada tiap baris akun, tidak di-rowspan, sehingga tiap
+             baris berdiri sendiri — persis bentuk berkas Excel yang diekspor halaman ini, dan
+             angkanya bisa dibaca lurus tanpa berpindah tingkat. Hanya kolom kendali (centang,
+             panah rincian, tautan "Lihat") yang tetap satu per jurnal.
 
              Sebelumnya rincian digambar sebagai baris bertingkat di bawah kepala jurnal, dengan
              kepala kolomnya sendiri. Akibatnya ada DUA pasang kolom Debit & Kredit yang
@@ -431,9 +432,13 @@ function rentangBaris(j: any) { return barisTampil(j).length; }
                     </tr>
                 </thead>
                 <tbody class="divide-y divide-neutral-200 dark:divide-neutral-800">
-                    <!-- Satu baris = satu BARIS JURNAL. Kolom milik jurnalnya (No. Jurnal s/d
-                         Anggaran) memakai rowspan sehingga ditulis sekali dan membentang menaungi
-                         baris-barisnya — sama seperti berkas Excel yang diekspor halaman ini. -->
+                    <!-- Satu baris = satu BARIS JURNAL, dan barisnya BERDIRI SENDIRI: kolom milik
+                         jurnalnya (No. Jurnal s/d Anggaran) ditulis ulang pada tiap baris akun.
+                         Yang tetap di-rowspan hanya kolom KENDALI — centang, panah rincian, dan
+                         tautan "Lihat" — karena ketiganya bekerja pada jurnalnya, bukan pada
+                         barisnya; mengulangnya akan membuat satu jurnal seolah bisa dicentang
+                         berkali-kali. Bentuk ini sama dengan ekspor Excel halaman ini, yang memang
+                         sudah mengulang kolom jurnalnya di tiap baris. -->
                     <template v-for="j in journals.data" :key="j.id">
                         <tr v-for="(ln, i) in barisTampil(j)" :key="ln?.id ?? ('ringkas-' + j.id)"
                             class="align-top hover:bg-neutral-50/60 dark:hover:bg-neutral-800/40"
@@ -444,32 +449,39 @@ function rentangBaris(j: any) { return barisTampil(j).length; }
                                     <Lock v-else class="mx-auto h-3.5 w-3.5 text-neutral-300 dark:text-neutral-600" title="Periode sudah closed — jurnalnya tidak bisa diubah. Batalkan closing periodenya dulu di General Function." />
                                 </td>
                                 <td class="px-2 py-2.5 text-center" :rowspan="rentangBaris(j)"><button type="button" @click="toggle(j.id)" class="text-neutral-400 hover:text-primary-600" :title="isOpen(j.id) ? 'Sembunyikan rincian jurnal ini' : 'Tampilkan rincian jurnal ini'"><ChevronDown class="h-4 w-4 transition-transform" :class="{ 'rotate-180': isOpen(j.id) }" /></button></td>
-                                <td class="px-4 py-2.5 font-mono font-semibold break-words" :rowspan="rentangBaris(j)">{{ j.journal_number }}</td>
-                                <td class="px-4 py-2.5" :rowspan="rentangBaris(j)">{{ fmtDate(j.journal_date) }}</td>
-                                <td class="px-4 py-2.5" :rowspan="rentangBaris(j)"><Badge variant="info" size="sm">{{ sources[j.source] ?? j.source }}</Badge></td>
+                            </template>
+
+                            <!-- Kolom milik JURNALNYA ditulis ULANG pada tiap baris akun, tidak lagi
+                                 di-rowspan. Dengan rowspan, akun kedua dan seterusnya tampil tanpa
+                                 nomor jurnal — barisnya terbaca seperti tidak bermilik, dan tidak
+                                 bisa disalin per baris. Ekspor Excel halaman ini memang sudah
+                                 mengulangnya di tiap baris (JournalController::exportExcel), jadi
+                                 yang menyimpang selama ini justru layarnya. -->
+                            <td class="px-4 py-2.5 align-top font-mono font-semibold break-words">{{ j.journal_number }}</td>
+                            <td class="px-4 py-2.5 align-top">{{ fmtDate(j.journal_date) }}</td>
+                            <td class="px-4 py-2.5 align-top"><Badge variant="info" size="sm">{{ sources[j.source] ?? j.source }}</Badge></td>
                                 <!-- Keterangan dibiarkan MEMBUNGKUS, tidak dipotong: keterangan jurnal
                                      adalah satu-satunya penjelasan mengapa jurnalnya ada. -->
-                                <td class="px-4 py-2.5 whitespace-normal break-words" :rowspan="rentangBaris(j)">{{ j.description }}<span v-if="j.reference" class="mt-0.5 block text-xs text-neutral-400">Ref: {{ j.reference }}</span></td>
-                                <td class="px-4 py-2.5 text-center" :rowspan="rentangBaris(j)"><Badge :variant="statusBadge[j.status] ?? 'neutral'" size="sm">{{ statuses[j.status] ?? j.status }}</Badge></td>
+                            <td class="px-4 py-2.5 align-top whitespace-normal break-words">{{ j.description }}<span v-if="j.reference" class="mt-0.5 block text-xs text-neutral-400">Ref: {{ j.reference }}</span></td>
+                            <td class="px-4 py-2.5 align-top text-center"><Badge :variant="statusBadge[j.status] ?? 'neutral'" size="sm">{{ statuses[j.status] ?? j.status }}</Badge></td>
                                 <!-- Total jurnalnya menumpang di sini sebagai keterangan, bukan sebagai
                                      kolom Debit/Kredit kedua: dua pasang kolom bernama sama membuat
                                      mata harus memutuskan mana yang sedang dibacanya. -->
-                                <td class="px-4 py-2.5 text-center tabular-nums" :rowspan="rentangBaris(j)"
-                                    :title="'Total jurnal — debit ' + fmtRp(j.total_debit) + ' · kredit ' + fmtRp(j.total_credit)">{{ j.lines_count }}</td>
+                            <td class="px-4 py-2.5 align-top text-center tabular-nums"
+                                :title="'Total jurnal — debit ' + fmtRp(j.total_debit) + ' · kredit ' + fmtRp(j.total_credit)">{{ j.lines_count }}</td>
                                 <!-- Over MAUPUN Under sama-sama membawa angkanya sendiri: anggaran,
                                      realisasi, dan sisanya. "Under Budget" tanpa menyebut anggaran
                                      mana yang dipatuhi hanya berbeda WARNA dari "Non Budget",
                                      padahal keduanya keadaan yang berbeda — yang satu beranggaran
                                      dan masih bersisa, yang satu memang tidak punya anggaran. -->
-                                <td class="px-4 py-2.5 text-center" :rowspan="rentangBaris(j)">
-                                    <span v-if="j.budget_status" class="inline-block rounded-md px-2 py-0.5 text-[11px] font-semibold ring-1"
-                                          :class="NADA_ANGGARAN[j.budget_status]"
-                                          :title="j.budget_note ?? 'Tidak ada anggaran disetujui untuk akun & cost center pada jurnal ini — tidak ada yang membatasi.'">
-                                        {{ budgetStatuses?.[j.budget_status] ?? j.budget_status }}
-                                    </span>
-                                    <span v-else class="text-[11px] text-neutral-400">—</span>
-                                </td>
-                            </template>
+                            <td class="px-4 py-2.5 align-top text-center">
+                                <span v-if="j.budget_status" class="inline-block rounded-md px-2 py-0.5 text-[11px] font-semibold ring-1"
+                                      :class="NADA_ANGGARAN[j.budget_status]"
+                                      :title="j.budget_note ?? 'Tidak ada anggaran disetujui untuk akun & cost center pada jurnal ini — tidak ada yang membatasi.'">
+                                    {{ budgetStatuses?.[j.budget_status] ?? j.budget_status }}
+                                </span>
+                                <span v-else class="text-[11px] text-neutral-400">—</span>
+                            </td>
 
                             <!-- Kolom milik BARISNYA. Saat rincian ditutup, ln kosong dan yang tampil
                                  total jurnalnya — sehingga Debit & Kredit tidak pernah kosong. -->
