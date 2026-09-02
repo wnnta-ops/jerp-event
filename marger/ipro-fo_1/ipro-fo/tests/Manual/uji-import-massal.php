@@ -207,7 +207,10 @@ try {
     // Inti fiturnya: yang gagal DISEBUT, lengkap dengan nomor barisnya.
     $galat = implode(' | ', $r['galat'] ?? []);
     $cek('nama kosong dilaporkan beserta nomor baris', str_contains($galat, 'Baris 4') && str_contains($galat, 'Nama Supplier kosong'), $galat);
-    $cek('NPWP bukan 16 angka dilaporkan', str_contains($galat, 'Baris 5') && str_contains($galat, 'NPWP'), $galat);
+    // Panjang yang sah 15 atau 16 angka, dan 13-14 angka dipulihkan nol depannya — seluruh
+    // aturannya diuji tersendiri di uji-import-npwp.php. Di sini cukup dipastikan barisnya
+    // benar-benar dilaporkan lewat jalur import.
+    $cek('NPWP yang panjangnya tidak sah dilaporkan', str_contains($galat, 'Baris 5') && str_contains($galat, 'NPWP'), $galat);
     $cek('email tidak valid dilaporkan', str_contains($galat, 'Baris 6') && str_contains($galat, 'Email'), $galat);
     $cek('kode kembar dalam satu berkas dilaporkan', str_contains($galat, 'Baris 7') && str_contains($galat, 'dua kali'), $galat);
 

@@ -230,4 +230,54 @@ final class TabelImpor
 
         return null;
     }
+
+    /**
+     * NPWP dari sel apa adanya. Memulangkan [npwp, dipulihkan, galat].
+     *
+     * DUA PANJANG SAMA-SAHNYA. NPWP lama 15 angka (00.000.000.0-000.000), dan sejak Coretax
+     * 2024 NPWP orang pribadi 16 angka mengikuti NIK. Keduanya beredar berdampingan di daftar
+     * supplier mana pun — menuntut 16 saja menolak seluruh data lama, yang justru mayoritasnya.
+     *
+     * NOL DEPAN YANG DIMAKAN EXCEL DIPULIHKAN. Bila kolomnya bertipe angka, Excel membuang nol
+     * di depan: "054963137617000" tersimpan sebagai 54963137617000. Kekurangannya hanya bisa
+     * di depan dan jumlahnya pasti, jadi nilainya bisa disusun kembali persis — bukan ditebak.
+     * Hanya 13-14 angka yang dipulihkan (menjadi 15); lebih pendek dari itu bukan lagi nol
+     * depan yang hilang melainkan datanya yang memang lain, dan menambalnya berarti mengarang.
+     *
+     * "0" dan sel kosong berarti TIDAK BER-NPWP — bukan galat. Banyak supplier perorangan
+     * memang tak punya, dan daftar lama menuliskannya sebagai angka nol.
+     *
+     * @return array{0: ?string, 1: bool, 2: ?string}
+     */
+    public static function npwp(string $raw): array
+    {
+        // Huruf O dibaca angka nol. Di kolom yang isinya angka semata, huruf O tidak punya
+        // arti lain, dan "055640221652OOO" jelas dimaksud "055640221652000". Dipetakan SEBELUM
+        // huruf dibuang — kalau dibuang lebih dulu, tiga angka terakhirnya hilang dan nilainya
+        // ditolak sebagai kependekan padahal utuh.
+        $bersih = str_replace(['O', 'o'], '0', trim($raw));
+        $angka = preg_replace('/\D/', '', $bersih) ?? '';
+
+        // Tanpa angka sama sekali, atau hanya nol ("0", "00", …) → tidak ber-NPWP.
+        if ($angka === '' || trim($angka, '0') === '') {
+            return [null, false, null];
+        }
+        if (strlen($angka) === 15 || strlen($angka) === 16) {
+            // Dianggap dipulihkan bila bentuk aslinya memang berbeda — mis. huruf O tadi.
+            return [$angka, $bersih !== trim($raw), null];
+        }
+        if (strlen($angka) >= 13 && strlen($angka) <= 14) {
+            return [str_pad($angka, 15, '0', STR_PAD_LEFT), true, null];
+        }
+
+        $n = strlen($angka);
+        $saran = $n < 13
+            // Terlalu pendek untuk sekadar nol depan yang hilang: ada bagian yang memang tak
+            // tertulis. Kelompok terakhir NPWP (kode cabang) tidak bisa ditebak — 000 pada
+            // kantor pusat, tetapi 001, 002, … pada cabang.
+            ? ' Sepertinya ada bagian yang belum lengkap — NPWP utuh berbentuk 00.000.000.0-000.000.'
+            : ' Periksa penulisannya.';
+
+        return [null, false, "NPWP '".trim($raw)."' terbaca {$n} angka — seharusnya 15 atau 16.".$saran];
+    }
 }

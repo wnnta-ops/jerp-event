@@ -44,7 +44,12 @@ function pilih(e: Event) {
 function kirim() {
     if (!berkas.value || mengirim.value) return;
     mengirim.value = true;
-    router.post(props.postRoute, { file: berkas.value, mode: mode.value }, {
+    // route(...), BUKAN nama rutenya mentah-mentah: router.post() menerima URL. Mengirim
+    // "bs.suppliers.import" apa adanya membuat browser memposting ke path harfiah itu —
+    // relatif terhadap halaman yang sedang dibuka — dan jawabannya 404. Tautan unduh
+    // template di bawah sudah benar sejak awal, jadi gejalanya khas: templatenya bisa
+    // diunduh, tombol Import-nya menghasilkan "Halaman Tidak Ditemukan".
+    router.post(route(props.postRoute), { file: berkas.value, mode: mode.value }, {
         forceFormData: true,
         preserveScroll: true,
         onFinish: () => { mengirim.value = false; },
