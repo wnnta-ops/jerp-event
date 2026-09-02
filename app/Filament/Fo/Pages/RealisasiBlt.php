@@ -61,7 +61,13 @@ class RealisasiBlt extends Page implements HasTable
                 Tables\Actions\Action::make('postingBo')->label('Posting BO')->icon('heroicon-o-paper-airplane')->color('success')->button()
                     ->requiresConfirmation()
                     ->modalHeading('Posting BLT ke BO')
-                    ->modalDescription(fn (Blt $r) => 'Kirim '.$r->jml.' BLT pada batch '.$r->no_pengajuan.' (nilai Rp '.number_format((float) $r->total_nilai, 0, ',', '.').', PPh Rp '.number_format((float) $r->total_pph, 0, ',', '.').', NETT Rp '.number_format((float) $r->total_nett, 0, ',', '.').') ke Posting Invoice BO. Setiap BLT menjadi satu baris tersendiri — tidak ada yang digabung. Jadi hutang AP setelah diposting di BO.')
+                    // Angka jumlah/nilai/PPh/NETT sengaja TIDAK diulang di sini: keempatnya
+                    // sudah terbaca pada baris yang tombolnya baru saja diklik, tepat di
+                    // sebelah kiri tombol itu. Mengulangnya membuat kalimat konfirmasi ini
+                    // panjang dan justru menenggelamkan hal yang perlu dipahami sebelum
+                    // menekan Konfirmasi — bahwa tiap BLT jadi barisnya sendiri, dan bahwa
+                    // ini melahirkan hutang AP.
+                    ->modalDescription(fn (Blt $r) => 'Kirim BLT pada '.$r->no_pengajuan.' ke Posting Invoice BO. Setiap BLT menjadi satu baris tersendiri dan tidak ada yang digabung. Akan menjadi hutang AP setelah diposting di BO.')
                     ->action(function (Blt $r) {
                         try {
                             $poster = app(\App\Modules\BO\IproBridge\Services\IproApPoster::class);
