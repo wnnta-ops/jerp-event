@@ -40,6 +40,13 @@ class BsJournal extends Model
         'ap'         => 'Hutang (AP)',
         'cash'       => 'Kas/Bank',
         'inventory'  => 'Persediaan',
+        // Import Jurnal massal (JournalImportController) sudah lama menulis source='import',
+        // tetapi nilainya tak pernah terdaftar di sini. Akibatnya badge Sumber-nya jatuh ke
+        // teks mentah "import", dan — yang lebih merepotkan — saringan Sumber pada Detail
+        // Transaksi Jurnal dibangun dari daftar INI, sehingga jurnal hasil impor tidak bisa
+        // disaring sama sekali. Justru sesudah mengimpor ratusan baris itulah orang paling
+        // butuh menyaringnya.
+        'import'     => 'Import Jurnal',
     ];
 
     public function lines(): HasMany { return $this->hasMany(BsJournalLine::class, 'journal_id'); }

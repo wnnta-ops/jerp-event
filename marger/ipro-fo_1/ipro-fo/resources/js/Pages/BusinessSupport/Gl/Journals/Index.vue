@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue';
 import { router, Link } from '@inertiajs/vue3';
-import { Plus, ArrowLeft, FileText, ChevronDown, ListTree, Layers, Lock, FilterX } from 'lucide-vue-next';
+import { Plus, ArrowLeft, FileText, ChevronDown, ListTree, Layers, Lock, FilterX, FileSpreadsheet } from 'lucide-vue-next';
 import Button from '@/Components/UI/Button.vue';
 import Badge from '@/Components/UI/Badge.vue';
 import EmptyState from '@/Components/UI/EmptyState.vue';
@@ -256,7 +256,18 @@ function rentangBaris(j: any) { return barisTampil(j).length; }
         <Link :href="route('bs.gl.index')" class="inline-flex items-center gap-2 text-sm text-neutral-500 hover:text-neutral-800 dark:hover:text-neutral-200"><ArrowLeft class="h-4 w-4" /> General Ledger</Link>
         <div class="flex items-center justify-between">
             <h1 class="flex items-center gap-2 text-2xl font-bold"><FileText class="h-6 w-6 text-primary-600" /> {{ title ?? 'Jurnal' }}</h1>
-            <Link :href="route('bs.gl.journal.create')"><Button><template #icon-left><Plus class="h-4 w-4" /></template>Jurnal Memorial</Button></Link>
+            <div class="flex items-center gap-2">
+                <!-- Import Jurnal massal. Layarnya sudah ada sejak lama, tetapi hanya bisa
+                     dicapai lewat menu samping — sementara orang yang hendak mengimpor justru
+                     sedang berdiri di sini, melihat daftar jurnalnya. Menautkan, BUKAN menyalin
+                     dialognya ke sini: satu layar impor berarti satu tempat memperbaikinya. -->
+                <Link :href="route('bs.gl.journal.import')">
+                    <button type="button" class="inline-flex h-9 items-center gap-1.5 rounded-lg border border-neutral-300 px-3 text-sm font-semibold text-neutral-700 hover:bg-neutral-50 dark:border-neutral-700 dark:text-neutral-200 dark:hover:bg-neutral-800">
+                        <FileSpreadsheet class="h-4 w-4" /> Import Jurnal
+                    </button>
+                </Link>
+                <Link :href="route('bs.gl.journal.create')"><Button><template #icon-left><Plus class="h-4 w-4" /></template>Jurnal Memorial</Button></Link>
+            </div>
         </div>
 
         <!-- Filter: periode tanggal + sumber + status + cari -->

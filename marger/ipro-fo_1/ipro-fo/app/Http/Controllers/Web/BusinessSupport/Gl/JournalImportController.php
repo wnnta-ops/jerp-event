@@ -10,6 +10,7 @@ use App\Exceptions\BusinessRuleException;
 use App\Http\Controllers\Controller;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -24,9 +25,51 @@ class JournalImportController extends Controller
     {
         abort_unless($request->user()?->canModule('gl'), 403);
 
+        // Pratinjau di layar dibangun dari SUMBER YANG SAMA dengan berkas templatenya.
+        // Sebelumnya kalimat contohnya ditulis ulang di sini sebagai untai CSV — dua salinan
+        // yang lambat laun berbeda, sehingga yang dilihat orang di layar bukan yang benar-benar
+        // terunduh, dan tidak ada galat apa pun yang menandainya.
         return Inertia::render('BusinessSupport/Gl/JournalImport', [
-            'template' => "TANGGAL,KODE_AKUN,DEBIT,KREDIT,KETERANGAN,REFERENSI\n2026-06-30,50101010101,1000000,0,Beban contoh,JU-001\n2026-06-30,10101010101,0,1000000,Kas keluar,JU-001",
+            'template' => collect($this->contohBaris())
+                ->map(fn (array $r) => implode(',', array_map(fn ($v) => (string) $v, $r)))
+                ->implode("\n"),
         ]);
+    }
+
+    /**
+     * Isi template: header + dua jurnal contoh yang seimbang.
+     *
+     * AKUNNYA DIAMBIL DARI BAGAN AKUN YANG ADA, bukan kode yang dipaku. Kode contoh yang tidak
+     * dikenal membuat percobaan pertama — unduh template, langsung unggah balik untuk melihat
+     * cara kerjanya — berakhir dengan "akun tidak ditemukan". Itu langkah pertama yang paling
+     * wajar dilakukan orang, dan gagalnya membuat fiturnya terkesan rusak padahal hanya
+     * contohnya yang tidak cocok dengan Bagan Akun tenant ini.
+     *
+     * Empat kode di bawah dipakai bila memang ada (contohnya jadi bermakna: beban/kas dan
+     * piutang/penjualan); bila tidak, diganti akun postable mana pun yang tersedia.
+     *
+     * @return array<int,array<int,string|int>>
+     */
+    private function contohBaris(): array
+    {
+        $mau = ['50101010101', '10101010101', '10102010101', '40101010101'];
+        $ada = BsAccount::whereIn('code', $mau)->pluck('code')->all();
+
+        if (count($ada) < 4) {
+            $ganti = BsAccount::where('is_postable', true)->orderBy('code')->limit(4)->pluck('code')->all();
+            // Kurang dari empat akun postable — biarkan kode bawaannya; berkasnya tetap
+            // terunduh dan pesan galat importnya yang akan menyebutkan akun mana yang kurang.
+            $mau = count($ganti) === 4 ? $ganti : $mau;
+        }
+        $tgl = now()->startOfMonth()->toDateString();
+
+        return [
+            ['TANGGAL', 'KODE_AKUN', 'DEBIT', 'KREDIT', 'KETERANGAN', 'REFERENSI'],
+            [$tgl, $mau[0], 1000000, 0, 'Beban contoh', 'JU-001'],
+            [$tgl, $mau[1], 0, 1000000, 'Kas keluar', 'JU-001'],
+            [$tgl, $mau[2], 5000000, 0, 'Piutang usaha', 'JU-002'],
+            [$tgl, $mau[3], 0, 5000000, 'Penjualan usaha', 'JU-002'],
+        ];
     }
 
     public function store(Request $request, JournalService $journal): RedirectResponse
@@ -81,15 +124,29 @@ class JournalImportController extends Controller
 
         $posted = 0;
         try {
-            foreach ($groups as $ref => $g) {
-                $journal->post([
-                    'journal_date' => $g['date'], 'source' => 'import', 'reference' => $ref,
-                    'description'  => 'Import Jurnal '.$ref, 'created_by' => $request->user()->id,
-                ], $g['lines']);
-                $posted++;
-            }
+            // SATU TRANSAKSI untuk seluruh berkas — semua jurnal masuk, atau tidak satu pun.
+            //
+            // Sebelumnya tiap jurnal diposting sendiri-sendiri tanpa transaksi. Berkas berisi
+            // 50 jurnal yang jurnal ke-30-nya tidak balance akan menyisakan 29 jurnal di buku
+            // besar, sementara layarnya hanya berkata "gagal". Orang lalu memperbaiki berkasnya
+            // dan mengunggah ulang seluruhnya — dan 29 jurnal itu masuk untuk KEDUA KALINYA.
+            // Tidak ada galat di mana pun; yang ada hanya buku besar yang dobel separuh.
+            DB::transaction(function () use ($groups, $journal, $request, &$posted): void {
+                foreach ($groups as $ref => $g) {
+                    $journal->post([
+                        'journal_date' => $g['date'], 'source' => 'import', 'reference' => $ref,
+                        'description'  => 'Import Jurnal '.$ref, 'created_by' => $request->user()->id,
+                    ], $g['lines']);
+                    $posted++;
+                }
+            });
         } catch (BusinessRuleException $e) {
-            return back()->with('error', "Gagal di jurnal ke-{$posted}+1: ".$e->getMessage());
+            // Sebutkan REFERENSI-nya, bukan sekadar urutan. Berkas berisi ratusan baris tidak
+            // bisa ditelusuri dari nomor urut jurnal; referensinya yang bisa dicari di Excel.
+            // (Bunyi sebelumnya "Gagal di jurnal ke-0+1" — hitungannya pun terbaca aneh.)
+            $ref = array_keys($groups)[$posted] ?? '?';
+            return back()->with('error', "Gagal pada jurnal REFERENSI {$ref} (jurnal ke-".($posted + 1).' dari '.count($groups).'): '.$e->getMessage()
+                .' Tidak ada jurnal dari berkas ini yang disimpan.');
         }
 
         return redirect()->route('bs.gl.journal.index')->with('success', "{$posted} jurnal berhasil diimport ke General Ledger.");
@@ -100,15 +157,7 @@ class JournalImportController extends Controller
     {
         abort_unless($request->user()?->canModule('gl'), 403);
 
-        $rows = [
-            ['TANGGAL', 'KODE_AKUN', 'DEBIT', 'KREDIT', 'KETERANGAN', 'REFERENSI'],
-            ['2026-06-30', '50101010101', 1000000, 0, 'Beban contoh', 'JU-001'],
-            ['2026-06-30', '10101010101', 0, 1000000, 'Kas keluar', 'JU-001'],
-            ['2026-06-30', '10102010101', 5000000, 0, 'Piutang usaha', 'JU-002'],
-            ['2026-06-30', '40101010101', 0, 5000000, 'Penjualan usaha', 'JU-002'],
-        ];
-
-        return $this->xlsxDownload($rows, 'Template-Import-Jurnal.xlsx');
+        return $this->xlsxDownload($this->contohBaris(), 'Template-Import-Jurnal.xlsx');
     }
 
     /** Normalisasi tanggal: teks (YYYY-MM-DD) atau serial Excel (basis 1899-12-30). */
