@@ -84,11 +84,48 @@ class GmcMassal extends Page implements HasForms
                         // itulah yang dulu memicu Livewire Entangle Error di halaman ini.
                         Forms\Components\Select::make('supplier_id')->label('Supplier')->required()->searchable()
                             ->options($this->supplierOptions())->columnSpan(1),
+                        // live(onBlur) DIPAKAI di sini, dan HANYA di sini — untuk menyalakan baris
+                        // total di bawah repeater.
+                        //
+                        // Ini pelanggaran sempit yang disengaja terhadap aturan "tanpa reaktivitas"
+                        // di docblock kelas, dan batasnya penting: yang direaktifkan adalah TextInput
+                        // angka biasa, bukan Select. Yang dulu memicu Livewire Entangle Error adalah
+                        // Select searchable/live di dalam repeater — Select di halaman ini tetap
+                        // tidak reaktif. onBlur (bukan per ketikan) menahan round-trip Livewire
+                        // sampai kursor pindah field, jadi mengetik angka tidak menjalankan render
+                        // ulang seluruh baris.
                         Forms\Components\TextInput::make('nilai')->label('Nilai / Biaya (Rp)')->numeric()->rupiah()->default(0)->required()
+                            ->live(onBlur: true)
                             ->columnSpan(1),
+                        // Keterangan disejajarkan dengan form GMC tunggal, yang sudah punya field ini.
+                        // Tanpa itu GMC yang dibuat massal selalu berketerangan kosong, dan satu-satunya
+                        // cara mengisinya adalah menyunting ulang satu per satu setelah tersimpan.
+                        Forms\Components\TextInput::make('keterangan')->label('Keterangan')
+                            ->maxLength(255)->columnSpan(6),
                     ])
                     ->columns(6)->defaultItems(1)->addActionLabel('+ Tambah baris')->reorderable(false)
                     ->helperText('Pilih SPR (nama customer tampil di daftar pilihan) dan Supplier penerima biayanya. Tambah baris untuk banyak GMC sekaligus.'),
+
+                // Jaring pengaman salah ketik. Tiap baris di sini hanya punya satu komponen,
+                // jadi nilai baris ADALAH totalnya — yang tidak bisa dilihat orang adalah
+                // jumlah seluruh baris. Nol digit yang kelebihan pada satu baris tenggelam di
+                // antara belasan baris lain, dan baru ketahuan setelah GMC-nya terlanjur dibuat.
+                Forms\Components\Placeholder::make('total_massal')->label('Total seluruh baris')
+                    ->content(function (Forms\Get $get): string {
+                        $rows = collect($get('rows') ?? []);
+                        $sah = $rows->filter(fn ($r) => filled($r['kontrak_id'] ?? null)
+                            && filled($r['nama'] ?? null) && filled($r['supplier_id'] ?? null));
+                        $total = $sah->sum(fn ($r) => (float) str_replace('.', '', (string) ($r['nilai'] ?? 0)));
+                        $lewat = $rows->count() - $sah->count();
+
+                        // Kalimat barisnya HARUS menyebut akibat yang benar. Field pada repeater
+                        // ini required(), sehingga baris yang belum lengkap MENAHAN penyimpanan
+                        // lewat validasi — bukan dilewati diam-diam. Menulis "tidak akan disimpan"
+                        // membuat orang menekan Buat Semua sambil mengira sisanya tetap tersimpan,
+                        // lalu bingung ketika tidak terjadi apa-apa.
+                        return $sah->count().' GMC — Rp '.number_format($total, 0, ',', '.')
+                            .($lewat > 0 ? '  ·  '.$lewat.' baris belum lengkap — lengkapi atau hapus dulu' : '');
+                    }),
             ])
             ->statePath('data');
     }
@@ -97,8 +134,11 @@ class GmcMassal extends Page implements HasForms
     {
         $rows = $this->form->getState()['rows'] ?? [];
         $n = 0;
+        $lewat = 0;
         foreach ($rows as $row) {
             if (empty($row['kontrak_id']) || empty($row['nama']) || empty($row['supplier_id'])) {
+                $lewat++;
+
                 continue;
             }
             $k = Kontrak::with('unit')->find($row['kontrak_id']);
@@ -110,6 +150,7 @@ class GmcMassal extends Page implements HasForms
                 'lokasi_id' => $k?->unit?->lokasi_id,
                 'nama' => $row['nama'],
                 'nilai' => $row['nilai'] ?? 0,
+                'keterangan' => $row['keterangan'] ?? null,
                 'status' => 'DRAFT',
             ]);
 
@@ -131,8 +172,14 @@ class GmcMassal extends Page implements HasForms
             $n++;
         }
 
-        Notification::make()->success()->title($n.' GMC dibuat')
-            ->body('GMC massal tersimpan (status DRAFT). Lakukan Posting BO bila perlu.')->send();
+        // Baris tak lengkap DILAPORKAN, bukan dilewati diam-diam. Notifikasi yang hanya
+        // menyebut jumlah berhasil membuat baris yang hilang terbaca seperti tidak pernah
+        // diisi — pola pelaporan ok/dilewati ini sudah dipakai Posting BO massal.
+        Notification::make()->{$lewat > 0 ? 'warning' : 'success'}()
+            ->title($n.' GMC dibuat'.($lewat > 0 ? ', '.$lewat.' baris dilewati' : ''))
+            ->body('GMC massal tersimpan (status DRAFT). Lakukan Posting BO bila perlu.'
+                .($lewat > 0 ? ' Baris yang dilewati belum lengkap SPR / gimmick / supplier-nya.' : ''))
+            ->send();
 
         $this->redirect(GmcResource::getUrl('index'));
     }

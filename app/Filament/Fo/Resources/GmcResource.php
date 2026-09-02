@@ -185,6 +185,9 @@ class GmcResource extends Resource
     public static function table(Table $table): Table
     {
         return $table
+            // Komponen dimuat sekaligus: kolom Supplier membaca $record->items untuk tiap baris,
+            // dan tanpa ini satu halaman daftar berarti satu query per baris (N+1).
+            ->modifyQueryUsing(fn ($query) => $query->with('items'))
             ->columns([
                 Tables\Columns\TextColumn::make('no_gmc')->label('No. GMC')->badge()->color('primary')->searchable()->sortable(),
                 Tables\Columns\TextColumn::make('kontrak.no_kontrak')->label('No. SPR')->placeholder('—')->searchable(),
@@ -192,8 +195,70 @@ class GmcResource extends Resource
                 Tables\Columns\TextColumn::make('customer.full_name')->label('Customer')->placeholder('—')->limit(22),
                 // Cluster hanya DITAMPILKAN, tidak lagi dipilih — isinya datang dari unit pada
                 // SPR-nya. Kosong berarti SPR itu belum punya unit atau unitnya belum berlokasi.
-                Tables\Columns\TextColumn::make('lokasi.nama')->label('Cluster')->placeholder('—')->limit(22)->toggleable(),
+                //
+                // Disembunyikan secara bawaan untuk memberi ruang kolom Supplier: dengan Cluster
+                // tampil, tabelnya melebihi wadahnya sampai kolom Nilai ikut terdorong keluar
+                // layar 1440px. Cluster yang dikorbankan karena isinya diturunkan dari unit pada
+                // SPR — jarang berbeda antar baris pada satu daftar — sedangkan Supplier adalah
+                // penerima hutangnya. Tetap bisa dimunculkan lagi lewat tombol kolom.
+                Tables\Columns\TextColumn::make('lokasi.nama')->label('Cluster')->placeholder('—')->limit(22)
+                    ->toggleable(isToggledHiddenByDefault: true),
                 Tables\Columns\TextColumn::make('nama')->label('Gimmick')->limit(28),
+                // Supplier ditampilkan di DAFTAR, bukan hanya di dalam form.
+                //
+                // Supplier hidup di fo_gmc_items, jadi sebelumnya satu-satunya cara melihatnya
+                // adalah membuka Edit lalu membaca repeater Rincian Komponen — padahal supplier
+                // adalah penerima hutangnya, hal pertama yang dicari orang saat menelusuri GMC.
+                // Halaman GMC Massal sudah menampilkannya sebagai kolom; kolom ini menyamakannya.
+                //
+                // Namanya TIDAK bisa di-join: bs_suppliers ada di koneksi lain (ipro_bo).
+                // Yang dipakai adalah peta memo GmcItem::supplierOptions() — satu query per
+                // request untuk seluruh halaman, bukan satu query per baris.
+                Tables\Columns\TextColumn::make('supplier_list')->label('Supplier')
+                    ->badge()->color('gray')->placeholder('—')
+                    ->getStateUsing(function (Gmc $record): array {
+                        // Peta nama supplier hidup di koneksi lain (ipro_bo). Kegagalannya
+                        // TIDAK boleh menjatuhkan daftar GMC: sebelum kolom ini ada, halaman
+                        // ini sama sekali tidak menyentuh BO, jadi memasukkannya tanpa penjaga
+                        // berarti menambah cara baru daftar GMC ikut mati saat BO mati.
+                        // Pola try/catch ini sama dengan gimmickOptions() di bawah.
+                        try {
+                            $peta = GmcItem::supplierOptions();
+                        } catch (\Throwable $e) {
+                            $peta = [];
+                        }
+
+                        return $record->items
+                            ->pluck('supplier_id')->filter()->unique()
+                            ->map(function ($id) use ($peta) {
+                                $label = $peta[(int) $id] ?? 'Supplier #'.$id;
+
+                                // supplierOptions() memberi "KODE — Nama" — panjang yang pas untuk
+                                // Select, tetapi di kolom tabel badge sepanjang itu mendorong Nilai
+                                // dan Status keluar layar. Yang dibaca orang adalah namanya, jadi
+                                // kodenya dibuang dan sisanya dipotong; label utuhnya tetap muncul
+                                // di judul badge saat kursor menyentuhnya.
+                                return \Illuminate\Support\Str::limit(
+                                    \Illuminate\Support\Str::after($label, ' — '), 22,
+                                );
+                            })
+                            ->values()->all();
+                    })
+                    ->tooltip(function (Gmc $record): ?string {
+                        try {
+                            $peta = GmcItem::supplierOptions();
+                        } catch (\Throwable $e) {
+                            return null;
+                        }
+
+                        $penuh = $record->items
+                            ->pluck('supplier_id')->filter()->unique()
+                            ->map(fn ($id) => $peta[(int) $id] ?? 'Supplier #'.$id);
+
+                        return $penuh->isEmpty() ? null : $penuh->implode(' · ');
+                    })
+                    ->listWithLineBreaks()->limitList(2)->expandableLimitedList()
+                    ->toggleable(),
                 Tables\Columns\TextColumn::make('nilai')->label('Nilai')->money('IDR'),
                 Tables\Columns\TextColumn::make('status')->label('Status')->badge()->color(fn (?string $state) => $state === 'DIPROSES' ? 'warning' : 'gray'),
             ])

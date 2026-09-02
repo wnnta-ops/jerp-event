@@ -97,31 +97,68 @@ const inputCls = 'h-9 w-full rounded-lg border border-neutral-300 bg-white px-3 
                     <h2 class="font-semibold">Struktur Jurnal (Debit / Kredit)</h2>
                     <button type="button" @click="addLine" class="inline-flex items-center gap-1 rounded-lg border border-neutral-300 px-2.5 py-1.5 text-xs hover:bg-neutral-50 dark:border-neutral-700"><Plus class="h-3.5 w-3.5" /> Baris</button>
                 </div>
-                <!-- Digeser, bukan diperas: pada layar yang lebih sempit dari lebar minimum
-                     tabelnya, kolomnya tetap utuh dan pengguna menggesernya. -->
-                <div class="overflow-x-auto">
-                <table class="w-full min-w-[1050px] text-sm">
-                    <thead class="text-left text-xs uppercase text-neutral-500"><tr><th class="py-2">Akun</th><th class="py-2">Cost Center</th><th class="min-w-[220px] py-2">Keterangan</th><th class="w-44 py-2 pr-2 text-right">Debit</th><th class="w-44 py-2 pr-2 text-right">Kredit</th><th class="w-10"></th></tr></thead>
-                    <tbody>
-                        <tr v-for="(l, i) in form.lines" :key="i" class="border-t border-neutral-100 dark:border-neutral-800">
-                            <td class="min-w-[240px] py-1.5 pr-2"><SearchSelect v-model="l.account_id" :options="accounts" placeholder="— pilih / ketik akun —" /></td>
+                <!-- Memanjang ke BAWAH, bukan ke samping. Sebagai satu baris tabel, kelima
+                     kolomnya harus muat dalam 1050px — akibatnya Keterangan, Debit, dan Kredit
+                     terpotong di tengah kata ("BELI KE", "110…") dan angkanya tidak bisa dibaca
+                     tanpa menggeser tabel. Tiap baris jurnal kini satu blok bertumpuk: nama akun,
+                     keterangan, dan angkanya tampil utuh pada lebar layar apa adanya. -->
+                <div class="space-y-3">
+                    <div v-for="(l, i) in form.lines" :key="i"
+                         class="rounded-lg border border-neutral-200 p-3 dark:border-neutral-800">
+                        <div class="mb-2 flex items-center justify-between">
+                            <span class="text-xs font-semibold uppercase tracking-wide text-neutral-400">Baris {{ i + 1 }}</span>
+                            <button type="button" @click="removeLine(i)" :disabled="form.lines.length<=2"
+                                    class="text-danger-500 disabled:opacity-30" title="Hapus baris">
+                                <Trash2 class="h-4 w-4" />
+                            </button>
+                        </div>
+
+                        <div class="grid gap-3 md:grid-cols-2">
+                            <div>
+                                <label class="mb-1 block text-xs font-medium text-neutral-500">Akun</label>
+                                <SearchSelect v-model="l.account_id" :options="accounts" placeholder="— pilih / ketik akun —" />
+                            </div>
                             <!-- Cost center PER COA. Dikosongkan → ikut cost center header, KECUALI
                                  akun yang memang boleh tanpa cost center: dibiarkan kosong apa adanya. -->
-                            <td class="min-w-[190px] py-1.5 pr-2">
+                            <div>
+                                <label class="mb-1 block text-xs font-medium text-neutral-500">Cost Center</label>
                                 <SearchSelect v-model="l.cost_center_id" :options="costCenters"
                                     :placeholder="ccOptional(l.account_id) ? '— tanpa cost center —' : '— ikut header —'" />
                                 <p v-if="ccOptional(l.account_id)" class="mt-0.5 text-[10.5px] text-neutral-400">Boleh dikosongkan</p>
-                            </td>
-                            <td class="min-w-[220px] py-1.5 pr-2"><input v-model="l.description" :class="inputCls" /></td>
-                            <td class="w-44 py-1.5 pr-2"><input v-model.number="l.debit" type="number" step="1" min="0" :class="[inputCls,'text-right']" @input="l.debit && (l.credit = 0)" /></td>
-                            <td class="w-44 py-1.5 pr-2"><input v-model.number="l.credit" type="number" step="1" min="0" :class="[inputCls,'text-right']" @input="l.credit && (l.debit = 0)" /></td>
-                            <td class="py-1.5 text-center"><button type="button" @click="removeLine(i)" :disabled="form.lines.length<=2" class="text-danger-500 disabled:opacity-30"><Trash2 class="h-4 w-4" /></button></td>
-                        </tr>
-                    </tbody>
-                    <tfoot class="border-t-2 border-neutral-200 text-sm font-bold dark:border-neutral-700">
-                        <tr><td colspan="3" class="py-2 pr-3 text-right text-neutral-500">Total</td><td class="w-44 py-2 pr-2 text-right font-mono tabular-nums">{{ fmtRp(totalDebit) }}</td><td class="w-44 py-2 pr-2 text-right font-mono tabular-nums">{{ fmtRp(totalCredit) }}</td><td></td></tr>
-                    </tfoot>
-                </table>
+                            </div>
+                        </div>
+
+                        <div class="mt-3">
+                            <label class="mb-1 block text-xs font-medium text-neutral-500">Keterangan</label>
+                            <input v-model="l.description" :class="inputCls" />
+                        </div>
+
+                        <div class="mt-3 grid gap-3 sm:grid-cols-2">
+                            <div>
+                                <label class="mb-1 block text-xs font-medium text-neutral-500">Debit</label>
+                                <input v-model.number="l.debit" type="number" step="1" min="0"
+                                       :class="[inputCls,'text-right font-mono tabular-nums']"
+                                       @input="l.debit && (l.credit = 0)" />
+                            </div>
+                            <div>
+                                <label class="mb-1 block text-xs font-medium text-neutral-500">Kredit</label>
+                                <input v-model.number="l.credit" type="number" step="1" min="0"
+                                       :class="[inputCls,'text-right font-mono tabular-nums']"
+                                       @input="l.credit && (l.debit = 0)" />
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="mt-3 grid gap-3 border-t-2 border-neutral-200 pt-3 text-sm font-bold sm:grid-cols-2 dark:border-neutral-700">
+                    <div class="flex items-center justify-between rounded-lg bg-neutral-50 px-3 py-2 dark:bg-neutral-900">
+                        <span class="text-neutral-500">Total Debit</span>
+                        <span class="font-mono tabular-nums">{{ fmtRp(totalDebit) }}</span>
+                    </div>
+                    <div class="flex items-center justify-between rounded-lg bg-neutral-50 px-3 py-2 dark:bg-neutral-900">
+                        <span class="text-neutral-500">Total Kredit</span>
+                        <span class="font-mono tabular-nums">{{ fmtRp(totalCredit) }}</span>
+                    </div>
                 </div>
                 <div class="mt-3 flex items-center gap-2 text-sm" :class="balanced ? 'text-success-600' : 'text-danger-600'">
                     <Scale class="h-4 w-4" />
