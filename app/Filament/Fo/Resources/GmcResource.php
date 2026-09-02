@@ -195,7 +195,14 @@ class GmcResource extends Resource
                 Tables\Columns\TextColumn::make('customer.full_name')->label('Customer')->placeholder('—')->limit(22),
                 // Cluster hanya DITAMPILKAN, tidak lagi dipilih — isinya datang dari unit pada
                 // SPR-nya. Kosong berarti SPR itu belum punya unit atau unitnya belum berlokasi.
-                Tables\Columns\TextColumn::make('lokasi.nama')->label('Cluster')->placeholder('—')->limit(22)->toggleable(),
+                //
+                // Disembunyikan secara bawaan untuk memberi ruang kolom Supplier: dengan Cluster
+                // tampil, tabelnya melebihi wadahnya sampai kolom Nilai ikut terdorong keluar
+                // layar 1440px. Cluster yang dikorbankan karena isinya diturunkan dari unit pada
+                // SPR — jarang berbeda antar baris pada satu daftar — sedangkan Supplier adalah
+                // penerima hutangnya. Tetap bisa dimunculkan lagi lewat tombol kolom.
+                Tables\Columns\TextColumn::make('lokasi.nama')->label('Cluster')->placeholder('—')->limit(22)
+                    ->toggleable(isToggledHiddenByDefault: true),
                 Tables\Columns\TextColumn::make('nama')->label('Gimmick')->limit(28),
                 // Supplier ditampilkan di DAFTAR, bukan hanya di dalam form.
                 //
