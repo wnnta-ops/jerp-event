@@ -79,22 +79,199 @@ class IproApPoster
         ]);
     }
 
-    /** Realisasi Komisi (batch per No. Pengajuan) → antrian (kind=komisi). */
-    public function queueKomisi(string $noPengajuan, float $amount, ?string $tgl = null, ?string $ket = null, float $pph = 0.0, float $nett = 0.0): ?int
+    /**
+     * Realisasi Komisi (batch per No. Pengajuan) → antrian (kind=komisi).
+     *
+     * @deprecated Pakai queueKomisiRow() — satu baris antrian per komisi. Cara batch ini
+     *             mengirim SATU baris berisi total NETT dengan nama pembeli diringkas, dan
+     *             tanpa rincian PPh: hutangnya jadi gelondongan dan potongan pajaknya tidak
+     *             muncul di buku besar. Sudah tak dipakai layar mana pun; disimpan sebentar
+     *             untuk pemanggil lama, jangan dipakai lagi.
+     */
+    public function queueKomisi(string $noPengajuan, float $amount, ?string $tgl = null, ?string $ket = null): ?int
     {
         return $this->queueIncentive(
-            'komisi', $noPengajuan, $amount, $tgl, $ket ?: ('Komisi '.$noPengajuan), $pph, $nett,
+            'komisi', $noPengajuan, $amount, $tgl, $ket ?: ('Komisi '.$noPengajuan),
             $this->pembeliUnitBatch(\App\Modules\FO\Komisi\Models\Komisi::class, $noPengajuan),
         );
     }
 
-    /** Realisasi BLT (batch per No. Pengajuan) → antrian (kind=blt). */
-    public function queueBlt(string $noPengajuan, float $amount, ?string $tgl = null, ?string $ket = null, float $pph = 0.0, float $nett = 0.0): ?int
+    /**
+     * Realisasi BLT (batch per No. Pengajuan) → antrian (kind=blt).
+     *
+     * @deprecated Pakai queueBltRow() — satu baris antrian per BLT. Lihat catatan pada
+     *             queueKomisi() di atas: alasannya sama persis.
+     */
+    public function queueBlt(string $noPengajuan, float $amount, ?string $tgl = null, ?string $ket = null): ?int
     {
         return $this->queueIncentive(
-            'blt', $noPengajuan, $amount, $tgl, $ket ?: ('BLT '.$noPengajuan), $pph, $nett,
+            'blt', $noPengajuan, $amount, $tgl, $ket ?: ('BLT '.$noPengajuan),
             $this->pembeliUnitBatch(\App\Modules\FO\Komisi\Models\Blt::class, $noPengajuan),
         );
+    }
+
+    /**
+     * Antrekan SATU baris BLT (satu pembeli / satu unit / satu jenjang).
+     *
+     * AKUN POTONGAN PAJAK MENGIKUTI JENJANGNYA, sejalan dengan pasal yang benar-benar dipotong
+     * oleh BltCalculatorService:
+     *   Sales & Koordinator → PPh 21 2,5%  → 20104040402 HUTANG PPH PASAL 21
+     *   Kantor              → PPh 23 2%    → 20104040403 HUTANG PPH PASAL 23
+     *
+     * Jenjang selain Kantor dianggap PPh 21: kalkulatornya hanya mengenal tiga jenjang, dan dua
+     * di antaranya PPh 21. Yang TIDAK boleh terjadi adalah baris tanpa akun sama sekali —
+     * potongannya lenyap dari buku besar, persis keadaan yang diperbaiki commit 3217c4b.
+     *
+     * @param  string  $noPengajuan  no. pengajuan batch-nya (untuk penelusuran)
+     * @param  string  $noBlt        no. BLT baris ini — dipakai membentuk refund_no unik
+     * @param  string  $jenis        'Sales' / 'Koordinator' / 'Kantor' — ikut menentukan akun
+     *                               potongan pajaknya (Kantor → PPh 23, selainnya → PPh 21)
+     * @param  float   $bruto        NILAI BLT sebelum potongan
+     * @param  float   $pph          PPh yang dipotong (0 = tanpa potongan)
+     * @param  string  $pembeli      NAMA PEMBELI pada permohonannya
+     * @param  string  $unit         BLOK/KAV
+     */
+    public function queueBltRow(
+        string $noPengajuan,
+        string $noBlt,
+        string $jenis,
+        float $bruto,
+        float $pph,
+        ?string $pembeli,
+        ?string $unit,
+        ?string $tgl = null,
+    ): ?int {
+        $kantor = strtoupper(trim($jenis)) === 'KANTOR';
+
+        return $this->queueInsentifRow(
+            'blt', $noPengajuan, $noBlt, trim('BLT '.$jenis), $bruto, $pph, $pembeli, $unit,
+            $kantor ? '20104040403' : '20104040402',
+            $kantor ? 'Hutang PPh 23' : 'Hutang PPh 21',
+            $tgl,
+        );
+    }
+
+    /**
+     * Antrekan SATU baris komisi (satu pembeli / satu unit).
+     *
+     * Komisi selalu dipotong PPh 23 — lihat KomisiCalculatorService, yang menghitungnya sebagai
+     * PPh atas jasa (bawaan 2%, bisa berbeda bila tarif per skema mengaturnya). Karena itu tidak
+     * ada percabangan jenjang seperti pada BLT: satu pasal untuk semuanya.
+     *
+     * NILAI POTONGANNYA DIBAWA APA ADANYA dari baris komisinya, tidak dihitung ulang di sini.
+     * Persentasenya bisa berasal dari tarif per skema (KomisiCalculatorService::$pphFromTarif),
+     * jadi menghitung ulang dengan 2% akan meleset dari angka yang sudah dicetak di
+     * permohonannya — dan selisihnya berakhir sebagai jurnal yang tidak balance.
+     *
+     * @param  string  $noPengajuan  no. pengajuan batch-nya (untuk penelusuran)
+     * @param  string  $noKomisi     no. komisi baris ini — dipakai membentuk refund_no unik
+     * @param  float   $bruto        NILAI KOMISI sebelum potongan
+     * @param  float   $pph          PPh yang dipotong (0 = tanpa potongan)
+     * @param  string  $pembeli      NAMA PEMBELI pada permohonannya
+     * @param  string  $unit         BLOK/KAV
+     */
+    public function queueKomisiRow(
+        string $noPengajuan,
+        string $noKomisi,
+        float $bruto,
+        float $pph,
+        ?string $pembeli,
+        ?string $unit,
+        ?string $tgl = null,
+    ): ?int {
+        return $this->queueInsentifRow(
+            'komisi', $noPengajuan, $noKomisi, 'Komisi', $bruto, $pph, $pembeli, $unit,
+            '20104040403', 'Hutang PPh 23', $tgl,
+        );
+    }
+
+    /**
+     * Inti antrean insentif PER BARIS — dipakai bersama BLT & Komisi.
+     *
+     * KENAPA PER BARIS, BUKAN PER BATCH: queueBlt()/queueKomisi() di atas mengirim satu baris
+     * berisi TOTAL NETT seluruh batch, dengan nama pembeli & unit diringkas jadi satu untai
+     * ("DIDIK KEMBUNG, REYZA FERNANDYA…"). Akibatnya satu pengajuan berisi tiga baris hanya
+     * melahirkan SATU invoice hutang: tidak bisa ditelusuri milik siapa, dan tidak bisa
+     * dibayarkan ke rekening masing-masing penerima. Dengan per baris, tiap insentif jadi
+     * barisnya sendiri di Posting Invoice dan tidak ada yang tertinggal.
+     *
+     * PECAHAN KREDIT dikirim dari sini karena PPh-nya dipotong di FO: nilai bruto diakui sebagai
+     * beban komisi, tetapi yang menjadi hutang ke penerima hanya NETT — sisanya hutang PPh ke
+     * negara. Tanpa pecahan ini jurnalnya mengkredit Utang Usaha sebesar bruto, dan potongan
+     * PPh-nya hilang dari buku besar meski tercetak di permohonannya.
+     *
+     * Akun disebut lewat KODE, bukan id: id akun hanya bermakna di basis data BO, dan
+     * menuliskannya di FO membuat kedua sisi harus tetap sepakat selamanya tanpa ada yang
+     * memeriksa. Kodenya yang stabil.
+     *
+     * Dua sumber ini sengaja BERBAGI satu jalur: penjagaan nilainya, bentuk keterangannya, dan
+     * bentuk pecahan kreditnya harus sama persis, dan menyalinnya dua kali adalah cara paling
+     * mudah keduanya lambat laun berbeda tanpa ada yang menyadarinya.
+     *
+     * @param  string  $kind      'blt' / 'komisi' — menentukan Sumber pada layar Posting Invoice
+     * @param  string  $awalanKet awalan keterangan ("BLT Sales", "Komisi")
+     * @param  string  $kodePph   kode akun hutang PPh-nya di Bagan Akun BO
+     * @param  string  $labelPph  awalan keterangan baris kredit PPh-nya
+     */
+    private function queueInsentifRow(
+        string $kind,
+        string $noPengajuan,
+        string $noDokumen,
+        string $awalanKet,
+        float $bruto,
+        float $pph,
+        ?string $pembeli,
+        ?string $unit,
+        string $kodePph,
+        string $labelPph,
+        ?string $tgl = null,
+    ): ?int {
+        $bruto = round($bruto, 2);
+        $pph   = round(max(0.0, $pph), 2);
+        if ($bruto <= 0 || trim($noPengajuan) === '') {
+            return null;
+        }
+        // PPh tidak boleh melebihi brutonya — bila terjadi, yang salah datanya, dan
+        // meneruskannya akan melahirkan jurnal dengan Utang Usaha negatif.
+        if ($pph > $bruto) {
+            return null;
+        }
+        $nett = round($bruto - $pph, 2);
+
+        // Keterangan mengikuti bentuk yang dipakai permohonannya: jenis dokumen, nomor
+        // pengajuan, lalu pembeli & blok/kavlingnya.
+        $ket = trim($awalanKet.' '.$noPengajuan
+            .($pembeli ? ' '.trim($pembeli) : '')
+            .($unit ? ', '.trim($unit) : ''));
+
+        // Sisi kredit: Utang Usaha sebesar NETT + Hutang PPh sebesar potongannya.
+        // Baris PPh hanya ikut bila memang ada potongannya — insentif tanpa PPh tetap berjurnal
+        // dua baris seperti biasa, bukan tiga baris yang salah satunya nol.
+        $kredit = [[
+            'side' => 'credit', 'role' => 'payable', 'code' => '20101010101',
+            'amount' => $nett, 'label' => 'Hutang Usaha',
+        ]];
+        if ($pph > 0) {
+            // role=pph dibaca BO untuk mengisi kolom PPh pada invoice hutangnya, sehingga
+            // sisa tagihan di AP (net_payable) sama dengan kredit Utang Usaha di jurnalnya.
+            // Ditandai peran, bukan ditebak dari nama akun/labelnya.
+            $kredit[] = [
+                'side' => 'credit', 'role' => 'pph', 'code' => $kodePph,
+                'amount' => $pph, 'label' => $labelPph,
+            ];
+        }
+
+        return $this->enqueue($kind, $noPengajuan.'#'.$noDokumen, null, [
+            'customer_id'        => null,
+            'customer_name'      => $pembeli ?: null,
+            'refund_source'      => null,
+            'amount'             => $bruto,
+            'payable_account_id' => $this->acc('2.1.01.001'),
+            'offset_account_id'  => $this->acc('5.2.01.001'), // Beban komisi/insentif
+            'account_split'      => json_encode($kredit),
+            'tgl_refund'         => $tgl,
+            'keterangan'         => $ket,
+        ]);
     }
 
     /**
@@ -347,37 +524,13 @@ class IproApPoster
         return $id ? (int) $id : null;
     }
 
-    /**
-     * Komisi/BLT → antrian dengan STRUKTUR LENGKAP (selaras GMC):
-     *   Debit  Prepaid/Beban Komisi-BLT  = BRUTO (nilai BLT/komisi)
-     *   Kredit Hutang PPh 23             = Σ PPh per unit
-     *   Kredit Hutang Komisi/BLT (NETT)  = bruto − PPh
-     * account_split memakai porsi = NOMINAL asli — allocate() BO menormalkan per
-     * sisi (amount × porsi/total porsi) sehingga nilai jurnal persis; selisih
-     * pembulatan jatuh ke baris terbesar (NETT). Tanpa pph/nett (caller lama)
-     * → fallback sepasang akun tunggal seperti dulu.
-     *
-     * @param  array{customer_name:?string, unit_label:?string}  $pembeli  nama pembeli & blok/unit batch ini
-     */
-    private function queueIncentive(string $kind, string $noPengajuan, float $amount, ?string $tgl, ?string $ket, float $pph = 0.0, float $nett = 0.0, array $pembeli = []): ?int
+    /** Komisi/BLT → hutang insentif: Beban Komisi (5.2.01.001) / Hutang Komisi (2.1.01.001). */
+    /** @param array{customer_name:?string, unit_label:?string} $pembeli nama pembeli & blok/unit batch ini */
+    private function queueIncentive(string $kind, string $noPengajuan, float $amount, ?string $tgl, ?string $ket, array $pembeli = []): ?int
     {
         $amount = round($amount, 2);
         if ($amount <= 0 || trim($noPengajuan) === '') {
             return null;
-        }
-
-        $accs = (array) config('ipro.incentive_accounts', []);
-        $accPrepaid = (int) ($accs['prepaid'] ?? 0) ?: $this->acc('5.2.01.001');
-        $accPph = (int) ($accs['pph'] ?? 0) ?: null;
-        $accNett = (int) ($accs['nett'] ?? 0) ?: $this->acc('2.1.01.001');
-
-        $split = null;
-        if ($pph > 0 && $nett > 0 && $accPph && $accPrepaid && $accNett) {
-            $split = [
-                ['side' => 'debit', 'account_id' => (int) $accPrepaid, 'portion' => 100.0],
-                ['side' => 'credit', 'account_id' => (int) $accPph, 'portion' => round($pph, 2)],
-                ['side' => 'credit', 'account_id' => (int) $accNett, 'portion' => round($nett, 2)],
-            ];
         }
 
         // Nama pembeli & blok/unit ikut dikirim supaya keterangan Struktur Jurnal di BO bisa
@@ -394,9 +547,8 @@ class IproApPoster
             'customer_name'      => $pembeli['customer_name'] ?? null,
             'refund_source'      => null,
             'amount'             => $amount,
-            'account_split'      => $split ? json_encode($split) : null,
-            'payable_account_id' => $accNett,    // Hutang komisi/insentif (nett)
-            'offset_account_id'  => $accPrepaid, // Prepaid/Beban komisi-insentif
+            'payable_account_id' => $this->acc('2.1.01.001'), // Hutang komisi/insentif
+            'offset_account_id'  => $this->acc('5.2.01.001'), // Beban komisi/insentif
             'tgl_refund'         => $tgl,
             'keterangan'         => $ketFull !== '' ? $ketFull : $ket,
         ]);
