@@ -7,7 +7,7 @@
 //
 // Semua angka datang dari DashboardController. Bila tabelnya masih kosong, kartunya
 // menampilkan keadaan kosong apa adanya — tidak ada angka contoh di layar ini.
-import { ref } from 'vue';
+import { computed, ref, watch } from 'vue';
 import { Head, router } from '@inertiajs/vue3';
 import VizColumns from '@/Components/Charts/VizColumns.vue';
 import VizFunnel from '@/Components/Charts/VizFunnel.vue';
@@ -62,6 +62,15 @@ const akhir = ref(props.periode.akhir);
 const BAWAAN = { awal: props.periode.awal, akhir: props.periode.akhir };
 const berubah = ref(false);
 
+/* Kotak tanggal disetel ULANG dari jawaban server tiap kali rentangnya berubah. Tanpa ini,
+   preserveState membuat kedua ref bertahan pada isi kunjungan pertama — sehingga tombol
+   "Bawaan" mengembalikan angkanya tetapi kotaknya masih memperlihatkan tanggal lama, dan
+   rentang terbalik yang sudah ditukar server tidak pernah terlihat tertukar di layar. */
+watch(() => [props.periode.awal, props.periode.akhir] as const, ([a, b]) => {
+    awal.value = a;
+    akhir.value = b;
+});
+
 function muat(dari: string, sampai: string) {
     router.get(route('dashboard'), { date_from: dari, date_to: sampai },
         { preserveState: true, preserveScroll: true, replace: true });
@@ -69,16 +78,22 @@ function muat(dari: string, sampai: string) {
 function terapkan() { berubah.value = true; muat(awal.value, akhir.value); }
 function bawaan() { berubah.value = false; muat('', ''); }
 
-const c = props.charts;
+/* Sumber angka seluruh kartu — WAJIB computed, bukan salinan `props.charts` yang diambil
+   sekali. Filter periode bernavigasi dengan preserveState, jadi komponen ini TIDAK dipasang
+   ulang dan setup() cuma jalan pada kunjungan pertama. Salinan biasa akan selamanya menunjuk
+   data kunjungan pertama itu: server sudah memulangkan angka periode baru, kepala halaman
+   sudah berganti rentang, tetapi ke-18 grafik diam tak berubah — dan diamnya terbaca sebagai
+   "angkanya memang sama", bukan sebagai layar yang tidak ikut diperbarui. */
+const c = computed(() => props.charts);
 
 /** Satu cluster memakai corak oranye yang SAMA di panel jumlah maupun panel nilai. */
-const kunciSpk = c.spk.rows.map((_, i) => i);
-const spkJumlah: Baris[] = c.spk.rows.map((r) => ({ n: r.n, v: r.jml }));
-const spkNilai: Baris[] = c.spk.rows.map((r) => ({ n: r.n, v: r.nilai }));
+const kunciSpk = computed(() => c.value.spk.rows.map((_, i) => i));
+const spkJumlah = computed<Baris[]>(() => c.value.spk.rows.map((r) => ({ n: r.n, v: r.jml })));
+const spkNilai = computed<Baris[]>(() => c.value.spk.rows.map((r) => ({ n: r.n, v: r.nilai })));
 
 /** Grafik gabungan: deret bulanan (unit) dan ringkasan tahunan (nilai) dari sumber yang sama. */
-const brUnit: Seri[] = c.bast_ajb_br.series.map((s) => ({ n: s.n, c: s.c, v: s.unit }));
-const brNilai = c.bast_ajb_br.series.map((s) => ({ n: s.n, c: s.c, v: s.nilai }));
+const brUnit = computed<Seri[]>(() => c.value.bast_ajb_br.series.map((s) => ({ n: s.n, c: s.c, v: s.unit })));
+const brNilai = computed(() => c.value.bast_ajb_br.series.map((s) => ({ n: s.n, c: s.c, v: s.nilai })));
 
 // ══════════════════════════════════════════════════════════════════════════════════════
 // Total tiap kartu
@@ -96,6 +111,9 @@ const brNilai = c.bast_ajb_br.series.map((s) => ({ n: s.n, c: s.c, v: s.nilai })
 //   3. Tahapan atas objek yang sama (kartu 14–16). BAST → AJB → Booked Revenue menyangkut
 //      unit yang sama pada tiga tahap; menjumlahkannya menghitung uang yang sama tiga kali.
 //      Ditampilkan per tahap. Alasan yang sama sudah tertulis di VizYearTotals.
+//
+// Semuanya computed dengan alasan yang sama seperti `c` di atas: baris total yang dihitung
+// sekali akan membantah grafik di atasnya begitu periodenya diganti.
 // ══════════════════════════════════════════════════════════════════════════════════════
 
 const jumlah = (v: number[]): number => v.reduce((a, b) => a + (Number.isFinite(b) ? b : 0), 0);
@@ -122,68 +140,68 @@ const posJml = (label: string, v: number, satuan: string, catatan?: string): Pos
 
 const CORONG = 'Tahap berikutnya adalah bagian dari angka ini, bukan tambahannya — karena itu keenam tahap tidak dijumlahkan.';
 
-const totalInisiasi: Pos[] = [posJml('Total berkas (tahap 1)', c.inisiasi_kpr.rows[0]?.v ?? 0, 'berkas', CORONG)];
-const totalProses: Pos[] = [posJml('Total berkas (tahap 1)', c.proses_kpr.rows[0]?.v ?? 0, 'berkas', CORONG)];
+const totalInisiasi = computed<Pos[]>(() => [posJml('Total berkas (tahap 1)', c.value.inisiasi_kpr.rows[0]?.v ?? 0, 'berkas', CORONG)]);
+const totalProses = computed<Pos[]>(() => [posJml('Total berkas (tahap 1)', c.value.proses_kpr.rows[0]?.v ?? 0, 'berkas', CORONG)]);
 
-const totalPenolakan: Pos[] = [
-    posJml('Reject BI Checking', jumlahSeri(c.penolakan.series, 0), 'berkas'),
-    posJml('Reject Proses KPR', jumlahSeri(c.penolakan.series, 1), 'berkas'),
-    posJml('Total penolakan', jumlahSeri(c.penolakan.series, 0) + jumlahSeri(c.penolakan.series, 1), 'berkas'),
-];
+const totalPenolakan = computed<Pos[]>(() => [
+    posJml('Reject BI Checking', jumlahSeri(c.value.penolakan.series, 0), 'berkas'),
+    posJml('Reject Proses KPR', jumlahSeri(c.value.penolakan.series, 1), 'berkas'),
+    posJml('Total penolakan', jumlahSeri(c.value.penolakan.series, 0) + jumlahSeri(c.value.penolakan.series, 1), 'berkas'),
+]);
 
-const totalRekening: Pos[] = [
-    posRp('Total saldo kas & bank', jumlahBaris(c.rekening.rows), 'Penjumlahan seluruh rekening; saldo berposisi kredit ikut mengurangi.'),
-];
+const totalRekening = computed<Pos[]>(() => [
+    posRp('Total saldo kas & bank', jumlahBaris(c.value.rekening.rows), 'Penjumlahan seluruh rekening; saldo berposisi kredit ikut mengurangi.'),
+]);
 
-const totalKasbon: Pos[] = [
-    posRp('Total diajukan', jumlahSeri(c.kasbon.series, 0)),
-    posRp('Total dipertanggungjawabkan', jumlahSeri(c.kasbon.series, 1)),
-    posRp('Belum dipertanggungjawabkan', jumlahSeri(c.kasbon.series, 0) - jumlahSeri(c.kasbon.series, 1)),
-];
+const totalKasbon = computed<Pos[]>(() => [
+    posRp('Total diajukan', jumlahSeri(c.value.kasbon.series, 0)),
+    posRp('Total dipertanggungjawabkan', jumlahSeri(c.value.kasbon.series, 1)),
+    posRp('Belum dipertanggungjawabkan', jumlahSeri(c.value.kasbon.series, 0) - jumlahSeri(c.value.kasbon.series, 1)),
+]);
 
-const totalAging: Pos[] = [posRp('Total hutang supplier', jumlahBaris(c.aging.rows))];
+const totalAging = computed<Pos[]>(() => [posRp('Total hutang supplier', jumlahBaris(c.value.aging.rows))]);
 
-const totalNeraca: Pos[] = [
-    posRp('Total ' + (c.neraca.rows[0]?.n ?? 'AKTIVA'), jumlahTumpukBaris(c.neraca, 0)),
-    posRp('Total ' + (c.neraca.rows[1]?.n ?? 'PASIVA'), jumlahTumpukBaris(c.neraca, 1)),
-    posRp('Selisih', jumlahTumpukBaris(c.neraca, 0) - jumlahTumpukBaris(c.neraca, 1), 'Neraca seimbang bila selisihnya nol.'),
-];
+const totalNeraca = computed<Pos[]>(() => [
+    posRp('Total ' + (c.value.neraca.rows[0]?.n ?? 'AKTIVA'), jumlahTumpukBaris(c.value.neraca, 0)),
+    posRp('Total ' + (c.value.neraca.rows[1]?.n ?? 'PASIVA'), jumlahTumpukBaris(c.value.neraca, 1)),
+    posRp('Selisih', jumlahTumpukBaris(c.value.neraca, 0) - jumlahTumpukBaris(c.value.neraca, 1), 'Neraca seimbang bila selisihnya nol.'),
+]);
 
-const totalLabaRugi: Pos[] = [posRp('Laba/rugi kumulatif', jumlah(c.laba_rugi.vals))];
-const totalAsetTetap: Pos[] = [posRp('Total nilai perolehan', jumlahTumpuk(c.aset_tetap))];
+const totalLabaRugi = computed<Pos[]>(() => [posRp('Laba/rugi kumulatif', jumlah(c.value.laba_rugi.vals))]);
+const totalAsetTetap = computed<Pos[]>(() => [posRp('Total nilai perolehan', jumlahTumpuk(c.value.aset_tetap))]);
 
-const totalBudget: Pos[] = [
-    posRp('Total realisasi', jumlah(c.budget.rows.map((r) => r.real))),
-    posRp('Total plafon', jumlah(c.budget.rows.map((r) => r.plafon))),
-    posRp('Sisa plafon', jumlah(c.budget.rows.map((r) => r.plafon)) - jumlah(c.budget.rows.map((r) => r.real))),
-];
+const totalBudget = computed<Pos[]>(() => [
+    posRp('Total realisasi', jumlah(c.value.budget.rows.map((r) => r.real))),
+    posRp('Total plafon', jumlah(c.value.budget.rows.map((r) => r.plafon))),
+    posRp('Sisa plafon', jumlah(c.value.budget.rows.map((r) => r.plafon)) - jumlah(c.value.budget.rows.map((r) => r.real))),
+]);
 
-const totalSpk: Pos[] = [
-    posJml('Total SPK', jumlah(c.spk.rows.map((r) => r.jml)), 'SPK'),
-    posRp('Total nilai SPK', jumlah(c.spk.rows.map((r) => r.nilai))),
-];
+const totalSpk = computed<Pos[]>(() => [
+    posJml('Total SPK', jumlah(c.value.spk.rows.map((r) => r.jml)), 'SPK'),
+    posRp('Total nilai SPK', jumlah(c.value.spk.rows.map((r) => r.nilai))),
+]);
 
-const totalProgress: Pos[] = [posJml('Total unit', jumlahTumpuk(c.progress), 'unit')];
+const totalProgress = computed<Pos[]>(() => [posJml('Total unit', jumlahTumpuk(c.value.progress), 'unit')]);
 
-const totalRetensi: Pos[] = [
-    posRp('Total ditahan', jumlahSeri(c.retensi.series, 0)),
-    posRp('Total dilepas', jumlahSeri(c.retensi.series, 1)),
-];
+const totalRetensi = computed<Pos[]>(() => [
+    posRp('Total ditahan', jumlahSeri(c.value.retensi.series, 0)),
+    posRp('Total dilepas', jumlahSeri(c.value.retensi.series, 1)),
+]);
 
 // Per tahap, TIDAK dijumlahkan — lihat catatan 3 di kepala blok ini.
-const totalBastAjbBr: Pos[] = c.bast_ajb_br.series.map((s) => posRp(
+const totalBastAjbBr = computed<Pos[]>(() => c.value.bast_ajb_br.series.map((s) => posRp(
     'Total ' + s.n,
     s.nilai,
     'Tiga tahap ini menyangkut unit yang sama, jadi nilainya tidak dijumlahkan menjadi satu angka.',
-));
+)));
 // Jumlah unit setahun DIAMBIL DARI CONTROLLER (`unit_tahunan`), bukan dijumlahkan dari ember
 // bulanan di sebelahnya: ember bulanan di-dedupe per (unit, bulan), sehingga satu unit yang
 // dokumennya terbit ulang di bulan berbeda akan terhitung dua kali dan membantah angka rupiah
 // di sampingnya.
-const totalBastAjbBrUnit: Pos[] = c.bast_ajb_br.series.map((s) => posJml('Total ' + s.n, s.unit_tahunan, 'unit'));
+const totalBastAjbBrUnit = computed<Pos[]>(() => c.value.bast_ajb_br.series.map((s) => posJml('Total ' + s.n, s.unit_tahunan, 'unit')));
 
-const totalPiutang: Pos[] = [posRp('Total tagihan', jumlahTumpuk(c.piutang))];
-const totalHpp: Pos[] = [posRp('Total HPP', jumlahTumpuk(c.hpp))];
+const totalPiutang = computed<Pos[]>(() => [posRp('Total tagihan', jumlahTumpuk(c.value.piutang))]);
+const totalHpp = computed<Pos[]>(() => [posRp('Total HPP', jumlahTumpuk(c.value.hpp))]);
 
 function fmtDateTime(iso: string | null | undefined): string {
     if (!iso) return '—';

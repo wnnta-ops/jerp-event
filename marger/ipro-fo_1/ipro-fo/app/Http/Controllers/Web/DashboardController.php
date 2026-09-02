@@ -1123,8 +1123,17 @@ class DashboardController extends Controller
      *   - pembayaran diambil dari kolom kumulatif paid_amount, sedangkan laporan resmi
      *     menjumlah bs_ap_payments s/d tanggal acuan. Untuk acuan "hari ini" keduanya sama
      *     kecuali ada pembayaran bertanggal mundur/maju yang belum tercermin di paid_amount;
-     *   - tidak ada batas atas invoice_date <= hari ini, karena dashboard menampilkan posisi
-     *     hutang saat ini, bukan potret per tanggal pilihan pengguna.
+     *   - ada batas atas invoice_date <= TANGGAL AKHIR PERIODE, sedangkan laporan resmi
+     *     memotret hari ini tanpa batas atas. Kartu ini kartu POSISI seperti Neraca dan Aset
+     *     Tetap: yang ditanya "berapa hutang yang SUDAH TERBIT per tanggal itu", jadi faktur
+     *     bertanggal setelahnya belum ada dan tidak boleh ikut. Tanpa batas ini faktur masa
+     *     depan selalu ikut terhitung dan mendarat di "Belum jatuh tempo" — sehingga TOTAL
+     *     kartu ini sama persis di periode mana pun, dan diamnya terbaca sebagai "hutangnya
+     *     memang segitu", bukan sebagai kartu yang mengabaikan filter.
+     *     Batas BAWAH tetap tidak ada, sama seperti kartu posisi yang lain: hutang yang terbit
+     *     sebelum periode masih terhutang pada tanggal potretnya.
+     *     Skema tanpa kolom invoice_date tidak disaring — pola Schema:: yang sudah berlaku di
+     *     seluruh berkas ini — dan pada skema itu acuan umurnya memang sudah due_date saja.
      *
      * @return array{rows: array<int, array{n: string, v: float}>}
      */
@@ -1189,6 +1198,12 @@ class DashboardController extends Controller
             if (Schema::hasColumn($t, 'deleted_at')) {
                 $q->whereNull('deleted_at');
             }
+
+            // POSISI: hanya faktur yang SUDAH terbit pada tanggal akhir periode. Penyaring yang
+            // sama persis dengan kartu posisi lain (Neraca, Aset Tetap, Rekonsiliasi Piutang),
+            // lewat helper yang sama — termasuk penjaga Schema::hasColumn di dalamnya, sehingga
+            // skema tanpa invoice_date tidak disaring alih-alih melempar QueryException.
+            $this->sampaiPeriode($q, 'invoice_date', $p, $t);
 
             foreach ($q->get() as $r) {
                 $vals[(int) $r->bucket] = round((float) $r->sisa, 2);
