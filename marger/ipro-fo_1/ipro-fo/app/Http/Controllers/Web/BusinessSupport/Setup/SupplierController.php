@@ -225,6 +225,7 @@ class SupplierController extends Controller
         $lewat = 0;
         $tanpaBank = 0;
         $tanpaNpwp = 0;
+        $npwpDitambal = 0;
         $galat = [];
         $siap  = [];
         $kodeDipakai = [];
@@ -241,12 +242,15 @@ class SupplierController extends Controller
                 continue;
             }
 
-            $npwp = preg_replace('/\D/', '', $get('npwp')) ?: null;
-            if ($npwp !== null && strlen($npwp) !== 16) {
-                $galat[] = "Baris {$barisNo}: NPWP '{$get('npwp')}' bukan 16 angka.";
+            [$npwp, $npwpDipulihkan, $npwpGalat] = TabelImpor::npwp($get('npwp'));
+            if ($npwpGalat !== null) {
+                $galat[] = "Baris {$barisNo}: {$npwpGalat}";
                 $lewat++;
 
                 continue;
+            }
+            if ($npwpDipulihkan) {
+                $npwpDitambal++;
             }
             $email = $get('email');
             if ($email !== '' && ! filter_var($email, FILTER_VALIDATE_EMAIL)) {
@@ -344,6 +348,9 @@ class SupplierController extends Controller
                 'catatan' => array_values(array_filter([
                     $tanpaBank ? "{$tanpaBank} baris tanpa data rekening bank — form Edit Supplier mewajibkannya, jadi baris itu perlu dilengkapi sebelum bisa disimpan ulang lewat layar." : null,
                     $tanpaNpwp ? "{$tanpaNpwp} baris tanpa NPWP." : null,
+                    // Penambalan nol depan TIDAK boleh diam-diam: yang tersimpan berbeda dari
+                    // yang tertulis di berkasnya, dan operator berhak tahu berapa banyak.
+                    $npwpDitambal ? "{$npwpDitambal} NPWP dipulihkan nol depannya (Excel membuangnya karena kolomnya bertipe angka). Jadikan kolom NPWP bertipe Teks agar tidak terulang." : null,
                 ])),
             ]);
     }
