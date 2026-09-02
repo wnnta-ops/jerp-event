@@ -141,7 +141,10 @@ async function main() {
     const unik = [...new Set(lebar)];
     cek('semua baris selebar sama', unik.length === 1,
         'lebar yang muncul: ' + unik.join(',') + ' → ' + lebar.join(','));
-    cek('lebarnya sembilan kolom', unik[0] === 9, String(unik[0]));
+    // 11 kolom: kotak centang + Customer + delapan kolom data + Keterangan. Angkanya
+    // dikunci supaya kolom yang tanpa sengaja hilang atau dobel langsung ketahuan —
+    // rowspan pada sel Customer membuat kesalahan semacam itu tidak terlihat di layar.
+    cek('lebarnya sebelas kolom', unik[0] === 11, String(unik[0]));
 
     console.log('\n=== 3. Pengajuan digabungkan per customer ===');
 
@@ -186,9 +189,13 @@ async function main() {
     console.log('\n=== 7. Saringan tidak hilang ===');
 
     const src = fs.readFileSync(BERKAS, 'utf8');
-    cek('kotak pencarian masih ada', src.includes('v-model="f.q"'));
-    cek('saringan status masih ada', src.includes('v-model="f.status"'));
-    cek('saringan akad masih ada', src.includes('v-model="f.akad"'));
+    // Saringannya kini per KOLOM (ColumnFilter) ditambah satu kotak ketik menyeluruh —
+    // perilakunya diuji tersendiri di uji-batal-akad-filter.cjs. Di sini cukup dipastikan
+    // pengelompokan per customer tidak menghilangkan sarana menyaringnya.
+    cek('kotak pencarian masih ada', src.includes('v-model="search"'));
+    cek('filter per kolom terpasang', (src.match(/<ColumnFilter/g) || []).length === 10,
+        String((src.match(/<ColumnFilter/g) || []).length));
+    cek('kotak centang baris terpasang', src.includes('@change="toggleRow(r.id)"'));
     cek('tombol Excel masih ada', src.includes("route('bs.batal-akad.export'"));
 
     console.log('\n==================================================');

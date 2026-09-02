@@ -45,29 +45,23 @@ class BatalAkadController extends Controller
     {
         abort_unless($request->user()?->canModule('businesssupport') || $request->user()?->can('bankloan.application.view'), 403);
 
-        // Saringan di layar (q/status/akad) tidak pernah masuk URL, jadi tombolnya yang
-        // mengirimkannya. Tanpa ini berkasnya berisi lebih banyak baris daripada yang
-        // sedang dilihat operator.
-        $rows = $this->rows($request, semua: true)->filter(function (array $r) use ($request): bool {
-            // Kolom yang dicari DISAMAKAN dengan layarnya (BatalAkad/Index.vue) — termasuk
-            // alasan. Daftar kolom yang berbeda membuat berkas dan layar memulangkan baris
-            // yang berbeda untuk kata kunci yang sama.
-            if ($q = trim((string) $request->input('q'))) {
-                $ada = stripos(implode(' ', [$r['kpr_number'], $r['customer'], $r['unit'], $r['booking'], $r['bank'], $r['alasan']]), $q) !== false;
-                if (! $ada) {
-                    return false;
-                }
-            }
-            if (($st = $request->input('status')) && $r['status'] !== $st) {
-                return false;
-            }
-            // Nilainya 'ya'/'tidak', mengikuti pilihan di layar apa adanya.
-            if (($ak = $request->input('akad')) !== null && $ak !== '') {
-                return $r['sempat_akad'] === ($ak === 'ya');
-            }
+        // Layarnya yang menentukan baris mana yang diekspor, lewat DAFTAR ID.
+        //
+        // Sebelumnya tombol ini mengirim q/status/akad dan di sini logika penyaringannya
+        // disalin ulang. Salinan itu harus ikut berubah setiap kali layarnya bertambah filter,
+        // dan sekarang filternya sepuluh — satu per kolom. Menyalinnya lagi berarti berkas dan
+        // layar akan memulangkan baris berbeda untuk saringan yang sama, tanpa satu pun galat.
+        // Dengan id, berkasnya berisi persis yang sedang terlihat.
+        $ids = collect(explode(',', (string) $request->input('ids')))
+            ->map(fn ($v) => (int) trim((string) $v))->filter()->unique();
 
-            return true;
-        })->values();
+        $rows = $this->rows($request, semua: true);
+        // Tanpa ids (mis. pranala lama yang tersimpan) seluruh baris diekspor — lebih baik
+        // kelebihan baris daripada berkas kosong tanpa penjelasan.
+        if ($ids->isNotEmpty()) {
+            $rows = $rows->filter(fn (array $r) => $ids->contains((int) $r['id']));
+        }
+        $rows = $rows->values();
 
         $e = fn ($v) => htmlspecialchars((string) ($v ?? ''), ENT_QUOTES);
         $t = fn ($v) => '<td style="mso-number-format:\'\@\'">'.$e($v).'</td>';
