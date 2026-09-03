@@ -68,7 +68,17 @@ class GmcResource extends Resource
                 ->label('Rincian Komponen (opsional — untuk gimmick multi-supplier)')
                 ->relationship()
                 ->schema([
-                    Forms\Components\TextInput::make('nama')->label('Nama Komponen')->required()->columnSpan(2),
+                    // Nama komponen DIPILIH dari master Kategori Gimmick, bukan diketik bebas —
+                    // sumber yang sama dengan field "Nama Gimmick" di atas dan dengan GMC Massal.
+                    //
+                    // Alasannya bukan kerapian: saat Posting BO, akun jurnalnya dicari dengan
+                    // MENCOCOKKAN NAMA PERSIS ke bs_gimmick_categories (IproApPoster::gimmickCategory).
+                    // Nama yang diketik bebas — "Jasa notaris", "PNBP ", "Biaya HT" — tidak akan
+                    // pernah cocok, dan hutangnya diam-diam jatuh ke akun sementara alih-alih akun
+                    // yang sudah ditetapkan di Setup Gimmick. Tidak ada galat; yang ada hanya
+                    // jurnal yang salah akun dan baru ketahuan saat rekonsiliasi.
+                    Forms\Components\Select::make('nama')->label('Nama Komponen')->required()->searchable()
+                        ->options(fn () => self::gimmickOptions())->columnSpan(2),
                     Forms\Components\Select::make('supplier_id')->label('Supplier')->required()->searchable()
                         ->options(fn () => GmcItem::supplierOptions())->columnSpan(2),
                     Forms\Components\TextInput::make('nilai')->label('Nilai (Rp)')->numeric()->rupiah()->default(0)->required()->columnSpan(2),
@@ -137,13 +147,21 @@ class GmcResource extends Resource
             $i = 0;
             foreach ($items as $it) {
                 $i++;
+                // Kategori dicari dari NAMA KOMPONENNYA lebih dulu, baru nama gimmick di header.
+                //
+                // Satu GMC bisa memuat komponen dari kategori yang berbeda-beda — "SSP" dan
+                // "BIAYA KPR" dalam satu GMC, masing-masing dengan akun sendiri di Setup Gimmick.
+                // Sebelumnya seluruh komponen dikirim memakai nama HEADER, sehingga keduanya
+                // dijurnal ke akun yang sama dan pengaturan akun per kategori itu tidak pernah
+                // terpakai. Nama header tetap jadi cadangan, jadi GMC lama yang nama komponennya
+                // teks bebas berperilaku persis seperti sebelumnya.
                 $poster->queueGmc(
                     (string) $r->no_gmc.'-'.$i,
                     (float) $it->nilai,
                     $custId, $custName, $tgl,
                     trim('Gimmick '.$nama.' — '.$it->nama.$sprRef),
                     $it->supplier_id ? (int) $it->supplier_id : null,
-                    $nama, $noKontrak, $foUnitId, $foLokasiId,
+                    (string) $it->nama, $noKontrak, $foUnitId, $foLokasiId, $nama,
                 );
             }
         } else {
