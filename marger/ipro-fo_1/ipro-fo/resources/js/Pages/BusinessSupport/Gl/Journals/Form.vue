@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { computed } from 'vue';
 import { useForm, usePage, Link } from '@inertiajs/vue3';
-import { ArrowLeft, Plus, Trash2, Save, Scale } from 'lucide-vue-next';
+import { ArrowLeft, Plus, Trash2, Save, Scale, BookText } from 'lucide-vue-next';
+import Badge from '@/Components/UI/Badge.vue';
 import Button from '@/Components/UI/Button.vue';
 import SearchSelect from '@/Components/UI/SearchSelect.vue';
 
@@ -92,43 +93,73 @@ const inputCls = 'h-9 w-full rounded-lg border border-neutral-300 bg-white px-3 
                 </div>
             </div>
 
-            <div class="card p-5">
-                <div class="mb-2 flex items-center justify-between">
-                    <h2 class="font-semibold">Struktur Jurnal (Debit / Kredit)</h2>
-                    <button type="button" @click="addLine" class="inline-flex items-center gap-1 rounded-lg border border-neutral-300 px-2.5 py-1.5 text-xs hover:bg-neutral-50 dark:border-neutral-700"><Plus class="h-3.5 w-3.5" /> Baris</button>
+            <!-- Bentuknya SENGAJA menyalin kartu "Struktur Jurnal" pada Detail Invoice/Jurnal:
+                 kepala kartu berlencana Balance, judul kolom Account · Dimensi · Keterangan ·
+                 Debit · Kredit, dan baris Grand Total di kaki tabel. Orang memeriksa jurnal di
+                 layar detail lalu membetulkannya di sini; dua tata letak berbeda untuk angka
+                 yang sama memaksa mata mencari ulang letak tiap kolom setiap kali berpindah.
+
+                 Yang TIDAK ikut disalin: lebar tabelnya. Baris di sini berisi isian sungguhan
+                 (dua SearchSelect + tiga kotak), jadi lebar minimumnya dipertahankan dan
+                 tabelnya digeser pada layar sempit — bukan diperas sampai Keterangan/Debit/
+                 Kredit terpotong. -->
+            <div class="card overflow-hidden">
+                <div class="flex flex-wrap items-center justify-between gap-2 border-b border-neutral-200 px-4 py-3 dark:border-neutral-800">
+                    <h2 class="flex items-center gap-2 font-semibold"><BookText class="h-5 w-5 text-primary-600" /> Struktur Jurnal</h2>
+                    <div class="flex items-center gap-2">
+                        <button type="button" @click="addLine" class="inline-flex items-center gap-1 rounded-lg border border-neutral-300 px-2.5 py-1.5 text-xs hover:bg-neutral-50 dark:border-neutral-700"><Plus class="h-3.5 w-3.5" /> Baris</button>
+                        <Badge :variant="balanced ? 'success' : 'warning'" size="sm">{{ balanced ? 'Balance' : 'Tidak balance' }}</Badge>
+                    </div>
                 </div>
-                <!-- Digeser, bukan diperas: pada layar yang lebih sempit dari lebar minimum
-                     tabelnya, kolomnya tetap utuh dan pengguna menggesernya. -->
+
                 <div class="overflow-x-auto">
                 <table class="w-full min-w-[1050px] text-sm">
-                    <thead class="text-left text-xs uppercase text-neutral-500"><tr><th class="py-2">Akun</th><th class="py-2">Cost Center</th><th class="min-w-[220px] py-2">Keterangan</th><th class="w-44 py-2 pr-2 text-right">Debit</th><th class="w-44 py-2 pr-2 text-right">Kredit</th><th class="w-10"></th></tr></thead>
-                    <tbody>
-                        <tr v-for="(l, i) in form.lines" :key="i" class="border-t border-neutral-100 dark:border-neutral-800">
-                            <td class="min-w-[240px] py-1.5 pr-2"><SearchSelect v-model="l.account_id" :options="accounts" placeholder="— pilih / ketik akun —" /></td>
+                    <thead class="bg-neutral-50 dark:bg-neutral-800"><tr class="text-left text-xs uppercase text-neutral-500">
+                        <th class="px-4 py-2.5">Account</th>
+                        <th class="px-4 py-2.5">Dimensi</th>
+                        <th class="min-w-[220px] px-4 py-2.5">Keterangan</th>
+                        <th class="w-44 px-4 py-2.5 text-right">Debit</th>
+                        <th class="w-44 px-4 py-2.5 text-right">Kredit</th>
+                        <th class="w-12 px-4 py-2.5"></th>
+                    </tr></thead>
+                    <tbody class="divide-y divide-neutral-200 dark:divide-neutral-800">
+                        <tr v-for="(l, i) in form.lines" :key="i">
+                            <td class="min-w-[240px] px-4 py-2.5"><SearchSelect v-model="l.account_id" :options="accounts" placeholder="— pilih / ketik akun —" /></td>
                             <!-- Cost center PER COA. Dikosongkan → ikut cost center header, KECUALI
                                  akun yang memang boleh tanpa cost center: dibiarkan kosong apa adanya. -->
-                            <td class="min-w-[190px] py-1.5 pr-2">
+                            <td class="min-w-[190px] px-4 py-2.5">
                                 <SearchSelect v-model="l.cost_center_id" :options="costCenters"
                                     :placeholder="ccOptional(l.account_id) ? '— tanpa cost center —' : '— ikut header —'" />
                                 <p v-if="ccOptional(l.account_id)" class="mt-0.5 text-[10.5px] text-neutral-400">Boleh dikosongkan</p>
                             </td>
-                            <td class="min-w-[220px] py-1.5 pr-2"><input v-model="l.description" :class="inputCls" /></td>
-                            <td class="w-44 py-1.5 pr-2"><input v-model.number="l.debit" type="number" step="1" min="0" :class="[inputCls,'text-right']" @input="l.debit && (l.credit = 0)" /></td>
-                            <td class="w-44 py-1.5 pr-2"><input v-model.number="l.credit" type="number" step="1" min="0" :class="[inputCls,'text-right']" @input="l.credit && (l.debit = 0)" /></td>
-                            <td class="py-1.5 text-center"><button type="button" @click="removeLine(i)" :disabled="form.lines.length<=2" class="text-danger-500 disabled:opacity-30"><Trash2 class="h-4 w-4" /></button></td>
+                            <td class="min-w-[220px] px-4 py-2.5"><input v-model="l.description" :class="inputCls" /></td>
+                            <td class="w-44 px-4 py-2.5"><input v-model.number="l.debit" type="number" step="1" min="0" :class="[inputCls,'text-right']" @input="l.debit && (l.credit = 0)" /></td>
+                            <td class="w-44 px-4 py-2.5"><input v-model.number="l.credit" type="number" step="1" min="0" :class="[inputCls,'text-right']" @input="l.credit && (l.debit = 0)" /></td>
+                            <td class="px-4 py-2.5 text-center"><button type="button" @click="removeLine(i)" :disabled="form.lines.length<=2" class="text-danger-500 disabled:opacity-30"><Trash2 class="h-4 w-4" /></button></td>
                         </tr>
                     </tbody>
-                    <tfoot class="border-t-2 border-neutral-200 text-sm font-bold dark:border-neutral-700">
-                        <tr><td colspan="3" class="py-2 pr-3 text-right text-neutral-500">Total</td><td class="w-44 py-2 pr-2 text-right font-mono tabular-nums">{{ fmtRp(totalDebit) }}</td><td class="w-44 py-2 pr-2 text-right font-mono tabular-nums">{{ fmtRp(totalCredit) }}</td><td></td></tr>
+                    <tfoot>
+                        <tr class="border-t-2 border-neutral-200 font-semibold dark:border-neutral-700">
+                            <td class="px-4 py-2.5" colspan="3">Grand Total</td>
+                            <td class="px-4 py-2.5 text-right font-mono tabular-nums">{{ fmtRp(totalDebit) }}</td>
+                            <td class="px-4 py-2.5 text-right font-mono tabular-nums">{{ fmtRp(totalCredit) }}</td>
+                            <td></td>
+                        </tr>
                     </tfoot>
                 </table>
                 </div>
-                <div class="mt-3 flex items-center gap-2 text-sm" :class="balanced ? 'text-success-600' : 'text-danger-600'">
-                    <Scale class="h-4 w-4" />
-                    <span v-if="balanced">Balance ✓ (debit = kredit)</span>
-                    <span v-else>Belum balance — selisih {{ fmtRp(Math.abs(totalDebit - totalCredit)) }}. Jurnal hanya bisa disimpan bila balance.</span>
+
+                <!-- Lencana di kepala kartu menyebut KEADAANNYA; baris ini menyebut SELISIHNYA
+                     dan akibatnya. Layar detail tidak memerlukannya karena jurnalnya sudah
+                     tersimpan — di sini justru itu yang menghalangi tombol Simpan. -->
+                <div class="border-t border-neutral-200 px-4 py-3 dark:border-neutral-800">
+                    <div class="flex items-center gap-2 text-sm" :class="balanced ? 'text-success-600' : 'text-danger-600'">
+                        <Scale class="h-4 w-4" />
+                        <span v-if="balanced">Balance ✓ (debit = kredit)</span>
+                        <span v-else>Belum balance — selisih {{ fmtRp(Math.abs(totalDebit - totalCredit)) }}. Jurnal hanya bisa disimpan bila balance.</span>
+                    </div>
+                    <p v-if="!allAccountsSet" class="mt-1 text-xs text-danger-500">Setiap baris wajib memilih akun.</p>
                 </div>
-                <p v-if="!allAccountsSet" class="mt-1 text-xs text-danger-500">Setiap baris wajib memilih akun.</p>
             </div>
 
             <div class="flex gap-2">
