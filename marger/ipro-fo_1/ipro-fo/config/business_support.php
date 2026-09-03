@@ -69,6 +69,25 @@ return [
         'bphtb_njoptkp'  => 80_000_000,  // pengurang BPHTB
     ],
 
+    /**
+     * Supplier bawaan pada layar "Posting Invoice dari FO", per SUMBER antrean.
+     *
+     * BLT dan Komisi tidak membawa supplier dari FO — penerimanya agen/sales perorangan,
+     * bukan vendor, dan hutangnya ditagihkan ke satu supplier penampung per jenis pembayaran.
+     * Tanpa bawaan ini, setiap baris BLTPENG/KOMPENG harus dipilih suppliernya satu per satu
+     * padahal jawabannya selalu sama, dan salah pilih berarti hutangnya tertagih ke vendor
+     * yang keliru.
+     *
+     * Disebut lewat KODE, bukan id: id supplier hanya berlaku di basis data ini, sedangkan
+     * kodenya yang dikenal orang dan dipakai di Supplier Center. Kode yang tidak ditemukan
+     * membuat bawaannya kosong — barisnya tetap bisa diposting setelah supplier dipilih
+     * manual, bukan gagal total.
+     */
+    'ap_supplier_default' => [
+        'blt'    => 'SP.00222', // PEMBAYARAN BLT
+        'komisi' => 'SP.00223', // PEMBAYARAN KOMISI
+    ],
+
     'gl_accounts' => [
         'inventory'  => '10104010101', // Persediaan — Bangunan Siap Jual
         'payable'    => '20101010101', // Utang Usaha Supplier
