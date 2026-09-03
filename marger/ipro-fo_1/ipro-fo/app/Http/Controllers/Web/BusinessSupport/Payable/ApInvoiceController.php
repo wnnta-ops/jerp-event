@@ -236,7 +236,11 @@ class ApInvoiceController extends Controller
             'ppnAccount'  => BsAccount::where('is_active', true)->where('code', config('business_support.gl_accounts.ppn_in'))->first(['id', 'code', 'name']),
             // Debit "Biaya PPh" default utk PPh ditanggung (bisa diganti di struktur jurnal).
             'pphBorneExpense' => BsAccount::where('code', config('business_support.gl_accounts.pph_borne_expense'))->first(['id', 'code', 'name']),
-            'accounts'    => BsAccount::where('is_active', true)->where('is_postable', true)->orderBy('code')->get(['id', 'code', 'name']),
+            // cost_center_optional ikut dikirim: layar Struktur Jurnal mewajibkan cost center,
+            // dan tanpa penanda ini ia tidak bisa membedakan akun yang MEMANG boleh tanpa cost
+            // center (mis. Utang Usaha Supplier) — hasilnya wizard-nya mengunci diri sendiri
+            // pada invoice yang sebenarnya sah. Daftar akunnya sama dengan Jurnal Memorial.
+            'accounts'    => BsAccount::where('is_active', true)->where('is_postable', true)->orderBy('code')->get(['id', 'code', 'name', 'cost_center_optional']),
             'costCenters' => BsCostCenter::where('is_active', true)->orderBy('code')->get(['id', 'code', 'name']),
             'departments' => BsDepartment::where('is_active', true)->orderBy('code')->get(['id', 'code', 'name']),
             'ledgers'     => BsLedger::where('is_active', true)->orderBy('code')->get(['id', 'code', 'name']),
@@ -293,6 +297,23 @@ class ApInvoiceController extends Controller
             'journal_lines.*.debit'       => ['nullable', 'numeric', 'min:0'],
             'journal_lines.*.credit'      => ['nullable', 'numeric', 'min:0'],
         ]);
+
+        // Cost center WAJIB pada baris jurnal yang akunnya memang memerlukannya.
+        //
+        // Layar Struktur Jurnal sudah menahan tombol Berikutnya, tetapi penjagaan di layar saja
+        // hanya berlaku bagi yang memakai wizardnya apa adanya — kiriman langsung, tab yang
+        // tertinggal terbuka sejak sebelum aturan ini ada, atau draf yang dipulihkan peramban
+        // tetap lolos. Baris jurnal tanpa cost center membuat nilainya tidak terhitung di
+        // Budget Control maupun laporan per cost center, dan itu tidak terlihat sebagai galat
+        // apa pun — hanya angka yang kurang.
+        //
+        // PENGECUALIAN: akun bertanda cost_center_optional (lihat CoaTanpaCostCenterSeeder) —
+        // mis. Utang Usaha Supplier — memang boleh tanpa cost center. Aturannya sama dengan
+        // Jurnal Memorial (JournalController), bukan aturan kedua yang berdiri sendiri.
+        if ($kurang = $this->akunKurangCostCenter($v['journal_lines'] ?? [])) {
+            return back()->withInput()->with('error',
+                'Cost center wajib diisi untuk akun: '.implode(', ', $kurang).'.');
+        }
 
         try {
             // Gerbang over-budget: tolak bila baris jurnal (Dr akun ber-anggaran + cost center) melewati anggaran.
@@ -447,6 +468,42 @@ class ApInvoiceController extends Controller
     }
 
     /** Apakah user termasuk Dept Finance (proksi peran). SuperAdmin ikut lewat Gate::before. */
+    /**
+     * Akun pada baris jurnal yang MEMERLUKAN cost center tetapi barisnya dikosongkan.
+     *
+     * Memulangkan label akunnya ("50302020213 - JASA OUTSOURCE …") supaya pesan galatnya bisa
+     * langsung ditelusuri ke barisnya — bukan sekadar "cost center wajib diisi" yang membuat
+     * orang menebak baris mana pada jurnal berisi sepuluh baris.
+     *
+     * Baris tanpa akun diabaikan: layar Struktur Jurnal memang membolehkan baris kosong
+     * sebagai pengisi, dan barisnya dibuang saat diproses.
+     *
+     * @param  array<int,array<string,mixed>>  $lines
+     * @return array<int,string>
+     */
+    private function akunKurangCostCenter(array $lines): array
+    {
+        $perluCc = [];
+        foreach ($lines as $l) {
+            $accId = (int) ($l['account_id'] ?? 0);
+            if ($accId <= 0 || ! empty($l['cost_center_id'])) {
+                continue;
+            }
+            $perluCc[$accId] = true;
+        }
+        if ($perluCc === []) {
+            return [];
+        }
+
+        // Hanya akun yang TIDAK bertanda optional yang dilaporkan. Penandanya bisa NULL pada
+        // baris lama, dan NULL berarti "wajib" — sama dengan cara JournalController membacanya.
+        return BsAccount::whereIn('id', array_keys($perluCc))
+            ->where(fn ($q) => $q->where('cost_center_optional', false)->orWhereNull('cost_center_optional'))
+            ->orderBy('code')->get(['code', 'name'])
+            ->map(fn ($a) => trim($a->code.' - '.$a->name))
+            ->values()->all();
+    }
+
     private function isFinance(Request $request): bool
     {
         return (bool) $request->user()?->hasAnyRole(['Finance', 'FinanceManager', 'SuperAdmin']);

@@ -52,6 +52,13 @@ const kurangCc = computed<string[]>(() => {
     }
     return [...out];
 });
+/**
+ * Baris ini kurang cost center? Syaratnya sama dengan kurangCc di atas, per baris — cost
+ * center header ikut dihitung karena baris yang dikosongkan mewarisinya.
+ */
+function ccKurang(l: any) {
+    return !!l?.account_id && ! l?.cost_center_id && ! form.cost_center_id && ! ccOptional(l.account_id);
+}
 const userName = computed(() => (usePage().props as any).auth?.user?.name ?? '—');
 function fmtRp(v: number) { return Number(v ?? 0).toLocaleString('id-ID'); }
 function submit() {
@@ -116,7 +123,7 @@ const inputCls = 'h-9 w-full rounded-lg border border-neutral-300 bg-white px-3 
                 <table class="w-full min-w-[1050px] text-sm">
                     <thead class="bg-neutral-50 dark:bg-neutral-800"><tr class="text-left text-xs uppercase text-neutral-500">
                         <th class="px-4 py-2.5">Account</th>
-                        <th class="px-4 py-2.5">Dimensi</th>
+                        <th class="px-4 py-2.5">Dimensi <span class="text-danger-500">*</span></th>
                         <th class="min-w-[220px] px-4 py-2.5">Keterangan</th>
                         <th class="w-44 px-4 py-2.5 text-right">Debit</th>
                         <th class="w-44 px-4 py-2.5 text-right">Kredit</th>
@@ -128,9 +135,16 @@ const inputCls = 'h-9 w-full rounded-lg border border-neutral-300 bg-white px-3 
                             <!-- Cost center PER COA. Dikosongkan → ikut cost center header, KECUALI
                                  akun yang memang boleh tanpa cost center: dibiarkan kosong apa adanya. -->
                             <td class="min-w-[190px] px-4 py-2.5">
-                                <SearchSelect v-model="l.cost_center_id" :options="costCenters"
-                                    :placeholder="ccOptional(l.account_id) ? '— tanpa cost center —' : '— ikut header —'" />
-                                <p v-if="ccOptional(l.account_id)" class="mt-0.5 text-[10.5px] text-neutral-400">Boleh dikosongkan</p>
+                                <!-- Barisnya ditandai merah selagi cost centernya kurang. Gerbang
+                                     tombol Simpan sudah ada sejak awal, tetapi tanpa penanda ini
+                                     orang hanya melihat tombol yang mati — pada jurnal berisi
+                                     sepuluh baris, baris mana yang kurang harus ditebak. -->
+                                <div :class="ccKurang(l) ? 'rounded-lg ring-1 ring-danger-400' : ''">
+                                    <SearchSelect v-model="l.cost_center_id" :options="costCenters"
+                                        :placeholder="ccOptional(l.account_id) ? '— tanpa cost center —' : '— ikut header —'" />
+                                </div>
+                                <p v-if="ccKurang(l)" class="mt-0.5 text-[10.5px] font-medium text-danger-500">Wajib diisi</p>
+                                <p v-else-if="ccOptional(l.account_id)" class="mt-0.5 text-[10.5px] text-neutral-400">Boleh dikosongkan</p>
                             </td>
                             <td class="min-w-[220px] px-4 py-2.5"><input v-model="l.description" :class="inputCls" /></td>
                             <td class="w-44 px-4 py-2.5"><input v-model.number="l.debit" type="number" step="1" min="0" :class="[inputCls,'text-right']" @input="l.debit && (l.credit = 0)" /></td>

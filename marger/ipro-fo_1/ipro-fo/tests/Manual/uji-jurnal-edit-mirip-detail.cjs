@@ -137,9 +137,15 @@ async function render(berkas, props) {
     const kolomForm = kepalaKolom(tabelForm ?? '');
 
     cek('acuan terbaca 5 kolom', kolomAcuan.length === 5, JSON.stringify(kolomAcuan));
-    // Form punya satu kolom tambahan: tombol hapus baris. Yang dibandingkan lima yang pertama.
-    cek('kelima judul kolomnya sama persis',
-        JSON.stringify(kolomForm.slice(0, 5)) === JSON.stringify(kolomAcuan),
+    /* Form punya satu kolom tambahan: tombol hapus baris. Yang dibandingkan lima yang pertama.
+
+       Tanda bintang wajib DILEPAS sebelum dibandingkan — dan itu satu-satunya perbedaan yang
+       dimaafkan. Layar detail hanya membaca, jadi menandai kolom "wajib diisi" di sana tidak
+       ada artinya; pada form, tandanya justru yang memberi tahu kolom itu menahan penyimpanan.
+       Keberadaan tandanya diperiksa tersendiri di uji-cost-center-wajib.cjs. */
+    const tanpaBintang = (t) => t.replace(/\s*\*$/, '').trim();
+    cek('kelima judul kolomnya sama persis (selain tanda wajib)',
+        JSON.stringify(kolomForm.slice(0, 5).map(tanpaBintang)) === JSON.stringify(kolomAcuan),
         '\n        form : ' + JSON.stringify(kolomForm) + '\n        acuan: ' + JSON.stringify(kolomAcuan));
 
     console.log('\n=== 2. Bentuk kartunya sama ===');
