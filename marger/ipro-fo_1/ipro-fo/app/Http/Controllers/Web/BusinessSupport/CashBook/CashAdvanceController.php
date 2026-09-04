@@ -526,9 +526,14 @@ class CashAdvanceController extends Controller
             // VA yang sudah lewat tanggalnya tidak bisa didebit, sehingga uangnya tak pernah
             // berpindah meski jurnalnya terbentuk.
             'va_expired_date' => ['nullable', 'date', 'required_if:payment_method,debit_va', 'after_or_equal:paid_date'],
+            // Nomor kartu kredit/VA yang didebit. WAJIB pada Debit VA: permintaan penambahan
+            // saldo dan permintaan masa berlaku yang lahir dari bon ini harus menempel pada
+            // kartu tertentu — tanpa itu, saldo bertambah di kartu yang tidak dituju.
+            'credit_card_id'  => ['nullable', 'integer', 'exists:bs_credit_cards,id', 'required_if:payment_method,debit_va'],
         ], [
             'va_expired_date.required_if'      => 'Tanggal expired VA wajib diisi untuk Pembayaran Debit VA.',
             'va_expired_date.after_or_equal'   => 'Tanggal expired VA tidak boleh mendahului tanggal transfer.',
+            'credit_card_id.required_if'       => 'Nomor kartu kredit/VA wajib dipilih untuk Pembayaran Debit VA.',
         ]);
 
         // Catat Pembayaran & Buat Jurnal hanya boleh setelah SELURUH persetujuan (pengaju → Manager Finance) lengkap.
@@ -550,7 +555,7 @@ class CashAdvanceController extends Controller
         abort_unless($request->user()?->canModule('cashbook'), 403);
 
         return Inertia::render('BusinessSupport/CashBook/Advances/Show', [
-            'advance'         => $advance->load(['cashAccount:id,code,name', 'lines.expenseAccount:id,code,name', 'lines.costCenter:id,code,name']),
+            'advance'         => $advance->load(['cashAccount:id,code,name', 'creditCard:id,name,card_number,balance,expired_date', 'lines.expenseAccount:id,code,name', 'lines.costCenter:id,code,name']),
             'expenseAccounts' => BsAccount::where('is_active', true)->where('is_postable', true)->whereIn('type', ['expense', 'asset'])->orderBy('code')->get(['id', 'code', 'name', 'type']),
             // Cost center per baris realisasi → diteruskan ke jurnal, dibaca Budget Control.
             'costCenters'     => \App\Domain\BusinessSupport\Models\BsCostCenter::where('is_active', true)
@@ -565,6 +570,14 @@ class CashAdvanceController extends Controller
             'approvalMode'    => $advance->isOfflineApproval() ? 'offline' : 'online',
             'approvalModes'   => BsCashAdvance::APPROVAL_MODES,
             'paymentMethods'  => BsCashAdvance::PAYMENT_METHODS,
+            // Kartu kredit/VA yang BOLEH dipakai membayar: aktif dan belum lewat masa berlaku.
+            // Kartu nonaktif/expired sengaja tidak dikirim sama sekali — menampilkannya sebagai
+            // pilihan yang ditolak server hanya memindahkan penolakannya ke belakang.
+            'creditCards'     => \App\Domain\BusinessSupport\Models\BsCreditCard::where('is_active', true)
+                ->orderBy('name')->get(['id', 'name', 'card_number', 'balance', 'expired_date', 'is_active'])
+                ->filter(fn ($c) => $c->isUsable())
+                ->map(fn ($c) => ['id' => $c->id, 'label' => $c->label(), 'balance' => (float) $c->balance])
+                ->values(),
             'canApprove'      => (bool) $request->user()?->can('businesssupport.approval.act'), // #127
             'canEditDocDate'  => (bool) $request->user()?->canModule('cashbook'), // #125
         ]);

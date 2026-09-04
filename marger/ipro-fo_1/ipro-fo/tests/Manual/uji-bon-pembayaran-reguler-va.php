@@ -77,6 +77,17 @@ try {
         throw new RuntimeException('tidak ada akun kas/bank untuk dijadikan fikstur');
     }
 
+    /* Kartu kredit/VA yang siap pakai. Sejak Set Up Credit Card, Debit VA WAJIB menyebut
+       kartunya: permintaan saldo & masa berlaku yang lahir dari pembayaran harus menempel pada
+       kartu tertentu. Kartunya diaktifkan di sini (dan dibatalkan bersama transaksi ini) supaya
+       yang diuji tetap soal TANGGAL EXPIRED-nya, bukan tersandung syarat kartu. */
+    $kartu = \App\Domain\BusinessSupport\Models\BsCreditCard::query()->first();
+    if (! $kartu) {
+        throw new RuntimeException('tidak ada kartu kredit/VA untuk dijadikan fikstur');
+    }
+    $kartu->update(['is_active' => true, 'expired_date' => null]);
+    $akunKartu = (int) $kartu->account_id;
+
     /** Bon siap bayar — dibuat OFFLINE supaya gerbang persetujuannya tidak ikut menghalangi. */
     $bonSiap = fn (string $tujuan) => $svc->issue([
         'advance_date' => '2026-09-04', 'holder' => 'UJI Pemegang — Staff',
@@ -138,7 +149,8 @@ try {
     echo "\n=== 2. Debit VA TANPA tanggal expired DITOLAK ===\n";
 
     $va1 = $bonSiap('UJI VA tanpa expired');
-    $h4 = $bayar($va1, ['paid_date' => '2026-09-04', 'cash_account_id' => $kas, 'payment_method' => 'debit_va']);
+    $h4 = $bayar($va1, ['paid_date' => '2026-09-04', 'cash_account_id' => $kas,
+        'payment_method' => 'debit_va', 'credit_card_id' => $kartu->id]);
     $cek('ditolak validasi', isset($h4['validasi']['va_expired_date']), json_encode($h4));
     $cek('pesannya menyebut tanggal expired VA',
         str_contains(implode(' ', $h4['validasi']['va_expired_date'] ?? []), 'expired VA'),
@@ -152,6 +164,7 @@ try {
     $h5 = $bayar($va2, [
         'paid_date' => '2026-09-04', 'cash_account_id' => $kas,
         'payment_method' => 'debit_va', 'va_expired_date' => '2026-09-18',
+        'credit_card_id' => $kartu->id,
     ]);
     $cek('diterima tanpa galat', empty($h5['galat']) && $h5['validasi'] === [], json_encode($h5));
     $segarVa = $va2->fresh();
@@ -160,15 +173,33 @@ try {
         $segarVa->va_expired_date?->toDateString() === '2026-09-18', (string) $segarVa->va_expired_date);
     $cek('jurnalnya terbentuk', $segarVa->journal_id !== null);
 
-    // Jurnalnya HARUS sama dengan reguler — yang berbeda cara uangnya berpindah, bukan akuntansinya.
+    /* SISI DEBITNYA BERBEDA dari reguler, dan itu memang disengaja sejak Set Up Credit Card.
+       Uang bon Debit VA berpindah ke REKENING KARTUNYA dulu, baru menjadi panjar saat kartunya
+       dipakai — jadi yang didebit akun kartu itu, bukan Uang Muka Operasional. Sisi kreditnya
+       tetap sama: bank sumber yang dipilih, dengan bentuk dua baris yang sama. */
     $barisVa = DB::table('bs_journal_lines')->where('journal_id', $segarVa->journal_id)
         ->orderBy('id')->get(['account_id', 'debit', 'credit']);
     $barisReg = DB::table('bs_journal_lines')->where('journal_id', $segar->journal_id)
         ->orderBy('id')->get(['account_id', 'debit', 'credit']);
-    $cek('jurnal VA sama bentuknya dengan jurnal reguler',
-        $barisVa->pluck('account_id')->all() === $barisReg->pluck('account_id')->all()
-            && $barisVa->count() === 2,
+    $cek('jurnal VA tetap dua baris & seimbang',
+        $barisVa->count() === 2 && (float) $barisVa->sum('debit') === (float) $barisVa->sum('credit'),
         json_encode($barisVa));
+    $cek('jurnal VA mendebit AKUN KARTU, bukan Uang Muka Operasional',
+        (float) ($barisVa->firstWhere('account_id', $akunKartu)->debit ?? 0) === 750000.0,
+        json_encode($barisVa));
+    $cek('jurnal reguler tetap mendebit akun Uang Muka Operasional',
+        (int) $barisReg->firstWhere('debit', '>', 0)?->account_id === (int) $segar->advance_account_id);
+    $cek('sisi kredit keduanya sama-sama bank sumber',
+        (int) $barisVa->firstWhere('credit', '>', 0)?->account_id === $kas
+            && (int) $barisReg->firstWhere('credit', '>', 0)?->account_id === $kas);
+
+    // Pembayarannya melahirkan permintaan saldo & masa berlaku pada kartu yang dipilih.
+    $mintaVa = \App\Domain\BusinessSupport\Models\BsCreditCardRequest::where('source_type', 'cash_advance')
+        ->where('source_id', $segarVa->id)->get();
+    $cek('lahir 2 permintaan kartu (saldo + masa berlaku)', $mintaVa->count() === 2, (string) $mintaVa->count());
+    $cek('keduanya menempel pada kartu yang dipilih',
+        $mintaVa->every(fn ($r) => (int) $r->credit_card_id === (int) $kartu->id));
+    $cek('keduanya menunggu persetujuan', $mintaVa->every(fn ($r) => $r->status === 'pending'));
 
     echo "\n=== 4. Tanggal expired tidak boleh mendahului tanggal transfer ===\n";
 
@@ -177,6 +208,7 @@ try {
     $h6 = $bayar($va3, [
         'paid_date' => '2026-09-10', 'cash_account_id' => $kas,
         'payment_method' => 'debit_va', 'va_expired_date' => '2026-09-01',
+        'credit_card_id' => $kartu->id,
     ]);
     $cek('ditolak', isset($h6['validasi']['va_expired_date']), json_encode($h6));
     $cek('tidak ada jurnal yang terbentuk', $va3->fresh()->journal_id === null);
@@ -186,6 +218,7 @@ try {
     $h7 = $bayar($va4, [
         'paid_date' => '2026-09-10', 'cash_account_id' => $kas,
         'payment_method' => 'debit_va', 'va_expired_date' => '2026-09-10',
+        'credit_card_id' => $kartu->id,
     ]);
     $cek('expired = tanggal transfer diterima', empty($h7['galat']) && $h7['validasi'] === [], json_encode($h7));
 
@@ -212,15 +245,25 @@ try {
     };
 
     $va5 = $bonSiap('UJI VA lewat service');
-    $k1 = $kode(fn () => $svc->pay($va5, ['paid_date' => '2026-09-04', 'cash_account_id' => $kas, 'payment_method' => 'debit_va'], (int) $user->id));
+    $k1 = $kode(fn () => $svc->pay($va5, ['paid_date' => '2026-09-04', 'cash_account_id' => $kas,
+        'payment_method' => 'debit_va', 'credit_card_id' => $kartu->id], (int) $user->id));
     $cek('service menolak VA tanpa tanggal expired', $k1 !== null, 'tidak ada penolakan');
     $cek('penolakannya memang karena tanggalnya TIDAK ADA', $k1 === 'ADV_VA_NO_EXPIRY', (string) $k1);
     $cek('tidak ada jurnal yang terbentuk', $va5->fresh()->journal_id === null);
 
     $va6 = $bonSiap('UJI VA mundur lewat service');
     $k2 = $kode(fn () => $svc->pay($va6, ['paid_date' => '2026-09-10', 'cash_account_id' => $kas,
-        'payment_method' => 'debit_va', 'va_expired_date' => '2026-09-01'], (int) $user->id));
+        'payment_method' => 'debit_va', 'va_expired_date' => '2026-09-01',
+        'credit_card_id' => $kartu->id], (int) $user->id));
     $cek('service menolak expired yang mendahului transfer', $k2 === 'ADV_VA_EXPIRED_BEFORE_PAID', (string) $k2);
+
+    /* Kartunya pun dijaga di service, bukan hanya di validasi request — dengan kode galat
+       tersendiri supaya "lupa memilih kartu" tidak tertukar dengan "tanggalnya kurang". */
+    $va8 = $bonSiap('UJI VA tanpa kartu lewat service');
+    $k3 = $kode(fn () => $svc->pay($va8, ['paid_date' => '2026-09-04', 'cash_account_id' => $kas,
+        'payment_method' => 'debit_va', 'va_expired_date' => '2026-09-18'], (int) $user->id));
+    $cek('service menolak Debit VA tanpa kartu', $k3 === 'ADV_VA_NO_CARD', (string) $k3);
+    $cek('tidak ada jurnal yang terbentuk', $va8->fresh()->journal_id === null);
 
     // Nilai asing tidak boleh lolos sebagai cara pembayaran tak dikenal.
     $va7 = $bonSiap('UJI cara bayar asing');

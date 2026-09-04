@@ -20,7 +20,7 @@ class BsCashAdvance extends Model
         'advance_account_id', 'amount', 'status', 'realized_date', 'realized_amount', 'settlement',
         'settlement_status', 'journal_id', 'realize_journal_id', 'settle_journal_id', 'created_by',
         'received_document_date', 'approvals', // #125, #127
-        'approval_mode', 'payment_method', 'va_expired_date',
+        'approval_mode', 'payment_method', 'va_expired_date', 'credit_card_id',
     ];
     protected $casts = [
         'advance_date' => 'date', 'paid_date' => 'date', 'realized_date' => 'date',
@@ -139,6 +139,8 @@ class BsCashAdvance extends Model
     }
 
     public function cashAccount(): BelongsTo { return $this->belongsTo(BsAccount::class, 'cash_account_id'); }
+    /** Kartu kredit/VA yang dipakai — hanya terisi pada pembayaran Debit VA. */
+    public function creditCard(): BelongsTo { return $this->belongsTo(BsCreditCard::class, 'credit_card_id'); }
     public function department(): BelongsTo { return $this->belongsTo(BsHrDepartment::class, 'department_id'); } // #150
     public function lines(): HasMany { return $this->hasMany(BsCashAdvanceLine::class, 'cash_advance_id'); }
 }

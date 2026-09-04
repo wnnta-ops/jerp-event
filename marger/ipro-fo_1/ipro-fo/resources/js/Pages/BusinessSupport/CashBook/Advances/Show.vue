@@ -8,7 +8,9 @@ import SearchSelect from '@/Components/UI/SearchSelect.vue';
 
 const props = defineProps<{ advance: any; expenseAccounts: Array<any>; costCenters: Array<any>; cashAccounts: Array<any>; signers?: Record<string, string>; requiredSigners?: string[]; fullyApproved?: boolean; canApprove?: boolean; canEditDocDate?: boolean;
     /** 'online' = berjenjang di aplikasi · 'offline' = tanda tangan di kertas. */
-    approvalMode?: string }>();
+    approvalMode?: string;
+    /** Kartu kredit/VA yang boleh dipakai (aktif & belum expired) — hanya untuk Debit VA. */
+    creditCards?: Array<{ id: number; label: string; balance: number }> }>();
 const showForm = ref(false);
 // #125: simpan tanggal terima dokumen (hanya finance) tanpa berpindah halaman.
 function saveDocDate(e: Event) {
@@ -30,12 +32,17 @@ const settleForm = useForm<any>({ settle_date: today, cash_account_id: '' });
 // #49: pembayaran oleh Finance (tanggal transfer + sumber bank/kas) → jurnal terbentuk.
 /* Cara pembayaran dipilih Finance saat mencatat. Bawaannya reguler — sama dengan satu-satunya
    cara yang ada sebelum pilihan ini. Debit VA menambah satu syarat: tanggal expired VA. */
-const payForm = useForm<any>({ paid_date: today, cash_account_id: '', payment_method: 'reguler', va_expired_date: '' });
+const payForm = useForm<any>({ paid_date: today, cash_account_id: '', payment_method: 'reguler', va_expired_date: '', credit_card_id: '' });
 function doPay() { payForm.post(route('bs.advance.pay', props.advance.id)); }
 /* Debit VA belum lengkap selama tanggal expired-nya kosong. Dihitung tersendiri supaya tombol
    DAN pesan penjelasnya memakai syarat yang sama persis — tombol mati tanpa penjelasan pada
    kartu pembayaran membuat orang menyangka layarnya rusak. */
 const vaKurangExpired = computed(() => payForm.payment_method === 'debit_va' && ! payForm.va_expired_date);
+/* ...begitu pula nomor kartunya. Permintaan penambahan saldo & masa berlaku yang lahir dari
+   pembayaran ini menempel pada kartu tertentu; tanpa kartu, tidak jelas saldo siapa yang
+   bertambah. */
+const vaKurangKartu = computed(() => payForm.payment_method === 'debit_va' && ! payForm.credit_card_id);
+const kartuDipilih = computed(() => (props.creditCards ?? []).find((c) => c.id === Number(payForm.credit_card_id)));
 const statusLabel: Record<string, string> = { requested: 'Diajukan', outstanding: 'Outstanding', realized: 'Realized' };
 const statusVariant: Record<string, any> = { requested: 'info', outstanding: 'warning', realized: 'success' };
 
@@ -123,6 +130,14 @@ function backToIndex() {
             <div><div class="text-neutral-500">Dari Kas/Bank</div><div class="font-medium">{{ advance.cash_account?.name ?? '— (belum dibayar)' }}</div></div>
             <div><div class="text-neutral-500">Nominal</div><div class="font-mono text-lg font-bold text-amber-600">{{ fmtRp(advance.amount) }}</div></div>
             <div v-if="advance.paid_date"><div class="text-neutral-500">Tanggal Transfer (Dibayar Finance)</div><div class="font-medium">{{ fmtDate(advance.paid_date) }}</div></div>
+            <!-- Kartu & masa berlaku VA hanya ditampilkan setelah bon BENAR-BENAR dibayar:
+                 payment_method sudah berisi 'reguler' sejak bonnya dibuat, jadi menampilkannya
+                 lebih awal akan melabeli bon yang belum dibayar. -->
+            <div v-if="advance.paid_date && advance.payment_method === 'debit_va'" class="md:col-span-2 rounded-lg border border-neutral-200 p-3 dark:border-neutral-700">
+                <div class="text-neutral-500">Pembayaran Debit VA</div>
+                <div class="font-medium">{{ advance.credit_card ? ((advance.credit_card.card_number ? advance.credit_card.card_number + ' — ' : '') + advance.credit_card.name) : '— (kartu tidak tercatat)' }}</div>
+                <div class="mt-0.5 text-xs text-neutral-500">Expired VA: {{ advance.va_expired_date ? fmtDate(advance.va_expired_date) : '—' }}</div>
+            </div>
             <!-- #125: tanggal terima dokumen — editable (finance) / read-only -->
             <div>
                 <div class="text-neutral-500">Tanggal Terima Dokumen</div>
@@ -201,7 +216,7 @@ function backToIndex() {
         <!-- #49: Pembayaran oleh Finance (status requested) → jurnal terbentuk -->
         <div v-if="advance.status === 'requested'" class="card p-5">
             <h2 class="mb-1 flex items-center gap-2 font-semibold"><HandCoins class="h-5 w-5 text-amber-600" /> Pembayaran (Dept Finance)</h2>
-            <p class="mb-3 text-xs text-neutral-500">Pengajuan ini belum membentuk jurnal. Isi tanggal transfer &amp; sumber bank/kas untuk membayar — jurnal <b>Dr Uang Muka Operasional · Cr Bank/Kas</b> akan terbentuk.</p>
+            <p class="mb-3 text-xs text-neutral-500">Pengajuan ini belum membentuk jurnal. Isi tanggal transfer &amp; sumber bank/kas untuk membayar — jurnalnya akan terbentuk (<b>Dr Uang Muka Operasional</b>, atau <b>Dr kartu kredit/VA</b> bila lewat Debit VA · <b>Cr Bank/Kas</b>).</p>
             <!-- Gate: tombol baru aktif setelah SELURUH persetujuan (pengaju → Manager Finance) lengkap. -->
             <!-- Pesan penahan hanya untuk bon ONLINE. Pada bon offline gerbangnya memang
                  terbuka, jadi memasang peringatan "menunggu persetujuan" di sana akan
@@ -254,11 +269,39 @@ function backToIndex() {
                     <p v-else-if="vaKurangExpired" class="mt-1 text-xs text-danger-500">Wajib diisi sebelum pembayaran dicatat.</p>
                     <p v-else class="mt-1 text-[11px] text-neutral-400">Setelah tanggal ini VA tidak bisa lagi didebit.</p>
                 </div>
+
+                <!-- Nomor kartu kredit/VA yang didebit. Hanya kartu AKTIF & belum expired yang
+                     dikirim server, jadi daftar kosong berarti Set Up Credit Card-nya memang
+                     belum disiapkan — dikatakan terang-terangan supaya tidak dikira kolomnya rusak. -->
+                <div v-if="payForm.payment_method === 'debit_va'" class="md:col-span-2">
+                    <label class="mb-1 block text-xs font-medium text-neutral-500">Nomor Kartu Kredit / VA <span class="text-danger-500">*</span></label>
+                    <SearchSelect :model-value="payForm.credit_card_id" :options="(creditCards ?? []).map((c) => ({ id: c.id, label: c.label }))" option-value="id"
+                                  :disabled="!fullyApproved" placeholder="— pilih kartu —"
+                                  :class="vaKurangKartu ? 'rounded-lg ring-1 ring-danger-400' : ''"
+                                  @update:model-value="(v) => payForm.credit_card_id = v" />
+                    <p v-if="payForm.errors.credit_card_id" class="mt-1 text-xs text-danger-500">{{ payForm.errors.credit_card_id }}</p>
+                    <p v-else-if="!(creditCards ?? []).length" class="mt-1 text-xs text-danger-500">Belum ada kartu aktif — aktifkan kartunya dulu di <b>Cash Book → Setup → Set Up Credit Card</b>.</p>
+                    <p v-else-if="vaKurangKartu" class="mt-1 text-xs text-danger-500">Wajib dipilih sebelum pembayaran dicatat.</p>
+                    <p v-else class="mt-1 text-[11px] text-neutral-400">
+                        Saldo kartu saat ini <span class="font-mono">{{ fmtRp(kartuDipilih?.balance ?? 0) }}</span>.
+                        Permintaan penambahan saldo {{ fmtRp(advance.amount) }} dan permintaan masa berlaku akan otomatis
+                        muncul pada kartu ini di Set Up Credit Card, menunggu persetujuan.
+                    </p>
+                </div>
+
                 <div><label class="mb-1 block text-xs font-medium text-neutral-500">Sumber Bank/Kas *</label><SearchSelect :model-value="payForm.cash_account_id" :options="cashAccounts" :disabled="!fullyApproved" placeholder="— pilih rekening —" @update:model-value="(v) => payForm.cash_account_id = v" /><p v-if="payForm.errors.cash_account_id" class="mt-1 text-xs text-danger-500">{{ payForm.errors.cash_account_id }}</p></div>
-                <div class="md:col-span-2 flex items-center justify-between rounded-lg bg-amber-50 px-4 py-2 text-xs text-amber-700 dark:bg-amber-900/20 dark:text-amber-300"><span>Jurnal: Dr Uang Muka Operasional · Cr Bank/Kas</span><span class="font-mono font-bold">{{ fmtRp(advance.amount) }}</span></div>
+                <!-- Keterangan jurnalnya ikut cara pembayaran, sebab akun debitnya memang
+                     BERBEDA: Debit VA membebani akun kartu (bukan Uang Muka Operasional),
+                     karena uangnya berpindah ke saldo kartu dulu, baru terpakai saat realisasi. -->
+                <div class="md:col-span-2 flex items-center justify-between rounded-lg bg-amber-50 px-4 py-2 text-xs text-amber-700 dark:bg-amber-900/20 dark:text-amber-300">
+                    <span v-if="payForm.payment_method === 'debit_va'">Jurnal: Dr {{ kartuDipilih?.label ?? 'Kartu Kredit / VA' }} · Cr Bank/Kas</span>
+                    <span v-else>Jurnal: Dr Uang Muka Operasional · Cr Bank/Kas</span>
+                    <span class="font-mono font-bold">{{ fmtRp(advance.amount) }}</span>
+                </div>
                 <div class="md:col-span-2 flex flex-wrap items-center gap-3">
-                    <Button type="submit" :disabled="payForm.processing || !payForm.cash_account_id || !fullyApproved || vaKurangExpired"><template #icon-left><HandCoins class="h-4 w-4" /></template>Catat Pembayaran &amp; Buat Jurnal</Button>
+                    <Button type="submit" :disabled="payForm.processing || !payForm.cash_account_id || !fullyApproved || vaKurangExpired || vaKurangKartu"><template #icon-left><HandCoins class="h-4 w-4" /></template>Catat Pembayaran &amp; Buat Jurnal</Button>
                     <span v-if="vaKurangExpired && fullyApproved" class="text-xs text-danger-500">Isi Tanggal Expired VA dulu.</span>
+                    <span v-else-if="vaKurangKartu && fullyApproved" class="text-xs text-danger-500">Pilih Nomor Kartu Kredit / VA dulu.</span>
                 </div>
             </form>
         </div>
