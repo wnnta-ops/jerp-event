@@ -70,6 +70,12 @@ class CashAdvanceController extends Controller
             'realized_amount'        => (float) $a->realized_amount,
             'settlement'             => (float) $a->settlement,
             'status'                 => $a->status,
+            // Kolom Kategori: cara pembayarannya. paid_date ikut dibawa karena itulah penanda
+            // bon sudah BENAR-BENAR dibayar — payment_method berbawaan 'reguler' sejak bonnya
+            // dibuat, jadi memakainya sendirian akan melabeli bon yang belum dibayar sebagai
+            // "Pembayaran Reguler".
+            'payment_method'         => $a->payment_method,
+            'paid_date'              => $a->paid_date?->toDateString(),
         ];
 
         $realisasi = BsCashAdvance::where('status', 'realized')->where('settlement', '=', 0)

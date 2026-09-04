@@ -42,6 +42,25 @@ const statusLabel: Record<string, string> = { requested: 'Diajukan', outstanding
 function statusVariant(s: string) { return s === 'realized' ? 'success' : (s === 'requested' ? 'info' : 'warning'); }
 
 /**
+ * Kategori = CARA PEMBAYARANNYA (Reguler / Debit VA).
+ *
+ * Hanya bermakna bila bonnya SUDAH dibayar. payment_method berbawaan 'reguler' sejak bon
+ * dibuat, jadi membacanya sendirian akan melabeli bon yang masih "Diajukan" sebagai
+ * "Pembayaran Reguler" — padahal belum satu rupiah pun keluar, dan caranya bahkan belum
+ * dipilih. Penandanya paid_date: itulah yang terisi saat Finance mencatat pembayaran.
+ */
+type Kategori = { label: string; nada: string; ket: string };
+function kategoriBayar(r: any): Kategori | null {
+    if (! r?.paid_date) return null;
+
+    return r.payment_method === 'debit_va'
+        ? { label: 'Debit VA', ket: 'Pembayaran Debit VA' + (r.va_expired_date ? ' — expired ' + fmtDate(r.va_expired_date) : ''),
+            nada: 'bg-violet-50 text-violet-700 ring-violet-200 dark:bg-violet-900/25 dark:text-violet-300 dark:ring-violet-800/60' }
+        : { label: 'Reguler', ket: 'Pembayaran Reguler (transfer / tunai)',
+            nada: 'bg-neutral-100 text-neutral-600 ring-neutral-200 dark:bg-neutral-800 dark:text-neutral-300 dark:ring-neutral-700' };
+}
+
+/**
  * Cara bon yang SUDAH direalisasi diselesaikan — dibaca dari settlement = nominal − realisasi,
  * tanda yang sama dengan yang dipakai tab Refund/Reimburse di halaman ini, jadi baris dan tab
  * tidak akan pernah menyebut hal yang berbeda untuk bon yang sama.
@@ -112,7 +131,7 @@ function penyelesaian(r: any): Selesai | null {
             <div class="card overflow-x-auto">
                 <table class="w-full text-sm">
                     <thead class="bg-neutral-50 dark:bg-neutral-800"><tr class="text-left text-xs uppercase text-neutral-500">
-                        <th class="px-4 py-3">No.</th><th class="px-4 py-3">Tanggal</th><th class="px-4 py-3">Pemegang</th><th class="px-4 py-3">Keperluan</th><th class="px-4 py-3 text-right">Nilai</th><th class="px-4 py-3 text-center">Status</th><th class="px-4 py-3 text-center">Tgl Terima Dokumen</th>
+                        <th class="px-4 py-3">No.</th><th class="px-4 py-3">Tanggal</th><th class="px-4 py-3">Pemegang</th><th class="px-4 py-3">Keperluan</th><th class="px-4 py-3 text-right">Nilai</th><th class="px-4 py-3 text-center">Kategori</th><th class="px-4 py-3 text-center">Status</th><th class="px-4 py-3 text-center">Tgl Terima Dokumen</th>
                     </tr></thead>
                     <tbody class="divide-y divide-neutral-200 dark:divide-neutral-800">
                         <tr v-for="r in advances.data" :key="r.id" class="cursor-pointer hover:bg-neutral-50 dark:hover:bg-neutral-800/50" @click="router.get(route('bs.advance.show', r.id))">
@@ -121,6 +140,14 @@ function penyelesaian(r: any): Selesai | null {
                             <td class="px-4 py-2.5">{{ r.holder }}</td>
                             <td class="px-4 py-2.5 text-neutral-500">{{ r.purpose }}</td>
                             <td class="px-4 py-2.5 text-right font-mono">{{ fmtRp(r.amount) }}</td>
+                            <!-- Kategori = cara pembayarannya. Kosong ("—") selama bonnya belum
+                                 dibayar: caranya memang belum ditentukan saat itu. -->
+                            <td class="px-4 py-2.5 text-center">
+                                <span v-if="kategoriBayar(r)" :title="kategoriBayar(r)!.ket"
+                                      class="inline-flex items-center whitespace-nowrap rounded-md px-1.5 py-0.5 text-[10.5px] font-semibold ring-1"
+                                      :class="kategoriBayar(r)!.nada">{{ kategoriBayar(r)!.label }}</span>
+                                <span v-else class="text-neutral-400">—</span>
+                            </td>
                             <td class="px-4 py-2.5 text-center">
                                 <div class="flex flex-wrap items-center justify-center gap-1">
                                     <Badge :variant="statusVariant(r.status)" size="sm">{{ statusLabel[r.status] ?? r.status }}</Badge>
@@ -151,6 +178,7 @@ function penyelesaian(r: any): Selesai | null {
                         <th class="px-4 py-3">No.</th><th class="px-4 py-3">Tgl Bon</th><th class="px-4 py-3">Tgl Realisasi</th><th class="px-4 py-3">Pemegang</th><th class="px-4 py-3">Keperluan</th><th class="px-4 py-3 text-right">Nilai Bon</th><th class="px-4 py-3 text-right">Realisasi</th>
                         <th v-if="activeTab === 'refund'" class="px-4 py-3 text-right">Sisa (Refund)</th>
                         <th v-else-if="activeTab === 'reimburse'" class="px-4 py-3 text-right">Kekurangan (Reimburse)</th>
+                        <th class="px-4 py-3 text-center">Kategori</th>
                         <th class="px-4 py-3 text-center">Tgl Terima Dokumen</th>
                     </tr></thead>
                     <tbody class="divide-y divide-neutral-200 dark:divide-neutral-800">
@@ -164,6 +192,12 @@ function penyelesaian(r: any): Selesai | null {
                             <td class="px-4 py-2.5 text-right font-mono">{{ fmtRp(r.realized_amount) }}</td>
                             <td v-if="activeTab === 'refund'" class="px-4 py-2.5 text-right font-mono text-success-600">{{ fmtRp(r.settlement) }}</td>
                             <td v-else-if="activeTab === 'reimburse'" class="px-4 py-2.5 text-right font-mono text-danger-600">{{ fmtRp(Math.abs(r.settlement)) }}</td>
+                            <td class="px-4 py-2.5 text-center">
+                                <span v-if="kategoriBayar(r)" :title="kategoriBayar(r)!.ket"
+                                      class="inline-flex items-center whitespace-nowrap rounded-md px-1.5 py-0.5 text-[10.5px] font-semibold ring-1"
+                                      :class="kategoriBayar(r)!.nada">{{ kategoriBayar(r)!.label }}</span>
+                                <span v-else class="text-neutral-400">—</span>
+                            </td>
                             <td class="px-4 py-2.5 text-center" @click.stop>
                                 <input v-if="canEditDocDate" type="date" :value="r.received_document_date" @change="saveDocDate(r, $event)" class="h-8 rounded border border-neutral-300 bg-white px-2 text-xs dark:border-neutral-700 dark:bg-neutral-900" />
                                 <span v-else class="text-neutral-500">{{ r.received_document_date ? fmtDate(r.received_document_date) : '—' }}</span>
@@ -173,8 +207,12 @@ function penyelesaian(r: any): Selesai | null {
                     <tfoot v-if="buckets[activeTab].count" class="border-t border-neutral-200 bg-neutral-50 font-semibold dark:border-neutral-700 dark:bg-neutral-800/50">
                         <tr>
                             <td class="px-4 py-2.5" :colspan="activeTab === 'realisasi' ? 6 : 7">Total ({{ buckets[activeTab].count }} bon)</td>
-                            <td class="px-4 py-2.5 text-right font-mono" :colspan="activeTab === 'realisasi' ? 1 : 1">{{ fmtRp(buckets[activeTab].total) }}</td>
-                            <td v-if="activeTab !== 'realisasi'"></td>
+                            <td class="px-4 py-2.5 text-right font-mono">{{ fmtRp(buckets[activeTab].total) }}</td>
+                            <!-- Dua sel penutup: Kategori + Tgl Terima Dokumen. Sejak kolom
+                                 Kategori ada, baris total kurang satu sel pada SEMUA tab —
+                                 kekurangan lebar pada tfoot tidak menimbulkan galat, hanya
+                                 membuat garis totalnya berhenti sebelum ujung tabel. -->
+                            <td colspan="2"></td>
                         </tr>
                     </tfoot>
                 </table>
