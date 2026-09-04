@@ -440,11 +440,13 @@ class CashAdvanceController extends Controller
     {
         abort_unless($request->user()?->canModule('cashbook'), 403);
 
+        // Kolom Departemen dihapus dari layar pengajuan, jadi daftar departemen & department_id
+        // karyawan tidak lagi dikirim ke sana. Departemennya tetap tercatat — ditentukan
+        // CashAdvanceService::issue() dari karyawan yang dipilih (fallback #150), sehingga
+        // penyaring Departemen pada Laporan Bon Sementara tetap berisi seperti sebelumnya.
         return Inertia::render('BusinessSupport/CashBook/Advances/Form', [
-            // #150: employees ikut bawa department_id agar form bisa auto-isi departemen.
-            'employees'   => BsEmployee::orderBy('name')->get(['id', 'name', 'position', 'department_id'])
-                ->map(fn ($e) => ['id' => $e->id, 'name' => $e->name, 'position' => $e->position, 'department_id' => $e->department_id]),
-            'departments' => $this->departments(),
+            'employees' => BsEmployee::orderBy('name')->get(['id', 'name', 'position'])
+                ->map(fn ($e) => ['id' => $e->id, 'name' => $e->name, 'position' => $e->position]),
         ]);
     }
 
