@@ -124,6 +124,31 @@ final class CashAdvanceService
                 throw new BusinessRuleException('Akun Uang Muka Operasional belum diset.', errorCode: 'ADV_NO_ACCOUNT');
             }
 
+            // Cara pembayaran. Nilai asing jatuh ke 'reguler' — bukan diterima apa adanya,
+            // sebab untai keliru akan membaca dirinya "bukan debit_va" dan lolos dari kewajiban
+            // tanggal expired sambil tersimpan sebagai cara pembayaran yang tidak dikenal.
+            $method = (($data['payment_method'] ?? null) === 'debit_va') ? 'debit_va' : 'reguler';
+            $expired = $method === 'debit_va' ? ($data['va_expired_date'] ?? null) : null;
+
+            if ($method === 'debit_va') {
+                // Ditegakkan DI SINI juga, bukan hanya di layar & validasi request: VA tanpa
+                // tanggal expired tidak bisa direkonsiliasi — tidak ada cara mengetahui kapan
+                // ia berhenti bisa didebit, sementara jurnalnya sudah terbentuk.
+                if (! $expired) {
+                    throw new BusinessRuleException(
+                        'Pembayaran Debit VA wajib mencantumkan tanggal expired VA.',
+                        errorCode: 'ADV_VA_NO_EXPIRY',
+                    );
+                }
+                // VA yang kedaluwarsa sebelum tanggal transfernya tidak pernah bisa didebit.
+                if (strtotime((string) $expired) < strtotime((string) $data['paid_date'])) {
+                    throw new BusinessRuleException(
+                        'Tanggal expired VA tidak boleh mendahului tanggal transfer.',
+                        errorCode: 'ADV_VA_EXPIRED_BEFORE_PAID',
+                    );
+                }
+            }
+
             $journal = $this->journal->post([
                 'journal_date' => $data['paid_date'],
                 'source'       => 'cash',
@@ -139,6 +164,8 @@ final class CashAdvanceService
                 'cash_account_id'    => (int) $data['cash_account_id'],
                 'advance_account_id' => $advanceAccount,
                 'paid_date'          => $data['paid_date'],
+                'payment_method'     => $method,
+                'va_expired_date'    => $expired,
                 'status'             => 'outstanding',
                 'journal_id'         => $journal->id,
             ]);

@@ -514,6 +514,15 @@ class CashAdvanceController extends Controller
         $v = $request->validate([
             'paid_date'       => ['required', 'date'],
             'cash_account_id' => ['required', 'integer', 'exists:bs_accounts,id'],
+            // Cara pembayaran; kosong = reguler (perilaku lama).
+            'payment_method'  => ['nullable', 'string', 'in:'.implode(',', array_keys(BsCashAdvance::PAYMENT_METHODS))],
+            // Tanggal expired WAJIB pada Debit VA, dan tidak boleh mendahului tanggal transfer:
+            // VA yang sudah lewat tanggalnya tidak bisa didebit, sehingga uangnya tak pernah
+            // berpindah meski jurnalnya terbentuk.
+            'va_expired_date' => ['nullable', 'date', 'required_if:payment_method,debit_va', 'after_or_equal:paid_date'],
+        ], [
+            'va_expired_date.required_if'      => 'Tanggal expired VA wajib diisi untuk Pembayaran Debit VA.',
+            'va_expired_date.after_or_equal'   => 'Tanggal expired VA tidak boleh mendahului tanggal transfer.',
         ]);
 
         // Catat Pembayaran & Buat Jurnal hanya boleh setelah SELURUH persetujuan (pengaju → Manager Finance) lengkap.
@@ -549,6 +558,7 @@ class CashAdvanceController extends Controller
             // menahan pembayaran dan yang satu tidak.
             'approvalMode'    => $advance->isOfflineApproval() ? 'offline' : 'online',
             'approvalModes'   => BsCashAdvance::APPROVAL_MODES,
+            'paymentMethods'  => BsCashAdvance::PAYMENT_METHODS,
             'canApprove'      => (bool) $request->user()?->can('businesssupport.approval.act'), // #127
             'canEditDocDate'  => (bool) $request->user()?->canModule('cashbook'), // #125
         ]);

@@ -28,8 +28,14 @@ const today = new Date().toISOString().slice(0, 10);
 const form = useForm<any>({ realized_date: today, defer_settlement: true, lines: [{ expense_account_id: '', cost_center_id: '', description: '', amount: 0 }] });
 const settleForm = useForm<any>({ settle_date: today, cash_account_id: '' });
 // #49: pembayaran oleh Finance (tanggal transfer + sumber bank/kas) → jurnal terbentuk.
-const payForm = useForm<any>({ paid_date: today, cash_account_id: '' });
+/* Cara pembayaran dipilih Finance saat mencatat. Bawaannya reguler — sama dengan satu-satunya
+   cara yang ada sebelum pilihan ini. Debit VA menambah satu syarat: tanggal expired VA. */
+const payForm = useForm<any>({ paid_date: today, cash_account_id: '', payment_method: 'reguler', va_expired_date: '' });
 function doPay() { payForm.post(route('bs.advance.pay', props.advance.id)); }
+/* Debit VA belum lengkap selama tanggal expired-nya kosong. Dihitung tersendiri supaya tombol
+   DAN pesan penjelasnya memakai syarat yang sama persis — tombol mati tanpa penjelasan pada
+   kartu pembayaran membuat orang menyangka layarnya rusak. */
+const vaKurangExpired = computed(() => payForm.payment_method === 'debit_va' && ! payForm.va_expired_date);
 const statusLabel: Record<string, string> = { requested: 'Diajukan', outstanding: 'Outstanding', realized: 'Realized' };
 const statusVariant: Record<string, any> = { requested: 'info', outstanding: 'warning', realized: 'success' };
 
@@ -203,10 +209,57 @@ function backToIndex() {
             <div v-if="!fullyApproved && approvalMode !== 'offline'" class="mb-3 flex items-center gap-2 rounded-lg border border-amber-300 bg-amber-50 px-4 py-2.5 text-xs font-medium text-amber-700 dark:border-amber-700/50 dark:bg-amber-900/20 dark:text-amber-300"><Lock class="h-4 w-4 shrink-0" /> Menunggu persetujuan lengkap — tombol "Catat Pembayaran &amp; Buat Jurnal" aktif setelah seluruh tanda tangan (pengaju s.d. Manager Finance) terpenuhi.</div>
             <div v-else-if="approvalMode === 'offline'" class="mb-3 flex items-center gap-2 rounded-lg border border-neutral-300 bg-neutral-50 px-4 py-2.5 text-xs text-neutral-600 dark:border-neutral-700 dark:bg-neutral-800/60 dark:text-neutral-300"><ClipboardCheck class="h-4 w-4 shrink-0" /> Persetujuan Offline — pembayaran boleh dicatat tanpa menunggu tanda tangan di aplikasi. Pastikan formulir cetaknya sudah ditandatangani.</div>
             <form @submit.prevent="doPay" class="grid gap-3 md:grid-cols-2">
+                <!-- Cara pembayaran. Reguler = alur seperti selama ini; Debit VA menambah satu
+                     syarat, yaitu tanggal expired VA-nya. Jurnalnya sama untuk keduanya —
+                     yang berbeda cara uangnya berpindah, bukan akuntansinya. -->
+                <div class="md:col-span-2">
+                    <label class="mb-1 block text-xs font-medium text-neutral-500">Cara Pembayaran *</label>
+                    <div class="grid gap-2 sm:grid-cols-2">
+                        <label class="flex cursor-pointer items-start gap-2 rounded-lg border p-3 text-sm transition-colors"
+                               :class="[payForm.payment_method === 'reguler'
+                                   ? 'border-primary-400 bg-primary-50 dark:border-primary-700 dark:bg-primary-900/20'
+                                   : 'border-neutral-300 hover:bg-neutral-50 dark:border-neutral-700 dark:hover:bg-neutral-800',
+                                   !fullyApproved ? 'pointer-events-none opacity-50' : '']">
+                            <input v-model="payForm.payment_method" type="radio" value="reguler" :disabled="!fullyApproved" class="mt-0.5 accent-primary-600" />
+                            <span>
+                                <span class="block font-medium">Pembayaran Reguler</span>
+                                <span class="mt-0.5 block text-xs text-neutral-500">Transfer / tunai seperti biasa.</span>
+                            </span>
+                        </label>
+                        <label class="flex cursor-pointer items-start gap-2 rounded-lg border p-3 text-sm transition-colors"
+                               :class="[payForm.payment_method === 'debit_va'
+                                   ? 'border-primary-400 bg-primary-50 dark:border-primary-700 dark:bg-primary-900/20'
+                                   : 'border-neutral-300 hover:bg-neutral-50 dark:border-neutral-700 dark:hover:bg-neutral-800',
+                                   !fullyApproved ? 'pointer-events-none opacity-50' : '']">
+                            <input v-model="payForm.payment_method" type="radio" value="debit_va" :disabled="!fullyApproved" class="mt-0.5 accent-primary-600" />
+                            <span>
+                                <span class="block font-medium">Pembayaran Debit VA</span>
+                                <span class="mt-0.5 block text-xs text-neutral-500">Lewat Virtual Account — tanggal expired VA wajib diisi.</span>
+                            </span>
+                        </label>
+                    </div>
+                    <p v-if="payForm.errors.payment_method" class="mt-1 text-xs text-danger-500">{{ payForm.errors.payment_method }}</p>
+                </div>
+
                 <div><label class="mb-1 block text-xs font-medium text-neutral-500">Tanggal Transfer *</label><input v-model="payForm.paid_date" type="date" required :disabled="!fullyApproved" :class="[inputCls, !fullyApproved ? 'opacity-50' : '']" /><p v-if="payForm.errors.paid_date" class="mt-1 text-xs text-danger-500">{{ payForm.errors.paid_date }}</p></div>
+
+                <!-- Muncul HANYA pada Debit VA: pada pembayaran reguler tidak ada VA yang bisa
+                     kedaluwarsa, dan kolom kosong yang menetap di layar hanya mengundang isian
+                     yang tidak berarti apa-apa. -->
+                <div v-if="payForm.payment_method === 'debit_va'">
+                    <label class="mb-1 block text-xs font-medium text-neutral-500">Tanggal Expired VA <span class="text-danger-500">*</span></label>
+                    <input v-model="payForm.va_expired_date" type="date" required :min="payForm.paid_date" :disabled="!fullyApproved"
+                           :class="[inputCls, !fullyApproved ? 'opacity-50' : '', vaKurangExpired ? 'border-danger-400 ring-1 ring-danger-400' : '']" />
+                    <p v-if="payForm.errors.va_expired_date" class="mt-1 text-xs text-danger-500">{{ payForm.errors.va_expired_date }}</p>
+                    <p v-else-if="vaKurangExpired" class="mt-1 text-xs text-danger-500">Wajib diisi sebelum pembayaran dicatat.</p>
+                    <p v-else class="mt-1 text-[11px] text-neutral-400">Setelah tanggal ini VA tidak bisa lagi didebit.</p>
+                </div>
                 <div><label class="mb-1 block text-xs font-medium text-neutral-500">Sumber Bank/Kas *</label><SearchSelect :model-value="payForm.cash_account_id" :options="cashAccounts" :disabled="!fullyApproved" placeholder="— pilih rekening —" @update:model-value="(v) => payForm.cash_account_id = v" /><p v-if="payForm.errors.cash_account_id" class="mt-1 text-xs text-danger-500">{{ payForm.errors.cash_account_id }}</p></div>
                 <div class="md:col-span-2 flex items-center justify-between rounded-lg bg-amber-50 px-4 py-2 text-xs text-amber-700 dark:bg-amber-900/20 dark:text-amber-300"><span>Jurnal: Dr Uang Muka Operasional · Cr Bank/Kas</span><span class="font-mono font-bold">{{ fmtRp(advance.amount) }}</span></div>
-                <div class="md:col-span-2"><Button type="submit" :disabled="payForm.processing || !payForm.cash_account_id || !fullyApproved"><template #icon-left><HandCoins class="h-4 w-4" /></template>Catat Pembayaran &amp; Buat Jurnal</Button></div>
+                <div class="md:col-span-2 flex flex-wrap items-center gap-3">
+                    <Button type="submit" :disabled="payForm.processing || !payForm.cash_account_id || !fullyApproved || vaKurangExpired"><template #icon-left><HandCoins class="h-4 w-4" /></template>Catat Pembayaran &amp; Buat Jurnal</Button>
+                    <span v-if="vaKurangExpired && fullyApproved" class="text-xs text-danger-500">Isi Tanggal Expired VA dulu.</span>
+                </div>
             </form>
         </div>
 

@@ -20,11 +20,12 @@ class BsCashAdvance extends Model
         'advance_account_id', 'amount', 'status', 'realized_date', 'realized_amount', 'settlement',
         'settlement_status', 'journal_id', 'realize_journal_id', 'settle_journal_id', 'created_by',
         'received_document_date', 'approvals', // #125, #127
-        'approval_mode',
+        'approval_mode', 'payment_method', 'va_expired_date',
     ];
     protected $casts = [
         'advance_date' => 'date', 'paid_date' => 'date', 'realized_date' => 'date',
         'received_document_date' => 'date:Y-m-d', // #125 agar <input type=date> ter-prefill
+        'va_expired_date' => 'date:Y-m-d',        // idem — agar terbaca <input type=date>
         'amount' => 'decimal:2', 'realized_amount' => 'decimal:2', 'settlement' => 'decimal:2',
         'approvals' => 'array',
     ];
@@ -50,6 +51,23 @@ class BsCashAdvance extends Model
     public const APPROVAL_MODES = [
         'online'  => 'Persetujuan Online (berjenjang di aplikasi)',
         'offline' => 'Persetujuan Offline (tanda tangan di kertas)',
+    ];
+
+    /**
+     * Cara pembayaran — dipilih Finance saat mencatat pembayaran.
+     *
+     *   reguler  : transfer/tunai, alur seperti selama ini.
+     *   debit_va : lewat Virtual Account. VA punya masa berlaku, dan tanggal expired-nya WAJIB
+     *              dicatat: VA yang lewat tanggalnya tidak bisa lagi didebit, sehingga uangnya
+     *              tidak pernah berpindah meski jurnalnya sudah terbentuk — selisih yang baru
+     *              ketahuan saat rekonsiliasi bank.
+     *
+     * Jurnalnya SAMA untuk keduanya (Dr Uang Muka Operasional · Cr Bank/Kas): yang berbeda
+     * cara uangnya berpindah, bukan akuntansinya.
+     */
+    public const PAYMENT_METHODS = [
+        'reguler'  => 'Pembayaran Reguler',
+        'debit_va' => 'Pembayaran Debit VA',
     ];
 
     /** #127 — slot approval berjenjang (urut). Moch Winarto & Boy Arifin hanya untuk pengajuan MULAI Rp 1 juta. */
