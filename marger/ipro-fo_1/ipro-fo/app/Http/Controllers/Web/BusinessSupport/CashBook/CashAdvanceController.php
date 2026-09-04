@@ -463,6 +463,8 @@ class CashAdvanceController extends Controller
             'amount'        => ['required', 'numeric', 'min:0.01'],
             'department_id' => ['nullable', 'integer', 'exists:bs_hr_departments,id'],
             'employee_id'   => ['nullable', 'integer', 'exists:bs_employees,id'],
+            // Cara persetujuan dipilih per pengajuan; kosong = online (perilaku lama).
+            'approval_mode' => ['nullable', 'string', 'in:'.implode(',', array_keys(BsCashAdvance::APPROVAL_MODES))],
         ]);
 
         try {
@@ -542,6 +544,11 @@ class CashAdvanceController extends Controller
             'signers'         => BsCashAdvance::SIGNERS,                                       // #127
             'requiredSigners' => $advance->requiredSigners(),                                  // #127
             'fullyApproved'   => $advance->isFullyApproved(),                                  // gate Catat Pembayaran
+            // Layar perlu MEMBEDAKAN "belum ada yang menyetujui" dari "memang tidak lewat
+            // aplikasi" — keduanya sama-sama tanpa tanda tangan digital, tetapi yang satu
+            // menahan pembayaran dan yang satu tidak.
+            'approvalMode'    => $advance->isOfflineApproval() ? 'offline' : 'online',
+            'approvalModes'   => BsCashAdvance::APPROVAL_MODES,
             'canApprove'      => (bool) $request->user()?->can('businesssupport.approval.act'), // #127
             'canEditDocDate'  => (bool) $request->user()?->canModule('cashbook'), // #125
         ]);

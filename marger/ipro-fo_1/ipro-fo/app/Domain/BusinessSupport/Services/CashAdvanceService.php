@@ -57,6 +57,11 @@ final class CashAdvanceService
                 'advance_account_id' => $advanceAccount,
                 'amount'             => $amount,
                 'status'             => 'requested',          // menunggu pembayaran Finance
+                // Cara persetujuan dipilih per pengajuan. Nilai asing DIABAIKAN — jatuh ke
+                // 'online', bukan diterima apa adanya: satu untai keliru yang lolos ke sini
+                // akan membaca dirinya "bukan offline" pada satu tempat dan "bukan online" di
+                // tempat lain, dan bonnya berperilaku setengah-setengah.
+                'approval_mode'      => (($data['approval_mode'] ?? null) === 'offline') ? 'offline' : 'online',
                 'created_by'         => $userId,
             ]);
         });
@@ -67,6 +72,16 @@ final class CashAdvanceService
     {
         if (! array_key_exists($slot, BsCashAdvance::SIGNERS)) {
             throw new BusinessRuleException('Slot persetujuan tidak dikenal.', errorCode: 'ADV_BAD_SLOT');
+        }
+        // Bon berpersetujuan OFFLINE tidak menerima tanda tangan digital sama sekali.
+        // Diperiksa tersendiri agar pesannya menyebut sebabnya; tanpa ini penolakannya jatuh
+        // ke ADV_SLOT_NA yang berbunyi "tidak diperlukan untuk nominal bon ini" — menyesatkan,
+        // karena yang menentukan bukan nominalnya melainkan cara persetujuannya.
+        if ($advance->isOfflineApproval()) {
+            throw new BusinessRuleException(
+                'Bon ini memakai Persetujuan Offline — tanda tangannya dikumpulkan di formulir cetak, bukan di aplikasi.',
+                errorCode: 'ADV_OFFLINE',
+            );
         }
         $required = $advance->requiredSigners();
         if (! in_array($slot, $required, true)) {

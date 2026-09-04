@@ -6,7 +6,9 @@ import Button from '@/Components/UI/Button.vue';
 import Badge from '@/Components/UI/Badge.vue';
 import SearchSelect from '@/Components/UI/SearchSelect.vue';
 
-const props = defineProps<{ advance: any; expenseAccounts: Array<any>; costCenters: Array<any>; cashAccounts: Array<any>; signers?: Record<string, string>; requiredSigners?: string[]; fullyApproved?: boolean; canApprove?: boolean; canEditDocDate?: boolean }>();
+const props = defineProps<{ advance: any; expenseAccounts: Array<any>; costCenters: Array<any>; cashAccounts: Array<any>; signers?: Record<string, string>; requiredSigners?: string[]; fullyApproved?: boolean; canApprove?: boolean; canEditDocDate?: boolean;
+    /** 'online' = berjenjang di aplikasi · 'offline' = tanda tangan di kertas. */
+    approvalMode?: string }>();
 const showForm = ref(false);
 // #125: simpan tanggal terima dokumen (hanya finance) tanpa berpindah halaman.
 function saveDocDate(e: Event) {
@@ -123,9 +125,21 @@ function backToIndex() {
             </div>
         </div>
 
+        <!-- Bon berpersetujuan OFFLINE: jenjangnya memang tidak berjalan di aplikasi. Disebut
+             apa adanya — tanpa kartu ini, layarnya hanya kehilangan blok persetujuan dan
+             terbaca seperti data yang belum lengkap. -->
+        <div v-if="approvalMode === 'offline'" class="card p-5">
+            <h2 class="mb-1 flex items-center gap-2 font-semibold"><Lock class="h-4 w-4 text-neutral-400" /> Persetujuan Offline</h2>
+            <p class="text-xs text-neutral-500">
+                Tanda tangannya dikumpulkan pada <b>formulir cetak</b> (tombol Cetak Pengajuan), bukan di aplikasi.
+                Karena itu jenjang persetujuan di sini dimatikan, dan Finance boleh mencatat pembayaran serta
+                membentuk jurnalnya tanpa menunggu tanda tangan digital.
+            </p>
+        </div>
+
         <!-- #127: persetujuan berjenjang (muncul setelah bon diajukan & disimpan) -->
         <div v-if="signers && requiredSigners?.length" class="card p-5">
-            <h2 class="mb-1 font-semibold">Persetujuan Bon (Berjenjang)</h2>
+            <h2 class="mb-1 font-semibold">Persetujuan Online</h2>
             <p class="mb-3 text-xs text-neutral-400">{{ Number(advance.amount) > 1000000 ? 'Nominal > Rp 1 juta → persetujuan lengkap termasuk Moch Winarto & Boy Arifin.' : 'Nominal ≤ Rp 1 juta → tanpa Moch Winarto & Boy Arifin.' }}</p>
             <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
                 <div v-for="key in requiredSigners" :key="key" class="rounded-lg border border-neutral-200 p-3 text-center text-sm dark:border-neutral-700">
@@ -183,7 +197,11 @@ function backToIndex() {
             <h2 class="mb-1 flex items-center gap-2 font-semibold"><HandCoins class="h-5 w-5 text-amber-600" /> Pembayaran (Dept Finance)</h2>
             <p class="mb-3 text-xs text-neutral-500">Pengajuan ini belum membentuk jurnal. Isi tanggal transfer &amp; sumber bank/kas untuk membayar — jurnal <b>Dr Uang Muka Operasional · Cr Bank/Kas</b> akan terbentuk.</p>
             <!-- Gate: tombol baru aktif setelah SELURUH persetujuan (pengaju → Manager Finance) lengkap. -->
-            <div v-if="!fullyApproved" class="mb-3 flex items-center gap-2 rounded-lg border border-amber-300 bg-amber-50 px-4 py-2.5 text-xs font-medium text-amber-700 dark:border-amber-700/50 dark:bg-amber-900/20 dark:text-amber-300"><Lock class="h-4 w-4 shrink-0" /> Menunggu persetujuan lengkap — tombol "Catat Pembayaran &amp; Buat Jurnal" aktif setelah seluruh tanda tangan (pengaju s.d. Manager Finance) terpenuhi.</div>
+            <!-- Pesan penahan hanya untuk bon ONLINE. Pada bon offline gerbangnya memang
+                 terbuka, jadi memasang peringatan "menunggu persetujuan" di sana akan
+                 memberi tahu hal yang tidak benar. -->
+            <div v-if="!fullyApproved && approvalMode !== 'offline'" class="mb-3 flex items-center gap-2 rounded-lg border border-amber-300 bg-amber-50 px-4 py-2.5 text-xs font-medium text-amber-700 dark:border-amber-700/50 dark:bg-amber-900/20 dark:text-amber-300"><Lock class="h-4 w-4 shrink-0" /> Menunggu persetujuan lengkap — tombol "Catat Pembayaran &amp; Buat Jurnal" aktif setelah seluruh tanda tangan (pengaju s.d. Manager Finance) terpenuhi.</div>
+            <div v-else-if="approvalMode === 'offline'" class="mb-3 flex items-center gap-2 rounded-lg border border-neutral-300 bg-neutral-50 px-4 py-2.5 text-xs text-neutral-600 dark:border-neutral-700 dark:bg-neutral-800/60 dark:text-neutral-300"><ClipboardCheck class="h-4 w-4 shrink-0" /> Persetujuan Offline — pembayaran boleh dicatat tanpa menunggu tanda tangan di aplikasi. Pastikan formulir cetaknya sudah ditandatangani.</div>
             <form @submit.prevent="doPay" class="grid gap-3 md:grid-cols-2">
                 <div><label class="mb-1 block text-xs font-medium text-neutral-500">Tanggal Transfer *</label><input v-model="payForm.paid_date" type="date" required :disabled="!fullyApproved" :class="[inputCls, !fullyApproved ? 'opacity-50' : '']" /><p v-if="payForm.errors.paid_date" class="mt-1 text-xs text-danger-500">{{ payForm.errors.paid_date }}</p></div>
                 <div><label class="mb-1 block text-xs font-medium text-neutral-500">Sumber Bank/Kas *</label><SearchSelect :model-value="payForm.cash_account_id" :options="cashAccounts" :disabled="!fullyApproved" placeholder="— pilih rekening —" @update:model-value="(v) => payForm.cash_account_id = v" /><p v-if="payForm.errors.cash_account_id" class="mt-1 text-xs text-danger-500">{{ payForm.errors.cash_account_id }}</p></div>
