@@ -10,8 +10,7 @@ import SearchSelect from '@/Components/UI/SearchSelect.vue';
 const props = defineProps<{ journals: any; sources: Record<string, string>; statuses: Record<string, string>; filters: Record<string, any>; defaultDetail?: boolean; listRoute?: string; title?: string; canApprove?: boolean; jumlahStatus?: Record<string, number>; tahunRekap?: number;
     // Isi pilihan tiap saringan kolom, dihitung server dari rentang tanggalnya.
     opsiKolom?: Record<string, Array<{ id: string; label: string }>>; batasOpsi?: number;
-    // Keterangan anggaran per jurnal: over / under / tanpa anggaran.
-    budgetStatuses?: Record<string, string> }>();
+    }>();
 
 /* Rekap per status untuk rentang yang sedang tampil. Angkanya dihitung server dengan aturan
    yang SAMA PERSIS dengan General Function — jurnal pada periode tertutup masuk Closed dan
@@ -146,12 +145,11 @@ const kolomFilter = ref<Record<string, any>>({
     f_number: props.filters.f_number ?? '',
     f_date: props.filters.f_date ?? '',
     f_desc: props.filters.f_desc ?? '',
-    f_lines: props.filters.f_lines ?? '',
     f_debit: props.filters.f_debit ?? '',
     f_credit: props.filters.f_credit ?? '',
     f_account: props.filters.f_account ?? '',
     f_line_desc: props.filters.f_line_desc ?? '',
-    f_budget: props.filters.f_budget ?? '',
+    f_cost_center: props.filters.f_cost_center ?? '',
 });
 
 /** Seluruh parameter yang sedang berlaku — dipakai bersama oleh Display dan Excel,
@@ -186,16 +184,6 @@ const opsi = (k: string) => props.opsiKolom?.[k] ?? [];
 /* Sumber & Status pilihannya berasal dari daftar bakunya, bukan dari data — supaya nilai
    yang sah tetap bisa dipilih walau kebetulan belum dipakai satu jurnal pun pada rentang
    ini, dan hasil kosongnya sendiri yang menjawab. */
-/* Keterangan anggaran. TIGA keadaan, bukan dua: jurnal yang tak satu pun barisnya
-   beranggaran TIDAK diberi hijau, karena mengatakan "Under Budget" pada sesuatu yang tak
-   beranggaran berarti menjanjikan pengawasan yang sebenarnya tidak ada. */
-const NADA_ANGGARAN: Record<string, string> = {
-    over:  'bg-danger-50 text-danger-700 ring-danger-200 dark:bg-danger-900/25 dark:text-danger-300 dark:ring-danger-800/60',
-    under: 'bg-success-50 text-success-700 ring-success-200 dark:bg-success-900/25 dark:text-success-300 dark:ring-success-800/60',
-    none:  'bg-neutral-100 text-neutral-500 ring-neutral-200 dark:bg-neutral-800 dark:text-neutral-400 dark:ring-neutral-700',
-};
-const opsiAnggaran = computed(() => Object.entries(props.budgetStatuses ?? {}).map(([id, label]) => ({ id, label })));
-
 const opsiSumber = computed(() => Object.entries(props.sources ?? {}).map(([id, label]) => ({ id, label })));
 const opsiStatus = computed(() => Object.entries(props.statuses ?? {}).map(([id, label]) => ({ id, label })));
 /** Berapa saringan kolom yang sedang aktif — dipakai tombol "Bersihkan". */
@@ -355,7 +343,7 @@ function rentangBaris(j: any) { return barisTampil(j).length; }
         <!-- ══ Tabel ══
              Satu baris tabel = satu BARIS JURNAL, memanjang ke kanan:
 
-               No. Jurnal │ Tanggal │ Sumber │ Keterangan │ Status │ Baris │ Anggaran │ COA │ Nama Akun │ Keterangan Baris │ Debit │ Kredit
+               No. Jurnal │ Tanggal │ Sumber │ Keterangan │ Status │ Cost Center │ COA │ Nama Akun │ Keterangan Baris │ Debit │ Kredit
 
              Kolom milik jurnalnya memakai rowspan — ditulis sekali, membentang menaungi
              baris-barisnya — jadi bentuknya sama persis dengan berkas Excel yang diekspor
@@ -374,14 +362,18 @@ function rentangBaris(j: any) { return barisTampil(j).length; }
                  break-words, hasilnya nama akun tercetak satu huruf per baris
                  ("N G U S A H A S U P P L I E R") dan kepala kolomnya saling menimpa.
 
-                 Jumlah sekarang: 40+40+192+120+128+240+112+72+136+144+256+256+144+144+88 = 2112px
-                 = 132rem. Kartunya sudah overflow-x-auto, jadi layar sempit MENGGESER — bukan
+                 Kolom Baris (72px) DIHAPUS dan Anggaran (136px) berganti menjadi Cost Center yang
+                 isinya nama departemen — jauh lebih panjang daripada lencana "Over Budget", jadi
+                 lebarnya dinaikkan ke 12rem supaya nama cost centernya tidak terpotong.
+
+                 Jumlah sekarang: 40+40+192+120+128+240+112+192+144+256+256+144+144+88 = 2096px
+                 = 131rem. Kartunya sudah overflow-x-auto, jadi layar sempit MENGGESER — bukan
                  menggencet satu kolom sampai tak terbaca. -->
-            <table class="w-full min-w-[132rem] table-fixed text-sm">
+            <table class="w-full min-w-[131rem] table-fixed text-sm">
                 <colgroup>
                     <col class="w-10" /><col class="w-10" />
                     <col class="w-[12rem]" /><col class="w-[7.5rem]" /><col class="w-[8rem]" />
-                    <col class="w-[15rem]" /><col class="w-[7rem]" /><col class="w-[4.5rem]" /><col class="w-[8.5rem]" />
+                    <col class="w-[15rem]" /><col class="w-[7rem]" /><col class="w-[12rem]" />
                     <!-- Nama Akun & Keterangan Baris: dua kolom berisi teks terpanjang di tabel
                          ini (mis. "PENYELESAIAN BIAYA KONSTRUKSI JRK CLUSTER 3 KRIAN"), jadi
                          keduanya diberi porsi terbesar — bukan sisa. -->
@@ -397,8 +389,7 @@ function rentangBaris(j: any) { return barisTampil(j).length; }
                         <th class="px-4 py-3">Sumber</th>
                         <th class="px-4 py-3">Keterangan</th>
                         <th class="px-4 py-3 text-center">Status</th>
-                        <th class="px-4 py-3 text-center">Baris</th>
-                        <th class="px-4 py-3 text-center">Anggaran</th>
+                        <th class="px-4 py-3">Cost Center</th>
                         <th class="px-4 py-3">COA</th>
                         <th class="px-4 py-3">Nama Akun</th>
                         <th class="px-4 py-3">Keterangan Baris</th>
@@ -420,8 +411,7 @@ function rentangBaris(j: any) { return barisTampil(j).length; }
                         <th class="px-2 py-2"><SearchSelect :model-value="source" :options="opsiSumber" option-value="id" placeholder="Semua" no-truncate @update:model-value="(v) => { source = v ?? ''; display(); }" /></th>
                         <th class="px-2 py-2"><SearchSelect :model-value="kolomFilter.f_desc" :options="opsi('desc')" option-value="id" placeholder="Semua" no-truncate @update:model-value="(v) => pilihKolom('f_desc', v)" /></th>
                         <th class="px-2 py-2"><SearchSelect :model-value="statusFilter" :options="opsiStatus" option-value="id" placeholder="Semua" no-truncate @update:model-value="(v) => { statusFilter = v ?? ''; display(); }" /></th>
-                        <th class="px-2 py-2"><SearchSelect :model-value="kolomFilter.f_lines" :options="opsi('lines')" option-value="id" placeholder="Semua" no-truncate @update:model-value="(v) => pilihKolom('f_lines', v)" /></th>
-                        <th class="px-2 py-2"><SearchSelect :model-value="kolomFilter.f_budget" :options="opsiAnggaran" option-value="id" placeholder="Semua" no-truncate @update:model-value="(v) => pilihKolom('f_budget', v)" /></th>
+                        <th class="px-2 py-2"><SearchSelect :model-value="kolomFilter.f_cost_center" :options="opsi('cost_center')" option-value="id" placeholder="Semua" no-truncate @update:model-value="(v) => pilihKolom('f_cost_center', v)" /></th>
                         <!-- Satu saringan untuk akun, menaungi COA dan Nama Akun: keduanya dua sisi
                              dari nilai yang sama, jadi dua kotak akan saling membatalkan. -->
                         <th class="px-2 py-2" colspan="2"><SearchSelect :model-value="kolomFilter.f_account" :options="opsi('account')" option-value="id" placeholder="Semua Akun" no-truncate @update:model-value="(v) => pilihKolom('f_account', v)" /></th>
@@ -435,7 +425,7 @@ function rentangBaris(j: any) { return barisTampil(j).length; }
                          tetap seimbang), sedangkan Debit & Kredit mencocokkan TOTAL jurnalnya —
                          bukan angka per baris yang tertera di kolom itu saat rincian dibuka. -->
                     <tr class="bg-white/60 text-[10px] font-normal normal-case text-neutral-400 dark:bg-neutral-900/40">
-                        <th class="px-2 pb-2.5" colspan="9"></th>
+                        <th class="px-2 pb-2.5" colspan="8"></th>
                         <th class="px-2 pb-2.5 text-center" colspan="3">menjaring jurnalnya</th>
                         <th class="px-2 pb-2.5 text-center" colspan="2">mencocokkan total jurnalnya</th>
                         <th class="px-2 pb-2.5"></th>
@@ -443,7 +433,7 @@ function rentangBaris(j: any) { return barisTampil(j).length; }
                 </thead>
                 <tbody class="divide-y divide-neutral-200 dark:divide-neutral-800">
                     <!-- Satu baris = satu BARIS JURNAL. Kolom milik jurnalnya (No. Jurnal s/d
-                         Anggaran) memakai rowspan sehingga ditulis sekali dan membentang menaungi
+                         Cost Center) memakai rowspan sehingga ditulis sekali dan membentang menaungi
                          baris-barisnya — sama seperti berkas Excel yang diekspor halaman ini. -->
                     <template v-for="j in journals.data" :key="j.id">
                         <tr v-for="(ln, i) in barisTampil(j)" :key="ln?.id ?? ('ringkas-' + j.id)"
@@ -462,23 +452,26 @@ function rentangBaris(j: any) { return barisTampil(j).length; }
                                      adalah satu-satunya penjelasan mengapa jurnalnya ada. -->
                                 <td class="px-4 py-2.5 whitespace-normal break-words" :rowspan="rentangBaris(j)">{{ j.description }}<span v-if="j.reference" class="mt-0.5 block text-xs text-neutral-400">Ref: {{ j.reference }}</span></td>
                                 <td class="px-4 py-2.5 text-center" :rowspan="rentangBaris(j)"><Badge :variant="statusBadge[j.status] ?? 'neutral'" size="sm">{{ statuses[j.status] ?? j.status }}</Badge></td>
-                                <!-- Total jurnalnya menumpang di sini sebagai keterangan, bukan sebagai
-                                     kolom Debit/Kredit kedua: dua pasang kolom bernama sama membuat
-                                     mata harus memutuskan mana yang sedang dibacanya. -->
-                                <td class="px-4 py-2.5 text-center tabular-nums" :rowspan="rentangBaris(j)"
-                                    :title="'Total jurnal — debit ' + fmtRp(j.total_debit) + ' · kredit ' + fmtRp(j.total_credit)">{{ j.lines_count }}</td>
-                                <!-- Over MAUPUN Under sama-sama membawa angkanya sendiri: anggaran,
-                                     realisasi, dan sisanya. "Under Budget" tanpa menyebut anggaran
-                                     mana yang dipatuhi hanya berbeda WARNA dari "Non Budget",
-                                     padahal keduanya keadaan yang berbeda — yang satu beranggaran
-                                     dan masih bersisa, yang satu memang tidak punya anggaran. -->
-                                <td class="px-4 py-2.5 text-center" :rowspan="rentangBaris(j)">
-                                    <span v-if="j.budget_status" class="inline-block rounded-md px-2 py-0.5 text-[11px] font-semibold ring-1"
-                                          :class="NADA_ANGGARAN[j.budget_status]"
-                                          :title="j.budget_note ?? 'Tidak ada anggaran disetujui untuk akun & cost center pada jurnal ini — tidak ada yang membatasi.'">
-                                        {{ budgetStatuses?.[j.budget_status] ?? j.budget_status }}
+                                <!-- COST CENTER (departemen) yang benar-benar tercatat di GL: cost
+                                     center barisnya, jatuh ke cost center header bila kosong. Satu
+                                     jurnal boleh menyentuh beberapa cost center, jadi semuanya
+                                     disebut — menampilkan yang pertama saja akan menyembunyikan
+                                     bahwa beban jurnal itu terbagi ke departemen lain.
+
+                                     Baris yang WAJIB bercost center tetapi masih kosong ditandai
+                                     merah beserta akunnya: sejak cost center menjadi syarat
+                                     Final → Approved, kekurangan itulah yang menahan jurnalnya, dan
+                                     tanpa penanda ini orang hanya melihat approval yang ditolak
+                                     tanpa tahu baris mana yang kurang. -->
+                                <td class="px-4 py-2.5" :rowspan="rentangBaris(j)">
+                                    <span v-for="cc in (j.cost_centers ?? [])" :key="cc"
+                                          class="mb-0.5 mr-1 inline-block rounded-md bg-primary-50 px-2 py-0.5 text-[11px] font-medium text-primary-700 ring-1 ring-primary-200 dark:bg-primary-900/30 dark:text-primary-300 dark:ring-primary-800">{{ cc }}</span>
+                                    <span v-if="!(j.cost_centers ?? []).length && !(j.cost_center_kurang ?? []).length" class="text-[11px] text-neutral-400">—</span>
+                                    <span v-if="(j.cost_center_kurang ?? []).length"
+                                          class="mt-0.5 block text-[11px] font-medium text-danger-600 dark:text-danger-400"
+                                          :title="'Belum bercost center: ' + (j.cost_center_kurang ?? []).join(', ') + '. Jurnal ini tidak bisa di-approve sebelum dilengkapi.'">
+                                        {{ (j.cost_center_kurang ?? []).length }} akun belum bercost center
                                     </span>
-                                    <span v-else class="text-[11px] text-neutral-400">—</span>
                                 </td>
                             </template>
 
@@ -500,13 +493,12 @@ function rentangBaris(j: any) { return barisTampil(j).length; }
             </table>
             <EmptyState v-if="!journals.data?.length" title="Belum ada jurnal pada periode ini" description="Ubah rentang tanggal, longgarkan saringan kolomnya, atau buat Jurnal Memorial." />
             <p class="border-t border-neutral-200 px-4 py-2 text-[11px] leading-relaxed text-neutral-500 dark:border-neutral-800">
-                <b>Anggaran</b> dibaca dari Master Budget yang sudah <b>disetujui</b>, per tahun + akun + cost center.
-                <span class="font-semibold text-danger-600 dark:text-danger-400">Over Budget</span> — akunnya <b>punya anggaran</b> dan realisasinya
-                sudah <b>melebihi</b> anggaran itu; input baru pada akun &amp; cost center tersebut <b>ditolak</b> sistem.
-                <span class="font-semibold text-success-600 dark:text-success-400">Under Budget</span> — akunnya <b>punya anggaran</b> dan realisasinya
-                masih <b>lebih kecil</b> daripada anggaran, jadi masih ada sisa dan input masih diterima.
-                <span class="font-semibold">Non Budget</span> — akunnya <b>memang belum punya anggaran</b> disetujui sama sekali, jadi tidak ada
-                yang dilampaui maupun disisakan. Ketiganya berlainan: arahkan kursor ke labelnya untuk melihat anggaran, realisasi, dan sisanya.
+                <b>Cost Center</b> adalah departemen yang menanggung barisnya — cost center baris, atau cost center header bila
+                barisnya dikosongkan. Satu jurnal boleh menyentuh beberapa cost center, dan semuanya disebut.
+                <span class="font-semibold text-danger-600 dark:text-danger-400">“n akun belum bercost center”</span> berarti jurnal itu
+                <b>tidak bisa berpindah dari Final ke Approved</b> sebelum dilengkapi: baris tanpa cost center tetap menjadi beban di GL
+                tetapi tidak pernah terbaca sebagai realisasi di Budget Control. Sebagian akun neraca memang dikecualikan
+                (bertanda <i>boleh tanpa cost center</i>) dan tidak ikut dihitung kurang. Arahkan kursor ke keterangan merahnya untuk melihat akun mana.
             </p>
             <p v-if="adaYangTerpotong" class="border-t border-neutral-200 px-4 py-2 text-[11px] text-neutral-400 dark:border-neutral-800">
                 Sebagian daftar pilihan saringan dibatasi {{ batasOpsi }} nilai teratas. Persempit rentang tanggalnya bila nilai yang Anda cari belum muncul.

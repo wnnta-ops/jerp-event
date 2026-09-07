@@ -3,19 +3,22 @@
 declare(strict_types=1);
 
 /**
- * Uji: kolom Over/Under Budget + saringan kolom pada Detail Transaksi Jurnal.
+ * Uji: gerbang anggaran (over-budget) + saringan kolom pada Detail Transaksi Jurnal.
+ *
+ * CATATAN: kolom "Anggaran" pada layar sudah DIGANTI menjadi kolom Cost Center, jadi keterangan
+ * over/under tidak lagi dibaca dari props layar. Aturannya tetap ditegakkan BudgetGuardService
+ * saat input, dan pemeriksaannya dipindahkan ke sana — bukan dibuang.
  *
  * Jalankan:  docker exec ipro-fo-app php artisan tinker /var/www/html/tests/Manual/uji-jurnal-anggaran-kolom.php
  *
  * Yang diperiksa:
- *   1. Keterangan anggaran per jurnal: over (merah) / under (hijau) / tanpa anggaran.
- *   2. Hanya anggaran BERSTATUS DISETUJUI yang dipakai — sama dengan gerbang over-budget.
- *   3. Anggaran lintas cost center (cost_center_id kosong) berlaku untuk cost center mana pun.
- *   4. Gerbang over-budget benar-benar MENOLAK input pada akun yang sudah over, dan
- *      MENERIMA pada yang masih under — inilah yang dijanjikan keterangan di layar.
- *   5. Saringan kolom Anggaran memulangkan jurnal yang tepat untuk ketiga nilainya.
- *   6. Saringan kolom lain (No. Jurnal, Akun, Keterangan Baris) menyaring dengan benar,
- *      dan rekap per status ikut tersaring supaya angkanya tidak menghitung yang tak tampil.
+ *   1. Hanya anggaran BERSTATUS DISETUJUI yang mengikat gerbang.
+ *   2. Anggaran lintas cost center (cost_center_id kosong) berlaku untuk cost center mana pun.
+ *   3. Gerbang over-budget benar-benar MENOLAK input pada akun yang sudah over, dan
+ *      MENERIMA pada yang masih under.
+ *   4. Saringan kolom (No. Jurnal, Tanggal, Akun, Keterangan Baris, Debit, Cost Center)
+ *      menyaring dengan benar, dan tiap kolom punya isi pilihannya.
+ *   5. Data uji tidak tertinggal setelah rollback.
  *
  * Semua yang menulis dibungkus transaksi lalu di-rollback.
  */
@@ -108,131 +111,55 @@ try {
     // Tanpa anggaran sama sekali.
     $jTanpa = $buatJurnal('UJI/TANPA/1', $akTanpa, (int) $cc->id, 3_000_000);
 
-    echo "\n=== 1. Keterangan anggaran per jurnal ===\n";
+    /* KOLOM "ANGGARAN" PADA LAYAR SUDAH DIHAPUS (diganti kolom Cost Center), jadi keterangan
+       over/under tidak lagi bisa dibaca dari props layar. Aturannya sendiri TIDAK ikut hilang:
+       ia tetap ditegakkan BudgetGuardService saat input. Karena itu pemeriksaan di bawah
+       DIPINDAHKAN ke gerbang itu, bukan dibuang — yang berubah cara membacanya, bukan
+       aturannya. Menghapusnya begitu saja akan melepas dua aturan anggaran dari pengujian
+       tanpa ada satu pun berkas yang menandainya. */
 
-    $props = $layar(['date_from' => $dari, 'date_to' => $sampai]);
-    $baris = $isi($props)->keyBy('journal_number');
+    $gerbang = app(BudgetGuardService::class);
+    /** Jalankan gerbang; pulangkan exception-nya (null = diterima). */
+    $ujiGerbang = function ($akun, ?int $ccId, float $nilai) use ($gerbang, $tahun) {
+        try {
+            $gerbang->assertWithinBudget(
+                [['account_id' => $akun->id, 'cost_center_id' => $ccId, 'debit' => $nilai, 'credit' => 0]],
+                null, "{$tahun}-04-01",
+            );
 
-    $cek('ketiga jurnal uji tampil', $baris->count() === 3, (string) $baris->count());
-    $cek('jurnal yang melewati anggaran → over',
-        ($baris['UJI/OVER/1']->budget_status ?? null) === 'over',
-        (string) ($baris['UJI/OVER/1']->budget_status ?? 'null'));
-    $cek('jurnal yang masih di bawah anggaran → under',
-        ($baris['UJI/UNDER/1']->budget_status ?? null) === 'under',
-        (string) ($baris['UJI/UNDER/1']->budget_status ?? 'null'));
-    $cek('jurnal tanpa anggaran TIDAK disebut under',
-        ($baris['UJI/TANPA/1']->budget_status ?? null) === 'none',
-        (string) ($baris['UJI/TANPA/1']->budget_status ?? 'null'));
+            return null;
+        } catch (BusinessRuleException $e) {
+            return $e;
+        }
+    };
 
-    // Keterangan over membawa angkanya sendiri, supaya tak perlu pindah layar.
-    $catatan = (string) ($baris['UJI/OVER/1']->budget_note ?? '');
-    $cek('keterangan over menyebut anggaran & realisasinya',
-        str_contains($catatan, '1.000.000') && str_contains($catatan, '1.500.000'), $catatan);
-    // Under Budget HARUS membawa angkanya juga. Kalau tidak, ia hanya berbeda warna dari
-    // Non Budget, padahal keduanya keadaan yang berbeda: yang satu punya anggaran dan
-    // masih bersisa, yang satu memang tidak punya anggaran sama sekali.
-    $catatanUnder = (string) ($baris['UJI/UNDER/1']->budget_note ?? '');
-    $cek('keterangan under menyebut anggaran, realisasi, dan sisanya',
-        str_contains($catatanUnder, '10.000.000')
-        && str_contains($catatanUnder, '2.000.000')
-        && str_contains($catatanUnder, '8.000.000'), $catatanUnder);
-    $cek('jurnal tanpa anggaran TIDAK membawa angka apa pun',
-        ($baris['UJI/TANPA/1']->budget_note ?? null) === null,
-        (string) ($baris['UJI/TANPA/1']->budget_note ?? 'null'));
-    $cek('ketiganya benar-benar berlainan',
-        count(array_unique([
-            $baris['UJI/OVER/1']->budget_status,
-            $baris['UJI/UNDER/1']->budget_status,
-            $baris['UJI/TANPA/1']->budget_status,
-        ])) === 3);
-
-    $cek('layar mengirim pilihan saringan anggaran',
-        ($props['budgetStatuses'] ?? []) === JournalController::BUDGET_STATUSES,
-        json_encode($props['budgetStatuses'] ?? null));
-
-    // Label ketiganya ditegaskan di sini supaya tidak diam-diam berubah: keduanya dipakai
-    // sekaligus oleh badge di kolom Anggaran DAN oleh pilihan saringannya, jadi salah satu
-    // yang bergeser akan membuat keduanya menyebut hal yang sama dengan nama berbeda.
-    $cek('label ketiga keadaan sesuai yang disepakati',
-        JournalController::BUDGET_STATUSES === [
-            'over' => 'Over Budget', 'under' => 'Under Budget', 'none' => 'Non Budget',
-        ], json_encode(JournalController::BUDGET_STATUSES));
-
-    echo "\n=== 1b. Under Budget menyebut anggaran yang paling sempit ===\n";
-
-    // Satu jurnal bisa menyentuh beberapa anggaran sekaligus. Yang disebut harus anggaran
-    // dengan SISA PALING SEDIKIT — anggaran itulah yang paling dulu menolak input berikutnya.
-    $akSempit = BsAccount::where('is_postable', true)->where('type', 'expense')
-        ->whereNotIn('id', [$akOver->id, $akUnder->id, $akTanpa->id])->orderBy('code')->first();
-    if ($akSempit) {
-        BsBudget::create(['doc_no' => 'UJI-SEMPIT', 'year' => $tahun, 'account_id' => $akSempit->id,
-            'cost_center_id' => $cc->id, 'amount' => 2_100_000, 'status' => 'approved']);
-
-        $lawan = BsAccount::where('is_postable', true)->where('type', 'liability')->first();
-        $jDua = BsJournal::create([
-            'cost_center_id' => $cc->id, 'journal_number' => 'UJI/DUA/1',
-            'journal_date' => "{$tahun}-03-10", 'period_year' => $tahun, 'period_month' => 3,
-            'source' => 'memorial', 'description' => 'UJI ANGGARAN DUA', 'status' => 'final',
-            'total_debit' => 4_000_000, 'total_credit' => 4_000_000,
-        ]);
-        // Menyentuh dua akun beranggaran: sisa 8.000.000 dan sisa 100.000.
-        $jDua->lines()->create(['account_id' => $akUnder->id, 'cost_center_id' => $cc->id, 'debit' => 0, 'credit' => 0, 'description' => 'sentuh anggaran longgar']);
-        $jDua->lines()->create(['account_id' => $akSempit->id, 'cost_center_id' => $cc->id, 'debit' => 2_000_000, 'credit' => 0, 'description' => 'sentuh anggaran sempit']);
-        $jDua->lines()->create(['account_id' => $lawan->id, 'debit' => 0, 'credit' => 2_000_000, 'description' => 'lawan']);
-
-        $pDua = $layar(['date_from' => $dari, 'date_to' => $sampai]);
-        $bDua = $isi($pDua)->keyBy('journal_number');
-        $cek('jurnal yang menyentuh dua anggaran tetap under',
-            ($bDua['UJI/DUA/1']->budget_status ?? null) === 'under',
-            (string) ($bDua['UJI/DUA/1']->budget_status ?? 'null'));
-        $cek('yang disebut adalah anggaran bersisa paling sedikit (100.000)',
-            str_contains((string) ($bDua['UJI/DUA/1']->budget_note ?? ''), '100.000'),
-            (string) ($bDua['UJI/DUA/1']->budget_note ?? ''));
-
-        $jDua->lines()->delete();
-        $jDua->forceDelete();
-        BsBudget::where('doc_no', 'UJI-SEMPIT')->delete();
-    } else {
-        echo "  (dilewati — akun beban uji tidak cukup)\n";
-    }
-
-    echo "\n=== 2. Hanya anggaran disetujui yang dipakai ===\n";
+    echo "\n=== 1. Hanya anggaran DISETUJUI yang mengikat ===\n";
 
     $draft = BsBudget::create(['doc_no' => 'UJI-DRAFT', 'year' => $tahun, 'account_id' => $akTanpa->id,
         'cost_center_id' => $cc->id, 'amount' => 1, 'status' => 'draft']);
-    $p2 = $layar(['date_from' => $dari, 'date_to' => $sampai]);
-    $b2 = $isi($p2)->keyBy('journal_number');
-    $cek('anggaran draft tidak membuat jurnal jadi over',
-        ($b2['UJI/TANPA/1']->budget_status ?? null) === 'none',
-        (string) ($b2['UJI/TANPA/1']->budget_status ?? 'null'));
+    $cek('anggaran berstatus draft tidak mengikat', $ujiGerbang($akTanpa, (int) $cc->id, 1000) === null,
+        (string) $ujiGerbang($akTanpa, (int) $cc->id, 1000)?->getMessage());
 
     $draft->update(['status' => 'approved']);
-    $p3 = $layar(['date_from' => $dari, 'date_to' => $sampai]);
-    $b3 = $isi($p3)->keyBy('journal_number');
-    $cek('begitu anggaran disetujui, jurnalnya langsung terbaca over',
-        ($b3['UJI/TANPA/1']->budget_status ?? null) === 'over',
-        (string) ($b3['UJI/TANPA/1']->budget_status ?? 'null'));
+    $cek('begitu disetujui, anggaran itu langsung mengikat',
+        $ujiGerbang($akTanpa, (int) $cc->id, 1000)?->errorCode() === 'OVER_BUDGET',
+        (string) $ujiGerbang($akTanpa, (int) $cc->id, 1000)?->errorCode());
     $draft->delete();
 
-    echo "\n=== 3. Anggaran lintas cost center ===\n";
+    echo "\n=== 2. Anggaran lintas cost center ===\n";
 
     if ($cc2) {
-        $jLain = $buatJurnal('UJI/CC2/1', $akTanpa, (int) $cc2->id, 500_000);
         $global = BsBudget::create(['doc_no' => 'UJI-GLOBAL', 'year' => $tahun, 'account_id' => $akTanpa->id,
             'cost_center_id' => null, 'amount' => 100_000, 'status' => 'approved']);
-        $p4 = $layar(['date_from' => $dari, 'date_to' => $sampai]);
-        $b4 = $isi($p4)->keyBy('journal_number');
         $cek('anggaran tanpa cost center mengikat cost center mana pun',
-            ($b4['UJI/CC2/1']->budget_status ?? null) === 'over',
-            (string) ($b4['UJI/CC2/1']->budget_status ?? 'null'));
+            $ujiGerbang($akTanpa, (int) $cc2->id, 500_000)?->errorCode() === 'OVER_BUDGET',
+            (string) $ujiGerbang($akTanpa, (int) $cc2->id, 500_000)?->errorCode());
         $global->delete();
-        $jLain->lines()->delete();
-        $jLain->forceDelete();
     } else {
         echo "  (dilewati — hanya ada satu cost center di master)\n";
     }
 
-    echo "\n=== 4. Gerbang input benar-benar menolak yang over ===\n";
+    echo "\n=== 3. Gerbang input benar-benar menolak yang over ===\n";
 
     $gerbang = app(BudgetGuardService::class);
     $tolak = null;
@@ -261,29 +188,12 @@ try {
     }
     $cek('input pada akun yang masih under DITERIMA', $terima);
 
-    echo "\n=== 5. Saringan kolom Anggaran ===\n";
+    echo "\n=== 4. Saringan kolom ===\n";
 
     $nomorDari = function (array $param) use ($layar, $isi) {
         return $isi($layar($param))->pluck('journal_number')->sort()->values()->all();
     };
     $dasar = ['date_from' => $dari, 'date_to' => $sampai];
-
-    $cek('saringan "over" memulangkan hanya jurnal over',
-        $nomorDari($dasar + ['f_budget' => 'over']) === ['UJI/OVER/1'],
-        json_encode($nomorDari($dasar + ['f_budget' => 'over'])));
-    $cek('saringan "under" memulangkan hanya jurnal under',
-        $nomorDari($dasar + ['f_budget' => 'under']) === ['UJI/UNDER/1'],
-        json_encode($nomorDari($dasar + ['f_budget' => 'under'])));
-    $cek('saringan "tanpa anggaran" memulangkan hanya yang tak beranggaran',
-        $nomorDari($dasar + ['f_budget' => 'none']) === ['UJI/TANPA/1'],
-        json_encode($nomorDari($dasar + ['f_budget' => 'none'])));
-
-    // Rekap ikut tersaring — angka yang tidak ikut tampil tidak boleh ikut dihitung.
-    $rekapOver = $layar($dasar + ['f_budget' => 'over'])['jumlahStatus'];
-    $cek('rekap ikut tersaring saringan anggaran',
-        array_sum($rekapOver) === 1, json_encode($rekapOver));
-
-    echo "\n=== 6. Saringan kolom lainnya ===\n";
 
     $cek('saringan No. Jurnal', $nomorDari($dasar + ['f_number' => 'UJI/UNDER/1']) === ['UJI/UNDER/1']);
     $cek('saringan Akun menjaring jurnal yang menyentuh akun itu',
@@ -294,16 +204,17 @@ try {
         json_encode($nomorDari($dasar + ['f_line_desc' => 'baris uji UJI/TANPA/1'])));
     $cek('saringan Debit', $nomorDari($dasar + ['f_debit' => '2000000']) === ['UJI/UNDER/1'],
         json_encode($nomorDari($dasar + ['f_debit' => '2000000'])));
-    $cek('saringan Baris (jumlah baris)',
-        count($nomorDari($dasar + ['f_lines' => '2'])) === 3,
-        json_encode($nomorDari($dasar + ['f_lines' => '2'])));
+    // Saringan "Baris (jumlah baris)" DIHAPUS bersama kolomnya; penggantinya saringan Cost Center.
+    $cek('saringan Cost Center menjaring jurnal ber-cost-center itu',
+        count($nomorDari($dasar + ['f_cost_center' => (string) $cc->id])) === 3,
+        json_encode($nomorDari($dasar + ['f_cost_center' => (string) $cc->id])));
     $cek('saringan Tanggal', count($nomorDari($dasar + ['f_date' => "{$tahun}-03-10"])) === 3);
     $cek('saringan yang tidak cocok memulangkan kosong',
         $nomorDari($dasar + ['f_number' => 'TIDAK-ADA']) === []);
 
     // Pilihan tiap kolom memang terisi dari data pada rentang itu.
     $opsi = $layar($dasar)['opsiKolom'];
-    foreach (['number', 'date', 'desc', 'lines', 'debit', 'credit', 'account', 'line_desc'] as $k) {
+    foreach (['number', 'date', 'desc', 'cost_center', 'debit', 'credit', 'account', 'line_desc'] as $k) {
         $cek("pilihan kolom '{$k}' terisi", count($opsi[$k] ?? []) > 0, (string) count($opsi[$k] ?? []));
     }
     $cek('pilihan Akun memakai label kode — nama',
@@ -319,7 +230,7 @@ try {
     DB::rollBack();
 }
 
-echo "\n=== 7. Rollback bersih ===\n";
+echo "\n=== 5. Rollback bersih ===\n";
 $cek('jurnal uji tidak tertinggal', BsJournal::where('journal_number', 'like', 'UJI/%')->count() === 0);
 $cek('anggaran uji tidak tertinggal', BsBudget::where('doc_no', 'like', 'UJI-%')->count() === 0);
 

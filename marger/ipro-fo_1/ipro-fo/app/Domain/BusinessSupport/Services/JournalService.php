@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\BusinessSupport\Services;
 
+use App\Domain\BusinessSupport\Models\BsAccount;
 use App\Domain\BusinessSupport\Models\BsFiscalPeriod;
 use App\Domain\BusinessSupport\Models\BsJournal;
 use App\Exceptions\BusinessRuleException;
@@ -249,13 +250,75 @@ final class JournalService
         return $journal;
     }
 
-    /** Final → Approved (efektif di GL). */
+    /**
+     * Baris jurnal yang WAJIB bercost center tetapi kosong — pengganjal Final → Approved.
+     *
+     * Cost center efektif tiap baris = cost center barisnya, jatuh ke cost center header bila
+     * kosong. Aturan warisan itu sama persis dengan yang dipakai saat jurnalnya disimpan
+     * (JournalController::withLineCostCenter) — kalau berbeda, gerbang ini akan menolak jurnal
+     * yang sebenarnya sudah lengkap.
+     *
+     * PENGECUALIANNYA DIPERTAHANKAN: akun bertanda cost_center_optional (71 dari 267 akun
+     * postable, lihat CoaTanpaCostCenterSeeder) memang tidak menanggung cost center — Utang
+     * Usaha Supplier dan sebagian akun neraca lain. Mewajibkannya untuk SEMUA baris akan
+     * mengunci approval pada jurnal yang justru paling biasa: Dr beban (ber-cost center) /
+     * Cr Utang Usaha (tanpa).
+     *
+     * @return array<int,string>  "kode - nama akun" yang barisnya masih kosong
+     */
+    public function barisTanpaCostCenter(BsJournal $journal): array
+    {
+        $headerCc = $journal->cost_center_id ? (int) $journal->cost_center_id : null;
+
+        $kurang = [];
+        foreach ($journal->lines()->get(['id', 'account_id', 'cost_center_id']) as $l) {
+            $cc = $l->cost_center_id ? (int) $l->cost_center_id : null;
+            if ($cc === null && $headerCc !== null) {
+                $cc = $headerCc;    // baris kosong mewarisi header, sama seperti saat disimpan
+            }
+            if ($cc === null) {
+                $kurang[] = (int) $l->account_id;
+            }
+        }
+        $kurang = array_values(array_unique(array_filter($kurang)));
+        if (! $kurang) {
+            return [];
+        }
+
+        // Hanya akun yang MEMANG wajib yang dilaporkan; akun bertanda optional disaring di sini.
+        return BsAccount::whereIn('id', $kurang)
+            ->where(fn ($q) => $q->where('cost_center_optional', false)->orWhereNull('cost_center_optional'))
+            ->orderBy('code')->get(['code', 'name'])
+            ->map(fn ($a) => $a->code.' - '.$a->name)->all();
+    }
+
+    /**
+     * Final → Approved (efektif di GL).
+     *
+     * COST CENTER WAJIB LENGKAP LEBIH DULU. Approved berarti jurnalnya efektif di buku besar,
+     * dan sejak saat itu angkanya ikut terbaca sebagai realisasi. Baris tanpa cost center tetap
+     * menjadi beban di GL tetapi TIDAK PERNAH muncul sebagai realisasi di Budget Control —
+     * anggarannya seolah tidak pernah terpakai. Itu tidak menimbulkan galat apa pun: hanya
+     * angka yang kurang, dan biasanya baru ketahuan berbulan kemudian saat anggaran
+     * direkonsiliasi. Karena itu ditahan di sini, di gerbang terakhir sebelum efektif.
+     */
     public function approve(BsJournal $journal, ?int $userId = null): BsJournal
     {
         $this->assertPeriodOpen($journal);
         if ($journal->status !== 'final') {
             throw new BusinessRuleException('Hanya jurnal berstatus Final yang bisa di-approve.', errorCode: 'JOURNAL_NOT_FINAL');
         }
+
+        $kurangCc = $this->barisTanpaCostCenter($journal);
+        if ($kurangCc !== []) {
+            throw new BusinessRuleException(
+                'Cost center belum lengkap — jurnal '.$journal->journal_number.' tidak bisa di-approve. '
+                .'Lengkapi cost center pada akun: '.implode(', ', $kurangCc).'. '
+                .'Buka Edit Jurnal untuk mengisinya, lalu approve ulang.',
+                errorCode: 'JOURNAL_NO_COST_CENTER',
+            );
+        }
+
         $journal->update(['status' => 'posted', 'posted_at' => now(), 'approved_by' => $userId ?? auth()->id()]);
 
         return $journal;
