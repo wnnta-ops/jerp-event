@@ -139,6 +139,17 @@ class PostingInvoiceController extends Controller
 
         $bawaanSupplier = $this->supplierBawaanPerSumber();
 
+        /* Supplier bawaan yang DIBAWA baris antrean (GMC) disaring dengan saringan yang sama
+           dengan dropdown-nya: hanya yang aktif & belum dihapus. Tanpa ini, baris bersupplier
+           nonaktif tampil KOSONG di layar (SearchSelect tidak menemukannya di daftar opsi) tetapi
+           id-nya tetap ikut terkirim saat diposting — kolom yang tampak kosong ternyata terisi
+           diam-diam oleh supplier yang tidak boleh dipakai. Satu kueri untuk seluruh halaman. */
+        $supplierAntrean = $queue->pluck('supplier_id')->filter()->unique()->values()->all();
+        $supplierBolehPakai = $supplierAntrean === []
+            ? []
+            : BsSupplier::whereIn('id', $supplierAntrean)->where('is_active', true)
+                ->pluck('id')->mapWithKeys(fn ($id) => [(int) $id => true])->all();
+
         return $queue->map(fn ($r) => [
             'id'           => $r->id,
             'refund_no'    => $r->refund_no,
@@ -156,7 +167,13 @@ class PostingInvoiceController extends Controller
             // GMC komponen membawa suppliernya sendiri. BLT & Komisi tidak — penerimanya
             // perorangan, dan hutangnya ditagihkan ke satu supplier penampung per jenis
             // pembayaran; itu yang diisikan sebagai bawaan. Tetap bisa diganti di dropdown.
-            'supplier_id'  => $r->supplier_id ? (int) $r->supplier_id : ($bawaanSupplier[$r->kind] ?? null),
+            'supplier_id'  => ($r->supplier_id && ! empty($supplierBolehPakai[(int) $r->supplier_id]))
+                ? (int) $r->supplier_id
+                : ($bawaanSupplier[$r->kind] ?? null),
+            // Supplier bawaannya ADA tetapi sudah nonaktif/dihapus. Disebutkan terang-terangan,
+            // sebab kolom kosong tanpa penjelasan tidak terbedakan dari "memang belum diisi" —
+            // dan yang ini butuh tindakan lain: aktifkan lagi suppliernya, atau pilih penggantinya.
+            'supplier_basi' => (bool) ($r->supplier_id && empty($supplierBolehPakai[(int) $r->supplier_id])),
             // Rantai GMC: kategori gimmick → kolom Rincian Biaya Master Data KPR → SPR yang dibiayai.
             'kategori'     => ($r->gimmick_category_id ?? null) ? ($catNames[$r->gimmick_category_id] ?? null) : null,
             'cluster'      => ($r->cluster_id ?? null) ? ($clusterNames[$r->cluster_id] ?? null) : null,
@@ -216,9 +233,9 @@ class PostingInvoiceController extends Controller
 
         // Supplier WAJIB dipilih (integrasi Supplier Center) — jadi hutang AP tertaut supplier.
         $validated = $request->validate([
-            'supplier_id' => ['required', 'integer', Rule::exists('bs_suppliers', 'id')],
+            'supplier_id' => ['required', 'integer', self::supplierTerpakai()],
             'due_date'    => self::ATURAN_JATUH_TEMPO,
-        ]);
+        ], ['supplier_id.exists' => self::PESAN_SUPPLIER_TAK_TERPAKAI]);
 
         $row = DB::table('bs_ap_refund_queue')->where('id', $queue)->first();
         if (! $row || $row->status === 'posted') {
@@ -250,9 +267,9 @@ class PostingInvoiceController extends Controller
         $validated = $request->validate([
             'items'               => ['required', 'array', 'min:1'],
             'items.*.id'          => ['required', 'integer'],
-            'items.*.supplier_id' => ['required', 'integer', Rule::exists('bs_suppliers', 'id')],
+            'items.*.supplier_id' => ['required', 'integer', self::supplierTerpakai()],
             'due_date'            => self::ATURAN_JATUH_TEMPO,
-        ]);
+        ], ['items.*.supplier_id.exists' => self::PESAN_SUPPLIER_TAK_TERPAKAI]);
 
         // GERBANG SUPPLIER SERAGAM — harus di sini, sebelum satu baris pun ditulis.
         //
@@ -784,6 +801,29 @@ class PostingInvoiceController extends Controller
 
     /** Aturan validasi bersama untuk kolom jatuh tempo pada layar posting. */
     private const ATURAN_JATUH_TEMPO = ['nullable', 'date'];
+
+    private const PESAN_SUPPLIER_TAK_TERPAKAI =
+        'Supplier yang dipilih sudah tidak aktif atau sudah dihapus di Supplier Center — pilih supplier lain.';
+
+    /**
+     * Aturan "supplier ini benar-benar boleh dipakai" untuk SEMUA jalur tulis.
+     *
+     * Rule::exists('bs_suppliers','id') menembak tabel mentah lewat query builder: tanpa
+     * is_active dan tanpa whereNull('deleted_at') — padahal BsSupplier memakai SoftDeletes dan
+     * dropdown-nya (daftarSupplier) hanya menyajikan supplier AKTIF. Jadi jalur BACA berhati-hati
+     * sementara jalur TULIS meloloskan apa saja.
+     *
+     * Akibatnya bukan sekadar kotor: baris antrean GMC membawa supplier_id sendiri sejak
+     * gimmick-nya dibuat. Bila supplier itu kemudian dinonaktifkan atau dihapus, kolomnya tampak
+     * KOSONG di layar (SearchSelect tidak menemukannya di daftar opsi lalu menampilkan
+     * placeholder) tetapi id-nya tetap ikut terkirim — dan invoice hutang terbit atas nama
+     * supplier yang sudah dihapus. Baru ketahuan saat kuitansi hendak dibayar, sebab layar
+     * Kuitansi hanya menawarkan supplier aktif: hutangnya mandek tanpa jalur pembayaran.
+     */
+    private static function supplierTerpakai(): \Illuminate\Validation\Rules\Exists
+    {
+        return Rule::exists('bs_suppliers', 'id')->where('is_active', 1)->whereNull('deleted_at');
+    }
 
     private function issueFromRefundRow(object $row, int $supplierId, JournalService $journal, int $userId, ?string $dueDate = null): array
     {

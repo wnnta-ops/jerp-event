@@ -254,9 +254,22 @@ async function main() {
     cek('lebar minimum tabel >= jumlah kolomnya', minTabelDaftar >= totalKolom,
         minTabelDaftar + 'px tabel vs ' + totalKolom + 'px kolom');
 
-    // Dua kolom teks terpanjang harus benar-benar lapang, bukan sekadar bukan-nol.
-    const iNamaAkun = 10;          // urutan colgroup: 0 centang, 1 buka, 2..9, 10 Nama Akun, 11 Ket. Baris
-    const iKetBaris = 11;
+    /* Dua kolom teks terpanjang harus benar-benar lapang, bukan sekadar bukan-nol.
+
+       Letaknya DIHITUNG dari kepala tabelnya, bukan ditulis sebagai angka tetap. Indeks tetap
+       diam-diam menunjuk kolom yang salah begitu ada satu kolom ditambah atau dihapus — persis
+       yang terjadi saat kolom "Baris" dibuang: pemeriksaan "Nama Akun" lulus karena kebetulan
+       jatuh ke Keterangan Baris, dan yang gagal justru kolom Debit. */
+    const judul = [...(daftar.match(/<tr class="text-left text-xs uppercase tracking-wide text-neutral-500">[\s\S]*?<\/tr>/) || [''])[0]
+        .matchAll(/<th[^>]*>([\s\S]*?)<\/th>/g)]
+        .map((m) => m[1].replace(/<[^>]*>/g, '').trim());
+    const iKolom = (nama) => judul.findIndex((t) => t === nama);
+    const iNamaAkun = iKolom('Nama Akun');
+    const iKetBaris = iKolom('Keterangan Baris');
+    cek('kepala kolom Nama Akun & Keterangan Baris ditemukan',
+        iNamaAkun >= 0 && iKetBaris >= 0, JSON.stringify(judul));
+    cek('jumlah <col> sama dengan jumlah kepala kolom', kolom.length === judul.length,
+        kolom.length + ' col vs ' + judul.length + ' th');
     cek('kolom Nama Akun minimal 240px', (kolom[iNamaAkun]?.px ?? 0) >= 240,
         (kolom[iNamaAkun]?.px ?? 0) + 'px');
     cek('kolom Keterangan Baris minimal 240px', (kolom[iKetBaris]?.px ?? 0) >= 240,

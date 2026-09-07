@@ -30,10 +30,27 @@ const kalimatJatuhTempo = computed(() => jatuhTempo.value
     ? `Jatuh tempo ${fmtTgl(jatuhTempo.value)}.`
     : 'Jatuh tempo mengikuti tanggal invoice (belum ditetapkan).');
 
-// Prefill supplier untuk baris yang sudah membawa supplier (mis. komponen GMC multi-supplier).
-// watch immediate → jalan saat setup & tiap data di-reload (Inertia). Number() agar cocok dgn opsi.
+/* Prefill supplier untuk baris yang membawa supplier — komponen GMC dari FO, dan sejak
+   b1f4963 juga bawaan per sumber untuk BLT & Komisi.
+
+   HANYA MENGISI YANG BELUM DIISI. Watcher ini berjalan ulang setiap kali props.refunds dimuat
+   ulang (router.post memakai preserveScroll, bukan preserveState), jadi menulis tanpa syarat
+   akan MENIMPA pilihan yang baru saja diganti operator: ia mengubah baris BLT dari SP.00222 ke
+   agen yang sebenarnya, memposting baris LAIN, dan pilihannya diam-diam kembali ke bawaan —
+   tanpa galat, tanpa tanda apa pun. Sebelum ada bawaan per sumber hal ini nyaris tak terasa
+   (hanya baris GMC yang punya supplier_id); sejak bawaan diisikan untuk BLT & Komisi, ia
+   mengenai hampir semua baris di layar.
+
+   Baris yang sudah hilang dari antrean (sudah diposting) ikut dibersihkan, supaya pilihan lama
+   tidak menempel pada id yang kelak dipakai baris lain. */
 watch(() => props.refunds, (rows) => {
-    (rows ?? []).forEach((it) => { if (it.supplier_id != null) supplierSel.value[it.id] = Number(it.supplier_id); });
+    const ada = new Set((rows ?? []).map((it: any) => Number(it.id)));
+    Object.keys(supplierSel.value).forEach((k) => { if (! ada.has(Number(k))) delete supplierSel.value[Number(k)]; });
+    (rows ?? []).forEach((it: any) => {
+        if (it.supplier_id != null && ! supplierSel.value[it.id]) {
+            supplierSel.value[it.id] = Number(it.supplier_id);
+        }
+    });
 }, { immediate: true });
 
 function matches(row: any, fields: string[]): boolean {
@@ -99,7 +116,11 @@ function postRefund(id: number) {
             + 'Samakan dulu pilihan suppliernya, atau lepas centangnya agar bisa diposting sendiri.');
         return;
     }
-    if (confirm(`Terbitkan invoice hutang dari item ini? Akan masuk ke Account Payable.
+    /* Nama suppliernya DISEBUT di konfirmasi. Sebelum ada supplier bawaan, tombol ini mati
+       sampai orang membuka dropdown dan memilih — itulah satu-satunya hal yang memaksa matanya
+       singgah ke kolom Supplier. Sejak bawaan diisikan server, tombolnya hidup sejak layar
+       terbuka, jadi konfirmasi inilah kesempatan terakhir melihat ke siapa hutangnya ditagihkan. */
+    if (confirm(`Terbitkan invoice hutang dari item ini untuk ${namaSupplier(Number(supplier_id))}? Akan masuk ke Account Payable.
 
 ${kalimatJatuhTempo.value}`))
         router.post(route('bs.ap.posting.refund', id), { supplier_id, due_date: jatuhTempo.value || null }, { preserveScroll: true });
@@ -192,13 +213,23 @@ ${kalimatJatuhTempo.value}`)) return;
                                  (kode maupun nama) dan tetap memulangkan id yang sama, jadi
                                  seluruh logika centang/gabung/posting di bawah tidak berubah. -->
                             <div class="w-56 max-w-full">
-                                <!-- Tanpa clearable: baris BLT/Komisi kini berbawaan supplier,
-                                     dan rowSupplier() jatuh kembali ke bawaan itu saat pilihannya
-                                     dikosongkan. Tombol hapus yang tidak benar-benar menghapus
-                                     lebih membingungkan daripada tidak ada; menggantinya cukup
-                                     dengan memilih supplier lain. -->
+                                <!-- Tombol hapus (X) dimatikan SUNGGUHAN lewat prop, bukan hanya
+                                     dinyatakan di komentar — sebelumnya komentarnya berbunyi
+                                     "tanpa clearable" sementara propnya tidak pernah dikirim,
+                                     jadi tombolnya tetap ada. Ikon X itu berada di dalam tombol
+                                     yang sama, tepat di kiri panah dropdown; mengkliknya
+                                     mengosongkan TAMPILAN tanpa mengosongkan yang terkirim,
+                                     sebab rowSupplier() jatuh kembali ke it.supplier_id. Barisnya
+                                     lalu terlihat persis seperti baris tanpa supplier, padahal
+                                     tetap akan diposting ke supplier bawaannya. -->
                                 <SearchSelect v-model="supplierSel[it.id]" :options="suppliers" option-value="id"
-                                              placeholder="— pilih supplier —" no-truncate />
+                                              :clearable="false" placeholder="— pilih supplier —" no-truncate />
+                                <!-- Supplier yang dibawa antrean ternyata sudah nonaktif/dihapus.
+                                     Tanpa keterangan ini, kolomnya hanya tampak kosong dan tak
+                                     terbedakan dari "belum diisi". -->
+                                <p v-if="it.supplier_basi" class="mt-1 text-[11px] font-medium text-danger-600 dark:text-danger-400">
+                                    Supplier asal dokumen sudah nonaktif/dihapus — pilih penggantinya.
+                                </p>
                             </div>
                         </td>
                         <td class="px-4 py-2.5">
