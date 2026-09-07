@@ -13,9 +13,14 @@ const today = new Date().toISOString().slice(0, 10);
    Departemen pengajuan tetap tercatat: CashAdvanceService::issue() mengambilnya dari karyawan
    yang dipilih bila tidak dikirim (fallback #150). Karena itu employee_id tetap dikirim, dan
    penyaring Departemen pada Laporan Bon Sementara tetap berisi seperti sebelumnya. */
-/* Cara persetujuan dipilih PER PENGAJUAN, dan bawaannya online — sama dengan satu-satunya
-   perilaku yang ada sebelum pilihan ini ada. Offline dipilih sadar, bukan kebetulan. */
-const form = useForm<any>({ advance_date: today, employee_id: '', holder: '', purpose: '', amount: 0, approval_mode: 'online' });
+/* Cara persetujuan dipilih PER PENGAJUAN, dan bawaannya OFFLINE — di lapangan tanda tangannya
+   memang dikumpulkan pada formulir cetak, jadi itulah keadaan yang lazim. Online tetap tersedia
+   dan tinggal dipilih pada kartu di sebelahnya.
+
+   Yang perlu disadari saat mengubah ini: offline MEMATIKAN jenjang persetujuan di aplikasi,
+   sehingga pembayaran & jurnal boleh dicatat tanpa menunggu tanda tangan digital. Karena itu
+   kalimat akibatnya ditulis di kartu pilihannya, bukan disembunyikan. */
+const form = useForm<any>({ advance_date: today, employee_id: '', holder: '', purpose: '', amount: 0, approval_mode: 'offline' });
 
 // Opsi karyawan utk SearchSelect: label = Nama (— Posisi) agar bisa diketik cari per nama.
 const employeeOptions = computed(() => props.employees.map((e) => ({
