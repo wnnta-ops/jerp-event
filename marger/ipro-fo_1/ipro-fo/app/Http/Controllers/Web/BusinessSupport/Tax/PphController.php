@@ -207,6 +207,12 @@ class PphController extends Controller
             // dihitung di sini padahal rincian rekapnya (lewat Eloquent) membuangnya, dan
             // centang hijau pada kartunya hilang tanpa sebab yang bisa dijelaskan operator.
             ->whereNull('bs_journals.deleted_at')
+            // Alasan yang sama untuk TENANT. Rinciannya dibaca lewat Eloquent (BsJournal
+            // memakai HasTenant), jadi hanya jurnal tenant berjalan yang masuk daftar;
+            // tanpa saringan ini angka GL menjumlahkan jurnal SEMUA tenant. Kartunya lalu
+            // memperlihatkan selisih yang tidak bisa ditelusuri ke satu baris pun di
+            // tabelnya — persis bentuk kesalahan yang paling sulit dijelaskan.
+            ->where('bs_journals.tenant_id', tenant_id())
             ->whereYear('bs_journals.journal_date', $year)->whereMonth('bs_journals.journal_date', $month)
             ->selectRaw('COALESCE(SUM(credit),0) c, COALESCE(SUM(debit),0) d')->first();
 

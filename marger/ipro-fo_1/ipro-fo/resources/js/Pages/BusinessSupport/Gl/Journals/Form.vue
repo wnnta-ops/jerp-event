@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { computed } from 'vue';
 import { useForm, usePage, Link } from '@inertiajs/vue3';
-import { ArrowLeft, Plus, Trash2, Save, Scale } from 'lucide-vue-next';
+import { ArrowLeft, Plus, Trash2, Save, Scale, BookText } from 'lucide-vue-next';
+import Badge from '@/Components/UI/Badge.vue';
 import Button from '@/Components/UI/Button.vue';
 import SearchSelect from '@/Components/UI/SearchSelect.vue';
 
@@ -51,6 +52,13 @@ const kurangCc = computed<string[]>(() => {
     }
     return [...out];
 });
+/**
+ * Baris ini kurang cost center? Syaratnya sama dengan kurangCc di atas, per baris — cost
+ * center header ikut dihitung karena baris yang dikosongkan mewarisinya.
+ */
+function ccKurang(l: any) {
+    return !!l?.account_id && ! l?.cost_center_id && ! form.cost_center_id && ! ccOptional(l.account_id);
+}
 const userName = computed(() => (usePage().props as any).auth?.user?.name ?? '—');
 function fmtRp(v: number) { return Number(v ?? 0).toLocaleString('id-ID'); }
 function submit() {
@@ -92,19 +100,38 @@ const inputCls = 'h-9 w-full rounded-lg border border-neutral-300 bg-white px-3 
                 </div>
             </div>
 
-            <div class="card p-5">
-                <div class="mb-2 flex items-center justify-between">
-                    <h2 class="font-semibold">Struktur Jurnal (Debit / Kredit)</h2>
-                    <button type="button" @click="addLine" class="inline-flex items-center gap-1 rounded-lg border border-neutral-300 px-2.5 py-1.5 text-xs hover:bg-neutral-50 dark:border-neutral-700"><Plus class="h-3.5 w-3.5" /> Baris</button>
+            <!-- Bentuknya SENGAJA menyalin kartu "Struktur Jurnal" pada Detail Invoice/Jurnal:
+                 kepala kartu berlencana Balance, judul kolom Account · Dimensi · Keterangan ·
+                 Debit · Kredit, dan baris Grand Total di kaki tabel. Orang memeriksa jurnal di
+                 layar detail lalu membetulkannya di sini; dua tata letak berbeda untuk angka
+                 yang sama memaksa mata mencari ulang letak tiap kolom setiap kali berpindah.
+
+                 Yang TIDAK ikut disalin: lebar tabelnya. Baris di sini berisi isian sungguhan
+                 (dua SearchSelect + tiga kotak), jadi lebar minimumnya dipertahankan dan
+                 tabelnya digeser pada layar sempit — bukan diperas sampai Keterangan/Debit/
+                 Kredit terpotong. -->
+            <div class="card overflow-hidden">
+                <div class="flex flex-wrap items-center justify-between gap-2 border-b border-neutral-200 px-4 py-3 dark:border-neutral-800">
+                    <h2 class="flex items-center gap-2 font-semibold"><BookText class="h-5 w-5 text-primary-600" /> Struktur Jurnal</h2>
+                    <div class="flex items-center gap-2">
+                        <button type="button" @click="addLine" class="inline-flex items-center gap-1 rounded-lg border border-neutral-300 px-2.5 py-1.5 text-xs hover:bg-neutral-50 dark:border-neutral-700"><Plus class="h-3.5 w-3.5" /> Baris</button>
+                        <Badge :variant="balanced ? 'success' : 'warning'" size="sm">{{ balanced ? 'Balance' : 'Tidak balance' }}</Badge>
+                    </div>
                 </div>
                 <!-- Memanjang ke BAWAH, bukan ke samping. Sebagai satu baris tabel, kelima
                      kolomnya harus muat dalam 1050px — akibatnya Keterangan, Debit, dan Kredit
                      terpotong di tengah kata ("BELI KE", "110…") dan angkanya tidak bisa dibaca
                      tanpa menggeser tabel. Tiap baris jurnal kini satu blok bertumpuk: nama akun,
-                     keterangan, dan angkanya tampil utuh pada lebar layar apa adanya. -->
+                     keterangan, dan angkanya tampil utuh pada lebar layar apa adanya.
+
+                     Penanda "Dimensi wajib" dari cabang bo IKUT dipertahankan di bentuk baru ini.
+                     Gerbang tombol Simpan sudah ada sejak awal, tetapi tanpa penanda per baris
+                     orang hanya melihat tombol yang mati — pada jurnal berisi sepuluh baris,
+                     baris mana yang kurang harus ditebak. -->
                 <div class="space-y-3">
                     <div v-for="(l, i) in form.lines" :key="i"
-                         class="rounded-lg border border-neutral-200 p-3 dark:border-neutral-800">
+                         class="rounded-lg border p-3"
+                         :class="ccKurang(l) ? 'border-danger-300 dark:border-danger-800' : 'border-neutral-200 dark:border-neutral-800'">
                         <div class="mb-2 flex items-center justify-between">
                             <span class="text-xs font-semibold uppercase tracking-wide text-neutral-400">Baris {{ i + 1 }}</span>
                             <button type="button" @click="removeLine(i)" :disabled="form.lines.length<=2"
@@ -121,10 +148,15 @@ const inputCls = 'h-9 w-full rounded-lg border border-neutral-300 bg-white px-3 
                             <!-- Cost center PER COA. Dikosongkan → ikut cost center header, KECUALI
                                  akun yang memang boleh tanpa cost center: dibiarkan kosong apa adanya. -->
                             <div>
-                                <label class="mb-1 block text-xs font-medium text-neutral-500">Cost Center</label>
-                                <SearchSelect v-model="l.cost_center_id" :options="costCenters"
-                                    :placeholder="ccOptional(l.account_id) ? '— tanpa cost center —' : '— ikut header —'" />
-                                <p v-if="ccOptional(l.account_id)" class="mt-0.5 text-[10.5px] text-neutral-400">Boleh dikosongkan</p>
+                                <label class="mb-1 block text-xs font-medium text-neutral-500">
+                                    Dimensi <span class="text-danger-500">*</span>
+                                </label>
+                                <div :class="ccKurang(l) ? 'rounded-lg ring-1 ring-danger-400' : ''">
+                                    <SearchSelect v-model="l.cost_center_id" :options="costCenters"
+                                        :placeholder="ccOptional(l.account_id) ? '— tanpa cost center —' : '— ikut header —'" />
+                                </div>
+                                <p v-if="ccKurang(l)" class="mt-0.5 text-[10.5px] font-medium text-danger-500">Wajib diisi</p>
+                                <p v-else-if="ccOptional(l.account_id)" class="mt-0.5 text-[10.5px] text-neutral-400">Boleh dikosongkan</p>
                             </div>
                         </div>
 
@@ -150,22 +182,30 @@ const inputCls = 'h-9 w-full rounded-lg border border-neutral-300 bg-white px-3 
                     </div>
                 </div>
 
+                <!-- "Grand Total" dari cabang bo dipertahankan namanya, dalam bentuk dua kartu
+                     karena kepala tabelnya sudah tidak ada. -->
                 <div class="mt-3 grid gap-3 border-t-2 border-neutral-200 pt-3 text-sm font-bold sm:grid-cols-2 dark:border-neutral-700">
                     <div class="flex items-center justify-between rounded-lg bg-neutral-50 px-3 py-2 dark:bg-neutral-900">
-                        <span class="text-neutral-500">Total Debit</span>
+                        <span class="text-neutral-500">Grand Total Debit</span>
                         <span class="font-mono tabular-nums">{{ fmtRp(totalDebit) }}</span>
                     </div>
                     <div class="flex items-center justify-between rounded-lg bg-neutral-50 px-3 py-2 dark:bg-neutral-900">
-                        <span class="text-neutral-500">Total Kredit</span>
+                        <span class="text-neutral-500">Grand Total Kredit</span>
                         <span class="font-mono tabular-nums">{{ fmtRp(totalCredit) }}</span>
                     </div>
                 </div>
-                <div class="mt-3 flex items-center gap-2 text-sm" :class="balanced ? 'text-success-600' : 'text-danger-600'">
-                    <Scale class="h-4 w-4" />
-                    <span v-if="balanced">Balance ✓ (debit = kredit)</span>
-                    <span v-else>Belum balance — selisih {{ fmtRp(Math.abs(totalDebit - totalCredit)) }}. Jurnal hanya bisa disimpan bila balance.</span>
+
+                <!-- Lencana di kepala kartu menyebut KEADAANNYA; baris ini menyebut SELISIHNYA
+                     dan akibatnya. Layar detail tidak memerlukannya karena jurnalnya sudah
+                     tersimpan — di sini justru itu yang menghalangi tombol Simpan. -->
+                <div class="border-t border-neutral-200 px-4 py-3 dark:border-neutral-800">
+                    <div class="flex items-center gap-2 text-sm" :class="balanced ? 'text-success-600' : 'text-danger-600'">
+                        <Scale class="h-4 w-4" />
+                        <span v-if="balanced">Balance ✓ (debit = kredit)</span>
+                        <span v-else>Belum balance — selisih {{ fmtRp(Math.abs(totalDebit - totalCredit)) }}. Jurnal hanya bisa disimpan bila balance.</span>
+                    </div>
+                    <p v-if="!allAccountsSet" class="mt-1 text-xs text-danger-500">Setiap baris wajib memilih akun.</p>
                 </div>
-                <p v-if="!allAccountsSet" class="mt-1 text-xs text-danger-500">Setiap baris wajib memilih akun.</p>
             </div>
 
             <div class="flex gap-2">

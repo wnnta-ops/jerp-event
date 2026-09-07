@@ -158,6 +158,33 @@ const jurnalNilai = computed(() => form.journal_lines.reduce((s: number, l: any)
 const jurnalBalanced = computed(() => Math.abs(jurnalDebit.value - jurnalKredit.value) < 1 && jurnalDebit.value > 0);
 const activeJournalLines = computed(() => form.journal_lines.filter((l: any) => l.account_id && ((Number(l.debit) || 0) > 0 || (Number(l.credit) || 0) > 0)));
 
+/* ── Cost center wajib ──────────────────────────────────────────────────────
+   Baris jurnal tanpa cost center tidak terhitung di Budget Control maupun laporan per cost
+   center, dan itu tidak muncul sebagai galat apa pun — hanya angka yang kurang, berbulan
+   kemudian. Karena itu diwajibkan di sini.
+
+   KECUALI akun bertanda cost_center_optional (CoaTanpaCostCenterSeeder): Utang Usaha
+   Supplier dan sebagian akun neraca lain memang tidak menanggung cost center. Mewajibkannya
+   untuk SEMUA baris akan mengunci wizard ini pada invoice yang justru paling biasa —
+   Dr beban (ber-cost center) / Cr Utang Usaha (tanpa). Aturannya dibuat sama dengan Jurnal
+   Memorial dan dengan rambu server, bukan aturan ketiga yang berdiri sendiri. */
+function ccOptional(accountId: any) {
+    return !!props.accounts.find((a: any) => a.id === Number(accountId))?.cost_center_optional;
+}
+/** Baris ini kurang cost center? Baris tanpa akun tidak dihitung — ia memang boleh kosong. */
+function ccKurang(l: any) {
+    return !!l?.account_id && ! l?.cost_center_id && ! ccOptional(l.account_id);
+}
+/** Label akun yang masih kurang cost center — dipakai pesan penahan tombol Berikutnya. */
+const kurangCc = computed<string[]>(() => {
+    const out = new Set<string>();
+    for (const l of form.journal_lines as any[]) {
+        if (ccKurang(l)) out.add(accountLabel(l.account_id));
+    }
+
+    return [...out];
+});
+
 function fmtRp(v: number) { return 'Rp ' + Number(v ?? 0).toLocaleString('id-ID'); }
 function fmtNum(v: number) { return Number(v ?? 0).toLocaleString('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
 function pickSupplier(s: any) { form.supplier_id = s.id; step.value = 2; }
@@ -257,7 +284,11 @@ watch(step, (s) => {
 function canNext() {
     if (step.value === 1) return !!form.supplier_id;
     if (step.value === 2) return !!form.category_id && !!form.supplier_invoice_no && Number(form.dpp) > 0 && !!form.description && Number(form.term_days) > 0;
-    if (step.value === 4) return jurnalBalanced.value;
+    // Langkah Struktur: selain balance, cost center pada baris yang memerlukannya harus terisi.
+    // Baris jurnal tanpa cost center tidak terhitung di Budget Control maupun laporan per cost
+    // center — dan itu tidak muncul sebagai galat apa pun, hanya angka yang kurang. Karena itu
+    // ditahan di sini, bukan diperbaiki belakangan.
+    if (step.value === 4) return jurnalBalanced.value && kurangCc.value.length === 0;
     return true;
 }
 function next() { if (canNext() && step.value < 5) step.value++; }
@@ -395,7 +426,7 @@ const cellArea = 'w-full rounded-md border border-neutral-300 bg-white px-2 py-1
                             <tr>
                                 <th class="border-b border-neutral-200 px-2 py-2 dark:border-neutral-700">No</th>
                                 <th class="border-b border-neutral-200 px-2 py-2 dark:border-neutral-700">Account</th>
-                                <th class="border-b border-neutral-200 px-2 py-2 dark:border-neutral-700">Cost Center</th>
+                                <th class="border-b border-neutral-200 px-2 py-2 dark:border-neutral-700">Cost Center <span class="text-danger-500">*</span></th>
                                 <th class="border-b border-neutral-200 px-2 py-2 dark:border-neutral-700">Keterangan</th>
                                 <th class="border-b border-neutral-200 px-2 py-2 dark:border-neutral-700">Mata Uang / Kurs</th>
                                 <th class="border-b border-neutral-200 px-2 py-2 text-right dark:border-neutral-700">Nilai Transaksi</th>
@@ -434,7 +465,18 @@ const cellArea = 'w-full rounded-md border border-neutral-300 bg-white px-2 py-1
                                         <span class="min-w-0 flex-1 truncate text-[11px] text-neutral-500 dark:text-neutral-400" :title="accountName(l.account_id)">{{ accountName(l.account_id) || '—' }}</span>
                                     </div>
                                 </td>
-                                <td class="px-2 py-2"><SearchSelect v-model="l.cost_center_id" :options="costCenters" placeholder="— cost center —" /></td>
+                                <!-- Cost center WAJIB, kecuali akun yang memang boleh tanpanya
+                                     (mis. Utang Usaha Supplier — lihat ccOptional). Barisnya
+                                     ditandai merah selagi kosong, jadi baris mana yang kurang
+                                     terlihat langsung tanpa perlu membaca pesan di bawah. -->
+                                <td class="px-2 py-2">
+                                    <div :class="ccKurang(l) ? 'rounded-lg ring-1 ring-danger-400' : ''">
+                                        <SearchSelect v-model="l.cost_center_id" :options="costCenters"
+                                            :placeholder="ccOptional(l.account_id) ? '— tanpa cost center —' : '— cost center —'" />
+                                    </div>
+                                    <p v-if="ccKurang(l)" class="mt-0.5 text-[10.5px] font-medium text-danger-500">Wajib diisi</p>
+                                    <p v-else-if="l.account_id && ccOptional(l.account_id)" class="mt-0.5 text-[10.5px] text-neutral-400">Boleh dikosongkan</p>
+                                </td>
                                 <td class="px-2 py-2"><textarea v-model="l.description" rows="2" :class="cellArea" placeholder="Keterangan baris…"></textarea></td>
                                 <td class="px-2 py-2">
                                     <select v-model="l.currency" :class="dimCls"><option value="IDR">IDR</option><option value="USD">USD</option><option value="SGD">SGD</option><option value="EUR">EUR</option></select>
@@ -513,6 +555,11 @@ const cellArea = 'w-full rounded-md border border-neutral-300 bg-white px-2 py-1
         <div class="flex items-center justify-between">
             <button v-if="step > 1" type="button" @click="prev" class="inline-flex items-center gap-1.5 rounded-lg border border-neutral-300 px-4 py-2 text-sm dark:border-neutral-700"><ArrowLeft class="h-4 w-4" /> Sebelumnya</button>
             <span v-else></span>
+            <!-- Alasan tombolnya mati DISEBUTKAN, bukan dibiarkan ditebak. Tombol nonaktif tanpa
+                 keterangan pada wizard berlangkah membuat orang menyangka layarnya rusak. -->
+            <span v-if="step === 4 && kurangCc.length" class="self-center text-xs text-danger-500">
+                Cost center wajib diisi untuk akun: {{ kurangCc.join(', ') }}.
+            </span>
             <Button v-if="step < 5" :disabled="!canNext()" @click="next"><template #icon-left><ArrowRight class="h-4 w-4" /></template>Berikutnya</Button>
             <Button v-else :disabled="form.processing" @click="submit"><template #icon-left><Save class="h-4 w-4" /></template>Simpan &amp; Buat Jurnal</Button>
         </div>

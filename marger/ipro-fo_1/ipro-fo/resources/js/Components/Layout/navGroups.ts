@@ -335,6 +335,9 @@ export function navGroups(foUrl: string): NavGroup[] {
                 { label: 'Rekening', href: 'rekening.index' },
                 // Barcode tanda tangan yang dipakai pada Persetujuan (TTD) SIP.
                 { label: 'Set Up Barcode', href: 'bs.cashbook.signature-barcode.index' },
+                // Kartu kredit/VA: saldo & masa berlakunya. Bon sementara berpembayaran
+                // Debit VA melahirkan permintaan saldo & expired di sini.
+                { label: 'Set Up Credit Card', href: 'bs.cashbook.credit-card.index' },
                 { label: 'Repair Data', href: 'bs.cashbook.repair.index' },
             ]},
             { label: 'Master', icon: Wallet, permission: ['businesssupport.view', 'cashbook.*'], children: [

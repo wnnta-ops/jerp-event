@@ -137,6 +137,8 @@ class PostingInvoiceController extends Controller
             ->whereIn('id', $queue->pluck('cluster_id')->filter()->unique()->all())
             ->pluck('code', 'id');
 
+        $bawaanSupplier = $this->supplierBawaanPerSumber();
+
         return $queue->map(fn ($r) => [
             'id'           => $r->id,
             'refund_no'    => $r->refund_no,
@@ -151,7 +153,10 @@ class PostingInvoiceController extends Controller
             'amount'       => (float) $r->amount,
             'tgl'          => $r->tgl_refund,
             'keterangan'   => $r->keterangan, // mis. GMC → nama gimmick ("Gimmick BPHTB — SPR ...")
-            'supplier_id'  => $r->supplier_id ? (int) $r->supplier_id : null, // GMC komponen → prefill supplier
+            // GMC komponen membawa suppliernya sendiri. BLT & Komisi tidak — penerimanya
+            // perorangan, dan hutangnya ditagihkan ke satu supplier penampung per jenis
+            // pembayaran; itu yang diisikan sebagai bawaan. Tetap bisa diganti di dropdown.
+            'supplier_id'  => $r->supplier_id ? (int) $r->supplier_id : ($bawaanSupplier[$r->kind] ?? null),
             // Rantai GMC: kategori gimmick → kolom Rincian Biaya Master Data KPR → SPR yang dibiayai.
             'kategori'     => ($r->gimmick_category_id ?? null) ? ($catNames[$r->gimmick_category_id] ?? null) : null,
             'cluster'      => ($r->cluster_id ?? null) ? ($clusterNames[$r->cluster_id] ?? null) : null,
@@ -159,6 +164,35 @@ class PostingInvoiceController extends Controller
             'spr'          => ($r->booking_id ?? null) ? ($bookingNos[$r->booking_id] ?? null) : null,
             'akun_pecah'   => count(is_string($r->account_split ?? null) ? (json_decode($r->account_split, true) ?: []) : []),
         ])->values();
+    }
+
+    /**
+     * Supplier bawaan per SUMBER antrean (blt / komisi) — id-nya, dicari dari kodenya.
+     *
+     * Hanya supplier AKTIF yang dipakai. Supplier yang sudah dinonaktifkan tidak muncul di
+     * dropdown Supplier, jadi mengisikannya sebagai bawaan akan memperlihatkan pilihan yang
+     * tidak ada isinya — kolomnya tampak terisi padahal tidak bisa disimpan.
+     *
+     * @return array<string,int>
+     */
+    private function supplierBawaanPerSumber(): array
+    {
+        $kode = (array) config('business_support.ap_supplier_default', []);
+        if ($kode === []) {
+            return [];
+        }
+
+        $idPerKode = BsSupplier::whereIn('code', array_values($kode))->where('is_active', true)
+            ->pluck('id', 'code');
+
+        $out = [];
+        foreach ($kode as $sumber => $k) {
+            if ($id = $idPerKode[$k] ?? null) {
+                $out[(string) $sumber] = (int) $id;
+            }
+        }
+
+        return $out;
     }
 
     /**

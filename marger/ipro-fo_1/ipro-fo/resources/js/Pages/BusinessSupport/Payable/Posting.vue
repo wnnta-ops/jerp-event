@@ -4,6 +4,7 @@ import { ref, computed, watch } from 'vue';
 import { ArrowLeft, FileInput, TriangleAlert, Receipt, CalendarClock } from 'lucide-vue-next';
 import Button from '@/Components/UI/Button.vue';
 import EmptyState from '@/Components/UI/EmptyState.vue';
+import SearchSelect from '@/Components/UI/SearchSelect.vue';
 
 // Sub modul "Posting Invoice dari FO" — HANYA antrean FO (refund, BLT, komisi, gimmick).
 // Purchase Order dan progress SPK punya sub modulnya sendiri. Inilah satu-satunya layar
@@ -184,13 +185,21 @@ ${kalimatJatuhTempo.value}`)) return;
                         <td class="px-4 py-2.5 font-mono font-semibold">{{ it.refund_no }}</td>
                         <td class="px-4 py-2.5">{{ it.customer ?? '—' }}</td>
                         <td class="px-4 py-2.5">
-                            <select
-                                v-model="supplierSel[it.id]"
-                                class="w-56 max-w-full rounded-lg border border-neutral-300 bg-white px-2 py-1.5 text-sm focus:border-primary-500 focus:ring-1 focus:ring-primary-500 dark:border-neutral-700 dark:bg-neutral-800"
-                            >
-                                <option value="">— pilih supplier —</option>
-                                <option v-for="s in suppliers" :key="s.id" :value="Number(s.id)">{{ s.label }}</option>
-                            </select>
+                            <!-- SearchSelect, bukan <select> biasa: masternya berisi ratusan
+                                 supplier, dan daftar sepanjang itu praktis tidak bisa dipakai
+                                 tanpa diketik — orang harus menggulir mencari satu nama, tiap
+                                 baris, berulang kali. Komponen ini menyaring sambil diketik
+                                 (kode maupun nama) dan tetap memulangkan id yang sama, jadi
+                                 seluruh logika centang/gabung/posting di bawah tidak berubah. -->
+                            <div class="w-56 max-w-full">
+                                <!-- Tanpa clearable: baris BLT/Komisi kini berbawaan supplier,
+                                     dan rowSupplier() jatuh kembali ke bawaan itu saat pilihannya
+                                     dikosongkan. Tombol hapus yang tidak benar-benar menghapus
+                                     lebih membingungkan daripada tidak ada; menggantinya cukup
+                                     dengan memilih supplier lain. -->
+                                <SearchSelect v-model="supplierSel[it.id]" :options="suppliers" option-value="id"
+                                              placeholder="— pilih supplier —" no-truncate />
+                            </div>
                         </td>
                         <td class="px-4 py-2.5">
                             <div class="flex flex-wrap items-center gap-1">

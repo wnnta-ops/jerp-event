@@ -70,6 +70,12 @@ class CashAdvanceController extends Controller
             'realized_amount'        => (float) $a->realized_amount,
             'settlement'             => (float) $a->settlement,
             'status'                 => $a->status,
+            // Kolom Kategori: cara pembayarannya. paid_date ikut dibawa karena itulah penanda
+            // bon sudah BENAR-BENAR dibayar — payment_method berbawaan 'reguler' sejak bonnya
+            // dibuat, jadi memakainya sendirian akan melabeli bon yang belum dibayar sebagai
+            // "Pembayaran Reguler".
+            'payment_method'         => $a->payment_method,
+            'paid_date'              => $a->paid_date?->toDateString(),
         ];
 
         $realisasi = BsCashAdvance::where('status', 'realized')->where('settlement', '=', 0)
@@ -440,11 +446,13 @@ class CashAdvanceController extends Controller
     {
         abort_unless($request->user()?->canModule('cashbook'), 403);
 
+        // Kolom Departemen dihapus dari layar pengajuan, jadi daftar departemen & department_id
+        // karyawan tidak lagi dikirim ke sana. Departemennya tetap tercatat — ditentukan
+        // CashAdvanceService::issue() dari karyawan yang dipilih (fallback #150), sehingga
+        // penyaring Departemen pada Laporan Bon Sementara tetap berisi seperti sebelumnya.
         return Inertia::render('BusinessSupport/CashBook/Advances/Form', [
-            // #150: employees ikut bawa department_id agar form bisa auto-isi departemen.
-            'employees'   => BsEmployee::orderBy('name')->get(['id', 'name', 'position', 'department_id'])
-                ->map(fn ($e) => ['id' => $e->id, 'name' => $e->name, 'position' => $e->position, 'department_id' => $e->department_id]),
-            'departments' => $this->departments(),
+            'employees' => BsEmployee::orderBy('name')->get(['id', 'name', 'position'])
+                ->map(fn ($e) => ['id' => $e->id, 'name' => $e->name, 'position' => $e->position]),
         ]);
     }
 
@@ -461,6 +469,8 @@ class CashAdvanceController extends Controller
             'amount'        => ['required', 'numeric', 'min:0.01'],
             'department_id' => ['nullable', 'integer', 'exists:bs_hr_departments,id'],
             'employee_id'   => ['nullable', 'integer', 'exists:bs_employees,id'],
+            // Cara persetujuan dipilih per pengajuan; kosong = online (perilaku lama).
+            'approval_mode' => ['nullable', 'string', 'in:'.implode(',', array_keys(BsCashAdvance::APPROVAL_MODES))],
         ]);
 
         try {
@@ -510,6 +520,20 @@ class CashAdvanceController extends Controller
         $v = $request->validate([
             'paid_date'       => ['required', 'date'],
             'cash_account_id' => ['required', 'integer', 'exists:bs_accounts,id'],
+            // Cara pembayaran; kosong = reguler (perilaku lama).
+            'payment_method'  => ['nullable', 'string', 'in:'.implode(',', array_keys(BsCashAdvance::PAYMENT_METHODS))],
+            // Tanggal expired WAJIB pada Debit VA, dan tidak boleh mendahului tanggal transfer:
+            // VA yang sudah lewat tanggalnya tidak bisa didebit, sehingga uangnya tak pernah
+            // berpindah meski jurnalnya terbentuk.
+            'va_expired_date' => ['nullable', 'date', 'required_if:payment_method,debit_va', 'after_or_equal:paid_date'],
+            // Nomor kartu kredit/VA yang didebit. WAJIB pada Debit VA: permintaan penambahan
+            // saldo dan permintaan masa berlaku yang lahir dari bon ini harus menempel pada
+            // kartu tertentu — tanpa itu, saldo bertambah di kartu yang tidak dituju.
+            'credit_card_id'  => ['nullable', 'integer', 'exists:bs_credit_cards,id', 'required_if:payment_method,debit_va'],
+        ], [
+            'va_expired_date.required_if'      => 'Tanggal expired VA wajib diisi untuk Pembayaran Debit VA.',
+            'va_expired_date.after_or_equal'   => 'Tanggal expired VA tidak boleh mendahului tanggal transfer.',
+            'credit_card_id.required_if'       => 'Nomor kartu kredit/VA wajib dipilih untuk Pembayaran Debit VA.',
         ]);
 
         // Catat Pembayaran & Buat Jurnal hanya boleh setelah SELURUH persetujuan (pengaju → Manager Finance) lengkap.
@@ -531,7 +555,7 @@ class CashAdvanceController extends Controller
         abort_unless($request->user()?->canModule('cashbook'), 403);
 
         return Inertia::render('BusinessSupport/CashBook/Advances/Show', [
-            'advance'         => $advance->load(['cashAccount:id,code,name', 'lines.expenseAccount:id,code,name', 'lines.costCenter:id,code,name']),
+            'advance'         => $advance->load(['cashAccount:id,code,name', 'creditCard:id,name,card_number,balance,expired_date', 'lines.expenseAccount:id,code,name', 'lines.costCenter:id,code,name']),
             'expenseAccounts' => BsAccount::where('is_active', true)->where('is_postable', true)->whereIn('type', ['expense', 'asset'])->orderBy('code')->get(['id', 'code', 'name', 'type']),
             // Cost center per baris realisasi → diteruskan ke jurnal, dibaca Budget Control.
             'costCenters'     => \App\Domain\BusinessSupport\Models\BsCostCenter::where('is_active', true)
@@ -540,6 +564,20 @@ class CashAdvanceController extends Controller
             'signers'         => BsCashAdvance::SIGNERS,                                       // #127
             'requiredSigners' => $advance->requiredSigners(),                                  // #127
             'fullyApproved'   => $advance->isFullyApproved(),                                  // gate Catat Pembayaran
+            // Layar perlu MEMBEDAKAN "belum ada yang menyetujui" dari "memang tidak lewat
+            // aplikasi" — keduanya sama-sama tanpa tanda tangan digital, tetapi yang satu
+            // menahan pembayaran dan yang satu tidak.
+            'approvalMode'    => $advance->isOfflineApproval() ? 'offline' : 'online',
+            'approvalModes'   => BsCashAdvance::APPROVAL_MODES,
+            'paymentMethods'  => BsCashAdvance::PAYMENT_METHODS,
+            // Kartu kredit/VA yang BOLEH dipakai membayar: aktif dan belum lewat masa berlaku.
+            // Kartu nonaktif/expired sengaja tidak dikirim sama sekali — menampilkannya sebagai
+            // pilihan yang ditolak server hanya memindahkan penolakannya ke belakang.
+            'creditCards'     => \App\Domain\BusinessSupport\Models\BsCreditCard::where('is_active', true)
+                ->orderBy('name')->get(['id', 'name', 'card_number', 'balance', 'expired_date', 'is_active'])
+                ->filter(fn ($c) => $c->isUsable())
+                ->map(fn ($c) => ['id' => $c->id, 'label' => $c->label(), 'balance' => (float) $c->balance])
+                ->values(),
             'canApprove'      => (bool) $request->user()?->can('businesssupport.approval.act'), // #127
             'canEditDocDate'  => (bool) $request->user()?->canModule('cashbook'), // #125
         ]);

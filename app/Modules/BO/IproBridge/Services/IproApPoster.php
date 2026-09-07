@@ -349,6 +349,16 @@ class IproApPoster
         ?string $noKontrak = null,
         ?int $foUnitId = null,
         ?int $foLokasiId = null,
+        /**
+         * Nama kategori CADANGAN, dipakai hanya bila $gimmickName tidak dikenal Setup Gimmick.
+         *
+         * Dipakai GMC berkomponen: yang dikirim sebagai $gimmickName adalah nama komponennya,
+         * supaya tiap komponen memakai akun kategorinya masing-masing. GMC lama yang nama
+         * komponennya diketik bebas tidak akan cocok kategori mana pun — untuk itulah nama
+         * gimmick di header diteruskan ke sini, sehingga perilakunya persis seperti sebelum
+         * pencocokan per komponen ada.
+         */
+        ?string $gimmickNameCadangan = null,
     ): ?int {
         $amount = round($amount, 2);
         if ($amount <= 0 || trim($noGmc) === '') {
@@ -360,6 +370,9 @@ class IproApPoster
         // yang sama bisa dibebankan ke akun berbeda di tiap cluster.
         $clusterId = $foLokasiId ? $this->iproClusterIdByFoLokasi($foLokasiId) : null;
         $cat = $gimmickName ? $this->gimmickCategory($gimmickName, $clusterId) : null;
+        if (! $cat && $gimmickNameCadangan && trim($gimmickNameCadangan) !== trim((string) $gimmickName)) {
+            $cat = $this->gimmickCategory($gimmickNameCadangan, $clusterId);
+        }
         $split = $cat ? $this->gimmickSplit((int) $cat->id) : [];
         $firstOf = function (string $side) use ($split): ?int {
             foreach ($split as $s) {

@@ -127,7 +127,12 @@ async function main() {
     cek('tabel menyatakan lebar minimum', minTabel > 0, String(minTabel));
 
     // Jumlah lebar minimum seluruh sel pada satu baris data.
-    const barisData = (html.match(/<tr [^>]*class="border-t[^"]*"[^>]*>[\s\S]*?<\/tr>/) || [''])[0];
+    // Baris data diambil dari dalam <tbody> — bukan dari kelas barisnya. Sejak tata letaknya
+    // menyalin kartu Struktur Jurnal, pemisah antarbaris memakai divide-y pada <tbody> dan
+    // barisnya tidak lagi berkelas border-t; mencocokkan kelas membuat uji ini diam-diam
+    // mengukur baris Grand Total di kaki tabel — dan lulus atas kolom yang salah.
+    const isiTbody = (html.match(/<tbody[^>]*>([\s\S]*?)<\/tbody>/) || ['', ''])[1];
+    const barisData = (isiTbody.match(/<tr[^>]*>[\s\S]*?<\/tr>/) || [''])[0];
     const sel = [...barisData.matchAll(/<td class="([^"]*)"/g)].map((m) => m[1]);
     cek('baris datanya ter-render', sel.length >= 5, sel.length + ' sel');
     const jumlah = sel.reduce((s, k) => s + lebarSel(k), 0);
@@ -143,7 +148,8 @@ async function main() {
 
     // Akun & Cost Center sudah punya sejak awal; ketiga sisanya yang tidak, dan justru
     // merekalah yang diperas sampai isinya terpotong.
-    const namaKolom = ['Akun', 'Cost Center', 'Keterangan', 'Debit', 'Kredit'];
+    // Judul kolomnya kini mengikuti kartu Struktur Jurnal pada layar detail.
+    const namaKolom = ['Account', 'Dimensi', 'Keterangan', 'Debit', 'Kredit'];
     sel.slice(0, 5).forEach((k, i) => {
         cek('kolom ' + namaKolom[i] + ' punya lebar minimum', lebarSel(k) > 0, k);
     });
@@ -181,9 +187,16 @@ async function main() {
     const angka = selTot.filter((x) => /^[\d.]+$/.test(x.t) && x.t !== '');
     cek('kedua total ter-render sebagai dua sel terpisah', angka.length === 2,
         JSON.stringify(selTot.map((x) => x.t)));
+    // Yang menjaga keduanya tidak menempel ada dua hal, dan keduanya diperiksa apa adanya:
+    // JARAK MENDATAR pada selnya (px-/pr-), dan LEBAR KOLOMNYA — yang sejak tata letaknya
+    // menyalin kartu Struktur Jurnal ditetapkan di kepala kolom, bukan lagi diulang di tiap
+    // sel total. Memeriksa kelas sel totalnya saja akan menuntut bentuk lama tanpa alasan.
+    const lebarKolomAngka = [...html.matchAll(/<th class="([^"]*)"[^>]*>\s*(Debit|Kredit)\s*<\/th>/g)]
+        .map((m) => lebarSel(m[1]));
     angka.forEach((a, i) => {
-        cek('total ke-' + (i + 1) + ' punya lebar & jarak kanan', lebarSel(a.k) >= 160 && a.k.includes('pr-'),
-            a.k);
+        cek('total ke-' + (i + 1) + ' berjarak mendatar', /(?:^|\s)(px-|pr-)\d/.test(a.k), a.k);
+        cek('kolom total ke-' + (i + 1) + ' selebar minimal 160px', (lebarKolomAngka[i] ?? 0) >= 160,
+            (lebarKolomAngka[i] ?? 0) + 'px');
     });
     // Angka rata kanan tanpa lebar tetap akan "melompat" saat digit bertambah.
     cek('totalnya memakai angka berlebar tetap', angka.every((a) => a.k.includes('tabular-nums')),
@@ -198,8 +211,8 @@ async function main() {
     cek('tombol tambah baris masih ada', teks.includes('Baris'), 'tidak ditemukan');
     cek('penanda balance masih ada', teks.includes('Balance') || teks.includes('balance'), 'tidak ditemukan');
     cek('tiga baris jurnal ter-render',
-        (html.match(/<tr [^>]*class="border-t[^"]*"/g) || []).length === LINES.length,
-        String((html.match(/<tr [^>]*class="border-t[^"]*"/g) || []).length));
+        (isiTbody.match(/<tr[^>]*>/g) || []).length === LINES.length,
+        String((isiTbody.match(/<tr[^>]*>/g) || []).length));
 
     console.log('\n=== 7. Detail Transaksi Jurnal: colgroup vs lebar tabel ===');
 

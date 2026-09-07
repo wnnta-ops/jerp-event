@@ -746,6 +746,15 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
     Route::post('/business-support/cash-book-signature-barcode',           [BsSignatureBarcodeController::class, 'store'])->name('bs.cashbook.signature-barcode.store');
     Route::put('/business-support/cash-book-signature-barcode/{barcode}',  [BsSignatureBarcodeController::class, 'update'])->name('bs.cashbook.signature-barcode.update');
     Route::delete('/business-support/cash-book-signature-barcode/{barcode}', [BsSignatureBarcodeController::class, 'destroy'])->name('bs.cashbook.signature-barcode.destroy');
+
+    // Cash Book → Setup → Set Up Credit Card: kartu kredit/VA, saldo & masa berlakunya.
+    // Saldo hanya berubah lewat permintaan yang disetujui (approve/reject di bawah).
+    Route::get('/business-support/credit-cards',                        [\App\Http\Controllers\Web\BusinessSupport\CashBook\CreditCardController::class, 'index'])->name('bs.cashbook.credit-card.index');
+    Route::post('/business-support/credit-cards',                       [\App\Http\Controllers\Web\BusinessSupport\CashBook\CreditCardController::class, 'store'])->name('bs.cashbook.credit-card.store');
+    Route::put('/business-support/credit-cards/{card}',                 [\App\Http\Controllers\Web\BusinessSupport\CashBook\CreditCardController::class, 'update'])->name('bs.cashbook.credit-card.update');
+    Route::post('/business-support/credit-cards/{card}/requests',       [\App\Http\Controllers\Web\BusinessSupport\CashBook\CreditCardController::class, 'requestStore'])->name('bs.cashbook.credit-card.request');
+    Route::post('/business-support/credit-card-requests/{creditCardRequest}/approve', [\App\Http\Controllers\Web\BusinessSupport\CashBook\CreditCardController::class, 'approve'])->name('bs.cashbook.credit-card.approve');
+    Route::post('/business-support/credit-card-requests/{creditCardRequest}/reject',  [\App\Http\Controllers\Web\BusinessSupport\CashBook\CreditCardController::class, 'reject'])->name('bs.cashbook.credit-card.reject');
     // CB-2: Rekening Ledger + Kalender Cek Giro
     Route::get('/business-support/cash-book-ledger',           [BsCashBookController::class, 'ledger'])->name('bs.cashbook.ledger');
     Route::get('/business-support/cash-book-ledger-excel',     [BsCashBookController::class, 'ledgerExcel'])->name('bs.cashbook.ledger.excel');       // #9

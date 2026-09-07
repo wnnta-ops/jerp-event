@@ -61,7 +61,11 @@ class RealisasiKomisi extends Page implements HasTable
                 Tables\Actions\Action::make('postingBo')->label('Posting BO')->icon('heroicon-o-paper-airplane')->color('success')->button()
                     ->requiresConfirmation()
                     ->modalHeading('Posting Komisi ke BO')
-                    ->modalDescription(fn (Komisi $r) => 'Kirim '.$r->jml.' komisi pada batch '.$r->no_pengajuan.' (nilai Rp '.number_format((float) $r->total_komisi, 0, ',', '.').', PPh Rp '.number_format((float) $r->total_pph, 0, ',', '.').', NETT Rp '.number_format((float) $r->total_nett, 0, ',', '.').') ke Posting Invoice BO. Setiap komisi menjadi satu baris tersendiri — tidak ada yang digabung. Jadi hutang AP setelah diposting di BO.')
+                    // Angka jumlah/nilai/PPh/NETT sengaja TIDAK diulang di sini — sama seperti
+                    // pada Realisasi BLT: keempatnya sudah terbaca pada baris yang tombolnya
+                    // baru saja diklik. Kalimat konfirmasi ini menyisakan hal yang justru
+                    // perlu dipahami sebelum menekan Konfirmasi.
+                    ->modalDescription(fn (Komisi $r) => 'Kirim komisi pada '.$r->no_pengajuan.' ke Posting Invoice BO. Setiap komisi menjadi satu baris tersendiri dan tidak ada yang digabung. Akan menjadi hutang AP setelah diposting di BO.')
                     ->action(function (Komisi $r) {
                         try {
                             $poster = app(\App\Modules\BO\IproBridge\Services\IproApPoster::class);
