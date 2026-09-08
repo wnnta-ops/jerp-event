@@ -111,10 +111,14 @@ try {
 
     // Persis seperti kiriman layarnya sekarang: TANPA department_id, hanya employee_id.
     $svc = app(CashAdvanceService::class);
+    // Cost center WAJIB sejak bon ditautkan ke Budget Control — fikstur ini hanya perlu satu
+    // yang sah; yang diuji berkas ini soal DEPARTEMENNYA, bukan dimensi anggarannya.
+    $ccUji = (int) \App\Domain\BusinessSupport\Models\BsCostCenter::where('is_active', true)->value('id');
+    $cek('ada cost center aktif untuk fikstur', $ccUji > 0, (string) $ccUji);
     $adv = $svc->issue([
         'advance_date' => '2026-09-03', 'holder' => 'UJI Pemegang Bon — Staff Uji',
         'purpose' => 'UJI tanpa kolom departemen', 'amount' => 500000,
-        'employee_id' => $pegawaiId,
+        'employee_id' => $pegawaiId, 'cost_center_id' => $ccUji,
     ], (int) $user->id);
 
     $tersimpan = DB::table('bs_cash_advances')->where('id', $adv->id)->first(['department_id', 'amount']);
@@ -142,7 +146,7 @@ try {
     $adv2 = $svc->issue([
         'advance_date' => '2026-09-03', 'holder' => 'UJI Tanpa Departemen — Staff Uji',
         'purpose' => 'UJI tanpa departemen', 'amount' => 250000,
-        'employee_id' => $tanpaDept,
+        'employee_id' => $tanpaDept, 'cost_center_id' => $ccUji,
     ], (int) $user->id);
     $cek('pengajuannya tetap tersimpan', $adv2 !== null);
     $cek('departemennya kosong, bukan galat',

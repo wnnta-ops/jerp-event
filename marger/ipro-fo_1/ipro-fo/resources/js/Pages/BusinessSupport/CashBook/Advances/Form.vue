@@ -7,7 +7,7 @@ import SearchSelect from '@/Components/UI/SearchSelect.vue';
 import { computed } from 'vue';
 
 type Employee = { id: number; name: string; position: string | null };
-const props = defineProps<{ employees: Employee[] }>();
+const props = defineProps<{ employees: Employee[]; costCenters?: Array<{ id: number; label: string }> }>();
 const today = new Date().toISOString().slice(0, 10);
 /* Kolom Departemen DIHAPUS dari layar ini — bukan datanya.
    Departemen pengajuan tetap tercatat: CashAdvanceService::issue() mengambilnya dari karyawan
@@ -20,7 +20,13 @@ const today = new Date().toISOString().slice(0, 10);
    Yang perlu disadari saat mengubah ini: offline MEMATIKAN jenjang persetujuan di aplikasi,
    sehingga pembayaran & jurnal boleh dicatat tanpa menunggu tanda tangan digital. Karena itu
    kalimat akibatnya ditulis di kartu pilihannya, bukan disembunyikan. */
-const form = useForm<any>({ advance_date: today, employee_id: '', holder: '', purpose: '', amount: 0, approval_mode: 'offline' });
+const form = useForm<any>({ advance_date: today, employee_id: '', holder: '', purpose: '', amount: 0, approval_mode: 'offline', cost_center_id: '' });
+
+/* Cost center WAJIB. Nilainya diteruskan ke bs_journal_lines.cost_center_id pada seluruh jurnal
+   yang lahir dari bon ini, lalu dibaca Budget Control untuk mencocokkan realisasi dengan plafon
+   per (akun, cost center). Bon tanpa cost center tetap menjadi beban di GL tetapi TIDAK PERNAH
+   terbaca sebagai realisasi anggaran — tidak ada galat, hanya angka yang kurang. */
+const ccKurang = computed(() => ! form.cost_center_id);
 
 // Opsi karyawan utk SearchSelect: label = Nama (— Posisi) agar bisa diketik cari per nama.
 const employeeOptions = computed(() => props.employees.map((e) => ({
@@ -50,6 +56,22 @@ const inputCls = 'h-9 w-full rounded-lg border border-neutral-300 bg-white px-3 
                 <div><label class="mb-1 block text-xs font-medium text-neutral-500">Tanggal Pengajuan *</label><input v-model="form.advance_date" type="date" required :class="inputCls" /></div>
                 <div><label class="mb-1 block text-xs font-medium text-neutral-500">Nama Karyawan *</label><SearchSelect v-model="form.employee_id" :options="employeeOptions" placeholder="— pilih karyawan —" @update:model-value="onEmployee" /><p v-if="form.errors.holder" class="mt-1 text-xs text-danger-500">{{ form.errors.holder }}</p></div>
                 <div class="md:col-span-2"><label class="mb-1 block text-xs font-medium text-neutral-500">Keperluan *</label><input v-model="form.purpose" required placeholder="mis. Operasional proyek Cluster 3" :class="inputCls" /><p v-if="form.errors.purpose" class="mt-1 text-xs text-danger-500">{{ form.errors.purpose }}</p></div>
+
+                <!-- COST CENTER — inilah tautan bon ke Budget Control. Ditandai bintang merah dan
+                     menahan tombol Simpan, sebab akibat mengosongkannya tidak terlihat saat itu
+                     juga: bonnya tetap tersimpan, jurnalnya tetap terbentuk, hanya angkanya yang
+                     tidak pernah muncul sebagai realisasi anggaran. -->
+                <div class="md:col-span-2">
+                    <label class="mb-1 block text-xs font-medium text-neutral-500">Cost Center <span class="text-danger-500">*</span></label>
+                    <SearchSelect :model-value="form.cost_center_id" :options="costCenters ?? []" option-value="id"
+                                  placeholder="— pilih cost center —"
+                                  :class="ccKurang ? 'rounded-lg ring-1 ring-danger-400' : ''"
+                                  @update:model-value="(v) => form.cost_center_id = v" />
+                    <p v-if="form.errors.cost_center_id" class="mt-1 text-xs text-danger-500">{{ form.errors.cost_center_id }}</p>
+                    <p v-else-if="!(costCenters ?? []).length" class="mt-1 text-xs text-danger-500">Belum ada cost center aktif — buat dulu di General Ledger → Master → Cost Center.</p>
+                    <p v-else-if="ccKurang" class="mt-1 text-xs text-danger-500">Wajib dipilih.</p>
+                    <p v-else class="mt-1 text-[11px] text-neutral-400">Belanja bon ini terbaca sebagai realisasi anggaran pada cost center tersebut di Budget Control.</p>
+                </div>
 
                 <!-- Cara persetujuan — ditentukan di sini karena melekat pada bonnya, bukan
                      pada perusahaannya: satu bon bisa ditandatangani di aplikasi sementara bon
@@ -86,7 +108,10 @@ const inputCls = 'h-9 w-full rounded-lg border border-neutral-300 bg-white px-3 
                 <div class="md:col-span-2 rounded-lg bg-amber-50 px-4 py-2 text-xs text-amber-700 dark:bg-amber-900/20 dark:text-amber-300">Pengajuan ini <b>belum membentuk jurnal</b>. Jurnal Uang Muka Operasional baru terbentuk saat dibayar oleh dept Finance (memilih tanggal transfer &amp; sumber bank/kas).</div>
             </div>
             <div class="flex gap-2">
-                <Button type="submit" :disabled="form.processing"><template #icon-left><Save class="h-4 w-4" /></template>Simpan Pengajuan</Button>
+                <!-- Gerbangnya dipasang di tombol DAN di server. Menekan Enter pada kolom teks
+                     memicu pengiriman implisit yang tidak melewati tombol ini. -->
+                <Button type="submit" :disabled="form.processing || ccKurang"><template #icon-left><Save class="h-4 w-4" /></template>Simpan Pengajuan</Button>
+                <span v-if="ccKurang" class="self-center text-xs text-danger-500">Pilih Cost Center dulu.</span>
                 <Link :href="route('bs.advance.index')" class="rounded-lg border border-neutral-300 px-4 py-2 text-sm dark:border-neutral-700">Batal</Link>
             </div>
         </form>

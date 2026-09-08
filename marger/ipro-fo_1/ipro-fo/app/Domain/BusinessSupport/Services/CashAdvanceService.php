@@ -48,11 +48,31 @@ final class CashAdvanceService
                 $departmentId = BsEmployee::whereKey($data['employee_id'])->value('department_id');
             }
 
+            /* COST CENTER WAJIB — inilah yang menautkan bon ke Budget Control.
+               Nilainya diteruskan ke bs_journal_lines.cost_center_id pada SELURUH jurnal yang
+               lahir dari bon ini (pembayaran, realisasi, refund/reimburse), lalu dibaca
+               BudgetRealizationService untuk mencocokkan realisasi dengan plafon per
+               (akun, cost center). Bon tanpa cost center tetap membentuk jurnal dan tetap
+               menjadi beban di GL, tetapi TIDAK PERNAH muncul sebagai realisasi di Budget
+               Control — anggarannya seolah tidak pernah terpakai, dan itu baru ketahuan
+               berbulan kemudian saat anggaran direkonsiliasi.
+
+               Ditegakkan DI SINI juga, bukan hanya di validasi request: pemanggilan service
+               langsung (job, perintah artisan, kode baru) tidak melewati validasi itu. */
+            $costCenterId = ($data['cost_center_id'] ?? null) ? (int) $data['cost_center_id'] : null;
+            if (! $costCenterId) {
+                throw new BusinessRuleException(
+                    'Cost center wajib dipilih — tanpa itu bon ini tidak akan terbaca sebagai realisasi di Budget Control.',
+                    errorCode: 'ADV_NO_COST_CENTER',
+                );
+            }
+
             return BsCashAdvance::create([
                 'advance_number'     => $this->nextNumber($data['advance_date']),
                 'advance_date'       => $data['advance_date'],
                 'holder'             => $data['holder'],
                 'department_id'      => $departmentId ? (int) $departmentId : null, // #150
+                'cost_center_id'     => $costCenterId,
                 'purpose'            => $data['purpose'],
                 'cash_account_id'    => null,                 // diisi Finance saat pembayaran
                 'advance_account_id' => $advanceAccount,
@@ -219,8 +239,11 @@ final class CashAdvanceService
                 'description'  => 'Pembayaran Bon Sementara — '.$adv->purpose.' ('.$adv->holder.')',
                 'created_by'   => $userId,
             ], [
-                ['account_id' => $debitAccount, 'debit' => $amount, 'credit' => 0, 'description' => $debitKet],
-                ['account_id' => (int) $data['cash_account_id'], 'debit' => 0, 'credit' => $amount, 'description' => 'Transfer bon sementara '.$adv->advance_number],
+                // cost_center_id dibawa KEDUA baris: itulah dimensi yang dibaca Budget Control,
+                // dan jurnal yang hanya separuh berdimensi akan terbaca timpang saat direkap
+                // per cost center.
+                ['account_id' => $debitAccount, 'cost_center_id' => $adv->cost_center_id, 'debit' => $amount, 'credit' => 0, 'description' => $debitKet],
+                ['account_id' => (int) $data['cash_account_id'], 'cost_center_id' => $adv->cost_center_id, 'debit' => 0, 'credit' => $amount, 'description' => 'Transfer bon sementara '.$adv->advance_number],
             ]);
 
             $adv->update([
@@ -299,16 +322,23 @@ final class CashAdvanceService
             $akunPanjar = $this->akunPanjar($adv);
             $ketPanjar = $adv->credit_card_id ? 'kartu/VA' : 'panjar';
 
+            /* Baris LAWAN realisasi (pelepasan panjar & selisih kasnya) memakai cost center BON.
+               Baris bebannya sendiri sudah membawa cost center per baris dari layar realisasi —
+               yang itu boleh berbeda, sebab satu bon bisa dibelanjakan untuk beberapa cost
+               center. Yang tidak boleh adalah baris lawannya tanpa dimensi sama sekali: jurnal
+               yang hanya separuh berdimensi terbaca timpang saat direkap per cost center. */
+            $ccBon = $adv->cost_center_id;
+
             if ($defer) {
                 // Settlement ditunda → kredit sebatas realisasi; sisa (± settlement) diselesaikan via Refund/Reimburse.
-                $jl[] = ['account_id' => $akunPanjar, 'debit' => 0, 'credit' => $realized, 'description' => 'Realisasi '.$ketPanjar.' (settlement ditunda)'];
+                $jl[] = ['account_id' => $akunPanjar, 'cost_center_id' => $ccBon, 'debit' => 0, 'credit' => $realized, 'description' => 'Realisasi '.$ketPanjar.' (settlement ditunda)'];
             } else {
                 // Settlement langsung (perilaku lama): lunasi penuh + kas masuk/keluar selisih.
-                $jl[] = ['account_id' => $akunPanjar, 'debit' => 0, 'credit' => round((float) $adv->amount, 2), 'description' => 'Pelunasan '.$ketPanjar];
+                $jl[] = ['account_id' => $akunPanjar, 'cost_center_id' => $ccBon, 'debit' => 0, 'credit' => round((float) $adv->amount, 2), 'description' => 'Pelunasan '.$ketPanjar];
                 if ($settlement > 0) {
-                    $jl[] = ['account_id' => $adv->cash_account_id, 'debit' => $settlement, 'credit' => 0, 'description' => 'Pengembalian sisa panjar'];
+                    $jl[] = ['account_id' => $adv->cash_account_id, 'cost_center_id' => $ccBon, 'debit' => $settlement, 'credit' => 0, 'description' => 'Pengembalian sisa panjar'];
                 } elseif ($settlement < 0) {
-                    $jl[] = ['account_id' => $adv->cash_account_id, 'debit' => 0, 'credit' => abs($settlement), 'description' => 'Penggantian kekurangan panjar'];
+                    $jl[] = ['account_id' => $adv->cash_account_id, 'cost_center_id' => $ccBon, 'debit' => 0, 'credit' => abs($settlement), 'description' => 'Penggantian kekurangan panjar'];
                 }
             }
 
@@ -377,14 +407,18 @@ final class CashAdvanceService
             // tidak pernah menerima panjarnya.
             $akunPanjar = $this->akunPanjar($adv);
 
+            // Cost center bon ikut pada refund/reimburse juga — penyelesaian panjar adalah bagian
+            // dari belanja bon yang sama, jadi ia harus terbaca pada cost center yang sama pula.
+            $ccBon = $adv->cost_center_id;
+
             $jl = $mode === 'refund'
                 ? [
-                    ['account_id' => $cashAccount, 'debit' => $amount, 'credit' => 0, 'description' => 'Pengembalian sisa panjar '.$adv->holder],
-                    ['account_id' => $akunPanjar, 'debit' => 0, 'credit' => $amount, 'description' => 'Penyelesaian panjar'],
+                    ['account_id' => $cashAccount, 'cost_center_id' => $ccBon, 'debit' => $amount, 'credit' => 0, 'description' => 'Pengembalian sisa panjar '.$adv->holder],
+                    ['account_id' => $akunPanjar, 'cost_center_id' => $ccBon, 'debit' => 0, 'credit' => $amount, 'description' => 'Penyelesaian panjar'],
                 ]
                 : [
-                    ['account_id' => $akunPanjar, 'debit' => $amount, 'credit' => 0, 'description' => 'Penyelesaian panjar'],
-                    ['account_id' => $cashAccount, 'debit' => 0, 'credit' => $amount, 'description' => 'Penggantian kekurangan panjar '.$adv->holder],
+                    ['account_id' => $akunPanjar, 'cost_center_id' => $ccBon, 'debit' => $amount, 'credit' => 0, 'description' => 'Penyelesaian panjar'],
+                    ['account_id' => $cashAccount, 'cost_center_id' => $ccBon, 'debit' => 0, 'credit' => $amount, 'description' => 'Penggantian kekurangan panjar '.$adv->holder],
                 ];
 
             $journal = $this->journal->post([

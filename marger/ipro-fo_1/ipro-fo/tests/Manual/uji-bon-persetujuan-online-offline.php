@@ -67,11 +67,17 @@ try {
         Schema::hasColumn('bs_cash_advances', 'approval_mode'),
         'migrasi 2026_09_04_100000 belum dijalankan');
 
+    // Cost center WAJIB sejak bon ditautkan ke Budget Control — fikstur ini hanya perlu satu
+    // yang sah; yang diuji berkas ini cara persetujuannya, bukan dimensinya.
+    $ccUji = (int) \App\Domain\BusinessSupport\Models\BsCostCenter::where('is_active', true)->value('id');
+    $cek('ada cost center aktif untuk fikstur', $ccUji > 0, (string) $ccUji);
+
     /** Buat bon dengan cara persetujuan tertentu. Nominalnya > 1 juta → rantai penuh 9 jenjang. */
-    $buat = function (?string $mode, float $nominal = 5000000) use ($svc, $user): BsCashAdvance {
+    $buat = function (?string $mode, float $nominal = 5000000) use ($svc, $user, $ccUji): BsCashAdvance {
         $data = [
             'advance_date' => '2026-09-04', 'holder' => 'UJI Pemegang — Staff',
             'purpose' => 'UJI persetujuan '.($mode ?? 'bawaan'), 'amount' => $nominal,
+            'cost_center_id' => $ccUji,
         ];
         if ($mode !== null) {
             $data['approval_mode'] = $mode;
@@ -97,7 +103,7 @@ try {
     // Nilai asing tidak boleh tersimpan apa adanya.
     $aneh = $svc->issue([
         'advance_date' => '2026-09-04', 'holder' => 'UJI Aneh', 'purpose' => 'UJI',
-        'amount' => 100000, 'approval_mode' => 'ONLINE-typo',
+        'amount' => 100000, 'approval_mode' => 'ONLINE-typo', 'cost_center_id' => $ccUji,
     ], (int) $user->id);
     $cek('nilai asing jatuh ke online, bukan diterima apa adanya',
         $aneh->approval_mode === 'online', (string) $aneh->approval_mode);
