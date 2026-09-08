@@ -88,10 +88,16 @@ try {
     $kartu->update(['is_active' => true, 'expired_date' => null]);
     $akunKartu = (int) $kartu->account_id;
 
+    // Cost center WAJIB sejak bon ditautkan ke Budget Control — fikstur ini hanya perlu satu
+    // yang sah; yang diuji berkas ini cara PEMBAYARANNYA, bukan dimensinya.
+    $ccUji = (int) \App\Domain\BusinessSupport\Models\BsCostCenter::where('is_active', true)->value('id');
+    $cek('ada cost center aktif untuk fikstur', $ccUji > 0, (string) $ccUji);
+
     /** Bon siap bayar — dibuat OFFLINE supaya gerbang persetujuannya tidak ikut menghalangi. */
     $bonSiap = fn (string $tujuan) => $svc->issue([
         'advance_date' => '2026-09-04', 'holder' => 'UJI Pemegang — Staff',
         'purpose' => $tujuan, 'amount' => 750000, 'approval_mode' => 'offline',
+        'cost_center_id' => $ccUji,
     ], (int) $user->id);
 
     /** Catat pembayaran lewat controller (validasi request ikut berjalan). */

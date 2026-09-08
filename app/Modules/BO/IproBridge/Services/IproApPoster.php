@@ -140,14 +140,28 @@ class IproApPoster
         ?string $pembeli,
         ?string $unit,
         ?string $tgl = null,
+        ?string $noKontrak = null,
     ): ?int {
-        $kantor = strtoupper(trim($jenis)) === 'KANTOR';
+        $jenjang = strtoupper(trim($jenis));
+        $kantor = $jenjang === 'KANTOR';
+
+        /* KOLOM "RINCIAN BIAYA PENJUALAN" pada Master Data KPR distempel DI SINI, bukan lewat
+           Kategori Gimmick. Jenjangnya sudah ditentukan dokumen BLT-nya sendiri; menyalurkannya
+           lewat pemetaan kategori berarti menambah tempat kedua yang bisa berbeda dari jenjang
+           aslinya. Jenjang selain Koordinator/Kantor jatuh ke Sales, sejalan dengan perlakuan
+           pajaknya di atas — yang tidak boleh adalah baris tanpa kolom sama sekali, sebab
+           angkanya lalu hilang dari Master Data KPR tanpa ada yang menandainya. */
+        $biayaKey = match ($jenjang) {
+            'KOORDINATOR' => 'blt_koord',
+            'KANTOR'      => 'blt_kantor',
+            default       => 'blt_sales',
+        };
 
         return $this->queueInsentifRow(
             'blt', $noPengajuan, $noBlt, trim('BLT '.$jenis), $bruto, $pph, $pembeli, $unit,
             $kantor ? '20104040403' : '20104040402',
             $kantor ? 'Hutang PPh 23' : 'Hutang PPh 21',
-            $tgl,
+            $tgl, $noKontrak, $biayaKey,
         );
     }
 
@@ -178,10 +192,11 @@ class IproApPoster
         ?string $pembeli,
         ?string $unit,
         ?string $tgl = null,
+        ?string $noKontrak = null,
     ): ?int {
         return $this->queueInsentifRow(
             'komisi', $noPengajuan, $noKomisi, 'Komisi', $bruto, $pph, $pembeli, $unit,
-            '20104040403', 'Hutang PPh 23', $tgl,
+            '20104040403', 'Hutang PPh 23', $tgl, $noKontrak, 'komisi',
         );
     }
 
@@ -225,6 +240,8 @@ class IproApPoster
         string $kodePph,
         string $labelPph,
         ?string $tgl = null,
+        ?string $noKontrak = null,
+        ?string $biayaKey = null,
     ): ?int {
         $bruto = round($bruto, 2);
         $pph   = round(max(0.0, $pph), 2);
@@ -261,10 +278,16 @@ class IproApPoster
             ];
         }
 
+        /* SPR-nya ikut dibawa supaya baris ini bisa mendarat di Master Data KPR. Tanpa
+           booking_id, BO tidak punya cara menautkan insentif ini ke SPR mana pun — angkanya
+           terbit sebagai hutang AP tetapi kolom Rincian Biaya Penjualan tetap kosong, tanpa
+           galat apa pun yang menandainya. Sepola dengan jalur GMC di bawah. */
         return $this->enqueue($kind, $noPengajuan.'#'.$noDokumen, null, [
             'customer_id'        => null,
             'customer_name'      => $pembeli ?: null,
             'refund_source'      => null,
+            'booking_id'         => $noKontrak ? $this->iproBookingIdByNoKontrak($noKontrak) : null,
+            'kpr_biaya_key'      => $biayaKey,
             'amount'             => $bruto,
             'payable_account_id' => $this->acc('2.1.01.001'),
             'offset_account_id'  => $this->acc('5.2.01.001'), // Beban komisi/insentif

@@ -709,9 +709,17 @@ class PostingInvoiceController extends Controller
      */
     private function recordKprBiaya(object $row, BsApInvoice $invoice, float $amount): void
     {
-        $key = $this->kprBiayaKeyAktif($row);
+        /* BLT & KOMISI TIDAK LEWAT KATEGORI GIMMICK. Kolomnya ditentukan langsung oleh
+           realisasinya — jenjang BLT sudah ada pada dokumen BLT-nya, dan komisi hanya punya satu
+           kolom. Menyalurkannya lewat Kategori Gimmick berarti menambah pemetaan yang bisa
+           berbeda dari jenjang aslinya, yaitu dua sumber kebenaran untuk satu hal yang sama. */
+        $kind = (string) ($row->kind ?? '');
+        $key = in_array($kind, ['blt', 'komisi'], true)
+            ? BsKprBiayaEntry::kunciPenjualan($kind, $row->kpr_biaya_key ?? null, $row->keterangan ?? null)
+            : $this->kprBiayaKeyAktif($row);
+
         $bookingId = (int) ($row->booking_id ?? 0);
-        if (! $key || ! $bookingId || ! array_key_exists($key, BsGimmickCategory::KPR_BIAYA_COLUMNS)) {
+        if (! $key || ! $bookingId || ! array_key_exists($key, BsKprBiayaEntry::kolomSah())) {
             return;
         }
 

@@ -12,6 +12,10 @@ type Card = {
     card_number: string | null; name: string; label: string;
     is_active: boolean; balance: number; expired_date: string | null;
     expired: boolean; usable: boolean; note: string | null;
+    /** Dari mutasi akun GL kartunya (jumlah kredit) — yang benar-benar terpakai. */
+    pemakaian: number;
+    /** Nominal yang dikembalikan lewat tombol "Masuk Saldo" pada realisasi bon Debit VA. */
+    sisa_saldo: number;
 };
 type Permintaan = {
     id: number; credit_card_id: number; card: string; type: string; type_label: string;
@@ -98,11 +102,17 @@ const inputCls = 'h-9 w-full rounded-lg border border-neutral-300 bg-white px-3 
         <div class="card overflow-hidden">
             <div class="border-b border-neutral-200 px-4 py-3 dark:border-neutral-800"><h2 class="font-semibold">Kartu</h2></div>
             <div class="overflow-x-auto">
-                <table class="w-full min-w-[60rem] text-sm">
+                <table class="w-full min-w-[74rem] text-sm">
                     <thead class="bg-neutral-50 dark:bg-neutral-800"><tr class="text-left text-xs uppercase text-neutral-500">
                         <th class="px-4 py-3">Kartu</th>
                         <th class="px-4 py-3">Akun GL</th>
                         <th class="px-4 py-3 text-right">Saldo</th>
+                        <!-- PEMAKAIAN dari mutasi akun kartunya di buku besar; SISA SALDO dari
+                             nominal yang dikembalikan lewat tombol "Masuk Saldo". Dua angka yang
+                             berbeda asalnya, jadi dipisah kolomnya — bukan disatukan menjadi satu
+                             "saldo" yang tidak bisa ditelusuri lagi dari mana datangnya. -->
+                        <th class="px-4 py-3 text-right">Pemakaian</th>
+                        <th class="px-4 py-3 text-right">Sisa Saldo</th>
                         <th class="px-4 py-3 text-center">Masa Berlaku</th>
                         <th class="px-4 py-3 text-center">Status</th>
                         <th class="px-4 py-3 text-center">Aksi</th>
@@ -115,6 +125,11 @@ const inputCls = 'h-9 w-full rounded-lg border border-neutral-300 bg-white px-3 
                             </td>
                             <td class="px-4 py-2.5 font-mono text-xs text-neutral-500">{{ c.account_code }}</td>
                             <td class="px-4 py-2.5 text-right font-mono">{{ fmtRp(c.balance) }}</td>
+                            <td class="px-4 py-2.5 text-right font-mono text-neutral-600 dark:text-neutral-300"
+                                title="Dari mutasi akun GL kartu ini — jumlah kredit, yaitu yang benar-benar terpakai.">{{ fmtRp(c.pemakaian) }}</td>
+                            <td class="px-4 py-2.5 text-right font-mono"
+                                :class="Number(c.sisa_saldo) > 0 ? 'text-primary-600 dark:text-primary-400' : 'text-neutral-400'"
+                                title="Sisa realisasi bon Debit VA yang dikembalikan lewat tombol Masuk Saldo.">{{ fmtRp(c.sisa_saldo) }}</td>
                             <td class="px-4 py-2.5 text-center">
                                 <span :class="c.expired ? 'text-danger-600 font-medium' : 'text-neutral-500'">{{ fmtTgl(c.expired_date) }}</span>
                             </td>

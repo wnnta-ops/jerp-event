@@ -199,11 +199,54 @@ async function render(berkas, props) {
     cek('isian debit & kredit tetap berupa kotak angka',
         (htmlForm.match(/type="number"/g) || []).length >= 6,
         (htmlForm.match(/type="number"/g) || []).length + ' kotak angka');
-    // Lebar minimum tabelnya dipertahankan — acuannya hanya menampilkan teks, form ini
-    // menampung dua SearchSelect dan tiga kotak; ikut melepas lebar berarti terpotong lagi.
-    cek('lebar minimum tabelnya dipertahankan', srcForm.includes('min-w-[1050px]'));
+    /* Lebar minimum tabelnya dipertahankan — acuannya hanya menampilkan teks, form ini menampung
+       dua SearchSelect dan tiga kotak; ikut melepas lebar berarti terpotong lagi.
+
+       Yang diuji SIFATNYA, bukan angkanya: dulu di sini tertulis min-w-[1050px] harfiah, padahal
+       1050px itulah justru lebar yang membuat Keterangan/Debit/Kredit terpenggal. Mematok angka
+       membuat pelebaran yang benar terbaca sebagai kerusakan. Syarat sebenarnya: tabelnya
+       menyatakan lebar minimum, dan lebar itu tidak lebih kecil dari jumlah lebar kolomnya —
+       kalau lebih kecil, kolom tanpa lebarlah yang menanggung kekurangannya dan tergencet. */
+    const lebarTabel = (() => {
+        const m = srcForm.match(/<table class="w-full min-w-\[([\d.]+)(px|rem)\]/);
+
+        return m ? Number(m[1]) * (m[2] === 'rem' ? 16 : 1) : 0;
+    })();
+    const lebarKolom = [...((srcForm.match(/<colgroup>[\s\S]*?<\/colgroup>/) || [''])[0])
+        .matchAll(/w-\[([\d.]+)(rem|px)\]/g)]
+        .reduce((s, m) => s + Number(m[1]) * (m[2] === 'rem' ? 16 : 1), 0);
+    cek('tabelnya menyatakan lebar minimum', lebarTabel > 0, String(lebarTabel));
+    cek('lebar minimum >= jumlah lebar kolomnya', lebarTabel >= lebarKolom,
+        lebarTabel + 'px tabel vs ' + lebarKolom + 'px kolom');
     cek('tabelnya tetap bisa digeser mendatar', srcForm.includes('<div class="overflow-x-auto">'));
     cek('keterangan selisih saat belum balance tetap ada', srcForm.includes('Belum balance — selisih'));
+
+    console.log('\n=== 5. Satu baris MENDATAR, keterangan panjang memanjang ke BAWAH ===');
+
+    /* Inilah tuntutan yang membuat bentuk tabelnya sempat dibongkar jadi blok bertumpuk:
+       sebagai <input> satu baris, keterangan panjang terpenggal di tengah kata. Sekarang
+       keduanya harus terpenuhi sekaligus — barisnya tetap mendatar (kelima kolom sejajar dalam
+       satu <tr>) DAN keterangannya tumbuh ke bawah mengikuti isinya. */
+    const barisPertama = ((htmlForm.match(/<tbody[^>]*>([\s\S]*?)<\/tbody>/) || ['', ''])[1]
+        .match(/<tr[^>]*>[\s\S]*?<\/tr>/) || [''])[0];
+    const selBaris = (barisPertama.match(/<td[^>]*>/g) || []).length;
+    cek('kelima kolom berada dalam SATU baris mendatar', selBaris >= 5, selBaris + ' sel');
+
+    cek('kolom Keterangan berupa textarea, bukan input satu baris',
+        /<td[^>]*>\s*<textarea/.test(barisPertama) || barisPertama.includes('<textarea'),
+        'masih memakai input satu baris');
+    cek('textarea-nya setinggi satu baris saat isinya pendek', srcForm.includes('rows="1"'));
+    cek('tingginya tumbuh mengikuti isi (autoGrow terpasang)', srcForm.includes('@input="autoGrow"'));
+    cek('autoGrow menolkan tinggi dulu sebelum mengukur',
+        /el\.style\.height = 'auto';[\s\S]{0,120}el\.style\.height = el\.scrollHeight/.test(srcForm),
+        'tanpa itu kotaknya hanya bisa membesar, tidak pernah menyusut lagi');
+    cek('textarea tidak bisa digeser-ukur manual & tanpa scrollbar',
+        srcForm.includes('resize-none') && srcForm.includes('overflow-hidden'));
+
+    // Bentuk bertumpuk yang lama tidak boleh tersisa berdampingan dengan tabelnya.
+    cek('label "Baris n" bertumpuk sudah tidak ada', ! srcForm.includes('Baris {{ i + 1 }}'));
+    cek('Grand Total kembali ke kaki tabel, bukan dua kartu',
+        srcForm.includes('<tfoot>') && ! srcForm.includes('Grand Total Debit'));
 
     console.log('\n' + '─'.repeat(78));
     console.log(gagal === 0 ? 'SEMUA LULUS (' + lulus + ')' : 'GAGAL: ' + gagal + ', lulus: ' + lulus);
