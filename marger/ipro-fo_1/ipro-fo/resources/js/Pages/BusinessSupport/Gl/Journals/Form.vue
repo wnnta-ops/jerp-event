@@ -37,6 +37,16 @@ const form = useForm<any>(e ? {
 function addLine() { form.lines.push({ account_id: '', cost_center_id: form.cost_center_id ?? '', description: '', debit: 0, credit: 0 }); }
 function removeLine(i: number) { form.lines.splice(i, 1); }
 
+/* Kolom Keterangan memanjang ke bawah mengikuti isinya, bukan terpotong di ujung kolomnya.
+   Tingginya dinolkan dulu sebelum dibaca: tanpa itu scrollHeight hanya bisa BERTAMBAH, sehingga
+   kotak yang sudah terlanjur tinggi tidak pernah menyusut lagi saat teksnya dihapus. */
+function autoGrow(e: Event) {
+    const el = e.target as HTMLTextAreaElement | null;
+    if (! el) return;
+    el.style.height = 'auto';
+    el.style.height = el.scrollHeight + 'px';
+}
+
 const totalDebit = computed(() => form.lines.reduce((s: number, l: any) => s + (Number(l.debit) || 0), 0));
 const totalCredit = computed(() => form.lines.reduce((s: number, l: any) => s + (Number(l.credit) || 0), 0));
 const balanced = computed(() => Math.abs(totalDebit.value - totalCredit.value) < 0.005 && totalDebit.value > 0);
@@ -118,81 +128,94 @@ const inputCls = 'h-9 w-full rounded-lg border border-neutral-300 bg-white px-3 
                         <Badge :variant="balanced ? 'success' : 'warning'" size="sm">{{ balanced ? 'Balance' : 'Tidak balance' }}</Badge>
                     </div>
                 </div>
-                <!-- Memanjang ke BAWAH, bukan ke samping. Sebagai satu baris tabel, kelima
-                     kolomnya harus muat dalam 1050px — akibatnya Keterangan, Debit, dan Kredit
-                     terpotong di tengah kata ("BELI KE", "110…") dan angkanya tidak bisa dibaca
-                     tanpa menggeser tabel. Tiap baris jurnal kini satu blok bertumpuk: nama akun,
-                     keterangan, dan angkanya tampil utuh pada lebar layar apa adanya.
+                <!-- SATU BARIS MENDATAR per baris jurnal — Account · Dimensi · Keterangan · Debit ·
+                     Kredit sejajar ke samping, persis seperti kartu Struktur Jurnal pada layar
+                     detail. Orang memeriksa jurnal di sana lalu membetulkannya di sini; dua tata
+                     letak berbeda untuk angka yang sama memaksa mata mencari ulang letak tiap
+                     kolom setiap kali berpindah.
 
-                     Penanda "Dimensi wajib" dari cabang bo IKUT dipertahankan di bentuk baru ini.
-                     Gerbang tombol Simpan sudah ada sejak awal, tetapi tanpa penanda per baris
-                     orang hanya melihat tombol yang mati — pada jurnal berisi sepuluh baris,
-                     baris mana yang kurang harus ditebak. -->
-                <div class="space-y-3">
-                    <div v-for="(l, i) in form.lines" :key="i"
-                         class="rounded-lg border p-3"
-                         :class="ccKurang(l) ? 'border-danger-300 dark:border-danger-800' : 'border-neutral-200 dark:border-neutral-800'">
-                        <div class="mb-2 flex items-center justify-between">
-                            <span class="text-xs font-semibold uppercase tracking-wide text-neutral-400">Baris {{ i + 1 }}</span>
-                            <button type="button" @click="removeLine(i)" :disabled="form.lines.length<=2"
-                                    class="text-danger-500 disabled:opacity-30" title="Hapus baris">
-                                <Trash2 class="h-4 w-4" />
-                            </button>
-                        </div>
+                     KETERANGAN YANG PANJANG MEMANJANG KE BAWAH, BUKAN TERPOTONG. Inilah keberatan
+                     yang dulu membuat bentuk tabelnya dibongkar menjadi blok bertumpuk: sebagai
+                     <input> satu baris, keterangan panjang terpenggal di tengah kata dan tidak
+                     bisa dibaca utuh. Kolom itu kini <textarea> setinggi satu baris yang TUMBUH
+                     sendiri mengikuti isinya (autoGrow), sehingga barisnya tetap mendatar dan
+                     teksnya tetap utuh — dua-duanya, bukan salah satu.
 
-                        <div class="grid gap-3 md:grid-cols-2">
-                            <div>
-                                <label class="mb-1 block text-xs font-medium text-neutral-500">Akun</label>
-                                <SearchSelect v-model="l.account_id" :options="accounts" placeholder="— pilih / ketik akun —" />
-                            </div>
+                     Lebar minimum tabel dipertahankan dan kartunya digeser mendatar pada layar
+                     sempit: baris di sini berisi isian sungguhan (dua SearchSelect + tiga kotak),
+                     jadi memerasnya sampai muat akan mengulang persis masalah yang dulu. -->
+                <div class="overflow-x-auto">
+                <!-- Lebarnya dipilih agar JUMLAHNYA (1080px) masih muat di lebar halaman ini
+                     (max-w-6xl = 1152px). Menuntut lebih lebar dari halamannya adalah persis
+                     penyakit yang dulu: browser memeras kolom yang tidak punya lebar, dan
+                     Keterangan/Debit/Kredit-lah yang terpotong. Debit & Kredit dipertahankan
+                     10rem supaya nilai belasan juta tetap terbaca utuh. -->
+                <table class="w-full min-w-[67.5rem] table-fixed text-sm">
+                    <colgroup>
+                        <col class="w-[17rem]" /><col class="w-[11rem]" /><col class="w-[17rem]" />
+                        <col class="w-[10rem]" /><col class="w-[10rem]" /><col class="w-[2.5rem]" />
+                    </colgroup>
+                    <thead class="bg-neutral-50 dark:bg-neutral-800">
+                        <tr class="text-left text-xs uppercase tracking-wide text-neutral-500">
+                            <th class="px-4 py-2.5">Account</th>
+                            <th class="px-4 py-2.5">Dimensi <span class="text-danger-500">*</span></th>
+                            <th class="px-4 py-2.5">Keterangan</th>
+                            <th class="px-4 py-2.5 text-right">Debit</th>
+                            <th class="px-4 py-2.5 text-right">Kredit</th>
+                            <th class="px-2 py-2.5"></th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-neutral-200 dark:divide-neutral-800">
+                        <tr v-for="(l, i) in form.lines" :key="i" class="align-top"
+                            :class="ccKurang(l) ? 'bg-danger-50/40 dark:bg-danger-900/10' : ''">
+                            <td class="px-4 py-2.5">
+                                <SearchSelect v-model="l.account_id" :options="accounts" placeholder="— pilih / ketik akun —" no-truncate />
+                            </td>
                             <!-- Cost center PER COA. Dikosongkan → ikut cost center header, KECUALI
                                  akun yang memang boleh tanpa cost center: dibiarkan kosong apa adanya. -->
-                            <div>
-                                <label class="mb-1 block text-xs font-medium text-neutral-500">
-                                    Dimensi <span class="text-danger-500">*</span>
-                                </label>
+                            <td class="px-4 py-2.5">
                                 <div :class="ccKurang(l) ? 'rounded-lg ring-1 ring-danger-400' : ''">
-                                    <SearchSelect v-model="l.cost_center_id" :options="costCenters"
+                                    <SearchSelect v-model="l.cost_center_id" :options="costCenters" no-truncate
                                         :placeholder="ccOptional(l.account_id) ? '— tanpa cost center —' : '— ikut header —'" />
                                 </div>
                                 <p v-if="ccKurang(l)" class="mt-0.5 text-[10.5px] font-medium text-danger-500">Wajib diisi</p>
                                 <p v-else-if="ccOptional(l.account_id)" class="mt-0.5 text-[10.5px] text-neutral-400">Boleh dikosongkan</p>
-                            </div>
-                        </div>
-
-                        <div class="mt-3">
-                            <label class="mb-1 block text-xs font-medium text-neutral-500">Keterangan</label>
-                            <input v-model="l.description" :class="inputCls" />
-                        </div>
-
-                        <div class="mt-3 grid gap-3 sm:grid-cols-2">
-                            <div>
-                                <label class="mb-1 block text-xs font-medium text-neutral-500">Debit</label>
+                            </td>
+                            <td class="px-4 py-2.5">
+                                <!-- rows="1" + autoGrow: setinggi satu baris selama isinya pendek,
+                                     memanjang ke bawah begitu keterangannya banyak. -->
+                                <textarea v-model="l.description" rows="1" @input="autoGrow"
+                                          :class="[inputCls,'h-auto min-h-9 resize-none overflow-hidden py-2 leading-snug']"></textarea>
+                            </td>
+                            <td class="px-4 py-2.5">
                                 <input v-model.number="l.debit" type="number" step="1" min="0"
                                        :class="[inputCls,'text-right font-mono tabular-nums']"
                                        @input="l.debit && (l.credit = 0)" />
-                            </div>
-                            <div>
-                                <label class="mb-1 block text-xs font-medium text-neutral-500">Kredit</label>
+                            </td>
+                            <td class="px-4 py-2.5">
                                 <input v-model.number="l.credit" type="number" step="1" min="0"
                                        :class="[inputCls,'text-right font-mono tabular-nums']"
                                        @input="l.credit && (l.debit = 0)" />
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- "Grand Total" dari cabang bo dipertahankan namanya, dalam bentuk dua kartu
-                     karena kepala tabelnya sudah tidak ada. -->
-                <div class="mt-3 grid gap-3 border-t-2 border-neutral-200 pt-3 text-sm font-bold sm:grid-cols-2 dark:border-neutral-700">
-                    <div class="flex items-center justify-between rounded-lg bg-neutral-50 px-3 py-2 dark:bg-neutral-900">
-                        <span class="text-neutral-500">Grand Total Debit</span>
-                        <span class="font-mono tabular-nums">{{ fmtRp(totalDebit) }}</span>
-                    </div>
-                    <div class="flex items-center justify-between rounded-lg bg-neutral-50 px-3 py-2 dark:bg-neutral-900">
-                        <span class="text-neutral-500">Grand Total Kredit</span>
-                        <span class="font-mono tabular-nums">{{ fmtRp(totalCredit) }}</span>
-                    </div>
+                            </td>
+                            <td class="px-2 py-2.5 text-center">
+                                <button type="button" @click="removeLine(i)" :disabled="form.lines.length<=2"
+                                        class="text-danger-500 disabled:opacity-30" title="Hapus baris">
+                                    <Trash2 class="h-4 w-4" />
+                                </button>
+                            </td>
+                        </tr>
+                    </tbody>
+                    <tfoot>
+                        <!-- Grand Total kembali ke KAKI TABEL, sejajar di bawah kolom Debit &
+                             Kredit yang ditotalnya — seperti pada kartu Struktur Jurnal. -->
+                        <tr class="border-t-2 border-neutral-200 font-semibold dark:border-neutral-700">
+                            <td class="px-4 py-2.5" colspan="3">Grand Total</td>
+                            <td class="px-4 py-2.5 text-right font-mono tabular-nums">{{ fmtRp(totalDebit) }}</td>
+                            <td class="px-4 py-2.5 text-right font-mono tabular-nums">{{ fmtRp(totalCredit) }}</td>
+                            <td></td>
+                        </tr>
+                    </tfoot>
+                </table>
                 </div>
 
                 <!-- Lencana di kepala kartu menyebut KEADAANNYA; baris ini menyebut SELISIHNYA
