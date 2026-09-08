@@ -5,27 +5,18 @@ WORKDIR /app
 RUN apk add --no-cache openssl libc6-compat
 COPY package.json package-lock.json ./
 COPY prisma ./prisma
-# COBA-ULANG + CERMIN: postinstall menjalankan `prisma generate`, yang menarik enam
-# berkas engine dari binaries.prisma.sh sekaligus — termasuk dua .gz puluhan MB.
-# Dari server produksi (umroh) unduhan itu KONSISTEN gagal ETIMEDOUT, terbukti lewat
-# DEBUG=prisma:fetch-engine*: satu berkas kecil lolos lewat wget, tetapi unduhan
-# serentak milik Prisma tidak pernah selesai. Pengunduh Prisma sendiri tak punya
-# coba-ulang, jadi satu kegagalan mematikan seluruh build. Percobaan resmi tetap
-# didahulukan; cermin hanya dipakai bila keduanya gagal.
-# Cermin dipakai sebagai CADANGAN, bukan sumber utama: engine Prisma adalah kode
-# yang dieksekusi, jadi sumber resmi tetap didahulukan. Bisa diganti saat build
-# dengan --build-arg PRISMA_ENGINES_MIRROR=..., atau dikosongkan untuk mematikannya.
-ARG PRISMA_ENGINES_MIRROR=https://registry.npmmirror.com/-/binary/prisma
-RUN for i in 1 2; do \
+# COBA-ULANG WAJIB: postinstall menjalankan `prisma generate` yang mengunduh engine
+# dari binaries.prisma.sh — CDN milik Prisma sendiri, di luar kendali kita.
+# Dari sebagian server unduhan itu sporadis
+# ETIMEDOUT — terbukti: permintaan yang sama gagal 2x lalu berhasil tanpa ada yang
+# diubah. Pengunduh Prisma TIDAK punya coba-ulang, jadi satu kegagalan mematikan
+# seluruh build. Cache npm bertahan antar percobaan dalam layer yang sama sehingga
+# percobaan berikutnya jauh lebih cepat.
+RUN for i in 1 2 3 4 5; do \
       npm ci --no-audit --no-fund && exit 0; \
-      echo "[coba-ulang] npm ci gagal - ulang dalam 10 detik"; \
+      echo "[coba-ulang] npm ci gagal (percobaan \$i/5) — ulang dalam 10 detik"; \
       sleep 10; \
-    done; \
-    if [ -n "$PRISMA_ENGINES_MIRROR" ]; then \
-      echo "[cermin] unduhan resmi gagal - mencoba lewat $PRISMA_ENGINES_MIRROR"; \
-      PRISMA_ENGINES_MIRROR="$PRISMA_ENGINES_MIRROR" npm ci --no-audit --no-fund && exit 0; \
-    fi; \
-    echo "[coba-ulang] npm ci tetap gagal, termasuk lewat cermin"; exit 1
+    done; echo "[coba-ulang] npm ci tetap gagal setelah 5 percobaan"; exit 1
 
 FROM node:20-alpine AS build
 WORKDIR /app
@@ -33,15 +24,12 @@ RUN apk add --no-cache openssl libc6-compat
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 # Build tidak menyentuh DB (semua halaman dynamic — pakai cookies()).
-# Engine biasanya sudah ikut dari tahap deps; coba-ulang + cermin dipertahankan
-# untuk berjaga bila Prisma memutuskan mengunduh ulang.
-ARG PRISMA_ENGINES_MIRROR=https://registry.npmmirror.com/-/binary/prisma
-RUN (npx prisma generate || \
-     (sleep 10; npx prisma generate) || \
-     ( [ -n "$PRISMA_ENGINES_MIRROR" ] && \
-       echo "[cermin] prisma generate gagal - mencoba lewat $PRISMA_ENGINES_MIRROR" && \
-       PRISMA_ENGINES_MIRROR="$PRISMA_ENGINES_MIRROR" npx prisma generate )) \
-    && npm run build
+# prisma generate diulang dengan alasan yang sama seperti di tahap deps.
+RUN (for i in 1 2 3; do \
+       npx prisma generate && exit 0; \
+       echo "[coba-ulang] prisma generate gagal (percobaan \$i/3) — ulang dalam 10 detik"; \
+       sleep 10; \
+     done; exit 1) && npm run build
 
 FROM node:20-alpine AS runtime
 WORKDIR /app
