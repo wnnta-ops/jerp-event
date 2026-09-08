@@ -22,6 +22,6 @@ class CreateRole extends CreateRecord
 
     protected function afterCreate(): void
     {
-        $this->record->syncPermissions($this->pendingPerms);
+        $this->record->syncPermissions(RoleResource::hanyaIzinYangAda($this->pendingPerms));
     }
 }

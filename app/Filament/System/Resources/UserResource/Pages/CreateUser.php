@@ -24,6 +24,6 @@ class CreateUser extends CreateRecord
     protected function afterCreate(): void
     {
         // Hak akses khusus = direct permission pengguna (di luar Grup Akses).
-        $this->record->syncPermissions($this->pendingPerms);
+        $this->record->syncPermissions(RoleResource::hanyaIzinYangAda($this->pendingPerms));
     }
 }
