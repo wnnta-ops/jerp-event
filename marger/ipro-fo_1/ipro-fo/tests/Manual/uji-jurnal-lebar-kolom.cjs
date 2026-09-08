@@ -73,10 +73,23 @@ const MAXW = { '3xl': 768, '4xl': 896, '5xl': 1024, '6xl': 1152, '7xl': 1280 };
 function lebarSel(kelas) {
     const min = kelas.match(/min-w-\[(\d+)px\]/);
     if (min) return Number(min[1]);
+    const kurung = kelas.match(/(?:^|\s)w-\[([\d.]+)(rem|px)\]/);
+    if (kurung) return Number(kurung[1]) * (kurung[2] === 'rem' ? 16 : 1);
     const w = kelas.match(/(?:^|\s)w-(\d+)(?:\s|$)/);
     if (w && SKALA[Number(w[1])]) return SKALA[Number(w[1])];
 
     return 0;
+}
+
+/* Lebar kolom boleh dinyatakan di <colgroup>, BUKAN hanya pada kelas tiap sel.
+   Tabel jurnal memakai colgroup — cara yang sama dengan tabel Detail Transaksi Jurnal, dan
+   memang lebih tepat: satu tempat untuk lebar kolom, bukan diulang di kepala dan di tiap sel.
+   Uji ini dulu hanya membaca kelas sel, sehingga tabel yang lebarnya BENAR-BENAR ditentukan
+   terbaca seolah tidak punya lebar sama sekali. */
+function lebarColgroup(src) {
+    const blok = (src.match(/<colgroup>[\s\S]*?<\/colgroup>/) || [''])[0];
+
+    return [...blok.matchAll(/<col class="([^"]*)"/g)].map((m) => lebarSel(m[1]));
 }
 
 const LINES = [
@@ -123,8 +136,13 @@ async function main() {
     const lebarHalaman = MAXW[mw] ?? 0;
 
     // Lebar minimum tabelnya sendiri.
-    const minTabel = Number((src.match(/<table class="w-full min-w-\[(\d+)px\] text-sm">/) || [])[1] || 0);
+    const mTabel = src.match(/<table class="w-full min-w-\[([\d.]+)(px|rem)\]/);
+    const minTabel = mTabel ? Number(mTabel[1]) * (mTabel[2] === 'rem' ? 16 : 1) : 0;
     cek('tabel menyatakan lebar minimum', minTabel > 0, String(minTabel));
+
+    // Lebar efektif per kolom: dari <colgroup> bila ada, kalau tidak dari kelas selnya.
+    const lebarCol = lebarColgroup(src);
+    const lebarKe = (i, kelasSel) => Math.max(lebarCol[i] ?? 0, lebarSel(kelasSel ?? ''));
 
     // Jumlah lebar minimum seluruh sel pada satu baris data.
     // Baris data diambil dari dalam <tbody> — bukan dari kelas barisnya. Sejak tata letaknya
@@ -135,7 +153,7 @@ async function main() {
     const barisData = (isiTbody.match(/<tr[^>]*>[\s\S]*?<\/tr>/) || [''])[0];
     const sel = [...barisData.matchAll(/<td class="([^"]*)"/g)].map((m) => m[1]);
     cek('baris datanya ter-render', sel.length >= 5, sel.length + ' sel');
-    const jumlah = sel.reduce((s, k) => s + lebarSel(k), 0);
+    const jumlah = sel.reduce((s, k, i) => s + lebarKe(i, k), 0);
 
     // INILAH yang dilanggar sebelumnya: kolomnya menuntut lebih dari lebar halamannya,
     // jadi browser memeras yang tidak punya lebar minimum — Keterangan, Debit, Kredit.
@@ -143,6 +161,12 @@ async function main() {
         jumlah + 'px kolom vs ' + lebarHalaman + 'px halaman');
     cek('lebar minimum tabel menampung kolomnya', minTabel >= jumlah,
         minTabel + 'px vs ' + jumlah + 'px');
+    /* ...dan tidak MELEBIHI lebar halamannya. Tanpa batas atas ini, menaikkan min-w tabel lolos
+       begitu saja — padahal itulah gejala aslinya: tabel yang lebih lebar dari halamannya
+       memaksa orang menggeser mendatar untuk membaca Debit & Kredit. Uji mutasi menemukan
+       celah ini (menaikkan min-w ke 100rem tetap lulus). */
+    cek('lebar minimum tabel tidak melebihi lebar halaman', minTabel <= lebarHalaman,
+        minTabel + 'px tabel vs ' + lebarHalaman + 'px halaman');
 
     console.log('\n=== 2. Ketiga kolom yang dulu terpotong punya lebar sendiri ===');
 
@@ -151,11 +175,11 @@ async function main() {
     // Judul kolomnya kini mengikuti kartu Struktur Jurnal pada layar detail.
     const namaKolom = ['Account', 'Dimensi', 'Keterangan', 'Debit', 'Kredit'];
     sel.slice(0, 5).forEach((k, i) => {
-        cek('kolom ' + namaKolom[i] + ' punya lebar minimum', lebarSel(k) > 0, k);
+        cek('kolom ' + namaKolom[i] + ' punya lebar minimum', lebarKe(i, k) > 0, k);
     });
-    cek('Keterangan minimal 220px', lebarSel(sel[2]) >= 220, lebarSel(sel[2]) + 'px');
-    cek('Debit minimal 160px', lebarSel(sel[3]) >= 160, lebarSel(sel[3]) + 'px');
-    cek('Kredit minimal 160px', lebarSel(sel[4]) >= 160, lebarSel(sel[4]) + 'px');
+    cek('Keterangan minimal 220px', lebarKe(2, sel[2]) >= 220, lebarKe(2, sel[2]) + 'px');
+    cek('Debit minimal 160px', lebarKe(3, sel[3]) >= 160, lebarKe(3, sel[3]) + 'px');
+    cek('Kredit minimal 160px', lebarKe(4, sel[4]) >= 160, lebarKe(4, sel[4]) + 'px');
 
     console.log('\n=== 3. Kepala kolom selebar selnya ===');
 
@@ -191,8 +215,12 @@ async function main() {
     // JARAK MENDATAR pada selnya (px-/pr-), dan LEBAR KOLOMNYA — yang sejak tata letaknya
     // menyalin kartu Struktur Jurnal ditetapkan di kepala kolom, bukan lagi diulang di tiap
     // sel total. Memeriksa kelas sel totalnya saja akan menuntut bentuk lama tanpa alasan.
-    const lebarKolomAngka = [...html.matchAll(/<th class="([^"]*)"[^>]*>\s*(Debit|Kredit)\s*<\/th>/g)]
-        .map((m) => lebarSel(m[1]));
+    // ...dan sejak lebar kolomnya pindah ke <colgroup>, kepala kolomnya pun tidak lagi
+    // membawanya. Yang dibaca: lebar EFEKTIF kolom Debit (indeks 3) & Kredit (indeks 4).
+    const lebarKolomAngka = [3, 4].map((i, n) => Math.max(
+        lebarCol[i] ?? 0,
+        lebarSel(([...html.matchAll(/<th class="([^"]*)"[^>]*>\s*(Debit|Kredit)\s*<\/th>/g)][n] ?? ['', ''])[1]),
+    ));
     angka.forEach((a, i) => {
         cek('total ke-' + (i + 1) + ' berjarak mendatar', /(?:^|\s)(px-|pr-)\d/.test(a.k), a.k);
         cek('kolom total ke-' + (i + 1) + ' selebar minimal 160px', (lebarKolomAngka[i] ?? 0) >= 160,

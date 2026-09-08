@@ -16,6 +16,7 @@ use App\Http\Controllers\Controller;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response as HttpResponse;
+use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -453,6 +454,10 @@ class CashAdvanceController extends Controller
         return Inertia::render('BusinessSupport/CashBook/Advances/Form', [
             'employees' => BsEmployee::orderBy('name')->get(['id', 'name', 'position'])
                 ->map(fn ($e) => ['id' => $e->id, 'name' => $e->name, 'position' => $e->position]),
+            // Cost center penanggung bon — WAJIB, dan hanya yang aktif yang ditawarkan.
+            'costCenters' => \App\Domain\BusinessSupport\Models\BsCostCenter::where('is_active', true)
+                ->orderBy('code')->get(['id', 'code', 'name'])
+                ->map(fn ($c) => ['id' => $c->id, 'label' => $c->code.' — '.$c->name])->values(),
         ]);
     }
 
@@ -469,8 +474,16 @@ class CashAdvanceController extends Controller
             'amount'        => ['required', 'numeric', 'min:0.01'],
             'department_id' => ['nullable', 'integer', 'exists:bs_hr_departments,id'],
             'employee_id'   => ['nullable', 'integer', 'exists:bs_employees,id'],
+            // COST CENTER WAJIB — dimensi yang menautkan bon ini ke Budget Control. Hanya cost
+            // center AKTIF yang diterima: yang sudah dinonaktifkan tidak muncul di dropdown,
+            // jadi menerimanya berarti menyimpan dimensi yang tidak bisa dipilih ulang.
+            'cost_center_id' => ['required', 'integer',
+                Rule::exists('bs_cost_centers', 'id')->where('is_active', 1)],
             // Cara persetujuan dipilih per pengajuan; kosong = online (perilaku lama).
             'approval_mode' => ['nullable', 'string', 'in:'.implode(',', array_keys(BsCashAdvance::APPROVAL_MODES))],
+        ], [
+            'cost_center_id.required' => 'Cost center wajib dipilih — tanpa itu bon ini tidak terbaca sebagai realisasi di Budget Control.',
+            'cost_center_id.exists'   => 'Cost center yang dipilih sudah tidak aktif — pilih yang lain.',
         ]);
 
         try {
@@ -634,6 +647,27 @@ class CashAdvanceController extends Controller
         }
 
         return redirect()->route('bs.advance.show', $advance)->with('success', 'Refund sisa panjar tercatat — jurnal otomatis terbentuk.');
+    }
+
+    /**
+     * Masuk Saldo — sisa panjar bon Debit VA dikembalikan ke saldo kartunya, TANPA jurnal.
+     *
+     * Tanpa isian apa pun: nominalnya sudah pasti (sisa bon itu) dan kartunya sudah ditentukan
+     * saat pembayaran. Meminta orang mengetik ulang keduanya hanya membuka peluang angka yang
+     * berbeda dari sisanya yang sebenarnya.
+     */
+    public function masukSaldo(Request $request, BsCashAdvance $advance, CashAdvanceService $svc): RedirectResponse
+    {
+        abort_unless($request->user()?->canModule('cashbook'), 403);
+
+        try {
+            $svc->masukSaldo($advance, $request->user()->id);
+        } catch (BusinessRuleException $e) {
+            return back()->with('error', $e->getMessage());
+        }
+
+        return redirect()->route('bs.advance.show', $advance)
+            ->with('success', 'Sisa panjar masuk ke saldo kartu — siap dipakai pengajuan berikutnya. Tidak ada jurnal tambahan: uangnya memang masih di akun kartu.');
     }
 
     public function reimburse(Request $request, BsCashAdvance $advance, CashAdvanceService $svc): RedirectResponse

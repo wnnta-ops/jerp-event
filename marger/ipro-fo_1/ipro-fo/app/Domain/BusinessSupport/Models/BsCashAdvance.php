@@ -19,7 +19,7 @@ class BsCashAdvance extends Model
         'tenant_id', 'advance_number', 'advance_date', 'paid_date', 'holder', 'department_id', 'purpose', 'cash_account_id',
         'advance_account_id', 'amount', 'status', 'realized_date', 'realized_amount', 'settlement',
         'settlement_status', 'journal_id', 'realize_journal_id', 'settle_journal_id', 'created_by',
-        'received_document_date', 'approvals', // #125, #127
+        'received_document_date', 'approvals', 'cost_center_id', // #125, #127
         'approval_mode', 'payment_method', 'va_expired_date', 'credit_card_id',
     ];
     protected $casts = [
@@ -139,6 +139,8 @@ class BsCashAdvance extends Model
     }
 
     public function cashAccount(): BelongsTo { return $this->belongsTo(BsAccount::class, 'cash_account_id'); }
+    /** Cost center (departemen) penanggung bon ini — dimensi yang dibaca Budget Control. */
+    public function costCenter(): BelongsTo { return $this->belongsTo(BsCostCenter::class, 'cost_center_id'); }
     /** Kartu kredit/VA yang dipakai — hanya terisi pada pembayaran Debit VA. */
     public function creditCard(): BelongsTo { return $this->belongsTo(BsCreditCard::class, 'credit_card_id'); }
     public function department(): BelongsTo { return $this->belongsTo(BsHrDepartment::class, 'department_id'); } // #150

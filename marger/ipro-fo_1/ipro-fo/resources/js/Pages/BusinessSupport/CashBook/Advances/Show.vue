@@ -90,6 +90,19 @@ const alasanKunci = computed(() => (barisKurang.value.length
 function doRefund() { if (confirm('Catat pengembalian sisa panjar ke kas?')) settleForm.post(route('bs.advance.refund', props.advance.id)); }
 function doReimburse() { if (confirm('Catat penggantian kekurangan panjar dari kas?')) settleForm.post(route('bs.advance.reimburse', props.advance.id)); }
 
+/* MASUK SALDO — sisa bon Debit VA dikembalikan ke saldo kartunya, bukan ke kas.
+   Syaratnya sama persis dengan yang ditegakkan server (payment_method debit_va + ada kartunya +
+   sisanya > 0); menawarkan tombol yang pasti ditolak hanya memindahkan penolakannya ke belakang. */
+const bisaMasukSaldo = computed(() => props.advance?.payment_method === 'debit_va'
+    && !! props.advance?.credit_card_id
+    && Number(props.advance?.settlement) > 0);
+function doMasukSaldo() {
+    if (! confirm(`Masukkan sisa ${fmtRp(Math.abs(Number(props.advance.settlement)))} ke saldo kartu?\n\n`
+        + 'Saldonya langsung bisa dipakai untuk pengajuan berikutnya.\n'
+        + 'TIDAK ada jurnal tambahan — uangnya memang masih berada di akun kartu itu.')) return;
+    settleForm.post(route('bs.advance.masuk-saldo', props.advance.id));
+}
+
 function fmtRp(v: number) { return 'Rp ' + Number(v ?? 0).toLocaleString('id-ID'); }
 function fmtDate(d: string) { return d ? new Date(d).toLocaleDateString('id-ID', { day:'2-digit', month:'long', year:'numeric' }) : '—'; }
 const inputCls = 'h-9 w-full rounded-lg border border-neutral-300 bg-white px-3 text-sm dark:border-neutral-700 dark:bg-neutral-900';
@@ -208,7 +221,19 @@ function backToIndex() {
                     <div><label class="mb-1 block text-xs font-medium text-neutral-500">Tanggal</label><input v-model="settleForm.settle_date" type="date" :class="[inputCls,'w-auto']" /></div>
                     <Button v-if="Number(advance.settlement) > 0" size="sm" variant="success" :disabled="settleForm.processing" @click="doRefund">Refund Sisa</Button>
                     <Button v-else size="sm" variant="warning" :disabled="settleForm.processing" @click="doReimburse">Reimburse</Button>
+                    <!-- MASUK SALDO — hanya untuk bon Debit VA yang bersisa. Bon reguler tidak
+                         punya kartu yang bisa menampung sisanya. Tanpa isian apa pun: nominalnya
+                         sudah pasti (sisa bon ini) dan kartunya sudah ditentukan saat pembayaran. -->
+                    <Button v-if="bisaMasukSaldo" size="sm" variant="primary" :disabled="settleForm.processing" @click="doMasukSaldo">Masuk Saldo</Button>
                 </div>
+                <p v-if="bisaMasukSaldo" class="text-[11px] text-amber-700 dark:text-amber-300">
+                    <b>Refund Sisa</b> memindahkan sisanya kembali ke bank (berjurnal).
+                    <b>Masuk Saldo</b> membiarkannya di kartu {{ advance.credit_card ? ((advance.credit_card.card_number ? advance.credit_card.card_number + ' — ' : '') + advance.credit_card.name) : 'yang dipakai' }}
+                    supaya bisa dipakai pengajuan berikutnya — tanpa jurnal tambahan, sebab uangnya memang masih di akun kartu itu.
+                </p>
+            </div>
+            <div v-else-if="advance.settlement_status === 'card'" class="mt-3 text-xs font-medium text-primary-600 dark:text-primary-400">
+                ● Sisa panjar {{ fmtRp(Math.abs(Number(advance.settlement))) }} sudah masuk ke saldo kartu — siap dipakai pengajuan berikutnya. Tidak ada jurnal tambahan.
             </div>
             <div v-else-if="advance.settlement_status === 'settled' && Math.abs(Number(advance.settlement)) >= 0.01" class="mt-3 text-xs font-medium text-success-600">● Sisa / kekurangan sudah diselesaikan (Refund/Reimburse)</div>
         </div>

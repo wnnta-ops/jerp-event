@@ -367,10 +367,14 @@ function rentangBaris(j: any) { return barisTampil(j).length; }
                  isinya nama departemen — jauh lebih panjang daripada lencana "Over Budget", jadi
                  lebarnya dinaikkan ke 12rem supaya nama cost centernya tidak terpotong.
 
-                 Jumlah sekarang: 40+40+192+120+128+240+112+192+144+256+256+144+144+88 = 2096px
-                 = 131rem. Kartunya sudah overflow-x-auto, jadi layar sempit MENGGESER — bukan
+                 Kolom aksi paling kanan (88px, berisi tombol "Lihat →") juga DIHAPUS: jalan menuju
+                 rincian kini melekat pada nomor jurnalnya di kolom pertama, yang selalu terlihat
+                 tanpa harus menggeser tabel selebar ini sampai ke ujung.
+
+                 Jumlah sekarang: 40+40+192+120+128+240+112+192+144+256+256+144+144 = 2008px
+                 = 125.5rem. Kartunya sudah overflow-x-auto, jadi layar sempit MENGGESER — bukan
                  menggencet satu kolom sampai tak terbaca. -->
-            <table class="w-full min-w-[131rem] table-fixed text-sm">
+            <table class="w-full min-w-[125.5rem] table-fixed text-sm">
                 <colgroup>
                     <col class="w-10" /><col class="w-10" />
                     <col class="w-[12rem]" /><col class="w-[7.5rem]" /><col class="w-[8rem]" />
@@ -379,7 +383,7 @@ function rentangBaris(j: any) { return barisTampil(j).length; }
                          ini (mis. "PENYELESAIAN BIAYA KONSTRUKSI JRK CLUSTER 3 KRIAN"), jadi
                          keduanya diberi porsi terbesar — bukan sisa. -->
                     <col class="w-[9rem]" /><col class="w-[16rem]" /><col class="w-[16rem]" />
-                    <col class="w-[9rem]" /><col class="w-[9rem]" /><col class="w-[5.5rem]" />
+                    <col class="w-[9rem]" /><col class="w-[9rem]" />
                 </colgroup>
                 <thead class="bg-neutral-50 dark:bg-neutral-800">
                     <tr class="text-left text-xs uppercase tracking-wide text-neutral-500">
@@ -396,7 +400,6 @@ function rentangBaris(j: any) { return barisTampil(j).length; }
                         <th class="px-4 py-3">Keterangan Baris</th>
                         <th class="px-4 py-3 text-right">Debit</th>
                         <th class="px-4 py-3 text-right">Kredit</th>
-                        <th class="px-4 py-3"></th>
                     </tr>
 
                     <!-- ══ SARINGAN KOLOM ══
@@ -419,7 +422,6 @@ function rentangBaris(j: any) { return barisTampil(j).length; }
                         <th class="px-2 py-2"><SearchSelect :model-value="kolomFilter.f_line_desc" :options="opsi('line_desc')" option-value="id" placeholder="Semua Keterangan" no-truncate @update:model-value="(v) => pilihKolom('f_line_desc', v)" /></th>
                         <th class="px-2 py-2"><SearchSelect :model-value="kolomFilter.f_debit" :options="opsi('debit')" option-value="id" placeholder="Semua" no-truncate @update:model-value="(v) => pilihKolom('f_debit', v)" /></th>
                         <th class="px-2 py-2"><SearchSelect :model-value="kolomFilter.f_credit" :options="opsi('credit')" option-value="id" placeholder="Semua" no-truncate @update:model-value="(v) => pilihKolom('f_credit', v)" /></th>
-                        <th class="px-2 py-2"></th>
                     </tr>
                     <!-- Apa yang sebenarnya disaring, dikatakan apa adanya. Akun & Keterangan Baris
                          menjaring JURNALNYA (seluruh barisnya tetap tampil agar debit & kreditnya
@@ -429,7 +431,6 @@ function rentangBaris(j: any) { return barisTampil(j).length; }
                         <th class="px-2 pb-2.5" colspan="8"></th>
                         <th class="px-2 pb-2.5 text-center" colspan="3">menjaring jurnalnya</th>
                         <th class="px-2 pb-2.5 text-center" colspan="2">mencocokkan total jurnalnya</th>
-                        <th class="px-2 pb-2.5"></th>
                     </tr>
                 </thead>
                 <tbody class="divide-y divide-neutral-200 dark:divide-neutral-800">
@@ -458,7 +459,26 @@ function rentangBaris(j: any) { return barisTampil(j).length; }
                                  bisa disalin per baris. Ekspor Excel halaman ini memang sudah
                                  mengulangnya di tiap baris (JournalController::exportExcel), jadi
                                  yang menyimpang selama ini justru layarnya. -->
-                            <td class="px-4 py-2.5 align-top font-mono font-semibold break-words">{{ j.journal_number }}</td>
+                            <!-- NOMOR JURNALNYA SENDIRI yang membuka rinciannya — menggantikan tombol
+                                 "Lihat →" yang dulu berdiri di kolom paling kanan. Tabel ini selebar
+                                 ~125rem: pada layar biasa ujung kanannya harus digeser dulu, jadi
+                                 satu-satunya jalan menuju rincian justru berada di tempat yang tidak
+                                 terlihat. Nomor jurnal ada di kolom pertama, selalu tampak, dan
+                                 memang itulah yang dicari orang saat hendak membuka satu jurnal.
+
+                                 Digarisbawahi saat disentuh, bukan hanya berubah warna: kolom ini
+                                 bergaya font-mono seperti kolom COA di sebelahnya, dan warna
+                                 sendirian tidak cukup menandai mana yang bisa diklik.
+
+                                 Tautannya diulang pada TIAP baris akun, mengikuti keputusan bahwa
+                                 kolom milik jurnal tidak lagi di-rowspan — supaya baris akun kedua
+                                 dan seterusnya juga punya jalan langsung ke rinciannya, bukan hanya
+                                 baris pertama seperti tombol "Lihat →" dulu. -->
+                            <td class="px-4 py-2.5 align-top font-mono font-semibold break-words">
+                                <Link :href="route('bs.gl.journal.show', j.id)"
+                                      class="text-primary-600 underline-offset-2 hover:underline dark:text-primary-400"
+                                      :title="'Buka rincian jurnal ' + j.journal_number">{{ j.journal_number }}</Link>
+                            </td>
                             <td class="px-4 py-2.5 align-top">{{ fmtDate(j.journal_date) }}</td>
                             <td class="px-4 py-2.5 align-top"><Badge variant="info" size="sm">{{ sources[j.source] ?? j.source }}</Badge></td>
                                 <!-- Keterangan dibiarkan MEMBUNGKUS, tidak dipotong: keterangan jurnal
@@ -500,8 +520,6 @@ function rentangBaris(j: any) { return barisTampil(j).length; }
                             </td>
                             <td class="px-4 py-2.5 text-right font-mono tabular-nums" :class="ln ? '' : 'font-semibold'">{{ ln ? (Number(ln.debit) > 0 ? fmtRp(ln.debit) : '') : fmtRp(j.total_debit) }}</td>
                             <td class="px-4 py-2.5 text-right font-mono tabular-nums" :class="ln ? '' : 'font-semibold'">{{ ln ? (Number(ln.credit) > 0 ? fmtRp(ln.credit) : '') : fmtRp(j.total_credit) }}</td>
-
-                            <td v-if="i === 0" class="px-4 py-2.5 text-right" :rowspan="rentangBaris(j)"><Link :href="route('bs.gl.journal.show', j.id)" class="whitespace-nowrap text-sm text-primary-600 hover:text-primary-800">Lihat →</Link></td>
                         </tr>
                     </template>
                 </tbody>

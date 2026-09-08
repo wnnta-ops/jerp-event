@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Web\BankLoan;
 
 use App\Domain\BusinessSupport\Models\BsGimmickCategory;
+use App\Domain\BusinessSupport\Models\BsKprBiayaEntry;
 use App\Http\Controllers\Controller;
 use App\Support\Export\SimpleXlsxWriter;
 use Illuminate\Http\Request;
@@ -19,7 +20,8 @@ use Symfony\Component\HttpFoundation\BinaryFileResponse;
  *  - Master Unit (booking, unit, customer, harga, agen, cara bayar)
  *  - Data KPR (BAST, AJB, bank via Proses KPR, akad, pengajuan/ACC/selisih plafon)
  *  - Collection UTJ & DP (jadwal tagihan yang sudah dibayar)
- *  - Collection Retensi (pelepasan retensi per kategori)
+ *  - Collection Retensi (PENCAIRAN per kategori + DAJAM yang sudah dilepas; kolomnya
+ *    mengikuti master Kategori Retensi)
  *  - Rincian Biaya (SSP/BPHTB dari realisasi; sisanya menyusul sumber)
  *
  * Semua data di-preload per-map (keyed by booking_id) agar tidak N+1.
@@ -29,17 +31,45 @@ class MasterDataKprController extends Controller
     /** Urutan 6 slot DP pada kolom Collection UTJ & DP. */
     private const DP_LABELS = ['DP 1', 'DP 2', 'DP 3', 'DP 4', 'DP 5', 'DP 6'];
 
-    /** Urutan 8 kolom Collection Retensi + kata-kunci pencocokan kategori (code/name retention_categories). */
-    private const RETENSI_COLS = [
-        ['key' => 'tanah_matang', 'label' => 'RETENSI 1 (TANAH MATANG)',        'match' => ['TANAH MATANG']],
-        ['key' => 'skhgb',        'label' => 'RETENSI 2 (SKHGB)',               'match' => ['SKHGB', '5KHGB', 'HGB']],
-        ['key' => 'topping_off',  'label' => 'RETENSI 3 (TOPPING OFF)',         'match' => ['TOPPING']],
-        ['key' => 'dajam_pajak',  'label' => 'RETENSI 4 (DAJAM PAJAK)',         'match' => ['PAJAK', 'SSP', 'BPHTB']],
-        ['key' => 'dajam_dok',    'label' => 'RETENSI 4 (DAJAM DOKUMEN)',       'match' => ['DOKUMEN']],
-        ['key' => 'dajam_imb',    'label' => 'RETENSI 4 (DAJAM IMB)',           'match' => ['IMB', 'PBG']],
-        ['key' => 'dajam_listrik','label' => 'RETENSI 4 (DAJAM LISTRIK&AIR)',   'match' => ['LISTRIK', 'AIR']],
-        ['key' => 'dajam_bestek', 'label' => 'RETENSI 4 (DAJAM BESTEK)',        'match' => ['BESTEK']],
-    ];
+    /** @var array<int,array{id:int,label:string,is_dajam:bool}>|null Cache master kategori retensi. */
+    private ?array $kategoriRetensi = null;
+
+    /**
+     * KOLOM COLLECTION RETENSI DIBENTUK DARI MASTER KATEGORI RETENSI, bukan dari daftar tetap.
+     *
+     * Sebelumnya kolomnya dipatok delapan buah dengan pencocokan kata kunci ("SKHGB", "BESTEK",
+     * …). Akibatnya dua arah sekaligus: kategori yang ADA di master tetapi tidak punya kolom
+     * (mis. PONDASI, BAST + AJB) pencairannya hilang tanpa jejak, dan kolom yang TIDAK punya
+     * kategori (mis. SKHGB) selamanya kosong sambil tampak seperti data yang belum masuk.
+     * Keduanya tidak menimbulkan galat apa pun — hanya angka yang tidak pernah muncul.
+     *
+     * Dengan membaca master, menambah/menonaktifkan kategori di Setup → Kategori Retensi
+     * langsung tercermin sebagai kolomnya di sini. Itulah sinkronisasi yang dimaksud.
+     *
+     * @return array<int,array{id:int,label:string,is_dajam:bool}>
+     */
+    private function retensiKategori(): array
+    {
+        // Cache PER INSTANCE, bukan static: static bertahan lintas instance dalam satu proses,
+        // sehingga perubahan master pada permintaan berikutnya (atau pada uji) terbaca dari
+        // potret lama tanpa ada yang menandainya.
+        if ($this->kategoriRetensi !== null) {
+            return $this->kategoriRetensi;
+        }
+
+        $rows = DB::table('retention_categories')
+            ->whereNull('deleted_at')->where('is_active', 1)
+            ->orderBy('sort_order')->orderBy('id')
+            ->get(['id', 'code', 'name', 'is_dajam']);
+
+        return $this->kategoriRetensi = $rows->map(fn ($c) => [
+            'id'       => (int) $c->id,
+            // Kode yang dipakai sebagai judul kolom: itulah yang dikenali orang di layar Setup.
+            // Nama dipakai bila kodenya kosong, supaya kolomnya tidak pernah tanpa judul.
+            'label'    => trim((string) ($c->code ?: $c->name)),
+            'is_dajam' => (bool) $c->is_dajam,
+        ])->values()->all();
+    }
 
     /**
      * 12 tahap Proses KPR (urut) — tiap tahap punya kolom Tanggal + Summary.
@@ -170,8 +200,8 @@ class MasterDataKprController extends Controller
                 // Collection UTJ & DP
                 'utj'             => $sch['utj'],
                 'dp'              => array_map(fn ($l) => $sch['dp'][$l] ?? null, self::DP_LABELS),
-                // Collection Retensi (8 slot sesuai urutan RETENSI_COLS)
-                'retensi'         => array_map(fn ($col) => ($retensi[$b->id][$col['key']] ?? null), self::RETENSI_COLS),
+                // Collection Retensi — satu slot per kategori aktif, urut sesuai masternya.
+                'retensi'         => array_map(fn ($col) => ($retensi[$b->id][$col['id']] ?? null), $this->retensiKategori()),
                 // Rincian Biaya — dari GMC yang sudah diposting jadi Invoice Hutang di BO
                 // (bs_kpr_biaya_entries, lewat Kategori Gimmick). SSP tetap punya cadangan dari
                 // realisasi pencairan (DAJAM Pajak) bila belum ada entri gimmick-nya.
@@ -188,7 +218,7 @@ class MasterDataKprController extends Controller
 
     private function retensiHeaders(): array
     {
-        return array_map(fn ($c) => $c['label'], self::RETENSI_COLS);
+        return array_map(fn ($c) => $c['label'], $this->retensiKategori());
     }
 
     /**
@@ -304,8 +334,10 @@ class MasterDataKprController extends Controller
      */
     private function biayaCells(array $entries, ?object $real): array
     {
+        // Kedua kelompok dibaca dari tabel yang sama; yang membedakan hanya ASALNYA — gimmick
+        // lewat Kategori Gimmick, penjualan langsung dari Realisasi BLT / Realisasi Komisi.
         $out = [];
-        foreach (array_keys(BsGimmickCategory::KPR_BIAYA_COLUMNS) as $key) {
+        foreach (array_keys(BsKprBiayaEntry::kolomSah()) as $key) {
             $out[$key] = $entries[$key] ?? null;
         }
         if ($out['ssp'] === null && $real && $real->ssp_bphtb_amount !== null) {
@@ -570,9 +602,26 @@ class MasterDataKprController extends Controller
     }
 
     /**
-     * Collection retensi per booking → per kolom (key RETENSI_COLS): {t, n}.
-     * Jalur: kpr_retention_releases → kpr_retentions → kpr_realizations(retention_category_id, kpr_application_id) → retention_categories.
+     * Collection Retensi per booking → per KATEGORI (id kategori): {t, n}.
+     *
+     * DUA HAL YANG DICATAT, keduanya dari modul Proses KPR:
+     *
+     *   1. PENCAIRAN — tiap baris kpr_realizations masuk ke kolom kategori retensinya sendiri,
+     *      lewat FK retention_category_id. Dipakai FK-nya, BUKAN pencocokan kata pada nama
+     *      kategori: pencocokan kata itulah yang dulu membuat PONDASI dan BAST + AJB tidak
+     *      pernah punya kolom sementara SKHGB punya kolom yang tidak pernah terisi.
+     *
+     *   2. DAJAM YANG RELEASED — pelepasan retensi (kpr_retention_releases) masuk ke kolom
+     *      kategori ber-flag is_dajam. Retensi yang MASIH DITAHAN sengaja tidak ikut: yang
+     *      diminta tercatat adalah yang sudah dilepas, dan menampilkan yang ditahan sebagai
+     *      angka yang sama akan membuat kolomnya terbaca seolah dananya sudah diterima.
+     *
+     * Alasannya dicocokkan ke kategori DAJAM yang paling SPESIFIK lebih dulu (mis. "DAJAM
+     * PAJAK" sebelum "DAJAM"), sebab master memang memuat keduanya; mencocokkan yang pendek
+     * lebih dulu akan menyedot seluruh pelepasan ke satu kolom.
+     *
      * @param array<int,int> $appIdByBooking booking_id => application_id
+     * @return array<int,array<int,array{t:?string,n:float}>>
      */
     private function retensiByBooking(array $appIdByBooking): array
     {
@@ -583,44 +632,64 @@ class MasterDataKprController extends Controller
         // application_id => booking_id (balik)
         $bookingByApp = array_flip($appIdByBooking);
 
-        $rows = DB::table('kpr_retention_releases as rr')
+        $map = [];
+        /** Tambahkan satu nilai ke sel (kategori) sebuah booking; tanggal memakai yang terbaru. */
+        $isi = function (?int $bookingId, ?int $catId, $tgl, $nominal) use (&$map): void {
+            if (! $bookingId || ! $catId) {
+                return;
+            }
+            $t = $this->d($tgl);
+            $prev = $map[$bookingId][$catId] ?? ['t' => null, 'n' => 0.0];
+            $map[$bookingId][$catId] = [
+                // Tanggal TERBARU yang menang, bukan yang terakhir dibaca: urutan baris dari
+                // basis data tidak dijamin, jadi "yang terakhir" bisa berarti yang mana saja.
+                't' => ($t !== null && ($prev['t'] === null || $t > $prev['t'])) ? $t : $prev['t'],
+                'n' => $prev['n'] + (float) $nominal,
+            ];
+        };
+
+        // ── 1. PENCAIRAN ────────────────────────────────────────────────────────────
+        $cair = DB::table('kpr_realizations')
+            ->whereIn('kpr_application_id', $appIds)
+            ->whereNotNull('retention_category_id')
+            ->get(['kpr_application_id', 'retention_category_id', 'disbursed_at', 'disbursed_amount']);
+        foreach ($cair as $r) {
+            $isi($bookingByApp[$r->kpr_application_id] ?? null, (int) $r->retention_category_id,
+                $r->disbursed_at, $r->disbursed_amount);
+        }
+
+        // ── 2. DAJAM YANG RELEASED ──────────────────────────────────────────────────
+        $dajam = array_values(array_filter($this->retensiKategori(), fn ($c) => $c['is_dajam']));
+        if ($dajam === []) {
+            return $map;   // master tidak punya kategori DAJAM → tidak ada kolom tujuannya
+        }
+        // Yang paling panjang labelnya diperiksa lebih dulu = yang paling spesifik.
+        usort($dajam, fn ($a, $b) => strlen($b['label']) <=> strlen($a['label']));
+        $umum = end($dajam);   // cadangan: kategori DAJAM paling umum
+
+        $rilis = DB::table('kpr_retention_releases as rr')
             ->join('kpr_retentions as rt', 'rt.id', '=', 'rr.kpr_retention_id')
             ->join('kpr_realizations as re', 're.id', '=', 'rt.kpr_realization_id')
-            ->leftJoin('retention_categories as rc', 'rc.id', '=', 're.retention_category_id')
             ->whereIn('re.kpr_application_id', $appIds)
-            ->get(['re.kpr_application_id', 'rr.released_at', 'rr.amount', 'rc.code as cat_code', 'rc.name as cat_name']);
+            ->get(['re.kpr_application_id', 'rr.released_at', 'rr.amount', 'rr.reason']);
 
-        $map = [];
-        foreach ($rows as $r) {
-            $bookingId = $bookingByApp[$r->kpr_application_id] ?? null;
-            if ($bookingId === null) {
-                continue;
-            }
-            $key = $this->matchRetensiKey(($r->cat_code ?? '') . ' ' . ($r->cat_name ?? ''));
-            if ($key === null) {
-                continue;
-            }
-            // akumulasi nominal; tanggal = pelepasan terakhir
-            $prev = $map[$bookingId][$key] ?? ['t' => null, 'n' => 0.0];
-            $map[$bookingId][$key] = [
-                't' => $this->d($r->released_at) ?? $prev['t'],
-                'n' => $prev['n'] + (float) $r->amount,
-            ];
-        }
-        return $map;
-    }
-
-    private function matchRetensiKey(string $haystack): ?string
-    {
-        $h = strtoupper($haystack);
-        foreach (self::RETENSI_COLS as $col) {
-            foreach ($col['match'] as $kw) {
-                if (str_contains($h, $kw)) {
-                    return $col['key'];
+        foreach ($rilis as $r) {
+            $alasan = strtoupper((string) ($r->reason ?? ''));
+            $cat = null;
+            foreach ($dajam as $d) {
+                if ($d['label'] !== '' && str_contains($alasan, strtoupper($d['label']))) {
+                    $cat = $d;
+                    break;
                 }
             }
+            // Pelepasan yang alasannya tidak menyebut kategori mana pun TIDAK dibuang — ia jatuh
+            // ke kategori DAJAM umum. Membuangnya berarti uang yang benar-benar dilepas hilang
+            // dari rekap tanpa satu pun tanda.
+            $cat ??= $umum;
+            $isi($bookingByApp[$r->kpr_application_id] ?? null, $cat['id'], $r->released_at, $r->amount);
         }
-        return null;
+
+        return $map;
     }
 
     /** Normalisasi tanggal apa pun (datetime/date string) → 'Y-m-d' atau null. */
