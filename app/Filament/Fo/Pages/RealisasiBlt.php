@@ -89,6 +89,9 @@ class RealisasiBlt extends Page implements HasTable
                                     $b->kontrak?->customer?->full_name,
                                     $unit ?: null,
                                     $b->tgl_bayar ? \Illuminate\Support\Carbon::parse($b->tgl_bayar)->toDateString() : null,
+                                    // No. kontrak = SPR-nya; dipakai BO menautkan BLT ini ke kolom
+                                    // BLT SALES / KOORDINATOR / KANTOR pada Rincian Biaya Penjualan.
+                                    $b->kontrak?->no_kontrak,
                                 );
                                 // Baris yang ditolak jangan hilang diam-diam — operator harus tahu
                                 // BLT mana yang tidak sampai ke BO, karena itulah selisih hutangnya.

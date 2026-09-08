@@ -32,9 +32,20 @@ const pairTS = (label: string, get: (r: any) => any): Item => ({
     ],
 });
 
+/* RINCIAN BIAYA GIMMICK — dipetakan operator lewat Setup Kategori Gimmick (satu kategori →
+   satu kolom, dengan sakelar sinkron). */
 const biayaKeys = [
     { key: 'kpr', label: 'BIAYA KPR' }, { key: 'ht', label: 'BIAYA HT' }, { key: 'ppjb', label: 'BIAYA PPJB' },
     { key: 'ssp', label: 'BIAYA SSP' }, { key: 'bphtb', label: 'BIAYA BPHTB' }, { key: 'ajb', label: 'BIAYA AJB' },
+];
+
+/* RINCIAN BIAYA PENJUALAN — TIDAK lewat Setup Kategori Gimmick. Keempatnya datang langsung dari
+   realisasinya: BLT per jenjang dari Realisasi BLT, dan Komisi dari Realisasi Komisi. Jenjang
+   BLT sudah ditentukan pada dokumen BLT itu sendiri, jadi menyediakan pemetaan kategori lagi
+   hanya membuka peluang dua sumber kebenaran yang berbeda untuk satu hal yang sama. */
+const biayaPenjualanKeys = [
+    { key: 'blt_sales', label: 'BLT SALES' }, { key: 'blt_koord', label: 'BLT KOORDINATOR' },
+    { key: 'blt_kantor', label: 'BLT KANTOR' }, { key: 'komisi', label: 'KOMISI' },
 ];
 const utjDpLabels = ['UTJ', 'DP 1', 'DP 2', 'DP 3', 'DP 4', 'DP 5', 'DP 6'];
 
@@ -81,8 +92,16 @@ const groups = computed<Group[]>(() => [
         items: props.retensiCols.map((label, i) => pairTN(label, (r) => r.retensi?.[i])),
     },
     {
-        label: 'Rincian Biaya', cls: 'bg-violet-50 dark:bg-violet-900/30',
+        label: 'Rincian Biaya Gimmick', cls: 'bg-violet-50 dark:bg-violet-900/30',
         items: biayaKeys.map((b) => pairTN(b.label, (r) => r.biaya?.[b.key])),
+    },
+    {
+        // Warnanya sengaja BEDA dari Rincian Biaya Gimmick: keduanya sama-sama "rincian biaya",
+        // dan satu-satunya penanda bahwa asalnya berlainan adalah judul kelompoknya. Pada tabel
+        // selebar ini judul kelompok mudah tergulir keluar layar, sehingga warna itulah yang
+        // tersisa untuk membedakannya.
+        label: 'Rincian Biaya Penjualan', cls: 'bg-teal-50 dark:bg-teal-900/30',
+        items: biayaPenjualanKeys.map((b) => pairTN(b.label, (r) => r.biaya?.[b.key])),
     },
 ]);
 
@@ -184,7 +203,7 @@ function unduhExcel() {
             </div>
         </div>
         <p class="text-sm text-neutral-500">
-            Rekap per-SPR: Master Unit, Data KPR, <strong>Proses KPR</strong> (tanggal &amp; summary tiap tahap), Collection UTJ &amp; DP, Collection Retensi, dan Rincian Biaya.
+            Rekap per-SPR: Master Unit, Data KPR, <strong>Proses KPR</strong> (tanggal &amp; summary tiap tahap), Collection UTJ &amp; DP, Collection Retensi, Rincian Biaya Gimmick, dan Rincian Biaya Penjualan (BLT &amp; Komisi, langsung dari realisasinya).
             Ketik pada kotak di bawah judul kolom untuk memfilter kolom tsb — filter antar kolom bersifat AND.
             <span class="text-neutral-400">{{ filtered.length }} dari {{ rows.length }} baris.</span>
         </p>

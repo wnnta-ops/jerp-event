@@ -86,6 +86,9 @@ class RealisasiKomisi extends Page implements HasTable
                                     $k->kontrak?->customer?->full_name,
                                     $unit ?: null,
                                     $k->tgl_bayar ? \Illuminate\Support\Carbon::parse($k->tgl_bayar)->toDateString() : null,
+                                    // No. kontrak = SPR-nya; dipakai BO menautkan komisi ini ke
+                                    // kolom KOMISI pada Rincian Biaya Penjualan Master Data KPR.
+                                    $k->kontrak?->no_kontrak,
                                 );
                                 // Baris yang ditolak jangan hilang diam-diam — operator harus tahu
                                 // komisi mana yang tidak sampai ke BO, karena itulah selisih hutangnya.

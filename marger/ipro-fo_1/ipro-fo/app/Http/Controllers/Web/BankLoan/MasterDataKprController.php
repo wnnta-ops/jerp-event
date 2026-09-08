@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Web\BankLoan;
 
 use App\Domain\BusinessSupport\Models\BsGimmickCategory;
+use App\Domain\BusinessSupport\Models\BsKprBiayaEntry;
 use App\Http\Controllers\Controller;
 use App\Support\Export\SimpleXlsxWriter;
 use Illuminate\Http\Request;
@@ -304,8 +305,10 @@ class MasterDataKprController extends Controller
      */
     private function biayaCells(array $entries, ?object $real): array
     {
+        // Kedua kelompok dibaca dari tabel yang sama; yang membedakan hanya ASALNYA — gimmick
+        // lewat Kategori Gimmick, penjualan langsung dari Realisasi BLT / Realisasi Komisi.
         $out = [];
-        foreach (array_keys(BsGimmickCategory::KPR_BIAYA_COLUMNS) as $key) {
+        foreach (array_keys(BsKprBiayaEntry::kolomSah()) as $key) {
             $out[$key] = $entries[$key] ?? null;
         }
         if ($out['ssp'] === null && $real && $real->ssp_bphtb_amount !== null) {
