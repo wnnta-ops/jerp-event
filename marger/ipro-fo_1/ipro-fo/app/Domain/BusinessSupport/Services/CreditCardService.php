@@ -121,6 +121,39 @@ class CreditCardService
     }
 
     /**
+     * "Masuk Saldo" — sisa realisasi bon Debit VA dikembalikan ke saldo kartunya.
+     *
+     * Diajukan DAN langsung disetujui dalam satu langkah, atas nama orang yang menekannya.
+     * Bukan jalan pintas yang melompati persetujuan: keputusan menekan tombol itu SENDIRI yang
+     * menjadi persetujuannya, dan barisnya tetap tercatat lengkap di Riwayat Permintaan —
+     * siapa, kapan, dari bon mana, berapa. Menaruhnya di antrean "menunggu persetujuan" akan
+     * bertentangan dengan yang dijanjikan tombolnya: saldonya bisa dipakai untuk pengajuan
+     * berikutnya, sekarang.
+     */
+    public function masukSaldoDariBon(
+        BsCreditCard $card,
+        int $advanceId,
+        string $advanceNumber,
+        float $amount,
+        ?int $userId = null,
+    ): BsCreditCardRequest {
+        $req = $this->request($card, [
+            'type'        => 'topup',
+            'amount'      => $amount,
+            'source_type' => self::SUMBER_MASUK_SALDO,
+            'source_id'   => $advanceId,
+            'reference'   => $advanceNumber,
+            'note'        => 'Masuk Saldo — sisa realisasi bon '.$advanceNumber
+                .' dikembalikan ke kartu (tanpa jurnal; uangnya memang masih di akun kartu)',
+        ], $userId);
+
+        return $this->approve($req, $userId);
+    }
+
+    /** Penanda sumber permintaan yang lahir dari tombol Masuk Saldo — dasar kolom "Sisa Saldo". */
+    public const SUMBER_MASUK_SALDO = 'cash_advance_sisa';
+
+    /**
      * Permintaan otomatis dari pembayaran bon sementara lewat Debit VA:
      * satu permintaan PENAMBAHAN SALDO sebesar nominal bonnya, dan satu permintaan MASA
      * BERLAKU sesuai tanggal expired yang ditentukan pada pembayarannya.

@@ -649,6 +649,27 @@ class CashAdvanceController extends Controller
         return redirect()->route('bs.advance.show', $advance)->with('success', 'Refund sisa panjar tercatat — jurnal otomatis terbentuk.');
     }
 
+    /**
+     * Masuk Saldo — sisa panjar bon Debit VA dikembalikan ke saldo kartunya, TANPA jurnal.
+     *
+     * Tanpa isian apa pun: nominalnya sudah pasti (sisa bon itu) dan kartunya sudah ditentukan
+     * saat pembayaran. Meminta orang mengetik ulang keduanya hanya membuka peluang angka yang
+     * berbeda dari sisanya yang sebenarnya.
+     */
+    public function masukSaldo(Request $request, BsCashAdvance $advance, CashAdvanceService $svc): RedirectResponse
+    {
+        abort_unless($request->user()?->canModule('cashbook'), 403);
+
+        try {
+            $svc->masukSaldo($advance, $request->user()->id);
+        } catch (BusinessRuleException $e) {
+            return back()->with('error', $e->getMessage());
+        }
+
+        return redirect()->route('bs.advance.show', $advance)
+            ->with('success', 'Sisa panjar masuk ke saldo kartu — siap dipakai pengajuan berikutnya. Tidak ada jurnal tambahan: uangnya memang masih di akun kartu.');
+    }
+
     public function reimburse(Request $request, BsCashAdvance $advance, CashAdvanceService $svc): RedirectResponse
     {
         abort_unless($request->user()?->canModule('cashbook'), 403);

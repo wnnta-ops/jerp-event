@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Web\BusinessSupport\CashBook;
 
 use App\Domain\BusinessSupport\Models\BsAccount;
+use App\Domain\BusinessSupport\Models\BsJournalLine;
 use App\Domain\BusinessSupport\Models\BsCreditCard;
 use App\Domain\BusinessSupport\Models\BsCreditCardRequest;
 use App\Domain\BusinessSupport\Services\CreditCardService;
@@ -29,8 +30,28 @@ class CreditCardController extends Controller
     {
         abort_unless($request->user()?->canModule('cashbook'), 403);
 
-        $cards = BsCreditCard::with('account:id,code,name')->orderBy('name')->get()
+        $kartu = BsCreditCard::with('account:id,code,name')->orderBy('name')->get();
+
+        /* PEMAKAIAN — dari MUTASI AKUN KARTUNYA di buku besar, bukan dari catatan aplikasi.
+           Akun kartu didebit saat bon Debit VA dibayar (uang masuk ke kartu) dan dikredit saat
+           bon direalisasi (uang terpakai), jadi jumlah KREDIT-nya adalah yang benar-benar
+           terpakai. Dibaca dari GL supaya angkanya tidak bisa menyimpang dari pembukuan —
+           menghitungnya dari tabel bon akan melewatkan mutasi yang masuk lewat jalur lain.
+           Satu kueri untuk seluruh kartu di halaman ini, bukan satu per kartu. */
+        $pemakaian = BsJournalLine::whereIn('account_id', $kartu->pluck('account_id')->filter()->unique())
+            ->selectRaw('account_id, COALESCE(SUM(credit),0) c')->groupBy('account_id')->pluck('c', 'account_id');
+
+        /* SISA SALDO — nominal yang dikembalikan lewat tombol "Masuk Saldo" pada realisasi bon
+           Debit VA, yaitu permintaan bersumber cash_advance_sisa yang sudah disetujui. */
+        $sisaMasuk = BsCreditCardRequest::where('source_type', CreditCardService::SUMBER_MASUK_SALDO)
+            ->where('status', 'approved')
+            ->selectRaw('credit_card_id, COALESCE(SUM(amount),0) s')->groupBy('credit_card_id')->pluck('s', 'credit_card_id');
+
+        $cards = $kartu
             ->map(fn (BsCreditCard $c) => [
+                'pemakaian'  => (float) ($pemakaian[$c->account_id] ?? 0),
+                'sisa_saldo' => (float) ($sisaMasuk[$c->id] ?? 0),
+            ] + [
                 'id'           => $c->id,
                 'account_id'   => $c->account_id,
                 'account_code' => $c->account?->code,

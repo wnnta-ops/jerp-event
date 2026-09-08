@@ -381,6 +381,60 @@ final class CashAdvanceService
         return $this->settle($adv, $date, 'reimburse', $userId, $cashAccountId);
     }
 
+    /**
+     * MASUK SALDO — sisa panjar bon Debit VA dikembalikan ke SALDO KARTUNYA, bukan ke kas.
+     *
+     * TIDAK MEMBENTUK JURNAL, dan itu bukan kelalaian melainkan justru yang benar: uangnya
+     * memang belum berpindah ke mana pun. Pembayaran Debit VA sudah MENDEBIT akun kartu sebesar
+     * nominal bon, realisasinya MENGKREDIT sebesar yang terpakai — jadi sisanya MASIH BERADA di
+     * akun kartu itu di buku besar. Refund memindahkannya kembali ke bank, karena itu ia
+     * berjurnal; Masuk Saldo membiarkannya tetap di kartu dan hanya membuka kembali
+     * pemakaiannya. Menjurnalnya lagi berarti mencatat perpindahan yang tidak terjadi, dan akun
+     * kartunya akan terkredit DUA KALI untuk uang yang sama.
+     *
+     * Yang berubah hanyalah saldo terpakai kartunya (lewat permintaan yang langsung disetujui,
+     * sehingga jejaknya tetap ada) dan status penyelesaian bonnya.
+     */
+    public function masukSaldo(BsCashAdvance $adv, ?int $userId = null): BsCashAdvance
+    {
+        return DB::transaction(function () use ($adv, $userId): BsCashAdvance {
+            if ($adv->settlement_status !== 'pending') {
+                throw new BusinessRuleException('Tidak ada sisa panjar yang perlu diselesaikan.', errorCode: 'ADV_NOT_PENDING');
+            }
+            // Hanya masuk akal untuk bon Debit VA: bon reguler tidak punya kartu yang bisa
+            // menampung sisanya, dan uangnya memang sudah berada di Uang Muka Operasional.
+            if ($adv->payment_method !== 'debit_va' || ! $adv->credit_card_id) {
+                throw new BusinessRuleException(
+                    'Masuk Saldo hanya untuk bon yang dibayar lewat Debit VA — sisanya dikembalikan ke kartu yang dipakai.',
+                    errorCode: 'ADV_NOT_DEBIT_VA',
+                );
+            }
+            $settlement = round((float) $adv->settlement, 2);
+            if ($settlement <= 0) {
+                throw new BusinessRuleException(
+                    'Masuk Saldo hanya untuk sisa panjar berlebih (panjar > realisasi).',
+                    errorCode: 'ADV_NOT_REFUND',
+                );
+            }
+
+            $card = BsCreditCard::whereKey($adv->credit_card_id)->first();
+            if (! $card) {
+                throw new BusinessRuleException('Kartu kredit/VA bon ini tidak ditemukan.', errorCode: 'ADV_VA_NO_CARD');
+            }
+
+            app(CreditCardService::class)->masukSaldoDariBon(
+                $card, (int) $adv->id, (string) $adv->advance_number, $settlement, $userId,
+            );
+
+            // Status tersendiri, BUKAN 'settled': keduanya sama-sama "sisa sudah beres", tetapi
+            // hanya satu di antaranya yang meninggalkan jurnal. Menyamakannya membuat layar
+            // menjanjikan bukti jurnal yang memang tidak pernah ada.
+            $adv->update(['settlement_status' => 'card']);
+
+            return $adv;
+        });
+    }
+
     private function settle(BsCashAdvance $adv, string $date, string $mode, ?int $userId, ?int $cashAccountId = null): BsCashAdvance
     {
         return DB::transaction(function () use ($adv, $date, $mode, $userId, $cashAccountId): BsCashAdvance {

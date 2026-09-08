@@ -855,6 +855,8 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
     Route::post('/business-support/bon-sementara/{advance}/realisasi', [BsAdvanceController::class, 'realize'])->name('bs.advance.realize');
     Route::post('/business-support/bon-sementara/{advance}/refund',    [BsAdvanceController::class, 'refund'])->name('bs.advance.refund');
     Route::post('/business-support/bon-sementara/{advance}/reimburse', [BsAdvanceController::class, 'reimburse'])->name('bs.advance.reimburse');
+    // Sisa bon Debit VA dikembalikan ke saldo kartunya — tanpa jurnal (uangnya masih di akun kartu).
+    Route::post('/business-support/bon-sementara/{advance}/masuk-saldo', [BsAdvanceController::class, 'masukSaldo'])->name('bs.advance.masuk-saldo');
     Route::get('/business-support/bon-sementara/{advance}/print',           [BsAdvanceController::class, 'print'])->name('bs.advance.print');
     Route::get('/business-support/bon-sementara/{advance}/print-realisasi', [BsAdvanceController::class, 'printRealisasi'])->name('bs.advance.print-realisasi');
     Route::post('/business-support/bon-sementara/{advance}/tanggal-dokumen', [BsAdvanceController::class, 'setReceivedDate'])->name('bs.advance.received-date'); // #125

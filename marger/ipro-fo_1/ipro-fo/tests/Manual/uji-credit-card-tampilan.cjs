@@ -93,13 +93,16 @@ async function render(berkas, props) {
 const KARTU = [
     { id: 1, account_id: 18, account_code: '10101020210', account_name: 'MANDIRI REK. 141-00-9988886-9',
       card_number: '141-00-9988886-9', name: 'MANDIRI REK. 141-00-9988886-9', label: '141-00-9988886-9 — MANDIRI REK. 141-00-9988886-9',
-      is_active: true, balance: 7500000, expired_date: '2027-01-31', expired: false, usable: true, note: null },
+      is_active: true, balance: 7500000, expired_date: '2027-01-31', expired: false, usable: true, note: null,
+      pemakaian: 4000000, sisa_saldo: 6000000 },
     { id: 2, account_id: 19, account_code: '10101020211', account_name: 'BCA VA',
       card_number: '888-1234', name: 'BCA VA', label: '888-1234 — BCA VA',
-      is_active: false, balance: 0, expired_date: null, expired: false, usable: false, note: null },
+      is_active: false, balance: 0, expired_date: null, expired: false, usable: false, note: null,
+      pemakaian: 0, sisa_saldo: 0 },
     { id: 3, account_id: 20, account_code: '10101020212', account_name: 'BNI VA',
       card_number: '777-9999', name: 'BNI VA', label: '777-9999 — BNI VA',
-      is_active: true, balance: 1250000, expired_date: '2026-01-01', expired: true, usable: false, note: null },
+      is_active: true, balance: 1250000, expired_date: '2026-01-01', expired: true, usable: false, note: null,
+      pemakaian: 250000, sisa_saldo: 0 },
 ];
 const PERMINTAAN = [
     { id: 11, credit_card_id: 1, card: '141-00-9988886-9 — MANDIRI REK. 141-00-9988886-9', type: 'topup',
@@ -155,7 +158,15 @@ const propsBon = (adv, kartu) => ({
        Diperiksa pada SEL STATUS saja (kolom ke-5), bukan pada seluruh barisnya: kata "Expired"
        juga muncul di tombol "Ajukan Saldo / Expired", sehingga pencarian se-baris akan
        menyatakan setiap kartu kedaluwarsa. */
-    const selStatus = (baris) => (baris.match(/<td[^>]*>[\s\S]*?<\/td>/g) || [])[4] || '';
+    /* Letak kolom Status DIHITUNG dari kepala tabelnya, bukan ditulis sebagai angka tetap.
+       Indeks tetap diam-diam menunjuk kolom yang salah begitu ada kolom ditambah — persis yang
+       terjadi saat kolom Pemakaian & Sisa Saldo masuk: pemeriksaan lencana status berpindah ke
+       sel rupiah dan ketiganya gagal tanpa ada yang benar-benar rusak. */
+    const judulKartu = [...((html.match(/<tr class="text-left text-xs uppercase text-neutral-500">[\s\S]*?<\/tr>/) || [''])[0])
+        .matchAll(/<th[^>]*>([\s\S]*?)<\/th>/g)].map((m) => m[1].replace(/<[^>]*>/g, '').trim());
+    const iStatus = judulKartu.indexOf('Status');
+    cek('kolom Status ditemukan di kepala tabel', iStatus >= 0, JSON.stringify(judulKartu));
+    const selStatus = (baris) => (baris.match(/<td[^>]*>[\s\S]*?<\/td>/g) || [])[iStatus] || '';
     const sMandiri = selStatus(bMandiri);
     const sBca = selStatus(bBca);
     const sBni = selStatus(bBni);
@@ -165,13 +176,28 @@ const propsBon = (adv, kartu) => ({
     cek('kartu kedaluwarsa berlabel "Expired"', sBni.includes('Expired') && !sBni.includes('Belum Aktif'), sBni);
 
     cek('saldo tampil terformat rupiah', bMandiri && bMandiri.includes('7.500.000'));
+
+    /* Tiga angka berbeda asalnya pada baris yang sama: Saldo (yang boleh dipakai), Pemakaian
+       (dari mutasi akun GL kartunya), dan Sisa Saldo (yang dikembalikan lewat Masuk Saldo).
+       Diperiksa PER SEL menurut letak kolomnya, bukan "ada di baris ini" — ketiganya sama-sama
+       rupiah, jadi mencarinya se-baris akan lulus meski nilainya tertukar antar kolom. */
+    const selKe = (baris, nama) => (baris.match(/<td[^>]*>[\s\S]*?<\/td>/g) || [])[judulKartu.indexOf(nama)] || '';
+    cek('kolom Pemakaian & Sisa Saldo ada di kepala tabel',
+        judulKartu.includes('Pemakaian') && judulKartu.includes('Sisa Saldo'), JSON.stringify(judulKartu));
+    cek('Pemakaian tampil pada kolomnya sendiri', selKe(bMandiri, 'Pemakaian').includes('4.000.000'),
+        selKe(bMandiri, 'Pemakaian'));
+    cek('Sisa Saldo tampil pada kolomnya sendiri', selKe(bMandiri, 'Sisa Saldo').includes('6.000.000'),
+        selKe(bMandiri, 'Sisa Saldo'));
+    cek('Saldo tetap pada kolomnya sendiri', selKe(bMandiri, 'Saldo').includes('7.500.000'),
+        selKe(bMandiri, 'Saldo'));
     cek('saldo kartu nonaktif tampil 0', bBca && bBca.includes('Rp 0'));
 
     // Lebar tabel kartu: kepala & isi harus sama, kalau tidak kolomnya bergeser diam-diam.
-    const kepala = (html.match(/<th[^>]*>/g) || []).length;
+    // Jumlah selnya dicocokkan dengan jumlah kepala kolomnya, bukan dengan angka tetap.
     const selMandiri = (bMandiri.match(/<td[^>]*>/g) || []).length;
-    cek('jumlah sel baris kartu = 6', selMandiri === 6, selMandiri + ' sel');
-    cek('tabelnya punya kepala kolom', kepala > 0);
+    cek('jumlah sel baris kartu = jumlah kepala kolom', selMandiri === judulKartu.length,
+        selMandiri + ' sel vs ' + judulKartu.length + ' kolom');
+    cek('tabelnya punya kepala kolom', judulKartu.length > 0);
 
     console.log('\n=== 2. SALDO TIDAK BISA DISUNTING LANGSUNG ===');
     const src = fs.readFileSync(HAL_KARTU, 'utf8');
