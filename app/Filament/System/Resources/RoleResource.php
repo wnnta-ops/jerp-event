@@ -64,8 +64,18 @@ class RoleResource extends Resource
             'system' => 'System',
         ];
 
+        // Hanya izin yang BENAR-BENAR ada di database yang diberi kotak. Kotak untuk
+        // izin yang belum dibuat bukan cuma percuma — mencentangnya membuat
+        // syncPermissions() melempar PermissionDoesNotExist dan seluruh halaman
+        // menjadi 500 saat Simpan ditekan.
+        $ada = \Spatie\Permission\Models\Permission::whereIn('name', array_values((array) config('akses.modul', [])))
+            ->pluck('name')->all();
+
         $kotak = [];
         foreach ((array) config('akses.modul', []) as $kunci => $izin) {
+            if (! in_array($izin, $ada, true)) {
+                continue;
+            }
             $kotak[] = Forms\Components\Checkbox::make('m.'.str_replace('.', '~', $izin))
                 ->label($label[$kunci] ?? $kunci);
         }
@@ -102,6 +112,27 @@ class RoleResource extends Resource
     {
         return collect($m)->filter()->keys()
             ->map(fn ($k) => str_replace('~', '.', $k))->values()->all();
+    }
+
+    /**
+     * Saring ke nama izin yang benar-benar ada di database.
+     *
+     * Jaring pengaman terakhir sebelum syncPermissions(): satu nama yang tak
+     * dikenal membuatnya melempar PermissionDoesNotExist, dan halaman Grup Akses
+     * berubah menjadi 500 tanpa petunjuk apa pun. Matriks dibangun dari config
+     * yang bisa saja mendahului seeder di suatu lingkungan — halaman ini tidak
+     * boleh ikut mati karenanya.
+     *
+     * @param  array<int,string>  $nama
+     * @return array<int,string>
+     */
+    public static function hanyaIzinYangAda(array $nama): array
+    {
+        if (! $nama) {
+            return [];
+        }
+
+        return \Spatie\Permission\Models\Permission::whereIn('name', $nama)->pluck('name')->all();
     }
 
     /**
@@ -153,7 +184,9 @@ class RoleResource extends Resource
             ->reject(fn (string $n) => in_array($n, $diMatriks, true))
             ->all();
 
-        return array_values(array_unique(array_merge($terpilih, $diluarMatriks)));
+        return self::hanyaIzinYangAda(
+            array_values(array_unique(array_merge($terpilih, $diluarMatriks)))
+        );
     }
 
     public static function table(Table $table): Table
