@@ -13,10 +13,17 @@ use App\Domain\Sales\Nup\Models\NupRegistration;
 use App\Http\Controllers\Controller;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Route;
 
 /**
  * Pencarian global lintas modul untuk Command Palette (Cmd/Ctrl+K).
  * Hanya mengembalikan modul yang boleh dilihat user (permission-aware).
+ *
+ * Tiap bagian dijaga DUA syarat: izin user DAN rutenya masih terdaftar.
+ * Cek rute wajib karena modul yang pindah ke FO dimatikan lewat sakelar
+ * (config/modul_pindah_fo.php) — izin saja tidak cukup: SuperAdmin lolos
+ * setiap can() lewat Gate::before, jadi tanpa Route::has() baris di bawah
+ * akan memanggil route() ke nama yang tidak ada dan melempar 500.
  */
 class SearchController extends Controller
 {
@@ -32,7 +39,7 @@ class SearchController extends Controller
         $out  = collect();
 
         // ── Customer ──
-        if ($user?->can('master.customer.view')) {
+        if ($user?->can('master.customer.view') && Route::has('customers.show')) {
             $out = $out->concat(
                 Customer::query()
                     ->where(fn ($w) => $w->where('full_name', 'like', $like)->orWhere('code', 'like', $like)->orWhere('phone', 'like', $like)->orWhere('email', 'like', $like))
@@ -54,7 +61,7 @@ class SearchController extends Controller
         }
 
         // ── Booking ──
-        if ($user?->can('sales.booking.view')) {
+        if ($user?->can('sales.booking.view') && Route::has('bookings.show')) {
             $out = $out->concat(
                 Booking::query()->where('booking_number', 'like', $like)->limit(5)->get(['id', 'booking_number', 'status'])
                     ->map(fn ($b) => ['type' => 'booking', 'label' => "{$b->booking_number} (".$this->str($b->status).')', 'url' => route('bookings.show', $b->id)])
@@ -62,7 +69,7 @@ class SearchController extends Controller
         }
 
         // ── Kontrak ──
-        if ($user?->can('sales.contract.view')) {
+        if ($user?->can('sales.contract.view') && Route::has('contracts.show')) {
             $out = $out->concat(
                 Contract::query()->where('contract_number', 'like', $like)->limit(5)->get(['id', 'contract_number'])
                     ->map(fn ($c) => ['type' => 'kontrak', 'label' => $c->contract_number, 'url' => route('contracts.show', $c->id)])
@@ -70,7 +77,7 @@ class SearchController extends Controller
         }
 
         // ── NUP ──
-        if ($user?->can('sales.nup.view')) {
+        if ($user?->can('sales.nup.view') && Route::has('nup.show')) {
             $out = $out->concat(
                 NupRegistration::query()->where('nup_number', 'like', $like)->limit(5)->get(['id', 'nup_number', 'queue_no'])
                     ->map(fn ($n) => ['type' => 'nup', 'label' => "{$n->nup_number} (antrian #{$n->queue_no})", 'url' => route('nup.show', $n->id)])
@@ -78,7 +85,7 @@ class SearchController extends Controller
         }
 
         // ── Kuitansi ──
-        if ($user?->can('finance.kuitansi.view')) {
+        if ($user?->can('finance.kuitansi.view') && Route::has('kuitansi.show')) {
             $out = $out->concat(
                 Kuitansi::query()->where('kuitansi_number', 'like', $like)->limit(5)->get(['id', 'kuitansi_number'])
                     ->map(fn ($k) => ['type' => 'kuitansi', 'label' => $k->kuitansi_number, 'url' => route('kuitansi.show', $k->id)])

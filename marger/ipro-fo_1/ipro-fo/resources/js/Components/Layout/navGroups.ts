@@ -108,8 +108,8 @@ export function navGroups(foUrl: string): NavGroup[] {
         // Marketing & Sales (FO/J-ERP), lalu disinkron ke BO — tidak dikelola dua kali di sini.
         desc: 'Pusat data Supplier & Karyawan.',
         items: [
-            { label: 'Supplier Center', icon: Truck,  href: 'bs.dc.supplier.center', permission: ['businesssupport.view', 'datacenter.*'] },
-            { label: 'Employee Center', icon: IdCard, href: 'bs.dc.employee.center', permission: ['businesssupport.view', 'datacenter.*'] },
+            { label: 'Supplier Center', icon: Truck,  href: 'bs.dc.supplier.center', permission: ['datacenter.hub.*'] },
+            { label: 'Employee Center', icon: IdCard, href: 'bs.dc.employee.center', permission: ['datacenter.hub.*'] },
         ],
     },
     // ── FO (Sales / Finance / Collection) DINONAKTIFKAN ──────────────────────────
@@ -121,14 +121,14 @@ export function navGroups(foUrl: string): NavGroup[] {
         desc: 'Inisiasi & Proses KPR bank (Bank Loan).',
         items: [
             // Set Up — kategori/master parameter KPR.
-            { label: 'Set Up', icon: SlidersHorizontal, permission: 'bankloan.setup.view', children: [
+            { label: 'Set Up', icon: SlidersHorizontal, permission: ['bankloan.setup.*'], children: [
                 { label: 'Kategori Retensi',        href: 'kpr.setup.retensi.index', permission: 'bankloan.setup.view' },
                 { label: 'Kategori Bank',           href: 'kpr.setup.bank.index',    permission: 'bankloan.setup.view' },
                 { label: 'Kategori Analisa Berkas', href: 'kpr.setup.analisa.index', permission: 'bankloan.setup.view' },
                 { label: 'Kategori Berkas Tidak Lengkap', href: 'kpr.setup.berkas-tidak-lengkap.index', permission: 'bankloan.setup.view' },
             ]},
             // Transaction — proses transaksi KPR.
-            { label: 'Transaction', icon: GitMerge, permission: 'bankloan.application.view', children: [
+            { label: 'Transaction', icon: GitMerge, permission: ['bankloan.application.*'], children: [
                 { label: 'Inisiasi KPR',                     href: 'kpr.initiation.index', permission: 'bankloan.application.view' },
                 { label: 'Proses KPR',                       href: 'kpr.index',            permission: 'bankloan.application.view' },
                 // "Cek Scan KTP & NPWP" DIHILANGKAN dari menu (belum jadi). Route kpr.scan.*,
@@ -136,7 +136,7 @@ export function navGroups(foUrl: string): NavGroup[] {
                 // barisnya di sini bila fiturnya sudah siap dipakai.
             ]},
             // Query/Report — master data & arsip Database KPR (Reject BI Checking / Reject Proses KPR).
-            { label: 'Query/Report', icon: FileBarChart, permission: 'bankloan.application.view', children: [
+            { label: 'Query/Report', icon: FileBarChart, permission: ['bankloan.application.*'], children: [
                 { label: 'Master Data KPR',    href: 'kpr.master-data.index',    permission: 'bankloan.application.view' },
                 { label: 'Reject BI Checking', href: 'kpr.database.reject-bi',  permission: 'bankloan.application.view' },
                 { label: 'Reject Proses KPR',  href: 'kpr.database.reject-kpr', permission: 'bankloan.application.view' },
@@ -152,17 +152,17 @@ export function navGroups(foUrl: string): NavGroup[] {
         icon: CircleDollarSign, color: '#14b8a6', route: 'bs.booked-revenue.index',
         desc: 'Pendapatan diakui, BAST/AJB & Faktur Pajak.',
         items: [
-            { label: 'Sudah Booked Revenue', icon: CircleDollarSign, href: 'bs.booked-revenue.index', permission: ['businesssupport.view', 'ar.*'] },
-            { label: 'Belum Booked Revenue', icon: CircleDollarSign, href: 'bs.booked-revenue.belum', permission: ['businesssupport.view', 'ar.*'] },
-            { label: 'Detail BAST', icon: FileCheck, href: 'bs.booked-revenue.control.bast', permission: ['businesssupport.view', 'ar.*'] },
-            { label: 'Detail AJB', icon: FileText, href: 'bs.booked-revenue.control.ajb', permission: ['businesssupport.view', 'ar.*'] },
-            { label: 'Verifikasi Faktur Pajak', icon: Receipt, permission: ['businesssupport.view', 'tax.*'], children: [
+            { label: 'Sudah Booked Revenue', icon: CircleDollarSign, href: 'bs.booked-revenue.index', permission: ['ar.booked-revenue.*'] },
+            { label: 'Belum Booked Revenue', icon: CircleDollarSign, href: 'bs.booked-revenue.belum', permission: ['ar.booked-revenue.*'] },
+            { label: 'Detail BAST', icon: FileCheck, href: 'bs.booked-revenue.control.bast', permission: ['ar.booked-revenue.*'] },
+            { label: 'Detail AJB', icon: FileText, href: 'bs.booked-revenue.control.ajb', permission: ['ar.booked-revenue.*'] },
+            { label: 'Verifikasi Faktur Pajak', icon: Receipt, permission: ['tax.ppn-keluaran.*', 'tax.ppn-masukan.*'], children: [
                 { label: 'PPN Masukan', href: 'bs.tax.masukan' },
                 { label: 'PPN Keluaran', href: 'bs.tax.keluaran' },
             ] },
-            { label: 'Rincian Batal Akad', icon: TriangleAlert, href: 'bs.batal-akad.index', permission: ['businesssupport.view', 'ar.*'] },
-            { label: 'Invoice Penjualan', icon: ReceiptText, href: 'bs.sales-invoice.index', permission: ['businesssupport.view', 'ar.*'] },
-            { label: 'Report / Query', icon: FileBarChart, href: 'bs.booked-revenue.report', permission: ['businesssupport.view', 'ar.*'] },
+            { label: 'Rincian Batal Akad', icon: TriangleAlert, href: 'bs.batal-akad.index', permission: ['bankloan.application.*', 'businesssupport.view'] },
+            { label: 'Invoice Penjualan', icon: ReceiptText, href: 'bs.sales-invoice.index', permission: ['ar.view'] },
+            { label: 'Report / Query', icon: FileBarChart, href: 'bs.booked-revenue.report', permission: ['ar.booked-revenue.*'] },
         ],
     },
     {
@@ -173,12 +173,12 @@ export function navGroups(foUrl: string): NavGroup[] {
             // Grup "Master" dihapus: satu-satunya isinya ("Master Aset Tetap") menunjuk
             // route yang SAMA PERSIS dengan Overview di bawah ini (bs.fa.index), jadi hanya
             // menggandakan halaman yang sama di dua tempat.
-            { label: 'Overview Aset Tetap', icon: Building, href: 'bs.fa.index', permission: ['businesssupport.view', 'bs.*'] },
-            { label: 'Report / Query', icon: FileBarChart, permission: ['businesssupport.view', 'bs.*'], children: [
+            { label: 'Overview Aset Tetap', icon: Building, href: 'bs.fa.index', permission: ['bs.asset.*'] },
+            { label: 'Report / Query', icon: FileBarChart, permission: ['bs.asset.*'], children: [
                 { label: 'Summary Aset', href: 'bs.fa.summary' },
                 { label: 'Penjualan Aset', href: 'bs.fa.penjualan' },
             ] },
-            { label: 'Registrasi', icon: ClipboardList, permission: ['businesssupport.view', 'bs.*'], children: [
+            { label: 'Registrasi', icon: ClipboardList, permission: ['bs.asset.*', 'businesssupport.transaction.*'], children: [
                 { label: 'Registrasi Aset', href: 'bs.fa.create' },
                 { label: 'Registrasi Penyusutan', href: 'bs.fa.run' },
                 { label: 'Upload Aset Massal', href: 'bs.bulk.form', params: { mode: 'asset' } },
@@ -190,28 +190,28 @@ export function navGroups(foUrl: string): NavGroup[] {
         icon: BookOpen, color: '#7c3aed', route: 'bs.gl.printhub',
         desc: 'Jurnal, Neraca, Laba Rugi & Cash Flow.',
         items: [
-            { label: 'General Function', icon: FileText, permission: ['businesssupport.view', 'gl.*'], children: [
+            { label: 'General Function', icon: FileText, permission: ['gl.ledger.*'], children: [
                 { label: 'General Function', href: 'bs.gl.printhub' },
             ]},
-            { label: 'Setup', icon: SlidersHorizontal, permission: ['businesssupport.view', 'gl.*'], children: [
+            { label: 'Setup', icon: SlidersHorizontal, permission: ['gl.cf-category.*', 'gl.currency.*', 'gl.kurs.*', 'gl.repair.*'], children: [
                 { label: 'Multi Currency', href: 'bs.gl.currency.index' },
                 { label: 'Kurs Sistem', href: 'bs.gl.kurs.index' },
                 { label: 'Repair Data', href: 'bs.gl.repair.index' },
                 { label: 'Kategori Cash Flow Direct', href: 'bs.gl.cf-category.index', params: { kind: 'direct' } },
                 { label: 'Kategori Cash Flow Indirect', href: 'bs.gl.cf-category.index', params: { kind: 'indirect' } },
             ]},
-            { label: 'Master', icon: BookText, permission: ['businesssupport.view', 'gl.*'], children: [
+            { label: 'Master', icon: BookText, permission: ['businesssupport.approval.*', 'gl.account.*', 'gl.cf-mapping.*', 'gl.cost-center.*', 'gl.journal-dimension.*', 'gl.journal.*'], children: [
                 { label: 'Chart of Account', href: 'bs.accounts.index' },
                 { label: 'Jurnal', href: 'bs.gl.journal.index' },
                 { label: 'Cost Center', href: 'bs.cost-centers.index' },
                 { label: 'Mapping Cash Flow Direct', href: 'bs.gl.cf-mapping.index' },
                 { label: 'Dimensi Jurnal', href: 'bs.journal-dimensions.index' },
             ]},
-            { label: 'Query', icon: FileBarChart, permission: ['businesssupport.view', 'gl.*'], children: [
+            { label: 'Query', icon: FileBarChart, permission: ['businesssupport.approval.*', 'gl.journal.*', 'gl.ledger.*'], children: [
                 { label: 'Detail Transaksi Jurnal', href: 'bs.gl.journal.detail' },
                 { label: 'General Ledger', href: 'bs.gl.ledger' },
             ]},
-            { label: 'Neraca', icon: Calculator, permission: ['businesssupport.view', 'gl.*'], children: [
+            { label: 'Neraca', icon: Calculator, permission: ['gl.comparative.*', 'gl.extra-report.*', 'gl.financials.*', 'gl.trialbalance.*', 'gl.worksheet.*'], children: [
                 { label: 'Neraca Saldo', href: 'bs.gl.trialbalance' },
                 { label: 'Neraca', href: 'bs.gl.balancesheet' },
                 { label: 'Neraca Lajur', href: 'bs.gl.worksheet' },
@@ -220,7 +220,7 @@ export function navGroups(foUrl: string): NavGroup[] {
                 { label: 'Neraca Komparasi (Bulanan)', href: 'bs.gl.comparative' },
                 { label: 'Neraca Komparasi (Tahunan)', href: 'bs.gl.extra', params: { mode: 'tahunan' } },
             ]},
-            { label: 'Laba Rugi', icon: BarChart3, permission: ['businesssupport.view', 'gl.*'], children: [
+            { label: 'Laba Rugi', icon: BarChart3, permission: ['gl.comparative.*', 'gl.extra-report.*', 'gl.financials.*'], children: [
                 { label: 'Laba Rugi', href: 'bs.gl.incomestatement' },
                 { label: 'Laba Rugi vs Budget', href: 'bs.gl.lr-budget' },
                 { label: 'Laba Rugi Multi Periode', href: 'bs.gl.extra', params: { mode: 'lr-multi' } },
@@ -228,26 +228,26 @@ export function navGroups(foUrl: string): NavGroup[] {
                 { label: 'Laba Rugi Komparasi (Tahunan)', href: 'bs.gl.extra', params: { mode: 'lr-tahunan' } },
                 { label: 'Laba Rugi Perbandingan', href: 'bs.gl.extra', params: { mode: 'lr-banding' } },
             ]},
-            { label: 'Cash Flow Direct', icon: PieChart, permission: ['businesssupport.view', 'gl.*'], children: [
+            { label: 'Cash Flow Direct', icon: PieChart, permission: ['gl.cashflow.*'], children: [
                 { label: 'Cash Flow Direct Multi Periode', href: 'bs.gl.cashflow', params: { method: 'direct' } },
             ]},
-            { label: 'Cash Flow Indirect', icon: PieChart, permission: ['businesssupport.view', 'gl.*'], children: [
+            { label: 'Cash Flow Indirect', icon: PieChart, permission: ['gl.cashflow.*'], children: [
                 { label: 'Cash Flow Indirect Multi Periode', href: 'bs.gl.cashflow', params: { method: 'indirect' } },
             ]},
-            { label: 'Saldo Awal', icon: Coins, permission: ['businesssupport.view', 'gl.*'], children: [
+            { label: 'Saldo Awal', icon: Coins, permission: ['gl.saldo-awal.*'], children: [
                 { label: 'Input Saldo Awal', href: 'bs.closing.saldoawal' },
                 { label: 'Confirm Saldo Awal', href: 'bs.gl.saldo-awal.confirm' },
             ]},
-            { label: 'Jurnal Memorial', icon: FileText, permission: ['businesssupport.view', 'gl.*'], children: [
+            { label: 'Jurnal Memorial', icon: FileText, permission: ['gl.journal.*'], children: [
                 { label: 'Registrasi Jurnal Memorial', href: 'bs.gl.journal.create' },
                 { label: 'Import Jurnal', href: 'bs.gl.journal.import' },
             ]},
-            { label: 'Generate Lap. Keuangan', icon: FileCheck, permission: ['businesssupport.view', 'gl.*'], children: [
+            { label: 'Generate Lap. Keuangan', icon: FileCheck, permission: ['businesssupport.approval.*', 'gl.journal.*', 'gl.late-closing.*'], children: [
                 { label: 'Finalisasi Jurnal', href: 'bs.gl.journal.finalisasi' },
                 { label: 'Approval Jurnal', href: 'bs.gl.journal.approval' },
                 { label: 'Late Closing', href: 'bs.gl.late-closing' },
             ]},
-            { label: 'Generate Lap. Perusahaan', icon: Lock, permission: ['businesssupport.view', 'gl.*'], children: [
+            { label: 'Generate Lap. Perusahaan', icon: Lock, permission: ['gl.closing.*'], children: [
                 { label: 'Closing Fiskal', href: 'bs.closing.index' },
             ]},
         ],
@@ -257,17 +257,17 @@ export function navGroups(foUrl: string): NavGroup[] {
         icon: Coins, color: '#3b82f6', route: 'bs.ar.index',
         desc: 'Invoice, kuitansi & kartu piutang customer.',
         items: [
-            { label: 'Invoice Piutang',     icon: Coins,            href: 'bs.ar.index',             permission: ['businesssupport.view', 'ar.*'] },
-            { label: 'UM Penjualan',        icon: Wallet,           href: 'bs.ar.um.index',          permission: ['businesssupport.view', 'ar.*'] },
-            { label: 'Rekonsiliasi Piutang', icon: Scale,           href: 'bs.ar.rekonsiliasi.index', permission: ['businesssupport.view', 'ar.*'] },
+            { label: 'Invoice Piutang',     icon: Coins,            href: 'bs.ar.index',             permission: ['ar.view'] },
+            { label: 'UM Penjualan',        icon: Wallet,           href: 'bs.ar.um.index',          permission: ['ar.view'] },
+            { label: 'Rekonsiliasi Piutang', icon: Scale,           href: 'bs.ar.rekonsiliasi.index', permission: ['ar.view'] },
             // "Registrasi Piutang" & "Kategori Invoice" DIHILANGKAN: invoice piutang tidak dibuat
             // manual lagi — dibentuk otomatis dari modul Booked Revenue saat unit di-booking.
             // "Kuitansi Piutang" DIHAPUS dari sidebar (permintaan user). Route & halamannya
             // sengaja TIDAK dihapus supaya kuitansi yang sudah pernah dibuat tetap terjangkau.
-            { label: 'Memorial Piutang',    icon: BookText,         href: 'bs.ar.memorial.index',    permission: ['businesssupport.view', 'ar.*'] },
-            { label: 'Kartu Piutang',       icon: LayoutList,       href: 'bs.ar.card',              permission: ['businesssupport.view', 'ar.*'] },
-            { label: 'Aging Piutang',       icon: FileBarChart,     href: 'bs.ar.aging',             permission: ['businesssupport.view', 'ar.*'] },
-            { label: 'Penghapusan Piutang', icon: Eraser,           href: 'bs.ar.penghapusan.index', permission: ['businesssupport.view', 'ar.*'] },
+            { label: 'Memorial Piutang',    icon: BookText,         href: 'bs.ar.memorial.index',    permission: ['ar.memorial.*'] },
+            { label: 'Kartu Piutang',       icon: LayoutList,       href: 'bs.ar.card',              permission: ['ar.card.*'] },
+            { label: 'Aging Piutang',       icon: FileBarChart,     href: 'bs.ar.aging',             permission: ['ar.aging.*'] },
+            { label: 'Penghapusan Piutang', icon: Eraser,           href: 'bs.ar.penghapusan.index', permission: ['ar.penghapusan.*'] },
         ],
     },
     {
@@ -275,16 +275,16 @@ export function navGroups(foUrl: string): NavGroup[] {
         icon: Receipt, color: '#f43f5e', route: 'bs.ap.index',
         desc: 'Invoice & pembayaran hutang supplier.',
         items: [
-            { label: 'Setup', icon: SlidersHorizontal, permission: ['businesssupport.view', 'ap.*'], children: [
+            { label: 'Setup', icon: SlidersHorizontal, permission: ['ap.category.*', 'ap.repair.*'], children: [
                 { label: 'Kategori Invoice', href: 'bs.ap.categories.index' },
                 { label: 'Kategori Gimmick', href: 'bs.gimmick.categories.index' },
                 { label: 'Repair Data', href: 'bs.ap.repair.index' },
             ]},
-            { label: 'Master', icon: BookText, permission: ['businesssupport.view', 'ap.*'], children: [
+            { label: 'Master', icon: BookText, permission: ['ap.invoice.*', 'ap.kuitansi.*'], children: [
                 { label: 'Invoice Hutang', href: 'bs.ap.index' },
                 { label: 'Kuitansi Hutang', href: 'bs.ap.kuitansi.index' },
             ]},
-            { label: 'Query', icon: FileBarChart, permission: ['businesssupport.view', 'ap.*'], children: [
+            { label: 'Query', icon: FileBarChart, permission: ['ap.aging.*', 'ap.invoice.*', 'ap.paycard.*', 'ap.penghapusan.*', 'ar.view', 'tax.pph.*'], children: [
                 { label: 'Kartu Hutang', href: 'bs.ap.card' },
                 { label: 'Aging Hutang', href: 'bs.ap.aging', params: { view: 'detail' } },
                 { label: 'Proyeksi Hutang', href: 'bs.projection', params: { mode: 'hutang' } },
@@ -295,10 +295,10 @@ export function navGroups(foUrl: string): NavGroup[] {
                 // dan tempatnya laporan di modul ini adalah Query.
                 { label: 'Rekap PPh Dipotong', href: 'bs.tax.pph' },
             ]},
-            { label: 'Generate Invoice', icon: ClipboardList, permission: ['businesssupport.view', 'ap.*'], children: [
+            { label: 'Generate Invoice', icon: ClipboardList, permission: ['ap.invoice.*'], children: [
                 { label: 'Registrasi Invoice Hutang', href: 'bs.ap.create' },
             ]},
-            { label: 'Penyesuaian Invoice', icon: Eraser, permission: ['businesssupport.view', 'ap.*'], children: [
+            { label: 'Penyesuaian Invoice', icon: Eraser, permission: ['ap.penghapusan.*'], children: [
                 { label: 'Penghapusan Nilai Hutang', href: 'bs.ap.penghapusan.index' },
             ]},
             // Sumber 'po' memuat seluruh dokumen asal FO (penerimaan PO, refund, BLT, komisi, gimmick),
@@ -307,16 +307,16 @@ export function navGroups(foUrl: string): NavGroup[] {
             // menunjuk rute yang sama (bs.ap.posting.index) dengan params `source` yang
             // tidak pernah dibaca controller, jadi "Posting Invoice SPK" sebenarnya membuka
             // layar yang persis sama dengan "Posting Invoice dari FO".
-            { label: 'Posting Invoice dari FO', icon: FileCheck, permission: ['businesssupport.view', 'ap.*'], children: [
+            { label: 'Posting Invoice dari FO', icon: FileCheck, permission: ['ap.posting.*'], children: [
                 { label: 'Posting Invoice dari FO', href: 'bs.ap.posting.index' },
             ]},
-            { label: 'Posting Invoice dari Purchase Order', icon: ShoppingCart, permission: ['businesssupport.view', 'ap.*'], children: [
+            { label: 'Posting Invoice dari Purchase Order', icon: ShoppingCart, permission: ['ap.posting.*'], children: [
                 { label: 'Posting Invoice dari Purchase Order', href: 'bs.ap.posting.po.index' },
             ]},
-            { label: 'Posting Invoice SPK', icon: HardHat, permission: ['businesssupport.view', 'ap.*'], children: [
+            { label: 'Posting Invoice SPK', icon: HardHat, permission: ['ap.posting.*'], children: [
                 { label: 'Posting Invoice SPK', href: 'bs.ap.posting.spk.index' },
             ]},
-            { label: 'Saldo Awal', icon: Coins, permission: ['businesssupport.view', 'ap.*'], children: [
+            { label: 'Saldo Awal', icon: Coins, permission: ['ap.opening.*'], children: [
                 { label: 'Saldo Awal', href: 'bs.ap.opening.index' },
             ]},
         ],
@@ -326,12 +326,12 @@ export function navGroups(foUrl: string): NavGroup[] {
         icon: Wallet, color: '#6366f1', route: 'bs.cashbook.printhub',
         desc: 'Kas, Bank, Giro, Bon Sementara & approval.',
         items: [
-            { label: 'General Function', icon: FileText, permission: ['businesssupport.view', 'cashbook.*'], children: [
+            { label: 'General Function', icon: FileText, permission: ['cashbook.print.*'], children: [
                 // Satu-satunya anak grup ini; namanya disamakan dengan grupnya agar tidak
                 // terbaca sebagai dua tingkat berbeda ("General Function → Print-Out").
                 { label: 'General Function', href: 'bs.cashbook.printhub' },
             ]},
-            { label: 'Setup', icon: SlidersHorizontal, permission: ['businesssupport.view', 'cashbook.*'], children: [
+            { label: 'Setup', icon: SlidersHorizontal, permission: ['businesssupport.approval.*', 'cashbook.print.*', 'cashbook.repair.*', 'cashbook.saldo.*'], children: [
                 { label: 'Rekening', href: 'rekening.index' },
                 // Barcode tanda tangan yang dipakai pada Persetujuan (TTD) SIP.
                 { label: 'Set Up Barcode', href: 'bs.cashbook.signature-barcode.index' },
@@ -340,7 +340,7 @@ export function navGroups(foUrl: string): NavGroup[] {
                 { label: 'Set Up Credit Card', href: 'bs.cashbook.credit-card.index' },
                 { label: 'Repair Data', href: 'bs.cashbook.repair.index' },
             ]},
-            { label: 'Master', icon: Wallet, permission: ['businesssupport.view', 'cashbook.*'], children: [
+            { label: 'Master', icon: Wallet, permission: ['cashbook.advance.*', 'cashbook.cheque-out.*', 'cashbook.giro.*', 'cashbook.pettycash.*', 'cashbook.transaction.*'], children: [
                 { label: 'Transfer Rekening', href: 'bs.cashbook.index', params: { type: 'transfer' } },
                 { label: 'Kas Masuk', href: 'bs.cashbook.index', params: { type: 'in' } },
                 { label: 'Kas Keluar', href: 'bs.cashbook.index', params: { type: 'out' } },
@@ -351,7 +351,7 @@ export function navGroups(foUrl: string): NavGroup[] {
                 { label: 'Realisasi Bon Sementara', href: 'bs.advance.index' },
                 { label: 'Outstanding Kasbon', href: 'bs.cashbook.outstanding-kasbon' },
             ]},
-            { label: 'Report/Query', icon: FileBarChart, permission: ['businesssupport.view', 'cashbook.*'], children: [
+            { label: 'Report/Query', icon: FileBarChart, permission: ['cashbook.advance.*', 'cashbook.giro-calendar.*', 'cashbook.ledger.*', 'cashbook.saldo.*', 'cashbook.transaction.*'], children: [
                 { label: 'Rekening Ledger', href: 'bs.cashbook.ledger' },
                 { label: 'Rekening Saldo', href: 'bs.cashbook.balances' },
                 { label: 'Kalender Cek Giro', href: 'bs.cashbook.giro-calendar' },
@@ -359,16 +359,16 @@ export function navGroups(foUrl: string): NavGroup[] {
                 { label: 'Kartu Bon Sementara', href: 'bs.advance.card' },
                 { label: 'Rekap Bon Sementara', href: 'bs.advance.report' },
             ]},
-            { label: 'Saldo Awal', icon: Coins, permission: ['businesssupport.view', 'cashbook.*'], children: [
+            { label: 'Saldo Awal', icon: Coins, permission: ['cashbook.opening.*'], children: [
                 { label: 'Saldo Awal Rekening', href: 'bs.cashbook.opening.index' },
             ]},
-            { label: 'Transaksi Pengeluaran Bank', icon: Banknote, permission: ['businesssupport.view', 'cashbook.*'], children: [
+            { label: 'Transaksi Pengeluaran Bank', icon: Banknote, permission: ['ap.kuitansi.*', 'bs.sip.*', 'businesssupport.approval.*', 'cashbook.transaction.*'], children: [
                 { label: 'Registrasi Pengeluaran Kas & Bank', href: 'bs.cashbook.create', params: { type: 'out' } },
                 { label: 'Registrasi Pengeluaran Kas & Bank (AP)', href: 'bs.ap.kuitansi.create' },
                 { label: 'Approval Pengeluaran Kas & Bank', href: 'bs.cashbook.approvals' },
-                { label: 'SIP (Instruksi Bayar)', href: 'bs.sip.index', permission: ['businesssupport.view', 'bs.*'] },
+                { label: 'SIP (Instruksi Bayar)', href: 'bs.sip.index', permission: ['bs.sip.*'] },
             ]},
-            { label: 'Transaksi Penerimaan Bank', icon: Landmark, permission: ['businesssupport.view', 'cashbook.*'], children: [
+            { label: 'Transaksi Penerimaan Bank', icon: Landmark, permission: ['cashbook.approval-retensi.*', 'cashbook.approval-utjdp.*', 'cashbook.transaction.*'], children: [
                 { label: 'Transfer Antar Rekening', href: 'bs.cashbook.create', params: { type: 'transfer' } },
                 { label: 'Penerimaan Bank', href: 'bs.cashbook.create', params: { type: 'in' } },
                 { label: 'Approval Retensi', href: 'bs.cashbook.approval-retensi' },
@@ -377,25 +377,25 @@ export function navGroups(foUrl: string): NavGroup[] {
                 // Penerimaan dari Pelunasan DP, Angsuran & Tambah DP (FO) — masuk otomatis.
                 { label: 'Approval DP', href: 'bs.cashbook.approval-dp' },
             ]},
-            { label: 'Transaksi Bon Sementara', icon: HandCoins, permission: ['businesssupport.view', 'cashbook.*'], children: [
+            { label: 'Transaksi Bon Sementara', icon: HandCoins, permission: ['cashbook.advance.*'], children: [
                 { label: 'Pengeluaran Bon Sementara', href: 'bs.advance.payments' },
                 { label: 'Realisasi Bon Sementara', href: 'bs.advance.index' },
             ]},
-            { label: 'Transaksi Kas Kecil', icon: Wallet, permission: ['businesssupport.view', 'cashbook.*'], children: [
+            { label: 'Transaksi Kas Kecil', icon: Wallet, permission: ['cashbook.pettycash.*'], children: [
                 { label: 'Penerimaan Kas Kecil', href: 'bs.pettycash.create', params: { type: 'in' } },
                 { label: 'Pengeluaran Kas Kecil', href: 'bs.pettycash.create', params: { type: 'out' } },
             ]},
-            { label: 'Transaksi Cek Giro Masuk', icon: FileText, permission: ['businesssupport.view', 'cashbook.*'], children: [
+            { label: 'Transaksi Cek Giro Masuk', icon: FileText, permission: ['cashbook.giro.*'], children: [
                 { label: 'Penerimaan Cek Giro', href: 'bs.giro.create' },
                 { label: 'Kliring Cek Giro Masuk', href: 'bs.giro.index' },
                 { label: 'Tolakan Cek Giro Masuk', href: 'bs.giro.index' },
             ]},
-            { label: 'Transaksi Cek Giro Keluar', icon: FileText, permission: ['businesssupport.view', 'cashbook.*'], children: [
+            { label: 'Transaksi Cek Giro Keluar', icon: FileText, permission: ['cashbook.cheque-out.*'], children: [
                 { label: 'Data BG/Cek Keluar', href: 'bs.cheque-out.index' },
             ]},
             // Modul Cash Flow: kategorinya menjadi pilihan "Pembagian Biaya per Cash Flow" di
             // Rekening Ledger, dan Report Cashflow merekap pembagian tersebut.
-            { label: 'Cash Flow', icon: BarChart3, permission: ['businesssupport.view', 'cashbook.*'], children: [
+            { label: 'Cash Flow', icon: BarChart3, permission: ['cashbook.ledger.*'], children: [
                 { label: 'Set Up Kategori', href: 'bs.cashflow.categories' },
                 { label: 'Set Up Rumus', href: 'bs.cashflow.formulas' },
                 { label: 'Report Cashflow', href: 'bs.cashflow.report' },
@@ -410,26 +410,26 @@ export function navGroups(foUrl: string): NavGroup[] {
             // Grup "General Function → Print-Out" DIHAPUS: isinya hanya daftar tautan ke
             // keempat laporan yang SUDAH ada satu per satu di grup "Query" di bawah ini,
             // jadi hanya menambah satu lompatan tanpa menambah apa pun.
-            { label: 'Master', icon: BookText, permission: ['businesssupport.view', 'budget.*'], children: [
+            { label: 'Master', icon: BookText, permission: ['budget.allocation.*', 'budget.correction.*', 'budget.master.*'], children: [
                 { label: 'Budget Control', href: 'bs.budget.index' },
                 { label: 'Alokasi Budget Control', href: 'bs.budget.allocation.index' },
                 { label: 'Koreksi Budget Control', href: 'bs.budget.correction.index' },
             ]},
-            { label: 'Query', icon: FileBarChart, permission: ['businesssupport.view', 'budget.*'], children: [
+            { label: 'Query', icon: FileBarChart, permission: ['budget.query.*'], children: [
                 { label: 'Master Budget', href: 'bs.budget.query.master' },
                 { label: 'Koreksi Budget', href: 'bs.budget.query.correction' },
                 { label: 'Realisasi Budget', href: 'bs.budget.query.realization' },
                 { label: 'Alokasi Budget', href: 'bs.budget.query.allocation' },
             ]},
-            { label: 'Upload Budget', icon: FileSpreadsheet, permission: ['businesssupport.view', 'budget.*'], children: [
+            { label: 'Upload Budget', icon: FileSpreadsheet, permission: ['budget.master.*', 'budget.upload.*', 'businesssupport.approval.*'], children: [
                 { label: 'Upload Budget', href: 'bs.budget.upload.index' },
                 { label: 'Approval Budget', href: 'bs.budget.approvals' },
             ]},
-            { label: 'Alokasi Budget', icon: Layers, permission: ['businesssupport.view', 'budget.*'], children: [
+            { label: 'Alokasi Budget', icon: Layers, permission: ['budget.allocation.*', 'businesssupport.approval.*'], children: [
                 { label: 'Alokasi Budget', href: 'bs.budget.allocation.create' },
                 { label: 'Approval Alokasi Budget', href: 'bs.budget.allocation.approvals' },
             ]},
-            { label: 'Koreksi Budget', icon: ShieldCheck, permission: ['businesssupport.view', 'budget.*'], children: [
+            { label: 'Koreksi Budget', icon: ShieldCheck, permission: ['budget.correction.*', 'businesssupport.approval.*'], children: [
                 { label: 'Koreksi Budget', href: 'bs.budget.correction.create' },
                 { label: 'Approval Koreksi Budget', href: 'bs.budget.correction.approvals' },
             ]},
@@ -440,22 +440,22 @@ export function navGroups(foUrl: string): NavGroup[] {
         icon: HardHat, color: '#f97316', route: 'bs.spk.index',
         desc: 'SPK, progress lapangan & retensi.',
         items: [
-            { label: 'Setup', icon: FolderGit2, permission: ['businesssupport.view', 'contractor.*'], children: [
+            { label: 'Setup', icon: FolderGit2, permission: ['contractor.project.*', 'contractor.spk.*'], children: [
                 { label: 'Project', href: 'bs.spk.project.index' },
                 { label: 'Set Up SPK', href: 'bs.spk.draft.edit' },
             ]},
-            { label: 'Master', icon: FileSignature, permission: ['businesssupport.view', 'contractor.*'], children: [
+            { label: 'Master', icon: FileSignature, permission: ['contractor.kpl.*', 'contractor.retention.*', 'contractor.spk.*'], children: [
                 { label: 'Surat Perintah Kerja', href: 'bs.spk.index' },
                 { label: 'Kontrol Progress Lapangan', href: 'bs.spk.kpl.index' },
                 { label: 'Progress Retensi', href: 'bs.spk.retention.index' },
             ]},
-            { label: 'Query', icon: FileBarChart, permission: ['businesssupport.view', 'contractor.*'], children: [
+            { label: 'Query', icon: FileBarChart, permission: ['contractor.query.*'], children: [
                 { label: 'Rekap SPK', href: 'bs.spk.query.rekap' },
                 { label: 'Kartu Hutang Supplier - SPK', href: 'bs.spk.query.kartu-hutang' },
                 { label: 'Pemakaian Barang', href: 'bs.spk.query.pemakaian' },
                 { label: 'Summary SPK', href: 'bs.spk.query.summary' },
             ]},
-            { label: 'Surat Perintah Kerja', icon: ClipboardList, permission: ['businesssupport.view', 'contractor.*'], children: [
+            { label: 'Surat Perintah Kerja', icon: ClipboardList, permission: ['contractor.kpl.*', 'contractor.retention.*', 'contractor.spk.*'], children: [
                 { label: 'Registrasi Surat Perintah Kerja', href: 'bs.spk.create' },
                 { label: 'Registrasi Kontrol Progress Lapangan', href: 'bs.spk.kpl.create' },
                 { label: 'Registrasi Retensi', href: 'bs.spk.retention.create' },
@@ -474,7 +474,7 @@ export function navGroups(foUrl: string): NavGroup[] {
         items: [
             // Grup "General Function → Print-Out" DIHAPUS: isinya hanya daftar tautan ke
             // keenam laporan yang SUDAH ada satu per satu di grup "Query" di bawah ini.
-            { label: 'Setup', icon: SlidersHorizontal, permission: ['businesssupport.view', 'cogs.*'], children: [
+            { label: 'Setup', icon: SlidersHorizontal, permission: ['cogs.budget.*', 'cogs.category.*', 'cogs.location.*', 'cogs.provision.*', 'cogs.unitcoa.*', 'cogs.upload.*'], children: [
                 { label: 'Lokasi', href: 'bs.cogs.location.index' },
                 { label: 'Ketentuan', href: 'bs.cogs.provision.index' },
                 { label: 'Budget', href: 'bs.cogs.budget.index' },
@@ -484,12 +484,12 @@ export function navGroups(foUrl: string): NavGroup[] {
                 { label: 'Upload Akun Budget', href: 'bs.cogs.upload.form', params: { kind: 'akun' } },
                 { label: 'Upload Nilai Budget', href: 'bs.cogs.upload.form', params: { kind: 'nilai' } },
             ]},
-            { label: 'Master', icon: BookText, permission: ['businesssupport.view', 'cogs.*'], children: [
+            { label: 'Master', icon: BookText, permission: ['cogs.hpp.*', 'cogs.mutation.*', 'cogs.realization.*'], children: [
                 { label: 'Mutasi Budget', href: 'bs.cogs.mutation.index' },
                 { label: 'HPP RealCost', href: 'bs.cogs.hpp.index' },
                 { label: 'Saldo Awal Realisasi', href: 'bs.cogs.realization.index' },
             ]},
-            { label: 'Query', icon: FileBarChart, permission: ['businesssupport.view', 'cogs.*'], children: [
+            { label: 'Query', icon: FileBarChart, permission: ['cogs.query.*'], children: [
                 { label: 'Report Budget', href: 'bs.cogs.query.budget' },
                 { label: 'Report Realisasi Budget', href: 'bs.cogs.query.realisasi' },
                 { label: 'Report Realisasi Budget Detil', href: 'bs.cogs.query.realisasi-detil' },
@@ -497,16 +497,16 @@ export function navGroups(foUrl: string): NavGroup[] {
                 { label: 'Report Persediaan Unit RealCost', href: 'bs.cogs.query.persediaan-unit' },
                 { label: 'Report HPP Unit RealCost', href: 'bs.cogs.query.hpp-unit' },
             ]},
-            { label: 'Mutasi Budget', icon: GitMerge, permission: ['businesssupport.view', 'cogs.*'], children: [
+            { label: 'Mutasi Budget', icon: GitMerge, permission: ['businesssupport.approval.*', 'cogs.mutation.*'], children: [
                 { label: 'Registrasi Mutasi Budget', href: 'bs.cogs.mutation.create' },
                 { label: 'Approval Mutasi Budget', href: 'bs.cogs.mutation.approvals' },
             ]},
-            { label: 'Transaksi HPP RealCost', icon: Calculator, permission: ['businesssupport.view', 'cogs.*'], children: [
+            { label: 'Transaksi HPP RealCost', icon: Calculator, permission: ['cogs.hpp.*'], children: [
                 { label: 'Generate HPP', href: 'bs.cogs.hpp.generate' },
                 { label: 'Posting Jurnal HPP Persediaan', href: 'bs.cogs.hpp.post-persediaan' },
                 { label: 'Posting Jurnal HPP', href: 'bs.cogs.hpp.post-hpp' },
             ]},
-            { label: 'Saldo Awal Realisasi', icon: Coins, permission: ['businesssupport.view', 'cogs.*'], children: [
+            { label: 'Saldo Awal Realisasi', icon: Coins, permission: ['cogs.realization.*'], children: [
                 { label: 'Input Saldo Awal Realisasi', href: 'bs.cogs.realization.create' },
             ]},
         ],
@@ -523,9 +523,9 @@ export function navGroups(foUrl: string): NavGroup[] {
         items: [
             // FPB ada di ATAS Purchase Order: permintaan pembelian adalah langkah SEBELUM PO,
             // jadi urutan sidebar mengikuti urutan prosesnya (FPB disetujui → jadi PO).
-            { label: 'FPB (Permintaan)',   icon: ClipboardList, href: 'bs.fpb.index',          permission: ['businesssupport.view', 'bs.*'] },
-            { label: 'Purchase Order',     icon: ShoppingCart,  href: 'bs.po.index',           permission: ['businesssupport.view', 'bs.*'] },
-            { label: 'Report PO',          icon: ClipboardList, href: 'bs.po.report',          permission: ['businesssupport.view', 'bs.*'] },
+            { label: 'FPB (Permintaan)',   icon: ClipboardList, href: 'bs.fpb.index',          permission: ['bs.fpb.*'] },
+            { label: 'Purchase Order',     icon: ShoppingCart,  href: 'bs.po.index',           permission: ['bs.po.*'] },
+            { label: 'Report PO',          icon: ClipboardList, href: 'bs.po.report',          permission: ['bs.po.*'] },
         ],
     },
     {
@@ -533,12 +533,12 @@ export function navGroups(foUrl: string): NavGroup[] {
         icon: Boxes, color: '#eab308', route: 'bs.items.index',
         desc: 'Item/stok, penerimaan & pengeluaran barang.',
         items: [
-            { label: 'Item / Stok',        icon: Boxes,         href: 'bs.items.index',        permission: ['businesssupport.view', 'bs.*'] },
+            { label: 'Item / Stok',        icon: Boxes,         href: 'bs.items.index',        permission: ['bs.item.*'] },
             // FPB (Permintaan) dipindah ke modul Purchasing — permintaan pembelian adalah
             // langkah awal proses pembelian, bukan pergerakan stok.
-            { label: 'Penerimaan Barang',  icon: PackagePlus,   href: 'bs.receipt.index',      permission: ['businesssupport.view', 'bs.*'] },
-            { label: 'Pengeluaran Barang', icon: PackageMinus,  href: 'bs.issue.index',        permission: ['businesssupport.view', 'bs.*'] },
-            { label: 'Kartu Stok',         icon: LayoutList,    href: 'bs.stockcard.index',    permission: ['businesssupport.view', 'bs.*'] },
+            { label: 'Penerimaan Barang',  icon: PackagePlus,   href: 'bs.receipt.index',      permission: ['bs.receipt.*'] },
+            { label: 'Pengeluaran Barang', icon: PackageMinus,  href: 'bs.issue.index',        permission: ['bs.issue.*'] },
+            { label: 'Kartu Stok',         icon: LayoutList,    href: 'bs.stockcard.index',    permission: ['bs.stockcard.*'] },
         ],
     },
     {
@@ -546,13 +546,13 @@ export function navGroups(foUrl: string): NavGroup[] {
         icon: ShieldCheck, color: '#ef4444', route: 'security.index',
         desc: 'User, hak akses, absensi & log.',
         items: [
-            { label: 'Security',        icon: ShieldCheck,   href: 'security.index',                permission: 'security.view' },
-            { label: 'Matrikulasi Perusahaan', icon: Building2, href: 'security.matrikulasi.company', permission: 'security.view' },
-            { label: 'Matrikulasi Project',    icon: FolderGit2, href: 'security.matrikulasi.project', permission: 'security.view' },
-            { label: 'Absensi',         icon: CalendarClock, href: 'security.absensi',              permission: 'security.view' },
-            { label: 'Job History',     icon: Briefcase,     href: 'security.jobhistory',           permission: 'security.view' },
-            { label: 'Technical Problem',icon: TriangleAlert,href: 'security.technical',            permission: 'security.view' },
-            { label: 'Security Log',    icon: Lock,          href: 'security.log',                  permission: 'security.view' },
+            { label: 'Security',        icon: ShieldCheck,   href: 'security.index',                permission: ['security.view'] },
+            { label: 'Matrikulasi Perusahaan', icon: Building2, href: 'security.matrikulasi.company', permission: ['security.view'] },
+            { label: 'Matrikulasi Project',    icon: FolderGit2, href: 'security.matrikulasi.project', permission: ['security.view'] },
+            { label: 'Absensi',         icon: CalendarClock, href: 'security.absensi',              permission: ['security.view'] },
+            { label: 'Job History',     icon: Briefcase,     href: 'security.jobhistory',           permission: ['security.view'] },
+            { label: 'Technical Problem',icon: TriangleAlert,href: 'security.technical',            permission: ['security.view'] },
+            { label: 'Security Log',    icon: Lock,          href: 'security.log',                  permission: ['security.view'] },
         ],
     },
     {
@@ -561,7 +561,7 @@ export function navGroups(foUrl: string): NavGroup[] {
         desc: 'Pengaturan & konfigurasi sistem.',
         items: [
             { label: 'Settings', icon: Settings, href: 'settings.index', permission: 'system.user.view' },
-            { label: 'Konfigurasi Sistem', icon: SlidersHorizontal, href: 'settings.config.index', permission: 'system.setup.parameter' },
+            { label: 'Konfigurasi Sistem', icon: SlidersHorizontal, href: 'settings.config.index', permission: ['system.setup.*'] },
         ],
     },
     ]);

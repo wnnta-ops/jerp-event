@@ -12,6 +12,15 @@ const props = defineProps<{
 const page = usePage();
 const foUrl: string = ((page.props as any).config?.fo_url ?? '');
 
+// Booking sudah PINDAH ke FO dan rutenya dimatikan lewat sakelar
+// (config/modul_pindah_fo.php). route() melempar bila namanya tak terdaftar —
+// dan ini dipanggil di dalam template, jadi tanpa penjagaan seluruh halaman
+// siteplan ikut gagal saat kursor menyentuh unit yang tersedia.
+const urlBuatBooking = computed<string | null>(() => {
+    try { return (route as any)('bookings.create'); }
+    catch { return null; }
+});
+
 const filter   = ref<string>('');
 const hovered  = ref<any>(null);
 const editMode = ref(false);
@@ -97,8 +106,8 @@ async function onDrop(unit: any, e: DragEvent) {
             <p class="text-sm text-neutral-500">{{ hovered.unit_type?.name }} · {{ hovered.unit_type?.lt }}/{{ hovered.unit_type?.lb }} m²</p>
             <p class="text-sm mt-2 font-semibold">{{ new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(hovered.current_price) }}</p>
             <p class="text-xs mt-1">Status: <span class="font-semibold capitalize">{{ hovered.status }}</span></p>
-            <Link v-if="hovered.status === 'available'"
-                :href="`${route('bookings.create')}?unit_id=${hovered.id}`"
+            <Link v-if="hovered.status === 'available' && urlBuatBooking"
+                :href="`${urlBuatBooking}?unit_id=${hovered.id}`"
                 class="mt-3 block text-center px-3 py-2 rounded-lg bg-primary-600 text-white text-sm font-medium hover:bg-primary-700 transition">
                 + Buat Booking untuk Unit Ini
             </Link>

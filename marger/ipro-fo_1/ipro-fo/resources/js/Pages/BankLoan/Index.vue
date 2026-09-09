@@ -41,6 +41,14 @@ const optStatus = computed(() => distinct(dStatus));
 
 // Filter global (ketik) + checklist per-kolom (kosong = semua). Semua di sisi klien.
 const search = ref('');
+
+// Export Excel dilayani modul Laporan, yang bisa dimatikan lewat sakelar
+// (config/modul_pindah_fo.php). route() melempar bila namanya tak terdaftar,
+// jadi tombolnya disembunyikan — bukan dibiarkan merusak seluruh halaman.
+const urlExportKpr = computed<string | null>(() => {
+    try { return (route as any)('exports.kpr', { search: search.value || undefined }); }
+    catch { return null; }
+});
 const col = reactive<Record<string, string[]>>({ no: [], status: [], cust: [], project: [], cluster: [], unit: [], bank: [] });
 const hasFilter = computed(() => Boolean(search.value) || Object.values(col).some((a) => a.length));
 function resetFilter() { search.value = ''; (Object.keys(col) as Array<keyof typeof col>).forEach((k) => (col[k] = [])); }
@@ -118,7 +126,7 @@ watch(filtered, () => nextTick(updateWidth));
         <div class="flex justify-between items-center">
             <h1 class="text-2xl font-bold">Proses KPR</h1>
             <div class="flex items-center gap-2">
-                <a :href="route('exports.kpr', { search: search || undefined })" class="inline-flex items-center gap-1.5 rounded-lg border border-neutral-300 px-3 py-2 text-sm font-medium hover:bg-neutral-50 dark:border-neutral-700 dark:hover:bg-neutral-800"><Download class="h-4 w-4" /> Export Excel</a>
+                <a v-if="urlExportKpr" :href="urlExportKpr" class="inline-flex items-center gap-1.5 rounded-lg border border-neutral-300 px-3 py-2 text-sm font-medium hover:bg-neutral-50 dark:border-neutral-700 dark:hover:bg-neutral-800"><Download class="h-4 w-4" /> Export Excel</a>
                 <!-- Akad Massal: dari Pra Proses KPR langsung ke tahap SI (tahapan di bank dilewati). -->
                 <Link :href="route('kpr.akad-bulk')"><Button variant="secondary"><template #icon-left><Users class="h-4 w-4" /></template>Akad Massal</Button></Link>
                 <Link :href="route('kpr.disbursement-bulk')"><Button variant="secondary"><template #icon-left><Layers class="h-4 w-4" /></template>Pencairan Retensi (Massal)</Button></Link>

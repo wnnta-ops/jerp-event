@@ -159,16 +159,22 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
     Route::get('/',          fn () => redirect()->route('dashboard'));
     Route::get('/dashboard', DashboardController::class)->name('dashboard');
 
-    // ── CRM SALES PIPELINE (Lead Management) ────────────────
-    Route::get('/crm/leads',                  [\App\Http\Controllers\Web\Crm\LeadController::class, 'index'])->name('crm.leads.index');
-    Route::get('/crm/leads/create',           [\App\Http\Controllers\Web\Crm\LeadController::class, 'create'])->name('crm.leads.create');
-    Route::post('/crm/leads',                 [\App\Http\Controllers\Web\Crm\LeadController::class, 'store'])->name('crm.leads.store');
-    Route::get('/crm/leads/{lead}',           [\App\Http\Controllers\Web\Crm\LeadController::class, 'show'])->name('crm.leads.show');
-    Route::put('/crm/leads/{lead}',           [\App\Http\Controllers\Web\Crm\LeadController::class, 'update'])->name('crm.leads.update');
-    Route::post('/crm/leads/{lead}/move',     [\App\Http\Controllers\Web\Crm\LeadController::class, 'move'])->name('crm.leads.move');
-    Route::post('/crm/leads/{lead}/convert',  [\App\Http\Controllers\Web\Crm\LeadController::class, 'convert'])->name('crm.leads.convert');
-    Route::post('/crm/leads/{lead}/activity', [\App\Http\Controllers\Web\Crm\LeadController::class, 'activity'])->name('crm.leads.activity');
-    Route::post('/crm/leads/{lead}/lost',     [\App\Http\Controllers\Web\Crm\LeadController::class, 'lost'])->name('crm.leads.lost');
+    // CRM Sales Pipeline (Lead Management) — sudah PINDAH ke FO. Rutenya dimatikan lewat sakelar, bukan
+    // dihapus: menunya sudah tidak ada di sidebar BO, tetapi alamatnya masih
+    // bisa diketik dan halaman lamanya masih bisa MENULIS ke data yang kini
+    // dikelola FO. Kembalikan dengan BO_MODUL_CRM_AKTIF=true di .env.
+    if (config('modul_pindah_fo.crm')) {
+        // ── CRM SALES PIPELINE (Lead Management) ────────────────
+        Route::get('/crm/leads',                  [\App\Http\Controllers\Web\Crm\LeadController::class, 'index'])->name('crm.leads.index');
+        Route::get('/crm/leads/create',           [\App\Http\Controllers\Web\Crm\LeadController::class, 'create'])->name('crm.leads.create');
+        Route::post('/crm/leads',                 [\App\Http\Controllers\Web\Crm\LeadController::class, 'store'])->name('crm.leads.store');
+        Route::get('/crm/leads/{lead}',           [\App\Http\Controllers\Web\Crm\LeadController::class, 'show'])->name('crm.leads.show');
+        Route::put('/crm/leads/{lead}',           [\App\Http\Controllers\Web\Crm\LeadController::class, 'update'])->name('crm.leads.update');
+        Route::post('/crm/leads/{lead}/move',     [\App\Http\Controllers\Web\Crm\LeadController::class, 'move'])->name('crm.leads.move');
+        Route::post('/crm/leads/{lead}/convert',  [\App\Http\Controllers\Web\Crm\LeadController::class, 'convert'])->name('crm.leads.convert');
+        Route::post('/crm/leads/{lead}/activity', [\App\Http\Controllers\Web\Crm\LeadController::class, 'activity'])->name('crm.leads.activity');
+        Route::post('/crm/leads/{lead}/lost',     [\App\Http\Controllers\Web\Crm\LeadController::class, 'lost'])->name('crm.leads.lost');
+    }
 
     // ── SECURITY (mirror eProperty: akses, absensi, audit) ──
     Route::get('/security',                       [\App\Http\Controllers\Web\Security\SecurityController::class, 'index'])->name('security.index');
@@ -251,11 +257,17 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
     Route::get('/activity-logs',  [\App\Http\Controllers\Web\ActivityLogController::class, 'index'])->name('activity.index');
     Route::post('/activity-logs', [\App\Http\Controllers\Web\ActivityLogController::class, 'store'])->name('activity.store');
 
-    // ── LAPORAN (report detail & summary per modul) ─────────
-    Route::get('/reports',                  [\App\Http\Controllers\Web\ReportController::class, 'index'])->name('reports.index');
-    Route::get('/reports/{key}/detail',     [\App\Http\Controllers\Web\ReportController::class, 'detail'])->name('reports.detail');
-    Route::get('/reports/{key}/summary',    [\App\Http\Controllers\Web\ReportController::class, 'summary'])->name('reports.summary');
-    Route::get('/reports/{key}/export',     [\App\Http\Controllers\Web\ReportController::class, 'export'])->name('reports.export');
+    // Laporan (report detail & summary per modul) — sudah PINDAH ke FO. Rutenya dimatikan lewat sakelar, bukan
+    // dihapus: menunya sudah tidak ada di sidebar BO, tetapi alamatnya masih
+    // bisa diketik dan halaman lamanya masih bisa MENULIS ke data yang kini
+    // dikelola FO. Kembalikan dengan BO_MODUL_LAPORAN_AKTIF=true di .env.
+    if (config('modul_pindah_fo.laporan')) {
+        // ── LAPORAN (report detail & summary per modul) ─────────
+        Route::get('/reports',                  [\App\Http\Controllers\Web\ReportController::class, 'index'])->name('reports.index');
+        Route::get('/reports/{key}/detail',     [\App\Http\Controllers\Web\ReportController::class, 'detail'])->name('reports.detail');
+        Route::get('/reports/{key}/summary',    [\App\Http\Controllers\Web\ReportController::class, 'summary'])->name('reports.summary');
+        Route::get('/reports/{key}/export',     [\App\Http\Controllers\Web\ReportController::class, 'export'])->name('reports.export');
+    }
 
     // ── MASTER ──────────────────────────────────────────────
     // Pemeliharaan customer (Gabung & Upload) — HARUS sebelum resource agar
@@ -353,49 +365,55 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
 
     }
 
-    // ── FINANCE ─────────────────────────────────────────────
-    Route::get('/tts',                                        [TtsController::class, 'index'])->name('tts.index');
-    Route::get('/tts/create',                                 [TtsController::class, 'create'])->name('tts.create');
-    Route::post('/tts',                                       [TtsController::class, 'store'])->name('tts.store');
-    Route::get('/tts/{tt}',                                   [TtsController::class, 'show'])->name('tts.show');
-    Route::post('/tts/{tt}/post',                             [TtsController::class, 'post'])->name('tts.post');
-    Route::post('/tts/{tt}/giro/clear',                       [TtsController::class, 'clearGiro'])->name('tts.clear-giro');
-    Route::post('/tts/{tt}/giro/reject',                      [TtsController::class, 'rejectGiro'])->name('tts.reject-giro');
+    // Finance (TTS, Kuitansi, Memo, Cashback, Refund, Faktur Pajak, VA, Rekening) — sudah PINDAH ke FO. Rutenya dimatikan lewat sakelar, bukan
+    // dihapus: menunya sudah tidak ada di sidebar BO, tetapi alamatnya masih
+    // bisa diketik dan halaman lamanya masih bisa MENULIS ke data yang kini
+    // dikelola FO. Kembalikan dengan BO_MODUL_FINANCE_AKTIF=true di .env.
+    if (config('modul_pindah_fo.finance')) {
+        // ── FINANCE ─────────────────────────────────────────────
+        Route::get('/tts',                                        [TtsController::class, 'index'])->name('tts.index');
+        Route::get('/tts/create',                                 [TtsController::class, 'create'])->name('tts.create');
+        Route::post('/tts',                                       [TtsController::class, 'store'])->name('tts.store');
+        Route::get('/tts/{tt}',                                   [TtsController::class, 'show'])->name('tts.show');
+        Route::post('/tts/{tt}/post',                             [TtsController::class, 'post'])->name('tts.post');
+        Route::post('/tts/{tt}/giro/clear',                       [TtsController::class, 'clearGiro'])->name('tts.clear-giro');
+        Route::post('/tts/{tt}/giro/reject',                      [TtsController::class, 'rejectGiro'])->name('tts.reject-giro');
 
-    Route::get('/kuitansi',                                   [KuitansiController::class, 'index'])->name('kuitansi.index');
-    Route::get('/kuitansi/{kuitansi}',                        [KuitansiController::class, 'show'])->name('kuitansi.show');
-    Route::get('/kuitansi/{kuitansi}/pdf',                    [PdfController::class, 'kuitansi'])->name('kuitansi.pdf');
+        Route::get('/kuitansi',                                   [KuitansiController::class, 'index'])->name('kuitansi.index');
+        Route::get('/kuitansi/{kuitansi}',                        [KuitansiController::class, 'show'])->name('kuitansi.show');
+        Route::get('/kuitansi/{kuitansi}/pdf',                    [PdfController::class, 'kuitansi'])->name('kuitansi.pdf');
 
-    Route::resource('memos', MemoController::class)->only(['index', 'create', 'store']);
-    // Phase 3 — Free DP / Subsidi DP / Cancel actions
-    Route::post('bookings/{booking}/free-dp',       [MemoController::class, 'applyFreeDp'])->name('memos.free-dp');
-    Route::post('bookings/{booking}/subsidi-dp',    [MemoController::class, 'applySubsidiDp'])->name('memos.subsidi-dp');
-    Route::post('memos/{memo}/cancel',              [MemoController::class, 'cancel'])->name('memos.cancel');
+        Route::resource('memos', MemoController::class)->only(['index', 'create', 'store']);
+        // Phase 3 — Free DP / Subsidi DP / Cancel actions
+        Route::post('bookings/{booking}/free-dp',       [MemoController::class, 'applyFreeDp'])->name('memos.free-dp');
+        Route::post('bookings/{booking}/subsidi-dp',    [MemoController::class, 'applySubsidiDp'])->name('memos.subsidi-dp');
+        Route::post('memos/{memo}/cancel',              [MemoController::class, 'cancel'])->name('memos.cancel');
 
-    Route::get('/cashbacks',                                  [CashbackController::class, 'index'])->name('cashbacks.index');
-    Route::post('/cashbacks',                                 [CashbackController::class, 'store'])->name('cashbacks.store');
-    Route::post('/cashbacks/{cashback}/approve',              [CashbackController::class, 'approve'])->name('cashbacks.approve');
-    Route::post('/cashbacks/{cashback}/pay',                  [CashbackController::class, 'pay'])->name('cashbacks.pay');
+        Route::get('/cashbacks',                                  [CashbackController::class, 'index'])->name('cashbacks.index');
+        Route::post('/cashbacks',                                 [CashbackController::class, 'store'])->name('cashbacks.store');
+        Route::post('/cashbacks/{cashback}/approve',              [CashbackController::class, 'approve'])->name('cashbacks.approve');
+        Route::post('/cashbacks/{cashback}/pay',                  [CashbackController::class, 'pay'])->name('cashbacks.pay');
 
-    Route::get('/refunds',                                    [RefundController::class, 'index'])->name('refunds.index');
-    Route::post('/refunds/{refundId}/approve',                [RefundController::class, 'approve'])->name('refunds.approve');
-    Route::post('/refunds/{refundId}/pay',                    [RefundController::class, 'pay'])->name('refunds.pay');
+        Route::get('/refunds',                                    [RefundController::class, 'index'])->name('refunds.index');
+        Route::post('/refunds/{refundId}/approve',                [RefundController::class, 'approve'])->name('refunds.approve');
+        Route::post('/refunds/{refundId}/pay',                    [RefundController::class, 'pay'])->name('refunds.pay');
 
-    Route::get('/faktur-pajak',                               [FakturPajakController::class, 'index'])->name('faktur-pajak.index');
-    Route::get('/faktur-pajak/create',                        [FakturPajakController::class, 'create'])->name('faktur-pajak.create');
-    Route::post('/faktur-pajak',                              [FakturPajakController::class, 'store'])->name('faktur-pajak.store');
+        Route::get('/faktur-pajak',                               [FakturPajakController::class, 'index'])->name('faktur-pajak.index');
+        Route::get('/faktur-pajak/create',                        [FakturPajakController::class, 'create'])->name('faktur-pajak.create');
+        Route::post('/faktur-pajak',                              [FakturPajakController::class, 'store'])->name('faktur-pajak.store');
 
-    Route::get('/va',                                         [VaController::class, 'index'])->name('va.index');
-    Route::post('/va/assign',                                 [VaController::class, 'assign'])->name('va.assign');
-    Route::get('/va/transactions',                            [VaController::class, 'transactions'])->name('va.transactions');
-    Route::get('/va/anonymous',                               [VaController::class, 'anonymous'])->name('va.anonymous');
-    Route::post('/va/anonymous/{payment}/allocate',           [VaController::class, 'allocateAnonymous'])->name('va.anonymous.allocate');
+        Route::get('/va',                                         [VaController::class, 'index'])->name('va.index');
+        Route::post('/va/assign',                                 [VaController::class, 'assign'])->name('va.assign');
+        Route::get('/va/transactions',                            [VaController::class, 'transactions'])->name('va.transactions');
+        Route::get('/va/anonymous',                               [VaController::class, 'anonymous'])->name('va.anonymous');
+        Route::post('/va/anonymous/{payment}/allocate',           [VaController::class, 'allocateAnonymous'])->name('va.anonymous.allocate');
 
-    // Setup Rekening Bank (eProperty Finance & AR → Setup Rekening)
-    Route::get('/finance/rekening',              [\App\Http\Controllers\Web\Finance\BankAccountController::class, 'index'])->name('rekening.index');
-    Route::post('/finance/rekening',             [\App\Http\Controllers\Web\Finance\BankAccountController::class, 'store'])->name('rekening.store');
-    Route::put('/finance/rekening/{rekening}',   [\App\Http\Controllers\Web\Finance\BankAccountController::class, 'update'])->name('rekening.update');
-    Route::delete('/finance/rekening/{rekening}',[\App\Http\Controllers\Web\Finance\BankAccountController::class, 'destroy'])->name('rekening.destroy');
+        // Setup Rekening Bank (eProperty Finance & AR → Setup Rekening)
+        Route::get('/finance/rekening',              [\App\Http\Controllers\Web\Finance\BankAccountController::class, 'index'])->name('rekening.index');
+        Route::post('/finance/rekening',             [\App\Http\Controllers\Web\Finance\BankAccountController::class, 'store'])->name('rekening.store');
+        Route::put('/finance/rekening/{rekening}',   [\App\Http\Controllers\Web\Finance\BankAccountController::class, 'update'])->name('rekening.update');
+        Route::delete('/finance/rekening/{rekening}',[\App\Http\Controllers\Web\Finance\BankAccountController::class, 'destroy'])->name('rekening.destroy');
+    }
 
     // COLLECTION sudah PINDAH ke FO. Rutenya dimatikan lewat sakelar, bukan dihapus:
     // menu yang hilang dari sidebar tidak menutup apa pun — alamatnya masih bisa
@@ -1288,47 +1306,77 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
     Route::get('/kpr-database/reject-proses-kpr-excel',       [\App\Http\Controllers\Web\BankLoan\KprDatabaseController::class, 'rejectProcessExcel'])->name('kpr.database.reject-kpr.excel'); // unduh rincian Excel
     Route::get('/kpr-database/reject-proses-kpr-memo-batal', [\App\Http\Controllers\Web\BankLoan\KprDatabaseController::class, 'rejectProcessMemoForm'])->name('kpr.database.reject-kpr.memo-form'); // form editable Memo Rekom Batal (massal / per-baris) — ?ids=
 
-    // ── LEGAL ──────────────────────────────────────────────
-    Route::get('/ppjb',                                       [PpjbController::class, 'index'])->name('ppjb.index');
-    Route::post('/contracts/{contract}/ppjb',                 [PpjbController::class, 'issue'])->name('ppjb.issue');
-    Route::get('/ppjb/{ppjb}/pdf',                            [PdfController::class, 'ppjb'])->name('ppjb.pdf');
-    Route::get('/ajb',                                        [AjbController::class, 'index'])->name('ajb.index');
-    Route::post('/bookings/{booking}/ajb',                    [AjbController::class, 'issue'])->name('ajb.issue');
-    Route::get('/bast',                                       [BastController::class, 'index'])->name('bast.index');
-    Route::post('/bookings/{booking}/bast',                   [BastController::class, 'issue'])->name('bast.issue');
-    Route::get('/imb',                                        [ImbController::class, 'index'])->name('imb.index');
-    Route::post('/imb',                                       [ImbController::class, 'store'])->name('imb.store');
-    Route::get('/sertifikat',                                 [SertifikatController::class, 'index'])->name('sertifikat.index');
-    Route::post('/sertifikat',                                [SertifikatController::class, 'store'])->name('sertifikat.store');
+    // Legal (PPJB, AJB, BAST, IMB, Sertifikat) — sudah PINDAH ke FO. Rutenya dimatikan lewat sakelar, bukan
+    // dihapus: menunya sudah tidak ada di sidebar BO, tetapi alamatnya masih
+    // bisa diketik dan halaman lamanya masih bisa MENULIS ke data yang kini
+    // dikelola FO. Kembalikan dengan BO_MODUL_LEGAL_AKTIF=true di .env.
+    if (config('modul_pindah_fo.legal')) {
+        // ── LEGAL ──────────────────────────────────────────────
+        Route::get('/ppjb',                                       [PpjbController::class, 'index'])->name('ppjb.index');
+        Route::post('/contracts/{contract}/ppjb',                 [PpjbController::class, 'issue'])->name('ppjb.issue');
+        Route::get('/ppjb/{ppjb}/pdf',                            [PdfController::class, 'ppjb'])->name('ppjb.pdf');
+        Route::get('/ajb',                                        [AjbController::class, 'index'])->name('ajb.index');
+        Route::post('/bookings/{booking}/ajb',                    [AjbController::class, 'issue'])->name('ajb.issue');
+        Route::get('/bast',                                       [BastController::class, 'index'])->name('bast.index');
+        Route::post('/bookings/{booking}/bast',                   [BastController::class, 'issue'])->name('bast.issue');
+        Route::get('/imb',                                        [ImbController::class, 'index'])->name('imb.index');
+        Route::post('/imb',                                       [ImbController::class, 'store'])->name('imb.store');
+        Route::get('/sertifikat',                                 [SertifikatController::class, 'index'])->name('sertifikat.index');
+        Route::post('/sertifikat',                                [SertifikatController::class, 'store'])->name('sertifikat.store');
+    }
 
-    // ── COMMISSION ─────────────────────────────────────────
-    Route::get('/commissions',                                [CommissionController::class, 'index'])->name('commissions.index');
-    Route::post('/commissions/lines/{line}/payout',           [CommissionController::class, 'requestPayout'])->name('commissions.payout-request');
-    Route::post('/commissions/payouts/{payout}/approve',      [CommissionController::class, 'approvePayout'])->name('commissions.payout-approve');
-    Route::post('/commissions/payouts/{payout}/pay',          [CommissionController::class, 'pay'])->name('commissions.payout-pay');
+    // Commission (komisi & payout) — sudah PINDAH ke FO. Rutenya dimatikan lewat sakelar, bukan
+    // dihapus: menunya sudah tidak ada di sidebar BO, tetapi alamatnya masih
+    // bisa diketik dan halaman lamanya masih bisa MENULIS ke data yang kini
+    // dikelola FO. Kembalikan dengan BO_MODUL_KOMISI_AKTIF=true di .env.
+    if (config('modul_pindah_fo.komisi')) {
+        // ── COMMISSION ─────────────────────────────────────────
+        Route::get('/commissions',                                [CommissionController::class, 'index'])->name('commissions.index');
+        Route::post('/commissions/lines/{line}/payout',           [CommissionController::class, 'requestPayout'])->name('commissions.payout-request');
+        Route::post('/commissions/payouts/{payout}/approve',      [CommissionController::class, 'approvePayout'])->name('commissions.payout-approve');
+        Route::post('/commissions/payouts/{payout}/pay',          [CommissionController::class, 'pay'])->name('commissions.payout-pay');
+    }
 
-    // ── INSENTIF (eProperty KOMISI → BLT & Reward) ──
-    Route::prefix('komisi/insentif')->name('incentives.')->group(function (): void {
-        $c = \App\Http\Controllers\Web\Commission\IncentiveController::class;
-        Route::put('/skema/{scheme}',     [$c, 'schemeUpdate'])->name('scheme.update');
-        Route::delete('/skema/{scheme}',  [$c, 'schemeDestroy'])->name('scheme.destroy');
-        Route::post('/{incentive}/setujui',   [$c, 'approve'])->whereNumber('incentive')->name('approve');
-        Route::post('/{incentive}/tolak',     [$c, 'reject'])->whereNumber('incentive')->name('reject');
-        Route::post('/{incentive}/realisasi', [$c, 'realize'])->whereNumber('incentive')->name('realize');
-        Route::get('/{type}',             [$c, 'index'])->whereIn('type', ['blt', 'reward'])->name('index');
-        Route::post('/{type}/ajukan',     [$c, 'store'])->whereIn('type', ['blt', 'reward'])->name('store');
-        Route::post('/{type}/skema',      [$c, 'schemeStore'])->whereIn('type', ['blt', 'reward'])->name('scheme.store');
-    });
+    // Insentif (BLT & Reward) — sudah PINDAH ke FO. Rutenya dimatikan lewat sakelar, bukan
+    // dihapus: menunya sudah tidak ada di sidebar BO, tetapi alamatnya masih
+    // bisa diketik dan halaman lamanya masih bisa MENULIS ke data yang kini
+    // dikelola FO. Kembalikan dengan BO_MODUL_INSENTIF_AKTIF=true di .env.
+    if (config('modul_pindah_fo.insentif')) {
+        // ── INSENTIF (eProperty KOMISI → BLT & Reward) ──
+        Route::prefix('komisi/insentif')->name('incentives.')->group(function (): void {
+            $c = \App\Http\Controllers\Web\Commission\IncentiveController::class;
+            Route::put('/skema/{scheme}',     [$c, 'schemeUpdate'])->name('scheme.update');
+            Route::delete('/skema/{scheme}',  [$c, 'schemeDestroy'])->name('scheme.destroy');
+            Route::post('/{incentive}/setujui',   [$c, 'approve'])->whereNumber('incentive')->name('approve');
+            Route::post('/{incentive}/tolak',     [$c, 'reject'])->whereNumber('incentive')->name('reject');
+            Route::post('/{incentive}/realisasi', [$c, 'realize'])->whereNumber('incentive')->name('realize');
+            Route::get('/{type}',             [$c, 'index'])->whereIn('type', ['blt', 'reward'])->name('index');
+            Route::post('/{type}/ajukan',     [$c, 'store'])->whereIn('type', ['blt', 'reward'])->name('store');
+            Route::post('/{type}/skema',      [$c, 'schemeStore'])->whereIn('type', ['blt', 'reward'])->name('scheme.store');
+        });
+    }
 
-    // ── APPROVAL ───────────────────────────────────────────
-    Route::get('/approvals',                                  [ApprovalController::class, 'index'])->name('approvals.index');
-    Route::get('/approvals/{approval}',                       [ApprovalController::class, 'show'])->name('approvals.show');
-    Route::post('/approvals/{approval}/act',                  [ApprovalController::class, 'act'])->name('approvals.act');
+    // Approval Center — sudah PINDAH ke FO. Rutenya dimatikan lewat sakelar, bukan
+    // dihapus: menunya sudah tidak ada di sidebar BO, tetapi alamatnya masih
+    // bisa diketik dan halaman lamanya masih bisa MENULIS ke data yang kini
+    // dikelola FO. Kembalikan dengan BO_MODUL_APPROVAL_AKTIF=true di .env.
+    if (config('modul_pindah_fo.approval')) {
+        // ── APPROVAL ───────────────────────────────────────────
+        Route::get('/approvals',                                  [ApprovalController::class, 'index'])->name('approvals.index');
+        Route::get('/approvals/{approval}',                       [ApprovalController::class, 'show'])->name('approvals.show');
+        Route::post('/approvals/{approval}/act',                  [ApprovalController::class, 'act'])->name('approvals.act');
+    }
 
-    // ── EXPORTS ────────────────────────────────────────────
-    Route::get('/exports/customers',                          [ExportController::class, 'customers'])->name('exports.customers');
-    Route::get('/exports/bookings',                           [ExportController::class, 'bookings'])->name('exports.bookings');
-    Route::get('/exports/kpr',                                [ExportController::class, 'kprApplications'])->name('exports.kpr');
+    // Exports (customers, bookings, kpr) — sudah PINDAH ke FO. Rutenya dimatikan lewat sakelar, bukan
+    // dihapus: menunya sudah tidak ada di sidebar BO, tetapi alamatnya masih
+    // bisa diketik dan halaman lamanya masih bisa MENULIS ke data yang kini
+    // dikelola FO. Kembalikan dengan BO_MODUL_LAPORAN_AKTIF=true di .env.
+    if (config('modul_pindah_fo.laporan')) {
+        // ── EXPORTS ────────────────────────────────────────────
+        Route::get('/exports/customers',                          [ExportController::class, 'customers'])->name('exports.customers');
+        Route::get('/exports/bookings',                           [ExportController::class, 'bookings'])->name('exports.bookings');
+        Route::get('/exports/kpr',                                [ExportController::class, 'kprApplications'])->name('exports.kpr');
+    }
 
     // ── SETTINGS ───────────────────────────────────────────
     Route::prefix('settings')->name('settings.')->group(function (): void {

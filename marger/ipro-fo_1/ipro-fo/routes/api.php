@@ -45,14 +45,19 @@ Route::prefix('v1')->name('api.')->group(function (): void {
                 Route::post('bookings/{booking}/promote', [BookingController::class, 'promote'])->name('bookings.promote');
             }
 
-            // Finance
-            Route::apiResource('tts', TtsController::class)->only(['index', 'store', 'show'])->parameters(['tts' => 'tts']);
-            Route::post('tts/{tts}/post',        [TtsController::class, 'post'])->name('tts.post');
-            Route::post('tts/{tts}/giro/clear',  [TtsController::class, 'clearGiro'])->name('tts.giro.clear');
-            Route::post('tts/{tts}/giro/reject', [TtsController::class, 'rejectGiro'])->name('tts.giro.reject');
+            // Finance — sudah PINDAH ke FO. Sama seperti bookings: API tidak punya
+            // menu untuk dicabut, jadi store/post/giro masih bisa MENULIS diam-diam.
+            if (config('modul_pindah_fo.finance')) {
+                Route::apiResource('tts', TtsController::class)->only(['index', 'store', 'show'])->parameters(['tts' => 'tts']);
+                Route::post('tts/{tts}/post',        [TtsController::class, 'post'])->name('tts.post');
+                Route::post('tts/{tts}/giro/clear',  [TtsController::class, 'clearGiro'])->name('tts.giro.clear');
+                Route::post('tts/{tts}/giro/reject', [TtsController::class, 'rejectGiro'])->name('tts.giro.reject');
+            }
 
-            // Reporting
-            Route::get('dashboards/executive', [DashboardController::class, 'executive'])->name('dashboards.executive');
+            // Reporting — sudah PINDAH ke FO.
+            if (config('modul_pindah_fo.laporan')) {
+                Route::get('dashboards/executive', [DashboardController::class, 'executive'])->name('dashboards.executive');
+            }
 
             // Search (untuk Cmd+K)
             Route::get('search', [SearchController::class, 'index'])->name('search');

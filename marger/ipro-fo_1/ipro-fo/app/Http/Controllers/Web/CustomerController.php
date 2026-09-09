@@ -22,6 +22,7 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Inertia\Response;
+use Illuminate\Support\Facades\Route;
 
 class CustomerController extends Controller
 {
@@ -87,7 +88,10 @@ class CustomerController extends Controller
         $customer = $action->execute($request->validated());
 
         $context = $request->string('context')->toString();
-        if ($context === 'booking') {
+        // Booking sudah PINDAH ke FO dan rutenya dimatikan lewat sakelar, jadi
+        // nama rutenya bisa tidak terdaftar. Tanpa Route::has() baris ini melempar
+        // RouteNotFoundException dan pembuatan customer ikut gagal.
+        if ($context === 'booking' && Route::has('bookings.create')) {
             return redirect()->route('bookings.create', ['customer_id' => $customer->id])
                 ->with('success', "Customer {$customer->code} berhasil dibuat. Lanjut buat booking.");
         }
