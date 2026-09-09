@@ -5,9 +5,10 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Web\BusinessSupport\CashBook;
 
 use App\Domain\BusinessSupport\Models\BsAccount;
-use App\Domain\BusinessSupport\Models\BsJournalLine;
 use App\Domain\BusinessSupport\Models\BsCreditCard;
+use App\Domain\BusinessSupport\Models\BsCreditCardClosing;
 use App\Domain\BusinessSupport\Models\BsCreditCardRequest;
+use App\Domain\BusinessSupport\Services\CreditCardClosingService;
 use App\Domain\BusinessSupport\Services\CreditCardService;
 use App\Exceptions\BusinessRuleException;
 use App\Http\Controllers\Controller;
@@ -26,32 +27,26 @@ use Inertia\Response;
  */
 class CreditCardController extends Controller
 {
-    public function index(Request $request): Response
+    public function index(Request $request, CreditCardClosingService $closing): Response
     {
         abort_unless($request->user()?->can('cashbook.saldo.view'), 403);
 
+        [$year, $month] = $this->period($request);
+
         $kartu = BsCreditCard::with('account:id,code,name')->orderBy('name')->get();
 
-        /* PEMAKAIAN — dari MUTASI AKUN KARTUNYA di buku besar, bukan dari catatan aplikasi.
-           Akun kartu didebit saat bon Debit VA dibayar (uang masuk ke kartu) dan dikredit saat
-           bon direalisasi (uang terpakai), jadi jumlah KREDIT-nya adalah yang benar-benar
-           terpakai. Dibaca dari GL supaya angkanya tidak bisa menyimpang dari pembukuan —
-           menghitungnya dari tabel bon akan melewatkan mutasi yang masuk lewat jalur lain.
-           Satu kueri untuk seluruh kartu di halaman ini, bukan satu per kartu. */
-        $pemakaian = BsJournalLine::whereIn('account_id', $kartu->pluck('account_id')->filter()->unique())
-            ->selectRaw('account_id, COALESCE(SUM(credit),0) c')->groupBy('account_id')->pluck('c', 'account_id');
-
-        /* SISA SALDO — nominal yang dikembalikan lewat tombol "Masuk Saldo" pada realisasi bon
-           Debit VA, yaitu permintaan bersumber cash_advance_sisa yang sudah disetujui. */
-        $sisaMasuk = BsCreditCardRequest::where('source_type', CreditCardService::SUMBER_MASUK_SALDO)
-            ->where('status', 'approved')
-            ->selectRaw('credit_card_id, COALESCE(SUM(amount),0) s')->groupBy('credit_card_id')->pluck('s', 'credit_card_id');
+        /* SALDO AWAL · PENAMBAHAN · PEMAKAIAN · SISA SALDO — per kartu, PER BULAN.
+           Bukan lagi dari mutasi akun kartunya di buku besar: sejak pembayaran Debit VA tidak
+           berjurnal, akun kartu tidak bermutasi sama sekali, sehingga SUM(credit) akan menjadi
+           NOL tanpa satu galat pun. Yang benar-benar menggerakkan saldo kartu adalah pembayaran
+           Debit VA (menambah) dan Alokasi Kasbon (mengurangi) — lihat CreditCardClosingService. */
+        $bulanan = $closing->ringkasanBanyak($kartu->pluck('id')->all(), $year, $month);
 
         $cards = $kartu
-            ->map(fn (BsCreditCard $c) => [
-                'pemakaian'  => (float) ($pemakaian[$c->account_id] ?? 0),
-                'sisa_saldo' => (float) ($sisaMasuk[$c->id] ?? 0),
-            ] + [
+            ->map(fn (BsCreditCard $c) => ($bulanan[$c->id] ?? [
+                'saldo_awal' => 0.0, 'penambahan' => 0.0, 'pemakaian' => 0.0, 'sisa_saldo' => 0.0,
+                'closed' => false, 'closed_at' => null, 'prev_closed' => false,
+            ]) + [
                 'id'           => $c->id,
                 'account_id'   => $c->account_id,
                 'account_code' => $c->account?->code,
@@ -87,9 +82,21 @@ class CreditCardController extends Controller
                 'approved_at'    => $r->approved_at?->toDateTimeString(),
             ])->values();
 
+        /* RIWAYAT DETAIL per bulan — hanya untuk kartu yang sedang dibuka rinciannya. Menghitung
+           riwayat SELURUH kartu pada tiap pembukaan halaman berarti puluhan kueri untuk tabel
+           yang biasanya tidak dilihat. */
+        $riwayatId = (int) $request->integer('riwayat');
+        $riwayatKartu = $riwayatId ? $kartu->firstWhere('id', $riwayatId) : null;
+
         return Inertia::render('BusinessSupport/CashBook/CreditCards/Index', [
             'cards'    => $cards,
             'requests' => $requests,
+            'period'   => ['year' => $year, 'month' => $month, 'label' => CreditCardClosingService::labelBulan($year, $month)],
+            'riwayat'  => $riwayatKartu ? [
+                'card_id' => $riwayatKartu->id,
+                'label'   => $riwayatKartu->label(),
+                'rows'    => $closing->riwayat($riwayatKartu, $year, $month),
+            ] : null,
             // Akun bank/kas yang bisa dijadikan kartu — dropdown saat menambah kartu baru.
             'accounts' => BsAccount::where('is_active', true)->where('is_postable', true)
                 ->where('code', 'like', '101010202%')->orderBy('code')
@@ -187,5 +194,58 @@ class CreditCardController extends Controller
         }
 
         return back()->with('success', 'Permintaan ditolak.');
+    }
+
+    /** CLOSING CREDIT CARD — membekukan Saldo Awal/Penambahan/Pemakaian/Sisa satu kartu satu bulan. */
+    public function close(Request $request, BsCreditCard $card, CreditCardClosingService $svc): RedirectResponse
+    {
+        abort_unless($request->user()?->can('cashbook.transaction.approve'), 403);
+        $v = $request->validate([
+            'year'  => ['required', 'integer', 'min:2000', 'max:2100'],
+            'month' => ['required', 'integer', 'min:1', 'max:12'],
+            'note'  => ['nullable', 'string', 'max:255'],
+        ]);
+
+        try {
+            $c = $svc->close($card, (int) $v['year'], (int) $v['month'], $request->user()->id, $v['note'] ?? null);
+        } catch (BusinessRuleException $e) {
+            return back()->with('error', $e->getMessage());
+        }
+
+        return back()->with('success', 'Closing '.CreditCardClosingService::labelBulan((int) $c->period_year, (int) $c->period_month)
+            .' selesai — sisa saldo '.number_format((float) $c->sisa_saldo, 2, ',', '.').' menjadi saldo awal bulan berikutnya.');
+    }
+
+    /** Buka kembali closing sebuah bulan (selama bulan sesudahnya belum ditutup). */
+    public function reopen(Request $request, BsCreditCard $card, CreditCardClosingService $svc): RedirectResponse
+    {
+        abort_unless($request->user()?->can('cashbook.transaction.approve'), 403);
+        $v = $request->validate([
+            'year'  => ['required', 'integer', 'min:2000', 'max:2100'],
+            'month' => ['required', 'integer', 'min:1', 'max:12'],
+        ]);
+
+        $closing = BsCreditCardClosing::where('credit_card_id', $card->id)
+            ->where('period_year', (int) $v['year'])->where('period_month', (int) $v['month'])->first();
+        if (! $closing) {
+            return back()->with('error', 'Bulan itu memang belum di-closing.');
+        }
+
+        try {
+            $svc->reopen($closing);
+        } catch (BusinessRuleException $e) {
+            return back()->with('error', $e->getMessage());
+        }
+
+        return back()->with('success', 'Closing dibuka kembali — angkanya kembali dihitung dari dokumennya.');
+    }
+
+    /** @return array{0:int,1:int} */
+    private function period(Request $request): array
+    {
+        $year = (int) ($request->integer('year') ?: now()->year);
+        $month = (int) ($request->integer('month') ?: now()->month);
+
+        return [$year, max(1, min(12, $month))];
     }
 }

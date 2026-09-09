@@ -12,10 +12,20 @@ type Card = {
     card_number: string | null; name: string; label: string;
     is_active: boolean; balance: number; expired_date: string | null;
     expired: boolean; usable: boolean; note: string | null;
-    /** Dari mutasi akun GL kartunya (jumlah kredit) — yang benar-benar terpakai. */
+    /** Sisa saldo bulan sebelumnya — hanya bila bulan itu SUDAH di-closing. */
+    saldo_awal: number;
+    /** Nominal pembayaran Debit VA bulan ini (+ penyesuaian manual yang disetujui). */
+    penambahan: number;
+    /** Nominal Alokasi Kasbon bulan ini. */
     pemakaian: number;
-    /** Nominal yang dikembalikan lewat tombol "Masuk Saldo" pada realisasi bon Debit VA. */
+    /** Saldo Awal + Penambahan − Pemakaian. */
     sisa_saldo: number;
+    closed: boolean; closed_at: string | null; prev_closed: boolean;
+};
+type BarisRiwayat = {
+    year: number; month: number; label: string;
+    saldo_awal: number; penambahan: number; pemakaian: number; sisa_saldo: number;
+    closed: boolean; closed_at: string | null; prev_closed: boolean;
 };
 type Permintaan = {
     id: number; credit_card_id: number; card: string; type: string; type_label: string;
@@ -27,10 +37,53 @@ const props = defineProps<{
     cards: Card[]; requests: Permintaan[];
     accounts: Array<{ id: number; label: string }>;
     types: Record<string, string>; canApprove: boolean;
+    period: { year: number; month: number; label: string };
+    riwayat: { card_id: number; label: string; rows: BarisRiwayat[] } | null;
 }>();
 
 function fmtRp(v: any) { return 'Rp ' + Number(v ?? 0).toLocaleString('id-ID'); }
 function fmtTgl(v: any) { return v ? new Date(v).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'; }
+
+/* === Periode & riwayat ===
+   Keempat angka kartu (Saldo Awal, Penambahan, Pemakaian, Sisa Saldo) selalu MILIK SATU BULAN.
+   Karena itu bulannya dipilih di sini, dan pilihannya ikut masuk URL — tautan yang dibagikan
+   harus menampilkan angka yang sama, bukan angka bulan berjalan orang yang membukanya. */
+const bulanNama = ['Januari','Februari','Maret','April','Mei','Juni','Juli','Agustus','September','Oktober','November','Desember'];
+const bulan = ref(props.period.month);
+const tahun = ref(props.period.year);
+const tahunPilihan = Array.from({ length: 6 }, (_, i) => new Date().getFullYear() - i);
+const kartuRiwayat = ref<number | null>(props.riwayat?.card_id ?? null);
+function muat() {
+    router.get(route('bs.cashbook.credit-card.index'),
+        { year: tahun.value, month: bulan.value, riwayat: kartuRiwayat.value ?? undefined },
+        { preserveState: true, preserveScroll: true, replace: true });
+}
+function bukaRiwayat(c: Card) { kartuRiwayat.value = kartuRiwayat.value === c.id ? null : c.id; muat(); }
+
+function closing(c: Card) {
+    if (! confirm(`Closing kartu ${c.label} untuk ${props.period.label}?\n\n`
+        + `Saldo Awal ${fmtRp(c.saldo_awal)} + Penambahan ${fmtRp(c.penambahan)} − Pemakaian ${fmtRp(c.pemakaian)} = Sisa ${fmtRp(c.sisa_saldo)}.\n`
+        + 'Angkanya dibekukan, dan sisa itu menjadi Saldo Awal bulan berikutnya.')) return;
+    router.post(route('bs.cashbook.credit-card.close', c.id),
+        { year: props.period.year, month: props.period.month }, { preserveScroll: true });
+}
+function bukaClosing(c: Card) {
+    if (! confirm(`Buka kembali closing ${props.period.label} pada kartu ${c.label}?\n\nAngkanya kembali dihitung dari dokumennya.`)) return;
+    router.post(route('bs.cashbook.credit-card.reopen', c.id),
+        { year: props.period.year, month: props.period.month }, { preserveScroll: true });
+}
+function closingRiwayat(b: BarisRiwayat) {
+    if (! props.riwayat) return;
+    if (! confirm(`Closing ${b.label}?\n\nSisa ${fmtRp(b.sisa_saldo)} menjadi Saldo Awal bulan berikutnya.`)) return;
+    router.post(route('bs.cashbook.credit-card.close', props.riwayat.card_id),
+        { year: b.year, month: b.month }, { preserveScroll: true });
+}
+function bukaClosingRiwayat(b: BarisRiwayat) {
+    if (! props.riwayat) return;
+    if (! confirm(`Buka kembali closing ${b.label}?`)) return;
+    router.post(route('bs.cashbook.credit-card.reopen', props.riwayat.card_id),
+        { year: b.year, month: b.month }, { preserveScroll: true });
+}
 
 /* Kartu baru selalu lahir NONAKTIF & bersaldo 0 — pengaktifan dan pengisian saldonya keputusan
    tersendiri, bukan efek samping dari menambahkannya ke daftar. */
@@ -83,53 +136,70 @@ function tolak(r: Permintaan) {
 }
 
 const menunggu = computed(() => props.requests.filter((r) => r.status === 'pending'));
-const riwayat = computed(() => props.requests.filter((r) => r.status !== 'pending'));
+/* Riwayat PERMINTAAN saldo/masa berlaku — sengaja bukan lagi bernama `riwayat`: prop
+   `riwayat` adalah riwayat SALDO BULANAN kartunya, dan nama yang sama akan menutupi prop itu
+   di template tanpa satu pun galat saat dibangun. */
+const riwayatPermintaan = computed(() => props.requests.filter((r) => r.status !== 'pending'));
 const inputCls = 'h-9 w-full rounded-lg border border-neutral-300 bg-white px-3 text-sm dark:border-neutral-700 dark:bg-neutral-900';
 </script>
 
 <template>
     <div class="space-y-4">
-        <div>
-            <h1 class="flex items-center gap-2 text-2xl font-bold"><CreditCard class="h-6 w-6 text-primary-600" /> Set Up Credit Card</h1>
-            <p class="text-sm text-neutral-500">
-                Kartu kredit / Virtual Account beserta saldonya. Kartu harus <b>diaktifkan</b> dan <b>diisi saldonya</b>
-                sebelum bisa dipakai. Saldo hanya berubah lewat <b>permintaan yang disetujui</b> — pembayaran bon
-                sementara lewat Debit VA melahirkan permintaannya secara otomatis.
-            </p>
+        <div class="flex flex-wrap items-start justify-between gap-3">
+            <div>
+                <h1 class="flex items-center gap-2 text-2xl font-bold"><CreditCard class="h-6 w-6 text-primary-600" /> Set Up Credit Card</h1>
+                <p class="text-sm text-neutral-500">
+                    Kartu kredit / Virtual Account beserta saldonya <b>per bulan</b>.
+                    <b>Saldo Awal</b> = sisa saldo bulan sebelumnya bila sudah di-closing ·
+                    <b>Penambahan</b> = pembayaran Debit VA yang tersimpan ·
+                    <b>Pemakaian</b> = Alokasi Kasbon ·
+                    <b>Sisa Saldo</b> = Awal + Penambahan − Pemakaian.
+                </p>
+            </div>
+            <div class="flex flex-wrap items-center gap-2">
+                <select v-model.number="bulan" @change="muat" class="h-9 rounded-lg border border-neutral-300 bg-white px-3 text-sm dark:border-neutral-700 dark:bg-neutral-900"><option v-for="(m, i) in bulanNama" :key="i" :value="i + 1">{{ m }}</option></select>
+                <select v-model.number="tahun" @change="muat" class="h-9 rounded-lg border border-neutral-300 bg-white px-3 text-sm dark:border-neutral-700 dark:bg-neutral-900"><option v-for="y in tahunPilihan" :key="y" :value="y">{{ y }}</option></select>
+            </div>
         </div>
 
         <!-- Daftar kartu -->
         <div class="card overflow-hidden">
-            <div class="border-b border-neutral-200 px-4 py-3 dark:border-neutral-800"><h2 class="font-semibold">Kartu</h2></div>
+            <div class="border-b border-neutral-200 px-4 py-3 dark:border-neutral-800"><h2 class="font-semibold">Kartu <span class="text-sm font-normal text-neutral-400">· {{ period.label }}</span></h2></div>
             <div class="overflow-x-auto">
-                <table class="w-full min-w-[74rem] text-sm">
+                <table class="w-full min-w-[86rem] text-sm">
                     <thead class="bg-neutral-50 dark:bg-neutral-800"><tr class="text-left text-xs uppercase text-neutral-500">
                         <th class="px-4 py-3">Kartu</th>
                         <th class="px-4 py-3">Akun GL</th>
-                        <th class="px-4 py-3 text-right">Saldo</th>
-                        <!-- PEMAKAIAN dari mutasi akun kartunya di buku besar; SISA SALDO dari
-                             nominal yang dikembalikan lewat tombol "Masuk Saldo". Dua angka yang
-                             berbeda asalnya, jadi dipisah kolomnya — bukan disatukan menjadi satu
-                             "saldo" yang tidak bisa ditelusuri lagi dari mana datangnya. -->
+                        <!-- Empat angka, empat asal yang berbeda — dipisah kolomnya, bukan
+                             disatukan menjadi satu "saldo" yang tidak bisa ditelusuri lagi. -->
+                        <th class="px-4 py-3 text-right">Saldo Awal</th>
+                        <th class="px-4 py-3 text-right">Penambahan</th>
                         <th class="px-4 py-3 text-right">Pemakaian</th>
                         <th class="px-4 py-3 text-right">Sisa Saldo</th>
                         <th class="px-4 py-3 text-center">Masa Berlaku</th>
                         <th class="px-4 py-3 text-center">Status</th>
+                        <th class="px-4 py-3 text-center">Closing</th>
                         <th class="px-4 py-3 text-center">Aksi</th>
                     </tr></thead>
                     <tbody class="divide-y divide-neutral-200 dark:divide-neutral-800">
-                        <tr v-for="c in cards" :key="c.id">
+                        <tr v-for="c in cards" :key="c.id" :class="riwayat?.card_id === c.id ? 'bg-primary-50/50 dark:bg-primary-900/10' : ''">
                             <td class="px-4 py-2.5">
                                 <span class="font-medium">{{ c.card_number ?? '—' }}</span>
                                 <span class="block text-xs text-neutral-500">{{ c.name }}</span>
                             </td>
                             <td class="px-4 py-2.5 font-mono text-xs text-neutral-500">{{ c.account_code }}</td>
-                            <td class="px-4 py-2.5 text-right font-mono">{{ fmtRp(c.balance) }}</td>
-                            <td class="px-4 py-2.5 text-right font-mono text-neutral-600 dark:text-neutral-300"
-                                title="Dari mutasi akun GL kartu ini — jumlah kredit, yaitu yang benar-benar terpakai.">{{ fmtRp(c.pemakaian) }}</td>
                             <td class="px-4 py-2.5 text-right font-mono"
+                                :title="c.prev_closed ? 'Sisa saldo bulan sebelumnya (sudah di-closing).' : 'Bulan sebelumnya belum di-closing — saldo awal dihitung nol.'">
+                                {{ fmtRp(c.saldo_awal) }}
+                                <span v-if="! c.prev_closed" class="block text-[10px] font-sans text-amber-600 dark:text-amber-400">blm closing</span>
+                            </td>
+                            <td class="px-4 py-2.5 text-right font-mono text-success-600"
+                                title="Nominal pembayaran Debit VA bulan ini + penyesuaian saldo manual yang disetujui.">{{ fmtRp(c.penambahan) }}</td>
+                            <td class="px-4 py-2.5 text-right font-mono text-danger-600"
+                                title="Total Alokasi Kasbon bulan ini.">{{ fmtRp(c.pemakaian) }}</td>
+                            <td class="px-4 py-2.5 text-right font-mono font-semibold"
                                 :class="Number(c.sisa_saldo) > 0 ? 'text-primary-600 dark:text-primary-400' : 'text-neutral-400'"
-                                title="Sisa realisasi bon Debit VA yang dikembalikan lewat tombol Masuk Saldo.">{{ fmtRp(c.sisa_saldo) }}</td>
+                                title="Saldo Awal + Penambahan − Pemakaian.">{{ fmtRp(c.sisa_saldo) }}</td>
                             <td class="px-4 py-2.5 text-center">
                                 <span :class="c.expired ? 'text-danger-600 font-medium' : 'text-neutral-500'">{{ fmtTgl(c.expired_date) }}</span>
                             </td>
@@ -141,7 +211,14 @@ const inputCls = 'h-9 w-full rounded-lg border border-neutral-300 bg-white px-3 
                                 <Badge v-else variant="success" size="sm">Aktif</Badge>
                             </td>
                             <td class="px-4 py-2.5 text-center">
+                                <button v-if="c.closed" type="button" class="rounded-lg border border-success-300 px-2 py-1 text-xs font-medium text-success-700 hover:bg-success-50 dark:border-success-700 dark:text-success-400"
+                                        :title="'Sudah di-closing ' + (c.closed_at ?? '') + ' — klik untuk membukanya kembali'" @click="bukaClosing(c)">Closed</button>
+                                <button v-else type="button" class="rounded-lg border border-neutral-300 px-2 py-1 text-xs hover:bg-neutral-50 dark:border-neutral-700"
+                                        title="Bekukan angka bulan ini; sisanya menjadi saldo awal bulan berikutnya" @click="closing(c)">Closing</button>
+                            </td>
+                            <td class="px-4 py-2.5 text-center">
                                 <div class="flex flex-wrap items-center justify-center gap-1">
+                                    <button type="button" class="rounded-lg border border-neutral-300 px-2 py-1 text-xs hover:bg-neutral-50 dark:border-neutral-700" @click="bukaRiwayat(c)">{{ riwayat?.card_id === c.id ? 'Tutup Riwayat' : 'Riwayat' }}</button>
                                     <button type="button" class="rounded-lg border border-neutral-300 px-2 py-1 text-xs hover:bg-neutral-50 dark:border-neutral-700" @click="bukaUbah(c)">Ubah</button>
                                     <button type="button" class="rounded-lg border border-primary-300 px-2 py-1 text-xs font-medium text-primary-600 hover:bg-primary-50 dark:border-primary-700" @click="bukaMinta(c)">Ajukan Saldo / Expired</button>
                                 </div>
@@ -151,6 +228,40 @@ const inputCls = 'h-9 w-full rounded-lg border border-neutral-300 bg-white px-3 
                 </table>
             </div>
             <EmptyState v-if="! cards.length" title="Belum ada kartu" description="Tambahkan kartu kredit/VA di bawah, lalu aktifkan dan isi saldonya." />
+        </div>
+
+        <!-- RIWAYAT DETAIL per bulan — saldo awal → penambahan → pemakaian → sisa saldo. -->
+        <div v-if="riwayat" class="card overflow-hidden">
+            <div class="border-b border-neutral-200 px-4 py-3 dark:border-neutral-800">
+                <h2 class="font-semibold">Riwayat Detail — {{ riwayat.label }}</h2>
+                <p class="text-xs text-neutral-500">Sisa saldo sebuah bulan menjadi saldo awal bulan berikutnya <b>hanya setelah bulan itu di-closing</b>.</p>
+            </div>
+            <div class="overflow-x-auto">
+                <table class="w-full min-w-[52rem] text-sm">
+                    <thead class="bg-neutral-50 dark:bg-neutral-800"><tr class="text-left text-xs uppercase text-neutral-500">
+                        <th class="px-4 py-3">Bulan</th>
+                        <th class="px-4 py-3 text-right">Saldo Awal</th>
+                        <th class="px-4 py-3 text-right">Penambahan</th>
+                        <th class="px-4 py-3 text-right">Pemakaian</th>
+                        <th class="px-4 py-3 text-right">Sisa Saldo</th>
+                        <th class="px-4 py-3 text-center">Closing</th>
+                    </tr></thead>
+                    <tbody class="divide-y divide-neutral-200 dark:divide-neutral-800">
+                        <tr v-for="b in riwayat.rows" :key="b.year + '-' + b.month">
+                            <td class="px-4 py-2">{{ b.label }}</td>
+                            <td class="px-4 py-2 text-right font-mono">{{ fmtRp(b.saldo_awal) }}</td>
+                            <td class="px-4 py-2 text-right font-mono text-success-600">{{ fmtRp(b.penambahan) }}</td>
+                            <td class="px-4 py-2 text-right font-mono text-danger-600">{{ fmtRp(b.pemakaian) }}</td>
+                            <td class="px-4 py-2 text-right font-mono font-semibold">{{ fmtRp(b.sisa_saldo) }}</td>
+                            <td class="px-4 py-2 text-center">
+                                <button v-if="b.closed" type="button" class="rounded-lg border border-success-300 px-2 py-0.5 text-xs font-medium text-success-700 hover:bg-success-50 dark:border-success-700 dark:text-success-400" @click="bukaClosingRiwayat(b)">Closed</button>
+                                <button v-else type="button" class="rounded-lg border border-neutral-300 px-2 py-0.5 text-xs hover:bg-neutral-50 dark:border-neutral-700" @click="closingRiwayat(b)">Closing</button>
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+            <EmptyState v-if="! riwayat.rows.length" title="Belum ada mutasi" description="Kartu ini belum pernah menerima pembayaran Debit VA maupun dipakai lewat Alokasi Kasbon." />
         </div>
 
         <!-- Tambah kartu -->
@@ -255,7 +366,7 @@ const inputCls = 'h-9 w-full rounded-lg border border-neutral-300 bg-white px-3 
         </div>
 
         <!-- Riwayat -->
-        <div v-if="riwayat.length" class="card overflow-hidden">
+        <div v-if="riwayatPermintaan.length" class="card overflow-hidden">
             <div class="border-b border-neutral-200 px-4 py-3 dark:border-neutral-800"><h2 class="font-semibold">Riwayat Permintaan</h2></div>
             <div class="overflow-x-auto">
                 <table class="w-full min-w-[56rem] text-sm">
@@ -264,7 +375,7 @@ const inputCls = 'h-9 w-full rounded-lg border border-neutral-300 bg-white px-3 
                         <th class="px-4 py-3 text-center">Tgl Expired</th><th class="px-4 py-3">Sumber</th><th class="px-4 py-3 text-center">Status</th>
                     </tr></thead>
                     <tbody class="divide-y divide-neutral-200 dark:divide-neutral-800">
-                        <tr v-for="r in riwayat" :key="r.id">
+                        <tr v-for="r in riwayatPermintaan" :key="r.id">
                             <td class="px-4 py-2.5">{{ r.card }}</td>
                             <td class="px-4 py-2.5">{{ r.type_label }}</td>
                             <td class="px-4 py-2.5 text-right font-mono">{{ r.amount !== null ? fmtRp(r.amount) : '—' }}</td>
