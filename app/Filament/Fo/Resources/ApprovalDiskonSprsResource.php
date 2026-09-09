@@ -2,6 +2,7 @@
 
 namespace App\Filament\Fo\Resources;
 
+use App\Filament\Concerns\MematuhiIzin;
 use App\Filament\Fo\Resources\ApprovalDiskonSprsResource\Pages;
 
 /**
@@ -10,6 +11,8 @@ use App\Filament\Fo\Resources\ApprovalDiskonSprsResource\Pages;
  */
 class ApprovalDiskonSprsResource extends ApprovalResource
 {
+    use MematuhiIzin;
+
     protected static ?string $jenisScope = 'DISKON_SPRS';
 
     protected static ?string $slug = 'approval-diskon-sprs';

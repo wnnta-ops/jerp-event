@@ -2,6 +2,7 @@
 
 namespace App\Filament\Fo\Resources;
 
+use App\Filament\Concerns\MematuhiIzin;
 use App\Filament\Fo\Resources\DataPreferensiUnitResource\Pages;
 use App\Modules\FO\Launching\Models\NupRegistration;
 use App\Modules\FO\Launching\Models\PreferensiUnit;
@@ -17,6 +18,8 @@ use Illuminate\Database\Eloquent\Builder;
  */
 class DataPreferensiUnitResource extends Resource
 {
+    use MematuhiIzin;
+
     protected static ?string $model = NupRegistration::class;
 
     protected static ?string $navigationIcon = 'heroicon-o-clipboard-document-list';

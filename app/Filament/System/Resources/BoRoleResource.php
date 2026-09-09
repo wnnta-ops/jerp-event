@@ -2,6 +2,7 @@
 
 namespace App\Filament\System\Resources;
 
+use App\Filament\Concerns\MematuhiIzin;
 use App\Filament\System\Resources\BoRoleResource\Pages;
 use App\Models\Bo\BoPermission;
 use App\Models\Bo\BoRole;
@@ -20,6 +21,8 @@ use Illuminate\Support\Str;
  */
 class BoRoleResource extends Resource
 {
+    use MematuhiIzin;
+
     protected static ?string $model = BoRole::class;
 
     protected static ?string $navigationIcon = 'heroicon-o-shield-exclamation';

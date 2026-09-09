@@ -2,6 +2,7 @@
 
 namespace App\Filament\Fo\Resources;
 
+use App\Filament\Concerns\MematuhiIzin;
 use App\Filament\Fo\Resources\SalesLevelResource\Pages;
 use App\Modules\FO\Adminjual\Models\SalesLevel;
 use Filament\Forms;
@@ -12,6 +13,8 @@ use Filament\Tables\Table;
 
 class SalesLevelResource extends Resource
 {
+    use MematuhiIzin;
+
     protected static ?string $model = SalesLevel::class;
 
     protected static ?string $navigationIcon = 'heroicon-o-bars-arrow-down';

@@ -2,6 +2,7 @@
 
 namespace App\Filament\Bo\Resources;
 
+use App\Filament\Concerns\MematuhiIzin;
 use App\Filament\Bo\Resources\IvtCategoryResource\Pages;
 use App\Modules\BO\Inventory\Models\IvtCategory;
 use Filament\Forms;
@@ -12,6 +13,8 @@ use Filament\Tables\Table;
 
 class IvtCategoryResource extends Resource
 {
+    use MematuhiIzin;
+
     protected static ?string $model = IvtCategory::class;
 
     protected static ?string $navigationIcon = 'heroicon-o-tag';

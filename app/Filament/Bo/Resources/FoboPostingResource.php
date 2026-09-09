@@ -2,6 +2,7 @@
 
 namespace App\Filament\Bo\Resources;
 
+use App\Filament\Concerns\MematuhiIzin;
 use App\Filament\Bo\Resources\FoboPostingResource\Pages;
 use App\Modules\BO\FoBoBridge\Models\FoboPosting;
 use App\Modules\FO\Shared\Events\FoFinancialEvent;
@@ -11,6 +12,8 @@ use Filament\Tables\Table;
 
 class FoboPostingResource extends Resource
 {
+    use MematuhiIzin;
+
     protected static ?string $model = FoboPosting::class;
 
     protected static ?string $navigationIcon = 'heroicon-o-arrows-right-left';

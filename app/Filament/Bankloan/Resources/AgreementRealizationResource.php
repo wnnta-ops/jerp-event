@@ -2,6 +2,7 @@
 
 namespace App\Filament\Bankloan\Resources;
 
+use App\Filament\Concerns\MematuhiIzin;
 use App\Filament\Bankloan\Resources\AgreementRealizationResource\Pages;
 use App\Modules\BankLoan\Models\AgreementRealization;
 use App\Modules\BankLoan\Models\ContractBankAgreement;
@@ -13,6 +14,8 @@ use Filament\Tables\Table;
 
 class AgreementRealizationResource extends Resource
 {
+    use MematuhiIzin;
+
     protected static ?string $model = AgreementRealization::class;
 
     protected static ?string $navigationIcon = 'heroicon-o-banknotes';

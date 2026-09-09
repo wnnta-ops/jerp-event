@@ -2,6 +2,7 @@
 
 namespace App\Filament\System\Resources;
 
+use App\Filament\Concerns\MematuhiIzin;
 use App\Filament\System\Resources\AuditUserResource\Pages;
 use App\Models\Session;
 use Filament\Forms\Form;
@@ -22,6 +23,8 @@ use Illuminate\Support\Str;
  */
 class AuditUserResource extends Resource
 {
+    use MematuhiIzin;
+
     protected static ?string $model = Session::class;
 
     protected static ?string $navigationIcon = 'heroicon-o-power';

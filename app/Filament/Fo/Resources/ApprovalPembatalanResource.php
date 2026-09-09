@@ -2,10 +2,13 @@
 
 namespace App\Filament\Fo\Resources;
 
+use App\Filament\Concerns\MematuhiIzin;
 use App\Filament\Fo\Resources\ApprovalPembatalanResource\Pages;
 
 class ApprovalPembatalanResource extends ApprovalResource
 {
+    use MematuhiIzin;
+
     protected static ?string $jenisScope = 'BATAL_KONTRAK';
 
     protected static ?string $slug = 'approval-pembatalan';

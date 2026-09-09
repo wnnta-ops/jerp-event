@@ -2,6 +2,7 @@
 
 namespace App\Filament\Bo\Resources;
 
+use App\Filament\Concerns\MematuhiIzin;
 use App\Filament\Bo\Resources\PurchaseOrderResource\Pages;
 use App\Modules\BO\PurchaseRequest\Models\PurchaseOrder;
 use Filament\Forms;
@@ -12,6 +13,8 @@ use Filament\Tables\Table;
 
 class PurchaseOrderResource extends Resource
 {
+    use MematuhiIzin;
+
     protected static ?string $model = PurchaseOrder::class;
 
     protected static ?string $navigationIcon = 'heroicon-o-shopping-cart';

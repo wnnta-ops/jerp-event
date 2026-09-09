@@ -2,6 +2,7 @@
 
 namespace App\Filament\Fo\Resources;
 
+use App\Filament\Concerns\MematuhiIzin;
 use App\Filament\Fo\Resources\KomisiResource\Pages;
 use App\Modules\FO\Komisi\Models\Agent;
 use App\Modules\FO\Komisi\Models\Komisi;
@@ -16,6 +17,8 @@ use Filament\Tables\Table;
 
 class KomisiResource extends Resource
 {
+    use MematuhiIzin;
+
     protected static ?string $model = Komisi::class;
 
     protected static ?string $navigationIcon = 'heroicon-o-receipt-percent';

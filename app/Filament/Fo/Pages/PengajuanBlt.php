@@ -2,6 +2,7 @@
 
 namespace App\Filament\Fo\Pages;
 
+use App\Filament\Concerns\MematuhiIzinHalaman;
 use App\Modules\FO\Komisi\Models\Blt;
 use Filament\Forms;
 use Filament\Notifications\Notification;
@@ -18,6 +19,8 @@ use Filament\Tables\Table;
  */
 class PengajuanBlt extends Page implements HasTable
 {
+    use MematuhiIzinHalaman;
+
     use InteractsWithTable;
 
     protected static ?string $slug = 'pengajuan-blt';

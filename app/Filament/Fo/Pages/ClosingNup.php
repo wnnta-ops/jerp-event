@@ -2,6 +2,7 @@
 
 namespace App\Filament\Fo\Pages;
 
+use App\Filament\Concerns\MematuhiIzinHalaman;
 use App\Modules\FO\Adminjual\Models\Skema;
 use App\Modules\FO\FinanceAR\Models\Bkm;
 use App\Modules\FO\FinanceAR\Models\Tts;
@@ -28,6 +29,8 @@ use Livewire\Attributes\On;
  */
 class ClosingNup extends Page implements HasForms, HasTable
 {
+    use MematuhiIzinHalaman;
+
     use InteractsWithForms;
     use InteractsWithTable;
 

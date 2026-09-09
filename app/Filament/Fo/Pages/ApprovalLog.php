@@ -2,6 +2,7 @@
 
 namespace App\Filament\Fo\Pages;
 
+use App\Filament\Concerns\MematuhiIzinHalaman;
 use App\Modules\FO\Approval\Models\Approval;
 use Filament\Pages\Page;
 use Filament\Tables;
@@ -12,6 +13,8 @@ use Filament\Tables\Table;
 /** Log File — jejak semua approval (jenis, status, siapa, kapan). Read-only. */
 class ApprovalLog extends Page implements HasTable
 {
+    use MematuhiIzinHalaman;
+
     use InteractsWithTable;
 
     protected static ?string $slug = 'approval-log';

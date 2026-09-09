@@ -2,6 +2,7 @@
 
 namespace App\Filament\Fo\Pages;
 
+use App\Filament\Concerns\MematuhiIzinHalaman;
 use App\Models\User;
 use App\Modules\FO\Approval\Models\ApprovalSetup;
 use Filament\Actions\Action;
@@ -22,6 +23,8 @@ use Filament\Pages\Page;
  */
 class SetupApproval extends Page implements HasForms
 {
+    use MematuhiIzinHalaman;
+
     use InteractsWithForms;
 
     protected static ?string $navigationIcon = 'heroicon-o-user-plus';

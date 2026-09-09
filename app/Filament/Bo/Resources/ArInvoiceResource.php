@@ -2,6 +2,7 @@
 
 namespace App\Filament\Bo\Resources;
 
+use App\Filament\Concerns\MematuhiIzin;
 use App\Filament\Bo\Resources\ArInvoiceResource\Pages;
 use App\Models\Company;
 use App\Modules\BO\AccountsReceivable\Models\ArInvoice;
@@ -14,6 +15,8 @@ use Filament\Tables\Table;
 
 class ArInvoiceResource extends Resource
 {
+    use MematuhiIzin;
+
     protected static ?string $model = ArInvoice::class;
 
     protected static ?string $navigationIcon = 'heroicon-o-document-currency-dollar';

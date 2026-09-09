@@ -75,12 +75,17 @@ class Akses
         return false;
     }
 
-    /** Awalan izin untuk sebuah kelas resource Filament, atau null bila belum dipetakan. */
+    /**
+     * Awalan izin untuk sebuah kelas resource Filament, atau null bila belum dipetakan.
+     *
+     * Nama kelas PENUH dicoba lebih dulu karena ada nama pendek yang dipakai dua
+     * panel sekaligus (BankResource ada di Fo dan System). Tanpa itu keduanya
+     * terpaksa berbagi satu izin, padahal isinya beda.
+     */
     public static function awalanResource(string $kelasResource): ?string
     {
-        $pendek = class_basename($kelasResource);
-
-        return config('akses.resource.'.$pendek);
+        return config('akses.resource.'.$kelasResource)
+            ?? config('akses.resource.'.class_basename($kelasResource));
     }
 
     /** Susun nama izin lengkap dari awalan + aksi Filament, mis. 'fo.nup' + 'viewAny' → 'fo.nup.index'. */
@@ -90,5 +95,19 @@ class Akses
         $akhiran = config('akses.aksi.'.$aksi);
 
         return ($awalan && $akhiran) ? $awalan.'.'.$akhiran : null;
+    }
+
+    /**
+     * Izin untuk sebuah HALAMAN Filament, atau null bila belum dipetakan.
+     *
+     * Halaman tidak punya aksi CRUD seperti resource — membukanya cuma satu
+     * tindakan — jadi yang dipakai selalu akhiran 'index'.
+     */
+    public static function izinHalaman(string $kelasHalaman): ?string
+    {
+        $awalan = config('akses.halaman.'.$kelasHalaman)
+            ?? config('akses.halaman.'.class_basename($kelasHalaman));
+
+        return $awalan ? $awalan.'.'.config('akses.aksi.viewAny', 'index') : null;
     }
 }

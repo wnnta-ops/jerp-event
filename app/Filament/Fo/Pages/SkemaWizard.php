@@ -2,6 +2,7 @@
 
 namespace App\Filament\Fo\Pages;
 
+use App\Filament\Concerns\MematuhiIzinHalaman;
 use App\Filament\Fo\Resources\SkemaResource;
 use App\Models\Project;
 use App\Modules\FO\Adminjual\Services\SkemaCalculatorService;
@@ -32,6 +33,8 @@ use Throwable;
  */
 class SkemaWizard extends Page implements HasForms
 {
+    use MematuhiIzinHalaman;
+
     use InteractsWithForms;
 
     protected static ?string $navigationIcon = 'heroicon-o-sparkles';

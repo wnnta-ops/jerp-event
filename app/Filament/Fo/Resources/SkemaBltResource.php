@@ -2,6 +2,7 @@
 
 namespace App\Filament\Fo\Resources;
 
+use App\Filament\Concerns\MematuhiIzin;
 use App\Filament\Fo\Resources\SkemaBltResource\Pages;
 use App\Modules\FO\Adminjual\Models\SalesLevel;
 use App\Modules\FO\Komisi\Models\SkemaBlt;
@@ -14,6 +15,8 @@ use Filament\Tables\Table;
 
 class SkemaBltResource extends Resource
 {
+    use MematuhiIzin;
+
     protected static ?string $model = SkemaBlt::class;
 
     protected static ?string $navigationIcon = 'heroicon-o-table-cells';

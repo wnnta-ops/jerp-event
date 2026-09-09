@@ -2,6 +2,7 @@
 
 namespace App\Filament\Bankloan\Resources;
 
+use App\Filament\Concerns\MematuhiIzin;
 use App\Filament\Bankloan\Resources\RetentionSubmissionResource\Pages;
 use App\Modules\BankLoan\Models\ContractBankRetention;
 use App\Modules\BankLoan\Models\RetentionSubmission;
@@ -13,6 +14,8 @@ use Filament\Tables\Table;
 
 class RetentionSubmissionResource extends Resource
 {
+    use MematuhiIzin;
+
     protected static ?string $model = RetentionSubmission::class;
 
     protected static ?string $navigationIcon = 'heroicon-o-arrow-up-on-square';

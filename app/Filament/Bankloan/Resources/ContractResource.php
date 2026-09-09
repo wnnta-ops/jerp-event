@@ -2,6 +2,7 @@
 
 namespace App\Filament\Bankloan\Resources;
 
+use App\Filament\Concerns\MematuhiIzin;
 use App\Filament\Bankloan\Resources\ContractResource\Pages;
 use App\Filament\Bankloan\Resources\ContractResource\RelationManagers;
 use App\Modules\BankLoan\Models\Contract;
@@ -17,6 +18,8 @@ use Filament\Tables\Table;
  */
 class ContractResource extends Resource
 {
+    use MematuhiIzin;
+
     protected static ?string $model = Contract::class;
 
     protected static ?string $navigationIcon = 'heroicon-o-document-check';

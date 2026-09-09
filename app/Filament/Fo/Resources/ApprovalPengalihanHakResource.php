@@ -2,6 +2,7 @@
 
 namespace App\Filament\Fo\Resources;
 
+use App\Filament\Concerns\MematuhiIzin;
 use App\Filament\Fo\Resources\ApprovalPengalihanHakResource\Pages;
 
 /**
@@ -11,6 +12,8 @@ use App\Filament\Fo\Resources\ApprovalPengalihanHakResource\Pages;
  */
 class ApprovalPengalihanHakResource extends ApprovalResource
 {
+    use MematuhiIzin;
+
     protected static ?string $jenisScope = 'GANTI_NAMA';
 
     protected static ?string $slug = 'approval-pengalihan-hak';

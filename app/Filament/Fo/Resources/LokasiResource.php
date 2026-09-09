@@ -2,6 +2,7 @@
 
 namespace App\Filament\Fo\Resources;
 
+use App\Filament\Concerns\MematuhiIzin;
 use App\Filament\Fo\Resources\LokasiResource\Pages;
 use App\Modules\FO\MarketingSales\Models\Lokasi;
 use Filament\Forms;
@@ -16,6 +17,8 @@ use Illuminate\Validation\Rules\Unique;
  */
 class LokasiResource extends Resource
 {
+    use MematuhiIzin;
+
     protected static ?string $model = Lokasi::class;
 
     protected static ?string $navigationIcon = 'heroicon-o-map-pin';

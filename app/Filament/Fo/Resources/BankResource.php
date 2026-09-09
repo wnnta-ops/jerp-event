@@ -2,6 +2,7 @@
 
 namespace App\Filament\Fo\Resources;
 
+use App\Filament\Concerns\MematuhiIzin;
 use App\Filament\Fo\Resources\BankResource\Pages;
 use App\Modules\FO\Launching\Models\Bank;
 use App\Modules\FO\MarketingSales\Models\Lokasi;
@@ -20,6 +21,8 @@ use Filament\Tables\Table;
  */
 class BankResource extends Resource
 {
+    use MematuhiIzin;
+
     protected static ?string $model = Bank::class;
 
     protected static ?string $navigationIcon = 'heroicon-o-building-library';

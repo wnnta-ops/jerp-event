@@ -2,6 +2,7 @@
 
 namespace App\Filament\Fo\Resources;
 
+use App\Filament\Concerns\MematuhiIzin;
 use App\Filament\Fo\Resources\SkemaRewardResource\Pages;
 use App\Modules\FO\Adminjual\Models\SalesLevel;
 use App\Modules\FO\Komisi\Models\SkemaReward;
@@ -13,6 +14,8 @@ use Filament\Tables\Table;
 
 class SkemaRewardResource extends Resource
 {
+    use MematuhiIzin;
+
     protected static ?string $model = SkemaReward::class;
 
     protected static ?string $navigationIcon = 'heroicon-o-gift';

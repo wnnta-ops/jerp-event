@@ -2,6 +2,7 @@
 
 namespace App\Filament\Bo\Resources;
 
+use App\Filament\Concerns\MematuhiIzin;
 use App\Filament\Bo\Resources\IvtLocationResource\Pages;
 use App\Modules\BO\Inventory\Models\IvtLocation;
 use Filament\Forms;
@@ -12,6 +13,8 @@ use Filament\Tables\Table;
 
 class IvtLocationResource extends Resource
 {
+    use MematuhiIzin;
+
     protected static ?string $model = IvtLocation::class;
 
     protected static ?string $navigationIcon = 'heroicon-o-map-pin';

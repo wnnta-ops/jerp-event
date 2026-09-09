@@ -2,6 +2,7 @@
 
 namespace App\Filament\Fo\Pages;
 
+use App\Filament\Concerns\MematuhiIzinHalaman;
 use App\Modules\FO\Shared\Assistant\DataSearchTool;
 use App\Modules\FO\Shared\Assistant\Exports\CustomerSearchExport;
 use App\Modules\FO\Shared\Assistant\SearchResult;
@@ -22,6 +23,8 @@ use Maatwebsite\Excel\Facades\Excel;
  */
 class AsistenAi extends Page
 {
+    use MematuhiIzinHalaman;
+
     protected static ?string $navigationIcon = 'heroicon-o-sparkles';
 
     protected static ?string $title = 'Asisten AI';

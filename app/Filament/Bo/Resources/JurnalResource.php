@@ -2,6 +2,7 @@
 
 namespace App\Filament\Bo\Resources;
 
+use App\Filament\Concerns\MematuhiIzin;
 use App\Filament\Bo\Clusters\GeneralLedger;
 use App\Filament\Bo\Resources\JurnalResource\Pages;
 use App\Models\Company;
@@ -18,6 +19,8 @@ use Illuminate\Support\HtmlString;
 
 class JurnalResource extends Resource
 {
+    use MematuhiIzin;
+
     protected static ?string $model = JurnalHeader::class;
 
     protected static ?string $cluster = GeneralLedger::class;

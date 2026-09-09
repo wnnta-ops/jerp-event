@@ -2,6 +2,7 @@
 
 namespace App\Filament\Fo\Pages;
 
+use App\Filament\Concerns\MematuhiIzinHalaman;
 use App\Modules\FO\Adminjual\Exports\PriceListTemplateExport;
 use App\Modules\FO\Adminjual\Imports\PriceListImport;
 use App\Modules\FO\Adminjual\Models\Skema;
@@ -19,6 +20,8 @@ use Maatwebsite\Excel\Facades\Excel;
 
 class UploadPriceList extends Page implements HasForms
 {
+    use MematuhiIzinHalaman;
+
     use InteractsWithForms;
     use MembacaBerkasUnggahan;
 

@@ -2,6 +2,7 @@
 
 namespace App\Filament\Fo\Pages;
 
+use App\Filament\Concerns\MematuhiIzinHalaman;
 use App\Modules\FO\Komisi\Models\Agent;
 use App\Modules\FO\Komisi\Models\Blt;
 use App\Modules\FO\Komisi\Services\BltCalculatorService;
@@ -16,6 +17,8 @@ use Filament\Tables\Table;
 /** Generate BLT — kontrak SPR belum punya BLT; buat record BLT per level (Sales/Koord/Kantor). */
 class GenerateBlt extends Page implements HasTable
 {
+    use MematuhiIzinHalaman;
+
     use InteractsWithTable;
 
     protected static ?string $slug = 'generate-blt';

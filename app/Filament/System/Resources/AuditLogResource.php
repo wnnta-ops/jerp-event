@@ -2,6 +2,7 @@
 
 namespace App\Filament\System\Resources;
 
+use App\Filament\Concerns\MematuhiIzin;
 use App\Filament\System\Resources\AuditLogResource\Pages;
 use Filament\Forms;
 use Filament\Forms\Form;
@@ -15,6 +16,8 @@ use Spatie\Activitylog\Models\Activity;
 
 class AuditLogResource extends Resource
 {
+    use MematuhiIzin;
+
     protected static ?string $model = Activity::class;
 
     protected static ?string $navigationIcon = 'heroicon-o-clipboard-document-list';

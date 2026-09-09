@@ -2,6 +2,7 @@
 
 namespace App\Filament\Bo\Resources;
 
+use App\Filament\Concerns\MematuhiIzin;
 use App\Filament\Bo\Resources\DepartemenResource\Pages;
 use App\Modules\BO\HR\Models\Departemen;
 use Filament\Forms;
@@ -12,6 +13,8 @@ use Filament\Tables\Table;
 
 class DepartemenResource extends Resource
 {
+    use MematuhiIzin;
+
     protected static ?string $model = Departemen::class;
 
     protected static ?string $navigationIcon = 'heroicon-o-building-office';

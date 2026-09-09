@@ -2,6 +2,7 @@
 
 namespace App\Filament\Backup\Pages;
 
+use App\Filament\Concerns\MematuhiIzinHalaman;
 use Filament\Actions\Action;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
@@ -15,6 +16,8 @@ use Illuminate\Support\Facades\Storage;
 
 class KelolaBackup extends Page
 {
+    use MematuhiIzinHalaman;
+
     protected static ?string $navigationIcon = 'heroicon-o-archive-box-arrow-down';
 
     protected static ?string $navigationLabel = 'Kelola Backup';

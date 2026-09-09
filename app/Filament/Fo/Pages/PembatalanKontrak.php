@@ -2,6 +2,7 @@
 
 namespace App\Filament\Fo\Pages;
 
+use App\Filament\Concerns\MematuhiIzinHalaman;
 use App\Filament\Fo\Resources\RefundResource;
 use App\Modules\FO\Approval\Models\Approval;
 use App\Modules\FO\Approval\Services\ApprovalService;
@@ -24,6 +25,8 @@ use Illuminate\Support\HtmlString;
  */
 class PembatalanKontrak extends Page implements HasForms, HasTable
 {
+    use MematuhiIzinHalaman;
+
     use InteractsWithForms;
     use InteractsWithTable;
 

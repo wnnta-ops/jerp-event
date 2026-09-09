@@ -2,6 +2,7 @@
 
 namespace App\Filament\Bankloan\Resources;
 
+use App\Filament\Concerns\MematuhiIzin;
 use App\Filament\Bankloan\Resources\RequirementResource\Pages;
 use App\Modules\BankLoan\Models\Requirement;
 use Filament\Forms;
@@ -12,6 +13,8 @@ use Filament\Tables\Table;
 
 class RequirementResource extends Resource
 {
+    use MematuhiIzin;
+
     protected static ?string $model = Requirement::class;
 
     protected static ?string $navigationIcon = 'heroicon-o-clipboard-document-list';

@@ -2,10 +2,13 @@
 
 namespace App\Filament\Fo\Resources;
 
+use App\Filament\Concerns\MematuhiIzin;
 use App\Filament\Fo\Resources\ApprovalRescheduleResource\Pages;
 
 class ApprovalRescheduleResource extends ApprovalResource
 {
+    use MematuhiIzin;
+
     protected static ?string $jenisScope = 'RESCHEDULE';
 
     protected static ?string $slug = 'approval-reschedule';

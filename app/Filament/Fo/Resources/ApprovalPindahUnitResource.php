@@ -2,10 +2,13 @@
 
 namespace App\Filament\Fo\Resources;
 
+use App\Filament\Concerns\MematuhiIzin;
 use App\Filament\Fo\Resources\ApprovalPindahUnitResource\Pages;
 
 class ApprovalPindahUnitResource extends ApprovalResource
 {
+    use MematuhiIzin;
+
     protected static ?string $jenisScope = 'GANTI_UNIT';
 
     protected static ?string $slug = 'approval-pindah-unit';

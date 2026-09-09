@@ -2,6 +2,7 @@
 
 namespace App\Filament\Fo\Pages;
 
+use App\Filament\Concerns\MematuhiIzinHalaman;
 use App\Settings\FoSettings;
 use Filament\Actions\Action;
 use Filament\Forms;
@@ -13,6 +14,8 @@ use Filament\Pages\Page;
 
 class PengaturanFo extends Page implements HasForms
 {
+    use MematuhiIzinHalaman;
+
     use InteractsWithForms;
 
     protected static ?string $navigationIcon = 'heroicon-o-cog-6-tooth';

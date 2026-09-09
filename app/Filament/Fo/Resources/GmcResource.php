@@ -2,6 +2,7 @@
 
 namespace App\Filament\Fo\Resources;
 
+use App\Filament\Concerns\MematuhiIzin;
 use App\Filament\Fo\Resources\GmcResource\Pages;
 use App\Modules\FO\FinanceAR\Models\Gmc;
 use App\Modules\FO\FinanceAR\Models\GmcItem;
@@ -20,6 +21,8 @@ use Filament\Tables\Table;
  */
 class GmcResource extends Resource
 {
+    use MematuhiIzin;
+
     protected static ?string $model = Gmc::class;
 
     protected static ?string $navigationIcon = 'heroicon-o-gift';

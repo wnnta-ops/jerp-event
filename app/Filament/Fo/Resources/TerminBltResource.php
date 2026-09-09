@@ -2,6 +2,7 @@
 
 namespace App\Filament\Fo\Resources;
 
+use App\Filament\Concerns\MematuhiIzin;
 use App\Filament\Fo\Resources\TerminBltResource\Pages;
 use App\Modules\FO\Adminjual\Models\SalesLevel;
 use App\Modules\FO\Komisi\Models\TerminBlt;
@@ -13,6 +14,8 @@ use Filament\Tables\Table;
 
 class TerminBltResource extends Resource
 {
+    use MematuhiIzin;
+
     protected static ?string $model = TerminBlt::class;
 
     protected static ?string $navigationIcon = 'heroicon-o-list-bullet';

@@ -2,6 +2,7 @@
 
 namespace App\Filament\Fo\Pages;
 
+use App\Filament\Concerns\MematuhiIzinHalaman;
 use App\Models\Project;
 use App\Modules\FO\Launching\Models\NupEvent;
 use App\Modules\FO\Launching\Models\NupRegistration;
@@ -25,6 +26,8 @@ use Illuminate\Database\Eloquent\Builder;
  */
 class AktivasiNup extends Page implements HasForms, HasTable
 {
+    use MematuhiIzinHalaman;
+
     use InteractsWithForms;
     use InteractsWithTable;
 

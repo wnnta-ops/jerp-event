@@ -2,6 +2,7 @@
 
 namespace App\Filament\Fo\Pages;
 
+use App\Filament\Concerns\MematuhiIzinHalaman;
 use App\Modules\FO\Approval\Models\Approval;
 use App\Modules\FO\Approval\Services\ApprovalService;
 use App\Modules\FO\MarketingSales\Models\Kontrak;
@@ -28,6 +29,8 @@ use Illuminate\Support\HtmlString;
  */
 class AdjustmentKontrak extends Page implements HasForms, HasTable
 {
+    use MematuhiIzinHalaman;
+
     use InteractsWithForms;
     use InteractsWithTable;
 

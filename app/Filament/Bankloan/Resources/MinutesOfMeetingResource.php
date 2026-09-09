@@ -2,6 +2,7 @@
 
 namespace App\Filament\Bankloan\Resources;
 
+use App\Filament\Concerns\MematuhiIzin;
 use App\Filament\Bankloan\Resources\MinutesOfMeetingResource\Pages;
 use App\Models\Bank;
 use App\Models\Project;
@@ -14,6 +15,8 @@ use Filament\Tables\Table;
 
 class MinutesOfMeetingResource extends Resource
 {
+    use MematuhiIzin;
+
     protected static ?string $model = MinutesOfMeeting::class;
 
     protected static ?string $navigationIcon = 'heroicon-o-document-text';

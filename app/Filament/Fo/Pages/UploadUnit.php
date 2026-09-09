@@ -2,6 +2,7 @@
 
 namespace App\Filament\Fo\Pages;
 
+use App\Filament\Concerns\MematuhiIzinHalaman;
 use App\Models\Project;
 use App\Modules\FO\Adminjual\Imports\UnitImport;
 use App\Filament\Fo\Pages\Concerns\MembacaBerkasUnggahan;
@@ -16,6 +17,8 @@ use Maatwebsite\Excel\Facades\Excel;
 
 class UploadUnit extends Page implements HasForms
 {
+    use MematuhiIzinHalaman;
+
     use InteractsWithForms;
     use MembacaBerkasUnggahan;
 

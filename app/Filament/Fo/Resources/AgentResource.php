@@ -2,6 +2,7 @@
 
 namespace App\Filament\Fo\Resources;
 
+use App\Filament\Concerns\MematuhiIzin;
 use App\Filament\Fo\Resources\AgentResource\Pages;
 use App\Modules\FO\Komisi\Models\Agent;
 use Filament\Forms;
@@ -12,6 +13,8 @@ use Filament\Tables\Table;
 
 class AgentResource extends Resource
 {
+    use MematuhiIzin;
+
     protected static ?string $model = Agent::class;
 
     protected static ?string $navigationIcon = 'heroicon-o-user-plus';

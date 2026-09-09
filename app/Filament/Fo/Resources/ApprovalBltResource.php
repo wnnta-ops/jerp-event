@@ -2,6 +2,7 @@
 
 namespace App\Filament\Fo\Resources;
 
+use App\Filament\Concerns\MematuhiIzin;
 use App\Filament\Fo\Resources\ApprovalBltResource\Pages;
 
 /**
@@ -10,6 +11,8 @@ use App\Filament\Fo\Resources\ApprovalBltResource\Pages;
  */
 class ApprovalBltResource extends ApprovalResource
 {
+    use MematuhiIzin;
+
     protected static ?string $jenisScope = 'BLT';
 
     protected static ?string $slug = 'approval-blt';

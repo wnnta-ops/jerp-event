@@ -2,6 +2,7 @@
 
 namespace App\Filament\Fo\Resources;
 
+use App\Filament\Concerns\MematuhiIzin;
 use App\Filament\Fo\Resources\SumberDataResource\Pages;
 use App\Modules\FO\Adminjual\Models\SumberData;
 use Filament\Forms;
@@ -16,6 +17,8 @@ use Filament\Tables\Table;
  */
 class SumberDataResource extends Resource
 {
+    use MematuhiIzin;
+
     protected static ?string $model = SumberData::class;
 
     protected static ?string $navigationIcon = 'heroicon-o-megaphone';

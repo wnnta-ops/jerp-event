@@ -2,6 +2,7 @@
 
 namespace App\Filament\Bo\Resources;
 
+use App\Filament\Concerns\MematuhiIzin;
 use App\Filament\Bo\Resources\ApInvoiceResource\Pages;
 use App\Models\Company;
 use App\Modules\BO\AccountsPayable\Models\ApInvoice;
@@ -15,6 +16,8 @@ use Filament\Tables\Table;
 
 class ApInvoiceResource extends Resource
 {
+    use MematuhiIzin;
+
     protected static ?string $model = ApInvoice::class;
 
     protected static ?string $navigationIcon = 'heroicon-o-document-text';

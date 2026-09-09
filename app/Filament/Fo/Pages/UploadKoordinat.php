@@ -2,6 +2,7 @@
 
 namespace App\Filament\Fo\Pages;
 
+use App\Filament\Concerns\MematuhiIzinHalaman;
 use App\Modules\FO\Adminjual\Imports\KoordinatImport;
 use App\Filament\Fo\Pages\Concerns\MembacaBerkasUnggahan;
 use Filament\Forms;
@@ -16,6 +17,8 @@ use Maatwebsite\Excel\Facades\Excel;
 
 class UploadKoordinat extends Page implements HasForms
 {
+    use MematuhiIzinHalaman;
+
     use InteractsWithForms;
     use MembacaBerkasUnggahan;
 

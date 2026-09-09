@@ -2,6 +2,7 @@
 
 namespace App\Filament\Fo\Resources;
 
+use App\Filament\Concerns\MematuhiIzin;
 use App\Filament\Fo\Resources\SprResource\Pages;
 use App\Modules\FO\MarketingSales\Models\Kontrak;
 use Filament\Forms\Form;
@@ -16,6 +17,8 @@ use Illuminate\Database\Eloquent\Builder;
  */
 class SprResource extends Resource
 {
+    use MematuhiIzin;
+
     protected static ?string $model = Kontrak::class;
 
     protected static ?string $navigationIcon = 'heroicon-o-document-check';
