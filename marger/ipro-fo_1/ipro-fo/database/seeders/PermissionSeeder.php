@@ -36,14 +36,10 @@ class PermissionSeeder extends Seeder
                 'master.sales.create', 'master.sales.update', 'master.sales.delete', 'master.agent.view',
                 'master.agent.create', 'master.agent.update', 'master.agent.delete',
             ],
-            // Sales
-            'sales' => [
-                'sales.hold.view', 'sales.hold.create', 'sales.hold.release', 'sales.booking.view',
-                'sales.booking.create', 'sales.booking.update', 'sales.booking.cancel', 'sales.booking.promote',
-                'sales.contract.view', 'sales.contract.update', 'sales.contract.sign', 'sales.nup.view',
-                'sales.nup.create', 'sales.nup.payment', 'sales.nup.refund', 'sales.nup.verify',
-                'sales.gn.request', 'sales.gu.request', 'sales.reschedule.request',
-            ],
+            // Sales — PINDAH ke FO. Izinnya dicabut agar seksi "Sales" tidak lagi
+            // muncul dobel di Grup Akses BO padahal rutenya sudah mati (lihat
+            // config/modul_pindah_fo.php). Kembalikan blok ini bila sakelarnya
+            // dinyalakan lagi.
             // Finance
             'finance' => [
                 'finance.tts.view', 'finance.tts.create', 'finance.tts.post', 'finance.tts.giro.manage',
@@ -53,12 +49,7 @@ class PermissionSeeder extends Seeder
                 'finance.fakturpajak.create', 'finance.refund.request', 'finance.refund.approve', 'finance.refund.pay',
                 'finance.anonim.view', 'finance.anonim.allocate',
             ],
-            // Collection
-            'collection' => [
-                'collection.followup.view', 'collection.followup.create', 'collection.denda.view', 'collection.denda.waive',
-                'collection.pjt.view', 'collection.pjt.regenerate', 'collection.tunggakan.view', 'collection.sp.view',
-                'collection.sp.issue',
-            ],
+            // Collection — PINDAH ke FO. Izin dicabut, lihat config/modul_pindah_fo.php.
             // Bank Loan
             'bankloan' => [
                 'bankloan.setup.view', 'bankloan.setup.manage', 'bankloan.application.view', 'bankloan.application.create',
@@ -86,8 +77,7 @@ class PermissionSeeder extends Seeder
             'crm' => ['crm.view', 'crm.manage'],
             // Security module (akses, absensi, audit)
             'security' => ['security.view', 'security.manage'],
-            // Setup Sales (skema bayar, master sales/agen, price list, dll)
-            'setupsales' => ['setupsales.view', 'setupsales.manage'],
+            // Setup Sales — PINDAH ke FO. Izin dicabut, lihat config/modul_pindah_fo.php.
             // Insentif (BLT & Reward) — pengajuan, persetujuan, realisasi
             'incentive' => ['incentive.view', 'incentive.manage', 'incentive.approve'],
             // Approval
