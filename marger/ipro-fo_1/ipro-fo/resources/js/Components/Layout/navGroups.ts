@@ -349,6 +349,7 @@ export function navGroups(foUrl: string): NavGroup[] {
                 { label: 'Cek Giro Masuk', href: 'bs.giro.index' },
                 { label: 'Cek Giro Keluar', href: 'bs.cheque-out.index' },
                 { label: 'Realisasi Bon Sementara', href: 'bs.advance.index' },
+                { label: 'Outstanding Kasbon', href: 'bs.cashbook.outstanding-kasbon' },
             ]},
             { label: 'Report/Query', icon: FileBarChart, permission: ['businesssupport.view', 'cashbook.*'], children: [
                 { label: 'Rekening Ledger', href: 'bs.cashbook.ledger' },
