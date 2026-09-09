@@ -2,6 +2,7 @@
 
 namespace App\Filament\Fo\Pages;
 
+use App\Filament\Concerns\MematuhiIzinHalaman;
 use App\Settings\CollectionSettings;
 use Filament\Actions\Action;
 use Filament\Forms;
@@ -17,6 +18,8 @@ use Filament\Pages\Page;
  */
 class SetupTerminSp extends Page implements HasForms
 {
+    use MematuhiIzinHalaman;
+
     use InteractsWithForms;
 
     protected static ?string $navigationIcon = 'heroicon-o-clock';

@@ -2,6 +2,7 @@
 
 namespace App\Filament\Fo\Resources;
 
+use App\Filament\Concerns\MematuhiIzin;
 use App\Filament\Fo\Resources\ApprovalKomisiResource\Pages;
 
 /**
@@ -10,6 +11,8 @@ use App\Filament\Fo\Resources\ApprovalKomisiResource\Pages;
  */
 class ApprovalKomisiResource extends ApprovalResource
 {
+    use MematuhiIzin;
+
     protected static ?string $jenisScope = 'KOMISI';
 
     protected static ?string $slug = 'approval-komisi';

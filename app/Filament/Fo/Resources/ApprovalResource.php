@@ -2,6 +2,7 @@
 
 namespace App\Filament\Fo\Resources;
 
+use App\Filament\Concerns\MematuhiIzin;
 use App\Filament\Fo\Resources\ApprovalResource\Pages;
 use App\Modules\FO\Approval\Models\Approval;
 use App\Modules\FO\Approval\Services\ApprovalService;
@@ -20,6 +21,8 @@ use Illuminate\Support\Str;
 
 class ApprovalResource extends Resource
 {
+    use MematuhiIzin;
+
     protected static ?string $model = Approval::class;
 
     protected static ?string $navigationIcon = 'heroicon-o-clipboard-document-check';

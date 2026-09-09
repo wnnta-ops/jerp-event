@@ -2,6 +2,7 @@
 
 namespace App\Filament\Fo\Resources;
 
+use App\Filament\Concerns\MematuhiIzin;
 use App\Filament\Fo\Pages\TerbitkanSp;
 use App\Filament\Fo\Resources\CollectionResource\Pages;
 use App\Modules\FO\Collection\Models\CollectionNotice;
@@ -24,6 +25,8 @@ use Illuminate\Database\Eloquent\Builder;
  */
 class CollectionResource extends Resource
 {
+    use MematuhiIzin;
+
     protected static ?string $model = Kontrak::class;
 
     protected static ?string $navigationIcon = 'heroicon-o-banknotes';

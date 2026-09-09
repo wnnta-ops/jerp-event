@@ -2,6 +2,7 @@
 
 namespace App\Filament\Bo\Resources;
 
+use App\Filament\Concerns\MematuhiIzin;
 use App\Filament\Bo\Resources\PurchaseRequestResource\Pages;
 use App\Models\Company;
 use App\Modules\BO\AccountsPayable\Models\Supplier;
@@ -15,6 +16,8 @@ use Filament\Tables\Table;
 
 class PurchaseRequestResource extends Resource
 {
+    use MematuhiIzin;
+
     protected static ?string $model = PurchaseRequest::class;
 
     protected static ?string $navigationIcon = 'heroicon-o-clipboard-document-list';

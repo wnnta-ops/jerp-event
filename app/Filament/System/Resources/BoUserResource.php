@@ -2,6 +2,7 @@
 
 namespace App\Filament\System\Resources;
 
+use App\Filament\Concerns\MematuhiIzin;
 use App\Filament\System\Resources\BoUserResource\Pages;
 use App\Models\Bo\BoRole;
 use App\Models\Bo\BoUser;
@@ -19,6 +20,8 @@ use Filament\Tables\Table;
  */
 class BoUserResource extends Resource
 {
+    use MematuhiIzin;
+
     protected static ?string $model = BoUser::class;
 
     protected static ?string $navigationIcon = 'heroicon-o-user-group';

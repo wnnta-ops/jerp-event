@@ -2,6 +2,7 @@
 
 namespace App\Filament\Bo\Pages;
 
+use App\Filament\Concerns\MematuhiIzinHalaman;
 use App\Filament\Bo\Clusters\GeneralLedger;
 use App\Models\Company;
 use App\Modules\BO\GeneralLedger\Models\Period;
@@ -18,6 +19,8 @@ use Throwable;
 
 class ClosingPeriodePage extends Page implements HasForms
 {
+    use MematuhiIzinHalaman;
+
     use InteractsWithForms;
 
     protected static ?string $cluster = GeneralLedger::class;

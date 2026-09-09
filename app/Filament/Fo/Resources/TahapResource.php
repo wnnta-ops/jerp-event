@@ -2,6 +2,7 @@
 
 namespace App\Filament\Fo\Resources;
 
+use App\Filament\Concerns\MematuhiIzin;
 use App\Filament\Fo\Resources\TahapResource\Pages;
 use App\Modules\FO\MarketingSales\Models\Tahap;
 use Filament\Forms;
@@ -15,6 +16,8 @@ use Filament\Tables\Table;
  */
 class TahapResource extends Resource
 {
+    use MematuhiIzin;
+
     protected static ?string $model = Tahap::class;
 
     protected static ?string $navigationIcon = 'heroicon-o-square-3-stack-3d';

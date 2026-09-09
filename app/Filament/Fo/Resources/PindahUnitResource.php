@@ -2,6 +2,7 @@
 
 namespace App\Filament\Fo\Resources;
 
+use App\Filament\Concerns\MematuhiIzin;
 use App\Filament\Fo\Resources\PindahUnitResource\Pages;
 use App\Filament\Fo\Resources\PindahUnitResource\RelationManagers\HistoryRelationManager;
 use App\Modules\FO\MarketingSales\Models\Kontrak;
@@ -18,6 +19,8 @@ use Illuminate\Database\Eloquent\Builder;
  */
 class PindahUnitResource extends Resource
 {
+    use MematuhiIzin;
+
     protected static ?string $model = Kontrak::class;
 
     protected static ?string $navigationIcon = 'heroicon-o-arrows-right-left';

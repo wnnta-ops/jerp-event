@@ -2,6 +2,7 @@
 
 namespace App\Filament\Fo\Resources;
 
+use App\Filament\Concerns\MematuhiIzin;
 use App\Filament\Fo\Resources\PriceListResource\Pages;
 use App\Modules\FO\Adminjual\Models\Skema;
 use App\Modules\FO\MarketingSales\Models\Unit;
@@ -24,6 +25,8 @@ use Illuminate\Support\Facades\DB;
  */
 class PriceListResource extends Resource
 {
+    use MematuhiIzin;
+
     protected static ?string $model = Unit::class;
 
     protected static ?string $navigationIcon = 'heroicon-o-currency-dollar';

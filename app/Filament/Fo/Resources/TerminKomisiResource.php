@@ -2,6 +2,7 @@
 
 namespace App\Filament\Fo\Resources;
 
+use App\Filament\Concerns\MematuhiIzin;
 use App\Filament\Fo\Resources\TerminKomisiResource\Pages;
 use App\Modules\FO\Adminjual\Models\SalesLevel;
 use App\Modules\FO\Komisi\Models\TerminKomisi;
@@ -13,6 +14,8 @@ use Filament\Tables\Table;
 
 class TerminKomisiResource extends Resource
 {
+    use MematuhiIzin;
+
     protected static ?string $model = TerminKomisi::class;
 
     protected static ?string $navigationIcon = 'heroicon-o-clock';

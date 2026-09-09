@@ -2,6 +2,7 @@
 
 namespace App\Filament\Fo\Pages;
 
+use App\Filament\Concerns\MematuhiIzinHalaman;
 use App\Modules\FO\MarketingSales\Controllers\LaporanPenjualanController;
 use App\Modules\FO\MarketingSales\Models\Lokasi;
 use Filament\Pages\Page;
@@ -12,6 +13,8 @@ use Filament\Pages\Page;
  */
 class LaporanPenjualan extends Page
 {
+    use MematuhiIzinHalaman;
+
     protected static ?string $navigationIcon = 'heroicon-o-chart-bar';
 
     protected static ?string $navigationGroup = 'Marketing & Sales';

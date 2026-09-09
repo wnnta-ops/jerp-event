@@ -2,6 +2,7 @@
 
 namespace App\Filament\Fo\Pages;
 
+use App\Filament\Concerns\MematuhiIzinHalaman;
 use App\Modules\FO\MarketingSales\Models\Kontrak;
 use Filament\Pages\Page;
 use Filament\Tables;
@@ -20,6 +21,8 @@ use Illuminate\Support\HtmlString;
  */
 class PembayaranAr extends Page implements HasTable
 {
+    use MematuhiIzinHalaman;
+
     use InteractsWithTable;
 
     protected static bool $shouldRegisterNavigation = false;

@@ -2,6 +2,7 @@
 
 namespace App\Filament\System\Resources;
 
+use App\Filament\Concerns\MematuhiIzin;
 use App\Filament\System\Resources\NumeratorResource\Pages;
 use App\Models\Numerator;
 use Filament\Forms;
@@ -12,6 +13,8 @@ use Filament\Tables\Table;
 
 class NumeratorResource extends Resource
 {
+    use MematuhiIzin;
+
     protected static ?string $model = Numerator::class;
 
     protected static ?string $navigationIcon = 'heroicon-o-hashtag';

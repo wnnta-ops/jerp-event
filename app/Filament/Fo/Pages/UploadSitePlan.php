@@ -2,6 +2,7 @@
 
 namespace App\Filament\Fo\Pages;
 
+use App\Filament\Concerns\MematuhiIzinHalaman;
 use App\Models\Project;
 use App\Modules\FO\MarketingSales\Models\Lokasi;
 use Filament\Forms;
@@ -14,6 +15,8 @@ use Illuminate\Support\HtmlString;
 
 class UploadSitePlan extends Page implements HasForms
 {
+    use MematuhiIzinHalaman;
+
     use InteractsWithForms;
 
     protected static ?string $navigationIcon = 'heroicon-o-photo';

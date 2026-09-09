@@ -2,6 +2,7 @@
 
 namespace App\Filament\Fo\Pages;
 
+use App\Filament\Concerns\MematuhiIzinHalaman;
 use App\Filament\Fo\Concerns\BuildsStockGrid;
 use App\Modules\FO\Adminjual\Models\Skema;
 use App\Modules\FO\Booked\Services\BookedVerificationService;
@@ -22,6 +23,8 @@ use Filament\Pages\Page;
  */
 class PilihUnitBooked extends Page implements HasActions, HasForms
 {
+    use MematuhiIzinHalaman;
+
     use BuildsStockGrid;
     use InteractsWithActions;
     use InteractsWithForms;

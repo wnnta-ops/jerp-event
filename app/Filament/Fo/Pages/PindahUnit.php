@@ -2,6 +2,7 @@
 
 namespace App\Filament\Fo\Pages;
 
+use App\Filament\Concerns\MematuhiIzinHalaman;
 use App\Filament\Fo\Concerns\BuildsStockGrid;
 use App\Modules\FO\Approval\Models\Approval;
 use App\Modules\FO\Approval\Services\ApprovalService;
@@ -22,6 +23,8 @@ use Filament\Pages\Page;
  */
 class PindahUnit extends Page implements HasActions, HasForms
 {
+    use MematuhiIzinHalaman;
+
     use BuildsStockGrid;
     use InteractsWithActions;
     use InteractsWithForms;

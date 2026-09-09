@@ -2,6 +2,7 @@
 
 namespace App\Filament\Bo\Resources;
 
+use App\Filament\Concerns\MematuhiIzin;
 use App\Filament\Bo\Resources\SupplierResource\Pages;
 use App\Modules\BO\AccountsPayable\Models\Supplier;
 use Filament\Forms;
@@ -12,6 +13,8 @@ use Filament\Tables\Table;
 
 class SupplierResource extends Resource
 {
+    use MematuhiIzin;
+
     protected static ?string $model = Supplier::class;
 
     protected static ?string $navigationIcon = 'heroicon-o-truck';

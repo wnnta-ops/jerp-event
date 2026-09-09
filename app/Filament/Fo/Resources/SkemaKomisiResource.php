@@ -2,6 +2,7 @@
 
 namespace App\Filament\Fo\Resources;
 
+use App\Filament\Concerns\MematuhiIzin;
 use App\Filament\Fo\Resources\SkemaKomisiResource\Pages;
 use App\Modules\FO\Adminjual\Models\SalesLevel;
 use App\Modules\FO\Komisi\Models\SkemaKomisi;
@@ -16,6 +17,8 @@ use Filament\Tables\Table;
 
 class SkemaKomisiResource extends Resource
 {
+    use MematuhiIzin;
+
     protected static ?string $model = SkemaKomisi::class;
 
     protected static ?string $navigationIcon = 'heroicon-o-calculator';

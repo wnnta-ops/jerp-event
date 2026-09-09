@@ -2,6 +2,7 @@
 
 namespace App\Filament\Fo\Pages;
 
+use App\Filament\Concerns\MematuhiIzinHalaman;
 use App\Modules\FO\Komisi\Models\Blt;
 use Filament\Notifications\Notification;
 use Filament\Pages\Page;
@@ -17,6 +18,8 @@ use Filament\Tables\Table;
  */
 class RealisasiBlt extends Page implements HasTable
 {
+    use MematuhiIzinHalaman;
+
     use InteractsWithTable;
 
     protected static ?string $slug = 'realisasi-blt';

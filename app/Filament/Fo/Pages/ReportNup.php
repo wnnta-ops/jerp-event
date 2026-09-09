@@ -2,6 +2,7 @@
 
 namespace App\Filament\Fo\Pages;
 
+use App\Filament\Concerns\MematuhiIzinHalaman;
 use App\Modules\FO\Launching\Models\NupRegistration;
 use Filament\Pages\Page;
 use Illuminate\Database\Eloquent\Builder;
@@ -18,6 +19,8 @@ use Illuminate\Database\Eloquent\Builder;
  */
 class ReportNup extends Page
 {
+    use MematuhiIzinHalaman;
+
     protected static ?string $navigationIcon = 'heroicon-o-document-chart-bar';
 
     protected static ?string $navigationGroup = 'NUP';

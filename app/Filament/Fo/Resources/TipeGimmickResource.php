@@ -2,6 +2,7 @@
 
 namespace App\Filament\Fo\Resources;
 
+use App\Filament\Concerns\MematuhiIzin;
 use App\Filament\Fo\Resources\TipeGimmickResource\Pages;
 use App\Modules\FO\Adminjual\Models\TipeGimmick;
 use Filament\Forms;
@@ -12,6 +13,8 @@ use Filament\Tables\Table;
 
 class TipeGimmickResource extends Resource
 {
+    use MematuhiIzin;
+
     protected static ?string $model = TipeGimmick::class;
 
     protected static ?string $navigationIcon = 'heroicon-o-squares-2x2';

@@ -2,6 +2,7 @@
 
 namespace App\Filament\Bo\Resources;
 
+use App\Filament\Concerns\MematuhiIzin;
 use App\Filament\Bo\Resources\CbVoucherResource\Pages;
 use App\Models\Company;
 use App\Modules\BO\CashBank\Models\CbVoucher;
@@ -15,6 +16,8 @@ use Filament\Tables\Table;
 
 class CbVoucherResource extends Resource
 {
+    use MematuhiIzin;
+
     protected static ?string $model = CbVoucher::class;
 
     protected static ?string $navigationIcon = 'heroicon-o-banknotes';

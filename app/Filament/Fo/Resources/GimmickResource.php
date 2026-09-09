@@ -2,6 +2,7 @@
 
 namespace App\Filament\Fo\Resources;
 
+use App\Filament\Concerns\MematuhiIzin;
 use App\Filament\Fo\Resources\GimmickResource\Pages;
 use App\Modules\FO\Adminjual\Models\Gimmick;
 use Filament\Forms;
@@ -12,6 +13,8 @@ use Filament\Tables\Table;
 
 class GimmickResource extends Resource
 {
+    use MematuhiIzin;
+
     protected static ?string $model = Gimmick::class;
 
     protected static ?string $navigationIcon = 'heroicon-o-sparkles';

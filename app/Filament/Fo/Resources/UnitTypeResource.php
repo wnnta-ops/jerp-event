@@ -2,6 +2,7 @@
 
 namespace App\Filament\Fo\Resources;
 
+use App\Filament\Concerns\MematuhiIzin;
 use App\Filament\Fo\Resources\UnitTypeResource\Pages;
 use App\Modules\FO\MarketingSales\Models\UnitType;
 use Filament\Forms;
@@ -12,6 +13,8 @@ use Filament\Tables\Table;
 
 class UnitTypeResource extends Resource
 {
+    use MematuhiIzin;
+
     protected static ?string $model = UnitType::class;
 
     protected static ?string $navigationIcon = 'heroicon-o-cube';

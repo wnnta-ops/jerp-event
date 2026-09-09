@@ -2,6 +2,7 @@
 
 namespace App\Filament\Fo\Pages;
 
+use App\Filament\Concerns\MematuhiIzinHalaman;
 use Filament\Pages\Page;
 
 /**
@@ -13,6 +14,8 @@ use Filament\Pages\Page;
  */
 class SegeraHadir extends Page
 {
+    use MematuhiIzinHalaman;
+
     protected static ?string $navigationIcon = 'heroicon-o-wrench-screwdriver';
 
     protected static ?string $slug = 'segera-hadir';

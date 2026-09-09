@@ -2,6 +2,7 @@
 
 namespace App\Filament\Fo\Pages;
 
+use App\Filament\Concerns\MematuhiIzinHalaman;
 use App\Models\Project;
 use App\Modules\FO\Launching\Services\UnitLockService;
 use App\Modules\FO\MarketingSales\Models\Unit;
@@ -18,6 +19,8 @@ use Livewire\Attributes\On;
  */
 class PetaUnitLive extends Page
 {
+    use MematuhiIzinHalaman;
+
     protected static ?string $navigationIcon = 'heroicon-o-map';
 
     protected static ?string $navigationGroup = 'Launching & NUP';

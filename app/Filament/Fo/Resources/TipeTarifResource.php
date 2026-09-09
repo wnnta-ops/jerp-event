@@ -2,6 +2,7 @@
 
 namespace App\Filament\Fo\Resources;
 
+use App\Filament\Concerns\MematuhiIzin;
 use App\Filament\Fo\Resources\TipeTarifResource\Pages;
 use App\Modules\FO\Komisi\Models\TipeTarif;
 use Filament\Forms;
@@ -12,6 +13,8 @@ use Filament\Tables\Table;
 
 class TipeTarifResource extends Resource
 {
+    use MematuhiIzin;
+
     protected static ?string $model = TipeTarif::class;
 
     protected static ?string $navigationIcon = 'heroicon-o-receipt-percent';

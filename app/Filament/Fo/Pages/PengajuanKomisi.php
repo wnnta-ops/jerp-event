@@ -2,6 +2,7 @@
 
 namespace App\Filament\Fo\Pages;
 
+use App\Filament\Concerns\MematuhiIzinHalaman;
 use App\Modules\FO\Komisi\Models\Komisi;
 use App\Modules\FO\Komisi\Services\KomisiCalculatorService;
 use Filament\Forms;
@@ -19,6 +20,8 @@ use Filament\Tables\Table;
  */
 class PengajuanKomisi extends Page implements HasTable
 {
+    use MematuhiIzinHalaman;
+
     use InteractsWithTable;
 
     protected static ?string $slug = 'pengajuan-komisi';

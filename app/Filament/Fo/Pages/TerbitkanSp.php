@@ -2,6 +2,7 @@
 
 namespace App\Filament\Fo\Pages;
 
+use App\Filament\Concerns\MematuhiIzinHalaman;
 use App\Modules\FO\Collection\Services\SpLetterService;
 use App\Modules\FO\MarketingSales\Models\Kontrak;
 use Filament\Forms;
@@ -19,6 +20,8 @@ use Illuminate\Support\HtmlString;
  */
 class TerbitkanSp extends Page implements HasForms
 {
+    use MematuhiIzinHalaman;
+
     use InteractsWithForms;
 
     protected static bool $shouldRegisterNavigation = false;

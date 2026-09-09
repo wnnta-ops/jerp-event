@@ -2,6 +2,7 @@
 
 namespace App\Filament\Fo\Pages;
 
+use App\Filament\Concerns\MematuhiIzinHalaman;
 use App\Models\Project;
 use App\Modules\FO\Launching\Models\NupRegistration;
 use App\Modules\FO\Launching\Services\PilihUnitService;
@@ -22,6 +23,8 @@ use Filament\Pages\Page;
  */
 class PilihUnit extends Page
 {
+    use MematuhiIzinHalaman;
+
     protected static ?string $navigationIcon = 'heroicon-o-map';
 
     protected static ?string $title = 'Pilih Unit';

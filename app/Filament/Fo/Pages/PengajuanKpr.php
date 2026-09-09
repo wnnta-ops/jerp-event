@@ -2,6 +2,7 @@
 
 namespace App\Filament\Fo\Pages;
 
+use App\Filament\Concerns\MematuhiIzinHalaman;
 use App\Models\Bank;
 use App\Modules\FO\FinanceAR\Models\KprPengajuan;
 use App\Modules\FO\FinanceAR\Models\KprPengajuanBiaya;
@@ -26,6 +27,8 @@ use Filament\Tables\Table;
  */
 class PengajuanKpr extends Page implements HasForms, HasTable
 {
+    use MematuhiIzinHalaman;
+
     use InteractsWithForms;
     use InteractsWithTable;
 

@@ -2,6 +2,7 @@
 
 namespace App\Filament\Fo\Resources;
 
+use App\Filament\Concerns\MematuhiIzin;
 use App\Filament\Fo\Resources\RewardResource\Pages;
 use App\Modules\FO\Komisi\Models\Reward;
 use Filament\Forms;
@@ -13,6 +14,8 @@ use Filament\Tables\Table;
 
 class RewardResource extends Resource
 {
+    use MematuhiIzin;
+
     protected static ?string $model = Reward::class;
 
     protected static ?string $navigationIcon = 'heroicon-o-trophy';

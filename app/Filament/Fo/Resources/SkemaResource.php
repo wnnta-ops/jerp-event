@@ -2,6 +2,7 @@
 
 namespace App\Filament\Fo\Resources;
 
+use App\Filament\Concerns\MematuhiIzin;
 use App\Filament\Fo\Resources\SkemaResource\Pages;
 use App\Modules\FO\Adminjual\Models\Skema;
 use App\Modules\FO\MarketingSales\Models\Kontrak;
@@ -16,6 +17,8 @@ use Illuminate\Support\Collection;
 
 class SkemaResource extends Resource
 {
+    use MematuhiIzin;
+
     protected static ?string $model = Skema::class;
 
     protected static ?string $navigationIcon = 'heroicon-o-table-cells';

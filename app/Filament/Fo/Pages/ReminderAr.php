@@ -2,6 +2,7 @@
 
 namespace App\Filament\Fo\Pages;
 
+use App\Filament\Concerns\MematuhiIzinHalaman;
 use App\Modules\FO\FinanceAR\Models\Bg;
 use App\Modules\FO\FinanceAR\Models\Bkm;
 use App\Modules\FO\FinanceAR\Models\Refund;
@@ -14,6 +15,8 @@ use Illuminate\Support\Facades\DB;
 /** Dashboard Finance AR — ringkasan piutang, collection, & tindak lanjut. */
 class ReminderAr extends Page
 {
+    use MematuhiIzinHalaman;
+
     protected static ?string $navigationIcon = 'heroicon-o-presentation-chart-line';
 
     protected static ?string $navigationGroup = 'Finance AR';

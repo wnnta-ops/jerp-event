@@ -2,11 +2,14 @@
 
 namespace App\Filament\Bo\Pages;
 
+use App\Filament\Concerns\MematuhiIzinHalaman;
 use App\Modules\BO\AccountsReceivable\Services\ArAgingService;
 use Filament\Pages\Page;
 
 class ArAgingPage extends Page
 {
+    use MematuhiIzinHalaman;
+
     protected static ?string $navigationIcon = 'heroicon-o-chart-bar';
 
     protected static ?string $navigationGroup = 'Piutang (AR)';

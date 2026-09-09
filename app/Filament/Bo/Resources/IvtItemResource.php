@@ -2,6 +2,7 @@
 
 namespace App\Filament\Bo\Resources;
 
+use App\Filament\Concerns\MematuhiIzin;
 use App\Filament\Bo\Resources\IvtItemResource\Pages;
 use App\Modules\BO\Inventory\Models\IvtItem;
 use Filament\Forms;
@@ -12,6 +13,8 @@ use Filament\Tables\Table;
 
 class IvtItemResource extends Resource
 {
+    use MematuhiIzin;
+
     protected static ?string $model = IvtItem::class;
 
     protected static ?string $navigationIcon = 'heroicon-o-cube';

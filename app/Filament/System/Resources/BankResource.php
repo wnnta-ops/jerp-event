@@ -2,6 +2,7 @@
 
 namespace App\Filament\System\Resources;
 
+use App\Filament\Concerns\MematuhiIzin;
 use App\Filament\System\Resources\BankResource\Pages;
 use App\Models\Bank;
 use Filament\Forms;
@@ -12,6 +13,8 @@ use Filament\Tables\Table;
 
 class BankResource extends Resource
 {
+    use MematuhiIzin;
+
     protected static ?string $model = Bank::class;
 
     protected static ?string $navigationIcon = 'heroicon-o-banknotes';

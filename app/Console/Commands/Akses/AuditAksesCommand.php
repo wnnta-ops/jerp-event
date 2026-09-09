@@ -87,15 +87,35 @@ class AuditAksesCommand extends Command
 
     private function resourceTanpaPenjaga(): void
     {
-        $dipetakan = array_keys((array) config('akses.resource'));
-        $semua = [];
-        foreach ((array) glob(app_path('Filament/*/Resources/*.php')) as $berkas) {
-            $semua[] = basename($berkas, '.php');
-        }
-        $belum = array_values(array_diff($semua, $dipetakan));
+        $this->laporTanpaPenjaga('RESOURCE', 'Filament/*/Resources/*.php', 'Resources',
+            fn (string $kelas) => Akses::awalanResource($kelas));
 
-        $this->line('  <options=bold>RESOURCE BELUM DIPETAKAN</> — dibiarkan lolos, tidak ditegakkan');
-        $this->line('  <fg=yellow>'.count($belum).'</fg=yellow> dari '.count($semua).' resource');
+        $this->laporTanpaPenjaga('HALAMAN', 'Filament/*/Pages/*.php', 'Pages',
+            fn (string $kelas) => Akses::izinHalaman($kelas));
+    }
+
+    /**
+     * @param  \Closure(string):?string  $cari
+     */
+    private function laporTanpaPenjaga(string $judul, string $pola, string $subFolder, \Closure $cari): void
+    {
+        $semua = $belum = [];
+        foreach ((array) glob(app_path($pola)) as $berkas) {
+            $berkas = str_replace('\\', '/', (string) $berkas);
+            $bagian = explode('/', $berkas);
+            $panel = $bagian[count($bagian) - 3] ?? '';
+            $nama = basename($berkas, '.php');
+            // Pemetaan boleh memakai nama pendek ATAU nama kelas penuh — nama pendek
+            // saja tidak cukup karena BankResource ada di dua panel sekaligus.
+            $kelas = 'App\\Filament\\'.$panel.'\\'.$subFolder.'\\'.$nama;
+            $semua[] = $nama;
+            if ($cari($kelas) === null) {
+                $belum[] = $panel.'/'.$nama;
+            }
+        }
+
+        $this->line('  <options=bold>'.$judul.' BELUM DIPETAKAN</> — dibiarkan lolos, tidak ditegakkan');
+        $this->line('  <fg=yellow>'.count($belum).'</fg=yellow> dari '.count($semua));
         if ($belum) {
             $this->line('  '.implode(', ', array_slice($belum, 0, 20)).(count($belum) > 20 ? ' … (+'.(count($belum) - 20).')' : ''));
         }

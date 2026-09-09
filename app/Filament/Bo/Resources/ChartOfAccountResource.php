@@ -2,6 +2,7 @@
 
 namespace App\Filament\Bo\Resources;
 
+use App\Filament\Concerns\MematuhiIzin;
 use App\Filament\Bo\Clusters\GeneralLedger;
 use App\Filament\Bo\Resources\ChartOfAccountResource\Pages;
 use App\Modules\BO\GeneralLedger\Models\ChartOfAccount;
@@ -13,6 +14,8 @@ use Filament\Tables\Table;
 
 class ChartOfAccountResource extends Resource
 {
+    use MematuhiIzin;
+
     protected static ?string $model = ChartOfAccount::class;
 
     protected static ?string $cluster = GeneralLedger::class;

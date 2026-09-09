@@ -2,6 +2,7 @@
 
 namespace App\Filament\Fo\Resources;
 
+use App\Filament\Concerns\MematuhiIzin;
 use App\Filament\Fo\Resources\BerkasLengkapResource\Pages;
 use App\Modules\FO\MarketingSales\Models\Kontrak;
 use App\Modules\FO\MarketingSales\Services\KontrakGeneratorService;
@@ -20,6 +21,8 @@ use Illuminate\Database\Eloquent\Builder;
  */
 class BerkasLengkapResource extends Resource
 {
+    use MematuhiIzin;
+
     protected static ?string $model = Kontrak::class;
 
     protected static ?string $navigationIcon = 'heroicon-o-document-check';
