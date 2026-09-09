@@ -26,7 +26,7 @@ class PeriodClosingController extends Controller
 {
     public function index(Request $request): Response
     {
-        abort_unless($request->user()?->canModule('gl'), 403);
+        abort_unless($request->user()?->can('gl.closing.view'), 403);
         $year = (int) ($request->integer('year') ?: now()->year);
 
         $statuses = BsFiscalPeriod::where('year', $year)->pluck('status', 'month');
@@ -80,7 +80,7 @@ class PeriodClosingController extends Controller
      */
     public function neracaAwal(Request $request): Response
     {
-        abort_unless($request->user()?->canModule('gl'), 403);
+        abort_unless($request->user()?->can('gl.saldo-awal.view'), 403);
         $year   = (int) ($request->integer('year') ?: now()->year);
         $cutoff = sprintf('%04d-01-01', $year); // mutasi < tanggal ini = s/d 31 Des tahun sebelumnya
 
@@ -123,7 +123,7 @@ class PeriodClosingController extends Controller
     /** Jurnal Saldo Awal (preview) — Neraca Awal dalam bentuk jurnal Dr/Cr per akun. Tidak di-posting. */
     public function saldoAwalJurnal(Request $request): Response
     {
-        abort_unless($request->user()?->canModule('gl'), 403);
+        abort_unless($request->user()?->can('gl.saldo-awal.view'), 403);
         $year  = (int) ($request->integer('year') ?: now()->year);
         $lines = $this->openingJournalLines($year);
 
@@ -140,7 +140,7 @@ class PeriodClosingController extends Controller
 
     public function saldoAwalCsv(Request $request): StreamedResponse
     {
-        abort_unless($request->user()?->canModule('gl'), 403);
+        abort_unless($request->user()?->can('gl.saldo-awal.view'), 403);
         $year  = (int) ($request->integer('year') ?: now()->year);
         $lines = $this->openingJournalLines($year);
 
@@ -241,7 +241,7 @@ class PeriodClosingController extends Controller
     /** Halaman konfirmasi saldo awal: tinjau jurnal saldo awal lalu kunci/konfirmasi. */
     public function confirmSaldoAwal(Request $request): Response
     {
-        abort_unless($request->user()?->canModule('gl'), 403);
+        abort_unless($request->user()?->can('gl.saldo-awal.confirm'), 403);
         $year  = (int) ($request->integer('year') ?: now()->year);
         $lines = $this->openingJournalLines($year);
         $debit  = round(array_sum(array_column($lines, 'debit')), 2);
@@ -280,7 +280,7 @@ class PeriodClosingController extends Controller
     /** Penutupan terlambat: tutup periode mundur yang sudah lewat jatuh tempo, dengan catatan. */
     public function lateClosing(Request $request): Response
     {
-        abort_unless($request->user()?->canModule('gl'), 403);
+        abort_unless($request->user()?->can('gl.late-closing.view'), 403);
         $year = (int) ($request->integer('year') ?: now()->year);
         $now  = now();
         $byMonth = BsFiscalPeriod::where('year', $year)->get()->keyBy('month');

@@ -35,7 +35,7 @@ class BudgetQueryController extends Controller
     /** Laporan Master Budget — hanya anggaran yang SUDAH di-approve. */
     public function master(Request $request): Response
     {
-        abort_unless($request->user()?->canModule('budget'), 403);
+        abort_unless($request->user()?->can('budget.query.master'), 403);
         $f = $this->filters($request);
 
         $rows = BsBudget::with(['account:id,code,name', 'costCenter:id,code,name'])
@@ -59,7 +59,7 @@ class BudgetQueryController extends Controller
     /** Laporan Realisasi Budget — matriks budget vs aktual per akun per bulan. */
     public function realization(Request $request): Response
     {
-        abort_unless($request->user()?->canModule('budget'), 403);
+        abort_unless($request->user()?->can('budget.query.realization'), 403);
         $f = $this->filters($request);
 
         $rows = BsBudget::with(['account:id,code,name', 'costCenter:id,code,name'])
@@ -97,7 +97,7 @@ class BudgetQueryController extends Controller
     /** Laporan Alokasi Budget. */
     public function allocation(Request $request): Response
     {
-        abort_unless($request->user()?->canModule('budget'), 403);
+        abort_unless($request->user()?->can('budget.query.allocation'), 403);
         $f = $this->filters($request);
 
         $rows = BsBudgetAllocation::with(['account:id,code,name', 'costCenter:id,code,name', 'budget:id,doc_no'])
@@ -120,7 +120,7 @@ class BudgetQueryController extends Controller
     /** Laporan Koreksi Budget. */
     public function correction(Request $request): Response
     {
-        abort_unless($request->user()?->canModule('budget'), 403);
+        abort_unless($request->user()?->can('budget.query.correction'), 403);
         $f = $this->filters($request);
 
         $rows = BsBudgetCorrection::with(['account:id,code,name', 'costCenter:id,code,name', 'budget:id,doc_no'])

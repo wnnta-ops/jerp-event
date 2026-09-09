@@ -411,7 +411,7 @@ class KprApplicationController extends Controller
             'bankTerms'           => $effectiveTerms,
             'bankDajamTax'        => $bankDajamTax, // default DAJAM Pajak per-bank (auto-isi SSP/BPHTB)
             // CTA "Buka Approval Retensi" hanya untuk user yg punya akses Cash Book.
-            'canApproveRetensi'   => (bool) ($request->user()?->canModule('cashbook')),
+            'canApproveRetensi'   => (bool) ($request->user()?->can('cashbook.approval-utjdp.view')),
             'hasRetention'        => $kpr->realizations->contains(fn ($r) => $r->retentions->isNotEmpty()),
             // Data tahap SI (Surat Instruksi): nama, tipe unit, ACC KPR, Free DP 5%.
             'si' => [
@@ -1864,7 +1864,7 @@ HTML;
         }
         $isLunas        = $kpr->status === KprStatus::Active;
         $pendingRetensi = $kpr->realizations()->whereHas('retentions', fn ($q) => $q->whereNull('journal_id'))->exists();
-        if ($isLunas && $pendingRetensi && $request->user()?->canModule('cashbook')) {
+        if ($isLunas && $pendingRetensi && $request->user()?->can('cashbook.approval-utjdp.view')) {
             return redirect()
                 ->route('bs.cashbook.approval-retensi', ['customer_id' => $kpr->customer_id])
                 ->with('success', 'Pencairan terakhir dicatat — KPR LUNAS. Otomatis diarahkan ke Approval Retensi untuk menjurnal retensi.');

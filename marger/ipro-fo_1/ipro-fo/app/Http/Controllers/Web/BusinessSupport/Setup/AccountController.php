@@ -24,7 +24,7 @@ class AccountController extends Controller
 {
     public function index(Request $request): Response
     {
-        abort_unless($request->user()?->canModule('gl'), 403);
+        abort_unless($request->user()?->can('gl.account.view'), 403);
 
         $search = $request->input('search');
         $type   = $request->input('type');
@@ -160,7 +160,7 @@ class AccountController extends Controller
      */
     public function template(Request $request): StreamedResponse
     {
-        abort_unless($request->user()?->canModule('gl'), 403);
+        abort_unless($request->user()?->can('gl.account.view'), 403);
 
         // Contohnya sengaja SATU RANTAI penuh level 1 sampai 6, bukan enam akun teratas:
         // hanya rantai yang memperlihatkan bagaimana kode anak melanjutkan kode induknya,

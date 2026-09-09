@@ -24,7 +24,7 @@ class PurchaseOrderController extends Controller
 {
     public function index(Request $request): Response
     {
-        abort_unless($request->user()?->canModule('bs'), 403);
+        abort_unless($request->user()?->can('bs.po.view'), 403);
 
         // Rincian & perilakunya disamakan dengan daftar Invoice Hutang (Account Payable):
         // SELURUH baris dikirim ke klien, lalu pencarian global, filter per-kolom (ketik +
@@ -117,7 +117,7 @@ class PurchaseOrderController extends Controller
 
     public function create(Request $request): Response
     {
-        abort_unless($request->user()?->canModule('bs'), 403);
+        abort_unless($request->user()?->can('bs.po.create'), 403);
 
         // Datang dari FPB yang disetujui → baris PO diisi awal dari baris FPB-nya.
         $fpb = null;
@@ -148,7 +148,7 @@ class PurchaseOrderController extends Controller
 
     public function store(Request $request): RedirectResponse
     {
-        abort_unless($request->user()?->canModule('bs'), 403);
+        abort_unless($request->user()?->can('bs.po.create'), 403);
 
         $v = $request->validate([
             'supplier_id'  => ['required', 'integer', 'exists:bs_suppliers,id'],
@@ -206,7 +206,7 @@ class PurchaseOrderController extends Controller
 
     public function show(Request $request, BsPurchaseOrder $po): Response
     {
-        abort_unless($request->user()?->canModule('bs'), 403);
+        abort_unless($request->user()?->can('bs.po.view'), 403);
 
         return Inertia::render('BusinessSupport/Purchasing/PurchaseOrders/Show', [
             'order' => $po->load(['lines.item:id,code,name', 'supplier']),
@@ -221,7 +221,7 @@ class PurchaseOrderController extends Controller
     /** Revisi PO — ganti baris & hitung ulang total (selagi belum ditutup). */
     public function revise(Request $request, BsPurchaseOrder $po): RedirectResponse
     {
-        abort_unless($request->user()?->canModule('bs'), 403);
+        abort_unless($request->user()?->can('bs.po.revise'), 403);
         if ($po->status === 'closed') {
             return back()->with('error', 'PO sudah ditutup, tidak dapat direvisi.');
         }
@@ -275,7 +275,7 @@ class PurchaseOrderController extends Controller
     /** Posting Termin PO — uang muka pembelian: Dr Uang Muka / Cr Kas-Bank. */
     public function postTermin(Request $request, BsPurchaseOrder $po, JournalService $journal): RedirectResponse
     {
-        abort_unless($request->user()?->canModule('bs'), 403);
+        abort_unless($request->user()?->can('bs.po.termin'), 403);
         if ($po->status === 'closed') {
             return back()->with('error', 'PO sudah ditutup.');
         }
@@ -321,7 +321,7 @@ class PurchaseOrderController extends Controller
     /** Adjust PPN PO — set ulang persentase PPN & hitung ulang total. */
     public function adjustPpn(Request $request, BsPurchaseOrder $po): RedirectResponse
     {
-        abort_unless($request->user()?->canModule('bs'), 403);
+        abort_unless($request->user()?->can('bs.po.adjust-ppn'), 403);
         if ($po->status === 'closed') {
             return back()->with('error', 'PO sudah ditutup.');
         }
@@ -397,7 +397,7 @@ class PurchaseOrderController extends Controller
     {
         $u = $request->user();
 
-        return (bool) ($u?->canModule('bs') || $u?->canModule('ap'));
+        return (bool) ($u?->can('bs.po.view') || $u?->can('bs.po.view'));
     }
 
     /** Susun data cetak satu PO: nilai bawaan dari data PO, ditimpa hasil edit (print_meta). */
@@ -495,7 +495,7 @@ class PurchaseOrderController extends Controller
     /** Simpan hasil edit format cetak (print_meta) — agar cetakan berikutnya tetap sama. */
     public function savePrintFormat(Request $request, BsPurchaseOrder $po): RedirectResponse
     {
-        abort_unless($request->user()?->canModule('bs'), 403);
+        abort_unless($request->user()?->can('bs.po.view'), 403);
         $form = $request->validate(['form' => ['required', 'array']])['form'];
         // Hanya field presentasi yang dipersistensi (lihat PRINT_META_KEYS).
         $po->update(['print_meta' => collect($form)->only(self::PRINT_META_KEYS)->all()]);
@@ -529,7 +529,7 @@ class PurchaseOrderController extends Controller
     /** Laporan jumlah PO per supplier + rincian nomor PO, waktu dibuat, dan waktu dicetak. */
     public function report(Request $request): Response
     {
-        abort_unless($request->user()?->canModule('bs'), 403);
+        abort_unless($request->user()?->can('bs.po.view'), 403);
 
         // Supplier dipilih LEBIH DULU; selama belum dipilih laporan tidak menarik data
         // sama sekali. 'all' = seluruh supplier, selain itu id supplier.

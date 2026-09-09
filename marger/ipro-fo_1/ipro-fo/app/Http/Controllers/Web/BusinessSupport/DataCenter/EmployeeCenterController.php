@@ -21,7 +21,7 @@ class EmployeeCenterController extends Controller
     /** Registrasi Karyawan — halaman penuh (POST ke bs.employees.store yang sudah ada). */
     public function create(Request $request): Response
     {
-        abort_unless($request->user()?->canModule('datacenter'), 403);
+        abort_unless($request->user()?->can('datacenter.employee.create'), 403);
 
         return Inertia::render('BusinessSupport/DataCenter/Employee/Create', [
             'costCenters' => BsCostCenter::where('is_active', true)->orderBy('code')->get(['id', 'code', 'name']),
@@ -32,7 +32,7 @@ class EmployeeCenterController extends Controller
     // ── HR Department (master) ──
     public function deptIndex(Request $request): Response
     {
-        abort_unless($request->user()?->canModule('datacenter'), 403);
+        abort_unless($request->user()?->can('datacenter.department.view'), 403);
 
         return Inertia::render('BusinessSupport/DataCenter/Employee/Department', [
             'rows' => BsHrDepartment::orderBy('code')->get(),
@@ -97,7 +97,7 @@ class EmployeeCenterController extends Controller
     // ── Repair Data Karyawan ──
     public function repair(Request $request): Response
     {
-        abort_unless($request->user()?->canModule('datacenter'), 403);
+        abort_unless($request->user()?->can('datacenter.employee.repair'), 403);
 
         $dupNik = BsEmployee::whereNotNull('nik')->where('nik', '!=', '')->select('nik')->groupBy('nik')->havingRaw('COUNT(*) > 1')->pluck('nik');
         $noNik  = BsEmployee::whereNull('nik')->orWhere('nik', '')->count();

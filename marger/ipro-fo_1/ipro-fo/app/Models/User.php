@@ -70,6 +70,14 @@ class User extends Authenticatable
      * 'gl', 'cashbook', …). Dipakai menggantikan cek `businesssupport.view` (& transaksi)
      * di controller agar role granular bisa membuka & memakai modulnya.
      */
+    /**
+     * @deprecated Tidak lagi dipakai controller mana pun sejak setiap aksi dijaga
+     * izinnya sendiri. DIPERTAHANKAN sengaja, TIDAK dihapus: 'businesssupport.view'
+     * di dalamnya berlaku sebagai kunci induk yang membuka SELURUH modul back-office
+     * sekaligus. Menghapus metodenya tanpa mencabut izin itu dari peran yang
+     * memegangnya hanya memindahkan kejutannya ke tempat lain. Cabut izinnya dulu
+     * dari Grup Akses BO, baru metode ini boleh hilang.
+     */
     public function canModule(string $module): bool
     {
         if ($this->can('businesssupport.view')) {

@@ -21,7 +21,7 @@ class GoodsIssueController extends Controller
 {
     public function index(Request $request): Response
     {
-        abort_unless($request->user()?->canModule('bs'), 403);
+        abort_unless($request->user()?->can('bs.issue.view'), 403);
 
         $rows = BsStockTransaction::query()
             ->where('trx_type', 'issue')
@@ -35,7 +35,7 @@ class GoodsIssueController extends Controller
 
     public function create(Request $request): Response
     {
-        abort_unless($request->user()?->canModule('bs'), 403);
+        abort_unless($request->user()?->can('bs.issue.view'), 403);
 
         return Inertia::render('BusinessSupport/Inventory/GoodsIssues/Form', [
             'warehouses' => BsWarehouse::where('is_active', true)->orderBy('code')->get(['id', 'code', 'name']),
@@ -73,7 +73,7 @@ class GoodsIssueController extends Controller
 
     public function store(Request $request, StockService $stock): RedirectResponse
     {
-        abort_unless($request->user()?->canModule('bs'), 403);
+        abort_unless($request->user()?->can('bs.issue.create'), 403);
 
         $v = $request->validate([
             'warehouse_id'        => ['required', 'integer', 'exists:bs_warehouses,id'],

@@ -20,7 +20,7 @@ class SupplierCenterController extends Controller
     /** Laporan Master Supplier. */
     public function report(Request $request): Response
     {
-        abort_unless($request->user()?->canModule('datacenter'), 403);
+        abort_unless($request->user()?->can('datacenter.supplier.report'), 403);
 
         $rows = BsSupplier::query()
             ->when($request->input('search'), fn ($q, $s) => $q->where(fn ($w) => $w->where('code', 'like', "%{$s}%")->orWhere('name', 'like', "%{$s}%")->orWhere('city', 'like', "%{$s}%")))
@@ -36,7 +36,7 @@ class SupplierCenterController extends Controller
     /** Supplier 360 — profil + agregasi transaksi (AP invoice / PO / SPK). */
     public function show(Request $request, BsSupplier $supplier): Response
     {
-        abort_unless($request->user()?->canModule('datacenter'), 403);
+        abort_unless($request->user()?->can('datacenter.supplier.show'), 403);
 
         $agg = function (string $table, string $amountCol = 'net_payable') use ($supplier): array {
             if (! Schema::hasTable($table) || ! Schema::hasColumn($table, 'supplier_id')) {
@@ -64,7 +64,7 @@ class SupplierCenterController extends Controller
     // ── Kategori Supplier (master) ──
     public function categoryIndex(Request $request): Response
     {
-        abort_unless($request->user()?->canModule('datacenter'), 403);
+        abort_unless($request->user()?->can('datacenter.supplier.category.view'), 403);
 
         return Inertia::render('BusinessSupport/DataCenter/Supplier/Category', [
             'rows' => BsSupplierCategory::orderBy('code')->get(),
@@ -138,7 +138,7 @@ class SupplierCenterController extends Controller
     // ── Upload Supplier (CSV) ──
     public function uploadForm(Request $request): Response
     {
-        abort_unless($request->user()?->canModule('datacenter'), 403);
+        abort_unless($request->user()?->can('datacenter.supplier.upload'), 403);
 
         return Inertia::render('BusinessSupport/DataCenter/Supplier/Upload', [
             'header' => ['code', 'name', 'category', 'phone', 'email', 'city', 'npwp', 'bank_name', 'bank_account_no', 'bank_account_name'],
@@ -147,7 +147,7 @@ class SupplierCenterController extends Controller
 
     public function template(Request $request): \Illuminate\Http\Response
     {
-        abort_unless($request->user()?->canModule('datacenter'), 403);
+        abort_unless($request->user()?->can('datacenter.supplier.upload'), 403);
         $csv = "code,name,category,phone,email,city,npwp,bank_name,bank_account_no,bank_account_name\nSUP-9001,CV Contoh,material,0811,a@b.c,Sidoarjo,1234567890123456,BCA,123456,CV Contoh\n";
 
         return response($csv)->header('Content-Type', 'text/csv')->header('Content-Disposition', 'attachment; filename="template_supplier.csv"');
@@ -187,7 +187,7 @@ class SupplierCenterController extends Controller
     // ── Repair Data Supplier ──
     public function repair(Request $request): Response
     {
-        abort_unless($request->user()?->canModule('datacenter'), 403);
+        abort_unless($request->user()?->can('datacenter.supplier.repair'), 403);
 
         $dupCodes = BsSupplier::select('code')->groupBy('code')->havingRaw('COUNT(*) > 1')->pluck('code');
         $noCode   = BsSupplier::whereNull('code')->orWhere('code', '')->count();

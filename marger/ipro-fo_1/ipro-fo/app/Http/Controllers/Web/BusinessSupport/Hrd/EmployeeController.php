@@ -20,7 +20,7 @@ class EmployeeController extends Controller
 {
     public function index(Request $request): Response
     {
-        abort_unless($request->user()?->canModule('datacenter'), 403);
+        abort_unless($request->user()?->can('datacenter.employee.view'), 403);
 
         $rows = BsEmployee::query()
             // Departemen ikut dimuat: kolom pada layar kini menampilkan DEPARTEMEN, sumber yang
@@ -90,7 +90,7 @@ class EmployeeController extends Controller
     /** Unduh template .xlsx berisi judul kolom + satu baris contoh. */
     public function importTemplate(Request $request): \Illuminate\Http\Response
     {
-        abort_unless($request->user()?->canModule('datacenter'), 403);
+        abort_unless($request->user()?->can('datacenter.employee.create'), 403);
 
         $dept = BsHrDepartment::where('is_active', true)->orderBy('code')->first();
         $cc   = BsCostCenter::where('is_active', true)->orderBy('code')->first();

@@ -23,7 +23,7 @@ class SupplierController extends Controller
 {
     public function index(Request $request): Response
     {
-        abort_unless($request->user()?->canModule('datacenter'), 403);
+        abort_unless($request->user()?->can('datacenter.supplier.view'), 403);
 
         $rows = BsSupplier::query()
             ->when($request->input('search'), fn ($q, $s) => $q->where(fn ($w) => $w->where('code', 'like', "%{$s}%")->orWhere('name', 'like', "%{$s}%")->orWhere('city', 'like', "%{$s}%")))
@@ -147,7 +147,7 @@ class SupplierController extends Controller
     /** Unduh template .xlsx berisi judul kolom + satu baris contoh. */
     public function importTemplate(Request $request): \Illuminate\Http\Response
     {
-        abort_unless($request->user()?->canModule('datacenter'), 403);
+        abort_unless($request->user()?->can('datacenter.supplier.upload'), 403);
 
         $judul  = array_map(fn (array $k) => $k[0], array_values(self::KOLOM));
         $contoh = [

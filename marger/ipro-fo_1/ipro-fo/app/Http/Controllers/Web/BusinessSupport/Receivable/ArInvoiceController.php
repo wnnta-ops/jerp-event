@@ -21,7 +21,7 @@ class ArInvoiceController extends Controller
 {
     public function index(Request $request): Response
     {
-        abort_unless($request->user()?->canModule('ar'), 403);
+        abort_unless($request->user()?->can('ar.view'), 403);
 
         $rows = BsArInvoice::query()
             // Rincian disamakan dengan layar "Sudah Booked Revenue": selain data akuntansi,
@@ -110,7 +110,7 @@ class ArInvoiceController extends Controller
      */
     public function linkSpr(Request $request, BsArInvoice $invoice): RedirectResponse
     {
-        abort_unless($request->user()?->canModule('ar'), 403);
+        abort_unless($request->user()?->can('ar.update'), 403);
 
         $v = $request->validate([
             'booking_id' => ['nullable', 'integer', 'exists:bookings,id'],
@@ -140,7 +140,7 @@ class ArInvoiceController extends Controller
 
     public function show(Request $request, BsArInvoice $invoice): Response
     {
-        abort_unless($request->user()?->canModule('ar'), 403);
+        abort_unless($request->user()?->can('ar.view'), 403);
 
         // Rincian disamakan dengan "Sudah Booked Revenue": customer (+telepon/email), SPR + unit
         // (turunan booking), serta ladder nilai Harga → Diskon → DPP → PPN → Total. Harga & diskon
@@ -185,7 +185,7 @@ class ArInvoiceController extends Controller
      */
     public function update(Request $request, BsArInvoice $invoice): RedirectResponse
     {
-        abort_unless($request->user()?->canModule('ar'), 403);
+        abort_unless($request->user()?->can('ar.update'), 403);
 
         $v = $request->validate([
             'invoice_date'    => ['required', 'date'],
@@ -206,7 +206,7 @@ class ArInvoiceController extends Controller
 
     public function pay(Request $request, BsArInvoice $invoice, PayArInvoice $action): RedirectResponse
     {
-        abort_unless($request->user()?->canModule('ar'), 403);
+        abort_unless($request->user()?->can('ar.pay'), 403);
 
         $v = $request->validate([
             'payment_date'    => ['required', 'date'],
@@ -227,7 +227,7 @@ class ArInvoiceController extends Controller
     /** Reschedule jatuh tempo — jadwal ulang sisa piutang (tanpa jurnal). */
     public function reschedule(Request $request, BsArInvoice $invoice, \App\Domain\BusinessSupport\Actions\RescheduleArInvoice $action): RedirectResponse
     {
-        abort_unless($request->user()?->canModule('ar'), 403);
+        abort_unless($request->user()?->can('ar.reschedule'), 403);
 
         $v = $request->validate([
             'schedules'            => ['required', 'array', 'min:1'],
@@ -248,7 +248,7 @@ class ArInvoiceController extends Controller
     /** Aging Piutang — umur piutang per customer dalam bucket. */
     public function aging(Request $request): Response
     {
-        abort_unless($request->user()?->canModule('ar'), 403);
+        abort_unless($request->user()?->can('ar.aging.view'), 403);
 
         $today  = now()->startOfDay();
         $rows   = [];
@@ -297,7 +297,7 @@ class ArInvoiceController extends Controller
     /** Kartu Piutang — mutasi per customer dengan saldo berjalan. */
     public function card(Request $request): Response
     {
-        abort_unless($request->user()?->canModule('ar'), 403);
+        abort_unless($request->user()?->can('ar.card.view'), 403);
 
         $customerId = $request->integer('customer_id') ?: null;
         $entries = collect();

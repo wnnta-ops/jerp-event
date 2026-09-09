@@ -21,7 +21,7 @@ class CurrencyController extends Controller
     // ── Multi Currency ────────────────────────────────────────────────────
     public function index(Request $request): Response
     {
-        abort_unless($request->user()?->canModule('gl'), 403);
+        abort_unless($request->user()?->can('gl.currency.view'), 403);
 
         return Inertia::render('BusinessSupport/Setup/Currency', [
             'currencies' => BsCurrency::orderByDesc('is_base')->orderBy('code')->get(),
@@ -55,7 +55,7 @@ class CurrencyController extends Controller
     // ── Kurs Sistem ───────────────────────────────────────────────────────
     public function kurs(Request $request): Response
     {
-        abort_unless($request->user()?->canModule('gl'), 403);
+        abort_unless($request->user()?->can('gl.kurs.view'), 403);
 
         $rates = BsExchangeRate::query()
             ->when($request->input('currency_code'), fn ($q, $c) => $q->where('currency_code', $c))

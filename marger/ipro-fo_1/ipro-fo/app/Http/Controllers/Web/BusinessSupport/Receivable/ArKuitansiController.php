@@ -20,7 +20,7 @@ class ArKuitansiController extends Controller
 {
     public function index(Request $request): Response
     {
-        abort_unless($request->user()?->canModule('ar'), 403);
+        abort_unless($request->user()?->can('ar.kuitansi.view'), 403);
 
         $rows = BsArKuitansi::with('customer:id,code,full_name')
             ->when($request->input('status'), fn ($q, $v) => $q->where('status', $v))
@@ -36,7 +36,7 @@ class ArKuitansiController extends Controller
 
     public function create(Request $request): Response
     {
-        abort_unless($request->user()?->canModule('ar'), 403);
+        abort_unless($request->user()?->can('ar.kuitansi.create'), 403);
 
         $open = BsArInvoice::where('status', 'open')->with('customer:id,code,full_name')->get()
             ->map(fn ($i) => [
@@ -57,7 +57,7 @@ class ArKuitansiController extends Controller
 
     public function store(Request $request, ArKuitansiService $svc): RedirectResponse
     {
-        abort_unless($request->user()?->canModule('ar'), 403);
+        abort_unless($request->user()?->can('ar.kuitansi.create'), 403);
 
         $v = $request->validate([
             'kuitansi_date'       => ['required', 'date'],
@@ -83,7 +83,7 @@ class ArKuitansiController extends Controller
 
     public function show(Request $request, BsArKuitansi $kuitansi): Response
     {
-        abort_unless($request->user()?->canModule('ar'), 403);
+        abort_unless($request->user()?->can('ar.kuitansi.view'), 403);
 
         return Inertia::render('BusinessSupport/Receivable/Kuitansi/Show', [
             'kuitansi' => $kuitansi->load(['customer:id,code,full_name', 'cashAccount:id,code,name', 'lines.invoice:id,invoice_number,description']),

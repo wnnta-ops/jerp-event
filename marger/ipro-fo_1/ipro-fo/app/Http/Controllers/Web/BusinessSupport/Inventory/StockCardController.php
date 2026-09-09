@@ -19,7 +19,7 @@ class StockCardController extends Controller
 {
     public function index(Request $request): Response
     {
-        abort_unless($request->user()?->canModule('bs'), 403);
+        abort_unless($request->user()?->can('bs.stockcard.view'), 403);
 
         $movements = BsStockMovement::query()
             ->with(['item:id,code,name', 'warehouse:id,code,name'])

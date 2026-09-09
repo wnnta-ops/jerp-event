@@ -22,7 +22,7 @@ class CashFlowSetupController extends Controller
     // ── Kategori Cash Flow ────────────────────────────────────────────────
     public function categories(Request $request): Response
     {
-        abort_unless($request->user()?->canModule('gl'), 403);
+        abort_unless($request->user()?->can('gl.cf-category.view'), 403);
         $kind = in_array($request->input('kind'), ['direct', 'indirect'], true) ? $request->input('kind') : 'direct';
 
         return Inertia::render('BusinessSupport/Setup/CashFlowCategories', [
@@ -59,7 +59,7 @@ class CashFlowSetupController extends Controller
     // ── Mapping Cash Flow Direct (akun → kategori) ────────────────────────
     public function mapping(Request $request): Response
     {
-        abort_unless($request->user()?->canModule('gl'), 403);
+        abort_unless($request->user()?->can('gl.cf-mapping.view'), 403);
 
         return Inertia::render('BusinessSupport/Setup/CashFlowMapping', [
             'mappings'   => BsCashFlowMapping::with(['account:id,code,name', 'category:id,code,name,activity'])->get(),

@@ -25,7 +25,7 @@ class BatalAkadController extends Controller
 {
     public function index(Request $request): Response
     {
-        abort_unless($request->user()?->canModule('businesssupport') || $request->user()?->can('bankloan.application.view'), 403);
+        abort_unless($request->user()?->can('businesssupport.view') || $request->user()?->can('bankloan.application.view'), 403);
 
         $rows = $this->rows($request);
 
@@ -43,7 +43,7 @@ class BatalAkadController extends Controller
      */
     public function export(Request $request): \Illuminate\Http\Response
     {
-        abort_unless($request->user()?->canModule('businesssupport') || $request->user()?->can('bankloan.application.view'), 403);
+        abort_unless($request->user()?->can('businesssupport.view') || $request->user()?->can('bankloan.application.view'), 403);
 
         // Layarnya yang menentukan baris mana yang diekspor, lewat DAFTAR ID.
         //

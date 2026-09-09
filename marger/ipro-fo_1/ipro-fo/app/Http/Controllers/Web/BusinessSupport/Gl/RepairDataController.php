@@ -20,7 +20,7 @@ class RepairDataController extends Controller
 {
     public function index(Request $request): Response
     {
-        abort_unless($request->user()?->canModule('gl'), 403);
+        abort_unless($request->user()?->can('gl.repair.view'), 403);
 
         return Inertia::render('BusinessSupport/Gl/RepairData', [
             'diagnostics' => $this->diagnose(),

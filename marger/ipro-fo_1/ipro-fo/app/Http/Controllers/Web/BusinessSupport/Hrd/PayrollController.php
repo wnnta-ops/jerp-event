@@ -20,7 +20,7 @@ class PayrollController extends Controller
 {
     public function index(Request $request): Response
     {
-        abort_unless($request->user()?->canModule('bs'), 403);
+        abort_unless($request->user()?->can('bs.payroll.view'), 403);
 
         $rows = BsPayrollRun::query()->withCount('lines')->latest('run_date')->latest('id')->paginate(50);
 
@@ -36,7 +36,7 @@ class PayrollController extends Controller
 
     public function store(Request $request, PayrollService $svc): RedirectResponse
     {
-        abort_unless($request->user()?->canModule('bs'), 403);
+        abort_unless($request->user()?->can('bs.payroll.create'), 403);
 
         $v = $request->validate([
             'period_year'     => ['required', 'integer', 'min:2000', 'max:2100'],
@@ -58,7 +58,7 @@ class PayrollController extends Controller
 
     public function show(Request $request, BsPayrollRun $payroll): Response
     {
-        abort_unless($request->user()?->canModule('bs'), 403);
+        abort_unless($request->user()?->can('bs.payroll.view'), 403);
 
         return Inertia::render('BusinessSupport/Hrd/PayrollShow', [
             'run'   => $payroll->load('lines'),

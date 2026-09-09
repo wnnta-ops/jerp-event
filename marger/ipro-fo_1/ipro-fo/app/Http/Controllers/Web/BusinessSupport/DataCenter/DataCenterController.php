@@ -20,7 +20,7 @@ class DataCenterController extends Controller
 {
     public function hub(Request $request): Response
     {
-        abort_unless($request->user()?->canModule('datacenter'), 403);
+        abort_unless($request->user()?->can('datacenter.hub.view'), 403);
 
         return Inertia::render('BusinessSupport/DataCenter/Hub', [
             'summary' => [
@@ -35,7 +35,7 @@ class DataCenterController extends Controller
     /** Landing per sub-modul/center (supplier | employee). */
     public function center(Request $request, string $center): Response
     {
-        abort_unless($request->user()?->canModule('datacenter'), 403);
+        abort_unless($request->user()?->can('datacenter.hub.view'), 403);
         $titles = ['supplier' => 'Supplier Center', 'employee' => 'Employee Center'];
         abort_unless(isset($titles[$center]), 404);
 
@@ -48,7 +48,7 @@ class DataCenterController extends Controller
     /** Print-Out per center (supplier | employee). */
     public function printout(Request $request, string $center): Response
     {
-        abort_unless($request->user()?->canModule('datacenter'), 403);
+        abort_unless($request->user()?->can('datacenter.employee.print'), 403);
         $titles = ['supplier' => 'Supplier Center', 'employee' => 'Employee Center'];
         abort_unless(isset($titles[$center]), 404);
 

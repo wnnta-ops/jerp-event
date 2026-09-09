@@ -18,7 +18,7 @@ class ItemController extends Controller
 {
     public function index(Request $request): Response
     {
-        abort_unless($request->user()?->canModule('bs'), 403);
+        abort_unless($request->user()?->can('bs.item.view'), 403);
 
         $rows = BsItem::query()
             ->with(['category:id,code,name', 'uom:id,code,name'])

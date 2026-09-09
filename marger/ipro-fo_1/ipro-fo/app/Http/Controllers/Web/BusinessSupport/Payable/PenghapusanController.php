@@ -22,7 +22,7 @@ class PenghapusanController extends Controller
 {
     public function index(Request $request): Response
     {
-        abort_unless($request->user()?->canModule('ap'), 403);
+        abort_unless($request->user()?->can('ap.penghapusan.view'), 403);
 
         $rows = BsApInvoice::where('status', 'open')->with('supplier:id,code,name')
             ->when($request->input('search'), fn ($q, $s) => $q->where(fn ($w) => $w->where('invoice_number', 'like', "%{$s}%")->orWhere('description', 'like', "%{$s}%")))
@@ -46,7 +46,7 @@ class PenghapusanController extends Controller
      */
     public function report(Request $request): Response
     {
-        abort_unless($request->user()?->canModule('ap'), 403);
+        abort_unless($request->user()?->can('ap.penghapusan.view'), 403);
 
         $rows = \App\Domain\BusinessSupport\Models\BsApMemorial::where('trx_type', 'penghapusan')
             ->with(['invoice:id,invoice_number,description', 'supplier:id,name', 'counterAccount:id,code,name', 'journal:id,journal_number'])

@@ -22,7 +22,7 @@ class BankRecController extends Controller
 {
     public function index(Request $request): Response
     {
-        abort_unless($request->user()?->canModule('cashbook'), 403);
+        abort_unless($request->user()?->can('cashbook.bankrec.view'), 403);
 
         return Inertia::render('BusinessSupport/CashBook/BankRec/Index', [
             'reconciliations' => BsBankReconciliation::with('account:id,code,name')->latest('statement_date')->latest('id')->paginate(50)->withQueryString(),
@@ -32,7 +32,7 @@ class BankRecController extends Controller
 
     public function store(Request $request): RedirectResponse
     {
-        abort_unless($request->user()?->canModule('cashbook'), 403);
+        abort_unless($request->user()?->can('cashbook.bankrec.finalize'), 403);
         $v = $request->validate([
             'account_id'        => ['required', 'integer', 'exists:bs_accounts,id'],
             'statement_date'    => ['required', 'date'],
@@ -73,7 +73,7 @@ class BankRecController extends Controller
 
     public function show(Request $request, BsBankReconciliation $reconciliation): Response
     {
-        abort_unless($request->user()?->canModule('cashbook'), 403);
+        abort_unless($request->user()?->can('cashbook.bankrec.view'), 403);
         $reconciliation->load('account:id,code,name');
         $lines = $reconciliation->lines()->orderBy('tx_date')->orderBy('id')->get();
 
@@ -98,7 +98,7 @@ class BankRecController extends Controller
 
     public function toggleLine(Request $request, BsBankReconciliation $reconciliation, BsBankRecLine $line): RedirectResponse
     {
-        abort_unless($request->user()?->canModule('cashbook'), 403);
+        abort_unless($request->user()?->can('cashbook.bankrec.toggle'), 403);
         abort_unless((int) $line->reconciliation_id === (int) $reconciliation->id, 404);
         abort_if($reconciliation->status === 'reconciled', 422, 'Rekonsiliasi sudah final.');
 

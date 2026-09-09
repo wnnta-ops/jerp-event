@@ -22,7 +22,7 @@ class RetentionController extends Controller
     /** Progress Retensi — daftar SPK dengan retensi tertahan. */
     public function index(Request $request): Response
     {
-        abort_unless($request->user()?->canModule('contractor'), 403);
+        abort_unless($request->user()?->can('contractor.retention.view'), 403);
 
         $rows = BsWorkOrder::with(['supplier:id,name', 'project:id,code,name'])
             ->where('retention_held', '>', 0)->orderByDesc('retention_held')->get()
@@ -42,7 +42,7 @@ class RetentionController extends Controller
     /** Registrasi Retensi — pilih SPK lalu cairkan retensi. */
     public function create(Request $request): Response
     {
-        abort_unless($request->user()?->canModule('contractor'), 403);
+        abort_unless($request->user()?->can('contractor.retention.view'), 403);
 
         $spks = BsWorkOrder::with('supplier:id,name')->where('retention_held', '>', 0)
             ->orderByDesc('retention_held')->get()
@@ -60,7 +60,7 @@ class RetentionController extends Controller
 
     public function store(Request $request, ContractorService $svc): RedirectResponse
     {
-        abort_unless($request->user()?->canModule('contractor'), 403);
+        abort_unless($request->user()?->can('contractor.retention.create'), 403);
         $v = $request->validate([
             'work_order_id'   => ['required', 'integer', 'exists:bs_work_orders,id'],
             'settled_date'    => ['required', 'date'],

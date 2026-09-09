@@ -28,7 +28,7 @@ class GlExtraReportController extends Controller
 
     public function index(Request $request): Response
     {
-        abort_unless($request->user()?->canModule('gl'), 403);
+        abort_unless($request->user()?->can('gl.extra-report.view'), 403);
 
         $d = $this->data($request);
 
@@ -51,7 +51,7 @@ class GlExtraReportController extends Controller
     /** Export laporan GL lanjutan yang sedang tampil ke Excel (.xlsx). */
     public function export(Request $request): StreamedResponse
     {
-        abort_unless($request->user()?->canModule('gl'), 403);
+        abort_unless($request->user()?->can('gl.extra-report.view'), 403);
 
         $d = $this->data($request);
         $l = $d['laporan'];

@@ -20,7 +20,7 @@ class CogsRealizationController extends Controller
 {
     public function index(Request $request): Response
     {
-        abort_unless($request->user()?->canModule('cogs'), 403);
+        abort_unless($request->user()?->can('cogs.realization.view'), 403);
         $year = (int) $request->integer('year', (int) now()->year);
 
         $rows = BsCogsRealization::with(['category:id,code,name', 'location:id,name'])
@@ -38,7 +38,7 @@ class CogsRealizationController extends Controller
 
     public function create(Request $request): Response
     {
-        abort_unless($request->user()?->canModule('cogs'), 403);
+        abort_unless($request->user()?->can('cogs.realization.view'), 403);
 
         return Inertia::render('BusinessSupport/Cogs/Realization/Create', [
             'projects'   => Project::orderBy('name')->get(['id', 'name']),
@@ -50,7 +50,7 @@ class CogsRealizationController extends Controller
 
     public function store(Request $request): RedirectResponse
     {
-        abort_unless($request->user()?->canModule('cogs'), 403);
+        abort_unless($request->user()?->can('cogs.realization.create'), 403);
         $v = $request->validate([
             'project_id'       => ['required', 'integer'],
             'location_id'      => ['nullable', 'integer'],

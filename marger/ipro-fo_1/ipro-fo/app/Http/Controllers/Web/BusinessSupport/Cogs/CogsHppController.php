@@ -25,7 +25,7 @@ class CogsHppController extends Controller
     /** Master HPP RealCost. */
     public function index(Request $request): Response
     {
-        abort_unless($request->user()?->canModule('cogs'), 403);
+        abort_unless($request->user()?->can('cogs.hpp.view'), 403);
 
         $rows = BsCogsHpp::query()
             ->when($request->input('search'), fn ($q, $s) => $q->where(fn ($w) => $w->where('cogs_id', 'like', "%{$s}%")->orWhere('unit_code', 'like', "%{$s}%")))
@@ -41,7 +41,7 @@ class CogsHppController extends Controller
     /** Generate HPP RealCost — form + jalankan. */
     public function generate(Request $request): Response
     {
-        abort_unless($request->user()?->canModule('cogs'), 403);
+        abort_unless($request->user()?->can('cogs.hpp.view'), 403);
 
         return Inertia::render('BusinessSupport/Cogs/Hpp/Generate', [
             'projects'  => $this->projects(),
@@ -52,7 +52,7 @@ class CogsHppController extends Controller
 
     public function runGenerate(Request $request, CogsService $svc): RedirectResponse
     {
-        abort_unless($request->user()?->canModule('cogs'), 403);
+        abort_unless($request->user()?->can('cogs.hpp.generate'), 403);
         $v = $request->validate([
             'project_id'       => ['required', 'integer'],
             'location_id'      => ['nullable', 'integer'],
@@ -72,7 +72,7 @@ class CogsHppController extends Controller
     /** Posting Jurnal HPP Persediaan — pilih HPP status generated. */
     public function postPersediaanForm(Request $request): Response
     {
-        abort_unless($request->user()?->canModule('cogs'), 403);
+        abort_unless($request->user()?->can('cogs.hpp.view'), 403);
 
         $rows = BsCogsHpp::where('status', 'generated')->latest('id')->limit(500)->get()
             ->map(fn ($h) => ['id' => $h->id, 'cogs_id' => $h->cogs_id, 'unit_code' => $h->unit_code, 'period' => $h->period_month.'/'.$h->period_year, 'total_hpp' => (float) $h->total_hpp])->values();
@@ -84,7 +84,7 @@ class CogsHppController extends Controller
 
     public function postPersediaan(Request $request, CogsService $svc): RedirectResponse
     {
-        abort_unless($request->user()?->canModule('cogs'), 403);
+        abort_unless($request->user()?->can('cogs.hpp.post-persediaan'), 403);
         $v = $request->validate(['ids' => ['required', 'array', 'min:1'], 'ids.*' => ['integer'], 'post_date' => ['required', 'date']]);
         $ok = 0;
         $err = null;
@@ -103,7 +103,7 @@ class CogsHppController extends Controller
     /** Posting Jurnal HPP — pilih HPP status posted_persediaan dengan HPP diakui > 0. */
     public function postHppForm(Request $request): Response
     {
-        abort_unless($request->user()?->canModule('cogs'), 403);
+        abort_unless($request->user()?->can('cogs.hpp.view'), 403);
 
         $rows = BsCogsHpp::whereIn('status', ['posted_persediaan', 'generated'])->where('hpp_recognized', '>', 0)->latest('id')->limit(500)->get()
             ->map(fn ($h) => ['id' => $h->id, 'cogs_id' => $h->cogs_id, 'unit_code' => $h->unit_code, 'period' => $h->period_month.'/'.$h->period_year, 'progress' => (float) $h->progress_pct, 'hpp_recognized' => (float) $h->hpp_recognized, 'status' => $h->status])->values();
@@ -115,7 +115,7 @@ class CogsHppController extends Controller
 
     public function postHpp(Request $request, CogsService $svc): RedirectResponse
     {
-        abort_unless($request->user()?->canModule('cogs'), 403);
+        abort_unless($request->user()?->can('cogs.hpp.post-hpp'), 403);
         $v = $request->validate(['ids' => ['required', 'array', 'min:1'], 'ids.*' => ['integer'], 'post_date' => ['required', 'date']]);
         $ok = 0;
         $err = null;

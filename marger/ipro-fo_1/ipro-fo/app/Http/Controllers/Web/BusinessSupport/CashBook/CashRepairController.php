@@ -19,7 +19,7 @@ class CashRepairController extends Controller
 {
     public function index(Request $request): Response
     {
-        abort_unless($request->user()?->canModule('cashbook'), 403);
+        abort_unless($request->user()?->can('cashbook.repair.view'), 403);
 
         return Inertia::render('BusinessSupport/CashBook/Repair', [
             'diagnostics' => $this->diagnose(),

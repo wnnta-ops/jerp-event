@@ -24,7 +24,7 @@ class CashAdvanceController extends Controller
 {
     public function index(Request $request): Response
     {
-        abort_unless($request->user()?->canModule('cashbook'), 403);
+        abort_unless($request->user()?->can('cashbook.advance.view'), 403);
 
         $rows = BsCashAdvance::query()
             ->with('cashAccount:id,code,name')
@@ -45,7 +45,7 @@ class CashAdvanceController extends Controller
                 'count'       => BsCashAdvance::where('status', 'outstanding')->count(),
             ],
             'buckets'        => $this->indexBuckets(),                                                  // #134
-            'canEditDocDate' => (bool) $request->user()?->canModule('cashbook'), // #125
+            'canEditDocDate' => (bool) $request->user()?->can('cashbook.advance.view'), // #125
         ]);
     }
 
@@ -104,7 +104,7 @@ class CashAdvanceController extends Controller
     /** #125 — set Tanggal Terima Dokumen (hanya finance: businesssupport.transaction.create). */
     public function setReceivedDate(Request $request, BsCashAdvance $advance): RedirectResponse
     {
-        abort_unless($request->user()?->canModule('cashbook'), 403);
+        abort_unless($request->user()?->can('cashbook.advance.received-date'), 403);
         $v = $request->validate(['received_document_date' => ['nullable', 'date']]);
         $advance->update(['received_document_date' => $v['received_document_date'] ?? null]);
 
@@ -128,7 +128,7 @@ class CashAdvanceController extends Controller
     /** Kartu Bon Sementara — kartu per pemegang bon (mutasi + outstanding). */
     public function card(Request $request): Response
     {
-        abort_unless($request->user()?->canModule('cashbook'), 403);
+        abort_unless($request->user()?->can('cashbook.advance.card'), 403);
 
         // Semua baris dikirim → filter per-kolom & ringkasan dihitung client-side (reaktif terhadap filter).
         $rows = BsCashAdvance::query()
@@ -190,7 +190,7 @@ class CashAdvanceController extends Controller
     /** #9: Kartu Bon Sementara → Excel (.xls). */
     public function cardExcel(Request $request): HttpResponse
     {
-        abort_unless($request->user()?->canModule('cashbook'), 403);
+        abort_unless($request->user()?->can('cashbook.advance.card'), 403);
 
         $d  = $this->cardExport($request);
         $e  = fn ($s) => htmlspecialchars((string) $s, ENT_QUOTES, 'UTF-8');
@@ -214,7 +214,7 @@ class CashAdvanceController extends Controller
     /** #9: Kartu Bon Sementara → PDF (HTML A4 auto-print). */
     public function cardPdf(Request $request): HttpResponse
     {
-        abort_unless($request->user()?->canModule('cashbook'), 403);
+        abort_unless($request->user()?->can('cashbook.advance.card'), 403);
 
         $d   = $this->cardExport($request);
         $e   = fn ($s) => htmlspecialchars((string) $s, ENT_QUOTES, 'UTF-8');
@@ -250,7 +250,7 @@ class CashAdvanceController extends Controller
     /** #88: laporan bon sementara — 4 bucket (transfer & settlement). #150: filter departemen. */
     public function report(Request $request): Response
     {
-        abort_unless($request->user()?->canModule('cashbook'), 403);
+        abort_unless($request->user()?->can('cashbook.advance.report'), 403);
 
         $department = $request->input('department') ?: null; // #150
 
@@ -283,7 +283,7 @@ class CashAdvanceController extends Controller
     /** #126 — unduh laporan bon sementara (Excel .xls). */
     public function reportExcel(Request $request): HttpResponse
     {
-        abort_unless($request->user()?->canModule('cashbook'), 403);
+        abort_unless($request->user()?->can('cashbook.advance.report.excel'), 403);
 
         $department = $request->input('department') ?: null; // #150
         $f = $this->reportFilters($request);                 // #175 ikut filter layar
@@ -316,7 +316,7 @@ class CashAdvanceController extends Controller
     /** #126 — laporan bon sementara siap-cetak (PDF via dialog cetak browser). */
     public function reportPdf(Request $request): HttpResponse
     {
-        abort_unless($request->user()?->canModule('cashbook'), 403);
+        abort_unless($request->user()?->can('cashbook.advance.report.pdf'), 403);
 
         $e  = fn ($s) => htmlspecialchars((string) $s, ENT_QUOTES, 'UTF-8');
         $rp = fn ($n) => 'Rp '.number_format((float) $n, 0, ',', '.');
@@ -445,7 +445,7 @@ class CashAdvanceController extends Controller
 
     public function create(Request $request): Response
     {
-        abort_unless($request->user()?->canModule('cashbook'), 403);
+        abort_unless($request->user()?->can('cashbook.advance.create'), 403);
 
         // Kolom Departemen dihapus dari layar pengajuan, jadi daftar departemen & department_id
         // karyawan tidak lagi dikirim ke sana. Departemennya tetap tercatat — ditentukan
@@ -463,7 +463,7 @@ class CashAdvanceController extends Controller
 
     public function store(Request $request, CashAdvanceService $svc): RedirectResponse
     {
-        abort_unless($request->user()?->canModule('cashbook'), 403);
+        abort_unless($request->user()?->can('cashbook.advance.create'), 403);
 
         // #49: pengajuan saja — tanpa sumber kas/bank & tanpa jurnal (Finance yang membayar).
         // #150: department_id (opsional) + employee_id (opsional) untuk fallback departemen.
@@ -498,7 +498,7 @@ class CashAdvanceController extends Controller
     /** #49: daftar pengajuan bon sementara yang menunggu pembayaran Finance. */
     public function payments(Request $request): Response
     {
-        abort_unless($request->user()?->canModule('cashbook'), 403);
+        abort_unless($request->user()?->can('cashbook.advance.view'), 403);
 
         $rows = BsCashAdvance::query()
             ->where('status', 'requested')
@@ -528,7 +528,7 @@ class CashAdvanceController extends Controller
     /** #49: Finance mencatat pembayaran (tanggal transfer + sumber bank/kas) → jurnal terbentuk. */
     public function pay(Request $request, BsCashAdvance $advance, CashAdvanceService $svc): RedirectResponse
     {
-        abort_unless($request->user()?->canModule('cashbook'), 403);
+        abort_unless($request->user()?->can('cashbook.advance.pay'), 403);
 
         $v = $request->validate([
             'paid_date'       => ['required', 'date'],
@@ -565,7 +565,7 @@ class CashAdvanceController extends Controller
 
     public function show(Request $request, BsCashAdvance $advance): Response
     {
-        abort_unless($request->user()?->canModule('cashbook'), 403);
+        abort_unless($request->user()?->can('cashbook.advance.view'), 403);
 
         return Inertia::render('BusinessSupport/CashBook/Advances/Show', [
             'advance'         => $advance->load(['cashAccount:id,code,name', 'creditCard:id,name,card_number,balance,expired_date', 'lines.expenseAccount:id,code,name', 'lines.costCenter:id,code,name']),
@@ -592,13 +592,13 @@ class CashAdvanceController extends Controller
                 ->map(fn ($c) => ['id' => $c->id, 'label' => $c->label(), 'balance' => (float) $c->balance])
                 ->values(),
             'canApprove'      => (bool) $request->user()?->can('businesssupport.approval.act'), // #127
-            'canEditDocDate'  => (bool) $request->user()?->canModule('cashbook'), // #125
+            'canEditDocDate'  => (bool) $request->user()?->can('cashbook.advance.view'), // #125
         ]);
     }
 
     public function realize(Request $request, BsCashAdvance $advance, CashAdvanceService $svc): RedirectResponse
     {
-        abort_unless($request->user()?->canModule('cashbook'), 403);
+        abort_unless($request->user()?->can('cashbook.advance.realize'), 403);
 
         $v = $request->validate([
             'realized_date'            => ['required', 'date'],
@@ -633,7 +633,7 @@ class CashAdvanceController extends Controller
 
     public function refund(Request $request, BsCashAdvance $advance, CashAdvanceService $svc): RedirectResponse
     {
-        abort_unless($request->user()?->canModule('cashbook'), 403);
+        abort_unless($request->user()?->can('cashbook.advance.refund'), 403);
         // #89: pilih bank penerima dana refund.
         $v = $request->validate([
             'settle_date'     => ['required', 'date'],
@@ -658,7 +658,7 @@ class CashAdvanceController extends Controller
      */
     public function masukSaldo(Request $request, BsCashAdvance $advance, CashAdvanceService $svc): RedirectResponse
     {
-        abort_unless($request->user()?->canModule('cashbook'), 403);
+        abort_unless($request->user()?->can('cashbook.advance.reimburse'), 403);
 
         try {
             $svc->masukSaldo($advance, $request->user()->id);
@@ -672,7 +672,7 @@ class CashAdvanceController extends Controller
 
     public function reimburse(Request $request, BsCashAdvance $advance, CashAdvanceService $svc): RedirectResponse
     {
-        abort_unless($request->user()?->canModule('cashbook'), 403);
+        abort_unless($request->user()?->can('cashbook.advance.reimburse'), 403);
         // #93: pilih bank sumber dana reimburse.
         $v = $request->validate([
             'settle_date'     => ['required', 'date'],
@@ -702,7 +702,7 @@ class CashAdvanceController extends Controller
      */
     public function print(Request $request, BsCashAdvance $advance): HttpResponse
     {
-        abort_unless($request->user()?->canModule('cashbook'), 403);
+        abort_unless($request->user()?->can('cashbook.advance.print'), 403);
         $advance->load(['cashAccount:id,code,name', 'department:id,code,name']);
 
         $html = $advance->status === 'requested'
@@ -715,7 +715,7 @@ class CashAdvanceController extends Controller
     /** Cetak bukti REALISASI bon sementara (auto-print) — format eProperty (logo + jurnal rincian + ttd). */
     public function printRealisasi(Request $request, BsCashAdvance $advance): HttpResponse
     {
-        abort_unless($request->user()?->canModule('cashbook'), 403);
+        abort_unless($request->user()?->can('cashbook.advance.print-realisasi'), 403);
         abort_unless($advance->status === 'realized', 404, 'Bon belum direalisasi.');
         $advance->load(['cashAccount:id,code,name', 'department:id,code,name', 'lines.expenseAccount:id,code,name']);
 

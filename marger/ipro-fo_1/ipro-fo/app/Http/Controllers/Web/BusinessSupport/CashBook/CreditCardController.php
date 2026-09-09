@@ -28,7 +28,7 @@ class CreditCardController extends Controller
 {
     public function index(Request $request): Response
     {
-        abort_unless($request->user()?->canModule('cashbook'), 403);
+        abort_unless($request->user()?->can('cashbook.saldo.view'), 403);
 
         $kartu = BsCreditCard::with('account:id,code,name')->orderBy('name')->get();
 
@@ -102,7 +102,7 @@ class CreditCardController extends Controller
 
     public function store(Request $request): RedirectResponse
     {
-        abort_unless($request->user()?->canModule('cashbook'), 403);
+        abort_unless($request->user()?->can('cashbook.transaction.create'), 403);
 
         $v = $request->validate([
             // Satu akun GL hanya boleh punya satu kartu: dua kartu berakun sama membuat saldo
@@ -122,7 +122,7 @@ class CreditCardController extends Controller
 
     public function update(Request $request, BsCreditCard $card): RedirectResponse
     {
-        abort_unless($request->user()?->canModule('cashbook'), 403);
+        abort_unless($request->user()?->can('cashbook.transaction.update'), 403);
 
         // Saldo & masa berlaku SENGAJA tidak ada di sini: keduanya hanya berubah lewat
         // permintaan yang disetujui. Kolom yang bisa disunting bebas akan menjadi jalan pintas
@@ -141,7 +141,7 @@ class CreditCardController extends Controller
     /** Ajukan permintaan saldo / masa berlaku secara manual dari layar ini. */
     public function requestStore(Request $request, BsCreditCard $card, CreditCardService $svc): RedirectResponse
     {
-        abort_unless($request->user()?->canModule('cashbook'), 403);
+        abort_unless($request->user()?->can('cashbook.transaction.create'), 403);
 
         $v = $request->validate([
             'type'         => ['required', 'string', 'in:'.implode(',', array_keys(BsCreditCardRequest::TYPES))],

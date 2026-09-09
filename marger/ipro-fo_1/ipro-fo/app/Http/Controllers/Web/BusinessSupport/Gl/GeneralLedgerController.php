@@ -19,7 +19,7 @@ class GeneralLedgerController extends Controller
 {
     public function index(Request $request): Response
     {
-        abort_unless($request->user()?->canModule('gl'), 403);
+        abort_unless($request->user()?->can('gl.ledger.view'), 403);
 
         $year   = (int) $request->integer('year', (int) now()->year);
         $source = trim((string) $request->string('source', ''));
@@ -81,7 +81,7 @@ class GeneralLedgerController extends Controller
      */
     public function generalFunction(Request $request): Response
     {
-        abort_unless($request->user()?->canModule('gl'), 403);
+        abort_unless($request->user()?->can('gl.ledger.view'), 403);
 
         $year   = (int) $request->integer('year', (int) now()->year);
         $source = trim((string) $request->string('source', ''));

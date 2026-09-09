@@ -21,7 +21,7 @@ class TaxDashboardController extends Controller
 {
     public function index(Request $request): Response
     {
-        abort_unless($request->user()?->canModule('tax'), 403);
+        abort_unless($request->user()?->can('tax.view'), 403);
         $year = (int) ($request->integer('year') ?: now()->year);
 
         $months = [];

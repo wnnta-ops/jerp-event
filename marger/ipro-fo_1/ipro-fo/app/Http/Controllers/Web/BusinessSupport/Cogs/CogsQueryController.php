@@ -26,7 +26,7 @@ class CogsQueryController extends Controller
     /** Report Budget. */
     public function budget(Request $request): Response
     {
-        abort_unless($request->user()?->canModule('cogs'), 403);
+        abort_unless($request->user()?->can('cogs.query.budget'), 403);
         $f = $this->f($request);
         $rows = BsCogsBudget::with(['category:id,code,name,component', 'location:id,name', 'account:id,code,name'])
             ->where('year', $f['year'])->when($f['project_id'], fn ($q, $id) => $q->where('project_id', $id))
@@ -42,7 +42,7 @@ class CogsQueryController extends Controller
     /** Report Realisasi Budget — budget vs realisasi per kategori. */
     public function realisasi(Request $request): Response
     {
-        abort_unless($request->user()?->canModule('cogs'), 403);
+        abort_unless($request->user()?->can('cogs.query.realisasi'), 403);
         $f = $this->f($request);
 
         $budget = BsCogsBudget::with('category:id,code,name')->where('year', $f['year'])
@@ -71,7 +71,7 @@ class CogsQueryController extends Controller
     /** Report Realisasi Budget Detil. */
     public function realisasiDetil(Request $request): Response
     {
-        abort_unless($request->user()?->canModule('cogs'), 403);
+        abort_unless($request->user()?->can('cogs.query.realisasi-detil'), 403);
         $f = $this->f($request);
         $rows = BsCogsRealization::with(['category:id,code,name', 'location:id,name'])
             ->where('year', $f['year'])->when($f['project_id'], fn ($q, $id) => $q->where('project_id', $id))
@@ -88,7 +88,7 @@ class CogsQueryController extends Controller
     /** Report Pengakuan HPP RealCost. */
     public function pengakuan(Request $request): Response
     {
-        abort_unless($request->user()?->canModule('cogs'), 403);
+        abort_unless($request->user()?->can('cogs.query.pengakuan'), 403);
         $f = $this->f($request);
         $rows = BsCogsHpp::where('period_year', $f['year'])->when($f['project_id'], fn ($q, $id) => $q->where('project_id', $id))
             ->orderBy('period_month')->orderBy('unit_code')->get()
@@ -107,7 +107,7 @@ class CogsQueryController extends Controller
     /** Report Persediaan Unit RealCost — kapitalisasi (posted persediaan) − HPP diakui = saldo persediaan unit. */
     public function persediaanUnit(Request $request): Response
     {
-        abort_unless($request->user()?->canModule('cogs'), 403);
+        abort_unless($request->user()?->can('cogs.query.persediaan-unit'), 403);
         $f = $this->f($request);
         $rows = BsCogsHpp::when($f['project_id'], fn ($q, $id) => $q->where('project_id', $id))
             ->get()->groupBy('unit_id')->map(function ($grp) {
@@ -127,7 +127,7 @@ class CogsQueryController extends Controller
     /** Report HPP Unit RealCost — akumulasi HPP & pendapatan per unit. */
     public function hppUnit(Request $request): Response
     {
-        abort_unless($request->user()?->canModule('cogs'), 403);
+        abort_unless($request->user()?->can('cogs.query.hpp-unit'), 403);
         $f = $this->f($request);
         $rows = BsCogsHpp::when($f['project_id'], fn ($q, $id) => $q->where('project_id', $id))
             ->get()->groupBy('unit_id')->map(function ($grp) {

@@ -20,7 +20,7 @@ class CostCenterController extends Controller
 {
     public function index(Request $request): Response
     {
-        abort_unless($request->user()?->canModule('gl'), 403);
+        abort_unless($request->user()?->can('gl.cost-center.view'), 403);
 
         $rows = BsCostCenter::query()
             ->with('project:id,name')

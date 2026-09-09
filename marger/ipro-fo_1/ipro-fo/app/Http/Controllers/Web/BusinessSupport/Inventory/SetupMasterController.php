@@ -27,7 +27,7 @@ class SetupMasterController extends Controller
 
     public function index(Request $request, string $kind): Response
     {
-        abort_unless($request->user()?->canModule('bs'), 403);
+        abort_unless($request->user()?->can('bs.inventory-setup.manage'), 403);
         [$model, $title, $hasProject] = $this->resolve($kind);
 
         $rows = $model::query()

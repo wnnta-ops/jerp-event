@@ -25,7 +25,7 @@ class ContractorController extends Controller
     /** Hub modul Contractor Management (mirror menu eProperty BO /PLAN/). */
     public function hub(Request $request): Response
     {
-        abort_unless($request->user()?->canModule('contractor'), 403);
+        abort_unless($request->user()?->can('contractor.general.view'), 403);
 
         return Inertia::render('BusinessSupport/Contractor/Hub', [
             'summary' => [
@@ -42,7 +42,7 @@ class ContractorController extends Controller
     /** Form picker: Addendum / Adjust PPN / Pembatalan — pilih SPK aktif lalu proses. */
     public function pickerForm(Request $request, string $action): Response
     {
-        abort_unless($request->user()?->canModule('contractor'), 403);
+        abort_unless($request->user()?->can('contractor.spk.view'), 403);
         $page = ['addendum' => 'Addendum', 'adjust-ppn' => 'AdjustPpn', 'cancel' => 'Cancel'][$action] ?? abort(404);
 
         $spks = BsWorkOrder::with(['supplier:id,name', 'project:id,code,name'])
@@ -58,7 +58,7 @@ class ContractorController extends Controller
 
     public function index(Request $request): Response
     {
-        abort_unless($request->user()?->canModule('contractor'), 403);
+        abort_unless($request->user()?->can('contractor.spk.view'), 403);
 
         $rows = BsWorkOrder::query()
             ->with(['supplier:id,code,name', 'project:id,code,name'])
@@ -83,7 +83,7 @@ class ContractorController extends Controller
 
     public function create(Request $request): Response
     {
-        abort_unless($request->user()?->canModule('contractor'), 403);
+        abort_unless($request->user()?->can('contractor.spk.create'), 403);
 
         return Inertia::render('BusinessSupport/Contractor/Form', [
             'projects'     => BsProject::where('is_active', true)->orderBy('code')
@@ -102,7 +102,7 @@ class ContractorController extends Controller
 
     public function store(Request $request, ContractorService $svc): RedirectResponse
     {
-        abort_unless($request->user()?->canModule('contractor'), 403);
+        abort_unless($request->user()?->can('contractor.spk.create'), 403);
 
         $v = $request->validate([
             'spk_date'                => ['required', 'date'],
@@ -177,7 +177,7 @@ class ContractorController extends Controller
 
     public function show(Request $request, BsWorkOrder $workOrder): Response
     {
-        abort_unless($request->user()?->canModule('contractor'), 403);
+        abort_unless($request->user()?->can('contractor.spk.view'), 403);
 
         return Inertia::render('BusinessSupport/Contractor/Show', [
             'spk'          => $workOrder->load([
@@ -208,7 +208,7 @@ class ContractorController extends Controller
      */
     public function printForm(Request $request, BsWorkOrder $workOrder): Response
     {
-        abort_unless($request->user()?->canModule('contractor'), 403);
+        abort_unless($request->user()?->can('contractor.general.print'), 403);
 
         $workOrder->load([
             'supplier:id,code,name,address,city,npwp,contact_person,phone,bank_name,bank_account_no,bank_account_name',
@@ -237,7 +237,7 @@ class ContractorController extends Controller
     /** Simpan editan dokumen Cetak SPK per-SPK (dari tombol "Simpan" di Cetak SPK). */
     public function printSave(Request $request, BsWorkOrder $workOrder): RedirectResponse
     {
-        abort_unless($request->user()?->canModule('contractor'), 403);
+        abort_unless($request->user()?->can('contractor.general.print'), 403);
 
         $payload = $request->validate([
             'payload' => ['required', 'array'],
@@ -250,7 +250,7 @@ class ContractorController extends Controller
 
     public function mutateProgress(Request $request, BsWorkOrder $workOrder, ContractorService $svc): RedirectResponse
     {
-        abort_unless($request->user()?->canModule('contractor'), 403);
+        abort_unless($request->user()?->can('contractor.spk.mutate-progress'), 403);
 
         $v = $request->validate([
             'mutation_date'      => ['required', 'date'],
@@ -271,7 +271,7 @@ class ContractorController extends Controller
 
     public function addendum(Request $request, BsWorkOrder $workOrder, ContractorService $svc): RedirectResponse
     {
-        abort_unless($request->user()?->canModule('contractor'), 403);
+        abort_unless($request->user()?->can('contractor.spk.addendum'), 403);
 
         $v = $request->validate([
             'addendum_date' => ['required', 'date'],
@@ -290,7 +290,7 @@ class ContractorController extends Controller
 
     public function adjustPpn(Request $request, BsWorkOrder $workOrder, ContractorService $svc): RedirectResponse
     {
-        abort_unless($request->user()?->canModule('contractor'), 403);
+        abort_unless($request->user()?->can('contractor.spk.adjust-ppn'), 403);
 
         $v = $request->validate([
             'addendum_date' => ['required', 'date'],
@@ -309,7 +309,7 @@ class ContractorController extends Controller
 
     public function cancel(Request $request, BsWorkOrder $workOrder, ContractorService $svc): RedirectResponse
     {
-        abort_unless($request->user()?->canModule('contractor'), 403);
+        abort_unless($request->user()?->can('contractor.spk.cancel'), 403);
 
         $v = $request->validate([
             'cancel_date' => ['required', 'date'],
@@ -327,7 +327,7 @@ class ContractorController extends Controller
 
     public function useMaterial(Request $request, BsWorkOrder $workOrder, ContractorService $svc): RedirectResponse
     {
-        abort_unless($request->user()?->canModule('contractor'), 403);
+        abort_unless($request->user()?->can('contractor.spk.material.use'), 403);
 
         $v = $request->validate([
             'usage_date'           => ['required', 'date'],
@@ -347,7 +347,7 @@ class ContractorController extends Controller
 
     public function addProgress(Request $request, BsWorkOrder $workOrder, ContractorService $svc): RedirectResponse
     {
-        abort_unless($request->user()?->canModule('contractor'), 403);
+        abort_unless($request->user()?->can('contractor.spk.progress'), 403);
 
         $v = $request->validate([
             'progress_date'  => ['required', 'date'],
@@ -366,7 +366,7 @@ class ContractorController extends Controller
 
     public function payProgress(Request $request, BsWorkOrderProgress $progress, ContractorService $svc): RedirectResponse
     {
-        abort_unless($request->user()?->canModule('contractor'), 403);
+        abort_unless($request->user()?->can('contractor.spk.progress.pay'), 403);
 
         $v = $request->validate([
             'payment_date'    => ['required', 'date'],
@@ -384,7 +384,7 @@ class ContractorController extends Controller
 
     public function releaseRetention(Request $request, BsWorkOrder $workOrder, ContractorService $svc): RedirectResponse
     {
-        abort_unless($request->user()?->canModule('contractor'), 403);
+        abort_unless($request->user()?->can('contractor.retention.release'), 403);
 
         $v = $request->validate([
             'settled_date'    => ['required', 'date'],

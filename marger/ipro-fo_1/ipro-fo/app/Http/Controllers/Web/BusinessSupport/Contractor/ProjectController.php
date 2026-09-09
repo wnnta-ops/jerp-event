@@ -23,7 +23,7 @@ class ProjectController extends Controller
 
     public function index(Request $request): Response
     {
-        abort_unless($request->user()?->canModule('contractor'), 403);
+        abort_unless($request->user()?->can('contractor.project.view'), 403);
 
         return Inertia::render('BusinessSupport/Contractor/Project', [
             'projects' => BsProject::orderBy('code')->get([
@@ -47,7 +47,7 @@ class ProjectController extends Controller
      */
     public function show(Request $request, BsProject $project): Response
     {
-        abort_unless($request->user()?->canModule('contractor'), 403);
+        abort_unless($request->user()?->can('contractor.project.view'), 403);
 
         $sales = Project::where('code', $project->code)->first()
             ?? Project::whereRaw('LOWER(name) = ?', [mb_strtolower($project->name)])->first();
