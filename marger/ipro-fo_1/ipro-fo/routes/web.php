@@ -139,13 +139,19 @@ Route::get('/sso/consume', [\App\Http\Controllers\SsoController::class, 'consume
 Route::post('/webhooks/xendit', [\App\Http\Controllers\Web\Webhook\XenditWebhookController::class, 'handle'])->name('webhooks.xendit');
 
 // ── PUBLIK: Pendaftaran NUP online (tanpa login) ──────────────────────────────
-// Domain/halaman terpisah untuk customer eksternal. Data tetap masuk ke Java Core System.
+// Pendaftaran NUP sudah PINDAH ke FO. Rute ini dimatikan lewat sakelar, bukan
+// dihapus: tanpa login siapa pun yang tahu alamatnya masih bisa MEMBUAT data NUP
+// di Java Core System, padahal datanya kini dikelola FO.
+// Kembalikan dengan BO_MODUL_NUP_PUBLIK_AKTIF=true di .env, tanpa deploy ulang.
 // Ditempatkan SEBELUM grup auth agar /nup/create tidak tertangkap /nup/{nup}.
 Route::middleware('set-tenant')->group(function (): void {
-    Route::get('/nup/create',       [\App\Http\Controllers\Web\Public\PublicNupController::class, 'create'])->name('nup.create');
-    Route::post('/nup/daftar',      [\App\Http\Controllers\Web\Public\PublicNupController::class, 'store'])->middleware('throttle:15,1')->name('nup.public.store');
-    Route::get('/nup/terima-kasih', [\App\Http\Controllers\Web\Public\PublicNupController::class, 'done'])->name('nup.public.done');
-    // Wilayah (cascading dropdown) — dipakai form publik & internal.
+    if (config('modul_pindah_fo.nup_publik')) {
+        Route::get('/nup/create',       [\App\Http\Controllers\Web\Public\PublicNupController::class, 'create'])->name('nup.create');
+        Route::post('/nup/daftar',      [\App\Http\Controllers\Web\Public\PublicNupController::class, 'store'])->middleware('throttle:15,1')->name('nup.public.store');
+        Route::get('/nup/terima-kasih', [\App\Http\Controllers\Web\Public\PublicNupController::class, 'done'])->name('nup.public.done');
+    }
+
+    // Wilayah (cascading dropdown) — dipakai halaman internal, tetap hidup.
     Route::get('/regions',          [\App\Http\Controllers\Web\RegionController::class, 'children'])->name('regions.children');
 });
 
@@ -178,52 +184,59 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
     Route::post('/security/technical-problem',    [\App\Http\Controllers\Web\Security\SecurityOpsController::class, 'storeTechnical'])->name('security.technical.store');
     Route::put('/security/technical-problem/{problem}', [\App\Http\Controllers\Web\Security\SecurityOpsController::class, 'updateTechnical'])->name('security.technical.update');
 
-    // ── SETUP SALES (mirror eProperty "adminjual") ──
-    Route::prefix('setup-sales')->name('setup-sales.')->group(function (): void {
-        Route::get('/',          [\App\Http\Controllers\Web\SetupSales\SetupSalesController::class, 'index'])->name('index');
-        Route::get('/dashboard', [\App\Http\Controllers\Web\SetupSales\SetupSalesController::class, 'dashboard'])->name('dashboard');
-        Route::get('/reminder',  [\App\Http\Controllers\Web\SetupSales\SetupSalesController::class, 'reminder'])->name('reminder');
-        Route::get('/log',       [\App\Http\Controllers\Web\SetupSales\SetupSalesController::class, 'log'])->name('log');
+    // SETUP SALES sudah PINDAH ke FO. Rutenya dimatikan lewat sakelar, bukan dihapus:
+    // menu yang hilang dari sidebar tidak menutup apa pun — alamatnya masih bisa
+    // diketik, dan halaman lama masih bisa MENULIS ke data yang kini dikelola FO.
+    // Kembalikan dengan BO_MODUL_SETUP_SALES_AKTIF=true di .env, tanpa deploy ulang.
+    if (config('modul_pindah_fo.setup_sales')) {
+        // ── SETUP SALES (mirror eProperty "adminjual") ──
+        Route::prefix('setup-sales')->name('setup-sales.')->group(function (): void {
+            Route::get('/',          [\App\Http\Controllers\Web\SetupSales\SetupSalesController::class, 'index'])->name('index');
+            Route::get('/dashboard', [\App\Http\Controllers\Web\SetupSales\SetupSalesController::class, 'dashboard'])->name('dashboard');
+            Route::get('/reminder',  [\App\Http\Controllers\Web\SetupSales\SetupSalesController::class, 'reminder'])->name('reminder');
+            Route::get('/log',       [\App\Http\Controllers\Web\SetupSales\SetupSalesController::class, 'log'])->name('log');
 
-        // Skema Cara Bayar (builder Rumus Global/Nilai/Jadwal)
-        Route::post('/scheme/preview', [\App\Http\Controllers\Web\SetupSales\PaymentSchemeController::class, 'preview'])->name('scheme.preview');
-        Route::get('/scheme',                  [\App\Http\Controllers\Web\SetupSales\PaymentSchemeController::class, 'index'])->name('scheme.index');
-        Route::get('/scheme/create',           [\App\Http\Controllers\Web\SetupSales\PaymentSchemeController::class, 'create'])->name('scheme.create');
-        Route::post('/scheme',                 [\App\Http\Controllers\Web\SetupSales\PaymentSchemeController::class, 'store'])->name('scheme.store');
-        Route::get('/scheme/{scheme}',         [\App\Http\Controllers\Web\SetupSales\PaymentSchemeController::class, 'show'])->name('scheme.show');
-        Route::get('/scheme/{scheme}/edit',    [\App\Http\Controllers\Web\SetupSales\PaymentSchemeController::class, 'edit'])->name('scheme.edit');
-        Route::put('/scheme/{scheme}',         [\App\Http\Controllers\Web\SetupSales\PaymentSchemeController::class, 'update'])->name('scheme.update');
-        Route::delete('/scheme/{scheme}',      [\App\Http\Controllers\Web\SetupSales\PaymentSchemeController::class, 'destroy'])->name('scheme.destroy');
+            // Skema Cara Bayar (builder Rumus Global/Nilai/Jadwal)
+            Route::post('/scheme/preview', [\App\Http\Controllers\Web\SetupSales\PaymentSchemeController::class, 'preview'])->name('scheme.preview');
+            Route::get('/scheme',                  [\App\Http\Controllers\Web\SetupSales\PaymentSchemeController::class, 'index'])->name('scheme.index');
+            Route::get('/scheme/create',           [\App\Http\Controllers\Web\SetupSales\PaymentSchemeController::class, 'create'])->name('scheme.create');
+            Route::post('/scheme',                 [\App\Http\Controllers\Web\SetupSales\PaymentSchemeController::class, 'store'])->name('scheme.store');
+            Route::get('/scheme/{scheme}',         [\App\Http\Controllers\Web\SetupSales\PaymentSchemeController::class, 'show'])->name('scheme.show');
+            Route::get('/scheme/{scheme}/edit',    [\App\Http\Controllers\Web\SetupSales\PaymentSchemeController::class, 'edit'])->name('scheme.edit');
+            Route::put('/scheme/{scheme}',         [\App\Http\Controllers\Web\SetupSales\PaymentSchemeController::class, 'update'])->name('scheme.update');
+            Route::delete('/scheme/{scheme}',      [\App\Http\Controllers\Web\SetupSales\PaymentSchemeController::class, 'destroy'])->name('scheme.destroy');
 
-        // Master Sales / Marketing
-        Route::get('/sales',            [\App\Http\Controllers\Web\SetupSales\SalesPersonController::class, 'index'])->name('sales.index');
-        Route::post('/sales',           [\App\Http\Controllers\Web\SetupSales\SalesPersonController::class, 'store'])->name('sales.store');
-        Route::put('/sales/{sales}',    [\App\Http\Controllers\Web\SetupSales\SalesPersonController::class, 'update'])->name('sales.update');
-        Route::delete('/sales/{sales}', [\App\Http\Controllers\Web\SetupSales\SalesPersonController::class, 'destroy'])->name('sales.destroy');
+            // Master Sales / Marketing
+            Route::get('/sales',            [\App\Http\Controllers\Web\SetupSales\SalesPersonController::class, 'index'])->name('sales.index');
+            Route::post('/sales',           [\App\Http\Controllers\Web\SetupSales\SalesPersonController::class, 'store'])->name('sales.store');
+            Route::put('/sales/{sales}',    [\App\Http\Controllers\Web\SetupSales\SalesPersonController::class, 'update'])->name('sales.update');
+            Route::delete('/sales/{sales}', [\App\Http\Controllers\Web\SetupSales\SalesPersonController::class, 'destroy'])->name('sales.destroy');
 
-        // Master Agen / Broker
-        Route::get('/agent',            [\App\Http\Controllers\Web\SetupSales\AgentController::class, 'index'])->name('agent.index');
-        Route::post('/agent',           [\App\Http\Controllers\Web\SetupSales\AgentController::class, 'store'])->name('agent.store');
-        Route::put('/agent/{agent}',    [\App\Http\Controllers\Web\SetupSales\AgentController::class, 'update'])->name('agent.update');
-        Route::delete('/agent/{agent}', [\App\Http\Controllers\Web\SetupSales\AgentController::class, 'destroy'])->name('agent.destroy');
+            // Master Agen / Broker
+            Route::get('/agent',            [\App\Http\Controllers\Web\SetupSales\AgentController::class, 'index'])->name('agent.index');
+            Route::post('/agent',           [\App\Http\Controllers\Web\SetupSales\AgentController::class, 'store'])->name('agent.store');
+            Route::put('/agent/{agent}',    [\App\Http\Controllers\Web\SetupSales\AgentController::class, 'update'])->name('agent.update');
+            Route::delete('/agent/{agent}', [\App\Http\Controllers\Web\SetupSales\AgentController::class, 'destroy'])->name('agent.destroy');
 
-        // Price List
-        Route::get('/pricelist',                 [\App\Http\Controllers\Web\SetupSales\PricelistController::class, 'index'])->name('pricelist.index');
-        Route::get('/pricelist/create',          [\App\Http\Controllers\Web\SetupSales\PricelistController::class, 'create'])->name('pricelist.create');
-        Route::get('/pricelist/units',           [\App\Http\Controllers\Web\SetupSales\PricelistController::class, 'units'])->name('pricelist.units');
-        Route::post('/pricelist',                [\App\Http\Controllers\Web\SetupSales\PricelistController::class, 'store'])->name('pricelist.store');
-        Route::get('/pricelist/{pricelist}',     [\App\Http\Controllers\Web\SetupSales\PricelistController::class, 'show'])->name('pricelist.show');
-        Route::post('/pricelist/{pricelist}/activate', [\App\Http\Controllers\Web\SetupSales\PricelistController::class, 'activate'])->name('pricelist.activate');
-        Route::delete('/pricelist/{pricelist}',  [\App\Http\Controllers\Web\SetupSales\PricelistController::class, 'destroy'])->name('pricelist.destroy');
+            // Price List
+            Route::get('/pricelist',                 [\App\Http\Controllers\Web\SetupSales\PricelistController::class, 'index'])->name('pricelist.index');
+            Route::get('/pricelist/create',          [\App\Http\Controllers\Web\SetupSales\PricelistController::class, 'create'])->name('pricelist.create');
+            Route::get('/pricelist/units',           [\App\Http\Controllers\Web\SetupSales\PricelistController::class, 'units'])->name('pricelist.units');
+            Route::post('/pricelist',                [\App\Http\Controllers\Web\SetupSales\PricelistController::class, 'store'])->name('pricelist.store');
+            Route::get('/pricelist/{pricelist}',     [\App\Http\Controllers\Web\SetupSales\PricelistController::class, 'show'])->name('pricelist.show');
+            Route::post('/pricelist/{pricelist}/activate', [\App\Http\Controllers\Web\SetupSales\PricelistController::class, 'activate'])->name('pricelist.activate');
+            Route::delete('/pricelist/{pricelist}',  [\App\Http\Controllers\Web\SetupSales\PricelistController::class, 'destroy'])->name('pricelist.destroy');
 
-        // Laporan
-        Route::get('/reports',                 [\App\Http\Controllers\Web\SetupSales\SetupSalesReportController::class, 'index'])->name('reports.index');
-        Route::get('/reports/master-sales',    [\App\Http\Controllers\Web\SetupSales\SetupSalesReportController::class, 'masterSales'])->name('reports.master-sales');
-        Route::get('/reports/price-list',      [\App\Http\Controllers\Web\SetupSales\SetupSalesReportController::class, 'priceList'])->name('reports.price-list');
-        Route::get('/reports/history-price',   [\App\Http\Controllers\Web\SetupSales\SetupSalesReportController::class, 'historyPriceList'])->name('reports.history-price');
-        Route::get('/reports/summary-stock',   [\App\Http\Controllers\Web\SetupSales\SetupSalesReportController::class, 'summaryStock'])->name('reports.summary-stock');
-        Route::get('/reports/master-unit',     [\App\Http\Controllers\Web\SetupSales\SetupSalesReportController::class, 'masterUnit'])->name('reports.master-unit');
-    });
+            // Laporan
+            Route::get('/reports',                 [\App\Http\Controllers\Web\SetupSales\SetupSalesReportController::class, 'index'])->name('reports.index');
+            Route::get('/reports/master-sales',    [\App\Http\Controllers\Web\SetupSales\SetupSalesReportController::class, 'masterSales'])->name('reports.master-sales');
+            Route::get('/reports/price-list',      [\App\Http\Controllers\Web\SetupSales\SetupSalesReportController::class, 'priceList'])->name('reports.price-list');
+            Route::get('/reports/history-price',   [\App\Http\Controllers\Web\SetupSales\SetupSalesReportController::class, 'historyPriceList'])->name('reports.history-price');
+            Route::get('/reports/summary-stock',   [\App\Http\Controllers\Web\SetupSales\SetupSalesReportController::class, 'summaryStock'])->name('reports.summary-stock');
+            Route::get('/reports/master-unit',     [\App\Http\Controllers\Web\SetupSales\SetupSalesReportController::class, 'masterUnit'])->name('reports.master-unit');
+        });
+    }
+
 
     // ── TOOLS / KALKULATOR ──────────────────────────────────
     Route::get('/kalkulator',          [\App\Http\Controllers\Web\Tools\CalculatorController::class, 'index'])->name('calculator.index');
@@ -263,75 +276,82 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
     Route::get('/projects/{project}/siteplan',                [SiteplanController::class, 'show'])->name('siteplan.show');
     Route::put('/projects/{project}/siteplan/{unit}',         [SiteplanController::class, 'update'])->name('siteplan.update');
 
-    // ── SALES ───────────────────────────────────────────────
-    Route::get('/holds',                                      [HoldController::class, 'index'])->name('holds.index');
-    Route::get('/holds/create',                               [HoldController::class, 'create'])->name('holds.create');
-    Route::post('/holds',                                     [HoldController::class, 'store'])->name('holds.store');
-    Route::post('/holds/{hold}/release',                      [HoldController::class, 'release'])->name('holds.release');
+    // SALES sudah PINDAH ke FO. Rutenya dimatikan lewat sakelar, bukan dihapus:
+    // menu yang hilang dari sidebar tidak menutup apa pun — alamatnya masih bisa
+    // diketik, dan halaman lama masih bisa MENULIS ke data yang kini dikelola FO.
+    // Kembalikan dengan BO_MODUL_SALES_AKTIF=true di .env, tanpa deploy ulang.
+    if (config('modul_pindah_fo.sales')) {
+        // ── SALES ───────────────────────────────────────────────
+        Route::get('/holds',                                      [HoldController::class, 'index'])->name('holds.index');
+        Route::get('/holds/create',                               [HoldController::class, 'create'])->name('holds.create');
+        Route::post('/holds',                                     [HoldController::class, 'store'])->name('holds.store');
+        Route::post('/holds/{hold}/release',                      [HoldController::class, 'release'])->name('holds.release');
 
-    Route::get('/nup',                                        [NupController::class, 'index'])->name('nup.index');
-    // VERIFIKASI NUP — harus SEBELUM /nup/{nup} agar tidak tertangkap wildcard.
-    Route::get('/nup/verifikasi',                             [NupController::class, 'verifikasi'])->name('nup.verifikasi');
-    Route::get('/nup/{nup}',                                  [NupController::class, 'show'])->name('nup.show');
-    Route::get('/nup/{nup}/bayar',                            [NupController::class, 'bayar'])->name('nup.bayar');
-    Route::post('/nup/{nup}/simulate-pay',                    [NupController::class, 'simulatePay'])->name('nup.simulatePay');
-    Route::post('/nup/{nup}/send-email',                      [NupController::class, 'sendEmail'])->name('nup.sendEmail');
-    Route::post('/nup/{nup}/pay',                             [NupController::class, 'pay'])->name('nup.pay');
-    Route::post('/nup/{nup}/refund',                          [NupController::class, 'refund'])->name('nup.refund');
-    // Aksi verifikasi (Approve/Pending/Reject/Delete/Payment/Expire).
-    Route::post('/nup/{nup}/verify/{decision}',               [NupController::class, 'verify'])->whereIn('decision', ['approve', 'pending', 'reject'])->name('nup.verify');
-    Route::delete('/nup/{nup}',                               [NupController::class, 'destroy'])->name('nup.destroy');
-    Route::post('/nup/{nup}/payment-xendit',                  [NupController::class, 'paymentXendit'])->name('nup.paymentXendit');
-    Route::post('/nup/{nup}/expire-xendit',                   [NupController::class, 'expireXendit'])->name('nup.expireXendit');
-    Route::post('/nup/{nup}/send-link',                       [NupController::class, 'sendLink'])->name('nup.sendLink');
+        Route::get('/nup',                                        [NupController::class, 'index'])->name('nup.index');
+        // VERIFIKASI NUP — harus SEBELUM /nup/{nup} agar tidak tertangkap wildcard.
+        Route::get('/nup/verifikasi',                             [NupController::class, 'verifikasi'])->name('nup.verifikasi');
+        Route::get('/nup/{nup}',                                  [NupController::class, 'show'])->name('nup.show');
+        Route::get('/nup/{nup}/bayar',                            [NupController::class, 'bayar'])->name('nup.bayar');
+        Route::post('/nup/{nup}/simulate-pay',                    [NupController::class, 'simulatePay'])->name('nup.simulatePay');
+        Route::post('/nup/{nup}/send-email',                      [NupController::class, 'sendEmail'])->name('nup.sendEmail');
+        Route::post('/nup/{nup}/pay',                             [NupController::class, 'pay'])->name('nup.pay');
+        Route::post('/nup/{nup}/refund',                          [NupController::class, 'refund'])->name('nup.refund');
+        // Aksi verifikasi (Approve/Pending/Reject/Delete/Payment/Expire).
+        Route::post('/nup/{nup}/verify/{decision}',               [NupController::class, 'verify'])->whereIn('decision', ['approve', 'pending', 'reject'])->name('nup.verify');
+        Route::delete('/nup/{nup}',                               [NupController::class, 'destroy'])->name('nup.destroy');
+        Route::post('/nup/{nup}/payment-xendit',                  [NupController::class, 'paymentXendit'])->name('nup.paymentXendit');
+        Route::post('/nup/{nup}/expire-xendit',                   [NupController::class, 'expireXendit'])->name('nup.expireXendit');
+        Route::post('/nup/{nup}/send-link',                       [NupController::class, 'sendLink'])->name('nup.sendLink');
 
-    Route::resource('bookings', BookingController::class)->only(['index', 'create', 'store', 'show']);
-    Route::post('/bookings/preview',                          [BookingController::class, 'preview'])->name('bookings.preview');
-    Route::post('/bookings/{booking}/cancel',                 [BookingController::class, 'cancel'])->name('bookings.cancel');
-    Route::post('/bookings/{booking}/promote',                [BookingController::class, 'promote'])->name('bookings.promote');
+        Route::resource('bookings', BookingController::class)->only(['index', 'create', 'store', 'show']);
+        Route::post('/bookings/preview',                          [BookingController::class, 'preview'])->name('bookings.preview');
+        Route::post('/bookings/{booking}/cancel',                 [BookingController::class, 'cancel'])->name('bookings.cancel');
+        Route::post('/bookings/{booking}/promote',                [BookingController::class, 'promote'])->name('bookings.promote');
 
-    Route::get('/contracts',                                  [ContractController::class, 'index'])->name('contracts.index');
-    Route::get('/contracts/{contract}',                       [ContractController::class, 'show'])->name('contracts.show');
-    Route::patch('/contracts/{contract}',                     [ContractController::class, 'update'])->name('contracts.update');
-    Route::get('/contracts/{contract}/print',                 [ContractController::class, 'printForm'])->name('contracts.print');
-    Route::post('/contracts/{contract}/sign',                 [ContractController::class, 'sign'])->name('contracts.sign');
+        Route::get('/contracts',                                  [ContractController::class, 'index'])->name('contracts.index');
+        Route::get('/contracts/{contract}',                       [ContractController::class, 'show'])->name('contracts.show');
+        Route::patch('/contracts/{contract}',                     [ContractController::class, 'update'])->name('contracts.update');
+        Route::get('/contracts/{contract}/print',                 [ContractController::class, 'printForm'])->name('contracts.print');
+        Route::post('/contracts/{contract}/sign',                 [ContractController::class, 'sign'])->name('contracts.sign');
 
-    // Phase 4 — PPJB lifecycle actions
-    Route::post('/contracts/{contract}/ppjb/print',           [ContractController::class, 'ppjbPrint'])->name('contracts.ppjb.print');
-    Route::post('/contracts/{contract}/ppjb/start-signing',   [ContractController::class, 'ppjbStartSigning'])->name('contracts.ppjb.start-signing');
-    Route::post('/contracts/{contract}/ppjb/complete',        [ContractController::class, 'ppjbComplete'])->name('contracts.ppjb.complete');
-    Route::post('/contracts/{contract}/ppjb/numbering',       [ContractController::class, 'updateNumbering'])->name('contracts.ppjb.numbering');
-    Route::post('/contracts/{contract}/documents/toggle',     [ContractController::class, 'toggleDocument'])->name('contracts.documents.toggle');
+        // Phase 4 — PPJB lifecycle actions
+        Route::post('/contracts/{contract}/ppjb/print',           [ContractController::class, 'ppjbPrint'])->name('contracts.ppjb.print');
+        Route::post('/contracts/{contract}/ppjb/start-signing',   [ContractController::class, 'ppjbStartSigning'])->name('contracts.ppjb.start-signing');
+        Route::post('/contracts/{contract}/ppjb/complete',        [ContractController::class, 'ppjbComplete'])->name('contracts.ppjb.complete');
+        Route::post('/contracts/{contract}/ppjb/numbering',       [ContractController::class, 'updateNumbering'])->name('contracts.ppjb.numbering');
+        Route::post('/contracts/{contract}/documents/toggle',     [ContractController::class, 'toggleDocument'])->name('contracts.documents.toggle');
 
-    // Phase 5 — Gimmick actions
-    Route::post('/contracts/{contract}/gimmicks/apply-package', [ContractController::class, 'applyGimmickPackage'])->name('contracts.gimmicks.apply-package');
-    Route::post('/gimmicks/{gimmick}/toggle-diterima',          [ContractController::class, 'toggleGimmickDiterima'])->name('gimmicks.toggle-diterima');
-    Route::delete('/gimmicks/{gimmick}',                        [ContractController::class, 'removeGimmick'])->name('gimmicks.remove');
+        // Phase 5 — Gimmick actions
+        Route::post('/contracts/{contract}/gimmicks/apply-package', [ContractController::class, 'applyGimmickPackage'])->name('contracts.gimmicks.apply-package');
+        Route::post('/gimmicks/{gimmick}/toggle-diterima',          [ContractController::class, 'toggleGimmickDiterima'])->name('gimmicks.toggle-diterima');
+        Route::delete('/gimmicks/{gimmick}',                        [ContractController::class, 'removeGimmick'])->name('gimmicks.remove');
 
-    // ── OPERASI KONTRAK (eProperty SALES → Kontrak) ──
-    Route::prefix('operasi-kontrak')->name('sales.kontrak-ops.')->group(function (): void {
-        $c = \App\Http\Controllers\Web\Sales\ContractOperationController::class;
-        Route::get('/',                  [$c, 'index'])->name('index');
-        Route::get('/cari',              [$c, 'find'])->name('find');
-        Route::get('/ppn',               [$c, 'ppn'])->name('ppn');
-        Route::post('/ppn/preview',      [$c, 'ppnPreview'])->name('ppn.preview');
-        Route::post('/ppn/apply',        [$c, 'ppnApply'])->name('ppn.apply');
-        Route::get('/{type}',            [$c, 'operation'])->name('operation');
-        Route::post('/{type}/apply',     [$c, 'apply'])->name('apply');
-    });
+        // ── OPERASI KONTRAK (eProperty SALES → Kontrak) ──
+        Route::prefix('operasi-kontrak')->name('sales.kontrak-ops.')->group(function (): void {
+            $c = \App\Http\Controllers\Web\Sales\ContractOperationController::class;
+            Route::get('/',                  [$c, 'index'])->name('index');
+            Route::get('/cari',              [$c, 'find'])->name('find');
+            Route::get('/ppn',               [$c, 'ppn'])->name('ppn');
+            Route::post('/ppn/preview',      [$c, 'ppnPreview'])->name('ppn.preview');
+            Route::post('/ppn/apply',        [$c, 'ppnApply'])->name('ppn.apply');
+            Route::get('/{type}',            [$c, 'operation'])->name('operation');
+            Route::post('/{type}/apply',     [$c, 'apply'])->name('apply');
+        });
 
-    // ── MIGRASI DATA (eProperty SALES → Migrate) ──
-    Route::prefix('sales/migrasi')->name('sales.migrasi.')->group(function (): void {
-        $c = \App\Http\Controllers\Web\Sales\MigrationController::class;
-        Route::get('/',                  [$c, 'index'])->name('index');
-        Route::get('/{type}/template',   [$c, 'template'])->whereIn('type', ['jadwal', 'pembayaran', 'kontrak'])->name('template');
-        Route::post('/{type}',           [$c, 'upload'])->whereIn('type', ['jadwal', 'pembayaran', 'kontrak'])->name('upload');
-    });
+        // ── MIGRASI DATA (eProperty SALES → Migrate) ──
+        Route::prefix('sales/migrasi')->name('sales.migrasi.')->group(function (): void {
+            $c = \App\Http\Controllers\Web\Sales\MigrationController::class;
+            Route::get('/',                  [$c, 'index'])->name('index');
+            Route::get('/{type}/template',   [$c, 'template'])->whereIn('type', ['jadwal', 'pembayaran', 'kontrak'])->name('template');
+            Route::post('/{type}',           [$c, 'upload'])->whereIn('type', ['jadwal', 'pembayaran', 'kontrak'])->name('upload');
+        });
 
-    Route::get('/exceptions',                                 [ExceptionController::class, 'index'])->name('exceptions.index');
-    Route::post('/bookings/{booking}/gn',                     [ExceptionController::class, 'requestGn'])->name('bookings.gn');
-    Route::post('/bookings/{booking}/gu',                     [ExceptionController::class, 'requestGu'])->name('bookings.gu');
-    Route::post('/bookings/{booking}/reschedule',             [ExceptionController::class, 'requestReschedule'])->name('bookings.reschedule');
+        Route::get('/exceptions',                                 [ExceptionController::class, 'index'])->name('exceptions.index');
+        Route::post('/bookings/{booking}/gn',                     [ExceptionController::class, 'requestGn'])->name('bookings.gn');
+        Route::post('/bookings/{booking}/gu',                     [ExceptionController::class, 'requestGu'])->name('bookings.gu');
+        Route::post('/bookings/{booking}/reschedule',             [ExceptionController::class, 'requestReschedule'])->name('bookings.reschedule');
+
+    }
 
     // ── FINANCE ─────────────────────────────────────────────
     Route::get('/tts',                                        [TtsController::class, 'index'])->name('tts.index');
@@ -377,23 +397,30 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
     Route::put('/finance/rekening/{rekening}',   [\App\Http\Controllers\Web\Finance\BankAccountController::class, 'update'])->name('rekening.update');
     Route::delete('/finance/rekening/{rekening}',[\App\Http\Controllers\Web\Finance\BankAccountController::class, 'destroy'])->name('rekening.destroy');
 
-    // ── COLLECTION ──────────────────────────────────────────
-    Route::get('/followups',                                  [FollowupController::class, 'index'])->name('followups.index');
-    Route::post('/followups',                                 [FollowupController::class, 'store'])->name('followups.store');
-    Route::get('/dendas',                                     [DendaController::class, 'index'])->name('dendas.index');
-    // Perumusan Denda (setup rumus) + Pemutihan Denda (waive massal)
-    Route::get('/perumusan-denda',   [\App\Http\Controllers\Web\Collection\PerumusanDendaController::class, 'index'])->name('denda.perumusan');
-    Route::put('/perumusan-denda',   [\App\Http\Controllers\Web\Collection\PerumusanDendaController::class, 'update'])->name('denda.perumusan.update');
-    Route::get('/pemutihan-denda',   [\App\Http\Controllers\Web\Collection\PemutihanDendaController::class, 'index'])->name('denda.pemutihan');
-    Route::post('/pemutihan-denda/waive', [\App\Http\Controllers\Web\Collection\PemutihanDendaController::class, 'waive'])->name('denda.pemutihan.waive');
-    Route::get('/pjt',                                        [PjtController::class, 'index'])->name('pjt.index');
-    Route::post('/pjt/regenerate',                            [PjtController::class, 'regenerate'])->name('pjt.regenerate');
-    Route::get('/tunggakan',                                  [TunggakanController::class, 'index'])->name('tunggakan.index');
-    Route::get('/surat-peringatan',                           [SpController::class, 'index'])->name('sp.index');
-    Route::post('/surat-peringatan/{tunggakan}/issue',        [SpController::class, 'issue'])->name('sp.issue');
-    Route::get('/surat-peringatan/{sp}/print',                [SpController::class, 'print'])->name('sp.print'); // #118
-    Route::get('/surat-peringatan/{sp}',                      [SpController::class, 'show'])->name('sp.show');
-    // SKL sub-module dihapus (#119) — routes, controller, page, model, action, PDF & seeder dibersihkan.
+    // COLLECTION sudah PINDAH ke FO. Rutenya dimatikan lewat sakelar, bukan dihapus:
+    // menu yang hilang dari sidebar tidak menutup apa pun — alamatnya masih bisa
+    // diketik, dan halaman lama masih bisa MENULIS ke data yang kini dikelola FO.
+    // Kembalikan dengan BO_MODUL_COLLECTION_AKTIF=true di .env, tanpa deploy ulang.
+    if (config('modul_pindah_fo.collection')) {
+        // ── COLLECTION ──────────────────────────────────────────
+        Route::get('/followups',                                  [FollowupController::class, 'index'])->name('followups.index');
+        Route::post('/followups',                                 [FollowupController::class, 'store'])->name('followups.store');
+        Route::get('/dendas',                                     [DendaController::class, 'index'])->name('dendas.index');
+        // Perumusan Denda (setup rumus) + Pemutihan Denda (waive massal)
+        Route::get('/perumusan-denda',   [\App\Http\Controllers\Web\Collection\PerumusanDendaController::class, 'index'])->name('denda.perumusan');
+        Route::put('/perumusan-denda',   [\App\Http\Controllers\Web\Collection\PerumusanDendaController::class, 'update'])->name('denda.perumusan.update');
+        Route::get('/pemutihan-denda',   [\App\Http\Controllers\Web\Collection\PemutihanDendaController::class, 'index'])->name('denda.pemutihan');
+        Route::post('/pemutihan-denda/waive', [\App\Http\Controllers\Web\Collection\PemutihanDendaController::class, 'waive'])->name('denda.pemutihan.waive');
+        Route::get('/pjt',                                        [PjtController::class, 'index'])->name('pjt.index');
+        Route::post('/pjt/regenerate',                            [PjtController::class, 'regenerate'])->name('pjt.regenerate');
+        Route::get('/tunggakan',                                  [TunggakanController::class, 'index'])->name('tunggakan.index');
+        Route::get('/surat-peringatan',                           [SpController::class, 'index'])->name('sp.index');
+        Route::post('/surat-peringatan/{tunggakan}/issue',        [SpController::class, 'issue'])->name('sp.issue');
+        Route::get('/surat-peringatan/{sp}/print',                [SpController::class, 'print'])->name('sp.print'); // #118
+        Route::get('/surat-peringatan/{sp}',                      [SpController::class, 'show'])->name('sp.show');
+        // SKL sub-module dihapus (#119) — routes, controller, page, model, action, PDF & seeder dibersihkan.
+
+    }
 
     // ── BANK LOAN ──────────────────────────────────────────
     // Master Data KPR — rekap per-SPR (harus SEBELUM /kpr/{kpr} agar tidak tertangkap wildcard).
