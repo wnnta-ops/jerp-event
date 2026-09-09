@@ -20,7 +20,7 @@ class CashBookController extends Controller
 {
     public function index(Request $request): Response
     {
-        abort_unless($request->user()?->canModule('cashbook'), 403);
+        abort_unless($request->user()?->can('cashbook.transaction.view'), 403);
 
         $accId = $request->integer('account_id') ?: null;
 
@@ -284,7 +284,7 @@ class CashBookController extends Controller
 
     public function create(Request $request): Response
     {
-        abort_unless($request->user()?->canModule('cashbook'), 403);
+        abort_unless($request->user()?->can('cashbook.transaction.create'), 403);
 
         // #148: kunci jenis transaksi sesuai konteks pembuka form.
         // ?type=in → hanya Penerimaan Bank ; ?type=transfer → hanya Transfer Antar Rekening ;
@@ -305,7 +305,7 @@ class CashBookController extends Controller
 
     public function store(Request $request, RecordCashTransaction $action): RedirectResponse
     {
-        abort_unless($request->user()?->canModule('cashbook'), 403);
+        abort_unless($request->user()?->can('cashbook.transaction.create'), 403);
 
         $v = $request->validate($this->rules(), [], $this->attributes());
 
@@ -320,7 +320,7 @@ class CashBookController extends Controller
 
     public function show(Request $request, BsCashTransaction $cashTransaction): Response
     {
-        abort_unless($request->user()?->canModule('cashbook'), 403);
+        abort_unless($request->user()?->can('cashbook.transaction.view'), 403);
 
         return Inertia::render('BusinessSupport/CashBook/Show', [
             'trx'   => $cashTransaction->load([
@@ -334,7 +334,7 @@ class CashBookController extends Controller
     /** #16: form edit transaksi kas. */
     public function edit(Request $request, BsCashTransaction $cashTransaction): Response
     {
-        abort_unless($request->user()?->canModule('cashbook'), 403);
+        abort_unless($request->user()?->can('cashbook.transaction.update'), 403);
 
         return Inertia::render('BusinessSupport/CashBook/Form', [
             'types'           => BsCashTransaction::TYPES,
@@ -361,7 +361,7 @@ class CashBookController extends Controller
     /** #16: simpan perubahan transaksi kas (ganti jurnal lama dengan baru). */
     public function update(Request $request, BsCashTransaction $cashTransaction, RecordCashTransaction $action): RedirectResponse
     {
-        abort_unless($request->user()?->canModule('cashbook'), 403);
+        abort_unless($request->user()?->can('cashbook.transaction.update'), 403);
 
         $v = $request->validate($this->rules(), [], $this->attributes());
 
@@ -378,7 +378,7 @@ class CashBookController extends Controller
     /** Hub Cash Book — direktori sub-modul + ringkasan kas/bank. */
     public function hub(Request $request): Response
     {
-        abort_unless($request->user()?->canModule('cashbook'), 403);
+        abort_unless($request->user()?->can('cashbook.hub.view'), 403);
 
         $cash = $this->cashAccounts();
         $saldo = (float) BsJournalLine::query()
@@ -403,14 +403,14 @@ class CashBookController extends Controller
     /** Print-Out — hub cetak laporan Cash Book. */
     public function printHub(Request $request): Response
     {
-        abort_unless($request->user()?->canModule('cashbook'), 403);
+        abort_unless($request->user()?->can('cashbook.print.view'), 403);
 
         return Inertia::render('BusinessSupport/CashBook/PrintHub');
     }
 
     public function balances(Request $request): Response
     {
-        abort_unless($request->user()?->canModule('cashbook'), 403);
+        abort_unless($request->user()?->can('cashbook.saldo.view'), 403);
 
         // #84: saldo "per tanggal". Default hari ini; param tak valid → fallback hari ini (tidak 500).
         // Catatan: $request->date() MELEMPAR pada input tak terurai, jadi dibungkus rescue().
@@ -442,7 +442,7 @@ class CashBookController extends Controller
     /** Rekening Ledger — buku besar mutasi per rekening kas/bank dengan saldo berjalan. */
     public function ledger(Request $request): Response
     {
-        abort_unless($request->user()?->canModule('cashbook'), 403);
+        abort_unless($request->user()?->can('cashbook.ledger.view'), 403);
 
         $accountId = $request->integer('account_id') ?: null;
         $from = $request->input('from');
@@ -530,7 +530,7 @@ class CashBookController extends Controller
     /** Simpan tag kategori arus kas (Direct/Indirect) untuk satu mutasi Rekening Ledger. */
     public function ledgerCf(Request $request): \Illuminate\Http\RedirectResponse
     {
-        abort_unless($request->user()?->canModule('cashbook'), 403);
+        abort_unless($request->user()?->can('cashbook.ledger.view'), 403);
         $v = $request->validate([
             'journal_line_id'         => ['required', 'integer', 'exists:bs_journal_lines,id'],
             'cf_direct_category_id'   => ['nullable', 'integer', 'exists:bs_cash_flow_categories,id'],
@@ -547,7 +547,7 @@ class CashBookController extends Controller
     /** Simpan pembagian cluster untuk satu mutasi Rekening Ledger (replace-all baris cluster). */
     public function ledgerClusters(Request $request): \Illuminate\Http\RedirectResponse
     {
-        abort_unless($request->user()?->canModule('cashbook'), 403);
+        abort_unless($request->user()?->can('cashbook.ledger.view'), 403);
         $v = $request->validate([
             'journal_line_id'     => ['required', 'integer', 'exists:bs_journal_lines,id'],
             'splits'              => ['array'],
@@ -611,7 +611,7 @@ class CashBookController extends Controller
     /** Kalender Cek Giro — jatuh tempo cek/giro masuk & keluar per bulan. */
     public function giroCalendar(Request $request): Response
     {
-        abort_unless($request->user()?->canModule('cashbook'), 403);
+        abort_unless($request->user()?->can('cashbook.giro-calendar.view'), 403);
 
         $month = (string) ($request->input('month') ?: now()->format('Y-m'));
         $start = rescue(fn () => \Illuminate\Support\Carbon::createFromFormat('Y-m', $month)->startOfMonth(), now()->startOfMonth(), false);
@@ -644,7 +644,7 @@ class CashBookController extends Controller
     /** Approval Pengeluaran Kas & Bank — antrian BKK (out) menunggu persetujuan. */
     public function approvals(Request $request): Response
     {
-        abort_unless($request->user()?->canModule('cashbook'), 403);
+        abort_unless($request->user()?->can('cashbook.transaction.approve'), 403);
 
         $rows = BsCashTransaction::query()
             ->where('trx_type', 'out')->where('approval_status', 'pending')
@@ -785,7 +785,7 @@ class CashBookController extends Controller
     /** #129: Download mutasi rekening (mengikuti filter layar) ke Excel (.xls). */
     public function export(Request $request): \Illuminate\Http\Response
     {
-        abort_unless($request->user()?->canModule('cashbook'), 403);
+        abort_unless($request->user()?->can('cashbook.transaction.export'), 403);
 
         $accId = $request->integer('account_id') ?: null;
         $ids = $this->selectedIds($request);
@@ -939,7 +939,7 @@ class CashBookController extends Controller
     /** #129/#9: PDF pasangan dari export() — mutasi rekening (1 rekening / Semua Rekening) siap-cetak. */
     public function exportPdf(Request $request): \Illuminate\Http\Response
     {
-        abort_unless($request->user()?->canModule('cashbook'), 403);
+        abort_unless($request->user()?->can('cashbook.transaction.export'), 403);
 
         $accId = $request->integer('account_id') ?: null;
         $ids = $this->selectedIds($request);
@@ -1093,7 +1093,7 @@ class CashBookController extends Controller
     /** #9: Rekening Ledger → Excel (.xls). */
     public function ledgerExcel(Request $request): \Illuminate\Http\Response
     {
-        abort_unless($request->user()?->canModule('cashbook'), 403);
+        abort_unless($request->user()?->can('cashbook.ledger.view'), 403);
 
         $d  = $this->ledgerExport($request);
         $e  = fn ($s) => htmlspecialchars((string) $s, ENT_QUOTES, 'UTF-8');
@@ -1114,7 +1114,7 @@ class CashBookController extends Controller
     /** #9: Rekening Ledger → PDF (HTML A4 auto-print). */
     public function ledgerPdf(Request $request): \Illuminate\Http\Response
     {
-        abort_unless($request->user()?->canModule('cashbook'), 403);
+        abort_unless($request->user()?->can('cashbook.ledger.view'), 403);
 
         $d  = $this->ledgerExport($request);
         $e  = fn ($s) => htmlspecialchars((string) $s, ENT_QUOTES, 'UTF-8');
@@ -1154,7 +1154,7 @@ class CashBookController extends Controller
     /** #9: Saldo Rekening → Excel (.xls). */
     public function balancesExcel(Request $request): \Illuminate\Http\Response
     {
-        abort_unless($request->user()?->canModule('cashbook'), 403);
+        abort_unless($request->user()?->can('cashbook.saldo.view'), 403);
 
         $d  = $this->balancesExport($request);
         $e  = fn ($s) => htmlspecialchars((string) $s, ENT_QUOTES, 'UTF-8');
@@ -1173,7 +1173,7 @@ class CashBookController extends Controller
     /** #9: Saldo Rekening → PDF (HTML A4 auto-print). */
     public function balancesPdf(Request $request): \Illuminate\Http\Response
     {
-        abort_unless($request->user()?->canModule('cashbook'), 403);
+        abort_unless($request->user()?->can('cashbook.saldo.view'), 403);
 
         $d  = $this->balancesExport($request);
         $e  = fn ($s) => htmlspecialchars((string) $s, ENT_QUOTES, 'UTF-8');
@@ -1219,7 +1219,7 @@ class CashBookController extends Controller
     /** #9: Kalender Cek Giro → Excel (.xls). */
     public function giroCalendarExcel(Request $request): \Illuminate\Http\Response
     {
-        abort_unless($request->user()?->canModule('cashbook'), 403);
+        abort_unless($request->user()?->can('cashbook.giro-calendar.view'), 403);
 
         $d  = $this->giroCalendarExport($request);
         $e  = fn ($s) => htmlspecialchars((string) $s, ENT_QUOTES, 'UTF-8');
@@ -1239,7 +1239,7 @@ class CashBookController extends Controller
     /** #9: Kalender Cek Giro → PDF (HTML A4 auto-print). */
     public function giroCalendarPdf(Request $request): \Illuminate\Http\Response
     {
-        abort_unless($request->user()?->canModule('cashbook'), 403);
+        abort_unless($request->user()?->can('cashbook.giro-calendar.view'), 403);
 
         $d  = $this->giroCalendarExport($request);
         $e  = fn ($s) => htmlspecialchars((string) $s, ENT_QUOTES, 'UTF-8');
@@ -1259,7 +1259,7 @@ class CashBookController extends Controller
     /** #130: Cetak bukti transaksi kas (BKM/BKK/Transfer) — auto-print, layout eProperty + logo. */
     public function print(Request $request, BsCashTransaction $cashTransaction): \Illuminate\Http\Response
     {
-        abort_unless($request->user()?->canModule('cashbook'), 403);
+        abort_unless($request->user()?->can('cashbook.transaction.print'), 403);
 
         $cashTransaction->load(['cashAccount:id,code,name', 'counterAccount:id,code,name', 'lines.account:id,code,name']);
         $createdBy = $cashTransaction->created_by ? \App\Models\User::find($cashTransaction->created_by)?->name : null;
@@ -1276,7 +1276,7 @@ class CashBookController extends Controller
      */
     public function printBulk(Request $request): \Illuminate\Http\Response
     {
-        abort_unless($request->user()?->canModule('cashbook'), 403);
+        abort_unless($request->user()?->can('cashbook.transaction.print'), 403);
 
         $ids = $this->selectedIds($request);
         abort_if($ids === [], 400, 'Belum ada transaksi yang dicentang.');

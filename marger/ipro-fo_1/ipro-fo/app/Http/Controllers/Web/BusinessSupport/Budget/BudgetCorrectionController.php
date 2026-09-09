@@ -21,7 +21,7 @@ class BudgetCorrectionController extends Controller
 {
     public function index(Request $request): Response
     {
-        abort_unless($request->user()?->canModule('budget'), 403);
+        abort_unless($request->user()?->can('budget.correction.view'), 403);
         $year = (int) $request->integer('year', (int) now()->year);
         // Gate approval: default hanya koreksi yang SUDAH di-approve.
         $status = (string) $request->input('status', 'approved');
@@ -49,7 +49,7 @@ class BudgetCorrectionController extends Controller
     /** Wizard koreksi — daftar master budget approved untuk dipilih. */
     public function create(Request $request): Response
     {
-        abort_unless($request->user()?->canModule('budget'), 403);
+        abort_unless($request->user()?->can('budget.correction.create'), 403);
         $year = (int) $request->integer('year', (int) now()->year);
 
         $budgets = BsBudget::with(['account:id,code,name', 'costCenter:id,code,name'])
@@ -67,7 +67,7 @@ class BudgetCorrectionController extends Controller
 
     public function store(Request $request): RedirectResponse
     {
-        abort_unless($request->user()?->canModule('budget'), 403);
+        abort_unless($request->user()?->can('budget.correction.create'), 403);
         $v = $request->validate([
             'budget_id'   => ['required', 'integer', 'exists:bs_budgets,id'],
             'corr_date'   => ['required', 'date'],
@@ -94,7 +94,7 @@ class BudgetCorrectionController extends Controller
     /** Inbox approval batch koreksi. */
     public function approvals(Request $request): Response
     {
-        abort_unless($request->user()?->canModule('budget'), 403);
+        abort_unless($request->user()?->can('budget.correction.approve'), 403);
 
         $rows = BsBudgetCorrection::with(['account:id,code,name', 'costCenter:id,code,name'])
             ->where('status', 'baru')->orderBy('doc_no')->get()

@@ -26,7 +26,7 @@ class BudgetController extends Controller
     /** Hub modul Budget Control (mirror menu eProperty BO /BC/). */
     public function hub(Request $request): Response
     {
-        abort_unless($request->user()?->canModule('budget'), 403);
+        abort_unless($request->user()?->can('budget.master.view'), 403);
 
         $year    = (int) now()->year;
         $budgets = BsBudget::where('year', $year)->get();
@@ -53,14 +53,14 @@ class BudgetController extends Controller
     /** Print-Out — hub cetak laporan Budget Control. */
     public function printHub(Request $request): Response
     {
-        abort_unless($request->user()?->canModule('budget'), 403);
+        abort_unless($request->user()?->can('budget.report.print'), 403);
 
         return Inertia::render('BusinessSupport/Budget/PrintHub');
     }
 
     public function index(Request $request): Response
     {
-        abort_unless($request->user()?->canModule('budget'), 403);
+        abort_unless($request->user()?->can('budget.master.view'), 403);
 
         $year = (int) $request->integer('year', (int) now()->year);
         // Gate approval: default hanya tampilkan anggaran yang SUDAH di-approve.
@@ -115,7 +115,7 @@ class BudgetController extends Controller
     /** Approval Budget Control — inbox batch master budget yang diajukan. */
     public function approvals(Request $request): Response
     {
-        abort_unless($request->user()?->canModule('budget'), 403);
+        abort_unless($request->user()?->can('budget.master.approve'), 403);
 
         $rows = BsBudget::with(['account:id,code,name', 'costCenter:id,code,name'])
             ->where('status', 'submitted')->orderBy('doc_no')->get()
@@ -325,7 +325,7 @@ class BudgetController extends Controller
     /** Export Budget Control ke Excel (.xls) dengan anggaran & realisasi per bulan (Jan–Des). */
     public function export(Request $request): \Illuminate\Http\Response
     {
-        abort_unless($request->user()?->canModule('budget'), 403);
+        abort_unless($request->user()?->can('budget.master.export'), 403);
         $year    = (int) $request->integer('year', (int) now()->year);
         $budgets = BsBudget::with(['account:id,code,name', 'costCenter:id,code,name'])->where('year', $year)->orderBy('doc_no')->get();
 

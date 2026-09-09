@@ -33,7 +33,7 @@ class CogsSetupController extends Controller
     // ── Lokasi ──
     public function locationIndex(Request $request): Response
     {
-        abort_unless($request->user()?->canModule('cogs'), 403);
+        abort_unless($request->user()?->can('cogs.location.view'), 403);
 
         return Inertia::render('BusinessSupport/Cogs/Setup/Location', [
             'rows'     => BsCogsLocation::orderBy('code')->get(),
@@ -69,7 +69,7 @@ class CogsSetupController extends Controller
     // ── Ketentuan (per project) ──
     public function provisionIndex(Request $request): Response
     {
-        abort_unless($request->user()?->canModule('cogs'), 403);
+        abort_unless($request->user()?->can('cogs.provision.view'), 403);
 
         return Inertia::render('BusinessSupport/Cogs/Setup/Provision', [
             'rows'     => BsCogsProvision::get(),
@@ -100,7 +100,7 @@ class CogsSetupController extends Controller
     // ── Set Akun Budget (Kategori Budget + komponen + COA) ──
     public function categoryIndex(Request $request): Response
     {
-        abort_unless($request->user()?->canModule('cogs'), 403);
+        abort_unless($request->user()?->can('cogs.category.view'), 403);
 
         return Inertia::render('BusinessSupport/Cogs/Setup/Category', [
             'rows'       => BsCogsCategory::with('defaultAccount:id,code,name')->orderBy('code')->get(),
@@ -137,7 +137,7 @@ class CogsSetupController extends Controller
     // ── Set COA Jenis Unit ──
     public function unitCoaIndex(Request $request): Response
     {
-        abort_unless($request->user()?->canModule('cogs'), 403);
+        abort_unless($request->user()?->can('cogs.unitcoa.view'), 403);
 
         return Inertia::render('BusinessSupport/Cogs/Setup/UnitCoa', [
             'rows'     => BsCogsUnitTypeAccount::with('account:id,code,name')->get(),
@@ -166,7 +166,7 @@ class CogsSetupController extends Controller
     // ── Budget (manual) ──
     public function budgetIndex(Request $request): Response
     {
-        abort_unless($request->user()?->canModule('cogs'), 403);
+        abort_unless($request->user()?->can('cogs.budget.view'), 403);
         $year = (int) $request->integer('year', (int) now()->year);
 
         $rows = BsCogsBudget::with(['category:id,code,name,component', 'location:id,code,name', 'account:id,code,name'])
@@ -224,7 +224,7 @@ class CogsSetupController extends Controller
     // ── Uploads (CSV) ──
     public function uploadForm(Request $request, string $kind): Response
     {
-        abort_unless($request->user()?->canModule('cogs'), 403);
+        abort_unless($request->user()?->can('cogs.upload.nilai'), 403);
         $meta = [
             'kategori' => ['title' => 'Upload Kategori Budget', 'header' => ['code', 'name', 'component'], 'route' => 'bs.cogs.upload.kategori.store'],
             'akun'     => ['title' => 'Upload Akun Budget', 'header' => ['category_code', 'account_code'], 'route' => 'bs.cogs.upload.akun.store'],

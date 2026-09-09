@@ -29,7 +29,7 @@ class ApInvoiceController extends Controller
 {
     public function index(Request $request): Response
     {
-        abort_unless($request->user()?->canModule('ap'), 403);
+        abort_unless($request->user()?->can('ap.invoice.view'), 403);
 
         // Semua invoice dikirim ke klien; filter per-kolom & ringkasan dihitung di sisi klien
         // agar kotak summary mengikuti hasil filter. Total & Sisa = nett (setelah PPN & PPh).
@@ -70,7 +70,7 @@ class ApInvoiceController extends Controller
     /** Hub Account Payable — direktori sub-modul + ringkasan hutang. */
     public function hub(Request $request): Response
     {
-        abort_unless($request->user()?->canModule('ap'), 403);
+        abort_unless($request->user()?->can('ap.printhub'), 403);
 
         $openTotal = (float) BsApInvoice::where('status', 'open')->sum('total');
         $openPaid  = (float) BsApInvoice::where('status', 'open')->sum('paid_amount');
@@ -93,7 +93,7 @@ class ApInvoiceController extends Controller
     /** Landing per sub-modul AP (grup BO) — detail item muncul di halaman ini. */
     public function section(Request $request, string $section): Response
     {
-        abort_unless($request->user()?->canModule('ap'), 403);
+        abort_unless($request->user()?->can('ap.invoice.view'), 403);
         $titles = [
             'general'      => 'General Function',
             'setup'        => 'Setup',
@@ -117,7 +117,7 @@ class ApInvoiceController extends Controller
     /** Export daftar AP ke Excel (.xls) — mengikuti filter status/search. */
     public function export(Request $request): \Illuminate\Http\Response
     {
-        abort_unless($request->user()?->canModule('ap'), 403);
+        abort_unless($request->user()?->can('ap.invoice.view'), 403);
 
         $rows = BsApInvoice::query()
             ->with('supplier:id,code,name')
@@ -157,7 +157,7 @@ class ApInvoiceController extends Controller
     /** Laporan Invoice Hutang — pilih periode tanggal & supplier dulu, tarik data (preview), lalu unduh .xls. */
     public function report(Request $request): Response
     {
-        abort_unless($request->user()?->canModule('ap'), 403);
+        abort_unless($request->user()?->can('ap.invoice.view'), 403);
 
         $dateFrom   = $request->input('date_from') ?: null;
         $dateTo     = $request->input('date_to') ?: null;
@@ -198,7 +198,7 @@ class ApInvoiceController extends Controller
 
     public function create(Request $request): Response
     {
-        abort_unless($request->user()?->canModule('ap'), 403);
+        abort_unless($request->user()?->can('ap.invoice.create'), 403);
 
         // Unit + customer (dari booking terbaru per unit) untuk tag invoice — cari cepat by kode unit / nama customer.
         $unitCustomer = DB::table('bookings')
@@ -251,7 +251,7 @@ class ApInvoiceController extends Controller
 
     public function store(Request $request, RegisterApInvoice $action, \App\Domain\BusinessSupport\Services\BudgetGuardService $budgetGuard): \Symfony\Component\HttpFoundation\Response
     {
-        abort_unless($request->user()?->canModule('ap'), 403);
+        abort_unless($request->user()?->can('ap.invoice.create'), 403);
 
         $v = $request->validate([
             'supplier_id'         => ['required', 'integer', 'exists:bs_suppliers,id'],
@@ -340,7 +340,7 @@ class ApInvoiceController extends Controller
 
     public function show(Request $request, BsApInvoice $invoice): Response
     {
-        abort_unless($request->user()?->canModule('ap'), 403);
+        abort_unless($request->user()?->can('ap.invoice.show'), 403);
 
         $invoice->load([
             'supplier:id,code,name', 'category:id,code,name',
@@ -433,7 +433,7 @@ class ApInvoiceController extends Controller
     /** Simpan / hapus catatan kelengkapan berkas (free-text) pada rincian AP.INV. */
     public function updateBerkasNotes(Request $request, BsApInvoice $invoice): RedirectResponse
     {
-        abort_unless($request->user()?->canModule('ap'), 403);
+        abort_unless($request->user()?->can('ap.berkas.update'), 403);
 
         $data = $request->validate(['notes' => ['nullable', 'string', 'max:5000']]);
         $invoice->update(['berkas_notes' => ($data['notes'] ?? '') !== '' ? $data['notes'] : null]);
@@ -454,7 +454,7 @@ class ApInvoiceController extends Controller
      */
     public function updateBerkasFinance(Request $request, BsApInvoice $invoice): RedirectResponse
     {
-        abort_unless($request->user()?->canModule('ap'), 403);
+        abort_unless($request->user()?->can('ap.berkas.update'), 403);
         abort_unless($this->isFinance($request), 403, 'Hanya Dept Finance yang boleh mengisi tanggal berkas diterima Finance.');
 
         $data = $request->validate(['berkas_finance_date' => ['nullable', 'date']], [], [
@@ -512,7 +512,7 @@ class ApInvoiceController extends Controller
     /** #51: Cetak bukti hutang supplier + riwayat pembayaran (auto-print). */
     public function print(Request $request, BsApInvoice $invoice): \Illuminate\Http\Response
     {
-        abort_unless($request->user()?->canModule('ap'), 403);
+        abort_unless($request->user()?->can('ap.invoice.print'), 403);
 
         $invoice->load(['supplier:id,code,name', 'lines', 'payments' => fn ($q) => $q->orderBy('payment_date')->orderBy('id')]);
         $accNames = BsAccount::whereIn('id', $invoice->payments->pluck('cash_account_id')->filter()->unique())->pluck('name', 'id');
@@ -606,7 +606,7 @@ class ApInvoiceController extends Controller
     /** Cetak "Memo Internal" + "Bukti Permohonan Pembayaran" (layout eProperty MI) di akhir registrasi. */
     public function memo(Request $request, BsApInvoice $invoice): \Illuminate\Http\Response
     {
-        abort_unless($request->user()?->canModule('ap'), 403);
+        abort_unless($request->user()?->can('ap.memo'), 403);
 
         $invoice->load([
             'supplier:id,code,name,bank_name,bank_account_no,bank_account_name',
@@ -879,7 +879,7 @@ HTML;
 
     public function pay(Request $request, BsApInvoice $invoice, PayApInvoice $action): RedirectResponse
     {
-        abort_unless($request->user()?->canModule('ap'), 403);
+        abort_unless($request->user()?->can('ap.invoice.pay'), 403);
 
         $v = $request->validate([
             'payment_date'    => ['required', 'date'],
@@ -900,7 +900,7 @@ HTML;
     /** Aging Hutang — umur hutang per supplier (Summary) atau per invoice (Detail). */
     public function aging(Request $request): Response
     {
-        abort_unless($request->user()?->canModule('ap'), 403);
+        abort_unless($request->user()?->can('ap.aging.view'), 403);
 
         $view   = $request->input('view') === 'detail' ? 'detail' : 'summary';
         $pulled = $request->boolean('pull'); // data baru ditarik setelah klik "Tampilkan" → hindari load berat
@@ -1011,7 +1011,7 @@ HTML;
     /** #139: Export Aging Hutang ke Excel (.xls) — ringkasan per supplier + detail per invoice. */
     public function agingExportExcel(Request $request): \Illuminate\Http\Response
     {
-        abort_unless($request->user()?->canModule('ap'), 403);
+        abort_unless($request->user()?->can('ap.aging.export'), 403);
 
         [$rows, $totals, $details, $asOf, $dateFrom] = $this->computeAging($request->input('date_to'), $request->input('date_from'));
 
@@ -1043,7 +1043,7 @@ HTML;
     /** #139: Cetak Aging Hutang (HTML siap-cetak / PDF) — auto-print. */
     public function agingExportPdf(Request $request): \Illuminate\Http\Response
     {
-        abort_unless($request->user()?->canModule('ap'), 403);
+        abort_unless($request->user()?->can('ap.aging.export'), 403);
 
         [$rows, $totals, $details, $asOf, $dateFrom] = $this->computeAging($request->input('date_to'), $request->input('date_from'));
 
@@ -1093,7 +1093,7 @@ HTML;
     /** Kartu Hutang — mutasi per supplier (Detail) atau rekap per supplier (Summary). */
     public function card(Request $request): Response
     {
-        abort_unless($request->user()?->canModule('ap'), 403);
+        abort_unless($request->user()?->can('ap.paycard.view'), 403);
 
         $d = $this->computeCard($request);
 
@@ -1199,7 +1199,7 @@ HTML;
      */
     public function cardExportExcel(Request $request): \Illuminate\Http\Response
     {
-        abort_unless($request->user()?->canModule('ap'), 403);
+        abort_unless($request->user()?->can('ap.paycard.view'), 403);
 
         $d   = $this->computeCard($request);
         $sup = $d['supplierId'] ? $d['suppliers']->firstWhere('id', $d['supplierId']) : null;
@@ -1254,7 +1254,7 @@ HTML;
     /** Kartu Hutang → HTML siap-cetak (PDF), auto-print. Pola sama dengan Aging Hutang. */
     public function cardExportPdf(Request $request): \Illuminate\Http\Response
     {
-        abort_unless($request->user()?->canModule('ap'), 403);
+        abort_unless($request->user()?->can('ap.paycard.view'), 403);
 
         $d   = $this->computeCard($request);
         $sup = $d['supplierId'] ? $d['suppliers']->firstWhere('id', $d['supplierId']) : null;
@@ -1315,7 +1315,7 @@ HTML;
     /** Kartu Pembayaran Hutang — riwayat pembayaran (BsApPayment) per supplier. */
     public function paymentCard(Request $request): Response
     {
-        abort_unless($request->user()?->canModule('ap'), 403);
+        abort_unless($request->user()?->can('ap.paycard.view'), 403);
 
         $supplierId = $request->integer('supplier_id') ?: null;
         $bySupplier = fn ($q) => $q->whereHas('invoice', fn ($w) => $w->where('supplier_id', $supplierId));
@@ -1350,7 +1350,7 @@ HTML;
     /** Export Kartu Pembayaran Hutang ke Excel (.xls). */
     public function paymentCardExportExcel(Request $request): \Illuminate\Http\Response
     {
-        abort_unless($request->user()?->canModule('ap'), 403);
+        abort_unless($request->user()?->can('ap.paycard.view'), 403);
         [$payments, $total, $supplierName] = $this->paymentCardData($request->integer('supplier_id') ?: null);
 
         $e  = fn ($s) => htmlspecialchars((string) $s, ENT_QUOTES, 'UTF-8');
@@ -1373,7 +1373,7 @@ HTML;
     /** Cetak Kartu Pembayaran Hutang (HTML siap-cetak / PDF) — auto-print. */
     public function paymentCardExportPdf(Request $request): \Illuminate\Http\Response
     {
-        abort_unless($request->user()?->canModule('ap'), 403);
+        abort_unless($request->user()?->can('ap.paycard.view'), 403);
         [$payments, $total, $supplierName] = $this->paymentCardData($request->integer('supplier_id') ?: null);
 
         $e   = fn ($s) => htmlspecialchars((string) $s, ENT_QUOTES, 'UTF-8');

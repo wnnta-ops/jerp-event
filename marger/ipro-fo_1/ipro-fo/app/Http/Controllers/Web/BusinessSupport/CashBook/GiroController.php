@@ -18,7 +18,7 @@ class GiroController extends Controller
 {
     public function index(Request $request): Response
     {
-        abort_unless($request->user()?->canModule('cashbook'), 403);
+        abort_unless($request->user()?->can('cashbook.giro.view'), 403);
 
         $rows = BsGiro::query()
             ->when($request->input('status'), fn ($q, $v) => $q->where('status', $v))
@@ -39,7 +39,7 @@ class GiroController extends Controller
     /** Penerimaan Cek Giro — daftar giro "Di Tangan" yang BELUM di-jurnal (kiriman FO / entri manual belum posting) untuk di-"Posting GL". */
     public function penerimaan(Request $request): Response
     {
-        abort_unless($request->user()?->canModule('cashbook'), 403);
+        abort_unless($request->user()?->can('cashbook.giro.view'), 403);
 
         $q = fn () => BsGiro::query()->where('status', 'in_hand')->whereNull('receive_journal_id');
         $rows = $q()->latest('receive_date')->latest('id')->paginate(50)->withQueryString();
@@ -52,7 +52,7 @@ class GiroController extends Controller
 
     public function create(Request $request): Response
     {
-        abort_unless($request->user()?->canModule('cashbook'), 403);
+        abort_unless($request->user()?->can('cashbook.giro.create'), 403);
 
         return Inertia::render('BusinessSupport/CashBook/Giro/Form', [
             // Piutang asal (lawan) → SEMUA akun COA transaksi yang aktif (bisa diketik/cari di dropdown).
@@ -63,7 +63,7 @@ class GiroController extends Controller
 
     public function store(Request $request, GiroService $svc): RedirectResponse
     {
-        abort_unless($request->user()?->canModule('cashbook'), 403);
+        abort_unless($request->user()?->can('cashbook.giro.create'), 403);
 
         $v = $request->validate([
             'receive_date'       => ['required', 'date'],
@@ -86,7 +86,7 @@ class GiroController extends Controller
 
     public function show(Request $request, BsGiro $giro): Response
     {
-        abort_unless($request->user()?->canModule('cashbook'), 403);
+        abort_unless($request->user()?->can('cashbook.giro.view'), 403);
 
         return Inertia::render('BusinessSupport/CashBook/Giro/Show', [
             'giro'         => $giro->load(['counterAccount:id,code,name', 'cashAccount:id,code,name']),
@@ -98,7 +98,7 @@ class GiroController extends Controller
 
     public function clear(Request $request, BsGiro $giro, GiroService $svc): RedirectResponse
     {
-        abort_unless($request->user()?->canModule('cashbook'), 403);
+        abort_unless($request->user()?->can('cashbook.giro.clear'), 403);
 
         $v = $request->validate([
             'settled_date'    => ['required', 'date'],
@@ -116,7 +116,7 @@ class GiroController extends Controller
 
     public function bounce(Request $request, BsGiro $giro, GiroService $svc): RedirectResponse
     {
-        abort_unless($request->user()?->canModule('cashbook'), 403);
+        abort_unless($request->user()?->can('cashbook.giro.bounce'), 403);
 
         // Alasan WAJIB: tolakan warkat harus bisa dipertanggungjawabkan & ditagihkan ulang ke penerbit.
         $v = $request->validate([
@@ -136,7 +136,7 @@ class GiroController extends Controller
     /** Posting GL — post jurnal penerimaan untuk giro Di Tangan yang belum di-jurnal (kiriman FO). */
     public function postGl(Request $request, BsGiro $giro, GiroService $svc): RedirectResponse
     {
-        abort_unless($request->user()?->canModule('cashbook'), 403);
+        abort_unless($request->user()?->can('cashbook.giro.clear'), 403);
 
         try {
             $svc->postReceiveJournal($giro, $request->user()->id);

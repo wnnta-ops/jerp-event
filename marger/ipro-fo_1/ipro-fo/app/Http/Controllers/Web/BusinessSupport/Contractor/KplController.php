@@ -29,7 +29,7 @@ class KplController extends Controller
 {
     public function index(Request $request): Response
     {
-        abort_unless($request->user()?->canModule('contractor'), 403);
+        abort_unless($request->user()?->can('contractor.kpl.view'), 403);
 
         $rows = BsWorkOrderProgress::query()
             ->with(['workOrder:id,spk_number,title,supplier_id,status', 'workOrder.supplier:id,name'])
@@ -44,7 +44,7 @@ class KplController extends Controller
 
     public function create(Request $request): Response
     {
-        abort_unless($request->user()?->canModule('contractor'), 403);
+        abort_unless($request->user()?->can('contractor.kpl.create'), 403);
 
         $spks = BsWorkOrder::with('supplier:id,name')->withCount('units')->where('status', 'active')
             ->orderByDesc('spk_date')->orderByDesc('id')->limit(500)->get()
@@ -66,7 +66,7 @@ class KplController extends Controller
 
     public function store(Request $request, ContractorService $svc): RedirectResponse
     {
-        abort_unless($request->user()?->canModule('contractor'), 403);
+        abort_unless($request->user()?->can('contractor.kpl.create'), 403);
 
         // Mode MASSAL per unit rumah (ada 'units') vs mode tunggal (nilai DPP langsung).
         if ($request->has('units')) {
@@ -147,7 +147,7 @@ class KplController extends Controller
     /** Unit rumah yang dialokasikan pada suatu SPK — Porsi Kontrak = harga satuan alokasi. */
     public function spkUnits(Request $request): JsonResponse
     {
-        abort_unless($request->user()?->canModule('contractor'), 403);
+        abort_unless($request->user()?->can('contractor.kpl.view'), 403);
         $wo    = BsWorkOrder::find((int) $request->input('work_order_id'));
         $units = $wo
             ? $wo->units()->with('unit:id,current_price,base_price')->orderBy('seq')->orderBy('id')->get(['id', 'unit_id', 'unit_code', 'unit_price'])
@@ -165,7 +165,7 @@ class KplController extends Controller
     /** Daftar unit rumah suatu project (untuk registrasi KPL massal — fallback proporsional). */
     public function units(Request $request): JsonResponse
     {
-        abort_unless($request->user()?->canModule('contractor'), 403);
+        abort_unless($request->user()?->can('contractor.kpl.view'), 403);
 
         $projectId = (int) $request->input('project_id');
         $clusterId = (int) $request->input('cluster_id');
@@ -222,7 +222,7 @@ class KplController extends Controller
      */
     public function clusters(Request $request): JsonResponse
     {
-        abort_unless($request->user()?->canModule('contractor'), 403);
+        abort_unless($request->user()?->can('contractor.kpl.view'), 403);
 
         $projectId = (int) $request->input('project_id');
         $clusters  = $projectId > 0
@@ -236,7 +236,7 @@ class KplController extends Controller
     /** Item pekerjaan (BoQ) dari SPK — untuk prefill registrasi INFRA/LAIN-LAIN. */
     public function items(Request $request): JsonResponse
     {
-        abort_unless($request->user()?->canModule('contractor'), 403);
+        abort_unless($request->user()?->can('contractor.kpl.view'), 403);
         $wo    = BsWorkOrder::find((int) $request->input('work_order_id'));
         $items = $wo
             ? $wo->items()->orderBy('seq')->orderBy('id')->get(['description', 'unit', 'qty', 'amount'])
@@ -249,7 +249,7 @@ class KplController extends Controller
     /** Unduh template Excel (.xlsx) registrasi massal — kolom sesuai kategori (housing / infra). */
     public function importTemplate(Request $request): HttpResponse
     {
-        abort_unless($request->user()?->canModule('contractor'), 403);
+        abort_unless($request->user()?->can('contractor.kpl.view'), 403);
         $cat = (string) $request->input('category', 'housing');
 
         if (in_array($cat, ['infra', 'lain_lain'], true)) {
@@ -288,7 +288,7 @@ class KplController extends Controller
     /** Parse file .xlsx/.csv yang diunggah → baris mentah [[c0,c1,...]] (dipetakan di client per kategori). */
     public function importParse(Request $request): JsonResponse
     {
-        abort_unless($request->user()?->canModule('contractor'), 403);
+        abort_unless($request->user()?->can('contractor.kpl.create'), 403);
         // Validasi tipe (mimes) + ukuran (CLAUDE.md §5.10); xlsxRead juga sniff isi (PK/CSV) sbg pertahanan ganda.
         $request->validate(['file' => ['required', 'file', 'mimes:xlsx,xls,csv,txt', 'max:5120']]);
         $rows = $this->xlsxRead($request->file('file')->getRealPath());
@@ -420,7 +420,7 @@ class KplController extends Controller
     /** Detail KPL (dapat diklik dari daftar) + preview angka BAP + tombol Cetak. */
     public function show(Request $request, BsWorkOrderProgress $progress): Response
     {
-        abort_unless($request->user()?->canModule('contractor'), 403);
+        abort_unless($request->user()?->can('contractor.kpl.view'), 403);
         $progress->load(['workOrder:id,spk_number,spk_date,title,supplier_id,contract_value,addendum_value,retention_pct,advance_pct,ppn_pct,project_id,status', 'workOrder.supplier:id,name', 'workOrder.project:id,name']);
 
         return Inertia::render('BusinessSupport/Contractor/Kpl/Show', [
@@ -432,7 +432,7 @@ class KplController extends Controller
     /** Cetak Berita Acara Pembayaran (HTML → window.print). */
     public function bap(Request $request, BsWorkOrderProgress $progress): HttpResponse
     {
-        abort_unless($request->user()?->canModule('contractor'), 403);
+        abort_unless($request->user()?->can('contractor.kpl.update'), 403);
         $progress->load(['workOrder.supplier:id,name', 'workOrder.project:id,name']);
 
         return response($this->renderBap($this->computeBap($progress)))

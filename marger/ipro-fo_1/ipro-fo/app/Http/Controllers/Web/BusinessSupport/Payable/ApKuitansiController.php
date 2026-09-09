@@ -23,7 +23,7 @@ class ApKuitansiController extends Controller
 
     public function index(Request $request): Response
     {
-        abort_unless($request->user()?->canModule('ap'), 403);
+        abort_unless($request->user()?->can('ap.kuitansi.view'), 403);
 
         // Semua kuitansi dikirim; filter per-kolom & ringkasan dihitung di sisi klien (mengikuti filter).
         $rows = BsApKuitansi::with('supplier:id,name')
@@ -46,7 +46,7 @@ class ApKuitansiController extends Controller
 
     public function create(Request $request): Response
     {
-        abort_unless($request->user()?->canModule('ap'), 403);
+        abort_unless($request->user()?->can('ap.kuitansi.create'), 403);
 
         $open = BsApInvoice::where('status', 'open')->with('supplier:id,code,name')->get()
             ->map(fn ($i) => [
@@ -68,7 +68,7 @@ class ApKuitansiController extends Controller
 
     public function store(Request $request, ApKuitansiService $svc): RedirectResponse
     {
-        abort_unless($request->user()?->canModule('ap'), 403);
+        abort_unless($request->user()?->can('ap.kuitansi.store'), 403);
 
         $v = $request->validate([
             'kuitansi_date'       => ['required', 'date'],
@@ -108,7 +108,7 @@ class ApKuitansiController extends Controller
 
     public function show(Request $request, BsApKuitansi $kuitansi): Response
     {
-        abort_unless($request->user()?->canModule('ap'), 403);
+        abort_unless($request->user()?->can('ap.kuitansi.show'), 403);
 
         return Inertia::render('BusinessSupport/Payable/Kuitansi/Show', [
             'kuitansi' => $kuitansi->load([

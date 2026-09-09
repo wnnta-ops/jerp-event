@@ -40,7 +40,7 @@ class CashFlowPlanController extends Controller
 
     public function categories(Request $request): Response
     {
-        abort_unless($request->user()?->canModule('cashbook'), 403);
+        abort_unless($request->user()?->can('cashbook.ledger.view'), 403);
 
         return Inertia::render('BusinessSupport/CashBook/CashFlow/Categories', [
             'categories' => BsCfCategory::orderBy('sort_order')->orderBy('id')->get()
@@ -109,7 +109,7 @@ class CashFlowPlanController extends Controller
 
     public function formulas(Request $request): Response
     {
-        abort_unless($request->user()?->canModule('cashbook'), 403);
+        abort_unless($request->user()?->can('cashbook.ledger.view'), 403);
 
         return Inertia::render('BusinessSupport/CashBook/CashFlow/Formulas', [
             'formulas' => BsCfFormula::orderBy('sort_order')->orderBy('id')->get(['id', 'code', 'name', 'expression', 'description', 'sort_order']),
@@ -134,7 +134,7 @@ class CashFlowPlanController extends Controller
 
     public function report(Request $request): Response
     {
-        abort_unless($request->user()?->canModule('cashbook'), 403);
+        abort_unless($request->user()?->can('cashbook.ledger.view'), 403);
 
         [$year, $upto] = $this->reportPeriod($request);
         $data = $this->reportData($year, $upto);
@@ -154,7 +154,7 @@ class CashFlowPlanController extends Controller
      */
     public function reportExcel(Request $request): BinaryFileResponse
     {
-        abort_unless($request->user()?->canModule('cashbook'), 403);
+        abort_unless($request->user()?->can('cashbook.ledger.view'), 403);
 
         [$year, $upto] = $this->reportPeriod($request);
         ['months' => $months, 'rows' => $rows, 'summary' => $summary, 'opening' => $opening] = $this->reportData($year, $upto);
@@ -434,7 +434,7 @@ class CashFlowPlanController extends Controller
      */
     public function reportTemplate(Request $request): \Symfony\Component\HttpFoundation\Response
     {
-        abort_unless($request->user()?->canModule('cashbook'), 403);
+        abort_unless($request->user()?->can('cashbook.ledger.view'), 403);
 
         $year = (int) ($request->integer('year') ?: now()->year);
         $categories = BsCfCategory::where('is_active', true)->orderBy('sort_order')->orderBy('id')->get();

@@ -20,7 +20,7 @@ class ArMemorialController extends Controller
 {
     public function index(Request $request): Response
     {
-        abort_unless($request->user()?->canModule('ar'), 403);
+        abort_unless($request->user()?->can('ar.memorial.view'), 403);
 
         $rows = BsArMemorial::with(['customer:id,code,full_name', 'counterAccount:id,code,name'])
             ->where('is_writeoff', false)
@@ -36,7 +36,7 @@ class ArMemorialController extends Controller
 
     public function create(Request $request): Response
     {
-        abort_unless($request->user()?->canModule('ar'), 403);
+        abort_unless($request->user()?->can('ar.memorial.view'), 403);
 
         return Inertia::render('BusinessSupport/Receivable/Memorial/Form', [
             'customers'    => Customer::orderBy('full_name')->limit(1000)->get(['id', 'code', 'full_name']),
@@ -50,7 +50,7 @@ class ArMemorialController extends Controller
 
     public function store(Request $request, ArMemorialService $svc): RedirectResponse
     {
-        abort_unless($request->user()?->canModule('ar'), 403);
+        abort_unless($request->user()?->can('ar.memorial.create'), 403);
 
         $v = $request->validate([
             'memorial_date'      => ['required', 'date'],

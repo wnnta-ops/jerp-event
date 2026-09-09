@@ -23,7 +23,7 @@ class JournalImportController extends Controller
 {
     public function form(Request $request): Response
     {
-        abort_unless($request->user()?->canModule('gl'), 403);
+        abort_unless($request->user()?->can('gl.journal.import'), 403);
 
         // Pratinjau di layar dibangun dari SUMBER YANG SAMA dengan berkas templatenya.
         // Sebelumnya kalimat contohnya ditulis ulang di sini sebagai untai CSV — dua salinan
@@ -155,7 +155,7 @@ class JournalImportController extends Controller
     /** Unduh template Excel (.xlsx) berisi header + contoh baris (dapat diisi ratusan baris). */
     public function template(Request $request): \Illuminate\Http\Response
     {
-        abort_unless($request->user()?->canModule('gl'), 403);
+        abort_unless($request->user()?->can('gl.journal.import'), 403);
 
         return $this->xlsxDownload($this->contohBaris(), 'Template-Import-Jurnal.xlsx');
     }

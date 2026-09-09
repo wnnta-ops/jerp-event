@@ -473,7 +473,7 @@ class BankApprovalController extends Controller
     // ── Approval Retensi (retensi pencairan KPR) ──────────────────────────
     public function retensiIndex(Request $request): Response
     {
-        abort_unless($request->user()?->canModule('cashbook'), 403);
+        abort_unless($request->user()?->can('cashbook.approval-retensi.view'), 403);
 
         $accounts = $this->postableAccounts();
         $defaults = $this->retensiAccountDefaults($accounts);
@@ -1204,7 +1204,7 @@ class BankApprovalController extends Controller
      */
     public function utjdpIndex(Request $request, ?string $source = null): Response
     {
-        abort_unless($request->user()?->canModule('cashbook'), 403);
+        abort_unless($request->user()?->can('cashbook.approval-utjdp.view'), 403);
 
         // Pemisah dua submodul: Approval UTJ mengambil sisanya (termasuk data lama yang
         // approval_source-nya masih NULL), Approval DP hanya yang bertanda 'dp'.
@@ -1406,7 +1406,7 @@ class BankApprovalController extends Controller
      */
     public function umIndex(Request $request): Response
     {
-        abort_unless($request->user()?->canModule('cashbook'), 403);
+        abort_unless($request->user()?->can('cashbook.approval-utjdp.view'), 403);
 
         $tab = in_array($request->query('tab'), ['selesai'], true) ? $request->query('tab') : 'pending';
 

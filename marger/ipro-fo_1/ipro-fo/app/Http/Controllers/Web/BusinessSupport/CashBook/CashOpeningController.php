@@ -30,7 +30,7 @@ class CashOpeningController extends Controller
 
     public function index(Request $request): Response
     {
-        abort_unless($request->user()?->canModule('cashbook'), 403);
+        abort_unless($request->user()?->can('cashbook.opening.view'), 403);
 
         $rows = BsCashTransaction::query()
             ->where('reference', 'SALDO-AWAL')
@@ -51,7 +51,7 @@ class CashOpeningController extends Controller
 
     public function store(Request $request, RecordCashTransaction $action): RedirectResponse
     {
-        abort_unless($request->user()?->canModule('cashbook'), 403);
+        abort_unless($request->user()?->can('cashbook.opening.create'), 403);
 
         $v = $request->validate([
             'cash_account_id'    => ['required', 'integer', 'exists:bs_accounts,id'],
@@ -77,7 +77,7 @@ class CashOpeningController extends Controller
     /** Tambah massal saldo awal rekening (banyak baris sekaligus; tiap baris = 1 jurnal otomatis). */
     public function bulkStore(Request $request, RecordCashTransaction $action): RedirectResponse
     {
-        abort_unless($request->user()?->canModule('cashbook'), 403);
+        abort_unless($request->user()?->can('cashbook.opening.create'), 403);
 
         $v = $request->validate([
             'rows'                      => ['required', 'array', 'min:1'],
@@ -117,7 +117,7 @@ class CashOpeningController extends Controller
     /** Unduh template Excel (.xlsx) untuk import massal saldo awal rekening. */
     public function template(Request $request): \Symfony\Component\HttpFoundation\Response
     {
-        abort_unless($request->user()?->canModule('cashbook'), 403);
+        abort_unless($request->user()?->can('cashbook.opening.view'), 403);
 
         $rek   = BsAccount::where('is_postable', true)->where('code', 'like', '101010%')->orderBy('code')->first();
         $lawan = BsAccount::where('is_postable', true)->where('type', 'equity')->orderBy('code')->first()
@@ -144,7 +144,7 @@ class CashOpeningController extends Controller
      */
     public function import(Request $request, RecordCashTransaction $action): RedirectResponse
     {
-        abort_unless($request->user()?->canModule('cashbook'), 403);
+        abort_unless($request->user()?->can('cashbook.opening.create'), 403);
         $request->validate(['file' => ['required', 'file', 'max:8192']]);
 
         $upload = $request->file('file');
@@ -352,7 +352,7 @@ class CashOpeningController extends Controller
 
     public function destroy(Request $request, BsCashTransaction $cashTransaction): RedirectResponse
     {
-        abort_unless($request->user()?->canModule('cashbook'), 403);
+        abort_unless($request->user()?->can('cashbook.opening.delete'), 403);
         abort_unless($cashTransaction->reference === 'SALDO-AWAL', 422, 'Hanya entri saldo awal yang bisa dihapus di sini.');
 
         if ($cashTransaction->journal_id) {

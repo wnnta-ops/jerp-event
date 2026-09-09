@@ -31,7 +31,7 @@ class FakturPajakController extends Controller
     /** Faktur Pajak Keluaran — PPN atas penjualan: AR Invoice + Penjualan Properti (FakturPajak). */
     public function keluaran(Request $request): Response
     {
-        abort_unless($request->user()?->canModule('tax'), 403);
+        abort_unless($request->user()?->can('tax.ppn-keluaran.view'), 403);
         [$year, $month] = $this->period($request);
 
         $rows = $this->keluaranRows($year, $month);
@@ -123,7 +123,7 @@ class FakturPajakController extends Controller
      */
     public function exportKeluaranXlsx(Request $request): \Illuminate\Http\Response
     {
-        abort_unless($request->user()?->canModule('tax'), 403);
+        abort_unless($request->user()?->can('tax.export'), 403);
         [$year, $month] = $this->period($request);
 
         $rows = $this->keluaranRows($year, $month);
@@ -180,7 +180,7 @@ class FakturPajakController extends Controller
     /** Faktur Pajak Masukan — PPN atas pembelian (AP). */
     public function masukan(Request $request): Response
     {
-        abort_unless($request->user()?->canModule('tax'), 403);
+        abort_unless($request->user()?->can('tax.ppn-masukan.view'), 403);
         [$year, $month] = $this->period($request);
 
         $rows = BsApInvoice::with('supplier:id,name,npwp')
@@ -204,7 +204,7 @@ class FakturPajakController extends Controller
     /** Rekap PPN periode — Keluaran − Masukan = Kurang/(Lebih) Bayar, dengan cross-check GL. */
     public function rekap(Request $request): Response
     {
-        abort_unless($request->user()?->canModule('tax'), 403);
+        abort_unless($request->user()?->can('tax.rekap'), 403);
         [$year, $month] = $this->period($request);
 
         // PPN Keluaran = AR Invoice + Penjualan Properti (FakturPajak).
@@ -234,7 +234,7 @@ class FakturPajakController extends Controller
     /** Set / ubah Nomor Seri Faktur Pajak pada invoice AR/AP. */
     public function updateNsfp(Request $request): RedirectResponse
     {
-        abort_unless($request->user()?->canModule('tax'), 403);
+        abort_unless($request->user()?->can('tax.nsfp'), 403);
         $v = $request->validate([
             'type'           => ['required', 'in:keluaran,masukan'],
             'invoice_id'     => ['required', 'integer'],
@@ -256,7 +256,7 @@ class FakturPajakController extends Controller
     /** Input massal NSFP + NPWP untuk seluruh faktur masukan pada masa pajak. */
     public function bulkNsfp(Request $request): RedirectResponse
     {
-        abort_unless($request->user()?->canModule('tax'), 403);
+        abort_unless($request->user()?->can('tax.nsfp'), 403);
         $v = $request->validate([
             'items'                  => ['required', 'array'],
             'items.*.invoice_id'     => ['required', 'integer'],
@@ -290,7 +290,7 @@ class FakturPajakController extends Controller
     /** Set / ubah Nomor Faktur Pajak pada satu entri Retensi / UTJ & DP (harus sudah aktif). */
     public function updateEntryNsfp(Request $request): RedirectResponse
     {
-        abort_unless($request->user()?->canModule('tax'), 403);
+        abort_unless($request->user()?->can('tax.nsfp'), 403);
         $v = $request->validate([
             'entry_id'       => ['required', 'integer'],
             'tax_invoice_no' => ['nullable', 'string', 'max:30'],
@@ -308,7 +308,7 @@ class FakturPajakController extends Controller
     /** Simpan Nomor Faktur Pajak massal untuk baris terpilih (AR Invoice & entri Retensi/UTJ). */
     public function bulkKeluaranNsfp(Request $request): RedirectResponse
     {
-        abort_unless($request->user()?->canModule('tax'), 403);
+        abort_unless($request->user()?->can('tax.nsfp'), 403);
         $v = $request->validate([
             'items'                  => ['required', 'array', 'min:1'],
             'items.*.type'           => ['required', 'in:ar,entry'],
@@ -364,7 +364,7 @@ class FakturPajakController extends Controller
      */
     public function konversiUangMuka(Request $request, BsFakturKeluaranEntry $entry, ConvertUtjDpToUangMuka $action): RedirectResponse
     {
-        abort_unless($request->user()?->canModule('tax'), 403);
+        abort_unless($request->user()?->can('tax.nsfp'), 403);
 
         try {
             $journal = $action->execute($entry, (int) $request->user()->id);
@@ -377,7 +377,7 @@ class FakturPajakController extends Controller
 
     public function exportMasukanXlsx(Request $request): StreamedResponse
     {
-        abort_unless($request->user()?->canModule('tax'), 403);
+        abort_unless($request->user()?->can('tax.export'), 403);
         [$year, $month] = $this->period($request);
 
         return (new FakturPajakMasukanExport($year, $month))->toResponse("faktur-masukan-{$year}-{$month}.xlsx");
@@ -385,7 +385,7 @@ class FakturPajakController extends Controller
 
     public function exportKeluaran(Request $request): StreamedResponse
     {
-        abort_unless($request->user()?->canModule('tax'), 403);
+        abort_unless($request->user()?->can('tax.export'), 403);
         [$year, $month] = $this->period($request);
 
         // Dulu merakit ulang daftarnya sendiri dari DUA sumber saja, sehingga seluruh entri
@@ -405,7 +405,7 @@ class FakturPajakController extends Controller
 
     public function exportMasukan(Request $request): StreamedResponse
     {
-        abort_unless($request->user()?->canModule('tax'), 403);
+        abort_unless($request->user()?->can('tax.export'), 403);
         [$year, $month] = $this->period($request);
         $rows = BsApInvoice::with('supplier:id,name,npwp')->where('ppn_amount', '>', 0)
             ->whereYear('invoice_date', $year)->whereMonth('invoice_date', $month)->orderBy('invoice_date')->get();

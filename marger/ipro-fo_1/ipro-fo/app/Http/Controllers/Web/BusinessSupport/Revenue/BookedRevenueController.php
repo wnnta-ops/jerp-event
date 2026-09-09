@@ -21,7 +21,7 @@ class BookedRevenueController extends Controller
 {
     public function index(Request $request): Response
     {
-        abort_unless($request->user()?->canModule('ar'), 403);
+        abort_unless($request->user()?->can('ar.booked-revenue.view'), 403);
 
         // Record 'cancelled' (data lama) DIKECUALIKAN: booking batal jurnalnya sudah dibalik,
         // net-nol di buku besar — kalau ikut tampil ia terlihat sama dengan booking aktif (kolom
@@ -133,7 +133,7 @@ class BookedRevenueController extends Controller
 
     public function create(Request $request): Response
     {
-        abort_unless($request->user()?->canModule('ar'), 403);
+        abort_unless($request->user()?->can('ar.booked-revenue.create'), 403);
 
         // Unit yang SUDAH punya Booked Revenue aktif (booked/recognized) dikecualikan —
         // yang dibatalkan (cancelled) boleh di-booking ulang.
@@ -216,7 +216,7 @@ class BookedRevenueController extends Controller
 
     public function store(Request $request, BookedRevenueService $svc): RedirectResponse
     {
-        abort_unless($request->user()?->canModule('ar'), 403);
+        abort_unless($request->user()?->can('ar.booked-revenue.create'), 403);
 
         $v = $request->validate([
             'booking_date'    => ['required', 'date'],
@@ -294,7 +294,7 @@ class BookedRevenueController extends Controller
 
     public function show(Request $request, BsBookedRevenue $bookedRevenue): Response
     {
-        abort_unless($request->user()?->canModule('ar'), 403);
+        abort_unless($request->user()?->can('ar.booked-revenue.view'), 403);
 
         $bookedRevenue->load([
             'customer:id,code,full_name,phone,email',
@@ -332,7 +332,7 @@ class BookedRevenueController extends Controller
      */
     public function update(Request $request, BsBookedRevenue $bookedRevenue): RedirectResponse
     {
-        abort_unless($request->user()?->canModule('ar'), 403);
+        abort_unless($request->user()?->can('ar.booked-revenue.create'), 403);
 
         $v = $request->validate([
             'booking_date' => ['required', 'date'],
@@ -355,7 +355,7 @@ class BookedRevenueController extends Controller
 
     public function report(Request $request): Response
     {
-        abort_unless($request->user()?->canModule('ar'), 403);
+        abort_unless($request->user()?->can('ar.booked-revenue.view'), 403);
 
         [$rows, $summary] = $this->reportRows($request);
 
@@ -379,7 +379,7 @@ class BookedRevenueController extends Controller
      */
     public function export(Request $request): \Illuminate\Http\Response
     {
-        abort_unless($request->user()?->canModule('ar'), 403);
+        abort_unless($request->user()?->can('ar.booked-revenue.view'), 403);
 
         $rows = BsBookedRevenue::query()
             ->where('status', '!=', 'cancelled')
@@ -452,7 +452,7 @@ class BookedRevenueController extends Controller
      */
     public function reportExport(Request $request): \Illuminate\Http\Response
     {
-        abort_unless($request->user()?->canModule('ar'), 403);
+        abort_unless($request->user()?->can('ar.booked-revenue.view'), 403);
 
         [$rows, $summary] = $this->reportRows($request);
 
@@ -603,7 +603,7 @@ class BookedRevenueController extends Controller
      */
     public function controlBast(Request $request): Response
     {
-        abort_unless($request->user()?->canModule('ar'), 403);
+        abort_unless($request->user()?->can('ar.booked-revenue.view'), 403);
 
         [$rows, $belum] = $this->bastRows($request);
 
@@ -614,7 +614,7 @@ class BookedRevenueController extends Controller
     /** Ekspor Detail BAST — baris yang sama dengan layarnya. */
     public function exportControlBast(Request $request): \Illuminate\Http\Response
     {
-        abort_unless($request->user()?->canModule('ar'), 403);
+        abort_unless($request->user()?->can('ar.booked-revenue.view'), 403);
 
         [$rows] = $this->bastRows($request);
         // Saringan Sudah/Belum di layar tidak pernah masuk URL, jadi tombolnya yang
@@ -781,7 +781,7 @@ class BookedRevenueController extends Controller
 
     public function controlAjb(Request $request): Response
     {
-        abort_unless($request->user()?->canModule('ar'), 403);
+        abort_unless($request->user()?->can('ar.booked-revenue.view'), 403);
 
         [$rows, $semua, $belumBookings] = $this->ajbRows($request);
 
@@ -800,7 +800,7 @@ class BookedRevenueController extends Controller
     /** Ekspor Detail AJB — baris yang sama dengan layarnya, sesudah saringan yang sama. */
     public function exportControlAjb(Request $request): \Illuminate\Http\Response
     {
-        abort_unless($request->user()?->canModule('ar'), 403);
+        abort_unless($request->user()?->can('ar.booked-revenue.view'), 403);
 
         [$rows] = $this->ajbRows($request);
 
@@ -859,7 +859,7 @@ class BookedRevenueController extends Controller
     /** Control Faktur Pajak — daftar FP per customer/booking. */
     public function controlFakturPajak(Request $request): Response
     {
-        abort_unless($request->user()?->canModule('ar'), 403);
+        abort_unless($request->user()?->can('ar.booked-revenue.view'), 403);
         $base = fn () => \App\Domain\Finance\FakturPajak\Models\FakturPajak::query();
         $rows = $base()
             ->with(['customer:id,full_name,code', 'booking.unit:id,unit_code'])
@@ -897,7 +897,7 @@ class BookedRevenueController extends Controller
     /** Terbitkan BAST (Sudah) utk booking terpilih — satuan / massal (Input Massal). */
     public function issueBast(Request $request, \App\Domain\Legal\Bast\Actions\IssueBast $issue): RedirectResponse
     {
-        abort_unless($request->user()?->canModule('ar'), 403);
+        abort_unless($request->user()?->can('ar.booked-revenue.recognize'), 403);
         $v = $request->validate([
             'booking_ids'   => ['required', 'array', 'min:1'],
             'booking_ids.*' => ['integer', 'exists:bookings,id'],
@@ -928,7 +928,7 @@ class BookedRevenueController extends Controller
     /** Terbitkan AJB (Sudah) utk booking terpilih — satuan / massal. Wajib lunas (dicek IssueAjb). */
     public function issueAjb(Request $request, \App\Domain\Legal\Ajb\Actions\IssueAjb $issue): RedirectResponse
     {
-        abort_unless($request->user()?->canModule('ar'), 403);
+        abort_unless($request->user()?->can('ar.booked-revenue.recognize'), 403);
         $v = $request->validate([
             'booking_ids'   => ['required', 'array', 'min:1'],
             'booking_ids.*' => ['integer', 'exists:bookings,id'],
@@ -964,7 +964,7 @@ class BookedRevenueController extends Controller
     /** Belum Booked Revenue — booking SPR final yg sudah BAST ATAU AJB, tapi belum di-booking revenue. */
     public function belumBooked(Request $request): Response
     {
-        abort_unless($request->user()?->canModule('ar'), 403);
+        abort_unless($request->user()?->can('ar.booked-revenue.view'), 403);
 
         return Inertia::render('BusinessSupport/BookedRevenue/BelumBooked', [
             'rows'    => $this->belumBookedRows($request),
@@ -975,7 +975,7 @@ class BookedRevenueController extends Controller
     /** Ekspor Belum Booked Revenue — baris yang sama dengan layarnya. */
     public function belumBookedExport(Request $request): \Illuminate\Http\Response
     {
-        abort_unless($request->user()?->canModule('ar'), 403);
+        abort_unless($request->user()?->can('ar.booked-revenue.view'), 403);
 
         $rows = $this->belumBookedRows($request);
         // Rumus "siap booking" DISALIN dari layarnya (BelumBooked.vue): kedua tanggal terisi.
@@ -1112,7 +1112,7 @@ class BookedRevenueController extends Controller
      */
     public function bookMassal(Request $request, BookedRevenueService $svc): RedirectResponse
     {
-        abort_unless($request->user()?->canModule('ar'), 403);
+        abort_unless($request->user()?->can('ar.booked-revenue.create'), 403);
         $v = $request->validate([
             'booking_ids'   => ['required', 'array', 'min:1'],
             'booking_ids.*' => ['integer', 'exists:bookings,id'],

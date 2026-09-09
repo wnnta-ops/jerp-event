@@ -37,7 +37,7 @@ class SalesInvoiceController extends Controller
 
     public function index(Request $request): Response
     {
-        abort_unless($request->user()?->canModule('ar'), 403);
+        abort_unless($request->user()?->can('ar.view'), 403);
 
         // Paginasi seperti layar Sudah Booked Revenue — daftarnya tumbuh seiring unit terjual.
         $page = $this->withRelations($this->query($request))->paginate(50)->withQueryString();
@@ -68,7 +68,7 @@ class SalesInvoiceController extends Controller
      */
     public function export(Request $request): \Illuminate\Http\Response
     {
-        abort_unless($request->user()?->canModule('ar'), 403);
+        abort_unless($request->user()?->can('ar.view'), 403);
 
         $rows = $this->withRelations($this->query($request))->get();
         $spr  = $this->sprMap($rows);
@@ -112,7 +112,7 @@ class SalesInvoiceController extends Controller
     /** Cetak massal — 1 invoice per halaman, dalam satu dokumen. */
     public function printBulk(Request $request): \Illuminate\Http\Response
     {
-        abort_unless($request->user()?->canModule('ar'), 403);
+        abort_unless($request->user()?->can('ar.view'), 403);
 
         $ids = $this->selectedIds($request);
         abort_if($ids === [], 400, 'Belum ada baris yang dicentang.');
@@ -132,7 +132,7 @@ class SalesInvoiceController extends Controller
     /** Cetak satu invoice — memakai pembangun lembar yang SAMA dengan cetak massal. */
     public function print(Request $request, BsBookedRevenue $bookedRevenue): \Illuminate\Http\Response
     {
-        abort_unless($request->user()?->canModule('ar'), 403);
+        abort_unless($request->user()?->can('ar.view'), 403);
         abort_if($bookedRevenue->isCancelled(), 404, 'Booked Revenue ini sudah dibatalkan.');
 
         $bookedRevenue->load(['customer', 'unit.unitType', 'unit.project']);

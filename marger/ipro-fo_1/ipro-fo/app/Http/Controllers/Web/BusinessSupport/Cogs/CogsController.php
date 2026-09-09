@@ -28,7 +28,7 @@ class CogsController extends Controller
     /** Hub modul COGS (mirror menu eProperty BO /COGS/). */
     public function hub(Request $request): Response
     {
-        abort_unless($request->user()?->canModule('cogs'), 403);
+        abort_unless($request->user()?->can('cogs.general.view'), 403);
 
         return Inertia::render('BusinessSupport/Cogs/Hub', [
             'summary' => [
@@ -44,14 +44,14 @@ class CogsController extends Controller
 
     public function printHub(Request $request): Response
     {
-        abort_unless($request->user()?->canModule('cogs'), 403);
+        abort_unless($request->user()?->can('cogs.general.print'), 403);
 
         return Inertia::render('BusinessSupport/Cogs/PrintHub');
     }
 
     public function index(Request $request): Response
     {
-        abort_unless($request->user()?->canModule('cogs'), 403);
+        abort_unless($request->user()?->can('cogs.budget.view'), 403);
 
         $rows = BsCogsRecognition::query()
             ->with('inventoryAccount:id,code,name')
@@ -84,7 +84,7 @@ class CogsController extends Controller
 
     public function store(Request $request, CogsService $svc): RedirectResponse
     {
-        abort_unless($request->user()?->canModule('cogs'), 403);
+        abort_unless($request->user()?->can('cogs.budget.create'), 403);
 
         $v = $request->validate([
             'recognition_date'     => ['required', 'date'],
@@ -107,7 +107,7 @@ class CogsController extends Controller
     /** Generate HPP RealCost — hitung biaya riil per unit dari pool CIP, alokasikan ke unit. */
     public function realCost(Request $request): Response
     {
-        abort_unless($request->user()?->canModule('cogs'), 403);
+        abort_unless($request->user()?->can('cogs.realization.view'), 403);
 
         $projectId = $request->integer('project_id') ?: null;
         $cip       = $request->integer('cip_account_id') ?: null;
@@ -127,7 +127,7 @@ class CogsController extends Controller
     /** Posting HPP RealCost — akui HPP unit terjual pada biaya riil teralokasi. */
     public function postRealCost(Request $request, CogsService $svc): RedirectResponse
     {
-        abort_unless($request->user()?->canModule('cogs'), 403);
+        abort_unless($request->user()?->can('cogs.realization.create'), 403);
 
         $v = $request->validate([
             'project_id'       => ['required', 'integer', 'exists:projects,id'],

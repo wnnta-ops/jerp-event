@@ -39,7 +39,7 @@ class PostingInvoiceController extends Controller
      */
     public function index(Request $request): Response
     {
-        abort_unless($request->user()?->canModule('ap'), 403);
+        abort_unless($request->user()?->can('ap.posting.view'), 403);
 
         return Inertia::render('BusinessSupport/Payable/Posting', [
             'refunds'   => $this->antreanFo(),
@@ -50,7 +50,7 @@ class PostingInvoiceController extends Controller
     /** Sub modul "Posting Invoice dari Purchase Order" — HANYA PO yang barangnya sudah diterima. */
     public function poIndex(Request $request): Response
     {
-        abort_unless($request->user()?->canModule('ap'), 403);
+        abort_unless($request->user()?->can('ap.posting.view'), 403);
 
         return Inertia::render('BusinessSupport/Payable/PostingPo', [
             'pos' => $this->antreanPo(),
@@ -60,7 +60,7 @@ class PostingInvoiceController extends Controller
     /** Sub modul "Posting Invoice SPK" — HANYA progress SPK kontraktor yang belum dibayar. */
     public function spkIndex(Request $request): Response
     {
-        abort_unless($request->user()?->canModule('ap'), 403);
+        abort_unless($request->user()?->can('ap.posting.view'), 403);
 
         return Inertia::render('BusinessSupport/Payable/PostingSpk', [
             'progress' => $this->antreanSpk(),
@@ -229,7 +229,7 @@ class PostingInvoiceController extends Controller
     /** Terbitkan invoice hutang dari 1 baris antrian (refund/komisi/blt/gmc) → masuk Account Payable. */
     public function fromRefund(Request $request, JournalService $journal, int $queue): RedirectResponse
     {
-        abort_unless($request->user()?->canModule('ap'), 403);
+        abort_unless($request->user()?->can('ap.posting.create'), 403);
 
         // Supplier WAJIB dipilih (integrasi Supplier Center) — jadi hutang AP tertaut supplier.
         $validated = $request->validate([
@@ -262,7 +262,7 @@ class PostingInvoiceController extends Controller
      */
     public function bulkRefund(Request $request, JournalService $journal): RedirectResponse
     {
-        abort_unless($request->user()?->canModule('ap'), 403);
+        abort_unless($request->user()?->can('ap.posting.create'), 403);
 
         $validated = $request->validate([
             'items'               => ['required', 'array', 'min:1'],
@@ -883,7 +883,7 @@ class PostingInvoiceController extends Controller
 
     public function fromPo(Request $request, BsPurchaseOrder $po): RedirectResponse
     {
-        abort_unless($request->user()?->canModule('ap'), 403);
+        abort_unless($request->user()?->can('ap.posting.create'), 403);
 
         if (BsApInvoice::where('source_type', 'po')->where('source_id', $po->id)->exists()) {
             return back()->with('error', 'PO ini sudah diposting menjadi invoice.');
@@ -916,7 +916,7 @@ class PostingInvoiceController extends Controller
 
     public function fromSpk(Request $request, BsWorkOrderProgress $progress): RedirectResponse
     {
-        abort_unless($request->user()?->canModule('ap'), 403);
+        abort_unless($request->user()?->can('ap.posting.create'), 403);
 
         if ($progress->status !== 'unpaid' || BsApInvoice::where('source_type', 'spk')->where('source_id', $progress->id)->exists()) {
             return back()->with('error', 'Progress ini sudah diposting / dibayar.');

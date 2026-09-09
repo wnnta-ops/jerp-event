@@ -24,7 +24,7 @@ class ApOpeningController extends Controller
 {
     public function index(Request $request): Response
     {
-        abort_unless($request->user()?->canModule('ap'), 403);
+        abort_unless($request->user()?->can('ap.opening.view'), 403);
 
         $rows = BsApInvoice::query()
             ->where('trx_type', 'saldo_awal')
@@ -45,7 +45,7 @@ class ApOpeningController extends Controller
 
     public function store(Request $request): RedirectResponse
     {
-        abort_unless($request->user()?->canModule('ap'), 403);
+        abort_unless($request->user()?->can('ap.opening.create'), 403);
 
         $v = $request->validate([
             'invoice_number'     => ['required', 'string', 'max:64'],
@@ -80,7 +80,7 @@ class ApOpeningController extends Controller
 
     public function bulkStore(Request $request): RedirectResponse
     {
-        abort_unless($request->user()?->canModule('ap'), 403);
+        abort_unless($request->user()?->can('ap.opening.create'), 403);
 
         $v = $request->validate([
             'rows'                      => ['required', 'array', 'min:1'],
@@ -131,7 +131,7 @@ class ApOpeningController extends Controller
      */
     public function template(Request $request): \Symfony\Component\HttpFoundation\Response
     {
-        abort_unless($request->user()?->canModule('ap'), 403);
+        abort_unless($request->user()?->can('ap.opening.view'), 403);
 
         $supplier = BsSupplier::orderBy('code')->first();
         $account  = BsAccount::where('is_postable', true)->where('type', 'liability')->orderBy('code')->first();
@@ -161,7 +161,7 @@ class ApOpeningController extends Controller
      */
     public function import(Request $request): RedirectResponse
     {
-        abort_unless($request->user()?->canModule('ap'), 403);
+        abort_unless($request->user()?->can('ap.opening.create'), 403);
         $request->validate(['file' => ['required', 'file', 'max:8192']]);
 
         $upload = $request->file('file');
@@ -396,7 +396,7 @@ class ApOpeningController extends Controller
 
     public function destroy(Request $request, BsApInvoice $invoice): RedirectResponse
     {
-        abort_unless($request->user()?->canModule('ap'), 403);
+        abort_unless($request->user()?->can('ap.opening.delete'), 403);
         abort_unless($invoice->trx_type === 'saldo_awal' && (float) $invoice->paid_amount < 0.01, 422, 'Hanya saldo awal yang belum dibayar yang bisa dihapus.');
 
         $invoice->delete();

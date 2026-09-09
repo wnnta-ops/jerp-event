@@ -20,7 +20,7 @@ class ComparativeReportController extends Controller
     /** Neraca Lajur (worksheet 10 kolom): Neraca Saldo · Laba Rugi · Neraca. */
     public function worksheet(Request $request): Response
     {
-        abort_unless($request->user()?->canModule('gl'), 403);
+        abort_unless($request->user()?->can('gl.worksheet.view'), 403);
 
         return Inertia::render('BusinessSupport/Gl/Worksheet', $this->worksheetData($request));
     }
@@ -28,7 +28,7 @@ class ComparativeReportController extends Controller
     /** Export Neraca Lajur ke Excel (.xlsx) — tahun yang sedang ditampilkan. */
     public function worksheetExport(Request $request): StreamedResponse
     {
-        abort_unless($request->user()?->canModule('gl'), 403);
+        abort_unless($request->user()?->can('gl.worksheet.view'), 403);
 
         $d = $this->worksheetData($request);
         $rows = [
@@ -111,7 +111,7 @@ class ComparativeReportController extends Controller
     /** Komparasi bulanan: Laba Rugi & Neraca per bulan dalam satu tahun. */
     public function comparative(Request $request): Response
     {
-        abort_unless($request->user()?->canModule('gl'), 403);
+        abort_unless($request->user()?->can('gl.comparative.view'), 403);
 
         $year = (int) $request->integer('year', (int) now()->year);
 

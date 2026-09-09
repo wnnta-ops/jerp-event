@@ -25,7 +25,7 @@ class SpkDraftController extends Controller
 {
     public function edit(Request $request): Response
     {
-        abort_unless($request->user()?->canModule('contractor'), 403);
+        abort_unless($request->user()?->can('contractor.spk.update'), 403);
 
         $jenis = self::normalizeJenis($request->input('jenis'));
         $draft = self::findDraft($jenis);

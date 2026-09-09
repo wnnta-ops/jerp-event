@@ -29,7 +29,7 @@ class OutgoingChequeController extends Controller
 {
     public function index(Request $request): Response
     {
-        abort_unless($request->user()?->canModule('cashbook'), 403);
+        abort_unless($request->user()?->can('cashbook.cheque-out.view'), 403);
 
         $rows = BsOutgoingCheque::query()
             ->with('bankAccount:id,code,name')
@@ -62,7 +62,7 @@ class OutgoingChequeController extends Controller
 
     public function create(Request $request): Response
     {
-        abort_unless($request->user()?->canModule('cashbook'), 403);
+        abort_unless($request->user()?->can('cashbook.cheque-out.create'), 403);
 
         return Inertia::render('BusinessSupport/CashBook/OutgoingCheque/Form', [
             'bankAccounts' => $this->bankAccounts(),
@@ -82,7 +82,7 @@ class OutgoingChequeController extends Controller
 
     public function store(Request $request): RedirectResponse
     {
-        abort_unless($request->user()?->canModule('cashbook'), 403);
+        abort_unless($request->user()?->can('cashbook.cheque-out.create'), 403);
 
         $v = $request->validate([
             'cheque_number'        => ['required', 'string', 'max:80'],
@@ -190,7 +190,7 @@ class OutgoingChequeController extends Controller
 
     public function show(Request $request, BsOutgoingCheque $cheque): Response
     {
-        abort_unless($request->user()?->canModule('cashbook'), 403);
+        abort_unless($request->user()?->can('cashbook.cheque-out.view'), 403);
 
         return Inertia::render('BusinessSupport/CashBook/OutgoingCheque/Show', [
             'cheque'   => $cheque->load([
@@ -224,7 +224,7 @@ class OutgoingChequeController extends Controller
 
     public function importForm(Request $request): Response
     {
-        abort_unless($request->user()?->canModule('cashbook'), 403);
+        abort_unless($request->user()?->can('cashbook.cheque-out.import'), 403);
 
         return Inertia::render('BusinessSupport/CashBook/OutgoingCheque/Import', [
             'bankAccounts' => $this->bankAccounts(),
@@ -233,7 +233,7 @@ class OutgoingChequeController extends Controller
 
     public function import(Request $request): RedirectResponse
     {
-        abort_unless($request->user()?->canModule('cashbook'), 403);
+        abort_unless($request->user()?->can('cashbook.cheque-out.import'), 403);
         $request->validate(['file' => ['required', 'file', 'max:2048']]);
 
         // #85 hanya Excel .xlsx. Cek via ekstensi klien (deteksi MIME xlsx kadang keliru jadi application/zip).
@@ -342,7 +342,7 @@ class OutgoingChequeController extends Controller
 
     public function importTemplate(Request $request): HttpResponse
     {
-        abort_unless($request->user()?->canModule('cashbook'), 403);
+        abort_unless($request->user()?->can('cashbook.cheque-out.view'), 403);
 
         $bin = SimpleXlsx::toString([
             ['NO_BG_CEK', 'BANK', 'JENIS'],
@@ -361,7 +361,7 @@ class OutgoingChequeController extends Controller
     /** Serahkan ke supplier/vendor → status beredar. #153 jurnal otomatis: Dr Hutang / Cr BG-Cek Beredar. */
     public function handover(Request $request, BsOutgoingCheque $cheque, OutgoingChequeService $svc): RedirectResponse
     {
-        abort_unless($request->user()?->canModule('cashbook'), 403);
+        abort_unless($request->user()?->can('cashbook.cheque-out.handover'), 403);
         $v = $request->validate([
             'handover_date'          => ['required', 'date'],
             // Pelunasan hutang dipilih saat penyerahan (opsional) — supplier + beberapa invoice.
@@ -422,7 +422,7 @@ class OutgoingChequeController extends Controller
     /** Dicairkan oleh supplier/vendor → status cair. #8 jurnal otomatis: Dr Hutang / Cr Bank (pelunasan hutang saat cair) — legacy/pihak ketiga: Dr BG-Cek Beredar / Cr Bank. */
     public function clear(Request $request, BsOutgoingCheque $cheque, OutgoingChequeService $svc): RedirectResponse
     {
-        abort_unless($request->user()?->canModule('cashbook'), 403);
+        abort_unless($request->user()?->can('cashbook.cheque-out.clear'), 403);
         $v = $request->validate(['cleared_date' => ['required', 'date']]);
 
         if ($cheque->status === 'cleared') {
@@ -447,7 +447,7 @@ class OutgoingChequeController extends Controller
     /** #74 VOID — batalkan warkat. #153 bila sempat beredar, pembalik jurnal penyerahan diposting otomatis. */
     public function void(Request $request, BsOutgoingCheque $cheque, OutgoingChequeService $svc): RedirectResponse
     {
-        abort_unless($request->user()?->canModule('cashbook'), 403);
+        abort_unless($request->user()?->can('cashbook.cheque-out.void'), 403);
         $v = $request->validate(['void_reason' => ['nullable', 'string', 'max:255']]);
 
         if ($cheque->status === 'cleared') {
@@ -469,7 +469,7 @@ class OutgoingChequeController extends Controller
     /** #73 Alat cetak BG/Cek — mode: with (default) / without (tanpa tanggal) / dateonly (hanya tanggal). */
     public function print(Request $request, BsOutgoingCheque $cheque): HttpResponse
     {
-        abort_unless($request->user()?->canModule('cashbook'), 403);
+        abort_unless($request->user()?->can('cashbook.cheque-out.print'), 403);
         $cheque->load('bankAccount:id,code,name');
 
         $mode = in_array($request->query('mode'), ['with', 'without', 'dateonly'], true)

@@ -106,7 +106,7 @@ class ContractorQueryController extends Controller
     /** Rekap SPK. */
     public function rekap(Request $request): Response
     {
-        abort_unless($request->user()?->canModule('contractor'), 403);
+        abort_unless($request->user()?->can('contractor.query.view'), 403);
         $f = $this->filters($request);
         $rows = $this->rekapRows($f);
 
@@ -119,7 +119,7 @@ class ContractorQueryController extends Controller
     /** Kartu Hutang Supplier - SPK: per-SPK hutang (net termin) vs terbayar. */
     public function kartuHutang(Request $request): Response
     {
-        abort_unless($request->user()?->canModule('contractor'), 403);
+        abort_unless($request->user()?->can('contractor.query.view'), 403);
         $f = $this->filters($request);
         $rows = $this->kartuRows($f);
 
@@ -132,7 +132,7 @@ class ContractorQueryController extends Controller
     /** Laporan Pemakaian Barang. */
     public function pemakaian(Request $request): Response
     {
-        abort_unless($request->user()?->canModule('contractor'), 403);
+        abort_unless($request->user()?->can('contractor.query.view'), 403);
         $f = $this->filters($request);
         $rows = $this->pemakaianRows($f);
 
@@ -145,7 +145,7 @@ class ContractorQueryController extends Controller
     /** Summary SPK — agregasi per project & jenis. */
     public function summary(Request $request): Response
     {
-        abort_unless($request->user()?->canModule('contractor'), 403);
+        abort_unless($request->user()?->can('contractor.query.view'), 403);
         $f = $this->filters($request);
         $rows = $this->summaryRows($f);
 
@@ -158,7 +158,7 @@ class ContractorQueryController extends Controller
     /** Export Excel (.xls) untuk 4 query — mengikuti filter periode & project/jenis di layar. */
     public function export(Request $request, string $type): \Illuminate\Http\Response
     {
-        abort_unless($request->user()?->canModule('contractor'), 403);
+        abort_unless($request->user()?->can('contractor.query.view'), 403);
         $f = $this->filters($request);
 
         if ($type === 'kartu-hutang') {

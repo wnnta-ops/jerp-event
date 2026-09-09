@@ -20,7 +20,7 @@ class CogsBudgetMutationController extends Controller
 {
     public function index(Request $request): Response
     {
-        abort_unless($request->user()?->canModule('cogs'), 403);
+        abort_unless($request->user()?->can('cogs.mutation.view'), 403);
         $year = (int) $request->integer('year', (int) now()->year);
 
         $rows = BsCogsBudgetMutation::with(['fromBudget.category:id,code,name', 'toBudget.category:id,code,name'])
@@ -38,7 +38,7 @@ class CogsBudgetMutationController extends Controller
 
     public function create(Request $request): Response
     {
-        abort_unless($request->user()?->canModule('cogs'), 403);
+        abort_unless($request->user()?->can('cogs.mutation.create'), 403);
         $year = (int) $request->integer('year', (int) now()->year);
 
         $budgets = BsCogsBudget::with(['category:id,code,name', 'location:id,name'])
@@ -56,7 +56,7 @@ class CogsBudgetMutationController extends Controller
 
     public function store(Request $request): RedirectResponse
     {
-        abort_unless($request->user()?->canModule('cogs'), 403);
+        abort_unless($request->user()?->can('cogs.mutation.create'), 403);
         $v = $request->validate([
             'project_id'     => ['required', 'integer'],
             'kind'           => ['required', 'in:transfer,koreksi'],
@@ -89,7 +89,7 @@ class CogsBudgetMutationController extends Controller
 
     public function approvals(Request $request): Response
     {
-        abort_unless($request->user()?->canModule('cogs'), 403);
+        abort_unless($request->user()?->can('cogs.mutation.approve'), 403);
 
         $rows = BsCogsBudgetMutation::with(['fromBudget.category:id,code', 'toBudget.category:id,code'])
             ->where('status', 'baru')->orderBy('id')->get()

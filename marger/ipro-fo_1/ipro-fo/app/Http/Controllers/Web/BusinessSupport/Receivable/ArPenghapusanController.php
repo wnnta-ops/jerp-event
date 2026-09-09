@@ -22,7 +22,7 @@ class ArPenghapusanController extends Controller
 {
     public function index(Request $request): Response
     {
-        abort_unless($request->user()?->canModule('ar'), 403);
+        abort_unless($request->user()?->can('ar.penghapusan.view'), 403);
 
         $rows = BsArInvoice::where('status', 'open')->with('customer:id,code,full_name')
             ->when($request->input('search'), fn ($q, $s) => $q->where(fn ($w) => $w->where('invoice_number', 'like', "%{$s}%")->orWhere('description', 'like', "%{$s}%")))

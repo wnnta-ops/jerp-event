@@ -26,7 +26,7 @@ class PettyCashController extends Controller
 
     public function index(Request $request): Response
     {
-        abort_unless($request->user()?->canModule('cashbook'), 403);
+        abort_unless($request->user()?->can('cashbook.pettycash.view'), 403);
 
         // Jangan 500 bila akun Kas Kecil belum ada — tampilkan halaman kosong + peringatan.
         $pettyId = (int) BsAccount::where('code', self::PETTY_CODE)->value('id');
@@ -110,7 +110,7 @@ class PettyCashController extends Controller
     /** Download mutasi Kas Kecil (mengikuti filter layar Dari/Sampai) ke Excel (.xls) — pola #129. */
     public function export(Request $request): \Illuminate\Http\Response
     {
-        abort_unless($request->user()?->canModule('cashbook'), 403);
+        abort_unless($request->user()?->can('cashbook.pettycash.view'), 403);
 
         $pettyId = (int) BsAccount::where('code', self::PETTY_CODE)->value('id');
         $e  = fn ($s) => htmlspecialchars((string) $s, ENT_QUOTES, 'UTF-8');
@@ -158,7 +158,7 @@ class PettyCashController extends Controller
 
     public function create(Request $request): Response
     {
-        abort_unless($request->user()?->canModule('cashbook'), 403);
+        abort_unless($request->user()?->can('cashbook.pettycash.create'), 403);
 
         // #52: sumber dana top-up = bank/kas + akun dari customer (Uang Muka Penjualan, Piutang)
         // + dari karyawan (Uang Muka Operasional / refund bon sementara).
@@ -181,7 +181,7 @@ class PettyCashController extends Controller
 
     public function store(Request $request, RecordCashTransaction $action): RedirectResponse
     {
-        abort_unless($request->user()?->canModule('cashbook'), 403);
+        abort_unless($request->user()?->can('cashbook.pettycash.create'), 403);
 
         $v = $request->validate([
             'trx_type'           => ['required', 'in:in,out'],

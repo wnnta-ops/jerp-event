@@ -31,7 +31,7 @@ class GimmickCategoryController extends Controller
 
     public function index(Request $request): Response
     {
-        abort_unless($request->user()?->canModule('ap'), 403);
+        abort_unless($request->user()?->can('ap.category.view'), 403);
 
         // cluster dimuat withTrashed: kategori yang menunjuk cluster sudah dipensiunkan akan
         // memulangkan relasi kosong bila disaring, sehingga barisnya berbohong "Semua cluster"

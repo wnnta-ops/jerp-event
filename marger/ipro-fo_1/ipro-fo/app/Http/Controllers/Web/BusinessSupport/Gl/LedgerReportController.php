@@ -20,7 +20,7 @@ class LedgerReportController extends Controller
     /** Buku Besar (General Ledger) per akun dengan saldo berjalan. */
     public function ledger(Request $request): Response
     {
-        abort_unless($request->user()?->canModule('gl'), 403);
+        abort_unless($request->user()?->can('gl.ledger.view'), 403);
         $data = $this->ledgerData($request);
 
         return Inertia::render('BusinessSupport/Gl/Ledger', [
@@ -117,7 +117,7 @@ class LedgerReportController extends Controller
      */
     public function trialBalance(Request $request): Response
     {
-        abort_unless($request->user()?->canModule('gl'), 403);
+        abort_unless($request->user()?->can('gl.trialbalance.view'), 403);
 
         $data = $this->trialBalanceData($request);
 
@@ -136,7 +136,7 @@ class LedgerReportController extends Controller
     /** Export Neraca Saldo ke Excel (.xls) mengikuti filter aktif. */
     public function trialBalanceExport(Request $request): \Illuminate\Http\Response
     {
-        abort_unless($request->user()?->canModule('gl'), 403);
+        abort_unless($request->user()?->can('gl.trialbalance.view'), 403);
 
         $data = $this->trialBalanceData($request);
         $file = 'Neraca-Saldo-'.$this->periodSlug($data).'.xls';
@@ -150,7 +150,7 @@ class LedgerReportController extends Controller
     /** Halaman cetak Neraca Saldo (auto print) mengikuti filter aktif. */
     public function trialBalancePrint(Request $request): \Illuminate\Http\Response
     {
-        abort_unless($request->user()?->canModule('gl'), 403);
+        abort_unless($request->user()?->can('gl.trialbalance.view'), 403);
 
         $data = $this->trialBalanceData($request);
 
@@ -271,7 +271,7 @@ class LedgerReportController extends Controller
     /** Neraca (Balance Sheet) + Laba Rugi (Income Statement). */
     public function financials(Request $request): Response
     {
-        abort_unless($request->user()?->canModule('gl'), 403);
+        abort_unless($request->user()?->can('gl.financials.view'), 403);
 
         $year = $request->integer('year') ?: null;
         $b = $this->accountBalances($year);
@@ -315,7 +315,7 @@ class LedgerReportController extends Controller
      */
     public function balanceSheet(Request $request): Response
     {
-        abort_unless($request->user()?->canModule('gl'), 403);
+        abort_unless($request->user()?->can('gl.financials.view'), 403);
 
         return Inertia::render('BusinessSupport/Gl/BalanceSheet', $this->balanceSheetData($request));
     }
@@ -323,7 +323,7 @@ class LedgerReportController extends Controller
     /** Export Neraca ke Excel (.xlsx) — per tanggal yang sedang ditampilkan. */
     public function balanceSheetExport(Request $request): StreamedResponse
     {
-        abort_unless($request->user()?->canModule('gl'), 403);
+        abort_unless($request->user()?->can('gl.financials.view'), 403);
 
         $d = $this->balanceSheetData($request);
         $rows = [
@@ -455,7 +455,7 @@ class LedgerReportController extends Controller
     /** Laporan Laba Rugi (Income Statement) — berkategori sesuai format eProperty. */
     public function incomeStatement(Request $request): Response
     {
-        abort_unless($request->user()?->canModule('gl'), 403);
+        abort_unless($request->user()?->can('gl.financials.view'), 403);
 
         return Inertia::render('BusinessSupport/Gl/IncomeStatement', $this->incomeStatementData($request));
     }
@@ -463,7 +463,7 @@ class LedgerReportController extends Controller
     /** Export Laporan Laba Rugi ke Excel (.xlsx) — periode yang sedang ditampilkan. */
     public function incomeStatementExport(Request $request): StreamedResponse
     {
-        abort_unless($request->user()?->canModule('gl'), 403);
+        abort_unless($request->user()?->can('gl.financials.view'), 403);
 
         $d = $this->incomeStatementData($request);
         $rows = [
@@ -602,7 +602,7 @@ class LedgerReportController extends Controller
      */
     public function incomeVsBudget(Request $request): Response
     {
-        abort_unless($request->user()?->canModule('gl'), 403);
+        abort_unless($request->user()?->can('gl.financials.view'), 403);
 
         return Inertia::render('BusinessSupport/Gl/IncomeVsBudget', $this->incomeVsBudgetData($request));
     }
@@ -610,7 +610,7 @@ class LedgerReportController extends Controller
     /** Export Laba Rugi vs Budget ke Excel (.xlsx) — periode yang sedang ditampilkan. */
     public function incomeVsBudgetExport(Request $request): StreamedResponse
     {
-        abort_unless($request->user()?->canModule('gl'), 403);
+        abort_unless($request->user()?->can('gl.financials.view'), 403);
 
         $d = $this->incomeVsBudgetData($request);
         $rows = [

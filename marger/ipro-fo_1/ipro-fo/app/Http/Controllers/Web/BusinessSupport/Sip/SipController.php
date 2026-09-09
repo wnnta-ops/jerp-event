@@ -28,7 +28,7 @@ class SipController extends Controller
 {
     public function index(Request $request): Response
     {
-        abort_unless($request->user()?->canModule('bs'), 403);
+        abort_unless($request->user()?->can('bs.sip.view'), 403);
 
         // Filter PERIODE atas Tanggal SIP (sip_date). Tanggal tak berformat diabaikan agar
         // ketikan setengah jadi tidak mengosongkan daftar. Bila periode awal melewati periode
@@ -111,7 +111,7 @@ class SipController extends Controller
 
     public function create(Request $request): Response
     {
-        abort_unless($request->user()?->canModule('bs'), 403);
+        abort_unless($request->user()?->can('bs.sip.create'), 403);
 
         $src = $this->selectableSources();
 
@@ -124,7 +124,7 @@ class SipController extends Controller
 
     public function store(Request $request, SipService $svc): RedirectResponse
     {
-        abort_unless($request->user()?->canModule('bs'), 403);
+        abort_unless($request->user()?->can('bs.sip.create'), 403);
 
         $v = $this->validateData($request);
 
@@ -140,7 +140,7 @@ class SipController extends Controller
     /** #124 — Edit SIP: hanya staf finance pembuat, selama belum disetujui penuh / dibatalkan. */
     public function edit(Request $request, BsSip $sip): Response
     {
-        abort_unless($request->user()?->canModule('bs'), 403);
+        abort_unless($request->user()?->can('bs.sip.update'), 403);
         abort_if((int) $sip->created_by !== (int) $request->user()->id, 403);
         // #174: SIP yang DITOLAK tidak diedit — finance memulai dari awal (buat SIP baru); item sudah kembali ke daftar.
         abort_if(in_array($sip->status, ['approved', 'cancelled', 'rejected'], true), 403);
@@ -174,7 +174,7 @@ class SipController extends Controller
 
     public function update(Request $request, BsSip $sip, SipService $svc): RedirectResponse
     {
-        abort_unless($request->user()?->canModule('bs'), 403);
+        abort_unless($request->user()?->can('bs.sip.update'), 403);
         abort_if((int) $sip->created_by !== (int) $request->user()->id, 403);
         // #174: SIP yang DITOLAK tidak diedit — finance memulai dari awal (buat SIP baru); item sudah kembali ke daftar.
         abort_if(in_array($sip->status, ['approved', 'cancelled', 'rejected'], true), 403);
@@ -192,7 +192,7 @@ class SipController extends Controller
 
     public function show(Request $request, BsSip $sip): Response
     {
-        abort_unless($request->user()?->canModule('bs'), 403);
+        abort_unless($request->user()?->can('bs.sip.view'), 403);
 
         return Inertia::render('BusinessSupport/Sip/Show', [
             'sip'      => $sip->load(['cashAccount:id,code,name', 'lines.cashAccount:id,code,name']),
@@ -249,7 +249,7 @@ class SipController extends Controller
 
     public function print(Request $request, BsSip $sip): HttpResponse
     {
-        abort_unless($request->user()?->canModule('bs'), 403);
+        abort_unless($request->user()?->can('bs.sip.print'), 403);
         // sourceable ikut dimuat: departemen pengaju dibaca dari dokumen asalnya
         // (bon sementara punya department_id; invoice hutang lewat pembuatnya).
         $sip->load(['cashAccount:id,code,name', 'lines.cashAccount:id,code,name', 'lines.sourceable']);

@@ -31,7 +31,7 @@ class SptPajakController extends Controller
     /** SPT Masa PPN (Formulir Induk 1111) — penyerahan, perolehan, PPN kurang/lebih bayar. */
     public function cetakPpn(Request $request): View
     {
-        abort_unless($request->user()?->canModule('tax'), 403);
+        abort_unless($request->user()?->can('tax.print'), 403);
         [$year, $month] = $this->period($request);
 
         $arPpn   = (float) BsArInvoice::where('ppn_amount', '>', 0)->whereYear('invoice_date', $year)->whereMonth('invoice_date', $month)->sum('ppn_amount');
@@ -54,7 +54,7 @@ class SptPajakController extends Controller
     /** SPT Masa PPh — rekap pemotongan PPh 21/23/4(2)/25 per masa (sumber Payroll + AP). */
     public function cetakPph(Request $request): View
     {
-        abort_unless($request->user()?->canModule('tax'), 403);
+        abort_unless($request->user()?->can('tax.print'), 403);
         [$year, $month] = $this->period($request);
         $codeById = BsAccount::whereIn('code', array_keys(self::PPH_ARTICLES))->pluck('code', 'id');
 
@@ -89,7 +89,7 @@ class SptPajakController extends Controller
     /** Buku Pembantu Pajak — kartu mutasi akun pajak (PPN Keluaran/Masukan, PPh) per masa. */
     public function bukuPembantu(Request $request): View
     {
-        abort_unless($request->user()?->canModule('tax'), 403);
+        abort_unless($request->user()?->can('tax.print'), 403);
         [$year, $month] = $this->period($request);
 
         $accounts = array_merge(
@@ -173,7 +173,7 @@ class SptPajakController extends Controller
     /** e-Faktur — CSV impor (skema FK/LT/OF) untuk Faktur Keluaran. */
     public function efakturCsv(Request $request): StreamedResponse
     {
-        abort_unless($request->user()?->canModule('tax'), 403);
+        abort_unless($request->user()?->can('tax.efaktur'), 403);
         [$year, $month] = $this->period($request);
         $rows = $this->keluaranRows($year, $month);
 
@@ -196,7 +196,7 @@ class SptPajakController extends Controller
     /** e-Faktur — XML bulk (representasi) untuk Faktur Keluaran. */
     public function efakturXml(Request $request): StreamedResponse
     {
-        abort_unless($request->user()?->canModule('tax'), 403);
+        abort_unless($request->user()?->can('tax.efaktur'), 403);
         [$year, $month] = $this->period($request);
         $rows = $this->keluaranRows($year, $month);
         $company = $this->company();

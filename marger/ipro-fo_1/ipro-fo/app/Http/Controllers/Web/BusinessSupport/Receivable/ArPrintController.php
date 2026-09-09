@@ -22,7 +22,7 @@ class ArPrintController extends Controller
     /** Cetak satu bukti piutang. */
     public function invoice(Request $request, BsArInvoice $invoice): Response
     {
-        abort_unless($request->user()?->canModule('ar'), 403);
+        abort_unless($request->user()?->can('ar.view'), 403);
 
         $invoice->load(['customer', 'booking:id,booking_number,unit_id', 'booking.unit:id,unit_code,unit_type_id', 'booking.unit.unitType:id,name']);
 
@@ -32,7 +32,7 @@ class ArPrintController extends Controller
     /** Cetak banyak bukti piutang sekaligus — 1 invoice per halaman. */
     public function invoiceBulk(Request $request): Response
     {
-        abort_unless($request->user()?->canModule('ar'), 403);
+        abort_unless($request->user()?->can('ar.view'), 403);
 
         $ids = $this->selectedIds($request);
         abort_if($ids === [], 400, 'Belum ada baris yang dicentang.');

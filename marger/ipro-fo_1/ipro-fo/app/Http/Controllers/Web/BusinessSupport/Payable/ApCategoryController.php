@@ -19,7 +19,7 @@ class ApCategoryController extends Controller
 {
     public function index(Request $request): Response
     {
-        abort_unless($request->user()?->canModule('ap'), 403);
+        abort_unless($request->user()?->can('ap.category.view'), 403);
 
         $rows = BsApCategory::with(['debitAccount:id,code,name', 'payableAccount:id,code,name'])
             ->when($request->input('search'), fn ($q, $s) => $q->where(fn ($w) => $w->where('code', 'like', "%{$s}%")->orWhere('name', 'like', "%{$s}%")))
@@ -88,7 +88,7 @@ class ApCategoryController extends Controller
      */
     public function template(Request $request): StreamedResponse
     {
-        abort_unless($request->user()?->canModule("ap"), 403);
+        abort_unless($request->user()?->can("ap.category.view"), 403);
 
         $contoh = BsApCategory::with(["debitAccount:id,code", "payableAccount:id,code"])
             ->orderBy("code")->limit(2)->get()

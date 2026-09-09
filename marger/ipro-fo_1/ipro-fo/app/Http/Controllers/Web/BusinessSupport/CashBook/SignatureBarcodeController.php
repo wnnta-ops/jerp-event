@@ -24,7 +24,7 @@ class SignatureBarcodeController extends Controller
 {
     public function index(Request $request): Response
     {
-        abort_unless($request->user()?->canModule('cashbook'), 403);
+        abort_unless($request->user()?->can('cashbook.print.view'), 403);
 
         $rows = BsSignatureBarcode::with('user:id,name,email')
             ->orderBy('id')->get()
@@ -80,7 +80,7 @@ class SignatureBarcodeController extends Controller
      */
     public function preview(Request $request): \Illuminate\Http\JsonResponse
     {
-        abort_unless($request->user()?->canModule('cashbook'), 403);
+        abort_unless($request->user()?->can('cashbook.print.view'), 403);
 
         $code = trim((string) $request->input('code', ''));
 

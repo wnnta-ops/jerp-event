@@ -30,7 +30,7 @@ class JournalDimensionController extends Controller
 
     public function index(Request $request): Response
     {
-        abort_unless($request->user()?->canModule('gl'), 403);
+        abort_unless($request->user()?->can('gl.journal-dimension.view'), 403);
 
         return Inertia::render('BusinessSupport/Setup/JournalDimensions', [
             'departments' => BsDepartment::orderBy('code')->get(['id', 'code', 'name', 'is_active']),

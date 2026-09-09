@@ -21,7 +21,8 @@ class ProjectionController extends Controller
     public function index(Request $request): Response
     {
         // Proyeksi lintas-modul: Hutang (AP) atau Piutang (AR).
-        abort_unless($request->user()?->canModule('ap') || $request->user()?->canModule('ar'), 403);
+        // Proyeksi menggabungkan hutang & piutang, jadi salah satu izin lihat sudah cukup.
+        abort_unless($request->user()?->can('ap.invoice.view') || $request->user()?->can('ar.view'), 403);
 
         $mode  = $request->input('mode') === 'piutang' ? 'piutang' : 'hutang';
         $today = now()->startOfDay();

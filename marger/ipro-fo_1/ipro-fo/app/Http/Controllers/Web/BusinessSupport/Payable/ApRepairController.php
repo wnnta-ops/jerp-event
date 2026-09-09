@@ -21,7 +21,7 @@ class ApRepairController extends Controller
 {
     public function index(Request $request): Response
     {
-        abort_unless($request->user()?->canModule('ap'), 403);
+        abort_unless($request->user()?->can('ap.repair.view'), 403);
 
         return Inertia::render('BusinessSupport/Payable/Repair', [
             'diagnostics' => $this->diagnose(),

@@ -32,7 +32,7 @@ class BudgetAllocationController extends Controller
 
     public function index(Request $request): Response
     {
-        abort_unless($request->user()?->canModule('budget'), 403);
+        abort_unless($request->user()?->can('budget.allocation.view'), 403);
         $year = (int) $request->integer('year', (int) now()->year);
         // Gate approval: default hanya alokasi yang SUDAH di-approve.
         $status = (string) $request->input('status', 'approved');
@@ -60,7 +60,7 @@ class BudgetAllocationController extends Controller
     /** Wizard alokasi — daftar master budget approved dengan Total & Sisa. */
     public function create(Request $request): Response
     {
-        abort_unless($request->user()?->canModule('budget'), 403);
+        abort_unless($request->user()?->can('budget.allocation.create'), 403);
         $year = (int) $request->integer('year', (int) now()->year);
 
         $budgets = BsBudget::with(['account:id,code,name', 'costCenter:id,code,name'])
@@ -81,7 +81,7 @@ class BudgetAllocationController extends Controller
 
     public function store(Request $request): RedirectResponse
     {
-        abort_unless($request->user()?->canModule('budget'), 403);
+        abort_unless($request->user()?->can('budget.allocation.create'), 403);
         $v = $request->validate([
             'budget_id'    => ['required', 'integer', 'exists:bs_budgets,id'],
             'alloc_date'   => ['required', 'date'],
@@ -119,7 +119,7 @@ class BudgetAllocationController extends Controller
     /** Inbox approval batch alokasi. */
     public function approvals(Request $request): Response
     {
-        abort_unless($request->user()?->canModule('budget'), 403);
+        abort_unless($request->user()?->can('budget.allocation.approve'), 403);
 
         $rows = BsBudgetAllocation::with(['account:id,code,name', 'costCenter:id,code,name'])
             ->where('status', 'baru')->orderBy('doc_no')->get()

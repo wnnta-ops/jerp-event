@@ -41,7 +41,7 @@ class PphController extends Controller
 
     public function index(Request $request): Response
     {
-        abort_unless($request->user()?->canModule('tax'), 403);
+        abort_unless($request->user()?->can('tax.pph.view'), 403);
         [$year, $month] = $this->period($request);
 
         $d = $this->hitung($year, $month);
@@ -163,7 +163,7 @@ class PphController extends Controller
      */
     public function export(Request $request): StreamedResponse
     {
-        abort_unless($request->user()?->canModule('tax'), 403);
+        abort_unless($request->user()?->can('tax.pph.export'), 403);
         [$year, $month] = $this->period($request);
 
         $rows = collect($this->hitung($year, $month)['rows']);

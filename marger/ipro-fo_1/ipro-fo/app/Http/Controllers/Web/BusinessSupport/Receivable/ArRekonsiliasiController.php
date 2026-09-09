@@ -28,7 +28,7 @@ class ArRekonsiliasiController extends Controller
 {
     public function index(Request $request): InertiaResponse
     {
-        abort_unless($request->user()?->canModule('ar'), 403);
+        abort_unless($request->user()?->can('ar.view'), 403);
 
         // Tidak ada penyaringan di server: pencarian, filter per kolom, dan pengurutan
         // seluruhnya dikerjakan di klien atas data lengkap ini.
@@ -48,7 +48,7 @@ class ArRekonsiliasiController extends Controller
     /** Surat tagihan untuk grup SPR terpilih — 1 halaman per SPR. */
     public function printTagihan(Request $request): Response
     {
-        abort_unless($request->user()?->canModule('ar'), 403);
+        abort_unless($request->user()?->can('ar.view'), 403);
 
         $keys = $this->selectedKeys($request);
         abort_if($keys === [], 400, 'Belum ada baris yang dicentang.');

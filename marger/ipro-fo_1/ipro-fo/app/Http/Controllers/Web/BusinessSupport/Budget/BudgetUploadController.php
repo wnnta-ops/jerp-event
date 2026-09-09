@@ -22,7 +22,7 @@ class BudgetUploadController extends Controller
 {
     public function index(Request $request): Response
     {
-        abort_unless($request->user()?->canModule('budget'), 403);
+        abort_unless($request->user()?->can('budget.upload.view'), 403);
 
         return Inertia::render('BusinessSupport/Budget/Upload', [
             'year'        => (int) now()->year,
@@ -34,7 +34,7 @@ class BudgetUploadController extends Controller
     /** Unduh template CSV. */
     public function template(Request $request): \Illuminate\Http\Response
     {
-        abort_unless($request->user()?->canModule('budget'), 403);
+        abort_unless($request->user()?->can('budget.upload.view'), 403);
         $cols = array_merge(['KodeAccount', 'NamaAccount'], ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember']);
         $csv  = implode(',', $cols)."\n".'50302020219,BIAYA PERLENGKAPAN KANTOR,1000000,1000000,1000000,1000000,1000000,1000000,1000000,1000000,1000000,1000000,1000000,1000000'."\n";
 

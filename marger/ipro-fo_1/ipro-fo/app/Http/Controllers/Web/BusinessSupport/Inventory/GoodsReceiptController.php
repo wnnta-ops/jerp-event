@@ -20,7 +20,7 @@ class GoodsReceiptController extends Controller
 {
     public function index(Request $request): Response
     {
-        abort_unless($request->user()?->canModule('bs'), 403);
+        abort_unless($request->user()?->can('bs.receipt.view'), 403);
 
         $rows = BsStockTransaction::query()
             ->where('trx_type', 'receipt')
@@ -34,7 +34,7 @@ class GoodsReceiptController extends Controller
 
     public function create(Request $request): Response
     {
-        abort_unless($request->user()?->canModule('bs'), 403);
+        abort_unless($request->user()?->can('bs.receipt.view'), 403);
 
         // Penerimaan HARUS berasal dari PO supaya nominalnya mengikuti PO. PO yang sudah
         // diterima seluruhnya tidak ditawarkan lagi — memilihnya hanya berujung baris kosong.
@@ -64,7 +64,7 @@ class GoodsReceiptController extends Controller
 
     public function store(Request $request, StockService $stock): RedirectResponse
     {
-        abort_unless($request->user()?->canModule('bs'), 403);
+        abort_unless($request->user()?->can('bs.receipt.create'), 403);
 
         $v = $request->validate([
             'warehouse_id'      => ['required', 'integer', 'exists:bs_warehouses,id'],

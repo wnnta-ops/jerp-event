@@ -24,7 +24,7 @@ class JournalController extends Controller
 {
     public function index(Request $request): Response
     {
-        abort_unless($request->user()?->canModule('gl'), 403);
+        abort_unless($request->user()?->can('gl.journal.view'), 403);
 
         // Filter periode tanggal — default bulan berjalan; mencakup SEMUA jenis sumber jurnal.
         $from = $request->date('date_from') ?? now()->startOfMonth();
@@ -240,7 +240,7 @@ class JournalController extends Controller
      */
     public function finalisasi(Request $request): Response
     {
-        abort_unless($request->user()?->canModule('gl'), 403);
+        abort_unless($request->user()?->can('gl.journal.finalize'), 403);
 
         $from = $request->date('date_from') ?? now()->startOfMonth();
         $to   = $request->date('date_to')   ?? now()->endOfMonth();
@@ -268,7 +268,7 @@ class JournalController extends Controller
      */
     public function approval(Request $request): Response
     {
-        abort_unless($request->user()?->canModule('gl'), 403);
+        abort_unless($request->user()?->can('gl.journal.approve'), 403);
 
         $from = $request->date('date_from') ?? now()->startOfMonth();
         $to   = $request->date('date_to')   ?? now()->endOfMonth();
@@ -304,7 +304,7 @@ class JournalController extends Controller
     /** Batch finalisasi: draft (balance) → final. */
     public function finalizeBatch(Request $request, JournalService $svc): RedirectResponse
     {
-        abort_unless($request->user()?->canModule('gl'), 403);
+        abort_unless($request->user()?->can('gl.journal.finalize'), 403);
 
         return $this->batch($request, fn (BsJournal $j) => $svc->finalize($j), 'difinalisasi (Final)');
     }
@@ -336,7 +336,7 @@ class JournalController extends Controller
      */
     public function cancelFinalizeBatch(Request $request, JournalService $svc): RedirectResponse
     {
-        abort_unless($request->user()?->canModule('gl'), 403);
+        abort_unless($request->user()?->can('gl.journal.finalize'), 403);
 
         return $this->batch($request, fn (BsJournal $j) => $svc->reject($j), 'dibatalkan finalisasinya (kembali Baru)');
     }
@@ -377,7 +377,7 @@ class JournalController extends Controller
     /** Export Excel: semua info Detail Transaksi Jurnal (header + semua baris akun) mengikuti filter layar. */
     public function export(Request $request, JournalPartyResolver $party): \Illuminate\Http\Response
     {
-        abort_unless($request->user()?->canModule('gl'), 403);
+        abort_unless($request->user()?->can('gl.journal.export'), 403);
 
         $from = $request->date('date_from') ?? now()->startOfMonth();
         $to   = $request->date('date_to')   ?? now()->endOfMonth();
@@ -514,7 +514,7 @@ class JournalController extends Controller
 
     public function create(Request $request): Response
     {
-        abort_unless($request->user()?->canModule('gl'), 403);
+        abort_unless($request->user()?->can('gl.journal.create'), 403);
 
         return Inertia::render('BusinessSupport/Gl/Journals/Form', [
             'accounts'    => BsAccount::where('is_active', true)->where('is_postable', true)->orderBy('code')->get(['id', 'code', 'name', 'type', 'cost_center_optional']),
@@ -524,7 +524,7 @@ class JournalController extends Controller
 
     public function store(Request $request, JournalService $svc, \App\Domain\BusinessSupport\Services\BudgetGuardService $guard): RedirectResponse
     {
-        abort_unless($request->user()?->canModule('gl'), 403);
+        abort_unless($request->user()?->can('gl.journal.create'), 403);
 
         $v = $request->validate([
             'journal_date'   => ['required', 'date'],
@@ -577,7 +577,7 @@ class JournalController extends Controller
 
     public function show(Request $request, BsJournal $journal): Response
     {
-        abort_unless($request->user()?->canModule('gl'), 403);
+        abort_unless($request->user()?->can('gl.journal.view'), 403);
 
         return Inertia::render('BusinessSupport/Gl/Journals/Show', [
             'journal'  => $journal->load(['lines.account:id,code,name', 'costCenter:id,code,name']),
@@ -589,7 +589,7 @@ class JournalController extends Controller
     /** #54: form edit jurnal (koreksi pencatatan). */
     public function edit(Request $request, BsJournal $journal): Response|RedirectResponse
     {
-        abort_unless($request->user()?->canModule('gl'), 403);
+        abort_unless($request->user()?->can('gl.journal.edit'), 403);
 
         // Jurnal pada periode yang sudah CLOSED tidak dapat diedit hingga closing dibuka (Closing Fiskal).
         $period = BsFiscalPeriod::where('tenant_id', $journal->tenant_id)
@@ -614,7 +614,7 @@ class JournalController extends Controller
     /** #54: simpan perubahan jurnal (ganti baris, tetap balance). */
     public function update(Request $request, BsJournal $journal, JournalService $svc, \App\Domain\BusinessSupport\Services\BudgetGuardService $guard): RedirectResponse
     {
-        abort_unless($request->user()?->canModule('gl'), 403);
+        abort_unless($request->user()?->can('gl.journal.update'), 403);
 
         $v = $request->validate([
             'journal_date'        => ['required', 'date'],
@@ -660,7 +660,7 @@ class JournalController extends Controller
 
     public function finalize(Request $request, BsJournal $journal, JournalService $svc): RedirectResponse
     {
-        abort_unless($request->user()?->canModule('gl'), 403);
+        abort_unless($request->user()?->can('gl.journal.finalize'), 403);
 
         return $this->transition(fn () => $svc->finalize($journal), $journal, 'Jurnal difinalisasi (Final).');
     }
@@ -675,7 +675,7 @@ class JournalController extends Controller
     /** Final → Baru (batal finalisasi). Jurnal Approved ditolak service-nya. */
     public function reject(Request $request, BsJournal $journal, JournalService $svc): RedirectResponse
     {
-        abort_unless($request->user()?->canModule('gl'), 403);
+        abort_unless($request->user()?->can('gl.journal.reject'), 403);
 
         return $this->transition(fn () => $svc->reject($journal), $journal, 'Finalisasi dibatalkan — jurnal kembali ke Baru.');
     }

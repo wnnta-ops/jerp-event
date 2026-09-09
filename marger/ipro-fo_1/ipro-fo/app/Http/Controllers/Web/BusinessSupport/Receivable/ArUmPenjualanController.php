@@ -43,7 +43,7 @@ class ArUmPenjualanController extends Controller
 
     public function index(Request $request, UangMukaPenjualanLedger $ledger): Response
     {
-        abort_unless($request->user()?->canModule('ar'), 403);
+        abort_unless($request->user()?->can('ar.view'), 403);
 
         // Tidak ada penyaringan di server: pencarian, filter per kolom, dan pengurutan
         // seluruhnya dikerjakan di klien atas data lengkap ini.
@@ -83,7 +83,7 @@ class ArUmPenjualanController extends Controller
      */
     public function compensate(Request $request): RedirectResponse
     {
-        abort_unless($request->user()?->canModule('ar'), 403);
+        abort_unless($request->user()?->can('ar.update'), 403);
 
         $v = $request->validate([
             'keys'   => ['required', 'array', 'min:1'],
@@ -132,7 +132,7 @@ class ArUmPenjualanController extends Controller
      */
     public function undo(Request $request): RedirectResponse
     {
-        abort_unless($request->user()?->canModule('ar'), 403);
+        abort_unless($request->user()?->can('ar.update'), 403);
 
         $v = $request->validate([
             'ids'   => ['required', 'array', 'min:1'],

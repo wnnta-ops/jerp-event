@@ -20,7 +20,7 @@ class MaterialRequestController extends Controller
 {
     public function index(Request $request): Response
     {
-        abort_unless($request->user()?->canModule('bs'), 403);
+        abort_unless($request->user()?->can('bs.fpb.view'), 403);
 
         $status = (string) $request->input('status', '');
 
@@ -45,14 +45,14 @@ class MaterialRequestController extends Controller
 
     public function create(Request $request): Response
     {
-        abort_unless($request->user()?->canModule('bs'), 403);
+        abort_unless($request->user()?->can('bs.fpb.create'), 403);
 
         return Inertia::render('BusinessSupport/Inventory/MaterialRequests/Form', $this->formData());
     }
 
     public function store(Request $request, StockService $stock): RedirectResponse
     {
-        abort_unless($request->user()?->canModule('bs'), 403);
+        abort_unless($request->user()?->can('bs.fpb.create'), 403);
 
         $v = $request->validate([
             'project_id'     => ['nullable', 'integer', 'exists:projects,id'],
@@ -91,7 +91,7 @@ class MaterialRequestController extends Controller
 
     public function show(Request $request, BsMaterialRequest $fpb): Response
     {
-        abort_unless($request->user()?->canModule('bs'), 403);
+        abort_unless($request->user()?->can('bs.fpb.view'), 403);
 
         return Inertia::render('BusinessSupport/Inventory/MaterialRequests/Show', [
             'request' => $fpb->load(['lines.item:id,code,name', 'costCenter:id,code,name']),
