@@ -585,10 +585,16 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
     Route::get('/business-support/faktur-pajak/masukan',      [BsTaxController::class, 'masukan'])->name('bs.tax.masukan');
     Route::post('/business-support/faktur-pajak/nsfp',        [BsTaxController::class, 'updateNsfp'])->name('bs.tax.nsfp');
     Route::post('/business-support/faktur-pajak/masukan/bulk', [BsTaxController::class, 'bulkNsfp'])->name('bs.tax.masukan.bulk'); // #5 input massal FP & NPWP
+    // Hapus No. Faktur Pajak & NPWP satu baris — barisnya sendiri tetap ada (milik buku besar).
+    // Satu pintu untuk Masukan maupun Keluaran: keduanya kini sama-sama baris jurnal.
+    Route::post('/business-support/faktur-pajak/baris/hapus', [BsTaxController::class, 'hapusEntriBaris'])->name('bs.tax.baris.hapus');
     // Entri Faktur Pajak Keluaran dari Approval Retensi / UTJ & DP: isi nomor FP (single + massal) & konversi UTJ→Uang Muka.
     Route::post('/business-support/faktur-pajak/entry/nsfp',             [BsTaxController::class, 'updateEntryNsfp'])->name('bs.tax.entry.nsfp');
     Route::post('/business-support/faktur-pajak/keluaran/bulk',          [BsTaxController::class, 'bulkKeluaranNsfp'])->name('bs.tax.keluaran.bulk');
     Route::post('/business-support/faktur-pajak/entry/{entry}/konversi', [BsTaxController::class, 'konversiUangMuka'])->name('bs.tax.entry.konversi');
+    // Impor massal FP & NPWP Faktur Keluaran: unduh formatnya (sudah terisi baris masa ini), isi, unggah lagi.
+    Route::get('/business-support/faktur-pajak/keluaran/format-impor', [BsTaxController::class, 'formatImporKeluaran'])->name('bs.tax.keluaran.format');
+    Route::post('/business-support/faktur-pajak/keluaran/impor',       [BsTaxController::class, 'imporKeluaran'])->name('bs.tax.keluaran.impor');
     Route::get('/business-support/faktur-pajak/export/keluaran', [BsTaxController::class, 'exportKeluaran'])->name('bs.tax.export.keluaran');
     Route::get('/business-support/faktur-pajak/export/masukan',  [BsTaxController::class, 'exportMasukan'])->name('bs.tax.export.masukan');
     Route::get('/business-support/faktur-pajak/export/masukan/xlsx', [BsTaxController::class, 'exportMasukanXlsx'])->name('bs.tax.export.masukan.xlsx'); // #4 tarik Excel FP masukan
@@ -755,6 +761,11 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
     Route::post('/business-support/credit-cards/{card}/requests',       [\App\Http\Controllers\Web\BusinessSupport\CashBook\CreditCardController::class, 'requestStore'])->name('bs.cashbook.credit-card.request');
     Route::post('/business-support/credit-card-requests/{creditCardRequest}/approve', [\App\Http\Controllers\Web\BusinessSupport\CashBook\CreditCardController::class, 'approve'])->name('bs.cashbook.credit-card.approve');
     Route::post('/business-support/credit-card-requests/{creditCardRequest}/reject',  [\App\Http\Controllers\Web\BusinessSupport\CashBook\CreditCardController::class, 'reject'])->name('bs.cashbook.credit-card.reject');
+    // Closing Credit Card per kartu per bulan — sisa saldonya menjadi saldo awal bulan berikutnya.
+    Route::post('/business-support/credit-cards/{card}/closing',        [\App\Http\Controllers\Web\BusinessSupport\CashBook\CreditCardController::class, 'close'])->name('bs.cashbook.credit-card.close');
+    Route::post('/business-support/credit-cards/{card}/closing/buka',   [\App\Http\Controllers\Web\BusinessSupport\CashBook\CreditCardController::class, 'reopen'])->name('bs.cashbook.credit-card.reopen');
+    // Outstanding Kasbon per karyawan — dari mutasi akun Uang Muka Operasional.
+    Route::get('/business-support/outstanding-kasbon', [\App\Http\Controllers\Web\BusinessSupport\CashBook\OutstandingKasbonController::class, 'index'])->name('bs.cashbook.outstanding-kasbon');
     // CB-2: Rekening Ledger + Kalender Cek Giro
     Route::get('/business-support/cash-book-ledger',           [BsCashBookController::class, 'ledger'])->name('bs.cashbook.ledger');
     Route::get('/business-support/cash-book-ledger-excel',     [BsCashBookController::class, 'ledgerExcel'])->name('bs.cashbook.ledger.excel');       // #9
@@ -857,6 +868,9 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
     Route::post('/business-support/bon-sementara/{advance}/reimburse', [BsAdvanceController::class, 'reimburse'])->name('bs.advance.reimburse');
     // Sisa bon Debit VA dikembalikan ke saldo kartunya — tanpa jurnal (uangnya masih di akun kartu).
     Route::post('/business-support/bon-sementara/{advance}/masuk-saldo', [BsAdvanceController::class, 'masukSaldo'])->name('bs.advance.masuk-saldo');
+    // ALOKASI KASBON — pengeluaran bertahap bon Debit VA; tiap baris berjurnal Dr Uang Muka Op / Cr bank.
+    Route::post('/business-support/bon-sementara/{advance}/alokasi',      [BsAdvanceController::class, 'allocationStore'])->name('bs.advance.allocation.store');
+    Route::delete('/business-support/bon-sementara-alokasi/{allocation}', [BsAdvanceController::class, 'allocationDestroy'])->name('bs.advance.allocation.destroy');
     Route::get('/business-support/bon-sementara/{advance}/print',           [BsAdvanceController::class, 'print'])->name('bs.advance.print');
     Route::get('/business-support/bon-sementara/{advance}/print-realisasi', [BsAdvanceController::class, 'printRealisasi'])->name('bs.advance.print-realisasi');
     Route::post('/business-support/bon-sementara/{advance}/tanggal-dokumen', [BsAdvanceController::class, 'setReceivedDate'])->name('bs.advance.received-date'); // #125

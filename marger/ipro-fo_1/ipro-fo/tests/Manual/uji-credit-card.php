@@ -199,9 +199,15 @@ $tolak('Debit VA dengan kartu tak dikenal ditolak', 'ADV_VA_NO_CARD', fn () => $
 $bon3->refresh();
 $ok('Bon yang ditolak tetap "requested" tanpa jurnal', $bon3->status === 'requested' && ! $bon3->journal_id);
 
-echo "\n=== 5-7. PEMBAYARAN & REALISASI DEBIT VA ===\n";
+echo "\n=== 5-7. PEMBAYARAN DEBIT VA — TANPA JURNAL, KARTUNYA TETAP OFF-LEDGER ===\n";
+/* Pembayaran Debit VA TIDAK lagi membentuk jurnal apa pun: uangnya belum berpindah, hanya
+   disediakan pada kartu/VA-nya. Yang mengeluarkannya dari bank adalah ALOKASI KASBON —
+   Dr Uang Muka Operasional / Cr bank pengeluaran — dan seluruh alurnya (alokasi, acuan
+   realisasi, refund, saldo kartu per bulan, closing) diuji di
+   tests/Manual/uji-kasbon-debit-va-alokasi.php.
+
+   Yang dijaga DI SINI hanya bagian yang memang milik berkas ini: kartunya sendiri. */
 $nominalBon = 6_000_000.0;
-$realisasi  = 4_250_000.0;
 $tglExpired = now()->addDays(45)->toDateString();
 
 $glKartuAwal = $saldoGL($akunKartu->id);
@@ -210,7 +216,7 @@ $saldoKartuAwal = (float) $kartuUji->refresh()->balance;
 
 $bonVA = $buatBon($nominalBon); $bersihkan[] = $bonVA->id;
 $svcAdv->pay($bonVA, [
-    'paid_date' => now()->toDateString(), 'cash_account_id' => $akunBank->id,
+    'paid_date' => now()->toDateString(),
     'payment_method' => 'debit_va', 'va_expired_date' => $tglExpired,
     'credit_card_id' => $kartuUji->id,
 ], $user?->id);
@@ -218,59 +224,38 @@ $bonVA->refresh();
 
 $ok('Bon tersimpan sebagai debit_va + kartunya', $bonVA->payment_method === 'debit_va' && (int) $bonVA->credit_card_id === (int) $kartuUji->id);
 $ok('Tanggal expired VA tersimpan', $bonVA->va_expired_date?->toDateString() === $tglExpired);
+$ok('Pembayaran Debit VA TIDAK membentuk jurnal', $bonVA->journal_id === null, (string) $bonVA->journal_id);
+$ok('Sumber bank/kas tidak ikut tersimpan', $bonVA->cash_account_id === null, (string) $bonVA->cash_account_id);
 
-$barisBayar = BsJournalLine::where('journal_id', $bonVA->journal_id)->get();
-$debitKartu = $barisBayar->firstWhere('account_id', $akunKartu->id);
-$kreditBank = $barisBayar->firstWhere('account_id', $akunBank->id);
-$ok('Jurnal bayar MENDEBIT akun kartu 10101020210', $debitKartu && (float) $debitKartu->debit === $nominalBon,
-    'debit '.($debitKartu->debit ?? 'tidak ada baris'));
-$ok('Jurnal bayar MENGKREDIT bank sumber', $kreditBank && (float) $kreditBank->credit === $nominalBon);
-$ok('Jurnal bayar TIDAK menyentuh Uang Muka Operasional', ! $barisBayar->firstWhere('account_id', $akunUM->id));
-$ok('Jurnal bayar hanya 2 baris & seimbang', $barisBayar->count() === 2
-    && (float) $barisBayar->sum('debit') === (float) $barisBayar->sum('credit'));
+/* AKUN KARTUNYA TIDAK BERMUTASI SAMA SEKALI, dan itu justru intinya: sejak pembayaran Debit VA
+   tak berjurnal, "Pemakaian" kartu tidak bisa lagi dibaca dari SUM(credit) akun kartunya —
+   angkanya akan NOL tanpa satu galat pun. Kolom itu kini dibaca dari Alokasi Kasbon. */
+$ok('Akun kartu tidak bermutasi di buku besar',
+    round($saldoGL($akunKartu->id) - $glKartuAwal, 2) === 0.0,
+    'selisih GL '.round($saldoGL($akunKartu->id) - $glKartuAwal, 2));
+$ok('Uang Muka Operasional pun belum bergerak sebelum dialokasikan',
+    round($saldoGL($akunUM->id) - $glUmAwal, 2) === 0.0,
+    'selisih '.round($saldoGL($akunUM->id) - $glUmAwal, 2));
 
+/* Yang lahir otomatis kini MASA BERLAKU saja. Permintaan penambahan saldo ditiadakan: kolom
+   "Penambahan" pada Set Up Credit Card dibaca langsung dari pembayaran Debit VA yang tersimpan,
+   jadi permintaan saldo di sampingnya akan menjadi angka kedua untuk uang yang sama. */
 $permintaanBon = BsCreditCardRequest::where('source_type', 'cash_advance')->where('source_id', $bonVA->id)->get();
-$pTopup  = $permintaanBon->firstWhere('type', 'topup');
 $pExpiry = $permintaanBon->firstWhere('type', 'expiry');
-$ok('Pembayaran melahirkan 2 permintaan (topup + expiry)', $permintaanBon->count() === 2 && $pTopup && $pExpiry);
-$ok('Permintaan menempel pada KARTU yang dipilih',
-    (int) $pTopup?->credit_card_id === (int) $kartuUji->id && (int) $pExpiry?->credit_card_id === (int) $kartuUji->id);
-$ok('Nilai topup = nominal bon', (float) $pTopup?->amount === $nominalBon, 'amount '.$pTopup?->amount);
+$ok('Pembayaran melahirkan 1 permintaan (masa berlaku saja)', $permintaanBon->count() === 1, (string) $permintaanBon->count());
+$ok('Tidak ada lagi permintaan penambahan saldo otomatis',
+    $permintaanBon->firstWhere('type', 'topup') === null, 'akan menghitung nominal bon dua kali');
+$ok('Permintaan menempel pada KARTU yang dipilih', (int) $pExpiry?->credit_card_id === (int) $kartuUji->id);
 $ok('Tanggal permintaan expiry = tanggal expired VA', $pExpiry?->expired_date?->toDateString() === $tglExpired);
-$ok('Keduanya menunggu persetujuan', $pTopup?->status === 'pending' && $pExpiry?->status === 'pending');
-$ok('Permintaan menyebut nomor bonnya', $pTopup?->reference === $bonVA->advance_number);
-$ok('Saldo kartu BELUM bertambah sebelum permintaannya disetujui',
+$ok('Permintaan menunggu persetujuan', $pExpiry?->status === 'pending');
+$ok('Permintaan menyebut nomor bonnya', $pExpiry?->reference === $bonVA->advance_number);
+$ok('Saldo kolom balance kartu tidak ikut berubah oleh pembayaran',
     (float) $kartuUji->refresh()->balance === $saldoKartuAwal, 'saldo '.$kartuUji->balance);
 
-$svcCard->approve($pTopup, $user?->id);
-$kartuUji->refresh();
-$ok('Setelah disetujui saldo kartu bertambah sebesar bon',
-    (float) $kartuUji->balance === $saldoKartuAwal + $nominalBon, 'saldo '.$kartuUji->balance);
 $svcCard->approve($pExpiry, $user?->id);
 $kartuUji->refresh();
 $ok('Masa berlaku kartu mengikuti expired VA bonnya', $kartuUji->expired_date?->toDateString() === $tglExpired);
 
-// Realisasi
-$svcAdv->realize($bonVA, [
-    'realized_date' => now()->toDateString(), 'defer_settlement' => true,
-    'lines' => [['expense_account_id' => $akunBeban->id, 'cost_center_id' => $cc->id,
-        'description' => 'Uji realisasi debit VA', 'amount' => $realisasi]],
-], $user?->id);
-$bonVA->refresh();
-
-$barisReal = BsJournalLine::where('journal_id', $bonVA->realize_journal_id)->get();
-$kreditKartu = $barisReal->firstWhere('account_id', $akunKartu->id);
-$ok('Jurnal realisasi MENGKREDIT akun kartu 10101020210',
-    $kreditKartu && (float) $kreditKartu->credit === $realisasi, 'kredit '.($kreditKartu->credit ?? 'tidak ada baris'));
-$ok('Jurnal realisasi TIDAK mengkredit Uang Muka Operasional', ! $barisReal->firstWhere('account_id', $akunUM->id));
-$ok('Jurnal realisasi mendebit akun beban', (float) ($barisReal->firstWhere('account_id', $akunBeban->id)?->debit ?? 0) === $realisasi);
-
-$sisa = $nominalBon - $realisasi;
-$ok('SISA SALDO KARTU di buku besar = pengajuan − realisasi',
-    round($saldoGL($akunKartu->id) - $glKartuAwal, 2) === round($sisa, 2),
-    'selisih GL '.round($saldoGL($akunKartu->id) - $glKartuAwal, 2).', diharap '.$sisa);
-$ok('Uang Muka Operasional sama sekali tidak bergerak untuk bon VA',
-    round($saldoGL($akunUM->id) - $glUmAwal, 2) === 0.0, 'selisih '.round($saldoGL($akunUM->id) - $glUmAwal, 2));
 
 echo "\n=== 8. BON REGULER TIDAK TERSENTUH ===\n";
 $glKartuSblmReguler = $saldoGL($akunKartu->id);

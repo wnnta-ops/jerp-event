@@ -6,6 +6,7 @@ namespace App\Domain\BusinessSupport\Services;
 
 use App\Domain\BusinessSupport\Models\BsAccount;
 use App\Domain\BusinessSupport\Models\BsCashAdvance;
+use App\Domain\BusinessSupport\Models\BsCashAdvanceAllocation;
 use App\Domain\BusinessSupport\Models\BsCreditCard;
 use App\Domain\BusinessSupport\Models\BsEmployee;
 use App\Exceptions\BusinessRuleException;
@@ -14,8 +15,17 @@ use Illuminate\Support\Facades\DB;
 
 /**
  * Bon Sementara (panjar / uang muka operasional).
- *   Pengeluaran : Dr Uang Muka Operasional / Cr Kas/Bank
- *   Realisasi   : Dr Beban (rincian) [+ Dr Kas jika ada refund] / Cr Uang Muka Operasional [+ Cr Kas jika nombok]
+ *
+ * PEMBAYARAN REGULER
+ *   Pengeluaran : Dr Uang Muka Operasional / Cr Kas/Bank   (saat dibayar)
+ *
+ * PEMBAYARAN DEBIT VA — pembayarannya TIDAK berjurnal
+ *   Pembayaran  : tidak ada jurnal; saldo disediakan pada kartu/VA (Set Up Credit Card)
+ *   Alokasi     : Dr Uang Muka Operasional / Cr bank pengeluaran  (per baris Alokasi Kasbon)
+ *   → Uang Muka Operasional bon Debit VA = TOTAL ALOKASI-nya, bukan nominal bonnya.
+ *
+ * REALISASI (keduanya)
+ *   Dr Beban (rincian) [+ Dr Kas jika ada refund] / Cr Uang Muka Operasional [+ Cr Kas jika nombok]
  */
 final class CashAdvanceService
 {
@@ -146,13 +156,47 @@ final class CashAdvanceService
      */
     private function akunPanjar(BsCashAdvance $adv): int
     {
-        if (! $adv->credit_card_id) {
+        if (! $this->bonKartuLama($adv)) {
             return (int) $adv->advance_account_id;
         }
 
         $akunKartu = BsCreditCard::whereKey($adv->credit_card_id)->value('account_id');
 
         return (int) ($akunKartu ?: $adv->advance_account_id);
+    }
+
+    /**
+     * Bon Debit VA MODEL LAMA — yang pembayarannya dulu masih membentuk jurnal ke akun kartunya.
+     *
+     * Pembedanya adalah DATA, bukan payment_method: sejak pembayaran Debit VA tidak lagi
+     * berjurnal, bon baru punya journal_id NULL sedangkan bon lama sudah terlanjur mendebit akun
+     * kartunya. Membedakannya lewat payment_method saja akan membuat bon lama yang belum
+     * direalisasi mengkredit Uang Muka Operasional yang tidak pernah menerima panjarnya — akun
+     * kartunya tinggal bersaldo debit selamanya, dan Uang Muka Operasional menjadi minus.
+     */
+    private function bonKartuLama(BsCashAdvance $adv): bool
+    {
+        return $adv->credit_card_id !== null && $adv->journal_id !== null;
+    }
+
+    /**
+     * ACUAN PANJAR — berapa rupiah yang benar-benar masuk ke akun panjarnya.
+     *
+     * Bon reguler (dan bon Debit VA model lama): sebesar nominal bonnya, sebab pembayarannya
+     * langsung mendebit akun panjar sejumlah itu.
+     *
+     * Bon Debit VA model baru: sebesar TOTAL ALOKASI KASBON-nya. Pembayarannya tidak berjurnal;
+     * yang mendebit Uang Muka Operasional adalah tiap baris alokasi. Memakai nominal bon di sini
+     * akan menghitung selisih terhadap uang yang tidak pernah dikeluarkan dari bank, sehingga
+     * refund/reimburse-nya menyelesaikan angka yang tidak ada.
+     */
+    private function acuanPanjar(BsCashAdvance $adv): float
+    {
+        if ($adv->payment_method !== 'debit_va' || $this->bonKartuLama($adv)) {
+            return round((float) $adv->amount, 2);
+        }
+
+        return round((float) BsCashAdvanceAllocation::where('cash_advance_id', $adv->id)->sum('amount'), 2);
     }
 
     public function pay(BsCashAdvance $adv, array $data, ?int $userId = null): BsCashAdvance
@@ -173,6 +217,13 @@ final class CashAdvanceService
             // tanggal expired sambil tersimpan sebagai cara pembayaran yang tidak dikenal.
             $method = (($data['payment_method'] ?? null) === 'debit_va') ? 'debit_va' : 'reguler';
             $expired = $method === 'debit_va' ? ($data['va_expired_date'] ?? null) : null;
+
+            /* Pembayaran reguler tetap WAJIB bersumber bank/kas — hanya Debit VA yang bebas dari
+               kewajiban itu. Ditegakkan di sini juga, bukan hanya di validasi request: layar
+               bayar massal dan pemanggilan service langsung tidak lewat aturan required_unless. */
+            if ($method !== 'debit_va' && empty($data['cash_account_id'])) {
+                throw new BusinessRuleException('Pilih sumber bank/kas pembayaran.', errorCode: 'ADV_NO_CASH');
+            }
 
             if ($method === 'debit_va') {
                 // Ditegakkan DI SINI juga, bukan hanya di layar & validasi request: VA tanpa
@@ -220,54 +271,56 @@ final class CashAdvanceService
                 }
             }
 
-            /* SISI DEBITNYA BERGANTUNG CARA PEMBAYARANNYA.
-               Reguler: uangnya langsung menjadi panjar di tangan pemegang bon → Dr Uang Muka
-               Operasional. Debit VA: uangnya berpindah ke REKENING KARTUNYA dulu (mis. MANDIRI
-               REK. 141-00-9988886-9), dan baru menjadi panjar saat kartunya dipakai — jadi yang
-               didebit akun kartu itu, bukan Uang Muka Operasional. Sisi kreditnya sama: bank
-               sumber yang dipilih. */
-            $debitAccount = $card ? (int) $card->account_id : $advanceAccount;
-            $debitKet = $card
-                ? 'Top-up '.$card->label().' — bon '.$adv->advance_number
-                : 'Panjar '.$adv->holder;
+            /* PEMBAYARAN DEBIT VA TIDAK MEMBENTUK JURNAL — dan itu bukan kelalaian.
+               Uangnya belum berpindah ke mana pun: ia hanya DISEDIAKAN pada kartu/VA-nya, masih
+               di rekening perusahaan sendiri. Yang memindahkannya ke tangan pemegang bon adalah
+               ALOKASI KASBON, dan alokasi itulah yang berjurnal (Dr Uang Muka Operasional / Cr
+               bank pengeluaran). Menjurnalnya di sini berarti mencatat pengeluaran bank pada
+               tanggal transfer VA — padahal banknya baru berkurang saat kartunya dipakai, bisa
+               beberapa kali, dari bank yang berbeda pula.
 
-            $journal = $this->journal->post([
-                'journal_date' => $data['paid_date'],
-                'source'       => 'cash',
-                'status'       => 'posted', // Treasury: pembayaran panjar langsung posting → mutasi bank tercatat di Rekening Ledger.
-                'reference'    => $adv->advance_number,
-                'description'  => 'Pembayaran Bon Sementara — '.$adv->purpose.' ('.$adv->holder.')',
-                'created_by'   => $userId,
-            ], [
-                // cost_center_id dibawa KEDUA baris: itulah dimensi yang dibaca Budget Control,
-                // dan jurnal yang hanya separuh berdimensi akan terbaca timpang saat direkap
-                // per cost center.
-                ['account_id' => $debitAccount, 'cost_center_id' => $adv->cost_center_id, 'debit' => $amount, 'credit' => 0, 'description' => $debitKet],
-                ['account_id' => (int) $data['cash_account_id'], 'cost_center_id' => $adv->cost_center_id, 'debit' => 0, 'credit' => $amount, 'description' => 'Transfer bon sementara '.$adv->advance_number],
-            ]);
+               Karena tidak ada jurnal, tidak ada pula sumber bank/kas yang harus dipilih:
+               cash_account_id sengaja dibiarkan NULL untuk bon Debit VA. */
+            $journal = null;
+
+            if ($method !== 'debit_va') {
+                $journal = $this->journal->post([
+                    'journal_date' => $data['paid_date'],
+                    'source'       => 'cash',
+                    'status'       => 'posted', // Treasury: pembayaran panjar langsung posting → mutasi bank tercatat di Rekening Ledger.
+                    'reference'    => $adv->advance_number,
+                    'description'  => 'Pembayaran Bon Sementara — '.$adv->purpose.' ('.$adv->holder.')',
+                    'created_by'   => $userId,
+                ], [
+                    // cost_center_id dibawa KEDUA baris: itulah dimensi yang dibaca Budget Control,
+                    // dan jurnal yang hanya separuh berdimensi akan terbaca timpang saat direkap
+                    // per cost center.
+                    ['account_id' => $advanceAccount, 'cost_center_id' => $adv->cost_center_id, 'debit' => $amount, 'credit' => 0, 'description' => 'Panjar '.$adv->holder],
+                    ['account_id' => (int) $data['cash_account_id'], 'cost_center_id' => $adv->cost_center_id, 'debit' => 0, 'credit' => $amount, 'description' => 'Transfer bon sementara '.$adv->advance_number],
+                ]);
+            }
 
             $adv->update([
-                'cash_account_id'    => (int) $data['cash_account_id'],
+                'cash_account_id'    => $method === 'debit_va' ? null : (int) $data['cash_account_id'],
                 'advance_account_id' => $advanceAccount,
                 'paid_date'          => $data['paid_date'],
                 'payment_method'     => $method,
                 'va_expired_date'    => $expired,
                 'credit_card_id'     => $card?->id,
                 'status'             => 'outstanding',
-                'journal_id'         => $journal->id,
+                'journal_id'         => $journal?->id,
             ]);
 
-            /* Permintaan otomatis pada kartunya: penambahan saldo sebesar nominal bonnya, dan
-               masa berlaku sesuai tanggal expired yang ditentukan. Keduanya MENUNGGU
-               PERSETUJUAN — jurnal sudah mencatat uang berpindah ke rekening kartu, tetapi
-               saldo yang boleh dipakai adalah keputusan tersendiri di Set Up Credit Card.
+            /* MASA BERLAKU kartunya diajukan otomatis dari tanggal expired VA yang ditentukan di
+               sini — masa berlaku memang keputusan tersendiri dan tetap menunggu persetujuan.
 
-               Berada di dalam transaksi yang sama dengan jurnalnya: bila salah satunya gagal,
-               tidak boleh ada jurnal tanpa permintaan — kartunya akan terdebit di buku besar
-               tanpa satu pun baris yang menjelaskan mengapa saldonya tak kunjung bertambah. */
+               SALDO-nya TIDAK diajukan lagi. "Penambahan" saldo kartu kini dibaca langsung dari
+               pembayaran Debit VA yang tersimpan (lihat CreditCardClosingService), sehingga
+               permintaan penambahan otomatis hanya akan menjadi angka kedua untuk uang yang
+               sama — menumpuk di antrean persetujuan tanpa pernah berarti apa pun. */
             if ($card) {
-                app(CreditCardService::class)->requestFromCashAdvance(
-                    $card, (int) $adv->id, (string) $adv->advance_number, $amount, (string) $expired, $userId,
+                app(CreditCardService::class)->requestMasaBerlakuDariBon(
+                    $card, (int) $adv->id, (string) $adv->advance_number, (string) $expired, $userId,
                 );
             }
 
@@ -297,9 +350,25 @@ final class CashAdvanceService
             if ($lines->isEmpty()) {
                 throw new BusinessRuleException('Rincian realisasi tidak boleh kosong.', errorCode: 'ADV_NO_LINES');
             }
-            $realized   = round((float) $lines->sum('amount'), 2);
-            $settlement = round((float) $adv->amount - $realized, 2); // + refund (kembali) / - reimburse (nombok)
+            $realized = round((float) $lines->sum('amount'), 2);
+
+            /* ACUANNYA BUKAN SELALU NOMINAL BON. Bon Debit VA model baru mendebit Uang Muka
+               Operasional lewat ALOKASI KASBON, jadi yang bisa direalisasi & diselesaikan adalah
+               sebesar total alokasinya. Memakai nominal bon akan menghitung selisih terhadap
+               uang yang belum pernah keluar dari bank. */
+            $acuan      = $this->acuanPanjar($adv);
+            $settlement = round($acuan - $realized, 2); // + refund (kembali) / - reimburse (nombok)
             $defer      = (bool) ($data['defer_settlement'] ?? false);
+
+            /* Bon Debit VA yang belum dialokasikan sama sekali belum menaruh sepeser pun di Uang
+               Muka Operasional. Merealisasinya akan mengkredit akun yang tidak pernah didebit —
+               akunnya langsung minus, dan tidak ada galat apa pun yang memberi tahu. */
+            if ($acuan <= 0 && $adv->payment_method === 'debit_va' && ! $this->bonKartuLama($adv)) {
+                throw new BusinessRuleException(
+                    'Bon Debit VA ini belum punya Alokasi Kasbon — isi alokasinya dulu, sebab Uang Muka Operasional baru terbentuk dari alokasi.',
+                    errorCode: 'ADV_NO_ALLOCATION',
+                );
+            }
 
             // Jurnal realisasi.
             $jl = [];
@@ -320,7 +389,11 @@ final class CashAdvanceService
                akun kartu sebesar nominal bon, realisasi mengkreditnya sebesar yang terpakai,
                dan bakinya = saldo yang masih tersimpan di kartu itu. */
             $akunPanjar = $this->akunPanjar($adv);
-            $ketPanjar = $adv->credit_card_id ? 'kartu/VA' : 'panjar';
+            /* Sebutannya mengikuti AKUN yang benar-benar dikredit, bukan sekadar "bon ini
+               berkartu". Bon Debit VA model baru mengkredit Uang Muka Operasional (uangnya
+               dibawa ke sana oleh Alokasi Kasbon), jadi menuliskan "kartu/VA" pada keterangan
+               jurnalnya akan menunjuk akun yang tidak tersentuh baris itu. */
+            $ketPanjar = $this->bonKartuLama($adv) ? 'kartu/VA' : 'panjar';
 
             /* Baris LAWAN realisasi (pelepasan panjar & selisih kasnya) memakai cost center BON.
                Baris bebannya sendiri sudah membawa cost center per baris dari layar realisasi —
@@ -334,7 +407,7 @@ final class CashAdvanceService
                 $jl[] = ['account_id' => $akunPanjar, 'cost_center_id' => $ccBon, 'debit' => 0, 'credit' => $realized, 'description' => 'Realisasi '.$ketPanjar.' (settlement ditunda)'];
             } else {
                 // Settlement langsung (perilaku lama): lunasi penuh + kas masuk/keluar selisih.
-                $jl[] = ['account_id' => $akunPanjar, 'cost_center_id' => $ccBon, 'debit' => 0, 'credit' => round((float) $adv->amount, 2), 'description' => 'Pelunasan '.$ketPanjar];
+                $jl[] = ['account_id' => $akunPanjar, 'cost_center_id' => $ccBon, 'debit' => 0, 'credit' => $acuan, 'description' => 'Pelunasan '.$ketPanjar];
                 if ($settlement > 0) {
                     $jl[] = ['account_id' => $adv->cash_account_id, 'cost_center_id' => $ccBon, 'debit' => $settlement, 'credit' => 0, 'description' => 'Pengembalian sisa panjar'];
                 } elseif ($settlement < 0) {
@@ -409,6 +482,22 @@ final class CashAdvanceService
                     errorCode: 'ADV_NOT_DEBIT_VA',
                 );
             }
+
+            /* HANYA UNTUK BON MODEL LAMA. Alasan Masuk Saldo tidak berjurnal adalah "uangnya
+               memang masih di akun kartu" — dan itu hanya benar bila pembayarannya dulu memang
+               mendebit akun kartu. Pada bon model baru, sisa realisasinya berada di UANG MUKA
+               OPERASIONAL (dibawa ke sana oleh Alokasi Kasbon), bukan di kartu; memindahkannya
+               ke saldo kartu tanpa jurnal akan meninggalkan Uang Muka Operasional yang tidak
+               pernah bersih. Sisa bon model baru diselesaikan lewat Refund/Reimburse, sedangkan
+               bagian bon yang MEMANG belum dialokasikan tetap menjadi sisa saldo kartunya dengan
+               sendirinya — tanpa perlu tombol apa pun. */
+            if (! $this->bonKartuLama($adv)) {
+                throw new BusinessRuleException(
+                    'Bon Debit VA ini tidak memakai Masuk Saldo. Sisa realisasinya berada di Uang Muka Operasional — '
+                    .'selesaikan lewat Refund. Bagian bon yang belum dialokasikan otomatis tetap menjadi sisa saldo kartu.',
+                    errorCode: 'ADV_MASUK_SALDO_OBSOLETE',
+                );
+            }
             $settlement = round((float) $adv->settlement, 2);
             if ($settlement <= 0) {
                 throw new BusinessRuleException(
@@ -450,8 +539,13 @@ final class CashAdvanceService
             }
             $amount = abs($settlement);
 
-            // #89/#93: bank yang dipilih user (penerima refund / sumber reimburse); fallback ke bank sumber bayar.
-            $cashAccount = $cashAccountId ?: $adv->cash_account_id;
+            /* #89/#93: bank yang dipilih user (penerima refund / sumber reimburse).
+               Cadangannya berlapis, sebab bon Debit VA model baru TIDAK punya bank sumber bayar
+               sama sekali (pembayarannya tidak berjurnal): pakai bank pengeluaran ALOKASI
+               terakhir — ke situlah uangnya keluar, jadi ke situ pula paling masuk akal ia
+               kembali. Barulah bila keduanya kosong, penggunanya diminta memilih. */
+            $cashAccount = $cashAccountId ?: $adv->cash_account_id ?: BsCashAdvanceAllocation::where('cash_advance_id', $adv->id)
+                ->orderByDesc('alloc_date')->orderByDesc('id')->value('cash_account_id');
             if (! $cashAccount) {
                 throw new BusinessRuleException('Pilih bank/kas untuk penyelesaian panjar.', errorCode: 'ADV_NO_CASH');
             }

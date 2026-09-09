@@ -145,4 +145,7 @@ class BsCashAdvance extends Model
     public function creditCard(): BelongsTo { return $this->belongsTo(BsCreditCard::class, 'credit_card_id'); }
     public function department(): BelongsTo { return $this->belongsTo(BsHrDepartment::class, 'department_id'); } // #150
     public function lines(): HasMany { return $this->hasMany(BsCashAdvanceLine::class, 'cash_advance_id'); }
+
+    /** Alokasi Kasbon — pengeluaran bertahap bon Debit VA; tiap baris berjurnal sendiri. */
+    public function allocations(): HasMany { return $this->hasMany(BsCashAdvanceAllocation::class, 'cash_advance_id'); }
 }

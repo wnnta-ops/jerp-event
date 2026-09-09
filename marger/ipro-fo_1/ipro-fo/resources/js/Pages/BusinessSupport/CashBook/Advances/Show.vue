@@ -10,7 +10,11 @@ const props = defineProps<{ advance: any; expenseAccounts: Array<any>; costCente
     /** 'online' = berjenjang di aplikasi · 'offline' = tanda tangan di kertas. */
     approvalMode?: string;
     /** Kartu kredit/VA yang boleh dipakai (aktif & belum expired) — hanya untuk Debit VA. */
-    creditCards?: Array<{ id: number; label: string; balance: number }> }>();
+    creditCards?: Array<{ id: number; label: string; balance: number }>;
+    /** Baris Alokasi Kasbon + totalnya + sisa bon yang belum dialokasikan. */
+    allocations?: { rows: Array<any>; total: number; sisa: number };
+    /** Bon Debit VA model baru — pembayarannya tidak berjurnal, pengeluarannya lewat Alokasi Kasbon. */
+    allocationMode?: boolean }>();
 const showForm = ref(false);
 // #125: simpan tanggal terima dokumen (hanya finance) tanpa berpindah halaman.
 function saveDocDate(e: Event) {
@@ -47,7 +51,14 @@ const statusLabel: Record<string, string> = { requested: 'Diajukan', outstanding
 const statusVariant: Record<string, any> = { requested: 'info', outstanding: 'warning', realized: 'success' };
 
 const realized = computed(() => form.lines.reduce((s: number, l: any) => s + (Number(l.amount) || 0), 0));
-const settlement = computed(() => Number(props.advance.amount) - realized.value); // + kembali / - nombok
+/* ACUAN PANJARNYA BUKAN SELALU NOMINAL BON. Bon Debit VA model baru menaruh uang di Uang Muka
+   Operasional lewat ALOKASI KASBON, jadi yang bisa direalisasi & diselesaikan adalah sebesar
+   total alokasinya. Sama persis dengan CashAdvanceService::acuanPanjar() — bila layar memakai
+   angka lain, sisa yang ditawarkan di sini akan berbeda dari yang dijurnal server. */
+const acuanPanjar = computed(() => (props.allocationMode
+    ? Number(props.allocations?.total ?? 0)
+    : Number(props.advance.amount)));
+const settlement = computed(() => acuanPanjar.value - realized.value); // + kembali / - nombok
 function addLine() { form.lines.push({ expense_account_id: '', cost_center_id: '', description: '', amount: 0 }); }
 function removeLine(i: number) { form.lines.splice(i, 1); }
 // Gerbangnya dipasang DUA kali, bukan sekali di tombol saja: menekan Enter di kolom teks
@@ -92,15 +103,49 @@ function doReimburse() { if (confirm('Catat penggantian kekurangan panjar dari k
 
 /* MASUK SALDO — sisa bon Debit VA dikembalikan ke saldo kartunya, bukan ke kas.
    Syaratnya sama persis dengan yang ditegakkan server (payment_method debit_va + ada kartunya +
-   sisanya > 0); menawarkan tombol yang pasti ditolak hanya memindahkan penolakannya ke belakang. */
+   sisanya > 0); menawarkan tombol yang pasti ditolak hanya memindahkan penolakannya ke belakang.
+
+   HANYA BON MODEL LAMA (yang pembayarannya dulu berjurnal ke akun kartu, jadi punya journal_id).
+   Pada bon model baru sisanya berada di Uang Muka Operasional, bukan di kartu — diselesaikan
+   lewat Refund. Bagian bon yang memang belum dialokasikan tetap menjadi sisa saldo kartu dengan
+   sendirinya, tanpa tombol apa pun. */
 const bisaMasukSaldo = computed(() => props.advance?.payment_method === 'debit_va'
     && !! props.advance?.credit_card_id
+    && !! props.advance?.journal_id
     && Number(props.advance?.settlement) > 0);
 function doMasukSaldo() {
     if (! confirm(`Masukkan sisa ${fmtRp(Math.abs(Number(props.advance.settlement)))} ke saldo kartu?\n\n`
         + 'Saldonya langsung bisa dipakai untuk pengajuan berikutnya.\n'
         + 'TIDAK ada jurnal tambahan — uangnya memang masih berada di akun kartu itu.')) return;
     settleForm.post(route('bs.advance.masuk-saldo', props.advance.id));
+}
+
+/* === ALOKASI KASBON (bon Debit VA) ===
+   Pembayaran Debit VA tidak berjurnal — uangnya baru keluar dari bank saat dialokasikan, dan itu
+   bisa beberapa kali pada tanggal & bank yang berbeda. Tiap baris di sini berjurnal sendiri:
+   Dr Uang Muka Operasional / Cr bank pengeluaran yang dipilih. */
+const alokForm = useForm<any>({ alloc_date: today, description: '', amount: 0, cash_account_id: '' });
+const sisaAlokasi = computed(() => Number(props.allocations?.sisa ?? 0));
+const alokKurang = computed<string[]>(() => {
+    const k: string[] = [];
+    if (! alokForm.alloc_date) k.push('tanggal');
+    if (! String(alokForm.description ?? '').trim()) k.push('keterangan');
+    if (! (Number(alokForm.amount) > 0)) k.push('jumlah');
+    if (! alokForm.cash_account_id) k.push('bank pengeluaran');
+    // Gerbang yang sama dengan servernya (ALLOC_EXCEEDS) — bukan lebih longgar.
+    if (Number(alokForm.amount) > sisaAlokasi.value + 0.001) k.push('jumlah melebihi sisa bon');
+    return k;
+});
+function tambahAlokasi() {
+    if (alokKurang.value.length) return;
+    alokForm.post(route('bs.advance.allocation.store', props.advance.id), {
+        preserveScroll: true,
+        onSuccess: () => { alokForm.reset('description', 'amount'); alokForm.amount = 0; },
+    });
+}
+function hapusAlokasi(a: any) {
+    if (! confirm(`Hapus alokasi ${fmtDate(a.alloc_date)} — ${fmtRp(a.amount)}?\n\nJurnalnya ikut terhapus.`)) return;
+    router.delete(route('bs.advance.allocation.destroy', a.id), { preserveScroll: true });
 }
 
 function fmtRp(v: number) { return 'Rp ' + Number(v ?? 0).toLocaleString('id-ID'); }
@@ -241,7 +286,10 @@ function backToIndex() {
         <!-- #49: Pembayaran oleh Finance (status requested) → jurnal terbentuk -->
         <div v-if="advance.status === 'requested'" class="card p-5">
             <h2 class="mb-1 flex items-center gap-2 font-semibold"><HandCoins class="h-5 w-5 text-amber-600" /> Pembayaran (Dept Finance)</h2>
-            <p class="mb-3 text-xs text-neutral-500">Pengajuan ini belum membentuk jurnal. Isi tanggal transfer &amp; sumber bank/kas untuk membayar — jurnalnya akan terbentuk (<b>Dr Uang Muka Operasional</b>, atau <b>Dr kartu kredit/VA</b> bila lewat Debit VA · <b>Cr Bank/Kas</b>).</p>
+            <p class="mb-3 text-xs text-neutral-500">
+                <b>Reguler</b>: isi tanggal transfer &amp; sumber bank/kas — jurnal <b>Dr Uang Muka Operasional · Cr Bank/Kas</b> terbentuk saat disimpan.
+                <b>Debit VA</b>: <b>tidak ada jurnal</b> dan tidak perlu sumber bank/kas — yang terbentuk hanya saldo di kartu/VA-nya (Set Up Credit Card). Uangnya keluar dari bank lewat <b>Alokasi Kasbon</b> sesudah ini.
+            </p>
             <!-- Gate: tombol baru aktif setelah SELURUH persetujuan (pengaju → Manager Finance) lengkap. -->
             <!-- Pesan penahan hanya untuk bon ONLINE. Pada bon offline gerbangnya memang
                  terbuka, jadi memasang peringatan "menunggu persetujuan" di sana akan
@@ -308,31 +356,88 @@ function backToIndex() {
                     <p v-else-if="!(creditCards ?? []).length" class="mt-1 text-xs text-danger-500">Belum ada kartu aktif — aktifkan kartunya dulu di <b>Cash Book → Setup → Set Up Credit Card</b>.</p>
                     <p v-else-if="vaKurangKartu" class="mt-1 text-xs text-danger-500">Wajib dipilih sebelum pembayaran dicatat.</p>
                     <p v-else class="mt-1 text-[11px] text-neutral-400">
-                        Saldo kartu saat ini <span class="font-mono">{{ fmtRp(kartuDipilih?.balance ?? 0) }}</span>.
-                        Permintaan penambahan saldo {{ fmtRp(advance.amount) }} dan permintaan masa berlaku akan otomatis
-                        muncul pada kartu ini di Set Up Credit Card, menunggu persetujuan.
+                        Nominal {{ fmtRp(advance.amount) }} langsung menjadi <b>Penambahan</b> saldo kartu ini pada bulan tanggal transfernya
+                        di Set Up Credit Card — tanpa perlu persetujuan tersendiri, sebab pembayarannya sendiri yang menjadi dasarnya.
+                        Yang tetap menunggu persetujuan hanya <b>masa berlakunya</b>.
                     </p>
                 </div>
 
-                <div><label class="mb-1 block text-xs font-medium text-neutral-500">Sumber Bank/Kas *</label><SearchSelect :model-value="payForm.cash_account_id" :options="cashAccounts" :disabled="!fullyApproved" placeholder="— pilih rekening —" @update:model-value="(v) => payForm.cash_account_id = v" /><p v-if="payForm.errors.cash_account_id" class="mt-1 text-xs text-danger-500">{{ payForm.errors.cash_account_id }}</p></div>
-                <!-- Keterangan jurnalnya ikut cara pembayaran, sebab akun debitnya memang
-                     BERBEDA: Debit VA membebani akun kartu (bukan Uang Muka Operasional),
-                     karena uangnya berpindah ke saldo kartu dulu, baru terpakai saat realisasi. -->
+                <!-- Sumber Bank/Kas HANYA untuk pembayaran reguler. Pembayaran Debit VA tidak
+                     membentuk jurnal sama sekali — banknya baru berkurang saat Alokasi Kasbon
+                     dibuat, dan bank itu dipilih di sana. Menampilkan kolom ini pada Debit VA
+                     akan menanyakan rekening yang tidak pernah dipakai. -->
+                <div v-if="payForm.payment_method !== 'debit_va'"><label class="mb-1 block text-xs font-medium text-neutral-500">Sumber Bank/Kas *</label><SearchSelect :model-value="payForm.cash_account_id" :options="cashAccounts" :disabled="!fullyApproved" placeholder="— pilih rekening —" @update:model-value="(v) => payForm.cash_account_id = v" /><p v-if="payForm.errors.cash_account_id" class="mt-1 text-xs text-danger-500">{{ payForm.errors.cash_account_id }}</p></div>
                 <div class="md:col-span-2 flex items-center justify-between rounded-lg bg-amber-50 px-4 py-2 text-xs text-amber-700 dark:bg-amber-900/20 dark:text-amber-300">
-                    <span v-if="payForm.payment_method === 'debit_va'">Jurnal: Dr {{ kartuDipilih?.label ?? 'Kartu Kredit / VA' }} · Cr Bank/Kas</span>
+                    <span v-if="payForm.payment_method === 'debit_va'">Tidak ada jurnal — saldo masuk ke {{ kartuDipilih?.label ?? 'kartu kredit / VA' }}. Jurnalnya terbentuk saat <b>Alokasi Kasbon</b> (Dr Uang Muka Operasional · Cr bank pengeluaran).</span>
                     <span v-else>Jurnal: Dr Uang Muka Operasional · Cr Bank/Kas</span>
                     <span class="font-mono font-bold">{{ fmtRp(advance.amount) }}</span>
                 </div>
                 <div class="md:col-span-2 flex flex-wrap items-center gap-3">
-                    <Button type="submit" :disabled="payForm.processing || !payForm.cash_account_id || !fullyApproved || vaKurangExpired || vaKurangKartu"><template #icon-left><HandCoins class="h-4 w-4" /></template>Catat Pembayaran &amp; Buat Jurnal</Button>
+                    <Button type="submit" :disabled="payForm.processing || (payForm.payment_method !== 'debit_va' && !payForm.cash_account_id) || !fullyApproved || vaKurangExpired || vaKurangKartu"><template #icon-left><HandCoins class="h-4 w-4" /></template>{{ payForm.payment_method === 'debit_va' ? 'Simpan Pembayaran Debit VA' : 'Catat Pembayaran &amp; Buat Jurnal' }}</Button>
                     <span v-if="vaKurangExpired && fullyApproved" class="text-xs text-danger-500">Isi Tanggal Expired VA dulu.</span>
                     <span v-else-if="vaKurangKartu && fullyApproved" class="text-xs text-danger-500">Pilih Nomor Kartu Kredit / VA dulu.</span>
                 </div>
             </form>
         </div>
 
+        <!-- ALOKASI KASBON — hanya bon Debit VA model baru, selama belum direalisasi.
+             Pembayarannya tidak berjurnal; tiap baris di sini-lah yang mengeluarkan uangnya dari
+             bank (Dr Uang Muka Operasional · Cr bank pengeluaran) sekaligus menjadi "Pemakaian"
+             kartunya di Set Up Credit Card. -->
+        <div v-if="allocationMode && advance.status === 'outstanding'" class="card p-5">
+            <h2 class="mb-1 flex items-center gap-2 font-semibold"><Wallet class="h-5 w-5 text-primary-600" /> Alokasi Kasbon</h2>
+            <p class="mb-3 text-xs text-neutral-500">
+                Pembayaran Debit VA belum mengeluarkan uang dari bank. Catat tiap pengeluarannya di sini —
+                jurnal <b>Dr Uang Muka Operasional · Cr bank pengeluaran</b> terbentuk per baris, dan totalnya
+                menjadi acuan realisasi bon ini.
+            </p>
+
+            <div class="mb-3 grid gap-3 sm:grid-cols-3">
+                <div class="rounded-lg border border-neutral-200 px-4 py-2.5 dark:border-neutral-700"><div class="text-[11px] uppercase text-neutral-400">Nominal Bon</div><div class="font-mono font-semibold">{{ fmtRp(advance.amount) }}</div></div>
+                <div class="rounded-lg border border-neutral-200 px-4 py-2.5 dark:border-neutral-700"><div class="text-[11px] uppercase text-neutral-400">Sudah Dialokasikan</div><div class="font-mono font-semibold text-primary-600">{{ fmtRp(allocations?.total ?? 0) }}</div></div>
+                <!-- Sisa ini punya DUA arti sekaligus, dan keduanya disebutkan: batas alokasi
+                     berikutnya, sekaligus bagian bon yang tetap tinggal sebagai saldo kartu. -->
+                <div class="rounded-lg border border-neutral-200 px-4 py-2.5 dark:border-neutral-700"><div class="text-[11px] uppercase text-neutral-400">Belum Dialokasikan</div><div class="font-mono font-semibold">{{ fmtRp(sisaAlokasi) }}</div><div class="text-[10px] text-neutral-400">tetap menjadi saldo kartu</div></div>
+            </div>
+
+            <table v-if="(allocations?.rows ?? []).length" class="mb-3 w-full text-sm">
+                <thead class="border-b border-neutral-200 text-left text-xs uppercase text-neutral-500 dark:border-neutral-700">
+                    <tr><th class="py-1.5">Tanggal</th><th class="py-1.5">Keterangan</th><th class="py-1.5">Bank Pengeluaran</th><th class="py-1.5 text-right">Jumlah</th><th class="py-1.5 text-right">Aksi</th></tr>
+                </thead>
+                <tbody class="divide-y divide-neutral-100 dark:divide-neutral-800">
+                    <tr v-for="a in allocations?.rows ?? []" :key="a.id">
+                        <td class="py-1.5">{{ fmtDate(a.alloc_date) }}</td>
+                        <td class="py-1.5 text-neutral-500">{{ a.description }}</td>
+                        <td class="py-1.5 font-mono text-xs text-neutral-500">{{ a.account }}</td>
+                        <td class="py-1.5 text-right font-mono">{{ fmtRp(a.amount) }}</td>
+                        <td class="py-1.5 text-right">
+                            <button type="button" class="inline-flex items-center rounded-lg border border-danger-300 px-2 py-1 text-xs font-medium text-danger-600 hover:bg-danger-50 dark:border-danger-700" title="Hapus alokasi beserta jurnalnya" @click="hapusAlokasi(a)"><Trash2 class="h-3.5 w-3.5" /></button>
+                        </td>
+                    </tr>
+                </tbody>
+                <tfoot class="border-t border-neutral-200 font-semibold dark:border-neutral-700">
+                    <tr><td colspan="3" class="py-1.5 text-right">Total Alokasi</td><td class="py-1.5 text-right font-mono">{{ fmtRp(allocations?.total ?? 0) }}</td><td></td></tr>
+                </tfoot>
+            </table>
+            <p v-else class="mb-3 rounded-lg bg-amber-50 px-4 py-2.5 text-xs text-amber-700 dark:bg-amber-900/20 dark:text-amber-300">
+                Belum ada alokasi. Bon ini belum bisa direalisasi — Uang Muka Operasional baru terbentuk dari alokasi.
+            </p>
+
+            <form class="grid gap-3 md:grid-cols-5" @submit.prevent="tambahAlokasi">
+                <div><label class="mb-1 block text-xs font-medium text-neutral-500">Tanggal *</label><input v-model="alokForm.alloc_date" type="date" :class="inputCls" /></div>
+                <div class="md:col-span-2"><label class="mb-1 block text-xs font-medium text-neutral-500">Keterangan *</label><input v-model="alokForm.description" type="text" placeholder="mis. Beli ATK" :class="String(alokForm.description ?? '').trim() ? inputCls : inputKurang" /></div>
+                <div><label class="mb-1 block text-xs font-medium text-neutral-500">Jumlah *</label><input v-model.number="alokForm.amount" type="number" step="0.01" min="0" :class="Number(alokForm.amount) > 0 ? inputCls : inputKurang" /></div>
+                <div><label class="mb-1 block text-xs font-medium text-neutral-500">Bank Pengeluaran *</label><SearchSelect :model-value="alokForm.cash_account_id" :options="cashAccounts" placeholder="— pilih rekening —" :class="alokForm.cash_account_id ? '' : pilihKurang" @update:model-value="(v) => alokForm.cash_account_id = v" /></div>
+                <div class="md:col-span-5 flex flex-wrap items-center gap-3">
+                    <Button type="submit" :disabled="alokForm.processing || alokKurang.length > 0"><template #icon-left><Plus class="h-4 w-4" /></template>Tambah Alokasi</Button>
+                    <span v-if="alokKurang.length" class="text-xs text-amber-600 dark:text-amber-400">Lengkapi dulu — {{ alokKurang.join(', ') }}.</span>
+                    <span v-else class="text-xs text-neutral-500">Jurnal: Dr Uang Muka Operasional · Cr bank pengeluaran · {{ fmtRp(alokForm.amount) }}</span>
+                </div>
+            </form>
+        </div>
+
         <!-- Form realisasi (jika outstanding) -->
-        <div v-else-if="advance.status === 'outstanding'" class="card p-5">
+        <div v-if="advance.status === 'outstanding'" class="card p-5">
             <Button v-if="!showForm" @click="showForm = true"><template #icon-left><ClipboardCheck class="h-4 w-4" /></template>Realisasikan Bon</Button>
             <form v-else @submit.prevent="submit" class="space-y-3">
                 <div class="flex items-center justify-between">
@@ -377,7 +482,11 @@ function backToIndex() {
                 </p>
                 <button type="button" @click="addLine" class="inline-flex items-center gap-1 rounded-lg border border-neutral-300 px-2.5 py-1.5 text-xs hover:bg-neutral-50 dark:border-neutral-700"><Plus class="h-3.5 w-3.5" /> Baris</button>
                 <div class="space-y-1 rounded-lg bg-neutral-50 p-3 text-sm dark:bg-neutral-800">
-                    <div class="flex justify-between"><span>Nominal</span><span class="font-mono">{{ fmtRp(advance.amount) }}</span></div>
+                    <!-- Acuannya total ALOKASI untuk bon Debit VA model baru: hanya sebesar itulah
+                         Uang Muka Operasional yang benar-benar terbentuk. Menampilkan nominal bon
+                         di sini akan menjanjikan sisa refund atas uang yang belum keluar dari bank. -->
+                    <div class="flex justify-between"><span>{{ allocationMode ? 'Total Alokasi Kasbon' : 'Nominal' }}</span><span class="font-mono">{{ fmtRp(acuanPanjar) }}</span></div>
+                    <div v-if="allocationMode" class="flex justify-between text-xs text-neutral-400"><span>Nominal bon (sisanya tetap di saldo kartu)</span><span class="font-mono">{{ fmtRp(advance.amount) }}</span></div>
                     <div class="flex justify-between"><span>Total Realisasi (beban)</span><span class="font-mono">{{ fmtRp(realized) }}</span></div>
                     <div class="flex justify-between border-t border-neutral-200 pt-1 font-semibold dark:border-neutral-700" :class="settlement >= 0 ? 'text-success-700' : 'text-danger-600'"><span>{{ settlement >= 0 ? 'Sisa dikembalikan ke kas (Refund)' : 'Kekurangan (Reimburse)' }}</span><span class="font-mono">{{ fmtRp(Math.abs(settlement)) }}</span></div>
                 </div>

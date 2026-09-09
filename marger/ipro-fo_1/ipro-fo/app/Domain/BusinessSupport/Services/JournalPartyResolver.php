@@ -234,9 +234,47 @@ final class JournalPartyResolver
         return [
             $this->mapVia(BsCashTransaction::class, ['journal_id'], 'payee', $ids, $asis),
             $this->mapVia(BsCashAdvance::class, ['journal_id', 'realize_journal_id', 'settle_journal_id'], 'holder', $ids, $asis),
+            /* Jurnal ALOKASI KASBON tidak menempel pada bonnya, melainkan pada baris alokasinya
+               sendiri. Sejak pembayaran Debit VA tidak berjurnal, justru jurnal inilah satu-
+               satunya yang mendebit Uang Muka Operasional untuk bon Debit VA — tanpa baris ini,
+               seluruh pengeluaran kasbon Debit VA muncul tanpa nama pemegangnya. */
+            $this->mapAlokasiKasbon($ids),
             $this->mapVia(BsGiro::class, ['receive_journal_id', 'settle_journal_id'], 'drawer', $ids, $asis),
             $this->mapVia(BsOutgoingCheque::class, ['handover_journal_id', 'clear_journal_id', 'void_journal_id'], 'payee', $ids, $asis),
         ];
+    }
+
+    /**
+     * Peta journal_id => nama pemegang bon lewat baris ALOKASI KASBON.
+     *
+     * Berdiri sendiri, tidak lewat mapVia(): nama pihaknya tidak ada di tabel alokasi melainkan
+     * di tabel bon induknya, jadi ia perlu join — sementara mapVia() membaca satu tabel saja.
+     *
+     * @param  array<int>  $ids
+     * @return array<int, string>
+     */
+    private function mapAlokasiKasbon(array $ids): array
+    {
+        if ($ids === []) {
+            return [];
+        }
+
+        $peta = [];
+        foreach (array_chunk($ids, self::CHUNK) as $bagian) {
+            // Kolom disebut lengkap dengan nama tabelnya — bs_cash_advances juga punya journal_id.
+            \App\Domain\BusinessSupport\Models\BsCashAdvanceAllocation::query()
+                ->join('bs_cash_advances as a', 'a.id', '=', 'bs_cash_advance_allocations.cash_advance_id')
+                ->whereIn('bs_cash_advance_allocations.journal_id', $bagian)
+                ->get(['bs_cash_advance_allocations.journal_id as jid', 'a.holder'])
+                ->each(function ($r) use (&$peta): void {
+                    $nama = trim((string) $r->holder);
+                    if ($nama !== '') {
+                        $peta[(int) $r->jid] = $nama;
+                    }
+                });
+        }
+
+        return $peta;
     }
 
     /**

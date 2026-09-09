@@ -153,42 +153,36 @@ class CreditCardService
     /** Penanda sumber permintaan yang lahir dari tombol Masuk Saldo — dasar kolom "Sisa Saldo". */
     public const SUMBER_MASUK_SALDO = 'cash_advance_sisa';
 
+    /** Penanda permintaan yang lahir otomatis dari pembayaran Debit VA sebuah bon. */
+    public const SUMBER_BON = 'cash_advance';
+
     /**
-     * Permintaan otomatis dari pembayaran bon sementara lewat Debit VA:
-     * satu permintaan PENAMBAHAN SALDO sebesar nominal bonnya, dan satu permintaan MASA
-     * BERLAKU sesuai tanggal expired yang ditentukan pada pembayarannya.
+     * Permintaan MASA BERLAKU otomatis dari pembayaran bon sementara lewat Debit VA.
      *
-     * Keduanya menunggu persetujuan. Saldonya TIDAK bertambah hanya karena jurnalnya terbentuk
-     * — jurnal mencatat uang berpindah ke rekening kartunya, sedangkan saldo yang boleh dipakai
-     * adalah keputusan tersendiri.
+     * SALDONYA TIDAK LAGI DIAJUKAN DI SINI. Kolom "Penambahan" pada Set Up Credit Card kini
+     * dibaca langsung dari pembayaran Debit VA yang tersimpan (CreditCardClosingService), sebab
+     * itulah yang diminta: penambahan berasal dari nominal pembayaran Debit VA. Mengajukan
+     * permintaan penambahan otomatis di samping itu akan melahirkan angka KEDUA untuk uang yang
+     * sama — menumpuk di antrean persetujuan, dan bila disetujui membuat saldo kartu terhitung
+     * dua kali.
      *
-     * @return array{topup:BsCreditCardRequest, expiry:BsCreditCardRequest}
+     * Masa berlakunya tetap lewat persetujuan: kapan sebuah kartu berhenti bisa didebit adalah
+     * keputusan tersendiri, bukan turunan dari pembayaran mana pun.
      */
-    public function requestFromCashAdvance(
+    public function requestMasaBerlakuDariBon(
         BsCreditCard $card,
         int $advanceId,
         string $advanceNumber,
-        float $amount,
         string $expiredDate,
         ?int $userId = null,
-    ): array {
-        $dasar = [
-            'source_type' => 'cash_advance',
-            'source_id'   => $advanceId,
-            'reference'   => $advanceNumber,
-        ];
-
-        return [
-            'topup' => $this->request($card, $dasar + [
-                'type'   => 'topup',
-                'amount' => $amount,
-                'note'   => 'Otomatis dari pembayaran Debit VA bon '.$advanceNumber,
-            ], $userId),
-            'expiry' => $this->request($card, $dasar + [
-                'type'         => 'expiry',
-                'expired_date' => $expiredDate,
-                'note'         => 'Masa berlaku dari pembayaran Debit VA bon '.$advanceNumber,
-            ], $userId),
-        ];
+    ): BsCreditCardRequest {
+        return $this->request($card, [
+            'type'         => 'expiry',
+            'expired_date' => $expiredDate,
+            'source_type'  => self::SUMBER_BON,
+            'source_id'    => $advanceId,
+            'reference'    => $advanceNumber,
+            'note'         => 'Masa berlaku dari pembayaran Debit VA bon '.$advanceNumber,
+        ], $userId);
     }
 }

@@ -5,7 +5,7 @@ import { ArrowLeft, ReceiptText, ArrowUpCircle, ArrowDownCircle, Scale, ChevronR
 
 const props = defineProps<{
     period: { year: number; month: number };
-    keluaran: { dpp: number; ppn: number; ar_ppn: number; prop_ppn: number };
+    keluaran: { dpp: number; ppn: number; jurnal_ppn: number; entry_ppn: number };
     masukan: { dpp: number; ppn: number };
     selisih: number;
     gl: { keluaran: number; masukan: number };
@@ -43,7 +43,7 @@ const gapMas = Math.round((props.gl.masukan - props.masukan.ppn) * 100) / 100;
                 <div class="flex items-center justify-between"><div class="flex items-center gap-2 text-sm font-semibold text-success-700 dark:text-success-300"><ArrowUpCircle class="h-5 w-5" /> PPN Keluaran</div><ChevronRight class="h-4 w-4 text-neutral-300" /></div>
                 <div class="mt-2 text-2xl font-bold text-success-600">{{ fmtRp(keluaran.ppn) }}</div>
                 <div class="mt-1 text-xs text-neutral-400">DPP {{ fmtRp(keluaran.dpp) }}</div>
-                <div class="mt-1 text-[11px] text-neutral-400">AR {{ fmtRp(keluaran.ar_ppn) }} · Properti {{ fmtRp(keluaran.prop_ppn) }}</div>
+                <div class="mt-1 text-[11px] text-neutral-400">Mutasi jurnal {{ fmtRp(keluaran.jurnal_ppn) }} · Entri approval {{ fmtRp(keluaran.entry_ppn) }}</div>
             </Link>
             <Link :href="route('bs.tax.masukan', { year: period.year, month: period.month })" class="card p-5 transition hover:ring-2 hover:ring-danger-300">
                 <div class="flex items-center justify-between"><div class="flex items-center gap-2 text-sm font-semibold text-danger-700 dark:text-danger-300"><ArrowDownCircle class="h-5 w-5" /> PPN Masukan</div><ChevronRight class="h-4 w-4 text-neutral-300" /></div>
