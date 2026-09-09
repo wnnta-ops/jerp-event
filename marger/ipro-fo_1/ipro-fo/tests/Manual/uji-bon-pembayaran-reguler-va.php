@@ -177,35 +177,41 @@ try {
     $cek('tersimpan sebagai debit_va', $segarVa->payment_method === 'debit_va', (string) $segarVa->payment_method);
     $cek('tanggal expired tersimpan',
         $segarVa->va_expired_date?->toDateString() === '2026-09-18', (string) $segarVa->va_expired_date);
-    $cek('jurnalnya terbentuk', $segarVa->journal_id !== null);
+    /* PEMBAYARAN DEBIT VA TIDAK LAGI BERJURNAL. Uangnya belum berpindah ke mana pun pada tanggal
+       transfer VA — ia hanya DISEDIAKAN pada kartunya, masih di rekening perusahaan sendiri.
+       Yang mengeluarkannya dari bank adalah ALOKASI KASBON (Dr Uang Muka Operasional / Cr bank
+       pengeluaran), yang tanggal & banknya bisa berbeda dan bisa beberapa kali.
+       Alur alokasinya diuji di tests/Manual/uji-kasbon-debit-va-alokasi.php. */
+    $cek('pembayaran Debit VA TIDAK membentuk jurnal', $segarVa->journal_id === null,
+        (string) $segarVa->journal_id);
+    $cek('sumber bank/kas tidak ikut tersimpan pada Debit VA', $segarVa->cash_account_id === null,
+        (string) $segarVa->cash_account_id);
+    $cek('akun kartunya pun tidak bermutasi di buku besar',
+        (float) DB::table('bs_journal_lines')->where('account_id', $akunKartu)->sum('debit') === 0.0);
 
-    /* SISI DEBITNYA BERBEDA dari reguler, dan itu memang disengaja sejak Set Up Credit Card.
-       Uang bon Debit VA berpindah ke REKENING KARTUNYA dulu, baru menjadi panjar saat kartunya
-       dipakai — jadi yang didebit akun kartu itu, bukan Uang Muka Operasional. Sisi kreditnya
-       tetap sama: bank sumber yang dipilih, dengan bentuk dua baris yang sama. */
-    $barisVa = DB::table('bs_journal_lines')->where('journal_id', $segarVa->journal_id)
-        ->orderBy('id')->get(['account_id', 'debit', 'credit']);
+    // Pembayaran REGULER tidak ikut berubah: ia tetap berjurnal Dr Uang Muka Op / Cr bank.
     $barisReg = DB::table('bs_journal_lines')->where('journal_id', $segar->journal_id)
         ->orderBy('id')->get(['account_id', 'debit', 'credit']);
-    $cek('jurnal VA tetap dua baris & seimbang',
-        $barisVa->count() === 2 && (float) $barisVa->sum('debit') === (float) $barisVa->sum('credit'),
-        json_encode($barisVa));
-    $cek('jurnal VA mendebit AKUN KARTU, bukan Uang Muka Operasional',
-        (float) ($barisVa->firstWhere('account_id', $akunKartu)->debit ?? 0) === 750000.0,
-        json_encode($barisVa));
+    $cek('jurnal reguler tetap dua baris & seimbang',
+        $barisReg->count() === 2 && (float) $barisReg->sum('debit') === (float) $barisReg->sum('credit'),
+        json_encode($barisReg));
     $cek('jurnal reguler tetap mendebit akun Uang Muka Operasional',
         (int) $barisReg->firstWhere('debit', '>', 0)?->account_id === (int) $segar->advance_account_id);
-    $cek('sisi kredit keduanya sama-sama bank sumber',
-        (int) $barisVa->firstWhere('credit', '>', 0)?->account_id === $kas
-            && (int) $barisReg->firstWhere('credit', '>', 0)?->account_id === $kas);
+    $cek('jurnal reguler tetap mengkredit bank sumber',
+        (int) $barisReg->firstWhere('credit', '>', 0)?->account_id === $kas);
 
-    // Pembayarannya melahirkan permintaan saldo & masa berlaku pada kartu yang dipilih.
+    /* Yang lahir otomatis dari pembayarannya kini MASA BERLAKU saja. Permintaan penambahan saldo
+       ditiadakan: kolom "Penambahan" pada Set Up Credit Card dibaca langsung dari pembayaran
+       Debit VA yang tersimpan, jadi permintaan saldo di sampingnya akan menjadi angka kedua
+       untuk uang yang sama. */
     $mintaVa = \App\Domain\BusinessSupport\Models\BsCreditCardRequest::where('source_type', 'cash_advance')
         ->where('source_id', $segarVa->id)->get();
-    $cek('lahir 2 permintaan kartu (saldo + masa berlaku)', $mintaVa->count() === 2, (string) $mintaVa->count());
-    $cek('keduanya menempel pada kartu yang dipilih',
+    $cek('lahir 1 permintaan kartu (masa berlaku saja)', $mintaVa->count() === 1, (string) $mintaVa->count());
+    $cek('permintaan itu memang masa berlaku, bukan saldo',
+        $mintaVa->every(fn ($r) => $r->type === 'expiry'), $mintaVa->pluck('type')->join(','));
+    $cek('ia menempel pada kartu yang dipilih',
         $mintaVa->every(fn ($r) => (int) $r->credit_card_id === (int) $kartu->id));
-    $cek('keduanya menunggu persetujuan', $mintaVa->every(fn ($r) => $r->status === 'pending'));
+    $cek('ia menunggu persetujuan', $mintaVa->every(fn ($r) => $r->status === 'pending'));
 
     echo "\n=== 4. Tanggal expired tidak boleh mendahului tanggal transfer ===\n";
 

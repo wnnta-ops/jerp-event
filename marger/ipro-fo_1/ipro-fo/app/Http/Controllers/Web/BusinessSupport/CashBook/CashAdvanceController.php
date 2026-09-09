@@ -6,10 +6,12 @@ namespace App\Http\Controllers\Web\BusinessSupport\CashBook;
 
 use App\Domain\BusinessSupport\Models\BsAccount;
 use App\Domain\BusinessSupport\Models\BsCashAdvance;
+use App\Domain\BusinessSupport\Models\BsCashAdvanceAllocation;
 use App\Domain\BusinessSupport\Models\BsEmployee;
 use App\Domain\BusinessSupport\Models\BsHrDepartment;
 use App\Domain\BusinessSupport\Print\PengajuanKasbonPrinter;
 use App\Domain\BusinessSupport\Models\BsJournal;
+use App\Domain\BusinessSupport\Services\CashAdvanceAllocationService;
 use App\Domain\BusinessSupport\Services\CashAdvanceService;
 use App\Exceptions\BusinessRuleException;
 use App\Http\Controllers\Controller;
@@ -532,7 +534,11 @@ class CashAdvanceController extends Controller
 
         $v = $request->validate([
             'paid_date'       => ['required', 'date'],
-            'cash_account_id' => ['required', 'integer', 'exists:bs_accounts,id'],
+            /* Sumber bank/kas hanya untuk pembayaran REGULER. Pembayaran Debit VA tidak membentuk
+               jurnal apa pun — uangnya baru keluar dari bank saat Alokasi Kasbon dibuat, dan bank
+               itu dipilih di sana. `required_unless` (bukan `required`) supaya layar bayar massal,
+               yang tidak pernah mengirim payment_method, tetap wajib memilih banknya. */
+            'cash_account_id' => ['nullable', 'integer', 'exists:bs_accounts,id', 'required_unless:payment_method,debit_va'],
             // Cara pembayaran; kosong = reguler (perilaku lama).
             'payment_method'  => ['nullable', 'string', 'in:'.implode(',', array_keys(BsCashAdvance::PAYMENT_METHODS))],
             // Tanggal expired WAJIB pada Debit VA, dan tidak boleh mendahului tanggal transfer:
@@ -544,6 +550,7 @@ class CashAdvanceController extends Controller
             // kartu tertentu — tanpa itu, saldo bertambah di kartu yang tidak dituju.
             'credit_card_id'  => ['nullable', 'integer', 'exists:bs_credit_cards,id', 'required_if:payment_method,debit_va'],
         ], [
+            'cash_account_id.required_unless'  => 'Sumber bank/kas wajib dipilih untuk pembayaran reguler.',
             'va_expired_date.required_if'      => 'Tanggal expired VA wajib diisi untuk Pembayaran Debit VA.',
             'va_expired_date.after_or_equal'   => 'Tanggal expired VA tidak boleh mendahului tanggal transfer.',
             'credit_card_id.required_if'       => 'Nomor kartu kredit/VA wajib dipilih untuk Pembayaran Debit VA.',
@@ -560,7 +567,48 @@ class CashAdvanceController extends Controller
             return back()->with('error', $e->getMessage());
         }
 
-        return redirect()->route('bs.advance.show', $advance)->with('success', 'Bon sementara dibayar — jurnal Uang Muka Operasional terbentuk.');
+        $advance->refresh();
+
+        return redirect()->route('bs.advance.show', $advance)->with('success', $advance->payment_method === 'debit_va'
+            ? 'Pembayaran Debit VA tersimpan — belum ada jurnal. Saldonya masuk ke kartu/VA; isi Alokasi Kasbon untuk mengeluarkan uangnya dari bank.'
+            : 'Bon sementara dibayar — jurnal Uang Muka Operasional terbentuk.');
+    }
+
+    /** Tambah satu baris Alokasi Kasbon (bon Debit VA) — Dr Uang Muka Operasional / Cr bank pengeluaran. */
+    public function allocationStore(Request $request, BsCashAdvance $advance, CashAdvanceAllocationService $svc): RedirectResponse
+    {
+        abort_unless($request->user()?->canModule('cashbook'), 403);
+
+        $v = $request->validate([
+            'alloc_date'      => ['required', 'date'],
+            'description'     => ['nullable', 'string', 'max:255'],
+            'amount'          => ['required', 'numeric', 'min:0.01'],
+            'cash_account_id' => ['required', 'integer', 'exists:bs_accounts,id'],
+        ], [
+            'cash_account_id.required' => 'Pilih bank pengeluaran alokasi.',
+        ]);
+
+        try {
+            $svc->tambah($advance, $v, $request->user()->id);
+        } catch (BusinessRuleException $e) {
+            return back()->with('error', $e->getMessage());
+        }
+
+        return back()->with('success', 'Alokasi kasbon tercatat — jurnal Dr Uang Muka Operasional / Cr bank pengeluaran terbentuk.');
+    }
+
+    /** Hapus satu baris Alokasi Kasbon beserta jurnalnya (hanya selama bon belum direalisasi). */
+    public function allocationDestroy(Request $request, BsCashAdvanceAllocation $allocation, CashAdvanceAllocationService $svc): RedirectResponse
+    {
+        abort_unless($request->user()?->canModule('cashbook'), 403);
+
+        try {
+            $svc->hapus($allocation, $request->user()->id);
+        } catch (BusinessRuleException $e) {
+            return back()->with('error', $e->getMessage());
+        }
+
+        return back()->with('success', 'Alokasi kasbon dihapus beserta jurnalnya.');
     }
 
     public function show(Request $request, BsCashAdvance $advance): Response
@@ -593,7 +641,40 @@ class CashAdvanceController extends Controller
                 ->values(),
             'canApprove'      => (bool) $request->user()?->can('businesssupport.approval.act'), // #127
             'canEditDocDate'  => (bool) $request->user()?->canModule('cashbook'), // #125
+            /* ALOKASI KASBON — hanya bon Debit VA model baru (yang pembayarannya tidak berjurnal).
+               Bon Debit VA lama sudah terlanjur berjurnal ke akun kartunya saat dibayar; membuka
+               alokasi untuknya akan mendebit Uang Muka Operasional atas uang yang sudah tercatat
+               keluar sekali. Pembedanya DATA (journal_id), bukan payment_method. */
+            'allocations'     => $this->allocationRows($advance),
+            'allocationMode'  => $advance->payment_method === 'debit_va' && $advance->journal_id === null,
         ]);
+    }
+
+    /** @return array<string,mixed> */
+    private function allocationRows(BsCashAdvance $advance): array
+    {
+        $rows = BsCashAdvanceAllocation::with('cashAccount:id,code,name')
+            ->where('cash_advance_id', $advance->id)
+            ->orderBy('alloc_date')->orderBy('id')->get()
+            ->map(fn (BsCashAdvanceAllocation $a) => [
+                'id'           => $a->id,
+                'alloc_date'   => $a->alloc_date?->toDateString(),
+                'description'  => $a->description,
+                'amount'       => (float) $a->amount,
+                'account_id'   => $a->cash_account_id,
+                'account'      => trim((string) ($a->cashAccount?->code ? $a->cashAccount->code.' — ' : '').($a->cashAccount?->name ?? '')),
+                'journal_id'   => $a->journal_id,
+            ])->values();
+
+        $total = round((float) $rows->sum('amount'), 2);
+
+        return [
+            'rows'  => $rows,
+            'total' => $total,
+            // Sisa yang masih boleh dialokasikan — sekaligus bagian bon yang tetap menjadi saldo
+            // kartunya bila memang tidak jadi dipakai.
+            'sisa'  => round((float) $advance->amount - $total, 2),
+        ];
     }
 
     public function realize(Request $request, BsCashAdvance $advance, CashAdvanceService $svc): RedirectResponse

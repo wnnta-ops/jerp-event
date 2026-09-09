@@ -76,18 +76,42 @@ $NOMINAL = 10_000_000.0;
 $TERPAKAI = 4_000_000.0;
 $SISA = $NOMINAL - $TERPAKAI;
 
-/** Bon Debit VA yang sudah dibayar & direalisasi, menyisakan $SISA. */
+/**
+ * Bon Debit VA MODEL LAMA yang sudah dibayar & direalisasi, menyisakan $SISA.
+ *
+ * KENAPA MODEL LAMA. "Masuk Saldo" bertumpu pada satu kenyataan: uangnya memang MASIH BERADA di
+ * akun kartunya, sebab pembayarannya dulu mendebit akun itu. Sejak pembayaran Debit VA tidak lagi
+ * berjurnal (uangnya keluar dari bank lewat ALOKASI KASBON, ke Uang Muka Operasional), kenyataan
+ * itu hanya berlaku bagi bon yang TERLANJUR berjurnal — dan tombolnya memang hanya ditawarkan
+ * untuk bon semacam itu. Bon model baru menyelesaikan sisanya lewat Refund; alurnya diuji di
+ * tests/Manual/uji-kasbon-debit-va-alokasi.php.
+ *
+ * Jurnal pembayarannya karena itu dibuat di sini apa adanya, persis seperti yang tersimpan pada
+ * data lama: Dr akun kartu / Cr bank.
+ */
 $buatBonVa = function (float $nominal, float $terpakai) use ($svc, $user, $kartu, $bank, $beban, $cc) {
     $bon = $svc->issue([
         'advance_date' => now()->toDateString(), 'holder' => 'UJI Masuk Saldo',
         'purpose' => 'UJI masuk saldo', 'amount' => $nominal,
         'approval_mode' => 'offline', 'cost_center_id' => $cc->id,
     ], $user?->id);
-    $svc->pay($bon, [
+
+    $jurnalLama = app(\App\Domain\BusinessSupport\Services\JournalService::class)->post([
+        'journal_date' => now()->toDateString(), 'source' => 'cash', 'status' => 'posted',
+        'reference' => $bon->advance_number, 'description' => 'Pembayaran Debit VA (model lama)',
+        'created_by' => $user?->id,
+    ], [
+        ['account_id' => $kartu->account_id, 'cost_center_id' => $cc->id, 'debit' => $nominal, 'credit' => 0, 'description' => 'Top-up kartu'],
+        ['account_id' => $bank->id, 'cost_center_id' => $cc->id, 'debit' => 0, 'credit' => $nominal, 'description' => 'Transfer'],
+    ]);
+    $bon->update([
+        'status' => 'outstanding', 'payment_method' => 'debit_va',
         'paid_date' => now()->toDateString(), 'cash_account_id' => $bank->id,
-        'payment_method' => 'debit_va', 'va_expired_date' => now()->addDays(30)->toDateString(),
-        'credit_card_id' => $kartu->id,
-    ], $user?->id);
+        'credit_card_id' => $kartu->id, 'journal_id' => $jurnalLama->id,
+        'va_expired_date' => now()->addDays(30)->toDateString(),
+    ]);
+    $bon->refresh();
+
     $svc->realize($bon, [
         'realized_date' => now()->toDateString(), 'defer_settlement' => true,
         'lines' => [['expense_account_id' => $beban->id, 'cost_center_id' => $cc->id,
@@ -193,26 +217,33 @@ $rq = \Illuminate\Http\Request::create('/business-support/credit-cards', 'GET');
 $rq->setUserResolver(fn () => $user);
 $rq->headers->set('X-Inertia', 'true');
 $rq->headers->set('X-Inertia-Version', (string) \Inertia\Inertia::getVersion());
-$props = json_decode((string) $ctl->index($rq)->toResponse($rq)->getContent(), true)['props'] ?? [];
+$props = json_decode((string) $ctl->index($rq, app(\App\Domain\BusinessSupport\Services\CreditCardClosingService::class))
+    ->toResponse($rq)->getContent(), true)['props'] ?? [];
 $barisKartu = collect($props['cards'] ?? [])->firstWhere('id', $kartu->id);
 
 $ok('kartunya ada di layar', (bool) $barisKartu);
-$ok('kolom pemakaian dikirim', array_key_exists('pemakaian', $barisKartu ?? []));
-$ok('kolom sisa_saldo dikirim', array_key_exists('sisa_saldo', $barisKartu ?? []));
+/* Kolom kartu kini EMPAT dan semuanya milik SATU BULAN: Saldo Awal · Penambahan · Pemakaian ·
+   Sisa Saldo. Perhitungannya sendiri diuji di tests/Manual/uji-kasbon-debit-va-alokasi.php;
+   yang dijaga di sini adalah akibatnya bagi Masuk Saldo. */
+foreach (['saldo_awal', 'penambahan', 'pemakaian', 'sisa_saldo'] as $kolom) {
+    $ok("kolom {$kolom} dikirim ke layar", array_key_exists($kolom, $barisKartu ?? []));
+}
 
-// Pemakaian = jumlah KREDIT pada akun kartu di GL — dihitung ulang di sini dengan cara yang
-// sama, supaya angkanya benar-benar berasal dari mutasi akunnya, bukan dari tabel bon.
-$kreditGl = (float) BsJournalLine::where('account_id', $akunKartu->id)
-    ->selectRaw('COALESCE(SUM(credit),0) c')->value('c');
-$ok('pemakaian = jumlah kredit akun kartu di GL',
-    round((float) ($barisKartu['pemakaian'] ?? -1), 2) === round($kreditGl, 2),
-    ($barisKartu['pemakaian'] ?? 'null').' vs '.$kreditGl);
-$ok('sisa saldo = nominal yang dimasukkan lewat Masuk Saldo',
-    round((float) ($barisKartu['sisa_saldo'] ?? -1), 2) === $SISA,
-    ($barisKartu['sisa_saldo'] ?? 'null').' vs '.$SISA);
-$ok('permintaan yang DITOLAK tidak ikut dihitung sebagai sisa saldo',
-    round((float) ($barisKartu['sisa_saldo'] ?? -1), 2) !== round($SISA + 777_000, 2),
-    'yang ditolak ikut terhitung: '.($barisKartu['sisa_saldo'] ?? 'null'));
+/* MASUK SALDO TIDAK MENAMBAH "Penambahan" KARTUNYA — dan itu memang benar. Penambahan berasal
+   dari nominal PEMBAYARAN Debit VA; sisa realisasi yang dikembalikan ke kartu adalah uang yang
+   sama, yang memang tidak pernah keluar dari akun kartunya. Menghitungnya lagi berarti satu
+   rupiah masuk dua kali, dan sisa saldonya menggelembung tanpa satu galat pun. */
+$permintaanMasuk = BsCreditCardRequest::where('source_type', CreditCardService::SUMBER_MASUK_SALDO)
+    ->where('credit_card_id', $kartu->id)->where('status', 'approved')->sum('amount');
+$ok('ada permintaan Masuk Saldo yang disetujui sebagai bahan uji',
+    round((float) $permintaanMasuk, 2) === $SISA, (string) $permintaanMasuk);
+$ok('Masuk Saldo TIDAK ikut terhitung sebagai Penambahan kartu',
+    round((float) ($barisKartu['penambahan'] ?? -1), 2) !== round($SISA, 2),
+    'penambahan '.($barisKartu['penambahan'] ?? 'null').' — sama dengan nilai Masuk Saldo, berarti terhitung dua kali');
+$ok('Pemakaian kartu tidak lagi dibaca dari mutasi akun kartunya',
+    round((float) ($barisKartu['pemakaian'] ?? -1), 2) === 0.0,
+    'bon uji ini tidak punya Alokasi Kasbon, jadi pemakaiannya nol: '.($barisKartu['pemakaian'] ?? 'null'));
+
 
 echo "\n=== 7. SUMBER LAYAR ===\n";
 $vueBon = file_get_contents(resource_path('js/Pages/BusinessSupport/CashBook/Advances/Show.vue')) ?: '';
@@ -241,10 +272,13 @@ $ok('syarat tombolnya sama dengan server',
 $ok('konfirmasinya menyebut tanpa jurnal', str_contains($vueBon, 'TIDAK ada jurnal tambahan'));
 
 $vueKartu = file_get_contents(resource_path('js/Pages/BusinessSupport/CashBook/CreditCards/Index.vue')) ?: '';
-$ok('kepala kolom Pemakaian ada', str_contains($vueKartu, '>Pemakaian</th>'));
-$ok('kepala kolom Sisa Saldo ada', str_contains($vueKartu, '>Sisa Saldo</th>'));
-$ok('keduanya di sebelah kolom Saldo',
-    (bool) preg_match('/>Saldo<\/th>[\s\S]{0,600}>Pemakaian<\/th>\s*<th[^>]*>Sisa Saldo<\/th>/', $vueKartu));
+/* Kolom kartu kini EMPAT dan berurutan membentuk rumusnya: Saldo Awal + Penambahan − Pemakaian
+   = Sisa Saldo. Urutannya ikut dikunci — angka yang bergeser satu kolom tidak menimbulkan galat
+   apa pun, hanya laporan yang salah. */
+$ok('keempat kepala kolomnya ada & berurutan sesuai rumusnya',
+    (bool) preg_match('/>Saldo Awal<\/th>\s*<th[^>]*>Penambahan<\/th>\s*<th[^>]*>Pemakaian<\/th>\s*<th[^>]*>Sisa Saldo<\/th>/', $vueKartu));
+$ok('kolom "Saldo" berjalan yang lama sudah tidak ada lagi',
+    ! preg_match('/<th[^>]*>Saldo<\/th>/', $vueKartu));
 
 } finally {
     DB::rollBack();

@@ -761,6 +761,9 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
     Route::post('/business-support/credit-cards/{card}/requests',       [\App\Http\Controllers\Web\BusinessSupport\CashBook\CreditCardController::class, 'requestStore'])->name('bs.cashbook.credit-card.request');
     Route::post('/business-support/credit-card-requests/{creditCardRequest}/approve', [\App\Http\Controllers\Web\BusinessSupport\CashBook\CreditCardController::class, 'approve'])->name('bs.cashbook.credit-card.approve');
     Route::post('/business-support/credit-card-requests/{creditCardRequest}/reject',  [\App\Http\Controllers\Web\BusinessSupport\CashBook\CreditCardController::class, 'reject'])->name('bs.cashbook.credit-card.reject');
+    // Closing Credit Card per kartu per bulan — sisa saldonya menjadi saldo awal bulan berikutnya.
+    Route::post('/business-support/credit-cards/{card}/closing',        [\App\Http\Controllers\Web\BusinessSupport\CashBook\CreditCardController::class, 'close'])->name('bs.cashbook.credit-card.close');
+    Route::post('/business-support/credit-cards/{card}/closing/buka',   [\App\Http\Controllers\Web\BusinessSupport\CashBook\CreditCardController::class, 'reopen'])->name('bs.cashbook.credit-card.reopen');
     // CB-2: Rekening Ledger + Kalender Cek Giro
     Route::get('/business-support/cash-book-ledger',           [BsCashBookController::class, 'ledger'])->name('bs.cashbook.ledger');
     Route::get('/business-support/cash-book-ledger-excel',     [BsCashBookController::class, 'ledgerExcel'])->name('bs.cashbook.ledger.excel');       // #9
@@ -863,6 +866,9 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
     Route::post('/business-support/bon-sementara/{advance}/reimburse', [BsAdvanceController::class, 'reimburse'])->name('bs.advance.reimburse');
     // Sisa bon Debit VA dikembalikan ke saldo kartunya — tanpa jurnal (uangnya masih di akun kartu).
     Route::post('/business-support/bon-sementara/{advance}/masuk-saldo', [BsAdvanceController::class, 'masukSaldo'])->name('bs.advance.masuk-saldo');
+    // ALOKASI KASBON — pengeluaran bertahap bon Debit VA; tiap baris berjurnal Dr Uang Muka Op / Cr bank.
+    Route::post('/business-support/bon-sementara/{advance}/alokasi',      [BsAdvanceController::class, 'allocationStore'])->name('bs.advance.allocation.store');
+    Route::delete('/business-support/bon-sementara-alokasi/{allocation}', [BsAdvanceController::class, 'allocationDestroy'])->name('bs.advance.allocation.destroy');
     Route::get('/business-support/bon-sementara/{advance}/print',           [BsAdvanceController::class, 'print'])->name('bs.advance.print');
     Route::get('/business-support/bon-sementara/{advance}/print-realisasi', [BsAdvanceController::class, 'printRealisasi'])->name('bs.advance.print-realisasi');
     Route::post('/business-support/bon-sementara/{advance}/tanggal-dokumen', [BsAdvanceController::class, 'setReceivedDate'])->name('bs.advance.received-date'); // #125

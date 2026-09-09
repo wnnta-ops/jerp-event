@@ -94,15 +94,18 @@ const KARTU = [
     { id: 1, account_id: 18, account_code: '10101020210', account_name: 'MANDIRI REK. 141-00-9988886-9',
       card_number: '141-00-9988886-9', name: 'MANDIRI REK. 141-00-9988886-9', label: '141-00-9988886-9 — MANDIRI REK. 141-00-9988886-9',
       is_active: true, balance: 7500000, expired_date: '2027-01-31', expired: false, usable: true, note: null,
-      pemakaian: 4000000, sisa_saldo: 6000000 },
+      saldo_awal: 7500000, penambahan: 2500000, pemakaian: 4000000, sisa_saldo: 6000000,
+      closed: false, closed_at: null, prev_closed: true },
     { id: 2, account_id: 19, account_code: '10101020211', account_name: 'BCA VA',
       card_number: '888-1234', name: 'BCA VA', label: '888-1234 — BCA VA',
       is_active: false, balance: 0, expired_date: null, expired: false, usable: false, note: null,
-      pemakaian: 0, sisa_saldo: 0 },
+      saldo_awal: 0, penambahan: 0, pemakaian: 0, sisa_saldo: 0,
+      closed: false, closed_at: null, prev_closed: false },
     { id: 3, account_id: 20, account_code: '10101020212', account_name: 'BNI VA',
       card_number: '777-9999', name: 'BNI VA', label: '777-9999 — BNI VA',
       is_active: true, balance: 1250000, expired_date: '2026-01-01', expired: true, usable: false, note: null,
-      pemakaian: 250000, sisa_saldo: 0 },
+      saldo_awal: 0, penambahan: 250000, pemakaian: 250000, sisa_saldo: 0,
+      closed: false, closed_at: null, prev_closed: false },
 ];
 const PERMINTAAN = [
     { id: 11, credit_card_id: 1, card: '141-00-9988886-9 — MANDIRI REK. 141-00-9988886-9', type: 'topup',
@@ -145,6 +148,7 @@ const propsBon = (adv, kartu) => ({
     const html = await render(HAL_KARTU, {
         cards: KARTU, requests: PERMINTAAN,
         accounts: [{ id: 21, label: '10101020213 — MANDIRI LAIN' }], types: TYPES, canApprove: true,
+        period: { year: 2026, month: 9, label: 'September 2026' }, riwayat: null,
     });
 
     cek('judul halaman muncul', html.includes('Set Up Credit Card'));
@@ -182,14 +186,16 @@ const propsBon = (adv, kartu) => ({
        Diperiksa PER SEL menurut letak kolomnya, bukan "ada di baris ini" — ketiganya sama-sama
        rupiah, jadi mencarinya se-baris akan lulus meski nilainya tertukar antar kolom. */
     const selKe = (baris, nama) => (baris.match(/<td[^>]*>[\s\S]*?<\/td>/g) || [])[judulKartu.indexOf(nama)] || '';
-    cek('kolom Pemakaian & Sisa Saldo ada di kepala tabel',
-        judulKartu.includes('Pemakaian') && judulKartu.includes('Sisa Saldo'), JSON.stringify(judulKartu));
+    cek('keempat kolom bulanannya ada di kepala tabel',
+        ['Saldo Awal','Penambahan','Pemakaian','Sisa Saldo'].every((k) => judulKartu.includes(k)), JSON.stringify(judulKartu));
     cek('Pemakaian tampil pada kolomnya sendiri', selKe(bMandiri, 'Pemakaian').includes('4.000.000'),
         selKe(bMandiri, 'Pemakaian'));
     cek('Sisa Saldo tampil pada kolomnya sendiri', selKe(bMandiri, 'Sisa Saldo').includes('6.000.000'),
         selKe(bMandiri, 'Sisa Saldo'));
-    cek('Saldo tetap pada kolomnya sendiri', selKe(bMandiri, 'Saldo').includes('7.500.000'),
-        selKe(bMandiri, 'Saldo'));
+    cek('Saldo Awal tampil pada kolomnya sendiri', selKe(bMandiri, 'Saldo Awal').includes('7.500.000'),
+        selKe(bMandiri, 'Saldo Awal'));
+    cek('Penambahan tampil pada kolomnya sendiri', selKe(bMandiri, 'Penambahan').includes('2.500.000'),
+        selKe(bMandiri, 'Penambahan'));
     cek('saldo kartu nonaktif tampil 0', bBca && bBca.includes('Rp 0'));
 
     // Lebar tabel kartu: kepala & isi harus sama, kalau tidak kolomnya bergeser diam-diam.
@@ -205,8 +211,12 @@ const propsBon = (adv, kartu) => ({
     const barisUbah = src.slice(awalUbah, src.indexOf(';', src.indexOf('})', awalUbah)));
     cek('form Ubah Kartu tidak memuat kolom balance', !barisUbah.includes('balance'), barisUbah.trim());
     cek('form Ubah Kartu tidak memuat kolom expired_date', !barisUbah.includes('expired_date'));
-    cek('layar menyebut saldo hanya berubah lewat persetujuan',
-        html.includes('permintaan yang disetujui') || html.includes('Permintaan yang disetujui'));
+    /* Saldo kartu kini dihitung per bulan dari dokumennya (pembayaran Debit VA & Alokasi
+       Kasbon), jadi yang dijelaskan layar adalah RUMUSNYA — bukan lagi 'lewat persetujuan'. */
+    cek('layar menjelaskan rumus saldo bulanannya',
+        html.includes('Saldo Awal') && html.includes('Penambahan') && html.includes('Pemakaian') && html.includes('Sisa Saldo'));
+    cek('form Ubah Kartu tetap tanpa jalan pintas menyunting saldo',
+        !barisUbah.includes('balance') && !barisUbah.includes('expired_date'));
 
     console.log('\n=== 3. PERMINTAAN MENUNGGU & PERSETUJUANNYA ===');
     cek('bagian Menunggu Persetujuan ada', html.includes('Menunggu Persetujuan'));
@@ -216,6 +226,7 @@ const propsBon = (adv, kartu) => ({
 
     const tanpaHak = await render(HAL_KARTU, {
         cards: KARTU, requests: PERMINTAAN, accounts: [], types: TYPES, canApprove: false,
+        period: { year: 2026, month: 9, label: 'September 2026' }, riwayat: null,
     });
     cek('tanpa hak approve, tombol Setujui tidak muncul', !tanpaHak.includes('Setujui'));
     cek('tanpa hak approve, alasannya disebut', tanpaHak.includes('tanpa hak approve'));
@@ -226,7 +237,11 @@ const propsBon = (adv, kartu) => ({
     /* Keterangan jurnal dibaca dari baris "Jurnal: Dr … · Cr …" saja. Paragraf pengantar di
        atas form menyebut KEDUA kemungkinan sekaligus, jadi mencari untainya di seluruh halaman
        akan selalu menemukan "Dr Uang Muka Operasional" — termasuk pada bon Debit VA. */
-    const ketJurnal = (html) => ((html.match(/Jurnal: Dr [^<]*/g) || [])[0] || '');
+    /* Ringkasan jurnal pada blok pembayaran. Diambil dari KOTAK RINGKASANNYA, bukan dari untai
+       'Jurnal: Dr …': pada Debit VA kotak itu justru berbunyi 'Tidak ada jurnal', sehingga pola
+       lama akan mengembalikan untai kosong dan setiap pemeriksaannya lulus/gagal palsu. */
+    const ketJurnal = (html) => ((html.match(/<div class="md:col-span-2 flex items-center justify-between rounded-lg bg-amber-50[\s\S]*?<\/div>/) || [''])[0])
+        .replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
 
     globalThis.__ubahForm = null;
     const bonReguler = await render(HAL_BON, propsBon({ ...bonDasar }, kartuUsable));
@@ -239,11 +254,17 @@ const propsBon = (adv, kartu) => ({
     const bonVa = await render(HAL_BON, propsBon({ ...bonDasar }, kartuUsable));
     cek('pada Debit VA pemilih kartu muncul', bonVa.includes('Nomor Kartu Kredit / VA'));
     cek('pada Debit VA tanggal expired tetap diminta', bonVa.includes('Tanggal Expired VA'));
-    cek('keterangan jurnal berpindah ke akun kartunya',
-        ketJurnal(bonVa).includes('Dr 141-00-9988886-9') && !ketJurnal(bonVa).includes('Uang Muka'), ketJurnal(bonVa));
-    cek('saldo kartu terpilih ditampilkan', bonVa.includes('7.500.000'));
-    cek('disebutkan permintaan saldo & masa berlaku akan terbit otomatis',
-        bonVa.includes('otomatis') && bonVa.includes('menunggu persetujuan'));
+    /* Pembayaran Debit VA tidak berjurnal lagi: ringkasannya karena itu menyebut bahwa jurnal
+       baru terbentuk saat ALOKASI KASBON, bukan menyebut akun kartu sebagai sisi debit. */
+    cek('ringkasannya menyebut Debit VA tanpa jurnal',
+        ketJurnal(bonVa).includes('Tidak ada jurnal'), ketJurnal(bonVa));
+    cek('ringkasannya menunjuk Alokasi Kasbon sebagai pembentuk jurnalnya',
+        ketJurnal(bonVa).includes('Alokasi Kasbon'), ketJurnal(bonVa));
+
+    cek('disebutkan nominalnya menjadi Penambahan saldo kartunya',
+        bonVa.includes('Penambahan') && bonVa.includes('Set Up Credit Card'));
+    cek('disebutkan hanya masa berlakunya yang menunggu persetujuan',
+        bonVa.includes('masa berlakunya') && bonVa.includes('menunggu persetujuan'));
 
     // Tanpa satu pun kartu aktif: penyebabnya harus disebut, bukan sekadar dropdown kosong.
     globalThis.__ubahForm = (d) => ('va_expired_date' in d ? { payment_method: 'debit_va' } : null);
