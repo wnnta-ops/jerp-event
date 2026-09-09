@@ -35,10 +35,15 @@ Route::prefix('v1')->name('api.')->group(function (): void {
             Route::apiResource('customers', CustomerController::class);
             Route::apiResource('units',     UnitController::class)->only(['index', 'show']);
 
-            // Sales
-            Route::apiResource('bookings', BookingController::class)->only(['index', 'store', 'show']);
-            Route::post('bookings/{booking}/cancel',  [BookingController::class, 'cancel'])->name('bookings.cancel');
-            Route::post('bookings/{booking}/promote', [BookingController::class, 'promote'])->name('bookings.promote');
+            // Sales — sudah PINDAH ke FO. Dimatikan lewat sakelar yang sama dengan
+            // rutenya di web.php: store/cancel/promote masih bisa MENULIS ke data
+            // booking yang kini dikelola FO, dan API tidak punya menu untuk dicabut.
+            // Kembalikan dengan BO_MODUL_SALES_AKTIF=true di .env.
+            if (config('modul_pindah_fo.sales')) {
+                Route::apiResource('bookings', BookingController::class)->only(['index', 'store', 'show']);
+                Route::post('bookings/{booking}/cancel',  [BookingController::class, 'cancel'])->name('bookings.cancel');
+                Route::post('bookings/{booking}/promote', [BookingController::class, 'promote'])->name('bookings.promote');
+            }
 
             // Finance
             Route::apiResource('tts', TtsController::class)->only(['index', 'store', 'show'])->parameters(['tts' => 'tts']);
