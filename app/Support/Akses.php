@@ -98,6 +98,65 @@ class Akses
     }
 
     /**
+     * Bolehkah pengguna melihat menu yang menuju rute Filament ini?
+     *
+     * Sidebar FO TIDAK dibangun otomatis oleh Filament — panelnya memakai
+     * NavigationBuilder dengan NavigationItem yang dirakit dari URL. Akibatnya
+     * canViewAny()/canAccess() milik resource & halaman tidak pernah ditanya
+     * untuk menu, jadi grup tanpa satu izin pun tetap melihat seluruh menu FO
+     * (rutenya sendiri tetap tertutup — yang bocor hanya daftar menunya).
+     *
+     * Di sini nama rute dipetakan balik ke kelas Filamentnya, lalu izinnya
+     * ditanyakan ke kelas itu — sumber kebenarannya tetap satu.
+     *
+     * @param  string  $awalan  Awalan nama rute, mis. 'filament.fo.resources.sales.'
+     */
+    public static function bolehRute(string $awalan): bool
+    {
+        return static::$cacheRute[$awalan] ??= static::hitungBolehRute($awalan);
+    }
+
+    /** @var array<string,bool> */
+    protected static array $cacheRute = [];
+
+    private static function hitungBolehRute(string $awalan): bool
+    {
+        $kelas = static::kelasRute($awalan);
+
+        // Rute tak dikenal dibiarkan tampil. Menyembunyikan yang tak bisa
+        // dipetakan berarti menu hilang tanpa ada izin yang bisa diberikan
+        // untuk memunculkannya kembali.
+        if ($kelas === null) {
+            return true;
+        }
+
+        // Halaman resource (ListX/EditX) → tanyakan resource-nya.
+        if (method_exists($kelas, 'getResource')) {
+            $resource = $kelas::getResource();
+
+            return method_exists($resource, 'canViewAny') ? (bool) $resource::canViewAny() : true;
+        }
+
+        return method_exists($kelas, 'canAccess') ? (bool) $kelas::canAccess() : true;
+    }
+
+    /** Kelas Filament di balik sebuah awalan nama rute, atau null bila tak ketemu. */
+    private static function kelasRute(string $awalan): ?string
+    {
+        $routes = app('router')->getRoutes();
+
+        // Resource memakai akhiran 'index'; halaman namanya sudah utuh.
+        foreach ([rtrim($awalan, '.').'.index', rtrim($awalan, '.')] as $nama) {
+            $r = $routes->getByName($nama);
+            if ($r && is_string($k = $r->getAction('controller'))) {
+                return str_contains($k, '@') ? explode('@', $k)[0] : $k;
+            }
+        }
+
+        return null;
+    }
+
+    /**
      * Izin untuk sebuah HALAMAN Filament, atau null bila belum dipetakan.
      *
      * Halaman tidak punya aksi CRUD seperti resource — membukanya cuma satu
