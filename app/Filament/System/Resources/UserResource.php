@@ -3,6 +3,7 @@
 namespace App\Filament\System\Resources;
 
 use App\Filament\Concerns\MematuhiIzin;
+use App\Filament\System\Resources\BoRoleResource;
 use App\Filament\System\Resources\UserResource\Pages;
 use App\Models\Bo\BoRole;
 use App\Models\Bo\BoUser;
@@ -117,6 +118,12 @@ class UserResource extends Resource
                 ->description('Tambahan hak akses untuk pengguna INI di luar Grup Akses (mis. anggota FAT yang butuh akses lintas modul secara dinamik). Akses efektif = Grup Akses + centang di sini.')
                 ->collapsible()->collapsed()
                 ->schema(RoleResource::permissionMatrix()),
+
+            Forms\Components\Section::make('Hak Akses Khusus BO (Java Core System) — opsional')
+                ->description('Padanan di aplikasi BO: tambahan izin untuk pengguna INI di luar Grup Akses BO, untuk yang butuh satu-dua menu tanpa dibuatkan grup baru. Akses efektif di BO = Grup Akses BO + centang di sini.')
+                ->collapsible()->collapsed()
+                ->visible(fn (?User $record) => $record !== null && static::penggunaBo($record) !== null)
+                ->schema(fn () => BoRoleResource::permissionMatrixBo('permBo')),
         ]);
     }
 

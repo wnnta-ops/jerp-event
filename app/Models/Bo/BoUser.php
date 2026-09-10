@@ -29,4 +29,17 @@ class BoUser extends Model
         return $this->belongsToMany(BoRole::class, 'model_has_roles', 'model_id', 'role_id')
             ->withPivotValue('model_type', 'user');
     }
+
+    /**
+     * Izin KHUSUS pengguna ini di BO — di luar grup aksesnya.
+     *
+     * Padanan "Hak Akses Khusus" milik FO: untuk orang yang butuh satu-dua menu
+     * di luar grupnya tanpa harus dibuatkan grup baru. Akses efektif di BO =
+     * gabungan izin dari grup + izin di sini.
+     */
+    public function permissions(): BelongsToMany
+    {
+        return $this->belongsToMany(BoPermission::class, 'model_has_permissions', 'model_id', 'permission_id')
+            ->withPivotValue('model_type', 'user');
+    }
 }
