@@ -59,16 +59,51 @@ class BoRoleResource extends Resource
     }
 
     /** Label modul BO yang lebih manusiawi (fallback: headline nama modul). */
-    private const MODULE_LABELS = [
-        'ap' => 'AP · Hutang', 'ar' => 'AR · Piutang', 'approval' => 'Approval',
-        'bankloan' => 'Bank Loan (KPR)', 'bs' => 'Business Support', 'budget' => 'Anggaran',
-        'businesssupport' => 'Business Support', 'cashbook' => 'Buku Kas', 'cogs' => 'COGS / HPP',
-        'collection' => 'Collection', 'commission' => 'Komisi', 'contractor' => 'Kontraktor',
-        'crm' => 'CRM', 'datacenter' => 'Data Center', 'finance' => 'Finance',
-        'gl' => 'GL · Buku Besar', 'incentive' => 'Insentif', 'legal' => 'Legal',
-        'master' => 'Master Data', 'reporting' => 'Laporan', 'sales' => 'Sales',
-        'security' => 'Keamanan', 'setupsales' => 'Setup Sales', 'system' => 'Sistem', 'tax' => 'Pajak',
+    /**
+     * Seksi matriks = GRUP MENU di sidebar BO, urutan dan namanya persis sama.
+     *
+     * Sebelumnya seksi dikelompokkan per KUNCI MODUL izin, dan itu tidak pernah
+     * cocok dengan yang dilihat pengguna: satu modul 'bs' membungkus tiga grup
+     * menu sekaligus (Aset Tetap, Purchasing, Inventory), sementara 'ar' terbelah
+     * antara Piutang Usaha dan Booked Revenue. Akibatnya nama seksi dan nama menu
+     * berbeda, dan menelusuri "izin mana untuk menu mana" jadi menebak.
+     *
+     * Tiap entri: label grup menu => daftar awalan izin miliknya. Awalan boleh
+     * berupa modul utuh ('gl') atau modul.area ('bs.asset') untuk modul yang
+     * memang terbelah. Yang lebih panjang menang, sehingga 'bs.sip' bisa masuk
+     * Cash Book meski 'bs' yang lain ada di tempat lain.
+     *
+     * Izin yang tidak cocok ke mana pun TIDAK dibuang — jatuh ke seksi terakhir
+     * "Lainnya". Membuangnya diam-diam berarti izin yang tak bisa diberikan
+     * siapa pun dan tak terlihat di layar mana pun.
+     */
+    private const MENU_BO = [
+        'Master' => ['master'],
+        'Data Center' => ['datacenter', 'bs.payroll'],
+        'KPR' => ['bankloan'],
+        // Seluruh 'tax' ada di sini (layar Verifikasi Faktur Pajak), KECUALI
+        // tax.pph yang rumahnya Rekap PPh Dipotong di Account Payable.
+        'Booked Revenue' => ['ar.booked-revenue', 'tax'],
+        'Aset Tetap' => ['bs.asset', 'bs.bulk-import', 'bs.overview', 'bs.projection'],
+        'General Ledger' => ['gl'],
+        'Piutang Usaha (Booked)' => ['ar'],
+        'Account Payable' => ['ap', 'tax.pph'],
+        'Cash Book' => ['cashbook', 'bs.sip'],
+        'Budget Control' => ['budget'],
+        'Contractor Management' => ['contractor'],
+        'COGS' => ['cogs'],
+        'Purchasing' => ['bs.fpb', 'bs.po'],
+        'Inventory' => ['bs.item', 'bs.receipt', 'bs.issue', 'bs.stockcard', 'bs.inventory-setup'],
+        'Security' => ['security'],
+        'System' => ['system'],
+
+        // Bukan grup menu, melainkan izin lintas-modul: kunci masuk BO, setup,
+        // dan WEWENANG MENYETUJUI yang dipakai Approval Budget, Kas/Bank & Jurnal.
+        'Back Office — akses umum & persetujuan' => ['businesssupport'],
     ];
+
+    /** Nama seksi penampung izin yang belum punya rumah. */
+    private const MENU_LAINNYA = 'Lainnya — belum dipetakan ke menu';
 
     /** Label aksi (segmen terakhir permission) dalam Bahasa Indonesia. */
     private const ACTION_LABELS = [
@@ -102,17 +137,34 @@ class BoRoleResource extends Resource
         $perms = BoPermission::query()->orderBy('module')->orderBy('name')
             ->get(['id', 'name', 'module', 'label']);
 
-        // module => area => [ ['id'=>.., 'action'=>..], ... ]
+        // grup menu BO => area => [ ['id'=>.., 'action'=>..], ... ]
         $tree = [];
         foreach ($perms as $p) {
             [$module, $area, $action] = self::splitPerm($p->name, (string) $p->module);
-            $tree[$module][$area][] = ['id' => $p->id, 'action' => $action];
+            $grup = self::grupMenu($p->name);
+            // Kunci baris menyimpan MODUL + area, bukan area saja. Nama field
+            // centang harus tetap 'modul__area' supaya cocok dengan areaKeyFor()
+            // yang dipakai saat memuat isian — dan supaya 'ap.aging' tidak
+            // bertabrakan dengan 'ar.aging' yang kebetulan senama.
+            $tree[$grup][$module.'|'.$area][] = ['id' => $p->id, 'action' => $action];
         }
 
+        $urutan = array_keys(self::MENU_BO);
+        uksort($tree, function ($a, $b) use ($urutan) {
+            $ia = array_search($a, $urutan, true);
+            $ib = array_search($b, $urutan, true);
+            $ia = $ia === false ? PHP_INT_MAX : $ia;
+            $ib = $ib === false ? PHP_INT_MAX : $ib;
+
+            return $ia === $ib ? strcmp((string) $a, (string) $b) : $ia <=> $ib;
+        });
+
         $sections = [];
-        foreach ($tree as $module => $areas) {
+        foreach ($tree as $grup => $areas) {
+            ksort($areas);
             $rows = [];
-            foreach ($areas as $area => $items) {
+            foreach ($areas as $kunci => $items) {
+                [$module, $area] = explode('|', (string) $kunci, 2);
                 usort($items, fn ($a, $b) => self::actionRank($a['action']) <=> self::actionRank($b['action']));
                 $options = [];
                 foreach ($items as $it) {
@@ -128,7 +180,7 @@ class BoRoleResource extends Resource
                 ]);
             }
 
-            $sections[] = Forms\Components\Section::make(self::humanizeModule((string) $module))
+            $sections[] = Forms\Components\Section::make((string) $grup)
                 ->description(count($areas).' sub-menu')
                 ->collapsible()->collapsed()
                 ->schema($rows);
@@ -174,6 +226,34 @@ class BoRoleResource extends Resource
         $i = array_search($action, self::ACTION_ORDER, true);
 
         return $i === false ? 99 : (int) $i;
+    }
+
+    /**
+     * Grup menu BO pemilik sebuah izin.
+     *
+     * Dicocokkan ke NAMA izin, bukan ke pasangan modul+area hasil splitPerm.
+     * Sebabnya: izin bersegmen dua seperti 'tax.rekap' dipecah jadi area 'umum',
+     * sehingga awalan 'tax.rekap' tak akan pernah cocok kalau yang dibandingkan
+     * areanya. Nama izin selalu utuh, jadi aman untuk dua-duanya.
+     *
+     * Yang paling khusus menang: 'bs.sip' mengalahkan 'bs', sehingga modul yang
+     * terbelah bisa dibagi per area tanpa daftar pengecualian terpisah.
+     */
+    public static function grupMenu(string $nama): string
+    {
+        $terbaik = null;
+        $panjang = -1;
+
+        foreach (self::MENU_BO as $grup => $awalan) {
+            foreach ($awalan as $a) {
+                if (($nama === $a || str_starts_with($nama, $a.'.')) && strlen($a) > $panjang) {
+                    $terbaik = $grup;
+                    $panjang = strlen($a);
+                }
+            }
+        }
+
+        return $terbaik ?? self::MENU_LAINNYA;
     }
 
     private static function humanizeModule(string $module): string

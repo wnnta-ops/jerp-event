@@ -40,15 +40,7 @@ class PermissionSeeder extends Seeder
             // muncul dobel di Grup Akses BO padahal rutenya sudah mati (lihat
             // config/modul_pindah_fo.php). Kembalikan blok ini bila sakelarnya
             // dinyalakan lagi.
-            // Finance
-            'finance' => [
-                'finance.tts.view', 'finance.tts.create', 'finance.tts.post', 'finance.tts.giro.manage',
-                'finance.tts.giro.reject', 'finance.va.view', 'finance.va.assign', 'finance.va.transactions.view',
-                'finance.memo.view', 'finance.memo.create', 'finance.kuitansi.view', 'finance.cashback.view',
-                'finance.cashback.request', 'finance.cashback.approve', 'finance.cashback.pay', 'finance.fakturpajak.view',
-                'finance.fakturpajak.create', 'finance.refund.request', 'finance.refund.approve', 'finance.refund.pay',
-                'finance.anonim.view', 'finance.anonim.allocate',
-            ],
+            // Finance — PINDAH ke FO. Izin dicabut, lihat config/modul_pindah_fo.php.
             // Collection — PINDAH ke FO. Izin dicabut, lihat config/modul_pindah_fo.php.
             // Bank Loan
             'bankloan' => [
@@ -58,36 +50,22 @@ class PermissionSeeder extends Seeder
                 'bankloan.disbursement.verify', 'bankloan.retensi.hold', 'bankloan.retensi.release', 'bankloan.buyback.request',
                 'bankloan.buyback.approve',
             ],
-            // Legal
-            'legal' => [
-                'legal.ppjb.view', 'legal.ppjb.issue', 'legal.ajb.view', 'legal.ajb.issue',
-                'legal.bast.view', 'legal.bast.issue', 'legal.imb.view', 'legal.imb.manage',
-                'legal.sertifikat.view', 'legal.sertifikat.manage',
-            ],
-            // Commission
-            'commission' => [
-                'commission.view', 'commission.payout.request', 'commission.payout.approve', 'commission.payout.execute',
-            ],
+            // Legal — rutenya dimatikan, lihat config/modul_pindah_fo.php.
+            // Commission — PINDAH ke FO. Izin dicabut, lihat config/modul_pindah_fo.php.
             // Business Support (back-office akuntansi)
             'businesssupport' => [
                 'businesssupport.view', 'businesssupport.setup.manage',
                 'businesssupport.transaction.create', 'businesssupport.approval.act',
             ],
-            // CRM Sales Pipeline (lead management)
-            'crm' => ['crm.view', 'crm.manage'],
+            // CRM Sales Pipeline — rutenya dimatikan, lihat config/modul_pindah_fo.php.
             // Security module (akses, absensi, audit)
             'security' => ['security.view', 'security.manage'],
             // Setup Sales — PINDAH ke FO. Izin dicabut, lihat config/modul_pindah_fo.php.
-            // Insentif (BLT & Reward) — pengajuan, persetujuan, realisasi
-            'incentive' => ['incentive.view', 'incentive.manage', 'incentive.approve'],
-            // Approval
-            'approval' => ['approval.view', 'approval.act',
-            ],
-            // Reporting
-            'reporting' => [
-                'reporting.dashboard.executive',
-                'reporting.report.export',
-            ],
+            // Insentif (BLT & Reward) — PINDAH ke FO. Izin dicabut.
+            // Approval — PINDAH ke FO. Izin dicabut. CATATAN: yang dicabut hanya
+            // modul 'approval'; 'businesssupport.approval.act' di atas TETAP ada
+            // karena itu yang menjaga Approval Budget & Approval Kas/Bank di BO.
+            // Reporting — PINDAH ke FO. Izin dicabut.
             ];
 
         foreach ($permissions as $module => $perms) {
