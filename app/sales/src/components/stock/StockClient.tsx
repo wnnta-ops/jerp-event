@@ -7,6 +7,7 @@ import { Modal } from "@/components/Modal";
 import { toast } from "@/components/Toast";
 import { UnitStatusBadge } from "@/components/badges";
 import { UNIT_STATUS_LABEL } from "@/lib/constants";
+import { MANUAL_STAGE_INPUT } from "@/lib/features";
 import type { FormOptions } from "@/lib/options";
 
 export interface StockRow {
@@ -93,7 +94,7 @@ export function StockClient({
     }
     let alive = true;
     setDetail(null);
-    fetch(`/sales/api/units/${detailUnit.id}/history`)
+    fetch(`/api/units/${detailUnit.id}/history`)
       .then((r) => r.json())
       .then((d) => alive && setDetail(d))
       .catch(() => {});
@@ -125,7 +126,7 @@ export function StockClient({
   async function submitUtj() {
     if (!utjForm.nama.trim()) return toast("Nama user wajib diisi");
     setBusy(true);
-    const res = await fetch(`/sales/api/units/${utjUnit!.id}/utj`, {
+    const res = await fetch(`/api/units/${utjUnit!.id}/utj`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -150,7 +151,7 @@ export function StockClient({
 
   async function submitEdit() {
     setBusy(true);
-    const res = await fetch(`/sales/api/units/${editUnit!.id}/update`, {
+    const res = await fetch(`/api/units/${editUnit!.id}/update`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -172,7 +173,7 @@ export function StockClient({
 
   async function submitBatal() {
     setBusy(true);
-    const res = await fetch(`/sales/api/units/${editUnit!.id}/update`, {
+    const res = await fetch(`/api/units/${editUnit!.id}/update`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ batal: true }),
@@ -222,7 +223,9 @@ export function StockClient({
           }}
         />
         <span className="rolehint">
-          {canEdit ? "Klik kode unit untuk lihat riwayat. Sales input UTJ pada unit Open Stock." : "Klik kode unit untuk lihat riwayat."}
+          {canEdit && MANUAL_STAGE_INPUT
+            ? "Klik kode unit untuk lihat riwayat. UTJ pada unit Open Stock via + UTJ."
+            : "Klik kode unit untuk lihat riwayat. Status unit sinkron dari sistem lain (integrasi)."}
         </span>
       </div>
 
@@ -272,9 +275,11 @@ export function StockClient({
                     <td>
                       {canEdit &&
                         (s.status === "OPEN_STOCK" ? (
-                          <button className="btn sm" onClick={() => setUtjUnit(s)}>
-                            + UTJ
-                          </button>
+                          MANUAL_STAGE_INPUT ? (
+                            <button className="btn sm" onClick={() => setUtjUnit(s)}>
+                              + UTJ
+                            </button>
+                          ) : null
                         ) : (
                           <button className="btn ghost sm" onClick={() => openEdit(s)}>
                             Update
@@ -380,7 +385,7 @@ export function StockClient({
         onClose={() => setEditUnit(null)}
         footer={
           <>
-            {editUnit?.hasBooking && (
+            {MANUAL_STAGE_INPUT && editUnit?.hasBooking && (
               <button
                 className="btn ghost"
                 style={{ borderColor: "var(--red)", color: "var(--red)", marginRight: "auto" }}

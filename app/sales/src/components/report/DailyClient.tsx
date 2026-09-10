@@ -5,7 +5,7 @@ import { toast } from "@/components/Toast";
 
 export function DailyClient({ dates, initial }: { dates: { key: string; label: string }[]; initial: string }) {
   const [date, setDate] = useState(initial);
-  const src = `/sales/api/report/daily?date=${date}`;
+  const src = `/api/report/daily?date=${date}`;
 
   return (
     <>

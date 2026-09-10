@@ -8,6 +8,7 @@ export function LostClient({ items }: { items: LostItem[] }) {
   const [cat, setCat] = useState("all");
   const [alasan, setAlasan] = useState("all");
   const [cluster, setCluster] = useState("all");
+  const [visible, setVisible] = useState(10); // rows tall the scroll window shows
 
   const alasanOpts = useMemo(
     () => [...new Set(items.map((i) => i.alasanLabel))].sort(),
@@ -43,7 +44,7 @@ export function LostClient({ items }: { items: LostItem[] }) {
           <select value={cat} onChange={(e) => setCat(e.target.value)}>
             <option value="all">Semua Kategori</option>
             <option value="BATAL">Batal</option>
-            <option value="MANDEK">Mandek</option>
+            <option value="MANDEK">Pasif</option>
           </select>
           <select value={alasan} onChange={(e) => setAlasan(e.target.value)}>
             <option value="all">Semua Sebab</option>
@@ -62,9 +63,17 @@ export function LostClient({ items }: { items: LostItem[] }) {
             ))}
           </select>
           <span className="rolehint">{rows.length} data</span>
+          <label className="rolehint" style={{ marginLeft: "auto", display: "inline-flex", gap: 6, alignItems: "center" }}>
+            Tampil:
+            <select value={visible} onChange={(e) => setVisible(Number(e.target.value))}>
+              <option value={5}>5 baris</option>
+              <option value={10}>10 baris</option>
+              <option value={15}>15 baris</option>
+            </select>
+          </label>
         </div>
 
-        <div className="tablewrap">
+        <div className="tablewrap scrollwin" style={{ maxHeight: visible * 60 }}>
           <table>
             <thead>
               <tr>
@@ -96,7 +105,7 @@ export function LostClient({ items }: { items: LostItem[] }) {
                   </td>
                   <td>
                     <span className={`badge ${i.category === "BATAL" ? "b-red" : "b-amber"}`}>
-                      {i.category === "BATAL" ? "Batal" : "Mandek"}
+                      {i.category === "BATAL" ? "Batal" : "Pasif"}
                     </span>
                   </td>
                   <td>

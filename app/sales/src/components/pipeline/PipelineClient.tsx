@@ -8,6 +8,7 @@ import { toast } from "@/components/Toast";
 import { ChannelBadge, LeadBadge, StageBadge } from "@/components/badges";
 import { SALES_MAX_INDEX, STAGES, STAGE_INDEX, LEAD_FIELD_LABEL } from "@/lib/constants";
 import { allowedTargets } from "@/lib/pipeline-flow";
+import { MANUAL_STAGE_INPUT } from "@/lib/features";
 
 interface HistoryEntry {
   icon: string;
@@ -74,7 +75,7 @@ export function PipelineClient({ deals, role }: { deals: PipelineDeal[]; role: R
     }
     let alive = true;
     setHistory(null);
-    fetch(`/sales/api/deals/${sel.id}/history`)
+    fetch(`/api/deals/${sel.id}/history`)
       .then((r) => r.json())
       .then((d) => alive && setHistory(d))
       .catch(() => {});
@@ -114,7 +115,7 @@ export function PipelineClient({ deals, role }: { deals: PipelineDeal[]; role: R
 
   async function advance(d: PipelineDeal, target: Stage) {
     setBusy(true);
-    const res = await fetch(`/sales/api/deals/${d.id}/advance`, {
+    const res = await fetch(`/api/deals/${d.id}/advance`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ toStage: target }),
@@ -131,7 +132,7 @@ export function PipelineClient({ deals, role }: { deals: PipelineDeal[]; role: R
   async function addFollowUp(d: PipelineDeal) {
     if (!fuNote.trim()) return toast("Isi catatan follow-up");
     setBusy(true);
-    const res = await fetch(`/sales/api/deals/${d.id}/followup`, {
+    const res = await fetch(`/api/deals/${d.id}/followup`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ note: fuNote, statusLead: fuStatus }),
@@ -148,7 +149,7 @@ export function PipelineClient({ deals, role }: { deals: PipelineDeal[]; role: R
 
   const idx = sel ? STAGE_INDEX[sel.stage] : 0;
   const targets = sel ? allowedTargets(role, sel.stage) : [];
-  const canFu = sel ? (role === "SALES" || role === "MANAGEMENT" || role === "SYSADMIN") && idx < SALES_MAX_INDEX : false;
+  const canFu = sel ? (role === "SALES" || role === "MANAGEMENT") && idx < SALES_MAX_INDEX : false;
 
   return (
     <>
@@ -303,7 +304,9 @@ export function PipelineClient({ deals, role }: { deals: PipelineDeal[]; role: R
           sel ? (
             <>
               <div style={{ flex: 1, display: "flex", gap: 8, flexWrap: "wrap" }}>
-                {targets.length > 0 ? (
+                {!MANUAL_STAGE_INPUT && idx < 7 ? (
+                  <span className="pill">🔌 Tahap lanjut masuk dari sistem lain (integrasi)</span>
+                ) : MANUAL_STAGE_INPUT && targets.length > 0 ? (
                   targets.map((t) => (
                     <button key={t} className="btn" onClick={() => advance(sel, t)} disabled={busy}>
                       {role === "COLLECTION" ? "Update ke" : "Lanjut ke"}: {STAGES[STAGE_INDEX[t]].label} →

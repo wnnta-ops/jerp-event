@@ -54,8 +54,9 @@ export default async function InputPage() {
         <div>
           {canInput ? (
             <>
-              <b>Sales / Koordinator:</b> input WI di sini. NUP / UTJ / SPR dilakukan per-customer di{" "}
-              <b>Pipeline</b> &amp; <b>Stock</b> — angka di bawah dihitung otomatis dari event.
+              <b>Sales / Koordinator:</b> di hub ini kamu cukup input <b>Walk-In</b>. NUP, UTJ, SPR,
+              dan Batal <b>masuk otomatis dari sistem lain</b> (integrasi) — bukan diketik manual di
+              sini — dan langsung dihitung ke angka di bawah.
             </>
           ) : (
             <>Mode lihat — input harian khusus Sales / Koordinator.</>
@@ -71,15 +72,9 @@ export default async function InputPage() {
             ＋ Walk-In
           </button>
         )}
-        <Link className="btn ghost" href="/pipeline">
-          ＋ NUP / SPR (Pipeline)
-        </Link>
-        <Link className="btn ghost" href="/stock">
-          ＋ UTJ (Stock)
-        </Link>
-        <Link className="btn ghost" href="/collection">
-          ＋ Batal (Collection)
-        </Link>
+        <span className="pill" style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+          🔌 NUP · UTJ · SPR · Batal — dari sistem lain (integrasi)
+        </span>
         <span style={{ flex: 1 }} />
         <Link className="btn wa" href="/daily">
           Lihat Daily Report →

@@ -4,7 +4,7 @@ import { useState } from "react";
 
 export function MonthlyChart() {
   const [view, setView] = useState<"bulan" | "tahun">("bulan");
-  const src = `/sales/api/report/monthly?view=${view}`;
+  const src = `/api/report/monthly?view=${view}`;
 
   return (
     <>

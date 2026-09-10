@@ -31,7 +31,7 @@ export function RotasiClient({
 
   async function save() {
     setBusy(true);
-    const res = await fetch("/sales/api/rotation", {
+    const res = await fetch("/api/rotation", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ agencyId, coordinatorId, effectiveFrom: effectiveFrom || undefined }),

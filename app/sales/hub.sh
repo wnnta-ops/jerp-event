@@ -1,6 +1,6 @@
 #!/bin/bash
 # Java Sales Hub — control script.
-# Usage:  ./hub.sh [restart|start|stop|status|logs|open|ip|rebuild]
+# Usage:  ./hub.sh [restart|start|stop|status|logs|open|ip|sync|rebuild|setkey]
 set -e
 LABEL="com.javasaleshub.web"
 PLIST="$HOME/Library/LaunchAgents/$LABEL.plist"
@@ -8,6 +8,24 @@ DIR="/Users/azizawiennetaputri/Desktop/Claude Sales"
 UID_NUM="$(id -u)"
 
 case "${1:-status}" in
+  setkey)
+    # Enter the Anthropic API key privately (hidden input, never in shell history)
+    printf "Paste your Anthropic API key (input hidden, then Enter): "
+    read -rs KEY; echo
+    if [ -z "$KEY" ]; then echo "No key entered — aborted."; exit 1; fi
+    case "$KEY" in
+      sk-ant-*) ;;
+      *) echo "⚠️  That doesn't look like an Anthropic key (expected sk-ant-...). Aborted."; exit 1 ;;
+    esac
+    # drop any existing key line (commented or not), then append the real one
+    /usr/bin/sed -i '' '/^# *ANTHROPIC_API_KEY=/d; /^ANTHROPIC_API_KEY=/d' "$DIR/.env"
+    printf 'ANTHROPIC_API_KEY="%s"\n' "$KEY" >> "$DIR/.env"
+    echo "✓ Key saved to .env. Restarting…"
+    launchctl kickstart -k "gui/$UID_NUM/$LABEL"
+    sleep 5
+    curl -s -o /dev/null -w "server: %{http_code}\n" http://localhost:3000/login
+    echo "✅ AI slot active — open Pipeline Gagal and click Generate."
+    ;;
   restart)
     echo "Restarting…"
     launchctl kickstart -k "gui/$UID_NUM/$LABEL"
