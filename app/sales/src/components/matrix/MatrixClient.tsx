@@ -37,7 +37,7 @@ export function MatrixClient({
     const value = trimmed === "" ? null : Math.round(Number(trimmed));
     if (value !== null && Number.isNaN(value)) return;
     setManual((m) => ({ ...m, [key(rowKey, colKey)]: value }));
-    const res = await fetch("/api/matrix", {
+    const res = await fetch("/sales/api/matrix", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ dayKey, rowKey, colKey, value }),

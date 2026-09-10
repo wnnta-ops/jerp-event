@@ -78,7 +78,7 @@ function TeamSlot({
 
   async function save() {
     setBusy(true);
-    const res = await fetch("/api/lost/strategy", {
+    const res = await fetch("/sales/api/lost/strategy", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ alasanKey: r.alasanKey, text }),
@@ -139,7 +139,7 @@ function AiSlot({ r, canGenerate }: { r: ReasonSlot; canGenerate: boolean }) {
 
   async function generate() {
     setBusy(true);
-    const res = await fetch("/api/lost/ai", {
+    const res = await fetch("/sales/api/lost/ai", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ alasanKey: r.alasanKey }),

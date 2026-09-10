@@ -54,7 +54,7 @@ export function CollectionClient({ deals, role }: { deals: CollDeal[]; role: Rol
 
   async function advance(d: CollDeal) {
     setBusy(true);
-    const res = await fetch(`/api/deals/${d.id}/advance`, { method: "POST" });
+    const res = await fetch(`/sales/api/deals/${d.id}/advance`, { method: "POST" });
     setBusy(false);
     const j = await res.json().catch(() => ({}));
     if (res.ok) {
@@ -65,7 +65,7 @@ export function CollectionClient({ deals, role }: { deals: CollDeal[]; role: Rol
 
   async function submitBatal() {
     setBusy(true);
-    const res = await fetch(`/api/deals/${batalDeal!.id}/batal`, {
+    const res = await fetch(`/sales/api/deals/${batalDeal!.id}/batal`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({

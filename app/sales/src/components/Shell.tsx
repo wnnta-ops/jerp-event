@@ -128,7 +128,11 @@ export function Shell({
             <span style={{ width: 1, height: 18, background: "var(--line)" }} />
             <span>{user.name}</span>
             <span className="pill">{ROLE_LABEL[user.role]}</span>
-            <button className="btn ghost sm" onClick={() => signOut({ callbackUrl: "/login" })}>
+            {/* Kembali ke portal J-ERP — <a> polos (bukan Link) agar TIDAK diberi basePath /sales. */}
+            <a className="btn ghost sm" href="/dashboard" title="Kembali ke Dashboard J-ERP">
+              ← Dashboard
+            </a>
+            <button className="btn ghost sm" onClick={() => signOut({ callbackUrl: "/sales/login" })}>
               Keluar
             </button>
           </div>
