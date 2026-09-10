@@ -682,7 +682,7 @@ class CashAdvanceController extends Controller
             return back()->with('error', $e->getMessage());
         }
 
-        return back()->with('success', 'Alokasi kasbon tercatat — jurnal Dr Uang Muka Operasional / Cr bank pengeluaran terbentuk.');
+        return back()->with('success', 'Alokasi kasbon tercatat — Dr Uang Muka Operasional / Cr bank pengeluaran. Alokasi bertanggal & berbank sama masuk ke satu jurnal.');
     }
 
     /** Hapus satu baris Alokasi Kasbon beserta jurnalnya (hanya selama bon belum direalisasi). */
@@ -696,7 +696,7 @@ class CashAdvanceController extends Controller
             return back()->with('error', $e->getMessage());
         }
 
-        return back()->with('success', 'Alokasi kasbon dihapus beserta jurnalnya.');
+        return back()->with('success', 'Alokasi kasbon dihapus. Jurnalnya ikut terhapus bila tidak ada lagi alokasi lain pada tanggal & bank itu.');
     }
 
     public function show(Request $request, BsCashAdvance $advance): Response

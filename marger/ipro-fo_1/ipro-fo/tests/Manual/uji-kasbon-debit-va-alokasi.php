@@ -173,7 +173,12 @@ try {
     $j1 = BsJournal::with('lines')->find($a1->journal_id);
     $barisDebit = $j1->lines->firstWhere('debit', '>', 0);
     $barisKredit = $j1->lines->firstWhere('credit', '>', 0);
-    $ok('alokasi membentuk jurnalnya sendiri', $j1 !== null);
+    /* Kedua alokasi ini sengaja BERBEDA BANK, jadi jurnalnya memang terpisah. Aturan
+       penggabungan (tanggal & bank SAMA → satu jurnal) diuji tersendiri di
+       tests/Manual/uji-alokasi-kasbon-satu-jurnal.php. */
+    $ok('alokasi membentuk jurnal', $j1 !== null);
+    $ok('bank berbeda → jurnalnya terpisah', $a1->journal_id !== $a2->journal_id,
+        json_encode([$a1->journal_id, $a2->journal_id]));
     $ok('sisi DEBIT = Uang Muka Operasional', (int) $barisDebit->account_id === (int) $akunUmOp,
         (string) $barisDebit->account_id);
     $ok('sisi KREDIT = bank pengeluaran yang dipilih', (int) $barisKredit->account_id === (int) $BANK_A,

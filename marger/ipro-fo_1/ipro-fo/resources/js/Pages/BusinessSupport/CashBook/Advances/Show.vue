@@ -144,7 +144,15 @@ function tambahAlokasi() {
     });
 }
 function hapusAlokasi(a: any) {
-    if (! confirm(`Hapus alokasi ${fmtDate(a.alloc_date)} — ${fmtRp(a.amount)}?\n\nJurnalnya ikut terhapus.`)) return;
+    /* Alokasi bertanggal & berbank sama berbagi SATU jurnal, jadi menghapus satu di antaranya
+       belum tentu menghapus jurnalnya — kalimatnya menyesuaikan supaya tidak menjanjikan yang
+       tidak terjadi. */
+    const berbagi = ((props.allocations?.rows ?? []) as any[]).filter(
+        (x: any) => x.alloc_date === a.alloc_date && x.account_id === a.account_id).length > 1;
+    const akibat = berbagi
+        ? 'Barisnya dicabut dari jurnal gabungan tanggal itu; jurnalnya tetap ada untuk alokasi lain.'
+        : 'Jurnalnya ikut terhapus.';
+    if (! confirm(`Hapus alokasi ${fmtDate(a.alloc_date)} — ${fmtRp(a.amount)}?\n\n${akibat}`)) return;
     router.delete(route('bs.advance.allocation.destroy', a.id), { preserveScroll: true });
 }
 
