@@ -231,6 +231,50 @@ const propsBon = (adv, kartu) => ({
     cek('tanpa hak approve, tombol Setujui tidak muncul', !tanpaHak.includes('Setujui'));
     cek('tanpa hak approve, alasannya disebut', tanpaHak.includes('tanpa hak approve'));
 
+    console.log('\n=== 3b. AJUKAN PERMINTAAN MASA BERLAKU (EXPIRED) ===');
+
+    /* BUG YANG DIJAGA DI SINI. Kolom "Nilai (Rp)" hanya DISEMBUNYIKAN saat jenisnya Masa Berlaku,
+       bukan dikosongkan — formulirnya tetap memegang amount bawaan 0. Selama nilai sisa itu ikut
+       terkirim, servernya menolaknya (min:0.01) dan pesannya menempel pada kolom yang justru
+       sedang tidak tampil: tombol "Ajukan" tampak tidak mengerjakan apa pun.
+
+       Diperiksa pada BADAN kirimMinta()-nya sendiri, bukan se-berkas: untai 'expiry' muncul di
+       banyak tempat pada halaman ini (daftar jenis, label, tabel permintaan). */
+    const badanKirim = (src.match(/function kirimMinta\(\)[\s\S]*?\n}/) || [''])[0];
+    cek('badan kirimMinta() terbaca', badanKirim !== '');
+    cek('kiriman disaring menurut jenisnya (transform)',
+        badanKirim.includes('.transform('), badanKirim);
+    // Kedua cabangnya dipisah dulu, lalu diperiksa sendiri-sendiri: yang dijaga adalah apa yang
+    // TIDAK ikut terkirim, dan itu hanya terbaca dari isi cabangnya masing-masing.
+    const cabangExpiry = (badanKirim.match(/\?\s*\{[^}]*expired_date[^}]*\}/) || [''])[0];
+    const cabangSaldo = (badanKirim.match(/:\s*\{[^}]*amount[^}]*\}/) || [''])[0];
+    cek('jenis Masa Berlaku mengirim tanggalnya', cabangExpiry.includes('expired_date: d.expired_date'), cabangExpiry);
+    cek('jenis Masa Berlaku TIDAK ikut mengirim nilai saldo', ! cabangExpiry.includes('amount'), cabangExpiry);
+    cek('jenis saldo mengirim nilainya', cabangSaldo.includes('amount: d.amount'), cabangSaldo);
+    cek('jenis saldo TIDAK ikut mengirim tanggal expired', ! cabangSaldo.includes('expired_date'), cabangSaldo);
+
+    /* Penolakan yang tidak punya kolom tempat menampilkannya harus tetap terbaca — itulah yang
+       dulu mengubah "permintaan ditolak" menjadi "tombolnya rusak". */
+    cek('ada penampung galat yang tak berkolom', src.includes('galatTersembunyi'));
+    cek('penampung itu dirender di formnya',
+        /<p v-if="galatTersembunyi"[^>]*>\{\{ galatTersembunyi \}\}<\/p>/.test(src));
+    const badanGalat = (src.match(/const galatTersembunyi = computed\([\s\S]*?\n\}\);/) || [''])[0];
+    cek('yang ditampilkan hanya galat di luar kolom yang sedang tampil',
+        badanGalat.includes("formMinta.type === 'expiry' ? ['expired_date'] : ['amount']"), badanGalat);
+
+    // Formnya sendiri: kedua kolom saling menggantikan menurut jenisnya.
+    cek('kolom Tanggal Expired muncul untuk jenis expiry',
+        /v-else>\s*<label[^>]*>Tanggal Expired \*<\/label>/.test(src.replace(/\n\s*/g, ' ')));
+    cek('kolom Nilai hanya untuk jenis selain expiry',
+        /v-if="formMinta\.type !== 'expiry'">\s*<label[^>]*>Nilai \(Rp\) \*<\/label>/.test(src.replace(/\n\s*/g, ' ')));
+    /* Diperiksa pada sumbernya: form "Ajukan Permintaan" baru ter-render setelah tombol
+       "Ajukan Saldo / Expired" ditekan (v-if="kartuPermintaan"), dan itu tidak bisa dilakukan
+       lewat SSR. */
+    cek('layar menjelaskan bahwa permintaannya masuk antrean persetujuan',
+        src.includes('Masuk ke Menunggu Persetujuan'));
+    cek('untuk jenis expiry, penjelasnya menyebut masa berlaku kartu',
+        src.includes('masa berlaku kartunya berubah setelah disetujui'));
+
     console.log('\n=== 4. PEMILIH KARTU PADA LAYAR BON ===');
     const kartuUsable = [{ id: 1, label: '141-00-9988886-9 — MANDIRI REK. 141-00-9988886-9', balance: 7500000 }];
 

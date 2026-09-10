@@ -150,14 +150,26 @@ class CreditCardController extends Controller
     {
         abort_unless($request->user()?->canModule('cashbook'), 403);
 
+        /* TIAP JENIS PERMINTAAN DIVALIDASI ATAS KOLOMNYA SENDIRI SAJA.
+           Permintaan MASA BERLAKU tidak punya nilai saldo — tetapi layarnya tetap mengirim
+           `amount` bawaan 0, sebab kolom Nilai hanya DISEMBUNYIKAN saat jenisnya expiry, bukan
+           dikosongkan. Dengan aturan lama ('nullable' + 'min:0.01'), angka 0 itu lolos dari
+           'nullable' (0 bukan null) lalu jatuh di 'min:0.01': permintaan masa berlaku SELALU
+           ditolak, pesannya menempel pada kolom yang sedang tidak tampil, dan tombol Ajukan
+           tampak tidak mengerjakan apa pun.
+
+           `exclude_if` / `exclude_unless` membuang kolom yang memang bukan miliknya SEBELUM
+           aturan lain dijalankan — jadi nilai sisa dari layar tidak lagi bisa menggagalkan
+           permintaan yang sebenarnya sah. */
         $v = $request->validate([
             'type'         => ['required', 'string', 'in:'.implode(',', array_keys(BsCreditCardRequest::TYPES))],
-            'amount'       => ['nullable', 'numeric', 'min:0.01', 'required_unless:type,expiry'],
-            'expired_date' => ['nullable', 'date', 'required_if:type,expiry'],
+            'amount'       => ['exclude_if:type,expiry', 'required', 'numeric', 'min:0.01'],
+            'expired_date' => ['exclude_unless:type,expiry', 'required', 'date'],
             'note'         => ['nullable', 'string', 'max:1000'],
         ], [
-            'amount.required_unless'    => 'Nilai saldo wajib diisi.',
-            'expired_date.required_if'  => 'Tanggal masa berlaku wajib diisi.',
+            'amount.required'       => 'Nilai saldo wajib diisi.',
+            'amount.min'            => 'Nilai saldo harus lebih dari 0.',
+            'expired_date.required' => 'Tanggal masa berlaku wajib diisi.',
         ]);
 
         try {

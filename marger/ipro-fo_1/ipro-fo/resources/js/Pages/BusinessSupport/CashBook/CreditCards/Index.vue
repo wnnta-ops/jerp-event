@@ -119,12 +119,32 @@ function simpanUbah() {
 const kartuPermintaan = ref<number | null>(null);
 const formMinta = useForm<any>({ type: 'topup', amount: 0, expired_date: '', note: '' });
 function bukaMinta(c: Card) { kartuPermintaan.value = c.id; formMinta.reset(); formMinta.type = 'topup'; }
+/* HANYA KOLOM MILIK JENISNYA YANG DIKIRIM. Kolom Nilai & Tanggal Expired saling menggantikan di
+   layar, tetapi nilai yang tidak tampil TETAP tersimpan di formulir — dan nilai sisa itulah yang
+   dulu menggagalkan permintaan Masa Berlaku: `amount` bawaan 0 ikut terkirim lalu ditolak
+   server, sementara pesannya menempel pada kolom yang sedang disembunyikan sehingga tombol
+   Ajukan tampak tidak mengerjakan apa pun. */
 function kirimMinta() {
     if (! kartuPermintaan.value) return;
-    formMinta.post(route('bs.cashbook.credit-card.request', kartuPermintaan.value), {
-        preserveScroll: true, onSuccess: () => { kartuPermintaan.value = null; },
-    });
+    formMinta
+        .transform((d: any) => (d.type === 'expiry'
+            ? { type: d.type, expired_date: d.expired_date, note: d.note }
+            : { type: d.type, amount: d.amount, note: d.note }))
+        .post(route('bs.cashbook.credit-card.request', kartuPermintaan.value), {
+            preserveScroll: true, onSuccess: () => { kartuPermintaan.value = null; },
+        });
 }
+
+/* Galat yang TIDAK punya kolom tempat menampilkannya. Sebuah penolakan yang tak terlihat sama
+   saja dengan tombol yang rusak — orang menekan Ajukan, tidak terjadi apa-apa, dan tidak ada
+   satu pun keterangan mengapa. */
+const galatTersembunyi = computed(() => {
+    const errors = formMinta.errors as Record<string, string>;
+    const terlihat = formMinta.type === 'expiry' ? ['expired_date'] : ['amount'];
+    const kunci = Object.keys(errors).filter((k) => ! terlihat.includes(k));
+
+    return kunci.length ? errors[kunci[0]] : '';
+});
 
 function setujui(r: Permintaan) {
     if (! confirm(`Setujui ${r.type_label} pada kartu ${r.card}?\n\nSaldo/masa berlaku kartunya akan langsung berubah.`)) return;
@@ -320,10 +340,17 @@ const inputCls = 'h-9 w-full rounded-lg border border-neutral-300 bg-white px-3 
                     <p v-if="formMinta.errors.expired_date" class="mt-1 text-xs text-danger-500">{{ formMinta.errors.expired_date }}</p>
                 </div>
                 <div class="md:col-span-2"><label class="mb-1 block text-xs font-medium text-neutral-500">Keterangan</label><input v-model="formMinta.note" :class="inputCls" /></div>
-                <div class="md:col-span-4 flex gap-2">
+                <div class="md:col-span-4 flex flex-wrap items-center gap-2">
                     <Button type="submit" :disabled="formMinta.processing">Ajukan</Button>
                     <button type="button" class="rounded-lg border border-neutral-300 px-3 py-2 text-sm dark:border-neutral-700" @click="kartuPermintaan = null">Batal</button>
+                    <span class="text-xs text-neutral-500">
+                        {{ formMinta.type === 'expiry'
+                            ? 'Masuk ke Menunggu Persetujuan; masa berlaku kartunya berubah setelah disetujui.'
+                            : 'Masuk ke Menunggu Persetujuan; saldo kartunya berubah setelah disetujui.' }}
+                    </span>
                 </div>
+                <!-- Penolakan yang tidak punya kolom tempat menampilkannya tetap harus terbaca. -->
+                <p v-if="galatTersembunyi" class="md:col-span-4 text-xs text-danger-500">{{ galatTersembunyi }}</p>
             </form>
         </div>
 
