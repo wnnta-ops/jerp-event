@@ -28,6 +28,14 @@ class EditUser extends EditRecord
      */
     protected ?array $grupBo = null;
 
+    /**
+     * Izin KHUSUS BO pilihan, ditahan sampai afterSave. Sama seperti $grupBo,
+     * null berarti bidangnya tidak ditampilkan — bukan "kosongkan semuanya".
+     *
+     * @var array<int,int>|null
+     */
+    protected ?array $izinBo = null;
+
     protected function getHeaderActions(): array
     {
         return [Actions\DeleteAction::make()];
@@ -45,6 +53,12 @@ class EditUser extends EditRecord
         $bo = UserResource::penggunaBo($this->record);
         if ($bo) {
             $data['grup_bo'] = $bo->roles()->pluck('roles.id')->all();
+
+            $khusus = [];
+            foreach ($bo->permissions as $p) {
+                $khusus[BoRoleResource::areaKeyFor($p->name, (string) $p->module)][] = $p->id;
+            }
+            $data['permBo'] = $khusus;
         }
 
         return $data;
@@ -58,7 +72,10 @@ class EditUser extends EditRecord
 
         // grup_bo bukan kolom tabel users — kalau ikut lolos, Eloquent gagal menyimpan.
         $this->grupBo = array_key_exists('grup_bo', $data) ? (array) $data['grup_bo'] : null;
-        unset($data['grup_bo']);
+        $this->izinBo = array_key_exists('permBo', $data)
+            ? BoRoleResource::collectPermissionIds((array) $data['permBo'])
+            : null;
+        unset($data['grup_bo'], $data['permBo']);
 
         return $data;
     }
@@ -75,10 +92,15 @@ class EditUser extends EditRecord
         // Grup akses BO ada di database lain (ipro_bo). Hanya disentuh bila
         // bidangnya benar-benar ditampilkan — kalau tidak, menyimpan pengguna FO
         // akan diam-diam mencabut grup BO orang tersebut.
-        if ($this->grupBo !== null) {
+        if ($this->grupBo !== null || $this->izinBo !== null) {
             $bo = UserResource::penggunaBo($this->record);
             if ($bo) {
-                $bo->roles()->sync($this->grupBo);
+                if ($this->grupBo !== null) {
+                    $bo->roles()->sync($this->grupBo);
+                }
+                if ($this->izinBo !== null) {
+                    $bo->permissions()->sync($this->izinBo);
+                }
                 // Peringatan yang sama seperti di halaman Grup Akses BO: app BO
                 // memegang cache izinnya sendiri, jadi perubahan tidak langsung
                 // terasa di sana.

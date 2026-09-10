@@ -21,7 +21,7 @@ class CreateUser extends CreateRecord
         // Bidang grup BO sengaja disembunyikan saat membuat (akun BO dicocokkan
         // lewat email, jadi belum ada apa pun untuk ditaut). Dibuang untuk jaga-jaga:
         // grup_bo bukan kolom tabel users, dan lolosnya berarti gagal insert.
-        unset($data['grup_bo']);
+        unset($data['grup_bo'], $data['permBo']);
 
         return $data;
     }

@@ -132,7 +132,14 @@ class BoRoleResource extends Resource
      *
      * @return array<int,\Filament\Forms\Components\Component>
      */
-    public static function permissionMatrixBo(): array
+    /**
+     * @param  string  $awalanState  Prefix state form. Halaman Grup Akses BO memakai
+     *                               'perm' (izin milik GRUP); halaman Pengguna memakai
+     *                               'permBo' (izin KHUSUS satu orang). Dipisah supaya
+     *                               dua matriks bisa hidup di satu form tanpa saling
+     *                               menimpa isian.
+     */
+    public static function permissionMatrixBo(string $awalanState = 'perm'): array
     {
         $perms = BoPermission::query()->orderBy('module')->orderBy('name')
             ->get(['id', 'name', 'module', 'label']);
@@ -172,9 +179,9 @@ class BoRoleResource extends Resource
                 }
 
                 $rows[] = Forms\Components\Grid::make(12)->schema([
-                    Forms\Components\Placeholder::make('lbl_'.$module.'_'.Str::slug($area, '_'))
+                    Forms\Components\Placeholder::make('lbl_'.$awalanState.'_'.$module.'_'.Str::slug($area, '_'))
                         ->label('')->content(self::humanizeArea($area))->columnSpan(3),
-                    Forms\Components\CheckboxList::make('perm.'.self::areaKey($module, $area))
+                    Forms\Components\CheckboxList::make($awalanState.'.'.self::areaKey($module, $area))
                         ->label('')->options($options)->columns(6)->gridDirection('row')
                         ->bulkToggleable()->columnSpan(9),
                 ]);
