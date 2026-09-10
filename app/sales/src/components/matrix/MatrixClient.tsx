@@ -65,7 +65,7 @@ export function MatrixClient({
             ))}
           </select>
         </label>
-        <a className="btn wa" href={`/api/matrix/export?date=${dayKey}`}>
+        <a className="btn wa" href={`/sales/api/matrix/export?date=${dayKey}`}>
           ⬇ Export Excel
         </a>
         <button className="btn ghost" onClick={() => window.print()}>
