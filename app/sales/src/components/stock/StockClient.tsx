@@ -94,7 +94,7 @@ export function StockClient({
     }
     let alive = true;
     setDetail(null);
-    fetch(`/api/units/${detailUnit.id}/history`)
+    fetch(`/sales/api/units/${detailUnit.id}/history`)
       .then((r) => r.json())
       .then((d) => alive && setDetail(d))
       .catch(() => {});
@@ -126,7 +126,7 @@ export function StockClient({
   async function submitUtj() {
     if (!utjForm.nama.trim()) return toast("Nama user wajib diisi");
     setBusy(true);
-    const res = await fetch(`/api/units/${utjUnit!.id}/utj`, {
+    const res = await fetch(`/sales/api/units/${utjUnit!.id}/utj`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -151,7 +151,7 @@ export function StockClient({
 
   async function submitEdit() {
     setBusy(true);
-    const res = await fetch(`/api/units/${editUnit!.id}/update`, {
+    const res = await fetch(`/sales/api/units/${editUnit!.id}/update`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -173,7 +173,7 @@ export function StockClient({
 
   async function submitBatal() {
     setBusy(true);
-    const res = await fetch(`/api/units/${editUnit!.id}/update`, {
+    const res = await fetch(`/sales/api/units/${editUnit!.id}/update`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ batal: true }),

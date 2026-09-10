@@ -75,7 +75,7 @@ export function PipelineClient({ deals, role }: { deals: PipelineDeal[]; role: R
     }
     let alive = true;
     setHistory(null);
-    fetch(`/api/deals/${sel.id}/history`)
+    fetch(`/sales/api/deals/${sel.id}/history`)
       .then((r) => r.json())
       .then((d) => alive && setHistory(d))
       .catch(() => {});
@@ -115,7 +115,7 @@ export function PipelineClient({ deals, role }: { deals: PipelineDeal[]; role: R
 
   async function advance(d: PipelineDeal, target: Stage) {
     setBusy(true);
-    const res = await fetch(`/api/deals/${d.id}/advance`, {
+    const res = await fetch(`/sales/api/deals/${d.id}/advance`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ toStage: target }),
@@ -132,7 +132,7 @@ export function PipelineClient({ deals, role }: { deals: PipelineDeal[]; role: R
   async function addFollowUp(d: PipelineDeal) {
     if (!fuNote.trim()) return toast("Isi catatan follow-up");
     setBusy(true);
-    const res = await fetch(`/api/deals/${d.id}/followup`, {
+    const res = await fetch(`/sales/api/deals/${d.id}/followup`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ note: fuNote, statusLead: fuStatus }),
