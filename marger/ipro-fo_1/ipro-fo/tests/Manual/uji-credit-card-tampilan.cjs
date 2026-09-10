@@ -218,6 +218,37 @@ const propsBon = (adv, kartu) => ({
     cek('form Ubah Kartu tetap tanpa jalan pintas menyunting saldo',
         !barisUbah.includes('balance') && !barisUbah.includes('expired_date'));
 
+    console.log('\n=== 2b. SATU AKUN GL BOLEH DIPAKAI BEBERAPA KARTU ===');
+
+    /* Yang dulu menghalangi ada di validasi server (Rule::unique account_id); yang dijaga di
+       layar adalah gantinya: nomor kartu wajib & penolakannya terbaca. Tanpa nomor, dua kartu
+       pada satu rekening tampil dengan label yang sama persis di pemilih pembayaran. */
+    cek('kolom No. Kartu / VA ditandai wajib pada Tambah Kartu',
+        src.includes('>No. Kartu / VA *</label>'));
+    const inputNomorBaru = (src.match(/<input v-model="formKartu\.card_number"[^>]*>/) || [''])[0];
+    cek('kotak nomornya memang required', inputNomorBaru.includes('required'), inputNomorBaru);
+    cek('tombol Tambah Kartu mati selama nomornya kosong',
+        /formKartu\.processing \|\| ! formKartu\.account_id \|\| ! String\(formKartu\.card_number \?\? ''\)\.trim\(\)/.test(src));
+    cek('penolakan nomor kartu terbaca di form Tambah Kartu',
+        /formKartu\.errors\.card_number/.test(src));
+    cek('penolakan nomor kartu terbaca juga di form Ubah Kartu',
+        /formUbah\.errors\.card_number/.test(src));
+    /* Diskopkan ke PARAGRAF KEPALA halaman: kalimat serupa juga ada sebagai keterangan kecil di
+       bawah tombol Tambah Kartu, jadi pencarian se-halaman akan lulus walaupun penjelasan di
+       kepalanya sudah hilang. */
+    const kepala = (html.match(/<p class="text-sm text-neutral-500">[\s\S]*?<\/p>/) || [''])[0];
+    cek('paragraf kepala menyebut satu Akun GL boleh dipakai beberapa kartu',
+        kepala.includes('beberapa kartu'), kepala.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').slice(0, 200));
+
+    /* Memilih akun yang sudah berkartu bukan lagi galat, melainkan KETERANGAN — dan keterangan
+       itu harus menyebut nomor yang sudah terpakai, supaya yang menambah kartu kedua tahu nomor
+       mana yang tidak boleh diulang. */
+    const petunjukAkun = (src.match(/<p v-else-if="kartuPadaAkun\.length"[\s\S]*?<\/p>/) || [''])[0];
+    cek('ada keterangan kartu yang sudah memakai akun itu', petunjukAkun !== '');
+    cek('keterangan itu menyebut nomor-nomor yang sudah terpakai',
+        petunjukAkun.includes('c.card_number'), petunjukAkun);
+    cek('keterangan itu menegaskan boleh ditambah', petunjukAkun.includes('boleh ditambah'), petunjukAkun);
+
     console.log('\n=== 3. PERMINTAAN MENUNGGU & PERSETUJUANNYA ===');
     cek('bagian Menunggu Persetujuan ada', html.includes('Menunggu Persetujuan'));
     cek('permintaan pending dari bon tampil dengan nomor bonnya', html.includes('BON/2609/0021'));
@@ -230,6 +261,50 @@ const propsBon = (adv, kartu) => ({
     });
     cek('tanpa hak approve, tombol Setujui tidak muncul', !tanpaHak.includes('Setujui'));
     cek('tanpa hak approve, alasannya disebut', tanpaHak.includes('tanpa hak approve'));
+
+    console.log('\n=== 3b. AJUKAN PERMINTAAN MASA BERLAKU (EXPIRED) ===');
+
+    /* BUG YANG DIJAGA DI SINI. Kolom "Nilai (Rp)" hanya DISEMBUNYIKAN saat jenisnya Masa Berlaku,
+       bukan dikosongkan — formulirnya tetap memegang amount bawaan 0. Selama nilai sisa itu ikut
+       terkirim, servernya menolaknya (min:0.01) dan pesannya menempel pada kolom yang justru
+       sedang tidak tampil: tombol "Ajukan" tampak tidak mengerjakan apa pun.
+
+       Diperiksa pada BADAN kirimMinta()-nya sendiri, bukan se-berkas: untai 'expiry' muncul di
+       banyak tempat pada halaman ini (daftar jenis, label, tabel permintaan). */
+    const badanKirim = (src.match(/function kirimMinta\(\)[\s\S]*?\n}/) || [''])[0];
+    cek('badan kirimMinta() terbaca', badanKirim !== '');
+    cek('kiriman disaring menurut jenisnya (transform)',
+        badanKirim.includes('.transform('), badanKirim);
+    // Kedua cabangnya dipisah dulu, lalu diperiksa sendiri-sendiri: yang dijaga adalah apa yang
+    // TIDAK ikut terkirim, dan itu hanya terbaca dari isi cabangnya masing-masing.
+    const cabangExpiry = (badanKirim.match(/\?\s*\{[^}]*expired_date[^}]*\}/) || [''])[0];
+    const cabangSaldo = (badanKirim.match(/:\s*\{[^}]*amount[^}]*\}/) || [''])[0];
+    cek('jenis Masa Berlaku mengirim tanggalnya', cabangExpiry.includes('expired_date: d.expired_date'), cabangExpiry);
+    cek('jenis Masa Berlaku TIDAK ikut mengirim nilai saldo', ! cabangExpiry.includes('amount'), cabangExpiry);
+    cek('jenis saldo mengirim nilainya', cabangSaldo.includes('amount: d.amount'), cabangSaldo);
+    cek('jenis saldo TIDAK ikut mengirim tanggal expired', ! cabangSaldo.includes('expired_date'), cabangSaldo);
+
+    /* Penolakan yang tidak punya kolom tempat menampilkannya harus tetap terbaca — itulah yang
+       dulu mengubah "permintaan ditolak" menjadi "tombolnya rusak". */
+    cek('ada penampung galat yang tak berkolom', src.includes('galatTersembunyi'));
+    cek('penampung itu dirender di formnya',
+        /<p v-if="galatTersembunyi"[^>]*>\{\{ galatTersembunyi \}\}<\/p>/.test(src));
+    const badanGalat = (src.match(/const galatTersembunyi = computed\([\s\S]*?\n\}\);/) || [''])[0];
+    cek('yang ditampilkan hanya galat di luar kolom yang sedang tampil',
+        badanGalat.includes("formMinta.type === 'expiry' ? ['expired_date'] : ['amount']"), badanGalat);
+
+    // Formnya sendiri: kedua kolom saling menggantikan menurut jenisnya.
+    cek('kolom Tanggal Expired muncul untuk jenis expiry',
+        /v-else>\s*<label[^>]*>Tanggal Expired \*<\/label>/.test(src.replace(/\n\s*/g, ' ')));
+    cek('kolom Nilai hanya untuk jenis selain expiry',
+        /v-if="formMinta\.type !== 'expiry'">\s*<label[^>]*>Nilai \(Rp\) \*<\/label>/.test(src.replace(/\n\s*/g, ' ')));
+    /* Diperiksa pada sumbernya: form "Ajukan Permintaan" baru ter-render setelah tombol
+       "Ajukan Saldo / Expired" ditekan (v-if="kartuPermintaan"), dan itu tidak bisa dilakukan
+       lewat SSR. */
+    cek('layar menjelaskan bahwa permintaannya masuk antrean persetujuan',
+        src.includes('Masuk ke Menunggu Persetujuan'));
+    cek('untuk jenis expiry, penjelasnya menyebut masa berlaku kartu',
+        src.includes('masa berlaku kartunya berubah setelah disetujui'));
 
     console.log('\n=== 4. PEMILIH KARTU PADA LAYAR BON ===');
     const kartuUsable = [{ id: 1, label: '141-00-9988886-9 — MANDIRI REK. 141-00-9988886-9', balance: 7500000 }];
