@@ -798,7 +798,7 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
     Route::put('/business-support/cash-book-signature-barcode/{barcode}',  [BsSignatureBarcodeController::class, 'update'])->name('bs.cashbook.signature-barcode.update');
     Route::delete('/business-support/cash-book-signature-barcode/{barcode}', [BsSignatureBarcodeController::class, 'destroy'])->name('bs.cashbook.signature-barcode.destroy');
 
-    // Cash Book → Setup → Set Up Credit Card: kartu kredit/VA, saldo & masa berlakunya.
+    // Cash Book → Setup → Set Up Debit Card: kartu debit/VA, saldo & masa berlakunya.
     // Saldo hanya berubah lewat permintaan yang disetujui (approve/reject di bawah).
     Route::get('/business-support/credit-cards',                        [\App\Http\Controllers\Web\BusinessSupport\CashBook\CreditCardController::class, 'index'])->name('bs.cashbook.credit-card.index');
     Route::post('/business-support/credit-cards',                       [\App\Http\Controllers\Web\BusinessSupport\CashBook\CreditCardController::class, 'store'])->name('bs.cashbook.credit-card.store');
@@ -806,7 +806,7 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
     Route::post('/business-support/credit-cards/{card}/requests',       [\App\Http\Controllers\Web\BusinessSupport\CashBook\CreditCardController::class, 'requestStore'])->name('bs.cashbook.credit-card.request');
     Route::post('/business-support/credit-card-requests/{creditCardRequest}/approve', [\App\Http\Controllers\Web\BusinessSupport\CashBook\CreditCardController::class, 'approve'])->name('bs.cashbook.credit-card.approve');
     Route::post('/business-support/credit-card-requests/{creditCardRequest}/reject',  [\App\Http\Controllers\Web\BusinessSupport\CashBook\CreditCardController::class, 'reject'])->name('bs.cashbook.credit-card.reject');
-    // Closing Credit Card per kartu per bulan — sisa saldonya menjadi saldo awal bulan berikutnya.
+    // Closing Debit Card per kartu per bulan — sisa saldonya menjadi saldo awal bulan berikutnya.
     Route::post('/business-support/credit-cards/{card}/closing',        [\App\Http\Controllers\Web\BusinessSupport\CashBook\CreditCardController::class, 'close'])->name('bs.cashbook.credit-card.close');
     Route::post('/business-support/credit-cards/{card}/closing/buka',   [\App\Http\Controllers\Web\BusinessSupport\CashBook\CreditCardController::class, 'reopen'])->name('bs.cashbook.credit-card.reopen');
     // Outstanding Kasbon per karyawan — dari mutasi akun Uang Muka Operasional.
@@ -902,6 +902,8 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
     // #88: laporan bon sementara (4 bucket). Path sibling agar tidak bentrok {advance}.
     Route::get('/business-support/bon-sementara-laporan',           [BsAdvanceController::class, 'report'])->name('bs.advance.report');
     Route::get('/business-support/bon-sementara-kartu',             [BsAdvanceController::class, 'card'])->name('bs.advance.card');
+    // Saldo Debit Card per nomor bon — penambahan/pemakaian/sisa saldo kartu, dipecah per bon.
+    Route::get('/business-support/saldo-debit-card',                [BsAdvanceController::class, 'cardBalance'])->name('bs.advance.card-balance');
     Route::get('/business-support/bon-sementara-kartu-excel',        [BsAdvanceController::class, 'cardExcel'])->name('bs.advance.card.excel'); // #9
     Route::get('/business-support/bon-sementara-kartu-pdf',          [BsAdvanceController::class, 'cardPdf'])->name('bs.advance.card.pdf');     // #9
     Route::post('/business-support/bon-sementara/{advance}/bayar',  [BsAdvanceController::class, 'pay'])->name('bs.advance.pay');

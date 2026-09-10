@@ -9,7 +9,7 @@ import SearchSelect from '@/Components/UI/SearchSelect.vue';
 const props = defineProps<{ advance: any; expenseAccounts: Array<any>; costCenters: Array<any>; cashAccounts: Array<any>; signers?: Record<string, string>; requiredSigners?: string[]; fullyApproved?: boolean; canApprove?: boolean; canEditDocDate?: boolean;
     /** 'online' = berjenjang di aplikasi · 'offline' = tanda tangan di kertas. */
     approvalMode?: string;
-    /** Kartu kredit/VA yang boleh dipakai (aktif & belum expired) — hanya untuk Debit VA. */
+    /** Kartu debit/VA yang boleh dipakai (aktif & belum expired) — hanya untuk Debit VA. */
     creditCards?: Array<{ id: number; label: string; balance: number }>;
     /** Baris Alokasi Kasbon + totalnya + sisa bon yang belum dialokasikan. */
     allocations?: { rows: Array<any>; total: number; sisa: number };
@@ -288,7 +288,7 @@ function backToIndex() {
             <h2 class="mb-1 flex items-center gap-2 font-semibold"><HandCoins class="h-5 w-5 text-amber-600" /> Pembayaran (Dept Finance)</h2>
             <p class="mb-3 text-xs text-neutral-500">
                 <b>Reguler</b>: isi tanggal transfer &amp; sumber bank/kas — jurnal <b>Dr Uang Muka Operasional · Cr Bank/Kas</b> terbentuk saat disimpan.
-                <b>Debit VA</b>: <b>tidak ada jurnal</b> dan tidak perlu sumber bank/kas — yang terbentuk hanya saldo di kartu/VA-nya (Set Up Credit Card). Uangnya keluar dari bank lewat <b>Alokasi Kasbon</b> sesudah ini.
+                <b>Debit VA</b>: <b>tidak ada jurnal</b> dan tidak perlu sumber bank/kas — yang terbentuk hanya saldo di kartu/VA-nya (Set Up Debit Card). Uangnya keluar dari bank lewat <b>Alokasi Kasbon</b> sesudah ini.
             </p>
             <!-- Gate: tombol baru aktif setelah SELURUH persetujuan (pengaju → Manager Finance) lengkap. -->
             <!-- Pesan penahan hanya untuk bon ONLINE. Pada bon offline gerbangnya memang
@@ -343,21 +343,21 @@ function backToIndex() {
                     <p v-else class="mt-1 text-[11px] text-neutral-400">Setelah tanggal ini VA tidak bisa lagi didebit.</p>
                 </div>
 
-                <!-- Nomor kartu kredit/VA yang didebit. Hanya kartu AKTIF & belum expired yang
-                     dikirim server, jadi daftar kosong berarti Set Up Credit Card-nya memang
+                <!-- Nomor kartu debit/VA yang didebit. Hanya kartu AKTIF & belum expired yang
+                     dikirim server, jadi daftar kosong berarti Set Up Debit Card-nya memang
                      belum disiapkan — dikatakan terang-terangan supaya tidak dikira kolomnya rusak. -->
                 <div v-if="payForm.payment_method === 'debit_va'" class="md:col-span-2">
-                    <label class="mb-1 block text-xs font-medium text-neutral-500">Nomor Kartu Kredit / VA <span class="text-danger-500">*</span></label>
+                    <label class="mb-1 block text-xs font-medium text-neutral-500">Nomor Kartu Debit / VA <span class="text-danger-500">*</span></label>
                     <SearchSelect :model-value="payForm.credit_card_id" :options="(creditCards ?? []).map((c) => ({ id: c.id, label: c.label }))" option-value="id"
                                   :disabled="!fullyApproved" placeholder="— pilih kartu —"
                                   :class="vaKurangKartu ? 'rounded-lg ring-1 ring-danger-400' : ''"
                                   @update:model-value="(v) => payForm.credit_card_id = v" />
                     <p v-if="payForm.errors.credit_card_id" class="mt-1 text-xs text-danger-500">{{ payForm.errors.credit_card_id }}</p>
-                    <p v-else-if="!(creditCards ?? []).length" class="mt-1 text-xs text-danger-500">Belum ada kartu aktif — aktifkan kartunya dulu di <b>Cash Book → Setup → Set Up Credit Card</b>.</p>
+                    <p v-else-if="!(creditCards ?? []).length" class="mt-1 text-xs text-danger-500">Belum ada kartu aktif — aktifkan kartunya dulu di <b>Cash Book → Setup → Set Up Debit Card</b>.</p>
                     <p v-else-if="vaKurangKartu" class="mt-1 text-xs text-danger-500">Wajib dipilih sebelum pembayaran dicatat.</p>
                     <p v-else class="mt-1 text-[11px] text-neutral-400">
                         Nominal {{ fmtRp(advance.amount) }} langsung menjadi <b>Penambahan</b> saldo kartu ini pada bulan tanggal transfernya
-                        di Set Up Credit Card — tanpa perlu persetujuan tersendiri, sebab pembayarannya sendiri yang menjadi dasarnya.
+                        di Set Up Debit Card — tanpa perlu persetujuan tersendiri, sebab pembayarannya sendiri yang menjadi dasarnya.
                         Yang tetap menunggu persetujuan hanya <b>masa berlakunya</b>.
                     </p>
                 </div>
@@ -368,14 +368,14 @@ function backToIndex() {
                      akan menanyakan rekening yang tidak pernah dipakai. -->
                 <div v-if="payForm.payment_method !== 'debit_va'"><label class="mb-1 block text-xs font-medium text-neutral-500">Sumber Bank/Kas *</label><SearchSelect :model-value="payForm.cash_account_id" :options="cashAccounts" :disabled="!fullyApproved" placeholder="— pilih rekening —" @update:model-value="(v) => payForm.cash_account_id = v" /><p v-if="payForm.errors.cash_account_id" class="mt-1 text-xs text-danger-500">{{ payForm.errors.cash_account_id }}</p></div>
                 <div class="md:col-span-2 flex items-center justify-between rounded-lg bg-amber-50 px-4 py-2 text-xs text-amber-700 dark:bg-amber-900/20 dark:text-amber-300">
-                    <span v-if="payForm.payment_method === 'debit_va'">Tidak ada jurnal — saldo masuk ke {{ kartuDipilih?.label ?? 'kartu kredit / VA' }}. Jurnalnya terbentuk saat <b>Alokasi Kasbon</b> (Dr Uang Muka Operasional · Cr bank pengeluaran).</span>
+                    <span v-if="payForm.payment_method === 'debit_va'">Tidak ada jurnal — saldo masuk ke {{ kartuDipilih?.label ?? 'kartu debit / VA' }}. Jurnalnya terbentuk saat <b>Alokasi Kasbon</b> (Dr Uang Muka Operasional · Cr bank pengeluaran).</span>
                     <span v-else>Jurnal: Dr Uang Muka Operasional · Cr Bank/Kas</span>
                     <span class="font-mono font-bold">{{ fmtRp(advance.amount) }}</span>
                 </div>
                 <div class="md:col-span-2 flex flex-wrap items-center gap-3">
                     <Button type="submit" :disabled="payForm.processing || (payForm.payment_method !== 'debit_va' && !payForm.cash_account_id) || !fullyApproved || vaKurangExpired || vaKurangKartu"><template #icon-left><HandCoins class="h-4 w-4" /></template>{{ payForm.payment_method === 'debit_va' ? 'Simpan Pembayaran Debit VA' : 'Catat Pembayaran &amp; Buat Jurnal' }}</Button>
                     <span v-if="vaKurangExpired && fullyApproved" class="text-xs text-danger-500">Isi Tanggal Expired VA dulu.</span>
-                    <span v-else-if="vaKurangKartu && fullyApproved" class="text-xs text-danger-500">Pilih Nomor Kartu Kredit / VA dulu.</span>
+                    <span v-else-if="vaKurangKartu && fullyApproved" class="text-xs text-danger-500">Pilih Nomor Kartu Debit / VA dulu.</span>
                 </div>
             </form>
         </div>
@@ -383,7 +383,7 @@ function backToIndex() {
         <!-- ALOKASI KASBON — hanya bon Debit VA model baru, selama belum direalisasi.
              Pembayarannya tidak berjurnal; tiap baris di sini-lah yang mengeluarkan uangnya dari
              bank (Dr Uang Muka Operasional · Cr bank pengeluaran) sekaligus menjadi "Pemakaian"
-             kartunya di Set Up Credit Card. -->
+             kartunya di Set Up Debit Card. -->
         <div v-if="allocationMode && advance.status === 'outstanding'" class="card p-5">
             <h2 class="mb-1 flex items-center gap-2 font-semibold"><Wallet class="h-5 w-5 text-primary-600" /> Alokasi Kasbon</h2>
             <p class="mb-3 text-xs text-neutral-500">

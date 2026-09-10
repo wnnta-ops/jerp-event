@@ -335,9 +335,9 @@ export function navGroups(foUrl: string): NavGroup[] {
                 { label: 'Rekening', href: 'rekening.index' },
                 // Barcode tanda tangan yang dipakai pada Persetujuan (TTD) SIP.
                 { label: 'Set Up Barcode', href: 'bs.cashbook.signature-barcode.index' },
-                // Kartu kredit/VA: saldo & masa berlakunya. Bon sementara berpembayaran
+                // Kartu debit/VA: saldo & masa berlakunya. Bon sementara berpembayaran
                 // Debit VA melahirkan permintaan saldo & expired di sini.
-                { label: 'Set Up Credit Card', href: 'bs.cashbook.credit-card.index' },
+                { label: 'Set Up Debit Card', href: 'bs.cashbook.credit-card.index' },
                 { label: 'Repair Data', href: 'bs.cashbook.repair.index' },
             ]},
             { label: 'Master', icon: Wallet, permission: ['cashbook.advance.*', 'cashbook.cheque-out.*', 'cashbook.giro.*', 'cashbook.pettycash.*', 'cashbook.transaction.*'], children: [
@@ -349,7 +349,6 @@ export function navGroups(foUrl: string): NavGroup[] {
                 { label: 'Cek Giro Masuk', href: 'bs.giro.index' },
                 { label: 'Cek Giro Keluar', href: 'bs.cheque-out.index' },
                 { label: 'Realisasi Bon Sementara', href: 'bs.advance.index' },
-                { label: 'Outstanding Kasbon', href: 'bs.cashbook.outstanding-kasbon' },
             ]},
             { label: 'Report/Query', icon: FileBarChart, permission: ['cashbook.advance.*', 'cashbook.giro-calendar.*', 'cashbook.ledger.*', 'cashbook.saldo.*', 'cashbook.transaction.*'], children: [
                 { label: 'Rekening Ledger', href: 'bs.cashbook.ledger' },
@@ -357,7 +356,14 @@ export function navGroups(foUrl: string): NavGroup[] {
                 { label: 'Kalender Cek Giro', href: 'bs.cashbook.giro-calendar' },
                 { label: 'Pengeluaran Kas & Bank', href: 'bs.cashbook.index', params: { type: 'out' } },
                 { label: 'Kartu Bon Sementara', href: 'bs.advance.card' },
+                // Saldo kartu debit/VA yang dipecah per nomor bon — angkanya sama dengan
+                // Set Up Debit Card, hanya sudut pandangnya yang per bon, bukan per kartu.
+                { label: 'Saldo Debit Card', href: 'bs.advance.card-balance' },
                 { label: 'Rekap Bon Sementara', href: 'bs.advance.report' },
+                // Outstanding Kasbon adalah laporan (saldo awal · penambahan · realisasi ·
+                // outstanding per karyawan), bukan tempat menginput — tempatnya di Report/Query,
+                // tepat di bawah Rekap Bon Sementara.
+                { label: 'Outstanding Kasbon', href: 'bs.cashbook.outstanding-kasbon' },
             ]},
             { label: 'Saldo Awal', icon: Coins, permission: ['cashbook.opening.*'], children: [
                 { label: 'Saldo Awal Rekening', href: 'bs.cashbook.opening.index' },

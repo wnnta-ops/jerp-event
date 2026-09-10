@@ -33,7 +33,7 @@ return new class extends Migration
             $t->unsignedBigInteger('tenant_id')->default(1)->index();
             $t->foreignId('cash_advance_id')->constrained('bs_cash_advances')->cascadeOnDelete();
             /* Kartunya disalin ke sini, tidak hanya dibaca lewat bonnya. Kolom "Pemakaian" pada
-               Set Up Credit Card dikelompokkan per kartu per bulan; menjoin lewat bon pada tiap
+               Set Up Debit Card dikelompokkan per kartu per bulan; menjoin lewat bon pada tiap
                pembacaan membuat angka kartu bergantung pada baris bon yang bisa ter-soft-delete. */
             $t->unsignedBigInteger('credit_card_id')->nullable()->index();
             $t->date('alloc_date')->index();

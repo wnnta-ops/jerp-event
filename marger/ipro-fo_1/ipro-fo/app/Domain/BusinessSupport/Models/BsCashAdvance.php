@@ -141,7 +141,7 @@ class BsCashAdvance extends Model
     public function cashAccount(): BelongsTo { return $this->belongsTo(BsAccount::class, 'cash_account_id'); }
     /** Cost center (departemen) penanggung bon ini — dimensi yang dibaca Budget Control. */
     public function costCenter(): BelongsTo { return $this->belongsTo(BsCostCenter::class, 'cost_center_id'); }
-    /** Kartu kredit/VA yang dipakai — hanya terisi pada pembayaran Debit VA. */
+    /** Kartu debit/VA yang dipakai — hanya terisi pada pembayaran Debit VA. */
     public function creditCard(): BelongsTo { return $this->belongsTo(BsCreditCard::class, 'credit_card_id'); }
     public function department(): BelongsTo { return $this->belongsTo(BsHrDepartment::class, 'department_id'); } // #150
     public function lines(): HasMany { return $this->hasMany(BsCashAdvanceLine::class, 'cash_advance_id'); }

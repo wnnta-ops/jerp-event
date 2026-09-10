@@ -9,7 +9,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 /**
- * Snapshot bulanan sebuah kartu kredit/VA yang sudah di-closing.
+ * Snapshot bulanan sebuah kartu debit/VA yang sudah di-closing.
  *
  * `sisa_saldo` di sini adalah SALDO AWAL bulan berikutnya. Selama bulan sebelumnya belum punya
  * baris di tabel ini, saldo awal bulan berjalan adalah nol — lihat CreditCardClosingService.

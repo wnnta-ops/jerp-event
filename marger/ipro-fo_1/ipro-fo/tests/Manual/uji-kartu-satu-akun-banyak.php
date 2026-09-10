@@ -1,7 +1,7 @@
 <?php
 
 /**
- * Set Up Credit Card — SATU AKUN GL boleh dipakai BEBERAPA kartu kredit/VA.
+ * Set Up Debit Card — SATU AKUN GL boleh dipakai BEBERAPA kartu debit/VA.
  *
  * KENAPA DULU DIBATASI SATU. Angka kartu dulu dibandingkan dengan MUTASI AKUNNYA di buku besar:
  * pembayaran Debit VA mendebit akun kartu, realisasinya mengkredit akun itu, dan "Pemakaian"

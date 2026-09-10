@@ -1,4 +1,4 @@
-// Tampilan Set Up Credit Card + blok Debit VA pada layar bon sementara.
+// Tampilan Set Up Debit Card + blok Debit VA pada layar bon sementara.
 //
 // KENAPA PERLU UJI:
 //  · Tiga keadaan kartu (belum aktif · expired · aktif) berakibat BERBEDA saat membayar, tetapi
@@ -151,7 +151,7 @@ const propsBon = (adv, kartu) => ({
         period: { year: 2026, month: 9, label: 'September 2026' }, riwayat: null,
     });
 
-    cek('judul halaman muncul', html.includes('Set Up Credit Card'));
+    cek('judul halaman muncul', html.includes('Set Up Debit Card'));
 
     const bMandiri = barisMemuat(html, '141-00-9988886-9');
     const bBca = barisMemuat(html, '888-1234');
@@ -320,14 +320,14 @@ const propsBon = (adv, kartu) => ({
 
     globalThis.__ubahForm = null;
     const bonReguler = await render(HAL_BON, propsBon({ ...bonDasar }, kartuUsable));
-    cek('pada pembayaran reguler pemilih kartu TIDAK muncul', !bonReguler.includes('Nomor Kartu Kredit / VA'));
+    cek('pada pembayaran reguler pemilih kartu TIDAK muncul', !bonReguler.includes('Nomor Kartu Debit / VA'));
     cek('pada pembayaran reguler keterangan jurnal tetap Uang Muka Operasional',
         ketJurnal(bonReguler).includes('Dr Uang Muka Operasional'), ketJurnal(bonReguler));
 
     // Cabang Debit VA — hanya form pembayaran yang digeser, bukan form realisasi.
     globalThis.__ubahForm = (d) => ('va_expired_date' in d ? { payment_method: 'debit_va', credit_card_id: 1 } : null);
     const bonVa = await render(HAL_BON, propsBon({ ...bonDasar }, kartuUsable));
-    cek('pada Debit VA pemilih kartu muncul', bonVa.includes('Nomor Kartu Kredit / VA'));
+    cek('pada Debit VA pemilih kartu muncul', bonVa.includes('Nomor Kartu Debit / VA'));
     cek('pada Debit VA tanggal expired tetap diminta', bonVa.includes('Tanggal Expired VA'));
     /* Pembayaran Debit VA tidak berjurnal lagi: ringkasannya karena itu menyebut bahwa jurnal
        baru terbentuk saat ALOKASI KASBON, bukan menyebut akun kartu sebagai sisi debit. */
@@ -337,14 +337,14 @@ const propsBon = (adv, kartu) => ({
         ketJurnal(bonVa).includes('Alokasi Kasbon'), ketJurnal(bonVa));
 
     cek('disebutkan nominalnya menjadi Penambahan saldo kartunya',
-        bonVa.includes('Penambahan') && bonVa.includes('Set Up Credit Card'));
+        bonVa.includes('Penambahan') && bonVa.includes('Set Up Debit Card'));
     cek('disebutkan hanya masa berlakunya yang menunggu persetujuan',
         bonVa.includes('masa berlakunya') && bonVa.includes('menunggu persetujuan'));
 
     // Tanpa satu pun kartu aktif: penyebabnya harus disebut, bukan sekadar dropdown kosong.
     globalThis.__ubahForm = (d) => ('va_expired_date' in d ? { payment_method: 'debit_va' } : null);
     const bonTanpaKartu = await render(HAL_BON, propsBon({ ...bonDasar }, []));
-    cek('daftar kartu kosong menyebut Set Up Credit Card', bonTanpaKartu.includes('Set Up Credit Card'));
+    cek('daftar kartu kosong menyebut Set Up Debit Card', bonTanpaKartu.includes('Set Up Debit Card'));
 
     console.log('\n=== 5. RINGKASAN BON YANG SUDAH DIBAYAR VIA VA ===');
     globalThis.__ubahForm = null;

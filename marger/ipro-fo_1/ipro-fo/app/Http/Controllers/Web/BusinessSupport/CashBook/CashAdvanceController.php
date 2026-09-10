@@ -13,6 +13,7 @@ use App\Domain\BusinessSupport\Print\PengajuanKasbonPrinter;
 use App\Domain\BusinessSupport\Models\BsJournal;
 use App\Domain\BusinessSupport\Services\CashAdvanceAllocationService;
 use App\Domain\BusinessSupport\Services\CashAdvanceService;
+use App\Domain\BusinessSupport\Support\SaldoBonSementara;
 use App\Exceptions\BusinessRuleException;
 use App\Http\Controllers\Controller;
 use Illuminate\Http\RedirectResponse;
@@ -127,6 +128,73 @@ class CashAdvanceController extends Controller
         return back()->with('success', 'Persetujuan bon dicatat.');
     }
 
+    /**
+     * SALDO DEBIT CARD — ketiga angka Set Up Debit Card, tetapi dipecah PER NOMOR BON.
+     *
+     * Set Up Debit Card menjawab "berapa saldo kartu ini bulan ini"; layar ini menjawab
+     * "bon mana yang menaruhnya di sana, dan bon mana yang memakainya". Keduanya membaca sumber
+     * yang sama persis supaya angkanya tidak pernah berbeda:
+     *
+     *   Penambahan = nominal pembayaran Debit VA yang sudah tersimpan (amount, bertanggal paid_date)
+     *   Pemakaian  = total Alokasi Kasbon bon itu
+     *   Sisa Saldo = Penambahan − Pemakaian
+     *
+     * Hanya bon Debit VA yang SUDAH dibayar yang muncul: bon yang belum dibayar belum menaruh
+     * sepeser pun di kartu, dan menampilkannya sebagai baris bersaldo 0 hanya membuat daftarnya
+     * panjang tanpa menambah keterangan apa pun.
+     *
+     * Riwayat tiap bon = baris-baris Alokasi Kasbon-nya, yaitu satu-satunya cara saldo kartu
+     * berkurang.
+     */
+    public function cardBalance(Request $request): Response
+    {
+        abort_unless($request->user()?->canModule('cashbook'), 403);
+
+        $bons = BsCashAdvance::query()
+            ->with('creditCard:id,card_number,name')
+            ->where('payment_method', 'debit_va')
+            ->whereNotNull('paid_date')
+            ->orderByDesc('advance_date')->orderByDesc('id')
+            ->get();
+
+        /* Alokasi diambil SEKALIGUS lalu dikelompokkan di PHP. Mengambilnya per bon di dalam
+           perulangan membuat satu kueri per baris — daftar 200 bon berarti 200 kueri, dan
+           lambatnya baru terasa setelah datanya banyak. */
+        $alokasi = BsCashAdvanceAllocation::query()
+            ->with('cashAccount:id,code,name')
+            ->whereIn('cash_advance_id', $bons->pluck('id')->all())
+            ->orderBy('alloc_date')->orderBy('id')
+            ->get()
+            ->groupBy('cash_advance_id');
+
+        $rows = $bons->map(function ($b) use ($alokasi) {
+            $baris = $alokasi->get($b->id) ?? collect();
+            $penambahan = round((float) $b->amount, 2);
+            $pemakaian  = round((float) $baris->sum('amount'), 2);
+
+            return [
+                'no'         => $b->advance_number,
+                'date'       => optional($b->advance_date)->toDateString(),
+                'holder'     => $b->holder,
+                'purpose'    => $b->purpose,
+                'card'       => $b->creditCard?->label(),
+                'penambahan' => $penambahan,
+                'pemakaian'  => $pemakaian,
+                'sisa'       => round($penambahan - $pemakaian, 2),
+                'riwayat'    => $baris->map(fn ($a) => [
+                    'date'        => optional($a->alloc_date)->toDateString(),
+                    'description' => $a->description,
+                    'amount'      => (float) $a->amount,
+                    'bank'        => $a->cashAccount ? trim($a->cashAccount->code.' — '.$a->cashAccount->name) : null,
+                ])->values(),
+            ];
+        });
+
+        return Inertia::render('BusinessSupport/CashBook/Advances/CardBalance', [
+            'rows' => $rows->values(),
+        ]);
+    }
+
     /** Kartu Bon Sementara — kartu per pemegang bon (mutasi + outstanding). */
     public function card(Request $request): Response
     {
@@ -136,17 +204,23 @@ class CashAdvanceController extends Controller
         $rows = BsCashAdvance::query()
             ->with('department:id,name')
             ->orderByDesc('advance_date')->orderByDesc('id')->get()
-            ->map(fn ($a) => [
-                'no'          => $a->advance_number,
-                'date'        => optional($a->advance_date)->toDateString(),
-                'holder'      => $a->holder,
-                'department'  => $a->department?->name,
-                'purpose'     => $a->purpose,
-                'amount'      => (float) $a->amount,
-                'realized'    => (float) $a->realized_amount,
-                'outstanding' => round((float) $a->amount - (float) $a->realized_amount, 2),
-                'status'      => $a->status,
-            ]);
+            ->map(function ($a) {
+                $s = SaldoBonSementara::dariBon($a);
+
+                return [
+                    'no'             => $a->advance_number,
+                    'date'           => optional($a->advance_date)->toDateString(),
+                    'holder'         => $a->holder,
+                    'department'     => $a->department?->name,
+                    'purpose'        => $a->purpose,
+                    'amount'         => $s['kasbon_awal'],
+                    'realized'       => $s['realisasi'],
+                    'refund'         => $s['refund'],
+                    'unused'         => $s['tidak_terpakai'],
+                    'outstanding'    => $s['outstanding'],
+                    'status'         => $a->status,
+                ];
+            });
 
         return Inertia::render('BusinessSupport/CashBook/Advances/Card', [
             'rows'     => $rows->values(),
@@ -169,21 +243,29 @@ class CashAdvanceController extends Controller
             ->when($from, fn ($q) => $q->whereDate('advance_date', '>=', $from))
             ->when($to, fn ($q) => $q->whereDate('advance_date', '<=', $to))
             ->orderByDesc('advance_date')->orderByDesc('id')->get()
-            ->map(fn ($a) => [
-                'no'          => $a->advance_number,
-                'date'        => optional($a->advance_date)->toDateString(),
-                'holder'      => $a->holder,
-                'department'  => $a->department?->name,
-                'purpose'     => $a->purpose,
-                'amount'      => (float) $a->amount,
-                'realized'    => (float) $a->realized_amount,
-                'outstanding' => round((float) $a->amount - (float) $a->realized_amount, 2),
-                'status'      => BsCashAdvance::STATUSES[$a->status] ?? $a->status,
-            ]);
+            ->map(function ($a) {
+                $s = SaldoBonSementara::dariBon($a);
+
+                return [
+                    'no'          => $a->advance_number,
+                    'date'        => optional($a->advance_date)->toDateString(),
+                    'holder'      => $a->holder,
+                    'department'  => $a->department?->name,
+                    'purpose'     => $a->purpose,
+                    'amount'      => $s['kasbon_awal'],
+                    'realized'    => $s['realisasi'],
+                    'refund'      => $s['refund'],
+                    'unused'      => $s['tidak_terpakai'],
+                    'outstanding' => $s['outstanding'],
+                    'status'      => BsCashAdvance::STATUSES[$a->status] ?? $a->status,
+                ];
+            });
 
         return ['rows' => $rows, 'total' => [
             'amount'      => (float) $rows->sum('amount'),
             'realized'    => (float) $rows->sum('realized'),
+            'refund'      => (float) $rows->sum('refund'),
+            'unused'      => (float) $rows->sum('unused'),
             'outstanding' => (float) $rows->sum('outstanding'),
             'count'       => $rows->count(),
         ]];
@@ -198,14 +280,19 @@ class CashAdvanceController extends Controller
         $e  = fn ($s) => htmlspecialchars((string) $s, ENT_QUOTES, 'UTF-8');
         $rp = fn ($n) => number_format((float) $n, 0, ',', '.');
 
-        $h = '<table border="1"><tr><th colspan="8" style="background:#0f766e;color:#fff">Kartu Bon Sementara</th></tr>'
-            .'<tr style="background:#e2e8f0"><th>No Bon</th><th>Tanggal</th><th>Pemegang</th><th>Departemen</th><th>Keperluan</th><th>Nilai</th><th>Realisasi</th><th>Outstanding</th><th>Status</th></tr>';
+        // 11 kolom: 5 keterangan + 5 nilai + status. colspan judul harus ikut, kalau tidak judulnya
+        // berhenti sebelum kolom terakhir (dulu colspan=8 di atas tabel 9 kolom).
+        $h = '<table border="1"><tr><th colspan="11" style="background:#0f766e;color:#fff">Kartu Bon Sementara</th></tr>'
+            .'<tr style="background:#e2e8f0"><th>No Bon</th><th>Tanggal</th><th>Pemegang</th><th>Departemen</th><th>Keperluan</th>'
+            .'<th>Kasbon Awal</th><th>Realisasi</th><th>Refund</th><th>Tidak Terpakai</th><th>Outstanding</th><th>Status</th></tr>';
         foreach ($d['rows'] as $r) {
             $h .= '<tr><td>'.$e($r['no']).'</td><td>'.$e($r['date']).'</td><td>'.$e($r['holder']).'</td><td>'.$e($r['department'])
-                .'</td><td>'.$e($r['purpose']).'</td><td>'.$rp($r['amount']).'</td><td>'.$rp($r['realized']).'</td><td>'.$rp($r['outstanding']).'</td><td>'.$e($r['status']).'</td></tr>';
+                .'</td><td>'.$e($r['purpose']).'</td><td>'.$rp($r['amount']).'</td><td>'.$rp($r['realized']).'</td><td>'.$rp($r['refund'])
+                .'</td><td>'.$rp($r['unused']).'</td><td>'.$rp($r['outstanding']).'</td><td>'.$e($r['status']).'</td></tr>';
         }
         $t = $d['total'];
-        $h .= '<tr style="background:#e2e8f0"><td colspan="5"><b>TOTAL ('.$t['count'].' bon)</b></td><td><b>'.$rp($t['amount']).'</b></td><td><b>'.$rp($t['realized']).'</b></td><td><b>'.$rp($t['outstanding']).'</b></td><td></td></tr></table>';
+        $h .= '<tr style="background:#e2e8f0"><td colspan="5"><b>TOTAL ('.$t['count'].' bon)</b></td><td><b>'.$rp($t['amount']).'</b></td><td><b>'.$rp($t['realized'])
+            .'</b></td><td><b>'.$rp($t['refund']).'</b></td><td><b>'.$rp($t['unused']).'</b></td><td><b>'.$rp($t['outstanding']).'</b></td><td></td></tr></table>';
         $file = 'Kartu-Bon-Sementara-'.now()->format('Ymd-His').'.xls';
 
         return response('<html xmlns:x="urn:schemas-microsoft-com:office:excel"><head><meta charset="utf-8"></head><body>'.$h.'</body></html>')
@@ -227,9 +314,10 @@ class CashAdvanceController extends Controller
         $body = '';
         foreach ($d['rows'] as $r) {
             $body .= '<tr><td>'.$e($r['no']).'</td><td>'.$e($r['date']).'</td><td>'.$e($r['holder']).'</td><td>'.$e($r['department'])
-                .'</td><td>'.$e($r['purpose']).'</td><td class="r">'.$rp($r['amount']).'</td><td class="r">'.$rp($r['realized']).'</td><td class="r">'.$rp($r['outstanding']).'</td><td>'.$e($r['status']).'</td></tr>';
+                .'</td><td>'.$e($r['purpose']).'</td><td class="r">'.$rp($r['amount']).'</td><td class="r">'.$rp($r['realized'])
+                .'</td><td class="r">'.$rp($r['refund']).'</td><td class="r">'.$rp($r['unused']).'</td><td class="r">'.$rp($r['outstanding']).'</td><td>'.$e($r['status']).'</td></tr>';
         }
-        if ($body === '') $body = '<tr><td colspan="9" class="c muted">Tidak ada data.</td></tr>';
+        if ($body === '') $body = '<tr><td colspan="11" class="c muted">Tidak ada data.</td></tr>';
         $t = $d['total'];
 
         $html = '<!DOCTYPE html><html lang="id"><head><meta charset="utf-8"><title>Kartu Bon Sementara</title><style>
@@ -240,9 +328,9 @@ class CashAdvanceController extends Controller
             thead th{background:#f1f5f9}.r{text-align:right;font-variant-numeric:tabular-nums}.c{text-align:center}tfoot td{font-weight:bold;background:#f8fafc}
             @media print{.noprint{display:none}}</style></head><body>
             <div class="head"><div><h1>KARTU BON SEMENTARA</h1><div class="muted">'.$e($co).'</div></div><div class="muted" style="text-align:right">Cetak: '.$e($now).'</div></div>
-            <table><thead><tr><th>No Bon</th><th>Tanggal</th><th>Pemegang</th><th>Departemen</th><th>Keperluan</th><th class="r">Nilai</th><th class="r">Realisasi</th><th class="r">Outstanding</th><th>Status</th></tr></thead>
+            <table><thead><tr><th>No Bon</th><th>Tanggal</th><th>Pemegang</th><th>Departemen</th><th>Keperluan</th><th class="r">Kasbon Awal</th><th class="r">Realisasi</th><th class="r">Refund</th><th class="r">Tidak Terpakai</th><th class="r">Outstanding</th><th>Status</th></tr></thead>
             <tbody>'.$body.'</tbody>
-            <tfoot><tr><td colspan="5">TOTAL ('.$t['count'].' bon)</td><td class="r">'.$rp($t['amount']).'</td><td class="r">'.$rp($t['realized']).'</td><td class="r">'.$rp($t['outstanding']).'</td><td></td></tr></tfoot></table>
+            <tfoot><tr><td colspan="5">TOTAL ('.$t['count'].' bon)</td><td class="r">'.$rp($t['amount']).'</td><td class="r">'.$rp($t['realized']).'</td><td class="r">'.$rp($t['refund']).'</td><td class="r">'.$rp($t['unused']).'</td><td class="r">'.$rp($t['outstanding']).'</td><td></td></tr></tfoot></table>
             <button class="noprint" onclick="window.print()" style="margin-top:12px;padding:6px 14px">Cetak / Simpan PDF</button>
             <script>window.onload=function(){setTimeout(function(){window.print()},300)}</script></body></html>';
 
@@ -545,7 +633,7 @@ class CashAdvanceController extends Controller
             // VA yang sudah lewat tanggalnya tidak bisa didebit, sehingga uangnya tak pernah
             // berpindah meski jurnalnya terbentuk.
             'va_expired_date' => ['nullable', 'date', 'required_if:payment_method,debit_va', 'after_or_equal:paid_date'],
-            // Nomor kartu kredit/VA yang didebit. WAJIB pada Debit VA: permintaan penambahan
+            // Nomor kartu debit/VA yang didebit. WAJIB pada Debit VA: permintaan penambahan
             // saldo dan permintaan masa berlaku yang lahir dari bon ini harus menempel pada
             // kartu tertentu — tanpa itu, saldo bertambah di kartu yang tidak dituju.
             'credit_card_id'  => ['nullable', 'integer', 'exists:bs_credit_cards,id', 'required_if:payment_method,debit_va'],
@@ -553,7 +641,7 @@ class CashAdvanceController extends Controller
             'cash_account_id.required_unless'  => 'Sumber bank/kas wajib dipilih untuk pembayaran reguler.',
             'va_expired_date.required_if'      => 'Tanggal expired VA wajib diisi untuk Pembayaran Debit VA.',
             'va_expired_date.after_or_equal'   => 'Tanggal expired VA tidak boleh mendahului tanggal transfer.',
-            'credit_card_id.required_if'       => 'Nomor kartu kredit/VA wajib dipilih untuk Pembayaran Debit VA.',
+            'credit_card_id.required_if'       => 'Nomor kartu debit/VA wajib dipilih untuk Pembayaran Debit VA.',
         ]);
 
         // Catat Pembayaran & Buat Jurnal hanya boleh setelah SELURUH persetujuan (pengaju → Manager Finance) lengkap.
@@ -631,7 +719,7 @@ class CashAdvanceController extends Controller
             'approvalMode'    => $advance->isOfflineApproval() ? 'offline' : 'online',
             'approvalModes'   => BsCashAdvance::APPROVAL_MODES,
             'paymentMethods'  => BsCashAdvance::PAYMENT_METHODS,
-            // Kartu kredit/VA yang BOLEH dipakai membayar: aktif dan belum lewat masa berlaku.
+            // Kartu debit/VA yang BOLEH dipakai membayar: aktif dan belum lewat masa berlaku.
             // Kartu nonaktif/expired sengaja tidak dikirim sama sekali — menampilkannya sebagai
             // pilihan yang ditolak server hanya memindahkan penolakannya ke belakang.
             'creditCards'     => \App\Domain\BusinessSupport\Models\BsCreditCard::where('is_active', true)
