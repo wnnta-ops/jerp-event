@@ -37,6 +37,10 @@ ENV NODE_ENV=production
 COPY --from=build /app/.next ./.next
 COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/prisma ./prisma
+# scripts/ ikut dibawa agar perawatan (mis. buat-admin.mjs) bisa dijalankan lewat
+# `docker exec` tanpa menempelkan skrip panjang ke baris perintah. Portal Legal
+# sudah begini; sebelumnya Sales tidak, jadi skrip apa pun tak ada di container.
+COPY --from=build /app/scripts ./scripts
 COPY --from=build /app/package.json ./package.json
 COPY --from=build /app/next.config.mjs ./next.config.mjs
 EXPOSE 3000
