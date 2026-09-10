@@ -21,6 +21,7 @@ use Illuminate\Foundation\Http\Middleware\VerifyCsrfToken;
 use Illuminate\Routing\Middleware\SubstituteBindings;
 use Illuminate\Session\Middleware\StartSession;
 use Illuminate\View\Middleware\ShareErrorsFromSession;
+use App\Support\Akses;
 
 class FoPanelProvider extends PanelProvider
 {
@@ -355,6 +356,11 @@ class FoPanelProvider extends PanelProvider
             return NavigationItem::make($label)
                 ->url(url($url))
                 ->icon($icon)
+                // Sidebar ini dirakit manual, jadi Filament tidak pernah menanyakan
+                // canViewAny()/canAccess() seperti pada navigasi otomatis. Tanpa baris
+                // ini, grup tanpa satu izin pun tetap melihat SELURUH menu FO —
+                // rutenya memang tetap tertutup, tetapi daftar menunya bocor.
+                ->visible(fn () => Akses::bolehRute($activeRoutePrefix))
                 ->isActiveWhen(fn () => request()->routeIs($activeRoutePrefix.'*') || request()->is($path.'*'));
         };
 
@@ -363,6 +369,7 @@ class FoPanelProvider extends PanelProvider
         $soon = fn (string $label, string $modul, string $fitur, string $icon = 'heroicon-o-wrench-screwdriver') => NavigationItem::make($label)
             ->url(url('/fo/segera-hadir?modul='.rawurlencode($modul).'&fitur='.rawurlencode($fitur)))
             ->icon($icon)
+            ->visible(fn () => Akses::bolehRute('filament.fo.pages.segera-hadir'))
             ->isActiveWhen(fn () => request()->is('fo/segera-hadir') && request()->query('fitur') === $fitur);
 
         return [
@@ -440,8 +447,8 @@ class FoPanelProvider extends PanelProvider
                         $item('Pemberkasan', '/fo/pemberkasan', 'heroicon-o-document-check', 'filament.fo.resources.pemberkasan.'),
                     ]],
                     ['label' => 'Setup', 'items' => [
-                        $item('Setup SP', '/fo/collection-setup-sp', 'heroicon-o-document-text', 'filament.fo.pages.setup-sp'),
-                        $item('Setup Termin SP', '/fo/collection-termin-sp', 'heroicon-o-clock', 'filament.fo.pages.setup-termin-sp'),
+                        $item('Setup SP', '/fo/collection-setup-sp', 'heroicon-o-document-text', 'filament.fo.pages.collection-setup-sp'),
+                        $item('Setup Termin SP', '/fo/collection-termin-sp', 'heroicon-o-clock', 'filament.fo.pages.collection-termin-sp'),
                     ]],
                 ],
             ],

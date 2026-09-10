@@ -4,6 +4,8 @@ namespace App\Filament\System\Resources;
 
 use App\Filament\Concerns\MematuhiIzin;
 use App\Filament\System\Resources\UserResource\Pages;
+use App\Models\Bo\BoRole;
+use App\Models\Bo\BoUser;
 use App\Models\User;
 use App\Modules\BO\IproBridge\Services\IproMasterSync;
 use Filament\Forms;
@@ -88,11 +90,55 @@ class UserResource extends Resource
                         ->helperText('Akses dasar mengikuti Grup Akses. Untuk tambahan lintas-modul, isi "Hak Akses Khusus" di bawah.'),
                 ]),
 
+            Forms\Components\Section::make('Grup Akses BO (Java Core System)')
+                ->description('BO punya daftar grup aksesnya sendiri di database ipro_bo. Pengguna dicocokkan lewat EMAIL yang sama.')
+                ->schema([
+                    Forms\Components\Placeholder::make('bo_belum_disimpan')
+                        ->label('')
+                        ->content('Simpan dulu penggunanya, lalu buka kembali halaman ini untuk mengatur grup akses BO.')
+                        ->visible(fn (?User $record) => $record === null),
+
+                    Forms\Components\Placeholder::make('bo_tidak_ada')
+                        ->label('')
+                        ->content('Belum ada akun BO dengan email ini, jadi grup aksesnya belum bisa diatur dari sini. Buat akunnya dulu di aplikasi BO — pembuatan akun butuh password & tenant, dan itu tetap dikerjakan di sana.')
+                        ->visible(fn (?User $record) => $record !== null && static::penggunaBo($record) === null),
+
+                    Forms\Components\Select::make('grup_bo')
+                        ->label('Grup Akses BO')
+                        ->multiple()
+                        ->options(fn () => BoRole::query()->orderBy('name')->pluck('name', 'id')->all())
+                        ->preload()
+                        ->searchable()
+                        ->helperText('Terpisah dari Grup Akses di atas: yang itu mengatur menu FO, yang ini mengatur menu di aplikasi BO.')
+                        ->visible(fn (?User $record) => $record !== null && static::penggunaBo($record) !== null),
+                ]),
+
             Forms\Components\Section::make('Hak Akses Khusus (lintas modul) — opsional')
                 ->description('Tambahan hak akses untuk pengguna INI di luar Grup Akses (mis. anggota FAT yang butuh akses lintas modul secara dinamik). Akses efektif = Grup Akses + centang di sini.')
                 ->collapsible()->collapsed()
                 ->schema(RoleResource::permissionMatrix()),
         ]);
+    }
+
+    /**
+     * Pengguna BO yang sepadan, dicocokkan lewat email.
+     *
+     * Email dipakai sebagai penghubung karena itu pula yang dipakai SSO FO→BO —
+     * tidak ada kolom penaut antar-database. Hasilnya diingat per pengguna supaya
+     * form yang memanggilnya berkali-kali tidak menembak ipro_bo berulang.
+     *
+     * @var array<string,\App\Models\Bo\BoUser|null>
+     */
+    protected static array $cacheBo = [];
+
+    public static function penggunaBo(?User $user): ?BoUser
+    {
+        $email = $user?->email;
+        if (! $email) {
+            return null;
+        }
+
+        return static::$cacheBo[$email] ??= BoUser::query()->where('email', $email)->first();
     }
 
     public static function table(Table $table): Table
