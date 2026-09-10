@@ -50,54 +50,33 @@ export default async function DashboardPage() {
 
       <div className="flow2">
         <div className="fzone">
-          <div className="fzlbl">Diisi Sales · klik untuk mengisi</div>
+          <div className="fzlbl">Diisi Sales di hub ini</div>
           <div className="fsteps">
             <Link className="fstep sa" href="/input">
-              <span className="fn">1</span>
               <span className="ft2">WI</span>
               <span className="fsub">isi →</span>
             </Link>
+            <span className="farrow">→</span>
             <Link className="fstep sa" href="/pipeline">
-              <span className="fn">2</span>
               <span className="ft2">Follow-up</span>
               <span className="fsub">isi →</span>
             </Link>
-            <Link className="fstep sa" href="/pipeline">
-              <span className="fn">3</span>
-              <span className="ft2">NUP</span>
-              <span className="fsub">isi →</span>
-            </Link>
-            <Link className="fstep sa" href="/stock">
-              <span className="fn">4</span>
-              <span className="ft2">UTJ</span>
-              <span className="fsub">isi →</span>
-            </Link>
-            <Link className="fstep sa" href="/pipeline">
-              <span className="fn">5</span>
-              <span className="ft2">SPR</span>
-              <span className="fsub">isi →</span>
-            </Link>
           </div>
+          <div className="fhint">Sales cukup catat Walk-In &amp; follow-up di sini.</div>
         </div>
         <div className="fdiv">»</div>
         <div className="fzone">
-          <div className="fzlbl">Diisi Tim Collection</div>
+          <div className="fzlbl">🔌 Dari sistem lain (integrasi)</div>
           <div className="fsteps">
-            <div className="fstep co">
-              <span className="fn">6</span>
-              <span className="ft2">ACC</span>
-              <span className="fsub">tim Collection</span>
-            </div>
-            <div className="fstep co">
-              <span className="fn">7</span>
-              <span className="ft2">Akad</span>
-              <span className="fsub">tim Collection</span>
-            </div>
-            <div className="fstep co">
-              <span className="fn">8</span>
-              <span className="ft2">Realisasi</span>
-              <span className="fsub">tim Collection</span>
-            </div>
+            {["NUP", "UTJ", "SPR", "ACC", "Akad", "Realisasi"].map((s) => (
+              <div className="fstep co" key={s}>
+                <span className="ft2">{s}</span>
+                <span className="fsub">integrasi</span>
+              </div>
+            ))}
+          </div>
+          <div className="fhint">
+            Tahap ini masuk otomatis dari sistem sumber — NUP opsional, urutan diatur di sana.
           </div>
         </div>
       </div>

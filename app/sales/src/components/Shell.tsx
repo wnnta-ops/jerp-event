@@ -32,6 +32,7 @@ const NAV: NavGroup[] = [
     items: [
       { href: "/daily", label: "Daily Report", ic: "📄", tag: "WA" },
       { href: "/monthly", label: "Monthly / Yearly", ic: "📈" },
+      { href: "/matrix", label: "Matrix Report", ic: "🧮" },
     ],
   },
   {
@@ -48,9 +49,10 @@ const TITLES: Record<string, [string, string]> = {
   "/": ["Dashboard", "Ringkasan divisi sales"],
   "/input": ["Input Harian", "Catat aktivitas hari ini"],
   "/pipeline": ["Customer Pipeline", "Progress tiap customer"],
-  "/gagal": ["Pipeline Gagal", "Analisa deal yang batal & mandek"],
+  "/gagal": ["Pipeline Gagal", "Analisa deal yang batal & pasif"],
   "/daily": ["Daily Report", "Recap harian untuk WA"],
   "/monthly": ["Monthly / Yearly", "Rekap & target tahunan"],
+  "/matrix": ["Matrix Report", "Matrix daily sales — export Excel/PDF"],
   "/stock": ["Stock Unit", "Inventori rumah"],
   "/rotasi": ["Rotasi & Bendera", "Koordinator & agen"],
   "/collection": ["Collection", "Progress akad"],
@@ -69,7 +71,6 @@ export function Shell({
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
   const [title, crumb] = TITLES[pathname] ?? ["Java Sales Hub", ""];
-  const nav = canManageUsers(user.role) ? [...NAV, ADMIN_GROUP] : NAV;
 
   return (
     <div className="app">
@@ -82,7 +83,7 @@ export function Shell({
             <small>Internal system</small>
           </div>
         </div>
-        {nav.map((g) => (
+        {(canManageUsers(user.role) ? [...NAV, ADMIN_GROUP] : NAV).map((g) => (
           <div key={g.group}>
             <div className="navgroup">{g.group}</div>
             <ul className="nav">
@@ -127,11 +128,7 @@ export function Shell({
             <span style={{ width: 1, height: 18, background: "var(--line)" }} />
             <span>{user.name}</span>
             <span className="pill">{ROLE_LABEL[user.role]}</span>
-            {/* Kembali ke portal J-ERP — <a> polos (bukan Link) agar TIDAK diberi basePath /sales. */}
-            <a className="btn ghost sm" href="/dashboard" title="Kembali ke Dashboard J-ERP">
-              ← Dashboard
-            </a>
-            <button className="btn ghost sm" onClick={() => signOut({ callbackUrl: "/sales/login" })}>
+            <button className="btn ghost sm" onClick={() => signOut({ callbackUrl: "/login" })}>
               Keluar
             </button>
           </div>

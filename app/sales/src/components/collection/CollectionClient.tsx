@@ -41,7 +41,8 @@ export function CollectionClient({ deals, role }: { deals: CollDeal[]; role: Rol
     refundAmount: "",
   });
 
-  const canEdit = role === "COLLECTION" || role === "MANAGEMENT" || role === "SYSADMIN";
+  // Only the Collection team may change collection status (ACC → Akad → Realisasi / Batal).
+  const canEdit = role === "COLLECTION";
 
   const filtered = useMemo(() => {
     if (!q.trim()) return deals;
@@ -53,7 +54,7 @@ export function CollectionClient({ deals, role }: { deals: CollDeal[]; role: Rol
 
   async function advance(d: CollDeal) {
     setBusy(true);
-    const res = await fetch(`/sales/api/deals/${d.id}/advance`, { method: "POST" });
+    const res = await fetch(`/api/deals/${d.id}/advance`, { method: "POST" });
     setBusy(false);
     const j = await res.json().catch(() => ({}));
     if (res.ok) {
@@ -64,7 +65,7 @@ export function CollectionClient({ deals, role }: { deals: CollDeal[]; role: Rol
 
   async function submitBatal() {
     setBusy(true);
-    const res = await fetch(`/sales/api/deals/${batalDeal!.id}/batal`, {
+    const res = await fetch(`/api/deals/${batalDeal!.id}/batal`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -149,8 +150,10 @@ export function CollectionClient({ deals, role }: { deals: CollDeal[]; role: Rol
                         Batal
                       </button>
                     </>
-                  ) : (
+                  ) : role === "COLLECTION" ? (
                     <span className="pill">🔒 view only</span>
+                  ) : (
+                    <span className="pill">🔒 Hanya tim Collection yang bisa update</span>
                   )}
                 </div>
               </div>

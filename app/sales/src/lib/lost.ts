@@ -26,6 +26,11 @@ export interface LostItem {
   lastActivity: string; // label
   lastActivityTs: number;
   appeal: string;
+  // Tier-2 demographic (from external system; null until synced)
+  ageBand: string | null;
+  pekerjaan: string | null;
+  domisili: string | null;
+  penghasilan: string | null;
 }
 
 export interface Slice {
@@ -64,7 +69,7 @@ const APPEAL: Record<string, string> = {
     "Faktor keluarga. Beri ruang & waktu, tawarkan skema co-buyer / joint income, jaga komunikasi hangat.",
   SKEMA_BAYAR: "Skema bayar tak cocok. Tawarkan promo DP ringan, cicilan bertahap, atau bunga fix di awal.",
   OTHER: "Alasan lain. Gali detail via follow-up, kelompokkan untuk penawaran ulang tertarget.",
-  MANDEK: "Lead mandek lama. Jadwalkan follow-up ulang, konfirmasi minat & kebutuhan, tawarkan unit/info/promo baru.",
+  MANDEK: "Lead pasif lama. Jadwalkan follow-up ulang, konfirmasi minat & kebutuhan, tawarkan unit/info/promo baru.",
 };
 
 function slices(counts: Map<string, number>, total: number, top = 0): Slice[] {
@@ -99,6 +104,9 @@ const DEAL_SELECT = {
   agency: { select: { name: true } },
   coordinator: { select: { name: true } },
   sales: { select: { name: true } },
+  demographic: {
+    select: { umur: true, ageBand: true, pekerjaan: true, domisili: true, penghasilan: true },
+  },
 } as const;
 
 type DealRow = {
@@ -121,7 +129,25 @@ type DealRow = {
   agency: { name: string };
   coordinator: { name: string } | null;
   sales: { name: string };
+  demographic: {
+    umur: number | null;
+    ageBand: string | null;
+    pekerjaan: string | null;
+    domisili: string | null;
+    penghasilan: string | null;
+  } | null;
 };
+
+// Derive an age band from raw age when the external system didn't supply one.
+function ageBandOf(umur: number | null, band: string | null): string | null {
+  if (band) return band;
+  if (umur == null) return null;
+  if (umur < 25) return "<25";
+  if (umur < 35) return "25-34";
+  if (umur < 45) return "35-44";
+  if (umur < 55) return "45-54";
+  return "55+";
+}
 
 function lastActivity(d: DealRow): Date {
   const cands = [d.tglAkad, d.tglAcc, d.tglSpr, d.tglUtj, d.tglNup, d.batalTanggal, d.tanggalWi].filter(
@@ -130,7 +156,8 @@ function lastActivity(d: DealRow): Date {
   return cands.reduce((a, b) => (a.getTime() > b.getTime() ? a : b), d.tanggalWi);
 }
 
-export async function getLostAnalysis(): Promise<LostAnalysis> {
+// Load every "lost" deal (batal + mandek) as normalized LostItems.
+export async function loadLostItems(): Promise<LostItem[]> {
   const today = wibToday();
   const cutoff = new Date(today.getTime() - STALE_DAYS * 86400_000);
 
@@ -143,11 +170,11 @@ export async function getLostAnalysis(): Promise<LostAnalysis> {
   ]);
 
   const items: LostItem[] = [];
-
   const toItem = (d: DealRow, category: LostCategory): LostItem => {
     const la = lastActivity(d);
     const alasanKey = category === "BATAL" ? d.batalAlasan ?? "OTHER" : "MANDEK";
-    const alasanLabel = category === "BATAL" ? BATAL_ALASAN_LABEL[alasanKey] ?? alasanKey : "Mandek (lama tak gerak)";
+    const alasanLabel =
+      category === "BATAL" ? BATAL_ALASAN_LABEL[alasanKey] ?? alasanKey : "Pasif (lama tak gerak)";
     return {
       id: d.id,
       nama: d.nama,
@@ -166,6 +193,10 @@ export async function getLostAnalysis(): Promise<LostAnalysis> {
       lastActivity: formatIdDateLong(la),
       lastActivityTs: la.getTime(),
       appeal: APPEAL[alasanKey] ?? APPEAL.OTHER,
+      ageBand: ageBandOf(d.demographic?.umur ?? null, d.demographic?.ageBand ?? null),
+      pekerjaan: d.demographic?.pekerjaan ?? null,
+      domisili: d.demographic?.domisili ?? null,
+      penghasilan: d.demographic?.penghasilan ?? null,
     };
   };
 
@@ -173,7 +204,11 @@ export async function getLostAnalysis(): Promise<LostAnalysis> {
   for (const d of stuckCandidates) {
     if (lastActivity(d).getTime() < cutoff.getTime()) items.push(toItem(d, "MANDEK"));
   }
+  return items;
+}
 
+export async function getLostAnalysis(): Promise<LostAnalysis> {
+  const items = await loadLostItems();
   const total = items.length;
   const batal = items.filter((i) => i.category === "BATAL").length;
 
@@ -197,9 +232,10 @@ export async function getLostAnalysis(): Promise<LostAnalysis> {
     bump(mChannel, it.channel);
     bump(mBayar, it.caraBayar);
   }
-  // month trend of cancellations only
-  for (const d of batalDeals) {
-    const t = d.batalTanggal ?? d.tanggalWi;
+  // month trend of cancellations only (batal items; lastActivity ≈ batalTanggal)
+  for (const it of items) {
+    if (it.category !== "BATAL") continue;
+    const t = new Date(it.lastActivityTs);
     bump(mMonth, `${idMonthShort(t.getUTCMonth())} ${String(t.getUTCFullYear()).slice(2)}`);
   }
 
@@ -230,4 +266,169 @@ export async function getLostAnalysis(): Promise<LostAnalysis> {
     profil,
     items: items.sort((a, b) => b.lastActivityTs - a.lastActivityTs),
   };
+}
+
+// ---------------------------------------------------------------------------
+// Per-reason anonymized aggregate context for the AI slot. Contains only
+// counts by dimension — NO customer names or personal data.
+// ---------------------------------------------------------------------------
+export interface ReasonContext {
+  alasanKey: string;
+  alasanLabel: string;
+  total: number;
+  isAll: boolean;
+  byCluster: Slice[];
+  byType: Slice[];
+  byChannel: Slice[];
+  byCaraBayar: Slice[];
+  byBendera: Slice[];
+  byStage: Slice[];
+  byAlasan: Slice[]; // only meaningful for the ALL segment
+  // Tier-2 demographic — empty arrays until the external pathway is connected.
+  demo: {
+    coverage: number; // how many of `total` have ANY demographic field
+    byAge: Slice[];
+    byJob: Slice[];
+    byDomisili: Slice[];
+    byIncome: Slice[];
+  };
+}
+
+export const ALL_KEY = "ALL";
+
+export async function getReasonContext(alasanKey: string): Promise<ReasonContext | null> {
+  const all = await loadLostItems();
+  const isAll = alasanKey === ALL_KEY;
+  const items = isAll ? all : all.filter((i) => i.alasanKey === alasanKey);
+  if (items.length === 0) return null;
+
+  const mk = (pick: (i: LostItem) => string, top = 0) => {
+    const m = new Map<string, number>();
+    for (const i of items) bump(m, pick(i));
+    return slices(m, items.length, top);
+  };
+  // demographic slices count only items that actually have the field
+  const mkDemo = (pick: (i: LostItem) => string | null, top = 0) => {
+    const present = items.filter((i) => pick(i));
+    const m = new Map<string, number>();
+    for (const i of present) bump(m, pick(i)!);
+    return slices(m, present.length, top);
+  };
+  const coverage = items.filter(
+    (i) => i.ageBand || i.pekerjaan || i.domisili || i.penghasilan,
+  ).length;
+
+  return {
+    alasanKey,
+    alasanLabel: isAll ? "Semua alasan" : items[0].alasanLabel,
+    total: items.length,
+    isAll,
+    byCluster: mk((i) => i.cluster),
+    byType: mk((i) => i.type, 6),
+    byChannel: mk((i) => i.channel),
+    byCaraBayar: mk((i) => i.caraBayar),
+    byBendera: mk((i) => i.bendera, 6),
+    byStage: mk((i) => i.stageLabel),
+    byAlasan: isAll ? mk((i) => i.alasanLabel) : [],
+    demo: {
+      coverage,
+      byAge: mkDemo((i) => i.ageBand),
+      byJob: mkDemo((i) => i.pekerjaan, 6),
+      byDomisili: mkDemo((i) => i.domisili, 6),
+      byIncome: mkDemo((i) => i.penghasilan),
+    },
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Per-reason profile data for the interactive demographic visualization.
+// One pass over the lost items builds the "Semua alasan" profile + one per
+// reason (ordered by volume). Fed to the <LostProfile> client component.
+// ---------------------------------------------------------------------------
+export interface ProfileData {
+  key: string;
+  label: string;
+  n: number;
+  pct: number; // share of all lost
+  byCluster: Slice[];
+  byType: Slice[];
+  byChannel: Slice[];
+  byBendera: Slice[];
+  byCaraBayar: Slice[];
+  demo: { coverage: number; byAge: Slice[]; byJob: Slice[]; byDomisili: Slice[]; byIncome: Slice[] };
+}
+
+export async function getLostProfiles(): Promise<ProfileData[]> {
+  const all = await loadLostItems();
+  const total = all.length;
+
+  const build = (key: string, label: string, items: LostItem[]): ProfileData => {
+    const mk = (pick: (i: LostItem) => string, top = 0) => {
+      const m = new Map<string, number>();
+      for (const i of items) bump(m, pick(i));
+      return slices(m, items.length, top);
+    };
+    const mkDemo = (pick: (i: LostItem) => string | null, top = 0) => {
+      const present = items.filter((i) => pick(i));
+      const m = new Map<string, number>();
+      for (const i of present) bump(m, pick(i)!);
+      return slices(m, present.length, top);
+    };
+    const coverage = items.filter(
+      (i) => i.ageBand || i.pekerjaan || i.domisili || i.penghasilan,
+    ).length;
+    return {
+      key,
+      label,
+      n: items.length,
+      pct: total ? Math.round((items.length / total) * 100) : 0,
+      byCluster: mk((i) => i.cluster),
+      byType: mk((i) => i.type, 6),
+      byChannel: mk((i) => i.channel),
+      byBendera: mk((i) => i.bendera, 6),
+      byCaraBayar: mk((i) => i.caraBayar),
+      demo: {
+        coverage,
+        byAge: mkDemo((i) => i.ageBand),
+        byJob: mkDemo((i) => i.pekerjaan, 6),
+        byDomisili: mkDemo((i) => i.domisili, 6),
+        byIncome: mkDemo((i) => i.penghasilan),
+      },
+    };
+  };
+
+  const byKey = new Map<string, { label: string; items: LostItem[] }>();
+  for (const i of all) {
+    const g = byKey.get(i.alasanKey) ?? { label: i.alasanLabel, items: [] };
+    g.items.push(i);
+    byKey.set(i.alasanKey, g);
+  }
+  const sorted = [...byKey.entries()].sort((a, b) => b[1].items.length - a[1].items.length);
+
+  return [
+    build(ALL_KEY, "Semua alasan", all),
+    ...sorted.map(([key, g]) => build(key, g.label, g.items)),
+  ];
+}
+
+// Stored 2-slot notes, keyed by alasanKey.
+export async function getAppealNotes(): Promise<
+  Map<string, { teamStrategy: string | null; aiText: string | null; aiGeneratedAt: Date | null }>
+> {
+  const rows = await prisma.appealNote.findMany();
+  const map = new Map<string, { teamStrategy: string | null; aiText: string | null; aiGeneratedAt: Date | null }>();
+  for (const r of rows) {
+    map.set(r.alasanKey, {
+      teamStrategy: r.teamStrategy,
+      aiText: r.aiText,
+      aiGeneratedAt: r.aiGeneratedAt,
+    });
+  }
+  return map;
+}
+
+// Default team-strategy text (the old hardcoded APPEAL) — used as Slot A
+// placeholder until a team writes their own.
+export function defaultTeamStrategy(alasanKey: string): string {
+  return APPEAL[alasanKey] ?? APPEAL.OTHER;
 }

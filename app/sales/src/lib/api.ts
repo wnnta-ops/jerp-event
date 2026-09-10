@@ -15,8 +15,6 @@ export async function requireSession() {
 }
 
 export function requireRole(role: Role, allowed: Role[]) {
-  // SYSADMIN (IT) melewati semua gerbang role — akses & wewenang penuh.
-  if (role === "SYSADMIN") return;
   if (!allowed.includes(role)) throw new ApiError(403, "Tidak punya akses untuk aksi ini.");
 }
 
