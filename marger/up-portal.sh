@@ -8,7 +8,17 @@
 #   LEGAL_AUTH_SECRET, LEGAL_EXTERNAL_APPROVAL_SECRET,
 #   SALES_NEXTAUTH_SECRET, SALES_NEXTAUTH_URL(=https://<domain>/sales/api/auth)
 #
-# CATATAN: skrip ini TIDAK men-seed DB (seed = sekali, menimpa data). Lihat pesan akhir.
+# CATATAN: skrip ini TIDAK men-seed DB dan TIDAK membuat akun. Keduanya dijalankan
+# manual, dan sengaja tidak dicetak tiap deploy — perintah seed MENIMPA data, dan
+# menampilkannya berulang di sebelah perintah yang aman mengundang salah salin.
+#
+#   Seed DB — SEKALI saja saat pertama, MENIMPA data:
+#     docker exec jerp-legal npm run db:seed
+#     docker exec jerp-sales npx tsx prisma/seed.ts
+#
+#   Akun admin IT — upsert, aman diulang, pilih kata sandi sendiri:
+#     docker exec jerp-legal node scripts/buat-admin.mjs <email> '<sandi>' 'IT Sysadmin'
+#     docker exec jerp-sales node scripts/buat-admin.mjs <email> '<sandi>' 'IT Sysadmin'
 set -euo pipefail
 JERP_DIR="${JERP_DIR:-$(cd "$(dirname "$0")/.." && pwd)}"
 cd "$JERP_DIR"
@@ -29,9 +39,3 @@ echo "==> 4/4 restart nginx (re-resolve upstream legal/sales — hindari 502/404
 docker restart jerp-nginx >/dev/null 2>&1 || true
 
 echo "==> PORTAL SELESAI.  Legal -> /legal   Sales -> /sales   (via jerp-nginx)"
-echo "    Seed DB (SEKALI saja, saat pertama; MENIMPA data):"
-echo "      docker exec jerp-legal npm run db:seed"
-echo "      docker exec jerp-sales npx tsx prisma/seed.ts"
-echo "    Akun admin IT (upsert, aman diulang; PILIH kata sandi sendiri):"
-echo "      docker exec jerp-legal node scripts/buat-admin.mjs admin@saleshub.com 'KataSandiKuat' 'IT Sysadmin'"
-echo "      docker exec jerp-sales node scripts/buat-admin.mjs admin@saleshub.com 'KataSandiKuat' 'IT Sysadmin'"
