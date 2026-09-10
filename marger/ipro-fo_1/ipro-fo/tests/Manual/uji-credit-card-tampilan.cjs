@@ -218,6 +218,37 @@ const propsBon = (adv, kartu) => ({
     cek('form Ubah Kartu tetap tanpa jalan pintas menyunting saldo',
         !barisUbah.includes('balance') && !barisUbah.includes('expired_date'));
 
+    console.log('\n=== 2b. SATU AKUN GL BOLEH DIPAKAI BEBERAPA KARTU ===');
+
+    /* Yang dulu menghalangi ada di validasi server (Rule::unique account_id); yang dijaga di
+       layar adalah gantinya: nomor kartu wajib & penolakannya terbaca. Tanpa nomor, dua kartu
+       pada satu rekening tampil dengan label yang sama persis di pemilih pembayaran. */
+    cek('kolom No. Kartu / VA ditandai wajib pada Tambah Kartu',
+        src.includes('>No. Kartu / VA *</label>'));
+    const inputNomorBaru = (src.match(/<input v-model="formKartu\.card_number"[^>]*>/) || [''])[0];
+    cek('kotak nomornya memang required', inputNomorBaru.includes('required'), inputNomorBaru);
+    cek('tombol Tambah Kartu mati selama nomornya kosong',
+        /formKartu\.processing \|\| ! formKartu\.account_id \|\| ! String\(formKartu\.card_number \?\? ''\)\.trim\(\)/.test(src));
+    cek('penolakan nomor kartu terbaca di form Tambah Kartu',
+        /formKartu\.errors\.card_number/.test(src));
+    cek('penolakan nomor kartu terbaca juga di form Ubah Kartu',
+        /formUbah\.errors\.card_number/.test(src));
+    /* Diskopkan ke PARAGRAF KEPALA halaman: kalimat serupa juga ada sebagai keterangan kecil di
+       bawah tombol Tambah Kartu, jadi pencarian se-halaman akan lulus walaupun penjelasan di
+       kepalanya sudah hilang. */
+    const kepala = (html.match(/<p class="text-sm text-neutral-500">[\s\S]*?<\/p>/) || [''])[0];
+    cek('paragraf kepala menyebut satu Akun GL boleh dipakai beberapa kartu',
+        kepala.includes('beberapa kartu'), kepala.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').slice(0, 200));
+
+    /* Memilih akun yang sudah berkartu bukan lagi galat, melainkan KETERANGAN — dan keterangan
+       itu harus menyebut nomor yang sudah terpakai, supaya yang menambah kartu kedua tahu nomor
+       mana yang tidak boleh diulang. */
+    const petunjukAkun = (src.match(/<p v-else-if="kartuPadaAkun\.length"[\s\S]*?<\/p>/) || [''])[0];
+    cek('ada keterangan kartu yang sudah memakai akun itu', petunjukAkun !== '');
+    cek('keterangan itu menyebut nomor-nomor yang sudah terpakai',
+        petunjukAkun.includes('c.card_number'), petunjukAkun);
+    cek('keterangan itu menegaskan boleh ditambah', petunjukAkun.includes('boleh ditambah'), petunjukAkun);
+
     console.log('\n=== 3. PERMINTAAN MENUNGGU & PERSETUJUANNYA ===');
     cek('bagian Menunggu Persetujuan ada', html.includes('Menunggu Persetujuan'));
     cek('permintaan pending dari bon tampil dengan nomor bonnya', html.includes('BON/2609/0021'));

@@ -98,6 +98,13 @@ function pilihAkun(v: any) {
     if (a && ! formKartu.name) formKartu.name = a.label.replace(/^\d+\s+—\s+/, '');
 }
 
+/* Kartu yang SUDAH memakai akun itu. Satu akun GL boleh dipakai beberapa kartu, jadi ini bukan
+   penghalang melainkan keterangan: yang menambahkan kartu kedua pada rekening yang sama perlu
+   tahu nomor mana yang sudah terpakai — dulu keadaan ini justru ditolak mentah-mentah. */
+const kartuPadaAkun = computed(() => (formKartu.account_id
+    ? props.cards.filter((c) => Number(c.account_id) === Number(formKartu.account_id))
+    : []));
+
 const kartuAktif = ref<number | null>(null);
 const formUbah = useForm<any>({ card_number: '', name: '', is_active: false, note: '' });
 function bukaUbah(c: Card) {
@@ -174,6 +181,7 @@ const inputCls = 'h-9 w-full rounded-lg border border-neutral-300 bg-white px-3 
                     <b>Penambahan</b> = pembayaran Debit VA yang tersimpan ·
                     <b>Pemakaian</b> = Alokasi Kasbon ·
                     <b>Sisa Saldo</b> = Awal + Penambahan − Pemakaian.
+                    Satu Akun GL boleh dipakai <b>beberapa kartu</b> — pembedanya nomor kartu.
                 </p>
             </div>
             <div class="flex flex-wrap items-center gap-2">
@@ -292,12 +300,19 @@ const inputCls = 'h-9 w-full rounded-lg border border-neutral-300 bg-white px-3 
                     <label class="mb-1 block text-xs font-medium text-neutral-500">Akun GL *</label>
                     <SearchSelect :model-value="formKartu.account_id" :options="accounts" option-value="id" placeholder="— pilih akun bank —" @update:model-value="pilihAkun" />
                     <p v-if="formKartu.errors.account_id" class="mt-1 text-xs text-danger-500">{{ formKartu.errors.account_id }}</p>
+                    <!-- Keterangan, BUKAN penghalang: satu akun GL boleh dipakai beberapa kartu. -->
+                    <p v-else-if="kartuPadaAkun.length" class="mt-1 text-[11px] text-neutral-400">
+                        Akun ini sudah dipakai {{ kartuPadaAkun.length }} kartu ({{ kartuPadaAkun.map((c) => c.card_number ?? c.name).join(', ') }}) — boleh ditambah, asal nomornya berbeda.
+                    </p>
                 </div>
-                <div><label class="mb-1 block text-xs font-medium text-neutral-500">No. Kartu / VA</label><input v-model="formKartu.card_number" :class="inputCls" placeholder="mis. 141-00-9988886-9" /></div>
+                <!-- Nomor kartu WAJIB pada kartu baru: satu rekening boleh punya beberapa kartu,
+                     dan nomor inilah satu-satunya yang membedakan keduanya di daftar maupun di
+                     pemilih kartu pada pembayaran bon. -->
+                <div><label class="mb-1 block text-xs font-medium text-neutral-500">No. Kartu / VA *</label><input v-model="formKartu.card_number" required :class="inputCls" placeholder="mis. 141-00-9988886-9" /><p v-if="formKartu.errors.card_number" class="mt-1 text-xs text-danger-500">{{ formKartu.errors.card_number }}</p></div>
                 <div><label class="mb-1 block text-xs font-medium text-neutral-500">Nama *</label><input v-model="formKartu.name" required :class="inputCls" /><p v-if="formKartu.errors.name" class="mt-1 text-xs text-danger-500">{{ formKartu.errors.name }}</p></div>
                 <div class="md:col-span-4">
-                    <Button type="submit" :disabled="formKartu.processing || ! formKartu.account_id"><template #icon-left><Plus class="h-4 w-4" /></template>Tambah Kartu</Button>
-                    <span class="ml-2 text-xs text-neutral-400">Kartu baru dibuat nonaktif & bersaldo 0.</span>
+                    <Button type="submit" :disabled="formKartu.processing || ! formKartu.account_id || ! String(formKartu.card_number ?? '').trim()"><template #icon-left><Plus class="h-4 w-4" /></template>Tambah Kartu</Button>
+                    <span class="ml-2 text-xs text-neutral-400">Kartu baru dibuat nonaktif &amp; bersaldo 0. Satu Akun GL boleh dipakai beberapa kartu — nomornya yang harus berbeda.</span>
                 </div>
             </form>
         </div>
@@ -306,8 +321,8 @@ const inputCls = 'h-9 w-full rounded-lg border border-neutral-300 bg-white px-3 
         <div v-if="kartuAktif" class="card p-5">
             <h2 class="mb-3 font-semibold">Ubah Kartu</h2>
             <form @submit.prevent="simpanUbah" class="grid gap-3 md:grid-cols-4">
-                <div><label class="mb-1 block text-xs font-medium text-neutral-500">No. Kartu / VA</label><input v-model="formUbah.card_number" :class="inputCls" /></div>
-                <div><label class="mb-1 block text-xs font-medium text-neutral-500">Nama *</label><input v-model="formUbah.name" required :class="inputCls" /></div>
+                <div><label class="mb-1 block text-xs font-medium text-neutral-500">No. Kartu / VA</label><input v-model="formUbah.card_number" :class="inputCls" /><p v-if="formUbah.errors.card_number" class="mt-1 text-xs text-danger-500">{{ formUbah.errors.card_number }}</p></div>
+                <div><label class="mb-1 block text-xs font-medium text-neutral-500">Nama *</label><input v-model="formUbah.name" required :class="inputCls" /><p v-if="formUbah.errors.name" class="mt-1 text-xs text-danger-500">{{ formUbah.errors.name }}</p></div>
                 <div>
                     <label class="mb-1 block text-xs font-medium text-neutral-500">Status</label>
                     <label class="flex h-9 items-center gap-2 text-sm"><input v-model="formUbah.is_active" type="checkbox" class="rounded accent-primary-600" /> Aktif</label>

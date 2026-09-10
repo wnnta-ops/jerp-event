@@ -111,14 +111,25 @@ class CreditCardController extends Controller
     {
         abort_unless($request->user()?->canModule('cashbook'), 403);
 
+        /* SATU AKUN GL BOLEH DIPAKAI BEBERAPA KARTU. Batas "satu akun satu kartu" dulu ada karena
+           angka kartu dibandingkan dengan mutasi akunnya di buku besar; sejak pembayaran Debit VA
+           tidak berjurnal, keempat angka kartu dihitung per KARTU dari dokumennya sendiri
+           (pembayaran bon & Alokasi Kasbon yang menunjuk credit_card_id), sehingga berbagi akun
+           tidak lagi membuat angkanya ambigu.
+
+           Yang menggantikan pembedanya NOMOR KARTU: dua kartu boleh berbagi rekening, tetapi
+           tidak boleh bernomor sama — nomor itulah satu-satunya yang membedakan keduanya di
+           dropdown pembayaran, dan dua pilihan yang berbunyi persis sama membuat orang tidak
+           bisa tahu saldo kartu mana yang sedang dipakai. */
         $v = $request->validate([
-            // Satu akun GL hanya boleh punya satu kartu: dua kartu berakun sama membuat saldo
-            // aplikasi tidak lagi bisa dibandingkan dengan mutasi akun itu di buku besar.
-            'account_id'  => ['required', 'integer', 'exists:bs_accounts,id',
-                Rule::unique('bs_credit_cards', 'account_id')->whereNull('deleted_at')],
-            'card_number' => ['nullable', 'string', 'max:40'],
+            'account_id'  => ['required', 'integer', 'exists:bs_accounts,id'],
+            'card_number' => ['required', 'string', 'max:40',
+                Rule::unique('bs_credit_cards', 'card_number')->whereNull('deleted_at')],
             'name'        => ['required', 'string', 'max:150'],
             'note'        => ['nullable', 'string', 'max:1000'],
+        ], [
+            'card_number.required' => 'Nomor kartu wajib diisi — sejak satu rekening boleh punya beberapa kartu, nomor inilah yang membedakannya.',
+            'card_number.unique'   => 'Nomor kartu ini sudah terdaftar — nomornya harus berbeda walau rekeningnya sama.',
         ]);
 
         // Kartu baru selalu NONAKTIF & bersaldo 0 — harus diaktifkan dan diisi saldonya dulu.
@@ -135,10 +146,18 @@ class CreditCardController extends Controller
         // permintaan yang disetujui. Kolom yang bisa disunting bebas akan menjadi jalan pintas
         // yang menghapus seluruh jejak persetujuannya.
         $v = $request->validate([
-            'card_number' => ['nullable', 'string', 'max:40'],
+            /* Nomor kartunya tetap harus unik — kecuali terhadap DIRINYA SENDIRI, kalau tidak
+               menyimpan ulang tanpa mengubah nomornya akan ditolak oleh nomornya sendiri.
+               Di sini `nullable`, bukan `required` seperti pada kartu baru: kartu yang sudah
+               terlanjur ada tanpa nomor tidak boleh terkunci — mengubah namanya saja tidak
+               seharusnya memaksa mengarang nomor kartu. */
+            'card_number' => ['nullable', 'string', 'max:40',
+                Rule::unique('bs_credit_cards', 'card_number')->ignore($card->id)->whereNull('deleted_at')],
             'name'        => ['required', 'string', 'max:150'],
             'is_active'   => ['required', 'boolean'],
             'note'        => ['nullable', 'string', 'max:1000'],
+        ], [
+            'card_number.unique' => 'Nomor kartu ini sudah dipakai kartu lain.',
         ]);
         $card->update($v);
 
