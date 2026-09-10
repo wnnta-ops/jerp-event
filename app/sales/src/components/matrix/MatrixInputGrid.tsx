@@ -75,7 +75,7 @@ export function MatrixInputGrid({
           </button>
         </div>
 
-        <a className="btn wa" href={`/api/matrix/export?date=${dayKey}`}>
+        <a className="btn wa" href={`/sales/api/matrix/export?date=${dayKey}`}>
           ⬇ Export Excel
         </a>
         {mode === "preview" && (
