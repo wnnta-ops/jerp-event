@@ -5,6 +5,7 @@ import { ArrowLeft, ArrowRight, Save, HandCoins, Plus, Trash2, Check, Search, Co
 import Button from '@/Components/UI/Button.vue';
 import MoneyInput from '@/Components/UI/MoneyInput.vue';
 import SearchSelect from '@/Components/UI/SearchSelect.vue';
+import { bangunStrukturJurnal, akunKurang, samaDenganBawaan, barisStruktur } from './strukturJurnal';
 
 const props = defineProps<{
     suppliers: Array<any>;
@@ -244,8 +245,7 @@ function dimDefaults() { return { cost_center_id: null, currency: 'IDR', kurs: 1
 // Satu baris jurnal ala eProperty: input satu "Nilai Transaksi" + pilih sisi (Debit/Kredit) lewat radio.
 // debit/credit tetap dijaga sinkron untuk submit ke backend & perhitungan balance.
 function mkJournalLine(account_id: number | null, description: string, amount: number, side: 'debit' | 'credit') {
-    const v = Number(amount) || 0;
-    return { account_id: account_id ?? null, ...dimDefaults(), description: description || '', nilai: v, side, debit: side === 'debit' ? v : 0, credit: side === 'credit' ? v : 0 };
+    return { ...barisStruktur(account_id, description, amount, side), ...dimDefaults() };
 }
 function applyAmount(l: any) {
     const v = Number(l.nilai) || 0;
@@ -253,30 +253,75 @@ function applyAmount(l: any) {
     else { l.side = 'debit'; l.debit = v; l.credit = 0; }
 }
 function setSide(l: any, side: 'debit' | 'credit') { l.side = side; applyAmount(l); }
+/** Bahan struktur bawaan — aturannya sendiri ada di ./strukturJurnal.ts supaya bisa diuji. */
+const bahanStruktur = computed(() => ({
+    dpp: dppR.value,
+    ppn: ppn.value,
+    pph: pphJournal.value,
+    ppnAktif: ppnOn.value,
+    pphMode: (form.pph_mode as 'none' | 'withheld' | 'borne'),
+    akun: {
+        beban: category.value?.debit_id ?? null,
+        hutangUsaha: category.value?.payable_id ?? null,
+        ppnMasukan: props.ppnAccount?.id ?? null,
+        hutangPph: form.pph_account_id ? Number(form.pph_account_id) : null,
+        biayaPph: props.pphBorneExpense?.id ?? null,
+    },
+    uraian: {
+        beban: form.description || '',
+        ppn: denganUraian('PPN Masukan'),
+        hutangUsaha: 'Hutang ' + (supplier.value?.name || 'supplier'),
+        pphDebit: denganUraian('Biaya ' + pasalPph(form.pph_account_id) + ' ditanggung'),
+        pphKredit: denganUraian(form.pph_mode === 'borne'
+            ? 'Hutang ' + pasalPph(form.pph_account_id) + ' ditanggung'
+            : pasalPph(form.pph_account_id) + ' dipotong'),
+    },
+}));
 function defaultJournal() {
-    const c = category.value;
-    const out: any[] = [];
-    if (c?.debit_id) out.push(mkJournalLine(c.debit_id, form.description || '', dppR.value, 'debit'));
-    if (form.ppn_mode === 'with' && ppn.value > 0 && props.ppnAccount?.id) out.push(mkJournalLine(props.ppnAccount.id, denganUraian('PPN Masukan'), ppn.value, 'debit'));
-    // PPh DITANGGUNG: Dr Biaya PPh <jenis> (beban perusahaan) — akun default bisa diubah; supplier tetap dibayar penuh.
-    if (form.pph_mode === 'borne' && pphJournal.value > 0 && props.pphBorneExpense?.id) out.push(mkJournalLine(props.pphBorneExpense.id, denganUraian('Biaya ' + pasalPph(form.pph_account_id) + ' ditanggung'), pphJournal.value, 'debit'));
-    // Hutang ke supplier: Dipungut → net (DPP+PPN−PPh) ; Ditanggung → penuh (DPP+PPN).
-    if (c?.payable_id) out.push(mkJournalLine(c.payable_id, 'Hutang ' + (supplier.value?.name || 'supplier'), form.pph_mode === 'borne' ? total.value : net.value, 'credit'));
-    // Cr Hutang PPh <jenis>: Dipotong (dari net supplier) & Ditanggung (lawan Biaya PPh) — pakai pphJournal.
-    if (pphOn.value && pphJournal.value > 0 && form.pph_account_id) out.push(mkJournalLine(Number(form.pph_account_id), denganUraian(form.pph_mode === 'borne' ? 'Hutang ' + pasalPph(form.pph_account_id) + ' ditanggung' : pasalPph(form.pph_account_id) + ' dipotong'), pphJournal.value, 'credit'));
-    return out;
+    return bangunStrukturJurnal(bahanStruktur.value).map((b) => ({ ...b, ...dimDefaults() }));
 }
+/** Akun yang dibutuhkan aturan PPN/PPh tetapi belum tersedia — disebutkan, bukan didiamkan. */
+const akunStrukturKurang = computed(() => akunKurang(bahanStruktur.value));
+
+/* Struktur bawaan yang TERAKHIR dibentuk — pembanding untuk tahu apakah yang di layar masih asli
+   atau sudah disunting tangan. */
+let strukturBawaanTerakhir: any[] = [];
+function pasangStruktur(baris: any[]) {
+    strukturBawaanTerakhir = baris.map((b) => ({ ...b }));
+    form.journal_lines = baris;
+}
+
 function addJournalLine() { form.journal_lines.push(mkJournalLine(null, '', 0, 'debit')); }
 function addJournalLines(n: number) { for (let k = 0; k < n; k++) addJournalLine(); }
 function removeJournalLine(i: number) { form.journal_lines.splice(i, 1); }
-function recalcJournal() { form.journal_lines = defaultJournal(); }
+function recalcJournal() { pasangStruktur(defaultJournal()); }
+
+/* STRUKTURNYA IKUT BERUBAH SAAT PPN/PPh DIUBAH.
+   Sebelumnya struktur hanya dibentuk SEKALI, yaitu saat pertama kali masuk langkah Struktur
+   ketika daftarnya masih kosong. Siapa pun yang kembali ke Input Transaksi untuk menyalakan PPN
+   lalu maju lagi akan menemukan struktur lamanya utuh — tanpa baris PPN Masukan, dan Hutang
+   Usaha masih sebesar DPP saja. Jurnalnya tetap balance, jadi tidak ada satu pun galat yang
+   memberi tahu; yang ketahuan belakangan hanya PPN Masukan yang tidak pernah tercatat.
+
+   Yang sudah DISUNTING TANGAN tidak ditimpa — pekerjaan orang tidak boleh lenyap hanya karena ia
+   kembali membetulkan satu angka. Untuk itu tersedia tombol "Hitung ulang", dan selisihnya
+   diberitahukan lewat strukturUsang. */
+const strukturUsang = computed(() => step.value === 4
+    && form.journal_lines.length > 0
+    && ! samaDenganBawaan(form.journal_lines as any[], defaultJournal()));
+
+watch(bahanStruktur, () => {
+    if (form.journal_lines.length === 0) return;                       // belum pernah dibentuk
+    if (! samaDenganBawaan(form.journal_lines as any[], strukturBawaanTerakhir)) return; // sudah disunting
+    pasangStruktur(defaultJournal());
+}, { deep: true });
 
 // Saat masuk Detil Tagihan, default 1 baris (Uraian = Keterangan, Jumlah = DPP) jika kosong.
 // Saat masuk Struktur, default 1 termin = net jika kosong.
 watch(step, (s) => {
     if (s === 3 && form.lines.length === 0) form.lines.push({ description: form.description || '', qty: 1, unit_price: dppR.value, amount: dppR.value });
     if (s === 4) {
-        if (form.journal_lines.length === 0) form.journal_lines = defaultJournal();
+        if (form.journal_lines.length === 0) pasangStruktur(defaultJournal());
         // Jadwal pembayaran dihilangkan dari registrasi — backend membuat default 1 termin = net otomatis.
     }
 });
@@ -416,6 +461,18 @@ const cellArea = 'w-full rounded-md border border-neutral-300 bg-white px-2 py-1
                     </div>
                 </div>
                 <p class="mb-2 text-[11px] text-neutral-400">Tips: Kosongkan kolom Account &amp; Nilai Transaksi untuk mengabaikan baris tersebut saat proses. Total Debit harus sama dengan Total Kredit. Tombol <b>salin</b> &amp; <b>tempel</b> kecil di bawah kolom Account dipakai untuk memakai ulang akun yang sama di baris lain.</p>
+                <!-- Struktur yang sudah disunting tangan TIDAK ditimpa saat PPN/PPh diubah — tetapi
+                     selisihnya harus terbaca, kalau tidak jurnalnya tetap balance sambil melewatkan
+                     baris PPN/PPh tanpa satu pun tanda. -->
+                <p v-if="strukturUsang" class="mb-2 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-700 dark:bg-amber-900/20 dark:text-amber-300">
+                    Struktur ini sudah disunting tangan sehingga tidak lagi mengikuti PPN/PPh pada Input Transaksi.
+                    Tekan <b>Hitung ulang</b> untuk menyusunnya ulang dari nilai transaksinya.
+                </p>
+                <!-- Akun yang dibutuhkan aturan PPN/PPh tetapi belum ada: barisnya sengaja tidak
+                     dibuat tanpa akun, jadi ketiadaannya disebutkan di sini. -->
+                <p v-if="akunStrukturKurang.length" class="mb-2 rounded-lg bg-danger-50 px-3 py-2 text-xs text-danger-700 dark:bg-danger-900/20 dark:text-danger-300">
+                    Akun {{ akunStrukturKurang.join(' & ') }} belum tersedia — barisnya tidak dibentuk. Lengkapi akunnya dulu, atau tambahkan barisnya sendiri di bawah.
+                </p>
                 <div class="rounded-lg border border-neutral-200 dark:border-neutral-800">
                     <table class="w-full table-fixed border-collapse text-sm">
                         <colgroup>
