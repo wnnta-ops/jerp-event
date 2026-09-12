@@ -49,6 +49,24 @@ class BsJournal extends Model
         'import'     => 'Import Jurnal',
     ];
 
+    /**
+     * SUMBER MIGRASI DATA AWAL — dibebaskan dari kewajiban cost center.
+     *
+     * Cost center wajib karena ia yang membuat sebuah baris terbaca sebagai realisasi anggaran.
+     * Tetapi jurnal migrasi tidak pernah menjadi realisasi anggaran siapa pun: ia memindahkan
+     * saldo yang SUDAH terjadi di sistem lama, bukan mencatat belanja baru. Memaksakan cost
+     * center di sana berarti mengarang departemen penanggung untuk angka yang bahkan tidak
+     * berasal dari periode berjalan — dan sampai dikarang, seluruh jurnalnya tertahan di Final
+     * sehingga saldo awalnya tidak pernah efektif di buku besar.
+     */
+    public const SUMBER_MIGRASI = ['import', 'saldo_awal'];
+
+    /** Jurnal ini hasil migrasi data awal (Import Jurnal / Import Saldo Awal)? */
+    public function migrasiDataAwal(): bool
+    {
+        return in_array((string) $this->source, self::SUMBER_MIGRASI, true);
+    }
+
     public function lines(): HasMany { return $this->hasMany(BsJournalLine::class, 'journal_id'); }
 
     /** Riwayat status (append-only): dibuat → finalisasi → approve → batal approve → reject. */
