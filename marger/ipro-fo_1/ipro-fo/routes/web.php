@@ -660,6 +660,9 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
     Route::get('/business-support/tutup-buku/neraca-awal',    [BsClosingController::class, 'neracaAwal'])->name('bs.closing.neraca');
     Route::get('/business-support/tutup-buku/jurnal-saldo-awal', [BsClosingController::class, 'saldoAwalJurnal'])->name('bs.closing.saldoawal');
     Route::get('/business-support/tutup-buku/jurnal-saldo-awal/csv', [BsClosingController::class, 'saldoAwalCsv'])->name('bs.closing.saldoawal.csv');
+    // Import Saldo Awal dari Excel — template .xlsx + unggahan; satu jurnal saldo awal per tahun.
+    Route::get('/business-support/tutup-buku/jurnal-saldo-awal/template', [BsClosingController::class, 'saldoAwalTemplate'])->name('bs.closing.saldoawal.template');
+    Route::post('/business-support/tutup-buku/jurnal-saldo-awal/import', [BsClosingController::class, 'saldoAwalImport'])->name('bs.closing.saldoawal.import');
     Route::post('/business-support/tutup-buku/close',         [BsClosingController::class, 'close'])->name('bs.closing.close');
     Route::post('/business-support/tutup-buku/reopen',        [BsClosingController::class, 'reopen'])->name('bs.closing.reopen');
     Route::post('/business-support/tutup-buku/year',          [BsClosingController::class, 'closeYear'])->name('bs.closing.year');
