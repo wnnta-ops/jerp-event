@@ -34,24 +34,30 @@ const props = defineProps<{
         awal: string; akhir: string;
         bulan: number; dipotong: boolean; maks_bulan: number;
     };
+    /* Sub-dashboard hanya mengirim grafik kelompoknya, jadi tiap kunci OPSIONAL dan tiap
+       kartunya digerbangi v-if. Tanpa itu, halaman kelompok akan menyentuh prop yang tidak
+       pernah dikirim dan rusak seketika — bukan sekadar kosong. */
     charts: {
-        inisiasi_kpr: { rows: Baris[] };
-        proses_kpr: { rows: Baris[] };
-        penolakan: Bulanan;
-        rekening: { rows: Baris[] };
-        kasbon: Bulanan;
-        aging: { rows: Baris[] };
-        neraca: Tumpuk;
-        laba_rugi: { labels: string[]; vals: number[] };
-        aset_tetap: Tumpuk;
-        budget: { rows: Array<{ n: string; real: number; plafon: number }> };
-        spk: { rows: Array<{ n: string; jml: number; nilai: number }> };
-        progress: Tumpuk;
-        retensi: Bulanan;
-        bast_ajb_br: { labels: string[]; series: SeriGabungan[] };
-        piutang: Tumpuk;
-        hpp: Tumpuk;
+        inisiasi_kpr?: { rows: Baris[] };
+        proses_kpr?: { rows: Baris[] };
+        penolakan?: Bulanan;
+        rekening?: { rows: Baris[] };
+        kasbon?: Bulanan;
+        aging?: { rows: Baris[] };
+        neraca?: Tumpuk;
+        laba_rugi?: { labels: string[]; vals: number[] };
+        aset_tetap?: Tumpuk;
+        budget?: { rows: Array<{ n: string; real: number; plafon: number }> };
+        spk?: { rows: Array<{ n: string; jml: number; nilai: number }> };
+        progress?: Tumpuk;
+        retensi?: Bulanan;
+        bast_ajb_br?: { labels: string[]; series: SeriGabungan[] };
+        piutang?: Tumpuk;
+        hpp?: Tumpuk;
     };
+    /** Kelompok yang sedang dilihat (null = halaman gabungan, keenam belas grafik). */
+    grup?: string | null;
+    grupJudul?: string | null;
 }>();
 
 /* Rentang periode. Nilai awalnya datang dari server — bukan dihitung ulang di layar —
@@ -72,7 +78,12 @@ watch(() => [props.periode.awal, props.periode.akhir] as const, ([a, b]) => {
 });
 
 function muat(dari: string, sampai: string) {
-    router.get(route('dashboard'), { date_from: dari, date_to: sampai },
+    /* `grup` HARUS ikut dibawa. Tanpa itu, menerapkan saringan periode di sub-dashboard
+       melemparkan orang kembali ke halaman gabungan — tanggalnya benar, tetapi kelompok yang
+       sedang dibacanya hilang begitu saja tanpa satu pun tanda. */
+    const q: Record<string, string> = { date_from: dari, date_to: sampai };
+    if (props.grup) q.grup = props.grup;
+    router.get(route('dashboard'), q,
         { preserveState: true, preserveScroll: true, replace: true });
 }
 function terapkan() { berubah.value = true; muat(awal.value, akhir.value); }
@@ -86,14 +97,19 @@ function bawaan() { berubah.value = false; muat('', ''); }
    "angkanya memang sama", bukan sebagai layar yang tidak ikut diperbarui. */
 const c = computed(() => props.charts);
 
+/* Sejak halaman ini juga melayani sub-dashboard, grafik yang tidak sekelompok memang TIDAK
+   dikirim. Computed di bawah karena itu bertahan terhadap kunci yang absen: kartunya sudah
+   digerbangi v-if sehingga computed-nya tidak pernah dipanggil, tetapi penjagaan ini yang
+   membuat penyuntingan berikutnya tidak diam-diam menjatuhkan seluruh halaman. */
+
 /** Satu cluster memakai corak oranye yang SAMA di panel jumlah maupun panel nilai. */
-const kunciSpk = computed(() => c.value.spk.rows.map((_, i) => i));
-const spkJumlah = computed<Baris[]>(() => c.value.spk.rows.map((r) => ({ n: r.n, v: r.jml })));
-const spkNilai = computed<Baris[]>(() => c.value.spk.rows.map((r) => ({ n: r.n, v: r.nilai })));
+const kunciSpk = computed(() => (c.value.spk?.rows ?? []).map((_, i) => i));
+const spkJumlah = computed<Baris[]>(() => (c.value.spk?.rows ?? []).map((r) => ({ n: r.n, v: r.jml })));
+const spkNilai = computed<Baris[]>(() => (c.value.spk?.rows ?? []).map((r) => ({ n: r.n, v: r.nilai })));
 
 /** Grafik gabungan: deret bulanan (unit) dan ringkasan tahunan (nilai) dari sumber yang sama. */
-const brUnit = computed<Seri[]>(() => c.value.bast_ajb_br.series.map((s) => ({ n: s.n, c: s.c, v: s.unit })));
-const brNilai = computed(() => c.value.bast_ajb_br.series.map((s) => ({ n: s.n, c: s.c, v: s.nilai })));
+const brUnit = computed<Seri[]>(() => (c.value.bast_ajb_br?.series ?? []).map((s) => ({ n: s.n, c: s.c, v: s.unit })));
+const brNilai = computed(() => (c.value.bast_ajb_br?.series ?? []).map((s) => ({ n: s.n, c: s.c, v: s.nilai })));
 
 // ══════════════════════════════════════════════════════════════════════════════════════
 // Total tiap kartu
@@ -212,15 +228,19 @@ function fmtDateTime(iso: string | null | undefined): string {
 </script>
 
 <template>
-    <Head title="Dashboard Back Office" />
+    <Head :title="grupJudul ? `${grupJudul} — Dashboard Back Office` : 'Dashboard Back Office'" />
 
     <div class="space-y-4">
         <!-- ══ Kepala halaman ══ -->
         <div class="flex flex-wrap items-end justify-between gap-3">
             <div>
-                <h1 class="text-2xl font-bold text-neutral-900 dark:text-neutral-100">Dashboard Back Office</h1>
+                <!-- Judul mengikuti kelompok yang sedang dibuka. Kepala yang selalu berbunyi
+                     "Dashboard Back Office" membuat keempat sub tampak seperti halaman yang sama
+                     dengan grafik yang hilang-hilang. -->
+                <h1 class="text-2xl font-bold text-neutral-900 dark:text-neutral-100">{{ grupJudul ?? 'Dashboard Back Office' }}</h1>
                 <p class="text-sm text-neutral-500 mt-1">
-                    Ringkasan 18 poin modul back office{{ greeting?.name ? ` — halo, ${greeting.name}` : '' }}
+                    <span v-if="grupJudul">Bagian dari Dashboard Back Office</span>
+                    <span v-else>Ringkasan 18 poin modul back office</span>{{ greeting?.name ? ` — halo, ${greeting.name}` : '' }}
                 </p>
                 <p v-if="greeting?.last_login_at" class="text-xs text-neutral-400 mt-1">
                     Login terakhir: {{ fmtDateTime(greeting.last_login_at) }}
@@ -263,7 +283,7 @@ function fmtDateTime(iso: string | null | undefined): string {
         <!-- ══ Kisi 12 kolom ══ -->
         <div class="grid grid-cols-12 gap-3.5">
             <!-- 1 -->
-            <section class="card col-span-12 lg:col-span-6 p-4">
+            <section v-if="charts.inisiasi_kpr" class="card col-span-12 lg:col-span-6 p-4">
                 <div class="flex items-baseline justify-between gap-2">
                     <h2 class="text-sm font-bold">1 · Inisiasi KPR</h2>
                     <span class="text-[10.5px] font-bold tracking-wide text-neutral-400">KPR</span>
@@ -279,7 +299,7 @@ function fmtDateTime(iso: string | null | undefined): string {
             </section>
 
             <!-- 2 -->
-            <section class="card col-span-12 lg:col-span-6 p-4">
+            <section v-if="charts.proses_kpr" class="card col-span-12 lg:col-span-6 p-4">
                 <div class="flex items-baseline justify-between gap-2">
                     <h2 class="text-sm font-bold">2 · Proses KPR</h2>
                     <span class="text-[10.5px] font-bold tracking-wide text-neutral-400">KPR</span>
@@ -294,7 +314,7 @@ function fmtDateTime(iso: string | null | undefined): string {
             </section>
 
             <!-- 3 -->
-            <section class="card col-span-12 lg:col-span-6 p-4">
+            <section v-if="charts.penolakan" class="card col-span-12 lg:col-span-6 p-4">
                 <div class="flex items-baseline justify-between gap-2">
                     <h2 class="text-sm font-bold">3 · Penolakan BI Checking &amp; Proses KPR</h2>
                     <span class="text-[10.5px] font-bold tracking-wide text-neutral-400">KPR</span>
@@ -305,7 +325,7 @@ function fmtDateTime(iso: string | null | undefined): string {
             </section>
 
             <!-- 4 -->
-            <section class="card col-span-12 lg:col-span-6 p-4">
+            <section v-if="charts.rekening" class="card col-span-12 lg:col-span-6 p-4">
                 <div class="flex items-baseline justify-between gap-2">
                     <h2 class="text-sm font-bold">4 · Summary Rekening Ledger</h2>
                     <span class="text-[10.5px] font-bold tracking-wide text-neutral-400">CASH BOOK</span>
@@ -321,7 +341,7 @@ function fmtDateTime(iso: string | null | undefined): string {
             </section>
 
             <!-- 5 -->
-            <section class="card col-span-12 lg:col-span-6 p-4">
+            <section v-if="charts.kasbon" class="card col-span-12 lg:col-span-6 p-4">
                 <div class="flex items-baseline justify-between gap-2">
                     <h2 class="text-sm font-bold">5 · Bon Sementara / Kasbon</h2>
                     <span class="text-[10.5px] font-bold tracking-wide text-neutral-400">CASH BOOK</span>
@@ -332,7 +352,7 @@ function fmtDateTime(iso: string | null | undefined): string {
             </section>
 
             <!-- 6 -->
-            <section class="card col-span-12 lg:col-span-6 p-4">
+            <section v-if="charts.aging" class="card col-span-12 lg:col-span-6 p-4">
                 <div class="flex items-baseline justify-between gap-2">
                     <h2 class="text-sm font-bold">6 · Aging Hutang</h2>
                     <span class="text-[10.5px] font-bold tracking-wide text-neutral-400">ACCOUNT PAYABLE</span>
@@ -347,7 +367,7 @@ function fmtDateTime(iso: string | null | undefined): string {
             </section>
 
             <!-- 7 -->
-            <section class="card col-span-12 lg:col-span-6 p-4">
+            <section v-if="charts.neraca" class="card col-span-12 lg:col-span-6 p-4">
                 <div class="flex items-baseline justify-between gap-2">
                     <h2 class="text-sm font-bold">7 · Summary Neraca</h2>
                     <span class="text-[10.5px] font-bold tracking-wide text-neutral-400">GENERAL LEDGER</span>
@@ -358,7 +378,7 @@ function fmtDateTime(iso: string | null | undefined): string {
             </section>
 
             <!-- 8 -->
-            <section class="card col-span-12 lg:col-span-6 p-4">
+            <section v-if="charts.laba_rugi" class="card col-span-12 lg:col-span-6 p-4">
                 <div class="flex items-baseline justify-between gap-2">
                     <h2 class="text-sm font-bold">8 · Summary Laba Rugi</h2>
                     <span class="text-[10.5px] font-bold tracking-wide text-neutral-400">GENERAL LEDGER</span>
@@ -369,7 +389,7 @@ function fmtDateTime(iso: string | null | undefined): string {
             </section>
 
             <!-- 9 -->
-            <section class="card col-span-12 lg:col-span-6 p-4">
+            <section v-if="charts.aset_tetap" class="card col-span-12 lg:col-span-6 p-4">
                 <div class="flex items-baseline justify-between gap-2">
                     <h2 class="text-sm font-bold">9 · Overview Aset Tetap</h2>
                     <span class="text-[10.5px] font-bold tracking-wide text-neutral-400">ASET TETAP</span>
@@ -380,7 +400,7 @@ function fmtDateTime(iso: string | null | undefined): string {
             </section>
 
             <!-- 10 -->
-            <section class="card col-span-12 lg:col-span-6 p-4">
+            <section v-if="charts.budget" class="card col-span-12 lg:col-span-6 p-4">
                 <div class="flex items-baseline justify-between gap-2">
                     <h2 class="text-sm font-bold">10 · Realisasi Budget</h2>
                     <span class="text-[10.5px] font-bold tracking-wide text-neutral-400">BUDGET CONTROL</span>
@@ -391,7 +411,7 @@ function fmtDateTime(iso: string | null | undefined): string {
             </section>
 
             <!-- 11 — dua ukuran, dua panel -->
-            <section class="card col-span-12 p-4">
+            <section v-if="charts.spk" class="card col-span-12 p-4">
                 <div class="flex items-baseline justify-between gap-2">
                     <h2 class="text-sm font-bold">11 · SPK per Cluster</h2>
                     <span class="text-[10.5px] font-bold tracking-wide text-neutral-400">CONTRACTOR MGT</span>
@@ -414,7 +434,7 @@ function fmtDateTime(iso: string | null | undefined): string {
             </section>
 
             <!-- 12 -->
-            <section class="card col-span-12 lg:col-span-6 p-4">
+            <section v-if="charts.progress" class="card col-span-12 lg:col-span-6 p-4">
                 <div class="flex items-baseline justify-between gap-2">
                     <h2 class="text-sm font-bold">12 · Progress Lapangan</h2>
                     <span class="text-[10.5px] font-bold tracking-wide text-neutral-400">CONTRACTOR MGT</span>
@@ -425,7 +445,7 @@ function fmtDateTime(iso: string | null | undefined): string {
             </section>
 
             <!-- 13 -->
-            <section class="card col-span-12 lg:col-span-6 p-4">
+            <section v-if="charts.retensi" class="card col-span-12 lg:col-span-6 p-4">
                 <div class="flex items-baseline justify-between gap-2">
                     <h2 class="text-sm font-bold">13 · Summary Retensi</h2>
                     <span class="text-[10.5px] font-bold tracking-wide text-neutral-400">CONTRACTOR MGT</span>
@@ -436,7 +456,7 @@ function fmtDateTime(iso: string | null | undefined): string {
             </section>
 
             <!-- 14–16 — tiga tahapan, satu kartu -->
-            <section class="card col-span-12 p-4">
+            <section v-if="charts.bast_ajb_br" class="card col-span-12 p-4">
                 <div class="flex items-baseline justify-between gap-2">
                     <h2 class="text-sm font-bold">14–16 · BAST → AJB → Booked Revenue</h2>
                     <span class="text-[10.5px] font-bold tracking-wide text-neutral-400">BOOKED REVENUE</span>
@@ -463,7 +483,7 @@ function fmtDateTime(iso: string | null | undefined): string {
             </section>
 
             <!-- 17 -->
-            <section class="card col-span-12 lg:col-span-6 p-4">
+            <section v-if="charts.piutang" class="card col-span-12 lg:col-span-6 p-4">
                 <div class="flex items-baseline justify-between gap-2">
                     <h2 class="text-sm font-bold">17 · Rekonsiliasi Piutang</h2>
                     <span class="text-[10.5px] font-bold tracking-wide text-neutral-400">PIUTANG USAHA (BOOKED)</span>
@@ -474,7 +494,7 @@ function fmtDateTime(iso: string | null | undefined): string {
             </section>
 
             <!-- 18 -->
-            <section class="card col-span-12 lg:col-span-6 p-4">
+            <section v-if="charts.hpp" class="card col-span-12 lg:col-span-6 p-4">
                 <div class="flex items-baseline justify-between gap-2">
                     <h2 class="text-sm font-bold">18 · Summary HPP</h2>
                     <span class="text-[10.5px] font-bold tracking-wide text-neutral-400">COGS</span>

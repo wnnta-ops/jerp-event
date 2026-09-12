@@ -84,7 +84,17 @@ export function navGroups(foUrl: string): NavGroup[] {
     {
         title: '',
         items: [
-            { label: 'Dashboard Back Office', icon: LayoutDashboard, href: 'dashboard' },
+            /* EMPAT SUB-DASHBOARD. Delapan belas grafik pada satu halaman membuat yang dicari
+               selalu jauh di bawah; tiap peran kini punya pintu masuknya sendiri.
+               Keempatnya bersama-sama memuat SELURUH grafik — tidak ada yang menjadi yatim.
+               Catatan: item ber-children dirender Sidebar sebagai tombol buka/tutup, bukan
+               tautan (lihat Sidebar.vue), jadi induknya sengaja tidak lagi diberi href. */
+            { label: 'Dashboard Back Office', icon: LayoutDashboard, children: [
+                { label: 'KPR & Collection',        href: 'dashboard', params: { grup: 'kpr' } },
+                { label: 'Cash Management',         href: 'dashboard', params: { grup: 'cash' } },
+                { label: 'Accounting, Tax & Budget', href: 'dashboard', params: { grup: 'accounting' } },
+                { label: 'Project',                 href: 'dashboard', params: { grup: 'project' } },
+            ]},
             // Menu silang → kembali ke hub/dashboard utama J-ERP (URL dari env via Inertia config.fo_url).
             { label: 'Kembali ke Dashboard Utama', icon: Building2, external: foUrl + '/dashboard' },
         ],
