@@ -1310,6 +1310,10 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
     Route::get('/kpr-database/reject-proses-kpr',             [\App\Http\Controllers\Web\BankLoan\KprDatabaseController::class, 'rejectProcess'])->name('kpr.database.reject-kpr');
     Route::get('/kpr-database/reject-proses-kpr-excel',       [\App\Http\Controllers\Web\BankLoan\KprDatabaseController::class, 'rejectProcessExcel'])->name('kpr.database.reject-kpr.excel'); // unduh rincian Excel
     Route::get('/kpr-database/reject-proses-kpr-memo-batal', [\App\Http\Controllers\Web\BankLoan\KprDatabaseController::class, 'rejectProcessMemoForm'])->name('kpr.database.reject-kpr.memo-form'); // form editable Memo Rekom Batal (massal / per-baris) — ?ids=
+    // Realisasi vs Budget — target akad KPR per bulan vs realisasinya; target diisi lewat import Excel.
+    Route::get('/kpr-database/realisasi-vs-budget',            [\App\Http\Controllers\Web\BankLoan\KprTargetRealisasiController::class, 'index'])->name('kpr.database.realisasi-budget');
+    Route::get('/kpr-database/realisasi-vs-budget/template',   [\App\Http\Controllers\Web\BankLoan\KprTargetRealisasiController::class, 'template'])->name('kpr.database.realisasi-budget.template');
+    Route::post('/kpr-database/realisasi-vs-budget/import',    [\App\Http\Controllers\Web\BankLoan\KprTargetRealisasiController::class, 'import'])->name('kpr.database.realisasi-budget.import');
 
     // Legal (PPJB, AJB, BAST, IMB, Sertifikat) — sudah PINDAH ke FO. Rutenya dimatikan lewat sakelar, bukan
     // dihapus: menunya sudah tidak ada di sidebar BO, tetapi alamatnya masih

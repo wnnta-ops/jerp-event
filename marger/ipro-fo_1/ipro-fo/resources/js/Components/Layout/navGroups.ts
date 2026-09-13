@@ -150,6 +150,9 @@ export function navGroups(foUrl: string): NavGroup[] {
                 { label: 'Master Data KPR',    href: 'kpr.master-data.index',    permission: 'bankloan.application.view' },
                 { label: 'Reject BI Checking', href: 'kpr.database.reject-bi',  permission: 'bankloan.application.view' },
                 { label: 'Reject Proses KPR',  href: 'kpr.database.reject-kpr', permission: 'bankloan.application.view' },
+                // Target akad per bulan vs realisasinya. Targetnya diisi lewat import Excel —
+                // angka rencana tidak berasal dari transaksi mana pun.
+                { label: 'Realisasi vs Budget', href: 'kpr.database.realisasi-budget', permission: 'bankloan.application.view' },
             ]},
         ],
     },
