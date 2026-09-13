@@ -1316,6 +1316,10 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
     Route::post('/kpr-database/realisasi-vs-budget/import',    [\App\Http\Controllers\Web\BankLoan\KprTargetRealisasiController::class, 'import'])->name('kpr.database.realisasi-budget.import');
     // Realisasi KPR per Bank — unit akad per cluster per bank, dihitung dari data akad.
     Route::get('/kpr-database/realisasi-per-bank',             [\App\Http\Controllers\Web\BankLoan\KprRealisasiBankController::class, 'index'])->name('kpr.database.realisasi-bank');
+    // Realisasi KPR per Cluster — dua tabel Exsum (status unit & outstanding), diisi lewat import.
+    Route::get('/kpr-database/realisasi-per-cluster',          [\App\Http\Controllers\Web\BankLoan\KprRealisasiClusterController::class, 'index'])->name('kpr.database.realisasi-cluster');
+    Route::get('/kpr-database/realisasi-per-cluster/template', [\App\Http\Controllers\Web\BankLoan\KprRealisasiClusterController::class, 'template'])->name('kpr.database.realisasi-cluster.template');
+    Route::post('/kpr-database/realisasi-per-cluster/import',  [\App\Http\Controllers\Web\BankLoan\KprRealisasiClusterController::class, 'import'])->name('kpr.database.realisasi-cluster.import');
 
     // Legal (PPJB, AJB, BAST, IMB, Sertifikat) — sudah PINDAH ke FO. Rutenya dimatikan lewat sakelar, bukan
     // dihapus: menunya sudah tidak ada di sidebar BO, tetapi alamatnya masih

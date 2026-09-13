@@ -155,6 +155,8 @@ export function navGroups(foUrl: string): NavGroup[] {
                 { label: 'Realisasi vs Budget', href: 'kpr.database.realisasi-budget', permission: 'bankloan.application.view' },
                 // Unit akad per cluster per bank — dihitung dari data akad, bukan diunggah.
                 { label: 'Realisasi KPR per Bank', href: 'kpr.database.realisasi-bank', permission: 'bankloan.application.view' },
+                // Status unit & outstanding per cluster — diisi lewat import Exsum, bukan dihitung.
+                { label: 'Realisasi KPR per Cluster', href: 'kpr.database.realisasi-cluster', permission: 'bankloan.application.view' },
             ]},
         ],
     },
