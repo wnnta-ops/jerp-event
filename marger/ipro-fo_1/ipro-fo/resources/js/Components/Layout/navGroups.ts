@@ -304,6 +304,9 @@ export function navGroups(foUrl: string): NavGroup[] {
             { label: 'Query', icon: FileBarChart, permission: ['ap.aging.*', 'ap.invoice.*', 'ap.paycard.*', 'ap.penghapusan.*', 'ar.view', 'tax.pph.*'], children: [
                 { label: 'Kartu Hutang', href: 'bs.ap.card' },
                 { label: 'Aging Hutang', href: 'bs.ap.aging', params: { view: 'detail' } },
+                // Outstanding per supplier: 20 terbesar + rangkuman sisanya. Angkanya dari
+                // computeAging() yang sama dengan Aging Hutang, jadi keduanya tidak bisa berbeda.
+                { label: 'Aging Hutang Supplier', href: 'bs.ap.aging-supplier' },
                 { label: 'Proyeksi Hutang', href: 'bs.projection', params: { mode: 'hutang' } },
                 { label: 'Kartu Pembayaran Hutang', href: 'bs.ap.payment-card' },
                 { label: 'Laporan Invoice Hutang', href: 'bs.ap.report' },

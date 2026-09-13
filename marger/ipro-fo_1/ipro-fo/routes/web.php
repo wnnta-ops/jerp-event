@@ -679,6 +679,8 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
     Route::get('/business-support/payable/create',            [BsApController::class, 'create'])->name('bs.ap.create');
     Route::post('/business-support/payable',                  [BsApController::class, 'store'])->name('bs.ap.store');
     Route::get('/business-support/payable-aging',             [BsApController::class, 'aging'])->name('bs.ap.aging');
+    // Aging Hutang Supplier — outstanding per supplier: 20 terbesar + rangkuman sisanya.
+    Route::get('/business-support/payable-aging-supplier',    [BsApController::class, 'agingSupplier'])->name('bs.ap.aging-supplier');
     Route::get('/business-support/payable-aging-pdf',         [BsApController::class, 'agingExportPdf'])->name('bs.ap.aging.export-pdf');   // #139
     Route::get('/business-support/payable-aging-excel',       [BsApController::class, 'agingExportExcel'])->name('bs.ap.aging.export-excel'); // #139
     Route::get('/business-support/payable-kartu',             [BsApController::class, 'card'])->name('bs.ap.card');

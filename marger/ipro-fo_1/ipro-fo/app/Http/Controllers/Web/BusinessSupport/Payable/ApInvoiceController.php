@@ -897,6 +897,80 @@ HTML;
         return redirect()->route('bs.ap.show', $invoice)->with('success', 'Pembayaran hutang tercatat — jurnal otomatis terbentuk.');
     }
 
+    /** Berapa supplier teratas yang ditampilkan utuh sebelum sisanya dirangkum. */
+    private const TOP_SUPPLIER = 20;
+
+    /**
+     * AGING HUTANG SUPPLIER — outstanding per supplier, 20 terbesar + rangkuman sisanya.
+     *
+     * Memakai computeAging() YANG SAMA dengan layar Aging Hutang, PDF, dan Excel-nya. Menyalin
+     * ulang perhitungannya akan melahirkan angka kedua untuk pertanyaan yang sama, dan yang
+     * membacanya tidak punya cara menebak mana yang benar.
+     *
+     * TIGA EMBER, BUKAN LIMA. computeAging menghasilkan lima (belum jatuh tempo · 1–30 · 31–60 ·
+     * 61–90 · >90); layar ini merangkumnya menjadi tiga seperti pada laporan ringkas:
+     *
+     *     0–30   = belum jatuh tempo + 1–30 hari lewat
+     *     31–60  = 31–60
+     *     > 60   = 61–90 + >90
+     *
+     * Yang BELUM jatuh tempo sengaja masuk ke 0–30, bukan dibuang: menghilangkannya membuat
+     * jumlah ketiga kolom tidak lagi sama dengan Outstanding-nya, dan selisihnya tidak pernah
+     * dijelaskan di mana pun.
+     *
+     * OTHERS BUKAN SEKADAR SISA TAMPILAN. Ia dijumlah dari seluruh supplier ke-21 dan seterusnya,
+     * sehingga Top 20 + Others SELALU sama dengan TOTAL. Tanpa baris itu, tabel yang memuat 20
+     * dari 80 supplier akan terbaca seolah itulah seluruh hutangnya.
+     */
+    public function agingSupplier(Request $request): Response
+    {
+        abort_unless($request->user()?->can('ap.aging.view'), 403);
+
+        [$rowsC, , , $asOf, $dateFrom] = $this->computeAging($request->input('date_to'), $request->input('date_from'));
+
+        $semua = [];
+        foreach ($rowsC as $r) {
+            $semua[] = [
+                'name'  => $r['name'],
+                'b0'    => round((float) $r['current'] + (float) $r['d30'], 2),
+                'b31'   => round((float) $r['d60'], 2),
+                'b60'   => round((float) $r['d90'] + (float) $r['d90p'], 2),
+                'total' => round((float) $r['total'], 2),
+            ];
+        }
+        usort($semua, fn ($a, $b) => $b['total'] <=> $a['total']);
+
+        $jml = fn (array $baris, string $k) => round(array_sum(array_column($baris, $k)), 2);
+
+        $top   = array_slice($semua, 0, self::TOP_SUPPLIER);
+        $sisa  = array_slice($semua, self::TOP_SUPPLIER);
+        $others = $sisa === [] ? null : [
+            'jumlah' => count($sisa),
+            'b0'     => $jml($sisa, 'b0'),
+            'b31'    => $jml($sisa, 'b31'),
+            'b60'    => $jml($sisa, 'b60'),
+            'total'  => $jml($sisa, 'total'),
+        ];
+
+        return Inertia::render('BusinessSupport/Payable/AgingSupplier', [
+            'rows'    => $top,
+            'others'  => $others,
+            'total'   => [
+                'jumlah' => count($semua),
+                'b0'     => $jml($semua, 'b0'),
+                'b31'    => $jml($semua, 'b31'),
+                'b60'    => $jml($semua, 'b60'),
+                'total'  => $jml($semua, 'total'),
+            ],
+            // Supplier terbesar disebut namanya: pada hutang yang terpusat di satu pihak, itulah
+            // keterangan yang paling menentukan dan paling mudah terlewat dari tabel panjang.
+            'dominan' => $semua[0] ?? null,
+            'topN'    => self::TOP_SUPPLIER,
+            'dateFrom' => $dateFrom,
+            'dateTo'  => $asOf->toDateString(),
+        ]);
+    }
+
     /** Aging Hutang — umur hutang per supplier (Summary) atau per invoice (Detail). */
     public function aging(Request $request): Response
     {
