@@ -153,6 +153,8 @@ export function navGroups(foUrl: string): NavGroup[] {
                 // Target akad per bulan vs realisasinya. Targetnya diisi lewat import Excel —
                 // angka rencana tidak berasal dari transaksi mana pun.
                 { label: 'Realisasi vs Budget', href: 'kpr.database.realisasi-budget', permission: 'bankloan.application.view' },
+                // Unit akad per cluster per bank — dihitung dari data akad, bukan diunggah.
+                { label: 'Realisasi KPR per Bank', href: 'kpr.database.realisasi-bank', permission: 'bankloan.application.view' },
             ]},
         ],
     },

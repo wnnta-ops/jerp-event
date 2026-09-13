@@ -1314,6 +1314,8 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
     Route::get('/kpr-database/realisasi-vs-budget',            [\App\Http\Controllers\Web\BankLoan\KprTargetRealisasiController::class, 'index'])->name('kpr.database.realisasi-budget');
     Route::get('/kpr-database/realisasi-vs-budget/template',   [\App\Http\Controllers\Web\BankLoan\KprTargetRealisasiController::class, 'template'])->name('kpr.database.realisasi-budget.template');
     Route::post('/kpr-database/realisasi-vs-budget/import',    [\App\Http\Controllers\Web\BankLoan\KprTargetRealisasiController::class, 'import'])->name('kpr.database.realisasi-budget.import');
+    // Realisasi KPR per Bank — unit akad per cluster per bank, dihitung dari data akad.
+    Route::get('/kpr-database/realisasi-per-bank',             [\App\Http\Controllers\Web\BankLoan\KprRealisasiBankController::class, 'index'])->name('kpr.database.realisasi-bank');
 
     // Legal (PPJB, AJB, BAST, IMB, Sertifikat) — sudah PINDAH ke FO. Rutenya dimatikan lewat sakelar, bukan
     // dihapus: menunya sudah tidak ada di sidebar BO, tetapi alamatnya masih
