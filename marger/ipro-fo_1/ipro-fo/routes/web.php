@@ -1031,6 +1031,7 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
     Route::get('/business-support/budget-query/realization',    [BsBudgetQueryController::class, 'realization'])->name('bs.budget.query.realization');
     Route::get('/business-support/budget-query/allocation',     [BsBudgetQueryController::class, 'allocation'])->name('bs.budget.query.allocation');
     Route::get('/business-support/budget-query/correction',     [BsBudgetQueryController::class, 'correction'])->name('bs.budget.query.correction');
+    Route::get('/business-support/budget-query/report',         [BsBudgetQueryController::class, 'report'])->name('bs.budget.query.report');
 
     Route::get('/business-support/bulk-upload/{mode}',           [BsBulkUploadController::class, 'form'])->whereIn('mode', ['asset', 'budget', 'stock'])->name('bs.bulk.form');
     Route::post('/business-support/bulk-upload/{mode}',          [BsBulkUploadController::class, 'store'])->whereIn('mode', ['asset', 'budget', 'stock'])->name('bs.bulk.store');

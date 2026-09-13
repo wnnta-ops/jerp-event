@@ -446,6 +446,7 @@ export function navGroups(foUrl: string): NavGroup[] {
                 { label: 'Koreksi Budget', href: 'bs.budget.query.correction' },
                 { label: 'Realisasi Budget', href: 'bs.budget.query.realization' },
                 { label: 'Alokasi Budget', href: 'bs.budget.query.allocation' },
+                { label: 'Report Budget', href: 'bs.budget.query.report' },
             ]},
             { label: 'Upload Budget', icon: FileSpreadsheet, permission: ['budget.master.*', 'budget.upload.*', 'businesssupport.approval.*'], children: [
                 { label: 'Upload Budget', href: 'bs.budget.upload.index' },

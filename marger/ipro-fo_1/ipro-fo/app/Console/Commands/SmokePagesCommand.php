@@ -249,6 +249,7 @@ class SmokePagesCommand extends Command
             'BS Budget q realisasi'=> '/business-support/budget-query/realization',
             'BS Budget q alokasi'  => '/business-support/budget-query/allocation',
             'BS Budget q koreksi'  => '/business-support/budget-query/correction',
+            'BS Budget q report'   => '/business-support/budget-query/report',
             'BS SPK hub'           => '/business-support/contractor-hub',
             'BS SPK printhub'      => '/business-support/contractor-print-out',
             'BS SPK list'          => '/business-support/spk',
