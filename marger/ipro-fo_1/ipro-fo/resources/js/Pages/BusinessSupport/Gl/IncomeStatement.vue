@@ -2,6 +2,7 @@
 import { ref, computed } from 'vue';
 import { router, Link } from '@inertiajs/vue3';
 import { ArrowLeft, TrendingUp, FileSpreadsheet } from 'lucide-vue-next';
+import AnalisaKenaikan from '@/Components/UI/AnalisaKenaikan.vue';
 
 type Row = { kind: string; code?: string | null; label: string; amount: number | null };
 const props = defineProps<{
@@ -17,6 +18,7 @@ const props = defineProps<{
     // akun tingkat 6 di bawahnya.
     view: string;
     detail: { tampil: number; total: number };
+    analisa: any;
 }>();
 
 const dari = ref(props.date_from);
@@ -139,6 +141,12 @@ function fmt(v: number | null) {
                 Akun yang <b>tidak bermutasi</b> pada periode ini tidak ditampilkan — selisihnya bukan angka yang hilang,
                 melainkan akun yang memang belum dipakai. Setiap baris Ledger adalah jumlah rincian tepat di atasnya.
             </p>
+        </div>
+
+        <!-- Pembandingnya rentang YANG SAMA setahun sebelumnya — bukan periode sebelum ini —
+             supaya musimnya setara dan kenaikannya bukan sekadar beda panjang periode. -->
+        <div class="mx-auto w-full" :class="mode === 'detail' ? 'max-w-4xl' : 'max-w-3xl'">
+            <AnalisaKenaikan :analisa="analisa" judul="Analisa Pergerakan Laba Rugi" />
         </div>
     </div>
 </template>

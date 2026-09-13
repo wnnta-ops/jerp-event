@@ -7,6 +7,7 @@ namespace App\Http\Controllers\Web\BusinessSupport\Gl;
 use App\Domain\BusinessSupport\Models\BsAccount;
 use App\Domain\BusinessSupport\Models\BsBudget;
 use App\Domain\BusinessSupport\Models\BsJournalLine;
+use App\Domain\BusinessSupport\Support\AnalisaKenaikan;
 use App\Exports\SheetXlsx;
 use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
@@ -440,6 +441,21 @@ class LedgerReportController extends Controller
         $grand       = fn (array $g) => (float) array_sum(array_map(fn ($x) => $x['total'], $g));
         $totalAssets = $grand($assets);
 
+        // Pembanding Neraca = AKHIR TAHUN SEBELUMNYA, jadi "kenaikan" berarti pergerakan sejak
+        // awal tahun berjalan. Itulah arti yang dipakai orang saat bertanya "naik berapa tahun
+        // ini". Neraca menyatakan posisi pada satu tanggal, bukan aktivitas satu rentang, jadi
+        // pembandingnya harus tanggal lain — bukan rentang yang digeser.
+        $pembanding = $asOf->copy()->subYear()->endOfYear();
+        $analisa    = AnalisaKenaikan::susun(
+            $this->barisAnalisa(
+                $leaf->mapWithKeys(fn ($x) => [(string) $x['code'] => (float) $x['net']])->all(),
+                $this->saldoPerKode(null, $pembanding->toDateString()),
+                fn (string $code) => in_array(substr($code, 0, 1), ['1', '2', '3', '8'], true),
+            ),
+            $asOf->translatedFormat('d M Y'),
+            $pembanding->translatedFormat('d M Y'),
+        );
+
         return [
             'company'       => $this->companyName(),
             'as_of'         => $asOf->translatedFormat('d F Y'),
@@ -449,6 +465,7 @@ class LedgerReportController extends Controller
             'equity'        => $equity,
             'total_assets'  => $totalAssets,
             'total_passiva' => $grand($liabilities) + $grand($equity),
+            'analisa'       => $analisa,
         ];
     }
 
@@ -629,6 +646,21 @@ class LedgerReportController extends Controller
             'rows'       => $rows,
             'net_profit' => $netProfit,
             'view'       => $view,
+            // Pembanding Laba Rugi = RENTANG YANG SAMA setahun sebelumnya. Laba rugi menyatakan
+            // aktivitas selama satu rentang, jadi pembandingnya harus rentang pula — dan rentang
+            // yang panjangnya sama, supaya yang dibandingkan memang setara.
+            'analisa'    => AnalisaKenaikan::susun(
+                $this->barisAnalisa(
+                    $leaf->mapWithKeys(fn ($x) => [(string) $x['code'] => (float) $x['net']])->all(),
+                    $this->saldoPerKode(
+                        $from->copy()->subYear()->toDateString(),
+                        $to->copy()->subYear()->toDateString(),
+                    ),
+                    fn (string $code) => in_array(substr($code, 0, 1), ['4', '5', '6', '7'], true),
+                ),
+                'Periode ini',
+                'Periode sama '.$from->copy()->subYear()->year,
+            ),
             // Berapa akun tingkat 6 yang TAMPIL, dari berapa yang ada di bagan akun laba rugi.
             // Tanpa kedua angka ini orang menghitung sendiri, menemukan lebih sedikit daripada
             // yang ia kira, lalu menyimpulkan laporannya bocor — padahal sisanya memang tidak
@@ -638,6 +670,75 @@ class LedgerReportController extends Controller
                 'total'  => $view === 'detail' ? $this->jumlahAkunLabaRugi() : 0,
             ],
         ];
+    }
+
+    /**
+     * Susun baris analisa dari dua kumpulan saldo per KODE akun.
+     *
+     * Yang dianalisa adalah akun yang benar-benar punya saldo — dalam praktiknya akun tingkat 6,
+     * karena hanya akun postable yang boleh dijurnal. Akun tingkat lain SENGAJA tidak disaring:
+     * laporan di atasnya menjumlah menurut awalan kode tanpa memeriksa level, jadi kalau suatu
+     * hari ada jurnal menempel pada akun Ledger (data warisan, perbaikan manual), akun itu ikut
+     * terhitung di totalnya. Menyaringnya di sini membuat analisanya tidak lagi bisa dicocokkan
+     * dengan laporannya — putusnya diam-diam, tanpa ada angka yang terlihat aneh. Lebih baik ia
+     * muncul sebagai penggerak dan terlihat.
+     *
+     * Nama induk tingkat 3-nya ikut dibawa sebagai keterangan, karena nama akun saja sering
+     * tidak cukup untuk tahu ia bagian dari apa ("Lain-lain" ada di banyak tempat).
+     *
+     * Tandanya mengikuti arah normal akun: akun kewajiban, modal, dan pendapatan yang membesar
+     * akan terbaca NAIK, bukan turun. Tanpa pembalikan ini, pendapatan yang tumbuh tampil
+     * sebagai penurunan terdalam — persis kebalikan dari keadaannya.
+     *
+     * @param  array<string,float>  $kini
+     * @param  array<string,float>  $lalu
+     * @param  callable(string):bool  $ikut  kode mana yang ikut dianalisa
+     * @return array<int,array<string,mixed>>
+     */
+    private function barisAnalisa(array $kini, array $lalu, callable $ikut): array
+    {
+        $akun = BsAccount::get(['code', 'name', 'type'])->keyBy('code');
+        $grup = BsAccount::where('level', 3)->pluck('name', 'code');
+
+        $out = [];
+        foreach (array_unique(array_merge(array_keys($kini), array_keys($lalu))) as $code) {
+            $code = (string) $code;
+            if (! $ikut($code)) {
+                continue;
+            }
+            $a = $akun[$code] ?? null;
+            if ($a === null) {
+                continue; // saldo pada kode yang tidak ada di bagan akun — tidak ada namanya untuk disebut
+            }
+            $tanda = in_array($a->type, ['liability', 'equity', 'income'], true) ? -1.0 : 1.0;
+            $out[] = [
+                'kode' => $code,
+                'nama' => (string) $a->name,
+                'grup' => (string) ($grup[substr($code, 0, 5)] ?? ''),
+                'kini' => $tanda * (float) ($kini[$code] ?? 0.0),
+                'lalu' => $tanda * (float) ($lalu[$code] ?? 0.0),
+                // Arah sumbangannya ke LABA: pendapatan menambah, beban menggerus. Akun neraca
+                // tidak menyentuh laba, jadi dibiarkan kosong dan tidak ikut dijumlahkan.
+                'dampak' => match ((string) $a->type) {
+                    'income'  => 1,
+                    'expense' => -1,
+                    default   => null,
+                },
+            ];
+        }
+
+        return $out;
+    }
+
+    /** Saldo per kode akun dari accountBalances(), dibentuk menjadi peta kode → net. */
+    private function saldoPerKode(?string $from, ?string $to): array
+    {
+        $out = [];
+        foreach ($this->accountBalances(null, $from, $to) as $x) {
+            $out[(string) $x['code']] = (float) $x['net'];
+        }
+
+        return $out;
     }
 
     /**
@@ -853,6 +954,18 @@ class LedgerReportController extends Controller
             'rows'       => $rows,
             'totals'     => ['realisasi' => $R['net'], 'budget' => $B['net'], 'variance' => $R['net'] - $B['net']],
             'has_budget' => array_sum(array_map('abs', $budByCode)) > 0.001,
+            // Di sini "kenaikan" berarti SELISIH TERHADAP ANGGARAN, bukan terhadap periode lain:
+            // laporan ini memang sudah punya pembandingnya sendiri. Akun yang paling jauh
+            // melampaui anggarannya itulah yang menggerakkan variance-nya.
+            'analisa'    => AnalisaKenaikan::susun(
+                $this->barisAnalisa(
+                    $realByCode,
+                    $budByCode,
+                    fn (string $code) => in_array(substr($code, 0, 1), ['4', '5', '6', '7'], true),
+                ),
+                'Realisasi',
+                'Anggaran',
+            ),
             // Dikatakan terus terang apakah angka budgetnya utuh setahun atau diprorata,
             // supaya pembacanya tahu terhadap apa realisasinya dibandingkan.
             'budget_note' => $penuh
