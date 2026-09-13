@@ -465,9 +465,12 @@ class LedgerReportController extends Controller
     {
         abort_unless($request->user()?->can('gl.financials.view'), 403);
 
-        $d = $this->incomeStatementData($request);
-        $rows = [
-            ['LAPORAN LABA RUGI'],
+        $d      = $this->incomeStatementData($request);
+        $detail = $d['view'] === 'detail';
+        $rows   = [
+            // Menumpang di baris judul yang sudah ada, BUKAN menambah baris pembuka baru, supaya
+            // jumlah baris kepala tetap 5 dan pembekuan barisnya di bawah tidak perlu diubah.
+            ['LAPORAN LABA RUGI'.($detail ? ' (DETAIL)' : '')],
             [$d['company']],
             ['Periode '.$d['periode']],
             [],
@@ -476,12 +479,23 @@ class LedgerReportController extends Controller
         foreach ($d['rows'] as $r) {
             // Baris bertingkat diberi jorokan supaya susunannya tetap terbaca di Excel,
             // tempat warna & tebal-tipisnya tidak ikut terbawa.
-            $jorok = match ($r['kind']) { 'line' => '        ', 'group' => '    ', default => '' };
-            $rows[] = [$jorok.$r['label'], $r['amount'] === null ? null : (float) $r['amount']];
+            $jorok = match ($r['kind']) {
+                'detail' => '            ',
+                'line'   => '        ',
+                'group'  => '    ',
+                default  => '',
+            };
+            // Kode hanya dicetak pada baris rincian, dan digabung ke depan label pada kolom yang
+            // sama. Dua hal yang sengaja dihindari: menambah kolom "Kode" baru (menggeser kolom
+            // nilai dari B ke C dan mematahkan rumus siapa pun yang sudah menunjuk kolom B), dan
+            // mencetak kode pada baris Ledger (mengubah berkas mode ringkas yang selama ini sudah
+            // biasa diterima orang, padahal mode ringkas tidak diminta berubah).
+            $label  = ($r['kind'] === 'detail' && ($r['code'] ?? '') !== '' ? $r['code'].'  ' : '').$r['label'];
+            $rows[] = [$jorok.$label, $r['amount'] === null ? null : (float) $r['amount']];
         }
 
         return (new SheetXlsx($rows, 5, 'Laba Rugi'))
-            ->toResponse('Laba-Rugi-'.$d['date_from'].'-sd-'.$d['date_to'].'.xlsx');
+            ->toResponse('Laba-Rugi-'.($detail ? 'Detail-' : '').$d['date_from'].'-sd-'.$d['date_to'].'.xlsx');
     }
 
     /**
@@ -494,6 +508,9 @@ class LedgerReportController extends Controller
         // Laba rugi menyatakan hasil SELAMA satu periode, jadi yang dipilih rentang tanggalnya.
         // Bawaannya awal tahun berjalan s/d hari ini — periode yang paling sering dilihat.
         [$from, $to] = $this->rentang($request);
+        // Nilai asing/kosong jatuh ke 'summary', jadi URL lama, bookmark, dan tautan export lama
+        // memulangkan laporan yang persis sama dengan sebelum mode ini ada.
+        $view  = $request->input('view') === 'detail' ? 'detail' : 'summary';
         $leaf  = $this->accountBalances(null, $from->toDateString(), $to->toDateString());
         $nodes = BsAccount::where('level', 3)->orderBy('code')->get(['code', 'name']);
 
@@ -501,15 +518,43 @@ class LedgerReportController extends Controller
             fn ($c, $x) => $c + (str_starts_with((string) $x['code'], $prefix) ? (float) $x['net'] : 0.0),
             0.0,
         );
-        $linesUnder = function (array $prefixes, bool $creditPositive) use ($nodes, $sum): array {
+        /*
+         * Rincian akun di bawah satu node Ledger (tingkat 3).
+         *
+         * Saringnya HANYA awalan kode — sengaja tanpa memeriksa level atau panjang kode, karena
+         * itulah aturan yang sama persis dipakai $sum() di atas. Akibatnya jumlah baris rincian
+         * SELALU sama dengan nilai baris induknya secara konstruksi, bukan karena kebetulan
+         * datanya rapi: seandainya suatu hari ada jurnal menempel pada akun bukan tingkat 6,
+         * akun itu ikut tampil sebagai baris rincian alih-alih diam-diam merusak jumlahnya.
+         */
+        $rincianDi = function (string $parentCode, float $sign) use ($leaf): array {
+            $out = [];
+            foreach ($leaf as $x) {
+                if (! str_starts_with((string) $x['code'], $parentCode)) {
+                    continue;
+                }
+                $amt = $sign * (float) $x['net'];
+                if (abs($amt) > 0.001) {
+                    $out[] = ['code' => (string) $x['code'], 'name' => (string) $x['name'], 'amount' => $amt];
+                }
+            }
+
+            return $out;
+        };
+        $linesUnder = function (array $prefixes, bool $creditPositive) use ($nodes, $sum, $rincianDi, $view): array {
             $sign = $creditPositive ? -1.0 : 1.0;
             $out  = [];
             foreach ($nodes as $n) {
                 foreach ($prefixes as $p) {
                     if (str_starts_with($n['code'], $p)) {
-                        $amt = $sign * $sum($n['code']);
-                        if (abs($amt) > 0.001) {
-                            $out[] = ['name' => $n['name'], 'amount' => $amt];
+                        $amt     = $sign * $sum($n['code']);
+                        $rincian = $view === 'detail' ? $rincianDi($n['code'], $sign) : [];
+                        // Mode ringkas membuang node bernilai nol, seperti seterusnya. Mode detail
+                        // TETAP menampilkannya bila anaknya bernilai — node yang anak-anaknya saling
+                        // meniadakan justru keadaan yang paling perlu dilihat, dan membuangnya
+                        // membuat seluruh kategori lenyap tanpa jejak.
+                        if (abs($amt) > 0.001 || $rincian !== []) {
+                            $out[] = ['code' => (string) $n['code'], 'name' => $n['name'], 'amount' => $amt, 'rincian' => $rincian];
                         }
                         break;
                     }
@@ -532,12 +577,20 @@ class LedgerReportController extends Controller
         $netProfit = $ebitda + $netLain;
 
         $rows = [];
-        $add  = function (string $kind, string $label, ?float $amount = null) use (&$rows): void {
-            $rows[] = ['kind' => $kind, 'label' => $label, 'amount' => $amount];
+        // 'code' diisi null untuk SEMUA baris, bukan hanya baris yang punya kode. Dengan begitu
+        // export & layar boleh membacanya tanpa penjaga, dan tidak ada "Undefined array key".
+        $add = function (string $kind, string $label, ?float $amount = null, ?string $code = null) use (&$rows): void {
+            $rows[] = ['kind' => $kind, 'code' => $code, 'label' => $label, 'amount' => $amount];
         };
         $addLines = function (array $prefixes, bool $creditPositive) use (&$rows, $linesUnder): void {
             foreach ($linesUnder($prefixes, $creditPositive) as $l) {
-                $rows[] = ['kind' => 'line', 'label' => $l['name'], 'amount' => $l['amount']];
+                // Rincian tingkat 6 mendahului baris Ledger-nya, sehingga baris Ledger terbaca
+                // sebagai JUMLAH dari rincian di atasnya — sama seperti setiap subtotal lain di
+                // laporan ini. Ditaruh sesudahnya, baris Ledger terbaca seperti judul.
+                foreach ($l['rincian'] as $d) {
+                    $rows[] = ['kind' => 'detail', 'code' => $d['code'], 'label' => $d['name'], 'amount' => $d['amount']];
+                }
+                $rows[] = ['kind' => 'line', 'code' => $l['code'], 'label' => $l['name'], 'amount' => $l['amount']];
             }
         };
 
@@ -575,7 +628,28 @@ class LedgerReportController extends Controller
             'date_to'    => $to->toDateString(),
             'rows'       => $rows,
             'net_profit' => $netProfit,
+            'view'       => $view,
+            // Berapa akun tingkat 6 yang TAMPIL, dari berapa yang ada di bagan akun laba rugi.
+            // Tanpa kedua angka ini orang menghitung sendiri, menemukan lebih sedikit daripada
+            // yang ia kira, lalu menyimpulkan laporannya bocor — padahal sisanya memang tidak
+            // punya transaksi pada periode itu.
+            'detail'     => [
+                'tampil' => count(array_filter($rows, fn ($r) => $r['kind'] === 'detail')),
+                'total'  => $view === 'detail' ? $this->jumlahAkunLabaRugi() : 0,
+            ],
         ];
+    }
+
+    /**
+     * Banyaknya akun postable (tingkat 6) di wilayah laba rugi — penyebut keterangan "x dari y akun".
+     *
+     * Dihitung dari JENIS akun, bukan dari daftar awalan kode: daftar awalan sudah tertulis di
+     * susunan bagian laporan (401/402/501/502/503/601/701), dan menyalinnya ke sini berarti dua
+     * daftar yang bisa menyimpang diam-diam.
+     */
+    private function jumlahAkunLabaRugi(): int
+    {
+        return (int) BsAccount::where('is_postable', true)->whereIn('type', ['income', 'expense'])->count();
     }
 
     /**

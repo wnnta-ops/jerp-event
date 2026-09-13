@@ -1,9 +1,9 @@
 <script setup lang="ts">
-import { ref } from 'vue';
+import { ref, computed } from 'vue';
 import { router, Link } from '@inertiajs/vue3';
 import { ArrowLeft, TrendingUp, FileSpreadsheet } from 'lucide-vue-next';
 
-type Row = { kind: string; label: string; amount: number | null };
+type Row = { kind: string; code?: string | null; label: string; amount: number | null };
 const props = defineProps<{
     company: string;
     as_of: string;
@@ -13,12 +13,28 @@ const props = defineProps<{
     date_to: string;
     rows: Row[];
     net_profit: number;
+    // 'summary' (bawaan) atau 'detail' — mode detail memecah tiap baris Ledger menjadi
+    // akun tingkat 6 di bawahnya.
+    view: string;
+    detail: { tampil: number; total: number };
 }>();
 
 const dari = ref(props.date_from);
 const sampai = ref(props.date_to);
-function display() { router.get(route('bs.gl.incomestatement'), { date_from: dari.value, date_to: sampai.value }, { preserveState: true, replace: true, preserveScroll: true }); }
-function excel() { window.location.href = route('bs.gl.incomestatement.export', { date_from: dari.value, date_to: sampai.value }); }
+/* Dibaca dari prop lewat computed, BUKAN disalin ke ref: display() memakai preserveState
+   sehingga instance komponen dipakai ulang, dan nilai awal ref akan basi setelah ganti mode. */
+const mode = computed(() => (props.view === 'detail' ? 'detail' : 'summary'));
+
+/* Satu tempat penyusun parameter, dipakai bersama Display dan Excel. Kalau keduanya menyusun
+   sendiri-sendiri, cepat atau lambat yang satu membawa mode dan yang lain tidak — dan orang
+   mengunduh berkas ringkas sambil melihat layar detail tanpa ada tanda apa pun. */
+function params(v: string = mode.value) { return { date_from: dari.value, date_to: sampai.value, view: v }; }
+function display() { router.get(route('bs.gl.incomestatement'), params(), { preserveState: true, replace: true, preserveScroll: true }); }
+function setView(v: string) { router.get(route('bs.gl.incomestatement'), params(v), { preserveState: true, replace: true, preserveScroll: true }); }
+function excel() { window.location.href = route('bs.gl.incomestatement.export', params()); }
+
+const segActive = 'rounded-md px-3 py-1 text-xs font-semibold bg-primary-600 text-white';
+const segIdle = 'rounded-md px-3 py-1 text-xs font-medium text-neutral-600 hover:bg-neutral-100 dark:text-neutral-300 dark:hover:bg-neutral-800';
 
 function fmt(v: number | null) {
     const n = Number(v ?? 0);
@@ -44,18 +60,39 @@ function fmt(v: number | null) {
                     <label class="mb-1 block text-[10px] uppercase text-neutral-400">Sampai Tanggal</label>
                     <input v-model="sampai" type="date" class="h-9 rounded-lg border border-neutral-300 bg-white px-3 text-sm dark:border-neutral-700 dark:bg-neutral-900" />
                 </div>
+                <div>
+                    <label class="mb-1 block text-[10px] uppercase text-neutral-400">Rincian</label>
+                    <div class="inline-flex h-9 items-center rounded-lg border border-neutral-300 p-0.5 dark:border-neutral-700">
+                        <button type="button" @click="setView('summary')" :class="mode === 'summary' ? segActive : segIdle">Ringkas</button>
+                        <button type="button" @click="setView('detail')" :class="mode === 'detail' ? segActive : segIdle">Detail</button>
+                    </div>
+                </div>
                 <button @click="display" class="h-9 rounded-lg bg-primary-600 px-5 text-sm font-semibold text-white hover:bg-primary-700">Display</button>
                 <button @click="excel" class="inline-flex h-9 items-center gap-1.5 rounded-lg bg-success-600 px-4 text-sm font-semibold text-white hover:bg-success-700"><FileSpreadsheet class="h-4 w-4" /> Excel</button>
             </div>
         </div>
 
-        <div class="card mx-auto w-full max-w-3xl p-5 sm:p-7">
+        <!-- Mode detail memuat nama akun tingkat 6 yang panjang pada indentasi lebih dalam, jadi
+             kartunya dilebarkan supaya namanya tidak membungkus dua baris. Mode ringkas tetap
+             selebar sebelumnya. -->
+        <div class="card mx-auto w-full p-5 sm:p-7" :class="mode === 'detail' ? 'max-w-4xl' : 'max-w-3xl'">
             <template v-for="(r, i) in rows" :key="i">
                 <!-- Header kategori -->
                 <div v-if="r.kind === 'header'" class="mt-5 border-b-2 border-neutral-300 pb-1 text-sm font-bold uppercase tracking-wide text-neutral-800 first:mt-0 dark:border-neutral-600 dark:text-neutral-100">{{ r.label }}</div>
 
                 <!-- Sub-grup -->
                 <div v-else-if="r.kind === 'group'" class="mt-2 pl-2 text-xs font-semibold uppercase tracking-wide text-neutral-500">{{ r.label }}</div>
+
+                <!-- Rincian akun tingkat 6 — mendahului baris Ledger-nya, sehingga baris Ledger
+                     di bawahnya terbaca sebagai jumlah dari rincian ini. Lebih menjorok, lebih
+                     kecil, dan lebih redup: tiga penanda sekaligus supaya induk & anak tidak
+                     terbaca sebagai satu daftar datar. -->
+                <div v-else-if="r.kind === 'detail'" class="flex justify-between gap-4 py-0.5 text-xs">
+                    <span class="pl-10 text-neutral-500 dark:text-neutral-400">
+                        <span class="font-mono text-[10px] text-neutral-400">{{ r.code }}</span> {{ r.label }}
+                    </span>
+                    <span class="shrink-0 font-mono tabular-nums" :class="(r.amount ?? 0) < 0 ? 'text-danger-600' : 'text-neutral-500 dark:text-neutral-400'">{{ fmt(r.amount) }}</span>
+                </div>
 
                 <!-- Baris akun -->
                 <div v-else-if="r.kind === 'line'" class="flex justify-between gap-4 py-1 text-sm">
@@ -86,7 +123,22 @@ function fmt(v: number | null) {
                     <span>{{ r.label }}</span>
                     <span class="shrink-0 font-mono tabular-nums">{{ fmt(r.amount) }}</span>
                 </div>
+
+                <!-- Penangkap terakhir. Tanpa ini, satu jenis baris yang belum punya cabang akan
+                     HILANG dari laporan tanpa error apa pun: angkanya tetap benar, barisnya saja
+                     yang tidak ada — kerusakan yang tidak mungkin terlihat. Jenis baris bertipe
+                     string bebas, jadi TypeScript pun tidak bisa menjaganya. -->
+                <div v-else class="flex justify-between gap-4 py-1 text-sm">
+                    <span class="pl-6 text-neutral-700 dark:text-neutral-300">{{ r.label }}</span>
+                    <span class="shrink-0 font-mono tabular-nums">{{ fmt(r.amount) }}</span>
+                </div>
             </template>
+
+            <p v-if="mode === 'detail'" class="mt-5 border-t border-neutral-200 pt-3 text-[11px] leading-relaxed text-neutral-500 dark:border-neutral-800">
+                Menampilkan <b>{{ detail.tampil }}</b> dari <b>{{ detail.total }}</b> akun tingkat 6 pada bagan akun laba rugi.
+                Akun yang <b>tidak bermutasi</b> pada periode ini tidak ditampilkan — selisihnya bukan angka yang hilang,
+                melainkan akun yang memang belum dipakai. Setiap baris Ledger adalah jumlah rincian tepat di atasnya.
+            </p>
         </div>
     </div>
 </template>
