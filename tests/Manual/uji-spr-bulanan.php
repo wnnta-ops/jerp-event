@@ -84,14 +84,47 @@ try {
     $seq = 0;
     /* Ditulis lewat query builder, bukan Kontrak::create(): yang diuji di sini angkanya,
        bukan alur pembuatan kontrak beserta event & listener-nya. */
-    $kontrak = function (string $tgl, string $status = 'AKTIF', string $tahap = 'SPR', bool $terhapus = false) use (&$seq, $TENANT): void {
+    $kontrak = function (string $tgl, string $status = 'AKTIF', string $tahap = 'SPR', bool $terhapus = false) use (&$seq, $TENANT): int {
         $seq++;
+        $id = 890000 + $seq;
         Kontrak::query()->insert([
+            'id' => $id,
             'tenant_id' => $TENANT, 'no_kontrak' => 'UJI-SPR-'.str_pad((string) $seq, 5, '0', STR_PAD_LEFT),
             'customer_id' => 900000 + $seq, 'unit_id' => 900000 + $seq, 'tgl_kontrak' => $tgl,
             'harga_jual' => 0, 'diskon' => 0, 'ppn' => 0, 'total_kontrak' => 0, 'cara_bayar' => 'CASH',
             'status' => $status, 'tahap' => $tahap,
             'created_at' => now(), 'updated_at' => now(), 'deleted_at' => $terhapus ? now() : null,
+        ]);
+
+        return $id;
+    };
+
+    $seqA = 0;
+    /**
+     * Baris approval pembatalan. `tglPembatalan` null meniru approval yang lahir dari form
+     * generik (KeyValue bebas) yang memang tidak punya kolom tanggal.
+     */
+    $approval = function (int $kontrakId, string $status, ?string $tglPembatalan, ?string $executedAt = null,
+        ?string $approvedAt = null, bool $terhapus = false, ?string $createdAt = null,
+        string $jenis = 'BATAL_KONTRAK', ?string $subjectType = null) use (&$seqA, $TENANT): void {
+        $seqA++;
+        DB::table('fo_approvals')->insert([
+            'id' => 880000 + $seqA, 'tenant_id' => $TENANT,
+            'no_approval' => 'UJI-APR-'.str_pad((string) $seqA, 5, '0', STR_PAD_LEFT),
+            // tgl_approval = tanggal PENGAJUAN. SELALU diisi tahun 2000 pada data uji, supaya
+            // kalau ia sampai terpakai sebagai tanggal batal, pembatalannya langsung lenyap dari
+            // tahun uji dan ketahuan.
+            'tgl_approval' => '2000-01-01',
+            'jenis' => $jenis, 'subject_type' => $subjectType ?? Kontrak::class, 'subject_id' => $kontrakId,
+            'alasan' => 'uji', 'status' => $status,
+            'detail_baru' => json_encode(array_filter([
+                'status_baru' => 'BATAL',
+                'tgl_pembatalan' => $tglPembatalan,
+            ], fn ($v) => $v !== null)),
+            'current_level' => 2,
+            'executed_at' => $executedAt, 'approved_at' => $approvedAt,
+            'created_at' => $createdAt ?? $approvedAt ?? $executedAt ?? now(), 'updated_at' => now(),
+            'deleted_at' => $terhapus ? now() : null,
         ]);
     };
 
@@ -145,6 +178,117 @@ try {
     $ok('kontrak ter-soft-delete tidak dihitung', $naik($p, $awal, 'gross', 6) === 1, (string) $naik($p, $awal, 'gross', 6));
     $ok('tahun sebelumnya berdiri sendiri',
         $naik($svc->perBulan($TAHUN - 1), $awalLalu, 'gross', 6) === 1);
+
+    echo "\n=== 2b. BULAN BATAL MENGIKUTI TANGGAL PEMBATALANNYA ===\n";
+
+    $mula = $svc->perBulan($TAHUN);
+    $mulaLalu = $svc->perBulan($TAHUN - 1);
+
+    /* Dipesan Juli, dibatalkan Oktober. Gross jatuh di Juli, Batal di Oktober — dua kelompok
+       kontrak yang berbeda, dan itu memang yang diminta. */
+    $a1 = $kontrak("$TAHUN-07-04", 'BATAL');
+    $approval($a1, 'EXECUTED', "$TAHUN-10-09", "$TAHUN-10-10 08:00:00");
+
+    $p = $svc->perBulan($TAHUN);
+    $ok('gross tetap di bulan kontraknya', $naik($p, $mula, 'gross', 7) === 1, (string) $naik($p, $mula, 'gross', 7));
+    $ok('batal pindah ke bulan pembatalannya', $naik($p, $mula, 'batal', 10) === 1, (string) $naik($p, $mula, 'batal', 10));
+    $ok('bulan kontraknya TIDAK ikut dihitung sebagai batal', $naik($p, $mula, 'batal', 7) === 0, (string) $naik($p, $mula, 'batal', 7));
+    /* Akibat yang disengaja: bulan pembatalan bisa bernilai negatif. */
+    $ok('nett bulan pembatalan berkurang, bisa negatif', $naik($p, $mula, 'nett', 10) === -1, (string) $naik($p, $mula, 'nett', 10));
+
+    /* Dipesan TAHUN LALU, dibatalkan tahun ini → masuk Batal tahun ini, tanpa menambah Gross. */
+    $a2 = $kontrak(($TAHUN - 1).'-11-02', 'BATAL');
+    $approval($a2, 'EXECUTED', "$TAHUN-03-15", "$TAHUN-03-16 08:00:00");
+
+    $p = $svc->perBulan($TAHUN);
+    $ok('pembatalan atas kontrak tahun lalu masuk ke tahun ini',
+        $naik($p, $mula, 'batal', 3) === 1, (string) $naik($p, $mula, 'batal', 3));
+    $ok('tanpa menambah gross tahun ini', $naik($p, $mula, 'gross', 3) === 0, (string) $naik($p, $mula, 'gross', 3));
+    $ok('dan tidak lagi terhitung di tahun kontraknya',
+        $naik($svc->perBulan($TAHUN - 1), $mulaLalu, 'batal', 11) === 0,
+        (string) $naik($svc->perBulan($TAHUN - 1), $mulaLalu, 'batal', 11));
+
+    /* Approval yang DITOLAK tetap menyimpan tgl_pembatalan sejak baris dibuat. Memakainya
+       berarti mencatat pembatalan yang tidak pernah terjadi lewat baris itu. */
+    $a3 = $kontrak("$TAHUN-08-05", 'BATAL');
+    $approval($a3, 'REJECTED', "$TAHUN-11-20", null, "$TAHUN-11-21 08:00:00");
+    /* Approval JENIS LAIN atas kontrak yang sama (mis. diskon yang pernah diajukan), dan
+       approval milik JENIS SUBJEK LAIN yang kebetulan ber-id sama. Keduanya EXECUTED dan
+       bertanggal November — kalau penyaring jenis atau subject_type lepas, batalnya pindah
+       ke November dan Agustus kehilangan miliknya. */
+    $approval($a3, 'EXECUTED', "$TAHUN-11-22", "$TAHUN-11-23 08:00:00", null, false, null, 'DISKON');
+    $approval($a3, 'EXECUTED', "$TAHUN-11-24", "$TAHUN-11-25 08:00:00", null, false, null, 'BATAL_KONTRAK',
+        'App\\Modules\\FO\\Launching\\Models\\NupRegistration');
+
+    $p = $svc->perBulan($TAHUN);
+    $ok('approval DITOLAK tidak dipakai sebagai tanggal batal',
+        $naik($p, $mula, 'batal', 11) === 0, (string) $naik($p, $mula, 'batal', 11));
+    $ok('jatuh ke bulan kontraknya ketika tidak ada approval yang sah',
+        $naik($p, $mula, 'batal', 8) === 1, (string) $naik($p, $mula, 'batal', 8));
+
+    /* Ditolak lalu diajukan ulang: tiga baris, satu pembatalan. Sengaja TIDAK di bulan yang
+       gross-nya sudah ditegaskan bagian lain, supaya penambahan data uji di sini tidak
+       diam-diam mengubah arti pemeriksaan di bagian lain. */
+    $a4 = $kontrak("$TAHUN-09-02", 'BATAL');
+    $approval($a4, 'REJECTED', "$TAHUN-05-01", null, "$TAHUN-05-02 08:00:00");
+    $approval($a4, 'EXECUTED', "$TAHUN-06-03", "$TAHUN-06-04 08:00:00");
+    $approval($a4, 'EXECUTED', "$TAHUN-09-07", "$TAHUN-09-08 08:00:00");
+
+    $p = $svc->perBulan($TAHUN);
+    $ok('beberapa approval untuk satu kontrak tetap satu pembatalan',
+        $naik($p, $mula, 'batal', 9) === 1 && $naik($p, $mula, 'batal', 6) === 0,
+        json_encode([$naik($p, $mula, 'batal', 9), $naik($p, $mula, 'batal', 6)]));
+
+    /* Approval tanpa tgl_pembatalan (form generik) → jatuh ke executed_at. */
+    $a5 = $kontrak("$TAHUN-01-10", 'BATAL');
+    $approval($a5, 'EXECUTED', null, "$TAHUN-12-05 08:00:00");
+
+    /* tgl_pembatalan berbentuk lain → jatuh ke executed_at. Sengaja dipilih tanggal yang MASIH
+       BISA dibaca pembaca longgar (05/07 → 5 Juli atau 7 Mei, tergantung tafsir) dan bukan yang
+       pasti gagal: pembacaan longgar tidak melempar galat, ia memulangkan tanggal yang salah
+       tanpa keluhan — dan itu kegagalan yang jauh lebih sulit terlihat. */
+    $a6 = $kontrak("$TAHUN-01-11", 'BATAL');
+    $approval($a6, 'EXECUTED', "05/07/$TAHUN", "$TAHUN-12-06 08:00:00");
+
+    $p = $svc->perBulan($TAHUN);
+    $ok('approval tanpa tgl_pembatalan jatuh ke executed_at',
+        $naik($p, $mula, 'batal', 12) === 2, (string) $naik($p, $mula, 'batal', 12));
+    /* Inti: tgl_approval (tanggal PENGAJUAN, di data uji sengaja tahun 2000) tidak boleh
+       pernah terpakai — kalau terpakai, batalnya lenyap dari tahun ini sama sekali. */
+    $ok('tgl_approval tidak pernah dipakai sebagai tanggal batal',
+        array_sum($p['batal']) - array_sum($mula['batal']) === 6,
+        'jumlah batal tahun ini bertambah '.(array_sum($p['batal']) - array_sum($mula['batal'])).', seharusnya 6');
+
+    /* Approval ter-soft-delete tetap merekam KAPAN pembatalannya terjadi. */
+    $a7 = $kontrak("$TAHUN-01-12", 'BATAL');
+    $approval($a7, 'EXECUTED', "$TAHUN-05-20", "$TAHUN-05-21 08:00:00", null, true);
+
+    $p = $svc->perBulan($TAHUN);
+    $ok('approval yang sudah dihapus tetap dipakai tanggalnya',
+        $naik($p, $mula, 'batal', 5) === 1, (string) $naik($p, $mula, 'batal', 5));
+
+    /* Approval EXECUTED tanpa executed_at MAUPUN approved_at — lahir dari koreksi manual super
+       admin. Satu-satunya tanggal yang tersisa adalah created_at. Ini yang membuktikan
+       tgl_approval (tahun 2000) tidak dipakai sebagai cadangan terakhir. */
+    $a8 = $kontrak("$TAHUN-01-13", 'BATAL');
+    $approval($a8, 'EXECUTED', null, null, null, false, "$TAHUN-04-18 08:00:00");
+
+    $p = $svc->perBulan($TAHUN);
+    $ok('tanpa executed_at & approved_at, jatuh ke created_at — bukan ke tgl_approval',
+        $naik($p, $mula, 'batal', 4) === 1, (string) $naik($p, $mula, 'batal', 4));
+
+    /* tgl_pembatalan diketik pemohon, jadi bisa dimajukan ke tahun depan. Pembatalan itu bukan
+       milik tahun ini dan tidak boleh muncul di kolom mana pun tahun ini. */
+    $a9 = $kontrak("$TAHUN-01-14", 'BATAL');
+    $approval($a9, 'EXECUTED', ($TAHUN + 1).'-02-09', ($TAHUN + 1).'-02-10 08:00:00');
+
+    $p = $svc->perBulan($TAHUN);
+    // Delapan pembatalan jatuh di tahun ini (a1..a8); a9 bertanggal tahun depan dan tidak ikut.
+    $ok('pembatalan bertanggal TAHUN DEPAN tidak masuk tahun ini sama sekali',
+        array_sum($p['batal']) - array_sum($mula['batal']) === 8,
+        'jumlah batal tahun ini '.(array_sum($p['batal']) - array_sum($mula['batal'])).', seharusnya 8');
+    $ok('tetapi kontraknya tetap terhitung sebagai gross tahun ini',
+        $naik($p, $mula, 'gross', 1) === 5, (string) $naik($p, $mula, 'gross', 1));
 
     echo "\n=== 3. BULAN BERJALAN & PEMOTONGAN DERET ===\n";
 
@@ -301,6 +445,11 @@ try {
     $ok('menyebut target tahunan dari skenario pertama, bukan yang lain',
         str_contains($ket, '99 unit') && str_contains($ket, 'Target (WPnB)'), $ket);
     $ok('menerangkan definisi SPR & Nett', str_contains($ket, 'Nett = Gross − Batal'), $ket);
+    $ok('menyatakan SPRS tidak ikut dihitung', str_contains($ket, '(tanpa SPRS)'), $ket);
+    /* Tanpa kalimat ini, batang Nett yang turun ke bawah nol terbaca sebagai kerusakan —
+       padahal itu justru keadaan yang benar ketika pembatalan bulan itu melebihi SPR barunya. */
+    $ok('memberi tahu Batal mengikuti bulan pembatalannya',
+        str_contains($ket, 'bulan pembatalannya') && str_contains($ket, 'bisa negatif'), $ket);
     $ok('memberi tahu legenda bisa diklik', str_contains($ket, 'klik legenda'), $ket);
 
     SprTarget::query()->withoutGlobalScopes()->where('tenant_id', $TENANT)->where('tahun', $TAHUN)->delete();

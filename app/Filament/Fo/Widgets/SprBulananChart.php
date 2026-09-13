@@ -84,7 +84,12 @@ class SprBulananChart extends ChartWidget
             // garisnya tidak — dan tidak ada apa pun yang menjelaskan kenapa.
             $bagian[] = '<b>target belum diimpor</b> (Setup Sales → Upload Target SPR)';
         }
-        $bagian[] = 'SPR = kontrak bertahap <b>SPR</b>, Nett = Gross − Batal';
+        $bagian[] = 'SPR = kontrak bertahap <b>SPR</b> (tanpa SPRS), Nett = Gross − Batal';
+        // Kalimat ini yang mencegah salah baca paling mahal: Gross dan Batal TIDAK berasal dari
+        // kelompok kontrak yang sama, jadi sebuah bulan bisa bernilai negatif tanpa ada yang
+        // rusak. Tanpa keterangan ini, batang Nett yang turun ke bawah nol terbaca sebagai bug.
+        $bagian[] = '<b>Batal</b> dihitung pada <b>bulan pembatalannya</b>, bukan bulan kontraknya '
+            .'— sehingga Nett satu bulan bisa negatif bila pembatalan bulan itu melebihi SPR barunya';
         $bagian[] = 'klik legenda untuk menyembunyikan/menampilkan seri';
 
         return new HtmlString(implode(' · ', $bagian).'.');
