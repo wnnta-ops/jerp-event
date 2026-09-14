@@ -19,6 +19,3 @@ Icon?
 Icon
 Screenshot*.png
 *.png
-
-# artefak build TypeScript — tidak perlu masuk git
-tsconfig.tsbuildinfo

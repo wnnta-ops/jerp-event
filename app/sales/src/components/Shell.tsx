@@ -8,28 +8,13 @@ import type { Role } from "@prisma/client";
 import { ROLE_LABEL } from "@/lib/constants";
 import { canManageUsers } from "@/lib/user-access";
 
-/*
- * Menu sidebar memakai prefetch={false}.
- *
- * Sidebar selalu tampil, jadi Next.js mengambil-muka SEMUA menunya begitu masuk
- * layar: sepuluh halaman ikut dirender di server — masing-masing dengan query
- * Prisma sendiri — setiap kali satu halaman dibuka. Membuka Daily Report berarti
- * menyuruh server mengerjakan sebelas halaman sekaligus.
- *
- * Untuk aplikasi internal yang tiap menunya menyentuh database, itu lebih mahal
- * daripada untungnya. Konsekuensinya: pindah menu tidak lagi terasa instan pada
- * klik pertama, tetapi hanya halaman yang benar-benar dibuka yang dikerjakan.
- */
-type NavItem = { href: string; label: string; ic: string; tag?: string };
-type NavGroup = { group: string; items: NavItem[] };
-
 // Grup menu khusus pengelola user — hanya tampil bila boleh (canManageUsers).
-const ADMIN_GROUP: NavGroup = {
+const ADMIN_GROUP = {
   group: "Administrasi",
   items: [{ href: "/users", label: "Manajemen User", ic: "👥" }],
 };
 
-const NAV: NavGroup[] = [
+const NAV = [
   {
     group: "Kerja Harian",
     items: [

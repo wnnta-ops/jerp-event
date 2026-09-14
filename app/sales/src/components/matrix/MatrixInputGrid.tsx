@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "@/components/Toast";
+import { DatePicker } from "@/components/DatePicker";
 import { MatrixGrid } from "@/components/matrix/MatrixGrid";
 
 type ColMap = Record<string, number>;
@@ -51,20 +52,13 @@ export function MatrixInputGrid({
   return (
     <>
       <div className="actions no-print">
-        <label className="pill" style={{ display: "inline-flex", gap: 6, alignItems: "center" }}>
-          Tanggal:
-          <select
-            value={dayKey}
-            onChange={(e) => router.push(`${dateBase}${e.target.value}`)}
-            style={{ border: "none", background: "transparent", fontWeight: 700, padding: 0, color: "var(--ink)" }}
-          >
-            {dates.map((d) => (
-              <option key={d.key} value={d.key}>
-                {d.label}
-              </option>
-            ))}
-          </select>
-        </label>
+        <DatePicker
+          value={dayKey}
+          onChange={(k) => router.push(`${dateBase}${k}`)}
+          markedKeys={dates.map((d) => d.key)}
+          todayKey={dates[0]?.key}
+          maxKey={dates[0]?.key}
+        />
 
         <div className="seg">
           <button className={`seg-btn ${mode === "fill" ? "on" : ""}`} onClick={() => setMode("fill")}>

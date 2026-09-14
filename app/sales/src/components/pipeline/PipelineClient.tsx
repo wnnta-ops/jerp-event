@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { Role, Stage } from "@prisma/client";
 import { Modal } from "@/components/Modal";
+import { Combobox } from "@/components/Combobox";
 import { toast } from "@/components/Toast";
 import { ChannelBadge, LeadBadge, StageBadge } from "@/components/badges";
 import { SALES_MAX_INDEX, STAGES, STAGE_INDEX, LEAD_FIELD_LABEL } from "@/lib/constants";
@@ -160,30 +161,27 @@ export function PipelineClient({ deals, role }: { deals: PipelineDeal[]; role: R
           value={q}
           onChange={(e) => setQ(e.target.value)}
         />
-        <select value={fSales} onChange={(e) => setFSales(e.target.value)} title="Filter Sales">
-          <option value="all">Semua Sales</option>
-          {salesOpts.map((s) => (
-            <option key={s} value={s}>
-              {s}
-            </option>
-          ))}
-        </select>
-        <select value={fKoor} onChange={(e) => setFKoor(e.target.value)} title="Filter Koordinator">
-          <option value="all">Semua Koor</option>
-          {koorOpts.map((k) => (
-            <option key={k} value={k}>
-              {k}
-            </option>
-          ))}
-        </select>
-        <select value={fTahap} onChange={(e) => setFTahap(e.target.value)} title="Filter Tahap">
-          <option value="all">Semua Tahap</option>
-          {tahapOpts.map((st) => (
-            <option key={st} value={st}>
-              {STAGES[STAGE_INDEX[st]].label}
-            </option>
-          ))}
-        </select>
+        <Combobox
+          value={fSales}
+          onChange={setFSales}
+          options={salesOpts.map((s) => ({ value: s, label: s }))}
+          allLabel="Semua Sales"
+          title="Filter Sales"
+        />
+        <Combobox
+          value={fKoor}
+          onChange={setFKoor}
+          options={koorOpts.map((k) => ({ value: k, label: k }))}
+          allLabel="Semua Koor"
+          title="Filter Koordinator"
+        />
+        <Combobox
+          value={fTahap}
+          onChange={setFTahap}
+          options={tahapOpts.map((st) => ({ value: st, label: STAGES[STAGE_INDEX[st]].label }))}
+          allLabel="Semua Tahap"
+          title="Filter Tahap"
+        />
         {hasFilter && (
           <button
             className="btn ghost sm"

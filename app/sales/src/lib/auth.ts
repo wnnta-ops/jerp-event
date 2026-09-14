@@ -8,9 +8,7 @@ import { prisma } from "./prisma";
 export const authOptions: NextAuthOptions = {
   session: { strategy: "jwt" },
   secret: process.env.NEXTAUTH_SECRET,
-  // Path LENGKAP dengan basePath /sales — NextAuth membangun URL halaman dari
-  // origin (tanpa basePath Next), jadi harus eksplisit.
-  pages: { signIn: "/sales/login", error: "/sales/login" },
+  pages: { signIn: "/login" },
   providers: [
     CredentialsProvider({
       name: "Credentials",

@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { toast } from "@/components/Toast";
+import { DatePicker } from "@/components/DatePicker";
 
 export function DailyClient({ dates, initial }: { dates: { key: string; label: string }[]; initial: string }) {
   const [date, setDate] = useState(initial);
@@ -10,20 +11,13 @@ export function DailyClient({ dates, initial }: { dates: { key: string; label: s
   return (
     <>
       <div className="actions">
-        <label className="pill" style={{ display: "inline-flex", gap: 6, alignItems: "center" }}>
-          Periode:
-          <select
-            value={date}
-            onChange={(e) => setDate(e.target.value)}
-            style={{ border: "none", background: "transparent", fontWeight: 700, padding: 0, color: "var(--ink)" }}
-          >
-            {dates.map((d) => (
-              <option key={d.key} value={d.key}>
-                {d.label}
-              </option>
-            ))}
-          </select>
-        </label>
+        <DatePicker
+          value={date}
+          onChange={setDate}
+          markedKeys={dates.map((d) => d.key)}
+          todayKey={dates[0]?.key}
+          maxKey={dates[0]?.key}
+        />
         <a className="btn wa" href={`${src}&download=1`}>
           ⬇ Download gambar (PNG)
         </a>

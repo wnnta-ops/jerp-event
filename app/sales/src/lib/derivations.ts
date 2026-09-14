@@ -332,10 +332,100 @@ export async function dashboardKpis(today: Date): Promise<DashboardKpis> {
 // ---------------------------------------------------------------------------
 // Full Daily Report payload (drives the PNG + preview)
 // ---------------------------------------------------------------------------
+export interface DailyRecap {
+  wiByCluster: { cluster: string; total: number; murni: number; janjian: number }[];
+  utjNett: number; // month-to-date: UTJ gross − batal UTJ
+  utjToday: { code: string; n: number }[]; // today's UTJ per cluster.phase (e.g. C2.1)
+  utjBatal: number; // month-to-date batal kategori UTJ
+  waitingList: number; // current snapshot
+  holdUnit: number; // current snapshot
+  sprNett: number; // month-to-date: SPR gross − batal SPR
+  sprBatal: number; // month-to-date batal kategori SPR
+  nupTotal: number; // month-to-date NUP
+}
+
+// Roman phase → number, and "Cluster 2" → "2" for the C2.1 style code.
+const ROMAN: Record<string, string> = { I: "1", II: "2", III: "3", IV: "4", V: "5" };
+function clusterCode(name: string): string {
+  const n = name.replace(/[^0-9]/g, "");
+  return n ? `C${n}` : name;
+}
+
+export async function dailyRecap(day: Date): Promise<DailyRecap> {
+  const { gte: dayGte, lt: dayLt } = dayBounds(day);
+  const monthGte = monthBounds(day.getUTCFullYear(), day.getUTCMonth()).gte;
+
+  const [wiEvents, utjEvents, utjGross, nupMtd, sprGross, batalUtj, batalSpr, statuses, wlCount] =
+    await Promise.all([
+      prisma.pipelineEvent.findMany({
+        where: { type: "WI", eventDate: { gte: dayGte, lt: dayLt } },
+        select: { deal: { select: { channel: true, cluster: { select: { name: true } } } } },
+      }),
+      prisma.pipelineEvent.findMany({
+        where: { type: "UTJ", eventDate: { gte: dayGte, lt: dayLt } },
+        select: {
+          deal: {
+            select: { cluster: { select: { name: true } }, phase: { select: { name: true } } },
+          },
+        },
+      }),
+      countEvents("UTJ", monthGte, dayLt),
+      countEvents("NUP", monthGte, dayLt),
+      countEvents("SPR", monthGte, dayLt),
+      prisma.deal.count({
+        where: { batal: true, batalKategori: "UTJ", batalTanggal: { gte: monthGte, lt: dayLt } },
+      }),
+      prisma.deal.count({
+        where: { batal: true, batalKategori: "SPR", batalTanggal: { gte: monthGte, lt: dayLt } },
+      }),
+      statusCounts(),
+      prisma.deal.count({ where: { waitingList: true, batal: false } }),
+    ]);
+
+  // WI per cluster with murni (non-janjian) vs janjian breakdown
+  const wiMap = new Map<string, { total: number; murni: number; janjian: number }>();
+  for (const e of wiEvents) {
+    const c = e.deal.cluster?.name ?? "Lainnya";
+    const row = wiMap.get(c) ?? { total: 0, murni: 0, janjian: 0 };
+    row.total++;
+    if (e.deal.channel === "JANJIAN") row.janjian++;
+    else row.murni++;
+    wiMap.set(c, row);
+  }
+  const wiByCluster = [...wiMap.entries()]
+    .map(([cluster, v]) => ({ cluster, ...v }))
+    .sort((a, b) => a.cluster.localeCompare(b.cluster));
+
+  // today's UTJ per cluster.phase
+  const utjMap = new Map<string, number>();
+  for (const e of utjEvents) {
+    const cn = e.deal.cluster?.name;
+    const pn = e.deal.phase?.name;
+    const code = cn ? (pn ? `${clusterCode(cn)}.${ROMAN[pn] ?? pn}` : clusterCode(cn)) : "?";
+    utjMap.set(code, (utjMap.get(code) ?? 0) + 1);
+  }
+  const utjToday = [...utjMap.entries()]
+    .map(([code, n]) => ({ code, n }))
+    .sort((a, b) => a.code.localeCompare(b.code));
+
+  return {
+    wiByCluster,
+    utjNett: utjGross - batalUtj,
+    utjToday,
+    utjBatal: batalUtj,
+    waitingList: wlCount,
+    holdUnit: statuses["HOLD"] ?? 0,
+    sprNett: sprGross - batalSpr,
+    sprBatal: batalSpr,
+    nupTotal: nupMtd,
+  };
+}
+
 export interface DailyReportData {
   dayKey: string;
   isArchive: boolean;
   tally: DailyTally;
+  recap: DailyRecap;
   monthNet: number;
   monthTarget: number;
   monthPct: number;
@@ -343,9 +433,7 @@ export interface DailyReportData {
   sprYtd: number;
   annualPct: number;
   teams: TeamNet[];
-  utjByType: TypeNet[];
   weekly: number[];
-  clusterSisa: ClusterSisa[];
   hold: number;
   waitingList: number;
   salesPotensial: number;
@@ -357,17 +445,16 @@ export async function dailyReportData(
 ): Promise<DailyReportData> {
   const year = day.getUTCFullYear();
   const month0 = day.getUTCMonth();
-  const [tally, mNet, monthTarget, annualTarget, spr, teams, byType, weekly, cSisa, statuses, hot, wl] =
+  const [tally, recap, mNet, monthTarget, annualTarget, spr, teams, weekly, statuses, hot, wl] =
     await Promise.all([
       dailyTally(day),
+      dailyRecap(day),
       monthlyNet(year, month0),
       targetValue("MONTHLY", "UNIT", monthKey(day)),
       targetValue("ANNUAL", "SPR", ANNUAL_TARGET_PERIOD),
       sprYtd(year),
       teamNet(year, month0),
-      utjByType(year, month0),
       weeklyTrend(year, month0),
-      clusterSisa(),
       statusCounts(),
       prisma.deal.count({ where: { statusLead: "HOT", batal: false } }),
       prisma.deal.count({ where: { stage: "UTJ", unitId: null, batal: false } }),
@@ -377,6 +464,7 @@ export async function dailyReportData(
     dayKey: `${year}-${String(month0 + 1).padStart(2, "0")}-${String(day.getUTCDate()).padStart(2, "0")}`,
     isArchive: day.getTime() < today.getTime(),
     tally,
+    recap,
     monthNet: mNet,
     monthTarget,
     monthPct: monthTarget ? Math.round((mNet / monthTarget) * 100) : 0,
@@ -384,9 +472,7 @@ export async function dailyReportData(
     sprYtd: spr,
     annualPct: annualTarget ? Math.round((spr / annualTarget) * 100) : 0,
     teams,
-    utjByType: byType,
     weekly,
-    clusterSisa: cSisa,
     hold: statuses["HOLD"] ?? 0,
     waitingList: wl,
     salesPotensial: hot,
