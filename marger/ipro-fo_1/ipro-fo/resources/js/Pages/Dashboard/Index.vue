@@ -132,6 +132,10 @@ const brNilai = computed(() => (c.value.bast_ajb_br?.series ?? []).map((s) => ({
 // sekali akan membantah grafik di atasnya begitu periodenya diganti.
 // ══════════════════════════════════════════════════════════════════════════════════════
 
+// Cadangan untuk kunci Tumpuk yang tidak dikirim sub-dashboard. Dipakai supaya
+// penjumlahannya tetap menghasilkan 0, bukan melempar saat kuncinya absen.
+const TUMPUK_KOSONG: Tumpuk = { rows: [], keys: [] };
+
 const jumlah = (v: number[]): number => v.reduce((a, b) => a + (Number.isFinite(b) ? b : 0), 0);
 const jumlahBaris = (rows: Baris[]): number => jumlah(rows.map((r) => r.v));
 const jumlahSeri = (s: Seri[], i: number): number => (s[i] ? jumlah(s[i].v) : 0);
@@ -156,56 +160,56 @@ const posJml = (label: string, v: number, satuan: string, catatan?: string): Pos
 
 const CORONG = 'Tahap berikutnya adalah bagian dari angka ini, bukan tambahannya — karena itu keenam tahap tidak dijumlahkan.';
 
-const totalInisiasi = computed<Pos[]>(() => [posJml('Total berkas (tahap 1)', c.value.inisiasi_kpr.rows[0]?.v ?? 0, 'berkas', CORONG)]);
-const totalProses = computed<Pos[]>(() => [posJml('Total berkas (tahap 1)', c.value.proses_kpr.rows[0]?.v ?? 0, 'berkas', CORONG)]);
+const totalInisiasi = computed<Pos[]>(() => [posJml('Total berkas (tahap 1)', c.value.inisiasi_kpr?.rows[0]?.v ?? 0, 'berkas', CORONG)]);
+const totalProses = computed<Pos[]>(() => [posJml('Total berkas (tahap 1)', c.value.proses_kpr?.rows[0]?.v ?? 0, 'berkas', CORONG)]);
 
 const totalPenolakan = computed<Pos[]>(() => [
-    posJml('Reject BI Checking', jumlahSeri(c.value.penolakan.series, 0), 'berkas'),
-    posJml('Reject Proses KPR', jumlahSeri(c.value.penolakan.series, 1), 'berkas'),
-    posJml('Total penolakan', jumlahSeri(c.value.penolakan.series, 0) + jumlahSeri(c.value.penolakan.series, 1), 'berkas'),
+    posJml('Reject BI Checking', jumlahSeri((c.value.penolakan?.series ?? []), 0), 'berkas'),
+    posJml('Reject Proses KPR', jumlahSeri((c.value.penolakan?.series ?? []), 1), 'berkas'),
+    posJml('Total penolakan', jumlahSeri((c.value.penolakan?.series ?? []), 0) + jumlahSeri((c.value.penolakan?.series ?? []), 1), 'berkas'),
 ]);
 
 const totalRekening = computed<Pos[]>(() => [
-    posRp('Total saldo kas & bank', jumlahBaris(c.value.rekening.rows), 'Penjumlahan seluruh rekening; saldo berposisi kredit ikut mengurangi.'),
+    posRp('Total saldo kas & bank', jumlahBaris((c.value.rekening?.rows ?? [])), 'Penjumlahan seluruh rekening; saldo berposisi kredit ikut mengurangi.'),
 ]);
 
 const totalKasbon = computed<Pos[]>(() => [
-    posRp('Total diajukan', jumlahSeri(c.value.kasbon.series, 0)),
-    posRp('Total dipertanggungjawabkan', jumlahSeri(c.value.kasbon.series, 1)),
-    posRp('Belum dipertanggungjawabkan', jumlahSeri(c.value.kasbon.series, 0) - jumlahSeri(c.value.kasbon.series, 1)),
+    posRp('Total diajukan', jumlahSeri((c.value.kasbon?.series ?? []), 0)),
+    posRp('Total dipertanggungjawabkan', jumlahSeri((c.value.kasbon?.series ?? []), 1)),
+    posRp('Belum dipertanggungjawabkan', jumlahSeri((c.value.kasbon?.series ?? []), 0) - jumlahSeri((c.value.kasbon?.series ?? []), 1)),
 ]);
 
-const totalAging = computed<Pos[]>(() => [posRp('Total hutang supplier', jumlahBaris(c.value.aging.rows))]);
+const totalAging = computed<Pos[]>(() => [posRp('Total hutang supplier', jumlahBaris((c.value.aging?.rows ?? [])))]);
 
 const totalNeraca = computed<Pos[]>(() => [
-    posRp('Total ' + (c.value.neraca.rows[0]?.n ?? 'AKTIVA'), jumlahTumpukBaris(c.value.neraca, 0)),
-    posRp('Total ' + (c.value.neraca.rows[1]?.n ?? 'PASIVA'), jumlahTumpukBaris(c.value.neraca, 1)),
-    posRp('Selisih', jumlahTumpukBaris(c.value.neraca, 0) - jumlahTumpukBaris(c.value.neraca, 1), 'Neraca seimbang bila selisihnya nol.'),
+    posRp('Total ' + (c.value.neraca?.rows[0]?.n ?? 'AKTIVA'), jumlahTumpukBaris(c.value.neraca ?? TUMPUK_KOSONG, 0)),
+    posRp('Total ' + (c.value.neraca?.rows[1]?.n ?? 'PASIVA'), jumlahTumpukBaris(c.value.neraca ?? TUMPUK_KOSONG, 1)),
+    posRp('Selisih', jumlahTumpukBaris(c.value.neraca ?? TUMPUK_KOSONG, 0) - jumlahTumpukBaris(c.value.neraca ?? TUMPUK_KOSONG, 1), 'Neraca seimbang bila selisihnya nol.'),
 ]);
 
-const totalLabaRugi = computed<Pos[]>(() => [posRp('Laba/rugi kumulatif', jumlah(c.value.laba_rugi.vals))]);
-const totalAsetTetap = computed<Pos[]>(() => [posRp('Total nilai perolehan', jumlahTumpuk(c.value.aset_tetap))]);
+const totalLabaRugi = computed<Pos[]>(() => [posRp('Laba/rugi kumulatif', jumlah((c.value.laba_rugi?.vals ?? [])))]);
+const totalAsetTetap = computed<Pos[]>(() => [posRp('Total nilai perolehan', jumlahTumpuk(c.value.aset_tetap ?? TUMPUK_KOSONG))]);
 
 const totalBudget = computed<Pos[]>(() => [
-    posRp('Total realisasi', jumlah(c.value.budget.rows.map((r) => r.real))),
-    posRp('Total plafon', jumlah(c.value.budget.rows.map((r) => r.plafon))),
-    posRp('Sisa plafon', jumlah(c.value.budget.rows.map((r) => r.plafon)) - jumlah(c.value.budget.rows.map((r) => r.real))),
+    posRp('Total realisasi', jumlah((c.value.budget?.rows ?? []).map((r) => r.real))),
+    posRp('Total plafon', jumlah((c.value.budget?.rows ?? []).map((r) => r.plafon))),
+    posRp('Sisa plafon', jumlah((c.value.budget?.rows ?? []).map((r) => r.plafon)) - jumlah((c.value.budget?.rows ?? []).map((r) => r.real))),
 ]);
 
 const totalSpk = computed<Pos[]>(() => [
-    posJml('Total SPK', jumlah(c.value.spk.rows.map((r) => r.jml)), 'SPK'),
-    posRp('Total nilai SPK', jumlah(c.value.spk.rows.map((r) => r.nilai))),
+    posJml('Total SPK', jumlah((c.value.spk?.rows ?? []).map((r) => r.jml)), 'SPK'),
+    posRp('Total nilai SPK', jumlah((c.value.spk?.rows ?? []).map((r) => r.nilai))),
 ]);
 
-const totalProgress = computed<Pos[]>(() => [posJml('Total unit', jumlahTumpuk(c.value.progress), 'unit')]);
+const totalProgress = computed<Pos[]>(() => [posJml('Total unit', jumlahTumpuk(c.value.progress ?? TUMPUK_KOSONG), 'unit')]);
 
 const totalRetensi = computed<Pos[]>(() => [
-    posRp('Total ditahan', jumlahSeri(c.value.retensi.series, 0)),
-    posRp('Total dilepas', jumlahSeri(c.value.retensi.series, 1)),
+    posRp('Total ditahan', jumlahSeri((c.value.retensi?.series ?? []), 0)),
+    posRp('Total dilepas', jumlahSeri((c.value.retensi?.series ?? []), 1)),
 ]);
 
 // Per tahap, TIDAK dijumlahkan — lihat catatan 3 di kepala blok ini.
-const totalBastAjbBr = computed<Pos[]>(() => c.value.bast_ajb_br.series.map((s) => posRp(
+const totalBastAjbBr = computed<Pos[]>(() => (c.value.bast_ajb_br?.series ?? []).map((s) => posRp(
     'Total ' + s.n,
     s.nilai,
     'Tiga tahap ini menyangkut unit yang sama, jadi nilainya tidak dijumlahkan menjadi satu angka.',
@@ -214,10 +218,10 @@ const totalBastAjbBr = computed<Pos[]>(() => c.value.bast_ajb_br.series.map((s) 
 // bulanan di sebelahnya: ember bulanan di-dedupe per (unit, bulan), sehingga satu unit yang
 // dokumennya terbit ulang di bulan berbeda akan terhitung dua kali dan membantah angka rupiah
 // di sampingnya.
-const totalBastAjbBrUnit = computed<Pos[]>(() => c.value.bast_ajb_br.series.map((s) => posJml('Total ' + s.n, s.unit_tahunan, 'unit')));
+const totalBastAjbBrUnit = computed<Pos[]>(() => (c.value.bast_ajb_br?.series ?? []).map((s) => posJml('Total ' + s.n, s.unit_tahunan, 'unit')));
 
-const totalPiutang = computed<Pos[]>(() => [posRp('Total tagihan', jumlahTumpuk(c.value.piutang))]);
-const totalHpp = computed<Pos[]>(() => [posRp('Total HPP', jumlahTumpuk(c.value.hpp))]);
+const totalPiutang = computed<Pos[]>(() => [posRp('Total tagihan', jumlahTumpuk(c.value.piutang ?? TUMPUK_KOSONG))]);
+const totalHpp = computed<Pos[]>(() => [posRp('Total HPP', jumlahTumpuk(c.value.hpp ?? TUMPUK_KOSONG))]);
 
 function fmtDateTime(iso: string | null | undefined): string {
     if (!iso) return '—';
@@ -283,7 +287,7 @@ function fmtDateTime(iso: string | null | undefined): string {
         <!-- ══ Kisi 12 kolom ══ -->
         <div class="grid grid-cols-12 gap-3.5">
             <!-- 1 -->
-            <section v-if="charts.inisiasi_kpr" class="card col-span-12 lg:col-span-6 p-4">
+            <section v-if="c.inisiasi_kpr" class="card col-span-12 lg:col-span-6 p-4">
                 <div class="flex items-baseline justify-between gap-2">
                     <h2 class="text-sm font-bold">1 · Inisiasi KPR</h2>
                     <span class="text-[10.5px] font-bold tracking-wide text-neutral-400">KPR</span>
@@ -299,7 +303,7 @@ function fmtDateTime(iso: string | null | undefined): string {
             </section>
 
             <!-- 2 -->
-            <section v-if="charts.proses_kpr" class="card col-span-12 lg:col-span-6 p-4">
+            <section v-if="c.proses_kpr" class="card col-span-12 lg:col-span-6 p-4">
                 <div class="flex items-baseline justify-between gap-2">
                     <h2 class="text-sm font-bold">2 · Proses KPR</h2>
                     <span class="text-[10.5px] font-bold tracking-wide text-neutral-400">KPR</span>
@@ -314,7 +318,7 @@ function fmtDateTime(iso: string | null | undefined): string {
             </section>
 
             <!-- 3 -->
-            <section v-if="charts.penolakan" class="card col-span-12 lg:col-span-6 p-4">
+            <section v-if="c.penolakan" class="card col-span-12 lg:col-span-6 p-4">
                 <div class="flex items-baseline justify-between gap-2">
                     <h2 class="text-sm font-bold">3 · Penolakan BI Checking &amp; Proses KPR</h2>
                     <span class="text-[10.5px] font-bold tracking-wide text-neutral-400">KPR</span>
@@ -325,7 +329,7 @@ function fmtDateTime(iso: string | null | undefined): string {
             </section>
 
             <!-- 4 -->
-            <section v-if="charts.rekening" class="card col-span-12 lg:col-span-6 p-4">
+            <section v-if="c.rekening" class="card col-span-12 lg:col-span-6 p-4">
                 <div class="flex items-baseline justify-between gap-2">
                     <h2 class="text-sm font-bold">4 · Summary Rekening Ledger</h2>
                     <span class="text-[10.5px] font-bold tracking-wide text-neutral-400">CASH BOOK</span>
@@ -341,7 +345,7 @@ function fmtDateTime(iso: string | null | undefined): string {
             </section>
 
             <!-- 5 -->
-            <section v-if="charts.kasbon" class="card col-span-12 lg:col-span-6 p-4">
+            <section v-if="c.kasbon" class="card col-span-12 lg:col-span-6 p-4">
                 <div class="flex items-baseline justify-between gap-2">
                     <h2 class="text-sm font-bold">5 · Bon Sementara / Kasbon</h2>
                     <span class="text-[10.5px] font-bold tracking-wide text-neutral-400">CASH BOOK</span>
@@ -352,7 +356,7 @@ function fmtDateTime(iso: string | null | undefined): string {
             </section>
 
             <!-- 6 -->
-            <section v-if="charts.aging" class="card col-span-12 lg:col-span-6 p-4">
+            <section v-if="c.aging" class="card col-span-12 lg:col-span-6 p-4">
                 <div class="flex items-baseline justify-between gap-2">
                     <h2 class="text-sm font-bold">6 · Aging Hutang</h2>
                     <span class="text-[10.5px] font-bold tracking-wide text-neutral-400">ACCOUNT PAYABLE</span>
@@ -367,7 +371,7 @@ function fmtDateTime(iso: string | null | undefined): string {
             </section>
 
             <!-- 7 -->
-            <section v-if="charts.neraca" class="card col-span-12 lg:col-span-6 p-4">
+            <section v-if="c.neraca" class="card col-span-12 lg:col-span-6 p-4">
                 <div class="flex items-baseline justify-between gap-2">
                     <h2 class="text-sm font-bold">7 · Summary Neraca</h2>
                     <span class="text-[10.5px] font-bold tracking-wide text-neutral-400">GENERAL LEDGER</span>
@@ -378,7 +382,7 @@ function fmtDateTime(iso: string | null | undefined): string {
             </section>
 
             <!-- 8 -->
-            <section v-if="charts.laba_rugi" class="card col-span-12 lg:col-span-6 p-4">
+            <section v-if="c.laba_rugi" class="card col-span-12 lg:col-span-6 p-4">
                 <div class="flex items-baseline justify-between gap-2">
                     <h2 class="text-sm font-bold">8 · Summary Laba Rugi</h2>
                     <span class="text-[10.5px] font-bold tracking-wide text-neutral-400">GENERAL LEDGER</span>
@@ -389,7 +393,7 @@ function fmtDateTime(iso: string | null | undefined): string {
             </section>
 
             <!-- 9 -->
-            <section v-if="charts.aset_tetap" class="card col-span-12 lg:col-span-6 p-4">
+            <section v-if="c.aset_tetap" class="card col-span-12 lg:col-span-6 p-4">
                 <div class="flex items-baseline justify-between gap-2">
                     <h2 class="text-sm font-bold">9 · Overview Aset Tetap</h2>
                     <span class="text-[10.5px] font-bold tracking-wide text-neutral-400">ASET TETAP</span>
@@ -400,7 +404,7 @@ function fmtDateTime(iso: string | null | undefined): string {
             </section>
 
             <!-- 10 -->
-            <section v-if="charts.budget" class="card col-span-12 lg:col-span-6 p-4">
+            <section v-if="c.budget" class="card col-span-12 lg:col-span-6 p-4">
                 <div class="flex items-baseline justify-between gap-2">
                     <h2 class="text-sm font-bold">10 · Realisasi Budget</h2>
                     <span class="text-[10.5px] font-bold tracking-wide text-neutral-400">BUDGET CONTROL</span>
@@ -411,7 +415,7 @@ function fmtDateTime(iso: string | null | undefined): string {
             </section>
 
             <!-- 11 — dua ukuran, dua panel -->
-            <section v-if="charts.spk" class="card col-span-12 p-4">
+            <section v-if="c.spk" class="card col-span-12 p-4">
                 <div class="flex items-baseline justify-between gap-2">
                     <h2 class="text-sm font-bold">11 · SPK per Cluster</h2>
                     <span class="text-[10.5px] font-bold tracking-wide text-neutral-400">CONTRACTOR MGT</span>
@@ -434,7 +438,7 @@ function fmtDateTime(iso: string | null | undefined): string {
             </section>
 
             <!-- 12 -->
-            <section v-if="charts.progress" class="card col-span-12 lg:col-span-6 p-4">
+            <section v-if="c.progress" class="card col-span-12 lg:col-span-6 p-4">
                 <div class="flex items-baseline justify-between gap-2">
                     <h2 class="text-sm font-bold">12 · Progress Lapangan</h2>
                     <span class="text-[10.5px] font-bold tracking-wide text-neutral-400">CONTRACTOR MGT</span>
@@ -445,7 +449,7 @@ function fmtDateTime(iso: string | null | undefined): string {
             </section>
 
             <!-- 13 -->
-            <section v-if="charts.retensi" class="card col-span-12 lg:col-span-6 p-4">
+            <section v-if="c.retensi" class="card col-span-12 lg:col-span-6 p-4">
                 <div class="flex items-baseline justify-between gap-2">
                     <h2 class="text-sm font-bold">13 · Summary Retensi</h2>
                     <span class="text-[10.5px] font-bold tracking-wide text-neutral-400">CONTRACTOR MGT</span>
@@ -456,7 +460,7 @@ function fmtDateTime(iso: string | null | undefined): string {
             </section>
 
             <!-- 14–16 — tiga tahapan, satu kartu -->
-            <section v-if="charts.bast_ajb_br" class="card col-span-12 p-4">
+            <section v-if="c.bast_ajb_br" class="card col-span-12 p-4">
                 <div class="flex items-baseline justify-between gap-2">
                     <h2 class="text-sm font-bold">14–16 · BAST → AJB → Booked Revenue</h2>
                     <span class="text-[10.5px] font-bold tracking-wide text-neutral-400">BOOKED REVENUE</span>
@@ -483,7 +487,7 @@ function fmtDateTime(iso: string | null | undefined): string {
             </section>
 
             <!-- 17 -->
-            <section v-if="charts.piutang" class="card col-span-12 lg:col-span-6 p-4">
+            <section v-if="c.piutang" class="card col-span-12 lg:col-span-6 p-4">
                 <div class="flex items-baseline justify-between gap-2">
                     <h2 class="text-sm font-bold">17 · Rekonsiliasi Piutang</h2>
                     <span class="text-[10.5px] font-bold tracking-wide text-neutral-400">PIUTANG USAHA (BOOKED)</span>
@@ -494,7 +498,7 @@ function fmtDateTime(iso: string | null | undefined): string {
             </section>
 
             <!-- 18 -->
-            <section v-if="charts.hpp" class="card col-span-12 lg:col-span-6 p-4">
+            <section v-if="c.hpp" class="card col-span-12 lg:col-span-6 p-4">
                 <div class="flex items-baseline justify-between gap-2">
                     <h2 class="text-sm font-bold">18 · Summary HPP</h2>
                     <span class="text-[10.5px] font-bold tracking-wide text-neutral-400">COGS</span>
