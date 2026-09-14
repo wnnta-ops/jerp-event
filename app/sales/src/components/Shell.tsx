@@ -8,13 +8,19 @@ import type { Role } from "@prisma/client";
 import { ROLE_LABEL } from "@/lib/constants";
 import { canManageUsers } from "@/lib/user-access";
 
+// Tipe ditulis EKSPLISIT, bukan disimpulkan. Tanpa ini ADMIN_GROUP — yang itemnya
+// tidak punya `tag` — melebarkan tipe gabungan NAV, dan `it.tag` pada Daily Report
+// gagal dikompilasi: "Property 'tag' does not exist".
+type NavItem = { href: string; label: string; ic: string; tag?: string };
+type NavGroup = { group: string; items: NavItem[] };
+
 // Grup menu khusus pengelola user — hanya tampil bila boleh (canManageUsers).
-const ADMIN_GROUP = {
+const ADMIN_GROUP: NavGroup = {
   group: "Administrasi",
   items: [{ href: "/users", label: "Manajemen User", ic: "👥" }],
 };
 
-const NAV = [
+const NAV: NavGroup[] = [
   {
     group: "Kerja Harian",
     items: [
