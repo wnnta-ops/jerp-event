@@ -309,4 +309,71 @@
             </div>
         </div>
     </div>
+
+    {{-- ── Sales Report — SPR per Bulan (tiga tampilan, pilih di pojok kanan atas) ──────
+         Label angka di atas tiap batang & titik digambar oleh plugin kecil di bawah ini.
+         Chart.js tidak punya label nilai bawaan, dan chartjs-plugin-datalabels tidak ikut
+         dibundel Filament. Satu-satunya pintu masuk plugin adalah window.filamentChartJsPlugins
+         (lihat components/chart.js: `plugins: window.filamentChartJsPlugins ?? []`), dan itu
+         GLOBAL untuk semua grafik di halaman — karena itu plugin ini hanya bekerja pada grafik
+         yang meminta lewat options.plugins.labelNilai.aktif.
+
+         Digambar di afterDatasetsDraw, BUKAN di animation.onComplete: kanvas digambar ulang
+         setiap kali kursor bergerak di atas grafik, sehingga label yang dilukis sekali seusai
+         animasi akan terhapus begitu grafiknya disentuh. --}}
+    @once
+        <script>
+            window.filamentChartJsPlugins = window.filamentChartJsPlugins ?? [];
+            if (! window.filamentChartJsPlugins.some((p) => p && p.id === 'labelNilai')) {
+                window.filamentChartJsPlugins.push({
+                    id: 'labelNilai',
+                    afterDatasetsDraw(chart) {
+                        const minta = chart.options?.plugins?.labelNilai;
+                        if (! minta || ! minta.aktif) return;
+
+                        const ctx = chart.ctx;
+                        const jumlahBulan = (chart.data.labels || []).length || 1;
+                        // Berapa deret BATANG yang sedang terlihat — itu yang berbagi lebar
+                        // satu bulan. Deret garis tidak ikut membagi, titiknya di tengah bulan.
+                        let batangTerlihat = 0;
+                        chart.data.datasets.forEach((ds, i) => {
+                            if (chart.isDatasetVisible(i) && (ds.type || chart.config.type) === 'bar') batangTerlihat++;
+                        });
+
+                        ctx.save();
+                        ctx.font = '600 10px ui-sans-serif, system-ui, -apple-system, sans-serif';
+                        ctx.textAlign = 'center';
+                        ctx.textBaseline = 'bottom';
+
+                        chart.data.datasets.forEach((ds, i) => {
+                            if (! chart.isDatasetVisible(i)) return;
+                            const meta = chart.getDatasetMeta(i);
+                            const batang = (ds.type || chart.config.type) === 'bar';
+                            // Jatah lebar satu label. Untuk batang, lebar satu bulan dibagi
+                            // banyaknya batang yang terlihat; untuk garis, satu bulan penuh.
+                            const jatah = (chart.chartArea.width / jumlahBulan) / (batang ? Math.max(1, batangTerlihat) : 1);
+                            ctx.fillStyle = ds.borderColor || ds.backgroundColor || '#64748b';
+
+                            meta.data.forEach((el, j) => {
+                                const v = ds.data[j];
+                                if (v === null || v === undefined) return;
+                                const teks = String(v);
+                                // Diukur, bukan ditebak: kalau angkanya tidak muat di jatahnya,
+                                // label dilewati supaya tidak bertumpuk jadi bubur. Angkanya
+                                // tetap terbaca lewat tooltip saat kursor menyentuh kolomnya.
+                                if (ctx.measureText(teks).width > jatah - 3) return;
+                                ctx.fillText(teks, el.x, el.y - 3);
+                            });
+                        });
+
+                        ctx.restore();
+                    },
+                });
+            }
+        </script>
+    @endonce
+
+    <div class="mt-4">
+        @livewire(\App\Filament\Fo\Widgets\SprBulananChart::class)
+    </div>
 </x-filament-panels::page>

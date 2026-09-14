@@ -7,7 +7,7 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
 /**
- * Kartu kredit/VA yang dipakai sebuah bon sementara berpembayaran Debit VA.
+ * Kartu debit/VA yang dipakai sebuah bon sementara berpembayaran Debit VA.
  *
  * Nullable: pembayaran reguler tidak memakai kartu, dan seluruh bon yang sudah dibayar sebelum
  * kolom ini ada memang tidak punya kartunya. Kewajibannya ditegakkan saat pembayaran dicatat

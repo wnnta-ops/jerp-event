@@ -271,6 +271,13 @@ final class JournalService
      */
     public function barisTanpaCostCenter(BsJournal $journal): array
     {
+        /* Jurnal migrasi data awal dibebaskan seluruhnya — lihat BsJournal::SUMBER_MIGRASI.
+           Ia memindahkan saldo yang sudah terjadi di sistem lama, bukan mencatat belanja baru,
+           jadi tidak ada anggaran yang bisa direalisasikannya. */
+        if ($journal->migrasiDataAwal()) {
+            return [];
+        }
+
         $headerCc = $journal->cost_center_id ? (int) $journal->cost_center_id : null;
 
         $kurang = [];

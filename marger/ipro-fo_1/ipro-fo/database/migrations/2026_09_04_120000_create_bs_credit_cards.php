@@ -8,7 +8,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
 /**
- * Set Up Credit Card (Cash Book → Setup) — kartu kredit/VA beserta saldonya.
+ * Set Up Debit Card (Cash Book → Setup) — kartu debit/VA beserta saldonya.
  *
  * SALDONYA TIDAK DIUBAH LANGSUNG. Setiap penambahan & pengurangan lewat PERMINTAAN yang harus
  * disetujui dulu (bs_credit_card_requests). Saldo yang bisa disunting bebas tidak punya jejak
@@ -58,7 +58,7 @@ return new class extends Migration
             $t->date('expired_date')->nullable();
             $t->string('status', 16)->default('pending');
             // Asal permintaannya — 'cash_advance' + id bon, atau NULL bila diajukan manual dari
-            // layar Set Up Credit Card. Tanpa ini, permintaan yang lahir otomatis dari bon tidak
+            // layar Set Up Debit Card. Tanpa ini, permintaan yang lahir otomatis dari bon tidak
             // bisa ditelusuri balik ke bon mana.
             $t->string('source_type', 32)->nullable();
             $t->unsignedBigInteger('source_id')->nullable();

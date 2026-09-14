@@ -502,7 +502,15 @@ function rentangBaris(j: any) { return barisTampil(j).length; }
                             <td class="px-4 py-2.5 align-top">
                                 <span v-for="cc in (j.cost_centers ?? [])" :key="cc"
                                       class="mb-0.5 mr-1 inline-block rounded-md bg-primary-50 px-2 py-0.5 text-[11px] font-medium text-primary-700 ring-1 ring-primary-200 dark:bg-primary-900/30 dark:text-primary-300 dark:ring-primary-800">{{ cc }}</span>
-                                <span v-if="!(j.cost_centers ?? []).length && !(j.cost_center_kurang ?? []).length" class="text-[11px] text-neutral-400">—</span>
+                                <!-- Jurnal migrasi data awal: cost center-nya memang dibebaskan.
+                                     Disebutkan apa adanya, bukan dibiarkan "—" — tanda pisah itu
+                                     terbaca seperti cost center yang lupa diisi. -->
+                                <span v-if="j.cost_center_migrasi"
+                                      class="inline-block rounded-md bg-neutral-100 px-2 py-0.5 text-[11px] font-medium text-neutral-600 ring-1 ring-neutral-200 dark:bg-neutral-800 dark:text-neutral-300 dark:ring-neutral-700"
+                                      title="Jurnal hasil migrasi data awal — dibebaskan dari kewajiban cost center karena memindahkan saldo yang sudah terjadi di sistem lama, bukan mencatat realisasi anggaran baru.">
+                                    Migrasi Data Awal
+                                </span>
+                                <span v-else-if="!(j.cost_centers ?? []).length && !(j.cost_center_kurang ?? []).length" class="text-[11px] text-neutral-400">—</span>
                                 <span v-if="(j.cost_center_kurang ?? []).length"
                                       class="mt-0.5 block text-[11px] font-medium text-danger-600 dark:text-danger-400"
                                       :title="'Belum bercost center: ' + (j.cost_center_kurang ?? []).join(', ') + '. Jurnal ini tidak bisa di-approve sebelum dilengkapi.'">
@@ -532,6 +540,8 @@ function rentangBaris(j: any) { return barisTampil(j).length; }
                 <b>tidak bisa berpindah dari Final ke Approved</b> sebelum dilengkapi: baris tanpa cost center tetap menjadi beban di GL
                 tetapi tidak pernah terbaca sebagai realisasi di Budget Control. Sebagian akun neraca memang dikecualikan
                 (bertanda <i>boleh tanpa cost center</i>) dan tidak ikut dihitung kurang. Arahkan kursor ke keterangan merahnya untuk melihat akun mana.
+                Jurnal bertanda <b>Migrasi Data Awal</b> (Import Jurnal &amp; Import Saldo Awal) dibebaskan seluruhnya: ia memindahkan saldo yang
+                sudah terjadi di sistem lama, bukan mencatat realisasi anggaran baru.
             </p>
             <p v-if="adaYangTerpotong" class="border-t border-neutral-200 px-4 py-2 text-[11px] text-neutral-400 dark:border-neutral-800">
                 Sebagian daftar pilihan saringan dibatasi {{ batasOpsi }} nilai teratas. Persempit rentang tanggalnya bila nilai yang Anda cari belum muncul.

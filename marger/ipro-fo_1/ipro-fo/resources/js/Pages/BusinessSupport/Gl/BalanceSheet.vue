@@ -3,6 +3,7 @@ import { computed, ref } from 'vue';
 import { router, Link } from '@inertiajs/vue3';
 import { ArrowLeft, Scale, FileSpreadsheet } from 'lucide-vue-next';
 import Badge from '@/Components/UI/Badge.vue';
+import AnalisaKenaikan from '@/Components/UI/AnalisaKenaikan.vue';
 
 type Line = { name: string; amount: number };
 type Group = { name: string; code: string; total: number; lines: Line[] };
@@ -16,6 +17,7 @@ const props = defineProps<{
     equity: Group[];
     total_assets: number;
     total_passiva: number;
+    analisa: any;
 }>();
 
 function fmt(v: number) {
@@ -116,5 +118,9 @@ function excel() { window.location.href = route('bs.gl.balancesheet.export', { a
         </div>
 
         <p v-if="!balanced" class="text-center text-sm text-danger-600">Selisih Aktiva vs Passiva: {{ fmt(total_assets - total_passiva) }} — periksa jurnal.</p>
+
+        <!-- Pembandingnya AKHIR TAHUN LALU, bukan tanggal yang sama tahun lalu: yang ditanyakan
+             orang pada neraca adalah "sejak awal tahun, apa yang bergerak". -->
+        <AnalisaKenaikan :analisa="analisa" judul="Analisa Pergerakan Neraca" />
     </div>
 </template>

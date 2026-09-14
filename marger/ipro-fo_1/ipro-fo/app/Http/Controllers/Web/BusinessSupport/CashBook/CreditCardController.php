@@ -19,9 +19,9 @@ use Inertia\Inertia;
 use Inertia\Response;
 
 /**
- * Cash Book → Setup → Set Up Credit Card.
+ * Cash Book → Setup → Set Up Debit Card.
  *
- * Kartu kredit/VA beserta saldonya. Saldo TIDAK bisa disunting langsung — setiap penambahan &
+ * Kartu debit/VA beserta saldonya. Saldo TIDAK bisa disunting langsung — setiap penambahan &
  * pengurangan lewat permintaan yang disetujui, sebab angka itulah yang menentukan sebuah kartu
  * boleh dipakai membayar atau tidak.
  */

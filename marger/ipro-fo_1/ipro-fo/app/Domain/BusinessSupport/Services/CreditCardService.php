@@ -10,7 +10,7 @@ use App\Exceptions\BusinessRuleException;
 use Illuminate\Support\Facades\DB;
 
 /**
- * Saldo & masa berlaku kartu kredit/VA — SELALU lewat permintaan yang disetujui.
+ * Saldo & masa berlaku kartu debit/VA — SELALU lewat permintaan yang disetujui.
  *
  * Tidak ada jalan menyunting saldo secara langsung, dan itu disengaja: angka saldo menentukan
  * sebuah kartu boleh dipakai membayar atau tidak, sehingga setiap perubahannya harus punya
@@ -159,7 +159,7 @@ class CreditCardService
     /**
      * Permintaan MASA BERLAKU otomatis dari pembayaran bon sementara lewat Debit VA.
      *
-     * SALDONYA TIDAK LAGI DIAJUKAN DI SINI. Kolom "Penambahan" pada Set Up Credit Card kini
+     * SALDONYA TIDAK LAGI DIAJUKAN DI SINI. Kolom "Penambahan" pada Set Up Debit Card kini
      * dibaca langsung dari pembayaran Debit VA yang tersimpan (CreditCardClosingService), sebab
      * itulah yang diminta: penambahan berasal dari nominal pembayaran Debit VA. Mengajukan
      * permintaan penambahan otomatis di samping itu akan melahirkan angka KEDUA untuk uang yang

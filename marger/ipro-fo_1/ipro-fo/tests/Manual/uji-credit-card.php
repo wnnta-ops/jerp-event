@@ -1,7 +1,7 @@
 <?php
 
 /**
- * Uji Set Up Credit Card + pembayaran/realisasi bon sementara lewat Debit VA.
+ * Uji Set Up Debit Card + pembayaran/realisasi bon sementara lewat Debit VA.
  *
  * Yang dibuktikan:
  *   1. Kartu baru lahir NONAKTIF & bersaldo 0, dan kartu nonaktif DITOLAK saat membayar.
@@ -238,7 +238,7 @@ $ok('Uang Muka Operasional pun belum bergerak sebelum dialokasikan',
     'selisih '.round($saldoGL($akunUM->id) - $glUmAwal, 2));
 
 /* Yang lahir otomatis kini MASA BERLAKU saja. Permintaan penambahan saldo ditiadakan: kolom
-   "Penambahan" pada Set Up Credit Card dibaca langsung dari pembayaran Debit VA yang tersimpan,
+   "Penambahan" pada Set Up Debit Card dibaca langsung dari pembayaran Debit VA yang tersimpan,
    jadi permintaan saldo di sampingnya akan menjadi angka kedua untuk uang yang sama. */
 $permintaanBon = BsCreditCardRequest::where('source_type', 'cash_advance')->where('source_id', $bonVA->id)->get();
 $pExpiry = $permintaanBon->firstWhere('type', 'expiry');

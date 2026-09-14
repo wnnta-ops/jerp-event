@@ -181,9 +181,24 @@ const DASAR = {
     console.log('\n=== 4. SIDEBAR ===');
 
     const nav = fs.readFileSync(NAV, 'utf8');
-    const master = (nav.match(/\{ label: 'Realisasi Bon Sementara', href: 'bs\.advance\.index' \},\s*\n\s*\{ label: '([^']+)'/) || [])[1];
-    cek('menu Outstanding Kasbon berada TEPAT di bawah Realisasi Bon Sementara',
-        master === 'Outstanding Kasbon', master ?? '(tidak ada menu sesudahnya)');
+
+    /* Tempatnya di Report/Query, TEPAT di bawah Rekap Bon Sementara — bukan lagi di Master.
+       Dicocokkan pada TETANGGA LANGSUNGNYA, bukan sekadar "namanya ada di berkas ini": nama itu
+       juga muncul sebagai rute dan sebagai komentar, sehingga pemeriksaan yang longgar akan tetap
+       lulus walau menunya sudah pindah ke grup mana pun. */
+    const sesudahRekap = (nav.match(/\{ label: 'Rekap Bon Sementara', href: 'bs\.advance\.report' \},\s*\n(?:\s*\/\/[^\n]*\n)*\s*\{ label: '([^']+)'/) || [])[1];
+    cek('menu Outstanding Kasbon berada TEPAT di bawah Rekap Bon Sementara',
+        sesudahRekap === 'Outstanding Kasbon', sesudahRekap ?? '(tidak ada menu sesudahnya)');
+
+    /* Dan BENAR-BENAR sudah keluar dari Master. Tanpa pemeriksaan ini, menu yang tersalin ganda
+       (muncul di dua grup) akan lolos begitu saja oleh pemeriksaan di atas. */
+    const sesudahRealisasi = (nav.match(/\{ label: 'Realisasi Bon Sementara', href: 'bs\.advance\.index' \},\s*\n\s*\{ label: '([^']+)'/) || [])[1];
+    cek('menu Outstanding Kasbon TIDAK lagi tertinggal di grup Master',
+        sesudahRealisasi !== 'Outstanding Kasbon', String(sesudahRealisasi));
+    cek('hanya ada SATU menu Outstanding Kasbon di seluruh sidebar',
+        (nav.match(/label: 'Outstanding Kasbon'/g) || []).length === 1,
+        String((nav.match(/label: 'Outstanding Kasbon'/g) || []).length));
+
     cek('menunya menunjuk rute Outstanding Kasbon', nav.includes("href: 'bs.cashbook.outstanding-kasbon'"));
 
     console.log('\n────────────────────────────────');

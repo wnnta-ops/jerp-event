@@ -660,6 +660,9 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
     Route::get('/business-support/tutup-buku/neraca-awal',    [BsClosingController::class, 'neracaAwal'])->name('bs.closing.neraca');
     Route::get('/business-support/tutup-buku/jurnal-saldo-awal', [BsClosingController::class, 'saldoAwalJurnal'])->name('bs.closing.saldoawal');
     Route::get('/business-support/tutup-buku/jurnal-saldo-awal/csv', [BsClosingController::class, 'saldoAwalCsv'])->name('bs.closing.saldoawal.csv');
+    // Import Saldo Awal dari Excel — template .xlsx + unggahan; satu jurnal saldo awal per tahun.
+    Route::get('/business-support/tutup-buku/jurnal-saldo-awal/template', [BsClosingController::class, 'saldoAwalTemplate'])->name('bs.closing.saldoawal.template');
+    Route::post('/business-support/tutup-buku/jurnal-saldo-awal/import', [BsClosingController::class, 'saldoAwalImport'])->name('bs.closing.saldoawal.import');
     Route::post('/business-support/tutup-buku/close',         [BsClosingController::class, 'close'])->name('bs.closing.close');
     Route::post('/business-support/tutup-buku/reopen',        [BsClosingController::class, 'reopen'])->name('bs.closing.reopen');
     Route::post('/business-support/tutup-buku/year',          [BsClosingController::class, 'closeYear'])->name('bs.closing.year');
@@ -676,6 +679,8 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
     Route::get('/business-support/payable/create',            [BsApController::class, 'create'])->name('bs.ap.create');
     Route::post('/business-support/payable',                  [BsApController::class, 'store'])->name('bs.ap.store');
     Route::get('/business-support/payable-aging',             [BsApController::class, 'aging'])->name('bs.ap.aging');
+    // Aging Hutang Supplier — outstanding per supplier: 20 terbesar + rangkuman sisanya.
+    Route::get('/business-support/payable-aging-supplier',    [BsApController::class, 'agingSupplier'])->name('bs.ap.aging-supplier');
     Route::get('/business-support/payable-aging-pdf',         [BsApController::class, 'agingExportPdf'])->name('bs.ap.aging.export-pdf');   // #139
     Route::get('/business-support/payable-aging-excel',       [BsApController::class, 'agingExportExcel'])->name('bs.ap.aging.export-excel'); // #139
     Route::get('/business-support/payable-kartu',             [BsApController::class, 'card'])->name('bs.ap.card');
@@ -798,7 +803,7 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
     Route::put('/business-support/cash-book-signature-barcode/{barcode}',  [BsSignatureBarcodeController::class, 'update'])->name('bs.cashbook.signature-barcode.update');
     Route::delete('/business-support/cash-book-signature-barcode/{barcode}', [BsSignatureBarcodeController::class, 'destroy'])->name('bs.cashbook.signature-barcode.destroy');
 
-    // Cash Book → Setup → Set Up Credit Card: kartu kredit/VA, saldo & masa berlakunya.
+    // Cash Book → Setup → Set Up Debit Card: kartu debit/VA, saldo & masa berlakunya.
     // Saldo hanya berubah lewat permintaan yang disetujui (approve/reject di bawah).
     Route::get('/business-support/credit-cards',                        [\App\Http\Controllers\Web\BusinessSupport\CashBook\CreditCardController::class, 'index'])->name('bs.cashbook.credit-card.index');
     Route::post('/business-support/credit-cards',                       [\App\Http\Controllers\Web\BusinessSupport\CashBook\CreditCardController::class, 'store'])->name('bs.cashbook.credit-card.store');
@@ -806,7 +811,7 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
     Route::post('/business-support/credit-cards/{card}/requests',       [\App\Http\Controllers\Web\BusinessSupport\CashBook\CreditCardController::class, 'requestStore'])->name('bs.cashbook.credit-card.request');
     Route::post('/business-support/credit-card-requests/{creditCardRequest}/approve', [\App\Http\Controllers\Web\BusinessSupport\CashBook\CreditCardController::class, 'approve'])->name('bs.cashbook.credit-card.approve');
     Route::post('/business-support/credit-card-requests/{creditCardRequest}/reject',  [\App\Http\Controllers\Web\BusinessSupport\CashBook\CreditCardController::class, 'reject'])->name('bs.cashbook.credit-card.reject');
-    // Closing Credit Card per kartu per bulan — sisa saldonya menjadi saldo awal bulan berikutnya.
+    // Closing Debit Card per kartu per bulan — sisa saldonya menjadi saldo awal bulan berikutnya.
     Route::post('/business-support/credit-cards/{card}/closing',        [\App\Http\Controllers\Web\BusinessSupport\CashBook\CreditCardController::class, 'close'])->name('bs.cashbook.credit-card.close');
     Route::post('/business-support/credit-cards/{card}/closing/buka',   [\App\Http\Controllers\Web\BusinessSupport\CashBook\CreditCardController::class, 'reopen'])->name('bs.cashbook.credit-card.reopen');
     // Outstanding Kasbon per karyawan — dari mutasi akun Uang Muka Operasional.
@@ -902,6 +907,8 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
     // #88: laporan bon sementara (4 bucket). Path sibling agar tidak bentrok {advance}.
     Route::get('/business-support/bon-sementara-laporan',           [BsAdvanceController::class, 'report'])->name('bs.advance.report');
     Route::get('/business-support/bon-sementara-kartu',             [BsAdvanceController::class, 'card'])->name('bs.advance.card');
+    // Saldo Debit Card per nomor bon — penambahan/pemakaian/sisa saldo kartu, dipecah per bon.
+    Route::get('/business-support/saldo-debit-card',                [BsAdvanceController::class, 'cardBalance'])->name('bs.advance.card-balance');
     Route::get('/business-support/bon-sementara-kartu-excel',        [BsAdvanceController::class, 'cardExcel'])->name('bs.advance.card.excel'); // #9
     Route::get('/business-support/bon-sementara-kartu-pdf',          [BsAdvanceController::class, 'cardPdf'])->name('bs.advance.card.pdf');     // #9
     Route::post('/business-support/bon-sementara/{advance}/bayar',  [BsAdvanceController::class, 'pay'])->name('bs.advance.pay');
@@ -1024,6 +1031,7 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
     Route::get('/business-support/budget-query/realization',    [BsBudgetQueryController::class, 'realization'])->name('bs.budget.query.realization');
     Route::get('/business-support/budget-query/allocation',     [BsBudgetQueryController::class, 'allocation'])->name('bs.budget.query.allocation');
     Route::get('/business-support/budget-query/correction',     [BsBudgetQueryController::class, 'correction'])->name('bs.budget.query.correction');
+    Route::get('/business-support/budget-query/report',         [BsBudgetQueryController::class, 'report'])->name('bs.budget.query.report');
 
     Route::get('/business-support/bulk-upload/{mode}',           [BsBulkUploadController::class, 'form'])->whereIn('mode', ['asset', 'budget', 'stock'])->name('bs.bulk.form');
     Route::post('/business-support/bulk-upload/{mode}',          [BsBulkUploadController::class, 'store'])->whereIn('mode', ['asset', 'budget', 'stock'])->name('bs.bulk.store');
@@ -1305,6 +1313,16 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
     Route::get('/kpr-database/reject-proses-kpr',             [\App\Http\Controllers\Web\BankLoan\KprDatabaseController::class, 'rejectProcess'])->name('kpr.database.reject-kpr');
     Route::get('/kpr-database/reject-proses-kpr-excel',       [\App\Http\Controllers\Web\BankLoan\KprDatabaseController::class, 'rejectProcessExcel'])->name('kpr.database.reject-kpr.excel'); // unduh rincian Excel
     Route::get('/kpr-database/reject-proses-kpr-memo-batal', [\App\Http\Controllers\Web\BankLoan\KprDatabaseController::class, 'rejectProcessMemoForm'])->name('kpr.database.reject-kpr.memo-form'); // form editable Memo Rekom Batal (massal / per-baris) — ?ids=
+    // Realisasi vs Budget — target akad KPR per bulan vs realisasinya; target diisi lewat import Excel.
+    Route::get('/kpr-database/realisasi-vs-budget',            [\App\Http\Controllers\Web\BankLoan\KprTargetRealisasiController::class, 'index'])->name('kpr.database.realisasi-budget');
+    Route::get('/kpr-database/realisasi-vs-budget/template',   [\App\Http\Controllers\Web\BankLoan\KprTargetRealisasiController::class, 'template'])->name('kpr.database.realisasi-budget.template');
+    Route::post('/kpr-database/realisasi-vs-budget/import',    [\App\Http\Controllers\Web\BankLoan\KprTargetRealisasiController::class, 'import'])->name('kpr.database.realisasi-budget.import');
+    // Realisasi KPR per Bank — unit akad per cluster per bank, dihitung dari data akad.
+    Route::get('/kpr-database/realisasi-per-bank',             [\App\Http\Controllers\Web\BankLoan\KprRealisasiBankController::class, 'index'])->name('kpr.database.realisasi-bank');
+    // Realisasi KPR per Cluster — dua tabel Exsum (status unit & outstanding), diisi lewat import.
+    Route::get('/kpr-database/realisasi-per-cluster',          [\App\Http\Controllers\Web\BankLoan\KprRealisasiClusterController::class, 'index'])->name('kpr.database.realisasi-cluster');
+    Route::get('/kpr-database/realisasi-per-cluster/template', [\App\Http\Controllers\Web\BankLoan\KprRealisasiClusterController::class, 'template'])->name('kpr.database.realisasi-cluster.template');
+    Route::post('/kpr-database/realisasi-per-cluster/import',  [\App\Http\Controllers\Web\BankLoan\KprRealisasiClusterController::class, 'import'])->name('kpr.database.realisasi-cluster.import');
 
     // Legal (PPJB, AJB, BAST, IMB, Sertifikat) — sudah PINDAH ke FO. Rutenya dimatikan lewat sakelar, bukan
     // dihapus: menunya sudah tidak ada di sidebar BO, tetapi alamatnya masih

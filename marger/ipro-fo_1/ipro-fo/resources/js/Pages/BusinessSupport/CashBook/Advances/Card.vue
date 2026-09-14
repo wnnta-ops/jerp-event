@@ -6,7 +6,9 @@ import Badge from '@/Components/UI/Badge.vue';
 import EmptyState from '@/Components/UI/EmptyState.vue';
 import ColumnFilter from '@/Components/UI/ColumnFilter.vue';
 
-interface Row { no: string; date: string | null; holder: string | null; department: string | null; purpose: string | null; amount: number; realized: number; outstanding: number; status: string }
+// amount = Kasbon Awal (nominal saat pengajuan) · refund = uang yang kembali ke kas ·
+// unused = Tidak Terpakai (sisa yang tidak pernah dipakai, mis. saldo kartu yang tak dialokasikan).
+interface Row { no: string; date: string | null; holder: string | null; department: string | null; purpose: string | null; amount: number; realized: number; refund: number; unused: number; outstanding: number; status: string }
 const props = defineProps<{ rows: Row[]; statuses: Record<string, string> }>();
 
 function fmtRp(v: number) { return Number(v ?? 0).toLocaleString('id-ID'); }
@@ -56,6 +58,8 @@ const exportParams = computed<Record<string, any>>(() => {
 const totals = computed(() => ({
     amount: filteredRows.value.reduce((s, r) => s + Number(r.amount), 0),
     realized: filteredRows.value.reduce((s, r) => s + Number(r.realized), 0),
+    refund: filteredRows.value.reduce((s, r) => s + Number(r.refund), 0),
+    unused: filteredRows.value.reduce((s, r) => s + Number(r.unused), 0),
     outstanding: filteredRows.value.reduce((s, r) => s + Number(r.outstanding), 0),
     count: filteredRows.value.length,
 }));
@@ -100,6 +104,15 @@ const inputCls = 'h-7 w-full rounded border border-neutral-300 bg-white px-2 tex
                 <button v-if="anyFilter" type="button" @click="resetFilters" class="rounded-lg border border-neutral-300 px-3 py-1.5 text-xs font-medium text-neutral-600 hover:bg-neutral-50 dark:border-neutral-700 dark:text-neutral-300">Reset filter</button>
             </div>
         </div>
+        <!-- "Tidak Terpakai" tidak terbaca sendiri: tanpa keterangan ini ia mudah dikira sama
+             dengan Refund, padahal uangnya justru TIDAK kembali ke kas. -->
+        <p class="max-w-4xl text-xs text-neutral-500">
+            <b>Kasbon Awal</b> = nominal saat pengajuan ·
+            <b>Realisasi</b> = nominal saat realisasi ·
+            <b>Refund</b> = nilai yang dikembalikan ke kas ·
+            <b>Tidak Terpakai</b> = Kasbon Awal − Realisasi − Refund (mis. saldo Debit Card yang tidak pernah dialokasikan) ·
+            <b>Outstanding</b> = sisa yang masih ditanggung pemegang bon.
+        </p>
 
         <!-- Ringkasan per status (reaktif terhadap filter) -->
         <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
@@ -137,15 +150,15 @@ const inputCls = 'h-7 w-full rounded border border-neutral-300 bg-white px-2 tex
             <table class="w-full text-sm">
                 <thead class="bg-neutral-50 dark:bg-neutral-800">
                     <tr class="text-left text-xs uppercase text-neutral-500">
-                        <th class="px-4 py-3">No Bon</th><th class="px-4 py-3">Tanggal</th><th class="px-4 py-3">Pemegang</th><th class="px-4 py-3">Keperluan</th><th class="px-4 py-3 text-right">Nilai</th><th class="px-4 py-3 text-right">Realisasi</th><th class="px-4 py-3 text-right">Outstanding</th><th class="px-4 py-3 text-center">Status</th>
+                        <th class="px-4 py-3">No Bon</th><th class="px-4 py-3">Tanggal</th><th class="px-4 py-3">Pemegang</th><th class="px-4 py-3">Keperluan</th><th class="px-4 py-3 text-right">Kasbon Awal</th><th class="px-4 py-3 text-right">Realisasi</th><th class="px-4 py-3 text-right">Refund</th><th class="px-4 py-3 text-right">Tidak Terpakai</th><th class="px-4 py-3 text-right">Outstanding</th><th class="px-4 py-3 text-center">Status</th>
                     </tr>
-                    <!-- Baris filter per-kolom -->
+                    <!-- Baris filter per-kolom. Lima kolom nilai tidak difilter → lima <th> kosong. -->
                     <tr class="border-t border-neutral-100 dark:border-neutral-800/60">
                         <th class="px-3 py-2"><ColumnFilter v-model="fNo" :options="noOptions" placeholder="Semua" /></th>
                         <th class="px-3 py-2"><div class="flex flex-col gap-1"><input v-model="from" type="date" :class="inputCls" title="Dari tanggal" /><input v-model="to" type="date" :class="inputCls" title="Sampai tanggal" /></div></th>
                         <th class="px-3 py-2"><ColumnFilter v-model="fHolder" :options="holderOptions" placeholder="Semua" /></th>
                         <th class="px-3 py-2"><ColumnFilter v-model="fPurpose" :options="purposeOptions" placeholder="Semua" /></th>
-                        <th class="px-3 py-2"></th><th class="px-3 py-2"></th><th class="px-3 py-2"></th>
+                        <th class="px-3 py-2"></th><th class="px-3 py-2"></th><th class="px-3 py-2"></th><th class="px-3 py-2"></th><th class="px-3 py-2"></th>
                         <th class="px-3 py-2"><ColumnFilter v-model="fStatus" :options="statusOptions" placeholder="Semua" align="right" /></th>
                     </tr>
                 </thead>
@@ -157,6 +170,8 @@ const inputCls = 'h-7 w-full rounded border border-neutral-300 bg-white px-2 tex
                         <td class="px-4 py-2.5 text-neutral-500">{{ r.purpose }}</td>
                         <td class="px-4 py-2.5 text-right font-mono">{{ fmtRp(r.amount) }}</td>
                         <td class="px-4 py-2.5 text-right font-mono">{{ fmtRp(r.realized) }}</td>
+                        <td class="px-4 py-2.5 text-right font-mono" :class="r.refund ? 'text-sky-600 dark:text-sky-400' : 'text-neutral-400'">{{ fmtRp(r.refund) }}</td>
+                        <td class="px-4 py-2.5 text-right font-mono" :class="r.unused ? 'text-violet-600 dark:text-violet-400' : 'text-neutral-400'">{{ fmtRp(r.unused) }}</td>
                         <td class="px-4 py-2.5 text-right font-mono font-semibold" :class="r.outstanding > 0 ? 'text-amber-600' : ''">{{ fmtRp(r.outstanding) }}</td>
                         <td class="px-4 py-2.5 text-center"><Badge :variant="statusColor[r.status] ?? 'neutral'" size="sm">{{ statusLabel(r.status) }}</Badge></td>
                     </tr>
@@ -165,6 +180,8 @@ const inputCls = 'h-7 w-full rounded border border-neutral-300 bg-white px-2 tex
                     <td class="px-4 py-3" colspan="4">TOTAL ({{ totals.count }} bon)</td>
                     <td class="px-4 py-3 text-right font-mono">{{ fmtRp(totals.amount) }}</td>
                     <td class="px-4 py-3 text-right font-mono">{{ fmtRp(totals.realized) }}</td>
+                    <td class="px-4 py-3 text-right font-mono text-sky-600 dark:text-sky-400">{{ fmtRp(totals.refund) }}</td>
+                    <td class="px-4 py-3 text-right font-mono text-violet-600 dark:text-violet-400">{{ fmtRp(totals.unused) }}</td>
                     <td class="px-4 py-3 text-right font-mono text-amber-600">{{ fmtRp(totals.outstanding) }}</td>
                     <td></td>
                 </tr></tfoot>

@@ -128,6 +128,12 @@ class JournalController extends Controller
         $rows->getCollection()->transform(function ($j) use ($ccOptional) {
             $headerCc = $j->cost_center_id ? (int) $j->cost_center_id : null;
 
+            /* Jurnal migrasi data awal tidak ikut dihitung kekurangannya: cost center-nya memang
+               dibebaskan (lihat BsJournal::SUMBER_MIGRASI). Yang ditampilkan bukan "—" melainkan
+               keterangannya sendiri — kolom kosong hanya membuat orang mengira cost center-nya
+               lupa diisi dan mencoba melengkapinya. */
+            $j->cost_center_migrasi = $j->migrasiDataAwal();
+
             $nama = [];
             $kurang = [];
             foreach ($j->lines as $ln) {
@@ -145,7 +151,7 @@ class JournalController extends Controller
             }
 
             $j->cost_centers = array_values(array_filter(array_unique($nama)));
-            $j->cost_center_kurang = array_values(array_unique(array_filter($kurang)));
+            $j->cost_center_kurang = $j->cost_center_migrasi ? [] : array_values(array_unique(array_filter($kurang)));
 
             return $j;
         });

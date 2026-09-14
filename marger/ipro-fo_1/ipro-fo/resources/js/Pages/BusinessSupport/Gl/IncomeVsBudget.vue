@@ -2,6 +2,7 @@
 import { ref } from 'vue';
 import { router, Link } from '@inertiajs/vue3';
 import { ArrowLeft, Scale, FileSpreadsheet } from 'lucide-vue-next';
+import AnalisaKenaikan from '@/Components/UI/AnalisaKenaikan.vue';
 
 type Row = {
     kind: string; label: string;
@@ -19,6 +20,7 @@ const props = defineProps<{
     rows: Row[];
     totals: { realisasi: number; budget: number; variance: number };
     has_budget: boolean;
+    analisa: any;
 }>();
 
 const dari = ref(props.date_from);
@@ -112,5 +114,9 @@ const showVals = (r: Row) => r.kind !== 'header' && r.kind !== 'group';
                  dibandingkan dengan anggaran setahun akan selalu terlihat "hemat". -->
             <span class="font-medium text-neutral-500 dark:text-neutral-400">{{ budget_note }}</span>
         </p>
+
+        <!-- Di sini "kenaikan" berarti selisih terhadap ANGGARAN — laporan ini memang sudah
+             punya pembandingnya sendiri, jadi tidak perlu periode pembanding. -->
+        <AnalisaKenaikan v-if="has_budget" :analisa="analisa" judul="Analisa Selisih terhadap Anggaran" mode="budget" />
     </div>
 </template>

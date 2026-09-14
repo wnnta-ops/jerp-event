@@ -41,7 +41,9 @@ const menu: Array<{ group: string; items: Array<{ label: string; route: string |
         { label: 'Kalender Cek Giro', route: r('bs.cashbook.giro-calendar') },
         { label: 'Pengeluaran Kas & Bank', route: r('bs.cashbook.index', { type: 'out' }) },
         { label: 'Kartu Bon Sementara', route: r('bs.advance.card') },
+        { label: 'Saldo Debit Card', route: r('bs.advance.card-balance') },
         { label: 'Rekap Bon Sementara', route: r('bs.advance.report') },
+        { label: 'Outstanding Kasbon', route: r('bs.cashbook.outstanding-kasbon') },
         { label: 'Bon Sementara Masih Outstanding', route: r('bs.advance.report') },
     ]},
     { group: 'Saldo Awal', items: [
