@@ -148,7 +148,11 @@ class CashAdvanceController extends Controller
      */
     public function cardBalance(Request $request): Response
     {
-        abort_unless($request->user()?->canModule('cashbook'), 403);
+        // Izinnya disamakan dengan Kartu Bon Sementara: layar ini menampilkan data
+        // kartu yang sama, hanya sudut pandangnya per bon. canModule() yang dipakai
+        // sebelumnya adalah cek tingkat-MODUL — siapa pun yang punya satu izin
+        // cashbook apa pun lolos, termasuk yang tak berhak melihat kartu.
+        abort_unless($request->user()?->can('cashbook.advance.card'), 403);
 
         $bons = BsCashAdvance::query()
             ->with('creditCard:id,card_number,name')

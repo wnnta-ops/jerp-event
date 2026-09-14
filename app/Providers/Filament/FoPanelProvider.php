@@ -412,6 +412,7 @@ class FoPanelProvider extends PanelProvider
                     $item('Tipe Unit', '/fo/unit-types', 'heroicon-o-cube', 'filament.fo.resources.unit-types.'),
                     $item('Unit', '/fo/units', 'heroicon-o-home-modern', 'filament.fo.resources.units.'),
                     $item('Upload Unit', '/fo/upload-unit', 'heroicon-o-arrow-up-tray', 'filament.fo.pages.upload-unit'),
+                    $item('Upload Target SPR', '/fo/upload-target-spr', 'heroicon-o-flag', 'filament.fo.pages.upload-target-spr'),
                     $item('Upload Price List', '/fo/upload-price-list', 'heroicon-o-arrow-up-tray', 'filament.fo.pages.upload-price-list'),
                     $item('Upload Site Plan', '/fo/upload-site-plan', 'heroicon-o-photo', 'filament.fo.pages.upload-site-plan'),
                     $item('Upload Koordinat', '/fo/upload-koordinat', 'heroicon-o-map-pin', 'filament.fo.pages.upload-koordinat'),

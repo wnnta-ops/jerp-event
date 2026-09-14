@@ -2,7 +2,9 @@
 
 namespace App\Filament\Fo\Widgets;
 
+use App\Filament\Fo\Resources\SprResource;
 use App\Modules\FO\MarketingSales\Services\SprBulananService;
+use App\Support\Akses;
 use Filament\Support\RawJs;
 use Filament\Widgets\ChartWidget;
 use Illuminate\Contracts\Support\Htmlable;
@@ -22,6 +24,19 @@ use Illuminate\Support\HtmlString;
  */
 class SprBulananChart extends ChartWidget
 {
+    /**
+     * Widget ini memampangkan angka penjualan SPR di dasbor FO, dan dasbor
+     * terbuka untuk semua yang bisa masuk panel. Tanpa penjaga, orang yang
+     * tidak berhak melihat data SPR tetap membacanya dari halaman depan.
+     *
+     * Izinnya disamakan dengan resource SPR supaya satu centang mengatur
+     * keduanya — bukan dua tempat yang harus dijaga selaras.
+     */
+    public static function canView(): bool
+    {
+        return Akses::boleh(Akses::izinUntuk(SprResource::class, 'viewAny'));
+    }
+
     protected static ?string $maxHeight = '320px';
 
     protected int | string | array $columnSpan = 'full';
