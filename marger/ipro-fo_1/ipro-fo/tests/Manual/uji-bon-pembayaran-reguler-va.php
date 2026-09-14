@@ -77,13 +77,13 @@ try {
         throw new RuntimeException('tidak ada akun kas/bank untuk dijadikan fikstur');
     }
 
-    /* Kartu kredit/VA yang siap pakai. Sejak Set Up Credit Card, Debit VA WAJIB menyebut
+    /* Kartu debit/VA yang siap pakai. Sejak Set Up Debit Card, Debit VA WAJIB menyebut
        kartunya: permintaan saldo & masa berlaku yang lahir dari pembayaran harus menempel pada
        kartu tertentu. Kartunya diaktifkan di sini (dan dibatalkan bersama transaksi ini) supaya
        yang diuji tetap soal TANGGAL EXPIRED-nya, bukan tersandung syarat kartu. */
     $kartu = \App\Domain\BusinessSupport\Models\BsCreditCard::query()->first();
     if (! $kartu) {
-        throw new RuntimeException('tidak ada kartu kredit/VA untuk dijadikan fikstur');
+        throw new RuntimeException('tidak ada kartu debit/VA untuk dijadikan fikstur');
     }
     $kartu->update(['is_active' => true, 'expired_date' => null]);
     $akunKartu = (int) $kartu->account_id;
@@ -201,7 +201,7 @@ try {
         (int) $barisReg->firstWhere('credit', '>', 0)?->account_id === $kas);
 
     /* Yang lahir otomatis dari pembayarannya kini MASA BERLAKU saja. Permintaan penambahan saldo
-       ditiadakan: kolom "Penambahan" pada Set Up Credit Card dibaca langsung dari pembayaran
+       ditiadakan: kolom "Penambahan" pada Set Up Debit Card dibaca langsung dari pembayaran
        Debit VA yang tersimpan, jadi permintaan saldo di sampingnya akan menjadi angka kedua
        untuk uang yang sama. */
     $mintaVa = \App\Domain\BusinessSupport\Models\BsCreditCardRequest::where('source_type', 'cash_advance')

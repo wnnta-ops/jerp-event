@@ -9,7 +9,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 /**
- * Permintaan pada sebuah kartu kredit/VA — penambahan saldo, pengurangan saldo, atau penetapan
+ * Permintaan pada sebuah kartu debit/VA — penambahan saldo, pengurangan saldo, atau penetapan
  * masa berlaku. Semuanya menunggu persetujuan sebelum berpengaruh pada kartunya.
  */
 class BsCreditCardRequest extends Model

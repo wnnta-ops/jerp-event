@@ -1,4 +1,4 @@
-// Layar: Alokasi Kasbon pada Bon Debit VA · Set Up Credit Card per bulan.
+// Layar: Alokasi Kasbon pada Bon Debit VA · Set Up Debit Card per bulan.
 //
 // KENAPA PERLU UJI:
 //  · Kolom "Sumber Bank/Kas" harus HILANG pada Debit VA. Bila ia tetap ada, operator mengisi

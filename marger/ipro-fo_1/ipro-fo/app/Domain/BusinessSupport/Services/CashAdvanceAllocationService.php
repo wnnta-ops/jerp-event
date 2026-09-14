@@ -73,17 +73,26 @@ class CashAdvanceAllocationService
                jurnal yang hanya separuh berdimensi terbaca timpang saat direkap per cost center. */
             $cc = $adv->cost_center_id;
 
-            $journal = $this->journal->post([
-                'journal_date' => $data['alloc_date'],
-                'source'       => 'cash',
-                'status'       => 'posted', // Treasury: pengeluaran kasbon langsung posting → mutasi bank tercatat di Rekening Ledger.
-                'reference'    => $adv->advance_number,
-                'description'  => 'Alokasi Kasbon '.$adv->advance_number.' — '.$adv->holder.' · '.$ket,
-                'created_by'   => $userId,
-            ], [
-                ['account_id' => $akunPanjar, 'cost_center_id' => $cc, 'debit' => $amount, 'credit' => 0, 'description' => 'Panjar '.$adv->holder.' — '.$ket],
-                ['account_id' => $cashAccount, 'cost_center_id' => $cc, 'debit' => 0, 'credit' => $amount, 'description' => 'Pengeluaran kasbon '.$adv->advance_number],
-            ]);
+            /* SATU JURNAL UNTUK SATU TANGGAL & SATU BANK. Alokasi yang tanggal dan bank
+               pengeluarannya sama menumpang jurnal yang sudah ada: barisnya bertambah di posisi
+               DEBIT (masing-masing berketerangan sendiri) dan baris KREDIT banknya membesar
+               sebesar totalnya. Tanggal atau bank yang berbeda tetap melahirkan jurnal sendiri —
+               keduanya memang pengeluaran bank yang berbeda. */
+            $jurnalGrup = $this->jurnalGrup($adv, (string) $data['alloc_date'], $cashAccount);
+
+            $journal = $jurnalGrup
+                ? $this->tempelkanKeJurnal($jurnalGrup, $adv, $akunPanjar, $cc, $amount, $ket)
+                : $this->journal->post([
+                    'journal_date' => $data['alloc_date'],
+                    'source'       => 'cash',
+                    'status'       => 'posted', // Treasury: pengeluaran kasbon langsung posting → mutasi bank tercatat di Rekening Ledger.
+                    'reference'    => $adv->advance_number,
+                    'description'  => $this->ketJurnal($adv, $ket, 1),
+                    'created_by'   => $userId,
+                ], [
+                    ['account_id' => $akunPanjar, 'cost_center_id' => $cc, 'debit' => $amount, 'credit' => 0, 'description' => $this->ketBaris($adv, $ket)],
+                    ['account_id' => $cashAccount, 'cost_center_id' => $cc, 'debit' => 0, 'credit' => $amount, 'description' => 'Pengeluaran kasbon '.$adv->advance_number],
+                ]);
 
             return BsCashAdvanceAllocation::create([
                 'cash_advance_id' => $adv->id,
@@ -96,6 +105,101 @@ class CashAdvanceAllocationService
                 'created_by'      => $userId,
             ]);
         });
+    }
+
+    /** Keterangan baris DEBIT — inilah "beberapa keterangan" yang membedakan alokasi dalam satu jurnal. */
+    private function ketBaris(BsCashAdvance $adv, string $ket): string
+    {
+        return 'Panjar '.$adv->holder.' — '.$ket;
+    }
+
+    /**
+     * Keterangan kepala jurnal. Selama masih satu alokasi, bunyinya persis seperti dulu; begitu
+     * beberapa alokasi menumpang, keterangan satu di antaranya akan menyesatkan — yang disebut
+     * cacahnya, dan rinciannya dibaca pada Keterangan Baris tiap posisi debit.
+     */
+    private function ketJurnal(BsCashAdvance $adv, string $ket, int $cacah): string
+    {
+        $awal = 'Alokasi Kasbon '.$adv->advance_number.' — '.$adv->holder;
+
+        return $cacah > 1 ? $awal.' · '.$cacah.' alokasi' : $awal.' · '.$ket;
+    }
+
+    /**
+     * Jurnal milik grup (bon + tanggal + bank) — diambil dari alokasi yang sudah ada.
+     *
+     * Data lama punya satu jurnal per alokasi, sehingga satu grup bisa menunjuk beberapa jurnal
+     * sekaligus. Yang dipakai adalah jurnal alokasi TERTUA di grup itu; jurnal lama yang lain
+     * sengaja DIBIARKAN apa adanya. Menggabungkannya surut berarti menghapus jurnal yang sudah
+     * efektif di buku besar — nomornya berlubang selamanya (soft delete tidak pernah membebaskan
+     * nomor), dan klasifikasi arus kas barisnya ikut lenyap.
+     */
+    private function jurnalGrup(BsCashAdvance $adv, string $tanggal, int $bank): ?BsJournal
+    {
+        $journalId = BsCashAdvanceAllocation::where('cash_advance_id', $adv->id)
+            ->whereDate('alloc_date', $tanggal)
+            ->where('cash_account_id', $bank)
+            ->whereNotNull('journal_id')
+            ->orderBy('id')
+            ->value('journal_id');
+
+        return $journalId ? BsJournal::whereKey($journalId)->first() : null;
+    }
+
+    /**
+     * Tempelkan satu alokasi ke jurnal grup yang sudah ada.
+     *
+     * BARIS LAMA TIDAK DIBONGKAR. JournalService::update() menulis ulang seluruh barisnya —
+     * baris lama dihapus permanen, dan bs_ledger_cf_tags serta bs_ledger_cluster_splits ber-FK
+     * cascade ke journal_line_id. Memakainya di sini berarti setiap penambahan alokasi
+     * MENGHAPUS klasifikasi arus kas alokasi-alokasi sebelumnya, tanpa satu galat pun; Report
+     * Cashflow lalu kehilangan angkanya diam-diam. Karena itu barisnya ditambah dan baris
+     * kreditnya dibesarkan di tempat, sehingga id tiap baris — dan semua yang menggantung
+     * padanya — tetap hidup.
+     */
+    private function tempelkanKeJurnal(
+        BsJournal $journal,
+        BsCashAdvance $adv,
+        int $akunPanjar,
+        ?int $cc,
+        float $amount,
+        string $ket,
+    ): BsJournal {
+        // Periode jurnal yang ditumpangi harus terbuka: menambah baris pada bulan yang sudah
+        // ditutup mengubah angka yang sudah dilaporkan.
+        $this->pastikanPeriodeTerbuka($journal);
+
+        // Jurnal alokasi selalu berbaris kredit tunggal (banknya); itulah baris yang membesar.
+        $kredit = $journal->lines()->where('credit', '>', 0)->orderBy('id')->first();
+
+        if (! $kredit) {
+            throw new BusinessRuleException(
+                'Jurnal alokasi ini tidak punya baris kredit bank — alokasi tidak bisa digabungkan ke dalamnya.',
+                errorCode: 'ALLOC_JOURNAL_NO_CREDIT',
+            );
+        }
+
+        $journal->lines()->create([
+            'account_id'     => $akunPanjar,
+            'cost_center_id' => $cc,
+            'currency'       => 'IDR',
+            'kurs'           => 1,
+            'description'    => $this->ketBaris($adv, $ket),
+            'debit'          => $amount,
+            'credit'         => 0,
+        ]);
+
+        $kredit->update(['credit' => round((float) $kredit->credit + $amount, 2)]);
+
+        $cacah = $journal->lines()->where('debit', '>', 0)->count();
+        $total = round((float) $journal->lines()->sum('debit'), 2);
+        $journal->update([
+            'total_debit'  => $total,
+            'total_credit' => round((float) $journal->lines()->sum('credit'), 2),
+            'description'  => $this->ketJurnal($adv, $ket, $cacah),
+        ]);
+
+        return $journal->refresh();
     }
 
     /**
@@ -124,12 +228,79 @@ class CashAdvanceAllocationService
                 // sudah dilaporkan.
                 if ($journal) {
                     $this->pastikanPeriodeTerbuka($journal);
-                    $journal->delete();
+
+                    /* JURNALNYA BISA DITUMPANGI ALOKASI LAIN. Sejak alokasi bertanggal & berbank
+                       sama berbagi satu jurnal, menghapus jurnalnya begitu saja akan ikut
+                       melenyapkan pengeluaran alokasi yang masih ada — barisnya hilang dari buku
+                       besar sementara nominalnya tetap terhitung sebagai Uang Muka Operasional
+                       oleh totalAlokasi(), dan realisasi berhitung terhadap panjar yang di buku
+                       besar tidak sebesar itu. Karena itu yang dicabut hanya baris debit miliknya;
+                       jurnalnya baru dihapus bila memang tidak ada lagi yang menumpang. */
+                    $saudara = BsCashAdvanceAllocation::where('journal_id', $journal->id)
+                        ->whereKeyNot($alloc->id)->exists();
+
+                    if ($saudara) {
+                        $this->cabutDariJurnal($journal, $alloc, $adv);
+                    } else {
+                        $journal->delete();
+                    }
                 }
             }
 
             $alloc->delete();
         });
+    }
+
+    /**
+     * Cabut satu alokasi dari jurnal grup yang masih ditumpangi alokasi lain.
+     *
+     * Sama seperti saat menempel: baris lain TIDAK dibongkar, supaya id-nya — dan klasifikasi
+     * arus kas yang menggantung padanya — tetap hidup. Baris debit yang dicabut dikenali dari
+     * keterangan & nominalnya; bila kebetulan ada dua baris yang persis sama, keduanya memang
+     * setara sehingga mencabut yang mana pun menghasilkan jurnal yang sama.
+     */
+    private function cabutDariJurnal(BsJournal $journal, BsCashAdvanceAllocation $alloc, ?BsCashAdvance $adv): void
+    {
+        $amount = round((float) $alloc->amount, 2);
+
+        $baris = $journal->lines()
+            ->where('debit', '>', 0)
+            ->when($adv, fn ($q) => $q->where('description', $this->ketBaris($adv, (string) $alloc->description)))
+            ->where('debit', $amount)
+            ->orderBy('id')
+            ->first();
+
+        // Keterangannya bisa saja sudah disunting orang dari layar Jurnal. Yang menentukan tetap
+        // nominalnya — tanpa cadangan ini, barisnya tertinggal dan jurnalnya berhenti balance.
+        $baris ??= $journal->lines()->where('debit', $amount)->orderBy('id')->first();
+
+        if (! $baris) {
+            throw new BusinessRuleException(
+                'Baris jurnal alokasi ini tidak ditemukan — hapus lewat jurnal koreksi supaya buku besarnya tetap seimbang.',
+                errorCode: 'ALLOC_LINE_NOT_FOUND',
+            );
+        }
+
+        $kredit = $journal->lines()->where('credit', '>', 0)->orderBy('id')->first();
+        if (! $kredit) {
+            throw new BusinessRuleException(
+                'Jurnal alokasi ini tidak punya baris kredit bank.',
+                errorCode: 'ALLOC_JOURNAL_NO_CREDIT',
+            );
+        }
+
+        $baris->delete();
+        $kredit->update(['credit' => round((float) $kredit->credit - $amount, 2)]);
+
+        $sisaKet = (string) BsCashAdvanceAllocation::where('journal_id', $journal->id)
+            ->whereKeyNot($alloc->id)->orderBy('id')->value('description');
+        $cacah = $journal->lines()->where('debit', '>', 0)->count();
+
+        $journal->update([
+            'total_debit'  => round((float) $journal->lines()->sum('debit'), 2),
+            'total_credit' => round((float) $journal->lines()->sum('credit'), 2),
+            'description'  => $adv ? $this->ketJurnal($adv, $sisaKet, $cacah) : $journal->description,
+        ]);
     }
 
     /** Total alokasi sebuah bon — dasar Uang Muka Operasional bon Debit VA. */

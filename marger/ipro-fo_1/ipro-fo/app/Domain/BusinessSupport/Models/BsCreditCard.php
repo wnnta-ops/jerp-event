@@ -11,7 +11,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
 /**
- * Kartu kredit / Virtual Account (Cash Book → Setup → Set Up Credit Card).
+ * Kartu debit / Virtual Account (Cash Book → Setup → Set Up Debit Card).
  *
  * Saldonya TIDAK disunting langsung: setiap penambahan & pengurangan lewat
  * BsCreditCardRequest yang harus disetujui. Lihat CreditCardService.

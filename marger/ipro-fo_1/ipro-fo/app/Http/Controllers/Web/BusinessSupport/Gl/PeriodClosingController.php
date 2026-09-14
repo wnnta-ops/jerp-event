@@ -11,6 +11,8 @@ use App\Domain\BusinessSupport\Models\BsOpeningConfirmation;
 use App\Domain\BusinessSupport\Services\PeriodClosingService;
 use App\Exceptions\BusinessRuleException;
 use App\Http\Controllers\Controller;
+use App\Support\Import\TabelImpor;
+use App\Support\Xlsx\SimpleXlsx;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
@@ -152,6 +154,192 @@ class PeriodClosingController extends Controller
             }
             fclose($out);
         }, "jurnal-saldo-awal-{$year}.csv", ['Content-Type' => 'text/csv']);
+    }
+
+    /** Kolom template Import Saldo Awal — urutannya tetap; pencocokan saat import toleran. */
+    public const IMPORT_HEADER = ['KODE_AKUN', 'NAMA_AKUN', 'DEBIT', 'KREDIT', 'KETERANGAN'];
+
+    /**
+     * Template Import Saldo Awal (.xlsx sungguhan).
+     *
+     * Kolomnya sengaja sama dengan hasil "Unduh CSV Jurnal" halaman ini, supaya berkas yang
+     * diunduh bisa disunting lalu diunggah kembali tanpa menata ulang kolomnya.
+     */
+    public function saldoAwalTemplate(Request $request): \Symfony\Component\HttpFoundation\Response
+    {
+        abort_unless($request->user()?->can('gl.saldo-awal.create'), 403);
+
+        // Contohnya memakai akun NYATA, supaya orang langsung melihat bentuk kode akun yang benar.
+        $debit  = BsAccount::where('is_postable', true)->where('type', 'asset')->orderBy('code')->first();
+        $kredit = BsAccount::where('is_postable', true)->where('type', 'equity')->orderBy('code')->first();
+
+        $bin = SimpleXlsx::toString([
+            self::IMPORT_HEADER,
+            [$debit?->code ?? '10101010101', $debit?->name ?? 'Kas', '1000000', '0', 'CONTOH — hapus baris ini sebelum mengisi data Anda'],
+            [$kredit?->code ?? '30101010101', $kredit?->name ?? 'Modal', '0', '1000000', 'CONTOH — hapus baris ini sebelum mengisi data Anda'],
+        ]);
+
+        return response($bin, 200, [
+            'Content-Type'        => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            'Content-Disposition' => 'attachment; filename="Template-Import-Saldo-Awal.xlsx"',
+        ]);
+    }
+
+    /**
+     * IMPORT SALDO AWAL — satu jurnal saldo awal untuk satu tahun.
+     *
+     * TANGGALNYA 31 DESEMBER TAHUN SEBELUMNYA, bukan 1 Januari. Halaman ini membaca jurnal
+     * bertanggal SEBELUM 1 Januari (lihat openingJournalLines), jadi jurnal bertanggal 1 Januari
+     * tidak akan tampil di halaman tahun yang baru saja diimpor — dan kolom Saldo Awal buku besar
+     * tahun itu tetap nol, sebab angkanya terbaca sebagai transaksi tanggal 1 Januari, bukan
+     * saldo pembuka.
+     *
+     * STATUSNYA LANGSUNG 'posted'. openingJournalLines hanya menghitung jurnal 'posted', sedangkan
+     * JournalService::post secara bawaan membuat 'final' — tanpa penegasan ini, saldo yang baru
+     * diimpor tidak muncul di mana pun dan fiturnya tampak tidak bekerja.
+     *
+     * DITOLAK BILA TAHUN ITU SUDAH PUNYA JURNAL SALDO AWAL. Mengimpor dua kali melipatgandakan
+     * seluruh saldo pembuka, dan jumlahnya tetap balance — tidak ada satu galat pun yang memberi
+     * tahu; selisihnya baru ketahuan saat neracanya dibandingkan dengan sistem lama.
+     */
+    public function saldoAwalImport(Request $request, \App\Domain\BusinessSupport\Services\JournalService $journal): RedirectResponse
+    {
+        abort_unless($request->user()?->can('gl.saldo-awal.create'), 403);
+        $request->validate([
+            'year' => ['required', 'integer', 'min:2000', 'max:2100'],
+            'file' => ['required', 'file', 'max:8192'],
+        ]);
+
+        $year = (int) $request->integer('year');
+        $ref  = 'SALDOAWAL/'.$year;
+
+        if (BsJournal::where('reference', $ref)->where('source', 'saldo_awal')->exists()) {
+            return back()->with('error', "Saldo Awal {$year} sudah pernah diimpor ({$ref}). Hapus jurnalnya dulu bila memang hendak diganti — mengimpor ulang akan melipatgandakan seluruh saldo pembukanya.");
+        }
+
+        /* .xls TIDAK diterima. Berkas BIFF lama tidak bisa dibaca satu pun mekanisme di aplikasi
+           ini; menerimanya hanya menghasilkan galat yang membingungkan ("kolom tidak ditemukan")
+           atas berkas yang sebenarnya benar isinya. */
+        $ext = strtolower((string) $request->file('file')->getClientOriginalExtension());
+        if (! in_array($ext, ['xlsx', 'csv', 'txt'], true)) {
+            return back()->with('error', 'Format file harus .xlsx atau .csv. Berkas .xls lama tidak didukung — simpan ulang sebagai .xlsx. Unduh template untuk format yang benar.');
+        }
+
+        try {
+            $rows = TabelImpor::baca($request->file('file'));
+        } catch (\Throwable $e) {
+            return back()->with('error', 'File tidak dapat dibaca: '.$e->getMessage());
+        }
+
+        if (count($rows) < 2) {
+            return back()->with('error', 'File kosong atau hanya berisi baris header.');
+        }
+
+        $header = TabelImpor::header(array_shift($rows));
+        $iKode  = TabelImpor::kolom($header, ['KODE_AKUN', 'KODE AKUN', 'KODE', 'AKUN'], ['NAMA']);
+        $iDebit = TabelImpor::kolom($header, ['DEBIT', 'DEBET']);
+        $iKred  = TabelImpor::kolom($header, ['KREDIT', 'CREDIT']);
+        $iKet   = TabelImpor::kolom($header, ['KETERANGAN', 'DESKRIPSI', 'CATATAN']);
+
+        $kurang = [];
+        if ($iKode === null) { $kurang[] = 'KODE_AKUN'; }
+        if ($iDebit === null) { $kurang[] = 'DEBIT'; }
+        if ($iKred === null) { $kurang[] = 'KREDIT'; }
+        if ($kurang) {
+            return back()->with('error', 'Kolom wajib tidak ditemukan: '.implode(', ', $kurang).'. Unduh template untuk format yang benar.');
+        }
+
+        $akun = BsAccount::where('is_postable', true)->get(['id', 'code'])
+            ->keyBy(fn ($a) => strtoupper(trim((string) $a->code)));
+
+        $lines  = [];
+        $galat  = [];
+        $lewat  = 0;
+
+        foreach ($rows as $n => $r) {
+            $baris = $n + 2;
+            $kode  = strtoupper(TabelImpor::sel($r, $iKode));
+            $dRaw  = TabelImpor::sel($r, $iDebit);
+            $kRaw  = TabelImpor::sel($r, $iKred);
+
+            if ($kode === '' && $dRaw === '' && $kRaw === '') {
+                continue;
+            }
+
+            $a = $akun->get($kode);
+            if (! $a) {
+                $galat[] = "Baris {$baris}: akun '{$kode}' tidak ditemukan atau bukan akun postable.";
+                $lewat++;
+
+                continue;
+            }
+
+            $debit  = TabelImpor::angka($dRaw) ?? 0.0;
+            $kredit = TabelImpor::angka($kRaw) ?? 0.0;
+
+            if ($debit < 0 || $kredit < 0) {
+                $galat[] = "Baris {$baris}: nilai negatif tidak diterima — tukar kolom Debit/Kredit.";
+                $lewat++;
+
+                continue;
+            }
+            if ($debit > 0 && $kredit > 0) {
+                $galat[] = "Baris {$baris}: akun {$kode} terisi Debit DAN Kredit sekaligus — isi salah satu saja.";
+                $lewat++;
+
+                continue;
+            }
+            if ($debit < 0.01 && $kredit < 0.01) {
+                $galat[] = "Baris {$baris}: akun {$kode} tidak punya nilai Debit maupun Kredit.";
+                $lewat++;
+
+                continue;
+            }
+
+            $lines[] = [
+                'account_id'  => (int) $a->id,
+                'debit'       => round($debit, 2),
+                'credit'      => round($kredit, 2),
+                'description' => TabelImpor::sel($r, $iKet) ?: 'Saldo Awal '.$year,
+            ];
+        }
+
+        if (! $lines) {
+            return back()->with('error', 'Tidak ada baris yang bisa diimpor. '.implode(' ', array_slice($galat, 0, 8)));
+        }
+
+        /* Saldo awal HARUS balance sebagai satu kesatuan. Berbeda dari import lain yang boleh
+           memasukkan baris baik dan melewati yang jelek, di sini melewati satu baris berarti
+           jurnalnya tidak seimbang — dan jurnal saldo awal yang timpang membuat seluruh neraca
+           tahun itu salah sejak hari pertama. Karena itu satu baris gagal membatalkan semuanya. */
+        $totalD = round(array_sum(array_column($lines, 'debit')), 2);
+        $totalK = round(array_sum(array_column($lines, 'credit')), 2);
+        if ($galat) {
+            return back()->with('error', 'Import dibatalkan — saldo awal harus lengkap & seimbang. '
+                .implode(' · ', array_slice($galat, 0, 8)).(count($galat) > 8 ? ' … (+'.(count($galat) - 8).' lainnya)' : ''));
+        }
+        if (abs($totalD - $totalK) >= 0.01) {
+            return back()->with('error', 'Import dibatalkan — total Debit ('.number_format($totalD, 2, ',', '.')
+                .') tidak sama dengan total Kredit ('.number_format($totalK, 2, ',', '.').'). Selisih '
+                .number_format(abs($totalD - $totalK), 2, ',', '.').'.');
+        }
+
+        try {
+            $j = $journal->post([
+                'journal_date' => sprintf('%04d-12-31', $year - 1),
+                'source'       => 'saldo_awal',
+                'status'       => 'posted',
+                'reference'    => $ref,
+                'description'  => 'Saldo Awal '.$year.' (import)',
+                'created_by'   => $request->user()->id,
+            ], $lines);
+        } catch (BusinessRuleException $e) {
+            return back()->with('error', 'Import gagal: '.$e->getMessage().' Tidak ada yang tersimpan.');
+        }
+
+        return back()->with('success', count($lines).' baris saldo awal diimpor sebagai jurnal '
+            .$j->journal_number.' bertanggal 31 Desember '.($year - 1).' — total Rp '
+            .number_format($totalD, 0, ',', '.').'.');
     }
 
     /** Baris jurnal saldo awal tahun {year} = saldo akun permanen s/d 31 Des {year-1} + L/R belum ditutup → Laba Ditahan. @return array<int,array<string,mixed>> */

@@ -1,7 +1,7 @@
 <?php
 
 /**
- * Set Up Credit Card — "Ajukan Permintaan" jenis MASA BERLAKU (Expired) sampai kartunya berubah.
+ * Set Up Debit Card — "Ajukan Permintaan" jenis MASA BERLAKU (Expired) sampai kartunya berubah.
  *
  * BUG YANG DIPERBAIKI. Layar menyembunyikan kolom "Nilai (Rp)" saat jenisnya Masa Berlaku, tetapi
  * TIDAK mengosongkannya — formulirnya tetap mengirim `amount` bawaan 0. Aturan validasinya dulu

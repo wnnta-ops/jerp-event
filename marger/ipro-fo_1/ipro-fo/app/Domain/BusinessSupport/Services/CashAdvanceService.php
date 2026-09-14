@@ -20,7 +20,7 @@ use Illuminate\Support\Facades\DB;
  *   Pengeluaran : Dr Uang Muka Operasional / Cr Kas/Bank   (saat dibayar)
  *
  * PEMBAYARAN DEBIT VA — pembayarannya TIDAK berjurnal
- *   Pembayaran  : tidak ada jurnal; saldo disediakan pada kartu/VA (Set Up Credit Card)
+ *   Pembayaran  : tidak ada jurnal; saldo disediakan pada kartu/VA (Set Up Debit Card)
  *   Alokasi     : Dr Uang Muka Operasional / Cr bank pengeluaran  (per baris Alokasi Kasbon)
  *   → Uang Muka Operasional bon Debit VA = TOTAL ALOKASI-nya, bukan nominal bonnya.
  *
@@ -255,7 +255,7 @@ final class CashAdvanceService
                     : null;
                 if (! $card) {
                     throw new BusinessRuleException(
-                        'Pembayaran Debit VA wajib memilih kartu kredit/VA.',
+                        'Pembayaran Debit VA wajib memilih kartu debit/VA.',
                         errorCode: 'ADV_VA_NO_CARD',
                     );
                 }
@@ -265,7 +265,7 @@ final class CashAdvanceService
                     throw new BusinessRuleException(
                         $card->is_active
                             ? 'Kartu '.$card->label().' sudah melewati masa berlakunya ('.$card->expired_date?->toDateString().').'
-                            : 'Kartu '.$card->label().' belum diaktifkan di Set Up Credit Card.',
+                            : 'Kartu '.$card->label().' belum diaktifkan di Set Up Debit Card.',
                         errorCode: 'ADV_VA_CARD_UNUSABLE',
                     );
                 }
@@ -508,7 +508,7 @@ final class CashAdvanceService
 
             $card = BsCreditCard::whereKey($adv->credit_card_id)->first();
             if (! $card) {
-                throw new BusinessRuleException('Kartu kredit/VA bon ini tidak ditemukan.', errorCode: 'ADV_VA_NO_CARD');
+                throw new BusinessRuleException('Kartu debit/VA bon ini tidak ditemukan.', errorCode: 'ADV_VA_NO_CARD');
             }
 
             app(CreditCardService::class)->masukSaldoDariBon(

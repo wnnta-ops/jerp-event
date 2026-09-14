@@ -84,7 +84,17 @@ export function navGroups(foUrl: string): NavGroup[] {
     {
         title: '',
         items: [
-            { label: 'Dashboard Back Office', icon: LayoutDashboard, href: 'dashboard' },
+            /* EMPAT SUB-DASHBOARD. Delapan belas grafik pada satu halaman membuat yang dicari
+               selalu jauh di bawah; tiap peran kini punya pintu masuknya sendiri.
+               Keempatnya bersama-sama memuat SELURUH grafik — tidak ada yang menjadi yatim.
+               Catatan: item ber-children dirender Sidebar sebagai tombol buka/tutup, bukan
+               tautan (lihat Sidebar.vue), jadi induknya sengaja tidak lagi diberi href. */
+            { label: 'Dashboard Back Office', icon: LayoutDashboard, children: [
+                { label: 'KPR & Collection',        href: 'dashboard', params: { grup: 'kpr' } },
+                { label: 'Cash Management',         href: 'dashboard', params: { grup: 'cash' } },
+                { label: 'Accounting, Tax & Budget', href: 'dashboard', params: { grup: 'accounting' } },
+                { label: 'Project',                 href: 'dashboard', params: { grup: 'project' } },
+            ]},
             // Menu silang → kembali ke hub/dashboard utama J-ERP (URL dari env via Inertia config.fo_url).
             { label: 'Kembali ke Dashboard Utama', icon: Building2, external: foUrl + '/dashboard' },
         ],
@@ -140,6 +150,13 @@ export function navGroups(foUrl: string): NavGroup[] {
                 { label: 'Master Data KPR',    href: 'kpr.master-data.index',    permission: 'bankloan.application.view' },
                 { label: 'Reject BI Checking', href: 'kpr.database.reject-bi',  permission: 'bankloan.application.view' },
                 { label: 'Reject Proses KPR',  href: 'kpr.database.reject-kpr', permission: 'bankloan.application.view' },
+                // Target akad per bulan vs realisasinya. Targetnya diisi lewat import Excel —
+                // angka rencana tidak berasal dari transaksi mana pun.
+                { label: 'Realisasi vs Budget', href: 'kpr.database.realisasi-budget', permission: 'bankloan.application.view' },
+                // Unit akad per cluster per bank — dihitung dari data akad, bukan diunggah.
+                { label: 'Realisasi KPR per Bank', href: 'kpr.database.realisasi-bank', permission: 'bankloan.application.view' },
+                // Status unit & outstanding per cluster — diisi lewat import Exsum, bukan dihitung.
+                { label: 'Realisasi KPR per Cluster', href: 'kpr.database.realisasi-cluster', permission: 'bankloan.application.view' },
             ]},
         ],
     },
@@ -287,6 +304,9 @@ export function navGroups(foUrl: string): NavGroup[] {
             { label: 'Query', icon: FileBarChart, permission: ['ap.aging.*', 'ap.invoice.*', 'ap.paycard.*', 'ap.penghapusan.*', 'ar.view', 'tax.pph.*'], children: [
                 { label: 'Kartu Hutang', href: 'bs.ap.card' },
                 { label: 'Aging Hutang', href: 'bs.ap.aging', params: { view: 'detail' } },
+                // Outstanding per supplier: 20 terbesar + rangkuman sisanya. Angkanya dari
+                // computeAging() yang sama dengan Aging Hutang, jadi keduanya tidak bisa berbeda.
+                { label: 'Aging Hutang Supplier', href: 'bs.ap.aging-supplier' },
                 { label: 'Proyeksi Hutang', href: 'bs.projection', params: { mode: 'hutang' } },
                 { label: 'Kartu Pembayaran Hutang', href: 'bs.ap.payment-card' },
                 { label: 'Laporan Invoice Hutang', href: 'bs.ap.report' },
@@ -335,9 +355,9 @@ export function navGroups(foUrl: string): NavGroup[] {
                 { label: 'Rekening', href: 'rekening.index' },
                 // Barcode tanda tangan yang dipakai pada Persetujuan (TTD) SIP.
                 { label: 'Set Up Barcode', href: 'bs.cashbook.signature-barcode.index' },
-                // Kartu kredit/VA: saldo & masa berlakunya. Bon sementara berpembayaran
+                // Kartu debit/VA: saldo & masa berlakunya. Bon sementara berpembayaran
                 // Debit VA melahirkan permintaan saldo & expired di sini.
-                { label: 'Set Up Credit Card', href: 'bs.cashbook.credit-card.index' },
+                { label: 'Set Up Debit Card', href: 'bs.cashbook.credit-card.index' },
                 { label: 'Repair Data', href: 'bs.cashbook.repair.index' },
             ]},
             { label: 'Master', icon: Wallet, permission: ['cashbook.advance.*', 'cashbook.cheque-out.*', 'cashbook.giro.*', 'cashbook.pettycash.*', 'cashbook.transaction.*'], children: [
@@ -349,7 +369,6 @@ export function navGroups(foUrl: string): NavGroup[] {
                 { label: 'Cek Giro Masuk', href: 'bs.giro.index' },
                 { label: 'Cek Giro Keluar', href: 'bs.cheque-out.index' },
                 { label: 'Realisasi Bon Sementara', href: 'bs.advance.index' },
-                { label: 'Outstanding Kasbon', href: 'bs.cashbook.outstanding-kasbon' },
             ]},
             { label: 'Report/Query', icon: FileBarChart, permission: ['cashbook.advance.*', 'cashbook.giro-calendar.*', 'cashbook.ledger.*', 'cashbook.saldo.*', 'cashbook.transaction.*'], children: [
                 { label: 'Rekening Ledger', href: 'bs.cashbook.ledger' },
@@ -357,7 +376,14 @@ export function navGroups(foUrl: string): NavGroup[] {
                 { label: 'Kalender Cek Giro', href: 'bs.cashbook.giro-calendar' },
                 { label: 'Pengeluaran Kas & Bank', href: 'bs.cashbook.index', params: { type: 'out' } },
                 { label: 'Kartu Bon Sementara', href: 'bs.advance.card' },
+                // Saldo kartu debit/VA yang dipecah per nomor bon — angkanya sama dengan
+                // Set Up Debit Card, hanya sudut pandangnya yang per bon, bukan per kartu.
+                { label: 'Saldo Debit Card', href: 'bs.advance.card-balance' },
                 { label: 'Rekap Bon Sementara', href: 'bs.advance.report' },
+                // Outstanding Kasbon adalah laporan (saldo awal · penambahan · realisasi ·
+                // outstanding per karyawan), bukan tempat menginput — tempatnya di Report/Query,
+                // tepat di bawah Rekap Bon Sementara.
+                { label: 'Outstanding Kasbon', href: 'bs.cashbook.outstanding-kasbon' },
             ]},
             { label: 'Saldo Awal', icon: Coins, permission: ['cashbook.opening.*'], children: [
                 { label: 'Saldo Awal Rekening', href: 'bs.cashbook.opening.index' },
@@ -420,6 +446,7 @@ export function navGroups(foUrl: string): NavGroup[] {
                 { label: 'Koreksi Budget', href: 'bs.budget.query.correction' },
                 { label: 'Realisasi Budget', href: 'bs.budget.query.realization' },
                 { label: 'Alokasi Budget', href: 'bs.budget.query.allocation' },
+                { label: 'Report Budget', href: 'bs.budget.query.report' },
             ]},
             { label: 'Upload Budget', icon: FileSpreadsheet, permission: ['budget.master.*', 'budget.upload.*', 'businesssupport.approval.*'], children: [
                 { label: 'Upload Budget', href: 'bs.budget.upload.index' },

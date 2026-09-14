@@ -174,9 +174,9 @@ const inputCls = 'h-9 w-full rounded-lg border border-neutral-300 bg-white px-3 
     <div class="space-y-4">
         <div class="flex flex-wrap items-start justify-between gap-3">
             <div>
-                <h1 class="flex items-center gap-2 text-2xl font-bold"><CreditCard class="h-6 w-6 text-primary-600" /> Set Up Credit Card</h1>
+                <h1 class="flex items-center gap-2 text-2xl font-bold"><CreditCard class="h-6 w-6 text-primary-600" /> Set Up Debit Card</h1>
                 <p class="text-sm text-neutral-500">
-                    Kartu kredit / Virtual Account beserta saldonya <b>per bulan</b>.
+                    Kartu debit / Virtual Account beserta saldonya <b>per bulan</b>.
                     <b>Saldo Awal</b> = sisa saldo bulan sebelumnya bila sudah di-closing ·
                     <b>Penambahan</b> = pembayaran Debit VA yang tersimpan ·
                     <b>Pemakaian</b> = Alokasi Kasbon ·
@@ -255,7 +255,7 @@ const inputCls = 'h-9 w-full rounded-lg border border-neutral-300 bg-white px-3 
                     </tbody>
                 </table>
             </div>
-            <EmptyState v-if="! cards.length" title="Belum ada kartu" description="Tambahkan kartu kredit/VA di bawah, lalu aktifkan dan isi saldonya." />
+            <EmptyState v-if="! cards.length" title="Belum ada kartu" description="Tambahkan kartu debit/VA di bawah, lalu aktifkan dan isi saldonya." />
         </div>
 
         <!-- RIWAYAT DETAIL per bulan — saldo awal → penambahan → pemakaian → sisa saldo. -->

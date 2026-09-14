@@ -7,6 +7,7 @@ namespace App\Http\Controllers\Web\BusinessSupport\Gl;
 use App\Domain\BusinessSupport\Models\BsAccount;
 use App\Domain\BusinessSupport\Models\BsBudget;
 use App\Domain\BusinessSupport\Models\BsJournalLine;
+use App\Domain\BusinessSupport\Support\AnalisaKenaikan;
 use App\Exports\SheetXlsx;
 use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
@@ -440,6 +441,21 @@ class LedgerReportController extends Controller
         $grand       = fn (array $g) => (float) array_sum(array_map(fn ($x) => $x['total'], $g));
         $totalAssets = $grand($assets);
 
+        // Pembanding Neraca = AKHIR TAHUN SEBELUMNYA, jadi "kenaikan" berarti pergerakan sejak
+        // awal tahun berjalan. Itulah arti yang dipakai orang saat bertanya "naik berapa tahun
+        // ini". Neraca menyatakan posisi pada satu tanggal, bukan aktivitas satu rentang, jadi
+        // pembandingnya harus tanggal lain — bukan rentang yang digeser.
+        $pembanding = $asOf->copy()->subYear()->endOfYear();
+        $analisa    = AnalisaKenaikan::susun(
+            $this->barisAnalisa(
+                $leaf->mapWithKeys(fn ($x) => [(string) $x['code'] => (float) $x['net']])->all(),
+                $this->saldoPerKode(null, $pembanding->toDateString()),
+                fn (string $code) => in_array(substr($code, 0, 1), ['1', '2', '3', '8'], true),
+            ),
+            $asOf->translatedFormat('d M Y'),
+            $pembanding->translatedFormat('d M Y'),
+        );
+
         return [
             'company'       => $this->companyName(),
             'as_of'         => $asOf->translatedFormat('d F Y'),
@@ -449,6 +465,7 @@ class LedgerReportController extends Controller
             'equity'        => $equity,
             'total_assets'  => $totalAssets,
             'total_passiva' => $grand($liabilities) + $grand($equity),
+            'analisa'       => $analisa,
         ];
     }
 
@@ -465,9 +482,12 @@ class LedgerReportController extends Controller
     {
         abort_unless($request->user()?->can('gl.financials.view'), 403);
 
-        $d = $this->incomeStatementData($request);
-        $rows = [
-            ['LAPORAN LABA RUGI'],
+        $d      = $this->incomeStatementData($request);
+        $detail = $d['view'] === 'detail';
+        $rows   = [
+            // Menumpang di baris judul yang sudah ada, BUKAN menambah baris pembuka baru, supaya
+            // jumlah baris kepala tetap 5 dan pembekuan barisnya di bawah tidak perlu diubah.
+            ['LAPORAN LABA RUGI'.($detail ? ' (DETAIL)' : '')],
             [$d['company']],
             ['Periode '.$d['periode']],
             [],
@@ -476,12 +496,23 @@ class LedgerReportController extends Controller
         foreach ($d['rows'] as $r) {
             // Baris bertingkat diberi jorokan supaya susunannya tetap terbaca di Excel,
             // tempat warna & tebal-tipisnya tidak ikut terbawa.
-            $jorok = match ($r['kind']) { 'line' => '        ', 'group' => '    ', default => '' };
-            $rows[] = [$jorok.$r['label'], $r['amount'] === null ? null : (float) $r['amount']];
+            $jorok = match ($r['kind']) {
+                'detail' => '            ',
+                'line'   => '        ',
+                'group'  => '    ',
+                default  => '',
+            };
+            // Kode hanya dicetak pada baris rincian, dan digabung ke depan label pada kolom yang
+            // sama. Dua hal yang sengaja dihindari: menambah kolom "Kode" baru (menggeser kolom
+            // nilai dari B ke C dan mematahkan rumus siapa pun yang sudah menunjuk kolom B), dan
+            // mencetak kode pada baris Ledger (mengubah berkas mode ringkas yang selama ini sudah
+            // biasa diterima orang, padahal mode ringkas tidak diminta berubah).
+            $label  = ($r['kind'] === 'detail' && ($r['code'] ?? '') !== '' ? $r['code'].'  ' : '').$r['label'];
+            $rows[] = [$jorok.$label, $r['amount'] === null ? null : (float) $r['amount']];
         }
 
         return (new SheetXlsx($rows, 5, 'Laba Rugi'))
-            ->toResponse('Laba-Rugi-'.$d['date_from'].'-sd-'.$d['date_to'].'.xlsx');
+            ->toResponse('Laba-Rugi-'.($detail ? 'Detail-' : '').$d['date_from'].'-sd-'.$d['date_to'].'.xlsx');
     }
 
     /**
@@ -494,6 +525,9 @@ class LedgerReportController extends Controller
         // Laba rugi menyatakan hasil SELAMA satu periode, jadi yang dipilih rentang tanggalnya.
         // Bawaannya awal tahun berjalan s/d hari ini — periode yang paling sering dilihat.
         [$from, $to] = $this->rentang($request);
+        // Nilai asing/kosong jatuh ke 'summary', jadi URL lama, bookmark, dan tautan export lama
+        // memulangkan laporan yang persis sama dengan sebelum mode ini ada.
+        $view  = $request->input('view') === 'detail' ? 'detail' : 'summary';
         $leaf  = $this->accountBalances(null, $from->toDateString(), $to->toDateString());
         $nodes = BsAccount::where('level', 3)->orderBy('code')->get(['code', 'name']);
 
@@ -501,15 +535,43 @@ class LedgerReportController extends Controller
             fn ($c, $x) => $c + (str_starts_with((string) $x['code'], $prefix) ? (float) $x['net'] : 0.0),
             0.0,
         );
-        $linesUnder = function (array $prefixes, bool $creditPositive) use ($nodes, $sum): array {
+        /*
+         * Rincian akun di bawah satu node Ledger (tingkat 3).
+         *
+         * Saringnya HANYA awalan kode — sengaja tanpa memeriksa level atau panjang kode, karena
+         * itulah aturan yang sama persis dipakai $sum() di atas. Akibatnya jumlah baris rincian
+         * SELALU sama dengan nilai baris induknya secara konstruksi, bukan karena kebetulan
+         * datanya rapi: seandainya suatu hari ada jurnal menempel pada akun bukan tingkat 6,
+         * akun itu ikut tampil sebagai baris rincian alih-alih diam-diam merusak jumlahnya.
+         */
+        $rincianDi = function (string $parentCode, float $sign) use ($leaf): array {
+            $out = [];
+            foreach ($leaf as $x) {
+                if (! str_starts_with((string) $x['code'], $parentCode)) {
+                    continue;
+                }
+                $amt = $sign * (float) $x['net'];
+                if (abs($amt) > 0.001) {
+                    $out[] = ['code' => (string) $x['code'], 'name' => (string) $x['name'], 'amount' => $amt];
+                }
+            }
+
+            return $out;
+        };
+        $linesUnder = function (array $prefixes, bool $creditPositive) use ($nodes, $sum, $rincianDi, $view): array {
             $sign = $creditPositive ? -1.0 : 1.0;
             $out  = [];
             foreach ($nodes as $n) {
                 foreach ($prefixes as $p) {
                     if (str_starts_with($n['code'], $p)) {
-                        $amt = $sign * $sum($n['code']);
-                        if (abs($amt) > 0.001) {
-                            $out[] = ['name' => $n['name'], 'amount' => $amt];
+                        $amt     = $sign * $sum($n['code']);
+                        $rincian = $view === 'detail' ? $rincianDi($n['code'], $sign) : [];
+                        // Mode ringkas membuang node bernilai nol, seperti seterusnya. Mode detail
+                        // TETAP menampilkannya bila anaknya bernilai — node yang anak-anaknya saling
+                        // meniadakan justru keadaan yang paling perlu dilihat, dan membuangnya
+                        // membuat seluruh kategori lenyap tanpa jejak.
+                        if (abs($amt) > 0.001 || $rincian !== []) {
+                            $out[] = ['code' => (string) $n['code'], 'name' => $n['name'], 'amount' => $amt, 'rincian' => $rincian];
                         }
                         break;
                     }
@@ -532,12 +594,20 @@ class LedgerReportController extends Controller
         $netProfit = $ebitda + $netLain;
 
         $rows = [];
-        $add  = function (string $kind, string $label, ?float $amount = null) use (&$rows): void {
-            $rows[] = ['kind' => $kind, 'label' => $label, 'amount' => $amount];
+        // 'code' diisi null untuk SEMUA baris, bukan hanya baris yang punya kode. Dengan begitu
+        // export & layar boleh membacanya tanpa penjaga, dan tidak ada "Undefined array key".
+        $add = function (string $kind, string $label, ?float $amount = null, ?string $code = null) use (&$rows): void {
+            $rows[] = ['kind' => $kind, 'code' => $code, 'label' => $label, 'amount' => $amount];
         };
         $addLines = function (array $prefixes, bool $creditPositive) use (&$rows, $linesUnder): void {
             foreach ($linesUnder($prefixes, $creditPositive) as $l) {
-                $rows[] = ['kind' => 'line', 'label' => $l['name'], 'amount' => $l['amount']];
+                // Rincian tingkat 6 mendahului baris Ledger-nya, sehingga baris Ledger terbaca
+                // sebagai JUMLAH dari rincian di atasnya — sama seperti setiap subtotal lain di
+                // laporan ini. Ditaruh sesudahnya, baris Ledger terbaca seperti judul.
+                foreach ($l['rincian'] as $d) {
+                    $rows[] = ['kind' => 'detail', 'code' => $d['code'], 'label' => $d['name'], 'amount' => $d['amount']];
+                }
+                $rows[] = ['kind' => 'line', 'code' => $l['code'], 'label' => $l['name'], 'amount' => $l['amount']];
             }
         };
 
@@ -575,7 +645,112 @@ class LedgerReportController extends Controller
             'date_to'    => $to->toDateString(),
             'rows'       => $rows,
             'net_profit' => $netProfit,
+            'view'       => $view,
+            // Pembanding Laba Rugi = RENTANG YANG SAMA setahun sebelumnya. Laba rugi menyatakan
+            // aktivitas selama satu rentang, jadi pembandingnya harus rentang pula — dan rentang
+            // yang panjangnya sama, supaya yang dibandingkan memang setara.
+            'analisa'    => AnalisaKenaikan::susun(
+                $this->barisAnalisa(
+                    $leaf->mapWithKeys(fn ($x) => [(string) $x['code'] => (float) $x['net']])->all(),
+                    $this->saldoPerKode(
+                        $from->copy()->subYear()->toDateString(),
+                        $to->copy()->subYear()->toDateString(),
+                    ),
+                    fn (string $code) => in_array(substr($code, 0, 1), ['4', '5', '6', '7'], true),
+                ),
+                'Periode ini',
+                'Periode sama '.$from->copy()->subYear()->year,
+            ),
+            // Berapa akun tingkat 6 yang TAMPIL, dari berapa yang ada di bagan akun laba rugi.
+            // Tanpa kedua angka ini orang menghitung sendiri, menemukan lebih sedikit daripada
+            // yang ia kira, lalu menyimpulkan laporannya bocor — padahal sisanya memang tidak
+            // punya transaksi pada periode itu.
+            'detail'     => [
+                'tampil' => count(array_filter($rows, fn ($r) => $r['kind'] === 'detail')),
+                'total'  => $view === 'detail' ? $this->jumlahAkunLabaRugi() : 0,
+            ],
         ];
+    }
+
+    /**
+     * Susun baris analisa dari dua kumpulan saldo per KODE akun.
+     *
+     * Yang dianalisa adalah akun yang benar-benar punya saldo — dalam praktiknya akun tingkat 6,
+     * karena hanya akun postable yang boleh dijurnal. Akun tingkat lain SENGAJA tidak disaring:
+     * laporan di atasnya menjumlah menurut awalan kode tanpa memeriksa level, jadi kalau suatu
+     * hari ada jurnal menempel pada akun Ledger (data warisan, perbaikan manual), akun itu ikut
+     * terhitung di totalnya. Menyaringnya di sini membuat analisanya tidak lagi bisa dicocokkan
+     * dengan laporannya — putusnya diam-diam, tanpa ada angka yang terlihat aneh. Lebih baik ia
+     * muncul sebagai penggerak dan terlihat.
+     *
+     * Nama induk tingkat 3-nya ikut dibawa sebagai keterangan, karena nama akun saja sering
+     * tidak cukup untuk tahu ia bagian dari apa ("Lain-lain" ada di banyak tempat).
+     *
+     * Tandanya mengikuti arah normal akun: akun kewajiban, modal, dan pendapatan yang membesar
+     * akan terbaca NAIK, bukan turun. Tanpa pembalikan ini, pendapatan yang tumbuh tampil
+     * sebagai penurunan terdalam — persis kebalikan dari keadaannya.
+     *
+     * @param  array<string,float>  $kini
+     * @param  array<string,float>  $lalu
+     * @param  callable(string):bool  $ikut  kode mana yang ikut dianalisa
+     * @return array<int,array<string,mixed>>
+     */
+    private function barisAnalisa(array $kini, array $lalu, callable $ikut): array
+    {
+        $akun = BsAccount::get(['code', 'name', 'type'])->keyBy('code');
+        $grup = BsAccount::where('level', 3)->pluck('name', 'code');
+
+        $out = [];
+        foreach (array_unique(array_merge(array_keys($kini), array_keys($lalu))) as $code) {
+            $code = (string) $code;
+            if (! $ikut($code)) {
+                continue;
+            }
+            $a = $akun[$code] ?? null;
+            if ($a === null) {
+                continue; // saldo pada kode yang tidak ada di bagan akun — tidak ada namanya untuk disebut
+            }
+            $tanda = in_array($a->type, ['liability', 'equity', 'income'], true) ? -1.0 : 1.0;
+            $out[] = [
+                'kode' => $code,
+                'nama' => (string) $a->name,
+                'grup' => (string) ($grup[substr($code, 0, 5)] ?? ''),
+                'kini' => $tanda * (float) ($kini[$code] ?? 0.0),
+                'lalu' => $tanda * (float) ($lalu[$code] ?? 0.0),
+                // Arah sumbangannya ke LABA: pendapatan menambah, beban menggerus. Akun neraca
+                // tidak menyentuh laba, jadi dibiarkan kosong dan tidak ikut dijumlahkan.
+                'dampak' => match ((string) $a->type) {
+                    'income'  => 1,
+                    'expense' => -1,
+                    default   => null,
+                },
+            ];
+        }
+
+        return $out;
+    }
+
+    /** Saldo per kode akun dari accountBalances(), dibentuk menjadi peta kode → net. */
+    private function saldoPerKode(?string $from, ?string $to): array
+    {
+        $out = [];
+        foreach ($this->accountBalances(null, $from, $to) as $x) {
+            $out[(string) $x['code']] = (float) $x['net'];
+        }
+
+        return $out;
+    }
+
+    /**
+     * Banyaknya akun postable (tingkat 6) di wilayah laba rugi — penyebut keterangan "x dari y akun".
+     *
+     * Dihitung dari JENIS akun, bukan dari daftar awalan kode: daftar awalan sudah tertulis di
+     * susunan bagian laporan (401/402/501/502/503/601/701), dan menyalinnya ke sini berarti dua
+     * daftar yang bisa menyimpang diam-diam.
+     */
+    private function jumlahAkunLabaRugi(): int
+    {
+        return (int) BsAccount::where('is_postable', true)->whereIn('type', ['income', 'expense'])->count();
     }
 
     /**
@@ -779,6 +954,18 @@ class LedgerReportController extends Controller
             'rows'       => $rows,
             'totals'     => ['realisasi' => $R['net'], 'budget' => $B['net'], 'variance' => $R['net'] - $B['net']],
             'has_budget' => array_sum(array_map('abs', $budByCode)) > 0.001,
+            // Di sini "kenaikan" berarti SELISIH TERHADAP ANGGARAN, bukan terhadap periode lain:
+            // laporan ini memang sudah punya pembandingnya sendiri. Akun yang paling jauh
+            // melampaui anggarannya itulah yang menggerakkan variance-nya.
+            'analisa'    => AnalisaKenaikan::susun(
+                $this->barisAnalisa(
+                    $realByCode,
+                    $budByCode,
+                    fn (string $code) => in_array(substr($code, 0, 1), ['4', '5', '6', '7'], true),
+                ),
+                'Realisasi',
+                'Anggaran',
+            ),
             // Dikatakan terus terang apakah angka budgetnya utuh setahun atau diprorata,
             // supaya pembacanya tahu terhadap apa realisasinya dibandingkan.
             'budget_note' => $penuh

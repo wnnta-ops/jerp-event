@@ -26,9 +26,41 @@ class DashboardController extends Controller
      */
     private const MAKS_BULAN = 36;
 
+    /**
+     * EMPAT SUB-DASHBOARD — isi tiap kelompok, berurutan seperti yang tampil di layar.
+     *
+     * Delapan belas grafik pada satu halaman membuat yang dicari selalu berada jauh di bawah.
+     * Pengelompokan ini memberi tiap peran pintu masuknya sendiri, dan — karena tiap grafiknya
+     * dibungkus closure di charts() — sub-dashboard hanya menghitung grafik yang ditampilkannya.
+     *
+     * Keempatnya bersama-sama memuat SELURUH kunci charts(); tidak ada grafik yang menjadi yatim
+     * ketika halaman gabungannya tidak lagi tertaut dari sidebar.
+     */
+    public const GRUP = [
+        'kpr'        => ['inisiasi_kpr', 'proses_kpr', 'penolakan'],                                   // 1–3
+        'cash'       => ['rekening', 'kasbon', 'aging'],                                               // 4–6
+        'accounting' => ['neraca', 'laba_rugi', 'aset_tetap', 'budget', 'bast_ajb_br', 'piutang', 'hpp'], // 7–10, 14–18
+        'project'    => ['spk', 'progress', 'retensi'],                                                // 11–13
+    ];
+
+    /** Judul tiap sub-dashboard — dipakai kepala halaman supaya jelas sedang melihat kelompok apa. */
+    public const GRUP_JUDUL = [
+        'kpr'        => 'KPR & Collection',
+        'cash'       => 'Cash Management',
+        'accounting' => 'Accounting, Tax & Budget',
+        'project'    => 'Project',
+    ];
+
     public function __invoke(Request $request): Response
     {
         $user = $request->user();
+
+        /* Tanpa ?grup= halaman berperilaku persis seperti dulu: keenam belas grafik dikirim
+           sekaligus. Sub-dashboard hanyalah penyaring di atas halaman yang sama, bukan halaman
+           baru — satu tata letak, satu saringan periode, satu tempat memperbaiki bila ada yang
+           salah. */
+        $grup = (string) $request->query('grup', '');
+        $grup = isset(self::GRUP[$grup]) ? $grup : null;
 
         $p = $this->periode($request);
 
@@ -52,7 +84,9 @@ class DashboardController extends Controller
                 'maks_bulan' => self::MAKS_BULAN,
                 'project' => (string) (DB::table('projects')->value('name') ?? 'Semua Project'),
             ],
-            'charts' => $this->charts($p),
+            'grup'       => $grup,
+            'grupJudul'  => $grup !== null ? self::GRUP_JUDUL[$grup] : null,
+            'charts'     => $this->charts($p, $grup),
         ]);
     }
 
@@ -184,26 +218,42 @@ class DashboardController extends Controller
      * @param  array{awal: Carbon, akhir: Carbon, bulan: array<int, Carbon>, label: string, dipotong: bool}  $p
      * @return array<string, mixed>
      */
-    private function charts(array $p): array
+    private function charts(array $p, ?string $grup = null): array
     {
-        return [
-            'inisiasi_kpr' => $this->chartInisiasiKpr($p),      // 1
-            'proses_kpr'   => $this->chartProsesKpr($p),        // 2
-            'penolakan'    => $this->chartPenolakanKpr($p),     // 3
-            'rekening'     => $this->chartSaldoRekeningKas($p), // 4
-            'kasbon'       => $this->chartBonSementara($p),     // 5
-            'aging'        => $this->chartAgingHutang($p),      // 6
-            'neraca'       => $this->chartSummaryNeraca($p),    // 7
-            'laba_rugi'    => $this->chartSummaryLabaRugi($p),  // 8
-            'aset_tetap'   => $this->chartAsetTetap($p),        // 9
-            'budget'       => $this->chartRealisasiBudget($p),  // 10
-            'spk'          => $this->chartSpkPerCluster($p),    // 11
-            'progress'     => $this->chartProgressLapangan($p), // 12
-            'retensi'      => $this->chartSummaryRetensi($p),   // 13
-            'bast_ajb_br'  => $this->chartBastAjbBooked($p),    // 14–16
-            'piutang'      => $this->chartRekonsiliasiPiutang($p), // 17
-            'hpp'          => $this->chartSummaryHpp($p),         // 18
+        $semua = [
+            'inisiasi_kpr' => fn () => $this->chartInisiasiKpr($p),      // 1
+            'proses_kpr'   => fn () => $this->chartProsesKpr($p),        // 2
+            'penolakan'    => fn () => $this->chartPenolakanKpr($p),     // 3
+            'rekening'     => fn () => $this->chartSaldoRekeningKas($p), // 4
+            'kasbon'       => fn () => $this->chartBonSementara($p),     // 5
+            'aging'        => fn () => $this->chartAgingHutang($p),      // 6
+            'neraca'       => fn () => $this->chartSummaryNeraca($p),    // 7
+            'laba_rugi'    => fn () => $this->chartSummaryLabaRugi($p),  // 8
+            'aset_tetap'   => fn () => $this->chartAsetTetap($p),        // 9
+            'budget'       => fn () => $this->chartRealisasiBudget($p),  // 10
+            'spk'          => fn () => $this->chartSpkPerCluster($p),    // 11
+            'progress'     => fn () => $this->chartProgressLapangan($p), // 12
+            'retensi'      => fn () => $this->chartSummaryRetensi($p),   // 13
+            'bast_ajb_br'  => fn () => $this->chartBastAjbBooked($p),    // 14–16
+            'piutang'      => fn () => $this->chartRekonsiliasiPiutang($p), // 17
+            'hpp'          => fn () => $this->chartSummaryHpp($p),         // 18
         ];
+
+        /* Tiap grafik dibungkus closure supaya sub-dashboard hanya MENGHITUNG yang ditampilkannya.
+           Satu pemuatan penuh menjalankan ±25 kueri data dan ratusan panggilan introspeksi skema;
+           menghitung keenam belasnya untuk halaman yang hanya menampilkan tiga adalah beban yang
+           tidak pernah terlihat di layar — hanya terasa sebagai halaman yang lambat. */
+        $kunci = $grup !== null ? (self::GRUP[$grup] ?? null) : null;
+        $pilih = $kunci === null ? array_keys($semua) : $kunci;
+
+        $out = [];
+        foreach ($pilih as $k) {
+            if (isset($semua[$k])) {
+                $out[$k] = ($semua[$k])();
+            }
+        }
+
+        return $out;
     }
 
 
