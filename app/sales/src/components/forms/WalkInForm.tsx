@@ -11,6 +11,7 @@ import { LEAD_FIELD_LABEL, SUMBER_INFORMASI } from "@/lib/constants";
 export interface WalkInEdit {
   id: string;
   nama: string;
+  tanggalWi?: string; // YYYY-MM-DD
   channel: string;
   agencyId: string;
   salesId: string;
@@ -39,6 +40,7 @@ export function WalkInForm({
   const router = useRouter();
   const isEdit = !!deal;
   const [busy, setBusy] = useState(false);
+  const [tanggal, setTanggal] = useState(deal?.tanggalWi ?? new Date().toLocaleDateString("en-CA"));
   const [clusterId, setClusterId] = useState(deal?.clusterId ?? options.clusters[0]?.id ?? "");
 
   // sumber informasi: known option, or "Other" with free text
@@ -73,6 +75,7 @@ export function WalkInForm({
     const sumberInformasi = sumberSel === "Other" ? sumberOther.trim() : sumberSel;
     const body = {
       nama: form.nama,
+      tanggalWi: tanggal,
       channel: form.channel,
       agencyId: form.agencyId,
       salesId: form.salesId,
@@ -120,6 +123,12 @@ export function WalkInForm({
           <input value={form.nama} onChange={(e) => setForm({ ...form, nama: e.target.value })} placeholder="cth: Budi" />
         </div>
         <div className="field">
+          <label>Tanggal WI</label>
+          <input type="date" value={tanggal} onChange={(e) => setTanggal(e.target.value)} />
+        </div>
+      </div>
+      <div className="frow">
+        <div className="field">
           <label>Channel WI</label>
           <select value={form.channel} onChange={(e) => setForm({ ...form, channel: e.target.value })}>
             <option value="SITE">Site</option>
@@ -128,6 +137,7 @@ export function WalkInForm({
             <option value="LEADS">Leads</option>
           </select>
         </div>
+        <div className="field" />
       </div>
       <div className="frow">
         <div className="field">
