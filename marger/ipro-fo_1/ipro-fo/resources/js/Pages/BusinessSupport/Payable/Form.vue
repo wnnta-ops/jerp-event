@@ -52,7 +52,17 @@ watch(() => form.pph_type, (t) => {
     // #94: jenis PPh → auto-isi tarif default (tetap bisa diubah manual di input tarif).
     if (t && PPH_RATES[t] !== undefined) form.pph_pct = PPH_RATES[t];
     // #113: jenis PPh → otomatis pilih akun PPh default (tetap bisa diubah manual lewat dropdown).
-    if (t && props.pphDefaults?.[t]) form.pph_account_id = props.pphDefaults[t];
+    // #113: jenis PPh → akun Hutang PPh. Kini SATU-SATUNYA jalan mengisinya — dropdown pemilih
+    // akun sudah dihilangkan dari layar. Karena itu ia harus ikut DIKOSONGKAN saat jenisnya
+    // dikosongkan: dulu nilai lamanya sengaja dibiarkan bertahan karena pengguna masih bisa
+    // membetulkannya sendiri, sekarang tidak bisa lagi. Akun yang tertinggal tidak cocok tidak
+    // sekadar salah muara — keterangan baris di buku besar dibaca dari NAMA AKUN (pasalPph),
+    // sehingga bisa tertulis "PPh 21" padahal jenisnya PPh 23.
+    //
+    // Jenis yang akunnya belum ada di CoA juga dikosongkan, BUKAN dibiarkan memakai akun jenis
+    // sebelumnya: baris Hutang PPh yang hilang dilaporkan akunKurang, sedangkan akun yang salah
+    // tidak dilaporkan apa pun.
+    form.pph_account_id = t ? (props.pphDefaults?.[t] ?? '') : '';
 });
 // #92/#PPh-acuan: saat masuk mode dipungut/ditanggung, default nilai objek PPh = ACUAN (Objek PPN bila "Dengan PPN", selain itu DPP).
 watch(() => form.pph_mode, (m) => { if ((m === 'withheld' || m === 'borne') && !Number(form.pph_base)) form.pph_base = pphRefBase.value; });
@@ -431,16 +441,25 @@ const cellArea = 'w-full rounded-md border border-neutral-300 bg-white px-2 py-1
                     </div></div>
                 <div><label class="mb-1 block text-xs font-medium text-neutral-500">Sifat PPh</label><div class="flex gap-1.5"><label class="flex flex-1 cursor-pointer items-center justify-center gap-1 rounded-lg border px-1.5 py-1.5 text-[11px]" :class="form.pph_mode==='none' ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/20' : 'border-neutral-300 dark:border-neutral-700'"><input v-model="form.pph_mode" type="radio" value="none" class="sr-only" />Tanpa PPh</label><label class="flex flex-1 cursor-pointer items-center justify-center gap-1 rounded-lg border px-1.5 py-1.5 text-[11px]" :class="form.pph_mode==='withheld' ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/20' : 'border-neutral-300 dark:border-neutral-700'"><input v-model="form.pph_mode" type="radio" value="withheld" class="sr-only" />Dipotong</label><label class="flex flex-1 cursor-pointer items-center justify-center gap-1 rounded-lg border px-1.5 py-1.5 text-[11px]" :class="form.pph_mode==='borne' ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/20' : 'border-neutral-300 dark:border-neutral-700'"><input v-model="form.pph_mode" type="radio" value="borne" class="sr-only" />Ditanggung</label></div>
                     <div v-if="form.pph_mode==='withheld' || form.pph_mode==='borne'" class="mt-2 space-y-1.5">
-                        <!-- #94: jenis PPh → tarif default (bisa diubah manual) -->
-                        <select v-model="form.pph_type" class="h-8 w-full rounded-lg border border-neutral-300 px-1 text-xs dark:border-neutral-700 dark:bg-neutral-900">
-                            <option value="">— jenis PPh —</option>
-                            <option value="pph21">PPh 21 (2,5%)</option>
-                            <option value="pph23">PPh 23 (2%)</option>
-                            <option value="pph4_2">PPh Pasal 4 Ayat 2 (1,75%)</option>
-                        </select>
+                        <!-- #94: jenis PPh → tarif default (bisa diubah manual).
+                             Jenis & tarif BERDAMPINGAN, rasio lebarnya diatur lewat flex (3 : 1) —
+                             min-w-0 wajib, kalau tidak lebar minimum bawaan select/input menahan
+                             keduanya dan rasionya tidak pernah benar-benar berlaku pada kolom sempit.
+
+                             Dropdown "Akun PPh" DIHILANGKAN: akunnya kini sepenuhnya ditentukan jenis
+                             PPh — Hutang PPh <jenis> lewat pphDefaults dan Biaya PPh <jenis> lewat
+                             pphBorneDefaults. Membiarkannya bisa dipilih sendiri hanya membuka peluang
+                             akun yang tidak cocok dengan jenisnya, dan itu tidak sekadar salah muara:
+                             keterangan baris di buku besar dibaca dari NAMA AKUN (pasalPph), sehingga
+                             bisa tertulis "PPh 21" padahal jenisnya PPh 23. -->
                         <div class="flex gap-1">
-                            <input v-model.number="form.pph_pct" type="number" step="0.25" min="0" max="100" title="Tarif % (bisa diubah manual)" class="h-8 w-16 rounded-lg border border-neutral-300 px-2 text-right text-xs dark:border-neutral-700 dark:bg-neutral-900" />
-                            <select v-model="form.pph_account_id" class="h-8 flex-1 rounded-lg border border-neutral-300 px-1 text-xs dark:border-neutral-700 dark:bg-neutral-900"><option value="">Akun PPh…</option><option v-for="a in pphAccounts" :key="a.id" :value="a.id">{{ a.name }}</option></select>
+                            <select v-model="form.pph_type" class="h-8 min-w-0 flex-[3] rounded-lg border border-neutral-300 px-1 text-xs dark:border-neutral-700 dark:bg-neutral-900">
+                                <option value="">— jenis PPh —</option>
+                                <option value="pph21">PPh 21 (2,5%)</option>
+                                <option value="pph23">PPh 23 (2%)</option>
+                                <option value="pph4_2">PPh Pasal 4 Ayat 2 (1,75%)</option>
+                            </select>
+                            <input v-model.number="form.pph_pct" type="number" step="0.25" min="0" max="100" title="Tarif % (bisa diubah manual)" class="h-8 min-w-0 flex-1 rounded-lg border border-neutral-300 px-2 text-right text-xs dark:border-neutral-700 dark:bg-neutral-900" />
                         </div>
                         <!-- #92: nilai objek PPh (default = Objek PPN bila Dengan PPN, selain itu DPP); PPh dihitung dari nilai ini saja -->
                         <MoneyInput v-model="form.pph_base" placeholder="Nilai objek PPh" />
