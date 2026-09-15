@@ -39,25 +39,25 @@ class ApInvoiceController extends Controller
             ->latest('invoice_date')->latest('id')
             ->get()
             ->map(fn ($r) => [
-                'id'             => $r->id,
+                'id' => $r->id,
                 'invoice_number' => $r->invoice_number,
-                'invoice_date'   => $r->invoice_date?->toDateString(),
-                'receive_date'   => $r->receive_date?->toDateString(),
-                'due_date'       => $r->due_date?->toDateString(),  // utk ringkasan jatuh tempo
-                'supplier'       => $r->supplier ? ['name' => $r->supplier->name] : null,
-                'customer'       => $r->customer ? ['name' => $r->customer->full_name] : null, // refund: lawan = customer
-                'source_type'    => $r->source_type,    // po / spk / refund / null(manual)
+                'invoice_date' => $r->invoice_date?->toDateString(),
+                'receive_date' => $r->receive_date?->toDateString(),
+                'due_date' => $r->due_date?->toDateString(),  // utk ringkasan jatuh tempo
+                'supplier' => $r->supplier ? ['name' => $r->supplier->name] : null,
+                'customer' => $r->customer ? ['name' => $r->customer->full_name] : null, // refund: lawan = customer
+                'source_type' => $r->source_type,    // po / spk / refund / null(manual)
                 // id PO asal (hanya bila source_type='po') — dipakai tombol "Cetak Purchase Order"
                 // pada baris terpilih. source_id sengaja tidak dikirim mentah agar tidak tertukar
                 // dengan id sumber lain (SPK/refund) yang memakai kolom yang sama.
-                'po_id'          => $r->source_type === 'po' ? $r->source_id : null,
-                'refund_source'  => $r->refund_source,  // SPR / SPRS / TRANSFER_ANONIM
-                'description'    => $r->description,
-                'berkas_notes'   => $r->berkas_notes,
+                'po_id' => $r->source_type === 'po' ? $r->source_id : null,
+                'refund_source' => $r->refund_source,  // SPR / SPRS / TRANSFER_ANONIM
+                'description' => $r->description,
+                'berkas_notes' => $r->berkas_notes,
                 'berkas_finance_date' => $r->berkas_finance_date?->toDateString(),
-                'status'         => $r->status,
-                'payable'        => round($r->payable_amount, 2),   // nett dibayar ke supplier (total − PPh dipotong)
-                'sisa'           => round($r->outstanding, 2),       // nett − terbayar
+                'status' => $r->status,
+                'payable' => round($r->payable_amount, 2),   // nett dibayar ke supplier (total − PPh dipotong)
+                'sisa' => round($r->outstanding, 2),       // nett − terbayar
             ]);
 
         return Inertia::render('BusinessSupport/Payable/Index', [
@@ -73,18 +73,18 @@ class ApInvoiceController extends Controller
         abort_unless($request->user()?->can('ap.printhub'), 403);
 
         $openTotal = (float) BsApInvoice::where('status', 'open')->sum('total');
-        $openPaid  = (float) BsApInvoice::where('status', 'open')->sum('paid_amount');
-        $overdueQ  = BsApInvoice::where('status', 'open')->whereNotNull('due_date')->whereDate('due_date', '<', now()->toDateString());
-        $dueSoonQ  = BsApInvoice::where('status', 'open')->whereNotNull('due_date')->whereDate('due_date', '<=', now()->addDays(30)->toDateString());
+        $openPaid = (float) BsApInvoice::where('status', 'open')->sum('paid_amount');
+        $overdueQ = BsApInvoice::where('status', 'open')->whereNotNull('due_date')->whereDate('due_date', '<', now()->toDateString());
+        $dueSoonQ = BsApInvoice::where('status', 'open')->whereNotNull('due_date')->whereDate('due_date', '<=', now()->addDays(30)->toDateString());
 
         return Inertia::render('BusinessSupport/Payable/Hub', [
             'summary' => [
                 'outstanding' => round($openTotal - $openPaid, 2),
-                'overdue'     => round((float) (clone $overdueQ)->sum('total') - (float) (clone $overdueQ)->sum('paid_amount'), 2),
-                'due_soon'    => round((float) (clone $dueSoonQ)->sum('total') - (float) (clone $dueSoonQ)->sum('paid_amount'), 2),
-                'count_open'  => BsApInvoice::where('status', 'open')->count(),
+                'overdue' => round((float) (clone $overdueQ)->sum('total') - (float) (clone $overdueQ)->sum('paid_amount'), 2),
+                'due_soon' => round((float) (clone $dueSoonQ)->sum('total') - (float) (clone $dueSoonQ)->sum('paid_amount'), 2),
+                'count_open' => BsApInvoice::where('status', 'open')->count(),
                 'count_total' => BsApInvoice::count(),
-                'suppliers'   => \App\Domain\BusinessSupport\Models\BsSupplier::count(),
+                'suppliers' => BsSupplier::count(),
             ],
         ]);
     }
@@ -95,22 +95,22 @@ class ApInvoiceController extends Controller
     {
         abort_unless($request->user()?->can('ap.invoice.view'), 403);
         $titles = [
-            'general'      => 'General Function',
-            'setup'        => 'Setup',
-            'master'       => 'Master',
-            'query'        => 'Query',
-            'generate'     => 'Generate Invoice',
-            'penyesuaian'  => 'Penyesuaian Invoice',
+            'general' => 'General Function',
+            'setup' => 'Setup',
+            'master' => 'Master',
+            'query' => 'Query',
+            'generate' => 'Generate Invoice',
+            'penyesuaian' => 'Penyesuaian Invoice',
             // Kunci 'posting-po' dipertahankan (dipakai URL/section), hanya judulnya yang berubah.
-            'posting-po'   => 'Posting Invoice dari FO',
-            'posting-spk'  => 'Posting Invoice SPK',
-            'saldoawal'    => 'Saldo Awal',
+            'posting-po' => 'Posting Invoice dari FO',
+            'posting-spk' => 'Posting Invoice SPK',
+            'saldoawal' => 'Saldo Awal',
         ];
         abort_unless(isset($titles[$section]), 404);
 
         return Inertia::render('BusinessSupport/Payable/Section', [
             'section' => $section,
-            'title'   => $titles[$section],
+            'title' => $titles[$section],
         ]);
     }
 
@@ -128,10 +128,10 @@ class ApInvoiceController extends Controller
             ->when($request->input('search'), fn ($q, $s) => $q->where(fn ($w) => $w->where('invoice_number', 'like', "%{$s}%")->orWhere('description', 'like', "%{$s}%")))
             ->latest('invoice_date')->latest('id')->get();
 
-        $e  = fn ($s) => htmlspecialchars((string) $s, ENT_QUOTES, 'UTF-8');
+        $e = fn ($s) => htmlspecialchars((string) $s, ENT_QUOTES, 'UTF-8');
         $rp = fn ($n) => number_format((float) $n, 0, ',', '.');
         $today = \Illuminate\Support\Carbon::today();
-        $h  = '<table border="1"><tr style="background:#0f766e;color:#fff"><th>No Invoice</th><th>Tanggal</th><th>Tgl Diterima</th><th>Berkas Diterima Finance</th><th>Jatuh Tempo</th><th>Aging Hutang</th><th>Aging Jatuh Tempo</th><th>Supplier</th><th>Keterangan</th><th>Status</th><th>Total</th><th>Terbayar</th><th>Sisa</th></tr>';
+        $h = '<table border="1"><tr style="background:#0f766e;color:#fff"><th>No Invoice</th><th>Tanggal</th><th>Tgl Diterima</th><th>Berkas Diterima Finance</th><th>Jatuh Tempo</th><th>Aging Hutang</th><th>Aging Jatuh Tempo</th><th>Supplier</th><th>Keterangan</th><th>Status</th><th>Total</th><th>Terbayar</th><th>Sisa</th></tr>';
         foreach ($rows as $r) {
             $sisa = (float) $r->total - (float) $r->paid_amount;
             // Aging Hutang = jumlah hari sejak tanggal diterima (receive_date) sampai hari ini (>=0).
@@ -159,10 +159,10 @@ class ApInvoiceController extends Controller
     {
         abort_unless($request->user()?->can('ap.invoice.view'), 403);
 
-        $dateFrom   = $request->input('date_from') ?: null;
-        $dateTo     = $request->input('date_to') ?: null;
+        $dateFrom = $request->input('date_from') ?: null;
+        $dateTo = $request->input('date_to') ?: null;
         $supplierId = $request->integer('supplier_id') ?: null;
-        $pulled     = $request->boolean('pull'); // data hanya ditarik setelah user pilih periode & klik Tampilkan
+        $pulled = $request->boolean('pull'); // data hanya ditarik setelah user pilih periode & klik Tampilkan
 
         $rows = collect();
         if ($pulled) {
@@ -173,26 +173,26 @@ class ApInvoiceController extends Controller
                 ->when($supplierId, fn ($q, $v) => $q->where('supplier_id', $v))
                 ->latest('invoice_date')->latest('id')->get()
                 ->map(fn ($r) => [
-                    'invoice_no'   => $r->invoice_number,
+                    'invoice_no' => $r->invoice_number,
                     'invoice_date' => $r->invoice_date?->toDateString(),
                     'receive_date' => $r->receive_date?->toDateString(),
-                    'due_date'     => $r->due_date?->toDateString(),
+                    'due_date' => $r->due_date?->toDateString(),
                     'aging_hutang' => $r->receive_date ? (int) $r->receive_date->copy()->startOfDay()->diffInDays($today, false) : null,
-                    'aging_jt'     => $r->due_date ? (int) $r->due_date->copy()->startOfDay()->diffInDays($today, false) : null,
-                    'supplier'     => trim(($r->supplier?->code ?? '').' '.($r->supplier?->name ?? '')),
-                    'description'  => $r->description,
-                    'status'       => $r->status,
-                    'total'        => round((float) $r->total, 2),
-                    'paid'         => round((float) $r->paid_amount, 2),
-                    'sisa'         => round((float) $r->total - (float) $r->paid_amount, 2),
+                    'aging_jt' => $r->due_date ? (int) $r->due_date->copy()->startOfDay()->diffInDays($today, false) : null,
+                    'supplier' => trim(($r->supplier?->code ?? '').' '.($r->supplier?->name ?? '')),
+                    'description' => $r->description,
+                    'status' => $r->status,
+                    'total' => round((float) $r->total, 2),
+                    'paid' => round((float) $r->paid_amount, 2),
+                    'sisa' => round((float) $r->total - (float) $r->paid_amount, 2),
                 ])->values();
         }
 
         return Inertia::render('BusinessSupport/Payable/InvoiceReport', [
-            'rows'      => $rows,
+            'rows' => $rows,
             'suppliers' => BsSupplier::orderBy('name')->get(['id', 'code', 'name']),
-            'filters'   => ['date_from' => $dateFrom, 'date_to' => $dateTo, 'supplier_id' => $supplierId],
-            'pulled'    => $pulled,
+            'filters' => ['date_from' => $dateFrom, 'date_to' => $dateTo, 'supplier_id' => $supplierId],
+            'pulled' => $pulled,
         ]);
     }
 
@@ -217,8 +217,8 @@ class ApInvoiceController extends Controller
             ->where('code', 'like', '2010404%')->orderBy('code')->get(['id', 'code', 'name']);
 
         return Inertia::render('BusinessSupport/Payable/Form', [
-            'suppliers'  => BsSupplier::where('is_active', true)->orderBy('name')->get(['id', 'code', 'name', 'category']),
-            'units'      => $units,
+            'suppliers' => BsSupplier::where('is_active', true)->orderBy('name')->get(['id', 'code', 'name', 'category']),
+            'units' => $units,
             'categories' => BsApCategory::where('is_active', true)->with(['debitAccount:id,code,name', 'payableAccount:id,code,name'])->orderBy('name')->get()
                 ->map(fn ($c) => [
                     'id' => $c->id, 'code' => $c->code, 'name' => $c->name,
@@ -229,23 +229,23 @@ class ApInvoiceController extends Controller
                 ]),
             'pphAccounts' => $pphAccounts,
             'pphDefaults' => [   // #113 jenis PPh → akun default (HUTANG PPh 21/23/4(2))
-                'pph21'  => $pphAccounts->firstWhere('code', '20104040402')?->id,
-                'pph23'  => $pphAccounts->firstWhere('code', '20104040403')?->id,
+                'pph21' => $pphAccounts->firstWhere('code', '20104040402')?->id,
+                'pph23' => $pphAccounts->firstWhere('code', '20104040403')?->id,
                 'pph4_2' => $pphAccounts->firstWhere('code', '20104040401')?->id,
             ],
-            'ppnAccount'  => BsAccount::where('is_active', true)->where('code', config('business_support.gl_accounts.ppn_in'))->first(['id', 'code', 'name']),
+            'ppnAccount' => BsAccount::where('is_active', true)->where('code', config('business_support.gl_accounts.ppn_in'))->first(['id', 'code', 'name']),
             // Debit "Biaya PPh" default utk PPh ditanggung (bisa diganti di struktur jurnal).
             'pphBorneExpense' => BsAccount::where('code', config('business_support.gl_accounts.pph_borne_expense'))->first(['id', 'code', 'name']),
             // cost_center_optional ikut dikirim: layar Struktur Jurnal mewajibkan cost center,
             // dan tanpa penanda ini ia tidak bisa membedakan akun yang MEMANG boleh tanpa cost
             // center (mis. Utang Usaha Supplier) — hasilnya wizard-nya mengunci diri sendiri
             // pada invoice yang sebenarnya sah. Daftar akunnya sama dengan Jurnal Memorial.
-            'accounts'    => BsAccount::where('is_active', true)->where('is_postable', true)->orderBy('code')->get(['id', 'code', 'name', 'cost_center_optional']),
+            'accounts' => BsAccount::where('is_active', true)->where('is_postable', true)->orderBy('code')->get(['id', 'code', 'name', 'cost_center_optional']),
             'costCenters' => BsCostCenter::where('is_active', true)->orderBy('code')->get(['id', 'code', 'name']),
             'departments' => BsDepartment::where('is_active', true)->orderBy('code')->get(['id', 'code', 'name']),
-            'ledgers'     => BsLedger::where('is_active', true)->orderBy('code')->get(['id', 'code', 'name']),
-            'locations'   => BsLocation::where('is_active', true)->orderBy('code')->get(['id', 'code', 'name']),
-            'trxTypes'    => BsApInvoice::TRX_TYPES,
+            'ledgers' => BsLedger::where('is_active', true)->orderBy('code')->get(['id', 'code', 'name']),
+            'locations' => BsLocation::where('is_active', true)->orderBy('code')->get(['id', 'code', 'name']),
+            'trxTypes' => BsApInvoice::TRX_TYPES,
         ]);
     }
 
@@ -254,48 +254,48 @@ class ApInvoiceController extends Controller
         abort_unless($request->user()?->can('ap.invoice.create'), 403);
 
         $v = $request->validate([
-            'supplier_id'         => ['required', 'integer', 'exists:bs_suppliers,id'],
-            'unit_id'             => ['nullable', 'integer', 'exists:units,id'],
-            'customer_id'         => ['nullable', 'integer', 'exists:customers,id'],
-            'category_id'         => ['required', 'integer', 'exists:bs_ap_categories,id'],
-            'trx_type'            => ['required', 'in:normal,denda,saldo_awal'],
+            'supplier_id' => ['required', 'integer', 'exists:bs_suppliers,id'],
+            'unit_id' => ['nullable', 'integer', 'exists:units,id'],
+            'customer_id' => ['nullable', 'integer', 'exists:customers,id'],
+            'category_id' => ['required', 'integer', 'exists:bs_ap_categories,id'],
+            'trx_type' => ['required', 'in:normal,denda,saldo_awal'],
             'supplier_invoice_no' => ['required', 'string', 'max:80'],
-            'manual_no'           => ['nullable', 'string', 'max:80'],
-            'invoice_date'        => ['required', 'date'],
-            'receive_date'        => ['nullable', 'date'],
-            'due_date'            => ['nullable', 'date', 'after_or_equal:invoice_date'],
-            'term_days'           => ['required', 'integer', 'min:1', 'max:3650'], // wajib: jatuh tempo (hari)
-            'description'         => ['required', 'string', 'max:255'],
-            'transfer_detail'     => ['nullable', 'string', 'max:255'],
-            'kurs'                => ['nullable', 'numeric', 'min:0'],
-            'dpp'                 => ['required', 'numeric', 'min:0.01'],
-            'ppn_mode'            => ['required', 'in:none,with'],
-            'ppn_pct'             => ['nullable', 'numeric', 'min:0', 'max:100'],
-            'ppn_base'            => ['nullable', 'numeric', 'min:0'],          // #140 nilai objek PPN
-            'pph_mode'            => ['required', 'in:none,withheld,borne'], // borne = PPh ditanggung (sebelumnya tertolak validasi)
-            'pph_type'            => ['nullable', 'in:pph21,pph23,pph4_2'],   // #94
-            'pph_pct'             => ['nullable', 'numeric', 'min:0', 'max:100'],
-            'pph_base'            => ['nullable', 'numeric', 'min:0'],         // #92 nilai objek PPh
-            'pph_account_id'      => ['nullable', 'integer', 'exists:bs_accounts,id'],
-            'lines'                  => ['nullable', 'array'],
-            'lines.*.description'    => ['required_with:lines', 'string', 'max:200'],
-            'lines.*.qty'            => ['nullable', 'numeric', 'min:0'],
-            'lines.*.unit_price'     => ['nullable', 'numeric', 'min:0'],
-            'lines.*.amount'         => ['required_with:lines', 'numeric', 'min:0'],
-            'schedules'              => ['nullable', 'array'],
-            'schedules.*.due_date'   => ['required_with:schedules', 'date'],
-            'schedules.*.amount'     => ['required_with:schedules', 'numeric', 'min:0.01'],
-            'journal_lines'               => ['nullable', 'array'],
-            'journal_lines.*.account_id'     => ['nullable', 'integer', 'exists:bs_accounts,id'],
+            'manual_no' => ['nullable', 'string', 'max:80'],
+            'invoice_date' => ['required', 'date'],
+            'receive_date' => ['nullable', 'date'],
+            'due_date' => ['nullable', 'date', 'after_or_equal:invoice_date'],
+            'term_days' => ['required', 'integer', 'min:1', 'max:3650'], // wajib: jatuh tempo (hari)
+            'description' => ['required', 'string', 'max:255'],
+            'transfer_detail' => ['nullable', 'string', 'max:255'],
+            'kurs' => ['nullable', 'numeric', 'min:0'],
+            'dpp' => ['required', 'numeric', 'min:0.01'],
+            'ppn_mode' => ['required', 'in:none,with'],
+            'ppn_pct' => ['nullable', 'numeric', 'min:0', 'max:100'],
+            'ppn_base' => ['nullable', 'numeric', 'min:0'],          // #140 nilai objek PPN
+            'pph_mode' => ['required', 'in:none,withheld,borne'], // borne = PPh ditanggung (sebelumnya tertolak validasi)
+            'pph_type' => ['nullable', 'in:pph21,pph23,pph4_2'],   // #94
+            'pph_pct' => ['nullable', 'numeric', 'min:0', 'max:100'],
+            'pph_base' => ['nullable', 'numeric', 'min:0'],         // #92 nilai objek PPh
+            'pph_account_id' => ['nullable', 'integer', 'exists:bs_accounts,id'],
+            'lines' => ['nullable', 'array'],
+            'lines.*.description' => ['required_with:lines', 'string', 'max:200'],
+            'lines.*.qty' => ['nullable', 'numeric', 'min:0'],
+            'lines.*.unit_price' => ['nullable', 'numeric', 'min:0'],
+            'lines.*.amount' => ['required_with:lines', 'numeric', 'min:0'],
+            'schedules' => ['nullable', 'array'],
+            'schedules.*.due_date' => ['required_with:schedules', 'date'],
+            'schedules.*.amount' => ['required_with:schedules', 'numeric', 'min:0.01'],
+            'journal_lines' => ['nullable', 'array'],
+            'journal_lines.*.account_id' => ['nullable', 'integer', 'exists:bs_accounts,id'],
             'journal_lines.*.cost_center_id' => ['nullable', 'integer', 'exists:bs_cost_centers,id'],
-            'journal_lines.*.department_id'  => ['nullable', 'integer', 'exists:bs_departments,id'],
-            'journal_lines.*.ledger_id'      => ['nullable', 'integer', 'exists:bs_ledgers,id'],
-            'journal_lines.*.location_id'    => ['nullable', 'integer', 'exists:bs_locations,id'],
-            'journal_lines.*.currency'       => ['nullable', 'string', 'max:8'],
-            'journal_lines.*.kurs'           => ['nullable', 'numeric', 'min:0'],
-            'journal_lines.*.description'    => ['nullable', 'string', 'max:255'],
-            'journal_lines.*.debit'       => ['nullable', 'numeric', 'min:0'],
-            'journal_lines.*.credit'      => ['nullable', 'numeric', 'min:0'],
+            'journal_lines.*.department_id' => ['nullable', 'integer', 'exists:bs_departments,id'],
+            'journal_lines.*.ledger_id' => ['nullable', 'integer', 'exists:bs_ledgers,id'],
+            'journal_lines.*.location_id' => ['nullable', 'integer', 'exists:bs_locations,id'],
+            'journal_lines.*.currency' => ['nullable', 'string', 'max:8'],
+            'journal_lines.*.kurs' => ['nullable', 'numeric', 'min:0'],
+            'journal_lines.*.description' => ['nullable', 'string', 'max:255'],
+            'journal_lines.*.debit' => ['nullable', 'numeric', 'min:0'],
+            'journal_lines.*.credit' => ['nullable', 'numeric', 'min:0'],
         ]);
 
         // Cost center WAJIB pada baris jurnal yang akunnya memang memerlukannya.
@@ -357,11 +357,11 @@ class ApInvoiceController extends Controller
             ->get(['id', 'memorial_number', 'memorial_date', 'amount', 'description', 'journal_id'])
             ->map(fn ($m) => [
                 'memorial_number' => $m->memorial_number,
-                'memorial_date'   => $m->memorial_date?->format('Y-m-d'),
-                'amount'          => (float) $m->amount,
-                'reason'          => $m->description, // alasan penghapusan hutang
-                'journal_id'      => $m->journal_id,  // tautan ke jurnal General Ledger
-                'journal_number'  => $m->journal?->journal_number,
+                'memorial_date' => $m->memorial_date?->format('Y-m-d'),
+                'amount' => (float) $m->amount,
+                'reason' => $m->description, // alasan penghapusan hutang
+                'journal_id' => $m->journal_id,  // tautan ke jurnal General Ledger
+                'journal_number' => $m->journal?->journal_number,
             ]);
 
         // Struktur jurnal pendaftaran invoice (Dr Akun + PPN Masukan / Cr Hutang + PPh).
@@ -371,25 +371,25 @@ class ApInvoiceController extends Controller
             : null;
         $journalData = null;
         if ($journal) {
-            $ccCodes   = \Illuminate\Support\Facades\DB::table('bs_cost_centers')->pluck('code', 'id');
-            $deptCodes = \Illuminate\Support\Facades\DB::table('bs_departments')->pluck('code', 'id');
+            $ccCodes = DB::table('bs_cost_centers')->pluck('code', 'id');
+            $deptCodes = DB::table('bs_departments')->pluck('code', 'id');
             $journalData = [
-                'id'     => $journal->id,
+                'id' => $journal->id,
                 'number' => $journal->journal_number,
-                'date'   => $journal->journal_date ? \Illuminate\Support\Carbon::parse($journal->journal_date)->toDateString() : null,
-                'lines'  => $journal->lines->map(function ($l) use ($ccCodes, $deptCodes) {
+                'date' => $journal->journal_date ? \Illuminate\Support\Carbon::parse($journal->journal_date)->toDateString() : null,
+                'lines' => $journal->lines->map(function ($l) use ($ccCodes, $deptCodes) {
                     $dim = collect([$ccCodes[$l->cost_center_id] ?? null, $deptCodes[$l->department_id] ?? null])->filter()->implode(' · ');
 
                     return [
                         'account_code' => $l->account?->code,
                         'account_name' => $l->account?->name,
-                        'dimensi'      => $dim !== '' ? $dim : null,
-                        'description'  => $l->description,
-                        'debit'        => (float) $l->debit,
-                        'credit'       => (float) $l->credit,
+                        'dimensi' => $dim !== '' ? $dim : null,
+                        'description' => $l->description,
+                        'debit' => (float) $l->debit,
+                        'credit' => (float) $l->credit,
                     ];
                 })->values(),
-                'total_debit'  => round((float) $journal->lines->sum('debit'), 2),
+                'total_debit' => round((float) $journal->lines->sum('debit'), 2),
                 'total_credit' => round((float) $journal->lines->sum('credit'), 2),
             ];
         }
@@ -403,29 +403,29 @@ class ApInvoiceController extends Controller
             $fallback = $po->lines
                 ->filter(fn ($l) => (float) $l->qty_received > 0)
                 ->map(function ($l) {
-                    $qty  = (float) $l->qty_received;
-                    $uom  = $l->item?->uom?->code ?? $l->item?->uom?->name;
+                    $qty = (float) $l->qty_received;
+                    $uom = $l->item?->uom?->code ?? $l->item?->uom?->name;
                     $name = trim((($l->item?->code) ? $l->item->code.' - ' : '').($l->item?->name ?? 'Barang'));
 
                     return [
                         'description' => trim($name.($uom ? ' ('.$uom.')' : '')),
-                        'qty'         => $qty,
-                        'unit_price'  => (float) $l->unit_price,
-                        'amount'      => round($qty * (float) $l->unit_price, 2),
+                        'qty' => $qty,
+                        'unit_price' => (float) $l->unit_price,
+                        'amount' => round($qty * (float) $l->unit_price, 2),
                     ];
                 })->values();
             $invoice->setRelation('lines', $fallback->map(fn ($l) => new \App\Domain\BusinessSupport\Models\BsApInvoiceLine($l)));
         }
 
         return Inertia::render('BusinessSupport/Payable/Show', [
-            'invoice'       => array_merge($invoice->toArray(), ['payable_amount' => $invoice->payable_amount]),
+            'invoice' => array_merge($invoice->toArray(), ['payable_amount' => $invoice->payable_amount]),
             // Tautan ke PO asal — dipakai tombol "Cetak Purchase Order" pada rincian invoice.
             'purchaseOrder' => $po ? ['id' => $po->id, 'po_number' => $po->po_number] : null,
-            'journal'       => $journalData,
-            'outstanding'   => (float) $invoice->outstanding,
-            'cashAccounts'  => BsAccount::where('is_active', true)->where('is_postable', true)->where('code', 'like', '101010%')->orderBy('code')->get(['id', 'code', 'name']),
-            'defaultCash'   => $this->accId('cash'),
-            'writeoffs'     => $writeoffs,
+            'journal' => $journalData,
+            'outstanding' => (float) $invoice->outstanding,
+            'cashAccounts' => BsAccount::where('is_active', true)->where('is_postable', true)->where('code', 'like', '101010%')->orderBy('code')->get(['id', 'code', 'name']),
+            'defaultCash' => $this->accId('cash'),
+            'writeoffs' => $writeoffs,
             'writeoffTotal' => round((float) $writeoffs->sum('amount'), 2),
         ]);
     }
@@ -522,24 +522,24 @@ class ApInvoiceController extends Controller
 
     private function renderInvoicePrint(BsApInvoice $invoice, $accNames): string
     {
-        $e   = fn ($s) => htmlspecialchars((string) $s, ENT_QUOTES, 'UTF-8');
-        $rp  = fn ($n) => 'Rp '.number_format((float) $n, 0, ',', '.');
-        $co  = (string) config('business_support.company.name', 'PT. Mitra Usaha Propertindo');
+        $e = fn ($s) => htmlspecialchars((string) $s, ENT_QUOTES, 'UTF-8');
+        $rp = fn ($n) => 'Rp '.number_format((float) $n, 0, ',', '.');
+        $co = (string) config('business_support.company.name', 'PT. Mitra Usaha Propertindo');
         $now = now()->translatedFormat('d F Y H:i');
 
         $payable = (float) $invoice->payable_amount;
-        $paid    = (float) $invoice->paid_amount;
-        $sisa    = round($payable - $paid, 2);
-        $lunas   = $sisa <= 0.01;
+        $paid = (float) $invoice->paid_amount;
+        $sisa = round($payable - $paid, 2);
+        $lunas = $sisa <= 0.01;
 
         // #115: rincian pajak (DPP, PPN, PPh dipungut) untuk print-out.
-        $dpp        = (float) $invoice->dpp;
-        $ppnAmt     = (float) $invoice->ppn_amount;
-        $pphAmt     = (float) $invoice->pph_amount;
+        $dpp = (float) $invoice->dpp;
+        $ppnAmt = (float) $invoice->ppn_amount;
+        $pphAmt = (float) $invoice->pph_amount;
         $grossTotal = (float) $invoice->total > 0 ? (float) $invoice->total : $dpp + $ppnAmt; // DPP + PPN
-        $pct        = fn ($n) => rtrim(rtrim(number_format((float) $n, 2, ',', '.'), '0'), ',');
-        $pphLabels  = ['pph21' => 'PPh Pasal 21', 'pph23' => 'PPh Pasal 23', 'pph4_2' => 'PPh Pasal 4(2)'];
-        $pphLabel   = $pphLabels[$invoice->pph_type] ?? 'PPh';
+        $pct = fn ($n) => rtrim(rtrim(number_format((float) $n, 2, ',', '.'), '0'), ',');
+        $pphLabels = ['pph21' => 'PPh Pasal 21', 'pph23' => 'PPh Pasal 23', 'pph4_2' => 'PPh Pasal 4(2)'];
+        $pphLabel = $pphLabels[$invoice->pph_type] ?? 'PPh';
 
         $sumRows = '<tr><td>DPP</td><td class="r">'.$rp($dpp).'</td></tr>';
         if ($invoice->ppn_mode === 'with' || $ppnAmt > 0) {
@@ -620,8 +620,8 @@ class ApInvoiceController extends Controller
 
     private function renderMemoPrint(BsApInvoice $invoice, $user): string
     {
-        $e   = fn ($s) => htmlspecialchars((string) $s, ENT_QUOTES, 'UTF-8');
-        $rp  = fn ($n) => 'Rp. '.number_format((float) $n, 2, ',', '.');
+        $e = fn ($s) => htmlspecialchars((string) $s, ENT_QUOTES, 'UTF-8');
+        $rp = fn ($n) => 'Rp. '.number_format((float) $n, 2, ',', '.');
         $pct = fn ($n) => rtrim(rtrim(number_format((float) $n, 2, ',', '.'), '0'), ',');
 
         $dpp = (float) $invoice->dpp;
@@ -629,11 +629,11 @@ class ApInvoiceController extends Controller
         $pph = (float) $invoice->pph_amount;
         $net = (float) $invoice->payable_amount;
 
-        $sup     = $invoice->supplier;
-        $payAcc  = $invoice->category?->payableAccount;
+        $sup = $invoice->supplier;
+        $payAcc = $invoice->category?->payableAccount;
         $created = $e(now()->translatedFormat('d-m-Y H.i.s'));
-        $eNo     = $e($invoice->invoice_number);
-        $eTgl    = $e(optional($invoice->invoice_date)->translatedFormat('d F Y'));
+        $eNo = $e($invoice->invoice_number);
+        $eTgl = $e(optional($invoice->invoice_date)->translatedFormat('d F Y'));
         // Jatuh tempo dari invoice — diisi saat Registrasi Invoice Hutang, dan sejak sekarang
         // juga saat posting dari FO / SPK / Purchase Order. Tanda '-' bila memang belum ada,
         // supaya barisnya tetap tercetak dan ketiadaannya terbaca sebagai keadaan, bukan
@@ -641,15 +641,18 @@ class ApInvoiceController extends Controller
         $eJatuhTempo = $invoice->due_date
             ? $e($invoice->due_date->translatedFormat('d F Y'))
             : '-';
-        $eDesc   = $e($invoice->description);
-        $eDari   = $e($user?->name ?? '-');
-        $eSupNm  = $e($sup?->name ?? '-');
+        $eDesc = $e($invoice->description);
+        $eDari = $e($user?->name ?? '-');
+        $eSupNm = $e($sup?->name ?? '-');
         $eBankNm = $e($sup?->bank_name ?: '-');
-        $eBankRek= $e($sup?->bank_account_no ?: '-');
+        $eBankRek = $e($sup?->bank_account_no ?: '-');
         $eBankAn = $e($sup?->bank_account_name ?: ($sup?->name ?: '-'));
-        $eBankLbl= 'Bank'.($sup?->bank_name ? ' ('.$e($sup->bank_name).')' : '');
+        $eBankLbl = 'Bank'.($sup?->bank_name ? ' ('.$e($sup->bank_name).')' : '');
         $ePayAcc = $e($payAcc?->code ?: '-');
-        $fDpp = $rp($dpp); $fPpn = $rp($ppn); $fPph = $rp($pph); $fNet = $rp($net);
+        $fDpp = $rp($dpp);
+        $fPpn = $rp($ppn);
+        $fPph = $rp($pph);
+        $fNet = $rp($net);
         $ppnPct = $pct($invoice->ppn_pct);
         $eWords = $e(strtoupper(trim(preg_replace('/\s+/', ' ', terbilang((int) round($net))))).' RUPIAH');
 
@@ -658,7 +661,7 @@ class ApInvoiceController extends Controller
         $eSign2 = $e('Rachmat Suhendra');
         $eMeng1 = $e(BsSip::SIGNERS['moch_winarto'] ?? 'Moch Winarto');
         $eMeng2 = $e(BsSip::SIGNERS['boy_arifin'] ?? 'Boy Arifin');
-        $logo   = '/images/mup-logo.jpeg'; // logo MUP (public/images) — dimuat sebelum window.onload print
+        $logo = '/images/mup-logo.jpeg'; // logo MUP (public/images) — dimuat sebelum window.onload print
 
         // Baris item: No | Nama Barang | Harga Sat | Jml Harga
         $itemRows = '';
@@ -671,32 +674,40 @@ class ApInvoiceController extends Controller
         }
 
         // #BPP — checkbox OTOMATIS dari data invoice (sisanya kosong utk dicentang manual).
-        $hasRek      = trim((string) ($sup?->bank_account_no ?? '')) !== '';        // ada nomor rekening?
-        $hasPph      = in_array($invoice->pph_mode, ['withheld', 'borne'], true);   // ada PPh dipungut/ditanggung?
-        $cbKas       = $hasRek ? '&nbsp;' : 'X';   // Dibayar Via: KAS bila TANPA rekening
-        $cbBank      = $hasRek ? 'X' : '&nbsp;';   // Dibayar Via: Bank/transfer bila ADA rekening
-        $cbTransfer  = $hasRek ? 'X' : '&nbsp;';   // Cara bayar: Transfer bila ada rekening
-        $cbTunai     = $hasRek ? '&nbsp;' : 'X';   // Cara bayar: Tunai bila KAS (tanpa rekening)
+        $hasRek = trim((string) ($sup?->bank_account_no ?? '')) !== '';        // ada nomor rekening?
+        $hasPph = in_array($invoice->pph_mode, ['withheld', 'borne'], true);   // ada PPh dipungut/ditanggung?
+        $cbKas = $hasRek ? '&nbsp;' : 'X';   // Dibayar Via: KAS bila TANPA rekening
+        $cbBank = $hasRek ? 'X' : '&nbsp;';   // Dibayar Via: Bank/transfer bila ADA rekening
+        $cbTransfer = $hasRek ? 'X' : '&nbsp;';   // Cara bayar: Transfer bila ada rekening
+        $cbTunai = $hasRek ? '&nbsp;' : 'X';   // Cara bayar: Tunai bila KAS (tanpa rekening)
         $cbPekerjaan = $hasPph ? 'X' : '&nbsp;';   // Type: Pekerjaan bila ada PPh
-        $cbMaterial  = $hasPph ? '&nbsp;' : 'X';   // Type: Material bila tanpa PPh
-        $cbPnjLgsg   = 'X';                         // Lampiran: selalu silang Penunjukan Langsung
-        $backUrl     = route('bs.ap.show', $invoice->id);
+        $cbMaterial = $hasPph ? '&nbsp;' : 'X';   // Type: Material bila tanpa PPh
+        $cbPnjLgsg = 'X';                         // Lampiran: selalu silang Penunjukan Langsung
+        $backUrl = route('bs.ap.show', $invoice->id);
 
-        // Departemen sesuai user login: User.employee_nip → BsEmployee.nik → BsHrDepartment.name.
-        // Departemen = dari Employee yang tertaut ke user login (NIP = NIK, atau cocok nama).
-        // Bila employee belum punya Departemen, pakai Jabatan (position) sebagai unit; selain itu '-'.
+        // Unit kerja si pengaju, dari karyawan yang tertaut ke akunnya (employee_nip = NIK,
+        // atau cocok nama). Urutannya: Departemen → Cost Center → Jabatan.
+        //
+        // Cost Center disisipkan karena master Departemen belum pernah diisi —
+        // bs_hr_departments 0 baris dan department_id NULL seluruhnya. Tanpa itu dokumen jatuh
+        // ke Jabatan, yang menyebut peran orangnya ("Staff Accounting") dan bukan unit yang
+        // menanggung biayanya. Departemen tetap didahulukan supaya master-nya bisa diisi nanti
+        // tanpa mengubah kode.
+        //
+        // SIP memakai urutan yang sama lewat SipController::unitPerUser(), supaya kedua dokumen
+        // tidak menyebut unit yang berbeda untuk orang yang sama.
         $eDept = '-';
         $emp = null;
         if (! empty($user?->employee_nip)) {
-            $emp = \App\Domain\BusinessSupport\Models\BsEmployee::with('department:id,name')
+            $emp = \App\Domain\BusinessSupport\Models\BsEmployee::with(['department:id,name', 'costCenter:id,name'])
                 ->where('nik', $user->employee_nip)->first();
         }
         if (! $emp && ! empty($user?->name)) {
-            $emp = \App\Domain\BusinessSupport\Models\BsEmployee::with('department:id,name')
+            $emp = \App\Domain\BusinessSupport\Models\BsEmployee::with(['department:id,name', 'costCenter:id,name'])
                 ->where('name', $user->name)->first();
         }
         if ($emp) {
-            $eDept = $e($emp->department?->name ?: ($emp->position ?: '-'));
+            $eDept = $e($emp->department?->name ?: ($emp->costCenter?->name ?: ($emp->position ?: '-')));
         }
 
         // #BPP — tabel No. Account / Uraian / Jumlah mengikuti Struktur Jurnal:
@@ -711,7 +722,7 @@ class ApInvoiceController extends Controller
         // Nilai minus diberi tanda '-'; nilai positif (debit) tanpa tanda '+'.
         $signFmt = fn (float $n) => ($n < 0 ? '- Rp. ' : 'Rp. ').number_format(abs($n), 2, ',', '.');
 
-        $bppRows  = '';
+        $bppRows = '';
         $bppCount = 0;
         // Total dijumlahkan dari baris yang BENAR-BENAR dicetak, bukan diambil dari baris Utang
         // Usaha Supplier. Satu invoice bisa punya BEBERAPA baris utang (mis. gimmick per customer);
@@ -882,10 +893,10 @@ HTML;
         abort_unless($request->user()?->can('ap.invoice.pay'), 403);
 
         $v = $request->validate([
-            'payment_date'    => ['required', 'date'],
+            'payment_date' => ['required', 'date'],
             'cash_account_id' => ['required', 'integer', 'exists:bs_accounts,id'],
-            'amount'          => ['required', 'numeric', 'min:0.01'],
-            'reference'       => ['nullable', 'string', 'max:150'],
+            'amount' => ['required', 'numeric', 'min:0.01'],
+            'reference' => ['nullable', 'string', 'max:150'],
         ]);
 
         try {
@@ -931,10 +942,10 @@ HTML;
         $semua = [];
         foreach ($rowsC as $r) {
             $semua[] = [
-                'name'  => $r['name'],
-                'b0'    => round((float) $r['current'] + (float) $r['d30'], 2),
-                'b31'   => round((float) $r['d60'], 2),
-                'b60'   => round((float) $r['d90'] + (float) $r['d90p'], 2),
+                'name' => $r['name'],
+                'b0' => round((float) $r['current'] + (float) $r['d30'], 2),
+                'b31' => round((float) $r['d60'], 2),
+                'b60' => round((float) $r['d90'] + (float) $r['d90p'], 2),
                 'total' => round((float) $r['total'], 2),
             ];
         }
@@ -942,32 +953,32 @@ HTML;
 
         $jml = fn (array $baris, string $k) => round(array_sum(array_column($baris, $k)), 2);
 
-        $top   = array_slice($semua, 0, self::TOP_SUPPLIER);
-        $sisa  = array_slice($semua, self::TOP_SUPPLIER);
+        $top = array_slice($semua, 0, self::TOP_SUPPLIER);
+        $sisa = array_slice($semua, self::TOP_SUPPLIER);
         $others = $sisa === [] ? null : [
             'jumlah' => count($sisa),
-            'b0'     => $jml($sisa, 'b0'),
-            'b31'    => $jml($sisa, 'b31'),
-            'b60'    => $jml($sisa, 'b60'),
-            'total'  => $jml($sisa, 'total'),
+            'b0' => $jml($sisa, 'b0'),
+            'b31' => $jml($sisa, 'b31'),
+            'b60' => $jml($sisa, 'b60'),
+            'total' => $jml($sisa, 'total'),
         ];
 
         return Inertia::render('BusinessSupport/Payable/AgingSupplier', [
-            'rows'    => $top,
-            'others'  => $others,
-            'total'   => [
+            'rows' => $top,
+            'others' => $others,
+            'total' => [
                 'jumlah' => count($semua),
-                'b0'     => $jml($semua, 'b0'),
-                'b31'    => $jml($semua, 'b31'),
-                'b60'    => $jml($semua, 'b60'),
-                'total'  => $jml($semua, 'total'),
+                'b0' => $jml($semua, 'b0'),
+                'b31' => $jml($semua, 'b31'),
+                'b60' => $jml($semua, 'b60'),
+                'total' => $jml($semua, 'total'),
             ],
             // Supplier terbesar disebut namanya: pada hutang yang terpusat di satu pihak, itulah
             // keterangan yang paling menentukan dan paling mudah terlewat dari tabel panjang.
             'dominan' => $semua[0] ?? null,
-            'topN'    => self::TOP_SUPPLIER,
+            'topN' => self::TOP_SUPPLIER,
             'dateFrom' => $dateFrom,
-            'dateTo'  => $asOf->toDateString(),
+            'dateTo' => $asOf->toDateString(),
         ]);
     }
 
@@ -976,29 +987,29 @@ HTML;
     {
         abort_unless($request->user()?->can('ap.aging.view'), 403);
 
-        $view   = $request->input('view') === 'detail' ? 'detail' : 'summary';
+        $view = $request->input('view') === 'detail' ? 'detail' : 'summary';
         $pulled = $request->boolean('pull'); // data baru ditarik setelah klik "Tampilkan" → hindari load berat
         $dateFrom = $request->input('date_from') ?: null;
-        $dateTo   = $request->input('date_to') ?: null;
-        $asOfStr  = $dateTo ?: now()->toDateString();
+        $dateTo = $request->input('date_to') ?: null;
+        $asOfStr = $dateTo ?: now()->toDateString();
 
-        $rows    = [];
+        $rows = [];
         $details = [];
-        $totals  = ['current' => 0.0, 'd30' => 0.0, 'd60' => 0.0, 'd90' => 0.0, 'd90p' => 0.0, 'total' => 0.0];
+        $totals = ['current' => 0.0, 'd30' => 0.0, 'd60' => 0.0, 'd90' => 0.0, 'd90p' => 0.0, 'total' => 0.0];
         if ($pulled) {
             [$rowsC, $totals, $details, $asOf, $dateFrom] = $this->computeAging($dateTo, $dateFrom);
-            $rows    = array_values($rowsC);
+            $rows = array_values($rowsC);
             $asOfStr = $asOf->toDateString();
         }
 
         return Inertia::render('BusinessSupport/Payable/Aging', [
-            'view'     => $view,
-            'rows'     => $rows,
-            'totals'   => $totals,
-            'details'  => $details,
+            'view' => $view,
+            'rows' => $rows,
+            'totals' => $totals,
+            'details' => $details,
             'dateFrom' => $dateFrom,
-            'dateTo'   => $asOfStr,
-            'pulled'   => $pulled,
+            'dateTo' => $asOfStr,
+            'pulled' => $pulled,
         ]);
     }
 
@@ -1036,9 +1047,9 @@ HTML;
 
     private function computeAging(?string $dateTo = null, ?string $dateFrom = null): array
     {
-        $asOf  = $dateTo ? \Illuminate\Support\Carbon::parse($dateTo)->startOfDay() : now()->startOfDay();
-        $from  = $dateFrom ?: null;
-        $rows  = [];
+        $asOf = $dateTo ? \Illuminate\Support\Carbon::parse($dateTo)->startOfDay() : now()->startOfDay();
+        $from = $dateFrom ?: null;
+        $rows = [];
         $details = [];
         $totals = ['current' => 0.0, 'd30' => 0.0, 'd60' => 0.0, 'd90' => 0.0, 'd90p' => 0.0, 'total' => 0.0];
         $bucketLabel = ['current' => 'Belum JT', 'd30' => '1–30', 'd60' => '31–60', 'd90' => '61–90', 'd90p' => '>90'];
@@ -1056,23 +1067,23 @@ HTML;
                 if ($out <= 0.009) {
                     return;
                 }
-                $ref     = $inv->due_date ?? $inv->invoice_date;
+                $ref = $inv->due_date ?? $inv->invoice_date;
                 $overdue = $ref && $ref->lt($asOf) ? (int) $ref->diffInDays($asOf) : 0;
-                $bucket  = $overdue <= 0 ? 'current' : ($overdue <= 30 ? 'd30' : ($overdue <= 60 ? 'd60' : ($overdue <= 90 ? 'd90' : 'd90p')));
+                $bucket = $overdue <= 0 ? 'current' : ($overdue <= 30 ? 'd30' : ($overdue <= 60 ? 'd60' : ($overdue <= 90 ? 'd90' : 'd90p')));
 
                 $key = $inv->supplier_id;
                 $rows[$key] ??= ['name' => $this->namaSupplier($inv), 'current' => 0, 'd30' => 0, 'd60' => 0, 'd90' => 0, 'd90p' => 0, 'total' => 0];
                 $rows[$key][$bucket] += $out;
                 $rows[$key]['total'] += $out;
-                $totals[$bucket]     += $out;
-                $totals['total']     += $out;
+                $totals[$bucket] += $out;
+                $totals['total'] += $out;
 
                 $details[] = [
-                    'supplier'    => $this->namaSupplier($inv),
-                    'invoice_no'  => $inv->invoice_number,
-                    'due_date'    => $ref?->toDateString(),
-                    'overdue'     => $overdue,
-                    'bucket'      => $bucketLabel[$bucket],
+                    'supplier' => $this->namaSupplier($inv),
+                    'invoice_no' => $inv->invoice_number,
+                    'due_date' => $ref?->toDateString(),
+                    'overdue' => $overdue,
+                    'bucket' => $bucketLabel[$bucket],
                     'outstanding' => round($out, 2),
                 ];
             });
@@ -1089,7 +1100,7 @@ HTML;
 
         [$rows, $totals, $details, $asOf, $dateFrom] = $this->computeAging($request->input('date_to'), $request->input('date_from'));
 
-        $e  = fn ($s) => htmlspecialchars((string) $s, ENT_QUOTES, 'UTF-8');
+        $e = fn ($s) => htmlspecialchars((string) $s, ENT_QUOTES, 'UTF-8');
         $rp = fn ($n) => number_format((float) $n, 0, ',', '.');
 
         $period = ($dateFrom ? $e($dateFrom).' s/d ' : 'sampai ').$e($asOf->toDateString());
@@ -1121,9 +1132,9 @@ HTML;
 
         [$rows, $totals, $details, $asOf, $dateFrom] = $this->computeAging($request->input('date_to'), $request->input('date_from'));
 
-        $e   = fn ($s) => htmlspecialchars((string) $s, ENT_QUOTES, 'UTF-8');
-        $rp  = fn ($n) => number_format((float) $n, 0, ',', '.');
-        $co  = (string) config('business_support.company.name', 'PT. Mitra Usaha Propertindo');
+        $e = fn ($s) => htmlspecialchars((string) $s, ENT_QUOTES, 'UTF-8');
+        $rp = fn ($n) => number_format((float) $n, 0, ',', '.');
+        $co = (string) config('business_support.company.name', 'PT. Mitra Usaha Propertindo');
         $now = now()->translatedFormat('d F Y H:i');
         $period = ($dateFrom ? $e($dateFrom).' s/d ' : 'sampai ').$e($asOf->translatedFormat('d F Y'));
 
@@ -1191,8 +1202,8 @@ HTML;
         $supplierId = $request->integer('supplier_id') ?: null;
         // #138: filter periode — invoice by invoice_date, pembayaran by payment_date.
         $dateFrom = $request->input('date_from') ?: null;
-        $dateTo   = $request->input('date_to') ?: null;
-        $entries        = collect();
+        $dateTo = $request->input('date_to') ?: null;
+        $entries = collect();
         $openingBalance = 0.0;
 
         // KUNCI sinkron Detail↔Summary: keduanya pakai basis NET (payable_amount = net_payable =
@@ -1225,6 +1236,7 @@ HTML;
             $running = $openingBalance;
             $entries = $window->map(function ($e) use (&$running) {
                 $running = round($running + $e['credit'] - $e['debit'], 2); // hutang +saat invoice, −saat bayar
+
                 return [...$e, 'balance' => $running];
             });
         }
@@ -1240,10 +1252,11 @@ HTML;
                 ->map(function ($g) {
                     $tertagih = round((float) $g->sum(fn ($i) => (float) $i->payable_amount), 2);          // NET tagihan
                     $terbayar = round((float) $g->sum(fn ($i) => (float) $i->payments->sum('amount')), 2); // NET dibayar s/d date_to
+
                     return [
-                        'name'        => $this->namaSupplier($g->first()),
-                        'invoiced'    => $tertagih,
-                        'paid'        => $terbayar,
+                        'name' => $this->namaSupplier($g->first()),
+                        'invoiced' => $tertagih,
+                        'paid' => $terbayar,
                         'outstanding' => round($tertagih - $terbayar, 2),
                     ];
                 })
@@ -1254,15 +1267,15 @@ HTML;
         $closing = $entries->isNotEmpty() ? (float) $entries->last()['balance'] : $openingBalance;
 
         return [
-            'view'           => $view,
-            'suppliers'      => BsSupplier::orderBy('name')->get(['id', 'code', 'name']),
-            'supplierId'     => $supplierId,
-            'dateFrom'       => $dateFrom,
-            'dateTo'         => $dateTo,
-            'entries'        => $entries,
+            'view' => $view,
+            'suppliers' => BsSupplier::orderBy('name')->get(['id', 'code', 'name']),
+            'supplierId' => $supplierId,
+            'dateFrom' => $dateFrom,
+            'dateTo' => $dateTo,
+            'entries' => $entries,
             'openingBalance' => round((float) $openingBalance, 2),
-            'summary'        => $summary,
-            'outstanding'    => round((float) $closing, 2), // = Saldo Akhir Detail (sinkron dgn Outstanding Summary)
+            'summary' => $summary,
+            'outstanding' => round((float) $closing, 2), // = Saldo Akhir Detail (sinkron dgn Outstanding Summary)
         ];
     }
 
@@ -1275,17 +1288,17 @@ HTML;
     {
         abort_unless($request->user()?->can('ap.paycard.view'), 403);
 
-        $d   = $this->computeCard($request);
+        $d = $this->computeCard($request);
         $sup = $d['supplierId'] ? $d['suppliers']->firstWhere('id', $d['supplierId']) : null;
 
-        $e  = fn ($s) => htmlspecialchars((string) $s, ENT_QUOTES, 'UTF-8');
+        $e = fn ($s) => htmlspecialchars((string) $s, ENT_QUOTES, 'UTF-8');
         $rp = fn ($n) => number_format((float) $n, 0, ',', '.');
         // Kolom identitas dipaksa jadi TEKS: tanpa ini Excel membaca "AP/2608/0012" sebagai
         // tanggal atau memangkas nol di depannya.
         $t = fn ($v) => '<td style="mso-number-format:\'\@\'">'.$e($v).'</td>';
 
         $periode = ($d['dateFrom'] ? $e($d['dateFrom']).' s/d ' : 'sampai ').$e($d['dateTo'] ?: now()->toDateString());
-        $judul   = $sup ? $e($sup->code.' — '.$sup->name) : 'SEMUA SUPPLIER';
+        $judul = $sup ? $e($sup->code.' — '.$sup->name) : 'SEMUA SUPPLIER';
 
         $h = '<table border="1">'
             .'<tr><td colspan="6" style="font-weight:bold">KARTU HUTANG — '.$judul.'</td></tr>'
@@ -1330,15 +1343,15 @@ HTML;
     {
         abort_unless($request->user()?->can('ap.paycard.view'), 403);
 
-        $d   = $this->computeCard($request);
+        $d = $this->computeCard($request);
         $sup = $d['supplierId'] ? $d['suppliers']->firstWhere('id', $d['supplierId']) : null;
 
-        $e   = fn ($s) => htmlspecialchars((string) $s, ENT_QUOTES, 'UTF-8');
-        $rp  = fn ($n) => number_format((float) $n, 0, ',', '.');
-        $co  = (string) config('business_support.company.name', 'PT. Mitra Usaha Propertindo');
+        $e = fn ($s) => htmlspecialchars((string) $s, ENT_QUOTES, 'UTF-8');
+        $rp = fn ($n) => number_format((float) $n, 0, ',', '.');
+        $co = (string) config('business_support.company.name', 'PT. Mitra Usaha Propertindo');
         $now = now()->translatedFormat('d F Y H:i');
         $periode = ($d['dateFrom'] ? $e($d['dateFrom']).' s/d ' : 'sampai ').$e($d['dateTo'] ?: now()->toDateString());
-        $judul   = $sup ? $e($sup->code.' — '.$sup->name) : 'Semua Supplier';
+        $judul = $sup ? $e($sup->code.' — '.$sup->name) : 'Semua Supplier';
 
         if ($d['view'] === 'summary') {
             $baris = '';
@@ -1401,10 +1414,10 @@ HTML;
             ->paginate(50)->withQueryString();
 
         return Inertia::render('BusinessSupport/Payable/PaymentCard', [
-            'payments'   => $payments,
-            'suppliers'  => BsSupplier::orderBy('name')->get(['id', 'code', 'name']),
+            'payments' => $payments,
+            'suppliers' => BsSupplier::orderBy('name')->get(['id', 'code', 'name']),
             'supplierId' => $supplierId,
-            'total'      => round((float) BsApPayment::query()->when($supplierId, $bySupplier)->sum('amount'), 2),
+            'total' => round((float) BsApPayment::query()->when($supplierId, $bySupplier)->sum('amount'), 2),
         ]);
     }
 
@@ -1427,7 +1440,7 @@ HTML;
         abort_unless($request->user()?->can('ap.paycard.view'), 403);
         [$payments, $total, $supplierName] = $this->paymentCardData($request->integer('supplier_id') ?: null);
 
-        $e  = fn ($s) => htmlspecialchars((string) $s, ENT_QUOTES, 'UTF-8');
+        $e = fn ($s) => htmlspecialchars((string) $s, ENT_QUOTES, 'UTF-8');
         $rp = fn ($n) => number_format((float) $n, 0, ',', '.');
 
         $h = '<table border="1"><tr><td colspan="5" style="font-weight:bold">KARTU PEMBAYARAN HUTANG — '.$e($supplierName).'</td></tr>'
@@ -1450,9 +1463,9 @@ HTML;
         abort_unless($request->user()?->can('ap.paycard.view'), 403);
         [$payments, $total, $supplierName] = $this->paymentCardData($request->integer('supplier_id') ?: null);
 
-        $e   = fn ($s) => htmlspecialchars((string) $s, ENT_QUOTES, 'UTF-8');
-        $rp  = fn ($n) => number_format((float) $n, 0, ',', '.');
-        $co  = (string) config('business_support.company.name', 'PT. Mitra Usaha Propertindo');
+        $e = fn ($s) => htmlspecialchars((string) $s, ENT_QUOTES, 'UTF-8');
+        $rp = fn ($n) => number_format((float) $n, 0, ',', '.');
+        $co = (string) config('business_support.company.name', 'PT. Mitra Usaha Propertindo');
         $now = now()->translatedFormat('d F Y H:i');
 
         $rows = '';

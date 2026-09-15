@@ -4,12 +4,14 @@ declare(strict_types=1);
 
 namespace App\Modules\BO\IproBridge\Services;
 
+use App\Modules\FO\MarketingSales\Models\Customer;
 use Illuminate\Database\ConnectionInterface;
 use Illuminate\Database\QueryException;
 use Illuminate\Encryption\Encrypter;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 
 /**
@@ -25,9 +27,13 @@ use Illuminate\Support\Str;
 class IproMasterSync
 {
     private Encrypter $enc;
+
     private string $conn;
+
     private int $tenantId;
+
     private int $projectId;
+
     private ?int $userId = null;
 
     /**
@@ -93,31 +99,101 @@ class IproMasterSync
 
         if ($existing) {
             $this->db()->table('users')->where('id', $existing->id)->update([
-                'name'       => $name,
-                'is_active'  => $active,
+                'name' => $name,
+                'is_active' => $active,
                 'updated_at' => $now,
             ]);
             $this->syncBoRolesFromFo((int) $existing->id, $u);
+            $this->syncKaryawan($u, (int) $existing->id);
 
             return (int) $existing->id;
         }
 
         $id = (int) $this->db()->table('users')->insertGetId([
-            'tenant_id'         => $this->tenantId,
-            'name'              => $name,
-            'email'             => $email,
-            'username'          => $this->uniqueUsername($email),
-            'password'          => Hash::make(Str::random(40)), // acak; user login BO via SSO FO
-            'is_active'         => $active,
-            'is_blocked'        => 0,
+            'tenant_id' => $this->tenantId,
+            'name' => $name,
+            'email' => $email,
+            'username' => $this->uniqueUsername($email),
+            'password' => Hash::make(Str::random(40)), // acak; user login BO via SSO FO
+            'is_active' => $active,
+            'is_blocked' => 0,
             'email_verified_at' => $now,
-            'created_at'        => $now,
-            'updated_at'        => $now,
+            'created_at' => $now,
+            'updated_at' => $now,
         ]);
 
         $this->syncBoRolesFromFo($id, $u);
+        $this->syncKaryawan($u, $id);
 
         return $id;
+    }
+
+    /**
+     * Tautkan akun BO ke data karyawan, dan buatkan barisnya bila belum ada.
+     *
+     * users.employee_nip adalah satu-satunya pengikat akun ke karyawan di BO — SIP dan
+     * Bukti Permohonan Pembayaran menelusurinya untuk tahu unit kerja si pengaju. Sebelum
+     * ini kolomnya tidak pernah punya layar untuk diisi, sehingga kosong di semua akun dan
+     * kedua dokumen tercetak "Tanpa Departemen".
+     *
+     * Barisnya hanya DIBUAT, tidak pernah diperbarui. Setelah karyawannya ada, HR memegang
+     * datanya dan Accounting memegang cost center-nya — modulnya memang berbeda. Menimpa
+     * dari sini berarti koreksi mereka hilang diam-diam setiap kali akunnya disimpan, tanpa
+     * gejala apa pun sampai ada yang membaca dokumen pembayaran.
+     *
+     * NIK di bs_employees TIDAK dienkripsi (beda dari NIK pelanggan di bs_customers yang
+     * memakai cast EncryptedString), jadi dicocokkan apa adanya.
+     */
+    private function syncKaryawan(object $u, int $boUserId): void
+    {
+        $nik = trim((string) ($u->nik ?? ''));
+        if ($nik === '') {
+            return; // akun tanpa NIK: tidak ada yang bisa ditautkan
+        }
+
+        $this->db()->table('users')->where('id', $boUserId)->update(['employee_nip' => $nik]);
+
+        // Termasuk yang sudah dihapus (soft delete): NIK yang sama muncul dua kali di daftar
+        // karyawan lebih membingungkan HR daripada satu baris nonaktif yang perlu diaktifkan.
+        if ($this->db()->table('bs_employees')->where('nik', $nik)->exists()) {
+            return;
+        }
+
+        $now = Carbon::now();
+        $baris = [
+            'tenant_id' => $this->tenantId,
+            'nik' => $nik,
+            'name' => (string) ($u->full_name ?? ($u->name ?? $nik)),
+            'cost_center_id' => ! empty($u->bo_cost_center_id) ? (int) $u->bo_cost_center_id : null,
+            'bank_name' => $this->namaBank($u->bank_id ?? null),
+            'bank_account' => ($v = trim((string) ($u->rekening_number ?? ''))) !== '' ? $v : null,
+            // NOT NULL di bs_employees. Nolnya disengaja: gaji itu urusan HR, dan menebaknya
+            // di sini berarti angka karangan masuk ke daftar penggajian.
+            'base_salary' => 0,
+            'allowance' => 0,
+            'is_active' => 1,
+            'created_at' => $now,
+            'updated_at' => $now,
+        ];
+
+        // Kolom npwp baru ada sejak migrasi 2026_09_15_000020 di sisi BO.
+        if (Schema::connection($this->conn)->hasColumn('bs_employees', 'npwp')) {
+            $baris['npwp'] = ($v = trim((string) ($u->npwp ?? ''))) !== '' ? $v : null;
+        }
+
+        $this->db()->table('bs_employees')->insert($baris);
+    }
+
+    /** Nama bank dari master FO (jerp.banks) — bs_employees menyimpan namanya, bukan id. */
+    private function namaBank(mixed $bankId): ?string
+    {
+        if (empty($bankId)) {
+            return null;
+        }
+
+        $nama = DB::table('banks')->where('id', (int) $bankId)->value('name');
+
+        return $nama !== null ? (string) $nama : null;
     }
 
     /** Username unik dari local-part email (nullable). Tambah sufiks bila bentrok. */
@@ -222,29 +298,29 @@ class IproMasterSync
         }
         $drawer = '-';
         if ($bg->customer_id) {
-            $drawer = (string) (\App\Modules\FO\MarketingSales\Models\Customer::whereKey($bg->customer_id)->value('full_name') ?: '-');
+            $drawer = (string) (Customer::whereKey($bg->customer_id)->value('full_name') ?: '-');
         }
-        $tgl = $bg->tgl_bg ? \Illuminate\Support\Carbon::parse((string) $bg->tgl_bg)->toDateString() : now()->toDateString();
-        $jt = $bg->tgl_jatuh_tempo ? \Illuminate\Support\Carbon::parse((string) $bg->tgl_jatuh_tempo)->toDateString() : $tgl;
+        $tgl = $bg->tgl_bg ? Carbon::parse((string) $bg->tgl_bg)->toDateString() : now()->toDateString();
+        $jt = $bg->tgl_jatuh_tempo ? Carbon::parse((string) $bg->tgl_jatuh_tempo)->toDateString() : $tgl;
 
         $this->db()->table('bs_giros')->insert([
-            'tenant_id'          => $this->tenantId,
-            'giro_number'        => (string) $bg->no_bg,
-            'receive_date'       => $tgl,
-            'due_date'           => $jt,
-            'bank_name'          => (string) ($bg->bank_nama ?: '-'),
-            'cheque_number'      => (string) $bg->no_bg,
-            'drawer'             => $drawer,
-            'amount'             => round((float) $bg->amount, 2),
-            'giro_account_id'    => $giroAcc,
+            'tenant_id' => $this->tenantId,
+            'giro_number' => (string) $bg->no_bg,
+            'receive_date' => $tgl,
+            'due_date' => $jt,
+            'bank_name' => (string) ($bg->bank_nama ?: '-'),
+            'cheque_number' => (string) $bg->no_bg,
+            'drawer' => $drawer,
+            'amount' => round((float) $bg->amount, 2),
+            'giro_account_id' => $giroAcc,
             'counter_account_id' => $counterAcc,
-            'status'             => 'in_hand',
-            'source'             => 'fo',
-            'source_ref'         => $ref,
+            'status' => 'in_hand',
+            'source' => 'fo',
+            'source_ref' => $ref,
             'receive_journal_id' => null,
-            'created_by'         => $this->userId(),
-            'created_at'         => now(),
-            'updated_at'         => now(),
+            'created_by' => $this->userId(),
+            'created_at' => now(),
+            'updated_at' => now(),
         ]);
     }
 
@@ -254,31 +330,31 @@ class IproMasterSync
         $now = Carbon::now();
 
         $data = [
-            'tenant_id'           => $this->tenantId,
-            'project_id'          => $this->projectId,
-            'full_name'           => $c->full_name ?? '-',
-            'nationality'         => 'WNI',
-            'id_type'             => 'KTP',
-            'id_number'           => $this->enc->encryptString((string) ($c->nik ?? '')),
-            'npwp'                => ! empty($c->npwp) ? $this->enc->encryptString((string) $c->npwp) : null,
-            'address_line'        => $c->address ?? null,
-            'city'                => $c->city ?? null,
-            'province'            => $c->province ?? null,
-            'postal_code'         => $c->postal_code ?? null,
-            'country'             => 'ID',
-            'dob'                 => $c->birth_date ?? null,
-            'birth_place'         => $c->birth_place ?? null,
-            'phone'               => $c->phone ?? ($c->mobile ?? null),
-            'email'               => $c->email ?? null,
-            'occupation'          => $c->occupation ?? null,
-            'employer_name'       => $c->company_name ?? null,
-            'monthly_income'      => $c->income_monthly ?? null,
-            'status'              => (int) ($c->is_active ?? 1) === 1 ? 'active' : 'inactive',
-            'id_lifetime'         => 0,
-            'npwp_same_as_ktp'    => 1,
+            'tenant_id' => $this->tenantId,
+            'project_id' => $this->projectId,
+            'full_name' => $c->full_name ?? '-',
+            'nationality' => 'WNI',
+            'id_type' => 'KTP',
+            'id_number' => $this->enc->encryptString((string) ($c->nik ?? '')),
+            'npwp' => ! empty($c->npwp) ? $this->enc->encryptString((string) $c->npwp) : null,
+            'address_line' => $c->address ?? null,
+            'city' => $c->city ?? null,
+            'province' => $c->province ?? null,
+            'postal_code' => $c->postal_code ?? null,
+            'country' => 'ID',
+            'dob' => $c->birth_date ?? null,
+            'birth_place' => $c->birth_place ?? null,
+            'phone' => $c->phone ?? ($c->mobile ?? null),
+            'email' => $c->email ?? null,
+            'occupation' => $c->occupation ?? null,
+            'employer_name' => $c->company_name ?? null,
+            'monthly_income' => $c->income_monthly ?? null,
+            'status' => (int) ($c->is_active ?? 1) === 1 ? 'active' : 'inactive',
+            'id_lifetime' => 0,
+            'npwp_same_as_ktp' => 1,
             'mailing_same_as_ktp' => 1,
-            'metadata'            => json_encode(['jerp_customer_id' => $c->id, 'jerp_code' => $c->code]),
-            'updated_at'          => $now,
+            'metadata' => json_encode(['jerp_customer_id' => $c->id, 'jerp_code' => $c->code]),
+            'updated_at' => $now,
         ];
 
         $existing = $this->db()->table('customers')
@@ -307,25 +383,25 @@ class IproMasterSync
             'TERJUAL' => 'sold', 'LUNAS' => 'sold', 'BATAL' => 'cancelled',
         ];
 
-        $code = $u->kode_unit ?: trim(($u->blok ?? '') . '-' . ($u->no_unit ?? ''), '-');
+        $code = $u->kode_unit ?: trim(($u->blok ?? '').'-'.($u->no_unit ?? ''), '-');
 
         $data = [
-            'tenant_id'     => $this->tenantId,
-            'project_id'    => $this->projectId,
-            'cluster_id'    => $this->iproClusterId($u),     // cerminan master Lokasi FO (Setup Unit)
-            'unit_type_id'  => $this->iproUnitTypeId($u),    // dari fo_unit_types (name + LT/LB)
-            'base_price'    => $u->harga_jual ?? 0,
+            'tenant_id' => $this->tenantId,
+            'project_id' => $this->projectId,
+            'cluster_id' => $this->iproClusterId($u),     // cerminan master Lokasi FO (Setup Unit)
+            'unit_type_id' => $this->iproUnitTypeId($u),    // dari fo_unit_types (name + LT/LB)
+            'base_price' => $u->harga_jual ?? 0,
             'current_price' => $u->harga_jual ?? 0,
-            'status'        => $statusMap[$u->status ?? 'TERSEDIA'] ?? 'available',
-            'address'       => $u->alamat ?? null,
-            'attributes'    => json_encode([
-                'jerp_unit_id'  => $u->id,
-                'blok'          => $u->blok ?? null,
-                'no_unit'       => $u->no_unit ?? null,
-                'luas_tanah'    => $u->luas_tanah ?? null,
+            'status' => $statusMap[$u->status ?? 'TERSEDIA'] ?? 'available',
+            'address' => $u->alamat ?? null,
+            'attributes' => json_encode([
+                'jerp_unit_id' => $u->id,
+                'blok' => $u->blok ?? null,
+                'no_unit' => $u->no_unit ?? null,
+                'luas_tanah' => $u->luas_tanah ?? null,
                 'luas_bangunan' => $u->luas_bangunan ?? null,
             ]),
-            'updated_at'    => $now,
+            'updated_at' => $now,
         ];
 
         $existing = $this->db()->table('units')
@@ -362,7 +438,7 @@ class IproMasterSync
         }
 
         try {
-            $ada = \Illuminate\Support\Facades\Schema::connection($this->conn)
+            $ada = Schema::connection($this->conn)
                 ->hasColumn('clusters', 'fo_lokasi_id');
         } catch (\Throwable $e) {
             // SENGAJA tidak di-cache. Servis ini singleton dan worker Horizon hidup berjam-jam
@@ -417,11 +493,11 @@ class IproMasterSync
         }
 
         $now = Carbon::now();
-        $memoKey = 'cluster:' . $lokasiId;
+        $memoKey = 'cluster:'.$lokasiId;
         // clusters.code hanya 32 karakter, sama dengan batas kode Lokasi di FO — dipotong
         // untuk berjaga bila batas FO dilonggarkan kelak.
         $label = [
-            'name'       => $nama,
+            'name' => $nama,
             'deleted_at' => $l->deleted_at ?? null,
             'updated_at' => $now,
         ];
@@ -550,7 +626,7 @@ class IproMasterSync
      */
     private function upsertClusterWarisan(int $lokasiId, array $label, Carbon $now): int
     {
-        $code = 'FOL-' . $lokasiId;
+        $code = 'FOL-'.$lokasiId;
         $ada = $this->db()->table('clusters')
             ->where('project_id', $this->projectId)->where('code', $code)->value('id');
 
@@ -586,7 +662,7 @@ class IproMasterSync
         if (! $lokasiId) {
             return null;
         }
-        $memoKey = 'cluster:' . $lokasiId;
+        $memoKey = 'cluster:'.$lokasiId;
         if (array_key_exists($memoKey, $this->memo)) {
             return $this->memo[$memoKey];
         }
@@ -618,7 +694,7 @@ class IproMasterSync
         if (! $typeId) {
             return null;
         }
-        $memoKey = 'type:' . $typeId;
+        $memoKey = 'type:'.$typeId;
         if (array_key_exists($memoKey, $this->memo)) {
             return $this->memo[$memoKey];
         }
@@ -626,14 +702,14 @@ class IproMasterSync
         if (! $t) {
             return $this->memo[$memoKey] = null;
         }
-        $code = 'FOT-' . $typeId;
+        $code = 'FOT-'.$typeId;
         $now = Carbon::now();
 
         $data = [
-            'tenant_id'  => $this->tenantId, 'project_id' => $this->projectId,
-            'code'       => $code, 'name' => $t->name ?? $code,
-            'lt'         => $t->luas_tanah ?? null, 'lb' => $t->luas_bangunan ?? null,
-            'bedrooms'   => $t->jumlah_kamar ?? null, 'bathrooms' => $t->jumlah_kmandi ?? null,
+            'tenant_id' => $this->tenantId, 'project_id' => $this->projectId,
+            'code' => $code, 'name' => $t->name ?? $code,
+            'lt' => $t->luas_tanah ?? null, 'lb' => $t->luas_bangunan ?? null,
+            'bedrooms' => $t->jumlah_kamar ?? null, 'bathrooms' => $t->jumlah_kmandi ?? null,
             'updated_at' => $now,
         ];
 
@@ -692,23 +768,23 @@ class IproMasterSync
         $total = (float) ($k->total_kontrak ?? ($base - $diskon + $ppn));
 
         $data = [
-            'tenant_id'         => $this->tenantId,
-            'project_id'        => $this->projectId,
-            'customer_id'       => $custId,
-            'unit_id'           => $unitId,
+            'tenant_id' => $this->tenantId,
+            'project_id' => $this->projectId,
+            'customer_id' => $custId,
+            'unit_id' => $unitId,
             'payment_scheme_id' => $this->iproPaymentSchemeId($typeMap[$k->cara_bayar ?? 'KPR'] ?? 'kpr'),
-            'scheme_name'       => $k->skema?->name,   // nama skema FO asli (mis. "KPR FREE DP", "CASH 3X")
-            'booking_date'      => $k->tgl_kontrak ?? $now->toDateString(),
-            'base_price'        => $base,
-            'discount_amount'   => $diskon,
-            'free_dp_amount'    => (float) ($k->free_dp_amount ?? 0),
-            'ppn_amount'        => $ppn,
-            'total_price'       => $total,
-            'status'            => $statusMap[$k->status ?? 'DRAFT'] ?? 'draft',
-            'booking_source'    => 'fo-jerp',
-            'created_by'        => $this->userId(),
-            'notes'             => 'SPR ' . ($k->no_kontrak ?? ''),
-            'updated_at'        => $now,
+            'scheme_name' => $k->skema?->name,   // nama skema FO asli (mis. "KPR FREE DP", "CASH 3X")
+            'booking_date' => $k->tgl_kontrak ?? $now->toDateString(),
+            'base_price' => $base,
+            'discount_amount' => $diskon,
+            'free_dp_amount' => (float) ($k->free_dp_amount ?? 0),
+            'ppn_amount' => $ppn,
+            'total_price' => $total,
+            'status' => $statusMap[$k->status ?? 'DRAFT'] ?? 'draft',
+            'booking_source' => 'fo-jerp',
+            'created_by' => $this->userId(),
+            'notes' => 'SPR '.($k->no_kontrak ?? ''),
+            'updated_at' => $now,
         ];
 
         // Transaksi: booking + payment_schedules atomik (cegah cicilan terhapus tanpa diisi ulang).
@@ -734,7 +810,7 @@ class IproMasterSync
     /** id payment_scheme ipro_bo untuk tipe tertentu (cash_keras/cicilan/kpr/...). Memoized. */
     private function iproPaymentSchemeId(string $type): int
     {
-        $memoKey = 'scheme:' . $type;
+        $memoKey = 'scheme:'.$type;
         if (array_key_exists($memoKey, $this->memo) && $this->memo[$memoKey]) {
             return (int) $this->memo[$memoKey];
         }
@@ -752,7 +828,7 @@ class IproMasterSync
             $now = Carbon::now();
             $id = $this->db()->table('payment_schemes')->insertGetId([
                 'tenant_id' => $this->tenantId, 'project_id' => $this->projectId,
-                'code' => 'FO-' . strtoupper($type), 'name' => 'FO ' . $type, 'type' => $type,
+                'code' => 'FO-'.strtoupper($type), 'name' => 'FO '.$type, 'type' => $type,
                 'is_active' => 1, 'created_at' => $now, 'updated_at' => $now,
             ]);
         }
@@ -786,18 +862,18 @@ class IproMasterSync
             $type = $typeMap[$t->tipe ?? 'ANG'] ?? 'ANG';
             $label = $t->nama_tagihan ?? null;
             $desired[] = [
-                'key'  => $this->scheduleKey($type, $label, $dCounters),
+                'key' => $this->scheduleKey($type, $label, $dCounters),
                 'data' => [
-                    'booking_id'     => $bookingId,
+                    'booking_id' => $bookingId,
                     'installment_no' => $t->urutan ?: $i,
-                    'sequence'       => $i,
-                    'payment_type'   => $type,
-                    'label'          => $label,
-                    'due_date'       => $t->jatuh_tempo ?? $fallbackDue,
-                    'amount'         => $nilai,
-                    'paid_amount'    => $bayar,
-                    'status'         => ($nilai > 0 && $bayar >= $nilai) ? 'paid' : 'outstanding',
-                    'updated_at'     => $now,
+                    'sequence' => $i,
+                    'payment_type' => $type,
+                    'label' => $label,
+                    'due_date' => $t->jatuh_tempo ?? $fallbackDue,
+                    'amount' => $nilai,
+                    'paid_amount' => $bayar,
+                    'status' => ($nilai > 0 && $bayar >= $nilai) ? 'paid' : 'outstanding',
+                    'updated_at' => $now,
                 ],
             ];
         }
@@ -850,10 +926,10 @@ class IproMasterSync
     /** Kunci pencocokan jadwal: payment_type|LABEL|#urutan-kemunculan (menangani label kembar mis. UANG MASUK). */
     private function scheduleKey(?string $type, ?string $label, array &$counters): string
     {
-        $base = ($type ?? 'ANG') . '|' . strtoupper(trim((string) $label));
+        $base = ($type ?? 'ANG').'|'.strtoupper(trim((string) $label));
         $counters[$base] = ($counters[$base] ?? 0) + 1;
 
-        return $base . '|#' . $counters[$base];
+        return $base.'|#'.$counters[$base];
     }
 
     /** Upsert TTS (fo_tts) → ipro_bo.tts_receipts. Return id receipt. */
@@ -878,17 +954,17 @@ class IproMasterSync
         $now = Carbon::now();
 
         $data = [
-            'tenant_id'      => $this->tenantId,
-            'customer_id'    => $custId,
-            'booking_id'     => $bookingId,
-            'amount'         => $t->amount ?? 0,
+            'tenant_id' => $this->tenantId,
+            'customer_id' => $custId,
+            'booking_id' => $bookingId,
+            'amount' => $t->amount ?? 0,
             'payment_method' => $pmMap[$t->cara_bayar ?? 'TRANSFER'] ?? 'TN',
-            'received_date'  => $t->tgl_tts ?? $now->toDateString(),
-            'reference_no'   => $t->no_referensi ?? null,
-            'status'         => $statusMap[$t->status ?? 'DRAFT'] ?? 'pending',
-            'received_by'    => $this->userId(),
-            'notes'          => $t->keterangan ?? null,
-            'updated_at'     => $now,
+            'received_date' => $t->tgl_tts ?? $now->toDateString(),
+            'reference_no' => $t->no_referensi ?? null,
+            'status' => $statusMap[$t->status ?? 'DRAFT'] ?? 'pending',
+            'received_by' => $this->userId(),
+            'notes' => $t->keterangan ?? null,
+            'updated_at' => $now,
         ];
 
         // Bila TTS ini berasal dari Transfer Anonim (link via NUP: tts_id+transfer_anonim_id),
@@ -939,16 +1015,16 @@ class IproMasterSync
         }
 
         $data = [
-            'tenant_id'      => $this->tenantId,
-            'customer_id'    => $this->iproCustomerIdByFo((int) $bkm->customer_id),
-            'booking_id'     => $bookingId,
-            'amount'         => $bkm->amount ?? 0,
+            'tenant_id' => $this->tenantId,
+            'customer_id' => $this->iproCustomerIdByFo((int) $bkm->customer_id),
+            'booking_id' => $bookingId,
+            'amount' => $bkm->amount ?? 0,
             'payment_method' => 'TN',
-            'received_date'  => $bkm->tgl_bkm ? Carbon::parse((string) $bkm->tgl_bkm)->toDateString() : $now->toDateString(),
-            'reference_no'   => $bkm->no_referensi ?? null,
-            'status'         => 'posted', // posted + journal_id null = "Menunggu Approval" di BO
-            'received_by'    => $this->userId(),
-            'updated_at'     => $now,
+            'received_date' => $bkm->tgl_bkm ? Carbon::parse((string) $bkm->tgl_bkm)->toDateString() : $now->toDateString(),
+            'reference_no' => $bkm->no_referensi ?? null,
+            'status' => 'posted', // posted + journal_id null = "Menunggu Approval" di BO
+            'received_by' => $this->userId(),
+            'updated_at' => $now,
         ];
         // Penanda submodul approval di BO. Hanya diisi bila memang ada nilainya, supaya
         // pemanggil lama (Kwitansi → Posting BO) tetap masuk Approval UTJ apa adanya.
@@ -990,17 +1066,17 @@ class IproMasterSync
             ->where('tenant_id', $this->tenantId)->where('tts_number', $key)->first();
 
         $data = [
-            'tenant_id'      => $this->tenantId,
-            'customer_id'    => $custId,
-            'booking_id'     => $bookingId,
-            'amount'         => $t->amount ?? 0,
+            'tenant_id' => $this->tenantId,
+            'customer_id' => $custId,
+            'booking_id' => $bookingId,
+            'amount' => $t->amount ?? 0,
             'payment_method' => 'TN',
-            'received_date'  => $t->tgl_transfer ?? $now->toDateString(),
-            'reference_no'   => $t->keterangan_bank ?? null,
-            'status'         => 'posted',   // tampil di Approval UTJ&DP (Tanpa Unit)
-            'received_by'    => $this->userId(),
-            'notes'          => 'Transfer Anonim'.($t->keterangan ? ' — '.$t->keterangan : ''),
-            'updated_at'     => $now,
+            'received_date' => $t->tgl_transfer ?? $now->toDateString(),
+            'reference_no' => $t->keterangan_bank ?? null,
+            'status' => 'posted',   // tampil di Approval UTJ&DP (Tanpa Unit)
+            'received_by' => $this->userId(),
+            'notes' => 'Transfer Anonim'.($t->keterangan ? ' — '.$t->keterangan : ''),
+            'updated_at' => $now,
         ];
 
         if ($existing) {
@@ -1082,16 +1158,16 @@ class IproMasterSync
         $now = Carbon::now();
 
         $data = [
-            'tenant_id'        => $this->tenantId,
-            'customer_id'      => $custId,
-            'booking_id'       => $bookingId,
+            'tenant_id' => $this->tenantId,
+            'customer_id' => $custId,
+            'booking_id' => $bookingId,
             'plafon_requested' => $plafon,
-            'current_stage'    => 2, // SPRS — FO sudah buat SP/SPRS, ipro lanjut pemberkasan
-            'status'           => $statusMap[$p->status ?? 'DRAFT'] ?? 'in_progress',
-            'stages'           => json_encode(['jerp_pengajuan_id' => $p->id, 'jerp_no' => $p->no_pengajuan]),
-            'notes'            => $p->keterangan ?? null,
-            'initiated_by'     => $this->userId(),
-            'updated_at'       => $now,
+            'current_stage' => 2, // SPRS — FO sudah buat SP/SPRS, ipro lanjut pemberkasan
+            'status' => $statusMap[$p->status ?? 'DRAFT'] ?? 'in_progress',
+            'stages' => json_encode(['jerp_pengajuan_id' => $p->id, 'jerp_no' => $p->no_pengajuan]),
+            'notes' => $p->keterangan ?? null,
+            'initiated_by' => $this->userId(),
+            'updated_at' => $now,
         ];
 
         $existing = $this->db()->table('kpr_initiations')

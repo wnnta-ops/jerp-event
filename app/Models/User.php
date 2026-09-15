@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Support\Akses;
 use Database\Factories\UserFactory;
 use Filament\Models\Contracts\FilamentUser;
 use Filament\Panel;
@@ -26,6 +27,14 @@ class User extends Authenticatable implements FilamentUser
         'email',
         'password',
         'is_active',
+        // Data awal karyawan — dipakai IproMasterSync saat MEMBUAT baris bs_employees di BO.
+        // Setelah baris itu ada, HR yang memegang datanya dan Accounting cost center-nya;
+        // nilai di sini tidak pernah menimpa yang di BO.
+        'nik',
+        'npwp',
+        'bank_id',
+        'rekening_number',
+        'bo_cost_center_id',
         'last_login_at',
         'last_login_ip',
     ];
@@ -95,6 +104,6 @@ class User extends Authenticatable implements FilamentUser
 
         $izin = config('akses.panel.'.$panel->getId());
 
-        return \App\Support\Akses::boleh($izin, $this);
+        return Akses::boleh($izin, $this);
     }
 }

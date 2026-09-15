@@ -171,7 +171,6 @@ return [
         'BoRoleResource' => 'system.bo_role',
         'BoUserResource' => 'system.bo_user',
         'CompanyResource' => 'system.company',
-        'CostCenterResource' => 'system.cost_center',
         'ProjectResource' => 'system.project',
         'TenantResource' => 'system.tenant',
     ],
