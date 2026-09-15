@@ -60,7 +60,8 @@ class ApKuitansiController extends Controller
             'openInvoices' => $open,
             'cashAccounts' => BsAccount::where('is_active', true)->where('is_postable', true)->where('code', 'like', '101010%')->orderBy('code')->get(['id', 'code', 'name'])
                 ->map(fn ($a) => ['id' => $a->id, 'code' => $a->code, 'name' => $a->name, 'is_kas' => in_array($a->code, self::KAS_CODES, true)]),
-            'defaultCash'  => BsAccount::where('code', config('business_support.gl_accounts.cash'))->value('id'),
+            // defaultCash TIDAK dikirim: layar ini sengaja tidak punya kas/bank bawaan supaya
+            // rekening sumbernya selalu dipilih sadar. Lihat komentar di Kuitansi/Form.vue.
             'alat'         => BsApKuitansi::ALAT,
             'kasir'        => $request->user()->name,
         ]);

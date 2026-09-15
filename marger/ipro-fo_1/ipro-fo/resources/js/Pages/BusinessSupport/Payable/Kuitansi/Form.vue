@@ -9,14 +9,24 @@ const props = defineProps<{
     suppliers: Array<any>;
     openInvoices: Array<any>;
     cashAccounts: Array<any>;   // tiap item punya { id, code, name, is_kas }
-    defaultCash: number | null;
     alat: Record<string, string>;
     kasir: string;
 }>();
 
 const today = new Date().toISOString().slice(0, 10);
 const form = useForm<any>({
-    kuitansi_date: today, supplier_id: '', cash_account_id: props.defaultCash ?? '',
+    // Kas/Bank SENGAJA dibiarkan kosong — tidak ada bawaan.
+    //
+    // Sebelumnya terisi otomatis dari config gl_accounts.cash, yang menunjuk satu rekening bank
+    // tertentu (10101020204 — BCA REK. 6155428914). Akibatnya uang keluar dari rekening yang
+    // tidak pernah dipilih siapa pun: kuitansi yang disimpan tergesa mengkredit rekening bawaan
+    // itu, jurnalnya tetap balance, dan tidak ada satu pun galat yang memberi tahu — yang
+    // ketahuan belakangan hanya saldo bank yang tidak cocok saat rekonsiliasi.
+    //
+    // Keadaan "kosong" sendiri bukan hal baru: memilih alat transaksi Tunai sudah mengosongkan
+    // kolom ini lewat watch di bawah, karena rekening bawaannya bukan akun kas. Yang berubah di
+    // sini hanya keadaan AWAL, dan tombol Simpan ikut dikunci sampai rekeningnya dipilih.
+    kuitansi_date: today, supplier_id: '', cash_account_id: '',
     alat_transaksi: 'transfer', kasir: props.kasir, manual_no: '', bg_number: '', description: '', lines: [],
 });
 
@@ -118,8 +128,14 @@ const inputCls = 'h-9 w-full rounded-lg border border-neutral-300 bg-white px-3 
             </div>
 
             <div class="flex gap-2">
-                <Button type="submit" :disabled="form.processing || total <= 0"><template #icon-left><Save class="h-4 w-4" /></template>Simpan &amp; Buat Jurnal</Button>
+                <!-- Kas/Bank ikut mengunci tombol. Servernya memang sudah menolak (required),
+                     tetapi penolakan itu baru terjadi SESUDAH tombol ditekan dan seluruh isian
+                     dikirim — dan alasan matinya tombol disebutkan di sebelahnya, bukan
+                     dibiarkan ditebak. -->
+                <Button type="submit" :disabled="form.processing || total <= 0 || !form.cash_account_id"><template #icon-left><Save class="h-4 w-4" /></template>Simpan &amp; Buat Jurnal</Button>
                 <Link :href="route('bs.ap.kuitansi.index')" class="rounded-lg border border-neutral-300 px-4 py-2 text-sm dark:border-neutral-700">Batal</Link>
+                <span v-if="!form.cash_account_id" class="self-center text-xs text-danger-500">Pilih Kas/Bank dulu.</span>
+                <span v-else-if="total <= 0" class="self-center text-xs text-neutral-400">Centang minimal satu invoice.</span>
             </div>
         </form>
     </div>
