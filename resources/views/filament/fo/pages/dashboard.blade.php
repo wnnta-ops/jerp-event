@@ -332,6 +332,10 @@
                         if (! minta || ! minta.aktif) return;
 
                         const ctx = chart.ctx;
+                        // Batang MENDATAR (indexAxis 'y'): angkanya ditaruh di UJUNG KANAN
+                        // batang, bukan di atasnya. Dipasang seperti batang tegak, angkanya
+                        // jatuh menimpa badan batangnya sendiri dan tidak terbaca.
+                        const mendatar = chart.options?.indexAxis === 'y';
                         const jumlahBulan = (chart.data.labels || []).length || 1;
                         // Berapa deret BATANG yang sedang terlihat — itu yang berbagi lebar
                         // satu bulan. Deret garis tidak ikut membagi, titiknya di tengah bulan.
@@ -342,8 +346,8 @@
 
                         ctx.save();
                         ctx.font = '600 10px ui-sans-serif, system-ui, -apple-system, sans-serif';
-                        ctx.textAlign = 'center';
-                        ctx.textBaseline = 'bottom';
+                        ctx.textAlign = mendatar ? 'left' : 'center';
+                        ctx.textBaseline = mendatar ? 'middle' : 'bottom';
 
                         chart.data.datasets.forEach((ds, i) => {
                             if (! chart.isDatasetVisible(i)) return;
@@ -358,6 +362,18 @@
                                 const v = ds.data[j];
                                 if (v === null || v === undefined) return;
                                 const teks = String(v);
+
+                                if (mendatar) {
+                                    // Yang membatasi di sini bukan lebar kolom melainkan ruang
+                                    // sisa di kanan batang; kalau tidak muat, angkanya ditaruh
+                                    // di DALAM ujung batang alih-alih dibuang.
+                                    const lebar = ctx.measureText(teks).width;
+                                    const muat = el.x + 5 + lebar <= chart.chartArea.right;
+                                    ctx.textAlign = muat ? 'left' : 'right';
+                                    ctx.fillText(teks, el.x + (muat ? 5 : -5), el.y);
+                                    return;
+                                }
+
                                 // Diukur, bukan ditebak: kalau angkanya tidak muat di jatahnya,
                                 // label dilewati supaya tidak bertumpuk jadi bubur. Angkanya
                                 // tetap terbaca lewat tooltip saat kursor menyentuh kolomnya.
@@ -373,7 +389,29 @@
         </script>
     @endonce
 
-    <div class="mt-4">
-        @livewire(\App\Filament\Fo\Widgets\SprBulananChart::class)
-    </div>
+    {{-- canView() WAJIB diperiksa di sini. Filament hanya menegakkannya saat widget dirender
+         lewat mekanismenya sendiri (Page::filterVisibleWidgets, vendor Page.php:252); halaman
+         ini merender widgetnya langsung dengan @livewire, yang melewati penjagaan itu sama
+         sekali. Tanpa @if di bawah, izin yang dipasang di kelas widgetnya tidak pernah berlaku
+         dan grafiknya tetap terbaca semua orang yang bisa membuka dasbor. --}}
+    @if (\App\Filament\Fo\Widgets\SprBulananChart::canView())
+        <div class="mt-4">
+            @livewire(\App\Filament\Fo\Widgets\SprBulananChart::class)
+        </div>
+    @endif
+
+    {{-- Keduanya memakai filter periode sendiri-sendiri (pojok kanan atas tiap panel), bukan
+         satu filter bersama: panel ini sering dibaca berpasangan dengan bulan yang BERBEDA —
+         penjualan bulan berjalan disandingkan dengan perolehan UTJ bulan sebelumnya. --}}
+    @if (\App\Filament\Fo\Widgets\PenjualanTipeChart::canView())
+        <div class="mt-4">
+            @livewire(\App\Filament\Fo\Widgets\PenjualanTipeChart::class)
+        </div>
+    @endif
+
+    @if (\App\Filament\Fo\Widgets\TopAgensiUtjChart::canView())
+        <div class="mt-4">
+            @livewire(\App\Filament\Fo\Widgets\TopAgensiUtjChart::class)
+        </div>
+    @endif
 </x-filament-panels::page>
