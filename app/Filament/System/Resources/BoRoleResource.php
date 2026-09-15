@@ -7,6 +7,7 @@ use App\Filament\System\Resources\BoRoleResource\Pages;
 use App\Models\Bo\BoPermission;
 use App\Models\Bo\BoRole;
 use Filament\Forms;
+use Filament\Forms\Components\Component;
 use Filament\Forms\Form;
 use Filament\Notifications\Notification;
 use Filament\Resources\Resource;
@@ -53,7 +54,7 @@ class BoRoleResource extends Resource
             ]),
 
             Forms\Components\Section::make('Hak Akses (Permission) BO')
-                ->description('Per modul → sub-menu → aksi (Lihat/Buat/Ubah/Hapus/Setujui/…), seperti Grup Akses FO. Perubahan tersimpan ke DB ipro_bo; berlaku di app BO setelah cache izin di-reset (maks 24 jam).')
+                ->description('Per modul → sub-menu → aksi (Lihat/Buat/Ubah/Hapus/Setujui/…), seperti Grup Akses FO. Perubahan tersimpan ke DB ipro_bo; berlaku di app BO paling lama 1 menit kemudian.')
                 ->schema(self::permissionMatrixBo()),
         ]);
     }
@@ -130,7 +131,7 @@ class BoRoleResource extends Resource
      * centang per AKSI. Izin BO berformat module.area.action, jadi tiap izin
      * tetap satu centang (tak ada yang hilang), tapi tersusun rapi & ringkas.
      *
-     * @return array<int,\Filament\Forms\Components\Component>
+     * @return array<int,Component>
      */
     /**
      * @param  string  $awalanState  Prefix state form. Halaman Grup Akses BO memakai
@@ -289,10 +290,9 @@ class BoRoleResource extends Resource
     public static function flashCacheNotice(): void
     {
         Notification::make()
-            ->warning()
+            ->success()
             ->title('Tersimpan ke database BO')
-            ->body('Perubahan berlaku di aplikasi BO setelah cache izin di-reset (otomatis maks 24 jam, atau `permission:cache-reset` di app BO).')
-            ->persistent()
+            ->body('Berlaku di aplikasi BO dalam waktu paling lama 1 menit — cukup muat ulang halamannya di sana.')
             ->send();
     }
 

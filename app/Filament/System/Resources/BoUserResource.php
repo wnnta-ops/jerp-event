@@ -66,7 +66,7 @@ class BoUserResource extends Resource
                         ->relationship('roles', 'name')
                         ->columns(2)
                         ->bulkToggleable()
-                        ->helperText('Perubahan berlaku di app BO setelah cache izin di-reset (maks 24 jam).'),
+                        ->helperText('Perubahan berlaku di app BO paling lama 1 menit kemudian.'),
                 ]),
         ]);
     }
