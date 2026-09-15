@@ -7,7 +7,6 @@ import type { FormOptions } from "@/lib/options";
 import type { LeadRow, LeadSummary } from "@/lib/leads";
 import { LEAD_STATUS_LABEL, LEAD_STATUS_ORDER } from "@/lib/constants";
 import { Modal } from "@/components/Modal";
-import { Combobox } from "@/components/Combobox";
 import { LeadStatusBadge } from "@/components/badges";
 import { WalkInForm } from "@/components/forms/WalkInForm";
 import { toast } from "@/components/Toast";
@@ -35,7 +34,6 @@ export function LeadsClient({
 
   const [editing, setEditing] = useState<LeadRow | null>(null);
   const [convert, setConvert] = useState<LeadRow | null>(null);
-  const [adding, setAdding] = useState(false);
 
   const koorOpts = useMemo(
     () => [...new Set(leads.map((l) => l.koor))].filter((k) => k !== "-").sort((a, b) => a.localeCompare(b)),
@@ -78,12 +76,9 @@ export function LeadsClient({
             Ringkasan
           </button>
         </div>
-        <span style={{ flex: 1 }} />
-        {isManager && (
-          <button className="btn" onClick={() => setAdding(true)}>
-            ＋ Tambah Lead
-          </button>
-        )}
+        <span className="pill" style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+          🔌 Leads masuk otomatis dari MarComm
+        </span>
       </div>
 
       {tab === "ringkasan" ? (
@@ -199,17 +194,6 @@ export function LeadsClient({
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({ dealId }),
             });
-            router.refresh();
-          }}
-        />
-      )}
-
-      {adding && (
-        <AddLeadModal
-          options={options}
-          onClose={() => setAdding(false)}
-          onSaved={() => {
-            setAdding(false);
             router.refresh();
           }}
         />
@@ -364,111 +348,6 @@ function EditLeadModal({
       <p className="rolehint">
         💡 “→ Walk-In” di tabel akan membuat customer baru di pipeline dari lead ini.
       </p>
-    </Modal>
-  );
-}
-
-// Tambah lead manual (Management) — untuk uji coba / input sementara sebelum
-// integrasi MarComm aktif.
-function AddLeadModal({
-  options,
-  onClose,
-  onSaved,
-}: {
-  options: FormOptions;
-  onClose: () => void;
-  onSaved: () => void;
-}) {
-  const [busy, setBusy] = useState(false);
-  const [f, setF] = useState({
-    nama: "",
-    phone: "",
-    source: "Meta",
-    campaign: "",
-    tanggal: new Date().toLocaleDateString("en-CA"),
-    coordinatorId: "",
-  });
-
-  async function save() {
-    if (!f.nama.trim()) return toast("Nama lead wajib diisi");
-    setBusy(true);
-    const res = await fetch("/sales/api/leads", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        nama: f.nama.trim(),
-        phone: f.phone.trim() || null,
-        source: f.source.trim() || null,
-        campaign: f.campaign.trim() || null,
-        tanggal: f.tanggal,
-        coordinatorId: f.coordinatorId || null,
-      }),
-    });
-    setBusy(false);
-    if (res.ok) {
-      toast("✓ Lead ditambahkan");
-      onSaved();
-    } else {
-      toast((await res.json().catch(() => ({}))).error ?? "Gagal menyimpan");
-    }
-  }
-
-  return (
-    <Modal
-      title="Tambah Lead"
-      open
-      onClose={onClose}
-      footer={
-        <>
-          <button className="btn ghost" onClick={onClose}>Batal</button>
-          <button className="btn" onClick={save} disabled={busy}>{busy ? "Menyimpan…" : "Simpan"}</button>
-        </>
-      }
-    >
-      <div className="notice" style={{ marginBottom: 12, background: "#fbedd8", borderColor: "#e9b877" }}>
-        <span>✋</span>
-        <div><b>Input manual sementara.</b> Nanti leads masuk otomatis dari MarComm.</div>
-      </div>
-      <div className="frow">
-        <div className="field">
-          <label>Nama</label>
-          <input value={f.nama} onChange={(e) => setF({ ...f, nama: e.target.value })} placeholder="cth: Budi" />
-        </div>
-        <div className="field">
-          <label>No. HP</label>
-          <input value={f.phone} onChange={(e) => setF({ ...f, phone: e.target.value })} placeholder="08…" />
-        </div>
-      </div>
-      <div className="frow">
-        <div className="field">
-          <label>Sumber</label>
-          <select value={f.source} onChange={(e) => setF({ ...f, source: e.target.value })}>
-            <option value="Meta">Meta</option>
-            <option value="TikTok">TikTok</option>
-            <option value="Lainnya">Lainnya</option>
-          </select>
-        </div>
-        <div className="field">
-          <label>Tanggal masuk</label>
-          <input type="date" value={f.tanggal} onChange={(e) => setF({ ...f, tanggal: e.target.value })} />
-        </div>
-      </div>
-      <div className="frow">
-        <div className="field">
-          <label>Kampanye</label>
-          <input value={f.campaign} onChange={(e) => setF({ ...f, campaign: e.target.value })} placeholder="opsional" />
-        </div>
-        <div className="field">
-          <label>Sales Koor</label>
-          <Combobox
-            value={f.coordinatorId}
-            onChange={(v) => setF({ ...f, coordinatorId: v })}
-            options={options.coordinators.map((c) => ({ value: c.id, label: c.name }))}
-            allLabel="— pilih koor —"
-            allValue=""
-          />
-        </div>
-      </div>
     </Modal>
   );
 }
