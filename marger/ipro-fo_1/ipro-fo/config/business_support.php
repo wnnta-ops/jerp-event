@@ -115,8 +115,22 @@ return [
         // Dr Beban Pokok Penjualan / Cr UTANG BG/CEK BEREDAR. Bisa diganti per-transaksi di struktur jurnal.
         'outgoing_cheque_expense'   => '50101010101', // BEBAN POKOK PENJUALAN (default debit pihak ketiga)
         // Debit "Biaya PPh" untuk PPh DITANGGUNG (borne) — jurnal: Dr Biaya PPh / Cr Hutang PPh.
-        // Default akun beban umum; bisa diganti per-transaksi di struktur jurnal (semua COA aktif tersedia).
-        'pph_borne_expense'         => '50302020228', // BIAYA UMUM & ADMINISTRASI LAIN-LAIN
+        //
+        // Per JENIS PPh, bukan satu akun untuk semuanya: menumpuk ketiganya di satu akun beban
+        // umum membuat beban PPh 21, 23, dan 4(2) tidak bisa dipisahkan lagi di buku besar
+        // maupun SPT, padahal masing-masing punya akunnya sendiri di CoA. Kuncinya sama dengan
+        // nilai pph_type yang dikirim wizard (pph21 / pph23 / pph4_2).
+        //
+        // Tetap bisa diganti per-transaksi di struktur jurnal (semua COA aktif tersedia).
+        'pph_borne_expense'         => [
+            'pph21'  => '70101010109', // BIAYA PPH 21
+            'pph23'  => '70101010107', // BIAYA PPH 23
+            'pph4_2' => '70101010108', // BIAYA PPH 4 AYAT 2
+        ],
+        // Dipakai HANYA bila jenis PPh belum dipilih padahal tarifnya sudah diisi manual —
+        // keadaan yang masih mungkin karena jenis PPh tidak diwajibkan oleh gerbang mana pun.
+        // Tanpa cadangan ini, baris Biaya PPh-nya tidak terbentuk dan jurnalnya tidak balance.
+        'pph_borne_expense_default' => '50302020228', // BIAYA UMUM & ADMINISTRASI LAIN-LAIN
         'advance_op' => '10107030303', // Uang Muka Operasional (Bon Sementara)
         'retained_earnings' => '80101010101', // LABA RUGI DITAHAN (Kategori 8 — tutup buku tahunan)
         'current_earnings'  => '80101010102', // LABA RUGI TAHUN BERJALAN (Kategori 8)

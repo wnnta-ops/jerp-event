@@ -5,7 +5,7 @@ import { ArrowLeft, ArrowRight, Save, HandCoins, Plus, Trash2, Check, Search, Co
 import Button from '@/Components/UI/Button.vue';
 import MoneyInput from '@/Components/UI/MoneyInput.vue';
 import SearchSelect from '@/Components/UI/SearchSelect.vue';
-import { bangunStrukturJurnal, akunKurang, samaDenganBawaan, barisStruktur } from './strukturJurnal';
+import { bangunStrukturJurnal, akunKurang, samaDenganBawaan, barisStruktur, akunBiayaPphDitanggung } from './strukturJurnal';
 
 const props = defineProps<{
     suppliers: Array<any>;
@@ -13,6 +13,9 @@ const props = defineProps<{
     pphAccounts: Array<any>;
     pphDefaults: Record<string, number>;
     ppnAccount: any;
+    /** Jenis PPh → akun BEBAN untuk PPh ditanggung (pasangan debit dari pphDefaults). */
+    pphBorneDefaults: Record<string, number | null>;
+    /** Cadangan akun beban bila jenis PPh belum dipilih. */
     pphBorneExpense: any;
     accounts: Array<any>;
     costCenters: Array<any>;
@@ -253,6 +256,26 @@ function applyAmount(l: any) {
     else { l.side = 'debit'; l.debit = v; l.credit = 0; }
 }
 function setSide(l: any, side: 'debit' | 'credit') { l.side = side; applyAmount(l); }
+/**
+ * Akun BEBAN untuk PPh ditanggung — mengikuti JENIS PPh yang dipilih.
+ *
+ * Dr Biaya PPh 21 (70101010109) · PPh 23 (70101010107) · PPh Pasal 4(2) (70101010108),
+ * jadi satu jenis PPh menentukan sepasang akun sekaligus bersama Hutang PPh-nya. Sebelumnya
+ * ketiganya bermuara ke satu akun beban umum, sehingga beban PPh 21, 23, dan 4(2) tidak bisa
+ * dipisahkan lagi di buku besar maupun SPT.
+ *
+ * Cadangan dipakai bila jenis PPh belum dipilih padahal tarifnya sudah diisi manual — keadaan
+ * yang masih mungkin karena jenis PPh tidak diwajibkan gerbang mana pun. Tanpa cadangan itu
+ * baris Biaya PPh tidak terbentuk dan jurnalnya tidak balance.
+ *
+ * Pemetaannya HARUS sama dengan yang dipakai RegisterApInvoice pada jalur otomatis — keduanya
+ * membaca config gl_accounts.pph_borne_expense yang sama. Kalau berbeda, invoice yang sama akan
+ * berjurnal berbeda tergantung dari pintu mana ia masuk, dan dua-duanya tetap balance.
+ */
+const akunBiayaPph = computed<number | null>(
+    () => akunBiayaPphDitanggung(form.pph_type, props.pphBorneDefaults, props.pphBorneExpense?.id),
+);
+
 /** Bahan struktur bawaan — aturannya sendiri ada di ./strukturJurnal.ts supaya bisa diuji. */
 const bahanStruktur = computed(() => ({
     dpp: dppR.value,
@@ -265,7 +288,7 @@ const bahanStruktur = computed(() => ({
         hutangUsaha: category.value?.payable_id ?? null,
         ppnMasukan: props.ppnAccount?.id ?? null,
         hutangPph: form.pph_account_id ? Number(form.pph_account_id) : null,
-        biayaPph: props.pphBorneExpense?.id ?? null,
+        biayaPph: akunBiayaPph.value,
     },
     uraian: {
         beban: form.description || '',

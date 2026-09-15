@@ -234,8 +234,14 @@ class ApInvoiceController extends Controller
                 'pph4_2' => $pphAccounts->firstWhere('code', '20104040401')?->id,
             ],
             'ppnAccount'  => BsAccount::where('is_active', true)->where('code', config('business_support.gl_accounts.ppn_in'))->first(['id', 'code', 'name']),
-            // Debit "Biaya PPh" default utk PPh ditanggung (bisa diganti di struktur jurnal).
-            'pphBorneExpense' => BsAccount::where('code', config('business_support.gl_accounts.pph_borne_expense'))->first(['id', 'code', 'name']),
+            // Debit "Biaya PPh" utk PPh DITANGGUNG, per JENIS PPh (bisa diganti di struktur jurnal).
+            // Kuncinya sama dengan pphDefaults di atas, supaya satu jenis PPh menentukan sepasang
+            // akun sekaligus: Dr Biaya PPh <jenis> / Cr Hutang PPh <jenis>.
+            'pphBorneDefaults' => collect((array) config('business_support.gl_accounts.pph_borne_expense'))
+                ->map(fn ($kode) => BsAccount::where('code', $kode)->value('id'))
+                ->all(),
+            // Cadangan bila jenis PPh belum dipilih padahal tarifnya diisi manual.
+            'pphBorneExpense' => BsAccount::where('code', config('business_support.gl_accounts.pph_borne_expense_default'))->first(['id', 'code', 'name']),
             // cost_center_optional ikut dikirim: layar Struktur Jurnal mewajibkan cost center,
             // dan tanpa penanda ini ia tidak bisa membedakan akun yang MEMANG boleh tanpa cost
             // center (mis. Utang Usaha Supplier) — hasilnya wizard-nya mengunci diri sendiri
