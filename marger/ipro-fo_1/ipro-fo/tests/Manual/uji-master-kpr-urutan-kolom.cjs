@@ -57,7 +57,43 @@ const iUnit = mu.indexOf('Kode Unit');
 cek('Nama Customer TEPAT di sebelah kanan No. SPR', iCust === iSpr + 1, 'spr=' + iSpr + ' customer=' + iCust);
 cek('Kode Unit bergeser ke kanan Nama Customer', iUnit === iCust + 1, 'unit=' + iUnit);
 cek('tidak ada kolom yang hilang saat dipindah', mu.length >= 11, String(mu.length));
-cek('Tipe Rumah tetap mengikuti Kode Unit', mu[iUnit + 1] === 'Tipe Rumah', String(mu[iUnit + 1]));
+// Kode Unit kini diikuti Lokasi & Tahap, baru Tipe Rumah — ketiganya membaca unit yang sama.
+cek('Tipe Rumah mengikuti sesudah Lokasi & Tahap', mu[iUnit + 3] === 'Tipe Rumah', String(mu[iUnit + 3]));
+
+console.log('\n=== 1b. Lokasi & Tahap tepat di kanan Kode Unit ===');
+
+cek('kolom Lokasi ada', mu.includes('Lokasi'), JSON.stringify(mu));
+cek('kolom Tahap ada', mu.includes('Tahap'), JSON.stringify(mu));
+cek('urutannya Kode Unit → Lokasi → Tahap',
+    mu.slice(iUnit, iUnit + 3).join(' → ') === 'Kode Unit → Lokasi → Tahap',
+    JSON.stringify(mu.slice(iUnit, iUnit + 4)));
+cek('keduanya dibaca dari baris, bukan diterka dari kode unit',
+    /one\('Lokasi', \(r\) => r\.lokasi\)/.test(kode) && /one\('Tahap', \(r\) => r\.tahap/.test(kode),
+    'nilainya tidak datang dari server');
+cek('tidak ada penguraian kode unit di layar',
+    ! /kode_unit[^)]*\.split\(/.test(kode),
+    'lokasi/tahap diterka dari teks kode unit, bukan dari sub-modul Unit FO');
+
+console.log('\n=== 1c. SISA RETENSI paling kanan pada Collection Retensi ===');
+
+const ret = kolomKelompok('Collection Retensi');
+cek('kelompok Collection Retensi terbaca', !! ret && ret.includes('SISA RETENSI'), JSON.stringify(ret));
+cek('SISA RETENSI kolom TERAKHIR (sesudah DAJAM)', ret && ret[ret.length - 1] === 'SISA RETENSI',
+    JSON.stringify(ret));
+// Ia RINGKASAN, bukan pembayaran: memakai pairTN akan memunculkan kolom Tanggal yang selamanya
+// kosong di sebelahnya.
+cek('SISA RETENSI kolom tunggal, bukan pasangan Tanggal + Nominal',
+    /one\('SISA RETENSI', \(r\) => r\.sisa_retensi/.test(kode), 'dipasang sebagai pairTN');
+cek('angkanya dirata-kanan & diformat angka',
+    /one\('SISA RETENSI',[\s\S]{0,80}\{ align: 'r', mono: true, num: true \}/.test(kode),
+    'kolom ringkasan rupiah yang rata-kiri & tanpa pemisah ribuan sulit dibandingkan antar baris');
+// Judul kategori (termasuk TANPA KATEGORI) datang dari server — layar tidak boleh punya
+// daftarnya sendiri, kalau tidak kolom & selnya bisa bergeser satu sama lain.
+cek('judul kategori retensi tetap dari prop retensiCols',
+    /props\.retensiCols\.map\(\(label, i\) => pairTN\(label, \(r\) => r\.retensi\?\.\[i\]\)\)/.test(kode),
+    'layar menyusun judul kategorinya sendiri');
+cek('layar tidak memaku judul TANPA KATEGORI', ! /'TANPA KATEGORI'/.test(kode),
+    'ada dua sumber judul kolom');
 
 console.log('\n=== 2. Kolom yang dibekukan memang dua ===');
 
