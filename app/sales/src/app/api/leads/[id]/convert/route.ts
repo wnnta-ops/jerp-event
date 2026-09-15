@@ -31,10 +31,10 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
 
     await prisma.lead.update({
       where: { id },
-      data: { convertedDealId: dealId, status: "WALK_IN" },
+      data: { convertedDealId: dealId, followUp: "WI" },
     });
 
-    void writeBackToMarcomm({ externalId: lead.externalId, leadId: id, status: "WALK_IN", dealId });
+    void writeBackToMarcomm({ externalId: lead.externalId, leadId: id, followUp: "WI", dealId });
 
     return ok({ ok: true });
   } catch (e) {

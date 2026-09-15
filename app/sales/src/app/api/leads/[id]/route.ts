@@ -2,21 +2,12 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { requireSession, requireRole, ok, handleError, ApiError } from "@/lib/api";
 import { getMyCoordinatorId, writeBackToMarcomm } from "@/lib/leads";
-import { parseDayKey } from "@/lib/wib";
 
 const schema = z.object({
-  minat: z.string().optional().nullable(),
-  status: z.enum([
-    "BARU",
-    "DIHUBUNGI",
-    "FOLLOW_UP",
-    "PROSPEK",
-    "WALK_IN",
-    "TIDAK_BERMINAT",
-    "NO_RESPONSE",
-  ]),
-  followUpDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().nullable(),
-  note: z.string().optional().nullable(),
+  minat: z.string().optional().nullable(), // free text
+  status: z.enum(["HOT", "WARM", "COLD"]).optional().nullable(),
+  followUp: z.enum(["WI", "RESPON", "NO_RESPON"]).optional().nullable(),
+  note: z.string().optional().nullable(), // free text
 });
 
 // Sales Koor meng-update kondisi lead miliknya. Koor HANYA boleh mengubah lead
@@ -47,8 +38,8 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
       where: { id },
       data: {
         minat: body.minat ?? null,
-        status: body.status,
-        followUpDate: body.followUpDate ? parseDayKey(body.followUpDate) : null,
+        status: body.status ?? null,
+        followUp: body.followUp ?? null,
         note: body.note ?? null,
       },
     });
@@ -58,8 +49,8 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
       externalId: lead.externalId,
       leadId: id,
       minat: body.minat ?? null,
-      status: body.status,
-      followUpDate: body.followUpDate ?? null,
+      status: body.status ?? null,
+      followUp: body.followUp ?? null,
       note: body.note ?? null,
     });
 

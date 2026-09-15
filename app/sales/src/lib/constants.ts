@@ -38,27 +38,21 @@ export const STATUS_LEAD_LABEL: Record<string, string> = {
 // UI label for the Hot/Warm/Cold field (§12.1 decision).
 export const LEAD_FIELD_LABEL = "Status Lead";
 
-// Kondisi lead MarComm yang di-update Sales Koor.
+// Status (tingkat minat) lead — diisi Sales Koor.
 export const LEAD_STATUS_LABEL: Record<string, string> = {
-  BARU: "Baru",
-  DIHUBUNGI: "Dihubungi",
-  FOLLOW_UP: "Follow-up",
-  PROSPEK: "Prospek",
-  WALK_IN: "Walk-In",
-  TIDAK_BERMINAT: "Tidak Berminat",
-  NO_RESPONSE: "No Response",
+  HOT: "Hot",
+  WARM: "Warm",
+  COLD: "Cold",
 };
+export const LEAD_STATUS_ORDER: string[] = ["HOT", "WARM", "COLD"];
 
-// Urutan pilihan status di dropdown.
-export const LEAD_STATUS_ORDER: string[] = [
-  "BARU",
-  "DIHUBUNGI",
-  "FOLLOW_UP",
-  "PROSPEK",
-  "WALK_IN",
-  "TIDAK_BERMINAT",
-  "NO_RESPONSE",
-];
+// Hasil follow-up lead — diisi Sales Koor.
+export const LEAD_FOLLOWUP_LABEL: Record<string, string> = {
+  WI: "WI",
+  RESPON: "Respon",
+  NO_RESPON: "No Respon",
+};
+export const LEAD_FOLLOWUP_ORDER: string[] = ["WI", "RESPON", "NO_RESPON"];
 
 export const UNIT_STATUS_LABEL: Record<string, string> = {
   OPEN_STOCK: "Open Stock",

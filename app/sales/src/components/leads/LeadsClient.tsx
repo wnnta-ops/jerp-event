@@ -2,12 +2,17 @@
 
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import type { LeadStatus } from "@prisma/client";
+import type { LeadFollowUp, LeadStatus } from "@prisma/client";
 import type { FormOptions } from "@/lib/options";
 import type { LeadRow, LeadSummary } from "@/lib/leads";
-import { LEAD_STATUS_LABEL, LEAD_STATUS_ORDER } from "@/lib/constants";
+import {
+  LEAD_FOLLOWUP_LABEL,
+  LEAD_FOLLOWUP_ORDER,
+  LEAD_STATUS_LABEL,
+  LEAD_STATUS_ORDER,
+} from "@/lib/constants";
 import { Modal } from "@/components/Modal";
-import { LeadStatusBadge } from "@/components/badges";
+import { LeadFollowUpBadge, LeadStatusBadge } from "@/components/badges";
 import { WalkInForm } from "@/components/forms/WalkInForm";
 import { toast } from "@/components/Toast";
 
@@ -30,6 +35,7 @@ export function LeadsClient({
   const [tab, setTab] = useState<Tab>("daftar");
   const [q, setQ] = useState("");
   const [fStatus, setFStatus] = useState<string>("all");
+  const [fFollowUp, setFFollowUp] = useState<string>("all");
   const [fKoor, setFKoor] = useState<string>("all");
 
   const [editing, setEditing] = useState<LeadRow | null>(null);
@@ -44,12 +50,13 @@ export function LeadsClient({
     const s = q.trim().toLowerCase();
     return leads.filter((l) => {
       if (fStatus !== "all" && l.status !== fStatus) return false;
+      if (fFollowUp !== "all" && l.followUp !== fFollowUp) return false;
       if (fKoor !== "all" && l.koor !== fKoor) return false;
       if (s && ![l.nama, l.phone, l.source, l.campaign, l.minat, l.note, l.koor].join(" ").toLowerCase().includes(s))
         return false;
       return true;
     });
-  }, [leads, q, fStatus, fKoor]);
+  }, [leads, q, fStatus, fFollowUp, fKoor]);
 
   return (
     <>
@@ -91,12 +98,21 @@ export function LeadsClient({
                 <label>Cari</label>
                 <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="nama / no HP / sumber / catatan…" />
               </div>
-              <div className="field" style={{ minWidth: 150 }}>
+              <div className="field" style={{ minWidth: 140 }}>
                 <label>Status</label>
                 <select value={fStatus} onChange={(e) => setFStatus(e.target.value)}>
                   <option value="all">Semua status</option>
                   {LEAD_STATUS_ORDER.map((s) => (
                     <option key={s} value={s}>{LEAD_STATUS_LABEL[s]}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="field" style={{ minWidth: 140 }}>
+                <label>Follow-up</label>
+                <select value={fFollowUp} onChange={(e) => setFFollowUp(e.target.value)}>
+                  <option value="all">Semua follow-up</option>
+                  {LEAD_FOLLOWUP_ORDER.map((s) => (
+                    <option key={s} value={s}>{LEAD_FOLLOWUP_LABEL[s]}</option>
                   ))}
                 </select>
               </div>
@@ -137,8 +153,11 @@ export function LeadsClient({
                     {rows.length === 0 && (
                       <tr>
                         <td colSpan={isManager ? 10 : 9} style={{ color: "var(--sub)" }}>
-                          Belum ada lead{fStatus !== "all" || fKoor !== "all" || q ? " sesuai filter" : ""}.
-                          Leads akan muncul di sini begitu MarComm mengirimkannya.
+                          Belum ada lead
+                          {fStatus !== "all" || fFollowUp !== "all" || fKoor !== "all" || q
+                            ? " sesuai filter"
+                            : ""}
+                          . Leads akan muncul di sini begitu MarComm mengirimkannya.
                         </td>
                       </tr>
                     )}
@@ -149,10 +168,10 @@ export function LeadsClient({
                         <td style={{ whiteSpace: "nowrap" }}>{l.phone ?? "-"}</td>
                         <td>{l.source ?? "-"}{l.campaign ? <div style={{ color: "var(--sub)", fontSize: 12 }}>{l.campaign}</div> : null}</td>
                         {isManager && <td>{l.koor}</td>}
-                        <td>{l.minat ?? "-"}</td>
+                        <td>{l.minat ?? <span style={{ color: "var(--sub)" }}>–</span>}</td>
                         <td><LeadStatusBadge s={l.status} /></td>
-                        <td style={{ whiteSpace: "nowrap" }}>{l.followUpDate ?? "-"}</td>
-                        <td style={{ maxWidth: 220, whiteSpace: "normal" }}>{l.note ?? "-"}</td>
+                        <td style={{ whiteSpace: "nowrap" }}><LeadFollowUpBadge f={l.followUp} /></td>
+                        <td style={{ maxWidth: 220, whiteSpace: "normal" }}>{l.note ?? <span style={{ color: "var(--sub)" }}>–</span>}</td>
                         <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
                           <button className="btn ghost sm" onClick={() => setEditing(l)}>✏️ Update</button>{" "}
                           {l.converted ? (
@@ -204,6 +223,7 @@ export function LeadsClient({
 
 function Ringkasan({ summary, isManager }: { summary: LeadSummary; isManager: boolean }) {
   const statusMap = new Map(summary.byStatus.map((s) => [s.status, s.count]));
+  const fuMap = new Map(summary.byFollowUp.map((s) => [s.followUp, s.count]));
   return (
     <>
       <div className="grid g4" style={{ marginBottom: 16 }}>
@@ -211,30 +231,55 @@ function Ringkasan({ summary, isManager }: { summary: LeadSummary; isManager: bo
           <div className="lab">Total Leads</div>
           <div className="val">{summary.total}</div>
         </div>
-        {summary.bySource.slice(0, 3).map((s) => (
+        {summary.bySource.slice(0, 2).map((s) => (
           <div className="card kpi" key={s.source}>
             <div className="lab">{s.source}</div>
             <div className="val">{s.count}</div>
           </div>
         ))}
+        <div className="card kpi">
+          <div className="lab">Belum diisi sales</div>
+          <div className="val">{summary.belumDiisi}</div>
+        </div>
       </div>
 
-      <div className="card" style={{ marginBottom: 16 }}>
-        <div className="pad">
-          <h3>Kondisi Leads (funnel)</h3>
-          <div className="tablewrap">
-            <table>
-              <thead>
-                <tr>{LEAD_STATUS_ORDER.map((s) => <th key={s}>{LEAD_STATUS_LABEL[s]}</th>)}</tr>
-              </thead>
-              <tbody>
-                <tr>
-                  {LEAD_STATUS_ORDER.map((s) => (
-                    <td key={s}><b>{statusMap.get(s as LeadStatus) ?? 0}</b></td>
-                  ))}
-                </tr>
-              </tbody>
-            </table>
+      <div className="grid g2" style={{ marginBottom: 16 }}>
+        <div className="card">
+          <div className="pad">
+            <h3>Status (minat)</h3>
+            <div className="tablewrap">
+              <table>
+                <thead>
+                  <tr>{LEAD_STATUS_ORDER.map((s) => <th key={s}>{LEAD_STATUS_LABEL[s]}</th>)}</tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    {LEAD_STATUS_ORDER.map((s) => (
+                      <td key={s}><b>{statusMap.get(s as LeadStatus) ?? 0}</b></td>
+                    ))}
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+        <div className="card">
+          <div className="pad">
+            <h3>Follow-up</h3>
+            <div className="tablewrap">
+              <table>
+                <thead>
+                  <tr>{LEAD_FOLLOWUP_ORDER.map((s) => <th key={s}>{LEAD_FOLLOWUP_LABEL[s]}</th>)}</tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    {LEAD_FOLLOWUP_ORDER.map((s) => (
+                      <td key={s}><b>{fuMap.get(s as LeadFollowUp) ?? 0}</b></td>
+                    ))}
+                  </tr>
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
       </div>
@@ -286,8 +331,8 @@ function EditLeadModal({
 }) {
   const [busy, setBusy] = useState(false);
   const [minat, setMinat] = useState(lead.minat ?? "");
-  const [status, setStatus] = useState<string>(lead.status);
-  const [followUpDate, setFollowUpDate] = useState(lead.followUpDate ?? "");
+  const [status, setStatus] = useState<string>(lead.status ?? "");
+  const [followUp, setFollowUp] = useState<string>(lead.followUp ?? "");
   const [note, setNote] = useState(lead.note ?? "");
 
   async function save() {
@@ -297,8 +342,8 @@ function EditLeadModal({
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         minat: minat.trim() || null,
-        status,
-        followUpDate: followUpDate || null,
+        status: status || null,
+        followUp: followUp || null,
         note: note.trim() || null,
       }),
     });
@@ -323,30 +368,37 @@ function EditLeadModal({
         </>
       }
     >
+      <div className="field">
+        <label>Minat <span style={{ color: "var(--sub)", fontWeight: 400 }}>(tulis bebas)</span></label>
+        <input value={minat} onChange={(e) => setMinat(e.target.value)} placeholder="cth: cluster Camar, 2 lantai, budget 800jt…" />
+      </div>
       <div className="frow">
-        <div className="field">
-          <label>Minat</label>
-          <input value={minat} onChange={(e) => setMinat(e.target.value)} placeholder="cth: cluster Camar, 2 lantai…" />
-        </div>
         <div className="field">
           <label>Status</label>
           <select value={status} onChange={(e) => setStatus(e.target.value)}>
+            <option value="">— belum diisi —</option>
             {LEAD_STATUS_ORDER.map((s) => (
               <option key={s} value={s}>{LEAD_STATUS_LABEL[s]}</option>
             ))}
           </select>
         </div>
+        <div className="field">
+          <label>Follow-up</label>
+          <select value={followUp} onChange={(e) => setFollowUp(e.target.value)}>
+            <option value="">— belum diisi —</option>
+            {LEAD_FOLLOWUP_ORDER.map((s) => (
+              <option key={s} value={s}>{LEAD_FOLLOWUP_LABEL[s]}</option>
+            ))}
+          </select>
+        </div>
       </div>
       <div className="field">
-        <label>Follow-up (tanggal)</label>
-        <input type="date" value={followUpDate} onChange={(e) => setFollowUpDate(e.target.value)} />
-      </div>
-      <div className="field">
-        <label>Note</label>
+        <label>Note <span style={{ color: "var(--sub)", fontWeight: 400 }}>(tulis bebas)</span></label>
         <textarea rows={3} value={note} onChange={(e) => setNote(e.target.value)} placeholder="catatan hasil follow-up…" />
       </div>
       <p className="rolehint">
-        💡 “→ Walk-In” di tabel akan membuat customer baru di pipeline dari lead ini.
+        💡 “→ Walk-In” di tabel akan membuat customer baru di pipeline dari lead ini (follow-up
+        otomatis jadi <b>WI</b>).
       </p>
     </Modal>
   );

@@ -1,4 +1,4 @@
-import type { LeadStatus } from "@prisma/client";
+import type { LeadFollowUp, LeadStatus } from "@prisma/client";
 import { prisma } from "./prisma";
 import { idMonthShort } from "./wib";
 
@@ -29,9 +29,10 @@ export interface LeadRow {
   campaign: string | null;
   tanggal: string; // YYYY-MM-DD
   koor: string; // nama koor ("-" bila belum ada)
+  // diisi Sales Koor (null = belum diisi):
   minat: string | null;
-  status: LeadStatus;
-  followUpDate: string | null; // YYYY-MM-DD
+  status: LeadStatus | null;
+  followUp: LeadFollowUp | null;
   note: string | null;
   converted: boolean;
 }
@@ -46,8 +47,8 @@ function shape(l: {
   campaign: string | null;
   tanggal: Date;
   minat: string | null;
-  status: LeadStatus;
-  followUpDate: Date | null;
+  status: LeadStatus | null;
+  followUp: LeadFollowUp | null;
   note: string | null;
   convertedDealId: string | null;
   coordinator: { name: string } | null;
@@ -62,7 +63,7 @@ function shape(l: {
     koor: l.coordinator?.name ?? "-",
     minat: l.minat,
     status: l.status,
-    followUpDate: l.followUpDate ? toKey(l.followUpDate) : null,
+    followUp: l.followUp,
     note: l.note,
     converted: !!l.convertedDealId,
   };
@@ -84,7 +85,7 @@ export async function getLeads(coordinatorId: string | null): Promise<LeadRow[]>
       tanggal: true,
       minat: true,
       status: true,
-      followUpDate: true,
+      followUp: true,
       note: true,
       convertedDealId: true,
       coordinator: { select: { name: true } },
@@ -95,8 +96,10 @@ export async function getLeads(coordinatorId: string | null): Promise<LeadRow[]>
 
 export interface LeadSummary {
   total: number;
+  belumDiisi: number; // lead yang status-nya masih kosong (belum disentuh sales)
   bySource: { source: string; count: number }[];
   byStatus: { status: LeadStatus; count: number }[];
+  byFollowUp: { followUp: LeadFollowUp; count: number }[];
   // matrik bulanan × koor (khusus Management). Kosong untuk koor.
   months: string[]; // label bulan yang ada datanya
   koors: string[]; // nama koor
@@ -110,6 +113,7 @@ export async function getLeadSummary(coordinatorId: string | null): Promise<Lead
     select: {
       source: true,
       status: true,
+      followUp: true,
       tanggal: true,
       coordinator: { select: { name: true } },
     },
@@ -117,14 +121,18 @@ export async function getLeadSummary(coordinatorId: string | null): Promise<Lead
 
   const bySourceMap = new Map<string, number>();
   const byStatusMap = new Map<LeadStatus, number>();
+  const byFollowUpMap = new Map<LeadFollowUp, number>();
   const matrix: Record<string, Record<string, number>> = {};
   const koorSet = new Set<string>();
   const monthIdx = new Set<number>(); // 0..11 bulan yang punya data (tahun berjalan)
+  let belumDiisi = 0;
 
   for (const r of rows) {
     const src = r.source?.trim() || "Lainnya";
     bySourceMap.set(src, (bySourceMap.get(src) ?? 0) + 1);
-    byStatusMap.set(r.status, (byStatusMap.get(r.status) ?? 0) + 1);
+    if (r.status) byStatusMap.set(r.status, (byStatusMap.get(r.status) ?? 0) + 1);
+    else belumDiisi++;
+    if (r.followUp) byFollowUpMap.set(r.followUp, (byFollowUpMap.get(r.followUp) ?? 0) + 1);
 
     const m0 = r.tanggal.getMonth();
     monthIdx.add(m0);
@@ -140,10 +148,12 @@ export async function getLeadSummary(coordinatorId: string | null): Promise<Lead
 
   return {
     total: rows.length,
+    belumDiisi,
     bySource: [...bySourceMap.entries()]
       .map(([source, count]) => ({ source, count }))
       .sort((a, b) => b.count - a.count),
     byStatus: [...byStatusMap.entries()].map(([status, count]) => ({ status, count })),
+    byFollowUp: [...byFollowUpMap.entries()].map(([followUp, count]) => ({ followUp, count })),
     months,
     koors,
     matrix,

@@ -1,6 +1,7 @@
-import type { Channel, LeadStatus, Stage, StatusLead, UnitStatus } from "@prisma/client";
+import type { Channel, LeadFollowUp, LeadStatus, Stage, StatusLead, UnitStatus } from "@prisma/client";
 import {
   CHANNEL_LABEL,
+  LEAD_FOLLOWUP_LABEL,
   LEAD_STATUS_LABEL,
   STAGES,
   STAGE_INDEX,
@@ -16,17 +17,16 @@ export function LeadBadge({ t }: { t: StatusLead | null | undefined }) {
   return <span className={`badge ${cls[t] ?? ""}`}>{STATUS_LEAD_LABEL[t]}</span>;
 }
 
-export function LeadStatusBadge({ s }: { s: LeadStatus }) {
-  const cls: Record<string, string> = {
-    BARU: "b-gray",
-    DIHUBUNGI: "b-blue",
-    FOLLOW_UP: "b-amber",
-    PROSPEK: "b-red",
-    WALK_IN: "b-green",
-    TIDAK_BERMINAT: "b-gray",
-    NO_RESPONSE: "b-gray",
-  };
+export function LeadStatusBadge({ s }: { s: LeadStatus | null | undefined }) {
+  if (!s) return <span style={{ color: "var(--sub)" }}>–</span>;
+  const cls: Record<string, string> = { HOT: "b-red", WARM: "b-amber", COLD: "b-blue" };
   return <span className={`badge ${cls[s] ?? "b-gray"}`}>{LEAD_STATUS_LABEL[s]}</span>;
+}
+
+export function LeadFollowUpBadge({ f }: { f: LeadFollowUp | null | undefined }) {
+  if (!f) return <span style={{ color: "var(--sub)" }}>–</span>;
+  const cls: Record<string, string> = { WI: "b-green", RESPON: "b-blue", NO_RESPON: "b-gray" };
+  return <span className={`badge ${cls[f] ?? "b-gray"}`}>{LEAD_FOLLOWUP_LABEL[f]}</span>;
 }
 
 export function ChannelBadge({ c }: { c: Channel }) {

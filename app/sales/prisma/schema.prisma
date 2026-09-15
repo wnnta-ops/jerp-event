@@ -96,15 +96,18 @@ enum EventType {
   STATUS_OVERRIDE
 }
 
-// Kondisi lead yang diisi/di-update oleh Sales Koor.
+// Status (tingkat minat) — diisi Sales Koor. Sama pola Hot/Warm/Cold.
 enum LeadStatus {
-  BARU // baru masuk dari marcomm, belum disentuh
-  DIHUBUNGI // sudah dihubungi pertama kali
-  FOLLOW_UP // dalam proses follow-up
-  PROSPEK // prospek panas
-  WALK_IN // sudah jadi Walk-In (masuk pipeline)
-  TIDAK_BERMINAT
-  NO_RESPONSE // tidak bisa dihubungi
+  HOT
+  WARM
+  COLD
+}
+
+// Hasil follow-up — diisi Sales Koor.
+enum LeadFollowUp {
+  WI // sudah Walk-In
+  RESPON // merespon tapi belum WI
+  NO_RESPON // tidak merespon
 }
 
 enum TargetScope {
@@ -446,11 +449,11 @@ model Lead {
   tanggal         DateTime     @default(now()) // tanggal lead masuk
   coordinatorId   String? // Sales Koor pemilik lead
   coordinator     Coordinator? @relation(fields: [coordinatorId], references: [id])
-  // diisi oleh Sales Koor:
-  minat           String?
-  status          LeadStatus   @default(BARU)
-  followUpDate    DateTime?
-  note            String?
+  // diisi oleh Sales Koor (kosong saat lead baru masuk dari MarComm):
+  minat           String? // free text
+  status          LeadStatus? // Hot / Warm / Cold
+  followUp        LeadFollowUp? // WI / Respon / No Respon
+  note            String? // free text
   // jembatan ke pipeline bila sudah jadi Walk-In:
   convertedDealId String?      @unique
   createdAt       DateTime     @default(now())
