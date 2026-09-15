@@ -390,22 +390,24 @@ model ReminderSetting {
   updatedAt     DateTime @updatedAt
 }
 
-// Manual input for the Sales Dashboard (Format 2). One row per WIB day.
-// Fields left null fall back to derived values in the report.
+// Manual input untuk Daily Report (Format 1) + Sales Dashboard (Format 2).
+// Satu baris per hari WIB. HANYA menyimpan field yang memang diketik manual
+// (angka dari integrasi eksternal yang belum nyala). Field yang sudah ada di web
+// — WI, Hold Unit, Waiting List, Sales Potensial, WI Hot, Target, dan Gagal
+// (batal/Collection) — TIDAK disimpan di sini; itu selalu diturunkan (linked).
 model DailyDashboardEntry {
-  id             String   @id @default(uuid())
-  dayKey         String   @unique
-  target2026     Int?
-  sprToday       Int?
-  targetUtj      Int?
-  utjNett        Int?
-  nupNett        Int?
-  holdUnit       Int?
-  waitingList    Int?
-  salesPotensial Int?
-  wiHot          Int?
-  remainingDays  Int?
-  updatedAt      DateTime @updatedAt
+  id          String   @id @default(uuid())
+  dayKey      String   @unique
+  // Format 2 (Sales Dashboard — bulanan / YTD):
+  sprToday    Int? // SPR YTD
+  utjNett     Int? // UTJ Nett bulan ini
+  nupNett     Int? // NUP Nett bulan ini
+  // Format 1 (Daily Report — harian):
+  utjGrossDay Int?
+  sprGrossDay Int?
+  nupDay      Int?
+  utjPerBlok  Json? // [{ code, n }] — UTJ hari ini per blok/phase
+  updatedAt   DateTime @updatedAt
 }
 
 model AppealNote {

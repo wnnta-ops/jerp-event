@@ -357,9 +357,11 @@ function clusterCode(name: string): string {
 
 export async function dailyRecap(day: Date): Promise<DailyRecap> {
   const { gte: dayGte, lt: dayLt } = dayBounds(day);
+  const dk = `${day.getUTCFullYear()}-${String(day.getUTCMonth() + 1).padStart(2, "0")}-${String(day.getUTCDate()).padStart(2, "0")}`;
 
-  const [wiEvents, utjEvents, utjGross, nup, sprGross, utjGagal, sprGagal, statuses, wlCount] =
+  const [entry, wiEvents, utjEvents, utjGrossD, nup, sprGrossD, utjGagal, sprGagal, statuses, wlCount] =
     await Promise.all([
+      prisma.dailyDashboardEntry.findUnique({ where: { dayKey: dk } }),
       prisma.pipelineEvent.findMany({
         where: { type: "WI", eventDate: { gte: dayGte, lt: dayLt } },
         select: { deal: { select: { channel: true, cluster: { select: { name: true } } } } },
@@ -407,9 +409,19 @@ export async function dailyRecap(day: Date): Promise<DailyRecap> {
     const code = cn ? (pn ? `${clusterCode(cn)}.${ROMAN[pn] ?? pn}` : clusterCode(cn)) : "?";
     utjMap.set(code, (utjMap.get(code) ?? 0) + 1);
   }
-  const utjToday = [...utjMap.entries()]
+  const utjTodayDerived = [...utjMap.entries()]
     .map(([code, n]) => ({ code, n }))
     .sort((a, b) => a.code.localeCompare(b.code));
+
+  // Overrides manual (integrasi eksternal belum nyala). Gagal (batal/Collection),
+  // WI, dan snapshot Hold/Waiting SELALU diturunkan — tidak bisa di-override.
+  const utjGross = entry?.utjGrossDay ?? utjGrossD;
+  const sprGross = entry?.sprGrossDay ?? sprGrossD;
+  const nupFinal = entry?.nupDay ?? nup;
+  const utjToday =
+    entry?.utjPerBlok != null
+      ? (entry.utjPerBlok as { code: string; n: number }[])
+      : utjTodayDerived;
 
   return {
     wiByCluster,
@@ -419,7 +431,7 @@ export async function dailyRecap(day: Date): Promise<DailyRecap> {
     sprGross,
     sprNett: sprGross - sprGagal,
     sprGagal,
-    nup,
+    nup: nupFinal,
     utjToday,
     waitingList: wlCount,
     holdUnit: statuses["HOLD"] ?? 0,
@@ -713,19 +725,21 @@ export async function salesDashboardData(day: Date): Promise<SalesDashboardData>
     salesDashboardDerived(day),
     prisma.dailyDashboardEntry.findUnique({ where: { dayKey: dk } }),
   ]);
-  const pick = (k: keyof SalesDashboardInput) =>
+  // Hanya field yang diketik manual yang bisa di-override; sisanya LINKED (selalu
+  // dari web): target, hold, waiting, sales potensial, WI hot, sisa hari.
+  const man = (k: "sprToday" | "utjNett" | "nupNett") =>
     entry && entry[k] != null ? (entry[k] as number) : derived[k];
   const r: SalesDashboardInput = {
-    target2026: pick("target2026"),
-    sprToday: pick("sprToday"),
-    targetUtj: pick("targetUtj"),
-    utjNett: pick("utjNett"),
-    nupNett: pick("nupNett"),
-    holdUnit: pick("holdUnit"),
-    waitingList: pick("waitingList"),
-    salesPotensial: pick("salesPotensial"),
-    wiHot: pick("wiHot"),
-    remainingDays: pick("remainingDays"),
+    target2026: derived.target2026, // linked (Management)
+    sprToday: man("sprToday"), // manual
+    targetUtj: derived.targetUtj, // linked (Management)
+    utjNett: man("utjNett"), // manual (bulanan)
+    nupNett: man("nupNett"), // manual (bulanan)
+    holdUnit: derived.holdUnit, // linked (Stock)
+    waitingList: derived.waitingList, // linked (deal)
+    salesPotensial: derived.salesPotensial, // linked (Walk-In HOT)
+    wiHot: derived.wiHot, // linked (Walk-In HOT)
+    remainingDays: derived.remainingDays, // auto (kalender)
   };
   const utjNupNett = r.utjNett + r.nupNett;
   return {
