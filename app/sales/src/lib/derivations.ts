@@ -8,6 +8,7 @@ import {
   weekOfMonth,
   yearBounds,
   idMonthShort,
+  formatIdDateLong,
 } from "./wib";
 
 // ---------------------------------------------------------------------------
@@ -641,6 +642,103 @@ export async function execSummaryData(day: Date, today: Date): Promise<ExecSumma
     perTipe,
     topAgent,
     hasKoorTarget: false,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Sales Dashboard (Daily Report — Format 2, approved table template).
+// Values are manual (DailyDashboardEntry) with derived fallbacks; computed
+// fields (remaining, %, min/day) are always derived from the resolved inputs.
+// ---------------------------------------------------------------------------
+export interface SalesDashboardInput {
+  target2026: number;
+  sprToday: number;
+  targetUtj: number;
+  utjNett: number;
+  nupNett: number;
+  holdUnit: number;
+  waitingList: number;
+  salesPotensial: number;
+  wiHot: number;
+  remainingDays: number;
+}
+export interface SalesDashboardData extends SalesDashboardInput {
+  dayKey: string;
+  dateLabel: string;
+  monthName: string;
+  remaining: number;
+  sprPct: number;
+  utjNupNett: number;
+  utjNupPct: number;
+  minSalesDay: number;
+  hasEntry: boolean;
+}
+
+// Derived suggestions (used as defaults for the input form & as fallbacks).
+export async function salesDashboardDerived(day: Date): Promise<SalesDashboardInput> {
+  const year = day.getUTCFullYear();
+  const month0 = day.getUTCMonth();
+  const { gte, lt } = monthBounds(year, month0);
+  const daysInMonth = new Date(Date.UTC(year, month0 + 1, 0)).getUTCDate();
+  const [target2026, targetUtj, spr, utjGross, utjBatal, nup, statuses, waiting, hot, wiHot] =
+    await Promise.all([
+      targetValue("ANNUAL", "SPR", ANNUAL_TARGET_PERIOD),
+      targetValue("MONTHLY", "UNIT", monthKey(new Date(Date.UTC(year, month0, 1)))),
+      sprYtd(year),
+      countEvents("UTJ", gte, lt),
+      prisma.deal.count({ where: { batal: true, batalKategori: "UTJ", batalTanggal: { gte, lt } } }),
+      countEvents("NUP", gte, lt),
+      statusCounts(),
+      prisma.deal.count({ where: { waitingList: true, batal: false } }),
+      prisma.deal.count({ where: { statusLead: "HOT", batal: false } }),
+      prisma.deal.count({ where: { statusLead: "HOT", batal: false, stage: { in: ["WI", "FOLLOW_UP"] } } }),
+    ]);
+  return {
+    target2026,
+    sprToday: spr,
+    targetUtj,
+    utjNett: utjGross - utjBatal,
+    nupNett: nup,
+    holdUnit: statuses["HOLD"] ?? 0,
+    waitingList: waiting,
+    salesPotensial: hot,
+    wiHot,
+    remainingDays: Math.max(daysInMonth - day.getUTCDate(), 0),
+  };
+}
+
+export async function salesDashboardData(day: Date): Promise<SalesDashboardData> {
+  const dk = `${day.getUTCFullYear()}-${String(day.getUTCMonth() + 1).padStart(2, "0")}-${String(day.getUTCDate()).padStart(2, "0")}`;
+  const [derived, entry] = await Promise.all([
+    salesDashboardDerived(day),
+    prisma.dailyDashboardEntry.findUnique({ where: { dayKey: dk } }),
+  ]);
+  const pick = (k: keyof SalesDashboardInput) =>
+    entry && entry[k] != null ? (entry[k] as number) : derived[k];
+  const r: SalesDashboardInput = {
+    target2026: pick("target2026"),
+    sprToday: pick("sprToday"),
+    targetUtj: pick("targetUtj"),
+    utjNett: pick("utjNett"),
+    nupNett: pick("nupNett"),
+    holdUnit: pick("holdUnit"),
+    waitingList: pick("waitingList"),
+    salesPotensial: pick("salesPotensial"),
+    wiHot: pick("wiHot"),
+    remainingDays: pick("remainingDays"),
+  };
+  const utjNupNett = r.utjNett + r.nupNett;
+  return {
+    ...r,
+    dayKey: dk,
+    dateLabel: formatIdDateLong(day),
+    monthName: idMonthShort(day.getUTCMonth()),
+    remaining: r.target2026 - r.sprToday,
+    sprPct: r.target2026 ? Math.round((r.sprToday / r.target2026) * 100) : 0,
+    utjNupNett,
+    utjNupPct: r.targetUtj ? Math.round((utjNupNett / r.targetUtj) * 100) : 0,
+    minSalesDay: r.remainingDays > 0 ? Math.ceil((r.targetUtj - utjNupNett) / r.remainingDays) : 0,
+    hasEntry: !!entry,
   };
 }
 

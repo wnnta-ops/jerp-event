@@ -629,7 +629,7 @@ table.mtx.cstyle tr.mtx-section td { background: #e2efda; border-radius: 6px; }
 .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 9px; overflow: hidden; background: var(--card); }
 .seg-btn { border: none; background: transparent; padding: 7px 14px; font: inherit; font-size: 13px; font-weight: 600; color: var(--muted); cursor: pointer; }
 .seg-btn + .seg-btn { border-left: 1px solid var(--line); }
-.seg-btn.on { background: var(--accent); color: #fff; }
+.seg-btn.on { background: var(--main); color: #fff; }
 
 .mform-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; color: var(--muted); font-size: 13px; }
 .mform-date { font-weight: 700; color: var(--ink); }

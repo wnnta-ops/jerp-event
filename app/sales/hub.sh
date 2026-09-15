@@ -23,14 +23,14 @@ case "${1:-status}" in
     echo "✓ Key saved to .env. Restarting…"
     launchctl kickstart -k "gui/$UID_NUM/$LABEL"
     sleep 5
-    curl -s -o /dev/null -w "server: %{http_code}\n" http://localhost:3000/login
+    curl -s -o /dev/null -w "server: %{http_code}\n" http://localhost:3000/sales/login
     echo "✅ AI slot active — open Pipeline Gagal and click Generate."
     ;;
   restart)
     echo "Restarting…"
     launchctl kickstart -k "gui/$UID_NUM/$LABEL"
     sleep 5
-    curl -s -o /dev/null -w "server: %{http_code}\n" http://localhost:3000/login
+    curl -s -o /dev/null -w "server: %{http_code}\n" http://localhost:3000/sales/login
     ;;
   start)
     launchctl load "$PLIST" 2>/dev/null || true
@@ -46,13 +46,13 @@ case "${1:-status}" in
     else
       echo "NOT running.  Run: ./hub.sh start"
     fi
-    curl -s -o /dev/null -w "http check: %{http_code}\n" http://localhost:3000/login 2>/dev/null || echo "not responding yet"
+    curl -s -o /dev/null -w "http check: %{http_code}\n" http://localhost:3000/sales/login 2>/dev/null || echo "not responding yet"
     ;;
   logs)
     tail -n 40 -f "$DIR/.server.log"
     ;;
   open)
-    open "http://localhost:3000"
+    open "http://localhost:3000/sales"
     ;;
   ip)
     IP="$(ipconfig getifaddr en0 2>/dev/null || ipconfig getifaddr en1 2>/dev/null)"
@@ -66,14 +66,14 @@ case "${1:-status}" in
     echo "Login URL set to http://$IP:3000 — restarting…"
     launchctl kickstart -k "gui/$UID_NUM/$LABEL"
     sleep 5
-    curl -s -o /dev/null -w "server: %{http_code}\n" http://localhost:3000/login
+    curl -s -o /dev/null -w "server: %{http_code}\n" http://localhost:3000/sales/login
     echo "✅ Share on same WiFi:  http://$IP:3000"
     ;;
   rebuild)
     echo "Rebuilding (after code changes)…"
     cd "$DIR" && npx next build && launchctl kickstart -k "gui/$UID_NUM/$LABEL"
     sleep 5
-    curl -s -o /dev/null -w "server: %{http_code}\n" http://localhost:3000/login
+    curl -s -o /dev/null -w "server: %{http_code}\n" http://localhost:3000/sales/login
     ;;
   *)
     echo "Usage: ./hub.sh [restart|start|stop|status|logs|open|ip|rebuild]"
