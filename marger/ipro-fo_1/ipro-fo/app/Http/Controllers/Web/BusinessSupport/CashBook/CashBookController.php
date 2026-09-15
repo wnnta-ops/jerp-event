@@ -7,6 +7,7 @@ namespace App\Http\Controllers\Web\BusinessSupport\CashBook;
 use App\Domain\BusinessSupport\Actions\RecordCashTransaction;
 use App\Domain\BusinessSupport\Models\BsAccount;
 use App\Domain\BusinessSupport\Models\BsCashTransaction;
+use App\Domain\BusinessSupport\Models\BsCostCenter;
 use App\Domain\BusinessSupport\Models\BsJournalLine;
 use App\Exceptions\BusinessRuleException;
 use App\Http\Controllers\Controller;
@@ -297,7 +298,9 @@ class CashBookController extends Controller
         return Inertia::render('BusinessSupport/CashBook/Form', [
             'types'          => BsCashTransaction::TYPES,
             'cashAccounts'   => $this->cashAccounts(),
-            'counterAccounts'=> BsAccount::where('is_active', true)->where('is_postable', true)->orderBy('code')->get(['id', 'code', 'name', 'type']),
+            'counterAccounts'=> BsAccount::where('is_active', true)->where('is_postable', true)->orderBy('code')->get(['id', 'code', 'name', 'type', 'cost_center_optional']),
+            // Cost center per baris — dimensi yang menautkan pengeluaran ke Budget Control.
+            'costCenters'    => BsCostCenter::where('is_active', true)->orderBy('code')->get(['id', 'code', 'name']),
             'defaultType'    => $allowedTypes[0] ?? 'in',
             'allowedTypes'   => array_values($allowedTypes),
         ]);
@@ -339,7 +342,8 @@ class CashBookController extends Controller
         return Inertia::render('BusinessSupport/CashBook/Form', [
             'types'           => BsCashTransaction::TYPES,
             'cashAccounts'    => $this->cashAccounts(),
-            'counterAccounts' => BsAccount::where('is_active', true)->where('is_postable', true)->orderBy('code')->get(['id', 'code', 'name', 'type']),
+            'counterAccounts' => BsAccount::where('is_active', true)->where('is_postable', true)->orderBy('code')->get(['id', 'code', 'name', 'type', 'cost_center_optional']),
+            'costCenters'     => BsCostCenter::where('is_active', true)->orderBy('code')->get(['id', 'code', 'name']),
             'defaultType'     => $cashTransaction->trx_type,
             // #148: saat edit, kunci jenis ke jenis transaksi yang sudah ada (tidak boleh diubah).
             'allowedTypes'    => [$cashTransaction->trx_type],
@@ -353,7 +357,10 @@ class CashBookController extends Controller
             'editing'         => array_merge(
                 $cashTransaction->only(['id', 'trx_type', 'cash_account_id', 'counter_account_id', 'amount', 'payee', 'description', 'reference']),
                 ['trx_date' => $cashTransaction->trx_date?->toDateString()],
-                ['lines' => $cashTransaction->lines()->get(['account_id', 'amount', 'description'])->toArray()],
+                // cost_center_id ikut dibaca: tanpa itu, membuka transaksi lama untuk disunting
+                // akan mengosongkan cost centernya diam-diam, lalu menyimpannya kembali tanpa
+                // dimensi — realisasi anggarannya hilang tanpa satu pun galat.
+                ['lines' => $cashTransaction->lines()->get(['account_id', 'cost_center_id', 'amount', 'description'])->toArray()],
             ),
         ]);
     }
@@ -1443,6 +1450,12 @@ class CashBookController extends Controller
             'reference'          => ['nullable', 'string', 'max:150'],
             'lines'              => $isTransfer ? ['required', 'array', 'min:1', 'max:1'] : ['required', 'array', 'min:1'],
             'lines.*.account_id' => ['required', 'integer', 'exists:bs_accounts,id', 'different:cash_account_id'],
+            // nullable di sini, WAJIB-nya ditegakkan di RecordCashTransaction::normalizeLines().
+            // Kewajibannya bergantung pada AKUN barisnya (akun bertanda cost_center_optional
+            // memang tidak menanggung cost center), dan aturan validasi Laravel tidak bisa
+            // melihat akun baris yang sama tanpa closure yang justru menyembunyikan aturannya
+            // dari tempat jurnal benar-benar dibentuk.
+            'lines.*.cost_center_id' => ['nullable', 'integer', 'exists:bs_cost_centers,id'],
             'lines.*.amount'     => ['required', 'numeric', 'min:0.01'],
             'lines.*.description'=> ['nullable', 'string', 'max:255'],
         ];
@@ -1453,6 +1466,7 @@ class CashBookController extends Controller
         return [
             'lines'              => 'rincian akun',
             'lines.*.account_id' => 'akun lawan',
+            'lines.*.cost_center_id' => 'cost center',
             'lines.*.amount'     => 'nominal',
         ];
     }

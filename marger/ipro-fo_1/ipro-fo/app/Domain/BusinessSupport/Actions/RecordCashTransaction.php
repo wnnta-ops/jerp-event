@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\BusinessSupport\Actions;
 
+use App\Domain\BusinessSupport\Models\BsAccount;
 use App\Domain\BusinessSupport\Models\BsCashTransaction;
 use App\Domain\BusinessSupport\Models\BsFiscalPeriod;
 use App\Domain\BusinessSupport\Models\BsJournal;
@@ -141,8 +142,13 @@ final class RecordCashTransaction
             }
 
             $type  = $trx->trx_type;
+            /* Dibaca dari TABEL, bukan dari payload: jurnal pengeluaran baru dibentuk setelah
+               disetujui, berjam atau berhari sesudah penyimpanan. Cost center yang tidak ikut
+               dibaca di sini akan hilang tepat di antara "Simpan" dan "Approve" — dan jurnalnya
+               tetap balance, jadi tidak ada satu pun galat yang memberi tahu. */
             $lines = $trx->lines()->get()->map(fn ($l) => [
                 'account_id'  => (int) $l->account_id,
+                'cost_center_id' => $l->cost_center_id ? (int) $l->cost_center_id : null,
                 'amount'      => round((float) $l->amount, 2),
                 'description' => $l->description,
             ])->all();
@@ -193,6 +199,8 @@ final class RecordCashTransaction
             }
             $lines[] = [
                 'account_id'  => $accId,
+                // 0 → null, bukan 0: kolomnya berelasi ke bs_cost_centers, dan 0 bukan id yang ada.
+                'cost_center_id' => ((int) ($r['cost_center_id'] ?? 0)) ?: null,
                 'amount'      => $amount,
                 'description' => isset($r['description']) ? (is_string($r['description']) ? trim($r['description']) : null) : null,
             ];
@@ -200,6 +208,35 @@ final class RecordCashTransaction
 
         if ($lines === []) {
             throw new BusinessRuleException('Minimal 1 baris akun lawan dengan nominal > 0.', errorCode: 'CASH_NO_LINES');
+        }
+
+        /* COST CENTER WAJIB, kecuali pada akun yang memang tidak menanggungnya.
+           Baris jurnal tanpa cost center tidak terhitung di Budget Control maupun laporan per
+           cost center — dan itu tidak muncul sebagai galat apa pun, hanya angka yang kurang,
+           biasanya baru ketahuan berbulan kemudian saat anggaran direkonsiliasi.
+
+           Ditegakkan DI SINI, bukan di aturan validasi request: kewajibannya bergantung pada
+           akun baris itu sendiri (cost_center_optional), dan di sinilah satu-satunya tempat yang
+           dilewati SEMUA jalur — simpan, ubah, maupun kiriman langsung tanpa layar.
+
+           Akun yang dikecualikan bukan sedikit: 71 dari 267 akun postable bertanda
+           cost_center_optional, termasuk rekening bank tujuan pada Transfer Antar Rekening.
+           Mewajibkannya untuk semua baris akan mengunci mode transfer sepenuhnya. */
+        $wajibCc = BsAccount::whereIn('id', array_column($lines, 'account_id'))
+            ->where('cost_center_optional', false)
+            ->pluck('code', 'id');
+
+        $kurang = [];
+        foreach ($lines as $l) {
+            if (isset($wajibCc[$l['account_id']]) && ! $l['cost_center_id']) {
+                $kurang[] = $wajibCc[$l['account_id']];
+            }
+        }
+        if ($kurang !== []) {
+            throw new BusinessRuleException(
+                'Cost center wajib diisi untuk akun: '.implode(', ', array_unique($kurang)).'.',
+                errorCode: 'CASH_NO_COST_CENTER',
+            );
         }
 
         return array_values($lines);
@@ -212,6 +249,7 @@ final class RecordCashTransaction
         foreach ($lines as $l) {
             $trx->lines()->create([
                 'account_id'  => $l['account_id'],
+                'cost_center_id' => $l['cost_center_id'] ?? null,
                 'amount'      => $l['amount'],
                 'description' => $l['description'] ?: null,
             ]);
@@ -254,6 +292,11 @@ final class RecordCashTransaction
         foreach ($lines as $l) {
             $rows[] = [
                 'account_id'  => $l['account_id'],
+                // JournalService::post() sudah menerima kunci ini sejak dulu; yang belum ada
+                // hanyalah yang mengirimnya. Baris KAS di atas sengaja tanpa cost center —
+                // rekening kas/bank tidak menanggung anggaran, dan mengisinya justru membuat
+                // realisasi tercatat dua kali pada cost center yang sama.
+                'cost_center_id' => $l['cost_center_id'] ?? null,
                 'debit'       => $cashIsDebit ? 0 : $l['amount'],
                 'credit'      => $cashIsDebit ? $l['amount'] : 0,
                 'description' => $l['description'] ?: ($trx->payee ?: $trx->description),
