@@ -53,9 +53,12 @@ const groups = computed<Group[]>(() => [
     {
         label: 'Master Unit', cls: 'bg-emerald-50 dark:bg-emerald-900/30',
         items: [
+            // Nama Customer duduk TEPAT setelah No. SPR: keduanya yang dipakai mengenali baris,
+            // dan tabel ini membekukan dua kolom pertama saja saat digulir ke kanan — nama yang
+            // terselip di belakang Kode Unit ikut hilang begitu pembacaan bergeser ke kolom jauh.
             one('No. SPR', (r) => r.no_spr, { mono: true }),
-            one('Kode Unit', (r) => r.kode_unit, { mono: true }),
             one('Nama Customer', (r) => r.customer),
+            one('Kode Unit', (r) => r.kode_unit, { mono: true }),
             one('Tipe Rumah', (r) => r.tipe),
             one('Pricelist Gross', (r) => r.pricelist_gross, { align: 'r', mono: true, num: true }),
             one('Diskon', (r) => r.diskon, { align: 'r', mono: true, num: true }),
