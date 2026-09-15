@@ -43,7 +43,7 @@ class PengajuanKomisi extends Page implements HasTable
             ->columns([
                 Tables\Columns\TextColumn::make('no_komisi')->label('No')->badge()->color('primary')->searchable()->sortable(),
                 Tables\Columns\TextColumn::make('kontrak.customer.full_name')->label('Pembeli')->placeholder('—')->searchable()->limit(20),
-                Tables\Columns\TextColumn::make('agent.name')->label('Sales')->placeholder('—'),
+                Tables\Columns\TextColumn::make('agent.name')->label('Kantor')->placeholder('—'),
                 Tables\Columns\TextColumn::make('amount')->label('Komisi')->money('IDR')->alignEnd(),
                 Tables\Columns\TextColumn::make('pph_amount')->label('PPh')->money('IDR')->alignEnd()->toggleable(),
                 Tables\Columns\TextColumn::make('amount_net')->label('NETT')->money('IDR')->alignEnd()->weight('bold'),
