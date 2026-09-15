@@ -51,8 +51,8 @@ export function DailyClient({
   }, [date]);
 
   useEffect(() => {
-    if (fmt === "2") loadForm();
-  }, [fmt, date, loadForm]);
+    if (canEdit) loadForm();
+  }, [date, canEdit, loadForm]);
 
   async function save() {
     setBusy(true);
@@ -93,14 +93,14 @@ export function DailyClient({
         <a className="btn wa" href={`${src}${src.includes("?") ? "&" : "?"}download=1`}>
           ⬇ Download PNG
         </a>
-        {fmt === "2" && canEdit && (
-          <button className="btn ghost sm" onClick={() => setShowInput((s) => !s)}>
-            {showInput ? "Tutup input" : "✏️ Isi Data"}
+        {canEdit && (
+          <button className="btn" onClick={() => setShowInput((s) => !s)}>
+            {showInput ? "Tutup input" : "✏️ Isi Data Sales Dashboard"}
           </button>
         )}
       </div>
 
-      {fmt === "2" && showInput && canEdit && (
+      {showInput && canEdit && (
         <div className="card" style={{ marginBottom: 14 }}>
           <div className="pad">
             <h3>Isi Data Sales Dashboard</h3>
