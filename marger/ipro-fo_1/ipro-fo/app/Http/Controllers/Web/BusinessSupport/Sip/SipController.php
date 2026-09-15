@@ -12,6 +12,7 @@ use App\Domain\BusinessSupport\Models\BsSipLine;
 use App\Domain\BusinessSupport\Services\SipService;
 use App\Exceptions\BusinessRuleException;
 use App\Http\Controllers\Controller;
+use DateTimeImmutable;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response as HttpResponse;
@@ -44,14 +45,14 @@ class SipController extends Controller
             ->paginate(50)->withQueryString();
 
         return Inertia::render('BusinessSupport/Sip/Index', [
-            'sips'     => $rows,
+            'sips' => $rows,
             'statuses' => BsSip::STATUSES,
-            'filters'  => ['status' => $request->input('status'), 'date_from' => $from, 'date_to' => $to],
-            'summary'  => [
+            'filters' => ['status' => $request->input('status'), 'date_from' => $from, 'date_to' => $to],
+            'summary' => [
                 // #111: belum disetujui semua pihak (Diajukan/Dicetak) vs sudah Disetujui.
-                'pending'  => BsSip::whereIn('status', ['submitted', 'printed'])->count(),
+                'pending' => BsSip::whereIn('status', ['submitted', 'printed'])->count(),
                 'approved' => BsSip::where('status', 'approved')->count(),
-                'total'    => (float) BsSip::whereIn('status', ['submitted', 'printed', 'approved'])->sum('total'),
+                'total' => (float) BsSip::whereIn('status', ['submitted', 'printed', 'approved'])->sum('total'),
             ],
         ]);
     }
@@ -95,7 +96,7 @@ class SipController extends Controller
             if ($v === '') {
                 return null;
             }
-            $d = \DateTimeImmutable::createFromFormat('!Y-m-d', $v);
+            $d = DateTimeImmutable::createFromFormat('!Y-m-d', $v);
 
             return ($d && $d->format('Y-m-d') === $v) ? $v : null;
         };
@@ -116,8 +117,8 @@ class SipController extends Controller
         $src = $this->selectableSources();
 
         return Inertia::render('BusinessSupport/Sip/Form', [
-            'invoices'     => $src['invoices'],
-            'advances'     => $src['advances'],
+            'invoices' => $src['invoices'],
+            'advances' => $src['advances'],
             'cashAccounts' => $this->cashAccounts(),
         ]);
     }
@@ -150,24 +151,24 @@ class SipController extends Controller
         $sip->load('lines');
 
         return Inertia::render('BusinessSupport/Sip/Form', [
-            'invoices'     => $src['invoices'],
-            'advances'     => $src['advances'],
+            'invoices' => $src['invoices'],
+            'advances' => $src['advances'],
             'cashAccounts' => $this->cashAccounts(),
-            'sip'          => [
-                'id'          => $sip->id,
-                'sip_number'  => $sip->sip_number,
-                'sip_date'    => optional($sip->sip_date)->toDateString(),
-                'title'       => $sip->title,
+            'sip' => [
+                'id' => $sip->id,
+                'sip_number' => $sip->sip_number,
+                'sip_date' => optional($sip->sip_date)->toDateString(),
+                'title' => $sip->title,
             ],
-            'editing'      => $sip->lines->map(fn ($l) => [
-                'cash_account_id'   => $l->cash_account_id,
-                'source_type'       => $l->sourceable_type === BsApInvoice::class ? 'ap' : 'advance',
-                'source_id'         => $l->sourceable_id,
-                'amount'            => (float) $l->amount,
-                'dest_bank_name'    => $l->dest_bank_name,
-                'dest_account_no'   => $l->dest_account_no,
+            'editing' => $sip->lines->map(fn ($l) => [
+                'cash_account_id' => $l->cash_account_id,
+                'source_type' => $l->sourceable_type === BsApInvoice::class ? 'ap' : 'advance',
+                'source_id' => $l->sourceable_id,
+                'amount' => (float) $l->amount,
+                'dest_bank_name' => $l->dest_bank_name,
+                'dest_account_no' => $l->dest_account_no,
                 'dest_account_name' => $l->dest_account_name,
-                'description'       => $l->description,
+                'description' => $l->description,
             ])->values(),
         ]);
     }
@@ -195,9 +196,9 @@ class SipController extends Controller
         abort_unless($request->user()?->can('bs.sip.view'), 403);
 
         return Inertia::render('BusinessSupport/Sip/Show', [
-            'sip'      => $sip->load(['cashAccount:id,code,name', 'lines.cashAccount:id,code,name']),
+            'sip' => $sip->load(['cashAccount:id,code,name', 'lines.cashAccount:id,code,name']),
             'statuses' => BsSip::STATUSES,
-            'signers'  => BsSip::SIGNERS,
+            'signers' => BsSip::SIGNERS,
             // Slot yang sudah disetujui ditampilkan sebagai BARCODE tanda tangan penyetujunya,
             // bukan namanya. Peta ini: slot → SVG barcode (kosong bila penyetuju belum punya
             // barcode di Cash Book → Setup → Set Up Barcode; layar akan jatuh kembali ke nama).
@@ -268,18 +269,18 @@ class SipController extends Controller
     private function validateData(Request $request): array
     {
         return $request->validate([
-            'sip_date'                  => ['required', 'date'],
-            'cash_account_id'           => ['required', 'integer', 'exists:bs_accounts,id'],
-            'title'                     => ['nullable', 'string', 'max:150'],
-            'lines'                     => ['required', 'array', 'min:1'],
-            'lines.*.source_type'       => ['required', 'in:ap,advance'],
-            'lines.*.source_id'         => ['required', 'integer'],
-            'lines.*.cash_account_id'   => ['required', 'integer', 'exists:bs_accounts,id'], // #114 bank sumber per baris
-            'lines.*.amount'            => ['required', 'numeric', 'min:0.01'],
-            'lines.*.dest_bank_name'    => ['nullable', 'string', 'max:150'],
-            'lines.*.dest_account_no'   => ['nullable', 'string', 'max:50'],
+            'sip_date' => ['required', 'date'],
+            'cash_account_id' => ['required', 'integer', 'exists:bs_accounts,id'],
+            'title' => ['nullable', 'string', 'max:150'],
+            'lines' => ['required', 'array', 'min:1'],
+            'lines.*.source_type' => ['required', 'in:ap,advance'],
+            'lines.*.source_id' => ['required', 'integer'],
+            'lines.*.cash_account_id' => ['required', 'integer', 'exists:bs_accounts,id'], // #114 bank sumber per baris
+            'lines.*.amount' => ['required', 'numeric', 'min:0.01'],
+            'lines.*.dest_bank_name' => ['nullable', 'string', 'max:150'],
+            'lines.*.dest_account_no' => ['nullable', 'string', 'max:50'],
             'lines.*.dest_account_name' => ['nullable', 'string', 'max:150'],
-            'lines.*.description'       => ['nullable', 'string', 'max:255'],
+            'lines.*.description' => ['nullable', 'string', 'max:255'],
         ]);
     }
 
@@ -299,7 +300,7 @@ class SipController extends Controller
                 }
             })->pluck('sourceable_id')->all();
 
-        $usedAp  = $used(BsApInvoice::class);
+        $usedAp = $used(BsApInvoice::class);
         $usedAdv = $used(BsCashAdvance::class);
 
         $invoices = BsApInvoice::where('status', 'open')
@@ -307,13 +308,13 @@ class SipController extends Controller
             ->with('supplier:id,code,name,bank_name,bank_account_no,bank_account_name')
             ->latest('invoice_date')->get()
             ->map(fn ($i) => [
-                'id'                => $i->id,
-                'invoice_number'    => $i->invoice_number,
-                'supplier_name'     => $i->supplier?->name,
-                'description'       => $i->description,
-                'outstanding'       => (float) $i->outstanding,
-                'dest_bank_name'    => $i->supplier?->bank_name,
-                'dest_account_no'   => $i->supplier?->bank_account_no,
+                'id' => $i->id,
+                'invoice_number' => $i->invoice_number,
+                'supplier_name' => $i->supplier?->name,
+                'description' => $i->description,
+                'outstanding' => (float) $i->outstanding,
+                'dest_bank_name' => $i->supplier?->bank_name,
+                'dest_account_no' => $i->supplier?->bank_account_no,
                 'dest_account_name' => $i->supplier?->bank_account_name,
             ])
             ->filter(fn ($i) => $i['outstanding'] > 0.009)->values();
@@ -322,11 +323,11 @@ class SipController extends Controller
             ->whereNotIn('id', $usedAdv)
             ->latest('advance_date')->get(['id', 'advance_number', 'holder', 'purpose', 'amount'])
             ->map(fn ($a) => [
-                'id'             => $a->id,
+                'id' => $a->id,
                 'advance_number' => $a->advance_number,
-                'holder'         => $a->holder,
-                'purpose'        => $a->purpose,
-                'amount'         => (float) $a->amount,
+                'holder' => $a->holder,
+                'purpose' => $a->purpose,
+                'amount' => (float) $a->amount,
             ])->values();
 
         return ['invoices' => $invoices, 'advances' => $advances];
@@ -374,17 +375,15 @@ class SipController extends Controller
      *
      * Tiga jalur, dicoba berurutan sampai ada yang menjawab:
      *  · Bon Sementara  — punya department_id sendiri (dipilih saat pengajuan bon).
-     *  · Invoice Hutang — TIDAK punya kolom departemen. Ditelusuri lewat pembuatnya:
-     *    users.employee_nip → bs_employees.nik → bs_hr_departments. Rantai yang sama
-     *    dipakai Bukti Permohonan Pembayaran untuk mengisi barisnya "Departemen", jadi
-     *    kedua dokumen menyebut departemen yang sama untuk invoice yang sama.
-     *  · Cadangan — departemen PEMBUAT SIP-nya sendiri (bs_sips.created_by), lewat rantai
-     *    yang sama. Dipakai untuk baris yang sumbernya tidak menyimpan departemen sama
-     *    sekali (mis. baris manual seperti "bunga bank") atau yang pembuat invoice-nya
-     *    belum terhubung ke data karyawan. Tanpa cadangan ini seluruh dokumen bisa
-     *    tercetak "Tanpa Departemen" padahal pengajunya jelas.
+     *  · Invoice Hutang — TIDAK punya kolom departemen. Ditelusuri lewat pembuatnya.
+     *  · Cadangan — pembuat SIP-nya sendiri (bs_sips.created_by). Dipakai untuk baris yang
+     *    sumbernya tidak menyimpan departemen sama sekali (mis. baris manual seperti "bunga
+     *    bank") atau yang pembuat invoice-nya belum terhubung ke data karyawan. Tanpa
+     *    cadangan ini seluruh dokumen tercetak "Tanpa Departemen" padahal pengajunya jelas.
      *
-     * Semua dibaca sekali (tiga query lookup), bukan per baris — SIP bisa memuat puluhan baris.
+     * Penelusuran lewat orang ada di unitPerUser(); alasan Cost Center dipakai ada di sana.
+     *
+     * Semua dibaca sekali, bukan per baris — SIP bisa memuat puluhan baris.
      *
      * @return array<int, string>
      */
@@ -392,44 +391,53 @@ class SipController extends Controller
     {
         $lines = $sip->lines;
 
-        // 1) Bon sementara → department_id langsung.
+        // 1) Bon sementara → department_id langsung; Cost Center bila departemennya kosong.
+        //    Kolom cost_center_id di bs_cash_advances baru ada sejak migrasi 2026_09_08_000010,
+        //    jadi keberadaannya diperiksa dulu — basis data yang belum migrasi tetap jalan.
         $advIds = $lines->where('sourceable_type', BsCashAdvance::class)->pluck('sourceable_id')->filter()->unique();
         $deptBon = [];
         if ($advIds->isNotEmpty() && Schema::hasColumn('bs_cash_advances', 'department_id')) {
-            $deptBon = DB::table('bs_cash_advances as a')
+            $q = DB::table('bs_cash_advances as a')
                 ->leftJoin('bs_hr_departments as d', 'd.id', '=', 'a.department_id')
-                ->whereIn('a.id', $advIds)
-                ->pluck('d.name', 'a.id')->all();
+                ->whereIn('a.id', $advIds);
+            $kolom = ['a.id', 'd.name as dept'];
+
+            if (Schema::hasColumn('bs_cash_advances', 'cost_center_id')) {
+                $q->leftJoin('bs_cost_centers as c', 'c.id', '=', 'a.cost_center_id');
+                $kolom[] = 'c.name as cc';
+            }
+
+            foreach ($q->get($kolom) as $r) {
+                $nama = trim((string) $r->dept) !== '' ? trim((string) $r->dept) : trim((string) ($r->cc ?? ''));
+                $deptBon[$r->id] = $nama !== '' ? $nama : null;
+            }
         }
 
         // 2) Invoice hutang → lewat pembuatnya.
         $invIds = $lines->where('sourceable_type', BsApInvoice::class)->pluck('sourceable_id')->filter()->unique();
-        $deptInv = [];
+        $pembuatInv = [];
         if ($invIds->isNotEmpty() && Schema::hasColumn('bs_ap_invoices', 'created_by')) {
-            $deptInv = DB::table('bs_ap_invoices as i')
-                ->leftJoin('users as u', 'u.id', '=', 'i.created_by')
-                ->leftJoin('bs_employees as e', 'e.nik', '=', 'u.employee_nip')
-                ->leftJoin('bs_hr_departments as d', 'd.id', '=', 'e.department_id')
-                ->whereIn('i.id', $invIds)
-                ->pluck('d.name', 'i.id')->all();
+            $pembuatInv = DB::table('bs_ap_invoices')->whereIn('id', $invIds)
+                ->pluck('created_by', 'id')->all();
         }
 
-        // 3) Cadangan: departemen pembuat SIP-nya sendiri.
-        $deptPembuat = null;
-        if ($sip->created_by) {
-            $deptPembuat = DB::table('users as u')
-                ->leftJoin('bs_employees as e', 'e.nik', '=', 'u.employee_nip')
-                ->leftJoin('bs_hr_departments as d', 'd.id', '=', 'e.department_id')
-                ->where('u.id', $sip->created_by)
-                ->value('d.name');
+        // Satu lookup untuk semua orang yang terlibat: pembuat tiap invoice + pembuat SIP.
+        $unit = $this->unitPerUser(array_filter(array_merge(array_values($pembuatInv), [$sip->created_by])));
+
+        $deptInv = [];
+        foreach ($pembuatInv as $invId => $userId) {
+            $deptInv[$invId] = $userId ? ($unit[$userId] ?? null) : null;
         }
+
+        // 3) Cadangan: unit pembuat SIP-nya sendiri.
+        $deptPembuat = $sip->created_by ? ($unit[$sip->created_by] ?? null) : null;
 
         $out = [];
         foreach ($lines as $l) {
             $nama = match ($l->sourceable_type) {
                 BsCashAdvance::class => $deptBon[$l->sourceable_id] ?? null,
-                BsApInvoice::class   => $deptInv[$l->sourceable_id] ?? null,
-                default              => null,
+                BsApInvoice::class => $deptInv[$l->sourceable_id] ?? null,
+                default => null,
             };
             if (trim((string) $nama) === '') {
                 $nama = $deptPembuat;
@@ -440,9 +448,74 @@ class SipController extends Controller
         return $out;
     }
 
+    /**
+     * id user => nama unit kerjanya: Departemen bila ada, kalau tidak Cost Center.
+     *
+     * Cost Center dipakai sebagai cadangan karena master Departemen belum pernah diisi:
+     * bs_hr_departments 0 baris dan bs_employees.department_id NULL seluruhnya, sementara
+     * bs_cost_centers terisi dan isinya memang nama divisi — Marketing, Finance & Accounting,
+     * Operasional, Proyek/Konstruksi, HRD & GA. Membaca Departemen saja berarti setiap
+     * dokumen tercetak "Tanpa Departemen" padahal divisinya diketahui. Departemen tetap
+     * didahulukan supaya master-nya bisa diisi nanti tanpa mengubah kode.
+     *
+     * Karyawan dicocokkan lewat users.employee_nip = bs_employees.nik — kolom itu kini diisi
+     * otomatis oleh IproMasterSync saat akun dibuat di J-ERP. Bila kosong, dicoba lewat
+     * kesamaan nama; cadangan nama itu menyamakan perilaku dengan Bukti Permohonan Pembayaran
+     * yang sudah memakainya, supaya kedua dokumen tidak menyebut unit berbeda untuk orang
+     * yang sama.
+     *
+     * bs_employees dimuat utuh (tabel kecil) supaya pencocokan nik DAN nama bisa dilakukan di
+     * memori — join bercabang dengan orOn menggandakan baris ketika keduanya cocok ke
+     * karyawan yang berbeda.
+     *
+     * @param  array<int, int|null>  $userIds
+     * @return array<int, string|null>
+     */
+    private function unitPerUser(array $userIds): array
+    {
+        $userIds = array_values(array_unique(array_filter($userIds)));
+        if ($userIds === []) {
+            return [];
+        }
+
+        $users = DB::table('users')->whereIn('id', $userIds)->get(['id', 'name', 'employee_nip']);
+
+        $baris = DB::table('bs_employees as e')
+            ->leftJoin('bs_hr_departments as d', 'd.id', '=', 'e.department_id')
+            ->leftJoin('bs_cost_centers as c', 'c.id', '=', 'e.cost_center_id')
+            ->get(['e.nik', 'e.name', 'd.name as dept', 'c.name as cc']);
+
+        $perNik = [];
+        $perNama = [];
+        foreach ($baris as $e) {
+            $unit = trim((string) $e->dept) !== '' ? trim((string) $e->dept) : trim((string) $e->cc);
+            $unit = $unit !== '' ? $unit : null;
+
+            if (trim((string) $e->nik) !== '') {
+                $perNik[trim((string) $e->nik)] = $unit;
+            }
+
+            // Nama kembar: yang pertama menang. Menebak di antara dua karyawan senama berarti
+            // mencetak divisi yang salah pada dokumen pembayaran.
+            $kunci = mb_strtolower(trim((string) $e->name));
+            if ($kunci !== '' && ! array_key_exists($kunci, $perNama)) {
+                $perNama[$kunci] = $unit;
+            }
+        }
+
+        $out = [];
+        foreach ($users as $u) {
+            $nip = trim((string) $u->employee_nip);
+            $out[(int) $u->id] = ($nip !== '' ? ($perNik[$nip] ?? null) : null)
+                ?? ($perNama[mb_strtolower(trim((string) $u->name))] ?? null);
+        }
+
+        return $out;
+    }
+
     private function renderPrint(BsSip $sip): string
     {
-        $e  = fn ($s) => htmlspecialchars((string) $s, ENT_QUOTES, 'UTF-8');
+        $e = fn ($s) => htmlspecialchars((string) $s, ENT_QUOTES, 'UTF-8');
         $rp = fn ($n) => 'Rp '.number_format((float) $n, 0, ',', '.');
         $co = (string) config('business_support.company.name', 'PT. Mitra Usaha Propertindo');
         $now = now()->translatedFormat('d F Y H:i');

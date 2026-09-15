@@ -3,8 +3,9 @@
 namespace App\Filament\System\Resources;
 
 use App\Filament\Concerns\MematuhiIzin;
-use App\Filament\System\Resources\BoRoleResource;
 use App\Filament\System\Resources\UserResource\Pages;
+use App\Models\Bank;
+use App\Models\Bo\BoCostCenter;
 use App\Models\Bo\BoRole;
 use App\Models\Bo\BoUser;
 use App\Models\User;
@@ -15,6 +16,7 @@ use Filament\Notifications\Notification;
 use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Table;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Hash;
 
 class UserResource extends Resource
@@ -60,6 +62,40 @@ class UserResource extends Resource
                         ->default(1)
                         ->searchable()
                         ->preload(),
+                ]),
+
+            Forms\Components\Section::make('Data Karyawan')
+                ->description('Dipakai membuat baris karyawan di BO saat akun ini disimpan — SIP & Bukti Permohonan Pembayaran mencetak Cost Center dari sini. Ini DATA AWAL: begitu baris karyawannya terbentuk, perubahan selanjutnya dilakukan HR di BO (Data Center → Karyawan) dan Cost Center oleh Accounting. Isian di sini tidak akan menimpanya.')
+                ->columns(2)
+                ->schema([
+                    Forms\Components\TextInput::make('nik')
+                        ->label('NIK')
+                        ->helperText('Nomor induk karyawan yang sebenarnya — ini satu-satunya pengikat akun ke data karyawan di BO. Salah satu digit berarti akun ini menunjuk karyawan lain.')
+                        ->required(fn (string $operation): bool => $operation === 'create')
+                        ->unique(ignoreRecord: true)
+                        ->maxLength(32),
+
+                    Forms\Components\Select::make('bo_cost_center_id')
+                        ->label('Cost Center')
+                        ->options(fn () => BoCostCenter::query()->where('is_active', true)
+                            ->orderBy('code')->get()->pluck('label', 'id')->all())
+                        ->searchable()
+                        ->preload()
+                        ->helperText('Unit kerja yang tercetak di dokumen pembayaran BO.'),
+
+                    Forms\Components\Select::make('bank_id')
+                        ->label('Bank')
+                        ->options(fn () => Bank::orderBy('name')->pluck('name', 'id')->all())
+                        ->searchable()
+                        ->preload(),
+
+                    Forms\Components\TextInput::make('rekening_number')
+                        ->label('No. Rekening')
+                        ->maxLength(64),
+
+                    Forms\Components\TextInput::make('npwp')
+                        ->label('NPWP')
+                        ->maxLength(32),
                 ]),
 
             Forms\Components\Section::make('Keamanan')
@@ -134,7 +170,7 @@ class UserResource extends Resource
      * tidak ada kolom penaut antar-database. Hasilnya diingat per pengguna supaya
      * form yang memanggilnya berkali-kali tidak menembak ipro_bo berulang.
      *
-     * @var array<string,\App\Models\Bo\BoUser|null>
+     * @var array<string,BoUser|null>
      */
     protected static array $cacheBo = [];
 
@@ -238,7 +274,7 @@ class UserResource extends Resource
                     Tables\Actions\BulkAction::make('sinkronBoBulk')->label('Sinkronkan ke BO')
                         ->icon('heroicon-o-arrows-right-left')->color('warning')
                         ->requiresConfirmation()
-                        ->action(function (\Illuminate\Support\Collection $records) {
+                        ->action(function (Collection $records) {
                             $svc = app(IproMasterSync::class);
                             $ok = $skip = $fail = 0;
                             foreach ($records as $r) {

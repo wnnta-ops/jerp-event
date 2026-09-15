@@ -14,16 +14,28 @@ class BsEmployee extends Model
     use HasTenant, SoftDeletes;
 
     protected $table = 'bs_employees';
+
     protected $fillable = [
         'tenant_id', 'nik', 'name', 'position', 'department_id', 'cost_center_id', 'join_date',
-        'base_salary', 'allowance', 'bank_name', 'bank_account', 'is_active', 'created_by',
+        'base_salary', 'allowance', 'bank_name', 'bank_account', 'npwp', 'is_active', 'created_by',
     ];
+
     protected $casts = [
         'join_date' => 'date', 'base_salary' => 'decimal:2', 'allowance' => 'decimal:2', 'is_active' => 'boolean',
     ];
 
-    public function costCenter(): BelongsTo { return $this->belongsTo(BsCostCenter::class, 'cost_center_id'); }
-    public function department(): BelongsTo { return $this->belongsTo(BsHrDepartment::class, 'department_id'); }
+    public function costCenter(): BelongsTo
+    {
+        return $this->belongsTo(BsCostCenter::class, 'cost_center_id');
+    }
 
-    public function getGrossAttribute(): float { return (float) $this->base_salary + (float) $this->allowance; }
+    public function department(): BelongsTo
+    {
+        return $this->belongsTo(BsHrDepartment::class, 'department_id');
+    }
+
+    public function getGrossAttribute(): float
+    {
+        return (float) $this->base_salary + (float) $this->allowance;
+    }
 }
