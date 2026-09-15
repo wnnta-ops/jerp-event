@@ -334,14 +334,17 @@ export async function dashboardKpis(today: Date): Promise<DashboardKpis> {
 // ---------------------------------------------------------------------------
 export interface DailyRecap {
   wiByCluster: { cluster: string; total: number; murni: number; janjian: number }[];
-  utjNett: number; // month-to-date: UTJ gross − batal UTJ
+  // all figures are for the report DAY (per hari)
+  utjGross: number;
+  utjNett: number; // gross − gagal (day)
+  utjGagal: number;
+  sprGross: number;
+  sprNett: number; // gross − gagal (day)
+  sprGagal: number;
+  nup: number;
   utjToday: { code: string; n: number }[]; // today's UTJ per cluster.phase (e.g. C2.1)
-  utjBatal: number; // month-to-date batal kategori UTJ
   waitingList: number; // current snapshot
   holdUnit: number; // current snapshot
-  sprNett: number; // month-to-date: SPR gross − batal SPR
-  sprBatal: number; // month-to-date batal kategori SPR
-  nupTotal: number; // month-to-date NUP
 }
 
 // Roman phase → number, and "Cluster 2" → "2" for the C2.1 style code.
@@ -353,9 +356,8 @@ function clusterCode(name: string): string {
 
 export async function dailyRecap(day: Date): Promise<DailyRecap> {
   const { gte: dayGte, lt: dayLt } = dayBounds(day);
-  const monthGte = monthBounds(day.getUTCFullYear(), day.getUTCMonth()).gte;
 
-  const [wiEvents, utjEvents, utjGross, nupMtd, sprGross, batalUtj, batalSpr, statuses, wlCount] =
+  const [wiEvents, utjEvents, utjGross, nup, sprGross, utjGagal, sprGagal, statuses, wlCount] =
     await Promise.all([
       prisma.pipelineEvent.findMany({
         where: { type: "WI", eventDate: { gte: dayGte, lt: dayLt } },
@@ -369,14 +371,14 @@ export async function dailyRecap(day: Date): Promise<DailyRecap> {
           },
         },
       }),
-      countEvents("UTJ", monthGte, dayLt),
-      countEvents("NUP", monthGte, dayLt),
-      countEvents("SPR", monthGte, dayLt),
+      countEvents("UTJ", dayGte, dayLt),
+      countEvents("NUP", dayGte, dayLt),
+      countEvents("SPR", dayGte, dayLt),
       prisma.deal.count({
-        where: { batal: true, batalKategori: "UTJ", batalTanggal: { gte: monthGte, lt: dayLt } },
+        where: { batal: true, batalKategori: "UTJ", batalTanggal: { gte: dayGte, lt: dayLt } },
       }),
       prisma.deal.count({
-        where: { batal: true, batalKategori: "SPR", batalTanggal: { gte: monthGte, lt: dayLt } },
+        where: { batal: true, batalKategori: "SPR", batalTanggal: { gte: dayGte, lt: dayLt } },
       }),
       statusCounts(),
       prisma.deal.count({ where: { waitingList: true, batal: false } }),
@@ -410,14 +412,16 @@ export async function dailyRecap(day: Date): Promise<DailyRecap> {
 
   return {
     wiByCluster,
-    utjNett: utjGross - batalUtj,
+    utjGross,
+    utjNett: utjGross - utjGagal,
+    utjGagal,
+    sprGross,
+    sprNett: sprGross - sprGagal,
+    sprGagal,
+    nup,
     utjToday,
-    utjBatal: batalUtj,
     waitingList: wlCount,
     holdUnit: statuses["HOLD"] ?? 0,
-    sprNett: sprGross - batalSpr,
-    sprBatal: batalSpr,
-    nupTotal: nupMtd,
   };
 }
 
@@ -476,6 +480,167 @@ export async function dailyReportData(
     hold: statuses["HOLD"] ?? 0,
     waitingList: wl,
     salesPotensial: hot,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Executive Summary (dashboard tab 2) — derived from the event ledger.
+// Fields we can't derive yet (2025 history, per-koor targets, budget) are left
+// empty and flagged so the UI can show "belum tersambung".
+// ---------------------------------------------------------------------------
+export interface ExecMonth {
+  m: string;
+  sprGross: number;
+  sprBatal: number;
+  sprNett: number;
+  wi: number;
+  utjNett: number;
+}
+export interface ExecSummaryData {
+  monthLabels: string[];
+  series: ExecMonth[];
+  nettSprYtd: number;
+  sprGrossYtd: number;
+  batalYtd: number;
+  batalRate: number;
+  annualTarget: number;
+  annualPct: number;
+  remaining: number;
+  monthLabel: string;
+  monthUtjGross: number;
+  monthUtjNett: number;
+  monthTarget: number;
+  monthPct: number;
+  monthWi: number;
+  convWiUtj: number;
+  perKoor: { name: string; gross: number; batal: number; nett: number; target: number | null }[];
+  perTipe: { type: string; n: number }[];
+  topAgent: { name: string; n: number }[];
+  hasKoorTarget: boolean;
+}
+
+export async function execSummaryData(day: Date, today: Date): Promise<ExecSummaryData> {
+  const year = day.getUTCFullYear();
+  const curMonth = year === today.getUTCFullYear() ? today.getUTCMonth() : 11;
+  const { gte, lt } = yearBounds(year);
+  const mb = monthBounds(year, curMonth);
+
+  const [sprEv, wiEv, utjEv, batalDeals, annualTarget, monthTarget, utjMonthRows, batalMonthRows] =
+    await Promise.all([
+      prisma.pipelineEvent.findMany({ where: { type: "SPR", eventDate: { gte, lt } }, select: { eventDate: true } }),
+      prisma.pipelineEvent.findMany({ where: { type: "WI", eventDate: { gte, lt } }, select: { eventDate: true } }),
+      prisma.pipelineEvent.findMany({ where: { type: "UTJ", eventDate: { gte, lt } }, select: { eventDate: true } }),
+      prisma.deal.findMany({
+        where: { batal: true, batalTanggal: { gte, lt } },
+        select: { batalTanggal: true, batalKategori: true },
+      }),
+      targetValue("ANNUAL", "SPR", ANNUAL_TARGET_PERIOD),
+      targetValue("MONTHLY", "UNIT", monthKey(new Date(Date.UTC(year, curMonth, 1)))),
+      prisma.pipelineEvent.findMany({
+        where: { type: "UTJ", eventDate: { gte: mb.gte, lt: mb.lt } },
+        select: {
+          deal: {
+            select: {
+              coordinator: { select: { name: true } },
+              agency: { select: { name: true } },
+              unitType: { select: { name: true } },
+            },
+          },
+        },
+      }),
+      prisma.deal.findMany({
+        where: { batal: true, batalKategori: "UTJ", batalTanggal: { gte: mb.gte, lt: mb.lt } },
+        select: { coordinator: { select: { name: true } } },
+      }),
+    ]);
+
+  const bucket = (rows: { eventDate: Date }[]) => {
+    const a = Array(12).fill(0) as number[];
+    for (const r of rows) a[r.eventDate.getUTCMonth()]++;
+    return a;
+  };
+  const sprB = bucket(sprEv);
+  const wiB = bucket(wiEv);
+  const utjB = bucket(utjEv);
+  const sprBatalB = Array(12).fill(0) as number[];
+  const utjBatalB = Array(12).fill(0) as number[];
+  for (const d of batalDeals) {
+    if (!d.batalTanggal) continue;
+    const m = d.batalTanggal.getUTCMonth();
+    if (d.batalKategori === "SPR") sprBatalB[m]++;
+    else if (d.batalKategori === "UTJ") utjBatalB[m]++;
+  }
+
+  const series: ExecMonth[] = [];
+  const monthLabels: string[] = [];
+  let nettSprYtd = 0, sprGrossYtd = 0, batalYtd = 0;
+  for (let m = 0; m <= curMonth; m++) {
+    const sprNett = sprB[m] - sprBatalB[m];
+    series.push({
+      m: idMonthShort(m),
+      sprGross: sprB[m],
+      sprBatal: sprBatalB[m],
+      sprNett,
+      wi: wiB[m],
+      utjNett: utjB[m] - utjBatalB[m],
+    });
+    monthLabels.push(idMonthShort(m));
+    nettSprYtd += sprNett;
+    sprGrossYtd += sprB[m];
+    batalYtd += sprBatalB[m] + utjBatalB[m];
+  }
+
+  // current-month aggregates
+  const koorMap = new Map<string, { gross: number; batal: number }>();
+  const agentMap = new Map<string, number>();
+  const tipeMap = new Map<string, number>();
+  for (const r of utjMonthRows) {
+    const kn = r.deal.coordinator?.name ?? "—";
+    const km = koorMap.get(kn) ?? { gross: 0, batal: 0 };
+    km.gross++;
+    koorMap.set(kn, km);
+    const an = r.deal.agency?.name ?? "—";
+    agentMap.set(an, (agentMap.get(an) ?? 0) + 1);
+    const tn = r.deal.unitType?.name ?? "—";
+    tipeMap.set(tn, (tipeMap.get(tn) ?? 0) + 1);
+  }
+  for (const d of batalMonthRows) {
+    const kn = d.coordinator?.name ?? "—";
+    const km = koorMap.get(kn) ?? { gross: 0, batal: 0 };
+    km.batal++;
+    koorMap.set(kn, km);
+  }
+  const perKoor = [...koorMap.entries()]
+    .map(([name, v]) => ({ name, gross: v.gross, batal: v.batal, nett: v.gross - v.batal, target: null as number | null }))
+    .sort((a, b) => b.nett - a.nett);
+  const perTipe = [...tipeMap.entries()].map(([type, n]) => ({ type, n })).sort((a, b) => b.n - a.n).slice(0, 6);
+  const topAgent = [...agentMap.entries()].map(([name, n]) => ({ name, n })).sort((a, b) => b.n - a.n).slice(0, 5);
+
+  const monthUtjGross = utjB[curMonth];
+  const monthUtjNett = utjB[curMonth] - utjBatalB[curMonth];
+  const monthWi = wiB[curMonth];
+
+  return {
+    monthLabels,
+    series,
+    nettSprYtd,
+    sprGrossYtd,
+    batalYtd,
+    batalRate: sprGrossYtd ? Math.round((batalYtd / (sprGrossYtd || 1)) * 1000) / 10 : 0,
+    annualTarget,
+    annualPct: annualTarget ? Math.round((nettSprYtd / annualTarget) * 100) : 0,
+    remaining: Math.max(annualTarget - nettSprYtd, 0),
+    monthLabel: idMonthShort(curMonth),
+    monthUtjGross,
+    monthUtjNett,
+    monthTarget,
+    monthPct: monthTarget ? Math.round((monthUtjNett / monthTarget) * 100) : 0,
+    monthWi,
+    convWiUtj: monthWi ? Math.round((monthUtjNett / monthWi) * 1000) / 10 : 0,
+    perKoor,
+    perTipe,
+    topAgent,
+    hasKoorTarget: false,
   };
 }
 

@@ -6,15 +6,16 @@ import { wibToday } from "@/lib/wib";
 
 const schema = z.object({
   nama: z.string().min(1),
-  channel: z.enum(["SITE", "PAMERAN", "JANJIAN"]),
+  channel: z.enum(["SITE", "PAMERAN", "JANJIAN", "LEADS"]),
   pameranLokasi: z.string().optional().nullable(),
   sumberInformasi: z.string().optional().nullable(),
   agencyId: z.string().min(1),
   salesId: z.string().min(1),
+  coordinatorId: z.string().optional().nullable(),
   clusterId: z.string().optional().nullable(),
   phaseId: z.string().optional().nullable(),
   unitTypeId: z.string().optional().nullable(),
-  statusLead: z.enum(["HOT", "WARM", "COLD"]).default("COLD"),
+  statusLead: z.enum(["HOT", "WARM", "COLD", "DONE"]).default("COLD"),
   catatan: z.string().optional().nullable(),
 });
 
@@ -25,7 +26,7 @@ export async function POST(req: Request) {
     requireRole(session.user.role, ["SALES", "MANAGEMENT"]);
     const body = schema.parse(await req.json());
     const today = wibToday();
-    const coordinatorId = await resolveCoordinatorId(body.agencyId, today);
+    const coordinatorId = body.coordinatorId || (await resolveCoordinatorId(body.agencyId, today));
 
     const deal = await prisma.$transaction(async (tx) => {
       const d = await tx.deal.create({

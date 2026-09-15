@@ -8,13 +8,12 @@ import type { Role } from "@prisma/client";
 import { ROLE_LABEL } from "@/lib/constants";
 import { canManageUsers } from "@/lib/user-access";
 
-// Tipe ditulis EKSPLISIT, bukan disimpulkan. Tanpa ini ADMIN_GROUP — yang itemnya
-// tidak punya `tag` — melebarkan tipe gabungan NAV, dan `it.tag` pada Daily Report
-// gagal dikompilasi: "Property 'tag' does not exist".
-type NavItem = { href: string; label: string; ic: string; tag?: string };
+type NavItem = { href: string; label: string; ic: string; tag?: string; roles?: Role[] };
 type NavGroup = { group: string; items: NavItem[] };
 
 // Grup menu khusus pengelola user — hanya tampil bila boleh (canManageUsers).
+// Tipenya WAJIB eksplisit: tanpa itu [...NAV, ADMIN_GROUP] melebarkan tipe
+// gabungannya, dan `it.tag` pada Daily Report gagal dikompilasi.
 const ADMIN_GROUP: NavGroup = {
   group: "Administrasi",
   items: [{ href: "/users", label: "Manajemen User", ic: "👥" }],
@@ -46,6 +45,12 @@ const NAV: NavGroup[] = [
       { href: "/collection", label: "Collection", ic: "💳" },
     ],
   },
+  {
+    group: "Sistem",
+    items: [
+      { href: "/management", label: "Management", ic: "🛠️", roles: ["MANAGEMENT", "SALES"] },
+    ],
+  },
 ];
 
 const TITLES: Record<string, [string, string]> = {
@@ -60,6 +65,7 @@ const TITLES: Record<string, [string, string]> = {
   "/rotasi": ["Rotasi & Bendera", "Koordinator & agen"],
   "/collection": ["Collection", "Progress akad"],
   "/users": ["Manajemen User", "Tambah/ubah user & hak akses"],
+  "/management": ["Management", "Pengaturan sistem"],
 };
 
 export function Shell({
@@ -86,11 +92,14 @@ export function Shell({
             <small>Internal system</small>
           </div>
         </div>
-        {(canManageUsers(user.role) ? [...NAV, ADMIN_GROUP] : NAV).map((g) => (
+        {(canManageUsers(user.role) ? [...NAV, ADMIN_GROUP] : NAV).map((g) => {
+          const items = g.items.filter((it) => !it.roles || it.roles.includes(user.role));
+          if (items.length === 0) return null;
+          return (
           <div key={g.group}>
             <div className="navgroup">{g.group}</div>
             <ul className="nav">
-              {g.items.map((it) => {
+              {items.map((it) => {
                 const active = pathname === it.href;
                 return (
                   <li key={it.href}>
@@ -109,7 +118,8 @@ export function Shell({
               })}
             </ul>
           </div>
-        ))}
+          );
+        })}
         <div className="side-foot">
           Model: 2 data inti (customer + unit). Semua report otomatis dari event ledger.
         </div>

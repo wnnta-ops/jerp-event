@@ -26,9 +26,9 @@ interface DealHistory {
 export interface PipelineDeal {
   id: string;
   nama: string;
-  channel: "SITE" | "PAMERAN" | "JANJIAN";
+  channel: "SITE" | "PAMERAN" | "JANJIAN" | "LEADS";
   stage: Stage;
-  statusLead: "HOT" | "WARM" | "COLD";
+  statusLead: "HOT" | "WARM" | "COLD" | "DONE";
   agency: string;
   sales: string;
   koor: string;
@@ -37,6 +37,7 @@ export interface PipelineDeal {
   unit: string | null;
   bank: string | null;
   catatan: string | null;
+  dead?: boolean; // not-interested (batal) — shown red, out of active flow
 }
 
 // One column per stage. Zone marks who owns it: Sales (0–4) vs Collection (5–7).
@@ -148,9 +149,31 @@ export function PipelineClient({ deals, role }: { deals: PipelineDeal[]; role: R
     } else toast(j.error ?? "Gagal");
   }
 
+  async function notInterested(d: PipelineDeal) {
+    if (!window.confirm(`Tandai "${d.nama}" tidak berminat? Customer keluar dari pipeline & masuk Pipeline Gagal.`)) return;
+    setBusy(true);
+    const res = await fetch(`/sales/api/deals/${d.id}/not-interested`, { method: "POST" });
+    setBusy(false);
+    const j = await res.json().catch(() => ({}));
+    if (res.ok) {
+      toast("✓ " + d.nama + " ditandai tidak berminat");
+      setSel(null);
+      router.refresh();
+    } else toast(j.error ?? "Gagal");
+  }
+
+  async function notifyFo(d: PipelineDeal) {
+    setBusy(true);
+    const res = await fetch(`/sales/api/deals/${d.id}/notify-fo`, { method: "POST" });
+    setBusy(false);
+    const j = await res.json().catch(() => ({}));
+    if (res.ok) toast("✓ " + d.nama + " diteruskan ke FO");
+    else toast(j.error ?? "Gagal kirim ke FO");
+  }
+
   const idx = sel ? STAGE_INDEX[sel.stage] : 0;
   const targets = sel ? allowedTargets(role, sel.stage) : [];
-  const canFu = sel ? (role === "SALES" || role === "MANAGEMENT") && idx < SALES_MAX_INDEX : false;
+  const canFu = sel ? (role === "SALES" || role === "MANAGEMENT") && idx < SALES_MAX_INDEX && !sel.dead : false;
 
   return (
     <>
@@ -215,9 +238,14 @@ export function PipelineClient({ deals, role }: { deals: PipelineDeal[]; role: R
                 <span className="cnt">{items.length}</span>
               </div>
               {items.slice(0, CARD_CAP).map((d) => (
-                <div className="lcard" key={d.id} onClick={() => setSel(d)}>
+                <div className={`lcard ${d.dead ? "dead" : ""}`} key={d.id} onClick={() => setSel(d)}>
                   <div className="nm">
-                    {d.nama} {showsLead(d.stage) && <LeadBadge t={d.statusLead} />}
+                    {d.nama}{" "}
+                    {d.dead ? (
+                      <span className="badge b-red">tidak berminat</span>
+                    ) : (
+                      showsLead(d.stage) && <LeadBadge t={d.statusLead} />
+                    )}
                   </div>
                   <div className="mt">
                     {d.cluster} · {d.type}
@@ -415,9 +443,28 @@ export function PipelineClient({ deals, role }: { deals: PipelineDeal[]; role: R
                     </select>
                   </div>
                 </div>
-                <button className="btn ghost sm" onClick={() => addFollowUp(sel)} disabled={busy}>
-                  ＋ Tambah Follow-up
-                </button>
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+                  <button className="btn ghost sm" onClick={() => addFollowUp(sel)} disabled={busy}>
+                    ＋ Tambah Follow-up
+                  </button>
+                  <span style={{ flex: 1 }} />
+                  <button className="btn ghost sm danger" onClick={() => notInterested(sel)} disabled={busy}>
+                    🚫 Tidak Berminat
+                  </button>
+                  <button className="btn sm" onClick={() => notifyFo(sel)} disabled={busy}>
+                    ➡ Next (kirim ke FO)
+                  </button>
+                </div>
+                <p className="rolehint" style={{ marginTop: 8 }}>
+                  <b>Next</b> = teruskan lead ke FO (Front Office) buat proses UTJ/NUP. <b>Tidak
+                  Berminat</b> = keluarin dari pipeline (masuk Pipeline Gagal).
+                </p>
+              </div>
+            )}
+            {sel.dead && (
+              <div className="notice" style={{ marginTop: 12, background: "#fdecea", borderColor: "#f1c4bb" }}>
+                <span>🚫</span>
+                <div>Customer ini ditandai <b>tidak berminat</b> — sudah keluar dari pipeline aktif &amp; masuk Pipeline Gagal.</div>
               </div>
             )}
           </>

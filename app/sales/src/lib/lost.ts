@@ -70,6 +70,8 @@ const APPEAL: Record<string, string> = {
   SKEMA_BAYAR: "Skema bayar tak cocok. Tawarkan promo DP ringan, cicilan bertahap, atau bunga fix di awal.",
   OTHER: "Alasan lain. Gali detail via follow-up, kelompokkan untuk penawaran ulang tertarget.",
   MANDEK: "Lead pasif lama. Jadwalkan follow-up ulang, konfirmasi minat & kebutuhan, tawarkan unit/info/promo baru.",
+  TIDAK_BERMINAT:
+    "Lead menyatakan tidak berminat saat follow-up. Simpan untuk retargeting; gali alasan (harga/lokasi/timing) & tawarkan opsi berbeda di kampanye berikutnya.",
 };
 
 function slices(counts: Map<string, number>, total: number, top = 0): Slice[] {
@@ -186,7 +188,7 @@ export async function loadLostItems(): Promise<LostItem[]> {
       cluster: d.cluster?.name ?? "-",
       type: d.unitType?.name ?? "-",
       channel: CHANNEL_LABEL[d.channel] ?? d.channel,
-      caraBayar: d.caraBayar ?? "-",
+      caraBayar: d.caraBayar ?? "In house",
       sales: d.sales.name,
       koor: d.coordinator?.name ?? "-",
       bendera: d.agency.name,

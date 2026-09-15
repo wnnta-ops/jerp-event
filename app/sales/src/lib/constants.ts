@@ -24,6 +24,7 @@ export const ROLE_LABEL: Record<Role, string> = {
   SALES: "Sales / Koordinator",
   COLLECTION: "Collection",
   MANAGEMENT: "Management",
+  KPR: "KPR",
   SYSADMIN: "IT Sysadmin",
 };
 
@@ -31,6 +32,7 @@ export const STATUS_LEAD_LABEL: Record<string, string> = {
   HOT: "Hot",
   WARM: "Warm",
   COLD: "Cold",
+  DONE: "Done",
 };
 
 // UI label for the Hot/Warm/Cold field (§12.1 decision).
@@ -49,7 +51,23 @@ export const CHANNEL_LABEL: Record<string, string> = {
   SITE: "Site",
   PAMERAN: "Pameran",
   JANJIAN: "Janjian",
+  LEADS: "Leads",
 };
+
+// Sumber informasi closing (marketing source) — options + free "Other".
+export const SUMBER_INFORMASI: string[] = [
+  "Instagram",
+  "Tiktok",
+  "Flyer/Brosur",
+  "Referensi Kerabat/Teman",
+  "Baliho",
+  "Pameran",
+  "Open Table",
+  "Facebook",
+  "Google Search",
+  "Radio",
+  "Market Place",
+];
 
 export const BATAL_ALASAN_LABEL: Record<string, string> = {
   KOL_2: "KOL 2",
@@ -58,6 +76,7 @@ export const BATAL_ALASAN_LABEL: Record<string, string> = {
   BATAL_SEPIHAK: "Batal Sepihak",
   MASALAH_KELUARGA: "Masalah Keluarga",
   SKEMA_BAYAR: "Skema Bayar",
+  TIDAK_BERMINAT: "Tidak Berminat",
   OTHER: "Lainnya",
 };
 
