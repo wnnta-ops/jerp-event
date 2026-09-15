@@ -23,6 +23,37 @@ class Agent extends TenantAwareModel
                 $m->code = app(NumeratorService::class)->next('SALES');
             }
         });
+
+        static::saving(fn (self $m) => $m->luruskanRekening());
+    }
+
+    /**
+     * Betulkan kolom bank & nomor rekening yang terbalik sebelum disimpan.
+     *
+     * Daftar agen dimasukkan dari Excel dan kedua kolomnya tertukar: nama bank
+     * masuk ke rekening_number, nomornya masuk ke rekening_bank. Di server test
+     * 512 dari 666 baris begitu, dan ikut tersalin ke fo_blt (784) & fo_komisi
+     * (725) — sudah dikoreksi 15 Sep 2026. Penjaga ini supaya tidak terulang
+     * saat daftar agen dimasukkan ke server utama.
+     *
+     * HANYA menukar yang tidak ambigu: kolom bank berisi angka murni SEKALIGUS
+     * kolom rekening bukan angka murni. Kalau dua-duanya angka, dua-duanya huruf,
+     * atau salah satunya kosong, dibiarkan apa adanya — menebak di sini berarti
+     * merusak baris yang sebetulnya benar.
+     */
+    public function luruskanRekening(): void
+    {
+        $bank = trim((string) $this->rekening_bank);
+        $rek = trim((string) $this->rekening_number);
+
+        if ($bank === '' || $rek === '') {
+            return;
+        }
+
+        if (ctype_digit($bank) && ! ctype_digit($rek)) {
+            $this->rekening_bank = $rek;
+            $this->rekening_number = $bank;
+        }
     }
 
     protected $fillable = [
