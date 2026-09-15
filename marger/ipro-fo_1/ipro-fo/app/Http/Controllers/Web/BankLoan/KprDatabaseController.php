@@ -102,6 +102,119 @@ class KprDatabaseController extends Controller
         ]);
     }
 
+    /**
+     * Lembar CETAK "Berita Acara Reject BI Checking" — dokumen A4 berkop, bukan layar dicetak apa adanya.
+     *
+     * Payloadnya sengaja disusun MATANG di sini, bukan mengirim $stages mentah seperti layar detail,
+     * karena ada tiga keputusan yang menentukan benar-tidaknya lembar yang keluar dari printer:
+     *
+     * 1. JENIS REJECT MENENTUKAN WARNA DAN KALIMATNYA. 'batal_sepihak' hanya bisa terjadi bila hasil BI
+     *    JUSTRU BERSIH (lihat gerbang di KprInitiationController::reject) — customer sendiri yang mundur.
+     *    Mencetaknya merah bertuliskan "ditolak" akan terbaca sebagai BI-nya bermasalah, padahal bersih,
+     *    dan lembar itu ikut masuk berkas customer. Karena itu jenisnya dibawa sampai ke label & warna.
+     * 2. PASANGAN HANYA RELEVAN BILA MENIKAH. Aturannya disalin persis dari gerbang reject
+     *    (marital_status !== 'belum_menikah', sehingga data lama yang belum punya kolom itu tetap
+     *    dianggap perlu pasangan). Tanpa ini, pemohon lajang tercetak dengan dua dokumen pasangan
+     *    bertanda silang — seolah berkasnya kurang.
+     * 3. SPRS TIDAK PERNAH MENYIMPAN no/tanggal/catatan. Layar detail menampilkan ketiganya dan karena
+     *    itu selalu memampangkan "—". Di lembar cetak yang dipakai keadaan yang BENAR-BENAR tersimpan:
+     *    status pernikahan, centang tiap dokumen beserta jam diterimanya, dan hasil OCR.
+     */
+    public function rejectBiCheckingPrint(Request $request, KprInitiation $initiation): Response
+    {
+        abort_unless($request->user()?->can('bankloan.application.view'), 403);
+        abort_unless($initiation->status === 'rejected', 404);
+
+        $initiation->load([
+            'customer:id,full_name,phone',
+            'ttsReceipt:id,tts_number,amount,received_date',
+            'booking:id,booking_number,unit_id',
+            'booking.unit:id,unit_code',
+        ]);
+
+        $stages = $initiation->stages ?? [];
+        $sprs   = $stages['sprs'] ?? [];
+        $bi     = $stages['bi_checking'] ?? [];
+
+        // Sama persis dengan gerbang reject: tidak ada kolom = dianggap perlu pasangan.
+        $perluPasangan = ($sprs['marital_status'] ?? '') !== 'belum_menikah';
+
+        $dokumen = [
+            ['label' => 'KTP Pemohon',   'ok' => (bool) ($sprs['ktp_pemohon_received'] ?? false),  'at' => $sprs['ktp_pemohon_received_at'] ?? null],
+            ['label' => 'NPWP Pemohon',  'ok' => (bool) ($sprs['npwp_pemohon_received'] ?? false), 'at' => $sprs['npwp_pemohon_received_at'] ?? null],
+        ];
+        if ($perluPasangan) {
+            $dokumen[] = ['label' => 'KTP Pasangan',  'ok' => (bool) ($sprs['ktp_pasangan_received'] ?? false),  'at' => $sprs['ktp_pasangan_received_at'] ?? null];
+            $dokumen[] = ['label' => 'NPWP Pasangan', 'ok' => (bool) ($sprs['npwp_pasangan_received'] ?? false), 'at' => $sprs['npwp_pasangan_received_at'] ?? null];
+        }
+
+        $jenis = in_array($bi['reject_type'] ?? null, ['bi_checking', 'batal_sepihak'], true)
+            ? $bi['reject_type']
+            : 'bi_checking';
+
+        $now = now();
+
+        return Inertia::render('BankLoan/Database/RejectBiCheckingCetak', [
+            'init' => [
+                'id'         => $initiation->id,
+                'number'     => $initiation->initiation_number,
+                'customer'   => $initiation->customer?->full_name,
+                'phone'      => $initiation->customer?->phone,
+                'tts'        => $initiation->ttsReceipt?->tts_number,
+                // Nominal & tanggal TTS sudah ikut ter-load sejak dulu tapi tidak pernah dikirim ke
+                // mana pun — di lembar cetak keduanya yang membuktikan tahap 1 benar-benar terjadi.
+                'tts_amount' => $initiation->ttsReceipt?->amount !== null ? (float) $initiation->ttsReceipt->amount : null,
+                'tts_date'   => optional($initiation->ttsReceipt?->received_date)->toDateString(),
+                'unit'       => $initiation->booking?->unit?->unit_code,
+                'booking'    => $initiation->booking?->booking_number,
+                'plafon'     => (float) $initiation->plafon_requested,
+                'created_at' => optional($initiation->created_at)->toIso8601String(),
+            ],
+            'sprs' => [
+                'marital_status' => $sprs['marital_status'] ?? null,
+                'perlu_pasangan' => $perluPasangan,
+                'at'             => $sprs['at'] ?? null,
+                'dokumen'        => $dokumen,
+                // Hanya vonisnya, dan HANYA bila scan-nya benar-benar sudah diverifikasi: sebelum
+                // verify, verdict masih null dan menuliskan "tidak sesuai" untuk null adalah fitnah.
+                // Teks mentah OCR (NIK/NPWP) tidak pernah ikut tercetak.
+                'ocr'            => ($sprs['docs']['verified'] ?? false) ? ($sprs['docs']['verdict'] ?? null) : null,
+            ],
+            'bi' => [
+                'jenis'           => $jenis,
+                'result'          => $bi['result'] ?? null,
+                'result_pasangan' => $perluPasangan ? ($bi['result_pasangan'] ?? null) : null,
+                'permintaan'      => $bi['permintaan'] ?? null,
+                'notes'           => $bi['notes'] ?? null,
+                'reason'          => $bi['reject_reason'] ?? null,
+                'rejected_at'     => $bi['rejected_at'] ?? null,
+                'rejected_by'     => $bi['rejected_by_name'] ?? null,
+                // JEJAK PEMBALIKAN. saveStage('bi_checking') hanya mau jalan bila permintaan =
+                // 'lanjut_spr', sedangkan reject mensyaratkan 'mundur' — jadi 'done' yang bernilai
+                // true pada inisiasi yang berakhir ditolak berarti tahap ini SUDAH pernah ditutup
+                // untuk lanjut ke pemberkasan, lalu dibalik. Untuk sebuah berita acara itu fakta
+                // penting, dan selama ini tidak pernah muncul di layar mana pun.
+                'pernah_lanjut'   => (bool) ($bi['done'] ?? false),
+                'lanjut_at'       => $bi['at'] ?? null,
+            ],
+            'company' => [
+                'name'    => (string) config('business_support.company.name', 'PT. MITRA USAHA PROPERTINDO'),
+                'address' => (string) config('business_support.sales_invoice.seller_address', 'Sidoarjo, Jawa Timur'),
+            ],
+            'cetak' => [
+                'nomor' => 'BA-BI/'.$initiation->initiation_number,
+                'oleh'  => $request->user()?->name,
+                'pada'  => ucfirst($now->translatedFormat('l, d F Y')).' pukul '.$now->format('H:i'),
+                'kota'  => 'Sidoarjo',
+                'hari'  => ucfirst($now->translatedFormat('d F Y')),
+            ],
+            'signers' => [
+                'left'  => ['label' => 'Dibuat oleh,',  'name' => (string) ($bi['rejected_by_name'] ?? ''), 'title' => 'Bank Loan'],
+                'right' => ['label' => 'Mengetahui,', 'name' => (string) config('business_support.company.signer_name', 'Rachmat Suhendra'), 'title' => (string) config('business_support.company.signer_title', 'Direktur')],
+            ],
+        ]);
+    }
+
     public function rejectProcess(Request $request): Response
     {
         abort_unless($request->user()?->can('bankloan.application.view'), 403);

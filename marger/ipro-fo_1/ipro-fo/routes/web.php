@@ -1309,6 +1309,7 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
     // ── Database KPR — arsip proses yang ditolak ──
     Route::get('/kpr-database/reject-bi-checking',            [\App\Http\Controllers\Web\BankLoan\KprDatabaseController::class, 'rejectBiChecking'])->name('kpr.database.reject-bi');
     Route::get('/kpr-database/reject-bi-checking-excel',      [\App\Http\Controllers\Web\BankLoan\KprDatabaseController::class, 'rejectBiCheckingExcel'])->name('kpr.database.reject-bi.excel'); // unduh rincian Excel
+    Route::get('/kpr-database/reject-bi-checking/{initiation}/cetak', [\App\Http\Controllers\Web\BankLoan\KprDatabaseController::class, 'rejectBiCheckingPrint'])->name('kpr.database.reject-bi.cetak'); // lembar A4 "Berita Acara Reject BI Checking" (dibuka tab baru dari tombol Cetak di halaman detail)
     Route::get('/kpr-database/reject-bi-checking/{initiation}', [\App\Http\Controllers\Web\BankLoan\KprDatabaseController::class, 'rejectBiCheckingDetail'])->name('kpr.database.reject-bi.detail');
     Route::get('/kpr-database/reject-proses-kpr',             [\App\Http\Controllers\Web\BankLoan\KprDatabaseController::class, 'rejectProcess'])->name('kpr.database.reject-kpr');
     Route::get('/kpr-database/reject-proses-kpr-excel',       [\App\Http\Controllers\Web\BankLoan\KprDatabaseController::class, 'rejectProcessExcel'])->name('kpr.database.reject-kpr.excel'); // unduh rincian Excel
