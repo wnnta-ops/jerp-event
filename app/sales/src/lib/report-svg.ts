@@ -250,14 +250,16 @@ export function buildSalesDashboardSVG(d: SalesDashboardData): string {
   gap();
   row("WI HOT PROSPECT", d.wiHot, "unit", { bg: "#e6eef8", color: "#2d5786", bold: true });
 
-  const H = y + 30;
+  y += 6;
+  p.push(t(M, y + 10, 11, 700, "#b03a2e", "* Sementara diisi MANUAL — data belum ter-link otomatis."));
+  const H = y + 34;
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" font-family="Inter, Arial, sans-serif">
   <rect width="${W}" height="${H}" fill="#ffffff"/>
   <rect width="${W}" height="72" fill="${MAIN}"/>
   <text x="${W / 2}" y="34" text-anchor="middle" font-size="22" font-weight="800" fill="#ffffff" letter-spacing="1">SALES DASHBOARD</text>
   <text x="${W / 2}" y="56" text-anchor="middle" font-size="13" fill="#fff6ea">Periode : ${esc(d.dateLabel)}</text>
   ${p.join("")}
-  <text x="${M}" y="${H - 10}" font-size="10.5" font-weight="500" fill="${MUTED}">Java Sales Hub · ${wibClock()}</text>
+  <text x="${R}" y="${H - 12}" text-anchor="end" font-size="10.5" font-weight="500" fill="${MUTED}">Java Sales Hub · ${wibClock()}</text>
  </svg>`;
 }
 

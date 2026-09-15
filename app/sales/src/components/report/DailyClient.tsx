@@ -104,6 +104,14 @@ export function DailyClient({
         <div className="card" style={{ marginBottom: 14 }}>
           <div className="pad">
             <h3>Isi Data Sales Dashboard</h3>
+            <div className="notice" style={{ marginBottom: 12, background: "#fbedd8", borderColor: "#e9b877" }}>
+              <span>✋</span>
+              <div>
+                <b>Sementara diisi manual.</b> Data belum ke-link otomatis — semua angka di sini
+                diketik dulu (satu funnel, isi semuanya). Nanti kalau sudah tersambung, field yang
+                bisa otomatis keisi sendiri.
+              </div>
+            </div>
             <p className="rolehint" style={{ marginBottom: 12 }}>
               Angka per tanggal. Kosongkan untuk pakai nilai otomatis dari sistem. Field turunan
               (remaining, %, min/hari) dihitung sendiri.
@@ -135,7 +143,7 @@ export function DailyClient({
         <div>
           {fmt === "1"
             ? "Format 1 — report harian (WI per cluster, UTJ/SPR/NUP, trend). Otomatis dari event ledger."
-            : "Format 2 — Sales Dashboard (template disetujui). Isi manual via “Isi Data”; yang kosong dipakai nilai otomatis."}
+            : "Format 2 — Sales Dashboard (template disetujui). ⚠️ Sementara diisi MANUAL (data belum ke-link) — isi semua lewat “Isi Data”."}
         </div>
       </div>
 
