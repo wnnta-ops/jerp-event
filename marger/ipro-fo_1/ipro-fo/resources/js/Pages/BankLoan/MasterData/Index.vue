@@ -48,6 +48,9 @@ const biayaPenjualanKeys = [
     { key: 'blt_kantor', label: 'BLT KANTOR' }, { key: 'komisi', label: 'KOMISI' },
 ];
 const utjDpLabels = ['UTJ', 'DP 1', 'DP 2', 'DP 3', 'DP 4', 'DP 5', 'DP 6'];
+/* Angsuran cash — cash 1x mengisi slot pertama saja, cash 3x mengisi ketiganya sesuai urutan
+   pembayarannya. Jumlah slotnya dikunci tiga, sama dengan CASH_SLOTS di controller. */
+const cashLabels = ['ANGSURAN CASH 1', 'ANGSURAN CASH 2', 'ANGSURAN CASH 3'];
 
 const groups = computed<Group[]>(() => [
     {
@@ -89,6 +92,12 @@ const groups = computed<Group[]>(() => [
     {
         label: 'Collection UTJ & DP', cls: 'bg-amber-50 dark:bg-amber-900/30',
         items: utjDpLabels.map((label, i) => pairTN(label, (r) => (i === 0 ? r.utj : r.dp?.[i - 1]))),
+    },
+    {
+        // Warnanya sengaja beda dari Collection UTJ & DP walau sama-sama "collection": keduanya
+        // bersebelahan dan hanya judul kelompok yang membedakan asal uangnya.
+        label: 'Collection Cash', cls: 'bg-lime-50 dark:bg-lime-900/30',
+        items: cashLabels.map((label, i) => pairTN(label, (r) => r.angsuran_cash?.[i])),
     },
     {
         label: 'Collection Retensi', cls: 'bg-rose-50 dark:bg-rose-900/30',
@@ -206,7 +215,7 @@ function unduhExcel() {
             </div>
         </div>
         <p class="text-sm text-neutral-500">
-            Rekap per-SPR: Master Unit, Data KPR, <strong>Proses KPR</strong> (tanggal &amp; summary tiap tahap), Collection UTJ &amp; DP, Collection Retensi, Rincian Biaya Gimmick, dan Rincian Biaya Penjualan (BLT &amp; Komisi, langsung dari realisasinya).
+            Rekap per-SPR: Master Unit, Data KPR, <strong>Proses KPR</strong> (tanggal &amp; summary tiap tahap), Collection UTJ &amp; DP, Collection Cash, Collection Retensi, Rincian Biaya Gimmick, dan Rincian Biaya Penjualan (BLT &amp; Komisi, langsung dari realisasinya).
             Ketik pada kotak di bawah judul kolom untuk memfilter kolom tsb — filter antar kolom bersifat AND.
             <span class="text-neutral-400">{{ filtered.length }} dari {{ rows.length }} baris.</span>
         </p>

@@ -31,6 +31,9 @@ class MasterDataKprController extends Controller
     /** Urutan 6 slot DP pada kolom Collection UTJ & DP. */
     private const DP_LABELS = ['DP 1', 'DP 2', 'DP 3', 'DP 4', 'DP 5', 'DP 6'];
 
+    /** Banyak slot Angsuran Cash pada kolom Collection Cash (cash 1x s/d cash 3x). */
+    private const CASH_SLOTS = 3;
+
     /** @var array<int,array{id:int,label:string,is_dajam:bool}>|null Cache master kategori retensi. */
     private ?array $kategoriRetensi = null;
 
@@ -154,7 +157,7 @@ class MasterDataKprController extends Controller
             $appId = $appIdByBooking[$b->id] ?? null;
             $ak   = $appId ? ($akad[$appId] ?? null) : null;
             $real = $appId ? ($realisasi[$appId] ?? null) : null;
-            $sch  = $schedules[$b->id] ?? ['utj' => null, 'dp' => []];
+            $sch  = $schedules[$b->id] ?? ['utj' => null, 'dp' => [], 'ang' => []];
 
             $pengajuan = $app?->plafon_requested !== null ? (float) $app->plafon_requested : null;
             $acc       = $app?->plafon_approved !== null ? (float) $app->plafon_approved : null;
@@ -200,6 +203,8 @@ class MasterDataKprController extends Controller
                 // Collection UTJ & DP
                 'utj'             => $sch['utj'],
                 'dp'              => array_map(fn ($l) => $sch['dp'][$l] ?? null, self::DP_LABELS),
+                // Collection Cash — Angsuran Cash 1..3 dari cicilan yang sudah dibayar.
+                'angsuran_cash'   => array_map(fn ($i) => $sch['ang'][$i] ?? null, range(0, self::CASH_SLOTS - 1)),
                 // Collection Retensi — satu slot per kategori aktif, urut sesuai masternya.
                 'retensi'         => array_map(fn ($col) => ($retensi[$b->id][$col['id']] ?? null), $this->retensiKategori()),
                 // Rincian Biaya — dari GMC yang sudah diposting jadi Invoice Hutang di BO
@@ -363,12 +368,36 @@ class MasterDataKprController extends Controller
         return $map;
     }
 
-    /** {t: 'Y-m-d'|null, n: float} untuk UTJ (BF) & DP 1..6 dari jadwal yang sudah dibayar. */
+    /**
+     * {t: 'Y-m-d'|null, n: float} untuk UTJ (BF), DP 1..6, dan Angsuran Cash 1..3 dari jadwal
+     * yang sudah dibayar.
+     *
+     * ANGSURAN CASH DIPUNGUT DARI JADWAL BER-TIPE 'ANG', BUKAN DARI KWITANSI LANGSUNG. Kwitansi
+     * (BKM) hidup di aplikasi Front Office, sedangkan layar ini berjalan di Back Office; yang
+     * menjembatani keduanya adalah jadwal tagihan yang tersinkron ke sini — mekanisme yang sama
+     * persis dengan kolom UTJ & DP di sebelahnya, dan yang membuat kolom ini ikut terisi begitu
+     * kwitansinya dicetak, tanpa penautan manual.
+     *
+     * 'ANG' DIPAKAI BERSAMA oleh cicilan cash DAN pencairan KPR (lihat PaymentType::Angsuran:
+     * "Cicilan KPR atau cash bertahap"). Karena itu booking yang skema bayarnya KPR SENGAJA
+     * dilewati: tanpa penyaring itu, pencairan bank akan tampil di kolom "Angsuran Cash" dan
+     * terbaca sebagai uang masuk dari customer — angkanya benar, artinya salah sama sekali.
+     *
+     * Urutan slotnya ditentukan sequence → installment_no → id, bukan teks label: label cicilan
+     * tidak dijamin seragam antar skema, sedangkan urutan pembayarannya selalu ada.
+     */
     private function schedulesByBooking(array $ids): array
     {
+        // Booking berskema KPR — ANG miliknya adalah pencairan, bukan angsuran cash.
+        $kprBookings = DB::table('bookings as b')
+            ->join('payment_schemes as ps', 'ps.id', '=', 'b.payment_scheme_id')
+            ->whereIn('b.id', $ids)->where('ps.type', 'kpr')
+            ->pluck('b.id')->flip();
+
         $rows = DB::table('payment_schedules')
             ->whereIn('booking_id', $ids)
-            ->get(['booking_id', 'payment_type', 'label', 'paid_amount', 'paid_at', 'due_date']);
+            ->orderBy('booking_id')->orderBy('sequence')->orderBy('installment_no')->orderBy('id')
+            ->get(['id', 'booking_id', 'payment_type', 'label', 'paid_amount', 'paid_at', 'due_date', 'sequence', 'installment_no']);
         $map = [];
         foreach ($rows as $r) {
             $t = $r->paid_at ?: null;
@@ -377,6 +406,11 @@ class MasterDataKprController extends Controller
                 $map[$r->booking_id]['utj'] = $cell;
             } elseif ($r->payment_type === 'DP') {
                 $map[$r->booking_id]['dp'][$r->label] = $cell;
+            } elseif ($r->payment_type === 'ANG' && ! isset($kprBookings[$r->booking_id])) {
+                // Hanya slot yang tersedia yang diisi; sisanya diabaikan, bukan menimpa slot 1.
+                if (count($map[$r->booking_id]['ang'] ?? []) < self::CASH_SLOTS) {
+                    $map[$r->booking_id]['ang'][] = $cell;
+                }
             }
         }
         return $map;
