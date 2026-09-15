@@ -10,8 +10,10 @@ use Illuminate\Database\Eloquent\Relations\BelongsToMany;
  * database `ipro_bo`. BUKAN role FO (itu Spatie\Role di DB jerp). Dikelola
  * lintas-DB dari panel System agar admin cukup satu tempat.
  *
- * Catatan: penulisan langsung ke tabel spatie BO ini melewati cache izin app
- * BO (file, TTL 24 jam). Perubahan berlaku di BO setelah cache di-reset.
+ * Catatan: penulisan langsung ke tabel spatie BO ini melewati cache izin app BO.
+ * Karena itu TTL cache tersebut diperpendek jadi 60 detik (config/permission.php
+ * di ipro-fo) — J-ERP tidak bisa membatalkannya sendiri: kedua aplikasi hanya
+ * berbagi MySQL, Redis-nya dua instance terpisah dan jaringannya tidak tersambung.
  */
 class BoRole extends Model
 {
