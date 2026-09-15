@@ -370,6 +370,24 @@ model ReminderSetting {
   updatedAt     DateTime @updatedAt
 }
 
+// Manual input for the Sales Dashboard (Format 2). One row per WIB day.
+// Fields left null fall back to derived values in the report.
+model DailyDashboardEntry {
+  id             String   @id @default(uuid())
+  dayKey         String   @unique
+  target2026     Int?
+  sprToday       Int?
+  targetUtj      Int?
+  utjNett        Int?
+  nupNett        Int?
+  holdUnit       Int?
+  waitingList    Int?
+  salesPotensial Int?
+  wiHot          Int?
+  remainingDays  Int?
+  updatedAt      DateTime @updatedAt
+}
+
 model AppealNote {
   id            String    @id @default(uuid())
   alasanKey     String    @unique // batalAlasan enum key, or "MANDEK"

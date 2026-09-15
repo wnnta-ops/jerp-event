@@ -1,10 +1,14 @@
 import { prisma } from "@/lib/prisma";
 import { DailyClient } from "@/components/report/DailyClient";
+import { getSession } from "@/lib/auth";
+import { can } from "@/lib/rbac";
 import { dayKey, formatIdDateLong, wibToday } from "@/lib/wib";
 
 export const dynamic = "force-dynamic";
 
 export default async function DailyPage() {
+  const session = (await getSession())!;
+  const canEdit = can.inputSalesStages(session.user.role);
   const today = wibToday();
   const todayKey = dayKey(today);
 
@@ -34,7 +38,7 @@ export default async function DailyPage() {
         Daily Report <span className="ft">Fitur 1</span>
       </div>
       <div className="lead">Auto dari input hari ini. Download gambar → kirim grup WA.</div>
-      <DailyClient dates={dates} initial={todayKey} />
+      <DailyClient dates={dates} initial={todayKey} canEdit={canEdit} />
     </>
   );
 }

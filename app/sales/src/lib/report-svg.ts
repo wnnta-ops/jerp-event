@@ -1,4 +1,4 @@
-import type { DailyReportData } from "./derivations";
+import type { DailyReportData, SalesDashboardData } from "./derivations";
 import { formatIdDateLong, parseDayKey, wibClock } from "./wib";
 
 // Colors — matched to app globals.css theme.
@@ -199,6 +199,65 @@ export function buildDailyReportSVG(d: DailyReportData): string {
   <text x="${M}" y="72" font-size="14" fill="#fff6ea">Divisi Sales · ${esc(dateLabel)}${d.isArchive ? " · arsip" : ""}</text>
   <text x="${W - M}" y="48" text-anchor="end" font-size="13" font-weight="600" fill="#fff6ea">Java Sales Hub</text>
   ${p.join("")}
+ </svg>`;
+}
+
+// Sales Dashboard (Format 2) — approved table template, polished with app theme.
+export function buildSalesDashboardSVG(d: SalesDashboardData): string {
+  const M = 32, W = 760, R = W - M;
+  const SEPA = 556, SEPB = 652;
+  const vX = (SEPA + SEPB) / 2, uX = (SEPB + R) / 2;
+  const SLATE = "#e7edf3", SLATEINK = "#b03a2e";
+  const p: string[] = [];
+  let y = 96;
+  const t = (x: number, yy: number, s: number, w: number, f: string, txt: string, a = "start") =>
+    `<text x="${x}" y="${yy}" font-size="${s}" font-weight="${w}" fill="${f}" text-anchor="${a}">${esc(txt)}</text>`;
+
+  const row = (
+    label: string,
+    val: string | number | null,
+    unit: string,
+    o: { bg?: string; color?: string; bold?: boolean } = {},
+  ) => {
+    const h = 34;
+    const col = o.color ?? INK;
+    p.push(`<rect x="${M}" y="${y}" width="${R - M}" height="${h}" fill="${o.bg ?? "#ffffff"}" stroke="${LINE}"/>`);
+    p.push(`<line x1="${SEPA}" y1="${y}" x2="${SEPA}" y2="${y + h}" stroke="${LINE}"/>`);
+    p.push(`<line x1="${SEPB}" y1="${y}" x2="${SEPB}" y2="${y + h}" stroke="${LINE}"/>`);
+    p.push(t(M + 12, y + 22, 12.5, o.bold ? 800 : 600, col, label));
+    if (val !== null) p.push(t(vX, y + 22, 14, 800, col, String(val), "middle"));
+    if (unit) p.push(t(uX, y + 22, 11.5, 600, col, unit, "middle"));
+    y += h;
+  };
+  const gap = () => { y += 9; };
+
+  const mn = d.monthName;
+  row("TARGET 2026", d.target2026, "unit", { bold: true });
+  row("SPR TODAY", d.sprToday, `${d.sprPct}%`, { bold: true });
+  row("REMAINING JAN–OKT", d.remaining, "", { bold: true });
+  gap();
+  // September block — slate bg, red text; % shown on first row
+  row(`TARGET UTJ ${mn.toUpperCase()}`, d.targetUtj, `${d.utjNupPct}%`, { bg: SLATE, color: SLATEINK, bold: true });
+  row(`UTJ NETT ${mn.toUpperCase()}`, d.utjNett, "", { bg: SLATE, color: SLATEINK, bold: true });
+  row(`NUP NETT ${mn.toUpperCase()}`, d.nupNett, "", { bg: SLATE, color: SLATEINK, bold: true });
+  row(`UTJ + NUP NETT ${mn.toUpperCase()}`, d.utjNupNett, "", { bg: SLATE, color: SLATEINK, bold: true });
+  row("REMAINING DAYS", d.remainingDays, "days", { bold: true });
+  row("MINIMUM SALES / DAY", d.minSalesDay, "per day", { bg: SOFT, color: SOFTINK, bold: true });
+  gap();
+  row("UTJ (Hold Unit)", d.holdUnit, "unit");
+  row("WAITING LIST", d.waitingList, "unit");
+  row("Sales Potensial", d.salesPotensial, "unit", { bg: SOFT, color: SOFTINK, bold: true });
+  gap();
+  row("WI HOT PROSPECT", d.wiHot, "unit", { bg: "#e6eef8", color: "#2d5786", bold: true });
+
+  const H = y + 30;
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" font-family="Inter, Arial, sans-serif">
+  <rect width="${W}" height="${H}" fill="#ffffff"/>
+  <rect width="${W}" height="72" fill="${MAIN}"/>
+  <text x="${W / 2}" y="34" text-anchor="middle" font-size="22" font-weight="800" fill="#ffffff" letter-spacing="1">SALES DASHBOARD</text>
+  <text x="${W / 2}" y="56" text-anchor="middle" font-size="13" fill="#fff6ea">Periode : ${esc(d.dateLabel)}</text>
+  ${p.join("")}
+  <text x="${M}" y="${H - 10}" font-size="10.5" font-weight="500" fill="${MUTED}">Java Sales Hub · ${wibClock()}</text>
  </svg>`;
 }
 
