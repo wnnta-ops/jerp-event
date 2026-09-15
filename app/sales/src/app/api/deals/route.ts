@@ -2,10 +2,11 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { requireSession, requireRole, ok, handleError } from "@/lib/api";
 import { resolveCoordinatorId } from "@/lib/derivations";
-import { wibToday } from "@/lib/wib";
+import { wibToday, parseDayKey } from "@/lib/wib";
 
 const schema = z.object({
   nama: z.string().min(1),
+  tanggalWi: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
   channel: z.enum(["SITE", "PAMERAN", "JANJIAN", "LEADS"]),
   pameranLokasi: z.string().optional().nullable(),
   sumberInformasi: z.string().optional().nullable(),
@@ -25,7 +26,7 @@ export async function POST(req: Request) {
     const session = await requireSession();
     requireRole(session.user.role, ["SALES", "MANAGEMENT"]);
     const body = schema.parse(await req.json());
-    const today = wibToday();
+    const today = body.tanggalWi ? parseDayKey(body.tanggalWi) : wibToday();
     const coordinatorId = body.coordinatorId || (await resolveCoordinatorId(body.agencyId, today));
 
     const deal = await prisma.$transaction(async (tx) => {

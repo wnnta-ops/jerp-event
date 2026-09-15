@@ -2,9 +2,11 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { requireSession, requireRole, ok, handleError, ApiError } from "@/lib/api";
 import { resolveCoordinatorId } from "@/lib/derivations";
+import { parseDayKey } from "@/lib/wib";
 
 const schema = z.object({
   nama: z.string().min(1),
+  tanggalWi: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
   channel: z.enum(["SITE", "PAMERAN", "JANJIAN", "LEADS"]),
   agencyId: z.string().min(1),
   salesId: z.string().min(1),
@@ -27,13 +29,15 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
 
     const existing = await prisma.deal.findUnique({ where: { id }, select: { tanggalWi: true } });
     if (!existing) throw new ApiError(404, "Data tidak ditemukan.");
+    const wiDate = body.tanggalWi ? parseDayKey(body.tanggalWi) : existing.tanggalWi;
     const coordinatorId =
-      body.coordinatorId || (await resolveCoordinatorId(body.agencyId, existing.tanggalWi));
+      body.coordinatorId || (await resolveCoordinatorId(body.agencyId, wiDate));
 
     await prisma.deal.update({
       where: { id },
       data: {
         nama: body.nama,
+        tanggalWi: wiDate,
         channel: body.channel,
         agencyId: body.agencyId,
         salesId: body.salesId,
@@ -46,6 +50,15 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
         catatan: body.catatan ?? null,
       },
     });
+    // keep the WI ledger event's date in sync so reports match
+    if (body.tanggalWi) {
+      const wi = await prisma.pipelineEvent.findFirst({
+        where: { dealId: id, type: "WI" },
+        orderBy: { eventDate: "asc" },
+        select: { id: true },
+      });
+      if (wi) await prisma.pipelineEvent.update({ where: { id: wi.id }, data: { eventDate: wiDate } });
+    }
     return ok({ ok: true, id });
   } catch (e) {
     return handleError(e);

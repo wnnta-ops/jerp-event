@@ -3,7 +3,7 @@ import { getSession } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { dailyTally } from "@/lib/derivations";
 import { getFormOptions } from "@/lib/options";
-import { dayBounds, wibToday } from "@/lib/wib";
+import { dayBounds, dayKey, wibToday } from "@/lib/wib";
 import { NewWalkInButton } from "@/components/forms/NewWalkInButton";
 import { WalkInRowActions } from "@/components/forms/WalkInRowActions";
 import { ChannelBadge, LeadBadge, StageBadge } from "@/components/badges";
@@ -27,6 +27,7 @@ export default async function InputPage() {
       select: {
         id: true,
         nama: true,
+        tanggalWi: true,
         channel: true,
         stage: true,
         statusLead: true,
@@ -164,6 +165,7 @@ export default async function InputPage() {
                           deal={{
                             id: c.id,
                             nama: c.nama,
+                            tanggalWi: dayKey(c.tanggalWi),
                             channel: c.channel,
                             agencyId: c.agencyId,
                             salesId: c.salesId,
