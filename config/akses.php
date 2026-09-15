@@ -91,7 +91,6 @@ return [
 
         // FO — approval (dipasang bersama penjagaan menu otomatis)
         'ApprovalAdjustmentResource' => 'fo.approval_adjustment',
-        'ApprovalCustomizeResource' => 'fo.approval_customize',
         'ApprovalDiskonResource' => 'fo.approval_diskon',
         'ApprovalPembatalanResource' => 'fo.approval_pembatalan',
         'ApprovalPengalihanHakResource' => 'fo.approval_pengalihan_hak',

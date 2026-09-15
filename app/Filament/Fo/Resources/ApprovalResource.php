@@ -255,7 +255,7 @@ class ApprovalResource extends Resource
         $th = fn ($t, $align = 'left') => '<th style="padding:5px 8px;border-bottom:1px solid #334155;text-align:'.$align.';white-space:nowrap;">'.$t.'</th>';
         $td = fn ($t, $align = 'left') => '<td style="padding:4px 8px;border-bottom:1px solid #1e293b;text-align:'.$align.';'.($align !== 'left' ? 'white-space:nowrap;' : '').'">'.$t.'</td>';
 
-        $head = '<tr>'.$th('No').$th('Nama Pembeli').$th('Sales').$th('Blok/Kav').$th('Cara Bayar')
+        $head = '<tr>'.$th('No').$th('Nama Pembeli').$th('Kantor').$th('Blok/Kav').$th('Cara Bayar')
             .$th('DPP', 'right').$th('Komisi', 'right').$th('PPh', 'right').$th('NETT', 'right').'</tr>';
         $body = '';
         $i = 0;
@@ -322,24 +322,46 @@ class ApprovalResource extends Resource
         ];
     }
 
-    public static function table(Table $table): Table
+    /**
+     * Empat kolom pengenal baris approval. Dipisah supaya bisa diganti per menu.
+     *
+     * @return array<int,Tables\Columns\TextColumn>
+     */
+    protected static function kolomIdentitas(): array
     {
-        // FORMAT APPROVAL (berlaku di SEMUA menu approval):
-        //   No. SPR · Tanggal SPR · Nama User · No. Unit · Status · Detail.
-        // Kolom "Jenis" hanya ditambahkan pada daftar gabungan (tanpa jenisScope),
-        // karena di menu per-jenis isinya selalu sama.
-        return $table->columns([
+        return [
+            // Nomor SPR ada di no_kontrak (mis. "000955/SPR/JR/VIII/2025"), BUKAN di
+            // reservasi. Sebelumnya kolom ini mengambil reservasi->no_reservasi yang
+            // isinya sekadar nomor urut ("548") — dan 923 dari 1.576 kontrak memang
+            // tidak punya tautan reservasi, sehingga hampir semua baris tampil "—".
             Tables\Columns\TextColumn::make('no_spr')->label('No. SPR')->badge()->color('primary')
-                ->state(fn (Approval $r) => static::kontrakOf($r)?->reservasi?->no_reservasi ?? '—'),
+                ->state(fn (Approval $r) => static::kontrakOf($r)?->no_kontrak ?: '—'),
 
-            Tables\Columns\TextColumn::make('tgl_spr')->label('Tanggal SPR')
-                ->state(fn (Approval $r) => optional(static::kontrakOf($r)?->reservasi?->tgl_reservasi)->format('d M Y') ?? '—'),
+            // Tanggal PENGAJUAN approval, bukan tanggal reservasi: yang ditanyakan
+            // orang saat membuka daftar ini adalah kapan permohonannya diajukan.
+            Tables\Columns\TextColumn::make('tgl_approval')->label('Tanggal Pengajuan')->date('d M Y')
+                ->sortable()->placeholder('—'),
 
             Tables\Columns\TextColumn::make('nama_user')->label('Nama User')->wrap()
                 ->state(fn (Approval $r) => static::kontrakOf($r)?->customer?->full_name ?? '—'),
 
             Tables\Columns\TextColumn::make('no_unit')->label('No. Unit')
                 ->state(fn (Approval $r) => ($u = static::kontrakOf($r)?->unit) ? ($u->kode_unit ?: $u->no_unit ?: '—') : '—'),
+        ];
+    }
+
+    public static function table(Table $table): Table
+    {
+        // FORMAT APPROVAL (berlaku di SEMUA menu approval):
+        //   No. SPR · Tanggal Pengajuan · Nama User · No. Unit · Status · Detail.
+        // Kolom "Jenis" hanya ditambahkan pada daftar gabungan (tanpa jenisScope),
+        // karena di menu per-jenis isinya selalu sama.
+        //
+        // Empat kolom pertama dipisah ke kolomIdentitas() agar menu yang objeknya
+        // BUKAN kontrak — Approval BLT & Komisi, yang mengajukan sekumpulan komisi
+        // sekaligus — bisa menggantinya tanpa menyalin seluruh definisi tabel.
+        return $table->columns([
+            ...static::kolomIdentitas(),
 
             Tables\Columns\TextColumn::make('jenis')->label('Jenis')->badge()
                 ->visible(fn () => blank(static::$jenisScope)),
