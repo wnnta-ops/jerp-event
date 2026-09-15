@@ -64,6 +64,71 @@ class Agent extends TenantAwareModel
     }
 
     /** Atasan langsung di hierarki sales (mis. KOOR untuk SALES). */
+    /**
+     * Nama KANTOR agent ini — ditelusuri ke atas lewat atasan_id sampai bertemu
+     * agent yang levelnya berawalan "KANTOR" (KANTOR AGENT, KANTOR AGENT AREBI,
+     * KANTOR AGENT NON ARB, KANTOR NON AREBI).
+     *
+     * Contoh rantainya:
+     *   TIKA SHANAYA (SALES NON AREBI) → TIKA SHNP (KOOR) → SHANAYA PROPERTY (KANTOR)
+     *
+     * Kolom agency_name TIDAK dipakai: isinya kosong untuk seluruh 993 agent.
+     * Kantornya memang direkam sebagai agent tersendiri di puncak rantai, bukan
+     * sebagai teks pada agent yang bersangkutan.
+     *
+     * Seluruh agent dimuat SEKALI per permintaan lalu ditelusuri di memori.
+     * Menelusuri lewat relasi Eloquent berarti satu kueri per tingkat per baris —
+     * daftar 25 baris komisi bisa menjadi puluhan kueri hanya untuk satu kolom.
+     */
+    public function namaKantor(): ?string
+    {
+        $peta = static::petaAgent();
+        $id = $this->getKey();
+        $lihat = [];
+
+        // Batas 10 tingkat: data atasan yang melingkar tidak boleh membuat
+        // permintaan menggantung selamanya.
+        for ($i = 0; $i < 10 && $id && ! isset($lihat[$id]); $i++) {
+            $lihat[$id] = true;
+            $baris = $peta[$id] ?? null;
+            if (! $baris) {
+                return null;
+            }
+            if (str_starts_with(strtoupper((string) $baris['level']), 'KANTOR')) {
+                return $baris['name'];
+            }
+            $id = $baris['atasan_id'];
+        }
+
+        return null;
+    }
+
+    /**
+     * id agent => [name, level, atasan_id], dimuat sekali per permintaan.
+     *
+     * @return array<int,array{name:string,level:?string,atasan_id:?int}>
+     */
+    protected static function petaAgent(): array
+    {
+        static $peta = null;
+        if ($peta !== null) {
+            return $peta;
+        }
+
+        $peta = [];
+        foreach (static::query()->withoutGlobalScopes()
+            ->leftJoin('fo_sales_levels as l', 'l.id', '=', 'fo_agents.sales_level_id')
+            ->get(['fo_agents.id', 'fo_agents.name', 'fo_agents.atasan_id', 'l.name as level_name']) as $a) {
+            $peta[(int) $a->id] = [
+                'name' => (string) $a->name,
+                'level' => $a->level_name,
+                'atasan_id' => $a->atasan_id ? (int) $a->atasan_id : null,
+            ];
+        }
+
+        return $peta;
+    }
+
     public function atasan(): BelongsTo
     {
         return $this->belongsTo(Agent::class, 'atasan_id');
