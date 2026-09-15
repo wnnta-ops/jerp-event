@@ -96,6 +96,17 @@ enum EventType {
   STATUS_OVERRIDE
 }
 
+// Kondisi lead yang diisi/di-update oleh Sales Koor.
+enum LeadStatus {
+  BARU // baru masuk dari marcomm, belum disentuh
+  DIHUBUNGI // sudah dihubungi pertama kali
+  FOLLOW_UP // dalam proses follow-up
+  PROSPEK // prospek panas
+  WALK_IN // sudah jadi Walk-In (masuk pipeline)
+  TIDAK_BERMINAT
+  NO_RESPONSE // tidak bisa dihubungi
+}
+
 enum TargetScope {
   ANNUAL
   MONTHLY
@@ -118,6 +129,10 @@ model User {
   role         Role     @default(SALES)
   salesId      String?  @unique
   sales        Sales?   @relation(fields: [salesId], references: [id])
+  // link akun -> Sales Koor, dipakai untuk membatasi Leads hanya milik koor ini.
+  // null = tidak terhubung (fallback ke pencocokan nama).
+  coordinatorId String?     @unique
+  coordinator   Coordinator? @relation(fields: [coordinatorId], references: [id])
   createdAt    DateTime @default(now())
 }
 
@@ -184,6 +199,8 @@ model Coordinator {
   name      String               @unique
   rotations RotationAssignment[]
   deals     Deal[]
+  leads     Lead[]
+  user      User?
 }
 
 model Agency {
@@ -411,6 +428,37 @@ model MatrixEntry {
   updatedAt DateTime @updatedAt
 
   @@unique([dayKey, rowKey, colKey])
+}
+
+// ---------------- LEADS (dari MarComm) ----------------
+// MarComm mengirim leads (Meta/TikTok/dsb) ke hub ini lewat POST /api/leads/ingest.
+// Tiap lead dimiliki satu Sales Koor; koor HANYA melihat lead miliknya sendiri
+// (scoping di page + API). Sales Koor meng-update kondisi lead: minat, status,
+// follow-up, note — perubahan tersimpan di sini (dan bisa di-write-back ke sheet
+// MarComm bila LEADS_WRITEBACK_URL diset). Bisa dikonversi jadi Walk-In (Deal).
+model Lead {
+  id              String       @id @default(uuid())
+  externalId      String?      @unique // id baris sheet MarComm — idempoten saat ingest & write-back
+  nama            String
+  phone           String?
+  source          String? // Meta / TikTok / dsb — dari MarComm
+  campaign        String? // nama kampanye / keterangan iklan
+  tanggal         DateTime     @default(now()) // tanggal lead masuk
+  coordinatorId   String? // Sales Koor pemilik lead
+  coordinator     Coordinator? @relation(fields: [coordinatorId], references: [id])
+  // diisi oleh Sales Koor:
+  minat           String?
+  status          LeadStatus   @default(BARU)
+  followUpDate    DateTime?
+  note            String?
+  // jembatan ke pipeline bila sudah jadi Walk-In:
+  convertedDealId String?      @unique
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+
+  @@index([coordinatorId])
+  @@index([status])
+  @@index([tanggal])
 }
 
 // ---------------- audit for reference-data edits ----------------

@@ -1,6 +1,7 @@
-import type { Channel, Stage, StatusLead, UnitStatus } from "@prisma/client";
+import type { Channel, LeadStatus, Stage, StatusLead, UnitStatus } from "@prisma/client";
 import {
   CHANNEL_LABEL,
+  LEAD_STATUS_LABEL,
   STAGES,
   STAGE_INDEX,
   STATUS_LEAD_LABEL,
@@ -13,6 +14,19 @@ export function LeadBadge({ t }: { t: StatusLead | null | undefined }) {
   if (!t) return null;
   const cls: Record<string, string> = { HOT: "b-red", WARM: "b-amber", COLD: "b-blue", DONE: "b-green" };
   return <span className={`badge ${cls[t] ?? ""}`}>{STATUS_LEAD_LABEL[t]}</span>;
+}
+
+export function LeadStatusBadge({ s }: { s: LeadStatus }) {
+  const cls: Record<string, string> = {
+    BARU: "b-gray",
+    DIHUBUNGI: "b-blue",
+    FOLLOW_UP: "b-amber",
+    PROSPEK: "b-red",
+    WALK_IN: "b-green",
+    TIDAK_BERMINAT: "b-gray",
+    NO_RESPONSE: "b-gray",
+  };
+  return <span className={`badge ${cls[s] ?? "b-gray"}`}>{LEAD_STATUS_LABEL[s]}</span>;
 }
 
 export function ChannelBadge({ c }: { c: Channel }) {

@@ -6,9 +6,10 @@ import { withAuth } from "next-auth/middleware";
 export default withAuth({ pages: { signIn: "/sales/login" } });
 
 // Protect all app routes; auth/login, static assets, and the machine-to-machine
-// demographic sync (guarded by its own bearer token) are excluded.
+// webhooks (demographic sync + MarComm leads ingest, each guarded by its own
+// secret header) are excluded.
 export const config = {
   matcher: [
-    "/((?!api/auth|api/sso|api/demographic|login|_next/static|_next/image|favicon.ico).*)",
+    "/((?!api/auth|api/sso|api/demographic|api/leads/ingest|login|_next/static|_next/image|favicon.ico).*)",
   ],
 };
