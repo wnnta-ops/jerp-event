@@ -48,7 +48,7 @@
             <tr>
                 <th style="width:22px">NO</th>
                 <th>NAMA PEMBELI</th>
-                <th>SALES</th>
+                <th>KANTOR</th>
                 <th>AGENT</th>
                 <th>BLOK/KAV</th>
                 <th>CARA BAYAR</th>
@@ -74,7 +74,8 @@
                 <tr>
                     <td class="c">{{ $i + 1 }}</td>
                     <td>{{ $k->kontrak?->customer?->full_name ?: '—' }}</td>
-                    <td>{{ $a?->name ?: '—' }}</td>
+                    {{-- Kantor agent, ditelusuri lewat rantai atasan — lihat Agent::namaKantor(). --}}
+                    <td>{{ $a?->namaKantor() ?: '—' }}</td>
                     <td class="c">{{ $a?->is_arebi ? 'AGENT AREBI' : 'AGENT NON AREBI' }}</td>
                     <td class="c">{{ $unit?->kode_unit ?: $unit?->no_unit ?: '—' }}</td>
                     <td class="c">{{ $k->kontrak?->cara_bayar ?: '—' }}</td>
