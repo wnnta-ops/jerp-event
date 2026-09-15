@@ -264,7 +264,7 @@ class ApprovalResource extends Resource
             $unit = $k->kontrak?->unit;
             $body .= '<tr>'.$td((string) $i, 'center')
                 .$td(e((string) ($k->kontrak?->customer?->full_name ?: '—')))
-                .$td(e((string) ($k->agent?->name ?: '—')))
+                .$td(e((string) ($k->agent?->namaKantor() ?: '—')))
                 .$td(e((string) ($unit?->kode_unit ?: $unit?->no_unit ?: '—')), 'center')
                 .$td(e((string) ($k->kontrak?->cara_bayar ?: '—')), 'center')
                 .$td($rp($k->dpp), 'right').$td($rp($k->amount), 'right')
