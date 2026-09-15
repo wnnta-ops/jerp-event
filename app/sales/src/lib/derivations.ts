@@ -355,13 +355,13 @@ function clusterCode(name: string): string {
   return n ? `C${n}` : name;
 }
 
-export async function dailyRecap(day: Date): Promise<DailyRecap> {
+// Nilai MURNI dari web/turunan (tanpa override manual). Dipakai sebagai default
+// auto-fill di form & untuk membandingkan apakah user meng-override.
+export async function dailyRecapPure(day: Date): Promise<DailyRecap> {
   const { gte: dayGte, lt: dayLt } = dayBounds(day);
-  const dk = `${day.getUTCFullYear()}-${String(day.getUTCMonth() + 1).padStart(2, "0")}-${String(day.getUTCDate()).padStart(2, "0")}`;
 
-  const [entry, wiEvents, utjEvents, utjGrossD, nup, sprGrossD, utjGagal, sprGagal, statuses, wlCount] =
+  const [wiEvents, utjEvents, utjGrossD, nup, sprGrossD, utjGagal, sprGagal, statuses, wlCount] =
     await Promise.all([
-      prisma.dailyDashboardEntry.findUnique({ where: { dayKey: dk } }),
       prisma.pipelineEvent.findMany({
         where: { type: "WI", eventDate: { gte: dayGte, lt: dayLt } },
         select: { deal: { select: { channel: true, cluster: { select: { name: true } } } } },
@@ -409,20 +409,43 @@ export async function dailyRecap(day: Date): Promise<DailyRecap> {
     const code = cn ? (pn ? `${clusterCode(cn)}.${ROMAN[pn] ?? pn}` : clusterCode(cn)) : "?";
     utjMap.set(code, (utjMap.get(code) ?? 0) + 1);
   }
-  const utjTodayDerived = [...utjMap.entries()]
+  const utjToday = [...utjMap.entries()]
     .map(([code, n]) => ({ code, n }))
     .sort((a, b) => a.code.localeCompare(b.code));
 
-  // Overrides manual (integrasi eksternal belum nyala). Gagal (batal/Collection),
-  // WI, dan snapshot Hold/Waiting SELALU diturunkan — tidak bisa di-override.
-  const utjGross = entry?.utjGrossDay ?? utjGrossD;
-  const sprGross = entry?.sprGrossDay ?? sprGrossD;
-  const nupFinal = entry?.nupDay ?? nup;
-  const utjToday =
-    entry?.utjPerBlok != null
-      ? (entry.utjPerBlok as { code: string; n: number }[])
-      : utjTodayDerived;
+  return {
+    wiByCluster,
+    utjGross: utjGrossD,
+    utjNett: utjGrossD - utjGagal,
+    utjGagal,
+    sprGross: sprGrossD,
+    sprNett: sprGrossD - sprGagal,
+    sprGagal,
+    nup,
+    utjToday,
+    waitingList: wlCount,
+    holdUnit: statuses["HOLD"] ?? 0,
+  };
+}
 
+// Nilai FINAL: turunan + override manual (yang tidak null di DailyDashboardEntry).
+export async function dailyRecap(day: Date): Promise<DailyRecap> {
+  const dk = `${day.getUTCFullYear()}-${String(day.getUTCMonth() + 1).padStart(2, "0")}-${String(day.getUTCDate()).padStart(2, "0")}`;
+  const [pure, entry] = await Promise.all([
+    dailyRecapPure(day),
+    prisma.dailyDashboardEntry.findUnique({ where: { dayKey: dk } }),
+  ]);
+  if (!entry) return pure;
+  const wiByCluster = Array.isArray(entry.wiByCluster)
+    ? (entry.wiByCluster as DailyRecap["wiByCluster"])
+    : pure.wiByCluster;
+  const utjGross = entry.utjGrossDay ?? pure.utjGross;
+  const utjGagal = entry.utjGagalDay ?? pure.utjGagal;
+  const sprGross = entry.sprGrossDay ?? pure.sprGross;
+  const sprGagal = entry.sprGagalDay ?? pure.sprGagal;
+  const utjToday = Array.isArray(entry.utjPerBlok)
+    ? (entry.utjPerBlok as DailyRecap["utjToday"])
+    : pure.utjToday;
   return {
     wiByCluster,
     utjGross,
@@ -431,10 +454,10 @@ export async function dailyRecap(day: Date): Promise<DailyRecap> {
     sprGross,
     sprNett: sprGross - sprGagal,
     sprGagal,
-    nup: nupFinal,
+    nup: entry.nupDay ?? pure.nup,
     utjToday,
-    waitingList: wlCount,
-    holdUnit: statuses["HOLD"] ?? 0,
+    waitingList: entry.waitingList ?? pure.waitingList,
+    holdUnit: entry.holdUnit ?? pure.holdUnit,
   };
 }
 
@@ -725,21 +748,21 @@ export async function salesDashboardData(day: Date): Promise<SalesDashboardData>
     salesDashboardDerived(day),
     prisma.dailyDashboardEntry.findUnique({ where: { dayKey: dk } }),
   ]);
-  // Hanya field yang diketik manual yang bisa di-override; sisanya LINKED (selalu
-  // dari web): target, hold, waiting, sales potensial, WI hot, sisa hari.
-  const man = (k: "sprToday" | "utjNett" | "nupNett") =>
+  // Semua field auto-fill dari web (derived) tapi bisa di-override manual.
+  // null di entry = pakai nilai web; terisi = override user.
+  const pick = (k: keyof SalesDashboardInput) =>
     entry && entry[k] != null ? (entry[k] as number) : derived[k];
   const r: SalesDashboardInput = {
-    target2026: derived.target2026, // linked (Management)
-    sprToday: man("sprToday"), // manual
-    targetUtj: derived.targetUtj, // linked (Management)
-    utjNett: man("utjNett"), // manual (bulanan)
-    nupNett: man("nupNett"), // manual (bulanan)
-    holdUnit: derived.holdUnit, // linked (Stock)
-    waitingList: derived.waitingList, // linked (deal)
-    salesPotensial: derived.salesPotensial, // linked (Walk-In HOT)
-    wiHot: derived.wiHot, // linked (Walk-In HOT)
-    remainingDays: derived.remainingDays, // auto (kalender)
+    target2026: pick("target2026"),
+    sprToday: pick("sprToday"),
+    targetUtj: pick("targetUtj"),
+    utjNett: pick("utjNett"),
+    nupNett: pick("nupNett"),
+    holdUnit: pick("holdUnit"),
+    waitingList: pick("waitingList"),
+    salesPotensial: pick("salesPotensial"),
+    wiHot: pick("wiHot"),
+    remainingDays: pick("remainingDays"),
   };
   const utjNupNett = r.utjNett + r.nupNett;
   return {

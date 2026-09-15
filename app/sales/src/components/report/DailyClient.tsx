@@ -6,44 +6,28 @@ import { DatePicker } from "@/components/DatePicker";
 
 type Fmt = "1" | "2";
 type Tab = "inti" | "daily" | "dash";
-
-type WiRow = { cluster: string; total: number; murni: number; janjian: number };
-type Daily = {
-  wiByCluster: WiRow[];
-  utjGagal: number;
-  sprGagal: number;
-  holdUnit: number;
-  waitingList: number;
-};
-type Dash = {
-  target2026: number;
-  targetUtj: number;
-  salesPotensial: number;
-  wiHot: number;
-  remainingDays: number;
-  remaining: number;
-  sprPct: number;
-  utjNupNett: number;
-  utjNupPct: number;
-  minSalesDay: number;
-};
+type WiRow = { cluster: string; murni: number; janjian: number; total?: number };
 type Blok = { code: string; n: number };
 
-// Field manual yang diketik user (angka dari integrasi eksternal yang belum nyala).
-const MANUAL = [
-  "utjGrossDay",
-  "sprGrossDay",
-  "nupDay",
-  "sprToday",
-  "utjNett",
-  "nupNett",
+// Semua field skalar bisa diedit; auto-fill dari web, disimpan hanya bila diubah.
+const SCALARS = [
+  "holdUnit", "waitingList",
+  "utjGrossDay", "utjGagalDay", "sprGrossDay", "sprGagalDay", "nupDay",
+  "target2026", "targetUtj", "sprToday", "utjNett", "nupNett",
+  "salesPotensial", "wiHot", "remainingDays",
 ] as const;
-type ManualKey = (typeof MANUAL)[number];
+type Key = (typeof SCALARS)[number];
+
+// label + sumber (untuk hint "dari web"). null = murni manual.
+const SRC: Record<Key, string | null> = {
+  holdUnit: "Stock", waitingList: "Deal",
+  utjGrossDay: null, utjGagalDay: "Collection", sprGrossDay: null, sprGagalDay: "Collection", nupDay: null,
+  target2026: "Management", targetUtj: "Management", sprToday: null, utjNett: null, nupNett: null,
+  salesPotensial: "Walk-In", wiHot: "Walk-In", remainingDays: "kalender",
+};
 
 export function DailyClient({
-  dates,
-  initial,
-  canEdit,
+  dates, initial, canEdit,
 }: {
   dates: { key: string; label: string }[];
   initial: string;
@@ -54,18 +38,14 @@ export function DailyClient({
   const [ver, setVer] = useState(0);
   const [showInput, setShowInput] = useState(false);
   const [tab, setTab] = useState<Tab>("inti");
-  const [form, setForm] = useState<Record<ManualKey, string>>({
-    utjGrossDay: "",
-    sprGrossDay: "",
-    nupDay: "",
-    sprToday: "",
-    utjNett: "",
-    nupNett: "",
-  });
-  const [blok, setBlok] = useState<Blok[]>([]);
-  const [daily, setDaily] = useState<Daily | null>(null);
-  const [dash, setDash] = useState<Dash | null>(null);
   const [busy, setBusy] = useState(false);
+
+  const [def, setDef] = useState<Record<Key, number>>({} as Record<Key, number>);
+  const [form, setForm] = useState<Record<Key, string>>({} as Record<Key, string>);
+  const [wi, setWi] = useState<WiRow[]>([]);
+  const [wiDef, setWiDef] = useState<WiRow[]>([]);
+  const [blok, setBlok] = useState<Blok[]>([]);
+  const [blokDef, setBlokDef] = useState<Blok[]>([]);
 
   const src =
     fmt === "1"
@@ -77,30 +57,51 @@ export function DailyClient({
     if (!res.ok) return;
     const d = await res.json();
     const e = d.entry ?? {};
-    const f = {} as Record<ManualKey, string>;
-    for (const k of MANUAL) f[k] = e[k] != null ? String(e[k]) : "";
+    const dd = d.derivedDaily ?? {};
+    const dh = d.derivedDash ?? {};
+    const defaults: Record<Key, number> = {
+      holdUnit: dd.holdUnit ?? 0, waitingList: dd.waitingList ?? 0,
+      utjGrossDay: dd.utjGross ?? 0, utjGagalDay: dd.utjGagal ?? 0,
+      sprGrossDay: dd.sprGross ?? 0, sprGagalDay: dd.sprGagal ?? 0, nupDay: dd.nup ?? 0,
+      target2026: dh.target2026 ?? 0, targetUtj: dh.targetUtj ?? 0, sprToday: dh.sprToday ?? 0,
+      utjNett: dh.utjNett ?? 0, nupNett: dh.nupNett ?? 0,
+      salesPotensial: dh.salesPotensial ?? 0, wiHot: dh.wiHot ?? 0, remainingDays: dh.remainingDays ?? 0,
+    };
+    setDef(defaults);
+    const f = {} as Record<Key, string>;
+    for (const k of SCALARS) f[k] = String(e[k] != null ? e[k] : defaults[k]);
     setForm(f);
-    setBlok(Array.isArray(e.utjPerBlok) ? e.utjPerBlok : []);
-    setDaily(d.daily ?? null);
-    setDash(d.dashboard ?? null);
+    const wd: WiRow[] = Array.isArray(dd.wiByCluster) ? dd.wiByCluster : [];
+    setWiDef(wd);
+    setWi(Array.isArray(e.wiByCluster) ? e.wiByCluster : wd);
+    const bd: Blok[] = Array.isArray(dd.utjToday) ? dd.utjToday : [];
+    setBlokDef(bd);
+    setBlok(Array.isArray(e.utjPerBlok) ? e.utjPerBlok : bd);
   }, [date]);
 
   useEffect(() => {
     if (canEdit) loadForm();
   }, [date, canEdit, loadForm]);
 
-  const numOf = (k: ManualKey) => (form[k]?.trim() === "" ? 0 : Number(form[k]) || 0);
-  const set = (k: ManualKey, v: string) => setForm((m) => ({ ...m, [k]: v }));
+  const n = (k: Key) => (form[k]?.trim() === "" ? 0 : Number(form[k]) || 0);
+  const setK = (k: Key, v: string) => setForm((m) => ({ ...m, [k]: v }));
 
   async function save() {
     setBusy(true);
     const body: Record<string, unknown> = { dayKey: date };
-    for (const k of MANUAL) body[k] = form[k]?.trim() === "" ? null : Number(form[k]);
-    body.utjPerBlok = blok.filter((b) => b.code.trim() !== "");
+    // dirty-tracking: kirim null bila = nilai web (tetap linked), else angkanya.
+    for (const k of SCALARS) {
+      const s = form[k]?.trim() ?? "";
+      const v = s === "" ? null : Number(s);
+      body[k] = v === null || v === def[k] ? null : v;
+    }
+    const wiClean = wi.filter((r) => r.cluster.trim() !== "").map((r) => ({ cluster: r.cluster, murni: r.murni, janjian: r.janjian, total: r.murni + r.janjian }));
+    body.wiByCluster = JSON.stringify(wiClean) === JSON.stringify(wiDef.map((r) => ({ cluster: r.cluster, murni: r.murni, janjian: r.janjian, total: r.murni + r.janjian }))) ? null : wiClean;
+    const blokClean = blok.filter((b) => b.code.trim() !== "");
+    body.utjPerBlok = JSON.stringify(blokClean) === JSON.stringify(blokDef) ? null : blokClean;
+
     const res = await fetch("/sales/api/report/dashboard/input", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
     });
     setBusy(false);
     if (res.ok) {
@@ -112,27 +113,25 @@ export function DailyClient({
     }
   }
 
-  // live-computed nett (gross manual − gagal linked)
-  const utjNettDay = numOf("utjGrossDay") - (daily?.utjGagal ?? 0);
-  const sprNettDay = numOf("sprGrossDay") - (daily?.sprGagal ?? 0);
+  const utjNettDay = n("utjGrossDay") - n("utjGagalDay");
+  const sprNettDay = n("sprGrossDay") - n("sprGagalDay");
+  const remaining = n("target2026") - n("sprToday");
+  const sprPct = n("target2026") ? Math.round((n("sprToday") / n("target2026")) * 100) : 0;
+  const utjNupNett = n("utjNett") + n("nupNett");
+  const utjNupPct = n("targetUtj") ? Math.round((utjNupNett / n("targetUtj")) * 100) : 0;
+  const minSales = n("remainingDays") > 0 ? Math.ceil((n("targetUtj") - utjNupNett) / n("remainingDays")) : 0;
+
+  const F = (k: Key, label: string) => (
+    <Field label={label} value={form[k] ?? ""} onChange={(v) => setK(k, v)} src={SRC[k]} overridden={n(k) !== def[k]} />
+  );
 
   return (
     <>
       <div className="actions">
-        <DatePicker
-          value={date}
-          onChange={setDate}
-          markedKeys={dates.map((d) => d.key)}
-          todayKey={dates[0]?.key}
-          maxKey={dates[0]?.key}
-        />
+        <DatePicker value={date} onChange={setDate} markedKeys={dates.map((d) => d.key)} todayKey={dates[0]?.key} maxKey={dates[0]?.key} />
         <div className="seg">
-          <button className={`seg-btn ${fmt === "1" ? "on" : ""}`} onClick={() => setFmt("1")}>
-            Format 1 · Report
-          </button>
-          <button className={`seg-btn ${fmt === "2" ? "on" : ""}`} onClick={() => setFmt("2")}>
-            Format 2 · Sales Dashboard
-          </button>
+          <button className={`seg-btn ${fmt === "1" ? "on" : ""}`} onClick={() => setFmt("1")}>Format 1 · Report</button>
+          <button className={`seg-btn ${fmt === "2" ? "on" : ""}`} onClick={() => setFmt("2")}>Format 2 · Sales Dashboard</button>
         </div>
         <a className="btn wa" href={`${src}&download=1`}>⬇ Download PNG</a>
         {canEdit && (
@@ -149,9 +148,9 @@ export function DailyClient({
             <div className="notice" style={{ marginBottom: 12, background: "#fbedd8", borderColor: "#e9b877" }}>
               <span>✋</span>
               <div>
-                <b>Satu form untuk dua format.</b> Angka bertanda <LinkChip /> sudah otomatis dari
-                web (sales/collection) — <b>tidak bisa diketik</b>. Sisanya diisi manual dulu
-                (integrasi belum nyala). Field <b>∑</b> dihitung sendiri.
+                <b>Satu form untuk dua format.</b> Angka bertanda <span className="badge b-teal" style={{ fontSize: 10 }}>🔗 dari web</span> sudah
+                terisi otomatis dari data web/collection — <b>tetap bisa diubah</b> kalau perlu. Yang tidak diubah
+                otomatis ngikut web. Field <b>∑</b> dihitung sendiri.
               </div>
             </div>
 
@@ -161,90 +160,72 @@ export function DailyClient({
               <button className={`seg-btn ${tab === "dash" ? "on" : ""}`} onClick={() => setTab("dash")}>📊 Sales Dashboard</button>
             </div>
 
-            {/* ---------- TAB: Angka Inti ---------- */}
             {tab === "inti" && (
               <>
-                <p className="rolehint" style={{ marginBottom: 12 }}>
-                  Dipakai <b>kedua format</b>. Sudah otomatis dari web — cukup dilihat.
-                </p>
+                <p className="rolehint" style={{ marginBottom: 12 }}>Dipakai <b>kedua format</b>. Auto dari web, bisa diubah.</p>
                 <div className="frow" style={{ flexWrap: "wrap" }}>
-                  <Linked label="Hold Unit" value={daily?.holdUnit} src="Stock" />
-                  <Linked label="Waiting List" value={daily?.waitingList} src="Deal" />
+                  {F("holdUnit", "Hold Unit")}
+                  {F("waitingList", "Waiting List")}
+                  <div className="field" style={{ flex: "1 1 150px" }} />
                 </div>
               </>
             )}
 
-            {/* ---------- TAB: Daily Report (harian) ---------- */}
             {tab === "daily" && (
               <>
                 <div style={{ marginBottom: 14 }}>
                   <div className="rolehint" style={{ marginBottom: 6 }}>
-                    <b>WI per Cluster</b> <LinkChip /> — otomatis dari Walk-In.
+                    <b>WI per Cluster</b> <span className="badge b-teal" style={{ fontSize: 10 }}>🔗 Walk-In</span> — auto dari web, bisa diubah.
                   </div>
                   <div className="tablewrap">
                     <table>
-                      <thead>
-                        <tr><th>Cluster</th><th>WI Murni</th><th>WI Janjian</th><th>Total</th></tr>
-                      </thead>
+                      <thead><tr><th>Cluster</th><th>WI Murni</th><th>WI Janjian</th><th>Total</th><th></th></tr></thead>
                       <tbody>
-                        {(daily?.wiByCluster ?? []).length === 0 && (
-                          <tr><td colSpan={4} style={{ color: "var(--sub)" }}>Belum ada WI hari ini.</td></tr>
+                        {wi.length === 0 && (
+                          <tr><td colSpan={5} style={{ color: "var(--sub)" }}>Belum ada WI — tambah baris kalau perlu.</td></tr>
                         )}
-                        {(daily?.wiByCluster ?? []).map((w) => (
-                          <tr key={w.cluster}>
-                            <td><b>{w.cluster}</b></td>
-                            <td>{w.murni}</td><td>{w.janjian}</td><td>{w.total}</td>
+                        {wi.map((r, i) => (
+                          <tr key={i}>
+                            <td><input value={r.cluster} placeholder="cluster" onChange={(e) => setWi((a) => a.map((x, j) => j === i ? { ...x, cluster: e.target.value } : x))} /></td>
+                            <td><input inputMode="numeric" value={String(r.murni ?? "")} placeholder="0" onChange={(e) => setWi((a) => a.map((x, j) => j === i ? { ...x, murni: Number(e.target.value) || 0 } : x))} /></td>
+                            <td><input inputMode="numeric" value={String(r.janjian ?? "")} placeholder="0" onChange={(e) => setWi((a) => a.map((x, j) => j === i ? { ...x, janjian: Number(e.target.value) || 0 } : x))} /></td>
+                            <td><b>{(r.murni ?? 0) + (r.janjian ?? 0)}</b></td>
+                            <td style={{ textAlign: "right" }}><button className="btn ghost sm" onClick={() => setWi((a) => a.filter((_, j) => j !== i))}>✕</button></td>
                           </tr>
                         ))}
                       </tbody>
                     </table>
                   </div>
+                  <button className="btn ghost sm" style={{ marginTop: 8 }} onClick={() => setWi((a) => [...a, { cluster: "", murni: 0, janjian: 0 }])}>＋ Tambah cluster</button>
                 </div>
 
                 <div className="frow" style={{ flexWrap: "wrap" }}>
-                  <Manual label="UTJ Gross" v={form.utjGrossDay} on={(v) => set("utjGrossDay", v)} />
-                  <Linked label="UTJ Gagal" value={daily?.utjGagal} src="Collection" />
+                  {F("utjGrossDay", "UTJ Gross")}
+                  {F("utjGagalDay", "UTJ Gagal")}
                   <Auto label="UTJ Nett" value={utjNettDay} />
                 </div>
                 <div className="frow" style={{ flexWrap: "wrap" }}>
-                  <Manual label="SPR Gross" v={form.sprGrossDay} on={(v) => set("sprGrossDay", v)} />
-                  <Linked label="SPR Gagal" value={daily?.sprGagal} src="Collection" />
+                  {F("sprGrossDay", "SPR Gross")}
+                  {F("sprGagalDay", "SPR Gagal")}
                   <Auto label="SPR Nett" value={sprNettDay} />
                 </div>
                 <div className="frow" style={{ flexWrap: "wrap" }}>
-                  <Manual label="NUP (hari ini)" v={form.nupDay} on={(v) => set("nupDay", v)} />
+                  {F("nupDay", "NUP (hari ini)")}
                   <div className="field" style={{ flex: "1 1 150px" }} />
                   <div className="field" style={{ flex: "1 1 150px" }} />
                 </div>
 
                 <div style={{ marginTop: 6 }}>
-                  <div className="rolehint" style={{ marginBottom: 6 }}>
-                    <b>UTJ hari ini per Blok</b> ✍️ — isi manual.
-                  </div>
+                  <div className="rolehint" style={{ marginBottom: 6 }}><b>UTJ hari ini per Blok</b></div>
                   <div className="tablewrap">
                     <table>
                       <thead><tr><th>Blok / Phase</th><th>Jumlah</th><th></th></tr></thead>
                       <tbody>
                         {blok.map((b, i) => (
                           <tr key={i}>
-                            <td>
-                              <input
-                                value={b.code}
-                                placeholder="cth: C2.1"
-                                onChange={(e) => setBlok((a) => a.map((x, j) => (j === i ? { ...x, code: e.target.value } : x)))}
-                              />
-                            </td>
-                            <td>
-                              <input
-                                inputMode="numeric"
-                                value={String(b.n ?? "")}
-                                placeholder="0"
-                                onChange={(e) => setBlok((a) => a.map((x, j) => (j === i ? { ...x, n: Number(e.target.value) || 0 } : x)))}
-                              />
-                            </td>
-                            <td style={{ textAlign: "right" }}>
-                              <button className="btn ghost sm" onClick={() => setBlok((a) => a.filter((_, j) => j !== i))}>✕</button>
-                            </td>
+                            <td><input value={b.code} placeholder="cth: C2.1" onChange={(e) => setBlok((a) => a.map((x, j) => j === i ? { ...x, code: e.target.value } : x))} /></td>
+                            <td><input inputMode="numeric" value={String(b.n ?? "")} placeholder="0" onChange={(e) => setBlok((a) => a.map((x, j) => j === i ? { ...x, n: Number(e.target.value) || 0 } : x))} /></td>
+                            <td style={{ textAlign: "right" }}><button className="btn ghost sm" onClick={() => setBlok((a) => a.filter((_, j) => j !== i))}>✕</button></td>
                           </tr>
                         ))}
                       </tbody>
@@ -255,35 +236,33 @@ export function DailyClient({
               </>
             )}
 
-            {/* ---------- TAB: Sales Dashboard (bulanan) ---------- */}
             {tab === "dash" && (
               <>
                 <div className="frow" style={{ flexWrap: "wrap" }}>
-                  <Linked label="Target 2026" value={dash?.target2026} src="Management" />
-                  <Linked label="Target UTJ (bln ini)" value={dash?.targetUtj} src="Management" />
-                  <Manual label="SPR Today (YTD)" v={form.sprToday} on={(v) => set("sprToday", v)} />
+                  {F("target2026", "Target 2026")}
+                  {F("targetUtj", "Target UTJ (bln ini)")}
+                  {F("sprToday", "SPR Today (YTD)")}
                 </div>
                 <div className="frow" style={{ flexWrap: "wrap" }}>
-                  <Manual label="UTJ Nett (bln ini)" v={form.utjNett} on={(v) => set("utjNett", v)} />
-                  <Manual label="NUP Nett (bln ini)" v={form.nupNett} on={(v) => set("nupNett", v)} />
-                  <Auto label="Sisa Hari" value={dash?.remainingDays} />
+                  {F("utjNett", "UTJ Nett (bln ini)")}
+                  {F("nupNett", "NUP Nett (bln ini)")}
+                  {F("remainingDays", "Sisa Hari")}
                 </div>
                 <div className="frow" style={{ flexWrap: "wrap" }}>
-                  <Linked label="Hold Unit" value={daily?.holdUnit} src="Stock" />
-                  <Linked label="Waiting List" value={daily?.waitingList} src="Deal" />
-                  <Linked label="Sales Potensial" value={dash?.salesPotensial} src="Walk-In" />
+                  {F("holdUnit", "Hold Unit")}
+                  {F("waitingList", "Waiting List")}
+                  {F("salesPotensial", "Sales Potensial")}
                 </div>
                 <div className="frow" style={{ flexWrap: "wrap" }}>
-                  <Linked label="WI Hot Prospect" value={dash?.wiHot} src="Walk-In" />
+                  {F("wiHot", "WI Hot Prospect")}
                   <div className="field" style={{ flex: "1 1 150px" }} />
                   <div className="field" style={{ flex: "1 1 150px" }} />
                 </div>
                 <div className="notice ok" style={{ marginTop: 6 }}>
                   <span>∑</span>
                   <div style={{ fontSize: 13 }}>
-                    Otomatis: <b>Sisa ke target</b> {dash?.remaining ?? "–"} · <b>SPR</b> {dash?.sprPct ?? 0}% ·{" "}
-                    <b>UTJ+NUP Nett</b> {dash?.utjNupNett ?? "–"} ({dash?.utjNupPct ?? 0}%) ·{" "}
-                    <b>Min Sales/hari</b> {dash?.minSalesDay ?? "–"} <span style={{ color: "var(--sub)" }}>(refresh setelah simpan)</span>
+                    Otomatis: <b>Sisa ke target</b> {remaining} · <b>SPR</b> {sprPct}% ·{" "}
+                    <b>UTJ+NUP Nett</b> {utjNupNett} ({utjNupPct}%) · <b>Min Sales/hari</b> {minSales}
                   </div>
                 </div>
               </>
@@ -303,7 +282,7 @@ export function DailyClient({
           {fmt === "1"
             ? "Format 1 — report harian (WI per cluster, UTJ/SPR/NUP, trend)."
             : "Format 2 — Sales Dashboard (template disetujui)."}{" "}
-          Angka linked dari web; sisanya dari “📝 Isi Data”.
+          Angka auto dari web; semua bisa diubah lewat “📝 Isi Data”.
         </div>
       </div>
 
@@ -315,58 +294,37 @@ export function DailyClient({
   );
 }
 
-// ---- small field helpers ----
-function LinkChip() {
-  return (
-    <span className="badge b-teal" style={{ fontSize: 10 }}>🔗 dari web</span>
-  );
-}
-
-function Linked({ label, value, src }: { label: string; value?: number | null; src: string }) {
+// Editable field, auto-filled from web. `overridden` menandai user sudah mengubah.
+function Field({
+  label, value, onChange, src, overridden,
+}: {
+  label: string; value: string; onChange: (v: string) => void; src: string | null; overridden: boolean;
+}) {
   return (
     <div className="field" style={{ flex: "1 1 150px", minWidth: 150 }}>
       <label style={{ display: "flex", alignItems: "center", gap: 6 }}>
-        {label} <span className="badge b-teal" style={{ fontSize: 10 }}>🔗 {src}</span>
+        {label}
+        {src ? (
+          <span className="badge b-teal" style={{ fontSize: 10 }}>🔗 {src}</span>
+        ) : (
+          <span className="badge b-amber" style={{ fontSize: 10 }}>✍️ manual</span>
+        )}
+        {overridden && <span className="badge b-purple" style={{ fontSize: 10 }}>diubah</span>}
       </label>
-      <div
-        title="Otomatis dari web — tidak bisa diketik"
-        style={{
-          border: "1px solid var(--line)", borderRadius: 8, padding: "9px 11px",
-          background: "var(--bg2, #eef4f0)", color: "var(--ink)", fontWeight: 600,
-          cursor: "not-allowed", opacity: 0.85,
-        }}
-      >
-        {value ?? "–"}
-      </div>
+      <input value={value} onChange={(e) => onChange(e.target.value)} inputMode="numeric" placeholder="0" />
     </div>
   );
 }
 
-function Auto({ label, value }: { label: string; value?: number | null }) {
+function Auto({ label, value }: { label: string; value: number }) {
   return (
     <div className="field" style={{ flex: "1 1 150px", minWidth: 150 }}>
       <label style={{ display: "flex", alignItems: "center", gap: 6 }}>
         {label} <span className="badge b-gray" style={{ fontSize: 10 }}>∑ auto</span>
       </label>
-      <div
-        style={{
-          border: "1px dashed var(--line)", borderRadius: 8, padding: "9px 11px",
-          background: "transparent", color: "var(--muted)", fontWeight: 600,
-        }}
-      >
-        {value ?? "–"}
+      <div style={{ border: "1px dashed var(--line)", borderRadius: 8, padding: "9px 11px", background: "transparent", color: "var(--muted)", fontWeight: 600 }}>
+        {value}
       </div>
-    </div>
-  );
-}
-
-function Manual({ label, v, on }: { label: string; v: string; on: (v: string) => void }) {
-  return (
-    <div className="field" style={{ flex: "1 1 150px", minWidth: 150 }}>
-      <label style={{ display: "flex", alignItems: "center", gap: 6 }}>
-        {label} <span className="badge b-amber" style={{ fontSize: 10 }}>✍️ manual</span>
-      </label>
-      <input value={v} onChange={(e) => on(e.target.value)} inputMode="numeric" placeholder="0" />
     </div>
   );
 }

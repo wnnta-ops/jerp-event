@@ -395,18 +395,33 @@ model ReminderSetting {
 // (angka dari integrasi eksternal yang belum nyala). Field yang sudah ada di web
 // — WI, Hold Unit, Waiting List, Sales Potensial, WI Hot, Target, dan Gagal
 // (batal/Collection) — TIDAK disimpan di sini; itu selalu diturunkan (linked).
+// Override manual per hari untuk Daily Report (Format 1) + Sales Dashboard
+// (Format 2). SEMUA field opsional: null = pakai nilai dari web/turunan (linked),
+// terisi = user meng-override angka dari web. Form meng-auto-fill dari web tapi
+// tetap bisa diedit; hanya yang benar-benar diubah yang disimpan (sisanya null).
 model DailyDashboardEntry {
   id          String   @id @default(uuid())
   dayKey      String   @unique
-  // Format 2 (Sales Dashboard — bulanan / YTD):
-  sprToday    Int? // SPR YTD
-  utjNett     Int? // UTJ Nett bulan ini
-  nupNett     Int? // NUP Nett bulan ini
+  // snapshot bersama (dipakai kedua format):
+  holdUnit    Int?
+  waitingList Int?
   // Format 1 (Daily Report — harian):
+  wiByCluster Json? // [{ cluster, murni, janjian }]
   utjGrossDay Int?
+  utjGagalDay Int?
   sprGrossDay Int?
+  sprGagalDay Int?
   nupDay      Int?
   utjPerBlok  Json? // [{ code, n }] — UTJ hari ini per blok/phase
+  // Format 2 (Sales Dashboard — bulanan / YTD):
+  target2026     Int?
+  targetUtj      Int?
+  sprToday       Int?
+  utjNett        Int?
+  nupNett        Int?
+  salesPotensial Int?
+  wiHot          Int?
+  remainingDays  Int?
   updatedAt   DateTime @updatedAt
 }
 
