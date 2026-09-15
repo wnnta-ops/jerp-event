@@ -7,6 +7,7 @@ import { useState } from "react";
 import type { Role } from "@prisma/client";
 import { ROLE_LABEL } from "@/lib/constants";
 import { canManageUsers } from "@/lib/user-access";
+import { NotifBell } from "@/components/NotifBell";
 
 type NavItem = { href: string; label: string; ic: string; tag?: string; roles?: Role[] };
 type NavGroup = { group: string; items: NavItem[] };
@@ -137,6 +138,7 @@ export function Shell({
             <div className="crumb">{crumb}</div>
           </div>
           <div className="spacer" />
+          <NotifBell />
           <div className="rolebox">
             <span>
               📅 <b>{todayLabel}</b>
