@@ -1,11 +1,13 @@
 import Link from "next/link";
 import { getSession } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { dashboardKpis } from "@/lib/derivations";
+import { dashboardKpis, execSummaryData } from "@/lib/derivations";
 import { getFormOptions } from "@/lib/options";
 import { wibToday } from "@/lib/wib";
 import { NewWalkInButton } from "@/components/forms/NewWalkInButton";
 import { LeadBadge } from "@/components/badges";
+import { DashboardTabs } from "@/components/dashboard/DashboardTabs";
+import { ExecutiveSummary } from "@/components/dashboard/ExecutiveSummary";
 import { can } from "@/lib/rbac";
 
 export const dynamic = "force-dynamic";
@@ -15,8 +17,9 @@ export default async function DashboardPage() {
   const role = session.user.role;
   const today = wibToday();
 
-  const [kpi, options, hotLeads, warmCount, collCount] = await Promise.all([
+  const [kpi, exsum, options, hotLeads, warmCount, collCount] = await Promise.all([
     dashboardKpis(today),
+    execSummaryData(today, today),
     getFormOptions(),
     prisma.deal.findMany({
       where: { statusLead: "HOT", batal: false },
@@ -36,7 +39,10 @@ export default async function DashboardPage() {
   const canInput = can.inputSalesStages(role);
 
   return (
-    <>
+    <DashboardTabs
+      exsum={<ExecutiveSummary data={exsum} />}
+      ringkasan={
+        <>
       <div className="hero">
         <div>
           <h2>Halo, Tim Sales 👋</h2>
@@ -177,6 +183,8 @@ export default async function DashboardPage() {
           Collection melanjutkan ACC → Realisasi.
         </div>
       </div>
-    </>
+        </>
+      }
+    />
   );
 }

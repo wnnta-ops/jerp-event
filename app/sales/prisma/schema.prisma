@@ -16,6 +16,7 @@ enum Role {
   SALES
   COLLECTION
   MANAGEMENT
+  KPR
   SYSADMIN // akun kontrol IT (di luar peran bisnis) — akses & wewenang penuh
 }
 
@@ -23,12 +24,14 @@ enum Channel {
   SITE
   PAMERAN
   JANJIAN
+  LEADS
 }
 
 enum StatusLead {
   HOT
   WARM
   COLD
+  DONE
 }
 
 enum Stage {
@@ -69,6 +72,7 @@ enum BatalAlasan {
   BATAL_SEPIHAK
   MASALAH_KELUARGA
   SKEMA_BAYAR
+  TIDAK_BERMINAT
   OTHER
 }
 
@@ -354,6 +358,18 @@ model PipelineEvent {
 // ---------------- appeal strategy per lost-reason (2 slots) ----------------
 // Slot A = team playbook (human-authored). Slot B = AI analysis (Claude,
 // generated from anonymized aggregate data, cached here).
+// Follow-up reminder config, set by Management / Sales Koor. A null
+// coordinatorId row is the global default; per-coordinator rows override it.
+model ReminderSetting {
+  id            String   @id @default(uuid())
+  coordinatorId String?  @unique // null = global default
+  days          Int      @default(3) // remind if no follow-up within N days
+  notifyApp     Boolean  @default(true)
+  notifyWa      Boolean  @default(false)
+  active        Boolean  @default(true)
+  updatedAt     DateTime @updatedAt
+}
+
 model AppealNote {
   id            String    @id @default(uuid())
   alasanKey     String    @unique // batalAlasan enum key, or "MANDEK"

@@ -9,7 +9,7 @@ export function canManageUsers(role: Role): boolean {
 }
 
 /** Peran yang boleh ditetapkan oleh aktor (SYSADMIN hanya utk sysadmin). */
-export const ALL_ROLES: Role[] = ["SALES", "COLLECTION", "MANAGEMENT", "SYSADMIN"];
+export const ALL_ROLES: Role[] = ["SALES", "COLLECTION", "MANAGEMENT", "KPR", "SYSADMIN"];
 export function assignableRoles(actorRole: Role): Role[] {
   return actorRole === "SYSADMIN" ? ALL_ROLES : ALL_ROLES.filter((r) => r !== "SYSADMIN");
 }

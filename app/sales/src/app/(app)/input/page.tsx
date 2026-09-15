@@ -5,6 +5,7 @@ import { dailyTally } from "@/lib/derivations";
 import { getFormOptions } from "@/lib/options";
 import { dayBounds, wibToday } from "@/lib/wib";
 import { NewWalkInButton } from "@/components/forms/NewWalkInButton";
+import { WalkInRowActions } from "@/components/forms/WalkInRowActions";
 import { ChannelBadge, LeadBadge, StageBadge } from "@/components/badges";
 import { can } from "@/lib/rbac";
 
@@ -29,6 +30,14 @@ export default async function InputPage() {
         channel: true,
         stage: true,
         statusLead: true,
+        catatan: true,
+        sumberInformasi: true,
+        agencyId: true,
+        salesId: true,
+        coordinatorId: true,
+        clusterId: true,
+        phaseId: true,
+        unitTypeId: true,
         agency: { select: { name: true } },
         sales: { select: { name: true } },
         coordinator: { select: { name: true } },
@@ -122,12 +131,13 @@ export default async function InputPage() {
                   <th>Cluster</th>
                   <th>Type</th>
                   <th>Status</th>
+                  {canInput && <th style={{ textAlign: "right" }}>Aksi</th>}
                 </tr>
               </thead>
               <tbody>
                 {todays.length === 0 && (
                   <tr>
-                    <td colSpan={8} style={{ color: "var(--sub)" }}>
+                    <td colSpan={canInput ? 9 : 8} style={{ color: "var(--sub)" }}>
                       Belum ada Walk-In hari ini.
                     </td>
                   </tr>
@@ -148,6 +158,27 @@ export default async function InputPage() {
                     <td>
                       {c.statusLead ? <LeadBadge t={c.statusLead} /> : <StageBadge stage={c.stage} />}
                     </td>
+                    {canInput && (
+                      <td style={{ textAlign: "right" }}>
+                        <WalkInRowActions
+                          deal={{
+                            id: c.id,
+                            nama: c.nama,
+                            channel: c.channel,
+                            agencyId: c.agencyId,
+                            salesId: c.salesId,
+                            coordinatorId: c.coordinatorId,
+                            clusterId: c.clusterId,
+                            phaseId: c.phaseId,
+                            unitTypeId: c.unitTypeId,
+                            statusLead: c.statusLead,
+                            sumberInformasi: c.sumberInformasi,
+                            catatan: c.catatan,
+                          }}
+                          options={options}
+                        />
+                      </td>
+                    )}
                   </tr>
                 ))}
               </tbody>

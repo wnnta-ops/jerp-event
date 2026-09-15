@@ -11,31 +11,41 @@ export default async function PipelinePage() {
   const session = (await getSession())!;
   const role = session.user.role;
 
-  const [rows, options] = await Promise.all([
+  const deadCutoff = new Date(Date.now() - 30 * 86400_000);
+  const select = {
+    id: true,
+    nama: true,
+    channel: true,
+    stage: true,
+    statusLead: true,
+    catatan: true,
+    agency: { select: { name: true } },
+    sales: { select: { name: true } },
+    coordinator: { select: { name: true } },
+    cluster: { select: { name: true } },
+    unitType: { select: { name: true } },
+    unit: { select: { code: true } },
+    bank: { select: { name: true } },
+  } as const;
+
+  const [rows, deadRows, options] = await Promise.all([
     prisma.deal.findMany({
       where: { batal: false },
       orderBy: { updatedAt: "desc" },
       take: 2000,
-      select: {
-        id: true,
-        nama: true,
-        channel: true,
-        stage: true,
-        statusLead: true,
-        catatan: true,
-        agency: { select: { name: true } },
-        sales: { select: { name: true } },
-        coordinator: { select: { name: true } },
-        cluster: { select: { name: true } },
-        unitType: { select: { name: true } },
-        unit: { select: { code: true } },
-        bank: { select: { name: true } },
-      },
+      select,
+    }),
+    // recent not-interested → shown as red cards in their last stage column
+    prisma.deal.findMany({
+      where: { batal: true, batalAlasan: "TIDAK_BERMINAT", batalTanggal: { gte: deadCutoff } },
+      orderBy: { batalTanggal: "desc" },
+      take: 300,
+      select,
     }),
     getFormOptions(),
   ]);
 
-  const deals: PipelineDeal[] = rows.map((d) => ({
+  const toDeal = (d: (typeof rows)[number], dead = false): PipelineDeal => ({
     id: d.id,
     nama: d.nama,
     channel: d.channel,
@@ -49,7 +59,9 @@ export default async function PipelinePage() {
     unit: d.unit?.code ?? null,
     bank: d.bank?.name ?? null,
     catatan: d.catatan,
-  }));
+    dead,
+  });
+  const deals: PipelineDeal[] = [...rows.map((d) => toDeal(d)), ...deadRows.map((d) => toDeal(d, true))];
 
   return (
     <>

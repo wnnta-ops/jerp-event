@@ -11,12 +11,12 @@ import {
 
 export function LeadBadge({ t }: { t: StatusLead | null | undefined }) {
   if (!t) return null;
-  const cls: Record<string, string> = { HOT: "b-red", WARM: "b-amber", COLD: "b-blue" };
+  const cls: Record<string, string> = { HOT: "b-red", WARM: "b-amber", COLD: "b-blue", DONE: "b-green" };
   return <span className={`badge ${cls[t] ?? ""}`}>{STATUS_LEAD_LABEL[t]}</span>;
 }
 
 export function ChannelBadge({ c }: { c: Channel }) {
-  const cls: Record<string, string> = { SITE: "b-teal", PAMERAN: "b-purple", JANJIAN: "b-blue" };
+  const cls: Record<string, string> = { SITE: "b-teal", PAMERAN: "b-purple", JANJIAN: "b-blue", LEADS: "b-green" };
   return <span className={`badge ${cls[c] ?? "b-gray"}`}>{CHANNEL_LABEL[c]}</span>;
 }
 
