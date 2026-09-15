@@ -294,7 +294,6 @@ function pasangStruktur(baris: any[]) {
 function addJournalLine() { form.journal_lines.push(mkJournalLine(null, '', 0, 'debit')); }
 function addJournalLines(n: number) { for (let k = 0; k < n; k++) addJournalLine(); }
 function removeJournalLine(i: number) { form.journal_lines.splice(i, 1); }
-function recalcJournal() { pasangStruktur(defaultJournal()); }
 
 /* STRUKTURNYA IKUT BERUBAH SAAT PPN/PPh DIUBAH.
    Sebelumnya struktur hanya dibentuk SEKALI, yaitu saat pertama kali masuk langkah Struktur
@@ -304,8 +303,14 @@ function recalcJournal() { pasangStruktur(defaultJournal()); }
    memberi tahu; yang ketahuan belakangan hanya PPN Masukan yang tidak pernah tercatat.
 
    Yang sudah DISUNTING TANGAN tidak ditimpa — pekerjaan orang tidak boleh lenyap hanya karena ia
-   kembali membetulkan satu angka. Untuk itu tersedia tombol "Hitung ulang", dan selisihnya
-   diberitahukan lewat strukturUsang. */
+   kembali membetulkan satu angka. Selisihnya diberitahukan lewat strukturUsang.
+
+   Dulu ada tombol "Hitung ulang" untuk menyusun ulang struktur yang terlanjur disunting; tombol
+   itu dihilangkan atas permintaan. Jalan menyusun ulang tetap ada dan memakai watcher di bawah:
+   hapus seluruh barisnya, lalu Sebelumnya → Berikutnya. Saat masuk langkah 4 dengan daftar kosong,
+   watch(step) membentuknya kembali dari nilai transaksi. Kedua pesan di layar (peringatan
+   strukturUsang & baris "belum ada baris") menyebutkan langkah itu — kalau tidak, keduanya
+   menyuruh menekan tombol yang sudah tidak ada. */
 const strukturUsang = computed(() => step.value === 4
     && form.journal_lines.length > 0
     && ! samaDenganBawaan(form.journal_lines as any[], defaultJournal()));
@@ -457,7 +462,6 @@ const cellArea = 'w-full rounded-md border border-neutral-300 bg-white px-2 py-1
                         <span v-if="copiedAccountLabel" class="inline-flex max-w-[22rem] items-center gap-1.5 truncate rounded-lg border border-sky-300 bg-sky-50 px-2.5 py-1.5 text-xs font-semibold text-sky-800 dark:border-sky-800 dark:bg-sky-950/50 dark:text-sky-200" :title="copiedAccountLabel">
                             <Copy class="h-3.5 w-3.5 shrink-0" /> <span class="shrink-0 font-normal text-sky-600 dark:text-sky-400">Tersalin:</span> <span class="truncate">{{ copiedAccountLabel }}</span>
                         </span>
-                        <button type="button" @click="recalcJournal" class="inline-flex items-center gap-1 rounded-lg border border-neutral-300 px-2.5 py-1.5 text-xs hover:bg-neutral-50 dark:border-neutral-700">Hitung ulang</button>
                     </div>
                 </div>
                 <p class="mb-2 text-[11px] text-neutral-400">Tips: Kosongkan kolom Account &amp; Nilai Transaksi untuk mengabaikan baris tersebut saat proses. Total Debit harus sama dengan Total Kredit. Tombol <b>salin</b> &amp; <b>tempel</b> kecil di bawah kolom Account dipakai untuk memakai ulang akun yang sama di baris lain.</p>
@@ -466,7 +470,8 @@ const cellArea = 'w-full rounded-md border border-neutral-300 bg-white px-2 py-1
                      baris PPN/PPh tanpa satu pun tanda. -->
                 <p v-if="strukturUsang" class="mb-2 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-700 dark:bg-amber-900/20 dark:text-amber-300">
                     Struktur ini sudah disunting tangan sehingga tidak lagi mengikuti PPN/PPh pada Input Transaksi.
-                    Tekan <b>Hitung ulang</b> untuk menyusunnya ulang dari nilai transaksinya.
+                    Untuk menyusunnya ulang dari nilai transaksinya: hapus seluruh barisnya, lalu tekan
+                    <b>Sebelumnya</b> dan <b>Berikutnya</b> lagi ke langkah ini.
                 </p>
                 <!-- Akun yang dibutuhkan aturan PPN/PPh tetapi belum ada: barisnya sengaja tidak
                      dibuat tanpa akun, jadi ketiadaannya disebutkan di sini. -->
@@ -539,7 +544,24 @@ const cellArea = 'w-full rounded-md border border-neutral-300 bg-white px-2 py-1
                                     <select v-model="l.currency" :class="dimCls"><option value="IDR">IDR</option><option value="USD">USD</option><option value="SGD">SGD</option><option value="EUR">EUR</option></select>
                                     <input v-model.number="l.kurs" type="number" step="0.0001" min="0" :class="[dimCls,'mt-1 text-right font-mono']" />
                                 </td>
-                                <td class="px-2 py-2"><input v-model.number="l.nilai" @input="applyAmount(l)" type="number" step="1" min="0" :class="[dimCls,'text-right font-mono']" /></td>
+                                <!-- MoneyInput, BUKAN input type=number. Peramban tidak pernah mau menampilkan
+                                     pemisah ribuan pada type=number: isinya wajib angka mentah yang sah, dan
+                                     "1.000.000" bukan salah satunya — jadi selama masih type=number, tanda ribuan
+                                     mustahil. MoneyInput juga yang sudah dipakai Nilai Transaksi di langkah Input
+                                     Transaksi, sehingga kolom ini justru yang selama ini berbeda sendiri.
+
+                                     AMAN DARI DESIMAL: parse MoneyInput membuang semua non-digit, sehingga nilai
+                                     berpecahan akan terbaca 100x lipat ("135.802,37" → 13580237). Itu tidak bisa
+                                     terjadi di sini — setiap nilai jurnal sudah dibulatkan ke rupiah penuh oleh
+                                     r0/fl0, dan journal_lines selalu mulai kosong (form ini tidak pernah dimuati
+                                     invoice lama).
+
+                                     Kelas ber-awalan ! menyetel ulang tinggi & ukuran huruf bawaan MoneyInput agar
+                                     sepadan dengan sel tabel padat ini — pola yang sama dipakai CashBook/Ledger.vue. -->
+                                <td class="px-2 py-2">
+                                    <MoneyInput :model-value="l.nilai" @update:model-value="(v) => { l.nilai = v; applyAmount(l); }"
+                                        class="!h-8 !rounded-md !px-2 !text-xs font-mono" />
+                                </td>
                                 <td class="px-2 py-2 text-right">
                                     <input type="radio" :name="'side-row-' + i" :checked="l.side==='debit'" @change="setSide(l,'debit')" class="h-4 w-4 accent-primary-600" />
                                     <div class="mt-1 font-mono text-[11px] text-neutral-600 dark:text-neutral-300">{{ l.side==='debit' && Number(l.debit) ? fmtNum(l.debit) : '' }}</div>
@@ -550,7 +572,7 @@ const cellArea = 'w-full rounded-md border border-neutral-300 bg-white px-2 py-1
                                 </td>
                                 <td class="px-1 py-2 text-center"><button type="button" @click="removeJournalLine(i)" class="text-danger-500"><Trash2 class="h-4 w-4" /></button></td>
                             </tr>
-                            <tr v-if="!form.journal_lines.length"><td colspan="9" class="px-2 py-6 text-center text-sm text-neutral-400">Belum ada baris. Klik "Hitung ulang" untuk membentuk jurnal otomatis dari transaksi, atau "Tambah 1 Baris".</td></tr>
+                            <tr v-if="!form.journal_lines.length"><td colspan="9" class="px-2 py-6 text-center text-sm text-neutral-400">Belum ada baris. Tekan "Sebelumnya" lalu "Berikutnya" lagi ke langkah ini untuk membentuk jurnal otomatis dari nilai transaksinya, atau klik "Tambah 1 Baris".</td></tr>
                         </tbody>
                         <tfoot>
                             <tr class="border-t-2 border-neutral-200 bg-neutral-50 font-semibold dark:border-neutral-700 dark:bg-neutral-800">
