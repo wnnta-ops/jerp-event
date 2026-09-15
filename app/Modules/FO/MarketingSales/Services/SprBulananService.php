@@ -46,6 +46,17 @@ final class SprBulananService
 
     public const BULAN = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Ags', 'Sep', 'Okt', 'Nov', 'Des'];
 
+    /** Kelompok untuk unit yang belum punya tipe — ditampilkan, bukan dibuang. */
+    public const TANPA_TIPE = '(Tanpa Tipe)';
+
+    /** Bulan paling awal yang punya kontrak SPR — batas bawah daftar periode pada filter. */
+    public function bulanPertama(): ?Carbon
+    {
+        $tgl = Kontrak::query()->where('tahap', self::TAHAP)->min('tgl_kontrak');
+
+        return $tgl ? Carbon::parse($tgl)->startOfMonth() : null;
+    }
+
     /**
      * Gross / Batal / Nett per bulan (indeks 1..12).
      *
@@ -93,6 +104,54 @@ final class SprBulananService
         }
 
         return ['gross' => $gross, 'batal' => $batal, 'nett' => $nett];
+    }
+
+    /**
+     * Penjualan SATU BULAN dipecah per TIPE RUMAH, diurut dari yang terbanyak.
+     *
+     * Definisinya sengaja SAMA dengan Gross pada perBulan(): kontrak bertahap SPR, bulannya dari
+     * tgl_kontrak, dan yang batal TIDAK dikurangkan. Akibatnya jumlah seluruh batang di sini
+     * selalu persis sama dengan batang Gross bulan itu pada grafik SPR di dashboard yang sama.
+     * Bila yang batal dikecualikan di sini saja, kedua panel yang bersebelahan tidak akan pernah
+     * cocok — dan tidak ada apa pun di layar yang menjelaskan selisihnya.
+     *
+     * Unit tanpa tipe MASUK sebagai kelompok tersendiri, bukan dibuang: membuangnya membuat
+     * jumlah seluruh batang lebih kecil daripada jumlah unit bulan itu tanpa ada yang menyadari.
+     *
+     * Catatan yang perlu diketahui pembacanya: pindah unit menimpa fo_kontrak.unit_id dan
+     * kontrak tidak menyimpan salinan tipenya, jadi yang terhitung selalu tipe unit TERKINI —
+     * angka bulan lampau bisa bergeser surut bila ada perpindahan unit.
+     *
+     * @return array<int,array{tipe: string, unit: int}>
+     */
+    public function perTipe(int $tahun, int $bulan): array
+    {
+        $awal  = Carbon::create($tahun, $bulan, 1)->startOfMonth();
+        $akhir = $awal->copy()->endOfMonth();
+
+        $rows = Kontrak::query()
+            // Kolomnya WAJIB berkualifikasi: 'tahap' ada di fo_kontrak DAN di fo_units, jadi
+            // begitu keduanya di-join, nama telanjang ditolak sebagai ambigu.
+            ->where('fo_kontrak.tahap', self::TAHAP)
+            ->whereNotNull('fo_kontrak.tgl_kontrak')
+            ->whereBetween('fo_kontrak.tgl_kontrak', [$awal->toDateString(), $akhir->toDateString()])
+            // leftJoin, bukan join: unit yang tipenya kosong harus tetap terbawa.
+            ->leftJoin('fo_units', 'fo_units.id', '=', 'fo_kontrak.unit_id')
+            ->leftJoin('fo_unit_types', 'fo_unit_types.id', '=', 'fo_units.unit_type_id')
+            ->get(['fo_unit_types.name as tipe']);
+
+        $hitung = [];
+        foreach ($rows as $r) {
+            $tipe = trim((string) ($r->tipe ?? ''));
+            $tipe = $tipe === '' ? self::TANPA_TIPE : $tipe;
+            $hitung[$tipe] = ($hitung[$tipe] ?? 0) + 1;
+        }
+
+        // Terbanyak dulu; yang sama banyak diurut menurut nama supaya urutannya tidak
+        // berubah-ubah antar pemuatan halaman.
+        uksort($hitung, fn ($a, $b) => ($hitung[$b] <=> $hitung[$a]) ?: strcmp($a, $b));
+
+        return array_map(fn ($tipe) => ['tipe' => $tipe, 'unit' => $hitung[$tipe]], array_keys($hitung));
     }
 
     /**
