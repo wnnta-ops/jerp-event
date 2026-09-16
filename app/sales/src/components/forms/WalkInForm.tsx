@@ -159,8 +159,9 @@ export function WalkInForm({
             value={form.agencyId}
             onChange={(v) => setForm({ ...form, agencyId: v })}
             options={options.agencies.map((a) => ({ value: a.id, label: a.name }))}
-            allLabel="— cari agent —"
+            allLabel="— cari / ketik agent —"
             allValue=""
+            allowCustom
           />
         </div>
         <div className="field">
@@ -169,8 +170,9 @@ export function WalkInForm({
             value={form.salesId}
             onChange={(v) => setForm({ ...form, salesId: v })}
             options={options.sales.map((s) => ({ value: s.id, label: s.name }))}
-            allLabel="— cari sales —"
+            allLabel="— cari / ketik sales —"
             allValue=""
+            allowCustom
           />
         </div>
       </div>
