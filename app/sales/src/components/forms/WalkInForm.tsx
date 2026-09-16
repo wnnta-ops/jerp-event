@@ -26,16 +26,27 @@ export interface WalkInEdit {
 
 // Shared Walk-In modal — creates a new deal (POST) or edits one (PATCH when
 // `deal` is passed). Koordinator auto-derives from bendera when left kosong.
+// Nilai awal saat membuat Walk-In dari sumber lain (mis. konversi Lead MarComm).
+export interface WalkInPrefill {
+  nama?: string;
+  channel?: string;
+  sumberInformasi?: string;
+}
+
 export function WalkInForm({
   options,
   open,
   onClose,
   deal,
+  prefill,
+  onCreated,
 }: {
   options: FormOptions;
   open: boolean;
   onClose: () => void;
   deal?: WalkInEdit;
+  prefill?: WalkInPrefill;
+  onCreated?: (dealId: string) => void;
 }) {
   const router = useRouter();
   const isEdit = !!deal;
@@ -44,14 +55,14 @@ export function WalkInForm({
   const [clusterId, setClusterId] = useState(deal?.clusterId ?? options.clusters[0]?.id ?? "");
 
   // sumber informasi: known option, or "Other" with free text
-  const initSumber = deal?.sumberInformasi ?? "";
+  const initSumber = deal?.sumberInformasi ?? prefill?.sumberInformasi ?? "";
   const initKnown = SUMBER_INFORMASI.includes(initSumber);
   const [sumberSel, setSumberSel] = useState(initSumber ? (initKnown ? initSumber : "Other") : "");
   const [sumberOther, setSumberOther] = useState(initKnown ? "" : initSumber);
 
   const [form, setForm] = useState({
-    nama: deal?.nama ?? "",
-    channel: deal?.channel ?? "SITE",
+    nama: deal?.nama ?? prefill?.nama ?? "",
+    channel: deal?.channel ?? prefill?.channel ?? "SITE",
     agencyId: deal?.agencyId ?? options.agencies[0]?.id ?? "",
     salesId: deal?.salesId ?? options.sales[0]?.id ?? "",
     coordinatorId: deal?.coordinatorId ?? "",
@@ -94,6 +105,8 @@ export function WalkInForm({
     });
     setBusy(false);
     if (res.ok) {
+      const j = await res.json().catch(() => ({}));
+      if (!isEdit && onCreated && j?.id) onCreated(j.id as string);
       onClose();
       toast(isEdit ? "✓ Perubahan disimpan" : "✓ " + form.nama + " → Pipeline & Daily Report");
       router.refresh();
@@ -146,8 +159,9 @@ export function WalkInForm({
             value={form.agencyId}
             onChange={(v) => setForm({ ...form, agencyId: v })}
             options={options.agencies.map((a) => ({ value: a.id, label: a.name }))}
-            allLabel="— cari agent —"
+            allLabel="— cari / ketik agent —"
             allValue=""
+            allowCustom
           />
         </div>
         <div className="field">
@@ -156,8 +170,9 @@ export function WalkInForm({
             value={form.salesId}
             onChange={(v) => setForm({ ...form, salesId: v })}
             options={options.sales.map((s) => ({ value: s.id, label: s.name }))}
-            allLabel="— cari sales —"
+            allLabel="— cari / ketik sales —"
             allValue=""
+            allowCustom
           />
         </div>
       </div>

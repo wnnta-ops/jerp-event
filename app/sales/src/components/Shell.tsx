@@ -7,6 +7,7 @@ import { useState } from "react";
 import type { Role } from "@prisma/client";
 import { ROLE_LABEL } from "@/lib/constants";
 import { canManageUsers } from "@/lib/user-access";
+import { NotifBell } from "@/components/NotifBell";
 
 type NavItem = { href: string; label: string; ic: string; tag?: string; roles?: Role[] };
 type NavGroup = { group: string; items: NavItem[] };
@@ -26,6 +27,7 @@ const NAV: NavGroup[] = [
       { href: "/", label: "Dashboard", ic: "▤" },
       { href: "/input", label: "Input Harian", ic: "✏️" },
       { href: "/pipeline", label: "Customer Pipeline", ic: "🔄" },
+      { href: "/leads", label: "Leads", ic: "🎯", tag: "MC", roles: ["SALES", "MANAGEMENT", "SYSADMIN"] },
       { href: "/gagal", label: "Pipeline Gagal", ic: "📉" },
     ],
   },
@@ -57,6 +59,7 @@ const TITLES: Record<string, [string, string]> = {
   "/": ["Dashboard", "Ringkasan divisi sales"],
   "/input": ["Input Harian", "Catat aktivitas hari ini"],
   "/pipeline": ["Customer Pipeline", "Progress tiap customer"],
+  "/leads": ["Leads", "Leads dari MarComm — update per Sales Koor"],
   "/gagal": ["Pipeline Gagal", "Analisa deal yang batal & pasif"],
   "/daily": ["Daily Report", "Recap harian untuk WA"],
   "/monthly": ["Monthly / Yearly", "Rekap & target tahunan"],
@@ -135,6 +138,7 @@ export function Shell({
             <div className="crumb">{crumb}</div>
           </div>
           <div className="spacer" />
+          <NotifBell />
           <div className="rolebox">
             <span>
               📅 <b>{todayLabel}</b>
