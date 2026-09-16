@@ -477,6 +477,15 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
     Route::put('/kpr/setup/reject-bank/{category}',   [\App\Http\Controllers\Web\BankLoan\Setup\BankRejectCategoryController::class, 'update'])->name('kpr.setup.reject-bank.update');
     Route::delete('/kpr/setup/reject-bank/{category}',[\App\Http\Controllers\Web\BankLoan\Setup\BankRejectCategoryController::class, 'destroy'])->name('kpr.setup.reject-bank.destroy');
 
+    // Kategori Perhitungan KPR (panel pengaturan) & Kalkulator KPR — satu controller, satu
+    // sumber data (kpr_calculator_settings.config), dua layar dengan izin berbeda.
+    Route::get('/kpr/setup/perhitungan',        [\App\Http\Controllers\Web\BankLoan\KprCalculatorController::class, 'setup'])->name('kpr.setup.perhitungan.index');
+    Route::put('/kpr/setup/perhitungan',        [\App\Http\Controllers\Web\BankLoan\KprCalculatorController::class, 'update'])->name('kpr.setup.perhitungan.update');
+    Route::post('/kpr/setup/perhitungan/gambar', [\App\Http\Controllers\Web\BankLoan\KprCalculatorController::class, 'unggahGambar'])->name('kpr.setup.perhitungan.gambar');
+    Route::get('/kpr/setup/perhitungan/ekspor', [\App\Http\Controllers\Web\BankLoan\KprCalculatorController::class, 'ekspor'])->name('kpr.setup.perhitungan.ekspor');
+    Route::get('/kpr/kalkulator',               [\App\Http\Controllers\Web\BankLoan\KprCalculatorController::class, 'kalkulator'])->name('kpr.kalkulator.index');
+    Route::get('/kpr/kalkulator/gambar/{berkas}', [\App\Http\Controllers\Web\BankLoan\KprCalculatorController::class, 'gambar'])->name('kpr.kalkulator.gambar');
+
     // ── BUSINESS SUPPORT (Back-Office Akuntansi) ───────────
     // Halaman hub "Business Support" (bs.index) & Module (bs.module) DIHILANGKAN — navigasi antar
     // modul lewat sidebar; back-link "← Business Support" ikut dibuang dari semua halaman.

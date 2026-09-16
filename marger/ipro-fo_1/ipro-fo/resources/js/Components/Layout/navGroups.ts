@@ -137,6 +137,9 @@ export function navGroups(foUrl: string): NavGroup[] {
                 { label: 'Kategori Analisa Berkas', href: 'kpr.setup.analisa.index', permission: 'bankloan.setup.view' },
                 { label: 'Kategori Berkas Tidak Lengkap', href: 'kpr.setup.berkas-tidak-lengkap.index', permission: 'bankloan.setup.view' },
                 { label: 'Kategori Reject Bank',    href: 'kpr.setup.reject-bank.index', permission: 'bankloan.setup.view' },
+                // Panel pengaturan Kalkulator KPR: bank, plafon & tenor, skema bunga, promo,
+                // foto intro. Yang dihitung dari pengaturan ini ada di Query/Report → Kalkulator KPR.
+                { label: 'Kategori Perhitungan KPR', href: 'kpr.setup.perhitungan.index', permission: 'bankloan.setup.view' },
             ]},
             // Transaction — proses transaksi KPR.
             { label: 'Transaction', icon: GitMerge, permission: ['bankloan.application.*'], children: [
@@ -158,6 +161,9 @@ export function navGroups(foUrl: string): NavGroup[] {
                 { label: 'Realisasi KPR per Bank', href: 'kpr.database.realisasi-bank', permission: 'bankloan.application.view' },
                 // Status unit & outstanding per cluster — diisi lewat import Exsum, bukan dihitung.
                 { label: 'Realisasi KPR per Cluster', href: 'kpr.database.realisasi-cluster', permission: 'bankloan.application.view' },
+                // Simulasi angsuran untuk calon pembeli. Angkanya mengikuti Kategori Perhitungan
+                // KPR di Set Up — tidak ada satu pun suku bunga yang ditulis di layar ini.
+                { label: 'Kalkulator KPR', href: 'kpr.kalkulator.index', permission: 'bankloan.application.view' },
             ]},
         ],
     },
