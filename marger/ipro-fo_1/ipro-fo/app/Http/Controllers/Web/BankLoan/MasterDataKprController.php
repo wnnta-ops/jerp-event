@@ -31,6 +31,22 @@ class MasterDataKprController extends Controller
     /** Urutan 6 slot DP pada kolom Collection UTJ & DP. */
     private const DP_LABELS = ['DP 1', 'DP 2', 'DP 3', 'DP 4', 'DP 5', 'DP 6'];
 
+    /** Banyak slot Angsuran Cash pada kolom Collection Cash (cash 1x s/d cash 3x). */
+    private const CASH_SLOTS = 3;
+
+    /**
+     * Kolom semu penampung PENCAIRAN TANPA KATEGORI RETENSI.
+     *
+     * retention_category_id baru ada setelah master kategori diperkenalkan; pencairan yang
+     * tercatat sebelum itu berkolom NULL dan DULU DIBUANG DIAM-DIAM dari Collection Retensi.
+     * Akibatnya jumlah pencairan di Master Data KPR lebih kecil daripada di Proses KPR tanpa
+     * satu pun tanda — selisih yang hanya ketahuan kalau seseorang menjumlahkan keduanya.
+     *
+     * Id-nya 0 karena tidak ada baris master ber-id 0; ia sengaja BUKAN kategori sungguhan.
+     */
+    private const KAT_TANPA_KATEGORI = 0;
+    private const LABEL_TANPA_KATEGORI = 'TANPA KATEGORI';
+
     /** @var array<int,array{id:int,label:string,is_dajam:bool}>|null Cache master kategori retensi. */
     private ?array $kategoriRetensi = null;
 
@@ -139,6 +155,8 @@ class MasterDataKprController extends Controller
         $akad       = $this->akadByApplication(array_values($appIdByBooking));
         $realisasi  = $this->realisasiByApplication(array_values($appIdByBooking));
         $retensi    = $this->retensiByBooking($appIdByBooking);
+        $sisaRetensi = $this->sisaRetensiByBooking($appIdByBooking);
+        $unitFo     = $this->lokasiTahapUnit($bookings->pluck('unit_code')->filter()->unique()->values()->all());
         // Bahan 12 kolom Proses KPR.
         $sp3k       = $this->sp3kByApplication(array_values($appIdByBooking));
         $pencairan  = $this->pencairanByApplication(array_values($appIdByBooking));
@@ -154,7 +172,7 @@ class MasterDataKprController extends Controller
             $appId = $appIdByBooking[$b->id] ?? null;
             $ak   = $appId ? ($akad[$appId] ?? null) : null;
             $real = $appId ? ($realisasi[$appId] ?? null) : null;
-            $sch  = $schedules[$b->id] ?? ['utj' => null, 'dp' => []];
+            $sch  = $schedules[$b->id] ?? ['utj' => null, 'dp' => [], 'ang' => []];
 
             $pengajuan = $app?->plafon_requested !== null ? (float) $app->plafon_requested : null;
             $acc       = $app?->plafon_approved !== null ? (float) $app->plafon_approved : null;
@@ -164,6 +182,9 @@ class MasterDataKprController extends Controller
                 // Master Unit
                 'no_spr'          => $b->booking_number,
                 'kode_unit'       => $b->unit_code,
+                // Lokasi & Tahap unit — dari sub-modul Unit aplikasi Front Office.
+                'lokasi'          => $unitFo[$b->unit_code]['lokasi'] ?? null,
+                'tahap'           => $unitFo[$b->unit_code]['tahap'] ?? null,
                 'customer'        => $b->customer,
                 'tipe'            => $b->unit_type,
                 'pricelist_gross' => (float) $b->base_price,
@@ -200,8 +221,17 @@ class MasterDataKprController extends Controller
                 // Collection UTJ & DP
                 'utj'             => $sch['utj'],
                 'dp'              => array_map(fn ($l) => $sch['dp'][$l] ?? null, self::DP_LABELS),
+                // Collection Cash — Angsuran Cash 1..3 dari cicilan yang sudah dibayar.
+                'angsuran_cash'   => array_map(fn ($i) => $sch['ang'][$i] ?? null, range(0, self::CASH_SLOTS - 1)),
                 // Collection Retensi — satu slot per kategori aktif, urut sesuai masternya.
-                'retensi'         => array_map(fn ($col) => ($retensi[$b->id][$col['id']] ?? null), $this->retensiKategori()),
+                'retensi'         => array_merge(
+                    array_map(fn ($col) => ($retensi[$b->id][$col['id']] ?? null), $this->retensiKategori()),
+                    [$retensi[$b->id][self::KAT_TANPA_KATEGORI] ?? null],
+                ),
+                // Sisa Retensi = Outstanding Pencairan pada Proses KPR, dihitung dengan rumus
+                // yang sama persis (lihat sisaRetensiByBooking).
+                'sisa_retensi'    => $sisaRetensi[$b->id] ?? null,
+
                 // Rincian Biaya — dari GMC yang sudah diposting jadi Invoice Hutang di BO
                 // (bs_kpr_biaya_entries, lewat Kategori Gimmick). SSP tetap punya cadangan dari
                 // realisasi pencairan (DAJAM Pajak) bila belum ada entri gimmick-nya.
@@ -218,7 +248,10 @@ class MasterDataKprController extends Controller
 
     private function retensiHeaders(): array
     {
-        return array_map(fn ($c) => $c['label'], $this->retensiKategori());
+        return array_merge(
+            array_map(fn ($c) => $c['label'], $this->retensiKategori()),
+            [self::LABEL_TANPA_KATEGORI],
+        );
     }
 
     /**
@@ -363,12 +396,36 @@ class MasterDataKprController extends Controller
         return $map;
     }
 
-    /** {t: 'Y-m-d'|null, n: float} untuk UTJ (BF) & DP 1..6 dari jadwal yang sudah dibayar. */
+    /**
+     * {t: 'Y-m-d'|null, n: float} untuk UTJ (BF), DP 1..6, dan Angsuran Cash 1..3 dari jadwal
+     * yang sudah dibayar.
+     *
+     * ANGSURAN CASH DIPUNGUT DARI JADWAL BER-TIPE 'ANG', BUKAN DARI KWITANSI LANGSUNG. Kwitansi
+     * (BKM) hidup di aplikasi Front Office, sedangkan layar ini berjalan di Back Office; yang
+     * menjembatani keduanya adalah jadwal tagihan yang tersinkron ke sini — mekanisme yang sama
+     * persis dengan kolom UTJ & DP di sebelahnya, dan yang membuat kolom ini ikut terisi begitu
+     * kwitansinya dicetak, tanpa penautan manual.
+     *
+     * 'ANG' DIPAKAI BERSAMA oleh cicilan cash DAN pencairan KPR (lihat PaymentType::Angsuran:
+     * "Cicilan KPR atau cash bertahap"). Karena itu booking yang skema bayarnya KPR SENGAJA
+     * dilewati: tanpa penyaring itu, pencairan bank akan tampil di kolom "Angsuran Cash" dan
+     * terbaca sebagai uang masuk dari customer — angkanya benar, artinya salah sama sekali.
+     *
+     * Urutan slotnya ditentukan sequence → installment_no → id, bukan teks label: label cicilan
+     * tidak dijamin seragam antar skema, sedangkan urutan pembayarannya selalu ada.
+     */
     private function schedulesByBooking(array $ids): array
     {
+        // Booking berskema KPR — ANG miliknya adalah pencairan, bukan angsuran cash.
+        $kprBookings = DB::table('bookings as b')
+            ->join('payment_schemes as ps', 'ps.id', '=', 'b.payment_scheme_id')
+            ->whereIn('b.id', $ids)->where('ps.type', 'kpr')
+            ->pluck('b.id')->flip();
+
         $rows = DB::table('payment_schedules')
             ->whereIn('booking_id', $ids)
-            ->get(['booking_id', 'payment_type', 'label', 'paid_amount', 'paid_at', 'due_date']);
+            ->orderBy('booking_id')->orderBy('sequence')->orderBy('installment_no')->orderBy('id')
+            ->get(['id', 'booking_id', 'payment_type', 'label', 'paid_amount', 'paid_at', 'due_date', 'sequence', 'installment_no']);
         $map = [];
         foreach ($rows as $r) {
             $t = $r->paid_at ?: null;
@@ -377,6 +434,11 @@ class MasterDataKprController extends Controller
                 $map[$r->booking_id]['utj'] = $cell;
             } elseif ($r->payment_type === 'DP') {
                 $map[$r->booking_id]['dp'][$r->label] = $cell;
+            } elseif ($r->payment_type === 'ANG' && ! isset($kprBookings[$r->booking_id])) {
+                // Hanya slot yang tersedia yang diisi; sisanya diabaikan, bukan menimpa slot 1.
+                if (count($map[$r->booking_id]['ang'] ?? []) < self::CASH_SLOTS) {
+                    $map[$r->booking_id]['ang'][] = $cell;
+                }
             }
         }
         return $map;
@@ -623,6 +685,115 @@ class MasterDataKprController extends Controller
      * @param array<int,int> $appIdByBooking booking_id => application_id
      * @return array<int,array<int,array{t:?string,n:float}>>
      */
+    /**
+     * LOKASI & TAHAP unit, dari sub-modul Unit aplikasi FRONT OFFICE.
+     *
+     * KENAPA LINTAS BASIS DATA. Back Office tidak menyimpan kedua nilai ini: tabel units di sini
+     * hanya punya unit_code, cluster, blok, dan tipe. Yang memilikinya adalah fo_units di
+     * aplikasi Front Office — basis data berbeda pada server MySQL yang sama. Selama ini data FO
+     * masuk ke BO lewat sinkronisasi (mis. bookings.free_dp_amount), tetapi lokasi & tahap tidak
+     * termasuk yang disinkronkan, dan menambahkannya ke sinkronisasi berarti menunggu data lama
+     * ikut di-backfill sebelum kolomnya berguna.
+     *
+     * KUERI TERPISAH, BUKAN JOIN pada kueri utama. Kalau ikut di-join, satu galat lintas basis
+     * data (nama basis data berbeda, hak akses kurang, tabel berganti nama) akan menjatuhkan
+     * SELURUH Master Data KPR. Dengan kueri sendiri yang dibungkus try/catch, kegagalannya hanya
+     * membuat dua kolom ini kosong — laporannya tetap terbaca.
+     *
+     * Nama basis datanya dari config bankloan.fo_database (env FO_DATABASE) dan disaring ketat
+     * sebelum masuk kueri: ia menyatu ke dalam SQL sebagai pengenal, bukan sebagai nilai
+     * berparameter, jadi tidak ada penjagaan lain yang menahannya.
+     *
+     * @param  array<int,string>  $kodeUnit
+     * @return array<string,array{lokasi:?string,tahap:?string}>
+     */
+    private function lokasiTahapUnit(array $kodeUnit): array
+    {
+        $db = (string) config('bankloan.fo_database', '');
+        if ($kodeUnit === [] || $db === '' || preg_match('/^[A-Za-z0-9_]+$/', $db) !== 1) {
+            return [];
+        }
+
+        try {
+            $rows = DB::select(
+                'SELECT u.kode_unit, l.kode AS lokasi, u.tahap'
+                .' FROM `'.$db.'`.fo_units u'
+                .' LEFT JOIN `'.$db.'`.fo_lokasi l ON l.id = u.lokasi_id'
+                .' WHERE u.deleted_at IS NULL AND u.kode_unit IN ('.implode(',', array_fill(0, count($kodeUnit), '?')).')',
+                $kodeUnit,
+            );
+        } catch (\Throwable $e) {
+            // FO tak terjangkau → kolomnya kosong, bukan laporannya yang mati.
+            report($e);
+
+            return [];
+        }
+
+        $map = [];
+        foreach ($rows as $r) {
+            $map[(string) $r->kode_unit] = [
+                'lokasi' => ($v = trim((string) ($r->lokasi ?? ''))) !== '' ? $v : null,
+                'tahap'  => ($t = trim((string) ($r->tahap ?? ''))) !== '' ? $t : null,
+            ];
+        }
+
+        return $map;
+    }
+
+    /**
+     * SISA RETENSI per booking = "Outstanding Pencairan" pada layar Proses KPR.
+     *
+     * Rumusnya DISALIN PERSIS dari BankLoan/Show.vue, bukan disederhanakan menjadi
+     * "plafon − pencairan":
+     *
+     *     kotor    = Σ kpr_realizations.disbursed_amount
+     *     dilepas  = retensi ditolak → 0, selain itu released_amount
+     *     ditahan  = Σ maks(0, retensi.amount − dilepas)
+     *     cair     = maks(0, kotor − ditahan)        ← "Sudah Cair" di layar Proses KPR
+     *     sisa     = maks(0, plafon_disetujui − cair) ← "Outstanding Pencairan"
+     *
+     * Retensi yang MASIH DITAHAN mengurangi "Sudah Cair" dan karena itu MENAMBAH outstanding —
+     * uangnya belum diterima customer meski pencairannya sudah dibukukan. Menyederhanakan
+     * rumusnya akan membuat angka di layar ini berbeda dari layar Proses KPR untuk setiap KPR
+     * yang punya retensi, dan dua-duanya terlihat masuk akal.
+     *
+     * Retensi yang DITOLAK pada Approval Retensi dihitung DITAHAN PENUH lagi — pelepasannya
+     * diabaikan, persis seperti di layar Proses KPR.
+     *
+     * @param array<int,int> $appIdByBooking booking_id => application_id
+     * @return array<int,float>
+     */
+    private function sisaRetensiByBooking(array $appIdByBooking): array
+    {
+        $appIds = array_values($appIdByBooking);
+        if (empty($appIds)) {
+            return [];
+        }
+
+        $plafon = DB::table('kpr_applications')->whereIn('id', $appIds)
+            ->pluck('plafon_approved', 'id');
+
+        $kotor = DB::table('kpr_realizations')->whereIn('kpr_application_id', $appIds)
+            ->selectRaw('kpr_application_id, SUM(disbursed_amount) AS total')
+            ->groupBy('kpr_application_id')->pluck('total', 'kpr_application_id');
+
+        // Retensi ditolak → dianggap ditahan PENUH (pelepasannya diabaikan).
+        $ditahan = DB::table('kpr_retentions as rt')
+            ->join('kpr_realizations as rl', 'rl.id', '=', 'rt.kpr_realization_id')
+            ->whereIn('rl.kpr_application_id', $appIds)
+            ->selectRaw("rl.kpr_application_id, SUM(GREATEST(0, rt.amount - CASE WHEN rt.approval_status = 'rejected' THEN 0 ELSE COALESCE(rt.released_amount, 0) END)) AS total")
+            ->groupBy('rl.kpr_application_id')->pluck('total', 'kpr_application_id');
+
+        $out = [];
+        foreach ($appIdByBooking as $bookingId => $appId) {
+            $p = (float) ($plafon[$appId] ?? 0);
+            $cair = max(0.0, (float) ($kotor[$appId] ?? 0) - (float) ($ditahan[$appId] ?? 0));
+            $out[$bookingId] = max(0.0, $p - $cair);
+        }
+
+        return $out;
+    }
+
     private function retensiByBooking(array $appIdByBooking): array
     {
         $appIds = array_values($appIdByBooking);
@@ -635,7 +806,8 @@ class MasterDataKprController extends Controller
         $map = [];
         /** Tambahkan satu nilai ke sel (kategori) sebuah booking; tanggal memakai yang terbaru. */
         $isi = function (?int $bookingId, ?int $catId, $tgl, $nominal) use (&$map): void {
-            if (! $bookingId || ! $catId) {
+            // catId === 0 SAH — itulah kolom TANPA KATEGORI. Yang ditolak hanya null.
+            if (! $bookingId || $catId === null) {
                 return;
             }
             $t = $this->d($tgl);
@@ -649,12 +821,18 @@ class MasterDataKprController extends Controller
         };
 
         // ── 1. PENCAIRAN ────────────────────────────────────────────────────────────
+        /* whereNotNull DICOPOT. Pencairan yang belum berkategori (tercatat sebelum master
+           kategori ada) dulu tersaring habis di sini, sehingga jumlah pencairan di layar ini
+           lebih kecil daripada di Proses KPR — tanpa satu pun tanda. Sekarang ia jatuh ke kolom
+           TANPA KATEGORI, bukan dibuang dan bukan pula ditebak kategorinya: menebak berarti
+           mengaku tahu retensi mana yang dimaksud, dan tebakan itu tidak bisa dibedakan dari
+           data yang benar-benar berkategori. */
         $cair = DB::table('kpr_realizations')
             ->whereIn('kpr_application_id', $appIds)
-            ->whereNotNull('retention_category_id')
             ->get(['kpr_application_id', 'retention_category_id', 'disbursed_at', 'disbursed_amount']);
         foreach ($cair as $r) {
-            $isi($bookingByApp[$r->kpr_application_id] ?? null, (int) $r->retention_category_id,
+            $isi($bookingByApp[$r->kpr_application_id] ?? null,
+                $r->retention_category_id !== null ? (int) $r->retention_category_id : self::KAT_TANPA_KATEGORI,
                 $r->disbursed_at, $r->disbursed_amount);
         }
 

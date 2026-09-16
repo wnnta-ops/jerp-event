@@ -472,6 +472,20 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
     Route::put('/kpr/setup/berkas-tidak-lengkap/{category}',   [\App\Http\Controllers\Web\BankLoan\Setup\BerkasIncompleteCategoryController::class, 'update'])->name('kpr.setup.berkas-tidak-lengkap.update');
     Route::delete('/kpr/setup/berkas-tidak-lengkap/{category}',[\App\Http\Controllers\Web\BankLoan\Setup\BerkasIncompleteCategoryController::class, 'destroy'])->name('kpr.setup.berkas-tidak-lengkap.destroy');
 
+    Route::get('/kpr/setup/reject-bank',              [\App\Http\Controllers\Web\BankLoan\Setup\BankRejectCategoryController::class, 'index'])->name('kpr.setup.reject-bank.index');
+    Route::post('/kpr/setup/reject-bank',             [\App\Http\Controllers\Web\BankLoan\Setup\BankRejectCategoryController::class, 'store'])->name('kpr.setup.reject-bank.store');
+    Route::put('/kpr/setup/reject-bank/{category}',   [\App\Http\Controllers\Web\BankLoan\Setup\BankRejectCategoryController::class, 'update'])->name('kpr.setup.reject-bank.update');
+    Route::delete('/kpr/setup/reject-bank/{category}',[\App\Http\Controllers\Web\BankLoan\Setup\BankRejectCategoryController::class, 'destroy'])->name('kpr.setup.reject-bank.destroy');
+
+    // Kategori Perhitungan KPR (panel pengaturan) & Kalkulator KPR — satu controller, satu
+    // sumber data (kpr_calculator_settings.config), dua layar dengan izin berbeda.
+    Route::get('/kpr/setup/perhitungan',        [\App\Http\Controllers\Web\BankLoan\KprCalculatorController::class, 'setup'])->name('kpr.setup.perhitungan.index');
+    Route::put('/kpr/setup/perhitungan',        [\App\Http\Controllers\Web\BankLoan\KprCalculatorController::class, 'update'])->name('kpr.setup.perhitungan.update');
+    Route::post('/kpr/setup/perhitungan/gambar', [\App\Http\Controllers\Web\BankLoan\KprCalculatorController::class, 'unggahGambar'])->name('kpr.setup.perhitungan.gambar');
+    Route::get('/kpr/setup/perhitungan/ekspor', [\App\Http\Controllers\Web\BankLoan\KprCalculatorController::class, 'ekspor'])->name('kpr.setup.perhitungan.ekspor');
+    Route::get('/kpr/kalkulator',               [\App\Http\Controllers\Web\BankLoan\KprCalculatorController::class, 'kalkulator'])->name('kpr.kalkulator.index');
+    Route::get('/kpr/kalkulator/gambar/{berkas}', [\App\Http\Controllers\Web\BankLoan\KprCalculatorController::class, 'gambar'])->name('kpr.kalkulator.gambar');
+
     // ── BUSINESS SUPPORT (Back-Office Akuntansi) ───────────
     // Halaman hub "Business Support" (bs.index) & Module (bs.module) DIHILANGKAN — navigasi antar
     // modul lewat sidebar; back-link "← Business Support" ikut dibuang dari semua halaman.
@@ -1305,6 +1319,7 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
     // ── Database KPR — arsip proses yang ditolak ──
     Route::get('/kpr-database/reject-bi-checking',            [\App\Http\Controllers\Web\BankLoan\KprDatabaseController::class, 'rejectBiChecking'])->name('kpr.database.reject-bi');
     Route::get('/kpr-database/reject-bi-checking-excel',      [\App\Http\Controllers\Web\BankLoan\KprDatabaseController::class, 'rejectBiCheckingExcel'])->name('kpr.database.reject-bi.excel'); // unduh rincian Excel
+    Route::get('/kpr-database/reject-bi-checking/{initiation}/cetak', [\App\Http\Controllers\Web\BankLoan\KprDatabaseController::class, 'rejectBiCheckingPrint'])->name('kpr.database.reject-bi.cetak'); // lembar A4 "Berita Acara Reject BI Checking" (dibuka tab baru dari tombol Cetak di halaman detail)
     Route::get('/kpr-database/reject-bi-checking/{initiation}', [\App\Http\Controllers\Web\BankLoan\KprDatabaseController::class, 'rejectBiCheckingDetail'])->name('kpr.database.reject-bi.detail');
     Route::get('/kpr-database/reject-proses-kpr',             [\App\Http\Controllers\Web\BankLoan\KprDatabaseController::class, 'rejectProcess'])->name('kpr.database.reject-kpr');
     Route::get('/kpr-database/reject-proses-kpr-excel',       [\App\Http\Controllers\Web\BankLoan\KprDatabaseController::class, 'rejectProcessExcel'])->name('kpr.database.reject-kpr.excel'); // unduh rincian Excel

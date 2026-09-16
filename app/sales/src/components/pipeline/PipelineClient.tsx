@@ -59,7 +59,10 @@ const showsLead = (stage: Stage) => STAGE_INDEX[stage] <= STAGE_INDEX["NUP"];
 
 export function PipelineClient({ deals, role }: { deals: PipelineDeal[]; role: Role }) {
   const router = useRouter();
-  const [q, setQ] = useState("");
+  // prefilter dari ?q= (mis. saat diklik dari lonceng notifikasi)
+  const [q, setQ] = useState(() =>
+    typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("q") ?? "" : "",
+  );
   const [sel, setSel] = useState<PipelineDeal | null>(null);
   const [busy, setBusy] = useState(false);
   const [fuNote, setFuNote] = useState("");

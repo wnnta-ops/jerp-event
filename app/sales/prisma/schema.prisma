@@ -96,6 +96,20 @@ enum EventType {
   STATUS_OVERRIDE
 }
 
+// Status (tingkat minat) — diisi Sales Koor. Sama pola Hot/Warm/Cold.
+enum LeadStatus {
+  HOT
+  WARM
+  COLD
+}
+
+// Hasil follow-up — diisi Sales Koor.
+enum LeadFollowUp {
+  WI // sudah Walk-In
+  RESPON // merespon tapi belum WI
+  NO_RESPON // tidak merespon
+}
+
 enum TargetScope {
   ANNUAL
   MONTHLY
@@ -118,6 +132,10 @@ model User {
   role         Role     @default(SALES)
   salesId      String?  @unique
   sales        Sales?   @relation(fields: [salesId], references: [id])
+  // link akun -> Sales Koor, dipakai untuk membatasi Leads hanya milik koor ini.
+  // null = tidak terhubung (fallback ke pencocokan nama).
+  coordinatorId String?     @unique
+  coordinator   Coordinator? @relation(fields: [coordinatorId], references: [id])
   createdAt    DateTime @default(now())
 }
 
@@ -184,6 +202,8 @@ model Coordinator {
   name      String               @unique
   rotations RotationAssignment[]
   deals     Deal[]
+  leads     Lead[]
+  user      User?
 }
 
 model Agency {
@@ -370,22 +390,39 @@ model ReminderSetting {
   updatedAt     DateTime @updatedAt
 }
 
-// Manual input for the Sales Dashboard (Format 2). One row per WIB day.
-// Fields left null fall back to derived values in the report.
+// Manual input untuk Daily Report (Format 1) + Sales Dashboard (Format 2).
+// Satu baris per hari WIB. HANYA menyimpan field yang memang diketik manual
+// (angka dari integrasi eksternal yang belum nyala). Field yang sudah ada di web
+// — WI, Hold Unit, Waiting List, Sales Potensial, WI Hot, Target, dan Gagal
+// (batal/Collection) — TIDAK disimpan di sini; itu selalu diturunkan (linked).
+// Override manual per hari untuk Daily Report (Format 1) + Sales Dashboard
+// (Format 2). SEMUA field opsional: null = pakai nilai dari web/turunan (linked),
+// terisi = user meng-override angka dari web. Form meng-auto-fill dari web tapi
+// tetap bisa diedit; hanya yang benar-benar diubah yang disimpan (sisanya null).
 model DailyDashboardEntry {
-  id             String   @id @default(uuid())
-  dayKey         String   @unique
+  id          String   @id @default(uuid())
+  dayKey      String   @unique
+  // snapshot bersama (dipakai kedua format):
+  holdUnit    Int?
+  waitingList Int?
+  // Format 1 (Daily Report — harian):
+  wiByCluster Json? // [{ cluster, murni, janjian }]
+  utjGrossDay Int?
+  utjGagalDay Int?
+  sprGrossDay Int?
+  sprGagalDay Int?
+  nupDay      Int?
+  utjPerBlok  Json? // [{ code, n }] — UTJ hari ini per blok/phase
+  // Format 2 (Sales Dashboard — bulanan / YTD):
   target2026     Int?
-  sprToday       Int?
   targetUtj      Int?
+  sprToday       Int?
   utjNett        Int?
   nupNett        Int?
-  holdUnit       Int?
-  waitingList    Int?
   salesPotensial Int?
   wiHot          Int?
   remainingDays  Int?
-  updatedAt      DateTime @updatedAt
+  updatedAt   DateTime @updatedAt
 }
 
 model AppealNote {
@@ -411,6 +448,37 @@ model MatrixEntry {
   updatedAt DateTime @updatedAt
 
   @@unique([dayKey, rowKey, colKey])
+}
+
+// ---------------- LEADS (dari MarComm) ----------------
+// MarComm mengirim leads (Meta/TikTok/dsb) ke hub ini lewat POST /api/leads/ingest.
+// Tiap lead dimiliki satu Sales Koor; koor HANYA melihat lead miliknya sendiri
+// (scoping di page + API). Sales Koor meng-update kondisi lead: minat, status,
+// follow-up, note — perubahan tersimpan di sini (dan bisa di-write-back ke sheet
+// MarComm bila LEADS_WRITEBACK_URL diset). Bisa dikonversi jadi Walk-In (Deal).
+model Lead {
+  id              String       @id @default(uuid())
+  externalId      String?      @unique // id baris sheet MarComm — idempoten saat ingest & write-back
+  nama            String
+  phone           String?
+  source          String? // Meta / TikTok / dsb — dari MarComm
+  campaign        String? // nama kampanye / keterangan iklan
+  tanggal         DateTime     @default(now()) // tanggal lead masuk
+  coordinatorId   String? // Sales Koor pemilik lead
+  coordinator     Coordinator? @relation(fields: [coordinatorId], references: [id])
+  // diisi oleh Sales Koor (kosong saat lead baru masuk dari MarComm):
+  minat           String? // free text
+  status          LeadStatus? // Hot / Warm / Cold
+  followUp        LeadFollowUp? // WI / Respon / No Respon
+  note            String? // free text
+  // jembatan ke pipeline bila sudah jadi Walk-In:
+  convertedDealId String?      @unique
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+
+  @@index([coordinatorId])
+  @@index([status])
+  @@index([tanggal])
 }
 
 // ---------------- audit for reference-data edits ----------------

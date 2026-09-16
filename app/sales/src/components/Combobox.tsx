@@ -10,6 +10,8 @@ export interface ComboOption {
 // Typeable filter with autocomplete (closest match first) + a dropdown arrow
 // that reveals all options. `value === "all"` means nothing selected (shows the
 // `allLabel` as placeholder and as the reset option at the top of the list).
+const CUSTOM = "__custom__"; // penanda baris "tambah teks sendiri"
+
 export function Combobox({
   value,
   onChange,
@@ -17,6 +19,7 @@ export function Combobox({
   allLabel,
   allValue = "all",
   title,
+  allowCustom = false,
 }: {
   value: string;
   onChange: (v: string) => void;
@@ -24,6 +27,8 @@ export function Combobox({
   allLabel: string;
   allValue?: string;
   title?: string;
+  // true = boleh ketik nama sendiri lalu Enter → dipakai apa adanya (free text)
+  allowCustom?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -31,7 +36,9 @@ export function Combobox({
   const wrapRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  const selLabel = value === allValue ? "" : options.find((o) => o.value === value)?.label ?? "";
+  // Nilai custom (free text) tidak ada di options → tampilkan value-nya langsung.
+  const selLabel =
+    value === allValue ? "" : options.find((o) => o.value === value)?.label ?? value;
 
   // options shown while open: rank by closeness (startsWith < includes), and
   // include the "all" reset row only when there's no active query.
@@ -42,8 +49,13 @@ export function Combobox({
       .filter((x) => x.i >= 0)
       .sort((a, b) => a.i - b.i || a.o.label.localeCompare(b.o.label))
       .map((x) => x.o);
-    return q ? base : [{ value: allValue, label: allLabel }, ...base];
-  }, [query, options, allLabel, allValue]);
+    // baris "＋ Tambah "…"" muncul saat allowCustom & ada ketikan yang belum persis cocok
+    const typed = query.trim();
+    const exact = typed && base.some((o) => o.label.toLowerCase() === typed.toLowerCase());
+    const customRow: ComboOption[] =
+      allowCustom && typed && !exact ? [{ value: CUSTOM, label: `＋ Tambah “${typed}”` }] : [];
+    return q ? [...base, ...customRow] : [{ value: allValue, label: allLabel }, ...base];
+  }, [query, options, allLabel, allValue, allowCustom]);
 
   useEffect(() => {
     if (!open) return;
@@ -60,7 +72,8 @@ export function Combobox({
     setOpen(true);
   }
   function pick(o: ComboOption) {
-    onChange(o.value);
+    // baris custom → pakai teks yang diketik apa adanya (free text)
+    onChange(o.value === CUSTOM ? query.trim() : o.value);
     setQuery("");
     setOpen(false);
     inputRef.current?.blur();

@@ -24,13 +24,17 @@ const sprsChecks = computed(() => [
     { label: 'NPWP Pasangan diterima', ok: !!sprs.value.npwp_pasangan_received },
 ]);
 
-function doPrint() { window.print(); }
+// Tombol Cetak TIDAK memanggil window.print() lagi. Halaman ini memakai AppLayout, sehingga
+// window.print() ikut mencetak sidebar & topbar aplikasi, dan seluruh warna latar panelnya
+// dibuang peramban saat mencetak — panel merah BI Checking, satu-satunya yang membawa arti
+// penolakan, keluar putih polos. Cetaknya kini lewat lembar A4 tersendiri (Berita Acara),
+// dibuka di tab baru mengikuti pola dokumen cetak lain di repo ini.
 </script>
 <template>
     <div class="mx-auto max-w-3xl space-y-4">
         <div class="flex items-center justify-between print:hidden">
             <Link :href="route('kpr.database.reject-bi')" class="inline-flex items-center gap-2 text-sm text-neutral-500 hover:text-neutral-800 dark:hover:text-neutral-200"><ArrowLeft class="h-4 w-4" /> Reject BI Checking</Link>
-            <button @click="doPrint" class="inline-flex items-center gap-1.5 rounded-lg border border-neutral-300 px-3 py-1.5 text-sm font-medium hover:bg-neutral-50 dark:border-neutral-700 dark:hover:bg-neutral-800"><Printer class="h-4 w-4" /> Cetak</button>
+            <a :href="route('kpr.database.reject-bi.cetak', init.id)" target="_blank" rel="noopener" class="inline-flex items-center gap-1.5 rounded-lg bg-primary-600 px-3 py-1.5 text-sm font-semibold text-white shadow-sm hover:bg-primary-700"><Printer class="h-4 w-4" /> Cetak</a>
         </div>
 
         <!-- Header report -->

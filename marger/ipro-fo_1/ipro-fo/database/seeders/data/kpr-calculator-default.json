@@ -1,0 +1,445 @@
+{
+  "banks": [
+    {
+      "id": "btn",
+      "name": "BTN",
+      "fullName": "Bank Tabungan Negara",
+      "logoImage": "/img/kpr-calculator/bank-btn-logo.png",
+      "promo": {
+        "enabled": true,
+        "slide1Text": "‼️*PROMO KPR BTN SBD x JAVA RESIDENCE DENGAN SUKU BUNGA MULAI DARI 1.65%*‼️\n\n👀 SSSTTTT...FEE AGENT 0.1% BISA DI KLAIM ON THE SPOT SAAT AKAD!!\n\n*🫆Asal ngga kol5, KPR BTN aja, lebih mudah, lebih muraah🫆*",
+        "slide2Text": "",
+        "slide2Image": "/img/kpr-calculator/bank-btn-promo2.jpg"
+      },
+      "plafon": {
+        "min": 100000000,
+        "max": 2000000000
+      },
+      "dpMinPercent": 0,
+      "dpDefaultPercent": 5,
+      "utjAmount": 0,
+      "tenor": {
+        "minYears": 1,
+        "maxYears": 30
+      },
+      "maxInstallmentRatio": 0.35,
+      "schemes": [
+        {
+          "id": "fixed_floating",
+          "type": "fixed_floating",
+          "label": "Fixed lalu Floating",
+          "fixedYears": 3,
+          "fixedRatePercent": 3.65,
+          "floatingRatePercent": 13,
+          "minTenorYears": 15
+        },
+        {
+          "id": "fixed_cap",
+          "type": "tiered",
+          "label": "Fixed & Cap Berjenjang",
+          "tiers": [
+            {
+              "years": 3,
+              "ratePercent": 5.5,
+              "tierLabel": "Fixed"
+            },
+            {
+              "years": 2,
+              "ratePercent": 8.5,
+              "tierLabel": "Cap"
+            },
+            {
+              "years": 3,
+              "ratePercent": 9.95,
+              "tierLabel": "Cap"
+            }
+          ],
+          "floatingRatePercent": 13,
+          "minTenorYears": 15
+        }
+      ]
+    },
+    {
+      "id": "bri",
+      "name": "BRI",
+      "fullName": "Bank Rakyat Indonesia",
+      "logoImage": "/img/kpr-calculator/bank-bri-logo.jpg",
+      "promo": {
+        "enabled": true,
+        "slide1Text": "*Asalkan pegawai tetap dengan fixed income/payroll, pasti bisa KPR di BRI!!!*",
+        "slide2Text": "",
+        "slide2Image": "/img/kpr-calculator/bank-bri-promo2.jpg"
+      },
+      "plafon": {
+        "min": 100000000,
+        "max": 2000000000
+      },
+      "dpMinPercent": 0,
+      "dpDefaultPercent": 5,
+      "utjAmount": 0,
+      "tenor": {
+        "minYears": 1,
+        "maxYears": 30
+      },
+      "maxInstallmentRatio": 0.35,
+      "schemes": [
+        {
+          "id": "anuitas_default",
+          "type": "fixed_floating",
+          "label": "Fixed 3 Tahun",
+          "fixedYears": 3,
+          "fixedRatePercent": 3.57,
+          "floatingRatePercent": 13,
+          "minTenorYears": 10
+        },
+        {
+          "id": "scheme_1787634110233",
+          "type": "fixed_floating",
+          "label": "Fixed 5 Tahun",
+          "fixedYears": 5,
+          "fixedRatePercent": 5.57,
+          "floatingRatePercent": 13,
+          "minTenorYears": 10
+        },
+        {
+          "id": "scheme_1787634169567",
+          "type": "tiered",
+          "label": "Fixed and Cap 20 Tahun",
+          "tiers": [
+            {
+              "years": 1,
+              "ratePercent": 3.71,
+              "tierLabel": "Fixed"
+            },
+            {
+              "years": 2,
+              "ratePercent": 5.71,
+              "tierLabel": "Cap"
+            },
+            {
+              "years": 7,
+              "ratePercent": 8.17,
+              "tierLabel": "Cap"
+            },
+            {
+              "years": 10,
+              "ratePercent": 10.71,
+              "tierLabel": "Fixed"
+            }
+          ],
+          "floatingRatePercent": 13,
+          "minTenorYears": 20
+        }
+      ]
+    },
+    {
+      "id": "bsn",
+      "name": "BSN",
+      "fullName": "Bank Syariah Nasional",
+      "logoImage": "/img/kpr-calculator/bank-bsn-logo.png",
+      "promo": {
+        "enabled": true,
+        "slide1Text": "*\"Asalkan punya penghasilan, semua bisa KPR di BSN\"*",
+        "slide2Text": "",
+        "slide2Image": "/img/kpr-calculator/bank-bsn-promo2.jpg"
+      },
+      "plafon": {
+        "min": 100000000,
+        "max": 2000000000
+      },
+      "dpMinPercent": 0,
+      "dpDefaultPercent": 5,
+      "utjAmount": 0,
+      "tenor": {
+        "minYears": 1,
+        "maxYears": 30
+      },
+      "maxInstallmentRatio": 0.35,
+      "schemes": [
+        {
+          "id": "anuitas_default",
+          "type": "tiered",
+          "label": "Fixed & Cap - 4Thn",
+          "tiers": [
+            {
+              "years": 1,
+              "ratePercent": 3.65,
+              "tierLabel": "Cap"
+            },
+            {
+              "years": 1,
+              "ratePercent": 5.65,
+              "tierLabel": "Cap"
+            },
+            {
+              "years": 1,
+              "ratePercent": 8.65,
+              "tierLabel": "Cap"
+            },
+            {
+              "years": 1,
+              "ratePercent": 11.65,
+              "tierLabel": "Cap"
+            }
+          ],
+          "floatingRatePercent": 12.99,
+          "minTenorYears": 10
+        },
+        {
+          "id": "scheme_1787634762789",
+          "type": "tiered",
+          "label": "Fixed & Cap - 6Thn",
+          "tiers": [
+            {
+              "years": 3,
+              "ratePercent": 3.65,
+              "tierLabel": "Fix"
+            },
+            {
+              "years": 1,
+              "ratePercent": 6.65,
+              "tierLabel": "Cap"
+            },
+            {
+              "years": 1,
+              "ratePercent": 9.65,
+              "tierLabel": "Cap"
+            },
+            {
+              "years": 1,
+              "ratePercent": 12.65,
+              "tierLabel": "Cap"
+            }
+          ],
+          "floatingRatePercent": 12.99,
+          "minTenorYears": 15
+        },
+        {
+          "id": "scheme_1787634765801",
+          "type": "tiered",
+          "label": "Fixed & Cap - 8Thn",
+          "tiers": [
+            {
+              "years": 3,
+              "ratePercent": 5.5,
+              "tierLabel": "Cap"
+            },
+            {
+              "years": 2,
+              "ratePercent": 8.5,
+              "tierLabel": "Cap"
+            },
+            {
+              "years": 2,
+              "ratePercent": 9.95,
+              "tierLabel": "Cap"
+            },
+            {
+              "years": 6,
+              "ratePercent": 12.99,
+              "tierLabel": "Cap"
+            }
+          ],
+          "floatingRatePercent": 12.99,
+          "minTenorYears": 15
+        }
+      ]
+    },
+    {
+      "id": "bank_1788171386532",
+      "name": "Mandiri",
+      "fullName": "Bank Mandiri",
+      "logoImage": "/img/kpr-calculator/bank-bank_1788171386532-logo.png",
+      "plafon": {
+        "min": 100000000,
+        "max": 2000000000
+      },
+      "dpMinPercent": 0,
+      "dpDefaultPercent": 5,
+      "utjAmount": 0,
+      "tenor": {
+        "minYears": 5,
+        "maxYears": 25
+      },
+      "maxInstallmentRatio": 0.35,
+      "promo": {
+        "enabled": true,
+        "slide1Text": "Semua bisa KPR di Mandiri",
+        "slide2Text": "",
+        "slide2Image": "/img/kpr-calculator/bank-bank_1788171386532-promo2.jpg"
+      },
+      "schemes": [
+        {
+          "id": "anuitas_default",
+          "type": "fixed_floating",
+          "label": "Fixed 3Th",
+          "fixedYears": 3,
+          "fixedRatePercent": 2.76,
+          "floatingRatePercent": 13,
+          "minTenorYears": 15
+        },
+        {
+          "id": "scheme_1788172095403",
+          "type": "fixed_floating",
+          "label": "Fixed 5Th Best Rate",
+          "fixedYears": 5,
+          "fixedRatePercent": 3.5,
+          "floatingRatePercent": 13,
+          "minTenorYears": 15
+        },
+        {
+          "id": "scheme_1788172255545",
+          "type": "tiered",
+          "label": "Fixed & Cap 10thn",
+          "tiers": [
+            {
+              "years": 3,
+              "ratePercent": 4.06,
+              "tierLabel": "Fixed"
+            },
+            {
+              "years": 3,
+              "ratePercent": 8.76,
+              "tierLabel": "Fixed"
+            },
+            {
+              "years": 4,
+              "ratePercent": 9.76,
+              "tierLabel": "Fixed"
+            }
+          ],
+          "floatingRatePercent": 13,
+          "minTenorYears": 15
+        }
+      ]
+    },
+    {
+      "id": "bank_1788173658580",
+      "name": "BNI",
+      "fullName": "Bank Negara Indonesia",
+      "logoImage": "/img/kpr-calculator/bank-bank_1788173658580-logo.png",
+      "plafon": {
+        "min": 100000000,
+        "max": 2000000000
+      },
+      "dpMinPercent": 0,
+      "dpDefaultPercent": 5,
+      "utjAmount": 0,
+      "tenor": {
+        "minYears": 1,
+        "maxYears": 25
+      },
+      "maxInstallmentRatio": 0.35,
+      "promo": {
+        "enabled": true,
+        "slide1Text": "*Semua yang punya penghasilan tapi bukan karyawan kontrak/pppk, bisa KPR di BNI*",
+        "slide2Text": "",
+        "slide2Image": ""
+      },
+      "schemes": [
+        {
+          "id": "anuitas_default",
+          "type": "fixed_floating",
+          "label": "Fixed 1Th Min Tenor 3Th",
+          "fixedYears": 1,
+          "fixedRatePercent": 3.5,
+          "floatingRatePercent": 13,
+          "minTenorYears": 3
+        },
+        {
+          "id": "scheme_1788173870857",
+          "type": "tiered",
+          "label": "Fixed Berjenjang 10Thn",
+          "tiers": [
+            {
+              "years": 1,
+              "ratePercent": 4.75,
+              "tierLabel": "Fixed"
+            },
+            {
+              "years": 2,
+              "ratePercent": 6.75,
+              "tierLabel": "Fixed"
+            },
+            {
+              "years": 1,
+              "ratePercent": 9.75,
+              "tierLabel": "Fixed"
+            },
+            {
+              "years": 6,
+              "ratePercent": 10.75,
+              "tierLabel": "Fixed"
+            }
+          ],
+          "floatingRatePercent": 13,
+          "minTenorYears": 0
+        },
+        {
+          "id": "scheme_1788173937979",
+          "type": "tiered",
+          "label": "Fixed Berjenjang 15Thn",
+          "tiers": [
+            {
+              "years": 1,
+              "ratePercent": 4.75,
+              "tierLabel": "Fixed"
+            },
+            {
+              "years": 2,
+              "ratePercent": 6.75,
+              "tierLabel": "Fixed"
+            },
+            {
+              "years": 7,
+              "ratePercent": 9.75,
+              "tierLabel": "Fixed"
+            },
+            {
+              "years": 5,
+              "ratePercent": 10.75,
+              "tierLabel": "Fixed"
+            }
+          ],
+          "floatingRatePercent": 13,
+          "minTenorYears": 15
+        },
+        {
+          "id": "scheme_1788173942116",
+          "type": "tiered",
+          "label": "Fixed Berjenjang 20Thn",
+          "tiers": [
+            {
+              "years": 1,
+              "ratePercent": 4.75,
+              "tierLabel": "Fixed"
+            },
+            {
+              "years": 2,
+              "ratePercent": 6.75,
+              "tierLabel": "Fixed"
+            },
+            {
+              "years": 7,
+              "ratePercent": 9.75,
+              "tierLabel": "Fixed"
+            },
+            {
+              "years": 10,
+              "ratePercent": 10.75,
+              "tierLabel": "Fixed"
+            }
+          ],
+          "floatingRatePercent": 13,
+          "minTenorYears": 20
+        }
+      ]
+    }
+  ],
+  "brandLogo": "/img/kpr-calculator/brand-logo.png",
+  "adminPasswordHash": "8c6976e5b5410415bde908bd4dee15dfb167a9c873fc4bb8a81f6f2ab448a918",
+  "effectiveMonth": "September 2026",
+  "lastUpdated": "2026-09-14T08:52:37.519Z",
+  "introPhoto": "/img/kpr-calculator/intro-photo.jpg",
+  "introPhotoMobile": "/img/kpr-calculator/intro-photo-mobile.jpg"
+}

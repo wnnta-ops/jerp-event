@@ -355,10 +355,12 @@ function clusterCode(name: string): string {
   return n ? `C${n}` : name;
 }
 
-export async function dailyRecap(day: Date): Promise<DailyRecap> {
+// Nilai MURNI dari web/turunan (tanpa override manual). Dipakai sebagai default
+// auto-fill di form & untuk membandingkan apakah user meng-override.
+export async function dailyRecapPure(day: Date): Promise<DailyRecap> {
   const { gte: dayGte, lt: dayLt } = dayBounds(day);
 
-  const [wiEvents, utjEvents, utjGross, nup, sprGross, utjGagal, sprGagal, statuses, wlCount] =
+  const [wiEvents, utjEvents, utjGrossD, nup, sprGrossD, utjGagal, sprGagal, statuses, wlCount] =
     await Promise.all([
       prisma.pipelineEvent.findMany({
         where: { type: "WI", eventDate: { gte: dayGte, lt: dayLt } },
@@ -413,16 +415,49 @@ export async function dailyRecap(day: Date): Promise<DailyRecap> {
 
   return {
     wiByCluster,
+    utjGross: utjGrossD,
+    utjNett: utjGrossD - utjGagal,
+    utjGagal,
+    sprGross: sprGrossD,
+    sprNett: sprGrossD - sprGagal,
+    sprGagal,
+    nup,
+    utjToday,
+    waitingList: wlCount,
+    holdUnit: statuses["HOLD"] ?? 0,
+  };
+}
+
+// Nilai FINAL: turunan + override manual (yang tidak null di DailyDashboardEntry).
+export async function dailyRecap(day: Date): Promise<DailyRecap> {
+  const dk = `${day.getUTCFullYear()}-${String(day.getUTCMonth() + 1).padStart(2, "0")}-${String(day.getUTCDate()).padStart(2, "0")}`;
+  const [pure, entry] = await Promise.all([
+    dailyRecapPure(day),
+    prisma.dailyDashboardEntry.findUnique({ where: { dayKey: dk } }),
+  ]);
+  if (!entry) return pure;
+  const wiByCluster = Array.isArray(entry.wiByCluster)
+    ? (entry.wiByCluster as DailyRecap["wiByCluster"])
+    : pure.wiByCluster;
+  const utjGross = entry.utjGrossDay ?? pure.utjGross;
+  const utjGagal = entry.utjGagalDay ?? pure.utjGagal;
+  const sprGross = entry.sprGrossDay ?? pure.sprGross;
+  const sprGagal = entry.sprGagalDay ?? pure.sprGagal;
+  const utjToday = Array.isArray(entry.utjPerBlok)
+    ? (entry.utjPerBlok as DailyRecap["utjToday"])
+    : pure.utjToday;
+  return {
+    wiByCluster,
     utjGross,
     utjNett: utjGross - utjGagal,
     utjGagal,
     sprGross,
     sprNett: sprGross - sprGagal,
     sprGagal,
-    nup,
+    nup: entry.nupDay ?? pure.nup,
     utjToday,
-    waitingList: wlCount,
-    holdUnit: statuses["HOLD"] ?? 0,
+    waitingList: entry.waitingList ?? pure.waitingList,
+    holdUnit: entry.holdUnit ?? pure.holdUnit,
   };
 }
 
@@ -713,6 +748,8 @@ export async function salesDashboardData(day: Date): Promise<SalesDashboardData>
     salesDashboardDerived(day),
     prisma.dailyDashboardEntry.findUnique({ where: { dayKey: dk } }),
   ]);
+  // Semua field auto-fill dari web (derived) tapi bisa di-override manual.
+  // null di entry = pakai nilai web; terisi = override user.
   const pick = (k: keyof SalesDashboardInput) =>
     entry && entry[k] != null ? (entry[k] as number) : derived[k];
   const r: SalesDashboardInput = {

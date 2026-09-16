@@ -364,11 +364,35 @@ function setBerkasStatus(key: string, status: 'lengkap' | 'tidak_lengkap') {
 }
 // File & waktu unggah dibaca dari props server (reaktif); status/catatan dari form (editable).
 function itemFile(key: string): any { return a.value.stages?.collect_berkas?.items?.[key] ?? null; }
-const allBerkasComplete = computed(() => {
+/**
+ * Boleh lanjut ke Analisa bila setiap berkas WAJIB sudah DITANDAI — Lengkap maupun Tidak
+ * Lengkap — bukan hanya bila semuanya Lengkap.
+ *
+ * Sebelumnya satu berkas yang memang belum ada menahan seluruh tahap: berkasnya ditandai Tidak
+ * Lengkap, tombolnya tetap berbunyi "Simpan" saja, dan prosesnya berhenti di situ. Padahal
+ * "tidak lengkap" adalah keadaan yang sah dan justru perlu tercatat — setiap penandaan
+ * menyimpan status_at, dan itulah jejak waktu yang dipakai menelusuri keterlambatan berkas.
+ * Tahap Analisa sendiri memang dirancang menilai berkas yang kurang (aspek slip gaji, laporan
+ * keuangan, dll.), jadi menahannya di sini hanya memindahkan kemacetan, bukan mencegah apa pun.
+ *
+ * Yang TIDAK dilonggarkan: tiap berkas Tidak Lengkap tetap wajib berketerangan (collectNotesOk)
+ * dan Catatan Umum tetap wajib — keduanya yang membuat "tidak lengkap" bisa dipertanggungjawabkan.
+ *
+ * Berkas OPSIONAL ("Apabila Ada") tetap boleh dibiarkan kosong, sama seperti sebelumnya:
+ * mewajibkannya ditandai akan membuat tombol ini LEBIH sulit aktif daripada sekarang, kebalikan
+ * dari yang dimaksud. Aturannya generik atas berkasCategories, jadi berlaku sama untuk Karyawan
+ * maupun Wirausaha.
+ */
+const semuaBerkasDitandai = computed(() => {
     const cat = f.collect_berkas.category;
     if (!cat) return false;
     const req = (berkasCategories[cat]?.items ?? []).filter((it) => !it.optional);
-    return req.length > 0 && req.every((it) => f.collect_berkas.items[cat + '__' + it.key]?.status === 'lengkap');
+
+    return req.length > 0 && req.every((it) => {
+        const s = f.collect_berkas.items[cat + '__' + it.key]?.status;
+
+        return s === 'lengkap' || s === 'tidak_lengkap';
+    });
 });
 // WAJIB: tiap berkas berstatus "Tidak Lengkap" harus punya catatan, dan Catatan Umum harus diisi.
 const collectNotesOk = computed(() => currentItems.value.every((it) => {
@@ -876,10 +900,10 @@ const analisaLabel: Record<string, string> = { layak: 'Layak', tidak_layak: 'Tid
                                 <span v-if="!collectNotesOk">Isi <b>catatan</b> untuk setiap berkas yang ditandai <b>Tidak Lengkap</b>. </span>
                                 <span v-if="!catatanUmumOk"><b>Catatan Umum</b> wajib diisi.</span>
                             </p>
-                            <p v-else class="text-xs font-medium" :class="allBerkasComplete ? 'text-success-600' : 'text-warning-600'">
-                                {{ allBerkasComplete ? '✓ Semua berkas wajib sudah Lengkap — siap lanjut ke Analisa.' : 'Tandai semua berkas wajib "Lengkap" untuk bisa Simpan & Lanjut.' }}
+                            <p v-else class="text-xs font-medium" :class="semuaBerkasDitandai ? 'text-success-600' : 'text-warning-600'">
+                                {{ semuaBerkasDitandai ? '✓ Semua berkas wajib sudah ditandai — siap lanjut ke Analisa.' : 'Tandai semua berkas wajib (Lengkap / Tidak Lengkap) untuk bisa Simpan &amp; Lanjut.' }}
                             </p>
-                            <Button type="button" :loading="saving" :disabled="!collectCanSave" @click="saveCollect()">{{ allBerkasComplete ? 'Simpan & Lanjut →' : 'Simpan' }}</Button>
+                            <Button type="button" :loading="saving" :disabled="!collectCanSave" @click="saveCollect()">{{ semuaBerkasDitandai ? 'Simpan & Lanjut →' : 'Simpan' }}</Button>
                         </template>
                     </div>
 

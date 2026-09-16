@@ -5,6 +5,7 @@ import { ArrowLeft, Wallet, Plus, Trash2, ClipboardCheck, Printer, HandCoins, Lo
 import Button from '@/Components/UI/Button.vue';
 import Badge from '@/Components/UI/Badge.vue';
 import SearchSelect from '@/Components/UI/SearchSelect.vue';
+import MoneyInput from '@/Components/UI/MoneyInput.vue';
 
 const props = defineProps<{ advance: any; expenseAccounts: Array<any>; costCenters: Array<any>; cashAccounts: Array<any>; signers?: Record<string, string>; requiredSigners?: string[]; fullyApproved?: boolean; canApprove?: boolean; canEditDocDate?: boolean;
     /** 'online' = berjenjang di aplikasi · 'offline' = tanda tangan di kertas. */
@@ -434,7 +435,28 @@ function backToIndex() {
             <form class="grid gap-3 md:grid-cols-5" @submit.prevent="tambahAlokasi">
                 <div><label class="mb-1 block text-xs font-medium text-neutral-500">Tanggal *</label><input v-model="alokForm.alloc_date" type="date" :class="inputCls" /></div>
                 <div class="md:col-span-2"><label class="mb-1 block text-xs font-medium text-neutral-500">Keterangan *</label><input v-model="alokForm.description" type="text" placeholder="mis. Beli ATK" :class="String(alokForm.description ?? '').trim() ? inputCls : inputKurang" /></div>
-                <div><label class="mb-1 block text-xs font-medium text-neutral-500">Jumlah *</label><input v-model.number="alokForm.amount" type="number" step="0.01" min="0" :class="Number(alokForm.amount) > 0 ? inputCls : inputKurang" /></div>
+                <div>
+                    <label class="mb-1 block text-xs font-medium text-neutral-500">Jumlah *</label>
+                    <!-- MoneyInput, bukan input type=number: peramban tidak pernah mau menampilkan
+                         pemisah ribuan pada type=number — isinya wajib angka mentah yang sah, dan
+                         "1.000.000" bukan salah satunya. Angka sebesar nominal bon praktis tidak
+                         terbaca tanpa titik ribuan.
+
+                         decimals=2 karena kolomnya memang decimal(20,2) dan servernya membulatkan
+                         ke 2 angka (CashAdvanceAllocationService::tambah). Memakai MoneyInput
+                         bawaannya yang bilangan bulat akan menghapus sen diam-diam — dan sisa bon
+                         yang bersen jadi tidak pernah bisa dialokasikan habis.
+
+                         Penanda "belum diisi" dipasang sebagai CINCIN pada pembungkusnya, bukan
+                         dengan menimpa border & background MoneyInput lewat kelas ber-awalan !.
+                         Cara itu sudah dicoba dan setengah gagal: varian gelapnya tidak ikut
+                         terbentuk, sehingga latar krem terang menembus ke mode gelap. Cincin
+                         pembungkus adalah pola yang sama dengan penanda cost center di
+                         Payable/Form.vue dan berlaku di kedua tema. -->
+                    <div :class="Number(alokForm.amount) > 0 ? '' : 'rounded-lg ring-1 ring-amber-400'">
+                        <MoneyInput v-model="alokForm.amount" :decimals="2" placeholder="0" />
+                    </div>
+                </div>
                 <div><label class="mb-1 block text-xs font-medium text-neutral-500">Bank Pengeluaran *</label><SearchSelect :model-value="alokForm.cash_account_id" :options="cashAccounts" placeholder="— pilih rekening —" :class="alokForm.cash_account_id ? '' : pilihKurang" @update:model-value="(v) => alokForm.cash_account_id = v" /></div>
                 <div class="md:col-span-5 flex flex-wrap items-center gap-3">
                     <Button type="submit" :disabled="alokForm.processing || alokKurang.length > 0"><template #icon-left><Plus class="h-4 w-4" /></template>Tambah Alokasi</Button>

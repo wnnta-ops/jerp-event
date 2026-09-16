@@ -134,6 +134,31 @@ export function bangunStrukturJurnal(m: MasukanStruktur): BarisStruktur[] {
 }
 
 /**
+ * Akun BEBAN untuk PPh DITANGGUNG, mengikuti JENIS PPh yang dipilih.
+ *
+ * Dr Biaya PPh 21 · Biaya PPh 23 · Biaya PPh Pasal 4(2) — satu jenis PPh menentukan sepasang
+ * akun sekaligus bersama Hutang PPh-nya. Sebelumnya ketiganya bermuara ke satu akun beban umum,
+ * sehingga beban PPh 21, 23, dan 4(2) tidak bisa dipisahkan lagi di buku besar maupun SPT.
+ *
+ * Diletakkan di modul ini, bukan di dalam komponennya, karena inilah satu-satunya keputusan
+ * pada rantai tersebut yang bisa salah TANPA memunculkan galat apa pun: akun yang keliru tetap
+ * membentuk baris, jurnalnya tetap balance, dan angkanya tetap benar.
+ *
+ * `cadangan` dipakai bila jenis PPh belum dipilih padahal tarifnya sudah diisi manual — keadaan
+ * yang masih mungkin karena jenis PPh tidak diwajibkan gerbang mana pun. Tanpa cadangan itu
+ * barisnya tidak terbentuk (lihat akunKurang) dan strukturnya tidak balance.
+ */
+export function akunBiayaPphDitanggung(
+    jenisPph: string | null | undefined,
+    perJenis: Record<string, number | null> | null | undefined,
+    cadangan: number | null | undefined,
+): number | null {
+    // ?? bukan ||: id akun tidak pernah 0, tetapi menulis || membuat nilai 0 yang terlanjur
+    // masuk dari server diam-diam jatuh ke cadangan alih-alih terbaca sebagai akun tak dikenal.
+    return (perJenis?.[String(jenisPph ?? '')] ?? cadangan) ?? null;
+}
+
+/**
  * Akun yang DIBUTUHKAN aturan di atas tetapi belum tersedia.
  *
  * Barisnya sengaja tidak dibuat tanpa akun, dan justru karena itu ketiadaannya harus disebutkan:

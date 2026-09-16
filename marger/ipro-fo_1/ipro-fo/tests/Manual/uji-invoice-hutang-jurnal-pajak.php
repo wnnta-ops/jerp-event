@@ -45,17 +45,27 @@ $aksi = app(RegisterApInvoice::class);
 
 $akun = fn (string $kode) => BsAccount::where('code', $kode)->value('id');
 $AKUN_PPN     = $akun(config('business_support.gl_accounts.ppn_in'));
-$AKUN_PPH_BIAYA = $akun(config('business_support.gl_accounts.pph_borne_expense'));
+// Akun Biaya PPh ditanggung kini PER JENIS PPh. Skenario 4 di bawah memakai PPh 23, jadi
+// yang dinanti akun BIAYA PPH 23 — bukan lagi satu akun beban umum untuk semua jenis.
+$akunBiayaPph = fn (string $jenis) => $akun(
+    config('business_support.gl_accounts.pph_borne_expense')[$jenis]
+    ?? config('business_support.gl_accounts.pph_borne_expense_default')
+);
+$AKUN_PPH_BIAYA = $akunBiayaPph('pph23');
 $AKUN_HUTANG  = $akun('20101010101');
 $AKUN_PPH23   = $akun('20104040403');
 $AKUN_BEBAN   = BsAccount::where('is_postable', true)->where('type', 'expense')
-    ->whereNotIn('id', array_filter([$AKUN_PPH_BIAYA]))->orderBy('code')->value('id');
+    // KETIGA akun Biaya PPh dikecualikan, bukan hanya yang dipakai skenario 4: kalau akun beban
+    // umum kebetulan jatuh pada salah satunya, baris Beban dan baris Biaya PPh akan menumpuk di
+    // akun yang sama dan pemeriksaan nominalnya jadi tidak berarti apa-apa.
+    ->whereNotIn('id', array_filter(array_map($akunBiayaPph, ['pph21', 'pph23', 'pph4_2'])))
+    ->orderBy('code')->value('id');
 
 echo "\n=== PRASYARAT ===\n";
 $ok('akun PPN Masukan ada', (bool) $AKUN_PPN);
 $ok('akun Utang Usaha Supplier ada', (bool) $AKUN_HUTANG);
 $ok('akun Hutang PPh 23 ada', (bool) $AKUN_PPH23);
-$ok('akun Biaya PPh ditanggung ada', (bool) $AKUN_PPH_BIAYA);
+$ok('akun Biaya PPh 23 ditanggung ada', (bool) $AKUN_PPH_BIAYA);
 $ok('akun beban ada', (bool) $AKUN_BEBAN);
 if (! $AKUN_PPN || ! $AKUN_HUTANG || ! $AKUN_PPH23 || ! $AKUN_PPH_BIAYA || ! $AKUN_BEBAN) {
     echo "\nPrasyarat kurang.\n";
@@ -151,6 +161,11 @@ try {
         'pph_account_id' => $AKUN_PPH23,
     ]);
     $ok('Dr Biaya PPh = 18', ($j4[$AKUN_PPH_BIAYA]['debit'] ?? 0) === 18, json_encode($j4[$AKUN_PPH_BIAYA] ?? null));
+    // Bukan sekadar "ada baris biaya": akunnya harus BIAYA PPH 23, sejenis dengan Hutang PPh 23
+    // di sebelahnya. Memakai akun beban umum tetap balance dan tetap 18 — tidak ada yang memberi tahu.
+    $ok('akunnya BIAYA PPH 23, bukan beban umum',
+        BsAccount::whereKey($AKUN_PPH_BIAYA)->value('code') === '70101010107',
+        (string) BsAccount::whereKey($AKUN_PPH_BIAYA)->value('code'));
     $ok('Cr Hutang PPh 23 = 18', ($j4[$AKUN_PPH23]['credit'] ?? 0) === 18, json_encode($j4[$AKUN_PPH23] ?? null));
     $ok('Cr Hutang Usaha TETAP 1.000 — supplier dibayar penuh',
         ($j4[$AKUN_HUTANG]['credit'] ?? 0) === 1000, json_encode($j4[$AKUN_HUTANG] ?? null));
