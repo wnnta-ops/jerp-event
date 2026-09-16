@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Web\BusinessSupport\Hrd;
 
 use App\Domain\BusinessSupport\Models\BsCostCenter;
-use App\Domain\BusinessSupport\Models\BsHrDepartment;
 use App\Domain\BusinessSupport\Models\BsEmployee;
 use App\Http\Controllers\Controller;
 use App\Support\Import\TabelImpor;
@@ -15,6 +14,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
 use Inertia\Response;
+use Throwable;
 
 class EmployeeController extends Controller
 {
@@ -23,21 +23,20 @@ class EmployeeController extends Controller
         abort_unless($request->user()?->can('datacenter.employee.view'), 403);
 
         $rows = BsEmployee::query()
-            // Departemen ikut dimuat: kolom pada layar kini menampilkan DEPARTEMEN, sumber yang
-            // sama dengan Pengajuan Bon Sementara, SIP, dan Bukti Permohonan Pembayaran.
-            ->with(['costCenter:id,code,name', 'department:id,code,name'])
+            // Kolom "Departemen" pada layar bersumber cost center — satu isian dengan yang
+            // dipakai Pengajuan Bon Sementara, SIP, dan Bukti Permohonan Pembayaran.
+            ->with(['costCenter:id,code,name'])
             ->when($request->input('search'), fn ($q, $s) => $q->where(fn ($w) => $w->where('name', 'like', "%{$s}%")->orWhere('nik', 'like', "%{$s}%")->orWhere('position', 'like', "%{$s}%")))
             ->when($request->input('status') !== null && $request->input('status') !== '', fn ($q) => $q->where('is_active', $request->input('status') === 'active'))
             ->orderBy('name')->paginate(50)->withQueryString();
 
         return Inertia::render('BusinessSupport/Hrd/Employees', [
-            'employees'   => $rows,
-            'filters'     => $request->only(['search', 'status']),
+            'employees' => $rows,
+            'filters' => $request->only(['search', 'status']),
             'costCenters' => BsCostCenter::where('is_active', true)->orderBy('code')->get(['id', 'code', 'name']),
-            'departments' => BsHrDepartment::where('is_active', true)->orderBy('code')->get(['id', 'code', 'name']),
-            'summary'     => [
-                'active'  => BsEmployee::where('is_active', true)->count(),
-                'payroll' => (float) BsEmployee::where('is_active', true)->sum(\Illuminate\Support\Facades\DB::raw('base_salary + allowance')),
+            'summary' => [
+                'active' => BsEmployee::where('is_active', true)->count(),
+                'payroll' => (float) BsEmployee::where('is_active', true)->sum(DB::raw('base_salary + allowance')),
             ],
         ]);
     }
@@ -74,17 +73,21 @@ class EmployeeController extends Controller
      * @var array<string,array{0:string,1:array<int,string>,2:array<int,string>}>
      */
     private const KOLOM = [
-        'nik'            => ['NIK', ['NIK', 'NIP', 'NO KARYAWAN', 'ID KARYAWAN'], []],
-        'name'           => ['Nama Karyawan', ['NAMA KARYAWAN', 'NAMA PEGAWAI', 'NAMA'], ['BANK', 'REKENING', 'JABATAN', 'DEPART', 'NIK', 'NIP']],
-        'position'       => ['Jabatan', ['JABATAN', 'POSISI', 'POSITION'], []],
-        'department'     => ['Departemen', ['DEPARTEMEN', 'DEPARTMENT', 'DEPT', 'BAGIAN', 'DIVISI'], []],
-        'cost_center'    => ['Cost Center', ['COST CENTER', 'COSTCENTER', 'CC', 'PUSAT BIAYA'], []],
-        'join_date'      => ['Tgl Masuk', ['TGL MASUK', 'TANGGAL MASUK', 'JOIN', 'MULAI KERJA'], []],
-        'base_salary'    => ['Gaji Pokok', ['GAJI POKOK', 'GAJI', 'BASIC', 'SALARY'], ['TUNJANGAN']],
-        'allowance'      => ['Tunjangan', ['TUNJANGAN', 'ALLOWANCE'], []],
-        'bank_name'      => ['Nama Bank', ['NAMA BANK', 'BANK'], ['REKENING', 'NO']],
-        'bank_account'   => ['No. Rekening', ['NO REKENING', 'NO. REKENING', 'NOMOR REKENING', 'REKENING', 'ACCOUNT'], []],
-        'is_active'      => ['Status (Aktif/Nonaktif)', ['STATUS', 'AKTIF', 'ACTIVE'], []],
+        'nik' => ['NIK', ['NIK', 'NIP', 'NO KARYAWAN', 'ID KARYAWAN'], []],
+        'name' => ['Nama Karyawan', ['NAMA KARYAWAN', 'NAMA PEGAWAI', 'NAMA'], ['BANK', 'REKENING', 'JABATAN', 'DEPART', 'NIK', 'NIP']],
+        'position' => ['Jabatan', ['JABATAN', 'POSISI', 'POSITION'], []],
+        // Satu kolom saja. Dulu ada dua — "Departemen" (bs_hr_departments) dan "Cost Center"
+        // (bs_cost_centers) — dan itu jebakan: master Departemen 0 baris, sehingga berkas yang
+        // memuat kolom Departemen membuat SETIAP barisnya ditolak "tidak ada di master".
+        // Judulnya tetap "Departemen" karena ini berkas HR; nama lama Cost Center tetap diterima
+        // agar template yang sudah tersebar tidak mendadak gagal.
+        'cost_center' => ['Departemen', ['DEPARTEMEN', 'DEPARTMENT', 'DEPT', 'BAGIAN', 'DIVISI', 'COST CENTER', 'COSTCENTER', 'CC', 'PUSAT BIAYA'], []],
+        'join_date' => ['Tgl Masuk', ['TGL MASUK', 'TANGGAL MASUK', 'JOIN', 'MULAI KERJA'], []],
+        'base_salary' => ['Gaji Pokok', ['GAJI POKOK', 'GAJI', 'BASIC', 'SALARY'], ['TUNJANGAN']],
+        'allowance' => ['Tunjangan', ['TUNJANGAN', 'ALLOWANCE'], []],
+        'bank_name' => ['Nama Bank', ['NAMA BANK', 'BANK'], ['REKENING', 'NO']],
+        'bank_account' => ['No. Rekening', ['NO REKENING', 'NO. REKENING', 'NOMOR REKENING', 'REKENING', 'ACCOUNT'], []],
+        'is_active' => ['Status (Aktif/Nonaktif)', ['STATUS', 'AKTIF', 'ACTIVE'], []],
     ];
 
     /** Unduh template .xlsx berisi judul kolom + satu baris contoh. */
@@ -92,22 +95,21 @@ class EmployeeController extends Controller
     {
         abort_unless($request->user()?->can('datacenter.employee.create'), 403);
 
-        $dept = BsHrDepartment::where('is_active', true)->orderBy('code')->first();
-        $cc   = BsCostCenter::where('is_active', true)->orderBy('code')->first();
+        $cc = BsCostCenter::where('is_active', true)->orderBy('code')->first();
 
-        $judul  = array_map(fn (array $k) => $k[0], array_values(self::KOLOM));
+        $judul = array_map(fn (array $k) => $k[0], array_values(self::KOLOM));
         $contoh = [
             'EMP-999', 'Contoh Karyawan', 'Staff Accounting',
-            $dept?->code ?? '', $cc?->code ?? '',
+            $cc?->code ?? '',
             now()->startOfYear()->toDateString(), '7000000', '1500000', 'BCA', '1234567890', 'Aktif',
         ];
         $catatan = array_fill(0, count($judul), '');
-        $catatan[0] = 'CONTOH — hapus baris ini. Departemen & Cost Center diisi KODE atau NAMA yang sudah ada di master.';
+        $catatan[0] = 'CONTOH — hapus baris ini. Departemen diisi KODE atau NAMA yang sudah ada di master.';
 
         $bin = SimpleXlsx::toString([$judul, $contoh, $catatan]);
 
         return response($bin, 200, [
-            'Content-Type'        => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            'Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
             'Content-Disposition' => 'attachment; filename="Template-Import-Karyawan.xlsx"',
         ]);
     }
@@ -132,7 +134,7 @@ class EmployeeController extends Controller
 
         try {
             $rows = TabelImpor::baca($request->file('file'));
-        } catch (\Throwable $e) {
+        } catch (Throwable $e) {
             return back()->with('error', $e->getMessage());
         }
         if (count($rows) < 2) {
@@ -160,18 +162,16 @@ class EmployeeController extends Controller
         $kunciPeta = fn ($v) => strtoupper(trim((string) $v));
 
         // Master dimuat sekali; mencari per baris akan jadi N query untuk berkas ribuan baris.
-        $deptKode = BsHrDepartment::pluck('id', 'code')->mapWithKeys(fn ($id, $k) => [$kunciPeta($k) => $id])->all();
-        $deptNama = BsHrDepartment::pluck('id', 'name')->mapWithKeys(fn ($id, $k) => [$kunciPeta($k) => $id])->all();
-        $ccKode   = BsCostCenter::pluck('id', 'code')->mapWithKeys(fn ($id, $k) => [$kunciPeta($k) => $id])->all();
-        $ccNama   = BsCostCenter::pluck('id', 'name')->mapWithKeys(fn ($id, $k) => [$kunciPeta($k) => $id])->all();
-        $adaNik   = BsEmployee::withTrashed()->whereNotNull('nik')->pluck('id', 'nik')
+        $ccKode = BsCostCenter::pluck('id', 'code')->mapWithKeys(fn ($id, $k) => [$kunciPeta($k) => $id])->all();
+        $ccNama = BsCostCenter::pluck('id', 'name')->mapWithKeys(fn ($id, $k) => [$kunciPeta($k) => $id])->all();
+        $adaNik = BsEmployee::withTrashed()->whereNotNull('nik')->pluck('id', 'nik')
             ->mapWithKeys(fn ($id, $k) => [$kunciPeta($k) => $id])->all();
 
         $baru = 0;
         $ubah = 0;
         $lewat = 0;
         $galat = [];
-        $siap  = [];
+        $siap = [];
         $nikDipakai = [];
 
         foreach ($rows as $n => $r) {
@@ -187,7 +187,7 @@ class EmployeeController extends Controller
             }
 
             $gajiRaw = $get('base_salary');
-            $gaji    = $gajiRaw === '' ? 0.0 : TabelImpor::angka($gajiRaw);
+            $gaji = $gajiRaw === '' ? 0.0 : TabelImpor::angka($gajiRaw);
             if ($gaji === null || $gaji < 0) {
                 $galat[] = "Baris {$barisNo}: Gaji Pokok '{$gajiRaw}' tidak valid.";
                 $lewat++;
@@ -195,7 +195,7 @@ class EmployeeController extends Controller
                 continue;
             }
             $tunjRaw = $get('allowance');
-            $tunj    = $tunjRaw === '' ? 0.0 : TabelImpor::angka($tunjRaw);
+            $tunj = $tunjRaw === '' ? 0.0 : TabelImpor::angka($tunjRaw);
             if ($tunj === null || $tunj < 0) {
                 $galat[] = "Baris {$barisNo}: Tunjangan '{$tunjRaw}' tidak valid.";
                 $lewat++;
@@ -204,7 +204,7 @@ class EmployeeController extends Controller
             }
 
             $tglRaw = $get('join_date');
-            $tgl    = $tglRaw === '' ? null : TabelImpor::tanggal($tglRaw);
+            $tgl = $tglRaw === '' ? null : TabelImpor::tanggal($tglRaw);
             if ($tglRaw !== '' && $tgl === null) {
                 $galat[] = "Baris {$barisNo}: Tgl Masuk '{$tglRaw}' tidak terbaca (pakai YYYY-MM-DD).";
                 $lewat++;
@@ -212,23 +212,12 @@ class EmployeeController extends Controller
                 continue;
             }
 
-            $deptRaw = $get('department');
-            $deptId  = null;
-            if ($deptRaw !== '') {
-                $deptId = $deptKode[$kunciPeta($deptRaw)] ?? $deptNama[$kunciPeta($deptRaw)] ?? null;
-                if ($deptId === null) {
-                    $galat[] = "Baris {$barisNo}: Departemen '{$deptRaw}' tidak ada di master.";
-                    $lewat++;
-
-                    continue;
-                }
-            }
             $ccRaw = $get('cost_center');
-            $ccId  = null;
+            $ccId = null;
             if ($ccRaw !== '') {
                 $ccId = $ccKode[$kunciPeta($ccRaw)] ?? $ccNama[$kunciPeta($ccRaw)] ?? null;
                 if ($ccId === null) {
-                    $galat[] = "Baris {$barisNo}: Cost Center '{$ccRaw}' tidak ada di master.";
+                    $galat[] = "Baris {$barisNo}: Departemen '{$ccRaw}' tidak ada di master.";
                     $lewat++;
 
                     continue;
@@ -252,27 +241,22 @@ class EmployeeController extends Controller
             }
 
             $data = [
-                'nik'            => $nik !== '' ? mb_substr($nik, 0, 32) : null,
-                'name'           => mb_substr($nama, 0, 150),
-                'position'       => $get('position') ?: null,
-                'department_id'  => $deptId,
+                'nik' => $nik !== '' ? mb_substr($nik, 0, 32) : null,
+                'name' => mb_substr($nama, 0, 150),
+                'position' => $get('position') ?: null,
                 'cost_center_id' => $ccId,
-                'join_date'      => $tgl,
-                'base_salary'    => $gaji,
-                'allowance'      => $tunj,
-                'bank_name'      => $get('bank_name') ?: null,
-                'bank_account'   => $get('bank_account') ?: null,
-                'is_active'      => TabelImpor::boolean($get('is_active')) ?? true,
+                'join_date' => $tgl,
+                'base_salary' => $gaji,
+                'allowance' => $tunj,
+                'bank_name' => $get('bank_name') ?: null,
+                'bank_account' => $get('bank_account') ?: null,
+                'is_active' => TabelImpor::boolean($get('is_active')) ?? true,
             ];
 
             // Kolom yang memang tidak ada di berkas tidak menimpa data lama dengan kosong.
             if ($adaId !== null) {
                 foreach ($data as $f => $v) {
-                    $sumber = match ($f) {
-                        'department_id'  => 'department',
-                        'cost_center_id' => 'cost_center',
-                        default          => $f,
-                    };
+                    $sumber = $f === 'cost_center_id' ? 'cost_center' : $f;
                     if ($f !== 'name' && ($idx[$sumber] ?? null) === null) {
                         unset($data[$f]);
                     }
@@ -315,17 +299,16 @@ class EmployeeController extends Controller
     private function data(Request $request): array
     {
         return $request->validate([
-            'nik'            => ['nullable', 'string', 'max:32'],
-            'name'           => ['required', 'string', 'max:150'],
-            'position'       => ['nullable', 'string', 'max:100'],
+            'nik' => ['nullable', 'string', 'max:32'],
+            'name' => ['required', 'string', 'max:150'],
+            'position' => ['nullable', 'string', 'max:100'],
             'cost_center_id' => ['nullable', 'integer', 'exists:bs_cost_centers,id'],
-            'department_id'  => ['nullable', 'integer', 'exists:bs_hr_departments,id'],
-            'join_date'      => ['nullable', 'date'],
-            'base_salary'    => ['required', 'numeric', 'min:0'],
-            'allowance'      => ['nullable', 'numeric', 'min:0'],
-            'bank_name'      => ['nullable', 'string', 'max:100'],
-            'bank_account'   => ['nullable', 'string', 'max:60'],
-            'is_active'      => ['boolean'],
+            'join_date' => ['nullable', 'date'],
+            'base_salary' => ['required', 'numeric', 'min:0'],
+            'allowance' => ['nullable', 'numeric', 'min:0'],
+            'bank_name' => ['nullable', 'string', 'max:100'],
+            'bank_account' => ['nullable', 'string', 'max:60'],
+            'is_active' => ['boolean'],
         ]);
     }
 }

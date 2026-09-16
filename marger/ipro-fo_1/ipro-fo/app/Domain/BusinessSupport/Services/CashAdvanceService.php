@@ -8,7 +8,6 @@ use App\Domain\BusinessSupport\Models\BsAccount;
 use App\Domain\BusinessSupport\Models\BsCashAdvance;
 use App\Domain\BusinessSupport\Models\BsCashAdvanceAllocation;
 use App\Domain\BusinessSupport\Models\BsCreditCard;
-use App\Domain\BusinessSupport\Models\BsEmployee;
 use App\Exceptions\BusinessRuleException;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -35,7 +34,7 @@ final class CashAdvanceService
      * Pengajuan bon sementara (#49) — BELUM membentuk jurnal. Jurnal Uang Muka Operasional
      * baru terbentuk saat dibayar Finance (lihat pay()). Sumber kas/bank diisi Finance saat bayar.
      *
-     * #150: department_id (opsional) ikut disimpan; bila kosong, fallback ke departemen
+     * #150: departemen pengaju tidak lagi disimpan terpisah — cost_center_id yang wajib
      *       karyawan yang dipilih (employee_id).
      *
      * @param array{advance_date:string, holder:string, purpose:string, amount:float|int|string, department_id?:int|string|null, employee_id?:int|string|null} $data
@@ -50,12 +49,6 @@ final class CashAdvanceService
             $advanceAccount = BsAccount::where('code', config('business_support.gl_accounts.advance_op'))->value('id');
             if (! $advanceAccount) {
                 throw new BusinessRuleException('Akun Uang Muka Operasional belum diset.', errorCode: 'ADV_NO_ACCOUNT');
-            }
-
-            // #150: department_id dari input, fallback ke departemen karyawan yang dipilih.
-            $departmentId = $data['department_id'] ?? null;
-            if (! $departmentId && ! empty($data['employee_id'])) {
-                $departmentId = BsEmployee::whereKey($data['employee_id'])->value('department_id');
             }
 
             /* COST CENTER WAJIB — inilah yang menautkan bon ke Budget Control.
@@ -78,22 +71,21 @@ final class CashAdvanceService
             }
 
             return BsCashAdvance::create([
-                'advance_number'     => $this->nextNumber($data['advance_date']),
-                'advance_date'       => $data['advance_date'],
-                'holder'             => $data['holder'],
-                'department_id'      => $departmentId ? (int) $departmentId : null, // #150
-                'cost_center_id'     => $costCenterId,
-                'purpose'            => $data['purpose'],
-                'cash_account_id'    => null,                 // diisi Finance saat pembayaran
+                'advance_number' => $this->nextNumber($data['advance_date']),
+                'advance_date' => $data['advance_date'],
+                'holder' => $data['holder'],
+                'cost_center_id' => $costCenterId,
+                'purpose' => $data['purpose'],
+                'cash_account_id' => null,                 // diisi Finance saat pembayaran
                 'advance_account_id' => $advanceAccount,
-                'amount'             => $amount,
-                'status'             => 'requested',          // menunggu pembayaran Finance
+                'amount' => $amount,
+                'status' => 'requested',          // menunggu pembayaran Finance
                 // Cara persetujuan dipilih per pengajuan. Nilai asing DIABAIKAN — jatuh ke
                 // 'online', bukan diterima apa adanya: satu untai keliru yang lolos ke sini
                 // akan membaca dirinya "bukan offline" pada satu tempat dan "bukan online" di
                 // tempat lain, dan bonnya berperilaku setengah-setengah.
-                'approval_mode'      => (($data['approval_mode'] ?? null) === 'offline') ? 'offline' : 'online',
-                'created_by'         => $userId,
+                'approval_mode' => (($data['approval_mode'] ?? null) === 'offline') ? 'offline' : 'online',
+                'created_by' => $userId,
             ]);
         });
     }
@@ -286,11 +278,11 @@ final class CashAdvanceService
             if ($method !== 'debit_va') {
                 $journal = $this->journal->post([
                     'journal_date' => $data['paid_date'],
-                    'source'       => 'cash',
-                    'status'       => 'posted', // Treasury: pembayaran panjar langsung posting → mutasi bank tercatat di Rekening Ledger.
-                    'reference'    => $adv->advance_number,
-                    'description'  => 'Pembayaran Bon Sementara — '.$adv->purpose.' ('.$adv->holder.')',
-                    'created_by'   => $userId,
+                    'source' => 'cash',
+                    'status' => 'posted', // Treasury: pembayaran panjar langsung posting → mutasi bank tercatat di Rekening Ledger.
+                    'reference' => $adv->advance_number,
+                    'description' => 'Pembayaran Bon Sementara — '.$adv->purpose.' ('.$adv->holder.')',
+                    'created_by' => $userId,
                 ], [
                     // cost_center_id dibawa KEDUA baris: itulah dimensi yang dibaca Budget Control,
                     // dan jurnal yang hanya separuh berdimensi akan terbaca timpang saat direkap
@@ -301,14 +293,14 @@ final class CashAdvanceService
             }
 
             $adv->update([
-                'cash_account_id'    => $method === 'debit_va' ? null : (int) $data['cash_account_id'],
+                'cash_account_id' => $method === 'debit_va' ? null : (int) $data['cash_account_id'],
                 'advance_account_id' => $advanceAccount,
-                'paid_date'          => $data['paid_date'],
-                'payment_method'     => $method,
-                'va_expired_date'    => $expired,
-                'credit_card_id'     => $card?->id,
-                'status'             => 'outstanding',
-                'journal_id'         => $journal?->id,
+                'paid_date' => $data['paid_date'],
+                'payment_method' => $method,
+                'va_expired_date' => $expired,
+                'credit_card_id' => $card?->id,
+                'status' => 'outstanding',
+                'journal_id' => $journal?->id,
             ]);
 
             /* MASA BERLAKU kartunya diajukan otomatis dari tanggal expired VA yang ditentukan di
@@ -342,9 +334,9 @@ final class CashAdvanceService
                 // Cost center per baris — inilah yang membuat beban bon sementara bisa
                 // dipasangkan dengan anggarannya oleh BudgetRealizationService. Tanpa ini,
                 // belanja yang nyata terjadi tidak pernah muncul sebagai realisasi anggaran.
-                'cost_center_id'     => ($l['cost_center_id'] ?? null) ? (int) $l['cost_center_id'] : null,
-                'description'        => $l['description'] ?? 'Realisasi',
-                'amount'             => round((float) $l['amount'], 2),
+                'cost_center_id' => ($l['cost_center_id'] ?? null) ? (int) $l['cost_center_id'] : null,
+                'description' => $l['description'] ?? 'Realisasi',
+                'amount' => round((float) $l['amount'], 2),
             ])->filter(fn ($l) => $l['amount'] > 0)->values();
 
             if ($lines->isEmpty()) {
@@ -356,9 +348,9 @@ final class CashAdvanceService
                Operasional lewat ALOKASI KASBON, jadi yang bisa direalisasi & diselesaikan adalah
                sebesar total alokasinya. Memakai nominal bon akan menghitung selisih terhadap
                uang yang belum pernah keluar dari bank. */
-            $acuan      = $this->acuanPanjar($adv);
+            $acuan = $this->acuanPanjar($adv);
             $settlement = round($acuan - $realized, 2); // + refund (kembali) / - reimburse (nombok)
-            $defer      = (bool) ($data['defer_settlement'] ?? false);
+            $defer = (bool) ($data['defer_settlement'] ?? false);
 
             /* Bon Debit VA yang belum dialokasikan sama sekali belum menaruh sepeser pun di Uang
                Muka Operasional. Merealisasinya akan mengkredit akun yang tidak pernah didebit —
@@ -417,22 +409,22 @@ final class CashAdvanceService
 
             $journal = $this->journal->post([
                 'journal_date' => $data['realized_date'],
-                'source'       => 'cash',
-                'status'       => 'posted', // Treasury: realisasi panjar langsung posting → selisih kas & Uang Muka Op tercatat di ledger.
-                'reference'    => $adv->advance_number,
-                'description'  => 'Realisasi Bon Sementara '.$adv->advance_number,
-                'created_by'   => $userId,
+                'source' => 'cash',
+                'status' => 'posted', // Treasury: realisasi panjar langsung posting → selisih kas & Uang Muka Op tercatat di ledger.
+                'reference' => $adv->advance_number,
+                'description' => 'Realisasi Bon Sementara '.$adv->advance_number,
+                'created_by' => $userId,
             ], $jl);
 
             foreach ($lines as $l) {
                 $adv->lines()->create($l);
             }
             $adv->update([
-                'status'             => 'realized',
-                'realized_date'      => $data['realized_date'],
-                'realized_amount'    => $realized,
-                'settlement'         => $settlement,
-                'settlement_status'  => $defer && abs($settlement) >= 0.01 ? 'pending' : 'settled',
+                'status' => 'realized',
+                'realized_date' => $data['realized_date'],
+                'realized_amount' => $realized,
+                'settlement' => $settlement,
+                'settlement_status' => $defer && abs($settlement) >= 0.01 ? 'pending' : 'settled',
                 'realize_journal_id' => $journal->id,
             ]);
 
@@ -571,11 +563,11 @@ final class CashAdvanceService
 
             $journal = $this->journal->post([
                 'journal_date' => $date,
-                'source'       => 'cash',
-                'status'       => 'posted', // Treasury: refund/reimburse panjar langsung posting → mutasi bank tercatat di Rekening Ledger.
-                'reference'    => $adv->advance_number,
-                'description'  => ($mode === 'refund' ? 'Refund' : 'Reimburse').' Bon Sementara '.$adv->advance_number,
-                'created_by'   => $userId,
+                'source' => 'cash',
+                'status' => 'posted', // Treasury: refund/reimburse panjar langsung posting → mutasi bank tercatat di Rekening Ledger.
+                'reference' => $adv->advance_number,
+                'description' => ($mode === 'refund' ? 'Refund' : 'Reimburse').' Bon Sementara '.$adv->advance_number,
+                'created_by' => $userId,
             ], $jl);
 
             $adv->update(['settlement_status' => 'settled', 'settle_journal_id' => $journal->id]);
@@ -586,14 +578,14 @@ final class CashAdvanceService
 
     private function nextNumber(string $date): string
     {
-        return app(\App\Domain\BusinessSupport\Services\BoNumberService::class)
+        return app(BoNumberService::class)
             ->next('BON', Carbon::parse($date), [], fn () => $this->nextNumberLama($date));
     }
 
     /** Cara lama — dipakai bila master numerator tidak bisa dipakai. */
     private function nextNumberLama(string $date): string
     {
-        $d     = Carbon::parse($date);
+        $d = Carbon::parse($date);
         $count = BsCashAdvance::withTrashed()->whereYear('advance_date', $d->year)->count() + 1;
 
         return sprintf('BON/%s/%04d', $d->format('y').$d->format('m'), $count);

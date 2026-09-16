@@ -29,7 +29,6 @@ const items = computed<Array<{ label: string; route: string | null }>>(() => {
         ],
         employee: [
             { label: 'Karyawan', route: r('bs.employees.index') },
-            { label: 'HR Department', route: r('bs.dc.department.index') },
             { label: 'Registrasi Karyawan', route: r('bs.dc.employee.create') },
             { label: 'Merge Karyawan', route: r('bs.dc.employee.merge') },
             { label: 'Repair Data Karyawan', route: r('bs.dc.employee.repair') },

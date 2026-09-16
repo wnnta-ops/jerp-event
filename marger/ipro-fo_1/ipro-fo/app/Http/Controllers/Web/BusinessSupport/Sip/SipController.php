@@ -391,26 +391,16 @@ class SipController extends Controller
     {
         $lines = $sip->lines;
 
-        // 1) Bon sementara → department_id langsung; Cost Center bila departemennya kosong.
-        //    Kolom cost_center_id di bs_cash_advances baru ada sejak migrasi 2026_09_08_000010,
-        //    jadi keberadaannya diperiksa dulu — basis data yang belum migrasi tetap jalan.
+        // 1) Bon sementara → cost center yang dipilih saat pengajuan.
+        //    Kolomnya baru ada sejak migrasi 2026_09_08_000010, jadi keberadaannya diperiksa
+        //    dulu — basis data yang belum migrasi tetap jalan.
         $advIds = $lines->where('sourceable_type', BsCashAdvance::class)->pluck('sourceable_id')->filter()->unique();
         $deptBon = [];
-        if ($advIds->isNotEmpty() && Schema::hasColumn('bs_cash_advances', 'department_id')) {
-            $q = DB::table('bs_cash_advances as a')
-                ->leftJoin('bs_hr_departments as d', 'd.id', '=', 'a.department_id')
-                ->whereIn('a.id', $advIds);
-            $kolom = ['a.id', 'd.name as dept'];
-
-            if (Schema::hasColumn('bs_cash_advances', 'cost_center_id')) {
-                $q->leftJoin('bs_cost_centers as c', 'c.id', '=', 'a.cost_center_id');
-                $kolom[] = 'c.name as cc';
-            }
-
-            foreach ($q->get($kolom) as $r) {
-                $nama = trim((string) $r->dept) !== '' ? trim((string) $r->dept) : trim((string) ($r->cc ?? ''));
-                $deptBon[$r->id] = $nama !== '' ? $nama : null;
-            }
+        if ($advIds->isNotEmpty() && Schema::hasColumn('bs_cash_advances', 'cost_center_id')) {
+            $deptBon = DB::table('bs_cash_advances as a')
+                ->leftJoin('bs_cost_centers as c', 'c.id', '=', 'a.cost_center_id')
+                ->whereIn('a.id', $advIds)
+                ->pluck('c.name', 'a.id')->all();
         }
 
         // 2) Invoice hutang → lewat pembuatnya.
@@ -451,12 +441,12 @@ class SipController extends Controller
     /**
      * id user => nama unit kerjanya: Departemen bila ada, kalau tidak Cost Center.
      *
-     * Cost Center dipakai sebagai cadangan karena master Departemen belum pernah diisi:
-     * bs_hr_departments 0 baris dan bs_employees.department_id NULL seluruhnya, sementara
-     * bs_cost_centers terisi dan isinya memang nama divisi — Marketing, Finance & Accounting,
-     * Operasional, Proyek/Konstruksi, HRD & GA. Membaca Departemen saja berarti setiap
-     * dokumen tercetak "Tanpa Departemen" padahal divisinya diketahui. Departemen tetap
-     * didahulukan supaya master-nya bisa diisi nanti tanpa mengubah kode.
+     * "Departemen" yang tercetak di dokumen ini BERSUMBER cost center. Dulu ada master
+     * Departemen tersendiri (bs_hr_departments), tapi tidak pernah diisi — 0 baris, dan
+     * department_id NULL di seluruh karyawan — sehingga setiap dokumen tercetak "Tanpa
+     * Departemen". Master itu sudah dicabut; cost center yang isinya memang nama divisi
+     * (Marketing, Finance & Accounting, Operasional, Proyek/Konstruksi, HRD & GA) menjadi
+     * satu-satunya sumber. Namanya tetap "Departemen" di dokumen dan layar HR.
      *
      * Karyawan dicocokkan lewat users.employee_nip = bs_employees.nik — kolom itu kini diisi
      * otomatis oleh IproMasterSync saat akun dibuat di J-ERP. Bila kosong, dicoba lewat
@@ -481,14 +471,13 @@ class SipController extends Controller
         $users = DB::table('users')->whereIn('id', $userIds)->get(['id', 'name', 'employee_nip']);
 
         $baris = DB::table('bs_employees as e')
-            ->leftJoin('bs_hr_departments as d', 'd.id', '=', 'e.department_id')
             ->leftJoin('bs_cost_centers as c', 'c.id', '=', 'e.cost_center_id')
-            ->get(['e.nik', 'e.name', 'd.name as dept', 'c.name as cc']);
+            ->get(['e.nik', 'e.name', 'c.name as cc']);
 
         $perNik = [];
         $perNama = [];
         foreach ($baris as $e) {
-            $unit = trim((string) $e->dept) !== '' ? trim((string) $e->dept) : trim((string) $e->cc);
+            $unit = trim((string) $e->cc);
             $unit = $unit !== '' ? $unit : null;
 
             if (trim((string) $e->nik) !== '') {

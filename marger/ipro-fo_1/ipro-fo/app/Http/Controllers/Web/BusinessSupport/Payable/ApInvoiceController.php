@@ -686,28 +686,27 @@ class ApInvoiceController extends Controller
         $backUrl = route('bs.ap.show', $invoice->id);
 
         // Unit kerja si pengaju, dari karyawan yang tertaut ke akunnya (employee_nip = NIK,
-        // atau cocok nama). Urutannya: Departemen → Cost Center → Jabatan.
+        // atau cocok nama). Bersumber cost center, jatuh ke Jabatan bila belum diisi.
         //
-        // Cost Center disisipkan karena master Departemen belum pernah diisi —
-        // bs_hr_departments 0 baris dan department_id NULL seluruhnya. Tanpa itu dokumen jatuh
-        // ke Jabatan, yang menyebut peran orangnya ("Staff Accounting") dan bukan unit yang
-        // menanggung biayanya. Departemen tetap didahulukan supaya master-nya bisa diisi nanti
-        // tanpa mengubah kode.
+        // Dulu ada master Departemen tersendiri yang didahulukan, tapi tidak pernah diisi —
+        // 0 baris — sehingga dokumen selalu jatuh ke Jabatan, yang menyebut peran orangnya
+        // ("Staff Accounting") dan bukan unit yang menanggung biayanya. Master itu sudah
+        // dicabut; namanya tetap "Departemen" di cetakan.
         //
         // SIP memakai urutan yang sama lewat SipController::unitPerUser(), supaya kedua dokumen
         // tidak menyebut unit yang berbeda untuk orang yang sama.
         $eDept = '-';
         $emp = null;
         if (! empty($user?->employee_nip)) {
-            $emp = \App\Domain\BusinessSupport\Models\BsEmployee::with(['department:id,name', 'costCenter:id,name'])
+            $emp = \App\Domain\BusinessSupport\Models\BsEmployee::with('costCenter:id,name')
                 ->where('nik', $user->employee_nip)->first();
         }
         if (! $emp && ! empty($user?->name)) {
-            $emp = \App\Domain\BusinessSupport\Models\BsEmployee::with(['department:id,name', 'costCenter:id,name'])
+            $emp = \App\Domain\BusinessSupport\Models\BsEmployee::with('costCenter:id,name')
                 ->where('name', $user->name)->first();
         }
         if ($emp) {
-            $eDept = $e($emp->department?->name ?: ($emp->costCenter?->name ?: ($emp->position ?: '-')));
+            $eDept = $e($emp->costCenter?->name ?: ($emp->position ?: '-'));
         }
 
         // #BPP — tabel No. Account / Uraian / Jumlah mengikuti Struktur Jurnal:
