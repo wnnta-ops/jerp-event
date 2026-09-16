@@ -8,7 +8,9 @@ import SearchSelect from '@/Components/UI/SearchSelect.vue';
 const props = defineProps<{
     types: Record<string, string>;
     cashAccounts: Array<any>;
-    counterAccounts: Array<{ id: number; code: string; name: string; type: string }>;
+    counterAccounts: Array<{ id: number; code: string; name: string; type: string; cost_center_optional?: boolean | number }>;
+    /** Cost center aktif — dimensi per baris yang menautkan pengeluaran ke Budget Control. */
+    costCenters: Array<{ id: number; code: string; name: string }>;
     defaultType: string;
     allowedTypes?: string[];
     editing?: any;
@@ -24,10 +26,11 @@ const today = (() => {
 })();
 const e = props.editing;
 
-type Line = { account_id: number | string; amount: number; description: string };
+type Line = { account_id: number | string; cost_center_id: number | string; amount: number; description: string };
+const barisKosong = (): Line => ({ account_id: '', cost_center_id: '', amount: 0, description: '' });
 const initialLines: Line[] = Array.isArray(e?.lines) && e.lines.length
-    ? e.lines.map((l: any) => ({ account_id: l.account_id ?? '', amount: Number(l.amount) || 0, description: l.description ?? '' }))
-    : [{ account_id: '', amount: 0, description: '' }];
+    ? e.lines.map((l: any) => ({ account_id: l.account_id ?? '', cost_center_id: l.cost_center_id ?? '', amount: Number(l.amount) || 0, description: l.description ?? '' }))
+    : [barisKosong()];
 
 // #148: jenis transaksi yang boleh dipilih (dari konteks pembuka / saat edit).
 // Hanya jenis yang valid (ada di `types`) yang dipertahankan; fallback ke semua jenis.
@@ -79,15 +82,46 @@ watch([() => form.trx_type, () => form.description], ([type, desc]) => {
 watch(() => form.trx_type, (type) => {
     if (type === 'transfer') {
         if (form.lines.length > 1) form.lines.splice(1);
-        if (!form.lines.length) form.lines.push({ account_id: '', amount: 0, description: '' });
+        if (!form.lines.length) form.lines.push(barisKosong());
         form.lines[0].description = '';
     }
 }, { immediate: true });
 
 const total = computed(() => form.lines.reduce((s: number, l: Line) => s + (Number(l.amount) || 0), 0));
+
+/*  COST CENTER WAJIB — kecuali pada akun yang memang tidak menanggungnya.
+
+    Baris jurnal tanpa cost center tidak terhitung di Budget Control maupun laporan per cost
+    center. Itu tidak muncul sebagai galat apa pun, hanya angka yang kurang, dan biasanya baru
+    ketahuan berbulan kemudian saat anggaran direkonsiliasi.
+
+    KENAPA TIDAK SEMUA BARIS: 71 dari 267 akun postable bertanda cost_center_optional —
+    termasuk rekening bank tujuan pada Transfer Antar Rekening. Mewajibkannya tanpa pandang akun
+    akan mengunci mode transfer sepenuhnya. Aturannya sama persis dengan Struktur Jurnal pada
+    Registrasi Invoice Hutang dan Jurnal Memorial, dan ditegakkan ulang di server
+    (RecordCashTransaction::normalizeLines) supaya kiriman langsung ikut tertahan. */
+const ccOptional = (accountId: number | string) => {
+    const a = props.counterAccounts.find((x: any) => String(x.id) === String(accountId))
+        ?? props.cashAccounts.find((x: any) => String(x.id) === String(accountId));
+
+    return !! (a as any)?.cost_center_optional;
+};
+/** Baris yang akunnya sudah dipilih, menuntut cost center, tetapi belum diisi. */
+const ccKurang = (l: Line) => !! l.account_id && ! ccOptional(l.account_id) && ! l.cost_center_id;
+const akunKurangCc = computed(() => {
+    const out: string[] = [];
+    for (const l of form.lines as Line[]) {
+        if (! ccKurang(l)) continue;
+        const a = counterOptions.value.find((x: any) => String(x.id) === String(l.account_id));
+        const label = a ? a.code + ' — ' + a.name : String(l.account_id);
+        if (! out.includes(label)) out.push(label);
+    }
+
+    return out;
+});
 const multi = computed(() => form.lines.length > 1);
 
-function addLine() { form.lines.push({ account_id: '', amount: 0, description: '' }); }
+function addLine() { form.lines.push(barisKosong()); }
 function removeLine(i: number) { if (form.lines.length > 1) form.lines.splice(i, 1); }
 function lineError(i: number, field: string): string | undefined { return form.errors[`lines.${i}.${field}`]; }
 
@@ -99,7 +133,11 @@ function submit() {
 const inputCls = 'h-9 w-full rounded-lg border border-neutral-300 bg-white px-3 text-sm dark:border-neutral-700 dark:bg-neutral-900';
 </script>
 <template>
-    <div class="max-w-4xl space-y-4">
+    <!-- max-w-6xl, bukan 4xl: kolom Cost Center adalah kolom KELIMA, dan tabelnya tidak punya
+         lebar minimum sehingga overflow-x-auto pembungkusnya tidak pernah aktif — menambah kolom
+         pada 4xl berarti memeras kolom Akun, persis kebalikan dari yang diminta. Jurnal Memorial
+         (Gl/Journals/Form.vue) sudah dilebarkan ke 6xl karena alasan yang sama. -->
+    <div class="max-w-6xl space-y-4">
         <div class="flex items-center justify-between">
             <h1 class="flex items-center gap-2 text-2xl font-bold"><Banknote class="h-6 w-6 text-primary-600" /> Transaksi Kas / Bank</h1>
             <Link :href="route('bs.cashbook.index')" class="inline-flex items-center gap-2 text-sm text-neutral-500 hover:text-neutral-800 dark:hover:text-neutral-200"><ArrowLeft class="h-4 w-4" /> Kembali</Link>
@@ -139,20 +177,37 @@ const inputCls = 'h-9 w-full rounded-lg border border-neutral-300 bg-white px-3 
                 </div>
 
                 <div class="overflow-x-auto">
-                    <table class="w-full text-sm">
+                    <table class="w-full min-w-[56rem] text-sm">
                         <thead>
                             <tr class="border-b border-neutral-200 text-left text-xs text-neutral-500 dark:border-neutral-700">
-                                <th class="pb-2 pl-1" :style="{ width: isTransfer ? '60%' : '38%' }">{{ isTransfer ? 'Rekening Tujuan *' : 'Akun *' }}</th>
-                                <th v-if="!isTransfer" class="pb-2" style="width:32%">Keterangan Baris</th>
-                                <th class="pb-2 text-right" :style="{ width: isTransfer ? '40%' : '24%' }">Nominal *</th>
-                                <th v-if="!isTransfer" class="pb-2" style="width:6%"></th>
+                                <th class="pb-2 pl-1" :style="{ width: isTransfer ? '52%' : '34%' }">{{ isTransfer ? 'Rekening Tujuan *' : 'Akun *' }}</th>
+                                <th class="pb-2" :style="{ width: isTransfer ? '28%' : '22%' }">Cost Center *</th>
+                                <th v-if="!isTransfer" class="pb-2" style="width:22%">Keterangan Baris</th>
+                                <th class="pb-2 text-right" :style="{ width: isTransfer ? '20%' : '17%' }">Nominal *</th>
+                                <th v-if="!isTransfer" class="pb-2" style="width:5%"></th>
                             </tr>
                         </thead>
                         <tbody>
                             <tr v-for="(line, i) in form.lines" :key="i" class="border-b border-neutral-100 align-top dark:border-neutral-800">
+                                <!-- no-truncate: nama akun panjang ("51010101 - Beban Perbaikan & Pemeliharaan
+                                     Bangunan") sebelumnya terpotong elipsis BAIK di pemicu MAUPUN di daftar
+                                     pilihannya, sehingga dua akun berbeda bisa tampak sama persis saat dipilih.
+                                     Lebar panel dropdown mengikuti lebar kolom ini (lantai 260px), jadi
+                                     melebarkan halaman ikut melebarkan daftarnya. -->
                                 <td class="py-2 pl-1 pr-2">
-                                    <SearchSelect v-model="line.account_id" :options="counterOptions" placeholder="— pilih akun —" />
+                                    <SearchSelect v-model="line.account_id" :options="counterOptions" placeholder="— pilih akun —" :no-truncate="true" />
                                     <p v-if="lineError(i, 'account_id')" class="mt-1 text-xs text-danger-500">{{ lineError(i, 'account_id') }}</p>
+                                </td>
+                                <!-- Barisnya ditandai merah selagi cost centernya kurang, jadi baris mana yang
+                                     menahan tombol Simpan terlihat langsung tanpa perlu membaca pesan di bawah. -->
+                                <td class="py-2 pr-2">
+                                    <div :class="ccKurang(line) ? 'rounded-lg ring-1 ring-danger-400' : ''">
+                                        <SearchSelect v-model="line.cost_center_id" :options="costCenters"
+                                            :placeholder="line.account_id && ccOptional(line.account_id) ? '— tanpa cost center —' : '— cost center —'" />
+                                    </div>
+                                    <p v-if="ccKurang(line)" class="mt-0.5 text-[10.5px] font-medium text-danger-500">Wajib diisi</p>
+                                    <p v-else-if="line.account_id && ccOptional(line.account_id)" class="mt-0.5 text-[10.5px] text-neutral-400">Boleh dikosongkan</p>
+                                    <p v-if="lineError(i, 'cost_center_id')" class="mt-1 text-xs text-danger-500">{{ lineError(i, 'cost_center_id') }}</p>
                                 </td>
                                 <td v-if="!isTransfer" class="py-2 pr-2"><input v-model="line.description" placeholder="(opsional)" :class="inputCls" /></td>
                                 <td class="py-2 pr-1"><input v-model.number="line.amount" type="number" step="1" min="1" :class="[inputCls, 'text-right font-mono']" /><p v-if="lineError(i, 'amount')" class="mt-1 text-right text-xs text-danger-500">{{ lineError(i, 'amount') }}</p></td>
@@ -161,7 +216,7 @@ const inputCls = 'h-9 w-full rounded-lg border border-neutral-300 bg-white px-3 
                         </tbody>
                         <tfoot>
                             <tr>
-                                <td :colspan="isTransfer ? 1 : 2" class="pt-3 text-right font-semibold">Total {{ types[form.trx_type] }}</td>
+                                <td :colspan="isTransfer ? 2 : 3" class="pt-3 text-right font-semibold">Total {{ types[form.trx_type] }}</td>
                                 <td class="pt-3 text-right"><span class="font-mono text-lg font-bold text-primary-700 dark:text-primary-300">{{ fmtRp(total) }}</span></td>
                                 <td v-if="!isTransfer"></td>
                             </tr>
@@ -173,8 +228,14 @@ const inputCls = 'h-9 w-full rounded-lg border border-neutral-300 bg-white px-3 
             </div>
 
             <div class="flex gap-2">
-                <Button type="submit" :disabled="form.processing || total <= 0"><template #icon-left><Save class="h-4 w-4" /></template>Simpan &amp; Buat Jurnal</Button>
+                <Button type="submit" :disabled="form.processing || total <= 0 || akunKurangCc.length > 0"><template #icon-left><Save class="h-4 w-4" /></template>Simpan &amp; Buat Jurnal</Button>
                 <Link :href="route('bs.cashbook.index')" class="rounded-lg border border-neutral-300 px-4 py-2 text-sm dark:border-neutral-700">Batal</Link>
+                <!-- Alasan tombolnya mati DISEBUTKAN, bukan dibiarkan ditebak: tombol nonaktif tanpa
+                     keterangan membuat orang menyangka layarnya rusak. -->
+                <span v-if="akunKurangCc.length" class="self-center text-xs text-danger-500">
+                    Cost center wajib diisi untuk akun: {{ akunKurangCc.join(', ') }}.
+                </span>
+                <span v-else-if="total <= 0" class="self-center text-xs text-neutral-400">Isi nominal baris dulu.</span>
             </div>
         </form>
     </div>

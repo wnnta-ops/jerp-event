@@ -190,7 +190,7 @@ final class RegisterApInvoice
                 }
                 // Ditanggung → Dr Biaya PPh <jenis> (beban perusahaan, akun default config); supplier dibayar PENUH (Hutang = total).
                 if ($pphMode === 'borne' && $pphJournal > 0) {
-                    $pphExpenseAcc = BsAccount::where('code', config('business_support.gl_accounts.pph_borne_expense'))->value('id') ?: $debitAcc;
+                    $pphExpenseAcc = $this->akunBiayaPph($data['pph_type'] ?? null) ?: $debitAcc;
                     $jl[] = ['account_id' => $pphExpenseAcc, 'debit' => $pphJournal, 'credit' => 0, 'description' => 'Biaya PPh ditanggung'];
                 }
                 $hutang = $pphMode === 'borne' ? $total : $net;
@@ -254,6 +254,34 @@ final class RegisterApInvoice
      * di General Ledger hanya berbunyi "PPN Masukan" / "PPh dipotong" — benar, tetapi tidak
      * memberi tahu tagihan mana, sehingga menelusurinya harus lewat nomor jurnal.
      */
+    /**
+     * Akun BEBAN untuk PPh DITANGGUNG, mengikuti JENIS PPh-nya.
+     *
+     * Dr Biaya PPh 21 (70101010109) · PPh 23 (70101010107) · PPh Pasal 4(2) (70101010108).
+     * Sebelumnya ketiganya bermuara ke satu akun beban umum, sehingga beban PPh 21, 23, dan 4(2)
+     * tidak bisa dipisahkan lagi di buku besar maupun SPT.
+     *
+     * Pemetaannya HARUS sama dengan yang dipakai layar Registrasi Invoice Hutang — keduanya
+     * membaca config gl_accounts.pph_borne_expense yang sama. Bila berbeda, invoice yang sama
+     * akan berjurnal berbeda tergantung dari pintu mana ia masuk, dan dua-duanya tetap balance
+     * sehingga tidak ada satu pun galat yang memberi tahu.
+     *
+     * Jenis yang kosong/asing jatuh ke akun cadangan — bukan null: jenis PPh tidak diwajibkan
+     * gerbang mana pun, sedangkan tarifnya bisa diisi manual, dan baris Biaya PPh yang tidak
+     * terbentuk membuat jurnalnya tidak balance.
+     */
+    private function akunBiayaPph(?string $pphType): ?int
+    {
+        $peta = (array) config('business_support.gl_accounts.pph_borne_expense');
+        $kode = $peta[(string) $pphType] ?? null;
+
+        if ($kode === null) {
+            $kode = config('business_support.gl_accounts.pph_borne_expense_default');
+        }
+
+        return $kode ? BsAccount::where('code', $kode)->value('id') : null;
+    }
+
     private function ketPajak(string $teks, BsApInvoice $inv): string
     {
         $uraian = trim((string) ($inv->description ?? ""));

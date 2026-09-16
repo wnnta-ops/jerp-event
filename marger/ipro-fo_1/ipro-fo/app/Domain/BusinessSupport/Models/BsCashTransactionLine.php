@@ -16,7 +16,7 @@ class BsCashTransactionLine extends Model
     use HasTenant;
 
     protected $table = 'bs_cash_transaction_lines';
-    protected $fillable = ['tenant_id', 'cash_transaction_id', 'account_id', 'amount', 'description'];
+    protected $fillable = ['tenant_id', 'cash_transaction_id', 'account_id', 'cost_center_id', 'amount', 'description'];
     protected $casts = ['amount' => 'decimal:2'];
 
     public function transaction(): BelongsTo { return $this->belongsTo(BsCashTransaction::class, 'cash_transaction_id'); }

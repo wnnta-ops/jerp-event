@@ -510,9 +510,15 @@ class KprInitiationController extends Controller
             }
 
             // Item disimpan dgn key ber-namespace kategori ("karyawan__<key>" / "wirausaha__<key>") agar 2 kategori terpisah.
+            /* Boleh lanjut bila setiap berkas WAJIB sudah DITANDAI — Lengkap maupun Tidak
+               Lengkap — bukan hanya bila semuanya Lengkap. "Tidak lengkap" adalah keadaan yang
+               sah dan justru perlu tercatat: tiap penandaan menyimpan status_at, dan itulah jejak
+               waktu yang dipakai menelusuri keterlambatan berkas. Cerminan persis dari
+               semuaBerkasDitandai di layar; keduanya harus berubah bersama, kalau tidak tombolnya
+               berbunyi "Simpan & Lanjut" sementara servernya diam-diam menolak memajukan tahap. */
             $required    = self::BERKAS_REQUIRED[$category] ?? [];
             $allComplete = $category !== null && $required !== []
-                && collect($required)->every(fn ($k) => ($items[$category.'__'.$k]['status'] ?? '') === 'lengkap');
+                && collect($required)->every(fn ($k) => in_array($items[$category.'__'.$k]['status'] ?? '', ['lengkap', 'tidak_lengkap'], true));
 
             $stages['collect_berkas'] = array_merge($existing, [
                 'category' => $category,
@@ -529,8 +535,8 @@ class KprInitiationController extends Controller
             return back()->with(
                 $allComplete ? 'success' : 'warning',
                 $allComplete
-                    ? 'Berkas lengkap — lanjut ke tahap Analisa.'
-                    : 'Berkas tersimpan. Tandai semua berkas wajib "Lengkap" untuk bisa lanjut.'
+                    ? 'Berkas sudah ditandai seluruhnya — lanjut ke tahap Analisa.'
+                    : 'Berkas tersimpan. Tandai semua berkas wajib (Lengkap / Tidak Lengkap) untuk bisa lanjut.'
             );
         }
 

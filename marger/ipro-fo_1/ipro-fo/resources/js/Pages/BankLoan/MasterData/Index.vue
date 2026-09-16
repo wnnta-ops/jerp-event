@@ -48,14 +48,24 @@ const biayaPenjualanKeys = [
     { key: 'blt_kantor', label: 'BLT KANTOR' }, { key: 'komisi', label: 'KOMISI' },
 ];
 const utjDpLabels = ['UTJ', 'DP 1', 'DP 2', 'DP 3', 'DP 4', 'DP 5', 'DP 6'];
+/* Angsuran cash — cash 1x mengisi slot pertama saja, cash 3x mengisi ketiganya sesuai urutan
+   pembayarannya. Jumlah slotnya dikunci tiga, sama dengan CASH_SLOTS di controller. */
+const cashLabels = ['ANGSURAN CASH 1', 'ANGSURAN CASH 2', 'ANGSURAN CASH 3'];
 
 const groups = computed<Group[]>(() => [
     {
         label: 'Master Unit', cls: 'bg-emerald-50 dark:bg-emerald-900/30',
         items: [
+            // Nama Customer duduk TEPAT setelah No. SPR: keduanya yang dipakai mengenali baris,
+            // dan tabel ini membekukan dua kolom pertama saja saat digulir ke kanan — nama yang
+            // terselip di belakang Kode Unit ikut hilang begitu pembacaan bergeser ke kolom jauh.
             one('No. SPR', (r) => r.no_spr, { mono: true }),
-            one('Kode Unit', (r) => r.kode_unit, { mono: true }),
             one('Nama Customer', (r) => r.customer),
+            one('Kode Unit', (r) => r.kode_unit, { mono: true }),
+            // Lokasi & Tahap duduk tepat di kanan Kode Unit — ketiganya membaca satu unit yang
+            // sama, dan kodenya sendiri tidak selalu mengandung keduanya.
+            one('Lokasi', (r) => r.lokasi),
+            one('Tahap', (r) => r.tahap, { mono: true }),
             one('Tipe Rumah', (r) => r.tipe),
             one('Pricelist Gross', (r) => r.pricelist_gross, { align: 'r', mono: true, num: true }),
             one('Diskon', (r) => r.diskon, { align: 'r', mono: true, num: true }),
@@ -88,8 +98,25 @@ const groups = computed<Group[]>(() => [
         items: utjDpLabels.map((label, i) => pairTN(label, (r) => (i === 0 ? r.utj : r.dp?.[i - 1]))),
     },
     {
+        // Warnanya sengaja beda dari Collection UTJ & DP walau sama-sama "collection": keduanya
+        // bersebelahan dan hanya judul kelompok yang membedakan asal uangnya.
+        label: 'Collection Cash', cls: 'bg-lime-50 dark:bg-lime-900/30',
+        items: cashLabels.map((label, i) => pairTN(label, (r) => r.angsuran_cash?.[i])),
+    },
+    {
         label: 'Collection Retensi', cls: 'bg-rose-50 dark:bg-rose-900/30',
-        items: props.retensiCols.map((label, i) => pairTN(label, (r) => r.retensi?.[i])),
+        items: [
+            ...props.retensiCols.map((label, i) => pairTN(label, (r) => r.retensi?.[i])),
+            /* SISA RETENSI — kolom RINGKASAN, bukan pasangan Tanggal + Nominal: ia bukan sebuah
+               pembayaran, melainkan sisa yang belum cair. Ditaruh paling kanan, sesudah kedua
+               kolom DAJAM (keduanya kategori terakhir pada master), karena ringkasan memang
+               dibaca setelah rinciannya.
+
+               Angkanya = "Outstanding Pencairan" di layar Proses KPR, dihitung server dengan
+               rumus yang sama persis — plafon disetujui dikurangi pencairan bersih (retensi yang
+               masih ditahan tidak dihitung cair). */
+            one('SISA RETENSI', (r) => r.sisa_retensi, { align: 'r', mono: true, num: true }),
+        ],
     },
     {
         label: 'Rincian Biaya Gimmick', cls: 'bg-violet-50 dark:bg-violet-900/30',
@@ -203,7 +230,7 @@ function unduhExcel() {
             </div>
         </div>
         <p class="text-sm text-neutral-500">
-            Rekap per-SPR: Master Unit, Data KPR, <strong>Proses KPR</strong> (tanggal &amp; summary tiap tahap), Collection UTJ &amp; DP, Collection Retensi, Rincian Biaya Gimmick, dan Rincian Biaya Penjualan (BLT &amp; Komisi, langsung dari realisasinya).
+            Rekap per-SPR: Master Unit, Data KPR, <strong>Proses KPR</strong> (tanggal &amp; summary tiap tahap), Collection UTJ &amp; DP, Collection Cash, Collection Retensi (termasuk pencairan tanpa kategori &amp; Sisa Retensi), Rincian Biaya Gimmick, dan Rincian Biaya Penjualan (BLT &amp; Komisi, langsung dari realisasinya).
             Ketik pada kotak di bawah judul kolom untuk memfilter kolom tsb — filter antar kolom bersifat AND.
             <span class="text-neutral-400">{{ filtered.length }} dari {{ rows.length }} baris.</span>
         </p>

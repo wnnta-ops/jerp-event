@@ -5,7 +5,7 @@ import { ArrowLeft, ArrowRight, Save, HandCoins, Plus, Trash2, Check, Search, Co
 import Button from '@/Components/UI/Button.vue';
 import MoneyInput from '@/Components/UI/MoneyInput.vue';
 import SearchSelect from '@/Components/UI/SearchSelect.vue';
-import { bangunStrukturJurnal, akunKurang, samaDenganBawaan, barisStruktur } from './strukturJurnal';
+import { bangunStrukturJurnal, akunKurang, samaDenganBawaan, barisStruktur, akunBiayaPphDitanggung } from './strukturJurnal';
 
 const props = defineProps<{
     suppliers: Array<any>;
@@ -13,6 +13,9 @@ const props = defineProps<{
     pphAccounts: Array<any>;
     pphDefaults: Record<string, number>;
     ppnAccount: any;
+    /** Jenis PPh → akun BEBAN untuk PPh ditanggung (pasangan debit dari pphDefaults). */
+    pphBorneDefaults: Record<string, number | null>;
+    /** Cadangan akun beban bila jenis PPh belum dipilih. */
     pphBorneExpense: any;
     accounts: Array<any>;
     costCenters: Array<any>;
@@ -49,7 +52,17 @@ watch(() => form.pph_type, (t) => {
     // #94: jenis PPh → auto-isi tarif default (tetap bisa diubah manual di input tarif).
     if (t && PPH_RATES[t] !== undefined) form.pph_pct = PPH_RATES[t];
     // #113: jenis PPh → otomatis pilih akun PPh default (tetap bisa diubah manual lewat dropdown).
-    if (t && props.pphDefaults?.[t]) form.pph_account_id = props.pphDefaults[t];
+    // #113: jenis PPh → akun Hutang PPh. Kini SATU-SATUNYA jalan mengisinya — dropdown pemilih
+    // akun sudah dihilangkan dari layar. Karena itu ia harus ikut DIKOSONGKAN saat jenisnya
+    // dikosongkan: dulu nilai lamanya sengaja dibiarkan bertahan karena pengguna masih bisa
+    // membetulkannya sendiri, sekarang tidak bisa lagi. Akun yang tertinggal tidak cocok tidak
+    // sekadar salah muara — keterangan baris di buku besar dibaca dari NAMA AKUN (pasalPph),
+    // sehingga bisa tertulis "PPh 21" padahal jenisnya PPh 23.
+    //
+    // Jenis yang akunnya belum ada di CoA juga dikosongkan, BUKAN dibiarkan memakai akun jenis
+    // sebelumnya: baris Hutang PPh yang hilang dilaporkan akunKurang, sedangkan akun yang salah
+    // tidak dilaporkan apa pun.
+    form.pph_account_id = t ? (props.pphDefaults?.[t] ?? '') : '';
 });
 // #92/#PPh-acuan: saat masuk mode dipungut/ditanggung, default nilai objek PPh = ACUAN (Objek PPN bila "Dengan PPN", selain itu DPP).
 watch(() => form.pph_mode, (m) => { if ((m === 'withheld' || m === 'borne') && !Number(form.pph_base)) form.pph_base = pphRefBase.value; });
@@ -253,6 +266,26 @@ function applyAmount(l: any) {
     else { l.side = 'debit'; l.debit = v; l.credit = 0; }
 }
 function setSide(l: any, side: 'debit' | 'credit') { l.side = side; applyAmount(l); }
+/**
+ * Akun BEBAN untuk PPh ditanggung — mengikuti JENIS PPh yang dipilih.
+ *
+ * Dr Biaya PPh 21 (70101010109) · PPh 23 (70101010107) · PPh Pasal 4(2) (70101010108),
+ * jadi satu jenis PPh menentukan sepasang akun sekaligus bersama Hutang PPh-nya. Sebelumnya
+ * ketiganya bermuara ke satu akun beban umum, sehingga beban PPh 21, 23, dan 4(2) tidak bisa
+ * dipisahkan lagi di buku besar maupun SPT.
+ *
+ * Cadangan dipakai bila jenis PPh belum dipilih padahal tarifnya sudah diisi manual — keadaan
+ * yang masih mungkin karena jenis PPh tidak diwajibkan gerbang mana pun. Tanpa cadangan itu
+ * baris Biaya PPh tidak terbentuk dan jurnalnya tidak balance.
+ *
+ * Pemetaannya HARUS sama dengan yang dipakai RegisterApInvoice pada jalur otomatis — keduanya
+ * membaca config gl_accounts.pph_borne_expense yang sama. Kalau berbeda, invoice yang sama akan
+ * berjurnal berbeda tergantung dari pintu mana ia masuk, dan dua-duanya tetap balance.
+ */
+const akunBiayaPph = computed<number | null>(
+    () => akunBiayaPphDitanggung(form.pph_type, props.pphBorneDefaults, props.pphBorneExpense?.id),
+);
+
 /** Bahan struktur bawaan — aturannya sendiri ada di ./strukturJurnal.ts supaya bisa diuji. */
 const bahanStruktur = computed(() => ({
     dpp: dppR.value,
@@ -265,7 +298,7 @@ const bahanStruktur = computed(() => ({
         hutangUsaha: category.value?.payable_id ?? null,
         ppnMasukan: props.ppnAccount?.id ?? null,
         hutangPph: form.pph_account_id ? Number(form.pph_account_id) : null,
-        biayaPph: props.pphBorneExpense?.id ?? null,
+        biayaPph: akunBiayaPph.value,
     },
     uraian: {
         beban: form.description || '',
@@ -294,7 +327,6 @@ function pasangStruktur(baris: any[]) {
 function addJournalLine() { form.journal_lines.push(mkJournalLine(null, '', 0, 'debit')); }
 function addJournalLines(n: number) { for (let k = 0; k < n; k++) addJournalLine(); }
 function removeJournalLine(i: number) { form.journal_lines.splice(i, 1); }
-function recalcJournal() { pasangStruktur(defaultJournal()); }
 
 /* STRUKTURNYA IKUT BERUBAH SAAT PPN/PPh DIUBAH.
    Sebelumnya struktur hanya dibentuk SEKALI, yaitu saat pertama kali masuk langkah Struktur
@@ -304,8 +336,14 @@ function recalcJournal() { pasangStruktur(defaultJournal()); }
    memberi tahu; yang ketahuan belakangan hanya PPN Masukan yang tidak pernah tercatat.
 
    Yang sudah DISUNTING TANGAN tidak ditimpa — pekerjaan orang tidak boleh lenyap hanya karena ia
-   kembali membetulkan satu angka. Untuk itu tersedia tombol "Hitung ulang", dan selisihnya
-   diberitahukan lewat strukturUsang. */
+   kembali membetulkan satu angka. Selisihnya diberitahukan lewat strukturUsang.
+
+   Dulu ada tombol "Hitung ulang" untuk menyusun ulang struktur yang terlanjur disunting; tombol
+   itu dihilangkan atas permintaan. Jalan menyusun ulang tetap ada dan memakai watcher di bawah:
+   hapus seluruh barisnya, lalu Sebelumnya → Berikutnya. Saat masuk langkah 4 dengan daftar kosong,
+   watch(step) membentuknya kembali dari nilai transaksi. Kedua pesan di layar (peringatan
+   strukturUsang & baris "belum ada baris") menyebutkan langkah itu — kalau tidak, keduanya
+   menyuruh menekan tombol yang sudah tidak ada. */
 const strukturUsang = computed(() => step.value === 4
     && form.journal_lines.length > 0
     && ! samaDenganBawaan(form.journal_lines as any[], defaultJournal()));
@@ -403,16 +441,25 @@ const cellArea = 'w-full rounded-md border border-neutral-300 bg-white px-2 py-1
                     </div></div>
                 <div><label class="mb-1 block text-xs font-medium text-neutral-500">Sifat PPh</label><div class="flex gap-1.5"><label class="flex flex-1 cursor-pointer items-center justify-center gap-1 rounded-lg border px-1.5 py-1.5 text-[11px]" :class="form.pph_mode==='none' ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/20' : 'border-neutral-300 dark:border-neutral-700'"><input v-model="form.pph_mode" type="radio" value="none" class="sr-only" />Tanpa PPh</label><label class="flex flex-1 cursor-pointer items-center justify-center gap-1 rounded-lg border px-1.5 py-1.5 text-[11px]" :class="form.pph_mode==='withheld' ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/20' : 'border-neutral-300 dark:border-neutral-700'"><input v-model="form.pph_mode" type="radio" value="withheld" class="sr-only" />Dipotong</label><label class="flex flex-1 cursor-pointer items-center justify-center gap-1 rounded-lg border px-1.5 py-1.5 text-[11px]" :class="form.pph_mode==='borne' ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/20' : 'border-neutral-300 dark:border-neutral-700'"><input v-model="form.pph_mode" type="radio" value="borne" class="sr-only" />Ditanggung</label></div>
                     <div v-if="form.pph_mode==='withheld' || form.pph_mode==='borne'" class="mt-2 space-y-1.5">
-                        <!-- #94: jenis PPh → tarif default (bisa diubah manual) -->
-                        <select v-model="form.pph_type" class="h-8 w-full rounded-lg border border-neutral-300 px-1 text-xs dark:border-neutral-700 dark:bg-neutral-900">
-                            <option value="">— jenis PPh —</option>
-                            <option value="pph21">PPh 21 (2,5%)</option>
-                            <option value="pph23">PPh 23 (2%)</option>
-                            <option value="pph4_2">PPh Pasal 4 Ayat 2 (1,75%)</option>
-                        </select>
+                        <!-- #94: jenis PPh → tarif default (bisa diubah manual).
+                             Jenis & tarif BERDAMPINGAN, rasio lebarnya diatur lewat flex (3 : 1) —
+                             min-w-0 wajib, kalau tidak lebar minimum bawaan select/input menahan
+                             keduanya dan rasionya tidak pernah benar-benar berlaku pada kolom sempit.
+
+                             Dropdown "Akun PPh" DIHILANGKAN: akunnya kini sepenuhnya ditentukan jenis
+                             PPh — Hutang PPh <jenis> lewat pphDefaults dan Biaya PPh <jenis> lewat
+                             pphBorneDefaults. Membiarkannya bisa dipilih sendiri hanya membuka peluang
+                             akun yang tidak cocok dengan jenisnya, dan itu tidak sekadar salah muara:
+                             keterangan baris di buku besar dibaca dari NAMA AKUN (pasalPph), sehingga
+                             bisa tertulis "PPh 21" padahal jenisnya PPh 23. -->
                         <div class="flex gap-1">
-                            <input v-model.number="form.pph_pct" type="number" step="0.25" min="0" max="100" title="Tarif % (bisa diubah manual)" class="h-8 w-16 rounded-lg border border-neutral-300 px-2 text-right text-xs dark:border-neutral-700 dark:bg-neutral-900" />
-                            <select v-model="form.pph_account_id" class="h-8 flex-1 rounded-lg border border-neutral-300 px-1 text-xs dark:border-neutral-700 dark:bg-neutral-900"><option value="">Akun PPh…</option><option v-for="a in pphAccounts" :key="a.id" :value="a.id">{{ a.name }}</option></select>
+                            <select v-model="form.pph_type" class="h-8 min-w-0 flex-[3] rounded-lg border border-neutral-300 px-1 text-xs dark:border-neutral-700 dark:bg-neutral-900">
+                                <option value="">— jenis PPh —</option>
+                                <option value="pph21">PPh 21 (2,5%)</option>
+                                <option value="pph23">PPh 23 (2%)</option>
+                                <option value="pph4_2">PPh Pasal 4 Ayat 2 (1,75%)</option>
+                            </select>
+                            <input v-model.number="form.pph_pct" type="number" step="0.25" min="0" max="100" title="Tarif % (bisa diubah manual)" class="h-8 min-w-0 flex-1 rounded-lg border border-neutral-300 px-2 text-right text-xs dark:border-neutral-700 dark:bg-neutral-900" />
                         </div>
                         <!-- #92: nilai objek PPh (default = Objek PPN bila Dengan PPN, selain itu DPP); PPh dihitung dari nilai ini saja -->
                         <MoneyInput v-model="form.pph_base" placeholder="Nilai objek PPh" />
@@ -457,7 +504,6 @@ const cellArea = 'w-full rounded-md border border-neutral-300 bg-white px-2 py-1
                         <span v-if="copiedAccountLabel" class="inline-flex max-w-[22rem] items-center gap-1.5 truncate rounded-lg border border-sky-300 bg-sky-50 px-2.5 py-1.5 text-xs font-semibold text-sky-800 dark:border-sky-800 dark:bg-sky-950/50 dark:text-sky-200" :title="copiedAccountLabel">
                             <Copy class="h-3.5 w-3.5 shrink-0" /> <span class="shrink-0 font-normal text-sky-600 dark:text-sky-400">Tersalin:</span> <span class="truncate">{{ copiedAccountLabel }}</span>
                         </span>
-                        <button type="button" @click="recalcJournal" class="inline-flex items-center gap-1 rounded-lg border border-neutral-300 px-2.5 py-1.5 text-xs hover:bg-neutral-50 dark:border-neutral-700">Hitung ulang</button>
                     </div>
                 </div>
                 <p class="mb-2 text-[11px] text-neutral-400">Tips: Kosongkan kolom Account &amp; Nilai Transaksi untuk mengabaikan baris tersebut saat proses. Total Debit harus sama dengan Total Kredit. Tombol <b>salin</b> &amp; <b>tempel</b> kecil di bawah kolom Account dipakai untuk memakai ulang akun yang sama di baris lain.</p>
@@ -466,7 +512,8 @@ const cellArea = 'w-full rounded-md border border-neutral-300 bg-white px-2 py-1
                      baris PPN/PPh tanpa satu pun tanda. -->
                 <p v-if="strukturUsang" class="mb-2 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-700 dark:bg-amber-900/20 dark:text-amber-300">
                     Struktur ini sudah disunting tangan sehingga tidak lagi mengikuti PPN/PPh pada Input Transaksi.
-                    Tekan <b>Hitung ulang</b> untuk menyusunnya ulang dari nilai transaksinya.
+                    Untuk menyusunnya ulang dari nilai transaksinya: hapus seluruh barisnya, lalu tekan
+                    <b>Sebelumnya</b> dan <b>Berikutnya</b> lagi ke langkah ini.
                 </p>
                 <!-- Akun yang dibutuhkan aturan PPN/PPh tetapi belum ada: barisnya sengaja tidak
                      dibuat tanpa akun, jadi ketiadaannya disebutkan di sini. -->
@@ -539,7 +586,24 @@ const cellArea = 'w-full rounded-md border border-neutral-300 bg-white px-2 py-1
                                     <select v-model="l.currency" :class="dimCls"><option value="IDR">IDR</option><option value="USD">USD</option><option value="SGD">SGD</option><option value="EUR">EUR</option></select>
                                     <input v-model.number="l.kurs" type="number" step="0.0001" min="0" :class="[dimCls,'mt-1 text-right font-mono']" />
                                 </td>
-                                <td class="px-2 py-2"><input v-model.number="l.nilai" @input="applyAmount(l)" type="number" step="1" min="0" :class="[dimCls,'text-right font-mono']" /></td>
+                                <!-- MoneyInput, BUKAN input type=number. Peramban tidak pernah mau menampilkan
+                                     pemisah ribuan pada type=number: isinya wajib angka mentah yang sah, dan
+                                     "1.000.000" bukan salah satunya — jadi selama masih type=number, tanda ribuan
+                                     mustahil. MoneyInput juga yang sudah dipakai Nilai Transaksi di langkah Input
+                                     Transaksi, sehingga kolom ini justru yang selama ini berbeda sendiri.
+
+                                     AMAN DARI DESIMAL: parse MoneyInput membuang semua non-digit, sehingga nilai
+                                     berpecahan akan terbaca 100x lipat ("135.802,37" → 13580237). Itu tidak bisa
+                                     terjadi di sini — setiap nilai jurnal sudah dibulatkan ke rupiah penuh oleh
+                                     r0/fl0, dan journal_lines selalu mulai kosong (form ini tidak pernah dimuati
+                                     invoice lama).
+
+                                     Kelas ber-awalan ! menyetel ulang tinggi & ukuran huruf bawaan MoneyInput agar
+                                     sepadan dengan sel tabel padat ini — pola yang sama dipakai CashBook/Ledger.vue. -->
+                                <td class="px-2 py-2">
+                                    <MoneyInput :model-value="l.nilai" @update:model-value="(v) => { l.nilai = v; applyAmount(l); }"
+                                        class="!h-8 !rounded-md !px-2 !text-xs font-mono" />
+                                </td>
                                 <td class="px-2 py-2 text-right">
                                     <input type="radio" :name="'side-row-' + i" :checked="l.side==='debit'" @change="setSide(l,'debit')" class="h-4 w-4 accent-primary-600" />
                                     <div class="mt-1 font-mono text-[11px] text-neutral-600 dark:text-neutral-300">{{ l.side==='debit' && Number(l.debit) ? fmtNum(l.debit) : '' }}</div>
@@ -550,7 +614,7 @@ const cellArea = 'w-full rounded-md border border-neutral-300 bg-white px-2 py-1
                                 </td>
                                 <td class="px-1 py-2 text-center"><button type="button" @click="removeJournalLine(i)" class="text-danger-500"><Trash2 class="h-4 w-4" /></button></td>
                             </tr>
-                            <tr v-if="!form.journal_lines.length"><td colspan="9" class="px-2 py-6 text-center text-sm text-neutral-400">Belum ada baris. Klik "Hitung ulang" untuk membentuk jurnal otomatis dari transaksi, atau "Tambah 1 Baris".</td></tr>
+                            <tr v-if="!form.journal_lines.length"><td colspan="9" class="px-2 py-6 text-center text-sm text-neutral-400">Belum ada baris. Tekan "Sebelumnya" lalu "Berikutnya" lagi ke langkah ini untuk membentuk jurnal otomatis dari nilai transaksinya, atau klik "Tambah 1 Baris".</td></tr>
                         </tbody>
                         <tfoot>
                             <tr class="border-t-2 border-neutral-200 bg-neutral-50 font-semibold dark:border-neutral-700 dark:bg-neutral-800">

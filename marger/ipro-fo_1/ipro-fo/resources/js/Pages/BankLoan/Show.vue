@@ -1,11 +1,12 @@
 <script setup lang="ts">
 import { Link, router, useForm, usePage } from '@inertiajs/vue3';
-import { ref, reactive, computed, watch } from 'vue';
+import { ref, reactive, computed, watch, nextTick, onMounted } from 'vue';
 import { CheckCircle2, Landmark, Plus, Printer, Search, TriangleAlert, Users } from 'lucide-vue-next';
 import Badge from '@/Components/UI/Badge.vue';
 import Button from '@/Components/UI/Button.vue';
 import Input from '@/Components/UI/Input.vue';
 import MoneyInput from '@/Components/UI/MoneyInput.vue';
+import { TANDA_AKAD, tujuanAkad, sorotAksiAkad } from '@/Composables/useAksiAkad';
 
 const props = defineProps<{ app: any; identity?: any; siblings?: Array<any>; customerApps?: Array<any>; retentionCategories: Array<any>; bankTerms: Record<string, number>; bankDajamTax?: { category_id: number; percentage: number; amount: number | null } | null; canApproveRetensi?: boolean; hasRetention?: boolean; si?: any;
     /** Booked Revenue unit rumah ini — NULL bila unitnya belum di-booking pendapatannya. */
@@ -53,9 +54,28 @@ function decide(id: number, decision: 'lanjut' | 'batal') {
 }
 function decisionVariant(d: string | null) { return d === 'lanjut' ? 'success' : (d === 'batal' ? 'danger' : 'neutral'); }
 function decisionLabel(d: string | null) { return d === 'lanjut' ? 'Disetujui' : (d === 'batal' ? 'Batal' : 'Belum diputuskan'); }
-// KPR yang DISETUJUI bisa langsung membuka proses Akad-nya (navigasi penuh = hard refresh) walau yang
-// sedang dibuka adalah KPR sibling yang Batal.
-function goToAkad(id: number) { window.location.href = route('kpr.show', id); }
+/**
+ * "Lanjut & Akad" pada kolom ACTION panel Keputusan KPR — langsung ke tombol aksi Akad di bawah.
+ * Percabangan & penyorotannya ada di useAksiAkad supaya bisa diuji tanpa peramban.
+ */
+async function goToAkad(id: number) {
+    const tujuan = tujuanAkad(id, a.id, (x) => route('kpr.show', x));
+    if (tujuan !== null) {
+        window.location.href = tujuan;
+
+        return;
+    }
+    // nextTick: panel tujuannya bisa baru saja muncul oleh keputusan yang dibuat sedetik lalu.
+    await nextTick();
+    sorotAksiAkad(document, window);
+}
+
+// Datang dari baris KPR lain: halaman baru harus ikut berhenti di tombol aksi Akad.
+onMounted(async () => {
+    if (window.location.hash !== TANDA_AKAD) return;
+    await nextTick();
+    sorotAksiAkad(document, window);
+});
 // "Ubah" — buka kembali tombol Lanjut/Batal pada baris (lokal). Re-pick akan tersimpan saat Lanjut/Batal diklik.
 function clearDecision(s: any) { s.decision = null; if (s.id === a.id) currentDecision.value = null; }
 // KPR sibling yang sudah Disetujui (untuk mengarahkan dari halaman KPR yang Batal ke proses Akad-nya).
@@ -1214,7 +1234,7 @@ const historyNodes = computed<HistoryNode[]>(() => {
             <!-- Akad tercatat → Lanjut ke Pencairan -->
             <div v-if="a.status === 'akad' && a.akad && !editAkad" id="next-step-form" class="mt-5 border-t border-neutral-200 dark:border-neutral-800 pt-5">
                 <p class="mb-3 text-sm text-neutral-500">Akad sudah tercatat. Lanjut ke tahap <strong>Pencairan</strong>.</p>
-                <Button size="lg" block variant="primary" @click="proceedAkad">Lanjut ke Pencairan →</Button>
+                <Button id="aksi-akad" size="lg" block variant="primary" @click="proceedAkad">Lanjut ke Pencairan →</Button>
             </div>
 
             <!-- Catat Akad (di tampilan Proses Akad saat SP3K) atau Edit Akad (saat tahap Akad) -->
@@ -1240,7 +1260,7 @@ const historyNodes = computed<HistoryNode[]>(() => {
                         <Button variant="secondary" @click="cancelEditAkad">Batal</Button>
                         <Button type="submit" :loading="akadForm.processing">Simpan Perubahan</Button>
                     </div>
-                    <Button v-else type="submit" size="lg" block :loading="akadForm.processing" :disabled="!canAkad">Simpan Akad</Button>
+                    <Button v-else id="aksi-akad" type="submit" size="lg" block :loading="akadForm.processing" :disabled="!canAkad">Simpan Akad</Button>
                 </form>
             </div>
 

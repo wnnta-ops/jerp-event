@@ -201,9 +201,18 @@ const totalKredit = (baris) => baris.reduce((s, b) => s + (Number(b.credit) || 0
 
     const template = ((src.match(/<template>[\s\S]*<\/template>/) || [''])[0]).replace(/<!--[\s\S]*?-->/g, '');
     /* Diperiksa pada GERBANG v-if-nya, bukan sekadar "namanya disebut di suatu tempat": isi
-       paragrafnya juga menyebut nama yang sama, jadi mematikan gerbangnya akan tetap lulus. */
-    cek('layar memberitahu bila strukturnya sudah tidak mengikuti PPN/PPh',
-        /<p v-if="strukturUsang"/.test(template) && template.includes('Hitung ulang'), 'penolakan diam-diam');
+       paragrafnya juga menyebut nama yang sama, jadi mematikan gerbangnya akan tetap lulus.
+
+       Dulu yang dicari kata "Hitung ulang" — nama tombol yang kini dihilangkan. Peringatan tanpa
+       jalan keluar sama tak bergunanya dengan tidak ada peringatan sama sekali, jadi yang dicari
+       sekarang langkah penggantinya: hapus semua baris, lalu Sebelumnya → Berikutnya. */
+    const pUsang = (template.match(/<p v-if="strukturUsang"[\s\S]*?<\/p>/) || [''])[0];
+    cek('layar memberitahu bila strukturnya sudah tidak mengikuti PPN/PPh', pUsang !== '', 'penolakan diam-diam');
+    cek('peringatannya menyebutkan cara menyusun ulang',
+        /Sebelumnya/.test(pUsang) && /Berikutnya/.test(pUsang),
+        'peringatan tanpa jalan keluar: ' + pUsang.slice(0, 160));
+    cek('tidak lagi menyuruh menekan tombol yang sudah tidak ada',
+        ! /Hitung ulang/.test(template), 'petunjuk menunjuk tombol yang tidak ada');
     cek('layar menyebutkan akun yang belum tersedia',
         /<p v-if="akunStrukturKurang\.length"/.test(template),
         'baris yang hilang akan terlihat seperti memang tidak ada');

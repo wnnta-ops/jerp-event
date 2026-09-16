@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, reactive, computed, watch } from 'vue';
 import { router, Link } from '@inertiajs/vue3';
-import { ArrowLeft, ShieldX, Search, FileText, FileSpreadsheet, FilterX } from 'lucide-vue-next';
+import { ArrowLeft, ShieldX, Search, FileText, FileSpreadsheet, FilterX, Printer } from 'lucide-vue-next';
 import Badge from '@/Components/UI/Badge.vue';
 import EmptyState from '@/Components/UI/EmptyState.vue';
 import ColumnFilter from '@/Components/UI/ColumnFilter.vue';
@@ -132,7 +132,14 @@ function downloadExcel() {
                         <td class="px-3 py-3 whitespace-nowrap"><Badge size="sm" :variant="r.reject_type === 'batal_sepihak' ? 'danger' : 'warning'">{{ typeLabel(r.reject_type) }}</Badge></td>
                         <td class="px-3 py-3"><span v-if="r.reason" class="text-neutral-700 dark:text-neutral-200">{{ r.reason }}</span><span v-else class="text-xs italic text-neutral-400">— tanpa alasan —</span></td>
                         <td class="whitespace-nowrap px-3 py-3">{{ fmtDate(r.rejected_at) }}<div v-if="r.rejected_by" class="text-xs text-neutral-400">oleh {{ r.rejected_by }}</div></td>
-                        <td class="px-3 py-3 text-center whitespace-nowrap"><Link :href="route('kpr.database.reject-bi.detail', r.id)" class="inline-flex items-center gap-1 rounded-lg border border-neutral-300 px-2.5 py-1 text-xs font-medium hover:bg-neutral-50 dark:border-neutral-700 dark:hover:bg-neutral-800"><FileText class="h-3.5 w-3.5" /> Report</Link></td>
+                        <td class="px-3 py-3 text-center whitespace-nowrap">
+                            <div class="inline-flex items-center gap-1.5">
+                                <Link :href="route('kpr.database.reject-bi.detail', r.id)" class="inline-flex items-center gap-1 rounded-lg border border-neutral-300 px-2.5 py-1 text-xs font-medium hover:bg-neutral-50 dark:border-neutral-700 dark:hover:bg-neutral-800"><FileText class="h-3.5 w-3.5" /> Report</Link>
+                                <!-- Tab baru, bukan Inertia visit: tujuannya lembar cetak A4, dan daftar ini biasa
+                                     dipakai mencetak beberapa berkas berturut-turut tanpa kehilangan filternya. -->
+                                <a :href="route('kpr.database.reject-bi.cetak', r.id)" target="_blank" rel="noopener" class="inline-flex items-center gap-1 rounded-lg border border-danger-300 bg-danger-50 px-2.5 py-1 text-xs font-medium text-danger-700 hover:bg-danger-100 dark:border-danger-700/50 dark:bg-danger-900/30 dark:text-danger-300"><Printer class="h-3.5 w-3.5" /> Cetak</a>
+                            </div>
+                        </td>
                     </tr>
                 </tbody>
             </table>
