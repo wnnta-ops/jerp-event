@@ -136,6 +136,7 @@ export function navGroups(foUrl: string): NavGroup[] {
                 { label: 'Kategori Bank',           href: 'kpr.setup.bank.index',    permission: 'bankloan.setup.view' },
                 { label: 'Kategori Analisa Berkas', href: 'kpr.setup.analisa.index', permission: 'bankloan.setup.view' },
                 { label: 'Kategori Berkas Tidak Lengkap', href: 'kpr.setup.berkas-tidak-lengkap.index', permission: 'bankloan.setup.view' },
+                { label: 'Kategori Reject Bank',    href: 'kpr.setup.reject-bank.index', permission: 'bankloan.setup.view' },
             ]},
             // Transaction — proses transaksi KPR.
             { label: 'Transaction', icon: GitMerge, permission: ['bankloan.application.*'], children: [

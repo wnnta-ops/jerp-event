@@ -472,6 +472,11 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
     Route::put('/kpr/setup/berkas-tidak-lengkap/{category}',   [\App\Http\Controllers\Web\BankLoan\Setup\BerkasIncompleteCategoryController::class, 'update'])->name('kpr.setup.berkas-tidak-lengkap.update');
     Route::delete('/kpr/setup/berkas-tidak-lengkap/{category}',[\App\Http\Controllers\Web\BankLoan\Setup\BerkasIncompleteCategoryController::class, 'destroy'])->name('kpr.setup.berkas-tidak-lengkap.destroy');
 
+    Route::get('/kpr/setup/reject-bank',              [\App\Http\Controllers\Web\BankLoan\Setup\BankRejectCategoryController::class, 'index'])->name('kpr.setup.reject-bank.index');
+    Route::post('/kpr/setup/reject-bank',             [\App\Http\Controllers\Web\BankLoan\Setup\BankRejectCategoryController::class, 'store'])->name('kpr.setup.reject-bank.store');
+    Route::put('/kpr/setup/reject-bank/{category}',   [\App\Http\Controllers\Web\BankLoan\Setup\BankRejectCategoryController::class, 'update'])->name('kpr.setup.reject-bank.update');
+    Route::delete('/kpr/setup/reject-bank/{category}',[\App\Http\Controllers\Web\BankLoan\Setup\BankRejectCategoryController::class, 'destroy'])->name('kpr.setup.reject-bank.destroy');
+
     // ── BUSINESS SUPPORT (Back-Office Akuntansi) ───────────
     // Halaman hub "Business Support" (bs.index) & Module (bs.module) DIHILANGKAN — navigasi antar
     // modul lewat sidebar; back-link "← Business Support" ikut dibuang dari semua halaman.
