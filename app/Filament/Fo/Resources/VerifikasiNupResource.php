@@ -4,10 +4,12 @@ namespace App\Filament\Fo\Resources;
 
 use App\Filament\Concerns\MematuhiIzin;
 use App\Filament\Fo\Resources\VerifikasiNupResource\Pages;
+use App\Modules\FO\Komisi\Models\Agent;
 use App\Modules\FO\Launching\Models\NupRegistration;
 use App\Modules\FO\Launching\Services\VerifikasiNupService;
 use App\Modules\FO\MarketingSales\Models\Unit;
 use Filament\Forms;
+use Filament\Notifications\Notification;
 use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Table;
@@ -138,37 +140,143 @@ class VerifikasiNupResource extends Resource
                     // berkas yang belum layak diserahkan ke bank.
                     ->visible(fn (NupRegistration $r) => $r->verif_status === 'APPROVED'),
 
-                // Edit SPRS — HANYA email & no. telepon. Dua kolom ini yang sering keliru
-                // diketik customer di form publik dan membuat kiriman SPRS tidak sampai.
-                // Kolom lain (nama, NIK, alamat, pilihan unit, nominal) TIDAK dibuka di
-                // sini: itu data pendaftaran yang jadi dasar verifikasi, bukan sekadar
-                // tampilan dokumen. Perubahan ditulis ke data PENDAFTARAN saja, tidak ke
-                // master customer — satu customer bisa punya beberapa pendaftaran/kontrak
-                // dan tidak boleh ikut berubah gara-gara koreksi satu berkas.
+                // Edit SPRS — seluruh isi dokumen, bukan lagi hanya email & telepon.
+                //
+                // Kolomnya dipilih dari apa yang BENAR-BENAR tercetak di sprs.blade.php, dan
+                // ditulis ke tempat yang dibaca cetakan itu — karena dua bagiannya berbeda asal:
+                //
+                //   Nama · No KTP · Alamat   ← MASTER customer ($c->full_name, $c->nik,
+                //                               $c->alamatRingkas()); pendaftaran hanya cadangan
+                //   Telp · Email · Sales · Type · Cara Bayar · Pilihan Unit · Catatan
+                //                            ← PENDAFTARAN ($reg->...)
+                //
+                // Karena itu bagian pertama menyimpan ke fo_customers. Dulu kolom-kolom itu
+                // sengaja tidak dibuka dengan alasan satu customer bisa punya beberapa
+                // pendaftaran; alasannya tetap benar, tapi menuliskannya ke pendaftaran saja
+                // membuat koreksi TIDAK PERNAH tampak di SPRS — master yang menang. Nama, NIK,
+                // dan alamat memang milik ORANGNYA, bukan milik satu berkas: kalau salah ketik,
+                // salahnya di semua dokumen. Peringatannya ditaruh di layar, dan kenyataannya
+                // hanya 2 dari 302 customer yang punya lebih dari satu pendaftaran.
                 Tables\Actions\Action::make('edit_sprs')
                     ->label('Edit SPRS')->icon('heroicon-o-pencil-square')->color('warning')
-                    ->modalHeading('Edit SPRS — Email & Telepon')
-                    ->modalDescription('Hanya email dan nomor telepon yang bisa diubah. Data lain mengikuti pendaftaran.')
+                    ->modalHeading('Edit SPRS')
+                    ->modalDescription('Semua isian di bawah ikut tercetak di SPRS. Cetak ulang setelah menyimpan.')
+                    ->modalWidth('3xl')
                     ->modalSubmitActionLabel('Simpan')
-                    ->fillForm(fn (NupRegistration $r) => [
-                        'email' => $r->email ?: $r->customer?->email,
-                        'phone' => $r->phone ?: $r->customer?->mobile,
-                    ])
+                    ->fillForm(function (NupRegistration $r): array {
+                        $c = $r->customer;
+
+                        return [
+                            'full_name' => $c?->full_name ?: $r->nama_pendaftar,
+                            'nik' => $c?->nik ?: $r->nik,
+                            'jalan' => $c?->jalan ?: $c?->address,
+                            'rt_rw' => $c?->rt_rw,
+                            'kelurahan' => $c?->kelurahan,
+                            'kecamatan' => $c?->kecamatan,
+                            'city' => $c?->city,
+                            'province' => $c?->province,
+
+                            'email' => $r->email ?: $c?->email,
+                            'phone' => $r->phone ?: $c?->mobile,
+                            'agent_id' => $r->agent_id,
+                            'tipe_nup' => $r->tipe_nup,
+                            'cara_bayar' => $r->cara_bayar,
+                            'pilihan_unit_1' => $r->pilihan_unit_1,
+                            'pilihan_unit_2' => $r->pilihan_unit_2,
+                            'pilihan_unit_3' => $r->pilihan_unit_3,
+                            'keterangan' => $r->keterangan,
+                        ];
+                    })
                     ->form([
-                        Forms\Components\TextInput::make('email')->label('Email')
-                            ->email()->required()->maxLength(255),
-                        Forms\Components\TextInput::make('phone')->label('No. Telepon / HP')
-                            ->tel()->required()->maxLength(32),
+                        Forms\Components\Section::make('Data Customer')
+                            ->description('Tersimpan ke master customer — ikut berlaku pada dokumen lain milik orang yang sama.')
+                            ->columns(2)
+                            ->schema([
+                                Forms\Components\TextInput::make('full_name')->label('Nama Lengkap')
+                                    ->required()->maxLength(255),
+                                Forms\Components\TextInput::make('nik')->label('No. KTP / NIK')
+                                    ->maxLength(32),
+                                Forms\Components\TextInput::make('jalan')->label('Alamat')
+                                    ->columnSpanFull()->maxLength(255),
+                                Forms\Components\TextInput::make('rt_rw')->label('RT/RW')->maxLength(32),
+                                Forms\Components\TextInput::make('kelurahan')->label('Kelurahan')->maxLength(100),
+                                Forms\Components\TextInput::make('kecamatan')->label('Kecamatan')->maxLength(100),
+                                Forms\Components\TextInput::make('city')->label('Kota / Kabupaten')->maxLength(100),
+                                Forms\Components\TextInput::make('province')->label('Provinsi')->maxLength(100),
+                            ]),
+
+                        Forms\Components\Section::make('Data Pendaftaran')
+                            ->description('Hanya berlaku untuk pendaftaran NUP ini.')
+                            ->columns(2)
+                            ->schema([
+                                Forms\Components\TextInput::make('email')->label('Email')
+                                    ->email()->required()->maxLength(255),
+                                Forms\Components\TextInput::make('phone')->label('No. Telepon / HP')
+                                    ->tel()->required()->maxLength(32),
+
+                                // Satu pilihan, dua kolom: agent_id dipakai komisi/BLT dan
+                                // ref_sales_name adalah potret label untuk SPRS/SPR. Keduanya
+                                // ditulis bersama supaya cetakan dan komisi tidak menyebut
+                                // sales yang berbeda.
+                                Forms\Components\Select::make('agent_id')->label('Sales')
+                                    ->options(fn () => Agent::query()->where('is_active', true)->salesPicker()
+                                        ->orderBy('name')->get()
+                                        ->mapWithKeys(fn (Agent $a) => [$a->id => ($a->code ? $a->code.' — ' : '').$a->name]))
+                                    ->searchable()->preload()->placeholder('— tanpa sales —')
+                                    ->helperText('Ikut menentukan komisi, bukan hanya nama di SPRS.'),
+
+                                Forms\Components\Select::make('cara_bayar')->label('Cara Bayar')
+                                    ->options(['KPR' => 'KPR', 'CASH' => 'CASH', 'IN HOUSE' => 'IN HOUSE'])
+                                    ->native(false),
+
+                                Forms\Components\TextInput::make('tipe_nup')->label('Type')->maxLength(64),
+                                Forms\Components\TextInput::make('pilihan_unit_1')->label('Pilihan Unit 1')->maxLength(100),
+                                Forms\Components\TextInput::make('pilihan_unit_2')->label('Pilihan Unit 2')->maxLength(100),
+                                Forms\Components\TextInput::make('pilihan_unit_3')->label('Pilihan Unit 3')->maxLength(100),
+
+                                Forms\Components\Textarea::make('keterangan')->label('Catatan')
+                                    ->rows(2)->columnSpanFull()->maxLength(500),
+                            ]),
                     ])
                     ->action(function (NupRegistration $r, array $data): void {
+                        $agent = ! empty($data['agent_id']) ? Agent::find($data['agent_id']) : null;
+
                         $r->update([
                             'email' => $data['email'],
                             'phone' => $data['phone'],
+                            'agent_id' => $data['agent_id'] ?: null,
+                            // Potret label ikut diperbarui: SPRS mendahulukan ref_sales_name,
+                            // jadi membiarkannya berarti cetakan menyebut sales yang lama
+                            // sementara komisinya sudah pindah.
+                            'ref_sales_name' => $agent?->sales_label,
+                            'tipe_nup' => $data['tipe_nup'] ?: null,
+                            'cara_bayar' => $data['cara_bayar'] ?: null,
+                            'pilihan_unit_1' => $data['pilihan_unit_1'] ?: null,
+                            'pilihan_unit_2' => $data['pilihan_unit_2'] ?: null,
+                            'pilihan_unit_3' => $data['pilihan_unit_3'] ?: null,
+                            'keterangan' => $data['keterangan'] ?: null,
+                            // Pendaftaran ikut disamakan supaya tidak tertinggal bila kelak
+                            // dibaca tanpa customer (mis. pendaftaran tanpa master).
+                            'nama_pendaftar' => $data['full_name'],
+                            'nik' => $data['nik'] ?: null,
                         ]);
 
-                        \Filament\Notifications\Notification::make()
+                        if ($c = $r->customer) {
+                            $c->update([
+                                'full_name' => $data['full_name'],
+                                'nik' => $data['nik'] ?: null,
+                                'jalan' => $data['jalan'] ?: null,
+                                'rt_rw' => $data['rt_rw'] ?: null,
+                                'kelurahan' => $data['kelurahan'] ?: null,
+                                'kecamatan' => $data['kecamatan'] ?: null,
+                                'city' => $data['city'] ?: null,
+                                'province' => $data['province'] ?: null,
+                            ]);
+                        }
+
+                        Notification::make()
                             ->title('SPRS diperbarui')
-                            ->body('Email & telepon pendaftaran diubah. Cetak ulang SPRS untuk melihat hasilnya.')
+                            ->body('Cetak ulang SPRS untuk melihat hasilnya.')
                             ->success()->send();
                     }),
 
