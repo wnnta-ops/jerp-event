@@ -7,7 +7,6 @@ use App\Modules\FO\Adminjual\Models\Skema;
 use App\Modules\FO\FinanceAR\Models\Bkm;
 use App\Modules\FO\FinanceAR\Models\Tts;
 use App\Modules\FO\FinanceAR\Services\TtsToBkmService;
-use App\Modules\FO\Komisi\Models\Agent;
 use App\Modules\FO\Launching\Models\NupRegistration;
 use App\Modules\FO\Launching\Services\ClosingNupService;
 use Filament\Forms;
@@ -29,10 +28,9 @@ use Livewire\Attributes\On;
  */
 class ClosingNup extends Page implements HasForms, HasTable
 {
-    use MematuhiIzinHalaman;
-
     use InteractsWithForms;
     use InteractsWithTable;
+    use MematuhiIzinHalaman;
 
     protected static ?string $navigationIcon = 'heroicon-o-check-circle';
 
@@ -100,7 +98,7 @@ class ClosingNup extends Page implements HasForms, HasTable
                     ->where('status', 'PILIH_UNIT')
                     ->whereNotNull('reservasi_id')
                     ->whereHas('reservasi', fn ($q) => $q->whereDoesntHave('kontrak'))
-                    ->with(['customer', 'reservasi.unit.unitType'])
+                    ->with(['customer', 'agent', 'reservasi.unit.unitType'])
             )
             ->defaultSort('updated_at', 'desc')
             ->paginated([10, 25, 50])
@@ -127,6 +125,33 @@ class ClosingNup extends Page implements HasForms, HasTable
                     ->modalHeading(fn (NupRegistration $r) => 'Closing NUP '.$r->no_nup.' — '.($r->customer?->full_name ?: $r->nama_pendaftar))
                     ->modalSubmitActionLabel('Buat Kontrak')
                     ->form([
+                        // Biodata yang DIISI SAAT MENDAFTAR NUP, ditampilkan apa adanya supaya
+                        // operator bisa mencocokkannya dengan berkas customer sebelum kontrak
+                        // terbentuk. Sekali kontrak jadi, nomor & nama ikut tercetak di SPR —
+                        // mencocokkan sesudahnya berarti membatalkan dan mengulang.
+                        Forms\Components\Section::make('Data Customer (dari form NUP)')
+                            ->columns(2)
+                            ->collapsible()
+                            ->schema([
+                                Forms\Components\Placeholder::make('c_nama')->label('Nama Pendaftar')
+                                    ->content(fn (NupRegistration $r) => $r->customer?->full_name ?: ($r->nama_pendaftar ?: '—')),
+                                Forms\Components\Placeholder::make('c_kode')->label('Kode Customer')
+                                    ->content(fn (NupRegistration $r) => $r->customer?->code ?: '—'),
+                                Forms\Components\Placeholder::make('c_nik')->label('NIK')
+                                    ->content(fn (NupRegistration $r) => $r->nik ?: ($r->customer?->nik ?: '—')),
+                                Forms\Components\Placeholder::make('c_hp')->label('No. HP')
+                                    ->content(fn (NupRegistration $r) => trim(($r->phone ?: '—').($r->secondary_phone ? ' / '.$r->secondary_phone : ''))),
+                                Forms\Components\Placeholder::make('c_email')->label('Email')
+                                    ->content(fn (NupRegistration $r) => $r->email ?: '—'),
+                                Forms\Components\Placeholder::make('c_nup')->label('NUP')
+                                    ->content(fn (NupRegistration $r) => $r->no_nup.($r->tgl_daftar ? ' · '.$r->tgl_daftar->format('d M Y') : '')),
+                                Forms\Components\Placeholder::make('c_unit')->label('Unit')
+                                    ->content(fn (NupRegistration $r) => $r->reservasi?->unit?->kode_unit ?: ($r->reservasi?->unit?->label ?: '—')),
+                                Forms\Components\Placeholder::make('c_harga')->label('Harga Reservasi')
+                                    ->content(fn (NupRegistration $r) => $r->reservasi?->harga_jual
+                                        ? 'Rp '.number_format((float) $r->reservasi->harga_jual, 0, ',', '.') : '—'),
+                            ]),
+
                         Forms\Components\DatePicker::make('tgl_kontrak')->label('Tanggal Kontrak')->default(now())->required(),
                         Forms\Components\Select::make('skema_id')
                             ->label('Skema Cara Bayar')
@@ -150,18 +175,24 @@ class ClosingNup extends Page implements HasForms, HasTable
                             ->label('Cara Bayar')
                             ->options(['KPR' => 'KPR', 'CASH_BERTAHAP' => 'Cash bertahap', 'CASH' => 'Cash keras'])
                             ->default('KPR')->required(),
-                        Forms\Components\Select::make('agent_id')
+                        // Sales TIDAK bisa dipilih di sini: yang berhak adalah sales yang
+                        // mendaftarkan NUP-nya, dan itu sudah tercatat sejak form NUP. Dulu ini
+                        // dropdown bebas, sehingga closing bisa memindahkan komisi ke sales lain
+                        // tanpa jejak — dan 293 dari 304 NUP memang sudah membawa sales-nya.
+                        // NUP tanpa sales (mis. pendaftaran langsung) memang kosong; perbaikannya
+                        // di NUP-nya, bukan dengan menebak di sini.
+                        Forms\Components\Placeholder::make('sales_nup')
                             ->label('Sales')
-                            // Hanya agent level Sales (sembunyikan Koordinator & Kantor).
-                            ->options(fn () => Agent::query()->where('is_active', true)->salesPicker()->orderBy('name')->get()
-                                ->mapWithKeys(fn (Agent $a) => [$a->id => ($a->code ? $a->code.' — ' : '').$a->name]))
-                            ->searchable()->placeholder('— pilih sales —'),
+                            ->content(fn (NupRegistration $r) => $r->agent
+                                ? trim(($r->agent->code ? $r->agent->code.' — ' : '').$r->agent->name)
+                                : ($r->ref_sales_name ?: '— tidak ada sales pada NUP ini —')),
                     ])
                     ->action(function (NupRegistration $r, array $data) {
                         try {
                             $result = app(ClosingNupService::class)->close($r, [
                                 'skema_id' => (int) $data['skema_id'],
-                                'agent_id' => $data['agent_id'] ?? null,
+                                // Dari NUP-nya, bukan dari form — bidangnya memang tidak bisa diisi.
+                                'agent_id' => $r->agent_id,
                                 'cara_bayar' => $data['cara_bayar'] ?? 'KPR',
                                 'tgl_kontrak' => $data['tgl_kontrak'] ?? now()->toDateString(),
                             ]);

@@ -149,7 +149,7 @@
                     <div class="cell"><div class="k">Unit / Blok</div><div class="v">{{ $u?->kode_unit ?: '—' }}</div></div>
                     <div class="cell"><div class="k">Tipe</div><div class="v">{{ $u?->unitType?->name ?: '—' }}</div></div>
                     <div class="cell"><div class="k">Lokasi / Cluster</div><div class="v">{{ $u?->lokasi?->nama ?: ($u?->cluster ?: '—') }}</div></div>
-                    <div class="cell"><div class="k">Luas Tanah / Bangunan</div><div class="v">{{ ($u?->luas_tanah ?: '—') }} / {{ ($u?->luas_bangunan ?: '—') }} m²</div></div>
+                    <div class="cell"><div class="k">Luas Tanah / Bangunan</div><div class="v">{{ \App\Support\Luas::rapi($u?->luas_tanah) }} / {{ \App\Support\Luas::rapi($u?->luas_bangunan) }} m²</div></div>
                     <div class="cell"><div class="k">Skema Bayar</div><div class="v">{{ $k?->skema?->name ?: $k?->cara_bayar ?: '—' }}</div></div>
                 </div>
                 @if ($u?->alamat)

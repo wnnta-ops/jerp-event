@@ -80,7 +80,7 @@
         $blok = $unit ? trim(($unit->blok ?: '') . ($unit->no_unit ? ' No. ' . $unit->no_unit : '')) : '';
         $lt = $unit?->luas_tanah ?: $ut?->luas_tanah;
         $lb = $ut?->luas_bangunan;
-        $ltlb = ($lt || $lb) ? (($lt ?: '-') . ' / ' . ($lb ?: '-')) : '';
+        $ltlb = ($lt || $lb) ? (\App\Support\Luas::rapi($lt, '-') . ' / ' . \App\Support\Luas::rapi($lb, '-')) : '';
 
         $hargaMengikat = $k ? $rp($k->total_kontrak) : '';
         $tandaJadi = (float) ($k?->reservasi?->booking_fee ?: ($reg->booking_fee_paid ?: $reg->utj_amount));

@@ -51,7 +51,7 @@
         $ag = $kontrak->agent;
         $kpr = $kontrak->cara_bayar === 'KPR';
         $alamatKtp = $c?->alamatRingkas() ?: '—';
-        $unitDesc = $u?->alamat ?: trim(($u?->kode_unit ?: '').' - '.($u?->unitType?->name ?: '').' - LT '.($u?->luas_tanah ?: '-').' - LB '.($u?->luas_bangunan ?: '-'), ' -');
+        $unitDesc = $u?->alamat ?: trim(($u?->kode_unit ?: '').' - '.($u?->unitType?->name ?: '').' - LT '.\App\Support\Luas::rapi($u?->luas_tanah, '-').' - LB '.\App\Support\Luas::rapi($u?->luas_bangunan, '-'), ' -');
         $clusterKode = $u?->lokasi?->kode ?: ($u?->blok ?: '—');
         $lokasiNama = $u?->lokasi?->nama ?: '—';
         $harga = (float) $kontrak->harga_jual;
@@ -139,8 +139,8 @@
             <tr><td class="k">1. Unit</td><td class="s">:</td><td>{{ $unitDesc }}</td></tr>
             <tr><td class="k">2. Cluster</td><td class="s">:</td><td>{{ $clusterKode }}</td></tr>
             <tr><td class="k">3. Lokasi</td><td class="s">:</td><td>{{ $lokasiNama }}</td></tr>
-            <tr><td class="k">4. Luas Tanah</td><td class="s">:</td><td>{{ $u?->luas_tanah ?: '—' }}</td></tr>
-            <tr><td class="k">5. Luas Bangunan</td><td class="s">:</td><td>{{ $u?->luas_bangunan ?: '—' }}</td></tr>
+            <tr><td class="k">4. Luas Tanah</td><td class="s">:</td><td>{{ \App\Support\Luas::rapi($u?->luas_tanah) }}</td></tr>
+            <tr><td class="k">5. Luas Bangunan</td><td class="s">:</td><td>{{ \App\Support\Luas::rapi($u?->luas_bangunan) }}</td></tr>
             <tr><td class="k">6. Peruntukkan</td><td class="s">:</td><td>RUMAH</td></tr>
             <tr><td class="k">7. Harga Include PPN</td><td class="s">:</td><td>Rp {{ number_format($harga, 0, ',', '.') }}</td></tr>
             <tr><td class="k">8. Diskon</td><td class="s">:</td><td>Rp {{ number_format($diskonVal, 0, ',', '.') }}</td></tr>
