@@ -16,7 +16,7 @@ class BsEmployee extends Model
     protected $table = 'bs_employees';
 
     protected $fillable = [
-        'tenant_id', 'nik', 'name', 'position', 'department_id', 'cost_center_id', 'join_date',
+        'tenant_id', 'nik', 'name', 'position', 'cost_center_id', 'join_date',
         'base_salary', 'allowance', 'bank_name', 'bank_account', 'npwp', 'is_active', 'created_by',
     ];
 
@@ -27,11 +27,6 @@ class BsEmployee extends Model
     public function costCenter(): BelongsTo
     {
         return $this->belongsTo(BsCostCenter::class, 'cost_center_id');
-    }
-
-    public function department(): BelongsTo
-    {
-        return $this->belongsTo(BsHrDepartment::class, 'department_id');
     }
 
     public function getGrossAttribute(): float

@@ -1142,10 +1142,6 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
     Route::post('/business-support/dc-employee-merge',         [BsEmployeeCenterController::class, 'mergeApply'])->name('bs.dc.employee.merge.apply');
     Route::get('/business-support/dc-employee-repair',         [BsEmployeeCenterController::class, 'repair'])->name('bs.dc.employee.repair');
     Route::post('/business-support/dc-employee-repair/run',    [BsEmployeeCenterController::class, 'repairRun'])->name('bs.dc.employee.repair.run');
-    Route::get('/business-support/dc-hr-department',           [BsEmployeeCenterController::class, 'deptIndex'])->name('bs.dc.department.index');
-    Route::post('/business-support/dc-hr-department',          [BsEmployeeCenterController::class, 'deptStore'])->name('bs.dc.department.store');
-    Route::put('/business-support/dc-hr-department/{department}',   [BsEmployeeCenterController::class, 'deptUpdate'])->name('bs.dc.department.update');
-    Route::delete('/business-support/dc-hr-department/{department}',[BsEmployeeCenterController::class, 'deptDestroy'])->name('bs.dc.department.destroy');
 
     Route::get('/business-support/projection',                    [BsProjectionController::class, 'index'])->name('bs.projection');
 

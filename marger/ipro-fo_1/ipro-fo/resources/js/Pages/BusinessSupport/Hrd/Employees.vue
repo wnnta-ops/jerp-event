@@ -17,7 +17,6 @@ const props = defineProps<{
     employees: any;
     filters: { search?: string; status?: string };
     costCenters: Array<any>;
-    departments: Array<any>;
     summary: { active: number; payroll: number };
 }>();
 
@@ -28,11 +27,11 @@ function fmtRp(v: number) { return 'Rp ' + Number(v ?? 0).toLocaleString('id-ID'
 
 const showModal = ref(false);
 const editingId = ref<number | null>(null);
-const form = useForm<any>({ nik: '', name: '', position: '', department_id: '', cost_center_id: '', join_date: '', base_salary: 0, allowance: 0, bank_name: '', bank_account: '', is_active: true });
+const form = useForm<any>({ nik: '', name: '', position: '', cost_center_id: '', join_date: '', base_salary: 0, allowance: 0, bank_name: '', bank_account: '', is_active: true });
 function openCreate() { editingId.value = null; form.reset(); showModal.value = true; }
 function openEdit(e: any) {
     editingId.value = e.id;
-    Object.assign(form, { nik: e.nik ?? '', name: e.name, position: e.position ?? '', department_id: e.department_id ?? '', cost_center_id: e.cost_center_id ?? '', join_date: e.join_date ? e.join_date.slice(0,10) : '', base_salary: Number(e.base_salary), allowance: Number(e.allowance), bank_name: e.bank_name ?? '', bank_account: e.bank_account ?? '', is_active: !!e.is_active });
+    Object.assign(form, { nik: e.nik ?? '', name: e.name, position: e.position ?? '', cost_center_id: e.cost_center_id ?? '', join_date: e.join_date ? e.join_date.slice(0,10) : '', base_salary: Number(e.base_salary), allowance: Number(e.allowance), bank_name: e.bank_name ?? '', bank_account: e.bank_account ?? '', is_active: !!e.is_active });
     showModal.value = true;
 }
 function submit() {
@@ -74,7 +73,7 @@ const inputCls = 'h-9 w-full rounded-lg border border-neutral-300 bg-white px-3 
                         <td class="px-4 py-2.5 font-mono text-xs">{{ e.nik ?? '—' }}</td>
                         <td class="px-4 py-2.5 font-medium">{{ e.name }}</td>
                         <td class="px-4 py-2.5">{{ e.position ?? '—' }}</td>
-                        <td class="px-4 py-2.5 text-neutral-500">{{ e.department?.name ?? '—' }}</td>
+                        <td class="px-4 py-2.5 text-neutral-500">{{ e.cost_center?.name ?? '—' }}</td>
                         <td class="px-4 py-2.5 text-right font-mono">{{ fmtRp(e.base_salary) }}</td>
                         <td class="px-4 py-2.5 text-right font-mono">{{ fmtRp(e.allowance) }}</td>
                         <td class="px-4 py-2.5 text-center"><Badge :variant="e.is_active ? 'success' : 'neutral'" size="sm">{{ e.is_active ? 'Aktif' : 'Nonaktif' }}</Badge></td>
@@ -93,17 +92,21 @@ const inputCls = 'h-9 w-full rounded-lg border border-neutral-300 bg-white px-3 
                         <div><label class="mb-1 block text-xs font-medium text-neutral-500">NIK</label><input v-model="form.nik" :class="inputCls" /></div>
                         <div><label class="mb-1 block text-xs font-medium text-neutral-500">Nama *</label><input v-model="form.name" required :class="inputCls" /></div>
                         <div><label class="mb-1 block text-xs font-medium text-neutral-500">Jabatan</label><input v-model="form.position" :class="inputCls" /></div>
-                        <!-- Departemen — SATU sumber dengan Pengajuan Bon Sementara, SIP, dan Bukti Permohonan
-                             Pembayaran. Dulu isian ini terikat cost_center_id, tabel yang sama sekali
-                             berbeda, sehingga department_id karyawan selalu kosong dan ketiga layar itu
-                             tidak pernah bisa mengisi departemennya sendiri. -->
+                        <!-- Tetap disebut "Departemen" di layar HR, tetapi sumbernya bs_cost_centers —
+                             SATU isian dengan yang dipakai Accounting, bukan dua master yang saling
+                             menggantikan. Master Departemen (bs_hr_departments) tidak pernah diisi (0
+                             baris), sehingga department_id selalu kosong dan SIP maupun Bukti
+                             Permohonan Pembayaran tidak pernah bisa menyebutkan unit kerja siapa pun.
+                             Cost Center justru terisi, isinya memang nama divisi, dan sudah dipakai
+                             Budget Control & jurnal — layar Pengajuan Bon Sementara pun lebih dulu
+                             membuang kolom Departemen demi Cost Center. Ini menyamakan sisanya. -->
                         <div>
                             <label class="mb-1 block text-xs font-medium text-neutral-500">Departemen</label>
-                            <select v-model="form.department_id" :class="inputCls">
+                            <select v-model="form.cost_center_id" :class="inputCls">
                                 <option value="">—</option>
-                                <option v-for="d in departments" :key="d.id" :value="d.id">{{ d.name }}</option>
+                                <option v-for="c in costCenters" :key="c.id" :value="c.id">{{ c.name }}</option>
                             </select>
-                            <p class="mt-1 text-[11px] text-neutral-400">Terpakai otomatis pada Pengajuan Bon Sementara karyawan ini.</p>
+                            <p class="mt-1 text-[11px] text-neutral-400">Tercetak di SIP &amp; Bukti Permohonan Pembayaran, dan terpakai otomatis pada Pengajuan Bon Sementara karyawan ini.</p>
                         </div>
                         <div><label class="mb-1 block text-xs font-medium text-neutral-500">Tgl Masuk</label><input v-model="form.join_date" type="date" :class="inputCls" /></div>
                         <div><label class="mb-1 block text-xs font-medium text-neutral-500">Gaji Pokok *</label><input v-model.number="form.base_salary" type="number" step="1" min="0" required :class="[inputCls,'text-right font-mono']" /></div>

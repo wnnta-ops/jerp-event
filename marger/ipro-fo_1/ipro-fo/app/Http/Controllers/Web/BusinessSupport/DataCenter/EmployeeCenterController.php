@@ -6,7 +6,6 @@ namespace App\Http\Controllers\Web\BusinessSupport\DataCenter;
 
 use App\Domain\BusinessSupport\Models\BsCostCenter;
 use App\Domain\BusinessSupport\Models\BsEmployee;
-use App\Domain\BusinessSupport\Models\BsHrDepartment;
 use App\Http\Controllers\Controller;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -24,48 +23,10 @@ class EmployeeCenterController extends Controller
         abort_unless($request->user()?->can('datacenter.employee.create'), 403);
 
         return Inertia::render('BusinessSupport/DataCenter/Employee/Create', [
+            // Isian "Departemen" pada layar itu bersumber cost center — satu isian, bukan dua
+            // master yang menanyakan hal yang sama. Master HR Department tidak pernah diisi.
             'costCenters' => BsCostCenter::where('is_active', true)->orderBy('code')->get(['id', 'code', 'name']),
-            'departments' => BsHrDepartment::where('is_active', true)->orderBy('code')->get(['id', 'code', 'name']),
         ]);
-    }
-
-    // ── HR Department (master) ──
-    public function deptIndex(Request $request): Response
-    {
-        abort_unless($request->user()?->can('datacenter.department.view'), 403);
-
-        return Inertia::render('BusinessSupport/DataCenter/Employee/Department', [
-            'rows' => BsHrDepartment::orderBy('code')->get(),
-        ]);
-    }
-
-    public function deptStore(Request $request): RedirectResponse
-    {
-        abort_unless($request->user()?->can('businesssupport.setup.manage'), 403);
-        BsHrDepartment::create(array_merge($this->deptRules($request), ['tenant_id' => tenant_id()]));
-
-        return back()->with('success', 'HR Department ditambahkan.');
-    }
-
-    public function deptUpdate(Request $request, BsHrDepartment $department): RedirectResponse
-    {
-        abort_unless($request->user()?->can('businesssupport.setup.manage'), 403);
-        $department->update($this->deptRules($request));
-
-        return back()->with('success', 'HR Department diperbarui.');
-    }
-
-    public function deptDestroy(Request $request, BsHrDepartment $department): RedirectResponse
-    {
-        abort_unless($request->user()?->can('businesssupport.setup.manage'), 403);
-        $department->delete();
-
-        return back()->with('success', 'HR Department dihapus.');
-    }
-
-    private function deptRules(Request $request): array
-    {
-        return $request->validate(['code' => ['required', 'string', 'max:40'], 'name' => ['required', 'string', 'max:150'], 'head' => ['nullable', 'string', 'max:100'], 'is_active' => ['nullable', 'boolean'], 'notes' => ['nullable', 'string', 'max:200']]);
     }
 
     // ── Merge Karyawan ──
@@ -100,7 +61,7 @@ class EmployeeCenterController extends Controller
         abort_unless($request->user()?->can('datacenter.employee.repair'), 403);
 
         $dupNik = BsEmployee::whereNotNull('nik')->where('nik', '!=', '')->select('nik')->groupBy('nik')->havingRaw('COUNT(*) > 1')->pluck('nik');
-        $noNik  = BsEmployee::whereNull('nik')->orWhere('nik', '')->count();
+        $noNik = BsEmployee::whereNull('nik')->orWhere('nik', '')->count();
 
         return Inertia::render('BusinessSupport/DataCenter/Employee/Repair', [
             'issues' => [

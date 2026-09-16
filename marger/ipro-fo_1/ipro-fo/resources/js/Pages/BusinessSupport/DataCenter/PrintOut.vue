@@ -23,7 +23,6 @@ const links = computed(() => {
         ],
         employee: [
             { label: 'Daftar Karyawan', desc: 'Cetak daftar master karyawan.', route: r('bs.employees.index') },
-            { label: 'HR Department', desc: 'Daftar departemen.', route: r('bs.dc.department.index') },
         ],
     };
 

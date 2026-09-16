@@ -1,4 +1,4 @@
-<!-- Employee registration form: NIK, HR department, cost center, payroll & bank details. -->
+<!-- Employee registration form: NIK, departemen (= cost center), payroll & bank details. -->
 <script setup lang="ts">
 import { Link, useForm } from '@inertiajs/vue3';
 import { ArrowLeft, UserPlus, Save } from 'lucide-vue-next';
@@ -6,7 +6,6 @@ import Button from '@/Components/UI/Button.vue';
 
 defineProps<{
   costCenters: Array<any>;
-  departments: Array<any>;
 }>();
 
 function fmtRp(v: number) { return 'Rp ' + Number(v ?? 0).toLocaleString('id-ID'); }
@@ -17,7 +16,6 @@ const form = useForm({
   nik: '',
   name: '',
   position: '',
-  department_id: '',
   cost_center_id: '',
   join_date: today,
   base_salary: 0,
@@ -63,19 +61,15 @@ function submit() {
             <input v-model="form.position" type="text" :class="inputCls" />
           </div>
 
+          <!-- Dulu dua isian: "HR Department" dan "Cost Center / Divisi", dua master berbeda
+               yang menanyakan hal yang sama. Master Departemen tidak pernah diisi (0 baris),
+               jadi yang terpakai selalu Cost Center. Disatukan jadi satu isian; namanya tetap
+               "Departemen" karena ini layar HR. -->
           <div>
-            <label class="mb-1 block text-sm font-medium">HR Department</label>
-            <select v-model="form.department_id" :class="inputCls">
-              <option value="">— Pilih —</option>
-              <option v-for="d in departments" :key="d.id" :value="d.id">{{ d.code }} - {{ d.name }}</option>
-            </select>
-          </div>
-
-          <div>
-            <label class="mb-1 block text-sm font-medium">Cost Center / Divisi</label>
+            <label class="mb-1 block text-sm font-medium">Departemen</label>
             <select v-model="form.cost_center_id" :class="inputCls">
               <option value="">— Pilih —</option>
-              <option v-for="c in costCenters" :key="c.id" :value="c.id">{{ c.code }} - {{ c.name }}</option>
+              <option v-for="c in costCenters" :key="c.id" :value="c.id">{{ c.name }}</option>
             </select>
           </div>
 

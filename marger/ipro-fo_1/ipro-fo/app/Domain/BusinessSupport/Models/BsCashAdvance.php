@@ -15,13 +15,15 @@ class BsCashAdvance extends Model
     use HasTenant, SoftDeletes;
 
     protected $table = 'bs_cash_advances';
+
     protected $fillable = [
-        'tenant_id', 'advance_number', 'advance_date', 'paid_date', 'holder', 'department_id', 'purpose', 'cash_account_id',
+        'tenant_id', 'advance_number', 'advance_date', 'paid_date', 'holder', 'purpose', 'cash_account_id',
         'advance_account_id', 'amount', 'status', 'realized_date', 'realized_amount', 'settlement',
         'settlement_status', 'journal_id', 'realize_journal_id', 'settle_journal_id', 'created_by',
         'received_document_date', 'approvals', 'cost_center_id', // #125, #127
         'approval_mode', 'payment_method', 'va_expired_date', 'credit_card_id',
     ];
+
     protected $casts = [
         'advance_date' => 'date', 'paid_date' => 'date', 'realized_date' => 'date',
         'received_document_date' => 'date:Y-m-d', // #125 agar <input type=date> ter-prefill
@@ -31,9 +33,9 @@ class BsCashAdvance extends Model
     ];
 
     public const STATUSES = [
-        'requested'   => 'Diajukan',
+        'requested' => 'Diajukan',
         'outstanding' => 'Outstanding',
-        'realized'    => 'Realized',
+        'realized' => 'Realized',
     ];
 
     /**
@@ -49,7 +51,7 @@ class BsCashAdvance extends Model
      * sama, sebab justru kertas itulah tempat tanda tangannya dikumpulkan.
      */
     public const APPROVAL_MODES = [
-        'online'  => 'Persetujuan Online (berjenjang di aplikasi)',
+        'online' => 'Persetujuan Online (berjenjang di aplikasi)',
         'offline' => 'Persetujuan Offline (tanda tangan di kertas)',
     ];
 
@@ -66,21 +68,21 @@ class BsCashAdvance extends Model
      * cara uangnya berpindah, bukan akuntansinya.
      */
     public const PAYMENT_METHODS = [
-        'reguler'  => 'Pembayaran Reguler',
+        'reguler' => 'Pembayaran Reguler',
         'debit_va' => 'Pembayaran Debit VA',
     ];
 
     /** #127 — slot approval berjenjang (urut). Moch Winarto & Boy Arifin hanya untuk pengajuan MULAI Rp 1 juta. */
     public const SIGNERS = [
-        'pengaju'            => 'Pengaju (User Dept)',
-        'spv_manager_dept'   => 'SPV / Manager Dept',
-        'general_manager'    => 'General Manager',
-        'direksi'            => 'Direksi',
-        'moch_winarto'       => 'Moch Winarto',
-        'boy_arifin'         => 'Boy Arifin',
-        'staf_accounting'    => 'Staf Accounting',
+        'pengaju' => 'Pengaju (User Dept)',
+        'spv_manager_dept' => 'SPV / Manager Dept',
+        'general_manager' => 'General Manager',
+        'direksi' => 'Direksi',
+        'moch_winarto' => 'Moch Winarto',
+        'boy_arifin' => 'Boy Arifin',
+        'staf_accounting' => 'Staf Accounting',
         'manager_accounting' => 'Manager Accounting',
-        'manager_finance'    => 'Manager Finance',
+        'manager_finance' => 'Manager Finance',
     ];
 
     /**
@@ -138,14 +140,31 @@ class BsCashAdvance extends Model
         return true;
     }
 
-    public function cashAccount(): BelongsTo { return $this->belongsTo(BsAccount::class, 'cash_account_id'); }
+    public function cashAccount(): BelongsTo
+    {
+        return $this->belongsTo(BsAccount::class, 'cash_account_id');
+    }
+
     /** Cost center (departemen) penanggung bon ini — dimensi yang dibaca Budget Control. */
-    public function costCenter(): BelongsTo { return $this->belongsTo(BsCostCenter::class, 'cost_center_id'); }
+    public function costCenter(): BelongsTo
+    {
+        return $this->belongsTo(BsCostCenter::class, 'cost_center_id');
+    }
+
     /** Kartu debit/VA yang dipakai — hanya terisi pada pembayaran Debit VA. */
-    public function creditCard(): BelongsTo { return $this->belongsTo(BsCreditCard::class, 'credit_card_id'); }
-    public function department(): BelongsTo { return $this->belongsTo(BsHrDepartment::class, 'department_id'); } // #150
-    public function lines(): HasMany { return $this->hasMany(BsCashAdvanceLine::class, 'cash_advance_id'); }
+    public function creditCard(): BelongsTo
+    {
+        return $this->belongsTo(BsCreditCard::class, 'credit_card_id');
+    }
+
+    public function lines(): HasMany
+    {
+        return $this->hasMany(BsCashAdvanceLine::class, 'cash_advance_id');
+    }
 
     /** Alokasi Kasbon — pengeluaran bertahap bon Debit VA; tiap baris berjurnal sendiri. */
-    public function allocations(): HasMany { return $this->hasMany(BsCashAdvanceAllocation::class, 'cash_advance_id'); }
+    public function allocations(): HasMany
+    {
+        return $this->hasMany(BsCashAdvanceAllocation::class, 'cash_advance_id');
+    }
 }

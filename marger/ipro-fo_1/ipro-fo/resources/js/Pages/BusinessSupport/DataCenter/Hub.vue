@@ -29,7 +29,6 @@ const menu: Array<{ group: string; icon: any; items: Array<{ label: string; rout
     { group: 'Employee Center', icon: IdCard, items: [
         { label: 'Print-Out', route: r('bs.dc.employee.printout') },
         { label: 'Karyawan', route: r('bs.employees.index') },
-        { label: 'HR Department', route: r('bs.dc.department.index') },
         { label: 'Registrasi Karyawan', route: r('bs.dc.employee.create') },
         { label: 'Merge Karyawan', route: r('bs.dc.employee.merge') },
         { label: 'Repair Data Karyawan', route: r('bs.dc.employee.repair') },
