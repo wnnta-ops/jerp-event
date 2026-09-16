@@ -8,6 +8,7 @@ use App\Modules\FO\Booked\Services\BookedRegistrationService;
 use App\Modules\FO\Komisi\Models\Agent;
 use App\Services\Recaptcha\RecaptchaVerifier;
 use App\Settings\FoSettings;
+use App\Support\NomorHp;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 use Livewire\Component;
@@ -156,6 +157,25 @@ class PublicForm extends Component
         }
     }
 
+    /**
+     * Rapikan nomor begitu isian ditinggalkan: buang non-angka dan awalan 0/62/+62.
+     *
+     * Isiannya sudah menampilkan "+62" di sebelah kiri, jadi yang tersisa di kotak harus
+     * bagian SESUDAH itu. Tanpa ini, orang yang mengetik "08123456789" — bentuk yang paling
+     * wajar — menghasilkan tampilan "+62 08123456789" dan tersimpan apa adanya.
+     */
+    public function updatedMobile($value): void
+    {
+        $this->mobile = NomorHp::tanpaAwalan($value);
+    }
+
+    public function updatedSecondaryPhone($value): void
+    {
+        $this->secondary_phone = $value === null || trim((string) $value) === ''
+            ? null
+            : NomorHp::tanpaAwalan($value);
+    }
+
     protected function rules(): array
     {
         return [
@@ -169,10 +189,21 @@ class PublicForm extends Component
             'marital_status' => ['nullable', Rule::in(['BELUM', 'KAWIN', 'CERAI'])],
             'religion' => ['nullable', 'string', 'max:32'],
             'occupation' => ['nullable', 'string', 'max:255'],
-            'mobile' => ['required', 'string', 'min:8', 'max:32'],
+            // Nomor HP, bukan sekadar 8 karakter. Aturan bakunya di App\Support\NomorHp —
+            // sama dengan yang dipakai gateway WhatsApp, supaya nomor yang lolos di sini
+            // pasti bisa dikirimi pesan.
+            'mobile' => ['required', 'string', 'max:32', function ($attr, $value, $fail) {
+                if (! NomorHp::sah($value)) {
+                    $fail('Nomor HP tidak sesuai. Contoh: 81234567890 (tanpa 0 di depan).');
+                }
+            }],
             'phone' => ['nullable', 'string', 'max:32'],
             'show_secondary_phone' => ['boolean'],
-            'secondary_phone' => ['nullable', 'string', 'max:32'],
+            'secondary_phone' => ['nullable', 'string', 'max:32', function ($attr, $value, $fail) {
+                if (trim((string) $value) !== '' && ! NomorHp::sah($value)) {
+                    $fail('Nomor HP kedua tidak sesuai. Contoh: 81234567890 (tanpa 0 di depan).');
+                }
+            }],
             'email' => ['required', 'email', 'max:255'],
             'jalan' => ['nullable', 'string', 'max:255'],
             'rt_rw' => ['nullable', 'string', 'max:16'],
@@ -284,9 +315,11 @@ class PublicForm extends Component
                     'marital_status' => $this->marital_status,
                     'religion' => $this->religion,
                     'occupation' => $this->occupation,
-                    'mobile' => $this->mobile,
+                    'mobile' => NomorHp::baku($this->mobile),
                     'phone' => $this->phone,
-                    'secondary_phone' => $this->show_secondary_phone ? $this->secondary_phone : null,
+                    'secondary_phone' => $this->show_secondary_phone
+                        ? NomorHp::baku($this->secondary_phone)
+                        : null,
                     'email' => $this->email,
                     'jalan' => $this->jalan,
                     'rt_rw' => $this->rt_rw,
