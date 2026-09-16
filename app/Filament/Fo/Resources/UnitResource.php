@@ -6,6 +6,7 @@ use App\Filament\Concerns\MematuhiIzin;
 use App\Filament\Fo\Resources\UnitResource\Pages;
 use App\Modules\FO\MarketingSales\Models\Tahap;
 use App\Modules\FO\MarketingSales\Models\Unit;
+use App\Support\Luas;
 use Filament\Forms;
 use Filament\Forms\Form;
 use Filament\Resources\Resource;
@@ -103,10 +104,27 @@ class UnitResource extends Resource
             Forms\Components\Section::make('Spesifikasi & Harga')
                 ->columns(3)
                 ->schema([
-                    Forms\Components\TextInput::make('luas_tanah')->label('Luas tanah (m²)')->numeric(),
-                    Forms\Components\TextInput::make('luas_bangunan')->label('Luas bangunan (m²)')->numeric(),
+                    Forms\Components\TextInput::make('luas_tanah')->label('Luas tanah (m²)')->numeric()
+                        ->formatStateUsing(fn ($state) => Luas::isian($state)),
+                    Forms\Components\TextInput::make('luas_bangunan')->label('Luas bangunan (m²)')->numeric()
+                        ->formatStateUsing(fn ($state) => Luas::isian($state)),
                     Forms\Components\TextInput::make('harga_jual')->label('Harga jual')->numeric()->rupiah()->default(0),
-                    Forms\Components\Textarea::make('keterangan')->rows(2)->columnSpanFull(),
+
+                    // Alamat/deskripsi unit — TULISAN YANG BENAR-BENAR DIPAKAI orang:
+                    // label di Pilih Unit & siteplan, deskripsi unit di cetak SPR, baris
+                    // "Alamat Unit" di Faktur Penjualan, dan penanda {unit} pada surat
+                    // Collection. Terisi dari migrasi (1358 dari 1358) tapi tidak pernah
+                    // punya isian di layar ini, sehingga salah ketik tidak bisa dibetulkan
+                    // dari mana pun. Keterangan di bawah TIDAK dibaca keempatnya — mengetik
+                    // koreksi di sana tidak akan mengubah satu pun dokumen.
+                    Forms\Components\Textarea::make('alamat')
+                        ->label('Alamat / Deskripsi Unit')
+                        ->rows(2)->columnSpanFull()->maxLength(500)
+                        ->helperText('Dipakai di siteplan, cetak SPR, Faktur Penjualan, dan surat Collection. Contoh: JL. JAVA RESIDENCE KRIAN 2 II NO. 3 - TIPE AKASIA 6X15 - LT. 90 LB. 36'),
+
+                    Forms\Components\Textarea::make('keterangan')->label('Keterangan (catatan internal)')
+                        ->rows(2)->columnSpanFull()
+                        ->helperText('Catatan bebas untuk tim sendiri — tidak ikut tercetak di dokumen mana pun.'),
                     Forms\Components\Toggle::make('is_active')->label('Aktif')->default(true),
                 ]),
         ]);
@@ -124,8 +142,10 @@ class UnitResource extends Resource
                 Tables\Columns\TextColumn::make('no_unit')->label('Nomer')->sortable()->searchable()->toggleable(),
                 Tables\Columns\TextColumn::make('unitType.name')->label('Tipe')->sortable()->toggleable(),
                 Tables\Columns\TextColumn::make('cluster')->label('Cluster')->toggleable(),
-                Tables\Columns\TextColumn::make('luas_tanah')->label('LT')->numeric(2)->alignEnd()->toggleable(),
-                Tables\Columns\TextColumn::make('luas_bangunan')->label('LB')->numeric(2)->alignEnd()->toggleable(),
+                Tables\Columns\TextColumn::make('luas_tanah')->label('LT')
+                    ->formatStateUsing(fn ($state) => Luas::rapi($state))->alignEnd()->toggleable(),
+                Tables\Columns\TextColumn::make('luas_bangunan')->label('LB')
+                    ->formatStateUsing(fn ($state) => Luas::rapi($state))->alignEnd()->toggleable(),
                 Tables\Columns\TextColumn::make('harga_jual')->label('Harga jual')->money('IDR', divideBy: 0)->alignEnd(),
                 Tables\Columns\TextColumn::make('status')->label('Status')->badge()->color(fn (?string $state) => match ($state) {
                     'TERSEDIA' => 'success',
