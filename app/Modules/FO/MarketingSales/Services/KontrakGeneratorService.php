@@ -3,6 +3,7 @@
 namespace App\Modules\FO\MarketingSales\Services;
 
 use App\Modules\FO\Adminjual\Models\Gimmick;
+use App\Modules\FO\FinanceAR\Models\Bkm;
 use App\Modules\FO\Komisi\Models\SkemaKomisi;
 use App\Modules\FO\MarketingSales\Models\Kontrak;
 
@@ -219,7 +220,7 @@ class KontrakGeneratorService
     /** Re-apply pembayaran booking fee (BKM BOOKING POSTED) ke baris BF jadwal. */
     private function reapplyBookingFee(Kontrak $kontrak): void
     {
-        $paid = (float) \App\Modules\FO\FinanceAR\Models\Bkm::query()
+        $paid = (float) Bkm::query()
             ->where('kontrak_id', $kontrak->id)->where('status', 'POSTED')
             ->where('jenis_pembayaran', 'BOOKING')->sum('amount');
         if ($paid <= 0.5) {
@@ -232,7 +233,7 @@ class KontrakGeneratorService
         $bf->pelunasan = min($paid, (float) $bf->nilai);
         $bf->save();
         // Tautkan kembali BKM booking ke baris BF agar sisa/Collection akurat.
-        \App\Modules\FO\FinanceAR\Models\Bkm::query()
+        Bkm::query()
             ->where('kontrak_id', $kontrak->id)->where('status', 'POSTED')
             ->where('jenis_pembayaran', 'BOOKING')->whereNull('kontrak_tagihan_id')
             ->update(['kontrak_tagihan_id' => $bf->id]);
@@ -419,7 +420,21 @@ class KontrakGeneratorService
         return $freedSum;
     }
 
-    /** Gimmick dari master (aktif, sesuai project unit / berlaku semua). */
+    /**
+     * Gimmick dari master (aktif, sesuai project unit / berlaku semua).
+     *
+     * Barisnya dibuat sebagai DAFTAR PILIHAN, bukan janji. `diberikan` sengaja false:
+     * yang bernilai true-lah yang tercetak di SPR sebagai hak customer, dan itu harus
+     * ditentukan orang, bukan oleh keberadaan item di master.
+     *
+     * Sebelumnya semuanya ditandai true, sehingga setiap kontrak baru otomatis menjanjikan
+     * seluruh isi master — termasuk item bernilai seperti "EMAS 2 GR*" — tanpa ada yang
+     * memilihnya. Itu janji tertulis kepada pembeli di dokumen yang ditandatangani.
+     *
+     * Ini juga menyelaraskan dengan tab Gimmick di kontrak, yang memang dirancang manual:
+     * repeater-nya defaultItems(0) dengan tombol "Tambah Gimmick", dan togglenya bernama
+     * "Aktif (tampil di SPR)".
+     */
     public function gimmick(Kontrak $kontrak, bool $replace = true): int
     {
         if ($replace) {
@@ -437,7 +452,7 @@ class KontrakGeneratorService
             $kontrak->gimmicks()->create([
                 'gimmick_id' => $g->id,
                 'nama_barang' => $g->name,
-                'diberikan' => true,
+                'diberikan' => false,
                 'diterima' => false,
                 'qty' => 1,
                 'harga_satuan' => (float) $g->nilai,
