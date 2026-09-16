@@ -2,6 +2,7 @@
 
 namespace App\Modules\FO\Shared\Integrations\WhatsApp;
 
+use App\Support\NomorHp;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
@@ -93,22 +94,15 @@ class QontakWhatsAppGateway implements WhatsAppGatewayInterface
     /**
      * Normalkan nomor ke format internasional tanpa "+": 08… → 628…, +62… → 62….
      */
+    /**
+     * Aturannya pindah ke App\Support\NomorHp supaya hanya ada satu tempat.
+     *
+     * Dulu aturan ini cuma ada di sini dan hanya dipakai SAAT MENGIRIM, sehingga nomor
+     * rusak baru ketahuan ketika pesannya gagal — setelah orangnya pulang. Kini form
+     * publik NUP & Booked memakai aturan yang sama saat nomornya diketik.
+     */
     private function normalizeNumber(string $number): string
     {
-        $digits = preg_replace('/\D+/', '', $number) ?? '';
-        if ($digits === '') {
-            return '';
-        }
-        if (str_starts_with($digits, '0')) {
-            return '62'.substr($digits, 1);
-        }
-        if (str_starts_with($digits, '62')) {
-            return $digits;
-        }
-        if (str_starts_with($digits, '8')) {
-            return '62'.$digits;
-        }
-
-        return $digits;
+        return NomorHp::baku($number) ?? '';
     }
 }
