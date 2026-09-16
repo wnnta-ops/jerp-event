@@ -37,9 +37,29 @@ class Luas
             return $kosong;
         }
 
-        // rtrim dua tahap: buang nol di belakang, lalu titik desimal bila tak bersisa.
-        $s = rtrim(rtrim(number_format($f, 2, '.', ''), '0'), '.');
+        return str_replace('.', ',', self::angka($f));
+    }
 
-        return str_replace('.', ',', $s);
+    /**
+     * Bentuk untuk ISIAN FORM — sama rapinya, tetapi pemisah desimalnya TITIK.
+     *
+     * TextInput::numeric() memakai <input type="number">, dan itu hanya menerima titik;
+     * koma membuat isiannya terbaca kosong lalu tersimpan 0 begitu form disubmit. Karena
+     * itu tampilan cetak dan tampilan isian sengaja dibedakan di sini, bukan dipaksa sama.
+     */
+    public static function isian(mixed $v): ?string
+    {
+        if ($v === null || $v === '' || $v === false) {
+            return null;
+        }
+
+        return self::angka((float) $v);
+    }
+
+    /** "105.00" → "105", "87.50" → "87.5". Nol di belakang dibuang, nilainya tidak dibulatkan. */
+    private static function angka(float $f): string
+    {
+        // rtrim dua tahap: buang nol di belakang, lalu titik desimal bila tak bersisa.
+        return rtrim(rtrim(number_format($f, 2, '.', ''), '0'), '.');
     }
 }

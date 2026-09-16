@@ -5,6 +5,7 @@ namespace App\Filament\Fo\Resources;
 use App\Filament\Concerns\MematuhiIzin;
 use App\Filament\Fo\Resources\UnitTypeResource\Pages;
 use App\Modules\FO\MarketingSales\Models\UnitType;
+use App\Support\Luas;
 use Filament\Forms;
 use Filament\Forms\Form;
 use Filament\Resources\Resource;
@@ -52,8 +53,10 @@ class UnitTypeResource extends Resource
                         ->numeric()
                         ->rupiah()
                         ->default(0),
-                    Forms\Components\TextInput::make('luas_tanah')->label('Luas tanah (m²)')->numeric(),
-                    Forms\Components\TextInput::make('luas_bangunan')->label('Luas bangunan (m²)')->numeric(),
+                    Forms\Components\TextInput::make('luas_tanah')->label('Luas tanah (m²)')->numeric()
+                        ->formatStateUsing(fn ($state) => Luas::isian($state)),
+                    Forms\Components\TextInput::make('luas_bangunan')->label('Luas bangunan (m²)')->numeric()
+                        ->formatStateUsing(fn ($state) => Luas::isian($state)),
                     Forms\Components\TextInput::make('jumlah_kamar')->label('Jumlah kamar')->numeric(),
                     Forms\Components\TextInput::make('jumlah_kmandi')->label('Jumlah kamar mandi')->numeric(),
                     Forms\Components\Toggle::make('is_active')->label('Aktif')->default(true),
@@ -68,8 +71,10 @@ class UnitTypeResource extends Resource
                 Tables\Columns\TextColumn::make('code')->label('Kode')->sortable()->searchable()->badge(),
                 Tables\Columns\TextColumn::make('name')->label('Nama')->searchable(),
                 Tables\Columns\TextColumn::make('project.name')->label('Proyek')->sortable(),
-                Tables\Columns\TextColumn::make('luas_tanah')->label('LT')->numeric(2)->alignEnd(),
-                Tables\Columns\TextColumn::make('luas_bangunan')->label('LB')->numeric(2)->alignEnd(),
+                Tables\Columns\TextColumn::make('luas_tanah')->label('LT')
+                    ->formatStateUsing(fn ($state) => Luas::rapi($state))->alignEnd(),
+                Tables\Columns\TextColumn::make('luas_bangunan')->label('LB')
+                    ->formatStateUsing(fn ($state) => Luas::rapi($state))->alignEnd(),
                 Tables\Columns\TextColumn::make('harga_dasar')
                     ->label('Harga dasar')
                     ->money('IDR', divideBy: 0)
