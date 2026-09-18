@@ -342,6 +342,8 @@ export function navGroups(foUrl: string): NavGroup[] {
             ]},
             { label: 'Posting Invoice SPK', icon: HardHat, permission: ['ap.posting.*'], children: [
                 { label: 'Posting Invoice SPK', href: 'bs.ap.posting.spk.index' },
+                // Baca-saja dari MUK ERP — sumber angka kontrak & penagihannya.
+                { label: 'Kontrak SPK (MUK)', href: 'bs.muk.kontrak.index' },
             ]},
             { label: 'Saldo Awal', icon: Coins, permission: ['ap.opening.*'], children: [
                 { label: 'Saldo Awal', href: 'bs.ap.opening.index' },
