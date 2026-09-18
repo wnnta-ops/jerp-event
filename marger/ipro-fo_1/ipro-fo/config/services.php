@@ -15,7 +15,7 @@ return [
     ],
 
     'ses' => [
-        'key'    => env('AWS_ACCESS_KEY_ID'),
+        'key' => env('AWS_ACCESS_KEY_ID'),
         'secret' => env('AWS_SECRET_ACCESS_KEY'),
         'region' => env('AWS_DEFAULT_REGION', 'us-east-1'),
     ],
@@ -27,7 +27,7 @@ return [
     'slack' => [
         'notifications' => [
             'bot_user_oauth_token' => env('SLACK_BOT_USER_OAUTH_TOKEN'),
-            'channel'              => env('SLACK_BOT_USER_DEFAULT_CHANNEL'),
+            'channel' => env('SLACK_BOT_USER_DEFAULT_CHANNEL'),
         ],
     ],
 
@@ -40,9 +40,9 @@ return [
     */
 
     'xendit' => [
-        'secret_key'    => env('XENDIT_SECRET_KEY'),
+        'secret_key' => env('XENDIT_SECRET_KEY'),
         'webhook_token' => env('XENDIT_WEBHOOK_TOKEN'),
-        'base_url'      => env('XENDIT_BASE_URL', 'https://api.xendit.co'),
+        'base_url' => env('XENDIT_BASE_URL', 'https://api.xendit.co'),
         // TTL invoice (detik). Default 24 jam.
         'invoice_duration' => (int) env('XENDIT_INVOICE_DURATION', 86400),
     ],
@@ -57,7 +57,7 @@ return [
     */
     'whatsapp' => [
         'base_url' => env('WA_BUSINESS_API_URL', 'https://graph.facebook.com/v19.0'),
-        'token'    => env('WA_BUSINESS_API_TOKEN'),
+        'token' => env('WA_BUSINESS_API_TOKEN'),
         'phone_id' => env('WA_BUSINESS_PHONE_ID'),
     ],
 
@@ -82,6 +82,26 @@ return [
     */
     'paddleocr' => [
         'url' => env('OCR_PADDLE_URL', 'http://127.0.0.1:8001'),
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | MUK ERP — API kontrak & progres konstruksi (baca-saja)
+    |--------------------------------------------------------------------------
+    | Sumber angka SPK: kontrak owner, progres per lokasi, dan COP Owner dipegang
+    | aplikasi MUK. BO menariknya supaya angka tagihan tidak diketik ulang.
+    |
+    | Kuncinya HANYA dari .env. Jangan pernah ditulis di sini: berkas ini masuk git,
+    | dan dokumen MUK sendiri melarang menaruh kunci di repositori.
+    |
+    | 'aktif' sengaja ada: bila API mereka bermasalah, integrasi bisa dimatikan tanpa
+    | menurunkan versi — layar tetap memakai data hasil tarikan terakhir.
+    */
+    'muk' => [
+        'url' => env('MUK_API_URL', 'https://app.mukjavacoresystem.com/api/mup'),
+        'key' => env('MUK_API_KEY'),
+        'aktif' => env('MUK_API_AKTIF', true),
+        'timeout' => (int) env('MUK_API_TIMEOUT', 20),
     ],
 
 ];
