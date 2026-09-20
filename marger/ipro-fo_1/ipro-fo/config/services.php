@@ -97,6 +97,23 @@ return [
     | 'aktif' sengaja ada: bila API mereka bermasalah, integrasi bisa dimatikan tanpa
     | menurunkan versi — layar tetap memakai data hasil tarikan terakhir.
     */
+    /*
+    |--------------------------------------------------------------------------
+    | Sistem Komplain / Garansi — API unit & komplain (baca-saja)
+    |--------------------------------------------------------------------------
+    | Sumber TANGGAL BAST: serah terima unit dicatat di sistem Komplain, bukan di BO.
+    | Dari 1464 unit di sana, 1110 punya bast_date — sementara BO hanya punya 18 dokumen.
+    |
+    | Kuncinya HANYA dari .env; dokumen mereka melarang menaruhnya di repositori, dan
+    | data yang dibawa memuat PII (nama pemilik, no. HP) serta access_code APP Warga.
+    */
+    'komplain' => [
+        'url' => env('CM_API_URL', 'https://erpmuk.java-sistem.com/api/integration'),
+        'key' => env('CM_API_KEY'),
+        'aktif' => env('CM_API_AKTIF', true),
+        'timeout' => (int) env('CM_API_TIMEOUT', 20),
+    ],
+
     'muk' => [
         'url' => env('MUK_API_URL', 'https://app.mukjavacoresystem.com/api/mup'),
         'key' => env('MUK_API_KEY'),
