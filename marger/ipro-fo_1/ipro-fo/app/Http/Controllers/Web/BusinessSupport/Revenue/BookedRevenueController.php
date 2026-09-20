@@ -12,6 +12,7 @@ use App\Domain\Master\Customer\Models\Customer;
 use App\Domain\Master\Unit\Models\Unit;
 use App\Exceptions\BusinessRuleException;
 use App\Http\Controllers\Controller;
+use BackedEnum;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
@@ -50,7 +51,7 @@ class BookedRevenueController extends Controller
         $rows->getCollection()->transform(fn ($r) => $this->row($r, $sprByUnit));
 
         return Inertia::render('BusinessSupport/BookedRevenue/Index', [
-            'rows'    => $rows,
+            'rows' => $rows,
             'filters' => $request->only(['search']),
             'summary' => [
                 'count' => $active()->count(),
@@ -70,25 +71,25 @@ class BookedRevenueController extends Controller
      */
     private function row(BsBookedRevenue $r, array $sprByUnit): array
     {
-        $dpp   = (float) $r->amount;
+        $dpp = (float) $r->amount;
         $total = round((float) $r->gross_price - (float) $r->discount, 2);
 
         return [
-            'id'           => $r->id,
-            'br_number'    => $r->br_number,
+            'id' => $r->id,
+            'br_number' => $r->br_number,
             'booking_date' => $r->booking_date?->toDateString(),
-            'customer'     => $r->customer ? ['code' => $r->customer->code, 'name' => $r->customer->full_name] : null,
-            'spr'          => $r->unit_id ? ($sprByUnit[$r->unit_id] ?? null) : null,
-            'unit'         => $r->unit?->unit_code,
-            'description'  => $r->description,
-            'dpp'          => $dpp,
-            'ppn'          => round($total - $dpp, 2),
-            'total'        => $total,
+            'customer' => $r->customer ? ['code' => $r->customer->code, 'name' => $r->customer->full_name] : null,
+            'spr' => $r->unit_id ? ($sprByUnit[$r->unit_id] ?? null) : null,
+            'unit' => $r->unit?->unit_code,
+            'description' => $r->description,
+            'dpp' => $dpp,
+            'ppn' => round($total - $dpp, 2),
+            'total' => $total,
             // Jurnal yang terbit dari BR ini. DUA-duanya disebut bila ada: jurnal Booking
             // (saat BR dibuat, mengakui piutang & pendapatan diterima dimuka) dan jurnal
             // Pengakuan (saat pendapatannya benar-benar diakui). Keduanya bernomor berbeda,
             // dan menampilkan salah satunya saja membuat yang lain seolah tidak pernah ada.
-            'journals'     => $this->journalsOf($r),
+            'journals' => $this->journalsOf($r),
         ];
     }
 
@@ -156,16 +157,16 @@ class BookedRevenueController extends Controller
             ->map(fn ($g) => $g->first());
 
         $units = $unitRows->map(fn ($u) => [
-            'id'            => $u->id,
-            'code'          => $u->unit_code,
-            'cluster'       => $u->cluster?->name,
-            'price'         => (float) ($u->current_price ?: $u->base_price),
+            'id' => $u->id,
+            'code' => $u->unit_code,
+            'cluster' => $u->cluster?->name,
+            'price' => (float) ($u->current_price ?: $u->base_price),
             // Pricelist GROSS & DISKON dari SPR (booking) — dasar hitungan jurnal Booked Revenue.
-            'gross'         => (float) ($unitCustomer->get($u->id)?->base_price ?: ($u->current_price ?: $u->base_price)),
-            'diskon'        => (float) ($unitCustomer->get($u->id)?->discount_amount ?: 0),
-            'status'        => $u->status instanceof \BackedEnum ? $u->status->value : $u->status,
+            'gross' => (float) ($unitCustomer->get($u->id)?->base_price ?: ($u->current_price ?: $u->base_price)),
+            'diskon' => (float) ($unitCustomer->get($u->id)?->discount_amount ?: 0),
+            'status' => $u->status instanceof BackedEnum ? $u->status->value : $u->status,
             // Collection->get(): null-safe bila unit tsb belum punya booking (hindari "Undefined array key").
-            'customer_id'   => $unitCustomer->get($u->id)?->customer_id,
+            'customer_id' => $unitCustomer->get($u->id)?->customer_id,
             'customer_name' => $unitCustomer->get($u->id)?->customer?->full_name,
         ]);
 
@@ -191,25 +192,25 @@ class BookedRevenueController extends Controller
         $accCode = fn (string $key) => (int) (BsAccount::where('code', config("business_support.gl_accounts.{$key}"))->value('id') ?? 0);
 
         return Inertia::render('BusinessSupport/BookedRevenue/Form', [
-            'customers'   => Customer::orderBy('full_name')->get(['id', 'code', 'full_name'])
+            'customers' => Customer::orderBy('full_name')->get(['id', 'code', 'full_name'])
                 ->map(fn ($c) => ['id' => $c->id, 'code' => $c->code, 'name' => $c->full_name]),
-            'units'       => $units,
+            'units' => $units,
             'bookedCount' => count($bookedUnitIds),
             'costCenters' => BsCostCenter::where('is_active', true)->orderBy('code')->get(['id', 'code', 'name']),
             // COA dari General Ledger (akun postable) untuk jurnal manual.
-            'accounts'    => BsAccount::where('is_active', true)->where('is_postable', true)
+            'accounts' => BsAccount::where('is_active', true)->where('is_postable', true)
                 ->orderBy('code')->get(['id', 'code', 'name', 'normal_balance']),
             // Pencairan KPR per customer + unit terpilih dari list Belum (auto-follow).
-            'pencairan'   => $pencairan,
-            'preselect'   => $request->integer('unit_id') ?: null,
+            'pencairan' => $pencairan,
+            'preselect' => $request->integer('unit_id') ?: null,
             // Akun default untuk prefill baris jurnal Booked Revenue (boleh diganti user).
-            'prefill'     => [
-                'piutang_id'      => $accCode('receivable'),        // Piutang Usaha
-                'diskon_id'       => $accCode('sales_discount'),    // Diskon Penjualan
-                'um_id'           => $accCode('unearned_revenue'),  // UM / Uang Muka Penjualan
+            'prefill' => [
+                'piutang_id' => $accCode('receivable'),        // Piutang Usaha
+                'diskon_id' => $accCode('sales_discount'),    // Diskon Penjualan
+                'um_id' => $accCode('unearned_revenue'),  // UM / Uang Muka Penjualan
                 'ppn_keluaran_id' => $accCode('ppn_out'),           // PPN Keluaran
-                'penjualan_id'    => $accCode('income'),            // Penjualan
-                'ppn_pending_id'  => $accCode('ppn_out_pending'),   // PPN Keluaran Akan Diterbitkan
+                'penjualan_id' => $accCode('income'),            // Penjualan
+                'ppn_pending_id' => $accCode('ppn_out_pending'),   // PPN Keluaran Akan Diterbitkan
             ],
         ]);
     }
@@ -219,24 +220,24 @@ class BookedRevenueController extends Controller
         abort_unless($request->user()?->can('ar.booked-revenue.create'), 403);
 
         $v = $request->validate([
-            'booking_date'    => ['required', 'date'],
-            'customer_id'     => ['required', 'integer', 'exists:customers,id'],
-            'cost_center_id'  => ['nullable', 'integer', 'exists:bs_cost_centers,id'],
-            'reference'       => ['nullable', 'string', 'max:150'],
-            'description'     => ['nullable', 'string', 'max:200'],
-            'units'            => ['required', 'array', 'min:1'],
-            'units.*.unit_id'  => ['required', 'integer', 'distinct', 'exists:units,id'],
+            'booking_date' => ['required', 'date'],
+            'customer_id' => ['required', 'integer', 'exists:customers,id'],
+            'cost_center_id' => ['nullable', 'integer', 'exists:bs_cost_centers,id'],
+            'reference' => ['nullable', 'string', 'max:150'],
+            'description' => ['nullable', 'string', 'max:200'],
+            'units' => ['required', 'array', 'min:1'],
+            'units.*.unit_id' => ['required', 'integer', 'distinct', 'exists:units,id'],
             'units.*.discount' => ['nullable', 'numeric', 'min:0'],
             // Jurnal manual Booked Revenue: hingga 4 baris debit + 3 baris kredit.
-            'debits'              => ['array', 'max:6'],
+            'debits' => ['array', 'max:6'],
             'debits.*.account_id' => ['nullable', 'integer', 'exists:bs_accounts,id'],
-            'debits.*.amount'     => ['nullable', 'numeric', 'min:0'],
-            'credits'              => ['array', 'max:6'],
+            'debits.*.amount' => ['nullable', 'numeric', 'min:0'],
+            'credits' => ['array', 'max:6'],
             'credits.*.account_id' => ['nullable', 'integer', 'exists:bs_accounts,id'],
-            'credits.*.amount'     => ['nullable', 'numeric', 'min:0'],
+            'credits.*.amount' => ['nullable', 'numeric', 'min:0'],
         ], [
             'units.required' => 'Pilih minimal 1 unit untuk di-booking.',
-            'units.min'      => 'Pilih minimal 1 unit untuk di-booking.',
+            'units.min' => 'Pilih minimal 1 unit untuk di-booking.',
         ]);
 
         // Diskon/Free DP WAJIB ikut SPR (bukan input manual): timpa nilai dari client dengan
@@ -268,8 +269,8 @@ class BookedRevenueController extends Controller
                 }
                 $lines[] = [
                     'account_id' => (int) $acc,
-                    'debit'      => $side === 'debit' ? $amt : 0,
-                    'credit'     => $side === 'credit' ? $amt : 0,
+                    'debit' => $side === 'debit' ? $amt : 0,
+                    'credit' => $side === 'credit' ? $amt : 0,
                 ];
             }
         }
@@ -304,19 +305,19 @@ class BookedRevenueController extends Controller
 
         return Inertia::render('BusinessSupport/BookedRevenue/Show', [
             'br' => [
-                'id'           => $bookedRevenue->id,
-                'br_number'    => $bookedRevenue->br_number,
+                'id' => $bookedRevenue->id,
+                'br_number' => $bookedRevenue->br_number,
                 'booking_date' => $bookedRevenue->booking_date?->toDateString(),
-                'gross_price'  => (float) $bookedRevenue->gross_price,
-                'discount'     => (float) $bookedRevenue->discount,
-                'amount'       => (float) $bookedRevenue->amount,
-                'reference'    => $bookedRevenue->reference,
-                'description'  => $bookedRevenue->description,
-                'customer'     => $bookedRevenue->customer ? [
+                'gross_price' => (float) $bookedRevenue->gross_price,
+                'discount' => (float) $bookedRevenue->discount,
+                'amount' => (float) $bookedRevenue->amount,
+                'reference' => $bookedRevenue->reference,
+                'description' => $bookedRevenue->description,
+                'customer' => $bookedRevenue->customer ? [
                     'code' => $bookedRevenue->customer->code, 'name' => $bookedRevenue->customer->full_name,
                     'phone' => $bookedRevenue->customer->phone, 'email' => $bookedRevenue->customer->email,
                 ] : null,
-                'unit'            => $bookedRevenue->unit?->unit_code,
+                'unit' => $bookedRevenue->unit?->unit_code,
                 'booking_journal' => $bookedRevenue->bookingJournal?->journal_number,
             ],
         ]);
@@ -336,14 +337,14 @@ class BookedRevenueController extends Controller
 
         $v = $request->validate([
             'booking_date' => ['required', 'date'],
-            'reference'    => ['nullable', 'string', 'max:150'],
-            'description'  => ['nullable', 'string', 'max:200'],
+            'reference' => ['nullable', 'string', 'max:150'],
+            'description' => ['nullable', 'string', 'max:200'],
         ]);
 
         $bookedRevenue->update([
             'booking_date' => $v['booking_date'],
-            'reference'    => $v['reference'] ?? null,
-            'description'  => $v['description'] ?? null,
+            'reference' => $v['reference'] ?? null,
+            'description' => $v['description'] ?? null,
         ]);
 
         return back()->with('success', "Rincian {$bookedRevenue->br_number} diperbarui. Nilai & jurnal tidak berubah (terkunci).");
@@ -360,9 +361,9 @@ class BookedRevenueController extends Controller
         [$rows, $summary] = $this->reportRows($request);
 
         return Inertia::render('BusinessSupport/BookedRevenue/Report', [
-            'rows'     => $rows->values(),
-            'filters'  => $request->only(['search', 'status']),
-            'summary'  => $summary,
+            'rows' => $rows->values(),
+            'filters' => $request->only(['search', 'status']),
+            'summary' => $summary,
             'statuses' => ['booked', 'recognized', 'cancelled'],
         ]);
     }
@@ -396,7 +397,7 @@ class BookedRevenueController extends Controller
 
         $sprByUnit = $this->sprByUnit($rows->pluck('unit_id')->filter()->unique()->all());
 
-        $e  = fn ($v) => htmlspecialchars((string) ($v ?? ''), ENT_QUOTES);
+        $e = fn ($v) => htmlspecialchars((string) ($v ?? ''), ENT_QUOTES);
         $rp = fn ($v) => number_format((float) ($v ?? 0), 2, ',', '.');
 
         $h = '<table border="1"><tr style="background:#c2410c;color:#fff">'
@@ -540,45 +541,45 @@ class BookedRevenueController extends Controller
         $utjByBooking = $entries->where('source_type', 'utj_dp')->groupBy('booking_id');
 
         $rows = $brs->map(function ($br) use ($bookingByUnit, $bast, $ajb, $fp, $retByBooking, $utjByBooking) {
-            $bid     = $bookingByUnit->get($br->unit_id)?->id;
+            $bid = $bookingByUnit->get($br->unit_id)?->id;
             $bastDoc = $bid ? $bast->get($bid) : null;
-            $ajbDoc  = $bid ? $ajb->get($bid) : null;
-            $fpDoc   = $bid ? $fp->get($bid) : null;
-            $ret     = $bid ? ($retByBooking->get($bid) ?? collect()) : collect();
-            $utj     = $bid ? ($utjByBooking->get($bid) ?? collect()) : collect();
+            $ajbDoc = $bid ? $ajb->get($bid) : null;
+            $fpDoc = $bid ? $fp->get($bid) : null;
+            $ret = $bid ? ($retByBooking->get($bid) ?? collect()) : collect();
+            $utj = $bid ? ($utjByBooking->get($bid) ?? collect()) : collect();
 
             return [
-                'id'             => $br->id,
-                'unit'           => $br->unit?->unit_code,
-                'cluster'        => $br->unit?->cluster?->name,
-                'customer'       => $br->customer?->full_name,
-                'customer_code'  => $br->customer?->code,
-                'br_number'      => $br->br_number,
-                'br_date'        => $br->booking_date?->toDateString(),
-                'br_amount'      => (float) $br->amount,
-                'br_status'      => $br->status,
-                'bast_date'      => $bastDoc?->handed_over_at?->toDateString(),
-                'ajb_date'       => $ajbDoc?->signed_at?->toDateString(),
-                'ajb_notary'     => $ajbDoc?->notary_name,
-                'retensi_date'   => optional($ret->sortByDesc('doc_date')->first())?->doc_date?->toDateString(),
+                'id' => $br->id,
+                'unit' => $br->unit?->unit_code,
+                'cluster' => $br->unit?->cluster?->name,
+                'customer' => $br->customer?->full_name,
+                'customer_code' => $br->customer?->code,
+                'br_number' => $br->br_number,
+                'br_date' => $br->booking_date?->toDateString(),
+                'br_amount' => (float) $br->amount,
+                'br_status' => $br->status,
+                'bast_date' => $bastDoc?->handed_over_at?->toDateString(),
+                'ajb_date' => $ajbDoc?->signed_at?->toDateString(),
+                'ajb_notary' => $ajbDoc?->notary_name,
+                'retensi_date' => optional($ret->sortByDesc('doc_date')->first())?->doc_date?->toDateString(),
                 'retensi_amount' => (float) $ret->sum('total'),
-                'utjdp_date'     => optional($utj->sortByDesc('doc_date')->first())?->doc_date?->toDateString(),
-                'utjdp_amount'   => (float) $utj->sum('total'),
-                'fp_date'        => $fpDoc?->issued_at?->toDateString(),
-                'fp_amount'      => (float) ($fpDoc?->total ?? 0),
-                'fp_number'      => $fpDoc?->fp_number,
+                'utjdp_date' => optional($utj->sortByDesc('doc_date')->first())?->doc_date?->toDateString(),
+                'utjdp_amount' => (float) $utj->sum('total'),
+                'fp_date' => $fpDoc?->issued_at?->toDateString(),
+                'fp_amount' => (float) ($fpDoc?->total ?? 0),
+                'fp_number' => $fpDoc?->fp_number,
             ];
         });
 
         $summary = [
-            'units'         => $rows->count(),
-            'with_bast'     => $rows->filter(fn ($r) => $r['bast_date'])->count(),
-            'with_ajb'      => $rows->filter(fn ($r) => $r['ajb_date'])->count(),
-            'with_fp'       => $rows->filter(fn ($r) => $r['fp_number'])->count(),
-            'br_total'      => round($rows->sum('br_amount'), 2),
+            'units' => $rows->count(),
+            'with_bast' => $rows->filter(fn ($r) => $r['bast_date'])->count(),
+            'with_ajb' => $rows->filter(fn ($r) => $r['ajb_date'])->count(),
+            'with_fp' => $rows->filter(fn ($r) => $r['fp_number'])->count(),
+            'br_total' => round($rows->sum('br_amount'), 2),
             'retensi_total' => round($rows->sum('retensi_amount'), 2),
-            'utjdp_total'   => round($rows->sum('utjdp_amount'), 2),
-            'fp_total'      => round($rows->sum('fp_amount'), 2),
+            'utjdp_total' => round($rows->sum('utjdp_amount'), 2),
+            'fp_total' => round($rows->sum('fp_amount'), 2),
         ];
 
         return [$rows, $summary];
@@ -652,13 +653,39 @@ class BookedRevenueController extends Controller
      *
      * @return array{0:\Illuminate\Support\Collection<int,array<string,mixed>>, 1:\Illuminate\Support\Collection<int,mixed>}
      */
+    /**
+     * Baris Detail BAST — dokumen BAST milik BO, DITAMBAH serah terima yang tercatat di
+     * sistem Komplain.
+     *
+     * Serah terima unit dicatat di sistem Komplain, bukan di sini: dari 1464 unit di sana
+     * 1110 punya tanggal BAST, sementara BO hanya memegang 18 dokumen. Tanpa ini layar
+     * menyebut "Belum BAST" untuk rumah yang sebenarnya sudah diserahkan berbulan-bulan.
+     *
+     * Baris yang sudah BAST menurut sistem Komplain juga DIKELUARKAN dari $belum — daftar
+     * itu mengisi tombol massal "terbitkan BAST", dan menerbitkan BAST untuk rumah yang
+     * sudah diserahkan adalah dokumen ganda.
+     *
+     * No. Dokumen tetap dari BO. Sistem Komplain praktis tidak mengisinya — 2 dari 1464 —
+     * jadi mengambilnya dari sana hanya memindahkan kolom kosong.
+     *
+     * Pencocokan kode unit TIDAK peka besar-kecil huruf: BO menulis "JRS5-001-II-53a",
+     * mereka menulis "…-53A". Diuji pada 27 unit yang punya booking — 22 cocok bila huruf
+     * ikut dibandingkan, 27 bila tidak.
+     */
     private function bastRows(Request $request): array
     {
         $docs = \App\Domain\Legal\Bast\Models\BastDocument::query()
             ->with(['booking.customer:id,full_name,code', 'booking.unit:id,unit_code'])
             ->latest('handed_over_at')->latest('id')->get();
         $doneBookingIds = $docs->pluck('booking_id')->filter()->unique()->all();
-        $belum = $this->finalBookings()->whereNotIn('id', $doneBookingIds)->orderByDesc('id')->get();
+        $sisa = $this->finalBookings()->whereNotIn('id', $doneBookingIds)->orderByDesc('id')->get();
+
+        $petaCm = \App\Domain\BusinessSupport\Models\BsCmUnit::petaBast();
+        $bastCm = function (?string $kode) use ($petaCm) {
+            $k = mb_strtoupper(trim((string) $kode));
+
+            return $k !== '' ? ($petaCm[$k] ?? null) : null;
+        };
 
         $rows = collect();
         foreach ($docs as $d) {
@@ -668,12 +695,30 @@ class BookedRevenueController extends Controller
                 'customer' => $d->booking?->customer?->full_name, 'unit' => $d->booking?->unit?->unit_code, 'extra' => null,
             ]);
         }
-        foreach ($belum as $b) {
+
+        $belum = collect();
+        foreach ($sisa as $b) {
+            $cm = $bastCm($b->unit?->unit_code);
+
+            if ($cm && $cm->bast_date) {
+                $rows->push([
+                    'id' => null, 'kind' => 'sudah', 'booking_id' => $b->id,
+                    'number' => $cm->bast_no ?: null,
+                    'date' => $cm->bast_date->toDateString(),
+                    'spr' => $b->booking_number, 'customer' => $b->customer?->full_name,
+                    'unit' => $b->unit?->unit_code, 'extra' => null,
+                ]);
+
+                continue;
+            }
+
+            $belum->push($b);
             $rows->push([
                 'id' => null, 'kind' => 'belum', 'booking_id' => $b->id, 'number' => null, 'date' => null,
                 'spr' => $b->booking_number, 'customer' => $b->customer?->full_name, 'unit' => $b->unit?->unit_code, 'extra' => null,
             ]);
         }
+
         return [$this->filterDocRows($rows, $request->input('search')), $belum];
     }
 
@@ -728,7 +773,7 @@ class BookedRevenueController extends Controller
             $sudahBast = $bast->has($b->id);
 
             // Kolom AJB hanya untuk yang sudah BAST (ketentuan pemilik proses).
-            $no  = $sudahBast ? ($d?->ajb_number ?: null) : null;
+            $no = $sudahBast ? ($d?->ajb_number ?: null) : null;
             $tgl = $sudahBast ? ($d?->signed_at?->toDateString() ?: null) : null;
             $nom = $sudahBast && $d?->amount !== null ? (float) $d->amount : null;
             $not = $sudahBast ? ($d?->notary_name ?: null) : null;
@@ -736,21 +781,21 @@ class BookedRevenueController extends Controller
             $lengkap = $no !== null && $tgl !== null && $nom !== null;
 
             return [
-                'booking_id'   => $b->id,
-                'ajb_id'       => $d?->id,
-                'spr'          => $b->booking_number,
-                'customer'     => $b->customer?->full_name,
-                'unit'         => $b->unit?->unit_code,
-                'unit_id'      => $b->unit_id,
-                'notaris'      => $not,
-                'ajb_number'   => $no,
-                'ajb_date'     => $tgl,
-                'ajb_amount'   => $nom,
-                'keterangan'   => $lengkap ? 'SUDAH BAST' : 'BELUM BAST',
-                'sudah_bast'   => $sudahBast,
-                'bast_number'  => $bast->get($b->id)?->bast_number,
+                'booking_id' => $b->id,
+                'ajb_id' => $d?->id,
+                'spr' => $b->booking_number,
+                'customer' => $b->customer?->full_name,
+                'unit' => $b->unit?->unit_code,
+                'unit_id' => $b->unit_id,
+                'notaris' => $not,
+                'ajb_number' => $no,
+                'ajb_date' => $tgl,
+                'ajb_amount' => $nom,
+                'keterangan' => $lengkap ? 'SUDAH BAST' : 'BELUM BAST',
+                'sudah_bast' => $sudahBast,
+                'bast_number' => $bast->get($b->id)?->bast_number,
                 // Tombol Posting Booked Revenue hanya berguna bila datanya lengkap & belum diposting.
-                'can_posting'  => $lengkap && ! $sudahBooked->has($b->unit_id),
+                'can_posting' => $lengkap && ! $sudahBooked->has($b->unit_id),
                 'sudah_booked' => $sudahBooked->has($b->unit_id),
             ];
         });
@@ -786,7 +831,7 @@ class BookedRevenueController extends Controller
         [$rows, $semua, $belumBookings] = $this->ajbRows($request);
 
         return Inertia::render('BusinessSupport/BookedRevenue/DetailAjb', [
-            'rows'    => $rows,
+            'rows' => $rows,
             'filters' => $request->only(['search', 'status']),
             'summary' => [
                 'total' => $semua,
@@ -838,6 +883,7 @@ class BookedRevenueController extends Controller
         if ($search) {
             $rows = $rows->filter(fn ($r) => stripos(implode(' ', [$r['number'], $r['spr'], $r['customer'], $r['unit']]), $search) !== false);
         }
+
         // BELUM di atas (perlu tindakan), lalu SUDAH.
         return $rows->sortBy(fn ($r) => $r['kind'] === 'belum' ? 0 : 1)->values();
     }
@@ -883,14 +929,14 @@ class BookedRevenueController extends Controller
         $byStatus = $baseQuery->selectRaw('status, COUNT(*) as c')->groupBy('status')->pluck('c', 'status');
 
         return Inertia::render('BusinessSupport/BookedRevenue/Control', [
-            'type'         => $type,
-            'title'        => $title,
-            'subtitle'     => $subtitle,
-            'extraLabel'   => $extraLabel,
+            'type' => $type,
+            'title' => $title,
+            'subtitle' => $subtitle,
+            'extraLabel' => $extraLabel,
             'extraIsMoney' => $extraIsMoney,
-            'rows'         => $rows,
-            'filters'      => $request->only(['search', 'status']),
-            'summary'      => ['total' => (int) $byStatus->sum(), 'byStatus' => $byStatus],
+            'rows' => $rows,
+            'filters' => $request->only(['search', 'status']),
+            'summary' => ['total' => (int) $byStatus->sum(), 'byStatus' => $byStatus],
         ]);
     }
 
@@ -899,9 +945,9 @@ class BookedRevenueController extends Controller
     {
         abort_unless($request->user()?->can('ar.booked-revenue.recognize'), 403);
         $v = $request->validate([
-            'booking_ids'   => ['required', 'array', 'min:1'],
+            'booking_ids' => ['required', 'array', 'min:1'],
             'booking_ids.*' => ['integer', 'exists:bookings,id'],
-            'date'          => ['required', 'date'],
+            'date' => ['required', 'date'],
         ]);
         $date = $v['date'];
         $ok = 0;
@@ -911,6 +957,7 @@ class BookedRevenueController extends Controller
             $b = \App\Domain\Sales\Booking\Models\Booking::find($bid);
             if (! $b || \App\Domain\Legal\Bast\Models\BastDocument::where('booking_id', $bid)->exists()) {
                 $skip++;
+
                 continue;
             }
             try {
@@ -930,12 +977,12 @@ class BookedRevenueController extends Controller
     {
         abort_unless($request->user()?->can('ar.booked-revenue.recognize'), 403);
         $v = $request->validate([
-            'booking_ids'   => ['required', 'array', 'min:1'],
+            'booking_ids' => ['required', 'array', 'min:1'],
             'booking_ids.*' => ['integer', 'exists:bookings,id'],
-            'date'          => ['required', 'date'],
-            'notary_name'   => ['required', 'string', 'max:150'],
+            'date' => ['required', 'date'],
+            'notary_name' => ['required', 'string', 'max:150'],
             // Nominal AJB opsional; bila kosong dipakai nilai transaksi booking-nya.
-            'amount'        => ['nullable', 'numeric', 'min:0'],
+            'amount' => ['nullable', 'numeric', 'min:0'],
         ]);
         $date = $v['date'];
         $notary = trim((string) $v['notary_name']);
@@ -947,6 +994,7 @@ class BookedRevenueController extends Controller
             $b = \App\Domain\Sales\Booking\Models\Booking::find($bid);
             if (! $b || \App\Domain\Legal\Ajb\Models\AjbDocument::where('booking_id', $bid)->exists()) {
                 $skip++;
+
                 continue;
             }
             try {
@@ -967,7 +1015,7 @@ class BookedRevenueController extends Controller
         abort_unless($request->user()?->can('ar.booked-revenue.view'), 403);
 
         return Inertia::render('BusinessSupport/BookedRevenue/BelumBooked', [
-            'rows'    => $this->belumBookedRows($request),
+            'rows' => $this->belumBookedRows($request),
             'filters' => $request->only(['search']),
         ]);
     }
@@ -1015,7 +1063,7 @@ class BookedRevenueController extends Controller
             ->whereNotNull('unit_id')->distinct()->pluck('unit_id')->all();
 
         $bast = \App\Domain\Legal\Bast\Models\BastDocument::get(['booking_id', 'handed_over_at'])->keyBy('booking_id');
-        $ajb  = \App\Domain\Legal\Ajb\Models\AjbDocument::get(['booking_id', 'signed_at'])->keyBy('booking_id');
+        $ajb = \App\Domain\Legal\Ajb\Models\AjbDocument::get(['booking_id', 'signed_at'])->keyBy('booking_id');
         $bookingIds = $bast->keys()->merge($ajb->keys())->unique()->values();
 
         $bookings = \App\Domain\Sales\Booking\Models\Booking::whereIn('id', $bookingIds)
@@ -1027,14 +1075,14 @@ class BookedRevenueController extends Controller
             ->orderByDesc('id')->get();
 
         return $bookings->values()->map(fn ($b, $i) => [
-            'no'         => $i + 1,
+            'no' => $i + 1,
             'booking_id' => $b->id,
-            'unit_id'    => $b->unit_id,
-            'spr'        => $b->booking_number,
-            'unit'       => $b->unit?->unit_code,
-            'customer'   => $b->customer?->full_name,
-            'ajb_date'   => $ajb->get($b->id)?->signed_at?->toDateString(),
-            'bast_date'  => $bast->get($b->id)?->handed_over_at?->toDateString(),
+            'unit_id' => $b->unit_id,
+            'spr' => $b->booking_number,
+            'unit' => $b->unit?->unit_code,
+            'customer' => $b->customer?->full_name,
+            'ajb_date' => $ajb->get($b->id)?->signed_at?->toDateString(),
+            'bast_date' => $bast->get($b->id)?->handed_over_at?->toDateString(),
         ]);
     }
 
@@ -1114,9 +1162,9 @@ class BookedRevenueController extends Controller
     {
         abort_unless($request->user()?->can('ar.booked-revenue.create'), 403);
         $v = $request->validate([
-            'booking_ids'   => ['required', 'array', 'min:1'],
+            'booking_ids' => ['required', 'array', 'min:1'],
             'booking_ids.*' => ['integer', 'exists:bookings,id'],
-            'booking_date'  => ['required', 'date'],
+            'booking_date' => ['required', 'date'],
         ]);
 
         $bookedUnitIds = BsBookedRevenue::whereIn('status', ['booked', 'recognized'])
@@ -1125,9 +1173,9 @@ class BookedRevenueController extends Controller
         // Akun default jurnal (sama sumbernya dgn prefill form) + pencairan KPR per booking (dasar UM).
         $accCode = fn (string $key) => (int) (BsAccount::where('code', config("business_support.gl_accounts.{$key}"))->value('id') ?? 0);
         $acc = [
-            'piutang'     => $accCode('receivable'),      'diskon'      => $accCode('sales_discount'),
-            'um'          => $accCode('unearned_revenue'), 'ppn_out'    => $accCode('ppn_out'),
-            'penjualan'   => $accCode('income'),          'ppn_pending' => $accCode('ppn_out_pending'),
+            'piutang' => $accCode('receivable'),      'diskon' => $accCode('sales_discount'),
+            'um' => $accCode('unearned_revenue'), 'ppn_out' => $accCode('ppn_out'),
+            'penjualan' => $accCode('income'),          'ppn_pending' => $accCode('ppn_out_pending'),
         ];
         // Semua akun jurnal WAJIB ada di CoA — jangan posting jurnal dgn akun 0 (FK tak valid).
         if (in_array(0, $acc, true)) {
@@ -1153,13 +1201,15 @@ class BookedRevenueController extends Controller
             $b = \App\Domain\Sales\Booking\Models\Booking::find($bid);
             if (! $b || ! $b->unit_id || in_array($b->unit_id, $bookedUnitIds, true)) {
                 $skip++; // tak valid / unit sudah di-booking
+
                 continue;
             }
             // Syarat: unit sudah BAST DAN AJB (samakan dgn tombol satuan yg aktif bila keduanya terisi).
             $hasBast = \App\Domain\Legal\Bast\Models\BastDocument::where('booking_id', $bid)->exists();
-            $hasAjb  = \App\Domain\Legal\Ajb\Models\AjbDocument::where('booking_id', $bid)->exists();
+            $hasAjb = \App\Domain\Legal\Ajb\Models\AjbDocument::where('booking_id', $bid)->exists();
             if (! $hasBast || ! $hasAjb) {
                 $fail[] = $b->booking_number;
+
                 continue;
             }
             $lines = $this->brJournalLines(
@@ -1198,15 +1248,15 @@ class BookedRevenueController extends Controller
     private function brJournalLines(float $gross, float $diskon, float $penc, array $acc): array
     {
         $rup = static fn (float $x): int => (int) round($x);
-        $nett              = $gross - $diskon;
-        $um                = $penc / 1.11;                    // UM Penjualan (dari pencairan KPR)
-        $piutang           = $rup($nett - $penc);             // Piutang Usaha
-        $diskonPenjualan   = $rup($diskon / 1.11);            // Diskon Penjualan
-        $umPenjualan       = $rup($um);
-        $ppnKeluaranDebit  = $rup($um * 0.11);               // PPN Keluaran (debit)
-        $penjualan         = $rup($gross / 1.11);            // Penjualan
+        $nett = $gross - $diskon;
+        $um = $penc / 1.11;                    // UM Penjualan (dari pencairan KPR)
+        $piutang = $rup($nett - $penc);             // Piutang Usaha
+        $diskonPenjualan = $rup($diskon / 1.11);            // Diskon Penjualan
+        $umPenjualan = $rup($um);
+        $ppnKeluaranDebit = $rup($um * 0.11);               // PPN Keluaran (debit)
+        $penjualan = $rup($gross / 1.11);            // Penjualan
         $ppnKeluaranCredit = $rup(($um / 1.11) * 0.11);     // PPN Keluaran (kredit)
-        $ppnPending        = ($piutang + $diskonPenjualan + $umPenjualan + $ppnKeluaranDebit)
+        $ppnPending = ($piutang + $diskonPenjualan + $umPenjualan + $ppnKeluaranDebit)
                              - $penjualan - $ppnKeluaranCredit; // PPN Akan Diterbitkan (plug → balance)
 
         $raw = [
