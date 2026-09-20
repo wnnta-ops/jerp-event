@@ -107,6 +107,20 @@ return [
     | Kuncinya HANYA dari .env; dokumen mereka melarang menaruhnya di repositori, dan
     | data yang dibawa memuat PII (nama pemilik, no. HP) serta access_code APP Warga.
     */
+    /*
+    |--------------------------------------------------------------------------
+    | Jadwal harian BO lama (hold/booking expire, denda, PJT, tunggakan)
+    |--------------------------------------------------------------------------
+    | Kelimanya TIDAK PERNAH berjalan: kontainer ipro-fo-scheduler tak pernah dinyalakan.
+    | Karena penjadwal kini hidup untuk penarikan MUK & Komplain, kelimanya digerbangi
+    | agar tidak ikut menyala diam-diam dan memproses tumpukan berbulan-bulan sekaligus.
+    |
+    | Dibaca lewat config, BUKAN env() langsung di routes/console.php: saat config:cache
+    | dipakai — dan up-bo.sh memakainya — Laravel tidak lagi memuat .env, sehingga env()
+    | selalu memulangkan nilai bawaan dan sakelarnya tak pernah bisa dinyalakan.
+    */
+    'jadwal_harian_bo' => env('BO_JADWAL_HARIAN_AKTIF', false),
+
     'komplain' => [
         'url' => env('CM_API_URL', 'https://erpmuk.java-sistem.com/api/integration'),
         'key' => env('CM_API_KEY'),

@@ -10,8 +10,11 @@ IPRO_DIR="$JERP_DIR/marger/ipro-fo_1/ipro-fo"
 IPRO_FILES="-f docker-compose.yml -f docker-compose.override.yml -f docker-compose.shared.yml -f docker-compose.prod.yml"
 
 cd "$IPRO_DIR"
-echo "==> 1/4 build & up BO (app + nginx + redis) — mysql TIDAK disentuh"
-docker compose $IPRO_FILES up -d --build app nginx redis
+echo "==> 1/4 build & up BO (app + nginx + redis + scheduler) — mysql TIDAK disentuh"
+# scheduler ikut dinyalakan sejak 21 Sep 2026: penarikan MUK (tiap menit) & Komplain (tiap
+# 5 menit) berjalan lewat dia. Lima jadwal harian BO yang lama TIDAK ikut hidup — semuanya
+# digerbangi config services.jadwal_harian_bo yang bawaannya false. Lihat routes/console.php.
+docker compose $IPRO_FILES up -d --build app nginx redis scheduler
 
 echo "==> 2/4 composer install (autoloader class baru)"
 docker compose $IPRO_FILES exec -T app composer install --no-dev --no-interaction --no-progress
