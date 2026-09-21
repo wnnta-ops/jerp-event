@@ -21,7 +21,9 @@ const sfc = require('vue/compiler-sfc');
 
 const ROOT = path.resolve(process.argv[2] || '.');
 const MONEY = path.join(ROOT, 'resources/js/Components/UI/MoneyInput.vue');
-const SHOW = path.join(ROOT, 'resources/js/Pages/BusinessSupport/CashBook/Advances/Show.vue');
+// Blok Alokasi Kasbon kini berdiri di sub-modul Alokasi Bon Sementara, bukan lagi di layar
+// Realisasi — yang dijaga berkas ini isinya, dan isinya pindah bersamanya.
+const SHOW = path.join(ROOT, 'resources/js/Pages/BusinessSupport/CashBook/Advances/Allocation/Show.vue');
 
 let lulus = 0, gagal = 0;
 const cek = (nama, ok, ket) => {

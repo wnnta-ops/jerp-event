@@ -744,8 +744,121 @@ class CashAdvanceController extends Controller
                alokasi untuknya akan mendebit Uang Muka Operasional atas uang yang sudah tercatat
                keluar sekali. Pembedanya DATA (journal_id), bukan payment_method. */
             'allocations' => $this->allocationRows($advance),
-            'allocationMode' => $advance->payment_method === 'debit_va' && $advance->journal_id === null,
+            'allocationMode' => app(CashAdvanceService::class)->perluLanjutAlokasi($advance),
+            /* Gerbang realisasi. Layar HANYA mencerminkan keadaan ini — yang benar-benar
+               menahan ada di CashAdvanceService::realize(); menyembunyikan tombol saja tidak
+               menghentikan POST-nya. */
+            'lanjutAlokasi' => $this->keadaanLanjut($advance),
         ]);
+    }
+
+    /**
+     * Keadaan gerbang "Lanjut Realisasikan Bon" untuk satu bon.
+     *
+     * @return array{perlu:bool, sudah:bool, pada:?string}
+     */
+    private function keadaanLanjut(BsCashAdvance $advance): array
+    {
+        return [
+            'perlu' => app(CashAdvanceService::class)->perluLanjutAlokasi($advance),
+            'sudah' => $advance->allocation_done_at !== null,
+            'pada'  => $advance->allocation_done_at?->toDateTimeString(),
+        ];
+    }
+
+    // ── Sub-modul: Alokasi Bon Sementara ───────────────────────────────────────────────
+
+    /** Daftar bon yang melewati langkah Alokasi Kasbon. */
+    public function allocationIndex(Request $request): Response
+    {
+        abort_unless($request->user()?->can('cashbook.advance.view'), 403);
+
+        /* Yang masuk daftar: bon Debit VA model baru (pembayarannya tidak berjurnal) yang
+           sudah dibayar dan belum direalisasi — persis himpunan yang punya Alokasi Kasbon.
+           Syaratnya diambil dari service supaya daftar ini tidak bisa berbeda dari gerbangnya.
+
+           payment_method='debit_va' di bawah SECARA LOGIKA berlebihan hari ini: status
+           'outstanding' berarti sudah dibayar, dan bon reguler yang dibayar SELALU berjurnal
+           (journal_id terisi), jadi whereNull('journal_id') sudah menyingkirkannya. Ia ditulis
+           tetap sebagai pernyataan maksud — kalau kelak ada cara pembayaran baru yang tidak
+           berjurnal, tanpa baris ini ia akan diam-diam ikut masuk ke daftar alokasi. */
+        $rows = BsCashAdvance::query()
+            ->where('payment_method', 'debit_va')
+            ->whereNull('journal_id')
+            ->where('status', 'outstanding')
+            ->with('cashAccount:id,code,name')
+            ->latest('advance_date')->latest('id')
+            ->paginate(50)->withQueryString();
+
+        $alokasi = BsCashAdvanceAllocation::query()
+            ->whereIn('cash_advance_id', $rows->getCollection()->pluck('id'))
+            ->selectRaw('cash_advance_id, COUNT(*) AS jumlah, COALESCE(SUM(amount),0) AS total')
+            ->groupBy('cash_advance_id')->get()->keyBy('cash_advance_id');
+
+        $rows->setCollection($rows->getCollection()->map(function (BsCashAdvance $a) use ($alokasi) {
+            $t = $alokasi[$a->id] ?? null;
+            $total = round((float) ($t->total ?? 0), 2);
+
+            return [
+                'id'        => $a->id,
+                'nomor'     => $a->advance_number,
+                'tanggal'   => $a->advance_date?->toDateString(),
+                'pemegang'  => $a->holder,
+                'keperluan' => $a->purpose,
+                'nominal'   => (float) $a->amount,
+                'jumlahAlokasi' => (int) ($t->jumlah ?? 0),
+                'dialokasikan'  => $total,
+                'belum'     => round((float) $a->amount - $total, 2),
+                'sudahLanjut' => $a->allocation_done_at !== null,
+            ];
+        }));
+
+        return Inertia::render('BusinessSupport/CashBook/Advances/Allocation/Index', [
+            'rows' => $rows,
+        ]);
+    }
+
+    /** Layar Alokasi Kasbon satu bon — dipindah dari layar Realisasi Bon Sementara. */
+    public function allocationShow(Request $request, BsCashAdvance $advance): Response
+    {
+        abort_unless($request->user()?->can('cashbook.advance.view'), 403);
+        // Bon yang memang tidak punya langkah alokasi tidak boleh membuka layar ini: halaman
+        // alokasi yang selalu kosong akan terbaca sebagai "bonnya belum dialokasikan".
+        abort_unless(app(CashAdvanceService::class)->perluLanjutAlokasi($advance), 404);
+
+        return Inertia::render('BusinessSupport/CashBook/Advances/Allocation/Show', [
+            'advance' => $advance->load(['creditCard:id,name,card_number']),
+            'cashAccounts' => $this->cashAccounts(),
+            'allocations' => $this->allocationRows($advance),
+            'lanjutAlokasi' => $this->keadaanLanjut($advance),
+            'bisaUbah' => (bool) $request->user()?->can('cashbook.advance.realize'),
+        ]);
+    }
+
+    /** Tombol "Lanjut Realisasikan Bon" — membuka gerbang realisasi untuk bon ini. */
+    public function lanjutRealisasi(Request $request, BsCashAdvance $advance): RedirectResponse
+    {
+        abort_unless($request->user()?->can('cashbook.advance.realize'), 403);
+        abort_unless(app(CashAdvanceService::class)->perluLanjutAlokasi($advance), 404);
+
+        if ($advance->status !== 'outstanding') {
+            return back()->withErrors(['lanjut' => 'Bon ini sudah tidak dalam tahap alokasi.']);
+        }
+        // Melanjutkan bon tanpa satu pun alokasi akan menabrak gerbang ADV_NO_ALLOCATION di
+        // langkah berikutnya — ditolak di sini supaya alasannya terbaca di tempat kejadiannya.
+        if ($this->allocationRows($advance)['total'] <= 0) {
+            return back()->withErrors(['lanjut' => 'Belum ada Alokasi Kasbon. Uang Muka Operasional baru terbentuk dari alokasi, jadi bon ini belum bisa direalisasi.']);
+        }
+
+        if ($advance->allocation_done_at === null) {
+            $advance->update([
+                'allocation_done_at' => now(),
+                'allocation_done_by' => $request->user()?->id,
+            ]);
+        }
+
+        return redirect()->route('bs.advance.show', $advance->id)
+            ->with('success', 'Bon '.$advance->advance_number.' dilanjutkan ke Realisasi Bon Sementara.');
     }
 
     /** @return array<string,mixed> */

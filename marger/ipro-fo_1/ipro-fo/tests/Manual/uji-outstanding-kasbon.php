@@ -74,6 +74,18 @@ $AKHIR = sprintf('%04d-%02d-28', $TAHUN, $BULAN);
 
 DB::beginTransaction();
 
+/* Langkah baru: Alokasi Bon Sementara → tombol "Lanjut Realisasikan Bon". Bon Debit VA model
+   baru tidak bisa direalisasi sebelum ini (CashAdvanceService::realize, ADV_ALLOCATION_NOT_CONFIRMED). */
+$lanjutkanAlokasi = function ($bon) {
+    if (app(\App\Domain\BusinessSupport\Services\CashAdvanceService::class)->perluLanjutAlokasi($bon)) {
+        $bon->update(['allocation_done_at' => now()]);
+        $bon->refresh();
+    }
+
+    return $bon;
+};
+
+
 try {
     app(JournalService::class)->ensurePeriod($TAHUN, $BULAN);
     app(JournalService::class)->ensurePeriod($TAHUN, $BULAN + 1);
@@ -105,6 +117,7 @@ try {
     $alokSvc->tambah($bonB, ['alloc_date' => $TGL, 'description' => 'Beli ATK', 'amount' => 500000, 'cash_account_id' => $BANK_A], $user->id);
     $alokSvc->tambah($bonB, ['alloc_date' => $TGL, 'description' => 'Transport', 'amount' => 300000, 'cash_account_id' => $BANK_B], $user->id);
     $bonB->refresh();
+    $lanjutkanAlokasi($bonB);
     $svc->realize($bonB, ['realized_date' => $TGL, 'defer_settlement' => true,
         'lines' => [['expense_account_id' => $akunBeban, 'cost_center_id' => $cc, 'description' => 'Belanja', 'amount' => 600000]]], $user->id);
     $bonB->refresh();
@@ -117,6 +130,7 @@ try {
     $bonC->refresh();
     $alokSvc->tambah($bonC, ['alloc_date' => $TGL, 'description' => 'Operasional', 'amount' => 400000, 'cash_account_id' => $BANK_A], $user->id);
     $bonC->refresh();
+    $lanjutkanAlokasi($bonC);
     $svc->realize($bonC, ['realized_date' => $TGL, 'defer_settlement' => true,
         'lines' => [['expense_account_id' => $akunBeban, 'cost_center_id' => $cc, 'description' => 'Belanja', 'amount' => 100000]]], $user->id);
 

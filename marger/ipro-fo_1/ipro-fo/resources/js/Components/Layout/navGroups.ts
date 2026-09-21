@@ -414,6 +414,9 @@ export function navGroups(foUrl: string): NavGroup[] {
             ]},
             { label: 'Transaksi Bon Sementara', icon: HandCoins, permission: ['cashbook.advance.*'], children: [
                 { label: 'Pengeluaran Bon Sementara', href: 'bs.advance.payments' },
+                // Alokasi Kasbon berdiri sendiri di antara pengeluaran dan realisasi: bon baru
+                // sampai ke Realisasi setelah tombol "Lanjut Realisasikan Bon" ditekan di sini.
+                { label: 'Alokasi Bon Sementara', href: 'bs.advance.allocation.index' },
                 { label: 'Realisasi Bon Sementara', href: 'bs.advance.index' },
             ]},
             { label: 'Transaksi Kas Kecil', icon: Wallet, permission: ['cashbook.pettycash.*'], children: [

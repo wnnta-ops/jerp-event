@@ -78,6 +78,18 @@ $TGL   = sprintf('%04d-%02d-10', $TAHUN, $BULAN);
 
 DB::beginTransaction();
 
+/* Langkah baru: Alokasi Bon Sementara → tombol "Lanjut Realisasikan Bon". Bon Debit VA model
+   baru tidak bisa direalisasi sebelum ini (CashAdvanceService::realize, ADV_ALLOCATION_NOT_CONFIRMED). */
+$lanjutkanAlokasi = function ($bon) {
+    if (app(\App\Domain\BusinessSupport\Services\CashAdvanceService::class)->perluLanjutAlokasi($bon)) {
+        $bon->update(['allocation_done_at' => now()]);
+        $bon->refresh();
+    }
+
+    return $bon;
+};
+
+
 try {
     $js = app(\App\Domain\BusinessSupport\Services\JournalService::class);
     $js->ensurePeriod($TAHUN, $BULAN);
@@ -98,7 +110,7 @@ try {
         'approval_mode'  => 'offline',
     ], $user->id);
 
-    $realisasi = fn (BsCashAdvance $b, float $nilai) => $svc->realize($b, [
+    $realisasi = fn (BsCashAdvance $b, float $nilai) => $svc->realize($lanjutkanAlokasi($b), [
         'realized_date'     => $TGL,
         'defer_settlement'  => true,
         'lines'             => [['expense_account_id' => $beban, 'cost_center_id' => $cc, 'description' => 'Belanja uji', 'amount' => $nilai]],
