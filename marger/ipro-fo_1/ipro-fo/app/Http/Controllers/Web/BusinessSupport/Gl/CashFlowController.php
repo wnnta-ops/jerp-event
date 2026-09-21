@@ -120,7 +120,12 @@ class CashFlowController extends Controller
         $depreciation = $sumPrefix('10203', true); // akumulasi penyusutan (kredit) = non-kas
         $dReceivable = $sumPrefix('10102');          // kenaikan piutang (debit) → arus keluar
         $dInventory  = $sumPrefix('10104');          // kenaikan persediaan/CIP → arus keluar
-        $dPayable    = $sumPrefix('20101', true);    // kenaikan hutang (kredit) → arus masuk
+        /* Kenaikan kewajiban usaha (kredit) → arus masuk.
+           20105 (Beban Masih Harus Dibayar) IKUT sejak Kategori Invoice bisa memilih posisi
+           kredit itu: bebannya mengurangi laba di baris atas, jadi tanpa menambahkan kembali
+           kenaikan kewajiban lawannya, cash_from_ops kurang persis sebesar invoice itu dan
+           Arus Kas Tidak Langsung berhenti cocok dengan yang Langsung — tanpa satu pun galat. */
+        $dPayable    = $sumPrefix('20101', true) + $sumPrefix('20105', true);
         $dTaxPayable = $sumPrefix('20104', true);    // kenaikan hutang pajak → arus masuk
         $cashFromOps = $netProfit + $depreciation - $dReceivable - $dInventory + $dPayable + $dTaxPayable;
         $investing   = -$sumPrefix('102');           // belanja aset tetap (debit) → keluar
