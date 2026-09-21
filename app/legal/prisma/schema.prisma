@@ -100,6 +100,28 @@ model Document {
   reminderDate DateTime?
   reminderNote String?
 
+  // ── AJB — tautan ke SPR (Final) di Marketing & Sales (J-ERP / Java Core) ──
+  //
+  // sprNumber menyimpan NOMOR SPR-nya (mis. "SPR-2026-00031"), bukan id baris di
+  // database FO. Nomor itu yang ditampilkan di semua layar FO/BO, stabil, dan bisa
+  // dicocokkan orang; id FO tidak berarti apa-apa di sini dan akan jadi angka yatim
+  // kalau database FO dibangun ulang.
+  //
+  // notaryName TIDAK memakai originalLocationDetail walaupun untuk AJB isinya
+  // memang nama notaris: originalLocationDetail menjawab "di mana berkas aslinya
+  // SEKARANG", jadi begitu akta pindah ke bank nama notarisnya hilang — padahal
+  // notaris pembuat akta melekat pada aktanya selamanya.
+  //
+  // ajbValue String (bukan Decimal) mengikuti authorizedCapital/issuedCapital yang
+  // sudah ada: nilai rupiah di modul ini disimpan apa adanya seperti yang diketik.
+  sprNumber    String?
+  notaryName   String?
+  ajbValue     String?
+  // Hasil dorongan terakhir ke J-ERP. Tanpa kedua kolom ini, kegagalan dorong
+  // hanya tampak sebagai "kolom di Detail AJB kok kosong" berhari-hari kemudian.
+  sprSyncedAt  DateTime?
+  sprSyncError String?
+
   accessLevel String // AccessLevel enum — gates visibility + approval-chain length
 
   files          DocumentFile[]
@@ -115,6 +137,7 @@ model Document {
   @@index([docType])
   @@index([status])
   @@index([cluster])
+  @@index([sprNumber])
 }
 
 // Per-document history log — every manual change (edit, lokasi fisik, ganti

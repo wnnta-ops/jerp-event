@@ -72,8 +72,23 @@ export type Scope = (typeof SCOPES)[number];
 export const ROLES = ["SYSADMIN", "LEGAL_PIC", "HEAD_OF_LEGAL", "GENERAL_MANAGER", "DIRECTOR", "REQUESTER"] as const;
 export type Role = (typeof ROLES)[number];
 
-/** Unit-scoped types — per-kavling "split" docs (require cluster/blok/unit). */
-export const TRANSACTION_TYPES: DocType[] = ["PBGSplit", "SHGBSplit", "PBBSplit"];
+/**
+ * Unit-scoped types — per-kavling docs (require cluster/blok/unit).
+ *
+ * AJB ada di sini sejak aktanya ditautkan ke No. SPR (Final): akta jual beli
+ * SELALU milik satu unit dan satu pembeli. Catatan: scripts/import-ajb.mjs sudah
+ * menulis scope "unit" untuk 22 AJB hasil impor, sementara formulirnya dulu
+ * memperlakukan AJB sebagai dokumen tingkat developer — jadi data lama dan
+ * formulirnya memang belum sejalan; ini menyamakannya.
+ */
+export const TRANSACTION_TYPES: DocType[] = ["PBGSplit", "SHGBSplit", "PBBSplit", "AJB"];
+
+/** Tipe yang ditautkan ke No. SPR (Final) di Marketing & Sales (J-ERP). */
+export const SPR_LINKED_TYPES: DocType[] = ["AJB"];
+
+export function isSprLinked(t: DocType | "" | null | undefined): boolean {
+  return !!t && SPR_LINKED_TYPES.includes(t);
+}
 
 /** Entity-scoped types — belong to a PT/company, not a unit (require entityName). */
 export const ENTITY_TYPES: DocType[] = ["AktaPendirian", "RUPS"];

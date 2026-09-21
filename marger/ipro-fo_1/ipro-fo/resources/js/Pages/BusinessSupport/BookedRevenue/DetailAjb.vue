@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, reactive, computed } from 'vue';
 import { router, Link, useForm } from '@inertiajs/vue3';
-import { ArrowLeft, Stamp, Plus, Search, RotateCcw, X, ArrowRight, Check, FileSpreadsheet } from 'lucide-vue-next';
+import { ArrowLeft, Stamp, Plus, Search, RotateCcw, X, ArrowRight, Check, FileSpreadsheet, Scale } from 'lucide-vue-next';
 import Button from '@/Components/UI/Button.vue';
 import Badge from '@/Components/UI/Badge.vue';
 import EmptyState from '@/Components/UI/EmptyState.vue';
@@ -12,6 +12,8 @@ type Row = {
     notaris: string | null; ajb_number: string | null; ajb_date: string | null; ajb_amount: number | null;
     keterangan: 'SUDAH BAST' | 'BELUM BAST';
     sudah_bast: boolean; bast_number: string | null;
+    /** Aktanya berasal dari direktori modul Legal, bukan diketik di sini. */
+    dari_legal: boolean;
     can_posting: boolean; sudah_booked: boolean;
 };
 const props = defineProps<{
@@ -79,8 +81,10 @@ const inputCls = 'h-9 w-full rounded-lg border border-neutral-300 bg-white px-3 
             </button>
                 <p class="mt-0.5 max-w-4xl text-sm text-neutral-500">
                     Satu baris untuk <b>setiap No. SPR (Final)</b> di Marketing &amp; Sales. Kolom <b>Notaris</b>,
-                    <b>No. AJB</b>, <b>Tanggal</b> &amp; <b>Nominal</b> berasal dari modul <b>Legal</b> dan hanya
-                    tampil untuk unit yang <b>sudah BAST</b>. Keterangan terisi sendiri: <b>SUDAH BAST</b> bila
+                    <b>No. AJB</b>, <b>Tanggal</b> &amp; <b>Nominal</b> berisi akta yang tertaut ke SPR tersebut —
+                    terisi sendiri begitu petugas <b>Legal</b> mengarsipkan aktanya dan menautkannya ke No. SPR ini
+                    (ditandai lencana <b>Legal</b>). Akta yang diketik di sini lewat <b>Input Massal AJB</b> baru
+                    tampil setelah unitnya <b>sudah BAST</b>. Keterangan terisi sendiri: <b>SUDAH BAST</b> bila
                     ketiga kolom AJB lengkap, selain itu <b>BELUM BAST</b>.
                 </p>
             </div>
@@ -130,7 +134,16 @@ const inputCls = 'h-9 w-full rounded-lg border border-neutral-300 bg-white px-3 
                         <td class="px-3 py-2.5">{{ r.customer ?? '—' }}</td>
                         <td class="px-3 py-2.5 font-mono">{{ r.unit ?? '—' }}</td>
                         <td class="px-3 py-2.5">{{ r.notaris ?? '—' }}</td>
-                        <td class="px-3 py-2.5 font-mono">{{ r.ajb_number ?? '—' }}</td>
+                        <td class="px-3 py-2.5 font-mono">
+                            {{ r.ajb_number ?? '—' }}
+                            <!-- Dari mana angkanya berasal. Tanpa penanda ini, baris yang terisi
+                                 dari modul Legal tak bisa dibedakan dari hasil Input Massal. -->
+                            <span v-if="r.ajb_number && r.dari_legal"
+                                title="Akta diarsipkan di modul Legal & ditautkan ke No. SPR ini"
+                                class="ml-1.5 inline-flex items-center gap-1 rounded-md border border-primary-200 bg-primary-50 px-1.5 py-0.5 align-middle font-sans text-[10px] font-semibold uppercase tracking-wide text-primary-700 dark:border-primary-800 dark:bg-primary-950/40 dark:text-primary-300">
+                                <Scale class="h-3 w-3" /> Legal
+                            </span>
+                        </td>
                         <td class="px-3 py-2.5">{{ fmtDate(r.ajb_date) }}</td>
                         <td class="px-3 py-2.5 text-right font-mono">{{ fmtRp(r.ajb_amount) }}</td>
                         <td class="px-3 py-2.5 text-center">

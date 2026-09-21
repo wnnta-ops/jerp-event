@@ -6,10 +6,11 @@ import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { getActingUser } from "@/lib/current-user";
 import { documentInputSchema, fieldErrors } from "@/lib/validation";
-import { scopeForDocType, type DocType } from "@/lib/enums";
+import { isSprLinked, scopeForDocType, type DocType } from "@/lib/enums";
+import { sinkronAjb } from "@/lib/ajb-sync";
 
 export type CreateResult =
-  | { ok: true; id: string; title: string }
+  | { ok: true; id: string; title: string; peringatan?: string }
   | { ok: false; errors: Record<string, string>; message?: string };
 
 const MAX_BYTES = 20 * 1024 * 1024; // 20 MB (matches the dropzone hint)
@@ -52,6 +53,9 @@ export async function createDocument(formData: FormData): Promise<CreateResult> 
     parties: formData.get("parties"),
     reminderDate: formData.get("reminderDate"),
     reminderNote: formData.get("reminderNote"),
+    sprNumber: formData.get("sprNumber"),
+    notaryName: formData.get("notaryName"),
+    ajbValue: formData.get("ajbValue"),
     accessLevel: formData.get("accessLevel"),
   };
 
@@ -102,6 +106,11 @@ export async function createDocument(formData: FormData): Promise<CreateResult> 
       parties: data.parties ?? null,
       reminderDate: data.reminderDate ? new Date(data.reminderDate) : null,
       reminderNote: data.reminderNote ?? null,
+      // Tautan AJB → SPR (Final). Disimpan hanya untuk tipe yang memang memakainya,
+      // supaya mengganti jenis dokumen tidak meninggalkan nomor SPR yatim di baris ini.
+      sprNumber: isSprLinked(docType) ? data.sprNumber ?? null : null,
+      notaryName: isSprLinked(docType) ? data.notaryName ?? null : null,
+      ajbValue: isSprLinked(docType) ? data.ajbValue ?? null : null,
       accessLevel: data.accessLevel,
       events: { create: { actorId: acting.id, action: "created", detail: "Dokumen diunggah" } },
     },
@@ -125,6 +134,16 @@ export async function createDocument(formData: FormData): Promise<CreateResult> 
     });
   }
 
+  // Tautkan ke Detail AJB (Booked Revenue). Sengaja SESUDAH berkasnya tersimpan
+  // dan sengaja tidak membatalkan apa pun bila gagal — arsipnya sudah jadi, yang
+  // tertunda hanya tautannya, dan alasannya tercatat di dokumen.
+  const sinkron = await sinkronAjb(doc);
+
   revalidatePath("/");
-  return { ok: true, id: doc.id, title: doc.title };
+  return {
+    ok: true,
+    id: doc.id,
+    title: doc.title,
+    ...(sinkron.pesan ? { peringatan: sinkron.pesan } : {}),
+  };
 }

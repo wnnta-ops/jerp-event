@@ -49,6 +49,12 @@ export type DocRow = {
   parties: string | null;
   reminderDate: string | null;
   reminderNote: string | null;
+  // AJB — tautan ke SPR (Final) di Marketing & Sales + data aktanya.
+  sprNumber: string | null;
+  notaryName: string | null;
+  ajbValue: string | null;
+  sprSyncedAt: string | null;
+  sprSyncError: string | null;
   fileCount: number;
   files: { url: string; fileName: string; mimeType: string | null }[];
   relatedIds: string[];

@@ -222,6 +222,37 @@ export function DocumentDrawer({
                 </div>
               )}
 
+              {/* Status tautan ke Detail AJB (Booked Revenue).
+                  Ditaruh SEBELUM daftar keterangan, bukan sebagai satu baris kecil di
+                  antara yang lain: kalau dorongannya gagal, satu-satunya gejala di
+                  tempat lain adalah kolom yang diam-diam kosong di modul sebelah. */}
+              {doc.sprNumber && (
+                <div
+                  className="mb-4 flex items-start gap-2 rounded-md px-3 py-2 text-[12px]"
+                  style={
+                    doc.sprSyncError
+                      ? { border: "0.5px solid var(--color-border-danger)", background: "var(--color-background-danger)", color: "var(--color-text-danger)" }
+                      : { border: "0.5px solid var(--color-border-tertiary)", background: "var(--color-background-success)", color: "var(--color-text-success)" }
+                  }
+                >
+                  <i className={doc.sprSyncError ? "ti ti-alert-triangle" : "ti ti-link"} style={{ fontSize: 14, marginTop: 1 }} />
+                  <div>
+                    {doc.sprSyncError ? (
+                      <>
+                        <span className="font-medium">Belum tertaut ke Detail AJB ({doc.sprNumber}).</span>
+                        <div className="mt-0.5">{doc.sprSyncError}</div>
+                        <div className="mt-0.5">Buka Edit lalu simpan lagi untuk mengulang.</div>
+                      </>
+                    ) : (
+                      <span className="font-medium">
+                        Tertaut ke {doc.sprNumber} · mengisi Detail AJB di Booked Revenue
+                        {doc.sprSyncedAt ? ` · ${formatDateID(doc.sprSyncedAt)}` : ""}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              )}
+
               {/* Key facts */}
               <div className="grid grid-cols-2 gap-x-4 gap-y-3.5">
                 <Fact label="Unit">{unitText}</Fact>
@@ -235,6 +266,9 @@ export function DocumentDrawer({
                   {doc.originalLocationDetail ? ` · ${doc.originalLocationDetail}` : ""}
                 </Fact>
                 <Fact label="Tingkat akses">{ACCESS_LEVEL_LABELS[doc.accessLevel as AccessLevel] ?? doc.accessLevel}</Fact>
+                {doc.sprNumber && <Fact label="No. SPR (Final)">{doc.sprNumber}</Fact>}
+                {doc.notaryName && <Fact label="Notaris / PPAT">{doc.notaryName}</Fact>}
+                {doc.ajbValue && <Fact label="Nominal akta">{doc.ajbValue}</Fact>}
                 {doc.objectLocation && <Fact label="Lokasi / objek">{doc.objectLocation}</Fact>}
                 {doc.landArea && <Fact label="Luas lahan">{doc.landArea}</Fact>}
                 {doc.boardStructure && <Fact label="Susunan pengurus">{doc.boardStructure}</Fact>}
