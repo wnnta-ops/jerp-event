@@ -79,6 +79,16 @@ export default function LoginPage() {
               </div>
             ))}
           </div>
+          {/* Kembali ke Java Core.
+              <a> POLOS, bukan <Link> next/link — basePath "/sales" akan mengubah href milik
+              Link menjadi "/sales/dashboard", halaman yang tidak ada. Pola yang sama sudah
+              dipakai Shell.tsx untuk pengguna yang sudah masuk; di sini ia dibutuhkan justru
+              oleh yang BELUM masuk dan salah membuka modul. */}
+          <div style={{ marginTop: 14, textAlign: "center" }}>
+            <a className="btn ghost sm" href="/dashboard" title="Kembali ke Dashboard Java Core">
+              ← Kembali ke Java Core
+            </a>
+          </div>
         </div>
       </div>
     </div>
