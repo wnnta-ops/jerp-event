@@ -1121,6 +1121,14 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
     Route::get('/business-support/cogs-hpp/post-hpp', [BsCogsHppController::class, 'postHppForm'])->name('bs.cogs.hpp.post-hpp');
     Route::post('/business-support/cogs-hpp/post-hpp', [BsCogsHppController::class, 'postHpp'])->name('bs.cogs.hpp.post-hpp.run');
 
+    // Komponen COGS — Tanah & License Permit (dari Kategori Invoice AP), Housing & Infrastruktur
+    // (dari Surat Perintah Kerja). Slug dibatasi supaya /komponen/apa-saja memulangkan 404,
+    // bukan halaman kosong yang terlihat seperti komponen tanpa biaya.
+    Route::get('/business-support/cogs-komponen/{komponen}', [\App\Http\Controllers\Web\BusinessSupport\Cogs\CogsComponentController::class, 'show'])
+        ->where('komponen', 'tanah|housing|infrastruktur|license-permit')->name('bs.cogs.komponen.show');
+    Route::put('/business-support/cogs-komponen/{komponen}/kategori-invoice', [\App\Http\Controllers\Web\BusinessSupport\Cogs\CogsComponentController::class, 'simpanTautan'])
+        ->where('komponen', 'tanah|license-permit')->name('bs.cogs.komponen.tautan');
+
     // Query / Laporan
     Route::get('/business-support/cogs-query/budget', [BsCogsQueryController::class, 'budget'])->name('bs.cogs.query.budget');
     Route::get('/business-support/cogs-query/realisasi', [BsCogsQueryController::class, 'realisasi'])->name('bs.cogs.query.realisasi');

@@ -542,6 +542,15 @@ export function navGroups(foUrl: string): NavGroup[] {
                 { label: 'Posting Jurnal HPP Persediaan', href: 'bs.cogs.hpp.post-persediaan' },
                 { label: 'Posting Jurnal HPP', href: 'bs.cogs.hpp.post-hpp' },
             ]},
+            // Biaya pembentuk tiap komponen HPP, diambil langsung dari modul sumbernya:
+            // Tanah & License Permit dari Kategori Invoice (Account Payable), Housing &
+            // Infrastruktur dari Surat Perintah Kerja (Contractor Management).
+            { label: 'Komponen COGS', icon: Layers, permission: ['cogs.component.*'], children: [
+                { label: 'Tanah', href: 'bs.cogs.komponen.show', params: { komponen: 'tanah' } },
+                { label: 'Housing', href: 'bs.cogs.komponen.show', params: { komponen: 'housing' } },
+                { label: 'Infrastruktur', href: 'bs.cogs.komponen.show', params: { komponen: 'infrastruktur' } },
+                { label: 'License Permit', href: 'bs.cogs.komponen.show', params: { komponen: 'license-permit' } },
+            ]},
             { label: 'Saldo Awal Realisasi', icon: Coins, permission: ['cogs.realization.*'], children: [
                 { label: 'Input Saldo Awal Realisasi', href: 'bs.cogs.realization.create' },
             ]},
