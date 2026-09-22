@@ -65,8 +65,9 @@ class TarikUnitKomplainCommand extends Command
             // tangan: access_code adalah kredensial login APP Warga, sisanya PII yang tidak
             // dipakai layar Detail BAST. Menyalin data pribadi yang tak terpakai hanya
             // menambah tempat ia bisa bocor.
+            // tenant_id SENGAJA tidak dikirim — lihat TarikKontrakMukCommand: mengirimnya
+            // membuat pembaruan menimpa tenant_id dengan NULL dan barisnya hilang dari layar.
             $model = BsCmUnit::updateOrCreate(['cm_id' => $cmId], [
-                'tenant_id' => tenant_id(),
                 'kode_unit' => $kode !== '' ? $kode : null,
                 'kode_upper' => $kode !== '' ? mb_strtoupper($kode) : null,
                 'cluster_kode' => $u['cluster_code'] ?? null,
