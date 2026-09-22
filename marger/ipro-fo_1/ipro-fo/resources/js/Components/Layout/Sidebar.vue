@@ -13,6 +13,7 @@ import {
     GitMerge, FileSpreadsheet, IdCard, Gift, Eraser, SlidersHorizontal, DatabaseZap, Database, UserPlus,
 } from 'lucide-vue-next';
 import { navGroups } from './navGroups';
+import { useIzin } from '@/Composables/useIzin';
 
 defineProps<{ open: boolean }>();
 defineEmits<{ (e: 'close'): void }>();
@@ -43,15 +44,10 @@ const foUrl: string = ((page.props as any).config?.fo_url ?? "");
 const groups = navGroups(foUrl);
 
 
-function hasPermission(perm?: string | string[]): boolean {
-    if (! perm) return true;
-    const perms: string[] = page.props.auth.user?.permissions ?? [];
-    const list = Array.isArray(perm) ? perm : [perm];
-    // Dukung wildcard modul, mis. 'ap.*' = punya permission granular apa pun pada modul 'ap'.
-    return list.some(p => p.endsWith('.*')
-        ? perms.some(x => x.startsWith(p.slice(0, -1)))
-        : perms.includes(p));
-}
+// Wildcard modul + lolosnya SuperAdmin tinggal di useIzin() — dipakai bersama Command Palette.
+// Disalin ke sini dulu, dan kedua salinan itu lambat laun menyaring hal yang berbeda:
+// sidebar menyembunyikan menu yang masih muncul di pencarian cepat, atau sebaliknya.
+const { punyaIzin: hasPermission } = useIzin();
 
 function isActive(href?: string, params?: Record<string, any>): boolean {
     if (! href) return false;

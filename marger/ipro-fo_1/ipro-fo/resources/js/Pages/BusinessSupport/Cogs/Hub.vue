@@ -51,6 +51,15 @@ const menu: Array<{ group: string; items: Array<{ label: string; route: string |
         { label: 'Posting Jurnal HPP Persediaan', route: r('bs.cogs.hpp.post-persediaan') },
         { label: 'Posting Jurnal HPP', route: r('bs.cogs.hpp.post-hpp') },
     ]},
+    // Urutannya mengikuti sidebar: Komponen COGS berada DI BAWAH Transaksi HPP RealCost.
+    // Hub ini adalah pintu masuk kedua ke modul COGS; sub-modul yang hanya ada di sidebar
+    // akan tak terlihat oleh siapa pun yang masuk lewat sini.
+    { group: 'Komponen COGS', items: [
+        { label: 'Tanah', route: r('bs.cogs.komponen.show', { komponen: 'tanah' }) },
+        { label: 'Housing', route: r('bs.cogs.komponen.show', { komponen: 'housing' }) },
+        { label: 'Infrastruktur', route: r('bs.cogs.komponen.show', { komponen: 'infrastruktur' }) },
+        { label: 'License Permit', route: r('bs.cogs.komponen.show', { komponen: 'license-permit' }) },
+    ]},
     { group: 'Saldo Awal Realisasi', items: [
         { label: 'Input Saldo Awal Realisasi', route: r('bs.cogs.realization.create') },
     ]},

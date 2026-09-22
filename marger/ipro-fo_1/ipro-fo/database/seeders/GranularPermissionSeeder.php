@@ -7,6 +7,7 @@ namespace Database\Seeders;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Str;
 use Spatie\Permission\Models\Permission;
+use Spatie\Permission\Models\Role;
 use Spatie\Permission\PermissionRegistrar;
 
 /**
@@ -140,6 +141,34 @@ class GranularPermissionSeeder extends Seeder
                     ['name' => $name, 'guard_name' => 'web'],
                     ['module' => $module, 'label' => Str::of($name)->after('.')->replace(['.', '-', '_'], ' ')->headline()],
                 );
+            }
+        }
+
+        $this->lengkapiSuperAdmin();
+    }
+
+    /**
+     * Izin yang baru dibuat langsung diberikan ke peran SuperAdmin.
+     *
+     * Tanpa ini seeder hanya MEMBUAT izin dan tidak memberikannya kepada siapa pun. Yang selama
+     * ini memberi SuperAdmin seluruh izin adalah RoleSeeder, dan RoleSeeder tidak ikut dijalankan
+     * setiap kali sebuah fitur menambah izin. Akibatnya izin baru menjadi yatim: menunya
+     * tersembunyi dari SEMUA orang — sidebar menyaring lewat daftar nama izin, yang tidak
+     * terpengaruh bypass Gate::before milik SuperAdmin — sementara halamannya sendiri tetap bisa
+     * dibuka dengan mengetik alamatnya. Kegagalan itu tidak memunculkan galat apa pun.
+     *
+     * HANYA MENAMBAH, dan HANYA pada SuperAdmin. Peran lain tidak disentuh: set izinnya adalah
+     * keputusan operator di Settings → Roles, dan seeder yang ikut mengaturnya akan menimpa
+     * penyesuaian yang sudah berjalan.
+     */
+    private function lengkapiSuperAdmin(): void
+    {
+        foreach (Role::where('name', 'SuperAdmin')->get() as $role) {
+            $kurang = Permission::whereNotIn('id', $role->permissions()->pluck('permissions.id'))->get();
+
+            if ($kurang->isNotEmpty()) {
+                // givePermissionTo() membersihkan cache izin Spatie sendiri.
+                $role->givePermissionTo($kurang);
             }
         }
     }

@@ -4,15 +4,19 @@ import { router, usePage } from '@inertiajs/vue3';
 import { Search, CornerDownLeft, FileText, Compass } from 'lucide-vue-next';
 import axios from 'axios';
 import { debounce } from 'lodash-es';
+import { useIzin } from '@/Composables/useIzin';
 
 const props = defineProps<{ open: boolean }>();
 const emit = defineEmits<{ (e: 'update:open', value: boolean): void }>();
 
 const page = usePage();
-const perms = computed<string[]>(() => (page.props as any).auth?.user?.permissions ?? []);
 // Alamat FO untuk entri yang menyeberang aplikasi (mis. master Unit).
 const foUrl: string = ((page.props as any).config?.fo_url ?? '');
-function can(p?: string): boolean { return !p || perms.value.includes(p); }
+// Aturan izinnya SATU dengan sidebar (termasuk lolosnya SuperAdmin) — lihat useIzin().
+// Sebelumnya berkas ini punya salinannya sendiri, dan salinan itu tidak mengenal wildcard
+// maupun SuperAdmin: halaman yang tampil di sidebar bisa tidak ditemukan di pencarian cepat.
+const { punyaIzin } = useIzin();
+function can(p?: string): boolean { return punyaIzin(p); }
 function safeRoute(name: string): string | null {
     try { return (route as any)(name); } catch { return null; }
 }
