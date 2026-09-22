@@ -88,6 +88,18 @@ $TGL   = sprintf('%04d-%02d-10', $TAHUN, $BULAN);
 
 DB::beginTransaction();
 
+/* Langkah baru: Alokasi Bon Sementara → tombol "Lanjut Realisasikan Bon". Bon Debit VA model
+   baru tidak bisa direalisasi sebelum ini (CashAdvanceService::realize, ADV_ALLOCATION_NOT_CONFIRMED). */
+$lanjutkanAlokasi = function ($bon) {
+    if (app(\App\Domain\BusinessSupport\Services\CashAdvanceService::class)->perluLanjutAlokasi($bon)) {
+        $bon->update(['allocation_done_at' => now()]);
+        $bon->refresh();
+    }
+
+    return $bon;
+};
+
+
 try {
     /* Periode fiskal bulan uji dibuka dulu — JournalService menolak posting pada periode closed,
        dan tanpa ini seluruh uji gagal karena sebab yang tidak ada hubungannya. */
@@ -204,6 +216,7 @@ try {
     $ok('total alokasi = 800.000', abs($totalAlokasi - 800000) < 0.01, (string) $totalAlokasi);
 
     $akunBeban = DB::table('bs_accounts')->where('is_postable', 1)->where('type', 'expense')->orderBy('code')->value('id');
+    $lanjutkanAlokasi($bon);
     $svc->realize($bon, [
         'realized_date'    => $TGL,
         'defer_settlement' => true,
@@ -257,6 +270,7 @@ try {
     ]);
     $bonLama->refresh();
 
+    $lanjutkanAlokasi($bonLama);
     $svc->realize($bonLama, [
         'realized_date'    => $TGL,
         'defer_settlement' => true,
@@ -281,6 +295,7 @@ try {
         'va_expired_date' => sprintf('%04d-12-31', $TAHUN), 'credit_card_id' => $kartu->id], $user->id);
     $alokSvc->tambah($bonBaru2, ['alloc_date' => $TGL, 'description' => 'Alokasi', 'amount' => 400000, 'cash_account_id' => $BANK_A], $user->id);
     $bonBaru2->refresh();
+    $lanjutkanAlokasi($bonBaru2);
     $svc->realize($bonBaru2, ['realized_date' => $TGL, 'defer_settlement' => true,
         'lines' => [['expense_account_id' => $akunBeban, 'cost_center_id' => $cc, 'description' => 'Belanja', 'amount' => 100000]]], $user->id);
     $bonBaru2->refresh();
@@ -291,6 +306,8 @@ try {
     $bonKosong = $buatBon('UJI Tanpa Alokasi', 100000);
     $svc->pay($bonKosong, ['paid_date' => $TGL, 'payment_method' => 'debit_va',
         'va_expired_date' => sprintf('%04d-12-31', $TAHUN), 'credit_card_id' => $kartu->id], $user->id);
+    $bonKosong->refresh();
+    $bonKosong->update(['allocation_done_at' => now()]);
     $bonKosong->refresh();
     $kode = $tolak(fn () => $svc->realize($bonKosong, ['realized_date' => $TGL, 'defer_settlement' => true,
         'lines' => [['expense_account_id' => $akunBeban, 'cost_center_id' => $cc, 'description' => 'X', 'amount' => 50000]]], $user->id));

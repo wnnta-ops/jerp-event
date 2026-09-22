@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\Mobile\ApprovalController;
+use App\Modules\BO\IproBridge\Controllers\LegalBridgeController;
 use App\Modules\FO\Launching\Controllers\XenditWebhookController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
@@ -33,4 +34,16 @@ Route::prefix('mobile')->middleware('throttle:api')->group(function () {
         Route::post('/approvals/{approval}/decision', [ApprovalController::class, 'decide']);
         Route::post('/approvals/{approval}/review', [ApprovalController::class, 'review']);
     });
+});
+
+/*
+ * Jembatan modul Legal (app/legal, Next.js di compose yang sama) → FO & ipro_bo.
+ * Tanpa sesi & tanpa CSRF: tiap permintaan ditandatangani HMAC dengan kunci
+ * bersama (LegalBridgeSignature). Dipakai saat petugas Legal mengarsipkan akta
+ * AJB dan menautkannya ke No. SPR (Final) di Marketing & Sales.
+ */
+Route::prefix('legal-bridge')->middleware('throttle:60,1')->group(function () {
+    Route::post('/spr', [LegalBridgeController::class, 'spr'])->name('legal-bridge.spr');
+    Route::post('/ajb', [LegalBridgeController::class, 'simpanAjb'])->name('legal-bridge.ajb');
+    Route::post('/ajb/lepas', [LegalBridgeController::class, 'lepasAjb'])->name('legal-bridge.ajb.lepas');
 });

@@ -54,6 +54,11 @@ export default async function HomePage() {
     parties: d.parties,
     reminderDate: d.reminderDate ? d.reminderDate.toISOString() : null,
     reminderNote: d.reminderNote,
+    sprNumber: d.sprNumber,
+    notaryName: d.notaryName,
+    ajbValue: d.ajbValue,
+    sprSyncedAt: d.sprSyncedAt ? d.sprSyncedAt.toISOString() : null,
+    sprSyncError: d.sprSyncError,
     fileCount: d.files.length,
     files: d.files.map((f) => ({ url: f.url, fileName: f.fileName, mimeType: f.mimeType })),
     relatedIds: Array.from(

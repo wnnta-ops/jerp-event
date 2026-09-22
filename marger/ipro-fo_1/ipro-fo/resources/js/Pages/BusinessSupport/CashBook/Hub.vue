@@ -60,6 +60,7 @@ const menu: Array<{ group: string; items: Array<{ label: string; route: string |
     ]},
     { group: 'Transaksi Bon Sementara', items: [
         { label: 'Pengeluaran Bon Sementara', route: r('bs.advance.payments') },
+        { label: 'Alokasi Bon Sementara', route: r('bs.advance.allocation.index') },
         { label: 'Realisasi Bon Sementara', route: r('bs.advance.index') },
         { label: 'Refund Bon Sementara', route: r('bs.advance.index') },
         { label: 'Reimburse Bon Sementara', route: r('bs.advance.index') },

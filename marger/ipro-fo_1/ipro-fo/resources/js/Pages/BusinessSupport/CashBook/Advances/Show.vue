@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue';
-import { useForm, router } from '@inertiajs/vue3';
-import { ArrowLeft, Wallet, Plus, Trash2, ClipboardCheck, Printer, HandCoins, Lock } from 'lucide-vue-next';
+import { Link, useForm, router } from '@inertiajs/vue3';
+import { ArrowLeft, Wallet, ClipboardCheck, Printer, HandCoins, Lock } from 'lucide-vue-next';
 import Button from '@/Components/UI/Button.vue';
 import Badge from '@/Components/UI/Badge.vue';
 import SearchSelect from '@/Components/UI/SearchSelect.vue';
@@ -15,7 +15,9 @@ const props = defineProps<{ advance: any; expenseAccounts: Array<any>; costCente
     /** Baris Alokasi Kasbon + totalnya + sisa bon yang belum dialokasikan. */
     allocations?: { rows: Array<any>; total: number; sisa: number };
     /** Bon Debit VA model baru — pembayarannya tidak berjurnal, pengeluarannya lewat Alokasi Kasbon. */
-    allocationMode?: boolean }>();
+    allocationMode?: boolean;
+    /** Gerbang "Lanjut Realisasikan Bon": perlu = bon ini melewati tahap alokasi; sudah = tombolnya ditekan. */
+    lanjutAlokasi?: { perlu: boolean; sudah: boolean; pada: string | null } }>();
 const showForm = ref(false);
 // #125: simpan tanggal terima dokumen (hanya finance) tanpa berpindah halaman.
 function saveDocDate(e: Event) {
@@ -121,41 +123,13 @@ function doMasukSaldo() {
     settleForm.post(route('bs.advance.masuk-saldo', props.advance.id));
 }
 
-/* === ALOKASI KASBON (bon Debit VA) ===
-   Pembayaran Debit VA tidak berjurnal — uangnya baru keluar dari bank saat dialokasikan, dan itu
-   bisa beberapa kali pada tanggal & bank yang berbeda. Tiap baris di sini berjurnal sendiri:
-   Dr Uang Muka Operasional / Cr bank pengeluaran yang dipilih. */
-const alokForm = useForm<any>({ alloc_date: today, description: '', amount: 0, cash_account_id: '' });
+/* === ALOKASI KASBON ===
+   Pencatatannya pindah ke sub-modul Alokasi Bon Sementara; di layar ini tinggal ringkasannya.
+   sisaAlokasi tetap dibaca dari server — dihitung ulang di layar akan melahirkan selisih sen,
+   sebab servernya membulatkan ke 2 angka. */
 const sisaAlokasi = computed(() => Number(props.allocations?.sisa ?? 0));
-const alokKurang = computed<string[]>(() => {
-    const k: string[] = [];
-    if (! alokForm.alloc_date) k.push('tanggal');
-    if (! String(alokForm.description ?? '').trim()) k.push('keterangan');
-    if (! (Number(alokForm.amount) > 0)) k.push('jumlah');
-    if (! alokForm.cash_account_id) k.push('bank pengeluaran');
-    // Gerbang yang sama dengan servernya (ALLOC_EXCEEDS) — bukan lebih longgar.
-    if (Number(alokForm.amount) > sisaAlokasi.value + 0.001) k.push('jumlah melebihi sisa bon');
-    return k;
-});
-function tambahAlokasi() {
-    if (alokKurang.value.length) return;
-    alokForm.post(route('bs.advance.allocation.store', props.advance.id), {
-        preserveScroll: true,
-        onSuccess: () => { alokForm.reset('description', 'amount'); alokForm.amount = 0; },
-    });
-}
-function hapusAlokasi(a: any) {
-    /* Alokasi bertanggal & berbank sama berbagi SATU jurnal, jadi menghapus satu di antaranya
-       belum tentu menghapus jurnalnya — kalimatnya menyesuaikan supaya tidak menjanjikan yang
-       tidak terjadi. */
-    const berbagi = ((props.allocations?.rows ?? []) as any[]).filter(
-        (x: any) => x.alloc_date === a.alloc_date && x.account_id === a.account_id).length > 1;
-    const akibat = berbagi
-        ? 'Barisnya dicabut dari jurnal gabungan tanggal itu; jurnalnya tetap ada untuk alokasi lain.'
-        : 'Jurnalnya ikut terhapus.';
-    if (! confirm(`Hapus alokasi ${fmtDate(a.alloc_date)} — ${fmtRp(a.amount)}?\n\n${akibat}`)) return;
-    router.delete(route('bs.advance.allocation.destroy', a.id), { preserveScroll: true });
-}
+/** Bon yang punya tahap alokasi tetapi belum ditekan "Lanjut Realisasikan Bon". */
+const terkunciAlokasi = computed(() => !! props.lanjutAlokasi?.perlu && ! props.lanjutAlokasi?.sudah);
 
 function fmtRp(v: number) { return 'Rp ' + Number(v ?? 0).toLocaleString('id-ID'); }
 function fmtDate(d: string) { return d ? new Date(d).toLocaleDateString('id-ID', { day:'2-digit', month:'long', year:'numeric' }) : '—'; }
@@ -389,86 +363,43 @@ function backToIndex() {
             </form>
         </div>
 
-        <!-- ALOKASI KASBON — hanya bon Debit VA model baru, selama belum direalisasi.
-             Pembayarannya tidak berjurnal; tiap baris di sini-lah yang mengeluarkan uangnya dari
-             bank (Dr Uang Muka Operasional · Cr bank pengeluaran) sekaligus menjadi "Pemakaian"
-             kartunya di Set Up Debit Card. -->
-        <div v-if="allocationMode && advance.status === 'outstanding'" class="card p-5">
-            <h2 class="mb-1 flex items-center gap-2 font-semibold"><Wallet class="h-5 w-5 text-primary-600" /> Alokasi Kasbon</h2>
-            <p class="mb-3 text-xs text-neutral-500">
-                Pembayaran Debit VA belum mengeluarkan uang dari bank. Catat tiap pengeluarannya di sini —
-                jurnal <b>Dr Uang Muka Operasional · Cr bank pengeluaran</b> terbentuk per baris, dan totalnya
-                menjadi acuan realisasi bon ini.
-            </p>
-
-            <div class="mb-3 grid gap-3 sm:grid-cols-3">
-                <div class="rounded-lg border border-neutral-200 px-4 py-2.5 dark:border-neutral-700"><div class="text-[11px] uppercase text-neutral-400">Nominal Bon</div><div class="font-mono font-semibold">{{ fmtRp(advance.amount) }}</div></div>
-                <div class="rounded-lg border border-neutral-200 px-4 py-2.5 dark:border-neutral-700"><div class="text-[11px] uppercase text-neutral-400">Sudah Dialokasikan</div><div class="font-mono font-semibold text-primary-600">{{ fmtRp(allocations?.total ?? 0) }}</div></div>
-                <!-- Sisa ini punya DUA arti sekaligus, dan keduanya disebutkan: batas alokasi
-                     berikutnya, sekaligus bagian bon yang tetap tinggal sebagai saldo kartu. -->
-                <div class="rounded-lg border border-neutral-200 px-4 py-2.5 dark:border-neutral-700"><div class="text-[11px] uppercase text-neutral-400">Belum Dialokasikan</div><div class="font-mono font-semibold">{{ fmtRp(sisaAlokasi) }}</div><div class="text-[10px] text-neutral-400">tetap menjadi saldo kartu</div></div>
+        <!-- ALOKASI KASBON — sekarang sub-modul sendiri (Cash Book → Transaksi Bon Sementara →
+             Alokasi Bon Sementara). Di sini tinggal ringkasannya + pintu menuju ke sana, supaya
+             operator tahu sudah sampai mana tanpa harus menebak. -->
+        <div v-if="lanjutAlokasi?.perlu && advance.status === 'outstanding'" class="card p-5">
+            <div class="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                    <h2 class="mb-1 flex items-center gap-2 font-semibold"><Wallet class="h-5 w-5 text-primary-600" /> Alokasi Kasbon</h2>
+                    <p class="text-xs text-neutral-500">
+                        Dicatat di sub-modul <b>Alokasi Bon Sementara</b>. Total alokasi menjadi acuan realisasi bon ini.
+                    </p>
+                </div>
+                <Link :href="route('bs.advance.allocation.show', advance.id)">
+                    <Button variant="secondary">Buka Alokasi Kasbon</Button>
+                </Link>
             </div>
 
-            <table v-if="(allocations?.rows ?? []).length" class="mb-3 w-full text-sm">
-                <thead class="border-b border-neutral-200 text-left text-xs uppercase text-neutral-500 dark:border-neutral-700">
-                    <tr><th class="py-1.5">Tanggal</th><th class="py-1.5">Keterangan</th><th class="py-1.5">Bank Pengeluaran</th><th class="py-1.5 text-right">Jumlah</th><th class="py-1.5 text-right">Aksi</th></tr>
-                </thead>
-                <tbody class="divide-y divide-neutral-100 dark:divide-neutral-800">
-                    <tr v-for="a in allocations?.rows ?? []" :key="a.id">
-                        <td class="py-1.5">{{ fmtDate(a.alloc_date) }}</td>
-                        <td class="py-1.5 text-neutral-500">{{ a.description }}</td>
-                        <td class="py-1.5 font-mono text-xs text-neutral-500">{{ a.account }}</td>
-                        <td class="py-1.5 text-right font-mono">{{ fmtRp(a.amount) }}</td>
-                        <td class="py-1.5 text-right">
-                            <button type="button" class="inline-flex items-center rounded-lg border border-danger-300 px-2 py-1 text-xs font-medium text-danger-600 hover:bg-danger-50 dark:border-danger-700" title="Hapus alokasi beserta jurnalnya" @click="hapusAlokasi(a)"><Trash2 class="h-3.5 w-3.5" /></button>
-                        </td>
-                    </tr>
-                </tbody>
-                <tfoot class="border-t border-neutral-200 font-semibold dark:border-neutral-700">
-                    <tr><td colspan="3" class="py-1.5 text-right">Total Alokasi</td><td class="py-1.5 text-right font-mono">{{ fmtRp(allocations?.total ?? 0) }}</td><td></td></tr>
-                </tfoot>
-            </table>
-            <p v-else class="mb-3 rounded-lg bg-amber-50 px-4 py-2.5 text-xs text-amber-700 dark:bg-amber-900/20 dark:text-amber-300">
-                Belum ada alokasi. Bon ini belum bisa direalisasi — Uang Muka Operasional baru terbentuk dari alokasi.
-            </p>
-
-            <form class="grid gap-3 md:grid-cols-5" @submit.prevent="tambahAlokasi">
-                <div><label class="mb-1 block text-xs font-medium text-neutral-500">Tanggal *</label><input v-model="alokForm.alloc_date" type="date" :class="inputCls" /></div>
-                <div class="md:col-span-2"><label class="mb-1 block text-xs font-medium text-neutral-500">Keterangan *</label><input v-model="alokForm.description" type="text" placeholder="mis. Beli ATK" :class="String(alokForm.description ?? '').trim() ? inputCls : inputKurang" /></div>
-                <div>
-                    <label class="mb-1 block text-xs font-medium text-neutral-500">Jumlah *</label>
-                    <!-- MoneyInput, bukan input type=number: peramban tidak pernah mau menampilkan
-                         pemisah ribuan pada type=number — isinya wajib angka mentah yang sah, dan
-                         "1.000.000" bukan salah satunya. Angka sebesar nominal bon praktis tidak
-                         terbaca tanpa titik ribuan.
-
-                         decimals=2 karena kolomnya memang decimal(20,2) dan servernya membulatkan
-                         ke 2 angka (CashAdvanceAllocationService::tambah). Memakai MoneyInput
-                         bawaannya yang bilangan bulat akan menghapus sen diam-diam — dan sisa bon
-                         yang bersen jadi tidak pernah bisa dialokasikan habis.
-
-                         Penanda "belum diisi" dipasang sebagai CINCIN pada pembungkusnya, bukan
-                         dengan menimpa border & background MoneyInput lewat kelas ber-awalan !.
-                         Cara itu sudah dicoba dan setengah gagal: varian gelapnya tidak ikut
-                         terbentuk, sehingga latar krem terang menembus ke mode gelap. Cincin
-                         pembungkus adalah pola yang sama dengan penanda cost center di
-                         Payable/Form.vue dan berlaku di kedua tema. -->
-                    <div :class="Number(alokForm.amount) > 0 ? '' : 'rounded-lg ring-1 ring-amber-400'">
-                        <MoneyInput v-model="alokForm.amount" :decimals="2" placeholder="0" />
-                    </div>
-                </div>
-                <div><label class="mb-1 block text-xs font-medium text-neutral-500">Bank Pengeluaran *</label><SearchSelect :model-value="alokForm.cash_account_id" :options="cashAccounts" placeholder="— pilih rekening —" :class="alokForm.cash_account_id ? '' : pilihKurang" @update:model-value="(v) => alokForm.cash_account_id = v" /></div>
-                <div class="md:col-span-5 flex flex-wrap items-center gap-3">
-                    <Button type="submit" :disabled="alokForm.processing || alokKurang.length > 0"><template #icon-left><Plus class="h-4 w-4" /></template>Tambah Alokasi</Button>
-                    <span v-if="alokKurang.length" class="text-xs text-amber-600 dark:text-amber-400">Lengkapi dulu — {{ alokKurang.join(', ') }}.</span>
-                    <span v-else class="text-xs text-neutral-500">Jurnal: Dr Uang Muka Operasional · Cr bank pengeluaran · {{ fmtRp(alokForm.amount) }}</span>
-                </div>
-            </form>
+            <div class="mt-3 grid gap-3 sm:grid-cols-3">
+                <div class="rounded-lg border border-neutral-200 px-4 py-2.5 dark:border-neutral-700"><div class="text-[11px] uppercase text-neutral-400">Nominal Bon</div><div class="font-mono font-semibold">{{ fmtRp(advance.amount) }}</div></div>
+                <div class="rounded-lg border border-neutral-200 px-4 py-2.5 dark:border-neutral-700"><div class="text-[11px] uppercase text-neutral-400">Sudah Dialokasikan</div><div class="font-mono font-semibold text-primary-600">{{ fmtRp(allocations?.total ?? 0) }}</div></div>
+                <div class="rounded-lg border border-neutral-200 px-4 py-2.5 dark:border-neutral-700"><div class="text-[11px] uppercase text-neutral-400">Belum Dialokasikan</div><div class="font-mono font-semibold">{{ fmtRp(sisaAlokasi) }}</div><div class="text-[10px] text-neutral-400">tetap menjadi saldo kartu</div></div>
+            </div>
         </div>
 
         <!-- Form realisasi (jika outstanding) -->
         <div v-if="advance.status === 'outstanding'" class="card p-5">
-            <Button v-if="!showForm" @click="showForm = true"><template #icon-left><ClipboardCheck class="h-4 w-4" /></template>Realisasikan Bon</Button>
+            <!-- GERBANG: bon yang punya tahap alokasi baru boleh direalisasi setelah tombol
+                 "Lanjut Realisasikan Bon" ditekan di sub-modul Alokasi Bon Sementara. Yang
+                 benar-benar menahan ada di CashAdvanceService::realize() — tombol yang mati di
+                 sini hanya mencerminkannya, sebab menyembunyikan tombol tidak menahan POST. -->
+            <div v-if="!showForm">
+                <Button :disabled="terkunciAlokasi" @click="showForm = true"><template #icon-left><ClipboardCheck class="h-4 w-4" /></template>Realisasikan Bon</Button>
+                <p v-if="terkunciAlokasi" class="mt-2 text-xs text-amber-600 dark:text-amber-400">
+                    Bon ini belum dilanjutkan dari Alokasi Kasbon.
+                    <Link :href="route('bs.advance.allocation.show', advance.id)" class="font-medium underline">Buka Alokasi Bon Sementara</Link>
+                    lalu tekan "Lanjut Realisasikan Bon".
+                </p>
+            </div>
             <form v-else @submit.prevent="submit" class="space-y-3">
                 <div class="flex items-center justify-between">
                     <h2 class="font-semibold">Realisasi Bon Sementara</h2>

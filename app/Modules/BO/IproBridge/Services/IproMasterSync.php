@@ -851,6 +851,9 @@ class IproMasterSync
         $now = Carbon::now();
         $fallbackDue = $k->tgl_kontrak ?? $now->toDateString();
 
+        // Tanggal bayar tiap baris tagihan — DARI KWITANSINYA. Lihat tanggalBayarPerTagihan().
+        $tglBayar = $this->tanggalBayarPerTagihan($foKontrakId);
+
         // Baris yang diinginkan dari tagihan FO (dengan kunci pencocokan stabil).
         $desired = [];
         $i = 0;
@@ -872,6 +875,10 @@ class IproMasterSync
                     'due_date' => $t->jatuh_tempo ?? $fallbackDue,
                     'amount' => $nilai,
                     'paid_amount' => $bayar,
+                    // Tanggal DAN nominal harus jatuh bersamaan: sel di layar BO adalah
+                    // sepasang (tanggal, nominal), dan tanggal yang berdiri sendirian di
+                    // atas nominal nol terbaca sebagai "sudah dibayar Rp 0".
+                    'paid_at' => $bayar > 0 ? ($tglBayar[(int) $t->id] ?? null) : null,
                     'status' => ($nilai > 0 && $bayar >= $nilai) ? 'paid' : 'outstanding',
                     'updated_at' => $now,
                 ],
@@ -921,6 +928,57 @@ class IproMasterSync
                 $this->db()->table('payment_schedules')->whereIn('id', $deletable)->delete();
             }
         }
+    }
+
+    /**
+     * Tanggal bayar per baris tagihan — DIAMBIL DARI KWITANSI (fo_bkm), bukan dari tagihan.
+     *
+     * fo_kontrak_tagihan sama sekali tidak punya kolom tanggal bayar: isinya hanya `nilai`
+     * dan `pelunasan`. Satu-satunya tempat TANGGAL uang masuk tercatat adalah kwitansinya —
+     * dan kwitansi itu SUDAH menunjuk baris tagihannya lewat kolom `kontrak_tagihan_id`,
+     * jadi penautannya sebetulnya sudah ada, tinggal dibawa menyeberang ke BO.
+     *
+     * Yang dihitung hanya kwitansi yang memenuhi syarat pemilik proses: status POSTED DAN
+     * sudah dikirim ke Approval BO (`bo_posted_at` terisi — inilah badge "Terkirim" di layar
+     * Kwitansi). Kwitansi BATAL gugur dengan sendirinya, sehingga pembatalan di FO
+     * mengosongkan kembali tanggalnya di BO tanpa satu baris kode tambahan.
+     *
+     * CATATAN JUJUR tentang "Terkirim": badge itu berarti kwitansinya sudah DIKIRIM ke
+     * Approval UTJ & DP di BO, BUKAN sudah disetujui. Tanda disetujui yang sebenarnya adalah
+     * ipro_bo.tts_receipts.journal_id terisi. Syarat di sini mengikuti permintaan pemilik
+     * proses apa adanya; bila kelak ingin lebih ketat, penyaringnya diperketat di sini saja.
+     *
+     * Satu tagihan yang dibayar beberapa kali (pembayaran sebagian) memakai tanggal
+     * TERAKHIR — saat tagihan itu benar-benar selesai tertagih.
+     *
+     * Kolom `bo_posted_at` lahir dari migrasi 2026_06_30_000070 dan bisa belum ada di basis
+     * data yang belum dimigrasi. Karena itu keberadaannya diperiksa dulu: tanpa kolom itu
+     * syaratnya turun ke POSTED saja, sebab tanggal yang terisi apa adanya jauh lebih
+     * berguna daripada satu kolom yang diam tanpa pernah menjelaskan kenapa.
+     *
+     * @return array<int,\Illuminate\Support\Carbon> kontrak_tagihan_id => tanggal bayar
+     */
+    private function tanggalBayarPerTagihan(int $foKontrakId): array
+    {
+        $q = DB::table('fo_bkm')
+            ->where('kontrak_id', $foKontrakId)
+            ->where('status', 'POSTED')
+            ->whereNull('deleted_at')
+            ->whereNotNull('kontrak_tagihan_id');
+
+        if (Schema::hasColumn('fo_bkm', 'bo_posted_at')) {
+            $q->whereNotNull('bo_posted_at');
+        }
+
+        $map = [];
+        // Urut MENAIK supaya penugasan terakhirlah yang bertahan = kwitansi terbaru.
+        foreach ($q->orderBy('tgl_bkm')->orderBy('id')->get(['kontrak_tagihan_id', 'tgl_bkm']) as $b) {
+            if ($b->tgl_bkm) {
+                $map[(int) $b->kontrak_tagihan_id] = Carbon::parse($b->tgl_bkm)->startOfDay();
+            }
+        }
+
+        return $map;
     }
 
     /** Kunci pencocokan jadwal: payment_type|LABEL|#urutan-kemunculan (menangani label kembar mis. UANG MASUK). */

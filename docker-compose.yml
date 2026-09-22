@@ -392,6 +392,11 @@ services:
       DATABASE_URL: postgresql://${PG_USER:-jerp}:${PG_PASSWORD:-pgsecret}@postgres:5432/legal
       AUTH_SECRET: ${LEGAL_AUTH_SECRET:-dev-legal-secret-change-me}
       JERP_SSO_SECRET: ${PORTAL_SSO_SECRET:-dev-portal-sso-secret}
+      # Jembatan dokumen AJB → SPR (Final) di Marketing & Sales & Detail AJB di BO.
+      # HARUS URL INTERNAL: service `app` adalah PHP-FPM port 9000 (bukan HTTP), jadi
+      # yang dituju nginx. Kuncinya diturunkan dari JERP_SSO_SECRET di atas — tidak
+      # ada variabel baru yang wajib diisi (lihat lib/jerp-bridge.ts & config/ipro.php).
+      JERP_BASE_URL: ${JERP_INTERNAL_URL:-http://nginx}
       # Secret callback approval eksternal (GM→Direktur→Owner). Endpoint fail-closed:
       # tanpa nilai ini, /api/external-approval menolak semua request.
       EXTERNAL_APPROVAL_SECRET: ${LEGAL_EXTERNAL_APPROVAL_SECRET:-dev-legal-extapproval-secret}

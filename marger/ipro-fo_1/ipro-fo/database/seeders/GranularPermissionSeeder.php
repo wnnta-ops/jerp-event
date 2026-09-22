@@ -97,6 +97,7 @@ class GranularPermissionSeeder extends Seeder
             'cogs' => [
                 'cogs.budget.create', 'cogs.budget.delete', 'cogs.budget.update', 'cogs.budget.view',
                 'cogs.category.create', 'cogs.category.delete', 'cogs.category.update', 'cogs.category.view',
+                'cogs.component.manage', 'cogs.component.view',
                 'cogs.cpp.view', 'cogs.general.print', 'cogs.general.view', 'cogs.hpp.generate',
                 'cogs.hpp.post-hpp', 'cogs.hpp.post-persediaan', 'cogs.hpp.view', 'cogs.location.create',
                 'cogs.location.delete', 'cogs.location.update', 'cogs.location.view', 'cogs.mutation.approve',

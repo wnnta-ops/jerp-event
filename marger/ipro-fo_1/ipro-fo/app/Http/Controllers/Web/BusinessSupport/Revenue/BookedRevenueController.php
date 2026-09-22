@@ -730,9 +730,14 @@ class BookedRevenueController extends Controller
      * Detail AJB — SATU BARIS PER SPR FINAL, bukan per dokumen AJB.
      *
      * Basisnya seluruh SPR Final di Marketing & Sales supaya tidak ada nomor SPR yang terlewat;
-     * kolom Notaris / No. AJB / Tanggal / Nominal diambil dari modul Legal dan HANYA ditampilkan
-     * untuk unit yang sudah BAST. Keterangan terisi sendiri: "SUDAH BAST" bila ketiga kolom AJB
-     * (nomor, tanggal, nominal) lengkap, selain itu "BELUM BAST".
+     * kolom Notaris / No. AJB / Tanggal / Nominal berisi akta yang ditautkan ke SPR itu.
+     * Keterangan terisi sendiri: "SUDAH BAST" bila ketiga kolom AJB (nomor, tanggal, nominal)
+     * lengkap, selain itu "BELUM BAST".
+     *
+     * Kolom aktanya baru boleh tampil kalau ada dasarnya — entah dokumen BAST unit itu, atau
+     * akta yang diarsipkan di modul Legal (source = 'legal') lengkap dengan berkas pindaiannya.
+     * Nomor yang sekadar diketik massal di sini tanpa dokumen apa pun tetap disembunyikan
+     * sampai BAST-nya ada, persis seperti sebelumnya.
      */
     /**
      * Baris Detail AJB — sesudah saringan pencarian & status, beserta cacah & daftar modal.
@@ -760,7 +765,8 @@ class BookedRevenueController extends Controller
             );
         }
 
-        // BAST menentukan boleh-tidaknya kolom AJB ditampilkan.
+        // BAST adalah salah satu dari dua dasar yang membolehkan kolom akta tampil
+        // (dasar kedua: akta yang ditautkan dari modul Legal — lihat map di bawah).
         $bast = \App\Domain\Legal\Bast\Models\BastDocument::whereIn('booking_id', $bookings->pluck('id'))
             ->get(['booking_id', 'bast_number', 'handed_over_at'])->keyBy('booking_id');
 
@@ -771,12 +777,23 @@ class BookedRevenueController extends Controller
         $rows = $bookings->map(function ($b) use ($ajb, $bast, $sudahBooked) {
             $d = $ajb->get($b->id);
             $sudahBast = $bast->has($b->id);
+            $dariLegal = (bool) $d?->dariLegal();
 
-            // Kolom AJB hanya untuk yang sudah BAST (ketentuan pemilik proses).
-            $no = $sudahBast ? ($d?->ajb_number ?: null) : null;
-            $tgl = $sudahBast ? ($d?->signed_at?->toDateString() ?: null) : null;
-            $nom = $sudahBast && $d?->amount !== null ? (float) $d->amount : null;
-            $not = $sudahBast ? ($d?->notary_name ?: null) : null;
+            // Kolom akta boleh tampil dalam DUA keadaan:
+            //  1. unitnya sudah punya dokumen BAST (ketentuan pemilik proses, berlaku
+            //     untuk akta yang diketik di sini lewat "Input Massal AJB"); ATAU
+            //  2. aktanya berasal dari direktori modul Legal — di sana akta asli sudah
+            //     diunggah berkasnya dan ditautkan ke No. SPR (Final) ini. Itu bukti
+            //     yang lebih kuat daripada baris ketikan, jadi tidak perlu menunggu
+            //     baris BAST terpisah dibuat lebih dulu.
+            // Baris 'bo' TIDAK ikut dilonggarkan: yang belum punya dokumen apa pun
+            // harus tetap terbaca BELUM BAST.
+            $bolehTampil = $sudahBast || $dariLegal;
+
+            $no = $bolehTampil ? ($d?->ajb_number ?: null) : null;
+            $tgl = $bolehTampil ? ($d?->signed_at?->toDateString() ?: null) : null;
+            $nom = $bolehTampil && $d?->amount !== null ? (float) $d->amount : null;
+            $not = $bolehTampil ? ($d?->notary_name ?: null) : null;
 
             $lengkap = $no !== null && $tgl !== null && $nom !== null;
 
@@ -793,6 +810,7 @@ class BookedRevenueController extends Controller
                 'ajb_amount' => $nom,
                 'keterangan' => $lengkap ? 'SUDAH BAST' : 'BELUM BAST',
                 'sudah_bast' => $sudahBast,
+                'dari_legal' => $dariLegal,
                 'bast_number' => $bast->get($b->id)?->bast_number,
                 // Tombol Posting Booked Revenue hanya berguna bila datanya lengkap & belum diposting.
                 'can_posting' => $lengkap && ! $sudahBooked->has($b->unit_id),
@@ -849,8 +867,10 @@ class BookedRevenueController extends Controller
 
         [$rows] = $this->ajbRows($request);
 
+        // Kolom "Sumber Akta" ikut dicetak: sesudah akta bisa datang dari modul Legal,
+        // berkas ekspor tanpa kolom itu tidak bisa menjawab dari mana angkanya berasal.
         $h = $this->xlsHead(['No Urut', 'No SPR', 'Nama Customer', 'Unit Rumah', 'Notaris', 'No AJB',
-            'Tanggal AJB', 'Nominal AJB', 'Keterangan', 'Status Posting']);
+            'Tanggal AJB', 'Nominal AJB', 'Sumber Akta', 'Keterangan', 'Status Posting']);
         $no = 0;
         $total = 0.0;
         foreach ($rows as $r) {
@@ -865,6 +885,7 @@ class BookedRevenueController extends Controller
                 .$this->xlsText($r['ajb_number'])
                 .$this->xlsText($r['ajb_date'])
                 .$this->xlsNum($r['ajb_amount'])
+                .$this->xlsText($r['ajb_number'] === null ? '—' : ($r['dari_legal'] ? 'Modul Legal' : 'Back Office'))
                 .$this->xlsText($r['keterangan'])
                 .$this->xlsText($r['sudah_booked'] ? 'Sudah Diposting' : ($r['can_posting'] ? 'Bisa Posting' : 'Lengkapi AJB dulu'))
                 .'</tr>';
@@ -872,7 +893,9 @@ class BookedRevenueController extends Controller
         // Cacahnya diambil SESUDAH saringan. summary.total di layar dihitung sebelum
         // disaring, jadi memakainya di sini akan membuat baris TOTAL menyebut angka yang
         // lebih besar daripada jumlah baris yang benar-benar ada di berkasnya.
-        $h .= $this->xlsTotal('TOTAL — '.$rows->count().' record', 7, [$total], 2).'</table>';
+        // 7 kolom pertama digabung, lalu 1 sel angka (Nominal AJB), lalu 3 sel kosong
+        // (Sumber Akta, Keterangan, Status Posting) = 11 kolom, sama dengan kepalanya.
+        $h .= $this->xlsTotal('TOTAL — '.$rows->count().' record', 7, [$total], 3).'</table>';
 
         return $this->xlsResponse('Detail-AJB', 'DETAIL AJB', $h, $request->input('search'));
     }

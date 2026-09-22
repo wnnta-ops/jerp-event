@@ -403,8 +403,19 @@ class MasterDataKprController extends Controller
      * ANGSURAN CASH DIPUNGUT DARI JADWAL BER-TIPE 'ANG', BUKAN DARI KWITANSI LANGSUNG. Kwitansi
      * (BKM) hidup di aplikasi Front Office, sedangkan layar ini berjalan di Back Office; yang
      * menjembatani keduanya adalah jadwal tagihan yang tersinkron ke sini — mekanisme yang sama
-     * persis dengan kolom UTJ & DP di sebelahnya, dan yang membuat kolom ini ikut terisi begitu
-     * kwitansinya dicetak, tanpa penautan manual.
+     * persis dengan kolom UTJ & DP di sebelahnya.
+     *
+     * DARI MANA ISI TIAP SEL (rantai penuhnya, karena dulu ia tidak pernah utuh):
+     *   NOMINAL ← payment_schedules.paid_amount ← fo_kontrak_tagihan.pelunasan, yang dinaikkan
+     *             PembayaranService saat kwitansi terbit dan diturunkan lagi saat dibatalkan.
+     *   TANGGAL ← payment_schedules.paid_at ← tgl_bkm KWITANSI-nya, dicocokkan lewat
+     *             fo_bkm.kontrak_tagihan_id, dan HANYA kwitansi POSTED yang sudah terkirim ke
+     *             Approval BO yang dihitung (IproMasterSync::tanggalBayarPerTagihan).
+     * Keduanya menyeberang lewat IproMasterSync::syncSchedules, yang kini ikut dipicu oleh
+     * peristiwa Kwitansi & baris tagihan — bukan hanya oleh penyimpanan Kontrak.
+     *
+     * Jadi sel yang masih "—" berarti salah satu dari: belum ada kwitansi yang memenuhi
+     * syarat, atau antrean sinkron FO→BO sedang tidak jalan. Bukan berarti datanya tidak ada.
      *
      * 'ANG' DIPAKAI BERSAMA oleh cicilan cash DAN pencairan KPR (lihat PaymentType::Angsuran:
      * "Cicilan KPR atau cash bertahap"). Karena itu booking yang skema bayarnya KPR SENGAJA

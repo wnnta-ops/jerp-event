@@ -21,6 +21,8 @@ const { renderToString } = require('vue/server-renderer');
 const ROOT = path.resolve(process.argv[2] || '.');
 const SHOW = path.join(ROOT, 'resources/js/Pages/BusinessSupport/CashBook/Advances/Show.vue');
 const KARTU = path.join(ROOT, 'resources/js/Pages/BusinessSupport/CashBook/CreditCards/Index.vue');
+// Blok Alokasi Kasbon kini berdiri di sub-modul Alokasi Bon Sementara.
+const ALOKASI = path.join(ROOT, 'resources/js/Pages/BusinessSupport/CashBook/Advances/Allocation/Show.vue');
 
 const plugin = {
     name: 'stub',
@@ -142,11 +144,11 @@ const AKUN = [{ id: 1, label: '10101010101 — KAS' }, { id: 2, label: '10101020
 
     console.log('\n=== 2. BLOK ALOKASI KASBON ===');
 
-    const alokasi = await render(SHOW, {
+    const alokasi = await render(ALOKASI, {
         advance: { ...BON_DASAR, status: 'outstanding' },
-        expenseAccounts: [], costCenters: [], cashAccounts: AKUN,
-        signers: {}, requiredSigners: [], fullyApproved: true, approvalMode: 'offline',
-        creditCards: [],
+        cashAccounts: AKUN,
+        lanjutAlokasi: { perlu: true, sudah: false, pada: null },
+        bisaUbah: true,
         allocations: {
             rows: [
                 { id: 11, alloc_date: '2032-05-10', description: 'Beli ATK', amount: 500000, account_id: 1, account: '10101010101 — KAS', journal_id: 21 },
@@ -154,7 +156,6 @@ const AKUN = [{ id: 1, label: '10101010101 — KAS' }, { id: 2, label: '10101020
             ],
             total: 800000, sisa: 1200000,
         },
-        allocationMode: true,
     }, 'alokasi');
 
     cek('blok Alokasi Kasbon tampil pada bon outstanding', alokasi.includes('Alokasi Kasbon'));

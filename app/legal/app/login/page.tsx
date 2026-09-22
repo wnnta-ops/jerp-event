@@ -54,6 +54,16 @@ export default function LoginPage() {
         <p className="mt-4 text-center text-[12px]" style={{ color: "var(--color-text-tertiary)" }}>
           Belum punya akun? <Link href="/register" style={{ color: "var(--color-text-info)" }}>Daftar</Link>
         </p>
+        {/* Kembali ke Java Core.
+            <a> POLOS, bukan <Link> next/link — basePath "/legal" akan mengubah href milik Link
+            menjadi "/legal/dashboard", halaman yang tidak ada. Perhatikan bedanya dengan
+            tautan Daftar di atas: itu memang halaman DI DALAM modul ini, jadi ia justru HARUS
+            memakai Link supaya ikut ber-basePath. */}
+        <p className="mt-3 text-center text-[12px]">
+          <a href="/dashboard" title="Kembali ke Dashboard Java Core" style={{ color: "var(--color-text-tertiary)" }}>
+            ← Kembali ke Java Core
+          </a>
+        </p>
       </form>
     </div>
   );

@@ -91,6 +91,10 @@ return [
     'gl_accounts' => [
         'inventory'  => '10104010101', // Persediaan — Bangunan Siap Jual
         'payable'    => '20101010101', // Utang Usaha Supplier
+        // Posisi kredit alternatif pada Kategori Invoice: beban yang sudah terjadi tetapi
+        // tagihannya belum masuk sebagai utang usaha. Hanya menentukan PENJURNALAN — seluruh
+        // layar & laporan Account Payable dihitung dari tabel invoice, bukan dari saldo akun.
+        'accrued_expense' => '20105050501', // Beban Masih Harus Dibayar
         'payable_customer' => '20101010102', // Utang Usaha Customer (uang muka/UTJ-DP customer) — BUKAN supplier
         'receivable' => '10102010101', // Piutang Usaha
         'income'     => '40101010101', // Penjualan Usaha

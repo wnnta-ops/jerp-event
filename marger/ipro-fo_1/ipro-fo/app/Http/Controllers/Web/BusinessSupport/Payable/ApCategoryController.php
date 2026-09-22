@@ -27,9 +27,11 @@ class ApCategoryController extends Controller
             ->map(fn ($c) => [
                 'id' => $c->id, 'code' => $c->code, 'name' => $c->name, 'is_active' => $c->is_active,
                 'debit_account_id' => $c->debit_account_id, 'payable_account_id' => $c->payable_account_id,
+                'credit_position' => $c->credit_position ?: BsApCategory::POSISI_HUTANG,
                 'debit' => $c->debitAccount?->code.' - '.$c->debitAccount?->name,
                 'payable' => $c->payableAccount?->code.' - '.$c->payableAccount?->name,
             ]);
+        $akunBeban = BsApCategory::akunBeban();
 
         return Inertia::render('BusinessSupport/Payable/Categories', [
             'categories' => $rows,
@@ -37,6 +39,11 @@ class ApCategoryController extends Controller
             // Hanya akun transaksi (is_postable) — CoA induk/header tidak ditampilkan. Tetap bisa dicari via SearchSelect.
             'accounts'   => BsAccount::where('is_active', true)->where('is_postable', true)->orderBy('code')->get(['id', 'code', 'name', 'type']),
             'defaultPayable' => BsAccount::where('code', config('business_support.gl_accounts.payable'))->value('id'),
+            'posisiKredit' => BsApCategory::POSISI,
+            /* Akun untuk posisi "Beban Masih Harus Dibayar". Dikirim ke layar supaya kolom
+               akun kreditnya bisa dikunci menampilkan akun yang SESUNGGUHNYA akan dipakai —
+               bukan sekadar menyembunyikan pilihannya dan membuat operator menebak. */
+            'akunBeban' => $akunBeban ? ['id' => $akunBeban->id, 'label' => $akunBeban->code.' - '.$akunBeban->name] : null,
         ]);
     }
 
@@ -67,17 +74,44 @@ class ApCategoryController extends Controller
     /** @return array<string,mixed> */
     private function data(Request $request, ?int $id = null): array
     {
-        return $request->validate([
+        $v = $request->validate([
             'code'               => ['required', 'string', 'max:40', Rule::unique('bs_ap_categories', 'code')->ignore($id)->where('tenant_id', tenant_id())],
             'name'               => ['required', 'string', 'max:150'],
             'debit_account_id'   => ['required', 'integer', 'exists:bs_accounts,id'],
-            'payable_account_id' => ['required', 'integer', 'exists:bs_accounts,id'],
+            // Wajib HANYA pada posisi "Hutang". Pada posisi "Beban Masih Harus Dibayar"
+            // akunnya ditentukan sistem, jadi menuntutnya dari layar berarti menolak form
+            // yang justru sudah benar.
+            'payable_account_id' => ['required_if:credit_position,'.BsApCategory::POSISI_HUTANG, 'nullable', 'integer', 'exists:bs_accounts,id'],
+            'credit_position'    => ['required', Rule::in(array_keys(BsApCategory::POSISI))],
             'is_active'          => ['boolean'],
+        ], [
+            'payable_account_id.required_if' => 'Akun hutang wajib dipilih untuk posisi kredit Hutang.',
         ]);
+
+        return array_merge($v, ['payable_account_id' => $this->akunKredit($v['credit_position'], $v['payable_account_id'] ?? null)]);
+    }
+
+    /**
+     * Akun yang benar-benar dikredit, ditentukan SERVER.
+     *
+     * Posisi "Beban Masih Harus Dibayar" memakai COA dari config — bukan akun kiriman layar.
+     * Kalau kiriman layar dipercaya, satu permintaan yang dirakit sendiri bisa menyimpan
+     * posisi "beban" sambil mengkredit akun mana pun, dan tidak ada satu pun layar yang
+     * memperlihatkan ketidakcocokannya.
+     */
+    private function akunKredit(string $posisi, ?int $pilihan): int
+    {
+        if ($posisi !== BsApCategory::POSISI_BEBAN) {
+            return (int) $pilihan;
+        }
+        $akun = BsApCategory::akunBeban();
+        abort_unless($akun !== null, 422, 'Akun '.config('business_support.gl_accounts.accrued_expense').' (Beban Masih Harus Dibayar) belum ada di bagan akun.');
+
+        return (int) $akun->id;
     }
 
     /** Kolom berkas impor, berikut urutannya. Dipakai contoh format maupun pembacanya. */
-    private const KOLOM = ['kode', 'keterangan', 'akun_debit', 'akun_hutang', 'aktif'];
+    private const KOLOM = ['kode', 'keterangan', 'akun_debit', 'akun_hutang', 'aktif', 'posisi_kredit'];
 
     /**
      * Unduh contoh format impor.
@@ -92,12 +126,12 @@ class ApCategoryController extends Controller
 
         $contoh = BsApCategory::with(["debitAccount:id,code", "payableAccount:id,code"])
             ->orderBy("code")->limit(2)->get()
-            ->map(fn ($c) => [$c->code, $c->name, $c->debitAccount?->code, $c->payableAccount?->code, $c->is_active ? 1 : 0])
+            ->map(fn ($c) => [$c->code, $c->name, $c->debitAccount?->code, $c->payableAccount?->code, $c->is_active ? 1 : 0, $c->credit_position ?: BsApCategory::POSISI_HUTANG])
             ->all();
         if ($contoh === []) {
             $debit = BsAccount::where("is_postable", true)->where("type", "expense")->value("code");
             $hutang = BsAccount::where("code", config("business_support.gl_accounts.payable"))->value("code");
-            $contoh = [["BIAYA-LISTRIK", "BIAYA LISTRIK KANTOR", $debit, $hutang, 1]];
+            $contoh = [["BIAYA-LISTRIK", "BIAYA LISTRIK KANTOR", $debit, $hutang, 1, BsApCategory::POSISI_HUTANG]];
         }
 
         return response()->streamDownload(function () use ($contoh) {
@@ -147,19 +181,36 @@ class ApCategoryController extends Controller
         $galat = [];
         foreach ($isi as $i => $b) {
             $no = $i + 2;
-            $b = array_pad(array_map(fn ($x) => trim((string) $x), $b), 5, "");
-            [$kode, $nama, $debit, $hutang, $aktif] = $b;
+            $b = array_pad(array_map(fn ($x) => trim((string) $x), $b), 6, "");
+            [$kode, $nama, $debit, $hutang, $aktif, $posisi] = $b;
             if ($kode === "" && $nama === "") {
+                continue;
+            }
+            /* Kolom keenam OPSIONAL: berkas lama yang berkolom lima tetap terbaca dan jatuh
+               ke posisi "hutang" — perilaku yang sama persis dengan sebelum fitur ini ada. */
+            $posisi = $posisi === "" ? BsApCategory::POSISI_HUTANG : strtolower($posisi);
+            if (! array_key_exists($posisi, BsApCategory::POSISI)) {
+                $galat[] = "Baris {$no}: posisi kredit \"{$posisi}\" tidak dikenal (isi ".implode(" atau ", array_keys(BsApCategory::POSISI)).", atau kosongkan).";
                 continue;
             }
             if ($kode === "") { $galat[] = "Baris {$no}: kode kategori kosong."; continue; }
             if ($nama === "") { $galat[] = "Baris {$no}: keterangan kosong."; continue; }
             if (! $kodeAkun->has($debit)) { $galat[] = "Baris {$no}: akun debit \"{$debit}\" tidak ada di bagan akun."; continue; }
-            if (! $kodeAkun->has($hutang)) { $galat[] = "Baris {$no}: akun hutang \"{$hutang}\" tidak ada di bagan akun."; continue; }
+            // Pada posisi "beban", kolom akun hutang boleh kosong — akunnya ditentukan sistem.
+            if ($posisi === BsApCategory::POSISI_HUTANG && ! $kodeAkun->has($hutang)) {
+                $galat[] = "Baris {$no}: akun hutang \"{$hutang}\" tidak ada di bagan akun.";
+                continue;
+            }
+            if ($posisi === BsApCategory::POSISI_BEBAN && BsApCategory::akunBeban() === null) {
+                $galat[] = "Baris {$no}: akun ".config("business_support.gl_accounts.accrued_expense")." (Beban Masih Harus Dibayar) belum ada di bagan akun.";
+                continue;
+            }
 
             $baris[] = [
                 "code" => $kode, "name" => $nama,
-                "debit_account_id" => $kodeAkun[$debit], "payable_account_id" => $kodeAkun[$hutang],
+                "debit_account_id" => $kodeAkun[$debit],
+                "payable_account_id" => $this->akunKredit($posisi, $kodeAkun[$hutang] ?? null),
+                "credit_position" => $posisi,
                 "is_active" => ! in_array(strtolower($aktif), ["0", "tidak", "no", "nonaktif", "false"], true),
             ];
         }

@@ -323,6 +323,19 @@ final class CashAdvanceService
     /**
      * @param array{realized_date:string, lines:array<int,array{expense_account_id:int, description?:?string, amount:float|int|string}>} $data
      */
+    /**
+     * Apakah bon ini melewati langkah Alokasi Kasbon (sub-modul Alokasi Bon Sementara)?
+     *
+     * Pembedanya DATA, bukan payment_method saja: bon Debit VA model LAMA sudah terlanjur
+     * berjurnal saat dibayar (journal_id terisi), jadi ia tidak pernah punya alokasi — sama
+     * seperti bon reguler. Syarat ini dipakai bersama oleh gerbang realisasi di sini dan oleh
+     * daftar sub-modul Alokasi Bon Sementara di controller, supaya keduanya tidak bisa berbeda.
+     */
+    public function perluLanjutAlokasi(BsCashAdvance $adv): bool
+    {
+        return $adv->payment_method === 'debit_va' && ! $this->bonKartuLama($adv);
+    }
+
     public function realize(BsCashAdvance $adv, array $data, ?int $userId = null): BsCashAdvance
     {
         return DB::transaction(function () use ($adv, $data, $userId): BsCashAdvance {
@@ -359,6 +372,26 @@ final class CashAdvanceService
                 throw new BusinessRuleException(
                     'Bon Debit VA ini belum punya Alokasi Kasbon — isi alokasinya dulu, sebab Uang Muka Operasional baru terbentuk dari alokasi.',
                     errorCode: 'ADV_NO_ALLOCATION',
+                );
+            }
+
+            /* GERBANG "LANJUT REALISASIKAN BON".
+               Alokasi Kasbon berdiri sebagai sub-modul sendiri, dan bon hanya boleh sampai ke
+               realisasi setelah tombol "Lanjut Realisasikan Bon" ditekan di sana.
+
+               Gerbangnya dipasang DI SINI, bukan di controller: sebelas tempat memanggil
+               realize() langsung tanpa melewati controller, dan gerbang di controller akan
+               dilewati semuanya tanpa satu pun tanda.
+
+               Cakupannya SENGAJA SEMPIT — hanya bon yang memang punya langkah alokasi (Debit VA
+               model baru). Bon reguler dan bon kartu model lama tidak pernah punya Alokasi
+               Kasbon; menggerbangi mereka akan mengunci mati seluruh bon yang alur alokasinya
+               memang tidak ada. */
+            if ($this->perluLanjutAlokasi($adv) && $adv->allocation_done_at === null) {
+                throw new BusinessRuleException(
+                    'Bon ini belum dilanjutkan dari Alokasi Kasbon. Buka Cash Book → Transaksi Bon Sementara → '
+                    .'Alokasi Bon Sementara, periksa alokasinya, lalu tekan "Lanjut Realisasikan Bon".',
+                    errorCode: 'ADV_ALLOCATION_NOT_CONFIRMED',
                 );
             }
 

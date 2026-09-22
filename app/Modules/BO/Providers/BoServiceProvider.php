@@ -8,11 +8,13 @@ use App\Modules\BO\GeneralLedger\Services\JurnalPostingService;
 use App\Models\User;
 use App\Modules\BO\IproBridge\Jobs\SyncFoToIproJob;
 use App\Modules\BO\IproBridge\Services\IproMasterSync;
+use App\Modules\FO\FinanceAR\Models\Bkm;
 use App\Modules\FO\FinanceAR\Models\KprPengajuan;
 use App\Modules\FO\FinanceAR\Models\TransferAnonim;
 use App\Modules\FO\FinanceAR\Models\Tts;
 use App\Modules\FO\MarketingSales\Models\Customer;
 use App\Modules\FO\MarketingSales\Models\Kontrak;
+use App\Modules\FO\MarketingSales\Models\KontrakTagihan;
 use App\Modules\FO\MarketingSales\Models\Lokasi;
 use App\Modules\FO\MarketingSales\Models\Unit;
 use App\Modules\FO\Shared\Events\FoFinancialEvent;
@@ -72,6 +74,49 @@ class BoServiceProvider extends ServiceProvider
         Customer::saved(fn ($m) => $dispatch('syncCustomer', $m));
         Unit::saved(fn ($m) => $dispatch('syncUnit', $m));
         Kontrak::saved(fn ($m) => $dispatch('syncSpr', $m));
+
+        // ── Pembayaran (Kwitansi & baris tagihan) → sinkron ulang jadwal SPR-nya ──
+        //
+        // Tanpa kedua hook ini pembayaran TIDAK PERNAH sampai ke BO. Menerima pembayaran
+        // hanya menyentuh KontrakTagihan (pelunasan) lalu membuat Bkm — baris Kontrak-nya
+        // sendiri tak ikut tersimpan, padahal satu-satunya pemicu syncSpr adalah
+        // Kontrak::saved. Akibatnya kolom Collection Cash / UTJ & DP di Master Data KPR
+        // membeku pada nilai saat SPR terakhir kali disimpan (umumnya nol), dan pembatalan
+        // kwitansi pun tak pernah tercermin. Penjadwal juga tak menolong: `ipro:backfill`
+        // yang berjalan tiap jam hanya mengerjakan entitas `lokasi`, bukan `spr`.
+        //
+        // Yang di-dispatch adalah KONTRAK-nya, bukan model yang berubah: syncSpr memang
+        // bekerja pada kontrak, dan job memuat ulang barisnya sendiri sehingga selalu
+        // membaca tagihan & kwitansi terbaru.
+        $syncKontrak = function ($kontrakId): void {
+            if ($kontrakId) {
+                SyncFoToIproJob::dispatch('syncSpr', Kontrak::class, (int) $kontrakId)->afterCommit();
+            }
+        };
+
+        // Dipasang pada `created`/`updated` TERPISAH, bukan `saved` + penanda
+        // wasRecentlyCreated: penanda itu bertahan sepanjang umur instance modelnya, jadi
+        // penyimpanan BERIKUTNYA atas objek yang sama masih mengaku "baru dibuat" dan
+        // penyaring apa pun yang bersandar padanya meleset ke dua arah sekaligus.
+        Bkm::created(fn ($m) => $syncKontrak($m->kontrak_id));
+        Bkm::updated(function ($m) use ($syncKontrak) {
+            // `bo_posted_at` WAJIB ikut: justru stempel itulah yang membuat sebuah kwitansi
+            // memenuhi syarat "Terkirim", dan tombol "Posting BO" di daftar Kwitansi tidak
+            // mengubah kolom lain apa pun.
+            if ($m->wasChanged(['status', 'bo_posted_at', 'amount', 'tgl_bkm', 'kontrak_tagihan_id', 'kontrak_id'])) {
+                $syncKontrak($m->kontrak_id);
+            }
+        });
+
+        // Baris tagihan: HANYA saat pelunasannya berubah (pembayaran & pembatalan).
+        // Pembuatannya sengaja TIDAK dipasang — baris tagihan lahir massal saat jadwal
+        // digenerate, dan itu sudah diikuti Kontrak::saved; satu job per baris hanya
+        // mengulang pekerjaan yang sama belasan kali untuk satu SPR.
+        KontrakTagihan::updated(function ($m) use ($syncKontrak) {
+            if ($m->wasChanged('pelunasan')) {
+                $syncKontrak($m->kontrak_id);
+            }
+        });
         Tts::saved(fn ($m) => $dispatch('syncTts', $m));
         KprPengajuan::saved(fn ($m) => $dispatch('syncKpr', $m));
         // Transfer Anonim → tts_receipts TANPA UNIT (muncul di BO Approval UTJ&DP "Tanpa Unit").

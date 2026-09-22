@@ -942,6 +942,11 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
     // Sisa bon Debit VA dikembalikan ke saldo kartunya — tanpa jurnal (uangnya masih di akun kartu).
     Route::post('/business-support/bon-sementara/{advance}/masuk-saldo', [BsAdvanceController::class, 'masukSaldo'])->name('bs.advance.masuk-saldo');
     // ALOKASI KASBON — pengeluaran bertahap bon Debit VA; tiap baris berjurnal Dr Uang Muka Op / Cr bank.
+    // Sub-modul sendiri (Cash Book → Transaksi Bon Sementara → Alokasi Bon Sementara). Daftarnya
+    // memakai path berimbuhan 'bon-sementara-alokasi' supaya tidak tertelan wildcard {advance}.
+    Route::get('/business-support/bon-sementara-alokasi', [BsAdvanceController::class, 'allocationIndex'])->name('bs.advance.allocation.index');
+    Route::get('/business-support/bon-sementara/{advance}/alokasi', [BsAdvanceController::class, 'allocationShow'])->name('bs.advance.allocation.show');
+    Route::post('/business-support/bon-sementara/{advance}/lanjut-realisasi', [BsAdvanceController::class, 'lanjutRealisasi'])->name('bs.advance.allocation.lanjut');
     Route::post('/business-support/bon-sementara/{advance}/alokasi', [BsAdvanceController::class, 'allocationStore'])->name('bs.advance.allocation.store');
     Route::delete('/business-support/bon-sementara-alokasi/{allocation}', [BsAdvanceController::class, 'allocationDestroy'])->name('bs.advance.allocation.destroy');
     Route::get('/business-support/bon-sementara/{advance}/print', [BsAdvanceController::class, 'print'])->name('bs.advance.print');
@@ -1120,6 +1125,14 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
     Route::post('/business-support/cogs-hpp/post-persediaan', [BsCogsHppController::class, 'postPersediaan'])->name('bs.cogs.hpp.post-persediaan.run');
     Route::get('/business-support/cogs-hpp/post-hpp', [BsCogsHppController::class, 'postHppForm'])->name('bs.cogs.hpp.post-hpp');
     Route::post('/business-support/cogs-hpp/post-hpp', [BsCogsHppController::class, 'postHpp'])->name('bs.cogs.hpp.post-hpp.run');
+
+    // Komponen COGS — Tanah & License Permit (dari Kategori Invoice AP), Housing & Infrastruktur
+    // (dari Surat Perintah Kerja). Slug dibatasi supaya /komponen/apa-saja memulangkan 404,
+    // bukan halaman kosong yang terlihat seperti komponen tanpa biaya.
+    Route::get('/business-support/cogs-komponen/{komponen}', [\App\Http\Controllers\Web\BusinessSupport\Cogs\CogsComponentController::class, 'show'])
+        ->where('komponen', 'tanah|housing|infrastruktur|license-permit')->name('bs.cogs.komponen.show');
+    Route::put('/business-support/cogs-komponen/{komponen}/kategori-invoice', [\App\Http\Controllers\Web\BusinessSupport\Cogs\CogsComponentController::class, 'simpanTautan'])
+        ->where('komponen', 'tanah|license-permit')->name('bs.cogs.komponen.tautan');
 
     // Query / Laporan
     Route::get('/business-support/cogs-query/budget', [BsCogsQueryController::class, 'budget'])->name('bs.cogs.query.budget');

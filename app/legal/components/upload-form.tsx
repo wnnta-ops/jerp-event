@@ -1,11 +1,12 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { createDocument } from "@/app/documents/new/actions";
 import { updateDocument } from "@/app/documents/actions";
-import { documentInputSchema, fieldErrors } from "@/lib/validation";
+import { buatSkemaDokumen, fieldErrors } from "@/lib/validation";
+import { withBase } from "@/lib/base-path";
 import {
   ACCESS_LEVELS,
   ACCESS_LEVEL_LABELS,
@@ -22,6 +23,7 @@ import {
   ORIGINAL_LOCATION_DETAIL_PLACEHOLDERS,
   ROLE_LABELS,
   TRANSACTION_TYPES,
+  isSprLinked,
   type AccessLevel,
   type DocStatus,
   type DocType,
@@ -84,6 +86,139 @@ function fmtBytes(n: number) {
   return `${(n / 1024 / 1024).toFixed(1)} MB`;
 }
 
+// ---------------------------------------------------------------------------
+// Penaut No. SPR (Final) — dokumen AJB
+// ---------------------------------------------------------------------------
+
+type SprRingkas = {
+  spr: string;
+  customer: string | null;
+  unit: string | null;
+  cluster: string | null;
+  blok: string | null;
+  no_unit: string | null;
+  tanggal: string | null;
+  total: number | null;
+};
+
+const rupiah = (n: number | null) => (n === null ? "—" : "Rp " + n.toLocaleString("id-ID"));
+
+/**
+ * Kotak cari No. SPR (Final) dari Marketing & Sales (Java Core).
+ *
+ * Tetap bisa DIKETIK MANUAL, bukan dropdown tertutup: kalau Java Core sedang
+ * tidak bisa dihubungi, petugas masih bisa mengarsipkan aktanya dan mengetik
+ * nomor SPR-nya: tautannya menyusul (kegagalannya tercatat di dokumen). Kalau
+ * dijadikan dropdown, satu gangguan jaringan berarti akta tidak bisa diarsipkan
+ * sama sekali — arsip legal berhenti karena modul lain sedang mati.
+ */
+function SprPicker({
+  value,
+  onPick,
+  onType,
+  error,
+}: {
+  value: string;
+  onPick: (s: SprRingkas) => void;
+  onType: (v: string) => void;
+  error?: string;
+}) {
+  const [q, setQ] = useState("");
+  const [hasil, setHasil] = useState<SprRingkas[]>([]);
+  const [memuat, setMemuat] = useState(false);
+  const [catatan, setCatatan] = useState<string | null>(null);
+  const [buka, setBuka] = useState(false);
+
+  // Debounce 300 ms: tiap ketikan memanggil Java Core lewat rute perantara, dan
+  // satu permintaan per huruf akan menabrak throttle-nya (60/menit).
+  useEffect(() => {
+    if (!buka) return;
+    const t = setTimeout(async () => {
+      setMemuat(true);
+      try {
+        const r = await fetch(withBase(`/api/spr?q=${encodeURIComponent(q)}`), { cache: "no-store" });
+        const j = (await r.json()) as { ok: boolean; data?: SprRingkas[]; pesan?: string };
+        setHasil(j.ok && Array.isArray(j.data) ? j.data : []);
+        setCatatan(j.ok ? null : j.pesan ?? "Daftar SPR tidak bisa dimuat.");
+      } catch {
+        setHasil([]);
+        setCatatan("Daftar SPR tidak bisa dimuat.");
+      } finally {
+        setMemuat(false);
+      }
+    }, 300);
+    return () => clearTimeout(t);
+  }, [q, buka]);
+
+  return (
+    <div style={{ gridColumn: "1 / -1" }}>
+      <label style={labelStyle}>
+        No. SPR (Final) — Marketing &amp; Sales <span style={{ color: "var(--color-text-danger)" }}>*</span>
+      </label>
+      <div style={{ position: "relative" }}>
+        <input
+          style={inputStyle}
+          value={value}
+          placeholder="Ketik nomor SPR / nama pembeli / kode unit…"
+          onFocus={() => setBuka(true)}
+          onChange={(e) => {
+            onType(e.target.value);
+            setQ(e.target.value);
+            setBuka(true);
+          }}
+          // onBlur ditunda: klik pada baris hasil terjadi SESUDAH blur, jadi
+          // menutup panelnya seketika membuat pilihannya tak pernah terdaftar.
+          onBlur={() => setTimeout(() => setBuka(false), 150)}
+        />
+        {buka && (
+          <div
+            className="absolute z-20 mt-1 max-h-64 w-full overflow-y-auto rounded-lg"
+            style={{ background: "var(--color-background-primary)", border: "0.5px solid var(--color-border-secondary)", boxShadow: "0 8px 24px rgba(0,0,0,.12)" }}
+          >
+            {memuat && <div className="px-3 py-2 text-[12px]" style={{ color: "var(--color-text-tertiary)" }}>Memuat…</div>}
+            {!memuat && hasil.length === 0 && (
+              <div className="px-3 py-2 text-[12px]" style={{ color: "var(--color-text-tertiary)" }}>
+                {catatan ?? "Tidak ada SPR yang cocok. Nomornya tetap bisa diketik manual."}
+              </div>
+            )}
+            {hasil.map((s) => (
+              <button
+                key={s.spr}
+                type="button"
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => {
+                  onPick(s);
+                  setBuka(false);
+                }}
+                className="flex w-full flex-col gap-0.5 px-3 py-2 text-left"
+                style={{ borderBottom: "0.5px solid var(--color-border-tertiary)" }}
+              >
+                <span className="text-[12px] font-medium">
+                  {s.spr} · {s.customer ?? "—"}
+                </span>
+                <span className="text-[11px]" style={{ color: "var(--color-text-tertiary)" }}>
+                  {s.unit ?? "—"} · {rupiah(s.total)}
+                </span>
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+      {error && (
+        <div className="mt-1 flex items-center gap-1 text-[11px]" style={{ color: "var(--color-text-danger)" }}>
+          <i className="ti ti-alert-circle" style={{ fontSize: 12 }} />
+          {error}
+        </div>
+      )}
+      {catatan && !error && (
+        <div className="mt-1 text-[11px]" style={{ color: "var(--color-text-warning)" }}>
+          {catatan} Nomor SPR boleh diketik manual — tautannya akan diulang saat dokumen disimpan lagi.
+        </div>
+      )}
+    </div>
+  );
+}
+
 const emptyValues = {
   docType: "" as DocType | "",
   title: "",
@@ -110,6 +245,9 @@ const emptyValues = {
   issuedCapital: "",
   reminderDate: "",
   reminderNote: "",
+  sprNumber: "",
+  notaryName: "",
+  ajbValue: "",
   accessLevel: "" as AccessLevel | "",
 };
 
@@ -144,7 +282,7 @@ export function UploadForm({
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [dragOver, setDragOver] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  const [saved, setSaved] = useState<{ id: string; title: string } | null>(null);
+  const [saved, setSaved] = useState<{ id: string; title: string; peringatan?: string } | null>(null);
   const [category, setCategory] = useState(
     isEdit && initial ? categoryOfDocType(initial.values.docType as DocType) ?? "" : "",
   );
@@ -178,6 +316,12 @@ export function UploadForm({
   const isEntity = !!docType && ENTITY_TYPES.includes(docType);
   const isDevelopment = !!docType && !isTransaction && !isEntity; // perizinan, sertifikasi (non-split), perjanjian
   const expiryRequired = !!docType && EXPIRY_REQUIRED_TYPES.includes(docType);
+  const isAjb = isSprLinked(docType);
+
+  // Dokumen AJB lama (hasil impor) belum punya No. SPR — tidak diwajibkan supaya
+  // tetap bisa disunting. Aturan yang sama dipakai ulang di server (actions.ts).
+  const sprWajib = !(isEdit && initial && !initial.values.sprNumber);
+  const skema = useMemo(() => buatSkemaDokumen({ sprWajib }), [sprWajib]);
 
   const set = (k: keyof typeof values) => (v: string | boolean) => {
     setValues((prev) => ({ ...prev, [k]: v }));
@@ -197,7 +341,7 @@ export function UploadForm({
   // Picking a category resets the type + category-specific fields.
   function onCategoryChange(c: string) {
     setCategory(c);
-    setValues((prev) => ({ ...prev, docType: "", status: "", objectLocation: "", landArea: "", notes: "", description: "", boardStructure: "", authorizedCapital: "", issuedCapital: "" }));
+    setValues((prev) => ({ ...prev, docType: "", status: "", objectLocation: "", landArea: "", notes: "", description: "", boardStructure: "", authorizedCapital: "", issuedCapital: "", sprNumber: "", notaryName: "", ajbValue: "" }));
     setShareholders([]);
     setParties([]);
     setErrors({});
@@ -227,7 +371,7 @@ export function UploadForm({
     e.preventDefault();
 
     // Client-side validation mirrors the server (same Zod schema).
-    const result = documentInputSchema.safeParse({ ...values, docType: values.docType || undefined });
+    const result = skema.safeParse({ ...values, docType: values.docType || undefined });
     const errs: Record<string, string> = result.success ? {} : fieldErrors(result.error);
     if (!isEdit && files.length === 0) errs.files = "Lampirkan minimal satu berkas";
 
@@ -269,6 +413,9 @@ export function UploadForm({
     fd.set("parties", cleanParties.length ? JSON.stringify(cleanParties.map((p) => ({ name: p.name.trim(), entity: p.entity.trim() }))) : "");
     fd.set("reminderDate", values.reminderDate);
     fd.set("reminderNote", values.reminderNote);
+    fd.set("sprNumber", values.sprNumber);
+    fd.set("notaryName", values.notaryName);
+    fd.set("ajbValue", values.ajbValue);
     fd.set("accessLevel", values.accessLevel);
     files.forEach((f) => fd.append("files", f));
 
@@ -283,7 +430,7 @@ export function UploadForm({
 
     if (res.ok) {
       const newId = isEdit && initial ? initial.id : (res as { id?: string }).id ?? "";
-      setSaved({ id: newId, title: values.title });
+      setSaved({ id: newId, title: values.title, peringatan: (res as { peringatan?: string }).peringatan });
       router.refresh();
     } else {
       const r = res as { errors?: Record<string, string>; message?: string; error?: string };
@@ -323,6 +470,18 @@ export function UploadForm({
               ? `Perubahan pada “${saved.title}” telah disimpan dan tercatat di riwayat.`
               : `“${saved.title}” telah masuk ke direktori dengan ${files.length} berkas.`}
           </div>
+          {/* Arsipnya SUDAH tersimpan; yang gagal hanya penautannya ke Detail AJB.
+              Dibedakan tegas supaya petugas tidak mengira dokumennya hilang dan
+              mengunggah ulang — dan tetap tahu ada yang perlu diulang. */}
+          {saved.peringatan && (
+            <div
+              className="mt-2 max-w-[460px] rounded-md px-3 py-2 text-[12px]"
+              style={{ background: "var(--color-background-warning)", color: "var(--color-text-warning)" }}
+            >
+              <b>Tautan ke Detail AJB belum berhasil.</b> {saved.peringatan} Dokumennya sendiri sudah tersimpan —
+              buka lagi lalu simpan untuk mengulang penautan.
+            </div>
+          )}
           <div className="mt-3 flex gap-2">
             {!isEdit && (
               <button
@@ -497,9 +656,61 @@ export function UploadForm({
             <input style={inputStyle} value={values.title} onChange={(e) => set("title")(e.target.value)} placeholder="cth. PPJB — Unit A-12" />
           </Field>
 
-          <Field label="Nomor dokumen" error={errors.docNumber}>
-            <input style={inputStyle} value={values.docNumber} onChange={(e) => set("docNumber")(e.target.value)} placeholder="cth. 045/PPJB/VI/2026" />
+          <Field label={isAjb ? "Nomor akta AJB" : "Nomor dokumen"} required={isAjb} error={errors.docNumber}>
+            <input style={inputStyle} value={values.docNumber} onChange={(e) => set("docNumber")(e.target.value)} placeholder={isAjb ? "cth. 112/AJB/V/2026" : "cth. 045/PPJB/VI/2026"} />
           </Field>
+
+          {/* AJB — penaut ke SPR (Final) + data akta.
+              Empat kolom ini (No. SPR, nomor akta, tanggal terbit, notaris, nominal)
+              adalah PERSIS yang ditampilkan layar "Detail AJB" di Booked Revenue.
+              Memilih SPR sekaligus mengisi cluster/blok/unit/pembeli di bawah, supaya
+              data unit di sini tidak pernah berbeda dari Marketing & Sales. */}
+          {isAjb && (
+            <>
+              <div style={{ gridColumn: "1 / -1" }}>
+                <div
+                  className="flex items-start gap-1.5 rounded-md px-2.5 py-1.5 text-[11px]"
+                  style={{ background: "var(--color-background-info)", color: "var(--color-text-info)" }}
+                >
+                  <i className="ti ti-link" style={{ fontSize: 13, marginTop: 1 }} />
+                  <span>
+                    Akta ini ditautkan ke satu <b>No. SPR (Final)</b> di Marketing &amp; Sales. Setelah tersimpan,
+                    notaris, nomor akta, tanggal, dan nominalnya mengisi baris SPR tersebut di <b>Detail AJB</b>
+                    (Booked Revenue) dan keterangannya berubah jadi <b>SUDAH BAST</b>.
+                  </span>
+                </div>
+              </div>
+
+              <SprPicker
+                value={values.sprNumber}
+                error={errors.sprNumber}
+                onType={(v) => set("sprNumber")(v)}
+                onPick={(s) => {
+                  setValues((prev) => ({
+                    ...prev,
+                    sprNumber: s.spr,
+                    cluster: s.cluster ?? prev.cluster,
+                    blok: s.blok ?? prev.blok,
+                    unitNo: s.no_unit ?? s.unit ?? prev.unitNo,
+                    buyerName: s.customer ?? prev.buyerName,
+                    // Nominal akta BAWAANNYA nilai kontrak SPR, tetapi tetap bisa
+                    // diubah: nilai yang tertulis pada akta kerap berbeda dari nilai
+                    // kontrak (mis. mengikuti NJOP), dan yang benar adalah isi akta.
+                    ajbValue: prev.ajbValue || (s.total === null ? "" : String(s.total)),
+                  }));
+                  setErrors((prev) => ({ ...prev, sprNumber: "", cluster: "", blok: "", unitNo: "" }));
+                }}
+              />
+
+              <Field label="Notaris / PPAT" required error={errors.notaryName}>
+                <input style={inputStyle} value={values.notaryName} onChange={(e) => set("notaryName")(e.target.value)} placeholder="cth. Budi Santoso, S.H., M.Kn." />
+              </Field>
+
+              <Field label="Nominal akta (Rp)" required error={errors.ajbValue}>
+                <input style={inputStyle} value={values.ajbValue} onChange={(e) => set("ajbValue")(e.target.value)} placeholder="cth. 501.000.000" />
+              </Field>
+            </>
+          )}
 
           {isTransaction && (
             <>
