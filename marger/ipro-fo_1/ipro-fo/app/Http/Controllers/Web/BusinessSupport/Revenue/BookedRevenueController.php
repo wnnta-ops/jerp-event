@@ -790,7 +790,7 @@ class BookedRevenueController extends Controller
             // harus tetap terbaca BELUM BAST.
             $bolehTampil = $sudahBast || $dariLegal;
 
-            $no  = $bolehTampil ? ($d?->ajb_number ?: null) : null;
+            $no = $bolehTampil ? ($d?->ajb_number ?: null) : null;
             $tgl = $bolehTampil ? ($d?->signed_at?->toDateString() ?: null) : null;
             $nom = $bolehTampil && $d?->amount !== null ? (float) $d->amount : null;
             $not = $bolehTampil ? ($d?->notary_name ?: null) : null;
@@ -798,20 +798,20 @@ class BookedRevenueController extends Controller
             $lengkap = $no !== null && $tgl !== null && $nom !== null;
 
             return [
-                'booking_id'   => $b->id,
-                'ajb_id'       => $d?->id,
-                'spr'          => $b->booking_number,
-                'customer'     => $b->customer?->full_name,
-                'unit'         => $b->unit?->unit_code,
-                'unit_id'      => $b->unit_id,
-                'notaris'      => $not,
-                'ajb_number'   => $no,
-                'ajb_date'     => $tgl,
-                'ajb_amount'   => $nom,
-                'keterangan'   => $lengkap ? 'SUDAH BAST' : 'BELUM BAST',
-                'sudah_bast'   => $sudahBast,
-                'dari_legal'   => $dariLegal,
-                'bast_number'  => $bast->get($b->id)?->bast_number,
+                'booking_id' => $b->id,
+                'ajb_id' => $d?->id,
+                'spr' => $b->booking_number,
+                'customer' => $b->customer?->full_name,
+                'unit' => $b->unit?->unit_code,
+                'unit_id' => $b->unit_id,
+                'notaris' => $not,
+                'ajb_number' => $no,
+                'ajb_date' => $tgl,
+                'ajb_amount' => $nom,
+                'keterangan' => $lengkap ? 'SUDAH BAST' : 'BELUM BAST',
+                'sudah_bast' => $sudahBast,
+                'dari_legal' => $dariLegal,
+                'bast_number' => $bast->get($b->id)?->bast_number,
                 // Tombol Posting Booked Revenue hanya berguna bila datanya lengkap & belum diposting.
                 'can_posting' => $lengkap && ! $sudahBooked->has($b->unit_id),
                 'sudah_booked' => $sudahBooked->has($b->unit_id),
