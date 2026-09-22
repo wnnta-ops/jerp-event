@@ -17,6 +17,7 @@ use Filament\Tables\Concerns\InteractsWithTable;
 use Filament\Tables\Contracts\HasTable;
 use Filament\Tables\Table;
 use Illuminate\Support\HtmlString;
+use Illuminate\Support\Facades\DB;
 
 /**
  * Pembatalan Kontrak — daftar kontrak SPR; ajukan pembatalan (alasan + pelunasan/
@@ -42,6 +43,66 @@ class PembatalanKontrak extends Page implements HasForms, HasTable
 
     protected static string $view = 'filament.fo.pages.pembatalan-kontrak';
 
+    /**
+     * Nomor SPR yang sudah punya Memo Rekom Batal dari modul KPR (Back Office).
+     *
+     * Diambil SEKALI per request, bukan sekali per baris: closure gerbang tombol berjalan
+     * untuk tiap baris tabel, dan halaman ini sudah menambah satu query per baris untuk kolom
+     * "Pembatalan". Satu query lagi per baris akan melipatgandakan beban itu tanpa alasan —
+     * daftar rekomendasinya sendiri pendek.
+     *
+     * Dibungkus try/catch dan memulangkan null bila ipro_bo tak terjangkau. Itu disengaja:
+     * gangguan sambungan tidak boleh mengunci SELURUH tombol pembatalan di layar ini
+     * (lihat rekomBatalSiap, yang memilih membuka tombol daripada mematikannya).
+     *
+     * @var array<string,bool>|null
+     */
+    private static ?array $rekomBatal = null;
+
+    private static function daftarRekomBatal(): ?array
+    {
+        if (self::$rekomBatal !== null) {
+            return self::$rekomBatal;
+        }
+
+        try {
+            $conn = (string) config('ipro.connection', 'ipro_bo');
+
+            return self::$rekomBatal = DB::connection($conn)->table('kpr_cancel_recommendations')
+                // tenant_id WAJIB disaring: nomor SPR hanya unik di dalam satu tenant, dan
+                // tanpa penyaring ini rekomendasi milik tenant lain yang kebetulan bernomor
+                // sama akan ikut membuka tombol di sini.
+                ->where('tenant_id', (int) config('ipro.tenant_id', 1))
+                ->pluck('spr_number')->flip()->map(fn () => true)->all();
+        } catch (\Throwable $e) {
+            report($e);
+
+            return null;
+        }
+    }
+
+    /**
+     * Boleh diajukan pembatalannya?
+     *
+     * HANYA kontrak KPR yang digerbangi. Layar ini memuat SPR & SPRS apa pun cara bayarnya
+     * (lihat query di bawah), sedangkan rekom batal hanya lahir dari Reject BI Checking /
+     * Reject Proses KPR. Mengunci semua baris berarti kontrak CASH, CASH BERTAHAP, dan
+     * CICILAN tidak akan pernah bisa dibatalkan sama sekali — bukan pengetatan, melainkan
+     * jalan buntu.
+     */
+    private static function rekomBatalSiap(Kontrak $k): bool
+    {
+        if (strtoupper((string) $k->cara_bayar) !== 'KPR') {
+            return true;
+        }
+
+        $daftar = self::daftarRekomBatal();
+
+        // Tak terjangkau → jangan mengunci. Menahan pembatalan karena sambungan ke modul lain
+        // sedang putus adalah kegagalan yang tidak bisa dibaca siapa pun dari layar ini.
+        return $daftar === null || isset($daftar[(string) $k->no_kontrak]);
+    }
+
     public function table(Table $table): Table
     {
         return $table
@@ -66,6 +127,14 @@ class PembatalanKontrak extends Page implements HasForms, HasTable
                     ->modalSubmitAction(false)->modalCancelActionLabel('Tutup')
                     ->modalContent(fn (Kontrak $record) => new HtmlString(AdjustmentKontrak::riwayatApprovalHtml($record, 'BATAL_KONTRAK'))),
                 Tables\Actions\Action::make('ajukan')->label('Ajukan Pembatalan')->icon('heroicon-o-x-circle')->color('danger')->button()
+                    // Gerbang: kontrak KPR baru boleh diajukan sesudah modul KPR menerbitkan
+                    // Memo Rekom Batal untuk SPR-nya. Filament menolaknya juga di SISI SERVER
+                    // (HasActions::mountTableAction memeriksa isDisabled), jadi tombol ini tidak
+                    // bisa ditembus dengan memanggil aksinya langsung.
+                    ->disabled(fn (Kontrak $record) => ! self::rekomBatalSiap($record))
+                    ->tooltip(fn (Kontrak $record) => self::rekomBatalSiap($record)
+                        ? null
+                        : 'Terkunci: belum ada Memo Rekom Batal dari modul KPR (Reject BI Checking / Reject Proses KPR) untuk '.$record->no_kontrak.'.')
                     ->modalHeading('Pengajuan Pembatalan Kontrak')
                     ->modalDescription(fn (Kontrak $record) => 'Status kontrak '.$record->no_kontrak.' akan menjadi BATAL setelah disetujui.')
                     ->modalWidth('xl')

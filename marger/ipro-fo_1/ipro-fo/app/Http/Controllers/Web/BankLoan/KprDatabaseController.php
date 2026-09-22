@@ -6,10 +6,12 @@ namespace App\Http\Controllers\Web\BankLoan;
 
 use App\Domain\BankLoan\Enums\KprStatus;
 use App\Domain\BankLoan\Models\KprApplication;
+use App\Domain\BankLoan\Models\KprCancelRecommendation;
 use App\Domain\BankLoan\Models\KprInitiation;
 use App\Http\Controllers\Controller;
 use Illuminate\Support\Carbon;
 use Illuminate\Http\Request;
+use Illuminate\Http\RedirectResponse;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -424,6 +426,81 @@ class KprDatabaseController extends Controller
             route('kpr.database.reject-bi'),
             'Reject BI Checking',
         ));
+    }
+
+    /**
+     * Catat "Memo Rekom Batal dibuat" lalu lanjut ke halaman memonya.
+     *
+     * Inilah yang membuka tombol "Ajukan Pembatalan" pada Pembatalan Kontrak di aplikasi
+     * Front Office. Dipisah dari rute GET memo dengan sengaja: rute GET hanya MERAKIT
+     * dokumen dan harus tetap bisa dimuat ulang/di-bookmark tanpa efek samping, sedangkan
+     * yang memberi instruksi ke admin sales adalah tindakan POST ini — sekali, sesudah
+     * operator melewati dua tahap konfirmasi.
+     *
+     * Jawabannya REDIRECT ke rute GET memo: tab baru berakhir pada URL yang bisa di-refresh
+     * tanpa mengulang POST, dan operator tidak pernah melihat kotak "kirim ulang formulir?".
+     *
+     * @param  'reject_bi'|'reject_kpr'  $sumber
+     */
+    private function catatRekomBatal(Request $request, string $sumber): RedirectResponse
+    {
+        abort_unless($request->user()?->can('bankloan.application.view'), 403);
+
+        $ids = $this->idsParam($request);
+        abort_if($ids->isEmpty(), 404, 'Pilih minimal satu baris untuk dibuatkan rekom batal.');
+
+        $bi = $sumber === KprCancelRecommendation::SUMBER_BI;
+
+        $baris = $bi
+            ? KprInitiation::whereIn('id', $ids)->where('status', 'rejected')
+                ->with('booking:id,booking_number')->orderBy('id')->get()
+            : KprApplication::whereIn('id', $ids)->where('status', KprStatus::Rejected->value)
+                ->with('booking:id,booking_number')->orderBy('id')->get();
+
+        abort_if($baris->isEmpty(), 404, 'Tidak ada baris berstatus ditolak yang cocok.');
+
+        $user = $request->user();
+
+        foreach ($baris as $r) {
+            // Tanpa booking, baris itu TIDAK punya nomor SPR — dan nomor SPR adalah
+            // satu-satunya kunci yang dikenali Front Office. Dilewati diam-diam di sini
+            // sama dengan memo tercetak sementara tombolnya tetap terkunci; jadi barisnya
+            // tetap boleh dicetak memonya, hanya penandanya yang tidak bisa dibuat.
+            $spr = $r->booking?->booking_number;
+            if (! $spr) {
+                continue;
+            }
+
+            KprCancelRecommendation::updateOrCreate(
+                ['tenant_id' => tenant_id(), 'spr_number' => $spr],
+                [
+                    'booking_id'          => $r->booking_id,
+                    'source'              => $sumber,
+                    'source_id'           => $r->id,
+                    'reason'              => $bi ? ($this->biStage($r)['reject_reason'] ?? null) : $r->reject_reason,
+                    'recommended_at'      => now(),
+                    'recommended_by'      => $user?->id,
+                    'recommended_by_name' => $user?->name,
+                ],
+            );
+        }
+
+        return redirect()->route(
+            $bi ? 'kpr.database.reject-bi.memo-form' : 'kpr.database.reject-kpr.memo-form',
+            ['ids' => $ids->join(',')],
+        );
+    }
+
+    /** Rekom batal dari Reject BI Checking (inisiasi). */
+    public function rejectBiCheckingRekomBatal(Request $request): RedirectResponse
+    {
+        return $this->catatRekomBatal($request, KprCancelRecommendation::SUMBER_BI);
+    }
+
+    /** Rekom batal dari Reject Proses KPR (pengajuan). */
+    public function rejectProcessRekomBatal(Request $request): RedirectResponse
+    {
+        return $this->catatRekomBatal($request, KprCancelRecommendation::SUMBER_KPR);
     }
 
     /**
