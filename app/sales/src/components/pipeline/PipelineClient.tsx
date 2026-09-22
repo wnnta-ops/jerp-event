@@ -3,9 +3,11 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { Role, Stage } from "@prisma/client";
+import type { FormOptions } from "@/lib/options";
 import { Modal } from "@/components/Modal";
 import { Combobox } from "@/components/Combobox";
 import { toast } from "@/components/Toast";
+import { WalkInRowActions } from "@/components/forms/WalkInRowActions";
 import { ChannelBadge, LeadBadge, StageBadge } from "@/components/badges";
 import { SALES_MAX_INDEX, STAGES, STAGE_INDEX, LEAD_FIELD_LABEL } from "@/lib/constants";
 import { allowedTargets } from "@/lib/pipeline-flow";
@@ -38,6 +40,15 @@ export interface PipelineDeal {
   bank: string | null;
   catatan: string | null;
   dead?: boolean; // not-interested (batal) — shown red, out of active flow
+  // field untuk Edit (WalkInForm)
+  tanggalWi: string;
+  sumberInformasi: string | null;
+  agencyId: string;
+  salesId: string;
+  coordinatorId: string | null;
+  clusterId: string | null;
+  phaseId: string | null;
+  unitTypeId: string | null;
 }
 
 // One column per stage. Zone marks who owns it: Sales (0–4), Collection (5–6),
@@ -59,7 +70,17 @@ const CARD_CAP = 40;
 // Lead temperature only meaningful before UTJ (WI / Follow-Up / NUP).
 const showsLead = (stage: Stage) => STAGE_INDEX[stage] <= STAGE_INDEX["NUP"];
 
-export function PipelineClient({ deals, role }: { deals: PipelineDeal[]; role: Role }) {
+export function PipelineClient({
+  deals,
+  role,
+  options,
+  canEdit,
+}: {
+  deals: PipelineDeal[];
+  role: Role;
+  options: FormOptions;
+  canEdit: boolean;
+}) {
   const router = useRouter();
   // prefilter dari ?q= (mis. saat diklik dari lonceng notifikasi)
   const [q, setQ] = useState(() =>
@@ -294,7 +315,7 @@ export function PipelineClient({ deals, role }: { deals: PipelineDeal[]; role: R
                   <th>Koor</th>
                   <th>Tahap</th>
                   <th>Progress</th>
-                  <th />
+                  {canEdit && <th style={{ textAlign: "right" }}>Aksi</th>}
                 </tr>
               </thead>
               <tbody>
@@ -303,7 +324,15 @@ export function PipelineClient({ deals, role }: { deals: PipelineDeal[]; role: R
                   return (
                     <tr key={d.id}>
                       <td>
-                        <b>{d.nama}</b> {showsLead(d.stage) && <LeadBadge t={d.statusLead} />}
+                        <button
+                          type="button"
+                          className="rowname"
+                          onClick={() => setSel(d)}
+                          title="Lihat journey"
+                        >
+                          {d.nama}
+                        </button>{" "}
+                        {showsLead(d.stage) && <LeadBadge t={d.statusLead} />}
                       </td>
                       <td>
                         <ChannelBadge c={d.channel} />
@@ -328,11 +357,28 @@ export function PipelineClient({ deals, role }: { deals: PipelineDeal[]; role: R
                           />
                         </div>
                       </td>
-                      <td>
-                        <button className="btn ghost sm" onClick={() => setSel(d)}>
-                          journey
-                        </button>
-                      </td>
+                      {canEdit && (
+                        <td style={{ textAlign: "right" }}>
+                          <WalkInRowActions
+                            deal={{
+                              id: d.id,
+                              nama: d.nama,
+                              tanggalWi: d.tanggalWi,
+                              channel: d.channel,
+                              agencyId: d.agencyId,
+                              salesId: d.salesId,
+                              coordinatorId: d.coordinatorId,
+                              clusterId: d.clusterId,
+                              phaseId: d.phaseId,
+                              unitTypeId: d.unitTypeId,
+                              statusLead: d.statusLead,
+                              sumberInformasi: d.sumberInformasi,
+                              catatan: d.catatan,
+                            }}
+                            options={options}
+                          />
+                        </td>
+                      )}
                     </tr>
                   );
                 })}

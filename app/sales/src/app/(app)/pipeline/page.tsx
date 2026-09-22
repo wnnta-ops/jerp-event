@@ -2,6 +2,7 @@ import { getSession } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { getFormOptions } from "@/lib/options";
 import { getMyCoordinatorId } from "@/lib/leads";
+import { dayKey } from "@/lib/wib";
 import { NewWalkInButton } from "@/components/forms/NewWalkInButton";
 import { PipelineClient, type PipelineDeal } from "@/components/pipeline/PipelineClient";
 import { can } from "@/lib/rbac";
@@ -33,6 +34,14 @@ export default async function PipelinePage() {
     stage: true,
     statusLead: true,
     catatan: true,
+    tanggalWi: true,
+    sumberInformasi: true,
+    agencyId: true,
+    salesId: true,
+    coordinatorId: true,
+    clusterId: true,
+    phaseId: true,
+    unitTypeId: true,
     agency: { select: { name: true } },
     sales: { select: { name: true } },
     coordinator: { select: { name: true } },
@@ -74,6 +83,15 @@ export default async function PipelinePage() {
     bank: d.bank?.name ?? null,
     catatan: d.catatan,
     dead,
+    // field untuk Edit (WalkInForm)
+    tanggalWi: dayKey(d.tanggalWi),
+    sumberInformasi: d.sumberInformasi,
+    agencyId: d.agencyId,
+    salesId: d.salesId,
+    coordinatorId: d.coordinatorId,
+    clusterId: d.clusterId,
+    phaseId: d.phaseId,
+    unitTypeId: d.unitTypeId,
   });
   const deals: PipelineDeal[] = [...rows.map((d) => toDeal(d)), ...deadRows.map((d) => toDeal(d, true))];
 
@@ -94,7 +112,7 @@ export default async function PipelinePage() {
           </button>
         )}
       </div>
-      <PipelineClient deals={deals} role={role} />
+      <PipelineClient deals={deals} role={role} options={options} canEdit={can.inputSalesStages(role)} />
     </>
   );
 }
