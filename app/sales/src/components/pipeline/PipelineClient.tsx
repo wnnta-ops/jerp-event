@@ -17,6 +17,7 @@ interface HistoryEntry {
   icon: string;
   title: string;
   detail: string;
+  statusLead?: "HOT" | "WARM" | "COLD" | "DONE" | null;
   dateLabel: string;
   actor: string;
 }
@@ -480,7 +481,17 @@ export function PipelineClient({
                       <span className="ticon">{e.icon}</span>
                       <div>
                         <div className="ttitle">{e.title}</div>
-                        {e.detail && <div className="tdetail">{e.detail}</div>}
+                        {(e.detail || e.statusLead) && (
+                          <div className="tdetail">
+                            {e.detail}
+                            {e.statusLead && (
+                              <>
+                                {e.detail ? " " : ""}
+                                <LeadBadge t={e.statusLead} />
+                              </>
+                            )}
+                          </div>
+                        )}
                         <div className="tmeta">
                           {e.dateLabel} · {e.actor}
                         </div>
