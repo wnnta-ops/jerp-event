@@ -46,10 +46,23 @@ class KprDatabaseController extends Controller
             ]);
     }
 
+    /**
+     * Blok BI Checking di dalam `stages` sebuah inisiasi — sumber hasil & alasan penolakannya.
+     *
+     * Dipusatkan karena jalurnya dibaca dari beberapa tempat (layar, ekspor Excel, Memo Rekom
+     * Batal). Menyalin `$r->stages['bi_checking']` di tiap pemakai berarti satu perubahan
+     * bentuk data harus diingat di semua tempat sekaligus, dan yang terlewat hanya akan
+     * menampilkan kolom kosong tanpa satu pun galat.
+     */
+    private function biStage(KprInitiation $r): array
+    {
+        return is_array($r->stages['bi_checking'] ?? null) ? $r->stages['bi_checking'] : [];
+    }
+
     /** Baris tampilan untuk satu inisiasi ditolak BI (dipakai layar & ekspor Excel). */
     private function biRow(KprInitiation $r): array
     {
-        $bi = $r->stages['bi_checking'] ?? [];
+        $bi = $this->biStage($r);
 
         return [
             'id'          => $r->id,
@@ -353,25 +366,113 @@ class KprDatabaseController extends Controller
         abort_if($apps->isEmpty(), 404, 'Tidak ada KPR berstatus ditolak yang cocok.');
 
         // Baris lampiran — pra-isi dari data sistem; kolom yang belum ada dibiarkan kosong utk diisi manual.
-        $rows = $apps->values()->map(fn (KprApplication $a, int $i) => [
-            'id'         => $a->id,
+        $rows = $apps->values()->map(fn (KprApplication $a, int $i) => $this->memoRow(
+            $a->id,
+            $i,
+            $a->booking?->unit,
+            $a->customer?->full_name,
+            $a->reject_reason,
+        ));
+
+        return Inertia::render('BankLoan/Database/RekomBatal', $this->memoRekomBatalPayload(
+            $rows,
+            route('kpr.database.reject-kpr'),
+            'Reject Proses KPR',
+        ));
+    }
+
+    /**
+     * Memo Rekom Batal untuk REJECT BI CHECKING — sama persis dengan milik Reject Proses KPR,
+     * hanya sumber barisnya inisiasi (KprInitiation), bukan pengajuan (KprApplication).
+     *
+     * Dipakai tombol per-baris maupun tombol massal di layar Reject BI Checking; keduanya
+     * memanggil rute yang SAMA dan hanya berbeda pada isi ?ids= — persis pola sub-modul
+     * sebelahnya, sehingga tidak ada dua jalur yang bisa perlahan berbeda hasilnya.
+     *
+     * Kedua jenis penolakan ikut: 'bi_checking' maupun 'batal_sepihak'. Dua-duanya berakhir
+     * pada pembatalan unit, dan memo inilah dokumen pembatalannya.
+     */
+    public function rejectBiCheckingMemoForm(Request $request): Response
+    {
+        abort_unless($request->user()?->can('bankloan.application.view'), 403);
+
+        $ids = $this->idsParam($request);
+        abort_if($ids->isEmpty(), 404, 'Pilih minimal satu inisiasi untuk dibuatkan memo.');
+
+        $inits = KprInitiation::whereIn('id', $ids)
+            ->where('status', 'rejected')
+            ->with([
+                'customer:id,full_name',
+                'booking:id,booking_number,unit_id',
+                'booking.unit:id,unit_code,cluster_id,unit_type_id',
+                'booking.unit.cluster:id,name',
+                'booking.unit.unitType:id,name',
+            ])
+            ->orderBy('id')->get();
+        abort_if($inits->isEmpty(), 404, 'Tidak ada inisiasi berstatus ditolak yang cocok.');
+
+        $rows = $inits->values()->map(fn (KprInitiation $r, int $i) => $this->memoRow(
+            $r->id,
+            $i,
+            $r->booking?->unit,
+            $r->customer?->full_name,
+            $this->biStage($r)['reject_reason'] ?? null,
+        ));
+
+        return Inertia::render('BankLoan/Database/RekomBatal', $this->memoRekomBatalPayload(
+            $rows,
+            route('kpr.database.reject-bi'),
+            'Reject BI Checking',
+        ));
+    }
+
+    /**
+     * Satu baris lampiran memo. Kolom yang tidak ada di sistem (THP, Sales, Agent) sengaja
+     * dikirim kosong — halaman memonya dapat disunting, dan mengarang isinya di sini akan
+     * membuat angka yang salah ikut tercetak tanpa ada yang memeriksanya.
+     */
+    private function memoRow(int $id, int $i, $unit, ?string $namaUser, ?string $keterangan): array
+    {
+        return [
+            // Dipakai halaman memo sebagai :key baris. Wajib ada: tanpa kunci yang stabil,
+            // Vue memakai ulang elemen <input> saat daftarnya berubah dan teks yang sudah
+            // diketik operator berpindah ke baris lain.
+            'id'         => $id,
             'no'         => $i + 1,
-            'cluster'    => (string) ($a->booking?->unit?->cluster?->name ?? ''),
+            'cluster'    => (string) ($unit?->cluster?->name ?? ''),
             'thp'        => '',
-            'tipe'       => (string) ($a->booking?->unit?->unitType?->name ?? ''),
-            'unit'       => (string) ($a->booking?->unit?->unit_code ?? ''),
-            'user'       => (string) ($a->customer?->full_name ?? ''),
+            'tipe'       => (string) ($unit?->unitType?->name ?? ''),
+            'unit'       => (string) ($unit?->unit_code ?? ''),
+            'user'       => (string) ($namaUser ?? ''),
             'sales'      => '',
             'agent'      => '',
             'cara_bayar' => 'KPR',
             'status'     => 'BATAL',
-            'keterangan' => (string) ($a->reject_reason ?? ''),
-        ]);
+            'keterangan' => (string) ($keterangan ?? ''),
+        ];
+    }
 
+    /**
+     * Isi halaman Memo Rekom Batal — SATU sumber untuk kedua sub-modul.
+     *
+     * Kepala memo, judul lampiran, dan blok tanda tangan diangkat ke sini justru karena
+     * permintaannya "sama persis": disalin ke masing-masing controller, mengganti nama
+     * penanda tangan atau format nomor memo hanya akan mengubah salah satunya, dan yang
+     * tertinggal tetap mencetak dokumen resmi dengan data lama tanpa satu pun tanda.
+     *
+     * $backHref/$backLabel dikirim karena halaman memonya dipakai DUA sub-modul; tanpa itu
+     * tombol kembalinya tetap menunjuk Reject Proses KPR dan operator dari BI Checking
+     * terlempar ke daftar yang salah — kehilangan filter yang sedang ia pakai.
+     *
+     * @param  \Illuminate\Support\Collection<int,array<string,mixed>>  $rows
+     * @return array<string,mixed>
+     */
+    private function memoRekomBatalPayload($rows, string $backHref, string $backLabel): array
+    {
         $now   = now();
         $roman = ['', 'I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X', 'XI', 'XII'][$now->month];
 
-        return Inertia::render('BankLoan/Database/RekomBatal', [
+        return [
             'rows' => $rows,
             'memo' => [
                 'no'       => '____/MUP-KPR/JRK/'.$roman.'/'.$now->year,
@@ -383,12 +484,13 @@ class KprDatabaseController extends Controller
             ],
             'listHeading' => 'List Rekomendasi Pembatalan KPR',
             'listDate'    => ucfirst($now->translatedFormat('d F Y')),
+            'back'        => ['href' => $backHref, 'label' => $backLabel],
             // Identitas perusahaan tidak dikirim lagi: nama/alamat/telepon/web sudah menyatu di
             // dalam gambar kop (public/images/mup-letterhead.jpeg), sama seperti lampiran.
             'signers' => [
                 'left'  => ['label' => 'Hormat kami,', 'name' => 'Prawanita Sari', 'title' => 'Finance Manager'],
                 'right' => ['label' => 'Mengetahui,', 'name' => (string) config('business_support.company.signer_name', 'Rachmat Suhendra'), 'title' => (string) config('business_support.company.signer_title', 'Direktur')],
             ],
-        ]);
+        ];
     }
 }

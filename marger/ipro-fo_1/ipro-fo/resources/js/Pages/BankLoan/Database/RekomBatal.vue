@@ -17,6 +17,10 @@ const props = defineProps<{
     memo: { no: string; kepada: string; tembusan: string; dari: string; tanggal: string; perihal: string };
     listHeading: string;
     listDate: string;
+    // Halaman ini dipakai DUA sub-modul (Reject Proses KPR & Reject BI Checking), jadi tujuan
+    // tombol kembalinya dikirim server. Dipatok di sini, operator yang datang dari BI Checking
+    // akan terlempar ke daftar yang salah — dan kehilangan filter yang sedang ia pakai.
+    back: { href: string; label: string };
     signers: { left: Sign; right: Sign };
 }>();
 
@@ -66,7 +70,7 @@ onMounted(async () => {
 
         <!-- Toolbar (tidak ikut tercetak) -->
         <div class="toolbar noprint">
-            <Link :href="route('kpr.database.reject-kpr')" class="tb-back"><ArrowLeft class="h-4 w-4" /> Reject Proses KPR</Link>
+            <Link :href="props.back.href" class="tb-back"><ArrowLeft class="h-4 w-4" /> {{ props.back.label }}</Link>
             <div class="tb-hint"><Info class="h-4 w-4" /> Lengkapi kolom yang masih kosong (Cluster / THP / Tipe / Sales / Agent) &amp; sesuaikan header memo, lalu klik <b>Cetak</b>. Semua teks di halaman ini dapat diedit.</div>
             <button type="button" class="tb-print" @click="cetak"><Printer class="h-4 w-4" /> Cetak</button>
         </div>

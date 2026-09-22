@@ -76,6 +76,16 @@ function toggleAll() {
     else filtered.value.forEach((r) => selected.value.add(r.id));
 }
 
+/* Memo Rekom Batal MASSAL — satu memo untuk seluruh baris tercentang.
+   Rute & perilakunya sama persis dengan Reject Proses KPR: tab baru, dan tombol per-baris
+   memanggil rute yang SAMA dengan satu id. Satu jalur, jadi hasil massal dan hasil per-baris
+   tidak mungkin perlahan berbeda. */
+function printBulk() {
+    if (!selected.value.size) return;
+    const url = route('kpr.database.reject-bi.memo-form', { ids: [...selected.value].join(',') });
+    window.open(url, '_blank', 'noopener');
+}
+
 // Unduh Excel: baris TERPILIH bila ada centang; selain itu mengikuti hasil FILTER yang tampil.
 function downloadExcel() {
     const ids = selected.value.size ? [...selected.value] : filtered.value.map((r) => r.id);
@@ -92,7 +102,10 @@ function downloadExcel() {
                 <h1 class="flex items-center gap-2 text-2xl font-bold"><ShieldX class="h-6 w-6 text-danger-600" /> Database KPR — Reject BI Checking</h1>
                 <p class="text-sm text-neutral-500">Inisiasi KPR yang ditolak pada tahap BI Checking, beserta alasannya.</p>
             </div>
-            <button type="button" :disabled="!filtered.length" @click="downloadExcel" class="inline-flex h-9 items-center gap-1.5 rounded-lg bg-success-600 px-3 text-sm font-semibold text-white hover:bg-success-700 disabled:cursor-not-allowed disabled:opacity-50"><FileSpreadsheet class="h-4 w-4" /> Download Excel<span v-if="selected.size" class="ml-1 rounded-full bg-white/25 px-1.5 text-xs">{{ selected.size }}</span></button>
+            <div class="flex items-center gap-2">
+                <button type="button" :disabled="!filtered.length" @click="downloadExcel" class="inline-flex h-9 items-center gap-1.5 rounded-lg bg-success-600 px-3 text-sm font-semibold text-white hover:bg-success-700 disabled:cursor-not-allowed disabled:opacity-50"><FileSpreadsheet class="h-4 w-4" /> Download Excel<span v-if="selected.size" class="ml-1 rounded-full bg-white/25 px-1.5 text-xs">{{ selected.size }}</span></button>
+                <button type="button" :disabled="!selected.size" @click="printBulk" class="inline-flex h-9 items-center gap-1.5 rounded-lg bg-danger-600 px-3 text-sm font-semibold text-white hover:bg-danger-700 disabled:cursor-not-allowed disabled:opacity-50"><Printer class="h-4 w-4" /> Memo Rekom Batal (Massal)<span v-if="selected.size" class="ml-1 rounded-full bg-white/25 px-1.5 text-xs">{{ selected.size }}</span></button>
+            </div>
         </div>
 
         <div class="flex flex-wrap items-center gap-2">
@@ -135,9 +148,15 @@ function downloadExcel() {
                         <td class="px-3 py-3 text-center whitespace-nowrap">
                             <div class="inline-flex items-center gap-1.5">
                                 <Link :href="route('kpr.database.reject-bi.detail', r.id)" class="inline-flex items-center gap-1 rounded-lg border border-neutral-300 px-2.5 py-1 text-xs font-medium hover:bg-neutral-50 dark:border-neutral-700 dark:hover:bg-neutral-800"><FileText class="h-3.5 w-3.5" /> Report</Link>
-                                <!-- Tab baru, bukan Inertia visit: tujuannya lembar cetak A4, dan daftar ini biasa
-                                     dipakai mencetak beberapa berkas berturut-turut tanpa kehilangan filternya. -->
-                                <a :href="route('kpr.database.reject-bi.cetak', r.id)" target="_blank" rel="noopener" class="inline-flex items-center gap-1 rounded-lg border border-danger-300 bg-danger-50 px-2.5 py-1 text-xs font-medium text-danger-700 hover:bg-danger-100 dark:border-danger-700/50 dark:bg-danger-900/30 dark:text-danger-300"><Printer class="h-3.5 w-3.5" /> Cetak</a>
+                                <!-- Tab baru, bukan Inertia visit: tujuannya lembar cetak, dan daftar ini biasa
+                                     dipakai mencetak beberapa berkas berturut-turut tanpa kehilangan filternya.
+
+                                     Dulu tombol ini membuka "Berita Acara Reject BI Checking" (lembar A4
+                                     kpr.database.reject-bi.cetak). Lembar itu TIDAK dihapus — ia tetap
+                                     terjangkau dari tombol Cetak di halaman Report/detail inisiasi. Yang
+                                     berubah hanya tombol di daftar ini, supaya alurnya sama dengan Reject
+                                     Proses KPR: dari daftar langsung ke memo pembatalannya. -->
+                                <a :href="route('kpr.database.reject-bi.memo-form', { ids: r.id })" target="_blank" rel="noopener" class="inline-flex items-center gap-1 rounded-lg border border-danger-300 bg-danger-50 px-2.5 py-1 text-xs font-medium text-danger-700 hover:bg-danger-100 dark:border-danger-700/50 dark:bg-danger-900/30 dark:text-danger-300"><Printer class="h-3.5 w-3.5" /> Memo Rekom Batal</a>
                             </div>
                         </td>
                     </tr>

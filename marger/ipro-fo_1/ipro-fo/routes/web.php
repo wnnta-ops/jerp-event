@@ -1339,6 +1339,10 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
     // ── Database KPR — arsip proses yang ditolak ──
     Route::get('/kpr-database/reject-bi-checking', [App\Http\Controllers\Web\BankLoan\KprDatabaseController::class, 'rejectBiChecking'])->name('kpr.database.reject-bi');
     Route::get('/kpr-database/reject-bi-checking-excel', [App\Http\Controllers\Web\BankLoan\KprDatabaseController::class, 'rejectBiCheckingExcel'])->name('kpr.database.reject-bi.excel'); // unduh rincian Excel
+    // Memo Rekom Batal (massal / per-baris) — ?ids=. Jalurnya SATU SEGMEN ('…-memo-batal',
+    // bukan '…/memo-batal') supaya tidak tertangkap rute '{initiation}' di bawah, yang akan
+    // mencoba memuat inisiasi bernama "memo-batal" lalu 404 tanpa menjelaskan apa pun.
+    Route::get('/kpr-database/reject-bi-checking-memo-batal', [App\Http\Controllers\Web\BankLoan\KprDatabaseController::class, 'rejectBiCheckingMemoForm'])->name('kpr.database.reject-bi.memo-form');
     Route::get('/kpr-database/reject-bi-checking/{initiation}/cetak', [App\Http\Controllers\Web\BankLoan\KprDatabaseController::class, 'rejectBiCheckingPrint'])->name('kpr.database.reject-bi.cetak'); // lembar A4 "Berita Acara Reject BI Checking" (dibuka tab baru dari tombol Cetak di halaman detail)
     Route::get('/kpr-database/reject-bi-checking/{initiation}', [App\Http\Controllers\Web\BankLoan\KprDatabaseController::class, 'rejectBiCheckingDetail'])->name('kpr.database.reject-bi.detail');
     Route::get('/kpr-database/reject-proses-kpr', [App\Http\Controllers\Web\BankLoan\KprDatabaseController::class, 'rejectProcess'])->name('kpr.database.reject-kpr');
