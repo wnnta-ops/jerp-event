@@ -40,15 +40,17 @@ export interface PipelineDeal {
   dead?: boolean; // not-interested (batal) — shown red, out of active flow
 }
 
-// One column per stage. Zone marks who owns it: Sales (0–4) vs Collection (5–7).
-const KANBAN: { t: string; stages: Stage[]; zone: "sa" | "co" }[] = [
+// One column per stage. Zone marks who owns it: Sales (0–4), Collection (5–6),
+// Legal (7 = AJB).
+const ZONE_LABEL = { sa: "Sales", co: "Collection", le: "Legal" } as const;
+const KANBAN: { t: string; stages: Stage[]; zone: "sa" | "co" | "le" }[] = [
   { t: "Follow-Up", stages: ["WI", "FOLLOW_UP"], zone: "sa" },
   { t: "NUP", stages: ["NUP"], zone: "sa" },
   { t: "UTJ", stages: ["UTJ"], zone: "sa" },
   { t: "SPR", stages: ["SPR"], zone: "sa" },
   { t: "ACC Bank", stages: ["ACC"], zone: "co" },
   { t: "Akad", stages: ["AKAD"], zone: "co" },
-  { t: "Realisasi", stages: ["REALISASI"], zone: "co" },
+  { t: "AJB", stages: ["REALISASI"], zone: "le" },
 ];
 
 // Max cards rendered per column (count badge still shows the true total).
@@ -72,22 +74,26 @@ export function PipelineClient({ deals, role }: { deals: PipelineDeal[]; role: R
   const [fTahap, setFTahap] = useState("all");
   const [history, setHistory] = useState<DealHistory | null>(null);
 
+  async function reloadHistory(id: string) {
+    try {
+      const d = await fetch(`/sales/api/deals/${id}/history`).then((r) => r.json());
+      setHistory(d);
+    } catch {
+      /* biarkan */
+    }
+  }
+
   // Load the full history whenever a customer's journey modal opens.
   useEffect(() => {
     if (!sel) {
       setHistory(null);
       return;
     }
-    let alive = true;
     setHistory(null);
-    fetch(`/sales/api/deals/${sel.id}/history`)
-      .then((r) => r.json())
-      .then((d) => alive && setHistory(d))
-      .catch(() => {});
-    return () => {
-      alive = false;
-    };
-  }, [sel]);
+    reloadHistory(sel.id);
+    // hanya saat id berubah (buka customer lain), bukan tiap patch sel
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sel?.id]);
 
   // Distinct filter options derived from the current deal set.
   const salesOpts = useMemo(
@@ -147,7 +153,9 @@ export function PipelineClient({ deals, role }: { deals: PipelineDeal[]; role: R
     if (res.ok) {
       toast("✓ Follow-up tercatat");
       setFuNote("");
-      setSel(null);
+      // biarkan modal terbuka & tampilkan update di Riwayat seketika
+      setSel((s) => (s ? { ...s, statusLead: fuStatus as PipelineDeal["statusLead"] } : s));
+      reloadHistory(d.id);
       router.refresh();
     } else toast(j.error ?? "Gagal");
   }
@@ -165,13 +173,22 @@ export function PipelineClient({ deals, role }: { deals: PipelineDeal[]; role: R
     } else toast(j.error ?? "Gagal");
   }
 
-  async function notifyFo(d: PipelineDeal) {
+  // Lead lanjut → NUP atau UTJ. Pindah stage + status lead jadi DONE.
+  async function convertStage(d: PipelineDeal, stage: "NUP" | "UTJ") {
     setBusy(true);
-    const res = await fetch(`/sales/api/deals/${d.id}/notify-fo`, { method: "POST" });
+    const res = await fetch(`/sales/api/deals/${d.id}/convert-stage`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ stage }),
+    });
     setBusy(false);
     const j = await res.json().catch(() => ({}));
-    if (res.ok) toast("✓ " + d.nama + " diteruskan ke FO");
-    else toast(j.error ?? "Gagal kirim ke FO");
+    if (res.ok) {
+      toast("✓ " + d.nama + " → " + stage + " (status: Done)");
+      setSel((s) => (s ? { ...s, stage, statusLead: "DONE" } : s));
+      reloadHistory(d.id);
+      router.refresh();
+    } else toast(j.error ?? "Gagal");
   }
 
   const idx = sel ? STAGE_INDEX[sel.stage] : 0;
@@ -235,7 +252,7 @@ export function PipelineClient({ deals, role }: { deals: PipelineDeal[]; role: R
           const items = filtered.filter((d) => col.stages.includes(d.stage));
           return (
             <div className={`col z${col.zone}`} key={col.t}>
-              <div className="zlab">{col.zone === "sa" ? "Sales" : "Collection"}</div>
+              <div className="zlab">{ZONE_LABEL[col.zone]}</div>
               <div className="ch">
                 <span>{col.t}</span>
                 <span className="cnt">{items.length}</span>
@@ -342,9 +359,9 @@ export function PipelineClient({ deals, role }: { deals: PipelineDeal[]; role: R
                     </button>
                   ))
                 ) : idx >= 7 ? (
-                  <span className="badge b-green">Selesai / Realisasi</span>
+                  <span className="badge b-legal">Selesai / AJB</span>
                 ) : role === "SALES" && idx >= SALES_MAX_INDEX ? (
-                  <span className="pill">🔒 Tahap ini diisi Collection</span>
+                  <span className="pill">🔒 Tahap ini diisi Collection / Legal</span>
                 ) : role === "COLLECTION" && idx < SALES_MAX_INDEX ? (
                   <span className="pill">🔒 Tahap awal diisi Sales</span>
                 ) : (
@@ -364,18 +381,20 @@ export function PipelineClient({ deals, role }: { deals: PipelineDeal[]; role: R
               <StageBadge stage={sel.stage} />
               {showsLead(sel.stage) && <LeadBadge t={sel.statusLead} />}
               <ChannelBadge c={sel.channel} />
-              <span className="pill">
+              <span className="pill key">
                 {sel.cluster} · {sel.type}
               </span>
-              <span className="pill">Sales: {sel.sales}</span>
-              <span className="pill">Koor: {sel.koor}</span>
+              <span className="pill key">Bendera: {sel.agency}</span>
+              <span className="pill key">Sales: {sel.sales}</span>
+              <span className="pill key">Koor: {sel.koor}</span>
               {sel.unit && <span className="pill">{sel.unit}</span>}
               {sel.bank && <span className="pill">Bank: {sel.bank}</span>}
             </div>
+            {/* zona pengisi — proporsional di atas stepper (Sales 5 / Collection 2 / Legal 1) */}
             <div style={{ display: "flex", gap: 6, marginBottom: 6 }}>
-              <span className="zone sa">Diisi Sales (s/d SPR)</span>
-              <span style={{ flex: 1 }} />
-              <span className="zone co">Diisi Collection</span>
+              <span className="zone sa" style={{ flex: 5 }}>Sales (s/d SPR)</span>
+              <span className="zone co" style={{ flex: 2 }}>Collection</span>
+              <span className="zone le" style={{ flex: 1 }}>Legal</span>
             </div>
             <div className="stepper">
               {STAGES.map((s, i) => {
@@ -454,13 +473,21 @@ export function PipelineClient({ deals, role }: { deals: PipelineDeal[]; role: R
                   <button className="btn ghost sm danger" onClick={() => notInterested(sel)} disabled={busy}>
                     🚫 Tidak Berminat
                   </button>
-                  <button className="btn sm" onClick={() => notifyFo(sel)} disabled={busy}>
-                    ➡ Next (kirim ke FO)
-                  </button>
+                  {idx < STAGE_INDEX["NUP"] && (
+                    <button className="btn ghost sm" onClick={() => convertStage(sel, "NUP")} disabled={busy}>
+                      → NUP
+                    </button>
+                  )}
+                  {idx < STAGE_INDEX["UTJ"] && (
+                    <button className="btn sm" onClick={() => convertStage(sel, "UTJ")} disabled={busy}>
+                      → UTJ
+                    </button>
+                  )}
                 </div>
                 <p className="rolehint" style={{ marginTop: 8 }}>
-                  <b>Next</b> = teruskan lead ke FO (Front Office) buat proses UTJ/NUP. <b>Tidak
-                  Berminat</b> = keluarin dari pipeline (masuk Pipeline Gagal).
+                  Pilih <b>NUP</b> atau <b>UTJ</b> saat lead lanjut — customer pindah ke tahap itu &amp;
+                  status lead jadi <b>Done</b>. <b>Tidak Berminat</b> = keluarin dari pipeline (masuk
+                  Pipeline Gagal).
                 </p>
               </div>
             )}

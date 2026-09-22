@@ -35,7 +35,8 @@ export function ChannelBadge({ c }: { c: Channel }) {
 }
 
 export function StageBadge({ stage }: { stage: Stage }) {
-  const cls = ["b-blue", "b-amber", "b-teal", "b-green", "b-teal", "b-purple", "b-purple", "b-green"];
+  // idx 5-6 = Collection (purple), idx 7 = AJB/Legal (pastel green)
+  const cls = ["b-blue", "b-amber", "b-teal", "b-green", "b-teal", "b-purple", "b-purple", "b-legal"];
   const idx = STAGE_INDEX[stage];
   return <span className={`badge ${cls[idx]}`}>{STAGES[idx].label}</span>;
 }
