@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Web\BankLoan;
 
+use App\Domain\BankLoan\Models\RetentionCategory;
 use App\Domain\BusinessSupport\Models\BsGimmickCategory;
 use App\Domain\BusinessSupport\Models\BsKprBiayaEntry;
 use App\Http\Controllers\Controller;
@@ -76,7 +77,7 @@ class MasterDataKprController extends Controller
         $rows = DB::table('retention_categories')
             ->whereNull('deleted_at')->where('is_active', 1)
             ->orderBy('sort_order')->orderBy('id')
-            ->get(['id', 'code', 'name', 'is_dajam']);
+            ->get(['id', 'code', 'name', 'is_dajam', 'kpr_sync']);
 
         return $this->kategoriRetensi = $rows->map(fn ($c) => [
             'id'       => (int) $c->id,
@@ -84,7 +85,85 @@ class MasterDataKprController extends Controller
             // Nama dipakai bila kodenya kosong, supaya kolomnya tidak pernah tanpa judul.
             'label'    => trim((string) ($c->code ?: $c->name)),
             'is_dajam' => (bool) $c->is_dajam,
+            'sync'     => $c->kpr_sync !== null && $c->kpr_sync !== '' ? (string) $c->kpr_sync : null,
         ])->values()->all();
+    }
+
+    /**
+     * KOLOM Collection Retensi — SATU per GRUP "Sinkron dengan Master Data KPR".
+     *
+     * Kategori yang bersinkron ke grup yang sama berdiri sebagai satu kolom: TANAH MATANG 50%,
+     * 20%, dan 30% menjadi satu "TANAH MATANG", TOPPING OFF 20% & 40% menjadi satu "TOPPING
+     * OFF". Yang disatukan hanya TAMPILANnya — baris masternya tetap terpisah, sebab
+     * bank_retention_terms memetakan akun GL per kategori dan beberapa tempat lain mengenali
+     * "DAJAM Pajak" dari TEKS kodenya.
+     *
+     * Tiap kolom membawa DAFTAR id anggotanya, bukan satu id wakil. Inilah bedanya dengan
+     * cara yang tampak lebih sederhana: nilai sel disimpan berkunci retention_category_id
+     * MENTAH (lihat retensiByBooking), jadi kolom yang hanya membawa id wakil akan
+     * MENINGGALKAN uang milik anggota lain pada kunci yang tak pernah dibaca siapa pun —
+     * nominalnya lenyap dari rekap tanpa satu pun galat.
+     *
+     * Kategori yang BELUM disinkronkan tidak dibuang: ia berdiri sebagai kolomnya sendiri.
+     * Membuangnya berarti pencairannya hilang dari layar sementara masternya masih ada.
+     *
+     * @return array<int,array{key:string,label:string,ids:array<int,int>,is_dajam:bool}>
+     */
+    private function retensiKolom(): array
+    {
+        $kolom = [];
+        foreach ($this->retensiKategori() as $c) {
+            // Tanpa sinkron → kunci miliknya sendiri, supaya tidak menyatu dengan siapa pun.
+            $key = $c['sync'] ?? ('x'.$c['id']);
+            if (! isset($kolom[$key])) {
+                $kolom[$key] = [
+                    'key'      => $key,
+                    'label'    => $c['sync'] !== null
+                        ? (RetentionCategory::KPR_SYNC[$c['sync']] ?? $c['label'])
+                        : $c['label'],
+                    'ids'      => [],
+                    'is_dajam' => false,
+                ];
+            }
+            $kolom[$key]['ids'][] = $c['id'];
+            // Satu anggota DAJAM cukup membuat kolomnya menjadi kolom DAJAM.
+            $kolom[$key]['is_dajam'] = $kolom[$key]['is_dajam'] || $c['is_dajam'];
+        }
+
+        return array_values($kolom);
+    }
+
+    /**
+     * Satu sel kolom gabungan: nominal DIJUMLAH antar anggota, tanggal memakai yang TERBARU.
+     *
+     * Dijumlah, bukan diambil salah satu: satu booking memang boleh punya pencairan pada
+     * beberapa kategori dalam grup yang sama (itulah gunanya tahapan 50%/20%/30%), dan
+     * "ambil yang terakhir" akan menghilangkan sisanya diam-diam.
+     *
+     * @param  array<int,array{t:?string,n:float}>  $selBooking
+     * @param  array<int,int>  $ids
+     */
+    private function selRetensiGrup(array $selBooking, array $ids): ?array
+    {
+        $t = null;
+        $n = 0.0;
+        $ada = false;
+
+        foreach ($ids as $id) {
+            $s = $selBooking[$id] ?? null;
+            if ($s === null) {
+                continue;
+            }
+            $ada = true;
+            if ($s['t'] !== null && ($t === null || $s['t'] > $t)) {
+                $t = $s['t'];
+            }
+            $n += (float) $s['n'];
+        }
+
+        // null (bukan nol) bila tidak satu pun anggota punya nilai — layar membedakan
+        // "belum ada pencairan" (—) dari "dicairkan Rp 0".
+        return $ada ? ['t' => $t, 'n' => $n] : null;
     }
 
     /**
@@ -223,9 +302,12 @@ class MasterDataKprController extends Controller
                 'dp'              => array_map(fn ($l) => $sch['dp'][$l] ?? null, self::DP_LABELS),
                 // Collection Cash — Angsuran Cash 1..3 dari cicilan yang sudah dibayar.
                 'angsuran_cash'   => array_map(fn ($i) => $sch['ang'][$i] ?? null, range(0, self::CASH_SLOTS - 1)),
-                // Collection Retensi — satu slot per kategori aktif, urut sesuai masternya.
+                // Collection Retensi — satu slot per GRUP sinkron Master Data KPR, urut masternya.
                 'retensi'         => array_merge(
-                    array_map(fn ($col) => ($retensi[$b->id][$col['id']] ?? null), $this->retensiKategori()),
+                    array_map(
+                        fn ($col) => $this->selRetensiGrup($retensi[$b->id] ?? [], $col['ids']),
+                        $this->retensiKolom(),
+                    ),
                     [$retensi[$b->id][self::KAT_TANPA_KATEGORI] ?? null],
                 ),
                 // Sisa Retensi = Outstanding Pencairan pada Proses KPR, dihitung dengan rumus
@@ -248,8 +330,11 @@ class MasterDataKprController extends Controller
 
     private function retensiHeaders(): array
     {
+        // WAJIB memakai sumber yang sama dengan nilainya (retensiKolom): judul dan angka
+        // dirakit sebagai dua array terpisah dan dipasangkan layar menurut INDEX — satu sisi
+        // yang berubah sendiri menggeser seluruh angka ke kolom tetangga tanpa satu pun galat.
         return array_merge(
-            array_map(fn ($c) => $c['label'], $this->retensiKategori()),
+            array_map(fn ($c) => $c['label'], $this->retensiKolom()),
             [self::LABEL_TANPA_KATEGORI],
         );
     }
