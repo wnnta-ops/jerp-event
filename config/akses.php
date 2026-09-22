@@ -218,6 +218,7 @@ return [
         'PengaturanFo' => 'fo.pengaturan_fo',
         'PetaUnitLive' => 'fo.peta_unit_live',
         'PilihUnitBooked' => 'fo.pilih_unit_booked',
+        'RekomBatalCash' => 'fo.rekom_batal_cash',
         'ReminderAr' => 'fo.reminder_ar',
         'ReportNup' => 'fo.report_nup',
         'ReportXendit' => 'fo.report_xendit',

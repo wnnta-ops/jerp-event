@@ -41,6 +41,7 @@ Catatan ringkas: tiap sub-modul = fungsinya.
 - Dashboard AR = ringkasan piutang, jatuh tempo, reminder
 
 ## Collection (penagihan)
+- Rekom Batal Cash = memo rekom batal SPR cash (CASH 1X & CASH 3X); membuka tombol Ajukan Pembatalan
 - Surat SP = terbitkan Surat Peringatan (SP1/SP2/SP3) tunggakan
 - Pemberkasan = kelengkapan dokumen penagihan
 - Setup SP = aturan surat peringatan
