@@ -4,15 +4,17 @@ import { router, Link } from '@inertiajs/vue3';
 import { ArrowLeft, FileBarChart, FileSpreadsheet } from 'lucide-vue-next';
 import EmptyState from '@/Components/UI/EmptyState.vue';
 import SearchSelect from '@/Components/UI/SearchSelect.vue';
+import PilihPosisiHutang from '@/Components/UI/PilihPosisiHutang.vue';
 
-const props = defineProps<{ rows: Array<any>; suppliers: Array<any>; filters: any; pulled?: boolean }>();
+const props = defineProps<{ rows: Array<any>; suppliers: Array<any>; filters: any; pulled?: boolean; posisiOpsi?: Array<{ nilai: string; label: string }> }>();
 
 const dateFrom = ref(props.filters?.date_from ?? '');
 const dateTo = ref(props.filters?.date_to ?? '');
 const supplierId = ref<any>(props.filters?.supplier_id ?? '');
+const posisi = ref(props.filters?.posisi ?? 'semua');
 
 function params() {
-    return { date_from: dateFrom.value || undefined, date_to: dateTo.value || undefined, supplier_id: supplierId.value || undefined };
+    return { date_from: dateFrom.value || undefined, date_to: dateTo.value || undefined, supplier_id: supplierId.value || undefined, posisi: posisi.value };
 }
 // Tarik data (preview) — data baru ditampilkan setelah periode dipilih & tombol ini diklik.
 function tarik() {
@@ -54,6 +56,7 @@ const totals = computed(() => ({
                 <label class="mb-1 block text-xs font-medium text-neutral-500">Supplier <span class="text-neutral-400">(opsional — kosong = semua)</span></label>
                 <SearchSelect v-model="supplierId" :options="suppliers" placeholder="— semua supplier —" />
             </div>
+            <PilihPosisiHutang v-model="posisi" :opsi="props.posisiOpsi" />
             <button @click="tarik" class="h-9 rounded-lg bg-primary-600 px-5 text-sm font-semibold text-white hover:bg-primary-700">Tampilkan</button>
             <a :href="exportUrl" class="inline-flex h-9 items-center gap-1.5 rounded-lg border border-emerald-300 bg-emerald-50 px-3 text-sm font-medium text-emerald-700 hover:bg-emerald-100 dark:border-emerald-700/50 dark:bg-emerald-900/30 dark:text-emerald-300"><FileSpreadsheet class="h-4 w-4" /> Export Excel</a>
         </div>

@@ -7,6 +7,7 @@ namespace App\Http\Controllers\Web\BusinessSupport\Payable;
 use App\Domain\BusinessSupport\Models\BsAccount;
 use App\Domain\BusinessSupport\Models\BsApInvoice;
 use App\Domain\BusinessSupport\Services\ApMemorialService;
+use App\Domain\BusinessSupport\Support\PosisiHutang;
 use App\Exceptions\BusinessRuleException;
 use App\Http\Controllers\Controller;
 use Illuminate\Http\RedirectResponse;
@@ -48,8 +49,17 @@ class PenghapusanController extends Controller
     {
         abort_unless($request->user()?->can('ap.penghapusan.view'), 403);
 
-        $rows = \App\Domain\BusinessSupport\Models\BsApMemorial::where('trx_type', 'penghapusan')
-            ->with(['invoice:id,invoice_number,description', 'supplier:id,name', 'counterAccount:id,code,name', 'journal:id,journal_number'])
+        $posisi = PosisiHutang::dariRequest($request);
+
+        // saringLewat(), bukan whereHas langsung: bs_ap_memorials.ap_invoice_id BOLEH KOSONG,
+        // dan whereHas akan membuang penghapusan tanpa invoice bahkan saat operator memilih
+        // "Tampilkan Semua". Pada pilihan itu query dikembalikan utuh.
+        $rows = PosisiHutang::saringLewat(
+            \App\Domain\BusinessSupport\Models\BsApMemorial::where('trx_type', 'penghapusan')
+                ->with(['invoice:id,invoice_number,description', 'supplier:id,name', 'counterAccount:id,code,name', 'journal:id,journal_number']),
+            $posisi,
+            'invoice',
+        )
             ->latest('memorial_date')->latest('id')->get()
             ->map(fn ($m) => [
                 'id'                  => $m->id,
@@ -68,7 +78,11 @@ class PenghapusanController extends Controller
 
         return Inertia::render('BusinessSupport/Payable/PenghapusanReport', [
             'rows'  => $rows,
+            // Dihitung dari $rows yang SUDAH tersaring, jadi angka Total tidak mungkin
+            // menyebut uang yang barisnya tidak ditampilkan.
             'total' => round((float) $rows->sum('amount'), 2),
+            'posisi' => $posisi,
+            'posisiOpsi' => PosisiHutang::opsi(),
         ]);
     }
 

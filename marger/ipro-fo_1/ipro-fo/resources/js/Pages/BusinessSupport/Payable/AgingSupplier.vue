@@ -8,6 +8,7 @@ import { ref, computed } from 'vue';
 import { router } from '@inertiajs/vue3';
 import { Layers, Search } from 'lucide-vue-next';
 import EmptyState from '@/Components/UI/EmptyState.vue';
+import PilihPosisiHutang from '@/Components/UI/PilihPosisiHutang.vue';
 
 interface Baris { name: string; b0: number; b31: number; b60: number; total: number }
 interface Others { jumlah: number; b0: number; b31: number; b60: number; total: number }
@@ -20,14 +21,17 @@ const props = defineProps<{
     topN: number;
     dateFrom: string | null;
     dateTo: string;
+    posisi?: string;
+    posisiOpsi?: Array<{ nilai: string; label: string }>;
 }>();
 
 const cari = ref('');
 const dari = ref(props.dateFrom ?? '');
 const sampai = ref(props.dateTo);
+const posisi = ref(props.posisi ?? 'semua');
 
 function muat() {
-    router.get(route('bs.ap.aging-supplier'), { date_from: dari.value, date_to: sampai.value },
+    router.get(route('bs.ap.aging-supplier'), { date_from: dari.value, date_to: sampai.value, posisi: posisi.value },
         { preserveState: true, preserveScroll: true, replace: true });
 }
 
@@ -65,6 +69,7 @@ function penuh(v: number) { return 'Rp ' + Number(v ?? 0).toLocaleString('id-ID'
                     <input v-model="dari" type="date" class="h-9 rounded-lg border border-neutral-300 bg-white px-2 text-sm dark:border-neutral-700 dark:bg-neutral-900" /></div>
                 <div><label class="mb-1 block text-[11px] font-medium uppercase text-neutral-400">Per tanggal</label>
                     <input v-model="sampai" type="date" class="h-9 rounded-lg border border-neutral-300 bg-white px-2 text-sm dark:border-neutral-700 dark:bg-neutral-900" /></div>
+                <PilihPosisiHutang v-model="posisi" :opsi="props.posisiOpsi" />
                 <button type="button" @click="muat" class="h-9 rounded-lg bg-primary-600 px-4 text-sm font-medium text-white hover:bg-primary-700">Tampilkan</button>
             </div>
         </div>
@@ -126,7 +131,10 @@ function penuh(v: number) { return 'Rp ' + Number(v ?? 0).toLocaleString('id-ID'
                 <p class="border-t border-neutral-200 px-4 py-2.5 text-[11px] leading-relaxed text-neutral-500 dark:border-neutral-800">
                     Total seluruh <b>{{ total.jumlah }} supplier</b>: <b>{{ penuh(total.total) }}</b>
                     (0–30: {{ rp(total.b0) }} · 31–60: {{ rp(total.b31) }} · &gt;60: {{ rp(total.b60) }}).
-                    <span v-if="dominan">Didominasi <b>{{ dominan.name }}</b> ({{ rp(dominan.total) }}).</span>
+                    <!-- Nama supplier terbesar berganti mengikuti posisi yang dipilih — itu
+                         wajar (kumpulannya memang berbeda), tetapi tanpa keterangan ini
+                         perubahannya terbaca seperti data yang berubah-ubah sendiri. -->
+                    <span v-if="dominan">Didominasi <b>{{ dominan.name }}</b> ({{ rp(dominan.total) }})<span v-if="posisi !== 'semua'"> pada posisi yang dipilih</span>.</span>
                     Kolom <b>0–30</b> sudah termasuk hutang yang <b>belum jatuh tempo</b>, sehingga jumlah ketiga
                     kolomnya selalu sama dengan Outstanding. Angkanya dihitung dari invoice hutang per
                     {{ dateTo }} — sama dengan layar <b>Aging Hutang</b>, tidak perlu diunggah.

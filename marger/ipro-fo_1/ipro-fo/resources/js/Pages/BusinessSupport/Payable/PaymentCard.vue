@@ -1,12 +1,22 @@
 <script setup lang="ts">
-import { ref } from 'vue';
+import { ref, computed } from 'vue';
 import { router, Link } from '@inertiajs/vue3';
 import { ArrowLeft, Receipt, FileSpreadsheet, Printer } from 'lucide-vue-next';
 import EmptyState from '@/Components/UI/EmptyState.vue';
+import PilihPosisiHutang from '@/Components/UI/PilihPosisiHutang.vue';
 
-const props = defineProps<{ payments: any; suppliers: Array<any>; supplierId: number | null; total: number }>();
+const props = defineProps<{ payments: any; suppliers: Array<any>; supplierId: number | null; total: number; posisi?: string; posisiOpsi?: Array<{ nilai: string; label: string }> }>();
 const selected = ref(props.supplierId ?? '');
-function display() { router.get(route('bs.ap.payment-card'), { supplier_id: selected.value || undefined }, { preserveState: true, replace: true }); }
+const posisi = ref(props.posisi ?? 'semua');
+function display() { router.get(route('bs.ap.payment-card'), { supplier_id: selected.value || undefined, posisi: posisi.value }, { preserveState: true, replace: true }); }
+
+// Tautan ekspor membaca props.*, BUKAN ref lokal. Ref-nya berubah begitu operator menyentuh
+// kontrol, sedangkan layarnya baru berubah setelah permintaan kembali — berkas yang terunduh
+// di sela itu akan berbeda dari yang sedang tampil, tanpa ada yang menandainya.
+const paramEkspor = computed(() => ({
+    supplier_id: props.supplierId || undefined,
+    posisi: props.posisi ?? 'semua',
+}));
 function fmtRp(v: number) { return Number(v ?? 0).toLocaleString('id-ID'); }
 function fmtDate(d: string) { return d ? new Date(d).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'; }
 </script>
@@ -21,8 +31,9 @@ function fmtDate(d: string) { return d ? new Date(d).toLocaleDateString('id-ID',
                 <label class="mb-1 block text-xs font-medium text-neutral-500">Supplier</label>
                 <select v-model="selected" class="h-9 w-full rounded-lg border border-neutral-300 bg-white px-3 text-sm dark:border-neutral-700 dark:bg-neutral-900" @change="display"><option value="">— semua supplier —</option><option v-for="s in suppliers" :key="s.id" :value="s.id">{{ s.name }}</option></select>
             </div>
-            <a :href="route('bs.ap.payment-card.export-excel', { supplier_id: selected || undefined })" class="inline-flex h-9 items-center gap-1.5 rounded-lg border border-emerald-300 bg-emerald-50 px-3 text-sm font-medium text-emerald-700 hover:bg-emerald-100 dark:border-emerald-700/50 dark:bg-emerald-900/30 dark:text-emerald-300"><FileSpreadsheet class="h-4 w-4" /> Excel</a>
-            <a :href="route('bs.ap.payment-card.export-pdf', { supplier_id: selected || undefined })" target="_blank" rel="noopener" class="inline-flex h-9 items-center gap-1.5 rounded-lg border border-danger-300 bg-danger-50 px-3 text-sm font-medium text-danger-700 hover:bg-danger-100 dark:border-danger-700/50 dark:bg-danger-900/30 dark:text-danger-300"><Printer class="h-4 w-4" /> PDF</a>
+            <PilihPosisiHutang v-model="posisi" :opsi="props.posisiOpsi" @ubah="display" />
+            <a :href="route('bs.ap.payment-card.export-excel', paramEkspor)" class="inline-flex h-9 items-center gap-1.5 rounded-lg border border-emerald-300 bg-emerald-50 px-3 text-sm font-medium text-emerald-700 hover:bg-emerald-100 dark:border-emerald-700/50 dark:bg-emerald-900/30 dark:text-emerald-300"><FileSpreadsheet class="h-4 w-4" /> Excel</a>
+            <a :href="route('bs.ap.payment-card.export-pdf', paramEkspor)" target="_blank" rel="noopener" class="inline-flex h-9 items-center gap-1.5 rounded-lg border border-danger-300 bg-danger-50 px-3 text-sm font-medium text-danger-700 hover:bg-danger-100 dark:border-danger-700/50 dark:bg-danger-900/30 dark:text-danger-300"><Printer class="h-4 w-4" /> PDF</a>
             <div class="ml-auto text-right"><div class="text-xs uppercase text-neutral-400">Total Pembayaran</div><div class="font-mono text-lg font-bold text-emerald-600">Rp {{ fmtRp(total) }}</div></div>
         </div>
 

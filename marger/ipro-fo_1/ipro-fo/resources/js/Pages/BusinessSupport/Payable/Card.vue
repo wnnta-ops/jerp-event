@@ -4,16 +4,18 @@ import { ref, computed } from 'vue';
 import { ArrowLeft, BookText, FileSpreadsheet, Printer } from 'lucide-vue-next';
 import EmptyState from '@/Components/UI/EmptyState.vue';
 import SearchSelect from '@/Components/UI/SearchSelect.vue';
+import PilihPosisiHutang from '@/Components/UI/PilihPosisiHutang.vue';
 
-const props = defineProps<{ view?: string; suppliers: Array<any>; supplierId: number | null; dateFrom?: string | null; dateTo?: string | null; entries: Array<any>; openingBalance?: number; summary: Array<any>; outstanding: number }>();
+const props = defineProps<{ view?: string; suppliers: Array<any>; supplierId: number | null; dateFrom?: string | null; dateTo?: string | null; entries: Array<any>; openingBalance?: number; summary: Array<any>; outstanding: number; posisi?: string; posisiOpsi?: Array<{ nilai: string; label: string }> }>();
 const selected = ref<any>(props.supplierId ?? '');
 const dateFrom = ref(props.dateFrom ?? '');
 const dateTo = ref(props.dateTo ?? '');
+const posisi = ref(props.posisi ?? 'semua');
 // #2: reaktif terhadap prop (preserveState membuat const biasa basi → toggle Summary tak berfungsi).
 const mode = computed(() => (props.view === 'summary' ? 'summary' : 'detail'));
 
 function go(view: string) {
-    router.get(route('bs.ap.card'), { view, supplier_id: selected.value || undefined, date_from: dateFrom.value || undefined, date_to: dateTo.value || undefined }, { preserveState: true, replace: true });
+    router.get(route('bs.ap.card'), { view, supplier_id: selected.value || undefined, date_from: dateFrom.value || undefined, date_to: dateTo.value || undefined, posisi: posisi.value }, { preserveState: true, replace: true });
 }
 function display() { go(mode.value); }
 function switchMode(m: string) { go(m); }
@@ -30,6 +32,7 @@ const paramEkspor = computed(() => ({
     supplier_id: props.supplierId || undefined,
     date_from: props.dateFrom || undefined,
     date_to: props.dateTo || undefined,
+    posisi: props.posisi ?? 'semua',
 }));
 function fmtDate(d: string) { return d ? new Date(d).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'; }
 
@@ -69,6 +72,7 @@ const summaryTotals = computed(() => {
                 <label class="mb-1 block text-xs font-medium text-neutral-500">Sampai Tanggal</label>
                 <input v-model="dateTo" type="date" class="h-9 rounded-lg border border-neutral-300 bg-white px-2 text-sm dark:border-neutral-700 dark:bg-neutral-900" />
             </div>
+            <PilihPosisiHutang v-model="posisi" :opsi="props.posisiOpsi" />
             <button @click="display" class="h-9 rounded-lg bg-primary-600 px-5 text-sm font-semibold text-white hover:bg-primary-700">Tampilkan</button>
             <a :href="route('bs.ap.card.export-excel', paramEkspor)" class="inline-flex h-9 items-center gap-1.5 rounded-lg border border-emerald-300 bg-emerald-50 px-3 text-sm font-medium text-emerald-700 hover:bg-emerald-100 dark:border-emerald-700/50 dark:bg-emerald-900/30 dark:text-emerald-300"><FileSpreadsheet class="h-4 w-4" /> Excel</a>
             <a :href="route('bs.ap.card.export-pdf', paramEkspor)" target="_blank" rel="noopener" class="inline-flex h-9 items-center gap-1.5 rounded-lg border border-danger-300 bg-danger-50 px-3 text-sm font-medium text-danger-700 hover:bg-danger-100 dark:border-danger-700/50 dark:bg-danger-900/30 dark:text-danger-300"><Printer class="h-4 w-4" /> PDF</a>

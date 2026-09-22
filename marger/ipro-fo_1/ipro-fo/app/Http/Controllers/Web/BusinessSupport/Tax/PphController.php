@@ -10,6 +10,7 @@ use App\Domain\BusinessSupport\Models\BsArInvoice;
 use App\Domain\BusinessSupport\Models\BsJournal;
 use App\Domain\BusinessSupport\Services\BukuBesarDokumen;
 use App\Domain\BusinessSupport\Services\JournalPartyResolver;
+use App\Domain\BusinessSupport\Support\PosisiHutang;
 use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -44,7 +45,7 @@ class PphController extends Controller
         abort_unless($request->user()?->can('tax.pph.view'), 403);
         [$year, $month] = $this->period($request);
 
-        $d = $this->hitung($year, $month);
+        $d = $this->hitung($year, $month, PosisiHutang::dariRequest($request));
 
         return Inertia::render('BusinessSupport/Tax/Pph', $d);
     }
@@ -65,7 +66,7 @@ class PphController extends Controller
      *
      * @return array<string,mixed>
      */
-    private function hitung(int $year, int $month): array
+    private function hitung(int $year, int $month, string $posisi): array
     {
         $akun     = BsAccount::whereIn('code', array_keys(self::ARTICLES))->get(['id', 'code', 'name']);
         $codeById = $akun->pluck('code', 'id');
@@ -87,6 +88,27 @@ class PphController extends Controller
         // angka yang tidak ada di dokumen mana pun.
         $apIds = collect($dokumen)->filter(fn ($x) => $x['type'] === 'ap_invoice')->pluck('id')->unique()->values()->all();
         $dpp   = $apIds === [] ? collect() : BsApInvoice::whereIn('id', $apIds)->pluck('dpp', 'id');
+
+        // ── Penyaring posisi hutang ──
+        // Layar ini digerakkan BUKU BESAR, bukan tabel invoice: sebagian barisnya (PPh 21
+        // dari Payroll, jurnal manual) tidak punya invoice hutang sama sekali, jadi tidak
+        // punya posisi apa pun. Barisan semacam itu DISISIHKAN saat sebuah posisi dipilih —
+        // memasukkannya ke "Hutang Usaha" berarti melaporkan potongan gaji sebagai hutang
+        // usaha — dan jumlahnya DILAPORKAN ke layar, bukan hilang diam-diam.
+        $disisihkan = 0;
+        if ($posisi !== PosisiHutang::SEMUA) {
+            $sah = $apIds === []
+                ? collect()
+                : PosisiHutang::saring(BsApInvoice::whereIn('id', $apIds), $posisi)->pluck('id')->flip();
+
+            $sebelum = $lines->count();
+            $lines = $lines->filter(function ($l) use ($dokumen, $sah) {
+                $doc = $dokumen[(int) $l->journal_id] ?? null;
+
+                return $doc !== null && $doc['type'] === 'ap_invoice' && isset($sah[$doc['id']]);
+            })->values();
+            $disisihkan = $sebelum - $lines->count();
+        }
 
         $rows = $lines->map(function ($l) use ($codeById, $dokumen, $pihak, $dpp) {
             $j    = $l->journal;
@@ -142,6 +164,18 @@ class PphController extends Controller
             'totalTerutang' => round(array_sum($byArticle), 2),
             'prepaid'       => round($prepaid, 2),
             'gl'            => $gl,
+            'posisi'        => $posisi,
+            'posisiOpsi'    => PosisiHutang::opsi(),
+            // Berapa baris buku besar yang tidak bisa ditelusuri ke invoice hutang, sehingga
+            // tidak punya posisi. Ditampilkan layar sebagai keterangan — operator harus tahu
+            // angka rekapnya sedang tidak memuat seluruh pemotongan masa itu.
+            'disisihkan'    => $disisihkan,
+            // Kartu cross-check GL SENGAJA tetap dihitung dari SELURUH posisi lewat query
+            // sendiri (accCreditMutation). Menyaringnya juga akan membuat centangnya selalu
+            // hijau; membiarkannya dibandingkan dengan tabel yang tersaring akan membuatnya
+            // selalu merah. Keduanya salah — jadi layar diberi tahu bahwa kartu itu memang
+            // berbicara tentang seluruh posisi, dan tidak boleh dibaca sebagai selisih.
+            'glSeluruhPosisi' => $posisi !== PosisiHutang::SEMUA,
             // Dipakai layar untuk menaut ke Detail Transaksi Jurnal per akun, membawa rentang
             // tanggal masa pajaknya — layar tujuan berbawaan "bulan berjalan", jadi tanpa
             // rentang ini tautannya mendarat di masa yang salah.
@@ -166,7 +200,7 @@ class PphController extends Controller
         abort_unless($request->user()?->can('tax.pph.export'), 403);
         [$year, $month] = $this->period($request);
 
-        $rows = collect($this->hitung($year, $month)['rows']);
+        $rows = collect($this->hitung($year, $month, PosisiHutang::dariRequest($request))['rows']);
 
         return response()->streamDownload(function () use ($rows): void {
             $out = fopen('php://output', 'wb');

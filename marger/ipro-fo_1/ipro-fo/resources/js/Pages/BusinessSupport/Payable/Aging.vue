@@ -1,20 +1,27 @@
 <script setup lang="ts">
-import { ref } from 'vue';
+import { ref, computed } from 'vue';
 import { router, Link } from '@inertiajs/vue3';
 import { ArrowLeft, CalendarClock, FileSpreadsheet, Printer } from 'lucide-vue-next';
 import Badge from '@/Components/UI/Badge.vue';
 import EmptyState from '@/Components/UI/EmptyState.vue';
+import PilihPosisiHutang from '@/Components/UI/PilihPosisiHutang.vue';
 
-const props = defineProps<{ view?: string; rows: Array<any>; totals: any; details: Array<any>; dateFrom?: string | null; dateTo?: string | null; pulled?: boolean }>();
+const props = defineProps<{ view?: string; rows: Array<any>; totals: any; details: Array<any>; dateFrom?: string | null; dateTo?: string | null; pulled?: boolean; posisi?: string; posisiOpsi?: Array<{ nilai: string; label: string }> }>();
 const mode = ref(props.view === 'detail' ? 'detail' : 'summary');
 const dateFrom = ref(props.dateFrom ?? '');
 const dateTo = ref(props.dateTo ?? '');
+const posisi = ref(props.posisi ?? 'semua');
 // Data ditarik hanya saat klik "Tampilkan" (pull=1) — hindari load berat di data banyak.
 function applyFilter() {
     router.get(route('bs.ap.aging'), {
-        view: mode.value, date_from: dateFrom.value || undefined, date_to: dateTo.value || undefined, pull: 1,
+        view: mode.value, date_from: dateFrom.value || undefined, date_to: dateTo.value || undefined, posisi: posisi.value, pull: 1,
     }, { preserveState: true, replace: true });
 }
+const paramEkspor = computed(() => ({
+    date_from: props.dateFrom || undefined,
+    date_to: props.dateTo || undefined,
+    posisi: props.posisi ?? 'semua',
+}));
 function fmtRp(v: number) { return Number(v ?? 0).toLocaleString('id-ID'); }
 function fmtDate(d: string) { return d ? new Date(d).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'; }
 </script>
@@ -41,10 +48,11 @@ function fmtDate(d: string) { return d ? new Date(d).toLocaleDateString('id-ID',
                 <label class="mb-1 block text-xs font-medium text-neutral-500">Per Tanggal (acuan aging)</label>
                 <input v-model="dateTo" type="date" title="Tanggal acuan perhitungan umur hutang" class="h-9 rounded-lg border border-neutral-300 bg-white px-2 text-sm dark:border-neutral-700 dark:bg-neutral-900" />
             </div>
+            <PilihPosisiHutang v-model="posisi" :opsi="props.posisiOpsi" />
             <button @click="applyFilter" class="h-9 rounded-lg bg-primary-600 px-5 text-sm font-semibold text-white hover:bg-primary-700">Tampilkan</button>
             <div class="ml-auto flex gap-2">
-                <a :href="route('bs.ap.aging.export-excel', { date_from: dateFrom || undefined, date_to: dateTo || undefined })" class="inline-flex h-9 items-center gap-1.5 rounded-lg border border-emerald-300 bg-emerald-50 px-3 text-sm font-medium text-emerald-700 hover:bg-emerald-100 dark:border-emerald-700/50 dark:bg-emerald-900/30 dark:text-emerald-300"><FileSpreadsheet class="h-4 w-4" /> Excel</a>
-                <a :href="route('bs.ap.aging.export-pdf', { date_from: dateFrom || undefined, date_to: dateTo || undefined })" target="_blank" rel="noopener" class="inline-flex h-9 items-center gap-1.5 rounded-lg border border-danger-300 bg-danger-50 px-3 text-sm font-medium text-danger-700 hover:bg-danger-100 dark:border-danger-700/50 dark:bg-danger-900/30 dark:text-danger-300"><Printer class="h-4 w-4" /> PDF</a>
+                <a :href="route('bs.ap.aging.export-excel', paramEkspor)" class="inline-flex h-9 items-center gap-1.5 rounded-lg border border-emerald-300 bg-emerald-50 px-3 text-sm font-medium text-emerald-700 hover:bg-emerald-100 dark:border-emerald-700/50 dark:bg-emerald-900/30 dark:text-emerald-300"><FileSpreadsheet class="h-4 w-4" /> Excel</a>
+                <a :href="route('bs.ap.aging.export-pdf', paramEkspor)" target="_blank" rel="noopener" class="inline-flex h-9 items-center gap-1.5 rounded-lg border border-danger-300 bg-danger-50 px-3 text-sm font-medium text-danger-700 hover:bg-danger-100 dark:border-danger-700/50 dark:bg-danger-900/30 dark:text-danger-300"><Printer class="h-4 w-4" /> PDF</a>
             </div>
         </div>
 
