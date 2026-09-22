@@ -461,49 +461,9 @@ export function PipelineClient({
               <textarea rows={2} defaultValue={sel.catatan ?? ""} readOnly />
             </div>
 
-            {/* Riwayat — history of every stage change / follow-up / batal */}
-            <div style={{ borderTop: "1px solid var(--line)", paddingTop: 12, marginTop: 4 }}>
-              <label style={{ fontSize: 11.5, fontWeight: 600, color: "var(--sub)" }}>
-                Riwayat perubahan
-              </label>
-              {!history ? (
-                <div className="rolehint" style={{ marginTop: 6 }}>
-                  Memuat riwayat…
-                </div>
-              ) : history.timeline.length === 0 ? (
-                <div className="rolehint" style={{ marginTop: 6 }}>
-                  Belum ada perubahan tercatat.
-                </div>
-              ) : (
-                <ul className="timeline">
-                  {history.timeline.map((e, i) => (
-                    <li key={i}>
-                      <span className="ticon">{e.icon}</span>
-                      <div>
-                        <div className="ttitle">{e.title}</div>
-                        {(e.detail || e.statusLead) && (
-                          <div className="tdetail">
-                            {e.detail}
-                            {e.statusLead && (
-                              <>
-                                {e.detail ? " " : ""}
-                                <LeadBadge t={e.statusLead} />
-                              </>
-                            )}
-                          </div>
-                        )}
-                        <div className="tmeta">
-                          {e.dateLabel} · {e.actor}
-                        </div>
-                      </div>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
-
+            {/* Aksi follow-up — di ATAS Riwayat biar tombol NUP/UTJ langsung kelihatan */}
             {canFu && (
-              <div style={{ borderTop: "1px solid var(--line)", paddingTop: 12, marginTop: 4 }}>
+              <div style={{ borderTop: "1px solid var(--line)", paddingTop: 12, marginTop: 8 }}>
                 <div className="frow">
                   <div className="field">
                     <label>Catatan follow-up</label>
@@ -548,6 +508,48 @@ export function PipelineClient({
                 </p>
               </div>
             )}
+
+            {/* Riwayat — history of every stage change / follow-up / batal */}
+            <div style={{ borderTop: "1px solid var(--line)", paddingTop: 12, marginTop: 4 }}>
+              <label style={{ fontSize: 11.5, fontWeight: 600, color: "var(--sub)" }}>
+                Riwayat perubahan
+              </label>
+              {!history ? (
+                <div className="rolehint" style={{ marginTop: 6 }}>
+                  Memuat riwayat…
+                </div>
+              ) : history.timeline.length === 0 ? (
+                <div className="rolehint" style={{ marginTop: 6 }}>
+                  Belum ada perubahan tercatat.
+                </div>
+              ) : (
+                <ul className="timeline">
+                  {history.timeline.map((e, i) => (
+                    <li key={i}>
+                      <span className="ticon">{e.icon}</span>
+                      <div>
+                        <div className="ttitle">{e.title}</div>
+                        {(e.detail || e.statusLead) && (
+                          <div className="tdetail">
+                            {e.detail}
+                            {e.statusLead && (
+                              <>
+                                {e.detail ? " " : ""}
+                                <LeadBadge t={e.statusLead} />
+                              </>
+                            )}
+                          </div>
+                        )}
+                        <div className="tmeta">
+                          {e.dateLabel} · {e.actor}
+                        </div>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+
             {sel.dead && (
               <div className="notice" style={{ marginTop: 12, background: "#fdecea", borderColor: "#f1c4bb" }}>
                 <span>🚫</span>
