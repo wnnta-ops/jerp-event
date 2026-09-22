@@ -61,8 +61,11 @@ class TarikKontrakMukCommand extends Command
             }
 
             $ku = (array) ($k['kumulatif_hari_ini'] ?? []);
+            // tenant_id SENGAJA tidak dikirim. Di CLI tenant_id() bernilai NULL; pada baris
+            // BARU hook creating milik HasTenant mengisinya dengan default_tenant_id(), tetapi
+            // pada PEMBARUAN hook itu tidak jalan sehingga NULL-nya tertulis — dan TenantScope
+            // di web menambah "where tenant_id = …", membuat barisnya lenyap dari layar.
             $model = BsMukContract::updateOrCreate(['muk_id' => $mukId], [
-                'tenant_id' => tenant_id(),
                 'no_kontrak' => $k['no_kontrak'] ?? null,
                 'no_spk' => $k['no_spk'] ?? null,
                 'jenis' => $k['jenis'] ?? null,
