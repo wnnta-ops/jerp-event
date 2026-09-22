@@ -8,6 +8,7 @@ import {
   ORIGINAL_LOCATIONS,
   TRANSACTION_TYPES,
   categoryOfDocType,
+  isSprLinked,
   type DocType,
 } from "./enums";
 
@@ -41,7 +42,21 @@ const optionalDate = z
   .transform((v) => (v && v.trim() !== "" ? v.trim() : undefined))
   .refine((v) => v === undefined || !Number.isNaN(Date.parse(v)), { message: "Tanggal tidak valid" });
 
-export const documentInputSchema = z
+/**
+ * Opsi skema. `sprWajib` menentukan apakah dokumen AJB HARUS menyebut No. SPR.
+ *
+ * Bawaannya true (setiap AJB baru wajib tertaut — itulah gunanya penautan).
+ * Jalur EDIT memberi false untuk dokumen lama yang memang belum punya tautan,
+ * supaya 22 AJB hasil impor tidak jadi tidak bisa disunting sama sekali hanya
+ * karena mau membetulkan salah ketik judul. Yang sudah tertaut tetap wajib:
+ * mengosongkannya diam-diam akan meninggalkan baris yatim di Back Office.
+ */
+export type OpsiSkema = { sprWajib?: boolean };
+
+export function buatSkemaDokumen(opsi: OpsiSkema = {}) {
+  const sprWajib = opsi.sprWajib ?? true;
+
+  return z
   .object({
     docType: z.enum(DOC_TYPES, { errorMap: () => ({ message: "Pilih jenis dokumen" }) }),
     title: nonEmpty("Judul dokumen wajib diisi"),
@@ -78,6 +93,11 @@ export const documentInputSchema = z
     reminderDate: optionalDate,
     reminderNote: optionalStr,
 
+    // AJB — tautan ke SPR (Final) + data akta yang mengisi layar Detail AJB di BO.
+    sprNumber: optionalStr,
+    notaryName: optionalStr,
+    ajbValue: optionalStr,
+
     accessLevel: z.enum(ACCESS_LEVELS, { errorMap: () => ({ message: "Pilih tingkat akses" }) }),
   })
   .superRefine((data, ctx) => {
@@ -101,7 +121,32 @@ export const documentInputSchema = z
     if (categoryOfDocType(t) === "perizinan" && !data.issueDate) {
       ctx.addIssue({ code: "custom", path: ["issueDate"], message: "Tanggal terbit wajib diisi" });
     }
+
+    // AJB — keempat kolom di bawah ini PERSIS yang ditampilkan layar "Detail AJB"
+    // di Booked Revenue: notaris, nomor akta, tanggal, nominal. Kalau salah satu
+    // kosong, keterangan di sana tetap terbaca "BELUM BAST" walaupun aktanya sudah
+    // ada di sini — jadi kelengkapannya ditegakkan di tempat datanya dimasukkan,
+    // bukan dibiarkan jadi baris setengah jadi di modul sebelah.
+    if (isSprLinked(t)) {
+      if (sprWajib && !data.sprNumber) {
+        ctx.addIssue({ code: "custom", path: ["sprNumber"], message: "Pilih No. SPR (Final) yang ditautkan" });
+      }
+      if (!data.docNumber) {
+        ctx.addIssue({ code: "custom", path: ["docNumber"], message: "Nomor akta AJB wajib diisi" });
+      }
+      if (!data.notaryName) {
+        ctx.addIssue({ code: "custom", path: ["notaryName"], message: "Nama notaris/PPAT wajib diisi" });
+      }
+      if (!data.ajbValue) {
+        ctx.addIssue({ code: "custom", path: ["ajbValue"], message: "Nominal akta wajib diisi" });
+      } else if (!/\d/.test(data.ajbValue)) {
+        ctx.addIssue({ code: "custom", path: ["ajbValue"], message: "Nominal akta harus berupa angka" });
+      }
+    }
   });
+}
+
+export const documentInputSchema = buatSkemaDokumen();
 
 export type DocumentInput = z.input<typeof documentInputSchema>;
 export type DocumentParsed = z.output<typeof documentInputSchema>;

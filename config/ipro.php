@@ -59,6 +59,27 @@ return [
     'legal_url' => rtrim(env('PORTAL_LEGAL_URL', env('APP_URL', 'http://localhost:8080').'/legal'), '/'),
     'sales_url' => rtrim(env('PORTAL_SALES_URL', env('APP_URL', 'http://localhost:8080').'/sales'), '/'),
 
+    // ── Jembatan modul Legal (app/legal) → FO & ipro_bo ────────────────────────
+    // Dipakai endpoint /api/legal-bridge/*: modul Legal mencari SPR (Final) dan
+    // mendorong akta AJB yang baru diarsipkan ke ipro_bo.ajb_documents.
+    //
+    // Kuncinya DITURUNKAN dari PORTAL_SSO_SECRET dengan pemisah domain, bukan
+    // dipakai apa adanya: token SSO yang bocor jadi tidak bisa dipakai memanggil
+    // API ini, dan tanda tangan API tidak bisa ditukar jadi token SSO. Karena
+    // turunan, tidak ada variabel .env baru yang wajib diisi — tetapi bila kedua
+    // secret induknya kosong hasilnya null. Itu FAIL-CLOSED dan disengaja:
+    // kunci turunan dari string kosong bisa dihitung siapa pun, jadi lebih baik
+    // endpoint-nya menolak semua permintaan daripada menerima yang palsu.
+    'legal_bridge_secret' => (static function (): ?string {
+        $langsung = (string) (env('LEGAL_BRIDGE_SECRET') ?: '');
+        if ($langsung !== '') {
+            return $langsung;
+        }
+        $portal = (string) (env('PORTAL_SSO_SECRET', env('SSO_SHARED_SECRET')) ?: '');
+
+        return $portal === '' ? null : hash_hmac('sha256', 'legal-bridge-v1', $portal);
+    })(),
+
     // ── Posting GL FO → ipro_bo ────────────────────────────────────────────────
     'gl_enabled' => (bool) env('IPRO_GL_ENABLED', true),
     // Status jurnal hasil posting FO. DRAFT = belum final → akuntan verifikasi dulu

@@ -5,18 +5,20 @@ import path from "path";
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { getActingUser } from "@/lib/current-user";
-import { documentInputSchema, fieldErrors } from "@/lib/validation";
+import { buatSkemaDokumen, fieldErrors } from "@/lib/validation";
 import {
   DOC_STATUSES,
   ORIGINAL_LOCATION_LABELS,
+  isSprLinked,
   scopeForDocType,
   type DocType,
   type OriginalLocation,
 } from "@/lib/enums";
+import { lepasSinkronAjb, sinkronAjb } from "@/lib/ajb-sync";
 
 export type UpdateResult = { ok: true } | { ok: false; error: string };
 export type EditResult =
-  | { ok: true }
+  | { ok: true; peringatan?: string }
   | { ok: false; errors?: Record<string, string>; error?: string };
 
 const MAX_BYTES = 20 * 1024 * 1024;
@@ -90,6 +92,9 @@ const FIELD_LABELS: Record<string, string> = {
   issuedCapital: "Modal ditempatkan",
   shareholders: "Pemegang saham",
   parties: "Pihak",
+  sprNumber: "No. SPR (Final)",
+  notaryName: "Notaris / PPAT",
+  ajbValue: "Nominal akta",
 };
 
 /**
@@ -129,15 +134,22 @@ export async function updateDocument(docId: string, formData: FormData): Promise
     parties: formData.get("parties"),
     reminderDate: formData.get("reminderDate"),
     reminderNote: formData.get("reminderNote"),
+    sprNumber: formData.get("sprNumber"),
+    notaryName: formData.get("notaryName"),
+    ajbValue: formData.get("ajbValue"),
     accessLevel: formData.get("accessLevel"),
   };
 
-  const parsed = documentInputSchema.safeParse(raw);
-  if (!parsed.success) return { ok: false, errors: fieldErrors(parsed.error) };
-  const data = parsed.data;
-
   const existing = await prisma.document.findUnique({ where: { id: docId } });
   if (!existing) return { ok: false, error: "Dokumen tidak ditemukan." };
+
+  // Dokumen AJB lama (hasil impor) memang belum punya No. SPR. Mewajibkannya di
+  // sini akan membuat dokumen itu tidak bisa disunting sama sekali — termasuk
+  // untuk membetulkan salah ketik. Yang SUDAH tertaut tetap wajib: mengosongkan
+  // tautannya diam-diam meninggalkan baris yatim di Back Office.
+  const parsed = buatSkemaDokumen({ sprWajib: Boolean(existing.sprNumber) }).safeParse(raw);
+  if (!parsed.success) return { ok: false, errors: fieldErrors(parsed.error) };
+  const data = parsed.data;
 
   const pic = await prisma.user.findUnique({ where: { id: data.picId } });
   if (!pic) return { ok: false, errors: { picId: "Penanggung jawab tidak ditemukan" } };
@@ -177,6 +189,11 @@ export async function updateDocument(docId: string, formData: FormData): Promise
     parties: data.parties ?? null,
     reminderDate: data.reminderDate ? new Date(data.reminderDate) : null,
     reminderNote: data.reminderNote ?? null,
+    // Tautan AJB → SPR (Final); dikosongkan bila jenis dokumennya diubah jadi
+    // bukan AJB, supaya tidak ada nomor SPR yatim menempel di baris ini.
+    sprNumber: isSprLinked(docType) ? data.sprNumber ?? null : null,
+    notaryName: isSprLinked(docType) ? data.notaryName ?? null : null,
+    ajbValue: isSprLinked(docType) ? data.ajbValue ?? null : null,
     accessLevel: data.accessLevel,
   };
 
@@ -246,7 +263,7 @@ export async function updateDocument(docId: string, formData: FormData): Promise
     });
   }
 
-  await prisma.document.update({
+  const doc = await prisma.document.update({
     where: { id: docId },
     data: {
       ...next,
@@ -255,10 +272,15 @@ export async function updateDocument(docId: string, formData: FormData): Promise
     },
   });
 
+  // Selalu disalurkan — juga ketika jenis dokumennya BERUBAH dari AJB jadi lain.
+  // sinkronAjb() melepas baris di Back Office untuk kasus itu; tanpa panggilan
+  // ini, akta yang sudah bukan AJB lagi akan tetap mengisi Detail AJB selamanya.
+  const sinkron = await sinkronAjb(doc);
+
   revalidatePath("/");
   revalidatePath("/timeline");
   revalidatePath("/alerts");
-  return { ok: true };
+  return { ok: true, ...(sinkron.pesan ? { peringatan: sinkron.pesan } : {}) };
 }
 
 /** Permanent delete — removes the row, its files (disk + db), and history. */
@@ -268,6 +290,11 @@ export async function deleteDocument(docId: string): Promise<UpdateResult> {
 
   const doc = await prisma.document.findUnique({ where: { id: docId }, select: { id: true } });
   if (!doc) return { ok: false, error: "Dokumen tidak ditemukan." };
+
+  // Lepas tautannya DULU, selagi dokumennya masih ada. Kalau dibalik dan
+  // pelepasan gagal, baris di Detail AJB jadi yatim tanpa ada dokumen tersisa
+  // di sini yang bisa dipakai mengulang pelepasannya.
+  await lepasSinkronAjb(docId);
 
   const dir = path.join(process.cwd(), "public", "uploads", docId);
   await rm(dir, { recursive: true, force: true });
