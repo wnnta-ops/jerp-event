@@ -23,14 +23,14 @@ class KprSetupSeeder extends Seeder
 
         // ── Kategori Retensi (#69: persentase default, DAJAM = pengurangan, keterangan) ──
         $categories = [
-            ['code' => 'TANAH MATANG',   'name' => 'TANAH MATANG',                'percentage' => 50, 'is_dajam' => false, 'keterangan' => null],
-            ['code' => 'TANAH MATANG 1', 'name' => 'TANAH MATANG 1 (koreksi)',    'percentage' => 50, 'is_dajam' => false, 'keterangan' => 'Untuk koreksi tahap tanah matang'],
-            ['code' => 'PONDASI',        'name' => 'PONDASI',                     'percentage' => 20, 'is_dajam' => false, 'keterangan' => null],
-            ['code' => 'TOPPING OFF',    'name' => 'TOPPING OFF',                 'percentage' => 20, 'is_dajam' => false, 'keterangan' => null],
-            ['code' => 'BAST + AJB',     'name' => 'BAST + AJB',                  'percentage' => 10, 'is_dajam' => false, 'keterangan' => null],
-            ['code' => 'DAJAM',          'name' => 'DAJAM',                       'percentage' => 0,  'is_dajam' => true,  'keterangan' => 'Pengurangan retensi (dana antisipasi/jaminan)'],
+            ['code' => 'TANAH MATANG',   'name' => 'TANAH MATANG',                'percentage' => 50, 'is_dajam' => false, 'kpr_sync' => 'dajam', 'kpr_sync' => 'dajam', 'kpr_sync' => 'bast_ajb', 'kpr_sync' => 'topping_off', 'kpr_sync' => 'pondasi', 'kpr_sync' => 'tanah_matang', 'kpr_sync' => 'tanah_matang', 'keterangan' => null],
+            ['code' => 'TANAH MATANG 1', 'name' => 'TANAH MATANG 1 (koreksi)',    'percentage' => 50, 'is_dajam' => false, 'kpr_sync' => 'dajam', 'kpr_sync' => 'dajam', 'kpr_sync' => 'bast_ajb', 'kpr_sync' => 'topping_off', 'kpr_sync' => 'pondasi', 'kpr_sync' => 'tanah_matang', 'kpr_sync' => 'tanah_matang', 'keterangan' => 'Untuk koreksi tahap tanah matang'],
+            ['code' => 'PONDASI',        'name' => 'PONDASI',                     'percentage' => 20, 'is_dajam' => false, 'kpr_sync' => 'dajam', 'kpr_sync' => 'dajam', 'kpr_sync' => 'bast_ajb', 'kpr_sync' => 'topping_off', 'kpr_sync' => 'pondasi', 'kpr_sync' => 'tanah_matang', 'kpr_sync' => 'tanah_matang', 'keterangan' => null],
+            ['code' => 'TOPPING OFF',    'name' => 'TOPPING OFF',                 'percentage' => 20, 'is_dajam' => false, 'kpr_sync' => 'dajam', 'kpr_sync' => 'dajam', 'kpr_sync' => 'bast_ajb', 'kpr_sync' => 'topping_off', 'kpr_sync' => 'pondasi', 'kpr_sync' => 'tanah_matang', 'kpr_sync' => 'tanah_matang', 'keterangan' => null],
+            ['code' => 'BAST + AJB',     'name' => 'BAST + AJB',                  'percentage' => 10, 'is_dajam' => false, 'kpr_sync' => 'dajam', 'kpr_sync' => 'dajam', 'kpr_sync' => 'bast_ajb', 'kpr_sync' => 'topping_off', 'kpr_sync' => 'pondasi', 'kpr_sync' => 'tanah_matang', 'kpr_sync' => 'tanah_matang', 'keterangan' => null],
+            ['code' => 'DAJAM',          'name' => 'DAJAM',                       'percentage' => 0,  'is_dajam' => true, 'kpr_sync' => 'dajam', 'kpr_sync' => 'dajam', 'kpr_sync' => 'bast_ajb', 'kpr_sync' => 'topping_off', 'kpr_sync' => 'pondasi', 'kpr_sync' => 'tanah_matang', 'kpr_sync' => 'tanah_matang',  'keterangan' => 'Pengurangan retensi (dana antisipasi/jaminan)'],
             // #146: DAJAM Pajak → memunculkan input pembayaran SSP/BPHTB pada form pencairan; pembayaran mengurangi outstanding AR.
-            ['code' => 'DAJAM PAJAK',    'name' => 'DAJAM Pajak (SSP/BPHTB)',     'percentage' => 0,  'is_dajam' => true,  'keterangan' => 'DAJAM pajak — input pembayaran SSP/BPHTB; mengurangi piutang customer'],
+            ['code' => 'DAJAM PAJAK',    'name' => 'DAJAM Pajak (SSP/BPHTB)',     'percentage' => 0,  'is_dajam' => true, 'kpr_sync' => 'dajam', 'kpr_sync' => 'dajam', 'kpr_sync' => 'bast_ajb', 'kpr_sync' => 'topping_off', 'kpr_sync' => 'pondasi', 'kpr_sync' => 'tanah_matang', 'kpr_sync' => 'tanah_matang',  'keterangan' => 'DAJAM pajak — input pembayaran SSP/BPHTB; mengurangi piutang customer'],
         ];
         $catIds = [];
         foreach ($categories as $i => $c) {
@@ -40,6 +40,9 @@ class KprSetupSeeder extends Seeder
                     'name'       => $c['name'],
                     'percentage' => $c['percentage'],
                     'is_dajam'   => $c['is_dajam'],
+                    // Tanpa ini instalasi baru lahir ber-kpr_sync NULL, dan ketujuh kategori
+                    // bawaannya langsung tidak bisa disunting (validasinya mewajibkan sinkron).
+                    'kpr_sync'   => $c['kpr_sync'],
                     'keterangan' => $c['keterangan'],
                     'project_id' => $project?->id,
                     'sort_order' => $i,

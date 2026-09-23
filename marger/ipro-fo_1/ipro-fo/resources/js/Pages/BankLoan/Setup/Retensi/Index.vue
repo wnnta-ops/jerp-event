@@ -10,6 +10,10 @@ const props = defineProps<{
     categories: any;
     projects: Array<{ id: number; name: string }>;
     filters: Record<string, any>;
+    // Daftar pilihan datang dari server (RetentionCategory::KPR_SYNC) — disalin di sini,
+    // menambah satu pilihan berarti mengingat dua tempat dan yang terlewat hanya menolak
+    // simpan tanpa menjelaskan kenapa.
+    syncOptions: Record<string, string>;
 }>();
 
 const search = ref(props.filters.search ?? '');
@@ -24,7 +28,7 @@ function display() {
 
 const showModal = ref(false);
 const editingId = ref<number | null>(null);
-const form = useForm({ project_id: '' as any, code: '', name: '', percentage: 0, is_dajam: false, keterangan: '', sort_order: 0, is_active: true });
+const form = useForm({ project_id: '' as any, code: '', name: '', percentage: 0, is_dajam: false, kpr_sync: '', keterangan: '', sort_order: 0, is_active: true });
 
 function openCreate() {
     editingId.value = null;
@@ -40,6 +44,7 @@ function openEdit(c: any) {
     form.name = c.name;
     form.percentage = Number(c.percentage ?? 0);
     form.is_dajam = !!c.is_dajam;
+    form.kpr_sync = c.kpr_sync ?? '';
     form.keterangan = c.keterangan ?? '';
     form.sort_order = c.sort_order ?? 0;
     form.is_active = !!c.is_active;
@@ -88,6 +93,7 @@ function destroy(c: any) {
                         <th class="px-4 py-3">Kategori</th>
                         <th class="px-4 py-3">Project</th>
                         <th class="px-4 py-3">Nama</th>
+                        <th class="px-4 py-3">Sinkron Master Data KPR</th>
                         <th class="px-4 py-3 text-right">Persentase</th>
                         <th class="px-4 py-3">Status</th>
                         <th class="px-4 py-3 text-right">Action</th>
@@ -98,6 +104,13 @@ function destroy(c: any) {
                         <td class="px-4 py-3 font-semibold">{{ c.code }}<Badge v-if="c.is_dajam" variant="warning" size="sm" class="ml-2">DAJAM</Badge></td>
                         <td class="px-4 py-3">{{ c.project?.name ?? '—' }}</td>
                         <td class="px-4 py-3">{{ c.name }}<div v-if="c.keterangan" class="text-xs text-neutral-400">{{ c.keterangan }}</div></td>
+                        <!-- Yang belum sinkron ditandai di sini, bukan hanya ditolak saat disimpan:
+                             tanpa penanda, operator tidak punya cara melihat kategori mana yang
+                             masih berdiri sebagai kolom sendirian di Master Data KPR. -->
+                        <td class="px-4 py-3">
+                            <Badge v-if="c.kpr_sync" variant="info" size="sm">{{ syncOptions[c.kpr_sync] ?? c.kpr_sync }}</Badge>
+                            <Badge v-else variant="warning" size="sm">Belum sinkron</Badge>
+                        </td>
                         <td class="px-4 py-3 text-right font-mono">{{ Number(c.percentage ?? 0).toFixed(2) }}%</td>
                         <td class="px-4 py-3"><Badge :variant="c.is_active ? 'success' : 'neutral'" dot>{{ c.is_active ? 'Aktif' : 'Nonaktif' }}</Badge></td>
                         <td class="px-4 py-3">
@@ -134,6 +147,20 @@ function destroy(c: any) {
                             <label class="mb-1 block text-xs font-medium text-neutral-500">Nama *</label>
                             <input v-model="form.name" type="text" required class="h-9 w-full rounded-lg border border-neutral-300 bg-white px-3 text-sm dark:border-neutral-700 dark:bg-neutral-900" />
                             <p v-if="form.errors.name" class="mt-1 text-xs text-danger-500">{{ form.errors.name }}</p>
+                        </div>
+                        <!-- Sinkron dengan Master Data KPR — menentukan KOLOM mana di layar itu
+                             yang menampung pencairan kategori ini. Kategori yang bersinkron sama
+                             berdiri sebagai SATU kolom (mis. TANAH MATANG 50%/20%/30%). Wajib:
+                             yang belum disinkronkan akan berdiri sebagai kolomnya sendiri dan
+                             terbaca seperti kategori terpisah, padahal hanya belum diisi. -->
+                        <div>
+                            <label class="mb-1 block text-xs font-medium text-neutral-500">Sinkron dengan Master Data KPR *</label>
+                            <select v-model="form.kpr_sync" required class="h-9 w-full rounded-lg border border-neutral-300 bg-white px-3 text-sm dark:border-neutral-700 dark:bg-neutral-900">
+                                <option value="">— pilih kolom —</option>
+                                <option v-for="(label, key) in syncOptions" :key="key" :value="key">{{ label }}</option>
+                            </select>
+                            <p v-if="form.errors.kpr_sync" class="mt-1 text-xs text-danger-500">{{ form.errors.kpr_sync }}</p>
+                            <p v-else class="mt-1 text-xs text-neutral-400">Kolom Collection Retensi tempat pencairan kategori ini dijumlahkan.</p>
                         </div>
                         <!-- #69 persentase default + DAJAM -->
                         <div class="flex items-end gap-4">

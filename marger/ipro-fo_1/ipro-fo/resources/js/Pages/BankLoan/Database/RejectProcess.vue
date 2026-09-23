@@ -5,6 +5,7 @@ import { ArrowLeft, ShieldX, Search, Printer, FilterX, FileSpreadsheet } from 'l
 import Badge from '@/Components/UI/Badge.vue';
 import EmptyState from '@/Components/UI/EmptyState.vue';
 import ColumnFilter from '@/Components/UI/ColumnFilter.vue';
+import KonfirmasiRekomBatal from '@/Components/UI/KonfirmasiRekomBatal.vue';
 
 type Row = { id: number; number: string; customer_id: number | null; customer: string | null; bank: string | null; unit: string | null; stage: string; reason: string | null; rejected_at: string | null };
 const props = defineProps<{ records: Row[] }>();
@@ -97,10 +98,16 @@ function toggleGrup(g: Grup) {
     else g.rows.forEach((r) => selected.value.add(r.id));
 }
 
+/* Memo Rekom Batal — satuan & massal MELEWATI KONFIRMASI DUA TAHAP yang sama.
+   Keduanya hanya membuka modal dengan daftar id yang berbeda; modal itulah yang mengirim
+   POST (sekaligus membuka tab memonya). Satu jalur, jadi hasil massal dan hasil per-baris
+   tidak mungkin perlahan berbeda — dan tidak ada pintu yang melewati konfirmasinya. */
+const konfirmasi = ref<{ buka: (ids: string) => void } | null>(null);
+
+function mintaRekomBatal(ids: string) { konfirmasi.value?.buka(ids); }
 function printBulk() {
     if (!selected.value.size) return;
-    const url = route('kpr.database.reject-kpr.memo-form', { ids: [...selected.value].join(',') });
-    window.open(url, '_blank', 'noopener');
+    mintaRekomBatal([...selected.value].join(','));
 }
 
 // Unduh Excel: baris TERPILIH bila ada centang; selain itu mengikuti hasil FILTER yang tampil.
@@ -199,7 +206,10 @@ function downloadExcel() {
                         <td class="px-3 py-3" :class="i > 0 ? 'border-t border-neutral-100 dark:border-neutral-800' : ''"><span v-if="r.reason" class="text-neutral-700 dark:text-neutral-200">{{ r.reason }}</span><span v-else class="text-xs italic text-neutral-400">— tanpa alasan —</span></td>
                         <td class="whitespace-nowrap px-3 py-3" :class="i > 0 ? 'border-t border-neutral-100 dark:border-neutral-800' : ''">{{ fmtDate(r.rejected_at) }}</td>
                         <td class="px-3 py-3 text-center whitespace-nowrap" :class="i > 0 ? 'border-t border-neutral-100 dark:border-neutral-800' : ''">
-                            <a :href="route('kpr.database.reject-kpr.memo-form', { ids: r.id })" target="_blank" rel="noopener" class="inline-flex items-center gap-1.5 rounded-lg border border-danger-300 bg-danger-50 px-3 py-1.5 text-xs font-medium text-danger-700 hover:bg-danger-100 dark:border-danger-700/50 dark:bg-danger-900/30 dark:text-danger-300"><Printer class="h-3.5 w-3.5" /> Memo Rekom Batal</a>
+                            <!-- <button>, BUKAN <a>: rekom batal memberi instruksi pembatalan SPR ke admin
+                                 sales, jadi ia harus melewati konfirmasi dua tahap lebih dulu. Sebuah
+                                 tautan sudah membuka tabnya sebelum pertanyaan pertama sempat muncul. -->
+                            <button type="button" @click="mintaRekomBatal(String(r.id))" class="inline-flex items-center gap-1.5 rounded-lg border border-danger-300 bg-danger-50 px-3 py-1.5 text-xs font-medium text-danger-700 hover:bg-danger-100 dark:border-danger-700/50 dark:bg-danger-900/30 dark:text-danger-300"><Printer class="h-3.5 w-3.5" /> Memo Rekom Batal</button>
                         </td>
                     </tr>
                 </tbody>
@@ -207,5 +217,10 @@ function downloadExcel() {
             <EmptyState v-if="!props.records.length" title="Belum ada proses KPR yang ditolak" description="Proses KPR yang Anda tolak pada proses Submitted/SP3K akan muncul di sini beserta alasannya." />
             <EmptyState v-else-if="!filtered.length" title="Tidak ada hasil" description="Tidak ada proses KPR yang cocok dengan filter. Klik Reset filter untuk menampilkan semua." />
         </div>
+
+        <!-- Satu instance untuk seluruh halaman: tombol per-baris maupun tombol massal
+             membukanya dengan daftar id yang berbeda. Satu modal berarti satu jalur, dan
+             tidak ada baris yang punya konfirmasi sendiri yang bisa berbeda kalimatnya. -->
+        <KonfirmasiRekomBatal ref="konfirmasi" :action="route('kpr.database.reject-kpr.rekom-batal')" />
     </div>
 </template>

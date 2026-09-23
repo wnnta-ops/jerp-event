@@ -9,9 +9,16 @@ use Illuminate\Support\Facades\Schema;
 /**
  * Posisi kredit pada Kategori Invoice (AP): Hutang atau Beban Masih Harus Dibayar.
  *
- * Nilainya HANYA menentukan akun yang dikredit saat invoice dijurnal. Seluruh layar dan
- * laporan Account Payable — Aging, Kartu Hutang, daftar invoice, ekspor — dihitung dari
- * tabel bs_ap_invoices, bukan dari saldo akun buku besar, jadi tidak satu pun berubah.
+ * Nilainya menentukan akun yang dikredit saat invoice dijurnal.
+ *
+ * CATATAN (diperbarui 23 September 2026): saat migrasi ini ditulis, kolom ini TIDAK dibaca
+ * layar mana pun — kalimat aslinya berbunyi "seluruh layar dan laporan Account Payable tidak
+ * satu pun berubah". Itu tidak berlaku lagi. Kedelapan layar Query Account Payable kini punya
+ * penyaring Hutang Usaha (AP) / Biaya yang Masih Harus Dibayar (BYMHD) / Tampilkan Semua, dan
+ * kolom inilah sumber kebenarannya (lihat App\Domain\BusinessSupport\Support\PosisiHutang).
+ *
+ * Artinya mengubah posisi sebuah kategori kini MEMINDAHKAN invoice-invoice lamanya antar
+ * kolom laporan, bukan sekadar mengubah penjurnalan invoice berikutnya.
  *
  * KENAPA AKUNNYA TETAP DISIMPAN DI payable_account_id, bukan dibiarkan kosong dan
  * disimpulkan dari posisi: seluruh hilir membaca kolom itu — RegisterApInvoice membekukannya

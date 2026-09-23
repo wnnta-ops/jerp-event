@@ -783,6 +783,11 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
     // AR — Penghapusan Piutang (write-off bad debt)
     Route::get('/business-support/receivable-penghapusan', [BsArPenghapusanController::class, 'index'])->name('bs.ar.penghapusan.index');
     Route::post('/business-support/receivable-penghapusan/{invoice}', [BsArPenghapusanController::class, 'store'])->name('bs.ar.penghapusan.store');
+    // AR — Piutang Lain: saldo awal/penambahan/pelunasan/saldo akhir seluruh akun di bawah
+    // 101030101 (Pemegang Saham, Karyawan, Lainnya), dari buku besar. Prefix SATU SEGMEN
+    // (receivable-piutang-lain) — wildcard /receivable/{invoice} di bawah akan menelan
+    // /business-support/receivable/apa-pun.
+    Route::get('/business-support/receivable-piutang-lain', [\App\Http\Controllers\Web\BusinessSupport\Receivable\PiutangLainController::class, 'index'])->name('bs.ar.piutang-lain');
     // AR — Cetak bukti piutang (satuan & massal).
     // Prefix TERPISAH (receivable-cetak) supaya tidak tertangkap wildcard /receivable/{invoice} di bawah.
     Route::get('/business-support/receivable-cetak', [BsArPrintController::class, 'invoiceBulk'])->name('bs.ar.print-bulk');
@@ -1339,11 +1344,20 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
     // ── Database KPR — arsip proses yang ditolak ──
     Route::get('/kpr-database/reject-bi-checking', [App\Http\Controllers\Web\BankLoan\KprDatabaseController::class, 'rejectBiChecking'])->name('kpr.database.reject-bi');
     Route::get('/kpr-database/reject-bi-checking-excel', [App\Http\Controllers\Web\BankLoan\KprDatabaseController::class, 'rejectBiCheckingExcel'])->name('kpr.database.reject-bi.excel'); // unduh rincian Excel
+    // Memo Rekom Batal (massal / per-baris) — ?ids=. Jalurnya SATU SEGMEN ('…-memo-batal',
+    // bukan '…/memo-batal') supaya tidak tertangkap rute '{initiation}' di bawah, yang akan
+    // mencoba memuat inisiasi bernama "memo-batal" lalu 404 tanpa menjelaskan apa pun.
+    Route::get('/kpr-database/reject-bi-checking-memo-batal', [App\Http\Controllers\Web\BankLoan\KprDatabaseController::class, 'rejectBiCheckingMemoForm'])->name('kpr.database.reject-bi.memo-form');
+    // Mencatat rekom batal (POST, sesudah dua tahap konfirmasi) lalu mengalihkan ke memo di atas.
+    // Inilah yang membuka tombol "Ajukan Pembatalan" pada Pembatalan Kontrak di aplikasi FO;
+    // rute GET memo sengaja tetap bebas efek samping supaya aman dimuat ulang.
+    Route::post('/kpr-database/reject-bi-checking-rekom-batal', [App\Http\Controllers\Web\BankLoan\KprDatabaseController::class, 'rejectBiCheckingRekomBatal'])->name('kpr.database.reject-bi.rekom-batal');
     Route::get('/kpr-database/reject-bi-checking/{initiation}/cetak', [App\Http\Controllers\Web\BankLoan\KprDatabaseController::class, 'rejectBiCheckingPrint'])->name('kpr.database.reject-bi.cetak'); // lembar A4 "Berita Acara Reject BI Checking" (dibuka tab baru dari tombol Cetak di halaman detail)
     Route::get('/kpr-database/reject-bi-checking/{initiation}', [App\Http\Controllers\Web\BankLoan\KprDatabaseController::class, 'rejectBiCheckingDetail'])->name('kpr.database.reject-bi.detail');
     Route::get('/kpr-database/reject-proses-kpr', [App\Http\Controllers\Web\BankLoan\KprDatabaseController::class, 'rejectProcess'])->name('kpr.database.reject-kpr');
     Route::get('/kpr-database/reject-proses-kpr-excel', [App\Http\Controllers\Web\BankLoan\KprDatabaseController::class, 'rejectProcessExcel'])->name('kpr.database.reject-kpr.excel'); // unduh rincian Excel
     Route::get('/kpr-database/reject-proses-kpr-memo-batal', [App\Http\Controllers\Web\BankLoan\KprDatabaseController::class, 'rejectProcessMemoForm'])->name('kpr.database.reject-kpr.memo-form'); // form editable Memo Rekom Batal (massal / per-baris) — ?ids=
+    Route::post('/kpr-database/reject-proses-kpr-rekom-batal', [App\Http\Controllers\Web\BankLoan\KprDatabaseController::class, 'rejectProcessRekomBatal'])->name('kpr.database.reject-kpr.rekom-batal'); // catat rekom batal → buka tombol Ajukan Pembatalan di FO
     // Realisasi vs Budget — target akad KPR per bulan vs realisasinya; target diisi lewat import Excel.
     Route::get('/kpr-database/realisasi-vs-budget', [App\Http\Controllers\Web\BankLoan\KprTargetRealisasiController::class, 'index'])->name('kpr.database.realisasi-budget');
     Route::get('/kpr-database/realisasi-vs-budget/template', [App\Http\Controllers\Web\BankLoan\KprTargetRealisasiController::class, 'template'])->name('kpr.database.realisasi-budget.template');

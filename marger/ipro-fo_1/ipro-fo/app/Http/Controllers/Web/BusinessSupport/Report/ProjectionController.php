@@ -6,6 +6,7 @@ namespace App\Http\Controllers\Web\BusinessSupport\Report;
 
 use App\Domain\BusinessSupport\Models\BsApInvoice;
 use App\Domain\BusinessSupport\Models\BsArInvoice;
+use App\Domain\BusinessSupport\Support\PosisiHutang;
 use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
@@ -25,6 +26,10 @@ class ProjectionController extends Controller
         abort_unless($request->user()?->can('ap.invoice.view') || $request->user()?->can('ar.view'), 403);
 
         $mode  = $request->input('mode') === 'piutang' ? 'piutang' : 'hutang';
+        // Posisi hutang HANYA berlaku pada cabang hutang. Cabang piutang membaca BsArInvoice,
+        // yang tidak punya kategori invoice AP sama sekali — membawa pilihan ini ke sana berarti
+        // menyodorkan penyaring yang tidak menyaring apa pun.
+        $posisi = $mode === 'hutang' ? PosisiHutang::dariRequest($request) : PosisiHutang::SEMUA;
         $today = now()->startOfDay();
 
         // Bucket keys: overdue + 12 bulan + beyond.
@@ -68,7 +73,7 @@ class ProjectionController extends Controller
         $periodItems = [];
 
         if ($mode === 'hutang') {
-            BsApInvoice::with('supplier:id,code,name')->where('status', 'open')->get()->each(function ($inv) use ($add, $bucketOf, &$periodItems, $from, $to, $today): void {
+            PosisiHutang::saring(BsApInvoice::with('supplier:id,code,name'), $posisi)->where('status', 'open')->get()->each(function ($inv) use ($add, $bucketOf, &$periodItems, $from, $to, $today): void {
                 $out = round((float) $inv->outstanding, 2);
                 if ($out <= 0.009) {
                     return;
@@ -119,7 +124,8 @@ class ProjectionController extends Controller
             'buckets'     => $buckets,
             'rows'        => $rows,
             'totals'      => $totals,
-            'filters'     => ['from' => $from->toDateString(), 'to' => $to->toDateString()], // #131
+            'filters'     => ['from' => $from->toDateString(), 'to' => $to->toDateString(), 'posisi' => $posisi], // #131
+            'posisiOpsi'  => PosisiHutang::opsi(),
             'periodItems' => $periodItems,
             'periodTotal' => $periodTotal,
         ]);

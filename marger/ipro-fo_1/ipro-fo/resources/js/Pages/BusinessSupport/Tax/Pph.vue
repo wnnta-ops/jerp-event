@@ -4,6 +4,7 @@ import { router, Link } from '@inertiajs/vue3';
 import { ArrowLeft, Landmark, Download, ReceiptText, Printer, BookText } from 'lucide-vue-next';
 import Badge from '@/Components/UI/Badge.vue';
 import EmptyState from '@/Components/UI/EmptyState.vue';
+import PilihPosisiHutang from '@/Components/UI/PilihPosisiHutang.vue';
 
 const props = defineProps<{
     period: { year: number; month: number };
@@ -15,13 +16,18 @@ const props = defineProps<{
     belumApproved: Record<string, number>;
     akun: Array<{ id: number; code: string; name: string; article: string }>;
     periode: { from: string; to: string };
+    posisi?: string;
+    posisiOpsi?: Array<{ nilai: string; label: string }>;
+    disisihkan?: number;
+    glSeluruhPosisi?: boolean;
 }>();
 
 const year = ref(props.period.year);
 const month = ref(props.period.month);
+const posisi = ref(props.posisi ?? 'semua');
 const months = ['Januari','Februari','Maret','April','Mei','Juni','Juli','Agustus','September','Oktober','November','Desember'];
 const years = Array.from({ length: 6 }, (_, i) => new Date().getFullYear() - i);
-function applyPeriod() { router.get(route('bs.tax.pph'), { year: year.value, month: month.value }, { preserveState: true, replace: true }); }
+function applyPeriod() { router.get(route('bs.tax.pph'), { year: year.value, month: month.value, posisi: posisi.value }, { preserveState: true, replace: true }); }
 function fmtRp(v: number) { return 'Rp ' + Number(v ?? 0).toLocaleString('id-ID'); }
 function fmtDate(d: string) { return d ? new Date(d).toLocaleDateString('id-ID', { day:'2-digit', month:'short', year:'numeric' }) : '—'; }
 const articleKeys = Object.keys(props.byArticle);
@@ -47,12 +53,22 @@ const linkCls = 'font-mono text-xs text-primary-600 hover:underline dark:text-pr
             <h1 class="flex items-center gap-2 text-2xl font-bold"><Landmark class="h-6 w-6 text-accent-600" /> Rekap PPh <span class="text-base font-normal text-neutral-400">(SPT Masa — Pemotongan)</span></h1>
             <div class="flex gap-2">
                 <select v-model.number="month" @change="applyPeriod" class="h-9 rounded-lg border border-neutral-300 bg-white px-3 text-sm dark:border-neutral-700 dark:bg-neutral-900"><option v-for="(m,i) in months" :key="i" :value="i+1">{{ m }}</option></select>
+                <PilihPosisiHutang v-model="posisi" :opsi="props.posisiOpsi" label="" @ubah="applyPeriod" />
                 <select v-model.number="year" @change="applyPeriod" class="h-9 rounded-lg border border-neutral-300 bg-white px-3 text-sm dark:border-neutral-700 dark:bg-neutral-900"><option v-for="y in years" :key="y" :value="y">{{ y }}</option></select>
                 <a :href="route('bs.tax.cetak.pph', { year: period.year, month: period.month })" target="_blank" class="inline-flex h-9 items-center gap-1.5 rounded-lg border border-neutral-300 px-3 text-sm font-medium hover:bg-neutral-50 dark:border-neutral-700"><Printer class="h-4 w-4" /> Cetak SPT</a>
-                <a :href="route('bs.tax.pph.export', { year: period.year, month: period.month })" class="inline-flex h-9 items-center gap-1.5 rounded-lg border border-neutral-300 px-3 text-sm font-medium hover:bg-neutral-50 dark:border-neutral-700"><Download class="h-4 w-4" /> CSV</a>
+                <a :href="route('bs.tax.pph.export', { year: period.year, month: period.month, posisi: props.posisi ?? 'semua' })" class="inline-flex h-9 items-center gap-1.5 rounded-lg border border-neutral-300 px-3 text-sm font-medium hover:bg-neutral-50 dark:border-neutral-700"><Download class="h-4 w-4" /> CSV</a>
             </div>
         </div>
         <p class="text-sm text-neutral-500">Masa Pajak <b>{{ months[period.month-1] }} {{ period.year }}</b> — PPh yang dipotong perusahaan (kewajiban setor).</p>
+
+        <!-- Layar ini digerakkan buku besar: sebagian pemotongan (PPh 21 Payroll, jurnal manual)
+             tidak punya invoice hutang sehingga tidak punya posisi. Jumlahnya DISEBUT, bukan
+             hilang diam-diam — tanpa keterangan ini angka rekapnya terbaca seolah itulah seluruh
+             pemotongan masa tersebut. -->
+        <p v-if="(props.disisihkan ?? 0) > 0" class="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-700/50 dark:bg-amber-900/20 dark:text-amber-300">
+            <b>{{ props.disisihkan }} baris</b> tidak ditampilkan karena tidak berasal dari invoice hutang (mis. PPh 21 Payroll atau jurnal manual), sehingga tidak punya posisi Hutang Usaha / BYMHD.
+            Pilih <b>Tampilkan Semua</b> untuk melihat seluruh pemotongan masa ini.
+        </p>
         <p class="text-sm text-neutral-500">
             Rinciannya dibaca langsung dari <b>akun Hutang PPh di buku besar</b>, jadi isinya sama dengan
             <b>Detail Transaksi Jurnal</b> untuk keempat akun itu — klik kode akun pada kartu di bawah untuk membukanya.
@@ -63,7 +79,11 @@ const linkCls = 'font-mono text-xs text-primary-600 hover:underline dark:text-pr
             <div v-for="a in articleKeys" :key="a" class="card p-4">
                 <div class="text-xs uppercase text-neutral-400">{{ a }}</div>
                 <div class="mt-1 text-xl font-bold" :class="byArticle[a] > 0 ? 'text-accent-600' : 'text-neutral-400'">{{ fmtRp(byArticle[a]) }}</div>
-                <div class="mt-1 text-[11px] text-neutral-400">GL: {{ fmtRp(gl[a]) }} <span v-if="Math.abs(gl[a]-byArticle[a]) < 1" class="text-success-600">✓</span></div>
+                <div class="mt-1 text-[11px] text-neutral-400">
+                    GL: {{ fmtRp(gl[a]) }}
+                    <span v-if="!props.glSeluruhPosisi && Math.abs(gl[a]-byArticle[a]) < 1" class="text-success-600">✓</span>
+                    <span v-else-if="props.glSeluruhPosisi" title="Angka GL dihitung dari seluruh posisi, jadi tidak dibandingkan saat penyaring posisi aktif">(seluruh posisi)</span>
+                </div>
                 <!-- Jurnal yang belum Approved tetap tampil di rincian tetapi TIDAK ikut
                      menaikkan angka SPT — disebut terpisah supaya selisihnya tidak jadi teka-teki. -->
                 <div v-if="belumApproved[a]" class="mt-0.5 text-[11px] text-warning-600 dark:text-warning-400">belum approved: {{ fmtRp(belumApproved[a]) }}</div>

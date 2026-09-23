@@ -177,6 +177,11 @@ Route::middleware('auth')->group(function () {
     Route::get('/fo/cetak/sp/{sp}', [ClosingPrintController::class, 'sp'])->name('fo.cetak.sp');
     Route::get('/fo/cetak/faktur/{fp}', [ClosingPrintController::class, 'fakturPenjualan'])->name('fo.cetak.faktur');
 
+    // FO — Memo Rekom Batal Cash (Collection). GET murni: penandanya sudah ditulis layar
+    // Filament sebelum redirect ke sini, jadi memuat ulang halaman ini tidak pernah
+    // menerbitkan rekom batal baru. ?ids= = daftar id fo_kontrak yang dipilih.
+    Route::get('/fo/cetak/rekom-batal-cash', [ClosingPrintController::class, 'rekomBatalCash'])->name('fo.cetak.rekom-batal-cash');
+
     // FO — Laporan Penjualan (Penjualan Netto): export Excel, filter cluster/periode dari halaman Filament.
     Route::get('/fo/laporan/penjualan/excel', [\App\Modules\FO\MarketingSales\Controllers\LaporanPenjualanController::class, 'excel'])->name('fo.laporan.penjualan.excel');
 

@@ -2,13 +2,20 @@
 import { ref } from 'vue';
 import { router, Link } from '@inertiajs/vue3';
 import { ArrowLeft, TrendingUp, CalendarRange } from 'lucide-vue-next';
+import PilihPosisiHutang from '@/Components/UI/PilihPosisiHutang.vue';
 
-const props = defineProps<{ mode: string; view?: string; buckets: Array<{ key: string; label: string }>; rows: any[]; totals: any; filters: { from: string; to: string }; periodItems: any[]; periodTotal: number }>();
+const props = defineProps<{ mode: string; view?: string; buckets: Array<{ key: string; label: string }>; rows: any[]; totals: any; filters: { from: string; to: string; posisi?: string }; periodItems: any[]; periodTotal: number; posisiOpsi?: Array<{ nilai: string; label: string }> }>();
 const from = ref(props.filters.from);
 const to = ref(props.filters.to);
 const view = ref(props.view === 'summary' ? 'summary' : 'detail');
-function go(mode: string) { router.get(route('bs.projection'), { mode, from: from.value || undefined, to: to.value || undefined }, { preserveState: true, replace: true }); }
-function applyRange() { router.get(route('bs.projection'), { mode: props.mode, from: from.value || undefined, to: to.value || undefined }, { preserveState: true, replace: true }); }
+const posisi = ref(props.filters.posisi ?? 'semua');
+function go(mode: string) {
+    // Posisi hutang tidak dibawa ke cabang piutang: di sana sumbernya BsArInvoice, yang tidak
+    // punya kategori invoice AP sama sekali.
+    const p = mode === 'hutang' ? { posisi: posisi.value } : {};
+    router.get(route('bs.projection'), { mode, from: from.value || undefined, to: to.value || undefined, ...p }, { preserveState: true, replace: true });
+}
+function applyRange() { go(props.mode); }
 function fmt(v: number) { return v ? Number(v).toLocaleString('id-ID') : ''; }
 function fmtDate(d: string) { return d ? new Date(d).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'; }
 const isAp = props.mode === 'hutang';
@@ -20,6 +27,7 @@ const isAp = props.mode === 'hutang';
         <div class="flex flex-wrap gap-2">
             <button @click="go('hutang')" class="rounded-lg border px-3 py-1.5 text-sm font-medium" :class="mode === 'hutang' ? 'border-primary-500 bg-primary-50 text-primary-700 dark:bg-primary-900/20 dark:text-primary-300' : 'border-neutral-300 dark:border-neutral-700'">Proyeksi Hutang (AP)</button>
             <button @click="go('piutang')" class="rounded-lg border px-3 py-1.5 text-sm font-medium" :class="mode === 'piutang' ? 'border-primary-500 bg-primary-50 text-primary-700 dark:bg-primary-900/20 dark:text-primary-300' : 'border-neutral-300 dark:border-neutral-700'">Proyeksi Piutang (AR)</button>
+            <PilihPosisiHutang v-if="isAp" v-model="posisi" :opsi="props.posisiOpsi" label="" @ubah="applyRange" />
             <div class="ml-auto flex gap-1 rounded-lg border border-neutral-300 p-0.5 text-sm dark:border-neutral-700">
                 <button @click="view = 'detail'" class="rounded px-3 py-1" :class="view === 'detail' ? 'bg-primary-600 text-white' : ''">Detail</button>
                 <button @click="view = 'summary'" class="rounded px-3 py-1" :class="view === 'summary' ? 'bg-primary-600 text-white' : ''">Summary</button>

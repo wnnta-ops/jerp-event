@@ -273,6 +273,7 @@ class FoPanelProvider extends PanelProvider
             'reminder-ar' => 'finance',
             // Collection (penagihan AR setelah SPR)
             'collection' => 'collection',
+            'rekom-batal-cash' => 'collection',
             'pemberkasan' => 'collection',
             'collection-setup-sp' => 'collection',
             'collection-termin-sp' => 'collection',
@@ -443,6 +444,10 @@ class FoPanelProvider extends PanelProvider
                 'icon' => 'heroicon-o-banknotes',
                 'groups' => [
                     ['label' => 'Penagihan', 'items' => [
+                        // Slugnya sengaja TIDAK diawali "collection": item "Surat SP" di bawah
+                        // menandai dirinya aktif lewat request()->is('fo/collection*'), jadi
+                        // '/fo/collection-rekom-batal-cash' akan membuat keduanya menyala.
+                        $item('Rekom Batal Cash', '/fo/rekom-batal-cash', 'heroicon-o-banknotes', 'filament.fo.pages.rekom-batal-cash'),
                         $item('Surat SP', '/fo/collection', 'heroicon-o-document-text', 'filament.fo.resources.collection.'),
                         $item('Pemberkasan', '/fo/pemberkasan', 'heroicon-o-document-check', 'filament.fo.resources.pemberkasan.'),
                     ]],

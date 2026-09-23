@@ -16,6 +16,7 @@ use App\Domain\BusinessSupport\Models\BsLedger;
 use App\Domain\BusinessSupport\Models\BsLocation;
 use App\Domain\BusinessSupport\Models\BsSip;
 use App\Domain\BusinessSupport\Models\BsSupplier;
+use App\Domain\BusinessSupport\Support\PosisiHutang;
 use App\Domain\Master\Unit\Models\Unit;
 use App\Exceptions\BusinessRuleException;
 use App\Http\Controllers\Controller;
@@ -119,8 +120,7 @@ class ApInvoiceController extends Controller
     {
         abort_unless($request->user()?->can('ap.invoice.view'), 403);
 
-        $rows = BsApInvoice::query()
-            ->with('supplier:id,code,name')
+        $rows = PosisiHutang::saring(BsApInvoice::query()->with('supplier:id,code,name'), PosisiHutang::dariRequest($request))
             ->when($request->input('status'), fn ($q, $v) => $q->where('status', $v))
             ->when($request->input('supplier_id'), fn ($q, $v) => $q->where('supplier_id', $v))   // #135
             ->when($request->input('date_from'), fn ($q, $v) => $q->whereDate('invoice_date', '>=', $v)) // periode laporan
@@ -167,7 +167,7 @@ class ApInvoiceController extends Controller
         $rows = collect();
         if ($pulled) {
             $today = \Illuminate\Support\Carbon::today();
-            $rows = BsApInvoice::with('supplier:id,code,name')
+            $rows = PosisiHutang::saring(BsApInvoice::with('supplier:id,code,name'), PosisiHutang::dariRequest($request))
                 ->when($dateFrom, fn ($q, $v) => $q->whereDate('invoice_date', '>=', $v))
                 ->when($dateTo, fn ($q, $v) => $q->whereDate('invoice_date', '<=', $v))
                 ->when($supplierId, fn ($q, $v) => $q->where('supplier_id', $v))
@@ -191,7 +191,8 @@ class ApInvoiceController extends Controller
         return Inertia::render('BusinessSupport/Payable/InvoiceReport', [
             'rows' => $rows,
             'suppliers' => BsSupplier::orderBy('name')->get(['id', 'code', 'name']),
-            'filters' => ['date_from' => $dateFrom, 'date_to' => $dateTo, 'supplier_id' => $supplierId],
+            'filters' => ['date_from' => $dateFrom, 'date_to' => $dateTo, 'supplier_id' => $supplierId, 'posisi' => PosisiHutang::dariRequest($request)],
+            'posisiOpsi' => PosisiHutang::opsi(),
             'pulled' => $pulled,
         ]);
     }
@@ -942,7 +943,7 @@ HTML;
     {
         abort_unless($request->user()?->can('ap.aging.view'), 403);
 
-        [$rowsC, , , $asOf, $dateFrom] = $this->computeAging($request->input('date_to'), $request->input('date_from'));
+        [$rowsC, , , $asOf, $dateFrom] = $this->computeAging($request, $request->input('date_to'), $request->input('date_from'));
 
         $semua = [];
         foreach ($rowsC as $r) {
@@ -984,6 +985,8 @@ HTML;
             'topN' => self::TOP_SUPPLIER,
             'dateFrom' => $dateFrom,
             'dateTo' => $asOf->toDateString(),
+            'posisi' => PosisiHutang::dariRequest($request),
+            'posisiOpsi' => PosisiHutang::opsi(),
         ]);
     }
 
@@ -1002,7 +1005,7 @@ HTML;
         $details = [];
         $totals = ['current' => 0.0, 'd30' => 0.0, 'd60' => 0.0, 'd90' => 0.0, 'd90p' => 0.0, 'total' => 0.0];
         if ($pulled) {
-            [$rowsC, $totals, $details, $asOf, $dateFrom] = $this->computeAging($dateTo, $dateFrom);
+            [$rowsC, $totals, $details, $asOf, $dateFrom] = $this->computeAging($request, $dateTo, $dateFrom);
             $rows = array_values($rowsC);
             $asOfStr = $asOf->toDateString();
         }
@@ -1015,6 +1018,8 @@ HTML;
             'dateFrom' => $dateFrom,
             'dateTo' => $asOfStr,
             'pulled' => $pulled,
+            'posisi' => PosisiHutang::dariRequest($request),
+            'posisiOpsi' => PosisiHutang::opsi(),
         ]);
     }
 
@@ -1050,8 +1055,19 @@ HTML;
         return $terhapus ? $s->name.' (dihapus)' : (string) $s->name;
     }
 
-    private function computeAging(?string $dateTo = null, ?string $dateFrom = null): array
+    /**
+     * $request diminta sebagai argumen PERTAMA dan WAJIB — bukan sekadar gaya.
+     *
+     * Penyaring posisi hutang harus berlaku di keempat pemanggil (layar Aging, Aging Supplier,
+     * ekspor Excel, cetak PDF). Bila posisinya dikirim sebagai argumen ketiga yang opsional,
+     * pemanggil yang terlupa akan tetap berjalan dan diam-diam memulangkan SELURUH posisi —
+     * berkas ekspor berbeda dari layarnya, tanpa satu pun galat. Dengan Request sebagai argumen
+     * wajib, pemanggil yang terlupa gagal sebagai TypeError, bukan sebagai angka yang salah.
+     */
+    private function computeAging(Request $request, ?string $dateTo = null, ?string $dateFrom = null): array
     {
+        $posisi = PosisiHutang::dariRequest($request);
+
         $asOf = $dateTo ? \Illuminate\Support\Carbon::parse($dateTo)->startOfDay() : now()->startOfDay();
         $from = $dateFrom ?: null;
         $rows = [];
@@ -1063,7 +1079,10 @@ HTML;
         // (setelah PPN & PPh) − Σ(pembayaran s/d tanggal acuan). TANPA filter status (status = kondisi
         // KINI, bukan posisi per-tanggal) → angka per-supplier sama persis dgn Saldo Hutang Kartu.
         $asOfStr = $asOf->toDateString();
-        BsApInvoice::with(['supplier:id,code,name,deleted_at', 'payments' => fn ($q) => $q->whereDate('payment_date', '<=', $asOfStr)])
+        PosisiHutang::saring(
+            BsApInvoice::with(['supplier:id,code,name,deleted_at', 'payments' => fn ($q) => $q->whereDate('payment_date', '<=', $asOfStr)]),
+            $posisi,
+        )
             ->when($from, fn ($q, $v) => $q->whereDate('invoice_date', '>=', $v))
             ->whereDate('invoice_date', '<=', $asOfStr)
             ->get()->each(function ($inv) use (&$rows, &$details, &$totals, $asOf, $bucketLabel): void {
@@ -1103,7 +1122,7 @@ HTML;
     {
         abort_unless($request->user()?->can('ap.aging.export'), 403);
 
-        [$rows, $totals, $details, $asOf, $dateFrom] = $this->computeAging($request->input('date_to'), $request->input('date_from'));
+        [$rows, $totals, $details, $asOf, $dateFrom] = $this->computeAging($request, $request->input('date_to'), $request->input('date_from'));
 
         $e = fn ($s) => htmlspecialchars((string) $s, ENT_QUOTES, 'UTF-8');
         $rp = fn ($n) => number_format((float) $n, 0, ',', '.');
@@ -1135,7 +1154,7 @@ HTML;
     {
         abort_unless($request->user()?->can('ap.aging.export'), 403);
 
-        [$rows, $totals, $details, $asOf, $dateFrom] = $this->computeAging($request->input('date_to'), $request->input('date_from'));
+        [$rows, $totals, $details, $asOf, $dateFrom] = $this->computeAging($request, $request->input('date_to'), $request->input('date_from'));
 
         $e = fn ($s) => htmlspecialchars((string) $s, ENT_QUOTES, 'UTF-8');
         $rp = fn ($n) => number_format((float) $n, 0, ',', '.');
@@ -1205,6 +1224,7 @@ HTML;
     {
         $view = $request->input('view') === 'summary' ? 'summary' : 'detail';
         $supplierId = $request->integer('supplier_id') ?: null;
+        $posisi = PosisiHutang::dariRequest($request);
         // #138: filter periode — invoice by invoice_date, pembayaran by payment_date.
         $dateFrom = $request->input('date_from') ?: null;
         $dateTo = $request->input('date_to') ?: null;
@@ -1215,7 +1235,7 @@ HTML;
         // total − PPh, sudah termasuk PPN) & cutoff yang sama (s/d date_to). Saldo akhir Detail
         // === Outstanding Summary untuk supplier yang sama.
         if ($supplierId) {
-            $invoices = BsApInvoice::where('supplier_id', $supplierId)
+            $invoices = PosisiHutang::saring(BsApInvoice::where('supplier_id', $supplierId), $posisi)
                 ->when($dateTo, fn ($q, $v) => $q->whereDate('invoice_date', '<=', $v)) // posisi hutang s/d date_to
                 ->with(['payments' => fn ($q) => $q->when($dateTo, fn ($w, $v) => $w->whereDate('payment_date', '<=', $v))])
                 ->get();
@@ -1249,7 +1269,7 @@ HTML;
         // Summary: rekap per supplier dgn basis & cutoff IDENTIK dengan Detail → Outstanding == Saldo Hutang.
         $summary = collect();
         if ($view === 'summary') {
-            $invs = BsApInvoice::with(['supplier:id,code,name,deleted_at', 'payments' => fn ($q) => $q->when($dateTo, fn ($w, $v) => $w->whereDate('payment_date', '<=', $v))])
+            $invs = PosisiHutang::saring(BsApInvoice::with(['supplier:id,code,name,deleted_at', 'payments' => fn ($q) => $q->when($dateTo, fn ($w, $v) => $w->whereDate('payment_date', '<=', $v))]), $posisi)
                 ->when($supplierId, fn ($q, $v) => $q->where('supplier_id', $v))
                 ->when($dateTo, fn ($q, $v) => $q->whereDate('invoice_date', '<=', $v))
                 ->get();
@@ -1281,6 +1301,8 @@ HTML;
             'openingBalance' => round((float) $openingBalance, 2),
             'summary' => $summary,
             'outstanding' => round((float) $closing, 2), // = Saldo Akhir Detail (sinkron dgn Outstanding Summary)
+            'posisi' => $posisi,
+            'posisiOpsi' => PosisiHutang::opsi(),
         ];
     }
 
@@ -1410,10 +1432,14 @@ HTML;
         abort_unless($request->user()?->can('ap.paycard.view'), 403);
 
         $supplierId = $request->integer('supplier_id') ?: null;
+        $posisi = PosisiHutang::dariRequest($request);
         $bySupplier = fn ($q) => $q->whereHas('invoice', fn ($w) => $w->where('supplier_id', $supplierId));
 
-        $payments = BsApPayment::query()
-            ->with(['invoice:id,invoice_number,supplier_id', 'invoice.supplier:id,code,name'])
+        $payments = PosisiHutang::saringLewat(
+            BsApPayment::query()->with(['invoice:id,invoice_number,supplier_id', 'invoice.supplier:id,code,name']),
+            $posisi,
+            'invoice',
+        )
             ->when($supplierId, $bySupplier)
             ->orderByDesc('payment_date')->orderByDesc('id')
             ->paginate(50)->withQueryString();
@@ -1422,16 +1448,24 @@ HTML;
             'payments' => $payments,
             'suppliers' => BsSupplier::orderBy('name')->get(['id', 'code', 'name']),
             'supplierId' => $supplierId,
-            'total' => round((float) BsApPayment::query()->when($supplierId, $bySupplier)->sum('amount'), 2),
+            // Query TERPISAH dari daftar di atas — penyaringnya WAJIB ikut di sini juga, kalau
+            // tidak angka Total menjadi lebih besar daripada jumlah baris yang ditampilkannya.
+            'total' => round((float) PosisiHutang::saringLewat(BsApPayment::query(), $posisi, 'invoice')->when($supplierId, $bySupplier)->sum('amount'), 2),
+            'posisi' => $posisi,
+            'posisiOpsi' => PosisiHutang::opsi(),
         ]);
     }
 
     /** Data Kartu Pembayaran Hutang (seluruh riwayat, tanpa paginasi) — dipakai layar export. */
-    private function paymentCardData(?int $supplierId): array
+    private function paymentCardData(Request $request): array
     {
+        $supplierId = $request->integer('supplier_id') ?: null;
         $bySupplier = fn ($q) => $q->whereHas('invoice', fn ($w) => $w->where('supplier_id', $supplierId));
-        $payments = BsApPayment::query()
-            ->with(['invoice:id,invoice_number,supplier_id', 'invoice.supplier:id,code,name'])
+        $payments = PosisiHutang::saringLewat(
+            BsApPayment::query()->with(['invoice:id,invoice_number,supplier_id', 'invoice.supplier:id,code,name']),
+            PosisiHutang::dariRequest($request),
+            'invoice',
+        )
             ->when($supplierId, $bySupplier)
             ->orderByDesc('payment_date')->orderByDesc('id')->get();
         $supplierName = $supplierId ? (BsSupplier::find($supplierId)?->name ?? '-') : 'Semua Supplier';
@@ -1443,7 +1477,7 @@ HTML;
     public function paymentCardExportExcel(Request $request): \Illuminate\Http\Response
     {
         abort_unless($request->user()?->can('ap.paycard.view'), 403);
-        [$payments, $total, $supplierName] = $this->paymentCardData($request->integer('supplier_id') ?: null);
+        [$payments, $total, $supplierName] = $this->paymentCardData($request);
 
         $e = fn ($s) => htmlspecialchars((string) $s, ENT_QUOTES, 'UTF-8');
         $rp = fn ($n) => number_format((float) $n, 0, ',', '.');
@@ -1466,7 +1500,7 @@ HTML;
     public function paymentCardExportPdf(Request $request): \Illuminate\Http\Response
     {
         abort_unless($request->user()?->can('ap.paycard.view'), 403);
-        [$payments, $total, $supplierName] = $this->paymentCardData($request->integer('supplier_id') ?: null);
+        [$payments, $total, $supplierName] = $this->paymentCardData($request);
 
         $e = fn ($s) => htmlspecialchars((string) $s, ENT_QUOTES, 'UTF-8');
         $rp = fn ($n) => number_format((float) $n, 0, ',', '.');

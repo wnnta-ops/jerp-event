@@ -103,6 +103,7 @@ SPR (Final)
 ### E. Collection *(penagihan)*
 | Fitur | Fungsi bisnis |
 |---|---|
+| Rekom Batal Cash | Memo Rekom Batal untuk SPR cash (CASH 1X & CASH 3X) — membuka Ajukan Pembatalan |
 | Surat SP (Peringatan) | Terbitkan SP1/SP2/SP3 otomatis untuk tunggakan |
 | Pemberkasan | Kelengkapan dokumen penagihan |
 | Setup & Termin SP | Aturan jadwal & tahapan penagihan |
@@ -195,6 +196,7 @@ Semua transaksi keuangan FO **mengalir otomatis ke BO** — inti nilai sistem te
 ### 📨 Collection (Penagihan)
 | Menu | Fungsi |
 |---|---|
+| Rekom Batal Cash | Memo Rekom Batal SPR cash (CASH 1X & CASH 3X); membuka tombol Ajukan Pembatalan |
 | Surat SP | Terbitkan Surat Peringatan (SP1/SP2/SP3) untuk tunggakan |
 | Pemberkasan | Kelengkapan dokumen penagihan |
 | Setup SP · Setup Termin SP | Aturan & jadwal/tahapan penagihan |

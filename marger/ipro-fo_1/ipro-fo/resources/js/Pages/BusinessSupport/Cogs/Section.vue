@@ -19,6 +19,7 @@ const titles: Record<string, string> = {
     'query': 'Query',
     'mutasi': 'Mutasi Budget',
     'hpp': 'Transaksi HPP RealCost',
+    'komponen': 'Komponen COGS',
     'saldo-awal': 'Saldo Awal Realisasi',
 };
 const sections = computed<Record<string, Item[]>>(() => ({
@@ -54,6 +55,16 @@ const sections = computed<Record<string, Item[]>>(() => ({
         { label: 'Generate HPP', route: r('bs.cogs.hpp.generate') },
         { label: 'Posting Jurnal HPP Persediaan', route: r('bs.cogs.hpp.post-persediaan') },
         { label: 'Posting Jurnal HPP', route: r('bs.cogs.hpp.post-hpp') },
+    ],
+    // Empat komponen pembentuk HPP. Daftarnya dipatok pada slug yang SAMA dengan
+    // CogsComponentController::KOMPONEN dan navGroups.ts; rutenya dibatasi
+    // 'tanah|housing|infrastruktur|license-permit' di routes/web.php, jadi slug yang meleset
+    // menjadikan kartunya mati (r() memulangkan null) alih-alih membuka halaman kosong.
+    'komponen': [
+        { label: 'Tanah', route: r('bs.cogs.komponen.show', { komponen: 'tanah' }), summary: 'Biaya dari Kategori Invoice (Account Payable)' },
+        { label: 'Housing', route: r('bs.cogs.komponen.show', { komponen: 'housing' }), summary: 'Biaya dari Surat Perintah Kerja (Contractor Management)' },
+        { label: 'Infrastruktur', route: r('bs.cogs.komponen.show', { komponen: 'infrastruktur' }), summary: 'Biaya dari Surat Perintah Kerja (Contractor Management)' },
+        { label: 'License Permit', route: r('bs.cogs.komponen.show', { komponen: 'license-permit' }), summary: 'Biaya dari Kategori Invoice (Account Payable)' },
     ],
     'saldo-awal': [
         { label: 'Input Saldo Awal Realisasi', route: r('bs.cogs.realization.create') },

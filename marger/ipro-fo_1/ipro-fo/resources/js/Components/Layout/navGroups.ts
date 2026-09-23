@@ -292,6 +292,10 @@ export function navGroups(foUrl: string): NavGroup[] {
             { label: 'Kartu Piutang',       icon: LayoutList,       href: 'bs.ar.card',              permission: ['ar.card.*'] },
             { label: 'Aging Piutang',       icon: FileBarChart,     href: 'bs.ar.aging',             permission: ['ar.aging.*'] },
             { label: 'Penghapusan Piutang', icon: Eraser,           href: 'bs.ar.penghapusan.index', permission: ['ar.penghapusan.*'] },
+            // Piutang di luar piutang customer: pemegang saham, karyawan, dan lainnya —
+            // seluruh anak akun 101030101. Angkanya dibaca dari buku besar, bukan dari tabel
+            // invoice, sebab ketiga akun itu tidak punya tabel pinjaman sendiri.
+            { label: 'Piutang Lain',        icon: HandCoins,        href: 'bs.ar.piutang-lain',      permission: ['ar.piutang-lain.*'] },
         ],
     },
     {

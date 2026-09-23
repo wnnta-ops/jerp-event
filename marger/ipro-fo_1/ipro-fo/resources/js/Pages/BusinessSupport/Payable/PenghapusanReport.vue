@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import { ref, reactive, computed } from 'vue';
-import { Link } from '@inertiajs/vue3';
+import { Link, router } from '@inertiajs/vue3';
 import { ArrowLeft, FileBarChart, FileSpreadsheet, FilterX, Search, BookText } from 'lucide-vue-next';
 import EmptyState from '@/Components/UI/EmptyState.vue';
 import ColumnFilter from '@/Components/UI/ColumnFilter.vue';
+import PilihPosisiHutang from '@/Components/UI/PilihPosisiHutang.vue';
 
 type Row = {
     id: number; memorial_number: string; memorial_date: string | null;
@@ -11,7 +12,16 @@ type Row = {
     supplier: string | null; amount: number; reason: string | null; counter_account: string | null;
     journal_id: number | null; journal_number: string | null;
 };
-const props = defineProps<{ rows: Row[]; total: number }>();
+const props = defineProps<{ rows: Row[]; total: number; posisi?: string; posisiOpsi?: Array<{ nilai: string; label: string }> }>();
+
+// Penyaring posisi dikerjakan SERVER, bukan di klien seperti filter lain di layar ini:
+// posisi sebuah penghapusan ada pada invoice yang dihapusnya, dan baris yang dikirim ke sini
+// tidak membawa kategori invoice-nya. Karena props.rows sudah tersaring, computed filtered,
+// angka Total, dan tombol Excel di bawah ikut benar tanpa perubahan apa pun.
+const posisi = ref(props.posisi ?? 'semua');
+function muatPosisi() {
+    router.get(route('bs.ap.penghapusan.report'), { posisi: posisi.value }, { preserveState: true, preserveScroll: true, replace: true });
+}
 
 function fmtRp(v: number) { return 'Rp ' + Number(v ?? 0).toLocaleString('id-ID'); }
 function fmtDate(d: string | null) { return d ? new Date(d).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'; }
@@ -105,6 +115,7 @@ function exportExcel() {
                 <Search class="pointer-events-none absolute left-3 top-[34px] h-4 w-4 text-neutral-400" />
                 <input v-model="search" placeholder="Cari semua kolom…" class="h-9 w-full rounded-lg border border-neutral-300 bg-white pl-9 pr-3 text-sm dark:border-neutral-700 dark:bg-neutral-900" />
             </div>
+            <PilihPosisiHutang v-model="posisi" :opsi="props.posisiOpsi" label="" @ubah="muatPosisi" />
             <button v-if="hasFilter" type="button" @click="resetFilter" class="inline-flex h-9 items-center gap-1.5 rounded-lg border border-neutral-300 px-3 text-sm font-medium text-neutral-600 hover:bg-neutral-50 dark:border-neutral-700 dark:text-neutral-300"><FilterX class="h-4 w-4" /> Reset</button>
             <button type="button" @click="exportExcel" title="Unduh sesuai tampilan terfilter" class="inline-flex h-9 items-center gap-1.5 rounded-lg border border-emerald-300 bg-emerald-50 px-3 text-sm font-medium text-emerald-700 hover:bg-emerald-100 dark:border-emerald-700/50 dark:bg-emerald-900/30 dark:text-emerald-300"><FileSpreadsheet class="h-4 w-4" /> Excel</button>
             <div class="ml-auto text-right">

@@ -3,6 +3,7 @@
 namespace App\Modules\FO\MarketingSales\Controllers;
 
 use App\Http\Controllers\Controller;
+use App\Modules\BO\IproBridge\Services\RekomBatalCashService;
 use App\Modules\FO\Collection\Models\SpLetter;
 use App\Modules\FO\FinanceAR\Models\Bkm;
 use App\Modules\FO\FinanceAR\Models\Fp;
@@ -445,6 +446,69 @@ class ClosingPrintController extends Controller
             'sp' => $sp,
             'settings' => app(CollectionSettings::class),
         ], str_replace('/', '-', (string) ($sp->no_surat ?: 'SP-'.$sp->id)));
+    }
+
+    /**
+     * Memo Rekom Batal Cash — dokumen 2 halaman (Memo Internal + lampiran daftar SPR).
+     *
+     * Sepadan dengan memo rekom batal di modul KPR (Back Office), tetapi berdiri sendiri di
+     * sini: memo BO adalah halaman Inertia/Vue di aplikasi lain, tidak terjangkau panel
+     * Filament ini, dan SPR cash tidak punya baris apa pun di modul KPR untuk dirujuk.
+     *
+     * TIDAK menulis apa pun. Penandanya sudah dicatat layar Rekom Batal Cash sebelum operator
+     * diantar ke sini, jadi memuat ulang halaman ini aman — persis pemisahan GET/POST yang
+     * dipakai memo KPR di Back Office.
+     *
+     * Daftar barisnya disaring ulang lewat RekomBatalCashService::daftar(), bukan sekadar
+     * whereIn id: tanpa itu siapa pun bisa mencetak memo untuk kontrak KPR atau kontrak yang
+     * sudah batal hanya dengan menyusun ?ids= sendiri di alamat.
+     */
+    public function rekomBatalCash(Request $request): mixed
+    {
+        $ids = collect(explode(',', (string) $request->query('ids')))
+            ->map(fn ($v) => (int) trim((string) $v))->filter()->unique()->values();
+
+        abort_if($ids->isEmpty(), 404, 'Pilih minimal satu SPR untuk dibuatkan memo rekom batal.');
+
+        $rows = RekomBatalCashService::daftar()
+            ->with(['customer', 'unit.unitType', 'unit.lokasi', 'unit.tahapMaster', 'agent', 'skema'])
+            ->whereKey($ids)
+            ->orderBy('no_kontrak')
+            ->get();
+
+        abort_if($rows->isEmpty(), 404, 'Tidak ada SPR cash yang cocok dengan pilihan itu.');
+
+        $now = now();
+        $roman = ['', 'I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X', 'XI', 'XII'][$now->month];
+
+        return $this->render('pdf.fo.rekom-batal-cash', [
+            'rows' => $rows,
+            'jumlah' => $rows->count(),
+            'jumlahKata' => $this->terbilangJumlah($rows->count()),
+            'memo' => [
+                'no' => '____/MUP-CASH/JRK/'.$roman.'/'.$now->year,
+                'kepada' => 'RS',
+                'tembusan' => 'RZ',
+                'dari' => 'PS',
+                'tanggal' => ucfirst($now->translatedFormat('l, d F Y')),
+                'perihal' => 'Rekomendasi Pembatalan SPR Cash',
+            ],
+            'listHeading' => 'List Rekomendasi Pembatalan SPR Cash',
+            'listDate' => ucfirst($now->translatedFormat('d F Y')),
+            'settings' => app(CollectionSettings::class),
+        ], 'Memo-Rekom-Batal-Cash-'.$now->format('Ymd-Hi'));
+    }
+
+    /**
+     * "3" → "tiga" untuk kalimat "3 (tiga) user terlampir".
+     *
+     * Memakai ulang Terbilang, bukan menulis pengubah angka→kata kedua: dua salinan berarti
+     * dua aturan "sebelas/seribu" yang bisa berbeda diam-diam. Akhiran " rupiah"-nya dibuang
+     * karena words() sendiri privat.
+     */
+    private function terbilangJumlah(int $n): string
+    {
+        return lcfirst(preg_replace('/\s*rupiah$/i', '', Terbilang::rupiah((float) $n)) ?: (string) $n);
     }
 
     /** @param  array<string,mixed>  $data */
