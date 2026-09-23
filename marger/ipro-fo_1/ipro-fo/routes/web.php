@@ -783,6 +783,11 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
     // AR — Penghapusan Piutang (write-off bad debt)
     Route::get('/business-support/receivable-penghapusan', [BsArPenghapusanController::class, 'index'])->name('bs.ar.penghapusan.index');
     Route::post('/business-support/receivable-penghapusan/{invoice}', [BsArPenghapusanController::class, 'store'])->name('bs.ar.penghapusan.store');
+    // AR — Piutang Lain: saldo awal/penambahan/pelunasan/saldo akhir seluruh akun di bawah
+    // 101030101 (Pemegang Saham, Karyawan, Lainnya), dari buku besar. Prefix SATU SEGMEN
+    // (receivable-piutang-lain) — wildcard /receivable/{invoice} di bawah akan menelan
+    // /business-support/receivable/apa-pun.
+    Route::get('/business-support/receivable-piutang-lain', [\App\Http\Controllers\Web\BusinessSupport\Receivable\PiutangLainController::class, 'index'])->name('bs.ar.piutang-lain');
     // AR — Cetak bukti piutang (satuan & massal).
     // Prefix TERPISAH (receivable-cetak) supaya tidak tertangkap wildcard /receivable/{invoice} di bawah.
     Route::get('/business-support/receivable-cetak', [BsArPrintController::class, 'invoiceBulk'])->name('bs.ar.print-bulk');

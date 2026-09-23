@@ -39,6 +39,7 @@ class GranularPermissionSeeder extends Seeder
                 'ar.booked-revenue.view', 'ar.card.view', 'ar.category.manage', 'ar.create',
                 'ar.kuitansi.create', 'ar.kuitansi.view', 'ar.kuitansi.void', 'ar.memorial.create',
                 'ar.memorial.view', 'ar.pay', 'ar.penghapusan.create', 'ar.penghapusan.view',
+                'ar.piutang-lain.view',
                 'ar.reschedule', 'ar.update', 'ar.view',
             ],
             'gl' => [
