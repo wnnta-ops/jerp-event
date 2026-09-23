@@ -52,7 +52,10 @@ $req = function ($u, array $data = [], string $metode = 'GET', string $url = '/b
 
     return $r;
 };
-$ctl = new K;
+// Dirakit lewat container, bukan `new K`: controller ini kini menerima BukuBesarDokumen
+// lewat konstruktor (sumber baris buku besar untuk komponen). Merakitnya sendiri berarti uji
+// ini ikut pecah setiap kali ketergantungannya bertambah.
+$ctl = app(K::class);
 $lihat = function (string $komponen, array $saring = [], $u = null) use ($ctl, $req, $user) {
     $r = $req($u ?? $user, $saring, 'GET', '/business-support/cogs-komponen/'.$komponen);
 

@@ -24,9 +24,16 @@ const props = defineProps<{
     ringkas: Record<string, number>;
     kategori?: Array<{ id: number; code: string; name: string; aktif: boolean; tertaut: boolean; milikLain: string | null; disarankan: boolean }>;
     jenisLabel?: string;
+    // Sumber KETIGA: mutasi buku besar pada akun ber-tanda komponen ini (Chart of Account →
+    // Edit Akun → Komponen COGS). Berdiri sendiri, TIDAK dijumlahkan dengan blok di atas.
+    glAkun?: Array<{ code: string; name: string }>;
+    glBaris?: Array<any>;
+    glRingkas?: { jumlah: number; masuk: number; keluar: number; netto: number; belumEfektif: number; tanpaJejak: number };
 }>();
 
 const dariAp = computed(() => props.komponen.sumber === 'ap');
+const glAda = computed(() => (props.glAkun ?? []).length > 0);
+const tgl = (v: string | null) => (v ? new Date(v).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' }) : '—');
 const rp = (v: number) => 'Rp ' + Math.round(Number(v ?? 0)).toLocaleString('id-ID');
 
 /* ── Saringan ─────────────────────────────────────────────────────────────────────── */
@@ -286,6 +293,78 @@ const inputCls = 'h-9 w-full rounded-lg border border-neutral-300 bg-white px-3 
         <div v-if="baris.links?.length > 3" class="flex flex-wrap gap-1">
             <component :is="l.url ? Link : 'span'" v-for="l in baris.links" :key="l.label" :href="l.url" v-html="l.label"
                        class="rounded-md px-3 py-1.5 text-sm" :class="l.active ? 'bg-primary-600 text-white' : 'text-neutral-500 hover:bg-neutral-100 dark:hover:bg-neutral-800'" />
+        </div>
+
+        <!-- ══════════ Sumber ketiga: mutasi buku besar akun ber-tanda komponen ══════════ -->
+        <div v-if="glAda" class="space-y-3">
+            <div class="flex flex-wrap items-baseline justify-between gap-2 border-t border-neutral-200 pt-5 dark:border-neutral-800">
+                <h2 class="flex items-center gap-2 text-lg font-semibold">
+                    <Layers class="h-5 w-5 text-primary-600" /> Mutasi Buku Besar — {{ komponen.label }}
+                </h2>
+                <div class="text-xs text-neutral-500">
+                    Akun bertanda: <span v-for="(a, i) in (glAkun ?? [])" :key="a.code"><span v-if="i"> · </span><b>{{ a.code }}</b> {{ a.name }}</span>
+                </div>
+            </div>
+
+            <!-- Peringatan ini WAJIB terbaca: satu akun kewajiban di bagan akun ini bisa menjadi
+                 akun debit beberapa kategori invoice sekaligus, jadi menjumlahkan blok ini dengan
+                 blok di atas akan menghitung uang yang sama dua kali. -->
+            <p class="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-700/50 dark:bg-amber-900/20 dark:text-amber-300">
+                Angka di bawah berdiri <b>sendiri</b> dan <b>tidak boleh dijumlahkan</b> dengan biaya dari
+                {{ dariAp ? 'Kategori Invoice' : 'Surat Perintah Kerja' }} di atas — satu akun bisa melayani lebih dari satu kategori,
+                sehingga penjumlahannya menghitung uang yang sama dua kali.
+                Ringkasan hanya menjumlah jurnal <b>Approved</b>, sama seperti Buku Besar &amp; Neraca.
+            </p>
+
+            <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                <div class="card p-4"><div class="text-xs uppercase text-neutral-400">Mutasi Masuk</div>
+                    <div class="mt-1 font-mono text-lg font-bold text-amber-600">{{ rp(glRingkas?.masuk ?? 0) }}</div></div>
+                <div class="card p-4"><div class="text-xs uppercase text-neutral-400">Mutasi Keluar</div>
+                    <div class="mt-1 font-mono text-lg font-bold text-emerald-600">{{ rp(glRingkas?.keluar ?? 0) }}</div></div>
+                <div class="card p-4"><div class="text-xs uppercase text-neutral-400">Netto</div>
+                    <div class="mt-1 font-mono text-lg font-bold">{{ rp(glRingkas?.netto ?? 0) }}</div></div>
+                <div class="card p-4"><div class="text-xs uppercase text-neutral-400">Baris</div>
+                    <div class="mt-1 font-mono text-lg font-bold">{{ glRingkas?.jumlah ?? 0 }}</div>
+                    <div v-if="(glRingkas?.belumEfektif ?? 0) > 0" class="text-[11px] text-amber-600">{{ glRingkas?.belumEfektif }} belum Approved</div></div>
+            </div>
+
+            <div v-if="(glBaris ?? []).length" class="card overflow-x-auto">
+                <table class="w-full text-sm">
+                    <thead class="bg-neutral-50 dark:bg-neutral-800"><tr class="text-left text-xs uppercase text-neutral-500">
+                        <th class="px-3 py-2.5">No</th>
+                        <th class="px-3 py-2.5">No. SPR</th>
+                        <th class="px-3 py-2.5">Nama Customer</th>
+                        <th class="px-3 py-2.5">Kode Unit</th>
+                        <th class="px-3 py-2.5">Lokasi</th>
+                        <th class="px-3 py-2.5">Tahap</th>
+                        <th class="px-3 py-2.5">Tanggal</th>
+                        <th class="px-3 py-2.5 text-right">Masuk</th>
+                        <th class="px-3 py-2.5 text-right">Keluar</th>
+                        <th class="px-3 py-2.5">Status</th>
+                    </tr></thead>
+                    <tbody class="divide-y divide-neutral-200 dark:divide-neutral-800">
+                        <tr v-for="r in (glBaris ?? [])" :key="r.no" :class="r.efektif ? '' : 'opacity-60'">
+                            <td class="px-3 py-2 tabular-nums">{{ r.no }}</td>
+                            <td class="px-3 py-2 font-mono text-xs">{{ r.spr ?? '—' }}</td>
+                            <td class="px-3 py-2">{{ r.customer ?? '—' }}</td>
+                            <td class="px-3 py-2 font-mono text-xs">{{ r.unit ?? '—' }}</td>
+                            <td class="px-3 py-2">{{ r.lokasi ?? '—' }}</td>
+                            <td class="px-3 py-2">{{ r.tahap ?? '—' }}</td>
+                            <td class="whitespace-nowrap px-3 py-2">{{ tgl(r.tanggal) }}</td>
+                            <td class="whitespace-nowrap px-3 py-2 text-right tabular-nums text-amber-600">{{ r.masuk ? rp(r.masuk) : '—' }}</td>
+                            <td class="whitespace-nowrap px-3 py-2 text-right tabular-nums text-emerald-600">{{ r.keluar ? rp(r.keluar) : '—' }}</td>
+                            <td class="px-3 py-2"><Badge :variant="r.efektif ? 'success' : 'warning'" dot>{{ r.status_label }}</Badge></td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+            <EmptyState v-else title="Belum ada mutasi buku besar"
+                        description="Akun sudah ditandai komponen ini, tetapi belum ada jurnal yang menyentuhnya pada saringan yang dipilih." />
+
+            <p v-if="(glRingkas?.tanpaJejak ?? 0) > 0" class="text-xs text-neutral-500">
+                {{ glRingkas?.tanpaJejak }} baris belum bisa ditelusuri ke SPR/unit — barisnya tetap ditampilkan dengan sel kosong,
+                sebab membuangnya membuat jumlah layar ini berhenti sama dengan mutasi akunnya.
+            </p>
         </div>
 
         <!-- Modal: atur tautan Kategori Invoice -->
