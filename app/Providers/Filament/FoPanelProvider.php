@@ -3,6 +3,7 @@
 namespace App\Providers\Filament;
 
 use App\Filament\Fo\Pages\Dashboard;
+use App\Support\Akses;
 use Filament\Http\Middleware\Authenticate;
 use Filament\Http\Middleware\AuthenticateSession;
 use Filament\Http\Middleware\DisableBladeIconComponents;
@@ -21,7 +22,6 @@ use Illuminate\Foundation\Http\Middleware\VerifyCsrfToken;
 use Illuminate\Routing\Middleware\SubstituteBindings;
 use Illuminate\Session\Middleware\StartSession;
 use Illuminate\View\Middleware\ShareErrorsFromSession;
-use App\Support\Akses;
 
 class FoPanelProvider extends PanelProvider
 {
@@ -277,6 +277,7 @@ class FoPanelProvider extends PanelProvider
             'pemberkasan' => 'collection',
             'collection-setup-sp' => 'collection',
             'collection-termin-sp' => 'collection',
+            'collection-setup-batal-angsuran' => 'collection',
             // Approval
             'approvals' => 'approval',
             'approval-pengalihan-hak' => 'approval',
@@ -454,6 +455,7 @@ class FoPanelProvider extends PanelProvider
                     ['label' => 'Setup', 'items' => [
                         $item('Setup SP', '/fo/collection-setup-sp', 'heroicon-o-document-text', 'filament.fo.pages.collection-setup-sp'),
                         $item('Setup Termin SP', '/fo/collection-termin-sp', 'heroicon-o-clock', 'filament.fo.pages.collection-termin-sp'),
+                        $item('Setup Batal Angsuran', '/fo/collection-setup-batal-angsuran', 'heroicon-o-receipt-percent', 'filament.fo.pages.collection-setup-batal-angsuran'),
                     ]],
                 ],
             ],
