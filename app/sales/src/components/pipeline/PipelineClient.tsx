@@ -3,9 +3,11 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { Role, Stage } from "@prisma/client";
+import type { FormOptions } from "@/lib/options";
 import { Modal } from "@/components/Modal";
 import { Combobox } from "@/components/Combobox";
 import { toast } from "@/components/Toast";
+import { WalkInRowActions } from "@/components/forms/WalkInRowActions";
 import { ChannelBadge, LeadBadge, StageBadge } from "@/components/badges";
 import { SALES_MAX_INDEX, STAGES, STAGE_INDEX, LEAD_FIELD_LABEL } from "@/lib/constants";
 import { allowedTargets } from "@/lib/pipeline-flow";
@@ -15,6 +17,7 @@ interface HistoryEntry {
   icon: string;
   title: string;
   detail: string;
+  statusLead?: "HOT" | "WARM" | "COLD" | "DONE" | null;
   dateLabel: string;
   actor: string;
 }
@@ -38,17 +41,28 @@ export interface PipelineDeal {
   bank: string | null;
   catatan: string | null;
   dead?: boolean; // not-interested (batal) — shown red, out of active flow
+  // field untuk Edit (WalkInForm)
+  tanggalWi: string;
+  sumberInformasi: string | null;
+  agencyId: string;
+  salesId: string;
+  coordinatorId: string | null;
+  clusterId: string | null;
+  phaseId: string | null;
+  unitTypeId: string | null;
 }
 
-// One column per stage. Zone marks who owns it: Sales (0–4) vs Collection (5–7).
-const KANBAN: { t: string; stages: Stage[]; zone: "sa" | "co" }[] = [
+// One column per stage. Zone marks who owns it: Sales (0–4), Collection (5–6),
+// Legal (7 = AJB).
+const ZONE_LABEL = { sa: "Sales", co: "Collection", le: "Legal" } as const;
+const KANBAN: { t: string; stages: Stage[]; zone: "sa" | "co" | "le" }[] = [
   { t: "Follow-Up", stages: ["WI", "FOLLOW_UP"], zone: "sa" },
   { t: "NUP", stages: ["NUP"], zone: "sa" },
   { t: "UTJ", stages: ["UTJ"], zone: "sa" },
   { t: "SPR", stages: ["SPR"], zone: "sa" },
   { t: "ACC Bank", stages: ["ACC"], zone: "co" },
   { t: "Akad", stages: ["AKAD"], zone: "co" },
-  { t: "Realisasi", stages: ["REALISASI"], zone: "co" },
+  { t: "AJB", stages: ["REALISASI"], zone: "le" },
 ];
 
 // Max cards rendered per column (count badge still shows the true total).
@@ -57,7 +71,17 @@ const CARD_CAP = 40;
 // Lead temperature only meaningful before UTJ (WI / Follow-Up / NUP).
 const showsLead = (stage: Stage) => STAGE_INDEX[stage] <= STAGE_INDEX["NUP"];
 
-export function PipelineClient({ deals, role }: { deals: PipelineDeal[]; role: Role }) {
+export function PipelineClient({
+  deals,
+  role,
+  options,
+  canEdit,
+}: {
+  deals: PipelineDeal[];
+  role: Role;
+  options: FormOptions;
+  canEdit: boolean;
+}) {
   const router = useRouter();
   // prefilter dari ?q= (mis. saat diklik dari lonceng notifikasi)
   const [q, setQ] = useState(() =>
@@ -72,22 +96,26 @@ export function PipelineClient({ deals, role }: { deals: PipelineDeal[]; role: R
   const [fTahap, setFTahap] = useState("all");
   const [history, setHistory] = useState<DealHistory | null>(null);
 
+  async function reloadHistory(id: string) {
+    try {
+      const d = await fetch(`/sales/api/deals/${id}/history`).then((r) => r.json());
+      setHistory(d);
+    } catch {
+      /* biarkan */
+    }
+  }
+
   // Load the full history whenever a customer's journey modal opens.
   useEffect(() => {
     if (!sel) {
       setHistory(null);
       return;
     }
-    let alive = true;
     setHistory(null);
-    fetch(`/sales/api/deals/${sel.id}/history`)
-      .then((r) => r.json())
-      .then((d) => alive && setHistory(d))
-      .catch(() => {});
-    return () => {
-      alive = false;
-    };
-  }, [sel]);
+    reloadHistory(sel.id);
+    // hanya saat id berubah (buka customer lain), bukan tiap patch sel
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sel?.id]);
 
   // Distinct filter options derived from the current deal set.
   const salesOpts = useMemo(
@@ -147,7 +175,9 @@ export function PipelineClient({ deals, role }: { deals: PipelineDeal[]; role: R
     if (res.ok) {
       toast("✓ Follow-up tercatat");
       setFuNote("");
-      setSel(null);
+      // biarkan modal terbuka & tampilkan update di Riwayat seketika
+      setSel((s) => (s ? { ...s, statusLead: fuStatus as PipelineDeal["statusLead"] } : s));
+      reloadHistory(d.id);
       router.refresh();
     } else toast(j.error ?? "Gagal");
   }
@@ -165,13 +195,22 @@ export function PipelineClient({ deals, role }: { deals: PipelineDeal[]; role: R
     } else toast(j.error ?? "Gagal");
   }
 
-  async function notifyFo(d: PipelineDeal) {
+  // Lead lanjut → NUP atau UTJ. Pindah stage + status lead jadi DONE.
+  async function convertStage(d: PipelineDeal, stage: "NUP" | "UTJ") {
     setBusy(true);
-    const res = await fetch(`/sales/api/deals/${d.id}/notify-fo`, { method: "POST" });
+    const res = await fetch(`/sales/api/deals/${d.id}/convert-stage`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ stage }),
+    });
     setBusy(false);
     const j = await res.json().catch(() => ({}));
-    if (res.ok) toast("✓ " + d.nama + " diteruskan ke FO");
-    else toast(j.error ?? "Gagal kirim ke FO");
+    if (res.ok) {
+      toast("✓ " + d.nama + " → " + stage + " (status: Done)");
+      setSel((s) => (s ? { ...s, stage, statusLead: "DONE" } : s));
+      reloadHistory(d.id);
+      router.refresh();
+    } else toast(j.error ?? "Gagal");
   }
 
   const idx = sel ? STAGE_INDEX[sel.stage] : 0;
@@ -235,7 +274,7 @@ export function PipelineClient({ deals, role }: { deals: PipelineDeal[]; role: R
           const items = filtered.filter((d) => col.stages.includes(d.stage));
           return (
             <div className={`col z${col.zone}`} key={col.t}>
-              <div className="zlab">{col.zone === "sa" ? "Sales" : "Collection"}</div>
+              <div className="zlab">{ZONE_LABEL[col.zone]}</div>
               <div className="ch">
                 <span>{col.t}</span>
                 <span className="cnt">{items.length}</span>
@@ -277,7 +316,7 @@ export function PipelineClient({ deals, role }: { deals: PipelineDeal[]; role: R
                   <th>Koor</th>
                   <th>Tahap</th>
                   <th>Progress</th>
-                  <th />
+                  {canEdit && <th style={{ textAlign: "right" }}>Aksi</th>}
                 </tr>
               </thead>
               <tbody>
@@ -286,7 +325,15 @@ export function PipelineClient({ deals, role }: { deals: PipelineDeal[]; role: R
                   return (
                     <tr key={d.id}>
                       <td>
-                        <b>{d.nama}</b> {showsLead(d.stage) && <LeadBadge t={d.statusLead} />}
+                        <button
+                          type="button"
+                          className="rowname"
+                          onClick={() => setSel(d)}
+                          title="Lihat journey"
+                        >
+                          {d.nama}
+                        </button>{" "}
+                        {showsLead(d.stage) && <LeadBadge t={d.statusLead} />}
                       </td>
                       <td>
                         <ChannelBadge c={d.channel} />
@@ -311,11 +358,28 @@ export function PipelineClient({ deals, role }: { deals: PipelineDeal[]; role: R
                           />
                         </div>
                       </td>
-                      <td>
-                        <button className="btn ghost sm" onClick={() => setSel(d)}>
-                          journey
-                        </button>
-                      </td>
+                      {canEdit && (
+                        <td style={{ textAlign: "right" }}>
+                          <WalkInRowActions
+                            deal={{
+                              id: d.id,
+                              nama: d.nama,
+                              tanggalWi: d.tanggalWi,
+                              channel: d.channel,
+                              agencyId: d.agencyId,
+                              salesId: d.salesId,
+                              coordinatorId: d.coordinatorId,
+                              clusterId: d.clusterId,
+                              phaseId: d.phaseId,
+                              unitTypeId: d.unitTypeId,
+                              statusLead: d.statusLead,
+                              sumberInformasi: d.sumberInformasi,
+                              catatan: d.catatan,
+                            }}
+                            options={options}
+                          />
+                        </td>
+                      )}
                     </tr>
                   );
                 })}
@@ -342,9 +406,9 @@ export function PipelineClient({ deals, role }: { deals: PipelineDeal[]; role: R
                     </button>
                   ))
                 ) : idx >= 7 ? (
-                  <span className="badge b-green">Selesai / Realisasi</span>
+                  <span className="badge b-legal">Selesai / AJB</span>
                 ) : role === "SALES" && idx >= SALES_MAX_INDEX ? (
-                  <span className="pill">🔒 Tahap ini diisi Collection</span>
+                  <span className="pill">🔒 Tahap ini diisi Collection / Legal</span>
                 ) : role === "COLLECTION" && idx < SALES_MAX_INDEX ? (
                   <span className="pill">🔒 Tahap awal diisi Sales</span>
                 ) : (
@@ -364,18 +428,20 @@ export function PipelineClient({ deals, role }: { deals: PipelineDeal[]; role: R
               <StageBadge stage={sel.stage} />
               {showsLead(sel.stage) && <LeadBadge t={sel.statusLead} />}
               <ChannelBadge c={sel.channel} />
-              <span className="pill">
+              <span className="pill key">
                 {sel.cluster} · {sel.type}
               </span>
-              <span className="pill">Sales: {sel.sales}</span>
-              <span className="pill">Koor: {sel.koor}</span>
+              <span className="pill key">Bendera: {sel.agency}</span>
+              <span className="pill key">Sales: {sel.sales}</span>
+              <span className="pill key">Koor: {sel.koor}</span>
               {sel.unit && <span className="pill">{sel.unit}</span>}
               {sel.bank && <span className="pill">Bank: {sel.bank}</span>}
             </div>
+            {/* zona pengisi — proporsional di atas stepper (Sales 5 / Collection 2 / Legal 1) */}
             <div style={{ display: "flex", gap: 6, marginBottom: 6 }}>
-              <span className="zone sa">Diisi Sales (s/d SPR)</span>
-              <span style={{ flex: 1 }} />
-              <span className="zone co">Diisi Collection</span>
+              <span className="zone sa" style={{ flex: 5 }}>Sales (s/d SPR)</span>
+              <span className="zone co" style={{ flex: 2 }}>Collection</span>
+              <span className="zone le" style={{ flex: 1 }}>Legal</span>
             </div>
             <div className="stepper">
               {STAGES.map((s, i) => {
@@ -395,39 +461,9 @@ export function PipelineClient({ deals, role }: { deals: PipelineDeal[]; role: R
               <textarea rows={2} defaultValue={sel.catatan ?? ""} readOnly />
             </div>
 
-            {/* Riwayat — history of every stage change / follow-up / batal */}
-            <div style={{ borderTop: "1px solid var(--line)", paddingTop: 12, marginTop: 4 }}>
-              <label style={{ fontSize: 11.5, fontWeight: 600, color: "var(--sub)" }}>
-                Riwayat perubahan
-              </label>
-              {!history ? (
-                <div className="rolehint" style={{ marginTop: 6 }}>
-                  Memuat riwayat…
-                </div>
-              ) : history.timeline.length === 0 ? (
-                <div className="rolehint" style={{ marginTop: 6 }}>
-                  Belum ada perubahan tercatat.
-                </div>
-              ) : (
-                <ul className="timeline">
-                  {history.timeline.map((e, i) => (
-                    <li key={i}>
-                      <span className="ticon">{e.icon}</span>
-                      <div>
-                        <div className="ttitle">{e.title}</div>
-                        {e.detail && <div className="tdetail">{e.detail}</div>}
-                        <div className="tmeta">
-                          {e.dateLabel} · {e.actor}
-                        </div>
-                      </div>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
-
+            {/* Aksi follow-up — di ATAS Riwayat biar tombol NUP/UTJ langsung kelihatan */}
             {canFu && (
-              <div style={{ borderTop: "1px solid var(--line)", paddingTop: 12, marginTop: 4 }}>
+              <div style={{ borderTop: "1px solid var(--line)", paddingTop: 12, marginTop: 8 }}>
                 <div className="frow">
                   <div className="field">
                     <label>Catatan follow-up</label>
@@ -454,16 +490,66 @@ export function PipelineClient({ deals, role }: { deals: PipelineDeal[]; role: R
                   <button className="btn ghost sm danger" onClick={() => notInterested(sel)} disabled={busy}>
                     🚫 Tidak Berminat
                   </button>
-                  <button className="btn sm" onClick={() => notifyFo(sel)} disabled={busy}>
-                    ➡ Next (kirim ke FO)
-                  </button>
+                  {idx < STAGE_INDEX["NUP"] && (
+                    <button className="btn ghost sm" onClick={() => convertStage(sel, "NUP")} disabled={busy}>
+                      → NUP
+                    </button>
+                  )}
+                  {idx < STAGE_INDEX["UTJ"] && (
+                    <button className="btn sm" onClick={() => convertStage(sel, "UTJ")} disabled={busy}>
+                      → UTJ
+                    </button>
+                  )}
                 </div>
                 <p className="rolehint" style={{ marginTop: 8 }}>
-                  <b>Next</b> = teruskan lead ke FO (Front Office) buat proses UTJ/NUP. <b>Tidak
-                  Berminat</b> = keluarin dari pipeline (masuk Pipeline Gagal).
+                  Pilih <b>NUP</b> atau <b>UTJ</b> saat lead lanjut — customer pindah ke tahap itu &amp;
+                  status lead jadi <b>Done</b>. <b>Tidak Berminat</b> = keluarin dari pipeline (masuk
+                  Pipeline Gagal).
                 </p>
               </div>
             )}
+
+            {/* Riwayat — history of every stage change / follow-up / batal */}
+            <div style={{ borderTop: "1px solid var(--line)", paddingTop: 12, marginTop: 4 }}>
+              <label style={{ fontSize: 11.5, fontWeight: 600, color: "var(--sub)" }}>
+                Riwayat perubahan
+              </label>
+              {!history ? (
+                <div className="rolehint" style={{ marginTop: 6 }}>
+                  Memuat riwayat…
+                </div>
+              ) : history.timeline.length === 0 ? (
+                <div className="rolehint" style={{ marginTop: 6 }}>
+                  Belum ada perubahan tercatat.
+                </div>
+              ) : (
+                <ul className="timeline">
+                  {history.timeline.map((e, i) => (
+                    <li key={i}>
+                      <span className="ticon">{e.icon}</span>
+                      <div>
+                        <div className="ttitle">{e.title}</div>
+                        {(e.detail || e.statusLead) && (
+                          <div className="tdetail">
+                            {e.detail}
+                            {e.statusLead && (
+                              <>
+                                {e.detail ? " " : ""}
+                                <LeadBadge t={e.statusLead} />
+                              </>
+                            )}
+                          </div>
+                        )}
+                        <div className="tmeta">
+                          {e.dateLabel} · {e.actor}
+                        </div>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+
             {sel.dead && (
               <div className="notice" style={{ marginTop: 12, background: "#fdecea", borderColor: "#f1c4bb" }}>
                 <span>🚫</span>

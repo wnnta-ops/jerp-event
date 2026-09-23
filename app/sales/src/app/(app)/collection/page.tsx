@@ -88,7 +88,7 @@ async function StatusPanel({ role, isColl }: { role: import("@prisma/client").Ro
         <div>
           {isColl ? (
             <>
-              <b>Collection:</b> update ACC → Akad → Realisasi (atau Batal + refund).
+              <b>Collection:</b> update ACC → Akad (AJB diisi Legal) — atau Batal + refund.
             </>
           ) : (
             <>

@@ -74,7 +74,7 @@ export default async function DashboardPage() {
         <div className="fzone">
           <div className="fzlbl">🔌 Dari sistem lain (integrasi)</div>
           <div className="fsteps">
-            {["NUP", "UTJ", "SPR", "ACC", "Akad", "Realisasi"].map((s) => (
+            {["NUP", "UTJ", "SPR", "ACC", "Akad", "AJB"].map((s) => (
               <div className="fstep co" key={s}>
                 <span className="ft2">{s}</span>
                 <span className="fsub">integrasi</span>
@@ -180,7 +180,7 @@ export default async function DashboardPage() {
         <div>
           <b>Alur:</b> buka <b>Input Harian</b> → catat WI (Site/Pameran/Janjian), NUP, UTJ, SPR.
           Otomatis masuk <b>Pipeline</b> &amp; jadi <b>Daily Report</b>. Sales mengisi s/d SPR;
-          Collection melanjutkan ACC → Realisasi.
+          Collection lanjut ACC → Akad; Legal → AJB.
         </div>
       </div>
         </>
