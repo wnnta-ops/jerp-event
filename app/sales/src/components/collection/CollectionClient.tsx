@@ -138,7 +138,7 @@ export function CollectionClient({ deals, role }: { deals: CollDeal[]; role: Rol
                 <span className="mt">📝 {d.catatan ?? "-"}</span>
                 <div style={{ display: "flex", gap: 8 }}>
                   {idx >= 7 ? (
-                    <span className="badge b-green">Realisasi</span>
+                    <span className="badge b-legal">AJB</span>
                   ) : idx < SALES_MAX_INDEX ? (
                     <span className="pill">Nunggu SPR dari Sales</span>
                   ) : canAdv ? (

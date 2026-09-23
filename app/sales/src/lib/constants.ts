@@ -9,7 +9,7 @@ export const STAGES: { key: Stage; label: string }[] = [
   { key: "SPR", label: "SPR" },
   { key: "ACC", label: "ACC Bank" },
   { key: "AKAD", label: "Akad" },
-  { key: "REALISASI", label: "Realisasi" },
+  { key: "REALISASI", label: "AJB" }, // AJB (Legal). Enum key tetap REALISASI.
 ];
 
 export const STAGE_INDEX: Record<Stage, number> = STAGES.reduce(

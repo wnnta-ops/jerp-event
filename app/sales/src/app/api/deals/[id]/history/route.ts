@@ -1,7 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { requireSession, handleError, ApiError, ok } from "@/lib/api";
 import { resolveActors, actorName } from "@/lib/actors";
-import { STAGES, STAGE_INDEX, BATAL_ALASAN_LABEL, STATUS_LEAD_LABEL } from "@/lib/constants";
+import { STAGES, STAGE_INDEX, BATAL_ALASAN_LABEL } from "@/lib/constants";
 import { formatIdDateLong } from "@/lib/wib";
 import type { Stage } from "@prisma/client";
 
@@ -47,10 +47,13 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
 
     const stageLabel = (s: Stage) => STAGES[STAGE_INDEX[s]].label;
 
-    type Entry = { icon: string; title: string; detail: string; dateLabel: string; actor: string; ts: number };
+    type Entry = { icon: string; title: string; detail: string; statusLead?: string | null; dateLabel: string; actor: string; ts: number };
     const timeline: Entry[] = [];
 
     for (const e of deal.events) {
+      // Follow-up ditampilkan satu baris dari record FollowUp (di bawah) yang
+      // sudah memuat catatan + status — jadi event FOLLOW_UP dilewati agar tidak dobel.
+      if (e.type === "FOLLOW_UP") continue;
       let icon = "→";
       let title = "";
       let detail = "";
@@ -58,10 +61,6 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
       if (e.type === "WI") {
         icon = "🚶";
         title = "Walk-In tercatat";
-      } else if (e.type === "FOLLOW_UP") {
-        icon = "📞";
-        title = "Follow-up";
-        if (meta.statusLead) detail = `Status Lead: ${STATUS_LEAD_LABEL[String(meta.statusLead)] ?? meta.statusLead}`;
       } else if (e.type === "BATAL") {
         icon = "✖";
         title = "Dibatalkan";
@@ -84,11 +83,13 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
       });
     }
 
+    // Satu baris per follow-up: catatan + status lead (status jadi badge di UI).
     for (const f of deal.followUps) {
       timeline.push({
-        icon: "📝",
-        title: "Catatan follow-up",
-        detail: `${f.note}${f.statusLead ? ` · ${STATUS_LEAD_LABEL[f.statusLead]}` : ""}`,
+        icon: "📞",
+        title: "Follow-up",
+        detail: f.note,
+        statusLead: f.statusLead,
         dateLabel: formatIdDateLong(f.date),
         actor: actorName(f.actorId, actors),
         ts: f.date.getTime(),
