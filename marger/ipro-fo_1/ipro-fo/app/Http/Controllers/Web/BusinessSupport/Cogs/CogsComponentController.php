@@ -11,6 +11,8 @@ use App\Domain\BusinessSupport\Models\BsCogsCategory;
 use App\Domain\BusinessSupport\Models\BsCogsComponentApCategory;
 use App\Domain\BusinessSupport\Models\BsJournal;
 use App\Domain\BusinessSupport\Models\BsJournalLine;
+use App\Domain\BusinessSupport\Models\BsMukContract;
+use App\Domain\BusinessSupport\Models\BsMukContractCogs;
 use App\Domain\BusinessSupport\Models\BsWorkOrder;
 use App\Domain\BusinessSupport\Services\BukuBesarDokumen;
 use App\Http\Controllers\Controller;
@@ -110,7 +112,154 @@ class CogsComponentController extends Controller
             // TANAH-C1, LICENSE-PERMIT-C1, DAN KONSTRUKSI-INFRA-C1), sehingga menjumlahkan
             // keduanya akan menghitung uang yang sama dua kali tanpa satu pun galat.
             $this->dataGl($def, $filters),
+            // Sumber KEEMPAT: kontrak SPK (MUK) yang ditautkan ke komponen ini lewat tombol
+            // "Link COGS". Sama seperti blok buku besar, ia berdiri sendiri dan tidak pernah
+            // dijumlahkan dengan blok mana pun di atasnya.
+            $this->dataMuk($def, $filters),
         ));
+    }
+
+    /**
+     * Kontrak SPK (MUK) yang ditautkan ke komponen ini, DIBAGI PROPORSIONAL ke unit-unitnya.
+     *
+     * ── Dari mana bobot pembaginya ──
+     * Kontrak MUK sendiri TIDAK menyimpan unit sama sekali (bs_muk_contracts hanya memuat
+     * proyek, pelanggan, nilai, dan angka kumulatif). Yang punya daftar unit beserta bobotnya
+     * adalah SPK lokal: bs_work_order_units (unit_code, unit_price). Jembatannya nomor SPK —
+     * bs_muk_contracts.no_spk dicocokkan dengan bs_work_orders.spk_number.
+     *
+     * ── Kontrak yang tidak punya dasar bagi TIDAK dikarang pembagiannya ──
+     * Bila nomor SPK-nya tidak ketemu, SPK-nya belum punya daftar unit, atau seluruh
+     * unit_price-nya nol, kontrak itu tetap DITAMPILKAN sebagai satu baris utuh dengan alasan
+     * yang tertulis. Membaginya rata akan menghasilkan HPP per unit yang terlihat masuk akal,
+     * masuk ke jurnal, dan salahnya tidak pernah memunculkan galat.
+     *
+     * ── Sisa pembulatan dibebankan ke unit terakhir ──
+     * Membulatkan tiap bagian sendiri-sendiri membuat jumlah seluruh bagian meleset beberapa
+     * rupiah dari nilai kontraknya. Selisih itu kecil, tidak pernah terlihat, dan merusak
+     * kecocokan angka saat ditotal — jadi bagian terakhir menerima sisanya supaya
+     * jumlah(bagian) === nilai kontrak, persis.
+     *
+     * @param  array<string,mixed>  $def
+     * @param  array<string,mixed>  $filters
+     * @return array<string,mixed>
+     */
+    private function dataMuk(array $def, array $filters): array
+    {
+        if (! Schema::hasTable('bs_muk_contract_cogs') || ! Schema::hasTable('bs_muk_contracts')) {
+            return ['mukBaris' => [], 'mukRingkas' => ['kontrak' => 0, 'nilai' => 0.0, 'unit' => 0, 'tanpaDasar' => 0]];
+        }
+
+        $mukIds = BsMukContractCogs::where('component', $def['cogs'])->pluck('muk_id');
+
+        if ($mukIds->isEmpty()) {
+            return ['mukBaris' => [], 'mukRingkas' => ['kontrak' => 0, 'nilai' => 0.0, 'unit' => 0, 'tanpaDasar' => 0]];
+        }
+
+        $kontrak = BsMukContract::query()
+            ->whereIn('muk_id', $mukIds)
+            ->when($filters['tahun'], fn ($q, $v) => $q->whereYear('tanggal', $v))
+            ->orderBy('no_kontrak')
+            ->get(['muk_id', 'no_kontrak', 'no_spk', 'proyek_kode', 'proyek_nama', 'pelanggan_nama', 'tanggal', 'nilai_kontrak']);
+
+        // Unit per nomor SPK, lewat SPK lokal. Relasi dipakai (bukan join mentah) supaya scope
+        // tenant & soft-delete SPK ikut berlaku.
+        $unitPerSpk = BsWorkOrder::query()
+            ->whereIn('spk_number', $kontrak->pluck('no_spk')->filter()->unique()->values())
+            ->with('units:id,work_order_id,unit_id,unit_code,unit_price,seq')
+            ->get(['id', 'spk_number'])
+            ->keyBy('spk_number');
+
+        $cari = mb_strtolower((string) $filters['search']);
+        $baris = [];
+        $no = 0;
+        $tanpaDasar = 0;
+
+        foreach ($kontrak as $k) {
+            $nilai = round((float) $k->nilai_kontrak, 2);
+            $units = $k->no_spk !== null ? ($unitPerSpk[$k->no_spk]->units ?? collect()) : collect();
+            $bobot = (float) $units->sum(fn ($u) => (float) $u->unit_price);
+
+            $dasar = $units->isNotEmpty() && $bobot > 0.009;
+            if (! $dasar) {
+                $tanpaDasar++;
+            }
+
+            $bagian = $dasar
+                ? $this->bagiProporsional($nilai, $units)
+                : [[
+                    'unit'   => null,
+                    'porsi'  => null,
+                    'nilai'  => $nilai,
+                    'alasan' => $k->no_spk === null || ! isset($unitPerSpk[$k->no_spk])
+                        ? 'Nomor SPK kontrak ini tidak ditemukan pada Surat Perintah Kerja'
+                        : ($units->isEmpty()
+                            ? 'Surat Perintah Kerja-nya belum punya daftar unit'
+                            : 'Seluruh nilai unit pada SPK-nya nol'),
+                ]];
+
+            foreach ($bagian as $b) {
+                $row = [
+                    'no'         => ++$no,
+                    'kontrak'    => $k->no_kontrak,
+                    'spk'        => $k->no_spk,
+                    'proyek'     => trim(($k->proyek_kode ? $k->proyek_kode.' — ' : '').$k->proyek_nama),
+                    'pelanggan'  => $k->pelanggan_nama,
+                    'tanggal'    => $k->tanggal ? substr((string) $k->tanggal, 0, 10) : null,
+                    'unit'       => $b['unit'],
+                    'porsi'      => $b['porsi'],
+                    'nilai'      => $b['nilai'],
+                    'nilaiKontrak' => $nilai,
+                    'alasan'     => $b['alasan'] ?? null,
+                ];
+
+                if ($cari === '' || str_contains(mb_strtolower(implode(' ', [
+                    $row['kontrak'], $row['spk'], $row['proyek'], $row['pelanggan'], $row['unit'],
+                ])), $cari)) {
+                    $baris[] = $row;
+                }
+            }
+        }
+
+        return [
+            'mukBaris' => $baris,
+            'mukRingkas' => [
+                'kontrak'    => $kontrak->count(),
+                'nilai'      => round((float) $kontrak->sum(fn ($k) => (float) $k->nilai_kontrak), 2),
+                'unit'       => count(array_filter($baris, fn (array $r) => $r['unit'] !== null)),
+                'tanpaDasar' => $tanpaDasar,
+            ],
+        ];
+    }
+
+    /**
+     * Bagi satu nilai ke unit-unit menurut bobot unit_price.
+     *
+     * Bagian TERAKHIR menerima sisa pembulatan supaya jumlah seluruh bagian sama PERSIS dengan
+     * nilai yang dibagi. Tanpa itu, jumlah bagian meleset beberapa rupiah dari nilai
+     * kontraknya — selisih yang terlalu kecil untuk terlihat dan terlalu nyata untuk dibiarkan.
+     *
+     * @param  \Illuminate\Support\Collection<int,\App\Domain\BusinessSupport\Models\BsWorkOrderUnit>  $units
+     * @return list<array<string,mixed>>
+     */
+    private function bagiProporsional(float $nilai, $units): array
+    {
+        $bobot = (float) $units->sum(fn ($u) => (float) $u->unit_price);
+        $urut = $units->sortBy([['seq', 'asc'], ['id', 'asc']])->values();
+        $out = [];
+        $terpakai = 0.0;
+
+        foreach ($urut as $i => $u) {
+            $porsi = (float) $u->unit_price / $bobot;
+            $bagian = $i === $urut->count() - 1
+                ? round($nilai - $terpakai, 2)   // unit terakhir menyerap sisa pembulatan
+                : round($nilai * $porsi, 2);
+            $terpakai = round($terpakai + $bagian, 2);
+
+            $out[] = ['unit' => $u->unit_code, 'porsi' => round($porsi, 6), 'nilai' => $bagian];
+        }
+
+        return $out;
     }
 
     /**

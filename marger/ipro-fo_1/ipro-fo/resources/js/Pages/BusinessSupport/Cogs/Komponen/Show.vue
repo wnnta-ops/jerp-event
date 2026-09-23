@@ -29,10 +29,16 @@ const props = defineProps<{
     glAkun?: Array<{ code: string; name: string }>;
     glBaris?: Array<any>;
     glRingkas?: { jumlah: number; masuk: number; keluar: number; netto: number; belumEfektif: number; tanpaJejak: number };
+    // Sumber KEEMPAT: kontrak SPK (MUK) yang ditautkan lewat tombol "Link COGS",
+    // nilainya dibagi proporsional ke unit-unit SPK-nya.
+    mukBaris?: Array<any>;
+    mukRingkas?: { kontrak: number; nilai: number; unit: number; tanpaDasar: number };
 }>();
 
 const dariAp = computed(() => props.komponen.sumber === 'ap');
 const glAda = computed(() => (props.glAkun ?? []).length > 0);
+const mukAda = computed(() => (props.mukRingkas?.kontrak ?? 0) > 0);
+const persen = (v: number | null) => (v === null || v === undefined ? '—' : (Number(v) * 100).toFixed(2) + '%');
 const tgl = (v: string | null) => (v ? new Date(v).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' }) : '—');
 const rp = (v: number) => 'Rp ' + Math.round(Number(v ?? 0)).toLocaleString('id-ID');
 
@@ -365,6 +371,57 @@ const inputCls = 'h-9 w-full rounded-lg border border-neutral-300 bg-white px-3 
                 {{ glRingkas?.tanpaJejak }} baris belum bisa ditelusuri ke SPR/unit — barisnya tetap ditampilkan dengan sel kosong,
                 sebab membuangnya membuat jumlah layar ini berhenti sama dengan mutasi akunnya.
             </p>
+        </div>
+
+        <!-- ══════════ Sumber keempat: kontrak SPK (MUK) yang ditautkan ══════════ -->
+        <div v-if="mukAda" class="space-y-3">
+            <div class="flex flex-wrap items-baseline justify-between gap-2 border-t border-neutral-200 pt-5 dark:border-neutral-800">
+                <h2 class="flex items-center gap-2 text-lg font-semibold">
+                    <Link2 class="h-5 w-5 text-primary-600" /> Kontrak SPK (MUK) — {{ komponen.label }}
+                </h2>
+                <div class="text-xs text-neutral-500">
+                    {{ mukRingkas?.kontrak }} kontrak · {{ mukRingkas?.unit }} bagian unit · total {{ rp(mukRingkas?.nilai ?? 0) }}
+                </div>
+            </div>
+
+            <p class="rounded-lg border border-sky-300 bg-sky-50 px-3 py-2 text-xs text-sky-800 dark:border-sky-700/50 dark:bg-sky-900/20 dark:text-sky-300">
+                Nilai tiap kontrak dibagi <b>proporsional</b> ke unit-unit pada Surat Perintah Kerja yang nomornya sama,
+                menurut nilai tiap unit. Jumlah seluruh bagian sama <b>persis</b> dengan nilai kontraknya —
+                sisa pembulatan dibebankan ke unit terakhir.
+                <span v-if="(mukRingkas?.tanpaDasar ?? 0) > 0">
+                    <b>{{ mukRingkas?.tanpaDasar }} kontrak</b> belum punya dasar bagi dan ditampilkan utuh dengan keterangannya.
+                </span>
+            </p>
+
+            <div class="card overflow-x-auto">
+                <table class="w-full text-sm">
+                    <thead class="bg-neutral-50 dark:bg-neutral-800"><tr class="text-left text-xs uppercase text-neutral-500">
+                        <th class="px-3 py-2.5">No</th>
+                        <th class="px-3 py-2.5">No. Kontrak</th>
+                        <th class="px-3 py-2.5">No. SPK</th>
+                        <th class="px-3 py-2.5">Proyek</th>
+                        <th class="px-3 py-2.5">Kode Unit</th>
+                        <th class="px-3 py-2.5 text-right">Porsi</th>
+                        <th class="px-3 py-2.5">Tanggal</th>
+                        <th class="px-3 py-2.5 text-right">Nominal</th>
+                    </tr></thead>
+                    <tbody class="divide-y divide-neutral-200 dark:divide-neutral-800">
+                        <tr v-for="r in (mukBaris ?? [])" :key="r.no">
+                            <td class="px-3 py-2 tabular-nums">{{ r.no }}</td>
+                            <td class="px-3 py-2 font-mono text-xs font-semibold">{{ r.kontrak ?? '—' }}</td>
+                            <td class="px-3 py-2 font-mono text-xs">{{ r.spk ?? '—' }}</td>
+                            <td class="px-3 py-2 text-neutral-500">{{ r.proyek || '—' }}</td>
+                            <td class="px-3 py-2 font-mono text-xs">
+                                {{ r.unit ?? '—' }}
+                                <span v-if="r.alasan" class="ml-1 text-[11px] font-normal text-amber-600">({{ r.alasan }})</span>
+                            </td>
+                            <td class="px-3 py-2 text-right tabular-nums">{{ persen(r.porsi) }}</td>
+                            <td class="whitespace-nowrap px-3 py-2">{{ tgl(r.tanggal) }}</td>
+                            <td class="whitespace-nowrap px-3 py-2 text-right font-semibold tabular-nums">{{ rp(r.nilai) }}</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
         </div>
 
         <!-- Modal: atur tautan Kategori Invoice -->

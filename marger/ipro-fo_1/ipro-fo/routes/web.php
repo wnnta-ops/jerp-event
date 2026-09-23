@@ -753,6 +753,10 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
     // invoice SPK-lah yang perlu melihat angka ini.
     Route::get('/business-support/muk-kontrak', [BsMukKontrakController::class, 'index'])->name('bs.muk.kontrak.index');
     Route::get('/business-support/muk-kontrak/{kontrak}', [BsMukKontrakController::class, 'show'])->name('bs.muk.kontrak.show');
+    // Tautkan kontrak ke Komponen COGS. Izinnya cogs.component.manage (dijaga di
+    // controller), BUKAN ap.posting seperti layarnya: menautkan kontrak menambah biaya ke
+    // perhitungan HPP, dan itu wewenang pemegang Komponen COGS.
+    Route::put('/business-support/muk-kontrak/{kontrak}/cogs', [BsMukKontrakController::class, 'simpanCogs'])->name('bs.muk.kontrak.cogs');
     // AP — Penghapusan Nilai Hutang
     Route::get('/business-support/payable-penghapusan', [BsApPenghapusanController::class, 'index'])->name('bs.ap.penghapusan.index');
     Route::get('/business-support/payable-penghapusan-report', [BsApPenghapusanController::class, 'report'])->name('bs.ap.penghapusan.report'); // Laporan Penghapusan Hutang (rincian + history)
