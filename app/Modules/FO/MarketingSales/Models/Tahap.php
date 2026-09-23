@@ -15,11 +15,13 @@ class Tahap extends TenantAwareModel
     protected $table = 'fo_tahap';
 
     protected $fillable = [
-        'tenant_id', 'lokasi_id', 'kode', 'nama', 'is_active',
+        'tenant_id', 'lokasi_id', 'kode', 'nama', 'is_active', 'persen_batal_admin',
     ];
 
     protected $casts = [
         'is_active' => 'boolean',
+        // null berarti "ikut persen bawaan", BUKAN nol persen. Lihat BiayaBatalAngsuran.
+        'persen_batal_admin' => 'decimal:2',
     ];
 
     public function lokasi(): BelongsTo
