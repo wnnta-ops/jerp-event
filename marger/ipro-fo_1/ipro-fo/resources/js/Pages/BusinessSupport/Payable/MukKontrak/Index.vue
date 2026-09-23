@@ -35,8 +35,8 @@ watch([cari, status], () => {
 
 <template>
     <div class="space-y-4">
-        <Link :href="route('bs.ap.index')" class="inline-flex items-center gap-2 text-sm text-neutral-500 hover:text-neutral-800 dark:hover:text-neutral-200">
-            <ArrowLeft class="h-4 w-4" /> Account Payable
+        <Link :href="route('bs.spk.index')" class="inline-flex items-center gap-2 text-sm text-neutral-500 hover:text-neutral-800 dark:hover:text-neutral-200">
+            <ArrowLeft class="h-4 w-4" /> Contractor Management
         </Link>
 
         <div class="flex flex-wrap items-center gap-3">

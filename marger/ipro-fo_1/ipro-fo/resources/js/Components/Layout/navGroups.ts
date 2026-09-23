@@ -346,8 +346,9 @@ export function navGroups(foUrl: string): NavGroup[] {
             ]},
             { label: 'Posting Invoice SPK', icon: HardHat, permission: ['ap.posting.*'], children: [
                 { label: 'Posting Invoice SPK', href: 'bs.ap.posting.spk.index' },
-                // Baca-saja dari MUK ERP — sumber angka kontrak & penagihannya.
-                { label: 'Kontrak SPK (MUK)', href: 'bs.muk.kontrak.index' },
+                // "Kontrak SPK (MUK)" DIPINDAH ke Contractor Management → Master, tepat di atas
+                // Surat Perintah Kerja (permintaan user). Rute & layarnya tidak ikut pindah —
+                // yang berpindah hanya tempatnya di menu.
             ]},
             { label: 'Saldo Awal', icon: Coins, permission: ['ap.opening.*'], children: [
                 { label: 'Saldo Awal', href: 'bs.ap.opening.index' },
@@ -487,7 +488,17 @@ export function navGroups(foUrl: string): NavGroup[] {
                 { label: 'Project', href: 'bs.spk.project.index' },
                 { label: 'Set Up SPK', href: 'bs.spk.draft.edit' },
             ]},
-            { label: 'Master', icon: FileSignature, permission: ['contractor.kpl.*', 'contractor.retention.*', 'contractor.spk.*'], children: [
+            // 'ap.posting.*' IKUT di daftar izin grup ini semata-mata karena "Kontrak SPK (MUK)"
+            // pindah ke sini: layarnya dijaga izin ap.posting.view (MukKontrakController:33,77),
+            // bukan izin contractor. Tanpa baris itu, pengguna yang selama ini bisa membukanya
+            // dari Account Payable akan kehilangan menunya sama sekali — grup Master-nya tidak
+            // pernah dirender untuk mereka.
+            { label: 'Master', icon: FileSignature, permission: ['contractor.kpl.*', 'contractor.retention.*', 'contractor.spk.*', 'ap.posting.*'], children: [
+                // Baca-saja dari MUK ERP — sumber angka kontrak & penagihan SPK. Izinnya
+                // DISEBUT di baris ini sendiri (bukan diwarisi grup): layar ini menuntut
+                // ap.posting.view, jadi menampilkannya kepada pemegang izin contractor saja
+                // berarti menyodorkan menu yang berakhir 403 saat diklik.
+                { label: 'Kontrak SPK (MUK)', href: 'bs.muk.kontrak.index', permission: ['ap.posting.*'] },
                 { label: 'Surat Perintah Kerja', href: 'bs.spk.index' },
                 { label: 'Kontrol Progress Lapangan', href: 'bs.spk.kpl.index' },
                 { label: 'Progress Retensi', href: 'bs.spk.retention.index' },
