@@ -8,7 +8,7 @@ import {
     Boxes, ShoppingCart, PackagePlus, PackageMinus, LayoutList, BookText,
     HandCoins, Coins, Building, PieChart, HardHat, Target, PiggyBank,
     FolderGit2, CalendarClock, TriangleAlert, Lock,
-    Layers, FileCog,
+    Layers, FileCog, LandPlot,
     GitMerge, FileSpreadsheet, IdCard, Gift, Eraser, SlidersHorizontal, DatabaseZap, Database, UserPlus,
     Scale,
 } from 'lucide-vue-next';
@@ -568,6 +568,12 @@ export function navGroups(foUrl: string): NavGroup[] {
                 { label: 'Housing', href: 'bs.cogs.komponen.show', params: { komponen: 'housing' } },
                 { label: 'Infrastruktur', href: 'bs.cogs.komponen.show', params: { komponen: 'infrastruktur' } },
                 { label: 'License Permit', href: 'bs.cogs.komponen.show', params: { komponen: 'license-permit' } },
+            ]},
+            // Perhitungan Lahan per lokasi/tahap → budget per unit menurut luas tanah & luas
+            // bangunan unit itu sendiri. Izinnya cogs.budget.* (baca) — SENGAJA bukan
+            // 'cogs.setup.*', yang akan ikut mencocoki izin mati cogs.setup.provision.manage.
+            { label: 'Set Up COGS', icon: LandPlot, permission: ['cogs.budget.*'], children: [
+                { label: 'Perhitungan Lahan & Budget per Unit', href: 'bs.cogs.setupcogs.index' },
             ]},
             { label: 'Saldo Awal Realisasi', icon: Coins, permission: ['cogs.realization.*'], children: [
                 { label: 'Input Saldo Awal Realisasi', href: 'bs.cogs.realization.create' },
