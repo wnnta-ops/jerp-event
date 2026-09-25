@@ -7,15 +7,41 @@
 // dilihatnya setua apa sebelum memakainya menyiapkan pembayaran.
 import { ref, watch } from 'vue';
 import { router, Link } from '@inertiajs/vue3';
-import { ArrowLeft, FileSpreadsheet, Search, AlertTriangle, RefreshCw } from 'lucide-vue-next';
+import { ArrowLeft, FileSpreadsheet, Search, AlertTriangle, RefreshCw, Link2, X } from 'lucide-vue-next';
 import EmptyState from '@/Components/UI/EmptyState.vue';
+import Button from '@/Components/UI/Button.vue';
 
 const props = defineProps<{
     kontrak: any;
     filters: { cari?: string; status?: string };
     ringkas: Record<string, number>;
     ditarik_pada: string | null;
+    // kunci komponen HPP => label ('tanah' => 'Tanah', 'bangunan' => 'Housing', dst.)
+    cogsOpsi?: Record<string, string>;
+    bisaLink?: boolean;
 }>();
+
+/* ── Link COGS ──────────────────────────────────────────────────────────────────────
+   Menautkan kontrak ke sebuah Komponen COGS. Nilai kontraknya lalu dibagi proporsional ke
+   unit-unit SPK-nya di layar komponen. Penjaga izinnya ada di server (cogs.component.manage);
+   tombolnya disembunyikan di sini semata-mata supaya tidak menawarkan yang berakhir 403. */
+const modalCogs = ref<any | null>(null);
+const pilihan = ref<string | null>(null);
+const menyimpan = ref(false);
+
+function bukaCogs(k: any) {
+    modalCogs.value = k;
+    pilihan.value = k.cogs ?? null;
+}
+function simpanCogs() {
+    if (! modalCogs.value) return;
+    menyimpan.value = true;
+    router.put(route('bs.muk.kontrak.cogs', modalCogs.value.id), { component: pilihan.value },
+        {
+            preserveScroll: true,
+            onFinish: () => { menyimpan.value = false; modalCogs.value = null; },
+        });
+}
 
 const cari = ref(props.filters.cari ?? '');
 const status = ref(props.filters.status ?? '');
@@ -35,8 +61,8 @@ watch([cari, status], () => {
 
 <template>
     <div class="space-y-4">
-        <Link :href="route('bs.ap.index')" class="inline-flex items-center gap-2 text-sm text-neutral-500 hover:text-neutral-800 dark:hover:text-neutral-200">
-            <ArrowLeft class="h-4 w-4" /> Account Payable
+        <Link :href="route('bs.spk.index')" class="inline-flex items-center gap-2 text-sm text-neutral-500 hover:text-neutral-800 dark:hover:text-neutral-200">
+            <ArrowLeft class="h-4 w-4" /> Contractor Management
         </Link>
 
         <div class="flex flex-wrap items-center gap-3">
@@ -103,6 +129,7 @@ watch([cari, status], () => {
                             <th class="px-4 py-3 text-right">Sudah Ditagih</th>
                             <th class="px-4 py-3 text-right">Belum Ditagih</th>
                             <th class="px-4 py-3 text-center">Status</th>
+                            <th class="px-4 py-3 text-center">Komponen COGS</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -132,6 +159,19 @@ watch([cari, status], () => {
                                     {{ k.status || '—' }}
                                 </span>
                             </td>
+                            <!-- @click.stop: baris ini sendiri membuka rincian kontrak; tanpa
+                                 penahan itu, menekan tombol juga ikut berpindah halaman. -->
+                            <td class="px-4 py-2.5 text-center" @click.stop>
+                                <button type="button" :disabled="! bisaLink" @click="bukaCogs(k)"
+                                        :title="bisaLink ? 'Tautkan kontrak ini ke Komponen COGS' : 'Butuh izin Komponen COGS untuk menautkan'"
+                                        class="inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-xs font-medium disabled:cursor-not-allowed disabled:opacity-50"
+                                        :class="k.cogs
+                                            ? 'border-primary-300 bg-primary-50 text-primary-700 dark:border-primary-700/50 dark:bg-primary-900/30 dark:text-primary-300'
+                                            : 'border-neutral-300 text-neutral-600 hover:bg-neutral-50 dark:border-neutral-700 dark:text-neutral-300'">
+                                    <Link2 class="h-3.5 w-3.5" />
+                                    {{ k.cogs ? (cogsOpsi?.[k.cogs] ?? k.cogs) : 'Link COGS' }}
+                                </button>
+                            </td>
                         </tr>
                     </tbody>
                 </table>
@@ -150,4 +190,45 @@ watch([cari, status], () => {
             </div>
         </div>
     </div>
+
+        <!-- Modal: pilih Komponen COGS untuk satu kontrak -->
+        <Teleport to="body">
+            <div v-if="modalCogs" class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" @click.self="modalCogs = null">
+                <div class="w-full max-w-md rounded-xl bg-white p-5 shadow-xl dark:bg-neutral-900">
+                    <div class="mb-3 flex items-start justify-between gap-3">
+                        <div>
+                            <h3 class="text-lg font-semibold">Link Komponen COGS</h3>
+                            <p class="mt-0.5 text-xs text-neutral-500">
+                                <span class="font-mono">{{ modalCogs.no_kontrak }}</span> — {{ modalCogs.proyek || '—' }}
+                            </p>
+                        </div>
+                        <button type="button" class="text-neutral-400 hover:text-neutral-600" @click="modalCogs = null"><X class="h-5 w-5" /></button>
+                    </div>
+
+                    <p class="mb-3 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-700/50 dark:bg-amber-900/20 dark:text-amber-300">
+                        Nilai kontrak dibagi <b>proporsional</b> ke unit-unit pada Surat Perintah Kerja bernomor
+                        <b>{{ modalCogs.no_spk || '—' }}</b>, menurut nilai tiap unitnya.
+                        Bila SPK itu belum punya daftar unit, kontraknya tetap tampil utuh dengan keterangan —
+                        pembagiannya tidak dikarang.
+                    </p>
+
+                    <div class="space-y-1.5">
+                        <label v-for="(label, kunci) in (cogsOpsi ?? {})" :key="kunci"
+                               class="flex cursor-pointer items-center gap-2 rounded-lg border px-3 py-2 text-sm"
+                               :class="pilihan === kunci ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/20' : 'border-neutral-200 dark:border-neutral-800'">
+                            <input v-model="pilihan" type="radio" :value="kunci" class="h-4 w-4" /> {{ label }}
+                        </label>
+                        <label class="flex cursor-pointer items-center gap-2 rounded-lg border px-3 py-2 text-sm"
+                               :class="pilihan === null ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/20' : 'border-neutral-200 dark:border-neutral-800'">
+                            <input v-model="pilihan" type="radio" :value="null" class="h-4 w-4" /> — tidak ditautkan —
+                        </label>
+                    </div>
+
+                    <div class="mt-4 flex justify-end gap-2">
+                        <Button variant="secondary" @click="modalCogs = null">Batal</Button>
+                        <Button :disabled="menyimpan" @click="simpanCogs">Simpan</Button>
+                    </div>
+                </div>
+            </div>
+        </Teleport>
 </template>

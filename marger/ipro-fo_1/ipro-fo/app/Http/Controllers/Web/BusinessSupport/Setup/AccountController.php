@@ -8,6 +8,7 @@ use App\Domain\BusinessSupport\Models\BsAccount;
 use App\Domain\BusinessSupport\Models\BsCashFlowCategory;
 use App\Domain\BusinessSupport\Models\BsCostCenter;
 use App\Http\Controllers\Controller;
+use App\Http\Controllers\Web\BusinessSupport\Cogs\CogsComponentController;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use App\Domain\BusinessSupport\Import\CoaImporter;
@@ -35,7 +36,7 @@ class AccountController extends Controller
             ->when($type, fn ($q, $v) => $q->where('type', $v))
             // Kelompokkan per kategori (head), level-1 header lebih dulu, lalu urut kode.
             ->orderByRaw("COALESCE(category_code, substr(code,1,1)) asc, case when level = 1 then '0' else code end asc")
-            ->get(['id', 'code', 'category_code', 'name', 'type', 'level', 'parent_id', 'parent_code', 'normal_balance', 'is_postable', 'is_active', 'cf_direct_category_id', 'cf_indirect_category_id', 'cost_center_id']);
+            ->get(['id', 'code', 'category_code', 'name', 'type', 'level', 'parent_id', 'parent_code', 'normal_balance', 'is_postable', 'is_active', 'cf_direct_category_id', 'cf_indirect_category_id', 'cost_center_id', 'cogs_component']);
 
         $cfCats = fn (string $kind) => BsCashFlowCategory::where('kind', $kind)->where('is_active', true)
             ->orderBy('sort_order')->orderBy('code')->get(['id', 'code', 'name', 'activity']);
@@ -53,6 +54,11 @@ class AccountController extends Controller
             'cfDirect'    => $cfCats('direct'),
             'cfIndirect'  => $cfCats('indirect'),
             'costCenters' => BsCostCenter::where('is_active', true)->orderBy('code')->get(['id', 'code', 'name']),
+            // Daftar komponen COGS datang dari SATU tempat (CogsComponentController::KOMPONEN),
+            // bukan disalin di layar: nilainya yang tersimpan adalah kunci komponen HPP
+            // ('tanah'|'bangunan'|'sarana'|'permit'), sedangkan yang dibaca operator adalah
+            // labelnya. Disalin ke Vue, menambah satu komponen berarti mengingat dua tempat.
+            'cogsComponents' => CogsComponentController::pilihanKomponen(),
             'filters'     => ['search' => $search, 'type' => $type],
             'stats'       => [
                 'total'    => BsAccount::count(),
@@ -105,6 +111,9 @@ class AccountController extends Controller
             'cf_direct_category_id'   => ['nullable', 'integer', Rule::exists('bs_cash_flow_categories', 'id')->where('kind', 'direct')],
             'cf_indirect_category_id' => ['nullable', 'integer', Rule::exists('bs_cash_flow_categories', 'id')->where('kind', 'indirect')],
             'cost_center_id'          => ['nullable', 'integer', 'exists:bs_cost_centers,id'],
+            // Kunci komponen HPP, bukan slug alamat layar. Daftar sahnya diambil dari
+            // CogsComponentController supaya tidak lahir kosakata ketiga.
+            'cogs_component'          => ['nullable', Rule::in(array_keys(CogsComponentController::pilihanKomponen()))],
         ]);
 
         $level  = (int) $data['level'];

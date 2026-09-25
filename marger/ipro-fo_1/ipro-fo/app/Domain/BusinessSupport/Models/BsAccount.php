@@ -21,6 +21,11 @@ class BsAccount extends Model
     protected $fillable = [
         'tenant_id', 'code', 'category_code', 'name', 'type', 'level', 'parent_code', 'normal_balance', 'parent_id', 'is_postable', 'is_active',
         'cf_direct_category_id', 'cf_indirect_category_id', 'cost_center_id',
+        // WAJIB ada di sini. Kolom yang tidak terdaftar lolos validasi, tidak memunculkan
+        // galat, notifikasi "tersimpan" tetap muncul, dan nilainya hilang — persis yang
+        // terjadi pada 'cost_center_optional' di bawah: kolomnya nyata, ikut di-cast, tetapi
+        // absen dari daftar ini.
+        'cogs_component',
     ];
 
     /** Kategori (head) sebuah kode — biasanya digit pertama, kecuali pengelompokan eProperty. */

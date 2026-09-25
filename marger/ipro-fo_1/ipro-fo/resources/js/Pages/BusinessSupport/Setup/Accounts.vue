@@ -13,6 +13,8 @@ const props = defineProps<{
     cfDirect: Array<{ id: number; code: string; name: string; activity: string }>;
     cfIndirect: Array<{ id: number; code: string; name: string; activity: string }>;
     costCenters: Array<{ id: number; code: string; name: string }>;
+    // kunci komponen HPP => label ('tanah' => 'Tanah', 'bangunan' => 'Housing', dst.)
+    cogsComponents?: Record<string, string>;
     filters: Record<string, any>;
     stats: { total: number; postable: number };
     levels?: Record<number, string>;
@@ -66,7 +68,7 @@ function kirimImpor() {
 const editingId = ref<number | null>(null);
 // Induk yang sedang ditambahi anak (dari tombol "+" per baris) — hanya untuk petunjuk di modal.
 const parentAcc = ref<any | null>(null);
-const form = useForm<any>({ code: '', name: '', level: 1, parent_id: null, type: 'asset', normal_balance: 'D', is_postable: false, is_active: true, cf_direct_category_id: null, cf_indirect_category_id: null, cost_center_id: null });
+const form = useForm<any>({ code: '', name: '', level: 1, parent_id: null, type: 'asset', normal_balance: 'D', is_postable: false, is_active: true, cf_direct_category_id: null, cf_indirect_category_id: null, cost_center_id: null, cogs_component: null });
 
 /** Panjang kode yang dituntut level: tiap turun satu tingkat menambah dua digit. */
 const panjangKode = computed(() => 2 * Number(form.level || 1) - 1);
@@ -143,6 +145,7 @@ function openEdit(a: any) {
     form.cf_direct_category_id = a.cf_direct_category_id ?? null;
     form.cf_indirect_category_id = a.cf_indirect_category_id ?? null;
     form.cost_center_id = a.cost_center_id ?? null;
+    form.cogs_component = a.cogs_component ?? null;
     showModal.value = true;
 }
 function submit() {
@@ -304,6 +307,18 @@ const inputCls = 'h-9 w-full rounded-lg border border-neutral-300 bg-white px-3 
                             </select>
                             <p class="mt-1 text-[11px] text-neutral-400">Dipakai otomatis & dikunci pada tiap baris Input Jurnal yang memakai akun ini.</p>
                             <p v-if="form.errors.cost_center_id" class="mt-1 text-xs text-danger-500">{{ form.errors.cost_center_id }}</p>
+                        </div>
+                        <div>
+                            <label class="mb-1 block text-xs font-medium text-neutral-500">Komponen COGS</label>
+                            <select v-model="form.cogs_component" :class="inputCls">
+                                <option :value="null">— tidak dipetakan —</option>
+                                <option v-for="(label, kunci) in (cogsComponents ?? {})" :key="kunci" :value="kunci">{{ label }}</option>
+                            </select>
+                            <p class="mt-1 text-[11px] text-neutral-400">
+                                Seluruh mutasi buku besar akun ini — masuk maupun keluar — ikut terbaca di layar Komponen COGS yang dipilih.
+                                Angkanya berdiri SENDIRI, tidak dijumlahkan dengan biaya dari Kategori Invoice maupun SPK pada layar itu.
+                            </p>
+                            <p v-if="form.errors.cogs_component" class="mt-1 text-xs text-danger-500">{{ form.errors.cogs_component }}</p>
                         </div>
                         <div class="flex gap-5">
                             <label class="flex items-center gap-2 text-sm"><input v-model="form.is_postable" type="checkbox" class="rounded" /> Bisa dijurnal</label>

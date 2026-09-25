@@ -5,9 +5,13 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Web\BusinessSupport\Payable;
 
 use App\Domain\BusinessSupport\Models\BsMukContract;
+use App\Domain\BusinessSupport\Models\BsMukContractCogs;
 use App\Domain\BusinessSupport\Services\MukApi;
 use App\Http\Controllers\Controller;
+use App\Http\Controllers\Web\BusinessSupport\Cogs\CogsComponentController;
+use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 use Inertia\Response;
 use RuntimeException;
@@ -44,9 +48,15 @@ class MukKontrakController extends Controller
             ->when($status !== '', fn ($w) => $w->where('status', $status))
             ->orderByDesc('diperbarui');
 
+        // Tautan komponen COGS per kontrak. Diambil SEKALI, bukan sekali per baris: daftarnya
+        // pendek sedangkan tabelnya dipaginasi 25 baris.
+        $tautan = BsMukContractCogs::query()->pluck('component', 'muk_id')
+            ->map(fn ($v) => (string) $v)->all();
+
         $rows = $q->paginate(25)->withQueryString()->through(fn (BsMukContract $k) => [
             'id' => $k->id,
             'muk_id' => $k->muk_id,
+            'cogs' => $tautan[(int) $k->muk_id] ?? null,
             'no_kontrak' => $k->no_kontrak,
             'no_spk' => $k->no_spk,
             'jenis' => $k->jenis,
@@ -66,10 +76,55 @@ class MukKontrakController extends Controller
             'kontrak' => $rows,
             'filters' => ['cari' => $cari, 'status' => $status],
             'ringkas' => $this->ringkas(),
+            // Daftar pilihan datang dari SATU tempat (CogsComponentController::KOMPONEN),
+            // sama dengan yang dipakai Chart of Account — bukan disalin di layar.
+            'cogsOpsi' => CogsComponentController::pilihanKomponen(),
+            'bisaLink' => (bool) $request->user()?->can('cogs.component.manage'),
             'ditarik_pada' => optional(BsMukContract::max('ditarik_pada'))
                 ? \Illuminate\Support\Carbon::parse(BsMukContract::max('ditarik_pada'))->translatedFormat('d M Y H:i')
                 : null,
         ]);
+    }
+
+    /**
+     * Tautkan / lepas tautan satu kontrak ke sebuah Komponen COGS.
+     *
+     * Izinnya cogs.component.manage — bukan ap.posting.view seperti layarnya. Menautkan
+     * kontrak berarti menambah biaya ke perhitungan HPP; itu wewenang pemegang Komponen COGS,
+     * bukan siapa pun yang boleh membaca daftar kontrak.
+     *
+     * Disimpan dengan kunci muk_id (identitas di MUK ERP), satu kontrak satu komponen:
+     * kontrak yang tertaut ke dua komponen menyumbang nilainya dua kali ke HPP tanpa satu pun
+     * galat yang memberi tahu.
+     */
+    public function simpanCogs(Request $request, BsMukContract $kontrak): RedirectResponse
+    {
+        abort_unless($request->user()?->can('cogs.component.manage'), 403);
+
+        $v = $request->validate([
+            'component' => ['present', 'nullable', Rule::in(array_keys(CogsComponentController::pilihanKomponen()))],
+        ], [
+            'component.in' => 'Komponen COGS yang dipilih tidak dikenal.',
+        ]);
+
+        if (($v['component'] ?? null) === null) {
+            BsMukContractCogs::where('muk_id', $kontrak->muk_id)->delete();
+
+            return back()->with('success', 'Tautan Komponen COGS untuk '.$kontrak->no_kontrak.' dilepas.');
+        }
+
+        BsMukContractCogs::updateOrCreate(
+            ['tenant_id' => tenant_id(), 'muk_id' => (int) $kontrak->muk_id],
+            [
+                'component'      => $v['component'],
+                'no_kontrak'     => $kontrak->no_kontrak,
+                'linked_by'      => $request->user()?->id,
+                'linked_by_name' => $request->user()?->name,
+            ],
+        );
+
+        return back()->with('success', $kontrak->no_kontrak.' ditautkan ke komponen '
+            .(CogsComponentController::pilihanKomponen()[$v['component']] ?? $v['component']).'.');
     }
 
     public function show(Request $request, BsMukContract $kontrak, MukApi $muk): Response

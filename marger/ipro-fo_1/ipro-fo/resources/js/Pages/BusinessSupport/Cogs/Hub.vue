@@ -60,6 +60,11 @@ const menu: Array<{ group: string; items: Array<{ label: string; route: string |
         { label: 'Infrastruktur', route: r('bs.cogs.komponen.show', { komponen: 'infrastruktur' }) },
         { label: 'License Permit', route: r('bs.cogs.komponen.show', { komponen: 'license-permit' }) },
     ]},
+    // Set Up COGS — Perhitungan Lahan per lokasi/tahap, lalu budget per unit menurut luas
+    // tanah & luas bangunan unit itu sendiri. Letaknya mengikuti sidebar: di bawah Komponen COGS.
+    { group: 'Set Up COGS', items: [
+        { label: 'Perhitungan Lahan & Budget per Unit', route: r('bs.cogs.setupcogs.index') },
+    ]},
     { group: 'Saldo Awal Realisasi', items: [
         { label: 'Input Saldo Awal Realisasi', route: r('bs.cogs.realization.create') },
     ]},
