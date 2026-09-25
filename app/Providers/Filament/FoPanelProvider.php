@@ -277,7 +277,6 @@ class FoPanelProvider extends PanelProvider
             'pemberkasan' => 'collection',
             'collection-setup-sp' => 'collection',
             'collection-termin-sp' => 'collection',
-            'collection-setup-batal-angsuran' => 'collection',
             // Approval
             'approvals' => 'approval',
             'approval-pengalihan-hak' => 'approval',
@@ -455,7 +454,6 @@ class FoPanelProvider extends PanelProvider
                     ['label' => 'Setup', 'items' => [
                         $item('Setup SP', '/fo/collection-setup-sp', 'heroicon-o-document-text', 'filament.fo.pages.collection-setup-sp'),
                         $item('Setup Termin SP', '/fo/collection-termin-sp', 'heroicon-o-clock', 'filament.fo.pages.collection-termin-sp'),
-                        $item('Setup Batal Angsuran', '/fo/collection-setup-batal-angsuran', 'heroicon-o-receipt-percent', 'filament.fo.pages.collection-setup-batal-angsuran'),
                     ]],
                 ],
             ],
