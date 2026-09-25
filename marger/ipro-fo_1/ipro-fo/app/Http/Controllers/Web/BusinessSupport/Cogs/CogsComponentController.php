@@ -4,16 +4,23 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Web\BusinessSupport\Cogs;
 
+use App\Domain\BusinessSupport\Models\BsAccount;
 use App\Domain\BusinessSupport\Models\BsApCategory;
 use App\Domain\BusinessSupport\Models\BsApInvoice;
 use App\Domain\BusinessSupport\Models\BsCogsCategory;
 use App\Domain\BusinessSupport\Models\BsCogsComponentApCategory;
+use App\Domain\BusinessSupport\Models\BsJournal;
+use App\Domain\BusinessSupport\Models\BsJournalLine;
+use App\Domain\BusinessSupport\Models\BsMukContract;
+use App\Domain\BusinessSupport\Models\BsMukContractCogs;
 use App\Domain\BusinessSupport\Models\BsWorkOrder;
+use App\Domain\BusinessSupport\Services\BukuBesarDokumen;
 use App\Http\Controllers\Controller;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
@@ -43,6 +50,26 @@ class CogsComponentController extends Controller
         'license-permit' => ['label' => 'License Permit', 'cogs' => 'permit',   'sumber' => 'ap'],
     ];
 
+    /**
+     * Pilihan "Komponen COGS" pada Chart of Account: kunci komponen HPP => label yang dibaca
+     * operator.
+     *
+     * KUNCINYA kunci HPP ('tanah'|'bangunan'|'sarana'|'permit'), BUKAN slug alamat layar
+     * ('housing'|'infrastruktur'|'license-permit'). Itulah kosakata yang sudah dipakai
+     * bs_cogs_component_ap_categories.component dan BsCogsCategory::COMPONENTS; memakai slug
+     * di basis data berarti setiap pembacaan harus menerjemahkan lebih dulu, dan satu
+     * terjemahan yang terlupa menghasilkan komponen yang diam-diam kosong.
+     *
+     * Diturunkan dari KOMPONEN, tidak ditulis ulang: menambah satu komponen kelak cukup di
+     * satu tempat, dan layar COA ikut berubah tanpa disentuh.
+     *
+     * @return array<string,string>
+     */
+    public static function pilihanKomponen(): array
+    {
+        return collect(self::KOMPONEN)->mapWithKeys(fn (array $d) => [$d['cogs'] => $d['label']])->all();
+    }
+
     /** Pola nama/kode kategori invoice yang DISARANKAN untuk ditautkan — hanya saran di layar,
      *  tidak pernah ditautkan otomatis: menautkan biaya berdasarkan tebakan nama berarti satu
      *  salah tebak memindahkan uang ke komponen yang salah tanpa ada yang memutuskannya. */
@@ -55,6 +82,8 @@ class CogsComponentController extends Controller
     private const BATAL_AP = ['void', 'cancelled'];
 
     private const BATAL_SPK = ['cancelled'];
+
+    public function __construct(private readonly BukuBesarDokumen $bukuBesar) {}
 
     public function show(Request $request, string $komponen): Response
     {
@@ -74,8 +103,342 @@ class CogsComponentController extends Controller
             'bisaAtur'  => (bool) $request->user()?->can('cogs.component.manage'),
         ];
 
-        return Inertia::render('BusinessSupport/Cogs/Komponen/Show', array_merge($props,
-            $def['sumber'] === 'ap' ? $this->dataAp($def, $filters) : $this->dataSpk($def, $filters)));
+        return Inertia::render('BusinessSupport/Cogs/Komponen/Show', array_merge(
+            $props,
+            $def['sumber'] === 'ap' ? $this->dataAp($def, $filters) : $this->dataSpk($def, $filters),
+            // Sumber KETIGA, berdampingan — bukan pengganti. Angkanya SENGAJA tidak pernah
+            // dijumlahkan dengan dua sumber di atas: satu akun kewajiban di bagan akun ini
+            // melayani beberapa kategori invoice sekaligus (mis. 20107070704 adalah akun debit
+            // TANAH-C1, LICENSE-PERMIT-C1, DAN KONSTRUKSI-INFRA-C1), sehingga menjumlahkan
+            // keduanya akan menghitung uang yang sama dua kali tanpa satu pun galat.
+            $this->dataGl($def, $filters),
+            // Sumber KEEMPAT: kontrak SPK (MUK) yang ditautkan ke komponen ini lewat tombol
+            // "Link COGS". Sama seperti blok buku besar, ia berdiri sendiri dan tidak pernah
+            // dijumlahkan dengan blok mana pun di atasnya.
+            $this->dataMuk($def, $filters),
+        ));
+    }
+
+    /**
+     * Kontrak SPK (MUK) yang ditautkan ke komponen ini, DIBAGI PROPORSIONAL ke unit-unitnya.
+     *
+     * ── Dari mana bobot pembaginya ──
+     * Kontrak MUK sendiri TIDAK menyimpan unit sama sekali (bs_muk_contracts hanya memuat
+     * proyek, pelanggan, nilai, dan angka kumulatif). Yang punya daftar unit beserta bobotnya
+     * adalah SPK lokal: bs_work_order_units (unit_code, unit_price). Jembatannya nomor SPK —
+     * bs_muk_contracts.no_spk dicocokkan dengan bs_work_orders.spk_number.
+     *
+     * ── Kontrak yang tidak punya dasar bagi TIDAK dikarang pembagiannya ──
+     * Bila nomor SPK-nya tidak ketemu, SPK-nya belum punya daftar unit, atau seluruh
+     * unit_price-nya nol, kontrak itu tetap DITAMPILKAN sebagai satu baris utuh dengan alasan
+     * yang tertulis. Membaginya rata akan menghasilkan HPP per unit yang terlihat masuk akal,
+     * masuk ke jurnal, dan salahnya tidak pernah memunculkan galat.
+     *
+     * ── Sisa pembulatan dibebankan ke unit terakhir ──
+     * Membulatkan tiap bagian sendiri-sendiri membuat jumlah seluruh bagian meleset beberapa
+     * rupiah dari nilai kontraknya. Selisih itu kecil, tidak pernah terlihat, dan merusak
+     * kecocokan angka saat ditotal — jadi bagian terakhir menerima sisanya supaya
+     * jumlah(bagian) === nilai kontrak, persis.
+     *
+     * @param  array<string,mixed>  $def
+     * @param  array<string,mixed>  $filters
+     * @return array<string,mixed>
+     */
+    private function dataMuk(array $def, array $filters): array
+    {
+        if (! Schema::hasTable('bs_muk_contract_cogs') || ! Schema::hasTable('bs_muk_contracts')) {
+            return ['mukBaris' => [], 'mukRingkas' => ['kontrak' => 0, 'nilai' => 0.0, 'unit' => 0, 'tanpaDasar' => 0]];
+        }
+
+        $mukIds = BsMukContractCogs::where('component', $def['cogs'])->pluck('muk_id');
+
+        if ($mukIds->isEmpty()) {
+            return ['mukBaris' => [], 'mukRingkas' => ['kontrak' => 0, 'nilai' => 0.0, 'unit' => 0, 'tanpaDasar' => 0]];
+        }
+
+        $kontrak = BsMukContract::query()
+            ->whereIn('muk_id', $mukIds)
+            ->when($filters['tahun'], fn ($q, $v) => $q->whereYear('tanggal', $v))
+            ->orderBy('no_kontrak')
+            ->get(['muk_id', 'no_kontrak', 'no_spk', 'proyek_kode', 'proyek_nama', 'pelanggan_nama', 'tanggal', 'nilai_kontrak']);
+
+        // Unit per nomor SPK, lewat SPK lokal. Relasi dipakai (bukan join mentah) supaya scope
+        // tenant & soft-delete SPK ikut berlaku.
+        $unitPerSpk = BsWorkOrder::query()
+            ->whereIn('spk_number', $kontrak->pluck('no_spk')->filter()->unique()->values())
+            ->with('units:id,work_order_id,unit_id,unit_code,unit_price,seq')
+            ->get(['id', 'spk_number'])
+            ->keyBy('spk_number');
+
+        $cari = mb_strtolower((string) $filters['search']);
+        $baris = [];
+        $no = 0;
+        $tanpaDasar = 0;
+
+        foreach ($kontrak as $k) {
+            $nilai = round((float) $k->nilai_kontrak, 2);
+            $units = $k->no_spk !== null ? ($unitPerSpk[$k->no_spk]->units ?? collect()) : collect();
+            $bobot = (float) $units->sum(fn ($u) => (float) $u->unit_price);
+
+            $dasar = $units->isNotEmpty() && $bobot > 0.009;
+            if (! $dasar) {
+                $tanpaDasar++;
+            }
+
+            $bagian = $dasar
+                ? $this->bagiProporsional($nilai, $units)
+                : [[
+                    'unit'   => null,
+                    'porsi'  => null,
+                    'nilai'  => $nilai,
+                    'alasan' => $k->no_spk === null || ! isset($unitPerSpk[$k->no_spk])
+                        ? 'Nomor SPK kontrak ini tidak ditemukan pada Surat Perintah Kerja'
+                        : ($units->isEmpty()
+                            ? 'Surat Perintah Kerja-nya belum punya daftar unit'
+                            : 'Seluruh nilai unit pada SPK-nya nol'),
+                ]];
+
+            foreach ($bagian as $b) {
+                $row = [
+                    'no'         => ++$no,
+                    'kontrak'    => $k->no_kontrak,
+                    'spk'        => $k->no_spk,
+                    'proyek'     => trim(($k->proyek_kode ? $k->proyek_kode.' — ' : '').$k->proyek_nama),
+                    'pelanggan'  => $k->pelanggan_nama,
+                    'tanggal'    => $k->tanggal ? substr((string) $k->tanggal, 0, 10) : null,
+                    'unit'       => $b['unit'],
+                    'porsi'      => $b['porsi'],
+                    'nilai'      => $b['nilai'],
+                    'nilaiKontrak' => $nilai,
+                    'alasan'     => $b['alasan'] ?? null,
+                ];
+
+                if ($cari === '' || str_contains(mb_strtolower(implode(' ', [
+                    $row['kontrak'], $row['spk'], $row['proyek'], $row['pelanggan'], $row['unit'],
+                ])), $cari)) {
+                    $baris[] = $row;
+                }
+            }
+        }
+
+        return [
+            'mukBaris' => $baris,
+            'mukRingkas' => [
+                'kontrak'    => $kontrak->count(),
+                'nilai'      => round((float) $kontrak->sum(fn ($k) => (float) $k->nilai_kontrak), 2),
+                'unit'       => count(array_filter($baris, fn (array $r) => $r['unit'] !== null)),
+                'tanpaDasar' => $tanpaDasar,
+            ],
+        ];
+    }
+
+    /**
+     * Bagi satu nilai ke unit-unit menurut bobot unit_price.
+     *
+     * Bagian TERAKHIR menerima sisa pembulatan supaya jumlah seluruh bagian sama PERSIS dengan
+     * nilai yang dibagi. Tanpa itu, jumlah bagian meleset beberapa rupiah dari nilai
+     * kontraknya — selisih yang terlalu kecil untuk terlihat dan terlalu nyata untuk dibiarkan.
+     *
+     * @param  \Illuminate\Support\Collection<int,\App\Domain\BusinessSupport\Models\BsWorkOrderUnit>  $units
+     * @return list<array<string,mixed>>
+     */
+    private function bagiProporsional(float $nilai, $units): array
+    {
+        $bobot = (float) $units->sum(fn ($u) => (float) $u->unit_price);
+        $urut = $units->sortBy([['seq', 'asc'], ['id', 'asc']])->values();
+        $out = [];
+        $terpakai = 0.0;
+
+        foreach ($urut as $i => $u) {
+            $porsi = (float) $u->unit_price / $bobot;
+            $bagian = $i === $urut->count() - 1
+                ? round($nilai - $terpakai, 2)   // unit terakhir menyerap sisa pembulatan
+                : round($nilai * $porsi, 2);
+            $terpakai = round($terpakai + $bagian, 2);
+
+            $out[] = ['unit' => $u->unit_code, 'porsi' => round($porsi, 6), 'nilai' => $bagian];
+        }
+
+        return $out;
+    }
+
+    /**
+     * Mutasi buku besar pada akun yang ditandai komponen ini (bs_accounts.cogs_component).
+     *
+     * ── Kenapa MASUK dan KELUAR ditampilkan sebagai DUA kolom, bukan satu angka bersih ──
+     * Akun CIP yang biasa ditandai komponen tidak hanya didebit oleh biaya; ia juga DIKREDIT
+     * oleh proses HPP itu sendiri — CogsService::postPersediaan() menulis "Dr Persediaan Unit /
+     * Cr CIP". Kalau kolomnya satu angka bersih (debit − kredit), maka begitu HPP dikapitalisasi
+     * angka komponennya meluncur ke NOL dan layar ini terlihat seperti kehilangan biaya, tanpa
+     * satu pun galat. User pun memang meminta "mutasi masuk dan keluar" — keduanya ditampilkan
+     * apa adanya, dan nettonya disebut terpisah.
+     *
+     * ── Kenapa jurnal yang belum Approved tetap DITAMPILKAN tetapi tidak dijumlahkan ──
+     * Status jurnal bawaan di pemasangan ini adalah 'final', bukan 'posted'
+     * (config/business_support.php), sedangkan Buku Besar & Neraca hanya menghitung 'posted'.
+     * Menyaring 'posted' saja membuat layar ini kosong padahal biayanya sudah ada; menjumlahkan
+     * semuanya membuat angkanya tidak pernah sama dengan Buku Besar. Jadi barisnya ditampilkan
+     * seluruhnya dengan penanda 'efektif', dan RINGKASANNYA hanya menjumlah yang efektif —
+     * pola yang sama dengan Rekap PPh Dipotong.
+     *
+     * ── Baris yang tidak bisa ditelusuri TIDAK dibuang ──
+     * No. SPR / Nama Customer / Kode Unit hanya ada bila jurnalnya bisa ditelusuri balik ke
+     * dokumen yang membawa booking. Baris yang tidak bisa ditelusuri tetap tampil dengan sel
+     * kosong: membuangnya membuat jumlah layar berhenti sama dengan mutasi akunnya, dan
+     * selisihnya tidak akan terlihat sebagai kesalahan.
+     *
+     * @param  array<string,mixed>  $def
+     * @param  array<string,mixed>  $filters
+     * @return array<string,mixed>
+     */
+    private function dataGl(array $def, array $filters): array
+    {
+        $akun = BsAccount::query()
+            ->where('cogs_component', $def['cogs'])
+            ->orderBy('code')
+            ->get(['id', 'code', 'name']);
+
+        if ($akun->isEmpty()) {
+            return ['glAkun' => [], 'glBaris' => [], 'glRingkas' => $this->glRingkasKosong()];
+        }
+
+        $lines = BsJournalLine::query()
+            ->whereIn('account_id', $akun->pluck('id'))
+            ->whereHas('journal', fn ($q) => $q
+                ->when($filters['tahun'], fn ($w, $v) => $w->whereYear('journal_date', $v)))
+            ->with('journal:id,journal_number,journal_date,reference,description,status')
+            ->get()
+            ->sortBy(fn ($l) => [(string) $l->journal?->journal_date, (int) $l->id])
+            ->values();
+
+        $dokumen = $this->bukuBesar->documentsFor(
+            $lines->pluck('journal_id')->map(fn ($v) => (int) $v)->unique()->values()->all(),
+        );
+
+        $jejak = $this->jejakUnit($dokumen);
+        $namaAkun = $akun->pluck('name', 'id');
+        $proyek = $this->proyekPerAkun($akun->pluck('id')->all());
+
+        $cari = mb_strtolower((string) $filters['search']);
+        $no = 0;
+        $baris = $lines->map(function ($l) use ($dokumen, $jejak, $namaAkun, $proyek, &$no) {
+            $doc = $dokumen[(int) $l->journal_id] ?? null;
+            $kunci = $doc !== null ? $doc['type'].':'.$doc['id'] : null;
+            $j = $jejak[$kunci] ?? [];
+            $p = $proyek[(int) $l->account_id] ?? [];
+
+            return [
+                'no'             => ++$no,
+                'spr'            => $j['spr'] ?? null,
+                'customer'       => $j['customer'] ?? null,
+                'unit'           => $j['unit'] ?? ($p['unit'] ?? null),
+                // Lokasi diambil dari cluster unitnya bila jurnalnya tertelusur; bila tidak,
+                // dari Project yang memetakan akun ini (bs_projects.coa_account_id).
+                'lokasi'         => $j['lokasi'] ?? ($p['cluster'] ?? null),
+                // units tidak punya kolom tahap sama sekali — satu-satunya sumbernya Project.
+                'tahap'          => $p['tahap'] ?? null,
+                'tanggal'        => substr((string) $l->journal?->journal_date, 0, 10),
+                'akun'           => (string) ($namaAkun[$l->account_id] ?? ''),
+                'jurnal'         => $l->journal?->journal_number,
+                'keterangan'     => $l->description ?: $l->journal?->description,
+                'masuk'          => (float) $l->debit,
+                'keluar'         => (float) $l->credit,
+                'status'         => (string) ($l->journal?->status ?? ''),
+                'status_label'   => BsJournal::STATUSES[$l->journal?->status] ?? (string) ($l->journal?->status ?? '—'),
+                // Hanya jurnal Approved yang masuk Buku Besar & Neraca; yang belum tetap
+                // DITAMPILKAN supaya rinciannya utuh, tetapi tidak ikut menaikkan ringkasan.
+                'efektif'        => ($l->journal?->status ?? '') === 'posted',
+            ];
+        });
+
+        if ($cari !== '') {
+            $baris = $baris->filter(fn (array $r) => str_contains(mb_strtolower(implode(' ', [
+                $r['spr'], $r['customer'], $r['unit'], $r['lokasi'], $r['tahap'], $r['akun'], $r['jurnal'], $r['keterangan'],
+            ])), $cari))->values();
+        }
+
+        $efektif = $baris->where('efektif', true);
+
+        return [
+            'glAkun'  => $akun->map(fn ($a) => ['code' => $a->code, 'name' => $a->name])->values(),
+            'glBaris' => $baris->values(),
+            'glRingkas' => [
+                'jumlah'       => $baris->count(),
+                'masuk'        => round((float) $efektif->sum('masuk'), 2),
+                'keluar'       => round((float) $efektif->sum('keluar'), 2),
+                'netto'        => round((float) $efektif->sum('masuk') - (float) $efektif->sum('keluar'), 2),
+                'belumEfektif' => $baris->count() - $efektif->count(),
+                'tanpaJejak'   => $baris->filter(fn (array $r) => ($r['spr'] ?? null) === null)->count(),
+            ],
+        ];
+    }
+
+    /** @return array<string,mixed> */
+    private function glRingkasKosong(): array
+    {
+        return ['jumlah' => 0, 'masuk' => 0.0, 'keluar' => 0.0, 'netto' => 0.0, 'belumEfektif' => 0, 'tanpaJejak' => 0];
+    }
+
+    /**
+     * Dokumen sumber → No. SPR, customer, unit, dan lokasi (cluster).
+     *
+     * Hanya dokumen yang benar-benar membawa booking/customer yang bisa ditelusuri; sisanya
+     * memulangkan array kosong dan barisnya tampil dengan sel kosong.
+     *
+     * @param  array<int,array<string,mixed>>  $dokumen
+     * @return array<string,array<string,mixed>>
+     */
+    private function jejakUnit(array $dokumen): array
+    {
+        $bookingIds = collect($dokumen)->pluck('booking_id')->filter()->unique()->values()->all();
+        $customerIds = collect($dokumen)->pluck('customer_id')->filter()->unique()->values()->all();
+
+        $booking = $bookingIds === [] ? collect() : DB::table('bookings as b')
+            ->leftJoin('customers as c', 'c.id', '=', 'b.customer_id')
+            ->leftJoin('units as u', 'u.id', '=', 'b.unit_id')
+            ->leftJoin('clusters as cl', 'cl.id', '=', 'u.cluster_id')
+            ->whereIn('b.id', $bookingIds)
+            ->get(['b.id', 'b.booking_number', 'c.full_name', 'u.unit_code', 'cl.name as cluster_name'])
+            ->keyBy('id');
+
+        $customer = $customerIds === [] ? collect() : DB::table('customers')
+            ->whereIn('id', $customerIds)->pluck('full_name', 'id');
+
+        $out = [];
+        foreach ($dokumen as $d) {
+            $b = isset($d['booking_id']) ? ($booking[$d['booking_id']] ?? null) : null;
+            $out[$d['type'].':'.$d['id']] = [
+                'spr'      => $b?->booking_number,
+                'customer' => $b?->full_name ?? ($customer[$d['customer_id'] ?? 0] ?? null),
+                'unit'     => $b?->unit_code,
+                'lokasi'   => $b?->cluster_name,
+            ];
+        }
+
+        return $out;
+    }
+
+    /**
+     * Project per akun (bs_projects.coa_account_id) → cluster / tahap / unit.
+     *
+     * Satu-satunya sumber kolom "Tahap": tabel units tidak punya kolom tahap sama sekali.
+     * Dipakai juga sebagai cadangan Lokasi & Unit untuk baris yang jurnalnya tidak tertelusur.
+     *
+     * @param  list<int>  $accountIds
+     * @return array<int,array<string,mixed>>
+     */
+    private function proyekPerAkun(array $accountIds): array
+    {
+        if ($accountIds === [] || ! Schema::hasTable('bs_projects')) {
+            return [];
+        }
+
+        return DB::table('bs_projects')
+            ->whereIn('coa_account_id', $accountIds)
+            ->get(['coa_account_id', 'cluster', 'tahap', 'unit'])
+            ->keyBy('coa_account_id')
+            ->map(fn ($p) => ['cluster' => $p->cluster, 'tahap' => $p->tahap, 'unit' => $p->unit])
+            ->all();
     }
 
     /** Simpan daftar Kategori Invoice yang ditautkan ke komponen (Tanah / License Permit). */

@@ -20,6 +20,7 @@ const titles: Record<string, string> = {
     'mutasi': 'Mutasi Budget',
     'hpp': 'Transaksi HPP RealCost',
     'komponen': 'Komponen COGS',
+    'setup-cogs': 'Set Up COGS',
     'saldo-awal': 'Saldo Awal Realisasi',
 };
 const sections = computed<Record<string, Item[]>>(() => ({
@@ -65,6 +66,11 @@ const sections = computed<Record<string, Item[]>>(() => ({
         { label: 'Housing', route: r('bs.cogs.komponen.show', { komponen: 'housing' }), summary: 'Biaya dari Surat Perintah Kerja (Contractor Management)' },
         { label: 'Infrastruktur', route: r('bs.cogs.komponen.show', { komponen: 'infrastruktur' }), summary: 'Biaya dari Surat Perintah Kerja (Contractor Management)' },
         { label: 'License Permit', route: r('bs.cogs.komponen.show', { komponen: 'license-permit' }), summary: 'Biaya dari Kategori Invoice (Account Payable)' },
+    ],
+    // Tanpa `summary`: kartu di halaman ini merender summary sebagai ALAMAT (:href),
+    // bukan keterangan — mengisinya dengan kalimat menghasilkan tautan rusak.
+    'setup-cogs': [
+        { label: 'Perhitungan Lahan & Budget per Unit', route: r('bs.cogs.setupcogs.index') },
     ],
     'saldo-awal': [
         { label: 'Input Saldo Awal Realisasi', route: r('bs.cogs.realization.create') },

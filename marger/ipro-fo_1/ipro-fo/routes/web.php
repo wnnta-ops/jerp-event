@@ -31,6 +31,7 @@ use App\Http\Controllers\Web\BusinessSupport\Cogs\CogsController as BsCogsContro
 use App\Http\Controllers\Web\BusinessSupport\Cogs\CogsHppController as BsCogsHppController;
 use App\Http\Controllers\Web\BusinessSupport\Cogs\CogsQueryController as BsCogsQueryController;
 use App\Http\Controllers\Web\BusinessSupport\Cogs\CogsRealizationController as BsCogsRealizationController;
+use App\Http\Controllers\Web\BusinessSupport\Cogs\CogsSetupCogsController as BsCogsSetupCogsController;
 use App\Http\Controllers\Web\BusinessSupport\Cogs\CogsSetupController as BsCogsSetupController;
 use App\Http\Controllers\Web\BusinessSupport\Contractor\ContractorController as BsSpkController;
 use App\Http\Controllers\Web\BusinessSupport\Contractor\ContractorQueryController as BsContractorQueryController;
@@ -753,6 +754,10 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
     // invoice SPK-lah yang perlu melihat angka ini.
     Route::get('/business-support/muk-kontrak', [BsMukKontrakController::class, 'index'])->name('bs.muk.kontrak.index');
     Route::get('/business-support/muk-kontrak/{kontrak}', [BsMukKontrakController::class, 'show'])->name('bs.muk.kontrak.show');
+    // Tautkan kontrak ke Komponen COGS. Izinnya cogs.component.manage (dijaga di
+    // controller), BUKAN ap.posting seperti layarnya: menautkan kontrak menambah biaya ke
+    // perhitungan HPP, dan itu wewenang pemegang Komponen COGS.
+    Route::put('/business-support/muk-kontrak/{kontrak}/cogs', [BsMukKontrakController::class, 'simpanCogs'])->name('bs.muk.kontrak.cogs');
     // AP — Penghapusan Nilai Hutang
     Route::get('/business-support/payable-penghapusan', [BsApPenghapusanController::class, 'index'])->name('bs.ap.penghapusan.index');
     Route::get('/business-support/payable-penghapusan-report', [BsApPenghapusanController::class, 'report'])->name('bs.ap.penghapusan.report'); // Laporan Penghapusan Hutang (rincian + history)
@@ -1138,6 +1143,18 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
         ->where('komponen', 'tanah|housing|infrastruktur|license-permit')->name('bs.cogs.komponen.show');
     Route::put('/business-support/cogs-komponen/{komponen}/kategori-invoice', [\App\Http\Controllers\Web\BusinessSupport\Cogs\CogsComponentController::class, 'simpanTautan'])
         ->where('komponen', 'tanah|license-permit')->name('bs.cogs.komponen.tautan');
+
+    // Set Up COGS — "Perhitungan Lahan" per lokasi/tahap → budget per unit menurut luas tanah &
+    // luas bangunan. Nama rutenya sengaja bs.cogs.setupcogs.* dan BUKAN bs.cogs.setup.*: grup
+    // sidebar "Setup" yang lama memakai bs.cogs.location/provision/budget/... dan sudah punya
+    // izin mati bernama cogs.setup.provision.manage, sehingga wildcard 'cogs.setup.*' akan ikut
+    // mencocoki izin itu.
+    Route::get('/business-support/cogs-setup', [BsCogsSetupCogsController::class, 'index'])->name('bs.cogs.setupcogs.index');
+    Route::post('/business-support/cogs-setup', [BsCogsSetupCogsController::class, 'store'])->name('bs.cogs.setupcogs.store');
+    Route::get('/business-support/cogs-setup/{setup}', [BsCogsSetupCogsController::class, 'show'])->name('bs.cogs.setupcogs.show');
+    Route::put('/business-support/cogs-setup/{setup}', [BsCogsSetupCogsController::class, 'update'])->name('bs.cogs.setupcogs.update');
+    Route::put('/business-support/cogs-setup/{setup}/komponen', [BsCogsSetupCogsController::class, 'simpanKomponen'])->name('bs.cogs.setupcogs.komponen');
+    Route::delete('/business-support/cogs-setup/{setup}', [BsCogsSetupCogsController::class, 'destroy'])->name('bs.cogs.setupcogs.destroy');
 
     // Query / Laporan
     Route::get('/business-support/cogs-query/budget', [BsCogsQueryController::class, 'budget'])->name('bs.cogs.query.budget');
