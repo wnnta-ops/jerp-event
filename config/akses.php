@@ -227,7 +227,6 @@ return [
         'SetupHold' => 'fo.setup_hold',
         'SetupSp' => 'fo.setup_sp',
         'SetupTerminSp' => 'fo.setup_termin_sp',
-        'SetupBatalAngsuran' => 'fo.setup_batal_angsuran',
         'SkemaWizard' => 'fo.skema_wizard',
         'TerbitkanSp' => 'fo.terbitkan_sp',
         'UploadKoordinat' => 'fo.upload_koordinat',

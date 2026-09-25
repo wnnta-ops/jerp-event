@@ -7,7 +7,6 @@ use App\Filament\Fo\Resources\RefundResource;
 use App\Modules\BO\IproBridge\Services\RekomBatalCashService;
 use App\Modules\FO\Approval\Models\Approval;
 use App\Modules\FO\Approval\Services\ApprovalService;
-use App\Modules\FO\Collection\Services\BiayaBatalAngsuran;
 use App\Modules\FO\MarketingSales\Models\Kontrak;
 use Filament\Forms;
 use Filament\Forms\Concerns\InteractsWithForms;
@@ -199,32 +198,6 @@ class PembatalanKontrak extends Page implements HasForms, HasTable
                         Forms\Components\TextInput::make('refund_utj')->label('Refund (dari yang sudah dibayar)')->numeric()->rupiah()->default(0)
                             ->readOnly(fn (Forms\Get $get) => $get('alasan') !== 'LAINNYA')
                             ->helperText('Reject Bank / Kol 5 / Tutup Buku: otomatis = TOTAL yang sudah dibayar customer (− admin). Batal Sepihak: 0 (hangus). Lainnya: isi manual. Pencairan di menu Finance → Refund.'),
-                        // Hitungan biaya administrasi menurut Setup Batal Angsuran. DITAMPILKAN
-                        // saja, tidak mengisi Refund secara otomatis: aturan Refund yang ada
-                        // sudah membedakan alasan pembatalan (Reject Bank / Kol 5 / Tutup Buku
-                        // penuh, Batal Sepihak nol), dan belum diputuskan alasan mana yang
-                        // dikenai potongan ini. Menimpanya diam-diam berarti mengubah uang yang
-                        // kembali ke pembeli tanpa ada yang memutuskan.
-                        Forms\Components\Placeholder::make('biaya_batal')->label('Biaya administrasi pembatalan (Setup Batal Angsuran)')
-                            ->content(function (Kontrak $record) {
-                                $h = app(BiayaBatalAngsuran::class)->hitung($record);
-                                $rp = fn ($v) => 'Rp '.number_format((float) $v, 0, ',', '.');
-
-                                if ($h['angsuran'] <= 0) {
-                                    return new HtmlString('<em style="color:#94a3b8;">Belum ada angsuran (tipe ANG) yang dibayar pada kontrak ini.</em>');
-                                }
-
-                                return new HtmlString(
-                                    '<div style="line-height:1.7;">'
-                                    .'Angsuran dibayar <strong>'.$rp($h['angsuran']).'</strong><br>'
-                                    .'Biaya administrasi <strong>'.$h['persen'].'%</strong> '
-                                    .'<span style="color:#94a3b8;">('.e($h['sumber']).')</span> = '
-                                    .'<strong style="color:#b45309;">'.$rp($h['biaya_admin']).'</strong><br>'
-                                    .'Sisa dikembalikan <strong>'.$rp($h['dikembalikan']).'</strong>'
-                                    .'</div>'
-                                );
-                            }),
-
                         Forms\Components\Placeholder::make('rincian')->label('Rincian yang sudah dibayar customer')
                             ->content(fn (Kontrak $record) => new HtmlString(RefundResource::rincianHtml((int) $record->id))),
                     ])

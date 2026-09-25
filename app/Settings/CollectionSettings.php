@@ -72,13 +72,6 @@ class CollectionSettings extends Settings
     // penjadwal di routes/console.php. Berlaku hanya bila channel Email/WA nyala.
     public string $auto_kirim_jam;
 
-    // ── Batal Angsuran (Setup Batal Angsuran) ────────────────────────────────
-    // Biaya administrasi pembatalan = persen × angsuran (tipe ANG) yang SUDAH dibayar.
-    // Bukan dari harga unit: yang dipotong uang yang sudah masuk, bukan nilai kontraknya.
-    //
-    // Ini persen BAWAAN; yang per Cluster+Tahap ada di fo_tahap.persen_batal_admin.
-    public float $batal_admin_persen;
-
     public static function group(): string
     {
         return 'collection';
