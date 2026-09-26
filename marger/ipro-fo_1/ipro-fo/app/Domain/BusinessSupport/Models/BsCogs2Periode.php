@@ -25,6 +25,7 @@ class BsCogs2Periode extends Model
     protected $fillable = [
         'tenant_id', 'lokasi_id', 'lokasi_kode', 'lokasi_nama', 'tahap',
         'luas_lahan', 'saleable', 'rth', 'luas_bangunan', 'jumlah_unit',
+        'ikut_muk', 'ikut_gl',
         'catatan', 'created_by', 'updated_by',
     ];
 
@@ -35,6 +36,8 @@ class BsCogs2Periode extends Model
         'rth'           => 'decimal:2',
         'luas_bangunan' => 'decimal:2',
         'jumlah_unit'   => 'integer',
+        'ikut_muk'      => 'boolean',
+        'ikut_gl'       => 'boolean',
     ];
 
     public function tipe(): HasMany

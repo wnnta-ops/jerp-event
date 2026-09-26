@@ -9,7 +9,9 @@ use App\Domain\BusinessSupport\Models\BsCogs2HousingTipe;
 use App\Domain\BusinessSupport\Models\BsCogs2Kategori;
 use App\Domain\BusinessSupport\Models\BsCogs2Periode;
 use App\Domain\BusinessSupport\Models\BsCogs2Unit;
+use App\Domain\BusinessSupport\Models\BsCogs2Akun;
 use App\Domain\BusinessSupport\Services\Cogs2Kalkulator;
+use App\Domain\BusinessSupport\Services\Cogs2Sumber;
 use App\Http\Controllers\Controller;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -35,7 +37,10 @@ class Cogs2Controller extends Controller
     /** Slug alamat → kunci komponen. Keduanya sengaja sama supaya tidak ada terjemahan yang terlupa. */
     private const KOMPONEN = ['tanah', 'housing', 'infra', 'license'];
 
-    public function __construct(private readonly Cogs2Kalkulator $kalkulator) {}
+    public function __construct(
+        private readonly Cogs2Kalkulator $kalkulator,
+        private readonly Cogs2Sumber $sumber,
+    ) {}
 
     // ── Daftar periode ──────────────────────────────────────────────────────────────
 
@@ -270,7 +275,61 @@ class Cogs2Controller extends Controller
         abort_unless($request->user()?->can('cogs.budget.view'), 403);
         abort_unless(in_array($komponen, self::KOMPONEN, true), 404);
 
-        return Inertia::render('BusinessSupport/Cogs2/Actual', $this->props($request, $periode) + ['komponen' => $komponen]);
+        return Inertia::render('BusinessSupport/Cogs2/Actual', $this->props($request, $periode) + [
+            'komponen'     => $komponen,
+            // Akun COA yang ditandai komponen ini di Tambah/Edit Akun, beserta keterangan apakah
+            // sudah diakui milik periode ini — inilah tempat tanda di Chart of Account benar-benar
+            // tersambung ke Actual Costing COGS.
+            'akunBertanda' => $this->sumber->akunBertanda($periode, $komponen),
+            'perluKategori' => Cogs2Sumber::perluKategori($komponen),
+        ]);
+    }
+
+    /**
+     * Akui / cabut akun COA bertanda komponen sebagai milik periode ini.
+     *
+     * Diganti utuh per komponen, bukan ditambal per akun: layarnya berupa daftar centang, dan
+     * menambalnya satu per satu menyisakan keadaan setengah jadi bila satu permintaan gagal.
+     * Akun komponen LAIN tidak ikut tersentuh.
+     */
+    public function simpanAkun(Request $request, BsCogs2Periode $periode, string $komponen): RedirectResponse
+    {
+        abort_unless($request->user()?->can('businesssupport.setup.manage'), 403);
+        abort_unless(in_array($komponen, self::KOMPONEN, true), 404);
+
+        $v = $request->validate([
+            'account_id'   => ['present', 'array', 'max:500'],
+            'account_id.*' => ['integer', 'min:1'],
+        ]);
+
+        // Hanya akun yang BENAR-BENAR bertanda komponen ini yang boleh diakui. Tanpa penyaring
+        // ini, akun mana pun bisa diselundupkan lewat kiriman dan mutasinya ikut membebani HPP.
+        $sah = collect($this->sumber->akunBertanda($periode, $komponen))->pluck('id')->all();
+        $dipilih = array_values(array_intersect(array_map('intval', $v['account_id']), $sah));
+
+        DB::transaction(function () use ($dipilih, $sah, $periode, $request) {
+            BsCogs2Akun::where('periode_id', $periode->id)->whereIn('account_id', $sah)->delete();
+            foreach ($dipilih as $id) {
+                BsCogs2Akun::create(['tenant_id' => tenant_id(), 'periode_id' => $periode->id, 'account_id' => $id]);
+            }
+            $periode->update(['updated_by' => $request->user()?->id]);
+        });
+
+        return back()->with('success', count($dipilih).' akun COA diakui untuk periode ini.');
+    }
+
+    /** Saklar kedua sumber otomatis. */
+    public function simpanSumber(Request $request, BsCogs2Periode $periode): RedirectResponse
+    {
+        abort_unless($request->user()?->can('businesssupport.setup.manage'), 403);
+
+        $v = $request->validate([
+            'ikut_muk' => ['required', 'boolean'],
+            'ikut_gl'  => ['required', 'boolean'],
+        ]);
+        $periode->update($v + ['updated_by' => $request->user()?->id]);
+
+        return back()->with('success', 'Sumber biaya aktual disimpan.');
     }
 
     public function simpanActual(Request $request, BsCogs2Periode $periode, string $komponen): RedirectResponse
@@ -450,13 +509,40 @@ class Cogs2Controller extends Controller
     {
         $periode->load(['tipe', 'kategori', 'actual', 'unit']);
 
+        // ── Tiga sumber biaya aktual, digabung SEBELUM dihitung ──────────────────────
+        // Kalkulator tidak perlu tahu dari mana sebuah baris datang; ia hanya menjumlah. Dengan
+        // menggabungkannya di sini, rekonsiliasi tetap tertutup apa pun sumbernya, dan tidak ada
+        // jalur kedua yang bisa menghasilkan angka berbeda.
+        $mukBaris = $periode->ikut_muk ? $this->sumber->muk($periode) : collect();
+        $glBaris = $periode->ikut_gl ? $this->sumber->gl($periode) : collect();
+
+        $gabungan = $periode->actual->map(fn (BsCogs2Actual $a) => (object) [
+            'sumber' => 'manual', 'komponen' => $a->komponen, 'kategori' => $a->kategori,
+            'no_spk' => $a->no_spk, 'penambahan' => (float) $a->penambahan, 'pengurangan' => (float) $a->pengurangan,
+        ])->concat($mukBaris)->concat($glBaris);
+
         $hitung = $this->kalkulator->hitung(
             $periode,
             $periode->tipe,
             $periode->kategori,
-            $periode->actual,
+            $gabungan,
             $periode->unit,
         );
+
+        // Subtotal tiap sumber, per komponen — supaya penggandaan (baris yang diketik padahal
+        // kontrak/jurnalnya sudah ditarik otomatis) terlihat seketika, bukan tersembunyi di
+        // dalam satu angka besar.
+        $subtotal = [];
+        foreach (array_keys(Cogs2Kalkulator::KOMPONEN) as $k) {
+            $subtotal[$k] = [
+                'manual' => round((float) $periode->actual->where('komponen', $k)
+                    ->sum(fn ($a) => (float) $a->penambahan - (float) $a->pengurangan), 2),
+                'muk' => round((float) $mukBaris->where('komponen', $k)
+                    ->sum(fn ($a) => (float) $a->penambahan - (float) $a->pengurangan), 2),
+                'gl' => round((float) $glBaris->where('komponen', $k)
+                    ->sum(fn ($a) => (float) $a->penambahan - (float) $a->pengurangan), 2),
+            ];
+        }
 
         return [
             'periode' => [
@@ -471,8 +557,15 @@ class Cogs2Controller extends Controller
                 'rth'           => (float) $periode->rth,
                 'luas_bangunan' => (float) $periode->luas_bangunan,
                 'jumlah_unit'   => $periode->jumlah_unit,
+                'ikut_muk'      => (bool) $periode->ikut_muk,
+                'ikut_gl'       => (bool) $periode->ikut_gl,
                 'catatan'       => $periode->catatan,
             ],
+            // Baris dari kedua sumber otomatis, berdiri SENDIRI di layar: baris yang diketik
+            // operator tetap bisa disunting, sedangkan yang ditarik hanya dibaca.
+            'sumberMuk'   => $mukBaris->groupBy('komponen')->map(fn ($g) => $g->values()),
+            'sumberGl'    => $glBaris->groupBy('komponen')->map(fn ($g) => $g->values()),
+            'subtotal'    => $subtotal,
             'kategoriBaris' => $periode->kategori->groupBy('komponen')->map(
                 fn ($g) => $g->map(fn (BsCogs2Kategori $r) => [
                     'id' => $r->id, 'lokasi' => $r->lokasi, 'tahap' => $r->tahap,

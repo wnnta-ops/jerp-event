@@ -6,6 +6,7 @@ namespace App\Http\Controllers\Web\BusinessSupport\Payable;
 
 use App\Domain\BusinessSupport\Models\BsMukContract;
 use App\Domain\BusinessSupport\Models\BsMukContractCogs;
+use App\Domain\BusinessSupport\Services\Cogs2Sumber;
 use App\Domain\BusinessSupport\Services\MukApi;
 use App\Http\Controllers\Controller;
 use App\Http\Controllers\Web\BusinessSupport\Cogs\CogsComponentController;
@@ -50,13 +51,13 @@ class MukKontrakController extends Controller
 
         // Tautan komponen COGS per kontrak. Diambil SEKALI, bukan sekali per baris: daftarnya
         // pendek sedangkan tabelnya dipaginasi 25 baris.
-        $tautan = BsMukContractCogs::query()->pluck('component', 'muk_id')
-            ->map(fn ($v) => (string) $v)->all();
+        $tautan = BsMukContractCogs::query()->get(['muk_id', 'component', 'kategori'])->keyBy('muk_id');
 
         $rows = $q->paginate(25)->withQueryString()->through(fn (BsMukContract $k) => [
             'id' => $k->id,
             'muk_id' => $k->muk_id,
-            'cogs' => $tautan[(int) $k->muk_id] ?? null,
+            'cogs' => $tautan[(int) $k->muk_id]?->component,
+            'cogsKategori' => $tautan[(int) $k->muk_id]?->kategori,
             'no_kontrak' => $k->no_kontrak,
             'no_spk' => $k->no_spk,
             'jenis' => $k->jenis,
@@ -80,6 +81,18 @@ class MukKontrakController extends Controller
             // sama dengan yang dipakai Chart of Account — bukan disalin di layar.
             'cogsOpsi' => CogsComponentController::pilihanKomponen(),
             'bisaLink' => (bool) $request->user()?->can('cogs.component.manage'),
+            // Pilihan kategori datang dari Set Up Kategori COGS, dikelompokkan menurut kunci HPP
+            // supaya layar tidak perlu tahu bahwa kedua modul memakai kosakata komponen yang
+            // berbeda — penerjemahannya hanya ada di Cogs2Sumber.
+            'kategoriOpsi' => collect(CogsComponentController::pilihanKomponen())->keys()
+                ->mapWithKeys(fn (string $hpp) => [
+                    $hpp => Cogs2Sumber::pilihanKategori()[Cogs2Sumber::dariHpp($hpp)] ?? [],
+                ])->all(),
+            // Komponen mana yang memang BERKOLOM kategori di Actual Costing COGS. Tanah tidak.
+            'perluKategori' => collect(CogsComponentController::pilihanKomponen())->keys()
+                ->mapWithKeys(fn (string $hpp) => [
+                    $hpp => Cogs2Sumber::perluKategori((string) Cogs2Sumber::dariHpp($hpp)),
+                ])->all(),
             'ditarik_pada' => optional(BsMukContract::max('ditarik_pada'))
                 ? \Illuminate\Support\Carbon::parse(BsMukContract::max('ditarik_pada'))->translatedFormat('d M Y H:i')
                 : null,
@@ -103,6 +116,7 @@ class MukKontrakController extends Controller
 
         $v = $request->validate([
             'component' => ['present', 'nullable', Rule::in(array_keys(CogsComponentController::pilihanKomponen()))],
+            'kategori'  => ['nullable', 'string', 'max:100'],
         ], [
             'component.in' => 'Komponen COGS yang dipilih tidak dikenal.',
         ]);
@@ -113,10 +127,20 @@ class MukKontrakController extends Controller
             return back()->with('success', 'Tautan Komponen COGS untuk '.$kontrak->no_kontrak.' dilepas.');
         }
 
+        // Kategori hanya bermakna pada komponen yang BERKOLOM KATEGORI di Actual Costing COGS
+        // (Housing, Infrastruktur, License Permit). Untuk Tanah ia dikosongkan, bukan disimpan
+        // diam-diam: kategori yang tersimpan pada komponen yang tidak memakainya adalah data
+        // yang tidak pernah dibaca siapa pun, dan kelak menyesatkan yang membacanya.
+        $cogs2 = Cogs2Sumber::dariHpp($v['component']);
+        $kategori = $cogs2 !== null && Cogs2Sumber::perluKategori($cogs2)
+            ? (trim((string) ($v['kategori'] ?? '')) ?: null)
+            : null;
+
         BsMukContractCogs::updateOrCreate(
             ['tenant_id' => tenant_id(), 'muk_id' => (int) $kontrak->muk_id],
             [
                 'component'      => $v['component'],
+                'kategori'       => $kategori,
                 'no_kontrak'     => $kontrak->no_kontrak,
                 'linked_by'      => $request->user()?->id,
                 'linked_by_name' => $request->user()?->name,

@@ -1185,6 +1185,12 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
     Route::put('/business-support/cogs2/{periode}/actual/{komponen}', [BsCogs2Controller::class, 'simpanActual'])
         ->where('komponen', 'tanah|housing|infra|license')->name('bs.cogs2.actual.simpan');
 
+    // Akun COA bertanda Komponen COGS yang diakui milik periode ini, dan saklar kedua sumber
+    // otomatis (Kontrak SPK MUK & mutasi buku besar).
+    Route::put('/business-support/cogs2/{periode}/akun/{komponen}', [BsCogs2Controller::class, 'simpanAkun'])
+        ->where('komponen', 'tanah|housing|infra|license')->name('bs.cogs2.akun.simpan');
+    Route::put('/business-support/cogs2/{periode}/sumber', [BsCogs2Controller::class, 'simpanSumber'])->name('bs.cogs2.sumber.simpan');
+
     Route::get('/business-support/cogs2/{periode}/rincian', [BsCogs2Controller::class, 'rincian'])->name('bs.cogs2.rincian');
     Route::put('/business-support/cogs2/{periode}/rincian', [BsCogs2Controller::class, 'simpanUnit'])->name('bs.cogs2.rincian.simpan');
     Route::post('/business-support/cogs2/{periode}/tarik-unit', [BsCogs2Controller::class, 'tarikUnit'])->name('bs.cogs2.tarik-unit');

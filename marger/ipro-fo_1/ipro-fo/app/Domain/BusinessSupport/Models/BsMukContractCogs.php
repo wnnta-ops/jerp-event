@@ -23,7 +23,7 @@ class BsMukContractCogs extends Model
 
     protected $table = 'bs_muk_contract_cogs';
 
-    protected $fillable = ['tenant_id', 'muk_id', 'component', 'no_kontrak', 'linked_by', 'linked_by_name'];
+    protected $fillable = ['tenant_id', 'muk_id', 'component', 'kategori', 'no_kontrak', 'linked_by', 'linked_by_name'];
 
     protected $casts = ['muk_id' => 'integer'];
 }

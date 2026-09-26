@@ -314,9 +314,24 @@ const inputCls = 'h-9 w-full rounded-lg border border-neutral-300 bg-white px-3 
                                 <option :value="null">— tidak dipetakan —</option>
                                 <option v-for="(label, kunci) in (cogsComponents ?? {})" :key="kunci" :value="kunci">{{ label }}</option>
                             </select>
+                            <!--
+                                Tanda ini dibaca DUA modul yang berbeda, dan keduanya perlu disebut:
+                                  • COGS Lama → Komponen COGS: mutasinya tampil di layar komponen, berdiri sendiri.
+                                  • COGS Baru → Actual Costing COGS: mutasinya IKUT DIBEBANKAN ke HPP per unit —
+                                    tetapi hanya pada periode yang mencentang akun ini, sebab satu komponen bisa
+                                    punya akun untuk beberapa cluster.
+                                Tanpa kalimat kedua, orang menandai akun lalu mengira angkanya sudah masuk HPP
+                                padahal belum dicentang di periode mana pun — dan sebaliknya.
+                            -->
                             <p class="mt-1 text-[11px] text-neutral-400">
-                                Seluruh mutasi buku besar akun ini — masuk maupun keluar — ikut terbaca di layar Komponen COGS yang dipilih.
-                                Angkanya berdiri SENDIRI, tidak dijumlahkan dengan biaya dari Kategori Invoice maupun SPK pada layar itu.
+                                Seluruh mutasi buku besar akun ini — masuk maupun keluar — ikut terbaca di layar <b>Komponen COGS</b> yang dipilih
+                                (COGS Lama). Angkanya berdiri SENDIRI, tidak dijumlahkan dengan biaya dari Kategori Invoice maupun SPK pada layar itu.
+                            </p>
+                            <p class="mt-1 text-[11px] text-neutral-400">
+                                Di <b>COGS Baru</b>, akun bertanda ini muncul di <b>Actual Costing COGS</b> pada komponen yang sama —
+                                Tanah → Tanah, Housing → Housing, Infrastruktur → Infra, License Permit → License. Mutasinya baru
+                                <b>dibebankan ke HPP per unit</b> setelah akun ini dicentang pada periode yang bersangkutan, sebab satu
+                                komponen bisa punya akun untuk beberapa cluster.
                             </p>
                             <p v-if="form.errors.cogs_component" class="mt-1 text-xs text-danger-500">{{ form.errors.cogs_component }}</p>
                         </div>

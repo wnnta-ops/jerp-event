@@ -5,7 +5,7 @@
 // kalau API mereka terganggu, layar ini tetap tampil dengan hasil tarikan terakhir.
 // Karena itu "ditarik" ditampilkan di kanan atas — orang berhak tahu angka yang
 // dilihatnya setua apa sebelum memakainya menyiapkan pembayaran.
-import { ref, watch } from 'vue';
+import { computed, ref, watch } from 'vue';
 import { router, Link } from '@inertiajs/vue3';
 import { ArrowLeft, FileSpreadsheet, Search, AlertTriangle, RefreshCw, Link2, X } from 'lucide-vue-next';
 import EmptyState from '@/Components/UI/EmptyState.vue';
@@ -19,6 +19,10 @@ const props = defineProps<{
     // kunci komponen HPP => label ('tanah' => 'Tanah', 'bangunan' => 'Housing', dst.)
     cogsOpsi?: Record<string, string>;
     bisaLink?: boolean;
+    // Pilihan kategori dari Set Up Kategori COGS, per komponen HPP.
+    kategoriOpsi?: Record<string, string[]>;
+    // Komponen mana yang BERKOLOM kategori di Actual Costing COGS. Tanah tidak.
+    perluKategori?: Record<string, boolean>;
 }>();
 
 /* ── Link COGS ──────────────────────────────────────────────────────────────────────
@@ -27,16 +31,33 @@ const props = defineProps<{
    tombolnya disembunyikan di sini semata-mata supaya tidak menawarkan yang berakhir 403. */
 const modalCogs = ref<any | null>(null);
 const pilihan = ref<string | null>(null);
+const kategori = ref<string | null>(null);
 const menyimpan = ref(false);
+
+/**
+ * Kategori hanya diminta untuk komponen yang memang BERKOLOM kategori di Actual Costing COGS
+ * (Housing, Infrastruktur, License Permit). Realisasi Housing di sana dicocokkan lewat
+ * (nomor SPK + kategori); tanpa kategori, kontrak yang ditarik ke sana tidak akan pernah cocok
+ * dengan baris Set Up Kategori mana pun dan nilainya berhenti di nol tanpa keterangan.
+ */
+const butuhKategori = computed(() => !! (pilihan.value && props.perluKategori?.[pilihan.value]));
+const kategoriTersedia = computed<string[]>(() => (pilihan.value ? props.kategoriOpsi?.[pilihan.value] ?? [] : []));
 
 function bukaCogs(k: any) {
     modalCogs.value = k;
     pilihan.value = k.cogs ?? null;
+    kategori.value = k.cogsKategori ?? null;
 }
+// Berganti komponen membuang kategori yang lama: kategori milik satu komponen tidak pernah
+// berlaku untuk komponen lain, dan membiarkannya tersimpan menghasilkan tautan yang tidak
+// akan pernah cocok di Actual Costing.
+watch(pilihan, () => { kategori.value = null; });
+
 function simpanCogs() {
     if (! modalCogs.value) return;
     menyimpan.value = true;
-    router.put(route('bs.muk.kontrak.cogs', modalCogs.value.id), { component: pilihan.value },
+    router.put(route('bs.muk.kontrak.cogs', modalCogs.value.id),
+        { component: pilihan.value, kategori: butuhKategori.value ? kategori.value : null },
         {
             preserveScroll: true,
             onFinish: () => { menyimpan.value = false; modalCogs.value = null; },
@@ -170,6 +191,7 @@ watch([cari, status], () => {
                                             : 'border-neutral-300 text-neutral-600 hover:bg-neutral-50 dark:border-neutral-700 dark:text-neutral-300'">
                                     <Link2 class="h-3.5 w-3.5" />
                                     {{ k.cogs ? (cogsOpsi?.[k.cogs] ?? k.cogs) : 'Link COGS' }}
+                                    <span v-if="k.cogs && k.cogsKategori" class="ml-1 opacity-80">· {{ k.cogsKategori }}</span>
                                 </button>
                             </td>
                         </tr>
@@ -222,6 +244,24 @@ watch([cari, status], () => {
                                :class="pilihan === null ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/20' : 'border-neutral-200 dark:border-neutral-800'">
                             <input v-model="pilihan" type="radio" :value="null" class="h-4 w-4" /> — tidak ditautkan —
                         </label>
+                    </div>
+
+                    <!-- Kategori: hanya untuk komponen yang memang memakainya di Actual Costing COGS. -->
+                    <div v-if="butuhKategori" class="mt-3">
+                        <label class="block text-sm font-medium">Kategori pada Actual Costing COGS</label>
+                        <select v-model="kategori"
+                                class="mt-1 h-9 w-full rounded-lg border border-neutral-300 bg-white px-3 text-sm dark:border-neutral-700 dark:bg-neutral-900">
+                            <option :value="null">— belum dipilih —</option>
+                            <option v-for="k in kategoriTersedia" :key="k" :value="k">{{ k }}</option>
+                        </select>
+                        <p v-if="kategoriTersedia.length" class="mt-1 text-xs text-neutral-500">
+                            Pilihan datang dari <b>Set Up Kategori COGS</b> pada modul COGS Baru. Kontrak ini akan tampil di
+                            <b>Actual Costing COGS — {{ cogsOpsi?.[pilihan!] }}</b> dengan kategori tersebut.
+                        </p>
+                        <p v-else class="mt-1 rounded-lg bg-amber-50 px-2.5 py-2 text-xs text-amber-800 dark:bg-amber-950/30 dark:text-amber-200">
+                            Belum ada kategori untuk komponen ini di <b>Set Up Kategori COGS</b>. Tautannya tetap bisa disimpan,
+                            tetapi di Actual Costing COGS ia belum akan cocok dengan baris Set Up Kategori mana pun.
+                        </p>
                     </div>
 
                     <div class="mt-4 flex justify-end gap-2">
