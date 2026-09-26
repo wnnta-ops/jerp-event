@@ -278,8 +278,9 @@ const turunanCls = 'rounded-lg border border-dashed border-neutral-300 bg-neutra
                         <th class="px-3 py-2 text-left">No. SPK</th>
                         <th class="px-3 py-2 text-left">Proyek</th>
                         <th v-if="perluKategori" class="px-3 py-2 text-left">Kategori</th>
-                        <th class="px-3 py-2 text-right">Nilai Kontrak</th>
+                        <th class="px-3 py-2 text-right">Diopname</th>
                         <th class="px-3 py-2 text-right">Sudah Ditagih</th>
+                        <th class="px-3 py-2 text-right">Nilai Kontrak</th>
                     </tr>
                 </thead>
                 <tbody class="divide-y divide-neutral-100 dark:divide-neutral-800">
@@ -291,27 +292,33 @@ const turunanCls = 'rounded-lg border border-dashed border-neutral-300 bg-neutra
                             <span v-if="b.kategori">{{ b.kategori }}</span>
                             <span v-else class="text-amber-700 dark:text-amber-300">belum dipilih</span>
                         </td>
-                        <td class="px-3 py-2 text-right tabular-nums text-neutral-500">{{ rp(b.nilai_kontrak) }}</td>
+                        <!-- Diopname & Sudah Ditagih: keterangan seberapa jauh kontraknya berjalan,
+                             TIDAK ikut dijumlahkan. Yang dibebankan adalah Nilai Kontrak. -->
+                        <td class="px-3 py-2 text-right tabular-nums text-neutral-500">{{ rp(b.diopname) }}</td>
+                        <td class="px-3 py-2 text-right tabular-nums text-neutral-500">{{ rp(b.ditagih) }}</td>
                         <td class="px-3 py-2 text-right font-semibold tabular-nums">{{ rp(b.penambahan) }}</td>
                     </tr>
                 </tbody>
                 <tfoot class="border-t-2 border-neutral-200 font-semibold dark:border-neutral-700">
                     <tr>
                         <td class="px-3 py-2.5" :colspan="perluKategori ? 4 : 3">Jumlah</td>
-                        <td class="px-3 py-2.5 text-right tabular-nums text-neutral-500">{{ rp(barisMuk.reduce((n: number, b: any) => n + Number(b.nilai_kontrak || 0), 0)) }}</td>
+                        <td class="px-3 py-2.5 text-right tabular-nums text-neutral-500">{{ rp(barisMuk.reduce((n: number, b: any) => n + Number(b.diopname || 0), 0)) }}</td>
+                        <td class="px-3 py-2.5 text-right tabular-nums text-neutral-500">{{ rp(barisMuk.reduce((n: number, b: any) => n + Number(b.ditagih || 0), 0)) }}</td>
                         <td class="px-3 py-2.5 text-right tabular-nums">{{ rp(sub.muk) }}</td>
                     </tr>
                 </tfoot>
             </table>
-            <!-- Yang dibebankan adalah SUDAH DITAGIH, bukan nilai kontrak: Actual Costing adalah
-                 biaya yang sudah terjadi, sedangkan nilai kontrak baru komitmen. -->
+            <!-- Yang dibebankan NILAI KONTRAK: tujuannya mengetahui keseluruhan COGS supaya
+                 pembebanan ke tiap unit tepat dan tidak bergerak tiap ada tagihan baru. -->
             <p class="mt-3 flex items-start gap-2 rounded-lg bg-sky-50 p-2.5 text-xs text-sky-800 dark:bg-sky-950/30 dark:text-sky-200">
                 <Info class="mt-0.5 h-3.5 w-3.5 shrink-0" />
                 <span>
-                    Yang dibebankan adalah <b>Sudah Ditagih</b>, bukan nilai kontrak. Actual Costing adalah biaya yang
-                    <b>sudah terjadi</b>; memakai nilai kontrak membebankan seluruhnya sejak hari pertama, jauh sebelum
-                    pekerjaannya dikerjakan, dan HPP tiap unit akan melonjak lalu turun sendiri seiring penagihan.
-                    Tautannya diatur lewat tombol <b>Link COGS</b> di Contractor Management → Master → Kontrak SPK (MUK).
+                    Yang dibebankan adalah <b>Nilai Kontrak</b> — angka COGS yang utuh, supaya pembebanan ke tiap unit
+                    tepat dan <b>tidak bergerak</b> setiap ada tagihan baru. <b>Diopname</b> dan <b>Sudah Ditagih</b>
+                    ditampilkan sebagai keterangan seberapa jauh kontraknya berjalan, dan tidak ikut dijumlahkan —
+                    selama kontraknya belum selesai ditagih, angka yang dibebankan memang lebih besar daripada kas yang
+                    sudah keluar. Tautannya diatur lewat tombol <b>Link COGS</b> di Contractor Management → Master →
+                    Kontrak SPK (MUK).
                 </span>
             </p>
         </div>

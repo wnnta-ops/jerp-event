@@ -27,8 +27,11 @@
  *     tidak ada satu pun galat.
  *  2. AKUN YANG DISELUNDUPKAN DITOLAK. Hanya akun yang benar-benar bertanda komponen itu yang
  *     boleh diakui, apa pun yang dikirim layar.
- *  3. YANG DIBEBANKAN DARI KONTRAK ADALAH SUDAH DITAGIH, bukan nilai kontrak: Actual Costing
- *     adalah biaya yang sudah terjadi, sedangkan nilai kontrak baru komitmen.
+ *  3. YANG DIBEBANKAN DARI KONTRAK ADALAH NILAI KONTRAK, bukan yang sudah ditagih. Tujuan layar
+ *     ini adalah mengetahui KESELURUHAN COGS supaya pembebanan ke tiap unit tepat; memakai yang
+ *     sudah ditagih membuat HPP per unit bergerak tiap ada tagihan baru, sehingga unit yang
+ *     di-booked lebih dulu terkunci pada angka yang lebih kecil semata-mata karena waktu
+ *     penagihan. "Diopname" & "Sudah Ditagih" tetap tampil sebagai keterangan, TIDAK dijumlah.
  *  4. JURNAL YANG BELUM 'posted' TAMPIL TETAPI TIDAK DIJUMLAHKAN, dan kredit menjadi
  *     PENGURANGAN — akun CIP juga dikredit oleh proses HPP itu sendiri.
  *  5. SAKLAR SUMBER BENAR-BENAR MEMATIKAN sumbernya, dan rekonsiliasi tetap tertutup pada
@@ -133,7 +136,8 @@ try {
     DB::table('bs_muk_contracts')->insert([
         'tenant_id' => $tenant, 'muk_id' => $mukId, 'no_kontrak' => 'NK-'.$TAG, 'no_spk' => 'SPK/'.$TAG,
         'jenis' => 'kontrak', 'status' => 'approved', 'proyek_kode' => '062', 'proyek_nama' => 'PROYEK UJI',
-        'tanggal' => '2026-06-05', 'nilai_kontrak' => 900_000_000, 'kum_ditagih_neto' => 300_000_000,
+        'tanggal' => '2026-06-05', 'nilai_kontrak' => 900_000_000,
+        'kum_ditagih_neto' => 300_000_000, 'kum_diopname' => 450_000_000,
         'created_at' => now(), 'updated_at' => now(),
     ]);
     $kontrak = BsMukContract::where('muk_id', $mukId)->firstOrFail();
@@ -153,15 +157,20 @@ try {
     $h = $props($ctl->actual($req('GET'), $p, 'housing'));
     $mukBaris = $h['sumberMuk']['housing'] ?? [];
     $ok('kontrak muncul di Actual Costing COGS-Housing', count($mukBaris) === 1);
-    $ok('  yang dibebankan SUDAH DITAGIH (300 jt), bukan nilai kontrak (900 jt)',
-        $sama($mukBaris[0]['penambahan'] ?? null, 300_000_000)
-        && $sama($mukBaris[0]['nilai_kontrak'] ?? null, 900_000_000),
+    // Fikstur sengaja memberi tiga angka yang BERBEDA (kontrak 900 jt, ditagih 300 jt, opname
+    // 450 jt) supaya tidak ada dua di antaranya yang bisa tertukar tanpa terlihat.
+    $ok('  yang dibebankan NILAI KONTRAK (900 jt), bukan yang sudah ditagih (300 jt)',
+        $sama($mukBaris[0]['penambahan'] ?? null, 900_000_000),
         'penambahan='.($mukBaris[0]['penambahan'] ?? 'tidak ada')
-        .' — nilai kontrak membebankan seluruh komitmen sejak hari pertama');
+        .' — yang sudah ditagih membuat HPP per unit bergerak tiap ada tagihan baru');
+    $ok('  Diopname & Sudah Ditagih tampil sebagai keterangan, TIDAK dijumlah',
+        $sama($mukBaris[0]['ditagih'] ?? null, 300_000_000)
+        && $sama($mukBaris[0]['diopname'] ?? null, 450_000_000),
+        'ditagih='.($mukBaris[0]['ditagih'] ?? 'tidak ada').' opname='.($mukBaris[0]['diopname'] ?? 'tidak ada'));
     $ok('  kategorinya terbawa', ($mukBaris[0]['kategori'] ?? null) === 'KAT-'.$TAG);
     $ok('  dan TIDAK muncul di komponen lain',
         ($h['sumberMuk']['tanah'] ?? []) === [] && ($h['sumberMuk']['infra'] ?? []) === []);
-    $ok('  biaya aktual Housing = 300 jt', $sama($h['hitung']['rekon']['housing']['aktual'] ?? null, 300_000_000));
+    $ok('  biaya aktual Housing = 900 jt (nilai kontrak)', $sama($h['hitung']['rekon']['housing']['aktual'] ?? null, 900_000_000));
     $ok('  rekonsiliasinya tertutup', $sama($h['hitung']['rekon']['housing']['selisih'] ?? null, 0));
 
     // Kategori pada komponen yang TIDAK memakainya harus dikosongkan, bukan disimpan diam-diam.
@@ -266,7 +275,7 @@ try {
         ($h3['sumberGl']['tanah'] ?? []) === []
         && $sama($h3['hitung']['rekon']['tanah']['aktual'] ?? null, 0));
     $ok('  dan MUK tetap membebani Housing',
-        $sama($h3['hitung']['rekon']['housing']['aktual'] ?? null, 300_000_000));
+        $sama($h3['hitung']['rekon']['housing']['aktual'] ?? null, 900_000_000));
 
     $ctl->simpanSumber($req('PUT', ['ikut_muk' => true, 'ikut_gl' => true]), $p);
 
@@ -331,6 +340,14 @@ try {
     $ok('layar Actual memuat ketiga sumber', str_contains($act, 'Sumber Biaya Aktual')
         && str_contains($act, 'Dari Kontrak SPK (MUK)') && str_contains($act, 'Dari Buku Besar'));
     $ok('  pemilih akun COA ada', str_contains($act, 'Akun COA bertanda'));
+    // Keterangan di layar harus menyebut yang BENAR-BENAR dibebankan. Keterangan yang membantah
+    // kodenya sendiri lebih menyesatkan daripada tidak ada keterangan sama sekali: orang
+    // membacanya, mempercayainya, lalu mencari sebab selisih di tempat yang salah.
+    $ok('  keterangannya menyebut NILAI KONTRAK sebagai yang dibebankan',
+        str_contains($act, 'Yang dibebankan adalah <b>Nilai Kontrak</b>')
+        && ! str_contains($act, 'Yang dibebankan adalah <b>Sudah Ditagih</b>'));
+    $ok('  dan menyebut Diopname & Sudah Ditagih tidak ikut dijumlahkan',
+        str_contains($act, 'tidak ikut dijumlahkan'));
     $ok('  penggandaan baris ditandai', str_contains($act, 'terhitung <b>dua kali</b>'),
         'total tetap merekonsiliasi saat digandakan — satu-satunya cara ia terlihat adalah disebut');
 

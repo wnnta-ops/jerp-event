@@ -100,11 +100,20 @@ class Cogs2Sumber
     /**
      * Kontrak SPK (MUK) yang ditautkan, sebagai baris Actual Costing.
      *
-     * ── Yang dipakai adalah SUDAH DITAGIH, bukan nilai kontrak ──
-     * Actual Costing adalah biaya yang SUDAH TERJADI. Nilai kontrak adalah komitmen, bukan
-     * realisasi; memakainya akan membebankan seluruh nilai kontrak sejak hari pertama, jauh
-     * sebelum pekerjaannya dikerjakan, dan HPP tiap unit melonjak lalu turun sendiri seiring
-     * penagihan. Nilai kontraknya tetap ditampilkan berdampingan supaya keduanya terlihat.
+     * ── Yang dibebankan adalah NILAI KONTRAK, bukan yang sudah ditagih ──
+     * Tujuan layar ini adalah mengetahui KESELURUHAN COGS/HPP sebuah komponen supaya bisa
+     * dibebankan ke tiap unit dengan tepat. Nilai kontrak adalah angka yang utuh itu; yang sudah
+     * ditagih baru sebagian dan bertambah sendiri seiring penagihan berjalan.
+     *
+     * Memakai yang sudah ditagih membuat HPP per unit BERGERAK setiap kali ada tagihan baru,
+     * padahal biaya kontraknya sejak awal sudah pasti — unit yang di-booked lebih dulu akan
+     * terkunci pada angka yang lebih kecil daripada unit yang di-booked belakangan, semata-mata
+     * karena waktu penagihan. Dengan nilai kontrak, pembebanannya stabil sejak hari pertama.
+     *
+     * Konsekuensinya disebut apa adanya, bukan disembunyikan: selama kontraknya belum selesai
+     * ditagih, angka di sini LEBIH BESAR daripada kas yang sudah keluar. Karena itu "Sudah
+     * Ditagih" dan "Diopname" tetap ditampilkan berdampingan — dari keduanya terbaca seberapa
+     * jauh kontraknya sudah berjalan — tetapi tidak ikut dijumlahkan.
      *
      * @return Collection<int, object>
      */
@@ -136,9 +145,13 @@ class Cogs2Sumber
                 'no_kontrak'  => $k->no_kontrak,
                 'proyek'      => trim((string) (($k->proyek_kode ? $k->proyek_kode.' — ' : '').$k->proyek_nama)),
                 'keterangan'  => 'Kontrak SPK (MUK) '.$k->no_kontrak,
-                'nilai_kontrak' => round((float) $k->nilai_kontrak, 2),
-                'penambahan'  => round((float) $k->kum_ditagih_neto, 2),
+                // Yang dibebankan adalah NILAI KONTRAK — lihat alasannya di docblock method ini.
+                'penambahan'  => round((float) $k->nilai_kontrak, 2),
                 'pengurangan' => 0.0,
+                // Ditampilkan berdampingan sebagai keterangan, tidak ikut dijumlahkan: dari
+                // keduanya terbaca seberapa jauh kontraknya sudah berjalan.
+                'ditagih'     => round((float) $k->kum_ditagih_neto, 2),
+                'diopname'    => round((float) $k->kum_diopname, 2),
                 'efektif'     => true,
             ];
         })->filter()->values();
