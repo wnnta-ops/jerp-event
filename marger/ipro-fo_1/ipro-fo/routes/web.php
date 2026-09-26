@@ -26,6 +26,7 @@ use App\Http\Controllers\Web\BusinessSupport\CashBook\GiroController as BsGiroCo
 use App\Http\Controllers\Web\BusinessSupport\CashBook\OutgoingChequeController as BsOutgoingChequeController;
 use App\Http\Controllers\Web\BusinessSupport\CashBook\PettyCashController as BsPettyCashController;
 use App\Http\Controllers\Web\BusinessSupport\CashBook\SignatureBarcodeController as BsSignatureBarcodeController;
+use App\Http\Controllers\Web\BusinessSupport\Cogs\Cogs2Controller as BsCogs2Controller;
 use App\Http\Controllers\Web\BusinessSupport\Cogs\CogsBudgetMutationController as BsCogsMutationController;
 use App\Http\Controllers\Web\BusinessSupport\Cogs\CogsController as BsCogsController;
 use App\Http\Controllers\Web\BusinessSupport\Cogs\CogsHppController as BsCogsHppController;
@@ -1155,6 +1156,38 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
     Route::put('/business-support/cogs-setup/{setup}', [BsCogsSetupCogsController::class, 'update'])->name('bs.cogs.setupcogs.update');
     Route::put('/business-support/cogs-setup/{setup}/komponen', [BsCogsSetupCogsController::class, 'simpanKomponen'])->name('bs.cogs.setupcogs.komponen');
     Route::delete('/business-support/cogs-setup/{setup}', [BsCogsSetupCogsController::class, 'destroy'])->name('bs.cogs.setupcogs.destroy');
+
+    // ── COGS BARU ────────────────────────────────────────────────────────────────────
+    // Perhitungan COGS → Set Up Kategori (4 komponen) → Actual Costing (4 komponen) →
+    // Rincian COGS per unit. Slug komponen dibatasi supaya alamat yang meleset memulangkan 404,
+    // bukan halaman kosong yang terlihat seperti komponen tanpa biaya.
+    Route::get('/business-support/cogs2', [BsCogs2Controller::class, 'index'])->name('bs.cogs2.index');
+    Route::post('/business-support/cogs2', [BsCogs2Controller::class, 'store'])->name('bs.cogs2.store');
+    Route::delete('/business-support/cogs2/{periode}', [BsCogs2Controller::class, 'destroy'])->name('bs.cogs2.destroy');
+
+    // Pintu dari sidebar: butir menu tidak bisa tahu periode mana yang sedang dikerjakan, jadi
+    // rute ini membuka periode yang terakhir disunting. Didaftarkan SEBELUM rute /{periode}/…
+    // supaya "buka" tidak pernah tertangkap sebagai id periode.
+    Route::get('/business-support/cogs2/buka/{layar}/{komponen?}', [BsCogs2Controller::class, 'buka'])
+        ->where('layar', 'perhitungan|kategori|actual|rincian')
+        ->where('komponen', 'tanah|housing|infra|license')->name('bs.cogs2.buka');
+
+    Route::get('/business-support/cogs2/{periode}/perhitungan', [BsCogs2Controller::class, 'perhitungan'])->name('bs.cogs2.perhitungan');
+    Route::put('/business-support/cogs2/{periode}/perhitungan', [BsCogs2Controller::class, 'simpanPerhitungan'])->name('bs.cogs2.perhitungan.simpan');
+
+    Route::get('/business-support/cogs2/{periode}/kategori/{komponen}', [BsCogs2Controller::class, 'kategori'])
+        ->where('komponen', 'tanah|housing|infra|license')->name('bs.cogs2.kategori');
+    Route::put('/business-support/cogs2/{periode}/kategori/{komponen}', [BsCogs2Controller::class, 'simpanKategori'])
+        ->where('komponen', 'tanah|housing|infra|license')->name('bs.cogs2.kategori.simpan');
+
+    Route::get('/business-support/cogs2/{periode}/actual/{komponen}', [BsCogs2Controller::class, 'actual'])
+        ->where('komponen', 'tanah|housing|infra|license')->name('bs.cogs2.actual');
+    Route::put('/business-support/cogs2/{periode}/actual/{komponen}', [BsCogs2Controller::class, 'simpanActual'])
+        ->where('komponen', 'tanah|housing|infra|license')->name('bs.cogs2.actual.simpan');
+
+    Route::get('/business-support/cogs2/{periode}/rincian', [BsCogs2Controller::class, 'rincian'])->name('bs.cogs2.rincian');
+    Route::put('/business-support/cogs2/{periode}/rincian', [BsCogs2Controller::class, 'simpanUnit'])->name('bs.cogs2.rincian.simpan');
+    Route::post('/business-support/cogs2/{periode}/tarik-unit', [BsCogs2Controller::class, 'tarikUnit'])->name('bs.cogs2.tarik-unit');
 
     // Query / Laporan
     Route::get('/business-support/cogs-query/budget', [BsCogsQueryController::class, 'budget'])->name('bs.cogs.query.budget');
