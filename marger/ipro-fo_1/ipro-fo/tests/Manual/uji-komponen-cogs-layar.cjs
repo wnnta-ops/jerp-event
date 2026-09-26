@@ -233,7 +233,15 @@ async function main() {
 
     console.log('\n=== 7. Sidebar COGS ===');
 
-    const iCogs = nav.indexOf("title: 'COGS'");
+    // Modul COGS yang lama berganti nama menjadi "COGS Lama" sejak modul "COGS Baru" lahir.
+    // Jangkarnya dicari APA ADANYA supaya uji ini berhenti (dan terlihat) bila namanya berubah
+    // lagi — bukan diam-diam memulangkan blok kosong dan menjatuhkan delapan pemeriksaan di
+    // bawahnya tanpa menyebut sebabnya.
+    const iCogs = nav.indexOf("title: 'COGS Lama'");
+    if (iCogs < 0) {
+        cek("blok modul COGS ketemu di navGroups (title: 'COGS Lama')", false,
+            'nama modulnya berubah — perbarui jangkar di berkas uji ini');
+    }
     const akhirCogs = nav.indexOf("title: '", iCogs + 10);
     const blokCogs = nav.slice(iCogs, akhirCogs > 0 ? akhirCogs : undefined);
     const atas = [...blokCogs.matchAll(/\{ label: '([^']+)', icon: /g)].map((x) => x[1]);
