@@ -89,6 +89,20 @@ const filteredSuppliers = computed(() => {
 });
 const supplier = computed(() => props.suppliers.find((s: any) => s.id === form.supplier_id));
 const category = computed(() => props.categories.find((c: any) => c.id === form.category_id));
+
+/**
+ * Pilihan Kategori Invoice untuk SearchSelect — bisa DIKETIK, bukan lagi digulir.
+ *
+ * Kategorinya ada puluhan dan namanya berawalan mirip ("BIAYA AIR KANTOR", "BIAYA INTERNET",
+ * "BIAYA LISTRIK KANTOR", …), sehingga mencarinya dengan menggulir daftar berarti membaca
+ * satu per satu — dan salah pilih kategori berarti invoice-nya mendarat di akun yang salah.
+ *
+ * `label` disusun di sini, bukan dibiarkan SearchSelect menyusunnya sendiri: penyaringnya
+ * mencocokkan terhadap LABEL, jadi label "NAMA (KODE)" membuat pengetikan nama MAUPUN kode
+ * sama-sama menemukan barisnya. Bentuk tulisannya pun tetap sama persis dengan yang dulu
+ * tampil di <select>, supaya tidak ada yang merasa daftarnya berubah.
+ */
+const kategoriOpsi = computed(() => props.categories.map((c: any) => ({ ...c, label: `${c.name} (${c.code})` })));
 // #140: PPN dihitung dari NILAI OBJEK PPN (default = DPP, clamp ≤ DPP), bukan dari seluruh DPP.
 const ppnOn = computed(() => form.ppn_mode === 'with');
 const ppnBase = computed(() => ppnOn.value ? Math.min(r0(form.ppn_base) || dppR.value, dppR.value) : 0);
@@ -414,8 +428,16 @@ const cellArea = 'w-full rounded-md border border-neutral-300 bg-white px-2 py-1
         <div v-show="step === 2" class="space-y-4">
             <div class="card grid gap-4 p-5 md:grid-cols-3">
                 <div class="md:col-span-3 rounded-lg bg-neutral-50 px-4 py-2 text-sm dark:bg-neutral-800">Supplier: <span class="font-semibold">{{ supplier?.name }}</span></div>
-                <div class="md:col-span-2"><label class="mb-1 block text-xs font-medium text-neutral-500">Kategori Invoice *</label><select v-model="form.category_id" required :class="inputCls"><option value="">— pilih kategori —</option><option v-for="c in categories" :key="c.id" :value="c.id">{{ c.name }} ({{ c.code }})</option></select>
-                    <p v-if="category" class="mt-1 text-[11px] text-neutral-400">Dr {{ category.debit }} · Cr {{ category.payable }}</p></div>
+                <!--
+                    Kategori Invoice bisa DIKETIK. Atribut `required` bawaan <select> memang ikut
+                    hilang, tetapi tidak ada penjaga yang hilang: tombol "Berikutnya" sudah dikunci
+                    canNext() selama category_id kosong, dan server memvalidasi
+                    required|integer|exists:bs_ap_categories,id.
+                -->
+                <div class="md:col-span-2"><label class="mb-1 block text-xs font-medium text-neutral-500">Kategori Invoice *</label>
+                    <SearchSelect v-model="form.category_id" :options="kategoriOpsi" placeholder="— ketik atau pilih kategori —" />
+                    <p v-if="category" class="mt-1 text-[11px] text-neutral-400">Dr {{ category.debit }} · Cr {{ category.payable }}</p>
+                    <p v-else class="mt-1 text-[11px] text-neutral-400">Ketik nama atau kode kategori untuk mencarinya.</p></div>
                 <div><label class="mb-1 block text-xs font-medium text-neutral-500">Tipe Transaksi *</label><select v-model="form.trx_type" :class="inputCls"><option v-for="(label,val) in trxTypes" :key="val" :value="val">{{ label }}</option></select></div>
                 <div><label class="mb-1 block text-xs font-medium text-neutral-500">No. Invoice Supplier *</label><input v-model="form.supplier_invoice_no" required :class="inputCls" /></div>
                 <div><label class="mb-1 block text-xs font-medium text-neutral-500">Tgl. Input *</label><input v-model="form.invoice_date" type="date" disabled title="Otomatis tanggal input, tidak bisa diubah" class="h-9 w-full cursor-not-allowed rounded-lg border border-neutral-300 bg-neutral-100 px-3 text-sm text-neutral-500 dark:border-neutral-700 dark:bg-neutral-800" /><p class="mt-1 text-[10px] text-neutral-400">Otomatis tanggal input — tidak bisa diubah.</p></div>
