@@ -5,17 +5,19 @@ namespace App\Filament\Fo\Resources;
 use App\Filament\Concerns\MematuhiIzin;
 use App\Filament\Fo\Resources\RefundResource\Pages;
 use App\Models\Bank;
+use App\Modules\BO\IproBridge\Services\IproApPoster;
 use App\Modules\FO\FinanceAR\Models\Refund;
 use App\Modules\FO\MarketingSales\Models\Customer;
 use App\Modules\FO\MarketingSales\Models\Kontrak;
 use App\Modules\FO\MarketingSales\Models\KontrakTagihan;
 use App\Support\Rupiah;
 use Filament\Forms;
-use Illuminate\Support\HtmlString;
 use Filament\Forms\Form;
+use Filament\Notifications\Notification;
 use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Table;
+use Illuminate\Support\HtmlString;
 
 class RefundResource extends Resource
 {
@@ -42,6 +44,16 @@ class RefundResource extends Resource
             $set('biaya_admin', $admin);
             $set('nilai_refund', max(0, $kotor - $admin));
         };
+
+        // Refund yang LAHIR DARI PEMBATALAN: tertaut kontrak dan berjenis BOOKING. Angkanya
+        // sudah diputuskan di Pembatalan Kontrak lalu disetujui berjenjang, jadi di sini
+        // dikunci — diperiksa, bukan dihitung ulang atau diketik ulang.
+        //
+        // Cash Back (LEBIH_BAYAR) dan refund lepas tanpa kontrak TIDAK ikut terkunci: itu
+        // memang diketik tangan, dan salah ketik harus bisa dibetulkan sesudah tersimpan.
+        $dariPembatalan = fn (?Refund $record) => $record !== null
+            && $record->kontrak_id
+            && $record->jenis === 'BOOKING';
 
         // Pilih kontrak (KPR/CASH) → auto-isi dari rincian tagihan yang SUDAH DIBAYAR:
         //  - Total Dibayar = Σ pelunasan semua rincian (BF + DP + angsuran + ADM)
@@ -90,36 +102,44 @@ class RefundResource extends Resource
                     $set('bank_id', $cust?->bank_id);
                     $set('rekening_tujuan', $cust?->no_rekening);
                 }),
+            // KETIGA KOLOM UANG DI BAWAH MENAMPILKAN APA YANG TERSIMPAN, TITIK.
+            //
+            // Sebelumnya ketiganya memakai formatStateUsing() yang MENIMPA nilai tersimpan
+            // dengan hitungan ulang dari paidTotals() setiap kali formulir dibuka. Untuk
+            // refund yang lahir dari pembatalan, itu berarti angka yang sudah diputuskan
+            // approval diganti diam-diam — dan tersimpan begitu tombol Simpan ditekan.
+            //
+            // Contoh nyata: RF-202609-00004 disetujui Rp 90.000.000 (DP+TDP 100 jt − admin
+            // 10%), tetapi terbuka sebagai Rp 103.000.000 karena hitungan ulangnya memakai
+            // "seluruh setoran − ADM" — rumus lama yang sudah tidak berlaku.
+            //
+            // Layar ini memang bukan tempat menghitung: hitungannya sudah selesai di
+            // Pembatalan Kontrak dan disetujui berjenjang. Di sini angkanya DIPASTIKAN lalu
+            // diposting ke BO.
             Forms\Components\TextInput::make('nilai_kotor')->label('Total Dibayar Customer (Rp)')->numeric()->rupiah()->default(0)
-                ->readOnly(fn (Forms\Get $get) => filled($get('kontrak_id')))
-                ->formatStateUsing(fn ($state, ?Refund $record) => $record?->kontrak_id ? self::paidTotals((int) $record->kontrak_id)[0] : $state)
+                ->readOnly(fn (Forms\Get $get, ?Refund $record) => $dariPembatalan($record) || filled($get('kontrak_id')))
                 ->live(onBlur: true)->afterStateUpdated(fn (Forms\Get $get, Forms\Set $set) => $fromPersen($get, $set))
-                ->helperText('Ikut rincian kontrak (BF+DP+angsuran+ADM). Tanpa kontrak: ketik manual.'),
+                ->helperText(fn (?Refund $record) => $dariPembatalan($record)
+                    ? 'Dasar perhitungan saat pembatalan disetujui.'
+                    : 'Ikut rincian kontrak (BF+DP+angsuran+ADM). Tanpa kontrak: ketik manual.'),
             Forms\Components\TextInput::make('biaya_admin_persen')->label('Admin (% dari Total Dibayar)')->numeric()->suffix('%')->default(0)
                 ->dehydrated(false)->live(onBlur: true)
+                ->readOnly(fn (?Refund $record) => $dariPembatalan($record))
+                // Diturunkan dari angka yang TERSIMPAN, bukan dihitung ulang dari tagihan.
                 ->afterStateHydrated(function (Forms\Set $set, ?Refund $record) {
-                    if ($record?->kontrak_id) {
-                        [$t, $a] = self::paidTotals((int) $record->kontrak_id);
-                        $set('biaya_admin_persen', $t > 0 ? round($a / $t * 100, 2) : 0);
-                    } elseif ($record && (float) $record->nilai_kotor > 0) {
+                    if ($record && (float) $record->nilai_kotor > 0) {
                         $set('biaya_admin_persen', round((float) $record->biaya_admin / (float) $record->nilai_kotor * 100, 2));
                     }
                 })
                 ->afterStateUpdated(fn (Forms\Get $get, Forms\Set $set) => $fromPersen($get, $set))
                 ->helperText('Atur potongan admin di sini → Admin (Rp) & Refund otomatis menyesuaikan.'),
             Forms\Components\TextInput::make('biaya_admin')->label('Admin / tidak di-refund (Rp)')->numeric()->rupiah()->default(0)->readOnly()
-                ->formatStateUsing(fn ($state, ?Refund $record) => $record?->kontrak_id ? self::paidTotals((int) $record->kontrak_id)[1] : $state)
                 ->helperText('= Total × % admin (otomatis). Default ikut ADM dari rincian.'),
             Forms\Components\TextInput::make('nilai_refund')->label('Nilai Refund (Rp)')->numeric()->rupiah()->default(0)
-                ->formatStateUsing(function ($state, ?Refund $record) {
-                    if (! $record?->kontrak_id) {
-                        return $state;
-                    }
-                    [$t, $a] = self::paidTotals((int) $record->kontrak_id);
-
-                    return max(0, $t - $a);
-                })
-                ->helperText('= Total Dibayar − Admin. Otomatis, tapi bisa diubah.'),
+                ->readOnly(fn (?Refund $record) => $dariPembatalan($record))
+                ->helperText(fn (?Refund $record) => $dariPembatalan($record)
+                    ? 'Nilai yang DISETUJUI. Tidak dihitung ulang di sini — periksa, lalu Proses & Kirim ke BO.'
+                    : '= Total Dibayar − Admin. Otomatis, tapi bisa diubah.'),
             // Rincian pembayaran (asal nominal) — seperti SPR, agar admin tahu dari mana.
             Forms\Components\Placeholder::make('rincian')->label('Rincian Pembayaran (asal nominal)')->columnSpanFull()
                 ->content(fn (Forms\Get $get) => new HtmlString(self::rincianHtml(
@@ -242,11 +262,11 @@ class RefundResource extends Resource
                             'status' => 'DIPROSES',
                         ]);
                         try {
-                            app(\App\Modules\BO\IproBridge\Services\IproApPoster::class)->queueRefund($r->load(['customer', 'kontrak']));
-                            \Filament\Notifications\Notification::make()->success()->title('Refund dikirim ke Posting Invoice BO')
+                            app(IproApPoster::class)->queueRefund($r->load(['customer', 'kontrak']));
+                            Notification::make()->success()->title('Refund dikirim ke Posting Invoice BO')
                                 ->body('Refund '.$r->no_refund.' ('.str_replace('_', ' ', $sumber).') menunggu diposting di BO → Posting Invoice. Setelah diposting baru masuk Account Payable.')->send();
                         } catch (\Throwable $e) {
-                            \Filament\Notifications\Notification::make()->warning()->title('Status DIPROSES, tapi kirim ke BO gagal')
+                            Notification::make()->warning()->title('Status DIPROSES, tapi kirim ke BO gagal')
                                 ->body($e->getMessage())->persistent()->send();
                         }
                     }),
