@@ -159,14 +159,21 @@ async function main() {
 
     console.log('\n=== 4. Tahap kedua mengirim <form> sungguhan ===');
 
-    // Dicocokkan per-atribut, bukan dengan satu pola [^>]* berurutan: atribut v-if-nya sendiri
-    // memuat karakter ">" (tahap > 0), sehingga pola semacam itu berhenti di tengah jalan.
     // Diambil sebagai JENDELA teks sesudah "<form", bukan dengan mencari ">" penutup tag:
-    // atribut v-if-nya memuat ">" sendiri, jadi pencarian penutup berhenti di tempat yang salah.
+    // atribut v-show-nya memuat ">" sendiri (tahap > 0), jadi pencarian penutup berhenti di
+    // tempat yang salah.
     const tagForm = modalBersih.slice(modalBersih.indexOf('<form'), modalBersih.indexOf('<form') + 400);
     cek('modalnya SEBUAH <form> POST ber-target _blank',
         /method="post"/.test(tagForm) && /target="_blank"/.test(tagForm) && /:action="props\.action"/.test(tagForm),
         'tab memo akan diblokir peramban — ' + tagForm.slice(0, 120));
+    // INI YANG DULU MEMATIKAN FITURNYA SELAMA SEBULAN, tanpa galat sedikit pun. @submit
+    // memanggil tutup(); dengan v-if, <form>-nya tercabut dari dokumen pada microtask yang
+    // sama dan peramban membatalkan pengirimannya — tidak ada tab, tidak ada permintaan di
+    // log server, tidak ada penanda yang tertulis. Diuji langsung di peramban: form yang
+    // dicabut TIDAK mengirim POST, form yang hanya disembunyikan mengirim.
+    cek('  form-nya DISEMBUNYIKAN (v-show), bukan dicabut (v-if)',
+        /v-show="tahap > 0"/.test(tagForm) && ! /v-if="tahap > 0"/.test(tagForm),
+        'v-if mencabut form saat submit → POST dibatalkan diam-diam');
     cek('  tombol "Ya" tahap 2 adalah type="submit"', /type="submit"/.test(modalBersih));
     cek('  TIDAK memakai window.open (diblokir sesudah modal)', ! /window\.open/.test(modalBersih));
     cek('  membawa token CSRF & daftar ids', /name="_token"/.test(modalBersih) && /name="ids"/.test(modalBersih));

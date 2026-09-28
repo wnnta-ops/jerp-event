@@ -15,6 +15,14 @@
  *    tidak terjadi apa-apa, dan tidak ada satu pun galat. Pengiriman <form target="_blank">
  *    dari tombol yang benar-benar ditekan tidak pernah diblokir.
  *
+ *    JANGAN GANTI v-show DI BAWAH MENJADI v-if. Keduanya terlihat setara, tetapi @submit
+ *    memanggil tutup(), dan dengan v-if itu MENCABUT <form>-nya dari dokumen pada microtask
+ *    yang sama — sebelum peramban sempat menjalankan navigasinya. POST-nya lalu dibatalkan
+ *    diam-diam: tidak ada tab yang terbuka, tidak ada permintaan di log server, tidak ada
+ *    galat. Fitur ini pernah sebulan penuh tampak "sudah jalan" karena persis itu, sementara
+ *    tidak satu pun penanda rekom batal pernah tertulis. v-show hanya mematikan display,
+ *    elemennya tetap tersambung, dan pengirimannya berjalan.
+ *
  * 2. SATU MODAL YANG ISINYA BERGANTI, bukan dua modal bertumpuk. Menumpuk berarti mengurus
  *    z-index, fokus, dan tombol Esc yang menutup lapisan yang salah.
  *
@@ -51,7 +59,8 @@ defineExpose({ buka });
 </script>
 
 <template>
-    <form v-if="tahap > 0" :action="props.action" method="post" target="_blank" @submit="tutup()"
+    <!-- v-show, BUKAN v-if — alasannya di keputusan 1 pada docblock di atas. -->
+    <form v-show="tahap > 0" :action="props.action" method="post" target="_blank" @submit="tutup()"
         class="fixed inset-0 z-[300] flex items-center justify-center bg-black/50 p-4">
         <input type="hidden" name="_token" :value="csrf" />
         <input type="hidden" name="ids" :value="ids" />
