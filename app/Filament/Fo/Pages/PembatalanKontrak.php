@@ -8,6 +8,7 @@ use App\Modules\BO\IproBridge\Services\RekomBatalCashService;
 use App\Modules\FO\Approval\Models\Approval;
 use App\Modules\FO\Approval\Services\ApprovalService;
 use App\Modules\FO\MarketingSales\Models\Kontrak;
+use App\Modules\FO\MarketingSales\Services\HitungPembatalan;
 use Filament\Forms;
 use Filament\Forms\Concerns\InteractsWithForms;
 use Filament\Forms\Contracts\HasForms;
@@ -169,35 +170,45 @@ class PembatalanKontrak extends Page implements HasForms, HasTable
                     ->modalWidth('xl')
                     ->modalSubmitActionLabel('Ajukan ke Approval')
                     ->form([
-                        Forms\Components\Radio::make('alasan')->label('Alasan Pembatalan')->required()->live()
-                            ->afterStateUpdated(function ($state, Forms\Get $get, Forms\Set $set) {
-                                // Reject Bank / Kol 5 / Tutup Buku → kembalikan SEMUA yang sudah dibayar customer (− admin).
-                                // Batal Sepihak → 0 (hangus). Lainnya → diisi manual.
-                                if (in_array($state, ['REJECT_BANK', 'KOL_5', 'TUTUP_BUKU'], true)) {
-                                    $set('refund_utj', (float) $get('paid_net'));
-                                } elseif ($state === 'BATAL_SEPIHAK') {
-                                    $set('refund_utj', 0);
-                                }
-                            })
+                        Forms\Components\Radio::make('alasan')->label('Alasan Pembatalan')->required()->live()->columns(2)
+                            ->afterStateUpdated(fn (Forms\Get $get, Forms\Set $set, Kontrak $record) => self::isiRefund($record, $get, $set))
                             ->options([
                                 'BATAL_SEPIHAK' => 'Batal Sepihak',
                                 'REJECT_BANK' => 'Reject Bank',
+                                'KOL_2' => 'Kol 2',
+                                'KOL_3' => 'Kol 3',
+                                'KOL_4' => 'Kol 4',
                                 'KOL_5' => 'Kol 5',
                                 'TUTUP_BUKU' => 'Tutup Buku',
                                 'LAINNYA' => 'Lainnya',
                             ]),
+
+                        // Persennya DIKETIK, tidak diturunkan dari keadaan kontrak. Praktiknya 10%
+                        // bila pembeli mundur sesudah membayar DP dan 30% bila batal menjelang akad,
+                        // tetapi batasnya soal kesepakatan — bukan sesuatu yang bisa dibaca sistem.
+                        Forms\Components\TextInput::make('admin_persen')->label('Administrasi dipotong dari DP')
+                            ->numeric()->suffix('%')->default(0)->minValue(0)->maxValue(100)
+                            ->live(onBlur: true)
+                            ->afterStateUpdated(fn (Forms\Get $get, Forms\Set $set, Kontrak $record) => self::isiRefund($record, $get, $set))
+                            ->visible(fn (Forms\Get $get) => $get('alasan') === HitungPembatalan::ALASAN_SEPIHAK)
+                            ->required(fn (Forms\Get $get) => $get('alasan') === HitungPembatalan::ALASAN_SEPIHAK)
+                            ->helperText('Isi 0 bila DP dikembalikan utuh. UTJ tidak ikut dikembalikan pada Batal Sepihak.'),
+
                         Forms\Components\Textarea::make('alasan_lainnya')->label('Alasan Lainnya')->rows(2)
                             ->visible(fn (Forms\Get $get) => $get('alasan') === 'LAINNYA')
                             ->required(fn (Forms\Get $get) => $get('alasan') === 'LAINNYA'),
                         Forms\Components\DatePicker::make('tgl_pembatalan')->label('Tgl Pembatalan')->default(now())->required(),
-                        Forms\Components\Hidden::make('paid_net')->default(function (Kontrak $record) {
-                            [$total, $admin] = RefundResource::paidTotals((int) $record->id);
 
-                            return max(0, $total - $admin);
-                        }),
-                        Forms\Components\TextInput::make('refund_utj')->label('Refund (dari yang sudah dibayar)')->numeric()->rupiah()->default(0)
+                        Forms\Components\TextInput::make('refund_utj')->label('Pengembalian ke customer')->numeric()->rupiah()->default(0)
                             ->readOnly(fn (Forms\Get $get) => $get('alasan') !== 'LAINNYA')
-                            ->helperText('Reject Bank / Kol 5 / Tutup Buku: otomatis = TOTAL yang sudah dibayar customer (− admin). Batal Sepihak: 0 (hangus). Lainnya: isi manual. Pencairan di menu Finance → Refund.'),
+                            ->helperText('Kol 2-5 / Reject Bank / Tutup Buku: UTJ dikembalikan utuh. Batal Sepihak: DP dikurangi administrasi — UTJ hangus. Lainnya: isi manual. Pencairan di menu Finance → Refund.'),
+
+                        // Diperlihatkan sebagai rincian bertingkat, bukan satu angka jadi: operator
+                        // harus bisa melihat DARI MANA angkanya, sebab dialah yang menjelaskannya
+                        // kepada pembeli.
+                        Forms\Components\Placeholder::make('hitungan')->label('Hitungan')
+                            ->content(fn (Forms\Get $get, Kontrak $record) => new HtmlString(self::hitunganHtml($record, $get))),
+
                         Forms\Components\Placeholder::make('rincian')->label('Rincian yang sudah dibayar customer')
                             ->content(fn (Kontrak $record) => new HtmlString(RefundResource::rincianHtml((int) $record->id))),
                     ])
@@ -206,12 +217,20 @@ class PembatalanKontrak extends Page implements HasForms, HasTable
                             ? ($data['alasan_lainnya'] ?? 'Lainnya')
                             : str_replace('_', ' ', $data['alasan']);
 
+                        // Dihitung ULANG di sini, tidak dipercayakan pada nilai yang datang dari
+                        // formulir: kolom Refund read-only hanya menghalangi pengetikan, bukan
+                        // pengiriman. Satu-satunya yang benar-benar diketik operator adalah persen
+                        // administrasi dan — pada alasan "Lainnya" — nominalnya sendiri.
+                        $h = app(HitungPembatalan::class)->pengembalian($record, $data['alasan'] ?? null, (float) ($data['admin_persen'] ?? 0));
+                        $pengembalian = $h['refund'] ?? (float) ($data['refund_utj'] ?? 0);
+                        $dasar = $h['dasar'] === 'UTJ' ? $h['utj'] : ($h['dasar'] === 'DP' ? $h['dp'] : $pengembalian);
+
                         $approval = Approval::create([
                             'tgl_approval' => now(),
                             'jenis' => 'BATAL_KONTRAK',
                             'subject_type' => Kontrak::class,
                             'subject_id' => $record->id,
-                            'amount_dampak' => (float) ($data['refund_utj'] ?? 0),
+                            'amount_dampak' => $pengembalian,
                             'alasan' => 'Pembatalan: '.$alasanLabel,
                             'detail_lama' => ['status' => $record->status, 'nilai_kontrak' => (float) $record->total_kontrak],
                             'detail_baru' => [
@@ -219,7 +238,16 @@ class PembatalanKontrak extends Page implements HasForms, HasTable
                                 'alasan' => $data['alasan'],
                                 'alasan_text' => $alasanLabel,
                                 'tgl_pembatalan' => $data['tgl_pembatalan'] ?? null,
-                                'total_pengembalian' => (float) ($data['refund_utj'] ?? 0),
+                                'total_pengembalian' => $pengembalian,
+                                // Dasar & potongannya ikut disimpan supaya Refund yang lahir nanti
+                                // bisa menyebut angka kotornya, dan supaya pembatalan lama tetap
+                                // terbaca meski persen di Pengaturan berubah kemudian.
+                                'total_pelunasan' => $dasar,
+                                'unrefund' => $h['potongan'],
+                                'admin_persen' => $h['admin_persen'],
+                                'utj_dibayar' => $h['utj'],
+                                'dp_dibayar' => $h['dp'],
+                                'dasar' => $h['dasar'],
                             ],
                             'status' => 'DRAFT',
                             'requested_by' => auth()->id(),
@@ -234,5 +262,58 @@ class PembatalanKontrak extends Page implements HasForms, HasTable
             ])
             ->defaultSort('tgl_kontrak', 'desc')
             ->paginated([10, 25, 50]);
+    }
+
+    /**
+     * Isi kolom Refund menurut alasan & persen administrasi.
+     *
+     * Tidak menyentuh kolomnya sama sekali pada alasan "Lainnya" — di sana angkanya milik
+     * operator, dan menimpanya berarti menghapus ketikan orang tepat setelah diketik.
+     */
+    private static function isiRefund(Kontrak $record, Forms\Get $get, Forms\Set $set): void
+    {
+        $h = app(HitungPembatalan::class)->pengembalian($record, $get('alasan'), (float) $get('admin_persen'));
+
+        if ($h['refund'] !== null) {
+            $set('refund_utj', $h['refund']);
+        }
+    }
+
+    /** Rincian bertingkat asal angka pengembalian — bentuknya mengikuti lembar rumus. */
+    private static function hitunganHtml(Kontrak $record, Forms\Get $get): string
+    {
+        $h = app(HitungPembatalan::class)->pengembalian($record, $get('alasan'), (float) $get('admin_persen'));
+        $rp = fn ($v) => 'Rp '.number_format((float) $v, 0, ',', '.');
+
+        if ($h['dasar'] === 'MANUAL') {
+            return '<em style="color:#94a3b8;">Pilih alasan pembatalan untuk melihat hitungannya. Pada alasan "Lainnya", nominalnya diisi manual.</em>';
+        }
+
+        $baris = fn ($label, $nilai, $tebal = false) => '<tr>'
+            .'<td style="padding:3px 12px 3px 0;">'.($tebal ? '<strong>'.$label.'</strong>' : $label).'</td>'
+            .'<td style="padding:3px 0;text-align:right;white-space:nowrap;">'.($tebal ? '<strong>'.$nilai.'</strong>' : $nilai).'</td></tr>';
+
+        $isi = '';
+        if ($h['dasar'] === 'UTJ') {
+            $isi .= $baris('UTJ yang sudah dibayar', $rp($h['utj']));
+            $isi .= $baris('Pengembalian UTJ', $rp($h['refund']), true);
+        } else {
+            $isi .= $baris('UTJ yang sudah dibayar', $rp($h['utj']).' <span style="color:#b45309;">(hangus)</span>');
+            $isi .= $baris('DP yang sudah dibayar', $rp($h['dp']));
+            $isi .= $baris('Administrasi '.rtrim(rtrim(number_format($h['admin_persen'], 2, ',', '.'), '0'), ',').'%', '− '.$rp($h['potongan']));
+            $isi .= $baris('Pengembalian DP customer', $rp($h['refund']), true);
+        }
+
+        $catatan = '';
+        if ($h['dasar'] === 'DP') {
+            $blt = app(HitungPembatalan::class)->bltBatalSepihak();
+            $catatan = '<div style="margin-top:8px;padding-top:8px;border-top:1px solid #334155;color:#94a3b8;">'
+                .'BLT Batal Sepihak untuk sales: '.$rp($blt['nilai'])
+                .' − PPh '.rtrim(rtrim(number_format($blt['pph_persen'], 2, ',', '.'), '0'), ',').'% '
+                .'= <strong style="color:#e2e8f0;">'.$rp($blt['nett']).'</strong> nett. '
+                .'Dibuat otomatis (DRAFT) saat pembatalan disetujui.</div>';
+        }
+
+        return '<div style="line-height:1.6;"><table style="border-collapse:collapse;">'.$isi.'</table>'.$catatan.'</div>';
     }
 }
