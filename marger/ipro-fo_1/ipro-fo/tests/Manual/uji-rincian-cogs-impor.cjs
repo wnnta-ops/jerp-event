@@ -208,8 +208,11 @@ function main() {
         /if \(ada\.has\(String\(b\.unit_rumah \?\? ''\)\.toLowerCase\(\)\)\) continue;/.test(srcLayar),
         'menimpa akan menghapus status booked & pilihan costing unit yang HPP-nya sudah terkunci');
     cek('  tombol impor mati selama masih ada galat',
-        /galat\.value\.length === 0/.test(srcDialog) && /:disabled="! siap"/.test(srcDialog),
+        /galatCsv\.value\.length === 0/.test(srcDialog) && /:disabled="! siap"/.test(srcDialog),
         'mengimpor sebagian membuat operator mengira semuanya masuk');
+    // Dialognya kini punya DUA jalan masuk; impor CSV tinggal salah satunya.
+    cek('  dialognya punya tab "Pilih dari Modul Unit" di samping "Impor CSV"',
+        srcDialog.includes('Pilih dari Modul Unit') && srcDialog.includes('Impor CSV'));
 
     console.log('\n────────────────────────────────');
     console.log('LULUS: ' + lulus + '   GAGAL: ' + gagal);

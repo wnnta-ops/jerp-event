@@ -34,6 +34,13 @@ const props = defineProps<{
     statusOpsi: Record<string, string>;
     costingOpsi: Record<string, string>;
     bisaUbah: boolean;
+    // ── Pemilih unit dari modul Unit (Set Up Sales) ──────────────────────────────────
+    // `unitFo` adalah prop LAZY: ia baru dikirim saat pemilihnya dibuka, sebab satu lokasi bisa
+    // berisi ratusan unit dan hampir setiap kali layar ini dibuka daftarnya tidak dipakai.
+    foLokasi?: Array<{ id: number; kode: string; nama: string }>;
+    foTahap?: Array<{ id: number; lokasi_id: number; kode: string; nama: string }>;
+    unitFo?: any;
+    galatFo?: string | null;
 }>();
 
 /* ── Salinan lokal ────────────────────────────────────────────────────────────────── */
@@ -268,7 +275,11 @@ const selCls = 'h-8 w-full rounded-lg border border-neutral-300 bg-white px-1.5 
                                 :aria-pressed="tampilan === t[0]" @click="tampilan = t[0] as any">{{ t[1] }}</button>
                     </div>
                     <Button v-if="bisaUbah" variant="ghost" size="sm" @click="tambah"><Plus class="h-4 w-4" /> Tambah Unit</Button>
-                    <ImporUnit :baris="baris" :nama-berkas="periode.cakupan" :bisa-ubah="bisaUbah" @impor="terimaImpor" />
+                    <ImporUnit :baris="baris" :nama-berkas="periode.cakupan" :bisa-ubah="bisaUbah"
+                               :periode-id="periode.id" :fo-lokasi="foLokasi" :fo-tahap="foTahap"
+                               :unit-fo="unitFo" :galat-fo="galatFo"
+                               :lokasi-awal="periode.lokasi_id" :tahap-awal="periode.tahap"
+                               @impor="terimaImpor" />
                 </div>
             </div>
 
