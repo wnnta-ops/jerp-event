@@ -228,7 +228,12 @@ class PembatalanKontrak extends Page implements HasForms, HasTable
                         // administrasi dan — pada alasan "Lainnya" — nominalnya sendiri.
                         $h = app(HitungPembatalan::class)->pengembalian($record, $data['alasan'] ?? null, (float) ($data['admin_persen'] ?? 0));
                         $pengembalian = $h['refund'] ?? (float) ($data['refund_utj'] ?? 0);
-                        $dasar = $h['dasar'] === 'UTJ' ? $h['utj'] : ($h['dasar'] === 'DP' ? $h['dp'] : $pengembalian);
+                        // 'basis' — BUKAN 'dp'. Sejak angsuran ikut dasar potongan pada kontrak
+                        // cash, dp saja bernilai nol untuk kontrak yang setorannya seluruhnya
+                        // ANG; Refund yang lahir lalu mencatat "Total Dibayar Rp 0" dengan
+                        // Nilai Refund ratusan juta, dan kolom persen adminnya kosong karena
+                        // dibagi nol.
+                        $dasar = $h['dasar'] === 'MANUAL' ? $pengembalian : $h['basis'];
 
                         $approval = Approval::create([
                             'tgl_approval' => now(),
