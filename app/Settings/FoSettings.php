@@ -22,6 +22,15 @@ class FoSettings extends Settings
 
     public float $komisi_pph_default_persen;
 
+    // ── BLT Batal Sepihak ────────────────────────────────────────────────────
+    // Nilai tetap untuk sales ketika kontrak dibatalkan sepihak oleh pembeli, beserta
+    // potongan PPh 21-nya. Tidak diambil dari Skema BLT: skema menghitung dari nilai
+    // kontrak, sedangkan yang ini justru muncul karena kontraknya TIDAK jadi.
+    // Dipakai HitungPembatalan; lihat di sana untuk rumus lengkapnya.
+    public float $blt_batal_sepihak_nilai;
+
+    public float $blt_batal_sepihak_pph_persen;
+
     public string $notification_email;
 
     // Formulir NUP publik — pemeliharaan

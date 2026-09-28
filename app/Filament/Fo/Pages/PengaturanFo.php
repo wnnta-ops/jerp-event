@@ -3,6 +3,8 @@
 namespace App\Filament\Fo\Pages;
 
 use App\Filament\Concerns\MematuhiIzinHalaman;
+use App\Modules\FO\MarketingSales\Models\Lokasi;
+use App\Modules\FO\MarketingSales\Models\Tahap;
 use App\Settings\FoSettings;
 use Filament\Actions\Action;
 use Filament\Forms;
@@ -14,9 +16,8 @@ use Filament\Pages\Page;
 
 class PengaturanFo extends Page implements HasForms
 {
-    use MematuhiIzinHalaman;
-
     use InteractsWithForms;
+    use MematuhiIzinHalaman;
 
     protected static ?string $navigationIcon = 'heroicon-o-cog-6-tooth';
 
@@ -44,6 +45,8 @@ class PengaturanFo extends Page implements HasForms
             'recaptcha_enabled' => $s->recaptcha_enabled,
             'recaptcha_min_score' => $s->recaptcha_min_score,
             'komisi_pph_default_persen' => $s->komisi_pph_default_persen,
+            'blt_batal_sepihak_nilai' => $s->blt_batal_sepihak_nilai,
+            'blt_batal_sepihak_pph_persen' => $s->blt_batal_sepihak_pph_persen,
             'notification_email' => $s->notification_email,
             'siteplanlive_show_stock' => $s->siteplanlive_show_stock,
             'siteplanlive_sold_animation' => $s->siteplanlive_sold_animation,
@@ -63,6 +66,14 @@ class PengaturanFo extends Page implements HasForms
                 Forms\Components\TextInput::make('tts_auto_confirm_minutes')->label('TTS auto-confirm (menit, 0 = manual)')->numeric()->required(),
                 Forms\Components\TextInput::make('komisi_pph_default_persen')->label('PPh komisi default (%)')->numeric()->suffix('%')->required(),
             ]),
+
+            Forms\Components\Section::make('BLT Batal Sepihak')
+                ->description('BLT untuk sales ketika kontrak dibatalkan sepihak oleh pembeli. Nilainya tetap — bukan turunan nilai kontrak, justru karena kontraknya tidak jadi. Batal karena bank menolak atau kolektibilitas TIDAK menerbitkan BLT.')
+                ->columns(2)->schema([
+                    Forms\Components\TextInput::make('blt_batal_sepihak_nilai')->label('Nilai BLT')->numeric()->rupiah()->required()->minValue(0),
+                    Forms\Components\TextInput::make('blt_batal_sepihak_pph_persen')->label('PPh 21')->numeric()->suffix('%')->required()->minValue(0)->maxValue(100)
+                        ->helperText('BLT NETT = Nilai BLT − PPh, dibulatkan ke atas.'),
+                ]),
 
             Forms\Components\Section::make('NUP Public')->columns(2)->schema([
                 Forms\Components\Toggle::make('recaptcha_enabled')->label('Aktifkan reCAPTCHA v3'),
@@ -105,14 +116,15 @@ class PengaturanFo extends Page implements HasForms
                     Forms\Components\Toggle::make('siteplanlive_show_stock')->label('Tampilkan kotak Stock Status (Ready/Sold)'),
                     Forms\Components\Toggle::make('siteplanlive_sold_animation')->label('Animasi SOLD OUT otomatis (saat scope 100% sold)'),
                     Forms\Components\Select::make('siteplanlive_focus_lokasi_id')->label('Fokus Cluster (Lokasi)')
-                        ->options(fn () => \App\Modules\FO\MarketingSales\Models\Lokasi::where('is_active', true)->orderBy('kode')->get()->mapWithKeys(fn ($l) => [$l->id => $l->kode.' — '.$l->nama]))
+                        ->options(fn () => Lokasi::where('is_active', true)->orderBy('kode')->get()->mapWithKeys(fn ($l) => [$l->id => $l->kode.' — '.$l->nama]))
                         ->placeholder('Seluruh project')->searchable()->live()
                         ->afterStateUpdated(fn (callable $set) => $set('siteplanlive_focus_tahap', null))
                         ->helperText('Kosongkan = pantau seluruh project.'),
                     Forms\Components\Select::make('siteplanlive_focus_tahap')->label('Fokus Tahap')
                         ->options(function (Forms\Get $get) {
                             $lok = $get('siteplanlive_focus_lokasi_id');
-                            return \App\Modules\FO\MarketingSales\Models\Tahap::where('is_active', true)
+
+                            return Tahap::where('is_active', true)
                                 ->when($lok, fn ($q) => $q->where('lokasi_id', $lok))
                                 ->orderBy('kode')->get()->mapWithKeys(fn ($t) => [$t->kode => $t->kode.' — '.($t->nama ?: $t->kode)]);
                         })
