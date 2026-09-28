@@ -37,14 +37,6 @@ class RefundResource extends Resource
 
     public static function form(Form $form): Form
     {
-        // Refund = Total Dibayar − Admin. Admin bisa diisi sbg % dari Total ATAU Rp langsung.
-        $fromPersen = function (Forms\Get $get, Forms\Set $set) {
-            $kotor = Rupiah::toFloat($get('nilai_kotor'));
-            $admin = round($kotor * (float) $get('biaya_admin_persen') / 100);
-            $set('biaya_admin', $admin);
-            $set('nilai_refund', max(0, $kotor - $admin));
-        };
-
         // Refund yang LAHIR DARI PEMBATALAN: tertaut kontrak dan berjenis BOOKING. Angkanya
         // sudah diputuskan di Pembatalan Kontrak lalu disetujui berjenjang, jadi di sini
         // dikunci — diperiksa, bukan dihitung ulang atau diketik ulang.
@@ -55,12 +47,35 @@ class RefundResource extends Resource
             && $record->kontrak_id
             && $record->jenis === 'BOOKING';
 
+        // Refund = Total Dibayar − Admin. Admin bisa diisi sbg % dari Total ATAU Rp langsung.
+        //
+        // BERHENTI untuk refund yang lahir dari pembatalan. readOnly() menghalangi PENGETIKAN,
+        // bukan peristiwa blur: kolom baca-saja tetap bisa difokus lalu ditinggalkan, dan
+        // live(onBlur) tetap memanggil afterStateUpdated. Tanpa penjaga ini, sekali klik pada
+        // kolom Total Dibayar sudah cukup menimpa angka yang disetujui — dan timpaannya
+        // memakai round() sementara yang tersimpan hasil ceil(), sehingga layar menampilkan
+        // Admin Rp 56.199.999 di atas dan Rp 56.200.000 di rincian bawahnya. Selisih satu
+        // rupiah yang tidak terlihat sebagai kesalahan, hanya sebagai dua angka berbeda.
+        $fromPersen = function (Forms\Get $get, Forms\Set $set, ?Refund $record) use ($dariPembatalan) {
+            if ($dariPembatalan($record)) {
+                return;
+            }
+
+            $kotor = Rupiah::toFloat($get('nilai_kotor'));
+            $admin = round($kotor * (float) $get('biaya_admin_persen') / 100);
+            $set('biaya_admin', $admin);
+            $set('nilai_refund', max(0, $kotor - $admin));
+        };
+
         // Pilih kontrak (KPR/CASH) → auto-isi dari rincian tagihan yang SUDAH DIBAYAR:
         //  - Total Dibayar = Σ pelunasan semua rincian (BF + DP + angsuran + ADM)
         //  - Biaya Admin    = Σ pelunasan rincian ber-tipe ADM (tidak di-refund)
         //  - Nilai Refund   = Total − ADM. (Pencairan KPR tak ikut: pelunasan=0 saat batal.)
-        $fillFromKontrak = function ($state, Forms\Set $set) {
-            if (! $state) {
+        // Ikut BERHENTI untuk refund hasil pembatalan: mengganti kontraknya di sini akan
+        // mengisi ulang seluruh angkanya dengan rumus lama "seluruh setoran − ADM", yang
+        // sudah tidak berlaku dan bukan angka yang disetujui.
+        $fillFromKontrak = function ($state, Forms\Set $set, ?Refund $record) use ($dariPembatalan) {
+            if (! $state || $dariPembatalan($record)) {
                 return;
             }
             $k = Kontrak::with('customer')->find($state);
@@ -93,7 +108,7 @@ class RefundResource extends Resource
             Forms\Components\Select::make('kontrak_id')->label('Kontrak (auto-hitung dari yang dibayar)')->searchable()->live()
                 ->options(fn () => Kontrak::with(['customer', 'unit'])->latest('id')->limit(300)->get()
                     ->mapWithKeys(fn ($k) => [$k->id => trim($k->no_kontrak.' — '.($k->customer?->full_name ?? '').' — '.($k->unit?->kode_unit ?? ''), ' —')]))
-                ->afterStateUpdated(fn ($state, Forms\Set $set) => $fillFromKontrak($state, $set))
+                ->afterStateUpdated(fn ($state, Forms\Set $set, ?Refund $record) => $fillFromKontrak($state, $set, $record))
                 ->helperText('Pilih kontrak → Total Dibayar, ADM, & Refund terisi otomatis (boleh diedit).'),
             Forms\Components\Select::make('customer_id')->label('Customer')->searchable()->live()
                 ->options(fn () => Customer::query()->limit(300)->pluck('full_name', 'id'))
@@ -118,7 +133,7 @@ class RefundResource extends Resource
             // diposting ke BO.
             Forms\Components\TextInput::make('nilai_kotor')->label('Total Dibayar Customer (Rp)')->numeric()->rupiah()->default(0)
                 ->readOnly(fn (Forms\Get $get, ?Refund $record) => $dariPembatalan($record) || filled($get('kontrak_id')))
-                ->live(onBlur: true)->afterStateUpdated(fn (Forms\Get $get, Forms\Set $set) => $fromPersen($get, $set))
+                ->live(onBlur: true)->afterStateUpdated(fn (Forms\Get $get, Forms\Set $set, ?Refund $record) => $fromPersen($get, $set, $record))
                 ->helperText(fn (?Refund $record) => $dariPembatalan($record)
                     ? 'Dasar perhitungan saat pembatalan disetujui.'
                     : 'Ikut rincian kontrak (BF+DP+angsuran+ADM). Tanpa kontrak: ketik manual.'),
@@ -131,7 +146,7 @@ class RefundResource extends Resource
                         $set('biaya_admin_persen', round((float) $record->biaya_admin / (float) $record->nilai_kotor * 100, 2));
                     }
                 })
-                ->afterStateUpdated(fn (Forms\Get $get, Forms\Set $set) => $fromPersen($get, $set))
+                ->afterStateUpdated(fn (Forms\Get $get, Forms\Set $set, ?Refund $record) => $fromPersen($get, $set, $record))
                 ->helperText('Atur potongan admin di sini → Admin (Rp) & Refund otomatis menyesuaikan.'),
             Forms\Components\TextInput::make('biaya_admin')->label('Admin / tidak di-refund (Rp)')->numeric()->rupiah()->default(0)->readOnly()
                 ->helperText('= Total × % admin (otomatis). Default ikut ADM dari rincian.'),
