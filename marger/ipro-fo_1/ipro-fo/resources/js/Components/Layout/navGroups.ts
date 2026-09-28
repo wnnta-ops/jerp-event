@@ -58,7 +58,11 @@ export const MODULE_ORDER: string[] = [
     'Contractor Management',
     'Booked Revenue',
     'Piutang Usaha (Booked)',
-    'COGS',
+    // Dua modul HPP berdampingan, COGS Lama lebih dulu supaya urutannya tidak berubah bagi yang
+    // sudah terbiasa. Nama di sini HARUS sama persis dengan `title` grupnya; yang tidak tercantum
+    // jatuh ke belakang daftar tanpa satu pun galat.
+    'COGS Lama',
+    'COGS Baru',
     'Purchasing',
     'Inventory',
     'Security',
@@ -520,11 +524,15 @@ export function navGroups(foUrl: string): NavGroup[] {
         ],
     },
     {
-        title: 'COGS',
+        // Seluruh COGS yang lama — Setup sampai Saldo Awal Realisasi — berdiri di bawah nama
+        // "COGS Lama" sejak modul COGS Baru lahir. Isinya, rutenya, dan izinnya TIDAK berubah
+        // sedikit pun; hanya namanya. Dua model perhitungan HPP yang hidup berdampingan tanpa
+        // nama yang membedakannya adalah cara tercepat membuat orang membuka yang salah.
+        title: 'COGS Lama',
         // Kartu modul mendarat di halaman hub-nya, BUKAN lagi di Print-Out yang sudah dihapus
         // dari menu — kalau tidak, pintu depan modul justru menuju halaman yang ditiadakan.
         icon: Boxes, color: '#84cc16', route: 'bs.cogs.home',
-        desc: 'HPP RealCost & budget proyek.',
+        desc: 'HPP RealCost & budget proyek (model lama).',
         items: [
             // Grup "General Function → Print-Out" DIHAPUS: isinya hanya daftar tautan ke
             // keenam laporan yang SUDAH ada satu per satu di grup "Query" di bawah ini.
@@ -577,6 +585,41 @@ export function navGroups(foUrl: string): NavGroup[] {
             ]},
             { label: 'Saldo Awal Realisasi', icon: Coins, permission: ['cogs.realization.*'], children: [
                 { label: 'Input Saldo Awal Realisasi', href: 'bs.cogs.realization.create' },
+            ]},
+        ],
+    },
+    {
+        // ── COGS BARU ────────────────────────────────────────────────────────────────
+        // Model HPP yang kedua, mengikuti lampiran "MODUL HPP.xlsx": budget per komponen
+        // diturunkan ke tiap unit menurut LUAS, lalu biaya aktual dibebankan ulang ke unit yang
+        // belum terkunci HPP-nya. Berdiri sebagai modul sendiri, bukan grup di dalam COGS Lama:
+        // angkanya tidak pernah bertemu dengan angka model lama, dan mencampurnya di satu modul
+        // membuat orang membandingkan dua angka yang memang tidak sebanding.
+        title: 'COGS Baru',
+        icon: Calculator, color: '#0ea5e9', route: 'bs.cogs2.index',
+        desc: 'Perhitungan COGS, kategori, actual costing & rincian per unit.',
+        items: [
+            // Seluruh layar COGS Baru berbutir PERIODE (lokasi + tahap), sedangkan butir menu
+            // tidak bisa tahu periode mana yang sedang dikerjakan. Rute 'bs.cogs2.buka' membuka
+            // periode yang terakhir disunting; kalau belum ada, ia mendarat di daftar periode.
+            { label: 'Perhitungan COGS', icon: Calculator, permission: ['cogs.budget.*'], children: [
+                { label: 'Perhitungan COGS', href: 'bs.cogs2.buka', params: { layar: 'perhitungan' } },
+                { label: 'Daftar Periode', href: 'bs.cogs2.index' },
+            ]},
+            { label: 'Set Up Kategori COGS', icon: SlidersHorizontal, permission: ['cogs.budget.*'], children: [
+                { label: 'Set Up Kategori COGS-Tanah', href: 'bs.cogs2.buka', params: { layar: 'kategori', komponen: 'tanah' } },
+                { label: 'Set Up Kategori COGS-Housing', href: 'bs.cogs2.buka', params: { layar: 'kategori', komponen: 'housing' } },
+                { label: 'Set Up Kategori COGS-Infra', href: 'bs.cogs2.buka', params: { layar: 'kategori', komponen: 'infra' } },
+                { label: 'Set Up Kategori COGS-License', href: 'bs.cogs2.buka', params: { layar: 'kategori', komponen: 'license' } },
+            ]},
+            { label: 'Actual Costing COGS', icon: ReceiptText, permission: ['cogs.budget.*'], children: [
+                { label: 'Actual Costing COGS-Tanah', href: 'bs.cogs2.buka', params: { layar: 'actual', komponen: 'tanah' } },
+                { label: 'Actual Costing COGS-Housing', href: 'bs.cogs2.buka', params: { layar: 'actual', komponen: 'housing' } },
+                { label: 'Actual Costing COGS-Infra', href: 'bs.cogs2.buka', params: { layar: 'actual', komponen: 'infra' } },
+                { label: 'Actual Costing COGS-License', href: 'bs.cogs2.buka', params: { layar: 'actual', komponen: 'license' } },
+            ]},
+            { label: 'Rincian COGS', icon: FileBarChart, permission: ['cogs.budget.*'], children: [
+                { label: 'Rincian COGS', href: 'bs.cogs2.buka', params: { layar: 'rincian' } },
             ]},
         ],
     },
