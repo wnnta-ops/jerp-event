@@ -110,14 +110,20 @@ $cek = function (string $label, $dapat, $harap) use (&$lulus, &$gagal, $rp) {
 };
 
 /** Pasang ulang tagihan sebuah kontrak, lalu kembalikan modelnya. */
-$kontrak = function (int $id, float $utj, float $dp) {
+$kontrak = function (int $id, float $utj, float $dp, float $tdp = 0, float $adm = 0) {
     DB::table('fo_kontrak_tagihan')->where('kontrak_id', $id)->delete();
     $baris = [];
     if ($utj > 0) {
-        $baris[] = ['kontrak_id' => $id, 'tipe' => 'BF', 'nama_tagihan' => 'UTJ (Booking Fee)', 'urutan' => 1, 'pelunasan' => $utj];
+        $baris[] = ['kontrak_id' => $id, 'tipe' => 'BF', 'nama_tagihan' => 'BOOKING FEE 1', 'urutan' => 1, 'pelunasan' => $utj];
     }
     if ($dp > 0) {
         $baris[] = ['kontrak_id' => $id, 'tipe' => 'DP', 'nama_tagihan' => 'DP', 'urutan' => 2, 'pelunasan' => $dp];
+    }
+    if ($tdp > 0) {
+        $baris[] = ['kontrak_id' => $id, 'tipe' => 'TDP', 'nama_tagihan' => 'TAMBAH DP', 'urutan' => 3, 'pelunasan' => $tdp];
+    }
+    if ($adm > 0) {
+        $baris[] = ['kontrak_id' => $id, 'tipe' => 'ADM', 'nama_tagihan' => 'UANG MASUK', 'urutan' => 4, 'pelunasan' => $adm];
     }
     if ($baris) {
         DB::table('fo_kontrak_tagihan')->insert($baris);
@@ -161,6 +167,27 @@ $b = $svc->bltBatalSepihak();
 $cek('BLT', $b['nilai'], 1_500_000);
 $cek('PPh 21 (A x 2,5%)', $b['pph'], 37_500);
 $cek('BLT NETT (A-B)', $b['nett'], 1_462_500);
+
+echo "\n=== TAMBAH DP ikut dasar potongan (kontrak nyata di server test) ===\n";
+// Kontraknya persis seperti yang tampil di layar: uang mukanya SELURUHNYA masuk sebagai TDP,
+// tanpa satu pun baris bertipe DP. Menghitung DP saja membuat baris ini terbaca nol sementara
+// pembeli sudah menyetor ratusan juta — dan tidak ada galat apa pun yang menandainya.
+$k = $kontrak(8, 3_000_000, 0, 100_000_000, 6_880_000);
+$h = $svc->pengembalian($k, 'BATAL_SEPIHAK', 10);
+$cek('uang muka = DP 0 + Tambah DP 100 jt', $h['dp'], 100_000_000);
+$cek('administrasi 10%', $h['potongan'], 10_000_000);
+$cek('pengembalian', $h['refund'], 90_000_000);
+$cek('UTJ tetap terbaca (ADM tidak mencemari)', $h['utj'], 3_000_000);
+
+// DP dan Tambah DP berdampingan -> DIJUMLAHKAN, bukan salah satu yang menang.
+$k = $kontrak(9, 3_000_000, 6_000_000, 4_000_000);
+$h = $svc->pengembalian($k, 'BATAL_SEPIHAK', 10);
+$cek('DP 6 jt + Tambah DP 4 jt', $h['dp'], 10_000_000);
+$cek('administrasi 10%', $h['potongan'], 1_000_000);
+$cek('pengembalian', $h['refund'], 9_000_000);
+
+// Keluarga UTJ tidak ikut berubah: Tambah DP sebanyak apa pun tidak menambah pengembalian.
+$cek('Reject Bank tetap UTJ saja', $svc->pengembalian($k, 'REJECT_BANK')['refund'], 3_000_000);
 
 echo "\n=== Penjaga tepi ===\n";
 $k = $kontrak(5, 3_000_000, 6_000_000);

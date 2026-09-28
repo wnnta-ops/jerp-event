@@ -32,6 +32,16 @@ use App\Settings\FoSettings;
  * Di master skema, barisnya bernama "UTJ (Booking Fee)" dan bertipe BF (lihat
  * SkemaCalculatorService). Yang dijumlahkan adalah kolom `pelunasan` — uang yang benar-benar
  * masuk, bukan yang seharusnya ditagih.
+ *
+ * ── "DP" BERARTI DP *DAN* TAMBAH DP ──
+ *
+ * Tambah DP tersimpan sebagai tipe tersendiri, TDP, bukan sebagai baris DP kedua. Keduanya
+ * uang muka yang sama-sama sudah disetor pembeli, jadi keduanya masuk dasar potongan; di
+ * repo ini PembayaranService pun sudah memetakan TDP ke jenis pembayaran DP.
+ *
+ * Menghitung DP saja pernah membuat kontrak yang seluruh uang mukanya masuk sebagai TDP
+ * terbaca "DP yang sudah dibayar Rp 0" — pengembaliannya nol padahal pembeli sudah menyetor
+ * ratusan juta, dan tidak ada galat apa pun yang menandainya.
  */
 class HitungPembatalan
 {
@@ -41,10 +51,15 @@ class HitungPembatalan
     /** Alasan yang dasarnya DP dikurangi administrasi, dan UTJ-nya hangus. */
     public const ALASAN_SEPIHAK = 'BATAL_SEPIHAK';
 
+    /** Tipe tagihan yang dihitung sebagai uang muka: DP dan Tambah DP. */
+    public const TIPE_DP = ['DP', 'TDP'];
+
     public function __construct(private readonly FoSettings $setelan) {}
 
     /**
      * Yang SUDAH dibayar customer, dipisah menurut tipe tagihan.
+     *
+     * `dp` menjumlahkan DP DAN TDP (Tambah DP) — lihat catatan di docblock kelas.
      *
      * @return array{utj: float, dp: float, adm: float, total: float}
      */
@@ -54,11 +69,11 @@ class HitungPembatalan
             ->selectRaw('tipe, SUM(pelunasan) AS dibayar')
             ->groupBy('tipe')->pluck('dibayar', 'tipe');
 
-        $ambil = fn (string $t) => (float) ($per[$t] ?? 0);
+        $ambil = fn (string ...$tipe) => (float) collect($tipe)->sum(fn ($t) => (float) ($per[$t] ?? 0));
 
         return [
             'utj' => $ambil('BF'),
-            'dp' => $ambil('DP'),
+            'dp' => $ambil(...self::TIPE_DP),
             'adm' => $ambil('ADM'),
             'total' => (float) $per->sum(),
         ];

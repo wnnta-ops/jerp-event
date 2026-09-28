@@ -186,13 +186,13 @@ class PembatalanKontrak extends Page implements HasForms, HasTable
                         // Persennya DIKETIK, tidak diturunkan dari keadaan kontrak. Praktiknya 10%
                         // bila pembeli mundur sesudah membayar DP dan 30% bila batal menjelang akad,
                         // tetapi batasnya soal kesepakatan — bukan sesuatu yang bisa dibaca sistem.
-                        Forms\Components\TextInput::make('admin_persen')->label('Administrasi dipotong dari DP')
+                        Forms\Components\TextInput::make('admin_persen')->label('Administrasi dipotong dari DP + Tambah DP')
                             ->numeric()->suffix('%')->default(0)->minValue(0)->maxValue(100)
                             ->live(onBlur: true)
                             ->afterStateUpdated(fn (Forms\Get $get, Forms\Set $set, Kontrak $record) => self::isiRefund($record, $get, $set))
                             ->visible(fn (Forms\Get $get) => $get('alasan') === HitungPembatalan::ALASAN_SEPIHAK)
                             ->required(fn (Forms\Get $get) => $get('alasan') === HitungPembatalan::ALASAN_SEPIHAK)
-                            ->helperText('Isi 0 bila DP dikembalikan utuh. UTJ tidak ikut dikembalikan pada Batal Sepihak.'),
+                            ->helperText('Dasarnya DP dan Tambah DP yang sudah dibayar, dijumlahkan. Isi 0 bila dikembalikan utuh. UTJ tidak ikut dikembalikan pada Batal Sepihak.'),
 
                         Forms\Components\Textarea::make('alasan_lainnya')->label('Alasan Lainnya')->rows(2)
                             ->visible(fn (Forms\Get $get) => $get('alasan') === 'LAINNYA')
@@ -201,7 +201,7 @@ class PembatalanKontrak extends Page implements HasForms, HasTable
 
                         Forms\Components\TextInput::make('refund_utj')->label('Pengembalian ke customer')->numeric()->rupiah()->default(0)
                             ->readOnly(fn (Forms\Get $get) => $get('alasan') !== 'LAINNYA')
-                            ->helperText('Kol 2-5 / Reject Bank / Tutup Buku: UTJ dikembalikan utuh. Batal Sepihak: DP dikurangi administrasi — UTJ hangus. Lainnya: isi manual. Pencairan di menu Finance → Refund.'),
+                            ->helperText('Kol 2-5 / Reject Bank / Tutup Buku: UTJ dikembalikan utuh. Batal Sepihak: DP + Tambah DP dikurangi administrasi — UTJ hangus. Lainnya: isi manual. Pencairan di menu Finance → Refund.'),
 
                         // Diperlihatkan sebagai rincian bertingkat, bukan satu angka jadi: operator
                         // harus bisa melihat DARI MANA angkanya, sebab dialah yang menjelaskannya
@@ -299,7 +299,7 @@ class PembatalanKontrak extends Page implements HasForms, HasTable
             $isi .= $baris('Pengembalian UTJ', $rp($h['refund']), true);
         } else {
             $isi .= $baris('UTJ yang sudah dibayar', $rp($h['utj']).' <span style="color:#b45309;">(hangus)</span>');
-            $isi .= $baris('DP yang sudah dibayar', $rp($h['dp']));
+            $isi .= $baris('DP + Tambah DP yang sudah dibayar', $rp($h['dp']));
             $isi .= $baris('Administrasi '.rtrim(rtrim(number_format($h['admin_persen'], 2, ',', '.'), '0'), ',').'%', '− '.$rp($h['potongan']));
             $isi .= $baris('Pengembalian DP customer', $rp($h['refund']), true);
         }
