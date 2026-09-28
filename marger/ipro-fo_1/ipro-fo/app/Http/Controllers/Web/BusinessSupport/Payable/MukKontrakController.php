@@ -53,25 +53,34 @@ class MukKontrakController extends Controller
         // pendek sedangkan tabelnya dipaginasi 25 baris.
         $tautan = BsMukContractCogs::query()->get(['muk_id', 'component', 'kategori'])->keyBy('muk_id');
 
-        $rows = $q->paginate(25)->withQueryString()->through(fn (BsMukContract $k) => [
-            'id' => $k->id,
-            'muk_id' => $k->muk_id,
-            'cogs' => $tautan[(int) $k->muk_id]?->component,
-            'cogsKategori' => $tautan[(int) $k->muk_id]?->kategori,
-            'no_kontrak' => $k->no_kontrak,
-            'no_spk' => $k->no_spk,
-            'jenis' => $k->jenis,
-            'status' => $k->status,
-            'proyek' => trim(($k->proyek_kode ? $k->proyek_kode.' — ' : '').$k->proyek_nama),
-            'pelanggan' => $k->pelanggan_nama,
-            'nilai_kontrak' => (float) $k->nilai_kontrak,
-            'diopname' => (float) $k->kum_diopname,
-            'ditagih' => (float) $k->kum_ditagih_neto,
-            'diterima' => (float) $k->kum_diterima,
-            'retensi' => (float) $k->kum_retensi_ditahan,
-            'belum_ditagih' => $k->belum_ditagih,
-            'janggal' => $k->angka_janggal,
-        ]);
+        $rows = $q->paginate(25)->withQueryString()->through(function (BsMukContract $k) use ($tautan) {
+            // ->get(), BUKAN $tautan[...]: akses kurung pada Collection memanggil offsetGet,
+            // yang MELEMPAR "Undefined array key" untuk kunci yang tidak ada. Operator ?->
+            // sesudahnya tidak pernah sempat bekerja — galatnya terjadi lebih dulu, dan
+            // kontrak yang belum ditautkan ke komponen COGS adalah keadaan yang WAJAR,
+            // bukan kesalahan. Seluruh layar Kontrak SPK 500 karenanya.
+            $cogs = $tautan->get((int) $k->muk_id);
+
+            return [
+                'id' => $k->id,
+                'muk_id' => $k->muk_id,
+                'cogs' => $cogs?->component,
+                'cogsKategori' => $cogs?->kategori,
+                'no_kontrak' => $k->no_kontrak,
+                'no_spk' => $k->no_spk,
+                'jenis' => $k->jenis,
+                'status' => $k->status,
+                'proyek' => trim(($k->proyek_kode ? $k->proyek_kode.' — ' : '').$k->proyek_nama),
+                'pelanggan' => $k->pelanggan_nama,
+                'nilai_kontrak' => (float) $k->nilai_kontrak,
+                'diopname' => (float) $k->kum_diopname,
+                'ditagih' => (float) $k->kum_ditagih_neto,
+                'diterima' => (float) $k->kum_diterima,
+                'retensi' => (float) $k->kum_retensi_ditahan,
+                'belum_ditagih' => $k->belum_ditagih,
+                'janggal' => $k->angka_janggal,
+            ];
+        });
 
         return Inertia::render('BusinessSupport/Payable/MukKontrak/Index', [
             'kontrak' => $rows,
