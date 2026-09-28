@@ -110,7 +110,7 @@ $cek = function (string $label, $dapat, $harap) use (&$lulus, &$gagal, $rp) {
 };
 
 /** Pasang ulang tagihan sebuah kontrak, lalu kembalikan modelnya. */
-$kontrak = function (int $id, float $utj, float $dp, float $tdp = 0, float $adm = 0) {
+$kontrak = function (int $id, float $utj, float $dp, float $tdp = 0, float $adm = 0, float $ang = 0, string $caraBayar = 'KPR') {
     DB::table('fo_kontrak_tagihan')->where('kontrak_id', $id)->delete();
     $baris = [];
     if ($utj > 0) {
@@ -125,11 +125,15 @@ $kontrak = function (int $id, float $utj, float $dp, float $tdp = 0, float $adm 
     if ($adm > 0) {
         $baris[] = ['kontrak_id' => $id, 'tipe' => 'ADM', 'nama_tagihan' => 'UANG MASUK', 'urutan' => 4, 'pelunasan' => $adm];
     }
+    if ($ang > 0) {
+        $baris[] = ['kontrak_id' => $id, 'tipe' => 'ANG', 'nama_tagihan' => 'ANGSURAN 1', 'urutan' => 5, 'pelunasan' => $ang];
+    }
     if ($baris) {
         DB::table('fo_kontrak_tagihan')->insert($baris);
     }
     $k = new Kontrak;
     $k->id = $id;
+    $k->cara_bayar = $caraBayar;
 
     return $k;
 };
@@ -188,6 +192,38 @@ $cek('pengembalian', $h['refund'], 9_000_000);
 
 // Keluarga UTJ tidak ikut berubah: Tambah DP sebanyak apa pun tidak menambah pengembalian.
 $cek('Reject Bank tetap UTJ saja', $svc->pengembalian($k, 'REJECT_BANK')['refund'], 3_000_000);
+
+echo "\n=== ANGSURAN: ikut pada CASH, TIDAK ikut pada KPR ===\n";
+// SPR-2026-00017 di server test: CASH 3X, setorannya BF 3 jt + ANGSURAN 187.333.331, tanpa
+// satu pun baris DP. Sebelum ini dasarnya terbaca nol dan pengembaliannya nol.
+$k = $kontrak(10, 3_000_000, 0, 0, 0, 187_333_331, 'CASH_BERTAHAP');
+$h = $svc->pengembalian($k, 'BATAL_SEPIHAK', 30);
+$cek('cash: angsuran masuk dasar', $h['basis'], 187_333_331);
+// 187.333.331 x 30% = 56.199.999,3 -> potongan DIBULATKAN KE ATAS, sehingga
+// pengembaliannya jatuh pada rupiah bulat dan tak pernah melebihi setoran.
+$cek('administrasi 30% (dibulatkan ke atas)', $h['potongan'], 56_200_000);
+$cek('pengembalian', $h['refund'], 131_133_331);
+$cek('UTJ tetap hangus', $h['utj'], 3_000_000);
+
+// CASH 1X diperlakukan sama.
+$k = $kontrak(11, 3_000_000, 0, 0, 0, 100_000_000, 'CASH');
+$cek('CASH 1X juga ikut', $svc->pengembalian($k, 'BATAL_SEPIHAK', 0)['basis'], 100_000_000);
+
+// KPR: ANG adalah PENCAIRAN BANK. Ikut dihitung = menyerahkan uang bank kepada pembeli.
+$k = $kontrak(12, 3_000_000, 6_000_000, 0, 0, 500_000_000, 'KPR');
+$h = $svc->pengembalian($k, 'BATAL_SEPIHAK', 10);
+$cek('KPR: angsuran TIDAK masuk dasar', $h['basis'], 6_000_000);
+$cek('angsurannya tetap TERBACA', $h['ang'], 500_000_000);
+$cek('administrasi 10% atas DP saja', $h['potongan'], 600_000);
+$cek('pengembalian', $h['refund'], 5_400_000);
+
+// CICILAN belum punya perlakuan cash — angsurannya tidak ikut, sama seperti KPR.
+$k = $kontrak(13, 3_000_000, 0, 0, 0, 50_000_000, 'CICILAN');
+$cek('CICILAN: angsuran tidak ikut', $svc->pengembalian($k, 'BATAL_SEPIHAK', 0)['basis'], 0);
+
+// Keluarga UTJ tidak terpengaruh cara bayar apa pun.
+$k = $kontrak(14, 3_000_000, 0, 0, 0, 187_333_331, 'CASH_BERTAHAP');
+$cek('cash + Reject Bank tetap UTJ saja', $svc->pengembalian($k, 'REJECT_BANK')['refund'], 3_000_000);
 
 echo "\n=== Penjaga tepi ===\n";
 $k = $kontrak(5, 3_000_000, 6_000_000);
