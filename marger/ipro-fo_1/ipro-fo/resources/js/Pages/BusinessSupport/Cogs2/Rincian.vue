@@ -24,6 +24,7 @@ import Button from '@/Components/UI/Button.vue';
 import Badge from '@/Components/UI/Badge.vue';
 import MoneyInput from '@/Components/UI/MoneyInput.vue';
 import Kepala from '@/Components/Cogs2/Kepala.vue';
+import ImporUnit from '@/Components/Cogs2/ImporUnit.vue';
 import { KOMPONEN, VAR, rp, rp2, m2, persen, angka } from '@/Components/Cogs2/warna';
 
 const props = defineProps<{
@@ -48,6 +49,31 @@ watch(() => props.unitBaris, segarkan, { deep: true });
 
 function tambah() { baris.value.push(kosong()); }
 function hapus(i: number) { baris.value.splice(i, 1); }
+
+/**
+ * Hasil "Tambah Unit Massal" masuk ke DRAF, bukan langsung ke basis data.
+ *
+ * Simpanan Rincian COGS mengganti SELURUH daftar, jadi impor yang menulis langsung akan tertimpa
+ * begitu operator menekan Simpan dengan draf lama di layarnya — tanpa galat apa pun. Dengan
+ * mengisi draf, jalur simpannya tetap satu dan seluruh penjaga di server tetap berlaku.
+ *
+ * Mode "tambah" MELEWATI kode yang sudah ada alih-alih menimpanya: menimpa akan menghapus status
+ * booked dan pilihan costing unit yang sudah terkunci HPP-nya, dan itu tidak terlihat sebagai
+ * kesalahan — hanya angka HPP yang berubah sendiri.
+ */
+function terimaImpor(masuk: any[], mode: 'ganti' | 'tambah') {
+    if (mode === 'ganti') {
+        baris.value = masuk.map((b) => ({ ...kosong(), ...b }));
+
+        return;
+    }
+    const ada = new Set(baris.value.map((b: any) => String(b.unit_rumah ?? '').toLowerCase()));
+    for (const b of masuk) {
+        if (ada.has(String(b.unit_rumah ?? '').toLowerCase())) continue;
+        ada.add(String(b.unit_rumah ?? '').toLowerCase());
+        baris.value.push({ ...kosong(), ...b });
+    }
+}
 
 /**
  * Selama unit BELUM booked, kedua pilihan costing masih terbuka — mengunci "Standard Costing"
@@ -242,6 +268,7 @@ const selCls = 'h-8 w-full rounded-lg border border-neutral-300 bg-white px-1.5 
                                 :aria-pressed="tampilan === t[0]" @click="tampilan = t[0] as any">{{ t[1] }}</button>
                     </div>
                     <Button v-if="bisaUbah" variant="ghost" size="sm" @click="tambah"><Plus class="h-4 w-4" /> Tambah Unit</Button>
+                    <ImporUnit :baris="baris" :nama-berkas="periode.cakupan" :bisa-ubah="bisaUbah" @impor="terimaImpor" />
                 </div>
             </div>
 
