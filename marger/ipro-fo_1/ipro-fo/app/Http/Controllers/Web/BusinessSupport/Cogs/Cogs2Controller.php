@@ -109,21 +109,37 @@ class Cogs2Controller extends Controller
         return redirect()->route('bs.cogs2.perhitungan', $p->id)->with('success', 'Periode COGS Baru dibuat.');
     }
 
+    /** Kunci sesi: periode COGS Baru yang TERAKHIR DIBUKA orang ini. */
+    private const SESI_PERIODE = 'cogs2.periode';
+
     /**
      * Pintu dari sidebar ke layar COGS Baru.
      *
      * Butir menu tidak bisa tahu periode mana yang sedang dikerjakan, sedangkan seluruh layar
-     * COGS Baru berbutir periode. Pintu ini membuka periode yang TERAKHIR disunting — bukan yang
-     * pertama dibuat — karena itulah yang hampir selalu sedang dikerjakan orang. Bila belum ada
-     * periode sama sekali, ia mendarat di daftar periode dengan keterangan, bukan 404 yang
-     * membuat menunya terlihat rusak.
+     * COGS Baru berbutir periode.
+     *
+     * Sejak keempat sub-modul berdiri sebagai layar yang TERPISAH, sidebar adalah jalan utama
+     * berpindah di antara keempatnya — jadi pintu ini wajib mendarat di periode yang SAMA dengan
+     * yang barusan dibuka. Karena itu yang diingat adalah periode yang TERAKHIR DIBUKA (disimpan
+     * di sesi oleh props()), bukan yang terakhir disunting: "terakhir disunting" berpindah begitu
+     * orang lain menyimpan periode lain, dan berpindah periode diam-diam di tengah pekerjaan
+     * berarti angka masuk ke lokasi yang salah tanpa satu pun galat.
+     *
+     * Bila periode yang diingat sudah dihapus — atau milik tenant lain, yang tidak akan pernah
+     * terbaca karena model ini bercakupan tenant — ia jatuh kembali ke yang terakhir disunting.
+     * Bila belum ada periode sama sekali, ia mendarat di daftar periode dengan keterangan, bukan
+     * 404 yang membuat menunya terlihat rusak.
      */
     public function buka(Request $request, string $layar, ?string $komponen = null): RedirectResponse
     {
         abort_unless($request->user()?->can('cogs.budget.view'), 403);
         abort_unless(in_array($layar, ['perhitungan', 'kategori', 'actual', 'rincian'], true), 404);
 
-        $periode = BsCogs2Periode::orderByDesc('updated_at')->orderByDesc('id')->first();
+        $ingat = $request->hasSession() ? (int) $request->session()->get(self::SESI_PERIODE, 0) : 0;
+
+        $periode = ($ingat > 0 ? BsCogs2Periode::find($ingat) : null)
+            ?? BsCogs2Periode::orderByDesc('updated_at')->orderByDesc('id')->first();
+
         if ($periode === null) {
             return redirect()->route('bs.cogs2.index')
                 ->with('info', 'Belum ada periode COGS Baru — buat satu lebih dulu untuk membuka layar itu.');
@@ -381,7 +397,157 @@ class Cogs2Controller extends Controller
     {
         abort_unless($request->user()?->can('cogs.budget.view'), 403);
 
-        return Inertia::render('BusinessSupport/Cogs2/Rincian', $this->props($request, $periode));
+        [$lokasi, $galatFo] = $this->lokasiFo();
+
+        return Inertia::render('BusinessSupport/Cogs2/Rincian', $this->props($request, $periode) + [
+            'foLokasi' => $lokasi,
+            'foTahap'  => $this->tahapFo(),
+            'galatFo'  => $galatFo,
+            // Daftar unit dari modul Unit (Set Up Sales) TIDAK ikut dikirim saat halaman dibuka:
+            // satu lokasi bisa berisi ratusan unit, dan hampir setiap kali layar Rincian dibuka
+            // daftarnya tidak dipakai sama sekali. Ia baru diambil saat pemilihnya dibuka, lewat
+            // muat-ulang sebagian.
+            'unitFo'   => Inertia::lazy(fn () => $this->pilihanUnitFo($request, $periode)),
+        ]);
+    }
+
+    /** Berapa banyak unit yang dikirim ke pemilih sekali muat. */
+    private const BATAS_PILIHAN_UNIT = 500;
+
+    /**
+     * Daftar unit dari modul Unit (Set Up Sales) untuk dicentang ke Rincian COGS.
+     *
+     * Lokasi & tahapnya BISA BERBEDA dari periode yang sedang dibuka — operator memang perlu
+     * memilih "lokasi dan tahap yang diinginkan", dan satu periode COGS bisa memuat unit dari
+     * tahap yang berbeda.
+     *
+     * No. SPR & nama customer diambil dari kontrak bila ada, kalau tidak dari reservasi: kontrak
+     * yang sudah ditandatangani menggantikan reservasinya. Keduanya dibaca lewat kueri TERPISAH
+     * yang dibungkus try/catch — kegagalan di sisi FO hanya mengosongkan kedua kolom itu, bukan
+     * menjatuhkan seluruh pemilihnya.
+     *
+     * @return array<string,mixed>
+     */
+    private function pilihanUnitFo(Request $request, BsCogs2Periode $periode): array
+    {
+        $db = $this->dbFo();
+        $lokasiId = (int) ($request->input('fo_lokasi') ?: $periode->lokasi_id);
+        $tahap = trim((string) $request->input('fo_tahap', $periode->tahap));
+        $cari = trim((string) $request->input('fo_cari', ''));
+        $filters = ['lokasi_id' => $lokasiId, 'tahap' => $tahap, 'cari' => $cari];
+
+        if ($db === '') {
+            return ['rows' => [], 'filters' => $filters, 'galat' => 'Nama basis data Front Office belum diatur.', 'total' => 0, 'terpotong' => false];
+        }
+
+        $sql = 'SELECT u.id, u.kode_unit, u.blok, u.no_unit, u.tahap, u.cluster,'
+            .' t.name AS tipe, u.luas_tanah, u.luas_lebih_tanah, u.luas_bangunan, u.harga_jual, u.status'
+            .' FROM `'.$db.'`.fo_units u'
+            .' LEFT JOIN `'.$db.'`.fo_unit_types t ON t.id = u.unit_type_id'
+            .' WHERE u.deleted_at IS NULL AND u.lokasi_id = ?'
+            // Unit BATAL dikeluarkan: ia bukan lagi bagian dari lahan yang dijual, jadi
+            // membebaninya mengecilkan tarif per m2 seluruh unit lain.
+            .' AND (u.status IS NULL OR u.status <> ?)';
+        $bind = [$lokasiId, 'BATAL'];
+
+        if ($tahap !== '') {
+            $sql .= ' AND u.tahap = ?';
+            $bind[] = $tahap;
+        }
+        if ($cari !== '') {
+            $sql .= ' AND (u.kode_unit LIKE ? OR u.blok LIKE ? OR u.no_unit LIKE ? OR t.name LIKE ?)';
+            array_push($bind, '%'.$cari.'%', '%'.$cari.'%', '%'.$cari.'%', '%'.$cari.'%');
+        }
+        $sql .= ' ORDER BY u.blok, u.no_unit, u.kode_unit LIMIT '.(self::BATAS_PILIHAN_UNIT + 1);
+
+        try {
+            $rows = DB::select($sql, $bind);
+        } catch (\Throwable $e) {
+            report($e);
+
+            return ['rows' => [], 'filters' => $filters, 'galat' => 'Daftar unit tidak bisa dibaca dari Front Office.', 'total' => 0, 'terpotong' => false];
+        }
+
+        // Batasnya DISEBUT, tidak dipotong diam-diam: daftar yang terpotong tanpa keterangan
+        // membuat operator mengira unit yang hilang memang tidak ada.
+        $terpotong = count($rows) > self::BATAS_PILIHAN_UNIT;
+        if ($terpotong) {
+            $rows = array_slice($rows, 0, self::BATAS_PILIHAN_UNIT);
+        }
+
+        $identitas = $this->identitasUnitFo($db, array_map(fn ($r) => (int) $r->id, $rows));
+        $sudahAda = BsCogs2Unit::where('periode_id', $periode->id)->pluck('unit_rumah')
+            ->map(fn ($v) => mb_strtolower((string) $v))->all();
+
+        return [
+            'rows' => array_map(function ($r) use ($identitas, $sudahAda) {
+                $id = (int) $r->id;
+
+                return [
+                    'kode'          => (string) $r->kode_unit,
+                    'blok'          => $r->blok,
+                    'no_unit'       => $r->no_unit,
+                    'tahap'         => $r->tahap,
+                    'cluster'       => $r->cluster,
+                    'tipe'          => $r->tipe,
+                    'lt'            => round((float) ($r->luas_tanah ?? 0), 2),
+                    'lt_lebih'      => round((float) ($r->luas_lebih_tanah ?? 0), 2),
+                    'lb'            => round((float) ($r->luas_bangunan ?? 0), 2),
+                    'harga_jual'    => round((float) ($r->harga_jual ?? 0), 2),
+                    'status'        => $r->status,
+                    'no_spr'        => $identitas[$id]['no'] ?? null,
+                    'nama_customer' => $identitas[$id]['nama'] ?? null,
+                    // Unit yang sudah ada di Rincian ditandai, bukan disembunyikan: menyembunyikannya
+                    // membuat operator mengira unitnya belum pernah ditarik.
+                    'sudah'         => in_array(mb_strtolower((string) $r->kode_unit), $sudahAda, true),
+                ];
+            }, $rows),
+            'filters'   => $filters,
+            'galat'     => null,
+            'total'     => count($rows),
+            'terpotong' => $terpotong,
+        ];
+    }
+
+    /**
+     * No. SPR & nama customer per unit — kontrak lebih dulu, lalu reservasi.
+     *
+     * @param  list<int>  $unitId
+     * @return array<int, array{no:?string, nama:?string}>
+     */
+    private function identitasUnitFo(string $db, array $unitId): array
+    {
+        if ($unitId === []) {
+            return [];
+        }
+        $tanda = implode(',', array_fill(0, count($unitId), '?'));
+        $out = [];
+
+        // Reservasi lebih dulu, lalu kontrak MENIMPANYA: kontrak yang sudah ditandatangani
+        // menggantikan reservasinya, jadi ia yang harus terbaca bila keduanya ada.
+        foreach ([
+            ['fo_reservasi', 'no_reservasi'],
+            ['fo_kontrak', 'no_kontrak'],
+        ] as [$tabel, $kolom]) {
+            try {
+                $rows = DB::select(
+                    'SELECT r.unit_id, r.'.$kolom.' AS no, c.full_name AS nama'
+                    .' FROM `'.$db.'`.'.$tabel.' r'
+                    .' LEFT JOIN `'.$db.'`.fo_customers c ON c.id = r.customer_id'
+                    .' WHERE r.deleted_at IS NULL AND r.unit_id IN ('.$tanda.')',
+                    $unitId,
+                );
+            } catch (\Throwable $e) {
+                report($e);
+
+                continue;
+            }
+            foreach ($rows as $r) {
+                $out[(int) $r->unit_id] = ['no' => $r->no, 'nama' => $r->nama];
+            }
+        }
+
+        return $out;
     }
 
     public function simpanUnit(Request $request, BsCogs2Periode $periode): RedirectResponse
@@ -507,6 +673,13 @@ class Cogs2Controller extends Controller
     /** @return array<string,mixed> */
     private function props(Request $request, BsCogs2Periode $periode): array
     {
+        // Periode yang sedang dibuka DIINGAT, supaya berpindah sub-modul lewat sidebar mendarat di
+        // periode yang sama — lihat buka(). Ditaruh di sini karena keempat layar melewati props();
+        // menaruhnya di tiap layar berarti empat tempat yang bisa terlupa satu.
+        if ($request->hasSession()) {
+            $request->session()->put(self::SESI_PERIODE, $periode->id);
+        }
+
         $periode->load(['tipe', 'kategori', 'actual', 'unit']);
 
         // ── Tiga sumber biaya aktual, digabung SEBELUM dihitung ──────────────────────
