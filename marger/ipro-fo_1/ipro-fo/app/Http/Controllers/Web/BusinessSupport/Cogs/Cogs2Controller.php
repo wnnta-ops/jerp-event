@@ -109,21 +109,37 @@ class Cogs2Controller extends Controller
         return redirect()->route('bs.cogs2.perhitungan', $p->id)->with('success', 'Periode COGS Baru dibuat.');
     }
 
+    /** Kunci sesi: periode COGS Baru yang TERAKHIR DIBUKA orang ini. */
+    private const SESI_PERIODE = 'cogs2.periode';
+
     /**
      * Pintu dari sidebar ke layar COGS Baru.
      *
      * Butir menu tidak bisa tahu periode mana yang sedang dikerjakan, sedangkan seluruh layar
-     * COGS Baru berbutir periode. Pintu ini membuka periode yang TERAKHIR disunting — bukan yang
-     * pertama dibuat — karena itulah yang hampir selalu sedang dikerjakan orang. Bila belum ada
-     * periode sama sekali, ia mendarat di daftar periode dengan keterangan, bukan 404 yang
-     * membuat menunya terlihat rusak.
+     * COGS Baru berbutir periode.
+     *
+     * Sejak keempat sub-modul berdiri sebagai layar yang TERPISAH, sidebar adalah jalan utama
+     * berpindah di antara keempatnya — jadi pintu ini wajib mendarat di periode yang SAMA dengan
+     * yang barusan dibuka. Karena itu yang diingat adalah periode yang TERAKHIR DIBUKA (disimpan
+     * di sesi oleh props()), bukan yang terakhir disunting: "terakhir disunting" berpindah begitu
+     * orang lain menyimpan periode lain, dan berpindah periode diam-diam di tengah pekerjaan
+     * berarti angka masuk ke lokasi yang salah tanpa satu pun galat.
+     *
+     * Bila periode yang diingat sudah dihapus — atau milik tenant lain, yang tidak akan pernah
+     * terbaca karena model ini bercakupan tenant — ia jatuh kembali ke yang terakhir disunting.
+     * Bila belum ada periode sama sekali, ia mendarat di daftar periode dengan keterangan, bukan
+     * 404 yang membuat menunya terlihat rusak.
      */
     public function buka(Request $request, string $layar, ?string $komponen = null): RedirectResponse
     {
         abort_unless($request->user()?->can('cogs.budget.view'), 403);
         abort_unless(in_array($layar, ['perhitungan', 'kategori', 'actual', 'rincian'], true), 404);
 
-        $periode = BsCogs2Periode::orderByDesc('updated_at')->orderByDesc('id')->first();
+        $ingat = $request->hasSession() ? (int) $request->session()->get(self::SESI_PERIODE, 0) : 0;
+
+        $periode = ($ingat > 0 ? BsCogs2Periode::find($ingat) : null)
+            ?? BsCogs2Periode::orderByDesc('updated_at')->orderByDesc('id')->first();
+
         if ($periode === null) {
             return redirect()->route('bs.cogs2.index')
                 ->with('info', 'Belum ada periode COGS Baru — buat satu lebih dulu untuk membuka layar itu.');
@@ -657,6 +673,13 @@ class Cogs2Controller extends Controller
     /** @return array<string,mixed> */
     private function props(Request $request, BsCogs2Periode $periode): array
     {
+        // Periode yang sedang dibuka DIINGAT, supaya berpindah sub-modul lewat sidebar mendarat di
+        // periode yang sama — lihat buka(). Ditaruh di sini karena keempat layar melewati props();
+        // menaruhnya di tiap layar berarti empat tempat yang bisa terlupa satu.
+        if ($request->hasSession()) {
+            $request->session()->put(self::SESI_PERIODE, $periode->id);
+        }
+
         $periode->load(['tipe', 'kategori', 'actual', 'unit']);
 
         // ── Tiga sumber biaya aktual, digabung SEBELUM dihitung ──────────────────────
