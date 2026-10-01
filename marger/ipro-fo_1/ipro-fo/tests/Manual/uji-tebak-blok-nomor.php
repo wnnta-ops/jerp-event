@@ -39,6 +39,19 @@ $kasus = [
     ['INFRA CLUSTER 5 — CLUSTER 5 SUKODONO',    null,  null],   // bukan rumah: HARUS diam
     ['PEK. SI INFRA CLUSTER 5',                 null,  null],   // bukan rumah
     ['MUSHOLLA CLUSTER 3',                      null,  null],   // bukan rumah
+
+    // Blok TIDAK selalu angka Romawi. Ditemukan 1 Okt 2026: 191 dari 1457 kode lokasi
+    // memakai nama jalan sebagai blok, dan seluruhnya terlewat waktu penguraiannya hanya
+    // mengenali Romawi.
+    ['AKASIA JRK RAYA No. 22',                  'RAYA', '22'],
+    ['AKASIA JRK RAYA No. 9',                   'RAYA', '9'],
+    ['AKASIA JRK RAYA No. 11A',                 'RAYA', '11A'],
+    ['AKASIA HOOK JRKC2 III No. 20',            'III',  '20'],
+
+    // PENJAGA: kata sebelum "No." wajib memuat huruf. Tanpa itu "CLUSTER 5 No. 3" terbaca
+    // berblok "5" — padahal 5 itu nomor cluster, dan usulan pasangannya akan menunjuk rumah
+    // yang salah. Lebih baik tidak mengusulkan apa pun.
+    ['CLUSTER 5 No. 3',                         null,  null],
 ];
 
 $lulus = $gagal = 0;
