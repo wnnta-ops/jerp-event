@@ -53,12 +53,21 @@ trait MapsUnitBast
             'unit_no'     => $u->unit_code,
             'location'    => $u->address ?: ($u->project?->location ?? '—'),
             'phase'       => (string) ($attr['tahap'] ?? $attr['phase'] ?? ''),
-            'block'       => $u->block?->code ?? '—',
+            // Blok: relasi block_id TIDAK PERNAH diisi oleh IproMasterSync — bloknya ikut
+            // ke `attributes` saja. Tanpa cadangan ini seluruh kolom Blok terbaca "—"
+            // padahal datanya ada, hanya di tempat lain.
+            'block'       => $u->block?->code ?: ($attr['blok'] ?? $attr['block'] ?? '—'),
             'number'      => (string) ($attr['nomer'] ?? $attr['number'] ?? ''),
-            'type'        => $u->unitType?->code ?? $u->unitType?->name ?? '—',
+            // NAMA dulu, baru kode. Kode tipe di cermin BO adalah "FOT-{id}" yang dikarang
+            // sinkron — tidak berarti apa pun bagi orang yang membacanya. Namanya ("CENDANA")
+            // yang sebenarnya dikenal di lapangan.
+            'type'        => $u->unitType?->name ?: ($u->unitType?->code ?? '—'),
             'cluster'     => $u->cluster?->name ?? $u->cluster?->code ?? '—',
-            'lt'          => $u->unitType?->lt,
-            'lb'          => $u->unitType?->lb,
+            // Luas diambil dari UNITNYA dulu, baru dari master tipe: dua unit bertipe sama
+            // bisa berbeda luas tanahnya (unit pojok, unit tusuk sate), dan angka tipe akan
+            // menyeragamkan sesuatu yang memang tidak seragam.
+            'lt'          => $attr['luas_tanah'] ?? $u->unitType?->lt,
+            'lb'          => $attr['luas_bangunan'] ?? $u->unitType?->lb,
             'price'       => (float) $u->current_price,
             'unit_status' => is_object($status) && method_exists($status, 'label') ? $status->label() : (string) $status,
             'bast_status' => $sudahBast ? 'sudah' : 'belum',
