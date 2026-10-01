@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Domain\BusinessSupport\Models;
 
-use App\Domain\Master\Unit\Models\Unit;
 use App\Support\Traits\HasTenant;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -26,7 +25,7 @@ class BsMukLokasi extends Model
         'nama', 'tipe_rumah', 'ukuran', 'blok', 'no_rumah', 'baris_kontrak',
         'nilai_kontrak', 'opname_nilai', 'opname_persen', 'opname_terakhir',
         'ditagih_nilai', 'ditagih_persen', 'belum_ditagih', 'retensi_nilai',
-        'unit_id', 'dipasangkan_oleh', 'dipasangkan_pada', 'ditarik_pada',
+        'ditarik_pada',
     ];
 
     protected $casts = [
@@ -42,9 +41,15 @@ class BsMukLokasi extends Model
         'retensi_nilai'    => 'decimal:2',
     ];
 
-    public function unit(): BelongsTo
+    /**
+     * Pasangan unitnya - lewat lokasi_kode, bukan kolom di baris ini.
+     *
+     * Satu rumah muncul di beberapa kontrak dengan lokasi_id berbeda tetapi kode yang
+     * sama; pasangannya diputuskan sekali untuk kodenya. Lihat migrasi 2026_10_01_120000.
+     */
+    public function pasangan(): BelongsTo
     {
-        return $this->belongsTo(Unit::class, 'unit_id');
+        return $this->belongsTo(BsMukUnitPasangan::class, 'lokasi_kode', 'lokasi_kode');
     }
 
     public function kontrak(): BelongsTo
@@ -68,10 +73,24 @@ class BsMukLokasi extends Model
         $no = $this->no_rumah ?: null;
 
         if ($blok === null || $no === null) {
-            // "… VI No. 15" / "… VI NO 15" / "… VI-15" — angka Romawi lalu nomor rumah.
-            if (preg_match('/\b([IVXLC]+)\b[\s-]*(?:No\.?|NO\.?)?\s*([0-9]+[A-Za-z]?)\s*$/i', (string) $this->nama, $m) === 1) {
-                $blok ??= strtoupper($m[1]);
-                $no ??= strtoupper($m[2]);
+            $nama = (string) $this->nama;
+
+            // 1) "<BLOK> No. 15" - kata TEPAT SEBELUM "No." adalah bloknya, apa pun bentuknya.
+            //    Blok di lapangan tidak selalu angka Romawi: "AKASIA JRK RAYA No. 22" bloknya
+            //    "RAYA", dan 191 kode terlewat ketika hanya Romawi yang dikenali.
+            //
+            //    Kata itu WAJIB memuat huruf. Tanpa syarat ini "CLUSTER 5 No. 3" terbaca
+            //    berblok "5" - padahal 5 itu nomor cluster, dan usulan pasangannya akan
+            //    menunjuk rumah yang salah.
+            if (preg_match('/([^\s]*[A-Za-z][^\s]*)\s+(?:No\.?|NO\.?)\s*([0-9]+[A-Za-z]?)\s*$/u', $nama, $m) === 1) {
+                $blok ??= mb_strtoupper($m[1]);
+                $no ??= mb_strtoupper($m[2]);
+            }
+            // 2) Cadangan tanpa kata "No.": "VI-15" / "VI 15". Dibatasi Romawi supaya tidak
+            //    menyambar potongan nama yang kebetulan berakhiran angka.
+            elseif (preg_match('/\b([IVXLC]+)\b[\s-]*([0-9]+[A-Za-z]?)\s*$/i', $nama, $m) === 1) {
+                $blok ??= mb_strtoupper($m[1]);
+                $no ??= mb_strtoupper($m[2]);
             }
         }
 

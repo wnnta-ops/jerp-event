@@ -23,9 +23,9 @@ use RuntimeException;
  * masih di bawah jatah, tetapi karena itu perintah ini TIDAK dijadwalkan tiap menit seperti
  * penarikan kontrak. Jalankan sesudah muk:tarik-kontrak, atau saat progres perlu disegarkan.
  *
- * PASANGAN UNIT TIDAK PERNAH DISENTUH. Kolom unit_id, dipasangkan_oleh, dan dipasangkan_pada
- * sengaja tidak ikut dalam payload updateOrCreate: itu pekerjaan orang, bukan data MUK, dan
- * menariknya ulang tidak boleh menghapus pasangan yang sudah disusun.
+ * PASANGAN UNIT TIDAK TERSENTUH penarikan ini, karena ia tidak tinggal di tabel ini sama
+ * sekali: pasangan disimpan per LOKASI FISIK di bs_muk_unit_pasangan, berkunci lokasi_kode.
+ * Menarik ulang seluruh lokasi karena itu aman - pasangan yang sudah disusun orang tetap.
  */
 class TarikLokasiMukCommand extends Command
 {
