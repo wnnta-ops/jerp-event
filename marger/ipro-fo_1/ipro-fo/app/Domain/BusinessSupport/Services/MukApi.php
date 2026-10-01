@@ -90,13 +90,28 @@ class MukApi
     }
 
     /**
+     * Daftar lokasi (unit) sebuah kontrak.
+     *
+     * Terpisah dari progres() karena endpoint-nya memang berbeda, dan sempat berbeda nasib:
+     * 19 Sep 2026 keduanya memulangkan lokasi tanpa identitas, lalu 1 Okt 2026 keduanya
+     * dibetulkan tim MUK. Sejak itu lokasi_id, kode, nama, tipe_rumah, dan ukuran terisi —
+     * sementara blok dan no_rumah MASIH kosong, dan hanya terbaca dari namanya.
+     *
+     * @return array<string, mixed>
+     */
+    public function lokasi(int $mukId): array
+    {
+        return $this->ambil('/contracts/'.$mukId.'/locations');
+    }
+
+    /**
      * Progres per lokasi.
      *
-     * CATATAN 19 Sep 2026: endpoint ini BELUM BISA DIPAKAI. Diuji pada 15 kontrak yang di
-     * /contracts jelas punya opname (sampai Rp 11,8 M), semuanya memulangkan opname 0 dan
-     * lokasi tanpa identitas (lokasi_id, kode, blok, no_rumah semuanya null). Sudah
-     * disampaikan ke tim MUK. Method-nya disiapkan supaya begitu mereka membetulkannya,
-     * yang perlu dikerjakan tinggal layarnya.
+     * RIWAYAT: 19 Sep 2026 endpoint ini memulangkan opname 0 dan lokasi tanpa identitas pada
+     * 15 kontrak yang di /contracts jelas punya opname sampai Rp 11,8 M. Dilaporkan ke tim
+     * MUK dan DIBETULKAN per 1 Okt 2026 — sejak itu opname, ditagih, belum_ditagih, retensi,
+     * dan identitas lokasinya terisi. Yang masih kosong hanya kolom blok & no_rumah; isinya
+     * ada di dalam `nama` ("CENDANA JRKC2 VI No. 15") dan diurai di BsMukLokasi.
      *
      * @return array<string, mixed>
      */

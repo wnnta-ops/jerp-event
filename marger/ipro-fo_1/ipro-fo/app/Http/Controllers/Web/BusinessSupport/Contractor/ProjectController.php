@@ -5,7 +5,9 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Web\BusinessSupport\Contractor;
 
 use App\Domain\BusinessSupport\Models\BsAccount;
+use App\Domain\BusinessSupport\Models\BsMukContract;
 use App\Domain\BusinessSupport\Models\BsProject;
+use App\Domain\BusinessSupport\Models\BsProjectMuk;
 use App\Domain\Foundation\Tenant\Models\Cluster;
 use App\Domain\Foundation\Tenant\Models\Project;
 use App\Domain\Master\Unit\Models\Unit;
@@ -13,6 +15,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Controllers\Web\BusinessSupport\Contractor\Concerns\MapsUnitBast;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -38,6 +41,20 @@ class ProjectController extends Controller
             // kodenya cocok dgn kode project (fallback: tampilkan semua bila tak ada yg cocok).
             'salesProjects' => Project::orderBy('code')->get(['id', 'code', 'name']),
             'clusters'      => Cluster::orderBy('name')->get(['id', 'project_id', 'code', 'name']),
+
+            // Pilihan "proyek" MUK diambil dari SALINAN KONTRAK, bukan daftar master
+            // tersendiri: MUK tidak menyediakan endpoint daftar proyek, dan yang relevan
+            // memang hanya proyek yang benar-benar punya kontrak di sini.
+            'mukProjects'   => BsMukContract::query()
+                ->selectRaw('proyek_kode, MAX(proyek_nama) AS proyek_nama, COUNT(*) AS jml')
+                ->whereNotNull('proyek_kode')->where('proyek_kode', '!=', '')
+                ->groupBy('proyek_kode')->orderBy('proyek_kode')->get(),
+
+            // Pemetaan tersimpan, dikelompokkan per project supaya layar tidak perlu
+            // menyaring sendiri 95 baris untuk tiap barisnya.
+            'mukMap'        => BsProjectMuk::orderBy('muk_proyek_kode')
+                ->get(['project_id', 'muk_proyek_kode', 'muk_proyek_nama'])
+                ->groupBy('project_id'),
         ]);
     }
 
@@ -81,7 +98,8 @@ class ProjectController extends Controller
     {
         abort_unless($request->user()?->can('businesssupport.setup.manage'), 403);
         $v = $this->validateData($request);
-        BsProject::create(array_merge($v, ['tenant_id' => tenant_id(), 'created_by' => $request->user()->id]));
+        $project = BsProject::create(array_merge($v, ['tenant_id' => tenant_id(), 'created_by' => $request->user()->id]));
+        $this->simpanPemetaanMuk($request, $project);
 
         return back()->with('success', 'Project ditambahkan.');
     }
@@ -90,6 +108,7 @@ class ProjectController extends Controller
     {
         abort_unless($request->user()?->can('businesssupport.setup.manage'), 403);
         $project->update($this->validateData($request));
+        $this->simpanPemetaanMuk($request, $project);
 
         return back()->with('success', 'Project diperbarui.');
     }
@@ -115,5 +134,59 @@ class ProjectController extends Controller
             'is_active'      => ['nullable', 'boolean'],
             'notes'          => ['nullable', 'string', 'max:200'],
         ]);
+    }
+
+    /**
+     * Sinkronkan daftar "proyek" MUK milik sebuah Project: yang dicentang disimpan, yang
+     * dilepas dihapus.
+     *
+     * TIDAK MENYENTUH APA PUN bila formulirnya tidak mengirim bagian ini — supaya pemanggil
+     * lama (atau layar lain yang memperbarui project) tidak diam-diam menghapus pemetaan
+     * yang sudah disusun orang.
+     *
+     * BENTROK DITOLAK DENGAN NAMA PROJECT-nya. Indeks unik di database sudah menjaga satu
+     * paket hanya menempel pada satu project, tetapi tanpa pemeriksaan di sini operator cuma
+     * melihat galat SQL mentah dan tidak tahu harus melepasnya dari mana.
+     */
+    private function simpanPemetaanMuk(Request $request, BsProject $project): void
+    {
+        if (! $request->has('muk_proyek')) {
+            return;
+        }
+
+        $kode = collect($request->input('muk_proyek', []))
+            ->map(fn ($k) => trim((string) $k))->filter()->unique()->values();
+
+        $bentrok = BsProjectMuk::whereIn('muk_proyek_kode', $kode)
+            ->where('project_id', '!=', $project->id)
+            ->with('project:id,code')->get();
+
+        if ($bentrok->isNotEmpty()) {
+            // ValidationException, BUKAN abort(422): galatnya muncul di dalam formulir yang
+            // sedang terbuka dan isian operator tidak hilang. abort() menampilkan layar galat
+            // dan membuang seluruh pekerjaannya.
+            throw ValidationException::withMessages([
+                'muk_proyek' => 'Paket berikut sudah dipakai project lain: '.$bentrok
+                    ->map(fn ($b) => $b->muk_proyek_kode.' → '.($b->project?->code ?? '?'))->implode(', '),
+            ]);
+        }
+
+        // Nama paket ikut disalin supaya layar tetap terbaca ketika salinan kontrak sedang
+        // kosong — mis. tepat sesudah dibuang dan belum ditarik ulang.
+        $nama = BsMukContract::whereIn('proyek_kode', $kode)->pluck('proyek_nama', 'proyek_kode');
+
+        BsProjectMuk::where('project_id', $project->id)
+            ->whereNotIn('muk_proyek_kode', $kode->all())->delete();
+
+        foreach ($kode as $k) {
+            BsProjectMuk::updateOrCreate(
+                ['tenant_id' => tenant_id(), 'muk_proyek_kode' => $k],
+                [
+                    'project_id'      => $project->id,
+                    'muk_proyek_nama' => $nama[$k] ?? null,
+                    'created_by'      => $request->user()?->id,
+                ],
+            );
+        }
     }
 }
