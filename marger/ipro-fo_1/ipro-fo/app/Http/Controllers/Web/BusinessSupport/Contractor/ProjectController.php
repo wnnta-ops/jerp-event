@@ -60,7 +60,20 @@ class ProjectController extends Controller
 
     /**
      * Detail Project → daftar unit di dalamnya + status Sudah/Belum BAST.
-     * Jembatan BsProject → Sales Project dicocokkan lewat kode (fallback: nama).
+     *
+     * UNITNYA DICARI LEWAT CLUSTER + TAHAP, bukan kode project. Master Sales hanya punya
+     * SATU project ("JRES — Java Residence"); yang membedakan satu kumpulan unit dari yang
+     * lain adalah cluster dan tahapnya. Kode project kontraktor (C3T4, C6T1) tidak pernah
+     * ada padanannya di sana, sehingga pencocokan lewat kode selalu memulangkan nol unit —
+     * dan layarnya menyuruh operator "samakan kode project" ke sesuatu yang tidak bisa
+     * disamakan.
+     *
+     * Kolom Cluster menyimpan NAMA ("JAVA RESIDENCE KRIAN 3") sementara kode unit memakai
+     * KODE ("JRK3-004-XIX-17"), jadi cluster-nya diresolusi dulu untuk mendapatkan kodenya.
+     *
+     * Tahap tidak punya kolom sendiri di cermin unit BO — ia hanya ada DI DALAM kode unit.
+     * Karena itu penyaringnya awalan kode, dan tahap dinormalkan ke tiga angka: operator
+     * mengetik "5" sementara kodenya berbunyi "005".
      */
     public function show(Request $request, BsProject $project): Response
     {
@@ -69,9 +82,28 @@ class ProjectController extends Controller
         $sales = Project::where('code', $project->code)->first()
             ?? Project::whereRaw('LOWER(name) = ?', [mb_strtolower($project->name)])->first();
 
+        // Cluster dicocokkan lewat NAMA lebih dulu (itu yang disimpan layar Setup), lalu
+        // kode sebagai cadangan bila kelak yang tersimpan berubah jadi kode.
+        $cluster = null;
+        if (filled($project->cluster)) {
+            $cluster = Cluster::whereRaw('LOWER(name) = ?', [mb_strtolower((string) $project->cluster)])->first()
+                ?? Cluster::whereRaw('LOWER(code) = ?', [mb_strtolower((string) $project->cluster)])->first();
+        }
+
+        // "5" → "005"; yang sudah tiga angka dibiarkan. Tahap kosong berarti SELURUH unit di
+        // cluster itu, bukan nol unit — project bisa saja mencakup satu cluster penuh.
+        $tahap = trim((string) $project->tahap);
+        $awalan = $cluster
+            ? $cluster->code.'-'.($tahap !== '' ? str_pad($tahap, 3, '0', STR_PAD_LEFT).'-' : '')
+            : null;
+
         $rows = collect();
-        if ($sales) {
-            $units = Unit::where('project_id', $sales->id)
+        if ($cluster || $sales) {
+            $units = Unit::query()
+                ->when($cluster, fn ($q) => $q->where('cluster_id', $cluster->id))
+                ->when($awalan, fn ($q) => $q->where('unit_code', 'like', $awalan.'%'))
+                // Tanpa cluster, jatuh ke cara lama: seluruh unit milik sales project.
+                ->when(! $cluster && $sales, fn ($q) => $q->where('project_id', $sales->id))
                 ->with([
                     'cluster:id,code,name', 'block:id,code',
                     'unitType:id,code,name,lt,lb', 'project:id,code,name,location',
@@ -85,6 +117,10 @@ class ProjectController extends Controller
         return Inertia::render('BusinessSupport/Contractor/ProjectDetail', [
             'project'      => $project->only(['id', 'code', 'name', 'dept', 'cluster', 'tahap', 'coa_account_id', 'notes']),
             'salesProject' => $sales?->only(['id', 'code', 'name', 'location']),
+            // Dikirim supaya layar bisa menyebut DASAR penyaringnya, bukan menyuruh
+            // operator menyamakan kode project ke sesuatu yang tidak bisa disamakan.
+            'cluster'      => $cluster?->only(['id', 'code', 'name']),
+            'tahap'        => $tahap !== '' ? $tahap : null,
             'rows'         => $rows,
             'summary'      => [
                 'total' => $rows->count(),
