@@ -65,7 +65,11 @@ class TarikLokasiMukCommand extends Command
 
         foreach ($kontrak as $k) {
             try {
-                $lokasi = data_get($muk->progres((int) $k->muk_id), 'data.lokasi', []);
+                // 'lokasi', BUKAN 'data.lokasi': MukApi::ambil() sudah membuka pembungkus
+                // `data` kecuali dipanggil dengan $utuh = true. Salah satu lapis membuat
+                // SELURUH kontrak terbaca tanpa lokasi — dan itu menyamar jadi keadaan yang
+                // masuk akal, karena paket infra & SI memang wajar tidak punya lokasi.
+                $lokasi = data_get($muk->progres((int) $k->muk_id), 'lokasi', []);
             } catch (RuntimeException $e) {
                 $gagal++;
                 $this->newLine();
@@ -135,6 +139,19 @@ class TarikLokasiMukCommand extends Command
             ['Total tersimpan', BsMukLokasi::count()],
             ['Kontrak gagal', $gagal],
         ]);
+
+        // NOL MUTLAK HAMPIR PASTI BUG, BUKAN DATA. Sebagian kontrak memang tidak punya
+        // lokasi, tetapi tidak mungkin SEMUANYA — kontrak housing jelas berisi ratusan rumah.
+        // Keadaan ini pernah terjadi karena salah satu lapis pada jalur JSON, dan lolos
+        // karena pesannya terdengar masuk akal. Sejak itu dikatakan terang-terangan.
+        if ($baru === 0 && $diperbarui === 0 && $gagal === 0) {
+            $this->newLine();
+            $this->error('  TIDAK ADA SATU PUN lokasi tersimpan dari '.$kontrak->count().' kontrak.');
+            $this->warn('  Itu hampir pasti bukan keadaan data, melainkan bentuk balasan API yang berubah.');
+            $this->warn('  Periksa: php artisan tinker --execute="dump(app(App\Domain\BusinessSupport\Services\MukApi::class)->progres(8));"');
+
+            return self::FAILURE;
+        }
 
         // Kontrak tanpa lokasi itu WAJAR untuk paket yang bukan rumah (infra, SI), tetapi
         // disebut supaya tidak dikira penarikannya yang gagal.
