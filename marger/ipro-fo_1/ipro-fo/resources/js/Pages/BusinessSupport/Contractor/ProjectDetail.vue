@@ -8,6 +8,10 @@ import EmptyState from '@/Components/UI/EmptyState.vue';
 defineProps<{
     project: { id: number; code: string; name: string; dept: string | null; notes: string | null };
     salesProject: { id: number; code: string; name: string; location: string | null } | null;
+    /** Cluster yang dipakai menyaring unit — hasil resolusi dari kolom Cluster di Setup Project. */
+    cluster: { id: number; code: string; name: string } | null;
+    /** Tahap yang dipakai menyaring; null berarti seluruh cluster. */
+    tahap: string | null;
     rows: Array<any>;
     summary: { total: number; sudah: number; belum: number };
 }>();
@@ -22,8 +26,9 @@ function fmtRp(v: number) { return 'Rp ' + Number(v ?? 0).toLocaleString('id-ID'
             <h1 class="flex items-center gap-2 text-2xl font-bold"><FolderGit2 class="h-6 w-6 text-amber-600" /> {{ project.code }} — {{ project.name }}</h1>
             <p class="text-sm text-neutral-500">
                 Daftar unit di dalam project beserta status BAST.
-                <span v-if="salesProject"> Terhubung ke master unit proyek <b>{{ salesProject.code }}</b>.</span>
-                <span v-else class="text-amber-600"> Belum ada master unit yang cocok (samakan kode project dengan master Unit di Setup Sales).</span>
+                <span v-if="cluster"> Unit disaring dari cluster <b>{{ cluster.code }}</b><span v-if="tahap"> tahap <b>{{ tahap }}</b></span>.</span>
+                <span v-else-if="salesProject"> Terhubung ke master unit proyek <b>{{ salesProject.code }}</b>.</span>
+                <span v-else class="text-amber-600"> Cluster belum diisi — buka Setup Project, sunting project ini, lalu pilih Cluster &amp; Tahap-nya. Unitnya disaring dari situ.</span>
             </p>
         </div>
 
