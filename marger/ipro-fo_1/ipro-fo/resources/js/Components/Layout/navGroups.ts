@@ -510,6 +510,9 @@ export function navGroups(foUrl: string): NavGroup[] {
                 // dengan alasan yang sama seperti baris di atas: layarnya menuntut
                 // ap.posting.view, bukan izin contractor yang memayungi grup ini.
                 { label: 'Informasi CTC', href: 'bs.muk.ctc.index', permission: ['ap.posting.*'] },
+                // COP Owner dari MUK beserta tombol Posting ke AP. Izinnya disebut sendiri,
+                // alasan yang sama dengan dua baris di atasnya.
+                { label: 'Tagihan Progress Project', href: 'bs.muk.tagihan.index', permission: ['ap.posting.*'] },
                 { label: 'Surat Perintah Kerja', href: 'bs.spk.index' },
                 { label: 'Kontrol Progress Lapangan', href: 'bs.spk.kpl.index' },
                 { label: 'Progress Retensi', href: 'bs.spk.retention.index' },

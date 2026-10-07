@@ -71,6 +71,7 @@ use App\Http\Controllers\Web\BusinessSupport\Payable\ApRepairController as BsApR
 use App\Http\Controllers\Web\BusinessSupport\Payable\GimmickCategoryController as BsGimmickCategoryController;
 use App\Http\Controllers\Web\BusinessSupport\Payable\InformasiCtcController as BsInformasiCtcController;
 use App\Http\Controllers\Web\BusinessSupport\Payable\MukKontrakController as BsMukKontrakController;
+use App\Http\Controllers\Web\BusinessSupport\Payable\TagihanProgressController as BsTagihanProgressController;
 use App\Http\Controllers\Web\BusinessSupport\Payable\PenghapusanController as BsApPenghapusanController;
 use App\Http\Controllers\Web\BusinessSupport\Payable\PostingInvoiceController as BsApPostingController;
 use App\Http\Controllers\Web\BusinessSupport\Purchasing\PurchaseOrderController as BsPoController;
@@ -748,6 +749,7 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
     Route::get('/business-support/payable-posting/spk', [BsApPostingController::class, 'spkIndex'])->name('bs.ap.posting.spk.index');
     Route::post('/business-support/payable-posting/po/{po}', [BsApPostingController::class, 'fromPo'])->name('bs.ap.posting.po');
     Route::post('/business-support/payable-posting/spk/{progress}', [BsApPostingController::class, 'fromSpk'])->name('bs.ap.posting.spk');
+    Route::post('/business-support/payable-posting/muk-tagihan/{tagihan}', [BsApPostingController::class, 'fromMukTagihan'])->name('bs.ap.posting.muk-tagihan');
     Route::post('/business-support/payable-posting/refund/{queue}', [BsApPostingController::class, 'fromRefund'])->name('bs.ap.posting.refund');
     Route::post('/business-support/payable-posting/bulk-refund', [BsApPostingController::class, 'bulkRefund'])->name('bs.ap.posting.bulk-refund');
 
@@ -767,6 +769,13 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
     // menumpang ap.posting.view karena itu angka yang sama untuk orang yang sama.
     Route::get('/business-support/muk-ctc', [BsInformasiCtcController::class, 'index'])->name('bs.muk.ctc.index');
     Route::get('/business-support/muk-ctc/{kontrak}', [BsInformasiCtcController::class, 'show'])->name('bs.muk.ctc.show');
+
+    // Tagihan Progress Project — COP Owner dari MUK, siap diposting ke AP. Melihat butuh
+    // ap.posting.view; "Posting ke AP" butuh ap.posting.create (dijaga di controller), sebab
+    // ia yang menentukan tagihan mana yang akan menjadi hutang.
+    Route::get('/business-support/muk-tagihan', [BsTagihanProgressController::class, 'index'])->name('bs.muk.tagihan.index');
+    Route::post('/business-support/muk-tagihan/{tagihan}/posting', [BsTagihanProgressController::class, 'postingKeAp'])->name('bs.muk.tagihan.posting');
+    Route::delete('/business-support/muk-tagihan/{tagihan}/posting', [BsTagihanProgressController::class, 'batalPosting'])->name('bs.muk.tagihan.batal');
     // AP — Penghapusan Nilai Hutang
     Route::get('/business-support/payable-penghapusan', [BsApPenghapusanController::class, 'index'])->name('bs.ap.penghapusan.index');
     Route::get('/business-support/payable-penghapusan-report', [BsApPenghapusanController::class, 'report'])->name('bs.ap.penghapusan.report'); // Laporan Penghapusan Hutang (rincian + history)

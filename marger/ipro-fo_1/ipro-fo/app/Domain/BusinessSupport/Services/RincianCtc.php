@@ -35,17 +35,20 @@ namespace App\Domain\BusinessSupport\Services;
  *
  * ── PEMBAYARAN DARI BO BELUM BISA IKUT ──
  *
- * Parameter $pembayaranBo sudah disediakan, tetapi hari ini selalu kosong: invoice AP yang
- * lahir dari posting SPK menunjuk register SPK INTERNAL (bs_work_orders), dan tidak ada
- * apa pun yang menghubungkannya ke kontrak MUK. Diperiksa 7 Okt 2026 di server test —
- * 95 kontrak MUK, 3 SPK internal, 0 nomor yang cocok. Begitu jalur posting AP dari kontrak
- * MUK ada, pembayarannya cukup dioper ke sini.
+ * $pembayaranBo berisi kuitansi AP yang SUDAH DISETUJUI dan tertaut ke tagihan MUK lewat
+ * bs_muk_tagihan (invoice ber-source_type 'muk_tagihan'). Jembatan itu baru ada sejak layar
+ * Tagihan Progress Project; sebelumnya invoice AP hanya menunjuk register SPK internal dan
+ * tidak pernah cocok dengan kontrak MUK.
+ *
+ * UNTUK TAGIHAN YANG DIBAYAR LEWAT BO, `diterima` dari MUK DILEWATI. Keduanya menggambarkan
+ * uang yang sama begitu MUK ikut mencatat pembayaran kita, dan menjumlahkannya membuat Sisa
+ * Pembayaran menyusut dua kali lipat tanpa satu pun galat.
  */
 class RincianCtc
 {
     /**
      * @param  array<int, array<string, mixed>>  $tagihan  dari MukApi::tagihan()
-     * @param  array<int, array{tanggal: ?string, nominal: float, sumber: string, keterangan: ?string}>  $pembayaranBo
+     * @param  array<int, array{tanggal: ?string, nominal: float, sumber: string, keterangan: ?string, no_tagihan?: ?string}>  $pembayaranBo
      * @return array{
      *     pembayaran: array<int, array<string, mixed>>, total_pembayaran: float,
      *     sisa_pembayaran: float, tertagih: array<int, array<string, mixed>>,
@@ -56,9 +59,25 @@ class RincianCtc
     {
         $pembayaran = [];
 
+        // Tagihan yang pembayarannya SUDAH tercatat di BO. Untuk tagihan itu, `diterima`
+        // kiriman MUK DILEWATI — kalau keduanya dijumlahkan, uang yang sama terhitung dua
+        // kali begitu MUK ikut mencatat pembayaran yang kita kirim, dan Sisa Pembayaran
+        // menyusut dua kali lipat tanpa satu pun galat.
+        //
+        // Aturannya berbasis data, bukan tanggal pisah-batas: tagihan yang diposting lewat
+        // BO dihitung dari BO, sisanya dari MUK. Tidak ada yang perlu disetel, dan tidak ada
+        // tagihan yang jatuh di antara keduanya.
+        $dariBo = [];
+        foreach ($pembayaranBo as $p) {
+            $no = trim((string) ($p['no_tagihan'] ?? ''));
+            if ($no !== '') {
+                $dariBo[$no] = true;
+            }
+        }
+
         foreach ($tagihan as $t) {
             $diterima = (float) ($t['diterima'] ?? 0);
-            if ($diterima <= 0) {
+            if ($diterima <= 0 || isset($dariBo[trim((string) ($t['no_tagihan'] ?? ''))])) {
                 continue;
             }
 

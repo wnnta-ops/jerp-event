@@ -8,6 +8,7 @@ use App\Domain\BusinessSupport\Models\BsAccount;
 use App\Domain\BusinessSupport\Models\BsApInvoice;
 use App\Domain\BusinessSupport\Models\BsGimmickCategory;
 use App\Domain\BusinessSupport\Models\BsKprBiayaEntry;
+use App\Domain\BusinessSupport\Models\BsMukTagihan;
 use App\Domain\BusinessSupport\Models\BsPurchaseOrder;
 use App\Domain\BusinessSupport\Models\BsSupplier;
 use App\Domain\BusinessSupport\Models\BsWorkOrder;
@@ -64,6 +65,10 @@ class PostingInvoiceController extends Controller
 
         return Inertia::render('BusinessSupport/Payable/PostingSpk', [
             'progress' => $this->antreanSpk(),
+            // Antrean kedua: tagihan MUK yang sudah ditekan "Posting ke AP" di layar Tagihan
+            // Progress Project. Dipisah dari progress SPK internal karena asal dokumennya
+            // berbeda — dan karena nilainya sudah membawa PPN & PPh dari COP-nya.
+            'mukTagihan' => $this->antreanMukTagihan(),
         ]);
     }
 
@@ -93,6 +98,32 @@ class PostingInvoiceController extends Controller
                     'received_value' => round((float) $po->lines->sum(fn ($l) => (float) $l->qty_received * (float) $l->unit_price), 2),
                 ];
             })->filter(fn ($p) => $p['received_value'] > 0.009)->values();
+    }
+
+    /**
+     * Tagihan MUK yang sudah dimasukkan ke antrean dan BELUM pernah diinvoice.
+     *
+     * @return \Illuminate\Support\Collection<int, array<string, mixed>>
+     */
+    private function antreanMukTagihan(): \Illuminate\Support\Collection
+    {
+        $sudah = BsApInvoice::where('source_type', 'muk_tagihan')->pluck('source_id')->all();
+
+        return BsMukTagihan::whereNotNull('diposting_pada')->whereNotIn('id', $sudah)
+            ->with('supplier:id,code,name')
+            ->orderBy('tanggal')->limit(200)->get()
+            ->map(fn (BsMukTagihan $t) => [
+                'id' => $t->id,
+                'no_tagihan' => $t->no_tagihan,
+                'no_kontrak' => $t->no_kontrak,
+                'supplier' => $t->supplier?->name,
+                'tanggal' => optional($t->tanggal)->toDateString(),
+                'due_date' => optional($t->due_date)->toDateString(),
+                'dpp' => (float) $t->dpp,
+                'ppn' => (float) $t->ppn,
+                'pph' => (float) $t->pph,
+                'nilai_tagihan' => $t->nilai_tagihan,
+            ])->values();
     }
 
     /**
@@ -941,6 +972,101 @@ class PostingInvoiceController extends Controller
         $progress->update(['status' => 'invoiced']);
 
         return redirect()->route('bs.ap.show', $inv)->with('success', "Invoice {$inv->invoice_number} diterbitkan dari SPK {$wo->spk_number}.");
+    }
+
+    /**
+     * Terbitkan invoice hutang dari satu TAGIHAN MUK yang sudah masuk antrean.
+     *
+     * Cerminan fromSpk(), dengan tiga perbedaan yang penting:
+     *
+     * 1. NILAINYA SUDAH MEMBAWA PPN & PPh dari COP-nya. Pada progress SPK internal, pajak
+     *    dihitung di sini; pada tagihan MUK, mereka yang menghitungnya dan kita menyalin.
+     *    Menghitung ulang berarti angka kita dan angka di dokumen kontraktor berbeda.
+     *
+     * 2. AKUN BIAYANYA dari COA Project di Setup Project, lewat pemetaan paket MUK →
+     *    project. Tidak ada cadangan diam-diam: tanpa COA, posting DITOLAK dengan menyebut
+     *    apa yang harus diisi. Invoice yang terbit ke akun sembarang menjadi jurnal salah
+     *    yang baru ketahuan saat tutup buku.
+     *
+     * 3. SUMBERNYA 'muk_tagihan' — inilah tautan yang selama ini hilang antara pembayaran di
+     *    BO dan kontrak MUK. Dari source_id terbaca muk_id-nya, dan dari situ riwayat
+     *    pembayaran di layar Informasi CTC akhirnya bisa menyebut pembayaran kita sendiri.
+     */
+    public function fromMukTagihan(Request $request, BsMukTagihan $tagihan): RedirectResponse
+    {
+        abort_unless($request->user()?->can('ap.posting.create'), 403);
+
+        if ($tagihan->diposting_pada === null) {
+            return back()->with('error', 'Tagihan ini belum dimasukkan ke antrean dari layar Tagihan Progress Project.');
+        }
+
+        if (BsApInvoice::where('source_type', 'muk_tagihan')->where('source_id', $tagihan->id)->exists()) {
+            return back()->with('error', 'Tagihan '.$tagihan->no_tagihan.' sudah pernah diinvoice.');
+        }
+
+        if ($tagihan->supplier_id === null) {
+            return back()->with('error', 'Tagihan ini belum punya kontraktor — ulangi Posting ke AP dan pilih suppliernya.');
+        }
+
+        $request->validate(['due_date' => self::ATURAN_JATUH_TEMPO]);
+
+        $akunBiaya = DB::table('bs_project_muk')
+            ->join('bs_projects', 'bs_projects.id', '=', 'bs_project_muk.project_id')
+            ->join('bs_muk_contracts', 'bs_muk_contracts.proyek_kode', '=', 'bs_project_muk.muk_proyek_kode')
+            ->where('bs_muk_contracts.muk_id', (int) $tagihan->muk_id)
+            ->value('bs_projects.coa_account_id');
+
+        if ($akunBiaya === null) {
+            return back()->with('error',
+                'COA Project belum disetel untuk kontrak ini. Buka Setup Project, pilih Akun Konstruksi/CIP-nya, lalu ulangi.');
+        }
+
+        $tglInvoice = now()->toDateString();
+        $payable = BsAccount::where('code', config('business_support.gl_accounts.payable'))->value('id');
+
+        $inv = $this->makeInvoice([
+            'supplier_id' => $tagihan->supplier_id,
+            'expense_account_id' => $akunBiaya,
+            'payable_account_id' => $payable,
+            'category_id' => null,
+            'description' => 'Tagihan MUK '.$tagihan->no_tagihan.' — SPK '.($tagihan->no_kontrak ?? '-'),
+            'invoice_date' => $tglInvoice,
+            // Jatuh tempo MUK dipakai bila ada: itu tanggal di dokumen yang dipegang
+            // kontraktor. "30 hari sejak hari ini" hanya cadangan terakhir.
+            'due_date' => $this->jatuhTempo(
+                $request,
+                $tglInvoice,
+                optional($tagihan->due_date)->toDateString()
+                    ?? optional($tagihan->jatuh_tempo)->toDateString()
+                    ?? now()->addDays(30)->toDateString(),
+            ),
+            'dpp' => (float) $tagihan->dpp,
+            // NILAINYA DISALIN dari COP, bukan dihitung ulang dari persentase. Persentasenya
+            // justru DITURUNKAN dari nilainya supaya catatan invoice konsisten saat dibaca
+            // layar lain — kalau dibalik, pembulatan persentase akan menggeser rupiah dan
+            // angka kita berbeda dari dokumen yang dipegang kontraktor.
+            //
+            // 'with' dan 'withheld' adalah satu-satunya nilai yang dikenal kolom ini
+            // (migrasi 2026_06_02_220000). Mode di luar itu tersimpan tanpa galat lalu
+            // diperlakukan sebagai 'none' oleh seluruh perhitungan pajak.
+            'ppn_mode' => (float) $tagihan->ppn > 0 ? 'with' : 'none',
+            'ppn_amount' => (float) $tagihan->ppn,
+            'ppn_base' => (float) $tagihan->dpp,
+            'ppn_pct' => (float) $tagihan->dpp > 0
+                ? round((float) $tagihan->ppn / (float) $tagihan->dpp * 100, 2) : 0,
+            'pph_mode' => (float) $tagihan->pph > 0 ? 'withheld' : 'none',
+            'pph_amount' => (float) $tagihan->pph,
+            'pph_base' => (float) $tagihan->dpp,
+            'pph_pct' => (float) $tagihan->dpp > 0
+                ? round((float) $tagihan->pph / (float) $tagihan->dpp * 100, 2) : 0,
+            'total' => round((float) $tagihan->dpp + (float) $tagihan->ppn, 2),
+            'net_payable' => $tagihan->nilai_tagihan,
+            'source_type' => 'muk_tagihan',
+            'source_id' => $tagihan->id,
+        ], $request->user()->id);
+
+        return redirect()->route('bs.ap.show', $inv)
+            ->with('success', "Invoice {$inv->invoice_number} diterbitkan dari tagihan MUK {$tagihan->no_tagihan}.");
     }
 
     /** @param array<string,mixed> $data */
