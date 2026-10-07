@@ -506,6 +506,10 @@ export function navGroups(foUrl: string): NavGroup[] {
                 // ap.posting.view, jadi menampilkannya kepada pemegang izin contractor saja
                 // berarti menyodorkan menu yang berakhir 403 saat diklik.
                 { label: 'Kontrak SPK (MUK)', href: 'bs.muk.kontrak.index', permission: ['ap.posting.*'] },
+                // Lampiran 2 — nilai SPK + sudah/belum tertagih. Izinnya DISEBUT sendiri
+                // dengan alasan yang sama seperti baris di atas: layarnya menuntut
+                // ap.posting.view, bukan izin contractor yang memayungi grup ini.
+                { label: 'Informasi CTC', href: 'bs.muk.ctc.index', permission: ['ap.posting.*'] },
                 { label: 'Surat Perintah Kerja', href: 'bs.spk.index' },
                 { label: 'Kontrol Progress Lapangan', href: 'bs.spk.kpl.index' },
                 { label: 'Progress Retensi', href: 'bs.spk.retention.index' },

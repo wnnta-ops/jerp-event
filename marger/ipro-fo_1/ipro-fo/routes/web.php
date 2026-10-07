@@ -69,6 +69,7 @@ use App\Http\Controllers\Web\BusinessSupport\Payable\ApKuitansiController as BsA
 use App\Http\Controllers\Web\BusinessSupport\Payable\ApOpeningController as BsApOpeningController;
 use App\Http\Controllers\Web\BusinessSupport\Payable\ApRepairController as BsApRepairController;
 use App\Http\Controllers\Web\BusinessSupport\Payable\GimmickCategoryController as BsGimmickCategoryController;
+use App\Http\Controllers\Web\BusinessSupport\Payable\InformasiCtcController as BsInformasiCtcController;
 use App\Http\Controllers\Web\BusinessSupport\Payable\MukKontrakController as BsMukKontrakController;
 use App\Http\Controllers\Web\BusinessSupport\Payable\PenghapusanController as BsApPenghapusanController;
 use App\Http\Controllers\Web\BusinessSupport\Payable\PostingInvoiceController as BsApPostingController;
@@ -760,6 +761,11 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
     // controller), BUKAN ap.posting seperti layarnya: menautkan kontrak menambah biaya ke
     // perhitungan HPP, dan itu wewenang pemegang Komponen COGS.
     Route::put('/business-support/muk-kontrak/{kontrak}/cogs', [BsMukKontrakController::class, 'simpanCogs'])->name('bs.muk.kontrak.cogs');
+
+    // Informasi CTC (Lampiran 2) — nilai tiap SPK + sudah/belum tertagih. Baca-saja, kolomnya
+    // disusun BarisSpkMuk, definisi yang sama dengan Kontrak SPK (MUK) di atas. Izinnya
+    // menumpang ap.posting.view karena itu angka yang sama untuk orang yang sama.
+    Route::get('/business-support/muk-ctc', [BsInformasiCtcController::class, 'index'])->name('bs.muk.ctc.index');
     // AP — Penghapusan Nilai Hutang
     Route::get('/business-support/payable-penghapusan', [BsApPenghapusanController::class, 'index'])->name('bs.ap.penghapusan.index');
     Route::get('/business-support/payable-penghapusan-report', [BsApPenghapusanController::class, 'report'])->name('bs.ap.penghapusan.report'); // Laporan Penghapusan Hutang (rincian + history)

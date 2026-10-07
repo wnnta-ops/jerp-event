@@ -25,6 +25,8 @@ const sections = computed<Record<string, Item[]>>(() => ({
         { label: 'Pasangan Unit MUK', route: r('bs.muk.pasangan.index') },
     ],
     master: [
+        { label: 'Kontrak SPK (MUK)', route: r('bs.muk.kontrak.index') },
+        { label: 'Informasi CTC', route: r('bs.muk.ctc.index') },
         { label: 'Surat Perintah Kerja', route: r('bs.spk.index') },
         { label: 'Kontrol Progress Lapangan', route: r('bs.spk.kpl.index') },
         { label: 'Progress Retensi', route: r('bs.spk.retention.index') },

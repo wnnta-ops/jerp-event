@@ -9,6 +9,7 @@ use App\Domain\BusinessSupport\Models\BsMukContractCogs;
 use App\Domain\BusinessSupport\Models\BsMukLokasi;
 use App\Domain\BusinessSupport\Models\BsProjectMuk;
 use App\Domain\BusinessSupport\Services\AlokasiSpkUnit;
+use App\Domain\BusinessSupport\Services\BarisSpkMuk;
 use App\Domain\BusinessSupport\Services\Cogs2Sumber;
 use App\Domain\BusinessSupport\Services\MukApi;
 use App\Http\Controllers\Controller;
@@ -36,7 +37,7 @@ use RuntimeException;
  */
 class MukKontrakController extends Controller
 {
-    public function index(Request $request): Response
+    public function index(Request $request, BarisSpkMuk $baris): Response
     {
         abort_unless($request->user()?->can('ap.posting.view'), 403);
 
@@ -56,16 +57,10 @@ class MukKontrakController extends Controller
         // pendek sedangkan tabelnya dipaginasi 25 baris.
         $tautan = BsMukContractCogs::query()->get(['muk_id', 'component', 'kategori'])->keyBy('muk_id');
 
-        // Lokasi & Tahap TIDAK datang dari MUK — MUK hanya punya "proyek" yang sebenarnya
-        // paket pekerjaan. Keduanya diturunkan dari pemetaan di Setup Project: kode proyek
-        // MUK → project kita → cluster & tahap yang diisi operator di sana.
-        //
-        // Diambil SEKALI sebagai peta, bukan sekali per baris: 25 baris per halaman dan
-        // daftar pemetaannya pendek.
-        $petaProyek = BsProjectMuk::query()
-            ->join('bs_projects', 'bs_projects.id', '=', 'bs_project_muk.project_id')
-            ->get(['bs_project_muk.muk_proyek_kode', 'bs_projects.cluster', 'bs_projects.tahap', 'bs_projects.code'])
-            ->keyBy('muk_proyek_kode');
+        // Lokasi, Tahap, dan nilai SPK disusun BarisSpkMuk — definisi yang sama dengan
+        // layar Informasi CTC. Dua layar yang menyusunnya sendiri-sendiri suatu saat akan
+        // berbeda untuk kontrak yang sama, dan tidak ada yang tahu mana yang benar.
+        $petaProyek = $baris->petaProyek();
 
         // Berapa lokasi kontrak ini yang sudah berpasangan dengan unit kita. Dihitung di
         // database, bukan dengan memuat 2867 baris ke memori.
@@ -74,7 +69,7 @@ class MukKontrakController extends Controller
             ->selectRaw('bs_muk_lokasi.muk_id, COUNT(*) AS jml, COUNT(bs_muk_unit_pasangan.id) AS terpasang')
             ->groupBy('bs_muk_lokasi.muk_id')->get()->keyBy('muk_id');
 
-        $rows = $q->paginate(25)->withQueryString()->through(function (BsMukContract $k) use ($tautan, $petaProyek, $hitungLokasi) {
+        $rows = $q->paginate(25)->withQueryString()->through(function (BsMukContract $k) use ($tautan, $petaProyek, $hitungLokasi, $baris) {
             // ->get(), BUKAN $tautan[...]: akses kurung pada Collection memanggil offsetGet,
             // yang MELEMPAR "Undefined array key" untuk kunci yang tidak ada. Operator ?->
             // sesudahnya tidak pernah sempat bekerja — galatnya terjadi lebih dulu, dan
@@ -84,38 +79,17 @@ class MukKontrakController extends Controller
             $proyek = $petaProyek->get((string) $k->proyek_kode);
             $lok = $hitungLokasi->get((int) $k->muk_id);
 
-            return [
+            return $baris->kolom($k, $proyek) + [
                 'id' => $k->id,
                 'muk_id' => $k->muk_id,
                 'cogs' => $cogs?->component,
                 'cogsKategori' => $cogs?->kategori,
                 'no_kontrak' => $k->no_kontrak,
-                'no_spk' => $k->no_spk,
                 'jenis' => $k->jenis,
                 'status' => $k->status,
                 'proyek' => trim(($k->proyek_kode ? $k->proyek_kode.' — ' : '').$k->proyek_nama),
                 'pelanggan' => $k->pelanggan_nama,
-                // null, BUKAN string "belum dipilih": layar yang memutuskan kata-katanya,
-                // dan null bisa dibedakan dari cluster yang kebetulan bernama begitu.
-                'lokasi' => $proyek?->cluster,
-                'tahap' => $proyek?->tahap,
-                'project_kode' => $proyek?->code,
                 'nilai_kontrak' => (float) $k->nilai_kontrak,
-                // DPP = nilai_kontrak. Dokumen MUK menyebutnya tegas: "nilai_kontrak: DPP
-                // (sebelum PPN)". Bukan nama kedua untuk hal yang sama — dipisah supaya
-                // kolom di layar sejajar dengan Lampiran 2 dan tidak perlu ditafsirkan.
-                'spk_dpp' => (float) $k->nilai_kontrak,
-                // PPN & PPh 4(2) TIDAK ADA di endpoint kontrak MUK. Keduanya hanya muncul
-                // per tagihan di /contracts/{id}/bills — dan itu nilai yang SUDAH DITAGIH,
-                // bukan nilai SPK. Menjumlahkannya dari sana akan memberi angka yang tampak
-                // masuk akal untuk hal yang berbeda.
-                //
-                // Dibiarkan null sampai MUK mengirimkannya. Menghitungnya sendiri dari DPP
-                // juga ditolak: PPh 4(2) jasa konstruksi bertarif 1,75%–4% menurut
-                // kualifikasi pelaksana, dan satu tarif tetap akan salah untuk sebagian
-                // kontrak tanpa ada yang bisa melihatnya.
-                'spk_ppn' => null,
-                'spk_pph42' => null,
                 'lokasi_total' => (int) ($lok->jml ?? 0),
                 'lokasi_terpasang' => (int) ($lok->terpasang ?? 0),
                 'diopname' => (float) $k->kum_diopname,

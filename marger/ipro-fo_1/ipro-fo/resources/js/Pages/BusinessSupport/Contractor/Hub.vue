@@ -25,6 +25,7 @@ const menu: Array<{ group: string; items: Array<{ label: string; route: string |
         // Baca-saja dari MUK ERP — sumber angka kontrak & penagihan SPK. Dipindah ke sini
         // bersama entri sidebarnya; rute & layarnya tetap di tempat semula.
         { label: 'Kontrak SPK (MUK)', route: r('bs.muk.kontrak.index') },
+        { label: 'Informasi CTC', route: r('bs.muk.ctc.index') },
         { label: 'Surat Perintah Kerja', route: r('bs.spk.index') },
         { label: 'Kontrol Progress Lapangan', route: r('bs.spk.kpl.index') },
         { label: 'Progress Retensi', route: r('bs.spk.retention.index') },
