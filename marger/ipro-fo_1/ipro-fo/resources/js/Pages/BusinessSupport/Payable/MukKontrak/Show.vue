@@ -193,7 +193,7 @@ const warnaStatus: Record<string, string> = {
                             <!-- Dijumlahkan di layar, BUKAN disalin dari nilai SPK: kalau
                                  pembulatannya meleset, selisihnya harus terlihat di sini. -->
                             <td class="px-4 py-2.5 text-right font-mono">
-                                {{ fmtRp(alokasi.baris.reduce((t, r) => t + Number(r.alokasi_dpp || 0), 0)) }}
+                                {{ fmtRp(alokasi.baris.reduce((t: number, r: any) => t + Number(r.alokasi_dpp || 0), 0)) }}
                             </td>
                             <td class="px-4 py-2.5"></td>
                             <td class="px-4 py-2.5"></td>
