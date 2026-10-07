@@ -766,6 +766,7 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
     // disusun BarisSpkMuk, definisi yang sama dengan Kontrak SPK (MUK) di atas. Izinnya
     // menumpang ap.posting.view karena itu angka yang sama untuk orang yang sama.
     Route::get('/business-support/muk-ctc', [BsInformasiCtcController::class, 'index'])->name('bs.muk.ctc.index');
+    Route::get('/business-support/muk-ctc/{kontrak}', [BsInformasiCtcController::class, 'show'])->name('bs.muk.ctc.show');
     // AP — Penghapusan Nilai Hutang
     Route::get('/business-support/payable-penghapusan', [BsApPenghapusanController::class, 'index'])->name('bs.ap.penghapusan.index');
     Route::get('/business-support/payable-penghapusan-report', [BsApPenghapusanController::class, 'report'])->name('bs.ap.penghapusan.report'); // Laporan Penghapusan Hutang (rincian + history)

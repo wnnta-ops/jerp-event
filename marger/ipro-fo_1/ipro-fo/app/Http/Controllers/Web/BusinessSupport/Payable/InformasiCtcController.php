@@ -6,10 +6,13 @@ namespace App\Http\Controllers\Web\BusinessSupport\Payable;
 
 use App\Domain\BusinessSupport\Models\BsMukContract;
 use App\Domain\BusinessSupport\Services\BarisSpkMuk;
+use App\Domain\BusinessSupport\Services\MukApi;
+use App\Domain\BusinessSupport\Services\RincianCtc;
 use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Inertia\Response;
+use RuntimeException;
 
 /**
  * Informasi CTC — nilai tiap SPK berikut berapa yang sudah dan belum tertagih (Lampiran 2).
@@ -74,6 +77,55 @@ class InformasiCtcController extends Controller
             'ditarik_pada' => optional(BsMukContract::max('ditarik_pada'))
                 ? \Illuminate\Support\Carbon::parse(BsMukContract::max('ditarik_pada'))->translatedFormat('d M Y H:i')
                 : null,
+        ]);
+    }
+
+    /**
+     * Rincian satu SPK (Lampiran 1): riwayat pembayaran, sisa, dan yang sudah/belum tertagih.
+     *
+     * Lokasi, Tahap, dan Nilai SPK (Tagihan) datang dari BarisSpkMuk — SAMA dengan daftarnya,
+     * supaya satu SPK tidak menunjukkan dua angka berbeda antara daftar dan rinciannya.
+     *
+     * TAGIHANNYA DITARIK LANGSUNG dari MUK saat dibuka, tidak disalin: hanya satu kontrak dan
+     * pemakaiannya sesekali. Bila MUK sedang mati, galatnya ditampilkan apa adanya dan bagian
+     * kepala tetap terbaca — tetapi seluruh angka turunannya ikut kosong, dan layar
+     * mengatakannya, karena angka yang dihitung dari daftar tagihan kosong akan terbaca
+     * seolah-olah belum ada tagihan sama sekali.
+     */
+    public function show(Request $request, BsMukContract $kontrak, BarisSpkMuk $baris, RincianCtc $rincian, MukApi $muk): Response
+    {
+        abort_unless($request->user()?->can('ap.posting.view'), 403);
+
+        $kolom = $baris->kolom($kontrak, $baris->petaProyek()->get((string) $kontrak->proyek_kode));
+
+        $tagihan = [];
+        $galat = null;
+
+        try {
+            $tagihan = $muk->tagihan((int) $kontrak->muk_id);
+        } catch (RuntimeException $e) {
+            $galat = $e->getMessage();
+        }
+
+        return Inertia::render('BusinessSupport/Payable/InformasiCtc/Show', [
+            'kontrak' => [
+                'id' => $kontrak->id,
+                'muk_id' => $kontrak->muk_id,
+                'no_spk' => $kontrak->no_spk,
+                'no_kontrak' => $kontrak->no_kontrak,
+                'pelanggan' => $kontrak->pelanggan_nama,
+                'status' => $kontrak->status,
+                'ditarik_pada' => optional($kontrak->ditarik_pada)->translatedFormat('d M Y H:i'),
+            ],
+            'kolom' => $kolom,
+            // Pembayaran dari BO BELUM bisa ikut: invoice AP dari posting SPK menunjuk register
+            // SPK internal, dan tidak ada yang menghubungkannya ke kontrak MUK (diperiksa
+            // 7 Okt 2026: 95 kontrak MUK, 3 SPK internal, 0 nomor cocok). Begitu jalur posting
+            // AP dari kontrak MUK ada, daftarnya cukup dioper sebagai argumen keempat.
+            'rincian' => $galat === null
+                ? $rincian->untuk((float) $kolom['spk_tagihan'], (float) $kontrak->kum_diterima, $tagihan)
+                : null,
+            'galat' => $galat,
         ]);
     }
 

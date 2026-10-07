@@ -97,9 +97,9 @@ watch(cari, () => {
                     <tr v-for="(r, i) in rows.data" :key="r.id" class="hover:bg-neutral-50 dark:hover:bg-neutral-800/50">
                         <td class="px-3 py-2.5 text-neutral-400">{{ (rows.from ?? 1) + i }}</td>
                         <td class="px-3 py-2.5">
-                            <!-- Tertaut ke kontraknya di Kontrak SPK (MUK): rincian penagihan
-                                 (COP Owner) yang membentuk kolom Sudah Tertagih ada di sana. -->
-                            <Link :href="route('bs.muk.kontrak.show', r.id)" class="font-mono font-semibold text-amber-700 hover:underline dark:text-amber-400">
+                            <!-- Ke RINCIAN CTC-nya (Lampiran 1): riwayat pembayaran, sisa,
+                                 dan tagihan yang sudah/belum terbit. -->
+                            <Link :href="route('bs.muk.ctc.show', r.id)" class="font-mono font-semibold text-amber-700 hover:underline dark:text-amber-400">
                                 {{ r.no_spk || r.no_kontrak || '—' }}
                             </Link>
                             <div v-if="r.pelanggan" class="text-xs text-neutral-400">{{ r.pelanggan }}</div>

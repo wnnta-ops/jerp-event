@@ -664,11 +664,16 @@ class CashBookController extends Controller
             ->paginate(50)->withQueryString();
 
         // Registrasi Pengeluaran Kas & Bank (AP) — Kuitansi Hutang menunggu persetujuan (status 'pending').
-        $apRows = \App\Domain\BusinessSupport\Models\BsApKuitansi::query()
+        $apKuitansi = \App\Domain\BusinessSupport\Models\BsApKuitansi::query()
             ->where('status', 'pending')
-            ->with(['supplier:id,code,name', 'cashAccount:id,code,name', 'lines.invoice:id,invoice_number,description'])
+            ->with(['supplier:id,code,name', 'cashAccount:id,code,name',
+                'lines.invoice:id,invoice_number,description,source_type,source_id'])
             ->latest('kuitansi_date')->latest('id')
-            ->get()
+            ->get();
+
+        $spkPerInvoice = $this->spkPerInvoice($apKuitansi);
+
+        $apRows = $apKuitansi
             ->map(fn ($k) => [
                 'id'              => $k->id,
                 'kuitansi_number' => $k->kuitansi_number,
@@ -677,10 +682,17 @@ class CashBookController extends Controller
                 'cash_account'    => $k->cashAccount ? ['code' => $k->cashAccount->code, 'name' => $k->cashAccount->name] : null,
                 'description'     => $k->description,
                 'amount'          => (float) $k->total,
+                // Nomor SPK yang dibayar kuitansi ini — dari posting AP-nya, bukan diketik.
+                // Satu kuitansi bisa membayar beberapa invoice sekaligus, jadi yang
+                // dipulangkan DAFTAR: menampilkan yang pertama saja menyembunyikan sisanya,
+                // dan orang menyetujui pembayaran yang dikiranya untuk satu SPK.
+                'spk'             => $k->lines->map(fn ($l) => $spkPerInvoice[$l->ap_invoice_id] ?? null)
+                    ->filter()->unique()->values(),
                 'lines'           => $k->lines->map(fn ($l) => [
                     'id'             => $l->id,
                     'invoice_number' => $l->invoice?->invoice_number,
                     'description'    => $l->invoice?->description,
+                    'spk'            => $spkPerInvoice[$l->ap_invoice_id] ?? null,
                     'amount'         => (float) $l->amount,
                 ])->values(),
             ])->values();
@@ -696,6 +708,39 @@ class CashBookController extends Controller
                 'ap_total' => round((float) $apRows->sum('amount'), 2),
             ],
         ]);
+    }
+
+    /**
+     * Nomor SPK per invoice AP — id invoice => nomor SPK.
+     *
+     * Invoice yang lahir dari posting SPK menyimpan source_type 'spk' dengan source_id
+     * menunjuk BARIS PROGRESS-nya, sedangkan nomor SPK ada di work order induknya. Karena
+     * itu perlu satu lompatan; dilakukan SEKALI untuk seluruh halaman, bukan sekali per
+     * baris.
+     *
+     * Invoice dari sumber lain (PO, refund, manual) memang tidak punya SPK dan tidak muncul
+     * di peta ini — layar menampilkannya sebagai kosong, bukan menebak.
+     *
+     * @param  \Illuminate\Support\Collection<int, \App\Domain\BusinessSupport\Models\BsApKuitansi>  $kuitansi
+     * @return array<int, string>
+     */
+    private function spkPerInvoice($kuitansi): array
+    {
+        $invoice = $kuitansi->flatMap(fn ($k) => $k->lines->pluck('invoice'))
+            ->filter(fn ($i) => $i !== null && $i->source_type === 'spk' && $i->source_id !== null);
+
+        if ($invoice->isEmpty()) {
+            return [];
+        }
+
+        $spkPerProgress = \App\Domain\BusinessSupport\Models\BsWorkOrderProgress::query()
+            ->join('bs_work_orders', 'bs_work_orders.id', '=', 'bs_work_order_progress.work_order_id')
+            ->whereIn('bs_work_order_progress.id', $invoice->pluck('source_id')->unique())
+            ->pluck('bs_work_orders.spk_number', 'bs_work_order_progress.id');
+
+        return $invoice->mapWithKeys(fn ($i) => [
+            (int) $i->id => $spkPerProgress[(int) $i->source_id] ?? null,
+        ])->filter()->all();
     }
 
     public function approve(Request $request, BsCashTransaction $cashTransaction, RecordCashTransaction $action): RedirectResponse
