@@ -10,6 +10,7 @@ use App\Domain\BusinessSupport\Models\BsMukContractCogs;
 use App\Domain\BusinessSupport\Models\BsMukTagihan;
 use App\Domain\BusinessSupport\Models\BsSupplier;
 use App\Domain\BusinessSupport\Services\BarisSpkMuk;
+use App\Domain\BusinessSupport\Services\RincianUnitSpk;
 use App\Http\Controllers\Controller;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -122,6 +123,49 @@ class TagihanProgressController extends Controller
             'ringkas' => [
                 'belum' => BsMukTagihan::whereNull('diposting_pada')->count(),
                 'sudah' => BsMukTagihan::whereNotNull('diposting_pada')->count(),
+            ],
+        ]);
+    }
+
+
+    /**
+     * Rincian per UNIT RUMAH: seluruh SPK yang menyentuh rumah itu dan nilai persediaan
+     * dalam prosesnya.
+     *
+     * BERPOROS PADA RUMAH, bukan pada tagihan yang diklik. Satu rumah disentuh beberapa SPK
+     * — housing, kanopi, site instruction — dan yang kelak dipindahkan ke Barang Siap Dijual
+     * adalah RUMAHNYA. Keputusan itu menuntut seluruh SPK pembentuknya terlihat sekaligus,
+     * bukan hanya SPK yang kebetulan dibuka.
+     *
+     * Rumah yang ditampilkan dipilih dari daftar rumah milik kontrak ini; bawaannya yang
+     * pertama. Rumah yang lokasinya belum dipasangkan ke unit kita tidak muncul sama sekali
+     * — lihat RincianUnitSpk.
+     */
+    public function unit(Request $request, BsMukContract $kontrak, RincianUnitSpk $rincian): Response
+    {
+        abort_unless($request->user()?->can('ap.posting.view'), 403);
+
+        $daftarUnit = $rincian->unitKontrak($kontrak);
+
+        $unitId = $request->integer('unit') ?: (int) ($daftarUnit->first()['id'] ?? 0);
+        $data = $unitId > 0 ? $rincian->untukUnit($unitId) : null;
+
+        return Inertia::render('BusinessSupport/Payable/TagihanProgress/Unit', [
+            'kontrak' => [
+                'id' => $kontrak->id,
+                'no_spk' => $kontrak->no_spk,
+                'no_kontrak' => $kontrak->no_kontrak,
+            ],
+            'daftarUnit' => $daftarUnit,
+            'unitId' => $unitId > 0 ? $unitId : null,
+            'unit' => $data['unit'] ?? null
+                ? ['id' => $data['unit']->id, 'unit_code' => $data['unit']->unit_code,
+                    'cluster' => $data['unit']->cluster?->name]
+                : null,
+            'baris' => $data['baris'] ?? [],
+            'total' => [
+                'alokasi' => $data['total_alokasi'] ?? 0,
+                'wip' => $data['total_wip'] ?? 0,
             ],
         ]);
     }

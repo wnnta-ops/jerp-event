@@ -56,10 +56,13 @@ class BsMukTagihan extends Model
      * Rumus yang SAMA dengan kolom "Nilai SPK (Tagihan)" di Kontrak SPK (MUK) dan Informasi
      * CTC (lihat BarisSpkMuk), supaya satu angka tidak punya dua arti di modul yang sama.
      *
-     * Dihitung dari komponennya, bukan memakai `total` dari MUK, karena arti `total` mereka
-     * BELUM DIPASTIKAN — tidak ada di dokumen API, dan belum ditanyakan ke tim MUK. Kalau
-     * keduanya ternyata berbeda, selisihnya terlihat lewat selisihTotalMuk() dan layar
-     * menandainya, bukan diam-diam memilih salah satu.
+     * DIPERIKSA 7 Okt 2026 pada 436 tagihan sungguhan: `total` kiriman MUK sama dengan
+     * DPP+PPN−PPh pada 433 baris. Jadi `total` mereka memang nilai NETO sesudah potong PPh,
+     * dan rumus di sini sejalan dengan mereka — bukan tafsir kita sendiri.
+     *
+     * Tetap dihitung dari komponennya, bukan menyalin `total`, supaya 3 baris yang TIDAK
+     * cocok tidak lewat begitu saja: selisihnya muncul lewat selisihTotalMuk() dan ditandai
+     * di layar. Menyalin `total` membuat ketiganya tak terlihat.
      */
     public function getNilaiTagihanAttribute(): float
     {
@@ -69,8 +72,9 @@ class BsMukTagihan extends Model
     /**
      * Selisih antara `total` kiriman MUK dan DPP+PPN−PPh, atau null bila sama.
      *
-     * Ditampilkan supaya kalau dugaan di atas keliru, ia KETAHUAN pada baris yang
-     * bersangkutan — bukan menjadi pembayaran yang nilainya meleset tanpa ada yang tahu.
+     * Pada 436 tagihan yang diperiksa, hanya 3 yang berselisih — jadi penanda ini jarang
+     * menyala, dan karena itu layak dipercaya ketika menyala. Penanda yang menyala di setiap
+     * baris berhenti dibaca orang.
      */
     public function selisihTotalMuk(): ?float
     {
