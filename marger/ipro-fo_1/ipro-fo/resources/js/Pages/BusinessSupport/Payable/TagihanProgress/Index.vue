@@ -96,6 +96,7 @@ function batal(r: any) {
             COP Owner dari MUK ERP. Tekan <b>Posting ke AP</b> untuk memasukkan tagihan ke antrean
             <b>Posting Invoice SPK</b> di Account Payable — hutangnya terbit di sana, bukan di layar ini.
             Nilai DPP, PPN, dan PPh 4 ayat 2 di bawah adalah nilai <b>tagihannya</b>, bukan nilai kontrak.
+            Klik <b>Nomor SPK</b> untuk melihat rinciannya per unit rumah.
         </p>
 
         <div class="card flex flex-wrap items-center gap-3 p-3">
@@ -131,7 +132,14 @@ function batal(r: any) {
                     <tr v-for="(r, i) in rows.data" :key="r.id" class="hover:bg-neutral-50 dark:hover:bg-neutral-800/50">
                         <td class="px-3 py-2.5 text-neutral-400">{{ (rows.from ?? 1) + i }}</td>
                         <td class="px-3 py-2.5">
-                            <span class="font-mono font-semibold">{{ r.no_spk || '—' }}</span>
+                            <!-- Ke RINCIAN PER UNIT RUMAH: seluruh SPK yang menyentuh rumah itu
+                                 beserta persediaan dalam prosesnya. Tanpa kontrak tersalin tidak
+                                 ada yang bisa dibuka, jadi barisnya tetap teks biasa. -->
+                            <Link v-if="r.kontrak_id" :href="route('bs.muk.tagihan.unit', r.kontrak_id)"
+                                  class="font-mono font-semibold text-amber-700 hover:underline dark:text-amber-400">
+                                {{ r.no_spk || '—' }}
+                            </Link>
+                            <span v-else class="font-mono font-semibold">{{ r.no_spk || '—' }}</span>
                             <div class="font-mono text-xs text-neutral-400">{{ r.no_tagihan }}</div>
                         </td>
                         <td class="px-3 py-2.5">
