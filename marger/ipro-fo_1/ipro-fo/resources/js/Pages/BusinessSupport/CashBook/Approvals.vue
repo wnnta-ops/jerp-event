@@ -147,7 +147,7 @@ function bulkRejectAp() {
             <div class="card overflow-x-auto">
                 <table class="w-full text-sm">
                     <thead class="bg-neutral-50 dark:bg-neutral-800"><tr class="text-left text-xs uppercase text-neutral-500">
-                        <th class="px-4 py-3 w-8 text-center"><input v-if="canApprove" type="checkbox" v-model="apAllChecked" class="h-4 w-4" title="Pilih semua" /></th><th class="px-4 py-3 w-8"></th><th class="px-4 py-3">No (Kuitansi)</th><th class="px-4 py-3">Tanggal</th><th class="px-4 py-3">Dari Kas/Bank</th><th class="px-4 py-3">Supplier / Keterangan</th><th class="px-4 py-3 text-right">Nominal</th><th class="px-4 py-3 text-right">Aksi</th>
+                        <th class="px-4 py-3 w-8 text-center"><input v-if="canApprove" type="checkbox" v-model="apAllChecked" class="h-4 w-4" title="Pilih semua" /></th><th class="px-4 py-3 w-8"></th><th class="px-4 py-3">No (Kuitansi)</th><th class="px-4 py-3">Tanggal</th><th class="px-4 py-3">Dari Kas/Bank</th><th class="px-4 py-3">Supplier / Keterangan</th><th class="px-4 py-3">No. SPK</th><th class="px-4 py-3 text-right">Nominal</th><th class="px-4 py-3 text-right">Aksi</th>
                     </tr></thead>
                     <tbody class="divide-y divide-neutral-200 dark:divide-neutral-800">
                         <template v-for="r in apRows" :key="r.id">
@@ -162,6 +162,15 @@ function bulkRejectAp() {
                                 <td class="px-4 py-2.5">{{ fmtDate(r.kuitansi_date) }}</td>
                                 <td class="px-4 py-2.5"><span class="font-mono text-xs text-neutral-400">{{ r.cash_account?.code }}</span> {{ r.cash_account?.name }}</td>
                                 <td class="px-4 py-2.5 text-neutral-500">{{ r.supplier }}<span v-if="r.description"> · {{ r.description }}</span></td>
+                                <!-- Dari posting AP-nya, bukan diketik. Satu kuitansi bisa membayar
+                                     beberapa SPK sekaligus, jadi SEMUANYA disebut: menampilkan yang
+                                     pertama saja membuat orang menyetujui pembayaran yang dikiranya
+                                     untuk satu SPK. -->
+                                <td class="px-4 py-2.5">
+                                    <span v-if="!(r.spk ?? []).length" class="text-xs text-neutral-400">—</span>
+                                    <span v-for="(sp, i) in (r.spk ?? [])" :key="i"
+                                          class="mr-1 inline-block rounded bg-amber-50 px-1.5 py-0.5 font-mono text-xs text-amber-700 dark:bg-amber-900/20 dark:text-amber-300">{{ sp }}</span>
+                                </td>
                                 <td class="px-4 py-2.5 text-right font-mono font-semibold">{{ fmtRp(r.amount) }}</td>
                                 <td class="px-4 py-2.5 text-right">
                                     <div v-if="canApprove" class="inline-flex items-center gap-1.5">
@@ -174,19 +183,20 @@ function bulkRejectAp() {
                             <tr v-if="expandedAp[r.id]" class="bg-neutral-50/70 dark:bg-neutral-800/40">
                                 <td></td>
                                 <td></td>
-                                <td colspan="6" class="px-4 py-3">
+                                <td colspan="7" class="px-4 py-3">
                                     <div class="rounded-lg border border-neutral-200 bg-white p-3 dark:border-neutral-700 dark:bg-neutral-900">
                                         <p class="mb-2 text-xs font-semibold uppercase text-neutral-500">Invoice yang Dibayar</p>
                                         <table class="w-full text-xs">
-                                            <thead><tr class="text-left text-neutral-400"><th class="pb-1.5">No. Invoice</th><th class="pb-1.5">Keterangan</th><th class="pb-1.5 text-right">Nominal</th></tr></thead>
+                                            <thead><tr class="text-left text-neutral-400"><th class="pb-1.5">No. Invoice</th><th class="pb-1.5">No. SPK</th><th class="pb-1.5">Keterangan</th><th class="pb-1.5 text-right">Nominal</th></tr></thead>
                                             <tbody class="divide-y divide-neutral-100 dark:divide-neutral-800">
                                                 <tr v-for="(l, i) in (r.lines ?? [])" :key="l.id ?? i">
                                                     <td class="py-1.5 font-mono text-neutral-500">{{ l.invoice_number ?? '—' }}</td>
+                                                    <td class="py-1.5 font-mono text-neutral-500">{{ l.spk ?? '—' }}</td>
                                                     <td class="py-1.5 text-neutral-500">{{ l.description || '—' }}</td>
                                                     <td class="py-1.5 text-right font-mono">{{ fmtRp(l.amount) }}</td>
                                                 </tr>
                                             </tbody>
-                                            <tfoot><tr class="border-t border-neutral-200 dark:border-neutral-700"><td colspan="2" class="pt-2 text-right font-semibold">Total</td><td class="pt-2 text-right font-mono font-semibold">{{ fmtRp(r.amount) }}</td></tr></tfoot>
+                                            <tfoot><tr class="border-t border-neutral-200 dark:border-neutral-700"><td colspan="3" class="pt-2 text-right font-semibold">Total</td><td class="pt-2 text-right font-mono font-semibold">{{ fmtRp(r.amount) }}</td></tr></tfoot>
                                         </table>
                                     </div>
                                 </td>
