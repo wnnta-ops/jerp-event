@@ -143,20 +143,41 @@ watch([cari, status], () => {
                 <table class="w-full text-sm">
                     <thead class="bg-neutral-50 text-left text-xs uppercase tracking-wide text-neutral-500 dark:bg-neutral-900/50">
                         <tr>
+                            <th class="px-4 py-3">No. SPK</th>
+                            <th class="px-4 py-3">Lokasi</th>
+                            <th class="px-4 py-3">Tahap</th>
                             <th class="px-4 py-3">No. Kontrak</th>
                             <th class="px-4 py-3">Proyek</th>
                             <th class="px-4 py-3 text-right">Nilai Kontrak</th>
+                            <th class="px-4 py-3 text-right">Nilai SPK (DPP)</th>
+                            <th class="px-4 py-3 text-right">Nilai SPK (PPN)</th>
+                            <th class="px-4 py-3 text-right">Nilai SPK (PPh 4(2))</th>
                             <th class="px-4 py-3 text-right">Diopname</th>
                             <th class="px-4 py-3 text-right">Sudah Ditagih</th>
                             <th class="px-4 py-3 text-right">Belum Ditagih</th>
+                            <th class="px-4 py-3 text-center">Unit Terpasang</th>
                             <th class="px-4 py-3 text-center">Status</th>
                             <th class="px-4 py-3 text-center">Komponen COGS</th>
+                            <th class="px-4 py-3">Kategori COGS</th>
                         </tr>
                     </thead>
                     <tbody>
                         <tr v-for="k in kontrak.data" :key="k.id"
                             class="cursor-pointer border-t border-neutral-100 hover:bg-neutral-50 dark:border-neutral-800 dark:hover:bg-neutral-900/40"
                             @click="router.visit(route('bs.muk.kontrak.show', k.id))">
+                            <td class="px-4 py-2.5 font-mono text-xs">{{ k.no_spk || '—' }}</td>
+                            <!-- Lokasi & Tahap TIDAK datang dari MUK: diturunkan dari pemetaan
+                                 di Setup Project. Yang belum dipetakan DIKATAKAN apa adanya
+                                 beserta ke mana harus pergi — kosong saja membuat orang mengira
+                                 datanya hilang, padahal keputusannya memang belum diambil. -->
+                            <td class="px-4 py-2.5 text-neutral-500">
+                                <span v-if="k.lokasi">{{ k.lokasi }}</span>
+                                <span v-else class="text-xs italic text-amber-600">belum dipilih dari Set Up Project</span>
+                            </td>
+                            <td class="px-4 py-2.5 text-neutral-500">
+                                <span v-if="k.tahap">{{ k.tahap }}</span>
+                                <span v-else class="text-xs italic text-amber-600">—</span>
+                            </td>
                             <td class="px-4 py-2.5">
                                 <span class="font-mono font-semibold">{{ k.no_kontrak || '—' }}</span>
                                 <span v-if="k.jenis === 'si'" class="ml-2 rounded bg-sky-100 px-1.5 py-0.5 text-[10px] font-semibold text-sky-700">SI</span>
@@ -171,9 +192,30 @@ watch([cari, status], () => {
                             </td>
                             <td class="px-4 py-2.5 text-neutral-500">{{ k.proyek || '—' }}</td>
                             <td class="px-4 py-2.5 text-right font-mono">{{ fmtRp(k.nilai_kontrak) }}</td>
+                            <td class="px-4 py-2.5 text-right font-mono">{{ fmtRp(k.spk_dpp) }}</td>
+                            <!-- PPN & PPh 4(2) belum dikirim MUK. Dikatakan terang-terangan,
+                                 bukan ditampilkan Rp 0 — nol adalah angka, dan orang akan
+                                 memakainya. -->
+                            <td class="px-4 py-2.5 text-right text-xs italic text-neutral-400"
+                                title="Belum dikirim API MUK — hanya ada per tagihan, bukan per SPK.">
+                                belum dari MUK
+                            </td>
+                            <td class="px-4 py-2.5 text-right text-xs italic text-neutral-400"
+                                title="Belum dikirim API MUK — hanya ada per tagihan, bukan per SPK.">
+                                belum dari MUK
+                            </td>
                             <td class="px-4 py-2.5 text-right font-mono">{{ fmtRp(k.diopname) }}</td>
                             <td class="px-4 py-2.5 text-right font-mono text-amber-600">{{ fmtRp(k.ditagih) }}</td>
                             <td class="px-4 py-2.5 text-right font-mono">{{ fmtRp(k.belum_ditagih) }}</td>
+                            <!-- Berapa lokasi kontrak ini yang sudah berpasangan dengan unit
+                                 kita. Kontrak tanpa lokasi (infra, SI) memang tidak punya unit —
+                                 ditandai berbeda dari "punya lokasi tapi belum dipasangkan". -->
+                            <td class="px-4 py-2.5 text-center text-xs">
+                                <span v-if="!k.lokasi_total" class="text-neutral-400">bukan per unit</span>
+                                <span v-else :class="k.lokasi_terpasang === k.lokasi_total ? 'text-emerald-600' : 'text-amber-600'">
+                                    {{ k.lokasi_terpasang }} / {{ k.lokasi_total }}
+                                </span>
+                            </td>
                             <td class="px-4 py-2.5 text-center">
                                 <span class="rounded px-2 py-0.5 text-xs font-semibold"
                                       :class="k.status === 'closed' ? 'bg-neutral-200 text-neutral-600 dark:bg-neutral-800 dark:text-neutral-400' : 'bg-emerald-100 text-emerald-700'">
@@ -191,8 +233,14 @@ watch([cari, status], () => {
                                             : 'border-neutral-300 text-neutral-600 hover:bg-neutral-50 dark:border-neutral-700 dark:text-neutral-300'">
                                     <Link2 class="h-3.5 w-3.5" />
                                     {{ k.cogs ? (cogsOpsi?.[k.cogs] ?? k.cogs) : 'Link COGS' }}
-                                    <span v-if="k.cogs && k.cogsKategori" class="ml-1 opacity-80">· {{ k.cogsKategori }}</span>
                                 </button>
+                            </td>
+                            <!-- Kategori COGS berdiri sebagai kolom sendiri, bukan lagi menempel
+                                 pada tombolnya. Di Lampiran 2 ia kolom tersendiri, dan menempel
+                                 pada tombol membuatnya tak terbaca saat tabel digulir. -->
+                            <td class="px-4 py-2.5 text-xs">
+                                <span v-if="k.cogsKategori">{{ k.cogsKategori }}</span>
+                                <span v-else class="italic text-neutral-400">—</span>
                             </td>
                         </tr>
                     </tbody>
