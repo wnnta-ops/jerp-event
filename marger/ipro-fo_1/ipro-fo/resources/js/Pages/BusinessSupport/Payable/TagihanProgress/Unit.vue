@@ -15,6 +15,7 @@ import SearchSelect from '@/Components/UI/SearchSelect.vue';
 const props = defineProps<{
     kontrak: { id: number; no_spk: string | null; no_kontrak: string | null };
     daftarUnit: Array<{ id: number; unit_code: string | null; lokasi_kode: string }>;
+    belumDipasangkan: number;
     unitId: number | null;
     unit: { id: number; unit_code: string | null; cluster: string | null } | null;
     baris: Array<any>;
@@ -60,8 +61,9 @@ function fmtPersen(v: number) { return Number(v ?? 0).toLocaleString('id-ID', { 
             <!-- Rumah yang lokasinya belum dipasangkan tidak muncul di daftar ini sama sekali.
                  Dikatakan, bukan dibiarkan tampak seperti SPK ini hanya punya sedikit rumah. -->
             <p class="text-xs text-neutral-400">
-                {{ daftarUnit.length }} rumah pada SPK ini sudah dipasangkan ke unit kita.
-                Yang belum dipasangkan tidak muncul — lengkapi di Setup → Pasangan Unit MUK.
+                {{ daftarUnit.length }} rumah pada SPK ini sudah dipasangkan ke unit kita<span
+                    v-if="belumDipasangkan">, {{ belumDipasangkan }} lokasi masih menunggu</span>.
+                <span v-if="belumDipasangkan">Lengkapi di Setup → Pasangan Unit MUK.</span>
             </p>
         </div>
 
@@ -129,7 +131,12 @@ function fmtPersen(v: number) { return Number(v ?? 0).toLocaleString('id-ID', { 
             </div>
         </template>
 
-        <EmptyState v-else title="Belum ada rumah yang dipasangkan"
-                    description="Tidak ada lokasi pada SPK ini yang sudah dipasangkan ke unit kita. Lengkapi di Setup → Pasangan Unit MUK." />
+        <!-- DUA keadaan yang berbeda, dan sarannya berbeda. Menyuruh "lengkapi pemasangan"
+             padahal MUK tidak mengirim lokasi apa pun membuat orang mencari sesuatu yang
+             tidak ada di sana. -->
+        <EmptyState v-else-if="belumDipasangkan" title="Lokasinya ada, tetapi belum dipasangkan"
+                    :description="belumDipasangkan + ' lokasi pada SPK ini belum dipasangkan ke unit kita. Buka Setup → Pasangan Unit MUK, pilih project-nya, lalu terima usulan pasangannya.'" />
+        <EmptyState v-else title="MUK tidak memulangkan lokasi untuk SPK ini"
+                    description="Bukan soal pemasangan — tidak ada lokasi yang bisa dipasangkan. Wajar untuk paket infrastruktur & site instruction; untuk SPK housing, tarik ulang dengan muk:tarik-lokasi atau tanyakan ke tim MUK." />
     </div>
 </template>
