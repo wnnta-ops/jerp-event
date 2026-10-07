@@ -10,6 +10,7 @@ use App\Domain\BusinessSupport\Services\MukApi;
 use App\Domain\BusinessSupport\Services\RincianCtc;
 use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
 use Inertia\Response;
 use RuntimeException;
@@ -118,15 +119,52 @@ class InformasiCtcController extends Controller
                 'ditarik_pada' => optional($kontrak->ditarik_pada)->translatedFormat('d M Y H:i'),
             ],
             'kolom' => $kolom,
-            // Pembayaran dari BO BELUM bisa ikut: invoice AP dari posting SPK menunjuk register
-            // SPK internal, dan tidak ada yang menghubungkannya ke kontrak MUK (diperiksa
-            // 7 Okt 2026: 95 kontrak MUK, 3 SPK internal, 0 nomor cocok). Begitu jalur posting
-            // AP dari kontrak MUK ada, daftarnya cukup dioper sebagai argumen keempat.
             'rincian' => $galat === null
-                ? $rincian->untuk((float) $kolom['spk_tagihan'], (float) $kontrak->kum_diterima, $tagihan)
+                ? $rincian->untuk(
+                    (float) $kolom['spk_tagihan'],
+                    (float) $kontrak->kum_diterima,
+                    $tagihan,
+                    $this->pembayaranBo($kontrak),
+                )
                 : null,
             'galat' => $galat,
         ]);
+    }
+
+    /**
+     * Pembayaran kita sendiri atas tagihan kontrak ini — kuitansi AP yang SUDAH DISETUJUI.
+     *
+     * Jalurnya: kuitansi → baris → invoice ber-source_type 'muk_tagihan' → bs_muk_tagihan →
+     * muk_id. Inilah jembatan yang baru ada sejak layar Tagihan Progress Project; sebelumnya
+     * invoice AP hanya menunjuk register SPK internal dan tidak pernah cocok dengan MUK.
+     *
+     * HANYA yang berstatus 'active'. Kuitansi 'pending' belum disetujui di Approval
+     * Pengeluaran Kas & Bank dan belum berjurnal; menghitungnya sebagai pembayaran membuat
+     * Sisa Pembayaran menyusut karena uang yang belum keluar. 'void' jelas bukan pembayaran.
+     *
+     * no_tagihan ikut dipulangkan karena RincianCtc memakainya untuk MELEWATI `diterima` dari
+     * MUK pada tagihan yang sama — tanpa itu, uang yang sama terhitung dua kali.
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    private function pembayaranBo(BsMukContract $kontrak): array
+    {
+        return DB::table('bs_ap_kuitansi_lines as l')
+            ->join('bs_ap_kuitansis as k', 'k.id', '=', 'l.kuitansi_id')
+            ->join('bs_ap_invoices as i', 'i.id', '=', 'l.ap_invoice_id')
+            ->join('bs_muk_tagihan as t', 't.id', '=', 'i.source_id')
+            ->where('i.source_type', 'muk_tagihan')
+            ->where('t.muk_id', (int) $kontrak->muk_id)
+            ->where('k.status', 'active')
+            ->orderBy('k.kuitansi_date')
+            ->get(['k.kuitansi_date', 'k.kuitansi_number', 'l.amount', 't.no_tagihan'])
+            ->map(fn ($p) => [
+                'tanggal' => $p->kuitansi_date ? substr((string) $p->kuitansi_date, 0, 10) : null,
+                'nominal' => (float) $p->amount,
+                'sumber' => 'bo',
+                'keterangan' => 'Kuitansi '.$p->kuitansi_number.' · tagihan '.$p->no_tagihan,
+                'no_tagihan' => $p->no_tagihan,
+            ])->all();
     }
 
     /**

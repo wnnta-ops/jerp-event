@@ -110,6 +110,32 @@ $cek('sisa 850 jt', $h['sisa_pembayaran'], 850_000_000);
 $cek('sudah tertagih 200 jt', $h['sudah_tertagih'], 200_000_000);
 $cek('belum tertagih 650 jt', $h['belum_tertagih'], 650_000_000);
 
+echo "\n=== Tagihan yang dibayar lewat BO: 'diterima' MUK DILEWATI ===\n";
+// Begitu MUK ikut mencatat pembayaran yang kita kirim, kedua sisi menggambarkan uang yang
+// SAMA. Menjumlahkannya membuat Sisa Pembayaran menyusut dua kali lipat tanpa satu pun galat
+// — dan itu angka yang dipakai memutuskan pembayaran berikutnya.
+$h = $r->untuk(1_000_000_000, 0, [
+    ['no_tagihan' => 'A', 'tanggal' => '2026-03-01', 'total' => 200_000_000, 'diterima' => 200_000_000],
+], [
+    ['tanggal' => '2026-03-05', 'nominal' => 200_000_000, 'sumber' => 'bo',
+        'keterangan' => 'Kuitansi AP/9', 'no_tagihan' => 'A'],
+]);
+$cek('hanya SATU baris pembayaran', count($h['pembayaran']), 1);
+$cek('barisnya yang dari BO', $h['pembayaran'][0]['sumber'], 'bo');
+$cek('total pembayaran 200 jt, bukan 400 jt', $h['total_pembayaran'], 200_000_000);
+$cek('sisa 800 jt, bukan 600 jt', $h['sisa_pembayaran'], 800_000_000);
+
+echo "\n=== Tagihan LAIN yang belum dibayar BO tetap dari MUK ===\n";
+$h = $r->untuk(1_000_000_000, 0, [
+    ['no_tagihan' => 'A', 'tanggal' => '2026-03-01', 'total' => 200_000_000, 'diterima' => 200_000_000],
+    ['no_tagihan' => 'B', 'tanggal' => '2026-04-01', 'total' => 100_000_000, 'diterima' => 100_000_000],
+], [
+    ['tanggal' => '2026-03-05', 'nominal' => 200_000_000, 'sumber' => 'bo',
+        'keterangan' => 'Kuitansi AP/9', 'no_tagihan' => 'A'],
+]);
+$cek('dua baris: BO utk A, MUK utk B', count($h['pembayaran']), 2);
+$cek('total 300 jt', $h['total_pembayaran'], 300_000_000);
+
 echo "\n=== Urutan baris menurut tanggal, bukan urutan sumbernya ===\n";
 $h = $r->untuk(1_000_000_000, 0, [
     ['no_tagihan' => 'A', 'tanggal' => '2026-05-01', 'total' => 100_000_000, 'diterima' => 100_000_000],
