@@ -2,7 +2,7 @@
 <script setup lang="ts">
 import { Link, router, useForm } from '@inertiajs/vue3';
 import { computed, ref } from 'vue';
-import { ArrowLeft, FolderGit2, Plus, Pencil, Trash2, ChevronRight } from 'lucide-vue-next';
+import { ArrowLeft, FolderGit2, Plus, Pencil, Trash2, ChevronRight, Sparkles } from 'lucide-vue-next';
 import Button from '@/Components/UI/Button.vue';
 import Badge from '@/Components/UI/Badge.vue';
 import EmptyState from '@/Components/UI/EmptyState.vue';
@@ -16,6 +16,8 @@ const props = defineProps<{
     mukProjects: Array<any>;
     /** Pemetaan tersimpan, dikelompokkan: { [project_id]: [{ muk_proyek_kode, muk_proyek_nama }] } */
     mukMap: Record<string, Array<any>>;
+    /** Usulan baris Project dari paket MUK yang belum dipetakan — hasil penguraian nama. */
+    usulMuk: Array<any>;
 }>();
 
 const inputCls = 'h-9 w-full rounded-lg border border-neutral-300 bg-white px-3 text-sm dark:border-neutral-700 dark:bg-neutral-900';
@@ -51,6 +53,46 @@ const dipakaiProjectLain = computed<Record<string, string>>(() => {
 });
 
 const cariMuk = ref('');
+
+// ── Buat dari MUK ────────────────────────────────────────────────────────────
+// Usulannya DISALIN ke state lokal supaya bisa disunting: operator mengganti cluster,
+// mengosongkan tahap, atau membuang paket, lalu yang dikirim adalah hasil suntingannya —
+// bukan perintah "urai ulang", yang akan membuang keputusannya.
+const bukaUsul = ref(false);
+const usul = ref<any[]>([]);
+const formUsul = useForm<any>({ usul: [] });
+
+function bukaDariMuk() {
+    usul.value = (props.usulMuk || []).map((g: any) => ({
+        kunci: g.kunci,
+        pakai: !!g.cluster_id,              // yang tanpa cluster tidak dicentang: belum ada keputusannya
+        code: g.kode_usul || '',
+        name: g.nama_usul || '',
+        cluster: g.cluster_nama || '',
+        tahap: g.tahap_no != null ? String(g.tahap_no) : '',
+        cluster_no: g.cluster_no,
+        paket: (g.paket || []).map((p: any) => ({ ...p, pakai: true })),
+    }));
+    formUsul.clearErrors();
+    bukaUsul.value = true;
+}
+
+const usulTerpilih = computed(() => usul.value.filter((g) => g.pakai && g.code && g.name
+    && g.paket.some((p: any) => p.pakai)));
+
+function simpanUsul() {
+    formUsul.usul = usulTerpilih.value.map((g) => ({
+        code: g.code,
+        name: g.name,
+        cluster: g.cluster || null,
+        tahap: g.tahap || null,
+        muk_proyek: g.paket.filter((p: any) => p.pakai).map((p: any) => p.kode),
+    }));
+    formUsul.post(route('bs.spk.project.dari-muk'), {
+        preserveScroll: true,
+        onSuccess: () => { bukaUsul.value = false; },
+    });
+}
 const mukTersaring = computed(() => {
     const q = cariMuk.value.trim().toLowerCase();
     const list = props.mukProjects || [];
@@ -123,7 +165,13 @@ function destroy(id: number) {
         <Link :href="route('bs.spk.home')" class="inline-flex items-center gap-2 text-sm text-neutral-500 hover:text-neutral-800 dark:hover:text-neutral-200"><ArrowLeft class="h-4 w-4" /> Contractor Management</Link>
         <div class="flex items-center justify-between">
             <h1 class="flex items-center gap-2 text-2xl font-bold"><FolderGit2 class="h-6 w-6 text-amber-600" /> Setup Project</h1>
-            <Button @click="openCreate"><template #icon-left><Plus class="h-4 w-4" /></template>Tambah Project</Button>
+            <div class="flex items-center gap-2">
+                <Button v-if="usulMuk?.length" variant="secondary" @click="bukaDariMuk">
+                    <template #icon-left><Sparkles class="h-4 w-4" /></template>
+                    Buat dari MUK ({{ usulMuk.length }})
+                </Button>
+                <Button @click="openCreate"><template #icon-left><Plus class="h-4 w-4" /></template>Tambah Project</Button>
+            </div>
         </div>
 
         <div class="card overflow-x-auto">
@@ -247,6 +295,76 @@ function destroy(id: number) {
                             <Button type="submit" :disabled="form.processing">Simpan</Button>
                         </div>
                     </form>
+                </div>
+            </div>
+        </Teleport>
+
+        <!-- Buat dari MUK: usulan yang DISUNTING, bukan dijalankan buta. Cluster bisa diganti,
+             tahap boleh dikosongkan, paket bisa dibuang satu-satu. -->
+        <Teleport to="body">
+            <div v-if="bukaUsul" class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" @click.self="bukaUsul = false">
+                <div class="card max-h-[90vh] w-full max-w-4xl overflow-y-auto p-5">
+                    <h2 class="mb-1 text-lg font-bold">Buat Project dari paket MUK</h2>
+                    <p class="mb-4 text-xs text-neutral-500">
+                        Cluster &amp; tahap di bawah DIBACA DARI NAMA paket MUK — usulan, bukan keputusan.
+                        Periksa dan ubah seperlunya. <b>Tahap boleh dikosongkan</b>: paket infrastruktur dan
+                        site instruction memang mencakup satu cluster penuh, dan kosong berarti seluruh unit
+                        di cluster itu.
+                    </p>
+
+                    <p v-if="formUsul.errors.usul" class="mb-3 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-600 dark:bg-red-900/20">{{ formUsul.errors.usul }}</p>
+
+                    <div class="space-y-3">
+                        <div v-for="g in usul" :key="g.kunci"
+                             class="rounded-xl border p-3"
+                             :class="g.pakai ? 'border-primary-300 dark:border-primary-700/50' : 'border-neutral-200 opacity-60 dark:border-neutral-800'">
+                            <label class="mb-2 flex items-center gap-2 text-sm font-semibold">
+                                <input type="checkbox" v-model="g.pakai" class="h-4 w-4 rounded border-neutral-300 dark:border-neutral-700" />
+                                <span v-if="g.cluster_no">Cluster {{ g.cluster_no }}<span v-if="g.tahap"> · Tahap {{ g.tahap }}</span></span>
+                                <span v-else class="text-amber-600">Tanpa cluster — tentukan sendiri</span>
+                                <span class="ml-auto text-xs font-normal text-neutral-400">{{ g.paket.length }} paket</span>
+                            </label>
+
+                            <div class="grid gap-2 sm:grid-cols-4">
+                                <div>
+                                    <label class="mb-1 block text-[11px] text-neutral-500">Kode</label>
+                                    <input v-model="g.code" :class="inputCls" placeholder="mis. C3T4" />
+                                </div>
+                                <div class="sm:col-span-2">
+                                    <label class="mb-1 block text-[11px] text-neutral-500">Nama</label>
+                                    <input v-model="g.name" :class="inputCls" />
+                                </div>
+                                <div>
+                                    <label class="mb-1 block text-[11px] text-neutral-500">Tahap <span class="text-neutral-400">(boleh kosong)</span></label>
+                                    <input v-model="g.tahap" :class="inputCls" placeholder="—" />
+                                </div>
+                                <div class="sm:col-span-4">
+                                    <label class="mb-1 block text-[11px] text-neutral-500">Cluster</label>
+                                    <select v-model="g.cluster" :class="inputCls">
+                                        <option value="">— pilih cluster —</option>
+                                        <option v-for="c in clusters" :key="c.id" :value="c.name">{{ c.code }} — {{ c.name }}</option>
+                                    </select>
+                                </div>
+                            </div>
+
+                            <div class="mt-2 max-h-28 overflow-y-auto rounded-lg border border-neutral-200 dark:border-neutral-800">
+                                <label v-for="p in g.paket" :key="p.kode"
+                                       class="flex cursor-pointer items-start gap-2 border-b border-neutral-100 px-2.5 py-1.5 text-xs last:border-0 hover:bg-neutral-50 dark:border-neutral-800 dark:hover:bg-neutral-800/50">
+                                    <input type="checkbox" v-model="p.pakai" class="mt-0.5 h-3.5 w-3.5 flex-none rounded border-neutral-300 dark:border-neutral-700" />
+                                    <span><span class="font-mono text-neutral-500">{{ p.kode }}</span> {{ p.nama }}
+                                        <span class="text-neutral-400">({{ p.jml_kontrak }} kontrak)</span></span>
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="mt-5 flex items-center justify-between gap-2">
+                        <p class="text-xs text-neutral-500">{{ usulTerpilih.length }} project akan dibuat.</p>
+                        <div class="flex gap-2">
+                            <Button variant="secondary" type="button" @click="bukaUsul = false">Batal</Button>
+                            <Button type="button" :disabled="!usulTerpilih.length || formUsul.processing" @click="simpanUsul">Buat</Button>
+                        </div>
+                    </div>
                 </div>
             </div>
         </Teleport>
