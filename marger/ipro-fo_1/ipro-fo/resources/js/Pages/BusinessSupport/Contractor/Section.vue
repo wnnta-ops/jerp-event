@@ -22,6 +22,7 @@ const titles: Record<string, string> = {
 const sections = computed<Record<string, Item[]>>(() => ({
     setup: [
         { label: 'Project', route: r('bs.spk.project.index') },
+        { label: 'Pasangan Unit MUK', route: r('bs.muk.pasangan.index') },
     ],
     master: [
         { label: 'Surat Perintah Kerja', route: r('bs.spk.index') },

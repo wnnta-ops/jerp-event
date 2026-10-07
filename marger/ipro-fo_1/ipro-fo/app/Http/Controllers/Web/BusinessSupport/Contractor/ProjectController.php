@@ -8,6 +8,7 @@ use App\Domain\BusinessSupport\Models\BsAccount;
 use App\Domain\BusinessSupport\Models\BsMukContract;
 use App\Domain\BusinessSupport\Models\BsProject;
 use App\Domain\BusinessSupport\Models\BsProjectMuk;
+use App\Domain\BusinessSupport\Services\UnitProject;
 use App\Domain\BusinessSupport\Services\UsulProjectMuk;
 use App\Domain\Foundation\Tenant\Models\Cluster;
 use App\Domain\Foundation\Tenant\Models\Project;
@@ -82,35 +83,25 @@ class ProjectController extends Controller
      * Karena itu penyaringnya awalan kode, dan tahap dinormalkan ke tiga angka: operator
      * mengetik "5" sementara kodenya berbunyi "005".
      */
-    public function show(Request $request, BsProject $project): Response
+    public function show(Request $request, BsProject $project, UnitProject $unitProject): Response
     {
         abort_unless($request->user()?->can('contractor.project.view'), 403);
 
         $sales = Project::where('code', $project->code)->first()
             ?? Project::whereRaw('LOWER(name) = ?', [mb_strtolower($project->name)])->first();
 
-        // Cluster dicocokkan lewat NAMA lebih dulu (itu yang disimpan layar Setup), lalu
-        // kode sebagai cadangan bila kelak yang tersimpan berubah jadi kode.
-        $cluster = null;
-        if (filled($project->cluster)) {
-            $cluster = Cluster::whereRaw('LOWER(name) = ?', [mb_strtolower((string) $project->cluster)])->first()
-                ?? Cluster::whereRaw('LOWER(code) = ?', [mb_strtolower((string) $project->cluster)])->first();
-        }
-
-        // "5" → "005"; yang sudah tiga angka dibiarkan. Tahap kosong berarti SELURUH unit di
-        // cluster itu, bukan nol unit — project bisa saja mencakup satu cluster penuh.
+        // SATU definisi "unit milik project", dipakai bersama layar pemasangan unit —
+        // lihat UnitProject. Dua penyaring terpisah suatu saat akan berbeda, dan yang satu
+        // menawarkan unit yang tidak muncul di yang lain.
+        $cluster = $unitProject->cluster($project);
         $tahap = trim((string) $project->tahap);
-        $awalan = $cluster
-            ? $cluster->code.'-'.($tahap !== '' ? str_pad($tahap, 3, '0', STR_PAD_LEFT).'-' : '')
-            : null;
 
         $rows = collect();
         if ($cluster || $sales) {
-            $units = Unit::query()
-                ->when($cluster, fn ($q) => $q->where('cluster_id', $cluster->id))
-                ->when($awalan, fn ($q) => $q->where('unit_code', 'like', $awalan.'%'))
-                // Tanpa cluster, jatuh ke cara lama: seluruh unit milik sales project.
-                ->when(! $cluster && $sales, fn ($q) => $q->where('project_id', $sales->id))
+            $units = ($cluster !== null
+                    ? $unitProject->query($project)
+                    // Tanpa cluster, jatuh ke cara lama: seluruh unit milik sales project.
+                    : Unit::query()->where('project_id', $sales->id))
                 ->with([
                     'cluster:id,code,name', 'block:id,code',
                     'unitType:id,code,name,lt,lb', 'project:id,code,name,location',
