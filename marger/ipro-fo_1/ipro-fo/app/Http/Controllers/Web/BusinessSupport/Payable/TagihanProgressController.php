@@ -127,7 +127,6 @@ class TagihanProgressController extends Controller
         ]);
     }
 
-
     /**
      * Rincian per UNIT RUMAH: seluruh SPK yang menyentuh rumah itu dan nilai persediaan
      * dalam prosesnya.
@@ -157,6 +156,10 @@ class TagihanProgressController extends Controller
                 'no_kontrak' => $kontrak->no_kontrak,
             ],
             'daftarUnit' => $daftarUnit,
+            // Disebut angkanya, bukan sekadar "belum ada": tanpa ini orang tidak tahu
+            // apakah yang menunggu 3 lokasi atau 122, dan mudah mengira MUK tidak
+            // mengirim lokasi sama sekali.
+            'belumDipasangkan' => $rincian->belumDipasangkan($kontrak),
             'unitId' => $unitId > 0 ? $unitId : null,
             'unit' => $data['unit'] ?? null
                 ? ['id' => $data['unit']->id, 'unit_code' => $data['unit']->unit_code,

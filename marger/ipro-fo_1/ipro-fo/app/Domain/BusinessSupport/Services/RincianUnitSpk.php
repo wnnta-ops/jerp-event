@@ -116,6 +116,23 @@ class RincianUnitSpk
     }
 
     /**
+     * Berapa lokasi kontrak ini yang BELUM dipasangkan ke unit kita.
+     *
+     * Dipakai layar untuk menyebut angkanya. "0 sudah dipasangkan" saja tidak memberi tahu
+     * apakah yang menunggu 3 atau 122 — dan tanpa itu orang tidak tahu seberapa besar
+     * pekerjaan yang tersisa, atau malah mengira MUK tidak mengirim lokasi sama sekali.
+     */
+    public function belumDipasangkan(BsMukContract $kontrak): int
+    {
+        return BsMukLokasi::query()
+            ->where('bs_muk_lokasi.muk_id', (int) $kontrak->muk_id)
+            ->leftJoin('bs_muk_unit_pasangan', 'bs_muk_unit_pasangan.lokasi_kode', '=', 'bs_muk_lokasi.lokasi_kode')
+            ->whereNull('bs_muk_unit_pasangan.id')
+            ->distinct()
+            ->count('bs_muk_lokasi.lokasi_kode');
+    }
+
+    /**
      * Unit rumah milik satu kontrak MUK — untuk pemilih di layar rincian.
      *
      * @return Collection<int, array{id: int, unit_code: ?string, lokasi_kode: string}>
