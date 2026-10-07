@@ -1278,6 +1278,9 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
     // Setup → Project
     Route::get('/business-support/spk-project', [BsProjectController::class, 'index'])->name('bs.spk.project.index');
     Route::post('/business-support/spk-project', [BsProjectController::class, 'store'])->name('bs.spk.project.store');
+    // Buat beberapa Project sekaligus dari paket MUK yang belum dipetakan - usulannya
+    // disunting dulu di layar, yang dikirim ke sini sudah hasil keputusan operator.
+    Route::post('/business-support/spk-project/dari-muk', [BsProjectController::class, 'dariMuk'])->name('bs.spk.project.dari-muk');
     Route::get('/business-support/spk-project/{project}', [BsProjectController::class, 'show'])->name('bs.spk.project.show');
     Route::put('/business-support/spk-project/{project}', [BsProjectController::class, 'update'])->name('bs.spk.project.update');
     Route::delete('/business-support/spk-project/{project}', [BsProjectController::class, 'destroy'])->name('bs.spk.project.destroy');

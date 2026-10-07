@@ -8,6 +8,7 @@ use App\Domain\BusinessSupport\Models\BsAccount;
 use App\Domain\BusinessSupport\Models\BsMukContract;
 use App\Domain\BusinessSupport\Models\BsProject;
 use App\Domain\BusinessSupport\Models\BsProjectMuk;
+use App\Domain\BusinessSupport\Services\UsulProjectMuk;
 use App\Domain\Foundation\Tenant\Models\Cluster;
 use App\Domain\Foundation\Tenant\Models\Project;
 use App\Domain\Master\Unit\Models\Unit;
@@ -15,6 +16,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Controllers\Web\BusinessSupport\Contractor\Concerns\MapsUnitBast;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -55,6 +57,11 @@ class ProjectController extends Controller
             'mukMap'        => BsProjectMuk::orderBy('muk_proyek_kode')
                 ->get(['project_id', 'muk_proyek_kode', 'muk_proyek_nama'])
                 ->groupBy('project_id'),
+
+            // Usulan baris Project dari paket MUK yang belum dipetakan. MENGUSULKAN, bukan
+            // memutuskan - seluruhnya melewati layar dan ditekan orang. Lihat UsulProjectMuk
+            // untuk angka yang mendasarinya.
+            'usulMuk'       => app(UsulProjectMuk::class)->untukYangBelumDipetakan(),
         ]);
     }
 
@@ -155,6 +162,81 @@ class ProjectController extends Controller
         $project->delete();
 
         return back()->with('success', 'Project dihapus.');
+    }
+
+    /**
+     * Terima usulan yang sudah DISUNTING & DISETUJUI operator: buat baris Project, lalu
+     * tempelkan paket-paket MUK-nya.
+     *
+     * Yang dikirim layar adalah hasil akhir, bukan "jalankan ulang penguraiannya": operator
+     * boleh mengganti cluster, mengosongkan tahap, atau membuang paket dari satu kelompok.
+     * Mengurai ulang di sini akan membuang suntingannya tanpa ada yang tahu.
+     *
+     * TAHAP BOLEH KOSONG. Paket infrastruktur dan site instruction mencakup satu cluster
+     * penuh; kosong di layar detail sudah berarti "seluruh unit di cluster itu".
+     */
+    public function dariMuk(Request $request): RedirectResponse
+    {
+        abort_unless($request->user()?->can('businesssupport.setup.manage'), 403);
+
+        $v = $request->validate([
+            'usul'                => ['required', 'array', 'min:1'],
+            'usul.*.code'         => ['required', 'string', 'max:30'],
+            'usul.*.name'         => ['required', 'string', 'max:150'],
+            'usul.*.cluster'      => ['nullable', 'string', 'max:100'],
+            'usul.*.tahap'        => ['nullable', 'string', 'max:100'],
+            'usul.*.muk_proyek'   => ['required', 'array', 'min:1'],
+            'usul.*.muk_proyek.*' => ['required', 'string', 'max:32'],
+        ]);
+
+        $dibuat = 0;
+        $paket = 0;
+
+        DB::transaction(function () use ($v, $request, &$dibuat, &$paket) {
+            foreach ($v['usul'] as $u) {
+                // Kode project unik per tenant. Yang sudah ada DIPAKAI ULANG, bukan dibuat
+                // kembar: operator bisa menjalankan ini dua kali, dan kedua kalinya hanya
+                // menambah paket yang belum tertempel.
+                $project = BsProject::firstOrNew(['code' => $u['code']]);
+                $baru = ! $project->exists;
+
+                $project->fill([
+                    'tenant_id'  => $project->tenant_id ?? tenant_id(),
+                    'name'       => $u['name'],
+                    'cluster'    => $u['cluster'] ?? null,
+                    'tahap'      => $u['tahap'] ?? null,
+                    'is_active'  => $project->exists ? $project->is_active : true,
+                    'created_by' => $project->created_by ?? $request->user()?->id,
+                ])->save();
+
+                $dibuat += $baru ? 1 : 0;
+
+                $nama = BsMukContract::whereIn('proyek_kode', $u['muk_proyek'])
+                    ->pluck('proyek_nama', 'proyek_kode');
+
+                foreach ($u['muk_proyek'] as $kode) {
+                    // Paket yang sudah menempel di project LAIN dilewati, tidak dipindahkan
+                    // diam-diam: memindahkannya menggeser biaya antar project tanpa ada yang
+                    // memutuskan. Yang bentrok disebut pada pesan hasilnya.
+                    $ada = BsProjectMuk::where('muk_proyek_kode', $kode)->first();
+                    if ($ada && (int) $ada->project_id !== (int) $project->id) {
+                        continue;
+                    }
+
+                    BsProjectMuk::updateOrCreate(
+                        ['tenant_id' => tenant_id(), 'muk_proyek_kode' => $kode],
+                        [
+                            'project_id'      => $project->id,
+                            'muk_proyek_nama' => $nama[$kode] ?? null,
+                            'created_by'      => $request->user()?->id,
+                        ],
+                    );
+                    $paket++;
+                }
+            }
+        });
+
+        return back()->with('success', $dibuat.' project dibuat, '.$paket.' paket MUK ditempelkan.');
     }
 
     /** @return array<string,mixed> */
