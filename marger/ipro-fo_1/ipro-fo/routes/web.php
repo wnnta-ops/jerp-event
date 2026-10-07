@@ -37,6 +37,7 @@ use App\Http\Controllers\Web\BusinessSupport\Cogs\CogsSetupController as BsCogsS
 use App\Http\Controllers\Web\BusinessSupport\Contractor\ContractorController as BsSpkController;
 use App\Http\Controllers\Web\BusinessSupport\Contractor\ContractorQueryController as BsContractorQueryController;
 use App\Http\Controllers\Web\BusinessSupport\Contractor\KplController as BsKplController;
+use App\Http\Controllers\Web\BusinessSupport\Contractor\MukPasanganController as BsMukPasanganController;
 use App\Http\Controllers\Web\BusinessSupport\Contractor\ProjectController as BsProjectController;
 use App\Http\Controllers\Web\BusinessSupport\Contractor\RetentionController as BsRetentionController;
 use App\Http\Controllers\Web\BusinessSupport\Contractor\SpkDraftController as BsSpkDraftController;
@@ -1284,6 +1285,14 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
     Route::get('/business-support/spk-project/{project}', [BsProjectController::class, 'show'])->name('bs.spk.project.show');
     Route::put('/business-support/spk-project/{project}', [BsProjectController::class, 'update'])->name('bs.spk.project.update');
     Route::delete('/business-support/spk-project/{project}', [BsProjectController::class, 'destroy'])->name('bs.spk.project.destroy');
+
+    // Setup → Pasangan Unit MUK: menyandingkan nama rumah versi MUK dengan kode unit kita.
+    // Melihat cukup izin contractor.project.view, MENYIMPAN menuntut businesssupport.setup.manage
+    // (dijaga di controller) — pasangan inilah yang menentukan biaya SPK sebuah rumah menempel
+    // ke rumah yang mana, jadi wewenangnya sama dengan menyetel project itu sendiri.
+    Route::get('/business-support/muk-pasangan', [BsMukPasanganController::class, 'index'])->name('bs.muk.pasangan.index');
+    Route::post('/business-support/muk-pasangan', [BsMukPasanganController::class, 'store'])->name('bs.muk.pasangan.store');
+    Route::delete('/business-support/muk-pasangan/{pasangan}', [BsMukPasanganController::class, 'destroy'])->name('bs.muk.pasangan.destroy');
 
     // Setup → Set Up SPK (draft Cetak SPK)
     Route::get('/business-support/spk-draft', [BsSpkDraftController::class, 'edit'])->name('bs.spk.draft.edit');

@@ -490,6 +490,9 @@ export function navGroups(foUrl: string): NavGroup[] {
         items: [
             { label: 'Setup', icon: FolderGit2, permission: ['contractor.project.*', 'contractor.spk.*'], children: [
                 { label: 'Project', href: 'bs.spk.project.index' },
+                // Menyandingkan nama rumah versi MUK dengan kode unit kita. Di Setup, bukan
+                // Master: ia menyetel dasar perhitungan, bukan mencatat transaksi.
+                { label: 'Pasangan Unit MUK', href: 'bs.muk.pasangan.index' },
                 { label: 'Set Up SPK', href: 'bs.spk.draft.edit' },
             ]},
             // 'ap.posting.*' IKUT di daftar izin grup ini semata-mata karena "Kontrak SPK (MUK)"

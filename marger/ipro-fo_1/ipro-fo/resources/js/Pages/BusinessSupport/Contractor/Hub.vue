@@ -19,6 +19,7 @@ function r(name?: string | null, params?: Record<string, any>): string | null {
 const menu: Array<{ group: string; items: Array<{ label: string; route: string | null; summary?: string | null }> }> = [
     { group: 'Setup', items: [
         { label: 'Project', route: r('bs.spk.project.index') },
+        { label: 'Pasangan Unit MUK', route: r('bs.muk.pasangan.index') },
     ]},
     { group: 'Master', items: [
         // Baca-saja dari MUK ERP — sumber angka kontrak & penagihan SPK. Dipindah ke sini
