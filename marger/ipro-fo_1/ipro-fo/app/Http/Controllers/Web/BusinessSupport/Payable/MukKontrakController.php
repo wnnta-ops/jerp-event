@@ -8,6 +8,7 @@ use App\Domain\BusinessSupport\Models\BsMukContract;
 use App\Domain\BusinessSupport\Models\BsMukContractCogs;
 use App\Domain\BusinessSupport\Models\BsMukLokasi;
 use App\Domain\BusinessSupport\Models\BsProjectMuk;
+use App\Domain\BusinessSupport\Services\AlokasiSpkUnit;
 use App\Domain\BusinessSupport\Services\Cogs2Sumber;
 use App\Domain\BusinessSupport\Services\MukApi;
 use App\Http\Controllers\Controller;
@@ -204,7 +205,7 @@ class MukKontrakController extends Controller
             .(CogsComponentController::pilihanKomponen()[$v['component']] ?? $v['component']).'.');
     }
 
-    public function show(Request $request, BsMukContract $kontrak, MukApi $muk): Response
+    public function show(Request $request, BsMukContract $kontrak, MukApi $muk, AlokasiSpkUnit $alokasi): Response
     {
         abort_unless($request->user()?->can('ap.posting.view'), 403);
 
@@ -220,6 +221,11 @@ class MukKontrakController extends Controller
         }
 
         return Inertia::render('BusinessSupport/Payable/MukKontrak/Show', [
+            // Lampiran 1: nilai SPK dibagi ke unit menurut luas. Housing memakai luas
+            // bangunan, Infrastruktur luas tanah. Hanya lokasi yang SUDAH dipasangkan ke unit
+            // kita yang ikut - jumlah yang belum ikut dipulangkan supaya layar bisa
+            // mengatakannya, karena pembaginya ikut berubah saat pasangan bertambah.
+            'alokasi' => $alokasi->untuk($kontrak),
             'kontrak' => [
                 'muk_id' => $kontrak->muk_id,
                 'no_kontrak' => $kontrak->no_kontrak,
