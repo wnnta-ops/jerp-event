@@ -46,6 +46,7 @@ const menu: Array<{ group: string; items: Item[] }> = [
     { group: 'Posting Invoice SPK', items: [
         { label: 'Posting Invoice', route: r('bs.ap.posting.index', { source: 'spk' }) },
         // Baca-saja dari MUK ERP — sumber angka kontrak & penagihannya.
+            { label: 'Posting ke Barang Siap Dijual', route: r('bs.ap.barang-siap-jual.index') },
     ]},
     { group: 'Saldo Awal', items: [
         { label: 'Saldo Awal', route: r('bs.ap.opening.index') },

@@ -350,6 +350,9 @@ export function navGroups(foUrl: string): NavGroup[] {
             ]},
             { label: 'Posting Invoice SPK', icon: HardHat, permission: ['ap.posting.*'], children: [
                 { label: 'Posting Invoice SPK', href: 'bs.ap.posting.spk.index' },
+                // Lanjutan rantainya: sesudah biaya SPK menjadi hutang, nilai rumahnya
+                // dipindahkan dari Persediaan Dalam Proses ke Barang Siap Dijual.
+                { label: 'Posting ke Barang Siap Dijual', href: 'bs.ap.barang-siap-jual.index' },
                 // "Kontrak SPK (MUK)" DIPINDAH ke Contractor Management → Master, tepat di atas
                 // Surat Perintah Kerja (permintaan user). Rute & layarnya tidak ikut pindah —
                 // yang berpindah hanya tempatnya di menu.
