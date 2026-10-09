@@ -73,7 +73,11 @@ final class PengajuanKasbonPrinter
 
     private function dept(BsCashAdvance $advance): string
     {
-        return (string) ($advance->department?->name ?: '—');
+        // costCenter, BUKAN department: master Departemen sudah dicabut dan relasi `department`
+        // tidak pernah ada di BsCashAdvance. Eloquent memulangkan null untuk relasi yang tidak
+        // ada tanpa melempar apa pun, sehingga baris Departemen pada formulir cetak SELALU
+        // berbunyi "—" — diam, dan tidak terbaca sebagai kesalahan.
+        return (string) ($advance->costCenter?->name ?: '—');
     }
 
     private function pengaju(BsCashAdvance $advance): string

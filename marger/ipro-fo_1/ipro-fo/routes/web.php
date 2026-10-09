@@ -990,6 +990,10 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
     Route::get('/business-support/bon-sementara/{advance}/print-realisasi', [BsAdvanceController::class, 'printRealisasi'])->name('bs.advance.print-realisasi');
     Route::post('/business-support/bon-sementara/{advance}/tanggal-dokumen', [BsAdvanceController::class, 'setReceivedDate'])->name('bs.advance.received-date'); // #125
     Route::post('/business-support/bon-sementara/{advance}/approve', [BsAdvanceController::class, 'approve'])->name('bs.advance.approve'); // #127
+    // Pembatalan pengajuan bon (ditolak SEBELUM dibayar) + riwayatnya. Izinnya
+    // cashbook.advance.pay — yang berwenang menolak adalah pihak yang berwenang membayar.
+    Route::post('/business-support/bon-sementara/{advance}/batal', [BsAdvanceController::class, 'cancel'])->name('bs.advance.cancel');
+    Route::get('/business-support/bon-sementara-batal', [BsAdvanceController::class, 'cancelledIndex'])->name('bs.advance.cancelled');
     Route::get('/business-support/bon-sementara-laporan-excel', [BsAdvanceController::class, 'reportExcel'])->name('bs.advance.report.excel'); // #126
     Route::get('/business-support/bon-sementara-laporan-pdf', [BsAdvanceController::class, 'reportPdf'])->name('bs.advance.report.pdf');     // #126
 

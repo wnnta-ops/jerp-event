@@ -8,7 +8,6 @@ use App\Domain\BusinessSupport\Models\BsAccount;
 use App\Domain\BusinessSupport\Models\BsCashAdvance;
 use App\Domain\BusinessSupport\Models\BsCashAdvanceAllocation;
 use App\Domain\BusinessSupport\Models\BsCreditCard;
-use App\Domain\BusinessSupport\Services\BudgetGuardService;
 use App\Exceptions\BusinessRuleException;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -97,6 +96,48 @@ final class CashAdvanceService
                 'created_by' => $userId,
             ]);
         });
+    }
+
+    /**
+     * Batalkan pengajuan bon — DITOLAK SEBELUM DIBAYAR.
+     *
+     * HANYA selagi berstatus 'requested'. Setelah dibayar, uangnya sudah keluar dan jurnalnya
+     * sudah terbentuk; yang berlaku saat itu Refund/Reimburse, bukan pembatalan. Dijaga di
+     * sini, bukan hanya di layar: pemanggilan service langsung tidak melewati gerbang layar,
+     * dan membatalkan bon yang sudah berjurnal meninggalkan jurnal tanpa dokumen.
+     *
+     * TIDAK ADA JURNAL yang dibalik — pada tahap ini memang belum ada satu pun.
+     */
+    public function cancel(BsCashAdvance $advance, string $alasan, ?int $userId = null): BsCashAdvance
+    {
+        if ($advance->isCancelled()) {
+            throw new BusinessRuleException('Bon ini sudah dibatalkan.', errorCode: 'ADV_ALREADY_CANCELLED');
+        }
+
+        if ($advance->status !== 'requested') {
+            throw new BusinessRuleException(
+                'Bon '.$advance->advance_number.' sudah dibayar — pembatalan hanya untuk pengajuan yang belum dibayar. '
+                .'Untuk bon yang sudah berjalan, pakai Refund atau Reimburse.',
+                errorCode: 'ADV_CANCEL_TOO_LATE',
+            );
+        }
+
+        $alasan = trim($alasan);
+        if ($alasan === '') {
+            throw new BusinessRuleException(
+                'Alasan penolakan wajib diisi — tanpa itu pengaju harus bertanya lewat jalur lain, dan jawabannya tidak tercatat.',
+                errorCode: 'ADV_CANCEL_NO_REASON',
+            );
+        }
+
+        $advance->update([
+            'status' => 'cancelled',
+            'cancelled_at' => now(),
+            'cancelled_by' => $userId,
+            'cancel_reason' => mb_substr($alasan, 0, 255),
+        ]);
+
+        return $advance->refresh();
     }
 
     /** #127 — Stempel satu slot approval bon sementara (urut, sesuai requiredSigners). */

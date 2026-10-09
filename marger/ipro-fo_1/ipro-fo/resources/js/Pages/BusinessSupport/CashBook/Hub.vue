@@ -59,11 +59,12 @@ const menu: Array<{ group: string; items: Array<{ label: string; route: string |
         { label: 'Penerimaan Bank', route: r('bs.cashbook.create', { type: 'in' }) },
     ]},
     { group: 'Transaksi Bon Sementara', items: [
-        { label: 'Pengeluaran Bon Sementara', route: r('bs.advance.payments') },
-        { label: 'Alokasi Bon Sementara', route: r('bs.advance.allocation.index') },
-        { label: 'Realisasi Bon Sementara', route: r('bs.advance.index') },
-        { label: 'Refund Bon Sementara', route: r('bs.advance.index') },
-        { label: 'Reimburse Bon Sementara', route: r('bs.advance.index') },
+        { label: 'Pengajuan Bon Sementara', route: r('bs.advance.create') },
+        // Proses Finance dikumpulkan di grupnya sendiri — lihat navGroups.
+        { label: 'Bon Sementara Finance', route: r('bs.advance.payments') },
+        { label: 'Alokasi Bon Sementara Finance', route: r('bs.advance.allocation.index') },
+        { label: 'Realisasi Bon Sementara Finance', route: r('bs.advance.index') },
+        { label: 'Transaksi Bon Batal (Riwayat)', route: r('bs.advance.cancelled') },
     ]},
     { group: 'Transaksi Kas Kecil', items: [
         { label: 'Penerimaan Kas Kecil', route: r('bs.pettycash.create', { type: 'in' }) },

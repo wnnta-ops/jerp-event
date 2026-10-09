@@ -1,13 +1,15 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue';
 import { Link, useForm, router } from '@inertiajs/vue3';
-import { ArrowLeft, Wallet, ClipboardCheck, Printer, HandCoins, Lock } from 'lucide-vue-next';
+import { Ban, ArrowLeft, Wallet, ClipboardCheck, Printer, HandCoins, Lock } from 'lucide-vue-next';
 import Button from '@/Components/UI/Button.vue';
 import Badge from '@/Components/UI/Badge.vue';
 import SearchSelect from '@/Components/UI/SearchSelect.vue';
 import MoneyInput from '@/Components/UI/MoneyInput.vue';
 
 const props = defineProps<{ advance: any; expenseAccounts: Array<any>; costCenters: Array<any>; cashAccounts: Array<any>; signers?: Record<string, string>; requiredSigners?: string[]; fullyApproved?: boolean; canApprove?: boolean; canEditDocDate?: boolean;
+    /** Panel Pembayaran milik Dept Finance — pengaju biasa tidak melihatnya. */
+    bisaBayar?: boolean;
     /** 'online' = berjenjang di aplikasi · 'offline' = tanda tangan di kertas. */
     approvalMode?: string;
     /** Kartu debit/VA yang boleh dipakai (aktif & belum expired) — hanya untuk Debit VA. */
@@ -18,6 +20,15 @@ const props = defineProps<{ advance: any; expenseAccounts: Array<any>; costCente
     allocationMode?: boolean;
     /** Gerbang "Lanjut Realisasikan Bon": perlu = bon ini melewati tahap alokasi; sudah = tombolnya ditekan. */
     lanjutAlokasi?: { perlu: boolean; sudah: boolean; pada: string | null } }>();
+
+// Penolakan pengajuan — alasan WAJIB, dan ikut tersimpan. Penolakan tanpa alasan memaksa
+// pengaju bertanya lewat jalur lain, dan jawabannya tidak tercatat di mana pun.
+const alasanBatal = ref('');
+function batalkan() {
+    if (! alasanBatal.value.trim()) return;
+    if (! confirm(`Tolak pengajuan ${props.advance.advance_number}?`)) return;
+    router.post(route('bs.advance.cancel', props.advance.id), { cancel_reason: alasanBatal.value }, { preserveScroll: true });
+}
 const showForm = ref(false);
 // #125: simpan tanggal terima dokumen (hanya finance) tanpa berpindah halaman.
 function saveDocDate(e: Event) {
@@ -266,8 +277,38 @@ function backToIndex() {
             <div v-else-if="advance.settlement_status === 'settled' && Math.abs(Number(advance.settlement)) >= 0.01" class="mt-3 text-xs font-medium text-success-600">● Sisa / kekurangan sudah diselesaikan (Refund/Reimburse)</div>
         </div>
 
-        <!-- #49: Pembayaran oleh Finance (status requested) → jurnal terbentuk -->
-        <div v-if="advance.status === 'requested'" class="card p-5">
+        <!-- #49: Pembayaran oleh Finance (status requested) → jurnal terbentuk.
+             HANYA untuk Dept Finance (cashbook.advance.pay). Pengaju biasa melihat bonnya
+             berhenti di "Diajukan" — itu memang keadaannya, dan menampilkan panel yang
+             tombolnya berakhir 403 membuat orang mengira bon itu urusannya sampai selesai. -->
+        <!-- Bon yang SUDAH dibatalkan: dikatakan terang-terangan, berikut alasannya. Tanpa ini
+             pengaju hanya melihat bonnya berhenti tanpa penjelasan. -->
+        <div v-if="advance.status === 'cancelled'" class="card border-danger-300 bg-danger-50/50 p-5 dark:border-danger-900/50 dark:bg-danger-900/10">
+            <h2 class="flex items-center gap-2 font-semibold text-danger-700 dark:text-danger-300"><Ban class="h-5 w-5" /> Pengajuan ditolak</h2>
+            <p class="mt-1 text-sm text-danger-700 dark:text-danger-300">{{ advance.cancel_reason || 'Tanpa keterangan.' }}</p>
+            <p class="mt-1 text-xs text-neutral-500">Tidak ada pembayaran maupun jurnal untuk bon ini.</p>
+        </div>
+
+        <!-- Tolak pengajuan — hanya selagi BELUM dibayar. Sesudah dibayar uangnya sudah
+             keluar dan jurnalnya terbentuk; yang berlaku Refund/Reimburse, bukan pembatalan. -->
+        <div v-if="advance.status === 'requested' && bisaBayar" class="card border-danger-200 p-5 dark:border-danger-900/40">
+            <h2 class="mb-1 flex items-center gap-2 font-semibold"><Ban class="h-5 w-5 text-danger-500" /> Tolak Pengajuan</h2>
+            <p class="mb-3 text-xs text-neutral-500">
+                Pengajuan ditandai <b>Batal</b> dan keluar dari antrean pembayaran. Tidak ada jurnal yang
+                terbentuk maupun dibalik — uangnya memang belum keluar. Alasannya tersimpan dan terbaca
+                pengaju.
+            </p>
+            <div class="flex flex-wrap items-end gap-2">
+                <div class="min-w-[18rem] flex-1">
+                    <label class="mb-1 block text-xs font-medium text-neutral-500">Alasan penolakan <span class="text-danger-500">*</span></label>
+                    <input v-model="alasanBatal" type="text" maxlength="255" placeholder="mis. Keperluan sudah ditanggung bon lain"
+                           class="h-9 w-full rounded-lg border border-neutral-300 px-3 text-sm dark:border-neutral-700 dark:bg-neutral-900" />
+                </div>
+                <Button variant="danger" size="md" :disabled="! alasanBatal.trim()" @click="batalkan">Tolak Pengajuan</Button>
+            </div>
+        </div>
+
+        <div v-if="advance.status === 'requested' && bisaBayar" class="card p-5">
             <h2 class="mb-1 flex items-center gap-2 font-semibold"><HandCoins class="h-5 w-5 text-amber-600" /> Pembayaran (Dept Finance)</h2>
             <p class="mb-3 text-xs text-neutral-500">
                 <b>Reguler</b>: isi tanggal transfer &amp; sumber bank/kas — jurnal <b>Dr Uang Muka Operasional · Cr Bank/Kas</b> terbentuk saat disimpan.
