@@ -443,7 +443,7 @@ export function navGroups(foUrl: string): NavGroup[] {
                 // Alokasi berdiri sendiri di antara pembayaran dan realisasi: bon baru sampai
                 // ke Realisasi setelah tombol "Lanjut Realisasikan Bon" ditekan di sini.
                 { label: 'Alokasi Bon Sementara Finance', href: 'bs.advance.allocation.index' },
-                { label: 'Realisasi Bon Sementara Finance', href: 'bs.advance.index' },
+                { label: 'Realisasi Bon Sementara Finance', href: 'bs.advance.index', params: { finance: 1 } },
                 // Riwayat pengajuan yang DITOLAK sebelum dibayar — baca-saja, tanpa jurnal.
                 { label: 'Transaksi Bon Batal (Riwayat)', href: 'bs.advance.cancelled' },
             ]},

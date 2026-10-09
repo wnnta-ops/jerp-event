@@ -58,14 +58,14 @@ const inputCls = 'h-9 w-full rounded-lg border border-neutral-300 bg-white px-3 
                 </tr></thead>
                 <tbody class="divide-y divide-neutral-200 dark:divide-neutral-800">
                     <tr v-for="r in advances.data" :key="r.id">
-                        <td class="px-3 py-2.5"><Link :href="route('bs.advance.show', r.id)" class="font-mono font-semibold text-primary-600 hover:underline">{{ r.advance_number }}</Link></td>
+                        <td class="px-3 py-2.5"><Link :href="route('bs.advance.finance.show', r.id)" class="font-mono font-semibold text-primary-600 hover:underline">{{ r.advance_number }}</Link></td>
                         <td class="px-3 py-2.5">{{ fmtDate(r.advance_date) }}</td>
                         <td class="px-3 py-2.5">{{ r.holder }}</td>
                         <td class="px-3 py-2.5 text-neutral-500">{{ r.purpose }}</td>
                         <td class="px-3 py-2.5 text-right font-mono font-semibold">{{ fmtRp(r.amount) }}</td>
                         <td class="px-3 py-2.5 text-center">
                             <span v-if="r.is_fully_approved" class="inline-flex items-center gap-1 rounded-full bg-success-50 px-2 py-0.5 text-xs font-medium text-success-700 dark:bg-success-900/30 dark:text-success-300">Lengkap</span>
-                            <Link v-else :href="route('bs.advance.show', r.id)" class="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-700 hover:underline dark:bg-amber-900/30 dark:text-amber-300" title="Lengkapi persetujuan dulu">{{ r.approved_count }}/{{ r.required_count }} setuju</Link>
+                            <Link v-else :href="route('bs.advance.finance.show', r.id)" class="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-700 hover:underline dark:bg-amber-900/30 dark:text-amber-300" title="Lengkapi persetujuan dulu">{{ r.approved_count }}/{{ r.required_count }} setuju</Link>
                         </td>
                         <td class="px-3 py-2.5"><input v-if="inputs[r.id]" v-model="inputs[r.id].paid_date" type="date" :disabled="!r.is_fully_approved" :class="[inputCls,'w-36', !r.is_fully_approved ? 'opacity-50' : '']" /></td>
                         <td class="px-3 py-2.5"><SearchSelect v-if="inputs[r.id]" :model-value="inputs[r.id].cash_account_id" :options="cashAccounts" :disabled="!r.is_fully_approved" placeholder="— pilih —" @update:model-value="(v) => inputs[r.id].cash_account_id = v" /></td>

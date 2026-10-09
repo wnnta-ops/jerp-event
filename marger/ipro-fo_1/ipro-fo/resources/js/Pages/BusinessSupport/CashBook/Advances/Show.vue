@@ -8,8 +8,12 @@ import SearchSelect from '@/Components/UI/SearchSelect.vue';
 import MoneyInput from '@/Components/UI/MoneyInput.vue';
 
 const props = defineProps<{ advance: any; expenseAccounts: Array<any>; costCenters: Array<any>; cashAccounts: Array<any>; signers?: Record<string, string>; requiredSigners?: string[]; fullyApproved?: boolean; canApprove?: boolean; canEditDocDate?: boolean;
-    /** Panel Pembayaran milik Dept Finance — pengaju biasa tidak melihatnya. */
-    bisaBayar?: boolean;
+    /**
+     * Layar ini dibuka dari sisi DEPT FINANCE (rute bs.advance.finance.show).
+     * Menentukan apa yang DITAMPILKAN — bukan apa yang boleh dilakukan; tiap aksi tetap
+     * diperiksa izinnya di server.
+     */
+    modeFinance?: boolean;
     /** 'online' = berjenjang di aplikasi · 'offline' = tanda tangan di kertas. */
     approvalMode?: string;
     /** Kartu debit/VA yang boleh dipakai (aktif & belum expired) — hanya untuk Debit VA. */
@@ -249,7 +253,7 @@ function backToIndex() {
                     <tr v-if="advance.settlement_status !== 'pending'"><td colspan="3" class="py-1.5 text-right" :class="advance.settlement >= 0 ? 'text-success-600' : 'text-danger-600'">{{ advance.settlement >= 0 ? 'Dikembalikan ke kas (Refund)' : 'Reimburse (diganti dari kas)' }}</td><td class="py-1.5 text-right font-mono">{{ fmtRp(Math.abs(advance.settlement)) }}</td></tr>
                 </tfoot>
             </table>
-            <div v-if="advance.settlement_status === 'pending'" class="mt-3 space-y-2 rounded-lg bg-amber-50 px-4 py-3 dark:bg-amber-900/20">
+            <div v-if="modeFinance && advance.settlement_status === 'pending'" class="mt-3 space-y-2 rounded-lg bg-amber-50 px-4 py-3 dark:bg-amber-900/20">
                 <span class="block text-sm font-medium text-amber-700 dark:text-amber-300">{{ Number(advance.settlement) > 0 ? 'Sisa panjar belum dikembalikan' : 'Kekurangan belum diganti' }}: {{ fmtRp(Math.abs(advance.settlement)) }}</span>
                 <div class="flex flex-wrap items-end gap-2">
                     <!-- #89/#93: pilih bank penerima refund / sumber reimburse -->
@@ -291,7 +295,7 @@ function backToIndex() {
 
         <!-- Tolak pengajuan — hanya selagi BELUM dibayar. Sesudah dibayar uangnya sudah
              keluar dan jurnalnya terbentuk; yang berlaku Refund/Reimburse, bukan pembatalan. -->
-        <div v-if="advance.status === 'requested' && bisaBayar" class="card border-danger-200 p-5 dark:border-danger-900/40">
+        <div v-if="advance.status === 'requested' && modeFinance" class="card border-danger-200 p-5 dark:border-danger-900/40">
             <h2 class="mb-1 flex items-center gap-2 font-semibold"><Ban class="h-5 w-5 text-danger-500" /> Tolak Pengajuan</h2>
             <p class="mb-3 text-xs text-neutral-500">
                 Pengajuan ditandai <b>Batal</b> dan keluar dari antrean pembayaran. Tidak ada jurnal yang
@@ -308,7 +312,7 @@ function backToIndex() {
             </div>
         </div>
 
-        <div v-if="advance.status === 'requested' && bisaBayar" class="card p-5">
+        <div v-if="advance.status === 'requested' && modeFinance" class="card p-5">
             <h2 class="mb-1 flex items-center gap-2 font-semibold"><HandCoins class="h-5 w-5 text-amber-600" /> Pembayaran (Dept Finance)</h2>
             <p class="mb-3 text-xs text-neutral-500">
                 <b>Reguler</b>: isi tanggal transfer &amp; sumber bank/kas — jurnal <b>Dr Uang Muka Operasional · Cr Bank/Kas</b> terbentuk saat disimpan.
@@ -407,7 +411,7 @@ function backToIndex() {
         <!-- ALOKASI KASBON — sekarang sub-modul sendiri (Cash Book → Transaksi Bon Sementara →
              Alokasi Bon Sementara). Di sini tinggal ringkasannya + pintu menuju ke sana, supaya
              operator tahu sudah sampai mana tanpa harus menebak. -->
-        <div v-if="lanjutAlokasi?.perlu && advance.status === 'outstanding'" class="card p-5">
+        <div v-if="modeFinance && lanjutAlokasi?.perlu && advance.status === 'outstanding'" class="card p-5">
             <div class="flex flex-wrap items-start justify-between gap-3">
                 <div>
                     <h2 class="mb-1 flex items-center gap-2 font-semibold"><Wallet class="h-5 w-5 text-primary-600" /> Alokasi Kasbon</h2>
@@ -428,7 +432,7 @@ function backToIndex() {
         </div>
 
         <!-- Form realisasi (jika outstanding) -->
-        <div v-if="advance.status === 'outstanding'" class="card p-5">
+        <div v-if="modeFinance && advance.status === 'outstanding'" class="card p-5">
             <!-- GERBANG: bon yang punya tahap alokasi baru boleh direalisasi setelah tombol
                  "Lanjut Realisasikan Bon" ditekan di sub-modul Alokasi Bon Sementara. Yang
                  benar-benar menahan ada di CashAdvanceService::realize() — tombol yang mati di

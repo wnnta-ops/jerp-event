@@ -194,7 +194,7 @@ const pilihKurang = 'rounded-lg ring-1 ring-amber-400';
                     </p>
                     <p v-else-if="lanjutKurang" class="mt-2 text-xs text-amber-600 dark:text-amber-400">{{ lanjutKurang }}</p>
                 </div>
-                <Link v-if="lanjutAlokasi.sudah" :href="route('bs.advance.show', advance.id)">
+                <Link v-if="lanjutAlokasi.sudah" :href="route('bs.advance.finance.show', advance.id)">
                     <Button variant="secondary">Buka Realisasi Bon<template #icon-right><ArrowRight class="h-4 w-4" /></template></Button>
                 </Link>
                 <Button v-else :disabled="lanjutForm.processing || !! lanjutKurang" @click="lanjut">

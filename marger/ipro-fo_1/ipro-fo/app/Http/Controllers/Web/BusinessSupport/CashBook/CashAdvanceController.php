@@ -13,15 +13,14 @@ use App\Domain\BusinessSupport\Models\BsJournal;
 use App\Domain\BusinessSupport\Print\PengajuanKasbonPrinter;
 use App\Domain\BusinessSupport\Services\CashAdvanceAllocationService;
 use App\Domain\BusinessSupport\Services\CashAdvanceService;
+use App\Domain\BusinessSupport\Services\CostCenterPengguna;
 use App\Domain\BusinessSupport\Support\SaldoBonSementara;
 use App\Exceptions\BusinessRuleException;
-use App\Domain\BusinessSupport\Services\CostCenterPengguna;
 use App\Http\Controllers\Concerns\GalatAnggaran;
 use App\Http\Controllers\Controller;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response as HttpResponse;
-use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -57,6 +56,10 @@ class CashAdvanceController extends Controller
             ],
             'buckets' => $this->indexBuckets(),                                                  // #134
             'canEditDocDate' => (bool) $request->user()?->can('cashbook.advance.view'), // #125
+            // Dibuka dari menu Finance (?finance=1) → barisnya menuju tampilan Finance.
+            // Dari menu pengaju → menuju tampilan baca-saja. Satu daftar, dua pintu keluar.
+            'modeFinance' => $request->boolean('finance')
+                && (bool) $request->user()?->can('cashbook.advance.pay'),
         ]);
     }
 
@@ -778,10 +781,19 @@ class CashAdvanceController extends Controller
                 ->map(fn ($c) => ['id' => $c->id, 'label' => $c->label(), 'balance' => (float) $c->balance])
                 ->values(),
             'canApprove' => (bool) $request->user()?->can('businesssupport.approval.act'), // #127
-            // Panel Pembayaran milik Dept Finance. Pengaju biasa tidak boleh melihatnya: ia
-            // menawarkan tombol yang berakhir 403, dan membuat orang mengira bon itu urusannya
-            // sendiri sampai selesai. Yang mereka perlukan hanya pengajuan, tampilan, dan cetak.
-            'bisaBayar' => (bool) $request->user()?->can('cashbook.advance.pay'),
+            // SELURUH PANEL DEPT FINANCE DIPISAH LEWAT RUTE, bukan izin.
+            //
+            // Penjagaan berbasis izin saja tidak cukup: SuperAdmin memegang semua izin, jadi
+            // ia tetap melihat panel Finance saat membuka bonnya sendiri dari menu pengaju —
+            // dan layar "milik pengaju" jadi tidak pernah benar-benar bersih.
+            //
+            // bs.advance.show        → tampilan PENGAJU: data, persetujuan, cetak. Baca-saja.
+            // bs.advance.finance.show → tampilan FINANCE: tolak, bayar, alokasi, realisasi.
+            //
+            // Izinnya TETAP diperiksa di tiap aksinya (pay/realize/cancel) — rute hanya
+            // menentukan apa yang DITAMPILKAN, bukan apa yang boleh dilakukan.
+            'modeFinance' => $request->routeIs('bs.advance.finance.show')
+                && (bool) $request->user()?->can('cashbook.advance.pay'),
             'canEditDocDate' => (bool) $request->user()?->can('cashbook.advance.view'), // #125
             /* ALOKASI KASBON — hanya bon Debit VA model baru (yang pembayarannya tidak berjurnal).
                Bon Debit VA lama sudah terlanjur berjurnal ke akun kartunya saat dibayar; membuka
