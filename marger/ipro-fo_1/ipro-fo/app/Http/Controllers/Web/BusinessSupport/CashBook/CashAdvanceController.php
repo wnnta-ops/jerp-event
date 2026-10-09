@@ -36,6 +36,10 @@ class CashAdvanceController extends Controller
         $rows = BsCashAdvance::query()
             ->with('cashAccount:id,code,name')
             ->when($request->input('status'), fn ($q, $v) => $q->where('status', $v))
+            // Bon BATAL punya layarnya sendiri (Transaksi Bon Batal). Dikeluarkan dari sini
+            // supaya daftar kerja tidak bercampur dengan pengajuan yang sudah ditolak — masih
+            // bisa dilihat di sini dengan memilih status "Batal".
+            ->when(! $request->input('status'), fn ($q) => $q->whereNull('cancelled_at'))
             // #87: filter per pemegang/department (holder = "Nama — Departemen") / keperluan / no.
             ->when($request->input('search'), fn ($q, $s) => $q->where(fn ($w) => $w
                 ->where('holder', 'like', "%{$s}%")
@@ -555,30 +559,26 @@ class CashAdvanceController extends Controller
         // karyawan tidak lagi dikirim ke sana. Departemennya tetap tercatat — ditentukan
         // CashAdvanceService::issue() dari karyawan yang dipilih (fallback #150), sehingga
         // penyaring Departemen pada Laporan Bon Sementara tetap berisi seperti sebelumnya.
-        // COST CENTER TIDAK LAGI DIPILIH TANGAN — ia DITURUNKAN dari karyawan pengaju.
+        // KARYAWAN & COST CENTER SAMA-SAMA DITURUNKAN DARI AKUN YANG LOGIN.
         //
-        // Memilihnya sendiri salah tempat: cost center adalah unit kerja orangnya, bukan
-        // keputusan per pengajuan. Memilih yang lain membebankan bon ke departemen yang tidak
-        // menanggungnya, dan realisasi dua departemen bergeser sekaligus.
-        //
-        // Tautannya ke Budget Control TIDAK hilang: cost center tetap tersimpan, hanya
-        // sumbernya berpindah dari dropdown ke master karyawan.
+        // Bon sementara adalah uang yang dipegang orangnya sendiri; memilih nama lain berarti
+        // mengajukan bon atas nama orang lain, dan unit kerja yang dibebani ikut berpindah.
+        // Karena itu daftar karyawan TIDAK dikirim ke layar sama sekali — bukan sekadar
+        // dikunci, sebab kiriman langsung masih bisa menyebut id lain. Penegakan sebenarnya
+        // ada di store(), yang mengabaikan employee_id dari layar.
         $emp = BsEmployee::with('costCenter:id,code,name')
             ->whereKey(app(CostCenterPengguna::class)->idKaryawan($request->user()))
             ->first();
 
         return Inertia::render('BusinessSupport/CashBook/Advances/Form', [
-            'employees' => BsEmployee::orderBy('name')->get(['id', 'name', 'position'])
-                ->map(fn ($e) => ['id' => $e->id, 'name' => $e->name, 'position' => $e->position]),
-            // Karyawan pengaju = pemilik akun yang login. Terisi otomatis; masih bisa diganti
-            // bila bon diajukan atas nama orang lain, dan unit kerjanya ikut berpindah.
-            'karyawanSaya' => $emp?->id,
-            // Dipakai layar untuk MENAMPILKAN unit kerja yang akan dibebani. Bukan isian —
-            // tetapi harus terlihat, sebab penolakan anggaran menyebut cost center dan orang
-            // perlu tahu yang mana sebelum menekan Simpan.
-            'unitPerKaryawan' => BsEmployee::with('costCenter:id,code,name')->get(['id', 'cost_center_id'])
-                ->mapWithKeys(fn ($e) => [$e->id => $e->costCenter
-                    ? $e->costCenter->code.' — '.$e->costCenter->name : null])->all(),
+            'karyawan' => $emp === null ? null : [
+                'id' => $emp->id,
+                'name' => $emp->name,
+                'position' => $emp->position,
+                // Dipulangkan hanya untuk MENJELASKAN penolakan bila kosong, bukan ditampilkan
+                // sebagai isian.
+                'punya_cost_center' => $emp->cost_center_id !== null,
+            ],
         ]);
     }
 
@@ -594,9 +594,6 @@ class CashAdvanceController extends Controller
             'holder' => ['required', 'string', 'max:150'],
             'purpose' => ['required', 'string', 'max:255'],
             'amount' => ['required', 'numeric', 'min:0.01'],
-            // WAJIB sejak cost center diturunkan darinya — tanpa karyawan, tidak ada unit
-            // kerja yang bisa dibebani.
-            'employee_id' => ['required', 'integer', 'exists:bs_employees,id'],
             // Cara persetujuan dipilih per pengajuan; kosong = online (perilaku lama).
             'approval_mode' => ['nullable', 'string', 'in:'.implode(',', array_keys(BsCashAdvance::APPROVAL_MODES))],
         ]);
@@ -606,17 +603,26 @@ class CashAdvanceController extends Controller
         // harus dibereskan — bon tanpa cost center tetap jadi beban di GL tetapi tidak
         // pernah terbaca sebagai realisasi di Budget Control, dan itu baru ketahuan
         // berbulan kemudian saat anggaran direkonsiliasi.
-        $emp = ! empty($v['employee_id'])
-            ? BsEmployee::with('costCenter:id,code,name')->find((int) $v['employee_id'])
-            : null;
+        // KARYAWAN DARI AKUN YANG LOGIN, bukan dari kiriman layar. employee_id yang ikut
+        // terkirim SENGAJA DIABAIKAN: mengunci pilihan di layar saja tidak menahan kiriman
+        // langsung, dan bon atas nama orang lain membebani unit kerja yang tidak
+        // menanggungnya.
+        $emp = BsEmployee::with('costCenter:id,code,name')
+            ->whereKey(app(CostCenterPengguna::class)->idKaryawan($request->user()))
+            ->first();
 
-        if ($emp?->cost_center_id === null) {
-            return back()->withInput()->with('error', $emp === null
-                ? 'Pilih dulu nama karyawannya — unit kerja bon diambil dari sana.'
-                : 'Karyawan '.$emp->name.' belum punya Cost Center di master Karyawan. '
-                    .'Lengkapi dulu di HR, lalu ulangi pengajuan.');
+        if ($emp === null) {
+            return back()->withInput()->with('error',
+                'Akun Anda belum tertaut ke data karyawan. Minta Admin melengkapi NIP karyawan pada akun ini.');
         }
 
+        if ($emp->cost_center_id === null) {
+            return back()->withInput()->with('error',
+                'Karyawan '.$emp->name.' belum punya Cost Center di master Karyawan. '
+                .'Lengkapi dulu di HR, lalu ulangi pengajuan.');
+        }
+
+        $v['employee_id'] = (int) $emp->id;
         $v['cost_center_id'] = (int) $emp->cost_center_id;
 
         try {
@@ -772,6 +778,10 @@ class CashAdvanceController extends Controller
                 ->map(fn ($c) => ['id' => $c->id, 'label' => $c->label(), 'balance' => (float) $c->balance])
                 ->values(),
             'canApprove' => (bool) $request->user()?->can('businesssupport.approval.act'), // #127
+            // Panel Pembayaran milik Dept Finance. Pengaju biasa tidak boleh melihatnya: ia
+            // menawarkan tombol yang berakhir 403, dan membuat orang mengira bon itu urusannya
+            // sendiri sampai selesai. Yang mereka perlukan hanya pengajuan, tampilan, dan cetak.
+            'bisaBayar' => (bool) $request->user()?->can('cashbook.advance.pay'),
             'canEditDocDate' => (bool) $request->user()?->can('cashbook.advance.view'), // #125
             /* ALOKASI KASBON — hanya bon Debit VA model baru (yang pembayarannya tidak berjurnal).
                Bon Debit VA lama sudah terlanjur berjurnal ke akun kartunya saat dibayar; membuka
@@ -1029,7 +1039,10 @@ class CashAdvanceController extends Controller
     public function print(Request $request, BsCashAdvance $advance): HttpResponse
     {
         abort_unless($request->user()?->can('cashbook.advance.print'), 403);
-        $advance->load(['cashAccount:id,code,name', 'department:id,code,name']);
+        // 'costCenter', BUKAN 'department': master Departemen sudah dicabut dan relasinya tidak
+        // pernah ada di BsCashAdvance — memuatnya melempar RelationNotFoundException, dan
+        // CETAK PENGAJUAN jadi 500 sejak itu. Unit kerja kini selalu dari cost center.
+        $advance->load(['cashAccount:id,code,name', 'costCenter:id,code,name']);
 
         $html = $advance->status === 'requested'
             ? app(PengajuanKasbonPrinter::class)->render($advance)
@@ -1038,12 +1051,72 @@ class CashAdvanceController extends Controller
         return response($html)->header('Content-Type', 'text/html; charset=UTF-8');
     }
 
+    /**
+     * Tolak / batalkan pengajuan bon — Dept Finance, sebelum dibayar.
+     *
+     * Izinnya cashbook.advance.pay: yang berwenang menolak adalah pihak yang sama yang
+     * berwenang membayar. Penolakan tanpa pembayaran bukan keputusan pengajunya sendiri.
+     */
+    public function cancel(Request $request, BsCashAdvance $advance, CashAdvanceService $svc): RedirectResponse
+    {
+        abort_unless($request->user()?->can('cashbook.advance.pay'), 403);
+
+        $v = $request->validate(
+            ['cancel_reason' => ['required', 'string', 'max:255']],
+            ['cancel_reason.required' => 'Alasan penolakan wajib diisi.'],
+        );
+
+        try {
+            $svc->cancel($advance, $v['cancel_reason'], $request->user()->id);
+        } catch (BusinessRuleException $e) {
+            return $this->balikDenganGalat($e, false);
+        }
+
+        return back()->with('success', 'Pengajuan '.$advance->advance_number.' dibatalkan.');
+    }
+
+    /** Riwayat bon yang DITOLAK sebelum dibayar. Baca-saja — tidak ada jurnal yang menyertainya. */
+    public function cancelledIndex(Request $request): Response
+    {
+        abort_unless($request->user()?->can('cashbook.advance.pay'), 403);
+
+        $rows = BsCashAdvance::query()
+            ->whereNotNull('cancelled_at')
+            ->when($request->input('search'), fn ($q, $s) => $q->where(fn ($w) => $w
+                ->where('holder', 'like', "%{$s}%")
+                ->orWhere('purpose', 'like', "%{$s}%")
+                ->orWhere('advance_number', 'like', "%{$s}%")
+                ->orWhere('cancel_reason', 'like', "%{$s}%")))
+            ->latest('cancelled_at')->paginate(50)->withQueryString();
+
+        $nama = DB::table('users')->whereIn('id', collect($rows->items())->pluck('cancelled_by')->filter()->unique())
+            ->pluck('name', 'id');
+
+        $rows->through(fn (BsCashAdvance $a) => [
+            'id' => $a->id,
+            'advance_number' => $a->advance_number,
+            'advance_date' => optional($a->advance_date)->toDateString(),
+            'holder' => $a->holder,
+            'purpose' => $a->purpose,
+            'amount' => (float) $a->amount,
+            'cancelled_at' => optional($a->cancelled_at)->translatedFormat('d M Y H:i'),
+            'cancelled_by' => $nama[$a->cancelled_by] ?? null,
+            'cancel_reason' => $a->cancel_reason,
+        ]);
+
+        return Inertia::render('BusinessSupport/CashBook/Advances/Cancelled', [
+            'rows' => $rows,
+            'filters' => $request->only(['search']),
+            'total' => (float) BsCashAdvance::whereNotNull('cancelled_at')->sum('amount'),
+        ]);
+    }
+
     /** Cetak bukti REALISASI bon sementara (auto-print) — format eProperty (logo + jurnal rincian + ttd). */
     public function printRealisasi(Request $request, BsCashAdvance $advance): HttpResponse
     {
         abort_unless($request->user()?->can('cashbook.advance.print-realisasi'), 403);
         abort_unless($advance->status === 'realized', 404, 'Bon belum direalisasi.');
-        $advance->load(['cashAccount:id,code,name', 'department:id,code,name', 'lines.expenseAccount:id,code,name']);
+        $advance->load(['cashAccount:id,code,name', 'costCenter:id,code,name', 'lines.expenseAccount:id,code,name']);
 
         return response($this->renderRealisasiPrint($advance))->header('Content-Type', 'text/html; charset=UTF-8');
     }

@@ -3,22 +3,18 @@ import { useForm, Link } from '@inertiajs/vue3';
 import { ArrowLeft, Save, Wallet } from 'lucide-vue-next';
 import Button from '@/Components/UI/Button.vue';
 import MoneyInput from '@/Components/UI/MoneyInput.vue';
-import SearchSelect from '@/Components/UI/SearchSelect.vue';
 import { computed, onMounted } from 'vue';
 
 type Employee = { id: number; name: string; position: string | null };
 const props = defineProps<{
-    employees: Employee[];
-    /** Karyawan pemilik akun yang login — terpilih otomatis. */
-    karyawanSaya?: number | null;
-    /** id karyawan → "KODE — Nama unit". Untuk DITAMPILKAN, bukan diisi. */
-    unitPerKaryawan?: Record<string, string | null>;
+    /** Karyawan pemilik akun yang login — satu-satunya pengaju yang mungkin. */
+    karyawan: { id: number; name: string; position: string | null; punya_cost_center: boolean } | null;
 }>();
 const today = new Date().toISOString().slice(0, 10);
-/* Kolom Departemen DIHAPUS dari layar ini — bukan datanya.
-   Departemen pengajuan tetap tercatat: CashAdvanceService::issue() mengambilnya dari karyawan
-   yang dipilih bila tidak dikirim (fallback #150). Karena itu employee_id tetap dikirim, dan
-   penyaring Departemen pada Laporan Bon Sementara tetap berisi seperti sebelumnya. */
+/* Departemen & Cost Center DIHAPUS dari layar ini — bukan datanya.
+   Keduanya tetap tercatat, diturunkan server dari karyawan pemilik akun yang login (lihat
+   CashAdvanceController::store). Penyaring Departemen pada Laporan Bon Sementara tetap
+   berisi seperti sebelumnya. */
 /* Cara persetujuan dipilih PER PENGAJUAN, dan bawaannya OFFLINE — di lapangan tanda tangannya
    memang dikumpulkan pada formulir cetak, jadi itulah keadaan yang lazim. Online tetap tersedia
    dan tinggal dipilih pada kartu di sebelahnya.
@@ -26,35 +22,21 @@ const today = new Date().toISOString().slice(0, 10);
    Yang perlu disadari saat mengubah ini: offline MEMATIKAN jenjang persetujuan di aplikasi,
    sehingga pembayaran & jurnal boleh dicatat tanpa menunggu tanda tangan digital. Karena itu
    kalimat akibatnya ditulis di kartu pilihannya, bukan disembunyikan. */
-// employee_id terisi dari akun yang login. Cost center TIDAK lagi ada di formulir — server
-// menurunkannya dari karyawan ini (lihat CashAdvanceController::store).
-const form = useForm<any>({ advance_date: today, employee_id: props.karyawanSaya ?? '', holder: '', purpose: '', amount: 0, approval_mode: 'offline' });
+// Karyawan & cost center DITURUNKAN server dari akun yang login — keduanya tidak dikirim
+// dari sini. 'holder' diisi hanya sebagai nilai tampilan yang ikut tersimpan.
+const form = useForm<any>({ advance_date: today, holder: '', purpose: '', amount: 0, approval_mode: 'offline' });
 
-/* UNIT KERJA DITURUNKAN DARI KARYAWANNYA, tidak dipilih di sini — cost center adalah unit
-   kerja orangnya, bukan keputusan per pengajuan. Tetap DITAMPILKAN karena penolakan anggaran
-   menyebut cost center, dan orang perlu tahu yang mana sebelum menekan Simpan. */
-const unitKerja = computed<string | null>(() => {
-    const id = form.employee_id;
-    return id ? ((props.unitPerKaryawan ?? {})[String(id)] ?? null) : null;
+// Nama pengaju tidak bisa dipilih: ia pemilik akun yang login. Dipakai juga sebagai nilai
+// 'holder' yang tersimpan di bonnya.
+const namaPengaju = computed(() => {
+    const k = props.karyawan;
+    if (!k) return '';
+    return k.position ? `${k.name} — ${k.position}` : k.name;
 });
-const unitKurang = computed(() => !! form.employee_id && ! unitKerja.value);
 
-// Opsi karyawan utk SearchSelect: label = Nama (— Posisi) agar bisa diketik cari per nama.
-const employeeOptions = computed(() => props.employees.map((e) => ({
-    id: e.id,
-    label: e.position ? `${e.name} — ${e.position}` : e.name,
-})));
-
-// Saat karyawan dipilih: set holder (Nama — Posisi). Departemennya ditentukan server dari
-// karyawan ini, jadi tidak ada lagi yang perlu diisikan di layar.
-function onEmployee() {
-    const e = props.employees.find((x) => x.id === Number(form.employee_id));
-    if (!e) { form.holder = ''; return; }
-    form.holder = e.position ? `${e.name} — ${e.position}` : e.name;
-}
-// Karyawan sudah terpilih sejak layar dibuka, jadi 'holder' harus ikut terisi — kalau tidak,
-// isian wajib itu kosong padahal namanya sudah tampil, dan penolakannya terbaca seperti bug.
-onMounted(() => { if (form.employee_id) onEmployee(); });
+// Diisikan sejak layar dibuka — isian wajib yang kosong padahal namanya sudah tampil akan
+// terbaca seperti bug, bukan seperti data yang belum lengkap.
+onMounted(() => { form.holder = namaPengaju.value; });
 
 function fmtRp(v: number) { return 'Rp ' + Number(v ?? 0).toLocaleString('id-ID'); }
 function submit() { form.post(route('bs.advance.store')); }
@@ -69,23 +51,27 @@ const inputCls = 'h-9 w-full rounded-lg border border-neutral-300 bg-white px-3 
         <form @submit.prevent="submit" class="space-y-4">
             <div class="card grid gap-4 p-5 md:grid-cols-2">
                 <div><label class="mb-1 block text-xs font-medium text-neutral-500">Tanggal Pengajuan *</label><input v-model="form.advance_date" type="date" required :class="inputCls" /></div>
-                <div><label class="mb-1 block text-xs font-medium text-neutral-500">Nama Karyawan *</label><SearchSelect v-model="form.employee_id" :options="employeeOptions" placeholder="— pilih karyawan —" @update:model-value="onEmployee" /><p v-if="form.errors.holder" class="mt-1 text-xs text-danger-500">{{ form.errors.holder }}</p></div>
+                <!-- TIDAK BISA DIPILIH. Bon sementara adalah uang yang dipegang orangnya
+                     sendiri; mengajukan atas nama orang lain memindahkan beban ke unit kerja
+                     yang tidak menanggungnya. Server juga mengabaikan kiriman apa pun dari
+                     sini — penguncian di layar saja tidak menahan kiriman langsung. -->
+                <div>
+                    <label class="mb-1 block text-xs font-medium text-neutral-500">Nama Karyawan</label>
+                    <div class="flex h-9 items-center rounded-lg border border-neutral-300 bg-neutral-50 px-3 text-sm dark:border-neutral-700 dark:bg-neutral-800">
+                        <span v-if="karyawan">{{ namaPengaju }}</span>
+                        <span v-else class="text-danger-500">Akun Anda belum tertaut ke data karyawan.</span>
+                    </div>
+                    <p v-if="!karyawan" class="mt-1 text-xs text-danger-500">Minta Admin melengkapi NIP karyawan pada akun ini.</p>
+                    <p v-else-if="!karyawan.punya_cost_center" class="mt-1 text-xs text-danger-500">Karyawan ini belum punya Cost Center di master Karyawan — lengkapi dulu di HR.</p>
+                    <p v-else class="mt-1 text-[11px] text-neutral-400">Mengikuti akun yang sedang login.</p>
+                </div>
                 <div class="md:col-span-2"><label class="mb-1 block text-xs font-medium text-neutral-500">Keperluan *</label><input v-model="form.purpose" required placeholder="mis. Operasional proyek Cluster 3" :class="inputCls" /><p v-if="form.errors.purpose" class="mt-1 text-xs text-danger-500">{{ form.errors.purpose }}</p></div>
 
                 <!-- COST CENTER — inilah tautan bon ke Budget Control. Ditandai bintang merah dan
                      menahan tombol Simpan, sebab akibat mengosongkannya tidak terlihat saat itu
                      juga: bonnya tetap tersimpan, jurnalnya tetap terbentuk, hanya angkanya yang
                      tidak pernah muncul sebagai realisasi anggaran. -->
-                <div class="md:col-span-2">
-                    <label class="mb-1 block text-xs font-medium text-neutral-500">Unit Kerja</label>
-                    <div class="flex h-9 items-center rounded-lg border border-neutral-300 bg-neutral-50 px-3 text-sm text-neutral-600 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-300">
-                        <span v-if="unitKerja">{{ unitKerja }}</span>
-                        <span v-else-if="unitKurang" class="text-danger-500">Karyawan ini belum punya Cost Center di master Karyawan.</span>
-                        <span v-else class="text-neutral-400">— pilih karyawan dulu —</span>
-                    </div>
-                    <p v-if="unitKurang" class="mt-1 text-xs text-danger-500">Lengkapi dulu di HR, lalu ulangi pengajuan.</p>
-                    <p v-else class="mt-1 text-[11px] text-neutral-400">Mengikuti unit kerja karyawannya. Belanja bon ini terbaca sebagai realisasi anggaran pada unit tersebut di Budget Control.</p>
-                </div>
+
 
                 <!-- Cara persetujuan — ditentukan di sini karena melekat pada bonnya, bukan
                      pada perusahaannya: satu bon bisa ditandatangani di aplikasi sementara bon
@@ -124,8 +110,8 @@ const inputCls = 'h-9 w-full rounded-lg border border-neutral-300 bg-white px-3 
             <div class="flex gap-2">
                 <!-- Gerbangnya dipasang di tombol DAN di server. Menekan Enter pada kolom teks
                      memicu pengiriman implisit yang tidak melewati tombol ini. -->
-                <Button type="submit" :disabled="form.processing || ! form.employee_id || unitKurang"><template #icon-left><Save class="h-4 w-4" /></template>Simpan Pengajuan</Button>
-                <span v-if="! form.employee_id" class="self-center text-xs text-danger-500">Pilih karyawan dulu.</span>
+                <Button type="submit" :disabled="form.processing || ! karyawan || ! karyawan.punya_cost_center"><template #icon-left><Save class="h-4 w-4" /></template>Simpan Pengajuan</Button>
+                <span v-if="! karyawan || ! karyawan.punya_cost_center" class="self-center text-xs text-danger-500">Lengkapi data karyawan dulu.</span>
                 <Link :href="route('bs.advance.index')" class="rounded-lg border border-neutral-300 px-4 py-2 text-sm dark:border-neutral-700">Batal</Link>
             </div>
         </form>

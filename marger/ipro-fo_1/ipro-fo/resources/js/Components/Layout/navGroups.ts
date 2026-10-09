@@ -424,12 +424,28 @@ export function navGroups(foUrl: string): NavGroup[] {
                 // Penerimaan dari Pelunasan DP, Angsuran & Tambah DP (FO) — masuk otomatis.
                 { label: 'Approval DP', href: 'bs.cashbook.approval-dp' },
             ]},
-            { label: 'Transaksi Bon Sementara', icon: HandCoins, permission: ['cashbook.advance.*'], children: [
-                { label: 'Pengeluaran Bon Sementara', href: 'bs.advance.payments' },
-                // Alokasi Kasbon berdiri sendiri di antara pengeluaran dan realisasi: bon baru
-                // sampai ke Realisasi setelah tombol "Lanjut Realisasikan Bon" ditekan di sini.
-                { label: 'Alokasi Bon Sementara', href: 'bs.advance.allocation.index' },
-                { label: 'Realisasi Bon Sementara', href: 'bs.advance.index' },
+            // ── MILIK PENGAJU ──────────────────────────────────────────────────────
+            // Pengaju berhenti di PENGAJUAN. Seluruh langkah sesudahnya (bayar, realisasi,
+            // alokasi) milik Dept Finance dan pindah ke grupnya sendiri di bawah — bukan
+            // karena rahasia, melainkan karena menampilkannya kepada pengaju membuat orang
+            // mengira bon itu urusannya sampai selesai, lalu menunggu tombol yang tidak akan
+            // pernah bisa ia tekan.
+            { label: 'Transaksi Bon Sementara', icon: HandCoins, permission: ['cashbook.advance.create', 'cashbook.advance.view'], children: [
+                { label: 'Pengajuan Bon Sementara', href: 'bs.advance.create' },
+                { label: 'Daftar Pengajuan Saya', href: 'bs.advance.index' },
+            ]},
+
+            // ── MILIK DEPT FINANCE ─────────────────────────────────────────────────
+            // Seluruh proses Finance dikumpulkan di satu grup, bukan tersebar di Transaksi.
+            // Izinnya cashbook.advance.pay — itulah yang membedakan Finance dari pengaju.
+            { label: 'Bon Sementara (Finance)', icon: HandCoins, permission: ['cashbook.advance.pay'], children: [
+                { label: 'Bon Sementara Finance', href: 'bs.advance.payments' },
+                // Alokasi berdiri sendiri di antara pembayaran dan realisasi: bon baru sampai
+                // ke Realisasi setelah tombol "Lanjut Realisasikan Bon" ditekan di sini.
+                { label: 'Alokasi Bon Sementara Finance', href: 'bs.advance.allocation.index' },
+                { label: 'Realisasi Bon Sementara Finance', href: 'bs.advance.index' },
+                // Riwayat pengajuan yang DITOLAK sebelum dibayar — baca-saja, tanpa jurnal.
+                { label: 'Transaksi Bon Batal (Riwayat)', href: 'bs.advance.cancelled' },
             ]},
             { label: 'Transaksi Kas Kecil', icon: Wallet, permission: ['cashbook.pettycash.*'], children: [
                 { label: 'Penerimaan Kas Kecil', href: 'bs.pettycash.create', params: { type: 'in' } },

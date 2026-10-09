@@ -25,6 +25,8 @@ class BsCashAdvance extends Model
         // Penanda tombol "Lanjut Realisasikan Bon" pada sub-modul Alokasi Bon Sementara.
         // Wajib fillable: seluruh penulisan bon memakai update() massal.
         'allocation_done_at', 'allocation_done_by',
+        // Pembatalan pengajuan — lihat migrasi 2026_10_09_100000.
+        'cancelled_at', 'cancelled_by', 'cancel_reason',
     ];
 
     protected $casts = [
@@ -34,13 +36,23 @@ class BsCashAdvance extends Model
         'amount' => 'decimal:2', 'realized_amount' => 'decimal:2', 'settlement' => 'decimal:2',
         'approvals' => 'array',
         'allocation_done_at' => 'datetime',
+        'cancelled_at' => 'datetime',
     ];
 
     public const STATUSES = [
         'requested' => 'Diajukan',
         'outstanding' => 'Outstanding',
         'realized' => 'Realized',
+        // Ditolak SEBELUM dibayar. Bukan penghapusan: pengajuan yang ditolak tetap pernah
+        // terjadi dan harus bisa ditelusuri — lihat migrasi 2026_10_09_100000.
+        'cancelled' => 'Batal',
     ];
+
+    /** Bon yang dibatalkan — tidak pernah dibayar, tidak punya jurnal. */
+    public function isCancelled(): bool
+    {
+        return $this->status === 'cancelled' || $this->cancelled_at !== null;
+    }
 
     /**
      * Cara persetujuan — DIPILIH PER PENGAJUAN saat bon dibuat.
