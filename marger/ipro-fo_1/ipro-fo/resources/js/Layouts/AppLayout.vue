@@ -5,6 +5,7 @@ import { debounce } from 'lodash-es';
 import Sidebar from '@/Components/Layout/Sidebar.vue';
 import Topbar from '@/Components/Layout/Topbar.vue';
 import Toaster from '@/Components/UI/Toaster.vue';
+import DialogBudget from '@/Components/UI/DialogBudget.vue';
 import { pageQuery, applyPageFilter, resetPageFilter } from '@/Composables/usePageSearch';
 
 defineProps<{ title?: string }>();
@@ -55,5 +56,9 @@ onUnmounted(() => {
         </div>
 
         <Toaster />
+        <!-- Penolakan gerbang anggaran muncul sebagai DIALOG di seluruh layar yang melewatinya
+             (AP, Bon Sementara, Jurnal Umum) — dipasang sekali di sini supaya tidak ada layar
+             yang terlewat. -->
+        <DialogBudget />
     </div>
 </template>

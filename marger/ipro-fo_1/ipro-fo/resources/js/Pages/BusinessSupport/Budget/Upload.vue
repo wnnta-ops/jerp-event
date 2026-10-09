@@ -1,7 +1,8 @@
 <!-- Upload Budget — Business Support / Budget Control -->
 <script setup lang="ts">
-import { Link, useForm } from '@inertiajs/vue3';
-import { ArrowLeft, Upload, Download } from 'lucide-vue-next';
+import { computed, ref, watch } from 'vue';
+import { Link, useForm, usePage } from '@inertiajs/vue3';
+import { ArrowLeft, Upload, Download, AlertTriangle, X } from 'lucide-vue-next';
 import Button from '@/Components/UI/Button.vue';
 
 const props = defineProps<{
@@ -18,6 +19,14 @@ const form = useForm({
 });
 
 const inputCls = 'h-9 w-full rounded-lg border border-neutral-300 bg-white px-3 text-sm dark:border-neutral-700 dark:bg-neutral-900';
+
+/* Penolakan upload tampil sebagai DIALOG, bukan toast: galatnya bisa puluhan baris, dan
+   justru baris itulah yang harus dibetulkan orang. Toast memampatkannya jadi satu kalimat
+   lalu hilang sebelum sempat dibaca. */
+const page = usePage();
+const galat = computed<any>(() => (page.props as any)?.flash?.uploadError ?? null);
+const tampilGalat = ref(false);
+watch(galat, (v) => { if (v) tampilGalat.value = true; }, { immediate: true });
 
 function fmtRp(v: number) { return 'Rp ' + Number(v ?? 0).toLocaleString('id-ID'); }
 
@@ -66,7 +75,7 @@ function submit() {
           </select>
         </div>
         <div class="sm:col-span-2 lg:col-span-3">
-          <label class="mb-1 block text-sm font-medium">File CSV</label>
+          <label class="mb-1 block text-sm font-medium">File XLSX</label>
           <input
             type="file"
             accept=".csv,.txt"
@@ -79,7 +88,7 @@ function submit() {
       </div>
 
       <p class="text-sm text-neutral-500">
-        COA yang tidak sesuai akan gagal upload. Nilai per bulan Januari–Desember.
+        Kode akun & cost center harus sesuai master. Akun yang memang tidak dianggarkan (kas, bank, piutang, utang, penyusutan, HPP) akan ditolak. Bila ada satu baris yang salah, <b>tidak ada</b> yang disimpan. Kolom Cost Center boleh dikosongkan — isinya mengikuti pilihan di atas.
       </p>
 
       <div>
@@ -106,4 +115,31 @@ function submit() {
       </table>
     </div>
   </div>
+
+    <!-- Penolakan upload: daftar baris yang salah, lengkap dengan nomor barisnya. -->
+    <div v-if="tampilGalat && galat" class="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4" @click.self="tampilGalat = false">
+      <div class="flex max-h-[80vh] w-full max-w-2xl flex-col rounded-xl bg-white shadow-xl dark:bg-neutral-900">
+        <div class="flex items-start gap-3 border-b border-neutral-200 px-5 py-4 dark:border-neutral-800">
+          <AlertTriangle class="mt-0.5 h-6 w-6 shrink-0 text-danger-500" />
+          <div class="flex-1">
+            <h3 class="text-lg font-bold">{{ galat.judul }}</h3>
+            <p class="text-sm text-neutral-500">{{ galat.pesan }}</p>
+          </div>
+          <button type="button" class="rounded-lg p-1 text-neutral-400 hover:bg-neutral-100 dark:hover:bg-neutral-800" @click="tampilGalat = false">
+            <X class="h-5 w-5" />
+          </button>
+        </div>
+        <div class="flex-1 overflow-y-auto px-5 py-4">
+          <ul class="space-y-1.5 text-sm">
+            <li v-for="(g, i) in (galat.baris ?? [])" :key="i" class="flex gap-2">
+              <span class="text-danger-500">&bull;</span><span>{{ g }}</span>
+            </li>
+          </ul>
+          <p v-if="galat.lainnya" class="mt-3 text-xs text-neutral-400">… dan {{ galat.lainnya }} baris lain dengan masalah serupa.</p>
+        </div>
+        <div class="flex justify-end border-t border-neutral-200 px-5 py-3 dark:border-neutral-800">
+          <Button variant="primary" size="md" @click="tampilGalat = false">Mengerti</Button>
+        </div>
+      </div>
+    </div>
 </template>

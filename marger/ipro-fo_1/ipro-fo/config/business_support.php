@@ -88,6 +88,54 @@ return [
         'komisi' => 'SP.00223', // PEMBAYARAN KOMISI
     ],
 
+    /*
+    |--------------------------------------------------------------------------
+    | Gerbang anggaran (Budget Control)
+    |--------------------------------------------------------------------------
+    |
+    | wajib_ada: input pada akun PEMBAWA BIAYA ditolak bila belum ada anggaran approved
+    | untuk (akun + cost center + tahun). Akun bertanda cost_center_optional di COA
+    | (Utang Usaha, Kas, PPN) tidak pernah dituntut beranggaran.
+    |
+    | Disediakan sebagai sakelar karena aturannya masih menunggu kepastian dari Accounting:
+    | bila ternyata terlalu ketat, dimatikan lewat .env TANPA deploy ulang. Dimatikan berarti
+    | kembali ke perilaku lama — anggaran yang TIDAK ADA diloloskan, yang KURANG tetap ditolak.
+    |
+    */
+    'budget' => [
+        'wajib_ada' => env('BUDGET_WAJIB_ADA', true),
+
+        /*
+         | COA YANG MEMANG TIDAK DIANGGARKAN — daftar resmi dari Accounting (9 Okt 2026).
+         |
+         | Akun di sini dilewati gerbang anggaran. Selain kas/bank/piutang/utang/modal, daftar
+         | ini juga memuat beberapa akun 5xxxx yang memang bukan objek anggaran: Beban Pokok
+         | Penjualan, cadangan imbalan karyawan, dan seluruh beban penyusutan/amortisasi —
+         | nilainya lahir dari perhitungan, bukan dari pengeluaran yang direncanakan.
+         |
+         | Akun yang TIDAK ada di daftar ini WAJIB beranggaran. Menambah/mengurangi cukup di
+         | sini, tanpa menyentuh kode.
+        */
+        'coa_tanpa_anggaran' => [
+            '10101010101', '10101020201', '10101020202', '10101020203', '10101020204', '10101020205',
+            '10101020206', '10101020207', '10101020208', '10101020209', '10101020210', '10101020211',
+            '10101020212', '10101020213', '10101020214', '10101020215', '10101020216', '10101020288',
+            '10101020289', '10101020299', '10101030301', '10101040401', '10102010101', '10103010101',
+            '10103010102', '10104010101', '10104010102', '10104010103', '10104010104', '10104010105',
+            '10104010106', '10104010107', '10104010108', '10104010198', '10105020301', '10108010101',
+            '10108010102', '10108010103', '10108010104', '10108010105', '10202020203', '10203030301',
+            '10203030302', '10203030303', '10203030304', '10204040401', '10204040402', '10204040403',
+            '10301010101', '20101010101', '20101010102', '20101010181', '20101010199', '20104040407',
+            '20104040408', '20105050501', '20106060601', '20106060602', '20107070701', '20107070702',
+            '20107070703', '20107070708', '20107070709', '20107070710', '20107070711', '20107070712',
+            '20107070713', '20201010101', '20201010102', '20202020201', '20203030301', '20204040401',
+            '20204040402', '30101010101', '30102020201', '30103030301', '40101010101', '40102020201',
+            '40103030301', '40201010101', '40202020201', '40203030301', '50101010101', '50301010107',
+            '50302020225', '50302020226', '50302020227', '50302020229', '50302020230', '70101010104',
+            '70101010105', '80101010101', '80101010102', '90101010101',
+        ],
+    ],
+
     'gl_accounts' => [
         'inventory'  => '10104010101', // Persediaan — Bangunan Siap Jual
         'payable'    => '20101010101', // Utang Usaha Supplier

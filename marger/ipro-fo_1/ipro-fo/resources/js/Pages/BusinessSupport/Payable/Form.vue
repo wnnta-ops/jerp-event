@@ -19,6 +19,10 @@ const props = defineProps<{
     pphBorneExpense: any;
     accounts: Array<any>;
     costCenters: Array<any>;
+    /** Cost center unit kerja pengaju — mengisi tiap baris jurnal secara otomatis. */
+    ccPengguna?: number | null;
+    /** Hanya Accounting (ap.costcenter.override) yang boleh mengubahnya. */
+    bisaUbahCc?: boolean;
     departments: Array<any>;
     ledgers: Array<any>;
     locations: Array<any>;
@@ -268,11 +272,20 @@ function dimSummary(l: any) {
     if (l.currency && l.currency !== 'IDR') parts.push(`${l.currency}@${l.kurs}`);
     return parts.join(' · ');
 }
-function dimDefaults() { return { cost_center_id: null, currency: 'IDR', kurs: 1 }; }
+// Cost center tiap baris MENGIKUTI UNIT KERJA PENGAJU. Dulu null, sehingga harus dipilih
+// tangan tiap baris — dan salah pilih membebankan biaya ke departemen lain tanpa galat.
+//
+// KECUALI akun yang memang boleh tanpa cost center (Utang Usaha, Kas, PPN). Mengisinya di
+// sana bukan cuma mubazir: baris itu lalu ikut masuk gerbang anggaran, dan setiap invoice
+// ber-PPN akan ditolak karena PPN Masukan memang tidak pernah dianggarkan.
+function dimDefaults(accountId?: any) {
+    const cc = accountId && ccOptional(accountId) ? null : (props.ccPengguna ?? null);
+    return { cost_center_id: cc, currency: 'IDR', kurs: 1 };
+}
 // Satu baris jurnal ala eProperty: input satu "Nilai Transaksi" + pilih sisi (Debit/Kredit) lewat radio.
 // debit/credit tetap dijaga sinkron untuk submit ke backend & perhitungan balance.
 function mkJournalLine(account_id: number | null, description: string, amount: number, side: 'debit' | 'credit') {
-    return { ...barisStruktur(account_id, description, amount, side), ...dimDefaults() };
+    return { ...barisStruktur(account_id, description, amount, side), ...dimDefaults(account_id) };
 }
 function applyAmount(l: any) {
     const v = Number(l.nilai) || 0;
@@ -325,7 +338,7 @@ const bahanStruktur = computed(() => ({
     },
 }));
 function defaultJournal() {
-    return bangunStrukturJurnal(bahanStruktur.value).map((b) => ({ ...b, ...dimDefaults() }));
+    return bangunStrukturJurnal(bahanStruktur.value).map((b: any) => ({ ...b, ...dimDefaults(b.account_id) }));
 }
 /** Akun yang dibutuhkan aturan PPN/PPh tetapi belum tersedia — disebutkan, bukan didiamkan. */
 const akunStrukturKurang = computed(() => akunKurang(bahanStruktur.value));
@@ -598,10 +611,14 @@ const cellArea = 'w-full rounded-md border border-neutral-300 bg-white px-2 py-1
                                 <td class="px-2 py-2">
                                     <div :class="ccKurang(l) ? 'rounded-lg ring-1 ring-danger-400' : ''">
                                         <SearchSelect v-model="l.cost_center_id" :options="costCenters"
+                                            :disabled="! bisaUbahCc"
                                             :placeholder="ccOptional(l.account_id) ? '— tanpa cost center —' : '— cost center —'" />
                                     </div>
                                     <p v-if="ccKurang(l)" class="mt-0.5 text-[10.5px] font-medium text-danger-500">Wajib diisi</p>
                                     <p v-else-if="l.account_id && ccOptional(l.account_id)" class="mt-0.5 text-[10.5px] text-neutral-400">Boleh dikosongkan</p>
+                                    <!-- Dikatakan kenapa terkunci. Isian mati tanpa keterangan
+                                         membuat orang mengira layarnya rusak. -->
+                                    <p v-else-if="! bisaUbahCc" class="mt-0.5 text-[10.5px] text-neutral-400">Mengikuti unit kerja Anda</p>
                                 </td>
                                 <td class="px-2 py-2"><textarea v-model="l.description" rows="2" :class="cellArea" placeholder="Keterangan baris…"></textarea></td>
                                 <td class="px-2 py-2">

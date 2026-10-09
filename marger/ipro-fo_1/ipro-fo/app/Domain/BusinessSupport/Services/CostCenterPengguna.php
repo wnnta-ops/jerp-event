@@ -1,0 +1,103 @@
+<?php
+
+declare(strict_types=1);
+
+namespace App\Domain\BusinessSupport\Services;
+
+use App\Domain\BusinessSupport\Models\BsCostCenter;
+use App\Domain\BusinessSupport\Models\BsEmployee;
+
+/**
+ * Cost center (unit kerja) milik seorang pengguna — SATU definisi untuk seluruh sistem.
+ *
+ * Dipakai mengisi otomatis cost center pada Registrasi Invoice Hutang & Bon Sementara, dan
+ * mencetak "Departemen" pada Bukti Permohonan Pembayaran serta SIP. Sebelum kelas ini,
+ * logikanya ditulis dua kali di ApInvoiceController dan SipController; dua salinan yang suatu
+ * saat berbeda berarti dokumen pembayaran dan layar input menyebut unit yang BERBEDA untuk
+ * orang yang sama — dan biaya menempel ke departemen yang salah tanpa satu pun galat.
+ *
+ * ── JALUR PENCOCOKANNYA ──
+ *
+ * 1. `users.employee_nip` = `bs_employees.nik` — jalur resmi, diisi otomatis oleh
+ *    IproMasterSync saat akun dibuat di J-ERP.
+ * 2. Cadangan: kesamaan NAMA. Dipertahankan karena akun lama belum tentu ber-NIP, dan tanpa
+ *    cadangan ini mereka kehilangan cost center-nya diam-diam.
+ *
+ * NAMA KEMBAR: yang pertama menang, dan itu memang tebakan. Karena itu nama hanya dipakai bila
+ * NIP kosong — menebak di antara dua karyawan senama berarti membebankan biaya ke divisi yang
+ * salah.
+ *
+ * ── TIDAK ADA MASTER DEPARTEMEN ──
+ *
+ * Dulu ada `bs_hr_departments`, tetapi tidak pernah diisi (0 baris, department_id NULL di
+ * seluruh karyawan) sehingga setiap dokumen tercetak "Tanpa Departemen". Master itu sudah
+ * dicabut; cost center-lah yang isinya memang nama divisi (Marketing, Finance & Accounting,
+ * Operasional, Proyek/Konstruksi, HRD & GA). Sebutan "Departemen" tetap dipakai di dokumen.
+ */
+class CostCenterPengguna
+{
+    /** Cost center pengguna, atau null bila akunnya belum tertaut ke karyawan mana pun. */
+    public function untuk(?object $user): ?BsCostCenter
+    {
+        $emp = $this->karyawan($user);
+
+        if ($emp?->cost_center_id === null) {
+            return null;
+        }
+
+        return BsCostCenter::find($emp->cost_center_id);
+    }
+
+    /** Id-nya saja — untuk mengisi isian di layar. */
+    public function idUntuk(?object $user): ?int
+    {
+        $emp = $this->karyawan($user);
+
+        return $emp?->cost_center_id !== null ? (int) $emp->cost_center_id : null;
+    }
+
+    /**
+     * Nama unit untuk DICETAK.
+     *
+     * Jatuh ke Jabatan bila cost center-nya belum diisi: pada dokumen pembayaran, "Staff
+     * Accounting" masih lebih berguna daripada tanda hubung — walaupun ia menyebut peran
+     * orangnya, bukan unit yang menanggung biayanya.
+     */
+    public function namaUnit(?object $user, string $kosong = '-'): string
+    {
+        $emp = $this->karyawan($user);
+
+        if ($emp === null) {
+            return $kosong;
+        }
+
+        $nama = trim((string) ($emp->costCenter?->name ?? ''));
+
+        return $nama !== '' ? $nama : (trim((string) $emp->position) ?: $kosong);
+    }
+
+    /** Karyawan yang tertaut ke akun ini — lewat NIP dulu, baru nama. */
+    private function karyawan(?object $user): ?BsEmployee
+    {
+        if ($user === null) {
+            return null;
+        }
+
+        $nip = trim((string) ($user->employee_nip ?? ''));
+        if ($nip !== '') {
+            $emp = BsEmployee::with('costCenter:id,code,name')->where('nik', $nip)->first();
+            if ($emp !== null) {
+                return $emp;
+            }
+        }
+
+        $nama = trim((string) ($user->name ?? ''));
+        if ($nama === '') {
+            return null;
+        }
+
+        return BsEmployee::with('costCenter:id,code,name')
+            ->whereRaw('LOWER(name) = ?', [mb_strtolower($nama)])
+            ->first();
+    }
+}
