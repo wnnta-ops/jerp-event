@@ -9,6 +9,8 @@ const props = defineProps<{
   year: number;
   costCenters: Array<any>;
   header: string[];
+  /** Satu baris contoh, sama persis dengan isi template yang diunduh. */
+  contoh: Array<string | number>;
 }>();
 
 const form = useForm({
@@ -17,6 +19,14 @@ const form = useForm({
   cost_center_id: '',
   file: null as any,
 });
+
+/* Huruf kolom ala Excel, supaya pratinjau di layar bisa dibandingkan baris-per-baris dengan
+   berkas yang dibuka di Excel — "kolom C salah" jadi bisa ditunjuk, bukan dihitung. */
+function hurufKolom(i: number): string {
+  let n = i + 1, s = '';
+  while (n > 0) { n--; s = String.fromCharCode(65 + (n % 26)) + s; n = Math.floor(n / 26); }
+  return s;
+}
 
 const inputCls = 'h-9 w-full rounded-lg border border-neutral-300 bg-white px-3 text-sm dark:border-neutral-700 dark:bg-neutral-900';
 
@@ -98,21 +108,43 @@ function submit() {
       </div>
     </form>
 
-    <div class="card overflow-x-auto">
-      <table class="w-full text-sm">
-        <thead>
-          <tr class="bg-neutral-50 text-left text-xs uppercase text-neutral-500 dark:bg-neutral-800">
-            <th class="px-3 py-2">#</th>
-            <th class="px-3 py-2">Kolom</th>
-          </tr>
-        </thead>
-        <tbody class="divide-y divide-neutral-200 dark:divide-neutral-800">
-          <tr v-for="(col, i) in header" :key="col">
-            <td class="px-3 py-2 text-neutral-500">{{ i + 1 }}</td>
-            <td class="px-3 py-2 font-medium">{{ col }}</td>
-          </tr>
-        </tbody>
-      </table>
+    <!-- Pratinjau MENIRU BENTUK BERKASNYA — mendatar, berhuruf kolom, dengan satu baris
+         contoh. Daftar nama kolom ke bawah tidak bisa dibandingkan dengan apa yang orang
+         lihat di Excel; bentuk ini bisa, dan "kolom C" menunjuk hal yang sama di keduanya. -->
+    <div class="card">
+      <div class="border-b border-neutral-200 px-4 py-3 dark:border-neutral-800">
+        <h2 class="font-semibold">Bentuk berkasnya</h2>
+        <p class="mt-0.5 text-xs text-neutral-500">
+          Persis seperti template yang diunduh. Baris pertama judul kolom, baris berikutnya data.
+        </p>
+      </div>
+      <div class="overflow-x-auto">
+        <table class="min-w-full border-collapse text-sm">
+          <thead>
+            <tr class="bg-neutral-100 text-center text-[11px] font-medium text-neutral-500 dark:bg-neutral-800">
+              <th class="w-10 border border-neutral-300 px-2 py-1 dark:border-neutral-700"></th>
+              <th v-for="(col, i) in header" :key="'h' + i"
+                  class="border border-neutral-300 px-3 py-1 dark:border-neutral-700">{{ hurufKolom(i) }}</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td class="border border-neutral-300 bg-neutral-100 px-2 py-1 text-center text-[11px] text-neutral-500 dark:border-neutral-700 dark:bg-neutral-800">1</td>
+              <td v-for="(col, i) in header" :key="'c' + i"
+                  class="whitespace-nowrap border border-neutral-300 px-3 py-1.5 font-semibold dark:border-neutral-700">{{ col }}</td>
+            </tr>
+            <tr>
+              <td class="border border-neutral-300 bg-neutral-100 px-2 py-1 text-center text-[11px] text-neutral-500 dark:border-neutral-700 dark:bg-neutral-800">2</td>
+              <td v-for="(v, i) in contoh" :key="'v' + i"
+                  class="whitespace-nowrap border border-neutral-300 px-3 py-1.5 text-neutral-500 dark:border-neutral-700"
+                  :class="i >= 3 ? 'text-right font-mono' : ''">{{ v }}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="px-4 py-3 text-xs text-neutral-500">
+        Kolom <b>C — CostCenter</b> boleh dikosongkan; bila kosong, isinya mengikuti pilihan Cost Center di atas.
+      </p>
     </div>
   </div>
 

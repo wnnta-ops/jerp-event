@@ -52,10 +52,11 @@ class BudgetUploadController extends Controller
         return Inertia::render('BusinessSupport/Budget/Upload', [
             'year' => (int) now()->year,
             'costCenters' => BsCostCenter::where('is_active', true)->orderBy('code')->get(['id', 'code', 'name']),
-            // Daftar kolom di layar DIAMBIL dari konstanta yang sama dengan template & pembaca.
-            // Sebelumnya ia disusun terpisah, sehingga layar bisa menyebut susunan kolom yang
-            // berbeda dari berkas yang sebenarnya diterima.
+            // Kolom DAN contoh barisnya diambil dari sumber yang sama dengan template yang
+            // diunduh. Sebelumnya layar menyusunnya terpisah, sehingga bisa menyebut susunan
+            // yang berbeda dari berkas yang sebenarnya diterima.
             'header' => self::KOLOM,
+            'contoh' => $this->contohBaris(),
         ]);
     }
 
@@ -64,18 +65,27 @@ class BudgetUploadController extends Controller
     {
         abort_unless($request->user()?->can('budget.upload.view'), 403);
 
-        // Contoh memakai cost center yang BENAR-BENAR ADA, bukan karangan: template yang
-        // contohnya saja ditolak sistem mengajari orang bahwa galatnya wajar.
-        $contohCc = BsCostCenter::where('is_active', true)->orderBy('code')->value('code') ?? 'CC-01';
-
-        $baris = [array_merge(
-            ['50302020219', 'BIAYA PERLENGKAPAN KANTOR', $contohCc],
-            array_fill(0, 12, 1000000),
-        )];
-
-        return response(Xlsx::tulis(self::KOLOM, $baris, 'Budget'))
+        return response(Xlsx::tulis(self::KOLOM, [$this->contohBaris()], 'Budget'))
             ->header('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
             ->header('Content-Disposition', 'attachment; filename="Template-Upload-Budget.xlsx"');
+    }
+
+    /**
+     * Satu baris contoh — dipakai template yang diunduh DAN pratinjau di layar.
+     *
+     * Cost center-nya diambil dari master, bukan dikarang: template yang contohnya saja
+     * ditolak sistem mengajari orang bahwa galat semacam itu wajar.
+     *
+     * @return list<string|int>
+     */
+    private function contohBaris(): array
+    {
+        $cc = BsCostCenter::where('is_active', true)->orderBy('code')->value('code') ?? 'CC-01';
+
+        return array_merge(
+            ['50302020219', 'BIAYA PERLENGKAPAN KANTOR', (string) $cc],
+            array_fill(0, 12, 1000000),
+        );
     }
 
     public function store(Request $request): RedirectResponse
