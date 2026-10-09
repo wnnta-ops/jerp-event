@@ -6,7 +6,6 @@ namespace App\Http\Controllers\Web\BusinessSupport\Payable;
 
 use App\Domain\BusinessSupport\Actions\PayApInvoice;
 use App\Domain\BusinessSupport\Actions\RegisterApInvoice;
-use App\Domain\BusinessSupport\Services\CostCenterPengguna;
 use App\Domain\BusinessSupport\Models\BsAccount;
 use App\Domain\BusinessSupport\Models\BsApCategory;
 use App\Domain\BusinessSupport\Models\BsApInvoice;
@@ -17,11 +16,12 @@ use App\Domain\BusinessSupport\Models\BsLedger;
 use App\Domain\BusinessSupport\Models\BsLocation;
 use App\Domain\BusinessSupport\Models\BsSip;
 use App\Domain\BusinessSupport\Models\BsSupplier;
+use App\Domain\BusinessSupport\Services\CostCenterPengguna;
 use App\Domain\BusinessSupport\Support\PosisiHutang;
 use App\Domain\Master\Unit\Models\Unit;
 use App\Exceptions\BusinessRuleException;
-use App\Http\Controllers\Controller;
 use App\Http\Controllers\Concerns\GalatAnggaran;
+use App\Http\Controllers\Controller;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -270,6 +270,10 @@ class ApInvoiceController extends Controller
             // mengubahnya.
             'ccPengguna' => app(CostCenterPengguna::class)->idUntuk($request->user()),
             'bisaUbahCc' => (bool) $request->user()?->can('ap.costcenter.override'),
+            // Akun tanpa anggaran: tidak diisi cost center otomatis, dan tidak dituntut
+            // mengisinya. Dikirim sebagai KODE supaya layar memakai daftar yang sama dengan
+            // server — bukan salinan kedua yang suatu saat berbeda.
+            'coaTanpaAnggaran' => array_map('strval', (array) config('business_support.budget.coa_tanpa_anggaran', [])),
         ]);
     }
 
@@ -522,8 +526,16 @@ class ApInvoiceController extends Controller
 
         // Hanya akun yang TIDAK bertanda optional yang dilaporkan. Penandanya bisa NULL pada
         // baris lama, dan NULL berarti "wajib" — sama dengan cara JournalController membacanya.
+        //
+        // Akun TANPA ANGGARAN juga dikecualikan. Keduanya satu hal yang sama dilihat dari dua
+        // sisi: akun yang tidak dianggarkan tidak dibebankan per cost center, jadi menuntut
+        // cost center di sana hanya menahan dokumen tanpa guna. PPN Masukan contohnya — ia
+        // didebit otomatis tiap invoice ber-PPN.
+        $bebas = array_map('strval', (array) config('business_support.budget.coa_tanpa_anggaran', []));
+
         return BsAccount::whereIn('id', array_keys($perluCc))
             ->where(fn ($q) => $q->where('cost_center_optional', false)->orWhereNull('cost_center_optional'))
+            ->whereNotIn('code', $bebas)
             ->orderBy('code')->get(['code', 'name'])
             ->map(fn ($a) => trim($a->code.' - '.$a->name))
             ->values()->all();

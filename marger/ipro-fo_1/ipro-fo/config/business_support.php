@@ -117,6 +117,11 @@ return [
          | sini, tanpa menyentuh kode.
         */
         'coa_tanpa_anggaran' => [
+            // Ditambahkan 9 Okt 2026 — TIDAK ada di daftar Accounting, tetapi akun ini didebit
+            // otomatis oleh setiap invoice ber-PPN dan tidak pernah dianggarkan. Tanpa baris ini,
+            // cost center-nya ikut terisi dan tiap invoice ber-PPN tertahan gerbang anggaran.
+            // Perlu dikonfirmasi ke Accounting agar daftarnya lengkap di satu tempat.
+            '10105010101',
             '10101010101', '10101020201', '10101020202', '10101020203', '10101020204', '10101020205',
             '10101020206', '10101020207', '10101020208', '10101020209', '10101020210', '10101020211',
             '10101020212', '10101020213', '10101020214', '10101020215', '10101020216', '10101020288',

@@ -34,7 +34,17 @@ const tidakAda = computed(() => isi.value?.code === 'BUDGET_TIDAK_ADA');
 function r(name: string): string | null {
     try { return route(name); } catch { return null; }
 }
-const tautanBudget = computed(() => r('bs.budget.index') ?? r('bs.budget.home') ?? null);
+
+/* Tombolnya hanya muncul bagi yang MEMANG boleh membuka Budget Control.
+   Sebagian besar pengaju invoice tidak punya izin budget.master.view — menawarkan tautan
+   yang berakhir 403 membuat orang mengira sistemnya rusak, padahal yang kurang izinnya. */
+const bolehBuka = computed<boolean>(() => {
+    const izin = (page.props as any)?.auth?.user?.permissions;
+    if (Array.isArray(izin)) return izin.includes('budget.master.view');
+    if (izin && typeof izin === 'object') return !! izin['budget.master.view'];
+    return false;
+});
+const tautanBudget = computed(() => (bolehBuka.value ? (r('bs.budget.index') ?? r('bs.budget.home')) : null));
 </script>
 
 <template>
