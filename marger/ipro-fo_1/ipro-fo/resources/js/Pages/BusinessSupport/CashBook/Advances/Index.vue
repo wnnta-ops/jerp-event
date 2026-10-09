@@ -7,12 +7,22 @@ import EmptyState from '@/Components/UI/EmptyState.vue';
 
 type Bucket = { rows: any[]; count: number; total: number };
 const props = defineProps<{
+    /** Daftar ini dibuka dari sisi Dept Finance. */
+    modeFinance?: boolean;
     advances: any;
     filters: { status?: string; search?: string };
     summary: { outstanding: number; count: number };
     buckets: { realisasi: Bucket; refund: Bucket; reimburse: Bucket };
     canEditDocDate?: boolean;
 }>();
+
+/* SATU DAFTAR, DUA PINTU KELUAR. Dibuka dari menu Finance (?finance=1) barisnya menuju
+   tampilan Finance; dari menu pengaju menuju tampilan baca-saja. Tanpa ini, pengaju yang
+   mengklik bonnya sendiri mendarat di layar berisi tombol bayar — dan pada akun SuperAdmin
+   tombolnya bahkan aktif. */
+function tautanBon(id: number): string {
+    return route((props as any).modeFinance ? 'bs.advance.finance.show' : 'bs.advance.show', id);
+}
 const status = ref(props.filters.status ?? '');
 const search = ref(props.filters.search ?? '');
 function applyFilter() { router.get(route('bs.advance.index'), { status: status.value || undefined, search: search.value || undefined }, { preserveState: true, replace: true }); }
@@ -134,7 +144,7 @@ function penyelesaian(r: any): Selesai | null {
                         <th class="px-4 py-3">No.</th><th class="px-4 py-3">Tanggal</th><th class="px-4 py-3">Pemegang</th><th class="px-4 py-3">Keperluan</th><th class="px-4 py-3 text-right">Nilai</th><th class="px-4 py-3 text-center">Kategori</th><th class="px-4 py-3 text-center">Status</th><th class="px-4 py-3 text-center">Tgl Terima Dokumen</th>
                     </tr></thead>
                     <tbody class="divide-y divide-neutral-200 dark:divide-neutral-800">
-                        <tr v-for="r in advances.data" :key="r.id" class="cursor-pointer hover:bg-neutral-50 dark:hover:bg-neutral-800/50" @click="router.get(route('bs.advance.show', r.id))">
+                        <tr v-for="r in advances.data" :key="r.id" class="cursor-pointer hover:bg-neutral-50 dark:hover:bg-neutral-800/50" @click="router.get(tautanBon(r.id))">
                             <td class="px-4 py-2.5 font-mono font-semibold">{{ r.advance_number }}</td>
                             <td class="px-4 py-2.5">{{ fmtDate(r.advance_date) }}</td>
                             <td class="px-4 py-2.5">{{ r.holder }}</td>
@@ -182,7 +192,7 @@ function penyelesaian(r: any): Selesai | null {
                         <th class="px-4 py-3 text-center">Tgl Terima Dokumen</th>
                     </tr></thead>
                     <tbody class="divide-y divide-neutral-200 dark:divide-neutral-800">
-                        <tr v-for="r in buckets[activeTab].rows" :key="r.id" class="cursor-pointer hover:bg-neutral-50 dark:hover:bg-neutral-800/50" @click="router.get(route('bs.advance.show', r.id))">
+                        <tr v-for="r in buckets[activeTab].rows" :key="r.id" class="cursor-pointer hover:bg-neutral-50 dark:hover:bg-neutral-800/50" @click="router.get(tautanBon(r.id))">
                             <td class="px-4 py-2.5 font-mono font-semibold">{{ r.advance_number }}</td>
                             <td class="px-4 py-2.5">{{ fmtDate(r.advance_date) }}</td>
                             <td class="px-4 py-2.5">{{ fmtDate(r.realized_date) }}</td>

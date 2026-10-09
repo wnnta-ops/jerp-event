@@ -973,6 +973,11 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
     Route::get('/business-support/bon-sementara/create', [BsAdvanceController::class, 'create'])->name('bs.advance.create');
     Route::post('/business-support/bon-sementara', [BsAdvanceController::class, 'store'])->name('bs.advance.store');
     Route::get('/business-support/bon-sementara/{advance}', [BsAdvanceController::class, 'show'])->name('bs.advance.show');
+    // Tampilan DEPT FINANCE untuk bon yang sama — layar & controller yang sama, hanya
+    // panel-panel Finance yang ikut dirender. Dipisah lewat rute, bukan izin: SuperAdmin
+    // memegang semua izin, sehingga penjagaan izin saja tidak pernah membuat tampilan
+    // pengaju benar-benar bersih.
+    Route::get('/business-support/bon-sementara-finance/{advance}', [BsAdvanceController::class, 'show'])->name('bs.advance.finance.show');
     Route::post('/business-support/bon-sementara/{advance}/realisasi', [BsAdvanceController::class, 'realize'])->name('bs.advance.realize');
     Route::post('/business-support/bon-sementara/{advance}/refund', [BsAdvanceController::class, 'refund'])->name('bs.advance.refund');
     Route::post('/business-support/bon-sementara/{advance}/reimburse', [BsAdvanceController::class, 'reimburse'])->name('bs.advance.reimburse');

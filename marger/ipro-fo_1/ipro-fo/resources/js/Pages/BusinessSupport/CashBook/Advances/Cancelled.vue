@@ -71,7 +71,7 @@ watch(cari, () => {
                 <tbody class="divide-y divide-neutral-200 dark:divide-neutral-800">
                     <tr v-for="r in rows.data" :key="r.id" class="hover:bg-neutral-50 dark:hover:bg-neutral-800/50">
                         <td class="px-3 py-2.5">
-                            <Link :href="route('bs.advance.show', r.id)" class="font-mono font-semibold text-primary-600 hover:underline">{{ r.advance_number }}</Link>
+                            <Link :href="route('bs.advance.finance.show', r.id)" class="font-mono font-semibold text-primary-600 hover:underline">{{ r.advance_number }}</Link>
                         </td>
                         <td class="px-3 py-2.5">{{ fmtTgl(r.advance_date) }}</td>
                         <td class="px-3 py-2.5">{{ r.holder }}</td>
