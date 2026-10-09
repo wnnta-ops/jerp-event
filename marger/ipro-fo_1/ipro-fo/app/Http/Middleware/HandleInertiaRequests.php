@@ -52,6 +52,14 @@ final class HandleInertiaRequests extends Middleware
                 // memampatkannya jadi satu kalimat toast akan menyembunyikan sebagian besarnya,
                 // dan justru baris yang gagal itulah yang perlu dibetulkan operator.
                 'import'  => fn () => $request->session()->get('import'),
+                // Penolakan gerbang anggaran (OVER_BUDGET / BUDGET_TIDAK_ADA). Terpisah dari
+                // 'error' karena layar memunculkannya sebagai DIALOG yang harus ditutup, bukan
+                // toast yang lewat: angkanya perlu dibaca, dan tindakan lanjutannya berbeda —
+                // minta tambahan anggaran, atau minta anggarannya dibuat.
+                'budgetError' => fn () => $request->session()->get('budgetError'),
+                // Penolakan Upload Budget: daftar baris yang salah. Dialog, bukan toast —
+                // galatnya bisa puluhan baris dan justru baris itulah yang harus dibetulkan.
+                'uploadError' => fn () => $request->session()->get('uploadError'),
             ],
             'config' => [
                 'currency'   => config('domain.currency'),

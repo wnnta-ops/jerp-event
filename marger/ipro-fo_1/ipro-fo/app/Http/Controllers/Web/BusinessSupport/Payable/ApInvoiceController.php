@@ -6,6 +6,7 @@ namespace App\Http\Controllers\Web\BusinessSupport\Payable;
 
 use App\Domain\BusinessSupport\Actions\PayApInvoice;
 use App\Domain\BusinessSupport\Actions\RegisterApInvoice;
+use App\Domain\BusinessSupport\Services\CostCenterPengguna;
 use App\Domain\BusinessSupport\Models\BsAccount;
 use App\Domain\BusinessSupport\Models\BsApCategory;
 use App\Domain\BusinessSupport\Models\BsApInvoice;
@@ -20,6 +21,7 @@ use App\Domain\BusinessSupport\Support\PosisiHutang;
 use App\Domain\Master\Unit\Models\Unit;
 use App\Exceptions\BusinessRuleException;
 use App\Http\Controllers\Controller;
+use App\Http\Controllers\Concerns\GalatAnggaran;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -28,6 +30,8 @@ use Inertia\Response;
 
 class ApInvoiceController extends Controller
 {
+    use GalatAnggaran;
+
     public function index(Request $request): Response
     {
         abort_unless($request->user()?->can('ap.invoice.view'), 403);
@@ -253,6 +257,19 @@ class ApInvoiceController extends Controller
             'ledgers' => BsLedger::where('is_active', true)->orderBy('code')->get(['id', 'code', 'name']),
             'locations' => BsLocation::where('is_active', true)->orderBy('code')->get(['id', 'code', 'name']),
             'trxTypes' => BsApInvoice::TRX_TYPES,
+
+            // COST CENTER MENGIKUTI UNIT KERJA PENGAJU, dan TERKUNCI.
+            //
+            // Diisikan dari karyawan yang tertaut ke akun ini (CostCenterPengguna) — definisi
+            // yang sama dengan yang tercetak di Bukti Permohonan Pembayaran dan SIP, supaya
+            // dokumen dan layar input tidak pernah menyebut unit berbeda untuk orang yang sama.
+            //
+            // Dikunci karena biaya yang dibebankan ke departemen lain menggeser realisasi
+            // anggaran dua departemen sekaligus — yang satu tampak hemat, yang lain boros, dan
+            // keduanya salah. Hanya pemegang ap.costcenter.override (Accounting) yang boleh
+            // mengubahnya.
+            'ccPengguna' => app(CostCenterPengguna::class)->idUntuk($request->user()),
+            'bisaUbahCc' => (bool) $request->user()?->can('ap.costcenter.override'),
         ]);
     }
 
@@ -331,7 +348,8 @@ class ApInvoiceController extends Controller
             // di invoice (no. PO, master barang) dibangkitkan sistem — lihat actionnya.
             $po = app(\App\Domain\BusinessSupport\Actions\GeneratePoFromApInvoice::class)->execute($inv, $request->user()->id);
         } catch (BusinessRuleException $e) {
-            return back()->withInput()->with('error', $e->getMessage());
+            // Penolakan anggaran disalurkan ke DIALOG; selebihnya tetap toast. Lihat trait.
+            return $this->balikDenganGalat($e);
         }
 
         if ($po) {

@@ -15,6 +15,7 @@ use App\Domain\BusinessSupport\Services\CashAdvanceAllocationService;
 use App\Domain\BusinessSupport\Services\CashAdvanceService;
 use App\Domain\BusinessSupport\Support\SaldoBonSementara;
 use App\Exceptions\BusinessRuleException;
+use App\Http\Controllers\Concerns\GalatAnggaran;
 use App\Http\Controllers\Controller;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -25,6 +26,8 @@ use Inertia\Response;
 
 class CashAdvanceController extends Controller
 {
+    use GalatAnggaran;
+
     public function index(Request $request): Response
     {
         abort_unless($request->user()?->can('cashbook.advance.view'), 403);
@@ -589,7 +592,8 @@ class CashAdvanceController extends Controller
         try {
             $adv = $svc->issue($v, $request->user()->id);
         } catch (BusinessRuleException $e) {
-            return back()->withInput()->with('error', $e->getMessage());
+            // Penolakan anggaran → DIALOG (lihat trait GalatAnggaran); selebihnya toast.
+            return $this->balikDenganGalat($e);
         }
 
         return redirect()->route('bs.advance.show', $adv)->with('success', "Pengajuan Bon Sementara {$adv->advance_number} tercatat — menunggu pembayaran Finance (jurnal belum terbentuk).");

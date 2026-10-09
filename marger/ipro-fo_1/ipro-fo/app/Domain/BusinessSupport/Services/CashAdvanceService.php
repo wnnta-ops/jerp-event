@@ -8,6 +8,7 @@ use App\Domain\BusinessSupport\Models\BsAccount;
 use App\Domain\BusinessSupport\Models\BsCashAdvance;
 use App\Domain\BusinessSupport\Models\BsCashAdvanceAllocation;
 use App\Domain\BusinessSupport\Models\BsCreditCard;
+use App\Domain\BusinessSupport\Services\BudgetGuardService;
 use App\Exceptions\BusinessRuleException;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -69,6 +70,14 @@ final class CashAdvanceService
                     errorCode: 'ADV_NO_COST_CENTER',
                 );
             }
+
+            /* GERBANG ANGGARAN — ditegakkan SEBELUM bon terbentuk.
+               Saat bon diajukan, akun bebannya belum diketahui (baru ditentukan pada
+               realisasi), jadi yang diperiksa plafon DEPARTEMENnya: jumlah anggaran approved
+               cost center itu dikurangi realisasinya. Lihat BudgetGuardService.
+               Di sini, bukan di validasi request: pemanggilan service langsung (job, perintah
+               artisan) tidak melewati validasi itu — alasan yang sama dengan cost center. */
+            app(BudgetGuardService::class)->assertPlafonCostCenter($costCenterId, $amount, (string) $data['advance_date']);
 
             return BsCashAdvance::create([
                 'advance_number' => $this->nextNumber($data['advance_date']),
