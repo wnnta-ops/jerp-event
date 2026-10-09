@@ -15,6 +15,7 @@ use App\Domain\BusinessSupport\Services\CashAdvanceAllocationService;
 use App\Domain\BusinessSupport\Services\CashAdvanceService;
 use App\Domain\BusinessSupport\Support\SaldoBonSementara;
 use App\Exceptions\BusinessRuleException;
+use App\Domain\BusinessSupport\Services\CostCenterPengguna;
 use App\Http\Controllers\Concerns\GalatAnggaran;
 use App\Http\Controllers\Controller;
 use Illuminate\Http\RedirectResponse;
@@ -554,13 +555,30 @@ class CashAdvanceController extends Controller
         // karyawan tidak lagi dikirim ke sana. Departemennya tetap tercatat — ditentukan
         // CashAdvanceService::issue() dari karyawan yang dipilih (fallback #150), sehingga
         // penyaring Departemen pada Laporan Bon Sementara tetap berisi seperti sebelumnya.
+        // COST CENTER TIDAK LAGI DIPILIH TANGAN — ia DITURUNKAN dari karyawan pengaju.
+        //
+        // Memilihnya sendiri salah tempat: cost center adalah unit kerja orangnya, bukan
+        // keputusan per pengajuan. Memilih yang lain membebankan bon ke departemen yang tidak
+        // menanggungnya, dan realisasi dua departemen bergeser sekaligus.
+        //
+        // Tautannya ke Budget Control TIDAK hilang: cost center tetap tersimpan, hanya
+        // sumbernya berpindah dari dropdown ke master karyawan.
+        $emp = BsEmployee::with('costCenter:id,code,name')
+            ->whereKey(app(CostCenterPengguna::class)->idKaryawan($request->user()))
+            ->first();
+
         return Inertia::render('BusinessSupport/CashBook/Advances/Form', [
             'employees' => BsEmployee::orderBy('name')->get(['id', 'name', 'position'])
                 ->map(fn ($e) => ['id' => $e->id, 'name' => $e->name, 'position' => $e->position]),
-            // Cost center penanggung bon — WAJIB, dan hanya yang aktif yang ditawarkan.
-            'costCenters' => BsCostCenter::where('is_active', true)
-                ->orderBy('code')->get(['id', 'code', 'name'])
-                ->map(fn ($c) => ['id' => $c->id, 'label' => $c->code.' — '.$c->name])->values(),
+            // Karyawan pengaju = pemilik akun yang login. Terisi otomatis; masih bisa diganti
+            // bila bon diajukan atas nama orang lain, dan unit kerjanya ikut berpindah.
+            'karyawanSaya' => $emp?->id,
+            // Dipakai layar untuk MENAMPILKAN unit kerja yang akan dibebani. Bukan isian —
+            // tetapi harus terlihat, sebab penolakan anggaran menyebut cost center dan orang
+            // perlu tahu yang mana sebelum menekan Simpan.
+            'unitPerKaryawan' => BsEmployee::with('costCenter:id,code,name')->get(['id', 'cost_center_id'])
+                ->mapWithKeys(fn ($e) => [$e->id => $e->costCenter
+                    ? $e->costCenter->code.' — '.$e->costCenter->name : null])->all(),
         ]);
     }
 
@@ -576,18 +594,30 @@ class CashAdvanceController extends Controller
             'holder' => ['required', 'string', 'max:150'],
             'purpose' => ['required', 'string', 'max:255'],
             'amount' => ['required', 'numeric', 'min:0.01'],
-            'employee_id' => ['nullable', 'integer', 'exists:bs_employees,id'],
-            // COST CENTER WAJIB — dimensi yang menautkan bon ini ke Budget Control. Hanya cost
-            // center AKTIF yang diterima: yang sudah dinonaktifkan tidak muncul di dropdown,
-            // jadi menerimanya berarti menyimpan dimensi yang tidak bisa dipilih ulang.
-            'cost_center_id' => ['required', 'integer',
-                Rule::exists('bs_cost_centers', 'id')->where('is_active', 1)],
+            // WAJIB sejak cost center diturunkan darinya — tanpa karyawan, tidak ada unit
+            // kerja yang bisa dibebani.
+            'employee_id' => ['required', 'integer', 'exists:bs_employees,id'],
             // Cara persetujuan dipilih per pengajuan; kosong = online (perilaku lama).
             'approval_mode' => ['nullable', 'string', 'in:'.implode(',', array_keys(BsCashAdvance::APPROVAL_MODES))],
-        ], [
-            'cost_center_id.required' => 'Cost center wajib dipilih — tanpa itu bon ini tidak terbaca sebagai realisasi di Budget Control.',
-            'cost_center_id.exists' => 'Cost center yang dipilih sudah tidak aktif — pilih yang lain.',
         ]);
+
+        // COST CENTER DITURUNKAN dari karyawan pengaju, tidak lagi dikirim layar. Kalau
+        // karyawannya belum punya unit kerja, pengajuan DITOLAK dengan menyebut apa yang
+        // harus dibereskan — bon tanpa cost center tetap jadi beban di GL tetapi tidak
+        // pernah terbaca sebagai realisasi di Budget Control, dan itu baru ketahuan
+        // berbulan kemudian saat anggaran direkonsiliasi.
+        $emp = ! empty($v['employee_id'])
+            ? BsEmployee::with('costCenter:id,code,name')->find((int) $v['employee_id'])
+            : null;
+
+        if ($emp?->cost_center_id === null) {
+            return back()->withInput()->with('error', $emp === null
+                ? 'Pilih dulu nama karyawannya — unit kerja bon diambil dari sana.'
+                : 'Karyawan '.$emp->name.' belum punya Cost Center di master Karyawan. '
+                    .'Lengkapi dulu di HR, lalu ulangi pengajuan.');
+        }
+
+        $v['cost_center_id'] = (int) $emp->cost_center_id;
 
         try {
             $adv = $svc->issue($v, $request->user()->id);

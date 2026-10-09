@@ -4,10 +4,16 @@ import { ArrowLeft, Save, Wallet } from 'lucide-vue-next';
 import Button from '@/Components/UI/Button.vue';
 import MoneyInput from '@/Components/UI/MoneyInput.vue';
 import SearchSelect from '@/Components/UI/SearchSelect.vue';
-import { computed } from 'vue';
+import { computed, onMounted } from 'vue';
 
 type Employee = { id: number; name: string; position: string | null };
-const props = defineProps<{ employees: Employee[]; costCenters?: Array<{ id: number; label: string }> }>();
+const props = defineProps<{
+    employees: Employee[];
+    /** Karyawan pemilik akun yang login — terpilih otomatis. */
+    karyawanSaya?: number | null;
+    /** id karyawan → "KODE — Nama unit". Untuk DITAMPILKAN, bukan diisi. */
+    unitPerKaryawan?: Record<string, string | null>;
+}>();
 const today = new Date().toISOString().slice(0, 10);
 /* Kolom Departemen DIHAPUS dari layar ini — bukan datanya.
    Departemen pengajuan tetap tercatat: CashAdvanceService::issue() mengambilnya dari karyawan
@@ -20,13 +26,18 @@ const today = new Date().toISOString().slice(0, 10);
    Yang perlu disadari saat mengubah ini: offline MEMATIKAN jenjang persetujuan di aplikasi,
    sehingga pembayaran & jurnal boleh dicatat tanpa menunggu tanda tangan digital. Karena itu
    kalimat akibatnya ditulis di kartu pilihannya, bukan disembunyikan. */
-const form = useForm<any>({ advance_date: today, employee_id: '', holder: '', purpose: '', amount: 0, approval_mode: 'offline', cost_center_id: '' });
+// employee_id terisi dari akun yang login. Cost center TIDAK lagi ada di formulir — server
+// menurunkannya dari karyawan ini (lihat CashAdvanceController::store).
+const form = useForm<any>({ advance_date: today, employee_id: props.karyawanSaya ?? '', holder: '', purpose: '', amount: 0, approval_mode: 'offline' });
 
-/* Cost center WAJIB. Nilainya diteruskan ke bs_journal_lines.cost_center_id pada seluruh jurnal
-   yang lahir dari bon ini, lalu dibaca Budget Control untuk mencocokkan realisasi dengan plafon
-   per (akun, cost center). Bon tanpa cost center tetap menjadi beban di GL tetapi TIDAK PERNAH
-   terbaca sebagai realisasi anggaran — tidak ada galat, hanya angka yang kurang. */
-const ccKurang = computed(() => ! form.cost_center_id);
+/* UNIT KERJA DITURUNKAN DARI KARYAWANNYA, tidak dipilih di sini — cost center adalah unit
+   kerja orangnya, bukan keputusan per pengajuan. Tetap DITAMPILKAN karena penolakan anggaran
+   menyebut cost center, dan orang perlu tahu yang mana sebelum menekan Simpan. */
+const unitKerja = computed<string | null>(() => {
+    const id = form.employee_id;
+    return id ? ((props.unitPerKaryawan ?? {})[String(id)] ?? null) : null;
+});
+const unitKurang = computed(() => !! form.employee_id && ! unitKerja.value);
 
 // Opsi karyawan utk SearchSelect: label = Nama (— Posisi) agar bisa diketik cari per nama.
 const employeeOptions = computed(() => props.employees.map((e) => ({
@@ -41,6 +52,10 @@ function onEmployee() {
     if (!e) { form.holder = ''; return; }
     form.holder = e.position ? `${e.name} — ${e.position}` : e.name;
 }
+// Karyawan sudah terpilih sejak layar dibuka, jadi 'holder' harus ikut terisi — kalau tidak,
+// isian wajib itu kosong padahal namanya sudah tampil, dan penolakannya terbaca seperti bug.
+onMounted(() => { if (form.employee_id) onEmployee(); });
+
 function fmtRp(v: number) { return 'Rp ' + Number(v ?? 0).toLocaleString('id-ID'); }
 function submit() { form.post(route('bs.advance.store')); }
 const inputCls = 'h-9 w-full rounded-lg border border-neutral-300 bg-white px-3 text-sm dark:border-neutral-700 dark:bg-neutral-900';
@@ -62,15 +77,14 @@ const inputCls = 'h-9 w-full rounded-lg border border-neutral-300 bg-white px-3 
                      juga: bonnya tetap tersimpan, jurnalnya tetap terbentuk, hanya angkanya yang
                      tidak pernah muncul sebagai realisasi anggaran. -->
                 <div class="md:col-span-2">
-                    <label class="mb-1 block text-xs font-medium text-neutral-500">Cost Center <span class="text-danger-500">*</span></label>
-                    <SearchSelect :model-value="form.cost_center_id" :options="costCenters ?? []" option-value="id"
-                                  placeholder="— pilih cost center —"
-                                  :class="ccKurang ? 'rounded-lg ring-1 ring-danger-400' : ''"
-                                  @update:model-value="(v) => form.cost_center_id = v" />
-                    <p v-if="form.errors.cost_center_id" class="mt-1 text-xs text-danger-500">{{ form.errors.cost_center_id }}</p>
-                    <p v-else-if="!(costCenters ?? []).length" class="mt-1 text-xs text-danger-500">Belum ada cost center aktif — buat dulu di General Ledger → Master → Cost Center.</p>
-                    <p v-else-if="ccKurang" class="mt-1 text-xs text-danger-500">Wajib dipilih.</p>
-                    <p v-else class="mt-1 text-[11px] text-neutral-400">Belanja bon ini terbaca sebagai realisasi anggaran pada cost center tersebut di Budget Control.</p>
+                    <label class="mb-1 block text-xs font-medium text-neutral-500">Unit Kerja</label>
+                    <div class="flex h-9 items-center rounded-lg border border-neutral-300 bg-neutral-50 px-3 text-sm text-neutral-600 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-300">
+                        <span v-if="unitKerja">{{ unitKerja }}</span>
+                        <span v-else-if="unitKurang" class="text-danger-500">Karyawan ini belum punya Cost Center di master Karyawan.</span>
+                        <span v-else class="text-neutral-400">— pilih karyawan dulu —</span>
+                    </div>
+                    <p v-if="unitKurang" class="mt-1 text-xs text-danger-500">Lengkapi dulu di HR, lalu ulangi pengajuan.</p>
+                    <p v-else class="mt-1 text-[11px] text-neutral-400">Mengikuti unit kerja karyawannya. Belanja bon ini terbaca sebagai realisasi anggaran pada unit tersebut di Budget Control.</p>
                 </div>
 
                 <!-- Cara persetujuan — ditentukan di sini karena melekat pada bonnya, bukan
@@ -110,8 +124,8 @@ const inputCls = 'h-9 w-full rounded-lg border border-neutral-300 bg-white px-3 
             <div class="flex gap-2">
                 <!-- Gerbangnya dipasang di tombol DAN di server. Menekan Enter pada kolom teks
                      memicu pengiriman implisit yang tidak melewati tombol ini. -->
-                <Button type="submit" :disabled="form.processing || ccKurang"><template #icon-left><Save class="h-4 w-4" /></template>Simpan Pengajuan</Button>
-                <span v-if="ccKurang" class="self-center text-xs text-danger-500">Pilih Cost Center dulu.</span>
+                <Button type="submit" :disabled="form.processing || ! form.employee_id || unitKurang"><template #icon-left><Save class="h-4 w-4" /></template>Simpan Pengajuan</Button>
+                <span v-if="! form.employee_id" class="self-center text-xs text-danger-500">Pilih karyawan dulu.</span>
                 <Link :href="route('bs.advance.index')" class="rounded-lg border border-neutral-300 px-4 py-2 text-sm dark:border-neutral-700">Batal</Link>
             </div>
         </form>

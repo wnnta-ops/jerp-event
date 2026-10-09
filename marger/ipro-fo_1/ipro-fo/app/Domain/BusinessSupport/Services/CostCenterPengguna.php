@@ -76,6 +76,15 @@ class CostCenterPengguna
         return $nama !== '' ? $nama : (trim((string) $emp->position) ?: $kosong);
     }
 
+    /**
+     * Id KARYAWAN yang tertaut ke akun ini — dipakai mengisi otomatis "Nama Karyawan" pada
+     * Pengajuan Bon Sementara, yang dari situ unit kerjanya diturunkan.
+     */
+    public function idKaryawan(?object $user): ?int
+    {
+        return $this->karyawan($user)?->id;
+    }
+
     /** Karyawan yang tertaut ke akun ini — lewat NIP dulu, baru nama. */
     private function karyawan(?object $user): ?BsEmployee
     {
