@@ -23,6 +23,8 @@ const props = defineProps<{
     ccPengguna?: number | null;
     /** Hanya Accounting (ap.costcenter.override) yang boleh mengubahnya. */
     bisaUbahCc?: boolean;
+    /** Kode COA yang tidak dianggarkan — tidak diisi cost center & tidak dituntut mengisinya. */
+    coaTanpaAnggaran?: string[];
     departments: Array<any>;
     ledgers: Array<any>;
     locations: Array<any>;
@@ -201,7 +203,15 @@ const activeJournalLines = computed(() => form.journal_lines.filter((l: any) => 
    Dr beban (ber-cost center) / Cr Utang Usaha (tanpa). Aturannya dibuat sama dengan Jurnal
    Memorial dan dengan rambu server, bukan aturan ketiga yang berdiri sendiri. */
 function ccOptional(accountId: any) {
-    return !!props.accounts.find((a: any) => a.id === Number(accountId))?.cost_center_optional;
+    const acc = props.accounts.find((a: any) => a.id === Number(accountId));
+    if (!acc) return false;
+    // DUA sumber, keduanya berarti "tidak dibebankan per cost center":
+    //   1. penanda cost_center_optional di COA;
+    //   2. akun yang memang TIDAK DIANGGARKAN (daftar Accounting).
+    // PPN Masukan hanya masuk yang kedua — tanpa ini cost center-nya ikut terisi dan tiap
+    // invoice ber-PPN tertahan gerbang anggaran.
+    if (acc.cost_center_optional) return true;
+    return (props.coaTanpaAnggaran ?? []).includes(String(acc.code));
 }
 /** Baris ini kurang cost center? Baris tanpa akun tidak dihitung — ia memang boleh kosong. */
 function ccKurang(l: any) {
@@ -278,6 +288,9 @@ function dimSummary(l: any) {
 // KECUALI akun yang memang boleh tanpa cost center (Utang Usaha, Kas, PPN). Mengisinya di
 // sana bukan cuma mubazir: baris itu lalu ikut masuk gerbang anggaran, dan setiap invoice
 // ber-PPN akan ditolak karena PPN Masukan memang tidak pernah dianggarkan.
+// currency & kurs TETAP dikirim (IDR, 1) walau isiannya dihapus dari layar: kolomnya ada di
+// bs_journal_lines dan dibaca laporan. Yang dibuang hanya isiannya — seluruh transaksi di
+// sini rupiah, dan pilihan yang tak pernah diubah hanya menambah kolom yang harus dilewati.
 function dimDefaults(accountId?: any) {
     const cc = accountId && ccOptional(accountId) ? null : (props.ccPengguna ?? null);
     return { cost_center_id: cc, currency: 'IDR', kurs: 1 };
@@ -567,7 +580,6 @@ const cellArea = 'w-full rounded-md border border-neutral-300 bg-white px-2 py-1
                                 <th class="border-b border-neutral-200 px-2 py-2 dark:border-neutral-700">Account</th>
                                 <th class="border-b border-neutral-200 px-2 py-2 dark:border-neutral-700">Cost Center <span class="text-danger-500">*</span></th>
                                 <th class="border-b border-neutral-200 px-2 py-2 dark:border-neutral-700">Keterangan</th>
-                                <th class="border-b border-neutral-200 px-2 py-2 dark:border-neutral-700">Mata Uang / Kurs</th>
                                 <th class="border-b border-neutral-200 px-2 py-2 text-right dark:border-neutral-700">Nilai Transaksi</th>
                                 <th class="border-b border-neutral-200 px-2 py-2 text-right dark:border-neutral-700">Debit</th>
                                 <th class="border-b border-neutral-200 px-2 py-2 text-right dark:border-neutral-700">Kredit</th>
@@ -621,10 +633,6 @@ const cellArea = 'w-full rounded-md border border-neutral-300 bg-white px-2 py-1
                                     <p v-else-if="! bisaUbahCc" class="mt-0.5 text-[10.5px] text-neutral-400">Mengikuti unit kerja Anda</p>
                                 </td>
                                 <td class="px-2 py-2"><textarea v-model="l.description" rows="2" :class="cellArea" placeholder="Keterangan baris…"></textarea></td>
-                                <td class="px-2 py-2">
-                                    <select v-model="l.currency" :class="dimCls"><option value="IDR">IDR</option><option value="USD">USD</option><option value="SGD">SGD</option><option value="EUR">EUR</option></select>
-                                    <input v-model.number="l.kurs" type="number" step="0.0001" min="0" :class="[dimCls,'mt-1 text-right font-mono']" />
-                                </td>
                                 <!-- MoneyInput, BUKAN input type=number. Peramban tidak pernah mau menampilkan
                                      pemisah ribuan pada type=number: isinya wajib angka mentah yang sah, dan
                                      "1.000.000" bukan salah satunya — jadi selama masih type=number, tanda ribuan
