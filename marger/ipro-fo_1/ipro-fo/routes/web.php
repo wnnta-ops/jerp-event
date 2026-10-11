@@ -994,6 +994,8 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
     Route::get('/business-support/bon-sementara/{advance}/print', [BsAdvanceController::class, 'print'])->name('bs.advance.print');
     Route::get('/business-support/bon-sementara/{advance}/print-realisasi', [BsAdvanceController::class, 'printRealisasi'])->name('bs.advance.print-realisasi');
     Route::post('/business-support/bon-sementara/{advance}/tanggal-dokumen', [BsAdvanceController::class, 'setReceivedDate'])->name('bs.advance.received-date'); // #125
+    // Tanggal Finance menerima berkas REALISASI — kolom & peristiwa yang berbeda dari berkas pengajuan.
+    Route::post('/business-support/bon-sementara/{advance}/tanggal-realisasi', [BsAdvanceController::class, 'setRealisasiDate'])->name('bs.advance.realisasi-date');
     Route::post('/business-support/bon-sementara/{advance}/approve', [BsAdvanceController::class, 'approve'])->name('bs.advance.approve'); // #127
     // Pembatalan pengajuan bon (ditolak SEBELUM dibayar) + riwayatnya. Izinnya
     // cashbook.advance.pay — yang berwenang menolak adalah pihak yang berwenang membayar.

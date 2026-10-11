@@ -59,6 +59,7 @@ const menu: Array<{ group: string; items: Array<{ label: string; route: string |
     ]},
     { group: 'Transaksi Bon Sementara', items: [
         { label: 'Pengajuan Bon Sementara', route: r('bs.advance.create') },
+        { label: 'Realisasi Bon Sementara', route: r('bs.advance.index') },
         // Proses Finance dikumpulkan di grupnya sendiri — lihat navGroups.
         { label: 'Bon Sementara Finance', route: r('bs.advance.payments') },
         { label: 'Alokasi Bon Sementara Finance', route: r('bs.advance.allocation.index') },
