@@ -389,7 +389,6 @@ export function navGroups(foUrl: string): NavGroup[] {
                 { label: 'Kas Kecil Keluar', href: 'bs.pettycash.index', params: { type: 'out' } },
                 { label: 'Cek Giro Masuk', href: 'bs.giro.index' },
                 { label: 'Cek Giro Keluar', href: 'bs.cheque-out.index' },
-                { label: 'Realisasi Bon Sementara', href: 'bs.advance.index' },
             ]},
             { label: 'Report/Query', icon: FileBarChart, permission: ['cashbook.advance.*', 'cashbook.giro-calendar.*', 'cashbook.ledger.*', 'cashbook.saldo.*', 'cashbook.transaction.*'], children: [
                 { label: 'Rekening Ledger', href: 'bs.cashbook.ledger' },

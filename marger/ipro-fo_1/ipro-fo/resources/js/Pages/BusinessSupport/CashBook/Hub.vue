@@ -33,7 +33,6 @@ const menu: Array<{ group: string; items: Array<{ label: string; route: string |
         { label: 'Cek Giro Masuk', route: r('bs.giro.index') },
         { label: 'Pengeluaran Kas & Bank', route: r('bs.cashbook.index', { type: 'out' }) },
         { label: 'Pengeluaran Kas & Bank (AP)', route: r('bs.ap.kuitansi.index') },
-        { label: 'Realisasi Bon Sementara', route: r('bs.advance.index') },
     ]},
     { group: 'Report/Query', items: [
         { label: 'Rekening Ledger', route: r('bs.cashbook.ledger') },
