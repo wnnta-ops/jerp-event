@@ -245,6 +245,20 @@ class IproMasterSync
      */
     private function syncBoRolesFromFo(int $boUserId, object $u): void
     {
+        /* DIATUR MANUAL → JANGAN DISENTUH.
+         *
+         * Begitu admin IT menyetel Grup Akses BO dari panel System, dialah pemiliknya.
+         * Tanpa penjaga ini, peran yang baru saja dipasang lenyap beberapa detik kemudian:
+         * panel menulisnya, job ini berjalan, lalu membuangnya karena nama peran itu ada di
+         * role_map — penyimpanan berhasil dan hasilnya tetap hilang saat dimuat ulang.
+         *
+         * Peta peran tetap berlaku untuk pengguna BARU; itulah gunanya — mengisi nilai awal,
+         * bukan memaksakan selamanya. Lihat migrasi 2026_10_11_110000.
+         */
+        if (! empty($u->bo_roles_manual)) {
+            return;
+        }
+
         $map = (array) config('ipro.role_map', []);
         $default = (string) config('ipro.default_bo_role', 'Viewer');
         $governedNames = array_values(array_unique(array_merge(
