@@ -194,10 +194,12 @@ function backToIndex() {
                 <div class="font-medium">{{ advance.credit_card ? ((advance.credit_card.card_number ? advance.credit_card.card_number + ' — ' : '') + advance.credit_card.name) : '— (kartu tidak tercatat)' }}</div>
                 <div class="mt-0.5 text-xs text-neutral-500">Expired VA: {{ advance.va_expired_date ? fmtDate(advance.va_expired_date) : '—' }}</div>
             </div>
-            <!-- #125: tanggal terima dokumen — editable (finance) / read-only -->
+            <!-- #125: tanggal terima dokumen — DIISI FINANCE saat berkasnya diterima.
+                 Pengaju tetap MELIHAT tanggalnya (ia yang menyerahkan berkas, jadi berhak tahu
+                 sudah diterima atau belum) tetapi tidak bisa mengubahnya. -->
             <div>
                 <div class="text-neutral-500">Tanggal Terima Dokumen</div>
-                <input v-if="canEditDocDate" type="date" :value="advance.received_document_date" @change="saveDocDate" :class="[inputCls,'mt-0.5 w-auto']" />
+                <input v-if="modeFinance && canEditDocDate" type="date" :value="advance.received_document_date" @change="saveDocDate" :class="[inputCls,'mt-0.5 w-auto']" />
                 <div v-else class="font-medium">{{ advance.received_document_date ? fmtDate(advance.received_document_date) : '—' }}</div>
             </div>
         </div>

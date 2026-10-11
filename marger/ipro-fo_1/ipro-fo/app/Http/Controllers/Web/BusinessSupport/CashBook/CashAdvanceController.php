@@ -55,7 +55,11 @@ class CashAdvanceController extends Controller
                 'count' => BsCashAdvance::where('status', 'outstanding')->count(),
             ],
             'buckets' => $this->indexBuckets(),                                                  // #134
-            'canEditDocDate' => (bool) $request->user()?->can('cashbook.advance.view'), // #125
+            // IZINNYA DISAMAKAN DENGAN AKSINYA: setReceivedDate() menuntut
+            // cashbook.advance.received-date, sedangkan isian ini dulu muncul untuk siapa pun
+            // yang boleh MELIHAT bon — jadi kebanyakan orang disodori isian yang berakhir 403
+            // begitu tanggalnya diubah.
+            'canEditDocDate' => (bool) $request->user()?->can('cashbook.advance.received-date'), // #125
             // Dibuka dari menu Finance (?finance=1) → barisnya menuju tampilan Finance.
             // Dari menu pengaju → menuju tampilan baca-saja. Satu daftar, dua pintu keluar.
             'modeFinance' => $request->boolean('finance')
@@ -794,7 +798,11 @@ class CashAdvanceController extends Controller
             // menentukan apa yang DITAMPILKAN, bukan apa yang boleh dilakukan.
             'modeFinance' => $request->routeIs('bs.advance.finance.show')
                 && (bool) $request->user()?->can('cashbook.advance.pay'),
-            'canEditDocDate' => (bool) $request->user()?->can('cashbook.advance.view'), // #125
+            // IZINNYA DISAMAKAN DENGAN AKSINYA: setReceivedDate() menuntut
+            // cashbook.advance.received-date, sedangkan isian ini dulu muncul untuk siapa pun
+            // yang boleh MELIHAT bon — jadi kebanyakan orang disodori isian yang berakhir 403
+            // begitu tanggalnya diubah.
+            'canEditDocDate' => (bool) $request->user()?->can('cashbook.advance.received-date'), // #125
             /* ALOKASI KASBON — hanya bon Debit VA model baru (yang pembayarannya tidak berjurnal).
                Bon Debit VA lama sudah terlanjur berjurnal ke akun kartunya saat dibayar; membuka
                alokasi untuknya akan mendebit Uang Muka Operasional atas uang yang sudah tercatat
