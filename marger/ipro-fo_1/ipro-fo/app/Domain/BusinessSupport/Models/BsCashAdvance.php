@@ -20,7 +20,7 @@ class BsCashAdvance extends Model
         'tenant_id', 'advance_number', 'advance_date', 'paid_date', 'holder', 'purpose', 'cash_account_id',
         'advance_account_id', 'amount', 'status', 'realized_date', 'realized_amount', 'settlement',
         'settlement_status', 'journal_id', 'realize_journal_id', 'settle_journal_id', 'created_by',
-        'received_document_date', 'approvals', 'cost_center_id', // #125, #127
+        'received_document_date', 'realisasi_document_date', 'approvals', 'cost_center_id', // #125, #127
         'approval_mode', 'payment_method', 'va_expired_date', 'credit_card_id',
         // Penanda tombol "Lanjut Realisasikan Bon" pada sub-modul Alokasi Bon Sementara.
         // Wajib fillable: seluruh penulisan bon memakai update() massal.
@@ -32,6 +32,7 @@ class BsCashAdvance extends Model
     protected $casts = [
         'advance_date' => 'date', 'paid_date' => 'date', 'realized_date' => 'date',
         'received_document_date' => 'date:Y-m-d', // #125 agar <input type=date> ter-prefill
+        'realisasi_document_date' => 'date:Y-m-d',
         'va_expired_date' => 'date:Y-m-d',        // idem — agar terbaca <input type=date>
         'amount' => 'decimal:2', 'realized_amount' => 'decimal:2', 'settlement' => 'decimal:2',
         'approvals' => 'array',

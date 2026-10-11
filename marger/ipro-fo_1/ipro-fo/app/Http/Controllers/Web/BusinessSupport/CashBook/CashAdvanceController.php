@@ -61,6 +61,13 @@ class CashAdvanceController extends Controller
             // yang boleh MELIHAT bon — jadi kebanyakan orang disodori isian yang berakhir 403
             // begitu tanggalnya diubah.
             'canEditDocDate' => (bool) $request->user()?->can('cashbook.advance.received-date'), // #125
+            // REALISASI, REFUND & REIMBURSE KINI MILIK PENGAJU — lihat pemetaan 11 Okt 2026.
+            // Digerbangi IZIN, bukan modeFinance, karena keduanya boleh: pengaju yang biasa
+            // melakukannya, dan Finance tetap bisa memperbaiki bila ada kesalahan — itulah
+            // kendali utamanya. Memakai modeFinance di sini justru menutup pengaju.
+            'canRealize' => (bool) $request->user()?->can('cashbook.advance.realize'),
+            'canRefund' => (bool) $request->user()?->can('cashbook.advance.refund'),
+            'canReimburse' => (bool) $request->user()?->can('cashbook.advance.reimburse'),
             // Dibuka dari menu Finance (?finance=1) → barisnya menuju tampilan Finance.
             // Dari menu pengaju → menuju tampilan baca-saja. Satu daftar, dua pintu keluar.
             'modeFinance' => $request->boolean('finance')
@@ -121,6 +128,22 @@ class CashAdvanceController extends Controller
     }
 
     /** #125 — set Tanggal Terima Dokumen (hanya finance: businesssupport.transaction.create). */
+    /**
+     * Tanggal Finance menerima berkas REALISASI — terpisah dari berkas pengajuan.
+     *
+     * Izinnya sama dengan setReceivedDate(): keduanya perbuatan yang sama, yaitu Finance
+     * mencatat penerimaan fisik berkas. Membuat izin kedua hanya menambah satu saklar lagi
+     * yang harus diingat orang saat menyetel peran.
+     */
+    public function setRealisasiDate(Request $request, BsCashAdvance $advance): RedirectResponse
+    {
+        abort_unless($request->user()?->can('cashbook.advance.received-date'), 403);
+        $v = $request->validate(['realisasi_document_date' => ['nullable', 'date']]);
+        $advance->update(['realisasi_document_date' => $v['realisasi_document_date'] ?? null]);
+
+        return back()->with('success', 'Tanggal terima berkas realisasi disimpan.');
+    }
+
     public function setReceivedDate(Request $request, BsCashAdvance $advance): RedirectResponse
     {
         abort_unless($request->user()?->can('cashbook.advance.received-date'), 403);
@@ -804,6 +827,13 @@ class CashAdvanceController extends Controller
             // yang boleh MELIHAT bon — jadi kebanyakan orang disodori isian yang berakhir 403
             // begitu tanggalnya diubah.
             'canEditDocDate' => (bool) $request->user()?->can('cashbook.advance.received-date'), // #125
+            // REALISASI, REFUND & REIMBURSE KINI MILIK PENGAJU — lihat pemetaan 11 Okt 2026.
+            // Digerbangi IZIN, bukan modeFinance, karena keduanya boleh: pengaju yang biasa
+            // melakukannya, dan Finance tetap bisa memperbaiki bila ada kesalahan — itulah
+            // kendali utamanya. Memakai modeFinance di sini justru menutup pengaju.
+            'canRealize' => (bool) $request->user()?->can('cashbook.advance.realize'),
+            'canRefund' => (bool) $request->user()?->can('cashbook.advance.refund'),
+            'canReimburse' => (bool) $request->user()?->can('cashbook.advance.reimburse'),
             /* ALOKASI KASBON — hanya bon Debit VA model baru (yang pembayarannya tidak berjurnal).
                Bon Debit VA lama sudah terlanjur berjurnal ke akun kartunya saat dibayar; membuka
                alokasi untuknya akan mendebit Uang Muka Operasional atas uang yang sudah tercatat

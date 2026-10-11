@@ -14,6 +14,14 @@ const props = defineProps<{ advance: any; expenseAccounts: Array<any>; costCente
      * diperiksa izinnya di server.
      */
     modeFinance?: boolean;
+    /**
+     * Realisasi / Refund / Reimburse kini milik PENGAJU, digerbangi IZIN — bukan modeFinance.
+     * Finance tetap boleh melakukannya sebagai kendali bila ada yang keliru, jadi panelnya
+     * muncul di KEDUA tampilan selama izinnya ada.
+     */
+    canRealize?: boolean;
+    canRefund?: boolean;
+    canReimburse?: boolean;
     /** 'online' = berjenjang di aplikasi · 'offline' = tanda tangan di kertas. */
     approvalMode?: string;
     /** Kartu debit/VA yang boleh dipakai (aktif & belum expired) — hanya untuk Debit VA. */
@@ -38,6 +46,11 @@ const showForm = ref(false);
 function saveDocDate(e: Event) {
     router.post(route('bs.advance.received-date', props.advance.id), { received_document_date: (e.target as HTMLInputElement).value || null }, { preserveScroll: true, preserveState: false });
 }
+function saveRealisasiDate(e: Event) {
+    const v = (e.target as HTMLInputElement).value || null;
+    router.post(route('bs.advance.realisasi-date', props.advance.id), { realisasi_document_date: v }, { preserveScroll: true });
+}
+
 // #127: persetujuan berjenjang
 const approveForm = useForm<any>({ slot: '' });
 function approveSlot(slot: string) { approveForm.slot = slot; approveForm.post(route('bs.advance.approve', props.advance.id), { preserveScroll: true }); }
@@ -202,6 +215,14 @@ function backToIndex() {
                 <input v-if="modeFinance && canEditDocDate" type="date" :value="advance.received_document_date" @change="saveDocDate" :class="[inputCls,'mt-0.5 w-auto']" />
                 <div v-else class="font-medium">{{ advance.received_document_date ? fmtDate(advance.received_document_date) : '—' }}</div>
             </div>
+            <!-- Tanggal berkas REALISASI diterima Finance — peristiwa kedua, kolom tersendiri.
+                 Baru bermakna sesudah bon direalisasi, jadi hanya muncul saat itu. Pengaju
+                 melihatnya, Finance yang mengisinya. -->
+            <div v-if="advance.status === 'realized'">
+                <div class="text-neutral-500">Tanggal Terima Berkas Realisasi</div>
+                <input v-if="modeFinance && canEditDocDate" type="date" :value="advance.realisasi_document_date" @change="saveRealisasiDate" :class="[inputCls,'mt-0.5 w-auto']" />
+                <div v-else class="font-medium">{{ advance.realisasi_document_date ? fmtDate(advance.realisasi_document_date) : '—' }}</div>
+            </div>
         </div>
 
         <!-- Bon berpersetujuan OFFLINE: jenjangnya memang tidak berjalan di aplikasi. Disebut
@@ -255,7 +276,7 @@ function backToIndex() {
                     <tr v-if="advance.settlement_status !== 'pending'"><td colspan="3" class="py-1.5 text-right" :class="advance.settlement >= 0 ? 'text-success-600' : 'text-danger-600'">{{ advance.settlement >= 0 ? 'Dikembalikan ke kas (Refund)' : 'Reimburse (diganti dari kas)' }}</td><td class="py-1.5 text-right font-mono">{{ fmtRp(Math.abs(advance.settlement)) }}</td></tr>
                 </tfoot>
             </table>
-            <div v-if="modeFinance && advance.settlement_status === 'pending'" class="mt-3 space-y-2 rounded-lg bg-amber-50 px-4 py-3 dark:bg-amber-900/20">
+            <div v-if="(canRefund || canReimburse) && advance.settlement_status === 'pending'" class="mt-3 space-y-2 rounded-lg bg-amber-50 px-4 py-3 dark:bg-amber-900/20">
                 <span class="block text-sm font-medium text-amber-700 dark:text-amber-300">{{ Number(advance.settlement) > 0 ? 'Sisa panjar belum dikembalikan' : 'Kekurangan belum diganti' }}: {{ fmtRp(Math.abs(advance.settlement)) }}</span>
                 <div class="flex flex-wrap items-end gap-2">
                     <!-- #89/#93: pilih bank penerima refund / sumber reimburse -->
@@ -264,8 +285,11 @@ function backToIndex() {
                         <SearchSelect :model-value="settleForm.cash_account_id" :options="cashAccounts" placeholder="— default: bank sumber bayar —" @update:model-value="(v) => settleForm.cash_account_id = v" />
                     </div>
                     <div><label class="mb-1 block text-xs font-medium text-neutral-500">Tanggal</label><input v-model="settleForm.settle_date" type="date" :class="[inputCls,'w-auto']" /></div>
-                    <Button v-if="Number(advance.settlement) > 0" size="sm" variant="success" :disabled="settleForm.processing" @click="doRefund">Refund Sisa</Button>
-                    <Button v-else size="sm" variant="warning" :disabled="settleForm.processing" @click="doReimburse">Reimburse</Button>
+                    <!-- Dipisah tegas, bukan v-if/v-else: dengan v-else, orang yang tidak
+                         berizin Refund tetap disodori tombol Reimburse hanya karena sisanya
+                         positif — dan sebaliknya. Masing-masing kini menuntut izinnya sendiri. -->
+                    <Button v-if="canRefund && Number(advance.settlement) > 0" size="sm" variant="success" :disabled="settleForm.processing" @click="doRefund">Refund Sisa</Button>
+                    <Button v-if="canReimburse && Number(advance.settlement) <= 0" size="sm" variant="warning" :disabled="settleForm.processing" @click="doReimburse">Reimburse</Button>
                     <!-- MASUK SALDO — hanya untuk bon Debit VA yang bersisa. Bon reguler tidak
                          punya kartu yang bisa menampung sisanya. Tanpa isian apa pun: nominalnya
                          sudah pasti (sisa bon ini) dan kartunya sudah ditentukan saat pembayaran. -->
@@ -434,7 +458,7 @@ function backToIndex() {
         </div>
 
         <!-- Form realisasi (jika outstanding) -->
-        <div v-if="modeFinance && advance.status === 'outstanding'" class="card p-5">
+        <div v-if="advance.status === 'outstanding' && canRealize" class="card p-5">
             <!-- GERBANG: bon yang punya tahap alokasi baru boleh direalisasi setelah tombol
                  "Lanjut Realisasikan Bon" ditekan di sub-modul Alokasi Bon Sementara. Yang
                  benar-benar menahan ada di CashAdvanceService::realize() — tombol yang mati di
