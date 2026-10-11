@@ -77,6 +77,18 @@ class EditUser extends EditRecord
             : null;
         unset($data['grup_bo'], $data['permBo']);
 
+        /* Menyimpan Grup Akses BO = mengambil alih kepemilikannya.
+         *
+         * Ditetapkan DI SINI, bukan di afterSave(), supaya ikut dalam simpanan yang sama:
+         * menulisnya belakangan akan memicu User::saved sekali lagi (sinkron berjalan dua
+         * kali) dan membuka celah balapan dengan job yang sudah terlanjur dikirim.
+         *
+         * Hanya dinyalakan, tidak pernah dimatikan dari sini — mematikannya adalah
+         * keputusan sadar lewat sakelarnya sendiri. */
+        if ($this->grupBo !== null && empty($data['bo_roles_manual'])) {
+            $data['bo_roles_manual'] = true;
+        }
+
         return $data;
     }
 

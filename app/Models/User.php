@@ -37,6 +37,9 @@ class User extends Authenticatable implements FilamentUser
         'bo_cost_center_id',
         'last_login_at',
         'last_login_ip',
+        // Grup Akses BO diatur manual dari panel — sinkron FO→BO berhenti menyentuhnya.
+        // Lihat migrasi 2026_10_11_110000.
+        'bo_roles_manual',
     ];
 
     protected $hidden = [
@@ -52,6 +55,7 @@ class User extends Authenticatable implements FilamentUser
             'locked_until' => 'datetime',
             'password' => 'hashed',
             'is_active' => 'boolean',
+            'bo_roles_manual' => 'boolean',
         ];
     }
 

@@ -148,6 +148,20 @@ class UserResource extends Resource
                         ->searchable()
                         ->helperText('Terpisah dari Grup Akses di atas: yang itu mengatur menu FO, yang ini mengatur menu di aplikasi BO.')
                         ->visible(fn (?User $record) => $record !== null && static::penggunaBo($record) !== null),
+
+                    /* SATU PEMILIK SAJA.
+                     *
+                     * Sebelum sakelar ini ada, Grup Akses BO punya dua pemilik: panel ini dan
+                     * sinkron FO→BO (config ipro.role_map). Yang belakangan menang, jadi peran
+                     * yang dipasang admin lenyap beberapa detik kemudian tanpa galat —
+                     * penyimpanan berhasil, hasilnya tetap hilang saat dimuat ulang.
+                     *
+                     * Menyimpan pilihan di atas otomatis menyalakan sakelar ini. Dimatikan
+                     * kembali berarti pengguna ini ikut peran FO-nya lagi. */
+                    Forms\Components\Toggle::make('bo_roles_manual')
+                        ->label('Grup Akses BO diatur manual')
+                        ->helperText('Menyala sendiri begitu Anda menyimpan Grup Akses BO di atas — sejak itu pilihan Anda yang berlaku, dan tidak lagi ditimpa peran FO. Matikan bila ingin pengguna ini kembali mengikuti Grup Akses FO-nya.')
+                        ->visible(fn (?User $record) => $record !== null && static::penggunaBo($record) !== null),
                 ]),
 
             Forms\Components\Section::make('Hak Akses Khusus (lintas modul) — opsional')
