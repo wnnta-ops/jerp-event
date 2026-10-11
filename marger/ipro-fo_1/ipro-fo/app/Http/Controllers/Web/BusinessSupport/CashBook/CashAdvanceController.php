@@ -91,6 +91,9 @@ class CashAdvanceController extends Controller
             'advance_date' => $a->advance_date?->toDateString(),
             'realized_date' => $a->realized_date?->toDateString(),
             'received_document_date' => $a->received_document_date?->toDateString(),
+            // Peristiwa KEDUA — berkas realisasi. Ikut dibawa karena daftar menampilkan
+            // keduanya berdampingan; tanpa ini kolomnya selalu kosong di layar.
+            'realisasi_document_date' => $a->realisasi_document_date?->toDateString(),
             'holder' => $a->holder,
             'purpose' => $a->purpose,
             'amount' => (float) $a->amount,

@@ -30,6 +30,12 @@ function applyFilter() { router.get(route('bs.advance.index'), { status: status.
 function saveDocDate(r: any, e: Event) {
     router.post(route('bs.advance.received-date', r.id), { received_document_date: (e.target as HTMLInputElement).value || null }, { preserveScroll: true, preserveState: false });
 }
+// Berkas REALISASI — peristiwa kedua, rute & kolomnya sendiri. Dipisah dari saveDocDate
+// supaya mengisi yang satu tidak pernah menimpa yang lain.
+function saveRealisasiDate(r: any, e: Event) {
+    router.post(route('bs.advance.realisasi-date', r.id), { realisasi_document_date: (e.target as HTMLInputElement).value || null }, { preserveScroll: true, preserveState: false });
+}
+
 function fmtRp(v: number) { return 'Rp ' + Number(v ?? 0).toLocaleString('id-ID'); }
 function fmtDate(d: string) { return d ? new Date(d).toLocaleDateString('id-ID', { day:'2-digit', month:'short', year:'numeric' }) : '—'; }
 
@@ -141,7 +147,7 @@ function penyelesaian(r: any): Selesai | null {
             <div class="card overflow-x-auto">
                 <table class="w-full text-sm">
                     <thead class="bg-neutral-50 dark:bg-neutral-800"><tr class="text-left text-xs uppercase text-neutral-500">
-                        <th class="px-4 py-3">No.</th><th class="px-4 py-3">Tanggal</th><th class="px-4 py-3">Pemegang</th><th class="px-4 py-3">Keperluan</th><th class="px-4 py-3 text-right">Nilai</th><th class="px-4 py-3 text-center">Kategori</th><th class="px-4 py-3 text-center">Status</th><th class="px-4 py-3 text-center">Tgl Terima Dokumen</th>
+                        <th class="px-4 py-3">No.</th><th class="px-4 py-3">Tanggal</th><th class="px-4 py-3">Pemegang</th><th class="px-4 py-3">Keperluan</th><th class="px-4 py-3 text-right">Nilai</th><th class="px-4 py-3 text-center">Kategori</th><th class="px-4 py-3 text-center">Status</th><th class="px-4 py-3 text-center">Tgl Terima Dokumen</th><th class="px-4 py-3 text-center">Tgl Terima Dokumen Realisasi</th>
                     </tr></thead>
                     <tbody class="divide-y divide-neutral-200 dark:divide-neutral-800">
                         <tr v-for="r in advances.data" :key="r.id" class="cursor-pointer hover:bg-neutral-50 dark:hover:bg-neutral-800/50" @click="router.get(tautanBon(r.id))">
@@ -173,6 +179,13 @@ function penyelesaian(r: any): Selesai | null {
                                 <input v-if="canEditDocDate" type="date" :value="r.received_document_date" @change="saveDocDate(r, $event)" class="h-8 rounded border border-neutral-300 bg-white px-2 text-xs dark:border-neutral-700 dark:bg-neutral-900" />
                                 <span v-else class="text-neutral-500">{{ r.received_document_date ? fmtDate(r.received_document_date) : '—' }}</span>
                             </td>
+                            <!-- Berkas realisasi baru mungkin diserahkan SESUDAH bon
+                                 direalisasi; sebelum itu isiannya tidak ditawarkan supaya
+                                 tidak terisi untuk peristiwa yang belum terjadi. -->
+                            <td class="px-4 py-2.5 text-center" @click.stop>
+                                <input v-if="canEditDocDate && r.status === 'realized'" type="date" :value="r.realisasi_document_date" @change="saveRealisasiDate(r, $event)" class="h-8 rounded border border-neutral-300 bg-white px-2 text-xs dark:border-neutral-700 dark:bg-neutral-900" />
+                                <span v-else class="text-neutral-500">{{ r.realisasi_document_date ? fmtDate(r.realisasi_document_date) : '—' }}</span>
+                            </td>
                         </tr>
                     </tbody>
                 </table>
@@ -189,7 +202,7 @@ function penyelesaian(r: any): Selesai | null {
                         <th v-if="activeTab === 'refund'" class="px-4 py-3 text-right">Sisa (Refund)</th>
                         <th v-else-if="activeTab === 'reimburse'" class="px-4 py-3 text-right">Kekurangan (Reimburse)</th>
                         <th class="px-4 py-3 text-center">Kategori</th>
-                        <th class="px-4 py-3 text-center">Tgl Terima Dokumen</th>
+                        <th class="px-4 py-3 text-center">Tgl Terima Dokumen</th><th class="px-4 py-3 text-center">Tgl Terima Dokumen Realisasi</th>
                     </tr></thead>
                     <tbody class="divide-y divide-neutral-200 dark:divide-neutral-800">
                         <tr v-for="r in buckets[activeTab].rows" :key="r.id" class="cursor-pointer hover:bg-neutral-50 dark:hover:bg-neutral-800/50" @click="router.get(tautanBon(r.id))">
@@ -212,6 +225,13 @@ function penyelesaian(r: any): Selesai | null {
                                 <input v-if="canEditDocDate" type="date" :value="r.received_document_date" @change="saveDocDate(r, $event)" class="h-8 rounded border border-neutral-300 bg-white px-2 text-xs dark:border-neutral-700 dark:bg-neutral-900" />
                                 <span v-else class="text-neutral-500">{{ r.received_document_date ? fmtDate(r.received_document_date) : '—' }}</span>
                             </td>
+                            <!-- Berkas realisasi baru mungkin diserahkan SESUDAH bon
+                                 direalisasi; sebelum itu isiannya tidak ditawarkan supaya
+                                 tidak terisi untuk peristiwa yang belum terjadi. -->
+                            <td class="px-4 py-2.5 text-center" @click.stop>
+                                <input v-if="canEditDocDate && r.status === 'realized'" type="date" :value="r.realisasi_document_date" @change="saveRealisasiDate(r, $event)" class="h-8 rounded border border-neutral-300 bg-white px-2 text-xs dark:border-neutral-700 dark:bg-neutral-900" />
+                                <span v-else class="text-neutral-500">{{ r.realisasi_document_date ? fmtDate(r.realisasi_document_date) : '—' }}</span>
+                            </td>
                         </tr>
                     </tbody>
                     <tfoot v-if="buckets[activeTab].count" class="border-t border-neutral-200 bg-neutral-50 font-semibold dark:border-neutral-700 dark:bg-neutral-800/50">
@@ -222,7 +242,7 @@ function penyelesaian(r: any): Selesai | null {
                                  Kategori ada, baris total kurang satu sel pada SEMUA tab —
                                  kekurangan lebar pada tfoot tidak menimbulkan galat, hanya
                                  membuat garis totalnya berhenti sebelum ujung tabel. -->
-                            <td colspan="2"></td>
+                            <td colspan="3"></td>
                         </tr>
                     </tfoot>
                 </table>
