@@ -7,6 +7,7 @@ namespace App\Domain\BusinessSupport\Import;
 use App\Domain\BusinessSupport\Models\BsAccount;
 use App\Domain\BusinessSupport\Models\BsCashFlowCategory;
 use App\Domain\BusinessSupport\Models\BsCostCenter;
+use App\Support\Xlsx;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -302,8 +303,29 @@ final class CoaImporter
     {
         $bom   = chr(0xEF).chr(0xBB).chr(0xBF);
         $isi   = str_replace($bom, '', $isiBerkas);
+        return $this->rapikan(array_map(fn ($b) => str_getcsv($b, ',', chr(34), ''), preg_split('/\r\n|\r|\n/', $isi) ?: []));
+    }
+
+    /**
+     * Baca lembar pertama berkas Excel (.xlsx) — aturan pembersihannya sama dengan csv().
+     *
+     * @return array<int, array<int, string>>
+     */
+    public function xlsx(string $path): array
+    {
+        return $this->rapikan(Xlsx::baca($path));
+    }
+
+    /**
+     * Buang baris kosong dan baris judul (bila ada).
+     *
+     * @param  array<int, array<int, string|null>>  $baris
+     * @return array<int, array<int, string>>
+     */
+    private function rapikan(array $baris): array
+    {
         $baris = array_values(array_filter(
-            array_map(fn ($b) => str_getcsv($b, ',', chr(34), ''), preg_split('/\r\n|\r|\n/', $isi) ?: []),
+            $baris,
             fn ($b) => $b !== [null] && implode('', array_map('strval', $b)) !== '',
         ));
 
