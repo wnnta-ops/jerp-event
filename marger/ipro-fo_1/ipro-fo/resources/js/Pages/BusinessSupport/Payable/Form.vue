@@ -88,64 +88,15 @@ watch(() => form.ppn_mode, (m) => { if (m === 'with') form.ppn_base = Number(for
 watch(() => form.dpp, (val, old) => {
     if (form.ppn_mode === 'with' && (!Number(form.ppn_base) || Number(form.ppn_base) === Number(old))) form.ppn_base = Number(val) || 0;
 });
-/**
- * Nilai SEBELUM konversi Include/Exclude yang terakhir, beserta hasilnya.
+/*
+ * TIDAK ADA LAGI KONVERSI SAAT TOGGLE Include/Exclude.
  *
- * Dipakai memulihkan angka apa adanya ketika sakelarnya dikembalikan — lihat alasannya di
- * watcher di bawah. Null berarti belum ada konversi yang bisa dibatalkan.
+ * Dulu sakelarnya menulis ulang isi kolom (÷ atau × (1+tarif)), dan karena kedua arah
+ * membulatkan ke rupiah penuh, menekannya bolak-balik menggeser angkanya:
+ * 5.000.000 → 4.504.505 → 5.000.001. Sekarang kolomnya tetap berisi apa yang diketik orang;
+ * yang berbeda hanya ARTI angka itu — bruto bila Include, DPP bila Exclude — dan ringkasan
+ * di bawahnya yang memecahnya. Tidak ada pembulatan bolak-balik, jadi tidak ada yang bergeser.
  */
-const asalKonversi = ref<{ ke: boolean; dpp: number; base: number; dppHasil: number; baseHasil: number } | null>(null);
-
-/**
- * Toggle Include/Exclude PPN: konversi nominal DPP & objek PPN LANGSUNG di field.
- * Include = ekstrak nilai NET (gross ÷ (1+tarif)); Exclude = kembalikan ke gross (× (1+tarif)).
- *
- * ── KENAPA NILAI ASALNYA DIINGAT, BUKAN DIHITUNG ULANG ──
- *
- * Kedua arah konversi membulatkan ke rupiah penuh, dan pembulatan tidak bisa dibatalkan.
- * Menekan Include lalu Exclude lagi pada Rp 5.000.000 menghasilkan:
- *
- *     5.000.000 ÷ 1,11 = 4.504.504,50…  → 4.504.505
- *     4.504.505 × 1,11 = 5.000.000,55   → 5.000.001     ← bertambah Rp 1
- *
- * Satu rupiah itu lalu ikut ke faktur, ke jurnal, dan ke memo yang tercetak — muncul begitu
- * saja tanpa ada yang mengetiknya. Mengganti cara pembulatan TIDAK menyembuhkannya: kedua
- * desimal di atas (,50… dan ,55) sama-sama di atas setengah, jadi dibulatkan ke mana pun
- * aturannya, hasil bolak-baliknya tetap bergeser. Yang bisa memulihkannya hanya angka
- * aslinya sendiri.
- *
- * Karena itu angka sebelum konversi disimpan, dan dipulihkan bila sakelarnya dikembalikan
- * SELAGI hasil konversinya belum disentuh. Begitu orang mengetik angka lain, simpanannya
- * basi dan konversi biasa yang berlaku — angka yang baru diketik tidak boleh ditimpa oleh
- * nilai lama.
- */
-watch(() => form.ppn_incl, (incl: boolean, prev: boolean) => {
-    if (form.ppn_mode !== 'with' || incl === prev) return;
-    const div = 1 + (Number(form.ppn_pct) || 0) / 100;
-    if (div <= 0) return;
-
-    const simpan = asalKonversi.value;
-    const belumDisentuh = simpan !== null
-        && simpan.ke === prev
-        && r0(form.dpp) === simpan.dppHasil
-        && r0(form.ppn_base) === simpan.baseHasil;
-
-    if (belumDisentuh && simpan) {
-        form.dpp = simpan.dpp;
-        form.ppn_base = simpan.base;
-        asalKonversi.value = null;
-
-        return;
-    }
-
-    const dppAsal = Number(form.dpp) || 0;
-    const baseAsal = Number(form.ppn_base) || 0;
-    const conv = (v: number) => r0(incl ? v / div : v * div);
-
-    form.dpp = conv(dppAsal);
-    form.ppn_base = conv(baseAsal);
-    asalKonversi.value = { ke: incl, dpp: dppAsal, base: baseAsal, dppHasil: r0(form.dpp), baseHasil: r0(form.ppn_base) };
-});
 
 const filteredSuppliers = computed(() => {
     const q = supplierSearch.value.toLowerCase();
@@ -169,13 +120,45 @@ const category = computed(() => props.categories.find((c: any) => c.id === form.
 const kategoriOpsi = computed(() => props.categories.map((c: any) => ({ ...c, label: `${c.name} (${c.code})` })));
 // #140: PPN dihitung dari NILAI OBJEK PPN (default = DPP, clamp ≤ DPP), bukan dari seluruh DPP.
 const ppnOn = computed(() => form.ppn_mode === 'with');
-const ppnBase = computed(() => ppnOn.value ? Math.min(r0(form.ppn_base) || dppR.value, dppR.value) : 0);
-const ppnNonObject = computed(() => ppnOn.value ? Math.max(0, dppR.value - ppnBase.value) : 0);
+/**
+ * INCLUDE PPN: ANGKA YANG DIKETIK ADALAH TOTAL, dan angka itulah yang dikunci.
+ *
+ * Dulu menekan Include mengubah isi kolomnya sendiri menjadi nilai net (5.000.000 → 4.504.505),
+ * lalu PPN dihitung ulang dari net itu — dan hasil penjumlahannya meleset dari angka yang
+ * tadi diketik: 4.504.505 + 495.496 = 5.000.001. Satu rupiah yang tidak pernah diketik siapa
+ * pun ikut ke faktur, jurnal, dan memo.
+ *
+ * Melesetnya BUKAN kesalahan pembulatan. 5.000.000 memang tidak bisa dipecah menjadi DPP bulat
+ * + PPN bulat pada tarif 11%: 5.000.000 ÷ 1,11 bukan bilangan bulat, dan tetangga terdekatnya
+ * (4.504.505 + 495.495,55) pecahannya tidak genap. Diuji pada 7.276 nilai: pembulatan ke bawah
+ * tepat 50,5% kali, 0,5-ke-bawah 90,1% — tidak ada aturan pembulatan yang benar selalu.
+ *
+ * Yang eksak hanya satu: PPN dihitung dari totalnya (× tarif/(100+tarif)), lalu DPP = total −
+ * PPN. Penjumlahannya kembali ke angka semula menurut definisi, bukan menurut keberuntungan
+ * pembulatan. Kolomnya pun tidak lagi berubah sendiri — yang diketik orang tetap terbaca.
+ */
+const inclOn = computed(() => ppnOn.value && form.ppn_incl === true);
+/** Objek PPN apa adanya dari kolomnya: bruto bila Include, DPP bila Exclude. */
+const objekIsi = computed(() => ppnOn.value ? Math.min(r0(form.ppn_base) || dppR.value, dppR.value) : 0);
+/** Bagian di luar objek PPN — selalu diukur terhadap angka yang diketik. */
+const ppnNonObject = computed(() => ppnOn.value ? Math.max(0, dppR.value - objekIsi.value) : 0);
+/** Objek PPN dalam nilai NET — sama dengan isian bila Exclude, dikurangi PPN-nya bila Include. */
+const ppnBase = computed(() => inclOn.value ? objekIsi.value - ppn.value : objekIsi.value);
 // #incl-ppn: pembagian ÷(1+tarif) dilakukan LANGSUNG ke field DPP & objek PPN saat toggle Include (lihat watch),
 // jadi kalkulasi di sini selalu pakai nilai field apa adanya (PPN = objek PPN × tarif). Dibulatkan ke rupiah penuh.
-const ppn = computed(() => ppnOn.value ? rpnn(ppnBase.value * (Number(form.ppn_pct) || 0) / 100) : 0);
+const ppn = computed(() => {
+    if (! ppnOn.value) return 0;
+    const pct = Number(form.ppn_pct) || 0;
+
+    // Include → PPN diambil DARI DALAM totalnya (tarif/(100+tarif)); Exclude → ditambahkan di atas DPP.
+    return inclOn.value
+        ? rpnn(objekIsi.value * pct / (100 + pct))
+        : rpnn(objekIsi.value * pct / 100);
+});
+/** DPP yang sebenarnya: Include → angka yang diketik dikurangi PPN-nya; Exclude → apa adanya. */
+const dppNet = computed(() => inclOn.value ? dppR.value - ppn.value : dppR.value);
 // #PPh-acuan: acuan objek PPh = OBJEK PPN (bila "Dengan PPN"), selain itu DPP.
-const pphRefBase = computed(() => ppnOn.value ? ppnBase.value : dppR.value);
+const pphRefBase = computed(() => ppnOn.value ? ppnBase.value : dppNet.value);
 // Objek PPh default mengikuti acuan (Objek PPN/DPP) selama belum di-override manual.
 watch(pphRefBase, (val, old) => {
     if ((form.pph_mode === 'withheld' || form.pph_mode === 'borne') && (!Number(form.pph_base) || Number(form.pph_base) === Number(old))) {
@@ -185,8 +168,8 @@ watch(pphRefBase, (val, old) => {
 // #92: PPh dihitung dari NILAI OBJEK PPh (default = Objek PPN, clamp ≤ DPP), bukan dari total transaksi.
 // PPh aktif untuk mode Dipungut (withheld) maupun Ditanggung (borne).
 const pphOn = computed(() => form.pph_mode === 'withheld' || form.pph_mode === 'borne');
-const pphBase = computed(() => pphOn.value ? Math.min(r0(form.pph_base) || pphRefBase.value, dppR.value) : 0);
-const pphNonObject = computed(() => Math.max(0, dppR.value - pphBase.value));
+const pphBase = computed(() => pphOn.value ? Math.min(r0(form.pph_base) || pphRefBase.value, dppNet.value) : 0);
+const pphNonObject = computed(() => Math.max(0, dppNet.value - pphBase.value));
 // Nilai PPh terhitung (utk JURNAL). PPh Pasal 4(2) → rounddown (floor); jenis lain → round. Selaras backend.
 const pphJournal = computed(() => {
     if (!pphOn.value) return 0;
@@ -240,7 +223,8 @@ function pasalPph(accountId: any): string {
  * pphJournal; yang berubah hanya tulisan pada ringkasan ini.
  */
 const pphLabel = computed(() => 'PPh dipotong');
-const total = computed(() => dppR.value + ppn.value);
+// Include → total PERSIS angka yang diketik. Exclude → DPP + PPN, seperti sebelumnya.
+const total = computed(() => dppNet.value + ppn.value);
 // Dipotong → PPh dipotong dari pembayaran supplier (net = total − PPh).
 // Ditanggung → supplier dibayar PENUH (net = total); PPh jadi beban perusahaan.
 const net = computed(() => form.pph_mode === 'borne' ? total.value : total.value - pph.value);
@@ -397,7 +381,7 @@ const akunBiayaPph = computed<number | null>(
 
 /** Bahan struktur bawaan — aturannya sendiri ada di ./strukturJurnal.ts supaya bisa diuji. */
 const bahanStruktur = computed(() => ({
-    dpp: dppR.value,
+    dpp: dppNet.value,
     ppn: ppn.value,
     pph: pphJournal.value,
     ppnAktif: ppnOn.value,
@@ -486,7 +470,7 @@ const dppBaris = ref(0);
  * isinya tidak disentuh.
  */
 function selaraskanBaris() {
-    const dpp = dppR.value;
+    const dpp = dppNet.value;
 
     if (form.lines.length === 0) {
         form.lines.push({ description: form.description || '', qty: 1, unit_price: dpp, amount: dpp });
@@ -509,7 +493,7 @@ function selaraskanBaris() {
 }
 
 // Nilai transaksi berubah selagi Detil Tagihan sudah terbentuk → baris bawaannya ikut.
-watch(dppR, () => { if (form.lines.length > 0) selaraskanBaris(); });
+watch(dppNet, () => { if (form.lines.length > 0) selaraskanBaris(); });
 
 // Saat masuk Detil Tagihan, baris bawaan dibentuk/diselaraskan dengan Nilai Transaksi.
 // Saat masuk Struktur, default 1 termin = net jika kosong.
@@ -631,7 +615,7 @@ const cellArea = 'w-full rounded-md border border-neutral-300 bg-white px-2 py-1
                         <p class="text-[10px] text-neutral-400">Objek PPh: {{ fmtRp(pphBase) }} · Non-objek: {{ fmtRp(pphNonObject) }}</p>
                     </div></div>
                 <div class="md:col-span-3 grid grid-cols-2 gap-2 rounded-lg bg-neutral-50 p-3 text-sm dark:bg-neutral-800 sm:grid-cols-4">
-                    <div><div class="text-xs text-neutral-400">DPP</div><div class="font-mono">{{ fmtRp(dppR) }}</div></div>
+                    <div><div class="text-xs text-neutral-400">DPP</div><div class="font-mono">{{ fmtRp(dppNet) }}</div></div>
                     <div><div class="text-xs text-neutral-400">PPN</div><div class="font-mono">{{ fmtRp(ppn) }}</div></div>
                     <div><div class="text-xs text-neutral-400">{{ pphLabel }}</div><div class="font-mono" :class="pph > 0 ? 'text-danger-600' : 'text-neutral-500'">{{ fmtRp(pph) }}</div></div>
                     <div><div class="text-xs text-neutral-400">Dibayar (net)</div><div class="font-mono font-bold text-primary-700 dark:text-primary-300">{{ fmtRp(net) }}</div></div>

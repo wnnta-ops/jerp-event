@@ -67,8 +67,27 @@ final class RegisterApInvoice
                Dihitung ULANG di sini, tidak memakai kiriman layar: nilai pajak yang datang dari
                luar bisa berisi apa saja. Form.vue memakai rumus yang sama supaya angka di layar
                dan angka yang tersimpan tidak pernah berbeda. */
-            $ppn    = ceil($ppnBase * $ppnPct / 100 - 0.5);
-            $total  = round($dpp + $ppn);
+
+            /* INCLUDE PPN — nilai yang dikirim adalah TOTAL, bukan DPP.
+               PPN diambil dari DALAM total (tarif/(100+tarif)) lalu DPP = total − PPN, sehingga
+               penjumlahannya kembali ke angka yang diketik MENURUT DEFINISI. Menghitungnya
+               sebagai total ÷ (1+tarif) lalu × tarif tidak pernah bisa eksak: 5.000.000 tidak
+               terbagi bulat pada tarif 11%, dan hasilnya meleset Rp 1 pada sekitar sepersepuluh
+               nilai — berapa pun aturan pembulatannya (diuji pada 7.276 nilai).
+
+               Mode ini DIKIRIM dari layar dan TIDAK disimpan: yang tersimpan hanya hasilnya
+               (dpp, ppn, total). Dulu Include hanya alat bantu pengetikan yang tidak pernah
+               sampai ke sini, sehingga angka di layar dan angka tersimpan bisa berbeda. */
+            $inclPpn = $ppnPct > 0 && (bool) ($data['ppn_incl'] ?? false);
+
+            if ($inclPpn) {
+                $ppn   = ceil($ppnBase * $ppnPct / (100 + $ppnPct) - 0.5);
+                $dpp   = $dpp - $ppn;
+                $total = $dpp + $ppn;
+            } else {
+                $ppn   = ceil($ppnBase * $ppnPct / 100 - 0.5);
+                $total = round($dpp + $ppn);
+            }
             $pphPct = $pphOn ? round((float) ($data['pph_pct'] ?? 0), 2) : 0.0;
             // #92: PPh dihitung dari NILAI OBJEK PPh (pph_base), bukan total. Default = seluruh DPP; clamp ke DPP.
             $pphBase = 0.0;
