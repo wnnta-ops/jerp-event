@@ -49,6 +49,24 @@ const groups = navGroups(foUrl);
 // sidebar menyembunyikan menu yang masih muncul di pencarian cepat, atau sebaliknya.
 const { punyaIzin: hasPermission } = useIzin();
 
+/**
+ * Butir menu ini pantas tampil?
+ *
+ * Dua syarat, dan keduanya harus terpenuhi: izin AKSI-nya (boleh membuka layarnya) dan izin
+ * TAMPIL-nya (butirnya memang dipasang di sidebar orang ini). Lihat NavItem.tampil.
+ *
+ * Sub-modul (punya children) ikut MENGHILANG ketika semua anaknya tersembunyi. Tanpa aturan
+ * ini, mematikan izin tampil seluruh anaknya menyisakan kotak sub-modul yang bisa diklik lalu
+ * kosong — dan kotak kosong terbaca sebagai layar yang rusak, bukan sebagai akses yang memang
+ * tidak diberikan.
+ */
+function butirTampil(item: any): boolean {
+    if (! hasPermission(item.permission)) return false;
+    if (! item.children) return hasPermission(item.tampil);
+
+    return item.children.some((c: any) => hasPermission(c.permission) && hasPermission(c.tampil));
+}
+
 function isActive(href?: string, params?: Record<string, any>): boolean {
     if (! href) return false;
     try { return (route() as unknown as { current: (n: string, p?: any) => boolean }).current(href, params); }
@@ -70,7 +88,7 @@ function revealActive(): void {
     for (const g of groups) {
         for (const item of g.items) {
             const active = item.children?.length
-                ? item.children.some(c => hasPermission(c.permission) && isActive(c.href, c.params))
+                ? item.children.some(c => hasPermission(c.permission) && hasPermission(c.tampil) && isActive(c.href, c.params))
                 : (hasPermission(item.permission) && isActive(item.href, item.params));
             if (! active) continue;
             if (g.title) revealed.value[g.title] = true;                         // buka grup (runtime, tak dipersist)
@@ -101,14 +119,14 @@ watch(() => page.url, () => revealActive(), { immediate: true });
 
         <nav class="py-3">
             <template v-for="g in groups" :key="g.title">
-                <button v-if="g.title && open && g.items.some(i => hasPermission(i.permission))"
+                <button v-if="g.title && open && g.items.some(butirTampil)"
                     type="button" @click="toggleGroup(g.title)"
                     class="flex w-full items-center justify-between px-4 mt-4 mb-1 text-[12px] uppercase tracking-wider text-primary-700 font-extrabold hover:text-primary-800">
                     <span>{{ g.title }}</span>
                     <ChevronDown class="h-3.5 w-3.5 transition-transform" :class="{ '-rotate-90': isCollapsed(g.title) }" />
                 </button>
                 <template v-for="item in g.items" :key="(item.href ?? item.label) + JSON.stringify(item.params ?? {})">
-                    <template v-if="hasPermission(item.permission) && (!g.title || !isCollapsed(g.title) || !open)">
+                    <template v-if="butirTampil(item) && (!g.title || !isCollapsed(g.title) || !open)">
                         <!-- Sub-modul dengan children (level 2) → klik untuk buka detail modul (level 3) -->
                         <template v-if="item.children">
                             <button
@@ -123,7 +141,7 @@ watch(() => page.url, () => revealActive(), { immediate: true });
                             <template v-if="open && openSub[g.title + '|' + item.label]">
                                 <template v-for="c in item.children" :key="c.label + JSON.stringify(c.params ?? {})">
                                     <Link
-                                        v-if="hasPermission(c.permission) && safeRoute(c.href, c.params)"
+                                        v-if="hasPermission(c.permission) && hasPermission(c.tampil) && safeRoute(c.href, c.params)"
                                         :href="safeRoute(c.href, c.params) ?? '#'"
                                         :data-active="isActive(c.href, c.params) ? 'true' : undefined"
                                         class="flex items-center gap-2 py-1.5 pl-11 pr-4 mx-2 rounded-lg text-sm transition"

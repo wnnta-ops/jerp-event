@@ -134,11 +134,37 @@ class GranularPermissionSeeder extends Seeder
             ],
         ];
 
+        /*
+         * IZIN TAMPIL MENU — katalognya di config/menu_permissions.php, diturunkan dari
+         * navGroups.ts supaya tidak pernah berbeda dari sidebar. Ditambahkan di sini, bukan
+         * ditulis ulang sebagai daftar kedua: dua daftar yang suatu saat berbeda berarti menu
+         * yang punya sakelar di satu tempat dan tidak di tempat lain.
+         *
+         * Hanya MEMBUAT izinnya. Pemberiannya ke peran dilakukan migrasi 2026_10_12_200000,
+         * yang mewarisinya dari izin aksi supaya tidak ada sidebar yang mendadak kosong.
+         *
+         * Dibaca langsung dari berkasnya: config() tidak melihatnya selama cache config lama
+         * masih ada (lihat migrasi di atas).
+         */
+        $katalogMenu = require base_path('config/menu_permissions.php');
+
+        foreach (array_keys($katalogMenu) as $nama) {
+            $permissions['menu'][] = $nama;
+        }
+
         foreach ($permissions as $module => $perms) {
             foreach ($perms as $name) {
+                // Izin menu.* dilabeli JALUR MENUNYA ("Tampil: Master › Invoice Hutang").
+                // Label turunan-nama akan berbunyi "Bs Ap Index" — nama rute, bukan nama menu —
+                // dan seeder ini updateOrCreate, jadi sekali dijalankan ia akan menimpa label
+                // bagus yang dipasang migrasi 2026_10_12_200000 dengan yang tak terbaca itu.
+                $label = isset($katalogMenu[$name])
+                    ? 'Tampil: '.$katalogMenu[$name][1]
+                    : (string) Str::of($name)->after('.')->replace(['.', '-', '_'], ' ')->headline();
+
                 Permission::updateOrCreate(
                     ['name' => $name, 'guard_name' => 'web'],
-                    ['module' => $module, 'label' => Str::of($name)->after('.')->replace(['.', '-', '_'], ' ')->headline()],
+                    ['module' => $module, 'label' => $label],
                 );
             }
         }

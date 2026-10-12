@@ -97,10 +97,30 @@ class BoRoleResource extends Resource
         'register' => 'Daftarkan', 'use' => 'Pakai', 'return' => 'Kembalikan',
         'numerator' => 'Penomoran', 'parameter' => 'Parameter', 'activate' => 'Aktifkan',
         'bulk_import' => 'Impor Massal', 'payment' => 'Pembayaran', 'price' => 'Harga',
+
+        // Izin menu.* — lihat PetaMenuBo::PETA_TAMPIL.
+        'tampil' => 'Tampil di menu',
+    ];
+
+    /**
+     * Label pembeda, dipakai HANYA bila dua aksi sebaris jatuh ke label yang sama.
+     *
+     * BO memisahkan membuka layar dari menyimpannya: `ap.kuitansi.create` membuka formulir,
+     * `ap.kuitansi.store` menyimpannya; `ap.invoice.view` membuka daftar, `ap.invoice.show`
+     * membuka rinciannya. Keduanya tadinya terbaca "Buat / Buat" dan "Lihat / Lihat" — dua
+     * centang yang tampak sama, padahal mencentang salah satunya saja berarti orang bisa
+     * membuka formulir tetapi gagal 403 saat menekan Simpan.
+     */
+    private const ACTION_LABELS_PEMBEDA = [
+        'view' => 'Lihat Daftar', 'index' => 'Lihat Daftar', 'list' => 'Lihat Daftar',
+        'show' => 'Lihat Rincian', 'read' => 'Lihat Rincian',
+        'create' => 'Buka Form Buat', 'add' => 'Buka Form Buat', 'store' => 'Simpan Baru',
+        'edit' => 'Buka Form Ubah', 'update' => 'Simpan Ubahan',
     ];
 
     /** Urutan aksi umum agar kolom konsisten antar-baris (mirip FO). */
     private const ACTION_ORDER = [
+        'tampil',
         'view', 'show', 'index', 'list', 'create', 'store', 'update', 'edit',
         'delete', 'destroy', 'approve', 'reject', 'print', 'export',
     ];
@@ -134,19 +154,21 @@ class BoRoleResource extends Resource
         $perms = BoPermission::query()->orderBy('module')->orderBy('name')
             ->get(['id', 'name', 'module', 'label']);
 
-        // modul => sub-modul => nama menu => [ ['id'=>.., 'action'=>..], ... ]
+        // modul => sub-modul => nama menu => kunci state => [ ['id'=>.., 'action'=>..], ... ]
+        //
+        // Satu baris bisa memuat LEBIH DARI SATU kunci state: izin tampil `menu.*` punya kuncinya
+        // sendiri per butir, tetapi duduk di baris menu yang sama namanya dengan kelompok izin
+        // aksinya ("Invoice Hutang": Tampil + Lihat/Buat/…). Kuncinya tetap terpisah karena
+        // pengisian ulang di halaman Edit mengelompokkan izin lewat areaKeyFor().
         $pohon = [];
-        // Kunci state tiap baris, supaya tombol "Pilih semua" se-sub-modul tahu
-        // field mana saja yang harus diisinya.
-        $kunci = [];
 
         foreach ($perms as $p) {
             [$module, $area, $action] = self::splitPerm($p->name, (string) $p->module);
             $kelompok = $module.'.'.$area;
             [$modul, $sub, $menu] = PetaMenuBo::untuk($kelompok, self::humanizeArea($area));
 
-            $pohon[$modul][$sub][$menu][] = ['id' => $p->id, 'action' => $action];
-            $kunci[$modul][$sub][$menu] = $awalanState.'.'.self::areaKey($module, $area);
+            $field = $awalanState.'.'.self::areaKey($module, $area);
+            $pohon[$modul][$sub][$menu][$field][] = ['id' => $p->id, 'action' => $action];
         }
 
         uksort($pohon, fn ($a, $b) => [PetaMenuBo::urutanModul((string) $a), (string) $a]
@@ -164,24 +186,32 @@ class BoRoleResource extends Resource
                 // nama field => semua id izin di bawahnya; dipakai aksi Pilih semua.
                 $semua = [];
 
-                foreach ($menus as $menu => $items) {
-                    usort($items, fn ($a, $b) => self::actionRank($a['action']) <=> self::actionRank($b['action']));
-                    $options = [];
-                    foreach ($items as $it) {
-                        $options[$it['id']] = self::actionLabel($it['action']);
-                    }
-                    $jml += count($options);
-
-                    $field = $kunci[$modul][$sub][$menu];
-                    $semua[$field] = array_keys($options);
-
-                    $baris[] = Forms\Components\Grid::make(12)->schema([
+                foreach ($menus as $menu => $perField) {
+                    $kolom = [
                         Forms\Components\Placeholder::make('lbl_'.Str::slug($awalanState.'-'.$modul.'-'.$sub.'-'.$menu, '_'))
                             ->label('')->content($menu)->columnSpan(3),
-                        Forms\Components\CheckboxList::make($field)
-                            ->label('')->options($options)->columns(6)->gridDirection('row')
-                            ->bulkToggleable()->columnSpan(9),
-                    ]);
+                    ];
+
+                    // Centang Tampil selalu di kolom yang sama (4–5) dan aksi mulai kolom 6,
+                    // ada atau tidak ada Tampil-nya — supaya kolom aksi tetap lurus antar-baris.
+                    // Tampil harus lebih dulu di DOM: grid CSS menempatkan butir berkolom tetap
+                    // menurut urutan, dan kolom 4 sesudah kolom 6 terdorong ke baris berikutnya.
+                    uksort($perField, fn ($a, $b) => [! Str::contains($a, '.menu__'), $a] <=> [! Str::contains($b, '.menu__'), $b]);
+                    foreach ($perField as $field => $items) {
+                        $tampil = Str::contains($field, '.menu__');
+                        $options = self::opsiAksi($items);
+                        $jml += count($options);
+                        $semua[$field] = array_keys($options);
+
+                        $kolom[] = Forms\Components\CheckboxList::make($field)
+                            ->label('')->options($options)->gridDirection('row')
+                            ->columns($tampil ? 1 : 5)
+                            ->bulkToggleable(! $tampil)
+                            ->columnStart($tampil ? 4 : 6)
+                            ->columnSpan($tampil ? 2 : 7);
+                    }
+
+                    $baris[] = Forms\Components\Grid::make(12)->schema($kolom);
                 }
 
                 // Sub-modul tanpa nama = modul yang memang tidak bertingkat dua di sidebar
@@ -229,6 +259,13 @@ class BoRoleResource extends Resource
         $seg = explode('.', $name);
         $module = $module !== '' ? $module : ($seg[0] ?? $name);
         $rest = Str::startsWith($name, $module.'.') ? Str::after($name, $module.'.') : implode('.', array_slice($seg, 1));
+        // Izin tampil: satu izin = satu butir sidebar, seluruh namanya kelompoknya. Dipecah
+        // seperti izin aksi, `menu.bs.ap.index` dan `menu.bs.ap.create` akan jadi satu baris
+        // "Bs Ap" berisi "Lihat / Buat" — padahal keduanya dua menu, bukan dua aksi.
+        if ($module === 'menu') {
+            return ['menu', $rest, 'tampil'];
+        }
+
         $restSeg = $rest === '' ? [] : explode('.', $rest);
         $action = $restSeg ? (string) end($restSeg) : $name;
         $area = count($restSeg) > 1 ? implode('.', array_slice($restSeg, 0, -1)) : 'umum';
@@ -253,6 +290,30 @@ class BoRoleResource extends Resource
     private static function actionLabel(string $action): string
     {
         return self::ACTION_LABELS[$action] ?? Str::headline($action);
+    }
+
+    /**
+     * Opsi centang sebaris (id => label), terurut, tanpa label kembar.
+     *
+     * @param  list<array{id:int,action:string}>  $items
+     * @return array<int,string>
+     */
+    private static function opsiAksi(array $items): array
+    {
+        usort($items, fn ($a, $b) => self::actionRank($a['action']) <=> self::actionRank($b['action']));
+
+        $kembar = array_count_values(array_map(fn ($it) => self::actionLabel($it['action']), $items));
+
+        $options = [];
+        foreach ($items as $it) {
+            $label = self::actionLabel($it['action']);
+            if ($kembar[$label] > 1) {
+                $label = self::ACTION_LABELS_PEMBEDA[$it['action']] ?? $label.' ('.$it['action'].')';
+            }
+            $options[$it['id']] = $label;
+        }
+
+        return $options;
     }
 
     private static function actionRank(string $action): int
