@@ -22,15 +22,15 @@ function submit() {
     <div class="space-y-5">
         <Link :href="route('customers.index')" class="inline-flex items-center gap-2 text-sm text-neutral-500 hover:text-neutral-800 dark:hover:text-neutral-200"><ArrowLeft class="h-4 w-4" /> Customer</Link>
         <h1 class="flex items-center gap-2 text-2xl font-bold"><FileSpreadsheet class="h-6 w-6 text-success-600" /> Upload Customer</h1>
-        <p class="text-sm text-neutral-500">Impor banyak customer sekaligus dari file CSV. Unduh template, isi, lalu unggah.</p>
+        <p class="text-sm text-neutral-500">Impor banyak customer sekaligus dari file Excel (.xlsx). Unduh template, isi, lalu unggah.</p>
 
         <div class="grid gap-4 lg:grid-cols-3">
             <!-- Form upload -->
             <div class="card space-y-3 p-4 lg:col-span-1">
-                <a :href="route('customers.upload.template')" class="inline-flex items-center gap-2 rounded-lg border border-neutral-300 px-3 py-2 text-sm hover:bg-neutral-50 dark:border-neutral-700 dark:hover:bg-neutral-800"><Download class="h-4 w-4" /> Download Template CSV</a>
+                <a :href="route('customers.upload.template')" class="inline-flex items-center gap-2 rounded-lg border border-neutral-300 px-3 py-2 text-sm hover:bg-neutral-50 dark:border-neutral-700 dark:hover:bg-neutral-800"><Download class="h-4 w-4" /> Download Template Excel</a>
                 <div>
-                    <label class="block text-xs font-medium text-neutral-500 mb-1">File CSV</label>
-                    <input type="file" accept=".csv,text/csv" @change="onFile" class="block w-full text-sm file:mr-3 file:rounded-lg file:border-0 file:bg-primary-50 file:px-3 file:py-2 file:text-sm file:font-semibold file:text-primary-700" />
+                    <label class="block text-xs font-medium text-neutral-500 mb-1">File Excel (.xlsx)</label>
+                    <input type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" @change="onFile" class="block w-full text-sm file:mr-3 file:rounded-lg file:border-0 file:bg-primary-50 file:px-3 file:py-2 file:text-sm file:font-semibold file:text-primary-700" />
                     <p v-if="form.errors.file" class="mt-1 text-xs text-danger-600">{{ form.errors.file }}</p>
                 </div>
                 <label class="inline-flex items-center gap-2 text-sm"><input type="checkbox" v-model="form.dry_run" class="rounded border-neutral-300" /> Dry run (validasi tanpa simpan)</label>

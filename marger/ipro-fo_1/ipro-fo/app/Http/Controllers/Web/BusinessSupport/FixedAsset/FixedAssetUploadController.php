@@ -15,7 +15,7 @@ use Inertia\Inertia;
 use Inertia\Response;
 
 /**
- * Upload massal Aset Tetap — impor daftar aset dari CSV / XLSX (template Java Core).
+ * Upload massal Aset Tetap — impor daftar aset dari Excel .xlsx (template Java Core).
  * Kolom: No. Aset, name, category, acquisition_date, Unit, acquisition_cost, residual_value, useful_life_months.
  * Nomor aset dipakai apa adanya bila diisi; kategori menerima label (Bangunan/…) maupun kode (bangunan/…).
  * Tidak memposting jurnal perolehan (aset dianggap sudah tercatat / migrasi) — sama seperti registrasi tanpa sumber dana.
@@ -50,14 +50,12 @@ class FixedAssetUploadController extends Controller
         abort_unless($request->user()?->can('businesssupport.setup.manage'), 403);
 
         $request->validate([
-            'file' => ['required', 'file', 'mimes:csv,txt,xlsx', 'max:8192'],
+            'file' => ['required', 'file', 'mimes:xlsx', 'max:8192'],
+        ], [
+            'file.mimes' => 'Berkas harus Excel (.xlsx). Unduh template untuk contoh susunannya.',
         ]);
-        $file = $request->file('file');
-        $ext  = strtolower($file->getClientOriginalExtension());
 
-        $rows = $ext === 'xlsx'
-            ? $this->readXlsx($file->getRealPath())
-            : array_map('str_getcsv', file($file->getRealPath(), FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) ?: []);
+        $rows = $this->readXlsx($request->file('file')->getRealPath());
         if (count($rows) === 0) {
             return back()->with('error', 'File kosong.');
         }
@@ -177,7 +175,7 @@ class FixedAssetUploadController extends Controller
         return round((float) preg_replace('/[^0-9.\-]/', '', str_replace(',', '', (string) $raw)), 2);
     }
 
-    /** Tanggal dari CSV (string) atau XLSX (serial Excel / string) → Y-m-d. */
+    /** Tanggal dari XLSX (serial Excel / string) → Y-m-d. */
     private function parseDate($raw): ?string
     {
         $s = trim((string) $raw);

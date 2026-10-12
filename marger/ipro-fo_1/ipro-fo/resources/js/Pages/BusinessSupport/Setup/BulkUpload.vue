@@ -27,8 +27,8 @@ function switchMode(k: string) { router.get(route('bs.bulk.form', k)); }
             <h2 class="font-semibold">{{ title }}</h2>
             <p class="text-sm text-neutral-500">{{ note }}</p>
             <div>
-                <label class="mb-1 block text-xs font-medium text-neutral-500">File CSV *</label>
-                <input type="file" accept=".csv,.txt" required @change="onFile" class="block w-full text-sm text-neutral-600 file:mr-3 file:rounded-lg file:border-0 file:bg-primary-600 file:px-4 file:py-2 file:text-sm file:font-semibold file:text-white dark:text-neutral-300" />
+                <label class="mb-1 block text-xs font-medium text-neutral-500">File Excel (.xlsx) *</label>
+                <input type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" required @change="onFile" class="block w-full text-sm text-neutral-600 file:mr-3 file:rounded-lg file:border-0 file:bg-primary-600 file:px-4 file:py-2 file:text-sm file:font-semibold file:text-white dark:text-neutral-300" />
                 <p v-if="form.errors.file" class="mt-1 text-xs text-danger-500">{{ form.errors.file }}</p>
             </div>
             <label class="flex items-center gap-2 text-sm"><input v-model="form.dry_run" type="checkbox" class="rounded" /> Dry-run (cek dulu, belum disimpan)</label>
@@ -40,7 +40,7 @@ function switchMode(k: string) { router.get(route('bs.bulk.form', k)); }
                         <tbody><tr v-for="(row, r) in tpl.body" :key="r"><td v-for="(c, ci) in row" :key="ci" class="border border-neutral-200 px-3 py-1.5 font-mono text-neutral-500 dark:border-neutral-700">{{ c }}</td></tr></tbody>
                     </table>
                 </div>
-                <p class="mt-1 text-xs text-neutral-400">Salin header & isi sesuai contoh di Excel, lalu simpan sebagai CSV.</p>
+                <p class="mt-1 text-xs text-neutral-400">Salin header & isi sesuai contoh di Excel, lalu simpan sebagai .xlsx.</p>
             </div>
             <Button type="submit" :disabled="form.processing || !form.file"><template #icon-left><Upload class="h-4 w-4" /></template>{{ form.dry_run ? 'Cek (Dry-run)' : 'Import Sekarang' }}</Button>
         </form>

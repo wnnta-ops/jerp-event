@@ -8,13 +8,13 @@ use App\Domain\Sales\Migration\Services\MigrationImportService;
 use App\Http\Controllers\Controller;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
-use Symfony\Component\HttpFoundation\StreamedResponse;
+use App\Support\Xlsx;
 use Inertia\Inertia;
 use Inertia\Response;
 
 /**
  * Migrasi Data (eProperty SALES → Migrate): Upload Kontrak / Jadwal / Pembayaran
- * dari CSV untuk cutover data legacy.
+ * dari Excel (.xlsx) untuk cutover data legacy.
  */
 class MigrationController extends Controller
 {
@@ -36,11 +36,17 @@ class MigrationController extends Controller
         abort_unless($request->user()?->can('sales.contract.update'), 403);
         abort_unless(isset(MigrationImportService::COLUMNS[$type]), 404);
         $request->validate([
-            'file'    => ['required', 'file', 'mimes:csv,txt', 'max:10240'],
+            'file'    => ['required', 'file', 'mimes:xlsx', 'max:10240'],
             'dry_run' => ['boolean'],
+        ], [
+            'file.mimes' => 'Berkas harus Excel (.xlsx). Unduh template untuk contoh susunannya.',
         ]);
-        $csv    = (string) file_get_contents($request->file('file')->getRealPath());
-        $result = $this->service->import($type, $csv, $request->user()->id, $request->boolean('dry_run'));
+        try {
+            $baris = Xlsx::baca($request->file('file')->getRealPath());
+        } catch (\RuntimeException $e) {
+            return back()->with('error', $e->getMessage());
+        }
+        $result = $this->service->import($type, $baris, $request->user()->id, $request->boolean('dry_run'));
 
         $label = ['jadwal' => 'Jadwal', 'pembayaran' => 'Pembayaran', 'kontrak' => 'Kontrak'][$type];
         $msg = ($request->boolean('dry_run') ? '[Dry run] ' : '')."Migrasi {$label}: {$result['ok']} baris diproses, ".count($result['failed']).' gagal.';
@@ -49,12 +55,14 @@ class MigrationController extends Controller
             ->with('migration_result', $result)->with('migration_type', $type)->with('success', $msg);
     }
 
-    public function template(Request $request, string $type): StreamedResponse
+    public function template(Request $request, string $type): \Illuminate\Http\Response
     {
         abort_unless($request->user()?->can('sales.contract.view'), 403);
         abort_unless(isset(MigrationImportService::COLUMNS[$type]), 404);
-        $content = $this->service->template($type);
 
-        return response()->streamDownload(fn () => print($content), "template_migrasi_{$type}.csv", ['Content-Type' => 'text/csv']);
+        return response($this->service->template($type), 200, [
+            'Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            'Content-Disposition' => "attachment; filename=\"template_migrasi_{$type}.xlsx\"",
+        ]);
     }
 }

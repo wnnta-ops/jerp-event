@@ -14,6 +14,7 @@ use App\Domain\BusinessSupport\Models\BsJournal;
 use App\Domain\BusinessSupport\Services\JournalPartyResolver;
 use App\Exceptions\BusinessRuleException;
 use App\Http\Controllers\Controller;
+use App\Support\Xlsx;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
@@ -563,58 +564,56 @@ class FakturPajakController extends Controller
      * Kalau orang harus mengarang sendiri pasangan itu, impornya tidak akan pernah cocok. Jadi
      * yang diunduh adalah daftarnya apa adanya dengan dua kolom terakhir siap diisi.
      */
-    public function formatImporKeluaran(Request $request): StreamedResponse
+    public function formatImporKeluaran(Request $request): \Illuminate\Http\Response
     {
         abort_unless($request->user()?->can('tax.nsfp'), 403);
         [$year, $month] = $this->period($request);
 
+        // No. FP & NPWP sebagai TEKS: NPWP 16 digit yang tersimpan sebagai angka kehilangan
+        // presisi di Excel (batasnya 15 digit), dan nol di depannya hilang.
         $rows = $this->keluaranRows($year, $month)->map(fn (array $r) => [
-            $r['row_type'], $r['id'], $r['doc_no'], $r['invoice_date'], $r['partner'],
-            (float) $r['dpp'], (float) $r['ppn'], $r['tax_invoice_no'] ?? '', $r['npwp'] ?? '',
-        ]);
+            $r['row_type'], (int) $r['id'], (string) $r['doc_no'], (string) $r['invoice_date'], (string) $r['partner'],
+            (float) $r['dpp'], (float) $r['ppn'], (string) ($r['tax_invoice_no'] ?? ''), (string) ($r['npwp'] ?? ''),
+        ])->values()->all();
 
-        return $this->csv("format-impor-faktur-keluaran-{$year}-{$month}.csv", self::KOLOM_IMPOR, $rows);
+        return response(Xlsx::tulis(self::KOLOM_IMPOR, $rows, 'Faktur Keluaran'), 200, [
+            'Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            'Content-Disposition' => "attachment; filename=\"format-impor-faktur-keluaran-{$year}-{$month}.xlsx\"",
+        ]);
     }
 
     /**
-     * Impor FP & NPWP Faktur Pajak Keluaran dari berkas format di atas.
-     *
-     * Pemisahnya dideteksi dari baris judul — Excel berlokal Indonesia menyimpan CSV dengan
-     * titik-koma, dan berkas semacam itu kalau dibaca dengan koma akan terbaca sebagai satu
-     * kolom raksasa lalu gagal diam-diam tanpa satu baris pun tersimpan.
+     * Impor FP & NPWP Faktur Pajak Keluaran dari berkas Excel (.xlsx) format di atas.
      */
     public function imporKeluaran(Request $request): RedirectResponse
     {
         abort_unless($request->user()?->can('tax.nsfp'), 403);
-        $request->validate(['file' => ['required', 'file', 'mimes:csv,txt', 'max:4096']]);
+        $request->validate(['file' => ['required', 'file', 'mimes:xlsx', 'max:4096']], [
+            'file.mimes' => 'Berkas harus Excel (.xlsx). Pakai berkas dari tombol "Format Impor".',
+        ]);
 
-        $isi = file_get_contents($request->file('file')->getRealPath());
-        if ($isi === false || trim($isi) === '') {
+        try {
+            $baris = Xlsx::baca($request->file('file')->getRealPath());
+        } catch (\RuntimeException $e) {
+            return back()->with('error', $e->getMessage());
+        }
+        if ($baris === []) {
             return back()->with('error', 'Berkas impor kosong.');
         }
-
-        // Buang BOM UTF-8 dari Excel — tanpa ini sel pertama berisi tiga bita tak kasatmata di
-        // depan "jurnal", dan baris pertama berkas tanpa judul kolom akan tertolak.
-        $isi = (string) preg_replace('/^\xEF\xBB\xBF/', '', $isi);
-        $baris = preg_split('/\r\n|\r|\n/', trim($isi)) ?: [];
-        $sep = substr_count($baris[0] ?? '', ';') > substr_count($baris[0] ?? '', ',') ? ';' : ',';
 
         /* Baris pertama dibuang HANYA bila ia memang judul kolom. Orang lazim menghapus baris
            judul sebelum mengunggah; kalau baris pertama dibuang membabi buta, satu barisnya
            hilang diam-diam dan tidak ada yang memberi tahu. */
-        if (! in_array(strtolower(trim((string) (str_getcsv($baris[0] ?? '', $sep, '"', '\\')[0] ?? ''))), ['jurnal', 'entry'], true)) {
+        if (! in_array(strtolower(trim((string) ($baris[0][0] ?? ''))), ['jurnal', 'entry'], true)) {
             array_shift($baris);
         }
 
         $items = [];
         $ditolak = 0;
-        foreach ($baris as $b) {
-            if (trim($b) === '') {
+        foreach ($baris as $c) {
+            if (implode('', array_map('trim', $c)) === '') {
                 continue;
             }
-            // Escape ditulis eksplisit: PHP 8.4 memperingatkan defaultnya akan berubah, dan
-            // pembacaan harus tetap sepasang dengan penulisan di csv() di bawah.
-            $c = str_getcsv($b, $sep, '"', '\\');
             $rowType = strtolower(trim((string) ($c[0] ?? '')));
             $id = (int) trim((string) ($c[1] ?? ''));
             if (! in_array($rowType, ['jurnal', 'entry'], true) || $id <= 0) {

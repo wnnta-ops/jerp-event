@@ -7,6 +7,7 @@ namespace App\Http\Controllers\Web\BusinessSupport\DataCenter;
 use App\Domain\BusinessSupport\Models\BsSupplier;
 use App\Domain\BusinessSupport\Models\BsSupplierCategory;
 use App\Http\Controllers\Controller;
+use App\Support\Xlsx;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -135,7 +136,7 @@ class SupplierCenterController extends Controller
         return $moved;
     }
 
-    // ── Upload Supplier (CSV) ──
+    // ── Upload Supplier (Excel .xlsx) ──
     public function uploadForm(Request $request): Response
     {
         abort_unless($request->user()?->can('datacenter.supplier.upload'), 403);
@@ -148,16 +149,26 @@ class SupplierCenterController extends Controller
     public function template(Request $request): \Illuminate\Http\Response
     {
         abort_unless($request->user()?->can('datacenter.supplier.upload'), 403);
-        $csv = "code,name,category,phone,email,city,npwp,bank_name,bank_account_no,bank_account_name\nSUP-9001,CV Contoh,material,0811,a@b.c,Sidoarjo,1234567890123456,BCA,123456,CV Contoh\n";
+        $header = ['code', 'name', 'category', 'phone', 'email', 'city', 'npwp', 'bank_name', 'bank_account_no', 'bank_account_name'];
+        // Nomor HP, NPWP & rekening ditulis sebagai TEKS supaya nol di depan tidak hilang.
+        $contoh = [['SUP-9001', 'CV Contoh', 'material', '0811', 'a@b.c', 'Sidoarjo', '1234567890123456', 'BCA', '123456', 'CV Contoh']];
 
-        return response($csv)->header('Content-Type', 'text/csv')->header('Content-Disposition', 'attachment; filename="template_supplier.csv"');
+        return response(Xlsx::tulis($header, $contoh, 'Supplier'))
+            ->header('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+            ->header('Content-Disposition', 'attachment; filename="template_supplier.xlsx"');
     }
 
     public function upload(Request $request): RedirectResponse
     {
         abort_unless($request->user()?->can('businesssupport.setup.manage'), 403);
-        $request->validate(['file' => ['required', 'file', 'mimes:csv,txt', 'max:4096']]);
-        $rows = array_map('str_getcsv', file($request->file('file')->getRealPath(), FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) ?: []);
+        $request->validate(['file' => ['required', 'file', 'mimes:xlsx', 'max:4096']], [
+            'file.mimes' => 'Berkas harus Excel (.xlsx). Unduh template untuk contoh susunannya.',
+        ]);
+        try {
+            $rows = Xlsx::baca($request->file('file')->getRealPath());
+        } catch (\RuntimeException $e) {
+            return back()->with('error', $e->getMessage());
+        }
         if (! $rows) {
             return back()->with('error', 'File kosong.');
         }

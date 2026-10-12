@@ -35,10 +35,10 @@ function submit() {
 
     <form class="card space-y-4 p-4" @submit.prevent="submit">
       <div>
-        <label class="mb-1 block text-sm font-medium">File CSV / XLSX</label>
+        <label class="mb-1 block text-sm font-medium">File Excel (.xlsx)</label>
         <input
           type="file"
-          accept=".csv,.txt,.xlsx"
+          accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
           :class="inputCls"
           class="py-1"
           @input="form.file = ($event.target as HTMLInputElement).files?.[0] ?? null"
@@ -49,7 +49,7 @@ function submit() {
       <div class="rounded-lg bg-neutral-50 p-3 text-sm text-neutral-600 dark:bg-neutral-800 dark:text-neutral-300">
         <p class="mb-1 font-medium">Catatan:</p>
         <ul class="list-inside list-disc space-y-0.5 text-[13px]">
-          <li>Bisa unggah template Java Core (.xlsx) langsung, atau CSV hasil "Save As".</li>
+          <li>Unggah template Java Core (.xlsx) langsung — unduh template di kanan atas.</li>
           <li><b>No. Aset</b> dipakai apa adanya bila diisi; bila kosong → nomor dibuat otomatis.</li>
           <li><b>category</b> menerima nama (Bangunan/Kendaraan/Inventaris/Tanah) maupun kode.</li>
           <li>Tidak memposting jurnal perolehan (aset dianggap sudah tercatat). Baris yang gagal dilaporkan.</li>

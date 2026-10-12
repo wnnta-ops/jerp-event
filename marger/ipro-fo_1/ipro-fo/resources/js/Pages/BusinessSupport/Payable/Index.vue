@@ -6,6 +6,11 @@ import Button from '@/Components/UI/Button.vue';
 import Badge from '@/Components/UI/Badge.vue';
 import EmptyState from '@/Components/UI/EmptyState.vue';
 import ColumnFilter from '@/Components/UI/ColumnFilter.vue';
+import { useIzin } from '@/Composables/useIzin';
+
+// Tombol di kepala halaman mengikuti hak akses: tiap tombol hanya muncul bila izin yang dijaga
+// controller tujuannya dipegang — kalau tidak, orang mengeklik lalu menabrak 403.
+const { punyaIzin } = useIzin();
 
 type Row = {
     id: number; invoice_number: string; invoice_date: string | null; receive_date: string | null; due_date: string | null;
@@ -229,20 +234,20 @@ watch(filtered, () => nextTick(measure));
         <div class="flex items-center justify-between">
             <h1 class="flex items-center gap-2 text-2xl font-bold"><HandCoins class="h-6 w-6 text-danger-600" /> Account Payable <span class="text-base font-normal text-neutral-400">(Hutang Usaha)</span></h1>
             <div class="flex flex-wrap gap-2">
-                <Link :href="route('bs.ap.categories.index')" class="inline-flex h-9 items-center gap-1.5 rounded-lg border border-neutral-300 px-3 text-sm font-medium hover:bg-neutral-50 dark:border-neutral-700"><Tags class="h-4 w-4" /> Kategori</Link>
-                <Link :href="route('bs.ap.aging')" class="inline-flex h-9 items-center gap-1.5 rounded-lg border border-neutral-300 px-3 text-sm font-medium hover:bg-neutral-50 dark:border-neutral-700"><CalendarClock class="h-4 w-4" /> Aging</Link>
-                <Link :href="route('bs.ap.card')" class="inline-flex h-9 items-center gap-1.5 rounded-lg border border-neutral-300 px-3 text-sm font-medium hover:bg-neutral-50 dark:border-neutral-700"><BookText class="h-4 w-4" /> Kartu</Link>
-                <Link :href="route('bs.ap.posting.index')" class="inline-flex h-9 items-center gap-1.5 rounded-lg border border-neutral-300 px-3 text-sm font-medium hover:bg-neutral-50 dark:border-neutral-700"><FileInput class="h-4 w-4" /> Posting</Link>
-                <Link :href="route('bs.ap.penghapusan.index')" class="inline-flex h-9 items-center gap-1.5 rounded-lg border border-neutral-300 px-3 text-sm font-medium hover:bg-neutral-50 dark:border-neutral-700"><Eraser class="h-4 w-4" /> Hapus</Link>
+                <Link v-if="punyaIzin('ap.category.view')" :href="route('bs.ap.categories.index')" class="inline-flex h-9 items-center gap-1.5 rounded-lg border border-neutral-300 px-3 text-sm font-medium hover:bg-neutral-50 dark:border-neutral-700"><Tags class="h-4 w-4" /> Kategori</Link>
+                <Link v-if="punyaIzin('ap.aging.view')" :href="route('bs.ap.aging')" class="inline-flex h-9 items-center gap-1.5 rounded-lg border border-neutral-300 px-3 text-sm font-medium hover:bg-neutral-50 dark:border-neutral-700"><CalendarClock class="h-4 w-4" /> Aging</Link>
+                <Link v-if="punyaIzin('ap.paycard.view')" :href="route('bs.ap.card')" class="inline-flex h-9 items-center gap-1.5 rounded-lg border border-neutral-300 px-3 text-sm font-medium hover:bg-neutral-50 dark:border-neutral-700"><BookText class="h-4 w-4" /> Kartu</Link>
+                <Link v-if="punyaIzin('ap.posting.view')" :href="route('bs.ap.posting.index')" class="inline-flex h-9 items-center gap-1.5 rounded-lg border border-neutral-300 px-3 text-sm font-medium hover:bg-neutral-50 dark:border-neutral-700"><FileInput class="h-4 w-4" /> Posting</Link>
+                <Link v-if="punyaIzin('ap.penghapusan.view')" :href="route('bs.ap.penghapusan.index')" class="inline-flex h-9 items-center gap-1.5 rounded-lg border border-neutral-300 px-3 text-sm font-medium hover:bg-neutral-50 dark:border-neutral-700"><Eraser class="h-4 w-4" /> Hapus</Link>
                 <button type="button" @click="exportExcel" title="Unduh sesuai tampilan terfilter (nilai nett)" class="inline-flex h-9 items-center gap-1.5 rounded-lg border border-emerald-300 bg-emerald-50 px-3 text-sm font-medium text-emerald-700 hover:bg-emerald-100 dark:border-emerald-700/50 dark:bg-emerald-900/30 dark:text-emerald-300"><FileSpreadsheet class="h-4 w-4" /> Excel</button>
-                <button type="button" @click="cetakPo" :disabled="!selectedPoIds.length"
+                <button v-if="punyaIzin('bs.po.view')" type="button" @click="cetakPo" :disabled="!selectedPoIds.length"
                     :title="selectedPoIds.length ? 'Cetak Purchase Order dari baris tercentang' : 'Centang dulu invoice yang berasal dari PO'"
                     class="inline-flex h-9 items-center gap-1.5 rounded-lg border px-3 text-sm font-medium disabled:cursor-not-allowed disabled:opacity-40"
                     :class="selectedPoIds.length ? 'border-primary-400 bg-primary-50 text-primary-700 hover:bg-primary-100 dark:border-primary-700/50 dark:bg-primary-900/30 dark:text-primary-300' : 'border-neutral-300 text-neutral-500 dark:border-neutral-700'">
                     <Printer class="h-4 w-4" /> Cetak PO<span v-if="selectedPoIds.length"> ({{ selectedPoIds.length }})</span>
                 </button>
-                <Link :href="route('bs.ap.kuitansi.index')"><Button variant="secondary"><template #icon-left><ReceiptText class="h-4 w-4" /></template>Kuitansi</Button></Link>
-                <Link :href="route('bs.ap.create')"><Button><template #icon-left><Plus class="h-4 w-4" /></template>Invoice</Button></Link>
+                <Link v-if="punyaIzin('ap.kuitansi.view')" :href="route('bs.ap.kuitansi.index')"><Button variant="secondary"><template #icon-left><ReceiptText class="h-4 w-4" /></template>Kuitansi</Button></Link>
+                <Link v-if="punyaIzin('ap.invoice.create')" :href="route('bs.ap.create')"><Button><template #icon-left><Plus class="h-4 w-4" /></template>Invoice</Button></Link>
             </div>
         </div>
 

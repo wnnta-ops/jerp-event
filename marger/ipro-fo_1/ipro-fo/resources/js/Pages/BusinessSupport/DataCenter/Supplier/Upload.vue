@@ -1,4 +1,4 @@
-<!-- Business Support · Data Center · Supplier · Upload (CSV import) -->
+<!-- Business Support · Data Center · Supplier · Upload (impor Excel .xlsx) -->
 <script setup lang="ts">
 import { Link, useForm } from '@inertiajs/vue3';
 import { ArrowLeft, Upload } from 'lucide-vue-next';
@@ -28,8 +28,8 @@ function submit() {
 
     <div class="card space-y-4">
       <div class="space-y-1">
-        <label class="text-sm font-medium">Berkas CSV</label>
-        <input type="file" accept=".csv,text/csv" :class="inputCls" @input="onPick" />
+        <label class="text-sm font-medium">Berkas Excel (.xlsx)</label>
+        <input type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" :class="inputCls" @input="onPick" />
         <p v-if="form.errors.file" class="text-sm text-red-600">{{ form.errors.file }}</p>
       </div>
 
@@ -38,7 +38,7 @@ function submit() {
         <a :href="route('bs.dc.supplier.upload.template')" class="text-sm text-primary-600 hover:underline">Unduh Template</a>
       </div>
 
-      <p class="text-xs text-neutral-500">CSV; baris pertama header otomatis dilewati.</p>
+      <p class="text-xs text-neutral-500">Excel (.xlsx); baris pertama header otomatis dilewati.</p>
     </div>
 
     <div class="card space-y-2">

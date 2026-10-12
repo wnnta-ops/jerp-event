@@ -9,9 +9,10 @@
  * yang sudah ada di sana (kode kembar, unit belum booked tidak boleh mengunci costing) tetap
  * berlaku tanpa ditulis dua kali.
  *
- * ── Angka: koma desimal, TANPA pemisah ribuan ──
- * Ekspor menulis "1234,56", bukan "1.234,56". Alasannya satu titik yang berdiri sendiri benar-
- * benar ambigu: "1.500" bisa berarti seribu lima ratus (pemisah ribuan) atau satu koma lima
+ * ── Angka teks: koma desimal, TANPA pemisah ribuan ──
+ * Berlaku untuk teks yang DITEMPEL. Ekspor & template kini berkas Excel dengan sel angka
+ * sungguhan (keLembar), dan sel angka dari berkas Excel diterjemahkan dulu (dariLembar).
+ * Untuk teks, satu titik yang berdiri sendiri benar-benar ambigu: "1.500" bisa berarti seribu lima ratus (pemisah ribuan) atau satu koma lima
  * (desimal), dan menebaknya salah menggeser luas unit seribu kali lipat tanpa terlihat. Yang
  * dibaca tetap longgar — "1.234,56", "1234.56", "1234,56" semuanya diterima — tetapi bentuk yang
  * benar-benar ambigu DITOLAK dengan keterangan, bukan ditebak.
@@ -63,13 +64,6 @@ export const COSTING: Record<string, string> = {
 /** Samakan bentuk teks sebelum dibandingkan: tanpa spasi berlebih, tanpa beda huruf besar-kecil. */
 const normal = (v: unknown): string => String(v ?? '').replace(/\s+/g, ' ').trim().toLowerCase();
 
-/** Angka id-ID untuk ekspor: koma desimal, TANPA pemisah ribuan. */
-function angkaKeluar(v: number | null | undefined, desimal: number): string {
-    if (v === null || v === undefined || Number.isNaN(Number(v))) return '';
-
-    return Number(v).toFixed(desimal).replace('.', ',');
-}
-
 /**
  * Teks → angka. Memulangkan `null` bila kosong, dan melempar bila BENAR-BENAR ambigu.
  *
@@ -114,32 +108,49 @@ function sel(v: unknown): string {
     return /[";\n\r,\t]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
 }
 
-/**
- * Daftar unit → CSV.
- *
- * Diawali BOM UTF-8 supaya Excel membaca huruf beraksen dengan benar; tanpa itu nama pelanggan
- * yang memuat é atau ' tampil rusak dan operator mengira datanya yang salah.
- */
 /** BOM UTF-8, ditulis sebagai KODE: karakter mentahnya tak terlihat di editor dan mudah terhapus tanpa sengaja. */
 const BOM = String.fromCharCode(0xFEFF);
 
-export function keCsv(baris: Array<Partial<BarisUnit>>): string {
-    const judul = KOLOM.map((k) => sel(k.judul)).join(';');
-    const isi = baris.map((b) => KOLOM.map((k) => {
-        if (k.kunci === 'lt' || k.kunci === 'lb') return sel(angkaKeluar(b[k.kunci] as number, 2));
-        if (k.kunci === 'booked_revenue') return sel(angkaKeluar(b.booked_revenue as number, 2));
-        if (k.kunci === 'status') return sel(STATUS[String(b.status ?? 'belum')] ?? STATUS.belum);
-        if (k.kunci === 'costing') return sel(COSTING[String(b.costing ?? 'belum')] ?? COSTING.belum);
+/**
+ * Daftar unit → lembar Excel {judul, isi}; berkasnya dirakit server (bs.cogs2.rincian-xlsx.tulis).
+ *
+ * LT, LB & Booked Revenue dikirim sebagai ANGKA sungguhan, bukan teks berformat: di Excel sel
+ * angka tidak punya persoalan koma-atau-titik sama sekali, dan bisa langsung dijumlahkan.
+ */
+export function keLembar(baris: Array<Partial<BarisUnit>>): { judul: string[]; isi: Array<Array<string | number>> } {
+    const isi = baris.map((b) => KOLOM.map((k): string | number => {
+        if (k.kunci === 'lt' || k.kunci === 'lb' || k.kunci === 'booked_revenue') {
+            const v = b[k.kunci];
 
-        return sel(b[k.kunci]);
-    }).join(';'));
+            return v === null || v === undefined || Number.isNaN(Number(v)) ? '' : Number(v);
+        }
+        if (k.kunci === 'status') return STATUS[String(b.status ?? 'belum')] ?? STATUS.belum;
+        if (k.kunci === 'costing') return COSTING[String(b.costing ?? 'belum')] ?? COSTING.belum;
 
-    return BOM + [judul, ...isi].join('\r\n') + '\r\n';
+        return String(b[k.kunci] ?? '');
+    }));
+
+    return { judul: KOLOM.map((k) => k.judul), isi };
+}
+
+/**
+ * Baris mentah dari berkas Excel → teks bertab, lalu dibaca dariCsv() seperti tempelan biasa.
+ *
+ * Sel angka di Excel tersimpan dalam bentuk mesin ("87.5", "1.125"). Titik di sana SELALU
+ * desimal, jadi diubah ke koma lebih dulu — kalau tidak, "1.125" dianggap ambigu dan ditolak
+ * oleh bacaAngka padahal Excel sudah menyimpannya tanpa keraguan.
+ */
+export function dariLembar(baris: string[][]): string {
+    return baris.map((b) => b.map((s) => {
+        const t = String(s ?? '');
+
+        return sel(/^-?\d+\.\d+$/.test(t) ? t.replace('.', ',') : t);
+    }).join('\t')).join('\n');
 }
 
 /** Template: judul kolom + dua baris contoh yang memperlihatkan bentuk angkanya. */
-export function templateCsv(): string {
-    return keCsv([
+export function templateLembar(): { judul: string[]; isi: Array<Array<string | number>> } {
+    return keLembar([
         {
             no_spr: 'SPR-001', nama_customer: 'NAMA PELANGGAN', unit_rumah: 'JRK3-001-X-9',
             lokasi: 'JRK3', tahap: '001 & 002', tipe: 'CICA',

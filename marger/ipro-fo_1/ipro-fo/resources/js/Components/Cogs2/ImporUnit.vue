@@ -1,11 +1,11 @@
-<!-- COGS Baru → Rincian COGS: tambah unit massal (pilih dari modul Unit / impor CSV) & ekspor -->
+<!-- COGS Baru → Rincian COGS: tambah unit massal (pilih dari modul Unit / impor Excel) & ekspor -->
 <script setup lang="ts">
 /**
  * Tombol "Tambah Unit Massal" beserta dialognya. Dua jalan masuk:
  *
  *   1. PILIH DARI MODUL UNIT (Set Up Sales) — daftar unit sungguhan dari Front Office pada lokasi
  *      & tahap yang dipilih, tinggal dicentang. Ini jalan utamanya.
- *   2. IMPOR CSV — untuk daftar yang datang dari luar sistem.
+ *   2. IMPOR EXCEL — untuk daftar yang datang dari luar sistem (berkas .xlsx, atau tempel dari Excel).
  *
  * ── Keduanya mengisi DRAF, bukan basis data ──
  * Tabel Rincian COGS disimpan sekaligus lewat satu tombol, dan simpanan itu MENGGANTI seluruh
@@ -23,7 +23,8 @@ import { computed, ref, watch } from 'vue';
 import { router } from '@inertiajs/vue3';
 import { Upload, Download, FileDown, X, TriangleAlert, CircleCheck, Plus, Search, RefreshCw, ListChecks } from 'lucide-vue-next';
 import Button from '@/Components/UI/Button.vue';
-import { dariCsv, keCsv, templateCsv, KOLOM, type BarisUnit } from './unitCsv';
+import axios from 'axios';
+import { dariCsv, dariLembar, keLembar, templateLembar, KOLOM, type BarisUnit } from './unitCsv';
 
 const props = defineProps<{
     /** Baris yang sedang ada di draf — dipakai ekspor dan penghitungan kode kembar. */
@@ -119,7 +120,7 @@ function keDraf(u: any): BarisUnit {
     };
 }
 
-/* ── Impor CSV ────────────────────────────────────────────────────────────────────── */
+/* ── Impor (berkas Excel / tempel) ────────────────────────────────────────────────────────────────────── */
 const teks = ref('');
 const inputRef = ref<HTMLInputElement | null>(null);
 const hasilCsv = computed(() => (teks.value.trim() === '' ? null : dariCsv(teks.value)));
@@ -154,26 +155,39 @@ const akanDilewati = computed(() => {
 });
 
 /* ── Ekspor & template ────────────────────────────────────────────────────────────── */
-function unduh(isi: string, nama: string) {
-    const blob = new Blob([isi], { type: 'text/csv;charset=utf-8;' });
+/** Berkas .xlsx dirakit server (tanpa pustaka Excel di peramban), lalu diunduh sebagai blob. */
+async function unduh(lembar: { judul: string[]; isi: Array<Array<string | number>> }, nama: string) {
+    const res = await axios.post(route('bs.cogs2.rincian-xlsx.tulis'), { judul: lembar.judul, baris: lembar.isi, nama }, { responseType: 'blob' });
     const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = nama;
+    a.href = URL.createObjectURL(res.data);
+    a.download = nama + '.xlsx';
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(a.href);
 }
 const dasarNama = computed(() => (props.namaBerkas ? String(props.namaBerkas).replace(/[^\w.-]+/g, '-') : 'rincian-cogs'));
-function unduhTemplate() { unduh(templateCsv(), 'template-rincian-cogs.csv'); }
-function ekspor() { unduh(keCsv(props.baris as any), dasarNama.value + '-rincian-cogs.csv'); }
+function unduhTemplate() { unduh(templateLembar(), 'template-rincian-cogs'); }
+function ekspor() { unduh(keLembar(props.baris as any), dasarNama.value + '-rincian-cogs'); }
 
-function pilihBerkas(e: Event) {
-    const f = (e.target as HTMLInputElement).files?.[0];
+/* Berkas Excel dibaca SERVER menjadi baris mentah, lalu dijadikan teks bertab di kotak tempel —
+   pemeriksaannya (kolom wajib, angka ambigu, kode kembar) tetap satu: dariCsv(). */
+const galatBerkas = ref('');
+async function pilihBerkas(e: Event) {
+    const input = e.target as HTMLInputElement;
+    const f = input.files?.[0];
     if (! f) return;
-    const r = new FileReader();
-    r.onload = () => { teks.value = String(r.result ?? ''); };
-    r.readAsText(f, 'utf-8');
+    galatBerkas.value = '';
+    const data = new FormData();
+    data.append('file', f);
+    try {
+        const res = await axios.post(route('bs.cogs2.rincian-xlsx.baca'), data);
+        teks.value = dariLembar(res.data.baris ?? []);
+    } catch (err: any) {
+        galatBerkas.value = err?.response?.data?.errors?.file?.[0] ?? err?.response?.data?.message ?? 'Berkas tidak bisa dibaca.';
+    } finally {
+        input.value = '';
+    }
 }
 
 function kirim() {
@@ -218,7 +232,7 @@ const rp = (v: number) => 'Rp ' + Math.round(Number(v ?? 0)).toLocaleString('id-
 
                     <!-- Dua jalan masuk -->
                     <div class="flex gap-1 border-b border-neutral-200 px-5 pt-3 dark:border-neutral-800">
-                        <button v-for="t in [['unit', 'Pilih dari Modul Unit'], ['csv', 'Impor CSV']]" :key="t[0]"
+                        <button v-for="t in [['unit', 'Pilih dari Modul Unit'], ['csv', 'Impor Excel']]" :key="t[0]"
                                 type="button" class="rounded-t-lg px-4 py-2 text-sm font-medium transition"
                                 :class="tab === t[0] ? 'bg-sky-600 text-white' : 'text-neutral-600 hover:bg-neutral-100 dark:text-neutral-300 dark:hover:bg-neutral-800'"
                                 :aria-current="tab === t[0] ? 'page' : undefined"
@@ -342,20 +356,21 @@ const rp = (v: number) => 'Rp ' + Math.round(Number(v ?? 0)).toLocaleString('id-
                             </p>
                         </div>
 
-                        <!-- ══ Impor CSV ══ -->
+                        <!-- ══ Impor Excel ══ -->
                         <div v-else class="space-y-4">
                             <div class="flex flex-wrap gap-2">
                                 <Button variant="ghost" size="sm" @click="unduhTemplate"><FileDown class="h-4 w-4" /> Unduh Template</Button>
                                 <Button variant="ghost" size="sm" :disabled="! baris.length" @click="ekspor"><Download class="h-4 w-4" /> Ekspor Daftar Sekarang</Button>
                                 <label class="inline-flex cursor-pointer items-center gap-2 rounded-lg border border-neutral-300 px-3 py-1.5 text-sm dark:border-neutral-700">
-                                    <Upload class="h-4 w-4" /> Pilih Berkas CSV
-                                    <input ref="inputRef" type="file" accept=".csv,text/csv,text/plain" class="hidden" @change="pilihBerkas" />
+                                    <Upload class="h-4 w-4" /> Pilih Berkas Excel (.xlsx)
+                                    <input ref="inputRef" type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" class="hidden" @change="pilihBerkas" />
                                 </label>
                             </div>
+                            <p v-if="galatBerkas" class="text-sm text-danger-600">{{ galatBerkas }}</p>
 
                             <p class="rounded-lg bg-sky-50 p-2.5 text-xs text-sky-800 dark:bg-sky-950/30 dark:text-sky-200">
                                 Kolomnya: <b>{{ KOLOM.map((k) => k.judul).join(' · ') }}</b>.
-                                Pemisah kolom boleh titik koma, koma, atau TAB — jadi menempel langsung dari Excel juga bisa.
+                                Pilih berkas Excel, atau salin sel dari Excel lalu tempel langsung di kotak di bawah.
                                 Angka ditulis dengan <b>koma desimal tanpa pemisah ribuan</b> (mis. <b>87,5</b>);
                                 bentuk seperti <b>1.500</b> ditolak karena benar-benar ambigu — seribu lima ratus atau satu koma lima.
                             </p>

@@ -17,7 +17,7 @@ use Inertia\Response;
 use RuntimeException;
 
 /**
- * Upload Budget — impor anggaran bulanan dari XLSX (CSV lama tetap diterima).
+ * Upload Budget — impor anggaran bulanan dari Excel (.xlsx).
  *
  * Kolom: KodeAccount, NamaAccount, CostCenter, Januari..Desember.
  *
@@ -96,8 +96,9 @@ class BudgetUploadController extends Controller
             'year' => ['required', 'integer', 'min:2000', 'max:2100'],
             'project' => ['nullable', 'string', 'max:30'],
             'cost_center_id' => ['nullable', 'integer', 'exists:bs_cost_centers,id'],
-            // CSV tetap diterima supaya berkas lama tidak mendadak ditolak.
-            'file' => ['required', 'file', 'mimes:xlsx,csv,txt', 'max:4096'],
+            'file' => ['required', 'file', 'mimes:xlsx', 'max:4096'],
+        ], [
+            'file.mimes' => 'Berkas harus Excel (.xlsx). Unduh template untuk contoh susunannya.',
         ]);
 
         try {
@@ -220,7 +221,7 @@ class BudgetUploadController extends Controller
     }
 
     /**
-     * Baca XLSX atau CSV menjadi larik baris.
+     * Baca berkas Excel (.xlsx) menjadi larik baris.
      *
      * @return list<list<string>>
      */
@@ -230,14 +231,6 @@ class BudgetUploadController extends Controller
             throw new RuntimeException('Berkas tidak terbaca.');
         }
 
-        $ext = mb_strtolower((string) $file->getClientOriginalExtension());
-
-        if ($ext === 'xlsx') {
-            return Xlsx::baca($file->getRealPath());
-        }
-
-        $isi = file($file->getRealPath(), FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) ?: [];
-
-        return array_map(fn ($b) => array_map('strval', (array) str_getcsv($b)), $isi);
+        return Xlsx::baca($file->getRealPath());
     }
 }

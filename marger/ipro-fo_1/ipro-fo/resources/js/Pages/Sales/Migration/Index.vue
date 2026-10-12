@@ -26,7 +26,7 @@ function submit(type: string) { if (!forms[type].file) return; forms[type].post(
     <div class="space-y-5">
         <div>
             <h1 class="flex items-center gap-2 text-2xl font-bold"><DatabaseZap class="h-6 w-6 text-primary-600" /> Migrasi Data</h1>
-            <p class="text-sm text-neutral-500">Impor data legacy (kontrak, jadwal, pembayaran) dari CSV untuk cutover. Cocokkan ke booking lewat <code>booking_number</code>.</p>
+            <p class="text-sm text-neutral-500">Impor data legacy (kontrak, jadwal, pembayaran) dari Excel (.xlsx) untuk cutover. Cocokkan ke booking lewat <code>booking_number</code>.</p>
         </div>
 
         <!-- Hasil import terakhir -->
@@ -53,7 +53,7 @@ function submit(type: string) { if (!forms[type].file) return; forms[type].post(
                     <code v-for="c in columns[s.type]" :key="c" class="rounded bg-neutral-100 px-1.5 py-0.5 text-[11px] dark:bg-neutral-800">{{ c }}</code>
                 </div>
                 <a :href="route('sales.migrasi.template', s.type)" class="inline-flex items-center gap-2 text-xs text-primary-600 hover:underline"><Download class="h-3.5 w-3.5" /> Download template</a>
-                <input type="file" accept=".csv,text/csv" @change="(e) => onFile(s.type, e)" class="block w-full text-xs file:mr-2 file:rounded file:border-0 file:bg-primary-50 file:px-2 file:py-1.5 file:text-xs file:font-semibold file:text-primary-700" />
+                <input type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" @change="(e) => onFile(s.type, e)" class="block w-full text-xs file:mr-2 file:rounded file:border-0 file:bg-primary-50 file:px-2 file:py-1.5 file:text-xs file:font-semibold file:text-primary-700" />
                 <p v-if="forms[s.type].errors.file" class="text-xs text-danger-600">{{ forms[s.type].errors.file }}</p>
                 <label class="inline-flex items-center gap-2 text-xs"><input type="checkbox" v-model="forms[s.type].dry_run" class="rounded border-neutral-300" /> Dry run (validasi saja)</label>
                 <button @click="submit(s.type)" :disabled="forms[s.type].processing || !forms[s.type].file" class="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-primary-600 px-3 py-2 text-sm font-semibold text-white hover:bg-primary-700 disabled:opacity-50"><Upload class="h-4 w-4" /> {{ forms[s.type].processing ? 'Mengunggah…' : 'Upload ' + s.title }}</button>

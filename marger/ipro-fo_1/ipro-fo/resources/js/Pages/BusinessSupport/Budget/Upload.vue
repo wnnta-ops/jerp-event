@@ -85,10 +85,10 @@ function submit() {
           </select>
         </div>
         <div class="sm:col-span-2 lg:col-span-3">
-          <label class="mb-1 block text-sm font-medium">File XLSX</label>
+          <label class="mb-1 block text-sm font-medium">File Excel (.xlsx)</label>
           <input
             type="file"
-            accept=".csv,.txt"
+            accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             :class="inputCls"
             class="py-1"
             @input="form.file = ($event.target as HTMLInputElement).files?.[0] ?? null"
