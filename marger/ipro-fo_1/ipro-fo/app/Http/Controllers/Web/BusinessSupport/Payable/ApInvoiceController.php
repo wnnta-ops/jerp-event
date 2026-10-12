@@ -679,7 +679,14 @@ class ApInvoiceController extends Controller
             ? $e($invoice->due_date->translatedFormat('d F Y'))
             : '-';
         $eDesc = $e($invoice->description);
-        $eDari = $e($user?->name ?? '-');
+        // NAMA LENGKAP KARYAWAN, bukan nama akun. users.name berisi nama login — di pemasangan
+        // ini sering sependek "aji" — sehingga memo tercetak "Dari: aji" dan kolom tanda tangan
+        // pun begitu. Dokumen yang keluar perusahaan menyebut orangnya, bukan akunnya.
+        //
+        // Jalur pencariannya sama dengan Departemen di bawah (NIP dulu, baru nama), lewat
+        // CostCenterPengguna supaya kedua keterangan pada satu kertas tidak pernah menunjuk
+        // karyawan yang berbeda. Jatuh ke nama akun bila akunnya memang belum tertaut.
+        $eDari = $e(app(CostCenterPengguna::class)->namaKaryawan($user) ?: ($user?->name ?? '-'));
         $eSupNm = $e($sup?->name ?? '-');
         $eBankNm = $e($sup?->bank_name ?: '-');
         $eBankRek = $e($sup?->bank_account_no ?: '-');

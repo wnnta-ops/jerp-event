@@ -60,7 +60,14 @@ final class RegisterApInvoice
                 }
                 $ppnBase = min($ppnBase, $dpp);
             }
-            $ppn    = round($ppnBase * $ppnPct / 100);
+            /* PEMBULATAN PPN: desimal tepat 0,5 ke BAWAH, di atasnya ke atas.
+               round() PHP membulatkan 0,5 ke ATAS, sehingga PPN kerap satu rupiah lebih besar
+               daripada hitungan Accounting — dan selisih satu rupiah pada faktur pajak harus
+               dijelaskan. ceil(v − 0,5): 550.000,50 → 550.000 · 550.000,51 → 550.001.
+               Dihitung ULANG di sini, tidak memakai kiriman layar: nilai pajak yang datang dari
+               luar bisa berisi apa saja. Form.vue memakai rumus yang sama supaya angka di layar
+               dan angka yang tersimpan tidak pernah berbeda. */
+            $ppn    = ceil($ppnBase * $ppnPct / 100 - 0.5);
             $total  = round($dpp + $ppn);
             $pphPct = $pphOn ? round((float) ($data['pph_pct'] ?? 0), 2) : 0.0;
             // #92: PPh dihitung dari NILAI OBJEK PPh (pph_base), bukan total. Default = seluruh DPP; clamp ke DPP.
