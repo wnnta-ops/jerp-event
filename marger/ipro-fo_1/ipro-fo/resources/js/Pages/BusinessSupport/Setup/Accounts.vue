@@ -352,7 +352,7 @@ const inputCls = 'h-9 w-full rounded-lg border border-neutral-300 bg-white px-3 
         <div v-if="showImport" class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" @click.self="showImport = false">
             <div class="max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-xl bg-white p-5 shadow-xl dark:bg-neutral-900">
                 <h2 class="mb-1 flex items-center gap-2 text-lg font-bold"><Upload class="h-5 w-5 text-primary-600" /> Import Chart of Account</h2>
-                <p class="mb-3 text-sm text-neutral-500">Berkas <b>CSV</b>. Akun dicocokkan lewat <b>kode</b> — yang sudah ada diperbarui, yang belum dibuat. Induk ditentukan dari kodenya sendiri (dua digit terakhir dibuang).</p>
+                <p class="mb-3 text-sm text-neutral-500">Berkas <b>Excel (.xlsx)</b>. Akun dicocokkan lewat <b>kode</b> — yang sudah ada diperbarui, yang belum dibuat. Induk ditentukan dari kodenya sendiri (dua digit terakhir dibuang).</p>
 
                 <div class="mb-3 overflow-hidden rounded-lg border border-neutral-200 dark:border-neutral-700">
                     <table class="w-full text-left text-xs">
@@ -379,8 +379,8 @@ const inputCls = 'h-9 w-full rounded-lg border border-neutral-300 bg-white px-3 
                     <a :href="route('bs.accounts.template')" class="inline-flex h-9 items-center gap-1.5 rounded-lg border border-neutral-300 px-3 text-sm font-medium hover:bg-neutral-50 dark:border-neutral-700"><Download class="h-4 w-4" /> Unduh Format</a>
                     <label class="inline-flex h-9 flex-1 cursor-pointer items-center gap-2 rounded-lg border border-dashed border-neutral-300 px-3 text-sm text-neutral-500 hover:bg-neutral-50 dark:border-neutral-700">
                         <FileSpreadsheet class="h-4 w-4" />
-                        <span>{{ berkas ? berkas.name : 'Pilih berkas CSV…' }}</span>
-                        <input type="file" accept=".csv,text/csv" class="hidden" @change="pilihBerkas" />
+                        <span>{{ berkas ? berkas.name : 'Pilih berkas Excel (.xlsx)…' }}</span>
+                        <input type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" class="hidden" @change="pilihBerkas" />
                     </label>
                 </div>
                 <p v-if="imporForm.errors.berkas" class="mt-1 text-xs text-danger-500">{{ imporForm.errors.berkas }}</p>

@@ -12,7 +12,9 @@ use App\Http\Controllers\Controller;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use App\Domain\BusinessSupport\Import\CoaImporter;
-use Symfony\Component\HttpFoundation\StreamedResponse;
+use App\Support\Xlsx;
+use RuntimeException;
+use Symfony\Component\HttpFoundation\Response as BerkasResponse;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
@@ -167,7 +169,7 @@ class AccountController extends Controller
      * di tangan operator bisa langsung dipakai tanpa disusun ulang. Baris contohnya diambil
      * dari akun NYATA bila ada — supaya kode & tingkatan pada contoh memang berlaku di sini.
      */
-    public function template(Request $request): StreamedResponse
+    public function template(Request $request): BerkasResponse
     {
         abort_unless($request->user()?->can('gl.account.view'), 403);
 
@@ -191,20 +193,22 @@ class AccountController extends Controller
             $a->normal_balance, $a->is_postable ? '√' : '', '', '', '',
         ])->all();
 
-        return response()->streamDownload(function () use ($contoh) {
-            $out = fopen("php://output", "w");
-            // BOM supaya Excel membaca tanda centang & huruf beraksen dengan benar.
-            fwrite($out, chr(0xEF).chr(0xBB).chr(0xBF));
-            fputcsv($out, CoaImporter::KOLOM, ",", chr(34), "");
-            foreach ($contoh as $b) {
-                fputcsv($out, $b, ",", chr(34), "");
-            }
-            fclose($out);
-        }, "format-impor-coa.csv", ["Content-Type" => "text/csv; charset=UTF-8"]);
+        // Kode akun ditulis sebagai TEKS: sebagai angka, Excel menampilkan kode 11 digit dalam
+        // notasi ilmiah, dan kode berawalan nol kehilangan nolnya.
+        $contoh = array_map(function ($b) {
+            $b[1] = (string) $b[1];
+
+            return $b;
+        }, $contoh);
+
+        return response(Xlsx::tulis(CoaImporter::KOLOM, $contoh, 'Chart of Account'), 200, [
+            "Content-Type" => "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            "Content-Disposition" => 'attachment; filename="format-impor-coa.xlsx"',
+        ]);
     }
 
     /**
-     * Impor Chart of Account dari CSV.
+     * Impor Chart of Account dari Excel (.xlsx).
      *
      * Pemeriksaan & penulisannya diserahkan ke CoaImporter — perkakas yang sama dengan
      * perintah `coa:impor`, jadi berkas yang ditolak di sini juga ditolak di sana.
@@ -213,9 +217,15 @@ class AccountController extends Controller
     public function import(Request $request, CoaImporter $importer): RedirectResponse
     {
         abort_unless($request->user()?->can('businesssupport.setup.manage'), 403);
-        $request->validate(["berkas" => ["required", "file", "mimes:csv,txt", "max:4096"]]);
+        $request->validate(["berkas" => ["required", "file", "mimes:xlsx", "max:4096"]], [
+            "berkas.mimes" => "Berkas harus Excel (.xlsx). Unduh format untuk contoh susunannya.",
+        ]);
 
-        $baris = $importer->csv((string) file_get_contents($request->file("berkas")->getRealPath()));
+        try {
+            $baris = $importer->xlsx($request->file("berkas")->getRealPath());
+        } catch (RuntimeException $e) {
+            return back()->with("error", $e->getMessage());
+        }
         if ($baris === []) {
             return back()->with("error", "Berkas impor kosong.");
         }

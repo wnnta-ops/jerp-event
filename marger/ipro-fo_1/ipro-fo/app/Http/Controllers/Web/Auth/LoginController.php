@@ -51,15 +51,21 @@ class LoginController extends Controller
         return redirect()->intended('/dashboard');
     }
 
-    public function logout(Request $request): RedirectResponse
+    public function logout(Request $request): \Symfony\Component\HttpFoundation\Response
     {
         Auth::guard('web')->logout();
         $request->session()->invalidate();
         $request->session()->regenerateToken();
 
         // 1-pintu: setelah logout BO, kembali ke login J-ERP (bukan login BO).
+        //
+        // Tombol Keluar mengirim router.post Inertia (XHR). XHR tidak bisa mengikuti 302 ke
+        // domain lain — diblokir CORS, dan di layar tombolnya tampak tidak berbuat apa-apa,
+        // padahal sesinya sudah terhapus. Inertia::location menyuruh browser pindah halaman penuh.
         if (config('sso.fo_login_only')) {
-            return redirect()->away(config('sso.fo_url').'/login');
+            $tujuan = config('sso.fo_url').'/login';
+
+            return $request->header('X-Inertia') ? Inertia::location($tujuan) : redirect()->away($tujuan);
         }
 
         return redirect('/login');
