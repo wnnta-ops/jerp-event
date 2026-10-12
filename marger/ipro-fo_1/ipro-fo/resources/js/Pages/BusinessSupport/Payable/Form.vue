@@ -49,6 +49,16 @@ const form = useForm<any>({
 // Pembulatan ke RUPIAH PENUH (round) untuk semua perhitungan; PPh Pasal 4(2) → rounddown (floor).
 const r0 = (v: any) => Math.round(Number(v) || 0);
 const fl0 = (v: any) => Math.floor(Number(v) || 0);
+/**
+ * Pembulatan PPN: desimal tepat 0,5 dibulatkan ke BAWAH, di atasnya ke atas.
+ *
+ * Math.round membulatkan 0,5 ke ATAS, sehingga PPN kerap satu rupiah lebih besar daripada
+ * yang dihitung Accounting — dan selisih satu rupiah pada faktur pajak harus dijelaskan.
+ * ceil(v − 0,5) memberi 550.000,50 → 550.000 dan 550.000,51 → 550.001. Nilainya tidak pernah
+ * negatif di sini (tarif & objek PPN keduanya ≥ 0), jadi tidak perlu penanganan tanda.
+ * RegisterApInvoice memakai rumus yang sama di server.
+ */
+const rpnn = (v: any) => Math.ceil((Number(v) || 0) - 0.5);
 const dppR = computed(() => r0(form.dpp)); // Nilai Transaksi dibulatkan ke rupiah penuh
 
 // #94: tarif PPh default per jenis (PPh 21 = 2,5% · PPh 23 = 2% · PPh Pasal 4(2) = 1,75%).
@@ -115,7 +125,7 @@ const ppnBase = computed(() => ppnOn.value ? Math.min(r0(form.ppn_base) || dppR.
 const ppnNonObject = computed(() => ppnOn.value ? Math.max(0, dppR.value - ppnBase.value) : 0);
 // #incl-ppn: pembagian ÷(1+tarif) dilakukan LANGSUNG ke field DPP & objek PPN saat toggle Include (lihat watch),
 // jadi kalkulasi di sini selalu pakai nilai field apa adanya (PPN = objek PPN × tarif). Dibulatkan ke rupiah penuh.
-const ppn = computed(() => ppnOn.value ? r0(ppnBase.value * (Number(form.ppn_pct) || 0) / 100) : 0);
+const ppn = computed(() => ppnOn.value ? rpnn(ppnBase.value * (Number(form.ppn_pct) || 0) / 100) : 0);
 // #PPh-acuan: acuan objek PPh = OBJEK PPN (bila "Dengan PPN"), selain itu DPP.
 const pphRefBase = computed(() => ppnOn.value ? ppnBase.value : dppR.value);
 // Objek PPh default mengikuti acuan (Objek PPN/DPP) selama belum di-override manual.
@@ -170,7 +180,18 @@ function pasalPph(accountId: any): string {
     if (/\b23\b/.test(n)) return 'PPh Pasal 23';
     return PPH_LABELS[form.pph_type] || 'PPh';
 }
-const pphLabel = computed(() => form.pph_mode === 'borne' ? 'PPh ditanggung' : 'PPh dipotong');
+/**
+ * Label kotak ringkasan SELALU "PPh dipotong" — permintaan Accounting, 12 Okt 2026.
+ *
+ * Kotak itu menjawab satu hal: berapa yang DIPOTONG dari pembayaran ke supplier. Pada mode
+ * Ditanggung jawabannya nol — perusahaan menanggungnya sendiri, supplier tetap dibayar penuh —
+ * jadi "PPh dipotong Rp 0" memang keadaan yang sebenarnya. Dua nama untuk satu kotak justru
+ * membuat orang mengira ada dua angka yang berbeda.
+ *
+ * Yang DITANGGUNG tetap tercatat utuh di jurnalnya (Dr Biaya PPh / Cr Hutang PPh) — lihat
+ * pphJournal; yang berubah hanya tulisan pada ringkasan ini.
+ */
+const pphLabel = computed(() => 'PPh dipotong');
 const total = computed(() => dppR.value + ppn.value);
 // Dipotong → PPh dipotong dari pembayaran supplier (net = total − PPh).
 // Ditanggung → supplier dibayar PENUH (net = total); PPh jadi beban perusahaan.
@@ -394,10 +415,58 @@ watch(bahanStruktur, () => {
     pasangStruktur(defaultJournal());
 }, { deep: true });
 
-// Saat masuk Detil Tagihan, default 1 baris (Uraian = Keterangan, Jumlah = DPP) jika kosong.
+/**
+ * Nilai Transaksi saat baris Detil Tagihan dibentuk/diselaraskan terakhir kali.
+ *
+ * Dipakai membedakan baris yang MASIH bawaan dari baris yang sudah disentuh orang. Tanpa
+ * penanda ini, menyelaraskan baris ke DPP yang baru berarti menimpa rincian yang diketik
+ * sendiri — dan rincian tagihan adalah satu-satunya tempat uraian per barang tercatat.
+ */
+const dppBaris = ref(0);
+
+/**
+ * Selaraskan Detil Tagihan dengan Nilai Transaksi.
+ *
+ * Dulu baris hanya dibentuk SEKALI, saat Detil Tagihan pertama dibuka dalam keadaan kosong.
+ * Kalau orang kembali ke Input Transaksi dan mengubah nilainya, barisnya tetap memakai angka
+ * lama: layarnya menampilkan "Total baris Rp 2.702.703 · DPP Rp 3.000.000" dan menyuruh orang
+ * membetulkan sendiri angka yang sebetulnya memang diturunkan dari nilai transaksi.
+ *
+ * Yang diselaraskan HANYA baris bawaan — satu baris yang nominalnya masih sama persis dengan
+ * DPP sewaktu ia dibentuk. Begitu orang memecahnya jadi beberapa baris atau mengubah
+ * nominalnya, barisnya miliknya: selisihnya tetap ditampilkan sebagai peringatan, tetapi
+ * isinya tidak disentuh.
+ */
+function selaraskanBaris() {
+    const dpp = dppR.value;
+
+    if (form.lines.length === 0) {
+        form.lines.push({ description: form.description || '', qty: 1, unit_price: dpp, amount: dpp });
+        dppBaris.value = dpp;
+
+        return;
+    }
+
+    const satuBarisBawaan = form.lines.length === 1
+        && Number(form.lines[0].qty) === 1
+        && Number(form.lines[0].amount) === dppBaris.value;
+
+    if (! satuBarisBawaan || dpp === dppBaris.value) {
+        return;
+    }
+
+    form.lines[0].unit_price = dpp;
+    form.lines[0].amount = dpp;
+    dppBaris.value = dpp;
+}
+
+// Nilai transaksi berubah selagi Detil Tagihan sudah terbentuk → baris bawaannya ikut.
+watch(dppR, () => { if (form.lines.length > 0) selaraskanBaris(); });
+
+// Saat masuk Detil Tagihan, baris bawaan dibentuk/diselaraskan dengan Nilai Transaksi.
 // Saat masuk Struktur, default 1 termin = net jika kosong.
 watch(step, (s) => {
-    if (s === 3 && form.lines.length === 0) form.lines.push({ description: form.description || '', qty: 1, unit_price: dppR.value, amount: dppR.value });
+    if (s === 3) selaraskanBaris();
     if (s === 4) {
         if (form.journal_lines.length === 0) pasangStruktur(defaultJournal());
         // Jadwal pembayaran dihilangkan dari registrasi — backend membuat default 1 termin = net otomatis.
