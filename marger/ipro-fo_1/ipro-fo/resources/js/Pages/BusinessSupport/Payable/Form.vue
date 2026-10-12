@@ -88,15 +88,63 @@ watch(() => form.ppn_mode, (m) => { if (m === 'with') form.ppn_base = Number(for
 watch(() => form.dpp, (val, old) => {
     if (form.ppn_mode === 'with' && (!Number(form.ppn_base) || Number(form.ppn_base) === Number(old))) form.ppn_base = Number(val) || 0;
 });
-// #incl-ppn: saat toggle Include/Exclude, konversi nominal DPP & objek PPN LANGSUNG di field.
-// Include = ekstrak nilai NET (gross ÷ (1+tarif)); Exclude = kembalikan ke gross (× (1+tarif)).
+/**
+ * Nilai SEBELUM konversi Include/Exclude yang terakhir, beserta hasilnya.
+ *
+ * Dipakai memulihkan angka apa adanya ketika sakelarnya dikembalikan — lihat alasannya di
+ * watcher di bawah. Null berarti belum ada konversi yang bisa dibatalkan.
+ */
+const asalKonversi = ref<{ ke: boolean; dpp: number; base: number; dppHasil: number; baseHasil: number } | null>(null);
+
+/**
+ * Toggle Include/Exclude PPN: konversi nominal DPP & objek PPN LANGSUNG di field.
+ * Include = ekstrak nilai NET (gross ÷ (1+tarif)); Exclude = kembalikan ke gross (× (1+tarif)).
+ *
+ * ── KENAPA NILAI ASALNYA DIINGAT, BUKAN DIHITUNG ULANG ──
+ *
+ * Kedua arah konversi membulatkan ke rupiah penuh, dan pembulatan tidak bisa dibatalkan.
+ * Menekan Include lalu Exclude lagi pada Rp 5.000.000 menghasilkan:
+ *
+ *     5.000.000 ÷ 1,11 = 4.504.504,50…  → 4.504.505
+ *     4.504.505 × 1,11 = 5.000.000,55   → 5.000.001     ← bertambah Rp 1
+ *
+ * Satu rupiah itu lalu ikut ke faktur, ke jurnal, dan ke memo yang tercetak — muncul begitu
+ * saja tanpa ada yang mengetiknya. Mengganti cara pembulatan TIDAK menyembuhkannya: kedua
+ * desimal di atas (,50… dan ,55) sama-sama di atas setengah, jadi dibulatkan ke mana pun
+ * aturannya, hasil bolak-baliknya tetap bergeser. Yang bisa memulihkannya hanya angka
+ * aslinya sendiri.
+ *
+ * Karena itu angka sebelum konversi disimpan, dan dipulihkan bila sakelarnya dikembalikan
+ * SELAGI hasil konversinya belum disentuh. Begitu orang mengetik angka lain, simpanannya
+ * basi dan konversi biasa yang berlaku — angka yang baru diketik tidak boleh ditimpa oleh
+ * nilai lama.
+ */
 watch(() => form.ppn_incl, (incl: boolean, prev: boolean) => {
     if (form.ppn_mode !== 'with' || incl === prev) return;
     const div = 1 + (Number(form.ppn_pct) || 0) / 100;
     if (div <= 0) return;
+
+    const simpan = asalKonversi.value;
+    const belumDisentuh = simpan !== null
+        && simpan.ke === prev
+        && r0(form.dpp) === simpan.dppHasil
+        && r0(form.ppn_base) === simpan.baseHasil;
+
+    if (belumDisentuh && simpan) {
+        form.dpp = simpan.dpp;
+        form.ppn_base = simpan.base;
+        asalKonversi.value = null;
+
+        return;
+    }
+
+    const dppAsal = Number(form.dpp) || 0;
+    const baseAsal = Number(form.ppn_base) || 0;
     const conv = (v: number) => r0(incl ? v / div : v * div);
-    form.dpp = conv(Number(form.dpp) || 0);
-    form.ppn_base = conv(Number(form.ppn_base) || 0);
+
+    form.dpp = conv(dppAsal);
+    form.ppn_base = conv(baseAsal);
+    asalKonversi.value = { ke: incl, dpp: dppAsal, base: baseAsal, dppHasil: r0(form.dpp), baseHasil: r0(form.ppn_base) };
 });
 
 const filteredSuppliers = computed(() => {
