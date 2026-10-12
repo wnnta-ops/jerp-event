@@ -15,13 +15,25 @@ const props = defineProps<{ advance: any; expenseAccounts: Array<any>; costCente
      */
     modeFinance?: boolean;
     /**
-     * Realisasi / Refund / Reimburse kini milik PENGAJU, digerbangi IZIN — bukan modeFinance.
-     * Finance tetap boleh melakukannya sebagai kendali bila ada yang keliru, jadi panelnya
-     * muncul di KEDUA tampilan selama izinnya ada.
+     * REALISASI milik PENGAJU — digerbangi izin, muncul di kedua tampilan karena Finance
+     * tetap boleh membetulkannya bila pengaju salah isi.
      */
     canRealize?: boolean;
+    /**
+     * REFUND & REIMBURSE milik DEPT FINANCE, dan hanya itu — keduanya memindahkan uang
+     * masuk/keluar bank, dan yang memegang kas memang Finance. Pengaju berhenti setelah
+     * mempertanggungjawabkan pemakaian; sisa atau kekurangannya diselesaikan Finance.
+     *
+     * Izin saja tidak cukup untuk memisahkannya: SuperAdmin memegang semua izin, sehingga
+     * panelnya tetap akan terbit di layar pengaju. Karena itu dipagari modeFinance juga —
+     * pola yang sama dipakai Tanggal Terima Dokumen di atas.
+     */
     canRefund?: boolean;
     canReimburse?: boolean;
+    /** Cost center unit kerja pengaju — mengisi tiap baris realisasi, dan terkunci. */
+    ccPengguna?: number | null;
+    /** Hanya Accounting (ap.costcenter.override) yang boleh mengubahnya. */
+    bisaUbahCc?: boolean;
     /** 'online' = berjenjang di aplikasi · 'offline' = tanda tangan di kertas. */
     approvalMode?: string;
     /** Kartu debit/VA yang boleh dipakai (aktif & belum expired) — hanya untuk Debit VA. */
@@ -62,7 +74,13 @@ function canApproveSlot(key: string): boolean {
 }
 const today = new Date().toISOString().slice(0, 10);
 // defer_settlement selalu true: penyelesaian sisa/kekurangan ditangani dept Finance (Refund/Reimburse).
-const form = useForm<any>({ realized_date: today, defer_settlement: true, lines: [{ expense_account_id: '', cost_center_id: '', description: '', amount: 0 }] });
+// Baris realisasi lahir dengan cost center unit kerja pengaju — bukan kosong. Dulu kosong,
+// sehingga harus dipilih tangan tiap baris, dan salah pilih membebankan biaya ke departemen
+// lain tanpa satu pun galat.
+function barisBaru() {
+    return { expense_account_id: '', cost_center_id: props.ccPengguna ?? '', description: '', amount: 0 };
+}
+const form = useForm<any>({ realized_date: today, defer_settlement: true, lines: [barisBaru()] });
 const settleForm = useForm<any>({ settle_date: today, cash_account_id: '' });
 // #49: pembayaran oleh Finance (tanggal transfer + sumber bank/kas) → jurnal terbentuk.
 /* Cara pembayaran dipilih Finance saat mencatat. Bawaannya reguler — sama dengan satu-satunya
@@ -90,7 +108,7 @@ const acuanPanjar = computed(() => (props.allocationMode
     ? Number(props.allocations?.total ?? 0)
     : Number(props.advance.amount)));
 const settlement = computed(() => acuanPanjar.value - realized.value); // + kembali / - nombok
-function addLine() { form.lines.push({ expense_account_id: '', cost_center_id: '', description: '', amount: 0 }); }
+function addLine() { form.lines.push(barisBaru()); }
 function removeLine(i: number) { form.lines.splice(i, 1); }
 // Gerbangnya dipasang DUA kali, bukan sekali di tombol saja: menekan Enter di kolom teks
 // memicu pengiriman implisit, dan itu tidak melewati tombolnya.
@@ -276,7 +294,7 @@ function backToIndex() {
                     <tr v-if="advance.settlement_status !== 'pending'"><td colspan="3" class="py-1.5 text-right" :class="advance.settlement >= 0 ? 'text-success-600' : 'text-danger-600'">{{ advance.settlement >= 0 ? 'Dikembalikan ke kas (Refund)' : 'Reimburse (diganti dari kas)' }}</td><td class="py-1.5 text-right font-mono">{{ fmtRp(Math.abs(advance.settlement)) }}</td></tr>
                 </tfoot>
             </table>
-            <div v-if="(canRefund || canReimburse) && advance.settlement_status === 'pending'" class="mt-3 space-y-2 rounded-lg bg-amber-50 px-4 py-3 dark:bg-amber-900/20">
+            <div v-if="modeFinance && (canRefund || canReimburse) && advance.settlement_status === 'pending'" class="mt-3 space-y-2 rounded-lg bg-amber-50 px-4 py-3 dark:bg-amber-900/20">
                 <span class="block text-sm font-medium text-amber-700 dark:text-amber-300">{{ Number(advance.settlement) > 0 ? 'Sisa panjar belum dikembalikan' : 'Kekurangan belum diganti' }}: {{ fmtRp(Math.abs(advance.settlement)) }}</span>
                 <div class="flex flex-wrap items-end gap-2">
                     <!-- #89/#93: pilih bank penerima refund / sumber reimburse -->
@@ -300,6 +318,12 @@ function backToIndex() {
                     <b>Masuk Saldo</b> membiarkannya di kartu {{ advance.credit_card ? ((advance.credit_card.card_number ? advance.credit_card.card_number + ' — ' : '') + advance.credit_card.name) : 'yang dipakai' }}
                     supaya bisa dipakai pengajuan berikutnya — tanpa jurnal tambahan, sebab uangnya memang masih di akun kartu itu.
                 </p>
+            </div>
+            <!-- Sisi PENGAJU: panel penyelesaian di atas tidak terbit untuknya, jadi tanpa baris
+                 ini sisa/kekurangan yang masih menggantung tidak terbaca sama sekali — orang
+                 akan menunggu tombol yang memang bukan haknya. Baca-saja. -->
+            <div v-else-if="advance.settlement_status === 'pending'" class="mt-3 text-xs font-medium text-amber-600 dark:text-amber-400">
+                ● {{ Number(advance.settlement) > 0 ? 'Sisa panjar' : 'Kekurangan' }} {{ fmtRp(Math.abs(Number(advance.settlement))) }} menunggu diselesaikan <b>Dept Finance</b> ({{ Number(advance.settlement) > 0 ? 'Refund' : 'Reimburse' }}).
             </div>
             <div v-else-if="advance.settlement_status === 'card'" class="mt-3 text-xs font-medium text-primary-600 dark:text-primary-400">
                 ● Sisa panjar {{ fmtRp(Math.abs(Number(advance.settlement))) }} sudah masuk ke saldo kartu — siap dipakai pengajuan berikutnya. Tidak ada jurnal tambahan.
@@ -499,7 +523,13 @@ function backToIndex() {
                             <td class="py-1 pr-2"><SearchSelect :model-value="l.expense_account_id" :options="expenseAccounts" placeholder="— cari akun —" no-truncate :class="l.expense_account_id ? '' : pilihKurang" @update:model-value="(v) => l.expense_account_id = v" /></td>
                             <!-- Cost center WAJIB: dialah yang menghubungkan baris ini ke plafon
                                  anggarannya di Budget Control. -->
-                            <td class="py-1 pr-2"><SearchSelect :model-value="l.cost_center_id" :options="costCenters" placeholder="— pilih cost center —" :class="l.cost_center_id ? '' : pilihKurang" @update:model-value="(v) => l.cost_center_id = v" /></td>
+                            <!-- Terkunci: mengikuti unit kerja pengaju. Hanya Accounting yang boleh
+                                     mengubahnya — aturan yang sama dengan Registrasi Invoice Hutang. -->
+                            <td class="py-1 pr-2">
+                                <SearchSelect :model-value="l.cost_center_id" :options="costCenters" :disabled="! bisaUbahCc"
+                                              placeholder="— pilih cost center —" :class="l.cost_center_id ? '' : pilihKurang"
+                                              @update:model-value="(v) => l.cost_center_id = v" />
+                            </td>
                             <td class="py-1 pr-2"><input v-model="l.description" :class="String(l.description ?? '').trim() ? inputCls : inputKurang" /></td>
                             <td class="py-1 pr-2"><input v-model.number="l.amount" type="number" step="1" min="0" :class="[Number(l.amount) > 0 ? inputCls : inputKurang,'text-right']" /></td>
                             <td class="py-1 text-center"><button type="button" @click="removeLine(i)" :disabled="form.lines.length===1" class="text-danger-500 disabled:opacity-30"><Trash2 class="h-4 w-4" /></button></td>

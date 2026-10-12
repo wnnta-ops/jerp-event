@@ -431,9 +431,10 @@ export function navGroups(foUrl: string): NavGroup[] {
             // pernah bisa ia tekan.
             { label: 'Transaksi Bon Sementara', icon: HandCoins, permission: ['cashbook.advance.create', 'cashbook.advance.view'], children: [
                 { label: 'Pengajuan Bon Sementara', href: 'bs.advance.create' },
-                // Di sinilah pengaju MEREALISASIKAN bonnya — rincian pemakaian, lalu Refund
-                // atau Reimburse bila ada sisa/kekurangan. Karena itu namanya Realisasi,
-                // bukan sekadar daftar.
+                // Di sinilah pengaju MEREALISASIKAN bonnya — rincian pemakaian. Karena itu
+                // namanya Realisasi, bukan sekadar daftar. Berhenti di situ: sisa atau
+                // kekurangannya (Refund/Reimburse) diselesaikan Dept Finance, sebab keduanya
+                // memindahkan uang masuk/keluar bank.
                 { label: 'Realisasi Bon Sementara', href: 'bs.advance.index' },
             ]},
 

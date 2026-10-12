@@ -61,10 +61,12 @@ class CashAdvanceController extends Controller
             // yang boleh MELIHAT bon — jadi kebanyakan orang disodori isian yang berakhir 403
             // begitu tanggalnya diubah.
             'canEditDocDate' => (bool) $request->user()?->can('cashbook.advance.received-date'), // #125
-            // REALISASI, REFUND & REIMBURSE KINI MILIK PENGAJU — lihat pemetaan 11 Okt 2026.
-            // Digerbangi IZIN, bukan modeFinance, karena keduanya boleh: pengaju yang biasa
-            // melakukannya, dan Finance tetap bisa memperbaiki bila ada kesalahan — itulah
-            // kendali utamanya. Memakai modeFinance di sini justru menutup pengaju.
+            // REALISASI milik PENGAJU; REFUND & REIMBURSE milik DEPT FINANCE (12 Okt 2026).
+            // Realisasi digerbangi IZIN saja, sebab keduanya boleh melakukannya: pengaju yang
+            // biasa, Finance sebagai pembetul bila pengaju salah isi. Refund/Reimburse tidak —
+            // keduanya memindahkan uang masuk/keluar bank, dan yang memegang kas adalah
+            // Finance; panelnya dipagari modeFinance di layar (izin saja tak memisahkan,
+            // karena SuperAdmin memegang semuanya).
             'canRealize' => (bool) $request->user()?->can('cashbook.advance.realize'),
             'canRefund' => (bool) $request->user()?->can('cashbook.advance.refund'),
             'canReimburse' => (bool) $request->user()?->can('cashbook.advance.reimburse'),
@@ -830,10 +832,19 @@ class CashAdvanceController extends Controller
             // yang boleh MELIHAT bon — jadi kebanyakan orang disodori isian yang berakhir 403
             // begitu tanggalnya diubah.
             'canEditDocDate' => (bool) $request->user()?->can('cashbook.advance.received-date'), // #125
-            // REALISASI, REFUND & REIMBURSE KINI MILIK PENGAJU — lihat pemetaan 11 Okt 2026.
-            // Digerbangi IZIN, bukan modeFinance, karena keduanya boleh: pengaju yang biasa
-            // melakukannya, dan Finance tetap bisa memperbaiki bila ada kesalahan — itulah
-            // kendali utamanya. Memakai modeFinance di sini justru menutup pengaju.
+            // REALISASI milik PENGAJU; REFUND & REIMBURSE milik DEPT FINANCE (12 Okt 2026).
+            // Realisasi digerbangi IZIN saja, sebab keduanya boleh melakukannya: pengaju yang
+            // biasa, Finance sebagai pembetul bila pengaju salah isi. Refund/Reimburse tidak —
+            // keduanya memindahkan uang masuk/keluar bank, dan yang memegang kas adalah
+            // Finance; panelnya dipagari modeFinance di layar (izin saja tak memisahkan,
+            // karena SuperAdmin memegang semuanya).
+            // COST CENTER BARIS REALISASI MENGIKUTI UNIT KERJA PENGAJU, dan terkunci —
+            // aturan yang sama dengan Registrasi Invoice Hutang, dari service yang sama.
+            // Dibiarkan bebas dipilih, biaya bon bisa dibebankan ke departemen yang tidak
+            // menanggungnya: realisasi dua departemen bergeser sekaligus — yang satu tampak
+            // hemat, yang lain boros, dan keduanya salah.
+            'ccPengguna' => app(CostCenterPengguna::class)->idUntuk($request->user()),
+            'bisaUbahCc' => (bool) $request->user()?->can('ap.costcenter.override'),
             'canRealize' => (bool) $request->user()?->can('cashbook.advance.realize'),
             'canRefund' => (bool) $request->user()?->can('cashbook.advance.refund'),
             'canReimburse' => (bool) $request->user()?->can('cashbook.advance.reimburse'),
@@ -1023,7 +1034,13 @@ class CashAdvanceController extends Controller
 
     public function refund(Request $request, BsCashAdvance $advance, CashAdvanceService $svc): RedirectResponse
     {
-        abort_unless($request->user()?->can('cashbook.advance.refund'), 403);
+        // MILIK DEPT FINANCE. Dua izin, bukan satu: izin cashbook.advance.refund menentukan SIAPA yang
+        // mengerjakan jenis penyelesaian ini, cashbook.advance.pay menandai bahwa ia memang
+        // orang Finance. Tanpa yang kedua, pemindahan ini hanya tersembunyi di layar —
+        // pengaju yang kebetulan diberi izin itu masih bisa menembusnya lewat POST langsung,
+        // dan uang bank berpindah dari sisi yang salah tanpa Finance tahu.
+        abort_unless($request->user()?->can('cashbook.advance.refund')
+            && $request->user()?->can('cashbook.advance.pay'), 403);
         // #89: pilih bank penerima dana refund.
         $v = $request->validate([
             'settle_date' => ['required', 'date'],
@@ -1036,7 +1053,7 @@ class CashAdvanceController extends Controller
             return back()->with('error', $e->getMessage());
         }
 
-        return redirect()->route('bs.advance.show', $advance)->with('success', 'Refund sisa panjar tercatat — jurnal otomatis terbentuk.');
+        return redirect()->route('bs.advance.finance.show', $advance)->with('success', 'Refund sisa panjar tercatat — jurnal otomatis terbentuk.');
     }
 
     /**
@@ -1048,7 +1065,13 @@ class CashAdvanceController extends Controller
      */
     public function masukSaldo(Request $request, BsCashAdvance $advance, CashAdvanceService $svc): RedirectResponse
     {
-        abort_unless($request->user()?->can('cashbook.advance.reimburse'), 403);
+        // MILIK DEPT FINANCE. Dua izin, bukan satu: izin cashbook.advance.reimburse menentukan SIAPA yang
+        // mengerjakan jenis penyelesaian ini, cashbook.advance.pay menandai bahwa ia memang
+        // orang Finance. Tanpa yang kedua, pemindahan ini hanya tersembunyi di layar —
+        // pengaju yang kebetulan diberi izin itu masih bisa menembusnya lewat POST langsung,
+        // dan uang bank berpindah dari sisi yang salah tanpa Finance tahu.
+        abort_unless($request->user()?->can('cashbook.advance.reimburse')
+            && $request->user()?->can('cashbook.advance.pay'), 403);
 
         try {
             $svc->masukSaldo($advance, $request->user()->id);
@@ -1056,13 +1079,19 @@ class CashAdvanceController extends Controller
             return back()->with('error', $e->getMessage());
         }
 
-        return redirect()->route('bs.advance.show', $advance)
+        return redirect()->route('bs.advance.finance.show', $advance)
             ->with('success', 'Sisa panjar masuk ke saldo kartu — siap dipakai pengajuan berikutnya. Tidak ada jurnal tambahan: uangnya memang masih di akun kartu.');
     }
 
     public function reimburse(Request $request, BsCashAdvance $advance, CashAdvanceService $svc): RedirectResponse
     {
-        abort_unless($request->user()?->can('cashbook.advance.reimburse'), 403);
+        // MILIK DEPT FINANCE. Dua izin, bukan satu: izin cashbook.advance.reimburse menentukan SIAPA yang
+        // mengerjakan jenis penyelesaian ini, cashbook.advance.pay menandai bahwa ia memang
+        // orang Finance. Tanpa yang kedua, pemindahan ini hanya tersembunyi di layar —
+        // pengaju yang kebetulan diberi izin itu masih bisa menembusnya lewat POST langsung,
+        // dan uang bank berpindah dari sisi yang salah tanpa Finance tahu.
+        abort_unless($request->user()?->can('cashbook.advance.reimburse')
+            && $request->user()?->can('cashbook.advance.pay'), 403);
         // #93: pilih bank sumber dana reimburse.
         $v = $request->validate([
             'settle_date' => ['required', 'date'],
@@ -1075,7 +1104,7 @@ class CashAdvanceController extends Controller
             return back()->with('error', $e->getMessage());
         }
 
-        return redirect()->route('bs.advance.show', $advance)->with('success', 'Reimburse kekurangan panjar tercatat — jurnal otomatis terbentuk.');
+        return redirect()->route('bs.advance.finance.show', $advance)->with('success', 'Reimburse kekurangan panjar tercatat — jurnal otomatis terbentuk.');
     }
 
     /**
