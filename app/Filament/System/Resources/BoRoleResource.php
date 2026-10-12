@@ -340,6 +340,31 @@ class BoRoleResource extends Resource
         return BoRole::query()->whereNotNull('tenant_id')->value('tenant_id');
     }
 
+    /**
+     * Grup bawaan KINI boleh dihapus — susunan grupnya akan dirombak. Kecuali SuperAdmin:
+     * aplikasi BO meloloskan seluruh pemeriksaan izin lewat nama peran itu, dan tanpanya tidak
+     * ada seorang pun yang tersisa untuk membetulkan hak akses.
+     */
+    public static function bolehDihapus(BoRole $record): bool
+    {
+        return $record->name !== 'SuperAdmin';
+    }
+
+    /** Isi konfirmasi Hapus: siapa yang terdampak, dan risiko khas grup bawaan. */
+    public static function peringatanHapus(BoRole $record): string
+    {
+        $jml = $record->users()->count();
+        $teks = $jml > 0
+            ? "{$jml} pengguna akan kehilangan grup ini beserta seluruh izinnya."
+            : 'Grup ini tidak dipakai pengguna mana pun.';
+
+        if ($record->is_system) {
+            $teks .= ' Ini grup BAWAAN: kode BO bisa merujuk namanya (penyetuju di rantai approval, kewajiban MFA) — periksa dulu rantai approval yang memakai grup ini.';
+        }
+
+        return $teks.' Tindakan ini tidak bisa dibatalkan.';
+    }
+
     /** Ingatkan admin bahwa cache izin app BO perlu reset agar perubahan berlaku. */
     public static function flashCacheNotice(): void
     {
@@ -379,7 +404,8 @@ class BoRoleResource extends Resource
                     }),
                 Tables\Actions\EditAction::make(),
                 Tables\Actions\DeleteAction::make()
-                    ->hidden(fn (BoRole $record) => $record->is_system),
+                    ->hidden(fn (BoRole $record) => ! self::bolehDihapus($record))
+                    ->modalDescription(fn (BoRole $record) => self::peringatanHapus($record)),
             ])
             ->defaultSort('name');
     }
