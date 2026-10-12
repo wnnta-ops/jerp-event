@@ -18,6 +18,7 @@ use App\Domain\BusinessSupport\Support\SaldoBonSementara;
 use App\Exceptions\BusinessRuleException;
 use App\Http\Controllers\Concerns\GalatAnggaran;
 use App\Http\Controllers\Controller;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response as HttpResponse;
@@ -33,7 +34,7 @@ class CashAdvanceController extends Controller
     {
         abort_unless($request->user()?->can('cashbook.advance.view'), 403);
 
-        $rows = BsCashAdvance::query()
+        $rows = $this->batasiKeMilikSendiri(BsCashAdvance::query(), $request)
             ->with('cashAccount:id,code,name')
             ->when($request->input('status'), fn ($q, $v) => $q->where('status', $v))
             // Bon BATAL punya layarnya sendiri (Transaksi Bon Batal). Dikeluarkan dari sini
@@ -52,10 +53,20 @@ class CashAdvanceController extends Controller
             'advances' => $rows,
             'filters' => $request->only(['status', 'search']),
             'summary' => [
-                'outstanding' => (float) BsCashAdvance::where('status', 'outstanding')->sum('amount'),
-                'count' => BsCashAdvance::where('status', 'outstanding')->count(),
+                // Ringkasannya ikut dibatasi: angka "Panjar Outstanding" seluruh perusahaan
+                // di atas daftar yang hanya berisi bon sendiri membuat orang mengira bonnya
+                // sendirilah yang sebesar itu.
+                'outstanding' => (float) $this->batasiKeMilikSendiri(BsCashAdvance::query(), $request)
+                    ->where('status', 'outstanding')->sum('amount'),
+                'count' => $this->batasiKeMilikSendiri(BsCashAdvance::query(), $request)
+                    ->where('status', 'outstanding')->count(),
             ],
-            'buckets' => $this->indexBuckets(),                                                  // #134
+            'buckets' => $this->indexBuckets($request),                                                  // #134
+            // Tombol "Laporan" dulu terbit untuk semua orang padahal report() menuntut izinnya
+            // sendiri — yang tidak memegangnya menekan tombol itu lalu mendapat 403. Laporannya
+            // juga memuat bon SELURUH karyawan, jadi membiarkannya terbuka di layar yang kini
+            // hanya berisi bon sendiri justru membatalkan pembatasannya.
+            'canReport' => (bool) $request->user()?->can('cashbook.advance.report'),
             // IZINNYA DISAMAKAN DENGAN AKSINYA: setReceivedDate() menuntut
             // cashbook.advance.received-date, sedangkan isian ini dulu muncul untuk siapa pun
             // yang boleh MELIHAT bon — jadi kebanyakan orang disodori isian yang berakhir 403
@@ -85,7 +96,83 @@ class CashAdvanceController extends Controller
      *     > 0 → realisasi lebih kecil (ada sisa → Refund)
      *     < 0 → realisasi lebih besar (kurang → Reimburse)
      */
-    private function indexBuckets(): array
+    /**
+     * DAFTAR BON HANYA MENAMPILKAN MILIK SENDIRI — permintaan Dept Finance, 12 Okt 2026.
+     *
+     * Sebelumnya setiap orang yang boleh MELIHAT bon melihat bon seluruh karyawan: nominal,
+     * keperluan, dan siapa memegang berapa. Itu bukan sekadar daftar yang panjang — nilai
+     * panjar orang lain memang bukan urusan pengaju.
+     *
+     * KEPEMILIKAN DICOCOKKAN DUA JALUR, karena satu saja tidak cukup:
+     *
+     *   created_by  jalur utama — id akun yang mengajukan.
+     *   holder      cadangan untuk bon lama yang created_by-nya kosong (hasil impor/seeder).
+     *               Dicocokkan PERSIS atau "Nama — Jabatan", bukan LIKE berawalan: dengan
+     *               awalan, "Aji" akan ikut menarik bon "Aji Trimantanto" — orang lain.
+     *
+     * Yang TETAP melihat semuanya:
+     *   cashbook.advance.pay        Dept Finance — merekalah yang membayar & menyelesaikan.
+     *   businesssupport.approval.act Penyetuju — bon menunggu tanda tangannya, dan satu-satunya
+     *                               pintu menuju bon itu adalah daftar ini. Tanpa pengecualian
+     *                               ini, persetujuan berjenjang mati tanpa galat apa pun:
+     *                               penyetuju membuka daftar, melihat kosong, dan bonnya
+     *                               menggantung selamanya.
+     */
+    private function bolehLihatSemuaBon(Request $request): bool
+    {
+        $u = $request->user();
+
+        return (bool) ($u?->can('cashbook.advance.pay') || $u?->can('businesssupport.approval.act'));
+    }
+
+    /**
+     * Bolehkah pengguna ini MEMBUKA satu bon tertentu?
+     *
+     * Memakai aturan yang sama dengan daftar. Tanpa ini pembatasan daftar hanya kosmetik:
+     * nomor bon berurutan, jadi mengganti angka di URL cukup untuk membaca panjar orang lain —
+     * nominal, keperluan, dan rincian realisasinya.
+     */
+    private function bolehBukaBon(Request $request, BsCashAdvance $advance): bool
+    {
+        if ($this->bolehLihatSemuaBon($request)) {
+            return true;
+        }
+
+        $u = $request->user();
+
+        if ($advance->created_by !== null && (int) $advance->created_by === (int) $u?->id) {
+            return true;
+        }
+
+        $nama = app(CostCenterPengguna::class)->namaKaryawan($u);
+        $holder = (string) $advance->holder;
+
+        return $nama !== null && ($holder === $nama || str_starts_with($holder, $nama.' — '));
+    }
+
+    /** Terapkan pembatasan di atas pada sebuah query bon. Dipakai daftar, ringkasan, & tab. */
+    private function batasiKeMilikSendiri(Builder $q, Request $request): Builder
+    {
+        if ($this->bolehLihatSemuaBon($request)) {
+            return $q;
+        }
+
+        $u = $request->user();
+        $nama = app(CostCenterPengguna::class)->namaKaryawan($u);
+
+        return $q->where(function (Builder $w) use ($u, $nama) {
+            // (int), bukan $u?->id apa adanya: Laravel mengubah nilai null pada where() menjadi
+            // whereNull, sehingga akun tanpa id justru akan melihat SEMUA bon yang created_by-nya
+            // kosong — kebalikan dari yang dimaksud. Nol tidak pernah cocok dengan id mana pun.
+            $w->where('created_by', (int) $u?->id);
+
+            if ($nama !== null) {
+                $w->orWhere('holder', $nama)->orWhere('holder', 'like', $nama.' — %');
+            }
+        });
+    }
+
+    private function indexBuckets(Request $request): array
     {
         $map = fn ($a) => [
             'id' => $a->id,
@@ -110,11 +197,14 @@ class CashAdvanceController extends Controller
             'paid_date' => $a->paid_date?->toDateString(),
         ];
 
-        $realisasi = BsCashAdvance::where('status', 'realized')->where('settlement', '=', 0)
+        $realisasi = $this->batasiKeMilikSendiri(BsCashAdvance::query(), $request)
+            ->where('status', 'realized')->where('settlement', '=', 0)
             ->latest('realized_date')->latest('id')->get();
-        $refund = BsCashAdvance::where('status', 'realized')->where('settlement', '>', 0)
+        $refund = $this->batasiKeMilikSendiri(BsCashAdvance::query(), $request)
+            ->where('status', 'realized')->where('settlement', '>', 0)
             ->latest('realized_date')->latest('id')->get();
-        $reimburse = BsCashAdvance::where('status', 'realized')->where('settlement', '<', 0)
+        $reimburse = $this->batasiKeMilikSendiri(BsCashAdvance::query(), $request)
+            ->where('status', 'realized')->where('settlement', '<', 0)
             ->latest('realized_date')->latest('id')->get();
 
         $bucket = fn ($rows, string $totalMode = 'amount') => [
@@ -788,6 +878,7 @@ class CashAdvanceController extends Controller
     public function show(Request $request, BsCashAdvance $advance): Response
     {
         abort_unless($request->user()?->can('cashbook.advance.view'), 403);
+        abort_unless($this->bolehBukaBon($request, $advance), 403);
 
         return Inertia::render('BusinessSupport/CashBook/Advances/Show', [
             'advance' => $advance->load(['cashAccount:id,code,name', 'creditCard:id,name,card_number,balance,expired_date', 'lines.expenseAccount:id,code,name', 'lines.costCenter:id,code,name']),
@@ -1000,6 +1091,10 @@ class CashAdvanceController extends Controller
     public function realize(Request $request, BsCashAdvance $advance, CashAdvanceService $svc): RedirectResponse
     {
         abort_unless($request->user()?->can('cashbook.advance.realize'), 403);
+        // Hanya bon yang boleh ia BUKA — layarnya memang sudah dijaga, tetapi realisasi
+        // mencetak jurnal beban ke cost center pengaju: direalisasi orang lain, beban itu
+        // menempel ke unit kerja yang salah dan tidak ada yang menyadarinya.
+        abort_unless($this->bolehBukaBon($request, $advance), 403);
 
         $v = $request->validate([
             'realized_date' => ['required', 'date'],
@@ -1122,6 +1217,7 @@ class CashAdvanceController extends Controller
     public function print(Request $request, BsCashAdvance $advance): HttpResponse
     {
         abort_unless($request->user()?->can('cashbook.advance.print'), 403);
+        abort_unless($this->bolehBukaBon($request, $advance), 403);
         // 'costCenter', BUKAN 'department': master Departemen sudah dicabut dan relasinya tidak
         // pernah ada di BsCashAdvance — memuatnya melempar RelationNotFoundException, dan
         // CETAK PENGAJUAN jadi 500 sejak itu. Unit kerja kini selalu dari cost center.
@@ -1198,6 +1294,7 @@ class CashAdvanceController extends Controller
     public function printRealisasi(Request $request, BsCashAdvance $advance): HttpResponse
     {
         abort_unless($request->user()?->can('cashbook.advance.print-realisasi'), 403);
+        abort_unless($this->bolehBukaBon($request, $advance), 403);
         abort_unless($advance->status === 'realized', 404, 'Bon belum direalisasi.');
         $advance->load(['cashAccount:id,code,name', 'costCenter:id,code,name', 'lines.expenseAccount:id,code,name']);
 

@@ -9,6 +9,8 @@ type Bucket = { rows: any[]; count: number; total: number };
 const props = defineProps<{
     /** Daftar ini dibuka dari sisi Dept Finance. */
     modeFinance?: boolean;
+    /** Laporan memuat bon SELURUH karyawan — tombolnya hanya untuk yang berizin. */
+    canReport?: boolean;
     advances: any;
     filters: { status?: string; search?: string };
     summary: { outstanding: number; count: number };
@@ -102,7 +104,7 @@ function penyelesaian(r: any): Selesai | null {
         <div class="flex items-center justify-between">
             <h1 class="flex items-center gap-2 text-2xl font-bold"><Wallet class="h-6 w-6 text-amber-600" /> Bon Sementara <span class="text-base font-normal text-neutral-400">(Panjar)</span></h1>
             <div class="flex items-center gap-2">
-                <Link :href="route('bs.advance.report')" class="inline-flex items-center gap-1.5 rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-50 dark:border-neutral-600 dark:bg-neutral-800 dark:text-neutral-200"><FileBarChart class="h-4 w-4" /> Laporan</Link>
+                <Link v-if="canReport" :href="route('bs.advance.report')" class="inline-flex items-center gap-1.5 rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-50 dark:border-neutral-600 dark:bg-neutral-800 dark:text-neutral-200"><FileBarChart class="h-4 w-4" /> Laporan</Link>
             </div>
         </div>
 
