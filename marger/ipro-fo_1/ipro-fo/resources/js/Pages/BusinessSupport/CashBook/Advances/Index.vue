@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { router, Link } from '@inertiajs/vue3';
 import { ref, computed } from 'vue';
-import { ArrowLeft, Wallet, HandCoins, Search, FileBarChart } from 'lucide-vue-next';
+import { ArrowLeft, Wallet, Search, FileBarChart } from 'lucide-vue-next';
 import Badge from '@/Components/UI/Badge.vue';
 import EmptyState from '@/Components/UI/EmptyState.vue';
 
@@ -103,7 +103,6 @@ function penyelesaian(r: any): Selesai | null {
             <h1 class="flex items-center gap-2 text-2xl font-bold"><Wallet class="h-6 w-6 text-amber-600" /> Bon Sementara <span class="text-base font-normal text-neutral-400">(Panjar)</span></h1>
             <div class="flex items-center gap-2">
                 <Link :href="route('bs.advance.report')" class="inline-flex items-center gap-1.5 rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-50 dark:border-neutral-600 dark:bg-neutral-800 dark:text-neutral-200"><FileBarChart class="h-4 w-4" /> Laporan</Link>
-                <Link :href="route('bs.advance.payments')" class="inline-flex items-center gap-1.5 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm font-medium text-amber-700 hover:bg-amber-100 dark:border-amber-700/50 dark:bg-amber-900/20 dark:text-amber-300"><HandCoins class="h-4 w-4" /> Bayar (Finance)</Link>
             </div>
         </div>
 

@@ -71,8 +71,10 @@ const sections = computed<Record<string, Item[]>>(() => ({
         { label: 'Pengeluaran Bon Sementara', route: r('bs.advance.payments') },
         { label: 'Alokasi Bon Sementara', route: r('bs.advance.allocation.index') },
         { label: 'Realisasi Bon Sementara', route: r('bs.advance.index') },
-        { label: 'Refund Bon Sementara', route: r('bs.advance.index') },
-        { label: 'Reimburse Bon Sementara', route: r('bs.advance.index') },
+        // Refund & Reimburse dikerjakan DEPT FINANCE, jadi keduanya menuju daftar Finance
+        // (finance=1) — bukan daftar pengaju, yang panel penyelesaiannya tidak terbit.
+        { label: 'Refund Bon Sementara', route: r('bs.advance.index', { finance: 1 }) },
+        { label: 'Reimburse Bon Sementara', route: r('bs.advance.index', { finance: 1 }) },
     ],
     'kas-kecil': [
         { label: 'Penerimaan Kas Kecil', route: r('bs.pettycash.create', { type: 'in' }) },
