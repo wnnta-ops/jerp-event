@@ -10,7 +10,9 @@ use App\Http\Controllers\Controller;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
-use Symfony\Component\HttpFoundation\StreamedResponse;
+use App\Support\Xlsx;
+use RuntimeException;
+use Symfony\Component\HttpFoundation\Response as BerkasResponse;
 use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -120,7 +122,7 @@ class ApCategoryController extends Controller
      * operator melihat kode akun yang memang berlaku di sistem ini — bukan contoh karangan
      * yang akan ditolak begitu diunggah kembali.
      */
-    public function template(Request $request): StreamedResponse
+    public function template(Request $request): BerkasResponse
     {
         abort_unless($request->user()?->can("ap.category.view"), 403);
 
@@ -134,20 +136,18 @@ class ApCategoryController extends Controller
             $contoh = [["BIAYA-LISTRIK", "BIAYA LISTRIK KANTOR", $debit, $hutang, 1, BsApCategory::POSISI_HUTANG]];
         }
 
-        return response()->streamDownload(function () use ($contoh) {
-            $out = fopen("php://output", "w");
-            // BOM supaya Excel membaca huruf beraksen dengan benar.
-            fwrite($out, chr(0xEF).chr(0xBB).chr(0xBF));
-            fputcsv($out, self::KOLOM, ",", chr(34), "");
-            foreach ($contoh as $b) {
-                fputcsv($out, $b, ",", chr(34), "");
-            }
-            fclose($out);
-        }, "format-impor-kategori-invoice.csv", ["Content-Type" => "text/csv; charset=UTF-8"]);
+        // Kode akun sengaja ditulis sebagai TEKS: sebagai angka, Excel menampilkan kode 11 digit
+        // seperti 50302020217 dalam notasi ilmiah, dan orang menyalinnya apa adanya.
+        $contoh = array_map(fn ($b) => [$b[0], $b[1], (string) $b[2], (string) $b[3], $b[4], $b[5]], $contoh);
+
+        return response(Xlsx::tulis(self::KOLOM, $contoh, 'Kategori Invoice'), 200, [
+            "Content-Type" => "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            "Content-Disposition" => 'attachment; filename="format-impor-kategori-invoice.xlsx"',
+        ]);
     }
 
     /**
-     * Impor kategori invoice dari CSV.
+     * Impor kategori invoice dari Excel (.xlsx).
      *
      * Akun ditulis sebagai KODE, bukan id: kode itulah yang terbaca operator di layar dan di
      * bagan akun, sedangkan id hanya bermakna di dalam basis data ini.
@@ -160,18 +160,21 @@ class ApCategoryController extends Controller
     public function import(Request $request): RedirectResponse
     {
         abort_unless($request->user()?->can("businesssupport.setup.manage"), 403);
-        $request->validate(["berkas" => ["required", "file", "mimes:csv,txt", "max:2048"]]);
+        $request->validate(["berkas" => ["required", "file", "mimes:xlsx", "max:2048"]], [
+            "berkas.mimes" => "Berkas harus Excel (.xlsx). Unduh format untuk contoh susunannya.",
+        ]);
 
-        $isi = array_map(fn ($b) => str_getcsv($b, ",", chr(34), ""), file($request->file("berkas")->getRealPath(), FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES));
+        try {
+            $isi = Xlsx::baca($request->file("berkas")->getRealPath());
+        } catch (RuntimeException $e) {
+            return back()->with("error", $e->getMessage());
+        }
         if ($isi === []) {
             return back()->with("error", "Berkas impor kosong.");
         }
 
         // Baris judul dibuang bila memang judul; berkas tanpa judul tetap diterima.
-        // BOM UTF-8 di awal berkas (ditulis Excel) dibuang eksplisit  tanpa itu kolom
-        // pertama terbaca sebagai "&kode" dan baris judulnya tidak dikenali.
-        $bom = chr(0xEF).chr(0xBB).chr(0xBF);
-        $kepala = array_map(fn ($x) => strtolower(trim(str_replace($bom, '', (string) $x))), $isi[0]);
+        $kepala = array_map(fn ($x) => strtolower(trim((string) $x)), $isi[0]);
         if (in_array("kode", $kepala, true)) {
             array_shift($isi);
         }
