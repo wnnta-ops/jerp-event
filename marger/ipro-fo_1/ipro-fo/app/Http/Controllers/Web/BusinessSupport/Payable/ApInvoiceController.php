@@ -300,6 +300,9 @@ class ApInvoiceController extends Controller
             'ppn_mode' => ['required', 'in:none,with'],
             'ppn_pct' => ['nullable', 'numeric', 'min:0', 'max:100'],
             'ppn_base' => ['nullable', 'numeric', 'min:0'],          // #140 nilai objek PPN
+            // Include PPN: nilai yang dikirim adalah TOTAL, bukan DPP. Harus sampai ke server —
+            // dulu ia cuma alat bantu di layar, sehingga angka tersimpan bisa beda dari layar.
+            'ppn_incl' => ['nullable', 'boolean'],
             'pph_mode' => ['required', 'in:none,withheld,borne'], // borne = PPh ditanggung (sebelumnya tertolak validasi)
             'pph_type' => ['nullable', 'in:pph21,pph23,pph4_2'],   // #94
             'pph_pct' => ['nullable', 'numeric', 'min:0', 'max:100'],
