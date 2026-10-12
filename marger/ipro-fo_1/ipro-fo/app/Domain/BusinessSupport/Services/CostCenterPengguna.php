@@ -85,6 +85,21 @@ class CostCenterPengguna
         return $this->karyawan($user)?->id;
     }
 
+    /**
+     * NAMA karyawan yang tertaut ke akun ini — dipakai mencocokkan kolom `holder` pada bon.
+     *
+     * `holder` menyimpan nama tampilan ("Nama — Jabatan"), bukan id, sehingga kepemilikan bon
+     * lama yang `created_by`-nya kosong hanya bisa dikenali lewat nama ini. Dikembalikan apa
+     * adanya — pemanggilnya yang menyusun pencocokan, supaya tidak ada yang memakai LIKE
+     * berawalan dan ikut menyeret nama lain yang berawalan sama.
+     */
+    public function namaKaryawan(?object $user): ?string
+    {
+        $nama = trim((string) ($this->karyawan($user)?->name ?? ''));
+
+        return $nama !== '' ? $nama : null;
+    }
+
     /** Karyawan yang tertaut ke akun ini — lewat NIP dulu, baru nama. */
     private function karyawan(?object $user): ?BsEmployee
     {
