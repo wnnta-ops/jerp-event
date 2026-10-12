@@ -315,17 +315,16 @@ const inputCls = 'h-9 w-full rounded-lg border border-neutral-300 bg-white px-3 
                                 <option v-for="(label, kunci) in (cogsComponents ?? {})" :key="kunci" :value="kunci">{{ label }}</option>
                             </select>
                             <!--
-                                Tanda ini dibaca DUA modul yang berbeda, dan keduanya perlu disebut:
-                                  • COGS Lama → Komponen COGS: mutasinya tampil di layar komponen, berdiri sendiri.
-                                  • COGS Baru → Actual Costing COGS: mutasinya IKUT DIBEBANKAN ke HPP per unit —
-                                    tetapi hanya pada periode yang mencentang akun ini, sebab satu komponen bisa
-                                    punya akun untuk beberapa cluster.
-                                Tanpa kalimat kedua, orang menandai akun lalu mengira angkanya sudah masuk HPP
-                                padahal belum dicentang di periode mana pun — dan sebaliknya.
+                                Tanda ini dibaca COGS → Actual Costing: mutasi akunnya IKUT DIBEBANKAN ke HPP
+                                per unit — tetapi hanya pada periode yang mencentang akun ini, sebab satu komponen
+                                bisa punya akun untuk beberapa cluster. Tanpa kalimat itu, orang menandai akun lalu
+                                mengira angkanya sudah masuk HPP padahal belum dicentang di periode mana pun.
+                                (Layar Komponen COGS milik COGS Lama ikut membacanya dulu; modul itu ditutup
+                                12 Okt 2026.)
                             -->
                             <p class="mt-1 text-[11px] text-neutral-400">
-                                Seluruh mutasi buku besar akun ini — masuk maupun keluar — ikut terbaca di layar <b>Komponen COGS</b> yang dipilih
-                                (COGS Lama). Angkanya berdiri SENDIRI, tidak dijumlahkan dengan biaya dari Kategori Invoice maupun SPK pada layar itu.
+                                Seluruh mutasi buku besar akun ini — masuk maupun keluar — ikut terbaca sebagai biaya aktual komponen yang dipilih,
+                                pada periode COGS yang mencentang akun ini.
                             </p>
                             <p class="mt-1 text-[11px] text-neutral-400">
                                 Di <b>COGS Baru</b>, akun bertanda ini muncul di <b>Actual Costing COGS</b> pada komponen yang sama —

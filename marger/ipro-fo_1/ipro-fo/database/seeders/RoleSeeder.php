@@ -42,60 +42,43 @@ class RoleSeeder extends Seeder
             }
 
             // Default sets per role:
+            /*
+             * IZIN MODUL YANG SUDAH PINDAH KE FO TIDAK LAGI DISEBUT DI SINI.
+             *
+             * Sales, Finance, Collection, Reporting & Approval dikerjakan sepenuhnya di FO;
+             * rutenya di BO sudah dimatikan config/modul_pindah_fo.php dan izinnya sudah
+             * lama berhenti dibuat PermissionSeeder. Yang tertinggal hanya penyebutan di
+             * seeder ini — dan itu cukup untuk MENGHIDUPKANNYA KEMBALI: satu `db:seed`
+             * membuat baris izinnya terbit lagi di layar Grup Akses BO, tanpa satu pun
+             * menu yang bisa dibuka olehnya.
+             *
+             * `businesssupport.*` TETAP ada: itu izin Back Office sendiri, bukan FO.
+             */
             $perms = match ($name) {
                 'Sales' => [
                     'master.customer.view', 'master.customer.create', 'master.customer.update',
-                    'master.unit.view', 'sales.hold.view', 'sales.hold.create',
-                    'sales.booking.view', 'sales.booking.create', 'sales.booking.update',
-                    'sales.discount.request', 'sales.nup.view', 'sales.nup.create',
-                    'collection.followup.view', 'collection.followup.create',
-                    'reporting.dashboard.view',
+                    'master.unit.view',
                 ],
                 'SalesManager' => [
                     'master.customer.view', 'master.unit.view',
-                    'sales.booking.view', 'sales.booking.promote', 'sales.booking.cancel',
-                    'sales.discount.approve', 'sales.contract.view',
-                    'sales.scheme.view', 'sales.gimmick.view',
-                    'sales.nup.view', 'sales.nup.verify', 'sales.nup.payment', 'sales.nup.refund',
-                    'approval.view', 'approval.act',
-                    'reporting.dashboard.view', 'reporting.report.view',
                 ],
                 'Finance' => [
-                    'master.customer.view', 'finance.tts.view', 'finance.tts.create', 'finance.tts.allocate',
-                    'finance.memo.view', 'finance.memo.create',
-                    'finance.kuitansi.view', 'finance.kuitansi.issue',
-                    'finance.va.view',
+                    'master.customer.view',
                     // #125: staf finance boleh akses Business Support & edit tgl terima dokumen bon sementara
                     'businesssupport.view', 'businesssupport.transaction.create',
                 ],
                 'FinanceManager' => [
-                    'finance.tts.view', 'finance.tts.post', 'finance.tts.void',
-                    'finance.memo.view', 'finance.kuitansi.view', 'finance.kuitansi.void',
-                    'finance.cashback.view', 'finance.cashback.approve', 'finance.cashback.pay',
-                    'finance.refund.view', 'finance.refund.approve', 'finance.refund.pay',
                     'bankloan.setup.view', 'bankloan.setup.manage', 'bankloan.application.view',
                     'businesssupport.view', 'businesssupport.setup.manage', 'businesssupport.transaction.create', 'businesssupport.approval.act',
-                    'approval.view', 'approval.act',
-                    'reporting.dashboard.view', 'reporting.report.view',
                 ],
                 'Collection' => [
-                    'master.customer.view', 'collection.followup.view', 'collection.followup.create',
-                    'collection.denda.view', 'collection.pjt.view',
-                    'collection.tunggakan.view', 'collection.tunggakan.settle',
-                    'collection.sp.view', 'collection.sp.issue',
+                    'master.customer.view',
                 ],
                 'Direktur' => [
-                    'reporting.dashboard.view', 'reporting.dashboard.executive',
-                    'reporting.report.view', 'reporting.report.export',
-                    'approval.view', 'approval.act',
                     'master.customer.view', 'master.customer.view.sensitive',
-                    'sales.discount.approve', 'sales.cancellation.approve',
-                    'sales.gn.approve', 'sales.gu.approve', 'sales.reschedule.approve',
                 ],
                 'Viewer' => [
                     'master.customer.view', 'master.unit.view',
-                    'sales.booking.view', 'finance.tts.view',
-                    'reporting.dashboard.view',
                 ],
                 default => [],
             };

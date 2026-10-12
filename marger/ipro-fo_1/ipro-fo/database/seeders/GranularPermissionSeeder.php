@@ -97,18 +97,15 @@ class GranularPermissionSeeder extends Seeder
                 'contractor.spk.material.use', 'contractor.spk.mutate-progress', 'contractor.spk.progress', 'contractor.spk.progress.pay',
                 'contractor.spk.retensi', 'contractor.spk.update', 'contractor.spk.view',
             ],
-            'cogs' => [
-                'cogs.budget.create', 'cogs.budget.delete', 'cogs.budget.update', 'cogs.budget.view',
-                'cogs.category.create', 'cogs.category.delete', 'cogs.category.update', 'cogs.category.view',
-                'cogs.component.manage', 'cogs.component.view',
-                'cogs.cpp.view', 'cogs.general.print', 'cogs.general.view', 'cogs.hpp.generate',
-                'cogs.hpp.post-hpp', 'cogs.hpp.post-persediaan', 'cogs.hpp.view', 'cogs.location.create',
-                'cogs.location.delete', 'cogs.location.update', 'cogs.location.view', 'cogs.mutation.approve',
-                'cogs.mutation.create', 'cogs.mutation.view', 'cogs.provision.view', 'cogs.query.budget',
-                'cogs.query.hpp-unit', 'cogs.query.pengakuan', 'cogs.query.persediaan-unit', 'cogs.query.realisasi',
-                'cogs.query.realisasi-detil', 'cogs.realization.create', 'cogs.realization.view', 'cogs.recognition.create',
-                'cogs.recognition.view', 'cogs.setup.provision.manage', 'cogs.unitcoa.create', 'cogs.unitcoa.delete',
-                'cogs.unitcoa.view', 'cogs.upload.akun', 'cogs.upload.kategori', 'cogs.upload.nilai',
+            // COGS LAMA DITUTUP 12 Okt 2026 — izin `cogs.*` dicabut migrasi
+            // 2026_10_12_100000. Blok katalognya dihapus dari sini, bukan sekadar
+            // dikosongkan di database: seeder ini idempoten dan dijalankan tiap deploy,
+            // jadi selama namanya masih tertulis di sini satu `db:seed` akan
+            // menerbitkannya kembali — izin yang hidup lagi tanpa satu pun menu.
+            //
+            // COGS Baru memakai izinnya sendiri, `cogs2.*`, yang dibuat migrasi itu.
+            'cogs2' => [
+                'cogs2.view', 'cogs2.manage',
             ],
             'tax' => [
                 'tax.efaktur', 'tax.export', 'tax.nsfp', 'tax.pph.export',

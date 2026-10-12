@@ -425,7 +425,7 @@ class DashboardController extends Controller
      * GRAFIK 18 — Summary HPP: susunan harga pokok per cluster (batang bertumpuk).
      *
      * bs_cogs_categories menyimpan kategori BUDGET, dan setiap kategori menunjuk salah satu
-     * dari tujuh komponen HPP (BsCogsCategory::COMPONENTS). CogsService::generateHpp() sudah
+     * dari tujuh komponen HPP. Modul COGS Lama yang menulisnya sudah dihapus (12 Okt 2026); kolomnya
      * meringkas budget itu ke tujuh kolom hpp_* di bs_cogs_hpp, jadi angka HPP per unit
      * diambil langsung dari sana — tidak perlu menelusuri ulang kategori (dan tidak akan
      * salah hitung bila kategori dihapus/diganti setelah HPP terlanjur di-generate).
@@ -489,7 +489,7 @@ class DashboardController extends Controller
 
         // ── PERIODE TERAKHIR SAJA, SATU BARIS PER UNIT ──────────────────────────────
         // bs_cogs_hpp bergrain (unit_id, period_year, period_month) dan SETIAP baris memuat
-        // HPP PENUH unit tersebut — bukan angka tambahan (CogsService::generateHpp menulis
+        // HPP PENUH unit tersebut — bukan angka tambahan (modul COGS Lama dulu menulis
         // pool anggaran tahunan x share tiap kali di-generate untuk periode baru). Menjumlah
         // seluruh baris berarti MENGALIKAN HPP dengan jumlah periode yang pernah di-generate.
         // Konvensi repo memang mengambil satu baris terakhir per unit — lihat

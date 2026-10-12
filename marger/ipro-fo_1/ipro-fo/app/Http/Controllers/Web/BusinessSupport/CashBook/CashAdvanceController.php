@@ -982,7 +982,10 @@ class CashAdvanceController extends Controller
            (journal_id terisi), jadi whereNull('journal_id') sudah menyingkirkannya. Ia ditulis
            tetap sebagai pernyataan maksud — kalau kelak ada cara pembayaran baru yang tidak
            berjurnal, tanpa baris ini ia akan diam-diam ikut masuk ke daftar alokasi. */
-        $rows = BsCashAdvance::query()
+        // Dibatasi ke bon sendiri dengan aturan yang sama seperti daftar utama — menunya
+        // memang hanya terbit untuk Finance, tetapi alamatnya bisa diketik langsung, dan
+        // tanpa ini daftar alokasi menjadi jalan memutar menuju bon seluruh karyawan.
+        $rows = $this->batasiKeMilikSendiri(BsCashAdvance::query(), $request)
             ->where('payment_method', 'debit_va')
             ->whereNull('journal_id')
             ->where('status', 'outstanding')
@@ -1022,6 +1025,7 @@ class CashAdvanceController extends Controller
     public function allocationShow(Request $request, BsCashAdvance $advance): Response
     {
         abort_unless($request->user()?->can('cashbook.advance.view'), 403);
+        abort_unless($this->bolehBukaBon($request, $advance), 403);
         // Bon yang memang tidak punya langkah alokasi tidak boleh membuka layar ini: halaman
         // alokasi yang selalu kosong akan terbaca sebagai "bonnya belum dialokasikan".
         abort_unless(app(CashAdvanceService::class)->perluLanjutAlokasi($advance), 404);

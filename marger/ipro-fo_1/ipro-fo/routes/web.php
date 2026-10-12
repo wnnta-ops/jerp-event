@@ -27,13 +27,6 @@ use App\Http\Controllers\Web\BusinessSupport\CashBook\OutgoingChequeController a
 use App\Http\Controllers\Web\BusinessSupport\CashBook\PettyCashController as BsPettyCashController;
 use App\Http\Controllers\Web\BusinessSupport\CashBook\SignatureBarcodeController as BsSignatureBarcodeController;
 use App\Http\Controllers\Web\BusinessSupport\Cogs\Cogs2Controller as BsCogs2Controller;
-use App\Http\Controllers\Web\BusinessSupport\Cogs\CogsBudgetMutationController as BsCogsMutationController;
-use App\Http\Controllers\Web\BusinessSupport\Cogs\CogsController as BsCogsController;
-use App\Http\Controllers\Web\BusinessSupport\Cogs\CogsHppController as BsCogsHppController;
-use App\Http\Controllers\Web\BusinessSupport\Cogs\CogsQueryController as BsCogsQueryController;
-use App\Http\Controllers\Web\BusinessSupport\Cogs\CogsRealizationController as BsCogsRealizationController;
-use App\Http\Controllers\Web\BusinessSupport\Cogs\CogsSetupCogsController as BsCogsSetupCogsController;
-use App\Http\Controllers\Web\BusinessSupport\Cogs\CogsSetupController as BsCogsSetupController;
 use App\Http\Controllers\Web\BusinessSupport\Contractor\ContractorController as BsSpkController;
 use App\Http\Controllers\Web\BusinessSupport\Contractor\ContractorQueryController as BsContractorQueryController;
 use App\Http\Controllers\Web\BusinessSupport\Contractor\KplController as BsKplController;
@@ -1121,78 +1114,15 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
     Route::post('/business-support/payroll', [BsPayrollController::class, 'store'])->name('bs.payroll.store');
     Route::get('/business-support/payroll/{payroll}', [BsPayrollController::class, 'show'])->name('bs.payroll.show');
 
-    // ── COST OF GOOD SOLD (modul mandiri; /cogs → hub) ──
-    Route::redirect('/cogs', '/business-support/cogs-hub')->name('cogs.home');
-    Route::get('/business-support/cogs-hub', [BsCogsController::class, 'hub'])->name('bs.cogs.home');
-    Route::get('/business-support/cogs-print-out', [BsCogsController::class, 'printHub'])->name('bs.cogs.printhub');
-    Route::get('/business-support/cogs', [BsCogsController::class, 'index'])->name('bs.cogs.index');
-    Route::post('/business-support/cogs', [BsCogsController::class, 'store'])->name('bs.cogs.store');
-    Route::get('/business-support/cogs-realcost', [BsCogsController::class, 'realCost'])->name('bs.cogs.realcost');
-    Route::post('/business-support/cogs-realcost', [BsCogsController::class, 'postRealCost'])->name('bs.cogs.realcost.post');
-
-    // Setup
-    Route::get('/business-support/cogs-location', [BsCogsSetupController::class, 'locationIndex'])->name('bs.cogs.location.index');
-    Route::post('/business-support/cogs-location', [BsCogsSetupController::class, 'locationStore'])->name('bs.cogs.location.store');
-    Route::put('/business-support/cogs-location/{location}', [BsCogsSetupController::class, 'locationUpdate'])->name('bs.cogs.location.update');
-    Route::delete('/business-support/cogs-location/{location}', [BsCogsSetupController::class, 'locationDestroy'])->name('bs.cogs.location.destroy');
-    Route::get('/business-support/cogs-provision', [BsCogsSetupController::class, 'provisionIndex'])->name('bs.cogs.provision.index');
-    Route::post('/business-support/cogs-provision', [BsCogsSetupController::class, 'provisionSave'])->name('bs.cogs.provision.save');
-    Route::get('/business-support/cogs-category', [BsCogsSetupController::class, 'categoryIndex'])->name('bs.cogs.category.index');
-    Route::post('/business-support/cogs-category', [BsCogsSetupController::class, 'categoryStore'])->name('bs.cogs.category.store');
-    Route::put('/business-support/cogs-category/{category}', [BsCogsSetupController::class, 'categoryUpdate'])->name('bs.cogs.category.update');
-    Route::delete('/business-support/cogs-category/{category}', [BsCogsSetupController::class, 'categoryDestroy'])->name('bs.cogs.category.destroy');
-    Route::get('/business-support/cogs-unitcoa', [BsCogsSetupController::class, 'unitCoaIndex'])->name('bs.cogs.unitcoa.index');
-    Route::post('/business-support/cogs-unitcoa', [BsCogsSetupController::class, 'unitCoaStore'])->name('bs.cogs.unitcoa.store');
-    Route::delete('/business-support/cogs-unitcoa/{unitCoa}', [BsCogsSetupController::class, 'unitCoaDestroy'])->name('bs.cogs.unitcoa.destroy');
-    Route::get('/business-support/cogs-budget', [BsCogsSetupController::class, 'budgetIndex'])->name('bs.cogs.budget.index');
-    Route::post('/business-support/cogs-budget', [BsCogsSetupController::class, 'budgetStore'])->name('bs.cogs.budget.store');
-    Route::put('/business-support/cogs-budget/{budget}', [BsCogsSetupController::class, 'budgetUpdate'])->name('bs.cogs.budget.update');
-    Route::delete('/business-support/cogs-budget/{budget}', [BsCogsSetupController::class, 'budgetDestroy'])->name('bs.cogs.budget.destroy');
-    Route::get('/business-support/cogs-upload/{kind}', [BsCogsSetupController::class, 'uploadForm'])->whereIn('kind', ['kategori', 'akun', 'nilai'])->name('bs.cogs.upload.form');
-    Route::post('/business-support/cogs-upload-kategori', [BsCogsSetupController::class, 'uploadKategori'])->name('bs.cogs.upload.kategori.store');
-    Route::post('/business-support/cogs-upload-akun', [BsCogsSetupController::class, 'uploadAkun'])->name('bs.cogs.upload.akun.store');
-    Route::post('/business-support/cogs-upload-nilai', [BsCogsSetupController::class, 'uploadNilai'])->name('bs.cogs.upload.nilai.store');
-
-    // Mutasi Budget + Approval
-    Route::get('/business-support/cogs-mutation', [BsCogsMutationController::class, 'index'])->name('bs.cogs.mutation.index');
-    Route::get('/business-support/cogs-mutation/create', [BsCogsMutationController::class, 'create'])->name('bs.cogs.mutation.create');
-    Route::post('/business-support/cogs-mutation', [BsCogsMutationController::class, 'store'])->name('bs.cogs.mutation.store');
-    Route::get('/business-support/cogs-mutation-approval', [BsCogsMutationController::class, 'approvals'])->name('bs.cogs.mutation.approvals');
-    Route::post('/business-support/cogs-mutation-approval', [BsCogsMutationController::class, 'approveBatch'])->name('bs.cogs.mutation.approve-batch');
-
-    // Saldo Awal Realisasi
-    Route::get('/business-support/cogs-realization', [BsCogsRealizationController::class, 'index'])->name('bs.cogs.realization.index');
-    Route::get('/business-support/cogs-realization/create', [BsCogsRealizationController::class, 'create'])->name('bs.cogs.realization.create');
-    Route::post('/business-support/cogs-realization', [BsCogsRealizationController::class, 'store'])->name('bs.cogs.realization.store');
-
-    // HPP RealCost (master + generate + posting 2 langkah)
-    Route::get('/business-support/cogs-hpp', [BsCogsHppController::class, 'index'])->name('bs.cogs.hpp.index');
-    Route::get('/business-support/cogs-hpp/generate', [BsCogsHppController::class, 'generate'])->name('bs.cogs.hpp.generate');
-    Route::post('/business-support/cogs-hpp/generate', [BsCogsHppController::class, 'runGenerate'])->name('bs.cogs.hpp.generate.run');
-    Route::get('/business-support/cogs-hpp/post-persediaan', [BsCogsHppController::class, 'postPersediaanForm'])->name('bs.cogs.hpp.post-persediaan');
-    Route::post('/business-support/cogs-hpp/post-persediaan', [BsCogsHppController::class, 'postPersediaan'])->name('bs.cogs.hpp.post-persediaan.run');
-    Route::get('/business-support/cogs-hpp/post-hpp', [BsCogsHppController::class, 'postHppForm'])->name('bs.cogs.hpp.post-hpp');
-    Route::post('/business-support/cogs-hpp/post-hpp', [BsCogsHppController::class, 'postHpp'])->name('bs.cogs.hpp.post-hpp.run');
-
-    // Komponen COGS — Tanah & License Permit (dari Kategori Invoice AP), Housing & Infrastruktur
-    // (dari Surat Perintah Kerja). Slug dibatasi supaya /komponen/apa-saja memulangkan 404,
-    // bukan halaman kosong yang terlihat seperti komponen tanpa biaya.
-    Route::get('/business-support/cogs-komponen/{komponen}', [\App\Http\Controllers\Web\BusinessSupport\Cogs\CogsComponentController::class, 'show'])
-        ->where('komponen', 'tanah|housing|infrastruktur|license-permit')->name('bs.cogs.komponen.show');
-    Route::put('/business-support/cogs-komponen/{komponen}/kategori-invoice', [\App\Http\Controllers\Web\BusinessSupport\Cogs\CogsComponentController::class, 'simpanTautan'])
-        ->where('komponen', 'tanah|license-permit')->name('bs.cogs.komponen.tautan');
-
-    // Set Up COGS — "Perhitungan Lahan" per lokasi/tahap → budget per unit menurut luas tanah &
-    // luas bangunan. Nama rutenya sengaja bs.cogs.setupcogs.* dan BUKAN bs.cogs.setup.*: grup
-    // sidebar "Setup" yang lama memakai bs.cogs.location/provision/budget/... dan sudah punya
-    // izin mati bernama cogs.setup.provision.manage, sehingga wildcard 'cogs.setup.*' akan ikut
-    // mencocoki izin itu.
-    Route::get('/business-support/cogs-setup', [BsCogsSetupCogsController::class, 'index'])->name('bs.cogs.setupcogs.index');
-    Route::post('/business-support/cogs-setup', [BsCogsSetupCogsController::class, 'store'])->name('bs.cogs.setupcogs.store');
-    Route::get('/business-support/cogs-setup/{setup}', [BsCogsSetupCogsController::class, 'show'])->name('bs.cogs.setupcogs.show');
-    Route::put('/business-support/cogs-setup/{setup}', [BsCogsSetupCogsController::class, 'update'])->name('bs.cogs.setupcogs.update');
-    Route::put('/business-support/cogs-setup/{setup}/komponen', [BsCogsSetupCogsController::class, 'simpanKomponen'])->name('bs.cogs.setupcogs.komponen');
-    Route::delete('/business-support/cogs-setup/{setup}', [BsCogsSetupCogsController::class, 'destroy'])->name('bs.cogs.setupcogs.destroy');
+    // ── COGS LAMA DIHAPUS (12 Okt 2026) ──────────────────────────────────────────────
+    // Model perhitungan HPP yang lama dibuang seluruhnya — rute, controller, service,
+    // model, dan halamannya — karena yang dipakai sekarang COGS Baru di bawah ini.
+    //
+    // Tabel `bs_cogs_*` beserta isinya SENGAJA TIDAK ikut dihapus: 71 baris HPP RealCost
+    // di sana berstatus `generated` dengan nol jurnal, jadi buku besar memang tak pernah
+    // tersentuh, tetapi membuang data bukan hal yang bisa dibatalkan kalau ternyata keliru.
+    // Kartu "Summary HPP" di Dashboard Back Office masih membacanya langsung lewat nama
+    // tabel, jadi ia tetap hidup tanpa modul ini.
 
     // ── COGS BARU ────────────────────────────────────────────────────────────────────
     // Perhitungan COGS → Set Up Kategori (4 komponen) → Actual Costing (4 komponen) →
@@ -1232,17 +1162,9 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
     Route::put('/business-support/cogs2/{periode}/rincian', [BsCogs2Controller::class, 'simpanUnit'])->name('bs.cogs2.rincian.simpan');
     Route::post('/business-support/cogs2/{periode}/tarik-unit', [BsCogs2Controller::class, 'tarikUnit'])->name('bs.cogs2.tarik-unit');
 
-    // Query / Laporan
-    Route::get('/business-support/cogs-query/budget', [BsCogsQueryController::class, 'budget'])->name('bs.cogs.query.budget');
-    Route::get('/business-support/cogs-query/realisasi', [BsCogsQueryController::class, 'realisasi'])->name('bs.cogs.query.realisasi');
-    Route::get('/business-support/cogs-query/realisasi-detil', [BsCogsQueryController::class, 'realisasiDetil'])->name('bs.cogs.query.realisasi-detil');
-    Route::get('/business-support/cogs-query/pengakuan', [BsCogsQueryController::class, 'pengakuan'])->name('bs.cogs.query.pengakuan');
-    Route::get('/business-support/cogs-query/persediaan-unit', [BsCogsQueryController::class, 'persediaanUnit'])->name('bs.cogs.query.persediaan-unit');
-    Route::get('/business-support/cogs-query/hpp-unit', [BsCogsQueryController::class, 'hppUnit'])->name('bs.cogs.query.hpp-unit');
-
-    // ── SUB-MODUL SECTION (landing grup BO untuk GL/Cash Book/Budget/COGS/Contractor) ──
+    // ── SUB-MODUL SECTION (landing grup BO untuk GL/Cash Book/Budget/Contractor) ──
     Route::get('/business-support/submodule/{module}/{section}', [BsSectionController::class, 'show'])
-        ->whereIn('module', ['gl', 'cashbook', 'budget', 'cogs', 'contractor'])
+        ->whereIn('module', ['gl', 'cashbook', 'budget', 'contractor'])
         ->name('bs.section');
 
     // ── DATA CENTER (modul mandiri; Customer + Supplier + Employee Center) ──

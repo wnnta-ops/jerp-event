@@ -21,7 +21,6 @@ class SubModuleSectionController extends Controller
         'gl'         => 'BusinessSupport/Gl/Section',
         'cashbook'   => 'BusinessSupport/CashBook/Section',
         'budget'     => 'BusinessSupport/Budget/Section',
-        'cogs'       => 'BusinessSupport/Cogs/Section',
         'contractor' => 'BusinessSupport/Contractor/Section',
     ];
 

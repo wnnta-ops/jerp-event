@@ -4,6 +4,7 @@ namespace App\Filament\System\Resources;
 
 use App\Filament\Concerns\MematuhiIzin;
 use App\Filament\System\Resources\BoRoleResource\Pages;
+use App\Filament\System\Support\PetaMenuBo;
 use App\Models\Bo\BoPermission;
 use App\Models\Bo\BoRole;
 use Filament\Forms;
@@ -54,70 +55,48 @@ class BoRoleResource extends Resource
             ]),
 
             Forms\Components\Section::make('Hak Akses (Permission) BO')
-                ->description('Per modul → sub-menu → aksi (Lihat/Buat/Ubah/Hapus/Setujui/…), seperti Grup Akses FO. Perubahan tersimpan ke DB ipro_bo; berlaku di app BO paling lama 1 menit kemudian.')
+                ->description('Disusun seperti menu BO: Modul → Sub-modul → Sub-sub-modul → aksi. Tiap sub-modul punya tombol Pilih semua. Tersimpan ke DB ipro_bo; berlaku di aplikasi BO paling lama 1 menit kemudian.')
                 ->schema(self::permissionMatrixBo()),
         ]);
     }
 
-    /** Label modul BO yang lebih manusiawi (fallback: headline nama modul). */
     /**
-     * Seksi matriks = GRUP MENU di sidebar BO, urutan dan namanya persis sama.
-     *
-     * Sebelumnya seksi dikelompokkan per KUNCI MODUL izin, dan itu tidak pernah
-     * cocok dengan yang dilihat pengguna: satu modul 'bs' membungkus tiga grup
-     * menu sekaligus (Aset Tetap, Purchasing, Inventory), sementara 'ar' terbelah
-     * antara Piutang Usaha dan Booked Revenue. Akibatnya nama seksi dan nama menu
-     * berbeda, dan menelusuri "izin mana untuk menu mana" jadi menebak.
-     *
-     * Tiap entri: label grup menu => daftar awalan izin miliknya. Awalan boleh
-     * berupa modul utuh ('gl') atau modul.area ('bs.asset') untuk modul yang
-     * memang terbelah. Yang lebih panjang menang, sehingga 'bs.sip' bisa masuk
-     * Cash Book meski 'bs' yang lain ada di tempat lain.
-     *
-     * Izin yang tidak cocok ke mana pun TIDAK dibuang — jatuh ke seksi terakhir
-     * "Lainnya". Membuangnya diam-diam berarti izin yang tak bisa diberikan
-     * siapa pun dan tak terlihat di layar mana pun.
+     * Seksi matriks = MENU BO yang sebenarnya, tiga tingkat seperti sidebarnya:
+     * Modul → Sub-modul → Sub-sub-modul. Petanya ada di PetaMenuBo, satu berkas
+     * tersendiri karena isinya 174 baris data — bukan logika.
      */
-    private const MENU_BO = [
-        'Master' => ['master'],
-        'Data Center' => ['datacenter', 'bs.payroll'],
-        'KPR' => ['bankloan'],
-        // Seluruh 'tax' ada di sini (layar Verifikasi Faktur Pajak), KECUALI
-        // tax.pph yang rumahnya Rekap PPh Dipotong di Account Payable.
-        'Booked Revenue' => ['ar.booked-revenue', 'tax'],
-        'Aset Tetap' => ['bs.asset', 'bs.bulk-import', 'bs.overview', 'bs.projection'],
-        'General Ledger' => ['gl'],
-        'Piutang Usaha (Booked)' => ['ar'],
-        'Account Payable' => ['ap', 'tax.pph'],
-        'Cash Book' => ['cashbook', 'bs.sip'],
-        'Budget Control' => ['budget'],
-        'Contractor Management' => ['contractor'],
-        'COGS' => ['cogs'],
-        'Purchasing' => ['bs.fpb', 'bs.po'],
-        'Inventory' => ['bs.item', 'bs.receipt', 'bs.issue', 'bs.stockcard', 'bs.inventory-setup'],
-        'Security' => ['security'],
-        'System' => ['system'],
-
-        // Bukan grup menu, melainkan izin lintas-modul: kunci masuk BO, setup,
-        // dan WEWENANG MENYETUJUI yang dipakai Approval Budget, Kas/Bank & Jurnal.
-        'Back Office — akses umum & persetujuan' => ['businesssupport'],
-    ];
-
-    /** Nama seksi penampung izin yang belum punya rumah. */
-    private const MENU_LAINNYA = 'Lainnya — belum dipetakan ke menu';
 
     /** Label aksi (segmen terakhir permission) dalam Bahasa Indonesia. */
     private const ACTION_LABELS = [
         'view' => 'Lihat', 'show' => 'Lihat', 'index' => 'Lihat', 'list' => 'Lihat', 'read' => 'Lihat',
-        'create' => 'Buat', 'store' => 'Buat', 'add' => 'Buat',
-        'update' => 'Ubah', 'edit' => 'Ubah',
+        'create' => 'Buat', 'store' => 'Buat', 'add' => 'Buat', 'registrasi' => 'Registrasi',
+        'update' => 'Ubah', 'edit' => 'Ubah', 'repair' => 'Perbaiki Data',
         'delete' => 'Hapus', 'destroy' => 'Hapus', 'remove' => 'Hapus',
         'approve' => 'Setujui', 'reject' => 'Tolak', 'verify' => 'Verifikasi', 'confirm' => 'Konfirmasi',
         'print' => 'Cetak', 'export' => 'Ekspor', 'download' => 'Unduh', 'import' => 'Impor',
-        'manage' => 'Kelola', 'request' => 'Ajukan', 'submit' => 'Ajukan',
+        'upload' => 'Unggah', 'excel' => 'Excel', 'pdf' => 'PDF', 'report' => 'Laporan',
+        'manage' => 'Kelola', 'request' => 'Ajukan', 'submit' => 'Ajukan', 'merge' => 'Gabungkan',
         'pay' => 'Bayar', 'void' => 'Void', 'cancel' => 'Batal', 'close' => 'Tutup', 'reopen' => 'Buka Lagi',
-        'issue' => 'Terbitkan', 'release' => 'Rilis', 'post' => 'Posting', 'reverse' => 'Reversal',
+        'issue' => 'Terbitkan', 'release' => 'Rilis', 'post' => 'Posting', 'posting' => 'Posting',
+        'reverse' => 'Reversal', 'finalize' => 'Finalisasi', 'settle' => 'Lunasi', 'allocate' => 'Alokasikan',
         'toggle' => 'Aktif/Nonaktif', 'assign' => 'Tetapkan', 'promote' => 'Promosikan', 'reschedule' => 'Jadwal Ulang',
+        'override' => 'Lintas Unit Kerja', 'anonymize' => 'Anonimkan', 'sensitive' => 'Data Sensitif',
+        'block' => 'Blokir', 'year' => 'Tutup Tahun', 'recognize' => 'Akui',
+
+        // ── Aksi khas Bon Sementara ──
+        // Dulu tampil mentah ("Realize", "Received Date", "Print Realisasi") sehingga
+        // tidak terbaca bahwa ketiganya milik tiga pihak yang berbeda.
+        'realize' => 'Realisasi', 'refund' => 'Refund', 'reimburse' => 'Reimburse',
+        'received-date' => 'Tgl Terima Dokumen', 'print-realisasi' => 'Cetak Realisasi', 'card' => 'Kartu',
+
+        // ── Aksi khas Cek Giro ──
+        'clear' => 'Cair', 'bounce' => 'Tolakan', 'handover' => 'Serah Terima',
+
+        // ── Aksi khas KPR & lain-lain ──
+        'hold' => 'Tahan', 'schedule' => 'Jadwalkan', 'complete' => 'Selesaikan',
+        'register' => 'Daftarkan', 'use' => 'Pakai', 'return' => 'Kembalikan',
+        'numerator' => 'Penomoran', 'parameter' => 'Parameter', 'activate' => 'Aktifkan',
+        'bulk_import' => 'Impor Massal', 'payment' => 'Pembayaran', 'price' => 'Harga',
     ];
 
     /** Urutan aksi umum agar kolom konsisten antar-baris (mirip FO). */
@@ -127,71 +106,118 @@ class BoRoleResource extends Resource
     ];
 
     /**
-     * Matrix izin BO gaya FO: Section per MODUL → baris per SUB-MENU (area) →
-     * centang per AKSI. Izin BO berformat module.area.action, jadi tiap izin
-     * tetap satu centang (tak ada yang hilang), tapi tersusun rapi & ringkas.
+     * Matriks izin BO — TIGA TINGKAT, persis sidebar BO:
      *
-     * @return array<int,Component>
-     */
-    /**
+     *     Modul            seksi yang bisa dilipat   (Cash Book)
+     *       Sub-modul      kelompok di dalamnya      (Transaksi Bon Sementara)
+     *         Sub-sub-modul + centang aksinya        (Bon Sementara · Lihat Buat Setujui …)
+     *
+     * Sebelumnya hanya dua tingkat, dan nama barisnya diambil dari potongan nama izin —
+     * "Sip", "Advance", "Bankrec", "Cheque Out". Orang yang menyetel peran harus menebak
+     * izin mana untuk menu mana, dan tebakan yang salah di layar hak akses berarti
+     * seseorang memegang wewenang yang tidak dimaksudkan. Nama menunya kini diambil dari
+     * PetaMenuBo, yang ditelusuri dari menu → route → controller aplikasi BO sendiri.
+     *
+     * SATU IZIN TETAP SATU CENTANG dan kunci state-nya TIDAK berubah
+     * (`{awalan}.{modul}__{area}`) — yang berubah hanya susunan & namanya di layar,
+     * sehingga izin yang sudah tersimpan tetap terbaca apa adanya.
+     *
      * @param  string  $awalanState  Prefix state form. Halaman Grup Akses BO memakai
      *                               'perm' (izin milik GRUP); halaman Pengguna memakai
      *                               'permBo' (izin KHUSUS satu orang). Dipisah supaya
      *                               dua matriks bisa hidup di satu form tanpa saling
      *                               menimpa isian.
+     * @return array<int,Component>
      */
     public static function permissionMatrixBo(string $awalanState = 'perm'): array
     {
         $perms = BoPermission::query()->orderBy('module')->orderBy('name')
             ->get(['id', 'name', 'module', 'label']);
 
-        // grup menu BO => area => [ ['id'=>.., 'action'=>..], ... ]
-        $tree = [];
+        // modul => sub-modul => nama menu => [ ['id'=>.., 'action'=>..], ... ]
+        $pohon = [];
+        // Kunci state tiap baris, supaya tombol "Pilih semua" se-sub-modul tahu
+        // field mana saja yang harus diisinya.
+        $kunci = [];
+
         foreach ($perms as $p) {
             [$module, $area, $action] = self::splitPerm($p->name, (string) $p->module);
-            $grup = self::grupMenu($p->name);
-            // Kunci baris menyimpan MODUL + area, bukan area saja. Nama field
-            // centang harus tetap 'modul__area' supaya cocok dengan areaKeyFor()
-            // yang dipakai saat memuat isian — dan supaya 'ap.aging' tidak
-            // bertabrakan dengan 'ar.aging' yang kebetulan senama.
-            $tree[$grup][$module.'|'.$area][] = ['id' => $p->id, 'action' => $action];
+            $kelompok = $module.'.'.$area;
+            [$modul, $sub, $menu] = PetaMenuBo::untuk($kelompok, self::humanizeArea($area));
+
+            $pohon[$modul][$sub][$menu][] = ['id' => $p->id, 'action' => $action];
+            $kunci[$modul][$sub][$menu] = $awalanState.'.'.self::areaKey($module, $area);
         }
 
-        $urutan = array_keys(self::MENU_BO);
-        uksort($tree, function ($a, $b) use ($urutan) {
-            $ia = array_search($a, $urutan, true);
-            $ib = array_search($b, $urutan, true);
-            $ia = $ia === false ? PHP_INT_MAX : $ia;
-            $ib = $ib === false ? PHP_INT_MAX : $ib;
-
-            return $ia === $ib ? strcmp((string) $a, (string) $b) : $ia <=> $ib;
-        });
+        uksort($pohon, fn ($a, $b) => [PetaMenuBo::urutanModul((string) $a), (string) $a]
+            <=> [PetaMenuBo::urutanModul((string) $b), (string) $b]);
 
         $sections = [];
-        foreach ($tree as $grup => $areas) {
-            ksort($areas);
-            $rows = [];
-            foreach ($areas as $kunci => $items) {
-                [$module, $area] = explode('|', (string) $kunci, 2);
-                usort($items, fn ($a, $b) => self::actionRank($a['action']) <=> self::actionRank($b['action']));
-                $options = [];
-                foreach ($items as $it) {
-                    $options[$it['id']] = self::actionLabel($it['action']);
+        foreach ($pohon as $modul => $subModul) {
+            ksort($subModul);
+            $isi = [];
+            $jml = 0;
+
+            foreach ($subModul as $sub => $menus) {
+                ksort($menus);
+                $baris = [];
+                // nama field => semua id izin di bawahnya; dipakai aksi Pilih semua.
+                $semua = [];
+
+                foreach ($menus as $menu => $items) {
+                    usort($items, fn ($a, $b) => self::actionRank($a['action']) <=> self::actionRank($b['action']));
+                    $options = [];
+                    foreach ($items as $it) {
+                        $options[$it['id']] = self::actionLabel($it['action']);
+                    }
+                    $jml += count($options);
+
+                    $field = $kunci[$modul][$sub][$menu];
+                    $semua[$field] = array_keys($options);
+
+                    $baris[] = Forms\Components\Grid::make(12)->schema([
+                        Forms\Components\Placeholder::make('lbl_'.Str::slug($awalanState.'-'.$modul.'-'.$sub.'-'.$menu, '_'))
+                            ->label('')->content($menu)->columnSpan(3),
+                        Forms\Components\CheckboxList::make($field)
+                            ->label('')->options($options)->columns(6)->gridDirection('row')
+                            ->bulkToggleable()->columnSpan(9),
+                    ]);
                 }
 
-                $rows[] = Forms\Components\Grid::make(12)->schema([
-                    Forms\Components\Placeholder::make('lbl_'.$awalanState.'_'.$module.'_'.Str::slug($area, '_'))
-                        ->label('')->content(self::humanizeArea($area))->columnSpan(3),
-                    Forms\Components\CheckboxList::make($awalanState.'.'.self::areaKey($module, $area))
-                        ->label('')->options($options)->columns(6)->gridDirection('row')
-                        ->bulkToggleable()->columnSpan(9),
-                ]);
+                // Sub-modul tanpa nama = modul yang memang tidak bertingkat dua di sidebar
+                // (Master, Data Center, Inventory, …). Barisnya menempel langsung ke modul;
+                // membungkusnya dalam kotak kosong hanya menambah tingkat yang tidak ada.
+                if ((string) $sub === '') {
+                    $isi = array_merge($isi, $baris);
+
+                    continue;
+                }
+
+                $isi[] = Forms\Components\Section::make((string) $sub)
+                    ->compact()
+                    ->headerActions([
+                        Forms\Components\Actions\Action::make('semua_'.Str::slug($awalanState.'-'.$modul.'-'.$sub, '_'))
+                            ->label('Pilih semua')->link()->size('sm')
+                            ->action(function (Forms\Set $set) use ($semua) {
+                                foreach ($semua as $field => $ids) {
+                                    $set($field, $ids);
+                                }
+                            }),
+                        Forms\Components\Actions\Action::make('kosong_'.Str::slug($awalanState.'-'.$modul.'-'.$sub, '_'))
+                            ->label('Kosongkan')->link()->size('sm')->color('gray')
+                            ->action(function (Forms\Set $set) use ($semua) {
+                                foreach ($semua as $field => $ids) {
+                                    $set($field, []);
+                                }
+                            }),
+                    ])
+                    ->schema($baris);
             }
 
-            $sections[] = Forms\Components\Section::make((string) $grup)
-                ->description(count($areas).' sub-menu')
+            $sections[] = Forms\Components\Section::make((string) $modul)
+                ->description(count($subModul).' sub-modul · '.$jml.' izin')
                 ->collapsible()->collapsed()
-                ->schema($rows);
+                ->schema($isi);
         }
 
         return $sections;
@@ -234,39 +260,6 @@ class BoRoleResource extends Resource
         $i = array_search($action, self::ACTION_ORDER, true);
 
         return $i === false ? 99 : (int) $i;
-    }
-
-    /**
-     * Grup menu BO pemilik sebuah izin.
-     *
-     * Dicocokkan ke NAMA izin, bukan ke pasangan modul+area hasil splitPerm.
-     * Sebabnya: izin bersegmen dua seperti 'tax.rekap' dipecah jadi area 'umum',
-     * sehingga awalan 'tax.rekap' tak akan pernah cocok kalau yang dibandingkan
-     * areanya. Nama izin selalu utuh, jadi aman untuk dua-duanya.
-     *
-     * Yang paling khusus menang: 'bs.sip' mengalahkan 'bs', sehingga modul yang
-     * terbelah bisa dibagi per area tanpa daftar pengecualian terpisah.
-     */
-    public static function grupMenu(string $nama): string
-    {
-        $terbaik = null;
-        $panjang = -1;
-
-        foreach (self::MENU_BO as $grup => $awalan) {
-            foreach ($awalan as $a) {
-                if (($nama === $a || str_starts_with($nama, $a.'.')) && strlen($a) > $panjang) {
-                    $terbaik = $grup;
-                    $panjang = strlen($a);
-                }
-            }
-        }
-
-        return $terbaik ?? self::MENU_LAINNYA;
-    }
-
-    private static function humanizeModule(string $module): string
-    {
-        return self::MODULE_LABELS[$module] ?? Str::headline($module);
     }
 
     private static function humanizeArea(string $area): string

@@ -58,11 +58,9 @@ export const MODULE_ORDER: string[] = [
     'Contractor Management',
     'Booked Revenue',
     'Piutang Usaha (Booked)',
-    // Dua modul HPP berdampingan, COGS Lama lebih dulu supaya urutannya tidak berubah bagi yang
-    // sudah terbiasa. Nama di sini HARUS sama persis dengan `title` grupnya; yang tidak tercantum
-    // jatuh ke belakang daftar tanpa satu pun galat.
-    'COGS Lama',
-    'COGS Baru',
+    // Nama di sini HARUS sama persis dengan `title` grupnya; yang tidak tercantum jatuh ke
+    // belakang daftar tanpa satu pun galat.
+    'COGS',
     'Purchasing',
     'Inventory',
     'Security',
@@ -555,102 +553,49 @@ export function navGroups(foUrl: string): NavGroup[] {
             ]},
         ],
     },
+    // ── COGS LAMA DITUTUP (12 Okt 2026) ──────────────────────────────────────────
+    // Grupnya dicabut dari sidebar dan izin `cogs.*`-nya dihapus migrasi
+    // 2026_10_12_100000. Alasannya bukan sekadar "tidak dipakai": seluruh masternya
+    // memang kosong di server (lokasi, budget, kategori, ketentuan, setup, realisasi =
+    // 0 baris), dan satu-satunya isinya — 71 baris HPP RealCost — semuanya berstatus
+    // `generated` dengan NOL jurnal, jadi buku besar tidak pernah tersentuh olehnya.
+    //
+    // Rute & kodenya SENGAJA tidak dibuang. Tanpa izin, layarnya berhenti di 403; kalau
+    // ternyata masih ada yang mencarinya, izinnya tinggal diterbitkan lagi tanpa
+    // mengembalikan kode apa pun. Datanya juga tidak dihapus — menutup menu tidak sama
+    // dengan menghapus riwayat.
+
     {
-        // Seluruh COGS yang lama — Setup sampai Saldo Awal Realisasi — berdiri di bawah nama
-        // "COGS Lama" sejak modul COGS Baru lahir. Isinya, rutenya, dan izinnya TIDAK berubah
-        // sedikit pun; hanya namanya. Dua model perhitungan HPP yang hidup berdampingan tanpa
-        // nama yang membedakannya adalah cara tercepat membuat orang membuka yang salah.
-        title: 'COGS Lama',
-        // Kartu modul mendarat di halaman hub-nya, BUKAN lagi di Print-Out yang sudah dihapus
-        // dari menu — kalau tidak, pintu depan modul justru menuju halaman yang ditiadakan.
-        icon: Boxes, color: '#84cc16', route: 'bs.cogs.home',
-        desc: 'HPP RealCost & budget proyek (model lama).',
-        items: [
-            // Grup "General Function → Print-Out" DIHAPUS: isinya hanya daftar tautan ke
-            // keenam laporan yang SUDAH ada satu per satu di grup "Query" di bawah ini.
-            { label: 'Setup', icon: SlidersHorizontal, permission: ['cogs.budget.*', 'cogs.category.*', 'cogs.location.*', 'cogs.provision.*', 'cogs.unitcoa.*', 'cogs.upload.*'], children: [
-                { label: 'Lokasi', href: 'bs.cogs.location.index' },
-                { label: 'Ketentuan', href: 'bs.cogs.provision.index' },
-                { label: 'Budget', href: 'bs.cogs.budget.index' },
-                { label: 'Set Akun Budget', href: 'bs.cogs.category.index' },
-                { label: 'Set COA Jenis Unit', href: 'bs.cogs.unitcoa.index' },
-                { label: 'Upload Kategori Budget', href: 'bs.cogs.upload.form', params: { kind: 'kategori' } },
-                { label: 'Upload Akun Budget', href: 'bs.cogs.upload.form', params: { kind: 'akun' } },
-                { label: 'Upload Nilai Budget', href: 'bs.cogs.upload.form', params: { kind: 'nilai' } },
-            ]},
-            { label: 'Master', icon: BookText, permission: ['cogs.hpp.*', 'cogs.mutation.*', 'cogs.realization.*'], children: [
-                { label: 'Mutasi Budget', href: 'bs.cogs.mutation.index' },
-                { label: 'HPP RealCost', href: 'bs.cogs.hpp.index' },
-                { label: 'Saldo Awal Realisasi', href: 'bs.cogs.realization.index' },
-            ]},
-            { label: 'Query', icon: FileBarChart, permission: ['cogs.query.*'], children: [
-                { label: 'Report Budget', href: 'bs.cogs.query.budget' },
-                { label: 'Report Realisasi Budget', href: 'bs.cogs.query.realisasi' },
-                { label: 'Report Realisasi Budget Detil', href: 'bs.cogs.query.realisasi-detil' },
-                { label: 'Report Pengakuan HPP RealCost', href: 'bs.cogs.query.pengakuan' },
-                { label: 'Report Persediaan Unit RealCost', href: 'bs.cogs.query.persediaan-unit' },
-                { label: 'Report HPP Unit RealCost', href: 'bs.cogs.query.hpp-unit' },
-            ]},
-            { label: 'Mutasi Budget', icon: GitMerge, permission: ['businesssupport.approval.*', 'cogs.mutation.*'], children: [
-                { label: 'Registrasi Mutasi Budget', href: 'bs.cogs.mutation.create' },
-                { label: 'Approval Mutasi Budget', href: 'bs.cogs.mutation.approvals' },
-            ]},
-            { label: 'Transaksi HPP RealCost', icon: Calculator, permission: ['cogs.hpp.*'], children: [
-                { label: 'Generate HPP', href: 'bs.cogs.hpp.generate' },
-                { label: 'Posting Jurnal HPP Persediaan', href: 'bs.cogs.hpp.post-persediaan' },
-                { label: 'Posting Jurnal HPP', href: 'bs.cogs.hpp.post-hpp' },
-            ]},
-            // Biaya pembentuk tiap komponen HPP, diambil langsung dari modul sumbernya:
-            // Tanah & License Permit dari Kategori Invoice (Account Payable), Housing &
-            // Infrastruktur dari Surat Perintah Kerja (Contractor Management).
-            { label: 'Komponen COGS', icon: Layers, permission: ['cogs.component.*'], children: [
-                { label: 'Tanah', href: 'bs.cogs.komponen.show', params: { komponen: 'tanah' } },
-                { label: 'Housing', href: 'bs.cogs.komponen.show', params: { komponen: 'housing' } },
-                { label: 'Infrastruktur', href: 'bs.cogs.komponen.show', params: { komponen: 'infrastruktur' } },
-                { label: 'License Permit', href: 'bs.cogs.komponen.show', params: { komponen: 'license-permit' } },
-            ]},
-            // Perhitungan Lahan per lokasi/tahap → budget per unit menurut luas tanah & luas
-            // bangunan unit itu sendiri. Izinnya cogs.budget.* (baca) — SENGAJA bukan
-            // 'cogs.setup.*', yang akan ikut mencocoki izin mati cogs.setup.provision.manage.
-            { label: 'Set Up COGS', icon: LandPlot, permission: ['cogs.budget.*'], children: [
-                { label: 'Perhitungan Lahan & Budget per Unit', href: 'bs.cogs.setupcogs.index' },
-            ]},
-            { label: 'Saldo Awal Realisasi', icon: Coins, permission: ['cogs.realization.*'], children: [
-                { label: 'Input Saldo Awal Realisasi', href: 'bs.cogs.realization.create' },
-            ]},
-        ],
-    },
-    {
-        // ── COGS BARU ────────────────────────────────────────────────────────────────
-        // Model HPP yang kedua, mengikuti lampiran "MODUL HPP.xlsx": budget per komponen
-        // diturunkan ke tiap unit menurut LUAS, lalu biaya aktual dibebankan ulang ke unit yang
-        // belum terkunci HPP-nya. Berdiri sebagai modul sendiri, bukan grup di dalam COGS Lama:
-        // angkanya tidak pernah bertemu dengan angka model lama, dan mencampurnya di satu modul
-        // membuat orang membandingkan dua angka yang memang tidak sebanding.
-        title: 'COGS Baru',
+        // ── COGS ─────────────────────────────────────────────────────────────────────
+        // Mengikuti lampiran "MODUL HPP.xlsx": budget per komponen diturunkan ke tiap unit
+        // menurut LUAS, lalu biaya aktual dibebankan ulang ke unit yang belum terkunci
+        // HPP-nya. Namanya kembali "COGS" begitu model lama ditutup — embel-embel "Baru"
+        // hanya berguna selagi keduanya hidup berdampingan, dan setelah itu justru membuat
+        // orang mencari-cari di mana "COGS Lama"-nya.
+        title: 'COGS',
         icon: Calculator, color: '#0ea5e9', route: 'bs.cogs2.index',
         desc: 'Perhitungan COGS, kategori, actual costing & rincian per unit.',
         items: [
             // Seluruh layar COGS Baru berbutir PERIODE (lokasi + tahap), sedangkan butir menu
             // tidak bisa tahu periode mana yang sedang dikerjakan. Rute 'bs.cogs2.buka' membuka
             // periode yang terakhir disunting; kalau belum ada, ia mendarat di daftar periode.
-            { label: 'Perhitungan COGS', icon: Calculator, permission: ['cogs.budget.*'], children: [
+            { label: 'Perhitungan COGS', icon: Calculator, permission: ['cogs2.*'], children: [
                 { label: 'Perhitungan COGS', href: 'bs.cogs2.buka', params: { layar: 'perhitungan' } },
                 { label: 'Daftar Periode', href: 'bs.cogs2.index' },
             ]},
-            { label: 'Set Up Kategori COGS', icon: SlidersHorizontal, permission: ['cogs.budget.*'], children: [
+            { label: 'Set Up Kategori COGS', icon: SlidersHorizontal, permission: ['cogs2.*'], children: [
                 { label: 'Set Up Kategori COGS-Tanah', href: 'bs.cogs2.buka', params: { layar: 'kategori', komponen: 'tanah' } },
                 { label: 'Set Up Kategori COGS-Housing', href: 'bs.cogs2.buka', params: { layar: 'kategori', komponen: 'housing' } },
                 { label: 'Set Up Kategori COGS-Infra', href: 'bs.cogs2.buka', params: { layar: 'kategori', komponen: 'infra' } },
                 { label: 'Set Up Kategori COGS-License', href: 'bs.cogs2.buka', params: { layar: 'kategori', komponen: 'license' } },
             ]},
-            { label: 'Actual Costing COGS', icon: ReceiptText, permission: ['cogs.budget.*'], children: [
+            { label: 'Actual Costing COGS', icon: ReceiptText, permission: ['cogs2.*'], children: [
                 { label: 'Actual Costing COGS-Tanah', href: 'bs.cogs2.buka', params: { layar: 'actual', komponen: 'tanah' } },
                 { label: 'Actual Costing COGS-Housing', href: 'bs.cogs2.buka', params: { layar: 'actual', komponen: 'housing' } },
                 { label: 'Actual Costing COGS-Infra', href: 'bs.cogs2.buka', params: { layar: 'actual', komponen: 'infra' } },
                 { label: 'Actual Costing COGS-License', href: 'bs.cogs2.buka', params: { layar: 'actual', komponen: 'license' } },
             ]},
-            { label: 'Rincian COGS', icon: FileBarChart, permission: ['cogs.budget.*'], children: [
+            { label: 'Rincian COGS', icon: FileBarChart, permission: ['cogs2.*'], children: [
                 { label: 'Rincian COGS', href: 'bs.cogs2.buka', params: { layar: 'rincian' } },
             ]},
         ],

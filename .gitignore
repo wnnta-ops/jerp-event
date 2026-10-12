@@ -44,3 +44,28 @@ docs/Migrasi/
 *.tgz
 *.bak
 IPRO_DL_*.sql
+
+# ── Isi runtime repo BO (marger/ipro-fo_1/ipro-fo) ───────────────────────────
+#
+# BO ikut di dalam repo ini sebagai folder biasa, bukan submodule, sehingga
+# .gitignore MILIKNYA tidak berlaku dari sini. Akibatnya satu `git add -A` pada
+# folder itu menyapu seluruh isi runtime-nya — termasuk
+# storage/app/private/kpr-initiation/ yang berisi PINDAIAN KTP & NPWP PEMOHON KPR.
+# Data pribadi yang sekali masuk riwayat git tidak bisa ditarik lagi tanpa menulis
+# ulang riwayat di semua kloning.
+marger/ipro-fo_1/ipro-fo/storage/
+marger/ipro-fo_1/ipro-fo/ops/
+marger/ipro-fo_1/ipro-fo/bootstrap/cache/
+marger/ipro-fo_1/ipro-fo/node_modules/
+marger/ipro-fo_1/ipro-fo/vendor/
+marger/ipro-fo_1/ipro-fo/public/build/
+marger/ipro-fo_1/ipro-fo/public/hot
+marger/ipro-fo_1/ipro-fo/composer.phar
+marger/ipro-fo_1/ipro-fo/docs.zip
+marger/ipro-fo_1/ipro-fo/_*.php
+*.sqlite
+*.sqlite.bak-*
+
+# Cadangan database yang kadang ditaruh di folder kerja — berisi data pelanggan.
+marger/BACK UP DATABASE*/
+.playwright-mcp/
