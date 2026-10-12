@@ -20,12 +20,19 @@ use Inertia\Response;
  *
  * Definisi (disepakati): batal = kpr_applications.status ∈ {cancelled, rejected}.
  * Tanggal batal akad = decided_at — diisi saat keputusan "Batal" / penolakan ditetapkan.
+ *
+ * IZIN: bankloan.application.view, dan hanya itu.
+ *
+ * Dulu 'businesssupport.view' juga diterima — izin "boleh masuk Back Office" yang dipegang
+ * hampir semua peran. Layar ini memuat nama customer, nomor KPR, bank, dan plafon; menjaganya
+ * dengan izin masuk pintu depan berarti seluruh isi tabel itu terbuka bagi siapa pun yang bisa
+ * membuka BO, tanpa seorang pun pernah memberikannya. Isinya data KPR, maka izinnya izin KPR.
  */
 class BatalAkadController extends Controller
 {
     public function index(Request $request): Response
     {
-        abort_unless($request->user()?->can('businesssupport.view') || $request->user()?->can('bankloan.application.view'), 403);
+        abort_unless($request->user()?->can('bankloan.application.view'), 403);
 
         $rows = $this->rows($request);
 
@@ -43,7 +50,7 @@ class BatalAkadController extends Controller
      */
     public function export(Request $request): \Illuminate\Http\Response
     {
-        abort_unless($request->user()?->can('businesssupport.view') || $request->user()?->can('bankloan.application.view'), 403);
+        abort_unless($request->user()?->can('bankloan.application.view'), 403);
 
         // Layarnya yang menentukan baris mana yang diekspor, lewat DAFTAR ID.
         //
