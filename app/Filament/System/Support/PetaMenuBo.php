@@ -278,13 +278,196 @@ final class PetaMenuBo
     ];
 
     /**
+     * Izin TAMPIL (`menu.*`) => [Modul, Sub-modul, Nama menu] — satu butir sidebar BO per baris.
+     *
+     * Izin ini tidak membuka layar apa pun; ia hanya menentukan butir sidebar mana yang muncul
+     * (izin aksinya tetap harus dipegang). Di matriks, centangnya menumpang di baris menu yang
+     * namanya sama, sehingga "Invoice Hutang" berisi Tampil + Lihat/Buat/… dalam satu baris.
+     *
+     * Disalin dari config/menu_permissions.php milik BO — aplikasi ini tidak bisa membaca config
+     * aplikasi lain. Menambah butir di sana berarti menambah barisnya di sini; yang terlupa
+     * tidak hilang, ia jatuh ke seksi "Belum dipetakan".
+     *
+     * @var array<string,array{0:string,1:string,2:string}>
+     */
+    public const PETA_TAMPIL = [
+        // ── Account Payable ────────────────────────────────────────────────────────────
+        'menu.bs.ap.create' => ['Account Payable', 'Generate Invoice', 'Registrasi Invoice Hutang'],
+        'menu.bs.ap.index' => ['Account Payable', 'Master', 'Invoice Hutang'],
+        'menu.bs.ap.kuitansi.index' => ['Account Payable', 'Master', 'Kuitansi Hutang'],
+        'menu.bs.ap.penghapusan.index' => ['Account Payable', 'Penyesuaian Invoice', 'Penghapusan Nilai Hutang'],
+        'menu.bs.ap.posting.spk.index' => ['Account Payable', 'Posting Invoice SPK', 'Posting Invoice SPK'],
+        'menu.bs.ap.barang-siap-jual.index' => ['Account Payable', 'Posting Invoice SPK', 'Posting ke Barang Siap Dijual'],
+        'menu.bs.ap.posting.index' => ['Account Payable', 'Posting Invoice dari FO', 'Posting Invoice dari FO'],
+        'menu.bs.ap.posting.po.index' => ['Account Payable', 'Posting Invoice dari Purchase Order', 'Posting Invoice dari Purchase Order'],
+        'menu.bs.ap.aging.detail' => ['Account Payable', 'Query', 'Aging Hutang'],
+        'menu.bs.ap.aging-supplier' => ['Account Payable', 'Query', 'Aging Hutang Supplier'],
+        'menu.bs.ap.card' => ['Account Payable', 'Query', 'Kartu Hutang'],
+        'menu.bs.ap.payment-card' => ['Account Payable', 'Query', 'Kartu Pembayaran Hutang'],
+        'menu.bs.ap.report' => ['Account Payable', 'Query', 'Laporan Invoice Hutang'],
+        'menu.bs.ap.penghapusan.report' => ['Account Payable', 'Query', 'Laporan Penghapusan Hutang'],
+        'menu.bs.projection.hutang' => ['Account Payable', 'Query', 'Proyeksi Hutang'],
+        'menu.bs.tax.pph' => ['Account Payable', 'Query', 'Rekap PPh Dipotong'],
+        'menu.bs.ap.opening.index' => ['Account Payable', 'Saldo Awal', 'Saldo Awal'],
+        'menu.bs.gimmick.categories.index' => ['Account Payable', 'Setup', 'Kategori Gimmick'],
+        'menu.bs.ap.categories.index' => ['Account Payable', 'Setup', 'Kategori Invoice'],
+        'menu.bs.ap.repair.index' => ['Account Payable', 'Setup', 'Repair Data'],
+
+        // ── Aset Tetap ─────────────────────────────────────────────────────────────────
+        'menu.bs.fa.create' => ['Aset Tetap', 'Registrasi', 'Registrasi Aset'],
+        'menu.bs.fa.run' => ['Aset Tetap', 'Registrasi', 'Registrasi Penyusutan'],
+        'menu.bs.bulk.form.asset' => ['Aset Tetap', 'Registrasi', 'Upload Aset Massal'],
+        'menu.bs.fa.penjualan' => ['Aset Tetap', 'Report / Query', 'Penjualan Aset'],
+        'menu.bs.fa.summary' => ['Aset Tetap', 'Report / Query', 'Summary Aset'],
+
+        // ── Booked Revenue ─────────────────────────────────────────────────────────────
+        'menu.bs.tax.keluaran' => ['Booked Revenue', 'Verifikasi Faktur Pajak', 'PPN Keluaran'],
+        'menu.bs.tax.masukan' => ['Booked Revenue', 'Verifikasi Faktur Pajak', 'PPN Masukan'],
+
+        // ── Budget Control ─────────────────────────────────────────────────────────────
+        'menu.bs.budget.allocation.create' => ['Budget Control', 'Alokasi Budget', 'Alokasi Budget'],
+        'menu.bs.budget.allocation.approvals' => ['Budget Control', 'Alokasi Budget', 'Approval Alokasi Budget'],
+        'menu.bs.budget.correction.approvals' => ['Budget Control', 'Koreksi Budget', 'Approval Koreksi Budget'],
+        'menu.bs.budget.correction.create' => ['Budget Control', 'Koreksi Budget', 'Koreksi Budget'],
+        'menu.bs.budget.allocation.index' => ['Budget Control', 'Master', 'Alokasi Budget Control'],
+        'menu.bs.budget.index' => ['Budget Control', 'Master', 'Budget Control'],
+        'menu.bs.budget.correction.index' => ['Budget Control', 'Master', 'Koreksi Budget Control'],
+        'menu.bs.budget.query.allocation' => ['Budget Control', 'Query', 'Alokasi Budget'],
+        'menu.bs.budget.query.correction' => ['Budget Control', 'Query', 'Koreksi Budget'],
+        'menu.bs.budget.query.master' => ['Budget Control', 'Query', 'Master Budget'],
+        'menu.bs.budget.query.realization' => ['Budget Control', 'Query', 'Realisasi Budget'],
+        'menu.bs.budget.query.report' => ['Budget Control', 'Query', 'Report Budget'],
+        'menu.bs.budget.approvals' => ['Budget Control', 'Upload Budget', 'Approval Budget'],
+        'menu.bs.budget.upload.index' => ['Budget Control', 'Upload Budget', 'Upload Budget'],
+
+        // ── COGS ───────────────────────────────────────────────────────────────────────
+        'menu.bs.cogs2.buka.actual.housing' => ['COGS', 'Actual Costing COGS', 'Actual Costing COGS-Housing'],
+        'menu.bs.cogs2.buka.actual.infra' => ['COGS', 'Actual Costing COGS', 'Actual Costing COGS-Infra'],
+        'menu.bs.cogs2.buka.actual.license' => ['COGS', 'Actual Costing COGS', 'Actual Costing COGS-License'],
+        'menu.bs.cogs2.buka.actual.tanah' => ['COGS', 'Actual Costing COGS', 'Actual Costing COGS-Tanah'],
+        'menu.bs.cogs2.index' => ['COGS', 'Perhitungan COGS', 'Daftar Periode'],
+        'menu.bs.cogs2.buka.perhitungan' => ['COGS', 'Perhitungan COGS', 'Perhitungan COGS'],
+        'menu.bs.cogs2.buka.rincian' => ['COGS', 'Rincian COGS', 'Rincian COGS'],
+        'menu.bs.cogs2.buka.kategori.housing' => ['COGS', 'Set Up Kategori COGS', 'Set Up Kategori COGS-Housing'],
+        'menu.bs.cogs2.buka.kategori.infra' => ['COGS', 'Set Up Kategori COGS', 'Set Up Kategori COGS-Infra'],
+        'menu.bs.cogs2.buka.kategori.license' => ['COGS', 'Set Up Kategori COGS', 'Set Up Kategori COGS-License'],
+        'menu.bs.cogs2.buka.kategori.tanah' => ['COGS', 'Set Up Kategori COGS', 'Set Up Kategori COGS-Tanah'],
+
+        // ── Cash Book ──────────────────────────────────────────────────────────────────
+        'menu.bs.advance.allocation.index' => ['Cash Book', 'Bon Sementara (Finance)', 'Alokasi Bon Sementara Finance'],
+        'menu.bs.advance.payments' => ['Cash Book', 'Bon Sementara (Finance)', 'Bon Sementara Finance'],
+        'menu.bs.advance.index.1' => ['Cash Book', 'Bon Sementara (Finance)', 'Realisasi Bon Sementara Finance'],
+        'menu.bs.advance.cancelled' => ['Cash Book', 'Bon Sementara (Finance)', 'Transaksi Bon Batal (Riwayat)'],
+        'menu.bs.cashflow.report' => ['Cash Book', 'Cash Flow', 'Report Cashflow'],
+        'menu.bs.cashflow.categories' => ['Cash Book', 'Cash Flow', 'Set Up Kategori'],
+        'menu.bs.cashflow.formulas' => ['Cash Book', 'Cash Flow', 'Set Up Rumus'],
+        'menu.bs.cashbook.printhub' => ['Cash Book', 'General Function', 'General Function'],
+        'menu.bs.cheque-out.index.master' => ['Cash Book', 'Master', 'Cek Giro Keluar'],
+        'menu.bs.giro.index.master' => ['Cash Book', 'Master', 'Cek Giro Masuk'],
+        'menu.bs.pettycash.index.out' => ['Cash Book', 'Master', 'Kas Kecil Keluar'],
+        'menu.bs.pettycash.index.in' => ['Cash Book', 'Master', 'Kas Kecil Masuk'],
+        'menu.bs.cashbook.index.out.master' => ['Cash Book', 'Master', 'Kas Keluar'],
+        'menu.bs.cashbook.index.in' => ['Cash Book', 'Master', 'Kas Masuk'],
+        'menu.bs.cashbook.index.transfer' => ['Cash Book', 'Master', 'Transfer Rekening'],
+        'menu.bs.cashbook.giro-calendar' => ['Cash Book', 'Report/Query', 'Kalender Cek Giro'],
+        'menu.bs.advance.card' => ['Cash Book', 'Report/Query', 'Kartu Bon Sementara'],
+        'menu.bs.cashbook.outstanding-kasbon' => ['Cash Book', 'Report/Query', 'Outstanding Kasbon'],
+        'menu.bs.cashbook.index.out.report-query' => ['Cash Book', 'Report/Query', 'Pengeluaran Kas & Bank'],
+        'menu.bs.advance.report' => ['Cash Book', 'Report/Query', 'Rekap Bon Sementara'],
+        'menu.bs.cashbook.ledger' => ['Cash Book', 'Report/Query', 'Rekening Ledger'],
+        'menu.bs.cashbook.balances' => ['Cash Book', 'Report/Query', 'Rekening Saldo'],
+        'menu.bs.advance.card-balance' => ['Cash Book', 'Report/Query', 'Saldo Debit Card'],
+        'menu.bs.cashbook.opening.index' => ['Cash Book', 'Saldo Awal', 'Saldo Awal Rekening'],
+        'menu.bs.cashbook.repair.index' => ['Cash Book', 'Setup', 'Repair Data'],
+        'menu.bs.cashbook.signature-barcode.index' => ['Cash Book', 'Setup', 'Set Up Barcode'],
+        'menu.bs.cashbook.credit-card.index' => ['Cash Book', 'Setup', 'Set Up Debit Card'],
+        'menu.bs.advance.create' => ['Cash Book', 'Transaksi Bon Sementara', 'Pengajuan Bon Sementara'],
+        'menu.bs.advance.index' => ['Cash Book', 'Transaksi Bon Sementara', 'Realisasi Bon Sementara'],
+        'menu.bs.cheque-out.index.transaksi-cek-giro-keluar' => ['Cash Book', 'Transaksi Cek Giro Keluar', 'Data BG/Cek Keluar'],
+        'menu.bs.giro.index.kliring-cek-giro-masuk' => ['Cash Book', 'Transaksi Cek Giro Masuk', 'Kliring Cek Giro Masuk'],
+        'menu.bs.giro.create' => ['Cash Book', 'Transaksi Cek Giro Masuk', 'Penerimaan Cek Giro'],
+        'menu.bs.giro.index.tolakan-cek-giro-masuk' => ['Cash Book', 'Transaksi Cek Giro Masuk', 'Tolakan Cek Giro Masuk'],
+        'menu.bs.pettycash.create.in' => ['Cash Book', 'Transaksi Kas Kecil', 'Penerimaan Kas Kecil'],
+        'menu.bs.pettycash.create.out' => ['Cash Book', 'Transaksi Kas Kecil', 'Pengeluaran Kas Kecil'],
+        'menu.bs.cashbook.approval-dp' => ['Cash Book', 'Transaksi Penerimaan Bank', 'Approval DP'],
+        'menu.bs.cashbook.approval-retensi' => ['Cash Book', 'Transaksi Penerimaan Bank', 'Approval Retensi'],
+        'menu.bs.cashbook.approval-um' => ['Cash Book', 'Transaksi Penerimaan Bank', 'Approval UM Penjualan'],
+        'menu.bs.cashbook.approval-utjdp' => ['Cash Book', 'Transaksi Penerimaan Bank', 'Approval UTJ'],
+        'menu.bs.cashbook.create.in' => ['Cash Book', 'Transaksi Penerimaan Bank', 'Penerimaan Bank'],
+        'menu.bs.cashbook.create.transfer' => ['Cash Book', 'Transaksi Penerimaan Bank', 'Transfer Antar Rekening'],
+        'menu.bs.cashbook.approvals' => ['Cash Book', 'Transaksi Pengeluaran Bank', 'Approval Pengeluaran Kas & Bank'],
+        'menu.bs.cashbook.create.out' => ['Cash Book', 'Transaksi Pengeluaran Bank', 'Registrasi Pengeluaran Kas & Bank'],
+        'menu.bs.ap.kuitansi.create' => ['Cash Book', 'Transaksi Pengeluaran Bank', 'Registrasi Pengeluaran Kas & Bank (AP)'],
+        'menu.bs.sip.index' => ['Cash Book', 'Transaksi Pengeluaran Bank', 'SIP (Instruksi Bayar)'],
+
+        // ── Contractor Management ──────────────────────────────────────────────────────
+        'menu.bs.muk.ctc.index' => ['Contractor Management', 'Master', 'Informasi CTC'],
+        'menu.bs.muk.kontrak.index' => ['Contractor Management', 'Master', 'Kontrak SPK (MUK)'],
+        'menu.bs.spk.kpl.index' => ['Contractor Management', 'Master', 'Kontrol Progress Lapangan'],
+        'menu.bs.spk.retention.index' => ['Contractor Management', 'Master', 'Progress Retensi'],
+        'menu.bs.spk.index' => ['Contractor Management', 'Master', 'Surat Perintah Kerja'],
+        'menu.bs.muk.tagihan.index' => ['Contractor Management', 'Master', 'Tagihan Progress Project'],
+        'menu.bs.spk.query.kartu-hutang' => ['Contractor Management', 'Query', 'Kartu Hutang Supplier - SPK'],
+        'menu.bs.spk.query.pemakaian' => ['Contractor Management', 'Query', 'Pemakaian Barang'],
+        'menu.bs.spk.query.rekap' => ['Contractor Management', 'Query', 'Rekap SPK'],
+        'menu.bs.spk.query.summary' => ['Contractor Management', 'Query', 'Summary SPK'],
+        'menu.bs.muk.pasangan.index' => ['Contractor Management', 'Setup', 'Pasangan Unit MUK'],
+        'menu.bs.spk.project.index' => ['Contractor Management', 'Setup', 'Project'],
+        'menu.bs.spk.draft.edit' => ['Contractor Management', 'Setup', 'Set Up SPK'],
+        'menu.bs.spk.addendum.form' => ['Contractor Management', 'Surat Perintah Kerja', 'Addendum SPK (Tambah / Kurang)'],
+        'menu.bs.spk.adjust-ppn.form' => ['Contractor Management', 'Surat Perintah Kerja', 'Adjustment PPN'],
+        'menu.bs.spk.cancel.form' => ['Contractor Management', 'Surat Perintah Kerja', 'Pembatalan Surat Perintah Kerja'],
+        'menu.bs.spk.kpl.create' => ['Contractor Management', 'Surat Perintah Kerja', 'Registrasi Kontrol Progress Lapangan'],
+        'menu.bs.spk.retention.create' => ['Contractor Management', 'Surat Perintah Kerja', 'Registrasi Retensi'],
+        'menu.bs.spk.create' => ['Contractor Management', 'Surat Perintah Kerja', 'Registrasi Surat Perintah Kerja'],
+
+        // ── General Ledger ─────────────────────────────────────────────────────────────
+        'menu.bs.gl.cashflow.direct' => ['General Ledger', 'Cash Flow Direct', 'Cash Flow Direct Multi Periode'],
+        'menu.bs.gl.cashflow.indirect' => ['General Ledger', 'Cash Flow Indirect', 'Cash Flow Indirect Multi Periode'],
+        'menu.bs.gl.printhub' => ['General Ledger', 'General Function', 'General Function'],
+        'menu.bs.gl.journal.approval' => ['General Ledger', 'Generate Lap. Keuangan', 'Approval Jurnal'],
+        'menu.bs.gl.journal.finalisasi' => ['General Ledger', 'Generate Lap. Keuangan', 'Finalisasi Jurnal'],
+        'menu.bs.gl.late-closing' => ['General Ledger', 'Generate Lap. Keuangan', 'Late Closing'],
+        'menu.bs.closing.index' => ['General Ledger', 'Generate Lap. Perusahaan', 'Closing Fiskal'],
+        'menu.bs.gl.journal.import' => ['General Ledger', 'Jurnal Memorial', 'Import Jurnal'],
+        'menu.bs.gl.journal.create' => ['General Ledger', 'Jurnal Memorial', 'Registrasi Jurnal Memorial'],
+        'menu.bs.gl.incomestatement' => ['General Ledger', 'Laba Rugi', 'Laba Rugi'],
+        'menu.bs.gl.comparative.laba-rugi' => ['General Ledger', 'Laba Rugi', 'Laba Rugi Komparasi (Bulanan)'],
+        'menu.bs.gl.extra.lr-tahunan' => ['General Ledger', 'Laba Rugi', 'Laba Rugi Komparasi (Tahunan)'],
+        'menu.bs.gl.extra.lr-multi' => ['General Ledger', 'Laba Rugi', 'Laba Rugi Multi Periode'],
+        'menu.bs.gl.extra.lr-banding' => ['General Ledger', 'Laba Rugi', 'Laba Rugi Perbandingan'],
+        'menu.bs.gl.lr-budget' => ['General Ledger', 'Laba Rugi', 'Laba Rugi vs Budget'],
+        'menu.bs.accounts.index' => ['General Ledger', 'Master', 'Chart of Account'],
+        'menu.bs.cost-centers.index' => ['General Ledger', 'Master', 'Cost Center'],
+        'menu.bs.journal-dimensions.index' => ['General Ledger', 'Master', 'Dimensi Jurnal'],
+        'menu.bs.gl.journal.index' => ['General Ledger', 'Master', 'Jurnal'],
+        'menu.bs.gl.cf-mapping.index' => ['General Ledger', 'Master', 'Mapping Cash Flow Direct'],
+        'menu.bs.gl.extra.histori' => ['General Ledger', 'Neraca', 'Histori Saldo'],
+        'menu.bs.gl.balancesheet' => ['General Ledger', 'Neraca', 'Neraca'],
+        'menu.bs.gl.comparative.neraca' => ['General Ledger', 'Neraca', 'Neraca Komparasi (Bulanan)'],
+        'menu.bs.gl.extra.tahunan' => ['General Ledger', 'Neraca', 'Neraca Komparasi (Tahunan)'],
+        'menu.bs.gl.worksheet' => ['General Ledger', 'Neraca', 'Neraca Lajur'],
+        'menu.bs.gl.extra.multi' => ['General Ledger', 'Neraca', 'Neraca Multi Periode'],
+        'menu.bs.gl.trialbalance' => ['General Ledger', 'Neraca', 'Neraca Saldo'],
+        'menu.bs.gl.journal.detail' => ['General Ledger', 'Query', 'Detail Transaksi Jurnal'],
+        'menu.bs.gl.ledger' => ['General Ledger', 'Query', 'General Ledger'],
+        'menu.bs.gl.saldo-awal.confirm' => ['General Ledger', 'Saldo Awal', 'Confirm Saldo Awal'],
+        'menu.bs.closing.saldoawal' => ['General Ledger', 'Saldo Awal', 'Input Saldo Awal'],
+        'menu.bs.gl.cf-category.index.direct' => ['General Ledger', 'Setup', 'Kategori Cash Flow Direct'],
+        'menu.bs.gl.cf-category.index.indirect' => ['General Ledger', 'Setup', 'Kategori Cash Flow Indirect'],
+        'menu.bs.gl.kurs.index' => ['General Ledger', 'Setup', 'Kurs Sistem'],
+        'menu.bs.gl.currency.index' => ['General Ledger', 'Setup', 'Multi Currency'],
+        'menu.bs.gl.repair.index' => ['General Ledger', 'Setup', 'Repair Data'],
+    ];
+
+    /**
      * Baris menu untuk sebuah kelompok izin.
      *
      * @return array{0:string,1:string,2:string} [Modul, Sub-modul, Nama menu]
      */
     public static function untuk(string $kelompok, string $fallbackLabel): array
     {
-        return self::PETA[$kelompok] ?? [self::MODUL_LAINNYA, '', $fallbackLabel];
+        return self::PETA[$kelompok] ?? self::PETA_TAMPIL[$kelompok] ?? [self::MODUL_LAINNYA, '', $fallbackLabel];
     }
 
     /** Posisi modul pada urutan sidebar; yang tak dikenal selalu di belakang. */
