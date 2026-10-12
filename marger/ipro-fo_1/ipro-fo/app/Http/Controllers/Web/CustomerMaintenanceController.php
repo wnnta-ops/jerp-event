@@ -11,7 +11,7 @@ use App\Http\Controllers\Controller;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
-use Symfony\Component\HttpFoundation\StreamedResponse;
+use App\Support\Xlsx;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -76,11 +76,17 @@ class CustomerMaintenanceController extends Controller
     {
         abort_unless($request->user()?->can('master.customer.import'), 403);
         $request->validate([
-            'file'    => ['required', 'file', 'mimes:csv,txt', 'max:5120'],
+            'file'    => ['required', 'file', 'mimes:xlsx', 'max:5120'],
             'dry_run' => ['boolean'],
+        ], [
+            'file.mimes' => 'Berkas harus Excel (.xlsx). Unduh template untuk contoh susunannya.',
         ]);
-        $csv    = (string) file_get_contents($request->file('file')->getRealPath());
-        $result = $this->import->import($csv, $request->boolean('dry_run'));
+        try {
+            $baris = Xlsx::baca($request->file('file')->getRealPath());
+        } catch (\RuntimeException $e) {
+            return back()->with('error', $e->getMessage());
+        }
+        $result = $this->import->import($baris, $request->boolean('dry_run'));
 
         $msg = $request->boolean('dry_run')
             ? "[Dry run] {$result['ok']} siap diimpor, {$result['skipped']} duplikat, ".count($result['failed']).' gagal.'
@@ -89,13 +95,13 @@ class CustomerMaintenanceController extends Controller
         return redirect()->route('customers.upload')->with('import_result', $result)->with('success', $msg);
     }
 
-    public function template(Request $request): StreamedResponse
+    public function template(Request $request): \Illuminate\Http\Response
     {
         abort_unless($request->user()?->can('master.customer.import'), 403);
-        $content = $this->import->template();
 
-        return response()->streamDownload(function () use ($content) {
-            echo $content;
-        }, 'template_customer.csv', ['Content-Type' => 'text/csv']);
+        return response($this->import->template(), 200, [
+            'Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            'Content-Disposition' => 'attachment; filename="template_customer.xlsx"',
+        ]);
     }
 }

@@ -14,6 +14,7 @@ use App\Domain\BusinessSupport\Services\FixedAssetService;
 use App\Domain\BusinessSupport\Services\JournalService;
 use App\Domain\BusinessSupport\Services\StockService;
 use App\Http\Controllers\Controller;
+use App\Support\Xlsx;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -28,7 +29,7 @@ use Inertia\Response;
  */
 class BulkUploadController extends Controller
 {
-    /** mode => [judul, header CSV] */
+    /** mode => [judul, header kolom] */
     private const MODES = [
         'asset'  => ['Upload Aset Tetap', 'name,category,acquisition_date,acquisition_cost,residual_value,useful_life_months'],
         'budget' => ['Upload Anggaran', 'year,cost_center_code,account_code,amount'],
@@ -59,17 +60,37 @@ class BulkUploadController extends Controller
         abort_unless(isset(self::MODES[$mode]), 404);
         abort_unless($request->user()?->can('businesssupport.transaction.create'), 403);
 
-        $request->validate(['file' => ['required', 'file', 'mimes:csv,txt'], 'dry_run' => ['nullable', 'boolean']]);
+        $request->validate(['file' => ['required', 'file', 'mimes:xlsx'], 'dry_run' => ['nullable', 'boolean']], [
+            'file.mimes' => 'Berkas harus Excel (.xlsx).',
+        ]);
         $dry    = $request->boolean('dry_run');
         $userId = $request->user()->id;
 
-        $raw = file($request->file('file')->getRealPath(), FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
-        $rows = array_map('str_getcsv', $raw ?: []);
+        try {
+            $rows = Xlsx::baca($request->file('file')->getRealPath());
+        } catch (\RuntimeException $e) {
+            return back()->with('error', $e->getMessage());
+        }
+        // Baris yang seluruh selnya kosong dibuang — dulu FILE_SKIP_EMPTY_LINES melakukannya untuk CSV.
+        $rows = array_values(array_filter($rows, fn ($r) => implode('', array_map('trim', $r)) !== ''));
         if (count($rows) < 2) {
-            return back()->with('error', 'CSV kosong atau tanpa baris data.');
+            return back()->with('error', 'Berkas kosong atau tanpa baris data.');
         }
         $header  = array_map(fn ($h) => strtolower(trim((string) $h)), array_shift($rows));
         $records = array_map(fn ($r) => array_combine($header, array_pad(array_slice($r, 0, count($header)), count($header), null)), $rows);
+
+        // Tanggal yang diketik di Excel tersimpan sebagai angka serial (45930), bukan teks
+        // seperti di CSV — tanpa ini angka itu masuk mentah ke kolom tanggal.
+        $records = array_map(function ($rec) {
+            foreach (['acquisition_date', 'date'] as $k) {
+                $s = trim((string) ($rec[$k] ?? ''));
+                if (is_numeric($s) && (float) $s > 20000 && (float) $s < 90000) {
+                    $rec[$k] = \Illuminate\Support\Carbon::create(1899, 12, 30)->addDays((int) $s)->toDateString();
+                }
+            }
+
+            return $rec;
+        }, $records);
 
         $errors = [];
         $ok = 0;

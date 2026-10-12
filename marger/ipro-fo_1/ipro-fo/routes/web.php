@@ -1161,6 +1161,8 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
     Route::get('/business-support/cogs2/{periode}/rincian', [BsCogs2Controller::class, 'rincian'])->name('bs.cogs2.rincian');
     Route::put('/business-support/cogs2/{periode}/rincian', [BsCogs2Controller::class, 'simpanUnit'])->name('bs.cogs2.rincian.simpan');
     Route::post('/business-support/cogs2/{periode}/tarik-unit', [BsCogs2Controller::class, 'tarikUnit'])->name('bs.cogs2.tarik-unit');
+    Route::post('/business-support/cogs2/rincian-xlsx/baca', [BsCogs2Controller::class, 'bacaXlsxRincian'])->name('bs.cogs2.rincian-xlsx.baca');
+    Route::post('/business-support/cogs2/rincian-xlsx/tulis', [BsCogs2Controller::class, 'tulisXlsxRincian'])->name('bs.cogs2.rincian-xlsx.tulis');
 
     // ── SUB-MODUL SECTION (landing grup BO untuk GL/Cash Book/Budget/Contractor) ──
     Route::get('/business-support/submodule/{module}/{section}', [BsSectionController::class, 'show'])

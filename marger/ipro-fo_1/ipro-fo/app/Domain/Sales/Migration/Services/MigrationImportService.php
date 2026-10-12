@@ -8,7 +8,7 @@ use App\Domain\Sales\Booking\Models\Booking;
 use App\Domain\Sales\Booking\Models\PaymentSchedule;
 use App\Domain\Sales\Contract\Models\Contract;
 use Illuminate\Support\Facades\DB;
-use League\Csv\Reader;
+use App\Support\Xlsx;
 
 /**
  * Migrasi data legacy (eProperty SALES → Migrate): Upload Kontrak / Jadwal / Pembayaran.
@@ -22,36 +22,47 @@ class MigrationImportService
         'kontrak'    => ['booking_number', 'contract_number', 'signed_at', 'status'],
     ];
 
+    /** Kolom tanggal — di Excel tersimpan sebagai angka serial bila diketik sebagai tanggal. */
+    private const KOLOM_TANGGAL = ['due_date', 'paid_at', 'signed_at'];
+
+    /** Template Excel (.xlsx): header + 1 baris contoh. */
     public function template(string $type): string
     {
-        $cols = self::COLUMNS[$type] ?? [];
         $sample = match ($type) {
-            'jadwal'     => 'BK/JRES/2606/00001,1,DP,2026-07-01,50000000,0,outstanding',
-            'pembayaran' => 'BK/JRES/2606/00001,1,50000000,2026-07-05',
-            'kontrak'    => 'BK/JRES/2606/00001,KTR/2026/00001,2026-07-10,signed',
-            default      => '',
+            'jadwal'     => ['BK/JRES/2606/00001', 1, 'DP', '2026-07-01', 50000000, 0, 'outstanding'],
+            'pembayaran' => ['BK/JRES/2606/00001', 1, 50000000, '2026-07-05'],
+            'kontrak'    => ['BK/JRES/2606/00001', 'KTR/2026/00001', '2026-07-10', 'signed'],
+            default      => [],
         };
 
-        return implode(',', $cols)."\n".$sample."\n";
+        return Xlsx::tulis(self::COLUMNS[$type] ?? [], [$sample], 'Migrasi '.ucfirst($type));
     }
 
     /**
+     * @param  list<list<string>>  $baris  Lembar pertama apa adanya — baris pertama = header.
      * @return array{ok:int, skipped:int, failed:array<int,array{row:int,ref:string,error:string}>}
      */
-    public function import(string $type, string $csv, int $userId, bool $dryRun = false): array
+    public function import(string $type, array $baris, int $userId, bool $dryRun = false): array
     {
         abort_unless(isset(self::COLUMNS[$type]), 422, 'Tipe migrasi tidak dikenal.');
-        $reader = Reader::createFromString($csv);
-        $reader->setHeaderOffset(0);
+        $header = array_map(fn ($h) => trim((string) $h), array_shift($baris) ?? []);
 
         $ok = 0; $skipped = 0; $failed = [];
         $rowNum = 1;
 
-        foreach ($reader->getRecords() as $record) {
+        foreach ($baris as $record) {
             $rowNum++;
+            if (implode('', array_map('trim', $record)) === '') {
+                continue;
+            }
             $d = [];
-            foreach ($record as $k => $val) {
-                $d[trim((string) $k)] = trim((string) $val);
+            foreach ($header as $i => $k) {
+                $d[$k] = trim((string) ($record[$i] ?? ''));
+            }
+            foreach (self::KOLOM_TANGGAL as $k) {
+                if (isset($d[$k]) && is_numeric($d[$k]) && (float) $d[$k] > 20000 && (float) $d[$k] < 90000) {
+                    $d[$k] = \Illuminate\Support\Carbon::create(1899, 12, 30)->addDays((int) $d[$k])->toDateString();
+                }
             }
             $ref = $d['booking_number'] ?? '';
 

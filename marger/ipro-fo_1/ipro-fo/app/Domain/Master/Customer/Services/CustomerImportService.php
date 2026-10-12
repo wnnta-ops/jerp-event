@@ -6,15 +6,15 @@ namespace App\Domain\Master\Customer\Services;
 
 use App\Domain\Master\Customer\Actions\CreateCustomer;
 use App\Domain\Master\Customer\Services\CustomerService;
-use League\Csv\Reader;
+use App\Support\Xlsx;
 
 /**
  * Bulk Upload Customer (eProperty: CustomerUpload / "Upload Customer").
- * Parse CSV → buat customer via CreateCustomer; laporkan ok/lewati/gagal.
+ * Baca Excel (.xlsx) → buat customer via CreateCustomer; laporkan ok/lewati/gagal.
  */
 class CustomerImportService
 {
-    /** Kolom template (header CSV). */
+    /** Kolom template (baris judul). */
     public const COLUMNS = ['full_name', 'id_type', 'id_number', 'phone', 'email', 'address_line', 'city'];
 
     public function __construct(
@@ -22,29 +22,38 @@ class CustomerImportService
         private readonly CustomerService $customers,
     ) {}
 
-    /** CSV template (header + 1 baris contoh). */
+    /**
+     * Template Excel (.xlsx): header + 1 baris contoh.
+     *
+     * NIK & nomor HP ditulis sebagai TEKS: sebagai angka, Excel memotong NIK 16 digit menjadi
+     * 15 digit bermakna (digit terakhir jadi 0) dan membuang nol di depan nomor HP.
+     */
     public function template(): string
     {
-        return implode(',', self::COLUMNS)."\n"
-            .'Budi Santoso,KTP,3201010101010001,08123456789,budi@email.com,Jl. Merdeka No. 1,Jakarta'."\n";
+        return Xlsx::tulis(self::COLUMNS, [
+            ['Budi Santoso', 'KTP', '3201010101010001', '08123456789', 'budi@email.com', 'Jl. Merdeka No. 1', 'Jakarta'],
+        ], 'Customer');
     }
 
     /**
+     * @param  list<list<string>>  $baris  Lembar pertama apa adanya — baris pertama = header.
      * @return array{ok:int, skipped:int, failed:array<int,array{row:int,name:string,error:string}>}
      */
-    public function import(string $csv, bool $dryRun = false): array
+    public function import(array $baris, bool $dryRun = false): array
     {
-        $reader = Reader::createFromString($csv);
-        $reader->setHeaderOffset(0);
+        $header = array_map(fn ($h) => trim((string) $h), array_shift($baris) ?? []);
 
         $ok = 0; $skipped = 0; $failed = [];
         $rowNum = 1; // header = baris 1
 
-        foreach ($reader->getRecords() as $record) {
+        foreach ($baris as $record) {
             $rowNum++;
+            if (implode('', array_map('trim', $record)) === '') {
+                continue;
+            }
             $data = [];
-            foreach ($record as $k => $v) {
-                $data[trim((string) $k)] = trim((string) $v);
+            foreach ($header as $i => $k) {
+                $data[$k] = trim((string) ($record[$i] ?? ''));
             }
             $name = $data['full_name'] ?? '';
 

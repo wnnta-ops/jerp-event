@@ -13,6 +13,7 @@ use App\Domain\BusinessSupport\Models\BsCogs2Akun;
 use App\Domain\BusinessSupport\Services\Cogs2Kalkulator;
 use App\Domain\BusinessSupport\Services\Cogs2Sumber;
 use App\Http\Controllers\Controller;
+use App\Support\Xlsx;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -620,6 +621,48 @@ class Cogs2Controller extends Controller
         });
 
         return back()->with('success', 'Rincian COGS disimpan.');
+    }
+
+    /**
+     * Baca berkas Excel Rincian COGS → baris mentah (JSON).
+     *
+     * Hanya MEMBACA, tidak menyimpan apa pun. Pemeriksaan isinya (kolom wajib, angka ambigu,
+     * kode kembar) tetap di layar — unitCsv.ts — supaya hasil impor masuk DRAF dan disimpan lewat
+     * tombol yang sama dengan entri tangan. Lihat ImporUnit.vue.
+     */
+    public function bacaXlsxRincian(Request $request): \Illuminate\Http\JsonResponse
+    {
+        abort_unless($request->user()?->can('cogs2.view'), 403);
+        $request->validate(['file' => ['required', 'file', 'mimes:xlsx', 'max:4096']], [
+            'file.mimes' => 'Berkas harus Excel (.xlsx).',
+        ]);
+
+        try {
+            return response()->json(['baris' => Xlsx::baca($request->file('file')->getRealPath())]);
+        } catch (\RuntimeException $e) {
+            return response()->json(['message' => $e->getMessage()], 422);
+        }
+    }
+
+    /** Rakit .xlsx dari baris yang dikirim layar — dipakai Unduh Template & Ekspor Rincian COGS. */
+    public function tulisXlsxRincian(Request $request): \Illuminate\Http\Response
+    {
+        abort_unless($request->user()?->can('cogs2.view'), 403);
+        $v = $request->validate([
+            'judul' => ['required', 'array', 'max:50'],
+            'judul.*' => ['nullable', 'string', 'max:100'],
+            'baris' => ['present', 'array', 'max:20000'],
+            'baris.*' => ['array'],
+            'nama' => ['required', 'string', 'max:120'],
+        ]);
+
+        $baris = array_map(fn ($b) => array_map(fn ($x) => is_int($x) || is_float($x) ? $x : (is_scalar($x) ? (string) $x : ''), array_values($b)), $v['baris']);
+        $nama = preg_replace('/[^\w.-]+/', '-', $v['nama']).'.xlsx';
+
+        return response(Xlsx::tulis(array_map('strval', $v['judul']), $baris, 'Rincian COGS'), 200, [
+            'Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            'Content-Disposition' => "attachment; filename=\"{$nama}\"",
+        ]);
     }
 
     /**

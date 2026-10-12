@@ -193,7 +193,7 @@ const fCls = 'h-7 w-full rounded border border-neutral-300 bg-white px-2 text-xs
             <div class="flex flex-wrap gap-2">
                 <button @click="resetFilter" class="inline-flex items-center gap-1.5 rounded-lg border border-neutral-300 px-3 py-1.5 text-xs font-medium text-neutral-600 hover:bg-neutral-50 dark:border-neutral-700 dark:text-neutral-300"><RotateCcw class="h-3.5 w-3.5" /> Reset Filter</button>
                 <a :href="route('bs.tax.keluaran.format', { year: period.year, month: period.month })" class="inline-flex items-center gap-1.5 rounded-lg border border-neutral-300 px-3 py-1.5 text-xs font-medium text-neutral-600 hover:bg-neutral-50 dark:border-neutral-700 dark:text-neutral-300"><Download class="h-3.5 w-3.5" /> Format Impor</a>
-                <input ref="berkasImpor" type="file" accept=".csv,text/csv" class="hidden" @change="unggahImpor" />
+                <input ref="berkasImpor" type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" class="hidden" @change="unggahImpor" />
                 <Button size="sm" variant="ghost" :loading="mengimpor" @click="pilihBerkas"><template #icon-left><Upload class="h-4 w-4" /></template>Impor FP &amp; NPWP</Button>
                 <Button size="sm" variant="primary" :disabled="!barisTerpilih.length" @click="openBulk"><template #icon-left><ListChecks class="h-4 w-4" /></template>Input Massal FP &amp; NPWP ({{ barisTerpilih.length }})</Button>
             </div>
