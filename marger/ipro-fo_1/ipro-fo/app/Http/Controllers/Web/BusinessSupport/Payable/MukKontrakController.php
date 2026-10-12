@@ -13,7 +13,6 @@ use App\Domain\BusinessSupport\Services\BarisSpkMuk;
 use App\Domain\BusinessSupport\Services\Cogs2Sumber;
 use App\Domain\BusinessSupport\Services\MukApi;
 use App\Http\Controllers\Controller;
-use App\Http\Controllers\Web\BusinessSupport\Cogs\CogsComponentController;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
@@ -105,19 +104,19 @@ class MukKontrakController extends Controller
             'kontrak' => $rows,
             'filters' => ['cari' => $cari, 'status' => $status],
             'ringkas' => $this->ringkas(),
-            // Daftar pilihan datang dari SATU tempat (CogsComponentController::KOMPONEN),
+            // Daftar pilihan datang dari SATU tempat (Cogs2Sumber::LABEL_HPP),
             // sama dengan yang dipakai Chart of Account — bukan disalin di layar.
-            'cogsOpsi' => CogsComponentController::pilihanKomponen(),
-            'bisaLink' => (bool) $request->user()?->can('cogs.component.manage'),
+            'cogsOpsi' => Cogs2Sumber::pilihanKomponen(),
+            'bisaLink' => (bool) $request->user()?->can('cogs2.manage'),
             // Pilihan kategori datang dari Set Up Kategori COGS, dikelompokkan menurut kunci HPP
             // supaya layar tidak perlu tahu bahwa kedua modul memakai kosakata komponen yang
             // berbeda — penerjemahannya hanya ada di Cogs2Sumber.
-            'kategoriOpsi' => collect(CogsComponentController::pilihanKomponen())->keys()
+            'kategoriOpsi' => collect(Cogs2Sumber::pilihanKomponen())->keys()
                 ->mapWithKeys(fn (string $hpp) => [
                     $hpp => Cogs2Sumber::pilihanKategori()[Cogs2Sumber::dariHpp($hpp)] ?? [],
                 ])->all(),
             // Komponen mana yang memang BERKOLOM kategori di Actual Costing COGS. Tanah tidak.
-            'perluKategori' => collect(CogsComponentController::pilihanKomponen())->keys()
+            'perluKategori' => collect(Cogs2Sumber::pilihanKomponen())->keys()
                 ->mapWithKeys(fn (string $hpp) => [
                     $hpp => Cogs2Sumber::perluKategori((string) Cogs2Sumber::dariHpp($hpp)),
                 ])->all(),
@@ -140,10 +139,10 @@ class MukKontrakController extends Controller
      */
     public function simpanCogs(Request $request, BsMukContract $kontrak): RedirectResponse
     {
-        abort_unless($request->user()?->can('cogs.component.manage'), 403);
+        abort_unless($request->user()?->can('cogs2.manage'), 403);
 
         $v = $request->validate([
-            'component' => ['present', 'nullable', Rule::in(array_keys(CogsComponentController::pilihanKomponen()))],
+            'component' => ['present', 'nullable', Rule::in(array_keys(Cogs2Sumber::pilihanKomponen()))],
             'kategori'  => ['nullable', 'string', 'max:100'],
         ], [
             'component.in' => 'Komponen COGS yang dipilih tidak dikenal.',
@@ -176,7 +175,7 @@ class MukKontrakController extends Controller
         );
 
         return back()->with('success', $kontrak->no_kontrak.' ditautkan ke komponen '
-            .(CogsComponentController::pilihanKomponen()[$v['component']] ?? $v['component']).'.');
+            .(Cogs2Sumber::pilihanKomponen()[$v['component']] ?? $v['component']).'.');
     }
 
     public function show(Request $request, BsMukContract $kontrak, MukApi $muk, AlokasiSpkUnit $alokasi): Response

@@ -58,6 +58,34 @@ class Cogs2Sumber
         return $balik[$cogs2] ?? null;
     }
 
+    /**
+     * Pilihan "Komponen COGS" pada Chart of Account: kunci komponen HPP => label operator.
+     *
+     * KUNCINYA kunci HPP ('tanah'|'bangunan'|'sarana'|'permit'), BUKAN slug COGS Baru
+     * ('tanah'|'housing'|'infra'|'license'). Itulah kosakata yang sudah tersimpan di kolom
+     * bs_accounts.cogs_component sejak sebelum modul ini ada; menggantinya berarti seluruh
+     * akun yang sudah ditandai harus diterjemahkan ulang, dan satu terjemahan yang terlupa
+     * menghasilkan komponen yang diam-diam kosong. DARI_HPP di atas yang menerjemahkannya.
+     *
+     * Dulu daftar ini milik CogsComponentController (COGS Lama). Modul itu dihapus
+     * 12 Okt 2026, sementara daftarnya tetap dipakai layar Tambah/Edit Akun — jadi ia pindah
+     * ke sini, ke modul yang memang membacanya.
+     *
+     * @var array<string,string>
+     */
+    public const LABEL_HPP = [
+        'tanah' => 'Tanah',
+        'bangunan' => 'Housing',
+        'sarana' => 'Infrastruktur',
+        'permit' => 'License Permit',
+    ];
+
+    /** @return array<string,string> */
+    public static function pilihanKomponen(): array
+    {
+        return self::LABEL_HPP;
+    }
+
     public static function dariHpp(?string $hpp): ?string
     {
         return $hpp === null ? null : (self::DARI_HPP[$hpp] ?? null);

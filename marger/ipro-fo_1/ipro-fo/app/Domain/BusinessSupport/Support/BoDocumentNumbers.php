@@ -139,22 +139,11 @@ final class BoDocumentNumbers
             // ── Aset Tetap, COGS, Payroll ─────────────────────────────────────────────
             'FA'  => $bulanan('FA', 'Aset Tetap', 'Aset Tetap', 'bs_fixed_assets', 'asset_number'),
             'PAY' => $bulanan('PAY', 'Payroll Run', 'HRGA', 'bs_payroll_runs', 'run_number'),
-            'HPP' => $bulanan('HPP', 'Pengakuan HPP', 'COGS', 'bs_cogs_recognitions', 'cogs_number'),
-            'COGS' => [
-                'label' => 'HPP RealCost / POC', 'grup' => 'COGS', 'prefix' => 'COGS',
-                'format' => '{PREFIX}/MUP/{MM}/{YY}/{SEQ}', 'padding' => 5, 'reset' => 'yearly',
-                'tabel' => 'bs_cogs_hpp', 'kolom' => 'cogs_id',
-            ],
-            'CG.SAR' => [
-                'label' => 'Realisasi COGS', 'grup' => 'COGS', 'prefix' => 'CG.SAR',
-                'format' => '{PREFIX}/{YY}/{SEQ}', 'padding' => 5, 'reset' => 'yearly',
-                'tabel' => 'bs_cogs_realizations', 'kolom' => 'doc_no',
-            ],
-            'CG.MUT' => [
-                'label' => 'Mutasi Budget COGS', 'grup' => 'COGS', 'prefix' => 'CG.MUT',
-                'format' => '{PREFIX}/{YY}/{SEQ}', 'padding' => 5, 'reset' => 'yearly',
-                'tabel' => 'bs_cogs_budget_mutations', 'kolom' => 'doc_no',
-            ],
+            // Empat seri penomoran COGS LAMA (HPP, COGS, CG.SAR, CG.MUT) dicabut 12 Okt 2026
+            // bersama modulnya. Tabelnya masih ada, tetapi tidak ada lagi layar yang meminta
+            // nomor dari seri itu — dan seri yang tak pernah dipakai pada layar Penomoran
+            // hanya membuat orang menyetel format untuk dokumen yang tidak akan terbit.
+            // COGS Baru tidak bernomor dokumen: ia beridentitas periode (lokasi + tahap).
 
             // ── Budget Control ────────────────────────────────────────────────────────
             'BC' => [

@@ -28,9 +28,16 @@ use Inertia\Response;
  * adalah cara termudah membuat empat layar berbeda beberapa rupiah tanpa ada yang tahu mana
  * yang benar.
  *
- * Izin: baca cogs.budget.view, tulis businesssupport.setup.manage — pasangan yang sudah dipakai
- * seluruh layar Setup COGS. Sengaja TIDAK membuat izin baru: izin baru di pemasangan ini lahir
- * yatim dan menunya hilang dari sidebar tanpa satu pun galat.
+ * ── IZIN: cogs2.view (baca) & cogs2.manage (tulis) ──
+ *
+ * Dulu modul ini menumpang izin COGS Lama (`cogs.budget.view`) dan izin setup Back Office
+ * (`businesssupport.setup.manage`). Menumpang itu berhenti bisa dipertahankan begitu COGS
+ * Lama ditutup: mencabut `cogs.*` akan mematikan modul yang justru sedang dipakai, dan
+ * matinya tanpa galat — layarnya cuma berubah jadi 403.
+ *
+ * Perpindahannya dibuat netral: migrasi 2026_10_12_100000 memberi `cogs2.*` kepada setiap
+ * peran dan pengguna yang hari ini memegang izin lamanya, jadi tidak ada seorang pun yang
+ * kehilangan atau mendapat akses karena pergantian ini.
  */
 class Cogs2Controller extends Controller
 {
@@ -46,7 +53,7 @@ class Cogs2Controller extends Controller
 
     public function index(Request $request): Response
     {
-        abort_unless($request->user()?->can('cogs.budget.view'), 403);
+        abort_unless($request->user()?->can('cogs2.view'), 403);
 
         $rows = BsCogs2Periode::withCount('unit')->orderBy('lokasi_kode')->orderBy('tahap')->get()
             ->map(function (BsCogs2Periode $p) {
@@ -75,13 +82,13 @@ class Cogs2Controller extends Controller
             'lokasiFo' => $lokasi,
             'tahapFo'  => $this->tahapFo(),
             'galatFo'  => $galatFo,
-            'bisaUbah' => (bool) $request->user()?->can('businesssupport.setup.manage'),
+            'bisaUbah' => (bool) $request->user()?->can('cogs2.manage'),
         ]);
     }
 
     public function store(Request $request): RedirectResponse
     {
-        abort_unless($request->user()?->can('businesssupport.setup.manage'), 403);
+        abort_unless($request->user()?->can('cogs2.manage'), 403);
 
         $v = $request->validate([
             'lokasi_id' => ['required', 'integer', 'min:1'],
@@ -132,7 +139,7 @@ class Cogs2Controller extends Controller
      */
     public function buka(Request $request, string $layar, ?string $komponen = null): RedirectResponse
     {
-        abort_unless($request->user()?->can('cogs.budget.view'), 403);
+        abort_unless($request->user()?->can('cogs2.view'), 403);
         abort_unless(in_array($layar, ['perhitungan', 'kategori', 'actual', 'rincian'], true), 404);
 
         $ingat = $request->hasSession() ? (int) $request->session()->get(self::SESI_PERIODE, 0) : 0;
@@ -156,7 +163,7 @@ class Cogs2Controller extends Controller
 
     public function destroy(Request $request, BsCogs2Periode $periode): RedirectResponse
     {
-        abort_unless($request->user()?->can('businesssupport.setup.manage'), 403);
+        abort_unless($request->user()?->can('cogs2.manage'), 403);
 
         DB::transaction(function () use ($periode) {
             BsCogs2Unit::where('periode_id', $periode->id)->delete();
@@ -173,14 +180,14 @@ class Cogs2Controller extends Controller
 
     public function perhitungan(Request $request, BsCogs2Periode $periode): Response
     {
-        abort_unless($request->user()?->can('cogs.budget.view'), 403);
+        abort_unless($request->user()?->can('cogs2.view'), 403);
 
         return Inertia::render('BusinessSupport/Cogs2/Perhitungan', $this->props($request, $periode));
     }
 
     public function simpanPerhitungan(Request $request, BsCogs2Periode $periode): RedirectResponse
     {
-        abort_unless($request->user()?->can('businesssupport.setup.manage'), 403);
+        abort_unless($request->user()?->can('cogs2.manage'), 403);
 
         $v = $request->validate([
             'luas_lahan'    => ['required', 'numeric', 'min:0'],
@@ -207,7 +214,7 @@ class Cogs2Controller extends Controller
 
     public function kategori(Request $request, BsCogs2Periode $periode, string $komponen): Response
     {
-        abort_unless($request->user()?->can('cogs.budget.view'), 403);
+        abort_unless($request->user()?->can('cogs2.view'), 403);
         abort_unless(in_array($komponen, self::KOMPONEN, true), 404);
 
         return Inertia::render('BusinessSupport/Cogs2/Kategori', $this->props($request, $periode) + ['komponen' => $komponen]);
@@ -222,7 +229,7 @@ class Cogs2Controller extends Controller
      */
     public function simpanKategori(Request $request, BsCogs2Periode $periode, string $komponen): RedirectResponse
     {
-        abort_unless($request->user()?->can('businesssupport.setup.manage'), 403);
+        abort_unless($request->user()?->can('cogs2.manage'), 403);
         abort_unless(in_array($komponen, self::KOMPONEN, true), 404);
 
         $v = $request->validate([
@@ -288,7 +295,7 @@ class Cogs2Controller extends Controller
 
     public function actual(Request $request, BsCogs2Periode $periode, string $komponen): Response
     {
-        abort_unless($request->user()?->can('cogs.budget.view'), 403);
+        abort_unless($request->user()?->can('cogs2.view'), 403);
         abort_unless(in_array($komponen, self::KOMPONEN, true), 404);
 
         return Inertia::render('BusinessSupport/Cogs2/Actual', $this->props($request, $periode) + [
@@ -310,7 +317,7 @@ class Cogs2Controller extends Controller
      */
     public function simpanAkun(Request $request, BsCogs2Periode $periode, string $komponen): RedirectResponse
     {
-        abort_unless($request->user()?->can('businesssupport.setup.manage'), 403);
+        abort_unless($request->user()?->can('cogs2.manage'), 403);
         abort_unless(in_array($komponen, self::KOMPONEN, true), 404);
 
         $v = $request->validate([
@@ -337,7 +344,7 @@ class Cogs2Controller extends Controller
     /** Saklar kedua sumber otomatis. */
     public function simpanSumber(Request $request, BsCogs2Periode $periode): RedirectResponse
     {
-        abort_unless($request->user()?->can('businesssupport.setup.manage'), 403);
+        abort_unless($request->user()?->can('cogs2.manage'), 403);
 
         $v = $request->validate([
             'ikut_muk' => ['required', 'boolean'],
@@ -350,7 +357,7 @@ class Cogs2Controller extends Controller
 
     public function simpanActual(Request $request, BsCogs2Periode $periode, string $komponen): RedirectResponse
     {
-        abort_unless($request->user()?->can('businesssupport.setup.manage'), 403);
+        abort_unless($request->user()?->can('cogs2.manage'), 403);
         abort_unless(in_array($komponen, self::KOMPONEN, true), 404);
 
         $v = $request->validate([
@@ -395,7 +402,7 @@ class Cogs2Controller extends Controller
 
     public function rincian(Request $request, BsCogs2Periode $periode): Response
     {
-        abort_unless($request->user()?->can('cogs.budget.view'), 403);
+        abort_unless($request->user()?->can('cogs2.view'), 403);
 
         [$lokasi, $galatFo] = $this->lokasiFo();
 
@@ -552,7 +559,7 @@ class Cogs2Controller extends Controller
 
     public function simpanUnit(Request $request, BsCogs2Periode $periode): RedirectResponse
     {
-        abort_unless($request->user()?->can('businesssupport.setup.manage'), 403);
+        abort_unless($request->user()?->can('cogs2.manage'), 403);
 
         $v = $request->validate([
             'baris'                 => ['present', 'array', 'max:2000'],
@@ -624,7 +631,7 @@ class Cogs2Controller extends Controller
      */
     public function tarikUnit(Request $request, BsCogs2Periode $periode): RedirectResponse
     {
-        abort_unless($request->user()?->can('businesssupport.setup.manage'), 403);
+        abort_unless($request->user()?->can('cogs2.manage'), 403);
 
         [$unitFo, $galat] = $this->unitFo((int) $periode->lokasi_id, (string) $periode->tahap);
         if ($galat !== null) {
@@ -771,7 +778,7 @@ class Cogs2Controller extends Controller
             'statusOpsi'  => BsCogs2Unit::STATUS,
             'costingOpsi' => BsCogs2Unit::COSTING,
             'komponenOpsi' => collect(Cogs2Kalkulator::KOMPONEN)->map(fn ($d) => $d['label']),
-            'bisaUbah'    => (bool) $request->user()?->can('businesssupport.setup.manage'),
+            'bisaUbah'    => (bool) $request->user()?->can('cogs2.manage'),
         ];
     }
 

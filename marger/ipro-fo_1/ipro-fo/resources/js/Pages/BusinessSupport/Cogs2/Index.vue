@@ -53,8 +53,10 @@ const inputCls = 'h-9 w-full rounded-lg border border-neutral-300 bg-white px-3 
 
 <template>
     <div class="space-y-4">
-        <Link :href="route('bs.cogs.home')" class="inline-flex items-center gap-2 text-sm text-neutral-500 hover:text-neutral-800 dark:hover:text-neutral-200">
-            <ArrowLeft class="h-4 w-4" /> Cost of Good Sold
+        <!-- Dulu menunjuk hub COGS Lama; modul itu ditutup 12 Okt 2026 dan tautannya
+             berakhir 403 — tombol "kembali" yang justru membuntu. -->
+        <Link :href="route('dashboard')" class="inline-flex items-center gap-2 text-sm text-neutral-500 hover:text-neutral-800 dark:hover:text-neutral-200">
+            <ArrowLeft class="h-4 w-4" /> Dashboard Back Office
         </Link>
 
         <div class="flex flex-wrap items-start justify-between gap-3">
