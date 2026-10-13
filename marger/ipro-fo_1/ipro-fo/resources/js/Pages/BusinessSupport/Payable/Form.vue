@@ -703,8 +703,10 @@ const cellArea = 'w-full rounded-md border border-neutral-300 bg-white px-2 py-1
                 <div class="rounded-lg border border-neutral-200 dark:border-neutral-800">
                     <table class="w-full table-fixed border-collapse text-sm">
                         <colgroup>
-                            <!-- Kolom Account dilebarkan: memuat pemilih akun + tombol Salin/Tempel berlabel. -->
-                            <col style="width:4%" /><col style="width:27%" /><col style="width:10%" /><col style="width:15%" /><col style="width:10%" /><col style="width:12%" /><col style="width:9%" /><col style="width:9%" /><col style="width:4%" />
+                            <!-- Kolom Account dilebarkan: memuat pemilih akun + tombol Salin/Tempel berlabel.
+                                 DELAPAN kolom, sama dengan sel tiap baris — kolom kesembilan yang
+                                 dulu ada di sini menggeser seluruh angka Grand Total satu kolom ke kanan. -->
+                            <col style="width:4%" /><col style="width:27%" /><col style="width:11%" /><col style="width:16%" /><col style="width:11%" /><col style="width:13%" /><col style="width:13%" /><col style="width:5%" />
                         </colgroup>
                         <thead class="bg-neutral-50 text-left text-[11px] uppercase tracking-wide text-neutral-500 dark:bg-neutral-800">
                             <tr>
@@ -793,11 +795,12 @@ const cellArea = 'w-full rounded-md border border-neutral-300 bg-white px-2 py-1
                                 </td>
                                 <td class="px-1 py-2 text-center"><button type="button" @click="removeJournalLine(i)" class="text-danger-500"><Trash2 class="h-4 w-4" /></button></td>
                             </tr>
-                            <tr v-if="!form.journal_lines.length"><td colspan="9" class="px-2 py-6 text-center text-sm text-neutral-400">Belum ada baris. Tekan "Sebelumnya" lalu "Berikutnya" lagi ke langkah ini untuk membentuk jurnal otomatis dari nilai transaksinya, atau klik "Tambah 1 Baris".</td></tr>
+                            <tr v-if="!form.journal_lines.length"><td colspan="8" class="px-2 py-6 text-center text-sm text-neutral-400">Belum ada baris. Tekan "Sebelumnya" lalu "Berikutnya" lagi ke langkah ini untuk membentuk jurnal otomatis dari nilai transaksinya, atau klik "Tambah 1 Baris".</td></tr>
                         </tbody>
                         <tfoot>
                             <tr class="border-t-2 border-neutral-200 bg-neutral-50 font-semibold dark:border-neutral-700 dark:bg-neutral-800">
-                                <td colspan="5" class="px-2 py-2 text-right text-neutral-500">Grand Total</td>
+                                <!-- 4 kolom (No·Account·Cost Center·Keterangan) — tiap total tepat di bawah kolomnya. -->
+                                <td colspan="4" class="px-2 py-2 text-right text-neutral-500">Grand Total</td>
                                 <td class="px-2 py-2 text-right font-mono">{{ fmtNum(jurnalNilai) }}</td>
                                 <td class="px-2 py-2 text-right font-mono">{{ fmtNum(jurnalDebit) }}</td>
                                 <td class="px-2 py-2 text-right font-mono">{{ fmtNum(jurnalKredit) }}</td>
