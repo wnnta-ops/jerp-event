@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue';
 import { router, Link } from '@inertiajs/vue3';
-import { Wallet, RotateCcw, Users, User } from 'lucide-vue-next';
+import { Wallet, RotateCcw, Users, User, Printer, FileText, FileSpreadsheet } from 'lucide-vue-next';
 import Button from '@/Components/UI/Button.vue';
 import EmptyState from '@/Components/UI/EmptyState.vue';
 import SearchSelect from '@/Components/UI/SearchSelect.vue';
@@ -16,7 +16,13 @@ const props = defineProps<{
     totals: { saldo_awal: number; penambahan: number; realisasi: number; outstanding: number; karyawan: number };
     filters: { from: string; to: string; mode: string; holder: string };
     account: { code: string; name: string } | null;
+    /** true = pengguna hanya melihat kasbon miliknya sendiri (bukan Finance / penyetuju). */
+    hanyaMilikSendiri?: boolean;
 }>();
+
+/* Cetak / PDF / Excel mengikuti saringan yang SEDANG TAMPIL (props.filters), bukan isian yang
+   belum diterapkan — supaya berkas yang keluar sama dengan tabel di layar. */
+const paramEkspor = computed(() => ({ from: props.filters.from, to: props.filters.to, mode: props.filters.mode, holder: props.filters.holder || undefined }));
 
 const from = ref(props.filters.from);
 const to = ref(props.filters.to);
@@ -78,6 +84,9 @@ const inputCls = 'h-9 w-full rounded-lg border border-neutral-300 bg-white px-3 
                 </div>
                 <Button size="sm" @click="terapkan">Tampilkan</Button>
                 <button type="button" class="inline-flex items-center gap-1.5 rounded-lg border border-neutral-300 px-3 py-1.5 text-xs font-medium text-neutral-600 hover:bg-neutral-50 dark:border-neutral-700 dark:text-neutral-300" @click="reset"><RotateCcw class="h-3.5 w-3.5" /> Reset</button>
+                <a :href="route('bs.cashbook.outstanding-kasbon.cetak', paramEkspor)" target="_blank" rel="noopener" class="inline-flex items-center gap-1.5 rounded-lg border border-neutral-300 px-3 py-1.5 text-xs font-medium text-neutral-600 hover:bg-neutral-50 dark:border-neutral-700 dark:text-neutral-300"><Printer class="h-3.5 w-3.5" /> Cetak</a>
+                <a :href="route('bs.cashbook.outstanding-kasbon.cetak', paramEkspor)" target="_blank" rel="noopener" title="Pilih Simpan sebagai PDF pada dialog cetak" class="inline-flex items-center gap-1.5 rounded-lg border border-neutral-300 px-3 py-1.5 text-xs font-medium text-neutral-600 hover:bg-neutral-50 dark:border-neutral-700 dark:text-neutral-300"><FileText class="h-3.5 w-3.5" /> PDF</a>
+                <a :href="route('bs.cashbook.outstanding-kasbon.excel', paramEkspor)" class="inline-flex items-center gap-1.5 rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-1.5 text-xs font-medium text-emerald-700 hover:bg-emerald-100 dark:border-emerald-700/50 dark:bg-emerald-900/30 dark:text-emerald-300"><FileSpreadsheet class="h-3.5 w-3.5" /> Excel</a>
                 <div class="ml-auto inline-flex overflow-hidden rounded-lg border border-neutral-300 dark:border-neutral-700">
                     <button type="button" class="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium"
                             :class="mode === 'summary' ? 'bg-primary-600 text-white' : 'text-neutral-600 hover:bg-neutral-50 dark:text-neutral-300'"
@@ -103,7 +112,7 @@ const inputCls = 'h-9 w-full rounded-lg border border-neutral-300 bg-white px-3 
 
         <!-- SUMMARY — seluruh karyawan -->
         <div v-if="mode === 'summary'" class="card overflow-hidden">
-            <div class="border-b border-neutral-200 px-4 py-3 dark:border-neutral-800"><h2 class="font-semibold">Summary — Seluruh Karyawan</h2></div>
+            <div class="border-b border-neutral-200 px-4 py-3 dark:border-neutral-800"><h2 class="font-semibold">Summary — {{ hanyaMilikSendiri ? 'Kasbon Saya' : 'Seluruh Karyawan' }}</h2></div>
             <div class="overflow-x-auto">
                 <table class="w-full min-w-[52rem] text-sm">
                     <thead class="bg-neutral-50 dark:bg-neutral-800"><tr class="text-left text-xs uppercase text-neutral-500">
