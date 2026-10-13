@@ -52,10 +52,14 @@ final class PengajuanKasbonPrinter
         return 'Rp. '.number_format($n, 2, ',', '.');
     }
 
-    /** "Rp. 16,500,000.00" — gaya BPP/Memo, persis seperti formulir aslinya. */
+    /**
+     * Angka TOTAL — kini format Indonesia "Rp. 16.500.000,00", sama dengan baris rinciannya.
+     * (Dulu "Rp. 16,500,000.00" mengikuti formulir eProperty, sehingga satu kertas memuat dua
+     * bentuk angka sekaligus.)
+     */
     private function rpTitik(float $n): string
     {
-        return 'Rp. '.number_format($n, 2, '.', ',');
+        return $this->rpKoma($n);
     }
 
     /** Rekening penerima diambil dari data karyawan yang namanya sama dengan pemegang bon. */
@@ -117,12 +121,6 @@ final class PengajuanKasbonPrinter
             .'</body></html>';
     }
 
-    /** Satu kotak tanda tangan: judul di atas, ruang kosong, nama peran di bawah. */
-    private function kotakTtd(string $atas, string $bawah): string
-    {
-        return '<td><div>'.$this->e($atas).'</div><div class="ruang"></div><div>'.$this->e($bawah).'</div></td>';
-    }
-
     /**
      * Kop berlogo — dipakai KETIGA halaman (KAS BON, BPP, Memo Internal).
      *
@@ -155,17 +153,20 @@ final class PengajuanKasbonPrinter
         $p       = $this->penerima($advance);
         $nominal = (float) $advance->amount;
 
-        // Lima kolom tanda tangan, urutannya persis seperti formulir aslinya.
-        $ttd = [
-            ['Yang Mengajukan', 'SPV/Manager Dept.'],
-            ['Diverifikasi', 'Manager Accounting'],
-            ['Disetujui', 'Manager Finance'],
-            ['Dibayar', 'General Manager'],
-            ['Diterima', 'Direktur'],
-        ];
+        // Tanda tangan persis formulir KAS BON eProperty: lima judul, tujuh kotak.
+        // Diverifikasi = Manager Accounting + Manager Finance, Disetujui = General Manager +
+        // Direktur; Dibayar & Diterima dibiarkan tanpa jabatan — diisi kasir dan penerimanya.
+        // (Dulu satu judul satu jabatan, sehingga jabatannya bergeser: Manager Finance di
+        // "Disetujui", General Manager di "Dibayar", Direktur di "Diterima".)
+        $judulTtd = [['Yang Mengajukan', 1], ['Diverifikasi', 2], ['Disetujui', 2], ['Dibayar', 1], ['Diterima', 1]];
+        $jabatanTtd = ['SPV/Manager Dept.', 'Manager Accounting', 'Manager Finance', 'General Manager', 'Direktur', '', ''];
         $selTtd = '';
-        foreach ($ttd as [$atas, $bawah]) {
-            $selTtd .= $this->kotakTtd($atas, $bawah);
+        foreach ($judulTtd as [$judul, $span]) {
+            $selTtd .= '<td colspan="'.$span.'">'.$this->e($judul).'</td>';
+        }
+        $selTtd .= '</tr><tr><td colspan="'.count($jabatanTtd).'" class="ruang"></td></tr><tr>';
+        foreach ($jabatanTtd as $jabatan) {
+            $selTtd .= '<td>'.$this->e($jabatan).'</td>';
         }
 
         $isi = $this->kop('<div style="font-size:20px;font-weight:700">KAS BON</div>')
@@ -324,7 +325,10 @@ final class PengajuanKasbonPrinter
 
             .'<table class="ttd"><tr><td>Hormat Kami,</td><td colspan="2">Menyetujui,</td></tr>'
             .'<tr><td class="ruang"></td><td class="ruang"></td><td class="ruang"></td></tr>'
-            .'<tr><td>'.$this->e($pengaju).'</td><td>'.$this->e((string) config('business_support.company.signer_manager', 'Manager Finance'))
+            // Penyetuju pertama = NAMA, bukan jabatan — sama dengan Memo Internal Invoice Hutang
+            // dan formulir eProperty. Kunci config ini tidak pernah diisi, sehingga dulu yang
+            // tercetak adalah cadangannya: tulisan "Manager Finance".
+            .'<tr><td>'.$this->e($pengaju).'</td><td>'.$this->e((string) config('business_support.company.signer_manager', 'Rizki Setyawardana'))
             .'</td><td>'.$this->e((string) config('business_support.company.signer_name', 'Direktur')).'</td></tr></table>'
 
             .'<table class="ttd" style="margin-top:10px"><tr><td colspan="2">Mengetahui,</td></tr>'
