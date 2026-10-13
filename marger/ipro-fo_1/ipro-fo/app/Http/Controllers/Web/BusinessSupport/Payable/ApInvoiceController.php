@@ -1034,7 +1034,7 @@ table.sum td{padding:2px 6px;border:1px solid #333}table.sum .tot{font-weight:bo
   </table>
   <table class="grid sign2" style="margin-top:18px;text-align:center">
     <colgroup><col style="width:14.28%"><col style="width:14.28%"><col style="width:14.28%"><col style="width:14.28%"><col style="width:14.28%"><col style="width:14.28%"><col style="width:14.32%"></colgroup>
-    <tr><td>Diajukan Oleh,</td><td>Di Verifikasi Oleh,</td><td colspan="3">Di Setujui Oleh,</td><td>Di Bayarkan Oleh,</td><td>Di Terima Oleh,</td></tr>
+    <tr><td>Diajukan Oleh,</td><td colspan="2">Di Verifikasi Oleh,</td><td colspan="2">Di Setujui Oleh,</td><td>Di Bayarkan Oleh,</td><td>Di Terima Oleh,</td></tr>
     <tr class="sph"><td></td><td></td><td></td><td></td><td></td><td></td><td></td></tr>
     <tr><td>SPV/Manager Dept</td><td>Manager Accounting</td><td>Manager Finance</td><td>General Manager</td><td>Direktur</td><td>General Cashier</td><td>Penerima</td></tr>
   </table>

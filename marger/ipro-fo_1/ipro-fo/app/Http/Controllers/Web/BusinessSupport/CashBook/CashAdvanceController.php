@@ -1389,9 +1389,13 @@ class CashAdvanceController extends Controller
             .'table.grid td.ac{white-space:nowrap;width:110px}table.grid td.r,table.grid th.r{text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums;width:120px}'
             .'.vc{font-weight:bold}.tlbl{float:right;font-weight:bold}'
             .'.terbilang{margin:7px 0 12px}'
-            .'table.sign{width:100%;border:1px solid #333;border-collapse:collapse;font-size:11px}'
-            .'table.sign td{border-left:1px solid #333;padding:4px 6px}table.sign td:first-child{border-left:0}'
-            .'tr.sl td{vertical-align:top;height:14px}tr.ss td{height:70px}tr.sr td{vertical-align:bottom;text-align:center;font-weight:600}';
+            // Tanda tangan: lebar kolom SAMA (table-layout fixed + colgroup) dan garis kotak penuh,
+            // seperti BPP. Dulu lebarnya mengikuti panjang teks ("Direksi" sempit, nama PT
+            // melebar) dan garisnya hanya sisi kiri sel, sehingga sekat di bawah judul gabungan
+            // baru mulai di tengah.
+            .'table.sign{width:100%;border-collapse:collapse;font-size:11px;table-layout:fixed}'
+            .'table.sign td{border:1px solid #333;padding:4px 6px;text-align:center;word-wrap:break-word}'
+            .'tr.sl td{vertical-align:middle;height:14px}tr.ss td{height:70px}tr.sr td{vertical-align:middle;font-weight:600}';
 
         $body = '<div class="cb">Created By Java Core ('.$e($printDate).')</div>'
             .'<table class="hd"><tr>'
@@ -1512,7 +1516,7 @@ class CashAdvanceController extends Controller
 
         $barisJudul = '';
         foreach ($judul as [$teks, $span]) {
-            $barisJudul .= '<td colspan="'.$span.'"'.($span > 1 ? ' style="text-align:center"' : '').'>'.$e($teks).'</td>';
+            $barisJudul .= '<td colspan="'.$span.'">'.$e($teks).'</td>';
         }
         $barisKosong = str_repeat('<td></td>', count($peran));
         $barisPeran = '';
@@ -1520,7 +1524,9 @@ class CashAdvanceController extends Controller
             $barisPeran .= '<td>'.$e($p).'</td>';
         }
 
-        return '<table class="sign">'
+        $lebar = round(100 / count($peran), 4);
+
+        return '<table class="sign"><colgroup>'.str_repeat('<col style="width:'.$lebar.'%">', count($peran)).'</colgroup>'
             .'<tr class="sl">'.$barisJudul.'</tr>'
             .'<tr class="ss">'.$barisKosong.'</tr>'
             .'<tr class="sr">'.$barisPeran.'</tr>'
