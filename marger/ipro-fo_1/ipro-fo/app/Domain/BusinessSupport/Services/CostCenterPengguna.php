@@ -100,6 +100,24 @@ class CostCenterPengguna
         return $nama !== '' ? $nama : null;
     }
 
+    /**
+     * Nama MANAGER cost center pengguna ini — penanda tangan "Dari" / "Hormat Kami" pada
+     * Memo Internal. Isinya kolom Manager di master Cost Center (SPV ke atas per departemen).
+     * null bila penggunanya tak tertaut ke karyawan, atau kolom Manager-nya masih kosong.
+     */
+    public function namaManager(?object $user): ?string
+    {
+        return self::managerDari($this->untuk($user));
+    }
+
+    /** Nama Manager sebuah cost center, atau null bila kosong. */
+    public static function managerDari(?BsCostCenter $cc): ?string
+    {
+        $nama = trim((string) ($cc?->manager ?? ''));
+
+        return $nama !== '' ? $nama : null;
+    }
+
     /** Karyawan yang tertaut ke akun ini — lewat NIP dulu, baru nama. */
     private function karyawan(?object $user): ?BsEmployee
     {

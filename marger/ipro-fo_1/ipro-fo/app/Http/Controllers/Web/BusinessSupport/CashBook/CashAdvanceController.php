@@ -1225,7 +1225,7 @@ class CashAdvanceController extends Controller
         // 'costCenter', BUKAN 'department': master Departemen sudah dicabut dan relasinya tidak
         // pernah ada di BsCashAdvance — memuatnya melempar RelationNotFoundException, dan
         // CETAK PENGAJUAN jadi 500 sejak itu. Unit kerja kini selalu dari cost center.
-        $advance->load(['cashAccount:id,code,name', 'costCenter:id,code,name']);
+        $advance->load(['cashAccount:id,code,name', 'costCenter:id,code,name,manager']);
 
         $html = $advance->status === 'requested'
             ? app(PengajuanKasbonPrinter::class)->render($advance)

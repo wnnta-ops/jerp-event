@@ -549,13 +549,20 @@ class KprDatabaseController extends Controller
         $now   = now();
         $roman = ['', 'I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X', 'XI', 'XII'][$now->month];
 
+        // "Dari" & "Hormat kami" = MANAGER cost center pengguna yang membuka memo (kolom Manager
+        // di master Cost Center), sama dengan Memo Internal lain. Hanya ISIAN AWAL — semuanya
+        // tetap bisa disunting di layar. Jatuh ke isian lama bila belum ada.
+        $ccPengguna = app(\App\Domain\BusinessSupport\Services\CostCenterPengguna::class);
+        $manager    = $ccPengguna->namaManager(auth()->user());
+        $unit       = $manager !== null ? $ccPengguna->untuk(auth()->user())?->name : null;
+
         return [
             'rows' => $rows,
             'memo' => [
                 'no'       => '____/MUP-KPR/JRK/'.$roman.'/'.$now->year,
                 'kepada'   => 'RS',
                 'tembusan' => 'RZ',
-                'dari'     => 'PS',
+                'dari'     => $manager ?? 'PS',
                 'tanggal'  => ucfirst($now->translatedFormat('l, d F Y')),
                 'perihal'  => 'Rekomendasi Pembatalan KPR',
             ],
@@ -565,7 +572,7 @@ class KprDatabaseController extends Controller
             // Identitas perusahaan tidak dikirim lagi: nama/alamat/telepon/web sudah menyatu di
             // dalam gambar kop (public/images/mup-letterhead.jpeg), sama seperti lampiran.
             'signers' => [
-                'left'  => ['label' => 'Hormat kami,', 'name' => 'Prawanita Sari', 'title' => 'Finance Manager'],
+                'left'  => ['label' => 'Hormat kami,', 'name' => $manager ?? 'Prawanita Sari', 'title' => $unit ?? 'Finance Manager'],
                 'right' => ['label' => 'Mengetahui,', 'name' => (string) config('business_support.company.signer_name', 'Rachmat Suhendra'), 'title' => (string) config('business_support.company.signer_title', 'Direktur')],
             ],
         ];
