@@ -1321,8 +1321,9 @@ class CashAdvanceController extends Controller
     private function renderRealisasiPrint(BsCashAdvance $advance): string
     {
         $e = fn ($s) => htmlspecialchars((string) $s, ENT_QUOTES, 'UTF-8');
-        // Jumlah mengikuti lampiran: "1,298,000.00" (ribuan koma, 2 desimal, tanpa "Rp").
-        $amt = fn ($n) => number_format((float) $n, 2, '.', ',');
+        // Jumlah format Indonesia "1.298.000,00" (ribuan titik, 2 desimal, tanpa "Rp") — seragam
+        // dengan cetakan Bon Sementara lainnya.
+        $amt = fn ($n) => number_format((float) $n, 2, ',', '.');
 
         // ── Cara pembayaran: parse nama akun kas/bank "{BANK} REK. {NO}" → bank + rekening; deteksi KAS. ──
         $cashName = (string) ($advance->cashAccount?->name ?? '');
@@ -1365,7 +1366,9 @@ class CashAdvanceController extends Controller
         $isReimburse = $settlement < 0;
         $terbilang = strtoupper(trim(preg_replace('/\s+/', ' ', terbilang((int) round($total)))).' rupiah');
         $tgl = optional($advance->realized_date)->format('d-m-Y') ?: '-';
-        $dept = $advance->department?->name ?: '-';
+        // Cost center bon, BUKAN `department`: master Departemen sudah dicabut dan relasinya tidak
+        // ada di BsCashAdvance, sehingga baris ini dulu SELALU tercetak "-".
+        $dept = $advance->costCenter?->name ?: '-';
         $holder = (string) $advance->holder;
         $printDate = now()->format('d-m-Y H.i.s');
         $logo = '/images/mup-logo.jpeg';
@@ -1498,9 +1501,11 @@ class CashAdvanceController extends Controller
         $e = fn ($x) => htmlspecialchars((string) $x, ENT_QUOTES, 'UTF-8');
         $co = (string) config('business_support.company.name', 'PT. Mitra Usaha Propertindo');
 
+        // Di Verifikasi = Manager Accounting + Manager Finance; Di Setujui = General Manager +
+        // Direksi — persis formulir eProperty (dulu Manager Finance terkelompok di "Di Setujui").
         $judul = $isReimburse
-            ? [['Diajukan Oleh,', 1], ['Di Verifikasi Oleh,', 1], ['Di Setujui Oleh,', 3], ['Di Bayarkan Oleh,', 1], ['Di Terima Oleh,', 1]]
-            : [['Diajukan Oleh,', 1], ['Di Verifikasi Oleh,', 1], ['Di Setujui Oleh,', 3], ['Di Terima Oleh,', 1]];
+            ? [['Diajukan Oleh,', 1], ['Di Verifikasi Oleh,', 2], ['Di Setujui Oleh,', 2], ['Di Bayarkan Oleh,', 1], ['Di Terima Oleh,', 1]]
+            : [['Diajukan Oleh,', 1], ['Di Verifikasi Oleh,', 2], ['Di Setujui Oleh,', 2], ['Di Terima Oleh,', 1]];
         $peran = $isReimburse
             ? ['SPV/Manager Dept.', 'Manager Accounting', 'Manager Finance', 'General Manager', 'Direksi', 'Finance', $holder]
             : ['SPV/Manager Dept.', 'Manager Accounting', 'Manager Finance', 'General Manager', 'Direksi', $co];
