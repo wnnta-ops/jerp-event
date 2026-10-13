@@ -153,6 +153,7 @@ class BoRoleResource extends Resource
     {
         $perms = BoPermission::query()->orderBy('module')->orderBy('name')
             ->get(['id', 'name', 'module', 'label']);
+        $idPerNama = $perms->pluck('id', 'name')->map(fn ($v) => (int) $v)->all();
 
         // modul => sub-modul => nama menu => kunci state => [ ['id'=>.., 'action'=>..], ... ]
         //
@@ -161,6 +162,8 @@ class BoRoleResource extends Resource
         // aksinya ("Invoice Hutang": Tampil + Lihat/Buat/…). Kuncinya tetap terpisah karena
         // pengisian ulang di halaman Edit mengelompokkan izin lewat areaKeyFor().
         $pohon = [];
+        // modul => sub => menu => nama izin tampil (bila baris itu butir sidebar).
+        $menuTampil = [];
 
         foreach ($perms as $p) {
             [$module, $area, $action] = self::splitPerm($p->name, (string) $p->module);
@@ -169,7 +172,62 @@ class BoRoleResource extends Resource
 
             $field = $awalanState.'.'.self::areaKey($module, $area);
             $pohon[$modul][$sub][$menu][$field][] = ['id' => $p->id, 'action' => $action];
+            if ($module === 'menu') {
+                $menuTampil[$modul][$sub][$menu] = $p->name;
+            }
         }
+
+        /* ── "BUKA LAYAR" — izin aksi sebuah menu, ditaruh di baris menu itu sendiri ──
+           Menu baru muncul bila Tampil DAN izin aksinya terpenuhi, tetapi izin aksi itu kerap
+           tinggal di baris kelompok lain (Kartu Bon Sementara butuh "Bon Sementara › Kartu").
+           Admin mencentang Tampil, menunya tidak muncul, dan layar tidak memberi tahu sebabnya.
+           Karena itu izin aksinya diulang di baris menunya sebagai centang "Buka layar". */
+        $bukaPerMenu = [];   // nama izin tampil => id izin aksi
+        $namaMenu = [];      // id izin aksi => nama-nama menu yang memakainya
+        foreach ($menuTampil as $subs) {
+            foreach ($subs as $menus) {
+                foreach ($menus as $menu => $izinTampil) {
+                    $id = self::idIzinAksi(PetaMenuBo::izinAksiMenu($izinTampil), $idPerNama);
+                    if ($id !== null) {
+                        $bukaPerMenu[$izinTampil] = $id;
+                        $namaMenu[$id][] = (string) $menu;
+                    }
+                }
+            }
+        }
+
+        // Izin yang mungkin muncul di lebih dari satu tempat = izin aksi menu ("Buka layar").
+        $izinKembar = array_values(array_unique(array_values($bukaPerMenu)));
+
+        /* ── SINKRON — satu izin, banyak centang ──
+           Izin yang sama bisa tampil di beberapa tempat (baris kelompoknya + "Buka layar" di tiap
+           menu pemakainya). Semuanya HARUS bernilai sama: penyimpanan menggabungkan seluruh
+           centang, jadi satu tempat yang masih tercentang akan diam-diam menahan izin yang
+           sudah dicabut di tempat lain. $lokasi diisi selagi baris disusun; penutupnya baru
+           dipanggil saat pengguna mengeklik, ketika petanya sudah lengkap. */
+        $lokasi = [];   // id izin => daftar kunci state yang memuatnya
+        $sinkron = static function (array $ids, bool $centang, string $asal, Forms\Get $get, Forms\Set $set) use (&$lokasi): void {
+            foreach ($ids as $id) {
+                foreach ($lokasi[(int) $id] ?? [] as $f) {
+                    if ($f === $asal) {
+                        continue;
+                    }
+                    $kini = array_map('intval', (array) ($get($f) ?? []));
+                    $kini = $centang
+                        ? array_values(array_unique([...$kini, (int) $id]))
+                        : array_values(array_diff($kini, [(int) $id]));
+                    $set($f, $kini);
+                }
+            }
+        };
+        $saatBerubah = static function (string $field) use ($sinkron): \Closure {
+            return static function ($state, $old, Forms\Get $get, Forms\Set $set) use ($field, $sinkron): void {
+                $baru = array_map('intval', (array) ($state ?? []));
+                $lama = array_map('intval', (array) ($old ?? []));
+                $sinkron(array_diff($baru, $lama), true, $field, $get, $set);
+                $sinkron(array_diff($lama, $baru), false, $field, $get, $set);
+            };
+        };
 
         uksort($pohon, fn ($a, $b) => [PetaMenuBo::urutanModul((string) $a), (string) $a]
             <=> [PetaMenuBo::urutanModul((string) $b), (string) $b]);
@@ -197,22 +255,70 @@ class BoRoleResource extends Resource
                     // Tampil harus lebih dulu di DOM: grid CSS menempatkan butir berkolom tetap
                     // menurut urutan, dan kolom 4 sesudah kolom 6 terdorong ke baris berikutnya.
                     uksort($perField, fn ($a, $b) => [! Str::contains($a, '.menu__'), $a] <=> [! Str::contains($b, '.menu__'), $b]);
-                    foreach ($perField as $field => $items) {
-                        $tampil = Str::contains($field, '.menu__');
-                        $options = self::opsiAksi($items);
-                        $jml += count($options);
-                        $semua[$field] = array_keys($options);
 
-                        $kolom[] = Forms\Components\CheckboxList::make($field)
+                    // "Buka layar" untuk menu ini — kecuali izin aksinya sudah ada di baris ini
+                    // sendiri (mis. "Lihat" pada Rekening Ledger): centang kedua hanya membingungkan.
+                    $izinTampil = $menuTampil[$modul][$sub][$menu] ?? null;
+                    $idBuka = $izinTampil !== null ? ($bukaPerMenu[$izinTampil] ?? null) : null;
+                    $idDiBaris = collect($perField)->flatten(1)->pluck('id')->map(fn ($v) => (int) $v)->all();
+                    if ($idBuka !== null && in_array($idBuka, $idDiBaris, true)) {
+                        $idBuka = null;
+                    }
+
+                    $urutan = [];
+                    foreach ($perField as $field => $items) {
+                        $urutan[] = [$field, $items, false];
+                        if (Str::contains($field, '.menu__') && $idBuka !== null) {
+                            $urutan[] = [$awalanState.'.buka__'.str_replace('.', '_', (string) $izinTampil), [], true];
+                        }
+                    }
+
+                    foreach ($urutan as [$field, $items, $buka]) {
+                        $tampil = Str::contains($field, '.menu__');
+                        $options = $buka ? [$idBuka => 'Buka layar'] : self::opsiAksi($items);
+                        if (! $buka) {
+                            $jml += count($options);
+                        }
+                        $semua[$field] = array_keys($options);
+                        foreach (array_keys($options) as $id) {
+                            $lokasi[(int) $id][] = $field;
+                        }
+
+                        $cb = Forms\Components\CheckboxList::make($field)
                             ->label('')->options($options)->gridDirection('row')
-                            ->columns($tampil ? 1 : 5)
-                            ->bulkToggleable(! $tampil)
+                            ->columns($tampil || $buka ? 1 : 5)
+                            ->bulkToggleable(! $tampil && ! $buka)
                             ->columnStart($tampil ? 4 : 6)
                             ->columnSpan($tampil ? 2 : 7);
+
+                        // Disinkronkan HANYA bila memuat izin yang juga muncul di tempat lain:
+                        // live() membuat tiap klik bolak-balik ke server, dan sebagian besar
+                        // centang di matriks ini tidak punya kembaran.
+                        if (array_intersect(array_map('intval', array_keys($options)), $izinKembar) !== []) {
+                            $cb->live()->afterStateUpdated($saatBerubah($field));
+                        }
+
+                        if ($buka) {
+                            $p = $perms->firstWhere('id', $idBuka);
+                            $grup = $awalanState.'.'.self::areaKeyFor((string) $p?->name, (string) $p?->module);
+                            $cb->afterStateHydrated(function (Forms\Components\CheckboxList $c, Forms\Get $get) use ($idBuka, $grup): void {
+                                // Diisi dari baris kelompok izinnya — tempat izin itu tersimpan.
+                                $c->state(in_array($idBuka, array_map('intval', (array) ($get($grup) ?? [])), true) ? [$idBuka] : []);
+                            })->helperText(self::keteranganBuka($idBuka, (string) $menu, $perms, $namaMenu));
+                        }
+
+                        $kolom[] = $cb;
                     }
 
                     $baris[] = Forms\Components\Grid::make(12)->schema($kolom);
                 }
+
+                $terapkan = static function (array $semua, bool $centang, Forms\Get $get, Forms\Set $set) use ($sinkron): void {
+                    foreach ($semua as $field => $ids) {
+                        $set($field, $centang ? $ids : []);
+                        $sinkron($ids, $centang, $field, $get, $set);
+                    }
+                };
 
                 // Sub-modul tanpa nama = modul yang memang tidak bertingkat dua di sidebar
                 // (Master, Data Center, Inventory, …). Barisnya menempel langsung ke modul;
@@ -228,18 +334,10 @@ class BoRoleResource extends Resource
                     ->headerActions([
                         Forms\Components\Actions\Action::make('semua_'.Str::slug($awalanState.'-'.$modul.'-'.$sub, '_'))
                             ->label('Pilih semua')->link()->size('sm')
-                            ->action(function (Forms\Set $set) use ($semua) {
-                                foreach ($semua as $field => $ids) {
-                                    $set($field, $ids);
-                                }
-                            }),
+                            ->action(fn (Forms\Get $get, Forms\Set $set) => $terapkan($semua, true, $get, $set)),
                         Forms\Components\Actions\Action::make('kosong_'.Str::slug($awalanState.'-'.$modul.'-'.$sub, '_'))
                             ->label('Kosongkan')->link()->size('sm')->color('gray')
-                            ->action(function (Forms\Set $set) use ($semua) {
-                                foreach ($semua as $field => $ids) {
-                                    $set($field, []);
-                                }
-                            }),
+                            ->action(fn (Forms\Get $get, Forms\Set $set) => $terapkan($semua, false, $get, $set)),
                     ])
                     ->schema($baris);
             }
@@ -251,6 +349,55 @@ class BoRoleResource extends Resource
         }
 
         return $sections;
+    }
+
+    /**
+     * Id izin aksi sebuah menu. Pola `x.*` (menu menerima izin apa pun berawalan x) diwakili
+     * `x.view` bila ada, kalau tidak izin pertama berawalan x.
+     *
+     * @param  array<string,int>  $idPerNama
+     */
+    private static function idIzinAksi(?string $pola, array $idPerNama): ?int
+    {
+        if ($pola === null || $pola === '') {
+            return null;
+        }
+        if (! str_ends_with($pola, '.*')) {
+            return $idPerNama[$pola] ?? null;
+        }
+        $awal = substr($pola, 0, -1);
+        if (isset($idPerNama[$awal.'view'])) {
+            return $idPerNama[$awal.'view'];
+        }
+        foreach ($idPerNama as $nama => $id) {
+            if (str_starts_with((string) $nama, $awal)) {
+                return $id;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Keterangan di bawah "Buka layar": izin mana itu sesungguhnya, dan menu lain mana yang
+     * ikut terbuka — supaya admin tahu mencentangnya di sini = mencentangnya di sana.
+     *
+     * @param  \Illuminate\Support\Collection<int,BoPermission>  $perms
+     * @param  array<int,list<string>>  $namaMenu
+     */
+    private static function keteranganBuka(int $id, string $menu, $perms, array $namaMenu): string
+    {
+        $p = $perms->firstWhere('id', $id);
+        [$module, $area, $action] = self::splitPerm((string) $p?->name, (string) $p?->module);
+        [$m, $s, $n] = PetaMenuBo::untuk($module.'.'.$area, self::humanizeArea($area));
+        $teks = '= '.implode(' › ', array_filter([$m, $s, $n])).' · '.self::actionLabel($action);
+
+        $lain = array_values(array_diff(array_unique($namaMenu[$id] ?? []), [$menu]));
+        if ($lain !== []) {
+            $teks .= ' — dipakai juga: '.implode(', ', $lain);
+        }
+
+        return $teks;
     }
 
     /** Pecah nama izin → [module, area, action]. Aman utk 2/3/4 segmen. */
