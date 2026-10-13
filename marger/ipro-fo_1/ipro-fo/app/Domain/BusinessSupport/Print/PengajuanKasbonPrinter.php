@@ -281,7 +281,10 @@ final class PengajuanKasbonPrinter
         $p         = $this->penerima($advance);
         $nominal   = (float) $advance->amount;
         $terbilang = strtoupper(trim(preg_replace('/\s+/', ' ', terbilang((int) round($nominal))))).' RUPIAH';
-        $pengaju   = $this->pengaju($advance);
+        // "Dari" & "Hormat Kami" = MANAGER cost center bon ini (kolom Manager di master Cost Center —
+        // SPV ke atas per departemen); jatuh ke pembuat pengajuan bila kolomnya masih kosong.
+        $pengaju   = \App\Domain\BusinessSupport\Services\CostCenterPengguna::managerDari($advance->costCenter)
+            ?? $this->pengaju($advance);
         $keperluan = (string) $advance->purpose;
 
         return '<div>'

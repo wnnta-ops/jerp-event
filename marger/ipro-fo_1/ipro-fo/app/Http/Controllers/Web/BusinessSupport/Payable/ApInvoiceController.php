@@ -658,6 +658,7 @@ class ApInvoiceController extends Controller
             ->header('Content-Type', 'text/html; charset=UTF-8');
     }
 
+    /** @param  mixed  $user  pengguna yang mencetak — dipakai hanya bila pembuat invoice tidak diketahui */
     private function renderMemoPrint(BsApInvoice $invoice, $user): string
     {
         $e = fn ($s) => htmlspecialchars((string) $s, ENT_QUOTES, 'UTF-8');
@@ -689,7 +690,14 @@ class ApInvoiceController extends Controller
         // Jalur pencariannya sama dengan Departemen di bawah (NIP dulu, baru nama), lewat
         // CostCenterPengguna supaya kedua keterangan pada satu kertas tidak pernah menunjuk
         // karyawan yang berbeda. Jatuh ke nama akun bila akunnya memang belum tertaut.
-        $eDari = $e(app(CostCenterPengguna::class)->namaKaryawan($user) ?: ($user?->name ?? '-'));
+        //
+        // "Dari" & "Hormat Kami" = MANAGER cost center si PEMBUAT invoice (kolom Manager di master
+        // Cost Center — SPV ke atas per departemen). Dibaca dari pembuat, bukan dari yang mencetak:
+        // memo milik Legal yang dicetak orang Finance tetap ditandatangani Manager Legal.
+        // Jatuh ke nama karyawan pembuat bila kolom Manager-nya kosong / pembuat tak tertaut.
+        $user = \App\Models\User::find($invoice->created_by) ?? $user;
+        $cc = app(CostCenterPengguna::class);
+        $eDari = $e($cc->namaManager($user) ?: $cc->namaKaryawan($user) ?: ($user?->name ?? '-'));
         $eSupNm = $e($sup?->name ?? '-');
         $eBankNm = $e($sup?->bank_name ?: '-');
         $eBankRek = $e($sup?->bank_account_no ?: '-');
