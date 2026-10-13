@@ -7,7 +7,7 @@ import Badge from '@/Components/UI/Badge.vue';
 import SearchSelect from '@/Components/UI/SearchSelect.vue';
 import MoneyInput from '@/Components/UI/MoneyInput.vue';
 
-const props = defineProps<{ advance: any; expenseAccounts: Array<any>; costCenters: Array<any>; cashAccounts: Array<any>; signers?: Record<string, string>; requiredSigners?: string[]; fullyApproved?: boolean; canApprove?: boolean; canEditDocDate?: boolean;
+const props = defineProps<{ advance: any; jurnalRealisasi?: { id: number; number: string | null; bisaBuka: boolean } | null; expenseAccounts: Array<any>; costCenters: Array<any>; cashAccounts: Array<any>; signers?: Record<string, string>; requiredSigners?: string[]; fullyApproved?: boolean; canApprove?: boolean; canEditDocDate?: boolean;
     /**
      * Layar ini dibuka dari sisi DEPT FINANCE (rute bs.advance.finance.show).
      * Menentukan apa yang DITAMPILKAN — bukan apa yang boleh dilakukan; tiap aksi tetap
@@ -274,7 +274,11 @@ function backToIndex() {
 
         <!-- Realisasi (jika sudah) -->
         <div v-if="advance.status === 'realized'" class="card p-5">
-            <h2 class="mb-3 flex items-center gap-2 font-semibold"><ClipboardCheck class="h-5 w-5 text-success-600" /> Realisasi {{ fmtDate(advance.realized_date) }}</h2>
+            <h2 class="mb-3 flex items-center gap-2 font-semibold"><ClipboardCheck class="h-5 w-5 text-success-600" /> Realisasi {{ fmtDate(advance.realized_date) }}
+                <span v-if="jurnalRealisasi?.number" class="ml-auto text-xs font-normal text-neutral-500">No. Ref. Jurnal:
+                    <Link v-if="jurnalRealisasi.bisaBuka" :href="route('bs.gl.journal.show', jurnalRealisasi.id)" class="font-mono font-semibold text-primary-600 hover:underline">{{ jurnalRealisasi.number }}</Link>
+                    <span v-else class="font-mono font-semibold text-neutral-700 dark:text-neutral-200">{{ jurnalRealisasi.number }}</span>
+                </span></h2>
             <table class="w-full text-sm">
                 <tbody class="divide-y divide-neutral-100 dark:divide-neutral-800">
                     <tr v-for="l in advance.lines" :key="l.id">

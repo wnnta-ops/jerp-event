@@ -881,6 +881,14 @@ class CashAdvanceController extends Controller
 
         return Inertia::render('BusinessSupport/CashBook/Advances/Show', [
             'advance' => $advance->load(['cashAccount:id,code,name', 'creditCard:id,name,card_number,balance,expired_date', 'lines.expenseAccount:id,code,name', 'lines.costCenter:id,code,name']),
+            // Nomor referensi jurnal realisasi (JKB/…) — nomor yang sama dengan "No. Voucher" di
+            // Cetak Realisasi, supaya bonnya bisa ditelusuri ke buku besar. Tautan hanya bila
+            // penggunanya memang boleh membuka jurnal.
+            'jurnalRealisasi' => $advance->realize_journal_id
+                ? ['id' => (int) $advance->realize_journal_id,
+                    'number' => BsJournal::whereKey($advance->realize_journal_id)->value('journal_number'),
+                    'bisaBuka' => (bool) $request->user()?->can('gl.journal.view')]
+                : null,
             'expenseAccounts' => BsAccount::where('is_active', true)->where('is_postable', true)->whereIn('type', ['expense', 'asset'])->orderBy('code')->get(['id', 'code', 'name', 'type']),
             // Cost center per baris realisasi → diteruskan ke jurnal, dibaca Budget Control.
             'costCenters' => BsCostCenter::where('is_active', true)
