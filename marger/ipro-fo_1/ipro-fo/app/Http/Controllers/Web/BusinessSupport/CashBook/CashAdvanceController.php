@@ -945,6 +945,7 @@ class CashAdvanceController extends Controller
                keluar sekali. Pembedanya DATA (journal_id), bukan payment_method. */
             'allocations' => $this->allocationRows($advance),
             'allocationMode' => app(CashAdvanceService::class)->perluLanjutAlokasi($advance),
+            'bisaCetakBppAlokasi' => $this->bisaCetakBppAlokasi($advance),
             /* Gerbang realisasi. Layar HANYA mencerminkan keadaan ini — yang benar-benar
                menahan ada di CashAdvanceService::realize(); menyembunyikan tombol saja tidak
                menghentikan POST-nya. */
@@ -1232,6 +1233,38 @@ class CashAdvanceController extends Controller
             : $this->renderPrint($advance, 'pengeluaran');
 
         return response($html)->header('Content-Type', 'text/html; charset=UTF-8');
+    }
+
+    /**
+     * Cetak ulang BPP bon Debit VA yang sudah dibayar, dengan rincian Alokasi Kasbon.
+     *
+     * BPP biasa hanya tercetak selama bon masih Diajukan — saat itu cara bayar belum dipilih
+     * dan alokasi belum ada. Rincian alokasi baru bermakna sesudah dibayar, jadi cetakannya
+     * tombol tersendiri; "Cetak Pengeluaran" tetap seperti semula.
+     */
+    public function printBppAlokasi(Request $request, BsCashAdvance $advance): HttpResponse
+    {
+        abort_unless($request->user()?->can('cashbook.advance.print'), 403);
+        abort_unless($this->bolehBukaBon($request, $advance), 403);
+        abort_unless($this->bisaCetakBppAlokasi($advance), 404);
+
+        $advance->load(['cashAccount:id,code,name', 'costCenter:id,code,name']);
+        $alokasi = $advance->allocations()->orderBy('alloc_date')->orderBy('id')->get();
+
+        return response(app(PengajuanKasbonPrinter::class)->renderBppAlokasi($advance, $alokasi))
+            ->header('Content-Type', 'text/html; charset=UTF-8');
+    }
+
+    /**
+     * Bon yang BPP-nya boleh dicetak ulang dengan rincian alokasi: bon alokasi (Debit VA model
+     * baru — syaratnya sama dengan sub-modul Alokasi Bon Sementara), sudah dibayar, dan
+     * nominalnya memakai formulir BPP (mulai Rp 1 juta; formulir KAS BON tidak memuatnya).
+     */
+    private function bisaCetakBppAlokasi(BsCashAdvance $advance): bool
+    {
+        return in_array($advance->status, ['outstanding', 'realized'], true)
+            && (float) $advance->amount >= PengajuanKasbonPrinter::AMBANG_BESAR
+            && app(CashAdvanceService::class)->perluLanjutAlokasi($advance);
     }
 
     /**
