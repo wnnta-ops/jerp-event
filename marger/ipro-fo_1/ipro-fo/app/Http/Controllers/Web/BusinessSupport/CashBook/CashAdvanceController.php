@@ -945,7 +945,6 @@ class CashAdvanceController extends Controller
                keluar sekali. Pembedanya DATA (journal_id), bukan payment_method. */
             'allocations' => $this->allocationRows($advance),
             'allocationMode' => app(CashAdvanceService::class)->perluLanjutAlokasi($advance),
-            'bisaCetakBppAlokasi' => $this->bisaCetakBppAlokasi($advance),
             /* Gerbang realisasi. Layar HANYA mencerminkan keadaan ini — yang benar-benar
                menahan ada di CashAdvanceService::realize(); menyembunyikan tombol saja tidak
                menghentikan POST-nya. */
@@ -1236,38 +1235,6 @@ class CashAdvanceController extends Controller
     }
 
     /**
-     * Cetak ulang BPP bon Debit VA yang sudah dibayar, dengan rincian Alokasi Kasbon.
-     *
-     * BPP biasa hanya tercetak selama bon masih Diajukan — saat itu cara bayar belum dipilih
-     * dan alokasi belum ada. Rincian alokasi baru bermakna sesudah dibayar, jadi cetakannya
-     * tombol tersendiri; "Cetak Pengeluaran" tetap seperti semula.
-     */
-    public function printBppAlokasi(Request $request, BsCashAdvance $advance): HttpResponse
-    {
-        abort_unless($request->user()?->can('cashbook.advance.print'), 403);
-        abort_unless($this->bolehBukaBon($request, $advance), 403);
-        abort_unless($this->bisaCetakBppAlokasi($advance), 404);
-
-        $advance->load(['cashAccount:id,code,name', 'costCenter:id,code,name']);
-        $alokasi = $advance->allocations()->orderBy('alloc_date')->orderBy('id')->get();
-
-        return response(app(PengajuanKasbonPrinter::class)->renderBppAlokasi($advance, $alokasi))
-            ->header('Content-Type', 'text/html; charset=UTF-8');
-    }
-
-    /**
-     * Bon yang BPP-nya boleh dicetak ulang dengan rincian alokasi: bon alokasi (Debit VA model
-     * baru — syaratnya sama dengan sub-modul Alokasi Bon Sementara), sudah dibayar, dan
-     * nominalnya memakai formulir BPP (mulai Rp 1 juta; formulir KAS BON tidak memuatnya).
-     */
-    private function bisaCetakBppAlokasi(BsCashAdvance $advance): bool
-    {
-        return in_array($advance->status, ['outstanding', 'realized'], true)
-            && (float) $advance->amount >= PengajuanKasbonPrinter::AMBANG_BESAR
-            && app(CashAdvanceService::class)->perluLanjutAlokasi($advance);
-    }
-
-    /**
      * Tolak / batalkan pengajuan bon — Dept Finance, sebelum dibayar.
      *
      * Izinnya cashbook.advance.pay: yang berwenang menolak adalah pihak yang sama yang
@@ -1371,9 +1338,17 @@ class CashAdvanceController extends Controller
         // ── Baris jurnal: Pengajuan (Dr Uang Muka Operasional) + Realisasi (Dr akun beban per baris). ──
         $advAccount = BsAccount::find($advance->advance_account_id);
         $pengajuanCode = $advAccount?->code ?? (string) config('business_support.gl_accounts.advance_op');
-        $rows = '<tr><td class="ac">'.$e($pengajuanCode).'</td><td>'.$e($advance->purpose).'</td><td class="r">'.$amt($advance->amount).'</td></tr>';
+        // Kolom Pengajuan memisahkan nominal yang DIAJUKAN dari yang benar-benar terpakai: nominal
+        // bon di kolom Pengajuan, sedangkan Dialokasikan & baris realisasi di kolom Jumlah.
+        $rows = '<tr><td class="ac">'.$e($pengajuanCode).'</td><td>'.$e($advance->purpose).'</td><td class="r">'.$amt($advance->amount).'</td><td class="r"></td></tr>';
+        // Bon Debit VA (model baru): total Alokasi Kasbon — angka yang sama dengan kotak "Sudah
+        // Dialokasikan". Hanya keterangan; Total di bawah tetap selisih realisasi (settlement).
+        if (app(CashAdvanceService::class)->perluLanjutAlokasi($advance)) {
+            $alokasi = app(CashAdvanceAllocationService::class)->totalAlokasi($advance);
+            $rows .= '<tr><td class="ac"></td><td>Dialokasikan</td><td class="r"></td><td class="r">'.$amt($alokasi).'</td></tr>';
+        }
         foreach ($advance->lines as $l) {
-            $rows .= '<tr><td class="ac">'.$e($l->expenseAccount?->code).'</td><td>'.$e($l->description).'</td><td class="r">'.$amt($l->amount).'</td></tr>';
+            $rows .= '<tr><td class="ac">'.$e($l->expenseAccount?->code).'</td><td>'.$e($l->description).'</td><td class="r"></td><td class="r">'.$amt($l->amount).'</td></tr>';
         }
 
         $settlement = (float) $advance->settlement;       // + = sisa dikembalikan (refund) / − = kekurangan (reimburse)
@@ -1426,13 +1401,13 @@ class CashAdvanceController extends Controller
             .$bx(! $isKas).'Transfer / Check<br>'
             .$bx($isKas).'Tunai</td>'
             .'</tr></table>'
-            .'<table class="grid"><thead><tr><th>No.Account</th><th>Uraian Pembayaran</th><th class="r">Jumlah</th></tr></thead>'
+            .'<table class="grid"><thead><tr><th>No.Account</th><th>Uraian Pembayaran</th><th class="r">Pengajuan</th><th class="r">Jumlah</th></tr></thead>'
             .'<tbody>'.$rows.'</tbody>'
             // Reimburse = perusahaan MASIH berhutang ke pemegang bon, jadi totalnya ditulis dalam
             // kurung persis seperti lampirannya — tanda baca itulah yang membedakan "diterima kembali"
             // dari "harus dibayarkan", dan artinya hilang begitu kurungnya dibuang.
             .'<tfoot><tr><td class="vc">No. Voucher'.($isReimburse ? '' : ' : -').'</td>'
-            .'<td><span class="vc">'.$e($voucher).'</span><span class="tlbl">Total</span></td>'
+            .'<td colspan="2"><span class="vc">'.$e($voucher).'</span><span class="tlbl">Total</span></td>'
             .'<td class="r"><b>'.($isReimburse ? '(Rp. '.$amt($total).')' : 'Rp. '.$amt($total)).'</b></td></tr></tfoot></table>'
             .'<div>No. Cek / BG : -</div>'
             .'<div class="terbilang">Terbilang : '.$e($terbilang).'</div>'

@@ -39,24 +39,6 @@ final class PengajuanKasbonPrinter
             : $this->kecil($advance);
     }
 
-    /**
-     * BPP cetak ulang untuk bon DEBIT VA yang sudah dibayar — sama dengan formulir pengajuan,
-     * ditambah rincian Alokasi Kasbon di bawah baris nominal bon.
-     *
-     * Hanya formulir BESAR: formulir KAS BON (di bawah Rp 1 juta) sengaja tidak memuat rincian
-     * ini. Pemanggilnya yang memastikan bonnya memang bon alokasi — lihat
-     * CashAdvanceController::printBppAlokasi.
-     *
-     * @param  iterable<\App\Domain\BusinessSupport\Models\BsCashAdvanceAllocation>  $alokasi
-     */
-    public function renderBppAlokasi(BsCashAdvance $advance, iterable $alokasi): string
-    {
-        return $this->bungkus(
-            $advance->advance_number.' — Bukti Permohonan Pembayaran',
-            $this->halamanBpp($advance, $alokasi).$this->halamanMemo($advance),
-        );
-    }
-
     // ── Bahan bersama ────────────────────────────────────────────────────────────
 
     private function e(?string $s): string
@@ -231,8 +213,7 @@ final class PengajuanKasbonPrinter
         );
     }
 
-    /** @param  iterable<\App\Domain\BusinessSupport\Models\BsCashAdvanceAllocation>|null  $alokasi  null = BPP pengajuan biasa */
-    private function halamanBpp(BsCashAdvance $advance, ?iterable $alokasi = null): string
+    private function halamanBpp(BsCashAdvance $advance): string
     {
         $p       = $this->penerima($advance);
         $nominal = (float) $advance->amount;
@@ -279,9 +260,8 @@ final class PengajuanKasbonPrinter
 
             .'<table><thead><tr><th style="width:140px">No. Account</th><th>Uraian Pembayaran</th>'
             .'<th style="width:170px">Jumlah</th></tr></thead>'
-            .'<tbody><tr><td>'.$this->e($akun).'</td><td'.($alokasi === null ? ' style="height:90px"' : '').'>'.$this->e($advance->purpose).'</td>'
+            .'<tbody><tr><td>'.$this->e($akun).'</td><td style="height:90px">'.$this->e($advance->purpose).'</td>'
             .'<td class="r">'.$this->rpKoma($nominal).'</td></tr>'
-            .($alokasi === null ? '' : $this->barisAlokasi($alokasi))
             .'<tr><td colspan="2" class="r"><b>Total</b></td><td class="r"><b>'.$this->rpTitik($nominal).'</b></td></tr>'
             .'</tbody></table>'
 
@@ -294,21 +274,6 @@ final class PengajuanKasbonPrinter
             .'<tr><td colspan="7" class="ruang"></td></tr>'
             .'<tr>'.$barisBawah.'</tr></table>'
             .'</div>';
-    }
-
-    /**
-     * SATU baris di bawah nominal bon: total yang sudah dialokasikan (tanpa rincian per tanggal).
-     *
-     * Hanya keterangan — Total & Terbilang tetap nominal bon. Kolom No. Account sengaja kosong.
-     *
-     * @param  iterable<\App\Domain\BusinessSupport\Models\BsCashAdvanceAllocation>  $alokasi
-     */
-    private function barisAlokasi(iterable $alokasi): string
-    {
-        $total = round((float) collect($alokasi)->sum(fn ($a) => (float) $a->amount), 2);
-
-        return '<tr><td></td><td style="padding-left:22px;font-style:italic">Dialokasikan</td>'
-            .'<td class="r"><i>'.$this->rpKoma($total).'</i></td></tr>';
     }
 
     private function halamanMemo(BsCashAdvance $advance): string
