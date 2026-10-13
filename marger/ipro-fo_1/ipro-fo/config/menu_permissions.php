@@ -34,8 +34,8 @@ return [
     'menu.bs.ap.create' => ['ap.invoice.create', 'Generate Invoice › Registrasi Invoice Hutang'],  // Account Payable
     'menu.bs.ap.index' => ['ap.invoice.view', 'Master › Invoice Hutang'],  // Account Payable
     'menu.bs.ap.kuitansi.index' => ['ap.kuitansi.view', 'Master › Kuitansi Hutang'],  // Account Payable
-    'menu.bs.ap.reimburse.index' => ['ap.reimburse.view', 'Master › Reimburse Biaya Karyawan'],  // Account Payable
-    'menu.bs.ap.deposit.index' => ['ap.deposit.view', 'Master › Deposit Renovasi Customer'],  // Account Payable
+    'menu.bs.ap.reimburse.index' => ['ap.reimburse.view', 'Generate Invoice › Reimburse Biaya Karyawan'],  // Account Payable
+    'menu.bs.ap.deposit.index' => ['ap.deposit.view', 'Generate Invoice › Deposit Renovasi Customer'],  // Account Payable
     'menu.bs.ap.penghapusan.index' => ['ap.penghapusan.view', 'Penyesuaian Invoice › Penghapusan Nilai Hutang'],  // Account Payable
     'menu.bs.ap.posting.spk.index' => ['ap.posting.view', 'Posting Invoice SPK › Posting Invoice SPK'],  // Account Payable
     'menu.bs.ap.barang-siap-jual.index' => ['ap.posting.view', 'Posting Invoice SPK › Posting ke Barang Siap Dijual'],  // Account Payable

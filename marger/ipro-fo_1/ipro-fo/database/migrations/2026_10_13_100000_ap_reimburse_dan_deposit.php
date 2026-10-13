@@ -33,8 +33,8 @@ return new class extends Migration
         'ap.reimburse.create' => ['ap', 'Reimburse Karyawan — Buat'],
         'ap.deposit.view' => ['ap', 'Deposit Renovasi — Lihat'],
         'ap.deposit.create' => ['ap', 'Deposit Renovasi — Buat'],
-        'menu.bs.ap.reimburse.index' => ['menu', 'Tampil: Master › Reimburse Biaya Karyawan'],
-        'menu.bs.ap.deposit.index' => ['menu', 'Tampil: Master › Deposit Renovasi Customer'],
+        'menu.bs.ap.reimburse.index' => ['menu', 'Tampil: Generate Invoice › Reimburse Biaya Karyawan'],
+        'menu.bs.ap.deposit.index' => ['menu', 'Tampil: Generate Invoice › Deposit Renovasi Customer'],
     ];
 
     public function up(): void
