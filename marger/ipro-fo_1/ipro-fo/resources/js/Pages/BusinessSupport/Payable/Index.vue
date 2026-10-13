@@ -19,7 +19,13 @@ type Row = {
     description: string | null; berkas_notes: string | null; berkas_finance_date: string | null;
     status: string; payable: number; sisa: number;
 };
-const props = defineProps<{ invoices: Row[]; canBerkasFinance?: boolean }>();
+const props = defineProps<{
+    invoices: Row[];
+    canBerkasFinance?: boolean;
+    /** Modul yang sedang dibuka: Invoice Hutang / Reimburse Karyawan / Deposit Renovasi. */
+    jenis: { kunci: string; judul: string; penerima: string; rute: string; izin: string };
+}>();
+const modulInvoice = props.jenis.kunci === 'invoice';
 
 function fmtRp(v: number) { return 'Rp ' + Number(v ?? 0).toLocaleString('id-ID'); }
 function fmtDate(d: string | null) { return d ? new Date(d).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'; }
@@ -232,7 +238,7 @@ watch(filtered, () => nextTick(measure));
     <div ref="rootEl" class="space-y-4">
         <Link :href="route('bs.ap.home')" class="inline-flex items-center gap-2 text-sm text-neutral-500 hover:text-neutral-800 dark:hover:text-neutral-200"><ArrowLeft class="h-4 w-4" /> Account Payable</Link>
         <div class="flex items-center justify-between">
-            <h1 class="flex items-center gap-2 text-2xl font-bold"><HandCoins class="h-6 w-6 text-danger-600" /> Account Payable <span class="text-base font-normal text-neutral-400">(Hutang Usaha)</span></h1>
+            <h1 class="flex items-center gap-2 text-2xl font-bold"><HandCoins class="h-6 w-6 text-danger-600" /> <template v-if="modulInvoice">Account Payable <span class="text-base font-normal text-neutral-400">(Hutang Usaha)</span></template><template v-else>{{ jenis.judul }}</template></h1>
             <div class="flex flex-wrap gap-2">
                 <Link v-if="punyaIzin('ap.category.view')" :href="route('bs.ap.categories.index')" class="inline-flex h-9 items-center gap-1.5 rounded-lg border border-neutral-300 px-3 text-sm font-medium hover:bg-neutral-50 dark:border-neutral-700"><Tags class="h-4 w-4" /> Kategori</Link>
                 <Link v-if="punyaIzin('ap.aging.view')" :href="route('bs.ap.aging')" class="inline-flex h-9 items-center gap-1.5 rounded-lg border border-neutral-300 px-3 text-sm font-medium hover:bg-neutral-50 dark:border-neutral-700"><CalendarClock class="h-4 w-4" /> Aging</Link>
@@ -247,7 +253,7 @@ watch(filtered, () => nextTick(measure));
                     <Printer class="h-4 w-4" /> Cetak PO<span v-if="selectedPoIds.length"> ({{ selectedPoIds.length }})</span>
                 </button>
                 <Link v-if="punyaIzin('ap.kuitansi.view')" :href="route('bs.ap.kuitansi.index')"><Button variant="secondary"><template #icon-left><ReceiptText class="h-4 w-4" /></template>Kuitansi</Button></Link>
-                <Link v-if="punyaIzin('ap.invoice.create')" :href="route('bs.ap.create')"><Button><template #icon-left><Plus class="h-4 w-4" /></template>Invoice</Button></Link>
+                <Link v-if="punyaIzin(jenis.izin + '.create')" :href="route(modulInvoice ? 'bs.ap.create' : jenis.rute + '.create')"><Button><template #icon-left><Plus class="h-4 w-4" /></template>{{ modulInvoice ? 'Invoice' : jenis.judul.split(' ')[0] }}</Button></Link>
             </div>
         </div>
 
@@ -305,7 +311,7 @@ watch(filtered, () => nextTick(measure));
                         <th class="w-10 px-3 pt-3 pb-1.5 text-center" title="Centang untuk memilih baris yang akan dicetak sebagai Purchase Order">
                             <input v-model="allChecked" type="checkbox" class="rounded border-neutral-300" @click.stop />
                         </th>
-                        <th class="whitespace-nowrap px-4 pt-3 pb-1.5">No. Invoice</th><th class="whitespace-nowrap px-4 pt-3 pb-1.5">Tanggal</th><th class="whitespace-nowrap px-4 pt-3 pb-1.5">Tgl. Diterima</th><th class="px-4 pt-3 pb-1.5">Supplier / Customer</th><th class="px-4 pt-3 pb-1.5">Sumber</th><th class="px-4 pt-3 pb-1.5">Keterangan</th>
+                        <th class="whitespace-nowrap px-4 pt-3 pb-1.5">No. Invoice</th><th class="whitespace-nowrap px-4 pt-3 pb-1.5">Tanggal</th><th class="whitespace-nowrap px-4 pt-3 pb-1.5">Tgl. Diterima</th><th class="px-4 pt-3 pb-1.5">{{ modulInvoice ? 'Supplier / Customer' : jenis.penerima }}</th><th class="px-4 pt-3 pb-1.5">Sumber</th><th class="px-4 pt-3 pb-1.5">Keterangan</th>
                         <th class="whitespace-nowrap px-4 pt-3 pb-1.5 text-right">Total</th><th class="whitespace-nowrap px-4 pt-3 pb-1.5 text-right">Sisa</th><th class="px-4 pt-3 pb-1.5 text-center">Status</th><th class="px-4 pt-3 pb-1.5">Kelengkapan<br>Berkas</th>
                         <th class="whitespace-nowrap px-4 pt-3 pb-1.5" title="Tanggal berkas fisik diterima Finance — berbeda dari Tgl. Diterima (tagihan supplier masuk). Hanya Dept Finance yang boleh mengisi.">Berkas Diterima<br>Finance</th>
                     </tr>

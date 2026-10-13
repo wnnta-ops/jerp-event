@@ -8,7 +8,12 @@ import SearchSelect from '@/Components/UI/SearchSelect.vue';
 import { bangunStrukturJurnal, akunKurang, samaDenganBawaan, barisStruktur, akunBiayaPphDitanggung } from './strukturJurnal';
 
 const props = defineProps<{
+    /** Modul: Invoice Hutang / Reimburse Karyawan / Deposit Renovasi — alur sama, penerima & akun beda. */
+    jenis: { kunci: string; judul: string; penerima: string; rute: string };
     suppliers: Array<any>;
+    /** Pilihan penerima Reimburse (karyawan) & Deposit (customer). */
+    employees?: Array<any>;
+    customers?: Array<any>;
     categories: Array<any>;
     pphAccounts: Array<any>;
     pphDefaults: Record<string, number>;
@@ -32,7 +37,7 @@ const props = defineProps<{
     trxTypes: Record<string, string>;
 }>();
 
-const steps = ['Pilih Supplier', 'Input Transaksi', 'Detil Tagihan', 'Struktur', 'Selesai'];
+const steps = ['Pilih ' + props.jenis.penerima, 'Input Transaksi', 'Detil Tagihan', 'Struktur', 'Selesai'];
 const step = ref(1);
 const today = new Date().toISOString().slice(0, 10);
 const supplierSearch = ref('');
@@ -44,7 +49,16 @@ const form = useForm<any>({
     ppn_mode: 'none', ppn_pct: 11, ppn_base: 0, ppn_incl: false, // #140 · ppn_incl: false=Exclude PPN, true=Include PPN
     pph_mode: 'none', pph_type: '', pph_pct: 0, pph_base: 0, pph_account_id: '', // #92/#94 — default tarif PPh 0% (dipungut & ditanggung)
     lines: [], schedules: [], journal_lines: [],
+    // Penerima Reimburse (karyawan) / Deposit (customer + rekening yang diketik).
+    employee_id: '', customer_id: '', bank_name: '', bank_account_no: '', bank_account_name: '',
 });
+
+/* PENERIMA — satu-satunya bagian yang berbeda antarmodul. Invoice Hutang memilih supplier,
+   Reimburse memilih karyawan, Deposit memilih customer; server mencatat keduanya sebagai
+   supplier berkategori khusus supaya Kuitansi & pembayaran menempuh jalur yang sama. */
+const kolomPihak = props.jenis.kunci === 'reimburse' ? 'employee_id' : (props.jenis.kunci === 'deposit' ? 'customer_id' : 'supplier_id');
+const daftarPihak = computed<any[]>(() => (props.jenis.kunci === 'reimburse' ? (props.employees ?? []) : (props.jenis.kunci === 'deposit' ? (props.customers ?? []) : props.suppliers)));
+const rekeningLengkap = computed(() => !!form.bank_name && !!form.bank_account_no && !!form.bank_account_name);
 
 // Pembulatan ke RUPIAH PENUH (round) untuk semua perhitungan; PPh Pasal 4(2) → rounddown (floor).
 const r0 = (v: any) => Math.round(Number(v) || 0);
@@ -100,9 +114,9 @@ watch(() => form.dpp, (val, old) => {
 
 const filteredSuppliers = computed(() => {
     const q = supplierSearch.value.toLowerCase();
-    return q ? props.suppliers.filter((s: any) => (s.name + s.code).toLowerCase().includes(q)) : props.suppliers;
+    return q ? daftarPihak.value.filter((s: any) => (s.name + s.code).toLowerCase().includes(q)) : daftarPihak.value;
 });
-const supplier = computed(() => props.suppliers.find((s: any) => s.id === form.supplier_id));
+const supplier = computed(() => daftarPihak.value.find((s: any) => s.id === form[kolomPihak]));
 const category = computed(() => props.categories.find((c: any) => c.id === form.category_id));
 
 /**
@@ -282,7 +296,15 @@ const kurangCc = computed<string[]>(() => {
 
 function fmtRp(v: number) { return 'Rp ' + Number(v ?? 0).toLocaleString('id-ID'); }
 function fmtNum(v: number) { return Number(v ?? 0).toLocaleString('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
-function pickSupplier(s: any) { form.supplier_id = s.id; step.value = 2; }
+function pickSupplier(s: any) {
+    form[kolomPihak] = s.id;
+    // Deposit: rekening customer diketik dulu di langkah ini (master Customer tak menyimpan bank).
+    if (props.jenis.kunci === 'deposit') {
+        if (! form.bank_account_name) form.bank_account_name = s.name;
+        return;
+    }
+    step.value = 2;
+}
 function addLine() { form.lines.push({ description: form.description || '', qty: 1, unit_price: 0, amount: 0 }); }
 function removeLine(i: number) { form.lines.splice(i, 1); }
 function addSchedule() { form.schedules.push({ due_date: dueDate.value, amount: 0 }); }
@@ -506,7 +528,7 @@ watch(step, (s) => {
 });
 
 function canNext() {
-    if (step.value === 1) return !!form.supplier_id;
+    if (step.value === 1) return !!form[kolomPihak] && (props.jenis.kunci !== 'deposit' || rekeningLengkap.value);
     if (step.value === 2) return !!form.category_id && !!form.supplier_invoice_no && Number(form.dpp) > 0 && !!form.description && Number(form.term_days) > 0;
     // Langkah Struktur: selain balance, cost center pada baris yang memerlukannya harus terisi.
     // Baris jurnal tanpa cost center tidak terhitung di Budget Control maupun laporan per cost
@@ -517,7 +539,7 @@ function canNext() {
 }
 function next() { if (canNext() && step.value < 5) step.value++; }
 function prev() { if (step.value > 1) step.value--; }
-function submit() { form.post(route('bs.ap.store')); }
+function submit() { form.post(route(props.jenis.kunci === 'invoice' ? 'bs.ap.store' : props.jenis.rute + '.store')); }
 const inputCls = 'h-9 w-full rounded-lg border border-neutral-300 bg-white px-3 text-sm dark:border-neutral-700 dark:bg-neutral-900';
 const dimCls = 'h-8 w-full rounded-md border border-neutral-300 bg-white px-2 text-xs dark:border-neutral-700 dark:bg-neutral-900';
 const cellArea = 'w-full rounded-md border border-neutral-300 bg-white px-2 py-1 text-xs dark:border-neutral-700 dark:bg-neutral-900';
@@ -525,8 +547,8 @@ const cellArea = 'w-full rounded-md border border-neutral-300 bg-white px-2 py-1
 <template>
     <div :class="['space-y-4', step === 4 ? 'max-w-none' : 'max-w-4xl']">
         <div class="flex items-center justify-between">
-            <h1 class="flex items-center gap-2 text-2xl font-bold"><HandCoins class="h-6 w-6 text-danger-600" /> Registrasi Invoice Hutang</h1>
-            <Link :href="route('bs.ap.index')" class="inline-flex items-center gap-2 text-sm text-neutral-500 hover:text-neutral-800 dark:hover:text-neutral-200"><ArrowLeft class="h-4 w-4" /> Kembali</Link>
+            <h1 class="flex items-center gap-2 text-2xl font-bold"><HandCoins class="h-6 w-6 text-danger-600" /> Registrasi {{ jenis.judul }}</h1>
+            <Link :href="route(jenis.kunci === 'invoice' ? 'bs.ap.index' : jenis.rute + '.index')" class="inline-flex items-center gap-2 text-sm text-neutral-500 hover:text-neutral-800 dark:hover:text-neutral-200"><ArrowLeft class="h-4 w-4" /> Kembali</Link>
         </div>
 
         <!-- Stepper -->
@@ -542,19 +564,28 @@ const cellArea = 'w-full rounded-md border border-neutral-300 bg-white px-2 py-1
 
         <!-- Step 1: Pilih Supplier -->
         <div v-show="step === 1" class="card p-5">
-            <div class="relative mb-3"><Search class="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-neutral-400" /><input v-model="supplierSearch" placeholder="Cari supplier / kontraktor…" :class="[inputCls,'pl-9']" /></div>
+            <div class="relative mb-3"><Search class="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-neutral-400" /><input v-model="supplierSearch" :placeholder="jenis.kunci === 'invoice' ? 'Cari supplier / kontraktor…' : 'Cari ' + jenis.penerima.toLowerCase() + '…'" :class="[inputCls,'pl-9']" /></div>
             <div class="max-h-96 divide-y divide-neutral-100 overflow-y-auto dark:divide-neutral-800">
-                <button v-for="s in filteredSuppliers" :key="s.id" type="button" @click="pickSupplier(s)" class="flex w-full items-center justify-between px-2 py-2.5 text-left text-sm hover:bg-neutral-50 dark:hover:bg-neutral-800/50" :class="form.supplier_id === s.id ? 'bg-primary-50 dark:bg-primary-900/20' : ''">
+                <button v-for="s in filteredSuppliers" :key="s.id" type="button" @click="pickSupplier(s)" class="flex w-full items-center justify-between px-2 py-2.5 text-left text-sm hover:bg-neutral-50 dark:hover:bg-neutral-800/50" :class="form[kolomPihak] === s.id ? 'bg-primary-50 dark:bg-primary-900/20' : ''">
                     <span><span class="font-mono text-xs text-neutral-400">{{ s.code }}</span> <span class="font-medium">{{ s.name }}</span><span v-if="s.category" class="ml-2 rounded bg-neutral-100 px-1.5 text-[10px] text-neutral-500 dark:bg-neutral-800">{{ s.category }}</span></span>
                     <ArrowRight class="h-4 w-4 text-neutral-300" />
                 </button>
+                <p v-if="!filteredSuppliers.length" class="px-2 py-6 text-center text-sm text-neutral-400">Tidak ada {{ jenis.penerima.toLowerCase() }} yang cocok.</p>
             </div>
+            <!-- Deposit: rekening tujuan pengembalian diketik — master Customer tidak menyimpan data bank. -->
+            <div v-if="jenis.kunci === 'deposit' && form.customer_id" class="mt-4 grid gap-3 rounded-lg border border-neutral-200 p-4 md:grid-cols-3 dark:border-neutral-700">
+                <div class="md:col-span-3 text-sm">Customer: <span class="font-semibold">{{ supplier?.name }}</span> — isi rekening tujuan pengembalian deposit:</div>
+                <div><label class="mb-1 block text-xs font-medium text-neutral-500">Bank *</label><input v-model="form.bank_name" placeholder="mis. BCA" :class="inputCls" /><p v-if="form.errors.bank_name" class="mt-1 text-xs text-danger-500">{{ form.errors.bank_name }}</p></div>
+                <div><label class="mb-1 block text-xs font-medium text-neutral-500">No. Rekening *</label><input v-model="form.bank_account_no" :class="inputCls" /><p v-if="form.errors.bank_account_no" class="mt-1 text-xs text-danger-500">{{ form.errors.bank_account_no }}</p></div>
+                <div><label class="mb-1 block text-xs font-medium text-neutral-500">Atas Nama *</label><input v-model="form.bank_account_name" :class="inputCls" /><p v-if="form.errors.bank_account_name" class="mt-1 text-xs text-danger-500">{{ form.errors.bank_account_name }}</p></div>
+            </div>
+            <p v-if="form.errors.employee_id || form.errors.customer_id" class="mt-2 text-sm text-danger-500">{{ form.errors.employee_id || form.errors.customer_id }}</p>
         </div>
 
         <!-- Step 2: Input Transaksi -->
         <div v-show="step === 2" class="space-y-4">
             <div class="card grid gap-4 p-5 md:grid-cols-3">
-                <div class="md:col-span-3 rounded-lg bg-neutral-50 px-4 py-2 text-sm dark:bg-neutral-800">Supplier: <span class="font-semibold">{{ supplier?.name }}</span></div>
+                <div class="md:col-span-3 rounded-lg bg-neutral-50 px-4 py-2 text-sm dark:bg-neutral-800">{{ jenis.penerima }}: <span class="font-semibold">{{ supplier?.name }}</span></div>
                 <!--
                     Kategori Invoice bisa DIKETIK. Atribut `required` bawaan <select> memang ikut
                     hilang, tetapi tidak ada penjaga yang hilang: tombol "Berikutnya" sudah dikunci
@@ -566,7 +597,7 @@ const cellArea = 'w-full rounded-md border border-neutral-300 bg-white px-2 py-1
                     <p v-if="category" class="mt-1 text-[11px] text-neutral-400">Dr {{ category.debit }} · Cr {{ category.payable }}</p>
                     <p v-else class="mt-1 text-[11px] text-neutral-400">Ketik nama atau kode kategori untuk mencarinya.</p></div>
                 <div><label class="mb-1 block text-xs font-medium text-neutral-500">Tipe Transaksi *</label><select v-model="form.trx_type" :class="inputCls"><option v-for="(label,val) in trxTypes" :key="val" :value="val">{{ label }}</option></select></div>
-                <div><label class="mb-1 block text-xs font-medium text-neutral-500">No. Invoice Supplier *</label><input v-model="form.supplier_invoice_no" required :class="inputCls" /></div>
+                <div><label class="mb-1 block text-xs font-medium text-neutral-500">{{ jenis.kunci === 'invoice' ? 'No. Invoice Supplier' : 'No. Bukti / Nota' }} *</label><input v-model="form.supplier_invoice_no" required :class="inputCls" /></div>
                 <div><label class="mb-1 block text-xs font-medium text-neutral-500">Tgl. Input *</label><input v-model="form.invoice_date" type="date" disabled title="Otomatis tanggal input, tidak bisa diubah" class="h-9 w-full cursor-not-allowed rounded-lg border border-neutral-300 bg-neutral-100 px-3 text-sm text-neutral-500 dark:border-neutral-700 dark:bg-neutral-800" /><p class="mt-1 text-[10px] text-neutral-400">Otomatis tanggal input — tidak bisa diubah.</p></div>
                 <div><label class="mb-1 block text-xs font-medium text-neutral-500">Tgl. Terima</label><input v-model="form.receive_date" type="date" :class="inputCls" /></div>
                 <div><label class="mb-1 block text-xs font-medium text-neutral-500">Jatuh Tempo (hari) <span class="text-danger-500">*</span></label><input v-model.number="form.term_days" type="number" min="1" required placeholder="mis. 30" :class="[inputCls,'text-right']" /><p v-if="!(Number(form.term_days) > 0)" class="mt-1 text-[11px] text-danger-500">Wajib diisi — tentukan jangka waktu jatuh tempo.</p></div>
@@ -790,7 +821,7 @@ const cellArea = 'w-full rounded-md border border-neutral-300 bg-white px-2 py-1
         <div v-show="step === 5" class="card p-5 text-sm">
             <h2 class="mb-3 font-semibold">Ringkasan</h2>
             <div class="grid gap-2 sm:grid-cols-2">
-                <div><span class="text-neutral-500">Supplier:</span> {{ supplier?.name }}</div>
+                <div><span class="text-neutral-500">{{ jenis.penerima }}:</span> {{ supplier?.name }}</div>
                 <div><span class="text-neutral-500">Kategori:</span> {{ category?.name }}</div>
                 <div><span class="text-neutral-500">Tipe:</span> {{ trxTypes[form.trx_type] }}</div>
                 <div><span class="text-neutral-500">Jatuh tempo:</span> {{ dueDate }}</div>

@@ -16,7 +16,7 @@ class BsApCategory extends Model
     use HasTenant;
 
     protected $table = 'bs_ap_categories';
-    protected $fillable = ['tenant_id', 'code', 'name', 'debit_account_id', 'payable_account_id', 'credit_position', 'is_active'];
+    protected $fillable = ['tenant_id', 'code', 'name', 'debit_account_id', 'payable_account_id', 'credit_position', 'is_active', 'jenis'];
     protected $casts = ['is_active' => 'boolean'];
 
     /**

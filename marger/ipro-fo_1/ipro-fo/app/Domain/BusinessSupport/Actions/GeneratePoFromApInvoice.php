@@ -44,6 +44,10 @@ final class GeneratePoFromApInvoice
         if (! empty($invoice->source_type)) {
             return null;
         }
+        // Reimburse karyawan & pengembalian deposit bukan pembelian → tidak berpasangan dengan PO.
+        if (($invoice->jenis ?? 'invoice') !== 'invoice') {
+            return null;
+        }
 
         return DB::transaction(function () use ($invoice, $userId): ?BsPurchaseOrder {
             $lines = $this->linesFrom($invoice);

@@ -34,11 +34,61 @@ class ApInvoiceController extends Controller
 
     public function index(Request $request): Response
     {
-        abort_unless($request->user()?->can('ap.invoice.view'), 403);
+        return $this->daftar($request, 'invoice');
+    }
+
+    /**
+     * Daftar Reimburse Biaya Karyawan / Deposit Renovasi Customer — layar yang sama dengan
+     * Invoice Hutang, disaring per jenis. Rutenya mengirim `jenis` lewat ->defaults().
+     */
+    public function indexJenis(Request $request, string $jenis): Response
+    {
+        return $this->daftar($request, $jenis);
+    }
+
+    public function createJenis(Request $request, string $jenis): Response
+    {
+        return $this->halamanForm($request, $jenis);
+    }
+
+    public function storeJenis(Request $request, string $jenis, RegisterApInvoice $action, \App\Domain\BusinessSupport\Services\BudgetGuardService $budgetGuard): \Symfony\Component\HttpFoundation\Response
+    {
+        return $this->simpan($request, $jenis, $action, $budgetGuard);
+    }
+
+    /**
+     * Pemegang izin modul Reimburse / Deposit boleh membuka detail & mencetak Memo dokumennya
+     * sendiri — tanpa ini ia menabrak 403 tepat sesudah menyimpan (simpan → cetak Memo).
+     * Tidak berlaku untuk Invoice Hutang biasa: izinnya tetap ap.invoice.show / ap.memo.
+     */
+    private function bolehModulJenis(Request $request, BsApInvoice $invoice): bool
+    {
+        $jenis = (string) ($invoice->jenis ?: 'invoice');
+        if ($jenis === 'invoice' || ! isset(BsApInvoice::JENIS[$jenis])) {
+            return false;
+        }
+        $izin = BsApInvoice::JENIS[$jenis]['izin'];
+
+        return (bool) ($request->user()?->can($izin.'.view') || $request->user()?->can($izin.'.create'));
+    }
+
+    /** Definisi jenis + kuncinya, untuk dikirim ke layar. @return array<string,string> */
+    private function infoJenis(string $jenis): array
+    {
+        abort_unless(isset(BsApInvoice::JENIS[$jenis]), 404);
+
+        return ['kunci' => $jenis] + BsApInvoice::JENIS[$jenis];
+    }
+
+    private function daftar(Request $request, string $jenis): Response
+    {
+        $info = $this->infoJenis($jenis);
+        abort_unless($request->user()?->can($info['izin'].'.view'), 403);
 
         // Semua invoice dikirim ke klien; filter per-kolom & ringkasan dihitung di sisi klien
         // agar kotak summary mengikuti hasil filter. Total & Sisa = nett (setelah PPN & PPh).
         $rows = BsApInvoice::query()
+            ->where('jenis', $jenis)
             ->with(['supplier:id,name', 'customer:id,full_name'])
             ->select(['id', 'invoice_number', 'invoice_date', 'receive_date', 'due_date', 'supplier_id', 'customer_id', 'source_type', 'source_id', 'refund_source', 'description', 'berkas_notes', 'berkas_finance_date', 'total', 'net_payable', 'paid_amount', 'status'])
             ->latest('invoice_date')->latest('id')
@@ -66,6 +116,7 @@ class ApInvoiceController extends Controller
             ]);
 
         return Inertia::render('BusinessSupport/Payable/Index', [
+            'jenis' => $info,
             'invoices' => $rows,
             // Hanya Finance yang boleh mengisi tanggal berkas diterima Finance.
             'canBerkasFinance' => $this->isFinance($request),
@@ -203,7 +254,13 @@ class ApInvoiceController extends Controller
 
     public function create(Request $request): Response
     {
-        abort_unless($request->user()?->can('ap.invoice.create'), 403);
+        return $this->halamanForm($request, 'invoice');
+    }
+
+    private function halamanForm(Request $request, string $jenis): Response
+    {
+        $info = $this->infoJenis($jenis);
+        abort_unless($request->user()?->can($info['izin'].'.create'), 403);
 
         // Unit + customer (dari booking terbaru per unit) untuk tag invoice — cari cepat by kode unit / nama customer.
         $unitCustomer = DB::table('bookings')
@@ -222,9 +279,26 @@ class ApInvoiceController extends Controller
             ->where('code', 'like', '2010404%')->orderBy('code')->get(['id', 'code', 'name']);
 
         return Inertia::render('BusinessSupport/Payable/Form', [
-            'suppliers' => BsSupplier::where('is_active', true)->orderBy('name')->get(['id', 'code', 'name', 'category']),
+            'jenis' => $info,
+            // Penerima Reimburse/Deposit tercatat sebagai supplier berkategori khusus
+            // (PenerimaHutang) — mereka bukan pilihan pada Invoice Hutang ke supplier.
+            'suppliers' => $jenis === 'invoice'
+                ? BsSupplier::where('is_active', true)
+                    ->where(fn ($q) => $q->whereNull('category')->orWhereNotIn('category', \App\Domain\BusinessSupport\Services\PenerimaHutang::KATEGORI))
+                    ->orderBy('name')->get(['id', 'code', 'name', 'category'])
+                : [],
+            'employees' => $jenis === 'reimburse'
+                ? \App\Domain\BusinessSupport\Models\BsEmployee::with('costCenter:id,name')->where('is_active', true)->orderBy('name')
+                    ->get(['id', 'nik', 'name', 'position', 'cost_center_id', 'bank_name', 'bank_account'])
+                    ->map(fn ($e) => ['id' => $e->id, 'code' => (string) $e->nik, 'name' => $e->name, 'category' => trim(($e->position ?? '').' · '.($e->costCenter?->name ?? ''), ' ·'),
+                        'bank' => trim(($e->bank_name ?? '').' '.($e->bank_account ?? ''))])
+                : [],
+            'customers' => $jenis === 'deposit'
+                ? \App\Domain\Master\Customer\Models\Customer::orderBy('full_name')->get(['id', 'code', 'full_name'])
+                    ->map(fn ($c) => ['id' => $c->id, 'code' => (string) $c->code, 'name' => $c->full_name, 'category' => ''])
+                : [],
             'units' => $units,
-            'categories' => BsApCategory::where('is_active', true)->with(['debitAccount:id,code,name', 'payableAccount:id,code,name'])->orderBy('name')->get()
+            'categories' => BsApCategory::where('is_active', true)->where('jenis', $jenis)->with(['debitAccount:id,code,name', 'payableAccount:id,code,name'])->orderBy('name')->get()
                 ->map(fn ($c) => [
                     'id' => $c->id, 'code' => $c->code, 'name' => $c->name,
                     'debit' => $c->debitAccount?->code.' - '.$c->debitAccount?->name,
@@ -279,13 +353,44 @@ class ApInvoiceController extends Controller
 
     public function store(Request $request, RegisterApInvoice $action, \App\Domain\BusinessSupport\Services\BudgetGuardService $budgetGuard): \Symfony\Component\HttpFoundation\Response
     {
-        abort_unless($request->user()?->can('ap.invoice.create'), 403);
+        return $this->simpan($request, 'invoice', $action, $budgetGuard);
+    }
+
+    private function simpan(Request $request, string $jenis, RegisterApInvoice $action, \App\Domain\BusinessSupport\Services\BudgetGuardService $budgetGuard): \Symfony\Component\HttpFoundation\Response
+    {
+        $info = $this->infoJenis($jenis);
+        abort_unless($request->user()?->can($info['izin'].'.create'), 403);
+
+        // PENERIMA — satu-satunya isian yang berbeda antarjenis. Reimburse & Deposit memilih
+        // karyawan / customer, lalu dicatat sebagai supplier berkategori khusus (PenerimaHutang)
+        // supaya Kuitansi, Approval & pembayaran menempuh jalur yang sama dengan Invoice Hutang.
+        $penerima = match ($jenis) {
+            'reimburse' => $request->validate(['employee_id' => ['required', 'integer', 'exists:bs_employees,id']], [
+                'employee_id.required' => 'Pilih karyawan penerima reimburse.',
+            ]),
+            'deposit' => $request->validate([
+                'customer_id' => ['required', 'integer', 'exists:customers,id'],
+                'bank_name' => ['required', 'string', 'max:80'],
+                'bank_account_no' => ['required', 'string', 'max:50'],
+                'bank_account_name' => ['required', 'string', 'max:120'],
+            ], ['customer_id.required' => 'Pilih customer penerima pengembalian deposit.']),
+            default => [],
+        };
+        if ($jenis !== 'invoice') {
+            $layanan = app(\App\Domain\BusinessSupport\Services\PenerimaHutang::class);
+            $sup = $jenis === 'reimburse'
+                ? $layanan->karyawan(\App\Domain\BusinessSupport\Models\BsEmployee::findOrFail($penerima['employee_id']))
+                : $layanan->customer(\App\Domain\Master\Customer\Models\Customer::findOrFail($penerima['customer_id']),
+                    $penerima['bank_name'], $penerima['bank_account_no'], $penerima['bank_account_name']);
+            $request->merge(['supplier_id' => $sup->id]);
+        }
 
         $v = $request->validate([
             'supplier_id' => ['required', 'integer', 'exists:bs_suppliers,id'],
             'unit_id' => ['nullable', 'integer', 'exists:units,id'],
             'customer_id' => ['nullable', 'integer', 'exists:customers,id'],
-            'category_id' => ['required', 'integer', 'exists:bs_ap_categories,id'],
+            // Kategori harus sejenis: akun Reimburse/Deposit hanya dari kategori jenisnya sendiri.
+            'category_id' => ['required', 'integer', \Illuminate\Validation\Rule::exists('bs_ap_categories', 'id')->where('jenis', $jenis)],
             'trx_type' => ['required', 'in:normal,denda,saldo_awal'],
             'supplier_invoice_no' => ['required', 'string', 'max:80'],
             'manual_no' => ['nullable', 'string', 'max:80'],
@@ -327,6 +432,8 @@ class ApInvoiceController extends Controller
             'journal_lines.*.description' => ['nullable', 'string', 'max:255'],
             'journal_lines.*.debit' => ['nullable', 'numeric', 'min:0'],
             'journal_lines.*.credit' => ['nullable', 'numeric', 'min:0'],
+        ], [
+            'category_id.exists' => 'Kategori ini bukan untuk modul '.$info['judul'].' — pilih kategori yang "Dipakai di" modul ini (Setup › Kategori Invoice).',
         ]);
 
         // Cost center WAJIB pada baris jurnal yang akunnya memang memerlukannya.
@@ -349,7 +456,7 @@ class ApInvoiceController extends Controller
         try {
             // Gerbang over-budget: tolak bila baris jurnal (Dr akun ber-anggaran + cost center) melewati anggaran.
             $budgetGuard->assertWithinBudget($v['journal_lines'] ?? [], null, $v['invoice_date']);
-            $inv = $action->execute($v, $request->user()->id);
+            $inv = $action->execute($v + ['jenis' => $jenis], $request->user()->id);
             // "Simpan & Buat Jurnal" sekaligus menerbitkan Purchase Order-nya, supaya pembelian
             // yang tagihannya masuk lebih dulu tetap punya dokumen pesanan. Data yang tidak ada
             // di invoice (no. PO, master barang) dibangkitkan sistem — lihat actionnya.
@@ -372,7 +479,7 @@ class ApInvoiceController extends Controller
 
     public function show(Request $request, BsApInvoice $invoice): Response
     {
-        abort_unless($request->user()?->can('ap.invoice.show'), 403);
+        abort_unless($request->user()?->can('ap.invoice.show') || $this->bolehModulJenis($request, $invoice), 403);
 
         $invoice->load([
             'supplier:id,code,name', 'category:id,code,name',
@@ -646,7 +753,7 @@ class ApInvoiceController extends Controller
     /** Cetak "Memo Internal" + "Bukti Permohonan Pembayaran" (layout eProperty MI) di akhir registrasi. */
     public function memo(Request $request, BsApInvoice $invoice): \Illuminate\Http\Response
     {
-        abort_unless($request->user()?->can('ap.memo'), 403);
+        abort_unless($request->user()?->can('ap.memo') || $this->bolehModulJenis($request, $invoice), 403);
 
         $invoice->load([
             'supplier:id,code,name,bank_name,bank_account_no,bank_account_name',

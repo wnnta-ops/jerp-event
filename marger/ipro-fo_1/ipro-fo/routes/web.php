@@ -691,6 +691,13 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
     Route::get('/business-support/payable-report', [BsApController::class, 'report'])->name('bs.ap.report'); // Laporan Invoice Hutang (pilih periode → tarik → unduh)
     Route::get('/business-support/payable/create', [BsApController::class, 'create'])->name('bs.ap.create');
     Route::post('/business-support/payable', [BsApController::class, 'store'])->name('bs.ap.store');
+    // AP › Master: Reimburse Biaya Karyawan & Deposit Renovasi Customer — alur Invoice Hutang,
+    // dibedakan penerima & akunnya (BsApInvoice::JENIS). Detail/Memo/Kuitansi memakai rute bs.ap.*.
+    foreach (['reimburse', 'deposit'] as $jenisAp) {
+        Route::get('/business-support/payable-'.$jenisAp, [BsApController::class, 'indexJenis'])->defaults('jenis', $jenisAp)->name('bs.ap.'.$jenisAp.'.index');
+        Route::get('/business-support/payable-'.$jenisAp.'/create', [BsApController::class, 'createJenis'])->defaults('jenis', $jenisAp)->name('bs.ap.'.$jenisAp.'.create');
+        Route::post('/business-support/payable-'.$jenisAp, [BsApController::class, 'storeJenis'])->defaults('jenis', $jenisAp)->name('bs.ap.'.$jenisAp.'.store');
+    }
     Route::get('/business-support/payable-aging', [BsApController::class, 'aging'])->name('bs.ap.aging');
     // Aging Hutang Supplier — outstanding per supplier: 20 terbesar + rangkuman sisanya.
     Route::get('/business-support/payable-aging-supplier', [BsApController::class, 'agingSupplier'])->name('bs.ap.aging-supplier');

@@ -29,6 +29,7 @@ class GranularPermissionSeeder extends Seeder
                 'ap.category.view', 'ap.control.view', 'ap.costcenter.override',
                 'ap.invoice.create', 'ap.invoice.pay',
                 'ap.invoice.print', 'ap.invoice.show', 'ap.invoice.view', 'ap.kuitansi.create',
+                'ap.reimburse.view', 'ap.reimburse.create', 'ap.deposit.view', 'ap.deposit.create',
                 'ap.kuitansi.show', 'ap.kuitansi.store', 'ap.kuitansi.view', 'ap.kuitansi.void',
                 'ap.memo', 'ap.memorial.create', 'ap.memorial.store', 'ap.memorial.view',
                 'ap.opening.create', 'ap.opening.delete', 'ap.opening.view', 'ap.paycard.view',

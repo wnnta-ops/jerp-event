@@ -116,7 +116,8 @@ final class RegisterApInvoice
             $pphAcc = $pphJournal > 0 ? ($data['pph_account_id'] ?? BsAccount::where('code', '20104040403')->value('id')) : null;
 
             $inv = BsApInvoice::create([
-                'invoice_number'      => $this->nextNumber($data['invoice_date'], $category?->code),
+                'invoice_number'      => $this->nextNumber($data['invoice_date'], $category?->code, $data['jenis'] ?? 'invoice'),
+                'jenis'               => $data['jenis'] ?? 'invoice',
                 'supplier_id'         => $data['supplier_id'],
                 'unit_id'             => $data['unit_id'] ?? null,
                 'customer_id'         => $data['customer_id'] ?? null,
@@ -251,22 +252,27 @@ final class RegisterApInvoice
         });
     }
 
-    /** Format eProperty: AP.INV/{KATEGORI}/MUP/{yy}/{bulan-romawi}/{seq}. */
-    private function nextNumber(string $date, ?string $catCode = null): string
+    /** Format eProperty: AP.INV/{KATEGORI}/MUP/{yy}/{bulan-romawi}/{seq} — AP.RMB / AP.DEP untuk jenis lain. */
+    private function nextNumber(string $date, ?string $catCode = null, string $jenis = 'invoice'): string
     {
+        $kode = BsApInvoice::JENIS[$jenis]['nomor'] ?? 'AP.INV';
+
         return app(\App\Domain\BusinessSupport\Services\BoNumberService::class)
-            ->next('AP.INV', Carbon::parse($date), ['KATEGORI' => $catCode ?: 'UMUM'], fn () => $this->nextNumberLama($date, $catCode));
+            ->next($kode, Carbon::parse($date), ['KATEGORI' => $catCode ?: 'UMUM'], fn () => $this->nextNumberLama($date, $catCode, $kode));
     }
 
     /** Cara lama — dipakai bila master numerator tidak bisa dipakai. */
-    private function nextNumberLama(string $date, ?string $catCode = null): string
+    private function nextNumberLama(string $date, ?string $catCode = null, string $kode = 'AP.INV'): string
     {
         $d     = Carbon::parse($date);
         $roman = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X', 'XI', 'XII'][$d->month - 1];
         $cat   = $catCode ?: 'UMUM';
-        $seq   = BsApInvoice::withTrashed()->whereYear('invoice_date', $d->year)->count() + 1;
+        $seq   = BsApInvoice::withTrashed()->whereYear('invoice_date', $d->year)
+            // AP.INV tetap menghitung seluruh invoice tahun itu, persis seperti sebelumnya.
+            ->when($kode !== 'AP.INV', fn ($q) => $q->where('invoice_number', 'like', $kode.'/%'))
+            ->count() + 1;
         do {
-            $number = sprintf('AP.INV/%s/MUP/%s/%s/%05d', $cat, $d->format('y'), $roman, $seq);
+            $number = sprintf('%s/%s/MUP/%s/%s/%05d', $kode, $cat, $d->format('y'), $roman, $seq);
             $seq++;
         } while (BsApInvoice::withTrashed()->where('invoice_number', $number)->exists());
 
