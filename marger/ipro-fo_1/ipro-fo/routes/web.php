@@ -985,7 +985,6 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
     Route::post('/business-support/bon-sementara/{advance}/alokasi', [BsAdvanceController::class, 'allocationStore'])->name('bs.advance.allocation.store');
     Route::delete('/business-support/bon-sementara-alokasi/{allocation}', [BsAdvanceController::class, 'allocationDestroy'])->name('bs.advance.allocation.destroy');
     Route::get('/business-support/bon-sementara/{advance}/print', [BsAdvanceController::class, 'print'])->name('bs.advance.print');
-    Route::get('/business-support/bon-sementara/{advance}/print-bpp', [BsAdvanceController::class, 'printBppAlokasi'])->name('bs.advance.print-bpp');
     Route::get('/business-support/bon-sementara/{advance}/print-realisasi', [BsAdvanceController::class, 'printRealisasi'])->name('bs.advance.print-realisasi');
     Route::post('/business-support/bon-sementara/{advance}/tanggal-dokumen', [BsAdvanceController::class, 'setReceivedDate'])->name('bs.advance.received-date'); // #125
     // Tanggal Finance menerima berkas REALISASI — kolom & peristiwa yang berbeda dari berkas pengajuan.
