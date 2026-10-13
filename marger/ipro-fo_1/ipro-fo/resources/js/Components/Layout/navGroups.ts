@@ -345,8 +345,6 @@ export function navGroups(foUrl: string): NavGroup[] {
             { label: 'Master', icon: BookText, permission: ['ap.invoice.view', 'ap.kuitansi.view'], children: [
                 { label: 'Invoice Hutang', href: 'bs.ap.index' , permission: ['ap.invoice.view'] , tampil: 'menu.bs.ap.index' },
                 { label: 'Kuitansi Hutang', href: 'bs.ap.kuitansi.index' , permission: ['ap.kuitansi.view'] , tampil: 'menu.bs.ap.kuitansi.index' },
-                { label: 'Reimburse Biaya Karyawan', href: 'bs.ap.reimburse.index' , permission: ['ap.reimburse.view'] , tampil: 'menu.bs.ap.reimburse.index' },
-                { label: 'Deposit Renovasi Customer', href: 'bs.ap.deposit.index' , permission: ['ap.deposit.view'] , tampil: 'menu.bs.ap.deposit.index' },
             ]},
             { label: 'Query', icon: FileBarChart, permission: ['ap.aging.view', 'ap.invoice.view', 'ap.paycard.view', 'ap.penghapusan.view', 'tax.pph.view'], children: [
                 { label: 'Kartu Hutang', href: 'bs.ap.card' , permission: ['ap.paycard.view'] , tampil: 'menu.bs.ap.card' },
@@ -364,6 +362,8 @@ export function navGroups(foUrl: string): NavGroup[] {
             ]},
             { label: 'Generate Invoice', icon: ClipboardList, permission: ['ap.invoice.create'], children: [
                 { label: 'Registrasi Invoice Hutang', href: 'bs.ap.create' , permission: ['ap.invoice.create'] , tampil: 'menu.bs.ap.create' },
+                { label: 'Reimburse Biaya Karyawan', href: 'bs.ap.reimburse.index' , permission: ['ap.reimburse.view'] , tampil: 'menu.bs.ap.reimburse.index' },
+                { label: 'Deposit Renovasi Customer', href: 'bs.ap.deposit.index' , permission: ['ap.deposit.view'] , tampil: 'menu.bs.ap.deposit.index' },
             ]},
             { label: 'Penyesuaian Invoice', icon: Eraser, permission: ['ap.penghapusan.view'], children: [
                 { label: 'Penghapusan Nilai Hutang', href: 'bs.ap.penghapusan.index' , permission: ['ap.penghapusan.view'] , tampil: 'menu.bs.ap.penghapusan.index' },
