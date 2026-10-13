@@ -21,6 +21,8 @@ const sections = computed<Record<string, Item[]>>(() => ({
     master: [
         { label: 'Invoice Hutang', route: r('bs.ap.index') },
         { label: 'Kuitansi Hutang', route: r('bs.ap.kuitansi.index') },
+        { label: 'Reimburse Biaya Karyawan', route: r('bs.ap.reimburse.index') },
+        { label: 'Deposit Renovasi Customer', route: r('bs.ap.deposit.index') },
     ],
     query: [
         { label: 'Kartu Hutang', route: r('bs.ap.card'), summary: r('bs.ap.card', { view: 'summary' }) },

@@ -21,7 +21,7 @@ class BsApInvoice extends Model
         'category_id', 'supplier_invoice_no', 'tax_invoice_no', 'manual_no', 'trx_type', 'source_type', 'source_id', 'refund_source',
         'expense_account_id', 'payable_account_id', 'description', 'berkas_notes', 'berkas_finance_date', 'transfer_detail', 'kurs',
         'dpp', 'ppn_pct', 'ppn_amount', 'ppn_base', 'ppn_mode', 'pph_mode', 'pph_type', 'pph_pct', 'pph_base', 'pph_amount', 'pph_account_id',
-        'total', 'net_payable', 'paid_amount', 'status', 'journal_id', 'created_by',
+        'total', 'net_payable', 'paid_amount', 'status', 'journal_id', 'created_by', 'jenis',
     ];
     protected $casts = [
         'invoice_date' => 'date', 'receive_date' => 'date', 'due_date' => 'date', 'berkas_finance_date' => 'date', 'term_days' => 'integer',
@@ -32,6 +32,22 @@ class BsApInvoice extends Model
     ];
 
     public const TRX_TYPES = ['normal' => 'Normal', 'denda' => 'Realisasi Denda', 'saldo_awal' => 'Saldo Awal'];
+
+    /**
+     * JENIS invoice hutang — alurnya sama (registrasi → Memo + BPP → Kuitansi → Approval →
+     * dibayar); yang berbeda penerima & akun jurnalnya (akun dari Kategori ber-jenis sama).
+     *
+     *   judul    nama modul di layar
+     *   nomor    prefiks penomoran (BoDocumentNumbers)
+     *   izin     awalan izin modulnya: {izin}.view / {izin}.create
+     *   rute     awalan nama rute daftar & registrasinya
+     *   penerima sebutan kolom penerima pengganti "Supplier"
+     */
+    public const JENIS = [
+        'invoice' => ['judul' => 'Invoice Hutang', 'nomor' => 'AP.INV', 'izin' => 'ap.invoice', 'rute' => 'bs.ap', 'penerima' => 'Supplier'],
+        'reimburse' => ['judul' => 'Reimburse Biaya Karyawan', 'nomor' => 'AP.RMB', 'izin' => 'ap.reimburse', 'rute' => 'bs.ap.reimburse', 'penerima' => 'Karyawan'],
+        'deposit' => ['judul' => 'Deposit Renovasi Customer', 'nomor' => 'AP.DEP', 'izin' => 'ap.deposit', 'rute' => 'bs.ap.deposit', 'penerima' => 'Customer'],
+    ];
 
     /**
      * Supplier pemilik hutang ini — TERMASUK yang sudah dihapus (soft delete).

@@ -16,6 +16,8 @@ const props = defineProps<{
     posisiKredit: Record<string, string>;
     /** Akun yang dipakai posisi "beban" — dikunci, bukan dipilih. */
     akunBeban: { id: number; label: string } | null;
+    /** Modul pemakai kategori: { invoice: 'Invoice Hutang', reimburse: …, deposit: … }. */
+    jenisOpsi: Record<string, string>;
 }>();
 
 const search = ref(props.filters.search ?? '');
@@ -49,19 +51,19 @@ function kirimImpor() {
     });
 }
 const editingId = ref<number | null>(null);
-const form = useForm<any>({ code: '', name: '', debit_account_id: '', payable_account_id: props.defaultPayable ?? '', credit_position: 'hutang', is_active: true });
+const form = useForm<any>({ code: '', name: '', debit_account_id: '', payable_account_id: props.defaultPayable ?? '', credit_position: 'hutang', jenis: 'invoice', is_active: true });
 
 /* Posisi "Beban Masih Harus Dibayar" memakai akun yang ditentukan sistem, jadi pemilih
    akunnya diganti tampilan terkunci. Yang dikirim ke server tetap posisinya — akun
    sesungguhnya ditetapkan server, supaya layar tidak bisa menyimpan posisi "beban" sambil
    mengkredit akun lain. */
 const posisiBeban = computed(() => form.credit_position === 'beban_ymhd');
-function openCreate() { editingId.value = null; form.reset(); form.payable_account_id = props.defaultPayable ?? ''; form.credit_position = 'hutang'; showModal.value = true; }
+function openCreate() { editingId.value = null; form.reset(); form.payable_account_id = props.defaultPayable ?? ''; form.credit_position = 'hutang'; form.jenis = 'invoice'; showModal.value = true; }
 function openEdit(c: any) {
     editingId.value = c.id;
     // credit_position WAJIB ikut disebut: Object.assign tidak menyentuh kunci yang tidak
     // disebut, jadi modal Edit akan mewarisi posisi dari baris yang dibuka sebelumnya.
-    Object.assign(form, { code: c.code, name: c.name, debit_account_id: c.debit_account_id, payable_account_id: c.payable_account_id, credit_position: c.credit_position ?? 'hutang', is_active: !!c.is_active });
+    Object.assign(form, { code: c.code, name: c.name, debit_account_id: c.debit_account_id, payable_account_id: c.payable_account_id, credit_position: c.credit_position ?? 'hutang', jenis: c.jenis ?? 'invoice', is_active: !!c.is_active });
     showModal.value = true;
 }
 function submit() {
@@ -92,7 +94,7 @@ const inputCls = 'h-9 w-full rounded-lg border border-neutral-300 bg-white px-3 
         <div class="card overflow-x-auto">
             <table class="w-full text-sm">
                 <thead class="bg-neutral-50 dark:bg-neutral-800"><tr class="text-left text-xs uppercase text-neutral-500">
-                    <th class="px-4 py-3">Kode</th><th class="px-4 py-3">Keterangan</th><th class="px-4 py-3">Akun Debit</th><th class="px-4 py-3">Akun Kredit</th><th class="px-4 py-3">Posisi Kredit</th><th class="px-4 py-3 text-center">Status</th><th class="px-4 py-3 text-right">Aksi</th>
+                    <th class="px-4 py-3">Kode</th><th class="px-4 py-3">Keterangan</th><th class="px-4 py-3">Akun Debit</th><th class="px-4 py-3">Akun Kredit</th><th class="px-4 py-3">Posisi Kredit</th><th class="px-4 py-3">Dipakai di</th><th class="px-4 py-3 text-center">Status</th><th class="px-4 py-3 text-right">Aksi</th>
                 </tr></thead>
                 <tbody class="divide-y divide-neutral-200 dark:divide-neutral-800">
                     <tr v-for="c in categories" :key="c.id">
@@ -105,6 +107,7 @@ const inputCls = 'h-9 w-full rounded-lg border border-neutral-300 bg-white px-3 
                                 {{ posisiKredit[c.credit_position] ?? posisiKredit.hutang }}
                             </Badge>
                         </td>
+                        <td class="px-4 py-2.5"><Badge :variant="(c.jenis ?? 'invoice') === 'invoice' ? 'neutral' : 'info'" size="sm">{{ jenisOpsi[c.jenis ?? 'invoice'] }}</Badge></td>
                         <td class="px-4 py-2.5 text-center"><Badge :variant="c.is_active ? 'success' : 'neutral'" size="sm">{{ c.is_active ? 'Aktif' : 'Nonaktif' }}</Badge></td>
                         <td class="px-4 py-2.5"><div class="flex justify-end gap-2"><button @click="openEdit(c)" class="text-primary-600 hover:text-primary-800"><Pencil class="h-4 w-4" /></button><button @click="destroy(c)" class="text-danger-500 hover:text-danger-700"><Trash2 class="h-4 w-4" /></button></div></td>
                     </tr>
@@ -120,6 +123,12 @@ const inputCls = 'h-9 w-full rounded-lg border border-neutral-300 bg-white px-3 
                     <form @submit.prevent="submit" class="space-y-3">
                         <div><label class="mb-1 block text-xs font-medium text-neutral-500">Kode *</label><input v-model="form.code" required placeholder="mis. JASA-KONSULTAN" :class="inputCls" /><p v-if="form.errors.code" class="mt-1 text-xs text-danger-500">{{ form.errors.code }}</p></div>
                         <div><label class="mb-1 block text-xs font-medium text-neutral-500">Keterangan *</label><input v-model="form.name" required :class="inputCls" /></div>
+                        <!-- Modul pemakai: kategori Reimburse / Deposit hanya muncul di form modulnya sendiri,
+                             dan akun debit & hutangnya inilah yang membedakan jurnal ketiga modul. -->
+                        <div>
+                            <label class="mb-1 block text-xs font-medium text-neutral-500">Dipakai di *</label>
+                            <select v-model="form.jenis" :class="inputCls"><option v-for="(label, nilai) in jenisOpsi" :key="nilai" :value="nilai">{{ label }}</option></select>
+                        </div>
                         <div>
                             <label class="mb-1 block text-xs font-medium text-neutral-500">Akun Debit *</label>
                             <SearchSelect v-model="form.debit_account_id" :options="accounts" placeholder="Ketik kode / nama akun…" no-truncate />

@@ -25,6 +25,8 @@ const menu: Array<{ group: string; items: Item[] }> = [
     { group: 'Master', items: [
         { label: 'Invoice Hutang', route: r('bs.ap.index') },
         { label: 'Kuitansi Hutang', route: r('bs.ap.kuitansi.index') },
+        { label: 'Reimburse Biaya Karyawan', route: r('bs.ap.reimburse.index') },
+        { label: 'Deposit Renovasi Customer', route: r('bs.ap.deposit.index') },
     ]},
     { group: 'Query', items: [
         { label: 'Kartu Hutang', route: r('bs.ap.card'), summary: r('bs.ap.card', { view: 'summary' }) },

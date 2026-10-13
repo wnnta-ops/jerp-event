@@ -82,6 +82,17 @@ final class BoDocumentNumbers
                 'format' => '{PREFIX}/{KATEGORI}/MUP/{YY}/{MM_ROMAN}/{SEQ}', 'padding' => 5, 'reset' => 'yearly',
                 'tabel' => 'bs_ap_invoices', 'kolom' => 'invoice_number',
             ],
+            // Reimburse Karyawan & Deposit Renovasi — alur Invoice Hutang, nomor sendiri.
+            'AP.RMB' => [
+                'label' => 'Reimburse Biaya Karyawan', 'grup' => 'Account Payable', 'prefix' => 'AP.RMB',
+                'format' => '{PREFIX}/{KATEGORI}/MUP/{YY}/{MM_ROMAN}/{SEQ}', 'padding' => 5, 'reset' => 'yearly',
+                'tabel' => 'bs_ap_invoices', 'kolom' => 'invoice_number',
+            ],
+            'AP.DEP' => [
+                'label' => 'Deposit Renovasi Customer', 'grup' => 'Account Payable', 'prefix' => 'AP.DEP',
+                'format' => '{PREFIX}/{KATEGORI}/MUP/{YY}/{MM_ROMAN}/{SEQ}', 'padding' => 5, 'reset' => 'yearly',
+                'tabel' => 'bs_ap_invoices', 'kolom' => 'invoice_number',
+            ],
             'AP' => $bulanan('AP', 'Invoice Hutang (Posting PO/SPK)', 'Account Payable', 'bs_ap_invoices', 'invoice_number'),
             'AP.KUI' => [
                 'label' => 'Kuitansi Hutang', 'grup' => 'Account Payable', 'prefix' => 'AP.KUI',

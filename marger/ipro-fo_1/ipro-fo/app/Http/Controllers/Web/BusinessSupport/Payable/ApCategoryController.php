@@ -30,6 +30,7 @@ class ApCategoryController extends Controller
                 'id' => $c->id, 'code' => $c->code, 'name' => $c->name, 'is_active' => $c->is_active,
                 'debit_account_id' => $c->debit_account_id, 'payable_account_id' => $c->payable_account_id,
                 'credit_position' => $c->credit_position ?: BsApCategory::POSISI_HUTANG,
+                'jenis' => $c->jenis ?: 'invoice',
                 'debit' => $c->debitAccount?->code.' - '.$c->debitAccount?->name,
                 'payable' => $c->payableAccount?->code.' - '.$c->payableAccount?->name,
             ]);
@@ -42,6 +43,9 @@ class ApCategoryController extends Controller
             'accounts'   => BsAccount::where('is_active', true)->where('is_postable', true)->orderBy('code')->get(['id', 'code', 'name', 'type']),
             'defaultPayable' => BsAccount::where('code', config('business_support.gl_accounts.payable'))->value('id'),
             'posisiKredit' => BsApCategory::POSISI,
+            // Kategori untuk modul mana: Invoice Hutang, Reimburse Karyawan, atau Deposit Renovasi.
+            // Akun debit & hutangnya inilah yang membedakan jurnal ketiga modul.
+            'jenisOpsi' => collect(\App\Domain\BusinessSupport\Models\BsApInvoice::JENIS)->map(fn ($j) => $j['judul'])->all(),
             /* Akun untuk posisi "Beban Masih Harus Dibayar". Dikirim ke layar supaya kolom
                akun kreditnya bisa dikunci menampilkan akun yang SESUNGGUHNYA akan dipakai —
                bukan sekadar menyembunyikan pilihannya dan membuat operator menebak. */
@@ -85,12 +89,16 @@ class ApCategoryController extends Controller
             // yang justru sudah benar.
             'payable_account_id' => ['required_if:credit_position,'.BsApCategory::POSISI_HUTANG, 'nullable', 'integer', 'exists:bs_accounts,id'],
             'credit_position'    => ['required', Rule::in(array_keys(BsApCategory::POSISI))],
+            'jenis'              => ['nullable', Rule::in(array_keys(\App\Domain\BusinessSupport\Models\BsApInvoice::JENIS))],
             'is_active'          => ['boolean'],
         ], [
             'payable_account_id.required_if' => 'Akun hutang wajib dipilih untuk posisi kredit Hutang.',
         ]);
 
-        return array_merge($v, ['payable_account_id' => $this->akunKredit($v['credit_position'], $v['payable_account_id'] ?? null)]);
+        return array_merge($v, [
+            'jenis' => $v['jenis'] ?? 'invoice',
+            'payable_account_id' => $this->akunKredit($v['credit_position'], $v['payable_account_id'] ?? null),
+        ]);
     }
 
     /**
