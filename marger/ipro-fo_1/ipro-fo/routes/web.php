@@ -874,6 +874,8 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
     Route::post('/business-support/credit-cards/{card}/closing/buka', [App\Http\Controllers\Web\BusinessSupport\CashBook\CreditCardController::class, 'reopen'])->name('bs.cashbook.credit-card.reopen');
     // Outstanding Kasbon per karyawan — dari mutasi akun Uang Muka Operasional.
     Route::get('/business-support/outstanding-kasbon', [App\Http\Controllers\Web\BusinessSupport\CashBook\OutstandingKasbonController::class, 'index'])->name('bs.cashbook.outstanding-kasbon');
+    Route::get('/business-support/outstanding-kasbon/cetak', [App\Http\Controllers\Web\BusinessSupport\CashBook\OutstandingKasbonController::class, 'cetak'])->name('bs.cashbook.outstanding-kasbon.cetak');
+    Route::get('/business-support/outstanding-kasbon/excel', [App\Http\Controllers\Web\BusinessSupport\CashBook\OutstandingKasbonController::class, 'excel'])->name('bs.cashbook.outstanding-kasbon.excel');
     // CB-2: Rekening Ledger + Kalender Cek Giro
     Route::get('/business-support/cash-book-ledger', [BsCashBookController::class, 'ledger'])->name('bs.cashbook.ledger');
     Route::get('/business-support/cash-book-ledger-excel', [BsCashBookController::class, 'ledgerExcel'])->name('bs.cashbook.ledger.excel');       // #9

@@ -120,9 +120,8 @@ class CashAdvanceController extends Controller
      */
     private function bolehLihatSemuaBon(Request $request): bool
     {
-        $u = $request->user();
-
-        return (bool) ($u?->can('cashbook.advance.pay') || $u?->can('businesssupport.approval.act'));
+        // Aturannya di satu tempat — dipakai juga Outstanding Kasbon.
+        return \App\Domain\BusinessSupport\Support\AksesBon::lihatSemua($request->user());
     }
 
     /**
