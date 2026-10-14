@@ -110,10 +110,12 @@ export function navGroups(foUrl: string): NavGroup[] {
                Catatan: item ber-children dirender Sidebar sebagai tombol buka/tutup, bukan
                tautan (lihat Sidebar.vue), jadi induknya sengaja tidak lagi diberi href. */
             { label: 'Dashboard Back Office', icon: LayoutDashboard, children: [
-                { label: 'KPR & Collection',        href: 'dashboard', params: { grup: 'kpr' } },
-                { label: 'Cash Management',         href: 'dashboard', params: { grup: 'cash' } },
-                { label: 'Accounting, Tax & Budget', href: 'dashboard', params: { grup: 'accounting' } },
-                { label: 'Project',                 href: 'dashboard', params: { grup: 'project' } },
+                // Satu izin per sub-dashboard (Grup Akses BO). Tanpa satu pun, grup ini lenyap
+                // dari sidebar dan /dashboard menampilkan "Selamat Datang".
+                { label: 'KPR & Collection',        href: 'dashboard', params: { grup: 'kpr' }, permission: ['dashboard.kpr.view'], tampil: 'menu.dashboard.kpr' },
+                { label: 'Cash Management',         href: 'dashboard', params: { grup: 'cash' }, permission: ['dashboard.cash.view'], tampil: 'menu.dashboard.cash' },
+                { label: 'Accounting, Tax & Budget', href: 'dashboard', params: { grup: 'accounting' }, permission: ['dashboard.accounting.view'], tampil: 'menu.dashboard.accounting' },
+                { label: 'Project',                 href: 'dashboard', params: { grup: 'project' }, permission: ['dashboard.project.view'], tampil: 'menu.dashboard.project' },
             ]},
             // Menu silang → kembali ke hub/dashboard utama J-ERP (URL dari env via Inertia config.fo_url).
             { label: 'Kembali ke Dashboard Utama', icon: Building2, external: foUrl + '/dashboard' },

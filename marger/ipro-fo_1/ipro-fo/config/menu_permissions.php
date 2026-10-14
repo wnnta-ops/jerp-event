@@ -30,6 +30,12 @@ declare(strict_types=1);
 
 return [
 
+    // ── Dashboard Back Office ── (satu izin per sub-dashboard; tanpa satu pun → "Selamat Datang")
+    'menu.dashboard.kpr' => ['dashboard.kpr.view', 'Dashboard Back Office › KPR & Collection'],  // Dashboard Back Office
+    'menu.dashboard.cash' => ['dashboard.cash.view', 'Dashboard Back Office › Cash Management'],  // Dashboard Back Office
+    'menu.dashboard.accounting' => ['dashboard.accounting.view', 'Dashboard Back Office › Accounting, Tax & Budget'],  // Dashboard Back Office
+    'menu.dashboard.project' => ['dashboard.project.view', 'Dashboard Back Office › Project'],  // Dashboard Back Office
+
     // ── Account Payable ──
     'menu.bs.ap.create' => ['ap.invoice.create', 'Generate Invoice › Registrasi Invoice Hutang'],  // Account Payable
     'menu.bs.ap.index' => ['ap.invoice.view', 'Master › Invoice Hutang'],  // Account Payable

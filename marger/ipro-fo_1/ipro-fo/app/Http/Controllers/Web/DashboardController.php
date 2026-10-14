@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Web;
 
 use App\Http\Controllers\Controller;
+use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -51,16 +52,32 @@ class DashboardController extends Controller
         'project'    => 'Project',
     ];
 
-    public function __invoke(Request $request): Response
+    public function __invoke(Request $request): Response|RedirectResponse
     {
         $user = $request->user();
 
-        /* Tanpa ?grup= halaman berperilaku persis seperti dulu: keenam belas grafik dikirim
-           sekaligus. Sub-dashboard hanyalah penyaring di atas halaman yang sama, bukan halaman
-           baru — satu tata letak, satu saringan periode, satu tempat memperbaiki bila ada yang
-           salah. */
+        /* HAK AKSES — satu izin per sub-dashboard (dashboard.{grup}.view, Grup Akses BO).
+           Tanpa satu pun izin, halamannya "Selamat Datang": tidak ada grafik yang dihitung
+           maupun dikirim ke browser. SuperAdmin lolos lewat Gate::before. */
+        $boleh = array_values(array_filter(array_keys(self::GRUP), fn ($g) => (bool) $user?->can("dashboard.{$g}.view")));
+        if ($boleh === []) {
+            return Inertia::render('Dashboard/Selamat', [
+                'nama' => $user?->name,
+                'hariIni' => now()->locale('id')->translatedFormat('l, d-m-Y'),
+                // Diatur di Settings → Konfigurasi Sistem → Halaman Selamat Datang.
+                'motivasi' => \App\Http\Controllers\Web\Settings\SettingsConfigController::motivasiHariIni(),
+            ]);
+        }
+
+        /* Tanpa ?grup= halaman memuat seluruh grafik dari sub-dashboard yang DIIZINKAN.
+           Sub-dashboard hanyalah penyaring di atas halaman yang sama, bukan halaman baru —
+           satu tata letak, satu saringan periode, satu tempat memperbaiki bila ada yang salah. */
         $grup = (string) $request->query('grup', '');
         $grup = isset(self::GRUP[$grup]) ? $grup : null;
+        if ($grup !== null && ! in_array($grup, $boleh, true)) {
+            // Alamat sub-dashboard yang tidak diizinkan → halaman dashboard miliknya sendiri.
+            return redirect()->route('dashboard', count($boleh) === 1 ? ['grup' => $boleh[0]] : []);
+        }
 
         $p = $this->periode($request);
 
@@ -86,7 +103,7 @@ class DashboardController extends Controller
             ],
             'grup'       => $grup,
             'grupJudul'  => $grup !== null ? self::GRUP_JUDUL[$grup] : null,
-            'charts'     => $this->charts($p, $grup),
+            'charts'     => $this->charts($p, $grup !== null ? [$grup] : $boleh),
         ]);
     }
 
@@ -218,7 +235,8 @@ class DashboardController extends Controller
      * @param  array{awal: Carbon, akhir: Carbon, bulan: array<int, Carbon>, label: string, dipotong: bool}  $p
      * @return array<string, mixed>
      */
-    private function charts(array $p, ?string $grup = null): array
+    /** @param list<string> $grupList  sub-dashboard yang grafiknya dihitung */
+    private function charts(array $p, array $grupList): array
     {
         $semua = [
             'inisiasi_kpr' => fn () => $this->chartInisiasiKpr($p),      // 1
@@ -243,8 +261,7 @@ class DashboardController extends Controller
            Satu pemuatan penuh menjalankan ±25 kueri data dan ratusan panggilan introspeksi skema;
            menghitung keenam belasnya untuk halaman yang hanya menampilkan tiga adalah beban yang
            tidak pernah terlihat di layar — hanya terasa sebagai halaman yang lambat. */
-        $kunci = $grup !== null ? (self::GRUP[$grup] ?? null) : null;
-        $pilih = $kunci === null ? array_keys($semua) : $kunci;
+        $pilih = array_merge(...array_map(fn ($g) => self::GRUP[$g] ?? [], $grupList));
 
         $out = [];
         foreach ($pilih as $k) {
