@@ -21,7 +21,7 @@ class BsApInvoice extends Model
         'category_id', 'supplier_invoice_no', 'tax_invoice_no', 'manual_no', 'trx_type', 'source_type', 'source_id', 'refund_source',
         'expense_account_id', 'payable_account_id', 'description', 'berkas_notes', 'berkas_finance_date', 'transfer_detail', 'kurs',
         'dpp', 'ppn_pct', 'ppn_amount', 'ppn_base', 'ppn_mode', 'pph_mode', 'pph_type', 'pph_pct', 'pph_base', 'pph_amount', 'pph_account_id',
-        'total', 'net_payable', 'paid_amount', 'status', 'journal_id', 'created_by', 'jenis',
+        'total', 'net_payable', 'paid_amount', 'status', 'journal_id', 'created_by', 'jenis', 'credit_position',
     ];
     protected $casts = [
         'invoice_date' => 'date', 'receive_date' => 'date', 'due_date' => 'date', 'berkas_finance_date' => 'date', 'term_days' => 'integer',
@@ -62,6 +62,8 @@ class BsApInvoice extends Model
      */
     public function supplier(): BelongsTo { return $this->belongsTo(BsSupplier::class, 'supplier_id')->withTrashed(); }
     public function category(): BelongsTo { return $this->belongsTo(BsApCategory::class, 'category_id'); }
+    /** Akun yang dikredit jurnal invoice ini (dibekukan saat registrasi). */
+    public function payableAccount(): BelongsTo { return $this->belongsTo(BsAccount::class, 'payable_account_id'); }
     public function unit(): BelongsTo { return $this->belongsTo(\App\Domain\Master\Unit\Models\Unit::class, 'unit_id'); }
     public function customer(): BelongsTo { return $this->belongsTo(\App\Domain\Master\Customer\Models\Customer::class, 'customer_id'); }
     public function payments(): HasMany { return $this->hasMany(BsApPayment::class, 'ap_invoice_id'); }

@@ -298,14 +298,21 @@ class ApInvoiceController extends Controller
                     ->map(fn ($c) => ['id' => $c->id, 'code' => (string) $c->code, 'name' => $c->full_name, 'category' => ''])
                 : [],
             'units' => $units,
-            'categories' => BsApCategory::where('is_active', true)->where('jenis', $jenis)->with(['debitAccount:id,code,name', 'payableAccount:id,code,name'])->orderBy('name')->get()
-                ->map(fn ($c) => [
-                    'id' => $c->id, 'code' => $c->code, 'name' => $c->name,
-                    'debit' => $c->debitAccount?->code.' - '.$c->debitAccount?->name,
-                    'payable' => $c->payableAccount?->code.' - '.$c->payableAccount?->name,
-                    'debit_id' => $c->debit_account_id, 'debit_code' => $c->debitAccount?->code, 'debit_name' => $c->debitAccount?->name,
-                    'payable_id' => $c->payable_account_id, 'payable_code' => $c->payableAccount?->code, 'payable_name' => $c->payableAccount?->name,
-                ]),
+            // Kategori yang dicentang untuk modul ini; akun kreditnya dari pemakaian modul ini.
+            'categories' => BsApCategory::where('is_active', true)->dipakaiDi($jenis)
+                ->with(['debitAccount:id,code,name', 'usages' => fn ($u) => $u->where('jenis', $jenis)->with('payableAccount:id,code,name')])
+                ->orderBy('name')->get()
+                ->map(function ($c) use ($jenis) {
+                    $kredit = $c->pemakaian($jenis)?->payableAccount;
+
+                    return [
+                        'id' => $c->id, 'code' => $c->code, 'name' => $c->name,
+                        'debit' => $c->debitAccount?->code.' - '.$c->debitAccount?->name,
+                        'payable' => $kredit?->code.' - '.$kredit?->name,
+                        'debit_id' => $c->debit_account_id, 'debit_code' => $c->debitAccount?->code, 'debit_name' => $c->debitAccount?->name,
+                        'payable_id' => $kredit?->id, 'payable_code' => $kredit?->code, 'payable_name' => $kredit?->name,
+                    ];
+                }),
             'pphAccounts' => $pphAccounts,
             'pphDefaults' => [   // #113 jenis PPh → akun default (HUTANG PPh 21/23/4(2))
                 'pph21' => $pphAccounts->firstWhere('code', '20104040402')?->id,
@@ -389,8 +396,8 @@ class ApInvoiceController extends Controller
             'supplier_id' => ['required', 'integer', 'exists:bs_suppliers,id'],
             'unit_id' => ['nullable', 'integer', 'exists:units,id'],
             'customer_id' => ['nullable', 'integer', 'exists:customers,id'],
-            // Kategori harus sejenis: akun Reimburse/Deposit hanya dari kategori jenisnya sendiri.
-            'category_id' => ['required', 'integer', \Illuminate\Validation\Rule::exists('bs_ap_categories', 'id')->where('jenis', $jenis)],
+            // Kategori harus dicentang untuk modul ini ("Dipakai di" di Setup Kategori Invoice).
+            'category_id' => ['required', 'integer', \Illuminate\Validation\Rule::exists('bs_ap_category_usages', 'category_id')->where('jenis', $jenis)],
             'trx_type' => ['required', 'in:normal,denda,saldo_awal'],
             'supplier_invoice_no' => ['required', 'string', 'max:80'],
             'manual_no' => ['nullable', 'string', 'max:80'],
@@ -757,6 +764,7 @@ class ApInvoiceController extends Controller
 
         $invoice->load([
             'supplier:id,code,name,bank_name,bank_account_no,bank_account_name',
+            'payableAccount:id,code,name',
             'category.payableAccount:id,code,name',
             'lines',
         ]);
@@ -778,7 +786,9 @@ class ApInvoiceController extends Controller
         $net = (float) $invoice->payable_amount;
 
         $sup = $invoice->supplier;
-        $payAcc = $invoice->category?->payableAccount;
+        // Akun beku di invoice, bukan akun kategori: satu kategori bisa mengkredit akun berbeda
+        // per modul, dan setup kategori bisa berubah sesudah invoice ini terbit.
+        $payAcc = $invoice->payableAccount ?? $invoice->category?->payableAccount;
         $created = $e(now()->translatedFormat('d-m-Y H.i.s'));
         $eNo = $e($invoice->invoice_number);
         $eTgl = $e(optional($invoice->invoice_date)->translatedFormat('d F Y'));
