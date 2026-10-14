@@ -15,8 +15,10 @@ import {
 import { navGroups } from './navGroups';
 import { useIzin } from '@/Composables/useIzin';
 
-defineProps<{ open: boolean }>();
-defineEmits<{ (e: 'close'): void }>();
+const props = defineProps<{ open: boolean }>();
+/* 'toggle' — nama yang didengarkan AppLayout (@toggle). Dulu 'close', sehingga tombol ciutkan
+   sidebar tidak pernah sampai ke layout dan tidak berbuat apa-apa. */
+const emit = defineEmits<{ (e: 'toggle'): void }>();
 
 const page = usePage();
 
@@ -36,6 +38,16 @@ function toggleGroup(title: string) {
 // Sub-modul (level 2) yang punya children bisa dibuka untuk menampilkan detail modul (level 3).
 const openSub = ref<Record<string, boolean>>({});
 function toggleSub(key: string) { openSub.value[key] = !openSub.value[key]; }
+/* Sidebar ciut hanya menampilkan ikon, jadi daftar menunya tak bisa terlihat. Mengeklik ikon
+   sub-modul karena itu MEMBENTANGKAN sidebar sekaligus membuka sub-modul itu. */
+function bukaSub(key: string) {
+    if (! props.open) {
+        emit('toggle');
+        openSub.value[key] = true;
+        return;
+    }
+    toggleSub(key);
+}
 
 // Elemen <aside> untuk menggulir item aktif ke tampilan saat lokasi berubah.
 const asideEl = ref<HTMLElement | null>(null);
@@ -112,7 +124,7 @@ watch(() => page.url, () => revealActive(), { immediate: true });
     >
         <div class="flex items-center justify-between px-4 h-16 border-b border-primary-200 sticky top-0 bg-primary-100 z-10">
             <span v-if="open" class="text-base font-bold text-primary-900">Java Core System</span>
-            <button @click="$emit('close')" class="text-primary-700 hover:text-primary-900">
+            <button type="button" @click="emit('toggle')" :title="open ? 'Sembunyikan sidebar' : 'Tampilkan sidebar'" class="text-primary-700 hover:text-primary-900">
                 <ChevronLeft class="h-5 w-5" :class="{ 'rotate-180': ! open }" />
             </button>
         </div>
@@ -130,7 +142,7 @@ watch(() => page.url, () => revealActive(), { immediate: true });
                         <!-- Sub-modul dengan children (level 2) → klik untuk buka detail modul (level 3) -->
                         <template v-if="item.children">
                             <button
-                                type="button" @click="toggleSub(g.title + '|' + item.label)"
+                                type="button" @click="bukaSub(g.title + '|' + item.label)"
                                 class="flex w-full items-center gap-3 px-4 py-2 mx-2 rounded-lg text-[15px] font-semibold text-primary-900 transition hover:bg-primary-300 hover:text-primary-950"
                                 :style="{ width: 'calc(100% - 1rem)' }"
                             >
