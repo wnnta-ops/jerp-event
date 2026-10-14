@@ -45,16 +45,6 @@ class ImporPengguna
     /** Berkas contoh: sheet Pengguna (judul + satu contoh) dan sheet Daftar (nilai yang sah). */
     public static function format(): string
     {
-        $buku = new Spreadsheet;
-        $s = $buku->getActiveSheet()->setTitle('Pengguna');
-        foreach (self::KOLOM as $i => $k) {
-            $s->setCellValue([$i + 1, 1], $k);
-            $s->getStyle([$i + 1, 1])->getFont()->setBold(true);
-            // Seluruh kolom diformat TEKS: NIK 16 digit yang diketik sebagai angka berubah
-            // menjadi 3,5E+15 dan digit belakangnya hilang selamanya.
-            $s->getStyle([$i + 1, 1, $i + 1, 500])->getNumberFormat()->setFormatCode(NumberFormat::FORMAT_TEXT);
-            $s->getColumnDimensionByColumn($i + 1)->setAutoSize(true);
-        }
         $contoh = [
             'nama_lengkap' => 'CONTOH NAMA KARYAWAN', 'username' => 'contoh', 'email' => 'contoh@email.com',
             'password' => 'GantiSaya2026', 'nik' => '3515000000000001',
@@ -63,8 +53,60 @@ class ImporPengguna
             'grup_akses' => (string) (self::modelPeran()::query()->orderBy('name')->value('name') ?? ''),
             'grup_akses_bo' => (string) (BoRole::query()->orderBy('name')->value('name') ?? ''), 'aktif' => '1',
         ];
+
+        return self::buku([$contoh]);
+    }
+
+    /**
+     * Seluruh pengguna dalam format Import — diedit lalu diunggah ulang lewat Import Excel.
+     * Kolom password sengaja kosong (tidak bisa dan tidak boleh dibaca balik); pengguna lama
+     * memang tidak memakainya saat import.
+     */
+    public static function ekspor(): string
+    {
+        $cc = BoCostCenter::query()->withTrashed()->pluck('code', 'id')->all();
+        $bank = Bank::query()->pluck('name', 'id')->all();
+        // Grup BO per email, sekali query (bukan satu query per pengguna).
+        $grupBo = BoUser::query()->with('roles:id,name')->get(['id', 'email'])
+            ->mapWithKeys(fn ($b) => [Str::lower((string) $b->email) => $b->roles->pluck('name')->sort()->implode(', ')])->all();
+
+        $baris = User::query()->with('roles:id,name')->orderBy('full_name')->get()->map(fn (User $u) => [
+            // Akun lama bisa tanpa nama lengkap; tanpa cadangan ini berkasnya tak bisa diimpor ulang.
+            'nama_lengkap' => (string) ($u->full_name ?: $u->name),
+            'username' => (string) $u->name,
+            'email' => (string) $u->email,
+            'password' => '',
+            'nik' => (string) $u->nik,
+            'cost_center' => (string) ($cc[$u->bo_cost_center_id] ?? ''),
+            'bank' => (string) ($bank[$u->bank_id] ?? ''),
+            'no_rekening' => (string) $u->rekening_number,
+            'npwp' => (string) $u->npwp,
+            'grup_akses' => $u->roles->pluck('name')->sort()->implode(', '),
+            'grup_akses_bo' => (string) ($grupBo[Str::lower((string) $u->email)] ?? ''),
+            'aktif' => $u->is_active ? '1' : '0',
+        ])->all();
+
+        return self::buku($baris);
+    }
+
+    /** @param list<array<string,string>> $baris */
+    private static function buku(array $baris): string
+    {
+        $buku = new Spreadsheet;
+        $s = $buku->getActiveSheet()->setTitle('Pengguna');
+        $akhir = max(500, count($baris) + 200);
         foreach (self::KOLOM as $i => $k) {
-            $s->setCellValueExplicit([$i + 1, 2], $contoh[$k], DataType::TYPE_STRING);
+            $s->setCellValue([$i + 1, 1], $k);
+            $s->getStyle([$i + 1, 1])->getFont()->setBold(true);
+            // Seluruh kolom diformat TEKS: NIK 16 digit yang diketik sebagai angka berubah
+            // menjadi 3,5E+15 dan digit belakangnya hilang selamanya.
+            $s->getStyle([$i + 1, 1, $i + 1, $akhir])->getNumberFormat()->setFormatCode(NumberFormat::FORMAT_TEXT);
+            $s->getColumnDimensionByColumn($i + 1)->setAutoSize(true);
+        }
+        foreach ($baris as $r => $isi) {
+            foreach (self::KOLOM as $i => $k) {
+                $s->setCellValueExplicit([$i + 1, $r + 2], (string) ($isi[$k] ?? ''), DataType::TYPE_STRING);
+            }
         }
 
         $d = $buku->createSheet()->setTitle('Daftar');

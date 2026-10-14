@@ -24,6 +24,14 @@ class ListUsers extends ListRecords
                 ->visible(fn () => UserResource::canCreate())
                 ->action(fn () => response()->download(ImporPengguna::format(), 'format-import-pengguna.xlsx')->deleteFileAfterSend()),
 
+            // Semua pengguna dalam format Import: edit di Excel, lalu unggah ulang.
+            Actions\Action::make('eksporExcel')
+                ->label('Export Excel')
+                ->icon('heroicon-o-document-arrow-down')
+                ->color('gray')
+                ->visible(fn () => UserResource::canCreate())
+                ->action(fn () => response()->download(ImporPengguna::ekspor(), 'pengguna-'.now()->format('Y-m-d').'.xlsx')->deleteFileAfterSend()),
+
             Actions\Action::make('imporExcel')
                 ->label('Import Excel')
                 ->icon('heroicon-o-arrow-up-tray')
