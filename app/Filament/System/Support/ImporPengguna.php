@@ -15,7 +15,6 @@ use PhpOffice\PhpSpreadsheet\IOFactory;
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
 use PhpOffice\PhpSpreadsheet\Style\NumberFormat;
 use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
-use RuntimeException;
 
 /**
  * Import Excel Pengguna (panel System → Pengguna).
@@ -140,7 +139,7 @@ class ImporPengguna
     /**
      * @return array{baru:int,ubah:int,karyawan_baru:int,karyawan_ubah:int,gagal_bo:list<string>}
      *
-     * @throws RuntimeException  berisi daftar galat per baris; tidak ada yang tersimpan
+     * @throws ImporPenggunaGagal  daftar galat per baris & kolom; tidak ada yang tersimpan
      */
     public static function jalankan(string $berkas, ?User $pelaku): array
     {
@@ -232,18 +231,18 @@ class ImporPengguna
         try {
             $buku = IOFactory::load($berkas);
         } catch (\Throwable) {
-            throw new RuntimeException('Berkas tidak bisa dibaca. Pastikan formatnya Excel (.xlsx).');
+            throw ImporPenggunaGagal::berkas('Berkas tidak bisa dibaca. Pastikan formatnya Excel (.xlsx).');
         }
         $sheet = $buku->getSheetByName('Pengguna') ?? $buku->getSheet(0);
         $isi = $sheet->toArray(null, true, false, false);
         if ($isi === []) {
-            throw new RuntimeException('Berkas kosong.');
+            throw ImporPenggunaGagal::berkas('Berkas kosong.');
         }
 
         $kepala = array_map(fn ($x) => Str::of((string) $x)->lower()->trim()->replace(' ', '_')->toString(), array_shift($isi));
         $hilang = array_diff(['nama_lengkap', 'email'], $kepala);
         if ($hilang !== []) {
-            throw new RuntimeException('Baris judul tidak dikenali (kolom '.implode(', ', $hilang).' tidak ada). Unduh format untuk contoh susunannya.');
+            throw ImporPenggunaGagal::berkas('Baris judul tidak dikenali (kolom '.implode(', ', $hilang).' tidak ada). Unduh format untuk contoh susunannya.');
         }
 
         $hasil = [];
@@ -264,7 +263,7 @@ class ImporPengguna
             $hasil[] = $r;
         }
         if ($hasil === []) {
-            throw new RuntimeException('Tidak ada baris pengguna di berkas itu.');
+            throw ImporPenggunaGagal::berkas('Tidak ada baris pengguna di berkas itu.');
         }
 
         return $hasil;
@@ -290,37 +289,39 @@ class ImporPengguna
             $no = $r['_no'];
             // Closure ber-referensi, BUKAN arrow fn: arrow fn menyalin $galat, sehingga galatnya
             // hilang dan berkas yang salah lolos tersimpan.
-            $salah = function (string $p) use (&$galat, $no): void { $galat[] = "Baris {$no}: {$p}"; };
+            $salah = function (string $kolom, string $p) use (&$galat, $no): void {
+                $galat[] = ['baris' => $no, 'kolom' => $kolom, 'pesan' => $p];
+            };
 
             foreach ($r['_angka_rusak'] ?? [] as $k) {
-                $salah("{$k} tersimpan sebagai angka sehingga digit belakangnya hilang — format selnya sebagai Teks lalu ketik ulang.");
+                $salah($k, 'tersimpan sebagai ANGKA sehingga digit belakangnya hilang. Ubah format selnya menjadi Teks, lalu ketik ulang.');
             }
             $email = Str::lower($r['email']);
-            if ($r['nama_lengkap'] === '') { $salah('nama_lengkap kosong.'); }
-            if (! filter_var($email, FILTER_VALIDATE_EMAIL)) { $salah("email \"{$r['email']}\" tidak valid."); continue; }
-            if (isset($emailDiBerkas[$email])) { $salah("email {$email} sudah ada di baris {$emailDiBerkas[$email]}."); continue; }
+            if ($r['nama_lengkap'] === '') { $salah('nama_lengkap', 'kosong — wajib diisi.'); }
+            if (! filter_var($email, FILTER_VALIDATE_EMAIL)) { $salah('email', $r['email'] === '' ? 'kosong — wajib diisi.' : "\"{$r['email']}\" bukan alamat email yang valid."); continue; }
+            if (isset($emailDiBerkas[$email])) { $salah('email', "{$email} sudah dipakai di baris {$emailDiBerkas[$email]} — satu email hanya boleh satu baris."); continue; }
             $emailDiBerkas[$email] = $no;
 
             $user = User::query()->where('email', $email)->first();
-            if (! $user && $r['password'] === '') { $salah('pengguna baru wajib diisi password.'); }
-            if (! $user && $r['nik'] === '') { $salah('pengguna baru wajib diisi nik.'); }
+            if (! $user && $r['password'] === '') { $salah('password', 'kosong — pengguna baru wajib diberi password.'); }
+            if (! $user && $r['nik'] === '') { $salah('nik', 'kosong — pengguna baru wajib diisi NIK.'); }
 
             if ($r['nik'] !== '') {
-                if (isset($nikDiBerkas[$r['nik']])) { $salah("nik {$r['nik']} sudah dipakai di baris {$nikDiBerkas[$r['nik']]}."); }
+                if (isset($nikDiBerkas[$r['nik']])) { $salah('nik', "{$r['nik']} sudah dipakai di baris {$nikDiBerkas[$r['nik']]}."); }
                 $nikDiBerkas[$r['nik']] = $no;
                 $pemilik = User::query()->where('nik', $r['nik'])->where('email', '!=', $email)->value('email');
-                if ($pemilik) { $salah("nik {$r['nik']} sudah dipakai pengguna {$pemilik}."); }
+                if ($pemilik) { $salah('nik', "{$r['nik']} sudah dipakai pengguna lain ({$pemilik})."); }
             }
 
             $ccId = null;
             if ($r['cost_center'] !== '') {
                 $ccId = $cc[Str::lower($r['cost_center'])] ?? null;
-                if ($ccId === null) { $salah("cost_center \"{$r['cost_center']}\" tidak ada (lihat sheet Daftar)."); }
+                if ($ccId === null) { $salah('cost_center', "\"{$r['cost_center']}\" tidak ditemukan. Salin kode/nama dari sheet Daftar."); }
             }
             [$bankId, $bankNama] = [null, null];
             if ($r['bank'] !== '') {
                 [$bankId, $bankNama] = $bank[Str::lower($r['bank'])] ?? [null, null];
-                if ($bankId === null) { $salah("bank \"{$r['bank']}\" tidak ada di master Bank (lihat sheet Daftar)."); }
+                if ($bankId === null) { $salah('bank', "\"{$r['bank']}\" tidak ada di master Bank. Salin namanya dari sheet Daftar."); }
             }
 
             $pecah = fn (string $s) => array_values(array_filter(array_map('trim', explode(',', $s)), fn ($x) => $x !== ''));
@@ -328,14 +329,14 @@ class ImporPengguna
             if ($r['grup_akses'] !== '') {
                 $grupFo = [];
                 foreach ($pecah($r['grup_akses']) as $g) {
-                    isset($peranFo[Str::lower($g)]) ? $grupFo[] = $peranFo[Str::lower($g)] : $salah("grup_akses \"{$g}\" tidak ada.");
+                    isset($peranFo[Str::lower($g)]) ? $grupFo[] = $peranFo[Str::lower($g)] : $salah('grup_akses', "\"{$g}\" tidak ditemukan. Salin namanya dari sheet Daftar.");
                 }
             }
             $grupBo = null;
             if ($r['grup_akses_bo'] !== '') {
                 $grupBo = [];
                 foreach ($pecah($r['grup_akses_bo']) as $g) {
-                    isset($peranBo[Str::lower($g)]) ? $grupBo[] = $peranBo[Str::lower($g)] : $salah("grup_akses_bo \"{$g}\" tidak ada.");
+                    isset($peranBo[Str::lower($g)]) ? $grupBo[] = $peranBo[Str::lower($g)] : $salah('grup_akses_bo', "\"{$g}\" tidak ditemukan. Salin namanya dari sheet Daftar.");
                 }
             }
 
@@ -353,8 +354,7 @@ class ImporPengguna
         }
 
         if ($galat !== []) {
-            throw new RuntimeException("Import dibatalkan, tidak ada data yang diubah.\n".implode("\n", array_slice($galat, 0, 15))
-                .(count($galat) > 15 ? "\n… dan ".(count($galat) - 15).' galat lain.' : ''));
+            throw new ImporPenggunaGagal($galat);
         }
 
         return $siap;
