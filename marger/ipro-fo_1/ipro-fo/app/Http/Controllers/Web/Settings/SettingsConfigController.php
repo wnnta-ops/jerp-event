@@ -48,7 +48,29 @@ class SettingsConfigController extends Controller
             'sms_sender'         => ['string', '', 'Sender ID SMS'],
             'daily_report_email' => ['string', '', 'Email Tujuan Daily Report'],
         ],
+        // Halaman "Selamat Datang" (pengguna tanpa izin Dashboard Back Office) — satu kalimat
+        // per baris, tampil bergantian tiap hari. Kosong = tidak ada kalimat yang tampil.
+        'beranda' => [
+            'kata_motivasi' => ['text', self::MOTIVASI_AWAL, 'Kata Motivasi (satu kalimat per baris — tampil bergantian tiap hari)'],
+        ],
     ];
+
+    /** Isi awal kata motivasi sampai admin menggantinya. */
+    private const MOTIVASI_AWAL = "Kerja yang rapi hari ini memudahkan pekerjaan esok hari.\n"
+        ."Teliti di awal, tenang di akhir.\n"
+        ."Setiap transaksi yang benar adalah kepercayaan yang terjaga.\n"
+        ."Selesaikan yang penting dulu, lalu yang mendesak.\n"
+        ."Kerja sama tim membuat beban terasa ringan.";
+
+    /** Kata motivasi untuk hari ini — satu baris, bergantian per hari. null bila kosong. */
+    public static function motivasiHariIni(): ?string
+    {
+        $isi = DB::table('parameters')->where('tenant_id', tenant_id() ?? default_tenant_id())
+            ->where('group', 'beranda')->where('key', 'kata_motivasi')->value('value') ?? self::MOTIVASI_AWAL;
+        $baris = array_values(array_filter(array_map('trim', preg_split('/\R/', (string) $isi)), fn ($b) => $b !== ''));
+
+        return $baris === [] ? null : $baris[now()->dayOfYear % count($baris)];
+    }
 
     public function index(Request $request): Response
     {
@@ -81,6 +103,7 @@ class SettingsConfigController extends Controller
                     'bool'   => ['boolean'],
                     'int'    => ['nullable', 'integer', 'min:0'],
                     'number' => ['nullable', 'numeric', 'min:0'],
+                    'text'   => ['nullable', 'string', 'max:5000'],
                     default  => ['nullable', 'string', 'max:191'],
                 };
             }
@@ -89,7 +112,9 @@ class SettingsConfigController extends Controller
 
         foreach (self::SCHEMA as $group => $keys) {
             foreach ($keys as $key => [$type, $default, $label]) {
-                $val = $data[$group][$key] ?? $default;
+                // Teks panjang yang DIKOSONGKAN memang berarti kosong (mis. tanpa kata motivasi),
+                // bukan "kembalikan isi awal".
+                $val = $type === 'text' ? (string) ($data[$group][$key] ?? '') : ($data[$group][$key] ?? $default);
                 $stringVal = $type === 'bool' ? ((bool) $val ? '1' : '0') : (string) $val;
                 // Petakan tipe skema → enum kolom data_type (string|int|decimal|bool|json).
                 $dataType = match ($type) {

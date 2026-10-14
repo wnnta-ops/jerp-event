@@ -949,7 +949,7 @@ table.sum td{padding:2px 6px;border:1px solid #333}table.sum .tot{font-weight:bo
 </style></head><body>
 
 <div class="page">
-  <div class="created">Dicetak: {$created}</div>
+  <div class="created">Created By Java Core System ({$created})</div>
   <div style="text-align:center"><img class="logo" src="{$logo}" alt="MUP"></div>
   <div class="ttl">MEMO INTERNAL</div>
   <div class="sub">No : {$eNo}</div>
@@ -1006,7 +1006,7 @@ table.sum td{padding:2px 6px;border:1px solid #333}table.sum .tot{font-weight:bo
 </div>
 
 <div class="page">
-  <div class="created">Dicetak: {$created}</div>
+  <div class="created">Created By Java Core System ({$created})</div>
   <table class="phead"><tr>
     <td style="width:70px"><img class="logo" src="{$logo}" alt="MUP"></td>
     <td><div class="ttl">BUKTI PERMOHONAN PEMBAYARAN</div></td>

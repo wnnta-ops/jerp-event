@@ -54,6 +54,7 @@ final class PetaMenuBo
      * @var list<string>
      */
     public const URUTAN_MODUL = [
+        'Dashboard Back Office',
         'Master',
         'Data Center',
         'KPR',
@@ -163,6 +164,13 @@ final class PetaMenuBo
         'ar.penghapusan' => ['Piutang Usaha (Booked)', '', 'Penghapusan Piutang'],
         'ar.piutang-lain' => ['Piutang Usaha (Booked)', '', 'Piutang Lain-lain'],
         'ar.category' => ['Piutang Usaha (Booked)', '', 'Kategori Piutang'],
+
+        // ── Dashboard Back Office ────────────────────────────────────────────────────
+        // Satu izin per sub-dashboard; tanpa satu pun, /dashboard menampilkan "Selamat Datang".
+        'dashboard.kpr' => ['Dashboard Back Office', '', 'KPR & Collection'],
+        'dashboard.cash' => ['Dashboard Back Office', '', 'Cash Management'],
+        'dashboard.accounting' => ['Dashboard Back Office', '', 'Accounting, Tax & Budget'],
+        'dashboard.project' => ['Dashboard Back Office', '', 'Project'],
 
         // ── Account Payable ──────────────────────────────────────────────────────────
         'ap.umum' => ['Account Payable', 'General Function', 'Cetak & Memo Hutang'],
@@ -297,6 +305,12 @@ final class PetaMenuBo
      * @var array<string,array{0:string,1:string,2:string,3:string}>
      */
     public const PETA_TAMPIL = [
+        // ── Dashboard Back Office ──────────────────────────────────────────────────────
+        'menu.dashboard.kpr' => ['Dashboard Back Office', '', 'KPR & Collection', 'dashboard.kpr.view'],
+        'menu.dashboard.cash' => ['Dashboard Back Office', '', 'Cash Management', 'dashboard.cash.view'],
+        'menu.dashboard.accounting' => ['Dashboard Back Office', '', 'Accounting, Tax & Budget', 'dashboard.accounting.view'],
+        'menu.dashboard.project' => ['Dashboard Back Office', '', 'Project', 'dashboard.project.view'],
+
         // ── Account Payable ────────────────────────────────────────────────────────────
         'menu.bs.ap.create' => ['Account Payable', 'Generate Invoice', 'Registrasi Invoice Hutang', 'ap.invoice.create'],
         'menu.bs.ap.index' => ['Account Payable', 'Master', 'Invoice Hutang', 'ap.invoice.view'],

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { useForm, Link } from '@inertiajs/vue3';
-import { ArrowLeft, SlidersHorizontal, Save, Receipt, CalendarClock, Hand, Star, Banknote, FileCheck, Bell } from 'lucide-vue-next';
+import { ArrowLeft, SlidersHorizontal, Save, Receipt, CalendarClock, Hand, Star, Banknote, FileCheck, Bell, Smile } from 'lucide-vue-next';
 
 const props = defineProps<{
     config: Record<string, Record<string, any>>;
@@ -18,6 +18,7 @@ const sections: Record<string, { title: string; icon: any }> = {
     va:        { title: 'Penomoran Virtual Account', icon: Banknote },
     mandatory: { title: 'Dokumen Wajib (Mandatory)', icon: FileCheck },
     notif:     { title: 'Notifikasi (SMS Blast & Daily Report)', icon: Bell },
+    beranda:   { title: 'Halaman Selamat Datang', icon: Smile },
 };
 const inputCls = 'h-9 w-full rounded-lg border border-neutral-300 bg-white px-3 text-sm dark:border-neutral-700 dark:bg-neutral-900';
 </script>
@@ -38,6 +39,12 @@ const inputCls = 'h-9 w-full rounded-lg border border-neutral-300 bg-white px-3 
                             <span>{{ field.label }}</span>
                             <input type="checkbox" v-model="form.config[group][key]" class="rounded border-neutral-300" />
                         </label>
+                        <div v-else-if="field.type === 'text'">
+                            <label class="block text-xs font-medium text-neutral-500 mb-1">{{ field.label }}</label>
+                            <textarea v-model="form.config[group][key]" rows="6"
+                                class="w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-900"></textarea>
+                            <p v-if="form.errors[`config.${group}.${key}`]" class="mt-1 text-xs text-danger-500">{{ form.errors[`config.${group}.${key}`] }}</p>
+                        </div>
                         <div v-else>
                             <label class="block text-xs font-medium text-neutral-500 mb-1">{{ field.label }}</label>
                             <input
