@@ -1397,7 +1397,7 @@ class CashAdvanceController extends Controller
             .'table.sign td{border:1px solid #333;padding:4px 6px;text-align:center;word-wrap:break-word}'
             .'tr.sl td{vertical-align:middle;height:14px}tr.ss td{height:70px}tr.sr td{vertical-align:middle;font-weight:600}';
 
-        $body = '<div class="cb">Created By Java Core ('.$e($printDate).')</div>'
+        $body = '<div class="cb">Created By Java Core System ('.$e($printDate).')</div>'
             .'<table class="hd"><tr>'
             .'<td style="width:72px"><img class="logo" src="'.$logo.'" alt="logo"></td>'
             .'<td style="text-align:center"><span class="title">REALISASI BON SEMENTARA</span>'
