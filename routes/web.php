@@ -144,6 +144,10 @@ Route::middleware('guest')->group(function () {
 Route::middleware('auth')->group(function () {
     Route::get('/dashboard', fn () => view('dashboard'))->name('dashboard');
 
+    // Ganti password oleh penggunanya sendiri (menu nama pengguna di topbar).
+    Route::get('/akun/password', [\App\Http\Controllers\AkunPasswordController::class, 'edit'])->name('akun.password');
+    Route::put('/akun/password', [\App\Http\Controllers\AkunPasswordController::class, 'update'])->name('akun.password.update');
+
     // BO — cetak voucher jurnal (HTML printable; ?pdf=1 untuk Browsershot di produksi)
     Route::get('/bo/cetak/jurnal/{jurnal}', [JurnalPrintController::class, 'show'])
         ->name('bo.cetak.jurnal');

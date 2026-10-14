@@ -52,6 +52,10 @@ class FoPanelProvider extends PanelProvider
                     ->label('Buka BO / Bankloan')
                     ->url(fn () => url('/sso/to-bo'))
                     ->icon('heroicon-o-building-library'),
+                MenuItem::make()
+                    ->label('Ganti Password')
+                    ->url(fn () => route('akun.password'))
+                    ->icon('heroicon-o-key'),
             ])
             ->discoverResources(in: app_path('Filament/Fo/Resources'), for: 'App\\Filament\\Fo\\Resources')
             ->discoverPages(in: app_path('Filament/Fo/Pages'), for: 'App\\Filament\\Fo\\Pages')

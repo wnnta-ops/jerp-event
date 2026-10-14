@@ -76,6 +76,9 @@
                 <div class="px-3 py-2 text-xs border-b" style="border-color: var(--color-surface-border); color: var(--color-text-muted);">
                     {{ $user?->email }}
                 </div>
+                <a href="{{ route('akun.password') }}" class="block px-3 py-2 text-sm hover:bg-gray-50 dark:hover:bg-gray-800">
+                    Ganti Password
+                </a>
                 <form method="POST" action="{{ route('logout') }}">
                     @csrf
                     <button type="submit" class="block w-full text-left px-3 py-2 text-sm hover:bg-gray-50 dark:hover:bg-gray-800">
