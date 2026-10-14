@@ -9,6 +9,8 @@ const props = defineProps<{
 
 const form = useForm({ config: JSON.parse(JSON.stringify(props.config)) });
 function submit() { form.put(route('settings.config.update'), { preserveScroll: true }); }
+/** Galat per isian bertingkat (config.grup.kunci) — kuncinya dinamis, jadi dibaca sebagai peta. */
+const galat = (kunci: string): string | undefined => (form.errors as Record<string, string | undefined>)[kunci];
 
 const sections: Record<string, { title: string; icon: any }> = {
     tax:       { title: 'Pajak (PPN)', icon: Receipt },
@@ -43,7 +45,7 @@ const inputCls = 'h-9 w-full rounded-lg border border-neutral-300 bg-white px-3 
                             <label class="block text-xs font-medium text-neutral-500 mb-1">{{ field.label }}</label>
                             <textarea v-model="form.config[group][key]" rows="6"
                                 class="w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-900"></textarea>
-                            <p v-if="form.errors[`config.${group}.${key}`]" class="mt-1 text-xs text-danger-500">{{ form.errors[`config.${group}.${key}`] }}</p>
+                            <p v-if="galat(`config.${group}.${key}`)" class="mt-1 text-xs text-danger-500">{{ galat(`config.${group}.${key}`) }}</p>
                         </div>
                         <div v-else>
                             <label class="block text-xs font-medium text-neutral-500 mb-1">{{ field.label }}</label>
