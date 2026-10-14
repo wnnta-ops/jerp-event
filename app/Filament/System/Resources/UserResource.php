@@ -166,15 +166,49 @@ class UserResource extends Resource
 
             Forms\Components\Section::make('Hak Akses Khusus (lintas modul) — opsional')
                 ->description('Tambahan hak akses untuk pengguna INI di luar Grup Akses (mis. anggota FAT yang butuh akses lintas modul secara dinamik). Akses efektif = Grup Akses + centang di sini.')
-                ->collapsible()->collapsed()
-                ->schema(RoleResource::permissionMatrix()),
+                ->collapsible()
+                ->schema(static::matriksBerpintu('ubah_izin_fo', fn () => RoleResource::permissionMatrix())),
 
             Forms\Components\Section::make('Hak Akses Khusus BO (Java Core System) — opsional')
                 ->description('Padanan di aplikasi BO: tambahan izin untuk pengguna INI di luar Grup Akses BO, untuk yang butuh satu-dua menu tanpa dibuatkan grup baru. Akses efektif di BO = Grup Akses BO + centang di sini.')
-                ->collapsible()->collapsed()
+                ->collapsible()
                 ->visible(fn (?User $record) => $record !== null && static::penggunaBo($record) !== null)
-                ->schema(fn () => BoRoleResource::permissionMatrixBo('permBo')),
+                // Closure supaya ipro_bo tidak disentuh untuk pengguna tanpa akun BO.
+                ->schema(static::matriksBerpintu('ubah_izin_bo', fn () => BoRoleResource::permissionMatrixBo('permBo'))),
         ]);
+    }
+
+    /**
+     * Matriks izin yang baru DIBANGUN & DIRENDER bila sakelarnya dinyalakan.
+     *
+     * Matriks BO saja ±950 komponen dan menghasilkan HTML ±4 MB. Livewire merender ulang
+     * seluruh halaman di SETIAP interaksi — termasuk Simpan — dan Section "collapsed" tetap
+     * dirender penuh (hanya disembunyikan di browser). Akibatnya menyimpan pengguna tembus batas
+     * 120 detik PHP (Cloudflare 504), padahal yang diubah hanya nama atau grupnya.
+     *
+     * Selama sakelar mati, matriksnya tidak ikut dikirim ke server sehingga izin khusus yang
+     * ada TIDAK disentuh (EditUser membedakan "tidak dikirim" dari "dikosongkan").
+     *
+     * Hasil pembangunannya diingat: Filament mengevaluasi closure schema setiap kali form
+     * ditelusuri, dan satu permintaan menelusurinya puluhan kali.
+     *
+     * @param  \Closure(): array<int,\Filament\Forms\Components\Component>  $bangun
+     * @return array<int,\Filament\Forms\Components\Component>
+     */
+    protected static function matriksBerpintu(string $sakelar, \Closure $bangun): array
+    {
+        $matriks = null;
+
+        return [
+            Forms\Components\Toggle::make($sakelar)
+                ->label('Ubah hak akses khusus')
+                ->helperText('Nyalakan untuk menampilkan & mengubah centangnya. Selama mati, hak akses khusus yang sudah ada tidak berubah saat disimpan.')
+                ->live()
+                ->dehydrated(false),
+            Forms\Components\Group::make(function () use (&$matriks, $bangun) {
+                return $matriks ??= $bangun();
+            })->visible(fn (Forms\Get $get) => (bool) $get($sakelar)),
+        ];
     }
 
     /**

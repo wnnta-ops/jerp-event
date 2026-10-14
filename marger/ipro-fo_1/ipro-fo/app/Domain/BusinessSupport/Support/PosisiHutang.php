@@ -31,7 +31,10 @@ use Illuminate\Http\Request;
  *    hanya memaksa akun untuk posisi 'beban_ymhd'). Jadi akun tidak bisa dibalik menjadi
  *    posisi: kategori berposisi 'hutang' yang sengaja memakai akun kewajiban lain akan salah
  *    dilabeli selamanya.
- * Sumber kebenarannya adalah bs_ap_categories.credit_position.
+ * Sumber kebenarannya adalah posisi kredit yang dipilih user — sejak 14 Okt 2026 dibekukan
+ * per invoice di bs_ap_invoices.credit_position (satu kategori boleh dipakai beberapa modul
+ * dengan posisi berbeda). Invoice sebelum itu (kolomnya kosong) tetap dibaca dari
+ * bs_ap_categories.credit_position.
  *
  * ── Kenapa akun tetap dipakai, tapi HANYA sebagai cadangan ──
  * bs_ap_invoices.category_id BOLEH KOSONG, dan memang kosong pada seluruh invoice Saldo Awal
@@ -151,11 +154,18 @@ final class PosisiHutang
     private static function predikatBeban(Builder $w): Builder
     {
         return $w
-            ->whereHas('category', fn ($c) => $c->where('credit_position', self::BEBAN))
-            // whereDoesntHave, bukan whereNull('category_id'): category_id yang menunjuk
-            // kategori terhapus juga tidak punya posisi, dan barisnya tetap harus mendarat di
-            // salah satu pilihan.
-            ->orWhere(fn ($x) => $x->whereDoesntHave('category')->where('payable_account_id', self::akunBebanId()));
+            // Invoice yang posisinya dibekukan saat disimpan (sejak satu kategori boleh dipakai
+            // beberapa modul dengan posisi berbeda, posisi kategori tidak lagi cukup).
+            // IS NOT NULL ikut ditulis: tanpanya `credit_position = 'beban_ymhd'` bernilai NULL
+            // pada invoice lama, NOT-nya juga NULL, dan invoice lama hilang dari "Hutang Usaha".
+            ->where(fn ($b) => $b->whereNotNull('credit_position')->where('credit_position', self::BEBAN))
+            // Invoice lama tanpa posisi beku: cara baca lama, apa adanya.
+            ->orWhere(fn ($lama) => $lama->whereNull('credit_position')->where(fn ($l) => $l
+                ->whereHas('category', fn ($c) => $c->where('credit_position', self::BEBAN))
+                // whereDoesntHave, bukan whereNull('category_id'): category_id yang menunjuk
+                // kategori terhapus juga tidak punya posisi, dan barisnya tetap harus mendarat di
+                // salah satu pilihan.
+                ->orWhere(fn ($x) => $x->whereDoesntHave('category')->where('payable_account_id', self::akunBebanId()))));
     }
 
     /**

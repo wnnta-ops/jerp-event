@@ -12,8 +12,13 @@ class EditUser extends EditRecord
 {
     protected static string $resource = UserResource::class;
 
-    /** @var array<int,string> */
-    protected array $pendingPerms = [];
+    /**
+     * Hak khusus FO pilihan. null = matriksnya tidak dibuka (sakelar "Ubah hak akses khusus"
+     * mati) — izin khusus yang ada dibiarkan, BUKAN dikosongkan.
+     *
+     * @var array<int,string>|null
+     */
+    protected ?array $pendingPerms = null;
 
     /** Potret hak khusus sebelum disimpan — sumber untuk mempertahankan yang di luar matriks. */
     protected $izinSebelumnya;
@@ -67,7 +72,7 @@ class EditUser extends EditRecord
     protected function mutateFormDataBeforeSave(array $data): array
     {
         $this->izinSebelumnya = $this->record->getDirectPermissions();
-        $this->pendingPerms = RoleResource::collectPermissions($data['m'] ?? []);
+        $this->pendingPerms = array_key_exists('m', $data) ? RoleResource::collectPermissions((array) $data['m']) : null;
         unset($data['m']);
 
         // grup_bo bukan kolom tabel users — kalau ikut lolos, Eloquent gagal menyimpan.
@@ -97,9 +102,11 @@ class EditUser extends EditRecord
         // Sama seperti Grup Akses: hak khusus yang tak punya kotak di matriks ini
         // (mis. izin BO) tidak boleh terhapus hanya karena halaman ini tak bisa
         // menampilkannya.
-        $this->record->syncPermissions(
-            RoleResource::gabungIzin($this->izinSebelumnya, $this->pendingPerms)
-        );
+        if ($this->pendingPerms !== null) {
+            $this->record->syncPermissions(
+                RoleResource::gabungIzin($this->izinSebelumnya, $this->pendingPerms)
+            );
+        }
 
         // Grup akses BO ada di database lain (ipro_bo). Hanya disentuh bila
         // bidangnya benar-benar ditampilkan — kalau tidak, menyimpan pengguna FO

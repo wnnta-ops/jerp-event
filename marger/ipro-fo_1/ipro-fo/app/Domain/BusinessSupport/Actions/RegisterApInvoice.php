@@ -39,8 +39,10 @@ final class RegisterApInvoice
         return DB::transaction(function () use ($data, $userId): BsApInvoice {
             // Akun dari Kategori Invoice bila ada.
             $category = ! empty($data['category_id']) ? BsApCategory::find($data['category_id']) : null;
+            // Satu kategori bisa dipakai beberapa modul; akun kredit & posisinya milik modul ini.
+            $pakai    = $category?->pemakaian($data['jenis'] ?? 'invoice');
             $debitAcc = $category?->debit_account_id ?? ($data['expense_account_id'] ?? null);
-            $payable  = $category?->payable_account_id ?? ($data['payable_account_id'] ?? BsAccount::where('code', config('business_support.gl_accounts.payable'))->value('id'));
+            $payable  = $pakai?->payable_account_id ?? $category?->payable_account_id ?? ($data['payable_account_id'] ?? BsAccount::where('code', config('business_support.gl_accounts.payable'))->value('id'));
             if (! $debitAcc || ! $payable) {
                 throw new BusinessRuleException('Akun debit / hutang belum ditentukan (pilih Kategori Invoice).', errorCode: 'AP_NO_ACCOUNT');
             }
@@ -131,6 +133,9 @@ final class RegisterApInvoice
                 'term_days'           => $data['term_days'] ?? null,
                 'expense_account_id'  => $debitAcc,
                 'payable_account_id'  => $payable,
+                // Dibekukan: mengubah setup kategori kelak tidak memindahkan invoice ini antar
+                // penyaring Hutang Usaha / BYMHD. Tanpa kategori → kosong (dibaca dari akunnya).
+                'credit_position'     => $pakai?->credit_position ?? $category?->credit_position,
                 'description'         => $data['description'],
                 'transfer_detail'     => $data['transfer_detail'] ?? null,
                 'kurs'                => $data['kurs'] ?? 1,
