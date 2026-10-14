@@ -188,16 +188,27 @@ const inputKurang = 'h-9 w-full rounded-lg border border-amber-400 bg-amber-50/5
 /** Cincin kuning pada SearchSelect — aditif, jadi aman ditumpuk di atas bingkainya. */
 const pilihKurang = 'rounded-lg ring-2 ring-amber-300 dark:ring-amber-500/40';
 
+/* Tombol Kembali mengikuti SISI yang membuka layar ini. Tampilan Finance kembali ke daftar
+   Finance sesuai tahap bonnya — bukan ke Realisasi Bon Sementara milik pengaju:
+     diajukan → Bon Sementara Finance · batal → Transaksi Bon Batal · lainnya → Realisasi Finance. */
+const kembali = computed(() => {
+    if (!props.modeFinance) return { label: 'Kembali ke Bon Sementara', rute: 'bs.advance.index', params: {}, url: '/business-support/bon-sementara' };
+    if (props.advance.status === 'requested') return { label: 'Kembali ke Bon Sementara Finance', rute: 'bs.advance.payments', params: {}, url: '/business-support/bon-sementara-pembayaran' };
+    if (props.advance.status === 'cancelled') return { label: 'Kembali ke Transaksi Bon Batal', rute: 'bs.advance.cancelled', params: {}, url: '/business-support/bon-sementara-batal' };
+
+    return { label: 'Kembali ke Realisasi Bon Sementara Finance', rute: 'bs.advance.index', params: { finance: 1 }, url: '/business-support/bon-sementara?finance=1' };
+});
+
 // #80: navigasi kembali yang anti-gagal — pakai router.visit, fallback ke URL literal bila route() gagal resolve.
 function backToIndex() {
-    let url = '/business-support/bon-sementara';
-    try { url = route('bs.advance.index'); } catch (e) { /* ziggy belum siap → pakai URL literal */ }
+    let url = kembali.value.url;
+    try { url = route(kembali.value.rute, kembali.value.params); } catch (e) { /* ziggy belum siap → pakai URL literal */ }
     router.visit(url);
 }
 </script>
 <template>
     <div class="max-w-5xl space-y-4">
-        <button type="button" @click="backToIndex" class="inline-flex items-center gap-2 rounded-lg border border-neutral-300 bg-white px-3 py-1.5 text-sm font-medium text-neutral-700 hover:bg-neutral-50 dark:border-neutral-600 dark:bg-neutral-800 dark:text-neutral-200"><ArrowLeft class="h-4 w-4" /> Kembali ke Bon Sementara</button>
+        <button type="button" @click="backToIndex" class="inline-flex items-center gap-2 rounded-lg border border-neutral-300 bg-white px-3 py-1.5 text-sm font-medium text-neutral-700 hover:bg-neutral-50 dark:border-neutral-600 dark:bg-neutral-800 dark:text-neutral-200"><ArrowLeft class="h-4 w-4" /> {{ kembali.label }}</button>
         <div class="flex flex-wrap items-center justify-between gap-2">
             <h1 class="flex items-center gap-2 font-mono text-2xl font-bold"><Wallet class="h-6 w-6 text-amber-600" /> {{ advance.advance_number }}</h1>
             <div class="flex items-center gap-2">
