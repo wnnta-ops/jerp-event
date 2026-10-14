@@ -184,6 +184,32 @@ class IproMasterSync
         $this->db()->table('bs_employees')->insert($baris);
     }
 
+    /**
+     * Timpa data karyawan BO yang SUDAH ADA dengan isian dari Import Excel Pengguna.
+     *
+     * Pengecualian yang disengaja dari aturan syncKaryawan() ("hanya dibuat, tidak pernah
+     * diperbarui"): Import Excel adalah keputusan sadar admin untuk menjadikan berkas itu
+     * acuan. Hanya kolom yang DIISI di berkas yang ditimpa — sel kosong membiarkan data BO.
+     *
+     * @param  array{name?:string,cost_center_id?:int,bank_name?:string,bank_account?:string,npwp?:string}  $isian
+     * @return bool  true bila ada baris karyawan ber-NIK itu
+     */
+    public function perbaruiKaryawan(string $nik, array $isian): bool
+    {
+        $q = $this->db()->table('bs_employees')->where('nik', $nik);
+        if (! $q->exists()) {
+            return false;
+        }
+        if (! Schema::connection($this->conn)->hasColumn('bs_employees', 'npwp')) {
+            unset($isian['npwp']);
+        }
+        if ($isian !== []) {
+            $q->update($isian + ['updated_at' => Carbon::now()]);
+        }
+
+        return true;
+    }
+
     /** Nama bank dari master FO (jerp.banks) — bs_employees menyimpan namanya, bukan id. */
     private function namaBank(mixed $bankId): ?string
     {
