@@ -5,6 +5,8 @@ import { ArrowLeft, ArrowRight, Save, HandCoins, Plus, Trash2, Check, Search, Co
 import Button from '@/Components/UI/Button.vue';
 import MoneyInput from '@/Components/UI/MoneyInput.vue';
 import SearchSelect from '@/Components/UI/SearchSelect.vue';
+import PesanWajib from '@/Components/UI/PesanWajib.vue';
+import { tandai, kosong, pesanKolom, CINCIN_MERAH } from '@/Composables/useWajib';
 import { bangunStrukturJurnal, akunKurang, samaDenganBawaan, barisStruktur, akunBiayaPphDitanggung } from './strukturJurnal';
 
 const props = defineProps<{
@@ -34,7 +36,6 @@ const props = defineProps<{
     ledgers: Array<any>;
     locations: Array<any>;
     units: Array<any>;
-    trxTypes: Record<string, string>;
 }>();
 
 const steps = ['Pilih ' + props.jenis.penerima, 'Input Transaksi', 'Detil Tagihan', 'Struktur', 'Selesai'];
@@ -43,7 +44,7 @@ const today = new Date().toISOString().slice(0, 10);
 const supplierSearch = ref('');
 
 const form = useForm<any>({
-    supplier_id: '', category_id: '', trx_type: 'normal', supplier_invoice_no: '', manual_no: '',
+    supplier_id: '', category_id: '', supplier_invoice_no: '', manual_no: '',
     invoice_date: today, receive_date: today, term_days: '', due_date: '',
     description: '', dpp: 0,
     ppn_mode: 'none', ppn_pct: 11, ppn_base: 0, ppn_incl: false, // #140 · ppn_incl: false=Exclude PPN, true=Include PPN
@@ -539,7 +540,48 @@ function canNext() {
 }
 function next() { if (canNext() && step.value < 5) step.value++; }
 function prev() { if (step.value > 1) step.value--; }
-function submit() { form.post(route(props.jenis.kunci === 'invoice' ? 'bs.ap.store' : props.jenis.rute + '.store')); }
+
+/* ── KOLOM WAJIB: bingkai merah + pesan ──
+   Tombol Berikutnya tetap dimatikan canNext(); tandanya memberi tahu KOLOM MANA yang menahannya.
+   Galat server (alasan sebenarnya, mis. terlalu panjang) didahulukan daripada "Wajib diisi". */
+const galatServer = (kolom: string): string | undefined => (form.errors as Record<string, string | undefined>)[kolom];
+const pesan = computed(() => ({
+    pihak: pesanKolom(galatServer(kolomPihak), kosong(form[kolomPihak]), 'Wajib dipilih — klik salah satu nama di daftar'),
+    bank_name: pesanKolom(galatServer('bank_name'), kosong(form.bank_name)),
+    bank_account_no: pesanKolom(galatServer('bank_account_no'), kosong(form.bank_account_no)),
+    bank_account_name: pesanKolom(galatServer('bank_account_name'), kosong(form.bank_account_name)),
+    category_id: pesanKolom(galatServer('category_id'), kosong(form.category_id)),
+    supplier_invoice_no: pesanKolom(galatServer('supplier_invoice_no'), kosong(form.supplier_invoice_no)),
+    term_days: pesanKolom(galatServer('term_days'), ! (Number(form.term_days) > 0), 'Wajib diisi — tentukan jangka waktu jatuh tempo'),
+    description: pesanKolom(galatServer('description'), kosong(form.description)),
+    dpp: pesanKolom(galatServer('dpp'), ! (Number(form.dpp) > 0), 'Wajib diisi — lebih dari 0'),
+    manual_no: pesanKolom(galatServer('manual_no'), false),
+    receive_date: pesanKolom(galatServer('receive_date'), false),
+}));
+/** Uraian baris Detil Tagihan wajib (server: lines.*.description). */
+const pesanUraian = (i: number) => pesanKolom(galatServer(`lines.${i}.description`), kosong(form.lines[i]?.description));
+
+/* Kolom → langkah tempatnya. Bila server menolak, wizard melompat ke langkah kolom pertama yang
+   salah — kalau tidak, bingkai merahnya ada di langkah yang tidak sedang terlihat. */
+const LANGKAH_KOLOM: Array<[RegExp, number]> = [
+    [/^(supplier_id|employee_id|customer_id|bank_)/, 1],
+    [/^(category_id|supplier_invoice_no|manual_no|invoice_date|receive_date|due_date|term_days|description|transfer_detail|kurs|dpp|ppn_|pph_)/, 2],
+    [/^lines\./, 3],
+    [/^journal_lines\./, 4],
+];
+function submit() {
+    form.post(route(props.jenis.kunci === 'invoice' ? 'bs.ap.store' : props.jenis.rute + '.store'), {
+        // Isian TIDAK dibuang saat server menolak: tanpa preserveState halaman dimuat ulang, wizard
+        // kembali ke langkah 1 dan seluruh isian hilang — tepat yang dikeluhkan di panduan.
+        preserveState: true,
+        preserveScroll: true,
+        onError: (galat: Record<string, string>) => {
+            const kolom = Object.keys(galat);
+            const tujuan = kolom.map(k => LANGKAH_KOLOM.find(([pola]) => pola.test(k))?.[1] ?? 5);
+            if (tujuan.length) step.value = Math.min(...tujuan);
+        },
+    });
+}
 const inputCls = 'h-9 w-full rounded-lg border border-neutral-300 bg-white px-3 text-sm dark:border-neutral-700 dark:bg-neutral-900';
 const dimCls = 'h-8 w-full rounded-md border border-neutral-300 bg-white px-2 text-xs dark:border-neutral-700 dark:bg-neutral-900';
 const cellArea = 'w-full rounded-md border border-neutral-300 bg-white px-2 py-1 text-xs dark:border-neutral-700 dark:bg-neutral-900';
@@ -572,14 +614,14 @@ const cellArea = 'w-full rounded-md border border-neutral-300 bg-white px-2 py-1
                 </button>
                 <p v-if="!filteredSuppliers.length" class="px-2 py-6 text-center text-sm text-neutral-400">Tidak ada {{ jenis.penerima.toLowerCase() }} yang cocok.</p>
             </div>
+            <PesanWajib :pesan="pesan.pihak" />
             <!-- Deposit: rekening tujuan pengembalian diketik — master Customer tidak menyimpan data bank. -->
             <div v-if="jenis.kunci === 'deposit' && form.customer_id" class="mt-4 grid gap-3 rounded-lg border border-neutral-200 p-4 md:grid-cols-3 dark:border-neutral-700">
                 <div class="md:col-span-3 text-sm">Customer: <span class="font-semibold">{{ supplier?.name }}</span> — isi rekening tujuan pengembalian deposit:</div>
-                <div><label class="mb-1 block text-xs font-medium text-neutral-500">Bank *</label><input v-model="form.bank_name" placeholder="mis. BCA" :class="inputCls" /><p v-if="form.errors.bank_name" class="mt-1 text-xs text-danger-500">{{ form.errors.bank_name }}</p></div>
-                <div><label class="mb-1 block text-xs font-medium text-neutral-500">No. Rekening *</label><input v-model="form.bank_account_no" :class="inputCls" /><p v-if="form.errors.bank_account_no" class="mt-1 text-xs text-danger-500">{{ form.errors.bank_account_no }}</p></div>
-                <div><label class="mb-1 block text-xs font-medium text-neutral-500">Atas Nama *</label><input v-model="form.bank_account_name" :class="inputCls" /><p v-if="form.errors.bank_account_name" class="mt-1 text-xs text-danger-500">{{ form.errors.bank_account_name }}</p></div>
+                <div><label class="mb-1 block text-xs font-medium text-neutral-500">Bank *</label><input v-model="form.bank_name" placeholder="mis. BCA" :class="tandai(inputCls, !!pesan.bank_name)" /><PesanWajib :pesan="pesan.bank_name" /></div>
+                <div><label class="mb-1 block text-xs font-medium text-neutral-500">No. Rekening *</label><input v-model="form.bank_account_no" :class="tandai(inputCls, !!pesan.bank_account_no)" /><PesanWajib :pesan="pesan.bank_account_no" /></div>
+                <div><label class="mb-1 block text-xs font-medium text-neutral-500">Atas Nama *</label><input v-model="form.bank_account_name" :class="tandai(inputCls, !!pesan.bank_account_name)" /><PesanWajib :pesan="pesan.bank_account_name" /></div>
             </div>
-            <p v-if="form.errors.employee_id || form.errors.customer_id" class="mt-2 text-sm text-danger-500">{{ form.errors.employee_id || form.errors.customer_id }}</p>
         </div>
 
         <!-- Step 2: Input Transaksi -->
@@ -592,21 +634,25 @@ const cellArea = 'w-full rounded-md border border-neutral-300 bg-white px-2 py-1
                     canNext() selama category_id kosong, dan server memvalidasi
                     required|integer|exists:bs_ap_categories,id.
                 -->
-                <div class="md:col-span-2"><label class="mb-1 block text-xs font-medium text-neutral-500">Kategori Invoice *</label>
-                    <SearchSelect v-model="form.category_id" :options="kategoriOpsi" placeholder="— ketik atau pilih kategori —" />
+                <!-- Tipe Transaksi DITIADAKAN — server selalu menyimpan "Normal". Saldo awal hutang punya
+                     menunya sendiri (Account Payable › Saldo Awal). -->
+                <div class="md:col-span-3"><label class="mb-1 block text-xs font-medium text-neutral-500">Kategori Invoice *</label>
+                    <div :class="pesan.category_id ? CINCIN_MERAH : ''">
+                        <SearchSelect v-model="form.category_id" :options="kategoriOpsi" placeholder="— ketik atau pilih kategori —" />
+                    </div>
+                    <PesanWajib :pesan="pesan.category_id" />
                     <p v-if="category" class="mt-1 text-[11px] text-neutral-400">Dr {{ category.debit }} · Cr {{ category.payable }}</p>
                     <p v-else class="mt-1 text-[11px] text-neutral-400">Ketik nama atau kode kategori untuk mencarinya.</p></div>
-                <div><label class="mb-1 block text-xs font-medium text-neutral-500">Tipe Transaksi *</label><select v-model="form.trx_type" :class="inputCls"><option v-for="(label,val) in trxTypes" :key="val" :value="val">{{ label }}</option></select></div>
-                <div><label class="mb-1 block text-xs font-medium text-neutral-500">{{ jenis.kunci === 'invoice' ? 'No. Invoice Supplier' : 'No. Bukti / Nota' }} *</label><input v-model="form.supplier_invoice_no" required :class="inputCls" /></div>
+                <div><label class="mb-1 block text-xs font-medium text-neutral-500">{{ jenis.kunci === 'invoice' ? 'No. Invoice Supplier' : 'No. Bukti / Nota' }} *</label><input v-model="form.supplier_invoice_no" required :class="tandai(inputCls, !!pesan.supplier_invoice_no)" /><PesanWajib :pesan="pesan.supplier_invoice_no" /></div>
                 <div><label class="mb-1 block text-xs font-medium text-neutral-500">Tgl. Input *</label><input v-model="form.invoice_date" type="date" disabled title="Otomatis tanggal input, tidak bisa diubah" class="h-9 w-full cursor-not-allowed rounded-lg border border-neutral-300 bg-neutral-100 px-3 text-sm text-neutral-500 dark:border-neutral-700 dark:bg-neutral-800" /><p class="mt-1 text-[10px] text-neutral-400">Otomatis tanggal input — tidak bisa diubah.</p></div>
-                <div><label class="mb-1 block text-xs font-medium text-neutral-500">Tgl. Terima</label><input v-model="form.receive_date" type="date" :class="inputCls" /></div>
-                <div><label class="mb-1 block text-xs font-medium text-neutral-500">Jatuh Tempo (hari) <span class="text-danger-500">*</span></label><input v-model.number="form.term_days" type="number" min="1" required placeholder="mis. 30" :class="[inputCls,'text-right']" /><p v-if="!(Number(form.term_days) > 0)" class="mt-1 text-[11px] text-danger-500">Wajib diisi — tentukan jangka waktu jatuh tempo.</p></div>
+                <div><label class="mb-1 block text-xs font-medium text-neutral-500">Tgl. Terima</label><input v-model="form.receive_date" type="date" :class="tandai(inputCls, !!pesan.receive_date)" /><PesanWajib :pesan="pesan.receive_date" /></div>
+                <div><label class="mb-1 block text-xs font-medium text-neutral-500">Jatuh Tempo (hari) <span class="text-danger-500">*</span></label><input v-model.number="form.term_days" type="number" min="1" required placeholder="mis. 30" :class="[tandai(inputCls, !!pesan.term_days),'text-right']" /><PesanWajib :pesan="pesan.term_days" /></div>
                 <div><label class="mb-1 block text-xs font-medium text-neutral-500">Tgl. Jatuh Tempo</label><input :value="dueDate" type="date" disabled title="Otomatis: Tgl. Terima + Jatuh Tempo (hari)" class="h-9 w-full cursor-not-allowed rounded-lg border border-neutral-300 bg-neutral-100 px-3 text-sm text-neutral-500 dark:border-neutral-700 dark:bg-neutral-800" /><p class="mt-1 text-[10px] text-neutral-400">Tgl. Terima + Jatuh Tempo (hari) — tidak bisa diubah.</p></div>
-                <div><label class="mb-1 block text-xs font-medium text-neutral-500">No. Manual</label><input v-model="form.manual_no" :class="inputCls" /></div>
-                <div class="md:col-span-3"><label class="mb-1 block text-xs font-medium text-neutral-500">Keterangan *</label><input v-model="form.description" required :class="inputCls" /></div>
+                <div><label class="mb-1 block text-xs font-medium text-neutral-500">No. Manual</label><input v-model="form.manual_no" :class="tandai(inputCls, !!pesan.manual_no)" /><PesanWajib :pesan="pesan.manual_no" /></div>
+                <div class="md:col-span-3"><label class="mb-1 block text-xs font-medium text-neutral-500">Keterangan *</label><input v-model="form.description" required :class="tandai(inputCls, !!pesan.description)" /><PesanWajib :pesan="pesan.description" /></div>
             </div>
             <div class="card grid gap-4 p-5 md:grid-cols-3">
-                <div><label class="mb-1 block text-xs font-medium text-neutral-500">Nilai Transaksi *</label><MoneyInput v-model="form.dpp" placeholder="0" /></div>
+                <div><label class="mb-1 block text-xs font-medium text-neutral-500">Nilai Transaksi *</label><div :class="pesan.dpp ? CINCIN_MERAH : ''"><MoneyInput v-model="form.dpp" placeholder="0" /></div><PesanWajib :pesan="pesan.dpp" /></div>
                 <div><label class="mb-1 block text-xs font-medium text-neutral-500">Sifat PPN</label><div class="flex gap-2"><label class="flex flex-1 cursor-pointer items-center justify-center gap-1 rounded-lg border px-2 py-1.5 text-xs" :class="form.ppn_mode==='none' ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/20' : 'border-neutral-300 dark:border-neutral-700'"><input v-model="form.ppn_mode" type="radio" value="none" class="sr-only" />Tanpa PPN</label><label class="flex flex-1 cursor-pointer items-center justify-center gap-1 rounded-lg border px-2 py-1.5 text-xs" :class="form.ppn_mode==='with' ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/20' : 'border-neutral-300 dark:border-neutral-700'"><input v-model="form.ppn_mode" type="radio" value="with" class="sr-only" />Dengan PPN</label></div>
                     <div v-if="form.ppn_mode==='with'" class="mt-2 space-y-1.5">
                         <!-- #incl-ppn: Exclude = PPN di atas objek · Include = objek sudah termasuk PPN (÷ 1+tarif) -->
@@ -661,7 +707,7 @@ const cellArea = 'w-full rounded-md border border-neutral-300 bg-white px-2 py-1
                 <thead class="text-left text-xs uppercase text-neutral-500"><tr><th class="py-1">Uraian</th><th class="w-20 py-1 text-right">Qty</th><th class="w-32 py-1 text-right">Harga</th><th class="w-36 py-1 text-right">Jumlah</th><th class="w-8"></th></tr></thead>
                 <tbody>
                     <tr v-for="(l,i) in form.lines" :key="i" class="border-t border-neutral-100 dark:border-neutral-800">
-                        <td class="py-1 pr-2"><input v-model="l.description" :class="inputCls" /></td>
+                        <td class="py-1 pr-2"><input v-model="l.description" :class="tandai(inputCls, !!pesanUraian(i))" /><PesanWajib :pesan="pesanUraian(i)" /></td>
                         <td class="py-1 pr-2"><input v-model.number="l.qty" type="number" step="0.01" min="0" :class="[inputCls,'text-right']" @input="l.amount = (Number(l.qty)||0)*(Number(l.unit_price)||0)" /></td>
                         <td class="py-1 pr-2"><input v-model.number="l.unit_price" type="number" step="1" min="0" :class="[inputCls,'text-right']" @input="l.amount = (Number(l.qty)||0)*(Number(l.unit_price)||0)" /></td>
                         <td class="py-1 pr-2"><input v-model.number="l.amount" type="number" step="1" min="0" :class="[inputCls,'text-right font-mono']" /></td>
@@ -826,7 +872,6 @@ const cellArea = 'w-full rounded-md border border-neutral-300 bg-white px-2 py-1
             <div class="grid gap-2 sm:grid-cols-2">
                 <div><span class="text-neutral-500">{{ jenis.penerima }}:</span> {{ supplier?.name }}</div>
                 <div><span class="text-neutral-500">Kategori:</span> {{ category?.name }}</div>
-                <div><span class="text-neutral-500">Tipe:</span> {{ trxTypes[form.trx_type] }}</div>
                 <div><span class="text-neutral-500">Jatuh tempo:</span> {{ dueDate }}</div>
                 <div class="sm:col-span-2"><span class="text-neutral-500">Keterangan:</span> {{ form.description }}</div>
             </div>

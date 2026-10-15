@@ -1346,17 +1346,25 @@ class CashAdvanceController extends Controller
         // ── Baris jurnal: Pengajuan (Dr Uang Muka Operasional) + Realisasi (Dr akun beban per baris). ──
         $advAccount = BsAccount::find($advance->advance_account_id);
         $pengajuanCode = $advAccount?->code ?? (string) config('business_support.gl_accounts.advance_op');
-        // Kolom Pengajuan memisahkan nominal yang DIAJUKAN dari yang benar-benar terpakai: nominal
-        // bon di kolom Pengajuan, sedangkan Dialokasikan & baris realisasi di kolom Jumlah.
-        $rows = '<tr><td class="ac">'.$e($pengajuanCode).'</td><td>'.$e($advance->purpose).'</td><td class="r">'.$amt($advance->amount).'</td><td class="r"></td></tr>';
-        // Bon Debit VA (model baru): total Alokasi Kasbon — angka yang sama dengan kotak "Sudah
-        // Dialokasikan". Hanya keterangan; Total di bawah tetap selisih realisasi (settlement).
-        if (app(CashAdvanceService::class)->perluLanjutAlokasi($advance)) {
+        /* DUA BENTUK TABEL.
+           - Bon Debit VA (model baru, ber-Alokasi Kasbon): 4 kolom. Nominal bon di kolom Pengajuan
+             TANPA no. akun; akun Uang Muka Operasional menempel di baris "Dialokasikan" (total
+             Alokasi Kasbon — sama dengan kotak "Sudah Dialokasikan"), lalu baris realisasi di Jumlah.
+           - Bon lainnya: 3 kolom seperti semula — akun & nominal bon di baris pertama kolom Jumlah.
+           Total di bawah tetap selisih realisasi (settlement) pada keduanya. */
+        $debitVa = app(CashAdvanceService::class)->perluLanjutAlokasi($advance);
+        if ($debitVa) {
             $alokasi = app(CashAdvanceAllocationService::class)->totalAlokasi($advance);
-            $rows .= '<tr><td class="ac"></td><td>Dialokasikan</td><td class="r"></td><td class="r">'.$amt($alokasi).'</td></tr>';
-        }
-        foreach ($advance->lines as $l) {
-            $rows .= '<tr><td class="ac">'.$e($l->expenseAccount?->code).'</td><td>'.$e($l->description).'</td><td class="r"></td><td class="r">'.$amt($l->amount).'</td></tr>';
+            $rows = '<tr><td class="ac"></td><td>'.$e($advance->purpose).'</td><td class="r">'.$amt($advance->amount).'</td><td class="r"></td></tr>'
+                .'<tr><td class="ac">'.$e($pengajuanCode).'</td><td>Dialokasikan</td><td class="r"></td><td class="r">'.$amt($alokasi).'</td></tr>';
+            foreach ($advance->lines as $l) {
+                $rows .= '<tr><td class="ac">'.$e($l->expenseAccount?->code).'</td><td>'.$e($l->description).'</td><td class="r"></td><td class="r">'.$amt($l->amount).'</td></tr>';
+            }
+        } else {
+            $rows = '<tr><td class="ac">'.$e($pengajuanCode).'</td><td>'.$e($advance->purpose).'</td><td class="r">'.$amt($advance->amount).'</td></tr>';
+            foreach ($advance->lines as $l) {
+                $rows .= '<tr><td class="ac">'.$e($l->expenseAccount?->code).'</td><td>'.$e($l->description).'</td><td class="r">'.$amt($l->amount).'</td></tr>';
+            }
         }
 
         $settlement = (float) $advance->settlement;       // + = sisa dikembalikan (refund) / − = kekurangan (reimburse)
@@ -1415,13 +1423,13 @@ class CashAdvanceController extends Controller
             .$bx(! $isKas).'Transfer / Check<br>'
             .$bx($isKas).'Tunai</td>'
             .'</tr></table>'
-            .'<table class="grid"><thead><tr><th>No.Account</th><th>Uraian Pembayaran</th><th class="r">Pengajuan</th><th class="r">Jumlah</th></tr></thead>'
+            .'<table class="grid"><thead><tr><th>No.Account</th><th>Uraian Pembayaran</th>'.($debitVa ? '<th class="r">Pengajuan</th>' : '').'<th class="r">Jumlah</th></tr></thead>'
             .'<tbody>'.$rows.'</tbody>'
             // Reimburse = perusahaan MASIH berhutang ke pemegang bon, jadi totalnya ditulis dalam
             // kurung persis seperti lampirannya — tanda baca itulah yang membedakan "diterima kembali"
             // dari "harus dibayarkan", dan artinya hilang begitu kurungnya dibuang.
             .'<tfoot><tr><td class="vc">No. Voucher'.($isReimburse ? '' : ' : -').'</td>'
-            .'<td colspan="2"><span class="vc">'.$e($voucher).'</span><span class="tlbl">Total</span></td>'
+            .'<td'.($debitVa ? ' colspan="2"' : '').'><span class="vc">'.$e($voucher).'</span><span class="tlbl">Total</span></td>'
             .'<td class="r"><b>'.($isReimburse ? '(Rp. '.$amt($total).')' : 'Rp. '.$amt($total)).'</b></td></tr></tfoot></table>'
             .'<div>No. Cek / BG : -</div>'
             .'<div class="terbilang">Terbilang : '.$e($terbilang).'</div>'
