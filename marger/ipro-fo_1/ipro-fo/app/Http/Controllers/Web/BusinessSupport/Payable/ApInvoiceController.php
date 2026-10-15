@@ -337,7 +337,6 @@ class ApInvoiceController extends Controller
             'departments' => BsDepartment::where('is_active', true)->orderBy('code')->get(['id', 'code', 'name']),
             'ledgers' => BsLedger::where('is_active', true)->orderBy('code')->get(['id', 'code', 'name']),
             'locations' => BsLocation::where('is_active', true)->orderBy('code')->get(['id', 'code', 'name']),
-            'trxTypes' => BsApInvoice::TRX_TYPES,
 
             // COST CENTER MENGIKUTI UNIT KERJA PENGAJU, dan TERKUNCI.
             //
@@ -380,7 +379,8 @@ class ApInvoiceController extends Controller
                 'bank_name' => ['required', 'string', 'max:80'],
                 'bank_account_no' => ['required', 'string', 'max:50'],
                 'bank_account_name' => ['required', 'string', 'max:120'],
-            ], ['customer_id.required' => 'Pilih customer penerima pengembalian deposit.']),
+            ], ['customer_id.required' => 'Pilih customer penerima pengembalian deposit.'],
+                ['bank_name' => 'Bank', 'bank_account_no' => 'No. Rekening', 'bank_account_name' => 'Atas Nama']),
             default => [],
         };
         if ($jenis !== 'invoice') {
@@ -398,7 +398,6 @@ class ApInvoiceController extends Controller
             'customer_id' => ['nullable', 'integer', 'exists:customers,id'],
             // Kategori harus dicentang untuk modul ini ("Dipakai di" di Setup Kategori Invoice).
             'category_id' => ['required', 'integer', \Illuminate\Validation\Rule::exists('bs_ap_category_usages', 'category_id')->where('jenis', $jenis)],
-            'trx_type' => ['required', 'in:normal,denda,saldo_awal'],
             'supplier_invoice_no' => ['required', 'string', 'max:80'],
             'manual_no' => ['nullable', 'string', 'max:80'],
             'invoice_date' => ['required', 'date'],
@@ -441,7 +440,21 @@ class ApInvoiceController extends Controller
             'journal_lines.*.credit' => ['nullable', 'numeric', 'min:0'],
         ], [
             'category_id.exists' => 'Kategori ini bukan untuk modul '.$info['judul'].' — pilih kategori yang "Dipakai di" modul ini (Setup › Kategori Invoice).',
+        ], [
+            // Nama kolom sebagaimana tertulis di layar — pesan galat tampil di bawah kolomnya.
+            'category_id' => 'Kategori Invoice',
+            'supplier_invoice_no' => $jenis === 'invoice' ? 'No. Invoice Supplier' : 'No. Bukti / Nota',
+            'manual_no' => 'No. Manual',
+            'receive_date' => 'Tgl. Terima',
+            'term_days' => 'Jatuh Tempo (hari)',
+            'description' => 'Keterangan',
+            'dpp' => 'Nilai Transaksi',
+            'lines.*.description' => 'Uraian',
+            'lines.*.amount' => 'Jumlah',
         ]);
+        // Tipe Transaksi ditiadakan dari layar: registrasi manual selalu "Normal". Saldo awal
+        // hutang punya menunya sendiri (Account Payable › Saldo Awal).
+        $v['trx_type'] = 'normal';
 
         // Cost center WAJIB pada baris jurnal yang akunnya memang memerlukannya.
         //
