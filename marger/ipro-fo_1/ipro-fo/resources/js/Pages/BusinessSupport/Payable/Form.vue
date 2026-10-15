@@ -549,6 +549,19 @@ function canNext() {
 function next() { if (canNext() && step.value < 5) step.value++; }
 function prev() { if (step.value > (modeEdit ? 2 : 1)) step.value--; }
 
+/* Tombol "Kembali" pada REGISTRASI = mulai lagi dari awal di halaman yang sama: isian dikosongkan
+   dan wizard kembali ke langkah 1. Ditanyakan dulu bila sudah ada yang diisi, supaya ketikan
+   tidak hilang karena salah klik. (Mode Edit tetap kembali ke rincian invoice.) */
+function ulangDariAwal() {
+    if (form.isDirty && ! confirm('Isian akan dikosongkan dan dimulai lagi dari langkah 1. Lanjutkan?')) return;
+    form.reset();
+    form.clearErrors();
+    supplierSearch.value = '';
+    strukturBawaanTerakhir = [];
+    dppBaris.value = 0;
+    step.value = 1;
+}
+
 /* ── KOLOM WAJIB: bingkai merah + pesan ──
    Tombol Berikutnya tetap dimatikan canNext(); tandanya memberi tahu KOLOM MANA yang menahannya.
    Galat server (alasan sebenarnya, mis. terlalu panjang) didahulukan daripada "Wajib diisi". */
@@ -603,7 +616,8 @@ const cellArea = 'w-full rounded-md border border-neutral-300 bg-white px-2 py-1
     <div :class="['space-y-4', step === 4 ? 'max-w-none' : 'max-w-4xl']">
         <div class="flex items-center justify-between">
             <h1 class="flex items-center gap-2 text-2xl font-bold"><HandCoins class="h-6 w-6 text-danger-600" /> <template v-if="invoiceEdit">Edit {{ jenis.judul }} <span class="font-mono text-lg text-neutral-500">{{ invoiceEdit.invoice_number }}</span></template><template v-else>Registrasi {{ jenis.judul }}</template></h1>
-            <Link :href="invoiceEdit ? route('bs.ap.show', invoiceEdit.id) : route(jenis.kunci === 'invoice' ? 'bs.ap.index' : jenis.rute + '.index')" class="inline-flex items-center gap-2 text-sm text-neutral-500 hover:text-neutral-800 dark:hover:text-neutral-200"><ArrowLeft class="h-4 w-4" /> Kembali</Link>
+            <Link v-if="invoiceEdit" :href="route('bs.ap.show', invoiceEdit.id)" class="inline-flex items-center gap-2 text-sm text-neutral-500 hover:text-neutral-800 dark:hover:text-neutral-200"><ArrowLeft class="h-4 w-4" /> Kembali</Link>
+            <button v-else type="button" @click="ulangDariAwal" title="Kosongkan isian & mulai lagi dari langkah 1" class="inline-flex items-center gap-2 text-sm text-neutral-500 hover:text-neutral-800 dark:hover:text-neutral-200"><ArrowLeft class="h-4 w-4" /> Kembali</button>
         </div>
 
         <!-- Stepper -->
