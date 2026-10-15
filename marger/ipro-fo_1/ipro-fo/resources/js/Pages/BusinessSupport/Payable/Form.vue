@@ -32,6 +32,8 @@ const props = defineProps<{
     bisaUbahCc?: boolean;
     /** Kode COA yang tidak dianggarkan — tidak diisi cost center & tidak dituntut mengisinya. */
     coaTanpaAnggaran?: string[];
+    /** Mode EDIT (sebelum diproses FAT): isian invoice lama. null/undefined = registrasi baru. */
+    invoiceEdit?: { id: number; invoice_number: string; pihak_nama: string | null; data: Record<string, any> } | null;
     departments: Array<any>;
     ledgers: Array<any>;
     locations: Array<any>;
@@ -39,7 +41,10 @@ const props = defineProps<{
 }>();
 
 const steps = ['Pilih ' + props.jenis.penerima, 'Input Transaksi', 'Detil Tagihan', 'Struktur', 'Selesai'];
-const step = ref(1);
+/* EDIT: penerima tidak bisa diganti (ganti penerima = Batal lalu buat baru), jadi wizard dimulai
+   dari Input Transaksi dan tidak bisa mundur ke langkah 1. */
+const modeEdit = !! props.invoiceEdit;
+const step = ref(modeEdit ? 2 : 1);
 const today = new Date().toISOString().slice(0, 10);
 const supplierSearch = ref('');
 
@@ -52,6 +57,7 @@ const form = useForm<any>({
     lines: [], schedules: [], journal_lines: [],
     // Penerima Reimburse (karyawan) / Deposit (customer + rekening yang diketik).
     employee_id: '', customer_id: '', bank_name: '', bank_account_no: '', bank_account_name: '',
+    ...(props.invoiceEdit?.data ?? {}),
 });
 
 /* PENERIMA — satu-satunya bagian yang berbeda antarmodul. Invoice Hutang memilih supplier,
@@ -117,7 +123,9 @@ const filteredSuppliers = computed(() => {
     const q = supplierSearch.value.toLowerCase();
     return q ? daftarPihak.value.filter((s: any) => (s.name + s.code).toLowerCase().includes(q)) : daftarPihak.value;
 });
-const supplier = computed(() => daftarPihak.value.find((s: any) => s.id === form[kolomPihak]));
+const supplier = computed(() => modeEdit
+    ? { name: props.invoiceEdit?.pihak_nama }
+    : daftarPihak.value.find((s: any) => s.id === form[kolomPihak]));
 const category = computed(() => props.categories.find((c: any) => c.id === form.category_id));
 
 /**
@@ -539,7 +547,7 @@ function canNext() {
     return true;
 }
 function next() { if (canNext() && step.value < 5) step.value++; }
-function prev() { if (step.value > 1) step.value--; }
+function prev() { if (step.value > (modeEdit ? 2 : 1)) step.value--; }
 
 /* ── KOLOM WAJIB: bingkai merah + pesan ──
    Tombol Berikutnya tetap dimatikan canNext(); tandanya memberi tahu KOLOM MANA yang menahannya.
@@ -570,7 +578,7 @@ const LANGKAH_KOLOM: Array<[RegExp, number]> = [
     [/^journal_lines\./, 4],
 ];
 function submit() {
-    form.post(route(props.jenis.kunci === 'invoice' ? 'bs.ap.store' : props.jenis.rute + '.store'), {
+    const opsi = {
         // Isian TIDAK dibuang saat server menolak: tanpa preserveState halaman dimuat ulang, wizard
         // kembali ke langkah 1 dan seluruh isian hilang — tepat yang dikeluhkan di panduan.
         preserveState: true,
@@ -578,9 +586,14 @@ function submit() {
         onError: (galat: Record<string, string>) => {
             const kolom = Object.keys(galat);
             const tujuan = kolom.map(k => LANGKAH_KOLOM.find(([pola]) => pola.test(k))?.[1] ?? 5);
-            if (tujuan.length) step.value = Math.min(...tujuan);
+            if (tujuan.length) step.value = Math.max(modeEdit ? 2 : 1, Math.min(...tujuan));
         },
-    });
+    };
+    if (modeEdit) {
+        form.put(route('bs.ap.update', props.invoiceEdit!.id), opsi);
+    } else {
+        form.post(route(props.jenis.kunci === 'invoice' ? 'bs.ap.store' : props.jenis.rute + '.store'), opsi);
+    }
 }
 const inputCls = 'h-9 w-full rounded-lg border border-neutral-300 bg-white px-3 text-sm dark:border-neutral-700 dark:bg-neutral-900';
 const dimCls = 'h-8 w-full rounded-md border border-neutral-300 bg-white px-2 text-xs dark:border-neutral-700 dark:bg-neutral-900';
@@ -589,8 +602,8 @@ const cellArea = 'w-full rounded-md border border-neutral-300 bg-white px-2 py-1
 <template>
     <div :class="['space-y-4', step === 4 ? 'max-w-none' : 'max-w-4xl']">
         <div class="flex items-center justify-between">
-            <h1 class="flex items-center gap-2 text-2xl font-bold"><HandCoins class="h-6 w-6 text-danger-600" /> Registrasi {{ jenis.judul }}</h1>
-            <Link :href="route(jenis.kunci === 'invoice' ? 'bs.ap.index' : jenis.rute + '.index')" class="inline-flex items-center gap-2 text-sm text-neutral-500 hover:text-neutral-800 dark:hover:text-neutral-200"><ArrowLeft class="h-4 w-4" /> Kembali</Link>
+            <h1 class="flex items-center gap-2 text-2xl font-bold"><HandCoins class="h-6 w-6 text-danger-600" /> <template v-if="invoiceEdit">Edit {{ jenis.judul }} <span class="font-mono text-lg text-neutral-500">{{ invoiceEdit.invoice_number }}</span></template><template v-else>Registrasi {{ jenis.judul }}</template></h1>
+            <Link :href="invoiceEdit ? route('bs.ap.show', invoiceEdit.id) : route(jenis.kunci === 'invoice' ? 'bs.ap.index' : jenis.rute + '.index')" class="inline-flex items-center gap-2 text-sm text-neutral-500 hover:text-neutral-800 dark:hover:text-neutral-200"><ArrowLeft class="h-4 w-4" /> Kembali</Link>
         </div>
 
         <!-- Stepper -->
@@ -901,7 +914,7 @@ const cellArea = 'w-full rounded-md border border-neutral-300 bg-white px-2 py-1
 
         <!-- Nav -->
         <div class="flex items-center justify-between">
-            <button v-if="step > 1" type="button" @click="prev" class="inline-flex items-center gap-1.5 rounded-lg border border-neutral-300 px-4 py-2 text-sm dark:border-neutral-700"><ArrowLeft class="h-4 w-4" /> Sebelumnya</button>
+            <button v-if="step > (modeEdit ? 2 : 1)" type="button" @click="prev" class="inline-flex items-center gap-1.5 rounded-lg border border-neutral-300 px-4 py-2 text-sm dark:border-neutral-700"><ArrowLeft class="h-4 w-4" /> Sebelumnya</button>
             <span v-else></span>
             <!-- Alasan tombolnya mati DISEBUTKAN, bukan dibiarkan ditebak. Tombol nonaktif tanpa
                  keterangan pada wizard berlangkah membuat orang menyangka layarnya rusak. -->
@@ -909,7 +922,7 @@ const cellArea = 'w-full rounded-md border border-neutral-300 bg-white px-2 py-1
                 Cost center wajib diisi untuk akun: {{ kurangCc.join(', ') }}.
             </span>
             <Button v-if="step < 5" :disabled="!canNext()" @click="next"><template #icon-left><ArrowRight class="h-4 w-4" /></template>Berikutnya</Button>
-            <Button v-else :disabled="form.processing" @click="submit"><template #icon-left><Save class="h-4 w-4" /></template>Simpan &amp; Buat Jurnal</Button>
+            <Button v-else :disabled="form.processing" @click="submit"><template #icon-left><Save class="h-4 w-4" /></template>{{ modeEdit ? 'Simpan Perubahan' : 'Simpan & Buat Jurnal' }}</Button>
         </div>
     </div>
 </template>
