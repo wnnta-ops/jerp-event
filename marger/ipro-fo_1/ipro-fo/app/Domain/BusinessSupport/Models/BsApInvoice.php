@@ -22,9 +22,11 @@ class BsApInvoice extends Model
         'expense_account_id', 'payable_account_id', 'description', 'berkas_notes', 'berkas_finance_date', 'transfer_detail', 'kurs',
         'dpp', 'ppn_pct', 'ppn_amount', 'ppn_base', 'ppn_mode', 'pph_mode', 'pph_type', 'pph_pct', 'pph_base', 'pph_amount', 'pph_account_id',
         'total', 'net_payable', 'paid_amount', 'status', 'journal_id', 'created_by', 'jenis', 'credit_position',
+        'cancelled_at', 'cancelled_by', 'cancel_reason',
     ];
     protected $casts = [
         'invoice_date' => 'date', 'receive_date' => 'date', 'due_date' => 'date', 'berkas_finance_date' => 'date', 'term_days' => 'integer',
+        'cancelled_at' => 'datetime',
         'kurs' => 'decimal:4',
         'dpp' => 'decimal:2', 'ppn_pct' => 'decimal:2', 'ppn_amount' => 'decimal:2', 'ppn_base' => 'decimal:2',
         'pph_pct' => 'decimal:2', 'pph_base' => 'decimal:2', 'pph_amount' => 'decimal:2',
@@ -94,4 +96,71 @@ class BsApInvoice extends Model
     }
 
     public function getOutstandingAttribute(): float { return $this->payable_amount - (float) $this->paid_amount; }
+
+    // ── EDIT & BATAL ─────────────────────────────────────────────────────────────
+
+    public const STATUS_BATAL = 'batal';
+
+    /** Penanda catatan PO yang diterbitkan otomatis oleh GeneratePoFromApInvoice. */
+    public const PENANDA_PO_OTOMATIS = 'Dibuat otomatis dari Invoice Hutang';
+
+    public function batal(): bool { return $this->status === self::STATUS_BATAL; }
+
+    /**
+     * Purchase Order yang DITERBITKAN OTOMATIS untuk invoice ini (bukan PO sungguhan yang
+     * di-posting menjadi invoice). Hanya PO semacam ini yang boleh ikut diperbarui/dibatalkan.
+     */
+    public function poOtomatis(): ?BsPurchaseOrder
+    {
+        $po = $this->purchaseOrder();
+
+        return $po && str_starts_with((string) $po->notes, self::PENANDA_PO_OTOMATIS) ? $po : null;
+    }
+
+    /**
+     * Dibuat lewat wizard Registrasi (Invoice Hutang / Reimburse / Deposit) — bukan hasil Posting
+     * dari FO, SPK, PO, atau Saldo Awal. Hanya invoice semacam ini yang punya Edit & Batal:
+     * yang lain bertaut ke dokumen sumbernya, dan membatalkannya di sini akan membuat dokumen
+     * sumber itu tetap tercatat "sudah diinvoice".
+     */
+    public function dariRegistrasi(): bool
+    {
+        return $this->category_id !== null
+            && ($this->trx_type ?? 'normal') !== 'saldo_awal'
+            && (empty($this->source_type) || $this->poOtomatis() !== null);
+    }
+
+    /**
+     * Alasan invoice ini SUDAH DIPROSES FAT — null bila belum (masih boleh diedit pembuatnya).
+     *
+     * @return string|null kalimat yang ditampilkan apa adanya di layar
+     */
+    public function alasanDiprosesFat(): ?string
+    {
+        if ($this->berkas_finance_date !== null) {
+            return 'Berkas sudah diterima Finance';
+        }
+        if ($this->kuitansiAktifAtauMenunggu()) {
+            return 'Sudah dibuatkan Kuitansi Hutang';
+        }
+        if ((float) $this->paid_amount > 0 || $this->payments()->exists()) {
+            return 'Sudah ada pembayaran';
+        }
+        if (BsApMemorial::where('ap_invoice_id', $this->id)->exists()) {
+            return 'Sudah ada Penghapusan Nilai Hutang';
+        }
+        if ($this->journal_id && BsJournal::whereKey($this->journal_id)->where('status', 'posted')->exists()) {
+            return 'Jurnalnya sudah di-approve di General Ledger';
+        }
+
+        return null;
+    }
+
+    /** Ada Kuitansi Hutang yang masih menunggu approval atau sudah aktif untuk invoice ini. */
+    public function kuitansiAktifAtauMenunggu(): bool
+    {
+        return BsApKuitansiLine::where('ap_invoice_id', $this->id)
+            ->whereIn('kuitansi_id', BsApKuitansi::query()->select('id')->whereIn('status', ['pending', 'active']))
+            ->exists();
+    }
 }

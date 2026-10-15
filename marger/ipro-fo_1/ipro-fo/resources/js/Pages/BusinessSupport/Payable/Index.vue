@@ -29,7 +29,7 @@ const modulInvoice = props.jenis.kunci === 'invoice';
 
 function fmtRp(v: number) { return 'Rp ' + Number(v ?? 0).toLocaleString('id-ID'); }
 function fmtDate(d: string | null) { return d ? new Date(d).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'; }
-const statusLabel = (s: string) => (s === 'paid' ? 'Lunas' : 'Open');
+const statusLabel = (s: string) => (s === 'paid' ? 'Lunas' : (s === 'batal' ? 'Batal' : 'Open'));
 
 // Tanggal hari ini (lokal, YYYY-MM-DD) untuk pemisahan jatuh tempo.
 const todayStr = (() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; })();
@@ -347,7 +347,7 @@ watch(filtered, () => nextTick(measure));
                         <td class="px-4 py-2.5 text-neutral-500"><span class="block max-w-[220px] truncate" :title="r.description ?? ''">{{ r.description }}</span></td>
                         <td class="whitespace-nowrap px-4 py-2.5 text-right font-mono">{{ fmtRp(r.payable) }}</td>
                         <td class="whitespace-nowrap px-4 py-2.5 text-right font-mono" :class="r.sisa > 0 ? 'text-danger-600' : 'text-neutral-400'">{{ fmtRp(r.sisa) }}</td>
-                        <td class="px-4 py-2.5 text-center"><Badge :variant="r.status === 'paid' ? 'success' : 'warning'" size="sm">{{ statusLabel(r.status) }}</Badge></td>
+                        <td class="px-4 py-2.5 text-center"><Badge :variant="r.status === 'paid' ? 'success' : (r.status === 'batal' ? 'danger' : 'warning')" size="sm">{{ statusLabel(r.status) }}</Badge></td>
                         <td class="px-4 py-2.5 text-neutral-500"><span class="block max-w-[200px] truncate" :title="r.berkas_notes ?? ''">{{ r.berkas_notes || '—' }}</span></td>
                         <!-- .stop: mengisi tanggal tidak boleh ikut membuka rincian invoice -->
                         <td class="whitespace-nowrap px-4 py-2.5" @click.stop>

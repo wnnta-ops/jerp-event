@@ -790,7 +790,12 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
     Route::get('/business-support/payable-penghapusan-report', [BsApPenghapusanController::class, 'report'])->name('bs.ap.penghapusan.report'); // Laporan Penghapusan Hutang (rincian + history)
     Route::post('/business-support/payable-penghapusan/{invoice}', [BsApPenghapusanController::class, 'store'])->name('bs.ap.penghapusan.store');
     // AP — Kelengkapan Berkas (setup + toggle per invoice)
-    Route::get('/business-support/payable/{invoice}', [BsApController::class, 'show'])->name('bs.ap.show');
+    // withTrashed: invoice BATAL ter-soft-delete tetapi rinciannya tetap bisa dibuka (show menolak soft delete lain).
+    Route::get('/business-support/payable/{invoice}', [BsApController::class, 'show'])->name('bs.ap.show')->withTrashed();
+    // Edit & Batal (sebelum/sesudah diproses FAT) — lihat ApInvoiceController::pastikanBolehEdit / bolehBatal.
+    Route::get('/business-support/payable/{invoice}/edit', [BsApController::class, 'edit'])->name('bs.ap.edit');
+    Route::put('/business-support/payable/{invoice}', [BsApController::class, 'update'])->name('bs.ap.update');
+    Route::post('/business-support/payable/{invoice}/batal', [BsApController::class, 'batal'])->name('bs.ap.batal');
     Route::get('/business-support/payable/{invoice}/memo', [BsApController::class, 'memo'])->name('bs.ap.memo'); // cetak Memo Internal + Bukti Permohonan Pembayaran
     Route::post('/business-support/payable/{invoice}/berkas-notes', [BsApController::class, 'updateBerkasNotes'])->name('bs.ap.berkas-notes'); // catatan kelengkapan berkas (free-text)
     Route::post('/business-support/payable/{invoice}/berkas-finance', [BsApController::class, 'updateBerkasFinance'])->name('bs.ap.berkas-finance'); // tanggal berkas diterima Finance (khusus Dept Finance)

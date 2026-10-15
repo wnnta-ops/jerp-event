@@ -77,6 +77,8 @@ class BoRoleResource extends Resource
         'upload' => 'Unggah', 'excel' => 'Excel', 'pdf' => 'PDF', 'report' => 'Laporan',
         'manage' => 'Kelola', 'request' => 'Ajukan', 'submit' => 'Ajukan', 'merge' => 'Gabungkan',
         'pay' => 'Bayar', 'void' => 'Void', 'cancel' => 'Batal', 'close' => 'Tutup', 'reopen' => 'Buka Lagi',
+        // Batal SESUDAH diproses FAT (mis. ap.invoice.cancel-after) — dibedakan dari Batal biasa.
+        'cancel-after' => 'Batal setelah diproses FAT',
         'issue' => 'Terbitkan', 'release' => 'Rilis', 'post' => 'Posting', 'posting' => 'Posting',
         'reverse' => 'Reversal', 'finalize' => 'Finalisasi', 'settle' => 'Lunasi', 'allocate' => 'Alokasikan',
         'toggle' => 'Aktif/Nonaktif', 'assign' => 'Tetapkan', 'promote' => 'Promosikan', 'reschedule' => 'Jadwal Ulang',

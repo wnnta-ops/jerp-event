@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue';
 import { router, useForm, Link, usePage } from '@inertiajs/vue3';
-import { ArrowLeft, HandCoins, Wallet, BookText, FolderCheck, CheckCircle2, Printer, Save, Eraser } from 'lucide-vue-next';
+import { ArrowLeft, HandCoins, Wallet, BookText, FolderCheck, CheckCircle2, Printer, Save, Eraser, Pencil, Ban, Lock } from 'lucide-vue-next';
 import Button from '@/Components/UI/Button.vue';
 import Badge from '@/Components/UI/Badge.vue';
 
@@ -15,7 +15,18 @@ const props = defineProps<{
     writeoffs?: Array<{ memorial_number: string; memorial_date: string; amount: number; reason: string; journal_id: number | null; journal_number: string | null }>;
     writeoffTotal?: number;
     journal?: { id: number; number: string | null; date: string | null; lines: Array<{ account_code: string | null; account_name: string | null; dimensi: string | null; description: string | null; debit: number; credit: number }>; total_debit: number; total_credit: number } | null;
+    /** Edit / Batal — diputuskan server (izin Grup Akses BO + keadaan "sudah diproses FAT"). null = invoice sudah BATAL. */
+    aksi?: { dariRegistrasi: boolean; diprosesFat: string | null; edit: boolean; batal: boolean; penahanBatal: string | null } | null;
+    infoBatal?: { at: string | null; by: string | null; reason: string | null } | null;
 }>();
+
+/* ── BATAL ── alasan wajib; tercatat di invoice bersama siapa & kapan. */
+const showBatal = ref(false);
+const formBatal = useForm<any>({ alasan: '' });
+function kirimBatal() {
+    formBatal.post(route('bs.ap.batal', props.invoice.id), { preserveScroll: true, onSuccess: () => { showBatal.value = false; } });
+}
+const batal = computed(() => props.invoice.status === 'batal');
 
 // Penghapusan hutang menambah paid_amount; pisahkan dari pembayaran tunai nyata.
 const writeoffTotal = computed(() => Number(props.writeoffTotal ?? 0));
@@ -65,8 +76,28 @@ const justCreated = computed(() => Boolean(usePage().props.flash?.created));
                 <a v-if="purchaseOrder" :href="route('bs.po.print', { ids: purchaseOrder.id })" target="_blank" rel="noopener"
                     :title="`Cetak Purchase Order ${purchaseOrder.po_number} (bisa diedit sebelum dicetak)`"
                     class="inline-flex items-center gap-1.5 rounded-lg border border-primary-400 bg-primary-50 px-3 py-1.5 text-sm font-medium text-primary-700 hover:bg-primary-100 dark:border-primary-700/50 dark:bg-primary-900/30 dark:text-primary-300"><Printer class="h-4 w-4" /> Cetak Purchase Order</a>
-                <a :href="route('bs.ap.memo', invoice.id)" target="_blank" rel="noopener" class="inline-flex items-center gap-1.5 rounded-lg bg-danger-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-danger-700"><Printer class="h-4 w-4" /> Cetak Memo Internal</a>
-                <Badge :variant="invoice.status === 'paid' ? 'success' : 'warning'">{{ invoice.status === 'paid' ? 'Lunas' : 'Open' }}</Badge>
+                <a v-if="! batal" :href="route('bs.ap.memo', invoice.id)" target="_blank" rel="noopener" class="inline-flex items-center gap-1.5 rounded-lg bg-danger-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-danger-700"><Printer class="h-4 w-4" /> Cetak Memo Internal</a>
+                <Link v-if="aksi?.edit" :href="route('bs.ap.edit', invoice.id)" class="inline-flex items-center gap-1.5 rounded-lg border border-neutral-300 bg-white px-3 py-1.5 text-sm font-medium text-neutral-700 hover:bg-neutral-50 dark:border-neutral-600 dark:bg-neutral-800 dark:text-neutral-200"><Pencil class="h-4 w-4" /> Edit</Link>
+                <button v-if="aksi?.batal" type="button" @click="showBatal = true" class="inline-flex items-center gap-1.5 rounded-lg border border-danger-300 bg-white px-3 py-1.5 text-sm font-medium text-danger-600 hover:bg-danger-50 dark:border-danger-700/60 dark:bg-neutral-800"><Ban class="h-4 w-4" /> Batal</button>
+                <Badge v-if="batal" variant="danger">BATAL</Badge>
+                <Badge v-else :variant="invoice.status === 'paid' ? 'success' : 'warning'">{{ invoice.status === 'paid' ? 'Lunas' : 'Open' }}</Badge>
+            </div>
+        </div>
+
+        <!-- Sudah BATAL: siapa, kapan, alasannya. -->
+        <div v-if="batal" class="card border border-danger-300 bg-danger-50 p-4 text-sm dark:border-danger-800 dark:bg-danger-900/20">
+            <div class="flex items-center gap-2 font-semibold text-danger-700 dark:text-danger-300"><Ban class="h-4 w-4" /> Invoice ini sudah DIBATALKAN</div>
+            <div class="mt-1 text-neutral-600 dark:text-neutral-300">
+                {{ infoBatal?.at ?? '—' }} oleh {{ infoBatal?.by ?? '—' }} · Alasan: {{ infoBatal?.reason ?? '—' }}
+            </div>
+            <div class="mt-1 text-xs text-neutral-500">Jurnal, termin pembayaran, dan Purchase Order otomatisnya ikut dibatalkan. Invoice ini tidak lagi dihitung di Aging, Kartu Hutang, maupun Kuitansi.</div>
+        </div>
+        <!-- Sudah diproses FAT: Edit terkunci — katakan sebabnya, jangan sekadar menyembunyikan tombol. -->
+        <div v-else-if="aksi?.dariRegistrasi && aksi?.diprosesFat" class="card flex items-start gap-2 border border-amber-300 bg-amber-50 p-3 text-sm dark:border-amber-800 dark:bg-amber-900/20">
+            <Lock class="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+            <div>
+                <b>Sudah diproses FAT</b> ({{ aksi.diprosesFat }}) — tidak bisa diedit. Batalkan dulu bila perlu diubah.
+                <span v-if="aksi.penahanBatal" class="block text-xs text-neutral-500">Untuk membatalkan: {{ aksi.penahanBatal }}</span>
             </div>
         </div>
 
@@ -197,4 +228,24 @@ const justCreated = computed(() => Boolean(usePage().props.flash?.created));
             <div v-else class="px-4 py-6 text-center text-sm text-neutral-400">Belum ada pembayaran.</div>
         </div>
     </div>
+    <Teleport to="body">
+        <div v-if="showBatal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" @click.self="showBatal = false">
+            <div class="w-full max-w-md rounded-xl bg-white p-6 shadow-xl dark:bg-neutral-900">
+                <h2 class="flex items-center gap-2 text-lg font-bold text-danger-600"><Ban class="h-5 w-5" /> Batalkan {{ invoice.invoice_number }}?</h2>
+                <p class="mt-2 text-sm text-neutral-600 dark:text-neutral-300">
+                    Jurnal, termin pembayaran, dan Purchase Order otomatisnya ikut dibatalkan. Invoice tetap tercatat dengan status
+                    <b>BATAL</b> dan tidak bisa dikembalikan — bila perlu, buat invoice baru.
+                </p>
+                <label class="mb-1 mt-4 block text-xs font-medium text-neutral-500">Alasan pembatalan *</label>
+                <textarea v-model="formBatal.alasan" rows="3" maxlength="255"
+                    :class="['w-full rounded-lg border bg-white px-3 py-2 text-sm dark:bg-neutral-900', formBatal.errors.alasan || ! formBatal.alasan.trim() ? 'border-danger-500 ring-1 ring-danger-400/40' : 'border-neutral-300 dark:border-neutral-700']"></textarea>
+                <p v-if="formBatal.errors.alasan || ! formBatal.alasan.trim()" class="mt-1 text-[11px] font-medium text-danger-500">{{ formBatal.errors.alasan ?? 'Wajib diisi' }}</p>
+                <div class="mt-4 flex justify-end gap-2">
+                    <button type="button" @click="showBatal = false" class="rounded-lg border border-neutral-300 px-4 py-2 text-sm dark:border-neutral-700">Tidak jadi</button>
+                    <button type="button" :disabled="! formBatal.alasan.trim() || formBatal.processing" @click="kirimBatal"
+                        class="rounded-lg bg-danger-600 px-4 py-2 text-sm font-semibold text-white hover:bg-danger-700 disabled:opacity-50">Ya, Batalkan</button>
+                </div>
+            </div>
+        </div>
+    </Teleport>
 </template>

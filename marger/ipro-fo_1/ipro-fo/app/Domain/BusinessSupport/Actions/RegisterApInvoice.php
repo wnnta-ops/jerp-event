@@ -34,9 +34,32 @@ final class RegisterApInvoice
      *   journal_lines?:array<int,array{account_id:?int,cost_center_id?:?int,department_id?:?int,ledger_id?:?int,location_id?:?int,currency?:string,kurs?:float,debit?:float,credit?:float,description?:string}>
      * } $data
      */
-    public function execute(array $data, ?int $userId = null): BsApInvoice
+    public function execute(array $data, ?int $userId = null, ?BsApInvoice $lama = null): BsApInvoice
     {
-        return DB::transaction(function () use ($data, $userId): BsApInvoice {
+        return DB::transaction(function () use ($data, $userId, $lama): BsApInvoice {
+            /* EDIT: invoice lama diperbarui DI TEMPAT — nomor invoice, pembuat, dan jenisnya tetap.
+               Jurnal, detil tagihan, termin, dan PO otomatisnya dibentuk ulang dari isian baru.
+               Jurnal lama dihapus PERMANEN (bukan soft delete) karena nomornya dipakai lagi oleh
+               jurnal barunya (No. Jurnal = No. Invoice, kolom unik). Controller memastikan
+               jurnal itu belum di-approve di GL — lihat BsApInvoice::alasanDiprosesFat(). */
+            if ($lama !== null) {
+                $jurnalLama = $lama->journal_id ? \App\Domain\BusinessSupport\Models\BsJournal::find($lama->journal_id) : null;
+                if ($jurnalLama) {
+                    BatalkanApInvoice::pastikanPeriodeTerbuka($jurnalLama);
+                }
+                $po = $lama->poOtomatis();
+                // Lepaskan tautannya DULU, baru hapus — referensi yang masih menunjuk jurnal/PO
+                // lama akan menahan penghapusannya.
+                $lama->forceFill(['journal_id' => null, 'source_type' => null, 'source_id' => null])->save();
+                $jurnalLama?->forceDelete();
+                $lama->lines()->delete();
+                $lama->schedules()->delete();
+                if ($po) {
+                    $po->lines()->delete();
+                    $po->delete();
+                }
+            }
+
             // Akun dari Kategori Invoice bila ada.
             $category = ! empty($data['category_id']) ? BsApCategory::find($data['category_id']) : null;
             // Satu kategori bisa dipakai beberapa modul; akun kredit & posisinya milik modul ini.
@@ -117,9 +140,7 @@ final class RegisterApInvoice
 
             $pphAcc = $pphJournal > 0 ? ($data['pph_account_id'] ?? BsAccount::where('code', '20104040403')->value('id')) : null;
 
-            $inv = BsApInvoice::create([
-                'invoice_number'      => $this->nextNumber($data['invoice_date'], $category?->code, $data['jenis'] ?? 'invoice'),
-                'jenis'               => $data['jenis'] ?? 'invoice',
+            $atribut = [
                 'supplier_id'         => $data['supplier_id'],
                 'unit_id'             => $data['unit_id'] ?? null,
                 'customer_id'         => $data['customer_id'] ?? null,
@@ -154,8 +175,17 @@ final class RegisterApInvoice
                 'net_payable'         => $net,
                 'paid_amount'         => 0,
                 'status'              => 'open',
-                'created_by'          => $userId,
-            ]);
+            ];
+            if ($lama !== null) {
+                $lama->forceFill($atribut)->save();
+                $inv = $lama;
+            } else {
+                $inv = BsApInvoice::create($atribut + [
+                    'invoice_number' => $this->nextNumber($data['invoice_date'], $category?->code, $data['jenis'] ?? 'invoice'),
+                    'jenis'          => $data['jenis'] ?? 'invoice',
+                    'created_by'     => $userId,
+                ]);
+            }
 
             // Detil Tagihan.
             foreach ($data['lines'] ?? [] as $l) {

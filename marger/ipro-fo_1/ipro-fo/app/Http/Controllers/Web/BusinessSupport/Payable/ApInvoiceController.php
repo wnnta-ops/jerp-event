@@ -87,7 +87,10 @@ class ApInvoiceController extends Controller
 
         // Semua invoice dikirim ke klien; filter per-kolom & ringkasan dihitung di sisi klien
         // agar kotak summary mengikuti hasil filter. Total & Sisa = nett (setelah PPN & PPh).
-        $rows = BsApInvoice::query()
+        // Invoice BATAL ter-soft-delete (keluar dari Aging/Kartu/Kuitansi) tetapi tetap tampil di
+        // daftar ini berlabel BATAL supaya nomornya bisa ditelusuri. Soft delete lain tetap tersembunyi.
+        $rows = BsApInvoice::withTrashed()
+            ->where(fn ($q) => $q->whereNull('deleted_at')->orWhere('status', BsApInvoice::STATUS_BATAL))
             ->where('jenis', $jenis)
             ->with(['supplier:id,name', 'customer:id,full_name'])
             ->select(['id', 'invoice_number', 'invoice_date', 'receive_date', 'due_date', 'supplier_id', 'customer_id', 'source_type', 'source_id', 'refund_source', 'description', 'berkas_notes', 'berkas_finance_date', 'total', 'net_payable', 'paid_amount', 'status'])
@@ -112,7 +115,7 @@ class ApInvoiceController extends Controller
                 'berkas_finance_date' => $r->berkas_finance_date?->toDateString(),
                 'status' => $r->status,
                 'payable' => round($r->payable_amount, 2),   // nett dibayar ke supplier (total − PPh dipotong)
-                'sisa' => round($r->outstanding, 2),       // nett − terbayar
+                'sisa' => $r->status === BsApInvoice::STATUS_BATAL ? 0 : round($r->outstanding, 2), // nett − terbayar
             ]);
 
         return Inertia::render('BusinessSupport/Payable/Index', [
@@ -257,10 +260,10 @@ class ApInvoiceController extends Controller
         return $this->halamanForm($request, 'invoice');
     }
 
-    private function halamanForm(Request $request, string $jenis): Response
+    private function halamanForm(Request $request, string $jenis, ?BsApInvoice $edit = null): Response
     {
         $info = $this->infoJenis($jenis);
-        abort_unless($request->user()?->can($info['izin'].'.create'), 403);
+        abort_unless($edit !== null || $request->user()?->can($info['izin'].'.create'), 403);
 
         // Unit + customer (dari booking terbaru per unit) untuk tag invoice — cari cepat by kode unit / nama customer.
         $unitCustomer = DB::table('bookings')
@@ -354,23 +357,130 @@ class ApInvoiceController extends Controller
             // mengisinya. Dikirim sebagai KODE supaya layar memakai daftar yang sama dengan
             // server — bukan salinan kedua yang suatu saat berbeda.
             'coaTanpaAnggaran' => array_map('strval', (array) config('business_support.budget.coa_tanpa_anggaran', [])),
+            // Mode EDIT: isian lama untuk mengisi wizard. null = registrasi baru.
+            'invoiceEdit' => $edit !== null ? $this->dataEdit($edit) : null,
         ]);
     }
+
+    /** Isian invoice lama untuk wizard Edit — bentuknya sama dengan form registrasi. @return array<string,mixed> */
+    private function dataEdit(BsApInvoice $inv): array
+    {
+        $inv->load(['lines', 'supplier:id,name']);
+        $jurnal = $inv->journal_id
+            ? \App\Domain\BusinessSupport\Models\BsJournal::with(['lines' => fn ($q) => $q->orderBy('id')])->find($inv->journal_id)
+            : null;
+
+        return [
+            'id' => $inv->id,
+            'invoice_number' => $inv->invoice_number,
+            'pihak_nama' => $inv->supplier?->name,
+            'data' => [
+                'supplier_id' => $inv->supplier_id,
+                'category_id' => $inv->category_id,
+                'supplier_invoice_no' => (string) $inv->supplier_invoice_no,
+                'manual_no' => (string) $inv->manual_no,
+                'invoice_date' => $inv->invoice_date?->toDateString(),
+                'receive_date' => $inv->receive_date?->toDateString(),
+                'term_days' => $inv->term_days,
+                'description' => (string) $inv->description,
+                'transfer_detail' => $inv->transfer_detail,
+                'unit_id' => $inv->unit_id,
+                'customer_id' => $inv->customer_id,
+                'dpp' => (float) $inv->dpp,
+                'ppn_mode' => $inv->ppn_mode ?: 'none',
+                'ppn_pct' => (float) ($inv->ppn_pct ?: 11),
+                'ppn_base' => (float) $inv->ppn_base,
+                'pph_mode' => $inv->pph_mode ?: 'none',
+                'pph_type' => (string) $inv->pph_type,
+                'pph_pct' => (float) $inv->pph_pct,
+                'pph_base' => (float) $inv->pph_base,
+                'pph_account_id' => $inv->pph_account_id ?? '',
+                'lines' => $inv->lines->map(fn ($l) => [
+                    'description' => (string) $l->description, 'qty' => (float) $l->qty,
+                    'unit_price' => (float) $l->unit_price, 'amount' => (float) $l->amount,
+                ])->values()->all(),
+                'journal_lines' => $jurnal ? $jurnal->lines->map(fn ($l) => [
+                    'account_id' => $l->account_id, 'cost_center_id' => $l->cost_center_id,
+                    'department_id' => $l->department_id, 'ledger_id' => $l->ledger_id, 'location_id' => $l->location_id,
+                    'currency' => $l->currency ?? 'IDR', 'kurs' => (float) ($l->kurs ?? 1),
+                    'debit' => (float) $l->debit, 'credit' => (float) $l->credit, 'description' => (string) $l->description,
+                ])->values()->all() : [],
+            ],
+        ];
+    }
+
+    // ── EDIT & BATAL ─────────────────────────────────────────────────────────────
+    //
+    // Sebelum diproses FAT (BsApInvoice::alasanDiprosesFat() = null): Edit (ap.invoice.update)
+    // & Batal (ap.invoice.cancel). Sesudahnya terkunci; Batal hanya oleh ap.invoice.cancel-after.
+    // Semua izin diberikan lewat Grup Akses BO. Hanya invoice dari Registrasi yang punya keduanya.
+
+    public function edit(Request $request, BsApInvoice $invoice): Response
+    {
+        $this->pastikanBolehEdit($request, $invoice);
+
+        return $this->halamanForm($request, (string) ($invoice->jenis ?: 'invoice'), $invoice);
+    }
+
+    public function update(Request $request, BsApInvoice $invoice, RegisterApInvoice $action, \App\Domain\BusinessSupport\Services\BudgetGuardService $budgetGuard): \Symfony\Component\HttpFoundation\Response
+    {
+        $this->pastikanBolehEdit($request, $invoice);
+
+        return $this->simpan($request, (string) ($invoice->jenis ?: 'invoice'), $action, $budgetGuard, $invoice);
+    }
+
+    public function batal(Request $request, BsApInvoice $invoice, \App\Domain\BusinessSupport\Actions\BatalkanApInvoice $action): RedirectResponse
+    {
+        abort_unless($this->bolehBatal($request, $invoice), 403, 'Anda tidak punya hak akses membatalkan invoice ini.');
+        $v = $request->validate(['alasan' => ['required', 'string', 'max:255']], [], ['alasan' => 'Alasan pembatalan']);
+
+        try {
+            $action->execute($invoice, $v['alasan'], $request->user()?->id);
+        } catch (BusinessRuleException $e) {
+            return back()->with('error', $e->getMessage());
+        }
+
+        return redirect()->route('bs.ap.show', $invoice->id)->with('success', "Invoice {$invoice->invoice_number} dibatalkan.");
+    }
+
+    private function pastikanBolehEdit(Request $request, BsApInvoice $invoice): void
+    {
+        abort_unless($request->user()?->can('ap.invoice.update'), 403, 'Anda tidak punya hak akses mengedit invoice.');
+        abort_if($invoice->batal() || $invoice->trashed(), 404);
+        abort_unless($invoice->dariRegistrasi(), 403, 'Invoice ini bukan dari Registrasi — tidak bisa diedit.');
+        if ($alasan = $invoice->alasanDiprosesFat()) {
+            abort(403, "Sudah diproses FAT ({$alasan}) — tidak bisa diedit. Batalkan dulu bila perlu diubah.");
+        }
+    }
+
+    /** Izin Batal mengikuti keadaannya: sebelum diproses FAT ap.invoice.cancel, sesudahnya ap.invoice.cancel-after. */
+    private function bolehBatal(Request $request, BsApInvoice $invoice): bool
+    {
+        if ($invoice->batal() || $invoice->trashed() || ! $invoice->dariRegistrasi()) {
+            return false;
+        }
+        $izin = $invoice->alasanDiprosesFat() !== null ? 'ap.invoice.cancel-after' : 'ap.invoice.cancel';
+
+        return (bool) $request->user()?->can($izin);
+    }
+
 
     public function store(Request $request, RegisterApInvoice $action, \App\Domain\BusinessSupport\Services\BudgetGuardService $budgetGuard): \Symfony\Component\HttpFoundation\Response
     {
         return $this->simpan($request, 'invoice', $action, $budgetGuard);
     }
 
-    private function simpan(Request $request, string $jenis, RegisterApInvoice $action, \App\Domain\BusinessSupport\Services\BudgetGuardService $budgetGuard): \Symfony\Component\HttpFoundation\Response
+    private function simpan(Request $request, string $jenis, RegisterApInvoice $action, \App\Domain\BusinessSupport\Services\BudgetGuardService $budgetGuard, ?BsApInvoice $lama = null): \Symfony\Component\HttpFoundation\Response
     {
         $info = $this->infoJenis($jenis);
-        abort_unless($request->user()?->can($info['izin'].'.create'), 403);
+        // Edit: izinnya ap.invoice.update, sudah diperiksa pastikanBolehEdit() di update().
+        abort_unless($lama !== null || $request->user()?->can($info['izin'].'.create'), 403);
 
         // PENERIMA — satu-satunya isian yang berbeda antarjenis. Reimburse & Deposit memilih
         // karyawan / customer, lalu dicatat sebagai supplier berkategori khusus (PenerimaHutang)
         // supaya Kuitansi, Approval & pembayaran menempuh jalur yang sama dengan Invoice Hutang.
-        $penerima = match ($jenis) {
+        // Edit: penerima TIDAK bisa diganti (ganti penerima = Batal lalu buat baru).
+        $penerima = $lama !== null ? [] : match ($jenis) {
             'reimburse' => $request->validate(['employee_id' => ['required', 'integer', 'exists:bs_employees,id']], [
                 'employee_id.required' => 'Pilih karyawan penerima reimburse.',
             ]),
@@ -383,7 +493,9 @@ class ApInvoiceController extends Controller
                 ['bank_name' => 'Bank', 'bank_account_no' => 'No. Rekening', 'bank_account_name' => 'Atas Nama']),
             default => [],
         };
-        if ($jenis !== 'invoice') {
+        if ($lama !== null) {
+            $request->merge(['supplier_id' => $lama->supplier_id]);
+        } elseif ($jenis !== 'invoice') {
             $layanan = app(\App\Domain\BusinessSupport\Services\PenerimaHutang::class);
             $sup = $jenis === 'reimburse'
                 ? $layanan->karyawan(\App\Domain\BusinessSupport\Models\BsEmployee::findOrFail($penerima['employee_id']))
@@ -475,8 +587,9 @@ class ApInvoiceController extends Controller
 
         try {
             // Gerbang over-budget: tolak bila baris jurnal (Dr akun ber-anggaran + cost center) melewati anggaran.
-            $budgetGuard->assertWithinBudget($v['journal_lines'] ?? [], null, $v['invoice_date']);
-            $inv = $action->execute($v + ['jenis' => $jenis], $request->user()->id);
+            // Edit: jurnal lama invoice ini dikecualikan supaya realisasinya tidak terhitung dua kali.
+            $budgetGuard->assertWithinBudget($v['journal_lines'] ?? [], null, $v['invoice_date'], $lama?->journal_id);
+            $inv = $action->execute($v + ['jenis' => $jenis], $request->user()->id, $lama);
             // "Simpan & Buat Jurnal" sekaligus menerbitkan Purchase Order-nya, supaya pembelian
             // yang tagihannya masuk lebih dulu tetap punya dokumen pesanan. Data yang tidak ada
             // di invoice (no. PO, master barang) dibangkitkan sistem — lihat actionnya.
@@ -486,7 +599,9 @@ class ApInvoiceController extends Controller
             return $this->balikDenganGalat($e);
         }
 
-        if ($po) {
+        if ($lama !== null) {
+            session()->flash('success', "Invoice {$inv->invoice_number} diperbarui".($po ? " — Purchase Order {$po->po_number} dibuat ulang." : '.'));
+        } elseif ($po) {
             session()->flash('success', "Invoice {$inv->invoice_number} tersimpan & Purchase Order {$po->po_number} dibuat otomatis.");
         }
 
@@ -500,6 +615,8 @@ class ApInvoiceController extends Controller
     public function show(Request $request, BsApInvoice $invoice): Response
     {
         abort_unless($request->user()?->can('ap.invoice.show') || $this->bolehModulJenis($request, $invoice), 403);
+        // Rute memakai withTrashed demi invoice BATAL; soft delete lain (mis. Saldo Awal dihapus) tetap 404.
+        abort_if($invoice->trashed() && ! $invoice->batal(), 404);
 
         $invoice->load([
             'supplier:id,code,name', 'category:id,code,name',
@@ -586,6 +703,21 @@ class ApInvoiceController extends Controller
             'defaultCash' => $this->accId('cash'),
             'writeoffs' => $writeoffs,
             'writeoffTotal' => round((float) $writeoffs->sum('amount'), 2),
+            // Tombol Edit / Batal — keputusannya di server, layar hanya mencerminkannya.
+            'aksi' => $invoice->batal() ? null : [
+                'dariRegistrasi' => $invoice->dariRegistrasi(),
+                'diprosesFat' => $invoice->dariRegistrasi() ? $invoice->alasanDiprosesFat() : null,
+                'edit' => $invoice->dariRegistrasi() && $invoice->alasanDiprosesFat() === null && (bool) $request->user()?->can('ap.invoice.update'),
+                'batal' => $this->bolehBatal($request, $invoice),
+                // Batal masih tertahan Kuitansi/pembayaran → sebutkan sebabnya, jangan tombol mati tanpa alasan.
+                'penahanBatal' => $invoice->kuitansiAktifAtauMenunggu() ? 'Void / tolak Kuitansi Hutangnya lebih dulu.'
+                    : (((float) $invoice->paid_amount > 0) ? 'Sudah ada pembayaran.' : null),
+            ],
+            'infoBatal' => $invoice->batal() ? [
+                'at' => $invoice->cancelled_at?->format('d-m-Y H:i'),
+                'by' => $invoice->cancelled_by ? DB::table('users')->where('id', $invoice->cancelled_by)->value('name') : null,
+                'reason' => $invoice->cancel_reason,
+            ] : null,
         ]);
     }
 
