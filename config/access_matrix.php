@@ -45,6 +45,12 @@ return [
             'fo.bg' => 'Bilyet Giro',
             'fo.refund' => 'Refund / CB',
             'fo.transfer_anonim' => 'Transfer Anonim',
+            'fo.pembayaran_ar' => 'Pembayaran AR',
+            'fo.pelunasan_angsuran' => 'Pelunasan DP, Angsuran & TDP',
+            'fo.gmc' => 'GMC (Gimmick)',
+            'fo.setup_hold' => 'Setup Hold',
+            'fo.report_xendit' => 'Report Xendit',
+            'fo.reminder_ar' => 'Dashboard AR',
         ],
         'FO · Approval' => [
             'fo.approval_pengalihan_hak' => 'Approval Pengalihan Hak',
