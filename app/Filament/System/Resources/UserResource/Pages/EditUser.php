@@ -5,7 +5,9 @@ namespace App\Filament\System\Resources\UserResource\Pages;
 use App\Filament\System\Resources\BoRoleResource;
 use App\Filament\System\Resources\RoleResource;
 use App\Filament\System\Resources\UserResource;
+use App\Modules\BO\IproBridge\Services\IproMasterSync;
 use Filament\Actions;
+use Filament\Notifications\Notification;
 use Filament\Resources\Pages\EditRecord;
 
 class EditUser extends EditRecord
@@ -43,7 +45,27 @@ class EditUser extends EditRecord
 
     protected function getHeaderActions(): array
     {
-        return [Actions\DeleteAction::make()];
+        return [
+            // Sama dengan tombol "Sinkronkan ke BO" di daftar pengguna.
+            Actions\Action::make('sinkronBo')->label('Sinkronkan ke BO')
+                ->icon('heroicon-o-arrows-right-left')->color('warning')
+                ->requiresConfirmation()
+                ->modalHeading('Sinkronkan ke BO')
+                ->modalDescription(fn () => 'Buat/selaraskan kembaran pengguna BO ber-email "'.$this->record->email.'" agar login SSO FO→BO cocok.')
+                ->action(function () {
+                    try {
+                        $id = app(IproMasterSync::class)->syncUser($this->record);
+                        $id
+                            ? Notification::make()->success()->title('Tersinkron ke BO')
+                                ->body('Pengguna BO (id '.$id.') untuk '.$this->record->email.' siap. Berlaku penuh setelah cache izin BO di-reset.')->send()
+                            : Notification::make()->warning()->title('Dilewati')
+                                ->body('Pengguna tanpa email tak dapat disinkron ke BO.')->send();
+                    } catch (\Throwable $e) {
+                        Notification::make()->danger()->title('Gagal sinkron ke BO')->body($e->getMessage())->send();
+                    }
+                }),
+            Actions\DeleteAction::make(),
+        ];
     }
 
     /** Muat hak akses khusus (direct permission) ke matrix. */
