@@ -50,7 +50,20 @@ class Kontrak extends TenantAwareModel
         'total_kontrak' => 'decimal:2',
         'dp_persen' => 'decimal:2',
         'dp_amount' => 'decimal:2',
+        'data_lama' => 'boolean',
     ];
+
+    /** Pesan untuk aksi yang ditolak pada kontrak hasil migrasi data lama. */
+    public const PESAN_DATA_LAMA = 'Jadwal tagihan kontrak ini berasal dari data aplikasi lama dan tidak dibentuk ulang otomatis — ubah lewat Adjustment.';
+
+    /**
+     * Kontrak hasil migrasi aplikasi lama (penanda `data_lama`, diisi skrip migrasi).
+     * Jadwal tagihannya tidak boleh dihitung/dibentuk ulang dari Skema Bayar.
+     */
+    public function dariDataLama(): bool
+    {
+        return (bool) $this->data_lama;
+    }
 
     protected static function booted(): void
     {

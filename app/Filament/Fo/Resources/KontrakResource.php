@@ -263,7 +263,11 @@ class KontrakResource extends Resource
                                 ->relationship('skema', 'name')
                                 ->getOptionLabelFromRecordUsing(fn ($record) => trim(($record->code ? $record->code.' — ' : '').$record->name))
                                 ->searchable()->preload()
-                                ->helperText('Termin (struktur DP/angsuran) diatur di Setup Skema Bayar (master). Ganti skema lalu klik Simpan → Jadwal Tagihan otomatis tergantikan dengan skema baru.'),
+                                // Kontrak data lama: skema dikunci — ganti skema = jadwal dibentuk ulang.
+                                ->disabled(fn (?Kontrak $record) => (bool) $record?->dariDataLama())
+                                ->helperText(fn (?Kontrak $record) => $record?->dariDataLama()
+                                    ? Kontrak::PESAN_DATA_LAMA
+                                    : 'Termin (struktur DP/angsuran) diatur di Setup Skema Bayar (master). Ganti skema lalu klik Simpan → Jadwal Tagihan otomatis tergantikan dengan skema baru.'),
 
                             Forms\Components\Repeater::make('tagihan')->relationship()->label('Jadwal Tagihan')
                                 ->columns(12)->defaultItems(0)->addActionLabel('Tambah Tagihan')

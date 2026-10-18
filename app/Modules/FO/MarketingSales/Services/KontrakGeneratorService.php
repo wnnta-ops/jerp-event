@@ -38,6 +38,11 @@ class KontrakGeneratorService
      */
     public function tagihan(Kontrak $kontrak, bool $replace = true, bool $withSubsidi = true): int
     {
+        // Jaring pengaman: jadwal kontrak data lama tidak pernah dibentuk ulang (lihat Kontrak::dariDataLama).
+        if ($kontrak->dariDataLama()) {
+            throw new \RuntimeException(Kontrak::PESAN_DATA_LAMA);
+        }
+
         // load (bukan loadMissing) agar skema selalu segar — penting setelah skema_id
         // diganti (mis. Batal Free DP → DP3X) supaya tidak memakai skema lama yang basi.
         $kontrak->load('skema.lines');
@@ -437,6 +442,10 @@ class KontrakGeneratorService
      */
     public function gimmick(Kontrak $kontrak, bool $replace = true): int
     {
+        if ($kontrak->dariDataLama()) {
+            throw new \RuntimeException('Gimmick kontrak ini berasal dari data aplikasi lama dan tidak dibentuk ulang dari master.');
+        }
+
         if ($replace) {
             $kontrak->gimmicks()->delete();
         }
