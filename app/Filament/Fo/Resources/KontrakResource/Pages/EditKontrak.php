@@ -45,7 +45,9 @@ class EditKontrak extends EditRecord
             }
         }
 
-        if ($this->record->tahap !== 'SPR') {
+        // Kontrak data lama: tagihan tambahan (Biaya KPR, HT, PPJB, …) di luar harga memang
+        // membuat total ≠ Nilai Kontrak — jangan dihalangi.
+        if ($this->record->tahap !== 'SPR' || $this->record->dariDataLama()) {
             return;
         }
 
@@ -72,6 +74,11 @@ class EditKontrak extends EditRecord
     /** GMC (gimmick FREE) selalu mengikuti gimmick kontrak — sinkronkan setelah simpan. */
     protected function afterSave(): void
     {
+        // Kontrak data lama: jadwal tagihan & Pencairan KPR TIDAK dihitung ulang (Kontrak::dariDataLama).
+        if ($this->record->dariDataLama()) {
+            return;
+        }
+
         // Ganti Skema Bayar → termin di-reset ke master skema baru + Jadwal Tagihan
         // DI-GENERATE ULANG (tergantikan, bukan ditambah termin). Juga heal bila Jadwal
         // riil kosong. Lalu reload.
@@ -97,7 +104,7 @@ class EditKontrak extends EditRecord
      */
     private function recomputePencairanKprDb(): bool
     {
-        if (strtoupper((string) $this->record->cara_bayar) !== 'KPR') {
+        if ($this->record->dariDataLama() || strtoupper((string) $this->record->cara_bayar) !== 'KPR') {
             return false;
         }
         $tagihan = $this->record->tagihan()->get();
@@ -118,6 +125,15 @@ class EditKontrak extends EditRecord
         }
 
         return false;
+    }
+
+    /** Data lama: tambah/kurangi nilai baris Pencairan KPR sebesar $selisih (tanpa hitung ulang dari harga). */
+    private function geserPencairanKpr(float $selisih): void
+    {
+        $tagihan = $this->record->tagihan()->get();
+        $kpr = $tagihan->first(fn ($t) => $t->tipe === 'ANG' && str_contains(strtoupper((string) $t->nama_tagihan), 'PENCAIRAN'))
+            ?? $tagihan->first(fn ($t) => $t->tipe === 'ANG');
+        $kpr?->update(['nilai' => max(0, round((float) $kpr->nilai + $selisih))]);
     }
 
     /**
@@ -149,7 +165,10 @@ class EditKontrak extends EditRecord
                     'nilai' => $nominal,
                     'pelunasan' => 0,
                 ]);
-                $this->recomputePencairanKprDb();
+                // Data lama: Pencairan KPR dikurangi sebesar Tambah DP (bukan dihitung ulang dari harga).
+                $this->record->dariDataLama()
+                    ? $this->geserPencairanKpr(-$nominal)
+                    : $this->recomputePencairanKprDb();
                 Notification::make()->success()->title('Tambah DP Rp '.number_format($nominal, 0, ',', '.'))
                     ->body('Pencairan KPR otomatis dikurangi.')->send();
                 $this->redirect($this->getResource()::getUrl('edit', ['record' => $this->getRecord()]));
@@ -166,8 +185,11 @@ class EditKontrak extends EditRecord
             ->modalHeading('Batalkan Tambah DP')
             ->modalDescription('Semua baris Tambah DP dihapus & Pencairan KPR dikembalikan.')
             ->action(function () {
+                $tdp = (float) $this->record->tagihan()->where('tipe', 'TDP')->sum('nilai');
                 $this->record->tagihan()->where('tipe', 'TDP')->delete();
-                $this->recomputePencairanKprDb();
+                $this->record->dariDataLama()
+                    ? $this->geserPencairanKpr($tdp)
+                    : $this->recomputePencairanKprDb();
                 Notification::make()->success()->title('Tambah DP dibatalkan')
                     ->body('Pencairan KPR dikembalikan.')->send();
                 $this->redirect($this->getResource()::getUrl('edit', ['record' => $this->getRecord()]));
@@ -314,6 +336,7 @@ class EditKontrak extends EditRecord
         return Actions\ActionGroup::make([
             Actions\Action::make('genTagihan')->label('Jadwal Tagihan ← Skema Bayar')
                 ->icon('heroicon-o-calendar-days')
+                ->visible(fn () => ! $this->record->dariDataLama())
                 ->requiresConfirmation()
                 ->modalDescription('Bentuk ulang Jadwal Tagihan dari Skema Bayar kontrak. Baris tagihan lama diganti.')
                 ->action(fn () => $this->regen('tagihan')),
@@ -324,6 +347,7 @@ class EditKontrak extends EditRecord
                 ->action(fn () => $this->regen('komisi')),
             Actions\Action::make('genGimmick')->label('Gimmick ← Setup Gimmick')
                 ->icon('heroicon-o-gift')
+                ->visible(fn () => ! $this->record->dariDataLama())
                 ->requiresConfirmation()
                 ->modalDescription('Bentuk ulang Gimmick dari master Setup Gimmick. Baris gimmick lama diganti.')
                 ->action(fn () => $this->regen('gimmick')),
@@ -345,7 +369,7 @@ class EditKontrak extends EditRecord
     protected function freeDpAction(): Actions\Action
     {
         return Actions\Action::make('freeDp')->label('Free DP')->icon('heroicon-o-gift')->color('warning')
-            ->visible(fn () => strtoupper((string) $this->record->cara_bayar) === 'KPR'
+            ->visible(fn () => ! $this->record->dariDataLama() && strtoupper((string) $this->record->cara_bayar) === 'KPR'
                 && ($this->record->skema?->bf_dipotong_di ?? '') === 'DP_DISEBAR')
             ->requiresConfirmation()
             ->modalHeading('Terapkan Free DP')
@@ -405,7 +429,7 @@ class EditKontrak extends EditRecord
     protected function cancelFreeDpAction(): Actions\Action
     {
         return Actions\Action::make('cancelFreeDp')->label('Batal Free DP')->icon('heroicon-o-arrow-uturn-left')->color('gray')
-            ->visible(fn () => strtoupper((string) $this->record->cara_bayar) === 'KPR' && $this->isFreeDpScheme())
+            ->visible(fn () => ! $this->record->dariDataLama() && strtoupper((string) $this->record->cara_bayar) === 'KPR' && $this->isFreeDpScheme())
             ->requiresConfirmation()
             ->modalHeading('Batalkan Free DP')
             ->modalDescription('Skema Bayar diganti ke KPR DP 3X & Jadwal Tagihan dihitung ulang (DP kembali dibayar customer + subsidi 20%).')
@@ -433,7 +457,7 @@ class EditKontrak extends EditRecord
     {
         return Actions\Action::make('cancelSubsidi')->label('Cancel Subsidi')->icon('heroicon-o-x-mark')->color('gray')
             // Hanya untuk DP3X (DP_DISEBAR). UANG MASUK milik FREE DP (ANGSURAN1) dikelola via Batal Free DP.
-            ->visible(fn () => ($this->record->skema?->bf_dipotong_di ?? '') === 'DP_DISEBAR'
+            ->visible(fn () => ! $this->record->dariDataLama() && ($this->record->skema?->bf_dipotong_di ?? '') === 'DP_DISEBAR'
                 && $this->record->tagihan()->where('tipe', 'ADM')->where('nama_tagihan', 'UANG MASUK')->exists())
             ->requiresConfirmation()
             ->modalHeading('Cancel Subsidi (Free 20% Developer)')

@@ -88,6 +88,13 @@ class BerkasLengkapResource extends Resource
                     ])
                     ->action(function (Kontrak $record, array $data) {
                         $record->update(['tgl_berkas_lengkap' => $data['tgl_berkas_lengkap'] ?: null]);
+                        // Kontrak data lama: tanggal disimpan, jadwal tagihannya tidak dibentuk ulang.
+                        if ($record->dariDataLama()) {
+                            Notification::make()->warning()->title('Tgl Berkas Lengkap disimpan')
+                                ->body(Kontrak::PESAN_DATA_LAMA)->send();
+
+                            return;
+                        }
                         app(KontrakGeneratorService::class)->tagihan($record);
                         Notification::make()->success()->title('Tgl Berkas Lengkap disimpan')
                             ->body('Jadwal Tagihan dihitung ulang — DP setelah berkas lengkap menjadi free.')->send();

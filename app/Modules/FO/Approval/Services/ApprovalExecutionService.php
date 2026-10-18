@@ -66,6 +66,7 @@ class ApprovalExecutionService
         $total = isset($baru['nilai_kontrak_baru'])
             ? (float) $baru['nilai_kontrak_baru']
             : max(0, (float) $k->harga_jual - $diskon);
+        $totalLama = (float) $k->total_kontrak;
 
         $k->update([
             'diskon' => $diskon,
@@ -73,7 +74,7 @@ class ApprovalExecutionService
             'ppn' => $this->ppn($total),
         ]);
 
-        return 'Diskon Rp '.number_format($diskon, 0, ',', '.').' diterapkan → Nilai Kontrak Rp '.number_format($total, 0, ',', '.').'.'.$this->regenTagihan($k);
+        return 'Diskon Rp '.number_format($diskon, 0, ',', '.').' diterapkan → Nilai Kontrak Rp '.number_format($total, 0, ',', '.').'.'.$this->regenTagihan($k, $totalLama);
     }
 
     /**
@@ -113,15 +114,41 @@ class ApprovalExecutionService
         if (isset($baru['diskon'])) {
             $update['diskon'] = (float) $baru['diskon'];
         }
+        $totalLama = (float) $k->total_kontrak;
         $k->update($update);
 
-        return 'Harga di-adjust → Nilai Kontrak Rp '.number_format($total, 0, ',', '.').'.'.$this->regenTagihan($k);
+        return 'Harga di-adjust → Nilai Kontrak Rp '.number_format($total, 0, ',', '.').'.'.$this->regenTagihan($k, $totalLama);
     }
 
-    /** Bentuk ulang Jadwal Tagihan mengikuti Nilai Kontrak terbaru (selisih jadi pas 0). */
-    private function regenTagihan(Kontrak $k): string
+    /**
+     * Bentuk ulang Jadwal Tagihan mengikuti Nilai Kontrak terbaru (selisih jadi pas 0).
+     *
+     * Kontrak data lama TIDAK dibentuk ulang (jadwal aslinya memuat tagihan tambahan di luar
+     * harga): selisih Nilai Kontrak dibebankan ke tagihan terakhir yang belum lunas — Pencairan
+     * KPR bila ada. Baris lain dan pembayarannya tidak berubah.
+     */
+    private function regenTagihan(Kontrak $k, ?float $totalLama = null): string
     {
-        $n = app(KontrakGeneratorService::class)->tagihan($k->fresh());
+        $k = $k->fresh();
+        if ($k->dariDataLama()) {
+            $selisih = round((float) $k->total_kontrak - (float) ($totalLama ?? $k->total_kontrak), 2);
+            if (abs($selisih) < 0.5) {
+                return '';
+            }
+            $tagihan = $k->tagihan()->orderByDesc('urutan')->get();
+            $target = $tagihan->first(fn ($t) => $t->tipe === 'ANG' && str_contains(strtoupper((string) $t->nama_tagihan), 'PENCAIRAN')
+                    && (float) $t->nilai > (float) $t->pelunasan)
+                ?? $tagihan->first(fn ($t) => (float) $t->nilai > (float) $t->pelunasan);
+            if (! $target) {
+                return ' Data lama: semua tagihan sudah lunas — selisih Rp '.number_format($selisih, 0, ',', '.').' perlu ditindaklanjuti manual.';
+            }
+            $target->update(['nilai' => max((float) $target->pelunasan, round((float) $target->nilai + $selisih, 2))]);
+
+            return ' Data lama: jadwal tidak dibentuk ulang — selisih Rp '.number_format($selisih, 0, ',', '.')
+                .' disesuaikan ke tagihan "'.$target->nama_tagihan.'".';
+        }
+
+        $n = app(KontrakGeneratorService::class)->tagihan($k);
 
         return ' Jadwal Tagihan dibentuk ulang ('.$n.' baris).';
     }

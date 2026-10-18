@@ -813,7 +813,11 @@ class IproMasterSync
             'customer_id' => $custId,
             'unit_id' => $unitId,
             'payment_scheme_id' => $this->iproPaymentSchemeId($typeMap[$k->cara_bayar ?? 'KPR'] ?? 'kpr'),
-            'scheme_name' => $k->skema?->name,   // nama skema FO asli (mis. "KPR FREE DP", "CASH 3X")
+            // Nama skema FO asli (mis. "KPR FREE DP", "CASH 3X"). $k bisa model Kontrak (relasi
+            // skema) atau baris mentah DB::table dari ipro:backfill — yang terakhir tak punya relasi.
+            'scheme_name' => $k instanceof \Illuminate\Database\Eloquent\Model
+                ? $k->skema?->name
+                : (empty($k->skema_id) ? null : DB::table('fo_skema')->where('id', $k->skema_id)->value('name')),
             'booking_date' => $k->tgl_kontrak ?? $now->toDateString(),
             'base_price' => $base,
             'discount_amount' => $diskon,
