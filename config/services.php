@@ -86,4 +86,9 @@ return [
         'template_utj_paid' => env('QONTAK_TEMPLATE_UTJ_PAID'),
     ],
 
+    // Aplikasi Survei — baca daftar SPR (GET /api/survei/spr). Kosong = API dimatikan.
+    'survei' => [
+        'api_key' => env('SURVEI_API_KEY'),
+    ],
+
 ];
