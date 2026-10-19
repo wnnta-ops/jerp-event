@@ -98,6 +98,8 @@ class CashAdvanceController extends Controller
      */
     /**
      * DAFTAR BON HANYA MENAMPILKAN MILIK SENDIRI — permintaan Dept Finance, 12 Okt 2026.
+     * DIPERLUAS 19 Okt 2026: + bon satu cost center (tim) — anggota tim ikut tahu & boleh
+     * menindaklanjuti pengajuan rekannya. Aturannya kini di AksesBon::batasi().
      *
      * Sebelumnya setiap orang yang boleh MELIHAT bon melihat bon seluruh karyawan: nominal,
      * keperluan, dan siapa memegang berapa. Itu bukan sekadar daftar yang panjang — nilai
@@ -133,42 +135,14 @@ class CashAdvanceController extends Controller
      */
     private function bolehBukaBon(Request $request, BsCashAdvance $advance): bool
     {
-        if ($this->bolehLihatSemuaBon($request)) {
-            return true;
-        }
-
-        $u = $request->user();
-
-        if ($advance->created_by !== null && (int) $advance->created_by === (int) $u?->id) {
-            return true;
-        }
-
-        $nama = app(CostCenterPengguna::class)->namaKaryawan($u);
-        $holder = (string) $advance->holder;
-
-        return $nama !== null && ($holder === $nama || str_starts_with($holder, $nama.' — '));
+        return \App\Domain\BusinessSupport\Support\AksesBon::bolehBuka($advance, $request->user());
     }
 
     /** Terapkan pembatasan di atas pada sebuah query bon. Dipakai daftar, ringkasan, & tab. */
     private function batasiKeMilikSendiri(Builder $q, Request $request): Builder
     {
-        if ($this->bolehLihatSemuaBon($request)) {
-            return $q;
-        }
-
-        $u = $request->user();
-        $nama = app(CostCenterPengguna::class)->namaKaryawan($u);
-
-        return $q->where(function (Builder $w) use ($u, $nama) {
-            // (int), bukan $u?->id apa adanya: Laravel mengubah nilai null pada where() menjadi
-            // whereNull, sehingga akun tanpa id justru akan melihat SEMUA bon yang created_by-nya
-            // kosong — kebalikan dari yang dimaksud. Nol tidak pernah cocok dengan id mana pun.
-            $w->where('created_by', (int) $u?->id);
-
-            if ($nama !== null) {
-                $w->orWhere('holder', $nama)->orWhere('holder', 'like', $nama.' — %');
-            }
-        });
+        // Milik sendiri + satu cost center (tim) — aturannya di AksesBon.
+        return \App\Domain\BusinessSupport\Support\AksesBon::batasi($q, $request->user());
     }
 
     private function indexBuckets(Request $request): array
