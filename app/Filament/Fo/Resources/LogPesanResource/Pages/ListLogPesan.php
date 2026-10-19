@@ -35,11 +35,11 @@ class ListLogPesan extends ListRecords
         return [
             'semua' => Tab::make('Semua'),
             'gagal' => Tab::make('Gagal')->badge($hitung[LogPesan::GAGAL] ?? null)->badgeColor('danger')
-                ->modifyQueryUsing(fn (Builder $q) => $q->where('status', LogPesan::GAGAL)),
+                ->modifyQueryUsing(fn (Builder $query) => $query->where('status', LogPesan::GAGAL)),
             'dilewati' => Tab::make('Dilewati')->badge($hitung[LogPesan::DILEWATI] ?? null)->badgeColor('gray')
-                ->modifyQueryUsing(fn (Builder $q) => $q->where('status', LogPesan::DILEWATI)),
+                ->modifyQueryUsing(fn (Builder $query) => $query->where('status', LogPesan::DILEWATI)),
             'terkirim' => Tab::make('Terkirim')->badge($hitung[LogPesan::TERKIRIM] ?? null)->badgeColor('success')
-                ->modifyQueryUsing(fn (Builder $q) => $q->where('status', LogPesan::TERKIRIM)),
+                ->modifyQueryUsing(fn (Builder $query) => $query->where('status', LogPesan::TERKIRIM)),
         ];
     }
 
