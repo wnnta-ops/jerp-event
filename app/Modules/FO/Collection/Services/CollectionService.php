@@ -4,6 +4,8 @@ namespace App\Modules\FO\Collection\Services;
 
 use App\Modules\FO\Collection\Mail\CollectionNoticeMail;
 use App\Modules\FO\Collection\Models\CollectionNotice;
+use App\Modules\FO\Komunikasi\Models\LogPesan;
+use App\Modules\FO\Komunikasi\Services\PengirimPesan;
 use App\Modules\FO\MarketingSales\Models\Kontrak;
 use App\Modules\FO\MarketingSales\Models\KontrakTagihan;
 use App\Modules\FO\Shared\Integrations\WhatsApp\WhatsAppGatewayInterface;
@@ -11,8 +13,6 @@ use App\Services\Numerator\NumeratorServiceInterface;
 use App\Settings\CollectionSettings;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
-use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\Mail;
 
 /**
  * Logika penagihan AR (Collection) untuk kontrak yang sudah SPR:
@@ -106,41 +106,45 @@ class CollectionService
         return $hasil;
     }
 
+    /**
+     * Kiriman lewat PengirimPesan → ikut tercatat di Monitoring Pesan (alasan gagal terbaca).
+     * fo_collection_notices tetap dicatat seperti biasa; selain TERKIRIM dianggap GAGAL di sana.
+     *
+     * @return array<string,mixed>
+     */
+    private function refPesan(Kontrak $k, ?KontrakTagihan $t, string $jenis, ?string $noSurat): array
+    {
+        return [
+            'jenis' => $jenis,
+            'ref_type' => 'kontrak_tagihan',
+            'ref_id' => $t?->id,
+            'ref_no' => trim(($noSurat ? $noSurat.' · ' : '').$k->no_kontrak.($t ? ' · '.$t->nama_tagihan : '')),
+            'kontrak_id' => $k->id,
+            'penerima_nama' => $k->customer?->full_name,
+        ];
+    }
+
     private function kirimEmail(Kontrak $k, ?KontrakTagihan $t, string $jenis, ?string $noSurat, string $subjek, string $isi, int $hariTelat, string $email): CollectionNotice
     {
-        $status = 'TERKIRIM';
-        if (trim($email) === '') {
-            $status = 'GAGAL';
-        } else {
-            try {
-                Mail::to($email)->send(new CollectionNoticeMail($subjek, $isi));
-            } catch (\Throwable $e) {
-                $status = 'GAGAL';
-                Log::channel('single')->warning('[Collection] gagal kirim email', ['to' => $email, 'err' => $e->getMessage()]);
-            }
-        }
+        $log = app(PengirimPesan::class)->email($this->refPesan($k, $t, $jenis, $noSurat), $email, new CollectionNoticeMail($subjek, $isi), $subjek);
+        // Sama seperti sebelumnya: MAIL_MAILER=log tetap dianggap terkirim di catatan Collection
+        // (agar jadwal otomatis tak mengulang & menghabiskan nomor SP); Monitoring mencatatnya DILEWATI.
+        $status = (trim($email) === '' || $log->status === LogPesan::GAGAL) ? 'GAGAL' : 'TERKIRIM';
 
         return $this->catat($k, $t, $jenis, 'EMAIL', $status, $email, $subjek, $isi, $hariTelat, $noSurat);
     }
 
     private function kirimWa(Kontrak $k, ?KontrakTagihan $t, string $jenis, ?string $noSurat, string $subjek, string $isi, int $hariTelat, string $nomor): CollectionNotice
     {
-        $status = 'TERKIRIM';
-        if (trim($nomor) === '') {
-            $status = 'GAGAL';
-        } else {
-            $template = $this->waTemplate($jenis);
-            $params = [
-                (string) ($k->customer?->full_name ?? ''),
-                (string) $k->no_kontrak,
-                $t ? (string) $t->nama_tagihan : '',
-                $t && $t->jatuh_tempo ? $t->jatuh_tempo->format('d M Y') : '',
-                $t ? number_format((float) $t->nilai - (float) $t->pelunasan, 0, ',', '.') : '',
-            ];
-            $ok = $this->wa->sendTemplate($nomor, (string) ($k->customer?->full_name ?? ''), $template, $params);
-            // Gateway Null mengembalikan false (belum dikonfigurasi) → catat GAGAL agar jelas.
-            $status = $ok ? 'TERKIRIM' : 'GAGAL';
-        }
+        $params = [
+            (string) ($k->customer?->full_name ?? ''),
+            (string) $k->no_kontrak,
+            $t ? (string) $t->nama_tagihan : '',
+            $t && $t->jatuh_tempo ? $t->jatuh_tempo->format('d M Y') : '',
+            $t ? number_format((float) $t->nilai - (float) $t->pelunasan, 0, ',', '.') : '',
+        ];
+        $log = app(PengirimPesan::class)->wa($this->refPesan($k, $t, $jenis, $noSurat), $nomor, $this->waTemplate($jenis), $params);
+        $status = $log->status === LogPesan::TERKIRIM ? 'TERKIRIM' : 'GAGAL';
 
         return $this->catat($k, $t, $jenis, 'WA', $status, $nomor, $subjek, $isi, $hariTelat, $noSurat);
     }

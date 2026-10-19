@@ -114,6 +114,13 @@ Route::middleware(['throttle:120,1'])
     ->where('hash', '[0-9a-f]{64}')
     ->name('fo.cetak.kwitansi-utj-pdf');
 
+// KWITANSI PEMBAYARAN (BKM: DP/angsuran/pelunasan) — path-token tanpa query string untuk
+// header dokumen WA, pola sama dengan kwitansi UTJ di atas.
+Route::middleware(['throttle:120,1'])
+    ->get('/fo/kwitansi/{bkm}/{hash}.pdf', [ClosingPrintController::class, 'kwitansiPdf'])
+    ->where('hash', '[0-9a-f]{64}')
+    ->name('fo.cetak.kwitansi-bkm-pdf');
+
 // Public site plan viewer (marketing — customer & sales). Read-only.
 Route::middleware(['throttle:120,1'])
     ->prefix('siteplan')->name('siteplan.')
@@ -183,6 +190,8 @@ Route::middleware('auth')->group(function () {
     Route::get('/fo/cetak/jadwal/{kontrak}', [ClosingPrintController::class, 'jadwal'])->name('fo.cetak.jadwal');
     Route::get('/fo/cetak/sp/{sp}', [ClosingPrintController::class, 'sp'])->name('fo.cetak.sp');
     Route::get('/fo/cetak/faktur/{fp}', [ClosingPrintController::class, 'fakturPenjualan'])->name('fo.cetak.faktur');
+    // Pengaturan → Template Dokumen: pratinjau satu versi teks SPR/SPRS (izin dicek di controller).
+    Route::get('/fo/cetak/template-dokumen/{templateDokumen}', [ClosingPrintController::class, 'pratinjauTemplateDokumen'])->name('fo.cetak.template-dokumen');
 
     // FO — Memo Rekom Batal Cash (Collection). GET murni: penandanya sudah ditulis layar
     // Filament sebelum redirect ke sini, jadi memuat ulang halaman ini tidak pernah

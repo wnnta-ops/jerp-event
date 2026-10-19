@@ -2,6 +2,8 @@
 
 namespace App\Modules\FO\Launching\Services;
 
+use App\Modules\FO\Komunikasi\Models\LogPesan;
+use App\Modules\FO\Komunikasi\Support\JenisPesan;
 use App\Modules\FO\Launching\Jobs\KirimKonfirmasiNupJob;
 use App\Modules\FO\Launching\Jobs\KirimKwitansiUtjJob;
 use App\Modules\FO\Launching\Models\NupRegistration;
@@ -173,7 +175,14 @@ class VerifikasiNupService
             return $reg->refresh();
         });
 
-        // Kirim konfirmasi (email + WA stub) berisi nomor urut NUP yang baru terbit.
+        // UTJ yang dibayar di luar Xendit (approve manual) belum pernah dapat kwitansi —
+        // kirim sekarang. Cek log agar yang sudah menerima (mis. Xendit telat sinkron) tak dapat dua kali.
+        if ($manual && ! $reg->isUtjPaid() && (float) $reg->utj_amount > 0
+            && ! LogPesan::sudahTerkirim(JenisPesan::KWITANSI_UTJ, 'nup', $reg->id)) {
+            KirimKwitansiUtjJob::dispatch($reg->id);
+        }
+
+        // Kirim konfirmasi (email + WA) berisi nomor urut NUP yang baru terbit.
         KirimKonfirmasiNupJob::dispatch($reg->id);
 
         return $reg;

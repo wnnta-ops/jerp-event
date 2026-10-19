@@ -14,8 +14,15 @@ use Illuminate\Support\Facades\Log;
  * Auth: Bearer access token. Pesan dikirim per nomor via template yang sudah
  * di-approve WhatsApp. Parameter body dipetakan berurutan ({{1}}, {{2}}, …).
  */
-class QontakWhatsAppGateway implements WhatsAppGatewayInterface
+class QontakWhatsAppGateway implements MemberiAlasan, WhatsAppGatewayInterface
 {
+    private ?string $alasan = null;
+
+    public function alasanTerakhir(): ?string
+    {
+        return $this->alasan;
+    }
+
     public function __construct(
         private readonly string $accessToken,
         private readonly string $channelIntegrationId,
@@ -25,6 +32,7 @@ class QontakWhatsAppGateway implements WhatsAppGatewayInterface
 
     public function sendTemplate(string $toNumber, string $toName, string $templateId, array $bodyParams = [], ?string $documentUrl = null, ?string $documentFilename = null): bool
     {
+        $this->alasan = null;
         $to = $this->normalizeNumber($toNumber);
         // Dulu di sini hanya `return false` — WA tak terkirim TANPA jejak apa pun,
         // sehingga penyebabnya (env template/channel kosong) mustahil dilacak.
@@ -41,6 +49,7 @@ class QontakWhatsAppGateway implements WhatsAppGatewayInterface
         }
         if ($kurang !== []) {
             Log::channel('single')->warning('[Qontak WA] pesan DILEWATI', ['sebab' => $kurang]);
+            $this->alasan = implode('; ', $kurang);
 
             return false;
         }
@@ -84,6 +93,9 @@ class QontakWhatsAppGateway implements WhatsAppGatewayInterface
                 'status' => $response->status(),
                 'body' => $response->body(),
             ]);
+            $pesan = $response->json('error.messages.0') ?? $response->json('error.message') ?? $response->json('message');
+            $this->alasan = 'Qontak menolak (HTTP '.$response->status().')'
+                .($pesan ? ': '.(is_array($pesan) ? json_encode($pesan) : $pesan) : ': '.mb_substr($response->body(), 0, 300));
 
             return false;
         }

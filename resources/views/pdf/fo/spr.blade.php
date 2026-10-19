@@ -86,13 +86,41 @@
         // Gimmick yang diberikan → "sudah termasuk".
         $gimmickNames = ($kontrak->gimmicks ?? collect())->where('diberikan', true)->pluck('nama_barang')->filter()->all();
         $payTotal = array_sum(array_column($payRows, 'amount')) ?: $netVal;
-        $totHal = 5;
+
+        // Teks pasal: versi Template Dokumen yang berlaku pada TANGGAL KONTRAK (cluster unit
+        // lebih dulu, lalu semua cluster) → SPR lama tetap tercetak dengan teks saat ditandatangani.
+        // $isiDokumen = pratinjau dari Pengaturan → Template Dokumen.
+        $dok = array_replace(
+            \App\Modules\FO\Komunikasi\Support\DokumenBawaan::spr(),
+            (array) ($isiDokumen ?? \App\Modules\FO\Komunikasi\Models\TemplateDokumen::berlakuUntuk('SPR', $u?->lokasi_id, $kontrak->tgl_kontrak)?->isi ?? []),
+        );
+        $nilaiDok = [
+            'nama_perusahaan' => $dok['nama_perusahaan'],
+            'nama_customer' => (string) ($c?->full_name ?: ''),
+            'no_kontrak' => (string) $kontrak->no_kontrak,
+            'unit' => (string) ($u?->kode_unit ?: ''),
+            'cluster' => (string) $lokasiNama,
+            'tanggal' => (string) optional($kontrak->tgl_kontrak)->format('d M Y'),
+        ];
+        $tx = fn ($teks) => \App\Modules\FO\Komunikasi\Support\DokumenBawaan::teks($teks, $nilaiDok);
+        // Kelompokkan pasal per halaman: pasal bertanda "halaman baru" membuka halaman berikutnya.
+        $halamanPasal = [];
+        foreach ((array) ($dok['pasal'] ?? []) as $ps) {
+            if ($halamanPasal === [] || ! empty($ps['halaman_baru'])) {
+                $halamanPasal[] = [];
+            }
+            $halamanPasal[array_key_last($halamanPasal)][] = $ps;
+        }
+        if ($halamanPasal === []) {
+            $halamanPasal[] = [];
+        }
+        $totHal = 1 + count($halamanPasal);
     @endphp
 
     {{-- Kaki halaman dipakai berulang: kotak paraf di kanan-bawah + nomor halaman. --}}
-    @php($pageFoot = function (int $hal) use ($totHal) {
+    @php($pageFoot = function (int $hal) use ($totHal, $dok) {
         return '<div class="pagefoot"><table class="paraf">'
-            .'<tr class="h"><td>PT MUP</td><td>PEMESAN</td></tr>'
+            .'<tr class="h"><td>'.e($dok['paraf_perusahaan']).'</td><td>PEMESAN</td></tr>'
             .'<tr class="p"><td></td><td></td></tr></table>'
             .'<div class="foot">'.$hal.' Dari Halaman '.$totHal.'</div></div>';
     })
@@ -134,7 +162,7 @@
             <tr><td class="k">Email</td><td class="s">:</td><td>{{ $c?->email ?: '—' }}</td></tr>
         </table>
 
-        <p style="margin-top:10px; text-align:justify;">Dengan ini menyatakan telah memesan kepada PT. MITRA USAHA PROPERTINDO, berkedudukan di Kecamatan Sidoarjo, Kabupaten Sidoarjo, untuk pembelian obyek yang berlokasi di Perumahan Java Residence, Kabupaten Sidoarjo, sebagai berikut :</p>
+        <p style="margin-top:10px; text-align:justify;">{!! $tx($dok['kalimat_pembuka']) !!}</p>
         <table class="kv">
             <tr><td class="k">1. Unit</td><td class="s">:</td><td>{{ $unitDesc }}</td></tr>
             <tr><td class="k">2. Cluster</td><td class="s">:</td><td>{{ $clusterKode }}</td></tr>
@@ -150,8 +178,8 @@
             <tr><td class="k">12. Nama Agent Properti</td><td class="s">:</td><td>{{ $ag?->agency_name ?: '—' }}</td></tr>
         </table>
 
-        <p style="margin-top:10px;">Untuk pemesanan tersebut di atas maka dengan ini pemesan menyetujui syarat dan ketentuan sebagai berikut:</p>
-        <h4>I. Harga Tanah dan Bangunan wajib dibayar oleh pemesan sesuai ketentuan sebagai berikut:</h4>
+        <p style="margin-top:10px;">{!! $tx($dok['kalimat_syarat']) !!}</p>
+        <h4>{!! $tx($dok['judul_pasal_bayar']) !!}</h4>
         <div style="font-weight:700;">{{ $kontrak->cara_bayar }}</div>
         <table class="pay">
             <tr><th style="width:30px;">No</th><th>Keterangan</th><th style="width:110px;">Tanggal</th><th class="r" style="width:130px;">Jumlah (Rp.)</th></tr>
@@ -179,121 +207,40 @@
         {!! $pageFoot(1) !!}
     </div>
 
-    {{-- ════════════ HALAMAN 2 ════════════ --}}
-    <div class="page">
-        <ol class="terms" start="2" style="list-style:none; padding-left:0;">
-            <li><span class="clause-h">II. Harga Pemesanan Sudah Termasuk :</span>
-                <ol class="alpha">
-                    <li>Sertipikat Hak Guna Bangunan (SHGB).</li>
-                    <li>IMB (Ijin Mendirikan Bangunan) / PBG (Persetujuan Bangunan Gedung).</li>
-                    <li>Pajak Pertambahan Nilai (PPN).</li>
-                    <li>Pemasangan dan penyambungan instalasi jaringan air bersih.</li>
-                    <li>Pemasangan dan penyambungan instalasi jaringan listrik PLN sesuai standart Developer.</li>
-                    <li>Retribusi Penyediaan Lahan Makam Estate.</li>
-                </ol>
-            </li>
-            <li><span class="clause-h">III. Harga Pemesanan Belum Termasuk :</span>
-                <ol class="alpha">
-                    <li>Pajak Pertambahan Nilai Barang Mewah (PPNBM).</li>
-                    <li>Biaya Administrasi (apabila ada).</li>
-                    <li>Biaya Iuran Pemeliharaan Lingkungan (IPL) dan Biaya Utilitas.</li>
-                    <li>Biaya Pengurusan KPR (*kecuali disepakati lain).</li>
-                    <li>Semua Bea/Pajak, Biaya, Retribusi, Pungutan lainnya berdasarkan keputusan atau peraturan pemerintah yang berlaku.</li>
-                </ol>
-            </li>
-            <li><span class="clause-h">IV.</span> Dalam hal pemesan telah membayar Uang Tanda Jadi dan pemesan mengakhiri pemesanannya dengan alasan apapun, maka PT. MITRA USAHA PROPERTINDO dapat mengakhiri Surat Pemesanan ini sesuai butir XII di bawah, terkait dengan seluruh pembayaran yang telah dilakukan pemesan tidak dapat dituntut kembali atau ditarik dari PT. MITRA USAHA PROPERTINDO.</li>
-            <li><span class="clause-h">V.</span> Untuk melaksanakan penandatanganan Akta Jual Beli (AJB) di hadapan Pejabat Pembuat Akta Tanah (PPAT) yang ditunjuk oleh PT. MITRA USAHA PROPERTINDO, pemesan wajib terlebih dahulu membayar seluruh bea/pajak dan biaya yang belum termasuk dalam Harga Tanah dan Bangunan butir III di atas.</li>
-            <li><span class="clause-h">VI.</span> Sebelum dilaksanakannya AJB di hadapan PPAT (untuk selanjutnya disebut AJB PPAT), apabila terjadi kenaikan tarif dan/atau pengenaan baru berdasarkan suatu perubahan atau peraturan baru yang dikeluarkan/diberlakukan oleh Pemerintah atas suatu pajak/bea dan biaya termasuk namun tidak terbatas pada PPN, BPHTB, atau kenaikan tarif NJOP, maka seluruhnya wajib ditanggung dan dibayar sepenuhnya oleh pemesan sebelum penandatanganan AJB PPAT, sejauh hal tersebut tidak disebabkan oleh PT. MITRA USAHA PROPERTINDO.</li>
-            <li><span class="clause-h">VII.</span> Dalam hal pemesan belum membayar seluruh pajak/bea dan biaya sebagaimana butir V dan butir VI di atas sebelum dilaksanakannya penandatanganan AJB PPAT, maka PT. MITRA USAHA PROPERTINDO tidak wajib melaksanakan penandatanganan AJB PPAT, dan segala risiko serta akibatnya menjadi tanggungan pemesan sepenuhnya.</li>
-            <li><span class="clause-h">VIII.</span> Apabila pemesan lalai dalam hal kurang atau terlambat melakukan suatu pembayaran berdasarkan Surat Pemesanan ini, maka pemesan dikenakan dan wajib membayar kepada PT. MITRA USAHA PROPERTINDO denda sebesar 1‰ (satu permil) per setiap hari keterlambatan dari jumlah terhutang sejak tanggal seharusnya dibayar sampai dilunasi seluruhnya, dengan keterlambatan maksimal 30 hari kerja dan maksimal denda 5% dari jumlah terhutang.</li>
-            <li><span class="clause-h">IX.</span> Apabila pemesan lalai dalam hal kurang atau terlambat melakukan suatu pembayaran yang berlangsung maksimal 14 (empat belas) hari kalender dan/atau mundur sepihak karena alasan dan/atau kesalahan pemesan, maka PT. MITRA USAHA PROPERTINDO dapat mengakhiri Surat Pemesanan ini sesuai butir XII di bawah. Terhadap seluruh uang yang telah dibayar oleh pemesan (kecuali Uang Tanda Jadi) akan dikembalikan setelah dipotong biaya administrasi pengakhiran sebesar 30% (tiga puluh persen).</li>
-        </ol>
-        {!! $pageFoot(2) !!}
-    </div>
+    {{-- ════════════ HALAMAN 2 dst — pasal dari Template Dokumen ════════════ --}}
+    @foreach ($halamanPasal as $h => $daftar)
+        <div class="page">
+            <ol class="terms" style="list-style:none; padding-left:0;">
+                @foreach ($daftar as $ps)
+                    <li><span class="clause-h">{!! $tx($ps['judul'] ?? '') !!}</span>@if (filled($ps['isi'] ?? null)) {!! $tx($ps['isi']) !!}@endif
+                        @if (! empty($ps['butir']))
+                            <ol class="alpha">
+                                @foreach ($ps['butir'] as $b)
+                                    @if (filled($b))<li>{!! $tx($b) !!}</li>@endif
+                                @endforeach
+                            </ol>
+                        @endif
+                    </li>
+                @endforeach
+            </ol>
 
-    {{-- ════════════ HALAMAN 3 ════════════ --}}
-    <div class="page">
-        <ol class="terms" style="list-style:none; padding-left:0;">
-            <li><span class="clause-h">X.</span> Semua pembayaran kepada PT. MITRA USAHA PROPERTINDO wajib dilakukan oleh pemesan kepada Bagian Keuangan di Kantor Pemasaran Mitra Usaha Propertindo, Kahuripan Nirwana Ruko Avenue Nomor 27-30, Sidoarjo – 61228, atau pembayaran melalui/transfer dengan mencantumkan nama pemesan, nomor Blok, maksud pembayaran, ditujukan ke rekening BCA 6155899909 atas nama PT. Mitra Usaha Propertindo. Seluruh pembayaran dianggap sah apabila telah diterima, efektif dan/atau dapat dicairkan, serta dibuktikan dengan dikeluarkannya kwitansi resmi.</li>
-            <li><span class="clause-h">XI. PENGURUSAN FASILITAS KREDIT MELALUI BANK/LEMBAGA KEUANGAN/PEMBIAYAAN</span>
-                <ol class="alpha">
-                    <li>Pemesan wajib melengkapi data-data yang diperlukan oleh Bank/Lembaga Keuangan/Pembiayaan selambat-lambatnya 10 (sepuluh) hari kalender setelah tanggal pembayaran Tanda Jadi dan/atau 10 hari kalender sebelum pembayaran terakhir Uang Muka secara angsuran. Apabila lewat, pemesan dinyatakan lalai.</li>
-                    <li>Untuk pemesan promo Free Uang Muka, wajib melengkapi data maksimal 10 hari kalender setelah pembayaran Uang Tanda Jadi.</li>
-                    <li>Apabila pemesan tidak memenuhi undangan wawancara, atau sudah disetujui kredit namun belum akad kredit di hadapan Notaris dalam 14 hari kalender, maka pemesan lalai dan uang (kecuali UTJ) dikembalikan setelah dipotong 30%.</li>
-                    <li>Apabila pemesan harus menambah Uang Muka, wajib dilunasi selambat-lambatnya 14 hari kalender setelah surat persetujuan kredit. Lewat tempo: dapat pengajuan KPR ulang 1 kali pada bank lain (14 hari), atau ubah cara bayar Cash Keras (14 hari, harga mengikuti SPR awal); jika lewat, dinyatakan batal dan uang (kecuali UTJ) dikembalikan dipotong 10%.</li>
-                    <li>Apabila permohonan kredit ditolak (dibuktikan surat penolakan bank), PT. MITRA USAHA PROPERTINDO berhak mengakhiri SPR; Uang Muka dikembalikan dipotong 10%, dan Uang Tanda Jadi bersifat Refund.</li>
-                    <li>Apabila pemesan melakukan pelanggaran salah satunya pemalsuan dan/atau rubah data, maka UTJ dianggap hangus dan pemesan menerima segala konsekuensi serta akibat hukumnya.</li>
-                </ol>
-            </li>
-            <li><span class="clause-h">XII.</span> Untuk pengakhiran Surat Pemesanan ini, PT. MITRA USAHA PROPERTINDO dan Pemesan sepakat melepaskan ketentuan Pasal 1265, 1266, 1267 KUH Perdata, dan pemesan memberikan kuasa sepenuhnya kepada PT. MITRA USAHA PROPERTINDO untuk menandatangani surat pengakhirannya, yang berlaku efektif sejak tanggal pengiriman surat pengakhiran tanpa perlu proses Pengadilan.</li>
-            <li><span class="clause-h">XIII. KETENTUAN GANTI CARA BAYAR.</span> Apabila pemesan bermaksud mengubah cara bayar, wajib disampaikan tertulis kepada PT. MITRA USAHA PROPERTINDO; harga pembelian menjadi kewenangan PT. MITRA USAHA PROPERTINDO, dan pemesan bertanggung jawab atas kewajiban perpajakan yang timbul.</li>
-            <li><span class="clause-h">XIV. KETENTUAN PINDAH BLOK DAN NOMOR TANAH BESERTA BANGUNAN.</span>
-                <ol class="alpha">
-                    <li>Pemesan harus memberitahukan secara tertulis.</li>
-                    <li>Pemindahan oleh PT. MITRA USAHA PROPERTINDO karena perubahan peruntukan tidak dikenakan biaya, dan akan diberitahukan terlebih dahulu.</li>
-                    <li>Pemindahan atas keinginan pemesan diperbolehkan dengan ketentuan: mengajukan surat permohonan & disetujui; pembayaran lama (dikurangi PPN/PPh) diperhitungkan ke blok baru; harga lama dari saat pemesanan, harga baru dari saat pindah; menandatangani seluruh dokumen yang dipersyaratkan.</li>
-                </ol>
-            </li>
-        </ol>
-        {!! $pageFoot(3) !!}
-    </div>
-
-    {{-- ════════════ HALAMAN 4 ════════════ --}}
-    <div class="page">
-        <ol class="terms" style="list-style:none; padding-left:0;">
-            <li><span class="clause-h">XV. KETENTUAN PENGALIHAN HAK, KEWAJIBAN DAN TANGGUNG JAWAB SERTA GANTI NAMA.</span>
-                <ol class="alpha">
-                    <li>Pemesan mengajukan permohonan tertulis bersama pembeli baru (PIHAK KETIGA) menghadap PT. MITRA USAHA PROPERTINDO.</li>
-                    <li>Apabila menggunakan fasilitas KPR, harus ada persetujuan tertulis dari Bank/Lembaga Keuangan/Pembiayaan.</li>
-                    <li>Pemesan wajib membayar biaya administrasi pengalihan hak sebesar 2,5% dari Harga Pemesanan (dibebaskan untuk 1 kali pengalihan).</li>
-                    <li>Ganti nama ke pihak keluarga (orang tua, istri/suami harta campur, anak kandung yang dapat dibuktikan) dikenakan biaya administrasi Rp 1.000.000,- per kejadian, maksimal 2 kali.</li>
-                    <li>Pemesan dan/atau PIHAK KETIGA bertanggung jawab atas kewajiban perpajakan yang timbul.</li>
-                    <li>Semua ketentuan SPR ini tetap berlaku terhadap pemesan dan/atau PIHAK KETIGA.</li>
-                    <li>Menandatangani seluruh dokumen yang dipersyaratkan.</li>
-                    <li>Proses pengalihan dilakukan dalam 14 hari kerja sejak dokumen dinyatakan lengkap.</li>
-                </ol>
-            </li>
-            <li><span class="clause-h">XVI. KETENTUAN ESTATE MANAJEMEN.</span> Pemesan sepakat patuh dan tertib terhadap ketentuan Estate Manajemen PT. MITRA USAHA PROPERTINDO demi kenyamanan dan keamanan kawasan; apabila tidak bersedia mengikuti tata tertib, pemesan bersedia menerima konsekuensi sesuai peraturan Estate Manajemen.</li>
-            <li><span class="clause-h">XVII. FORCE MAJEURE.</span> PT. MITRA USAHA PROPERTINDO dan Pemesan setuju mengadakan perubahan/penambahan atas SPR apabila terjadi Force Majeure (gempa bumi, banjir, bencana alam, epidemi, pandemi, huru-hara, perang, keadaan politik, atau kelangkaan bahan bangunan yang mempengaruhi kegiatan usaha properti).</li>
-        </ol>
-        {!! $pageFoot(4) !!}
-    </div>
-
-    {{-- ════════════ HALAMAN 5 ════════════ --}}
-    <div class="page">
-        <ol class="terms" style="list-style:none; padding-left:0;">
-            <li><span class="clause-h">XVII. KETENTUAN SERAH TERIMA.</span>
-                <ol class="alpha">
-                    <li>1 Lantai paling lambat 18 Bulan setelah pembayaran lunas (cash/InHouse) atau setelah akad kredit (KPR).</li>
-                    <li>2 Lantai paling lambat 24 Bulan setelah pembayaran lunas (cash/InHouse) atau setelah akad kredit (KPR).</li>
-                    <li>Keterlambatan serah terima dikenakan denda 0,5‰ per bulan dari Harga Pemesanan, maksimum 2 bulan keterlambatan.</li>
-                    <li>Pemesan wajib mentaati seluruh aturan PT. MITRA USAHA PROPERTINDO/pengelola termasuk IPL, abodemen listrik/air, keamanan, kebersihan, PBB setelah serah terima (BAST).</li>
-                    <li>Pemesan tidak diperbolehkan mengubah desain sebelum AJB & BAST; perubahan setelahnya wajib izin tertulis dan biaya menjadi tanggung jawab pemesan (khusus cash/Inhouse, selain perubahan façade).</li>
-                    <li>Garansi bangunan dianggap hangus bila pemesan mengajukan desain ulang/perubahan desain.</li>
-                </ol>
-            </li>
-            <li><span class="clause-h">XVIII. PENYELESAIAN PERSELISIHAN.</span>
-                <ol class="alpha">
-                    <li>Jika timbul perselisihan dalam melaksanakan Surat Pemesanan ini, maka akan diselesaikan oleh PT. MITRA USAHA PROPERTINDO dan Pemesan secara musyawarah.</li>
-                    <li>Apabila dalam jangka waktu 30 (tiga puluh) hari sejak sengketa atau beda pendapat tersebut penyelesaian secara musyawarah tidak tercapai, maka PT. MITRA USAHA PROPERTINDO dan Pemesan sepakat untuk menyelesaikannya melalui Pengadilan Negeri Sidoarjo.</li>
-                </ol>
-            </li>
-        </ol>
-
-        <p style="margin-top:10px;">Demikian Surat Pemesanan ini dibuat untuk dapat dilaksanakan sebagaimana mestinya.</p>
-        <p style="margin-top:14px;">Sidoarjo, {{ optional($kontrak->tgl_kontrak)->format('d M Y') }}</p>
-        <div class="sign" style="margin-top:6px;">
-            <div class="c" style="font-weight:700;">Pemesan</div>
-            <div class="c"></div>
-            <div class="c" style="font-weight:700; white-space:nowrap;">PT. MITRA USAHA PROPERTINDO</div>
+            @if ($loop->last)
+                <p style="margin-top:10px;">{!! $tx($dok['kalimat_penutup']) !!}</p>
+                <p style="margin-top:14px;">{{ $dok['kota'] }}, {{ optional($kontrak->tgl_kontrak)->format('d M Y') }}</p>
+                <div class="sign" style="margin-top:6px;">
+                    <div class="c" style="font-weight:700;">Pemesan</div>
+                    <div class="c"></div>
+                    <div class="c" style="font-weight:700; white-space:nowrap;">{{ $dok['nama_perusahaan'] }}</div>
+                </div>
+                <div class="sign" style="margin-top:0;">
+                    <div class="c"><div class="nm">{{ $c?->full_name ?: '' }}</div>Pemesan</div>
+                    <div class="c"><div class="nm">{{ $ag?->name ?: '' }}@if ($ag?->agency_name) <br><span style="font-weight:400;font-size:9px;">{{ $ag->agency_name }}</span>@endif</div>Sales</div>
+                    <div class="c"><div class="nm">{{ $dok['penandatangan_nama'] }}</div>{{ $dok['penandatangan_jabatan'] }}</div>
+                </div>
+            @endif
+            {!! $pageFoot($h + 2) !!}
         </div>
-        <div class="sign" style="margin-top:0;">
-            <div class="c"><div class="nm">{{ $c?->full_name ?: '' }}</div>Pemesan</div>
-            <div class="c"><div class="nm">{{ $ag?->name ?: '' }}@if ($ag?->agency_name) <br><span style="font-weight:400;font-size:9px;">{{ $ag->agency_name }}</span>@endif</div>Sales</div>
-            <div class="c"><div class="nm">Rachmat Suhendra</div>Direktur</div>
-        </div>
-        {!! $pageFoot(5) !!}
-    </div>
+    @endforeach
 
     <div class="actions">
         <a class="btn" href="javascript:window.print()">Cetak</a>

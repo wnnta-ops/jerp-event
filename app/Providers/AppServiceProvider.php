@@ -124,6 +124,25 @@ class AppServiceProvider extends ServiceProvider
         // FO/Launching domain events
         Event::listen(NupRegistered::class, KirimKonfirmasiNupListener::class);
 
+        // Kwitansi pembayaran (DP/angsuran/pelunasan) ke customer setelah BKM tersimpan.
+        // UTJ yang TTS-nya skip_gl_posting sudah dapat Kwitansi UTJ saat bayar → dilewati.
+        // Data migrasi (SQL langsung) tak memicu event ini.
+        // Dibungkus try: notifikasi tidak boleh menggagalkan pencatatan pembayaran.
+        \App\Modules\FO\FinanceAR\Models\Bkm::created(function ($bkm) {
+            try {
+                if ($bkm->status !== 'POSTED' || ($bkm->tts_id && $bkm->tts?->skip_gl_posting)) {
+                    return;
+                }
+                if (! \App\Modules\FO\Komunikasi\Models\TemplatePesan::query()
+                    ->where('jenis', \App\Modules\FO\Komunikasi\Support\JenisPesan::KWITANSI_BAYAR)->where('is_active', true)->exists()) {
+                    return;
+                }
+                \App\Modules\FO\Komunikasi\Jobs\KirimKwitansiBayarJob::dispatch($bkm->id)->afterCommit();
+            } catch (\Throwable $e) {
+                report($e);
+            }
+        });
+
         // Otorisasi Approval (model di luar App\Models → daftarkan eksplisit).
         Gate::policy(Approval::class, ApprovalPolicy::class);
 

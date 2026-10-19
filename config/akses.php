@@ -151,6 +151,10 @@ return [
         'GmcResource' => 'fo.gmc',
         'KomisiResource' => 'fo.komisi',
         'LokasiResource' => 'fo.lokasi',
+        'LogPesanResource' => 'fo.monitoring_pesan',
+        'TemplatePesanResource' => 'fo.template_pesan',
+        'WaTemplateResource' => 'fo.template_wa',
+        'TemplateDokumenResource' => 'fo.template_dokumen',
         'PreferensiUnitResource' => 'fo.preferensi_unit',
         'PriceListResource' => 'fo.price_list',
         'RewardResource' => 'fo.reward',
@@ -246,6 +250,7 @@ return [
         // Token HMAC di path, diperiksa hash_equals di controller.
         'fo.cetak.sprs-pdf',
         'fo.cetak.kwitansi-utj-pdf',
+        'fo.cetak.kwitansi-bkm-pdf',
         // Memang publik: siteplan pemasaran & data wilayah untuk dropdown form.
         'siteplan.show',
         'siteplan.subdomain.show',

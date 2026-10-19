@@ -54,6 +54,12 @@ class BookedVerificationService
             ]);
         }
 
+        // Booking fee booked = pembayaran manual → kirim Kwitansi UTJ (sekali saja).
+        if ((float) $bookingFee > 0
+            && ! \App\Modules\FO\Komunikasi\Models\LogPesan::sudahTerkirim(\App\Modules\FO\Komunikasi\Support\JenisPesan::KWITANSI_UTJ, 'nup', $reg->id)) {
+            \App\Modules\FO\Launching\Jobs\KirimKwitansiUtjJob::dispatch($reg->id);
+        }
+
         return $reg->fresh();
     }
 
