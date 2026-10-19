@@ -294,8 +294,9 @@ final class PengajuanKasbonPrinter
             .'<div style="text-align:center;margin-bottom:12px">No : '.$this->e($advance->advance_number).'</div>'
 
             .'<table class="nb" style="margin-bottom:10px">'
-            .'<tr><td style="width:110px">Kepada Yth</td><td>: '.$this->e($this->dept($advance)).'</td></tr>'
-            .'<tr><td>Tembusan</td><td>: -</td></tr>'
+            // Tujuan & tembusan baku, seragam dengan memo Account Payable (ApInvoiceController).
+            .'<tr><td style="width:110px">Kepada Yth</td><td>: RS</td></tr>'
+            .'<tr><td>Tembusan</td><td>: BA, MW</td></tr>'
             .'<tr><td>Dari</td><td>: '.$this->e($pengaju).'</td></tr>'
             .'<tr><td>Hari / Tanggal</td><td>: '.$this->e(optional($advance->advance_date)->format('d-m-Y')).'</td></tr>'
             .'<tr><td>Perihal</td><td>: '.$this->e($keperluan).'</td></tr></table>'
