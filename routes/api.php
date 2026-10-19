@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\Mobile\ApprovalController;
+use App\Http\Controllers\Api\SurveiSprController;
 use App\Modules\BO\IproBridge\Controllers\LegalBridgeController;
 use App\Modules\FO\Launching\Controllers\XenditWebhookController;
 use Illuminate\Http\Request;
@@ -47,3 +48,9 @@ Route::prefix('legal-bridge')->middleware('throttle:60,1')->group(function () {
     Route::post('/ajb', [LegalBridgeController::class, 'simpanAjb'])->name('legal-bridge.ajb');
     Route::post('/ajb/lepas', [LegalBridgeController::class, 'lepasAjb'])->name('legal-bridge.ajb.lepas');
 });
+
+/*
+ * Aplikasi Survei — daftar SPR (No. SPR, nama customer, unit). Baca saja.
+ * Auth: header "Authorization: Bearer <SURVEI_API_KEY>" (atau X-Api-Key).
+ */
+Route::get('/survei/spr', SurveiSprController::class)->middleware('throttle:60,1')->name('api.survei.spr');
