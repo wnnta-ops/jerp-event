@@ -326,6 +326,10 @@ class FoPanelProvider extends PanelProvider
             'skema-reward' => 'komisi',
             // Pengaturan + Setup Unit (master Lokasi & Tahap)
             'pengaturan-fo' => 'pengaturan',
+            'monitoring-pesan' => 'pengaturan',
+            'template-pesan' => 'pengaturan',
+            'template-wa' => 'pengaturan',
+            'template-dokumen' => 'pengaturan',
             'lokasis' => 'setup-unit',
             'tahaps' => 'setup-unit',
         ];
@@ -545,10 +549,18 @@ class FoPanelProvider extends PanelProvider
             'pengaturan' => [
                 'label' => 'Pengaturan',
                 'icon' => 'heroicon-o-cog-6-tooth',
-                'items' => [
-                    $item('Pengaturan FO', '/fo/pengaturan-fo', 'heroicon-o-cog-6-tooth', 'filament.fo.pages.pengaturan-fo'),
-                    $item('Setup Unit — Lokasi', '/fo/lokasis', 'heroicon-o-map-pin', 'filament.fo.resources.lokasis.'),
-                    $item('Setup Unit — Tahap', '/fo/tahaps', 'heroicon-o-square-3-stack-3d', 'filament.fo.resources.tahaps.'),
+                'groups' => [
+                    ['label' => 'Umum', 'items' => [
+                        $item('Pengaturan FO', '/fo/pengaturan-fo', 'heroicon-o-cog-6-tooth', 'filament.fo.pages.pengaturan-fo'),
+                        $item('Setup Unit — Lokasi', '/fo/lokasis', 'heroicon-o-map-pin', 'filament.fo.resources.lokasis.'),
+                        $item('Setup Unit — Tahap', '/fo/tahaps', 'heroicon-o-square-3-stack-3d', 'filament.fo.resources.tahaps.'),
+                    ]],
+                    ['label' => 'Komunikasi & Dokumen', 'items' => [
+                        $item('Monitoring Pesan', '/fo/monitoring-pesan', 'heroicon-o-signal', 'filament.fo.resources.monitoring-pesan.'),
+                        $item('Template Pesan', '/fo/template-pesan', 'heroicon-o-envelope', 'filament.fo.resources.template-pesan.'),
+                        $item('Template WA (Qontak)', '/fo/template-wa', 'heroicon-o-chat-bubble-left-right', 'filament.fo.resources.template-wa.'),
+                        $item('Template Dokumen SPR/SPRS', '/fo/template-dokumen', 'heroicon-o-document-duplicate', 'filament.fo.resources.template-dokumen.'),
+                    ]],
                 ],
             ],
             'setup-unit' => [

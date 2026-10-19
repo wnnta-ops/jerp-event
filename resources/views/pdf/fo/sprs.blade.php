@@ -93,6 +93,23 @@
         $email = $reg->email ?: ($c?->email ?: '');
         $catatan = $k?->keterangan ?: ($reg->keterangan ?: '');
         $tglSurat = $k?->tgl_kontrak ?: now();
+
+        // Teks dari Pengaturan → Template Dokumen (versi yang berlaku pada tanggal surat,
+        // cluster unit lebih dulu). $isiDokumen = pratinjau dari layar Template Dokumen.
+        $lokasiSprs = $unit?->lokasi_id ?: ($reg->unit_id ? $reg->unit?->lokasi_id : null);
+        $dok = array_replace(
+            \App\Modules\FO\Komunikasi\Support\DokumenBawaan::sprs(),
+            (array) ($isiDokumen ?? \App\Modules\FO\Komunikasi\Models\TemplateDokumen::berlakuUntuk('SPRS', $lokasiSprs, $tglSurat)?->isi ?? []),
+        );
+        $nilaiDok = [
+            'nama_perusahaan' => $dok['nama_perusahaan'],
+            'nama_customer' => (string) $nama,
+            'no_kontrak' => (string) ($k?->no_kontrak ?: ($reg->no_nup ?: '')),
+            'unit' => (string) $pu1,
+            'cluster' => (string) ($unit?->lokasi?->nama ?: ''),
+            'tanggal' => $tgl($tglSurat),
+        ];
+        $tx = fn ($teks) => \App\Modules\FO\Komunikasi\Support\DokumenBawaan::teks($teks, $nilaiDok);
     @endphp
 
     {{-- Logo di-embed base64 supaya ikut tercetak di PDF (Browsershot tak selalu
@@ -112,8 +129,8 @@
             <div class="brand">JAVA<br>RESIDENCE</div>
         @endif
         <div class="co">
-            <div class="pt">PT. MITRA USAHA PROPERTINDO</div>
-            <div class="ttl">FORMULIR SURAT PEMESANAN RUMAH SEMENTARA</div>
+            <div class="pt">{{ $dok['nama_perusahaan'] }}</div>
+            <div class="ttl">{{ $dok['judul'] }}</div>
         </div>
         <div class="right">
             {{-- QR Customer dipindah ke HALAMAN 2 (lihat bagian bawah berkas ini):
@@ -184,21 +201,19 @@
     <div class="kk">
         <div class="h">Syarat dan Ketentuan :</div>
         <ol class="terms">
-            <li>Untuk mendapatkan promo <i>free DP</i>, dokumen lengkap (siap proses KPR) diserahkan paling lambat 10 hari kalender
-                sejak penandatangan surat ini, apabila melebihi waktu tersebut, maka Uang Tanda Jadi (UTJ) dialokasikan sebagai bagian <i>DP</i>.</li>
-            <li>Uang Tanda Jadi (UTJ) dapat dikembalikan apabila hasil SLIK <i>COLL</i> 3-5 dan sebelum diterbitkannya SPR.</li>
-            <li>Pembayaran wajib di transfer ke : BCA No. Rek 6155899909 an. PT. Mitra Usaha Propertindo.</li>
-            <li>Formulir Pesanan Tanah &amp; Bangunan ini memiliki kekuatan hukum mengikat kedua belah pihak.</li>
+            @foreach ((array) $dok['syarat'] as $sy)
+                @if (filled($sy))<li>{!! $tx($sy) !!}</li>@endif
+            @endforeach
         </ol>
     </div>
 
-    <div style="margin-top:10px;">Sidoarjo, {{ $tgl($tglSurat) }}</div>
+    <div style="margin-top:10px;">{{ $dok['kota'] }}, {{ $tgl($tglSurat) }}</div>
 
     <div class="sign">
         <div class="c"><div class="line">{{ $nama ?: '' }}<br>Pembeli</div></div>
         {{-- Tanpa nomor telepon: kolom tanda tangan cukup nama sales + jabatan. --}}
         <div class="c"><div class="line">{{ $sales }}<br>Marketing</div></div>
-        <div class="c"><div class="line">PT. MUP</div></div>
+        <div class="c"><div class="line">{{ $dok['label_perusahaan'] }}</div></div>
     </div>
 
     {{-- ════════════ HALAMAN 2 — QR CUSTOMER ════════════

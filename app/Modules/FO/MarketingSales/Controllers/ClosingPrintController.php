@@ -37,6 +37,34 @@ class ClosingPrintController extends Controller
     }
 
     /**
+     * Pratinjau satu versi Template Dokumen memakai kontrak / NUP terbaru (cluster yang sama
+     * bila ada) sebagai contoh data. Hanya tampilan — tidak menyimpan apa pun.
+     */
+    public function pratinjauTemplateDokumen(\App\Modules\FO\Komunikasi\Models\TemplateDokumen $templateDokumen): mixed
+    {
+        abort_unless(\App\Filament\Fo\Resources\TemplateDokumenResource::canViewAny(), 403);
+        $t = $templateDokumen;
+        $diCluster = fn ($q) => $t->lokasi_id ? $q->where('lokasi_id', $t->lokasi_id) : $q;
+
+        if ($t->dokumen === 'SPRS') {
+            $reg = NupRegistration::query()->whereNotNull('urutan')
+                ->when($t->lokasi_id, fn ($q) => $q->whereHas('unit', $diCluster))
+                ->latest('id')->first()
+                ?? NupRegistration::query()->whereNotNull('urutan')->latest('id')->first();
+            abort_unless($reg, 404, 'Belum ada NUP yang disetujui untuk contoh pratinjau.');
+
+            return $this->render('pdf.fo.sprs', self::sprsData($reg) + ['isiDokumen' => $t->isi], 'PRATINJAU-SPRS-v'.$t->versi);
+        }
+
+        $kontrak = Kontrak::query()->when($t->lokasi_id, fn ($q) => $q->whereHas('unit', $diCluster))->latest('id')->first()
+            ?? Kontrak::query()->latest('id')->first();
+        abort_unless($kontrak, 404, 'Belum ada kontrak untuk contoh pratinjau.');
+        $kontrak->load(['customer', 'unit.unitType', 'unit.lokasi', 'skema.lines', 'agent', 'reservasi', 'gimmicks', 'tagihan']);
+
+        return $this->render('pdf.fo.spr', ['kontrak' => $kontrak, 'nup' => null, 'isiDokumen' => $t->isi], 'PRATINJAU-SPR-v'.$t->versi);
+    }
+
+    /**
      * Cetak SPR ACCOUNTING (untuk perpajakan). Sama dengan SPR, tetapi:
      *  - DP yang di-free-kan + subsidi DP (baris "UANG MASUK") dilebur ke DISKON
      *    (rumus: Diskon = diskon kontrak + Free DP + Subsidi).
@@ -133,9 +161,13 @@ class ClosingPrintController extends Controller
     public function kwitansiUtjPdf(NupRegistration $registration, string $hash): mixed
     {
         abort_unless(hash_equals(self::kwitansiUtjPdfHash($registration->id), $hash), 403);
-        request()->merge(['pdf' => 1]);
+        $isi = self::pdfKwitansiUtj($registration);
 
-        return $this->kwitansiUtj($registration);
+        return new Response($isi, 200, [
+            'Content-Type' => 'application/pdf',
+            'Content-Length' => (string) strlen($isi),
+            'Content-Disposition' => 'inline; filename="'.self::namaBerkasKwitansiUtj($registration).'.pdf"',
+        ]);
     }
 
     /**
@@ -303,8 +335,12 @@ class ClosingPrintController extends Controller
      */
     public static function pdfSprsTersimpan(NupRegistration $registration): string
     {
+        // + jejak Template Dokumen SPRS: versi teks baru → berkas baru.
+        $jejakDok = (string) \App\Modules\FO\Komunikasi\Models\TemplateDokumen::withTrashed()
+            ->where('dokumen', 'SPRS')->max('updated_at');
         $jalur = 'sprs-cache/'.$registration->id.'-'
-            .(optional($registration->updated_at)->timestamp ?: 0).'.pdf';
+            .(optional($registration->updated_at)->timestamp ?: 0)
+            .($jejakDok !== '' ? '-'.substr(md5($jejakDok), 0, 8) : '').'.pdf';
 
         $disk = Storage::disk('local');
         if ($disk->exists($jalur)) {
@@ -397,12 +433,74 @@ class ClosingPrintController extends Controller
 
     public function kwitansi(Bkm $bkm): mixed
     {
+        return $this->render('pdf.fo.kwitansi', self::kwitansiData($bkm), self::namaBerkasKwitansi($bkm));
+    }
+
+    /** Data view kwitansi pembayaran — satu sumber untuk cetak, WA, dan email. */
+    public static function kwitansiData(Bkm $bkm): array
+    {
         $bkm->load(['customer', 'kontrak.unit', 'tts']);
 
-        return $this->render('pdf.fo.kwitansi', [
-            'bkm' => $bkm,
-            'terbilang' => Terbilang::rupiah((float) $bkm->amount),
-        ], 'KWITANSI-'.$bkm->no_bkm);
+        return ['bkm' => $bkm, 'terbilang' => Terbilang::rupiah((float) $bkm->amount)];
+    }
+
+    public static function namaBerkasKwitansi(Bkm $bkm): string
+    {
+        return 'KWITANSI-'.trim(preg_replace('/[^A-Za-z0-9._-]+/', '-', (string) $bkm->no_bkm), '-');
+    }
+
+    /** Token path kwitansi pembayaran (header dokumen WA tak boleh ber-query string). */
+    public static function kwitansiPdfHash(int $bkmId): string
+    {
+        return hash_hmac('sha256', 'kwitansi-bkm-pdf:'.$bkmId, (string) config('app.key'));
+    }
+
+    /**
+     * Isi PDF kwitansi pembayaran (lampiran email & unduhan Qontak), dirender sekali
+     * lalu disimpan — alasan sama dengan pdfSprsTersimpan(): pengunduh WA menyerah ~5 detik.
+     */
+    public static function pdfKwitansi(Bkm $bkm): string
+    {
+        $jalur = 'kwitansi-cache/'.$bkm->id.'-'.(optional($bkm->updated_at)->timestamp ?: 0).'.pdf';
+        $disk = Storage::disk('local');
+        if ($disk->exists($jalur)) {
+            return (string) $disk->get($jalur);
+        }
+
+        $html = view('pdf.fo.kwitansi', self::kwitansiData($bkm))->render();
+        $pdf = Browsershot::html($html)->noSandbox()->addChromiumArguments(['disable-dev-shm-usage'])->format('A4')->pdf();
+        $disk->put($jalur, $pdf);
+
+        return $pdf;
+    }
+
+    /** Isi PDF kwitansi UTJ, dirender sekali lalu disimpan (lihat pdfKwitansi()). */
+    public static function pdfKwitansiUtj(NupRegistration $reg): string
+    {
+        $jalur = 'kwitansi-utj-cache/'.$reg->id.'-'.(optional($reg->updated_at)->timestamp ?: 0).'.pdf';
+        $disk = Storage::disk('local');
+        if ($disk->exists($jalur)) {
+            return (string) $disk->get($jalur);
+        }
+
+        $html = view('pdf.fo.kwitansi-utj', self::kwitansiUtjData($reg))->render();
+        $pdf = Browsershot::html($html)->noSandbox()->addChromiumArguments(['disable-dev-shm-usage'])->format('A4')->pdf();
+        $disk->put($jalur, $pdf);
+
+        return $pdf;
+    }
+
+    /** PDF kwitansi pembayaran via path-token (publik) — diunduh Qontak/Meta saat kirim WA. */
+    public function kwitansiPdf(Bkm $bkm, string $hash): mixed
+    {
+        abort_unless(hash_equals(self::kwitansiPdfHash($bkm->id), $hash), 403);
+        $isi = self::pdfKwitansi($bkm);
+
+        return new Response($isi, 200, [
+            'Content-Type' => 'application/pdf',
+            'Content-Length' => (string) strlen($isi),
+            'Content-Disposition' => 'inline; filename="'.self::namaBerkasKwitansi($bkm).'.pdf"',
+        ]);
     }
 
     public function jadwal(Kontrak $kontrak): mixed
