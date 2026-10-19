@@ -104,6 +104,8 @@ return [
             'fo.generate_blt' => 'Generate BLT',
             'fo.pengajuan_blt' => 'Pengajuan BLT',
             'fo.realisasi_blt' => 'Realisasi BLT',
+            'fo.laporan_komisi' => 'Laporan Komisi',
+            'fo.laporan_blt' => 'Laporan BLT',
             'fo.skema_reward' => 'Setup Skema Reward',
             'fo.reward' => 'Daftar Reward',
         ],

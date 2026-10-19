@@ -317,6 +317,8 @@ class FoPanelProvider extends PanelProvider
             'generate-blt' => 'komisi',
             'pengajuan-blt' => 'komisi',
             'realisasi-blt' => 'komisi',
+            'laporan-komisi' => 'komisi',
+            'laporan-blt' => 'komisi',
             'rewards' => 'komisi',
             'tipe-tarif' => 'komisi',
             'skema-komisi' => 'komisi',
@@ -530,6 +532,10 @@ class FoPanelProvider extends PanelProvider
                         $item('Generate Komisi', '/fo/generate-komisi', 'heroicon-o-bolt', 'filament.fo.pages.generate-komisi'),
                         $item('Pengajuan Komisi', '/fo/pengajuan-komisi', 'heroicon-o-paper-airplane', 'filament.fo.pages.pengajuan-komisi'),
                         $item('Realisasi Komisi', '/fo/realisasi-komisi', 'heroicon-o-banknotes', 'filament.fo.pages.realisasi-komisi'),
+                    ]],
+                    ['label' => 'Laporan', 'items' => [
+                        $item('Laporan Komisi', '/fo/laporan-komisi', 'heroicon-o-document-chart-bar', 'filament.fo.pages.laporan-komisi'),
+                        $item('Laporan BLT', '/fo/laporan-blt', 'heroicon-o-document-chart-bar', 'filament.fo.pages.laporan-blt'),
                     ]],
                     ['label' => 'Reward', 'items' => [
                         $item('Daftar Reward', '/fo/rewards', 'heroicon-o-trophy', 'filament.fo.resources.rewards.'),

@@ -199,6 +199,9 @@ Route::middleware('auth')->group(function () {
     Route::get('/fo/cetak/rekom-batal-cash', [ClosingPrintController::class, 'rekomBatalCash'])->name('fo.cetak.rekom-batal-cash');
 
     // FO — Laporan Penjualan (Penjualan Netto): export Excel, filter cluster/periode dari halaman Filament.
+    // FO — Laporan Komisi & BLT (format Excel Finance): export, izin dicek di controller.
+    Route::get('/fo/laporan/komisi/excel', [\App\Modules\FO\Komisi\Controllers\LaporanKomisiBltController::class, 'komisi'])->name('fo.laporan.komisi.excel');
+    Route::get('/fo/laporan/blt/excel', [\App\Modules\FO\Komisi\Controllers\LaporanKomisiBltController::class, 'blt'])->name('fo.laporan.blt.excel');
     Route::get('/fo/laporan/penjualan/excel', [\App\Modules\FO\MarketingSales\Controllers\LaporanPenjualanController::class, 'excel'])->name('fo.laporan.penjualan.excel');
 
     // FO — Report Xendit (Finance AR): export Excel pencocokan pembayaran UTJ <-> customer.
