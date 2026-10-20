@@ -8,6 +8,8 @@ use App\Domain\BusinessSupport\Models\BsAccount;
 use App\Domain\BusinessSupport\Models\BsCashAdvance;
 use App\Domain\BusinessSupport\Models\BsCashAdvanceAllocation;
 use App\Domain\BusinessSupport\Models\BsCreditCard;
+use App\Domain\BusinessSupport\Models\BsCreditCardRequest;
+use App\Domain\BusinessSupport\Models\BsJournal;
 use App\Exceptions\BusinessRuleException;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -141,6 +143,145 @@ final class CashAdvanceService
     }
 
     /** #127 — Stempel satu slot approval bon sementara (urut, sesuai requiredSigners). */
+    /**
+     * Langkah mundur berikutnya untuk bon ini — null bila tidak ada (bon sudah terhapus).
+     *
+     * Bon dimundurkan SATU LANGKAH per tindakan, kebalikan urutan majunya:
+     *   Realized + Refund/Reimburse → Batal Refund/Reimburse (sisa kembali "belum diselesaikan")
+     *   Realized + Masuk Saldo       → Batal Masuk Saldo
+     *   Realized                     → Batal Realisasi   (→ Outstanding)
+     *   Outstanding                  → Batal Pembayaran  (→ Diajukan)
+     *   Diajukan / Batal             → Hapus Pengajuan
+     *
+     * @return array{kode:string,label:string}|null
+     */
+    public function langkahMundur(BsCashAdvance $adv): ?array
+    {
+        if ($adv->trashed()) {
+            return null;
+        }
+        if ($adv->status === 'realized') {
+            if ($adv->settle_journal_id) {
+                return ['kode' => 'settle', 'label' => (float) $adv->settlement < 0 ? 'Batal Reimburse' : 'Batal Refund'];
+            }
+            if ($adv->settlement_status === 'card') {
+                return ['kode' => 'card', 'label' => 'Batal Masuk Saldo'];
+            }
+
+            return ['kode' => 'realize', 'label' => 'Batal Realisasi'];
+        }
+        if ($adv->status === 'outstanding') {
+            return ['kode' => 'pay', 'label' => 'Batal Pembayaran'];
+        }
+
+        return ['kode' => 'delete', 'label' => 'Hapus Pengajuan'];
+    }
+
+    /**
+     * Jalankan langkah mundur berikutnya. Jurnal yang dibuang lewat JournalService::buang()
+     * (periode harus terbuka; jejaknya tetap di log status jurnal), dan langkahnya sendiri
+     * dicatat di bs_cash_advance_mundur.
+     *
+     * $kode WAJIB sama dengan langkah yang sedang berlaku — kalau orang lain lebih dulu
+     * memundurkan bon yang sama, klik kedua ditolak alih-alih ikut memundurkan satu langkah lagi.
+     */
+    public function mundur(BsCashAdvance $adv, string $kode, string $alasan, ?int $userId = null): string
+    {
+        $alasan = trim($alasan);
+        if ($alasan === '') {
+            throw new BusinessRuleException('Alasan wajib diisi.', errorCode: 'ADV_UNDO_NO_REASON');
+        }
+
+        return DB::transaction(function () use ($adv, $kode, $alasan, $userId): string {
+            $adv = BsCashAdvance::whereKey($adv->id)->lockForUpdate()->firstOrFail();
+            $langkah = $this->langkahMundur($adv);
+            if (! $langkah || $langkah['kode'] !== $kode) {
+                throw new BusinessRuleException('Status bon sudah berubah — muat ulang halamannya.', errorCode: 'ADV_UNDO_STALE');
+            }
+            $dari = $adv->status.($adv->settlement_status ? '/'.$adv->settlement_status : '');
+            $buang = fn (?int $id) => $id && ($j = BsJournal::find($id))
+                ? $this->journal->buang($j, $langkah['label'].' '.$adv->advance_number.': '.$alasan, $userId) : null;
+
+            switch ($kode) {
+                case 'settle':
+                    $buang((int) $adv->settle_journal_id);
+                    $adv->update(['settlement_status' => 'pending', 'settle_journal_id' => null]);
+                    break;
+
+                case 'card':
+                    $this->batalMasukSaldo($adv, $userId);
+                    $adv->update(['settlement_status' => 'pending']);
+                    break;
+
+                case 'realize':
+                    $buang((int) $adv->realize_journal_id);
+                    $adv->lines()->delete();
+                    $adv->update([
+                        'status' => 'outstanding', 'realized_date' => null, 'realized_amount' => 0,
+                        'settlement' => 0, 'settlement_status' => null, 'realize_journal_id' => null,
+                    ]);
+                    break;
+
+                case 'pay':
+                    // Alokasi Debit VA dicabut lewat service-nya sendiri: jurnalnya bisa ditumpangi
+                    // alokasi bon lain, dan hanya service itu yang tahu cara mencabut baris miliknya.
+                    $alokasi = app(CashAdvanceAllocationService::class);
+                    foreach (BsCashAdvanceAllocation::where('cash_advance_id', $adv->id)->get() as $al) {
+                        $alokasi->hapus($al, $userId);
+                    }
+                    $buang((int) $adv->journal_id);
+                    // Pengajuan masa berlaku kartu yang lahir dari pembayaran ini, bila belum diputus.
+                    BsCreditCardRequest::where('source_type', CreditCardService::SUMBER_BON)
+                        ->where('source_id', $adv->id)->where('status', 'pending')
+                        ->update(['status' => 'rejected', 'approved_by' => $userId, 'approved_at' => now(),
+                            'note' => 'Dibatalkan — pembayaran bon '.$adv->advance_number.' dibatalkan']);
+                    $adv->update([
+                        'status' => 'requested', 'paid_date' => null, 'journal_id' => null,
+                        'cash_account_id' => null, 'credit_card_id' => null, 'va_expired_date' => null,
+                        'allocation_done_at' => null, 'allocation_done_by' => null,
+                    ]);
+                    break;
+
+                case 'delete':
+                    $adv->delete();
+                    break;
+            }
+
+            DB::table('bs_cash_advance_mundur')->insert([
+                'tenant_id' => $adv->tenant_id, 'cash_advance_id' => $adv->id,
+                'advance_number' => $adv->advance_number, 'langkah' => $langkah['label'],
+                'dari_status' => $dari, 'alasan' => mb_substr($alasan, 0, 255),
+                'user_id' => $userId, 'created_at' => now(),
+            ]);
+
+            return $langkah['label'];
+        });
+    }
+
+    /** Kebalikan masukSaldo(): saldo kartu dikurangi lagi, permintaannya ditandai dibatalkan. */
+    private function batalMasukSaldo(BsCashAdvance $adv, ?int $userId): void
+    {
+        $req = BsCreditCardRequest::where('source_type', CreditCardService::SUMBER_MASUK_SALDO)
+            ->where('source_id', $adv->id)->where('status', 'approved')->latest('id')->first();
+        if (! $req) {
+            return;
+        }
+        $card = BsCreditCard::whereKey($req->credit_card_id)->lockForUpdate()->first();
+        if ($card) {
+            $sisa = round((float) $card->balance - (float) $req->amount, 2);
+            if ($sisa < 0) {
+                throw new BusinessRuleException(
+                    'Saldo kartu '.$card->label().' sudah terpakai — Masuk Saldo tidak bisa dibatalkan (saldo tinggal '
+                    .number_format((float) $card->balance, 2, ',', '.').').',
+                    errorCode: 'ADV_UNDO_CARD_USED',
+                );
+            }
+            $card->balance = $sisa;
+            $card->save();
+        }
+        $req->update(['status' => 'rejected', 'note' => trim(($req->note ?? '').' — DIBATALKAN (mundur bon) oleh user #'.$userId)]);
+    }
+
     public function approve(BsCashAdvance $advance, string $slot, int $userId, string $name): BsCashAdvance
     {
         if (! array_key_exists($slot, BsCashAdvance::SIGNERS)) {

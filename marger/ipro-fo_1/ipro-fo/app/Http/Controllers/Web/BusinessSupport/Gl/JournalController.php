@@ -83,8 +83,13 @@ class JournalController extends Controller
             ->map(fn ($p) => ((int) $p->year).'-'.((int) $p->month))->flip();
         $ditutup = fn ($j) => $tutup->has(((int) $j->period_year).'-'.((int) $j->period_month));
 
-        $rows->getCollection()->transform(function ($j) use ($ditutup) {
+        // Jurnal milik dokumen tidak ditawari Hapus — dibatalkan lewat dokumennya.
+        $pemilik = app(\App\Domain\BusinessSupport\Services\PemilikJurnal::class)
+            ->untuk($rows->getCollection()->where('status', 'draft')->pluck('id')->all());
+
+        $rows->getCollection()->transform(function ($j) use ($ditutup, $pemilik) {
             $j->period_closed = $ditutup($j);
+            $j->pemilik = $pemilik[(int) $j->id] ?? null;
 
             return $j;
         });
@@ -225,6 +230,7 @@ class JournalController extends Controller
             'title'         => $isDetail ? 'Detail Transaksi Jurnal' : 'Jurnal',
             // Aksi massal Approve / Cancel Approved hanya untuk yang berwenang menyetujui.
             'canApprove'    => (bool) $request->user()?->can('businesssupport.approval.act'),
+            'canDelete'     => (bool) $request->user()?->can('gl.journal.delete'),
             // Isi pilihan tiap saringan kolom + batasnya, supaya layar bisa mengatakan
             // terus terang kalau daftarnya terpotong.
             'opsiKolom'     => $opsi,
@@ -596,6 +602,9 @@ class JournalController extends Controller
             'journal'  => $journal->load(['lines.account:id,code,name', 'lines.costCenter:id,code,name', 'costCenter:id,code,name']),
             'sources'  => BsJournal::SOURCES,
             'statuses' => BsJournal::STATUSES,
+            // Hapus: hanya status Baru & bukan milik dokumen (izin gl.journal.delete).
+            'pemilik'   => app(\App\Domain\BusinessSupport\Services\PemilikJurnal::class)->untuk([(int) $journal->id])[(int) $journal->id] ?? null,
+            'canDelete' => (bool) $request->user()?->can('gl.journal.delete'),
         ]);
     }
 
@@ -699,6 +708,21 @@ class JournalController extends Controller
         abort_unless($request->user()?->can('businesssupport.approval.act'), 403);
 
         return $this->transition(fn () => $svc->unapprove($journal), $journal, 'Approval dibatalkan — jurnal kembali ke Final.');
+    }
+
+    /** Hapus jurnal Baru yang tidak dimiliki dokumen — aturannya di JournalService::hapus(). */
+    public function destroy(Request $request, BsJournal $journal, JournalService $svc): RedirectResponse
+    {
+        abort_unless($request->user()?->can('gl.journal.delete'), 403);
+        $v = $request->validate(['alasan' => ['required', 'string', 'max:255']], ['alasan.required' => 'Alasan hapus wajib diisi.']);
+
+        try {
+            $svc->hapus($journal, $v['alasan'], $request->user()->id);
+        } catch (BusinessRuleException $e) {
+            return back()->with('error', $e->getMessage());
+        }
+
+        return redirect()->route('bs.gl.journal.detail')->with('success', "Jurnal {$journal->journal_number} dihapus.");
     }
 
     private function transition(callable $fn, BsJournal $journal, string $message): RedirectResponse

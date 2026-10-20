@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue';
 import { Link, useForm, router } from '@inertiajs/vue3';
-import { Ban, ArrowLeft, Wallet, ClipboardCheck, Printer, HandCoins, Lock } from 'lucide-vue-next';
+import { Ban, ArrowLeft, Wallet, ClipboardCheck, Printer, HandCoins, Lock, Undo2 } from 'lucide-vue-next';
 import Button from '@/Components/UI/Button.vue';
 import Badge from '@/Components/UI/Badge.vue';
 import SearchSelect from '@/Components/UI/SearchSelect.vue';
@@ -43,7 +43,32 @@ const props = defineProps<{ advance: any; jurnalRealisasi?: { id: number; number
     /** Bon Debit VA model baru — pembayarannya tidak berjurnal, pengeluarannya lewat Alokasi Kasbon. */
     allocationMode?: boolean;
     /** Gerbang "Lanjut Realisasikan Bon": perlu = bon ini melewati tahap alokasi; sudah = tombolnya ditekan. */
-    lanjutAlokasi?: { perlu: boolean; sudah: boolean; pada: string | null } }>();
+    lanjutAlokasi?: { perlu: boolean; sudah: boolean; pada: string | null };
+    /** Langkah mundur berikutnya (izin cashbook.advance.undo) — null bila tidak berhak/tidak ada. */
+    langkahMundur?: { kode: string; label: string } | null;
+    riwayatMundur?: Array<{ langkah: string; alasan: string; created_at: string; oleh: string | null }> }>();
+
+// Mundur SATU LANGKAH — kebalikan urutan majunya. Alasan wajib dan tercatat di riwayat.
+const alasanMundur = ref('');
+const bukaMundur = ref(false);
+const keteranganMundur: Record<string, string> = {
+    settle: 'Jurnal refund/reimburse dihapus; sisa/kekurangan kembali berstatus belum diselesaikan.',
+    card: 'Penambahan saldo kartu dari bon ini dibatalkan; sisa kembali berstatus belum diselesaikan.',
+    realize: 'Jurnal realisasi & rincian beban dihapus; bon kembali Outstanding.',
+    pay: 'Jurnal pembayaran (dan alokasi Debit VA, bila ada) dihapus; bon kembali Diajukan.',
+    delete: 'Pengajuan bon dihapus dari daftar.',
+};
+function mundur() {
+    const l = props.langkahMundur;
+    if (! l || ! alasanMundur.value.trim()) return;
+    if (! confirm(`${l.label} ${props.advance.advance_number}?
+
+${keteranganMundur[l.kode] ?? ''}`)) return;
+    router.post(route('bs.advance.mundur', props.advance.id), { langkah: l.kode, alasan: alasanMundur.value }, {
+        preserveScroll: true,
+        onSuccess: () => { alasanMundur.value = ''; bukaMundur.value = false; },
+    });
+}
 
 // Penolakan pengajuan — alasan WAJIB, dan ikut tersimpan. Penolakan tanpa alasan memaksa
 // pengaju bertanya lewat jalur lain, dan jawabannya tidak tercatat di mana pun.
@@ -217,8 +242,25 @@ function backToIndex() {
                      berbeda beredar untuk satu bon yang sama. -->
                 <a v-if="advance.status !== 'realized'" :href="route('bs.advance.print', advance.id)" target="_blank" rel="noopener" class="inline-flex items-center gap-1.5 rounded-lg border border-neutral-300 bg-white px-3 py-1.5 text-sm font-medium text-neutral-700 hover:bg-neutral-50 dark:border-neutral-600 dark:bg-neutral-800 dark:text-neutral-200"><Printer class="h-4 w-4" /> {{ advance.status === 'requested' ? 'Cetak Pengajuan' : 'Cetak Pengeluaran' }}</a>
                 <a v-if="advance.status === 'realized'" :href="route('bs.advance.print-realisasi', advance.id)" target="_blank" rel="noopener" class="inline-flex items-center gap-1.5 rounded-lg border border-success-300 bg-success-50 px-3 py-1.5 text-sm font-medium text-success-700 hover:bg-success-100 dark:border-success-700/50 dark:bg-success-900/30 dark:text-success-300"><Printer class="h-4 w-4" /> Cetak Realisasi</a>
+                <button v-if="langkahMundur" type="button" @click="bukaMundur = ! bukaMundur" class="inline-flex items-center gap-1.5 rounded-lg border border-danger-300 bg-white px-3 py-1.5 text-sm font-medium text-danger-700 hover:bg-danger-50 dark:border-danger-700/50 dark:bg-neutral-800 dark:text-danger-300"><Undo2 class="h-4 w-4" /> {{ langkahMundur.label }}</button>
                 <Badge :variant="statusVariant[advance.status] ?? 'neutral'">{{ statusLabel[advance.status] ?? advance.status }}</Badge>
             </div>
+        </div>
+
+        <div v-if="langkahMundur && bukaMundur" class="card border border-danger-200 p-4 dark:border-danger-800/50">
+            <h2 class="mb-1 flex items-center gap-2 font-semibold text-danger-700 dark:text-danger-300"><Undo2 class="h-5 w-5" /> {{ langkahMundur.label }}</h2>
+            <p class="mb-3 text-sm text-neutral-600 dark:text-neutral-300">{{ keteranganMundur[langkahMundur.kode] }} Bon mundur satu langkah; ulangi untuk mundur lebih jauh.</p>
+            <div class="flex flex-wrap items-end gap-2">
+                <input v-model="alasanMundur" type="text" maxlength="255" placeholder="Alasan (wajib)" class="h-9 min-w-[18rem] flex-1 rounded-lg border border-neutral-300 px-3 text-sm dark:border-neutral-700 dark:bg-neutral-900" />
+                <Button variant="danger" size="md" :disabled="! alasanMundur.trim()" @click="mundur">{{ langkahMundur.label }}</Button>
+            </div>
+        </div>
+
+        <div v-if="riwayatMundur?.length" class="card p-4 text-sm">
+            <h2 class="mb-2 font-semibold">Riwayat Mundur / Hapus</h2>
+            <ul class="space-y-1 text-neutral-600 dark:text-neutral-300">
+                <li v-for="(r, i) in riwayatMundur" :key="i"><span class="font-medium">{{ r.langkah }}</span> — {{ r.alasan }} <span class="text-xs text-neutral-400">({{ r.oleh ?? '—' }}, {{ r.created_at }})</span></li>
+            </ul>
         </div>
 
         <div class="card grid gap-4 p-5 text-sm md:grid-cols-2">

@@ -1,15 +1,21 @@
 <script setup lang="ts">
 import { router, Link } from '@inertiajs/vue3';
-import { ArrowLeft, CheckCircle2, FileCheck2, Undo2, Pencil } from 'lucide-vue-next';
+import { ArrowLeft, CheckCircle2, FileCheck2, Undo2, Pencil, Trash2 } from 'lucide-vue-next';
 import Button from '@/Components/UI/Button.vue';
 import Badge from '@/Components/UI/Badge.vue';
 
-const props = defineProps<{ journal: any; sources: Record<string, string>; statuses: Record<string, string> }>();
+const props = defineProps<{ journal: any; sources: Record<string, string>; statuses: Record<string, string>; pemilik?: string | null; canDelete?: boolean }>();
 function fmtRp(v: number) { return Number(v ?? 0).toLocaleString('id-ID'); }
 function fmtDate(d: string) { return d ? new Date(d).toLocaleDateString('id-ID', { day:'2-digit', month:'long', year:'numeric' }) : '—'; }
 const statusBadge: Record<string, any> = { draft: 'warning', final: 'info', posted: 'success' };
 
 function act(name: string) { router.post(route(`bs.gl.journal.${name}`, props.journal.id), {}, { preserveScroll: true }); }
+function hapus() {
+    const alasan = window.prompt(`Hapus jurnal ${props.journal.journal_number}?
+Tulis alasannya:`);
+    if (! alasan || ! alasan.trim()) return;
+    router.delete(route('bs.gl.journal.destroy', props.journal.id), { data: { alasan } });
+}
 </script>
 <template>
     <div class="max-w-3xl space-y-4">
@@ -41,8 +47,13 @@ function act(name: string) { router.post(route(`bs.gl.journal.${name}`, props.jo
                      menghapus jejak persetujuan tanpa satu pun langkah yang mencatatnya. -->
                 <button v-if="journal.status==='posted'" @click="act('unapprove')" class="inline-flex h-8 items-center gap-1.5 rounded-lg border border-neutral-300 px-3 text-sm font-medium hover:bg-neutral-50 dark:border-neutral-700" title="Approved → Final"><Undo2 class="h-4 w-4" /> Batalkan Approval</button>
                 <button v-if="journal.status==='final'" @click="act('reject')" class="inline-flex h-8 items-center gap-1.5 rounded-lg border border-neutral-300 px-3 text-sm font-medium hover:bg-neutral-50 dark:border-neutral-700" title="Final → Baru"><Undo2 class="h-4 w-4" /> Batalkan Finalisasi</button>
+                <!-- Hapus hanya untuk jurnal Baru yang tidak dimiliki dokumen. Approved/Final:
+                     mundurkan dulu lewat tombol di atas. -->
+                <button v-if="canDelete && journal.status==='draft' && !pemilik" @click="hapus" class="inline-flex h-8 items-center gap-1.5 rounded-lg border border-danger-300 px-3 text-sm font-medium text-danger-700 hover:bg-danger-50 dark:border-danger-700/50 dark:text-danger-300"><Trash2 class="h-4 w-4" /> Hapus Jurnal</button>
             </div>
         </div>
+        <p v-if="canDelete && pemilik" class="-mt-2 text-xs text-neutral-500">Jurnal ini milik dokumen <b>{{ pemilik }}</b><span v-if="journal.reference"> ({{ journal.reference }})</span> — hapus/batalkan lewat dokumennya.</p>
+        <p v-else-if="canDelete && journal.status!=='draft'" class="-mt-2 text-xs text-neutral-500">Untuk menghapus: Batalkan Approval → Batalkan Finalisasi, lalu Hapus Jurnal.</p>
         <p v-if="journal.status!=='posted'" class="-mt-2 text-xs text-amber-600">Jurnal hanya efektif di Neraca Saldo / Laporan Keuangan setelah berstatus <b>Approved</b>.</p>
 
         <div class="card grid gap-4 p-5 text-sm md:grid-cols-3">

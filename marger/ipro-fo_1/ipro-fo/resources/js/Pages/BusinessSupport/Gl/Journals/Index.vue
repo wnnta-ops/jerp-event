@@ -1,13 +1,13 @@
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue';
 import { router, Link } from '@inertiajs/vue3';
-import { Plus, ArrowLeft, FileText, ChevronDown, ListTree, Layers, Lock, FilterX, FileSpreadsheet } from 'lucide-vue-next';
+import { Plus, ArrowLeft, FileText, ChevronDown, ListTree, Layers, Lock, FilterX, FileSpreadsheet, Trash2 } from 'lucide-vue-next';
 import Button from '@/Components/UI/Button.vue';
 import Badge from '@/Components/UI/Badge.vue';
 import EmptyState from '@/Components/UI/EmptyState.vue';
 import SearchSelect from '@/Components/UI/SearchSelect.vue';
 
-const props = defineProps<{ journals: any; sources: Record<string, string>; statuses: Record<string, string>; filters: Record<string, any>; defaultDetail?: boolean; listRoute?: string; title?: string; canApprove?: boolean; jumlahStatus?: Record<string, number>; tahunRekap?: number;
+const props = defineProps<{ journals: any; sources: Record<string, string>; statuses: Record<string, string>; filters: Record<string, any>; defaultDetail?: boolean; listRoute?: string; title?: string; canApprove?: boolean; canDelete?: boolean; jumlahStatus?: Record<string, number>; tahunRekap?: number;
     // Isi pilihan tiap saringan kolom, dihitung server dari rentang tanggalnya.
     opsiKolom?: Record<string, Array<{ id: string; label: string }>>; batasOpsi?: number;
     }>();
@@ -67,6 +67,15 @@ const barisHalaman = computed<any[]>(() => props.journals?.data ?? []);
  * itu kembali OPEN.
  */
 function terkunci(j: any) { return !! j?.period_closed; }
+// Hapus: hanya jurnal Baru, periode terbuka, dan bukan milik dokumen (yang itu dibatalkan
+// lewat dokumennya). Server memeriksa ulang semuanya.
+function bisaHapus(j: any) { return !! props.canDelete && j?.status === 'draft' && ! terkunci(j) && ! j?.pemilik; }
+function hapus(j: any) {
+    const alasan = window.prompt(`Hapus jurnal ${j.journal_number}?
+Tulis alasannya:`);
+    if (! alasan || ! alasan.trim()) return;
+    router.delete(route('bs.gl.journal.destroy', j.id), { data: { alasan }, preserveScroll: true });
+}
 /** Semua baris bisa dicentang, KECUALI yang periodenya sudah ditutup. */
 const bisaDipilih = computed<number[]>(() =>
     barisHalaman.value.filter((j: any) => ! terkunci(j)).map((j: any) => Number(j.id)));
@@ -450,7 +459,9 @@ function rentangBaris(j: any) { return barisTampil(j).length; }
                                     <input v-if="!terkunci(j)" v-model="dipilih" type="checkbox" :value="Number(j.id)" class="h-4 w-4 rounded border-neutral-300 text-primary-600 focus:ring-primary-500" :title="'Pilih jurnal ' + j.journal_number" />
                                     <Lock v-else class="mx-auto h-3.5 w-3.5 text-neutral-300 dark:text-neutral-600" title="Periode sudah closed — jurnalnya tidak bisa diubah. Batalkan closing periodenya dulu di General Function." />
                                 </td>
-                                <td class="px-2 py-2.5 text-center" :rowspan="rentangBaris(j)"><button type="button" @click="toggle(j.id)" class="text-neutral-400 hover:text-primary-600" :title="isOpen(j.id) ? 'Sembunyikan rincian jurnal ini' : 'Tampilkan rincian jurnal ini'"><ChevronDown class="h-4 w-4 transition-transform" :class="{ 'rotate-180': isOpen(j.id) }" /></button></td>
+                                <td class="px-2 py-2.5 text-center" :rowspan="rentangBaris(j)"><button type="button" @click="toggle(j.id)" class="text-neutral-400 hover:text-primary-600" :title="isOpen(j.id) ? 'Sembunyikan rincian jurnal ini' : 'Tampilkan rincian jurnal ini'"><ChevronDown class="h-4 w-4 transition-transform" :class="{ 'rotate-180': isOpen(j.id) }" /></button>
+                                    <button v-if="bisaHapus(j)" type="button" @click="hapus(j)" class="mx-auto mt-2 block text-neutral-400 hover:text-danger-600" :title="'Hapus jurnal ' + j.journal_number"><Trash2 class="h-4 w-4" /></button>
+                                </td>
                             </template>
 
                             <!-- Kolom milik JURNALNYA ditulis ULANG pada tiap baris akun, tidak lagi
