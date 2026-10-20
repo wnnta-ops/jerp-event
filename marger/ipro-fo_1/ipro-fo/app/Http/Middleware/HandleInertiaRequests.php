@@ -47,6 +47,8 @@ final class HandleInertiaRequests extends Middleware
                 'warning' => fn () => $request->session()->get('warning'),
                 'info'    => fn () => $request->session()->get('info'),
                 'created' => fn () => $request->session()->get('created'),
+                // Pop-up Posting Invoice dari FO: invoice AP yang baru terbit (nomor bisa diklik).
+                'apTerbit' => fn () => $request->session()->get('apTerbit'),
                 // Hasil import massal: jumlah baru/diperbarui/dilewati + galat per baris.
                 // Dibawa terpisah dari 'error' karena daftar galatnya bisa puluhan baris —
                 // memampatkannya jadi satu kalimat toast akan menyembunyikan sebagian besarnya,

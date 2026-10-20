@@ -32,12 +32,9 @@ const today = new Date().toISOString().slice(0, 10);
 const form = useForm<any>({ advance_date: today, holder: '', purpose: '', amount: 0, approval_mode: 'offline', rek_sumber: null as string | null });
 
 // Nama pengaju tidak bisa dipilih: ia pemilik akun yang login. Dipakai juga sebagai nilai
-// 'holder' yang tersimpan di bonnya.
-const namaPengaju = computed(() => {
-    const k = props.karyawan;
-    if (!k) return '';
-    return k.position ? `${k.name} — ${k.position}` : k.name;
-});
+// 'holder' yang tersimpan di bonnya. NAMA SAJA, tanpa jabatan (sejak 20 Okt 2026) — jabatan
+// tetap ada di Data Karyawan; bon lama yang tersimpan "Nama — Jabatan" tidak diubah.
+const namaPengaju = computed(() => props.karyawan?.name?.trim() ?? '');
 
 // Diisikan sejak layar dibuka — isian wajib yang kosong padahal namanya sudah tampil akan
 // terbaca seperti bug, bukan seperti data yang belum lengkap.

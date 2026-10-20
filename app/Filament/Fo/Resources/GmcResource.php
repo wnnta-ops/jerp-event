@@ -304,8 +304,10 @@ class GmcResource extends Resource
                     ->action(function (Gmc $r) {
                         try {
                             self::postGmcToBo($r);
+                            // Nomornya bisa diklik → BO Posting Invoice dari FO, tersaring ke GMC ini.
                             \Filament\Notifications\Notification::make()->success()->title('GMC dikirim ke Posting Invoice BO')
-                                ->body('Biaya gimmick '.$r->no_gmc.' menunggu diposting di BO → Posting Invoice (Sumber: GMC).')->send();
+                                ->body('Biaya gimmick '.$r->no_gmc.' menunggu diposting di BO → Posting Invoice (Sumber: GMC). Klik nomornya untuk membuka di BO.')
+                                ->actions(\App\Modules\BO\IproBridge\Support\TautanBo::aksiPosting([(string) $r->no_gmc]))->persistent()->send();
                         } catch (\Throwable $e) {
                             \Filament\Notifications\Notification::make()->warning()->title('Gagal kirim ke BO')->body($e->getMessage())->persistent()->send();
                         }
@@ -327,6 +329,7 @@ class GmcResource extends Resource
                         $ok = 0;
                         $skip = 0;
                         $fail = 0;
+                        $terkirim = [];
                         foreach ($records as $r) {
                             if ($r->status === 'DIPROSES' || (float) $r->nilai <= 0) {
                                 $skip++;
@@ -336,12 +339,15 @@ class GmcResource extends Resource
                             try {
                                 self::postGmcToBo($r);
                                 $ok++;
+                                $terkirim[] = (string) $r->no_gmc;
                             } catch (\Throwable $e) {
                                 $fail++;
                             }
                         }
                         \Filament\Notifications\Notification::make()
                             ->title('Posting BO massal: '.$ok.' terkirim'.($skip ? ', '.$skip.' dilewati' : '').($fail ? ', '.$fail.' gagal' : ''))
+                            ->body($terkirim ? 'Klik nomornya untuk membuka di BO → Posting Invoice.'.\App\Modules\BO\IproBridge\Support\TautanBo::sisa($terkirim) : null)
+                            ->actions(\App\Modules\BO\IproBridge\Support\TautanBo::aksiPosting($terkirim))->persistent()
                             ->{$fail ? 'warning' : 'success'}()->send();
                     })
                     ->deselectRecordsAfterCompletion(),

@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { router, Link } from '@inertiajs/vue3';
+import { router, Link, usePage } from '@inertiajs/vue3';
 import { ref, computed, watch } from 'vue';
-import { ArrowLeft, FileInput, TriangleAlert, Receipt, CalendarClock } from 'lucide-vue-next';
+import { ArrowLeft, FileInput, TriangleAlert, Receipt, CalendarClock, CheckCircle2, X } from 'lucide-vue-next';
 import Button from '@/Components/UI/Button.vue';
 import EmptyState from '@/Components/UI/EmptyState.vue';
 import SearchSelect from '@/Components/UI/SearchSelect.vue';
@@ -16,8 +16,9 @@ const props = defineProps<{ refunds: Array<any>; suppliers: Array<any> }>();
 const supplierSel = ref<Record<number, number | ''>>({});
 // Baris antrean tercentang untuk posting massal.
 const checked = ref<Record<number, boolean>>({});
-// Pencarian/filter tabel (client-side).
-const q = ref('');
+// Pencarian/filter tabel (client-side). ?cari= dari tautan pop-up FO langsung mengisinya,
+// sehingga yang tampil hanya pengajuan yang baru saja dikirim dari FO.
+const q = ref((() => { try { return new URLSearchParams(window.location.search).get('cari') ?? ''; } catch { return ''; } })());
 // Jatuh tempo ditetapkan SEBELUM invoice terbit — berlaku untuk posting satuan maupun
 // gabungan dari layar ini. Kosongkan untuk memakai cadangan lama (sama dengan tanggal
 // invoice). Nilai ini yang tercetak di Bukti Permohonan Pembayaran dan menentukan umur
@@ -120,10 +121,14 @@ function postRefund(id: number) {
        sampai orang membuka dropdown dan memilih — itulah satu-satunya hal yang memaksa matanya
        singgah ke kolom Supplier. Sejak bawaan diisikan server, tombolnya hidup sejak layar
        terbuka, jadi konfirmasi inilah kesempatan terakhir melihat ke siapa hutangnya ditagihkan. */
-    if (confirm(`Terbitkan invoice hutang dari item ini untuk ${namaSupplier(Number(supplier_id))}? Akan masuk ke Account Payable.
-
-${kalimatJatuhTempo.value}`))
-        router.post(route('bs.ap.posting.refund', id), { supplier_id, due_date: jatuhTempo.value || null }, { preserveScroll: true });
+    const it = props.refunds.find((r) => r.id === id);
+    bukaDialog({
+        mode: 'satu', ids: [id],
+        judul: `Posting Invoice — ${it?.refund_no ?? ''}`,
+        teks: `Terbitkan invoice hutang dari item ini untuk ${namaSupplier(Number(supplier_id))}? Akan masuk ke Account Payable.`,
+        rincian: [],
+        ket: String(it?.keterangan || it?.refund_no || ''),
+    });
 }
 function postBulk() {
     const ids = selectedIds.value;
@@ -137,14 +142,44 @@ function postBulk() {
             + `${namaSupplierKonflik.value}.\n\nSamakan pilihan suppliernya, atau posting terpisah per supplier.`);
         return;
     }
-    if (! confirm(`Gabungkan ${ids.length} item jadi 1 Invoice Hutang untuk ${namaSupplier(supplierTerpilih.value[0])}? `
-        + 'Tiap item jadi baris + struktur jurnal. Masuk ke Account Payable.'
-        + `
-
-${kalimatJatuhTempo.value}`)) return;
-    const items = ids.map((id) => ({ id, supplier_id: rowSupplier(id) }));
-    router.post(route('bs.ap.posting.bulk-refund'), { items, due_date: jatuhTempo.value || null }, { preserveScroll: true });
+    const rows = ids.map((id) => props.refunds.find((r) => r.id === id)).filter(Boolean) as any[];
+    const ketBaris = rows.map((r) => String(r.keterangan || r.refund_no || ''));
+    // Bawaan: keterangan FO bila semua baris sama; kalau berbeda, baris pertama + "dan n lainnya".
+    const sama = ketBaris.every((k) => k === ketBaris[0]);
+    bukaDialog({
+        mode: 'gabung', ids,
+        judul: `Posting Gabungan — ${ids.length} item`,
+        teks: `Gabungkan ${ids.length} item jadi 1 Invoice Hutang untuk ${namaSupplier(supplierTerpilih.value[0])}? Tiap item jadi baris + struktur jurnal. Masuk ke Account Payable.`,
+        rincian: ketBaris,
+        ket: sama ? ketBaris[0] : `${ketBaris[0]} dan ${ketBaris.length - 1} lainnya`,
+    });
 }
+
+/* ── Dialog konfirmasi + KETERANGAN invoice ──────────────────────────────────
+   Keterangan kepala invoice & jurnalnya = isian ini (terisi dari keterangan FO, boleh diubah,
+   wajib). Rincian per baris tetap keterangan asli FO, jadi asal tiap biaya tetap tertelusur. */
+type Dialog = { mode: 'satu' | 'gabung'; ids: number[]; judul: string; teks: string; rincian: string[]; ket: string };
+const dialog = ref<Dialog | null>(null);
+const ketDialog = ref('');
+const mengirim = ref(false);
+function bukaDialog(d: Dialog) { dialog.value = d; ketDialog.value = d.ket.slice(0, 255); }
+function kirimDialog() {
+    const d = dialog.value;
+    if (! d || ! ketDialog.value.trim() || mengirim.value) return;
+    mengirim.value = true;
+    const opsi = { preserveScroll: true, onFinish: () => { mengirim.value = false; }, onSuccess: () => { dialog.value = null; } };
+    if (d.mode === 'satu') {
+        router.post(route('bs.ap.posting.refund', d.ids[0]), { supplier_id: rowSupplier(d.ids[0]), due_date: jatuhTempo.value || null, keterangan: ketDialog.value.trim() }, opsi);
+    } else {
+        const items = d.ids.map((id) => ({ id, supplier_id: rowSupplier(id) }));
+        router.post(route('bs.ap.posting.bulk-refund'), { items, due_date: jatuhTempo.value || null, keterangan: ketDialog.value.trim() }, opsi);
+    }
+}
+
+/* ── Pop-up "Invoice diterbitkan" — nomor invoice bisa diklik → detail di Account Payable ── */
+const page = usePage<any>();
+const terbit = ref<Array<{ id: number; number: string; keterangan: string; baris: number; dari: string }>>([]);
+watch(() => page.props.flash?.apTerbit, (v) => { if (Array.isArray(v) && v.length) terbit.value = v; }, { immediate: true });
 </script>
 <template>
     <div class="space-y-4">
@@ -264,5 +299,50 @@ ${kalimatJatuhTempo.value}`)) return;
             </table>
             <EmptyState v-else title="Tidak ada antrean FO siap diposting" description="Refund, BLT, komisi, dan gimmick dari FO yang belum diinvoice akan tampil di sini." />
         </div>
+
+        <!-- Dialog konfirmasi posting + Keterangan invoice (wajib, boleh diubah). -->
+        <Teleport to="body">
+            <div v-if="dialog" class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" @click.self="dialog = null">
+                <div class="w-full max-w-xl rounded-xl bg-white p-5 shadow-xl dark:bg-neutral-900">
+                    <div class="mb-3 flex items-center justify-between">
+                        <h2 class="font-semibold">{{ dialog.judul }}</h2>
+                        <button type="button" class="text-neutral-400 hover:text-neutral-700" @click="dialog = null"><X class="h-5 w-5" /></button>
+                    </div>
+                    <p class="text-sm text-neutral-600 dark:text-neutral-300">{{ dialog.teks }}</p>
+                    <p class="mt-1 text-xs text-neutral-500">{{ kalimatJatuhTempo }}</p>
+                    <label class="mt-4 mb-1 block text-xs font-medium text-neutral-500">Keterangan Invoice *</label>
+                    <input v-model="ketDialog" type="text" maxlength="255"
+                           class="h-9 w-full rounded-lg border border-neutral-300 bg-white px-3 text-sm focus:border-primary-500 focus:ring-1 focus:ring-primary-500 dark:border-neutral-700 dark:bg-neutral-800" />
+                    <p class="mt-1 text-[11px] text-neutral-400">Tampil di daftar Invoice Hutang, Kartu Hutang, Kuitansi, dan jurnalnya.</p>
+                    <div v-if="dialog.rincian.length" class="mt-3 max-h-40 overflow-y-auto rounded-lg bg-neutral-50 p-3 text-xs text-neutral-600 dark:bg-neutral-800/60 dark:text-neutral-300">
+                        <div class="mb-1 font-medium">Rincian per baris (tetap keterangan dari FO):</div>
+                        <ul class="list-disc space-y-0.5 pl-4"><li v-for="(r, i) in dialog.rincian" :key="i">{{ r }}</li></ul>
+                    </div>
+                    <div class="mt-4 flex justify-end gap-2">
+                        <button type="button" class="rounded-lg border border-neutral-300 px-4 py-2 text-sm dark:border-neutral-700" @click="dialog = null">Batal</button>
+                        <Button :disabled="! ketDialog.trim() || mengirim" @click="kirimDialog">{{ mengirim ? 'Memproses…' : 'Posting' }}</Button>
+                    </div>
+                </div>
+            </div>
+        </Teleport>
+
+        <!-- Pop-up sesudah posting: nomor invoice AP bisa diklik → detail invoice. -->
+        <Teleport to="body">
+            <div v-if="terbit.length" class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" @click.self="terbit = []">
+                <div class="w-full max-w-xl rounded-xl bg-white p-5 shadow-xl dark:bg-neutral-900">
+                    <div class="mb-3 flex items-center justify-between">
+                        <h2 class="flex items-center gap-2 font-semibold text-success-700 dark:text-success-400"><CheckCircle2 class="h-5 w-5" /> Invoice diterbitkan — masuk Account Payable</h2>
+                        <button type="button" class="text-neutral-400 hover:text-neutral-700" @click="terbit = []"><X class="h-5 w-5" /></button>
+                    </div>
+                    <ul class="space-y-2 text-sm">
+                        <li v-for="t in terbit" :key="t.id">
+                            <Link :href="route('bs.ap.show', t.id)" class="font-mono font-semibold text-primary-600 underline-offset-2 hover:underline dark:text-primary-400">{{ t.number }} ↗</Link>
+                            <div class="text-xs text-neutral-500">{{ t.keterangan }} · dari {{ t.baris > 1 ? t.baris + ' baris' : t.dari }}</div>
+                        </li>
+                    </ul>
+                    <div class="mt-4 flex justify-end"><button type="button" class="rounded-lg border border-neutral-300 px-4 py-2 text-sm dark:border-neutral-700" @click="terbit = []">Tutup</button></div>
+                </div>
+            </div>
+        </Teleport>
     </div>
 </template>
