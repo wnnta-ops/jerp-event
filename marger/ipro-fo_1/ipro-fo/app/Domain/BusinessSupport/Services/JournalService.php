@@ -295,9 +295,16 @@ final class JournalService
             return [];
         }
 
-        // Hanya akun yang MEMANG wajib yang dilaporkan; akun bertanda optional disaring di sini.
+        // Hanya akun yang MEMANG wajib yang dilaporkan. Dikecualikan, SAMA dengan wizard invoice AP
+        // (Payable/Form.vue · ccOptional): akun bertanda optional DAN akun yang tidak dianggarkan
+        // (daftar Accounting). Dulu gerbang ini hanya mengenal yang pertama — invoice bisa dibuat
+        // tanpa cost center di baris mis. Beban Masih Harus Dibayar, lalu jurnalnya tidak pernah
+        // bisa di-approve.
+        $tanpaAnggaran = array_map('strval', (array) config('business_support.budget.coa_tanpa_anggaran', []));
+
         return BsAccount::whereIn('id', $kurang)
             ->where(fn ($q) => $q->where('cost_center_optional', false)->orWhereNull('cost_center_optional'))
+            ->when($tanpaAnggaran, fn ($q) => $q->whereNotIn('code', $tanpaAnggaran))
             ->orderBy('code')->get(['code', 'name'])
             ->map(fn ($a) => $a->code.' - '.$a->name)->all();
     }
