@@ -114,6 +114,9 @@ final class PengajuanKasbonPrinter
             .'.co{font-weight:700;font-size:16px}.alamat{font-size:11px}'
             .'.kotak{display:inline-block;width:11px;height:11px;border:1px solid #000;margin-right:5px;vertical-align:-1px}'
             .'.ttd{margin-top:26px;width:100%}.ttd td{border:0;text-align:center;font-size:11px;vertical-align:top}'
+            // Kotak tanda tangan BPP bergaris (eProperty): judul di atas, jabatan di dasar kolom.
+            .'.ttdb{table-layout:fixed}.ttdb td{font-size:11px}.ttdb .h td{border-bottom:0;vertical-align:top}'
+            .'.ttdb .b td{border-top:0;height:78px;vertical-align:bottom}'
             .'.ttd .ruang{height:62px}'
             .'.kop td{border:0;vertical-align:middle;padding:0 0 0 8px}'
             .'.kop td:first-child{padding-left:0}'
@@ -231,7 +234,8 @@ final class PengajuanKasbonPrinter
     {
         $p       = $this->penerima($advance);
         $nominal = (float) $advance->amount;
-        $akun    = $advance->cashAccount?->code ?: '—';
+        // Belum dibayar = akun kas belum dipilih Finance → tampilkan akun bawaan bon (seperti eProperty).
+        $akun    = $advance->cashAccount?->code ?: (config('business_support.gl_accounts.advance_cash_default') ?: '—');
         $terbilang = strtoupper(trim(preg_replace('/\s+/', ' ', terbilang((int) round($nominal))))).' RUPIAH';
 
         // Lima judul, tujuh kotak tanda tangan: Verifikasi & Persetujuan masing-masing dua orang,
@@ -276,17 +280,19 @@ final class PengajuanKasbonPrinter
             .'<th style="width:170px">Jumlah</th></tr></thead>'
             .'<tbody><tr><td>'.$this->e($akun).'</td><td style="height:90px">'.$this->e($advance->purpose).'</td>'
             .'<td class="r">'.$this->rpKoma($nominal).'</td></tr>'
-            .'<tr><td colspan="2" class="r"><b>Total</b></td><td class="r"><b>'.$this->rpTitik($nominal).'</b></td></tr>'
             .'</tbody></table>'
 
-            .'<table class="nb" style="margin-top:6px">'
-            .'<tr><td style="width:120px">No. Cek / BG</td><td>: -</td></tr>'
-            .'<tr><td>No. Voucher</td><td>: '.$this->e($advance->advance_number).'</td></tr>'
-            .'<tr><td>Terbilang</td><td>: '.$this->e($terbilang).'</td></tr></table>'
+            // Bagian bawah BERBINGKAI seperti eProperty: No. Cek / No. Voucher dengan Total di
+            // sampingnya, Terbilang satu baris, lalu kotak tanda tangan bergaris per kolom.
+            .'<table style="margin-top:-1px">'
+            .'<tr><td>No. Cek / BG : -</td>'
+            .'<td rowspan="2" class="c" style="width:90px;vertical-align:middle"><b>Total</b></td>'
+            .'<td rowspan="2" class="r" style="width:170px;vertical-align:middle"><b>'.$this->rpTitik($nominal).'</b></td></tr>'
+            .'<tr><td>No. Voucher : '.$this->e($advance->advance_number).'</td></tr>'
+            .'<tr><td colspan="3">Terbilang : '.$this->e($terbilang).'</td></tr></table>'
 
-            .'<table class="ttd"><tr>'.$barisAtas.'</tr>'
-            .'<tr><td colspan="7" class="ruang"></td></tr>'
-            .'<tr>'.$barisBawah.'</tr></table>'
+            .'<table class="ttdb" style="margin-top:-1px"><tr class="h">'.$barisAtas.'</tr>'
+            .'<tr class="b">'.$barisBawah.'</tr></table>'
             .'</div>';
     }
 
