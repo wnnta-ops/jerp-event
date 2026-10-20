@@ -62,10 +62,23 @@ final class PengajuanKasbonPrinter
         return $this->rpKoma($n);
     }
 
-    /** Rekening penerima diambil dari data karyawan yang namanya sama dengan pemegang bon. */
+    /**
+     * Rekening penerima diambil dari data karyawan yang namanya sama dengan pemegang bon.
+     *
+     * HOLDER MEMUAT JABATAN, BUKAN HANYA NAMA. Pengajuan menyimpannya sebagai nilai tampilan
+     * "Nama — Jabatan" (mis. "REZA NUR AZIZAH — ADMIN SUPPORT & CUSTOMER CARE"), dan dipakai
+     * apa adanya ia merusak DUA hal sekaligus pada kertas yang tercetak:
+     *
+     *   1. baris "Atas Nama" memuat jabatan — padahal yang dibaca bank hanya namanya;
+     *   2. pencarian karyawannya TIDAK PERNAH cocok, sebab di master namanya tersimpan tanpa
+     *      jabatan. Akibatnya No. Rekening dan Bank selalu tercetak "—" tanpa satu pun galat,
+     *      dan orang mengira data rekening karyawannya yang belum diisi.
+     *
+     * Dipotong pada em dash, bukan pada tanda hubung biasa: nama orang boleh mengandung "-".
+     */
     private function penerima(BsCashAdvance $advance): array
     {
-        $nama = trim((string) $advance->holder);
+        $nama = trim(explode('—', (string) $advance->holder, 2)[0]);
         $emp  = $nama !== '' ? BsEmployee::whereRaw('LOWER(name) = ?', [mb_strtolower($nama)])->first() : null;
 
         return [
