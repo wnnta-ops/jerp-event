@@ -268,7 +268,9 @@ class PostingInvoiceController extends Controller
         $validated = $request->validate([
             'supplier_id' => ['required', 'integer', self::supplierTerpakai()],
             'due_date'    => self::ATURAN_JATUH_TEMPO,
-        ], ['supplier_id.exists' => self::PESAN_SUPPLIER_TAK_TERPAKAI]);
+            // Keterangan invoice — terisi dari FO di layar, boleh diubah user, wajib.
+            'keterangan'  => ['required', 'string', 'max:255'],
+        ], ['supplier_id.exists' => self::PESAN_SUPPLIER_TAK_TERPAKAI, 'keterangan.required' => 'Keterangan invoice wajib diisi.']);
 
         $row = DB::table('bs_ap_refund_queue')->where('id', $queue)->first();
         if (! $row || $row->status === 'posted') {
@@ -277,14 +279,16 @@ class PostingInvoiceController extends Controller
 
         $res = $this->issueFromRefundRow(
             $row, (int) $validated['supplier_id'], $journal, (int) $request->user()->id,
-            $validated['due_date'] ?? null,
+            $validated['due_date'] ?? null, trim((string) $validated['keterangan']),
         );
         if (! $res['ok']) {
             return back()->with('error', $res['error']);
         }
 
-        return redirect()->route('bs.ap.show', $res['invoice'])
-            ->with('success', "Invoice {$res['invoice']->invoice_number} diterbitkan dari {$row->refund_no} — masuk Account Payable.");
+        // Tetap di layar Posting; pop-up menyebut nomor invoice yang bisa diklik → detail AP.
+        return back()
+            ->with('success', "Invoice {$res['invoice']->invoice_number} diterbitkan dari {$row->refund_no} — masuk Account Payable.")
+            ->with('apTerbit', [self::infoTerbit($res['invoice'], 1, (string) $row->refund_no)]);
     }
 
     /**
@@ -302,7 +306,10 @@ class PostingInvoiceController extends Controller
             'items.*.id'          => ['required', 'integer'],
             'items.*.supplier_id' => ['required', 'integer', self::supplierTerpakai()],
             'due_date'            => self::ATURAN_JATUH_TEMPO,
-        ], ['items.*.supplier_id.exists' => self::PESAN_SUPPLIER_TAK_TERPAKAI]);
+            // Keterangan invoice gabungan — dulu selalu "Invoice hutang gabungan (n item)".
+            'keterangan'          => ['required', 'string', 'max:255'],
+        ], ['items.*.supplier_id.exists' => self::PESAN_SUPPLIER_TAK_TERPAKAI, 'keterangan.required' => 'Keterangan invoice wajib diisi.']);
+        $ketGabungan = trim((string) $validated['keterangan']);
 
         // GERBANG SUPPLIER SERAGAM — harus di sini, sebelum satu baris pun ditulis.
         //
@@ -365,14 +372,14 @@ class PostingInvoiceController extends Controller
         $jatuhTempo = $this->jatuhTempo($request, $tglInvoice, $tglInvoice);
         $userId = (int) $request->user()->id;
 
-        $inv = DB::transaction(function () use ($prepared, $total, $totalPph, $akunPph, $journal, $userId, $tglInvoice, $jatuhTempo) {
+        $inv = DB::transaction(function () use ($prepared, $total, $totalPph, $akunPph, $journal, $userId, $tglInvoice, $jatuhTempo, $ketGabungan) {
             $first = $prepared[0];
             $inv = $this->makeInvoice([
                 'supplier_id'        => $first['supplier_id'],
                 'customer_id'        => null,
                 'expense_account_id' => $first['offset'],
                 'payable_account_id' => $first['payable'],
-                'description'        => 'Invoice hutang gabungan ('.count($prepared).' item)',
+                'description'        => $ketGabungan, // isian user; rincian per baris tetap keterangan FO
                 'invoice_date'       => $tglInvoice,
                 'receive_date'       => $tglInvoice,
                 'due_date'           => $jatuhTempo,
@@ -448,7 +455,7 @@ class PostingInvoiceController extends Controller
 
             $j = $journal->post([
                 'journal_date' => $inv->invoice_date->toDateString(), 'source' => 'ap',
-                'reference' => $inv->invoice_number, 'description' => 'AP — Invoice gabungan '.$inv->invoice_number, 'created_by' => $userId,
+                'reference' => $inv->invoice_number, 'description' => 'AP — '.$ketGabungan, 'created_by' => $userId,
             ], $this->isiCostCenter($jLines, $userId));
             $inv->update(['journal_id' => $j->id]);
 
@@ -463,11 +470,12 @@ class PostingInvoiceController extends Controller
         });
 
         $msg = "1 Invoice Hutang {$inv->invoice_number} diterbitkan dari ".count($prepared)." item (total Rp ".number_format($total, 0, ',', '.').").";
+        $terbit = [self::infoTerbit($inv, count($prepared), (string) $prepared[0]['row']->refund_no)];
         if ($errors) {
-            return back()->with('error', $msg.' Dilewati: '.implode('; ', $errors));
+            return back()->with('error', $msg.' Dilewati: '.implode('; ', $errors))->with('apTerbit', $terbit);
         }
 
-        return back()->with('success', $msg);
+        return back()->with('success', $msg)->with('apTerbit', $terbit);
     }
 
     /**
@@ -915,20 +923,35 @@ class PostingInvoiceController extends Controller
         return $lines;
     }
 
-    private function issueFromRefundRow(object $row, int $supplierId, JournalService $journal, int $userId, ?string $dueDate = null): array
+    /**
+     * Data pop-up "Invoice diterbitkan" di layar Posting — nomor invoice yang bisa diklik
+     * menuju detailnya di Account Payable.
+     *
+     * @return array{id:int, number:string, keterangan:string, baris:int, dari:string}
+     */
+    private static function infoTerbit(BsApInvoice $inv, int $baris, string $dari): array
+    {
+        return ['id' => (int) $inv->id, 'number' => (string) $inv->invoice_number,
+            'keterangan' => (string) $inv->description, 'baris' => $baris, 'dari' => $dari];
+    }
+
+    private function issueFromRefundRow(object $row, int $supplierId, JournalService $journal, int $userId, ?string $dueDate = null, ?string $keterangan = null): array
     {
         $p = $this->prepRefundRow($row);
         if (! $p['ok']) {
             return $p;
         }
+        // Keterangan KEPALA invoice & jurnal = isian user (terisi dari FO, boleh diubah).
+        // Baris jurnalnya tetap membawa keterangan asli FO supaya asal biayanya tertelusur.
+        $ketKepala = $keterangan !== null && $keterangan !== '' ? $keterangan : $p['desc'];
 
-        $inv = DB::transaction(function () use ($row, $supplierId, $p, $journal, $userId, $dueDate) {
+        $inv = DB::transaction(function () use ($row, $supplierId, $p, $journal, $userId, $dueDate, $ketKepala) {
             $inv = $this->makeInvoice([
                 'supplier_id' => $supplierId, 'customer_id' => $row->customer_id,
                 // unit_id dari antrian GMC → invoice tertaut ke unit/SPR yang dibiayai.
                 'unit_id' => $row->unit_id ?? null,
                 'expense_account_id' => $p['offset'], 'payable_account_id' => $p['payable'],
-                'description' => $p['desc'], 'invoice_date' => $p['date'], 'receive_date' => $p['date'],
+                'description' => $ketKepala, 'invoice_date' => $p['date'], 'receive_date' => $p['date'],
                 // Cadangan = tanggal invoice, persis perilaku sebelum kolom jatuh tempo ada.
                 'due_date' => $dueDate && $dueDate >= $p['date'] ? $dueDate : $p['date'],
                 // NET = nilai − PPh dipotong. Untuk sumber tanpa PPh, $p['pph'] = 0 dan
@@ -947,7 +970,7 @@ class PostingInvoiceController extends Controller
             // Untuk GMC ber-Kategori Gimmick multi-akun, tiap sisi bisa lebih dari satu baris.
             $j = $journal->post([
                 'journal_date' => $inv->invoice_date->toDateString(), 'source' => 'ap',
-                'reference' => $inv->invoice_number, 'description' => 'AP — '.$p['desc'], 'created_by' => $userId,
+                'reference' => $inv->invoice_number, 'description' => 'AP — '.$ketKepala, 'created_by' => $userId,
             ], $this->isiCostCenter($this->journalLinesOf($p), $userId));
             $inv->update(['journal_id' => $j->id]);
 

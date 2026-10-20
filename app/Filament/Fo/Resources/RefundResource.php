@@ -279,7 +279,8 @@ class RefundResource extends Resource
                         try {
                             app(IproApPoster::class)->queueRefund($r->load(['customer', 'kontrak']));
                             Notification::make()->success()->title('Refund dikirim ke Posting Invoice BO')
-                                ->body('Refund '.$r->no_refund.' ('.str_replace('_', ' ', $sumber).') menunggu diposting di BO → Posting Invoice. Setelah diposting baru masuk Account Payable.')->send();
+                                ->body('Refund '.$r->no_refund.' ('.str_replace('_', ' ', $sumber).') menunggu diposting di BO → Posting Invoice. Setelah diposting baru masuk Account Payable. Klik nomornya untuk membuka di BO.')
+                                ->actions(\App\Modules\BO\IproBridge\Support\TautanBo::aksiPosting([(string) $r->no_refund]))->persistent()->send();
                         } catch (\Throwable $e) {
                             Notification::make()->warning()->title('Status DIPROSES, tapi kirim ke BO gagal')
                                 ->body($e->getMessage())->persistent()->send();

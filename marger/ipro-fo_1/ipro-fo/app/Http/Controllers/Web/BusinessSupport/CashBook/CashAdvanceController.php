@@ -749,6 +749,9 @@ class CashAdvanceController extends Controller
         }
 
         $v['employee_id'] = (int) $emp->id;
+        // Pemegang = NAMA karyawan akun yang login, tanpa jabatan, ditentukan server — bukan
+        // teks kiriman layar. Bon lama ("Nama — Jabatan") tetap terbaca AksesBon & cetakan.
+        $v['holder'] = trim((string) $emp->name);
         $v['cost_center_id'] = (int) $emp->cost_center_id;
 
         // REKENING TUJUAN — nomornya diambil server dari master, bukan dari kiriman layar

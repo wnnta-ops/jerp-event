@@ -45,6 +45,16 @@ class SsoController extends Controller
         Auth::login($user, true);
         $request->session()->regenerate();
 
+        // ?next= dari FO (mis. tautan pop-up Posting ke BO) → langsung ke halaman itu.
+        // HANYA path di dalam BO sendiri ("/..."): URL lengkap, "//host", backslash, atau
+        // karakter kendali ditolak — tanpa ini tautan SSO bisa dipakai mengarahkan orang ke
+        // situs luar sesudah login (open redirect).
+        $next = trim((string) $request->query('next', ''));
+        if ($next !== '' && str_starts_with($next, '/') && ! str_starts_with($next, '//')
+            && ! str_contains($next, '\\') && ! preg_match('/[\x00-\x1F]/', $next)) {
+            return redirect($next);
+        }
+
         return redirect()->intended('/dashboard');
     }
 }

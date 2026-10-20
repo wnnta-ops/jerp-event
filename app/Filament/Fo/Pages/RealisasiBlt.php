@@ -104,10 +104,11 @@ class RealisasiBlt extends Page implements HasTable
                             if ($lewat) {
                                 Notification::make()->warning()->title($ok.' dari '.$rows->count().' BLT dikirim ke BO')
                                     ->body('Tidak terkirim (nilai tidak wajar / PPh melebihi nilainya): '.implode(', ', $lewat).'. Perbaiki di Detail/Edit lalu Posting BO lagi.')
-                                    ->persistent()->send();
+                                    ->actions($ok ? \App\Modules\BO\IproBridge\Support\TautanBo::aksiPosting([(string) $r->no_pengajuan]) : [])->persistent()->send();
                             } else {
                                 Notification::make()->success()->title($ok.' BLT dikirim ke Posting Invoice BO')
-                                    ->body('Batch '.$r->no_pengajuan.' menunggu diposting di BO → Posting Invoice (Sumber: BLT).')->send();
+                                    ->body('Batch '.$r->no_pengajuan.' menunggu diposting di BO → Posting Invoice (Sumber: BLT). Klik nomornya untuk membuka di BO.')
+                                    ->actions(\App\Modules\BO\IproBridge\Support\TautanBo::aksiPosting([(string) $r->no_pengajuan]))->persistent()->send();
                             }
                         } catch (\Throwable $e) {
                             Notification::make()->warning()->title('Gagal kirim ke BO')->body($e->getMessage())->persistent()->send();

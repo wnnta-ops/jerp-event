@@ -14,12 +14,17 @@ use Illuminate\Support\Facades\Auth;
  */
 class SsoController
 {
-    public function toBo(): RedirectResponse
+    public function toBo(\Illuminate\Http\Request $request): RedirectResponse
     {
         $this->pastikanBoleh('bo');
         $token = $this->makeToken((string) config('ipro.sso_secret'));
 
-        return redirect(config('ipro.bo_url') . '/sso/consume?token=' . urlencode($token));
+        // ?next= halaman BO tujuan (mis. Posting Invoice dari FO) — diteruskan ke BO, yang
+        // memeriksanya lagi. Hanya path di dalam BO sendiri; selain itu diabaikan.
+        $next = \App\Modules\BO\IproBridge\Support\TautanBo::tujuanAman($request->query('next'));
+
+        return redirect(config('ipro.bo_url') . '/sso/consume?token=' . urlencode($token)
+            . ($next !== null ? '&next=' . urlencode($next) : ''));
     }
 
     /** Portal → app Legal (Next.js, path /legal) — verifikasi di /legal/api/sso. */
