@@ -930,6 +930,13 @@ class CashAdvanceController extends Controller
                menahan ada di CashAdvanceService::realize(); menyembunyikan tombol saja tidak
                menghentikan POST-nya. */
             'lanjutAlokasi' => $this->keadaanLanjut($advance),
+            // Mundur satu langkah / hapus pengajuan — izin cashbook.advance.undo (Hak Akses).
+            'langkahMundur' => $request->user()?->can('cashbook.advance.undo')
+                ? app(CashAdvanceService::class)->langkahMundur($advance) : null,
+            'riwayatMundur' => \Illuminate\Support\Facades\DB::table('bs_cash_advance_mundur as m')
+                ->leftJoin('users as u', 'u.id', '=', 'm.user_id')
+                ->where('m.cash_advance_id', $advance->id)->orderByDesc('m.id')
+                ->get(['m.langkah', 'm.alasan', 'm.created_at', 'u.name as oleh']),
         ]);
     }
 
@@ -1237,6 +1244,33 @@ class CashAdvanceController extends Controller
         }
 
         return back()->with('success', 'Pengajuan '.$advance->advance_number.' dibatalkan.');
+    }
+
+    /**
+     * Mundurkan bon SATU LANGKAH (Batal Refund/Reimburse → Batal Realisasi → Batal Pembayaran →
+     * Hapus Pengajuan). Aturan & urutannya di CashAdvanceService::mundur().
+     */
+    public function mundur(Request $request, BsCashAdvance $advance, CashAdvanceService $svc): RedirectResponse
+    {
+        abort_unless($request->user()?->can('cashbook.advance.undo'), 403);
+        abort_unless($this->bolehBukaBon($request, $advance), 403);
+
+        $v = $request->validate([
+            'langkah' => ['required', 'string', 'in:settle,card,realize,pay,delete'],
+            'alasan' => ['required', 'string', 'max:255'],
+        ], ['alasan.required' => 'Alasan wajib diisi.']);
+
+        try {
+            $label = $svc->mundur($advance, $v['langkah'], $v['alasan'], $request->user()->id);
+        } catch (BusinessRuleException $e) {
+            return back()->with('error', $e->getMessage());
+        }
+
+        if ($v['langkah'] === 'delete') {
+            return redirect()->route('bs.advance.index')->with('success', 'Pengajuan '.$advance->advance_number.' dihapus.');
+        }
+
+        return back()->with('success', $label.' '.$advance->advance_number.' berhasil — bon mundur satu langkah.');
     }
 
     /** Riwayat bon yang DITOLAK sebelum dibayar. Baca-saja — tidak ada jurnal yang menyertainya. */

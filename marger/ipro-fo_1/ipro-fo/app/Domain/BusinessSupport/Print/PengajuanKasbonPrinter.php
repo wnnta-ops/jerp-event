@@ -79,7 +79,21 @@ final class PengajuanKasbonPrinter
     private function penerima(BsCashAdvance $advance): array
     {
         $nama = trim(explode('—', (string) $advance->holder, 2)[0]);
-        $emp  = $nama !== '' ? BsEmployee::whereRaw('LOWER(name) = ?', [mb_strtolower($nama)])->first() : null;
+        // Nama yang sama bisa tercatat lebih dari sekali (karyawan dobel / hasil sinkron). Yang
+        // dipakai yang REKENINGNYA TERISI, lalu yang aktif — ->first() polos bisa mengambil
+        // baris kosong dan mencetak "—" walau rekeningnya ada di baris lain.
+        $emp  = $nama !== '' ? BsEmployee::whereRaw('LOWER(TRIM(name)) = ?', [mb_strtolower($nama)])
+            ->orderByRaw("CASE WHEN COALESCE(TRIM(bank_account), '') = '' THEN 1 ELSE 0 END")
+            ->orderByDesc('is_active')->orderBy('id')->first() : null;
+
+        // Cadangan: karyawan milik akun PEMBUAT bon (lewat NIP akunnya). Holder ditulis dari
+        // karyawan akun yang login saat bon dibuat, jadi bila nama di master kemudian dibetulkan
+        // ejaannya (mis. AZIZAH → AZIZZAH), pencocokan nama di atas tidak lagi kena — padahal
+        // orangnya sama dan rekeningnya ada.
+        if ($emp === null && $advance->created_by && ($user = \App\Models\User::find($advance->created_by))) {
+            $id  = app(\App\Domain\BusinessSupport\Services\CostCenterPengguna::class)->idKaryawan($user);
+            $emp = $id ? BsEmployee::find($id) : null;
+        }
 
         return [
             'nama' => $nama !== '' ? $nama : '—',

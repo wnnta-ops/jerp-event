@@ -212,7 +212,7 @@ class CashAdvanceAllocationService
      */
     public function hapus(BsCashAdvanceAllocation $alloc, ?int $userId = null): void
     {
-        DB::transaction(function () use ($alloc): void {
+        DB::transaction(function () use ($alloc, $userId): void {
             $adv = BsCashAdvance::whereKey($alloc->cash_advance_id)->first();
             if ($adv && $adv->status !== 'outstanding') {
                 throw new BusinessRuleException(
@@ -242,7 +242,10 @@ class CashAdvanceAllocationService
                     if ($saudara) {
                         $this->cabutDariJurnal($journal, $alloc, $adv);
                     } else {
-                        $journal->delete();
+                        // Lewat buang(), bukan $journal->delete() saja: laporan GL menjumlah
+                        // bs_journal_lines tanpa melihat deleted_at jurnalnya, jadi baris jurnal
+                        // yang cuma di-soft-delete tetap terhitung sebagai pengeluaran bank.
+                        app(JournalService::class)->buang($journal, 'Hapus alokasi bon sementara', $userId);
                     }
                 }
             }

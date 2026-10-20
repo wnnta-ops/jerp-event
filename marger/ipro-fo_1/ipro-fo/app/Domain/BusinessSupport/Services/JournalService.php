@@ -385,6 +385,50 @@ final class JournalService
     }
 
     /**
+     * Hapus jurnal dari menu Jurnal. HANYA status Baru — jurnal Final/Approved harus dimundurkan
+     * dulu lewat Batalkan Approval → Batalkan Finalisasi, supaya pencabutan persetujuannya
+     * tercatat sebagai langkah tersendiri. Jurnal milik dokumen ditolak: hapus lewat dokumennya.
+     */
+    public function hapus(BsJournal $journal, string $alasan, ?int $userId = null): void
+    {
+        if ($journal->status !== 'draft') {
+            throw new BusinessRuleException(
+                'Hanya jurnal berstatus Baru yang bisa dihapus. Mundurkan dulu: Batalkan Approval → Batalkan Finalisasi.',
+                errorCode: 'JOURNAL_NOT_DRAFT',
+            );
+        }
+        if ($pemilik = (app(PemilikJurnal::class)->untuk([(int) $journal->id])[(int) $journal->id] ?? null)) {
+            throw new BusinessRuleException(
+                "Jurnal ini milik dokumen {$pemilik}".($journal->reference ? " ({$journal->reference})" : '').' — hapus/batalkan lewat dokumennya.',
+                errorCode: 'JOURNAL_OWNED',
+            );
+        }
+
+        $this->buang($journal, $alasan, $userId);
+    }
+
+    /**
+     * Buang jurnal milik dokumen, dipanggil oleh dokumen itu sendiri saat langkahnya dimundurkan
+     * (mis. Batal Realisasi Bon). Statusnya diturunkan ke Baru lebih dulu supaya laporan yang
+     * menyaring status Approved tidak lagi menghitungnya, lalu barisnya dihapus dan jurnalnya
+     * di-soft-delete. Jejaknya tetap di log status.
+     */
+    public function buang(BsJournal $journal, string $alasan, ?int $userId = null): void
+    {
+        $this->assertPeriodOpen($journal);
+
+        DB::transaction(function () use ($journal, $alasan, $userId): void {
+            $dari = (string) $journal->status;
+            if ($dari !== 'draft') {
+                $journal->update(['status' => 'draft', 'finalized_at' => null, 'posted_at' => null, 'approved_by' => null]);
+            }
+            $this->logStatus($journal, 'deleted', $dari, null, $userId, mb_substr($alasan, 0, 255));
+            $journal->lines()->delete();
+            $journal->delete();
+        });
+    }
+
+    /**
      * Catat satu baris log status jurnal (append-only). Tidak pernah dihapus/di-update, sehingga
      * riwayat dibuat → finalisasi → approve → batal approve → reject tetap utuh hingga closed.
      */

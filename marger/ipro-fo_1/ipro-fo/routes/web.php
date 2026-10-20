@@ -570,6 +570,7 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
     // Dipisah sengaja: satu tombol per satu langkah, tidak ada yang melompati dua tahap.
     Route::post('/business-support/gl/journal/{journal}/reject', [BsJournalController::class, 'reject'])->name('bs.gl.journal.reject');
     Route::post('/business-support/gl/journal/{journal}/unapprove', [BsJournalController::class, 'unapprove'])->name('bs.gl.journal.unapprove');
+    Route::delete('/business-support/gl/journal/{journal}', [BsJournalController::class, 'destroy'])->name('bs.gl.journal.destroy');
     // Master → Jurnal (ringkas) vs Query → Detail Transaksi Jurnal (rincian) — controller sama, mode beda by route.
     Route::get('/business-support/gl/journal-detail', [BsJournalController::class, 'index'])->name('bs.gl.journal.detail');
     // Finalisasi Jurnal (daftar Baru per periode + batch finalisasi) & Approval Jurnal (grid batch Final→Approved).
@@ -1007,6 +1008,7 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
     // Pembatalan pengajuan bon (ditolak SEBELUM dibayar) + riwayatnya. Izinnya
     // cashbook.advance.pay — yang berwenang menolak adalah pihak yang berwenang membayar.
     Route::post('/business-support/bon-sementara/{advance}/batal', [BsAdvanceController::class, 'cancel'])->name('bs.advance.cancel');
+    Route::post('/business-support/bon-sementara/{advance}/mundur', [BsAdvanceController::class, 'mundur'])->name('bs.advance.mundur');
     Route::get('/business-support/bon-sementara-batal', [BsAdvanceController::class, 'cancelledIndex'])->name('bs.advance.cancelled');
     Route::get('/business-support/bon-sementara-laporan-excel', [BsAdvanceController::class, 'reportExcel'])->name('bs.advance.report.excel'); // #126
     Route::get('/business-support/bon-sementara-laporan-pdf', [BsAdvanceController::class, 'reportPdf'])->name('bs.advance.report.pdf');     // #126
