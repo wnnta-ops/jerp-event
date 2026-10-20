@@ -30,7 +30,8 @@ class LaporanKomisi extends Page
 
     public ?string $status = null;
 
-    public string $tanggal = 'pengajuan';
+    // Bawaan = tanggal cair: Excel Finance disusun per periode komisi (pencairan).
+    public string $tanggal = 'cair';
 
     public bool $ready = false;
 

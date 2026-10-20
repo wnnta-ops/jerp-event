@@ -44,7 +44,7 @@
                 <td {!! $td !!}>{{ $r['rek_bank'] }}</td>
             </tr>
         @empty
-            <tr><td colspan="24" @if (! $excel) class="px-4 py-8 text-center text-sm text-gray-500" @endif>Tidak ada komisi pada filter ini.</td></tr>
+            <tr><td colspan="24" @if (! $excel) class="px-4 py-8 text-center text-sm text-gray-500" @endif>Tidak ada komisi pada filter ini. Coba ubah "Berdasarkan" (tanggal pengajuan / cair) atau perlebar periodenya.</td></tr>
         @endforelse
     </tbody>
     @if ($rows->isNotEmpty())
