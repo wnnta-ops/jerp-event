@@ -332,6 +332,7 @@ class FoPanelProvider extends PanelProvider
             'template-pesan' => 'pengaturan',
             'template-wa' => 'pengaturan',
             'template-dokumen' => 'pengaturan',
+            'rekonsiliasi-eprop' => 'pengaturan',
             'lokasis' => 'setup-unit',
             'tahaps' => 'setup-unit',
         ];
@@ -566,6 +567,9 @@ class FoPanelProvider extends PanelProvider
                         $item('Template Pesan', '/fo/template-pesan', 'heroicon-o-envelope', 'filament.fo.resources.template-pesan.'),
                         $item('Template WA (Qontak)', '/fo/template-wa', 'heroicon-o-chat-bubble-left-right', 'filament.fo.resources.template-wa.'),
                         $item('Template Dokumen SPR/SPRS', '/fo/template-dokumen', 'heroicon-o-document-duplicate', 'filament.fo.resources.template-dokumen.'),
+                    ]],
+                    ['label' => 'Data eProperty', 'items' => [
+                        $item('Rekonsiliasi eProperty', '/fo/rekonsiliasi-eprop', 'heroicon-o-arrows-right-left', 'filament.fo.pages.rekonsiliasi-eprop'),
                     ]],
                 ],
             ],

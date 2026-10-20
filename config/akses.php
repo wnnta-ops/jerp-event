@@ -200,6 +200,7 @@ return [
         'RealisasiKomisi' => 'fo.realisasi_komisi',
         'LaporanKomisi' => 'fo.laporan_komisi',
         'LaporanBlt' => 'fo.laporan_blt',
+        'RekonsiliasiEprop' => 'fo.rekonsiliasi_eprop',
         'UploadTargetSpr' => 'fo.upload_target_spr',
 
         // Sisanya — dilengkapi agar tiap halaman bisa disembunyikan sendiri
