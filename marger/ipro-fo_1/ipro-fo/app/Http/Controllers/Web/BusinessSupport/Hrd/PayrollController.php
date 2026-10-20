@@ -22,7 +22,7 @@ class PayrollController extends Controller
     {
         abort_unless($request->user()?->can('bs.payroll.view'), 403);
 
-        $rows = BsPayrollRun::query()->withCount('lines')->latest('run_date')->latest('id')->paginate(50);
+        $rows = BsPayrollRun::query()->withCount('lines')->latest('run_date')->latest('id')->paginate(25);
 
         return Inertia::render('BusinessSupport/Hrd/Payroll', [
             'runs'         => $rows,

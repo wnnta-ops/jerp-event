@@ -25,7 +25,7 @@ class BankRecController extends Controller
         abort_unless($request->user()?->can('cashbook.bankrec.view'), 403);
 
         return Inertia::render('BusinessSupport/CashBook/BankRec/Index', [
-            'reconciliations' => BsBankReconciliation::with('account:id,code,name')->latest('statement_date')->latest('id')->paginate(50)->withQueryString(),
+            'reconciliations' => BsBankReconciliation::with('account:id,code,name')->latest('statement_date')->latest('id')->paginate(25)->withQueryString(),
             'accounts' => $this->bankAccounts(),
         ]);
     }

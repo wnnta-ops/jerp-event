@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import Pagination from '@/Components/UI/Pagination.vue';
 import { ref, computed } from 'vue';
 import { router, Link } from '@inertiajs/vue3';
 import { Wallet, Plus, Download } from 'lucide-vue-next';
@@ -58,5 +59,6 @@ function fmtDate(d: string) { return d ? new Date(d).toLocaleDateString('id-ID',
             </table>
             <EmptyState v-if="!transactions.data?.length" title="Belum ada transaksi kas kecil" description="Klik Tambah untuk top-up atau catat pengeluaran kas kecil." />
         </div>
+        <Pagination :data="transactions" />
     </div>
 </template>

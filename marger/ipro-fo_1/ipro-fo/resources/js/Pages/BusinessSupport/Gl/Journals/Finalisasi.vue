@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import Pagination from '@/Components/UI/Pagination.vue';
 import { ref, computed } from 'vue';
 import { router, Link } from '@inertiajs/vue3';
 import { ArrowLeft, FileCheck2, CheckCircle2 } from 'lucide-vue-next';
@@ -106,5 +107,6 @@ const inputCls = 'h-9 rounded-lg border border-neutral-300 bg-white px-3 text-sm
             </table>
             <EmptyState v-if="!rows.length" title="Tidak ada jurnal Baru pada periode ini" description="Semua jurnal sudah difinalisasi/di-approve, atau ubah rentang tanggal." />
         </div>
+        <Pagination :data="journals" />
     </div>
 </template>

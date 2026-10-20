@@ -42,7 +42,7 @@ class SipController extends Controller
             ->when($from, fn ($q, $v) => $q->whereDate('sip_date', '>=', $v))
             ->when($to, fn ($q, $v) => $q->whereDate('sip_date', '<=', $v))
             ->latest('sip_date')->latest('id')
-            ->paginate(50)->withQueryString();
+            ->paginate(25)->withQueryString();
 
         return Inertia::render('BusinessSupport/Sip/Index', [
             'sips' => $rows,

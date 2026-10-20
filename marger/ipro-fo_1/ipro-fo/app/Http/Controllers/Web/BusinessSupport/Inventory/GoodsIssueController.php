@@ -28,7 +28,7 @@ class GoodsIssueController extends Controller
             ->with('warehouse:id,code,name')
             ->withCount('lines')
             ->latest('trx_date')->latest('id')
-            ->paginate(50);
+            ->paginate(25);
 
         return Inertia::render('BusinessSupport/Inventory/GoodsIssues/Index', ['issues' => $rows]);
     }

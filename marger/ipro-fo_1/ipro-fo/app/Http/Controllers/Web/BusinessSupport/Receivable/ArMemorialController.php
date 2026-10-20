@@ -25,7 +25,7 @@ class ArMemorialController extends Controller
         $rows = BsArMemorial::with(['customer:id,code,full_name', 'counterAccount:id,code,name'])
             ->where('is_writeoff', false)
             ->when($request->input('type'), fn ($q, $v) => $q->where('trx_type', $v))
-            ->latest('memorial_date')->latest('id')->paginate(50)->withQueryString();
+            ->latest('memorial_date')->latest('id')->paginate(25)->withQueryString();
 
         return Inertia::render('BusinessSupport/Receivable/Memorial/Index', [
             'memorials' => $rows,

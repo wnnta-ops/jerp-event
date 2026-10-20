@@ -26,7 +26,7 @@ class ApprovalController extends Controller
                 fn ($q) => $q->whereHas('steps', fn ($q) => $q->where('status', 'pending'))
             )
             ->latest()
-            ->paginate(50);
+            ->paginate(25);
 
         return Inertia::render('Approval/Index', [
             'approvals' => $rows,

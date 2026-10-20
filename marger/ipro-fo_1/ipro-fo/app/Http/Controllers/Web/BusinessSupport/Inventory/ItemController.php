@@ -25,7 +25,7 @@ class ItemController extends Controller
             ->when($request->input('search'), fn ($q, $s) => $q->where(fn ($w) => $w->where('code', 'like', "%{$s}%")->orWhere('name', 'like', "%{$s}%")->orWhere('brand', 'like', "%{$s}%")))
             ->when($request->input('category_id'), fn ($q, $v) => $q->where('stock_category_id', $v))
             ->orderBy('name')
-            ->paginate(50)
+            ->paginate(25)
             ->withQueryString();
 
         // Stok on-hand per item (ringkas).

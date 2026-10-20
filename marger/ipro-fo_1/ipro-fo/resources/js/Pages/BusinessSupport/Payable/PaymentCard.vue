@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import Pagination from '@/Components/UI/Pagination.vue';
 import { ref, computed } from 'vue';
 import { router, Link } from '@inertiajs/vue3';
 import { ArrowLeft, Receipt, FileSpreadsheet, Printer } from 'lucide-vue-next';
@@ -54,5 +55,6 @@ function fmtDate(d: string) { return d ? new Date(d).toLocaleDateString('id-ID',
             </table>
             <EmptyState v-if="!payments.data?.length" title="Belum ada pembayaran" description="Belum ada riwayat pembayaran hutang." />
         </div>
+        <Pagination :data="payments" />
     </div>
 </template>

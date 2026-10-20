@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import Pagination from '@/Components/UI/Pagination.vue';
 import { Link, router } from '@inertiajs/vue3';
 import { ref, watch } from 'vue';
 import { IdCard, Search, ScanLine } from 'lucide-vue-next';
@@ -58,5 +59,6 @@ watch(search, (v) => {
             </table>
             <EmptyState v-if="!rows.length" title="Tidak ada inisiasi" description="Buat inisiasi KPR dulu untuk mengunggah & memverifikasi KTP/NPWP." />
         </div>
+        <Pagination :data="records" />
     </div>
 </template>

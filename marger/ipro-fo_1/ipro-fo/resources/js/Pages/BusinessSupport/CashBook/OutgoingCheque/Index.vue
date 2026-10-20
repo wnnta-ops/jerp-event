@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import Pagination from '@/Components/UI/Pagination.vue';
 import { ref, computed } from 'vue';
 import { router, Link } from '@inertiajs/vue3';
 import { Plus, ArrowLeft, FileText, Wallet, Send, CheckCircle2, Search, Upload, Ban } from 'lucide-vue-next';
@@ -100,5 +101,6 @@ const badge: Record<string, any> = { available: 'neutral', issued: 'warning', cl
             </table>
             <EmptyState v-if="!cheques.data?.length" title="Belum ada BG/Cek keluar" description="Klik Tambah BG/Cek untuk mencatat warkat yang diterbitkan ke supplier/vendor." />
         </div>
+        <Pagination :data="cheques" />
     </div>
 </template>

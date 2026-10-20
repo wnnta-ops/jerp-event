@@ -36,7 +36,7 @@ class CashOpeningController extends Controller
             ->where('reference', 'SALDO-AWAL')
             ->with(['cashAccount:id,code,name', 'counterAccount:id,code,name'])
             ->latest('trx_date')->latest('id')
-            ->paginate(50)->withQueryString();
+            ->paginate(25)->withQueryString();
 
         return Inertia::render('BusinessSupport/CashBook/Opening', [
             'openings'     => $rows,

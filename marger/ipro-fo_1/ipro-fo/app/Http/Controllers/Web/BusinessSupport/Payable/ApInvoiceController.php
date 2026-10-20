@@ -32,7 +32,7 @@ class ApInvoiceController extends Controller
 {
     use GalatAnggaran;
 
-    public function index(Request $request): Response
+    public function index(Request $request): Response|\Illuminate\Http\Response
     {
         return $this->daftar($request, 'invoice');
     }
@@ -41,7 +41,7 @@ class ApInvoiceController extends Controller
      * Daftar Reimburse Biaya Karyawan / Deposit Renovasi Customer — layar yang sama dengan
      * Invoice Hutang, disaring per jenis. Rutenya mengirim `jenis` lewat ->defaults().
      */
-    public function indexJenis(Request $request, string $jenis): Response
+    public function indexJenis(Request $request, string $jenis): Response|\Illuminate\Http\Response
     {
         return $this->daftar($request, $jenis);
     }
@@ -80,49 +80,88 @@ class ApInvoiceController extends Controller
         return ['kunci' => $jenis] + BsApInvoice::JENIS[$jenis];
     }
 
-    private function daftar(Request $request, string $jenis): Response
+    private function daftar(Request $request, string $jenis): Response|\Illuminate\Http\Response
     {
         $info = $this->infoJenis($jenis);
         abort_unless($request->user()?->can($info['izin'].'.view'), 403);
 
-        // Semua invoice dikirim ke klien; filter per-kolom & ringkasan dihitung di sisi klien
-        // agar kotak summary mengikuti hasil filter. Total & Sisa = nett (setelah PPN & PPh).
-        // Invoice BATAL ter-soft-delete (keluar dari Aging/Kartu/Kuitansi) tetapi tetap tampil di
-        // daftar ini berlabel BATAL supaya nomornya bisa ditelusuri. Soft delete lain tetap tersembunyi.
-        $rows = BsApInvoice::withTrashed()
-            ->where(fn ($q) => $q->whereNull('deleted_at')->orWhere('status', BsApInvoice::STATUS_BATAL))
-            ->where('jenis', $jenis)
-            ->with(['supplier:id,name', 'customer:id,full_name'])
-            ->select(['id', 'invoice_number', 'invoice_date', 'receive_date', 'due_date', 'supplier_id', 'customer_id', 'source_type', 'source_id', 'refund_source', 'description', 'berkas_notes', 'berkas_finance_date', 'total', 'net_payable', 'paid_amount', 'status'])
-            ->latest('invoice_date')->latest('id')
-            ->get()
-            ->map(fn ($r) => [
-                'id' => $r->id,
-                'invoice_number' => $r->invoice_number,
-                'invoice_date' => $r->invoice_date?->toDateString(),
-                'receive_date' => $r->receive_date?->toDateString(),
-                'due_date' => $r->due_date?->toDateString(),  // utk ringkasan jatuh tempo
-                'supplier' => $r->supplier ? ['name' => $r->supplier->name] : null,
-                'customer' => $r->customer ? ['name' => $r->customer->full_name] : null, // refund: lawan = customer
-                'source_type' => $r->source_type,    // po / spk / refund / null(manual)
-                // id PO asal (hanya bila source_type='po') — dipakai tombol "Cetak Purchase Order"
-                // pada baris terpilih. source_id sengaja tidak dikirim mentah agar tidak tertukar
-                // dengan id sumber lain (SPK/refund) yang memakai kolom yang sama.
-                'po_id' => $r->source_type === 'po' ? $r->source_id : null,
-                'refund_source' => $r->refund_source,  // SPR / SPRS / TRANSFER_ANONIM
-                'description' => $r->description,
-                'berkas_notes' => $r->berkas_notes,
-                'berkas_finance_date' => $r->berkas_finance_date?->toDateString(),
-                'status' => $r->status,
-                'payable' => round($r->payable_amount, 2),   // nett dibayar ke supplier (total − PPh dipotong)
-                'sisa' => $r->status === BsApInvoice::STATUS_BATAL ? 0 : round($r->outstanding, 2), // nett − terbayar
-            ]);
+        // DISARING & DIHALAMANKAN DI SERVER (25 baris) — lihat DaftarInvoiceHutang. Dulu seluruh
+        // invoice dikirim ke browser dan disaring di sana; ribuan baris membuat halamannya lambat.
+        // Total & Sisa = nett (setelah PPN & PPh). Invoice BATAL ter-soft-delete tetapi tetap
+        // tampil berlabel BATAL supaya nomornya bisa ditelusuri.
+        $daftar = new \App\Domain\BusinessSupport\Support\DaftarInvoiceHutang($jenis);
+        $q = $daftar->saring($daftar->dasar(), $request);
+
+        $baris = fn ($r) => [
+            'id' => $r->id,
+            'invoice_number' => $r->invoice_number,
+            'invoice_date' => $r->invoice_date?->toDateString(),
+            'receive_date' => $r->receive_date?->toDateString(),
+            'due_date' => $r->due_date?->toDateString(),
+            'supplier' => $r->nama_supplier !== null ? ['name' => $r->nama_supplier] : null,
+            'customer' => $r->nama_customer !== null ? ['name' => $r->nama_customer] : null, // refund: lawan = customer
+            'source_type' => $r->source_type,    // po / spk / refund / null(manual)
+            // id PO asal (hanya bila source_type='po') — dipakai tombol "Cetak Purchase Order".
+            'po_id' => $r->source_type === 'po' ? $r->source_id : null,
+            'refund_source' => $r->refund_source,  // SPR / SPRS / TRANSFER_ANONIM
+            'description' => $r->description,
+            'berkas_notes' => $r->berkas_notes,
+            'berkas_finance_date' => $r->berkas_finance_date?->toDateString(),
+            'status' => $r->status,
+            'payable' => round($r->payable_amount, 2),   // nett dibayar ke supplier (total − PPh dipotong)
+            'sisa' => $r->status === BsApInvoice::STATUS_BATAL ? 0 : round($r->outstanding, 2), // nett − terbayar
+        ];
+        $urut = fn ($x) => $x->orderByDesc('bs_ap_invoices.invoice_date')->orderByDesc('bs_ap_invoices.id');
+
+        // Excel = SELURUH hasil saringan (bukan hanya halaman yang tampil).
+        if ($request->boolean('excel')) {
+            return $this->excelDaftar($urut((clone $q)->select(\App\Domain\BusinessSupport\Support\DaftarInvoiceHutang::kolomBaris()))->get()->map($baris), $info);
+        }
+
+        $rows = $urut((clone $q)->select(\App\Domain\BusinessSupport\Support\DaftarInvoiceHutang::kolomBaris()))
+            ->paginate(\App\Domain\BusinessSupport\Support\DaftarInvoiceHutang::PER_HALAMAN)->withQueryString()
+            ->through($baris);
 
         return Inertia::render('BusinessSupport/Payable/Index', [
             'jenis' => $info,
             'invoices' => $rows,
+            'summary' => $daftar->ringkasan($q),
+            'jumlahSemua' => (int) $daftar->dasar()->count(),
+            'opsi' => $daftar->opsi(),
+            'batasOpsi' => \App\Domain\BusinessSupport\Support\DaftarInvoiceHutang::BATAS_OPSI,
+            'filters' => [
+                'search' => (string) $request->input('search', ''),
+                't' => (array) $request->input('t', []),
+                'c' => (array) $request->input('c', []),
+            ],
             // Hanya Finance yang boleh mengisi tanggal berkas diterima Finance.
             'canBerkasFinance' => $this->isFinance($request),
+        ]);
+    }
+
+    /** Excel daftar invoice — kolom sama dengan unduhan layar sebelumnya (nilai nett). */
+    private function excelDaftar(\Illuminate\Support\Collection $rows, array $info): \Illuminate\Http\Response
+    {
+        $e = fn ($v) => htmlspecialchars((string) ($v ?? ''), ENT_QUOTES, 'UTF-8');
+        $tgl = fn (?string $d) => $d ? \Illuminate\Support\Carbon::parse($d)->translatedFormat('d M Y') : '—';
+        $num = fn ($v) => number_format((float) $v, 0, ',', '.');
+        $status = fn (string $s) => $s === 'paid' ? 'Lunas' : ($s === 'batal' ? 'Batal' : 'Open');
+        $body = '';
+        foreach ($rows as $r) {
+            $body .= '<tr><td>'.$e($r['invoice_number']).'</td><td>'.$e($tgl($r['invoice_date'])).'</td><td>'.$e($tgl($r['receive_date'])).'</td>'
+                .'<td>'.$e($tgl($r['due_date'])).'</td><td>'.$e($r['supplier']['name'] ?? $r['customer']['name'] ?? '').'</td><td>'.$e($r['description']).'</td>'
+                .'<td>'.$e($num($r['payable'])).'</td><td>'.$e($num($r['sisa'])).'</td><td>'.$e($status($r['status'])).'</td>'
+                .'<td>'.$e($r['berkas_notes']).'</td><td>'.$e($tgl($r['berkas_finance_date'])).'</td></tr>';
+        }
+        $html = '<html xmlns:x="urn:schemas-microsoft-com:office:excel"><head><meta charset="utf-8"></head><body>'
+            .'<table border="1"><tr style="background:#0f766e;color:#fff">'
+            .'<th>No. Invoice</th><th>Tanggal</th><th>Tgl. Diterima</th><th>Jatuh Tempo</th><th>Supplier</th><th>Keterangan</th><th>Total (Net)</th><th>Sisa (Net)</th><th>Status</th><th>Kelengkapan Berkas</th><th>Berkas Diterima Finance</th>'
+            .'</tr>'.$body.'</table></body></html>';
+        $nama = str_replace(' ', '-', (string) ($info['judul'] ?? 'Invoice-Hutang')).'-'.now()->toDateString().'.xls';
+
+        return response($html, 200, [
+            'Content-Type' => 'application/vnd.ms-excel',
+            'Content-Disposition' => 'attachment; filename="'.$nama.'"',
         ]);
     }
 
@@ -1752,7 +1791,7 @@ HTML;
         )
             ->when($supplierId, $bySupplier)
             ->orderByDesc('payment_date')->orderByDesc('id')
-            ->paginate(50)->withQueryString();
+            ->paginate(25)->withQueryString();
 
         return Inertia::render('BusinessSupport/Payable/PaymentCard', [
             'payments' => $payments,

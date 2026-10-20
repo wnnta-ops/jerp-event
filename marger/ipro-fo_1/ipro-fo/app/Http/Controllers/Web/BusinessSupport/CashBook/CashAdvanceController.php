@@ -678,7 +678,33 @@ class CashAdvanceController extends Controller
                 // sebagai isian.
                 'punya_cost_center' => $emp->cost_center_id !== null,
             ],
+            'rekening' => $emp === null ? [] : $this->opsiRekening($emp),
         ]);
+    }
+
+    /**
+     * Pilihan rekening tujuan transfer bon: rekening pengaju sendiri dan rekening atasannya
+     * (Data Karyawan → Atasan). Dibaca dari master SAAT INI — yang dipilih lalu DISALIN ke bon.
+     *
+     * @return array<string, array{employee_id:int, nama:string, jabatan:?string, bank:?string, nomor:?string, ada:bool}>
+     */
+    private function opsiRekening(BsEmployee $emp): array
+    {
+        $baris = fn (BsEmployee $e) => [
+            'employee_id' => (int) $e->id,
+            'nama' => trim((string) $e->name),
+            'jabatan' => $e->position ? trim((string) $e->position) : null,
+            'bank' => trim((string) $e->bank_name) ?: null,
+            'nomor' => trim((string) $e->bank_account) ?: null,
+            'ada' => trim((string) $e->bank_account) !== '',
+        ];
+
+        $opsi = ['sendiri' => $baris($emp)];
+        if ($emp->atasan_id && ($atasan = BsEmployee::find($emp->atasan_id))) {
+            $opsi['atasan'] = $baris($atasan);
+        }
+
+        return $opsi;
     }
 
     public function store(Request $request, CashAdvanceService $svc): RedirectResponse
@@ -695,6 +721,7 @@ class CashAdvanceController extends Controller
             'amount' => ['required', 'numeric', 'min:0.01'],
             // Cara persetujuan dipilih per pengajuan; kosong = online (perilaku lama).
             'approval_mode' => ['nullable', 'string', 'in:'.implode(',', array_keys(BsCashAdvance::APPROVAL_MODES))],
+            'rek_sumber' => ['nullable', 'string', 'in:sendiri,atasan'],
         ]);
 
         // COST CENTER DITURUNKAN dari karyawan pengaju, tidak lagi dikirim layar. Kalau
@@ -724,6 +751,22 @@ class CashAdvanceController extends Controller
         $v['employee_id'] = (int) $emp->id;
         $v['cost_center_id'] = (int) $emp->cost_center_id;
 
+        // REKENING TUJUAN — nomornya diambil server dari master, bukan dari kiriman layar
+        // (layar hanya menyebut "sendiri"/"atasan"), lalu disalin ke bon.
+        $opsiRek = $this->opsiRekening($emp);
+        $sumber = $v['rek_sumber'] ?? (($opsiRek['sendiri']['ada'] ?? false) ? 'sendiri' : null);
+        unset($v['rek_sumber']);
+        if ($sumber !== null) {
+            $rek = $opsiRek[$sumber] ?? null;
+            if (! $rek || ! $rek['ada']) {
+                return back()->withInput()->with('error', $sumber === 'atasan'
+                    ? 'Rekening atasan belum tersedia — isi Atasan dan rekeningnya di Data Karyawan.'
+                    : 'Rekening Anda belum diisi di Data Karyawan.');
+            }
+            $v += ['rek_sumber' => $sumber, 'rek_employee_id' => $rek['employee_id'],
+                'rek_bank' => $rek['bank'], 'rek_nomor' => $rek['nomor'], 'rek_atas_nama' => $rek['nama']];
+        }
+
         try {
             $adv = $svc->issue($v, $request->user()->id);
         } catch (BusinessRuleException $e) {
@@ -742,7 +785,7 @@ class CashAdvanceController extends Controller
         $rows = BsCashAdvance::query()
             ->where('status', 'requested')
             ->latest('advance_date')->latest('id')
-            ->paginate(50)->withQueryString();
+            ->paginate(25)->withQueryString();
 
         // Bayar hanya boleh bila approval lengkap → kirim status approval per baris.
         $rows->getCollection()->transform(function (BsCashAdvance $a) {

@@ -661,7 +661,7 @@ class CashBookController extends Controller
                 'lines:id,cash_transaction_id,account_id,amount,description', 'lines.account:id,code,name',
             ])
             ->latest('trx_date')->latest('id')
-            ->paginate(50)->withQueryString();
+            ->paginate(25)->withQueryString();
 
         // Registrasi Pengeluaran Kas & Bank (AP) — Kuitansi Hutang menunggu persetujuan (status 'pending').
         $apKuitansi = \App\Domain\BusinessSupport\Models\BsApKuitansi::query()

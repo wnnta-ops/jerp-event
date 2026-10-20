@@ -38,7 +38,7 @@ class OutgoingChequeController extends Controller
             ->when($request->input('bank_account_id'), fn ($q, $v) => $q->where('bank_account_id', $v))
             ->when($request->input('search'), fn ($q, $s) => $q->where(fn ($w) => $w->where('cheque_number', 'like', "%{$s}%")->orWhere('payee', 'like', "%{$s}%")))
             ->latest('cheque_date')->latest('id')
-            ->paginate(50)->withQueryString();
+            ->paginate(25)->withQueryString();
 
         $bucket = fn (string $status) => [
             'count' => BsOutgoingCheque::where('status', $status)->count(),

@@ -95,6 +95,12 @@ final class CashAdvanceService
                 // akan membaca dirinya "bukan offline" pada satu tempat dan "bukan online" di
                 // tempat lain, dan bonnya berperilaku setengah-setengah.
                 'approval_mode' => (($data['approval_mode'] ?? null) === 'offline') ? 'offline' : 'online',
+                // Rekening tujuan transfer (salinan saat diajukan) — lihat CashAdvanceController::store().
+                'rek_sumber' => $data['rek_sumber'] ?? null,
+                'rek_employee_id' => $data['rek_employee_id'] ?? null,
+                'rek_bank' => $data['rek_bank'] ?? null,
+                'rek_nomor' => $data['rek_nomor'] ?? null,
+                'rek_atas_nama' => $data['rek_atas_nama'] ?? null,
                 'created_by' => $userId,
             ]);
         });

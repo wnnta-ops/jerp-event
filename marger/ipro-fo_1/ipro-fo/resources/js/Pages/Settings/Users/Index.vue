@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import Pagination from '@/Components/UI/Pagination.vue';
 import { Link, router } from '@inertiajs/vue3';
 import { ref, watch } from 'vue';
 import { Plus } from 'lucide-vue-next';
@@ -62,5 +63,6 @@ function blockUser(id: number) {
                 </tbody>
             </table>
         </div>
+        <Pagination :data="users" />
     </div>
 </template>

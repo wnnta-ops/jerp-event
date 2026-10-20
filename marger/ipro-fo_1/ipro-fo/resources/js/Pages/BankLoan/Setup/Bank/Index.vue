@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import Pagination from '@/Components/UI/Pagination.vue';
 import { ref } from 'vue';
 import { Link, router } from '@inertiajs/vue3';
 import { Plus, Pencil, Trash2, Landmark, Link2 } from 'lucide-vue-next';
@@ -98,5 +99,6 @@ function destroy(b: any) {
             </table>
             <EmptyState v-if="!banks.data?.length" title="Belum ada bank" description="Klik Add New untuk menambah bank rekanan KPR." />
         </div>
+        <Pagination :data="banks" />
     </div>
 </template>

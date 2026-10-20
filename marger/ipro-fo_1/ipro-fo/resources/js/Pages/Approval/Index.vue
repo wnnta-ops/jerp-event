@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import Pagination from '@/Components/UI/Pagination.vue';
 import { Link, router } from '@inertiajs/vue3';
 import { ref, watch } from 'vue';
 import Badge from '@/Components/UI/Badge.vue';
@@ -50,5 +51,6 @@ watch(tab, (v) => router.get(route('approvals.index'), { tab: v }, { preserveSta
             </table>
             <EmptyState v-if="!approvals.data?.length" title="Tidak ada approval tertunda" />
         </div>
+        <Pagination :data="approvals" />
     </div>
 </template>

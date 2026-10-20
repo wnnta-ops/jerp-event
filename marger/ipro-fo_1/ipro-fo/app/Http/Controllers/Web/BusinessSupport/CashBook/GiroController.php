@@ -23,7 +23,7 @@ class GiroController extends Controller
         $rows = BsGiro::query()
             ->when($request->input('status'), fn ($q, $v) => $q->where('status', $v))
             ->latest('due_date')->latest('id')
-            ->paginate(50)->withQueryString();
+            ->paginate(25)->withQueryString();
 
         return Inertia::render('BusinessSupport/CashBook/Giro/Index', [
             'giros'    => $rows,
@@ -42,7 +42,7 @@ class GiroController extends Controller
         abort_unless($request->user()?->can('cashbook.giro.view'), 403);
 
         $q = fn () => BsGiro::query()->where('status', 'in_hand')->whereNull('receive_journal_id');
-        $rows = $q()->latest('receive_date')->latest('id')->paginate(50)->withQueryString();
+        $rows = $q()->latest('receive_date')->latest('id')->paginate(25)->withQueryString();
 
         return Inertia::render('BusinessSupport/CashBook/Giro/Penerimaan', [
             'giros'   => $rows,

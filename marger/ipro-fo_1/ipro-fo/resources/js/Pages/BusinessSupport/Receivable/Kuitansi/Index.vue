@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import Pagination from '@/Components/UI/Pagination.vue';
 import { router, Link } from '@inertiajs/vue3';
 import { ref } from 'vue';
 import { Plus, ArrowLeft, ReceiptText, Search } from 'lucide-vue-next';
@@ -50,5 +51,6 @@ const alat: Record<string, string> = { tunai: 'Tunai', transfer: 'Transfer', gir
             </table>
             <EmptyState v-if="!kuitansis.data?.length" title="Belum ada kuitansi" description="Klik Terima Piutang untuk membuat voucher penerimaan customer." />
         </div>
+        <Pagination :data="kuitansis" />
     </div>
 </template>

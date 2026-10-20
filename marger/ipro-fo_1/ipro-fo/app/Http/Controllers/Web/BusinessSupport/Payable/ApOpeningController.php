@@ -30,7 +30,7 @@ class ApOpeningController extends Controller
             ->where('trx_type', 'saldo_awal')
             ->with('supplier:id,code,name')
             ->latest('invoice_date')->latest('id')
-            ->paginate(50)->withQueryString();
+            ->paginate(25)->withQueryString();
 
         return Inertia::render('BusinessSupport/Payable/Opening', [
             'openings'  => $rows,

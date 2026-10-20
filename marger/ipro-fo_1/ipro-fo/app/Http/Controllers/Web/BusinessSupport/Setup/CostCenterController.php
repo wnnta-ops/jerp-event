@@ -26,7 +26,7 @@ class CostCenterController extends Controller
             ->with('project:id,name')
             ->when($request->input('search'), fn ($q, $s) => $q->where(fn ($w) => $w->where('code', 'like', "%{$s}%")->orWhere('name', 'like', "%{$s}%")))
             ->orderBy('code')
-            ->paginate(50)
+            ->paginate(25)
             ->withQueryString();
 
         return Inertia::render('BusinessSupport/Setup/CostCenters', [

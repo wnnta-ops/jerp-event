@@ -76,7 +76,7 @@ class PettyCashController extends Controller
                 'bs_journal_lines.description as line_description',
                 'j.journal_number', 'j.reference', 'j.journal_date', 'j.description as journal_description',
             ])
-            ->paginate(50)->withQueryString();
+            ->paginate(25)->withQueryString();
 
         $rows->getCollection()->transform(function (BsJournalLine $l) use ($runningSaldo): BsJournalLine {
             $l->setAttribute('masuk', (float) $l->debit);

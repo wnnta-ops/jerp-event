@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import Pagination from '@/Components/UI/Pagination.vue';
 import { ref } from 'vue';
 import { router, useForm } from '@inertiajs/vue3';
 import { Plus, Pencil, Trash2, FileWarning } from 'lucide-vue-next';
@@ -117,5 +118,6 @@ function destroy(c: any) {
                 </div>
             </div>
         </Teleport>
+        <Pagination :data="categories" />
     </div>
 </template>

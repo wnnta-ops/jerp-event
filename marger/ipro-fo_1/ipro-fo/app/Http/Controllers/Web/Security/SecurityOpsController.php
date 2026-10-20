@@ -99,7 +99,7 @@ class SecurityOpsController extends Controller
         return Inertia::render('Security/Technical', [
             'rows' => SecTechnicalProblem::with(['reporter:id,name', 'assignee:id,name'])
                 ->when($request->input('status'), fn ($q, $v) => $q->where('status', $v))
-                ->latest('id')->paginate(50)->withQueryString(),
+                ->latest('id')->paginate(25)->withQueryString(),
             'filters'    => $request->only('status'),
             'users'      => User::orderBy('name')->get(['id', 'name']),
             'priorities' => SecTechnicalProblem::PRIORITIES,
