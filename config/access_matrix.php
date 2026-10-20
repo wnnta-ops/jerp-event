@@ -131,6 +131,7 @@ return [
             'fo.template_pesan' => 'Template Pesan',
             'fo.template_wa' => 'Template WA (Qontak)',
             'fo.template_dokumen' => 'Template Dokumen SPR/SPRS',
+            'fo.rekonsiliasi_eprop' => 'Rekonsiliasi eProperty (ubah = memutuskan ditahan/konflik)',
             'fo.segera_hadir' => 'Menu "Segera Hadir" (Report)',
             'fo.asisten_ai' => 'Asisten AI',
         ],
