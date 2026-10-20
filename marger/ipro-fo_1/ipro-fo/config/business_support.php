@@ -158,6 +158,10 @@ return [
         'ppn_out_pending' => '20104040409', // PPN Keluaran Akan Diterbitkan — Booked Revenue
         'sales_discount'  => '40102020201', // Diskon Penjualan — Booked Revenue
         'cash'       => '10101020204', // Bank — BCA REK. 6155428914
+        // Akun kas/bank bawaan bon sementara — dicetak di kolom No. Account Bukti Permohonan
+        // Pembayaran selama bon belum dibayar (akun sebenarnya baru dipilih Finance saat membayar).
+        // 10101020299 dipakai ±98% bon di eProperty.
+        'advance_cash_default' => '10101020299', // AYAT (POS) SILANG
         'cogs'       => '50101010101', // Beban Pokok Penjualan (HPP)
         'giro_in'    => '10102010102', // Piutang Giro (cek/giro masuk)
         // #153 BG/Cek KELUAR (outgoing cheque). outgoing_cheque_liability = penampung "BG/Cek Beredar"

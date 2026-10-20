@@ -13,8 +13,10 @@ use App\Domain\BusinessSupport\Models\BsPurchaseOrder;
 use App\Domain\BusinessSupport\Models\BsSupplier;
 use App\Domain\BusinessSupport\Models\BsWorkOrder;
 use App\Domain\BusinessSupport\Models\BsWorkOrderProgress;
+use App\Domain\BusinessSupport\Services\CostCenterPengguna;
 use App\Domain\BusinessSupport\Services\JournalService;
 use App\Http\Controllers\Controller;
+use App\Models\User;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
@@ -447,7 +449,7 @@ class PostingInvoiceController extends Controller
             $j = $journal->post([
                 'journal_date' => $inv->invoice_date->toDateString(), 'source' => 'ap',
                 'reference' => $inv->invoice_number, 'description' => 'AP — Invoice gabungan '.$inv->invoice_number, 'created_by' => $userId,
-            ], $jLines);
+            ], $this->isiCostCenter($jLines, $userId));
             $inv->update(['journal_id' => $j->id]);
 
             foreach ($prepared as $p) {
@@ -864,6 +866,55 @@ class PostingInvoiceController extends Controller
         return Rule::exists('bs_suppliers', 'id')->where('is_active', 1)->whereNull('deleted_at');
     }
 
+    /**
+     * Cost center baris jurnal posting dari FO.
+     *
+     * Antrean FO tidak membawa cost center, sehingga dulu SEMUA jurnalnya tanpa cost center dan
+     * tertahan di gerbang Approve (akun wajib, mis. PREPAID BIAYA KPR per cluster). Urutannya:
+     *   1. cost center BAWAAN AKUN (Setup → Akun · kolom Cost Center) — ditetapkan Accounting;
+     *   2. cadangan: cost center karyawan yang menekan Posting (sama dengan wizard invoice AP).
+     * Akun yang boleh tanpa cost center (optional / tidak dianggarkan) dibiarkan kosong — sama
+     * dengan gerbang Approve, supaya baris itu tidak ikut tertahan anggaran.
+     *
+     * @param  array<int,array<string,mixed>>  $lines
+     * @return array<int,array<string,mixed>>
+     */
+    private function isiCostCenter(array $lines, int $userId): array
+    {
+        $ids = array_values(array_unique(array_filter(array_map(fn ($l) => (int) ($l['account_id'] ?? 0), $lines))));
+        if (! $ids) {
+            return $lines;
+        }
+        $akun = BsAccount::whereIn('id', $ids)->get(['id', 'code', 'cost_center_id', 'cost_center_optional'])->keyBy('id');
+        $tanpaAnggaran = array_map('strval', (array) config('business_support.budget.coa_tanpa_anggaran', []));
+        $ccPemosting = null;
+        $sudahCari = false;
+
+        foreach ($lines as $i => $l) {
+            $a = $akun[(int) ($l['account_id'] ?? 0)] ?? null;
+            if (! empty($l['cost_center_id']) || ! $a) {
+                continue;
+            }
+            if ($a->cost_center_id) {
+                $lines[$i]['cost_center_id'] = (int) $a->cost_center_id;
+
+                continue;
+            }
+            if ($a->cost_center_optional || in_array((string) $a->code, $tanpaAnggaran, true)) {
+                continue;
+            }
+            if (! $sudahCari) {
+                $ccPemosting = app(CostCenterPengguna::class)->idUntuk(User::find($userId));
+                $sudahCari = true;
+            }
+            if ($ccPemosting) {
+                $lines[$i]['cost_center_id'] = (int) $ccPemosting;
+            }
+        }
+
+        return $lines;
+    }
+
     private function issueFromRefundRow(object $row, int $supplierId, JournalService $journal, int $userId, ?string $dueDate = null): array
     {
         $p = $this->prepRefundRow($row);
@@ -897,7 +948,7 @@ class PostingInvoiceController extends Controller
             $j = $journal->post([
                 'journal_date' => $inv->invoice_date->toDateString(), 'source' => 'ap',
                 'reference' => $inv->invoice_number, 'description' => 'AP — '.$p['desc'], 'created_by' => $userId,
-            ], $this->journalLinesOf($p));
+            ], $this->isiCostCenter($this->journalLinesOf($p), $userId));
             $inv->update(['journal_id' => $j->id]);
 
             DB::table('bs_ap_refund_queue')->where('id', $row->id)
