@@ -47,11 +47,7 @@ final class BoNumberService
         $d = $date ?: Carbon::now();
 
         try {
-            // scope adalah argumen KETIGA NumeratorService::next(), bukan kunci di dalam
-            // context. Mengirimnya di dalam context membuat pencarian jatuh ke bawaan 'fo',
-            // tidak menemukan satu pun baris BO, dan SETIAP penerbitan nomor diam-diam
-            // kembali ke cara lama — master tidak pernah terpakai sama sekali.
-            return $this->numerator->next($code, array_merge([
+            $terbit = fn () => $this->numerator->next($code, array_merge([
                 'YYYY'     => $d->format('Y'),
                 'YY'       => $d->format('y'),
                 'MM'       => $d->format('m'),
@@ -59,6 +55,26 @@ final class BoNumberService
                 'MM_ROMAN' => NumeratorService::romanMonth((int) $d->format('n')),
                 'MMM_ID'   => NumeratorService::monthAbbrId((int) $d->format('n')),
             ], $extra), BoDocumentNumbers::SCOPE);
+            // scope adalah argumen KETIGA NumeratorService::next(), bukan kunci di dalam
+            // context. Mengirimnya di dalam context membuat pencarian jatuh ke bawaan 'fo',
+            // tidak menemukan satu pun baris BO, dan SETIAP penerbitan nomor diam-diam
+            // kembali ke cara lama — master tidak pernah terpakai sama sekali.
+            $nomor = $terbit();
+
+            /* PENJAGA NOMOR GANDA. Penghitung master bisa TERTINGGAL dari dokumen yang sudah
+               ada — data migrasi & sinkron eProperty ditulis langsung ke tabel tanpa menaikkan
+               penghitungnya (kejadian 21 Okt 2026: AP.KUI di penghitung 8, kuitansi sudah
+               sampai 00147, sehingga Simpan pelunasan AP selalu gagal "Duplicate entry").
+               Nomor yang sudah terpakai dilewati — penghitungnya ikut naik — sampai ketemu
+               nomor kosong. Batasnya longgar; selebihnya jalankan bo:numerator-sinkron. */
+            $kat = BoDocumentNumbers::all()[$code] ?? null;
+            if ($kat && ($kat['tabel'] ?? null) && ($kat['kolom'] ?? null) && \Illuminate\Support\Facades\Schema::hasTable($kat['tabel'])) {
+                for ($i = 0; $i < 5000 && DB::table($kat['tabel'])->where($kat['kolom'], $nomor)->exists(); $i++) {
+                    $nomor = $terbit();
+                }
+            }
+
+            return $nomor;
         } catch (\Throwable $e) {
             // Dicatat, tidak didiamkan: kalau master tidak terpakai, seseorang harus tahu.
             report($e);
@@ -170,6 +186,83 @@ final class BoNumberService
         }
 
         return $tertinggi;
+    }
+
+    /**
+     * Nomor urut tertinggi TAHUN INI untuk sebuah kode — dibaca dari dokumennya, mengikuti
+     * FORMAT baris masternya ({YY}/{YYYY} dikunci ke tahun berjalan, {SEQ} ditangkap, token
+     * lain bebas). Penghitung seluruh katalog di-reset tahunan, jadi nomor tahun lalu tidak
+     * boleh ikut menaikkannya. Format tanpa token tahun jatuh ke urutTertinggi() (semua tahun).
+     */
+    public static function urutTertinggiTahunIni(string $tabel, string $kolom, string $prefix, string $format): int
+    {
+        if (! \Illuminate\Support\Facades\Schema::hasTable($tabel)) {
+            return 0;
+        }
+        if (! str_contains($format, '{YY}') && ! str_contains($format, '{YYYY}')) {
+            return self::urutTertinggi('', $tabel, $kolom, $prefix);
+        }
+
+        $now = Carbon::now();
+        $pola = preg_quote($format, '#');
+        $ganti = [
+            preg_quote('{PREFIX}', '#') => preg_quote($prefix, '#'),
+            preg_quote('{YYYY}', '#') => $now->format('Y'),
+            preg_quote('{YY}', '#') => $now->format('y'),
+            preg_quote('{MM}', '#') => '\\d{2}',
+            preg_quote('{DD}', '#') => '\\d{2}',
+            preg_quote('{MM_ROMAN}', '#') => '[IVXLC]+',
+            preg_quote('{SEQ}', '#') => '(?P<seq>\\d+)',
+        ];
+        $pola = strtr($pola, $ganti);
+        // Token lain ({KATEGORI}, {PROJ}, {MMM_ID}, …) — bebas, tanpa garis miring.
+        $pola = preg_replace('#\\\{[A-Z_]+\\\}#', '[^/]+', $pola);
+        $pola = '#^'.$pola.'$#';
+
+        $tertinggi = 0;
+        $q = DB::table($tabel)->whereNotNull($kolom);
+        if (! str_starts_with($format, '{SEQ}')) {
+            $q->where($kolom, 'like', $prefix.'%');
+        }
+        foreach ($q->pluck($kolom) as $nomor) {
+            if (preg_match($pola, (string) $nomor, $m)) {
+                $tertinggi = max($tertinggi, (int) $m['seq']);
+            }
+        }
+
+        return $tertinggi;
+    }
+
+    /**
+     * Naikkan penghitung master yang TERTINGGAL dari dokumen yang sudah ada (tahun ini).
+     * Penghitung tidak pernah diturunkan. $jalankan=false hanya melaporkan rencananya.
+     *
+     * @return array<int, array{code:string, label:string, sekarang:int, tertinggi:int, baru:int}>
+     */
+    public static function sinkronPenghitung(bool $jalankan): array
+    {
+        $katalog = BoDocumentNumbers::all();
+        $periode = Carbon::now()->format('Y');
+        $hasil = [];
+
+        foreach (Numerator::withoutGlobalScopes()->where('scope', BoDocumentNumbers::SCOPE)->orderBy('code')->get() as $n) {
+            $d = $katalog[$n->code] ?? null;
+            if (! $d || ! ($d['tabel'] ?? null) || ! ($d['kolom'] ?? null) || $n->code === 'SIP') {
+                continue;   // SIP dihitung dari print_seq-nya sendiri
+            }
+            $sekarang = $n->current_period === $periode ? (int) $n->current_seq : 0;
+            $tertinggi = self::urutTertinggiTahunIni($d['tabel'], $d['kolom'], (string) $n->prefix, (string) ($n->format ?: $d['format']));
+            if ($tertinggi <= $sekarang) {
+                continue;
+            }
+            $hasil[] = ['code' => (string) $n->code, 'label' => (string) $d['label'], 'sekarang' => $sekarang, 'tertinggi' => $tertinggi, 'baru' => $tertinggi];
+            if ($jalankan) {
+                DB::table('numerators')->where('id', $n->id)
+                    ->update(['current_period' => $periode, 'current_seq' => $tertinggi, 'updated_at' => now()]);
+            }
+        }
+
+        return $hasil;
     }
 
     /**

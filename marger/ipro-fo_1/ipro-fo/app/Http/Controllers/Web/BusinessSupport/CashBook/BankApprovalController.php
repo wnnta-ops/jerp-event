@@ -805,8 +805,24 @@ class BankApprovalController extends Controller
                 ))?->application?->customer?->full_name;
         }
 
+        // DISARING & DIHALAMANKAN DI SERVER (50 baris). Dulu ribuan baris (termasuk yang sudah
+        // dijurnal) dikirim & dirender sekaligus. Bawaan saat dibuka: hanya "Belum dijurnal".
+        $f = $this->filterApproval($request, true);
+        if ($initialCustomer !== null && ! $request->has('customer')) {
+            $f['customer'] = $initialCustomer;
+        }
+        $tersaring = $this->saringApproval($rows, $f);
+
         return Inertia::render('BusinessSupport/CashBook/ApprovalRetensi', [
-            'rows'            => $rows,
+            'rows'            => $this->halamanApproval($tersaring, $request),
+            'ringkas'         => [
+                'total' => $tersaring->count(), 'semua' => $rows->count(),
+                'retensi' => $tersaring->where('kind', 'retensi')->count(),
+                'pencairan' => $tersaring->where('kind', 'pencairan')->count(),
+                'release' => $tersaring->where('kind', 'release')->count(),
+            ],
+            'opsi'            => $this->opsiApproval($rows, ['customer', 'unit_code', 'amount']),
+            'filters'         => $f,
             'accounts'        => $accounts,
             'accountDefaults' => $defaults,
             'initialCustomer' => $initialCustomer,
@@ -1306,8 +1322,16 @@ class BankApprovalController extends Controller
 
         $isDp = $source === Tts::SOURCE_DP;
 
+        // DISARING & DIHALAMANKAN DI SERVER (50 baris). Tab sudah memisahkan menunggu/ditolak,
+        // jadi tidak ada bawaan "Belum dijurnal" di sini.
+        $f = $this->filterApproval($request, false);
+        $tersaring = $this->saringApproval($rows, $f);
+
         return Inertia::render('BusinessSupport/CashBook/ApprovalUtjDp', [
-            'rows'     => $rows,
+            'rows'     => $this->halamanApproval($tersaring, $request),
+            'jumlahSemua' => $rows->count(),
+            'opsi'     => $this->opsiApproval($rows, ['customer', 'tts_number', 'amount', 'payment_method', 'journal_date']),
+            'filters'  => $f,
             'accounts' => $accounts,
             'tab'      => $tab,
             'counts'   => $counts,
@@ -1426,7 +1450,7 @@ class BankApprovalController extends Controller
                 'convertJournal:id,journal_number,journal_date',
             ])
             ->orderByDesc('id')
-            ->limit(500)
+            // Tanpa limit(500) lagi: dulu daftar diam-diam terpotong di 500 baris. Kini dihalamankan.
             ->get();
 
         $akad = $this->akadStatusByBooking($entries->pluck('booking_id')->filter()->unique()->values()->all());
@@ -1463,11 +1487,239 @@ class BankApprovalController extends Controller
             ];
         });
 
+        // Saring (cari teks + status akad) & halaman 50 baris DI SERVER.
+        $q = mb_strtolower(trim((string) $request->input('q', '')));
+        $akadF = (string) $request->input('akad', '');
+        $tersaring = $rows->filter(function ($r) use ($q, $akadF) {
+            if ($akadF !== '' && (($r['akad_status'] ?? '-') ?: '-') !== $akadF) {
+                return false;
+            }
+            if ($q === '') {
+                return true;
+            }
+            foreach (['keterangan', 'customer', 'unit', 'booking', 'journal_number'] as $k) {
+                if (str_contains(mb_strtolower((string) ($r[$k] ?? '')), $q)) {
+                    return true;
+                }
+            }
+
+            return false;
+        })->values();
+
         return Inertia::render('BusinessSupport/CashBook/ApprovalUmPenjualan', [
-            'rows'   => $rows,
+            'rows'   => $this->halamanApproval($tersaring, $request),
+            'totalTersaring' => round((float) $tersaring->sum('total'), 2),
+            'jumlahSemua' => $rows->count(),
+            'filters' => ['q' => (string) $request->input('q', ''), 'akad' => $akadF],
             'tab'    => $tab,
             'counts' => $counts,
         ]);
+    }
+
+    // ══════════════════ HALAMAN 50 BARIS & AKSI MASSAL (approval) ══════════════════
+
+    /** Baris per halaman di semua layar Approval (Retensi, UTJ, DP, UM Penjualan). */
+    private const PER_HALAMAN_APPROVAL = 50;
+
+    /**
+     * Nilai saringan dari request. $bawaanBelum: bila parameter `jurnal` tidak dikirim sama
+     * sekali, saringan "Belum dijurnal" yang dipakai (layar approval = antrean yang belum
+     * diproses). "Semua" dikirim sebagai jurnal= (kosong) sehingga tetap bisa dipilih.
+     *
+     * @return array<string,string>
+     */
+    private function filterApproval(Request $request, bool $bawaanBelum): array
+    {
+        $ambil = fn (string $k) => trim((string) $request->input($k, ''));
+
+        return [
+            'customer' => $ambil('customer'), 'unit' => $ambil('unit'), 'tts' => $ambil('tts'),
+            'pay' => $ambil('pay'), 'kind' => $ambil('kind'), 'status' => $ambil('status'),
+            'jurnal' => $request->has('jurnal') ? $ambil('jurnal') : ($bawaanBelum ? 'belum' : ''),
+            'dari' => $ambil('dari'), 'sampai' => $ambil('sampai'), 'nilai' => $ambil('nilai'),
+        ];
+    }
+
+    /** Aturannya SAMA dengan saringan yang dulu berjalan di layar (lihat ApprovalRetensi/UtjDp.vue). */
+    private function saringApproval(Collection $rows, array $f): Collection
+    {
+        return $rows->filter(function ($r) use ($f) {
+            $jurnal = (bool) ($r['journaled'] ?? false);
+            $tolak = (bool) ($r['rejected'] ?? false);
+            if ($f['customer'] !== '' && (string) ($r['customer'] ?? '') !== $f['customer']) return false;
+            if ($f['unit'] !== '' && (string) ($r['unit_code'] ?? '') !== $f['unit']) return false;
+            if ($f['tts'] !== '' && (string) ($r['tts_number'] ?? '') !== $f['tts']) return false;
+            if ($f['pay'] !== '' && (string) ($r['payment_method'] ?? '') !== $f['pay']) return false;
+            if ($f['kind'] !== '' && (string) ($r['kind'] ?? '') !== $f['kind']) return false;
+            if ($f['status'] !== '' && (string) ($r['status'] ?? '') !== $f['status']) return false;
+            if ($f['jurnal'] === 'belum' && ($jurnal || $tolak)) return false;
+            if ($f['jurnal'] === 'sudah' && ! $jurnal) return false;
+            if ($f['jurnal'] === 'ditolak' && ! $tolak) return false;
+            $tj = (string) ($r['journal_date'] ?? '');
+            if ($f['dari'] !== '' && ($tj === '' || $tj < $f['dari'])) return false;
+            if ($f['sampai'] !== '' && ($tj === '' || $tj > $f['sampai'])) return false;
+            if ($f['nilai'] !== '' && abs((float) ($r['amount'] ?? 0) - (float) $f['nilai']) > 0.005) return false;
+
+            return true;
+        })->values();
+    }
+
+    /** Isi dropdown saringan — dari SELURUH baris (lepas dari saringan lain). */
+    private function opsiApproval(Collection $rows, array $kolom): array
+    {
+        $o = [];
+        foreach ($kolom as $k) {
+            $v = $rows->pluck($k)->filter(fn ($x) => $x !== null && $x !== '')->unique();
+            $o[$k] = ($k === 'amount' ? $v->sortDesc() : $v->sort())->values()->all();
+        }
+
+        return $o;
+    }
+
+    private function halamanApproval(Collection $rows, Request $request): \Illuminate\Pagination\LengthAwarePaginator
+    {
+        $per = self::PER_HALAMAN_APPROVAL;
+        $hal = max(1, (int) $request->input('page', 1));
+        $last = max(1, (int) ceil($rows->count() / $per));
+        $hal = min($hal, $last);
+
+        return new \Illuminate\Pagination\LengthAwarePaginator(
+            $rows->forPage($hal, $per)->values(), $rows->count(), $per, $hal,
+            ['path' => $request->url(), 'query' => $request->except('page')],
+        );
+    }
+
+    /**
+     * Jalankan aksi SATUAN yang sudah ada untuk tiap item, satu per satu — aturan jurnal,
+     * validasi, dan penjagaan periode tetap persis milik tombol satuannya. Setiap item
+     * memakai request tiruannya sendiri; galatnya (flash 'error', galat validasi, 403)
+     * dikumpulkan per nomor, lalu dilaporkan sekaligus. Item yang gagal tidak menghentikan
+     * item lain.
+     *
+     * @param  array<int, array{0:string, 1:array, 2:callable}>  $tugas  [label, data, fn(Request $sub)]
+     */
+    private function jalankanMassal(Request $request, array $tugas, string $kata): RedirectResponse
+    {
+        $ok = 0;
+        $gagal = [];
+        foreach ($tugas as [$label, $data, $fn]) {
+            $sub = Request::create($request->url(), 'POST', $data);
+            $sub->setUserResolver($request->getUserResolver());
+            $sub->setLaravelSession($request->session());
+            $request->session()->forget(['error', 'success']);
+            $err = null;
+            try {
+                $fn($sub);
+                $err = $request->session()->pull('error');
+            } catch (\Illuminate\Validation\ValidationException $e) {
+                $err = (string) collect($e->errors())->flatten()->first();
+            } catch (\Symfony\Component\HttpKernel\Exception\HttpExceptionInterface $e) {
+                $err = $e->getMessage() ?: 'Tidak diizinkan.';
+            } catch (\Throwable $e) {
+                report($e);
+                $err = $e->getMessage();
+            }
+            $request->session()->forget(['success', 'error']);
+            $err ? $gagal[] = $label.': '.$err : $ok++;
+        }
+
+        $msg = "{$ok} {$kata}".($gagal ? ', '.count($gagal).' gagal — '.implode(' · ', array_slice($gagal, 0, 8)).(count($gagal) > 8 ? ' · …' : '') : '.');
+
+        return back()->with($gagal ? 'error' : 'success', $msg);
+    }
+
+    /** Setujui & Posting massal — Approval Retensi (retensi / pelepasan DAJAM / pencairan). */
+    public function retensiBulkPost(Request $request, JournalService $svc): RedirectResponse
+    {
+        abort_unless($request->user()?->can('businesssupport.approval.act'), 403);
+        $items = (array) $request->validate(['items' => ['required', 'array', 'min:1', 'max:200'], 'items.*.kind' => ['required', 'in:retensi,release,pencairan'], 'items.*.id' => ['required', 'integer']])['items'];
+        $raw = (array) $request->input('items', []);
+
+        $tugas = [];
+        foreach ($raw as $it) {
+            $id = (int) $it['id'];
+            $data = collect($it)->except(['kind', 'id', 'label'])->all();
+            $label = (string) ($it['label'] ?? $it['kind'].' #'.$id);
+            $tugas[] = [$label, $data, match ($it['kind']) {
+                'retensi' => fn (Request $sub) => $this->retensiPost($sub, KprRetention::findOrFail($id), $svc),
+                'release' => fn (Request $sub) => $this->releasePost($sub, KprRetentionRelease::findOrFail($id), $svc),
+                default => fn (Request $sub) => $this->realizationPost($sub, KprRealization::findOrFail($id), $svc),
+            }];
+        }
+
+        return $this->jalankanMassal($request, $tugas, 'baris disetujui & dijurnal');
+    }
+
+    /** Tolak massal — Approval Retensi. Satu alasan untuk semua. */
+    public function retensiBulkReject(Request $request): RedirectResponse
+    {
+        abort_unless($request->user()?->can('businesssupport.approval.act'), 403);
+        $v = $request->validate(['items' => ['required', 'array', 'min:1', 'max:200'], 'items.*.kind' => ['required', 'in:retensi,release,pencairan'], 'items.*.id' => ['required', 'integer'], 'reason' => ['nullable', 'string', 'max:255']]);
+
+        $tugas = [];
+        foreach ((array) $request->input('items', []) as $it) {
+            $id = (int) $it['id'];
+            $label = (string) ($it['label'] ?? $it['kind'].' #'.$id);
+            $tugas[] = [$label, ['reason' => (string) ($v['reason'] ?? '')], match ($it['kind']) {
+                'retensi' => fn (Request $sub) => $this->retensiReject($sub, KprRetention::findOrFail($id)),
+                'release' => fn (Request $sub) => $this->releaseReject($sub, KprRetentionRelease::findOrFail($id)),
+                default => fn (Request $sub) => $this->realizationReject($sub, KprRealization::findOrFail($id)),
+            }];
+        }
+
+        return $this->jalankanMassal($request, $tugas, 'baris ditolak');
+    }
+
+    /** Setujui & Posting massal — Approval UTJ / DP (tiap item: tgl jurnal + akun debit/kredit). */
+    public function utjdpBulkPost(Request $request, JournalService $svc, ?string $source = null): RedirectResponse
+    {
+        abort_unless($request->user()?->can('businesssupport.approval.act'), 403);
+        $request->validate(['items' => ['required', 'array', 'min:1', 'max:200'], 'items.*.id' => ['required', 'integer']]);
+
+        $tugas = [];
+        foreach ((array) $request->input('items', []) as $it) {
+            $id = (int) $it['id'];
+            $tugas[] = [(string) ($it['label'] ?? 'TTS #'.$id),
+                collect($it)->only(['journal_date', 'debit_account_id', 'credit_account_id'])->all(),
+                fn (Request $sub) => $this->utjdpPost($sub, Tts::findOrFail($id), $svc, $source)];
+        }
+
+        return $this->jalankanMassal($request, $tugas, 'TTS disetujui & dijurnal');
+    }
+
+    public function dpBulkPost(Request $request, JournalService $svc): RedirectResponse
+    {
+        return $this->utjdpBulkPost($request, $svc, Tts::SOURCE_DP);
+    }
+
+    /** Tolak massal — Approval UTJ / DP. */
+    public function utjdpBulkReject(Request $request): RedirectResponse
+    {
+        abort_unless($request->user()?->can('businesssupport.approval.act'), 403);
+        $v = $request->validate(['ids' => ['required', 'array', 'min:1', 'max:200'], 'ids.*' => ['integer'], 'reason' => ['nullable', 'string', 'max:255'], 'labels' => ['nullable', 'array']]);
+
+        $tugas = [];
+        foreach ($v['ids'] as $i => $id) {
+            $tugas[] = [(string) ($request->input("labels.$i") ?: 'TTS #'.$id), ['reason' => (string) ($v['reason'] ?? '')],
+                fn (Request $sub) => $this->utjdpReject($sub, Tts::findOrFail((int) $id))];
+        }
+
+        return $this->jalankanMassal($request, $tugas, 'TTS ditolak');
+    }
+
+    /** Setujui & Posting massal — Approval UM Penjualan (tanpa isian). */
+    public function umBulkPost(Request $request, ConvertUtjDpToUangMuka $action): RedirectResponse
+    {
+        abort_unless($request->user()?->can('businesssupport.approval.act'), 403);
+        $v = $request->validate(['ids' => ['required', 'array', 'min:1', 'max:200'], 'ids.*' => ['integer'], 'labels' => ['nullable', 'array']]);
+
+        $tugas = [];
+        foreach ($v['ids'] as $i => $id) {
+            $tugas[] = [(string) ($request->input("labels.$i") ?: 'Entri #'.$id), [],
+                fn (Request $sub) => $this->umPost($sub, BsFakturKeluaranEntry::findOrFail((int) $id), $action)];
+        }
+
+        return $this->jalankanMassal($request, $tugas, 'UM Penjualan disetujui & dijurnal');
     }
 
     public function umPost(Request $request, BsFakturKeluaranEntry $entry, ConvertUtjDpToUangMuka $action): RedirectResponse

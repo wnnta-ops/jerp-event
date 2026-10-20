@@ -913,6 +913,14 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
     Route::post('/business-support/cash-book-approvals/{cashTransaction}/reject', [BsCashBookController::class, 'reject'])->name('bs.cashbook.reject'); // #160
     // Transaksi Bank — Approval Retensi (KPR) & Approval UTJ & DP (TTS→Kuitansi) + posting jurnal
     Route::get('/business-support/cash-book-approval-retensi', [BsBankApprovalController::class, 'retensiIndex'])->name('bs.cashbook.approval-retensi');
+    // Aksi MASSAL (centang) — memanggil aksi satuan per baris; didaftarkan sebelum rute {param}.
+    Route::post('/business-support/cash-book-approval-retensi-bulk/post', [BsBankApprovalController::class, 'retensiBulkPost'])->name('bs.cashbook.approval-retensi.bulk-post');
+    Route::post('/business-support/cash-book-approval-retensi-bulk/reject', [BsBankApprovalController::class, 'retensiBulkReject'])->name('bs.cashbook.approval-retensi.bulk-reject');
+    Route::post('/business-support/cash-book-approval-utjdp-bulk/post', [BsBankApprovalController::class, 'utjdpBulkPost'])->name('bs.cashbook.approval-utjdp.bulk-post');
+    Route::post('/business-support/cash-book-approval-utjdp-bulk/reject', [BsBankApprovalController::class, 'utjdpBulkReject'])->name('bs.cashbook.approval-utjdp.bulk-reject');
+    Route::post('/business-support/cash-book-approval-dp-bulk/post', [BsBankApprovalController::class, 'dpBulkPost'])->name('bs.cashbook.approval-dp.bulk-post');
+    Route::post('/business-support/cash-book-approval-dp-bulk/reject', [BsBankApprovalController::class, 'utjdpBulkReject'])->name('bs.cashbook.approval-dp.bulk-reject');
+    Route::post('/business-support/cash-book-approval-um-bulk/post', [BsBankApprovalController::class, 'umBulkPost'])->name('bs.cashbook.approval-um.bulk-post');
     Route::post('/business-support/cash-book-approval-retensi/{retention}', [BsBankApprovalController::class, 'retensiPost'])->name('bs.cashbook.approval-retensi.post');
     Route::post('/business-support/cash-book-approval-retensi/{retention}/reject', [BsBankApprovalController::class, 'retensiReject'])->name('bs.cashbook.approval-retensi.reject');
     Route::post('/business-support/cash-book-approval-retensi/{retention}/restore', [BsBankApprovalController::class, 'retensiRestore'])->name('bs.cashbook.approval-retensi.restore'); // pulihkan retensi ditolak

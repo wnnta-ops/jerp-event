@@ -8,6 +8,7 @@ import EmptyState from '@/Components/UI/EmptyState.vue';
 import SearchSelect from '@/Components/UI/SearchSelect.vue';
 import ScrollTopButton from '@/Components/UI/ScrollTopButton.vue';
 import TableTopScroll from '@/Components/UI/TableTopScroll.vue';
+import Pagination from '@/Components/UI/Pagination.vue';
 
 type Acc = { id: number; code: string; name: string; type?: string };
 type Row = {
@@ -19,7 +20,12 @@ type Row = {
     reject_reason: string | null; rejected_at: string | null;
 };
 const props = defineProps<{
-    rows: Row[]; accounts: Acc[]; tab: string; counts: { pending: number; tanpa_unit: number; rejected: number };
+    /** Hasil saringan server, 50 baris per halaman. */
+    rows: { data: Row[]; links?: any[]; from?: number | null; to?: number | null; total?: number };
+    jumlahSemua: number;
+    opsi: { customer: string[]; tts_number: string[]; amount: number[]; payment_method: string[]; journal_date: string[] };
+    filters: Record<string, string>;
+    accounts: Acc[]; tab: string; counts: { pending: number; tanpa_unit: number; rejected: number };
     // Halaman ini dipakai DUA submodul: Approval UTJ & Approval DP. Judul, penjelasan, dan
     // seluruh endpoint mengikuti prop di bawah supaya tidak ada aksi yang salah alamat.
     variant?: 'utj' | 'dp'; title?: string; subtitle?: string; routeBase?: string; indexRoute?: string;
@@ -33,7 +39,7 @@ function switchTab(tab: string) { if (tab !== props.tab) router.get(route(props.
 function todayStr() { return new Date().toISOString().slice(0, 10); }
 const forms = reactive<Record<number, { journal_date: string; debit_account_id: any; credit_account_id: any; processing: boolean }>>({});
 // #164 — default tgl jurnal = tgl terima TTS; akun debit = bank TTS; akun kredit = Hutang Usaha (semua editable).
-if (!isRejected.value) for (const r of props.rows) if (!r.journaled) forms[r.id] = { journal_date: r.received_date ?? todayStr(), debit_account_id: r.default_debit_account_id ?? '', credit_account_id: r.default_credit_account_id ?? '', processing: false };
+if (!isRejected.value) for (const r of (props.rows.data ?? [])) if (!r.journaled) forms[r.id] = { journal_date: r.received_date ?? todayStr(), debit_account_id: r.default_debit_account_id ?? '', credit_account_id: r.default_credit_account_id ?? '', processing: false };
 
 function fmtRp(v: number) { return 'Rp ' + Number(v ?? 0).toLocaleString('id-ID'); }
 function fmtDate(d: string | null) { return d ? new Date(d).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'; }
@@ -84,47 +90,95 @@ function submitAddAccount() {
     });
 }
 
-const payMethods = computed(() => Array.from(new Set(props.rows.map((r) => r.payment_method).filter(Boolean))) as string[]);
+const payMethods = computed(() => (props.opsi?.payment_method ?? []) as string[]);
 
-// ── Filter ──
-const fCustomer = ref<any>('');
-const fTts = ref<any>('');
-const fPay = ref('');
-const fJournaled = ref('');
-const fDateFrom = ref('');
-const fDateTo = ref('');
-const fNilai = ref<any>('');
+// ── Filter — DIKERJAKAN SERVER (50 baris per halaman) ──
+const F = props.filters ?? {};
+const fCustomer = ref<any>(F.customer ?? '');
+const fTts = ref<any>(F.tts ?? '');
+const fPay = ref(F.pay ?? '');
+const fJournaled = ref(F.jurnal ?? '');
+const fDateFrom = ref(F.dari ?? '');
+const fDateTo = ref(F.sampai ?? '');
+const fNilai = ref<any>(F.nilai !== undefined && F.nilai !== '' ? Number(F.nilai) : '');
 
-function uniq(a: any[]) { return Array.from(new Set(a.filter((v) => v !== null && v !== undefined && v !== ''))); }
-const customerOptions = computed(() => (uniq(props.rows.map((r) => r.customer)) as string[]).sort().map((c) => ({ id: c, label: c })));
-const ttsOptions = computed(() => (uniq(props.rows.map((r) => r.tts_number)) as string[]).sort().map((t) => ({ id: t, label: t })));
-const nilaiOptions = computed(() => (uniq(props.rows.map((r) => r.amount)) as number[]).sort((a, b) => b - a).map((n) => ({ id: n, label: fmtRp(n) })));
-const journalDateOptions = computed(() => (uniq(props.rows.map((r) => r.journal_date)) as string[]).sort().map((d) => ({ id: d, label: fmtDate(d) })));
+const customerOptions = computed(() => (props.opsi?.customer ?? []).map((c) => ({ id: c, label: c })));
+const ttsOptions = computed(() => (props.opsi?.tts_number ?? []).map((t) => ({ id: t, label: t })));
+const nilaiOptions = computed(() => (props.opsi?.amount ?? []).map((n) => ({ id: Number(n), label: fmtRp(Number(n)) })));
+const journalDateOptions = computed(() => (props.opsi?.journal_date ?? []).map((d) => ({ id: d, label: fmtDate(d) })));
 
 function resetFilter() { fCustomer.value = ''; fTts.value = ''; fPay.value = ''; fJournaled.value = ''; fDateFrom.value = ''; fDateTo.value = ''; fNilai.value = ''; }
 
-const filtered = computed(() => props.rows.filter((r) => {
-    if (fCustomer.value && r.customer !== fCustomer.value) return false;
-    if (fTts.value && r.tts_number !== fTts.value) return false;
-    if (fPay.value && r.payment_method !== fPay.value) return false;
-    if (!isRejected.value) {
-        if (fJournaled.value === 'belum' && r.journaled) return false;
-        if (fJournaled.value === 'sudah' && !r.journaled) return false;
-        if (fDateFrom.value && (!r.journal_date || r.journal_date < fDateFrom.value)) return false;
-        if (fDateTo.value && (!r.journal_date || r.journal_date > fDateTo.value)) return false;
-    }
-    if (fNilai.value !== '' && fNilai.value !== null && Number(r.amount) !== Number(fNilai.value)) return false;
-    return true;
-}));
+let jedaSaring: ReturnType<typeof setTimeout> | null = null;
+watch([fCustomer, fTts, fPay, fJournaled, fDateFrom, fDateTo, fNilai], () => {
+    if (jedaSaring) clearTimeout(jedaSaring);
+    jedaSaring = setTimeout(() => router.get(window.location.pathname, {
+        tab: props.tab, customer: fCustomer.value || undefined, tts: fTts.value || undefined, pay: fPay.value || undefined,
+        jurnal: fJournaled.value || undefined, dari: fDateFrom.value || undefined, sampai: fDateTo.value || undefined,
+        nilai: fNilai.value === '' || fNilai.value === null ? undefined : fNilai.value,
+    }, { preserveScroll: true, preserveState: false, replace: true }), 350);
+});
 
+// Baris halaman ini — sudah disaring server.
+const filtered = computed<Row[]>(() => props.rows.data ?? []);
+
+function cekBaris(id: number): string | null {
+    const f = forms[id];
+    if (!f) return 'Baris ini tidak bisa diposting.';
+    if (!f.debit_account_id || !f.credit_account_id) return 'Pilih akun Debit & Kredit terlebih dahulu.';
+    if (String(f.debit_account_id) === String(f.credit_account_id)) return 'Akun Debit & Kredit tidak boleh sama.';
+    return null;
+}
 function approve(id: number) {
     const f = forms[id];
-    if (!f.debit_account_id || !f.credit_account_id) { alert('Pilih akun Debit & Kredit terlebih dahulu.'); return; }
-    if (String(f.debit_account_id) === String(f.credit_account_id)) { alert('Akun Debit & Kredit tidak boleh sama.'); return; }
+    const e = cekBaris(id);
+    if (e) { alert(e); return; }
     f.processing = true;
     router.post(route(`${rb.value}.post`, id), {
         journal_date: f.journal_date, debit_account_id: f.debit_account_id, credit_account_id: f.credit_account_id,
     }, { onSuccess: () => window.location.reload(), onFinish: () => { f.processing = false; } });
+}
+
+/* ── CENTANG & INPUT MASSAL ── isi tanggal & akun sekali, salin ke baris tercentang, lalu
+   setujui / tolak sekaligus. Server menjalankan aksi satuan per baris (aturan sama persis). */
+const bisaDicentang = (r: Row) => !isRejected.value && !r.journaled && !!forms[r.id];
+const dipilih = ref<number[]>([]);
+const barisDipilih = computed(() => filtered.value.filter((r) => dipilih.value.includes(r.id)));
+const totalDipilih = computed(() => barisDipilih.value.reduce((a, r) => a + Number(r.amount || 0), 0));
+const semuaDicentang = computed({
+    get: () => filtered.value.filter(bisaDicentang).length > 0 && filtered.value.filter(bisaDicentang).every((r) => dipilih.value.includes(r.id)),
+    set: (v: boolean) => { dipilih.value = v ? filtered.value.filter(bisaDicentang).map((r) => r.id) : []; },
+});
+const massal = reactive<{ journal_date: string; debit_account_id: any; credit_account_id: any }>({ journal_date: '', debit_account_id: '', credit_account_id: '' });
+function terapkanMassal() {
+    for (const r of barisDipilih.value) {
+        const f = forms[r.id];
+        if (!f) continue;
+        if (massal.journal_date) f.journal_date = massal.journal_date;
+        if (massal.debit_account_id) f.debit_account_id = massal.debit_account_id;
+        if (massal.credit_account_id) f.credit_account_id = massal.credit_account_id;
+    }
+}
+const labelTts = (r: Row) => `${r.tts_number}${r.customer ? ' · ' + r.customer : ''}`;
+const prosesMassal = ref(false);
+function setujuiMassal() {
+    const rows = barisDipilih.value;
+    if (!rows.length || prosesMassal.value) return;
+    const salah = rows.map((r) => ({ r, e: cekBaris(r.id) })).filter((x) => x.e);
+    if (salah.length) { alert(`${salah.length} TTS belum bisa diposting:\n\n` + salah.slice(0, 10).map((x) => `• ${labelTts(x.r)}: ${x.e}`).join('\n')); return; }
+    if (!confirm(`Setujui & Posting ${rows.length} TTS (total ${fmtRp(totalDipilih.value)})?\n\nSetiap TTS dijurnal sendiri-sendiri dengan isiannya masing-masing.`)) return;
+    prosesMassal.value = true;
+    const items = rows.map((r) => ({ id: r.id, label: labelTts(r), journal_date: forms[r.id].journal_date, debit_account_id: forms[r.id].debit_account_id, credit_account_id: forms[r.id].credit_account_id }));
+    router.post(route(`${rb.value}.bulk-post`), { items }, { preserveScroll: true, onFinish: () => { prosesMassal.value = false; } });
+}
+function tolakMassal() {
+    const rows = barisDipilih.value;
+    if (!rows.length || prosesMassal.value) return;
+    const reason = window.prompt(`Tolak ${rows.length} TTS terpilih? Tidak dijurnal, pindah ke tab Ditolak (bisa dipulihkan).\n\nAlasan penolakan (opsional):`, '');
+    if (reason === null) return;
+    prosesMassal.value = true;
+    router.post(route(`${rb.value}.bulk-reject`), { ids: rows.map((r) => r.id), labels: rows.map(labelTts), reason },
+        { preserveScroll: true, onFinish: () => { prosesMassal.value = false; } });
 }
 
 // #164 — Tolak approval UTJ/DP (TTS belum dijurnal).
@@ -166,7 +220,7 @@ const hSelCls = 'h-7 w-52 rounded border border-neutral-300 bg-white px-2 text-x
         </div>
 
         <div class="flex items-center justify-between">
-            <p class="text-xs text-neutral-500">{{ filtered.length }} dari {{ rows.length }} TTS</p>
+            <p class="text-xs text-neutral-500">{{ rows.total ?? 0 }} dari {{ jumlahSemua }} TTS</p>
             <button @click="resetFilter" class="inline-flex items-center gap-1.5 rounded-lg border border-neutral-300 px-3 py-1.5 text-xs font-medium text-neutral-600 hover:bg-neutral-50 dark:border-neutral-700 dark:text-neutral-300"><RotateCcw class="h-3.5 w-3.5" /> Reset Filter</button>
         </div>
 
@@ -210,8 +264,24 @@ const hSelCls = 'h-7 w-52 rounded border border-neutral-300 bg-white px-2 text-x
             </table>
         </TableTopScroll>
 
+        <!-- Centang & input massal (tab Menunggu / Tanpa Unit — baris yang belum dijurnal). -->
+        <div v-if="!isRejected && filtered.some(bisaDicentang)" class="card flex flex-wrap items-end gap-3 p-3 text-sm">
+            <label class="flex items-center gap-2 font-medium"><input v-model="semuaDicentang" type="checkbox" class="h-4 w-4 rounded border-neutral-300" /> Pilih semua di halaman ini</label>
+            <span class="text-neutral-500">{{ barisDipilih.length }} terpilih<span v-if="barisDipilih.length"> · {{ fmtRp(totalDipilih) }}</span></span>
+            <template v-if="barisDipilih.length">
+                <div><div class="mb-1 text-[11px] text-neutral-500">Tgl Jurnal</div><input v-model="massal.journal_date" type="date" :class="inputCls" /></div>
+                <div class="w-64"><div class="mb-1 text-[11px] text-neutral-500">Akun Debit</div><SearchSelect v-model="massal.debit_account_id" :options="accountList" placeholder="Cari akun debit…" /></div>
+                <div class="w-64"><div class="mb-1 text-[11px] text-neutral-500">Akun Kredit</div><SearchSelect v-model="massal.credit_account_id" :options="accountList" placeholder="Cari akun kredit…" /></div>
+                <Button size="sm" variant="secondary" @click="terapkanMassal">Terapkan ke terpilih</Button>
+                <div class="ml-auto flex gap-2">
+                    <Button size="sm" variant="danger" :loading="prosesMassal" @click="tolakMassal">Tolak Terpilih ({{ barisDipilih.length }})</Button>
+                    <Button size="sm" variant="success" :loading="prosesMassal" @click="setujuiMassal">Setujui &amp; Posting ({{ barisDipilih.length }})</Button>
+                </div>
+            </template>
+        </div>
+
         <!-- TAB MENUNGGU APPROVAL -->
-        <TableTopScroll v-else>
+        <TableTopScroll v-if="!isRejected">
             <table class="w-full text-sm">
                 <thead class="bg-neutral-50 dark:bg-neutral-800">
                     <tr class="text-left text-xs uppercase text-neutral-500">
@@ -236,8 +306,9 @@ const hSelCls = 'h-7 w-52 rounded border border-neutral-300 bg-white px-2 text-x
                 </thead>
                 <tbody class="divide-y divide-neutral-200 dark:divide-neutral-800 align-top">
                     <tr v-if="!filtered.length"><td colspan="7" class="px-3 py-10"><EmptyState title="Tidak ada TTS sesuai filter" description="Ubah kriteria filter di atas." /></td></tr>
-                    <tr v-for="r in filtered" :key="r.id">
+                    <tr v-for="r in filtered" :key="r.id" :class="dipilih.includes(r.id) ? 'bg-primary-50/40 dark:bg-primary-900/10' : ''">
                         <td class="px-3 py-3">
+                            <label v-if="bisaDicentang(r)" class="mb-1 inline-flex items-center gap-1.5 text-[11px] text-neutral-500"><input v-model="dipilih" type="checkbox" :value="r.id" class="h-4 w-4 rounded border-neutral-300" /> pilih</label>
                             <div class="font-semibold">{{ r.customer ?? '—' }}</div>
                             <div v-if="r.unit_info || r.unit_code" class="text-xs font-medium text-neutral-600 dark:text-neutral-300">🏠 {{ r.unit_info ?? r.unit_code }}</div>
                             <div class="text-xs text-neutral-500 font-mono">{{ r.tts_number }}<span v-if="r.booking"> · {{ r.booking }}</span><span v-if="r.received_date"> · {{ fmtDate(r.received_date) }}</span></div>
@@ -278,6 +349,7 @@ const hSelCls = 'h-7 w-52 rounded border border-neutral-300 bg-white px-2 text-x
                 </tbody>
             </table>
         </TableTopScroll>
+        <Pagination :data="rows" satuan="TTS" />
 
         <!-- Modal quick-add akun GL baru (debit / kredit) -->
         <Teleport to="body">
