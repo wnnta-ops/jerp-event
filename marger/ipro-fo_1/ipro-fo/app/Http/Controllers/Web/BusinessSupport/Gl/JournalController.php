@@ -491,7 +491,12 @@ class JournalController extends Controller
             return [];
         }
 
-        return BsAccount::whereIn('id', $ids)->where('cost_center_optional', true)
+        // Sama dengan gerbang Approve (JournalService::barisTanpaCostCenter) & wizard invoice AP:
+        // optional ATAU tidak dianggarkan.
+        $tanpaAnggaran = array_map('strval', (array) config('business_support.budget.coa_tanpa_anggaran', []));
+
+        return BsAccount::whereIn('id', $ids)
+            ->where(fn ($q) => $q->where('cost_center_optional', true)->when($tanpaAnggaran, fn ($w) => $w->orWhereIn('code', $tanpaAnggaran)))
             ->pluck('id')->mapWithKeys(fn ($id) => [(int) $id => true])->all();
     }
 
@@ -586,7 +591,9 @@ class JournalController extends Controller
         abort_unless($request->user()?->can('gl.journal.view'), 403);
 
         return Inertia::render('BusinessSupport/Gl/Journals/Show', [
-            'journal'  => $journal->load(['lines.account:id,code,name', 'costCenter:id,code,name']),
+            // lines.costCenter WAJIB dimuat: tanpa ini kolom Cost Center tiap baris selalu "—"
+            // walau terisi, dan orang mengira jurnalnya belum lengkap.
+            'journal'  => $journal->load(['lines.account:id,code,name', 'lines.costCenter:id,code,name', 'costCenter:id,code,name']),
             'sources'  => BsJournal::SOURCES,
             'statuses' => BsJournal::STATUSES,
         ]);
