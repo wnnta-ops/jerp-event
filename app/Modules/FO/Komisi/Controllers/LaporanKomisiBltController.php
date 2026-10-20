@@ -24,7 +24,7 @@ class LaporanKomisiBltController extends Controller
             'tanggal' => ['nullable', 'in:pengajuan,cair'],
         ]);
         $data = LaporanKomisiBlt::komisi($v['from'] ?? null, $v['to'] ?? null,
-            isset($v['lokasi_id']) ? (int) $v['lokasi_id'] : null, $v['status'] ?? null, $v['tanggal'] ?? 'pengajuan');
+            isset($v['lokasi_id']) ? (int) $v['lokasi_id'] : null, $v['status'] ?? null, $v['tanggal'] ?? 'cair');
 
         return Excel::download(new LaporanKomisiExport($data), 'Laporan-Komisi-'.now()->format('Ymd-His').'.xlsx');
     }
