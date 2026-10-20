@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import Pagination from '@/Components/UI/Pagination.vue';
 import { ref, computed } from 'vue';
 import { router, Link } from '@inertiajs/vue3';
 import { ArrowLeft, ShieldCheck, Check, X, ChevronDown, ChevronRight } from 'lucide-vue-next';
@@ -207,5 +208,6 @@ function bulkRejectAp() {
                 <EmptyState v-if="!apRows.length" title="Tidak ada Kuitansi (AP) menunggu persetujuan" description="Registrasi Pengeluaran Kas & Bank (AP) yang dibuat akan muncul di sini untuk disetujui." />
             </div>
         </div>
+        <Pagination :data="rows" />
     </div>
 </template>

@@ -66,7 +66,7 @@ class ContractorController extends Controller
             ->when($request->input('jenis'), fn ($q, $v) => $q->where('jenis', $v))
             ->when($request->input('search'), fn ($q, $s) => $q->where(fn ($w) => $w->where('spk_number', 'like', "%{$s}%")->orWhere('title', 'like', "%{$s}%")))
             ->latest('spk_date')->latest('id')
-            ->paginate(50)->withQueryString();
+            ->paginate(25)->withQueryString();
 
         return Inertia::render('BusinessSupport/Contractor/Index', [
             'workOrders' => $rows,

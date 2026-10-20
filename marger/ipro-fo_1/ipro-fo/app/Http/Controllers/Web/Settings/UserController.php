@@ -26,7 +26,7 @@ class UserController extends Controller
                 $q->where('name', 'like', "%{$term}%")->orWhere('email', 'like', "%{$term}%");
             }))
             ->orderBy('name')
-            ->paginate(50);
+            ->paginate(25);
 
         return Inertia::render('Settings/Users/Index', [
             'users'   => $users,

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import Pagination from '@/Components/UI/Pagination.vue';
 import { router, Link } from '@inertiajs/vue3';
 import { ref } from 'vue';
 import { ArrowLeft, HardHat, Search } from 'lucide-vue-next';
@@ -73,5 +74,6 @@ function pct(p: number, c: number) { return c > 0 ? Math.min(100, Math.round(p /
             </table>
             <EmptyState v-if="!workOrders.data?.length" title="Belum ada SPK" description="SPK terbit otomatis dari proses kontrak kontraktor." />
         </div>
+        <Pagination :data="workOrders" />
     </div>
 </template>

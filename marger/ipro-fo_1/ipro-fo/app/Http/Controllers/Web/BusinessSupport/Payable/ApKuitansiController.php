@@ -25,22 +25,87 @@ class ApKuitansiController extends Controller
     {
         abort_unless($request->user()?->can('ap.kuitansi.view'), 403);
 
-        // Semua kuitansi dikirim; filter per-kolom & ringkasan dihitung di sisi klien (mengikuti filter).
-        $rows = BsApKuitansi::with('supplier:id,name')
-            ->select(['id', 'kuitansi_number', 'kuitansi_date', 'supplier_id', 'alat_transaksi', 'total', 'status'])
-            ->latest('kuitansi_date')->latest('id')->get()
-            ->map(fn ($k) => [
+        // DISARING & DIHALAMANKAN DI SERVER (25 baris). Dulu semua kuitansi (ribuan) dikirim ke
+        // browser dan disaring di sana. Nilai saringan tetap bentuk tampilan layar ("20 Okt 2026",
+        // "Rp 1.300.000", "Aktif"); tiap kolom punya ekspresi SQL yang menghasilkan bentuk itu.
+        // Ringkasan dihitung atas SELURUH hasil saringan.
+        $T = 'bs_ap_kuitansis';
+        $bulan = "'Jan','Feb','Mar','Apr','Mei','Jun','Jul','Agu','Sep','Okt','Nov','Des'";
+        $eks = [
+            'no' => "COALESCE($T.kuitansi_number,'')",
+            'tgl' => "COALESCE(CONCAT(LPAD(DAY($T.kuitansi_date),2,'0'),' ',ELT(MONTH($T.kuitansi_date),$bulan),' ',YEAR($T.kuitansi_date)),'—')",
+            'supplier' => "COALESCE(NULLIF(s.name,''),'—')",
+            'alat' => "CASE $T.alat_transaksi WHEN 'tunai' THEN 'Tunai' WHEN 'transfer' THEN 'Transfer' WHEN 'giro' THEN 'Cek/Giro' ELSE COALESCE($T.alat_transaksi,'—') END",
+            'total' => "ROUND($T.total,2)",
+            'status' => "CASE $T.status WHEN 'pending' THEN 'Menunggu' WHEN 'active' THEN 'Aktif' WHEN 'rejected' THEN 'Ditolak' WHEN 'void' THEN 'Void' ELSE COALESCE($T.status,'') END",
+        ];
+        $dasar = fn () => BsApKuitansi::query()->leftJoin('bs_suppliers as s', 's.id', '=', "$T.supplier_id");
+
+        $q = $dasar();
+        if (($cari = trim((string) $request->input('search'))) !== '') {
+            $q->where(function ($w) use ($eks, $cari) {
+                foreach ($eks as $k => $e) {
+                    if ($k === 'total') {
+                        $d = preg_replace('/\D/', '', $cari);
+                        if ($d !== '') {
+                            $w->orWhereRaw("CAST(ROUND($e) AS CHAR) LIKE ?", ['%'.$d.'%']);
+                        }
+
+                        continue;
+                    }
+                    $w->orWhereRaw("LOWER($e) LIKE ?", ['%'.mb_strtolower($cari).'%']);
+                }
+            });
+        }
+        foreach ($eks as $k => $e) {
+            $nilai = array_values(array_filter((array) $request->input("c.$k", []), fn ($v) => $v !== null));
+            if (! $nilai) {
+                continue;
+            }
+            if ($k === 'total') {
+                $angka = array_values(array_filter(array_map([\App\Domain\BusinessSupport\Support\DaftarInvoiceHutang::class, 'angkaDariTampilan'], $nilai), fn ($v) => $v !== null));
+                $q->where(function ($w) use ($e, $angka) {
+                    $w->whereRaw('1=0');
+                    foreach ($angka as $x) {
+                        $w->orWhereRaw("$e = ?", [$x]);
+                    }
+                });
+            } else {
+                $q->whereIn(\Illuminate\Support\Facades\DB::raw($e), array_map('strval', $nilai));
+            }
+        }
+
+        $ringkas = (clone $q)->toBase()->selectRaw("COUNT(*) AS n, COALESCE(SUM(CASE WHEN $T.status='active' THEN $T.total END),0) AS aktif")->first();
+
+        $rows = (clone $q)->select(["$T.id", "$T.kuitansi_number", "$T.kuitansi_date", "$T.supplier_id", "$T.alat_transaksi", "$T.total", "$T.status", \Illuminate\Support\Facades\DB::raw('s.name AS nama_supplier')])
+            ->orderByDesc("$T.kuitansi_date")->orderByDesc("$T.id")
+            ->paginate(25)->withQueryString()
+            ->through(fn ($k) => [
                 'id'              => $k->id,
                 'kuitansi_number' => $k->kuitansi_number,
                 'kuitansi_date'   => $k->kuitansi_date?->toDateString(),
-                'supplier'        => $k->supplier ? ['name' => $k->supplier->name] : null,
+                'supplier'        => $k->nama_supplier !== null ? ['name' => $k->nama_supplier] : null,
                 'alat_transaksi'  => $k->alat_transaksi,
                 'total'           => (float) $k->total,
                 'status'          => $k->status,
             ]);
 
+        // Isi dropdown per kolom — dari SELURUH kuitansi, lepas dari saringan lain.
+        $opsi = [];
+        foreach ($eks as $k => $e) {
+            $v = $dasar()->toBase()->selectRaw("$e AS v")->groupByRaw('v')
+                ->orderByRaw($k === 'tgl' ? "MAX($T.kuitansi_date) DESC" : 'v')->limit(1000)->pluck('v');
+            $opsi[$k] = $k === 'total'
+                ? $v->map(fn ($x) => \App\Domain\BusinessSupport\Support\DaftarInvoiceHutang::rp((float) $x))->values()->all()
+                : $v->map(fn ($x) => (string) $x)->values()->all();
+        }
+
         return Inertia::render('BusinessSupport/Payable/Kuitansi/Index', [
             'kuitansis' => $rows,
+            'summary' => ['active' => round((float) $ringkas->aktif, 2), 'count' => (int) $ringkas->n],
+            'jumlahSemua' => (int) $dasar()->count(),
+            'opsi' => $opsi,
+            'filters' => ['search' => (string) $request->input('search', ''), 'c' => (array) $request->input('c', [])],
         ]);
     }
 

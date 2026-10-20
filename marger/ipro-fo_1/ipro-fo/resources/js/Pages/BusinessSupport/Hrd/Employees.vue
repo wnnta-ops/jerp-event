@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import Pagination from '@/Components/UI/Pagination.vue';
 import { ref } from 'vue';
 import { router, useForm, Link } from '@inertiajs/vue3';
 import { Plus, Pencil, Trash2, ArrowLeft, Users, Search, Banknote } from 'lucide-vue-next';
@@ -6,6 +7,7 @@ import Button from '@/Components/UI/Button.vue';
 import Badge from '@/Components/UI/Badge.vue';
 import EmptyState from '@/Components/UI/EmptyState.vue';
 import ImportMassal from '@/Components/UI/ImportMassal.vue';
+import SearchSelect from '@/Components/UI/SearchSelect.vue';
 
 // Judul kolom template import — SATU sumber dengan EmployeeController::KOLOM.
 const KOLOM_IMPOR = [
@@ -17,6 +19,7 @@ const props = defineProps<{
     employees: any;
     filters: { search?: string; status?: string };
     costCenters: Array<any>;
+    atasanOpsi?: Array<{ id: number; label: string }>;
     summary: { active: number; payroll: number };
 }>();
 
@@ -27,11 +30,11 @@ function fmtRp(v: number) { return 'Rp ' + Number(v ?? 0).toLocaleString('id-ID'
 
 const showModal = ref(false);
 const editingId = ref<number | null>(null);
-const form = useForm<any>({ nik: '', name: '', position: '', cost_center_id: '', join_date: '', base_salary: 0, allowance: 0, bank_name: '', bank_account: '', is_active: true });
+const form = useForm<any>({ nik: '', name: '', position: '', cost_center_id: '', join_date: '', base_salary: 0, allowance: 0, bank_name: '', bank_account: '', atasan_id: null as number | null, is_active: true });
 function openCreate() { editingId.value = null; form.reset(); showModal.value = true; }
 function openEdit(e: any) {
     editingId.value = e.id;
-    Object.assign(form, { nik: e.nik ?? '', name: e.name, position: e.position ?? '', cost_center_id: e.cost_center_id ?? '', join_date: e.join_date ? e.join_date.slice(0,10) : '', base_salary: Number(e.base_salary), allowance: Number(e.allowance), bank_name: e.bank_name ?? '', bank_account: e.bank_account ?? '', is_active: !!e.is_active });
+    Object.assign(form, { nik: e.nik ?? '', name: e.name, position: e.position ?? '', cost_center_id: e.cost_center_id ?? '', join_date: e.join_date ? e.join_date.slice(0,10) : '', base_salary: Number(e.base_salary), allowance: Number(e.allowance), bank_name: e.bank_name ?? '', bank_account: e.bank_account ?? '', atasan_id: e.atasan_id ?? null, is_active: !!e.is_active });
     showModal.value = true;
 }
 function submit() {
@@ -113,11 +116,17 @@ const inputCls = 'h-9 w-full rounded-lg border border-neutral-300 bg-white px-3 
                         <div><label class="mb-1 block text-xs font-medium text-neutral-500">Tunjangan</label><input v-model.number="form.allowance" type="number" step="1" min="0" :class="[inputCls,'text-right font-mono']" /></div>
                         <div><label class="mb-1 block text-xs font-medium text-neutral-500">Bank</label><input v-model="form.bank_name" :class="inputCls" /></div>
                         <div><label class="mb-1 block text-xs font-medium text-neutral-500">No. Rekening</label><input v-model="form.bank_account" :class="inputCls" /></div>
+                        <div class="col-span-2">
+                            <label class="mb-1 block text-xs font-medium text-neutral-500">Atasan</label>
+                            <SearchSelect v-model="form.atasan_id" :options="(atasanOpsi ?? []).filter((o) => o.id !== editingId)" placeholder="— tidak ada —" />
+                            <p class="mt-1 text-[11px] text-neutral-400">Rekening atasan bisa dipilih sebagai tujuan transfer pada Pengajuan Bon Sementara karyawan ini.</p>
+                        </div>
                         <div class="col-span-2"><label class="flex items-center gap-2 text-sm"><input v-model="form.is_active" type="checkbox" class="rounded" /> Karyawan aktif</label></div>
                         <div class="col-span-2 flex justify-end gap-2 pt-1"><button type="button" @click="showModal = false" class="rounded-lg border border-neutral-300 px-4 py-2 text-sm dark:border-neutral-700">Batal</button><Button type="submit" :disabled="form.processing">Simpan</Button></div>
                     </form>
                 </div>
             </div>
         </Teleport>
+        <Pagination :data="employees" />
     </div>
 </template>

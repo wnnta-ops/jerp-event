@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import Pagination from '@/Components/UI/Pagination.vue';
 import { ref, computed } from 'vue';
 import { router, Link } from '@inertiajs/vue3';
 import { Plus, ClipboardList, CalendarRange, RotateCcw } from 'lucide-vue-next';
@@ -89,5 +90,6 @@ const badge: Record<string, any> = { submitted: 'info', printed: 'warning', appr
             <EmptyState v-if="!sips.data?.length && adaFilter" title="Tidak ada SIP pada periode ini" description="Ubah periode awal / akhir atau status, atau klik Reset Filter." />
             <EmptyState v-else-if="!sips.data?.length" title="Belum ada SIP" description="Klik Buat SIP untuk mengajukan instruksi pembayaran tagihan & bon per bank sumber." />
         </div>
+        <Pagination :data="sips" />
     </div>
 </template>

@@ -9,7 +9,12 @@ type Employee = { id: number; name: string; position: string | null };
 const props = defineProps<{
     /** Karyawan pemilik akun yang login — satu-satunya pengaju yang mungkin. */
     karyawan: { id: number; name: string; position: string | null; punya_cost_center: boolean } | null;
+    /** Rekening tujuan transfer: milik sendiri & milik atasan (Data Karyawan → Atasan). */
+    rekening?: Record<string, { employee_id: number; nama: string; jabatan: string | null; bank: string | null; nomor: string | null; ada: boolean }>;
 }>();
+const opsiRek = computed(() => (['sendiri', 'atasan'] as const)
+    .filter((k) => props.rekening?.[k])
+    .map((k) => ({ kode: k, judul: k === 'sendiri' ? 'Rekening saya' : 'Rekening atasan', ...props.rekening![k] })));
 const today = new Date().toISOString().slice(0, 10);
 /* Departemen & Cost Center DIHAPUS dari layar ini — bukan datanya.
    Keduanya tetap tercatat, diturunkan server dari karyawan pemilik akun yang login (lihat
@@ -24,7 +29,7 @@ const today = new Date().toISOString().slice(0, 10);
    kalimat akibatnya ditulis di kartu pilihannya, bukan disembunyikan. */
 // Karyawan & cost center DITURUNKAN server dari akun yang login — keduanya tidak dikirim
 // dari sini. 'holder' diisi hanya sebagai nilai tampilan yang ikut tersimpan.
-const form = useForm<any>({ advance_date: today, holder: '', purpose: '', amount: 0, approval_mode: 'offline' });
+const form = useForm<any>({ advance_date: today, holder: '', purpose: '', amount: 0, approval_mode: 'offline', rek_sumber: null as string | null });
 
 // Nama pengaju tidak bisa dipilih: ia pemilik akun yang login. Dipakai juga sebagai nilai
 // 'holder' yang tersimpan di bonnya.
@@ -36,7 +41,11 @@ const namaPengaju = computed(() => {
 
 // Diisikan sejak layar dibuka — isian wajib yang kosong padahal namanya sudah tampil akan
 // terbaca seperti bug, bukan seperti data yang belum lengkap.
-onMounted(() => { form.holder = namaPengaju.value; });
+onMounted(() => {
+    form.holder = namaPengaju.value;
+    // Bawaan: rekening sendiri bila terisi, kalau tidak rekening atasan.
+    form.rek_sumber = opsiRek.value.find((o) => o.ada)?.kode ?? null;
+});
 
 function fmtRp(v: number) { return 'Rp ' + Number(v ?? 0).toLocaleString('id-ID'); }
 function submit() { form.post(route('bs.advance.store')); }
@@ -105,6 +114,24 @@ const inputCls = 'h-9 w-full rounded-lg border border-neutral-300 bg-white px-3 
                     <p v-if="form.errors.approval_mode" class="mt-1 text-xs text-danger-500">{{ form.errors.approval_mode }}</p>
                 </div>
                 <div><label class="mb-1 block text-xs font-medium text-neutral-500">Nominal *</label><MoneyInput v-model="form.amount" placeholder="0" /><p v-if="form.errors.amount" class="mt-1 text-xs text-danger-500">{{ form.errors.amount }}</p></div>
+                <!-- REKENING TUJUAN TRANSFER — disalin ke bon saat disimpan; tercetak di Memo & BPP. -->
+                <div class="md:col-span-2">
+                    <label class="mb-1 block text-xs font-medium text-neutral-500">Rekening Tujuan Transfer *</label>
+                    <div v-if="opsiRek.length" class="grid gap-2 sm:grid-cols-2">
+                        <label v-for="o in opsiRek" :key="o.kode" class="flex items-start gap-2 rounded-lg border p-3 text-sm transition-colors"
+                               :class="! o.ada ? 'cursor-not-allowed border-neutral-200 opacity-60 dark:border-neutral-800'
+                                   : form.rek_sumber === o.kode ? 'cursor-pointer border-primary-400 bg-primary-50 dark:border-primary-700 dark:bg-primary-900/20'
+                                   : 'cursor-pointer border-neutral-300 hover:bg-neutral-50 dark:border-neutral-700 dark:hover:bg-neutral-800'">
+                            <input v-model="form.rek_sumber" type="radio" :value="o.kode" :disabled="! o.ada" class="mt-0.5 accent-primary-600" />
+                            <span>
+                                <span class="block font-medium">{{ o.judul }}</span>
+                                <span v-if="o.ada" class="mt-0.5 block text-xs text-neutral-500">{{ o.bank || '—' }} · {{ o.nomor }} · a.n. {{ o.nama }}</span>
+                                <span v-else class="mt-0.5 block text-xs text-danger-500">{{ o.nama }} — rekening belum diisi di Data Karyawan</span>
+                            </span>
+                        </label>
+                    </div>
+                    <p v-if="! props.rekening?.atasan" class="mt-1 text-[11px] text-neutral-400">Atasan belum diisi di Data Karyawan — hanya rekening sendiri yang bisa dipilih.</p>
+                </div>
                 <div class="md:col-span-2 rounded-lg bg-amber-50 px-4 py-2 text-xs text-amber-700 dark:bg-amber-900/20 dark:text-amber-300">Pengajuan ini <b>belum membentuk jurnal</b>. Jurnal Uang Muka Operasional baru terbentuk saat dibayar oleh dept Finance (memilih tanggal transfer &amp; sumber bank/kas).</div>
             </div>
             <div class="flex gap-2">

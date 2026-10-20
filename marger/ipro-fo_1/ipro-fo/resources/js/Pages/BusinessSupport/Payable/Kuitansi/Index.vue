@@ -5,9 +5,20 @@ import { ArrowLeft, ReceiptText, Search, FilterX } from 'lucide-vue-next';
 import Badge from '@/Components/UI/Badge.vue';
 import EmptyState from '@/Components/UI/EmptyState.vue';
 import ColumnFilter from '@/Components/UI/ColumnFilter.vue';
+import Pagination from '@/Components/UI/Pagination.vue';
 
 type Row = { id: number; kuitansi_number: string; kuitansi_date: string | null; supplier: { name: string } | null; alat_transaksi: string; total: number; status: string };
-const props = defineProps<{ kuitansis: Row[] }>();
+type Kolom = 'no' | 'tgl' | 'supplier' | 'alat' | 'total' | 'status';
+const props = defineProps<{
+    /** Hasil paginate() — 25 baris per halaman, sudah disaring server. */
+    kuitansis: { data: Row[]; links?: any[]; from?: number | null; to?: number | null; total?: number };
+    /** Ringkasan atas SELURUH hasil saringan. */
+    summary: { active: number; count: number };
+    jumlahSemua: number;
+    opsi: Record<Kolom, string[]>;
+    filters: { search?: string; c?: Partial<Record<Kolom, string[]>> };
+}>();
+const rows = computed<Row[]>(() => props.kuitansis.data ?? []);
 
 function fmtRp(v: number) { return 'Rp ' + Number(v ?? 0).toLocaleString('id-ID'); }
 function fmtDate(d: string | null) { return d ? new Date(d).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'; }
@@ -29,51 +40,32 @@ const dAlat = (k: Row) => alat[k.alat_transaksi] ?? k.alat_transaksi ?? '—';
 const dTotal = (k: Row) => fmtRp(k.total);
 const dStatus = (k: Row) => stMeta(k.status).l;
 
-function distinct(fn: (k: Row) => string) {
-    const s = new Set<string>();
-    for (const k of props.kuitansis) s.add(fn(k));
-    return [...s].sort((a, b) => a.localeCompare(b, 'id', { numeric: true }));
-}
-const optNo = computed(() => distinct(dNo));
-const optTgl = computed(() => distinct(dTgl));
-const optSupplier = computed(() => distinct(dSupplier));
-const optAlat = computed(() => distinct(dAlat));
-const optTotal = computed(() => distinct(dTotal));
-const optStatus = computed(() => distinct(dStatus));
+const optNo = computed(() => props.opsi?.no ?? []);
+const optTgl = computed(() => props.opsi?.tgl ?? []);
+const optSupplier = computed(() => props.opsi?.supplier ?? []);
+const optAlat = computed(() => props.opsi?.alat ?? []);
+const optTotal = computed(() => props.opsi?.total ?? []);
+const optStatus = computed(() => props.opsi?.status ?? []);
 
-// Filter global + checklist per-kolom (kosong = tampilkan semua). Semua di sisi klien.
-const search = ref('');
-const col = reactive<Record<string, string[]>>({ no: [], tgl: [], supplier: [], alat: [], total: [], status: [] });
+// Filter global + checklist per-kolom — DIKERJAKAN SERVER; perubahan dikirim dengan jeda singkat
+// dan daftar kembali ke halaman 1.
+const KOLOM: Kolom[] = ['no', 'tgl', 'supplier', 'alat', 'total', 'status'];
+const search = ref(props.filters?.search ?? '');
+const col = reactive<Record<string, string[]>>(Object.fromEntries(KOLOM.map((k) => [k, [...(props.filters?.c?.[k] ?? [])]])));
 const hasFilter = computed(() => Boolean(search.value) || Object.values(col).some((a) => a.length));
-function resetFilter() { search.value = ''; (Object.keys(col) as Array<keyof typeof col>).forEach((k) => (col[k] = [])); }
-
-const filtered = computed<Row[]>(() => props.kuitansis.filter((k) => {
-    if (search.value) {
-        const q = search.value.toLowerCase();
-        const hay = [dNo(k), dTgl(k), dSupplier(k), dAlat(k), dTotal(k), dStatus(k)].join(' ').toLowerCase();
-        if (!hay.includes(q)) return false;
-    }
-    if (col.no.length && !col.no.includes(dNo(k))) return false;
-    if (col.tgl.length && !col.tgl.includes(dTgl(k))) return false;
-    if (col.supplier.length && !col.supplier.includes(dSupplier(k))) return false;
-    if (col.alat.length && !col.alat.includes(dAlat(k))) return false;
-    if (col.total.length && !col.total.includes(dTotal(k))) return false;
-    if (col.status.length && !col.status.includes(dStatus(k))) return false;
-    return true;
-}));
-
-// Ringkasan mengikuti hasil filter.
-const summary = computed(() => ({
-    active: filtered.value.filter((k) => k.status === 'active').reduce((s, k) => s + Number(k.total), 0),
-    count: filtered.value.length,
-}));
-
-// Buang nilai filter yang sudah tak ada bila data berubah.
-watch([optNo, optTgl, optSupplier, optAlat, optTotal, optStatus], () => {
-    const prune = (sel: string[], opts: string[]) => { const s = new Set(opts); return sel.filter((v) => s.has(v)); };
-    col.no = prune(col.no, optNo.value); col.tgl = prune(col.tgl, optTgl.value); col.supplier = prune(col.supplier, optSupplier.value);
-    col.alat = prune(col.alat, optAlat.value); col.total = prune(col.total, optTotal.value); col.status = prune(col.status, optStatus.value);
+function resetFilter() { search.value = ''; KOLOM.forEach((k) => (col[k] = [])); }
+let jeda: ReturnType<typeof setTimeout> | null = null;
+watch([search, () => JSON.stringify(col)], () => {
+    if (jeda) clearTimeout(jeda);
+    jeda = setTimeout(() => {
+        const c: Record<string, string[]> = {};
+        KOLOM.forEach((k) => { if (col[k].length) c[k] = col[k]; });
+        router.get(window.location.pathname, { search: search.value || undefined, c: Object.keys(c).length ? c : undefined }, { preserveState: true, preserveScroll: true, replace: true });
+    }, 450);
 });
+
+// Ringkasan dihitung server atas SELURUH hasil saringan.
+const summary = computed(() => props.summary);
 </script>
 <template>
     <div class="space-y-4">
@@ -85,7 +77,7 @@ watch([optNo, optTgl, optSupplier, optAlat, optTotal, optStatus], () => {
         <!-- Ringkasan mengikuti hasil filter checklist. -->
         <div class="grid gap-3 sm:grid-cols-2">
             <div class="card border-l-4 border-success-500 p-4"><div class="text-xs uppercase text-neutral-400">Total Dibayar (aktif)</div><div class="mt-1 text-xl font-bold text-success-700">{{ fmtRp(summary.active) }}</div></div>
-            <div class="card border-l-4 border-neutral-300 p-4 dark:border-neutral-600"><div class="text-xs uppercase text-neutral-400">Jumlah Kuitansi</div><div class="mt-1 flex items-baseline gap-2 text-xl font-bold">{{ summary.count }}<span v-if="hasFilter" class="text-xs font-normal text-neutral-400">dari {{ props.kuitansis.length }}</span></div></div>
+            <div class="card border-l-4 border-neutral-300 p-4 dark:border-neutral-600"><div class="text-xs uppercase text-neutral-400">Jumlah Kuitansi</div><div class="mt-1 flex items-baseline gap-2 text-xl font-bold">{{ summary.count }}<span v-if="hasFilter" class="text-xs font-normal text-neutral-400">dari {{ props.jumlahSemua }}</span></div></div>
         </div>
 
         <div class="flex flex-wrap items-center gap-2">
@@ -110,7 +102,7 @@ watch([optNo, optTgl, optSupplier, optAlat, optTotal, optStatus], () => {
                     </tr>
                 </thead>
                 <tbody class="divide-y divide-neutral-200 dark:divide-neutral-800">
-                    <tr v-for="k in filtered" :key="k.id" class="cursor-pointer hover:bg-neutral-50 dark:hover:bg-neutral-800/50" @click="router.get(route('bs.ap.kuitansi.show', k.id))">
+                    <tr v-for="k in rows" :key="k.id" class="cursor-pointer hover:bg-neutral-50 dark:hover:bg-neutral-800/50" @click="router.get(route('bs.ap.kuitansi.show', k.id))">
                         <td class="whitespace-nowrap px-4 py-2.5 font-mono text-xs font-semibold">{{ k.kuitansi_number }}</td>
                         <td class="whitespace-nowrap px-4 py-2.5">{{ fmtDate(k.kuitansi_date) }}</td>
                         <td class="px-4 py-2.5">{{ k.supplier?.name ?? '—' }}</td>
@@ -120,8 +112,9 @@ watch([optNo, optTgl, optSupplier, optAlat, optTotal, optStatus], () => {
                     </tr>
                 </tbody>
             </table>
-            <EmptyState v-if="!props.kuitansis.length" title="Belum ada kuitansi" description="Voucher pembayaran supplier dibuat dari Cash Book → Registrasi Pengeluaran Kas &amp; Bank (AP)." />
-            <EmptyState v-else-if="!filtered.length" title="Tidak ada hasil" description="Tidak ada kuitansi yang cocok dengan filter. Klik Reset filter untuk menampilkan semua." />
+            <EmptyState v-if="!props.jumlahSemua" title="Belum ada kuitansi" description="Voucher pembayaran supplier dibuat dari Cash Book → Registrasi Pengeluaran Kas &amp; Bank (AP)." />
+            <EmptyState v-else-if="!rows.length" title="Tidak ada hasil" description="Tidak ada kuitansi yang cocok dengan filter. Klik Reset filter untuk menampilkan semua." />
         </div>
+        <Pagination :data="kuitansis" satuan="kuitansi" />
     </div>
 </template>

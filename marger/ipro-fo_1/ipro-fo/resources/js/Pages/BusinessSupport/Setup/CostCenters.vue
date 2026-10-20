@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import Pagination from '@/Components/UI/Pagination.vue';
 import { ref } from 'vue';
 import { router, useForm, Link } from '@inertiajs/vue3';
 import { Plus, Pencil, Trash2, Building2, ArrowLeft } from 'lucide-vue-next';
@@ -84,5 +85,6 @@ const inputCls = 'h-9 w-full rounded-lg border border-neutral-300 bg-white px-3 
                 </div>
             </div>
         </Teleport>
+        <Pagination :data="costCenters" />
     </div>
 </template>

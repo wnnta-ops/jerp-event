@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import Pagination from '@/Components/UI/Pagination.vue';
 import { ref } from 'vue';
 import { router, useForm, Link } from '@inertiajs/vue3';
 import { Plus, Trash2, Coins, ArrowLeft, Layers, FileSpreadsheet, Upload, Download } from 'lucide-vue-next';
@@ -207,5 +208,6 @@ function submitImport() { importForm.post(route('bs.ap.opening.import'), { prese
                 </div>
             </div>
         </Teleport>
+        <Pagination :data="openings" />
     </div>
 </template>

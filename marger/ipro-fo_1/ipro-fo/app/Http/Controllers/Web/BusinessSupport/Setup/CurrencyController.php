@@ -60,7 +60,7 @@ class CurrencyController extends Controller
         $rates = BsExchangeRate::query()
             ->when($request->input('currency_code'), fn ($q, $c) => $q->where('currency_code', $c))
             ->orderByDesc('rate_date')->orderBy('currency_code')
-            ->paginate(50)->withQueryString();
+            ->paginate(25)->withQueryString();
 
         return Inertia::render('BusinessSupport/Setup/Kurs', [
             'rates'      => $rates,

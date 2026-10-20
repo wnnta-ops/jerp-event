@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import Pagination from '@/Components/UI/Pagination.vue';
 import { router, Link } from '@inertiajs/vue3';
 import { ref } from 'vue';
 import { Plus, ArrowLeft, FileText } from 'lucide-vue-next';
@@ -51,5 +52,6 @@ const badge: Record<string, any> = { in_hand: 'warning', cleared: 'success', bou
             </table>
             <EmptyState v-if="!giros.data?.length" title="Belum ada BG/Cek masuk" description="Klik Terima BG/Cek untuk mencatat warkat masuk dari customer." />
         </div>
+        <Pagination :data="giros" />
     </div>
 </template>

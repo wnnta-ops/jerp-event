@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import Pagination from '@/Components/UI/Pagination.vue';
 import { ref } from 'vue';
 import { router, Link } from '@inertiajs/vue3';
 import { ArrowLeft, LayoutList } from 'lucide-vue-next';
@@ -60,5 +61,6 @@ const inputCls = 'h-9 rounded-lg border border-neutral-300 bg-white px-3 text-sm
             </table>
             <EmptyState v-if="!movements.data?.length" title="Belum ada pergerakan stok" />
         </div>
+        <Pagination :data="movements" />
     </div>
 </template>

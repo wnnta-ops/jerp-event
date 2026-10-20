@@ -6,6 +6,7 @@ import Button from '@/Components/UI/Button.vue';
 import Badge from '@/Components/UI/Badge.vue';
 import EmptyState from '@/Components/UI/EmptyState.vue';
 import ColumnFilter from '@/Components/UI/ColumnFilter.vue';
+import Pagination from '@/Components/UI/Pagination.vue';
 import { useIzin } from '@/Composables/useIzin';
 
 // Tombol di kepala halaman mengikuti hak akses: tiap tombol hanya muncul bila izin yang dijaga
@@ -19,8 +20,17 @@ type Row = {
     description: string | null; berkas_notes: string | null; berkas_finance_date: string | null;
     status: string; payable: number; sisa: number;
 };
+type Kolom = 'no' | 'tgl' | 'terima' | 'supplier' | 'sumber' | 'ket' | 'total' | 'sisa' | 'status' | 'berkas' | 'berkasFinance';
 const props = defineProps<{
-    invoices: Row[];
+    /** Hasil paginate() — 25 baris per halaman, sudah disaring server. */
+    invoices: { data: Row[]; links?: any[]; from?: number | null; to?: number | null; total?: number };
+    /** Ringkasan atas SELURUH hasil saringan (bukan hanya halaman ini). */
+    summary: { open: number; dueNow: number; notDue: number; count_open: number; count_total: number };
+    jumlahSemua: number;
+    /** Isi dropdown per kolom (nilai tampilan), dari seluruh invoice jenis ini. */
+    opsi: Record<Kolom, string[]>;
+    batasOpsi?: number;
+    filters: { search?: string; t?: Partial<Record<Kolom, string>>; c?: Partial<Record<Kolom, string[]>> };
     canBerkasFinance?: boolean;
     /** Modul yang sedang dibuka: Invoice Hutang / Reimburse Karyawan / Deposit Renovasi. */
     jenis: { kunci: string; judul: string; penerima: string; rute: string; izin: string };
@@ -64,68 +74,52 @@ function saveBerkasFinance(r: Row, ev: Event) {
     router.post(route('bs.ap.berkas-finance', r.id), { berkas_finance_date: val }, { preserveScroll: true, preserveState: false });
 }
 
-function distinct(fn: (r: Row) => string) {
-    const s = new Set<string>();
-    for (const r of props.invoices) s.add(fn(r));
-    return [...s].sort((a, b) => a.localeCompare(b, 'id', { numeric: true }));
-}
-const optNo = computed(() => distinct(dNo));
-const optTgl = computed(() => distinct(dTgl));
-const optTerima = computed(() => distinct(dTerima));
-const optSupplier = computed(() => distinct(dSupplier));
-const optSumber = computed(() => distinct(dSumber));
-const optKet = computed(() => distinct(dKet));
-const optTotal = computed(() => distinct(dTotal));
-const optSisa = computed(() => distinct(dSisa));
-const optStatus = computed(() => distinct(dStatus));
-const optBerkas = computed(() => distinct(dBerkas));
-const optBerkasFinance = computed(() => distinct(dBerkasFinance));
+const rows = computed<Row[]>(() => props.invoices.data ?? []);
+const optNo = computed(() => props.opsi?.no ?? []);
+const optTgl = computed(() => props.opsi?.tgl ?? []);
+const optTerima = computed(() => props.opsi?.terima ?? []);
+const optSupplier = computed(() => props.opsi?.supplier ?? []);
+const optSumber = computed(() => props.opsi?.sumber ?? []);
+const optKet = computed(() => props.opsi?.ket ?? []);
+const optTotal = computed(() => props.opsi?.total ?? []);
+const optSisa = computed(() => props.opsi?.sisa ?? []);
+const optStatus = computed(() => props.opsi?.status ?? []);
+const optBerkas = computed(() => props.opsi?.berkas ?? []);
+const optBerkasFinance = computed(() => props.opsi?.berkasFinance ?? []);
 
-// Filter global + per-kolom. Tiap kolom punya DUA cara yang saling melengkapi:
+// Filter global + per-kolom — DIKERJAKAN SERVER (DaftarInvoiceHutang). Tiap kolom punya DUA cara:
 //   • txt[...]  → KETIK bebas (cocok "berisi") langsung di kotak kolom;
 //   • col[...]  → checklist nilai persis dari dropdown.
-// Keduanya di sisi klien; kosong = tampilkan semua.
-const search = ref('');
-const col = reactive<Record<string, string[]>>({ no: [], tgl: [], terima: [], supplier: [], sumber: [], ket: [], total: [], sisa: [], status: [], berkas: [], berkasFinance: [] });
-const txt = reactive<Record<string, string>>({ no: '', tgl: '', terima: '', supplier: '', sumber: '', ket: '', total: '', sisa: '', status: '', berkas: '', berkasFinance: '' });
+// Setiap perubahan dikirim ke server (jeda singkat saat mengetik) dan daftar kembali ke halaman 1.
+const KOLOM: Kolom[] = ['no', 'tgl', 'terima', 'supplier', 'sumber', 'ket', 'total', 'sisa', 'status', 'berkas', 'berkasFinance'];
+const search = ref(props.filters?.search ?? '');
+const col = reactive<Record<string, string[]>>(Object.fromEntries(KOLOM.map((k) => [k, [...(props.filters?.c?.[k] ?? [])]])));
+const txt = reactive<Record<string, string>>(Object.fromEntries(KOLOM.map((k) => [k, props.filters?.t?.[k] ?? ''])));
 const hasFilter = computed(() => Boolean(search.value) || Object.values(col).some((a) => a.length) || Object.values(txt).some((v) => v.trim() !== ''));
 function resetFilter() {
     search.value = '';
-    (Object.keys(col) as Array<keyof typeof col>).forEach((k) => (col[k] = []));
-    (Object.keys(txt) as Array<keyof typeof txt>).forEach((k) => (txt[k] = ''));
+    KOLOM.forEach((k) => { col[k] = []; txt[k] = ''; });
 }
-
-/** Lolos bila nilai tampilan mengandung teks yang diketik (case-insensitive). */
-function okTxt(key: string, val: string) {
-    const q = txt[key]?.trim().toLowerCase();
-    return !q || val.toLowerCase().includes(q);
+function paramSaring(): Record<string, any> {
+    const t: Record<string, string> = {}; const c: Record<string, string[]> = {};
+    KOLOM.forEach((k) => { if (txt[k].trim()) t[k] = txt[k].trim(); if (col[k].length) c[k] = col[k]; });
+    return { search: search.value || undefined, t: Object.keys(t).length ? t : undefined, c: Object.keys(c).length ? c : undefined };
 }
-/** Lolos bila tidak ada checklist, atau nilainya termasuk yang dicentang. */
-function okCol(key: string, val: string) { return !col[key].length || col[key].includes(val); }
-
-const filtered = computed<Row[]>(() => props.invoices.filter((r) => {
-    if (search.value) {
-        const q = search.value.toLowerCase();
-        const hay = [dNo(r), dTgl(r), dTerima(r), dSupplier(r), dSumber(r), dKet(r), dTotal(r), dSisa(r), dStatus(r), dBerkas(r), dBerkasFinance(r)].join(' ').toLowerCase();
-        if (!hay.includes(q)) return false;
-    }
-    const pairs: Array<[string, string]> = [
-        ['no', dNo(r)], ['tgl', dTgl(r)], ['terima', dTerima(r)], ['supplier', dSupplier(r)], ['sumber', dSumber(r)],
-        ['ket', dKet(r)], ['total', dTotal(r)], ['sisa', dSisa(r)], ['status', dStatus(r)],
-        ['berkas', dBerkas(r)], ['berkasFinance', dBerkasFinance(r)],
-    ];
-    return pairs.every(([k, v]) => okCol(k, v) && okTxt(k, v));
-}));
+let jeda: ReturnType<typeof setTimeout> | null = null;
+watch([search, () => JSON.stringify(txt), () => JSON.stringify(col)], () => {
+    if (jeda) clearTimeout(jeda);
+    jeda = setTimeout(() => router.get(window.location.pathname, paramSaring(), { preserveState: true, preserveScroll: true, replace: true }), 450);
+});
 
 // ── Pilih baris (checklist kiri) untuk dicetak sebagai Purchase Order ──
 // Hanya invoice yang benar-benar lahir dari PO (punya po_id) yang bisa dicetak sebagai PO.
 const checked = reactive<Record<number, boolean>>({});
-const selectedRows = computed(() => filtered.value.filter((r) => checked[r.id]));
+const selectedRows = computed(() => rows.value.filter((r) => checked[r.id]));
 const selectedPoIds = computed(() => selectedRows.value.map((r) => r.po_id).filter((v): v is number => !!v));
 const selectedNonPo = computed(() => selectedRows.value.length - selectedPoIds.value.length);
 const allChecked = computed<boolean>({
-    get: () => filtered.value.length > 0 && filtered.value.every((r) => checked[r.id]),
-    set: (v: boolean) => filtered.value.forEach((r) => (checked[r.id] = v)),
+    get: () => rows.value.length > 0 && rows.value.every((r) => checked[r.id]),
+    set: (v: boolean) => rows.value.forEach((r) => (checked[r.id] = v)),
 });
 function clearSelection() { Object.keys(checked).forEach((k) => delete checked[Number(k)]); }
 /** Buka halaman cetak PO (editable) untuk seluruh PO dari baris yang dicentang. */
@@ -134,60 +128,18 @@ function cetakPo() {
     window.open(route('bs.po.print', { ids: selectedPoIds.value.join(',') }), '_blank');
 }
 
-// Ringkasan dari hasil filter (nett). Jatuh tempo dipisah relatif hari ini.
-const summary = computed(() => {
-    const open = filtered.value.filter((r) => r.status === 'open');
-    let dueNow = 0, notDue = 0;
-    for (const r of open) {
-        // Tanpa due_date dianggap sudah jatuh tempo (perlu perhatian) agar dueNow+notDue == total open.
-        if (!r.due_date || r.due_date <= todayStr) dueNow += Number(r.sisa); else notDue += Number(r.sisa);
-    }
-    return {
-        open: open.reduce((s, r) => s + Number(r.sisa), 0),
-        count_open: open.length,
-        count_total: filtered.value.length,
-        dueNow, notDue,
-    };
-});
+// Ringkasan (nett) dihitung server atas SELURUH hasil saringan — props.summary.
+const summary = computed(() => props.summary);
 
-// Bila data berubah (mis. reload), buang nilai filter yang sudah tak ada agar tak diam-diam mengosongkan tabel.
-watch([optNo, optTgl, optTerima, optSupplier, optSumber, optKet, optTotal, optSisa, optStatus, optBerkas, optBerkasFinance], () => {
-    const prune = (sel: string[], opts: string[]) => { const s = new Set(opts); return sel.filter((v) => s.has(v)); };
-    col.no = prune(col.no, optNo.value); col.tgl = prune(col.tgl, optTgl.value); col.terima = prune(col.terima, optTerima.value);
-    col.supplier = prune(col.supplier, optSupplier.value); col.sumber = prune(col.sumber, optSumber.value); col.ket = prune(col.ket, optKet.value); col.total = prune(col.total, optTotal.value);
-    col.sisa = prune(col.sisa, optSisa.value); col.status = prune(col.status, optStatus.value); col.berkas = prune(col.berkas, optBerkas.value);
-    col.berkasFinance = prune(col.berkasFinance, optBerkasFinance.value);
-});
-
-// Export Excel mengikuti TAMPILAN saat ini (hasil filter + nilai nett).
+// Export Excel = SELURUH hasil saringan (server), bukan hanya 25 baris yang tampil.
 function exportExcel() {
-    const esc = (s: unknown) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-    const num = (v: number) => Number(v ?? 0).toLocaleString('id-ID');
-    const body = filtered.value.map((r) => '<tr>'
-        + `<td>${esc(r.invoice_number)}</td>`
-        + `<td>${esc(fmtDate(r.invoice_date))}</td>`
-        + `<td>${esc(fmtDate(r.receive_date))}</td>`
-        + `<td>${esc(fmtDate(r.due_date))}</td>`
-        + `<td>${esc(r.supplier?.name ?? '')}</td>`
-        + `<td>${esc(r.description)}</td>`
-        + `<td>${esc(num(r.payable))}</td>`
-        + `<td>${esc(num(r.sisa))}</td>`
-        + `<td>${esc(statusLabel(r.status))}</td>`
-        + `<td>${esc(r.berkas_notes ?? '')}</td>`
-        + `<td>${esc(fmtDate(r.berkas_finance_date))}</td>`
-        + '</tr>').join('');
-    const html = '<html xmlns:x="urn:schemas-microsoft-com:office:excel"><head><meta charset="utf-8"></head><body>'
-        + '<table border="1"><tr style="background:#0f766e;color:#fff">'
-        + '<th>No. Invoice</th><th>Tanggal</th><th>Tgl. Diterima</th><th>Jatuh Tempo</th><th>Supplier</th><th>Keterangan</th><th>Total (Net)</th><th>Sisa (Net)</th><th>Status</th><th>Kelengkapan Berkas</th><th>Berkas Diterima Finance</th>'
-        + `</tr>${body}</table></body></html>`;
-    const url = URL.createObjectURL(new Blob([html], { type: 'application/vnd.ms-excel' }));
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `Invoice-Hutang-${new Date().toISOString().slice(0, 10)}.xls`;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    URL.revokeObjectURL(url);
+    const qs = new URLSearchParams();
+    const p = paramSaring();
+    if (p.search) qs.set('search', p.search);
+    Object.entries(p.t ?? {}).forEach(([k, v]) => qs.set(`t[${k}]`, String(v)));
+    Object.entries(p.c ?? {}).forEach(([k, arr]) => (arr as string[]).forEach((v) => qs.append(`c[${k}][]`, v)));
+    qs.set('excel', '1');
+    window.location.href = `${window.location.pathname}?${qs.toString()}`;
 }
 
 // ── Perlebar tampilan (full-bleed dari container terpusat) + scrollbar horizontal ATAS yang tersinkron ──
@@ -232,7 +184,7 @@ onBeforeUnmount(() => {
     window.removeEventListener('resize', recalc);
 });
 // Lebar tabel berubah saat hasil filter berubah → ukur ulang.
-watch(filtered, () => nextTick(measure));
+watch(rows, () => nextTick(measure));
 </script>
 <template>
     <div ref="rootEl" class="space-y-4">
@@ -245,7 +197,7 @@ watch(filtered, () => nextTick(measure));
                 <Link v-if="punyaIzin('ap.paycard.view')" :href="route('bs.ap.card')" class="inline-flex h-9 items-center gap-1.5 rounded-lg border border-neutral-300 px-3 text-sm font-medium hover:bg-neutral-50 dark:border-neutral-700"><BookText class="h-4 w-4" /> Kartu</Link>
                 <Link v-if="punyaIzin('ap.posting.view')" :href="route('bs.ap.posting.index')" class="inline-flex h-9 items-center gap-1.5 rounded-lg border border-neutral-300 px-3 text-sm font-medium hover:bg-neutral-50 dark:border-neutral-700"><FileInput class="h-4 w-4" /> Posting</Link>
                 <Link v-if="punyaIzin('ap.penghapusan.view')" :href="route('bs.ap.penghapusan.index')" class="inline-flex h-9 items-center gap-1.5 rounded-lg border border-neutral-300 px-3 text-sm font-medium hover:bg-neutral-50 dark:border-neutral-700"><Eraser class="h-4 w-4" /> Hapus</Link>
-                <button type="button" @click="exportExcel" title="Unduh sesuai tampilan terfilter (nilai nett)" class="inline-flex h-9 items-center gap-1.5 rounded-lg border border-emerald-300 bg-emerald-50 px-3 text-sm font-medium text-emerald-700 hover:bg-emerald-100 dark:border-emerald-700/50 dark:bg-emerald-900/30 dark:text-emerald-300"><FileSpreadsheet class="h-4 w-4" /> Excel</button>
+                <button type="button" @click="exportExcel" title="Unduh seluruh hasil filter (nilai nett), bukan hanya halaman ini" class="inline-flex h-9 items-center gap-1.5 rounded-lg border border-emerald-300 bg-emerald-50 px-3 text-sm font-medium text-emerald-700 hover:bg-emerald-100 dark:border-emerald-700/50 dark:bg-emerald-900/30 dark:text-emerald-300"><FileSpreadsheet class="h-4 w-4" /> Excel</button>
                 <button v-if="punyaIzin('bs.po.view')" type="button" @click="cetakPo" :disabled="!selectedPoIds.length"
                     :title="selectedPoIds.length ? 'Cetak Purchase Order dari baris tercentang' : 'Centang dulu invoice yang berasal dari PO'"
                     class="inline-flex h-9 items-center gap-1.5 rounded-lg border px-3 text-sm font-medium disabled:cursor-not-allowed disabled:opacity-40"
@@ -279,7 +231,7 @@ watch(filtered, () => nextTick(measure));
             </div>
             <div class="card border-l-4 border-neutral-300 p-4 dark:border-neutral-600">
                 <div class="text-xs uppercase text-neutral-400">Total Tagihan</div>
-                <div class="mt-1 flex items-baseline gap-2 text-xl font-bold">{{ summary.count_total }}<span v-if="hasFilter" class="text-xs font-normal text-neutral-400">dari {{ props.invoices.length }}</span></div>
+                <div class="mt-1 flex items-baseline gap-2 text-xl font-bold">{{ summary.count_total }}<span v-if="hasFilter" class="text-xs font-normal text-neutral-400">dari {{ props.jumlahSemua }}</span></div>
             </div>
         </div>
 
@@ -333,7 +285,7 @@ watch(filtered, () => nextTick(measure));
                     </tr>
                 </thead>
                 <tbody class="divide-y divide-neutral-200 dark:divide-neutral-800">
-                    <tr v-for="r in filtered" :key="r.id" class="cursor-pointer hover:bg-neutral-50 dark:hover:bg-neutral-800/50" :class="checked[r.id] ? 'bg-primary-50/40 dark:bg-primary-900/10' : ''" @click="router.get(route('bs.ap.show', r.id))">
+                    <tr v-for="r in rows" :key="r.id" class="cursor-pointer hover:bg-neutral-50 dark:hover:bg-neutral-800/50" :class="checked[r.id] ? 'bg-primary-50/40 dark:bg-primary-900/10' : ''" @click="router.get(route('bs.ap.show', r.id))">
                         <!-- .stop: mencentang tidak boleh ikut membuka rincian invoice -->
                         <td class="px-3 py-2.5 text-center" @click.stop>
                             <input v-model="checked[r.id]" type="checkbox" class="rounded border-neutral-300"
@@ -359,8 +311,9 @@ watch(filtered, () => nextTick(measure));
                     </tr>
                 </tbody>
             </table>
-            <EmptyState v-if="!props.invoices.length" title="Belum ada tagihan hutang" description="Klik Invoice untuk mencatat tagihan supplier." />
-            <EmptyState v-else-if="!filtered.length" title="Tidak ada hasil" description="Tidak ada tagihan yang cocok dengan filter. Klik Reset filter untuk menampilkan semua." />
+            <EmptyState v-if="!props.jumlahSemua" title="Belum ada tagihan hutang" description="Klik Invoice untuk mencatat tagihan supplier." />
+            <EmptyState v-else-if="!rows.length" title="Tidak ada hasil" description="Tidak ada tagihan yang cocok dengan filter. Klik Reset filter untuk menampilkan semua." />
         </div>
+        <Pagination :data="invoices" satuan="tagihan" />
     </div>
 </template>

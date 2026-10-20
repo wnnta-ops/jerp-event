@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import Pagination from '@/Components/UI/Pagination.vue';
 import { ref, computed } from 'vue';
 import { router, useForm, Link } from '@inertiajs/vue3';
 import { ArrowLeft, Scale, Plus, ChevronRight } from 'lucide-vue-next';
@@ -51,5 +52,6 @@ const inputCls = 'h-9 w-full rounded-lg border border-neutral-300 bg-white px-3 
             </table>
             <EmptyState v-if="!reconciliations.data?.length" title="Belum ada rekonsiliasi" description="Mulai rekonsiliasi baru dengan memilih akun bank dan saldo koran." />
         </div>
+        <Pagination :data="reconciliations" />
     </div>
 </template>

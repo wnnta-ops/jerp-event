@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import Pagination from '@/Components/UI/Pagination.vue';
 import { ref } from 'vue';
 import { router, useForm, Link } from '@inertiajs/vue3';
 import { ArrowLeft, TriangleAlert, Plus } from 'lucide-vue-next';
@@ -55,5 +56,6 @@ const inputCls = 'h-9 w-full rounded-lg border border-neutral-300 bg-white px-3 
             </table>
             <div v-if="!rows.data?.length" class="px-4 py-6 text-center text-sm text-neutral-400">Belum ada technical problem.</div>
         </div>
+        <Pagination :data="rows" />
     </div>
 </template>

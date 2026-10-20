@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import Pagination from '@/Components/UI/Pagination.vue';
 import { Link, router } from '@inertiajs/vue3';
 import { ref, watch, computed } from 'vue';
 import { Plus, GitMerge } from 'lucide-vue-next';
@@ -86,5 +87,6 @@ function statusLabel(s: string) { return s === 'completed' ? 'Selesai' : (s === 
             </table>
             <EmptyState v-if="!rows.length" title="Belum ada inisiasi KPR" description="Klik 'Mulai Inisiasi' untuk memulai dari sebuah TTS." />
         </div>
+        <Pagination :data="records" />
     </div>
 </template>

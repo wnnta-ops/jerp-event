@@ -28,12 +28,15 @@ class EmployeeController extends Controller
             ->with(['costCenter:id,code,name'])
             ->when($request->input('search'), fn ($q, $s) => $q->where(fn ($w) => $w->where('name', 'like', "%{$s}%")->orWhere('nik', 'like', "%{$s}%")->orWhere('position', 'like', "%{$s}%")))
             ->when($request->input('status') !== null && $request->input('status') !== '', fn ($q) => $q->where('is_active', $request->input('status') === 'active'))
-            ->orderBy('name')->paginate(50)->withQueryString();
+            ->orderBy('name')->paginate(25)->withQueryString();
 
         return Inertia::render('BusinessSupport/Hrd/Employees', [
             'employees' => $rows,
             'filters' => $request->only(['search', 'status']),
             'costCenters' => BsCostCenter::where('is_active', true)->orderBy('code')->get(['id', 'code', 'name']),
+            // Pilihan Atasan — rekeningnya bisa dipilih pada Pengajuan Bon Sementara bawahannya.
+            'atasanOpsi' => BsEmployee::where('is_active', true)->orderBy('name')->get(['id', 'name', 'position'])
+                ->map(fn ($e) => ['id' => $e->id, 'label' => trim($e->name.($e->position ? ' — '.trim($e->position) : ''))])->values(),
             'summary' => [
                 'active' => BsEmployee::where('is_active', true)->count(),
                 'payroll' => (float) BsEmployee::where('is_active', true)->sum(DB::raw('base_salary + allowance')),
@@ -52,7 +55,7 @@ class EmployeeController extends Controller
     public function update(Request $request, BsEmployee $employee): RedirectResponse
     {
         abort_unless($request->user()?->can('businesssupport.setup.manage'), 403);
-        $employee->update($this->data($request));
+        $employee->update($this->data($request, $employee));
 
         return back()->with('success', 'Data karyawan diperbarui.');
     }
@@ -296,7 +299,7 @@ class EmployeeController extends Controller
     }
 
     /** @return array<string,mixed> */
-    private function data(Request $request): array
+    private function data(Request $request, ?BsEmployee $employee = null): array
     {
         return $request->validate([
             'nik' => ['nullable', 'string', 'max:32'],
@@ -308,6 +311,9 @@ class EmployeeController extends Controller
             'allowance' => ['nullable', 'numeric', 'min:0'],
             'bank_name' => ['nullable', 'string', 'max:100'],
             'bank_account' => ['nullable', 'string', 'max:60'],
+            'atasan_id' => ['nullable', 'integer', 'exists:bs_employees,id',
+                // Atasan diri sendiri tidak bermakna — dan menjadikan "rekening atasan" = rekening sendiri.
+                fn ($attr, $val, $fail) => $employee && (int) $val === (int) $employee->id ? $fail('Atasan tidak boleh diri sendiri.') : null],
             'is_active' => ['boolean'],
         ]);
     }

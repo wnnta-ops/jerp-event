@@ -133,7 +133,7 @@ class KprInitiationController extends Controller
                     ->orWhereHas('ttsReceipt', fn ($t) => $t->where('tts_number', 'like', "%{$term}%"));
             }))
             ->latest('id')
-            ->paginate(50)->withQueryString()
+            ->paginate(25)->withQueryString()
             ->through(fn (KprInitiation $r) => [
                 'id'            => $r->id,
                 'number'        => $r->initiation_number,
@@ -740,7 +740,7 @@ class KprInitiationController extends Controller
                 $w->where('initiation_number', 'like', "%{$term}%")
                     ->orWhereHas('customer', fn ($c) => $c->where('full_name', 'like', "%{$term}%"));
             }))
-            ->latest('id')->paginate(50)->withQueryString()
+            ->latest('id')->paginate(25)->withQueryString()
             ->through(fn (KprInitiation $r) => [
                 'id'       => $r->id,
                 'number'   => $r->initiation_number,

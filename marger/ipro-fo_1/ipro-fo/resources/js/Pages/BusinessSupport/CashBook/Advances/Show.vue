@@ -266,6 +266,8 @@ function backToIndex() {
         <div class="card grid gap-4 p-5 text-sm md:grid-cols-2">
             <div><div class="text-neutral-500">Tanggal</div><div class="font-medium">{{ fmtDate(advance.advance_date) }}</div></div>
             <div><div class="text-neutral-500">Pemegang</div><div class="font-medium">{{ advance.holder }}</div></div>
+            <!-- Rekening tujuan transfer yang dipilih saat pengajuan (salinan di bon). -->
+            <div v-if="advance.rek_nomor"><div class="text-neutral-500">Rekening Tujuan Transfer <span class="text-xs">({{ advance.rek_sumber === 'atasan' ? 'rekening atasan' : 'rekening sendiri' }})</span></div><div class="font-medium">{{ advance.rek_bank || '—' }} · <span class="font-mono">{{ advance.rek_nomor }}</span> · a.n. {{ advance.rek_atas_nama }}</div></div>
             <div class="md:col-span-2"><div class="text-neutral-500">Keperluan</div><div class="font-medium">{{ advance.purpose }}</div></div>
             <div><div class="text-neutral-500">Dari Kas/Bank</div><div class="font-medium">{{ advance.cash_account?.name ?? '— (belum dibayar)' }}</div></div>
             <div><div class="text-neutral-500">Nominal</div><div class="font-mono text-lg font-bold text-amber-600">{{ fmtRp(advance.amount) }}</div></div>

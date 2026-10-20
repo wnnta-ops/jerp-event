@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import Pagination from '@/Components/UI/Pagination.vue';
 import { ref, computed, watch } from 'vue';
 import { router, Link } from '@inertiajs/vue3';
 import { Plus, ArrowLeft, FileText, ChevronDown, ListTree, Layers, Lock, FilterX, FileSpreadsheet, Trash2 } from 'lucide-vue-next';
@@ -558,5 +559,6 @@ function rentangBaris(j: any) { return barisTampil(j).length; }
                 Sebagian daftar pilihan saringan dibatasi {{ batasOpsi }} nilai teratas. Persempit rentang tanggalnya bila nilai yang Anda cari belum muncul.
             </p>
         </div>
+        <Pagination :data="journals" />
     </div>
 </template>

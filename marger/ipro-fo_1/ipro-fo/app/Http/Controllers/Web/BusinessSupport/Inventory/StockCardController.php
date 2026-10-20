@@ -26,7 +26,7 @@ class StockCardController extends Controller
             ->when($request->input('item_id'), fn ($q, $v) => $q->where('item_id', $v))
             ->when($request->input('warehouse_id'), fn ($q, $v) => $q->where('warehouse_id', $v))
             ->orderByDesc('moved_at')->orderByDesc('id')
-            ->paginate(80)->withQueryString();
+            ->paginate(25)->withQueryString();
 
         // Ringkasan on-hand per item.
         $onHand = BsStockMovement::query()

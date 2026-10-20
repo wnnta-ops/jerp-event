@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import Pagination from '@/Components/UI/Pagination.vue';
 import { Link } from '@inertiajs/vue3';
 import { Plus, ArrowLeft, PackageMinus } from 'lucide-vue-next';
 import Button from '@/Components/UI/Button.vue';
@@ -30,5 +31,6 @@ function fmtDate(d: string) { return d ? new Date(d).toLocaleDateString('id-ID',
             </table>
             <EmptyState v-if="!issues.data?.length" title="Belum ada pengeluaran" description="Klik Keluarkan Barang." />
         </div>
+        <Pagination :data="issues" />
     </div>
 </template>

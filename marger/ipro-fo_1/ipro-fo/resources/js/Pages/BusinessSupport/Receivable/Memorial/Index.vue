@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import Pagination from '@/Components/UI/Pagination.vue';
 import { router, Link } from '@inertiajs/vue3';
 import { ref } from 'vue';
 import { Plus, ArrowLeft, FileText } from 'lucide-vue-next';
@@ -41,5 +42,6 @@ function fmtDate(d: string) { return d ? new Date(d).toLocaleDateString('id-ID',
             </table>
             <EmptyState v-if="!memorials.data?.length" title="Belum ada memorial" description="Klik Memorial untuk membuat penyesuaian piutang." />
         </div>
+        <Pagination :data="memorials" />
     </div>
 </template>

@@ -27,7 +27,7 @@ class GoodsReceiptController extends Controller
             ->with(['warehouse:id,code,name', 'supplier:id,code,name'])
             ->withCount('lines')
             ->latest('trx_date')->latest('id')
-            ->paginate(50);
+            ->paginate(25);
 
         return Inertia::render('BusinessSupport/Inventory/GoodsReceipts/Index', ['receipts' => $rows]);
     }

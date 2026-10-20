@@ -27,6 +27,8 @@ class BsCashAdvance extends Model
         'allocation_done_at', 'allocation_done_by',
         // Pembatalan pengajuan — lihat migrasi 2026_10_09_100000.
         'cancelled_at', 'cancelled_by', 'cancel_reason',
+        // Rekening tujuan transfer yang dipilih saat pengajuan (salinan) — migrasi 2026_10_20_110000.
+        'rek_sumber', 'rek_employee_id', 'rek_bank', 'rek_nomor', 'rek_atas_nama',
     ];
 
     protected $casts = [

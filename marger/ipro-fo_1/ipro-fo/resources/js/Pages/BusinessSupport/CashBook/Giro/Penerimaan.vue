@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import Pagination from '@/Components/UI/Pagination.vue';
 import { router, Link } from '@inertiajs/vue3';
 import { Plus, ArrowLeft, FileText, Check } from 'lucide-vue-next';
 import Button from '@/Components/UI/Button.vue';
@@ -50,5 +51,6 @@ function postGl(r: any) {
             </table>
             <EmptyState v-if="!giros.data?.length" title="Tidak ada giro menunggu Posting GL" description="Giro dari FO / entri manual yang belum di-jurnal akan tampil di sini." />
         </div>
+        <Pagination :data="giros" />
     </div>
 </template>

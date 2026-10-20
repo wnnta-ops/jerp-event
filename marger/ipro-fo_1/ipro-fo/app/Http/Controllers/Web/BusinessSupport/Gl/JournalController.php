@@ -69,7 +69,7 @@ class JournalController extends Controller
             ->whereBetween('journal_date', [$from->toDateString(), $to->toDateString()]))
             ->when($request->input('status'), fn ($q, $v) => $q->where('status', $v))
             ->latest('journal_date')->latest('id')
-            ->paginate(50)->withQueryString();
+            ->paginate(25)->withQueryString();
 
         // ── Periode yang sudah ditutup ──────────────────────────────────────────────
         //
@@ -265,7 +265,7 @@ class JournalController extends Controller
             ->when($request->input('source'), fn ($q, $v) => $q->where('source', $v))
             ->when($request->input('search'), fn ($q, $s) => $q->where(fn ($w) => $w->where('journal_number', 'like', "%{$s}%")->orWhere('description', 'like', "%{$s}%")->orWhere('reference', 'like', "%{$s}%")))
             ->latest('journal_date')->latest('id')
-            ->paginate(100)->withQueryString();
+            ->paginate(25)->withQueryString();
 
         return Inertia::render('BusinessSupport/Gl/Journals/Finalisasi', [
             'journals' => $rows,

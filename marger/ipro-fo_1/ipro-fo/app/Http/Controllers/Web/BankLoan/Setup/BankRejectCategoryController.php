@@ -24,7 +24,7 @@ class BankRejectCategoryController extends Controller
         $rows = BankRejectCategory::query()
             ->when($request->input('search'), fn ($q, $s) => $q->where('name', 'like', "%{$s}%"))
             ->orderBy('sort_order')->orderBy('name')
-            ->paginate(50)
+            ->paginate(25)
             ->withQueryString();
 
         return Inertia::render('BankLoan/Setup/RejectBank/Index', [

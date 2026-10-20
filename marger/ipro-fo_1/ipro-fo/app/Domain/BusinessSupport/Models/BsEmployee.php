@@ -18,6 +18,7 @@ class BsEmployee extends Model
     protected $fillable = [
         'tenant_id', 'nik', 'name', 'position', 'cost_center_id', 'join_date',
         'base_salary', 'allowance', 'bank_name', 'bank_account', 'npwp', 'is_active', 'created_by',
+        'atasan_id', // atasan langsung — rekeningnya bisa dipilih pada Pengajuan Bon Sementara
     ];
 
     protected $casts = [

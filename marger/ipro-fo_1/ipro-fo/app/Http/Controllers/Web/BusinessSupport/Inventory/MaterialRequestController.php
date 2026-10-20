@@ -33,7 +33,7 @@ class MaterialRequestController extends Controller
             // supaya riwayatnya tidak jadi tidak terjangkau.
             ->when($status !== 'approved', fn ($q) => $q->where('status', '!=', 'approved'))
             ->latest('request_date')->latest('id')
-            ->paginate(50)->withQueryString();
+            ->paginate(25)->withQueryString();
 
         return Inertia::render('BusinessSupport/Inventory/MaterialRequests/Index', [
             'requests' => $rows,

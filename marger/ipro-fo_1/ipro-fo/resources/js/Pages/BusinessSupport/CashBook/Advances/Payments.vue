@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import Pagination from '@/Components/UI/Pagination.vue';
 import { reactive } from 'vue';
 import { router, Link } from '@inertiajs/vue3';
 import { toast } from 'vue-sonner';
@@ -75,5 +76,6 @@ const inputCls = 'h-9 w-full rounded-lg border border-neutral-300 bg-white px-3 
             </table>
             <EmptyState v-if="!advances.data?.length" title="Tidak ada pengajuan menunggu pembayaran" description="Semua bon sementara sudah dibayar atau belum ada pengajuan baru." />
         </div>
+        <Pagination :data="advances" />
     </div>
 </template>

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import Pagination from '@/Components/UI/Pagination.vue';
 import { ref } from 'vue';
 import { router, Link } from '@inertiajs/vue3';
 import { Plus, ClipboardList, ShoppingCart } from 'lucide-vue-next';
@@ -50,5 +51,6 @@ const statusColor: Record<string,any> = { draft:'warning', approved:'success', c
             </table>
             <EmptyState v-if="!requests.data?.length" title="Belum ada FPB" description="Klik Buat FPB." />
         </div>
+        <Pagination :data="requests" />
     </div>
 </template>

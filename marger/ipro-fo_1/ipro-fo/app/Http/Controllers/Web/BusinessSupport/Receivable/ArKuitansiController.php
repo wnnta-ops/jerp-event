@@ -25,7 +25,7 @@ class ArKuitansiController extends Controller
         $rows = BsArKuitansi::with('customer:id,code,full_name')
             ->when($request->input('status'), fn ($q, $v) => $q->where('status', $v))
             ->when($request->input('search'), fn ($q, $s) => $q->where(fn ($w) => $w->where('kuitansi_number', 'like', "%{$s}%")->orWhere('description', 'like', "%{$s}%")))
-            ->latest('kuitansi_date')->latest('id')->paginate(50)->withQueryString();
+            ->latest('kuitansi_date')->latest('id')->paginate(25)->withQueryString();
 
         return Inertia::render('BusinessSupport/Receivable/Kuitansi/Index', [
             'kuitansis' => $rows,
