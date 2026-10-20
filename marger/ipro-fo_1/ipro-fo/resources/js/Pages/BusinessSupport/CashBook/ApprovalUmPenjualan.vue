@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue';
+import { ref, computed, watch } from 'vue';
 import { router, Link } from '@inertiajs/vue3';
 import { ArrowLeft, Wallet, RotateCcw, CheckCircle2, ArrowRight } from 'lucide-vue-next';
 import Button from '@/Components/UI/Button.vue';
@@ -7,6 +7,7 @@ import Badge from '@/Components/UI/Badge.vue';
 import EmptyState from '@/Components/UI/EmptyState.vue';
 import ScrollTopButton from '@/Components/UI/ScrollTopButton.vue';
 import TableTopScroll from '@/Components/UI/TableTopScroll.vue';
+import Pagination from '@/Components/UI/Pagination.vue';
 
 type Row = {
     id: number; keterangan: string | null; customer: string | null; unit: string | null; booking: string | null;
@@ -14,24 +15,46 @@ type Row = {
     converted_at: string | null; journal_number: string | null;
     akad_status: 'sudah' | 'belum' | 'batal' | null; akad_at: string | null;
 };
-const props = defineProps<{ rows: Row[]; tab: string; counts: { pending: number; selesai: number } }>();
+const props = defineProps<{
+    /** Hasil saringan server, 50 baris per halaman. */
+    rows: { data: Row[]; links?: any[]; from?: number | null; to?: number | null; total?: number };
+    totalTersaring: number; jumlahSemua: number; filters: { q?: string; akad?: string };
+    tab: string; counts: { pending: number; selesai: number };
+}>();
 
 const isSelesai = computed(() => props.tab === 'selesai');
 function switchTab(t: string) { router.get(route('bs.cashbook.approval-um'), { tab: t }, { preserveState: false }); }
 
-// ── Filter per kolom (client-side) ──
-const fq = ref('');
-const fAkad = ref('');
+// ── Filter — DIKERJAKAN SERVER (50 baris per halaman) ──
+const fq = ref(props.filters?.q ?? '');
+const fAkad = ref(props.filters?.akad ?? '');
 function resetFilter() { fq.value = ''; fAkad.value = ''; }
-const filtered = computed(() => {
-    const s = fq.value.trim().toLowerCase();
-    return props.rows.filter((r) => {
-        if (fAkad.value && (r.akad_status ?? '-') !== fAkad.value) return false;
-        if (! s) return true;
-        return [r.keterangan, r.customer, r.unit, r.booking, r.journal_number].some((v) => String(v ?? '').toLowerCase().includes(s));
-    });
+let jedaSaring: ReturnType<typeof setTimeout> | null = null;
+watch([fq, fAkad], () => {
+    if (jedaSaring) clearTimeout(jedaSaring);
+    jedaSaring = setTimeout(() => router.get(route('bs.cashbook.approval-um'), { tab: props.tab, q: fq.value || undefined, akad: fAkad.value || undefined },
+        { preserveScroll: true, preserveState: true, replace: true }), 400);
 });
-const totalPending = computed(() => filtered.value.reduce((a, r) => a + Number(r.total || 0), 0));
+const filtered = computed<Row[]>(() => props.rows.data ?? []);
+const totalPending = computed(() => props.totalTersaring ?? 0);
+
+// ── Centang & Setujui massal (tab Menunggu) — tanpa isian, server memproses satu per satu. ──
+const dipilih = ref<number[]>([]);
+const barisDipilih = computed(() => filtered.value.filter((r) => dipilih.value.includes(r.id)));
+const totalDipilih = computed(() => barisDipilih.value.reduce((a, r) => a + Number(r.total || 0), 0));
+const semuaDicentang = computed({
+    get: () => filtered.value.length > 0 && filtered.value.every((r) => dipilih.value.includes(r.id)),
+    set: (v: boolean) => { dipilih.value = v ? filtered.value.map((r) => r.id) : []; },
+});
+const prosesMassal = ref(false);
+function setujuiMassal() {
+    const rows = barisDipilih.value;
+    if (!rows.length || prosesMassal.value) return;
+    if (!confirm(`Setujui & Posting ${rows.length} UM Penjualan (total ${fmtRp(totalDipilih.value)})?\n\nJurnal per entri: Utang Usaha (D) — Uang Muka Penjualan + PPN Keluaran (K).`)) return;
+    prosesMassal.value = true;
+    router.post(route('bs.cashbook.approval-um.bulk-post'), { ids: rows.map((r) => r.id), labels: rows.map((r) => `${r.customer ?? '—'}${r.unit ? ' · ' + r.unit : ''}`) },
+        { preserveScroll: true, onSuccess: () => { dipilih.value = []; }, onFinish: () => { prosesMassal.value = false; } });
+}
 
 const posting = ref<number | null>(null);
 function approve(r: Row) {
@@ -81,10 +104,16 @@ const akadMeta: Record<string, { label: string; variant: 'success' | 'warning' |
 
         <div class="flex flex-wrap items-center justify-between gap-2">
             <p class="text-xs text-neutral-500">
-                {{ filtered.length }} dari {{ rows.length }} entri
+                {{ rows.total ?? 0 }} dari {{ jumlahSemua }} entri
                 <span v-if="! isSelesai" class="ml-2">· total <span class="font-mono font-semibold text-neutral-700 dark:text-neutral-200">{{ fmtRp(totalPending) }}</span></span>
             </p>
             <button @click="resetFilter" class="inline-flex items-center gap-1.5 rounded-lg border border-neutral-300 px-3 py-1.5 text-xs font-medium text-neutral-600 hover:bg-neutral-50 dark:border-neutral-700 dark:text-neutral-300"><RotateCcw class="h-3.5 w-3.5" /> Reset Filter</button>
+        </div>
+
+        <div v-if="! isSelesai && filtered.length" class="card flex flex-wrap items-center gap-3 p-3 text-sm">
+            <label class="flex items-center gap-2 font-medium"><input v-model="semuaDicentang" type="checkbox" class="h-4 w-4 rounded border-neutral-300" /> Pilih semua di halaman ini</label>
+            <span class="text-neutral-500">{{ barisDipilih.length }} terpilih<span v-if="barisDipilih.length"> · {{ fmtRp(totalDipilih) }}</span></span>
+            <Button v-if="barisDipilih.length" class="ml-auto" size="sm" variant="success" :loading="prosesMassal" @click="setujuiMassal">Setujui &amp; Posting ({{ barisDipilih.length }})</Button>
         </div>
 
         <TableTopScroll v-if="filtered.length || fq || fAkad">
@@ -120,6 +149,7 @@ const akadMeta: Record<string, { label: string; variant: 'success' | 'warning' |
                 <tbody class="divide-y divide-neutral-200 dark:divide-neutral-800">
                     <tr v-for="r in filtered" :key="r.id" class="hover:bg-neutral-50 dark:hover:bg-neutral-800/40">
                         <td class="px-3 py-2">
+                            <label v-if="! isSelesai" class="mb-1 inline-flex items-center gap-1.5 text-[11px] text-neutral-500"><input v-model="dipilih" type="checkbox" :value="r.id" class="h-4 w-4 rounded border-neutral-300" /> pilih</label>
                             <p class="font-medium">{{ d(r.keterangan) }}</p>
                             <p class="text-xs text-neutral-400">{{ d(r.doc_date) }}<span v-if="r.booking"> · {{ r.booking }}</span></p>
                         </td>
@@ -158,6 +188,7 @@ const akadMeta: Record<string, { label: string; variant: 'success' | 'warning' |
             :description="isSelesai ? 'Entri yang sudah dikonversi ke Uang Muka Penjualan akan tampil di sini.' : 'Entri muncul di sini setelah TTS disetujui & diposting pada Approval UTJ & DP.'">
             <template #icon><Wallet class="h-12 w-12" /></template>
         </EmptyState>
+        <Pagination :data="rows" satuan="entri" />
 
         <ScrollTopButton />
     </div>

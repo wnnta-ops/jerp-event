@@ -9,6 +9,7 @@ import SearchSelect from '@/Components/UI/SearchSelect.vue';
 import MoneyInput from '@/Components/UI/MoneyInput.vue';
 import ScrollTopButton from '@/Components/UI/ScrollTopButton.vue';
 import TableTopScroll from '@/Components/UI/TableTopScroll.vue';
+import Pagination from '@/Components/UI/Pagination.vue';
 
 type Acc = { id: number; code: string; name: string; type?: string };
 type Row = {
@@ -48,7 +49,16 @@ type AccountDefaults = {
 //  deduct  → DAJAM Pajak jalur BSN: KEBALIKAN — Dr Uang Muka Penjualan / Cr Bank
 //  manual  → kredit tunggal bebas (pengecualian)
 type CreditMode = 'split' | 'piutang' | 'deduct' | 'manual';
-const props = defineProps<{ rows: Row[]; accounts: Acc[]; accountDefaults: AccountDefaults; initialCustomer?: string | null }>();
+const props = defineProps<{
+    /** Hasil saringan server, 50 baris per halaman. */
+    rows: { data: Row[]; links?: any[]; from?: number | null; to?: number | null; total?: number };
+    /** Jumlah atas SELURUH hasil saringan (bukan hanya halaman ini). */
+    ringkas: { total: number; semua: number; retensi: number; pencairan: number; release: number };
+    /** Isi dropdown saringan — dari seluruh baris. */
+    opsi: { customer: string[]; unit_code: string[]; amount: number[] };
+    filters: Record<string, string>;
+    accounts: Acc[]; accountDefaults: AccountDefaults; initialCustomer?: string | null;
+}>();
 
 // #162 — daftar akun lokal yang bisa di-refresh setelah quick-add akun GL baru.
 // Tetap sinkron dengan prop (Inertia reuse component) lewat watcher.
@@ -68,7 +78,7 @@ type RetForm = {
 };
 // Dikunci per row_key (bukan id) — id retensi & pencairan bisa sama.
 const forms = reactive<Record<string, RetForm>>({});
-for (const r of props.rows) {
+for (const r of (props.rows.data ?? [])) {
     if (!r.journaled) {
         forms[r.row_key] = {
             // #162 — default tgl jurnal = tgl akad, fallback tgl retensi/cair, fallback hari ini.
@@ -215,44 +225,44 @@ function submitAddAccount() {
     });
 }
 
-// ── Filter ──
-const fCustomer = ref<any>('');
-// Auto-redirect "KPR Lunas" mengirim ?customer_id → server resolusi jadi nama → pra-filter ke customer itu.
-onMounted(() => { if (props.initialCustomer) fCustomer.value = props.initialCustomer; });
+// ── Filter — DIKERJAKAN SERVER (50 baris per halaman). Bawaan: "Belum dijurnal". ──
+const F = props.filters ?? {};
+const fCustomer = ref<any>(F.customer ?? '');
 // #163 — filter berdasarkan UNIT (unit_code), bukan nomor KPR.
-const fUnit = ref<any>('');
-const fKind = ref('');
-const fStatus = ref('');
-const fJournaled = ref('');
-const fDateFrom = ref('');
-const fDateTo = ref('');
-const fNilai = ref<any>('');
+const fUnit = ref<any>(F.unit ?? '');
+const fKind = ref(F.kind ?? '');
+const fStatus = ref(F.status ?? '');
+const fJournaled = ref(F.jurnal ?? 'belum');
+const fDateFrom = ref(F.dari ?? '');
+const fDateTo = ref(F.sampai ?? '');
+const fNilai = ref<any>(F.nilai !== undefined && F.nilai !== '' ? Number(F.nilai) : '');
 
-function uniq(a: any[]) { return Array.from(new Set(a.filter((v) => v !== null && v !== undefined && v !== ''))); }
-const customerOptions = computed(() => (uniq(props.rows.map((r) => r.customer)) as string[]).sort().map((c) => ({ id: c, label: c })));
-const unitOptions = computed(() => (uniq(props.rows.map((r) => r.unit_code)) as string[]).sort().map((u) => ({ id: u, label: u })));
-const nilaiOptions = computed(() => (uniq(props.rows.map((r) => r.amount)) as number[]).sort((a, b) => b - a).map((n) => ({ id: n, label: fmtRp(n) })));
+const customerOptions = computed(() => (props.opsi?.customer ?? []).map((c) => ({ id: c, label: c })));
+const unitOptions = computed(() => (props.opsi?.unit_code ?? []).map((u) => ({ id: u, label: u })));
+const nilaiOptions = computed(() => (props.opsi?.amount ?? []).map((n) => ({ id: Number(n), label: fmtRp(Number(n)) })));
 
-function resetFilter() { fCustomer.value = ''; fUnit.value = ''; fKind.value = ''; fStatus.value = ''; fJournaled.value = ''; fDateFrom.value = ''; fDateTo.value = ''; fNilai.value = ''; }
+function resetFilter() { fCustomer.value = ''; fUnit.value = ''; fKind.value = ''; fStatus.value = ''; fJournaled.value = 'belum'; fDateFrom.value = ''; fDateTo.value = ''; fNilai.value = ''; }
 
-const filtered = computed(() => props.rows.filter((r) => {
-    if (fCustomer.value && r.customer !== fCustomer.value) return false;
-    if (fUnit.value && r.unit_code !== fUnit.value) return false;
-    if (fKind.value && r.kind !== fKind.value) return false;
-    if (fStatus.value && r.status !== fStatus.value) return false;
-    if (fJournaled.value === 'belum' && (r.journaled || r.rejected)) return false;
-    if (fJournaled.value === 'sudah' && !r.journaled) return false;
-    if (fJournaled.value === 'ditolak' && !r.rejected) return false;
-    if (fDateFrom.value && (!r.journal_date || r.journal_date < fDateFrom.value)) return false;
-    if (fDateTo.value && (!r.journal_date || r.journal_date > fDateTo.value)) return false;
-    if (fNilai.value !== '' && fNilai.value !== null && Number(r.amount) !== Number(fNilai.value)) return false;
-    return true;
-}));
+// Setiap perubahan saringan dikirim ke server (jeda singkat), kembali ke halaman 1.
+// `jurnal` SELALU dikirim — kosong berarti "Semua", supaya bawaan "Belum dijurnal" tidak
+// diterapkan ulang oleh server.
+let jedaSaring: ReturnType<typeof setTimeout> | null = null;
+watch([fCustomer, fUnit, fKind, fStatus, fJournaled, fDateFrom, fDateTo, fNilai], () => {
+    if (jedaSaring) clearTimeout(jedaSaring);
+    jedaSaring = setTimeout(() => router.get(window.location.pathname, {
+        customer: fCustomer.value || undefined, unit: fUnit.value || undefined, kind: fKind.value || undefined,
+        status: fStatus.value || undefined, jurnal: fJournaled.value ?? '', dari: fDateFrom.value || undefined,
+        sampai: fDateTo.value || undefined, nilai: fNilai.value === '' || fNilai.value === null ? undefined : fNilai.value,
+    }, { preserveScroll: true, preserveState: false, replace: true }), 350);
+});
+
+// Baris halaman ini — sudah disaring server.
+const filtered = computed<Row[]>(() => props.rows.data ?? []);
 
 // Ringkasan kecil: berapa retensi vs pencairan yang tampil.
-const countRetensi = computed(() => filtered.value.filter((r) => r.kind === 'retensi').length);
-const countPencairan = computed(() => filtered.value.filter((r) => r.kind === 'pencairan').length);
-const countRelease = computed(() => filtered.value.filter((r) => r.kind === 'release').length);
+const countRetensi = computed(() => props.ringkas?.retensi ?? 0);
+const countPencairan = computed(() => props.ringkas?.pencairan ?? 0);
+const countRelease = computed(() => props.ringkas?.release ?? 0);
 
 // ── Susunan INDUK → ANAK ──────────────────────────────────────────────────
 // Tiap tranche pelepasan ditempelkan tepat di bawah baris pencadangan (retensi) asalnya,
@@ -287,29 +297,28 @@ function tranchePct(r: Row) {
     return Math.min(100, Math.round(((Number(r.released_cum) || 0) / total) * 100));
 }
 
-function approve(r: Row) {
+/** Isian jurnal satu baris → data kiriman, atau pesan galat bila belum lengkap/tidak balance. */
+function payloadOf(r: Row): { error?: string; data?: Record<string, any> } {
     const f = forms[r.row_key];
+    if (!f) return { error: 'Baris ini tidak bisa diposting.' };
     const mode = modeOf(r);
-    if (!f.debit_account_id) { alert('Pilih akun Debit (Bank) terlebih dahulu.'); return; }
+    if (!f.debit_account_id) return { error: 'Pilih akun Debit (Bank) terlebih dahulu.' };
 
     if (mode === 'split') {
-        if (!f.uang_muka_account_id && !f.ppn_account_id) { alert('Pilih akun kredit (Uang Muka Penjualan / PPN Keluaran).'); return; }
+        if (!f.uang_muka_account_id && !f.ppn_account_id) return { error: 'Pilih akun kredit (Uang Muka Penjualan / PPN Keluaran).' };
         if (String(f.debit_account_id) === String(f.uang_muka_account_id) || String(f.debit_account_id) === String(f.ppn_account_id)) {
-            alert('Akun Debit tidak boleh sama dengan akun Kredit.'); return;
+            return { error: 'Akun Debit tidak boleh sama dengan akun Kredit.' };
         }
-        if (!balanced(r)) {
-            alert(`Tidak balance: total kredit (${fmtRp(creditTotal(r.row_key))}) harus sama dengan nilai (${fmtRp(r.amount)}).`); return;
-        }
+        if (!balanced(r)) return { error: `Tidak balance: total kredit (${fmtRp(creditTotal(r.row_key))}) harus sama dengan nilai (${fmtRp(r.amount)}).` };
     } else if (mode === 'deduct') {
-        if (!f.uang_muka_account_id) { alert('Pilih akun Uang Muka Penjualan untuk potongan DAJAM Pajak.'); return; }
-        if (String(f.debit_account_id) === String(f.uang_muka_account_id)) { alert('Akun Uang Muka Penjualan tidak boleh sama dengan akun Bank.'); return; }
+        if (!f.uang_muka_account_id) return { error: 'Pilih akun Uang Muka Penjualan untuk potongan DAJAM Pajak.' };
+        if (String(f.debit_account_id) === String(f.uang_muka_account_id)) return { error: 'Akun Uang Muka Penjualan tidak boleh sama dengan akun Bank.' };
     } else {
-        if (!f.credit_account_id) { alert(mode === 'piutang' ? 'Pilih akun Piutang Usaha untuk kredit.' : 'Pilih akun kredit.'); return; }
-        if (String(f.debit_account_id) === String(f.credit_account_id)) { alert('Akun Debit tidak boleh sama dengan akun Kredit.'); return; }
+        if (!f.credit_account_id) return { error: mode === 'piutang' ? 'Pilih akun Piutang Usaha untuk kredit.' : 'Pilih akun kredit.' };
+        if (String(f.debit_account_id) === String(f.credit_account_id)) return { error: 'Akun Debit tidak boleh sama dengan akun Kredit.' };
     }
 
-    f.processing = true;
-    router.post(postRoute(r, 'post'), {
+    return { data: {
         journal_date: f.journal_date,
         debit_account_id: f.debit_account_id,
         credit_mode: mode,
@@ -319,7 +328,62 @@ function approve(r: Row) {
         ppn_account_id: mode === 'split' ? (f.ppn_account_id || null) : null,
         ppn_amount: mode === 'split' ? (Number(f.ppn_amount) || 0) : 0,
         credit_account_id: (mode === 'piutang' || mode === 'manual') ? (f.credit_account_id || null) : null,
-    }, { onSuccess: () => window.location.reload(), onFinish: () => { f.processing = false; } });
+    } };
+}
+
+function approve(r: Row) {
+    const p = payloadOf(r);
+    if (p.error) { alert(p.error); return; }
+    const f = forms[r.row_key];
+    f.processing = true;
+    router.post(postRoute(r, 'post'), p.data!, { onSuccess: () => window.location.reload(), onFinish: () => { f.processing = false; } });
+}
+
+/* ── CENTANG & INPUT MASSAL ────────────────────────────────────────────────
+   Hanya baris yang masih menunggu (belum dijurnal & tidak ditolak). Isian massal menyalin
+   tanggal jurnal & akun debit (bank) ke baris tercentang — pecahan Uang Muka/PPN tetap
+   per baris karena bentuk jurnalnya bergantung pada Booked Revenue tiap unit. */
+const bisaDicentang = (r: Row) => !r.journaled && !r.rejected && !!forms[r.row_key];
+const dipilih = ref<string[]>([]);
+const barisDipilih = computed(() => filtered.value.filter((r) => dipilih.value.includes(r.row_key)));
+const totalDipilih = computed(() => barisDipilih.value.reduce((a, r) => a + Number(r.amount || 0), 0));
+const semuaDicentang = computed({
+    get: () => filtered.value.filter(bisaDicentang).length > 0 && filtered.value.filter(bisaDicentang).every((r) => dipilih.value.includes(r.row_key)),
+    set: (v: boolean) => { dipilih.value = v ? filtered.value.filter(bisaDicentang).map((r) => r.row_key) : []; },
+});
+const massal = reactive<{ journal_date: string; debit_account_id: any }>({ journal_date: '', debit_account_id: '' });
+function terapkanMassal() {
+    for (const r of barisDipilih.value) {
+        const f = forms[r.row_key];
+        if (!f) continue;
+        if (massal.journal_date) f.journal_date = massal.journal_date;
+        if (massal.debit_account_id) f.debit_account_id = massal.debit_account_id;
+    }
+}
+const labelBaris = (r: Row) => `${r.customer ?? '—'}${r.unit_code ? ' · ' + r.unit_code : ''} (${r.kind === 'pencairan' ? 'pencairan' : (r.kind === 'release' ? 'pelepasan' : 'retensi')})`;
+const prosesMassal = ref(false);
+function setujuiMassal() {
+    const rows = barisDipilih.value;
+    if (!rows.length || prosesMassal.value) return;
+    const salah = rows.map((r) => ({ r, p: payloadOf(r) })).filter((x) => x.p.error);
+    if (salah.length) {
+        alert(`${salah.length} baris belum bisa diposting:\n\n` + salah.slice(0, 10).map((x) => `• ${labelBaris(x.r)}: ${x.p.error}`).join('\n'));
+        return;
+    }
+    if (!confirm(`Setujui & Posting ${rows.length} baris (total ${fmtRp(totalDipilih.value)})?\n\nSetiap baris dijurnal sendiri-sendiri dengan isiannya masing-masing.`)) return;
+    prosesMassal.value = true;
+    const items = rows.map((r) => ({ kind: r.kind, id: r.id, label: labelBaris(r), ...payloadOf(r).data }));
+    router.post(route('bs.cashbook.approval-retensi.bulk-post'), { items }, { preserveScroll: true, onFinish: () => { prosesMassal.value = false; } });
+}
+function tolakMassal() {
+    const rows = barisDipilih.value;
+    if (!rows.length || prosesMassal.value) return;
+    const reason = window.prompt(`Tolak ${rows.length} baris terpilih? Tidak dijurnal, pindah ke status Ditolak (bisa dipulihkan).\n\nAlasan penolakan (wajib):`, '');
+    if (reason === null) return;
+    if (!reason.trim()) { alert('Alasan penolakan wajib diisi.'); return; }
+    prosesMassal.value = true;
+    router.post(route('bs.cashbook.approval-retensi.bulk-reject'), { items: rows.map((r) => ({ kind: r.kind, id: r.id, label: labelBaris(r) })), reason: reason.trim() },
+        { preserveScroll: true, onFinish: () => { prosesMassal.value = false; } });
 }
 
 // Tolak (belum dijurnal) → status ditolak + alasan (mirror Approval UTJ & DP).
@@ -406,8 +470,23 @@ const hSelCls = 'h-7 w-52 rounded border border-neutral-300 bg-white px-2 text-x
         </div>
 
         <div class="flex items-center justify-between">
-            <p class="text-xs text-neutral-500">{{ filtered.length }} dari {{ rows.length }} baris · <span class="text-sky-600">{{ countPencairan }} pencairan</span> · <span class="text-danger-600">{{ countRetensi }} retensi DAJAM</span> · <span class="text-success-600">{{ countRelease }} pelepasan DAJAM</span></p>
+            <p class="text-xs text-neutral-500">{{ ringkas.total }} dari {{ ringkas.semua }} baris · <span class="text-sky-600">{{ countPencairan }} pencairan</span> · <span class="text-danger-600">{{ countRetensi }} retensi DAJAM</span> · <span class="text-success-600">{{ countRelease }} pelepasan DAJAM</span></p>
             <button @click="resetFilter" class="inline-flex items-center gap-1.5 rounded-lg border border-neutral-300 px-3 py-1.5 text-xs font-medium text-neutral-600 hover:bg-neutral-50 dark:border-neutral-700 dark:text-neutral-300"><RotateCcw class="h-3.5 w-3.5" /> Reset Filter</button>
+        </div>
+
+        <!-- Centang & input massal: isi sekali, salin ke baris tercentang, lalu setujui/tolak sekaligus. -->
+        <div class="card flex flex-wrap items-end gap-3 p-3 text-sm">
+            <label class="flex items-center gap-2 font-medium"><input v-model="semuaDicentang" type="checkbox" class="h-4 w-4 rounded border-neutral-300" /> Pilih semua di halaman ini</label>
+            <span class="text-neutral-500">{{ barisDipilih.length }} terpilih<span v-if="barisDipilih.length"> · {{ fmtRp(totalDipilih) }}</span></span>
+            <template v-if="barisDipilih.length">
+                <div><div class="mb-1 text-[11px] text-neutral-500">Tgl Jurnal</div><input v-model="massal.journal_date" type="date" :class="inputCls" /></div>
+                <div class="w-72"><div class="mb-1 text-[11px] text-neutral-500">Akun Debit (Bank)</div><SearchSelect v-model="massal.debit_account_id" :options="accountList" placeholder="Cari akun bank…" /></div>
+                <Button size="sm" variant="secondary" @click="terapkanMassal">Terapkan ke terpilih</Button>
+                <div class="ml-auto flex gap-2">
+                    <Button size="sm" variant="danger" :loading="prosesMassal" @click="tolakMassal">Tolak Terpilih ({{ barisDipilih.length }})</Button>
+                    <Button size="sm" variant="success" :loading="prosesMassal" @click="setujuiMassal">Setujui &amp; Posting ({{ barisDipilih.length }})</Button>
+                </div>
+            </template>
         </div>
 
         <TableTopScroll>
@@ -446,6 +525,7 @@ const hSelCls = 'h-7 w-52 rounded border border-neutral-300 bg-white px-2 text-x
                         <td class="px-3 py-3"
                             :class="r.is_retensi_dajam ? 'border-l-4 border-danger-500' : (isChild(r) ? 'border-l-4 border-success-500' : '')">
                             <div :class="isChild(r) ? 'pl-4 border-l border-dashed border-success-300 dark:border-success-800' : ''">
+                                <label v-if="bisaDicentang(r)" class="mb-1 inline-flex items-center gap-1.5 text-[11px] text-neutral-500"><input v-model="dipilih" type="checkbox" :value="r.row_key" class="h-4 w-4 rounded border-neutral-300" /> pilih</label>
                                 <div v-if="r.kind === 'release'" class="mb-0.5 flex flex-wrap items-center gap-1.5">
                                     <span class="inline-flex items-center rounded-md bg-success-100 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-success-700 dark:bg-success-950/60 dark:text-success-300">
                                         Tranche {{ r.tranche_index }}/{{ r.tranche_count }}
@@ -617,6 +697,7 @@ const hSelCls = 'h-7 w-52 rounded border border-neutral-300 bg-white px-2 text-x
                 </tbody>
             </table>
         </TableTopScroll>
+        <Pagination :data="rows" satuan="baris" />
 
         <!-- #162 — Modal quick-add akun GL baru -->
         <Teleport to="body">
