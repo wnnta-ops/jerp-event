@@ -121,6 +121,12 @@ class AppServiceProvider extends ServiceProvider
         // Audit autentikasi (login/logout/gagal/terkunci) → Audit Log
         Event::subscribe(LogAuthenticationActivity::class);
 
+        // Webhook Survei: perubahan SPR → aplikasi Survei Kepuasan Customer (mati bila
+        // SURVEI_WEBHOOK_URL/SECRET kosong). Lihat App\Modules\FO\Survei.
+        \App\Modules\FO\MarketingSales\Models\Kontrak::observe(\App\Modules\FO\Survei\Observers\SprWebhookObserver::class);
+        \App\Modules\FO\MarketingSales\Models\Customer::observe(\App\Modules\FO\Survei\Observers\SprWebhookObserver::class);
+        \App\Modules\FO\MarketingSales\Models\Unit::observe(\App\Modules\FO\Survei\Observers\SprWebhookObserver::class);
+
         // FO/Launching domain events
         Event::listen(NupRegistered::class, KirimKonfirmasiNupListener::class);
 

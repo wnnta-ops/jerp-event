@@ -74,6 +74,12 @@ class EpropSinkronCommand extends Command
             }
         }
 
+        // Webhook Survei: SPR yang masuk/diperbarui dari eProperty tidak memicu observer (ditulis
+        // langsung ke tabel), jadi notifikasinya dikirim di sini — satu per SPR.
+        if (! $kering && \App\Modules\FO\Survei\Services\WebhookSurvei::aktif()) {
+            $this->kirimWebhookSurvei($hasil);
+        }
+
         $this->newLine();
         $this->info('RINGKASAN (jalan #' . $hasil['jalan_id'] . ')');
         $baris = [];
@@ -99,5 +105,45 @@ class EpropSinkronCommand extends Command
         $this->info($kering ? 'UJI selesai — tidak ada data yang berubah.' : 'Selesai.');
 
         return self::SUCCESS;
+    }
+
+    /** Satu notifikasi per SPR yang masuk / diperbarui, termasuk SPR milik customer yang namanya berubah. */
+    private function kirimWebhookSurvei(array $hasil): void
+    {
+        $noSpr = [];
+        $custIds = [];
+        foreach ($hasil['hasil'] as $h) {
+            if (! in_array($h['aksi'] ?? '', ['masuk', 'diperbarui'], true)) {
+                continue;
+            }
+            if (($h['tabel'] ?? '') === 'fo_kontrak') {
+                $noSpr[(string) $h['kunci']] = $h['aksi'] === 'masuk' ? 'spr.created' : 'spr.updated';
+            }
+        }
+        foreach ($hasil['hasil'] as $h) {
+            if (($h['tabel'] ?? '') === 'fo_customers' && ($h['aksi'] ?? '') === 'diperbarui') {
+                $custIds[] = (string) $h['kunci'];
+            }
+        }
+
+        $n = 0;
+        $q = Kontrak::query()->where('tahap', 'SPR')->where(function ($w) use ($noSpr, $hasil, $custIds) {
+            $w->whereIn('no_kontrak', array_keys($noSpr) ?: ['-'])
+                ->orWhereIn('id', $hasil['kontrak_baru'] ?: [0]);
+            if ($custIds) {
+                $w->orWhereHas('customer', fn ($c) => $c->whereIn('code', $custIds));
+            }
+        });
+        foreach ($q->get() as $k) {
+            $event = $noSpr[(string) $k->no_kontrak] ?? (in_array($k->id, $hasil['kontrak_baru'], true) ? 'spr.created' : 'spr.updated');
+            if ($event !== 'spr.created' && strtoupper((string) $k->status) === 'BATAL') {
+                $event = 'spr.cancelled';
+            }
+            \App\Modules\FO\Survei\Services\WebhookSurvei::antreKontrak($k, $event);
+            $n++;
+        }
+        if ($n) {
+            $this->line("Webhook Survei: {$n} SPR diantre untuk dikirim.");
+        }
     }
 }

@@ -333,6 +333,7 @@ class FoPanelProvider extends PanelProvider
             'template-wa' => 'pengaturan',
             'template-dokumen' => 'pengaturan',
             'rekonsiliasi-eprop' => 'pengaturan',
+            'webhook-survei' => 'pengaturan',
             'lokasis' => 'setup-unit',
             'tahaps' => 'setup-unit',
         ];
@@ -570,6 +571,9 @@ class FoPanelProvider extends PanelProvider
                     ]],
                     ['label' => 'Data eProperty', 'items' => [
                         $item('Rekonsiliasi eProperty', '/fo/rekonsiliasi-eprop', 'heroicon-o-arrows-right-left', 'filament.fo.pages.rekonsiliasi-eprop'),
+                    ]],
+                    ['label' => 'Integrasi', 'items' => [
+                        $item('Webhook Survei', '/fo/webhook-survei', 'heroicon-o-paper-airplane', 'filament.fo.pages.webhook-survei'),
                     ]],
                 ],
             ],

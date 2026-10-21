@@ -89,6 +89,9 @@ return [
     // Aplikasi Survei — baca daftar SPR (GET /api/survei/spr). Kosong = API dimatikan.
     'survei' => [
         'api_key' => env('SURVEI_API_KEY'),
+        // Webhook perubahan SPR → aplikasi survei. Kosong = mati (tidak dicatat/dikirim).
+        'webhook_url' => env('SURVEI_WEBHOOK_URL'),
+        'webhook_secret' => env('SURVEI_WEBHOOK_SECRET'),
     ],
 
 ];
