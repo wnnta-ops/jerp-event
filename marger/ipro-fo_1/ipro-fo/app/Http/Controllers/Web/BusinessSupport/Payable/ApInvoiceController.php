@@ -108,6 +108,8 @@ class ApInvoiceController extends Controller
             'berkas_notes' => $r->berkas_notes,
             'berkas_finance_date' => $r->berkas_finance_date?->toDateString(),
             'status' => $r->status,
+            'status_jurnal' => (string) ($r->status_jurnal ?? '—'),   // Baru / Final / Approved / Closed
+            'journal_id' => $r->journal_id,
             'payable' => round($r->payable_amount, 2),   // nett dibayar ke supplier (total − PPh dipotong)
             'sisa' => $r->status === BsApInvoice::STATUS_BATAL ? 0 : round($r->outstanding, 2), // nett − terbayar
         ];
@@ -151,11 +153,11 @@ class ApInvoiceController extends Controller
             $body .= '<tr><td>'.$e($r['invoice_number']).'</td><td>'.$e($tgl($r['invoice_date'])).'</td><td>'.$e($tgl($r['receive_date'])).'</td>'
                 .'<td>'.$e($tgl($r['due_date'])).'</td><td>'.$e($r['supplier']['name'] ?? $r['customer']['name'] ?? '').'</td><td>'.$e($r['description']).'</td>'
                 .'<td>'.$e($num($r['payable'])).'</td><td>'.$e($num($r['sisa'])).'</td><td>'.$e($status($r['status'])).'</td>'
-                .'<td>'.$e($r['berkas_notes']).'</td><td>'.$e($tgl($r['berkas_finance_date'])).'</td></tr>';
+                .'<td>'.$e($r['status_jurnal'] ?? '—').'</td><td>'.$e($r['berkas_notes']).'</td><td>'.$e($tgl($r['berkas_finance_date'])).'</td></tr>';
         }
         $html = '<html xmlns:x="urn:schemas-microsoft-com:office:excel"><head><meta charset="utf-8"></head><body>'
             .'<table border="1"><tr style="background:#0f766e;color:#fff">'
-            .'<th>No. Invoice</th><th>Tanggal</th><th>Tgl. Diterima</th><th>Jatuh Tempo</th><th>Supplier</th><th>Keterangan</th><th>Total (Net)</th><th>Sisa (Net)</th><th>Status</th><th>Kelengkapan Berkas</th><th>Berkas Diterima Finance</th>'
+            .'<th>No. Invoice</th><th>Tanggal</th><th>Tgl. Diterima</th><th>Jatuh Tempo</th><th>Supplier</th><th>Keterangan</th><th>Total (Net)</th><th>Sisa (Net)</th><th>Status</th><th>Status Jurnal</th><th>Kelengkapan Berkas</th><th>Berkas Diterima Finance</th>'
             .'</tr>'.$body.'</table></body></html>';
         $nama = str_replace(' ', '-', (string) ($info['judul'] ?? 'Invoice-Hutang')).'-'.now()->toDateString().'.xls';
 
