@@ -132,6 +132,7 @@ return [
             'fo.template_wa' => 'Template WA (Qontak)',
             'fo.template_dokumen' => 'Template Dokumen SPR/SPRS',
             'fo.rekonsiliasi_eprop' => 'Rekonsiliasi eProperty (ubah = memutuskan ditahan/konflik)',
+            'fo.webhook_survei' => 'Webhook Survei (ubah = kirim ulang)',
             'fo.segera_hadir' => 'Menu "Segera Hadir" (Report)',
             'fo.asisten_ai' => 'Asisten AI',
         ],
