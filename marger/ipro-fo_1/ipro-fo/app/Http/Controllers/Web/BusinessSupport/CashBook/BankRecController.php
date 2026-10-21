@@ -109,7 +109,7 @@ class BankRecController extends Controller
 
     public function finalize(Request $request, BsBankReconciliation $reconciliation): RedirectResponse
     {
-        abort_unless($request->user()?->can('businesssupport.approval.act'), 403);
+        abort_unless($request->user()?->canAny(['cashbook.bankrec.finalize', 'businesssupport.approval.act']), 403);
         $reconciliation->update(['status' => 'reconciled', 'reconciled_at' => now()->toDateString()]);
 
         return redirect()->route('bs.bankrec.show', $reconciliation)->with('success', 'Rekonsiliasi difinalisasi.');

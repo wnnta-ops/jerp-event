@@ -745,8 +745,11 @@ class ApInvoiceController extends Controller
             // Tombol Edit / Batal — keputusannya di server, layar hanya mencerminkannya.
             'aksi' => $invoice->batal() ? null : [
                 'dariRegistrasi' => $invoice->dariRegistrasi(),
-                'diprosesFat' => $invoice->dariRegistrasi() ? $invoice->alasanDiprosesFat() : null,
-                'edit' => $invoice->dariRegistrasi() && $invoice->alasanDiprosesFat() === null && (bool) $request->user()?->can('ap.invoice.update'),
+                // Invoice hasil Posting dari FO punya Edit-nya sendiri (bs.ap.edit-fo), aturan kunci sama.
+                'dariPostingFo' => $invoice->dariPostingFo(),
+                'diprosesFat' => ($invoice->dariRegistrasi() || $invoice->dariPostingFo()) ? $invoice->alasanDiprosesFat() : null,
+                'edit' => ($invoice->dariRegistrasi() || $invoice->dariPostingFo()) && $invoice->alasanDiprosesFat() === null && (bool) $request->user()?->can('ap.invoice.update'),
+                'editRute' => $invoice->dariPostingFo() ? 'bs.ap.edit-fo' : 'bs.ap.edit',
                 'batal' => $this->bolehBatal($request, $invoice),
                 // Batal masih tertahan Kuitansi/pembayaran → sebutkan sebabnya, jangan tombol mati tanpa alasan.
                 'penahanBatal' => $invoice->kuitansiAktifAtauMenunggu() ? 'Void / tolak Kuitansi Hutangnya lebih dulu.'

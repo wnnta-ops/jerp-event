@@ -74,7 +74,7 @@ class SupplierCenterController extends Controller
 
     public function categoryStore(Request $request): RedirectResponse
     {
-        abort_unless($request->user()?->can('businesssupport.setup.manage'), 403);
+        abort_unless($request->user()?->canAny(['datacenter.supplier.category.create', 'businesssupport.setup.manage']), 403);
         BsSupplierCategory::create(array_merge($this->catRules($request), ['tenant_id' => tenant_id()]));
 
         return back()->with('success', 'Kategori supplier ditambahkan.');
@@ -82,7 +82,7 @@ class SupplierCenterController extends Controller
 
     public function categoryUpdate(Request $request, BsSupplierCategory $category): RedirectResponse
     {
-        abort_unless($request->user()?->can('businesssupport.setup.manage'), 403);
+        abort_unless($request->user()?->canAny(['datacenter.supplier.category.update', 'businesssupport.setup.manage']), 403);
         $category->update($this->catRules($request));
 
         return back()->with('success', 'Kategori supplier diperbarui.');
@@ -90,7 +90,7 @@ class SupplierCenterController extends Controller
 
     public function categoryDestroy(Request $request, BsSupplierCategory $category): RedirectResponse
     {
-        abort_unless($request->user()?->can('businesssupport.setup.manage'), 403);
+        abort_unless($request->user()?->canAny(['datacenter.supplier.category.delete', 'businesssupport.setup.manage']), 403);
         $category->delete();
 
         return back()->with('success', 'Kategori supplier dihapus.');
@@ -113,7 +113,7 @@ class SupplierCenterController extends Controller
 
     public function mergeApply(Request $request): RedirectResponse
     {
-        abort_unless($request->user()?->can('businesssupport.setup.manage'), 403);
+        abort_unless($request->user()?->canAny(['datacenter.supplier.merge', 'businesssupport.setup.manage']), 403);
         $v = $request->validate(['source_id' => ['required', 'integer', 'different:target_id', 'exists:bs_suppliers,id'], 'target_id' => ['required', 'integer', 'exists:bs_suppliers,id']]);
 
         $moved = $this->remapId('supplier_id', (int) $v['source_id'], (int) $v['target_id']);
@@ -160,7 +160,7 @@ class SupplierCenterController extends Controller
 
     public function upload(Request $request): RedirectResponse
     {
-        abort_unless($request->user()?->can('businesssupport.setup.manage'), 403);
+        abort_unless($request->user()?->canAny(['datacenter.supplier.upload', 'businesssupport.setup.manage']), 403);
         $request->validate(['file' => ['required', 'file', 'mimes:xlsx', 'max:4096']], [
             'file.mimes' => 'Berkas harus Excel (.xlsx). Unduh template untuk contoh susunannya.',
         ]);
@@ -215,7 +215,7 @@ class SupplierCenterController extends Controller
 
     public function repairRun(Request $request): RedirectResponse
     {
-        abort_unless($request->user()?->can('businesssupport.setup.manage'), 403);
+        abort_unless($request->user()?->canAny(['datacenter.supplier.repair', 'businesssupport.setup.manage']), 403);
         $fixed = 0;
         DB::transaction(function () use (&$fixed): void {
             foreach (BsSupplier::where(fn ($q) => $q->whereNull('code')->orWhere('code', ''))->get() as $s) {

@@ -19,7 +19,7 @@ const statusColor: Record<string,any> = { draft:'warning', approved:'success', c
             <h1 class="font-mono text-2xl font-bold">{{ request.mr_number }}</h1>
             <div class="flex items-center gap-3">
                 <Badge :variant="statusColor[request.status]" dot>{{ request.status }}</Badge>
-                <Button v-if="request.status==='draft' && can.includes('businesssupport.approval.act')" @click="approve"><template #icon-left><Check class="h-4 w-4" /></template>Approve</Button>
+                <Button v-if="request.status==='draft' && (can.includes('bs.fpb.approve') || can.includes('businesssupport.approval.act'))" @click="approve"><template #icon-left><Check class="h-4 w-4" /></template>Approve</Button>
             </div>
         </div>
         <div class="card grid gap-4 p-5 text-sm md:grid-cols-3">

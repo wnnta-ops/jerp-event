@@ -56,7 +56,7 @@ class CashFlowPlanController extends Controller
 
     public function categoryStore(Request $request): RedirectResponse
     {
-        abort_unless($request->user()?->can('businesssupport.setup.manage'), 403);
+        abort_unless($request->user()?->canAny(['cashbook.cashflow-plan.manage', 'businesssupport.setup.manage']), 403);
         $v = $this->categoryData($request);
         BsCfCategory::create($v + ['tenant_id' => tenant_id() ?? default_tenant_id()]);
 
@@ -65,7 +65,7 @@ class CashFlowPlanController extends Controller
 
     public function categoryUpdate(Request $request, BsCfCategory $category): RedirectResponse
     {
-        abort_unless($request->user()?->can('businesssupport.setup.manage'), 403);
+        abort_unless($request->user()?->canAny(['cashbook.cashflow-plan.manage', 'businesssupport.setup.manage']), 403);
         $category->update($this->categoryData($request, $category->id));
 
         return back()->with('success', 'Kategori cash flow diperbarui.');
@@ -73,7 +73,7 @@ class CashFlowPlanController extends Controller
 
     public function categoryDestroy(Request $request, BsCfCategory $category): RedirectResponse
     {
-        abort_unless($request->user()?->can('businesssupport.setup.manage'), 403);
+        abort_unless($request->user()?->canAny(['cashbook.cashflow-plan.manage', 'businesssupport.setup.manage']), 403);
 
         // Kategori yang sudah dipakai membagi mutasi TIDAK boleh hilang — angka laporan bulan
         // lalu akan ikut lenyap tanpa jejak. Nonaktifkan saja supaya berhenti muncul di pilihan.
@@ -118,7 +118,7 @@ class CashFlowPlanController extends Controller
 
     public function formulaUpdate(Request $request, BsCfFormula $formula): RedirectResponse
     {
-        abort_unless($request->user()?->can('businesssupport.setup.manage'), 403);
+        abort_unless($request->user()?->canAny(['cashbook.cashflow-plan.manage', 'businesssupport.setup.manage']), 403);
 
         // Kode & rumusnya dipakai mesin laporan → hanya nama & keterangan yang boleh disunting.
         $v = $request->validate([
@@ -380,7 +380,7 @@ class CashFlowPlanController extends Controller
     /** Simpan angka manual (WPNB / Proyeksi per kategori-bulan, Blokir Angsuran & Buffer per bulan). */
     public function reportSave(Request $request): RedirectResponse
     {
-        abort_unless($request->user()?->can('businesssupport.setup.manage'), 403);
+        abort_unless($request->user()?->canAny(['cashbook.cashflow-plan.manage', 'businesssupport.setup.manage']), 403);
 
         $v = $request->validate([
             'year'                    => ['required', 'integer', 'min:2000', 'max:2100'],
@@ -484,7 +484,7 @@ class CashFlowPlanController extends Controller
      */
     public function reportImport(Request $request): RedirectResponse
     {
-        abort_unless($request->user()?->can('businesssupport.setup.manage'), 403);
+        abort_unless($request->user()?->canAny(['cashbook.cashflow-plan.manage', 'businesssupport.setup.manage']), 403);
         $request->validate(['file' => ['required', 'file', 'max:8192']]);
 
         $upload = $request->file('file');

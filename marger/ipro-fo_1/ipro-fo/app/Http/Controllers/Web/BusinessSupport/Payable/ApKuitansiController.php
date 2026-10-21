@@ -188,7 +188,7 @@ class ApKuitansiController extends Controller
 
     public function void(Request $request, BsApKuitansi $kuitansi, ApKuitansiService $svc): RedirectResponse
     {
-        abort_unless($request->user()?->can('businesssupport.approval.act'), 403);
+        abort_unless($request->user()?->canAny(['ap.kuitansi.void', 'businesssupport.approval.act']), 403);
 
         try {
             $svc->void($kuitansi, $request->user()->id);
@@ -202,7 +202,7 @@ class ApKuitansiController extends Controller
     /** Approval Pengeluaran Kas & Bank (AP): setujui kuitansi pending → jurnal JAP + payment + saldo invoice. */
     public function approve(Request $request, BsApKuitansi $kuitansi, ApKuitansiService $svc): RedirectResponse
     {
-        abort_unless($request->user()?->can('businesssupport.approval.act'), 403);
+        abort_unless($request->user()?->canAny(['ap.kuitansi.approve', 'cashbook.transaction.approve', 'businesssupport.approval.act']), 403);
 
         try {
             $svc->approve($kuitansi, $request->user()->id);
@@ -216,7 +216,7 @@ class ApKuitansiController extends Controller
     /** Tolak kuitansi pending — tidak ada jurnal terbentuk. */
     public function reject(Request $request, BsApKuitansi $kuitansi, ApKuitansiService $svc): RedirectResponse
     {
-        abort_unless($request->user()?->can('businesssupport.approval.act'), 403);
+        abort_unless($request->user()?->canAny(['ap.kuitansi.reject', 'cashbook.transaction.approve', 'cashbook.transaction.reject', 'businesssupport.approval.act']), 403);
 
         try {
             $svc->reject($kuitansi, $request->user()->id);
@@ -230,7 +230,7 @@ class ApKuitansiController extends Controller
     /** Setujui beberapa kuitansi AP sekaligus (dari Approval Pengeluaran Kas & Bank). Lewati yang bukan pending. */
     public function approveBulk(Request $request, ApKuitansiService $svc): RedirectResponse
     {
-        abort_unless($request->user()?->can('businesssupport.approval.act'), 403);
+        abort_unless($request->user()?->canAny(['ap.kuitansi.approve', 'cashbook.transaction.approve', 'businesssupport.approval.act']), 403);
         $v = $request->validate([
             'ids'   => ['required', 'array', 'min:1'],
             'ids.*' => ['integer', 'exists:bs_ap_kuitansis,id'],
@@ -261,7 +261,7 @@ class ApKuitansiController extends Controller
     /** Tolak beberapa kuitansi AP sekaligus. Lewati yang bukan pending. */
     public function rejectBulk(Request $request, ApKuitansiService $svc): RedirectResponse
     {
-        abort_unless($request->user()?->can('businesssupport.approval.act'), 403);
+        abort_unless($request->user()?->canAny(['ap.kuitansi.reject', 'cashbook.transaction.approve', 'cashbook.transaction.reject', 'businesssupport.approval.act']), 403);
         $v = $request->validate([
             'ids'   => ['required', 'array', 'min:1'],
             'ids.*' => ['integer', 'exists:bs_ap_kuitansis,id'],

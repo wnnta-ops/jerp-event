@@ -123,6 +123,19 @@ class BsApInvoice extends Model
      * yang lain bertaut ke dokumen sumbernya, dan membatalkannya di sini akan membuat dokumen
      * sumber itu tetap tercatat "sudah diinvoice".
      */
+    /** Sumber Posting Invoice dari FO (antrean bs_ap_refund_queue; 'batch' = posting gabungan). */
+    public const SUMBER_POSTING_FO = ['refund', 'komisi', 'blt', 'gmc', 'batch'];
+
+    /**
+     * Lahir dari Posting Invoice dari FO — punya Edit sendiri (ApInvoiceFoEditController), sebab
+     * wizard Registrasi bertumpu pada Kategori yang tidak dimiliki invoice semacam ini.
+     */
+    public function dariPostingFo(): bool
+    {
+        return in_array((string) $this->source_type, self::SUMBER_POSTING_FO, true)
+            && ($this->trx_type ?? 'normal') !== 'saldo_awal';
+    }
+
     public function dariRegistrasi(): bool
     {
         return $this->category_id !== null

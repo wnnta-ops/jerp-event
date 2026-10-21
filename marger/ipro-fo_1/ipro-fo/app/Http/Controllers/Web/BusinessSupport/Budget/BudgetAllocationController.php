@@ -130,14 +130,14 @@ class BudgetAllocationController extends Controller
             ])->values();
 
         return Inertia::render('BusinessSupport/Budget/Allocations/Approvals', [
-            'rows' => $rows, 'canApprove' => (bool) $request->user()?->can('businesssupport.approval.act'),
+            'rows' => $rows, 'canApprove' => (bool) $request->user()?->canAny(['budget.allocation.approve', 'businesssupport.approval.act']),
             'summary' => ['count' => $rows->count(), 'total' => $rows->sum('amount')],
         ]);
     }
 
     public function approveBatch(Request $request): RedirectResponse
     {
-        abort_unless($request->user()?->can('businesssupport.approval.act'), 403);
+        abort_unless($request->user()?->canAny(['budget.allocation.approve', 'businesssupport.approval.act']), 403);
         $v = $request->validate([
             'ids'      => ['required', 'array', 'min:1'],
             'ids.*'    => ['integer', 'exists:bs_budget_allocations,id'],

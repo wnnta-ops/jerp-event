@@ -62,7 +62,7 @@ class ApCategoryController extends Controller
 
     public function store(Request $request): RedirectResponse
     {
-        abort_unless($request->user()?->can('businesssupport.setup.manage'), 403);
+        abort_unless($request->user()?->canAny(['ap.category.create', 'businesssupport.setup.manage']), 403);
         [$data, $pemakaian] = $this->data($request);
         DB::transaction(fn () => $this->simpanPemakaian(BsApCategory::create($data), $pemakaian));
 
@@ -71,7 +71,7 @@ class ApCategoryController extends Controller
 
     public function update(Request $request, BsApCategory $category): RedirectResponse
     {
-        abort_unless($request->user()?->can('businesssupport.setup.manage'), 403);
+        abort_unless($request->user()?->canAny(['ap.category.update', 'businesssupport.setup.manage']), 403);
         [$data, $pemakaian] = $this->data($request, $category->id);
         DB::transaction(function () use ($category, $data, $pemakaian): void {
             $category->update($data);
@@ -83,7 +83,7 @@ class ApCategoryController extends Controller
 
     public function destroy(Request $request, BsApCategory $category): RedirectResponse
     {
-        abort_unless($request->user()?->can('businesssupport.setup.manage'), 403);
+        abort_unless($request->user()?->canAny(['ap.category.delete', 'businesssupport.setup.manage']), 403);
         $category->delete();
 
         return back()->with('success', 'Kategori invoice dihapus.');

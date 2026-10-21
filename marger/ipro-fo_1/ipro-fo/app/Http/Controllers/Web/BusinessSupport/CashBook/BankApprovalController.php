@@ -831,7 +831,7 @@ class BankApprovalController extends Controller
 
     public function retensiPost(Request $request, KprRetention $retention, JournalService $svc): RedirectResponse
     {
-        abort_unless($request->user()?->can('businesssupport.approval.act'), 403);
+        abort_unless($request->user()?->canAny(['cashbook.approval-retensi.post', 'businesssupport.approval.act']), 403);
 
         if ($retention->journal_id) {
             return back()->with('error', 'Retensi ini sudah dijurnal.');
@@ -930,7 +930,7 @@ class BankApprovalController extends Controller
      */
     public function releasePost(Request $request, KprRetentionRelease $release, JournalService $svc): RedirectResponse
     {
-        abort_unless($request->user()?->can('businesssupport.approval.act'), 403);
+        abort_unless($request->user()?->canAny(['cashbook.approval-retensi.post', 'businesssupport.approval.act']), 403);
 
         if ($release->journal_id) {
             return back()->with('error', 'Pelepasan DAJAM ini sudah dijurnal.');
@@ -1006,7 +1006,7 @@ class BankApprovalController extends Controller
     /** Tolak SATU TRANCHE pelepasan DAJAM (belum dijurnal). */
     public function releaseReject(Request $request, KprRetentionRelease $release): RedirectResponse
     {
-        abort_unless($request->user()?->can('businesssupport.approval.act'), 403);
+        abort_unless($request->user()?->canAny(['cashbook.approval-retensi.reject', 'businesssupport.approval.act']), 403);
 
         if ($release->journal_id) {
             return back()->with('error', 'Pelepasan ini sudah dijurnal — tidak bisa ditolak.');
@@ -1020,7 +1020,7 @@ class BankApprovalController extends Controller
     /** Pulihkan pelepasan DAJAM yang ditolak → kembali menunggu approval. */
     public function releaseRestore(Request $request, KprRetentionRelease $release): RedirectResponse
     {
-        abort_unless($request->user()?->can('businesssupport.approval.act'), 403);
+        abort_unless($request->user()?->canAny(['cashbook.approval-retensi.reject', 'businesssupport.approval.act']), 403);
 
         $release->update(['approval_status' => null, 'reject_reason' => null, 'rejected_at' => null]);
 
@@ -1030,7 +1030,7 @@ class BankApprovalController extends Controller
     /** Tolak approval Retensi (belum dijurnal) → approval_status 'rejected' + alasan. */
     public function retensiReject(Request $request, KprRetention $retention): RedirectResponse
     {
-        abort_unless($request->user()?->can('businesssupport.approval.act'), 403);
+        abort_unless($request->user()?->canAny(['cashbook.approval-retensi.reject', 'businesssupport.approval.act']), 403);
 
         if ($retention->journal_id) {
             return back()->with('error', 'Retensi ini sudah dijurnal, tidak bisa ditolak.');
@@ -1063,7 +1063,7 @@ class BankApprovalController extends Controller
     /** Pulihkan Retensi yang ditolak → kembali menunggu approval. Alasan dipertahankan sbg riwayat. */
     public function retensiRestore(Request $request, KprRetention $retention): RedirectResponse
     {
-        abort_unless($request->user()?->can('businesssupport.approval.act'), 403);
+        abort_unless($request->user()?->canAny(['cashbook.approval-retensi.reject', 'businesssupport.approval.act']), 403);
 
         if ($retention->approval_status !== 'rejected') {
             return back()->with('error', 'Hanya retensi berstatus ditolak yang bisa dipulihkan.');
@@ -1087,7 +1087,7 @@ class BankApprovalController extends Controller
 
     public function realizationPost(Request $request, KprRealization $realization, JournalService $svc): RedirectResponse
     {
-        abort_unless($request->user()?->can('businesssupport.approval.act'), 403);
+        abort_unless($request->user()?->canAny(['cashbook.approval-retensi.post', 'businesssupport.approval.act']), 403);
 
         if ($realization->journal_id) {
             return back()->with('error', 'Pencairan ini sudah dijurnal.');
@@ -1159,7 +1159,7 @@ class BankApprovalController extends Controller
     /** Tolak approval Pencairan (belum dijurnal) → approval_status 'rejected' + alasan. */
     public function realizationReject(Request $request, KprRealization $realization): RedirectResponse
     {
-        abort_unless($request->user()?->can('businesssupport.approval.act'), 403);
+        abort_unless($request->user()?->canAny(['cashbook.approval-retensi.reject', 'businesssupport.approval.act']), 403);
 
         if ($realization->journal_id) {
             return back()->with('error', 'Pencairan ini sudah dijurnal, tidak bisa ditolak.');
@@ -1177,7 +1177,7 @@ class BankApprovalController extends Controller
     /** Pulihkan Pencairan yang ditolak → kembali menunggu approval. */
     public function realizationRestore(Request $request, KprRealization $realization): RedirectResponse
     {
-        abort_unless($request->user()?->can('businesssupport.approval.act'), 403);
+        abort_unless($request->user()?->canAny(['cashbook.approval-retensi.reject', 'businesssupport.approval.act']), 403);
 
         if ($realization->approval_status !== 'rejected') {
             return back()->with('error', 'Hanya pencairan berstatus ditolak yang bisa dipulihkan.');
@@ -1349,7 +1349,7 @@ class BankApprovalController extends Controller
     /** #164 — Tolak approval UTJ/DP (TTS belum dijurnal) → status rejected + alasan. */
     public function utjdpReject(Request $request, Tts $tts): RedirectResponse
     {
-        abort_unless($request->user()?->can('businesssupport.approval.act'), 403);
+        abort_unless($request->user()?->canAny(['cashbook.approval-utjdp.reject', 'businesssupport.approval.act']), 403);
 
         if ($tts->journal_id) {
             return back()->with('error', 'TTS ini sudah dijurnal, tidak bisa ditolak.');
@@ -1366,7 +1366,7 @@ class BankApprovalController extends Controller
     /** Pulihkan TTS UTJ/DP yang ditolak → kembali ke daftar Menunggu Approval (status posted). Notes/alasan dipertahankan sbg riwayat. */
     public function utjdpRestore(Request $request, Tts $tts): RedirectResponse
     {
-        abort_unless($request->user()?->can('businesssupport.approval.act'), 403);
+        abort_unless($request->user()?->canAny(['cashbook.approval-utjdp.reject', 'businesssupport.approval.act']), 403);
 
         if ($tts->status !== 'rejected') {
             return back()->with('error', 'Hanya TTS berstatus ditolak yang bisa dipulihkan.');
@@ -1379,7 +1379,7 @@ class BankApprovalController extends Controller
     /** @param  ?string  $source  'dp' bila disetujui dari submodul Approval DP. */
     public function utjdpPost(Request $request, Tts $tts, JournalService $svc, ?string $source = null): RedirectResponse
     {
-        abort_unless($request->user()?->can('businesssupport.approval.act'), 403);
+        abort_unless($request->user()?->canAny(['cashbook.approval-utjdp.post', 'businesssupport.approval.act']), 403);
 
         if ($tts->journal_id) {
             return back()->with('error', 'TTS ini sudah dijurnal.');
@@ -1631,7 +1631,7 @@ class BankApprovalController extends Controller
     /** Setujui & Posting massal — Approval Retensi (retensi / pelepasan DAJAM / pencairan). */
     public function retensiBulkPost(Request $request, JournalService $svc): RedirectResponse
     {
-        abort_unless($request->user()?->can('businesssupport.approval.act'), 403);
+        abort_unless($request->user()?->canAny(['cashbook.approval-retensi.post', 'businesssupport.approval.act']), 403);
         $items = (array) $request->validate(['items' => ['required', 'array', 'min:1', 'max:200'], 'items.*.kind' => ['required', 'in:retensi,release,pencairan'], 'items.*.id' => ['required', 'integer']])['items'];
         $raw = (array) $request->input('items', []);
 
@@ -1653,7 +1653,7 @@ class BankApprovalController extends Controller
     /** Tolak massal — Approval Retensi. Satu alasan untuk semua. */
     public function retensiBulkReject(Request $request): RedirectResponse
     {
-        abort_unless($request->user()?->can('businesssupport.approval.act'), 403);
+        abort_unless($request->user()?->canAny(['cashbook.approval-retensi.reject', 'businesssupport.approval.act']), 403);
         $v = $request->validate(['items' => ['required', 'array', 'min:1', 'max:200'], 'items.*.kind' => ['required', 'in:retensi,release,pencairan'], 'items.*.id' => ['required', 'integer'], 'reason' => ['nullable', 'string', 'max:255']]);
 
         $tugas = [];
@@ -1673,7 +1673,7 @@ class BankApprovalController extends Controller
     /** Setujui & Posting massal — Approval UTJ / DP (tiap item: tgl jurnal + akun debit/kredit). */
     public function utjdpBulkPost(Request $request, JournalService $svc, ?string $source = null): RedirectResponse
     {
-        abort_unless($request->user()?->can('businesssupport.approval.act'), 403);
+        abort_unless($request->user()?->canAny(['cashbook.approval-utjdp.post', 'businesssupport.approval.act']), 403);
         $request->validate(['items' => ['required', 'array', 'min:1', 'max:200'], 'items.*.id' => ['required', 'integer']]);
 
         $tugas = [];
@@ -1695,7 +1695,7 @@ class BankApprovalController extends Controller
     /** Tolak massal — Approval UTJ / DP. */
     public function utjdpBulkReject(Request $request): RedirectResponse
     {
-        abort_unless($request->user()?->can('businesssupport.approval.act'), 403);
+        abort_unless($request->user()?->canAny(['cashbook.approval-utjdp.reject', 'businesssupport.approval.act']), 403);
         $v = $request->validate(['ids' => ['required', 'array', 'min:1', 'max:200'], 'ids.*' => ['integer'], 'reason' => ['nullable', 'string', 'max:255'], 'labels' => ['nullable', 'array']]);
 
         $tugas = [];
@@ -1710,7 +1710,7 @@ class BankApprovalController extends Controller
     /** Setujui & Posting massal — Approval UM Penjualan (tanpa isian). */
     public function umBulkPost(Request $request, ConvertUtjDpToUangMuka $action): RedirectResponse
     {
-        abort_unless($request->user()?->can('businesssupport.approval.act'), 403);
+        abort_unless($request->user()?->canAny(['cashbook.approval-utjdp.post', 'businesssupport.approval.act']), 403);
         $v = $request->validate(['ids' => ['required', 'array', 'min:1', 'max:200'], 'ids.*' => ['integer'], 'labels' => ['nullable', 'array']]);
 
         $tugas = [];
@@ -1724,7 +1724,7 @@ class BankApprovalController extends Controller
 
     public function umPost(Request $request, BsFakturKeluaranEntry $entry, ConvertUtjDpToUangMuka $action): RedirectResponse
     {
-        abort_unless($request->user()?->can('businesssupport.approval.act'), 403);
+        abort_unless($request->user()?->canAny(['cashbook.approval-utjdp.post', 'businesssupport.approval.act']), 403);
 
         try {
             $journal = $action->execute($entry, (int) $request->user()->id);

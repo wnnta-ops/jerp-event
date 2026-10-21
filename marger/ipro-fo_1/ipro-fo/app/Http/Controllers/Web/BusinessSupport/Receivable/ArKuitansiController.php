@@ -93,7 +93,7 @@ class ArKuitansiController extends Controller
 
     public function void(Request $request, BsArKuitansi $kuitansi, ArKuitansiService $svc): RedirectResponse
     {
-        abort_unless($request->user()?->can('businesssupport.approval.act'), 403);
+        abort_unless($request->user()?->canAny(['ar.kuitansi.void', 'businesssupport.approval.act']), 403);
 
         try {
             $svc->void($kuitansi, $request->user()->id);

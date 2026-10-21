@@ -71,7 +71,7 @@ class AccountController extends Controller
 
     public function store(Request $request): RedirectResponse
     {
-        abort_unless($request->user()?->can('businesssupport.setup.manage'), 403);
+        abort_unless($request->user()?->canAny(['gl.account.create', 'businesssupport.setup.manage']), 403);
         BsAccount::create($this->data($request));
 
         return back()->with('success', 'Akun ditambahkan.');
@@ -79,7 +79,7 @@ class AccountController extends Controller
 
     public function update(Request $request, BsAccount $account): RedirectResponse
     {
-        abort_unless($request->user()?->can('businesssupport.setup.manage'), 403);
+        abort_unless($request->user()?->canAny(['gl.account.update', 'businesssupport.setup.manage']), 403);
         $account->update($this->data($request, $account->id));
 
         return back()->with('success', 'Akun diperbarui.');
@@ -87,7 +87,7 @@ class AccountController extends Controller
 
     public function destroy(Request $request, BsAccount $account): RedirectResponse
     {
-        abort_unless($request->user()?->can('businesssupport.setup.manage'), 403);
+        abort_unless($request->user()?->canAny(['gl.account.delete', 'businesssupport.setup.manage']), 403);
         $account->delete();
 
         return back()->with('success', 'Akun dihapus.');
@@ -225,7 +225,7 @@ class AccountController extends Controller
      */
     public function import(Request $request, CoaImporter $importer): RedirectResponse
     {
-        abort_unless($request->user()?->can('businesssupport.setup.manage'), 403);
+        abort_unless($request->user()?->canAny(['gl.account.manage', 'businesssupport.setup.manage']), 403);
         $request->validate(["berkas" => ["required", "file", "mimes:xlsx", "max:4096"]], [
             "berkas.mimes" => "Berkas harus Excel (.xlsx). Unduh format untuk contoh susunannya.",
         ]);

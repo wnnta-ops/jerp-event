@@ -48,7 +48,7 @@ class SignatureBarcodeController extends Controller
 
     public function store(Request $request): RedirectResponse
     {
-        abort_unless($request->user()?->can('businesssupport.setup.manage'), 403);
+        abort_unless($request->user()?->canAny(['cashbook.signature-barcode.manage', 'businesssupport.setup.manage']), 403);
 
         $v = $this->validated($request, null);
 
@@ -59,7 +59,7 @@ class SignatureBarcodeController extends Controller
 
     public function update(Request $request, BsSignatureBarcode $barcode): RedirectResponse
     {
-        abort_unless($request->user()?->can('businesssupport.setup.manage'), 403);
+        abort_unless($request->user()?->canAny(['cashbook.signature-barcode.manage', 'businesssupport.setup.manage']), 403);
 
         $barcode->update($this->validated($request, $barcode->id));
 
@@ -68,7 +68,7 @@ class SignatureBarcodeController extends Controller
 
     public function destroy(Request $request, BsSignatureBarcode $barcode): RedirectResponse
     {
-        abort_unless($request->user()?->can('businesssupport.setup.manage'), 403);
+        abort_unless($request->user()?->canAny(['cashbook.signature-barcode.manage', 'businesssupport.setup.manage']), 403);
 
         $barcode->delete();
 

@@ -224,7 +224,7 @@ class CashAdvanceController extends Controller
     /** #127 — persetujuan bon sementara (berjenjang). */
     public function approve(Request $request, BsCashAdvance $advance, CashAdvanceService $svc): RedirectResponse
     {
-        abort_unless($request->user()?->can('businesssupport.approval.act'), 403);
+        abort_unless($request->user()?->canAny(['cashbook.advance.approve', 'businesssupport.approval.act']), 403);
         $v = $request->validate(['slot' => ['required', 'string', 'in:'.implode(',', array_keys(BsCashAdvance::SIGNERS))]]);
         try {
             $svc->approve($advance, $v['slot'], $request->user()->id, (string) $request->user()->name);
@@ -934,7 +934,7 @@ class CashAdvanceController extends Controller
                 ->filter(fn ($c) => $c->isUsable())
                 ->map(fn ($c) => ['id' => $c->id, 'label' => $c->label(), 'balance' => (float) $c->balance])
                 ->values(),
-            'canApprove' => (bool) $request->user()?->can('businesssupport.approval.act'), // #127
+            'canApprove' => (bool) $request->user()?->canAny(['cashbook.advance.approve', 'businesssupport.approval.act']), // #127
             // SELURUH PANEL DEPT FINANCE DIPISAH LEWAT RUTE, bukan izin.
             //
             // Penjagaan berbasis izin saja tidak cukup: SuperAdmin memegang semua izin, jadi

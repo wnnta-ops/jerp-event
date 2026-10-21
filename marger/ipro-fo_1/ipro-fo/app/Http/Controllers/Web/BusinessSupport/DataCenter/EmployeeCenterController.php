@@ -41,7 +41,7 @@ class EmployeeCenterController extends Controller
 
     public function mergeApply(Request $request): RedirectResponse
     {
-        abort_unless($request->user()?->can('businesssupport.setup.manage'), 403);
+        abort_unless($request->user()?->canAny(['datacenter.employee.merge', 'businesssupport.setup.manage']), 403);
         $v = $request->validate(['source_id' => ['required', 'integer', 'different:target_id', 'exists:bs_employees,id'], 'target_id' => ['required', 'integer', 'exists:bs_employees,id']]);
 
         $moved = 0;
@@ -73,7 +73,7 @@ class EmployeeCenterController extends Controller
 
     public function repairRun(Request $request): RedirectResponse
     {
-        abort_unless($request->user()?->can('businesssupport.setup.manage'), 403);
+        abort_unless($request->user()?->canAny(['datacenter.employee.repair', 'businesssupport.setup.manage']), 403);
         $fixed = 0;
         DB::transaction(function () use (&$fixed): void {
             foreach (BsEmployee::where(fn ($q) => $q->whereNull('nik')->orWhere('nik', ''))->get() as $e) {

@@ -74,7 +74,7 @@ class JournalImportController extends Controller
 
     public function store(Request $request, JournalService $journal): RedirectResponse
     {
-        abort_unless($request->user()?->can('businesssupport.approval.act'), 403);
+        abort_unless($request->user()?->canAny(['gl.journal.import', 'businesssupport.approval.act']), 403);
         $request->validate([
             'file'    => ['required', 'file', 'mimes:xlsx,xls,csv,txt', 'max:5120'],
             'dry_run' => ['nullable', 'boolean'],

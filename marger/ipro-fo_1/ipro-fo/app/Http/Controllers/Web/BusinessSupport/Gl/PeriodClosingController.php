@@ -383,7 +383,7 @@ class PeriodClosingController extends Controller
 
     public function close(Request $request, PeriodClosingService $svc): RedirectResponse
     {
-        abort_unless($request->user()?->can('businesssupport.approval.act'), 403);
+        abort_unless($request->user()?->canAny(['gl.closing.close', 'businesssupport.approval.act']), 403);
         $v = $request->validate(['year' => ['required', 'integer'], 'month' => ['required', 'integer', 'min:1', 'max:12']]);
 
         try {
@@ -399,7 +399,7 @@ class PeriodClosingController extends Controller
 
     public function reopen(Request $request, PeriodClosingService $svc): RedirectResponse
     {
-        abort_unless($request->user()?->can('businesssupport.approval.act'), 403);
+        abort_unless($request->user()?->canAny(['gl.closing.reopen', 'businesssupport.approval.act']), 403);
         $v = $request->validate(['year' => ['required', 'integer'], 'month' => ['required', 'integer', 'min:1', 'max:12']]);
         $svc->reopenPeriod($v['year'], $v['month']);
 
@@ -408,7 +408,7 @@ class PeriodClosingController extends Controller
 
     public function closeYear(Request $request, PeriodClosingService $svc): RedirectResponse
     {
-        abort_unless($request->user()?->can('businesssupport.approval.act'), 403);
+        abort_unless($request->user()?->canAny(['gl.closing.year', 'businesssupport.approval.act']), 403);
         $v = $request->validate(['year' => ['required', 'integer']]);
 
         try {
@@ -445,7 +445,7 @@ class PeriodClosingController extends Controller
 
     public function storeSaldoAwalConfirm(Request $request): RedirectResponse
     {
-        abort_unless($request->user()?->can('businesssupport.approval.act'), 403);
+        abort_unless($request->user()?->canAny(['gl.saldo-awal.confirm', 'businesssupport.approval.act']), 403);
         $v = $request->validate(['year' => ['required', 'integer']]);
         $year  = (int) $v['year'];
         $lines = $this->openingJournalLines($year);
@@ -496,7 +496,7 @@ class PeriodClosingController extends Controller
 
     public function lateClose(Request $request, PeriodClosingService $svc): RedirectResponse
     {
-        abort_unless($request->user()?->can('businesssupport.approval.act'), 403);
+        abort_unless($request->user()?->canAny(['gl.closing.close', 'businesssupport.approval.act']), 403);
         $v = $request->validate([
             'year'  => ['required', 'integer'],
             'month' => ['required', 'integer', 'min:1', 'max:12'],

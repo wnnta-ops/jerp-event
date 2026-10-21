@@ -88,7 +88,7 @@ class PenghapusanController extends Controller
 
     public function store(Request $request, BsApInvoice $invoice, ApMemorialService $svc): RedirectResponse
     {
-        abort_unless($request->user()?->can('businesssupport.approval.act'), 403);
+        abort_unless($request->user()?->canAny(['ap.penghapusan.store', 'businesssupport.approval.act']), 403);
 
         $v = $request->validate([
             'counter_account_id' => ['required', 'integer', 'exists:bs_accounts,id'],

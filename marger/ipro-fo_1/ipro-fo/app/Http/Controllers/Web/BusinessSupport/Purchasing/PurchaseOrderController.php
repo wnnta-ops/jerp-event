@@ -342,7 +342,7 @@ class PurchaseOrderController extends Controller
 
     public function approve(Request $request, BsPurchaseOrder $po): RedirectResponse
     {
-        abort_unless($request->user()?->can('businesssupport.approval.act'), 403);
+        abort_unless($request->user()?->canAny(['bs.po.approve', 'businesssupport.approval.act']), 403);
         if ($po->status !== 'draft') {
             return back()->with('error', 'PO sudah diproses.');
         }
@@ -353,7 +353,7 @@ class PurchaseOrderController extends Controller
 
     public function close(Request $request, BsPurchaseOrder $po): RedirectResponse
     {
-        abort_unless($request->user()?->can('businesssupport.approval.act'), 403);
+        abort_unless($request->user()?->canAny(['bs.po.close', 'businesssupport.approval.act']), 403);
         $po->update(['status' => 'closed']);
 
         return back()->with('success', "PO {$po->po_number} ditutup.");

@@ -41,7 +41,7 @@ class JournalDimensionController extends Controller
 
     public function store(Request $request, string $type): RedirectResponse
     {
-        [$model, $table, $label] = $this->resolve($request, $type);
+        [$model, $table, $label] = $this->resolve($request, $type, 'create');
         $model::create($this->data($request, $table));
 
         return back()->with('success', "{$label} ditambahkan.");
@@ -49,7 +49,7 @@ class JournalDimensionController extends Controller
 
     public function update(Request $request, string $type, int $id): RedirectResponse
     {
-        [$model, $table, $label] = $this->resolve($request, $type);
+        [$model, $table, $label] = $this->resolve($request, $type, 'update');
         $model::findOrFail($id)->update($this->data($request, $table, $id));
 
         return back()->with('success', "{$label} diperbarui.");
@@ -57,16 +57,17 @@ class JournalDimensionController extends Controller
 
     public function destroy(Request $request, string $type, int $id): RedirectResponse
     {
-        [$model, $table, $label] = $this->resolve($request, $type);
+        [$model, $table, $label] = $this->resolve($request, $type, 'delete');
         $model::findOrFail($id)->delete();
 
         return back()->with('success', "{$label} dihapus.");
     }
 
     /** @return array{0:class-string<Model>,1:string,2:string} */
-    private function resolve(Request $request, string $type): array
+    private function resolve(Request $request, string $type, string $aksi): array
     {
-        abort_unless($request->user()?->can('businesssupport.setup.manage'), 403);
+        // Izin Dimensi Jurnal per aksi (Grup Akses BO) — atau Setup — Kelola seperti dulu.
+        abort_unless($request->user()?->canAny(['gl.journal-dimension.'.$aksi, 'gl.journal-dimension.manage', 'businesssupport.setup.manage']), 403);
         abort_unless(isset(self::TYPES[$type]), 404);
 
         return self::TYPES[$type];

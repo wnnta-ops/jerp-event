@@ -47,7 +47,7 @@ class FixedAssetUploadController extends Controller
 
     public function store(Request $request, FixedAssetService $svc): RedirectResponse
     {
-        abort_unless($request->user()?->can('businesssupport.setup.manage'), 403);
+        abort_unless($request->user()?->canAny(['bs.bulk-import.manage', 'businesssupport.setup.manage']), 403);
 
         $request->validate([
             'file' => ['required', 'file', 'mimes:xlsx', 'max:8192'],

@@ -100,7 +100,7 @@ class MaterialRequestController extends Controller
 
     public function approve(Request $request, BsMaterialRequest $fpb): RedirectResponse
     {
-        abort_unless($request->user()?->can('businesssupport.approval.act'), 403);
+        abort_unless($request->user()?->canAny(['bs.fpb.approve', 'businesssupport.approval.act']), 403);
         if ($fpb->status !== 'draft') {
             return back()->with('error', 'FPB sudah diproses.');
         }
