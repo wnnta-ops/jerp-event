@@ -31,7 +31,7 @@ final class DaftarInvoiceHutang
     public const BATAS_OPSI = 1000;
 
     /** Kunci kolom saringan (sama dengan layar). */
-    public const KOLOM = ['no', 'tgl', 'terima', 'supplier', 'sumber', 'ket', 'total', 'sisa', 'status', 'berkas', 'berkasFinance'];
+    public const KOLOM = ['no', 'tgl', 'terima', 'supplier', 'sumber', 'ket', 'total', 'sisa', 'status', 'jurnal', 'berkas', 'berkasFinance'];
 
     private const BULAN = "'Jan','Feb','Mar','Apr','Mei','Jun','Jul','Agu','Sep','Okt','Nov','Des'";
 
@@ -54,10 +54,20 @@ final class DaftarInvoiceHutang
             'ket' => "COALESCE(bs_ap_invoices.description,'')",
             'status' => "CASE bs_ap_invoices.status WHEN 'paid' THEN 'Lunas' WHEN 'batal' THEN 'Batal' ELSE 'Open' END",
             'berkas' => "COALESCE(NULLIF(bs_ap_invoices.berkas_notes,''),'—')",
+            'jurnal' => self::STATUS_JURNAL,
             'total' => self::BAYAR,
             'sisa' => self::SISA,
         };
     }
+
+    /**
+     * Status jurnal invoice — aturannya sama dengan General Ledger: periode yang sudah ditutup
+     * terbaca 'Closed' apa pun statusnya; selain itu Baru (draft) / Final / Approved (posted).
+     * Invoice tanpa jurnal (mis. saldo awal) → '—'.
+     */
+    private const STATUS_JURNAL = "CASE WHEN j.id IS NULL THEN '—'"
+        ." WHEN EXISTS (SELECT 1 FROM bs_fiscal_periods fp WHERE fp.year = j.period_year AND fp.month = j.period_month AND fp.status = 'closed') THEN 'Closed'"
+        ." WHEN j.status = 'posted' THEN 'Approved' WHEN j.status = 'final' THEN 'Final' ELSE 'Baru' END";
 
     /** Nett dibayar = net_payable bila terisi, kalau tidak total (BsApInvoice::payable_amount). */
     private const BAYAR = 'ROUND(CASE WHEN bs_ap_invoices.net_payable > 0 THEN bs_ap_invoices.net_payable ELSE bs_ap_invoices.total END, 2)';
@@ -71,6 +81,7 @@ final class DaftarInvoiceHutang
         return BsApInvoice::withTrashed()
             ->leftJoin('bs_suppliers as s', 's.id', '=', 'bs_ap_invoices.supplier_id')
             ->leftJoin('customers as c', fn ($j) => $j->on('c.id', '=', 'bs_ap_invoices.customer_id')->whereNull('c.deleted_at'))
+            ->leftJoin('bs_journals as j', fn ($x) => $x->on('j.id', '=', 'bs_ap_invoices.journal_id')->whereNull('j.deleted_at'))
             ->where(fn ($q) => $q->whereNull('bs_ap_invoices.deleted_at')->orWhere('bs_ap_invoices.status', BsApInvoice::STATUS_BATAL))
             ->where('bs_ap_invoices.jenis', $this->jenis);
     }
@@ -205,6 +216,6 @@ final class DaftarInvoiceHutang
         return ['bs_ap_invoices.id', 'bs_ap_invoices.invoice_number', 'bs_ap_invoices.invoice_date', 'bs_ap_invoices.receive_date', 'bs_ap_invoices.due_date', 'bs_ap_invoices.supplier_id', 'bs_ap_invoices.customer_id',
             'bs_ap_invoices.source_type', 'bs_ap_invoices.source_id', 'bs_ap_invoices.refund_source', 'bs_ap_invoices.description', 'bs_ap_invoices.berkas_notes', 'bs_ap_invoices.berkas_finance_date',
             'bs_ap_invoices.total', 'bs_ap_invoices.net_payable', 'bs_ap_invoices.paid_amount', 'bs_ap_invoices.status',
-            DB::raw('s.name AS nama_supplier'), DB::raw('c.full_name AS nama_customer')];
+            'bs_ap_invoices.journal_id', DB::raw(self::STATUS_JURNAL.' AS status_jurnal'), DB::raw('s.name AS nama_supplier'), DB::raw('c.full_name AS nama_customer')];
     }
 }
