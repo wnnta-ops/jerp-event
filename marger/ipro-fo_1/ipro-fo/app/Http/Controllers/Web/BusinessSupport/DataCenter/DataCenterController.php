@@ -35,9 +35,10 @@ class DataCenterController extends Controller
     /** Landing per sub-modul/center (supplier | employee). */
     public function center(Request $request, string $center): Response
     {
-        abort_unless($request->user()?->can('datacenter.hub.view'), 403);
         $titles = ['supplier' => 'Supplier Center', 'employee' => 'Employee Center'];
         abort_unless(isset($titles[$center]), 404);
+        // Tiap center mengikuti izin Lihat-nya sendiri; izin gabungan lama tetap membuka keduanya.
+        abort_unless($request->user()?->can('datacenter.'.$center.'.view') || $request->user()?->can('datacenter.hub.view'), 403);
 
         return Inertia::render('BusinessSupport/DataCenter/Center', [
             'center' => $center,

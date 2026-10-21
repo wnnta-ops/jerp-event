@@ -46,7 +46,8 @@ class EmployeeController extends Controller
 
     public function store(Request $request): RedirectResponse
     {
-        abort_unless($request->user()?->can('businesssupport.setup.manage'), 403);
+        // Izin Data Center (Grup Akses BO) — atau Setup Business Support — Kelola seperti dulu.
+        abort_unless($request->user()?->can('datacenter.employee.create') || $request->user()?->can('businesssupport.setup.manage'), 403);
         BsEmployee::create($this->data($request) + ['created_by' => $request->user()->id]);
 
         return back()->with('success', 'Karyawan ditambahkan.');
@@ -54,7 +55,8 @@ class EmployeeController extends Controller
 
     public function update(Request $request, BsEmployee $employee): RedirectResponse
     {
-        abort_unless($request->user()?->can('businesssupport.setup.manage'), 403);
+        // Izin Data Center (Grup Akses BO) — atau Setup Business Support — Kelola seperti dulu.
+        abort_unless($request->user()?->can('datacenter.employee.update') || $request->user()?->can('businesssupport.setup.manage'), 403);
         $employee->update($this->data($request, $employee));
 
         return back()->with('success', 'Data karyawan diperbarui.');
@@ -62,7 +64,8 @@ class EmployeeController extends Controller
 
     public function destroy(Request $request, BsEmployee $employee): RedirectResponse
     {
-        abort_unless($request->user()?->can('businesssupport.setup.manage'), 403);
+        // Izin Data Center (Grup Akses BO) — atau Setup Business Support — Kelola seperti dulu.
+        abort_unless($request->user()?->can('datacenter.employee.delete') || $request->user()?->can('businesssupport.setup.manage'), 403);
         $employee->delete();
 
         return back()->with('success', 'Karyawan dihapus.');
@@ -129,7 +132,8 @@ class EmployeeController extends Controller
      */
     public function import(Request $request): RedirectResponse
     {
-        abort_unless($request->user()?->can('businesssupport.setup.manage'), 403);
+        // Izin Data Center (Grup Akses BO) — atau Setup Business Support — Kelola seperti dulu.
+        abort_unless($request->user()?->can('datacenter.employee.create') || $request->user()?->can('businesssupport.setup.manage'), 403);
         $request->validate([
             'file' => ['required', 'file', 'max:8192'],
             'mode' => ['nullable', 'in:perbarui,lewati'],
