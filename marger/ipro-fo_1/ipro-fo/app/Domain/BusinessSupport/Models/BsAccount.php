@@ -26,6 +26,8 @@ class BsAccount extends Model
         // terjadi pada 'cost_center_optional' di bawah: kolomnya nyata, ikut di-cast, tetapi
         // absen dari daftar ini.
         'cogs_component',
+        // Diatur dari Setup → Akun ("— dikosongkan (tanpa cost center) —") sejak 21 Okt 2026.
+        'cost_center_optional',
     ];
 
     /** Kategori (head) sebuah kode — biasanya digit pertama, kecuali pengelompokan eProperty. */

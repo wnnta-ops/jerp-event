@@ -68,7 +68,7 @@ function kirimImpor() {
 const editingId = ref<number | null>(null);
 // Induk yang sedang ditambahi anak (dari tombol "+" per baris) — hanya untuk petunjuk di modal.
 const parentAcc = ref<any | null>(null);
-const form = useForm<any>({ code: '', name: '', level: 1, parent_id: null, type: 'asset', normal_balance: 'D', is_postable: false, is_active: true, cf_direct_category_id: null, cf_indirect_category_id: null, cost_center_id: null, cogs_component: null });
+const form = useForm<any>({ code: '', name: '', level: 1, parent_id: null, type: 'asset', normal_balance: 'D', is_postable: false, is_active: true, cf_direct_category_id: null, cf_indirect_category_id: null, cost_center_id: null, cost_center_optional: false, cogs_component: null });
 
 /** Panjang kode yang dituntut level: tiap turun satu tingkat menambah dua digit. */
 const panjangKode = computed(() => 2 * Number(form.level || 1) - 1);
@@ -144,11 +144,18 @@ function openEdit(a: any) {
     form.is_postable = !!a.is_postable; form.is_active = !!a.is_active;
     form.cf_direct_category_id = a.cf_direct_category_id ?? null;
     form.cf_indirect_category_id = a.cf_indirect_category_id ?? null;
-    form.cost_center_id = a.cost_center_id ?? null;
+    // '__kosong' = pilihan "dikosongkan (tanpa cost center)" — penanda cost_center_optional.
+    form.cost_center_id = a.cost_center_optional ? '__kosong' : (a.cost_center_id ?? null);
     form.cogs_component = a.cogs_component ?? null;
     showModal.value = true;
 }
 function submit() {
+    // Pilihan "dikosongkan" dikirim sebagai penanda, bukan id cost center.
+    form.transform((d: any) => ({
+        ...d,
+        cost_center_optional: d.cost_center_id === '__kosong',
+        cost_center_id: d.cost_center_id === '__kosong' ? null : d.cost_center_id,
+    }));
     const opts = { onSuccess: () => { showModal.value = false; } };
     editingId.value ? form.put(route('bs.accounts.update', editingId.value), opts) : form.post(route('bs.accounts.store'), opts);
 }
@@ -211,6 +218,7 @@ const inputCls = 'h-9 w-full rounded-lg border border-neutral-300 bg-white px-3 
                         <td class="px-4 py-2 text-center">{{ a.is_postable ? '✓' : '—' }}</td>
                         <td class="px-4 py-2 text-xs">
                             <span v-if="a.cost_center" class="inline-flex items-center gap-1 whitespace-nowrap rounded bg-primary-50 px-1.5 py-0.5 text-primary-700 dark:bg-primary-900/25 dark:text-primary-300"><span class="font-mono">{{ a.cost_center.code }}</span> {{ a.cost_center.name }}</span>
+                            <span v-else-if="a.cost_center_optional" class="whitespace-nowrap text-[11px] italic text-neutral-500">(dikosongkan)</span>
                             <span v-else class="text-neutral-300 dark:text-neutral-600">—</span>
                         </td>
                         <td class="px-4 py-2 text-xs">
@@ -302,10 +310,12 @@ const inputCls = 'h-9 w-full rounded-lg border border-neutral-300 bg-white px-3 
                         <div>
                             <label class="mb-1 block text-xs font-medium text-neutral-500">Cost Center</label>
                             <select v-model="form.cost_center_id" :class="inputCls">
-                                <option :value="null">— tidak dipetakan —</option>
+                                <option :value="null">— tidak dipetakan — (ikut unit kerja user)</option>
+                                <option value="__kosong">— dikosongkan (tanpa cost center) —</option>
                                 <option v-for="c in costCenters" :key="c.id" :value="c.id">{{ c.code }} - {{ c.name }}</option>
                             </select>
-                            <p class="mt-1 text-[11px] text-neutral-400">Dipakai otomatis & dikunci pada tiap baris Input Jurnal yang memakai akun ini.</p>
+                            <p v-if="form.cost_center_id === '__kosong'" class="mt-1 text-[11px] text-neutral-400">Baris jurnal yang memakai akun ini otomatis tanpa cost center dan boleh disimpan kosong (mis. Utang Usaha Customer).</p>
+                            <p v-else class="mt-1 text-[11px] text-neutral-400">Dipakai otomatis & dikunci pada tiap baris Input Jurnal yang memakai akun ini.</p>
                             <p v-if="form.errors.cost_center_id" class="mt-1 text-xs text-danger-500">{{ form.errors.cost_center_id }}</p>
                         </div>
                         <div>

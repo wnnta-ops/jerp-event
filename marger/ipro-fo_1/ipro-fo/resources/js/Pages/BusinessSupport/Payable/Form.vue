@@ -356,7 +356,7 @@ async function pasteAccount(l: any, i: number) {
         } catch { /* abaikan */ }
     }
     if (!id) return;
-    l.account_id = id;
+    pilihAkun(l, id);   // cost center ikut akun yang ditempel
     pasteFlash.value = i;
     setTimeout(() => { if (pasteFlash.value === i) pasteFlash.value = null; }, 1200);
 }
@@ -448,6 +448,20 @@ function pasangStruktur(baris: any[]) {
     form.journal_lines = baris;
 }
 
+/* COST CENTER IKUT AKUN YANG DIPILIH — dulu cost center hanya ditentukan saat baris DIBUAT
+   (sebelum COA-nya diketahui), sehingga "+ Baris → pilih Utang Usaha Customer" tetap membawa
+   cost center user. Kini disetel ulang tiap kali COA dipilih/diganti:
+     akun "dikosongkan" (Setup → Akun) → kosong · akun bercost center bawaan → itu ·
+     selain itu → unit kerja user bila masih kosong. Cost center yang diisi tangan pada akun
+     biasa tidak ditimpa. */
+function pilihAkun(l: any, v: any) {
+    l.account_id = v;
+    const acc: any = props.accounts.find((a: any) => a.id === Number(v));
+    if (!v || !acc) return;
+    if (ccOptional(v)) { l.cost_center_id = null; return; }
+    if (acc.cost_center_id) { l.cost_center_id = Number(acc.cost_center_id); return; }
+    if (!l.cost_center_id) l.cost_center_id = props.ccPengguna ?? null;
+}
 function addJournalLine() { form.journal_lines.push(mkJournalLine(null, '', 0, 'debit')); }
 function addJournalLines(n: number) { for (let k = 0; k < n; k++) addJournalLine(); }
 function removeJournalLine(i: number) { form.journal_lines.splice(i, 1); }
@@ -797,7 +811,7 @@ const cellArea = 'w-full rounded-md border border-neutral-300 bg-white px-2 py-1
                             <tr v-for="(l,i) in form.journal_lines" :key="i" class="border-b border-neutral-100 align-top dark:border-neutral-800">
                                 <td class="px-2 py-2 font-mono text-neutral-400">{{ i+1 }}</td>
                                 <td class="px-2 py-2">
-                                    <SearchSelect v-model="l.account_id" :options="accounts" placeholder="— pilih akun —" />
+                                    <SearchSelect :model-value="l.account_id" :options="accounts" placeholder="— pilih akun —" @update:model-value="(v) => pilihAkun(l, v)" />
                                     <!-- Salin / tempel akun antar baris — akun kerap berulang.
                                          Tombolnya BERLABEL & berwarna: versi ikon 20px sebelumnya
                                          nyaris tak terbaca dan mudah terlewat operator. -->
