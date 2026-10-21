@@ -899,8 +899,11 @@ class CashAdvanceController extends Controller
         abort_unless($request->user()?->can('cashbook.advance.view'), 403);
         abort_unless($this->bolehBukaBon($request, $advance), 403);
 
+        $advance->load(['cashAccount:id,code,name', 'creditCard:id,name,card_number,balance,expired_date', 'lines.expenseAccount:id,code,name', 'lines.costCenter:id,code,name']);
+        $this->buangBarisPengajuan($advance);
+
         return Inertia::render('BusinessSupport/CashBook/Advances/Show', [
-            'advance' => $advance->load(['cashAccount:id,code,name', 'creditCard:id,name,card_number,balance,expired_date', 'lines.expenseAccount:id,code,name', 'lines.costCenter:id,code,name']),
+            'advance' => $advance,
             // Nomor referensi jurnal realisasi (JKB/…) — nomor yang sama dengan "No. Voucher" di
             // Cetak Realisasi, supaya bonnya bisa ditelusuri ke buku besar. Tautan hanya bila
             // penggunanya memang boleh membuka jurnal.
@@ -1362,8 +1365,25 @@ class CashAdvanceController extends Controller
         abort_unless($this->bolehBukaBon($request, $advance), 403);
         abort_unless($advance->status === 'realized', 404, 'Bon belum direalisasi.');
         $advance->load(['cashAccount:id,code,name', 'costCenter:id,code,name', 'lines.expenseAccount:id,code,name']);
+        $this->buangBarisPengajuan($advance);
 
         return response($this->renderRealisasiPrint($advance))->header('Content-Type', 'text/html; charset=UTF-8');
+    }
+
+    /**
+     * Rincian realisasi bon MIGRASI eProperty ikut memuat baris akun Uang Muka Operasional
+     * (lawan jurnalnya di eProperty). Baris itu sudah diwakili baris "Pengajuan" di cetakan &
+     * layar, jadi ditampilkan dua kali. Disembunyikan dari TAMPILAN saja — datanya tidak diubah.
+     * Bon yang dibuat di aplikasi tidak pernah punya baris semacam itu.
+     */
+    private function buangBarisPengajuan(BsCashAdvance $advance): void
+    {
+        if (! $advance->advance_account_id || ! $advance->relationLoaded('lines')) {
+            return;
+        }
+        $advance->setRelation('lines', $advance->lines
+            ->reject(fn ($l) => (int) $l->expense_account_id === (int) $advance->advance_account_id)
+            ->values());
     }
 
     /**
