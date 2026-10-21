@@ -15,6 +15,7 @@ class Numerator extends TenantAwareModel
         'company_id',
         'code',
         'format',
+        'reset',
         'last_seq',
         'period',
         'is_active',

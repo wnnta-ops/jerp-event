@@ -49,17 +49,36 @@ class NumeratorResource extends Resource
                         ->required()
                         ->maxLength(255)
                         ->default('{code}-{YYYY}-{seq:5}')
-                        ->helperText('Placeholder: {code}, {YYYY}, {YY}, {MM}, {seq:N} (zero-padded)'),
+                        ->live(onBlur: true)
+                        ->helperText(fn (Forms\Get $get) => 'Placeholder: {YYYY}, {YY}, {MM}, {M}, {ROMAWI} (bulan Romawi), {DD}, {seq:N}. '
+                            . 'Contoh hasil berikutnya: ' . app(\App\Services\Numerator\NumeratorService::class)
+                                ->contoh((string) $get('format'), (int) $get('last_seq') + 1)),
+                    Forms\Components\Select::make('reset')
+                        ->label('Reset nomor urut')
+                        ->options(['tidak' => 'Tidak pernah — nomor terus bersambung'])
+                        ->placeholder('Ikut format (tahunan/bulanan/harian)')
+                        ->live()
+                        ->helperText('Pilih "Tidak pernah" untuk nomor yang bersambung lintas tahun, mis. SPR penerus eProperty.'),
                     Forms\Components\TextInput::make('period')
                         ->label('Periode reset')
                         ->maxLength(16)
+                        ->visible(fn (Forms\Get $get) => $get('reset') !== 'tidak')
                         ->helperText('Contoh: "2026" (yearly), "202605" (monthly). Kosongkan jika tidak ada reset.'),
                     Forms\Components\TextInput::make('last_seq')
-                        ->label('Nomor urut terakhir')
+                        ->label('Seq terakhir (cutoff)')
                         ->numeric()
+                        ->minValue(0)
                         ->default(0)
-                        ->disabled(fn (string $operation) => $operation === 'edit')
-                        ->helperText('Hanya di-set saat membuat numerator baru. Sistem akan increment otomatis.'),
+                        ->live(onBlur: true)
+                        ->helperText(function (Forms\Get $get) {
+                            $teks = 'Nomor berikutnya = angka ini + 1. Boleh diubah kapan saja (mis. cutoff dari eProperty).';
+                            $max = \App\Services\Numerator\NumeratorService::tertinggiDiData((string) $get('code'), (string) $get('format'));
+                            if ($max !== null) {
+                                $teks .= ' Nomor tertinggi di data sekarang: ' . $max . '. Nomor yang sudah dipakai otomatis dilewati.';
+                            }
+
+                            return $teks;
+                        }),
                     Forms\Components\Toggle::make('is_active')
                         ->label('Aktif')
                         ->default(true),
@@ -73,7 +92,8 @@ class NumeratorResource extends Resource
             ->columns([
                 Tables\Columns\TextColumn::make('code')->label('Jenis')->searchable()->sortable()->badge(),
                 Tables\Columns\TextColumn::make('format')->label('Format')->fontFamily('mono'),
-                Tables\Columns\TextColumn::make('period')->label('Periode')->placeholder('—')->sortable(),
+                Tables\Columns\TextColumn::make('period')->label('Periode')->placeholder('—')->sortable()
+                    ->formatStateUsing(fn ($state, $record) => $record->reset === 'tidak' ? 'tanpa reset' : $state),
                 Tables\Columns\TextColumn::make('last_seq')->label('Seq terakhir')->numeric()->alignEnd(),
                 Tables\Columns\TextColumn::make('company.name')->label('Perusahaan')->placeholder('Semua')->sortable(),
                 Tables\Columns\IconColumn::make('is_active')->label('Aktif')->boolean(),

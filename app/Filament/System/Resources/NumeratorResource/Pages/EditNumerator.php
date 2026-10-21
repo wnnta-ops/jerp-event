@@ -16,4 +16,16 @@ class EditNumerator extends EditRecord
             Actions\DeleteAction::make(),
         ];
     }
+
+    /** Tanpa reset → baris berperiode kosong; itulah baris yang dibaca NumeratorService. */
+    protected function mutateFormDataBeforeSave(array $data): array
+    {
+        if (($data['reset'] ?? null) === 'tidak') {
+            $data['period'] = '';
+        } else {
+            $data['reset'] = null;
+        }
+
+        return $data;
+    }
 }
