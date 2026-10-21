@@ -39,7 +39,8 @@ class SupplierController extends Controller
 
     public function store(Request $request): RedirectResponse
     {
-        abort_unless($request->user()?->can('businesssupport.setup.manage'), 403);
+        // Izin Data Center (Grup Akses BO) — atau Setup Business Support — Kelola seperti dulu.
+        abort_unless($request->user()?->can('datacenter.supplier.create') || $request->user()?->can('businesssupport.setup.manage'), 403);
         $data = $this->data($request);
         // Kode dibuat berurutan oleh sistem (anti-duplikat) bila tidak diisi.
         if (empty($data['code'])) {
@@ -77,7 +78,8 @@ class SupplierController extends Controller
 
     public function update(Request $request, BsSupplier $supplier): RedirectResponse
     {
-        abort_unless($request->user()?->can('businesssupport.setup.manage'), 403);
+        // Izin Data Center (Grup Akses BO) — atau Setup Business Support — Kelola seperti dulu.
+        abort_unless($request->user()?->can('datacenter.supplier.update') || $request->user()?->can('businesssupport.setup.manage'), 403);
         $supplier->update($this->data($request, $supplier->id));
 
         return back()->with('success', 'Supplier diperbarui.');
@@ -94,7 +96,8 @@ class SupplierController extends Controller
      */
     public function destroy(Request $request, BsSupplier $supplier): RedirectResponse
     {
-        abort_unless($request->user()?->can('businesssupport.setup.manage'), 403);
+        // Izin Data Center (Grup Akses BO) — atau Setup Business Support — Kelola seperti dulu.
+        abort_unless($request->user()?->can('datacenter.supplier.delete') || $request->user()?->can('businesssupport.setup.manage'), 403);
 
         // Termasuk invoice yang sudah lunas: namanya tetap dibutuhkan riwayat Kartu Hutang,
         // dan foreign key di basis data juga menolak penghapusan permanennya.
@@ -180,7 +183,8 @@ class SupplierController extends Controller
      */
     public function import(Request $request): RedirectResponse
     {
-        abort_unless($request->user()?->can('businesssupport.setup.manage'), 403);
+        // Izin Data Center (Grup Akses BO) — atau Setup Business Support — Kelola seperti dulu.
+        abort_unless($request->user()?->can('datacenter.supplier.upload') || $request->user()?->can('businesssupport.setup.manage'), 403);
         $request->validate([
             'file' => ['required', 'file', 'max:8192'],
             // Bawaannya PERBARUI, bukan lewati: berkas perbaikan data adalah alasan paling

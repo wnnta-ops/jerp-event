@@ -140,8 +140,10 @@ export function navGroups(foUrl: string): NavGroup[] {
         // Marketing & Sales (FO/J-ERP), lalu disinkron ke BO — tidak dikelola dua kali di sini.
         desc: 'Pusat data Supplier & Karyawan.',
         items: [
-            { label: 'Supplier Center', icon: Truck,  href: 'bs.dc.supplier.center', permission: ['datacenter.hub.*'] },
-            { label: 'Employee Center', icon: IdCard, href: 'bs.dc.employee.center', permission: ['datacenter.hub.*'] },
+            // Dipisah per center (21 Okt 2026): masing-masing mengikuti izin Lihat-nya sendiri.
+            // Izin lama "Supplier & Employee Center — Lihat" (datacenter.hub.*) tetap membuka keduanya.
+            { label: 'Supplier Center', icon: Truck,  href: 'bs.dc.supplier.center', permission: ['datacenter.supplier.view', 'datacenter.hub.*'] },
+            { label: 'Employee Center', icon: IdCard, href: 'bs.dc.employee.center', permission: ['datacenter.employee.view', 'datacenter.hub.*'] },
         ],
     },
     // ── FO (Sales / Finance / Collection) DINONAKTIFKAN ──────────────────────────

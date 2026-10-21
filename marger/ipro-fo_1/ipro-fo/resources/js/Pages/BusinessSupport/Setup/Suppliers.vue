@@ -7,6 +7,10 @@ import Button from '@/Components/UI/Button.vue';
 import Badge from '@/Components/UI/Badge.vue';
 import EmptyState from '@/Components/UI/EmptyState.vue';
 import ImportMassal from '@/Components/UI/ImportMassal.vue';
+import { useIzin } from '@/Composables/useIzin';
+// Tombol mengikuti izin Data Center → Supplier (atau Setup — Kelola) — sama dengan penjaga server.
+const { punyaIzin } = useIzin();
+const KELOLA = 'businesssupport.setup.manage';
 
 // Judul kolom template import — SATU sumber dengan SupplierController::KOLOM. Kalau keduanya
 // berbeda, keterangan di layar menjanjikan kolom yang tidak dikenali servernya.
@@ -51,9 +55,9 @@ const inputCls = 'h-9 w-full rounded-lg border border-neutral-300 bg-white px-3 
         <div class="flex items-center justify-between">
             <h1 class="flex items-center gap-2 text-2xl font-bold"><Truck class="h-6 w-6 text-primary-600" /> Supplier / Vendor</h1>
             <div class="flex flex-wrap items-center gap-2">
-                <ImportMassal post-route="bs.suppliers.import" template-route="bs.suppliers.import.template" entitas="Supplier"
+                <ImportMassal v-if="punyaIzin(['datacenter.supplier.upload', KELOLA])" post-route="bs.suppliers.import" template-route="bs.suppliers.import.template" entitas="Supplier"
                               :kolom="KOLOM_IMPOR" :wajib="['Nama Supplier']" />
-                <Button @click="openCreate"><template #icon-left><Plus class="h-4 w-4" /></template>Tambah Supplier</Button>
+                <Button v-if="punyaIzin(['datacenter.supplier.create', KELOLA])" @click="openCreate"><template #icon-left><Plus class="h-4 w-4" /></template>Tambah Supplier</Button>
             </div>
         </div>
 
@@ -77,8 +81,8 @@ const inputCls = 'h-9 w-full rounded-lg border border-neutral-300 bg-white px-3 
                         <td class="px-4 py-2.5 text-xs">{{ s.bank_name ? `${s.bank_name} ${s.bank_account_no ?? ''}` : '—' }}</td>
                         <td class="px-4 py-2.5 text-center"><Badge :variant="s.is_active ? 'success' : 'neutral'" size="sm">{{ s.is_active ? 'Aktif' : 'Nonaktif' }}</Badge></td>
                         <td class="px-4 py-2.5"><div class="flex justify-end gap-2">
-                            <button @click="openEdit(s)" class="text-primary-600 hover:text-primary-800"><Pencil class="h-4 w-4" /></button>
-                            <button @click="destroy(s)" class="text-danger-500 hover:text-danger-700"><Trash2 class="h-4 w-4" /></button>
+                            <button v-if="punyaIzin(['datacenter.supplier.update', KELOLA])" @click="openEdit(s)" class="text-primary-600 hover:text-primary-800"><Pencil class="h-4 w-4" /></button>
+                            <button v-if="punyaIzin(['datacenter.supplier.delete', KELOLA])" @click="destroy(s)" class="text-danger-500 hover:text-danger-700"><Trash2 class="h-4 w-4" /></button>
                         </div></td>
                     </tr>
                 </tbody>
