@@ -795,6 +795,9 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
     Route::get('/business-support/payable/{invoice}', [BsApController::class, 'show'])->name('bs.ap.show')->withTrashed();
     // Edit & Batal (sebelum/sesudah diproses FAT) — lihat ApInvoiceController::pastikanBolehEdit / bolehBatal.
     Route::get('/business-support/payable/{invoice}/edit', [BsApController::class, 'edit'])->name('bs.ap.edit');
+    // Edit invoice hasil Posting Invoice dari FO (tanpa Kategori → bukan wizard Registrasi).
+    Route::get('/business-support/payable/{invoice}/edit-fo', [App\Http\Controllers\Web\BusinessSupport\Payable\ApInvoiceFoEditController::class, 'edit'])->name('bs.ap.edit-fo');
+    Route::put('/business-support/payable/{invoice}/edit-fo', [App\Http\Controllers\Web\BusinessSupport\Payable\ApInvoiceFoEditController::class, 'update'])->name('bs.ap.update-fo');
     Route::put('/business-support/payable/{invoice}', [BsApController::class, 'update'])->name('bs.ap.update');
     Route::post('/business-support/payable/{invoice}/batal', [BsApController::class, 'batal'])->name('bs.ap.batal');
     Route::get('/business-support/payable/{invoice}/memo', [BsApController::class, 'memo'])->name('bs.ap.memo'); // cetak Memo Internal + Bukti Permohonan Pembayaran

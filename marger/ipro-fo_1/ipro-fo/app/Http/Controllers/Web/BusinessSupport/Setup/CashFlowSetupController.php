@@ -34,7 +34,7 @@ class CashFlowSetupController extends Controller
 
     public function storeCategory(Request $request): RedirectResponse
     {
-        abort_unless($request->user()?->can('businesssupport.setup.manage'), 403);
+        abort_unless($request->user()?->canAny(['gl.cf-category.create', 'businesssupport.setup.manage']), 403);
         BsCashFlowCategory::create($this->categoryData($request));
 
         return back()->with('success', 'Kategori arus kas ditambahkan.');
@@ -42,7 +42,7 @@ class CashFlowSetupController extends Controller
 
     public function updateCategory(Request $request, BsCashFlowCategory $category): RedirectResponse
     {
-        abort_unless($request->user()?->can('businesssupport.setup.manage'), 403);
+        abort_unless($request->user()?->canAny(['gl.cf-category.update', 'businesssupport.setup.manage']), 403);
         $category->update($this->categoryData($request, $category->id, $category->kind));
 
         return back()->with('success', 'Kategori arus kas diperbarui.');
@@ -50,7 +50,7 @@ class CashFlowSetupController extends Controller
 
     public function destroyCategory(Request $request, BsCashFlowCategory $category): RedirectResponse
     {
-        abort_unless($request->user()?->can('businesssupport.setup.manage'), 403);
+        abort_unless($request->user()?->canAny(['gl.cf-category.delete', 'businesssupport.setup.manage']), 403);
         $category->delete();
 
         return back()->with('success', 'Kategori arus kas dihapus.');
@@ -70,7 +70,7 @@ class CashFlowSetupController extends Controller
 
     public function storeMapping(Request $request): RedirectResponse
     {
-        abort_unless($request->user()?->can('businesssupport.setup.manage'), 403);
+        abort_unless($request->user()?->canAny(['gl.cf-mapping.create', 'businesssupport.setup.manage']), 403);
         $data = $this->mappingData($request);
         // Satu akun → satu kategori; upsert agar tidak bentrok unique.
         BsCashFlowMapping::updateOrCreate(['account_id' => $data['account_id']], ['category_id' => $data['category_id']]);
@@ -80,7 +80,7 @@ class CashFlowSetupController extends Controller
 
     public function updateMapping(Request $request, BsCashFlowMapping $mapping): RedirectResponse
     {
-        abort_unless($request->user()?->can('businesssupport.setup.manage'), 403);
+        abort_unless($request->user()?->canAny(['gl.cf-mapping.update', 'businesssupport.setup.manage']), 403);
         $mapping->update(['category_id' => $this->mappingData($request)['category_id']]);
 
         return back()->with('success', 'Mapping arus kas diperbarui.');
@@ -88,7 +88,7 @@ class CashFlowSetupController extends Controller
 
     public function destroyMapping(Request $request, BsCashFlowMapping $mapping): RedirectResponse
     {
-        abort_unless($request->user()?->can('businesssupport.setup.manage'), 403);
+        abort_unless($request->user()?->canAny(['gl.cf-mapping.delete', 'businesssupport.setup.manage']), 403);
         $mapping->delete();
 
         return back()->with('success', 'Mapping arus kas dihapus.');

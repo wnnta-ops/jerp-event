@@ -56,8 +56,8 @@ const inputCls = 'h-9 w-full rounded-lg border border-neutral-300 bg-white px-3 
                     class="inline-flex h-9 items-center gap-1.5 rounded-lg border border-primary-300 bg-white px-3 text-sm font-semibold text-primary-700 shadow-sm transition-all duration-200 hover:bg-primary-50 active:scale-[0.98] dark:border-primary-800 dark:bg-neutral-900 dark:text-primary-300 dark:hover:bg-primary-950/40">
                     <Printer class="h-4 w-4" /> Cetak PO
                 </a>
-                <Button v-if="order.status==='draft' && can.includes('businesssupport.approval.act')" @click="approve"><template #icon-left><Check class="h-4 w-4" /></template>Approve</Button>
-                <Button v-if="order.status==='approved' && can.includes('businesssupport.approval.act')" variant="secondary" @click="close"><template #icon-left><Lock class="h-4 w-4" /></template>Close</Button>
+                <Button v-if="order.status==='draft' && (can.includes('bs.po.approve') || can.includes('businesssupport.approval.act'))" @click="approve"><template #icon-left><Check class="h-4 w-4" /></template>Approve</Button>
+                <Button v-if="order.status==='approved' && (can.includes('bs.po.close') || can.includes('businesssupport.approval.act'))" variant="secondary" @click="close"><template #icon-left><Lock class="h-4 w-4" /></template>Close</Button>
             </div>
         </div>
         <div class="card grid gap-4 p-5 text-sm md:grid-cols-3">

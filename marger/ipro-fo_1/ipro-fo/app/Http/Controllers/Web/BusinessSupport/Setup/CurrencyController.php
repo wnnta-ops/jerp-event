@@ -30,7 +30,7 @@ class CurrencyController extends Controller
 
     public function store(Request $request): RedirectResponse
     {
-        abort_unless($request->user()?->can('businesssupport.setup.manage'), 403);
+        abort_unless($request->user()?->canAny(['gl.currency.create', 'businesssupport.setup.manage']), 403);
         BsCurrency::create($this->currencyData($request));
 
         return back()->with('success', 'Mata uang ditambahkan.');
@@ -38,7 +38,7 @@ class CurrencyController extends Controller
 
     public function update(Request $request, BsCurrency $currency): RedirectResponse
     {
-        abort_unless($request->user()?->can('businesssupport.setup.manage'), 403);
+        abort_unless($request->user()?->canAny(['gl.currency.update', 'businesssupport.setup.manage']), 403);
         $currency->update($this->currencyData($request, $currency->id));
 
         return back()->with('success', 'Mata uang diperbarui.');
@@ -46,7 +46,7 @@ class CurrencyController extends Controller
 
     public function destroy(Request $request, BsCurrency $currency): RedirectResponse
     {
-        abort_unless($request->user()?->can('businesssupport.setup.manage'), 403);
+        abort_unless($request->user()?->canAny(['gl.currency.delete', 'businesssupport.setup.manage']), 403);
         $currency->delete();
 
         return back()->with('success', 'Mata uang dihapus.');
@@ -71,7 +71,7 @@ class CurrencyController extends Controller
 
     public function storeKurs(Request $request): RedirectResponse
     {
-        abort_unless($request->user()?->can('businesssupport.setup.manage'), 403);
+        abort_unless($request->user()?->canAny(['gl.kurs.create', 'businesssupport.setup.manage']), 403);
         BsExchangeRate::create($this->kursData($request));
 
         return back()->with('success', 'Kurs ditambahkan.');
@@ -79,7 +79,7 @@ class CurrencyController extends Controller
 
     public function updateKurs(Request $request, BsExchangeRate $rate): RedirectResponse
     {
-        abort_unless($request->user()?->can('businesssupport.setup.manage'), 403);
+        abort_unless($request->user()?->canAny(['gl.kurs.update', 'businesssupport.setup.manage']), 403);
         $rate->update($this->kursData($request));
 
         return back()->with('success', 'Kurs diperbarui.');
@@ -87,7 +87,7 @@ class CurrencyController extends Controller
 
     public function destroyKurs(Request $request, BsExchangeRate $rate): RedirectResponse
     {
-        abort_unless($request->user()?->can('businesssupport.setup.manage'), 403);
+        abort_unless($request->user()?->canAny(['gl.kurs.delete', 'businesssupport.setup.manage']), 403);
         $rate->delete();
 
         return back()->with('success', 'Kurs dihapus.');

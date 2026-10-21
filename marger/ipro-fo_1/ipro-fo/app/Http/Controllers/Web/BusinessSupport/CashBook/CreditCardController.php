@@ -103,7 +103,7 @@ class CreditCardController extends Controller
                 ->get(['id', 'code', 'name'])
                 ->map(fn ($a) => ['id' => $a->id, 'label' => $a->code.' — '.$a->name])->values(),
             'types'    => BsCreditCardRequest::TYPES,
-            'canApprove' => (bool) $request->user()?->can('businesssupport.approval.act'),
+            'canApprove' => (bool) $request->user()?->canAny(['cashbook.debit-card.approve', 'businesssupport.approval.act']),
         ]);
     }
 
@@ -202,7 +202,7 @@ class CreditCardController extends Controller
 
     public function approve(Request $request, BsCreditCardRequest $creditCardRequest, CreditCardService $svc): RedirectResponse
     {
-        abort_unless($request->user()?->can('businesssupport.approval.act'), 403);
+        abort_unless($request->user()?->canAny(['cashbook.debit-card.approve', 'businesssupport.approval.act']), 403);
 
         try {
             $svc->approve($creditCardRequest, $request->user()->id);
@@ -215,7 +215,7 @@ class CreditCardController extends Controller
 
     public function reject(Request $request, BsCreditCardRequest $creditCardRequest, CreditCardService $svc): RedirectResponse
     {
-        abort_unless($request->user()?->can('businesssupport.approval.act'), 403);
+        abort_unless($request->user()?->canAny(['cashbook.debit-card.approve', 'businesssupport.approval.act']), 403);
         $v = $request->validate(['note' => ['nullable', 'string', 'max:1000']]);
 
         try {

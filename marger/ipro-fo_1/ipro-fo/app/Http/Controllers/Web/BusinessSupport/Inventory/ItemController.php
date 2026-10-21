@@ -49,7 +49,7 @@ class ItemController extends Controller
 
     public function store(Request $request): RedirectResponse
     {
-        abort_unless($request->user()?->can('businesssupport.setup.manage'), 403);
+        abort_unless($request->user()?->canAny(['bs.item.manage', 'businesssupport.setup.manage']), 403);
         BsItem::create($this->data($request));
 
         return back()->with('success', 'Item ditambahkan.');
@@ -57,7 +57,7 @@ class ItemController extends Controller
 
     public function update(Request $request, BsItem $item): RedirectResponse
     {
-        abort_unless($request->user()?->can('businesssupport.setup.manage'), 403);
+        abort_unless($request->user()?->canAny(['bs.item.manage', 'businesssupport.setup.manage']), 403);
         $item->update($this->data($request, $item->id));
 
         return back()->with('success', 'Item diperbarui.');
@@ -65,7 +65,7 @@ class ItemController extends Controller
 
     public function destroy(Request $request, BsItem $item): RedirectResponse
     {
-        abort_unless($request->user()?->can('businesssupport.setup.manage'), 403);
+        abort_unless($request->user()?->canAny(['bs.item.manage', 'businesssupport.setup.manage']), 403);
         $item->delete();
 
         return back()->with('success', 'Item dihapus.');

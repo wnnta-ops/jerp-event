@@ -700,7 +700,7 @@ class CashBookController extends Controller
         return Inertia::render('BusinessSupport/CashBook/Approvals', [
             'rows'       => $rows,
             'apRows'     => $apRows,
-            'canApprove' => (bool) $request->user()?->can('businesssupport.approval.act'),
+            'canApprove' => (bool) $request->user()?->canAny(['cashbook.transaction.approve', 'businesssupport.approval.act']),
             'summary'    => [
                 'count'    => BsCashTransaction::where('trx_type', 'out')->where('approval_status', 'pending')->count(),
                 'total'    => round((float) BsCashTransaction::where('trx_type', 'out')->where('approval_status', 'pending')->sum('amount'), 2),
@@ -745,7 +745,7 @@ class CashBookController extends Controller
 
     public function approve(Request $request, BsCashTransaction $cashTransaction, RecordCashTransaction $action): RedirectResponse
     {
-        abort_unless($request->user()?->can('businesssupport.approval.act'), 403);
+        abort_unless($request->user()?->canAny(['cashbook.transaction.approve', 'businesssupport.approval.act']), 403);
         abort_unless($cashTransaction->trx_type === 'out', 422, 'Hanya pengeluaran (BKK) yang perlu disetujui.');
 
         $cashTransaction->update([
@@ -767,7 +767,7 @@ class CashBookController extends Controller
     /** #160: Tolak pengeluaran (BKK) — hanya saat masih pending; tidak berjurnal. */
     public function reject(Request $request, BsCashTransaction $cashTransaction): RedirectResponse
     {
-        abort_unless($request->user()?->can('businesssupport.approval.act'), 403);
+        abort_unless($request->user()?->canAny(['cashbook.transaction.reject', 'cashbook.transaction.approve', 'businesssupport.approval.act']), 403);
         abort_unless($cashTransaction->trx_type === 'out', 422, 'Hanya pengeluaran (BKK) yang perlu disetujui.');
         abort_unless($cashTransaction->approval_status === 'pending', 422, 'Hanya transaksi berstatus menunggu yang bisa ditolak.');
 
@@ -783,7 +783,7 @@ class CashBookController extends Controller
     /** #13 — Setujui BEBERAPA pengeluaran sekaligus (jurnal diposting per transaksi). */
     public function approveBulk(Request $request, RecordCashTransaction $action): RedirectResponse
     {
-        abort_unless($request->user()?->can('businesssupport.approval.act'), 403);
+        abort_unless($request->user()?->canAny(['cashbook.transaction.approve', 'businesssupport.approval.act']), 403);
         $v = $request->validate([
             'ids'   => ['required', 'array', 'min:1'],
             'ids.*' => ['integer', 'exists:bs_cash_transactions,id'],
@@ -814,7 +814,7 @@ class CashBookController extends Controller
     /** #13 — Tolak BEBERAPA pengeluaran sekaligus. */
     public function rejectBulk(Request $request): RedirectResponse
     {
-        abort_unless($request->user()?->can('businesssupport.approval.act'), 403);
+        abort_unless($request->user()?->canAny(['cashbook.transaction.reject', 'cashbook.transaction.approve', 'businesssupport.approval.act']), 403);
         $v = $request->validate([
             'ids'   => ['required', 'array', 'min:1'],
             'ids.*' => ['integer', 'exists:bs_cash_transactions,id'],

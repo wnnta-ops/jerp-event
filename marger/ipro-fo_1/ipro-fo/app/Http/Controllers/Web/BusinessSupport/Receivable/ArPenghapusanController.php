@@ -42,7 +42,7 @@ class ArPenghapusanController extends Controller
 
     public function store(Request $request, BsArInvoice $invoice, ArMemorialService $svc): RedirectResponse
     {
-        abort_unless($request->user()?->can('businesssupport.approval.act'), 403);
+        abort_unless($request->user()?->canAny(['ar.penghapusan.create', 'businesssupport.approval.act']), 403);
 
         $v = $request->validate([
             'counter_account_id' => ['required', 'integer', 'exists:bs_accounts,id'],

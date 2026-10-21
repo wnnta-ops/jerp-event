@@ -128,7 +128,7 @@ class BudgetController extends Controller
 
         return Inertia::render('BusinessSupport/Budget/Approvals', [
             'rows'       => $rows,
-            'canApprove' => (bool) $request->user()?->can('businesssupport.approval.act'),
+            'canApprove' => (bool) $request->user()?->canAny(['budget.master.approve', 'businesssupport.approval.act']),
             'summary'    => ['count' => $rows->count(), 'total' => $rows->sum('amount')],
         ]);
     }
@@ -136,7 +136,7 @@ class BudgetController extends Controller
     /** Approve/Reject banyak master budget sekaligus. */
     public function approveBatch(Request $request): RedirectResponse
     {
-        abort_unless($request->user()?->can('businesssupport.approval.act'), 403);
+        abort_unless($request->user()?->canAny(['budget.master.approve', 'businesssupport.approval.act']), 403);
         $v = $request->validate([
             'ids'      => ['required', 'array', 'min:1'],
             'ids.*'    => ['integer', 'exists:bs_budgets,id'],
@@ -155,7 +155,7 @@ class BudgetController extends Controller
     /** Ajukan anggaran (draft → submitted). */
     public function submit(Request $request, BsBudget $budget): RedirectResponse
     {
-        abort_unless($request->user()?->can('businesssupport.setup.manage'), 403);
+        abort_unless($request->user()?->canAny(['budget.master.submit', 'businesssupport.setup.manage']), 403);
         if ($budget->status !== 'draft' && $budget->status !== 'rejected') {
             return back()->with('error', 'Hanya anggaran draft/ditolak yang dapat diajukan.');
         }
@@ -167,7 +167,7 @@ class BudgetController extends Controller
     /** Setujui / tolak anggaran (submitted → approved|rejected). */
     public function approve(Request $request, BsBudget $budget): RedirectResponse
     {
-        abort_unless($request->user()?->can('businesssupport.approval.act'), 403);
+        abort_unless($request->user()?->canAny(['budget.master.approve', 'businesssupport.approval.act']), 403);
         $v = $request->validate(['decision' => ['required', 'in:approve,reject'], 'note' => ['nullable', 'string', 'max:255']]);
         if ($budget->status !== 'submitted') {
             return back()->with('error', 'Hanya anggaran yang diajukan yang dapat diputuskan.');
@@ -186,7 +186,7 @@ class BudgetController extends Controller
     /** Mutasi cepat (legacy): transfer antar baris / koreksi nilai satu baris (langsung). */
     public function mutate(Request $request): RedirectResponse
     {
-        abort_unless($request->user()?->can('businesssupport.setup.manage'), 403);
+        abort_unless($request->user()?->canAny(['budget.master.mutate', 'businesssupport.setup.manage']), 403);
 
         $v = $request->validate([
             'kind'           => ['required', 'in:transfer,koreksi'],
@@ -232,7 +232,7 @@ class BudgetController extends Controller
 
     public function store(Request $request): RedirectResponse
     {
-        abort_unless($request->user()?->can('businesssupport.setup.manage'), 403);
+        abort_unless($request->user()?->canAny(['budget.master.create', 'businesssupport.setup.manage']), 403);
 
         $v      = $this->validateData($request);
         $months = $this->monthsFrom($v);
@@ -267,7 +267,7 @@ class BudgetController extends Controller
 
     public function update(Request $request, BsBudget $budget): RedirectResponse
     {
-        abort_unless($request->user()?->can('businesssupport.setup.manage'), 403);
+        abort_unless($request->user()?->canAny(['budget.master.update', 'businesssupport.setup.manage']), 403);
 
         $v      = $this->validateData($request, $budget->id);
         $months = $this->monthsFrom($v);
@@ -287,7 +287,7 @@ class BudgetController extends Controller
 
     public function destroy(Request $request, BsBudget $budget): RedirectResponse
     {
-        abort_unless($request->user()?->can('businesssupport.setup.manage'), 403);
+        abort_unless($request->user()?->canAny(['budget.master.delete', 'businesssupport.setup.manage']), 403);
         $budget->delete();
 
         return back()->with('success', 'Anggaran dihapus.');

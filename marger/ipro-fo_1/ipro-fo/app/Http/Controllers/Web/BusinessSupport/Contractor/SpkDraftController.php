@@ -42,7 +42,7 @@ class SpkDraftController extends Controller
 
     public function update(Request $request): RedirectResponse
     {
-        abort_unless($request->user()?->can('businesssupport.setup.manage'), 403);
+        abort_unless($request->user()?->canAny(['contractor.spk.update', 'businesssupport.setup.manage']), 403);
 
         $v = $request->validate([
             'jenis'          => ['required', 'string', 'in:'.implode(',', array_keys(BsWorkOrder::JENIS))],
@@ -72,7 +72,7 @@ class SpkDraftController extends Controller
 
     public function reset(Request $request): RedirectResponse
     {
-        abort_unless($request->user()?->can('businesssupport.setup.manage'), 403);
+        abort_unless($request->user()?->canAny(['contractor.spk.update', 'businesssupport.setup.manage']), 403);
 
         $jenis = self::normalizeJenis($request->input('jenis'));
         BsSpkDraft::query()->where('jenis', $jenis)->delete();

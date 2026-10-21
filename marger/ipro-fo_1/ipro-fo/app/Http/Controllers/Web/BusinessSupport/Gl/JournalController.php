@@ -229,7 +229,7 @@ class JournalController extends Controller
             'listRoute'     => $isDetail ? 'bs.gl.journal.detail' : 'bs.gl.journal.index',
             'title'         => $isDetail ? 'Detail Transaksi Jurnal' : 'Jurnal',
             // Aksi massal Approve / Cancel Approved hanya untuk yang berwenang menyetujui.
-            'canApprove'    => (bool) $request->user()?->can('businesssupport.approval.act'),
+            'canApprove'    => (bool) $request->user()?->canAny(['gl.journal.approve', 'businesssupport.approval.act']),
             'canDelete'     => (bool) $request->user()?->can('gl.journal.delete'),
             // Isi pilihan tiap saringan kolom + batasnya, supaya layar bisa mengatakan
             // terus terang kalau daftarnya terpotong.
@@ -308,7 +308,7 @@ class JournalController extends Controller
             'statuses'   => BsJournal::STATUSES,
             'statusTab'  => $status,
             'counts'     => $counts,
-            'canApprove' => (bool) $request->user()?->can('businesssupport.approval.act'),
+            'canApprove' => (bool) $request->user()?->canAny(['gl.journal.approve', 'businesssupport.approval.act']),
             'filters'    => array_merge($request->only(['source', 'search']), ['date_from' => $from->toDateString(), 'date_to' => $to->toDateString()]),
         ]);
     }
@@ -324,7 +324,7 @@ class JournalController extends Controller
     /** Batch approval: final → posted (efektif di GL). */
     public function approveBatch(Request $request, JournalService $svc): RedirectResponse
     {
-        abort_unless($request->user()?->can('businesssupport.approval.act'), 403);
+        abort_unless($request->user()?->canAny(['gl.journal.approve', 'businesssupport.approval.act']), 403);
         $uid = $request->user()->id;
 
         return $this->batch($request, fn (BsJournal $j) => $svc->approve($j, $uid), 'di-approve (efektif di GL)');
@@ -333,7 +333,7 @@ class JournalController extends Controller
     /** Batch cancel approval: posted → final (batalkan approval). */
     public function cancelBatch(Request $request, JournalService $svc): RedirectResponse
     {
-        abort_unless($request->user()?->can('businesssupport.approval.act'), 403);
+        abort_unless($request->user()?->canAny(['gl.journal.approve', 'businesssupport.approval.act']), 403);
 
         return $this->batch($request, fn (BsJournal $j) => $svc->unapprove($j), 'dibatalkan approval-nya (kembali Final)');
     }
@@ -689,7 +689,7 @@ class JournalController extends Controller
 
     public function approve(Request $request, BsJournal $journal, JournalService $svc): RedirectResponse
     {
-        abort_unless($request->user()?->can('businesssupport.approval.act'), 403);
+        abort_unless($request->user()?->canAny(['gl.journal.approve', 'businesssupport.approval.act']), 403);
 
         return $this->transition(fn () => $svc->approve($journal, $request->user()->id), $journal, 'Jurnal di-approve — efektif di GL.');
     }
@@ -705,7 +705,7 @@ class JournalController extends Controller
     /** Approved → Final (batal approval). Langkah WAJIB sebelum bisa kembali ke Baru. */
     public function unapprove(Request $request, BsJournal $journal, JournalService $svc): RedirectResponse
     {
-        abort_unless($request->user()?->can('businesssupport.approval.act'), 403);
+        abort_unless($request->user()?->canAny(['gl.journal.approve', 'businesssupport.approval.act']), 403);
 
         return $this->transition(fn () => $svc->unapprove($journal), $journal, 'Approval dibatalkan — jurnal kembali ke Final.');
     }

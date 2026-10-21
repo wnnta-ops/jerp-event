@@ -29,7 +29,7 @@ class RepairDataController extends Controller
 
     public function run(Request $request): RedirectResponse
     {
-        abort_unless($request->user()?->can('businesssupport.approval.act'), 403);
+        abort_unless($request->user()?->canAny(['gl.repair.run', 'businesssupport.approval.act']), 403);
 
         $res = DB::transaction(fn () => $this->repair());
 

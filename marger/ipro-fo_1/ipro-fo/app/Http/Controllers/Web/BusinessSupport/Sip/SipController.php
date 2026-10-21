@@ -208,7 +208,7 @@ class SipController extends Controller
 
     public function approve(Request $request, BsSip $sip, SipService $svc): RedirectResponse
     {
-        abort_unless($request->user()?->can('businesssupport.approval.act'), 403);
+        abort_unless($request->user()?->canAny(['bs.sip.approve', 'businesssupport.approval.act']), 403);
         $v = $request->validate(['slot' => ['required', 'string', 'in:'.implode(',', array_keys(BsSip::SIGNERS))]]);
 
         try {
@@ -223,7 +223,7 @@ class SipController extends Controller
     /** #122 — Tolak SIP dengan alasan; semua TTD dibuka & finance dapat merevisi. */
     public function reject(Request $request, BsSip $sip, SipService $svc): RedirectResponse
     {
-        abort_unless($request->user()?->can('businesssupport.approval.act'), 403);
+        abort_unless($request->user()?->canAny(['bs.sip.reject', 'businesssupport.approval.act']), 403);
         $v = $request->validate(['reason' => ['required', 'string', 'max:1000']]);
 
         try {
@@ -237,7 +237,7 @@ class SipController extends Controller
 
     public function cancel(Request $request, BsSip $sip): RedirectResponse
     {
-        abort_unless($request->user()?->can('businesssupport.approval.act'), 403);
+        abort_unless($request->user()?->canAny(['bs.sip.cancel', 'businesssupport.approval.act']), 403);
 
         // #111: boleh dibatalkan selama Diajukan/Dicetak; dilarang setelah Disetujui semua pihak.
         if ($sip->status === 'approved') {

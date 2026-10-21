@@ -149,7 +149,7 @@ class GimmickCategoryController extends Controller
 
     public function store(Request $request): RedirectResponse
     {
-        abort_unless($request->user()?->can('businesssupport.setup.manage'), 403);
+        abort_unless($request->user()?->canAny(['ap.category.create', 'businesssupport.setup.manage']), 403);
 
         $v = $this->data($request);
         DB::transaction(function () use ($v): void {
@@ -162,7 +162,7 @@ class GimmickCategoryController extends Controller
 
     public function update(Request $request, BsGimmickCategory $category): RedirectResponse
     {
-        abort_unless($request->user()?->can('businesssupport.setup.manage'), 403);
+        abort_unless($request->user()?->canAny(['ap.category.update', 'businesssupport.setup.manage']), 403);
 
         $v = $this->data($request, $category->id);
         DB::transaction(function () use ($category, $v): void {
@@ -175,7 +175,7 @@ class GimmickCategoryController extends Controller
 
     public function destroy(Request $request, BsGimmickCategory $category): RedirectResponse
     {
-        abort_unless($request->user()?->can('businesssupport.setup.manage'), 403);
+        abort_unless($request->user()?->canAny(['ap.category.delete', 'businesssupport.setup.manage']), 403);
         $category->delete();
 
         return back()->with('success', 'Kategori gimmick dihapus.');

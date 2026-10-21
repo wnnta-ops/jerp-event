@@ -170,7 +170,7 @@ class MukPasanganController extends Controller
      */
     public function store(Request $request): RedirectResponse
     {
-        abort_unless($request->user()?->can('businesssupport.setup.manage'), 403);
+        abort_unless($request->user()?->canAny(['contractor.project.update', 'businesssupport.setup.manage']), 403);
 
         $v = $request->validate([
             'pasangan'               => ['required', 'array', 'min:1'],
@@ -234,7 +234,7 @@ class MukPasanganController extends Controller
     /** Lepas satu pasangan. Alokasi SPK rumah itu ikut lepas — lihat AlokasiSpkUnit. */
     public function destroy(Request $request, BsMukUnitPasangan $pasangan): RedirectResponse
     {
-        abort_unless($request->user()?->can('businesssupport.setup.manage'), 403);
+        abort_unless($request->user()?->canAny(['contractor.project.update', 'businesssupport.setup.manage']), 403);
 
         $kode = $pasangan->lokasi_kode;
         $pasangan->delete();

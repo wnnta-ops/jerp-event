@@ -158,7 +158,7 @@ class GeneralLedgerController extends Controller
      */
     public function closePeriod(Request $request, PeriodClosingService $svc): RedirectResponse
     {
-        abort_unless($request->user()?->can('businesssupport.approval.act'), 403);
+        abort_unless($request->user()?->canAny(['gl.period.close', 'businesssupport.approval.act']), 403);
         $v = $request->validate(['year' => ['required', 'integer'], 'month' => ['required', 'integer', 'min:1', 'max:12']]);
 
         try {
@@ -172,7 +172,7 @@ class GeneralLedgerController extends Controller
 
     public function openPeriod(Request $request): RedirectResponse
     {
-        abort_unless($request->user()?->can('businesssupport.approval.act'), 403);
+        abort_unless($request->user()?->canAny(['gl.period.open', 'businesssupport.approval.act']), 403);
         $v = $request->validate(['year' => ['required', 'integer'], 'month' => ['required', 'integer', 'min:1', 'max:12']]);
 
         BsFiscalPeriod::updateOrCreate(

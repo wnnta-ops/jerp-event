@@ -130,7 +130,7 @@ class ProjectController extends Controller
 
     public function store(Request $request): RedirectResponse
     {
-        abort_unless($request->user()?->can('businesssupport.setup.manage'), 403);
+        abort_unless($request->user()?->canAny(['contractor.project.create', 'businesssupport.setup.manage']), 403);
         $v = $this->validateData($request);
         $project = BsProject::create(array_merge($v, ['tenant_id' => tenant_id(), 'created_by' => $request->user()->id]));
         $this->simpanPemetaanMuk($request, $project);
@@ -140,7 +140,7 @@ class ProjectController extends Controller
 
     public function update(Request $request, BsProject $project): RedirectResponse
     {
-        abort_unless($request->user()?->can('businesssupport.setup.manage'), 403);
+        abort_unless($request->user()?->canAny(['contractor.project.update', 'businesssupport.setup.manage']), 403);
         $project->update($this->validateData($request));
         $this->simpanPemetaanMuk($request, $project);
 
@@ -149,7 +149,7 @@ class ProjectController extends Controller
 
     public function destroy(Request $request, BsProject $project): RedirectResponse
     {
-        abort_unless($request->user()?->can('businesssupport.setup.manage'), 403);
+        abort_unless($request->user()?->canAny(['contractor.project.delete', 'businesssupport.setup.manage']), 403);
         $project->delete();
 
         return back()->with('success', 'Project dihapus.');
@@ -168,7 +168,7 @@ class ProjectController extends Controller
      */
     public function dariMuk(Request $request): RedirectResponse
     {
-        abort_unless($request->user()?->can('businesssupport.setup.manage'), 403);
+        abort_unless($request->user()?->canAny(['contractor.project.create', 'businesssupport.setup.manage']), 403);
 
         $v = $request->validate([
             'usul'                => ['required', 'array', 'min:1'],

@@ -90,7 +90,7 @@ class BudgetUploadController extends Controller
 
     public function store(Request $request): RedirectResponse
     {
-        abort_unless($request->user()?->can('businesssupport.setup.manage'), 403);
+        abort_unless($request->user()?->canAny(['budget.upload.create', 'businesssupport.setup.manage']), 403);
 
         $v = $request->validate([
             'year' => ['required', 'integer', 'min:2000', 'max:2100'],

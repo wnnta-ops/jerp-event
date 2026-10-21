@@ -16,7 +16,7 @@ const props = defineProps<{
     writeoffTotal?: number;
     journal?: { id: number; number: string | null; date: string | null; lines: Array<{ account_code: string | null; account_name: string | null; dimensi: string | null; description: string | null; debit: number; credit: number }>; total_debit: number; total_credit: number } | null;
     /** Edit / Batal — diputuskan server (izin Grup Akses BO + keadaan "sudah diproses FAT"). null = invoice sudah BATAL. */
-    aksi?: { dariRegistrasi: boolean; diprosesFat: string | null; edit: boolean; batal: boolean; penahanBatal: string | null } | null;
+    aksi?: { dariRegistrasi: boolean; dariPostingFo?: boolean; diprosesFat: string | null; edit: boolean; editRute?: string; batal: boolean; penahanBatal: string | null } | null;
     infoBatal?: { at: string | null; by: string | null; reason: string | null } | null;
 }>();
 
@@ -77,7 +77,7 @@ const justCreated = computed(() => Boolean(usePage().props.flash?.created));
                     :title="`Cetak Purchase Order ${purchaseOrder.po_number} (bisa diedit sebelum dicetak)`"
                     class="inline-flex items-center gap-1.5 rounded-lg border border-primary-400 bg-primary-50 px-3 py-1.5 text-sm font-medium text-primary-700 hover:bg-primary-100 dark:border-primary-700/50 dark:bg-primary-900/30 dark:text-primary-300"><Printer class="h-4 w-4" /> Cetak Purchase Order</a>
                 <a v-if="! batal" :href="route('bs.ap.memo', invoice.id)" target="_blank" rel="noopener" class="inline-flex items-center gap-1.5 rounded-lg bg-danger-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-danger-700"><Printer class="h-4 w-4" /> Cetak Memo Internal</a>
-                <Link v-if="aksi?.edit" :href="route('bs.ap.edit', invoice.id)" class="inline-flex items-center gap-1.5 rounded-lg border border-neutral-300 bg-white px-3 py-1.5 text-sm font-medium text-neutral-700 hover:bg-neutral-50 dark:border-neutral-600 dark:bg-neutral-800 dark:text-neutral-200"><Pencil class="h-4 w-4" /> Edit</Link>
+                <Link v-if="aksi?.edit" :href="route(aksi?.editRute ?? 'bs.ap.edit', invoice.id)" class="inline-flex items-center gap-1.5 rounded-lg border border-neutral-300 bg-white px-3 py-1.5 text-sm font-medium text-neutral-700 hover:bg-neutral-50 dark:border-neutral-600 dark:bg-neutral-800 dark:text-neutral-200"><Pencil class="h-4 w-4" /> Edit</Link>
                 <button v-if="aksi?.batal" type="button" @click="showBatal = true" class="inline-flex items-center gap-1.5 rounded-lg border border-danger-300 bg-white px-3 py-1.5 text-sm font-medium text-danger-600 hover:bg-danger-50 dark:border-danger-700/60 dark:bg-neutral-800"><Ban class="h-4 w-4" /> Batal</button>
                 <Badge v-if="batal" variant="danger">BATAL</Badge>
                 <Badge v-else :variant="invoice.status === 'paid' ? 'success' : 'warning'">{{ invoice.status === 'paid' ? 'Lunas' : 'Open' }}</Badge>
@@ -93,7 +93,7 @@ const justCreated = computed(() => Boolean(usePage().props.flash?.created));
             <div class="mt-1 text-xs text-neutral-500">Jurnal, termin pembayaran, dan Purchase Order otomatisnya ikut dibatalkan. Invoice ini tidak lagi dihitung di Aging, Kartu Hutang, maupun Kuitansi.</div>
         </div>
         <!-- Sudah diproses FAT: Edit terkunci — katakan sebabnya, jangan sekadar menyembunyikan tombol. -->
-        <div v-else-if="aksi?.dariRegistrasi && aksi?.diprosesFat" class="card flex items-start gap-2 border border-amber-300 bg-amber-50 p-3 text-sm dark:border-amber-800 dark:bg-amber-900/20">
+        <div v-else-if="(aksi?.dariRegistrasi || aksi?.dariPostingFo) && aksi?.diprosesFat" class="card flex items-start gap-2 border border-amber-300 bg-amber-50 p-3 text-sm dark:border-amber-800 dark:bg-amber-900/20">
             <Lock class="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
             <div>
                 <b>Sudah diproses FAT</b> ({{ aksi.diprosesFat }}) — tidak bisa diedit. Batalkan dulu bila perlu diubah.

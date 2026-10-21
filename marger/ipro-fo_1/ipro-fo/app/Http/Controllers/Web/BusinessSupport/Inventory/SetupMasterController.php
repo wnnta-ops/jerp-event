@@ -49,7 +49,7 @@ class SetupMasterController extends Controller
 
     public function store(Request $request, string $kind): RedirectResponse
     {
-        abort_unless($request->user()?->can('businesssupport.setup.manage'), 403);
+        abort_unless($request->user()?->canAny(['bs.inventory-setup.manage', 'businesssupport.setup.manage']), 403);
         [$model, , $hasProject] = $this->resolve($kind);
         $model::create($this->data($request, $hasProject));
 
@@ -58,7 +58,7 @@ class SetupMasterController extends Controller
 
     public function update(Request $request, string $kind, int $id): RedirectResponse
     {
-        abort_unless($request->user()?->can('businesssupport.setup.manage'), 403);
+        abort_unless($request->user()?->canAny(['bs.inventory-setup.manage', 'businesssupport.setup.manage']), 403);
         [$model, , $hasProject] = $this->resolve($kind);
         $model::findOrFail($id)->update($this->data($request, $hasProject));
 
@@ -67,7 +67,7 @@ class SetupMasterController extends Controller
 
     public function destroy(Request $request, string $kind, int $id): RedirectResponse
     {
-        abort_unless($request->user()?->can('businesssupport.setup.manage'), 403);
+        abort_unless($request->user()?->canAny(['bs.inventory-setup.manage', 'businesssupport.setup.manage']), 403);
         [$model] = $this->resolve($kind);
         $model::findOrFail($id)->delete();
 

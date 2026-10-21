@@ -38,7 +38,7 @@ class CostCenterController extends Controller
 
     public function store(Request $request): RedirectResponse
     {
-        abort_unless($request->user()?->can('businesssupport.setup.manage'), 403);
+        abort_unless($request->user()?->canAny(['gl.cost-center.create', 'businesssupport.setup.manage']), 403);
         BsCostCenter::create($this->data($request));
 
         return back()->with('success', 'Cost center ditambahkan.');
@@ -46,7 +46,7 @@ class CostCenterController extends Controller
 
     public function update(Request $request, BsCostCenter $costCenter): RedirectResponse
     {
-        abort_unless($request->user()?->can('businesssupport.setup.manage'), 403);
+        abort_unless($request->user()?->canAny(['gl.cost-center.update', 'businesssupport.setup.manage']), 403);
         $costCenter->update($this->data($request, $costCenter->id));
 
         return back()->with('success', 'Cost center diperbarui.');
@@ -54,7 +54,7 @@ class CostCenterController extends Controller
 
     public function destroy(Request $request, BsCostCenter $costCenter): RedirectResponse
     {
-        abort_unless($request->user()?->can('businesssupport.setup.manage'), 403);
+        abort_unless($request->user()?->canAny(['gl.cost-center.delete', 'businesssupport.setup.manage']), 403);
         $costCenter->delete();
 
         return back()->with('success', 'Cost center dihapus.');
