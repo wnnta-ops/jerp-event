@@ -374,7 +374,7 @@ class ApInvoiceController extends Controller
             // dan tanpa penanda ini ia tidak bisa membedakan akun yang MEMANG boleh tanpa cost
             // center (mis. Utang Usaha Supplier) — hasilnya wizard-nya mengunci diri sendiri
             // pada invoice yang sebenarnya sah. Daftar akunnya sama dengan Jurnal Memorial.
-            'accounts' => BsAccount::where('is_active', true)->where('is_postable', true)->orderBy('code')->get(['id', 'code', 'name', 'cost_center_optional']),
+            'accounts' => BsAccount::where('is_active', true)->where('is_postable', true)->orderBy('code')->get(['id', 'code', 'name', 'cost_center_optional', 'cost_center_id']),
             'costCenters' => BsCostCenter::where('is_active', true)->orderBy('code')->get(['id', 'code', 'name']),
             'departments' => BsDepartment::where('is_active', true)->orderBy('code')->get(['id', 'code', 'name']),
             'ledgers' => BsLedger::where('is_active', true)->orderBy('code')->get(['id', 'code', 'name']),

@@ -38,7 +38,7 @@ class AccountController extends Controller
             ->when($type, fn ($q, $v) => $q->where('type', $v))
             // Kelompokkan per kategori (head), level-1 header lebih dulu, lalu urut kode.
             ->orderByRaw("COALESCE(category_code, substr(code,1,1)) asc, case when level = 1 then '0' else code end asc")
-            ->get(['id', 'code', 'category_code', 'name', 'type', 'level', 'parent_id', 'parent_code', 'normal_balance', 'is_postable', 'is_active', 'cf_direct_category_id', 'cf_indirect_category_id', 'cost_center_id', 'cogs_component']);
+            ->get(['id', 'code', 'category_code', 'name', 'type', 'level', 'parent_id', 'parent_code', 'normal_balance', 'is_postable', 'is_active', 'cf_direct_category_id', 'cf_indirect_category_id', 'cost_center_id', 'cost_center_optional', 'cogs_component']);
 
         $cfCats = fn (string $kind) => BsCashFlowCategory::where('kind', $kind)->where('is_active', true)
             ->orderBy('sort_order')->orderBy('code')->get(['id', 'code', 'name', 'activity']);
@@ -113,6 +113,10 @@ class AccountController extends Controller
             'cf_direct_category_id'   => ['nullable', 'integer', Rule::exists('bs_cash_flow_categories', 'id')->where('kind', 'direct')],
             'cf_indirect_category_id' => ['nullable', 'integer', Rule::exists('bs_cash_flow_categories', 'id')->where('kind', 'indirect')],
             'cost_center_id'          => ['nullable', 'integer', 'exists:bs_cost_centers,id'],
+            // "— dikosongkan (tanpa cost center) —": baris jurnal akun ini lahir & boleh disimpan
+            // TANPA cost center (penanda yang sama dengan yang dibaca gerbang anggaran). Diatur
+            // Accounting per akun dari layar ini — mis. Utang Usaha Customer (21 Okt 2026).
+            'cost_center_optional'    => ['boolean'],
             // Kunci komponen HPP, bukan slug alamat layar. Daftar sahnya diambil dari
             // Cogs2Sumber supaya tidak lahir kosakata ketiga.
             'cogs_component'          => ['nullable', Rule::in(array_keys(Cogs2Sumber::pilihanKomponen()))],
@@ -152,6 +156,11 @@ class AccountController extends Controller
 
         if ($galat) {
             throw ValidationException::withMessages($galat);
+        }
+
+        // Akun "dikosongkan" tidak punya cost center bawaan — keduanya saling meniadakan.
+        if (! empty($data['cost_center_optional'])) {
+            $data['cost_center_id'] = null;
         }
 
         unset($data['parent_id']);
