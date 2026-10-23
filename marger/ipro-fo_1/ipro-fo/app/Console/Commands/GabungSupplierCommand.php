@@ -55,6 +55,11 @@ class GabungSupplierCommand extends Command
         }
         foreach ((array) $this->option('pasangan') as $p) {
             [$lama, $dobel] = array_map('intval', explode(':', (string) $p) + [1 => 0]);
+            if ((int) DB::table('bs_suppliers')->where('id', $dobel)->value('digabung_ke_id') === $lama && $lama > 0) {
+                $this->line("Pasangan {$p} sudah digabung sebelumnya — dilewati.");
+
+                continue;
+            }
             if (! isset($sup[$lama], $sup[$dobel]) || $lama === $dobel) {
                 $this->error("Pasangan tidak valid: {$p}");
 

@@ -138,6 +138,62 @@ class ApKuitansiController extends Controller
         ]);
     }
 
+    /**
+     * Rincian satu invoice untuk pop-up di form Pelunasan AP (diambil saat No. Invoice diklik):
+     * Struktur Jurnal, ringkasan nominal & riwayat kuitansinya — termasuk yang masih menunggu
+     * approval, supaya pelunasan sebagian tidak terbayar dobel. Hanya baca.
+     */
+    public function rincianInvoice(Request $request, BsApInvoice $invoice): \Illuminate\Http\JsonResponse
+    {
+        abort_unless($request->user()?->canAny(['ap.kuitansi.create', 'ap.invoice.show']), 403);
+        $invoice->load('category:id,code,name');
+
+        $baris = $invoice->journal_id
+            ? \App\Domain\BusinessSupport\Models\BsJournalLine::with(['account:id,code,name', 'costCenter:id,code'])
+                ->where('journal_id', $invoice->journal_id)->orderBy('id')->get()
+            : collect();
+        $akunHutang = BsApInvoice::akunHutangDariJurnal(
+            $baris->map(fn ($l) => ['account_id' => $l->account_id, 'credit' => $l->credit]),
+            (int) $invoice->payable_account_id,
+        );
+        $statusJurnal = $invoice->journal_id
+            ? \App\Domain\BusinessSupport\Models\BsJournal::whereKey($invoice->journal_id)->value('status') : null;
+
+        $riwayat = \App\Domain\BusinessSupport\Models\BsApKuitansiLine::query()
+            ->join('bs_ap_kuitansis as k', 'k.id', '=', 'bs_ap_kuitansi_lines.kuitansi_id')
+            ->where('bs_ap_kuitansi_lines.ap_invoice_id', $invoice->id)
+            ->orderBy('k.kuitansi_date')->orderBy('k.id')
+            ->get(['k.id', 'k.kuitansi_number', 'k.kuitansi_date', 'k.status', 'bs_ap_kuitansi_lines.amount']);
+
+        return response()->json([
+            'invoice_number' => $invoice->invoice_number,
+            'status' => $invoice->status,
+            'invoice_date' => $invoice->invoice_date?->toDateString(),
+            'due_date' => $invoice->due_date?->toDateString(),
+            'kategori' => $invoice->category ? trim($invoice->category->code.' — '.$invoice->category->name) : null,
+            'description' => $invoice->description,
+            'total' => (float) $invoice->total,
+            'pph' => (float) $invoice->pph_amount,
+            'nett' => (float) $invoice->payable_amount,
+            'dibayar' => (float) $invoice->paid_amount,
+            'sisa' => (float) $invoice->outstanding,
+            'status_jurnal' => ['draft' => 'Baru', 'final' => 'Final', 'posted' => 'Approved'][$statusJurnal] ?? null,
+            'jurnal' => $baris->map(fn ($l) => [
+                'akun' => trim(($l->account?->code ?? '').' '.($l->account?->name ?? '')),
+                'cc' => $l->costCenter?->code,
+                'debit' => (float) $l->debit, 'credit' => (float) $l->credit,
+                'hutang' => (float) $l->credit > 0 && (int) $l->account_id === (int) $akunHutang,
+            ])->values(),
+            'riwayat' => $riwayat->map(fn ($r) => [
+                'nomor' => $r->kuitansi_number,
+                'tanggal' => $r->kuitansi_date ? substr((string) $r->kuitansi_date, 0, 10) : null,
+                'status' => $r->status, 'amount' => (float) $r->amount,
+                'url' => route('bs.ap.kuitansi.show', $r->id),
+            ])->values(),
+            'url' => route('bs.ap.show', $invoice->id),
+        ]);
+    }
+
     public function store(Request $request, ApKuitansiService $svc): RedirectResponse
     {
         abort_unless($request->user()?->can('ap.kuitansi.store'), 403);

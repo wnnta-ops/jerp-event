@@ -75,6 +75,26 @@ function submit() {
     form.post(route('bs.ap.kuitansi.store'));
 }
 const inputCls = 'h-9 w-full rounded-lg border border-neutral-300 bg-white px-3 text-sm dark:border-neutral-700 dark:bg-neutral-900';
+
+// Pop-up rincian invoice (klik No. Invoice): Struktur Jurnal + ringkasan + riwayat pelunasan.
+// Diambil saat diklik saja, supaya form tetap ringan. Hanya baca — isian form tidak berubah.
+const rincian = ref<any>(null);
+const rincianMuat = ref(false);
+const rincianGalat = ref('');
+async function bukaRincian(id: number) {
+    rincian.value = { memuat: true };
+    rincianMuat.value = true; rincianGalat.value = '';
+    try {
+        const res = await (window as any).axios.get(route('bs.ap.kuitansi.rincian-invoice', id));
+        rincian.value = res.data;
+    } catch (e: any) {
+        rincianGalat.value = e?.response?.status === 403 ? 'Anda tidak punya akses melihat rincian invoice.' : 'Rincian gagal dimuat — coba lagi.';
+    } finally { rincianMuat.value = false; }
+}
+const STATUS_KUI: Record<string, [string, string]> = {
+    pending: ['Menunggu approval', 'text-amber-600'], active: ['Approved', 'text-success-600'],
+    rejected: ['Ditolak', 'text-neutral-400 line-through'], void: ['Void', 'text-neutral-400 line-through'],
+};
 </script>
 <template>
     <div class="max-w-3xl space-y-4">
@@ -114,8 +134,8 @@ const inputCls = 'h-9 w-full rounded-lg border border-neutral-300 bg-white px-3 
                     <tbody>
                         <tr v-for="inv in supplierInvoices" :key="inv.id" class="border-t border-neutral-100 dark:border-neutral-800">
                             <td class="py-1.5"><input v-model="inv.pay" type="checkbox" class="rounded" /></td>
-                            <td class="py-1.5 font-mono text-xs">{{ inv.invoice_number }}</td>
-                            <td class="py-1.5 text-neutral-500">{{ inv.description }}</td>
+                            <td class="py-1.5 font-mono text-xs"><button type="button" @click="bukaRincian(inv.id)" class="text-left text-primary-600 hover:underline" title="Lihat struktur jurnal & riwayat pelunasan">{{ inv.invoice_number }} 🔍</button></td>
+                            <td class="max-w-xs truncate py-1.5 text-neutral-500" :title="inv.description">{{ inv.description }}</td>
                             <td class="py-1.5">{{ fmtDate(inv.due_date) }}</td>
                             <td class="py-1.5 text-right font-mono">{{ fmtRp(inv.outstanding) }}</td>
                             <td class="py-1.5 pr-1"><input v-model.number="inv.amount" :disabled="!inv.pay" type="number" step="1" min="0" :max="inv.outstanding" :class="[inputCls,'text-right']" /></td>
@@ -138,5 +158,63 @@ const inputCls = 'h-9 w-full rounded-lg border border-neutral-300 bg-white px-3 
                 <span v-else-if="total <= 0" class="self-center text-xs text-neutral-400">Centang minimal satu invoice.</span>
             </div>
         </form>
+
+        <!-- Pop-up rincian invoice -->
+        <div v-if="rincian" class="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 p-4 pt-16" @click.self="rincian = null">
+            <div class="w-full max-w-2xl rounded-xl bg-white shadow-xl dark:bg-neutral-900">
+                <div v-if="rincianMuat" class="p-8 text-center text-sm text-neutral-500">Memuat rincian…</div>
+                <div v-else-if="rincianGalat" class="p-6 text-center text-sm text-danger-600">{{ rincianGalat }}
+                    <div class="mt-3"><button type="button" class="rounded-lg border px-3 py-1.5 text-sm" @click="rincian = null">Tutup</button></div></div>
+                <template v-else>
+                    <div class="flex items-start justify-between gap-3 border-b border-neutral-200 p-4 dark:border-neutral-800">
+                        <div class="min-w-0">
+                            <div class="font-mono text-sm font-bold">{{ rincian.invoice_number }} <span class="ml-1 rounded-full bg-neutral-100 px-2 py-0.5 font-sans text-xs font-medium dark:bg-neutral-800">{{ rincian.status === 'paid' ? 'Lunas' : 'Open' }}</span></div>
+                            <div class="mt-0.5 text-xs text-neutral-500">Tgl {{ fmtDate(rincian.invoice_date) }} · Jatuh tempo {{ fmtDate(rincian.due_date) }}<span v-if="rincian.kategori"> · {{ rincian.kategori }}</span></div>
+                            <div class="mt-1 text-sm">{{ rincian.description }}</div>
+                        </div>
+                        <button type="button" class="text-xl leading-none text-neutral-400 hover:text-neutral-700" @click="rincian = null">✕</button>
+                    </div>
+                    <div class="p-4">
+                        <div class="mb-1 flex justify-between text-xs font-semibold uppercase text-neutral-500"><span>Struktur Jurnal</span><span v-if="rincian.status_jurnal">Status jurnal: {{ rincian.status_jurnal }}</span></div>
+                        <table class="w-full text-xs">
+                            <thead class="text-left text-neutral-500"><tr><th class="py-1">Akun</th><th class="py-1">Cost Center</th><th class="py-1 text-right">Debit</th><th class="py-1 text-right">Kredit</th></tr></thead>
+                            <tbody>
+                                <tr v-for="(l, i) in rincian.jurnal" :key="i" class="border-t border-neutral-100 dark:border-neutral-800" :class="l.hutang ? 'bg-primary-50/60 dark:bg-primary-900/10' : ''">
+                                    <td class="py-1">{{ l.akun }} <span v-if="l.hutang" class="ml-1 text-[10px] font-semibold text-primary-600">◄ hutang</span></td>
+                                    <td class="py-1 text-neutral-500">{{ l.cc ?? '—' }}</td>
+                                    <td class="py-1 text-right font-mono">{{ l.debit > 0 ? fmtRp(l.debit) : '' }}</td>
+                                    <td class="py-1 text-right font-mono">{{ l.credit > 0 ? fmtRp(l.credit) : '' }}</td>
+                                </tr>
+                                <tr v-if="!rincian.jurnal.length"><td colspan="4" class="py-2 text-center text-neutral-400">Invoice tanpa jurnal (mis. saldo awal).</td></tr>
+                            </tbody>
+                        </table>
+                        <div class="mt-3 grid grid-cols-3 gap-2 rounded-lg bg-neutral-50 p-3 text-xs dark:bg-neutral-800/60">
+                            <div>Total invoice<div class="font-mono font-semibold">{{ fmtRp(rincian.total) }}</div></div>
+                            <div>PPh dipotong<div class="font-mono font-semibold">{{ fmtRp(rincian.pph) }}</div></div>
+                            <div>Nett dibayar<div class="font-mono font-semibold">{{ fmtRp(rincian.nett) }}</div></div>
+                            <div>Sudah dibayar<div class="font-mono font-semibold">{{ fmtRp(rincian.dibayar) }}</div></div>
+                            <div class="col-span-2">SISA<div class="font-mono text-base font-bold text-primary-700 dark:text-primary-300">{{ fmtRp(rincian.sisa) }}</div></div>
+                        </div>
+                        <div class="mt-4 mb-1 text-xs font-semibold uppercase text-neutral-500">Riwayat Pelunasan</div>
+                        <table v-if="rincian.riwayat.length" class="w-full text-xs">
+                            <tbody>
+                                <tr v-for="r in rincian.riwayat" :key="r.nomor" class="border-t border-neutral-100 dark:border-neutral-800">
+                                    <td class="py-1 font-mono"><a :href="r.url" target="_blank" class="text-primary-600 hover:underline">{{ r.nomor }}</a></td>
+                                    <td class="py-1">{{ fmtDate(r.tanggal) }}</td>
+                                    <td class="py-1 text-right font-mono">{{ fmtRp(r.amount) }}</td>
+                                    <td class="py-1 pl-3" :class="(STATUS_KUI[r.status] ?? ['', ''])[1]">{{ (STATUS_KUI[r.status] ?? [r.status])[0] }}<span v-if="r.status === 'pending'"> ⚠</span></td>
+                                </tr>
+                            </tbody>
+                        </table>
+                        <p v-else class="text-xs text-neutral-400">Belum pernah ada pelunasan.</p>
+                        <p v-if="rincian.riwayat.some((r: any) => r.status === 'pending')" class="mt-2 text-xs text-amber-600">⚠ Ada pelunasan yang masih menunggu approval — sisa di atas belum dikurangi pengajuan itu.</p>
+                    </div>
+                    <div class="flex justify-between border-t border-neutral-200 p-4 dark:border-neutral-800">
+                        <a :href="rincian.url" target="_blank" class="text-sm text-primary-600 hover:underline">Buka detail lengkap ↗</a>
+                        <button type="button" class="rounded-lg border border-neutral-300 px-4 py-1.5 text-sm hover:bg-neutral-50 dark:border-neutral-700" @click="rincian = null">Tutup</button>
+                    </div>
+                </template>
+            </div>
+        </div>
     </div>
 </template>
