@@ -735,6 +735,7 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
     // AP — Kuitansi Hutang
     Route::get('/business-support/payable-kuitansi', [BsApKuitansiController::class, 'index'])->name('bs.ap.kuitansi.index');
     Route::get('/business-support/payable-kuitansi/create', [BsApKuitansiController::class, 'create'])->name('bs.ap.kuitansi.create');
+    Route::get('/business-support/payable-kuitansi/rincian-invoice/{invoice}', [BsApKuitansiController::class, 'rincianInvoice'])->name('bs.ap.kuitansi.rincian-invoice');
     Route::post('/business-support/payable-kuitansi', [BsApKuitansiController::class, 'store'])->name('bs.ap.kuitansi.store');
     Route::get('/business-support/payable-kuitansi/{kuitansi}', [BsApKuitansiController::class, 'show'])->name('bs.ap.kuitansi.show');
     Route::post('/business-support/payable-kuitansi/{kuitansi}/void', [BsApKuitansiController::class, 'void'])->name('bs.ap.kuitansi.void');
