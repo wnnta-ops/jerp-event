@@ -605,6 +605,7 @@ class JournalController extends Controller
             // Hapus: hanya status Baru & bukan milik dokumen (izin gl.journal.delete).
             'pemilik'   => app(\App\Domain\BusinessSupport\Services\PemilikJurnal::class)->untuk([(int) $journal->id])[(int) $journal->id] ?? null,
             'canDelete' => (bool) $request->user()?->can('gl.journal.delete'),
+            'canDeleteDirect' => (bool) $request->user()?->can('gl.journal.delete-direct'),
         ]);
     }
 
@@ -723,6 +724,21 @@ class JournalController extends Controller
         }
 
         return redirect()->route('bs.gl.journal.detail')->with('success', "Jurnal {$journal->journal_number} dihapus.");
+    }
+
+    /** Hapus langsung jurnal Final/Approved tanpa mundur bertahap — aturannya di JournalService::hapusLangsung(). */
+    public function destroyLangsung(Request $request, BsJournal $journal, JournalService $svc): RedirectResponse
+    {
+        abort_unless($request->user()?->can('gl.journal.delete-direct'), 403);
+        $v = $request->validate(['alasan' => ['required', 'string', 'max:255']], ['alasan.required' => 'Alasan hapus wajib diisi.']);
+
+        try {
+            $svc->hapusLangsung($journal, $v['alasan'], $request->user()->id);
+        } catch (BusinessRuleException $e) {
+            return back()->with('error', $e->getMessage());
+        }
+
+        return redirect()->route('bs.gl.journal.detail')->with('success', "Jurnal {$journal->journal_number} dihapus langsung.");
     }
 
     private function transition(callable $fn, BsJournal $journal, string $message): RedirectResponse

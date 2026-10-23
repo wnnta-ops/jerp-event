@@ -363,7 +363,7 @@ class MesinSinkron
                 FROM `$db`.bs_journals j
                 LEFT JOIN `$db`.bs_journal_lines l ON l.journal_id = j.id
                 LEFT JOIN `$db`.bs_accounts a ON a.id = l.account_id
-                WHERE j.source IN ('import', 'saldo_awal')
+                WHERE j.source IN ('import', 'saldo_awal')" . ($sisi === 'n' ? ' AND j.deleted_at IS NULL' : '') . "
                 GROUP BY j.id, j.journal_number, j.journal_date, j.updated_at");
         };
         $this->c->statement('SET SESSION group_concat_max_len = 1000000');

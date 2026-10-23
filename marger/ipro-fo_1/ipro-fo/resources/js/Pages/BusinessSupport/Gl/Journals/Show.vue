@@ -4,7 +4,7 @@ import { ArrowLeft, CheckCircle2, FileCheck2, Undo2, Pencil, Trash2 } from 'luci
 import Button from '@/Components/UI/Button.vue';
 import Badge from '@/Components/UI/Badge.vue';
 
-const props = defineProps<{ journal: any; sources: Record<string, string>; statuses: Record<string, string>; pemilik?: string | null; canDelete?: boolean }>();
+const props = defineProps<{ journal: any; sources: Record<string, string>; statuses: Record<string, string>; pemilik?: string | null; canDelete?: boolean; canDeleteDirect?: boolean }>();
 function fmtRp(v: number) { return Number(v ?? 0).toLocaleString('id-ID'); }
 function fmtDate(d: string) { return d ? new Date(d).toLocaleDateString('id-ID', { day:'2-digit', month:'long', year:'numeric' }) : '—'; }
 const statusBadge: Record<string, any> = { draft: 'warning', final: 'info', posted: 'success' };
@@ -15,6 +15,14 @@ function hapus() {
 Tulis alasannya:`);
     if (! alasan || ! alasan.trim()) return;
     router.delete(route('bs.gl.journal.destroy', props.journal.id), { data: { alasan } });
+}
+// Hapus langsung Final/Approved — tanpa Batalkan Approval → Batalkan Finalisasi lebih dulu.
+function hapusLangsung() {
+    const status = props.statuses[props.journal.status] ?? props.journal.status;
+    const alasan = window.prompt(`HAPUS LANGSUNG jurnal ${props.journal.journal_number} (status ${status})?
+Jurnal langsung keluar dari GL. Tulis alasannya:`);
+    if (! alasan || ! alasan.trim()) return;
+    router.delete(route('bs.gl.journal.destroy-langsung', props.journal.id), { data: { alasan } });
 }
 </script>
 <template>
@@ -50,10 +58,12 @@ Tulis alasannya:`);
                 <!-- Hapus hanya untuk jurnal Baru yang tidak dimiliki dokumen. Approved/Final:
                      mundurkan dulu lewat tombol di atas. -->
                 <button v-if="canDelete && journal.status==='draft' && !pemilik" @click="hapus" class="inline-flex h-8 items-center gap-1.5 rounded-lg border border-danger-300 px-3 text-sm font-medium text-danger-700 hover:bg-danger-50 dark:border-danger-700/50 dark:text-danger-300"><Trash2 class="h-4 w-4" /> Hapus Jurnal</button>
+                <!-- Hapus LANGSUNG (izin terpisah): Final/Approved tanpa mundur bertahap. -->
+                <button v-if="canDeleteDirect && journal.status!=='draft' && !pemilik" @click="hapusLangsung" class="inline-flex h-8 items-center gap-1.5 rounded-lg border border-danger-600 bg-danger-600 px-3 text-sm font-medium text-white hover:bg-danger-700"><Trash2 class="h-4 w-4" /> Hapus Langsung</button>
             </div>
         </div>
-        <p v-if="canDelete && pemilik" class="-mt-2 text-xs text-neutral-500">Jurnal ini milik dokumen <b>{{ pemilik }}</b><span v-if="journal.reference"> ({{ journal.reference }})</span> — hapus/batalkan lewat dokumennya.</p>
-        <p v-else-if="canDelete && journal.status!=='draft'" class="-mt-2 text-xs text-neutral-500">Untuk menghapus: Batalkan Approval → Batalkan Finalisasi, lalu Hapus Jurnal.</p>
+        <p v-if="(canDelete || canDeleteDirect) && pemilik" class="-mt-2 text-xs text-neutral-500">Jurnal ini milik dokumen <b>{{ pemilik }}</b><span v-if="journal.reference"> ({{ journal.reference }})</span> — hapus/batalkan lewat dokumennya.</p>
+        <p v-else-if="canDelete && journal.status!=='draft'" class="-mt-2 text-xs text-neutral-500">Untuk menghapus: Batalkan Approval → Batalkan Finalisasi, lalu Hapus Jurnal<span v-if="canDeleteDirect"> — atau langsung lewat <b>Hapus Langsung</b></span>.</p>
         <p v-if="journal.status!=='posted'" class="-mt-2 text-xs text-amber-600">Jurnal hanya efektif di Neraca Saldo / Laporan Keuangan setelah berstatus <b>Approved</b>.</p>
 
         <div class="card grid gap-4 p-5 text-sm md:grid-cols-3">

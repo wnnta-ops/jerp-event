@@ -571,6 +571,7 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
     Route::post('/business-support/gl/journal/{journal}/reject', [BsJournalController::class, 'reject'])->name('bs.gl.journal.reject');
     Route::post('/business-support/gl/journal/{journal}/unapprove', [BsJournalController::class, 'unapprove'])->name('bs.gl.journal.unapprove');
     Route::delete('/business-support/gl/journal/{journal}', [BsJournalController::class, 'destroy'])->name('bs.gl.journal.destroy');
+    Route::delete('/business-support/gl/journal/{journal}/langsung', [BsJournalController::class, 'destroyLangsung'])->name('bs.gl.journal.destroy-langsung');
     // Master → Jurnal (ringkas) vs Query → Detail Transaksi Jurnal (rincian) — controller sama, mode beda by route.
     Route::get('/business-support/gl/journal-detail', [BsJournalController::class, 'index'])->name('bs.gl.journal.detail');
     // Finalisasi Jurnal (daftar Baru per periode + batch finalisasi) & Approval Jurnal (grid batch Final→Approved).
