@@ -132,10 +132,7 @@ class ApInvoiceFoEditController extends Controller
                 // Akun HUTANG invoice ikut struktur jurnal: tetap yang lama bila masih dipakai di sisi
                 // kredit, selain itu akun kredit terbesar. Dibaca BPP untuk memisahkan baris hutang
                 // dari rinciannya — akun lama yang tertinggal membuat baris hutang baru ikut tercetak.
-                $kredit = collect($v['journal_lines'])->filter(fn ($l) => (float) ($l['credit'] ?? 0) > 0);
-                $akunHutang = $kredit->contains(fn ($l) => (int) $l['account_id'] === (int) $invoice->payable_account_id)
-                    ? (int) $invoice->payable_account_id
-                    : (int) ($kredit->sortByDesc(fn ($l) => (float) $l['credit'])->first()['account_id'] ?? $invoice->payable_account_id);
+                $akunHutang = BsApInvoice::akunHutangDariJurnal($v['journal_lines'], (int) $invoice->payable_account_id);
                 $akunBeban = (int) (collect($v['journal_lines'])->first(fn ($l) => (float) ($l['debit'] ?? 0) > 0)['account_id'] ?? $invoice->expense_account_id);
 
                 $invoice->update([

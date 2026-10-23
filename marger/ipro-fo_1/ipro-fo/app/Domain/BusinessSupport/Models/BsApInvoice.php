@@ -97,6 +97,30 @@ class BsApInvoice extends Model
 
     public function getOutstandingAttribute(): float { return $this->payable_amount - (float) $this->paid_amount; }
 
+    /**
+     * Akun HUTANG invoice menurut Struktur Jurnalnya: akun semula bila masih dikredit, selain itu
+     * akun kredit terbesar. Null bila jurnal tidak punya baris kredit.
+     *
+     * Struktur Jurnal bisa disusun manual (wizard Registrasi, Edit invoice Posting FO), sehingga
+     * akun kreditnya bisa lain dari akun Kategori. payable_account_id dibaca BPP (memisahkan baris
+     * hutang dari rinciannya) dan Kuitansi/pelunasan (akun yang didebit) — harus ikut jurnal.
+     *
+     * @param  iterable<array{account_id:mixed,credit?:mixed}|object>  $lines
+     */
+    public static function akunHutangDariJurnal(iterable $lines, ?int $semula): ?int
+    {
+        $kredit = collect($lines)->map(fn ($l) => (array) $l)
+            ->filter(fn ($l) => (float) ($l['credit'] ?? 0) > 0 && ! empty($l['account_id']));
+        if ($kredit->isEmpty()) {
+            return null;
+        }
+        if ($semula && $kredit->contains(fn ($l) => (int) $l['account_id'] === $semula)) {
+            return $semula;
+        }
+
+        return (int) $kredit->sortByDesc(fn ($l) => (float) $l['credit'])->first()['account_id'];
+    }
+
     // ── EDIT & BATAL ─────────────────────────────────────────────────────────────
 
     public const STATUS_BATAL = 'batal';

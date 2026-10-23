@@ -281,7 +281,9 @@ final class RegisterApInvoice
             // jurnal pembayaran AP tetap memakai penomoran GL standar (JAP).
             $journal->update(['journal_number' => $inv->invoice_number]);
 
-            $inv->update(['journal_id' => $journal->id]);
+            // Akun hutang ikut Struktur Jurnal — baris manual bisa mengkredit akun lain dari Kategori.
+            $akunHutang = BsApInvoice::akunHutangDariJurnal($jl, (int) $payable) ?? $payable;
+            $inv->update(['journal_id' => $journal->id, 'payable_account_id' => $akunHutang]);
 
             return $inv;
         });
