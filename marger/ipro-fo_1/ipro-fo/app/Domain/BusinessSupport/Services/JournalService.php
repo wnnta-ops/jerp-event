@@ -408,6 +408,36 @@ final class JournalService
     }
 
     /**
+     * HAPUS LANGSUNG: jurnal Final/Approved dihapus tanpa dimundurkan satu per satu (izin
+     * gl.journal.delete-direct). Langkah mundurnya tetap dicatat sendiri-sendiri di log status
+     * (Batal approval → Batal finalisasi → Hapus), bertanda "Hapus langsung", jadi jejak
+     * pencabutan persetujuannya tidak hilang. Jurnal milik dokumen & periode tertutup tetap ditolak.
+     */
+    public function hapusLangsung(BsJournal $journal, string $alasan, ?int $userId = null): void
+    {
+        if ($pemilik = (app(PemilikJurnal::class)->untuk([(int) $journal->id])[(int) $journal->id] ?? null)) {
+            throw new BusinessRuleException(
+                "Jurnal ini milik dokumen {$pemilik}".($journal->reference ? " ({$journal->reference})" : '').' — hapus/batalkan lewat dokumennya.',
+                errorCode: 'JOURNAL_OWNED',
+            );
+        }
+        $this->assertPeriodOpen($journal);
+
+        DB::transaction(function () use ($journal, $alasan, $userId): void {
+            $catatan = mb_substr('Hapus langsung: '.$alasan, 0, 255);
+            if ($journal->status === 'posted') {
+                $journal->update(['status' => 'final', 'posted_at' => null, 'approved_by' => null]);
+                $this->logStatus($journal, 'unapproved', 'posted', 'final', $userId, $catatan);
+            }
+            if ($journal->status === 'final') {
+                $journal->update(['status' => 'draft', 'finalized_at' => null]);
+                $this->logStatus($journal, 'rejected', 'final', 'draft', $userId, $catatan);
+            }
+            $this->buang($journal, $alasan, $userId);
+        });
+    }
+
+    /**
      * Buang jurnal milik dokumen, dipanggil oleh dokumen itu sendiri saat langkahnya dimundurkan
      * (mis. Batal Realisasi Bon). Statusnya diturunkan ke Baru lebih dulu supaya laporan yang
      * menyaring status Approved tidak lagi menghitungnya, lalu barisnya dihapus dan jurnalnya
