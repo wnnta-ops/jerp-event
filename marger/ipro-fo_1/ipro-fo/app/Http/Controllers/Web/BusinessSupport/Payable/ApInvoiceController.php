@@ -1074,11 +1074,16 @@ class ApInvoiceController extends Controller
         //   • semua akun jurnal KECUALI Utang Usaha Supplier (akun payable),
         //   • Debit bernilai PLUS, Kredit bernilai MINUS,
         //   • TOTAL = penjumlahan SELURUH rincian yang tercetak di atasnya.
-        $payableId = (int) ($invoice->payable_account_id ?? 0);
         $jlines = $invoice->journal_id
             ? \App\Domain\BusinessSupport\Models\BsJournalLine::with('account:id,code,name')
                 ->where('journal_id', $invoice->journal_id)->orderBy('id')->get()
             : collect();
+        // Akun hutang menurut jurnalnya — invoice lama yang Struktur Jurnalnya disusun manual bisa
+        // menyimpan akun Kategori yang tidak dikredit jurnal; baris hutangnya lalu ikut tercetak.
+        $payableId = (int) (BsApInvoice::akunHutangDariJurnal(
+            $jlines->map(fn ($l) => ['account_id' => $l->account_id, 'credit' => $l->credit]),
+            (int) ($invoice->payable_account_id ?? 0),
+        ) ?? $invoice->payable_account_id ?? 0);
         // Nilai minus diberi tanda '-'; nilai positif (debit) tanpa tanda '+'.
         $signFmt = fn (float $n) => ($n < 0 ? '- Rp. ' : 'Rp. ').number_format(abs($n), 2, ',', '.');
 
