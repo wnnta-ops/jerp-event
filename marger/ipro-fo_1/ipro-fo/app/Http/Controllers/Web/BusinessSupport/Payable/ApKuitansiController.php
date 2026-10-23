@@ -121,7 +121,13 @@ class ApKuitansiController extends Controller
             ])->filter(fn ($i) => $i['outstanding'] > 0.009)->values();
 
         return Inertia::render('BusinessSupport/Payable/Kuitansi/Form', [
-            'suppliers'    => BsSupplier::where('is_active', true)->orderBy('name')->get(['id', 'code', 'name']),
+            // Hanya supplier yang PUNYA invoice open — pelunasan memang hanya untuk itu. Kode & jenisnya
+            // ikut di label, supaya nama kembar (supplier lama vs penerima Reimburse/Deposit) terbedakan.
+            'suppliers'    => BsSupplier::withTrashed()->whereIn('id', $open->pluck('supplier_id')->unique()->values())
+                ->orderBy('name')->get(['id', 'code', 'name', 'category'])
+                ->map(fn ($s) => ['id' => $s->id, 'code' => $s->code, 'name' => $s->name,
+                    'label' => $s->name.' — '.$s->code.' · '.match ($s->category) { 'karyawan' => 'Karyawan', 'customer' => 'Customer', default => 'Supplier' }])
+                ->values(),
             'openInvoices' => $open,
             'cashAccounts' => BsAccount::where('is_active', true)->where('is_postable', true)->where('code', 'like', '101010%')->orderBy('code')->get(['id', 'code', 'name'])
                 ->map(fn ($a) => ['id' => $a->id, 'code' => $a->code, 'name' => $a->name, 'is_kas' => in_array($a->code, self::KAS_CODES, true)]),
