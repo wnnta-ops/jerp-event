@@ -52,6 +52,25 @@ final class PenerimaHutang
     /** @param  array<string,mixed>  $isi */
     private function simpan(string $kode, string $kategori, array $isi): BsSupplier
     {
+        // Orang yang SUDAH punya baris supplier lama (dari eProperty / input manual, nama sama persis)
+        // memakai baris itu — tidak dibuatkan baris KRY-/CST- kedua (23 Okt 2026: nama kembar di
+        // Pelunasan AP, riwayat hutang terpecah). Kode, nama & kategori baris lama dibiarkan; hanya
+        // rekening yang diperbarui bila diisi.
+        // Baris KRY-/CST- yang sudah DIGABUNG (ap:gabung-supplier) → pakai baris tujuannya.
+        $gabung = BsSupplier::withTrashed()->where('code', $kode)->value('digabung_ke_id');
+        $lama = $gabung ? BsSupplier::withTrashed()->find($gabung) : $this->barisLama((string) $isi['name'], $kode);
+        if ($lama) {
+            $rek = array_filter(
+                array_intersect_key($isi, array_flip(['bank_name', 'bank_account_no', 'bank_account_name'])),
+                fn ($v) => filled($v),
+            );
+            if ($rek) {
+                $lama->fill($rek)->save();
+            }
+
+            return $lama;
+        }
+
         $s = BsSupplier::withTrashed()->firstOrNew(['code' => $kode]);
         $s->fill($isi + ['category' => $kategori, 'is_active' => true]);
         if ($s->trashed()) {
@@ -60,5 +79,18 @@ final class PenerimaHutang
         $s->save();
 
         return $s;
+    }
+
+    /** Supplier aktif bernama sama (bukan baris KRY-/CST- itu sendiri) — yang tertua. */
+    private function barisLama(string $nama, string $kode): ?BsSupplier
+    {
+        $nama = trim(preg_replace('/\s+/', ' ', $nama) ?? '');
+        if ($nama === '') {
+            return null;
+        }
+
+        return BsSupplier::where('is_active', true)->where('code', '<>', $kode)
+            ->whereRaw('TRIM(name) = ?', [$nama])
+            ->orderBy('created_at')->orderBy('id')->first();
     }
 }
