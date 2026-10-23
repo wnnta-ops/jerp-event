@@ -58,7 +58,10 @@ final class PenerimaHutang
         // rekening yang diperbarui bila diisi.
         // Baris KRY-/CST- yang sudah DIGABUNG (ap:gabung-supplier) → pakai baris tujuannya.
         $gabung = BsSupplier::withTrashed()->where('code', $kode)->value('digabung_ke_id');
-        $lama = $gabung ? BsSupplier::withTrashed()->find($gabung) : $this->barisLama((string) $isi['name'], $kode);
+        // Pencocokan NAMA hanya untuk karyawan: customer jauh lebih sering bernama sama dengan orang
+        // lain (mis. customer "IRFAN PRASETYA" ≠ karyawan Irfan Prasetya) — Deposit tetap di CST- sendiri.
+        $lama = $gabung ? BsSupplier::withTrashed()->find($gabung)
+            : ($kategori === 'karyawan' ? $this->barisLama((string) $isi['name'], $kode) : null);
         if ($lama) {
             $rek = array_filter(
                 array_intersect_key($isi, array_flip(['bank_name', 'bank_account_no', 'bank_account_name'])),
@@ -90,6 +93,7 @@ final class PenerimaHutang
         }
 
         return BsSupplier::where('is_active', true)->where('code', '<>', $kode)
+            ->where(fn ($q) => $q->whereNull('category')->orWhere('category', '<>', 'customer'))
             ->whereRaw('TRIM(name) = ?', [$nama])
             ->orderBy('created_at')->orderBy('id')->first();
     }

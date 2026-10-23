@@ -34,14 +34,21 @@ class GabungSupplierCommand extends Command
     {
         $jalankan = (bool) $this->option('jalankan');
         $sup = DB::table('bs_suppliers')->whereNull('deleted_at')->orderBy('created_at')->orderBy('id')->get()->keyBy('id');
+        $jmlInvoice = DB::table('bs_ap_invoices')->selectRaw('supplier_id, COUNT(*) n')->groupBy('supplier_id')->pluck('n', 'supplier_id');
 
         // pasangan: id_dobel => id_lama
+        // Baris CUSTOMER (CST-) tidak ikut otomatis — nama customer sering kembar dengan orang lain
+        // (customer "IRFAN PRASETYA" ≠ karyawan Irfan Prasetya); gabungkan lewat --pasangan.
         $pasangan = [];
-        foreach ($sup->groupBy(fn ($s) => mb_strtoupper(trim(preg_replace('/\s+/', ' ', (string) $s->name) ?? ''))) as $nama => $grup) {
+        $otomatis = $sup->filter(fn ($s) => $s->category !== 'customer');
+        foreach ($otomatis->groupBy(fn ($s) => mb_strtoupper(trim(preg_replace('/\s+/', ' ', (string) $s->name) ?? ''))) as $nama => $grup) {
             if ($nama === '' || $grup->count() < 2) {
                 continue;
             }
-            $lama = $grup->first();
+            // Yang lama = dibuat paling awal; bila sama (mis. dimuat bersamaan saat migrasi) →
+            // yang dokumennya paling banyak, supaya yang dipindah sesedikit mungkin.
+            $lama = $grup->sortBy(fn ($s) => [(string) $s->created_at, -($jmlInvoice[$s->id] ?? 0), $s->id])->first();
+            $grup = $grup->reject(fn ($s) => $s->id === $lama->id)->prepend($lama);
             foreach ($grup->slice(1) as $d) {
                 $pasangan[$d->id] = $lama->id;
             }
