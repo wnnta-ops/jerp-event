@@ -1426,18 +1426,21 @@ class CashAdvanceController extends Controller
              Alokasi Kasbon — sama dengan kotak "Sudah Dialokasikan"), lalu baris realisasi di Jumlah.
            - Bon lainnya: 3 kolom seperti semula — akun & nominal bon di baris pertama kolom Jumlah.
            Total di bawah tetap selisih realisasi (settlement) pada keduanya. */
+        // Baris REALISASI (biaya terpakai) dicetak dalam kurung = pengurang uang muka, supaya tabel
+        // terbaca Pengajuan − Realisasi = Total (permintaan ACC 24 Okt 2026).
+        $kurang = fn ($n) => '('.$amt($n).')';
         $debitVa = app(CashAdvanceService::class)->perluLanjutAlokasi($advance);
         if ($debitVa) {
             $alokasi = app(CashAdvanceAllocationService::class)->totalAlokasi($advance);
             $rows = '<tr><td class="ac"></td><td>'.$e($advance->purpose).'</td><td class="r">'.$amt($advance->amount).'</td><td class="r"></td></tr>'
                 .'<tr><td class="ac">'.$e($pengajuanCode).'</td><td>Dialokasikan</td><td class="r"></td><td class="r">'.$amt($alokasi).'</td></tr>';
             foreach ($advance->lines as $l) {
-                $rows .= '<tr><td class="ac">'.$e($l->expenseAccount?->code).'</td><td>'.$e($l->description).'</td><td class="r"></td><td class="r">'.$amt($l->amount).'</td></tr>';
+                $rows .= '<tr><td class="ac">'.$e($l->expenseAccount?->code).'</td><td>'.$e($l->description).'</td><td class="r"></td><td class="r">'.$kurang($l->amount).'</td></tr>';
             }
         } else {
             $rows = '<tr><td class="ac">'.$e($pengajuanCode).'</td><td>'.$e($advance->purpose).'</td><td class="r">'.$amt($advance->amount).'</td></tr>';
             foreach ($advance->lines as $l) {
-                $rows .= '<tr><td class="ac">'.$e($l->expenseAccount?->code).'</td><td>'.$e($l->description).'</td><td class="r">'.$amt($l->amount).'</td></tr>';
+                $rows .= '<tr><td class="ac">'.$e($l->expenseAccount?->code).'</td><td>'.$e($l->description).'</td><td class="r">'.$kurang($l->amount).'</td></tr>';
             }
         }
 

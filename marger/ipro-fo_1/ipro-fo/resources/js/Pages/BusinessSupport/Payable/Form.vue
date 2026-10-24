@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, watch } from 'vue';
+import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue';
 import { useForm, Link } from '@inertiajs/vue3';
 import { ArrowLeft, ArrowRight, Save, HandCoins, Plus, Trash2, Check, Search, Copy, ClipboardPaste } from 'lucide-vue-next';
 import Button from '@/Components/UI/Button.vue';
@@ -611,17 +611,32 @@ function submit() {
         preserveState: true,
         preserveScroll: true,
         onError: (galat: Record<string, string>) => {
+            sudahKirim = false;   // ditolak server → wizard tetap di sini, boleh disimpan lagi
             const kolom = Object.keys(galat);
             const tujuan = kolom.map(k => LANGKAH_KOLOM.find(([pola]) => pola.test(k))?.[1] ?? 5);
             if (tujuan.length) step.value = Math.max(modeEdit ? 2 : 1, Math.min(...tujuan));
         },
     };
+    sudahKirim = true;
     if (modeEdit) {
         form.put(route('bs.ap.update', props.invoiceEdit!.id), opsi);
     } else {
         form.post(route(props.jenis.kunci === 'invoice' ? 'bs.ap.store' : props.jenis.rute + '.store'), opsi);
     }
 }
+/* SIMPAN GANDA LEWAT BACK (ESTATE 23 Okt 2026: satu deposit tersimpan 3x). Sesudah tersimpan,
+   layar pindah penuh ke cetak Memo/BPP; tombol Back browser lalu bisa MEMULIHKAN wizard yang masih
+   terisi di langkah terakhir (bfcache), dan Simpan berikutnya membuat invoice baru lagi. Wizard yang
+   dipulihkan sesudah dikirim langsung dialihkan ke daftar (edit: ke detail invoice) — invoice yang
+   baru tersimpan ada di sana. */
+let sudahKirim = false;
+function saatDipulihkan(ev: PageTransitionEvent) {
+    if (ev.persisted && sudahKirim) {
+        window.location.replace(modeEdit ? route('bs.ap.show', props.invoiceEdit!.id) : route(props.jenis.rute + '.index'));
+    }
+}
+onMounted(() => window.addEventListener('pageshow', saatDipulihkan));
+onBeforeUnmount(() => window.removeEventListener('pageshow', saatDipulihkan));
 const inputCls = 'h-9 w-full rounded-lg border border-neutral-300 bg-white px-3 text-sm dark:border-neutral-700 dark:bg-neutral-900';
 const dimCls = 'h-8 w-full rounded-md border border-neutral-300 bg-white px-2 text-xs dark:border-neutral-700 dark:bg-neutral-900';
 const cellArea = 'w-full rounded-md border border-neutral-300 bg-white px-2 py-1 text-xs dark:border-neutral-700 dark:bg-neutral-900';
