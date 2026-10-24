@@ -610,6 +610,10 @@ function submit() {
         // kembali ke langkah 1 dan seluruh isian hilang — tepat yang dikeluhkan di panduan.
         preserveState: true,
         preserveScroll: true,
+        // Server menjawab TANPA pindah halaman (mis. ditolak anggaran → dialog, pesan galat) →
+        // tidak ada yang tersimpan; wizard boleh disimpan lagi. Simpan yang berhasil pindah penuh
+        // ke cetak Memo (Inertia::location) dan tidak melewati onSuccess ini.
+        onSuccess: () => { sudahKirim = false; },
         onError: (galat: Record<string, string>) => {
             sudahKirim = false;   // ditolak server → wizard tetap di sini, boleh disimpan lagi
             const kolom = Object.keys(galat);
