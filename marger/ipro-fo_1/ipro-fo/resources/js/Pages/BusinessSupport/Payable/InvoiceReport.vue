@@ -29,6 +29,7 @@ function dash(v: any) { return (v === null || v === undefined || v === '') ? 'â€
 
 const totals = computed(() => ({
     total: props.rows.reduce((s: number, r: any) => s + Number(r.total || 0), 0),
+    hutang: props.rows.reduce((s: number, r: any) => s + Number(r.hutang || 0), 0),
     paid: props.rows.reduce((s: number, r: any) => s + Number(r.paid || 0), 0),
     sisa: props.rows.reduce((s: number, r: any) => s + Number(r.sisa || 0), 0),
 }));
@@ -70,12 +71,14 @@ const totals = computed(() => ({
                         <th class="px-3 py-3">Tanggal</th>
                         <th class="px-3 py-3">Tgl Diterima</th>
                         <th class="px-3 py-3">Jatuh Tempo</th>
+                        <th class="px-3 py-3">Tgl Terima Finance</th>
                         <th class="px-3 py-3 text-right">Aging Hutang</th>
                         <th class="px-3 py-3 text-right">Aging JT</th>
                         <th class="px-3 py-3">Supplier</th>
                         <th class="px-3 py-3">Keterangan</th>
                         <th class="px-3 py-3">Status</th>
-                        <th class="px-3 py-3 text-right">Total</th>
+                        <th class="px-3 py-3 text-right" title="Nilai tagihan bruto (sebelum PPh dipotong)">Total Invoice</th>
+                        <th class="px-3 py-3 text-right" title="Kredit akun Hutang Supplier / BYMHD di jurnal invoice â€” nilai yang dibayar">Hutang (jurnal)</th>
                         <th class="px-3 py-3 text-right">Terbayar</th>
                         <th class="px-3 py-3 text-right">Sisa</th>
                     </tr>
@@ -86,20 +89,23 @@ const totals = computed(() => ({
                         <td class="px-3 py-2">{{ fmtDate(r.invoice_date) }}</td>
                         <td class="px-3 py-2">{{ fmtDate(r.receive_date) }}</td>
                         <td class="px-3 py-2">{{ fmtDate(r.due_date) }}</td>
+                        <td class="px-3 py-2">{{ fmtDate(r.berkas_finance_date) }}</td>
                         <td class="px-3 py-2 text-right">{{ dash(r.aging_hutang) }}</td>
                         <td class="px-3 py-2 text-right" :class="(r.aging_jt ?? 0) > 0 ? 'text-danger-600' : 'text-neutral-400'">{{ dash(r.aging_jt) }}</td>
                         <td class="px-3 py-2">{{ r.supplier }}</td>
                         <td class="px-3 py-2 text-neutral-500">{{ dash(r.description) }}</td>
                         <td class="px-3 py-2">{{ r.status }}</td>
-                        <td class="px-3 py-2 text-right font-mono">{{ fmtRp(r.total) }}</td>
+                        <td class="px-3 py-2 text-right font-mono text-neutral-500">{{ fmtRp(r.total) }}</td>
+                        <td class="px-3 py-2 text-right font-mono">{{ fmtRp(r.hutang) }}</td>
                         <td class="px-3 py-2 text-right font-mono">{{ fmtRp(r.paid) }}</td>
                         <td class="px-3 py-2 text-right font-mono font-semibold">{{ fmtRp(r.sisa) }}</td>
                     </tr>
                 </tbody>
                 <tfoot v-if="rows?.length" class="border-t-2 border-neutral-300 bg-neutral-50 font-bold dark:border-neutral-700 dark:bg-neutral-800">
                     <tr>
-                        <td class="px-3 py-3" colspan="9">TOTAL <span class="ml-1 text-xs font-normal text-neutral-400">({{ rows.length }} invoice)</span></td>
-                        <td class="px-3 py-3 text-right font-mono">{{ fmtRp(totals.total) }}</td>
+                        <td class="px-3 py-3" colspan="10">TOTAL <span class="ml-1 text-xs font-normal text-neutral-400">({{ rows.length }} invoice)</span></td>
+                        <td class="px-3 py-3 text-right font-mono text-neutral-500">{{ fmtRp(totals.total) }}</td>
+                        <td class="px-3 py-3 text-right font-mono">{{ fmtRp(totals.hutang) }}</td>
                         <td class="px-3 py-3 text-right font-mono">{{ fmtRp(totals.paid) }}</td>
                         <td class="px-3 py-3 text-right font-mono text-danger-600">{{ fmtRp(totals.sisa) }}</td>
                     </tr>

@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { ref } from 'vue';
+import { ref, computed } from 'vue';
 import { router, Link } from '@inertiajs/vue3';
-import { ArrowLeft, TrendingUp, CalendarRange } from 'lucide-vue-next';
+import { ArrowLeft, TrendingUp, CalendarRange, FileSpreadsheet, Printer } from 'lucide-vue-next';
 import PilihPosisiHutang from '@/Components/UI/PilihPosisiHutang.vue';
 
 const props = defineProps<{ mode: string; view?: string; buckets: Array<{ key: string; label: string }>; rows: any[]; totals: any; filters: { from: string; to: string; posisi?: string }; periodItems: any[]; periodTotal: number; posisiOpsi?: Array<{ nilai: string; label: string }> }>();
@@ -19,6 +19,8 @@ function applyRange() { go(props.mode); }
 function fmt(v: number) { return v ? Number(v).toLocaleString('id-ID') : ''; }
 function fmtDate(d: string) { return d ? new Date(d).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'; }
 const isAp = props.mode === 'hutang';
+// Unduhan = isi layar: mode, posisi, Detail/Summary, rentang periode yang SUDAH dimuat.
+const paramEkspor = computed(() => ({ mode: props.mode, view: view.value, from: props.filters.from, to: props.filters.to, ...(isAp ? { posisi: props.filters.posisi ?? 'semua' } : {}) }));
 </script>
 <template>
     <div class="space-y-4">
@@ -28,7 +30,9 @@ const isAp = props.mode === 'hutang';
             <button @click="go('hutang')" class="rounded-lg border px-3 py-1.5 text-sm font-medium" :class="mode === 'hutang' ? 'border-primary-500 bg-primary-50 text-primary-700 dark:bg-primary-900/20 dark:text-primary-300' : 'border-neutral-300 dark:border-neutral-700'">Proyeksi Hutang (AP)</button>
             <button @click="go('piutang')" class="rounded-lg border px-3 py-1.5 text-sm font-medium" :class="mode === 'piutang' ? 'border-primary-500 bg-primary-50 text-primary-700 dark:bg-primary-900/20 dark:text-primary-300' : 'border-neutral-300 dark:border-neutral-700'">Proyeksi Piutang (AR)</button>
             <PilihPosisiHutang v-if="isAp" v-model="posisi" :opsi="props.posisiOpsi" label="" @ubah="applyRange" />
-            <div class="ml-auto flex gap-1 rounded-lg border border-neutral-300 p-0.5 text-sm dark:border-neutral-700">
+            <a :href="route('bs.projection.excel', paramEkspor)" class="ml-auto inline-flex items-center gap-1.5 rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-1.5 text-sm font-medium text-emerald-700 hover:bg-emerald-100 dark:border-emerald-700/50 dark:bg-emerald-900/30 dark:text-emerald-300"><FileSpreadsheet class="h-4 w-4" /> Excel</a>
+            <a :href="route('bs.projection.pdf', paramEkspor)" target="_blank" rel="noopener" class="inline-flex items-center gap-1.5 rounded-lg border border-danger-300 bg-danger-50 px-3 py-1.5 text-sm font-medium text-danger-700 hover:bg-danger-100 dark:border-danger-700/50 dark:bg-danger-900/30 dark:text-danger-300"><Printer class="h-4 w-4" /> PDF</a>
+            <div class="flex gap-1 rounded-lg border border-neutral-300 p-0.5 text-sm dark:border-neutral-700">
                 <button @click="view = 'detail'" class="rounded px-3 py-1" :class="view === 'detail' ? 'bg-primary-600 text-white' : ''">Detail</button>
                 <button @click="view = 'summary'" class="rounded px-3 py-1" :class="view === 'summary' ? 'bg-primary-600 text-white' : ''">Summary</button>
             </div>
