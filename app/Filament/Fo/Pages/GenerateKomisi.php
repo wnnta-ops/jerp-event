@@ -63,7 +63,7 @@ class GenerateKomisi extends Page implements HasTable
                 Tables\Columns\TextColumn::make('no_kontrak')->label('No. Kontrak')->badge()->color('info')->searchable()->sortable(),
                 Tables\Columns\TextColumn::make('unit.kode_unit')->label('Unit')->placeholder('—')->searchable(),
                 Tables\Columns\TextColumn::make('customer.full_name')->label('Customer')->searchable()->limit(20),
-                Tables\Columns\TextColumn::make('agent.name')->label('Agent')->placeholder('—')
+                Tables\Columns\TextColumn::make('agent.name')->label('Agent')->placeholder('—')->searchable()
                     ->description(fn (Kontrak $r) => $r->agent?->is_arebi ? 'AREBI' : 'NON AREBI'),
                 Tables\Columns\TextColumn::make('total_kontrak')->label('Nilai Kontrak')->money('IDR', divideBy: 0)->alignEnd(),
                 Tables\Columns\TextColumn::make('preview')->label('Komisi NETT (preview)')->alignEnd()

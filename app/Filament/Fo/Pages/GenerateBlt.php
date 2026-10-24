@@ -44,8 +44,8 @@ class GenerateBlt extends Page implements HasTable
             ->columns([
                 Tables\Columns\TextColumn::make('no_kontrak')->label('No. Kontrak')->badge()->color('info')->searchable()->sortable(),
                 Tables\Columns\TextColumn::make('unit.kode_unit')->label('Unit')->placeholder('—')->searchable(),
-                Tables\Columns\TextColumn::make('customer.full_name')->label('Customer')->limit(20),
-                Tables\Columns\TextColumn::make('agent.name')->label('Agent')->placeholder('—'),
+                Tables\Columns\TextColumn::make('customer.full_name')->label('Customer')->searchable()->limit(20),
+                Tables\Columns\TextColumn::make('agent.name')->label('Agent')->placeholder('—')->searchable(),
                 Tables\Columns\TextColumn::make('preview')->label('Skema BLT')
                     ->state(fn (Kontrak $r) => ($s = app(BltCalculatorService::class)->matchSkema($r))
                         ? $s->nama.' ('.$s->lines->count().' level)'
