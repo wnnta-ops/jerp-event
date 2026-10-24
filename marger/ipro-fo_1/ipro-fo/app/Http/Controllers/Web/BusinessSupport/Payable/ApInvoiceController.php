@@ -230,9 +230,16 @@ class ApInvoiceController extends Controller
         $e = fn ($s) => htmlspecialchars((string) $s, ENT_QUOTES, 'UTF-8');
         $rp = fn ($n) => number_format((float) $n, 0, ',', '.');
         $today = \Illuminate\Support\Carbon::today();
-        $h = '<table border="1"><tr style="background:#0f766e;color:#fff"><th>No Invoice</th><th>Tanggal</th><th>Tgl Diterima</th><th>Berkas Diterima Finance</th><th>Jatuh Tempo</th><th>Aging Hutang</th><th>Aging Jatuh Tempo</th><th>Supplier</th><th>Keterangan</th><th>Status</th><th>Total</th><th>Terbayar</th><th>Sisa</th></tr>';
+        $h = '<table border="1"><tr style="background:#0f766e;color:#fff"><th>No Invoice</th><th>Tanggal</th><th>Tgl Diterima</th><th>Berkas Diterima Finance</th><th>Jatuh Tempo</th><th>Aging Hutang</th><th>Aging Jatuh Tempo</th><th>Supplier</th><th>Keterangan</th><th>Status</th><th>Total Invoice</th><th>Hutang (jurnal)</th><th>Terbayar</th><th>Sisa</th></tr>';
+        // Hutang = kredit akun Hutang Supplier/BYMHD di jurnal (sesudah PPh); Sisa = Hutang − Terbayar.
+        $hutang = BsApInvoice::nilaiHutangJurnal($rows);
+        $jml = ['total' => 0.0, 'hutang' => 0.0, 'paid' => 0.0, 'sisa' => 0.0];
         foreach ($rows as $r) {
-            $sisa = (float) $r->total - (float) $r->paid_amount;
+            $sisa = $hutang[$r->id] - (float) $r->paid_amount;
+            $jml['total'] += (float) $r->total;
+            $jml['hutang'] += $hutang[$r->id];
+            $jml['paid'] += (float) $r->paid_amount;
+            $jml['sisa'] += $sisa;
             // Aging Hutang = jumlah hari sejak tanggal diterima (receive_date) sampai hari ini (>=0).
             $agingHutang = $r->receive_date
                 ? (string) (int) $r->receive_date->copy()->startOfDay()->diffInDays($today, false)
@@ -242,8 +249,9 @@ class ApInvoiceController extends Controller
                 ? (string) (int) $r->due_date->copy()->startOfDay()->diffInDays($today, false)
                 : '-';
             $h .= '<tr><td>'.$e($r->invoice_number).'</td><td>'.$e($r->invoice_date?->toDateString()).'</td><td>'.$e($r->receive_date?->toDateString())
-                .'</td><td>'.$e($r->berkas_finance_date?->toDateString()).'</td><td>'.$e($r->due_date?->toDateString()).'</td><td>'.$e($agingHutang).'</td><td>'.$e($agingJt).'</td><td>'.$e($r->supplier?->code).' '.$e($r->supplier?->name).'</td><td>'.$e($r->description).'</td><td>'.$e($r->status).'</td><td>'.$rp($r->total).'</td><td>'.$rp($r->paid_amount).'</td><td>'.$rp($sisa).'</td></tr>';
+                .'</td><td>'.$e($r->berkas_finance_date?->toDateString()).'</td><td>'.$e($r->due_date?->toDateString()).'</td><td>'.$e($agingHutang).'</td><td>'.$e($agingJt).'</td><td>'.$e($r->supplier?->code).' '.$e($r->supplier?->name).'</td><td>'.$e($r->description).'</td><td>'.$e($r->status).'</td><td>'.$rp($r->total).'</td><td>'.$rp($hutang[$r->id]).'</td><td>'.$rp($r->paid_amount).'</td><td>'.$rp($sisa).'</td></tr>';
         }
+        $h .= '<tr style="font-weight:bold;background:#e2e8f0"><td colspan="10">TOTAL ('.count($rows).' invoice)</td><td>'.$rp($jml['total']).'</td><td>'.$rp($jml['hutang']).'</td><td>'.$rp($jml['paid']).'</td><td>'.$rp($jml['sisa']).'</td></tr>';
         $h .= '</table>';
 
         $file = 'Account-Payable-'.now()->format('Ymd-His').'.xls';
@@ -266,12 +274,14 @@ class ApInvoiceController extends Controller
         $rows = collect();
         if ($pulled) {
             $today = \Illuminate\Support\Carbon::today();
-            $rows = PosisiHutang::saring(BsApInvoice::with('supplier:id,code,name'), PosisiHutang::dariRequest($request))
+            $inv = PosisiHutang::saring(BsApInvoice::with('supplier:id,code,name'), PosisiHutang::dariRequest($request))
                 ->when($dateFrom, fn ($q, $v) => $q->whereDate('invoice_date', '>=', $v))
                 ->when($dateTo, fn ($q, $v) => $q->whereDate('invoice_date', '<=', $v))
                 ->when($supplierId, fn ($q, $v) => $q->where('supplier_id', $v))
-                ->latest('invoice_date')->latest('id')->get()
-                ->map(fn ($r) => [
+                ->latest('invoice_date')->latest('id')->get();
+            // Hutang = kredit akun Hutang Supplier/BYMHD di jurnal (sesudah PPh) — bukan total bruto.
+            $hutang = BsApInvoice::nilaiHutangJurnal($inv);
+            $rows = $inv->map(fn ($r) => [
                     'invoice_no' => $r->invoice_number,
                     'invoice_date' => $r->invoice_date?->toDateString(),
                     'receive_date' => $r->receive_date?->toDateString(),
@@ -281,9 +291,11 @@ class ApInvoiceController extends Controller
                     'supplier' => trim(($r->supplier?->code ?? '').' '.($r->supplier?->name ?? '')),
                     'description' => $r->description,
                     'status' => $r->status,
+                    'berkas_finance_date' => $r->berkas_finance_date?->toDateString(),
                     'total' => round((float) $r->total, 2),
+                    'hutang' => $hutang[$r->id],
                     'paid' => round((float) $r->paid_amount, 2),
-                    'sisa' => round((float) $r->total - (float) $r->paid_amount, 2),
+                    'sisa' => round($hutang[$r->id] - (float) $r->paid_amount, 2),
                 ])->values();
         }
 
@@ -1302,6 +1314,12 @@ HTML;
     {
         abort_unless($request->user()?->can('ap.aging.view'), 403);
 
+        return Inertia::render('BusinessSupport/Payable/AgingSupplier', $this->dataAgingSupplier($request));
+    }
+
+    /** Hitungan Aging Hutang Supplier — SATU sumber untuk layar, Excel, dan PDF-nya. */
+    private function dataAgingSupplier(Request $request): array
+    {
         [$rowsC, , , $asOf, $dateFrom] = $this->computeAging($request, $request->input('date_to'), $request->input('date_from'));
 
         $semua = [];
@@ -1318,8 +1336,12 @@ HTML;
 
         $jml = fn (array $baris, string $k) => round(array_sum(array_column($baris, $k)), 2);
 
-        $top = array_slice($semua, 0, self::TOP_SUPPLIER);
-        $sisa = array_slice($semua, self::TOP_SUPPLIER);
+        // Jumlah supplier yang dirinci: 10 / 20 (bawaan) / 50 / semua — dipilih di layar.
+        $tampil = $request->input('tampil') === 'semua' ? 'semua'
+            : (in_array((int) $request->input('tampil'), [10, 20, 50], true) ? (int) $request->input('tampil') : self::TOP_SUPPLIER);
+        $n = $tampil === 'semua' ? count($semua) : $tampil;
+        $top = array_slice($semua, 0, $n);
+        $sisa = array_slice($semua, $n);
         $others = $sisa === [] ? null : [
             'jumlah' => count($sisa),
             'b0' => $jml($sisa, 'b0'),
@@ -1328,7 +1350,7 @@ HTML;
             'total' => $jml($sisa, 'total'),
         ];
 
-        return Inertia::render('BusinessSupport/Payable/AgingSupplier', [
+        return [
             'rows' => $top,
             'others' => $others,
             'total' => [
@@ -1341,12 +1363,94 @@ HTML;
             // Supplier terbesar disebut namanya: pada hutang yang terpusat di satu pihak, itulah
             // keterangan yang paling menentukan dan paling mudah terlewat dari tabel panjang.
             'dominan' => $semua[0] ?? null,
-            'topN' => self::TOP_SUPPLIER,
+            'topN' => $n,
+            'tampil' => (string) $tampil,
             'dateFrom' => $dateFrom,
             'dateTo' => $asOf->toDateString(),
             'posisi' => PosisiHutang::dariRequest($request),
             'posisiOpsi' => PosisiHutang::opsi(),
-        ]);
+        ];
+    }
+
+    /**
+     * Unduh Aging Hutang Supplier — isi SAMA dengan layar (filter tanggal, posisi, Tampilkan
+     * 10/20/50/semua; baris Others & TOTAL), angka penuh. Pencarian di layar tidak ikut.
+     *
+     * @return array{0:string,1:string,2:string} [judul periode, label posisi, baris tabel HTML]
+     */
+    private function tabelAgingSupplier(array $d, bool $excel): array
+    {
+        $e = fn ($s) => htmlspecialchars((string) $s, ENT_QUOTES, 'UTF-8');
+        $rp = fn ($n) => number_format((float) $n, 0, ',', '.');
+        $sel = fn (string $isi, bool $kanan = true) => $excel ? '<td>'.$isi.'</td>' : '<td'.($kanan ? ' class="r"' : '').'>'.$isi.'</td>';
+        $baris = function (string $nama, array $r, string $gaya = '') use ($e, $rp, $sel) {
+            return '<tr'.$gaya.'>'.$sel($e($nama), false).$sel($rp($r['total'])).$sel($rp($r['b0'])).$sel($rp($r['b31'])).$sel($rp($r['b60'])).'</tr>';
+        };
+
+        $html = '';
+        foreach ($d['rows'] as $r) {
+            $html .= $baris($r['name'], $r);
+        }
+        if ($d['others']) {
+            $html .= $baris('Others ('.$d['others']['jumlah'].' supplier lainnya)', $d['others'], ' style="font-style:italic"');
+        }
+        if ($d['rows'] === []) {
+            $html .= '<tr><td colspan="5" style="text-align:center">Tidak ada hutang outstanding.</td></tr>';
+        }
+        $html .= $baris('TOTAL ('.$d['total']['jumlah'].' supplier)', $d['total'], ' style="font-weight:bold;background:#e2e8f0"');
+
+        $periode = ($d['dateFrom'] ? $e($d['dateFrom']).' s/d ' : 'sampai ').$e($d['dateTo']);
+        $posisi = collect($d['posisiOpsi'])->firstWhere('nilai', $d['posisi'])['label'] ?? 'Semua';
+
+        return [$periode, $e($posisi), $html];
+    }
+
+    public function agingSupplierExcel(Request $request): \Illuminate\Http\Response
+    {
+        abort_unless($request->user()?->can('ap.aging.export'), 403);
+        $d = $this->dataAgingSupplier($request);
+        [$periode, $posisi, $baris] = $this->tabelAgingSupplier($d, true);
+        $co = htmlspecialchars((string) config('business_support.company.name', 'PT. Mitra Usaha Propertindo'), ENT_QUOTES, 'UTF-8');
+        $judul = $d['tampil'] === 'semua' ? 'seluruh supplier' : $d['topN'].' terbesar';
+
+        $html = '<table border="1"><tr><td colspan="5" style="font-weight:bold">AGING HUTANG SUPPLIER — '.$co.'</td></tr>'
+            .'<tr><td colspan="5">Periode '.$periode.' · Posisi: '.$posisi.' · Tampil: '.$judul.' · Cetak '.now()->format('d-m-Y H:i').'</td></tr>'
+            .'<tr style="background:#0f766e;color:#fff"><th>Supplier</th><th>Outstanding</th><th>0-30</th><th>31-60</th><th>&gt; 60</th></tr>'
+            .$baris
+            .'<tr><td colspan="5">Kolom 0-30 sudah termasuk hutang yang belum jatuh tempo.</td></tr></table>';
+        $file = 'Aging-Hutang-Supplier-'.now()->format('Ymd-His').'.xls';
+
+        return response('<html xmlns:x="urn:schemas-microsoft-com:office:excel"><head><meta charset="utf-8"></head><body>'.$html.'</body></html>')
+            ->header('Content-Type', 'application/vnd.ms-excel; charset=UTF-8')
+            ->header('Content-Disposition', 'attachment; filename="'.$file.'"');
+    }
+
+    /** Cetak Aging Hutang Supplier (HTML siap-cetak / simpan PDF) — auto-print, gaya sama dgn Aging Hutang. */
+    public function agingSupplierPdf(Request $request): \Illuminate\Http\Response
+    {
+        abort_unless($request->user()?->can('ap.aging.export'), 403);
+        $d = $this->dataAgingSupplier($request);
+        [$periode, $posisi, $baris] = $this->tabelAgingSupplier($d, false);
+        $co = htmlspecialchars((string) config('business_support.company.name', 'PT. Mitra Usaha Propertindo'), ENT_QUOTES, 'UTF-8');
+        $judul = $d['tampil'] === 'semua' ? 'Seluruh supplier' : $d['topN'].' supplier terbesar, sisanya dirangkum';
+
+        $html = '<!DOCTYPE html><html lang="id"><head><meta charset="utf-8"><title>Aging Hutang Supplier</title><style>
+            @page{size:A4 portrait;margin:14mm}*{box-sizing:border-box}body{font-family:"Segoe UI",Arial,sans-serif;font-size:11px;color:#1f2937;margin:0}
+            h1{font-size:16px;margin:0 0 2px;color:#b91c1c}
+            .head{border-bottom:2px solid #b91c1c;padding-bottom:8px;margin-bottom:12px;display:flex;justify-content:space-between;align-items:flex-start}
+            .muted{color:#6b7280;font-size:10px}table{border-collapse:collapse;width:100%;margin:4px 0;font-size:10px}
+            th,td{border:1px solid #cbd5e1;padding:4px 6px;text-align:left}.r{text-align:right;font-variant-numeric:tabular-nums}
+            thead th{background:#f1f5f9}
+            @media print{.noprint{display:none}}</style></head><body>
+            <div class="head"><div><h1>AGING HUTANG SUPPLIER</h1><div class="muted">'.$co.'</div></div>
+            <div class="muted" style="text-align:right">Periode: '.$periode.'<br>Posisi: '.$posisi.' · '.htmlspecialchars($judul, ENT_QUOTES, 'UTF-8').'<br>Cetak: '.htmlspecialchars(now()->translatedFormat('d F Y H:i'), ENT_QUOTES, 'UTF-8').'</div></div>
+            <table><thead><tr><th>Supplier</th><th class="r">Outstanding</th><th class="r">0–30</th><th class="r">31–60</th><th class="r">&gt; 60</th></tr></thead>
+            <tbody>'.$baris.'</tbody></table>
+            <div class="muted" style="margin-top:6px">Kolom 0–30 sudah termasuk hutang yang belum jatuh tempo.</div>
+            <button class="noprint" onclick="window.print()" style="margin-top:14px;padding:6px 14px">Cetak</button>
+            <script>window.onload=function(){setTimeout(function(){window.print()},300)}</script></body></html>';
+
+        return response($html)->header('Content-Type', 'text/html; charset=UTF-8');
     }
 
     /** Aging Hutang — umur hutang per supplier (Summary) atau per invoice (Detail). */

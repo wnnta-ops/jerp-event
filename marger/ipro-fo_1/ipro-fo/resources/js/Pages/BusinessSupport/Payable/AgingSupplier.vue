@@ -1,12 +1,13 @@
 <script setup lang="ts">
-// Aging Hutang Supplier — outstanding per supplier, 20 terbesar + rangkuman sisanya.
+// Aging Hutang Supplier — outstanding per supplier, N terbesar (10/20/50/semua) + rangkuman sisanya.
 //
 // Angkanya dari computeAging() yang SAMA dengan layar Aging Hutang, PDF, dan Excel-nya —
 // alasannya ada di ApInvoiceController::agingSupplier(). Lima embernya dirangkum jadi tiga
 // (0–30 sudah termasuk yang belum jatuh tempo).
 import { ref, computed } from 'vue';
 import { router } from '@inertiajs/vue3';
-import { Layers, Search } from 'lucide-vue-next';
+import { Layers, Search, FileSpreadsheet, Printer } from 'lucide-vue-next';
+import { useIzin } from '@/Composables/useIzin';
 import EmptyState from '@/Components/UI/EmptyState.vue';
 import PilihPosisiHutang from '@/Components/UI/PilihPosisiHutang.vue';
 
@@ -19,6 +20,7 @@ const props = defineProps<{
     total: Others;
     dominan: Baris | null;
     topN: number;
+    tampil?: string;
     dateFrom: string | null;
     dateTo: string;
     posisi?: string;
@@ -29,13 +31,19 @@ const cari = ref('');
 const dari = ref(props.dateFrom ?? '');
 const sampai = ref(props.dateTo);
 const posisi = ref(props.posisi ?? 'semua');
+// Jumlah supplier yang dirinci: 10 / 20 / 50 / semua; sisanya dirangkum di baris Others.
+const jumlahTampil = ref(props.tampil ?? '20');
+const semuaTampil = computed(() => props.tampil === 'semua');
+const { punyaIzin } = useIzin();
+// Unduhan mengikuti filter yang SUDAH dimuat di layar (bukan isian yang belum ditekan Tampilkan).
+const paramEkspor = computed(() => ({ date_from: props.dateFrom ?? '', date_to: props.dateTo, posisi: props.posisi ?? 'semua', tampil: props.tampil ?? '20' }));
 
 function muat() {
-    router.get(route('bs.ap.aging-supplier'), { date_from: dari.value, date_to: sampai.value, posisi: posisi.value },
+    router.get(route('bs.ap.aging-supplier'), { date_from: dari.value, date_to: sampai.value, posisi: posisi.value, tampil: jumlahTampil.value },
         { preserveState: true, preserveScroll: true, replace: true });
 }
 
-/* Pencarian hanya menyaring 20 baris yang TAMPIL. Baris Others & TOTAL tetap utuh — keduanya
+/* Pencarian hanya menyaring baris yang TAMPIL. Baris Others & TOTAL tetap utuh — keduanya
    menjawab "berapa seluruhnya", dan menyaringnya ikut membuat jumlahnya berubah-ubah mengikuti
    apa yang sedang diketik. */
 const tampil = computed(() => {
@@ -62,7 +70,7 @@ function penuh(v: number) { return 'Rp ' + Number(v ?? 0).toLocaleString('id-ID'
         <div class="flex flex-wrap items-end justify-between gap-3">
             <div>
                 <h1 class="flex items-center gap-2 text-2xl font-bold"><Layers class="h-6 w-6 text-primary-600" /> Aging Hutang Supplier</h1>
-                <p class="mt-1 text-sm text-neutral-500">Outstanding per supplier — {{ topN }} terbesar, sisanya dirangkum.</p>
+                <p class="mt-1 text-sm text-neutral-500">Outstanding per supplier — <template v-if="semuaTampil">seluruh supplier.</template><template v-else>{{ topN }} terbesar, sisanya dirangkum.</template></p>
             </div>
             <div class="flex flex-wrap items-end gap-2">
                 <div><label class="mb-1 block text-[11px] font-medium uppercase text-neutral-400">Dari tgl invoice</label>
@@ -70,13 +78,21 @@ function penuh(v: number) { return 'Rp ' + Number(v ?? 0).toLocaleString('id-ID'
                 <div><label class="mb-1 block text-[11px] font-medium uppercase text-neutral-400">Per tanggal</label>
                     <input v-model="sampai" type="date" class="h-9 rounded-lg border border-neutral-300 bg-white px-2 text-sm dark:border-neutral-700 dark:bg-neutral-900" /></div>
                 <PilihPosisiHutang v-model="posisi" :opsi="props.posisiOpsi" />
+                <div><label class="mb-1 block text-[11px] font-medium uppercase text-neutral-400">Tampilkan</label>
+                    <select v-model="jumlahTampil" @change="muat" class="h-9 rounded-lg border border-neutral-300 bg-white px-2 text-sm dark:border-neutral-700 dark:bg-neutral-900">
+                        <option value="10">10 supplier</option><option value="20">20 supplier</option><option value="50">50 supplier</option><option value="semua">Semua supplier</option>
+                    </select></div>
                 <button type="button" @click="muat" class="h-9 rounded-lg bg-primary-600 px-4 text-sm font-medium text-white hover:bg-primary-700">Tampilkan</button>
+                <template v-if="punyaIzin('ap.aging.export')">
+                    <a :href="route('bs.ap.aging-supplier.excel', paramEkspor)" class="inline-flex h-9 items-center gap-1.5 rounded-lg border border-emerald-300 bg-emerald-50 px-3 text-sm font-medium text-emerald-700 hover:bg-emerald-100 dark:border-emerald-700/50 dark:bg-emerald-900/30 dark:text-emerald-300"><FileSpreadsheet class="h-4 w-4" /> Excel</a>
+                    <a :href="route('bs.ap.aging-supplier.pdf', paramEkspor)" target="_blank" rel="noopener" class="inline-flex h-9 items-center gap-1.5 rounded-lg border border-danger-300 bg-danger-50 px-3 text-sm font-medium text-danger-700 hover:bg-danger-100 dark:border-danger-700/50 dark:bg-danger-900/30 dark:text-danger-300"><Printer class="h-4 w-4" /> PDF</a>
+                </template>
             </div>
         </div>
 
         <div class="card overflow-hidden">
             <div class="flex flex-wrap items-center justify-between gap-2 px-4 pt-4">
-                <h2 class="text-sm font-bold">Outstanding AP per Supplier <span class="font-normal text-neutral-400">(Top {{ topN }})</span></h2>
+                <h2 class="text-sm font-bold">Outstanding AP per Supplier <span class="font-normal text-neutral-400">{{ semuaTampil ? '(Semua)' : '(Top ' + topN + ')' }}</span></h2>
                 <div class="relative">
                     <Search class="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-neutral-400" />
                     <input v-model="cari" placeholder="Cari supplier…" class="h-8 w-56 rounded-lg border border-neutral-300 bg-white pl-8 pr-2 text-xs dark:border-neutral-700 dark:bg-neutral-900" />
@@ -106,8 +122,8 @@ function penuh(v: number) { return 'Rp ' + Number(v ?? 0).toLocaleString('id-ID'
                             <td colspan="5" class="px-4 py-6 text-center text-sm text-neutral-400">Tidak ada supplier yang cocok dengan pencarian.</td>
                         </tr>
 
-                        <!-- Others: seluruh supplier ke-21 dan seterusnya. Tanpa baris ini, tabel
-                             yang memuat 20 dari puluhan supplier terbaca seolah itulah seluruh
+                        <!-- Others: seluruh supplier di luar yang dirinci. Tanpa baris ini, tabel
+                             yang memuat sebagian dari puluhan supplier terbaca seolah itulah seluruh
                              hutangnya. Sengaja TIDAK ikut tersaring pencarian. -->
                         <tr v-if="others" class="bg-neutral-50/70 italic dark:bg-neutral-800/40">
                             <td class="px-4 py-2.5 text-neutral-600 dark:text-neutral-300">Others ({{ others.jumlah }} supplier lainnya)</td>

@@ -107,6 +107,45 @@ class BsApInvoice extends Model
      *
      * @param  iterable<array{account_id:mixed,credit?:mixed}|object>  $lines
      */
+    /**
+     * Nilai HUTANG tiap invoice menurut jurnalnya: jumlah kredit pada akun hutangnya (Utang Usaha
+     * Supplier / BYMHD / akun hutang lain yang dikredit) — nilai yang memang dibayar ke supplier,
+     * sesudah PPh dipotong. Invoice tanpa jurnal (saldo awal) memakai nett (payable_amount).
+     * Satu query untuk seluruh daftar.
+     *
+     * @param  iterable<BsApInvoice>  $invoices
+     * @return array<int,float> id invoice → nilai hutang
+     */
+    public static function nilaiHutangJurnal(iterable $invoices): array
+    {
+        $inv = collect($invoices);
+        $baris = \Illuminate\Support\Facades\DB::table('bs_journal_lines as l')
+            ->join('bs_accounts as a', 'a.id', '=', 'l.account_id')
+            ->whereIn('l.journal_id', $inv->pluck('journal_id')->filter()->unique()->values())
+            ->where('l.credit', '>', 0)
+            ->get(['l.journal_id', 'l.account_id', 'l.credit', 'a.code'])->groupBy('journal_id');
+        // Utamakan COA Utang Usaha Supplier & BYMHD (permintaan Finance): akun hutang invoice data
+        // lama bisa keliru (mis. Uang Muka Pembelian yang ikut dikredit).
+        $utama = array_filter([config('business_support.gl_accounts.payable'), config('business_support.gl_accounts.accrued_expense')]);
+
+        $hasil = [];
+        foreach ($inv as $i) {
+            $kredit = $baris[$i->journal_id] ?? collect();
+            $diUtama = $kredit->whereIn('code', $utama);
+            if ($diUtama->isNotEmpty()) {
+                $hasil[$i->id] = round((float) $diUtama->sum('credit'), 2);
+
+                continue;
+            }
+            $akun = $kredit->isEmpty() ? null : self::akunHutangDariJurnal($kredit, (int) $i->payable_account_id);
+            $hasil[$i->id] = $akun
+                ? round((float) $kredit->where('account_id', $akun)->sum('credit'), 2)
+                : round($i->payable_amount, 2);
+        }
+
+        return $hasil;
+    }
+
     public static function akunHutangDariJurnal(iterable $lines, ?int $semula): ?int
     {
         $kredit = collect($lines)->map(fn ($l) => (array) $l)
@@ -117,8 +156,13 @@ class BsApInvoice extends Model
         if ($semula && $kredit->contains(fn ($l) => (int) $l['account_id'] === $semula)) {
             return $semula;
         }
+        // Kredit terbesar di akun KEWAJIBAN (kode 2…) lebih dulu — kredit pada akun aset (mis. Uang
+        // Muka Pembelian yang dikompensasi) bukan hutang.
+        $kodeAkun = \Illuminate\Support\Facades\DB::table('bs_accounts')
+            ->whereIn('id', $kredit->pluck('account_id')->unique()->values())->pluck('code', 'id');
+        $kewajiban = $kredit->filter(fn ($l) => str_starts_with((string) ($kodeAkun[$l['account_id']] ?? ''), '2'));
 
-        return (int) $kredit->sortByDesc(fn ($l) => (float) $l['credit'])->first()['account_id'];
+        return (int) ($kewajiban->isNotEmpty() ? $kewajiban : $kredit)->sortByDesc(fn ($l) => (float) $l['credit'])->first()['account_id'];
     }
 
     // ── EDIT & BATAL ─────────────────────────────────────────────────────────────

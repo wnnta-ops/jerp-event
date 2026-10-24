@@ -703,6 +703,8 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
     Route::get('/business-support/payable-aging', [BsApController::class, 'aging'])->name('bs.ap.aging');
     // Aging Hutang Supplier — outstanding per supplier: 20 terbesar + rangkuman sisanya.
     Route::get('/business-support/payable-aging-supplier', [BsApController::class, 'agingSupplier'])->name('bs.ap.aging-supplier');
+    Route::get('/business-support/payable-aging-supplier/excel', [BsApController::class, 'agingSupplierExcel'])->name('bs.ap.aging-supplier.excel');
+    Route::get('/business-support/payable-aging-supplier/pdf', [BsApController::class, 'agingSupplierPdf'])->name('bs.ap.aging-supplier.pdf');
     Route::get('/business-support/payable-aging-pdf', [BsApController::class, 'agingExportPdf'])->name('bs.ap.aging.export-pdf');   // #139
     Route::get('/business-support/payable-aging-excel', [BsApController::class, 'agingExportExcel'])->name('bs.ap.aging.export-excel'); // #139
     Route::get('/business-support/payable-kartu', [BsApController::class, 'card'])->name('bs.ap.card');
@@ -1229,6 +1231,8 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
     Route::post('/business-support/dc-employee-repair/run', [BsEmployeeCenterController::class, 'repairRun'])->name('bs.dc.employee.repair.run');
 
     Route::get('/business-support/projection', [BsProjectionController::class, 'index'])->name('bs.projection');
+    Route::get('/business-support/projection/excel', [BsProjectionController::class, 'excel'])->name('bs.projection.excel');
+    Route::get('/business-support/projection/pdf', [BsProjectionController::class, 'pdf'])->name('bs.projection.pdf');
 
     // ── BOOKED REVENUE (pendapatan ter-booking per customer & unit) ──
     Route::get('/business-support/booked-revenue', [BsBookedRevenueController::class, 'index'])->name('bs.booked-revenue.index');
