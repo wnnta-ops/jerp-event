@@ -137,6 +137,9 @@ final class PengajuanKasbonPrinter
             .'.ttdb{table-layout:fixed}.ttdb td{font-size:11px}.ttdb .h td{border-bottom:0;vertical-align:top}'
             .'.ttdb .b td{border-top:0;height:78px;vertical-align:bottom}'
             .'.ttd .ruang{height:62px}'
+            // Kotak tanda tangan KAS BON: bergaris penuh, 7 kolom sama lebar.
+            .'.ttdk{margin-top:22px;table-layout:fixed}.ttdk td{text-align:center;font-size:11px;vertical-align:middle;padding:4px}'
+            .'.ttdk .ruang td{height:62px}'
             .'.kop td{border:0;vertical-align:middle;padding:0 0 0 8px}'
             .'.kop td:first-child{padding-left:0}'
             .'.logo{width:56px;height:56px;object-fit:contain;display:block}'
@@ -195,16 +198,19 @@ final class PengajuanKasbonPrinter
         // "Disetujui", General Manager di "Dibayar", Direktur di "Diterima".)
         $judulTtd = [['Yang Mengajukan', 1], ['Diverifikasi', 2], ['Disetujui', 2], ['Dibayar', 1], ['Diterima', 1]];
         $jabatanTtd = ['SPV/Manager Dept.', 'Manager Accounting', 'Manager Finance', 'General Manager', 'Direktur', '', ''];
+        // Kotak BERGARIS & lebar sama seperti BPP (26 Okt 2026): judul di atas, ruang tanda
+        // tangan per kolom, jabatan di dasarnya — dulu tanpa garis, jabatannya tak lurus judul.
         $selTtd = '';
         foreach ($judulTtd as [$judul, $span]) {
             $selTtd .= '<td colspan="'.$span.'">'.$this->e($judul).'</td>';
         }
-        $selTtd .= '</tr><tr><td colspan="'.count($jabatanTtd).'" class="ruang"></td></tr><tr>';
+        $selTtd .= '</tr><tr class="ruang">'.str_repeat('<td></td>', count($jabatanTtd)).'</tr><tr>';
         foreach ($jabatanTtd as $jabatan) {
             $selTtd .= '<td>'.$this->e($jabatan).'</td>';
         }
 
-        $isi = $this->kop('<div style="font-size:20px;font-weight:700">KAS BON</div>')
+        $isi = $this->kop('<div class="cap">Created By Java Core System ('.$this->e(now()->format('d-m-Y H.i.s')).')</div>'
+                .'<div style="font-size:20px;font-weight:700;margin-top:4px">KAS BON</div>')
 
             .'<table class="nb" style="margin:14px 0 8px"><tr>'
             .'<td style="width:55%"><table class="nb">'
@@ -234,7 +240,7 @@ final class PengajuanKasbonPrinter
             .'<div style="margin-top:8px">Catatan :</div>'
             .'<div style="border:1px solid #000;height:48px;margin-top:3px"></div>'
 
-            .'<table class="ttd"><tr>'.$selTtd.'</tr></table>';
+            .'<table class="ttdk"><colgroup>'.str_repeat('<col style="width:'.round(100 / count($jabatanTtd), 4).'%">', count($jabatanTtd)).'</colgroup><tr>'.$selTtd.'</tr></table>';
 
         return $this->bungkus($advance->advance_number.' — KAS BON', $isi);
     }
