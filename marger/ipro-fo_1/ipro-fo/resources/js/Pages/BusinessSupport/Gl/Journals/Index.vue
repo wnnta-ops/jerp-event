@@ -382,14 +382,18 @@ function rentangBaris(j: any) { return barisTampil(j).length; }
                  rincian kini melekat pada nomor jurnalnya di kolom pertama, yang selalu terlihat
                  tanpa harus menggeser tabel selebar ini sampai ke ujung.
 
-                 Jumlah sekarang: 40+40+192+120+128+240+112+192+144+256+256+144+144 = 2008px
-                 = 125.5rem. Kartunya sudah overflow-x-auto, jadi layar sempit MENGGESER — bukan
+                 Kolom Diinput Oleh (176px) ditambahkan setelah Status — JATAHNYA WAJIB ikut di
+                 colgroup; tanpa itu seluruh kolom sesudahnya bergeser satu jatah dan Kredit
+                 tergencet tanpa lebar.
+
+                 Jumlah sekarang: 40+40+192+120+128+240+112+176+192+144+256+256+144+144 = 2184px
+                 = 136.5rem. Kartunya sudah overflow-x-auto, jadi layar sempit MENGGESER — bukan
                  menggencet satu kolom sampai tak terbaca. -->
-            <table class="w-full min-w-[125.5rem] table-fixed text-sm">
+            <table class="w-full min-w-[136.5rem] table-fixed text-sm">
                 <colgroup>
                     <col class="w-10" /><col class="w-10" />
                     <col class="w-[12rem]" /><col class="w-[7.5rem]" /><col class="w-[8rem]" />
-                    <col class="w-[15rem]" /><col class="w-[7rem]" /><col class="w-[12rem]" />
+                    <col class="w-[15rem]" /><col class="w-[7rem]" /><col class="w-[11rem]" /><col class="w-[12rem]" />
                     <!-- Nama Akun & Keterangan Baris: dua kolom berisi teks terpanjang di tabel
                          ini (mis. "PENYELESAIAN BIAYA KONSTRUKSI JRK CLUSTER 3 KRIAN"), jadi
                          keduanya diberi porsi terbesar — bukan sisa. -->
@@ -502,8 +506,10 @@ function rentangBaris(j: any) { return barisTampil(j).length; }
                             <td class="px-4 py-2.5 align-top text-center"><Badge :variant="statusBadge[j.status] ?? 'neutral'" size="sm">{{ statuses[j.status] ?? j.status }}</Badge></td>
                             <!-- Diinput Oleh: akun J-ERP pembuat jurnal; jurnal dari eProperty memakai nama
                                  penginputnya di sana (teks, ditandai "eProperty"). -->
-                            <td class="px-4 py-2.5 align-top whitespace-nowrap">
-                                <template v-if="j.diinput_oleh">{{ j.diinput_oleh }}<span v-if="!j.created_by" class="ml-1 text-[10px] text-neutral-400">(eProperty)</span></template>
+                            <!-- Boleh MEMBUNGKUS: nama panjang + tanda eProperty melebihi 11rem dan, bila
+                                 dipaksa satu baris, menimpa kolom Cost Center di sebelahnya. -->
+                            <td class="px-4 py-2.5 align-top whitespace-normal break-words">
+                                <template v-if="j.diinput_oleh">{{ j.diinput_oleh }}<span v-if="!j.created_by" class="block text-[10px] text-neutral-400">eProperty</span></template>
                                 <span v-else class="text-[11px] text-neutral-400">—</span>
                             </td>
                             <!-- COST CENTER (departemen) yang benar-benar tercatat di GL: cost
@@ -522,7 +528,7 @@ function rentangBaris(j: any) { return barisTampil(j).length; }
                                  seperti kolom jurnal lainnya — bukan di-rowspan. -->
                             <td class="px-4 py-2.5 align-top">
                                 <span v-for="cc in (j.cost_centers ?? [])" :key="cc"
-                                      class="mb-0.5 mr-1 inline-block rounded-md bg-primary-50 px-2 py-0.5 text-[11px] font-medium text-primary-700 ring-1 ring-primary-200 dark:bg-primary-900/30 dark:text-primary-300 dark:ring-primary-800">{{ cc }}</span>
+                                      class="mb-0.5 mr-1 inline-block max-w-full break-all rounded-md bg-primary-50 px-2 py-0.5 text-[11px] font-medium text-primary-700 ring-1 ring-primary-200 dark:bg-primary-900/30 dark:text-primary-300 dark:ring-primary-800">{{ cc }}</span>
                                 <!-- Jurnal migrasi data awal: cost center-nya memang dibebaskan.
                                      Disebutkan apa adanya, bukan dibiarkan "—" — tanda pisah itu
                                      terbaca seperti cost center yang lupa diisi. -->
