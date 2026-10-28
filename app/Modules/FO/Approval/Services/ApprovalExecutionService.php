@@ -343,13 +343,15 @@ class ApprovalExecutionService
             $lines = Komisi::query()
                 ->where('no_pengajuan', $no)->where('status', 'PENDING')->get();
             foreach ($lines as $k) {
+                // Dibayar ke KANTOR agent bila ada (rekening kantor), bukan ke sales perorangan.
+                $penerima = $k->agent?->penerimaKomisi();
                 $k->update([
                     'status' => 'PAID',
                     'tgl_bayar' => now(),
                     'amount_net' => max(0, (float) $k->amount - (float) $k->pph_amount - (float) $k->ppn_amount),
-                    'rek_bank' => $k->rek_bank ?: $k->agent?->rekening_bank,
-                    'rek_number' => $k->rek_number ?: $k->agent?->rekening_number,
-                    'rek_holder' => $k->rek_holder ?: ($k->agent?->rekening_holder ?: $k->agent?->name),
+                    'rek_bank' => $k->rek_bank ?: $penerima?->rekening_bank,
+                    'rek_number' => $k->rek_number ?: $penerima?->rekening_number,
+                    'rek_holder' => $k->rek_holder ?: ($penerima?->rekening_holder ?: $penerima?->name),
                 ]);
             }
 
