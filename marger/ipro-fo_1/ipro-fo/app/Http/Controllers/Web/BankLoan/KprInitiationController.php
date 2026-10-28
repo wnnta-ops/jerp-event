@@ -38,7 +38,7 @@ class KprInitiationController extends Controller
     ];
 
     /** Berkas WAJIB per kategori Collect Berkas (item "(Apabila Ada)" TIDAK termasuk → tidak menghalangi lanjut).
-     *  Tanda Terima Gaji Tunai & SPT Tahunan (karyawan) + SPT Tahunan (wirausaha) = opsional. */
+     *  Tanda Terima Gaji Tunai & SPT Tahunan dihapus dari checklist (28 Okt 2026): termasuk berkas tambahan. */
     private const BERKAS_REQUIRED = [
         'karyawan'  => ['ktp_pemohon', 'ktp_pasangan', 'kk', 'npwp_pemohon', 'npwp_pasangan', 'surat_nikah', 'sk_kerja', 'slip_gaji_3bln', 'rekening_koran_3bln'],
         'wirausaha' => ['ktp_pemohon', 'ktp_pasangan', 'kk', 'npwp_pemohon', 'npwp_pasangan', 'surat_nikah', 'laporan_keuangan_6bln', 'rekening_koran_usaha_6bln', 'foto_denah_shareloc'],

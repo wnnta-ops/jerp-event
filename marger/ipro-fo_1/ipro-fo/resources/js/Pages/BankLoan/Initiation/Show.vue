@@ -329,8 +329,6 @@ const berkasCategories: Record<string, { label: string; items: BerkasItem[] }> =
         { key: 'sk_kerja', label: 'SK Kerja' },
         { key: 'slip_gaji_3bln', label: 'Slip Gaji 3 Bulan' },
         { key: 'rekening_koran_3bln', label: 'Rekening Koran 3 Bulan' },
-        { key: 'tanda_terima_gaji_3bln', label: 'Tanda Terima Gaji Tunai 3 Bulan (Apabila Ada)', optional: true },
-        { key: 'spt_tahunan', label: 'SPT Tahunan (Apabila Ada)', optional: true },
     ]},
     wirausaha: { label: 'Wirausaha', items: [
         { key: 'ktp_pemohon', label: 'KTP Pemohon' },
@@ -342,7 +340,6 @@ const berkasCategories: Record<string, { label: string; items: BerkasItem[] }> =
         { key: 'laporan_keuangan_6bln', label: 'Laporan Keuangan 6 Bulan' },
         { key: 'rekening_koran_usaha_6bln', label: 'Rekening Koran Usaha 6 Bulan' },
         { key: 'foto_denah_shareloc', label: 'Foto-Foto, Denah Lokasi Manual, Shareloc Tempat Usaha' },
-        { key: 'spt_tahunan', label: 'SPT Tahunan (Apabila Ada)', optional: true },
     ]},
 };
 const currentItems = computed<BerkasItem[]>(() => berkasCategories[f.collect_berkas.category]?.items ?? []);
@@ -361,6 +358,18 @@ function setBerkasStatus(key: string, status: 'lengkap' | 'tidak_lengkap') {
     const it = f.collect_berkas.items[key] ?? (f.collect_berkas.items[key] = { status: '', note: '', status_at: null });
     it.status = status;
     it.status_at = new Date().toISOString();
+}
+/* Tandai Semua Lengkap (permintaan KPR 27 Okt 2026) — hanya berkas WAJIB yang BELUM ditandai:
+   yang sudah "Tidak Lengkap" tidak ditimpa, yang sudah "Lengkap" tidak di-cap ulang waktunya,
+   dan berkas "Apabila Ada" (optional) dilewati. Tiap berkas tetap mendapat cap jam & tanggal
+   sendiri, sama seperti diklik satu per satu. */
+const belumDitandai = computed<BerkasItem[]>(() => currentItems.value
+    .filter((it) => !it.optional && !f.collect_berkas.items[bkey(it.key)]?.status));
+function tandaiSemuaLengkap() {
+    const daftar = belumDitandai.value;
+    if (!daftar.length) return;
+    if (!confirm(`Tandai ${daftar.length} berkas wajib yang belum ditandai sebagai Lengkap?\n(Berkas "Tidak Lengkap" dan "Apabila Ada" tidak diubah.)`)) return;
+    for (const it of daftar) setBerkasStatus(bkey(it.key), 'lengkap');
 }
 // File & waktu unggah dibaca dari props server (reaktif); status/catatan dari form (editable).
 function itemFile(key: string): any { return a.value.stages?.collect_berkas?.items?.[key] ?? null; }
@@ -857,7 +866,12 @@ const analisaLabel: Record<string, string> = { layak: 'Layak', tidak_layak: 'Tid
                         <p v-if="!f.collect_berkas.category" class="text-sm text-warning-600">Pilih kategori pemohon (Karyawan / Wirausaha) untuk menampilkan checklist berkas.</p>
 
                         <template v-else>
-                            <p class="text-xs text-neutral-500">Tandai tiap berkas <b>Lengkap</b> / <b>Tidak Lengkap</b>. Untuk yang Tidak Lengkap, isi catatan (di sebelah kanan).</p>
+                            <div class="flex flex-wrap items-center justify-between gap-2">
+                                <p class="text-xs text-neutral-500">Tandai tiap berkas <b>Lengkap</b> / <b>Tidak Lengkap</b>. Untuk yang Tidak Lengkap, isi catatan (di sebelah kanan).</p>
+                                <button type="button" @click="tandaiSemuaLengkap" :disabled="!belumDitandai.length"
+                                        :title="belumDitandai.length ? 'Tandai ' + belumDitandai.length + ' berkas wajib yang belum ditandai' : 'Semua berkas wajib sudah ditandai'"
+                                        class="rounded-lg border border-success-500 bg-success-50 px-3 py-1.5 text-xs font-semibold text-success-700 transition hover:bg-success-100 disabled:cursor-not-allowed disabled:opacity-40 dark:bg-success-900/20 dark:text-success-300">✓ Tandai Semua Lengkap<span v-if="belumDitandai.length"> ({{ belumDitandai.length }})</span></button>
+                            </div>
                             <div class="space-y-2">
                                 <div v-for="(it, i) in currentItems" :key="bkey(it.key)" class="rounded-lg border border-neutral-200 p-3 dark:border-neutral-800">
                                     <div class="flex flex-wrap items-center gap-x-3 gap-y-2">
