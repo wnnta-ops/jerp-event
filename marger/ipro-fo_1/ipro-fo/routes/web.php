@@ -485,6 +485,14 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
     Route::get('/kpr/kalkulator', [App\Http\Controllers\Web\BankLoan\KprCalculatorController::class, 'kalkulator'])->name('kpr.kalkulator.index');
     Route::get('/kpr/kalkulator/gambar/{berkas}', [App\Http\Controllers\Web\BankLoan\KprCalculatorController::class, 'gambar'])->name('kpr.kalkulator.gambar');
 
+    // Approval perubahan Proses KPR — Set Up → Setup Approval KPR & menu KPR → Approval
+    // (segmen statis, HARUS sebelum /kpr/{kpr}).
+    Route::get('/kpr/setup/approval', [App\Http\Controllers\Web\BankLoan\KprApprovalController::class, 'setup'])->name('kpr.setup.approval.index');
+    Route::put('/kpr/setup/approval', [App\Http\Controllers\Web\BankLoan\KprApprovalController::class, 'saveSetup'])->name('kpr.setup.approval.update');
+    Route::get('/kpr/approval/{stage}', [App\Http\Controllers\Web\BankLoan\KprApprovalController::class, 'index'])->name('kpr.approval.index');
+    Route::post('/kpr/approval/{change}/setujui', [App\Http\Controllers\Web\BankLoan\KprApprovalController::class, 'approve'])->name('kpr.approval.approve');
+    Route::post('/kpr/approval/{change}/tolak', [App\Http\Controllers\Web\BankLoan\KprApprovalController::class, 'reject'])->name('kpr.approval.reject');
+
     // ── BUSINESS SUPPORT (Back-Office Akuntansi) ───────────
     // Halaman hub "Business Support" (bs.index) & Module (bs.module) DIHILANGKAN — navigasi antar
     // modul lewat sidebar; back-link "← Business Support" ikut dibuang dari semua halaman.
@@ -1396,6 +1404,9 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
     Route::put('/kpr/{kpr}/akad', [KprApplicationController::class, 'updateAkad'])->name('kpr.akad.update');
     Route::delete('/kpr/{kpr}/akad', [KprApplicationController::class, 'destroyAkad'])->name('kpr.akad.destroy');
     Route::delete('/kpr/{kpr}/realization/{realization}', [KprApplicationController::class, 'destroyRealization'])->name('kpr.realization.destroy');
+    Route::put('/kpr/{kpr}/realization/{realization}', [KprApplicationController::class, 'updateRealization'])->name('kpr.realization.update');
+    Route::put('/kpr/{kpr}/process', [KprApplicationController::class, 'updateProcess'])->name('kpr.process.update'); // ubah data tahap Wawancara..Banding yang sudah dilalui
+    Route::delete('/kpr/{kpr}/perubahan/{change}', [KprApplicationController::class, 'cancelChange'])->name('kpr.change.cancel'); // tarik pengajuan perubahan sendiri
     // GET fallback untuk URL aksi KPR (POST-only): bila diakses via GET (reload / address bar lama / akses langsung),
     // arahkan ke detail KPR — bukan 405 Method Not Allowed.
     foreach (['submit', 'sp3k', 'akad', 'akad-complete', 'disbursement', 'reject', 'cancel', 'uncancel', 'proceed-submitted', 'proceed-sp3k', 'proceed-si', 'proceed-akad', 'step-back', 'go-stage', 'process'] as $kprAction) {

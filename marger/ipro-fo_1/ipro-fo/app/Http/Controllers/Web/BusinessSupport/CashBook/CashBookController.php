@@ -1133,8 +1133,10 @@ class CashBookController extends Controller
                 // Sama dengan layar & Buku Besar GL: keterangan baris + kepala jurnal (bila berbeda).
                 [$ket, $ketJurnal] = KeteranganJurnal::pisah($r->description, $r->journal_description);
 
+                // No. Voucher (nomor jurnal) & Referensi (dokumen sumber) di kolom SENDIRI-SENDIRI —
+                // dulu satu kolom "reference ?: journal_number" sehingga no. voucher hilang bila ada referensi.
                 return [
-                    'date' => (string) $r->journal_date, 'ref' => $r->reference ?: $r->journal_number,
+                    'date' => (string) $r->journal_date, 'voucher' => (string) $r->journal_number, 'ref' => (string) $r->reference,
                     'desc' => $ket, 'journal_desc' => $ketJurnal,
                     'debit' => (float) $r->debit, 'credit' => (float) $r->credit, 'balance' => round($running, 2),
                 ];
@@ -1157,16 +1159,20 @@ class CashBookController extends Controller
         $e  = fn ($s) => htmlspecialchars((string) $s, ENT_QUOTES, 'UTF-8');
         $rp = fn ($n) => number_format((float) $n, 0, ',', '.');
 
-        $h = '<table border="1"><tr><th colspan="6" style="background:#0f766e;color:#fff">Rekening Ledger: '.$e($d['acc']?->code).' — '.$e($d['acc']?->name).'</th></tr>'
-            .'<tr style="background:#e2e8f0"><th>Tanggal</th><th>Referensi</th><th>Keterangan</th><th>Debit</th><th>Kredit</th><th>Saldo</th></tr>'
-            .'<tr><td colspan="5">Saldo Awal</td><td>'.$rp($d['opening']).'</td></tr>';
+        // Sel teks (mso-number-format '\@') — no. voucher/referensi tidak dibaca Excel sebagai angka/tanggal.
+        $t = fn ($v) => '<td style="mso-number-format:\'\@\'">'.$e($v).'</td>';
+
+        $h = '<table border="1"><col width="90"><col width="170"><col width="150"><col width="380"><col width="110"><col width="110"><col width="120">'
+            .'<tr><th colspan="7" style="background:#0f766e;color:#fff">Rekening Ledger: '.$e($d['acc']?->code).' — '.$e($d['acc']?->name).'</th></tr>'
+            .'<tr style="background:#e2e8f0"><th>Tanggal</th><th>No. Voucher</th><th>Referensi</th><th>Keterangan</th><th>Debit</th><th>Kredit</th><th>Saldo</th></tr>'
+            .'<tr><td colspan="6">Saldo Awal</td><td>'.$rp($d['opening']).'</td></tr>';
         foreach ($d['entries'] as $en) {
             // Keterangan jurnal di SEL YANG SAMA (pindah baris di dalam sel) — urutan kolom tetap.
             $ket = $e($en['desc']).($en['journal_desc'] ? '<br style="mso-data-placement:same-cell">'.$e($en['journal_desc']) : '');
-            $h .= '<tr><td>'.$e($en['date']).'</td><td>'.$e($en['ref']).'</td><td style="white-space:normal">'.$ket
+            $h .= '<tr><td>'.$e($en['date']).'</td>'.$t($en['voucher']).$t($en['ref']).'<td style="white-space:normal">'.$ket
                 .'</td><td>'.$rp($en['debit']).'</td><td>'.$rp($en['credit']).'</td><td>'.$rp($en['balance']).'</td></tr>';
         }
-        $h .= '<tr style="background:#e2e8f0"><td colspan="5"><b>Saldo Akhir</b></td><td><b>'.$rp($d['closing']).'</b></td></tr></table>';
+        $h .= '<tr style="background:#e2e8f0"><td colspan="6"><b>Saldo Akhir</b></td><td><b>'.$rp($d['closing']).'</b></td></tr></table>';
 
         return $this->xlsResponse($h, 'Rekening-Ledger-'.($d['acc']?->code ?? 'rekening').'-'.now()->format('Ymd-His').'.xls');
     }
@@ -1180,14 +1186,14 @@ class CashBookController extends Controller
         $e  = fn ($s) => htmlspecialchars((string) $s, ENT_QUOTES, 'UTF-8');
         $rp = fn ($n) => number_format((float) $n, 0, ',', '.');
 
-        $body = '<table><thead><tr><th>Tanggal</th><th>Referensi</th><th>Keterangan</th><th class="r">Debit</th><th class="r">Kredit</th><th class="r">Saldo</th></tr></thead><tbody>'
-            .'<tr><td colspan="5">Saldo Awal</td><td class="r">'.$rp($d['opening']).'</td></tr>';
+        $body = '<table><thead><tr><th>Tanggal</th><th>No. Voucher</th><th>Referensi</th><th>Keterangan</th><th class="r">Debit</th><th class="r">Kredit</th><th class="r">Saldo</th></tr></thead><tbody>'
+            .'<tr><td colspan="6">Saldo Awal</td><td class="r">'.$rp($d['opening']).'</td></tr>';
         foreach ($d['entries'] as $en) {
             $ket = $e($en['desc']).($en['journal_desc'] ? '<div style="font-size:9px;color:#6b7280">'.$e($en['journal_desc']).'</div>' : '');
-            $body .= '<tr><td>'.$e($en['date']).'</td><td>'.$e($en['ref']).'</td><td>'.$ket
+            $body .= '<tr><td style="white-space:nowrap">'.$e($en['date']).'</td><td style="white-space:nowrap">'.$e($en['voucher']).'</td><td style="white-space:nowrap">'.$e($en['ref']).'</td><td>'.$ket
                 .'</td><td class="r">'.($en['debit'] ? $rp($en['debit']) : '').'</td><td class="r">'.($en['credit'] ? $rp($en['credit']) : '').'</td><td class="r">'.$rp($en['balance']).'</td></tr>';
         }
-        $body .= '</tbody><tfoot><tr><td colspan="5">Saldo Akhir</td><td class="r">'.$rp($d['closing']).'</td></tr></tfoot></table>';
+        $body .= '</tbody><tfoot><tr><td colspan="6">Saldo Akhir</td><td class="r">'.$rp($d['closing']).'</td></tr></tfoot></table>';
 
         return $this->pdfPage('REKENING LEDGER', trim((string) $d['acc']?->code.' — '.(string) $d['acc']?->name, ' —'), $body);
     }

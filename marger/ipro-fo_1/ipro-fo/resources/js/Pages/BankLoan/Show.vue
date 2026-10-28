@@ -13,6 +13,8 @@ const props = defineProps<{ app: any; identity?: any; siblings?: Array<any>; cus
     bookedRevenue?: { br_number: string; booking_date: string | null; amount: number; total: number } | null;
     /** Format SI yang dipakai tombol Cetak SI pada tahap SI (mengikuti bank KPR ini). */
     siFormat?: { bank: string; label: string; ready: boolean };
+    /** Approval perubahan: mode per tahap ('ajukan' = wajib approval), pengajuan yang menunggu, riwayat. */
+    perubahan?: { mode: Record<string, 'ajukan' | 'langsung'>; pending: any | null; riwayat: any[] };
 }>();
 const a = props.app;
 const showOtherApps = ref(false);
@@ -267,6 +269,7 @@ function proceedAkad() { router.post(route('kpr.proceed-akad', a.id), {}, { onSu
 const canStepBack = computed(() => ['wawancara', 'input_bank', 'verifikasi', 'analis', 'banding', 'sp3k', 'si', 'akad'].includes(a.status));
 function stepBack() {
     if (!canStepBack.value) return;
+    if (butuhApproval('prosesbank')) return bukaPerubahan('mundur');
     if (!confirm('Kembali ke tahap sebelumnya? Data tahap ini tetap tersimpan — Anda bisa meninjau/mengedit tahap sebelumnya lalu melanjutkan kembali.')) return;
     router.post(route('kpr.step-back', a.id), {}, { onSuccess: () => window.location.reload() });
 }
@@ -291,6 +294,7 @@ function canGoStage(i: number, s: string): boolean {
     return i <= reachedNavIdx.value;
 }
 function goStage(s: string) {
+    if (butuhApproval('prosesbank')) return bukaPerubahan('buka_tahap', { stage: s });
     if (!confirm(`Buka tahap "${stepLabels[s]}" untuk ditinjau / diedit?`)) return;
     router.post(route('kpr.go-stage', a.id), { stage: s }, { onSuccess: () => window.location.reload() });
 }
@@ -362,6 +366,7 @@ function cekProsesLain() { showOtherApps.value = true; if (typeof window !== 'un
 
 // Tolak proses KPR (dari tahap Submitted/SP3K) → status Rejected; muncul di Database KPR → Reject Proses KPR.
 function reject() {
+    if (butuhApproval('batal')) return bukaPerubahan('tolak');
     if (! confirm('Tolak proses KPR ini? Status menjadi Ditolak (Rejected) dan tidak dilanjutkan ke Akad.')) return;
     const reason = window.prompt('Alasan penolakan (opsional):', '');
     if (reason === null) return; // dibatalkan
@@ -379,6 +384,7 @@ const showCancel = computed(() => mayDecideKpr.value && !['rejected', 'cancelled
 const canCancel = computed(() => CANCELLABLE.includes(a.status));
 function cancelKpr() {
     if (!canCancel.value || !mayDecideKpr.value) return;
+    if (butuhApproval('batal')) return bukaPerubahan('batal');
     if (!confirm(`Batalkan Proses KPR ${a.application_number}?\n\nStatus menjadi Batal (Cancelled) dan proses tidak dilanjutkan. Data tiap tahap tetap tersimpan (tidak dihapus) dan proses bisa dipulihkan lagi lewat tombol "Pulihkan Proses".`)) return;
     router.post(route('kpr.cancel', a.id), {}, { onSuccess: () => window.location.reload() });
 }
@@ -386,6 +392,7 @@ function cancelKpr() {
 const showUncancel = computed(() => mayDecideKpr.value && a.status === 'cancelled');
 function uncancelKpr() {
     if (!showUncancel.value) return;
+    if (butuhApproval('batal')) return bukaPerubahan('pulihkan');
     if (!confirm(`Pulihkan Proses KPR ${a.application_number}?\n\nStatus kembali ke tahap terakhir sebelum dibatalkan; keputusan "Batal" dicabut (kembali Belum diputuskan).`)) return;
     router.post(route('kpr.uncancel', a.id), {}, { onSuccess: () => window.location.reload() });
 }
@@ -400,10 +407,11 @@ function submitSp3k() {
     // Satu proses: catat SP3K + langsung lanjut ke SI (status dimajukan server).
     sp3kForm.post(route('kpr.sp3k', a.id), { onSuccess: () => window.location.reload() });
 }
-function deleteSp3k() { if (confirm('Hapus SP3K? Status kembali ke Submitted.')) router.delete(route('kpr.sp3k.destroy', a.id), { onSuccess: () => window.location.reload() }); }
+function deleteSp3k() { if (butuhApproval('sp3k')) return bukaPerubahan('sp3k_hapus'); if (confirm('Hapus SP3K? Status kembali ke Submitted.')) router.delete(route('kpr.sp3k.destroy', a.id), { onSuccess: () => window.location.reload() }); }
 
 // ── Akad (inline) ──
 function openEditAkad() {
+    if (butuhApproval('akad')) return bukaPerubahan('akad_ubah');
     if (a.akad) { akadForm.akad_at = String(a.akad.akad_at).slice(0, 10); akadForm.place = a.akad.place ?? ''; }
     editAkad.value = true;
 }
@@ -413,7 +421,7 @@ function submitAkad() {
     if (a.akad) akadForm.put(route('kpr.akad.update', a.id), opts);   // edit
     else akadForm.post(route('kpr.akad', a.id), opts);                // catat akad → status lanjut ke Pencairan
 }
-function deleteAkad() { if (confirm('Hapus Akad? Status kembali ke SP3K.')) router.delete(route('kpr.akad.destroy', a.id), { onSuccess: () => window.location.reload() }); }
+function deleteAkad() { if (butuhApproval('akad')) return bukaPerubahan('akad_hapus'); if (confirm('Hapus Akad? Status kembali ke SP3K.')) router.delete(route('kpr.akad.destroy', a.id), { onSuccess: () => window.location.reload() }); }
 
 // ── Pencairan (inline) ──
 function submitDisb() {
@@ -440,6 +448,7 @@ function submitDisb() {
     });
 }
 function deleteRealization(id: number) {
+    if (butuhApproval('pencairan')) return bukaPerubahan('pencairan_hapus', { target: (a.realizations ?? []).find((r: any) => r.id === id) });
     if (confirm('Hapus realisasi pencairan ini? Alokasi pembayaran & TTS akan dikembalikan.')) {
         router.delete(route('kpr.realization.destroy', [a.id, id]), { onSuccess: () => window.location.reload() });
     }
@@ -685,6 +694,118 @@ const historyNodes = computed<HistoryNode[]>(() => {
     }
     return nodes;
 });
+
+// ── Perubahan data tahap — lewat approval bila tahapnya diwajibkan (Set Up → Setup Approval KPR) ──
+// Server tetap penentunya; mode di sini hanya memilih tampilan (dialog "Ajukan" + alasan wajib).
+const perubahan = computed(() => props.perubahan ?? { mode: {} as Record<string, string>, pending: null, riwayat: [] as any[] });
+const butuhApproval = (stage: string) => perubahan.value.mode?.[stage] === 'ajukan';
+const adaPending = computed(() => !!perubahan.value.pending);
+const mayAkad = computed(() => can.value.includes('bankloan.akad.schedule'));
+const mayCair = computed(() => can.value.includes('bankloan.disbursement.create'));
+const PROSES_LABEL: Record<string, string> = { wawancara: 'Wawancara', input_bank: 'Input Sistem Bank', verifikasi: 'Proses Verifikasi', analis: 'Proses Analis', banding: 'Proses Banding' };
+const AKSI: Record<string, { stage: string; title: string; ket?: string }> = {
+    proses_ubah:     { stage: 'prosesbank', title: 'Ubah Data Tahap' },
+    mundur:          { stage: 'prosesbank', title: 'Mundur ke Tahap Sebelumnya', ket: 'Status KPR mundur satu tahap. Data tahap tetap tersimpan.' },
+    buka_tahap:      { stage: 'prosesbank', title: 'Buka Tahap', ket: 'Status KPR pindah ke tahap yang dipilih untuk ditinjau / diedit.' },
+    sp3k_ubah:       { stage: 'sp3k', title: 'Ubah SP3K' },
+    sp3k_hapus:      { stage: 'sp3k', title: 'Hapus SP3K', ket: 'SP3K dihapus dan status kembali ke tahap SP3K. Hanya bisa bila belum ada Akad / pencairan.' },
+    akad_ubah:       { stage: 'akad', title: 'Ubah Akad' },
+    akad_hapus:      { stage: 'akad', title: 'Hapus Akad', ket: 'Akad dihapus dan status kembali ke tahap Akad. Hanya bisa bila belum ada pencairan.' },
+    pencairan_ubah:  { stage: 'pencairan', title: 'Ubah Pencairan', ket: 'Baris lama dibatalkan (alokasi & TTS dikembalikan) lalu dicatat ulang dengan nilai baru.' },
+    pencairan_hapus: { stage: 'pencairan', title: 'Hapus Pencairan', ket: 'Realisasi pencairan dihapus — alokasi pembayaran & TTS dikembalikan.' },
+    batal:           { stage: 'batal', title: 'Batalkan Proses KPR', ket: 'Status menjadi Batal. Data tiap tahap tetap tersimpan dan bisa dipulihkan.' },
+    tolak:           { stage: 'batal', title: 'Tolak Proses KPR', ket: 'Status menjadi Ditolak (Rejected) dan tidak dilanjutkan ke Akad.' },
+    pulihkan:        { stage: 'batal', title: 'Pulihkan Proses KPR', ket: 'Status kembali ke tahap terakhir sebelum dibatalkan; keputusan "Batal" dicabut.' },
+};
+const STAGE_LABEL: Record<string, string> = { prosesbank: 'Proses Bank', sp3k: 'SP3K', akad: 'Akad', pencairan: 'Pencairan', batal: 'Batal / Tolak' };
+
+const dlg = reactive<{ open: boolean; aksi: string; target: any; stage: string }>({ open: false, aksi: '', target: null, stage: '' });
+const dlgForm = useForm<any>({ alasan: '' });
+const dlgAjukan = computed(() => dlg.aksi !== '' && butuhApproval(AKSI[dlg.aksi].stage));
+const dlgTitle = computed(() => dlg.aksi === 'proses_ubah' ? `Ubah Data Tahap — ${PROSES_LABEL[dlg.stage] ?? ''}` : (AKSI[dlg.aksi]?.title ?? ''));
+
+// Isian tahap tambahan diseragamkan seperti form tahapnya (tanggal 'YYYY-MM-DD', teks '').
+function salinProses(stage: string): any {
+    const p: any = (a.process_stages ?? {})[stage] ?? {};
+    const blk = (b: any) => ({ started_at: dstr(b?.started_at), notes: b?.notes ?? '', finished_at: dstr(b?.finished_at) });
+    if (stage === 'verifikasi') return { ots: blk(p.ots), wawancara2: blk(p.wawancara2), wawancara2_mode: p.wawancara2_mode ?? (p.wawancara2?.finished_at ? 'dengan' : null) };
+    if (stage === 'analis') return { ...blk(p), berkas_tambahan: p.berkas_tambahan ?? '', banding: !!p.banding };
+    if (stage === 'banding') return { ...blk(p), jenis: p.jenis ?? '', jenis_lain: p.jenis_lain ?? '', berkas_tambahan: p.berkas_tambahan ?? '' };
+    return blk(p);
+}
+// Blok tanggal-mulai / catatan / tanggal-selesai yang ditampilkan untuk tahap yang sedang diubah.
+const blokProses = computed<Array<{ title: string; obj: any }>>(() => {
+    if (dlg.aksi !== 'proses_ubah' || !dlgForm.isi) return [];
+    if (dlg.stage === 'verifikasi') {
+        const out = [{ title: 'OTS', obj: dlgForm.isi.ots }];
+        if (dlgForm.isi.wawancara2_mode === 'dengan') out.push({ title: 'Wawancara Kedua', obj: dlgForm.isi.wawancara2 });
+        return out;
+    }
+    return [{ title: '', obj: dlgForm.isi }];
+});
+
+function bukaPerubahan(aksi: string, opts: { stage?: string; target?: any } = {}) {
+    dlg.aksi = aksi;
+    dlg.stage = opts.stage ?? '';
+    dlg.target = opts.target ?? null;
+    const r = dlg.target;
+    const isi: any = { alasan: '' };
+    if (aksi === 'sp3k_ubah') Object.assign(isi, { sp3k_date: dstr(a.sp3k?.sp3k_date), approved_amount: Number(a.sp3k?.approved_amount) || 0 });
+    if (aksi === 'akad_ubah') Object.assign(isi, { akad_at: dstr(a.akad?.akad_at), place: a.akad?.place ?? '' });
+    if (aksi === 'pencairan_ubah' && r) Object.assign(isi, {
+        disbursed_at: dstr(r.disbursed_at), retention_category_id: r.retention_category_id ?? null,
+        disbursed_amount: Number(r.disbursed_amount) || 0, retention_amount: Number(r.retention_amount) || 0,
+        retention_note: r.retention_note ?? '', disbursement_scheme: r.disbursement_scheme ?? null,
+        ssp_bphtb_date: dstr(r.ssp_bphtb_date), ssp_bphtb_amount: Number(r.ssp_bphtb_amount) || 0,
+    });
+    if (aksi === 'proses_ubah') isi.isi = salinProses(dlg.stage);
+    if (aksi === 'tolak') isi.reason = '';
+    dlgForm.defaults(isi);
+    dlgForm.reset();
+    dlgForm.clearErrors();
+    dlg.open = true;
+}
+
+function kirimPerubahan() {
+    if (dlgAjukan.value && !String(dlgForm.alasan ?? '').trim()) return;
+    const f: any = dlgForm;
+    const base = { alasan: f.alasan };
+    const r = dlg.target;
+    const tujuan: Record<string, [string, string, any]> = {
+        proses_ubah:     ['put', route('kpr.process.update', a.id), { ...base, stage: dlg.stage, data: f.isi }],
+        mundur:          ['post', route('kpr.step-back', a.id), base],
+        buka_tahap:      ['post', route('kpr.go-stage', a.id), { ...base, stage: dlg.stage }],
+        sp3k_ubah:       ['put', route('kpr.sp3k.update', a.id), { ...base, sp3k_date: f.sp3k_date, approved_amount: f.approved_amount }],
+        sp3k_hapus:      ['delete', route('kpr.sp3k.destroy', a.id), base],
+        akad_ubah:       ['put', route('kpr.akad.update', a.id), { ...base, akad_at: f.akad_at, place: f.place }],
+        akad_hapus:      ['delete', route('kpr.akad.destroy', a.id), base],
+        pencairan_ubah:  ['put', route('kpr.realization.update', [a.id, r?.id ?? 0]), {
+            ...base, disbursed_at: f.disbursed_at, retention_category_id: f.retention_category_id, disbursed_amount: f.disbursed_amount,
+            retention_amount: f.retention_amount, retention_note: f.retention_note, disbursement_scheme: f.disbursement_scheme,
+            ssp_bphtb_date: f.ssp_bphtb_date || null, ssp_bphtb_amount: f.ssp_bphtb_amount,
+        }],
+        pencairan_hapus: ['delete', route('kpr.realization.destroy', [a.id, r?.id ?? 0]), base],
+        batal:           ['post', route('kpr.cancel', a.id), base],
+        tolak:           ['post', route('kpr.reject', a.id), { ...base, reason: f.reason }],
+        pulihkan:        ['post', route('kpr.uncancel', a.id), base],
+    };
+    const [method, url, data] = tujuan[dlg.aksi];
+    dlgForm.transform(() => data).submit(method as any, url, {
+        preserveScroll: true,
+        onSuccess: () => { dlg.open = false; window.location.reload(); },
+    });
+}
+
+function batalkanPengajuan() {
+    const p = perubahan.value.pending;
+    if (!p || !confirm('Tarik kembali pengajuan perubahan ini?')) return;
+    router.delete(route('kpr.change.cancel', [a.id, p.id]), { onSuccess: () => window.location.reload() });
+}
+const PERUBAHAN_STATUS: Record<string, { label: string; variant: 'warning' | 'success' | 'danger' | 'neutral' | 'info' }> = {
+    pending: { label: 'Menunggu', variant: 'warning' }, approved: { label: 'Disetujui', variant: 'success' },
+    rejected: { label: 'Ditolak', variant: 'danger' }, cancelled: { label: 'Ditarik', variant: 'neutral' },
+    direct: { label: 'Langsung', variant: 'info' },
+};
 </script>
 
 <template>
@@ -726,6 +847,22 @@ const historyNodes = computed<HistoryNode[]>(() => {
                 <template v-if="akadLocked">🔒 Proses sudah pada tahap Akad — data tahap sebelumnya terkunci (tidak dapat diedit).</template>
                 <template v-else>Klik nama tahap yang sudah dicapai untuk meninjau / mengedit tahap tersebut.</template>
             </p>
+        </div>
+
+        <!-- Pengajuan perubahan yang menunggu approval — data lama tetap berlaku sampai disetujui -->
+        <div v-if="perubahan.pending" class="card border-warning-300 bg-warning-50 p-4 dark:border-warning-700 dark:bg-warning-900/20">
+            <div class="flex flex-wrap items-start justify-between gap-2">
+                <div>
+                    <p class="text-sm font-semibold text-warning-800 dark:text-warning-300">⏳ {{ perubahan.pending.label }} — menunggu approval tahap {{ perubahan.pending.stage_label }}</p>
+                    <p class="text-xs text-warning-700 dark:text-warning-400">Diajukan {{ perubahan.pending.requested_by ?? '—' }} · {{ fmtDateTime(perubahan.pending.requested_at) }} · Alasan: {{ perubahan.pending.reason ?? '—' }}</p>
+                </div>
+                <button v-if="perubahan.pending.requested_by_id === page.props.auth.user?.id" type="button" @click="batalkanPengajuan" class="rounded border border-warning-400 px-2 py-1 text-xs text-warning-800 hover:bg-warning-100 dark:text-warning-300">Tarik Pengajuan</button>
+            </div>
+            <ul class="mt-2 space-y-0.5 text-xs">
+                <li v-for="d in perubahan.pending.rincian.filter((x: any) => x.berubah)" :key="d.label">
+                    <span class="text-neutral-500">{{ d.label }}:</span> <span class="line-through text-neutral-400">{{ d.lama }}</span> → <b>{{ d.baru }}</b>
+                </li>
+            </ul>
         </div>
 
         <!-- Tambah SP3K Lain: semua Proses KPR nasabah → pilih untuk dibuka & dilanjutkan hingga SP3K -->
@@ -907,7 +1044,10 @@ const historyNodes = computed<HistoryNode[]>(() => {
                                     <!-- #146: tampilkan pembayaran SSP/BPHTB bila ada -->
                                     <span v-if="Number(r.ssp_bphtb_amount) > 0" class="mt-0.5 block text-info-600 dark:text-info-400">SSP/BPHTB {{ fmtRp(r.ssp_bphtb_amount) }}<template v-if="r.ssp_bphtb_date"> ({{ fmtDate(r.ssp_bphtb_date) }})</template></span>
                                 </td>
-                                <td class="py-2 text-center"><button class="text-xs px-2 py-1 rounded border border-danger-300 text-danger-600 hover:bg-danger-50 dark:border-danger-700" @click="deleteRealization(r.id)">Hapus</button></td>
+                                <td class="py-2 text-center whitespace-nowrap">
+                                    <button v-if="mayCair && !adaPending" class="mr-1 text-xs px-2 py-1 rounded border border-neutral-300 hover:bg-neutral-50 dark:border-neutral-700" @click="bukaPerubahan('pencairan_ubah', { target: r })">{{ butuhApproval('pencairan') ? 'Ajukan Ubah' : 'Ubah' }}</button>
+                                    <button class="text-xs px-2 py-1 rounded border border-danger-300 text-danger-600 hover:bg-danger-50 dark:border-danger-700" @click="deleteRealization(r.id)">{{ butuhApproval('pencairan') ? 'Ajukan Hapus' : 'Hapus' }}</button>
+                                </td>
                             </tr>
                             <tr v-if="!a.realizations?.length"><td colspan="6" class="py-3 text-center text-neutral-400">Belum ada realisasi pencairan.</td></tr>
                         </tbody>
@@ -1434,9 +1574,168 @@ const historyNodes = computed<HistoryNode[]>(() => {
                         <p class="text-sm font-medium">{{ node.label }}<span v-if="node.date" class="text-xs font-normal text-neutral-400"> · {{ node.date }}</span></p>
                         <p class="text-xs text-neutral-500">{{ node.summary }}</p>
                     </div>
+                    <!-- Koreksi data tahap yang sudah dilalui — tanpa memundurkan tahap KPR -->
+                    <div v-if="!adaPending" class="flex shrink-0 items-start gap-1">
+                        <template v-if="PROSES_LABEL[node.key] && mayDecideKpr">
+                            <button type="button" class="rounded border border-neutral-300 px-2 py-0.5 text-[11px] hover:bg-neutral-50 dark:border-neutral-700" @click="bukaPerubahan('proses_ubah', { stage: node.key })">{{ butuhApproval('prosesbank') ? 'Ajukan Perubahan' : 'Ubah' }}</button>
+                        </template>
+                        <template v-else-if="node.key === 'sp3k' && mayDecideKpr">
+                            <button type="button" class="rounded border border-neutral-300 px-2 py-0.5 text-[11px] hover:bg-neutral-50 dark:border-neutral-700" @click="bukaPerubahan('sp3k_ubah')">{{ butuhApproval('sp3k') ? 'Ajukan Perubahan' : 'Ubah' }}</button>
+                            <button type="button" class="rounded border border-danger-300 px-2 py-0.5 text-[11px] text-danger-600 hover:bg-danger-50 dark:border-danger-700" @click="bukaPerubahan('sp3k_hapus')">{{ butuhApproval('sp3k') ? 'Ajukan Hapus' : 'Hapus' }}</button>
+                        </template>
+                        <template v-else-if="node.key === 'akad' && mayAkad">
+                            <button type="button" class="rounded border border-neutral-300 px-2 py-0.5 text-[11px] hover:bg-neutral-50 dark:border-neutral-700" @click="bukaPerubahan('akad_ubah')">{{ butuhApproval('akad') ? 'Ajukan Perubahan' : 'Ubah' }}</button>
+                            <button type="button" class="rounded border border-danger-300 px-2 py-0.5 text-[11px] text-danger-600 hover:bg-danger-50 dark:border-danger-700" @click="bukaPerubahan('akad_hapus')">{{ butuhApproval('akad') ? 'Ajukan Hapus' : 'Hapus' }}</button>
+                        </template>
+                    </div>
                 </li>
             </ol>
         </div>
+
+        <!-- RIWAYAT PERUBAHAN: pengajuan (disetujui/ditolak/ditarik) & perubahan langsung -->
+        <div v-if="perubahan.riwayat.length" class="card p-6">
+            <h2 class="font-semibold mb-3">Riwayat Perubahan</h2>
+            <ol class="space-y-3">
+                <li v-for="c in perubahan.riwayat" :key="c.id" class="rounded-lg border border-neutral-200 p-3 dark:border-neutral-800">
+                    <div class="flex flex-wrap items-center justify-between gap-2">
+                        <p class="text-sm font-medium">{{ c.label }} <span class="text-xs font-normal text-neutral-400">· {{ c.stage_label }}</span></p>
+                        <Badge size="sm" :variant="PERUBAHAN_STATUS[c.status]?.variant ?? 'neutral'">{{ PERUBAHAN_STATUS[c.status]?.label ?? c.status }}</Badge>
+                    </div>
+                    <ul class="mt-1 space-y-0.5 text-xs">
+                        <li v-for="d in c.rincian.filter((x: any) => x.berubah)" :key="d.label">
+                            <span class="text-neutral-500">{{ d.label }}:</span> <span class="text-neutral-400">{{ d.lama }}</span> → <b>{{ d.baru }}</b>
+                        </li>
+                    </ul>
+                    <p class="mt-1 text-xs text-neutral-500">
+                        {{ c.status === 'direct' ? 'Diubah' : 'Diajukan' }} {{ c.requested_by ?? '—' }} · {{ fmtDateTime(c.requested_at) }}<template v-if="c.reason"> · Alasan: {{ c.reason }}</template>
+                        <template v-if="c.status === 'approved' || c.status === 'rejected'"> — {{ c.status === 'approved' ? 'disetujui' : 'ditolak' }} {{ c.decided_by ?? '—' }} · {{ fmtDateTime(c.decided_at) }}<template v-if="c.decision_note"> ({{ c.decision_note }})</template></template>
+                    </p>
+                </li>
+            </ol>
+        </div>
+
+        <!-- DIALOG PERUBAHAN — satu untuk semua aksi (ubah / hapus / mundur / batal) -->
+        <Teleport to="body">
+            <div v-if="dlg.open" class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" @click.self="dlg.open = false">
+                <div class="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-xl bg-white p-6 shadow-xl dark:bg-neutral-900">
+                    <h2 class="text-lg font-bold">{{ dlgAjukan ? 'Ajukan ' : '' }}{{ dlgTitle }}</h2>
+                    <p class="mt-0.5 text-xs text-neutral-500">{{ a.application_number }} · {{ a.customer?.full_name }}</p>
+                    <p v-if="AKSI[dlg.aksi]?.ket" class="mt-2 text-sm text-neutral-600 dark:text-neutral-300">{{ AKSI[dlg.aksi].ket }}</p>
+
+                    <form @submit.prevent="kirimPerubahan" class="mt-4 space-y-3">
+                        <!-- SP3K -->
+                        <template v-if="dlg.aksi === 'sp3k_ubah'">
+                            <Input v-model="dlgForm.sp3k_date" type="date" label="Tanggal SP3K" required :hint="'Sekarang: ' + fmtDate(a.sp3k?.sp3k_date)" />
+                            <div>
+                                <label class="mb-1 block text-sm font-medium">Plafon Disetujui (Rp) <span class="text-danger-500">*</span></label>
+                                <MoneyInput v-model="dlgForm.approved_amount" />
+                                <p class="mt-1 text-xs text-neutral-400">Sekarang: {{ fmtRp(a.sp3k?.approved_amount) }} · sudah cair {{ fmtRp(grossDisbursed) }} (plafon baru tidak boleh lebih kecil)</p>
+                            </div>
+                        </template>
+
+                        <!-- Akad -->
+                        <template v-if="dlg.aksi === 'akad_ubah'">
+                            <Input v-model="dlgForm.akad_at" type="date" label="Tanggal Akad" required :hint="'Sekarang: ' + fmtDate(a.akad?.akad_at)" />
+                            <Input v-model="dlgForm.place" label="Tempat" :hint="'Sekarang: ' + (a.akad?.place ?? '—')" />
+                        </template>
+
+                        <!-- Pencairan -->
+                        <template v-if="dlg.aksi === 'pencairan_ubah'">
+                            <Input v-model="dlgForm.disbursed_at" type="date" label="Tanggal Pencairan" required />
+                            <div>
+                                <label class="mb-1 block text-sm font-medium">Kategori Retensi <span class="text-danger-500">*</span></label>
+                                <select v-model="dlgForm.retention_category_id" required class="h-9 w-full rounded-lg border border-neutral-300 bg-white px-3 text-sm dark:border-neutral-700 dark:bg-neutral-900">
+                                    <option :value="null" disabled>— pilih kategori —</option>
+                                    <option v-for="c in retentionCategories" :key="c.id" :value="c.id">{{ c.code }} - {{ c.name }}</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="mb-1 block text-sm font-medium">Nominal Cair (Rp)</label>
+                                <MoneyInput v-model="dlgForm.disbursed_amount" />
+                            </div>
+                            <div>
+                                <label class="mb-1 block text-sm font-medium">Jalur Pencairan <span v-if="bookedRevenue" class="text-danger-500">*</span></label>
+                                <select v-model="dlgForm.disbursement_scheme" class="h-9 w-full rounded-lg border border-neutral-300 bg-white px-3 text-sm dark:border-neutral-700 dark:bg-neutral-900">
+                                    <option :value="null">— tidak dipilih —</option>
+                                    <option value="bsn">BSN</option>
+                                    <option value="non_bsn">SELAIN BSN</option>
+                                </select>
+                            </div>
+                            <div class="grid gap-3 sm:grid-cols-2">
+                                <div>
+                                    <label class="mb-1 block text-sm font-medium">Retensi / DAJAM (Rp)</label>
+                                    <MoneyInput v-model="dlgForm.retention_amount" />
+                                </div>
+                                <Input v-model="dlgForm.retention_note" label="Keterangan Retensi" />
+                            </div>
+                            <div class="grid gap-3 sm:grid-cols-2">
+                                <Input v-model="dlgForm.ssp_bphtb_date" type="date" label="Tanggal SSP/BPHTB" />
+                                <div>
+                                    <label class="mb-1 block text-sm font-medium">Nominal SSP/BPHTB (Rp)</label>
+                                    <MoneyInput v-model="dlgForm.ssp_bphtb_amount" />
+                                </div>
+                            </div>
+                        </template>
+
+                        <!-- Tahap tambahan (Wawancara..Banding) -->
+                        <template v-if="dlg.aksi === 'proses_ubah' && dlgForm.isi">
+                            <div v-if="dlg.stage === 'verifikasi'">
+                                <label class="mb-1 block text-sm font-medium">Jalur Wawancara Kedua</label>
+                                <select v-model="dlgForm.isi.wawancara2_mode" class="h-9 w-full rounded-lg border border-neutral-300 bg-white px-3 text-sm dark:border-neutral-700 dark:bg-neutral-900">
+                                    <option value="dengan">Melalui Wawancara Kedua</option>
+                                    <option value="tanpa">Tanpa Wawancara Kedua</option>
+                                </select>
+                            </div>
+                            <template v-if="dlg.stage === 'banding'">
+                                <div>
+                                    <label class="mb-1 block text-sm font-medium">Jenis Banding</label>
+                                    <select v-model="dlgForm.isi.jenis" class="h-9 w-full rounded-lg border border-neutral-300 bg-white px-3 text-sm dark:border-neutral-700 dark:bg-neutral-900">
+                                        <option value="">— pilih jenis banding —</option>
+                                        <option v-for="j in BANDING_JENIS" :key="j.value" :value="j.value">{{ j.label }}</option>
+                                    </select>
+                                </div>
+                                <Input v-if="dlgForm.isi.jenis === 'lain_lain'" v-model="dlgForm.isi.jenis_lain" label="Keterangan Lain-Lain" />
+                            </template>
+                            <div v-for="b in blokProses" :key="b.title" class="space-y-2" :class="b.title ? 'rounded-lg border border-neutral-200 p-3 dark:border-neutral-700' : ''">
+                                <p v-if="b.title" class="text-sm font-semibold">{{ b.title }}</p>
+                                <div class="grid gap-3 sm:grid-cols-2">
+                                    <Input v-model="b.obj.started_at" type="date" label="Tanggal Mulai" />
+                                    <Input v-model="b.obj.finished_at" type="date" label="Tanggal Selesai" />
+                                </div>
+                                <div>
+                                    <label class="mb-1 block text-sm font-medium">Update Proses &amp; Kendala</label>
+                                    <textarea v-model="b.obj.notes" rows="2" class="w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-900"></textarea>
+                                </div>
+                            </div>
+                            <div v-if="dlg.stage === 'analis' || dlg.stage === 'banding'">
+                                <label class="mb-1 block text-sm font-medium">Tambahan Berkas yang Diminta Analis</label>
+                                <textarea v-model="dlgForm.isi.berkas_tambahan" rows="2" class="w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-900"></textarea>
+                            </div>
+                        </template>
+
+                        <!-- Tolak: alasan penolakan -->
+                        <div v-if="dlg.aksi === 'tolak'">
+                            <label class="mb-1 block text-sm font-medium">Alasan Penolakan</label>
+                            <textarea v-model="dlgForm.reason" rows="2" class="w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-900"></textarea>
+                        </div>
+
+                        <div>
+                            <label class="mb-1 block text-sm font-medium">{{ dlgAjukan ? 'Alasan Perubahan' : 'Catatan (opsional)' }} <span v-if="dlgAjukan" class="text-danger-500">*</span></label>
+                            <textarea v-model="dlgForm.alasan" rows="2" class="w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-900" placeholder="mis. salah input, sesuai surat SP3K bank"></textarea>
+                        </div>
+                        <p v-if="dlgAjukan" class="rounded-lg bg-info-50 px-3 py-2 text-xs text-info-700 dark:bg-info-900/30 dark:text-info-300">ⓘ Perubahan berlaku setelah disetujui approver tahap {{ STAGE_LABEL[AKSI[dlg.aksi].stage] }}. Sampai saat itu data lama tetap dipakai.</p>
+                        <ul v-if="Object.keys(dlgForm.errors).length" class="text-xs text-danger-600">
+                            <li v-for="(e, k) in dlgForm.errors" :key="k">{{ e }}</li>
+                        </ul>
+                        <div class="flex justify-end gap-2 pt-1">
+                            <Button type="button" variant="secondary" @click="dlg.open = false">Batal</Button>
+                            <Button type="submit" :loading="dlgForm.processing" :disabled="dlgAjukan && !String(dlgForm.alasan ?? '').trim()"
+                                :variant="dlg.aksi.endsWith('_hapus') || dlg.aksi === 'batal' || dlg.aksi === 'tolak' ? 'danger' : 'primary'">{{ dlgAjukan ? 'Ajukan' : 'Simpan' }}</Button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </Teleport>
 
         <!-- LAPORAN DURASI PROSES (seperti pada Inisiasi KPR) -->
         <div v-if="prosesLaporan.rows.length" class="card p-6">

@@ -34,7 +34,13 @@ final class HandleInertiaRequests extends Middleware
                     'name'       => $request->user()->name,
                     'email'      => $request->user()->email,
                     'roles'      => $request->user()->getRoleNames(),
-                    'permissions'=> $request->user()->getAllPermissions()->pluck('name'),
+                    // + penanda 'kpr.approval.<tahap>' untuk tahap yang approver-nya mencantumkan user ini
+                    //   (Set Up → Setup Approval KPR). Bukan izin Spatie — hanya agar menu KPR → Approval
+                    //   memakai saringan sidebar yang sama; halaman & aksinya tetap diperiksa server.
+                    'permissions'=> $request->user()->getAllPermissions()->pluck('name')
+                        ->merge(rescue(fn () => array_map(fn ($s) => 'kpr.approval.'.$s,
+                            app(\App\Domain\BankLoan\Services\KprPerubahanService::class)->tahapApprover((int) $request->user()->id)), [], false))
+                        ->values(),
                     'tenant_id'  => $request->user()->tenant_id,
                     'dark_mode'  => $request->user()->dark_mode,
                     'avatar_url' => $request->user()->avatar_path
