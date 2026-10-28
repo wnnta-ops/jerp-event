@@ -35,8 +35,9 @@ const posisi = ref(props.posisi ?? 'semua');
 const jumlahTampil = ref(props.tampil ?? '20');
 const semuaTampil = computed(() => props.tampil === 'semua');
 const { punyaIzin } = useIzin();
-// Unduhan mengikuti filter yang SUDAH dimuat di layar (bukan isian yang belum ditekan Tampilkan).
-const paramEkspor = computed(() => ({ date_from: props.dateFrom ?? '', date_to: props.dateTo, posisi: props.posisi ?? 'semua', tampil: props.tampil ?? '20' }));
+// Unduhan mengikuti filter yang SUDAH dimuat di layar (bukan isian yang belum ditekan Tampilkan),
+// plus kotak "Cari supplier" (menyaring baris supplier saja, seperti di layar).
+const paramEkspor = computed(() => ({ date_from: props.dateFrom ?? '', date_to: props.dateTo, posisi: props.posisi ?? 'semua', tampil: props.tampil ?? '20', cari: cari.value.trim() || undefined }));
 
 function muat() {
     router.get(route('bs.ap.aging-supplier'), { date_from: dari.value, date_to: sampai.value, posisi: posisi.value, tampil: jumlahTampil.value },

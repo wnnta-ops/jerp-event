@@ -22,7 +22,8 @@ const search = ref(props.filters?.search ?? '');
 const catOptions = Object.entries(props.categories).map(([id, label]) => ({ id, label }));
 function params() { return { year: year.value, category: cat.value || undefined, date_from: dateFrom.value || undefined, date_to: dateTo.value || undefined, search: search.value || undefined }; }
 function reload() { router.get(route('bs.fa.summary'), params(), { preserveState: true, replace: true }); }
-function exportXls() { window.location.href = route('bs.fa.summary.export', params()); }
+// Unduhan memakai filter yang SUDAH diterapkan (props), bukan isian yang belum ditekan Tampilkan.
+function exportXls() { window.location.href = route('bs.fa.summary.export', { year: props.year, category: props.filters?.category || undefined, date_from: props.filters?.date_from || undefined, date_to: props.filters?.date_to || undefined, search: props.filters?.search || undefined }); }
 const inputCls = 'h-9 rounded-lg border border-neutral-300 bg-white px-3 text-sm dark:border-neutral-700 dark:bg-neutral-900';
 function n(v: number) { return Number(v ?? 0).toLocaleString('id-ID', { maximumFractionDigits: 0 }); }
 function fmtDate(d: string) { return d ? new Date(d).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'; }

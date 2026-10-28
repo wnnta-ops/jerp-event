@@ -117,6 +117,14 @@ const view = computed(() => {
     };
 });
 
+// Excel = baris yang sedang tampil: tahun & status yang sudah dimuat server, plus id baris
+// hasil cari/saringan kolom (hanya bila ada saringan — tanpa saringan semua baris status itu).
+const excelUrl = computed(() => route('bs.budget.export', {
+    year: props.year,
+    status: props.filterStatus ?? 'approved',
+    ids: hasFilter.value ? (filtered.value.map((b) => b.id).join(',') || '0') : undefined,
+}));
+
 // Data berubah (mis. ganti tahun/status) → buang nilai filter yang sudah tak ada,
 // supaya tabel tidak diam-diam kosong karena filter lama yang tak lagi relevan.
 watch([optNo, optAkun, optCc, optStatus, optAnggaran, optRealisasi, optSisa, optTerpakai], () => {
@@ -135,7 +143,7 @@ watch([optNo, optAkun, optCc, optStatus, optAnggaran, optRealisasi, optSisa, opt
                 <input v-model.number="year" @change="reload" type="number" class="h-9 w-28 rounded-lg border border-neutral-300 bg-white px-3 text-sm dark:border-neutral-700 dark:bg-neutral-900" />
                 <select v-model="statusFilter" @change="reload" class="h-9 rounded-lg border border-neutral-300 bg-white px-3 text-sm dark:border-neutral-700 dark:bg-neutral-900" title="Filter status"><option value="approved">Disetujui</option><option value="submitted">Menunggu Approval</option><option value="rejected">Ditolak</option><option value="all">Semua Status</option></select>
                 <Link :href="route('bs.budget.upload.index')" class="inline-flex h-9 items-center gap-1.5 rounded-lg border border-neutral-300 px-3 text-sm font-medium dark:border-neutral-700"><Upload class="h-4 w-4" /> Upload</Link>
-                <a :href="route('bs.budget.export', { year })" class="inline-flex h-9 items-center gap-1.5 rounded-lg border border-emerald-300 bg-emerald-50 px-3 text-sm font-medium text-emerald-700 hover:bg-emerald-100 dark:border-emerald-700/50 dark:bg-emerald-900/30 dark:text-emerald-300"><FileSpreadsheet class="h-4 w-4" /> Excel</a>
+                <a :href="excelUrl"class="inline-flex h-9 items-center gap-1.5 rounded-lg border border-emerald-300 bg-emerald-50 px-3 text-sm font-medium text-emerald-700 hover:bg-emerald-100 dark:border-emerald-700/50 dark:bg-emerald-900/30 dark:text-emerald-300"><FileSpreadsheet class="h-4 w-4" /> Excel</a>
                 <button @click="showMutate = true" class="inline-flex h-9 items-center gap-1.5 rounded-lg border border-neutral-300 px-3 text-sm font-medium dark:border-neutral-700"><Shuffle class="h-4 w-4" /> Mutasi</button>
                 <Button @click="openCreate"><template #icon-left><Plus class="h-4 w-4" /></template>Tambah Anggaran</Button>
             </div>

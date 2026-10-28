@@ -30,12 +30,13 @@ const params = computed(() => ({
     to: to.value || undefined,
 }));
 function display() { router.get(route('bs.gl.ledger'), params.value, { preserveState: true, replace: true }); }
-// Excel = format "Detail Transaksi Jurnal" (Kode/Nama Akun, Pihak Terkait, dst) difilter rentang COA + periode.
-const excelUrl = computed(() => route('bs.gl.journal.export', {
-    from_code: fromCode.value || undefined,
-    to_code: toCode.value || undefined,
-    date_from: from.value || undefined,
-    date_to: to.value || undefined,
+// Excel = kolom format "Detail Transaksi Jurnal", isinya data yang SEDANG TAMPIL (filter yang
+// sudah di-Display, bukan isian yang belum diterapkan) — rentang COA, posted, saldo awal & berjalan.
+const excelUrl = computed(() => route('bs.gl.ledger.export', {
+    from_code: props.filters.from_code || undefined,
+    to_code: props.filters.to_code || undefined,
+    from: props.filters.from || undefined,
+    to: props.filters.to || undefined,
 }));
 
 function fmtRp(v: number) { return Number(v ?? 0).toLocaleString('id-ID'); }

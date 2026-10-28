@@ -33,7 +33,8 @@ const mode = computed(() => (props.view === 'detail' ? 'detail' : 'summary'));
 function params(v: string = mode.value) { return { date_from: dari.value, date_to: sampai.value, view: v }; }
 function display() { router.get(route('bs.gl.incomestatement'), params(), { preserveState: true, replace: true, preserveScroll: true }); }
 function setView(v: string) { router.get(route('bs.gl.incomestatement'), params(v), { preserveState: true, replace: true, preserveScroll: true }); }
-function excel() { window.location.href = route('bs.gl.incomestatement.export', params()); }
+// Unduhan memakai filter yang SUDAH diterapkan (props), bukan isian yang belum ditekan Tampilkan.
+function excel() { window.location.href = route('bs.gl.incomestatement.export', { date_from: props.date_from, date_to: props.date_to, view: mode.value }); }
 
 const segActive = 'rounded-md px-3 py-1 text-xs font-semibold bg-primary-600 text-white';
 const segIdle = 'rounded-md px-3 py-1 text-xs font-medium text-neutral-600 hover:bg-neutral-100 dark:text-neutral-300 dark:hover:bg-neutral-800';

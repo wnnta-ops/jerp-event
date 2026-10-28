@@ -33,6 +33,9 @@ const filtered = computed(() => props.assets.filter((a) =>
     (!f.tgl || inc(fmtDate(a.acquisition_date), f.tgl) || inc(a.acquisition_date, f.tgl)) &&
     (!f.status || a.status === f.status)
 ));
+// Unduhan mengikuti saringan kolom: bila ada saringan, kirim id aset yang tampil.
+const excelUrl = computed(() => route('bs.fa.export', Object.values(f).some((v) => v !== '')
+    ? { ids: filtered.value.map((a) => a.id).join(',') || '0' } : {}));
 const fInput = 'h-7 w-full rounded border border-neutral-300 bg-white px-2 text-xs font-normal normal-case dark:border-neutral-700 dark:bg-neutral-900';
 const catTint: Record<string, string> = { bangunan: 'text-sky-600', kendaraan: 'text-violet-600', inventaris: 'text-amber-600', tanah: 'text-emerald-600' };
 </script>
@@ -41,8 +44,8 @@ const catTint: Record<string, string> = { bangunan: 'text-sky-600', kendaraan: '
         <div class="flex items-center justify-between">
             <h1 class="flex items-center gap-2 text-2xl font-bold"><Building class="h-6 w-6 text-primary-600" /> Aset Tetap <span class="text-base font-normal text-neutral-400">(Fixed Asset)</span></h1>
             <div class="flex flex-wrap gap-2">
-                <!-- Unduhan memuat SELURUH aset & ringkasan per kategori, bukan hanya yang tersaring. -->
-                <a :href="route('bs.fa.export')" title="Unduh ringkasan per kategori + seluruh daftar aset ke Excel"
+                <!-- Ringkasan per kategori selalu utuh; daftar aset mengikuti saringan kolom. -->
+                <a :href="excelUrl" title="Unduh ringkasan per kategori + daftar aset (sesuai saringan) ke Excel"
                    class="inline-flex h-9 items-center gap-1.5 rounded-lg border border-emerald-300 bg-emerald-50 px-3 text-sm font-medium text-emerald-700 transition-colors duration-200 hover:bg-emerald-100 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300 dark:hover:bg-emerald-900/50">
                     <FileSpreadsheet class="h-4 w-4" /> Download Excel
                 </a>

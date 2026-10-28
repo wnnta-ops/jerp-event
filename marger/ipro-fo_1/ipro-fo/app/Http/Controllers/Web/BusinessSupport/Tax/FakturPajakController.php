@@ -571,7 +571,7 @@ class FakturPajakController extends Controller
 
         // No. FP & NPWP sebagai TEKS: NPWP 16 digit yang tersimpan sebagai angka kehilangan
         // presisi di Excel (batasnya 15 digit), dan nol di depannya hilang.
-        $rows = $this->keluaranRows($year, $month)->map(fn (array $r) => [
+        $rows = $this->sesuaiLayar($this->keluaranRows($year, $month), $request)->map(fn (array $r) => [
             $r['row_type'], (int) $r['id'], (string) $r['doc_no'], (string) $r['invoice_date'], (string) $r['partner'],
             (float) $r['dpp'], (float) $r['ppn'], (string) ($r['tax_invoice_no'] ?? ''), (string) ($r['npwp'] ?? ''),
         ])->values()->all();
@@ -654,15 +654,15 @@ class FakturPajakController extends Controller
      * Bentuknya HTML bertipe vnd.ms-excel: layar ini menggabungkan baris jurnal dengan entri
      * approval yang belum berjurnal, jadi tidak ada satu query Eloquent yang bisa mewakilinya.
      *
-     * Saringan kolom di layar dihitung di sisi peramban dan tidak pernah masuk URL, jadi berkas
-     * ini berisi SELURUH masa pajak yang dipilih. Itu dikatakan di judul lembarnya, bukan didiamkan.
+     * Saringan kolom di layar dihitung di sisi peramban; yang tersaring dikirim sebagai kunci
+     * baris (`keys` = row_type-id) sehingga berkasnya berisi persis baris yang terlihat.
      */
     public function exportKeluaranXlsx(Request $request): \Illuminate\Http\Response
     {
         abort_unless($request->user()?->can('tax.export'), 403);
         [$year, $month] = $this->period($request);
 
-        $rows = $this->keluaranRows($year, $month);
+        $rows = $this->sesuaiLayar($this->keluaranRows($year, $month), $request);
 
         $tabel = $this->xlsTabel(
             ['No. Faktur Pajak', 'Sumber', 'Tanggal', 'NPWP', 'Nama', 'No. Dokumen / Unit', 'DPP', 'PPN', 'Keterangan', 'Status Konversi'],
@@ -753,11 +753,27 @@ class FakturPajakController extends Controller
             .$n($totalDpp).$n($totalPpn).str_repeat('<td></td>', $penutup).'</tr></table>';
     }
 
+    /**
+     * Baris yang tersaring di layar: `keys` = daftar row_type-id (dipisah koma). Tanpa `keys`
+     * (tak ada saringan) seluruh masa pajak; `keys` kosong-isi (mis. "0") = tak ada baris.
+     */
+    private function sesuaiLayar(Collection $rows, Request $request): Collection
+    {
+        if (! $request->filled('keys')) {
+            return $rows;
+        }
+        $keys = array_flip(array_map('trim', explode(',', (string) $request->input('keys'))));
+
+        return $rows->filter(fn (array $r) => isset($keys[$r['row_type'].'-'.$r['id']]))->values();
+    }
+
     private function xlsResponse(string $judul, int $year, int $month, string $tabel, string $file): \Illuminate\Http\Response
     {
+        $cakupan = request()->filled('keys') ? 'sesuai saringan di layar' : 'seluruh baris masa ini';
+
         return response('<html xmlns:x="urn:schemas-microsoft-com:office:excel"><head><meta charset="utf-8"></head><body>'
             .'<h3>'.$judul.'</h3>'
-            .'<p>Masa pajak: '.sprintf('%02d/%04d', $month, $year).' — seluruh baris masa ini (saringan kolom di layar tidak diterapkan).</p>'
+            .'<p>Masa pajak: '.sprintf('%02d/%04d', $month, $year).' — '.$cakupan.'.</p>'
             .$tabel.'</body></html>')
             ->header('Content-Type', 'application/vnd.ms-excel; charset=UTF-8')
             ->header('Content-Disposition', 'attachment; filename="'.$file.'"');

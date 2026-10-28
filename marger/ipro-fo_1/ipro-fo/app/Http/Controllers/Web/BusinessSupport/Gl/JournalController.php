@@ -40,37 +40,7 @@ class JournalController extends Controller
         // Status SENGAJA tidak ikut di sini: rekap memang harus menyebutkan jumlah SETIAP
         // status pada rentang ini, jadi menyaringnya lebih dulu akan membuat tiga dari empat
         // angkanya selalu nol.
-        $saring = function ($q) use ($request, $from, $to) {
-            return $q
-                ->when($request->input('source'), fn ($x, $v) => $x->where('source', $v))
-                ->when($request->input('f_number'), fn ($x, $v) => $x->where('journal_number', $v))
-                ->when($request->input('f_date'), fn ($x, $v) => $x->whereDate('journal_date', $v))
-                ->when($request->input('f_desc'), fn ($x, $v) => $x->where('description', $v))
-                // Saringan Cost Center menjaring JURNALNYA: ikut tampil bila cost center itu
-                // dipakai salah satu barisnya, ATAU menjadi cost center header (yang diwarisi
-                // baris-baris yang dikosongkan). Memeriksa header saja akan melewatkan jurnal
-                // yang cost centernya memang ditulis per baris.
-                ->when($request->input('f_cost_center'), fn ($x, $v) => $x->where(fn ($w) => $w
-                    ->whereHas('lines', fn ($l) => $l->where('cost_center_id', (int) $v))
-                    ->orWhere('cost_center_id', (int) $v)))
-                ->when($request->filled('f_debit'), fn ($x) => $x->where('total_debit', (float) $request->input('f_debit')))
-                ->when($request->filled('f_credit'), fn ($x) => $x->where('total_credit', (float) $request->input('f_credit')))
-                // Saringan rincian menjaring JURNALNYA, bukan barisnya: sebuah jurnal ikut
-                // tampil bila salah satu barisnya cocok, dan seluruh barisnya tetap
-                // ditampilkan supaya debit & kreditnya tetap seimbang di layar.
-                ->when($request->input('f_account'), fn ($x, $v) => $x->whereHas('lines', fn ($l) => $l->where('account_id', (int) $v)))
-                ->when($request->input('f_line_desc'), fn ($x, $v) => $x->whereHas('lines', fn ($l) => $l->where('description', $v)))
-                // Diinput Oleh: 'u:<id user>' = dibuat di J-ERP (created_by); 't:<nama>' = nama
-                // penginput dari eProperty (dibuat_oleh), hanya untuk jurnal tanpa created_by.
-                ->when($request->input('f_user'), function ($x, $v) {
-                    [$jenis, $nilai] = array_pad(explode(':', (string) $v, 2), 2, '');
-
-                    return $jenis === 'u'
-                        ? $x->where('created_by', (int) $nilai)
-                        : $x->whereNull('created_by')->where('dibuat_oleh', $nilai);
-                })
-                ->when($request->input('search'), fn ($x, $s) => $x->where(fn ($w) => $w->where('journal_number', 'like', "%{$s}%")->orWhere('description', 'like', "%{$s}%")->orWhere('reference', 'like', "%{$s}%")));
-        };
+        $saring = fn ($q) => $this->saring($q, $request);
 
         $rows = $saring(BsJournal::query()
             ->with(['lines.account:id,code,name', 'lines.costCenter:id,code,name', 'costCenter:id,code,name', 'createdBy:id,name'])
@@ -404,6 +374,43 @@ class JournalController extends Controller
         return back()->with($fail > 0 && $ok === 0 ? 'error' : 'success', $msg);
     }
 
+    /**
+     * Saringan layar Detail Transaksi Jurnal — dipakai daftar, rekap, DAN export Excel, supaya
+     * isi unduhan selalu sama dengan yang tampil. Status sengaja tidak ikut (lihat index()).
+     */
+    private function saring($q, Request $request)
+    {
+        return $q
+            ->when($request->input('source'), fn ($x, $v) => $x->where('source', $v))
+            ->when($request->input('f_number'), fn ($x, $v) => $x->where('journal_number', $v))
+            ->when($request->input('f_date'), fn ($x, $v) => $x->whereDate('journal_date', $v))
+            ->when($request->input('f_desc'), fn ($x, $v) => $x->where('description', $v))
+            // Saringan Cost Center menjaring JURNALNYA: ikut tampil bila cost center itu
+            // dipakai salah satu barisnya, ATAU menjadi cost center header (yang diwarisi
+            // baris-baris yang dikosongkan). Memeriksa header saja akan melewatkan jurnal
+            // yang cost centernya memang ditulis per baris.
+            ->when($request->input('f_cost_center'), fn ($x, $v) => $x->where(fn ($w) => $w
+                ->whereHas('lines', fn ($l) => $l->where('cost_center_id', (int) $v))
+                ->orWhere('cost_center_id', (int) $v)))
+            ->when($request->filled('f_debit'), fn ($x) => $x->where('total_debit', (float) $request->input('f_debit')))
+            ->when($request->filled('f_credit'), fn ($x) => $x->where('total_credit', (float) $request->input('f_credit')))
+            // Saringan rincian menjaring JURNALNYA, bukan barisnya: sebuah jurnal ikut
+            // tampil bila salah satu barisnya cocok, dan seluruh barisnya tetap
+            // ditampilkan supaya debit & kreditnya tetap seimbang di layar.
+            ->when($request->input('f_account'), fn ($x, $v) => $x->whereHas('lines', fn ($l) => $l->where('account_id', (int) $v)))
+            ->when($request->input('f_line_desc'), fn ($x, $v) => $x->whereHas('lines', fn ($l) => $l->where('description', $v)))
+            // Diinput Oleh: 'u:<id user>' = dibuat di J-ERP (created_by); 't:<nama>' = nama
+            // penginput dari eProperty (dibuat_oleh), hanya untuk jurnal tanpa created_by.
+            ->when($request->input('f_user'), function ($x, $v) {
+                [$jenis, $nilai] = array_pad(explode(':', (string) $v, 2), 2, '');
+
+                return $jenis === 'u'
+                    ? $x->where('created_by', (int) $nilai)
+                    : $x->whereNull('created_by')->where('dibuat_oleh', $nilai);
+            })
+            ->when($request->input('search'), fn ($x, $s) => $x->where(fn ($w) => $w->where('journal_number', 'like', "%{$s}%")->orWhere('description', 'like', "%{$s}%")->orWhere('reference', 'like', "%{$s}%")));
+    }
+
     /** Export Excel: semua info Detail Transaksi Jurnal (header + semua baris akun) mengikuti filter layar. */
     public function export(Request $request, JournalPartyResolver $party): \Illuminate\Http\Response
     {
@@ -415,9 +422,9 @@ class JournalController extends Controller
         $journals = BsJournal::query()
             ->with(['lines.account:id,code,name', 'lines.costCenter:id,code,name', 'costCenter:id,code,name', 'createdBy:id,name'])
             ->whereBetween('journal_date', [$from->toDateString(), $to->toDateString()])
-            ->when($request->input('source'), fn ($q, $v) => $q->where('source', $v))
+            // Saringan yang sama persis dengan layar (termasuk saringan per kolom).
+            ->where(fn ($q) => $this->saring($q, $request))
             ->when($request->input('status'), fn ($q, $v) => $q->where('status', $v))
-            ->when($request->input('search'), fn ($q, $s) => $q->where(fn ($w) => $w->where('journal_number', 'like', "%{$s}%")->orWhere('description', 'like', "%{$s}%")->orWhere('reference', 'like', "%{$s}%")))
             ->latest('journal_date')->latest('id')
             ->get();
 

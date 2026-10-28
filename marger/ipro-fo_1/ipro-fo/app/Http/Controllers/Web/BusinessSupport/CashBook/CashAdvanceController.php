@@ -342,14 +342,29 @@ class CashAdvanceController extends Controller
     /** #9: query baris Kartu Bon Sementara (mengikuti filter layar) untuk Excel/PDF — reuse logika card(). */
     private function cardExport(Request $request): array
     {
-        $holders = array_values(array_filter((array) $request->input('holders', []), fn ($v) => $v !== '' && $v !== null));
         $statuses = array_values(array_filter((array) $request->input('statuses', []), fn ($v) => $v !== '' && $v !== null));
         $from = $request->input('from') ?: null;
         $to = $request->input('to') ?: null;
 
+        // Checklist kolom (No Bon, Pemegang, Keperluan). Pilihan "" = sel kosong di layar,
+        // jadi dicocokkan ke NULL/'' — bukan dibuang (dulu memilih "(kosong)" saja malah
+        // mengunduh semua baris).
+        $pilih = function ($q, string $kolom, string $param) use ($request) {
+            $v = array_map(fn ($x) => (string) $x, (array) $request->input($param, []));
+            if (! $v) {
+                return $q;
+            }
+            $isi = array_values(array_filter($v, fn ($x) => $x !== ''));
+
+            return $q->where(fn ($w) => $w->whereIn($kolom, $isi)
+                ->when(in_array('', $v, true), fn ($x) => $x->orWhereNull($kolom)->orWhere($kolom, '')));
+        };
+
         $rows = BsCashAdvance::query()
             ->with('costCenter:id,name')
-            ->when($holders, fn ($q) => $q->whereIn('holder', $holders))
+            ->tap(fn ($q) => $pilih($q, 'advance_number', 'nos'))
+            ->tap(fn ($q) => $pilih($q, 'holder', 'holders'))
+            ->tap(fn ($q) => $pilih($q, 'purpose', 'purposes'))
             ->when($statuses, fn ($q) => $q->whereIn('status', $statuses))
             ->when($from, fn ($q) => $q->whereDate('advance_date', '>=', $from))
             ->when($to, fn ($q) => $q->whereDate('advance_date', '<=', $to))

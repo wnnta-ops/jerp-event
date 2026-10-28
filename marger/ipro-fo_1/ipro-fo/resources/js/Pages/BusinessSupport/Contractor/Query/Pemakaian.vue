@@ -28,7 +28,8 @@ const dt=ref<string>(props.filters.date_to ?? '');
 
 function params(){ return {project_id:proj.value||undefined,jenis:jen.value||undefined,date_from:df.value||undefined,date_to:dt.value||undefined}; }
 function apply(){ router.get(route('bs.spk.query.pemakaian'),params(),{preserveState:true,replace:true}); }
-function exportXls(){ window.location.href=route('bs.spk.query.export',{type:'pemakaian',...params()}); }
+// Unduhan memakai filter yang SUDAH diterapkan (props), bukan isian yang belum ditekan Tampilkan.
+function exportXls(){ const a=props.filters; window.location.href=route('bs.spk.query.export',{type:'pemakaian',project_id:a.project_id||undefined,jenis:a.jenis||undefined,date_from:a.date_from||undefined,date_to:a.date_to||undefined}); }
 </script>
 
 <template>
