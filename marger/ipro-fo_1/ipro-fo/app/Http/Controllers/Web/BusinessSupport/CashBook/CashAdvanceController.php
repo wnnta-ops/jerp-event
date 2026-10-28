@@ -686,6 +686,37 @@ class CashAdvanceController extends Controller
     }
 
     /**
+     * Cost center baris Realisasi: ccPengguna = bawaan, ccPilihan = departemen yang boleh dipilih.
+     *
+     * Sumbernya PEMILIK BON: akun yang mengajukannya (created_by — sejak 20 Okt bon selalu
+     * diajukan dari akun karyawannya sendiri), lalu nama pemegangnya; tak ketemu → akun yang
+     * login, seperti sebelumnya. Bawaan = cost center bon itu bila termasuk daftarnya, kalau
+     * tidak Utama. (rek_employee_id BUKAN pemilik: itu pemilik rekening tujuan, bisa atasannya.)
+     *
+     * @return array{ccPengguna: ?int, ccPilihan: list<int>}
+     */
+    private function ccRealisasi(Request $request, BsCashAdvance $advance): array
+    {
+        $cc = app(CostCenterPengguna::class);
+        $pengaju = $advance->created_by ? \App\Models\User::find($advance->created_by) : null;
+        $daftar = $pengaju ? $cc->idsUntuk($pengaju) : [];
+        if ($daftar === [] && trim((string) $advance->holder) !== '') {
+            // Bon lama: holder "Nama" atau "Nama — Jabatan".
+            $nama = trim(explode(' — ', (string) $advance->holder)[0]);
+            $daftar = BsEmployee::whereRaw('LOWER(name) = ?', [mb_strtolower($nama)])->first()?->costCenterIds() ?? [];
+        }
+        if ($daftar === []) {
+            $daftar = $cc->idsUntuk($request->user());
+        }
+        $bon = $advance->cost_center_id ? (int) $advance->cost_center_id : null;
+
+        return [
+            'ccPengguna' => ($bon !== null && in_array($bon, $daftar, true)) ? $bon : ($daftar[0] ?? null),
+            'ccPilihan' => $daftar,
+        ];
+    }
+
+    /**
      * Departemen milik karyawan (Utama lebih dulu) sebagai pilihan bon.
      *
      * @return list<array{id:int, code:?string, name:?string}>
@@ -991,7 +1022,11 @@ class CashAdvanceController extends Controller
             // Dibiarkan bebas dipilih, biaya bon bisa dibebankan ke departemen yang tidak
             // menanggungnya: realisasi dua departemen bergeser sekaligus — yang satu tampak
             // hemat, yang lain boros, dan keduanya salah.
-            'ccPengguna' => app(CostCenterPengguna::class)->idUntuk($request->user()),
+            //
+            // Karyawan dengan LEBIH DARI SATU departemen (Data Karyawan) boleh memilih di antara
+            // departemennya sendiri — bukan bebas. Daftarnya milik KARYAWAN PEMILIK BON (bukan
+            // akun yang membuka layar), bawaannya departemen yang dipilih saat bon diajukan.
+            ...$this->ccRealisasi($request, $advance),
             'bisaUbahCc' => (bool) $request->user()?->can('ap.costcenter.override'),
             'canRealize' => (bool) $request->user()?->can('cashbook.advance.realize'),
             'canRefund' => (bool) $request->user()?->can('cashbook.advance.refund'),
