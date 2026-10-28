@@ -22,7 +22,8 @@ const df = ref(props.filters?.date_from ?? '');
 const dt = ref(props.filters?.date_to ?? '');
 function params(){ return {project_id:proj.value||undefined,jenis:jen.value||undefined,date_from:df.value||undefined,date_to:dt.value||undefined}; }
 function apply() { router.get(route('bs.spk.query.summary'), params(), { preserveState: true, replace: true }); }
-function exportXls(){ window.location.href=route('bs.spk.query.export',{type:'summary',...params()}); }
+// Unduhan memakai filter yang SUDAH diterapkan (props), bukan isian yang belum ditekan Tampilkan.
+function exportXls(){ const a=props.filters; window.location.href=route('bs.spk.query.export',{type:'summary',project_id:a.project_id||undefined,jenis:a.jenis||undefined,date_from:a.date_from||undefined,date_to:a.date_to||undefined}); }
 
 const inputCls = 'h-9 w-full rounded-lg border border-neutral-300 bg-white px-3 text-sm dark:border-neutral-700 dark:bg-neutral-900';
 </script>

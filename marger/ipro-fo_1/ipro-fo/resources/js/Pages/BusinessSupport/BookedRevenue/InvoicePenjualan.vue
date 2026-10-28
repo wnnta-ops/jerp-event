@@ -29,8 +29,9 @@ const status = ref(props.filters.status ?? '');
 /* Ekspor memakai saringan yang sama dengan layar, tetapi TANPA paginasi — jumlah
    barisnya cocok dengan kartu ringkasan, bukan dengan halaman yang kebetulan terbuka. */
 function exportExcel() {
+    // Saringan yang SUDAH diterapkan (props), bukan isian yang belum ditekan Cari.
     window.location.href = route('bs.sales-invoice.export', {
-        search: search.value || undefined, status: status.value || undefined,
+        search: props.filters.search || undefined, status: props.filters.status || undefined,
     });
 }
 function applyFilter() {

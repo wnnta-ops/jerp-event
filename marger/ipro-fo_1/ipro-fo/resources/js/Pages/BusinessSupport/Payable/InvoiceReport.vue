@@ -20,8 +20,12 @@ function params() {
 function tarik() {
     router.get(route('bs.ap.report'), { ...params(), pull: 1 }, { preserveState: true, replace: true });
 }
-// URL export mengikuti periode/supplier yang sedang dipilih.
-const exportUrl = computed(() => route('bs.ap.export', params()));
+// URL export mengikuti filter yang SUDAH ditarik (props.filters), bukan isian yang belum
+// ditekan Tampilkan — supaya berkasnya persis daftar di layar.
+const exportUrl = computed(() => route('bs.ap.export', {
+    date_from: props.filters?.date_from || undefined, date_to: props.filters?.date_to || undefined,
+    supplier_id: props.filters?.supplier_id || undefined, posisi: props.filters?.posisi ?? 'semua',
+}));
 
 function fmtRp(v: number) { return Number(v ?? 0).toLocaleString('id-ID'); }
 function fmtDate(d: string | null) { return d ? new Date(d).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'; }
@@ -59,7 +63,7 @@ const totals = computed(() => ({
             </div>
             <PilihPosisiHutang v-model="posisi" :opsi="props.posisiOpsi" />
             <button @click="tarik" class="h-9 rounded-lg bg-primary-600 px-5 text-sm font-semibold text-white hover:bg-primary-700">Tampilkan</button>
-            <a :href="exportUrl" class="inline-flex h-9 items-center gap-1.5 rounded-lg border border-emerald-300 bg-emerald-50 px-3 text-sm font-medium text-emerald-700 hover:bg-emerald-100 dark:border-emerald-700/50 dark:bg-emerald-900/30 dark:text-emerald-300"><FileSpreadsheet class="h-4 w-4" /> Export Excel</a>
+            <a v-if="pulled" :href="exportUrl" class="inline-flex h-9 items-center gap-1.5 rounded-lg border border-emerald-300 bg-emerald-50 px-3 text-sm font-medium text-emerald-700 hover:bg-emerald-100 dark:border-emerald-700/50 dark:bg-emerald-900/30 dark:text-emerald-300"><FileSpreadsheet class="h-4 w-4" /> Export Excel</a>
         </div>
 
         <!-- Hasil (preview) -->

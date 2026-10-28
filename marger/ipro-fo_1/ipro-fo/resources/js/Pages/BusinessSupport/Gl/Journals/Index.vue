@@ -180,8 +180,12 @@ function paramSaring() {
 function display() {
     router.get(route(listRoute), paramSaring(), { preserveState: true, replace: true });
 }
+// Excel memakai filter yang SUDAH diterapkan server (props.filters), bukan isian yang baru
+// diketik tapi belum di-Display — supaya berkasnya persis daftar yang terlihat.
 function exportExcel() {
-    window.location.href = route('bs.gl.journal.export', paramSaring());
+    const p: Record<string, any> = {};
+    for (const [k, v] of Object.entries(props.filters ?? {})) p[k] = (v === '' || v == null) ? undefined : v;
+    window.location.href = route('bs.gl.journal.export', p);
 }
 
 /** Memilih di kolom langsung menampilkan hasilnya — tidak menunggu tombol Display,

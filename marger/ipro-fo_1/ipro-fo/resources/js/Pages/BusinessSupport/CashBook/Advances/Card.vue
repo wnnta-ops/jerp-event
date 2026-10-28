@@ -41,10 +41,13 @@ const filteredRows = computed(() => props.rows.filter((r) =>
 const anyFilter = computed(() => fNo.value.length || fHolder.value.length || fPurpose.value.length || fStatus.value.length || from.value || to.value);
 function resetFilters() { fNo.value = []; fHolder.value = []; fPurpose.value = []; fStatus.value = []; from.value = ''; to.value = ''; }
 
-// #9: parameter unduhan = filter layar (pemegang, status, rentang tgl). fStatus menyimpan LABEL → petakan balik ke key.
+// #9: parameter unduhan = SEMUA filter layar (No Bon, pemegang, keperluan, status, rentang tgl).
+// fStatus menyimpan LABEL → petakan balik ke key.
 const exportParams = computed<Record<string, any>>(() => {
     const p: Record<string, any> = {};
+    if (fNo.value.length) p.nos = fNo.value;
     if (fHolder.value.length) p.holders = fHolder.value;
+    if (fPurpose.value.length) p.purposes = fPurpose.value;
     if (fStatus.value.length) {
         const keys = Object.entries(props.statuses).filter(([, label]) => fStatus.value.includes(label)).map(([k]) => k);
         if (keys.length) p.statuses = keys;

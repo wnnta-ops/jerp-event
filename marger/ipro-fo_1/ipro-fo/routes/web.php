@@ -593,7 +593,8 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
     Route::get('/business-support/gl/laporan-lanjutan', [BsGlExtraController::class, 'index'])->name('bs.gl.extra');
     Route::get('/business-support/gl/laporan-lanjutan/export', [BsGlExtraController::class, 'export'])->name('bs.gl.extra.export');
     Route::get('/business-support/gl/buku-besar', [BsLedgerController::class, 'ledger'])->name('bs.gl.ledger');
-    // Excel Buku Besar memakai export "Detail Transaksi Jurnal" (bs.gl.journal.export) dgn filter rentang COA.
+    // Excel Buku Besar: kolom format "Detail Transaksi Jurnal", isi = data layar (rentang COA, posted, saldo).
+    Route::get('/business-support/gl/buku-besar/export', [BsLedgerController::class, 'ledgerExport'])->name('bs.gl.ledger.export');
     Route::get('/business-support/gl/neraca-saldo', [BsLedgerController::class, 'trialBalance'])->name('bs.gl.trialbalance');
     Route::get('/business-support/gl/neraca-saldo/export', [BsLedgerController::class, 'trialBalanceExport'])->name('bs.gl.trialbalance.export');
     Route::get('/business-support/gl/neraca-saldo/print', [BsLedgerController::class, 'trialBalancePrint'])->name('bs.gl.trialbalance.print');

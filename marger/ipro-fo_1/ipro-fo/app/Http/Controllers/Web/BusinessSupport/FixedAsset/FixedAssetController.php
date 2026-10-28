@@ -53,7 +53,10 @@ class FixedAssetController extends Controller
 
         $d = $this->overviewData();
         $kategori = $d['byCategory'];
-        $aset = $d['assets'];
+        // Daftar aset mengikuti saringan kolom di layar (id baris yang tampil); ringkasan per
+        // kategori tetap utuh karena angkanya dari Neraca Saldo, bukan dari daftar.
+        $ids = $this->idsLayar($request);
+        $aset = $ids === null ? $d['assets'] : collect($d['assets'])->filter(fn ($a) => isset($ids[(int) $a['id']]))->values();
         $s = $d['summary'];
 
         $kolom = ['No. Aset', 'Nama Aset', 'Kategori', 'Tgl Perolehan', 'Harga Perolehan',
@@ -296,11 +299,29 @@ class FixedAssetController extends Controller
             })->values();
     }
 
+    /**
+     * Id baris yang tersaring di layar (`ids`, dipisah koma) sebagai peta id => true.
+     * null = tak ada saringan (semua baris); `ids` berisi "0" = tak ada baris yang tampil.
+     *
+     * @return array<int,bool>|null
+     */
+    private function idsLayar(Request $request): ?array
+    {
+        if (! $request->filled('ids')) {
+            return null;
+        }
+
+        return array_fill_keys(array_filter(array_map('intval', explode(',', (string) $request->input('ids')))), true);
+    }
+
     /** Export Excel Penjualan Aset (mengikuti filter). */
     public function penjualanExport(Request $request): \Illuminate\Http\Response
     {
         abort_unless($request->user()?->can('bs.asset.view'), 403);
-        $rows = $this->penjualanRows($request)->map(fn ($r) => [
+        $ids = $this->idsLayar($request);
+        $rows = $this->penjualanRows($request)
+            ->when($ids !== null, fn ($c) => $c->filter(fn ($r) => isset($ids[(int) $r['id']])))
+            ->map(fn ($r) => [
             $r['asset_number'], $r['name'], $r['category_label'], $r['acquisition_date'], $r['cost'], $r['accum'], $r['book'],
             $r['disposed_date'], $r['disposal_type'] === 'sold' || $r['status'] === 'sold' ? 'Jual' : 'Hapus', $r['proceeds'], $r['gain'],
         ]);

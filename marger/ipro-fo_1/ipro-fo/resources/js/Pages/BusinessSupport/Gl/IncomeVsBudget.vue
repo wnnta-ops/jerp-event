@@ -26,7 +26,8 @@ const props = defineProps<{
 const dari = ref(props.date_from);
 const sampai = ref(props.date_to);
 function display() { router.get(route('bs.gl.lr-budget'), { date_from: dari.value, date_to: sampai.value }, { preserveState: true, replace: true, preserveScroll: true }); }
-function excel() { window.location.href = route('bs.gl.lr-budget.export', { date_from: dari.value, date_to: sampai.value }); }
+// Unduhan memakai filter yang SUDAH diterapkan (props), bukan isian yang belum ditekan Tampilkan.
+function excel() { window.location.href = route('bs.gl.lr-budget.export', { date_from: props.date_from, date_to: props.date_to }); }
 
 function fmt(v: number | null) {
     if (v === null || v === undefined) return '';

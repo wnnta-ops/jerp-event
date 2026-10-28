@@ -21,7 +21,16 @@ const dateFrom = ref(props.filters?.date_from ?? '');
 const dateTo = ref(props.filters?.date_to ?? '');
 function params() { return { date_from: dateFrom.value || undefined, date_to: dateTo.value || undefined }; }
 function reload() { router.get(route('bs.fa.penjualan'), params(), { preserveState: true, replace: true }); }
-function exportXls() { window.location.href = route('bs.fa.penjualan.export', params()); }
+// Excel = yang sedang tampil: periode yang sudah diterapkan (props.filters) + id baris hasil
+// saringan kolom (bila ada saringan).
+function exportXls() {
+    const ada = Object.values(f).some((v) => v !== '');
+    window.location.href = route('bs.fa.penjualan.export', {
+        date_from: props.filters?.date_from || undefined,
+        date_to: props.filters?.date_to || undefined,
+        ids: ada ? (filtered.value.map((r) => r.id).join(',') || '0') : undefined,
+    });
+}
 
 const catOptions = Object.entries(props.categories).map(([id, label]) => ({ id, label }));
 const jenisOptions = [{ id: 'sold', label: 'Jual' }, { id: 'disposed', label: 'Hapus' }];

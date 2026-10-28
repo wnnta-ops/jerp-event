@@ -34,7 +34,17 @@ function param(mode: string) {
     };
 }
 function go(mode: string) { router.get(route('bs.gl.extra'), param(mode), { preserveState: true, replace: true }); }
-function excel() { window.location.href = route('bs.gl.extra.export', param(props.mode)); }
+// Unduhan memakai filter yang SUDAH diterapkan (props), bukan isian yang belum ditekan Tampilkan.
+function excel() {
+    const lr = props.mode.startsWith('lr-');
+    window.location.href = route('bs.gl.extra.export', {
+        mode: props.mode,
+        as_of: lr ? undefined : props.filters.as_of,
+        date_from: lr ? props.filters.date_from : undefined,
+        date_to: lr ? props.filters.date_to : undefined,
+        account_id: props.mode === 'histori' ? (props.filters.account_id || undefined) : undefined,
+    });
+}
 function fmt(v: number | null) { return v === null || v === undefined ? '' : Number(v).toLocaleString('id-ID'); }
 const inputCls = 'h-9 rounded-lg border border-neutral-300 bg-white px-3 text-sm dark:border-neutral-700 dark:bg-neutral-900';
 </script>

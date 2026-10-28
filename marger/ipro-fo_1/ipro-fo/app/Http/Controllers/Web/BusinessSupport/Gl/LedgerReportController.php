@@ -35,7 +35,74 @@ class LedgerReportController extends Controller
     }
 
     /**
-     * Data Buku Besar terfilter — dipakai tampilan (export Excel via bs.gl.journal.export).
+     * Excel Buku Besar — kolom format "Detail Transaksi Jurnal" (Kode/Nama Akun, Pihak Terkait,
+     * Diinput Oleh, dst), tapi ISINYA persis layar: dari ledgerData() yang sama, jadi hanya akun
+     * dalam rentang COA, hanya jurnal posted, hanya baris akun itu, + Saldo Awal & Saldo berjalan.
+     */
+    public function ledgerExport(Request $request, \App\Domain\BusinessSupport\Services\JournalPartyResolver $party): \Illuminate\Http\Response
+    {
+        abort_unless($request->user()?->can('gl.ledger.view'), 403);
+        $data = $this->ledgerData($request);
+
+        // Rincian kolom tambahan (sumber, status, penginput, referensi, cost center) dimuat
+        // SEKALI untuk semua baris — bukan per baris.
+        $lineIds = collect($data['ledgers'])->flatMap(fn ($l) => array_column($l['rows'], 'line_id'))->all();
+        $lines = BsJournalLine::with([
+            'costCenter:id,name',
+            'journal:id,description,source,status,reference,created_by,dibuat_oleh,cost_center_id',
+            'journal.createdBy:id,name', 'journal.costCenter:id,name',
+        ])->whereIn('id', $lineIds ?: [0])->get()->keyBy('id');
+        $pihak = $party->forJournalIds($lines->pluck('journal_id')->unique()->values()->all());
+
+        $e = fn ($v) => htmlspecialchars((string) ($v ?? ''), ENT_QUOTES);
+        $rp = fn ($v) => number_format((float) ($v ?? 0), 2, ',', '.');
+        $src = \App\Domain\BusinessSupport\Models\BsJournal::SOURCES;
+        $st = \App\Domain\BusinessSupport\Models\BsJournal::STATUSES;
+
+        $h = '<table border="1"><tr style="background:#0f766e;color:#fff">'
+            .'<th>Kode Akun</th><th>Nama Akun</th>'
+            .'<th>No. Jurnal</th><th>Tanggal</th><th>Sumber</th><th>Pihak Terkait</th><th>Status</th><th>Diinput Oleh</th><th>Keterangan</th><th>Referensi</th>'
+            .'<th>Cost Center</th><th>Keterangan Baris</th><th>Debit</th><th>Kredit</th><th>Saldo</th></tr>';
+        foreach ($data['ledgers'] as $l) {
+            $akun = '<td>'.$e($l['code']).'</td><td>'.$e($l['name']).'</td>';
+            $h .= '<tr style="background:#f8fafc">'.$akun.'<td colspan="12">Saldo Awal</td><td>'.$rp($l['opening']).'</td></tr>';
+            foreach ($l['rows'] as $r) {
+                $ln = $lines[$r['line_id']] ?? null;
+                $j = $ln?->journal;
+                $h .= '<tr>'.$akun
+                    .'<td>'.$e($r['number']).'</td>'
+                    .'<td>'.$e($r['date']).'</td>'
+                    .'<td>'.$e($src[$j?->source] ?? $j?->source).'</td>'
+                    .'<td>'.$e($pihak[$j?->id] ?? '').'</td>'
+                    .'<td>'.$e($st[$j?->status] ?? $j?->status).'</td>'
+                    .'<td>'.$e($j?->createdBy?->name ?: $j?->dibuat_oleh).'</td>'
+                    .'<td>'.$e($j?->description).'</td>'
+                    .'<td>'.$e($j?->reference).'</td>'
+                    .'<td>'.$e($ln?->costCenter?->name ?? $j?->costCenter?->name).'</td>'
+                    .'<td>'.$e($r['description']).'</td>'
+                    .'<td>'.$rp($r['debit']).'</td>'
+                    .'<td>'.$rp($r['credit']).'</td>'
+                    .'<td>'.$rp($r['balance']).'</td>'
+                    .'</tr>';
+            }
+            $h .= '<tr style="font-weight:bold;background:#f1f5f9">'.$akun.'<td colspan="10">TOTAL</td>'
+                .'<td>'.$rp($l['total_debit']).'</td><td>'.$rp($l['total_credit']).'</td><td>'.$rp($l['closing']).'</td></tr>';
+        }
+        $h .= '</table>';
+
+        $periode = ($data['from'] ?? 'awal').' s/d '.($data['to'] ?? 'akhir');
+        $coa = $data['from_code'].($data['to_code'] !== '' && $data['to_code'] !== $data['from_code'] ? ' s/d '.$data['to_code'] : '');
+        $file = 'Buku-Besar-'.preg_replace('/[^0-9A-Za-z\-]+/', '-', $coa.'-'.$periode).'.xls';
+
+        return response('<html xmlns:x="urn:schemas-microsoft-com:office:excel"><head><meta charset="utf-8"></head><body>'
+            .'<h3>BUKU BESAR</h3><p>COA: '.$e($coa).' &middot; Periode: '.$e($periode).'</p>'
+            .$h.'</body></html>')
+            ->header('Content-Type', 'application/vnd.ms-excel; charset=UTF-8')
+            ->header('Content-Disposition', 'attachment; filename="'.$file.'"');
+    }
+
+    /**
+     * Data Buku Besar terfilter — dipakai tampilan & Excel (ledgerExport).
      * Range akun postable dari kode `from_code` s/d `to_code` (salah satu boleh kosong = satu akun).
      * Tiap akun: saldo awal (sebelum `from`) + mutasi periode + saldo berjalan.
      */
@@ -99,6 +166,7 @@ class LedgerReportController extends Controller
                 [$ket, $ketJurnal] = \App\Domain\BusinessSupport\Support\KeteranganJurnal::pisah($l->description, $l->journal->description);
 
                 return [
+                    'line_id' => (int) $l->id,
                     'date' => $l->journal->journal_date?->format('Y-m-d'),
                     'number' => $l->journal->journal_number,
                     'description' => $ket,

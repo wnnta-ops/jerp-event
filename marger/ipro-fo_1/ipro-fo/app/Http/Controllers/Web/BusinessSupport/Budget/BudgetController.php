@@ -327,7 +327,14 @@ class BudgetController extends Controller
     {
         abort_unless($request->user()?->can('budget.master.export'), 403);
         $year    = (int) $request->integer('year', (int) now()->year);
-        $budgets = BsBudget::with(['account:id,code,name', 'costCenter:id,code,name'])->where('year', $year)->orderBy('doc_no')->get();
+        // Sama dengan layar: filter status (default approved) + baris yang tersaring di layar
+        // (cari & saringan kolom, dikirim sebagai id — pola Batal Akad).
+        $status  = (string) $request->input('status', 'approved');
+        $ids     = collect(explode(',', (string) $request->input('ids')))->map(fn ($v) => (int) trim($v))->filter()->unique();
+        $budgets = BsBudget::with(['account:id,code,name', 'costCenter:id,code,name'])->where('year', $year)
+            ->when($status !== 'all', fn ($q) => $q->where('status', $status))
+            ->when($request->filled('ids'), fn ($q) => $q->whereIn('id', $ids->all() ?: [0]))
+            ->orderBy('doc_no')->get();
 
         $months = BsBudget::MONTHS;
         $e  = fn ($s) => htmlspecialchars((string) $s, ENT_QUOTES, 'UTF-8');

@@ -23,8 +23,10 @@ function display() {
     router.get(route('bs.gl.trialbalance'), filterParams(), { preserveState: true, replace: true, preserveScroll: true });
 }
 function setMode(m: string) { mode.value = m; display(); }
-function printReport() { window.open(route('bs.gl.trialbalance.print', filterParams()), '_blank'); }
-function exportExcel() { window.location.href = route('bs.gl.trialbalance.export', filterParams()); }
+// Unduhan memakai filter yang SUDAH diterapkan (props), bukan isian yang belum ditekan Tampilkan.
+function appliedParams() { return { start_date: props.filters?.start_date || undefined, end_date: props.filters?.end_date || undefined, mode: props.filters?.mode ?? 'mutation' }; }
+function printReport() { window.open(route('bs.gl.trialbalance.print', appliedParams()), '_blank'); }
+function exportExcel() { window.location.href = route('bs.gl.trialbalance.export', appliedParams()); }
 
 function fmtRp(v: number) { return Number(v ?? 0).toLocaleString('id-ID'); }
 function fmtDate(d: string) { return d ? new Date(d).toLocaleDateString('id-ID', { day:'2-digit', month:'short', year:'numeric' }) : null; }

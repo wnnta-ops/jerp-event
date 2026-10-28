@@ -35,8 +35,11 @@ function cleaned() {
     if (f.status) o.status = f.status;
     return o;
 }
+// Unduhan memakai filter yang SUDAH diterapkan (props.filters), bukan isian yang belum di-apply.
 function exportUrl() {
-    const q = new URLSearchParams(cleaned()).toString();
+    const o: Record<string, string> = {};
+    for (const k of ['from', 'to', 'status'] as const) if (props.filters[k]) o[k] = props.filters[k] as string;
+    const q = new URLSearchParams(o).toString();
     return route('reports.export', props.report.key) + (q ? '?' + q : '');
 }
 function fmt(v: any, type: string): string {

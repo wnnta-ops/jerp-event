@@ -46,6 +46,12 @@ const filtered = computed(() => props.rows.filter((r) =>
     (!f.dpp || inc(r.dpp, f.dpp) || inc(fmtRp(r.dpp), f.dpp)) &&
     (!f.ppn || inc(r.ppn, f.ppn) || inc(fmtRp(r.ppn), f.ppn))
 ));
+// Unduhan mengikuti saringan kolom: bila ada saringan, kirim kunci baris yang tampil.
+const adaSaringan = computed(() => Object.values(f).some((v) => v !== ''));
+const unduhParam = computed(() => ({
+    year: props.period.year, month: props.period.month,
+    keys: adaSaringan.value ? (filtered.value.map(rowKey).join(',') || '0') : undefined,
+}));
 const totF = computed(() => ({ dpp: filtered.value.reduce((s, r) => s + Number(r.dpp || 0), 0), ppn: filtered.value.reduce((s, r) => s + Number(r.ppn || 0), 0) }));
 
 /* ── Checkbox seleksi ──
@@ -173,8 +179,8 @@ const fCls = 'h-7 w-full rounded border border-neutral-300 bg-white px-2 text-xs
             <div class="flex flex-wrap gap-2">
                 <select v-model.number="month" @change="applyPeriod" class="h-9 rounded-lg border border-neutral-300 bg-white px-3 text-sm dark:border-neutral-700 dark:bg-neutral-900"><option v-for="(m,i) in months" :key="i" :value="i+1">{{ m }}</option></select>
                 <select v-model.number="year" @change="applyPeriod" class="h-9 rounded-lg border border-neutral-300 bg-white px-3 text-sm dark:border-neutral-700 dark:bg-neutral-900"><option v-for="y in years" :key="y" :value="y">{{ y }}</option></select>
-                <a :href="route('bs.tax.export.keluaran.xlsx', { year: period.year, month: period.month })" class="inline-flex h-9 items-center gap-1.5 rounded-lg bg-success-600 px-4 text-sm font-semibold text-white hover:bg-success-700"><FileSpreadsheet class="h-4 w-4" /> Excel</a>
-                <a :href="route('bs.tax.export.keluaran', { year: period.year, month: period.month })" class="inline-flex h-9 items-center gap-1.5 rounded-lg border border-neutral-300 px-3 text-sm font-medium hover:bg-neutral-50 dark:border-neutral-700"><Download class="h-4 w-4" /> CSV</a>
+                <a :href="route('bs.tax.export.keluaran.xlsx', unduhParam)" class="inline-flex h-9 items-center gap-1.5 rounded-lg bg-success-600 px-4 text-sm font-semibold text-white hover:bg-success-700"><FileSpreadsheet class="h-4 w-4" /> Excel</a>
+                <a :href="route('bs.tax.export.keluaran', unduhParam)" class="inline-flex h-9 items-center gap-1.5 rounded-lg border border-neutral-300 px-3 text-sm font-medium hover:bg-neutral-50 dark:border-neutral-700"><Download class="h-4 w-4" /> CSV</a>
                 <a :href="route('bs.tax.efaktur.csv', { year: period.year, month: period.month })" class="inline-flex h-9 items-center gap-1.5 rounded-lg border border-accent-300 px-3 text-sm font-medium text-accent-700 hover:bg-accent-50 dark:border-accent-700 dark:text-accent-300"><Download class="h-4 w-4" /> e-Faktur CSV</a>
                 <a :href="route('bs.tax.efaktur.xml', { year: period.year, month: period.month })" class="inline-flex h-9 items-center gap-1.5 rounded-lg border border-accent-300 px-3 text-sm font-medium text-accent-700 hover:bg-accent-50 dark:border-accent-700 dark:text-accent-300"><Download class="h-4 w-4" /> e-Faktur XML</a>
             </div>

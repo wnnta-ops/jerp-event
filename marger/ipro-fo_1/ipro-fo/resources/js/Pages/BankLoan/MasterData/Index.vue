@@ -167,7 +167,7 @@ const tdCls = (c: Col) => [
 // ── Unduh Excel ──────────────────────────────────────────────────────────
 // Susunan kolom dikirim dari sini (satu sumber kebenaran ada di `groups` di atas), jadi isi
 // berkasnya tak mungkin melenceng dari tabel di layar — menambah kolom otomatis ikut terunduh.
-// Yang diunduh SELURUH baris Master Data KPR, bukan hanya yang lolos filter layar.
+// Yang diunduh = baris yang sedang tampil (lolos pencarian & filter kolom), sama dengan layar.
 const downloading = ref(false);
 function unduhExcel() {
     if (downloading.value) return;
@@ -180,7 +180,7 @@ function unduhExcel() {
         // Kolom "No" berdiri sendiri di depan seluruh grup.
         headers: ['No', ...cols.map((c) => c.label)],
         numeric: [false, ...cols.map((c) => !!c.num)],
-        rows: props.rows.map((r, i) => [i + 1, ...cols.map((c) => {
+        rows: filtered.value.map((r, i) => [i + 1, ...cols.map((c) => {
             const v = c.get(r);
             return v === null || v === undefined ? '' : v;
         })]),

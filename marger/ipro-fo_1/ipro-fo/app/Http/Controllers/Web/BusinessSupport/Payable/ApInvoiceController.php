@@ -1378,6 +1378,21 @@ HTML;
      *
      * @return array{0:string,1:string,2:string} [judul periode, label posisi, baris tabel HTML]
      */
+    /**
+     * Kotak "Cari supplier" di layar ikut ke unduhan: hanya baris supplier yang disaring —
+     * Others & TOTAL tetap utuh, persis seperti di layar (keduanya menjawab "berapa seluruhnya").
+     */
+    private function cariAgingSupplier(array $d, Request $request): array
+    {
+        $q = mb_strtolower(trim((string) $request->input('cari', '')));
+        $d['cari'] = $q;
+        if ($q !== '') {
+            $d['rows'] = array_values(array_filter($d['rows'], fn ($r) => str_contains(mb_strtolower((string) $r['name']), $q)));
+        }
+
+        return $d;
+    }
+
     private function tabelAgingSupplier(array $d, bool $excel): array
     {
         $e = fn ($s) => htmlspecialchars((string) $s, ENT_QUOTES, 'UTF-8');
@@ -1395,7 +1410,9 @@ HTML;
             $html .= $baris('Others ('.$d['others']['jumlah'].' supplier lainnya)', $d['others'], ' style="font-style:italic"');
         }
         if ($d['rows'] === []) {
-            $html .= '<tr><td colspan="5" style="text-align:center">Tidak ada hutang outstanding.</td></tr>';
+            $html .= '<tr><td colspan="5" style="text-align:center">'
+                .(($d['cari'] ?? '') !== '' ? 'Tidak ada supplier yang cocok dengan pencarian "'.$e($d['cari']).'".' : 'Tidak ada hutang outstanding.')
+                .'</td></tr>';
         }
         $html .= $baris('TOTAL ('.$d['total']['jumlah'].' supplier)', $d['total'], ' style="font-weight:bold;background:#e2e8f0"');
 
@@ -1408,7 +1425,7 @@ HTML;
     public function agingSupplierExcel(Request $request): \Illuminate\Http\Response
     {
         abort_unless($request->user()?->can('ap.aging.export'), 403);
-        $d = $this->dataAgingSupplier($request);
+        $d = $this->cariAgingSupplier($this->dataAgingSupplier($request), $request);
         [$periode, $posisi, $baris] = $this->tabelAgingSupplier($d, true);
         $co = htmlspecialchars((string) config('business_support.company.name', 'PT. Mitra Usaha Propertindo'), ENT_QUOTES, 'UTF-8');
         $judul = $d['tampil'] === 'semua' ? 'seluruh supplier' : $d['topN'].' terbesar';
@@ -1429,7 +1446,7 @@ HTML;
     public function agingSupplierPdf(Request $request): \Illuminate\Http\Response
     {
         abort_unless($request->user()?->can('ap.aging.export'), 403);
-        $d = $this->dataAgingSupplier($request);
+        $d = $this->cariAgingSupplier($this->dataAgingSupplier($request), $request);
         [$periode, $posisi, $baris] = $this->tabelAgingSupplier($d, false);
         $co = htmlspecialchars((string) config('business_support.company.name', 'PT. Mitra Usaha Propertindo'), ENT_QUOTES, 'UTF-8');
         $judul = $d['tampil'] === 'semua' ? 'Seluruh supplier' : $d['topN'].' supplier terbesar, sisanya dirangkum';
