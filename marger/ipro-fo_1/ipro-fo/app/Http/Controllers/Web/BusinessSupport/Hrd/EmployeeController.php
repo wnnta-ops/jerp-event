@@ -25,7 +25,7 @@ class EmployeeController extends Controller
         $rows = BsEmployee::query()
             // Kolom "Departemen" pada layar bersumber cost center — satu isian dengan yang
             // dipakai Pengajuan Bon Sementara, SIP, dan Bukti Permohonan Pembayaran.
-            ->with(['costCenter:id,code,name'])
+            ->with(['costCenter:id,code,name', 'extraCostCenters:id,code,name'])
             ->when($request->input('search'), fn ($q, $s) => $q->where(fn ($w) => $w->where('name', 'like', "%{$s}%")->orWhere('nik', 'like', "%{$s}%")->orWhere('position', 'like', "%{$s}%")))
             ->when($request->input('status') !== null && $request->input('status') !== '', fn ($q) => $q->where('is_active', $request->input('status') === 'active'))
             ->orderBy('name')->paginate(25)->withQueryString();
@@ -48,7 +48,13 @@ class EmployeeController extends Controller
     {
         // Izin Data Center (Grup Akses BO) — atau Setup Business Support — Kelola seperti dulu.
         abort_unless($request->user()?->can('datacenter.employee.create') || $request->user()?->can('businesssupport.setup.manage'), 403);
-        BsEmployee::create($this->data($request) + ['created_by' => $request->user()->id]);
+        [$data, $tambahan] = $this->data($request);
+        DB::transaction(function () use ($data, $tambahan, $request): void {
+            $employee = BsEmployee::create($data + ['created_by' => $request->user()->id]);
+            if ($tambahan !== null) {
+                $employee->extraCostCenters()->sync($tambahan);
+            }
+        });
 
         return back()->with('success', 'Karyawan ditambahkan.');
     }
@@ -57,7 +63,13 @@ class EmployeeController extends Controller
     {
         // Izin Data Center (Grup Akses BO) — atau Setup Business Support — Kelola seperti dulu.
         abort_unless($request->user()?->can('datacenter.employee.update') || $request->user()?->can('businesssupport.setup.manage'), 403);
-        $employee->update($this->data($request, $employee));
+        [$data, $tambahan] = $this->data($request, $employee);
+        DB::transaction(function () use ($employee, $data, $tambahan): void {
+            $employee->update($data);
+            if ($tambahan !== null) {
+                $employee->extraCostCenters()->sync($tambahan);
+            }
+        });
 
         return back()->with('success', 'Data karyawan diperbarui.');
     }
@@ -302,14 +314,24 @@ class EmployeeController extends Controller
             ->with('import', ['baru' => $baru, 'ubah' => $ubah, 'lewat' => $lewat, 'galat' => $galat, 'catatan' => []]);
     }
 
-    /** @return array<string,mixed> */
+    /**
+     * Data karyawan + departemen tambahannya.
+     *
+     * Layar Data Karyawan mengirim `cost_center_ids` (urut; yang PERTAMA = Utama → disimpan di
+     * cost_center_id, sisanya = tambahan). Layar Registrasi Karyawan masih mengirim satu
+     * `cost_center_id` saja — tambahannya lalu null = tidak disentuh.
+     *
+     * @return array{0: array<string,mixed>, 1: list<int>|null}
+     */
     private function data(Request $request, ?BsEmployee $employee = null): array
     {
-        return $request->validate([
+        $v = $request->validate([
             'nik' => ['nullable', 'string', 'max:32'],
             'name' => ['required', 'string', 'max:150'],
             'position' => ['nullable', 'string', 'max:100'],
             'cost_center_id' => ['nullable', 'integer', 'exists:bs_cost_centers,id'],
+            'cost_center_ids' => ['sometimes', 'array'],
+            'cost_center_ids.*' => ['integer', 'distinct', 'exists:bs_cost_centers,id'],
             'join_date' => ['nullable', 'date'],
             'base_salary' => ['required', 'numeric', 'min:0'],
             'allowance' => ['nullable', 'numeric', 'min:0'],
@@ -320,5 +342,15 @@ class EmployeeController extends Controller
                 fn ($attr, $val, $fail) => $employee && (int) $val === (int) $employee->id ? $fail('Atasan tidak boleh diri sendiri.') : null],
             'is_active' => ['boolean'],
         ]);
+
+        $tambahan = null;
+        if (array_key_exists('cost_center_ids', $v)) {
+            $ids = array_map('intval', $v['cost_center_ids'] ?? []);
+            $v['cost_center_id'] = $ids[0] ?? null;
+            $tambahan = array_slice($ids, 1);
+        }
+        unset($v['cost_center_ids']);
+
+        return [$v, $tambahan];
     }
 }

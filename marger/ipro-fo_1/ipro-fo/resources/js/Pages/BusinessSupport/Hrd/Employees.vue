@@ -12,6 +12,7 @@ import { useIzin } from '@/Composables/useIzin';
 const { punyaIzin } = useIzin();
 const KELOLA = 'businesssupport.setup.manage';
 import SearchSelect from '@/Components/UI/SearchSelect.vue';
+import MultiSearchSelect from '@/Components/UI/MultiSearchSelect.vue';
 
 // Judul kolom template import — SATU sumber dengan EmployeeController::KOLOM.
 const KOLOM_IMPOR = [
@@ -34,16 +35,27 @@ function fmtRp(v: number) { return 'Rp ' + Number(v ?? 0).toLocaleString('id-ID'
 
 const showModal = ref(false);
 const editingId = ref<number | null>(null);
-const form = useForm<any>({ nik: '', name: '', position: '', cost_center_id: '', join_date: '', base_salary: 0, allowance: 0, bank_name: '', bank_account: '', atasan_id: null as number | null, is_active: true });
+// cost_center_ids: urut — yang PERTAMA = Departemen Utama (disimpan server di cost_center_id).
+const form = useForm<any>({ nik: '', name: '', position: '', cost_center_ids: [] as number[], join_date: '', base_salary: 0, allowance: 0, bank_name: '', bank_account: '', atasan_id: null as number | null, is_active: true });
 function openCreate() { editingId.value = null; form.reset(); showModal.value = true; }
 function openEdit(e: any) {
     editingId.value = e.id;
-    Object.assign(form, { nik: e.nik ?? '', name: e.name, position: e.position ?? '', cost_center_id: e.cost_center_id ?? '', join_date: e.join_date ? e.join_date.slice(0,10) : '', base_salary: Number(e.base_salary), allowance: Number(e.allowance), bank_name: e.bank_name ?? '', bank_account: e.bank_account ?? '', atasan_id: e.atasan_id ?? null, is_active: !!e.is_active });
+    Object.assign(form, { nik: e.nik ?? '', name: e.name, position: e.position ?? '', cost_center_ids: departemenIds(e), join_date: e.join_date ? e.join_date.slice(0,10) : '', base_salary: Number(e.base_salary), allowance: Number(e.allowance), bank_name: e.bank_name ?? '', bank_account: e.bank_account ?? '', atasan_id: e.atasan_id ?? null, is_active: !!e.is_active });
     showModal.value = true;
 }
 function submit() {
     const opts = { onSuccess: () => { showModal.value = false; } };
     editingId.value ? form.put(route('bs.employees.update', editingId.value), opts) : form.post(route('bs.employees.store'), opts);
+}
+/** Departemen karyawan, Utama lebih dulu. */
+function departemenIds(e: any): number[] {
+    const ids = e.cost_center_id ? [Number(e.cost_center_id)] : [];
+    for (const c of (e.extra_cost_centers ?? [])) if (!ids.includes(Number(c.id))) ids.push(Number(c.id));
+    return ids;
+}
+function departemenNama(e: any): string {
+    const nama = [e.cost_center?.name, ...(e.extra_cost_centers ?? []).map((c: any) => c.name)].filter(Boolean);
+    return [...new Set(nama)].join(', ') || '—';
 }
 function destroy(e: any) { if (confirm(`Hapus karyawan ${e.name}?`)) router.delete(route('bs.employees.destroy', e.id), { preserveScroll: true }); }
 const inputCls = 'h-9 w-full rounded-lg border border-neutral-300 bg-white px-3 text-sm dark:border-neutral-700 dark:bg-neutral-900';
@@ -80,7 +92,7 @@ const inputCls = 'h-9 w-full rounded-lg border border-neutral-300 bg-white px-3 
                         <td class="px-4 py-2.5 font-mono text-xs">{{ e.nik ?? '—' }}</td>
                         <td class="px-4 py-2.5 font-medium">{{ e.name }}</td>
                         <td class="px-4 py-2.5">{{ e.position ?? '—' }}</td>
-                        <td class="px-4 py-2.5 text-neutral-500">{{ e.cost_center?.name ?? '—' }}</td>
+                        <td class="px-4 py-2.5 text-neutral-500">{{ departemenNama(e) }}</td>
                         <td class="px-4 py-2.5 text-right font-mono">{{ fmtRp(e.base_salary) }}</td>
                         <td class="px-4 py-2.5 text-right font-mono">{{ fmtRp(e.allowance) }}</td>
                         <td class="px-4 py-2.5 text-center"><Badge :variant="e.is_active ? 'success' : 'neutral'" size="sm">{{ e.is_active ? 'Aktif' : 'Nonaktif' }}</Badge></td>
@@ -109,11 +121,8 @@ const inputCls = 'h-9 w-full rounded-lg border border-neutral-300 bg-white px-3 
                              membuang kolom Departemen demi Cost Center. Ini menyamakan sisanya. -->
                         <div>
                             <label class="mb-1 block text-xs font-medium text-neutral-500">Departemen</label>
-                            <select v-model="form.cost_center_id" :class="inputCls">
-                                <option value="">—</option>
-                                <option v-for="c in costCenters" :key="c.id" :value="c.id">{{ c.name }}</option>
-                            </select>
-                            <p class="mt-1 text-[11px] text-neutral-400">Tercetak di SIP &amp; Bukti Permohonan Pembayaran, dan terpakai otomatis pada Pengajuan Bon Sementara karyawan ini.</p>
+                            <MultiSearchSelect v-model="form.cost_center_ids" :options="costCenters" utama placeholder="Pilih departemen…" />
+                            <p class="mt-1 text-[11px] text-neutral-400">★ Utama: tercetak di SIP &amp; Bukti Permohonan Pembayaran. Departemen lain bisa dipilih pada Pengajuan Bon Sementara. Klik nama departemen untuk menjadikannya Utama.</p>
                         </div>
                         <div><label class="mb-1 block text-xs font-medium text-neutral-500">Tgl Masuk</label><input v-model="form.join_date" type="date" :class="inputCls" /></div>
                         <div><label class="mb-1 block text-xs font-medium text-neutral-500">Gaji Pokok *</label><input v-model.number="form.base_salary" type="number" step="1" min="0" required :class="[inputCls,'text-right font-mono']" /></div>
