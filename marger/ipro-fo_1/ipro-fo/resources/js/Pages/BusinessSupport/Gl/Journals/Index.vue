@@ -160,6 +160,7 @@ const kolomFilter = ref<Record<string, any>>({
     f_account: props.filters.f_account ?? '',
     f_line_desc: props.filters.f_line_desc ?? '',
     f_cost_center: props.filters.f_cost_center ?? '',
+    f_user: props.filters.f_user ?? '',
 });
 
 /** Seluruh parameter yang sedang berlaku — dipakai bersama oleh Display dan Excel,
@@ -404,6 +405,7 @@ function rentangBaris(j: any) { return barisTampil(j).length; }
                         <th class="px-4 py-3">Sumber</th>
                         <th class="px-4 py-3">Keterangan</th>
                         <th class="px-4 py-3 text-center">Status</th>
+                        <th class="px-4 py-3">Diinput Oleh</th>
                         <th class="px-4 py-3">Cost Center</th>
                         <th class="px-4 py-3">COA</th>
                         <th class="px-4 py-3">Nama Akun</th>
@@ -425,6 +427,7 @@ function rentangBaris(j: any) { return barisTampil(j).length; }
                         <th class="px-2 py-2"><SearchSelect :model-value="source" :options="opsiSumber" option-value="id" placeholder="Semua" no-truncate @update:model-value="(v) => { source = v ?? ''; display(); }" /></th>
                         <th class="px-2 py-2"><SearchSelect :model-value="kolomFilter.f_desc" :options="opsi('desc')" option-value="id" placeholder="Semua" no-truncate @update:model-value="(v) => pilihKolom('f_desc', v)" /></th>
                         <th class="px-2 py-2"><SearchSelect :model-value="statusFilter" :options="opsiStatus" option-value="id" placeholder="Semua" no-truncate @update:model-value="(v) => { statusFilter = v ?? ''; display(); }" /></th>
+                        <th class="px-2 py-2"><SearchSelect :model-value="kolomFilter.f_user" :options="opsi('user')" option-value="id" placeholder="Semua" no-truncate @update:model-value="(v) => pilihKolom('f_user', v)" /></th>
                         <th class="px-2 py-2"><SearchSelect :model-value="kolomFilter.f_cost_center" :options="opsi('cost_center')" option-value="id" placeholder="Semua" no-truncate @update:model-value="(v) => pilihKolom('f_cost_center', v)" /></th>
                         <!-- Satu saringan untuk akun, menaungi COA dan Nama Akun: keduanya dua sisi
                              dari nilai yang sama, jadi dua kotak akan saling membatalkan. -->
@@ -438,7 +441,7 @@ function rentangBaris(j: any) { return barisTampil(j).length; }
                          tetap seimbang), sedangkan Debit & Kredit mencocokkan TOTAL jurnalnya —
                          bukan angka per baris yang tertera di kolom itu saat rincian dibuka. -->
                     <tr class="bg-white/60 text-[10px] font-normal normal-case text-neutral-400 dark:bg-neutral-900/40">
-                        <th class="px-2 pb-2.5" colspan="8"></th>
+                        <th class="px-2 pb-2.5" colspan="9"></th>
                         <th class="px-2 pb-2.5 text-center" colspan="3">menjaring jurnalnya</th>
                         <th class="px-2 pb-2.5 text-center" colspan="2">mencocokkan total jurnalnya</th>
                     </tr>
@@ -497,6 +500,12 @@ function rentangBaris(j: any) { return barisTampil(j).length; }
                                      adalah satu-satunya penjelasan mengapa jurnalnya ada. -->
                             <td class="px-4 py-2.5 align-top whitespace-normal break-words">{{ j.description }}<span v-if="j.reference" class="mt-0.5 block text-xs text-neutral-400">Ref: {{ j.reference }}</span></td>
                             <td class="px-4 py-2.5 align-top text-center"><Badge :variant="statusBadge[j.status] ?? 'neutral'" size="sm">{{ statuses[j.status] ?? j.status }}</Badge></td>
+                            <!-- Diinput Oleh: akun J-ERP pembuat jurnal; jurnal dari eProperty memakai nama
+                                 penginputnya di sana (teks, ditandai "eProperty"). -->
+                            <td class="px-4 py-2.5 align-top whitespace-nowrap">
+                                <template v-if="j.diinput_oleh">{{ j.diinput_oleh }}<span v-if="!j.created_by" class="ml-1 text-[10px] text-neutral-400">(eProperty)</span></template>
+                                <span v-else class="text-[11px] text-neutral-400">—</span>
+                            </td>
                             <!-- COST CENTER (departemen) yang benar-benar tercatat di GL: cost
                                  center barisnya, jatuh ke cost center header bila kosong. Satu
                                  jurnal boleh menyentuh beberapa cost center, jadi semuanya

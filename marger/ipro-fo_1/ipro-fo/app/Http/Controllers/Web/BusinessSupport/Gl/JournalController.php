@@ -60,11 +60,20 @@ class JournalController extends Controller
                 // ditampilkan supaya debit & kreditnya tetap seimbang di layar.
                 ->when($request->input('f_account'), fn ($x, $v) => $x->whereHas('lines', fn ($l) => $l->where('account_id', (int) $v)))
                 ->when($request->input('f_line_desc'), fn ($x, $v) => $x->whereHas('lines', fn ($l) => $l->where('description', $v)))
+                // Diinput Oleh: 'u:<id user>' = dibuat di J-ERP (created_by); 't:<nama>' = nama
+                // penginput dari eProperty (dibuat_oleh), hanya untuk jurnal tanpa created_by.
+                ->when($request->input('f_user'), function ($x, $v) {
+                    [$jenis, $nilai] = array_pad(explode(':', (string) $v, 2), 2, '');
+
+                    return $jenis === 'u'
+                        ? $x->where('created_by', (int) $nilai)
+                        : $x->whereNull('created_by')->where('dibuat_oleh', $nilai);
+                })
                 ->when($request->input('search'), fn ($x, $s) => $x->where(fn ($w) => $w->where('journal_number', 'like', "%{$s}%")->orWhere('description', 'like', "%{$s}%")->orWhere('reference', 'like', "%{$s}%")));
         };
 
         $rows = $saring(BsJournal::query()
-            ->with(['lines.account:id,code,name', 'lines.costCenter:id,code,name', 'costCenter:id,code,name'])
+            ->with(['lines.account:id,code,name', 'lines.costCenter:id,code,name', 'costCenter:id,code,name', 'createdBy:id,name'])
             ->withCount('lines')
             ->whereBetween('journal_date', [$from->toDateString(), $to->toDateString()]))
             ->when($request->input('status'), fn ($q, $v) => $q->where('status', $v))
@@ -138,6 +147,8 @@ class JournalController extends Controller
                keterangannya sendiri — kolom kosong hanya membuat orang mengira cost center-nya
                lupa diisi dan mencoba melengkapinya. */
             $j->cost_center_migrasi = $j->migrasiDataAwal();
+            // Diinput Oleh: akun J-ERP pembuatnya; jurnal dari eProperty → nama penginput di sana.
+            $j->diinput_oleh = $j->createdBy?->name ?: ($j->dibuat_oleh ?: null);
 
             $nama = [];
             $kurang = [];
@@ -209,6 +220,13 @@ class JournalController extends Controller
                 ->distinct()->pluck('account_id'))
                 ->orderBy('code')->limit($BATAS)->get(['id', 'code', 'name'])
                 ->map(fn ($a) => ['id' => (string) $a->id, 'label' => $a->code.' — '.$a->name])->values(),
+            'user'      => \App\Models\User::whereIn('id', $dalamRentang()->whereNotNull('created_by')->distinct()->pluck('created_by'))
+                ->orderBy('name')->limit($BATAS)->get(['id', 'name'])
+                ->map(fn ($u) => ['id' => 'u:'.$u->id, 'label' => (string) $u->name])
+                ->concat($dalamRentang()->whereNull('created_by')->whereNotNull('dibuat_oleh')->where('dibuat_oleh', '!=', '')
+                    ->distinct()->orderBy('dibuat_oleh')->limit($BATAS)->pluck('dibuat_oleh')
+                    ->map(fn ($v) => ['id' => 't:'.$v, 'label' => $v.' (eProperty)']))
+                ->values(),
             'line_desc' => BsJournalLine::whereIn('journal_id', $idJurnal)
                 ->whereNotNull('description')->where('description', '!=', '')
                 ->distinct()->orderBy('description')->limit($BATAS)->pluck('description')
@@ -239,7 +257,7 @@ class JournalController extends Controller
                 $request->only([
                     'source', 'status', 'search',
                     'f_number', 'f_date', 'f_desc', 'f_cost_center', 'f_debit', 'f_credit',
-                    'f_account', 'f_line_desc',
+                    'f_account', 'f_line_desc', 'f_user',
                 ]),
                 ['date_from' => $from->toDateString(), 'date_to' => $to->toDateString()],
             ),
@@ -395,7 +413,7 @@ class JournalController extends Controller
         $to   = $request->date('date_to')   ?? now()->endOfMonth();
 
         $journals = BsJournal::query()
-            ->with(['lines.account:id,code,name', 'lines.costCenter:id,code,name', 'costCenter:id,code,name'])
+            ->with(['lines.account:id,code,name', 'lines.costCenter:id,code,name', 'costCenter:id,code,name', 'createdBy:id,name'])
             ->whereBetween('journal_date', [$from->toDateString(), $to->toDateString()])
             ->when($request->input('source'), fn ($q, $v) => $q->where('source', $v))
             ->when($request->input('status'), fn ($q, $v) => $q->where('status', $v))
@@ -415,7 +433,7 @@ class JournalController extends Controller
         // Urutan kolom: Kode Akun & Nama Akun paling kiri, lalu Pihak Terkait tepat setelah Sumber.
         $h = '<table border="1"><tr style="background:#0f766e;color:#fff">'
             .'<th>Kode Akun</th><th>Nama Akun</th>'
-            .'<th>No. Jurnal</th><th>Tanggal</th><th>Sumber</th><th>Pihak Terkait</th><th>Status</th><th>Keterangan</th><th>Referensi</th>'
+            .'<th>No. Jurnal</th><th>Tanggal</th><th>Sumber</th><th>Pihak Terkait</th><th>Status</th><th>Diinput Oleh</th><th>Keterangan</th><th>Referensi</th>'
             .'<th>Cost Center</th><th>Keterangan Baris</th><th>Debit</th><th>Kredit</th></tr>';
         $totalD = 0.0;
         $totalK = 0.0;
@@ -431,6 +449,8 @@ class JournalController extends Controller
                     .'<td>'.$e($src[$j->source] ?? $j->source).'</td>'
                     .'<td>'.$e($pihak[$j->id] ?? '').'</td>'
                     .'<td>'.$e($st[$j->status] ?? $j->status).'</td>'
+                    // Akun J-ERP pembuatnya; jurnal dari eProperty → nama penginput di sana.
+                    .'<td>'.$e($j->createdBy?->name ?: $j->dibuat_oleh).'</td>'
                     .'<td>'.$e($j->description).'</td>'
                     .'<td>'.$e($j->reference).'</td>'
                     // Cost center EFEKTIF barisnya: cost center baris, jatuh ke header bila
@@ -443,7 +463,7 @@ class JournalController extends Controller
                     .'</tr>';
             }
         }
-        $h .= '<tr style="font-weight:bold;background:#f1f5f9"><td colspan="11">TOTAL</td><td>'.$rp($totalD).'</td><td>'.$rp($totalK).'</td></tr></table>';
+        $h .= '<tr style="font-weight:bold;background:#f1f5f9"><td colspan="12">TOTAL</td><td>'.$rp($totalD).'</td><td>'.$rp($totalK).'</td></tr></table>';
 
         $file = 'Detail-Transaksi-Jurnal-'.$from->format('Ymd').'-'.$to->format('Ymd').'.xls';
 
