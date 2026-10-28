@@ -164,6 +164,17 @@ export function navGroups(foUrl: string): NavGroup[] {
                 // Panel pengaturan Kalkulator KPR: bank, plafon & tenor, skema bunga, promo,
                 // foto intro. Yang dihitung dari pengaturan ini ada di Query/Report → Kalkulator KPR.
                 { label: 'Kategori Perhitungan KPR', href: 'kpr.setup.perhitungan.index', permission: 'bankloan.setup.view' },
+                // Per tahap Proses KPR: wajib approval?, approver, boleh ubah langsung.
+                { label: 'Setup Approval KPR', href: 'kpr.setup.approval.index', permission: 'bankloan.setup.view' },
+            ]},
+            // Approval perubahan data Proses KPR — tiap sub-menu hanya tampil bagi approver tahap itu
+            // (penanda 'kpr.approval.<tahap>' dikirim server, lihat HandleInertiaRequests).
+            { label: 'Approval', icon: ShieldCheck, permission: ['kpr.approval.*'], children: [
+                { label: 'Approval Proses Bank',   href: 'kpr.approval.index', params: { stage: 'prosesbank' }, permission: 'kpr.approval.prosesbank' },
+                { label: 'Approval SP3K',          href: 'kpr.approval.index', params: { stage: 'sp3k' },       permission: 'kpr.approval.sp3k' },
+                { label: 'Approval Akad',          href: 'kpr.approval.index', params: { stage: 'akad' },       permission: 'kpr.approval.akad' },
+                { label: 'Approval Pencairan',     href: 'kpr.approval.index', params: { stage: 'pencairan' },  permission: 'kpr.approval.pencairan' },
+                { label: 'Approval Batal / Tolak', href: 'kpr.approval.index', params: { stage: 'batal' },      permission: 'kpr.approval.batal' },
             ]},
             // Transaction — proses transaksi KPR.
             { label: 'Transaction', icon: GitMerge, permission: ['bankloan.application.*'], children: [
