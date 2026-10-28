@@ -95,10 +95,14 @@ class LedgerReportController extends Controller
             ->map(function ($l) use (&$running) {
                 $running += (float) $l->debit - (float) $l->credit;
 
+                // Keterangan baris + keterangan kepala jurnal — aturan yang sama dengan Rekening Ledger.
+                [$ket, $ketJurnal] = \App\Domain\BusinessSupport\Support\KeteranganJurnal::pisah($l->description, $l->journal->description);
+
                 return [
                     'date' => $l->journal->journal_date?->format('Y-m-d'),
                     'number' => $l->journal->journal_number,
-                    'description' => $l->description ?: $l->journal->description,
+                    'description' => $ket,
+                    'journal_desc' => $ketJurnal,
                     'debit' => (float) $l->debit, 'credit' => (float) $l->credit, 'balance' => $running,
                 ];
             });

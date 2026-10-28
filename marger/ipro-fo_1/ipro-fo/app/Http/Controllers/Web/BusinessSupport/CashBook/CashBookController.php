@@ -9,6 +9,7 @@ use App\Domain\BusinessSupport\Models\BsAccount;
 use App\Domain\BusinessSupport\Models\BsCashTransaction;
 use App\Domain\BusinessSupport\Models\BsCostCenter;
 use App\Domain\BusinessSupport\Models\BsJournalLine;
+use App\Domain\BusinessSupport\Support\KeteranganJurnal;
 use App\Exceptions\BusinessRuleException;
 use App\Http\Controllers\Controller;
 use Illuminate\Http\RedirectResponse;
@@ -495,19 +496,21 @@ class CashBookController extends Controller
                 $running += (float) $r->debit - (float) $r->credit;
                 $tag = $cfTags[$r->id] ?? null;
 
-                // Keterangan kepala jurnal hanya dikirim bila BERBEDA dari keterangan barisnya —
-                // kalau sama persis, mencetaknya dua kali cuma menggandakan kalimat yang sama.
-                $ketBaris  = trim((string) $r->description);
-                $ketJurnal = trim((string) $r->journal_description);
+                // Keterangan baris + kepala jurnal (bila berbeda) — aturan bersama dengan
+                // PDF/Excel Rekening Ledger dan Buku Besar GL (KeteranganJurnal).
+                [$ketBaris, $ketJurnal] = KeteranganJurnal::pisah($r->description, $r->journal_description);
 
                 return [
                     'id' => $r->id,
                     'journal_id' => $r->journal_id,   // tujuan pranala nomor referensi
                     'trx_id' => $trxByJournal[$r->journal_id] ?? null,
+                    // Jurnal KAS yang dibentuk langsung tanpa transaksi kas (Approval Pencairan KPR,
+                    // Pembayaran Bon Sementara) — buktinya dicetak dari jurnalnya (printBulk ?jids).
+                    'jrn_print' => (! isset($trxByJournal[$r->journal_id]) && $r->source === 'cash') ? $r->journal_id : null,
                     'journal_id' => $r->journal_id, // #3 — buka Detail Jurnal dari baris Rekening Ledger
                     'date' => (string) $r->journal_date, 'ref' => $r->reference ?: $r->journal_number,
                     'source' => $r->source, 'desc' => $ketBaris,
-                    'journal_desc' => ($ketJurnal !== '' && $ketJurnal !== $ketBaris) ? $ketJurnal : null,
+                    'journal_desc' => $ketJurnal,
                     'debit' => (float) $r->debit, 'credit' => (float) $r->credit, 'balance' => round($running, 2),
                     'cf_direct_category_id' => $tag?->cf_direct_category_id,
                     'cf_indirect_category_id' => $tag?->cf_indirect_category_id,
@@ -950,9 +953,9 @@ class CashBookController extends Controller
      * Makna id mengikuti mode layar: tanpa account_id → id BsCashTransaction; dengan account_id
      * (mode GL) → id BsJournalLine. Karena itu layar WAJIB mengosongkan centang saat filter berubah.
      */
-    private function selectedIds(Request $request): array
+    private function selectedIds(Request $request, string $key = 'ids'): array
     {
-        $raw = $request->input('ids');
+        $raw = $request->input($key);
         $ids = is_array($raw) ? $raw : array_filter(explode(',', (string) $raw), fn ($v) => trim($v) !== '');
 
         return array_values(array_unique(array_map('intval', $ids)));
@@ -1122,15 +1125,18 @@ class CashBookController extends Controller
                 ->when($from, fn ($q) => $q->whereDate('bs_journals.journal_date', '>=', $from))
                 ->when($to, fn ($q) => $q->whereDate('bs_journals.journal_date', '<=', $to))
                 ->orderBy('bs_journals.journal_date')->orderBy('bs_journal_lines.id')
-                ->get(['bs_journals.journal_date', 'bs_journals.journal_number', 'bs_journals.reference', 'bs_journals.source', 'bs_journal_lines.description', 'bs_journal_lines.debit', 'bs_journal_lines.credit']);
+                ->get(['bs_journals.journal_date', 'bs_journals.journal_number', 'bs_journals.reference', 'bs_journals.source', 'bs_journals.description as journal_description', 'bs_journal_lines.description', 'bs_journal_lines.debit', 'bs_journal_lines.credit']);
 
             $running = $opening;
             $entries = $rows->map(function ($r) use (&$running) {
                 $running += (float) $r->debit - (float) $r->credit;
+                // Sama dengan layar & Buku Besar GL: keterangan baris + kepala jurnal (bila berbeda).
+                [$ket, $ketJurnal] = KeteranganJurnal::pisah($r->description, $r->journal_description);
 
                 return [
                     'date' => (string) $r->journal_date, 'ref' => $r->reference ?: $r->journal_number,
-                    'desc' => $r->description, 'debit' => (float) $r->debit, 'credit' => (float) $r->credit, 'balance' => round($running, 2),
+                    'desc' => $ket, 'journal_desc' => $ketJurnal,
+                    'debit' => (float) $r->debit, 'credit' => (float) $r->credit, 'balance' => round($running, 2),
                 ];
             });
         }
@@ -1155,7 +1161,9 @@ class CashBookController extends Controller
             .'<tr style="background:#e2e8f0"><th>Tanggal</th><th>Referensi</th><th>Keterangan</th><th>Debit</th><th>Kredit</th><th>Saldo</th></tr>'
             .'<tr><td colspan="5">Saldo Awal</td><td>'.$rp($d['opening']).'</td></tr>';
         foreach ($d['entries'] as $en) {
-            $h .= '<tr><td>'.$e($en['date']).'</td><td>'.$e($en['ref']).'</td><td>'.$e($en['desc'])
+            // Keterangan jurnal di SEL YANG SAMA (pindah baris di dalam sel) — urutan kolom tetap.
+            $ket = $e($en['desc']).($en['journal_desc'] ? '<br style="mso-data-placement:same-cell">'.$e($en['journal_desc']) : '');
+            $h .= '<tr><td>'.$e($en['date']).'</td><td>'.$e($en['ref']).'</td><td style="white-space:normal">'.$ket
                 .'</td><td>'.$rp($en['debit']).'</td><td>'.$rp($en['credit']).'</td><td>'.$rp($en['balance']).'</td></tr>';
         }
         $h .= '<tr style="background:#e2e8f0"><td colspan="5"><b>Saldo Akhir</b></td><td><b>'.$rp($d['closing']).'</b></td></tr></table>';
@@ -1175,7 +1183,8 @@ class CashBookController extends Controller
         $body = '<table><thead><tr><th>Tanggal</th><th>Referensi</th><th>Keterangan</th><th class="r">Debit</th><th class="r">Kredit</th><th class="r">Saldo</th></tr></thead><tbody>'
             .'<tr><td colspan="5">Saldo Awal</td><td class="r">'.$rp($d['opening']).'</td></tr>';
         foreach ($d['entries'] as $en) {
-            $body .= '<tr><td>'.$e($en['date']).'</td><td>'.$e($en['ref']).'</td><td>'.$e($en['desc'])
+            $ket = $e($en['desc']).($en['journal_desc'] ? '<div style="font-size:9px;color:#6b7280">'.$e($en['journal_desc']).'</div>' : '');
+            $body .= '<tr><td>'.$e($en['date']).'</td><td>'.$e($en['ref']).'</td><td>'.$ket
                 .'</td><td class="r">'.($en['debit'] ? $rp($en['debit']) : '').'</td><td class="r">'.($en['credit'] ? $rp($en['credit']) : '').'</td><td class="r">'.$rp($en['balance']).'</td></tr>';
         }
         $body .= '</tbody><tfoot><tr><td colspan="5">Saldo Akhir</td><td class="r">'.$rp($d['closing']).'</td></tr></tfoot></table>';
@@ -1331,13 +1340,18 @@ class CashBookController extends Controller
         abort_unless($request->user()?->can('cashbook.transaction.print'), 403);
 
         $ids = $this->selectedIds($request);
-        abort_if($ids === [], 400, 'Belum ada transaksi yang dicentang.');
+        $jids = $this->selectedIds($request, 'jids');
+        abort_if($ids === [] && $jids === [], 400, 'Belum ada transaksi yang dicentang.');
 
-        $rows = BsCashTransaction::query()
+        $rows = $ids === [] ? collect() : BsCashTransaction::query()
             ->whereIn('id', $ids)
             ->with(['cashAccount:id,code,name', 'counterAccount:id,code,name', 'lines.account:id,code,name'])
-            ->orderBy('trx_date')->orderBy('id')
             ->get();
+        // Dari Rekening Ledger: jurnal kas tanpa transaksi kas → bukti dibentuk dari jurnalnya.
+        if ($jids !== []) {
+            $rows = $rows->concat($this->buktiDariJurnal($jids, $request->integer('acc') ?: null));
+        }
+        $rows = $rows->sortBy(fn (BsCashTransaction $t) => optional($t->trx_date)->format('Y-m-d').'|'.$t->trx_number)->values();
         abort_if($rows->isEmpty(), 404, 'Transaksi tidak ditemukan.');
 
         // Nama pembuat di-preload sekali (hindari N+1 saat mencetak puluhan bukti).
@@ -1353,6 +1367,68 @@ class CashBookController extends Controller
 
         return response($this->cashPrintDoc('Bukti Kas/Bank ('.$rows->count().')', $inner))
             ->header('Content-Type', 'text/html; charset=UTF-8');
+    }
+
+    /**
+     * Bukti kas/bank dari JURNAL KAS yang tidak punya transaksi kas — Approval Pencairan KPR dan
+     * Pembayaran Bon Sementara memosting jurnal langsung (source 'cash'), sehingga mutasinya di
+     * Rekening Ledger tak punya BKK/BKM untuk dicetak.
+     *
+     * Jurnal dibentuk menjadi BsCashTransaction SEMENTARA (tidak disimpan) supaya cashPrintSheet
+     * yang sama yang mencetaknya — satu format bukti. Akun bank = $akunBank (rekening yang sedang
+     * dibuka di ledger); debit di sana = Penerimaan, kredit = Pengeluaran. Rincian = baris jurnal
+     * selain akun bank. Hanya jurnal kas posted tanpa transaksi kas yang diterima.
+     *
+     * @param  list<int>  $jids
+     * @return \Illuminate\Support\Collection<int, BsCashTransaction>
+     */
+    private function buktiDariJurnal(array $jids, ?int $akunBank): \Illuminate\Support\Collection
+    {
+        $sudahAdaTrx = BsCashTransaction::whereIn('journal_id', $jids)->pluck('journal_id')->all();
+        $jurnal = \App\Domain\BusinessSupport\Models\BsJournal::query()
+            ->whereIn('id', array_diff($jids, $sudahAdaTrx))
+            ->where('source', 'cash')->where('status', 'posted')
+            ->with('lines.account:id,code,name')
+            ->get();
+
+        // "Diterima Oleh" bon = pemegangnya (referensi jurnal = nomor bon).
+        $pemegang = \App\Domain\BusinessSupport\Models\BsCashAdvance::whereIn('advance_number', $jurnal->pluck('reference')->filter()->unique()->all())
+            ->pluck('holder', 'advance_number');
+
+        return $jurnal->filter(fn ($j) => $j->lines->isNotEmpty())->values()->map(function ($j) use ($akunBank, $pemegang) {
+            $bank = $j->lines->first(fn ($l) => $akunBank !== null && (int) $l->account_id === $akunBank)
+                ?? $j->lines->first();
+            $masuk = (float) $bank->debit - (float) $bank->credit;   // + = Penerimaan, − = Pengeluaran
+            $akunBankId = (int) $bank->account_id;
+
+            $rincian = $j->lines
+                ->filter(fn ($l) => (int) $l->account_id !== $akunBankId)
+                ->map(fn ($l) => (object) [
+                    'account' => $l->account,
+                    'amount' => $masuk >= 0 ? (float) $l->credit - (float) $l->debit : (float) $l->debit - (float) $l->credit,
+                    'description' => $l->description,
+                ])
+                ->filter(fn ($l) => abs($l->amount) >= 0.005)
+                ->values();
+
+            $t = new BsCashTransaction;
+            $t->forceFill([
+                'trx_type' => $masuk >= 0 ? 'in' : 'out',
+                'trx_number' => $j->journal_number,
+                'trx_date' => $j->journal_date,
+                'amount' => abs($masuk),
+                'reference' => $j->reference,
+                'description' => $j->description,
+                'payee' => $pemegang[$j->reference] ?? null,
+                'journal_id' => $j->id,
+                'created_by' => $j->created_by,
+            ]);
+            $t->setRelation('cashAccount', $bank->account);
+            $t->setRelation('counterAccount', null);
+            $t->setRelation('lines', $rincian);
+
+            return $t;
+        });
     }
 
     /** Bungkus dokumen bukti (CSS + auto-print). $inner = satu atau banyak <section class="sheet">. */

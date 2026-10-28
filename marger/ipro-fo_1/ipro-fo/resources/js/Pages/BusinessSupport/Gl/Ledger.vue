@@ -7,7 +7,8 @@ import SearchSelect from '@/Components/UI/SearchSelect.vue';
 
 type Ledger = {
     code: string; name: string; opening: number;
-    rows: Array<{ date: string; number: string; description: string; debit: number; credit: number; balance: number }>;
+    /** journal_desc: keterangan kepala jurnal, hanya bila berbeda dari keterangan baris. */
+    rows: Array<{ date: string; number: string; description: string; journal_desc?: string | null; debit: number; credit: number; balance: number }>;
     total_debit: number; total_credit: number; closing: number;
 };
 const props = defineProps<{
@@ -72,7 +73,10 @@ const inputCls = 'h-9 rounded-lg border border-neutral-300 bg-white px-3 text-sm
                     <tr v-for="(r, i) in l.rows" :key="i">
                         <td class="px-4 py-2.5 whitespace-nowrap">{{ fmtDate(r.date) }}</td>
                         <td class="px-4 py-2.5 font-mono text-xs">{{ r.number }}</td>
-                        <td class="px-4 py-2.5">{{ r.description }}</td>
+                        <td class="px-4 py-2.5">
+                            {{ r.description }}
+                            <div v-if="r.journal_desc" class="mt-0.5 text-xs text-neutral-500">{{ r.journal_desc }}</div>
+                        </td>
                         <td class="px-4 py-2.5 text-right font-mono">{{ r.debit > 0 ? fmtRp(r.debit) : '' }}</td>
                         <td class="px-4 py-2.5 text-right font-mono">{{ r.credit > 0 ? fmtRp(r.credit) : '' }}</td>
                         <td class="px-4 py-2.5 text-right font-mono font-semibold">{{ fmtRp(r.balance) }}</td>
