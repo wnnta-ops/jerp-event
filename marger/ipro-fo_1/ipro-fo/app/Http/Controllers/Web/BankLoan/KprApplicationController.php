@@ -1497,6 +1497,12 @@ HTML;
             'approved_amount' => 'required|numeric|min:1',
         ]);
 
+        // Hanya pada tahap SP3K (sama dengan form di layar). Mengubah SP3K di tahap lain lewat
+        // updateSp3k → approval tahap SP3K; tanpa gerbang ini endpoint ini menimpa plafon diam-diam.
+        if ($kpr->status !== KprStatus::Sp3kIssued) {
+            return back()->with('error', 'SP3K hanya bisa didaftarkan pada tahap SP3K. Untuk mengoreksi SP3K, gunakan Ubah SP3K di Riwayat Tahap.');
+        }
+
         // Nomor SP3K dibuat otomatis (pertahankan nomor lama bila SP3K sudah ada).
         $data['sp3k_number'] = KprSp3k::where('kpr_application_id', $kpr->id)->value('sp3k_number')
             ?: 'SP3K/'.now()->format('y/m').'/'.str_pad((string) (KprSp3k::count() + 1), 4, '0', STR_PAD_LEFT);
