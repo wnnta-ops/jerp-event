@@ -598,7 +598,7 @@ function backToIndex() {
                                               @update:model-value="(v) => l.cost_center_id = v" />
                             </td>
                             <td class="py-1 pr-2"><input v-model="l.description" :class="String(l.description ?? '').trim() ? inputCls : inputKurang" /></td>
-                            <td class="py-1 pr-2"><input v-model.number="l.amount" type="number" step="1" min="0" :class="[Number(l.amount) > 0 ? inputCls : inputKurang,'text-right']" /></td>
+                            <td class="py-1 pr-2"><MoneyInput v-model="l.amount" placeholder="0" :class="Number(l.amount) > 0 ? '' : pilihKurang" /></td>
                             <td class="py-1 text-center"><button type="button" @click="removeLine(i)" :disabled="form.lines.length===1" class="text-danger-500 disabled:opacity-30"><Trash2 class="h-4 w-4" /></button></td>
                         </tr>
                     </tbody>
