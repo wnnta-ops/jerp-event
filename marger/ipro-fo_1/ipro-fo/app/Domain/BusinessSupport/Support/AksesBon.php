@@ -37,7 +37,8 @@ final class AksesBon
 
         $cc = app(CostCenterPengguna::class);
         $nama = $cc->namaKaryawan($user);
-        $tim = $cc->idUntuk($user);
+        // Semua departemen karyawan (Utama + tambahan): bon tim departemen mana pun ikut terlihat.
+        $tim = $cc->idsUntuk($user);
 
         return $q->where(function (Builder $w) use ($user, $nama, $tim) {
             // (int): null pada where() menjadi whereNull — akun tanpa id justru akan melihat
@@ -46,8 +47,8 @@ final class AksesBon
             if ($nama !== null) {
                 $w->orWhere('holder', $nama)->orWhere('holder', 'like', $nama.' — %');
             }
-            if ($tim !== null) {
-                $w->orWhere('cost_center_id', $tim);
+            if ($tim !== []) {
+                $w->orWhereIn('cost_center_id', $tim);
             }
         });
     }

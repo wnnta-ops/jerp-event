@@ -678,8 +678,26 @@ class CashAdvanceController extends Controller
                 // sebagai isian.
                 'punya_cost_center' => $emp->cost_center_id !== null,
             ],
+            // Departemen yang boleh dibebani bon ini: milik karyawan sendiri (Utama lebih dulu).
+            // Lebih dari satu → layar menampilkan pilihan; satu → langsung terpakai seperti dulu.
+            'departemen' => $emp === null ? [] : $this->opsiDepartemen($emp),
             'rekening' => $emp === null ? [] : $this->opsiRekening($emp),
         ]);
+    }
+
+    /**
+     * Departemen milik karyawan (Utama lebih dulu) sebagai pilihan bon.
+     *
+     * @return list<array{id:int, code:?string, name:?string}>
+     */
+    private function opsiDepartemen(BsEmployee $emp): array
+    {
+        $ids = $emp->costCenterIds();
+        $cc = BsCostCenter::whereIn('id', $ids)->get(['id', 'code', 'name'])->keyBy('id');
+
+        return array_values(array_filter(array_map(fn (int $id) => isset($cc[$id])
+            ? ['id' => $id, 'code' => $cc[$id]->code, 'name' => $cc[$id]->name]
+            : null, $ids)));
     }
 
     /**
@@ -722,7 +740,10 @@ class CashAdvanceController extends Controller
             // Cara persetujuan dipilih per pengajuan; kosong = online (perilaku lama).
             'approval_mode' => ['nullable', 'string', 'in:'.implode(',', array_keys(BsCashAdvance::APPROVAL_MODES))],
             'rek_sumber' => ['nullable', 'string', 'in:sendiri,atasan'],
+            'cost_center_id' => ['nullable', 'integer'],
         ]);
+        $ccDipilih = ($v['cost_center_id'] ?? null) ? (int) $v['cost_center_id'] : null;
+        unset($v['cost_center_id']);
 
         // COST CENTER DITURUNKAN dari karyawan pengaju, tidak lagi dikirim layar. Kalau
         // karyawannya belum punya unit kerja, pengajuan DITOLAK dengan menyebut apa yang
@@ -752,7 +773,13 @@ class CashAdvanceController extends Controller
         // Pemegang = NAMA karyawan akun yang login, tanpa jabatan, ditentukan server — bukan
         // teks kiriman layar. Bon lama ("Nama — Jabatan") tetap terbaca AksesBon & cetakan.
         $v['holder'] = trim((string) $emp->name);
-        $v['cost_center_id'] = (int) $emp->cost_center_id;
+        // Departemen: yang dipilih di layar, tetapi HANYA dari departemen milik karyawan ini —
+        // kiriman di luar daftarnya ditolak, bukan diam-diam diganti Utama. Kosong = Utama.
+        if ($ccDipilih !== null && ! in_array($ccDipilih, $emp->costCenterIds(), true)) {
+            return back()->withInput()->with('error',
+                'Departemen yang dipilih bukan departemen karyawan '.$emp->name.'. Pilih dari daftar departemennya.');
+        }
+        $v['cost_center_id'] = $ccDipilih ?? (int) $emp->cost_center_id;
 
         // REKENING TUJUAN — nomornya diambil server dari master, bukan dari kiriman layar
         // (layar hanya menyebut "sendiri"/"atasan"), lalu disalin ke bon.

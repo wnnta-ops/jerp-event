@@ -11,6 +11,8 @@ const props = defineProps<{
     karyawan: { id: number; name: string; position: string | null; punya_cost_center: boolean } | null;
     /** Rekening tujuan transfer: milik sendiri & milik atasan (Data Karyawan → Atasan). */
     rekening?: Record<string, { employee_id: number; nama: string; jabatan: string | null; bank: string | null; nomor: string | null; ada: boolean }>;
+    /** Departemen milik karyawan, Utama lebih dulu. Lebih dari satu → bisa dipilih. */
+    departemen?: Array<{ id: number; code: string | null; name: string | null }>;
 }>();
 const opsiRek = computed(() => (['sendiri', 'atasan'] as const)
     .filter((k) => props.rekening?.[k])
@@ -27,9 +29,11 @@ const today = new Date().toISOString().slice(0, 10);
    Yang perlu disadari saat mengubah ini: offline MEMATIKAN jenjang persetujuan di aplikasi,
    sehingga pembayaran & jurnal boleh dicatat tanpa menunggu tanda tangan digital. Karena itu
    kalimat akibatnya ditulis di kartu pilihannya, bukan disembunyikan. */
-// Karyawan & cost center DITURUNKAN server dari akun yang login — keduanya tidak dikirim
-// dari sini. 'holder' diisi hanya sebagai nilai tampilan yang ikut tersimpan.
-const form = useForm<any>({ advance_date: today, holder: '', purpose: '', amount: 0, approval_mode: 'offline', rek_sumber: null as string | null });
+// Karyawan DITURUNKAN server dari akun yang login. Cost center = departemen milik karyawan itu:
+// dikirim dari sini hanya bila ia punya lebih dari satu (bawaan Utama), dan server menolak
+// departemen di luar daftarnya. 'holder' diisi hanya sebagai nilai tampilan yang ikut tersimpan.
+const form = useForm<any>({ advance_date: today, holder: '', purpose: '', amount: 0, approval_mode: 'offline', rek_sumber: null as string | null,
+    cost_center_id: props.departemen?.[0]?.id ?? null });
 
 // Nama pengaju tidak bisa dipilih: ia pemilik akun yang login. Dipakai juga sebagai nilai
 // 'holder' yang tersimpan di bonnya. NAMA SAJA, tanpa jabatan (sejak 20 Okt 2026) — jabatan
@@ -77,7 +81,15 @@ const inputCls = 'h-9 w-full rounded-lg border border-neutral-300 bg-white px-3 
                      menahan tombol Simpan, sebab akibat mengosongkannya tidak terlihat saat itu
                      juga: bonnya tetap tersimpan, jurnalnya tetap terbentuk, hanya angkanya yang
                      tidak pernah muncul sebagai realisasi anggaran. -->
-
+                <!-- Hanya tampil bila karyawan punya LEBIH DARI SATU departemen (Data Karyawan).
+                     Pilihannya terbatas pada departemen miliknya; server menolak yang lain. -->
+                <div v-if="(departemen ?? []).length > 1" class="md:col-span-2">
+                    <label class="mb-1 block text-xs font-medium text-neutral-500">Departemen *</label>
+                    <select v-model="form.cost_center_id" required :class="inputCls">
+                        <option v-for="(d, i) in departemen" :key="d.id" :value="d.id">{{ d.name }}{{ i === 0 ? ' (Utama)' : '' }}</option>
+                    </select>
+                    <p class="mt-1 text-[11px] text-neutral-400">Departemen yang dibebani bon ini — tercetak di SIP &amp; terbaca di Budget Control.</p>
+                </div>
 
                 <!-- Cara persetujuan — ditentukan di sini karena melekat pada bonnya, bukan
                      pada perusahaannya: satu bon bisa ditandatangani di aplikasi sementara bon

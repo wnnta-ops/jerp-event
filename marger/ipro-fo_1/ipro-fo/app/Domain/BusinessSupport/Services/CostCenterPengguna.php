@@ -57,6 +57,17 @@ class CostCenterPengguna
     }
 
     /**
+     * SEMUA departemen pengguna (Utama lebih dulu, lalu tambahan). Dipakai pilihan departemen
+     * Pengajuan Bon Sementara dan hak melihat bon tim — tempat lain tetap memakai Utama.
+     *
+     * @return list<int>
+     */
+    public function idsUntuk(?object $user): array
+    {
+        return $this->karyawan($user)?->costCenterIds() ?? [];
+    }
+
+    /**
      * Nama unit untuk DICETAK.
      *
      * Jatuh ke Jabatan bila cost center-nya belum diisi: pada dokumen pembayaran, "Staff
