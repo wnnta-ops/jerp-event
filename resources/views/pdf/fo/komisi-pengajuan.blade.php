@@ -67,9 +67,10 @@
             @foreach ($rows as $i => $k)
                 @php
                     $a = $k->agent; $unit = $k->kontrak?->unit;
-                    $rek = $k->rek_number ?: $a?->rekening_number;
-                    $bank = $k->rek_bank ?: $a?->rekening_bank;
-                    $an = $k->rek_holder ?: ($a?->rekening_holder ?: $a?->name);
+                    $p = $a?->penerimaKomisi(); // rekening KANTOR agent, bukan sales perorangan
+                    $rek = $k->rek_number ?: $p?->rekening_number;
+                    $bank = $k->rek_bank ?: $p?->rekening_bank;
+                    $an = $k->rek_holder ?: ($p?->rekening_holder ?: $p?->name);
                 @endphp
                 <tr>
                     <td class="c">{{ $i + 1 }}</td>

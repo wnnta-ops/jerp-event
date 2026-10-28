@@ -105,6 +105,9 @@ class GenerateKomisi extends Page implements HasTable
             return false;
         }
 
+        // Komisi dibayar ke KANTOR agent (rekening kantor), bukan ke sales perorangan.
+        $penerima = $kontrak->agent?->penerimaKomisi();
+
         Komisi::create([
             'tenant_id' => $kontrak->tenant_id ?? 1,
             'tgl_komisi' => now()->toDateString(),
@@ -116,6 +119,9 @@ class GenerateKomisi extends Page implements HasTable
             'pph_persen' => $c['pph_persen'],
             'pph_amount' => $c['pph'],
             'amount_net' => $c['nett'],
+            'rek_bank' => $penerima?->rekening_bank,
+            'rek_number' => $penerima?->rekening_number,
+            'rek_holder' => $penerima ? ($penerima->rekening_holder ?: $penerima->name) : null,
             'status' => 'DRAFT',
             'keterangan' => 'Generate dari skema '.$c['skema']->kode,
         ]);

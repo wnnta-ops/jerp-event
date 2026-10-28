@@ -52,14 +52,19 @@ class PengajuanKomisi extends Page implements HasTable
             ->actions([
                 Tables\Actions\Action::make('edit')->label('Edit')->icon('heroicon-o-pencil-square')->color('gray')->link()
                     ->modalHeading(fn (Komisi $r) => 'Edit Komisi — '.$r->no_komisi)
-                    ->fillForm(fn (Komisi $r) => [
-                        'amount' => (float) $r->amount,
-                        'pph_amount' => (float) $r->pph_amount,
-                        'ppn_amount' => (float) $r->ppn_amount,
-                        'rek_bank' => $r->rek_bank ?: $r->agent?->rekening_bank,
-                        'rek_number' => $r->rek_number ?: $r->agent?->rekening_number,
-                        'rek_holder' => $r->rek_holder ?: ($r->agent?->rekening_holder ?: $r->agent?->name),
-                    ])
+                    ->fillForm(function (Komisi $r) {
+                        // Default rekening = KANTOR agent, bukan sales perorangan.
+                        $p = $r->agent?->penerimaKomisi();
+
+                        return [
+                            'amount' => (float) $r->amount,
+                            'pph_amount' => (float) $r->pph_amount,
+                            'ppn_amount' => (float) $r->ppn_amount,
+                            'rek_bank' => $r->rek_bank ?: $p?->rekening_bank,
+                            'rek_number' => $r->rek_number ?: $p?->rekening_number,
+                            'rek_holder' => $r->rek_holder ?: ($p?->rekening_holder ?: $p?->name),
+                        ];
+                    })
                     ->form([
                         Forms\Components\TextInput::make('amount')->label('Komisi (Rp)')->numeric()->rupiah()->required(),
                         Forms\Components\TextInput::make('pph_amount')->label('PPh (Rp)')->numeric()->rupiah()->default(0),

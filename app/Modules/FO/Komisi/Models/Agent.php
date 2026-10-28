@@ -113,6 +113,14 @@ class Agent extends TenantAwareModel
      */
     public function namaKantor(): ?string
     {
+        $id = $this->kantorId();
+
+        return $id ? static::petaAgent()[$id]['name'] : null;
+    }
+
+    /** id agent KANTOR di puncak rantai atasan — lihat namaKantor(). */
+    public function kantorId(): ?int
+    {
         $peta = static::petaAgent();
         $id = $this->getKey();
         $lihat = [];
@@ -126,12 +134,25 @@ class Agent extends TenantAwareModel
                 return null;
             }
             if (str_starts_with(strtoupper((string) $baris['level']), 'KANTOR')) {
-                return $baris['name'];
+                return (int) $id;
             }
             $id = $baris['atasan_id'];
         }
 
         return null;
+    }
+
+    /**
+     * Penerima pembayaran komisi: KANTOR agent ini (rekening kantor), bukan sales
+     * perorangannya. Tanpa kantor di rantai atasan → agent ini sendiri.
+     */
+    public function penerimaKomisi(): self
+    {
+        $id = $this->kantorId();
+
+        return ($id && $id !== $this->getKey())
+            ? (static::query()->withoutGlobalScopes()->find($id) ?? $this)
+            : $this;
     }
 
     /**
