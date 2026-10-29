@@ -33,4 +33,21 @@ class UnitPricelist extends Model
     {
         return $this->belongsTo(Skema::class);
     }
+
+    /**
+     * Harga unit untuk satu skema bayar: Price List (unit × skema) bila > 0, selain itu
+     * harga di data unit. 0 = belum ada harga sama sekali. Unit hasil migrasi eProperty
+     * banyak yang harga unitnya 0 — harganya hanya tercatat per skema.
+     */
+    public static function hargaUntuk(int $unitId, ?int $skemaId): float
+    {
+        if ($skemaId) {
+            $pl = (float) static::query()->where('unit_id', $unitId)->where('skema_id', $skemaId)->value('price_list');
+            if ($pl > 0) {
+                return $pl;
+            }
+        }
+
+        return (float) Unit::query()->whereKey($unitId)->value('harga_jual');
+    }
 }
