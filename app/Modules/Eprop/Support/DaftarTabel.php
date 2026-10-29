@@ -59,9 +59,11 @@ final class DaftarTabel
                     ['tabel' => 'fo_kontrak_skema_line', 'fk' => 'kontrak_id', 'kunci' => null],
                     ['tabel' => 'fo_kontrak_gimmick', 'fk' => 'kontrak_id', 'kunci' => null, 'master' => ['gimmick_id' => 'fo_gimmicks']],
                 ],
-                'jaga' => ['data_lama'],
+                'jaga' => ['data_lama', 'no_kontrak_sementara'],
                 'perbarui' => true,
-                'cocok' => ['nominal' => 'total_kontrak', 'pihak' => 'unit_id', 'pihak_wajib' => true, 'tanggal' => 'tgl_kontrak'],
+                // pihak_juga: SPR baru dianggap SAMA bila customer-nya juga sama — unit + nominal saja
+                // terlalu longgar (unit bisa berpindah pembeli). Beda customer → ditahan, dicek manual.
+                'cocok' => ['nominal' => 'total_kontrak', 'pihak' => 'unit_id', 'pihak_wajib' => true, 'pihak_juga' => ['customer_id'], 'tanggal' => 'tgl_kontrak'],
                 'label' => ['unit_id', 'total_kontrak', 'cara_bayar'],
             ],
             'fo_tts' => [

@@ -42,6 +42,9 @@ class MesinSinkron
     /** tabel → [kunci → [id_jerp, status, disinkron_pada]] dari eprop_tautan. */
     private array $tautan = [];
 
+    /** tabel → [id_jerp → kunci eProperty] — kebalikan $tautan. */
+    private array $tautanBalik = [];
+
     /** Nomor dokumen yang COCOK/DITAHAN: tidak boleh ikut tersalin lewat tabel lain (mis. jurnal/BKK-nya). */
     private array $lewatiNomor = [];
 
@@ -59,15 +62,25 @@ class MesinSinkron
 
     private array $kontrakBaru = [];
 
+    /** SPR buatan J-ERP (sesudah batas) yang belum tertaut ke SPR eProperty — dilaporkan, tidak diubah. */
+    private array $sprHanyaJerp = [];
+
+    /** Nomor SPR J-ERP yang diganti nomor eProperty pada jalan ini: [lama, baru]. */
+    private array $nomorDisamakan = [];
+
     private int $jalanId = 0;
 
     /**
      * @param  array{fo:string,bo:string,bfo:string,bbo:string}  $db
+     * @param  string|null  $modul  'fo' / 'bo' = hanya dokumen modul itu; null = semua
      */
-    public function __construct(private array $db, private string $batas, private bool $kering = false, private ?string $kiriman = null)
+    public function __construct(private array $db, private string $batas, private bool $kering = false, private ?string $kiriman = null, private ?string $modul = null)
     {
         $this->c = DB::connection();
         $this->cfg = DaftarTabel::dokumen();
+        if ($modul !== null) {
+            $this->cfg = array_filter($this->cfg, fn ($cfg) => $cfg['db'] === $modul);
+        }
         $this->cfgMaster = DaftarTabel::master();
     }
 
@@ -97,6 +110,15 @@ class MesinSinkron
                 $log(sprintf('  %-22s masuk %d · cocok %d · ditahan %d · diperbarui %d · konflik %d', $this->cfg[$tabel]['modul'],
                     count(array_diff_key($r['masuk'], $this->lewatiNomor)), count($r['cocok']), count($r['ditahan']),
                     count($r['ubah']), count($r['konflik'])));
+            }
+            foreach ($this->nomorDisamakan as [$lama, $baru]) {
+                $log("  Nomor SPR disamakan dengan eProperty: {$lama} → {$baru}");
+            }
+            if ($this->sprHanyaJerp) {
+                $log('  SPR J-ERP yang belum tertaut ke SPR eProperty (tidak diubah — di eProperty kemungkinan masih verifikasi / belum SPR):');
+                foreach ($this->sprHanyaJerp as $s) {
+                    $log('    - ' . $s);
+                }
             }
 
             foreach ($rencana as $tabel => $r) {
@@ -141,6 +163,7 @@ class MesinSinkron
         $nyata = $this->kunciKeId('n', $tabel, $k);
         $taut = $this->tautan[$tabel] ?? [];
         $r = ['masuk' => [], 'cocok' => [], 'ditahan' => [], 'ubah' => [], 'konflik' => []];
+        $calonDitahan = [];   // id input J-ERP yang menjadi kandidat dokumen ditahan
 
         // Input J-ERP (nomor J-ERP) sesudah data dimuat, yang belum bertaut ke dokumen eProperty mana pun.
         $idTertaut = array_flip(array_filter(array_column($taut, 0)));
@@ -169,6 +192,10 @@ class MesinSinkron
             if (isset($taut[$kunci])) {
                 if ($taut[$kunci][0]) {
                     $this->peta[$tabel][$idB] = (int) $taut[$kunci][0];
+                    // Ditautkan manual di layar Rekonsiliasi → nomor SPR J-ERP ikut disamakan.
+                    if ($tabel === 'fo_kontrak' && $taut[$kunci][1] === 'cocok') {
+                        $this->samakanNomorSpr($cfg, (int) $taut[$kunci][0], (string) $kunci, $this->baris('b', $tabel, $idB));
+                    }
                 }
                 $this->lewatiNomor[$kunci] = true;
                 continue;
@@ -185,7 +212,13 @@ class MesinSinkron
                 $r['cocok'][$kunci] = $idB;
                 $this->catatTautan($tabel, $kunci, (int) $pasangan->id, 'cocok');
                 $this->tambahHasil($tabel, $cfg, $kunci, 'cocok', $rowB, $this->labelNyata($tabel, $cfg, $pasangan));
+                if ($tabel === 'fo_kontrak') {
+                    $this->samakanNomorSpr($cfg, (int) $pasangan->id, (string) $kunci, $rowB);
+                }
             } elseif ($aksi === 'ditahan') {
+                foreach ($calon as $x) {
+                    $calonDitahan[$x->id] = true;
+                }
                 $this->lewatiNomor[$kunci] = true;
                 $r['ditahan'][$kunci] = $idB;
                 $this->tambahHasil($tabel, $cfg, $kunci, 'ditahan', $rowB,
@@ -193,6 +226,15 @@ class MesinSinkron
                     'Ada input J-ERP bernominal sama tetapi keterangan/pihaknya berbeda — dicek manual (tautkan atau masukkan).');
             } else {
                 $r['masuk'][$kunci] = $idB;
+            }
+        }
+
+        // SPR yang dibuat di J-ERP tetapi belum ada di eProperty: TIDAK diubah apa pun — biasanya
+        // customer-nya di eProperty masih verifikasi data / belum sampai SPR. Hanya dilaporkan.
+        if ($tabel === 'fo_kontrak') {
+            foreach (array_diff_key($native, $calonDitahan) as $x) {
+                $this->sprHanyaJerp[] = $this->labelNyata($tabel, $cfg, $x) . ' · customer '
+                    . ($this->c->table($this->n('fo_customers'))->where('id', $x->customer_id)->value('code') ?? '—');
             }
         }
 
@@ -288,8 +330,9 @@ class MesinSinkron
             return ['masuk', null, []];
         }
         $persis = array_values(array_filter($calon, fn ($x) => (! isset($m['teks']) || $this->teksSama($rowB->{$m['teks']}, $x->{$m['teks']}))
-            && (! isset($m['pihak']) || $this->pihakSama($tabel, $cfg, $rowB, $x))));
-        if (! $persis && ! isset($m['teks']) && count($calon) === 1) {
+            && (! isset($m['pihak']) || $this->pihakSama($tabel, $cfg, $rowB, $x))
+            && $this->pihakJugaSama($cfg, $rowB, $x)));
+        if (! $persis && ! isset($m['teks']) && ! isset($m['pihak_juga']) && count($calon) === 1) {
             $persis = $calon;
         }
         if (count($persis) > 1 && isset($m['tanggal'])) {
@@ -326,6 +369,71 @@ class MesinSinkron
         }
 
         return $vb !== null && (string) $vb === (string) $n->{$kol};
+    }
+
+    /**
+     * SPR J-ERP yang sama dengan SPR eProperty memakai NOMOR eProperty — selama input masih di dua
+     * tempat, eProperty-lah yang menerbitkan nomor resmi; nomor J-ERP hanya sementara. Ikut diganti:
+     * booking BO (BO mengenal SPR lewat nomornya) dan rujukan nomor di data MUK. Nomor lama dicatat di
+     * keterangan SPR. Teks lama yang menyebut nomor sementara (keterangan TTS/kwitansi) tidak diubah.
+     */
+    private function samakanNomorSpr(array $cfg, int $idN, string $nomorEprop, ?object $rowB): void
+    {
+        $lama = (string) $this->c->table($this->n('fo_kontrak'))->where('id', $idN)->value('no_kontrak');
+        if ($lama === '' || $lama === $nomorEprop) {
+            return;
+        }
+        $bentrok = $this->c->table($this->n('fo_kontrak'))->where('no_kontrak', $nomorEprop)->where('id', '!=', $idN)->exists();
+        if ($bentrok) {
+            $this->tambahHasil('fo_kontrak', $cfg, $nomorEprop, 'konflik', $rowB, $lama,
+                "Nomor eProperty {$nomorEprop} sudah dipakai SPR J-ERP lain — nomor {$lama} TIDAK diganti. Periksa manual.");
+
+            return;
+        }
+
+        // Nomor lama disimpan di kolom tersendiri (dijaga, tidak ikut dibandingkan) — bukan di
+        // keterangan, yang ikut diperbarui dari eProperty sehingga catatannya akan tertimpa.
+        $ubah = ['no_kontrak' => $nomorEprop];
+        if ($this->adaKolom('n', 'fo_kontrak', 'no_kontrak_sementara')) {
+            $ubah['no_kontrak_sementara'] = $lama;
+        }
+        $this->c->table($this->n('fo_kontrak'))->where('id', $idN)->update($ubah);
+
+        $bo = $this->db['bo'];
+        if ($this->c->table('information_schema.tables')->where('table_schema', $bo)->where('table_name', 'bookings')->exists()) {
+            $this->c->table("{$bo}.bookings")->where('booking_number', $lama)
+                ->update(['booking_number' => $nomorEprop, 'notes' => 'SPR ' . $nomorEprop]);
+        }
+        foreach (['bs_muk_contracts', 'bs_muk_lokasi', 'bs_muk_tagihan', 'bs_muk_contract_cogs', 'bs_cogs_hpp'] as $t) {
+            if ($this->c->table('information_schema.columns')->where('table_schema', $bo)->where('table_name', $t)->where('column_name', 'no_kontrak')->exists()) {
+                $this->c->table("{$bo}.{$t}")->where('no_kontrak', $lama)->update(['no_kontrak' => $nomorEprop]);
+            }
+        }
+
+        $this->nomorDisamakan[] = [$lama, $nomorEprop];
+        $alasan = "Nomor SPR J-ERP {$lama} diganti nomor eProperty {$nomorEprop} (booking BO ikut diganti).";
+        // Catatan pada baris hasil "cocok" yang sudah ada; tautan manual (tanpa baris hasil) → baris baru.
+        for ($i = count($this->hasil) - 1; $i >= 0; $i--) {
+            if ($this->hasil[$i]['tabel'] === 'fo_kontrak' && $this->hasil[$i]['kunci'] === $nomorEprop) {
+                $this->hasil[$i]['alasan'] = $alasan;
+
+                return;
+            }
+        }
+        $this->tambahHasil('fo_kontrak', $cfg, $nomorEprop, 'diperbarui', $rowB, $lama, $alasan);
+    }
+
+    /** Kolom tautan tambahan yang wajib sama (cocok.pihak_juga), dibandingkan sesudah dipetakan ke id J-ERP. */
+    private function pihakJugaSama(array $cfg, object $b, object $n): bool
+    {
+        foreach ($cfg['cocok']['pihak_juga'] ?? [] as $kol) {
+            $vb = isset($cfg['ref'][$kol]) ? $this->idNyataRef($cfg['ref'][$kol], $b->{$kol}) : $b->{$kol};
+            if ($vb === null || (string) $vb !== (string) $n->{$kol}) {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     private function teksSama($a, $b): bool
@@ -927,6 +1035,12 @@ class MesinSinkron
         if ($id === null || ! isset($this->cfg[$tabel])) {
             return $id === null ? null : (string) $id;
         }
+        // Dokumen J-ERP yang DITAUTKAN ke dokumen eProperty (mis. customer CUST-2026-00107 ↔ 2075)
+        // dikenali dengan nomor eProperty-nya. Tanpa ini setiap dokumen yang merujuknya selalu
+        // tampak "berubah" (kodenya memang beda) dan diperbarui ulang pada setiap sinkron.
+        if ($sisi === 'n' && isset($this->tautanBalik[$tabel][(int) $id])) {
+            return $this->tautanBalik[$tabel][(int) $id];
+        }
         static $cache = [];
         $ck = $sisi . $tabel . ':' . $id;
 
@@ -1050,6 +1164,9 @@ class MesinSinkron
     {
         foreach (DB::table('eprop_tautan')->get() as $t) {
             $this->tautan[$t->tabel][$t->kunci] = [$t->id_jerp, $t->status, $t->disinkron_pada];
+            if ($t->id_jerp) {
+                $this->tautanBalik[$t->tabel][(int) $t->id_jerp] = (string) $t->kunci;
+            }
         }
     }
 
@@ -1058,6 +1175,7 @@ class MesinSinkron
         DB::table('eprop_tautan')->updateOrInsert(['tabel' => $tabel, 'kunci' => $kunci],
             ['id_jerp' => $idJerp, 'status' => $status, 'disinkron_pada' => now(), 'updated_at' => now(), 'created_at' => now()]);
         $this->tautan[$tabel][$kunci] = [$idJerp, $status, (string) now()];
+        $this->tautanBalik[$tabel][$idJerp] = $kunci;
     }
 
     // ═════════════════════════════ akses tabel ═════════════════════════════
