@@ -4,6 +4,7 @@ namespace App\Modules\FO\Komisi\Controllers;
 
 use App\Http\Controllers\Controller;
 use App\Modules\FO\Komisi\Models\Blt;
+use App\Settings\FoSettings;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 use Spatie\Browsershot\Browsershot;
@@ -41,6 +42,7 @@ class BltPrintController extends Controller
             'groups' => $groups,
             'lokasiName' => $lokasiName,
             'tanggal' => now(),
+            'ttd' => app(FoSettings::class)->ttdPengajuan('blt'),
         ];
 
         if ($request->boolean('pdf') && class_exists(Browsershot::class)) {

@@ -47,6 +47,14 @@ class PengaturanFo extends Page implements HasForms
             'komisi_pph_default_persen' => $s->komisi_pph_default_persen,
             'blt_batal_sepihak_nilai' => $s->blt_batal_sepihak_nilai,
             'blt_batal_sepihak_pph_persen' => $s->blt_batal_sepihak_pph_persen,
+            'ttd_blt_diajukan' => $s->ttd_blt_diajukan,
+            'ttd_blt_diperiksa' => $s->ttd_blt_diperiksa,
+            'ttd_blt_diketahui' => $s->ttd_blt_diketahui,
+            'ttd_blt_disetujui' => $s->ttd_blt_disetujui,
+            'ttd_komisi_diajukan' => $s->ttd_komisi_diajukan,
+            'ttd_komisi_diperiksa' => $s->ttd_komisi_diperiksa,
+            'ttd_komisi_diketahui' => $s->ttd_komisi_diketahui,
+            'ttd_komisi_disetujui' => $s->ttd_komisi_disetujui,
             'notification_email' => $s->notification_email,
             'siteplanlive_show_stock' => $s->siteplanlive_show_stock,
             'siteplanlive_sold_animation' => $s->siteplanlive_sold_animation,
@@ -74,6 +82,15 @@ class PengaturanFo extends Page implements HasForms
                     Forms\Components\TextInput::make('blt_batal_sepihak_pph_persen')->label('PPh 21')->numeric()->suffix('%')->required()->minValue(0)->maxValue(100)
                         ->helperText('BLT NETT = Nilai BLT − PPh, dibulatkan ke atas.'),
                 ]),
+
+            ...collect(['blt' => 'BLT', 'komisi' => 'Komisi'])->map(fn ($judul, $jenis) => Forms\Components\Section::make('Tanda Tangan Pengajuan '.$judul)
+                ->description('Nama yang tercetak di bawah tanda tangan pada cetak Pengajuan '.$judul.'. Lebih dari satu orang dipisah koma (mis. "Rizki Setyawardana, Rachmat Suhendra"). Kosongkan bila ingin ditulis tangan.')
+                ->columns(4)->schema([
+                    Forms\Components\TextInput::make("ttd_{$jenis}_diajukan")->label('Diajukan Oleh')->maxLength(200),
+                    Forms\Components\TextInput::make("ttd_{$jenis}_diperiksa")->label('Diperiksa Oleh')->maxLength(200),
+                    Forms\Components\TextInput::make("ttd_{$jenis}_diketahui")->label('Diketahui Oleh')->maxLength(200),
+                    Forms\Components\TextInput::make("ttd_{$jenis}_disetujui")->label('Disetujui Oleh')->maxLength(200),
+                ]))->values()->all(),
 
             Forms\Components\Section::make('NUP Public')->columns(2)->schema([
                 Forms\Components\Toggle::make('recaptcha_enabled')->label('Aktifkan reCAPTCHA v3'),

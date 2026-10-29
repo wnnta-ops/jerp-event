@@ -21,8 +21,9 @@
         td.c { text-align: center; }
         tr.tot td { font-weight: 800; }
         .sign { display: flex; justify-content: space-between; margin-top: 36px; font-size: 11px; }
-        .sign .c { width: 22%; text-align: center; }
-        .sign .line { margin-top: 48px; font-weight: 700; }
+        .sign .c { text-align: center; }
+        .sign .names { display: flex; justify-content: space-around; }
+        .sign .line { flex: 1; margin-top: 48px; font-weight: 700; }
         .totbox { float: right; margin-top: 14px; border: 1px solid #111; padding: 6px 12px; font-weight: 800; font-size: 12px; }
         .actions { margin-top: 16px; }
         @media print { .actions { display: none; } body { padding: 8px; } }
@@ -108,10 +109,18 @@
         <div class="totbox">TOTAL {{ $rp($total) }}</div>
         <div style="clear:both"></div>
         <div class="sign">
-            <div class="c">Diajukan Oleh,<div class="line">(&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;)</div></div>
-            <div class="c">Diperiksa Oleh,<div class="line">(&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;)</div></div>
-            <div class="c">Diketahui Oleh,<div class="line">(&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;)</div></div>
-            <div class="c">Disetujui Oleh,<div class="line">(&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;)</div></div>
+            @foreach ($ttd as $peran => $nama)
+                {{-- Kolom melebar sesuai jumlah penanda tangannya; kosong = ruang untuk ditulis tangan. --}}
+                <div class="c" style="flex: {{ max(count($nama), 1) }}">{{ $peran }}
+                    <div class="names">
+                        @forelse ($nama as $n)
+                            <div class="line">{{ $n }}</div>
+                        @empty
+                            <div class="line">&nbsp;</div>
+                        @endforelse
+                    </div>
+                </div>
+            @endforeach
         </div>
     </div>
 @empty

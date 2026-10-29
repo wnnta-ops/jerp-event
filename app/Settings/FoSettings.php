@@ -31,6 +31,24 @@ class FoSettings extends Settings
 
     public float $blt_batal_sepihak_pph_persen;
 
+    // Nama penanda tangan pada cetak Pengajuan BLT / Komisi. Satu peran bisa >1 orang
+    // (dipisah koma); kosong = ruang untuk ditulis tangan. Dibaca lewat ttdPengajuan().
+    public ?string $ttd_blt_diajukan;
+
+    public ?string $ttd_blt_diperiksa;
+
+    public ?string $ttd_blt_diketahui;
+
+    public ?string $ttd_blt_disetujui;
+
+    public ?string $ttd_komisi_diajukan;
+
+    public ?string $ttd_komisi_diperiksa;
+
+    public ?string $ttd_komisi_diketahui;
+
+    public ?string $ttd_komisi_disetujui;
+
     public string $notification_email;
 
     // Formulir NUP publik — pemeliharaan
@@ -52,6 +70,23 @@ class FoSettings extends Settings
     public ?int $siteplanlive_focus_lokasi_id;
 
     public ?string $siteplanlive_focus_tahap;
+
+    /**
+     * Penanda tangan cetak pengajuan, per peran → daftar nama.
+     *
+     * @param  'blt'|'komisi'  $jenis
+     * @return array<string, list<string>>
+     */
+    public function ttdPengajuan(string $jenis): array
+    {
+        $peran = ['diajukan' => 'Diajukan Oleh,', 'diperiksa' => 'Diperiksa Oleh,', 'diketahui' => 'Diketahui Oleh,', 'disetujui' => 'Disetujui Oleh,'];
+        $out = [];
+        foreach ($peran as $key => $label) {
+            $out[$label] = array_values(array_filter(array_map('trim', explode(',', (string) $this->{"ttd_{$jenis}_{$key}"}))));
+        }
+
+        return $out;
+    }
 
     public static function group(): string
     {

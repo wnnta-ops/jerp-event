@@ -4,6 +4,7 @@ namespace App\Modules\FO\Komisi\Controllers;
 
 use App\Http\Controllers\Controller;
 use App\Modules\FO\Komisi\Models\Komisi;
+use App\Settings\FoSettings;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 use Spatie\Browsershot\Browsershot;
@@ -35,6 +36,7 @@ class KomisiPrintController extends Controller
             'noPengajuan' => $request->query('pengajuan', ''),
             'lokasiName' => $lokasiName,
             'tanggal' => now(),
+            'ttd' => app(FoSettings::class)->ttdPengajuan('komisi'),
         ];
 
         if ($request->boolean('pdf') && class_exists(Browsershot::class)) {
