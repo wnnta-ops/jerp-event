@@ -10,7 +10,9 @@
         .page { page-break-after: always; }
         .page:last-child { page-break-after: auto; }
         .head { display: flex; align-items: center; border-bottom: 1px solid #111; padding-bottom: 8px; margin-bottom: 4px; }
-        .brand { width: 120px; font-weight: 800; color: #ea7a1d; font-size: 22px; }
+        .brand { width: 230px; font-weight: 800; color: #ea7a1d; font-size: 22px; }
+        .brand img { width: 56px; height: 56px; object-fit: contain; display: block; }
+        .cap { width: 230px; font-size: 10px; text-align: right; white-space: nowrap; align-self: flex-start; }
         .head .co { text-align: center; flex: 1; }
         .head .co .ttl { font-weight: 800; font-size: 13px; letter-spacing: .3px; }
         .tgl { text-align: center; font-size: 11px; margin: 6px 0 8px; }
@@ -35,6 +37,10 @@
 @php
     $labels = ['SALES' => 'SALES', 'KOORDINATOR' => 'KOORDINATOR', 'KANTOR' => 'KANTOR'];
     $rp = fn ($n) => number_format((float) $n, 0, ',', '.');
+    // Logo MUP = logo kop Memo Internal BO (mup-logo.jpeg). Di-embed base64 supaya ikut
+    // tercetak di PDF (Browsershot tak selalu bisa memuat URL lokal).
+    $logoPath = public_path('images/mup-logo.jpeg');
+    $logoMup = is_file($logoPath) ? 'data:image/jpeg;base64,'.base64_encode((string) file_get_contents($logoPath)) : null;
 @endphp
 
 @forelse ($groups as $type => $rows)
@@ -46,11 +52,11 @@
     @endphp
     <div class="page">
         <div class="head">
-            <div class="brand">M</div>
+            <div class="brand">@if ($logoMup)<img src="{{ $logoMup }}" alt="PT Mitra Usaha Propertindo">@else M @endif</div>
             <div class="co">
                 <div class="ttl">PERMOHONAN PENGAJUAN BLT {{ $label }} UNTUK PENJUALAN {{ $lokasiName ?: '—' }}</div>
             </div>
-            <div style="width:120px"></div>
+            <div class="cap">Created By Java Core System ({{ now()->format('d-m-Y H.i.s') }})</div>
         </div>
         <div class="tgl">TANGGAL : {{ $tanggal->translatedFormat('d F Y') }}</div>
 
