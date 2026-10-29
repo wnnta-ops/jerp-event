@@ -82,13 +82,23 @@ class PilihUnitBooked extends Page implements HasActions, HasForms
         return Action::make('konfirmasi')
             ->modalHeading('Yakin pilih unit ini?')
             ->modalDescription($unit
-                ? 'Unit '.($unit->kode_unit ?: $unit->no_unit).' (Rp '.number_format((float) $unit->harga_jual, 0, ',', '.').') akan dijadikan Kontrak SPRS untuk '.$this->registration->nama_pendaftar.'.'
+                ? 'Unit '.($unit->kode_unit ?: $unit->no_unit).' akan dijadikan Kontrak SPRS untuk '.$this->registration->nama_pendaftar.'. Harga mengikuti Price List skema bayar yang dipilih.'
                 : null)
             ->modalSubmitActionLabel('Ya, pilih unit ini')
             ->form([
                 Forms\Components\Select::make('skema_id')->label('Skema Bayar')->searchable()
                     ->options(fn () => Skema::orderBy('name')->pluck('name', 'id'))
-                    ->helperText('Pilih skema bayar. Bisa diatur ulang nanti di tab Skema Bayar SPR.'),
+                    ->live()
+                    ->helperText(function (Forms\Get $get) use ($unit) {
+                        if (! $unit || ! $get('skema_id')) {
+                            return 'Pilih skema bayar. Bisa diatur ulang nanti di tab Skema Bayar SPR.';
+                        }
+                        $harga = \App\Modules\FO\MarketingSales\Models\UnitPricelist::hargaUntuk($unit->id, (int) $get('skema_id'));
+
+                        return $harga > 0
+                            ? 'Harga unit untuk skema ini: Rp '.number_format($harga, 0, ',', '.')
+                            : 'Unit ini belum punya harga untuk skema ini — isi dulu di Price List atau pilih skema lain.';
+                    }),
             ])
             ->action(function (array $data) {
                 try {

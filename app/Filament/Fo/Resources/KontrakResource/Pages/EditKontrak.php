@@ -84,6 +84,10 @@ class EditKontrak extends EditRecord
         // riil kosong. Lalu reload.
         $skemaGanti = $this->oldSkemaId !== null && (int) $this->record->skema_id !== $this->oldSkemaId;
         $kosong = ! $this->record->tagihan()->exists();
+        if ($skemaGanti) {
+            // SPRS: harga ikut Price List skema yang baru (sebelum jadwal tagihan dibentuk ulang).
+            $this->hargaDariPricelist();
+        }
         if ($skemaGanti || $kosong) {
             app(KontrakGeneratorService::class)->tagihan($this->record);
             $this->redirect($this->getResource()::getUrl('edit', ['record' => $this->getRecord()]));
@@ -125,6 +129,69 @@ class EditKontrak extends EditRecord
         }
 
         return false;
+    }
+
+    /**
+     * SPRS: harga jual = Price List (unit × skema bayar), fallback harga unit — sama dengan saat
+     * SPRS dibentuk. Total = harga − diskon, PPN dari total (rumus Pindah Unit). Mengembalikan
+     * true bila harga berubah. Tidak berlaku untuk SPR final & kontrak data lama; SPRS yang sudah
+     * berdiskon tidak diubah otomatis (diskonnya disetujui atas harga lama).
+     */
+    private function hargaDariPricelist(bool $dariTombol = false): bool
+    {
+        $k = $this->record;
+        if ($k->tahap !== 'SPRS' || $k->dariDataLama() || ! $k->unit_id) {
+            return false;
+        }
+        $skema = $k->skema?->name ?? 'yang dipilih';
+        $harga = \App\Modules\FO\MarketingSales\Models\UnitPricelist::hargaUntuk((int) $k->unit_id, $k->skema_id ? (int) $k->skema_id : null);
+        if ($harga <= 0) {
+            Notification::make()->warning()->persistent()->title('Harga tidak berubah')
+                ->body("Skema {$skema} belum punya harga untuk unit ini — isi dulu di Setup Sales → Price List.")->send();
+
+            return false;
+        }
+        if ((float) $k->diskon > 0) {
+            Notification::make()->warning()->persistent()->title('Harga tidak diubah otomatis')
+                ->body('SPRS ini sudah berdiskon — cek harga & diskonnya secara manual. Harga Price List skema '
+                    .$skema.': '.'Rp '.number_format($harga, 0, ',', '.').'.')->send();
+
+            return false;
+        }
+        if (abs($harga - (float) $k->harga_jual) < 1) {
+            if ($dariTombol) {
+                Notification::make()->info()->title('Harga sudah sesuai Price List')->body('Rp '.number_format($harga, 0, ',', '.'))->send();
+            }
+
+            return false;
+        }
+
+        $lama = (float) $k->harga_jual;
+        $k->update([
+            'harga_jual' => $harga,
+            'total_kontrak' => $harga,
+            'ppn' => round($harga - round($harga / 1.11), 2),
+        ]);
+        $k->reservasi?->update(['harga_jual' => $harga]);
+        Notification::make()->success()->title('Harga diambil dari Price List')
+            ->body('Skema '.$skema.': '.'Rp '.number_format($lama, 0, ',', '.').' → '.'Rp '.number_format($harga, 0, ',', '.').'. Jadwal tagihan dibentuk ulang.')->send();
+
+        return true;
+    }
+
+    /** Tombol untuk SPRS yang sudah terlanjur berharga lama / Rp 0. */
+    protected function ambilHargaAction(): Actions\Action
+    {
+        return Actions\Action::make('ambilHarga')->label('Ambil Harga dari Price List')->icon('heroicon-o-currency-dollar')->color('gray')
+            ->visible(fn () => $this->record->tahap === 'SPRS' && ! $this->record->dariDataLama())
+            ->requiresConfirmation()
+            ->modalDescription('Harga jual SPRS diambil dari Price List unit × skema bayar saat ini, lalu jadwal tagihan dibentuk ulang. Isian yang belum disimpan akan hilang.')
+            ->action(function () {
+                if ($this->hargaDariPricelist(true)) {
+                    app(KontrakGeneratorService::class)->tagihan($this->record->fresh());
+                }
+                $this->redirect($this->getResource()::getUrl('edit', ['record' => $this->getRecord()]));
+            });
     }
 
     /** Data lama: tambah/kurangi nilai baris Pencairan KPR sebesar $selisih (tanpa hitung ulang dari harga). */
@@ -298,6 +365,7 @@ class EditKontrak extends EditRecord
     {
         return [
             $this->cetakAction(),
+            $this->ambilHargaAction(),
             $this->freeDpAction(),
             $this->cancelFreeDpAction(),
             $this->cancelSubsidiAction(),

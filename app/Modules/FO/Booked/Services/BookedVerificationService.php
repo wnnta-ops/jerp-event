@@ -88,7 +88,14 @@ class BookedVerificationService
                 );
             }
 
-            $harga = (float) $unit->harga_jual;
+            // Harga sesuai skema yang dipilih (Price List unit × skema), fallback harga unit —
+            // sama dengan Closing NUP. Tanpa harga sama sekali → tolak, jangan bentuk SPRS Rp 0.
+            $harga = \App\Modules\FO\MarketingSales\Models\UnitPricelist::hargaUntuk($unit->id, $skemaId);
+            if ($harga <= 0) {
+                $namaSkema = $skemaId ? (string) \App\Modules\FO\Adminjual\Models\Skema::whereKey($skemaId)->value('name') : 'yang dipilih';
+                throw new RuntimeException('Unit '.($unit->kode_unit ?: $unit->no_unit).' belum punya harga untuk skema '
+                    .$namaSkema.' — isi dulu di Setup Sales → Price List, atau pilih skema lain.');
+            }
             // cara_bayar kontrak = ENUM (CASH/CASH_BERTAHAP/CICILAN/KPR). reg.cara_bayar
             // bisa berisi channel bayar ('TRANSFER') atau nilai lain → SARING; kalau tak
             // sah pakai 'KPR' (nanti di-sync ulang dari skema saat generate jadwal).
