@@ -346,6 +346,13 @@ class MesinSinkron
             }
             $calon[] = $x;
         }
+        if (! $calon && ! empty($m['tahan_pihak_sama'])) {
+            // Mis. SPR J-ERP di unit yang sama tetapi harganya belum diisi (0): jangan jadi SPR kedua.
+            $calon = array_values(array_filter($native, fn ($x) => $this->pihakSama($tabel, $cfg, $rowB, $x)));
+            if ($calon) {
+                return ['ditahan', null, $calon];
+            }
+        }
         if (! $calon) {
             return ['masuk', null, []];
         }
