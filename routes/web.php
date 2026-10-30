@@ -192,6 +192,9 @@ Route::middleware('auth')->group(function () {
     Route::get('/fo/cetak/faktur/{fp}', [ClosingPrintController::class, 'fakturPenjualan'])->name('fo.cetak.faktur');
     // Pengaturan → Template Dokumen: pratinjau satu versi teks SPR/SPRS (izin dicek di controller).
     Route::get('/fo/cetak/template-dokumen/{templateDokumen}', [ClosingPrintController::class, 'pratinjauTemplateDokumen'])->name('fo.cetak.template-dokumen');
+    // Editor visual Template Dokumen — tanpa {templateDokumen} = versi baru (izin dicek di controller).
+    Route::get('/fo/template-dokumen/editor/{templateDokumen?}', [\App\Modules\FO\Komunikasi\Controllers\TemplateDokumenEditorController::class, 'tampil'])->name('fo.template-dokumen.editor');
+    Route::post('/fo/template-dokumen/editor/{templateDokumen?}', [\App\Modules\FO\Komunikasi\Controllers\TemplateDokumenEditorController::class, 'kirim'])->name('fo.template-dokumen.editor.kirim');
 
     // FO — Memo Rekom Batal Cash (Collection). GET murni: penandanya sudah ditulis layar
     // Filament sebelum redirect ke sini, jadi memuat ulang halaman ini tidak pernah

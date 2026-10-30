@@ -87,12 +87,12 @@
         $gimmickNames = ($kontrak->gimmicks ?? collect())->where('diberikan', true)->pluck('nama_barang')->filter()->all();
         $payTotal = array_sum(array_column($payRows, 'amount')) ?: $netVal;
 
-        // Teks pasal: versi Template Dokumen yang berlaku pada TANGGAL KONTRAK (cluster unit
-        // lebih dulu, lalu semua cluster) → SPR lama tetap tercetak dengan teks saat ditandatangani.
+        // Teks pasal: versi Template Dokumen yang berlaku pada TANGGAL KONTRAK (cluster + tahap
+        // unit lebih dulu, lalu cluster, lalu semua cluster) → SPR lama tetap tercetak dengan teks saat ditandatangani.
         // $isiDokumen = pratinjau dari Pengaturan → Template Dokumen.
         $dok = array_replace(
             \App\Modules\FO\Komunikasi\Support\DokumenBawaan::spr(),
-            (array) ($isiDokumen ?? \App\Modules\FO\Komunikasi\Models\TemplateDokumen::berlakuUntuk('SPR', $u?->lokasi_id, $kontrak->tgl_kontrak)?->isi ?? []),
+            (array) ($isiDokumen ?? \App\Modules\FO\Komunikasi\Models\TemplateDokumen::berlakuUntuk('SPR', $u?->lokasi_id, $kontrak->tgl_kontrak, $u?->tahap_id)?->isi ?? []),
         );
         $nilaiDok = [
             'nama_perusahaan' => $dok['nama_perusahaan'],
@@ -103,9 +103,21 @@
             'tanggal' => (string) optional($kontrak->tgl_kontrak)->format('d M Y'),
         ];
         $tx = fn ($teks) => \App\Modules\FO\Komunikasi\Support\DokumenBawaan::teks($teks, $nilaiDok);
+        // $editor = editor visual Template Dokumen: teks aturan jadi span yang bisa diedit
+        // (kata kunci tidak diganti). Tanpa editor → keluaran cetak biasa.
+        $editor = $editor ?? null;
+        $ed = function (string $kunci, bool $polos = false) use ($dok, $tx, $editor) {
+            $v = (string) data_get($dok, $kunci, '');
+            if (! $editor) {
+                return $polos ? e($v) : $tx($v);
+            }
+
+            return \App\Modules\FO\Komunikasi\Support\EditorDokumen::kolom($kunci, $v, $polos);
+        };
         // Kelompokkan pasal per halaman: pasal bertanda "halaman baru" membuka halaman berikutnya.
         $halamanPasal = [];
-        foreach ((array) ($dok['pasal'] ?? []) as $ps) {
+        foreach ((array) ($dok['pasal'] ?? []) as $iPs => $ps) {
+            $ps['_i'] = $iPs;
             if ($halamanPasal === [] || ! empty($ps['halaman_baru'])) {
                 $halamanPasal[] = [];
             }
@@ -118,9 +130,9 @@
     @endphp
 
     {{-- Kaki halaman dipakai berulang: kotak paraf di kanan-bawah + nomor halaman. --}}
-    @php($pageFoot = function (int $hal) use ($totHal, $dok) {
+    @php($pageFoot = function (int $hal) use ($totHal, $ed) {
         return '<div class="pagefoot"><table class="paraf">'
-            .'<tr class="h"><td>'.e($dok['paraf_perusahaan']).'</td><td>PEMESAN</td></tr>'
+            .'<tr class="h"><td>'.$ed('paraf_perusahaan', true).'</td><td>PEMESAN</td></tr>'
             .'<tr class="p"><td></td><td></td></tr></table>'
             .'<div class="foot">'.$hal.' Dari Halaman '.$totHal.'</div></div>';
     })
@@ -162,7 +174,7 @@
             <tr><td class="k">Email</td><td class="s">:</td><td>{{ $c?->email ?: '—' }}</td></tr>
         </table>
 
-        <p style="margin-top:10px; text-align:justify;">{!! $tx($dok['kalimat_pembuka']) !!}</p>
+        <p style="margin-top:10px; text-align:justify;">{!! $ed('kalimat_pembuka') !!}</p>
         <table class="kv">
             <tr><td class="k">1. Unit</td><td class="s">:</td><td>{{ $unitDesc }}</td></tr>
             <tr><td class="k">2. Cluster</td><td class="s">:</td><td>{{ $clusterKode }}</td></tr>
@@ -178,8 +190,8 @@
             <tr><td class="k">12. Nama Agent Properti</td><td class="s">:</td><td>{{ $ag?->agency_name ?: '—' }}</td></tr>
         </table>
 
-        <p style="margin-top:10px;">{!! $tx($dok['kalimat_syarat']) !!}</p>
-        <h4>{!! $tx($dok['judul_pasal_bayar']) !!}</h4>
+        <p style="margin-top:10px;">{!! $ed('kalimat_syarat') !!}</p>
+        <h4>{!! $ed('judul_pasal_bayar') !!}</h4>
         <div style="font-weight:700;">{{ $kontrak->cara_bayar }}</div>
         <table class="pay">
             <tr><th style="width:30px;">No</th><th>Keterangan</th><th style="width:110px;">Tanggal</th><th class="r" style="width:130px;">Jumlah (Rp.)</th></tr>
@@ -212,6 +224,24 @@
         <div class="page">
             <ol class="terms" style="list-style:none; padding-left:0;">
                 @foreach ($daftar as $ps)
+                    @if ($editor)
+                        @php($p = 'pasal.'.$ps['_i'])
+                        <li class="ed-item">{!! \App\Modules\FO\Komunikasi\Support\EditorDokumen::kendali('pasal', $ps['_i'], [
+                                ['naik', '↑', 'Geser pasal ke atas'], ['turun', '↓', 'Geser pasal ke bawah'],
+                                ['halaman', empty($ps['halaman_baru']) ? 'Mulai halaman baru' : 'Gabung ke halaman sebelumnya', 'Pasal ini membuka halaman baru / ikut halaman sebelumnya'],
+                                ['butir', '+ Butir', 'Tambah butir a, b, c …'], ['tambah', '+ Pasal', 'Tambah pasal di bawah ini'], ['hapus', 'Hapus', 'Hapus pasal ini'],
+                            ]) !!}<span class="clause-h">{!! $ed($p.'.judul') !!}</span> {!! $ed($p.'.isi') !!}
+                            @if (! empty($ps['butir']))
+                                <ol class="alpha">
+                                    @foreach ($ps['butir'] as $j => $b)
+                                        <li class="ed-item">{!! \App\Modules\FO\Komunikasi\Support\EditorDokumen::kendali($p.'.butir', $j, [
+                                            ['naik', '↑', 'Geser butir ke atas'], ['turun', '↓', 'Geser butir ke bawah'], ['tambah', '+', 'Tambah butir di bawah ini'], ['hapus', 'Hapus', 'Hapus butir ini'],
+                                        ]) !!}{!! $ed($p.'.butir.'.$j) !!}</li>
+                                    @endforeach
+                                </ol>
+                            @endif
+                        </li>
+                    @else
                     <li><span class="clause-h">{!! $tx($ps['judul'] ?? '') !!}</span>@if (filled($ps['isi'] ?? null)) {!! $tx($ps['isi']) !!}@endif
                         @if (! empty($ps['butir']))
                             <ol class="alpha">
@@ -221,27 +251,34 @@
                             </ol>
                         @endif
                     </li>
+                    @endif
                 @endforeach
             </ol>
+            @if ($editor && $daftar === [])
+                <button type="button" class="ed-add" data-op="tambah" data-list="pasal" data-i="-1">+ Tambah pasal</button>
+            @endif
 
             @if ($loop->last)
-                <p style="margin-top:10px;">{!! $tx($dok['kalimat_penutup']) !!}</p>
-                <p style="margin-top:14px;">{{ $dok['kota'] }}, {{ optional($kontrak->tgl_kontrak)->format('d M Y') }}</p>
+                <p style="margin-top:10px;">{!! $ed('kalimat_penutup') !!}</p>
+                <p style="margin-top:14px;">{!! $ed('kota', true) !!}, {{ optional($kontrak->tgl_kontrak)->format('d M Y') }}</p>
                 <div class="sign" style="margin-top:6px;">
                     <div class="c" style="font-weight:700;">Pemesan</div>
                     <div class="c"></div>
-                    <div class="c" style="font-weight:700; white-space:nowrap;">{{ $dok['nama_perusahaan'] }}</div>
+                    <div class="c" style="font-weight:700; white-space:nowrap;">{!! $ed('nama_perusahaan', true) !!}</div>
                 </div>
                 <div class="sign" style="margin-top:0;">
                     <div class="c"><div class="nm">{{ $c?->full_name ?: '' }}</div>Pemesan</div>
                     <div class="c"><div class="nm">{{ $ag?->name ?: '' }}@if ($ag?->agency_name) <br><span style="font-weight:400;font-size:9px;">{{ $ag->agency_name }}</span>@endif</div>Sales</div>
-                    <div class="c"><div class="nm">{{ $dok['penandatangan_nama'] }}</div>{{ $dok['penandatangan_jabatan'] }}</div>
+                    <div class="c"><div class="nm">{!! $ed('penandatangan_nama', true) !!}</div>{!! $ed('penandatangan_jabatan', true) !!}</div>
                 </div>
             @endif
             {!! $pageFoot($h + 2) !!}
         </div>
     @endforeach
 
+    @if ($editor)
+        @include('fo.template-dokumen.editor', ['editor' => $editor, 'isi' => $dok])
+    @endif
     <div class="actions">
         <a class="btn" href="javascript:window.print()">Cetak</a>
         <a class="btn" style="background:#475569" href="?pdf=1">Unduh PDF</a>
