@@ -138,10 +138,10 @@ final class DokumenBawaan
     }
 
     /**
-     * Teks aman untuk dicetak: kata kunci diganti (nilai di-escape), tag selain b/i/u/br dibuang.
+     * Teks aman untuk dicetak: kata kunci diganti (nilai di-escape), tag selain b/i/u/br dibuang, atributnya juga.
      */
     public static function teks(?string $teks, array $nilai): string
     {
-        return strip_tags(JenisPesan::isi($teks, $nilai, true), '<b><i><u><br><strong><em>');
+        return EditorDokumen::aman(JenisPesan::isi($teks, $nilai, true));
     }
 }

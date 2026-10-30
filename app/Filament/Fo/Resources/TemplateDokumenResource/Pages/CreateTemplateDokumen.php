@@ -19,20 +19,22 @@ class CreateTemplateDokumen extends CreateRecord
         $dari = TemplateDokumen::find(request()->integer('dari'));
         $dokumen = $dari?->dokumen ?? DokumenBawaan::SPR;
         $lokasiId = $dari?->lokasi_id;
+        $tahapId = $dari?->tahap_id;
 
         $this->form->fill([
             'dokumen' => $dokumen,
             'lokasi_id' => $lokasiId,
+            'tahap_id' => $tahapId,
             'berlaku_mulai' => today()->addDay()->toDateString(),
             'isi' => $dari
                 ? array_replace(DokumenBawaan::untuk($dokumen), (array) $dari->isi)
-                : TemplateDokumenResource::isiAwal($dokumen, $lokasiId),
+                : TemplateDokumenResource::isiAwal($dokumen, $lokasiId, $tahapId),
         ]);
     }
 
     protected function mutateFormDataBeforeCreate(array $data): array
     {
-        $data['versi'] = TemplateDokumen::versiBerikutnya($data['dokumen'], $data['lokasi_id'] ?? null);
+        $data['versi'] = TemplateDokumen::versiBerikutnya($data['dokumen'], $data['lokasi_id'] ?? null, ($data['lokasi_id'] ?? null) ? ($data['tahap_id'] ?? null) : null);
         $data['created_by'] = Auth::id();
 
         return $data;
