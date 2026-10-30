@@ -53,16 +53,31 @@ class ApprovalMobileMapper
             'tag' => $single ? 'GM' : ((int) $a->current_level === 1 ? 'L1' : 'FINAL'),
             'slaMin' => $sla['min'],
             'slc' => $sla['class'],
+            // Urgensi menurut SLA 72 jam J-ERP; tanpa ini app memakai ambang
+            // berbasis hari (≤3 hari = merah) sehingga semua tampil "Urgent".
+            'deadline' => ['red' => 'red', 'amb' => 'amber'][$sla['class']] ?? 'none',
             'requester' => $a->requester?->name ?: ($a->requester?->full_name ?: '—'),
             'dept' => $this->dept($a),
             'sub' => $sub ?: ($a->alasan ?: '—'),
             'forward' => $this->forward($a, $single),
             'chain' => $this->buildChain($a, $single),
             'docs' => [], // approval J-ERP belum punya lampiran dokumen
+
+            // Kolom tabel inbox app (bentuk Javacore). Nominal selalu positif —
+            // diskon disimpan negatif di amount_dampak, jenisnya sudah menjelaskan arah.
+            'docNo' => $a->no_approval,
+            'moduleKey' => $jenis,
+            'moduleLabel' => $label,
+            'docDate' => $a->tgl_approval?->format('d/m/Y'),
+            'project' => data_get($a->subject, 'unit.project.name'),
+            'valueNum' => $isFund ? abs($amount) : null,
+            'submittedAgo' => $a->created_at?->diffForHumans(),
+            'approveLevel' => $this->levelsDone($a, $single),
+            'approveTotal' => $single ? 1 : 2,
         ];
 
         if ($isFund) {
-            $item['amount'] = 'Rp '.number_format($amount, 0, ',', '.');
+            $item['amount'] = 'Rp '.number_format(abs($amount), 0, ',', '.');
             $item['purpose'] = $label;
             $item['desc'] = $a->alasan ?: $label;
         } else {
@@ -86,7 +101,7 @@ class ApprovalMobileMapper
         return [
             'id' => (string) $a->id,
             'type' => $isFund ? 'FUND' : 'DOC',
-            'label' => $isFund ? 'Rp '.number_format((float) $a->amount_dampak, 0, ',', '.') : $label,
+            'label' => $isFund ? 'Rp '.number_format(abs((float) $a->amount_dampak), 0, ',', '.') : $label,
             'who' => ($a->requester?->name ?: '—').' · '.$this->dept($a),
             'dec' => $rejected ? 'rejected' : 'approved',
             'time' => optional($a->approved_at ?? $a->executed_at ?? $a->updated_at)->diffForHumans() ?? '—',
@@ -149,6 +164,16 @@ class ApprovalMobileMapper
         return (int) $a->current_level === 1 ? 'Level 2 — Final' : null;
     }
 
+    /** Jumlah level yang sudah menyetujui (untuk "Approve X/N"). */
+    private function levelsDone(Approval $a, bool $single): int
+    {
+        if (in_array($a->status, ['APPROVED', 'EXECUTED'], true)) {
+            return $single ? 1 : 2;
+        }
+
+        return ! $single && $a->status === 'PENDING' && (int) $a->current_level === 2 ? 1 : 0;
+    }
+
     private function tier(float $amount): string
     {
         $amount = abs($amount);
@@ -165,7 +190,9 @@ class ApprovalMobileMapper
     /** @return array{min:int|null,class:string} */
     private function sla(Approval $a): array
     {
-        $start = $a->tgl_approval ?? $a->created_at;
+        // created_at dulu: tgl_approval hanya DATE (jam 00:00), jadi SLA terpotong
+        // sampai satu hari bila dihitung darinya.
+        $start = $a->created_at ?? $a->tgl_approval;
         if (! $start) {
             return ['min' => null, 'class' => 'norm'];
         }

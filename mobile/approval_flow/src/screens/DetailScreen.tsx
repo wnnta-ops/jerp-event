@@ -59,13 +59,14 @@ export default function DetailScreen() {
   }
 
   const isFund = r.type === 'FUND';
+  const isJava = !!r.docNo;
   const s = slaTokens[r.slc];
   const slaText = r.slaMin == null ? 'In chain' : `${r.slc === 'red' ? '⏱ ' : ''}${formatSla(r.slaMin)}`;
 
   return (
     <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
       <AppBar
-        title={isFund ? 'Fund request' : 'Document access'}
+        title={isJava ? r.moduleLabel ?? 'Approval' : isFund ? 'Fund request' : 'Document access'}
         onBack={() => navigation.goBack()}
         right={
           <View style={[styles.slaTop, { backgroundColor: s.bg }]}>
@@ -75,26 +76,86 @@ export default function DetailScreen() {
       />
 
       <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-        <View style={styles.amt}>
-          <View style={styles.amtHead}>
-            <Text style={styles.amtK}>{isFund ? `${r.reqName ?? 'Fund usage'} · ` : 'Document access · '}</Text>
-            <TierChip tier={r.tier} label={r.tag} />
-          </View>
-          <Text style={[styles.amtV, !isFund && styles.amtVDoc]}>{isFund ? r.amount : r.title}</Text>
-        </View>
-
-        {isFund ? (
+        {isJava ? (
           <>
-            <KV k="Requester" v={`${r.requester} · ${r.dept}`} />
-            <KV k="Purpose" v={r.purpose!} />
-            <KV k="Budget line" v={r.budget!} />
-            <KV k="Needed by (H)" v={r.need!} />
+            <View style={styles.jHead}>
+              <Text style={styles.jDocNo}>{r.docNo}</Text>
+              <View style={styles.jChips}>
+                <View style={styles.jStatus}>
+                  <Text style={styles.jStatusText}>Diajukan</Text>
+                </View>
+                {r.approveTotal ? (
+                  <View style={styles.jApprove}>
+                    <Text style={styles.jApproveText}>Approve {r.approveLevel ?? 0}/{r.approveTotal}</Text>
+                  </View>
+                ) : null}
+                {r.overPagu ? (
+                  <View style={styles.jPagu}>
+                    <Text style={styles.jPaguText}>Melebihi Pagu / Non-RAP</Text>
+                  </View>
+                ) : null}
+              </View>
+              {r.valueNum != null ? <Text style={styles.jValue}>{rupiah(r.valueNum)}</Text> : null}
+            </View>
+
+            <SectionLabel style={styles.jSect}>Informasi dokumen</SectionLabel>
+            <KV k="Modul" v={r.moduleLabel!} />
+            <KV k="Jenis" v={r.jenis ?? '—'} />
+            <KV k="Proyek" v={r.project ?? '—'} />
+            <KV k="Kontrak Proyek" v={r.kontrak ?? '—'} />
+            <KV k="Peminta" v={r.requester} />
+            <KV k="Cabang" v={r.branch ?? '—'} />
+            <KV k="Tanggal dibutuhkan" v={r.needBy ?? '—'} />
+
+            {r.lineItems && r.lineItems.length > 0 && (
+              <>
+                <SectionLabel style={styles.jSect}>Rincian permintaan</SectionLabel>
+                <View style={styles.tbl}>
+                  <View style={styles.tblHeadRow}>
+                    <Text style={[styles.tblH, styles.colBarang]}>Barang</Text>
+                    <Text style={[styles.tblH, styles.colUraian]}>Uraian</Text>
+                    <Text style={[styles.tblH, styles.colQty]}>Qty</Text>
+                  </View>
+                  {r.lineItems.map((it) => (
+                    <View key={it.no} style={styles.tblRow}>
+                      <Text style={[styles.tblCell, styles.colBarang, styles.tblCode]}>{it.barang}</Text>
+                      <View style={styles.colUraian}>
+                        <Text style={styles.tblCell}>{it.uraian}</Text>
+                        {it.bq ? <Text style={styles.tblSub}>{it.bq}</Text> : null}
+                      </View>
+                      <Text style={[styles.tblCell, styles.colQty]}>
+                        {it.qty} {it.satuan}
+                      </Text>
+                    </View>
+                  ))}
+                </View>
+              </>
+            )}
           </>
         ) : (
           <>
-            <KV k="Requester" v={`${r.requester} · ${r.dept}`} />
-            <KV k="Access level" v={r.access!} />
-            <KV k="Classification" v={r.cls!} />
+            <View style={styles.amt}>
+              <View style={styles.amtHead}>
+                <Text style={styles.amtK}>{isFund ? `${r.reqName ?? 'Fund usage'} · ` : 'Document access · '}</Text>
+                <TierChip tier={r.tier} label={r.tag} />
+              </View>
+              <Text style={[styles.amtV, !isFund && styles.amtVDoc]}>{isFund ? r.amount : r.title}</Text>
+            </View>
+
+            {isFund ? (
+              <>
+                <KV k="Requester" v={`${r.requester} · ${r.dept}`} />
+                <KV k="Purpose" v={r.purpose!} />
+                <KV k="Budget line" v={r.budget!} />
+                <KV k="Needed by (H)" v={r.need!} />
+              </>
+            ) : (
+              <>
+                <KV k="Requester" v={`${r.requester} · ${r.dept}`} />
+                <KV k="Access level" v={r.access!} />
+                <KV k="Classification" v={r.cls!} />
+              </>
+            )}
           </>
         )}
 
@@ -124,7 +185,27 @@ export default function DetailScreen() {
           </View>
         )}
 
-        <Pipeline chain={r.chain} />
+        {isJava && r.riwayat && r.riwayat.length > 0 ? (
+          <>
+            <SectionLabel style={styles.jSect}>Riwayat & log aktivitas</SectionLabel>
+            <View style={styles.log}>
+              {r.riwayat.map((e, i) => (
+                <View key={i} style={[styles.logRow, i > 0 && styles.logDivider]}>
+                  <View style={styles.logTop}>
+                    <View style={[styles.logBadge, { backgroundColor: aksiColor(e.aksi).bg }]}>
+                      <Text style={[styles.logBadgeText, { color: aksiColor(e.aksi).fg }]}>{e.aksi}</Text>
+                    </View>
+                    <Text style={styles.logTime}>{e.waktu}</Text>
+                    <Text style={styles.logUser}>{e.pengguna}</Text>
+                  </View>
+                  <Text style={styles.logKet}>{e.keterangan}</Text>
+                </View>
+              ))}
+            </View>
+          </>
+        ) : (
+          <Pipeline chain={r.chain} />
+        )}
       </ScrollView>
 
       {!readOnly && (
@@ -279,6 +360,26 @@ function KV({ k, v }: { k: string; v: string }) {
   );
 }
 
+function rupiah(n: number): string {
+  return 'Rp ' + n.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+}
+
+// Riwayat badge palette per action.
+function aksiColor(a: string): { bg: string; fg: string } {
+  switch (a) {
+    case 'Approve':
+      return { bg: colors.greenBg, fg: colors.green };
+    case 'Submit':
+      return { bg: colors.blueBg, fg: colors.blueDark };
+    case 'Tolak':
+      return { bg: colors.redBg, fg: colors.red };
+    case 'Revisi':
+      return { bg: colors.amberBg, fg: colors.amber };
+    default:
+      return { bg: colors.slate100, fg: colors.sub }; // Tambah
+  }
+}
+
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.white },
   scroll: { flex: 1 },
@@ -292,6 +393,40 @@ const styles = StyleSheet.create({
   amtK: { fontSize: 10.5, color: colors.sub, textTransform: 'uppercase', letterSpacing: 0.4 },
   amtV: { fontSize: 23, fontWeight: '800', color: colors.ink },
   amtVDoc: { fontSize: 18 },
+
+  // ── Javacore detail ──
+  jHead: { backgroundColor: colors.slate100, borderWidth: 1, borderColor: colors.line, borderRadius: radius.lg, padding: 14, marginVertical: 12 },
+  jDocNo: { fontSize: 19, fontWeight: '800', color: colors.ink, letterSpacing: 0.2 },
+  jChips: { flexDirection: 'row', flexWrap: 'wrap', gap: 7, marginTop: 9 },
+  jStatus: { backgroundColor: colors.blueChipBg, borderRadius: radius.pill, paddingHorizontal: 9, paddingVertical: 3 },
+  jStatusText: { fontSize: 10.5, fontWeight: '800', color: colors.blueDark },
+  jApprove: { backgroundColor: colors.greenBg, borderRadius: radius.pill, paddingHorizontal: 9, paddingVertical: 3 },
+  jApproveText: { fontSize: 10.5, fontWeight: '800', color: colors.green },
+  jPagu: { backgroundColor: colors.redBg, borderRadius: radius.pill, paddingHorizontal: 9, paddingVertical: 3 },
+  jPaguText: { fontSize: 10.5, fontWeight: '800', color: colors.red },
+  jValue: { fontSize: 22, fontWeight: '800', color: colors.ink, marginTop: 11 },
+  jSect: { marginTop: 18, marginBottom: 9 },
+
+  tbl: { borderWidth: 1, borderColor: colors.line, borderRadius: radius.md, overflow: 'hidden' },
+  tblHeadRow: { flexDirection: 'row', backgroundColor: colors.slate100, paddingHorizontal: 10, paddingVertical: 8, gap: 8 },
+  tblH: { fontSize: 10, fontWeight: '800', color: colors.sub, textTransform: 'uppercase', letterSpacing: 0.3 },
+  tblRow: { flexDirection: 'row', paddingHorizontal: 10, paddingVertical: 10, gap: 8, borderTopWidth: 1, borderTopColor: colors.line, alignItems: 'flex-start' },
+  tblCell: { fontSize: 12, color: colors.ink, fontWeight: '600' },
+  tblCode: { fontWeight: '800' },
+  tblSub: { fontSize: 10.5, color: colors.sub, marginTop: 2, lineHeight: 14 },
+  colBarang: { width: 54 },
+  colUraian: { flex: 1, minWidth: 0 },
+  colQty: { width: 60, textAlign: 'right' },
+
+  log: { borderWidth: 1, borderColor: colors.line, borderRadius: radius.md, paddingHorizontal: 12 },
+  logRow: { paddingVertical: 11 },
+  logDivider: { borderTopWidth: 1, borderTopColor: colors.line },
+  logTop: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  logBadge: { borderRadius: radius.sm, paddingHorizontal: 7, paddingVertical: 2 },
+  logBadgeText: { fontSize: 10, fontWeight: '800' },
+  logTime: { fontSize: 11, color: colors.sub, fontWeight: '600' },
+  logUser: { fontSize: 11, color: colors.slate400, fontWeight: '700', marginLeft: 'auto' },
+  logKet: { fontSize: 12, color: colors.ink, marginTop: 6, lineHeight: 17 },
 
   kv: { flexDirection: 'row', justifyContent: 'space-between', gap: 10, paddingVertical: 7, borderBottomWidth: 1, borderStyle: 'dashed', borderBottomColor: colors.line },
   kvK: { color: colors.sub, fontSize: 12.5 },

@@ -309,6 +309,181 @@ function demoRequests(n: number): RequestItem[] {
   return out;
 }
 
+// ── Javacore (MUK ERP) approval inbox ──────────────────────────────────────────
+// Documents pulled from Javacore across its modules (Permintaan Pembelian, Order
+// Pembelian, SPK, Pencairan Retensi, Opname, Material). Shapes mirror what the
+// real Inbox Approval / document detail / Riwayat expose, so the API swap is 1:1.
+
+import type { JavaLineItem, RiwayatEntry } from './types';
+import { modules as MODULE_META } from '../theme/tokens';
+
+const JC_PROJECTS = [
+  'INFRASTRUKTUR CLUSTER 5 TAHAP 1',
+  'PROYEK HOUSING CLUSTER 3 TAHAP 4 BATCH 2',
+  'PROYEK HOUSING CLUSTER 5 TAHAP 2',
+  'PROYEK HOUSING CLUSTER 3 TAHAP 3 BATCH I',
+  'SITE INSTRUCTION CLUSTER 5 NEW',
+  'PERSIAPAN INFRA CLUSTER 5 EXTN',
+  'MUSHOLLA CLUSTER 3',
+  'SI BALLROOM GUDANG CENTRAL',
+];
+const JC_REQUESTERS = ['ANAM', 'ACHMAD FAUZI', 'INDRA', 'DARYANTO', 'RANGGA P.', 'YUSUF', 'FIRMAN', 'BAGUS'];
+const JC_APPROVERS = ['HELMI', 'DARYANTO', 'BUDIONO']; // names recorded on already-approved levels
+const JC_AGO = ['1 hari lalu', '19 jam lalu', '18 jam lalu', '16 jam lalu', '2 minggu lalu', '3 minggu lalu', '4 minggu lalu'];
+
+// Per-module definition: numerator prefix, typical sub-type, and sample items.
+interface ModuleDef {
+  key: string;
+  prefix: string; // numerator prefix
+  jenis: string[];
+  items: [string, string, string, string][]; // [barang, uraian, bq, satuan]
+}
+const JC_MODULES: ModuleDef[] = [
+  {
+    key: 'PR', prefix: 'PR', jenis: ['Material', 'Alat Kerja', 'Aset', 'Biaya Proyek'],
+    items: [
+      ['AK01', 'FLOOR EMBOSSER', 'PEKERJAAN BETONISASI & ASPAL ENTRANCE', 'PCS'],
+      ['MT12', 'BESI BETON D10 ULIR', 'PEKERJAAN STRUKTUR KOLOM', 'BTG'],
+      ['MT08', 'SEMEN PCC 50KG', 'PEKERJAAN PASANGAN DINDING', 'SAK'],
+    ],
+  },
+  {
+    key: 'PO', prefix: 'PO', jenis: ['Material'],
+    items: [
+      ['MT21', 'KERAMIK 60x60 GRANIT', 'PEKERJAAN FINISHING LANTAI', 'DUS'],
+      ['MT05', 'CAT WEATHERSHIELD 20L', 'PEKERJAAN PENGECATAN EKSTERIOR', 'PAIL'],
+    ],
+  },
+  {
+    key: 'SPK', prefix: 'SPK', jenis: ['Jasa Subkon'],
+    items: [
+      ['JS01', 'PEKERJAAN PEMBESIAN & BEKISTING', 'STRUKTUR LANTAI 2', 'LS'],
+      ['JS04', 'PEKERJAAN WATERPROOFING', 'AREA TOILET & BALKON', 'M2'],
+    ],
+  },
+  {
+    key: 'RETENSI', prefix: 'RET', jenis: ['Retensi Subkon'],
+    items: [['RT01', 'PENCAIRAN RETENSI TERMIN AKHIR', 'KONTRAK SUBKON STRUKTUR', 'LS']],
+  },
+  {
+    key: 'OPNAME', prefix: 'OP', jenis: ['Opname Prestasi'],
+    items: [['OP01', 'OPNAME PRESTASI SUBKON TERMIN 3', 'PROGRES 72% STRUKTUR', 'LS']],
+  },
+  {
+    key: 'MATERIAL', prefix: 'PM', jenis: ['Material'],
+    items: [
+      ['MT33', 'PIPA PVC 4" AW', 'INSTALASI PLUMBING', 'BTG'],
+      ['MT41', 'KABEL NYM 3x2.5', 'INSTALASI ELEKTRIKAL', 'ROLL'],
+    ],
+  },
+];
+
+const JC_DAYS = [1, 2, 3, 5, 6, 7, 10, 14, 2, 4]; // deadline spread for color coding
+const JC_VALUES = [8_650_000, 12_400_000, 3_250_000, 46_800_000, 9_575_000, null, 1_600_000, null, 22_300_000, 4_925_000];
+
+function pad4(n: number): string {
+  return n.toString().padStart(4, '0');
+}
+
+// Build the Riwayat activity log + matching pipeline chain for a document sitting
+// at the GM's turn: `level` levels already approved, GM pending, then the rest.
+function buildRiwayatChain(docNo: string, moduleLabel: string, requester: string, level: number, total: number, overPagu: boolean, date: string) {
+  const riwayat: RiwayatEntry[] = [];
+  // Newest first (Javacore shows latest activity at the top).
+  for (let i = level; i >= 1; i--) {
+    const hh = String(7 + i).padStart(2, '0');
+    const mm = String(10 + i * 3).padStart(2, '0');
+    riwayat.push({
+      waktu: `${date} ${hh}:${mm}`,
+      aksi: 'Approve',
+      keterangan: `Approval level tercatat ${docNo} — menunggu level ${i + 1}/${total}`,
+      pengguna: JC_APPROVERS[(i - 1) % JC_APPROVERS.length],
+    });
+  }
+  riwayat.push({ waktu: `${date} 01:11`, aksi: 'Submit', keterangan: `Ajukan ${moduleLabel} ${docNo} — Status: draft → submitted`, pengguna: requester });
+  riwayat.push({ waktu: `${date} 01:11`, aksi: 'Tambah', keterangan: `Tambah ${moduleLabel} ${docNo}${overPagu ? ' [MELEBIHI PAGU/NON-RAP]' : ''}`, pengguna: requester });
+
+  const chain: PipeStep[] = [step('Submitted', `${requester} · 01:11`, 'done')];
+  for (let i = 1; i <= level; i++) chain.push(step(`Approval L${i}`, `${JC_APPROVERS[(i - 1) % JC_APPROVERS.length]} · sudah setuju`, 'done'));
+  chain.push(step(`Approval L${level + 1} — You`, 'Giliran anda', 'now'));
+  for (let i = level + 2; i <= total; i++) chain.push(step(`Approval L${i}`, 'Menunggu', 'wait'));
+  chain.push(step('Sinkron Javacore', 'Diproses di sistem internal', 'wait'));
+  return { riwayat, chain };
+}
+
+// Generate ~N Javacore documents cycling across modules, all pending at GM level.
+function javacoreRequests(n: number): RequestItem[] {
+  const out: RequestItem[] = [];
+  for (let i = 0; i < n; i++) {
+    const mod = JC_MODULES[i % JC_MODULES.length];
+    const meta = MODULE_META[mod.key];
+    const requester = JC_REQUESTERS[i % JC_REQUESTERS.length];
+    const project = JC_PROJECTS[i % JC_PROJECTS.length];
+    const days = JC_DAYS[i % JC_DAYS.length];
+    const value = JC_VALUES[i % JC_VALUES.length];
+    const overPagu = i % 3 === 0;
+    const seq = 90 + i;
+    const docNo = `${mod.prefix}-2026/10-${pad4(seq)}`;
+    const total = 3;
+    const level = i % 3; // 0..2 levels already approved
+    const jenis = mod.jenis[i % mod.jenis.length];
+    const date = '29/10/2026';
+
+    // Line items (1–2 per doc).
+    const nItems = (i % 2) + 1;
+    const lineItems: JavaLineItem[] = [];
+    for (let k = 0; k < nItems; k++) {
+      const [barang, uraian, bq, satuan] = mod.items[(i + k) % mod.items.length];
+      lineItems.push({ no: k + 1, barang, uraian, bq, satuan, qty: (i % 4) + 1, jadwal: '05/11/2026' });
+    }
+
+    const { riwayat, chain } = buildRiwayatChain(docNo, meta.label, requester, level, total, overPagu, date);
+    const bucket = days <= 3 ? 'red' : days <= 7 ? 'amb' : 'norm';
+
+    out.push({
+      id: `jc-${i}`,
+      type: 'FUND',
+      reqName: meta.label,
+      tier: 't1',
+      tag: bucket === 'red' ? 'URGENT' : bucket === 'amb' ? 'DUE SOON' : 'REGULER',
+      amount: value != null ? rupiah(value) : docNo, // label fallback for mockService
+      slaMin: days * 1440,
+      slc: bucket,
+      requester,
+      dept: project,
+      sub: `${meta.label} · GM (anda) · → Direksi`,
+      purpose: project,
+      desc: lineItems.map((it) => it.uraian).join(', '),
+      forward: 'Direksi',
+      chain,
+      docs: i % 2 === 0
+        ? [{ name: `${docNo.replace(/[\/]/g, '_')}.pdf`, type: 'pdf', size: '180 KB' }]
+        : [
+            { name: 'Penawaran_vendor.pdf', type: 'pdf', size: '248 KB' },
+            { name: 'Spesifikasi_teknis.pdf', type: 'pdf', size: '96 KB' },
+          ],
+      // Javacore fields
+      docNo,
+      moduleKey: mod.key,
+      moduleLabel: meta.label,
+      jenis,
+      project,
+      branch: 'Cabang 01',
+      kontrak: `NK20250300${pad4(seq).slice(1)}`,
+      valueNum: value ?? undefined,
+      overPagu,
+      approveLevel: level,
+      approveTotal: total,
+      submittedAgo: JC_AGO[i % JC_AGO.length],
+      docDate: date,
+      needBy: '02/11/2026',
+      lineItems,
+      riwayat,
+    });
+  }
+  return out;
+}
+
 // A document-access request (separate from the funding flows) per approver role.
 const docAccessDirector: RequestItem = {
   id: 'd2', type: 'DOC', tier: 't2', tag: 'CONFIDENTIAL', title: 'Q2 Financials.xlsx', slaMin: 1080, slc: 'amb',
@@ -335,7 +510,7 @@ const docAccessReviewer: RequestItem = {
 };
 
 export const SEED: Record<RoleKey, RoleSeed> = {
-  GM: { name: 'Rizki Setyawardana', role: 'General Manager', init: 'R', needs: demoRequests(40), inchain: [] },
+  GM: { name: 'Rizki Setyawardana', role: 'General Manager', init: 'R', needs: javacoreRequests(24), inchain: [] },
   Director: { name: 'Rachmat Suhendra', role: 'Director', init: 'R', needs: [...flowsFor('Director'), docAccessDirector], inchain: [] },
   Owner1: { name: 'M. Winarto', role: 'Owner', init: 'W', needs: [...flowsFor('Owner1')], inchain: [] },
   Owner2: { name: 'Boy Arifin', role: 'Owner', init: 'B', needs: [...flowsFor('Owner2')], inchain: [] },

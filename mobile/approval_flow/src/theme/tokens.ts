@@ -1,6 +1,30 @@
 // Design tokens mirrored 1:1 from approver_app_prototype.html (:root CSS variables).
 // Keep this the single source of truth for color/spacing so screens stay consistent.
 
+import { Platform } from 'react-native';
+
+// Top breathing room for screen headers. On a phone, SafeAreaView already inserts
+// the notch/status-bar inset, so we only add a small gap below it. On web there is
+// NO safe-area inset, so the header would otherwise hug the very top edge — give it
+// a status-bar-sized gap so the browser demo doesn't look cornered.
+export const headerTop = Platform.OS === 'web' ? 24 : 8;
+
+// Shift a hex color toward white (amt > 0) or black (amt < 0). amt is -1..1.
+function shade(hex: string, amt: number): string {
+  const h = hex.replace('#', '');
+  const n = parseInt(h.length === 3 ? h.replace(/(.)/g, '$1$1') : h, 16);
+  const r = (n >> 16) & 255, g = (n >> 8) & 255, b = n & 255;
+  const mix = (c: number) => Math.round(amt >= 0 ? c + (255 - c) * amt : c * (1 + amt));
+  const to2 = (c: number) => Math.max(0, Math.min(255, c)).toString(16).padStart(2, '0');
+  return `#${to2(mix(r))}${to2(mix(g))}${to2(mix(b))}`;
+}
+
+// Derive a diagonal gradient (lighter -> darker) from ANY base color, so the two
+// stat cards stay vivid and update automatically if their base color changes.
+export function gradient(base: string): [string, string] {
+  return [shade(base, 0.18), shade(base, -0.28)];
+}
+
 export const colors = {
   ink: '#0F172A',
   sub: '#64748B',
@@ -53,6 +77,32 @@ export const reqTypeColor: Record<string, string> = {
 };
 export function typeColor(name?: string): string {
   return (name && reqTypeColor[name]) || reqTypeColor.Others;
+}
+
+// ── Javacore (MUK ERP) modules ─────────────────────────────────────────────────
+// The approval inbox aggregates documents from many Javacore modules; each gets a
+// stripe/legend color and a short label. Keyed by moduleKey (see types.ts).
+export interface ModuleMeta {
+  label: string;
+  color: string;
+}
+export const modules: Record<string, ModuleMeta> = {
+  PR: { label: 'Permintaan Pembelian', color: '#2563EB' }, // blue
+  PO: { label: 'Order Pembelian', color: '#7C3AED' }, // purple
+  SPK: { label: 'SPK / Work Order', color: '#0D9488' }, // teal
+  RETENSI: { label: 'Pencairan Retensi', color: '#DB2777' }, // pink
+  OPNAME: { label: 'Opname Prestasi', color: '#D97706' }, // orange
+  MATERIAL: { label: 'Permintaan Material', color: '#16A34A' }, // green
+  KONTRAK: { label: 'Kontrak Owner', color: '#0EA5E9' }, // sky
+  Others: { label: 'Lainnya', color: '#64748B' }, // slate
+};
+export function moduleColor(key?: string): string {
+  return (key && modules[key]?.color) || modules.Others.color;
+}
+// fallback = label sent by the backend for keys outside this table (e.g. J-ERP
+// approval types like DISKON), so they don't all collapse into "Lainnya".
+export function moduleLabel(key?: string, fallback?: string): string {
+  return (key && modules[key]?.label) || fallback || modules.Others.label;
 }
 
 // Deadline urgency: <=3 days -> red, 4-7 days -> amber, else none (white).
