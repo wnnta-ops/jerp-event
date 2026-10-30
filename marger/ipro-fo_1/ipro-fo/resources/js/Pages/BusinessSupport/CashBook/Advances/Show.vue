@@ -359,8 +359,8 @@ function backToIndex() {
             </div>
         </div>
 
-        <!-- Realisasi (jika sudah) -->
-        <div v-if="advance.status === 'realized'" class="card p-5">
+        <!-- Realisasi (jika sudah) — disembunyikan selama Edit Realisasi; form edit menggantikannya. -->
+        <div v-if="advance.status === 'realized' && !modeEdit" class="card p-5">
             <h2 class="mb-3 flex items-center gap-2 font-semibold"><ClipboardCheck class="h-5 w-5 text-success-600" /> Realisasi {{ fmtDate(advance.realized_date) }}
                 <span v-if="jurnalRealisasi?.number" class="ml-auto text-xs font-normal text-neutral-500">No. Ref. Jurnal:
                     <Link v-if="jurnalRealisasi.bisaBuka" :href="route('bs.gl.journal.show', jurnalRealisasi.id)" class="font-mono font-semibold text-primary-600 hover:underline">{{ jurnalRealisasi.number }}</Link>
