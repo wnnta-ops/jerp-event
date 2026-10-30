@@ -48,7 +48,7 @@ const props = defineProps<{ advance: any; jurnalRealisasi?: { id: number; number
     lanjutAlokasi?: { perlu: boolean; sudah: boolean; pada: string | null };
     /** Langkah mundur berikutnya (izin cashbook.advance.undo) — null bila tidak berhak/tidak ada. */
     langkahMundur?: { kode: string; label: string } | null;
-    /** Edit Realisasi (izin cashbook.advance.realize.edit) — hanya selama selisih belum diselesaikan. */
+    /** Edit Realisasi (izin cashbook.advance.realize-edit) — hanya selama selisih belum diselesaikan. */
     bisaEditRealisasi?: boolean;
     riwayatMundur?: Array<{ langkah: string; alasan: string; created_at: string; oleh: string | null }> }>();
 

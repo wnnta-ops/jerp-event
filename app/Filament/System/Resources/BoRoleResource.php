@@ -90,6 +90,7 @@ class BoRoleResource extends Resource
         // tidak terbaca bahwa ketiganya milik tiga pihak yang berbeda.
         'realize' => 'Realisasi', 'refund' => 'Refund', 'reimburse' => 'Reimburse',
         'received-date' => 'Tgl Terima Dokumen', 'print-realisasi' => 'Cetak Realisasi', 'card' => 'Kartu',
+        'realize-edit' => 'Edit Realisasi',
 
         // ── Aksi khas Cek Giro ──
         'clear' => 'Cair', 'bounce' => 'Tolakan', 'handover' => 'Serah Terima',
