@@ -64,7 +64,9 @@ final class DaftarTabel
                 'perbarui' => true,
                 // pihak_juga: SPR baru dianggap SAMA bila customer-nya juga sama — unit + nominal saja
                 // terlalu longgar (unit bisa berpindah pembeli). Beda customer → ditahan, dicek manual.
-                'cocok' => ['nominal' => 'total_kontrak', 'pihak' => 'unit_id', 'pihak_wajib' => true, 'pihak_juga' => ['customer_id'], 'tanggal' => 'tgl_kontrak'],
+                // tahan_pihak_sama: SPR J-ERP di unit yang sama tapi nominal beda (mis. harga belum diisi) → ditahan, bukan SPR kedua.
+                'cocok' => ['nominal' => 'total_kontrak', 'pihak' => 'unit_id', 'pihak_wajib' => true, 'pihak_juga' => ['customer_id'], 'tanggal' => 'tgl_kontrak',
+                    'tahan_pihak_sama' => true],
                 'label' => ['unit_id', 'total_kontrak', 'cara_bayar'],
             ],
             'fo_tts' => [
