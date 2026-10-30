@@ -1059,8 +1059,8 @@ class CashAdvanceController extends Controller
             // Mundur satu langkah / hapus pengajuan — izin cashbook.advance.undo (Hak Akses).
             'langkahMundur' => $request->user()?->can('cashbook.advance.undo')
                 ? app(CashAdvanceService::class)->langkahMundur($advance) : null,
-            // Edit Realisasi — izin cashbook.advance.realize.edit, hanya selama selisihnya belum diselesaikan.
-            'bisaEditRealisasi' => (bool) $request->user()?->can('cashbook.advance.realize.edit')
+            // Edit Realisasi — izin cashbook.advance.realize-edit, hanya selama selisihnya belum diselesaikan.
+            'bisaEditRealisasi' => (bool) $request->user()?->can('cashbook.advance.realize-edit')
                 && app(CashAdvanceService::class)->bisaEditRealisasi($advance),
             'riwayatMundur' => \Illuminate\Support\Facades\DB::table('bs_cash_advance_mundur as m')
                 ->leftJoin('users as u', 'u.id', '=', 'm.user_id')
@@ -1243,7 +1243,7 @@ class CashAdvanceController extends Controller
      */
     public function editRealisasi(Request $request, BsCashAdvance $advance, CashAdvanceService $svc): RedirectResponse
     {
-        abort_unless($request->user()?->can('cashbook.advance.realize.edit'), 403);
+        abort_unless($request->user()?->can('cashbook.advance.realize-edit'), 403);
         abort_unless($this->bolehBukaBon($request, $advance), 403);
 
         $v = $request->validate([
