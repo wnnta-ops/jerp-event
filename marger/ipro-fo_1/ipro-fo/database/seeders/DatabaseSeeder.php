@@ -24,6 +24,7 @@ class DatabaseSeeder extends Seeder
             PaymentSchemeSeeder::class,
             UnitDemoSeeder::class,
             ApprovalChainSeeder::class,
+            ApprovalInboxSeeder::class,
             BankPartnerSeeder::class,
             KprSetupSeeder::class,
             BusinessSupportSeeder::class,
