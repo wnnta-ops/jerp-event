@@ -40,6 +40,9 @@ class PreferensiUnitResource extends Resource
     {
         return $form->schema([
             Forms\Components\TextInput::make('nama')->label('Nama Preferensi')->required()->maxLength(100)
+                // Unik per tenant (indeks DB tenant_id+nama) — tampilkan pesan, bukan 500.
+                ->unique(ignoreRecord: true, modifyRuleUsing: fn ($rule) => $rule->where('tenant_id', app(\App\Support\TenantContext::class)->id()))
+                ->validationMessages(['unique' => 'Nama preferensi ini sudah dipakai.'])
                 ->placeholder('mis. Rumah 400 Jutaan / RUKO')
                 ->helperText('Tampil sebagai pilihan di form pendaftaran NUP.'),
             Forms\Components\TextInput::make('urutan')->label('Urutan')->numeric()->default(0)

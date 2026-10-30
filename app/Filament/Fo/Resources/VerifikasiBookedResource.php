@@ -82,9 +82,15 @@ class VerifikasiBookedResource extends Resource
                     Tables\Actions\Action::make('unduh_npwp')->label('Unduh NPWP')->icon('heroicon-o-arrow-down-tray')
                         ->url(fn (NupRegistration $r) => route('fo.customer.file', [$r->customer_id, 'npwp']).'?download=1')
                         ->visible(fn (NupRegistration $r) => (bool) $r->customer?->npwp_file_path),
+                    Tables\Actions\Action::make('lihat_ktp_pasangan')->label('Lihat KTP Pasangan')->icon('heroicon-o-eye')
+                        ->url(fn (NupRegistration $r) => route('fo.customer.file', [$r->customer_id, 'ktp_pasangan']), shouldOpenInNewTab: true)
+                        ->visible(fn (NupRegistration $r) => (bool) $r->customer?->ktp_pasangan_file_path),
                     Tables\Actions\Action::make('unduh_ktp_pasangan')->label('Unduh KTP Pasangan')->icon('heroicon-o-arrow-down-tray')
                         ->url(fn (NupRegistration $r) => route('fo.customer.file', [$r->customer_id, 'ktp_pasangan']).'?download=1')
                         ->visible(fn (NupRegistration $r) => (bool) $r->customer?->ktp_pasangan_file_path),
+                    Tables\Actions\Action::make('lihat_npwp_pasangan')->label('Lihat NPWP Pasangan')->icon('heroicon-o-eye')
+                        ->url(fn (NupRegistration $r) => route('fo.customer.file', [$r->customer_id, 'npwp_pasangan']), shouldOpenInNewTab: true)
+                        ->visible(fn (NupRegistration $r) => (bool) $r->customer?->npwp_pasangan_file_path),
                     Tables\Actions\Action::make('unduh_npwp_pasangan')->label('Unduh NPWP Pasangan')->icon('heroicon-o-arrow-down-tray')
                         ->url(fn (NupRegistration $r) => route('fo.customer.file', [$r->customer_id, 'npwp_pasangan']).'?download=1')
                         ->visible(fn (NupRegistration $r) => (bool) $r->customer?->npwp_pasangan_file_path),
