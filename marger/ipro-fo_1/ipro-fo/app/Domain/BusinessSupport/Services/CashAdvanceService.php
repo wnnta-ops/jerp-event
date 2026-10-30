@@ -662,6 +662,64 @@ final class CashAdvanceService
         });
     }
 
+    /**
+     * Realisasi bon ini masih boleh diedit? Hanya selama selisihnya BELUM diselesaikan:
+     * Refund/Reimburse/Masuk Saldo sudah memindahkan uang sesuai angka lama, jadi penyelesaian
+     * itu harus dibatalkan dulu (Mundur) sebelum angkanya diubah.
+     */
+    public function bisaEditRealisasi(BsCashAdvance $adv): bool
+    {
+        return ! $adv->trashed()
+            && $adv->status === 'realized'
+            && ! $adv->settle_journal_id
+            && $adv->settlement_status !== 'card';
+    }
+
+    /**
+     * Edit Realisasi — jurnal realisasi lama dibuang, rincian diganti, lalu realisasi dibentuk
+     * ulang lewat realize() pada TANGGAL REALISASI LAMA. Satu transaksi: gagal di mana pun
+     * (mis. periode sudah closed), realisasi lama tetap utuh. Tercatat di riwayat bon.
+     */
+    public function editRealisasi(BsCashAdvance $adv, array $lines, string $alasan, ?int $userId = null): BsCashAdvance
+    {
+        $alasan = trim($alasan);
+        if ($alasan === '') {
+            throw new BusinessRuleException('Alasan edit wajib diisi.', errorCode: 'ADV_EDIT_NO_REASON');
+        }
+
+        return DB::transaction(function () use ($adv, $lines, $alasan, $userId): BsCashAdvance {
+            $adv = BsCashAdvance::whereKey($adv->id)->lockForUpdate()->firstOrFail();
+            if (! $this->bisaEditRealisasi($adv)) {
+                throw new BusinessRuleException(
+                    'Realisasi tidak bisa diedit — bon belum direalisasi, atau sisa/kekurangannya sudah diselesaikan (batalkan dulu Refund/Reimburse/Masuk Saldo).',
+                    errorCode: 'ADV_EDIT_NOT_ALLOWED',
+                );
+            }
+            $tanggal = $adv->realized_date->toDateString();
+            $dari = $adv->status.($adv->settlement_status ? '/'.$adv->settlement_status : '');
+
+            if ($adv->realize_journal_id && ($j = BsJournal::find($adv->realize_journal_id))) {
+                $this->journal->buang($j, 'Edit Realisasi '.$adv->advance_number.': '.$alasan, $userId);
+            }
+            $adv->lines()->delete();
+            $adv->update([
+                'status' => 'outstanding', 'realized_date' => null, 'realized_amount' => 0,
+                'settlement' => 0, 'settlement_status' => null, 'realize_journal_id' => null,
+            ]);
+
+            $this->realize($adv, ['realized_date' => $tanggal, 'defer_settlement' => true, 'lines' => $lines], $userId);
+
+            DB::table('bs_cash_advance_mundur')->insert([
+                'tenant_id' => $adv->tenant_id, 'cash_advance_id' => $adv->id,
+                'advance_number' => $adv->advance_number, 'langkah' => 'Edit Realisasi',
+                'dari_status' => $dari, 'alasan' => mb_substr($alasan, 0, 255),
+                'user_id' => $userId, 'created_at' => now(),
+            ]);
+
+            return $adv;
+        });
+    }
+
     /** Refund — sisa panjar dikembalikan pemegang ke kas/bank: Dr Kas / Cr Uang Muka.
      *  #89: bank PENERIMA dana refund bisa dipilih (default = bank sumber pembayaran). */
     public function refund(BsCashAdvance $adv, string $date, ?int $userId = null, ?int $cashAccountId = null): BsCashAdvance

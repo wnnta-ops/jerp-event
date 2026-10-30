@@ -1059,6 +1059,9 @@ class CashAdvanceController extends Controller
             // Mundur satu langkah / hapus pengajuan — izin cashbook.advance.undo (Hak Akses).
             'langkahMundur' => $request->user()?->can('cashbook.advance.undo')
                 ? app(CashAdvanceService::class)->langkahMundur($advance) : null,
+            // Edit Realisasi — izin cashbook.advance.realize.edit, hanya selama selisihnya belum diselesaikan.
+            'bisaEditRealisasi' => (bool) $request->user()?->can('cashbook.advance.realize.edit')
+                && app(CashAdvanceService::class)->bisaEditRealisasi($advance),
             'riwayatMundur' => \Illuminate\Support\Facades\DB::table('bs_cash_advance_mundur as m')
                 ->leftJoin('users as u', 'u.id', '=', 'm.user_id')
                 ->where('m.cash_advance_id', $advance->id)->orderByDesc('m.id')
@@ -1217,18 +1220,7 @@ class CashAdvanceController extends Controller
         $v = $request->validate([
             'realized_date' => ['required', 'date'],
             'defer_settlement' => ['nullable', 'boolean'],
-            'lines' => ['required', 'array', 'min:1'],
-            'lines.*.expense_account_id' => ['required', 'integer', 'exists:bs_accounts,id'],
-            // WAJIB. Cost center inilah yang menentukan anggaran mana yang terpakai: ia
-            // diteruskan ke bs_journal_lines.cost_center_id, lalu dibaca BudgetRealizationService
-            // untuk mencocokkan realisasi dengan plafon per (akun, cost center). Baris realisasi
-            // tanpa cost center tetap menjadi beban di GL tetapi TIDAK PERNAH muncul sebagai
-            // realisasi di Budget Control — anggarannya seolah tidak pernah terpakai. Karena itu
-            // di sini ia diwajibkan, berbeda dari BudgetController yang memang boleh
-            // menganggarkan lintas cost center.
-            'lines.*.cost_center_id' => ['required', 'integer', 'exists:bs_cost_centers,id'],
-            'lines.*.description' => ['nullable', 'string', 'max:200'],
-            'lines.*.amount' => ['required', 'numeric', 'min:0.01'],
+            ...$this->aturanBarisRealisasi(),
         ]);
 
         // Tanggal realisasi dikunci hari ini (UI read-only); penyelesaian sisa/kekurangan
@@ -1243,6 +1235,48 @@ class CashAdvanceController extends Controller
         }
 
         return redirect()->route('bs.advance.show', $advance)->with('success', 'Realisasi bon sementara tercatat — jurnal otomatis terbentuk.');
+    }
+
+    /**
+     * Edit Realisasi — membetulkan rincian realisasi (mis. salah input nominal). Tanggal
+     * realisasinya TETAP tanggal lama; jurnal lama dibuang dan jurnal baru diposting.
+     */
+    public function editRealisasi(Request $request, BsCashAdvance $advance, CashAdvanceService $svc): RedirectResponse
+    {
+        abort_unless($request->user()?->can('cashbook.advance.realize.edit'), 403);
+        abort_unless($this->bolehBukaBon($request, $advance), 403);
+
+        $v = $request->validate([
+            ...$this->aturanBarisRealisasi(),
+            'alasan' => ['required', 'string', 'max:255'],
+        ], ['alasan.required' => 'Alasan edit wajib diisi.']);
+
+        try {
+            $svc->editRealisasi($advance, $v['lines'], $v['alasan'], $request->user()->id);
+        } catch (BusinessRuleException $e) {
+            return back()->with('error', $e->getMessage());
+        }
+
+        return redirect()->route('bs.advance.show', $advance)->with('success', 'Realisasi '.$advance->advance_number.' diperbarui — jurnal realisasi dibentuk ulang.');
+    }
+
+    /** Aturan baris realisasi — dipakai bersama oleh Realisasi dan Edit Realisasi. */
+    private function aturanBarisRealisasi(): array
+    {
+        return [
+            'lines' => ['required', 'array', 'min:1'],
+            'lines.*.expense_account_id' => ['required', 'integer', 'exists:bs_accounts,id'],
+            // WAJIB. Cost center inilah yang menentukan anggaran mana yang terpakai: ia
+            // diteruskan ke bs_journal_lines.cost_center_id, lalu dibaca BudgetRealizationService
+            // untuk mencocokkan realisasi dengan plafon per (akun, cost center). Baris realisasi
+            // tanpa cost center tetap menjadi beban di GL tetapi TIDAK PERNAH muncul sebagai
+            // realisasi di Budget Control — anggarannya seolah tidak pernah terpakai. Karena itu
+            // di sini ia diwajibkan, berbeda dari BudgetController yang memang boleh
+            // menganggarkan lintas cost center.
+            'lines.*.cost_center_id' => ['required', 'integer', 'exists:bs_cost_centers,id'],
+            'lines.*.description' => ['nullable', 'string', 'max:200'],
+            'lines.*.amount' => ['required', 'numeric', 'min:0.01'],
+        ];
     }
 
     public function refund(Request $request, BsCashAdvance $advance, CashAdvanceService $svc): RedirectResponse

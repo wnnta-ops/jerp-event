@@ -48,6 +48,8 @@ const props = defineProps<{ advance: any; jurnalRealisasi?: { id: number; number
     lanjutAlokasi?: { perlu: boolean; sudah: boolean; pada: string | null };
     /** Langkah mundur berikutnya (izin cashbook.advance.undo) — null bila tidak berhak/tidak ada. */
     langkahMundur?: { kode: string; label: string } | null;
+    /** Edit Realisasi (izin cashbook.advance.realize.edit) — hanya selama selisih belum diselesaikan. */
+    bisaEditRealisasi?: boolean;
     riwayatMundur?: Array<{ langkah: string; alasan: string; created_at: string; oleh: string | null }> }>();
 
 // Mundur SATU LANGKAH — kebalikan urutan majunya. Alasan wajib dan tercatat di riwayat.
@@ -107,7 +109,8 @@ const today = new Date().toISOString().slice(0, 10);
 function barisBaru() {
     return { expense_account_id: '', cost_center_id: props.ccPengguna ?? '', description: '', amount: 0 };
 }
-const form = useForm<any>({ realized_date: today, defer_settlement: true, lines: [barisBaru()] });
+// alasan hanya dipakai Edit Realisasi — wajib ada sejak awal, sebab useForm hanya mengirim kunci bawaannya.
+const form = useForm<any>({ realized_date: today, defer_settlement: true, lines: [barisBaru()], alasan: '' });
 // Pilihan cost center baris realisasi: Accounting → semua; karyawan ber-departemen >1 → hanya
 // departemennya sendiri; selain itu terkunci di bawaannya (perilaku lama).
 const opsiCcRealisasi = computed(() => props.bisaUbahCc
@@ -147,7 +150,27 @@ function removeLine(i: number) { form.lines.splice(i, 1); }
 // memicu pengiriman implisit, dan itu tidak melewati tombolnya.
 function submit() {
     if (!bisaSimpan.value) return;
+    if (modeEdit.value) {
+        form.post(route('bs.advance.realize.edit', props.advance.id), { onSuccess: () => { showForm.value = false; modeEdit.value = false; } });
+        return;
+    }
     form.post(route('bs.advance.realize', props.advance.id), { onSuccess: () => { showForm.value = false; } });
+}
+
+// Edit Realisasi — form yang sama, terisi rincian lama; tanggal tetap tanggal realisasi lama.
+const modeEdit = ref(false);
+function mulaiEdit() {
+    form.lines = (props.advance.lines ?? []).map((l: any) => ({
+        expense_account_id: l.expense_account_id, cost_center_id: l.cost_center_id ?? '',
+        description: l.description ?? '', amount: Number(l.amount),
+    }));
+    form.alasan = '';
+    modeEdit.value = true;
+    showForm.value = true;
+}
+function batalForm() {
+    showForm.value = false;
+    if (modeEdit.value) { modeEdit.value = false; form.lines = [barisBaru()]; }
 }
 
 /**
@@ -176,7 +199,8 @@ function kurangnya(l: any): string[] {
 const barisKurang = computed(() => form.lines
     .map((l: any, i: number) => ({ no: i + 1, kurang: kurangnya(l) }))
     .filter((b: any) => b.kurang.length));
-const bisaSimpan = computed(() => form.lines.length > 0 && barisKurang.value.length === 0);
+const bisaSimpan = computed(() => form.lines.length > 0 && barisKurang.value.length === 0
+    && (!modeEdit.value || !!String(form.alasan ?? '').trim()));
 const alasanKunci = computed(() => (barisKurang.value.length
     ? 'Lengkapi dulu — ' + barisKurang.value.map((b: any) => `baris ${b.no}: ${b.kurang.join(', ')}`).join('; ')
     : 'Simpan realisasi bon sementara'));
@@ -265,7 +289,7 @@ function backToIndex() {
         </div>
 
         <div v-if="riwayatMundur?.length" class="card p-4 text-sm">
-            <h2 class="mb-2 font-semibold">Riwayat Mundur / Hapus</h2>
+            <h2 class="mb-2 font-semibold">Riwayat Mundur / Edit / Hapus</h2>
             <ul class="space-y-1 text-neutral-600 dark:text-neutral-300">
                 <li v-for="(r, i) in riwayatMundur" :key="i"><span class="font-medium">{{ r.langkah }}</span> — {{ r.alasan }} <span class="text-xs text-neutral-400">({{ r.oleh ?? '—' }}, {{ r.created_at }})</span></li>
             </ul>
@@ -341,7 +365,8 @@ function backToIndex() {
                 <span v-if="jurnalRealisasi?.number" class="ml-auto text-xs font-normal text-neutral-500">No. Ref. Jurnal:
                     <Link v-if="jurnalRealisasi.bisaBuka" :href="route('bs.gl.journal.show', jurnalRealisasi.id)" class="font-mono font-semibold text-primary-600 hover:underline">{{ jurnalRealisasi.number }}</Link>
                     <span v-else class="font-mono font-semibold text-neutral-700 dark:text-neutral-200">{{ jurnalRealisasi.number }}</span>
-                </span></h2>
+                </span>
+                <button v-if="bisaEditRealisasi && !modeEdit" type="button" @click="mulaiEdit" :class="[jurnalRealisasi?.number ? '' : 'ml-auto', 'rounded-lg border border-primary-300 px-3 py-1 text-xs font-medium text-primary-600 hover:bg-primary-50 dark:border-primary-700']">Edit Realisasi</button></h2>
             <table class="w-full text-sm">
                 <tbody class="divide-y divide-neutral-100 dark:divide-neutral-800">
                     <tr v-for="l in advance.lines" :key="l.id">
@@ -549,7 +574,7 @@ function backToIndex() {
         </div>
 
         <!-- Form realisasi (jika outstanding) -->
-        <div v-if="advance.status === 'outstanding' && canRealize" class="card p-5">
+        <div v-if="(advance.status === 'outstanding' && canRealize) || modeEdit" class="card p-5">
             <!-- GERBANG: bon yang punya tahap alokasi baru boleh direalisasi setelah tombol
                  "Lanjut Realisasikan Bon" ditekan di sub-modul Alokasi Bon Sementara. Yang
                  benar-benar menahan ada di CashAdvanceService::realize() — tombol yang mati di
@@ -564,9 +589,10 @@ function backToIndex() {
             </div>
             <form v-else @submit.prevent="submit" class="space-y-3">
                 <div class="flex items-center justify-between">
-                    <h2 class="font-semibold">Realisasi Bon Sementara</h2>
-                    <input :value="today" type="date" readonly title="Tanggal realisasi dikunci pada hari ini" :class="[inputCls,'w-auto cursor-not-allowed bg-neutral-100 dark:bg-neutral-800']" />
+                    <h2 class="font-semibold">{{ modeEdit ? 'Edit Realisasi Bon Sementara' : 'Realisasi Bon Sementara' }}</h2>
+                    <input :value="modeEdit ? String(advance.realized_date ?? '').slice(0, 10) : today" type="date" readonly :title="modeEdit ? 'Tanggal realisasi tetap tanggal realisasi lama' : 'Tanggal realisasi dikunci pada hari ini'" :class="[inputCls,'w-auto cursor-not-allowed bg-neutral-100 dark:bg-neutral-800']" />
                 </div>
+                <p v-if="modeEdit" class="text-xs text-amber-700 dark:text-amber-400">Jurnal realisasi lama dibuang dan dibentuk ulang dari rincian di bawah, pada tanggal realisasi lama.</p>
                 <!-- Lebar kolom ditetapkan lewat <colgroup>, bukan diserahkan ke isi sel.
                      Akun Beban paling lebar (38%) karena isinya "kode - nama akun" yang panjang
                      dan paling sering memotong; nama akun yang terpotong membuat operator
@@ -627,9 +653,14 @@ function backToIndex() {
                     Lengkapi dulu sebelum bisa disimpan —
                     <template v-for="(b, i) in barisKurang" :key="b.no"><span v-if="i">; </span><b>baris {{ b.no }}</b>: {{ b.kurang.join(', ') }}</template>.
                 </p>
+                <div v-if="modeEdit">
+                    <label class="mb-1 block text-xs font-medium text-neutral-500">Alasan Edit *</label>
+                    <input v-model="form.alasan" type="text" maxlength="255" placeholder="mis. salah input nominal baris 3" :class="String(form.alasan ?? '').trim() ? inputCls : inputKurang" />
+                    <p v-if="form.errors.alasan" class="mt-1 text-xs text-danger-500">{{ form.errors.alasan }}</p>
+                </div>
                 <div class="flex gap-2">
-                    <span :title="alasanKunci"><Button type="submit" :disabled="form.processing || !bisaSimpan">Simpan Realisasi</Button></span>
-                    <button type="button" @click="showForm = false" class="rounded-lg border border-neutral-300 px-4 py-2 text-sm dark:border-neutral-700">Batal</button>
+                    <span :title="alasanKunci"><Button type="submit" :disabled="form.processing || !bisaSimpan">{{ modeEdit ? 'Simpan Perubahan' : 'Simpan Realisasi' }}</Button></span>
+                    <button type="button" @click="batalForm" class="rounded-lg border border-neutral-300 px-4 py-2 text-sm dark:border-neutral-700">Batal</button>
                 </div>
             </form>
         </div>
