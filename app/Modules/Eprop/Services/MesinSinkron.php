@@ -300,6 +300,10 @@ class MesinSinkron
 
         // Dokumen hasil muat yang hilang dari eProperty (dihapus di sana) — dilaporkan saja.
         $hilang = array_diff_key($nyata, $bayang);
+        if (isset($cfg['kunci_jerp'])) {
+            // Nomor terbitan J-ERP (mis. customer NUP publik CUST-…) memang tidak pernah ada di eProperty.
+            $hilang = array_filter($hilang, fn ($kunci) => ! preg_match($cfg['kunci_jerp'], (string) $kunci), ARRAY_FILTER_USE_KEY);
+        }
         if ($hilang && $this->adaKolom('n', $tabel, 'created_at')) {
             $nHilang = $this->c->table($this->n($tabel))->whereIn('id', array_values($hilang))->where('created_at', '<', $this->batas)
                 ->when(isset($cfg['native_sumber']), fn ($q) => $q->whereNotIn('source', $cfg['native_sumber']))->count();

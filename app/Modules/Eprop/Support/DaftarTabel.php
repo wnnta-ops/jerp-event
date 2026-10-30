@@ -38,6 +38,7 @@ final class DaftarTabel
             // ── FO ──────────────────────────────────────────────────────────
             'fo_customers' => [
                 'db' => 'fo', 'modul' => 'Customer', 'kunci' => 'code',
+                'kunci_jerp' => '/^CUST-/',   // kode terbitan J-ERP; kode eProperty berupa angka
                 'master' => ['project_id' => 'projects', 'bank_id' => 'banks'],
                 'perbarui' => false,
                 'cocok' => ['pihak' => 'nik', 'pihak_wajib' => true, 'teks' => 'full_name'],
