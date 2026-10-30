@@ -12,6 +12,8 @@ use App\Http\Controllers\Controller;
 use Illuminate\Support\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Http\RedirectResponse;
+use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -368,13 +370,13 @@ class KprDatabaseController extends Controller
         abort_if($apps->isEmpty(), 404, 'Tidak ada KPR berstatus ditolak yang cocok.');
 
         // Baris lampiran — pra-isi dari data sistem; kolom yang belum ada dibiarkan kosong utk diisi manual.
-        $rows = $apps->values()->map(fn (KprApplication $a, int $i) => $this->memoRow(
+        $rows = $this->lengkapiDariFo($apps->values()->map(fn (KprApplication $a, int $i) => $this->memoRow(
             $a->id,
             $i,
             $a->booking?->unit,
             $a->customer?->full_name,
             $a->reject_reason,
-        ));
+        )), $apps->values()->map(fn (KprApplication $a) => (string) ($a->booking?->booking_number ?? ''))->all());
 
         return Inertia::render('BankLoan/Database/RekomBatal', $this->memoRekomBatalPayload(
             $rows,
@@ -413,13 +415,13 @@ class KprDatabaseController extends Controller
             ->orderBy('id')->get();
         abort_if($inits->isEmpty(), 404, 'Tidak ada inisiasi berstatus ditolak yang cocok.');
 
-        $rows = $inits->values()->map(fn (KprInitiation $r, int $i) => $this->memoRow(
+        $rows = $this->lengkapiDariFo($inits->values()->map(fn (KprInitiation $r, int $i) => $this->memoRow(
             $r->id,
             $i,
             $r->booking?->unit,
             $r->customer?->full_name,
             $this->biStage($r)['reject_reason'] ?? null,
-        ));
+        )), $inits->values()->map(fn (KprInitiation $r) => (string) ($r->booking?->booking_number ?? ''))->all());
 
         return Inertia::render('BankLoan/Database/RekomBatal', $this->memoRekomBatalPayload(
             $rows,
@@ -504,9 +506,9 @@ class KprDatabaseController extends Controller
     }
 
     /**
-     * Satu baris lampiran memo. Kolom yang tidak ada di sistem (THP, Sales, Agent) sengaja
-     * dikirim kosong — halaman memonya dapat disunting, dan mengarang isinya di sini akan
-     * membuat angka yang salah ikut tercetak tanpa ada yang memeriksanya.
+     * Satu baris lampiran memo. THP, Sales, Agent tidak ada di BO — diisi kemudian oleh
+     * lengkapiDariFo(); bila FO tak menyediakannya tetap kosong (halaman memo dapat disunting),
+     * bukan dikarang.
      */
     private function memoRow(int $id, int $i, $unit, ?string $namaUser, ?string $keterangan): array
     {
@@ -527,6 +529,84 @@ class KprDatabaseController extends Controller
             'status'     => 'BATAL',
             'keterangan' => (string) ($keterangan ?? ''),
         ];
+    }
+
+    /**
+     * Lengkapi THP, Sales, Agent tiap baris memo dari aplikasi FRONT OFFICE.
+     *
+     * BO tidak menyimpannya (bookings.sales_person_id/agent_id kosong untuk data hasil sinkron FO),
+     * jadi dibaca lintas basis data seperti MasterDataKprController::lokasiTahapUnit():
+     *  - THP   ← fo_units.tahap, kunci kode_unit
+     *  - Sales ← fo_agents.name dari fo_kontrak.agent_id, kunci no_kontrak = bookings.booking_number
+     *  - Agent ← kantor di puncak rantai atasan sales (level diawali "KANTOR") — logika sama dengan
+     *            Agent::namaKantor() di FO yang dipakai cetak Pengajuan Komisi.
+     * Kueri terpisah dalam try/catch: FO tak terjangkau → kolomnya kosong, memonya tetap terbuka.
+     *
+     * @param  array<int,string>  $noKontrak  sejajar dengan urutan $rows
+     */
+    private function lengkapiDariFo(Collection $rows, array $noKontrak): Collection
+    {
+        $db = (string) config('bankloan.fo_database', '');
+        if ($rows->isEmpty() || $db === '' || preg_match('/^[A-Za-z0-9_]+$/', $db) !== 1) {
+            return $rows;
+        }
+
+        $in = fn (array $v) => implode(',', array_fill(0, count($v), '?'));
+        try {
+            $kodeUnit = array_values(array_unique(array_filter($rows->pluck('unit')->all())));
+            $tahap = $kodeUnit === [] ? [] : collect(DB::select(
+                'SELECT kode_unit, tahap FROM `'.$db.'`.fo_units WHERE deleted_at IS NULL AND kode_unit IN ('.$in($kodeUnit).')',
+                $kodeUnit,
+            ))->pluck('tahap', 'kode_unit')->all();
+
+            $no = array_values(array_unique(array_filter($noKontrak)));
+            $agentKontrak = $no === [] ? [] : collect(DB::select(
+                'SELECT no_kontrak, agent_id FROM `'.$db.'`.fo_kontrak WHERE deleted_at IS NULL AND no_kontrak IN ('.$in($no).')',
+                $no,
+            ))->pluck('agent_id', 'no_kontrak')->all();
+
+            // Peta agent: sales + seluruh atasannya, diambil bertingkat (maks. 10 — data atasan
+            // yang melingkar tidak boleh membuat permintaan menggantung).
+            $peta = [];
+            $cari = array_values(array_unique(array_filter(array_map('intval', $agentKontrak))));
+            for ($i = 0; $i < 10 && $cari !== []; $i++) {
+                foreach (DB::select(
+                    'SELECT a.id, a.name, a.atasan_id, l.name AS level_name FROM `'.$db.'`.fo_agents a'
+                    .' LEFT JOIN `'.$db.'`.fo_sales_levels l ON l.id = a.sales_level_id WHERE a.id IN ('.$in($cari).')',
+                    $cari,
+                ) as $a) {
+                    $peta[(int) $a->id] = $a;
+                }
+                $cari = array_values(array_diff(array_unique(array_filter(array_map(
+                    fn ($a) => (int) $a->atasan_id, array_intersect_key($peta, array_flip($cari)),
+                ))), array_keys($peta)));
+            }
+        } catch (\Throwable $e) {
+            report($e);
+
+            return $rows;
+        }
+
+        $kantor = function (int $id) use ($peta): string {
+            for ($i = 0, $lihat = []; $i < 10 && $id && ! isset($lihat[$id]) && isset($peta[$id]); $i++) {
+                $lihat[$id] = true;
+                if (str_starts_with(strtoupper((string) $peta[$id]->level_name), 'KANTOR')) {
+                    return (string) $peta[$id]->name;
+                }
+                $id = (int) $peta[$id]->atasan_id;
+            }
+
+            return '';
+        };
+
+        return $rows->values()->map(function (array $r, int $i) use ($tahap, $agentKontrak, $peta, $kantor, $noKontrak) {
+            $agentId = (int) ($agentKontrak[$noKontrak[$i] ?? ''] ?? 0);
+            $r['thp'] = (string) ($tahap[$r['unit']] ?? '');
+            $r['sales'] = (string) ($peta[$agentId]->name ?? '');
+            $r['agent'] = $agentId ? $kantor($agentId) : '';
+
+            return $r;
+        });
     }
 
     /**
