@@ -13,13 +13,19 @@ final class EditorDokumen
     public const TAG = '<b><i><u><br><strong><em>';
 
     /**
-     * Buang semua tag kecuali b/i/u/br/strong/em, LALU buang atribut tag yang tersisa —
-     * strip_tags membiarkan atribut (mis. <b onmouseover=…>), jadi tanpa langkah kedua
-     * teks template bisa menyisipkan skrip ke halaman cetak.
+     * Teks template → HTML aman. SELURUH teks di-escape, lalu hanya tag POLOS b/i/u/br/strong/em
+     * (tanpa atribut) yang dikembalikan menjadi tag. strip_tags saja tidak cukup: ia meloloskan
+     * atribut (mis. <b onmouseover=…>). Apa pun yang tersisa tercetak sebagai teks, bukan HTML.
      */
     public static function aman(string $html): string
     {
-        return (string) preg_replace('/<(\/?)(strong|em|br|b|i|u)\b[^>]*>/i', '<$1$2>', strip_tags($html, self::TAG));
+        $polos = (string) preg_replace('/<(\/?)(strong|em|br|b|i|u)\b[^>]*>/i', '<$1$2>', strip_tags($html, self::TAG));
+
+        return (string) preg_replace_callback(
+            '/&lt;(\/?)(strong|em|br|b|i|u)\s*\/?&gt;/i',
+            fn ($m) => '<'.$m[1].strtolower($m[2]).'>',
+            htmlspecialchars($polos, ENT_QUOTES | ENT_HTML5, 'UTF-8', false),
+        );
     }
 
     /** Span teks yang bisa diedit. $polos = teks satu baris tanpa format (nama, kota, …). */
