@@ -363,7 +363,7 @@ class KprDatabaseController extends Controller
                 'customer:id,full_name',
                 'booking:id,booking_number,unit_id',
                 'booking.unit:id,unit_code,cluster_id,unit_type_id',
-                'booking.unit.cluster:id,name',
+                'booking.unit.cluster:id,code,name',
                 'booking.unit.unitType:id,name',
             ])
             ->orderBy('id')->get();
@@ -409,7 +409,7 @@ class KprDatabaseController extends Controller
                 'customer:id,full_name',
                 'booking:id,booking_number,unit_id',
                 'booking.unit:id,unit_code,cluster_id,unit_type_id',
-                'booking.unit.cluster:id,name',
+                'booking.unit.cluster:id,code,name',
                 'booking.unit.unitType:id,name',
             ])
             ->orderBy('id')->get();
@@ -518,7 +518,9 @@ class KprDatabaseController extends Controller
             // diketik operator berpindah ke baris lain.
             'id'         => $id,
             'no'         => $i + 1,
-            'cluster'    => (string) ($unit?->cluster?->name ?? ''),
+            // Kode cluster (JRK3, JRS5) — nama lengkap terlalu panjang untuk kolom lampiran;
+            // cluster tanpa kode jatuh ke namanya supaya kolomnya tidak kosong.
+            'cluster'    => (string) ($unit?->cluster?->code ?: ($unit?->cluster?->name ?? '')),
             'thp'        => '',
             'tipe'       => (string) ($unit?->unitType?->name ?? ''),
             'unit'       => (string) ($unit?->unit_code ?? ''),
