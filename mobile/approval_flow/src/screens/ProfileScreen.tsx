@@ -4,7 +4,7 @@
 import React from 'react';
 import { View, Text, StyleSheet, ScrollView } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { colors } from '../theme/tokens';
+import { colors, headerTop } from '../theme/tokens';
 import { Avatar, Button } from '../components/ui';
 import { useApp } from '../state/AppContext';
 
@@ -43,7 +43,7 @@ export default function ProfileScreen() {
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.white },
-  head: { paddingHorizontal: 16, paddingTop: 8 },
+  head: { paddingHorizontal: 16, paddingTop: headerTop },
   title: { fontSize: 18, fontWeight: '800', color: colors.ink },
   scroll: { flex: 1 },
   scrollContent: { paddingHorizontal: 16, paddingBottom: 24 },

@@ -5,7 +5,7 @@ import { View, Text, StyleSheet, ScrollView } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { colors } from '../theme/tokens';
+import { colors, headerTop } from '../theme/tokens';
 import HistoryRow from '../components/HistoryRow';
 import EmptyState from '../components/EmptyState';
 import { useApp } from '../state/AppContext';
@@ -37,7 +37,7 @@ export default function HistoryScreen() {
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.white },
-  head: { paddingHorizontal: 16, paddingTop: 8 },
+  head: { paddingHorizontal: 16, paddingTop: headerTop },
   title: { fontSize: 18, fontWeight: '800', color: colors.ink, marginBottom: 4 },
   scroll: { flex: 1 },
   scrollContent: { paddingHorizontal: 16, paddingTop: 6, paddingBottom: 16 },

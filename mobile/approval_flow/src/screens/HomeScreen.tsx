@@ -7,9 +7,9 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { colors, radius } from '../theme/tokens';
+import { colors, radius, headerTop, gradient } from '../theme/tokens';
 import { Avatar, SectionLabel } from '../components/ui';
-import { ApprovalsIcon, HistoryIcon, ProfileIcon, CheckSmall } from '../components/Icons';
+import { ApprovalsIcon, HistoryIcon, CheckSmall } from '../components/Icons';
 import RequestCard from '../components/RequestCard';
 import { useApp } from '../state/AppContext';
 import { deadlineBucket } from '../utils/sla';
@@ -23,11 +23,13 @@ export default function HomeScreen() {
   const { profile, queue } = useApp();
   const needs = queue.needs.length;
   const urgent = queue.needs.filter((r) => deadlineBucket(r.slaMin) === 'red').length;
-  const top = queue.needs[0];
+  // Soonest deadline first (no-deadline items last), show a short preview on Home.
+  const priority = [...queue.needs]
+    .sort((a, b) => (a.slaMin ?? Infinity) - (b.slaMin ?? Infinity))
+    .slice(0, 4);
 
   const goApprovals = () => navigation.navigate('Approvals');
   const goHistory = () => navigation.navigate('History');
-  const goProfile = () => navigation.navigate('Profile');
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
@@ -47,13 +49,13 @@ export default function HomeScreen() {
       <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
         <View style={styles.cards}>
           <Pressable style={styles.cardWrap} onPress={goApprovals}>
-            <LinearGradient colors={[colors.blue, colors.blue700]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.scard}>
+            <LinearGradient colors={gradient(colors.blue)} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.scard}>
               <Text style={styles.scardNum}>{needs}</Text>
               <Text style={styles.scardLab}>Awaiting you</Text>
             </LinearGradient>
           </Pressable>
           <View style={styles.cardWrap}>
-            <LinearGradient colors={['#DC2626', '#B91C1C']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.scard}>
+            <LinearGradient colors={gradient(colors.red)} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.scard}>
               <Text style={styles.scardNum}>{urgent}</Text>
               <Text style={styles.scardLab}>Urgent now</Text>
             </LinearGradient>
@@ -64,13 +66,21 @@ export default function HomeScreen() {
         <View style={styles.tiles}>
           <Tile icon={<ApprovalsIcon size={18} color={colors.blue} />} tint="b" label="Approvals" badge={needs} onPress={goApprovals} />
           <Tile icon={<HistoryIcon size={18} color={colors.green} />} tint="g" label="History" onPress={goHistory} />
-          <Tile icon={<ProfileIcon size={18} color={colors.sub} />} tint="s" label="Profile" onPress={goProfile} />
         </View>
 
-        {top ? (
+        {priority.length > 0 ? (
           <>
-            <SectionLabel style={styles.sect}>Top priority</SectionLabel>
-            <RequestCard request={top} onPress={() => navigation.navigate('Detail', { id: top.id })} />
+            <View style={styles.sectRow}>
+              <SectionLabel style={styles.sectFlush}>Top priority</SectionLabel>
+              {needs > priority.length && (
+                <Pressable onPress={goApprovals} hitSlop={8}>
+                  <Text style={styles.seeAll}>Lihat semua ({needs})</Text>
+                </Pressable>
+              )}
+            </View>
+            {priority.map((r) => (
+              <RequestCard key={r.id} request={r} onPress={() => navigation.navigate('Detail', { id: r.id })} />
+            ))}
           </>
         ) : (
           <View style={styles.empty}>
@@ -106,7 +116,7 @@ function Tile({
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.white },
-  hhead: { flexDirection: 'row', alignItems: 'center', gap: 11, paddingHorizontal: 16, paddingTop: 8, paddingBottom: 12 },
+  hhead: { flexDirection: 'row', alignItems: 'center', gap: 11, paddingHorizontal: 16, paddingTop: headerTop, paddingBottom: 12 },
   greetG: { fontSize: 11.5, color: colors.sub },
   greetRow: { flexDirection: 'row', alignItems: 'center' },
   greetN: { fontSize: 16, fontWeight: '800', color: colors.ink },
@@ -123,6 +133,9 @@ const styles = StyleSheet.create({
   scardLab: { fontSize: 11, color: colors.white, opacity: 0.92, marginTop: 4 },
 
   sect: { marginTop: 8, marginBottom: 9 },
+  sectRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 8, marginBottom: 9 },
+  sectFlush: { marginTop: 0, marginBottom: 0 },
+  seeAll: { fontSize: 12, fontWeight: '700', color: colors.blue },
   tiles: { flexDirection: 'row', flexWrap: 'wrap', gap: 16, marginBottom: 16 },
   tile: {
     flexBasis: '47%',
