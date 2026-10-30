@@ -43,6 +43,20 @@ class ApBerkasApprovalSeeder extends Seeder
         Role::query()->with('permissions')->whereNotIn('name', ['Agent', 'Viewer'])->get()
             ->each(fn (Role $r) => $r->givePermissionTo('ap.berkas.upload'));
 
+        // Hak per aksi (v2): lihat semua, kelola (batal/tutup/hapus milik siapa pun, lihat yang
+        // dihapus), export. Diberikan ke peran yang sudah memegang hak invoice hutang.
+        $izin = [
+            'ap.berkas.view' => ['Lihat Semua Berkas', 'ap.invoice.view'],
+            'ap.berkas.export' => ['Export Berkas', 'ap.invoice.view'],
+            'ap.berkas.manage' => ['Kelola Berkas', 'ap.invoice.create'],
+        ];
+        foreach ($izin as $name => [$label, $dariIzin]) {
+            Permission::firstOrCreate(['name' => $name, 'guard_name' => 'web'], ['module' => 'ap', 'label' => $label]);
+            Role::query()->with('permissions')->get()
+                ->filter(fn (Role $r) => $r->name === 'SuperAdmin' || $r->hasPermissionTo($dariIzin))
+                ->each(fn (Role $r) => $r->givePermissionTo($name));
+        }
+
         $berkas = ApprovalChain::updateOrCreate(
             ['tenant_id' => $tenant->id, 'project_id' => null, 'document_type' => BsApBerkasUpload::DOCUMENT_TYPE, 'code' => 'BRK-DEFAULT'],
             ['name' => 'TTD Dept Head — Upload Berkas', 'match_conditions' => null, 'is_active' => true],

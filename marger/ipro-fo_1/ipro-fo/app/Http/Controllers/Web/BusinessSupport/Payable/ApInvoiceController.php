@@ -338,7 +338,12 @@ class ApInvoiceController extends Controller
         $dariBerkas = null;
         if ($edit === null && $jenis === 'invoice' && $request->filled('berkas')) {
             $b = \App\Domain\BusinessSupport\Models\BsApBerkasUpload::with('files.jenis:id,name')->find((int) $request->input('berkas'));
-            if ($b && $b->status === \App\Domain\BusinessSupport\Models\BsApBerkasUpload::STATUS_SIAP_INVOICE && ! $b->ap_invoice_id) {
+            if ($b && $b->bisaDiinvoice()) {
+                // Invoice pertama: nilai & PPN sesuai berkas. Berikutnya (sebagian diinvoice):
+                // sisanya, tanpa PPN tambahan — tim AP menyesuaikan bila perlu.
+                $invoiced = $b->invoicedTotal();
+                $pertama = $invoiced <= 0.01;
+                $net = $b->subtotal !== null ? max(0.0, (float) $b->subtotal - (float) $b->discount) : null;
                 $dariBerkas = [
                     'id' => $b->id,
                     'number' => $b->berkas_number,
@@ -346,6 +351,14 @@ class ApInvoiceController extends Controller
                     'supplier_invoice_no' => $b->supplier_invoice_no,
                     'amount' => $b->amount !== null ? (float) $b->amount : null,
                     'description' => $b->description,
+                    'invoice_date' => $b->document_date?->toDateString(),
+                    'dpp' => $pertama ? ($net ?? ($b->amount !== null ? (float) $b->amount : null)) : $b->sisa(),
+                    'ppn_mode' => $pertama && (float) $b->ppn_pct > 0 ? 'with' : 'none',
+                    'ppn_pct' => (float) $b->ppn_pct,
+                    'ppn_incl' => $pertama && (bool) $b->tax_inclusive,
+                    'cost_center_id' => $b->cost_center_id,
+                    'invoiced' => $invoiced,
+                    'sisa' => $b->sisa(),
                     'files' => $b->files->map(fn ($f) => [
                         'name' => $f->original_name,
                         'jenis' => $f->jenis?->name,

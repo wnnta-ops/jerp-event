@@ -12,6 +12,9 @@ use Illuminate\Support\Facades\DB;
 
 final class ActOnApproval
 {
+    /** Jenis dokumen yang tidak boleh disetujui oleh pengajunya sendiri (kecuali SuperAdmin). */
+    public const NO_SELF_APPROVAL = ['memo_internal', 'ap_berkas', 'ap_invoice'];
+
     /**
      * @return Approval refresh setelah aksi.
      */
@@ -57,6 +60,16 @@ final class ActOnApproval
                 || ($chainStep && $chainStep->approver_type === 'assigned' && (int) $currentStep->approver_id === (int) $userId)
             );
 
+            // Pembuat dokumen tidak boleh menyetujui/menolak dokumennya sendiri (Memo Internal,
+            // Upload Berkas, Invoice dari berkas). Jenis lain tetap seperti sebelumnya.
+            if ($authorized && in_array($approval->document_type, self::NO_SELF_APPROVAL, true)
+                && (int) $approval->submitted_by === (int) $userId && ! $user->hasRole('SuperAdmin')) {
+                throw new BusinessRuleException(
+                    'Anda yang mengajukan dokumen ini — persetujuannya harus oleh orang lain.',
+                    errorCode: 'APPROVAL_SELF',
+                );
+            }
+
             if (! $authorized) {
                 $need = $chainStep?->approver_type === 'assigned'
                     ? 'penanda tangan yang ditunjuk'
@@ -101,7 +114,7 @@ final class ActOnApproval
                 event(new \App\Domain\Approval\Events\ApprovalApproved($approval));
             } else {
                 $approval->update(['status' => 'in_review']);
-                // TODO: notify next approver
+                event(new \App\Domain\Approval\Events\ApprovalStepApproved($approval));
             }
 
             return $approval->refresh();

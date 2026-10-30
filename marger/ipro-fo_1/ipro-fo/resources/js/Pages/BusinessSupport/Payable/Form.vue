@@ -38,6 +38,9 @@ const props = defineProps<{
     dariBerkas?: {
         id: number; number: string; supplier_id: number | null; supplier_invoice_no: string | null;
         amount: number | null; description: string; files: Array<{ name: string; jenis: string | null; url: string }>;
+        /** v2: tanggal dokumen, pajak, cost center, dan sisa untuk invoice berikutnya. */
+        invoice_date?: string | null; dpp?: number | null; ppn_mode?: 'none' | 'with'; ppn_pct?: number; ppn_incl?: boolean;
+        cost_center_id?: number | null; sisa?: number | null; invoiced?: number;
     } | null;
     departments: Array<any>;
     ledgers: Array<any>;
@@ -69,7 +72,9 @@ const form = useForm<any>({
         supplier_id: props.dariBerkas.supplier_id ?? '',
         supplier_invoice_no: props.dariBerkas.supplier_invoice_no ?? '',
         description: props.dariBerkas.description,
-        dpp: props.dariBerkas.amount ?? 0,
+        dpp: props.dariBerkas.dpp ?? props.dariBerkas.amount ?? 0,
+        ...(props.dariBerkas.invoice_date ? { invoice_date: props.dariBerkas.invoice_date } : {}),
+        ...(props.dariBerkas.ppn_mode ? { ppn_mode: props.dariBerkas.ppn_mode, ppn_pct: props.dariBerkas.ppn_pct ?? 11, ppn_incl: !!props.dariBerkas.ppn_incl } : {}),
     } : {}),
     ...(props.invoiceEdit?.data ?? {}),
 });
@@ -390,7 +395,7 @@ function dimSummary(l: any) {
 // bs_journal_lines dan dibaca laporan. Yang dibuang hanya isiannya — seluruh transaksi di
 // sini rupiah, dan pilihan yang tak pernah diubah hanya menambah kolom yang harus dilewati.
 function dimDefaults(accountId?: any) {
-    const cc = accountId && ccOptional(accountId) ? null : (props.ccPengguna ?? null);
+    const cc = accountId && ccOptional(accountId) ? null : (props.dariBerkas?.cost_center_id ?? props.ccPengguna ?? null);
     return { cost_center_id: cc, currency: 'IDR', kurs: 1 };
 }
 // Satu baris jurnal ala eProperty: input satu "Nilai Transaksi" + pilih sisi (Debit/Kredit) lewat radio.
@@ -474,7 +479,7 @@ function pilihAkun(l: any, v: any) {
     if (!v || !acc) return;
     if (ccOptional(v)) { l.cost_center_id = null; return; }
     if (acc.cost_center_id) { l.cost_center_id = Number(acc.cost_center_id); return; }
-    if (!l.cost_center_id) l.cost_center_id = props.ccPengguna ?? null;
+    if (!l.cost_center_id) l.cost_center_id = props.dariBerkas?.cost_center_id ?? props.ccPengguna ?? null;
 }
 function addJournalLine() { form.journal_lines.push(mkJournalLine(null, '', 0, 'debit')); }
 function addJournalLines(n: number) { for (let k = 0; k < n; k++) addJournalLine(); }
@@ -671,6 +676,7 @@ const cellArea = 'w-full rounded-md border border-neutral-300 bg-white px-2 py-1
         <div v-if="dariBerkas" class="rounded-xl border border-primary-200 bg-primary-50 p-4 text-sm dark:border-primary-900 dark:bg-primary-950/40">
             <p class="font-semibold">Dari berkas <span class="font-mono">{{ dariBerkas.number }}</span> — sudah ditandatangani Dept Head</p>
             <p class="mt-1 text-neutral-600 dark:text-neutral-300">Setelah disimpan, invoice ini langsung masuk approval <b>Accounting → Finance → GM → Direktur → MW / BA</b> dan baru bisa dibayar setelah disetujui penuh.</p>
+            <p v-if="dariBerkas.invoiced" class="mt-1 text-neutral-600 dark:text-neutral-300">Sudah diinvoice Rp {{ Math.round(dariBerkas.invoiced).toLocaleString('id-ID') }} — sisa <b>Rp {{ Math.round(dariBerkas.sisa ?? 0).toLocaleString('id-ID') }}</b>. Nilai invoice tidak boleh melebihi sisa.</p>
             <div class="mt-2 flex flex-wrap gap-2">
                 <a v-for="(f, i) in dariBerkas.files" :key="i" :href="f.url" target="_blank" rel="noopener" class="rounded-md border border-primary-200 bg-white px-2 py-1 text-xs text-primary-700 hover:underline dark:border-primary-800 dark:bg-neutral-900 dark:text-primary-300">
                     📎 {{ f.jenis ? f.jenis + ' · ' : '' }}{{ f.name }}

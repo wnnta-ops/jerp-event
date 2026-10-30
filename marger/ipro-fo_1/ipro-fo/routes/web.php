@@ -809,11 +809,26 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
     Route::prefix('business-support/payable-berkas')->name('bs.ap.berkas.')->group(function (): void {
         $c = App\Http\Controllers\Web\BusinessSupport\Payable\ApBerkasController::class;
         Route::get('/', [$c, 'index'])->name('index');
+        Route::get('/export', [$c, 'export'])->name('export');
         Route::get('/unggah', [$c, 'create'])->name('create');
         Route::post('/', [$c, 'store'])->name('store');
-        Route::get('/{berkas}', [$c, 'show'])->whereNumber('berkas')->name('show');
-        Route::get('/{berkas}/file/{file}', [$c, 'file'])->whereNumber('berkas')->whereNumber('file')->name('file');
+        // Berkas terhapus tetap bisa dilihat, dicetak, dan file-nya dibuka (withTrashed).
+        Route::get('/{berkas}', [$c, 'show'])->whereNumber('berkas')->name('show')->withTrashed();
+        Route::get('/{berkas}/cetak', [$c, 'print'])->whereNumber('berkas')->name('print')->withTrashed();
+        Route::get('/{berkas}/file/{file}', [$c, 'file'])->whereNumber('berkas')->whereNumber('file')->name('file')->withTrashed();
+        Route::get('/{berkas}/edit', [$c, 'edit'])->whereNumber('berkas')->name('edit');
+        Route::post('/{berkas}', [$c, 'update'])->whereNumber('berkas')->name('update'); // POST: multipart (file baru)
+        Route::post('/{berkas}/ajukan', [$c, 'submit'])->whereNumber('berkas')->name('submit');
+        Route::post('/{berkas}/batal', [$c, 'cancel'])->whereNumber('berkas')->name('cancel');
+        Route::post('/{berkas}/tutup', [$c, 'close'])->whereNumber('berkas')->name('close');
+        Route::delete('/{berkas}', [$c, 'destroy'])->whereNumber('berkas')->name('destroy');
+        Route::delete('/{berkas}/file/{file}', [$c, 'removeFile'])->whereNumber('berkas')->whereNumber('file')->name('file.destroy');
     });
+
+    // Lonceng notifikasi (topbar) — daftar terbaru & tandai dibaca.
+    Route::get('/notifikasi', [App\Http\Controllers\Web\NotifikasiController::class, 'index'])->name('notifikasi.index');
+    Route::post('/notifikasi/{id}/baca', [App\Http\Controllers\Web\NotifikasiController::class, 'read'])->name('notifikasi.read');
+    Route::post('/notifikasi/baca-semua', [App\Http\Controllers\Web\NotifikasiController::class, 'readAll'])->name('notifikasi.read-all');
     Route::get('/business-support/payable/{invoice}', [BsApController::class, 'show'])->name('bs.ap.show')->withTrashed();
     // Edit & Batal (sebelum/sesudah diproses FAT) — lihat ApInvoiceController::pastikanBolehEdit / bolehBatal.
     Route::get('/business-support/payable/{invoice}/edit', [BsApController::class, 'edit'])->name('bs.ap.edit');
