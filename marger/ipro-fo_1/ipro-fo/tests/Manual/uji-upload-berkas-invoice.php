@@ -88,7 +88,9 @@ try {
     $act = app(ActOnApproval::class);
     $sebagai = fn (User $u) => auth()->setUser($u);
     $muat = fn (int $id) => Approval::with(['steps', 'approvable'])->findOrFail($id);
-    $file = fn () => [['file' => UploadedFile::fake()->create('tagihan.pdf', 120, 'application/pdf'), 'berkas_id' => null]];
+    // v2: berkas wajib (master bs_ap_berkas.is_mandatory) harus ada — sertakan semua jenis wajib.
+    $wajib = DB::table('bs_ap_berkas')->where('is_active', true)->where('is_mandatory', true)->pluck('id');
+    $file = fn () => $wajib->map(fn ($id) => ['file' => UploadedFile::fake()->create("berkas-{$id}.pdf", 120, 'application/pdf'), 'berkas_id' => (int) $id])->all();
     $data = fn (array $x = []) => $x + ['upload_date' => now()->toDateString(), 'description' => 'Tagihan uji', 'dept_head_id' => $dh->id, 'amount' => 5000000];
 
     echo "\n=== 1. Unggah berkas ===\n";

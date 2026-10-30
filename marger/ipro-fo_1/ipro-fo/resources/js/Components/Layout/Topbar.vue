@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { router } from '@inertiajs/vue3';
-import { Search, Bell, Sun, Moon, LogOut, X } from 'lucide-vue-next';
+import { Search, Sun, Moon, LogOut, X } from 'lucide-vue-next';
 import { ref, watch, onMounted, onUnmounted } from 'vue';
+import NotificationBell from '@/Components/Layout/NotificationBell.vue';
 import { pageQuery, pageMatches, pageTotal } from '@/Composables/usePageSearch';
 
 defineProps<{ user: any }>();
@@ -61,9 +62,7 @@ function logout() {
         </div>
 
         <div class="flex items-center gap-3 ml-auto">
-            <button class="p-2 text-neutral-500 hover:text-primary-600">
-                <Bell class="h-5 w-5" />
-            </button>
+            <NotificationBell />
             <button @click="dark = ! dark" class="p-2 text-neutral-500 hover:text-primary-600">
                 <Sun v-if="dark" class="h-5 w-5" />
                 <Moon v-else class="h-5 w-5" />

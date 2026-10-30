@@ -79,6 +79,11 @@ final class ApprovalInboxQuery
         if ($user->hasRole('SuperAdmin')) {
             return true;
         }
+        // Sama dengan ActOnApproval::NO_SELF_APPROVAL — pengaju tidak menyetujui dokumennya sendiri.
+        if ((int) $approval->submitted_by === (int) $user->id
+            && in_array($approval->document_type, \App\Domain\Approval\Actions\ActOnApproval::NO_SELF_APPROVAL, true)) {
+            return false;
+        }
         $chainStep = $this->chainStep($approval, (int) $current->level);
 
         return $chainStep !== null && (
@@ -277,7 +282,10 @@ final class ApprovalInboxQuery
 
     private function berkasOf(BsApInvoice $invoice): ?BsApBerkasUpload
     {
-        return BsApBerkasUpload::query()->with('files.jenis:id,name')->where('ap_invoice_id', $invoice->id)->first();
+        // Invoice dari berkas ditandai source_type 'berkas' (satu berkas bisa beberapa invoice).
+        return $invoice->source_type === \App\Domain\BusinessSupport\Services\ApBerkasService::INVOICE_SOURCE
+            ? BsApBerkasUpload::withTrashed()->with('files.jenis:id,name')->find($invoice->source_id)
+            : null;
     }
 
     /** @return list<array{name:string,jenis:?string,url:string}> */

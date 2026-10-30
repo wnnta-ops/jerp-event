@@ -42,6 +42,7 @@ const statusBadge: Record<string, { variant: string; text: string }> = {
     in_review: { variant: 'warning', text: 'Diproses' },
     approved: { variant: 'success', text: 'Disetujui' },
     rejected: { variant: 'danger', text: 'Ditolak' },
+    cancelled: { variant: 'neutral', text: 'Dibatalkan' },
 };
 
 const dot: Record<Stage['state'], string> = {

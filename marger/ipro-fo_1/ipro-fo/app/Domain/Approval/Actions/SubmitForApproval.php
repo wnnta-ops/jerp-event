@@ -53,7 +53,7 @@ final class SubmitForApproval
                 ]);
             }
 
-            // TODO: notify level-1 approver (in-app + WA)
+            event(new \App\Domain\Approval\Events\ApprovalSubmitted($approval));
 
             return $approval;
         });
