@@ -113,7 +113,14 @@ class ApKuitansiController extends Controller
     {
         abort_unless($request->user()?->can('ap.kuitansi.create'), 403);
 
-        $open = BsApInvoice::where('status', 'open')->with('supplier:id,code,name')->get()
+        // Invoice dari Upload Berkas yang approval-nya belum selesai / ditolak tidak ditawarkan —
+        // servernya juga menolak (BsApInvoice::assertBolehDibayar); ini hanya merapikan pilihan.
+        $tertahan = \App\Domain\Approval\Models\Approval::query()
+            ->where('document_type', BsApInvoice::APPROVAL_DOCUMENT_TYPE)
+            ->whereIn('status', ['pending', 'in_review', 'rejected'])
+            ->pluck('approvable_id');
+
+        $open = BsApInvoice::where('status', 'open')->whereNotIn('id', $tertahan)->with('supplier:id,code,name')->get()
             ->map(fn ($i) => [
                 'id' => $i->id, 'invoice_number' => $i->invoice_number, 'supplier_id' => $i->supplier_id,
                 'description' => $i->description, 'outstanding' => (float) $i->outstanding,

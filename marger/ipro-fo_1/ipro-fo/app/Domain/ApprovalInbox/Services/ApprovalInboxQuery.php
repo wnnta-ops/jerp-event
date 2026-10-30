@@ -7,7 +7,10 @@ namespace App\Domain\ApprovalInbox\Services;
 use App\Domain\Approval\Models\Approval;
 use App\Domain\Approval\Models\ApprovalChainStep;
 use App\Domain\ApprovalInbox\Models\MemoInternal;
+use App\Domain\BusinessSupport\Models\BsApBerkasUpload;
+use App\Domain\BusinessSupport\Models\BsApInvoice;
 use App\Models\User;
+use Illuminate\Database\Eloquent\Relations\MorphTo;
 use Illuminate\Support\Collection;
 
 /**
@@ -17,13 +20,26 @@ use Illuminate\Support\Collection;
  *  - Perlu Persetujuan    : dokumen yang tahap aktifnya menunggu role/user saya.
  *  - Riwayat              : dokumen yang pernah saya setujui/tolak.
  *
- * Aturan "berhak bertindak" sama dengan ActOnApproval (role/user di chain step,
+ * Jenis dokumen: Memo Internal, TTD Dept Head atas Upload Berkas, dan Invoice Hutang dari
+ * berkas. Tracker invoice memuat alur penuh sejak berkas diunggah.
+ *
+ * Aturan "berhak bertindak" sama dengan ActOnApproval (role / user / assigned di chain step,
  * SuperAdmin selalu boleh) supaya tombol yang tampil = aksi yang diterima server.
  */
 final class ApprovalInboxQuery
 {
     /** Jenis dokumen yang dikelola inbox ini. */
-    public const DOCUMENT_TYPES = [MemoInternal::DOCUMENT_TYPE];
+    public const DOCUMENT_TYPES = [
+        MemoInternal::DOCUMENT_TYPE,
+        BsApBerkasUpload::DOCUMENT_TYPE,
+        BsApInvoice::APPROVAL_DOCUMENT_TYPE,
+    ];
+
+    public const TYPE_LABELS = [
+        MemoInternal::DOCUMENT_TYPE => 'Memo Internal',
+        BsApBerkasUpload::DOCUMENT_TYPE => 'TTD Berkas',
+        BsApInvoice::APPROVAL_DOCUMENT_TYPE => 'Invoice Hutang',
+    ];
 
     /** @return Collection<int, Approval> */
     public function mine(User $user): Collection
@@ -42,11 +58,11 @@ final class ApprovalInboxQuery
             ->values();
     }
 
-    /** @return Collection<int, Approval> */
+    /** Langkah yang SUDAH saya putuskan (approver 'assigned' tercatat sejak pengajuan). */
     public function history(User $user): Collection
     {
         return $this->base()
-            ->whereHas('steps', fn ($q) => $q->where('approver_id', $user->id))
+            ->whereHas('steps', fn ($q) => $q->where('approver_id', $user->id)->where('status', '!=', 'pending'))
             ->latest('updated_at')
             ->get();
     }
@@ -68,10 +84,11 @@ final class ApprovalInboxQuery
         return $chainStep !== null && (
             ($chainStep->approver_type === 'role' && $user->hasRole((string) $chainStep->approver_value))
             || ($chainStep->approver_type === 'user' && (int) $chainStep->approver_value === (int) $user->id)
+            || ($chainStep->approver_type === 'assigned' && (int) $current->approver_id === (int) $user->id)
         );
     }
 
-    /** Pengaju, yang pernah bertindak, yang sedang mendapat giliran, atau SuperAdmin. */
+    /** Pengaju, yang ditunjuk / pernah bertindak, yang sedang mendapat giliran, atau SuperAdmin. */
     public function canView(User $user, Approval $approval): bool
     {
         return (int) $approval->submitted_by === (int) $user->id
@@ -81,7 +98,7 @@ final class ApprovalInboxQuery
     }
 
     /**
-     * Tahap-tahap alur untuk tracker: tahap 1 = pengaju, sisanya dari chain step.
+     * Tahap-tahap alur untuk tracker.
      *
      * @return list<array{label:string, role:?string, state:string, by:?string, at:?string, notes:?string, signature:?string}>
      *   state: done | rejected | current | waiting | skipped
@@ -89,24 +106,12 @@ final class ApprovalInboxQuery
      */
     public function stages(Approval $approval): array
     {
-        $users = User::query()
-            ->whereIn('id', $approval->steps->pluck('approver_id')->push($approval->submitted_by)->filter()->unique())
-            ->get(['id', 'name', 'tenant_id', 'signature_path', 'signature_updated_at'])
-            ->keyBy('id');
-        $ttd = fn (?int $id) => $id && isset($users[$id]) ? $users[$id]->signatureUrl() : null;
+        $leading = $this->leadingStages($approval);
 
-        $stages = [[
-            'label' => 'Dept. Head',
-            'role' => 'Pengajuan',
-            'state' => 'done',
-            'by' => $users[$approval->submitted_by]->name ?? null,
-            'at' => $approval->submitted_at?->toIso8601String(),
-            'notes' => null,
-            'signature' => $ttd((int) $approval->submitted_by),
-        ]];
-
+        $users = $this->users($approval->steps->pluck('approver_id'));
         $rejected = false;
         $currentLevel = $approval->steps->where('status', 'pending')->min('level');
+        $stages = $leading;
         foreach ($approval->steps->sortBy('level') as $step) {
             $chainStep = $this->chainStep($approval, (int) $step->level);
             $state = match (true) {
@@ -118,15 +123,16 @@ final class ApprovalInboxQuery
                 default => 'waiting',
             };
             $rejected = $rejected || $step->status === 'rejected';
+            $who = $step->approver_id ? ($users[$step->approver_id] ?? null) : null;
 
             $stages[] = [
                 'label' => $this->stepLabel($approval, (int) $step->level, $chainStep),
-                'role' => $chainStep?->approver_value,
+                'role' => $chainStep?->approver_type === 'assigned' ? 'Ditunjuk' : $chainStep?->approver_value,
                 'state' => $state,
-                'by' => $step->approver_id ? ($users[$step->approver_id]->name ?? null) : null,
+                'by' => $who?->name,
                 'at' => $step->acted_at?->toIso8601String(),
                 'notes' => $step->notes,
-                'signature' => $state === 'done' ? $ttd((int) $step->approver_id) : null,
+                'signature' => $state === 'done' ? $who?->signatureUrl() : null,
             ];
         }
 
@@ -138,17 +144,19 @@ final class ApprovalInboxQuery
     {
         $stages = $this->stages($approval);
         $current = collect($stages)->first(fn ($s) => in_array($s['state'], ['current', 'rejected'], true));
-        $memo = $approval->approvable;
+        $doc = $this->header($approval);
+        $submitter = $this->users(collect([$approval->submitted_by]))[$approval->submitted_by] ?? null;
 
         return [
             'id' => $approval->id,
-            'number' => $memo?->memo_number,
-            'subject' => $memo?->subject,
-            'department' => $memo?->department,
-            'amount' => $memo?->amount !== null ? (float) $memo->amount : null,
-            'type' => 'Memo Internal',
+            'document_type' => $approval->document_type,
+            'type' => self::TYPE_LABELS[$approval->document_type] ?? $approval->document_type,
+            'number' => $doc['number'],
+            'subject' => $doc['title'],
+            'department' => $doc['sub'],
+            'amount' => $doc['amount'],
             'status' => $approval->status,
-            'submitter' => $stages[0]['by'],
+            'submitter' => $submitter?->name,
             'submitted_at' => $approval->submitted_at?->toIso8601String(),
             'position' => $current['label'] ?? ($approval->status === 'approved' ? 'Selesai' : '—'),
             'done' => collect($stages)->where('state', 'done')->count(),
@@ -157,11 +165,145 @@ final class ApprovalInboxQuery
         ];
     }
 
+    /**
+     * Isi dokumen untuk halaman detail: judul, kolom ringkas, isi, file, & tautan ke modul asal.
+     *
+     * @return array{number:?string, title:?string, type:string, fields:list<array{label:string,value:?string}>, body:?string, files:list<array{name:string,jenis:?string,url:string}>, links:list<array{label:string,url:string}>}
+     */
+    public function detail(Approval $approval): array
+    {
+        $doc = $this->header($approval);
+        $m = $approval->approvable;
+        $rp = fn ($v) => $v !== null ? 'Rp '.number_format((float) $v, 0, ',', '.') : null;
+        $out = ['number' => $doc['number'], 'title' => $doc['title'], 'type' => self::TYPE_LABELS[$approval->document_type] ?? $approval->document_type,
+            'fields' => [], 'body' => null, 'files' => [], 'links' => []];
+
+        if ($m instanceof MemoInternal) {
+            $out['fields'] = [
+                ['label' => 'Tanggal', 'value' => $m->memo_date?->toDateString()],
+                ['label' => 'Departemen', 'value' => $m->department],
+                ['label' => 'Nominal', 'value' => $rp($m->amount) ?? 'Tanpa nominal'],
+            ];
+            $out['body'] = $m->body;
+        } elseif ($m instanceof BsApBerkasUpload) {
+            $out['fields'] = [
+                ['label' => 'Tanggal', 'value' => $m->upload_date?->toDateString()],
+                ['label' => 'Supplier', 'value' => $m->supplier?->name ?? '—'],
+                ['label' => 'Nominal', 'value' => $rp($m->amount) ?? '—'],
+            ];
+            $out['files'] = $this->files($m);
+            $out['links'][] = ['label' => 'Buka berkas', 'url' => route('bs.ap.berkas.show', $m->id)];
+        } elseif ($m instanceof BsApInvoice) {
+            $berkas = $this->berkasOf($m);
+            $out['fields'] = [
+                ['label' => 'Tgl. Invoice', 'value' => $m->invoice_date?->toDateString()],
+                ['label' => 'Supplier', 'value' => $m->supplier?->name],
+                ['label' => 'No. Invoice Supplier', 'value' => $m->supplier_invoice_no],
+                ['label' => 'Total', 'value' => $rp($m->total)],
+                ['label' => 'Hutang Bersih', 'value' => $rp($m->net_payable)],
+                ['label' => 'Berkas Asal', 'value' => $berkas?->berkas_number],
+            ];
+            $out['files'] = $berkas ? $this->files($berkas) : [];
+            $out['links'][] = ['label' => 'Buka invoice', 'url' => route('bs.ap.show', $m->id)];
+            if ($berkas) {
+                $out['links'][] = ['label' => 'Buka berkas', 'url' => route('bs.ap.berkas.show', $berkas->id)];
+            }
+        }
+
+        return $out;
+    }
+
+    // ── internal ─────────────────────────────────────────────────────────────────
+
     private function base()
     {
         return Approval::query()
             ->whereIn('document_type', self::DOCUMENT_TYPES)
-            ->with(['steps', 'approvable']);
+            ->with(['steps', 'approvable' => fn (MorphTo $m) => $m->morphWith([
+                BsApBerkasUpload::class => ['supplier:id,name', 'files.jenis:id,name'],
+                BsApInvoice::class => ['supplier:id,name'],
+            ])]);
+    }
+
+    /** @return array{number:?string, title:?string, sub:?string, amount:?float} */
+    private function header(Approval $approval): array
+    {
+        $m = $approval->approvable;
+
+        return match (true) {
+            $m instanceof MemoInternal => ['number' => $m->memo_number, 'title' => $m->subject, 'sub' => $m->department,
+                'amount' => $m->amount !== null ? (float) $m->amount : null],
+            $m instanceof BsApBerkasUpload => ['number' => $m->berkas_number, 'title' => $m->description, 'sub' => $m->supplier?->name ?? 'Upload Berkas',
+                'amount' => $m->amount !== null ? (float) $m->amount : null],
+            $m instanceof BsApInvoice => ['number' => $m->invoice_number, 'title' => $m->description, 'sub' => $m->supplier?->name,
+                'amount' => (float) $m->total],
+            default => ['number' => '#'.$approval->id, 'title' => null, 'sub' => null, 'amount' => null],
+        };
+    }
+
+    /** Tahap sebelum chain step: pengaju; untuk invoice — pengunggah berkas, TTD Dept Head, tim AP. */
+    private function leadingStages(Approval $approval): array
+    {
+        $by = fn (?int $id) => $id ? ($this->users(collect([$id]))[$id] ?? null) : null;
+        $stage = fn (string $label, string $role, ?User $u, $at) => [
+            'label' => $label, 'role' => $role, 'state' => 'done', 'by' => $u?->name,
+            'at' => $at?->toIso8601String(), 'notes' => null, 'signature' => $u?->signatureUrl(),
+        ];
+        $submitter = $by((int) $approval->submitted_by);
+
+        if ($approval->document_type === BsApBerkasUpload::DOCUMENT_TYPE) {
+            return [$stage('Pengunggah', 'Upload berkas', $submitter, $approval->submitted_at)];
+        }
+
+        if ($approval->document_type === BsApInvoice::APPROVAL_DOCUMENT_TYPE && $approval->approvable instanceof BsApInvoice) {
+            $berkas = $this->berkasOf($approval->approvable);
+            $lead = [];
+            if ($berkas && $berkas->approval_id) {
+                $ttd = Approval::with('steps')->find($berkas->approval_id);
+                if ($ttd) {
+                    $lead[] = $stage('Pengunggah', 'Upload berkas', $by((int) $ttd->submitted_by), $ttd->submitted_at);
+                    $s = $ttd->steps->sortBy('level')->first();
+                    $lead[] = $stage('Dept. Head (TTD)', 'Ditunjuk', $by((int) $s?->approver_id), $s?->acted_at)
+                        + ['notes' => $s?->notes];
+                }
+            }
+            $lead[] = $stage('Tim AP', 'Buat invoice', $submitter, $approval->submitted_at);
+
+            return $lead;
+        }
+
+        return [$stage('Dept. Head', 'Pengajuan', $submitter, $approval->submitted_at)];
+    }
+
+    private function berkasOf(BsApInvoice $invoice): ?BsApBerkasUpload
+    {
+        return BsApBerkasUpload::query()->with('files.jenis:id,name')->where('ap_invoice_id', $invoice->id)->first();
+    }
+
+    /** @return list<array{name:string,jenis:?string,url:string}> */
+    private function files(BsApBerkasUpload $berkas): array
+    {
+        return $berkas->files->map(fn ($f) => [
+            'name' => $f->original_name,
+            'jenis' => $f->jenis?->name,
+            'url' => route('bs.ap.berkas.file', [$berkas->id, $f->id]),
+        ])->all();
+    }
+
+    /** @var array<int, User> */
+    private array $userCache = [];
+
+    /** @return array<int, User> */
+    private function users(Collection $ids): array
+    {
+        $missing = $ids->filter()->map(fn ($v) => (int) $v)->unique()->diff(array_keys($this->userCache));
+        if ($missing->isNotEmpty()) {
+            User::query()->whereIn('id', $missing)
+                ->get(['id', 'name', 'tenant_id', 'signature_path', 'signature_updated_at'])
+                ->each(fn (User $u) => $this->userCache[$u->id] = $u);
+        }
+
+        return $this->userCache;
     }
 
     /** @var array<int, Collection<int, ApprovalChainStep>> */
@@ -177,7 +319,11 @@ final class ApprovalInboxQuery
 
     private function stepLabel(Approval $approval, int $level, ?ApprovalChainStep $chainStep): string
     {
-        if ($approval->document_type === MemoInternal::DOCUMENT_TYPE && isset(MemoInternal::STEPS[$level])) {
+        if ($approval->document_type === BsApBerkasUpload::DOCUMENT_TYPE) {
+            return 'Dept. Head (TTD)';
+        }
+        if (in_array($approval->document_type, [MemoInternal::DOCUMENT_TYPE, BsApInvoice::APPROVAL_DOCUMENT_TYPE], true)
+            && isset(MemoInternal::STEPS[$level])) {
             return MemoInternal::STEPS[$level][1];
         }
 

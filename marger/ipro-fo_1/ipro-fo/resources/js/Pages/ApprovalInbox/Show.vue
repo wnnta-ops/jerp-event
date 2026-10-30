@@ -9,7 +9,14 @@ type Stage = { label: string; role: string | null; state: StageState; by: string
 
 const props = defineProps<{
     approval: { id: number; status: string; position: string; done: number; total: number };
-    memo: { number: string; date: string; department: string; subject: string; body: string; amount: number | null; status: string } | null;
+    /** Isi dokumen — Memo Internal, TTD Berkas, atau Invoice Hutang (lihat ApprovalInboxQuery::detail). */
+    doc: {
+        number: string | null; title: string | null; type: string;
+        fields: Array<{ label: string; value: string | null }>;
+        body: string | null;
+        files: Array<{ name: string; jenis: string | null; url: string }>;
+        links: Array<{ label: string; url: string }>;
+    };
     stages: Stage[];
     canAct: boolean;
 }>();
@@ -22,7 +29,6 @@ function decide(action: 'approve' | 'reject') {
     form.post(route('approval-inbox.act', props.approval.id), { preserveScroll: true });
 }
 
-const rupiah = (v: number) => 'Rp ' + v.toLocaleString('id-ID');
 const waktu = (iso: string | null) => (iso ? new Date(iso).toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' }) : '');
 
 const look: Record<StageState, { circle: string; text: string; caption: string }> = {
@@ -42,29 +48,41 @@ const statusBadge: Record<string, { variant: string; text: string }> = {
 </script>
 
 <template>
-    <Head :title="(memo?.number ?? 'Memo') + ' — Approval Inbox'" />
+    <Head :title="(doc.number ?? 'Dokumen') + ' — Approval Inbox'" />
     <div class="mx-auto max-w-5xl space-y-4">
         <Link :href="route('approval-inbox.index')" class="text-sm text-neutral-500 hover:text-primary-600">← Approval Inbox</Link>
 
         <div class="flex flex-wrap items-start justify-between gap-3">
             <div>
-                <p class="font-mono text-sm text-neutral-500">{{ memo?.number }}</p>
-                <h1 class="text-2xl font-bold">{{ memo?.subject }}</h1>
+                <p class="font-mono text-sm text-neutral-500">{{ doc.type }} · {{ doc.number }}</p>
+                <h1 class="text-2xl font-bold">{{ doc.title }}</h1>
             </div>
             <Badge :variant="(statusBadge[approval.status]?.variant as any) ?? 'warning'" dot>{{ statusBadge[approval.status]?.text ?? approval.status }}</Badge>
         </div>
 
         <div class="grid gap-4 lg:grid-cols-3">
-            <!-- Isi memo -->
+            <!-- Isi dokumen -->
             <div class="card space-y-4 p-6 lg:col-span-2">
                 <dl class="grid gap-4 text-sm sm:grid-cols-3">
-                    <div><dt class="text-xs uppercase text-neutral-500">Tanggal</dt><dd class="font-medium">{{ memo?.date }}</dd></div>
-                    <div><dt class="text-xs uppercase text-neutral-500">Departemen</dt><dd class="font-medium">{{ memo?.department }}</dd></div>
-                    <div><dt class="text-xs uppercase text-neutral-500">Nominal</dt><dd class="font-medium tabular-nums">{{ memo?.amount != null ? rupiah(memo.amount) : 'Tanpa nominal' }}</dd></div>
+                    <div v-for="f in doc.fields" :key="f.label">
+                        <dt class="text-xs uppercase text-neutral-500">{{ f.label }}</dt>
+                        <dd class="font-medium tabular-nums">{{ f.value ?? '—' }}</dd>
+                    </div>
                 </dl>
-                <div class="border-t border-neutral-200 pt-4 dark:border-neutral-800">
+                <div v-if="doc.body" class="border-t border-neutral-200 pt-4 dark:border-neutral-800">
                     <p class="mb-2 text-xs uppercase text-neutral-500">Isi Memo</p>
-                    <p class="whitespace-pre-line text-sm leading-relaxed">{{ memo?.body }}</p>
+                    <p class="whitespace-pre-line text-sm leading-relaxed">{{ doc.body }}</p>
+                </div>
+                <div v-if="doc.files.length" class="border-t border-neutral-200 pt-4 dark:border-neutral-800">
+                    <p class="mb-2 text-xs uppercase text-neutral-500">Dokumen pendukung ({{ doc.files.length }})</p>
+                    <div class="flex flex-wrap gap-2">
+                        <a v-for="(f, i) in doc.files" :key="i" :href="f.url" target="_blank" rel="noopener" class="rounded-md border border-neutral-200 px-2 py-1 text-xs text-primary-700 hover:border-primary-300 hover:underline dark:border-neutral-700 dark:text-primary-300">
+                            📎 {{ f.jenis ? f.jenis + ' · ' : '' }}{{ f.name }}
+                        </a>
+                    </div>
+                </div>
+                <div v-if="doc.links.length" class="flex flex-wrap gap-3 text-sm">
+                    <Link v-for="l in doc.links" :key="l.url" :href="l.url" class="text-primary-600 hover:underline">{{ l.label }} →</Link>
                 </div>
 
                 <!-- Keputusan -->
@@ -101,7 +119,8 @@ const statusBadge: Record<string, { variant: string; text: string }> = {
                         <div class="min-w-0 text-sm">
                             <p :class="look[s.state].text">{{ s.label }}</p>
                             <p class="text-xs text-neutral-500">
-                                <template v-if="i === 0">Pengajuan · {{ s.by }}</template>
+                                <!-- Tahap pembuka (pengaju / pengunggah / tim AP) bukan persetujuan — tampilkan perannya. -->
+                                <template v-if="s.state === 'done' && ['Pengajuan', 'Upload berkas', 'Buat invoice'].includes(s.role ?? '')">{{ s.role }} · {{ s.by }}</template>
                                 <template v-else>{{ look[s.state].caption }}<template v-if="s.by"> · {{ s.by }}</template></template>
                             </p>
                             <p v-if="s.at" class="text-xs text-neutral-400">{{ waktu(s.at) }}</p>

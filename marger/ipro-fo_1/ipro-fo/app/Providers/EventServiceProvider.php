@@ -28,9 +28,11 @@ class EventServiceProvider extends ServiceProvider
         \App\Domain\Approval\Events\ApprovalApproved::class => [
             \App\Domain\Approval\Listeners\ApplyApprovedOutcome::class,
             \App\Domain\ApprovalInbox\Listeners\SyncMemoInternalStatus::class,
+            \App\Domain\BusinessSupport\Listeners\SyncApBerkasStatus::class,
         ],
         \App\Domain\Approval\Events\ApprovalRejected::class => [
             \App\Domain\ApprovalInbox\Listeners\SyncMemoInternalStatus::class,
+            \App\Domain\BusinessSupport\Listeners\SyncApBerkasStatus::class,
         ],
     ];
 

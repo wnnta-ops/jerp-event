@@ -805,6 +805,15 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
     Route::post('/business-support/payable-penghapusan/{invoice}', [BsApPenghapusanController::class, 'store'])->name('bs.ap.penghapusan.store');
     // AP — Kelengkapan Berkas (setup + toggle per invoice)
     // withTrashed: invoice BATAL ter-soft-delete tetapi rinciannya tetap bisa dibuka (show menolak soft delete lain).
+    // Upload Berkas (AP › Master) — prefix sendiri supaya tidak tertelan rute {invoice} di bawah.
+    Route::prefix('business-support/payable-berkas')->name('bs.ap.berkas.')->group(function (): void {
+        $c = App\Http\Controllers\Web\BusinessSupport\Payable\ApBerkasController::class;
+        Route::get('/', [$c, 'index'])->name('index');
+        Route::get('/unggah', [$c, 'create'])->name('create');
+        Route::post('/', [$c, 'store'])->name('store');
+        Route::get('/{berkas}', [$c, 'show'])->whereNumber('berkas')->name('show');
+        Route::get('/{berkas}/file/{file}', [$c, 'file'])->whereNumber('berkas')->whereNumber('file')->name('file');
+    });
     Route::get('/business-support/payable/{invoice}', [BsApController::class, 'show'])->name('bs.ap.show')->withTrashed();
     // Edit & Batal (sebelum/sesudah diproses FAT) — lihat ApInvoiceController::pastikanBolehEdit / bolehBatal.
     Route::get('/business-support/payable/{invoice}/edit', [BsApController::class, 'edit'])->name('bs.ap.edit');

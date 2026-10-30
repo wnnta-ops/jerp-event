@@ -165,6 +165,41 @@ class BsApInvoice extends Model
         return (int) ($kewajiban->isNotEmpty() ? $kewajiban : $kredit)->sortByDesc(fn ($l) => (float) $l['credit'])->first()['account_id'];
     }
 
+    // ── APPROVAL SEBELUM BAYAR (invoice dari Upload Berkas) ──────────────────────
+
+    /** document_type approval invoice hutang (Accounting → Finance → GM → Direktur → MW / BA). */
+    public const APPROVAL_DOCUMENT_TYPE = 'ap_invoice';
+
+    /**
+     * Approval terakhir invoice ini, atau null bila invoice tidak pernah diajukan
+     * (semua invoice lama / bukan dari Upload Berkas — tetap bisa dibayar seperti biasa).
+     */
+    public function approvalPembayaran(): ?\App\Domain\Approval\Models\Approval
+    {
+        return \App\Domain\Approval\Models\Approval::query()
+            ->where('document_type', self::APPROVAL_DOCUMENT_TYPE)
+            ->where('approvable_type', $this->getMorphClass())
+            ->where('approvable_id', $this->id)
+            ->latest('id')
+            ->first();
+    }
+
+    /** Tolak pembayaran (bayar langsung / kuitansi) selama approval invoice belum disetujui penuh. */
+    public function assertBolehDibayar(): void
+    {
+        $approval = $this->approvalPembayaran();
+        if ($approval === null || $approval->status === 'approved') {
+            return;
+        }
+
+        throw new \App\Exceptions\BusinessRuleException(
+            $approval->status === 'rejected'
+                ? "Invoice {$this->invoice_number} DITOLAK di approval — tidak bisa dibayar."
+                : "Invoice {$this->invoice_number} masih menunggu approval (Accounting → Finance → GM → Direktur → MW / BA) — belum bisa dibayar.",
+            errorCode: 'AP_MENUNGGU_APPROVAL',
+        );
+    }
+
     // ── EDIT & BATAL ─────────────────────────────────────────────────────────────
 
     public const STATUS_BATAL = 'batal';

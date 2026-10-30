@@ -369,7 +369,10 @@ export function navGroups(foUrl: string): NavGroup[] {
                 { label: 'Kategori Gimmick', href: 'bs.gimmick.categories.index' , permission: ['ap.category.view'] , tampil: 'menu.bs.gimmick.categories.index' },
                 { label: 'Repair Data', href: 'bs.ap.repair.index' , permission: ['ap.repair.view'] , tampil: 'menu.bs.ap.repair.index' },
             ]},
-            { label: 'Master', icon: BookText, permission: ['ap.invoice.view', 'ap.kuitansi.view'], children: [
+            { label: 'Master', icon: BookText, permission: ['ap.invoice.view', 'ap.kuitansi.view', 'ap.berkas.upload'], children: [
+                // Titik awal approval hutang: staf unggah berkas → TTD Dept Head → tim AP buat invoice
+                // dari berkas → approval invoice di Approval Inbox → baru boleh dibayar.
+                { label: 'Upload Berkas', href: 'bs.ap.berkas.index' , permission: ['ap.berkas.upload', 'ap.invoice.view'] },
                 { label: 'Invoice Hutang', href: 'bs.ap.index' , permission: ['ap.invoice.view'] , tampil: 'menu.bs.ap.index' },
                 { label: 'Kuitansi Hutang', href: 'bs.ap.kuitansi.index' , permission: ['ap.kuitansi.view'] , tampil: 'menu.bs.ap.kuitansi.index' },
             ]},

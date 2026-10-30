@@ -17,10 +17,12 @@ final class SubmitForApproval
     /**
      * @param Model $approvable Entity yang butuh approval (booking, refund, dll).
      * @param array<string, mixed> $payload Snapshot + context (akan disimpan ke approvals.payload).
+     * @param array<int, int> $assignees level => user id, untuk chain step ber-approver_type
+     *   'assigned' (approver dipilih saat pengajuan, mis. Dept Head si pengunggah berkas).
      */
-    public function execute(string $documentType, Model $approvable, array $payload = []): Approval
+    public function execute(string $documentType, Model $approvable, array $payload = [], array $assignees = []): Approval
     {
-        return DB::transaction(function () use ($documentType, $approvable, $payload): Approval {
+        return DB::transaction(function () use ($documentType, $approvable, $payload, $assignees): Approval {
             $chain = $this->resolver->resolve($documentType, $payload);
 
             $approval = Approval::create([
@@ -35,10 +37,18 @@ final class SubmitForApproval
             ]);
 
             foreach ($chain->load('steps')->steps as $step) {
+                $assigned = $step->approver_type === 'assigned' ? ($assignees[$step->level] ?? null) : null;
+                if ($step->approver_type === 'assigned' && ! $assigned) {
+                    throw new \App\Exceptions\BusinessRuleException(
+                        "Approver level {$step->level} harus dipilih saat pengajuan.",
+                        errorCode: 'APPROVAL_ASSIGNEE_REQUIRED',
+                    );
+                }
+
                 ApprovalStep::create([
                     'approval_id' => $approval->id,
                     'level'       => $step->level,
-                    'approver_id' => null,        // di-assign saat approver acts
+                    'approver_id' => $assigned,   // 'assigned' = ditunjuk sekarang; lainnya di-assign saat approver acts
                     'status'      => 'pending',
                 ]);
             }
