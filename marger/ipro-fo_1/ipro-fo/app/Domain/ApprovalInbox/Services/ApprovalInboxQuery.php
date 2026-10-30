@@ -83,22 +83,26 @@ final class ApprovalInboxQuery
     /**
      * Tahap-tahap alur untuk tracker: tahap 1 = pengaju, sisanya dari chain step.
      *
-     * @return list<array{label:string, role:?string, state:string, by:?string, at:?string, notes:?string}>
+     * @return list<array{label:string, role:?string, state:string, by:?string, at:?string, notes:?string, signature:?string}>
      *   state: done | rejected | current | waiting | skipped
+     *   signature: URL TTD orang yang menyetujui (hanya tahap 'done'), null bila belum mengunggah
      */
     public function stages(Approval $approval): array
     {
         $users = User::query()
             ->whereIn('id', $approval->steps->pluck('approver_id')->push($approval->submitted_by)->filter()->unique())
-            ->pluck('name', 'id');
+            ->get(['id', 'name', 'tenant_id', 'signature_path', 'signature_updated_at'])
+            ->keyBy('id');
+        $ttd = fn (?int $id) => $id && isset($users[$id]) ? $users[$id]->signatureUrl() : null;
 
         $stages = [[
             'label' => 'Dept. Head',
             'role' => 'Pengajuan',
             'state' => 'done',
-            'by' => $users[$approval->submitted_by] ?? null,
+            'by' => $users[$approval->submitted_by]->name ?? null,
             'at' => $approval->submitted_at?->toIso8601String(),
             'notes' => null,
+            'signature' => $ttd((int) $approval->submitted_by),
         ]];
 
         $rejected = false;
@@ -119,9 +123,10 @@ final class ApprovalInboxQuery
                 'label' => $this->stepLabel($approval, (int) $step->level, $chainStep),
                 'role' => $chainStep?->approver_value,
                 'state' => $state,
-                'by' => $step->approver_id ? ($users[$step->approver_id] ?? null) : null,
+                'by' => $step->approver_id ? ($users[$step->approver_id]->name ?? null) : null,
                 'at' => $step->acted_at?->toIso8601String(),
                 'notes' => $step->notes,
+                'signature' => $state === 'done' ? $ttd((int) $step->approver_id) : null,
             ];
         }
 

@@ -5,7 +5,7 @@ import Badge from '@/Components/UI/Badge.vue';
 import Button from '@/Components/UI/Button.vue';
 
 type StageState = 'done' | 'rejected' | 'current' | 'waiting' | 'skipped';
-type Stage = { label: string; role: string | null; state: StageState; by: string | null; at: string | null; notes: string | null };
+type Stage = { label: string; role: string | null; state: StageState; by: string | null; at: string | null; notes: string | null; signature: string | null };
 
 const props = defineProps<{
     approval: { id: number; status: string; position: string; done: number; total: number };
@@ -105,6 +105,7 @@ const statusBadge: Record<string, { variant: string; text: string }> = {
                                 <template v-else>{{ look[s.state].caption }}<template v-if="s.by"> · {{ s.by }}</template></template>
                             </p>
                             <p v-if="s.at" class="text-xs text-neutral-400">{{ waktu(s.at) }}</p>
+                            <img v-if="s.signature" :src="s.signature" :alt="'TTD ' + (s.by ?? '')" class="mt-1 h-10 max-w-[140px] object-contain" />
                             <p v-if="s.notes" class="mt-1 rounded bg-neutral-50 px-2 py-1 text-xs italic text-neutral-600 dark:bg-neutral-800 dark:text-neutral-300">“{{ s.notes }}”</p>
                         </div>
                     </li>

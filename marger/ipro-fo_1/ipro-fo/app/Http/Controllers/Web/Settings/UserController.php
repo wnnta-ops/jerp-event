@@ -80,6 +80,7 @@ class UserController extends Controller
         return Inertia::render('Settings/Users/Edit', [
             'user'  => $user->load('roles:id,name'),
             'roles' => Role::select('id', 'name', 'description')->orderBy('name')->get(),
+            'signatureUrl' => $user->signatureUrl(),
         ]);
     }
 
