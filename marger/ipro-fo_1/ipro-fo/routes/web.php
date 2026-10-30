@@ -1011,6 +1011,7 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
     // pengaju benar-benar bersih.
     Route::get('/business-support/bon-sementara-finance/{advance}', [BsAdvanceController::class, 'show'])->name('bs.advance.finance.show');
     Route::post('/business-support/bon-sementara/{advance}/realisasi', [BsAdvanceController::class, 'realize'])->name('bs.advance.realize');
+    Route::post('/business-support/bon-sementara/{advance}/realisasi/edit', [BsAdvanceController::class, 'editRealisasi'])->name('bs.advance.realize.edit');
     Route::post('/business-support/bon-sementara/{advance}/refund', [BsAdvanceController::class, 'refund'])->name('bs.advance.refund');
     Route::post('/business-support/bon-sementara/{advance}/reimburse', [BsAdvanceController::class, 'reimburse'])->name('bs.advance.reimburse');
     // Sisa bon Debit VA dikembalikan ke saldo kartunya — tanpa jurnal (uangnya masih di akun kartu).
