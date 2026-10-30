@@ -12,7 +12,7 @@ import { Avatar, SectionLabel } from '../components/ui';
 import { ApprovalsIcon, HistoryIcon, CheckSmall } from '../components/Icons';
 import RequestCard from '../components/RequestCard';
 import { useApp } from '../state/AppContext';
-import { deadlineBucket } from '../utils/sla';
+import { requestBucket } from '../utils/sla';
 import type { RootStackParamList, MainTabParamList } from '../navigation/types';
 
 // Composite type: tab switches resolve in the tab navigator, Detail bubbles to root.
@@ -22,7 +22,7 @@ export default function HomeScreen() {
   const navigation = useNavigation<Nav>();
   const { profile, queue } = useApp();
   const needs = queue.needs.length;
-  const urgent = queue.needs.filter((r) => deadlineBucket(r.slaMin) === 'red').length;
+  const urgent = queue.needs.filter((r) => requestBucket(r) === 'red').length;
   // Soonest deadline first (no-deadline items last), show a short preview on Home.
   const priority = [...queue.needs]
     .sort((a, b) => (a.slaMin ?? Infinity) - (b.slaMin ?? Infinity))

@@ -2,7 +2,7 @@
 // prototype and define the contract the UI relies on. When the real backend
 // lands, only the mock implementation behind mockService changes — not these.
 
-import type { Tier, SlaClass } from '../theme/tokens';
+import type { Tier, SlaClass, Deadline } from '../theme/tokens';
 
 export type RequestType = 'FUND' | 'DOC';
 export type RoleKey = 'GM' | 'Director' | 'Owner1' | 'Owner2' | 'Reviewer';
@@ -85,6 +85,7 @@ export interface RequestItem {
   tag: string; // URGENT / INTERNAL / DUE SOON / BOARD ...
   slaMin: number | null; // SLA time remaining in minutes (null = in chain)
   slc: SlaClass; // sla pill color class
+  deadline?: Deadline; // server-decided urgency (J-ERP: 72h SLA); falls back to deadlineBucket(slaMin)
 
   requester: string;
   dept: string;

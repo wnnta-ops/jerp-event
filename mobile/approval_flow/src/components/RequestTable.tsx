@@ -5,7 +5,7 @@
 import React from 'react';
 import { View, Text, Pressable, StyleSheet } from 'react-native';
 import { colors, radius, moduleColor, moduleLabel, deadlineStyle } from '../theme/tokens';
-import { formatSla, deadlineBucket } from '../utils/sla';
+import { formatSla, requestBucket } from '../utils/sla';
 import { CheckSmall } from './Icons';
 import type { RequestItem } from '../data/types';
 
@@ -38,7 +38,7 @@ export default function RequestTable({ rows, selecting, selected, onToggle, onOp
 
       {rows.map((r, i) => {
         const on = selected?.has(r.id);
-        const bucket = deadlineBucket(r.slaMin);
+        const bucket = requestBucket(r);
         const dl = deadlineStyle[bucket];
         return (
           <View key={r.id} style={[styles.row, on && styles.rowOn]}>

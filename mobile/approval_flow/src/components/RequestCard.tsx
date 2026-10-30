@@ -8,7 +8,7 @@ import React from 'react';
 import { View, Text, Pressable, StyleSheet } from 'react-native';
 import Svg, { Path } from 'react-native-svg';
 import { colors, radius, typeColor, deadlineStyle, moduleColor, moduleLabel } from '../theme/tokens';
-import { formatSla, deadlineBucket } from '../utils/sla';
+import { formatSla, deadlineBucket, requestBucket } from '../utils/sla';
 import { CheckSmall } from './Icons';
 import type { RequestItem } from '../data/types';
 
@@ -30,7 +30,7 @@ type Bucket = ReturnType<typeof deadlineBucket>;
 
 export default function RequestCard({ request: r, onPress, selecting, selected }: Props) {
   const isJava = !!r.docNo;
-  const bucket = deadlineBucket(r.slaMin);
+  const bucket = requestBucket(r);
   const dl = deadlineStyle[bucket];
   const stripe = isJava ? moduleColor(r.moduleKey) : typeColor(r.reqName);
 
@@ -85,7 +85,7 @@ function javaBody(r: RequestItem, dl: DlStyle, bucket: Bucket, stripe: string) {
           <Text style={styles.noValue}>Tanpa nilai</Text>
         )}
         <View style={[styles.modChip, { backgroundColor: stripe + '1A' }]}>
-          <Text style={[styles.modChipText, { color: stripe }]}>{moduleLabel(r.moduleKey)}</Text>
+          <Text style={[styles.modChipText, { color: stripe }]}>{moduleLabel(r.moduleKey, r.moduleLabel)}</Text>
         </View>
         {r.overPagu ? (
           <View style={styles.pagu}>

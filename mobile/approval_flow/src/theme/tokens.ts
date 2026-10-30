@@ -99,8 +99,10 @@ export const modules: Record<string, ModuleMeta> = {
 export function moduleColor(key?: string): string {
   return (key && modules[key]?.color) || modules.Others.color;
 }
-export function moduleLabel(key?: string): string {
-  return (key && modules[key]?.label) || modules.Others.label;
+// fallback = label sent by the backend for keys outside this table (e.g. J-ERP
+// approval types like DISKON), so they don't all collapse into "Lainnya".
+export function moduleLabel(key?: string, fallback?: string): string {
+  return (key && modules[key]?.label) || fallback || modules.Others.label;
 }
 
 // Deadline urgency: <=3 days -> red, 4-7 days -> amber, else none (white).

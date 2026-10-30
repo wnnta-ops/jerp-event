@@ -12,6 +12,13 @@ export function deadlineBucket(min: number | null): Deadline {
   return 'none';
 }
 
+// Urgency for a request: the backend's own bucket when it sends one (J-ERP's
+// SLA is 72h total, so the day-based thresholds would mark everything red),
+// otherwise the day-based bucket above.
+export function requestBucket(r: { deadline?: Deadline; slaMin: number | null }): Deadline {
+  return r.deadline ?? deadlineBucket(r.slaMin);
+}
+
 export function formatSla(min: number | null): string {
   if (min == null) return '—';
   if (min >= 1440) {

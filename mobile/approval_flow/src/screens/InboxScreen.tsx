@@ -38,10 +38,14 @@ export default function InboxScreen() {
   // filter chips that double as the color legend). Empty for non-Javacore queues.
   const javaModules = useMemo(() => {
     const counts = new Map<string, number>();
+    const labels = new Map<string, string | undefined>();
     queue.needs.forEach((r) => {
-      if (r.moduleKey) counts.set(r.moduleKey, (counts.get(r.moduleKey) ?? 0) + 1);
+      if (r.moduleKey) {
+        counts.set(r.moduleKey, (counts.get(r.moduleKey) ?? 0) + 1);
+        labels.set(r.moduleKey, r.moduleLabel);
+      }
     });
-    return [...counts.entries()].map(([key, count]) => ({ key, count }));
+    return [...counts.entries()].map(([key, count]) => ({ key, count, label: labels.get(key) }));
   }, [queue.needs]);
 
   const needsList = modFilter ? queue.needs.filter((r) => r.moduleKey === modFilter) : queue.needs;
@@ -160,7 +164,7 @@ export default function InboxScreen() {
             {javaModules.map((m) => (
               <ModChip
                 key={m.key}
-                label={moduleLabel(m.key)}
+                label={moduleLabel(m.key, m.label)}
                 count={m.count}
                 color={moduleColor(m.key)}
                 active={modFilter === m.key}
