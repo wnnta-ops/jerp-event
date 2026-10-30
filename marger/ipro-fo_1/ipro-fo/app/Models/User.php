@@ -23,13 +23,14 @@ class User extends Authenticatable
 
     protected $fillable = [
         'tenant_id', 'name', 'email', 'username', 'phone', 'password',
-        'avatar_path', 'employee_nip', 'is_active', 'is_blocked',
+        'avatar_path', 'signature_path', 'signature_updated_at', 'employee_nip', 'is_active', 'is_blocked',
         'dark_mode', 'locale',
         'failed_login_count', 'blocked_until', 'last_login_at', 'last_login_ip',
         'password_changed_at', 'email_verified_at',
     ];
 
-    protected $hidden = ['password', 'remember_token'];
+    // signature_path = lokasi file di disk privat; ke frontend cukup URL route users.signature.
+    protected $hidden = ['password', 'remember_token', 'signature_path'];
 
     protected function casts(): array
     {
@@ -38,10 +39,19 @@ class User extends Authenticatable
             'password_changed_at'  => 'datetime',
             'last_login_at'        => 'datetime',
             'blocked_until'        => 'datetime',
+            'signature_updated_at' => 'datetime',
             'is_active'            => 'boolean',
             'is_blocked'           => 'boolean',
             'password'             => 'hashed',
         ];
+    }
+
+    /** URL gambar TTD (route users.signature, berversi agar cache terganti saat diganti); null bila belum ada. */
+    public function signatureUrl(): ?string
+    {
+        return $this->signature_path
+            ? route('users.signature', ['user' => $this->id, 'v' => $this->signature_updated_at?->timestamp])
+            : null;
     }
 
     public function tenant(): BelongsTo

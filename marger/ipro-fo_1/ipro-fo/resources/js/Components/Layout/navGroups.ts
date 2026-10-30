@@ -65,6 +65,7 @@ export interface NavGroup {
  * sini ikut di belakang mengikuti urutan definisinya — tidak pernah hilang.
  */
 export const MODULE_ORDER: string[] = [
+    'Approval Inbox',
     'Master',
     'Data Center',
     'KPR',
@@ -119,6 +120,17 @@ export function navGroups(foUrl: string): NavGroup[] {
             ]},
             // Menu silang → kembali ke hub/dashboard utama J-ERP (URL dari env via Inertia config.fo_url).
             { label: 'Kembali ke Dashboard Utama', icon: Building2, external: foUrl + '/dashboard' },
+        ],
+    },
+    {
+        title: 'Approval Inbox',
+        icon: ShieldCheck, color: '#f97316', route: 'approval-inbox.index',
+        desc: 'Ajukan Memo Internal & lacak approval bertingkat.',
+        items: [
+            // Satu layar, tiga tab (perlu persetujuan / pengajuan saya / riwayat); isi tiap tab
+            // dibatasi per baris oleh server, jadi semua peran internal boleh membukanya.
+            { label: 'Inbox Approval', icon: ShieldCheck, href: 'approval-inbox.index', permission: ['approvalinbox.view'] },
+            { label: 'Ajukan Memo', icon: FileText, href: 'approval-inbox.create', permission: ['approvalinbox.submit'] },
         ],
     },
     {

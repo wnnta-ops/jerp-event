@@ -53,6 +53,7 @@ class AppServiceProvider extends ServiceProvider
             'unit_change'       => \App\Domain\Sales\Exception\UnitChange\Models\UnitChangeRequest::class,
             'reschedule'        => \App\Domain\Sales\Exception\Reschedule\Models\RescheduleRequest::class,
             'surat_peringatan'  => \App\Domain\Collection\SuratPeringatan\Models\SuratPeringatan::class, // #118 approval finance
+            'memo_internal'     => \App\Domain\ApprovalInbox\Models\MemoInternal::class, // Approval Inbox
 
             // Phase 3 — Payment polymorphic sources
             'tts_receipt'       => \App\Domain\Finance\Tts\Models\Tts::class,

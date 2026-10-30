@@ -1503,6 +1503,19 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
         Route::post('/approvals/{approval}/act', [ApprovalController::class, 'act'])->name('approvals.act');
     }
 
+    // Gambar TTD user (disk privat) — dipakai Approval Inbox & printout.
+    Route::get('/users/{user}/signature', [App\Http\Controllers\Web\Settings\UserSignatureController::class, 'show'])->name('users.signature');
+
+    // ── APPROVAL INBOX — Memo Internal & tracking approval bertingkat ──
+    Route::prefix('approval-inbox')->name('approval-inbox.')->group(function (): void {
+        $c = App\Http\Controllers\Web\ApprovalInbox\ApprovalInboxController::class;
+        Route::get('/', [$c, 'index'])->name('index');
+        Route::get('/ajukan', [$c, 'create'])->name('create');
+        Route::post('/', [$c, 'store'])->name('store');
+        Route::get('/{approval}', [$c, 'show'])->whereNumber('approval')->name('show');
+        Route::post('/{approval}/act', [$c, 'act'])->whereNumber('approval')->name('act');
+    });
+
     // Exports (customers, bookings, kpr) — sudah PINDAH ke FO. Rutenya dimatikan lewat sakelar, bukan
     // dihapus: menunya sudah tidak ada di sidebar BO, tetapi alamatnya masih
     // bisa diketik dan halaman lamanya masih bisa MENULIS ke data yang kini
@@ -1524,6 +1537,8 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
         Route::get('/users/{user}/edit', [SettingUserController::class, 'edit'])->name('users.edit');
         Route::put('/users/{user}', [SettingUserController::class, 'update'])->name('users.update');
         Route::post('/users/{user}/block', [SettingUserController::class, 'block'])->name('users.block');
+        Route::post('/users/{user}/signature', [App\Http\Controllers\Web\Settings\UserSignatureController::class, 'store'])->name('users.signature.store');
+        Route::delete('/users/{user}/signature', [App\Http\Controllers\Web\Settings\UserSignatureController::class, 'destroy'])->name('users.signature.destroy');
 
         Route::get('/roles', [SettingRoleController::class, 'index'])->name('roles.index');
         Route::get('/roles/create', [SettingRoleController::class, 'create'])->name('roles.create');
