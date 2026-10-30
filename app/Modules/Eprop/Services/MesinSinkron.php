@@ -73,8 +73,11 @@ class MesinSinkron
     /**
      * @param  array{fo:string,bo:string,bfo:string,bbo:string}  $db
      * @param  string|null  $modul  'fo' / 'bo' = hanya dokumen modul itu; null = semua
+     * @param  bool  $hanyaBaru  true = hanya MEMASUKKAN dokumen yang belum ada; data J-ERP yang sudah ada
+     *                           tidak diperbarui (perubahan di eProperty dilaporkan sebagai konflik); penyamaan
+     *                           nomor SPR dengan nomor eProperty tetap dijalankan
      */
-    public function __construct(private array $db, private string $batas, private bool $kering = false, private ?string $kiriman = null, private ?string $modul = null)
+    public function __construct(private array $db, private string $batas, private bool $kering = false, private ?string $kiriman = null, private ?string $modul = null, private bool $hanyaBaru = false)
     {
         $this->c = DB::connection();
         $this->cfg = DaftarTabel::dokumen();
@@ -128,6 +131,19 @@ class MesinSinkron
                     }
                 }
                 foreach ($r['ubah'] as $kunci => [$idB, $idN]) {
+                    if ($this->hanyaBaru) {
+                        $rowB = $this->baris('b', $tabel, (int) $idB);
+                        $rowN = $this->baris('n', $tabel, (int) $idN);
+                        $beda = $tabel === 'bs_journals' ? ['isi baris jurnal'] : $this->bedaKolom(
+                            $this->kanonik('b', $tabel, $this->cfg[$tabel], $rowB), $this->kanonik('n', $tabel, $this->cfg[$tabel], $rowN));
+                        if ($beda === ['category_id']) {
+                            continue;   // kategori AP sudah dibetulkan di J-ERP — beda yang disengaja, tidak dilaporkan
+                        }
+                        $this->tambahHasil($tabel, $this->cfg[$tabel], (string) $kunci, 'konflik', $rowB, $this->labelNyata($tabel, $this->cfg[$tabel], $rowN),
+                            'Berubah di eProperty — TIDAK diterapkan (mode hanya data baru). Data J-ERP tetap. Beda: ' . implode(', ', $beda));
+
+                        continue;
+                    }
                     $this->perbaruiDokumen($tabel, (int) $idB, (int) $idN, (string) $kunci);
                 }
             }

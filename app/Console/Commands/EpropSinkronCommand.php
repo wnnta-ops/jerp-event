@@ -27,6 +27,7 @@ class EpropSinkronCommand extends Command
         {--bo= : database BO J-ERP (bawaan: koneksi ipro_bo)}
         {--bayang-fo=bayang_fo} {--bayang-bo=bayang_bo}
         {--modul= : fo = hanya dokumen FO (BO, KPR & jurnal tidak disentuh); kosong = semua}
+        {--hanya-baru : hanya memasukkan dokumen yang belum ada; data J-ERP yang sudah ada tidak diubah}
         {--kering : jalankan lalu batalkan — hanya laporan}';
 
     protected $description = 'Bandingkan kiriman eProperty dengan J-ERP: tautkan yang sama, masukkan yang terlewat, tahan yang meragukan';
@@ -52,10 +53,11 @@ class EpropSinkronCommand extends Command
 
             return self::FAILURE;
         }
-        $this->info(sprintf('Sinkron eProperty → J-ERP %s%s  (FO %s ← %s · BO %s ← %s · batas %s)',
-            $kering ? '[UJI — tidak menulis]' : '', $modul ? ' [HANYA ' . strtoupper($modul) . ']' : '', $db['fo'], $db['bfo'], $db['bo'], $db['bbo'], $batas));
+        $hanyaBaru = (bool) $this->option('hanya-baru');
+        $this->info(sprintf('Sinkron eProperty → J-ERP %s%s%s  (FO %s ← %s · BO %s ← %s · batas %s)',
+            $kering ? '[UJI — tidak menulis]' : '', $modul ? ' [HANYA ' . strtoupper($modul) . ']' : '', $hanyaBaru ? ' [HANYA DATA BARU]' : '', $db['fo'], $db['bfo'], $db['bo'], $db['bbo'], $batas));
 
-        $mesin = new MesinSinkron($db, $batas, $kering, $this->option('kiriman') ?: null, $modul);
+        $mesin = new MesinSinkron($db, $batas, $kering, $this->option('kiriman') ?: null, $modul, $hanyaBaru);
         try {
             $hasil = $mesin->jalankan(fn (string $s) => $this->line($s));
         } catch (Throwable $e) {
