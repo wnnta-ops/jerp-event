@@ -24,6 +24,7 @@ final class PayApInvoice
     public function execute(BsApInvoice $inv, array $data, ?int $userId = null): BsApPayment
     {
         return DB::transaction(function () use ($inv, $data, $userId): BsApPayment {
+            $inv->assertBolehDibayar(); // invoice dari Upload Berkas: tunggu approval penuh
             $amount = round((float) $data['amount'], 2);
 
             if ($amount <= 0) {

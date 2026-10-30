@@ -59,7 +59,7 @@ const dot: Record<Stage['state'], string> = {
         <div class="flex flex-wrap items-center justify-between gap-3">
             <div>
                 <h1 class="text-2xl font-bold">Approval Inbox</h1>
-                <p class="text-sm text-neutral-500">Memo Internal · Dept. Head → Accounting → Finance → GM → Direktur → MW / BA</p>
+                <p class="text-sm text-neutral-500">Memo Internal, TTD Berkas & Invoice Hutang — Accounting → Finance → GM → Direktur → MW / BA</p>
             </div>
             <Link v-if="canSubmit" :href="route('approval-inbox.create')"><Button>+ Ajukan Memo</Button></Link>
         </div>
@@ -78,7 +78,7 @@ const dot: Record<Stage['state'], string> = {
             <table class="w-full text-sm">
                 <thead class="bg-neutral-50 dark:bg-neutral-800">
                     <tr class="text-left text-xs uppercase text-neutral-500">
-                        <th class="px-4 py-3">No. Memo</th>
+                        <th class="px-4 py-3">No. Dokumen</th>
                         <th class="px-4 py-3">Perihal</th>
                         <th class="px-4 py-3 text-right">Nominal</th>
                         <th class="px-4 py-3">Diajukan</th>
@@ -89,7 +89,10 @@ const dot: Record<Stage['state'], string> = {
                 </thead>
                 <tbody class="divide-y divide-neutral-200 dark:divide-neutral-800">
                     <tr v-for="r in rows" :key="r.id" class="hover:bg-neutral-50 dark:hover:bg-neutral-800/50">
-                        <td class="px-4 py-3 font-mono text-xs font-semibold">{{ r.number ?? '#' + r.id }}</td>
+                        <td class="px-4 py-3">
+                            <p class="font-mono text-xs font-semibold">{{ r.number ?? '#' + r.id }}</p>
+                            <p class="text-xs text-neutral-500">{{ r.type }}</p>
+                        </td>
                         <td class="px-4 py-3">
                             <p class="font-medium">{{ r.subject }}</p>
                             <p class="text-xs text-neutral-500">{{ r.department }}</p>

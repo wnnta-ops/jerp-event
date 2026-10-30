@@ -334,8 +334,30 @@ class ApInvoiceController extends Controller
         $pphAccounts = BsAccount::where('is_active', true)->where('is_postable', true)
             ->where('code', 'like', '2010404%')->orderBy('code')->get(['id', 'code', 'name']);
 
+        // ?berkas={id} dari Upload Berkas → isian awal diambil dari berkas (hanya yang siap).
+        $dariBerkas = null;
+        if ($edit === null && $jenis === 'invoice' && $request->filled('berkas')) {
+            $b = \App\Domain\BusinessSupport\Models\BsApBerkasUpload::with('files.jenis:id,name')->find((int) $request->input('berkas'));
+            if ($b && $b->status === \App\Domain\BusinessSupport\Models\BsApBerkasUpload::STATUS_SIAP_INVOICE && ! $b->ap_invoice_id) {
+                $dariBerkas = [
+                    'id' => $b->id,
+                    'number' => $b->berkas_number,
+                    'supplier_id' => $b->supplier_id,
+                    'supplier_invoice_no' => $b->supplier_invoice_no,
+                    'amount' => $b->amount !== null ? (float) $b->amount : null,
+                    'description' => $b->description,
+                    'files' => $b->files->map(fn ($f) => [
+                        'name' => $f->original_name,
+                        'jenis' => $f->jenis?->name,
+                        'url' => route('bs.ap.berkas.file', [$b->id, $f->id]),
+                    ]),
+                ];
+            }
+        }
+
         return Inertia::render('BusinessSupport/Payable/Form', [
             'jenis' => $info,
+            'dariBerkas' => $dariBerkas,
             // Penerima Reimburse/Deposit tercatat sebagai supplier berkategori khusus
             // (PenerimaHutang) — mereka bukan pilihan pada Invoice Hutang ke supplier.
             'suppliers' => $jenis === 'invoice'
@@ -557,6 +579,19 @@ class ApInvoiceController extends Controller
             $request->merge(['supplier_id' => $sup->id]);
         }
 
+        // UPLOAD BERKAS: invoice yang dibuat dari berkas ber-TTD Dept Head langsung diajukan ke
+        // approval invoice saat tersimpan, dan tidak bisa dibayar sebelum disetujui penuh.
+        // Hanya registrasi baru Invoice Hutang; diperiksa lagi (terkunci) di dalam transaksi.
+        $berkas = null;
+        if ($lama === null && $jenis === 'invoice' && $request->filled('berkas_upload_id')) {
+            $berkas = \App\Domain\BusinessSupport\Models\BsApBerkasUpload::findOrFail((int) $request->input('berkas_upload_id'));
+            try {
+                app(\App\Domain\BusinessSupport\Services\ApBerkasService::class)->assertSiapInvoice($berkas);
+            } catch (BusinessRuleException $e) {
+                return back()->withInput()->with('error', $e->getMessage());
+            }
+        }
+
         $v = $request->validate([
             'supplier_id' => ['required', 'integer', 'exists:bs_suppliers,id'],
             'unit_id' => ['nullable', 'integer', 'exists:units,id'],
@@ -642,11 +677,21 @@ class ApInvoiceController extends Controller
             // Gerbang over-budget: tolak bila baris jurnal (Dr akun ber-anggaran + cost center) melewati anggaran.
             // Edit: jurnal lama invoice ini dikecualikan supaya realisasinya tidak terhitung dua kali.
             $budgetGuard->assertWithinBudget($v['journal_lines'] ?? [], null, $v['invoice_date'], $lama?->journal_id);
-            $inv = $action->execute($v + ['jenis' => $jenis], $request->user()->id, $lama);
-            // "Simpan & Buat Jurnal" sekaligus menerbitkan Purchase Order-nya, supaya pembelian
-            // yang tagihannya masuk lebih dulu tetap punya dokumen pesanan. Data yang tidak ada
-            // di invoice (no. PO, master barang) dibangkitkan sistem — lihat actionnya.
-            $po = app(\App\Domain\BusinessSupport\Actions\GeneratePoFromApInvoice::class)->execute($inv, $request->user()->id);
+            $simpanInvoice = function () use ($action, $v, $jenis, $request, $lama, $berkas): array {
+                $inv = $action->execute($v + ['jenis' => $jenis], $request->user()->id, $lama);
+                // "Simpan & Buat Jurnal" sekaligus menerbitkan Purchase Order-nya, supaya pembelian
+                // yang tagihannya masuk lebih dulu tetap punya dokumen pesanan. Data yang tidak ada
+                // di invoice (no. PO, master barang) dibangkitkan sistem — lihat actionnya.
+                $po = app(\App\Domain\BusinessSupport\Actions\GeneratePoFromApInvoice::class)->execute($inv, $request->user()->id);
+                if ($berkas !== null) {
+                    app(\App\Domain\BusinessSupport\Services\ApBerkasService::class)->ajukanInvoice($berkas, $inv);
+                }
+
+                return [$inv, $po];
+            };
+            // Dari berkas: invoice + pengajuan approval satu transaksi — tidak pernah ada invoice
+            // berkas yang tersimpan tanpa approval (yang berarti bisa langsung dibayar).
+            [$inv, $po] = $berkas !== null ? DB::transaction($simpanInvoice) : $simpanInvoice();
         } catch (BusinessRuleException $e) {
             // Penolakan anggaran disalurkan ke DIALOG; selebihnya tetap toast. Lihat trait.
             return $this->balikDenganGalat($e);
@@ -654,6 +699,8 @@ class ApInvoiceController extends Controller
 
         if ($lama !== null) {
             session()->flash('success', "Invoice {$inv->invoice_number} diperbarui".($po ? " — Purchase Order {$po->po_number} dibuat ulang." : '.'));
+        } elseif ($berkas !== null) {
+            session()->flash('success', "Invoice {$inv->invoice_number} dari berkas {$berkas->berkas_number} tersimpan & diajukan ke approval — belum bisa dibayar sampai disetujui MW / BA.");
         } elseif ($po) {
             session()->flash('success', "Invoice {$inv->invoice_number} tersimpan & Purchase Order {$po->po_number} dibuat otomatis.");
         }

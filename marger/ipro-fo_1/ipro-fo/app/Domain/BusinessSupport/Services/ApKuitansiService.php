@@ -42,6 +42,7 @@ final class ApKuitansiService
                     continue;
                 }
                 $inv = BsApInvoice::findOrFail($l['ap_invoice_id']);
+                $inv->assertBolehDibayar();
                 if ((int) $inv->supplier_id !== (int) $data['supplier_id']) {
                     throw new BusinessRuleException('Invoice tidak sesuai supplier.', errorCode: 'KUI_SUPPLIER');
                 }
@@ -97,6 +98,8 @@ final class ApKuitansiService
                 if (! $inv) {
                     throw new BusinessRuleException('Invoice baris kuitansi tidak ditemukan.', errorCode: 'KUI_INV_MISSING');
                 }
+                // Kuitansi bisa dibuat sebelum aturan ini ada — periksa lagi saat disetujui.
+                $inv->assertBolehDibayar();
                 $amount = round((float) $line->amount, 2);
                 if ($amount > (float) $inv->outstanding + 0.01) {
                     throw new BusinessRuleException("Sisa hutang invoice {$inv->invoice_number} tidak cukup (mungkin sudah dibayar) — tolak & registrasi ulang.", errorCode: 'KUI_OVER');

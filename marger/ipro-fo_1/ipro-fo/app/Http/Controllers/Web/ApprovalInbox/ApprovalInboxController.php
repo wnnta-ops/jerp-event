@@ -82,22 +82,15 @@ class ApprovalInboxController extends Controller
         $user = $request->user();
         abort_unless($user?->can('approvalinbox.view'), 403);
         abort_unless(in_array($approval->document_type, ApprovalInboxQuery::DOCUMENT_TYPES, true), 404);
-        $approval->load(['steps', 'approvable']);
+        $approval->load('steps')->loadMorph('approvable', [
+            \App\Domain\BusinessSupport\Models\BsApBerkasUpload::class => ['supplier:id,name', 'files.jenis:id,name'],
+            \App\Domain\BusinessSupport\Models\BsApInvoice::class => ['supplier:id,name'],
+        ]);
         abort_unless($this->inbox->canView($user, $approval), 403);
-
-        $memo = $approval->approvable;
 
         return Inertia::render('ApprovalInbox/Show', [
             'approval' => $this->inbox->row($approval),
-            'memo' => $memo ? [
-                'number' => $memo->memo_number,
-                'date' => $memo->memo_date?->toDateString(),
-                'department' => $memo->department,
-                'subject' => $memo->subject,
-                'body' => $memo->body,
-                'amount' => $memo->amount !== null ? (float) $memo->amount : null,
-                'status' => $memo->status,
-            ] : null,
+            'doc' => $this->inbox->detail($approval),
             'stages' => $this->inbox->stages($approval),
             'canAct' => $this->inbox->canAct($user, $approval),
         ]);

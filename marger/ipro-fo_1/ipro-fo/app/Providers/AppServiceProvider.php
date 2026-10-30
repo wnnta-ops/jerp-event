@@ -54,6 +54,8 @@ class AppServiceProvider extends ServiceProvider
             'reschedule'        => \App\Domain\Sales\Exception\Reschedule\Models\RescheduleRequest::class,
             'surat_peringatan'  => \App\Domain\Collection\SuratPeringatan\Models\SuratPeringatan::class, // #118 approval finance
             'memo_internal'     => \App\Domain\ApprovalInbox\Models\MemoInternal::class, // Approval Inbox
+            'ap_berkas_upload'  => \App\Domain\BusinessSupport\Models\BsApBerkasUpload::class, // Upload Berkas → TTD Dept Head
+            'ap_invoice'        => \App\Domain\BusinessSupport\Models\BsApInvoice::class,      // approval invoice dari berkas
 
             // Phase 3 — Payment polymorphic sources
             'tts_receipt'       => \App\Domain\Finance\Tts\Models\Tts::class,

@@ -53,10 +53,14 @@ final class ActOnApproval
                 $user->hasRole('SuperAdmin')
                 || ($chainStep && $chainStep->approver_type === 'role' && $user->hasRole((string) $chainStep->approver_value))
                 || ($chainStep && $chainStep->approver_type === 'user' && (int) $chainStep->approver_value === (int) $userId)
+                // 'assigned' = approver ditunjuk per pengajuan (ApprovalStep.approver_id diisi saat submit).
+                || ($chainStep && $chainStep->approver_type === 'assigned' && (int) $currentStep->approver_id === (int) $userId)
             );
 
             if (! $authorized) {
-                $need = $chainStep ? "{$chainStep->approver_type} {$chainStep->approver_value}" : 'approver yang sesuai';
+                $need = $chainStep?->approver_type === 'assigned'
+                    ? 'penanda tangan yang ditunjuk'
+                    : ($chainStep ? "{$chainStep->approver_type} {$chainStep->approver_value}" : 'approver yang sesuai');
                 throw new BusinessRuleException(
                     "Anda tidak berhak meng-approve langkah ini (butuh {$need}).",
                     errorCode: 'APPROVAL_FORBIDDEN',

@@ -34,6 +34,11 @@ const props = defineProps<{
     coaTanpaAnggaran?: string[];
     /** Mode EDIT (sebelum diproses FAT): isian invoice lama. null/undefined = registrasi baru. */
     invoiceEdit?: { id: number; invoice_number: string; pihak_nama: string | null; data: Record<string, any> } | null;
+    /** Registrasi dari Upload Berkas (?berkas=) — isian awal + file pendukung; tersimpan → diajukan ke approval. */
+    dariBerkas?: {
+        id: number; number: string; supplier_id: number | null; supplier_invoice_no: string | null;
+        amount: number | null; description: string; files: Array<{ name: string; jenis: string | null; url: string }>;
+    } | null;
     departments: Array<any>;
     ledgers: Array<any>;
     locations: Array<any>;
@@ -57,6 +62,15 @@ const form = useForm<any>({
     lines: [], schedules: [], journal_lines: [],
     // Penerima Reimburse (karyawan) / Deposit (customer + rekening yang diketik).
     employee_id: '', customer_id: '', bank_name: '', bank_account_no: '', bank_account_name: '',
+    // Dari Upload Berkas: isian awal diambil dari berkas; berkas_upload_id membuat server
+    // mengajukan invoice ini ke approval begitu tersimpan.
+    berkas_upload_id: props.dariBerkas?.id ?? '',
+    ...(props.dariBerkas ? {
+        supplier_id: props.dariBerkas.supplier_id ?? '',
+        supplier_invoice_no: props.dariBerkas.supplier_invoice_no ?? '',
+        description: props.dariBerkas.description,
+        dpp: props.dariBerkas.amount ?? 0,
+    } : {}),
     ...(props.invoiceEdit?.data ?? {}),
 });
 
@@ -651,6 +665,17 @@ const cellArea = 'w-full rounded-md border border-neutral-300 bg-white px-2 py-1
             <h1 class="flex items-center gap-2 text-2xl font-bold"><HandCoins class="h-6 w-6 text-danger-600" /> <template v-if="invoiceEdit">Edit {{ jenis.judul }} <span class="font-mono text-lg text-neutral-500">{{ invoiceEdit.invoice_number }}</span></template><template v-else>Registrasi {{ jenis.judul }}</template></h1>
             <Link v-if="invoiceEdit" :href="route('bs.ap.show', invoiceEdit.id)" class="inline-flex items-center gap-2 text-sm text-neutral-500 hover:text-neutral-800 dark:hover:text-neutral-200"><ArrowLeft class="h-4 w-4" /> Kembali</Link>
             <button v-else type="button" @click="ulangDariAwal" title="Kosongkan isian & mulai lagi dari langkah 1" class="inline-flex items-center gap-2 text-sm text-neutral-500 hover:text-neutral-800 dark:hover:text-neutral-200"><ArrowLeft class="h-4 w-4" /> Kembali</button>
+        </div>
+
+        <!-- Dari Upload Berkas -->
+        <div v-if="dariBerkas" class="rounded-xl border border-primary-200 bg-primary-50 p-4 text-sm dark:border-primary-900 dark:bg-primary-950/40">
+            <p class="font-semibold">Dari berkas <span class="font-mono">{{ dariBerkas.number }}</span> — sudah ditandatangani Dept Head</p>
+            <p class="mt-1 text-neutral-600 dark:text-neutral-300">Setelah disimpan, invoice ini langsung masuk approval <b>Accounting → Finance → GM → Direktur → MW / BA</b> dan baru bisa dibayar setelah disetujui penuh.</p>
+            <div class="mt-2 flex flex-wrap gap-2">
+                <a v-for="(f, i) in dariBerkas.files" :key="i" :href="f.url" target="_blank" rel="noopener" class="rounded-md border border-primary-200 bg-white px-2 py-1 text-xs text-primary-700 hover:underline dark:border-primary-800 dark:bg-neutral-900 dark:text-primary-300">
+                    📎 {{ f.jenis ? f.jenis + ' · ' : '' }}{{ f.name }}
+                </a>
+            </div>
         </div>
 
         <!-- Stepper -->
