@@ -49,7 +49,9 @@ function submit() {
 }
 /** Departemen karyawan, Utama lebih dulu. */
 function departemenIds(e: any): number[] {
-    const ids = e.cost_center_id ? [Number(e.cost_center_id)] : [];
+    // e.cost_center null = cost center Utama sudah dihapus → dibuang, supaya ★ Utama yang
+    // tampil sama dengan yang tersimpan (chip id terhapus tidak terlihat, tetapi tetap terkirim).
+    const ids = e.cost_center_id && e.cost_center ? [Number(e.cost_center_id)] : [];
     for (const c of (e.extra_cost_centers ?? [])) if (!ids.includes(Number(c.id))) ids.push(Number(c.id));
     return ids;
 }
