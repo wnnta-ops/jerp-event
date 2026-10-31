@@ -133,6 +133,10 @@ class SiteplanController
             'project' => $model,
             'lokasi' => $lokasi,
             'clusters' => $lokasiList,
+            // Jumlah unit & sisa siap jual per cluster untuk daftar "Pilih cluster".
+            'clusterStok' => Unit::where('project_id', $model->id)->where('is_active', true)
+                ->selectRaw("lokasi_id, COUNT(*) AS total, SUM(status = 'TERSEDIA') AS ready")
+                ->groupBy('lokasi_id')->get()->keyBy('lokasi_id'),
             'siteplan' => $lokasi?->resolvedSiteplan() ?? $this->siteplan($model),
             'units' => $this->units($model, $lokasi?->id),
             'blocks' => $this->blocks($model, $lokasi?->id),
