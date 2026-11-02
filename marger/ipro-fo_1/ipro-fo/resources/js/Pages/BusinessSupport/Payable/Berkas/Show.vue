@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { Head, Link, router } from '@inertiajs/vue3';
-import { ref } from 'vue';
+import { onBeforeUnmount, ref } from 'vue';
+import { gabungPdf } from '@/Composables/useGabungPdf';
+import { Files } from 'lucide-vue-next';
 import Badge from '@/Components/UI/Badge.vue';
 import Button from '@/Components/UI/Button.vue';
 
@@ -42,6 +44,45 @@ const ada = (nama: string) => props.berkas.files.some((f) => f.jenis === nama);
 // Pratinjau file di halaman (PDF / gambar).
 const pratinjau = ref<FileRow | null>(null);
 
+// "Lihat Semua": semua file digabung jadi satu PDF (sampul + daftar isi), urut sesuai checklist.
+const semua = ref<{ url: string; nama: string } | null>(null);
+const menggabung = ref(false);
+const galatGabung = ref('');
+async function lihatSemua() {
+    if (semua.value) return;
+    menggabung.value = true;
+    galatGabung.value = '';
+    try {
+        const urutan = props.jenisChecklist.map((j) => j.name);
+        const pos = (f: FileRow) => (f.jenis && urutan.includes(f.jenis) ? urutan.indexOf(f.jenis) : urutan.length);
+        const files = [...props.berkas.files].sort((a, b) => pos(a) - pos(b));
+        const b = props.berkas;
+        const blob = await gabungPdf(files, {
+            judul: 'Kumpulan Berkas ' + b.number,
+            subjudul: b.description,
+            baris: [
+                ['Supplier', b.supplier ?? '-'],
+                ['No. tagihan', b.supplier_invoice_no ?? '-'],
+                ['Tanggal tagihan', tglPendek(b.document_date)],
+                ['Jatuh tempo', tglPendek(b.needed_date)],
+                ['Total tagihan', rupiah(b.amount)],
+                ['Pengunggah / Dept Head', `${b.uploader ?? '-'} / ${b.dept_head ?? '-'}`],
+                ['Status', label[b.status] ?? b.status],
+            ],
+        });
+        semua.value = { url: URL.createObjectURL(blob), nama: `${b.number}.pdf` }; // nama unduhan = nomor berkas
+    } catch (e) {
+        galatGabung.value = 'Gagal menggabungkan file — coba buka satu per satu.';
+    } finally {
+        menggabung.value = false;
+    }
+}
+function tutupSemua() {
+    if (semua.value) URL.revokeObjectURL(semua.value.url);
+    semua.value = null;
+}
+onBeforeUnmount(tutupSemua);
+
 // Batal / tutup / hapus — dialog di halaman.
 const dialog = ref<'cancel' | 'close' | 'delete' | null>(null);
 const alasan = ref('');
@@ -53,6 +94,8 @@ function konfirmasi() {
 }
 const ajukan = () => router.post(route('bs.ap.berkas.submit', props.berkas.id), {}, { preserveScroll: true });
 
+// 2026-11-02 → 02/11/26
+const tglPendek = (iso: string | null) => (iso ? iso.slice(8, 10) + '/' + iso.slice(5, 7) + '/' + iso.slice(2, 4) : '-');
 const rupiah = (v: number | null) => (v == null ? '—' : 'Rp ' + Math.round(v).toLocaleString('id-ID'));
 const ukuran = (b: number) => (b > 1048576 ? (b / 1048576).toFixed(1) + ' MB' : Math.ceil(b / 1024) + ' KB');
 const waktu = (iso: string) => new Date(iso).toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' });
@@ -112,7 +155,14 @@ const tampil = (v: any) => (v === null || v === '' || v === undefined ? '—' : 
                 <!-- File -->
                 <div class="card space-y-3 p-6">
                     <div class="flex flex-wrap items-center justify-between gap-2">
-                        <p class="text-xs uppercase text-neutral-500">File berkas ({{ berkas.files.length }})</p>
+                        <div class="flex items-center gap-3">
+                            <p class="text-xs uppercase text-neutral-500">File berkas ({{ berkas.files.length }})</p>
+                            <button v-if="berkas.files.length > 1" type="button" :disabled="menggabung" title="Gabungkan semua file jadi satu PDF"
+                                class="inline-flex items-center gap-1 rounded-full bg-primary-50 px-2 py-0.5 text-[11px] font-medium text-primary-700 transition hover:bg-primary-100 disabled:opacity-60 dark:bg-primary-950/40 dark:text-primary-300"
+                                @click="lihatSemua">
+                                <Files class="h-3 w-3" />{{ menggabung ? 'Menggabung…' : 'Lihat semua' }}
+                            </button>
+                        </div>
                         <ul class="flex flex-wrap gap-1 text-xs">
                             <li v-for="j in jenisChecklist" :key="j.name" :class="['rounded-full px-2 py-0.5', ada(j.name) ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300' : j.is_mandatory ? 'bg-amber-50 text-amber-800 dark:bg-amber-950/40 dark:text-amber-300' : 'bg-neutral-100 text-neutral-500 dark:bg-neutral-800']">
                                 {{ ada(j.name) ? '✓' : '○' }} {{ j.name }}{{ j.is_mandatory ? ' (wajib)' : '' }}
@@ -130,6 +180,7 @@ const tampil = (v: any) => (v === null || v === '' || v === undefined ? '—' : 
                             <a :href="f.url" target="_blank" rel="noopener" class="text-xs text-neutral-500 hover:underline">Buka ↗</a>
                         </li>
                     </ul>
+                    <p v-if="galatGabung" class="text-xs text-red-600">{{ galatGabung }}</p>
                     <p v-if="can.edit" class="text-xs text-neutral-500">Tambah atau ganti file lewat tombol {{ berkas.status === 'ditolak' ? 'Revisi' : 'Edit' }}.</p>
                 </div>
 
@@ -177,6 +228,20 @@ const tampil = (v: any) => (v === null || v === '' || v === undefined ? '—' : 
             <div class="mx-auto flex min-h-0 w-full max-w-4xl flex-1 items-center justify-center overflow-auto rounded-lg bg-white">
                 <iframe v-if="pratinjau.mime === 'application/pdf'" :src="pratinjau.url" class="h-full w-full" :title="pratinjau.name" />
                 <img v-else :src="pratinjau.url" :alt="pratinjau.name" class="max-h-full max-w-full object-contain" />
+            </div>
+        </div>
+
+        <!-- Lihat semua: satu PDF gabungan -->
+        <div v-if="semua" class="fixed inset-0 z-50 flex flex-col bg-black/70 p-4" @click.self="tutupSemua">
+            <div class="mx-auto flex w-full max-w-4xl items-center justify-between gap-3 pb-2 text-white">
+                <span class="truncate text-sm">Semua berkas · {{ berkas.files.length }} file digabung</span>
+                <div class="flex gap-2">
+                    <a :href="semua.url" :download="semua.nama" class="rounded-md bg-white/15 px-3 py-1 text-sm hover:bg-white/25">Unduh PDF</a>
+                    <button class="rounded-md bg-white/15 px-3 py-1 text-sm hover:bg-white/25" @click="tutupSemua">Tutup</button>
+                </div>
+            </div>
+            <div class="mx-auto min-h-0 w-full max-w-4xl flex-1 overflow-hidden rounded-lg bg-white">
+                <iframe :src="semua.url" class="h-full w-full" :title="semua.nama" />
             </div>
         </div>
 

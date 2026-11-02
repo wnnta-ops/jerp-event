@@ -314,7 +314,7 @@ final class ApBerkasService
     }
 
     /**
-     * DOC-{YYYYMMDD tanggal tagihan}-{kode supplier}-{NNNN}; urut per tanggal tagihan + supplier.
+     * DOC-{DDMMYY tanggal tagihan}-{kode supplier}-{NNNN}; urut per tanggal tagihan + supplier.
      * Supplier belum diisi → kode "NA".
      */
     public function nextNumber(?int $supplierId, string $date): string
@@ -336,7 +336,7 @@ final class ApBerkasService
         $code = $supplierId ? (string) BsSupplier::query()->whereKey($supplierId)->value('code') : '';
         $code = substr(strtoupper((string) preg_replace('/[^A-Za-z0-9]/', '', $code)), 0, 16) ?: 'NA';
 
-        return 'DOC-'.\Illuminate\Support\Carbon::parse($date)->format('Ymd').'-'.$code.'-';
+        return 'DOC-'.\Illuminate\Support\Carbon::parse($date)->format('dmy').'-'.$code.'-';
     }
 
     // ── internal ─────────────────────────────────────────────────────────────────
