@@ -127,12 +127,11 @@ export function navGroups(foUrl: string): NavGroup[] {
     {
         title: 'Approval Inbox',
         icon: ShieldCheck, color: '#f97316', route: 'approval-inbox.index', baru: true,
-        desc: 'Ajukan Memo Internal & lacak approval bertingkat.',
+        desc: 'Setujui & lacak approval bertingkat dari Invoice Hutang (AP).',
         items: [
             // Satu layar, tiga tab (perlu persetujuan / pengajuan saya / riwayat); isi tiap tab
             // dibatasi per baris oleh server, jadi semua peran internal boleh membukanya.
             { label: 'Inbox Approval', icon: ShieldCheck, href: 'approval-inbox.index', permission: ['approvalinbox.view'], baru: true },
-            { label: 'Ajukan Memo', icon: FileText, href: 'approval-inbox.create', permission: ['approvalinbox.submit'], baru: true },
         ],
     },
     {

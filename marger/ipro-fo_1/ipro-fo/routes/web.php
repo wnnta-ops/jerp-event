@@ -1530,12 +1530,10 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
     // Gambar TTD user (disk privat) — dipakai Approval Inbox & printout.
     Route::get('/users/{user}/signature', [App\Http\Controllers\Web\Settings\UserSignatureController::class, 'show'])->name('users.signature');
 
-    // ── APPROVAL INBOX — Memo Internal & tracking approval bertingkat ──
+    // ── APPROVAL INBOX — tracking approval bertingkat (TTD Berkas & Invoice Hutang dari AP) ──
     Route::prefix('approval-inbox')->name('approval-inbox.')->group(function (): void {
         $c = App\Http\Controllers\Web\ApprovalInbox\ApprovalInboxController::class;
         Route::get('/', [$c, 'index'])->name('index');
-        Route::get('/ajukan', [$c, 'create'])->name('create');
-        Route::post('/', [$c, 'store'])->name('store');
         Route::get('/{approval}', [$c, 'show'])->whereNumber('approval')->name('show');
         Route::post('/{approval}/act', [$c, 'act'])->whereNumber('approval')->name('act');
     });

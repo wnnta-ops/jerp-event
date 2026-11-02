@@ -6,7 +6,6 @@ namespace App\Http\Controllers\Web\ApprovalInbox;
 
 use App\Domain\Approval\Actions\ActOnApproval;
 use App\Domain\Approval\Models\Approval;
-use App\Domain\ApprovalInbox\Actions\SubmitMemoInternal;
 use App\Domain\ApprovalInbox\Services\ApprovalInboxQuery;
 use App\Exceptions\BusinessRuleException;
 use App\Http\Controllers\Controller;
@@ -16,7 +15,8 @@ use Inertia\Inertia;
 use Inertia\Response;
 
 /**
- * Approval Inbox — pengajuan & tracking Memo Internal di rantai approval bertingkat.
+ * Approval Inbox — tracking & keputusan approval bertingkat. Pengajuannya datang dari AP
+ * (TTD Berkas, Invoice Hutang); form Ajukan Memo sudah dihapus, memo lama tetap bisa dibuka.
  * Visibilitas per baris diatur ApprovalInboxQuery (staf hanya melihat ajuannya sendiri).
  */
 class ApprovalInboxController extends Controller
@@ -42,39 +42,7 @@ class ApprovalInboxController extends Controller
             'tab' => $tab,
             'counts' => array_map(fn ($l) => $l->count(), $lists),
             'rows' => $lists[$tab]->map(fn (Approval $a) => $this->inbox->row($a))->values(),
-            'canSubmit' => $user->can('approvalinbox.submit'),
         ]);
-    }
-
-    public function create(Request $request): Response
-    {
-        abort_unless($request->user()?->can('approvalinbox.submit'), 403);
-
-        return Inertia::render('ApprovalInbox/Create', [
-            'today' => now()->toDateString(),
-        ]);
-    }
-
-    public function store(Request $request, SubmitMemoInternal $submit): RedirectResponse
-    {
-        abort_unless($request->user()?->can('approvalinbox.submit'), 403);
-
-        $data = $request->validate([
-            'memo_date' => 'required|date',
-            'department' => 'required|string|max:100',
-            'subject' => 'required|string|max:200',
-            'body' => 'required|string|max:5000',
-            'amount' => 'nullable|numeric|min:0',
-        ]);
-
-        try {
-            $memo = $submit->execute($data);
-        } catch (BusinessRuleException $e) {
-            return back()->withInput()->with('error', $e->getMessage());
-        }
-
-        return redirect()->route('approval-inbox.show', $memo->approval_id)
-            ->with('success', "Memo {$memo->memo_number} diajukan — menunggu Accounting.");
     }
 
     public function show(Request $request, Approval $approval): Response
