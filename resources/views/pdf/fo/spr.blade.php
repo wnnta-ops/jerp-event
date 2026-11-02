@@ -121,9 +121,9 @@
 
             return \App\Modules\FO\Komunikasi\Support\EditorDokumen::kolom($kunci, $v, $polos);
         };
-        // Nomor romawi di awal judul ("IV.", "XI. JUDUL") → [nomor, sisa judul] untuk kolom nomor.
+        // Nomor romawi di awal judul ("IV.", "XI. JUDUL", atau "XVIII" saja) → [nomor, sisa judul] untuk kolom nomor.
         $pisahNo = function (string $judul): array {
-            if (preg_match('/^\s*((?:<[^>]+>)*)\s*([IVXLCDM]+\.)(?=\s|<|$)/u', $judul, $m)) {
+            if (preg_match('/^\s*((?:<[^>]+>)*)\s*([IVXLCDM]+\.(?=\s|<|$)|[IVXLCDM]+(?=\s*$))/u', $judul, $m)) {
                 return [$m[2], $m[1].ltrim(substr($judul, strlen($m[0])))];
             }
 

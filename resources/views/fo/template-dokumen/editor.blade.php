@@ -23,6 +23,8 @@
     .ed-item { position: relative; }
     .ctl { position: absolute; right: 0; top: -17px; display: none; gap: 2px; z-index: 5; white-space: nowrap; }
     .ed-item:hover > .ctl, .ed-item:focus-within > .ctl { display: flex; }
+    /* Satu deret tombol saja: yang disorot mouse menang atas yang sedang diketik. */
+    body:has(.ed-item:hover) .ed-item:focus-within:not(:hover) > .ctl { display: none; }
     .ctl button, .ed-add { font: 600 10px Arial, sans-serif; padding: 2px 6px; border: 1px solid #d1d5db; background: #fff; color: #374151; border-radius: 4px; cursor: pointer; }
     .ctl button:hover, .ed-add:hover { background: #ea7a1d; color: #fff; border-color: #ea7a1d; }
     .ctl button[data-op=hapus]:hover { background: #dc2626; border-color: #dc2626; }
@@ -151,7 +153,60 @@
         });
     });
 
+    // Teks contoh ("Isi pasal …") langsung terpilih saat diklik → tinggal diketik, tak perlu dihapus dulu.
+    function pilihSemua(el) {
+        var r = document.createRange();
+        r.selectNodeContents(el);
+        var s = window.getSelection();
+        s.removeAllRanges();
+        s.addRange(r);
+    }
+    document.querySelectorAll('.ed').forEach(function (el) {
+        el.addEventListener('focus', function () {
+            if (/…$/.test(el.textContent.trim())) setTimeout(function () { pilihSemua(el); }, 0);
+        });
+    });
+    function fokusBaru() {
+        var k = null;
+        try { k = sessionStorage.getItem('ed-fokus'); sessionStorage.removeItem('ed-fokus'); } catch (_) {}
+        var el = k && document.querySelector('.ed[data-k="' + k + '"]');
+        if (!el) return;
+        el.scrollIntoView({ block: 'center' });
+        el.focus();
+    }
+
     // ── Tambah / hapus / geser / halaman baru → ubah isi lalu tampilkan ulang ──
+    // ── Nomor pasal otomatis (seperti Word): sesudah tambah/hapus/geser, nomor romawi di awal judul
+    // diurutkan ulang mulai dari nomor pasal bernomor pertama. Hanya versi yang sedang diedit.
+    var RE_NO = /^(\s*(?:<[^>]+>)*\s*)([IVXLCDM]+)(\.|(?=\s*$))/;
+    function dariRomawi(s) {
+        var v = { I: 1, V: 5, X: 10, L: 50, C: 100, D: 500, M: 1000 }, n = 0;
+        for (var i = 0; i < s.length; i++) n += v[s[i]] < (v[s[i + 1]] || 0) ? -v[s[i]] : v[s[i]];
+        return n;
+    }
+    function keRomawi(n) {
+        var s = '';
+        [[1000, 'M'], [900, 'CM'], [500, 'D'], [400, 'CD'], [100, 'C'], [90, 'XC'], [50, 'L'], [40, 'XL'],
+            [10, 'X'], [9, 'IX'], [5, 'V'], [4, 'IV'], [1, 'I']].forEach(function (p) {
+            while (n >= p[0]) { s += p[1]; n -= p[0]; }
+        });
+        return s;
+    }
+    function nomorAwal(pasal) {
+        for (var i = 0; i < pasal.length; i++) {
+            var m = RE_NO.exec(pasal[i].judul || '');
+            if (m) return dariRomawi(m[2]);
+        }
+        return 0;
+    }
+    function nomoriPasal(pasal, awal) {
+        if (!awal) return;
+        pasal.forEach(function (p) {
+            var m = RE_NO.exec(p.judul || '');
+            if (m) p.judul = p.judul.replace(RE_NO, m[1] + keRomawi(awal++) + '.');
+        });
+    }
+
     function kirim(aksi) {
         document.getElementById('ed-isi').value = JSON.stringify(isi);
         document.getElementById('ed-aksi').value = aksi;
@@ -165,6 +220,7 @@
         e.preventDefault();
         var daftar = ambil(b.dataset.list), i = parseInt(b.dataset.i, 10), op = b.dataset.op;
         if (!Array.isArray(daftar)) { setel(b.dataset.list, []); daftar = ambil(b.dataset.list); }
+        var pasal = b.dataset.list === 'pasal', awal = pasal ? nomorAwal(daftar) : 0, fokus = null;
         if (op === 'hapus') {
             daftar.splice(i, 1);
         } else if (op === 'naik' && i > 0) {
@@ -172,16 +228,22 @@
         } else if (op === 'turun' && i < daftar.length - 1) {
             daftar.splice(i + 1, 0, daftar.splice(i, 1)[0]);
         } else if (op === 'tambah') {
-            daftar.splice(i + 1, 0, b.dataset.list === 'pasal'
-                ? { judul: 'Pasal baru', isi: 'Isi pasal …', butir: [], halaman_baru: false } : 'Teks baru …');
+            // Pasal baru ikut bernomor bila pasal lain bernomor; nomornya dirapikan di bawah.
+            daftar.splice(i + 1, 0, pasal
+                ? { judul: awal ? 'I. Judul pasal …' : 'Judul pasal …', isi: 'Isi pasal …', butir: [], halaman_baru: false } : 'Teks baru …');
+            fokus = b.dataset.list + '.' + (i + 1) + (pasal ? '.isi' : '');
         } else if (op === 'halaman') {
             daftar[i].halaman_baru = !daftar[i].halaman_baru;
         } else if (op === 'butir') {
             daftar[i].butir = daftar[i].butir || [];
             daftar[i].butir.push('Butir baru …');
+            fokus = b.dataset.list + '.' + i + '.butir.' + (daftar[i].butir.length - 1);
         } else {
             return;
         }
+        if (pasal && op !== 'halaman' && op !== 'butir') nomoriPasal(daftar, awal);
+        // Sesudah dimuat ulang, kursor langsung di teks yang baru ditambah.
+        try { if (fokus) sessionStorage.setItem('ed-fokus', fokus); } catch (_) {}
         kirim('muat');
     });
 
@@ -214,6 +276,6 @@
         });
     }
     cekHalaman();
-    window.addEventListener('load', function () { cekHalaman(); window.scrollTo(0, {{ (int) $editor['gulir'] }}); });
+    window.addEventListener('load', function () { cekHalaman(); window.scrollTo(0, {{ (int) $editor['gulir'] }}); fokusBaru(); });
 })();
 </script>
