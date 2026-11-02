@@ -55,11 +55,12 @@ final class NotifyApprovalProgress
     {
         $this->notifier->notify([$submitter], 'approval.disetujui', 'Disetujui', "{$doc} sudah disetujui penuh.", $url);
 
+        // Invoice Hutang dibuat oleh pengunggah berkasnya sendiri → hanya dia yang diberi tahu.
         if ($a->document_type === BsApBerkasUpload::DOCUMENT_TYPE) {
             $this->notifier->notify(
-                $this->notifier->usersWithPermission('ap.invoice.create'), 'berkas.siap_invoice',
-                'Berkas siap dibuat invoice', "{$doc} sudah ditandatangani Dept Head.",
-                route('bs.ap.berkas.show', $a->approvable_id),
+                [$submitter], 'berkas.siap_invoice',
+                'Berkas siap dibuat invoice', "{$doc} sudah ditandatangani Dept Head — pilih berkas ini di Registrasi Invoice Hutang.",
+                route('bs.ap.create'),
             );
         }
     }

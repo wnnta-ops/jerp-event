@@ -165,6 +165,13 @@ try {
     $cek('banner draft tidak tampil di berkas lain', $adaDraft->invoke($ctlBerkas, $staf, $siap) === false);
     $cek('banner draft tidak tampil untuk user lain', $adaDraft->invoke($ctlBerkas, $lain, $draft) === false);
 
+    $scope = new ReflectionMethod($ctlBerkas, 'scope');
+    $sebagai($dh);
+    app(ActOnApproval::class)->execute(Approval::with('steps')->findOrFail($milikLain->fresh()->approval_id), 'approve');
+    $siapIds = $scope->invoke($ctlBerkas, $staf, 'siap')->pluck('id')->all();
+    $cek('tab Siap Dibuat Invoice hanya berkas sendiri', in_array($siap->id, $siapIds, true) && ! in_array($milikLain->id, $siapIds, true));
+    $sebagai($staf);
+
     echo "\n=== 5. Buang draft ===\n";
     $ctlInv->buangDraft($minta('DELETE'));
     $cek('draft terhapus', ! BsApInvoiceDraft::query()->where('user_id', $staf->id)->exists());

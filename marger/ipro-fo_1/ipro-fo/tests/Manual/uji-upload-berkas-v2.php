@@ -162,7 +162,9 @@ try {
     $sebagai($dh);
     $act->execute($muat($b->fresh()->approval_id), 'approve');
     $cek('TTD → siap invoice', $b->fresh()->status === 'siap_invoice');
-    $cek('tim AP (ap.invoice.create) dapat notifikasi siap invoice', DB::table('notifications')->where('type', 'berkas.siap_invoice')->exists());
+    // Invoice dibuat oleh pengunggahnya sendiri → notifikasi siap invoice hanya ke pengunggah.
+    $siapKe = DB::table('notifications')->where('type', 'berkas.siap_invoice')->where('created_at', '>=', now()->subMinute())->pluck('notifiable_id')->unique()->values()->all();
+    $cek('pengunggah (bukan seluruh tim AP) dapat notifikasi siap invoice', $siapKe === [$staf->id], json_encode($siapKe));
     $sebagai($acc); // pembuat invoice = Accounting (bukan SuperAdmin)
     $ia = $svc->ajukanInvoice($b->fresh(), $invoice(4000000));
     $cek('invoice 4jt dari 11,1jt → sebagian diinvoice', $b->fresh()->status === 'sebagian_diinvoice', $b->fresh()->status);

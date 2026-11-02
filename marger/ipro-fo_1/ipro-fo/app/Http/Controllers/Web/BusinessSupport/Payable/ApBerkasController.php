@@ -30,7 +30,7 @@ use Symfony\Component\HttpFoundation\Response as HttpResponse;
  * Account Payable › Master › Upload Berkas.
  *
  *   Berkas Saya          : yang saya unggah (semua staf, ap.berkas.upload)
- *   Siap Dibuat Invoice  : sudah TTD, masih ada sisa nominal (pemegang ap.invoice.create)
+ *   Siap Dibuat Invoice  : berkas SAYA yang sudah TTD & masih ada sisa nominal (pemegang ap.invoice.create)
  *   Semua Berkas         : seluruh berkas (ap.berkas.view / ap.invoice.view)
  *
  * Hak per aksi: ubah/ajukan/batal/hapus — pengunggah (milik sendiri) atau ap.berkas.manage;
@@ -383,7 +383,8 @@ class ApBerkasController extends Controller
         $q = BsApBerkasUpload::query();
 
         return match ($tab) {
-            'siap' => $q->whereIn('status', [BsApBerkasUpload::STATUS_SIAP_INVOICE, BsApBerkasUpload::STATUS_SEBAGIAN]),
+            // Invoice Hutang wajib memakai berkas unggahan sendiri → yang siap pun hanya milik sendiri.
+            'siap' => $q->where('uploaded_by', $u->id)->whereIn('status', [BsApBerkasUpload::STATUS_SIAP_INVOICE, BsApBerkasUpload::STATUS_SEBAGIAN]),
             'semua' => $q,
             default => $q->where('uploaded_by', $u->id),
         };
