@@ -1081,10 +1081,13 @@ class CashAdvanceController extends Controller
                     'number' => BsJournal::whereKey($advance->realize_journal_id)->value('journal_number'),
                     'bisaBuka' => (bool) $request->user()?->can('gl.journal.view')]
                 : null,
-            // Selain beban & aset, akun TITIPAN ESTATE (kewajiban) dibuka: biaya estate dibayar dari dana titipan.
+            // Selain beban & aset, dibuka juga: TITIPAN ESTATE, PENYELESAIAN BIAYA KONSTRUKSI (kewajiban)
+            // dan NURSERY ESTATE — biayanya dibayar dari dana titipan/cadangan tsb.
             'expenseAccounts' => BsAccount::where('is_active', true)->where('is_postable', true)
                 ->where(fn ($q) => $q->whereIn('type', ['expense', 'asset'])
-                    ->orWhere(fn ($q) => $q->where('type', 'liability')->where('name', 'like', 'TITIPAN ESTATE%')))
+                    ->orWhere('name', 'like', 'TITIPAN ESTATE%')
+                    ->orWhere('name', 'like', 'PENYELESAIAN BIAYA KONSTRUKSI%')
+                    ->orWhere('code', '10104010199'))
                 ->orderBy('code')->get(['id', 'code', 'name', 'type']),
             // Cost center per baris realisasi → diteruskan ke jurnal, dibaca Budget Control.
             'costCenters' => BsCostCenter::where('is_active', true)
