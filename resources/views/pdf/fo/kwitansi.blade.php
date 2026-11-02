@@ -74,7 +74,7 @@
         <div class="p"><span class="box {{ $isGiro ? 'on' : '' }}"></span> Giro/Cek</div>
         <div class="p"><span class="box {{ $isTunai ? 'on' : '' }}"></span> Tunai</div>
         <div style="flex:1"></div>
-        <div>Sidoarjo, {{ optional($bkm->tgl_bkm)->format('d M Y') }}</div>
+        <div style="margin-right:60px">Sidoarjo, {{ optional($bkm->tgl_bkm)->format('d M Y') }}</div>
     </div>
 
     <div class="nb">NB. Pembayaran dengan Bilyet Giro / Cheque dianggap sah jika sudah dicairkan / diuangkan.</div>
