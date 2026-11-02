@@ -9,6 +9,7 @@ use App\Domain\Approval\Models\ApprovalChainStep;
 use App\Domain\ApprovalInbox\Models\MemoInternal;
 use App\Domain\BusinessSupport\Models\BsApBerkasUpload;
 use App\Domain\BusinessSupport\Models\BsApInvoice;
+use App\Domain\BusinessSupport\Models\BsBudgetCorrection;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Relations\MorphTo;
 use Illuminate\Support\Collection;
@@ -33,12 +34,14 @@ final class ApprovalInboxQuery
         MemoInternal::DOCUMENT_TYPE,
         BsApBerkasUpload::DOCUMENT_TYPE,
         BsApInvoice::APPROVAL_DOCUMENT_TYPE,
+        BsBudgetCorrection::DOCUMENT_TYPE,
     ];
 
     public const TYPE_LABELS = [
         MemoInternal::DOCUMENT_TYPE => 'Memo Internal',
         BsApBerkasUpload::DOCUMENT_TYPE => 'TTD Berkas',
         BsApInvoice::APPROVAL_DOCUMENT_TYPE => 'Invoice Hutang',
+        BsBudgetCorrection::DOCUMENT_TYPE => 'Koreksi Budget',
     ];
 
     /** @return Collection<int, Approval> */
@@ -213,6 +216,22 @@ final class ApprovalInboxQuery
             if ($berkas) {
                 $out['links'][] = ['label' => 'Buka berkas', 'url' => route('bs.ap.berkas.show', $berkas->id)];
             }
+        } elseif ($m instanceof BsBudgetCorrection) {
+            $bulan = \App\Domain\BusinessSupport\Models\BsBudget::MONTHS[max(1, (int) $m->period_from) - 1].' '.$m->year;
+            $budget = $m->budget;
+            $inv = $m->source_type === BsBudgetCorrection::SOURCE_INVOICE ? BsApInvoice::query()->find($m->source_id) : null;
+            $out['fields'] = [
+                ['label' => 'Periode', 'value' => $bulan],
+                ['label' => 'Account', 'value' => trim($m->account?->code.' - '.$m->account?->name, ' -')],
+                ['label' => 'Cost Center', 'value' => $m->costCenter ? trim($m->costCenter->code.' '.$m->costCenter->name) : 'Semua'],
+                ['label' => 'Anggaran bulan ini (sebelum koreksi)', 'value' => $budget ? $rp(\App\Domain\BusinessSupport\Services\BudgetGuardService::anggaranBulan($budget, (int) $m->period_from)) : null],
+                ['label' => 'Nilai pengajuan', 'value' => $rp((float) $m->new_amount - (float) $m->old_amount)],
+                ['label' => 'Invoice asal', 'value' => $inv?->invoice_number],
+            ];
+            $out['body'] = $m->note;
+            if ($inv) {
+                $out['links'][] = ['label' => 'Buka invoice', 'url' => route('bs.ap.show', $inv->id)];
+            }
         }
 
         return $out;
@@ -227,6 +246,7 @@ final class ApprovalInboxQuery
             ->with(['steps', 'approvable' => fn (MorphTo $m) => $m->morphWith([
                 BsApBerkasUpload::class => ['supplier:id,name', 'files.jenis:id,name'],
                 BsApInvoice::class => ['supplier:id,name'],
+                BsBudgetCorrection::class => ['account:id,code,name', 'costCenter:id,code,name', 'budget'],
             ])]);
     }
 
@@ -242,6 +262,8 @@ final class ApprovalInboxQuery
                 'amount' => $m->amount !== null ? (float) $m->amount : null],
             $m instanceof BsApInvoice => ['number' => $m->invoice_number, 'title' => $m->description, 'sub' => $m->supplier?->name,
                 'amount' => (float) $m->total],
+            $m instanceof BsBudgetCorrection => ['number' => $m->doc_no, 'title' => 'Koreksi budget '.$m->account?->code.' '.$m->account?->name,
+                'sub' => $m->costCenter?->name ?? 'Semua cost center', 'amount' => round((float) $m->new_amount - (float) $m->old_amount, 2)],
             default => ['number' => '#'.$approval->id, 'title' => null, 'sub' => null, 'amount' => null],
         };
     }
@@ -275,6 +297,10 @@ final class ApprovalInboxQuery
             $lead[] = $stage('Tim AP', 'Buat invoice', $submitter, $approval->submitted_at);
 
             return $lead;
+        }
+
+        if ($approval->document_type === BsBudgetCorrection::DOCUMENT_TYPE) {
+            return [$stage('Pengaju', 'Koreksi dari invoice hutang', $submitter, $approval->submitted_at)];
         }
 
         return [$stage('Dept. Head', 'Pengajuan', $submitter, $approval->submitted_at)];
