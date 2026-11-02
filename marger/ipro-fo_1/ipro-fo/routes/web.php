@@ -1133,6 +1133,8 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
     // Master Budget
     Route::get('/business-support/budget', [BsBudgetController::class, 'index'])->name('bs.budget.index');
     Route::get('/business-support/budget-export', [BsBudgetController::class, 'export'])->name('bs.budget.export');
+    Route::get('/business-support/budget-laporan-export', [BsBudgetController::class, 'laporanExport'])->name('bs.budget.laporan-export');
+    Route::get('/business-support/budget-rincian', [BsBudgetController::class, 'rincian'])->name('bs.budget.rincian');
     Route::post('/business-support/budget', [BsBudgetController::class, 'store'])->name('bs.budget.store');
     Route::put('/business-support/budget/{budget}', [BsBudgetController::class, 'update'])->name('bs.budget.update');
     Route::delete('/business-support/budget/{budget}', [BsBudgetController::class, 'destroy'])->name('bs.budget.destroy');

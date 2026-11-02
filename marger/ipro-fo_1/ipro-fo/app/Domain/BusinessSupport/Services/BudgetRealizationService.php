@@ -117,6 +117,35 @@ final class BudgetRealizationService
         return $out;
     }
 
+    /**
+     * Baris jurnal di balik satu angka realisasi (drill-down Budget Control). Aturannya sama dengan
+     * total(); $costCenterId null = lintas cost center, 0 = baris yang cost center efektifnya kosong.
+     *
+     * @return list<array{journal_id:int,nomor:string,tanggal:string,keterangan:string,cost_center_id:int,nilai:float}>
+     */
+    public function rincian(int $year, int $accountId, ?int $costCenterId, ?string $from = null, ?string $to = null): array
+    {
+        $ccEfektif = $this->costCenterOptional($accountId)
+            ? 'bs_journal_lines.cost_center_id'
+            : 'COALESCE(bs_journal_lines.cost_center_id, bs_journals.cost_center_id)';
+        $sign = $this->sign($accountId);
+
+        $q = $costCenterId === 0
+            ? $this->base($year, $accountId, null, $from, $to)->whereRaw($ccEfektif.' IS NULL')
+            : $this->base($year, $accountId, $costCenterId, $from, $to);
+
+        return $q->orderBy('bs_journals.journal_date')->orderBy('bs_journals.id')
+            ->selectRaw('bs_journals.id as jid, bs_journals.journal_number as nomor, bs_journals.journal_date as tgl,'
+                .' COALESCE(bs_journal_lines.description, bs_journals.description) as ket, '.$ccEfektif.' as cc,'
+                .' bs_journal_lines.debit - bs_journal_lines.credit as v')
+            ->get()
+            ->map(fn ($r) => [
+                'journal_id' => (int) $r->jid, 'nomor' => (string) $r->nomor,
+                'tanggal' => substr((string) $r->tgl, 0, 10), 'keterangan' => (string) $r->ket,
+                'cost_center_id' => (int) $r->cc, 'nilai' => round($sign * (float) $r->v, 2),
+            ])->all();
+    }
+
     /** Kontribusi satu baris ke realisasi budget akunnya (bertanda): +menambah, −mengurangi. Utk gerbang over-budget. */
     public function contribution(int $accountId, float $debit, float $credit): float
     {

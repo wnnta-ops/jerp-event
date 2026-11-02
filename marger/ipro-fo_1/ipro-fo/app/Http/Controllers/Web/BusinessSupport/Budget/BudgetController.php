@@ -10,6 +10,7 @@ use App\Domain\BusinessSupport\Models\BsBudgetAllocation;
 use App\Domain\BusinessSupport\Models\BsBudgetCorrection;
 use App\Domain\BusinessSupport\Models\BsBudgetMutation;
 use App\Domain\BusinessSupport\Models\BsCostCenter;
+use App\Domain\BusinessSupport\Services\BudgetAnnualReportService;
 use App\Domain\BusinessSupport\Services\BudgetRealizationService;
 use App\Exceptions\BusinessRuleException;
 use App\Http\Controllers\Controller;
@@ -21,7 +22,20 @@ use Inertia\Response;
 
 class BudgetController extends Controller
 {
-    public function __construct(private readonly BudgetRealizationService $realisasi) {}
+    public function __construct(
+        private readonly BudgetRealizationService $realisasi,
+        private readonly BudgetAnnualReportService $laporan,
+    ) {}
+
+    /** Filter laporan tahunan: versi anggaran & realisasi s.d. bulan (default bulan berjalan / Des untuk tahun lalu). */
+    private function filterLaporan(Request $request, int $year): array
+    {
+        $versi = (string) $request->input('versi', 'berlaku');
+        $versi = array_key_exists($versi, BudgetAnnualReportService::VERSI) ? $versi : 'berlaku';
+        $bawaan = $year === (int) now()->year ? (int) now()->month : ($year < (int) now()->year ? 12 : 1);
+
+        return [$versi, min(12, max(1, (int) $request->integer('sd', $bawaan)))];
+    }
 
     /** Hub modul Budget Control (mirror menu eProperty BO /BC/). */
     public function hub(Request $request): Response
@@ -66,6 +80,7 @@ class BudgetController extends Controller
         // Gate approval: default hanya tampilkan anggaran yang SUDAH di-approve.
         // (Tambahan anggaran/upload yang belum di-approve tidak muncul di Master Budget Control.)
         $status = (string) $request->input('status', 'approved');
+        [$versi, $sd] = $this->filterLaporan($request, $year);
 
         $budgets = BsBudget::with(['account:id,code,name', 'costCenter:id,code,name'])
             ->where('year', $year)
@@ -109,6 +124,11 @@ class BudgetController extends Controller
             'costCenters' => BsCostCenter::where('is_active', true)->orderBy('code')->get(['id', 'code', 'name']),
             'filterStatus' => $status,
             'pending'      => BsBudget::where('year', $year)->where('status', 'submitted')->count(),
+            // Anggaran vs Realisasi Tahunan (menggantikan tabel daftar anggaran).
+            'laporan'      => $this->laporan->susun($year, $status, $versi, $sd),
+            'versi'        => $versi,
+            'sd'           => $sd,
+            'versiOptions' => BudgetAnnualReportService::VERSI,
         ]);
     }
 
@@ -361,5 +381,92 @@ class BudgetController extends Controller
         return response('<html xmlns:x="urn:schemas-microsoft-com:office:excel"><head><meta charset="utf-8"></head><body><table border="1">'.$head.$body.'</table></body></html>')
             ->header('Content-Type', 'application/vnd.ms-excel; charset=UTF-8')
             ->header('Content-Disposition', 'attachment; filename="Budget-Control-'.$year.'.xls"');
+    }
+
+    /**
+     * Dasar satu angka di laporan tahunan (klik angka): dokumen anggaran per bulan (awal vs berlaku,
+     * dengan Koreksi Budget yang membentuknya) dan baris jurnal realisasinya.
+     */
+    public function rincian(Request $request): \Illuminate\Http\JsonResponse
+    {
+        abort_unless($request->user()?->can('budget.master.view'), 403);
+        $year = (int) $request->integer('year', (int) now()->year);
+        $status = (string) $request->input('status', 'approved');
+        [$versi, $sd] = $this->filterLaporan($request, $year);
+        $accId = (int) $request->integer('account_id');
+        $ccRaw = (string) $request->input('cc', 'semua');
+        $cc = $ccRaw === 'semua' ? null : (int) $ccRaw;
+        [$from, $to] = BudgetAnnualReportService::rentang($year, $sd);
+
+        $budgets = BsBudget::where('year', $year)->where('account_id', $accId)
+            ->when($status !== 'all', fn ($q) => $q->where('status', $status))
+            ->when($ccRaw === 'semua', fn ($q) => $q->whereNull('cost_center_id'), fn ($q) => $q->where('cost_center_id', $cc ?: -1))
+            ->orderBy('doc_no')->get();
+        $tambahan = BudgetAnnualReportService::tambahanKoreksi($budgets->pluck('id')->all());
+        $koreksi = BsBudgetCorrection::whereIn('budget_id', $budgets->pluck('id')->all() ?: [0])->orderBy('corr_date')->orderBy('id')->get();
+
+        $pusat = BsCostCenter::withTrashed()->pluck('name', 'id');
+
+        return response()->json([
+            'akun' => BsAccount::withTrashed()->whereKey($accId)->first(['id', 'code', 'name']),
+            'cost_center' => $ccRaw === 'semua' ? 'Semua cost center' : ($cc === 0 ? 'Tanpa cost center' : ($pusat[$cc] ?? '—')),
+            'periode' => 'Jan – '.BsBudget::MONTHS[$sd - 1].' '.$year,
+            'budgets' => $budgets->map(fn ($b) => [
+                'id' => $b->id, 'doc_no' => $b->doc_no, 'wf_status' => $b->status ?? 'draft',
+                'awal' => array_values(BudgetAnnualReportService::bulanVersi($b, 'awal', $tambahan)),
+                'berlaku' => array_values(BudgetAnnualReportService::bulanVersi($b, 'berlaku', $tambahan)),
+                'koreksi' => $koreksi->where('budget_id', $b->id)->values()->map(fn ($c) => [
+                    'doc_no' => $c->doc_no, 'tanggal' => $c->corr_date?->format('Y-m-d') ?? substr((string) $c->corr_date, 0, 10),
+                    'periode' => BsBudget::MONTHS[max(1, (int) $c->period_from) - 1].((int) $c->period_to !== (int) $c->period_from ? ' – '.BsBudget::MONTHS[min(12, (int) $c->period_to) - 1] : ''),
+                    'nilai' => round((float) $c->new_amount - (float) $c->old_amount, 2),
+                    'status' => $c->status, 'note' => $c->note,
+                    // Koreksi dari invoice diputus di Approval Inbox; yang lama di layar Koreksi Budget.
+                    'url' => $c->approval_id ? route('approval-inbox.show', $c->approval_id) : route('bs.budget.correction.index'),
+                ]),
+            ]),
+            'jurnal' => array_map(fn ($j) => $j + [
+                'cost_center' => $j['cost_center_id'] ? ($pusat[$j['cost_center_id']] ?? '—') : 'Tanpa cost center',
+                'url' => route('bs.gl.journal.show', $j['journal_id']),
+            ], $this->realisasi->rincian($year, $accId, $cc, $from, $to)),
+        ]);
+    }
+
+    /** Unduh Excel laporan tahunan — susunan & angka sama persis dengan layar. */
+    public function laporanExport(Request $request): \Illuminate\Http\Response
+    {
+        abort_unless($request->user()?->can('budget.master.export'), 403);
+        $year = (int) $request->integer('year', (int) now()->year);
+        $status = (string) $request->input('status', 'approved');
+        [$versi, $sd] = $this->filterLaporan($request, $year);
+        $lap = $this->laporan->susun($year, $status, $versi, $sd);
+
+        $e = fn ($s) => htmlspecialchars((string) $s, ENT_QUOTES, 'UTF-8');
+        $rp = fn ($n) => number_format((float) $n, 0, ',', '.');
+        $pr = fn ($p) => $p === null ? '—' : number_format((float) $p, 1, ',', '.').'%';
+        $sel = fn (array $r, string $gaya, string $uraian) => '<tr style="'.$gaya.'"><td>'.$uraian.'</td><td align="right">'.$rp($r['anggaran']).'</td><td align="right">'.$rp($r['realisasi']).'</td><td align="right">'.$rp($r['selisih']).'</td><td align="right">'.$pr($r['persen']).'</td><td align="right">'.$rp($r['setahun']).'</td></tr>';
+
+        $bulan = BsBudget::MONTHS[$sd - 1];
+        $html = '<tr><td colspan="6"><b>Anggaran vs Realisasi Tahunan '.$year.'</b> — versi '.$e(BudgetAnnualReportService::VERSI[$versi]).' · realisasi s.d. akhir '.$bulan.' '.$year.'</td></tr>'
+            .'<tr style="background:#0f766e;color:#fff"><th>Uraian</th><th>Anggaran s.d. '.$bulan.'</th><th>Realisasi s.d. '.$bulan.'</th><th>Selisih</th><th>%</th><th>Anggaran setahun</th></tr>';
+        foreach ($lap['bagian'] as $bg) {
+            $html .= '<tr style="background:#dbeafe;font-weight:bold"><td colspan="6">'.$e($bg['judul']).'</td></tr>';
+            foreach ($bg['grup'] as $g) {
+                $html .= '<tr style="background:#f3f4f6;font-weight:bold"><td colspan="6">'.$e($g['kode'].' '.$g['nama']).'</td></tr>';
+                foreach ($g['akun'] as $a) {
+                    $html .= $sel($a, '', '&nbsp;&nbsp;'.$e($a['kode'].' - '.$a['nama']));
+                    foreach ($a['baris'] as $r) {
+                        $docs = implode(', ', array_filter(array_column($r['budgets'], 'doc_no')));
+                        $html .= $sel($r, 'color:#6b7280', '&nbsp;&nbsp;&nbsp;&nbsp;'.$e($r['cc_nama']).($docs ? ' ('.$e($docs).')' : ''));
+                    }
+                }
+                $html .= $sel($g, 'font-weight:bold', 'Total '.$e($g['kode'].' '.$g['nama']));
+            }
+            $html .= $sel($bg, 'font-weight:bold;background:#eef2ff', 'TOTAL '.$e(mb_strtoupper($bg['judul'])));
+        }
+        $html .= $sel($lap['laba'], 'font-weight:bold;background:#fef3c7', 'LABA (pendapatan − beban)');
+
+        return response('<html xmlns:x="urn:schemas-microsoft-com:office:excel"><head><meta charset="utf-8"></head><body><table border="1">'.$html.'</table></body></html>')
+            ->header('Content-Type', 'application/vnd.ms-excel; charset=UTF-8')
+            ->header('Content-Disposition', 'attachment; filename="Anggaran-vs-Realisasi-'.$year.'-sd-'.$bulan.'.xls"');
     }
 }
