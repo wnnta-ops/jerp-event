@@ -33,7 +33,7 @@ class AccountController extends Controller
         $type   = $request->input('type');
 
         $rows = BsAccount::query()
-            ->with(['cfDirectCategory:id,code,name', 'cfIndirectCategory:id,code,name', 'costCenter:id,code,name'])
+            ->with(['cfDirectCategory:id,code,name', 'cfIndirectCategory:id,code,name', 'costCenter:id,code,name', 'costCenters:id,code,name'])
             ->when($search, fn ($q, $s) => $q->where(fn ($w) => $w->where('code', 'like', "%{$s}%")->orWhere('name', 'like', "%{$s}%")))
             ->when($type, fn ($q, $v) => $q->where('type', $v))
             // Kelompokkan per kategori (head), level-1 header lebih dulu, lalu urut kode.
@@ -72,7 +72,9 @@ class AccountController extends Controller
     public function store(Request $request): RedirectResponse
     {
         abort_unless($request->user()?->canAny(['gl.account.create', 'businesssupport.setup.manage']), 403);
-        BsAccount::create($this->data($request));
+        $data = $this->data($request);
+        $ccIds = $this->ambilDaftarCc($data);
+        BsAccount::create($data)->costCenters()->sync($ccIds);
 
         return back()->with('success', 'Akun ditambahkan.');
     }
@@ -80,7 +82,10 @@ class AccountController extends Controller
     public function update(Request $request, BsAccount $account): RedirectResponse
     {
         abort_unless($request->user()?->canAny(['gl.account.update', 'businesssupport.setup.manage']), 403);
-        $account->update($this->data($request, $account->id));
+        $data = $this->data($request, $account->id);
+        $ccIds = $this->ambilDaftarCc($data);
+        $account->update($data);
+        $account->costCenters()->sync($ccIds);
 
         return back()->with('success', 'Akun diperbarui.');
     }
@@ -112,7 +117,12 @@ class AccountController extends Controller
             'is_active'      => ['boolean'],
             'cf_direct_category_id'   => ['nullable', 'integer', Rule::exists('bs_cash_flow_categories', 'id')->where('kind', 'direct')],
             'cf_indirect_category_id' => ['nullable', 'integer', Rule::exists('bs_cash_flow_categories', 'id')->where('kind', 'indirect')],
+            // DEFAULT — dipakai bila unit kerja penginput tidak ada di cost_center_ids.
             'cost_center_id'          => ['nullable', 'integer', 'exists:bs_cost_centers,id'],
+            // Daftar cost center yang BOLEH dipakai akun ini (CostCenterAkun). Kosong = bebas,
+            // ikut unit kerja penginput.
+            'cost_center_ids'         => ['nullable', 'array'],
+            'cost_center_ids.*'       => ['integer', 'distinct', 'exists:bs_cost_centers,id'],
             // "— dikosongkan (tanpa cost center) —": baris jurnal akun ini lahir & boleh disimpan
             // TANPA cost center (penanda yang sama dengan yang dibaca gerbang anggaran). Diatur
             // Accounting per akun dari layar ini — mis. Utang Usaha Customer (21 Okt 2026).
@@ -159,9 +169,18 @@ class AccountController extends Controller
         }
 
         // Akun "dikosongkan" tidak punya cost center bawaan — keduanya saling meniadakan.
+        $ids = array_values(array_unique(array_map('intval', $data['cost_center_ids'] ?? [])));
         if (! empty($data['cost_center_optional'])) {
             $data['cost_center_id'] = null;
+            $ids = [];
         }
+        // Default harus salah satu isi daftar; daftar kosong = tanpa default (ikut unit kerja).
+        if ($ids === []) {
+            $data['cost_center_id'] = null;
+        } elseif (! in_array((int) ($data['cost_center_id'] ?? 0), $ids, true)) {
+            $data['cost_center_id'] = $ids[0];
+        }
+        $data['cost_center_ids'] = $ids;
 
         unset($data['parent_id']);
         $data['parent_id']     = $parent?->id;
@@ -169,6 +188,20 @@ class AccountController extends Controller
         $data['category_code'] = BsAccount::categoryOf($data['code']);
 
         return $data;
+    }
+
+    /**
+     * Keluarkan daftar cost center dari data tervalidasi — bukan kolom bs_accounts.
+     *
+     * @param  array<string,mixed>  $data
+     * @return list<int>
+     */
+    private function ambilDaftarCc(array &$data): array
+    {
+        $ids = $data['cost_center_ids'] ?? [];
+        unset($data['cost_center_ids']);
+
+        return $ids;
     }
 
     /**

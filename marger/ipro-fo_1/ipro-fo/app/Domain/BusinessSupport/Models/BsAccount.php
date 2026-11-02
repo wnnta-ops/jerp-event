@@ -7,6 +7,7 @@ namespace App\Domain\BusinessSupport\Models;
 use App\Support\Traits\HasTenant;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
 /**
@@ -87,9 +88,19 @@ class BsAccount extends Model
         return $this->belongsTo(BsCashFlowCategory::class, 'cf_indirect_category_id');
     }
 
-    /** Cost Center akun ini — diturunkan ke tiap baris jurnal (dikunci di Input Jurnal manual). */
+    /**
+     * Cost Center DEFAULT akun ini — dipakai bila unit kerja penginput tidak ada di daftar
+     * costCenters() (lihat CostCenterAkun).
+     */
     public function costCenter(): BelongsTo
     {
         return $this->belongsTo(BsCostCenter::class, 'cost_center_id');
+    }
+
+    /** Cost center yang BOLEH dipakai akun ini — kosong = bebas (ikut unit kerja penginput). */
+    public function costCenters(): BelongsToMany
+    {
+        return $this->belongsToMany(BsCostCenter::class, 'bs_account_cost_centers', 'account_id', 'cost_center_id')
+            ->withTimestamps();
     }
 }

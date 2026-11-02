@@ -13,6 +13,7 @@ use App\Domain\BusinessSupport\Models\BsPurchaseOrder;
 use App\Domain\BusinessSupport\Models\BsSupplier;
 use App\Domain\BusinessSupport\Models\BsWorkOrder;
 use App\Domain\BusinessSupport\Models\BsWorkOrderProgress;
+use App\Domain\BusinessSupport\Services\CostCenterAkun;
 use App\Domain\BusinessSupport\Services\CostCenterPengguna;
 use App\Domain\BusinessSupport\Services\JournalService;
 use App\Http\Controllers\Controller;
@@ -879,8 +880,9 @@ class PostingInvoiceController extends Controller
      *
      * Antrean FO tidak membawa cost center, sehingga dulu SEMUA jurnalnya tanpa cost center dan
      * tertahan di gerbang Approve (akun wajib, mis. PREPAID BIAYA KPR per cluster). Urutannya:
-     *   1. cost center BAWAAN AKUN (Setup → Akun · kolom Cost Center) — ditetapkan Accounting;
-     *   2. cadangan: cost center karyawan yang menekan Posting (sama dengan wizard invoice AP).
+     *   1. akun berdaftar cost center (Setup → Akun) → CostCenterAkun: unit kerja yang menekan
+     *      Posting bila ada di daftar, selain itu default COA;
+     *   2. akun tanpa daftar → unit kerja yang menekan Posting (sama dengan wizard invoice AP).
      * Akun yang boleh tanpa cost center (optional / tidak dianggarkan) dibiarkan kosong — sama
      * dengan gerbang Approve, supaya baris itu tidak ikut tertahan anggaran.
      *
@@ -889,34 +891,32 @@ class PostingInvoiceController extends Controller
      */
     private function isiCostCenter(array $lines, int $userId): array
     {
-        $ids = array_values(array_unique(array_filter(array_map(fn ($l) => (int) ($l['account_id'] ?? 0), $lines))));
-        if (! $ids) {
+        $svc = app(CostCenterAkun::class);
+        $akun = $svc->peta(array_column($lines, 'account_id'));
+        if (! $akun) {
             return $lines;
         }
-        $akun = BsAccount::whereIn('id', $ids)->get(['id', 'code', 'cost_center_id', 'cost_center_optional'])->keyBy('id');
+        $kode = BsAccount::whereIn('id', array_keys($akun))->pluck('code', 'id');
         $tanpaAnggaran = array_map('strval', (array) config('business_support.budget.coa_tanpa_anggaran', []));
-        $ccPemosting = null;
-        $sudahCari = false;
+        $milik = null;
 
         foreach ($lines as $i => $l) {
-            $a = $akun[(int) ($l['account_id'] ?? 0)] ?? null;
+            $id = (int) ($l['account_id'] ?? 0);
+            $a = $akun[$id] ?? null;
             if (! empty($l['cost_center_id']) || ! $a) {
                 continue;
             }
-            if ($a->cost_center_id) {
-                $lines[$i]['cost_center_id'] = (int) $a->cost_center_id;
+            $milik ??= $svc->milikUser(User::find($userId));
+            if ($a['ids'] !== []) {
+                $lines[$i]['cost_center_id'] = CostCenterAkun::pilih($a, $milik);
 
                 continue;
             }
-            if ($a->cost_center_optional || in_array((string) $a->code, $tanpaAnggaran, true)) {
+            if ($a['optional'] || in_array((string) ($kode[$id] ?? ''), $tanpaAnggaran, true)) {
                 continue;
             }
-            if (! $sudahCari) {
-                $ccPemosting = app(CostCenterPengguna::class)->idUntuk(User::find($userId));
-                $sudahCari = true;
-            }
-            if ($ccPemosting) {
-                $lines[$i]['cost_center_id'] = (int) $ccPemosting;
+            if ($milik !== []) {
+                $lines[$i]['cost_center_id'] = $milik[0];
             }
         }
 

@@ -5,6 +5,7 @@ import { Ban, ArrowLeft, Wallet, ClipboardCheck, Printer, HandCoins, Lock, Undo2
 import Button from '@/Components/UI/Button.vue';
 import Badge from '@/Components/UI/Badge.vue';
 import SearchSelect from '@/Components/UI/SearchSelect.vue';
+import { pilihCc } from '@/Composables/costCenterAkun';
 import MoneyInput from '@/Components/UI/MoneyInput.vue';
 
 const props = defineProps<{ advance: any; jurnalRealisasi?: { id: number; number: string | null; bisaBuka: boolean } | null; expenseAccounts: Array<any>; costCenters: Array<any>; cashAccounts: Array<any>; signers?: Record<string, string>; requiredSigners?: string[]; fullyApproved?: boolean; canApprove?: boolean; canEditDocDate?: boolean;
@@ -119,6 +120,34 @@ const opsiCcRealisasi = computed(() => props.bisaUbahCc
     ? props.costCenters
     : props.costCenters.filter((c: any) => (props.ccPilihan ?? []).includes(Number(c.id))));
 const ccBisaDipilih = computed(() => !!props.bisaUbahCc || (props.ccPilihan ?? []).length > 1);
+
+/* COA BERDAFTAR COST CENTER (Setup → Akun): pilihan baris dibatasi ke daftar itu, bawaannya
+   departemen pemilik bon yang ada di daftar — kalau tidak ada, default COA (CostCenterAkun). */
+const akunBeban = (id: any) => props.expenseAccounts.find((a: any) => Number(a.id) === Number(id));
+/** Departemen pemilik bon, bawaannya lebih dulu. */
+const milikPengaju = computed(() => {
+    const out = props.ccPengguna ? [Number(props.ccPengguna)] : [];
+    for (const c of props.ccPilihan ?? []) if (!out.includes(Number(c))) out.push(Number(c));
+    return out;
+});
+function opsiCcBaris(l: any) {
+    const ids = (akunBeban(l.expense_account_id)?.cc_ids ?? []).map(Number);
+    if (!ids.length) return ccBisaDipilih.value ? opsiCcRealisasi.value : props.costCenters;
+    if (props.bisaUbahCc) return props.costCenters.filter((c: any) => ids.includes(Number(c.id)));
+    const cocok = props.costCenters.filter((c: any) => ids.includes(Number(c.id)) && milikPengaju.value.includes(Number(c.id)));
+    if (cocok.length) return cocok;
+    const def = pilihCc(akunBeban(l.expense_account_id), milikPengaju.value);
+    return props.costCenters.filter((c: any) => Number(c.id) === Number(def));
+}
+const ccBarisBisaDipilih = (l: any) => (akunBeban(l.expense_account_id)?.cc_ids ?? []).length
+    ? opsiCcBaris(l).length > 1
+    : ccBisaDipilih.value;
+function pilihAkunBeban(l: any, v: any) {
+    l.expense_account_id = v;
+    const a = akunBeban(v);
+    if ((a?.cc_ids ?? []).length) l.cost_center_id = pilihCc(a, milikPengaju.value) ?? '';
+    else if (!l.cost_center_id) l.cost_center_id = props.ccPengguna ?? '';
+}
 const settleForm = useForm<any>({ settle_date: today, cash_account_id: '' });
 // #49: pembayaran oleh Finance (tanggal transfer + sumber bank/kas) → jurnal terbentuk.
 /* Cara pembayaran dipilih Finance saat mencatat. Bawaannya reguler — sama dengan satu-satunya
@@ -616,13 +645,13 @@ function backToIndex() {
                     </tr></thead>
                     <tbody>
                         <tr v-for="(l, i) in form.lines" :key="i">
-                            <td class="py-1 pr-2"><SearchSelect :model-value="l.expense_account_id" :options="expenseAccounts" placeholder="— cari akun —" no-truncate :class="l.expense_account_id ? '' : pilihKurang" @update:model-value="(v) => l.expense_account_id = v" /></td>
+                            <td class="py-1 pr-2"><SearchSelect :model-value="l.expense_account_id" :options="expenseAccounts" placeholder="— cari akun —" no-truncate :class="l.expense_account_id ? '' : pilihKurang" @update:model-value="(v) => pilihAkunBeban(l, v)" /></td>
                             <!-- Cost center WAJIB: dialah yang menghubungkan baris ini ke plafon
                                  anggarannya di Budget Control. -->
                             <!-- Terkunci: mengikuti unit kerja pengaju. Hanya Accounting yang boleh
                                      mengubahnya — aturan yang sama dengan Registrasi Invoice Hutang. -->
                             <td class="py-1 pr-2">
-                                <SearchSelect :model-value="l.cost_center_id" :options="ccBisaDipilih ? opsiCcRealisasi : costCenters" :disabled="! ccBisaDipilih"
+                                <SearchSelect :model-value="l.cost_center_id" :options="opsiCcBaris(l)" :disabled="! ccBarisBisaDipilih(l)"
                                               placeholder="— pilih cost center —" :class="l.cost_center_id ? '' : pilihKurang"
                                               @update:model-value="(v) => l.cost_center_id = v" />
                             </td>
