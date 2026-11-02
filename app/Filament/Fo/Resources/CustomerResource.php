@@ -13,6 +13,8 @@ use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Enums\FiltersLayout;
 use Filament\Tables\Table;
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\HtmlString;
 
 class CustomerResource extends Resource
@@ -190,7 +192,72 @@ class CustomerResource extends Resource
                     'LEAD' => 'Lead (belum verifikasi)', 'PROSPEK' => 'Prospek', 'CUSTOMER' => 'Customer',
                 ]),
                 Tables\Filters\TernaryFilter::make('is_active')->label('Status aktif'),
+                // Tanggal daftar (created_at): isi Tahun saja → setahun; + Bulan → sebulan; + Tanggal → sehari.
+                Tables\Filters\Filter::make('tanggal_daftar')
+                    ->form([
+                        Forms\Components\Select::make('tahun')->label('Tahun')
+                            ->options(function () {
+                                $pertama = Customer::query()->min('created_at');
+                                $tahun = range(now()->year, min($pertama ? (int) substr((string) $pertama, 0, 4) : now()->year, now()->year));
+
+                                return array_combine($tahun, $tahun);
+                            })
+                            ->placeholder('Semua')->live()
+                            ->afterStateUpdated(function (Forms\Set $set) {
+                                $set('bulan', null);
+                                $set('tanggal', null);
+                            }),
+                        Forms\Components\Select::make('bulan')->label('Bulan')
+                            ->options(collect(range(1, 12))->mapWithKeys(fn ($b) => [$b => now()->setDate(2000, $b, 1)->translatedFormat('F')])->all())
+                            ->placeholder('Semua')->live()
+                            ->disabled(fn (Forms\Get $get) => blank($get('tahun')))
+                            ->afterStateUpdated(fn (Forms\Set $set) => $set('tanggal', null)),
+                        Forms\Components\Select::make('tanggal')->label('Tanggal')
+                            ->options(function (Forms\Get $get) {
+                                if (blank($get('tahun')) || blank($get('bulan'))) {
+                                    return [];
+                                }
+                                $hari = range(1, now()->setDate((int) $get('tahun'), (int) $get('bulan'), 1)->daysInMonth);
+
+                                return array_combine($hari, $hari);
+                            })
+                            ->placeholder('Semua')
+                            ->disabled(fn (Forms\Get $get) => blank($get('bulan'))),
+                    ])
+                    ->columns(3)->columnSpan(3)
+                    ->query(function (Builder $query, array $data): Builder {
+                        if (blank($data['tahun'] ?? null)) {
+                            return $query;
+                        }
+                        $tahun = (int) $data['tahun'];
+                        $bulan = filled($data['bulan'] ?? null) ? (int) $data['bulan'] : null;
+                        $tanggal = ($bulan && filled($data['tanggal'] ?? null)) ? (int) $data['tanggal'] : null;
+
+                        if ($tanggal) {
+                            $awal = Carbon::create($tahun, $bulan, $tanggal)->startOfDay();
+                            $akhir = $awal->copy()->endOfDay();
+                        } elseif ($bulan) {
+                            $awal = Carbon::create($tahun, $bulan, 1)->startOfMonth();
+                            $akhir = $awal->copy()->endOfMonth();
+                        } else {
+                            $awal = Carbon::create($tahun, 1, 1)->startOfYear();
+                            $akhir = $awal->copy()->endOfYear();
+                        }
+
+                        return $query->whereBetween('created_at', [$awal, $akhir]);
+                    })
+                    ->indicateUsing(function (array $data): ?string {
+                        if (blank($data['tahun'] ?? null)) {
+                            return null;
+                        }
+                        $bulan = filled($data['bulan'] ?? null) ? (int) $data['bulan'] : null;
+                        $tanggal = ($bulan && filled($data['tanggal'] ?? null)) ? (int) $data['tanggal'] : null;
+                        $tgl = Carbon::create((int) $data['tahun'], $bulan ?: 1, $tanggal ?: 1);
+
+                        return 'Daftar: '.($tanggal ? $tgl->translatedFormat('d F Y') : ($bulan ? $tgl->translatedFormat('F Y') : $tgl->year));
+                    }),
             ], layout: FiltersLayout::AboveContent)
+            ->filtersFormColumns(6)
             ->actions([
                 Tables\Actions\ViewAction::make()->label('Lihat'),
                 Tables\Actions\EditAction::make(),
