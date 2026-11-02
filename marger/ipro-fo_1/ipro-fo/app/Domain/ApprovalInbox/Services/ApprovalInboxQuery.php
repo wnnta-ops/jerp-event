@@ -38,7 +38,7 @@ final class ApprovalInboxQuery
     ];
 
     public const TYPE_LABELS = [
-        MemoInternal::DOCUMENT_TYPE => 'Memo Internal',
+        MemoInternal::DOCUMENT_TYPE => 'Memo Urgent',
         BsApBerkasUpload::DOCUMENT_TYPE => 'TTD Berkas',
         BsApInvoice::APPROVAL_DOCUMENT_TYPE => 'Invoice Hutang',
         BsBudgetCorrection::DOCUMENT_TYPE => 'Koreksi Budget',

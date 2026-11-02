@@ -9,7 +9,7 @@ type Stage = { label: string; role: string | null; state: StageState; by: string
 
 const props = defineProps<{
     approval: { id: number; status: string; position: string; done: number; total: number };
-    /** Isi dokumen — Memo Internal, TTD Berkas, atau Invoice Hutang (lihat ApprovalInboxQuery::detail). */
+    /** Isi dokumen — Memo Urgent, TTD Berkas, Invoice Hutang, atau Koreksi Budget (lihat ApprovalInboxQuery::detail). */
     doc: {
         number: string | null; title: string | null; type: string;
         fields: Array<{ label: string; value: string | null }>;
