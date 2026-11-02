@@ -5,6 +5,7 @@ import { ArrowLeft, ArrowRight, Save, HandCoins, Plus, Trash2, Check, Search, Co
 import Button from '@/Components/UI/Button.vue';
 import MoneyInput from '@/Components/UI/MoneyInput.vue';
 import SearchSelect from '@/Components/UI/SearchSelect.vue';
+import { pilihCc, opsiCc } from '@/Composables/costCenterAkun';
 import PesanWajib from '@/Components/UI/PesanWajib.vue';
 import { tandai, kosong, pesanKolom, CINCIN_MERAH } from '@/Composables/useWajib';
 import { bangunStrukturJurnal, akunKurang, samaDenganBawaan, barisStruktur, akunBiayaPphDitanggung } from './strukturJurnal';
@@ -28,6 +29,8 @@ const props = defineProps<{
     costCenters: Array<any>;
     /** Cost center unit kerja pengaju — mengisi tiap baris jurnal secara otomatis. */
     ccPengguna?: number | null;
+    /** Semua unit kerja pengaju (Utama dulu) — dicocokkan dengan daftar cost center COA. */
+    ccUser?: number[];
     /** Hanya Accounting (ap.costcenter.override) yang boleh mengubahnya. */
     bisaUbahCc?: boolean;
     /** Kode COA yang tidak dianggarkan — tidak diisi cost center & tidak dituntut mengisinya. */
@@ -376,7 +379,7 @@ function dimSummary(l: any) {
 // bs_journal_lines dan dibaca laporan. Yang dibuang hanya isiannya — seluruh transaksi di
 // sini rupiah, dan pilihan yang tak pernah diubah hanya menambah kolom yang harus dilewati.
 function dimDefaults(accountId?: any) {
-    const cc = accountId && ccOptional(accountId) ? null : (props.ccPengguna ?? null);
+    const cc = accountId && ccOptional(accountId) ? null : ccBawaan(accountId);
     return { cost_center_id: cc, currency: 'IDR', kurs: 1 };
 }
 // Satu baris jurnal ala eProperty: input satu "Nilai Transaksi" + pilih sisi (Debit/Kredit) lewat radio.
@@ -459,8 +462,18 @@ function pilihAkun(l: any, v: any) {
     const acc: any = props.accounts.find((a: any) => a.id === Number(v));
     if (!v || !acc) return;
     if (ccOptional(v)) { l.cost_center_id = null; return; }
-    if (acc.cost_center_id) { l.cost_center_id = Number(acc.cost_center_id); return; }
+    // COA berdaftar cost center → unit kerja user bila ada di daftar, selain itu default COA.
+    if ((acc.cc_ids ?? []).length) { l.cost_center_id = ccBawaan(v); return; }
     if (!l.cost_center_id) l.cost_center_id = props.ccPengguna ?? null;
+}
+/** Cost center bawaan baris (CostCenterAkun) — unit kerja user dicocokkan dengan daftar COA. */
+function ccBawaan(accountId: any): number | null {
+    const milik = props.ccUser ?? (props.ccPengguna ? [props.ccPengguna] : []);
+    return pilihCc(props.accounts.find((a: any) => a.id === Number(accountId)), milik);
+}
+/** Pilihan cost center baris: dibatasi daftar COA bila ada. */
+function ccOpsiBaris(accountId: any) {
+    return opsiCc(props.accounts.find((a: any) => a.id === Number(accountId)), props.costCenters);
 }
 function addJournalLine() { form.journal_lines.push(mkJournalLine(null, '', 0, 'debit')); }
 function addJournalLines(n: number) { for (let k = 0; k < n; k++) addJournalLine(); }
@@ -862,7 +875,7 @@ const cellArea = 'w-full rounded-md border border-neutral-300 bg-white px-2 py-1
                                      terlihat langsung tanpa perlu membaca pesan di bawah. -->
                                 <td class="px-2 py-2">
                                     <div :class="ccKurang(l) ? 'rounded-lg ring-1 ring-danger-400' : ''">
-                                        <SearchSelect v-model="l.cost_center_id" :options="costCenters"
+                                        <SearchSelect v-model="l.cost_center_id" :options="ccOpsiBaris(l.account_id)"
                                             :disabled="! bisaUbahCc"
                                             :placeholder="ccOptional(l.account_id) ? '— tanpa cost center —' : '— cost center —'" />
                                     </div>

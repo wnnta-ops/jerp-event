@@ -10,6 +10,7 @@ use App\Domain\BusinessSupport\Models\BsCostCenter;
 use App\Domain\BusinessSupport\Models\BsJournal;
 use App\Domain\BusinessSupport\Models\BsKprBiayaEntry;
 use App\Domain\BusinessSupport\Models\BsSupplier;
+use App\Domain\BusinessSupport\Services\CostCenterAkun;
 use App\Domain\BusinessSupport\Services\CostCenterPengguna;
 use App\Domain\BusinessSupport\Services\JournalService;
 use App\Exceptions\BusinessRuleException;
@@ -77,11 +78,12 @@ class ApInvoiceFoEditController extends Controller
             'suppliers' => BsSupplier::query()->where(fn ($q) => $q->where('is_active', true)->orWhere('id', $invoice->supplier_id))
                 ->orderBy('name')->get(['id', 'code', 'name'])
                 ->map(fn ($s) => ['id' => $s->id, 'label' => trim(($s->code ? $s->code.' — ' : '').$s->name)])->values(),
-            'accounts' => BsAccount::where('is_active', true)->where('is_postable', true)->orderBy('code')
-                ->get(['id', 'code', 'name', 'cost_center_optional', 'cost_center_id']),
+            'accounts' => CostCenterAkun::lampirkan(BsAccount::where('is_active', true)->where('is_postable', true)->orderBy('code')
+                ->get(['id', 'code', 'name', 'cost_center_optional', 'cost_center_id'])),
             'costCenters' => BsCostCenter::where('is_active', true)->orderBy('code')->get(['id', 'code', 'name']),
             'coaTanpaAnggaran' => array_map('strval', (array) config('business_support.budget.coa_tanpa_anggaran', [])),
             'ccPengguna' => app(CostCenterPengguna::class)->idUntuk($request->user()),
+            'ccUser' => app(CostCenterAkun::class)->milikUser($request->user()),
             'bisaUbahCc' => (bool) $request->user()?->can('ap.costcenter.override'),
         ]);
     }
@@ -112,6 +114,15 @@ class ApInvoiceFoEditController extends Controller
 
         if ($kurang = $this->akunKurangCostCenter($v['journal_lines'])) {
             return back()->withInput()->with('error', 'Cost center wajib diisi untuk akun: '.implode(', ', $kurang).'.');
+        }
+        // Baris jurnal lama yang sudah tercatat tetap boleh (forward-only).
+        $lama = [];
+        if ($invoice->journal_id && ($jl = BsJournal::find($invoice->journal_id))) {
+            $lama = $jl->lines()->get(['account_id', 'cost_center_id'])
+                ->mapWithKeys(fn ($l) => [$l->account_id.'|'.$l->cost_center_id => true])->all();
+        }
+        if ($salah = app(CostCenterAkun::class)->diLuarDaftar($v['journal_lines'], $lama)) {
+            return back()->withInput()->with('error', 'Cost center di luar daftar COA untuk akun: '.implode(', ', $salah).'.');
         }
 
         $total = round(array_sum(array_map(fn ($l) => (float) $l['amount'], $v['lines'])), 2);

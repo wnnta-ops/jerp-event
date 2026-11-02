@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Web\BusinessSupport\CashBook;
 
 use App\Domain\BusinessSupport\Actions\RecordCashTransaction;
+use App\Domain\BusinessSupport\Services\CostCenterAkun;
 use App\Domain\BusinessSupport\Models\BsAccount;
 use App\Domain\BusinessSupport\Models\BsCashTransaction;
 use App\Domain\BusinessSupport\Models\BsCostCenter;
@@ -299,7 +300,9 @@ class CashBookController extends Controller
         return Inertia::render('BusinessSupport/CashBook/Form', [
             'types'          => BsCashTransaction::TYPES,
             'cashAccounts'   => $this->cashAccounts(),
-            'counterAccounts'=> BsAccount::where('is_active', true)->where('is_postable', true)->orderBy('code')->get(['id', 'code', 'name', 'type', 'cost_center_optional']),
+            // cc_ids + cost_center_id (default) → cost center bawaan baris (CostCenterAkun).
+            'counterAccounts'=> CostCenterAkun::lampirkan(BsAccount::where('is_active', true)->where('is_postable', true)->orderBy('code')->get(['id', 'code', 'name', 'type', 'cost_center_id', 'cost_center_optional'])),
+            'ccUser'         => app(CostCenterAkun::class)->milikUser($request->user()),
             // Cost center per baris — dimensi yang menautkan pengeluaran ke Budget Control.
             'costCenters'    => BsCostCenter::where('is_active', true)->orderBy('code')->get(['id', 'code', 'name']),
             'defaultType'    => $allowedTypes[0] ?? 'in',
@@ -312,6 +315,9 @@ class CashBookController extends Controller
         abort_unless($request->user()?->can('cashbook.transaction.create'), 403);
 
         $v = $request->validate($this->rules(), [], $this->attributes());
+        if ($salah = app(CostCenterAkun::class)->diLuarDaftar($v['lines'] ?? [])) {
+            return back()->withInput()->with('error', 'Cost center di luar daftar COA untuk akun: '.implode(', ', $salah).'.');
+        }
 
         try {
             $trx = $action->execute($v, $request->user()->id);
@@ -343,7 +349,8 @@ class CashBookController extends Controller
         return Inertia::render('BusinessSupport/CashBook/Form', [
             'types'           => BsCashTransaction::TYPES,
             'cashAccounts'    => $this->cashAccounts(),
-            'counterAccounts' => BsAccount::where('is_active', true)->where('is_postable', true)->orderBy('code')->get(['id', 'code', 'name', 'type', 'cost_center_optional']),
+            'counterAccounts' => CostCenterAkun::lampirkan(BsAccount::where('is_active', true)->where('is_postable', true)->orderBy('code')->get(['id', 'code', 'name', 'type', 'cost_center_id', 'cost_center_optional'])),
+            'ccUser'          => app(CostCenterAkun::class)->milikUser($request->user()),
             'costCenters'     => BsCostCenter::where('is_active', true)->orderBy('code')->get(['id', 'code', 'name']),
             'defaultType'     => $cashTransaction->trx_type,
             // #148: saat edit, kunci jenis ke jenis transaksi yang sudah ada (tidak boleh diubah).
@@ -372,6 +379,12 @@ class CashBookController extends Controller
         abort_unless($request->user()?->can('cashbook.transaction.update'), 403);
 
         $v = $request->validate($this->rules(), [], $this->attributes());
+        // Baris lama yang sudah tercatat tetap boleh (forward-only).
+        $lama = $cashTransaction->lines()->get(['account_id', 'cost_center_id'])
+            ->mapWithKeys(fn ($l) => [$l->account_id.'|'.$l->cost_center_id => true])->all();
+        if ($salah = app(CostCenterAkun::class)->diLuarDaftar($v['lines'] ?? [], $lama)) {
+            return back()->withInput()->with('error', 'Cost center di luar daftar COA untuk akun: '.implode(', ', $salah).'.');
+        }
 
         try {
             $action->update($cashTransaction, $v, $request->user()->id);

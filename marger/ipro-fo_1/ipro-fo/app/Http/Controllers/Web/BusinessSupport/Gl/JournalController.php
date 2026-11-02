@@ -497,6 +497,37 @@ class JournalController extends Controller
      * @param  array<int,bool>  $optional  account_id → boleh tanpa cost center
      * @return array<int,array<string,mixed>>
      */
+    /**
+     * Baris KOSONG pada akun berdaftar cost center (Setup → Akun): header dipakai bila termasuk
+     * daftarnya, selain itu cost center bawaan CostCenterAkun (unit kerja penginput → default COA).
+     * Akun tanpa daftar dibiarkan — withLineCostCenter yang mewariskan header seperti biasa.
+     *
+     * @param  array<int,array<string,mixed>>  $lines
+     * @return array<int,array<string,mixed>>
+     */
+    private function isiDariCoa(array $lines, ?int $headerCostCenterId, ?object $user): array
+    {
+        $svc = app(CostCenterAkun::class);
+        $peta = $svc->peta(array_column($lines, 'account_id'));
+        $milik = null;
+
+        foreach ($lines as $i => $l) {
+            $akun = $peta[(int) ($l['account_id'] ?? 0)] ?? null;
+            if (! empty($l['cost_center_id']) || $akun === null || $akun['ids'] === []) {
+                continue;
+            }
+            if ($headerCostCenterId !== null && in_array($headerCostCenterId, $akun['ids'], true)) {
+                $lines[$i]['cost_center_id'] = $headerCostCenterId;
+
+                continue;
+            }
+            $milik ??= $svc->milikUser($user);
+            $lines[$i]['cost_center_id'] = CostCenterAkun::pilih($akun, $milik);
+        }
+
+        return $lines;
+    }
+
     private function withLineCostCenter(array $lines, ?int $headerCostCenterId, array $optional = []): array
     {
         return array_map(function (array $l) use ($headerCostCenterId, $optional): array {
@@ -561,8 +592,10 @@ class JournalController extends Controller
         abort_unless($request->user()?->can('gl.journal.create'), 403);
 
         return Inertia::render('BusinessSupport/Gl/Journals/Form', [
-            'accounts'    => BsAccount::where('is_active', true)->where('is_postable', true)->orderBy('code')->get(['id', 'code', 'name', 'type', 'cost_center_optional']),
+            // cost_center_id (default) + cc_ids (daftar COA) → cost center bawaan tiap baris (CostCenterAkun).
+            'accounts'    => CostCenterAkun::lampirkan(BsAccount::where('is_active', true)->where('is_postable', true)->orderBy('code')->get(['id', 'code', 'name', 'type', 'cost_center_id', 'cost_center_optional'])),
             'costCenters' => BsCostCenter::where('is_active', true)->orderBy('code')->get(['id', 'code', 'name']),
+            'ccUser'      => app(CostCenterAkun::class)->milikUser($request->user()),
         ]);
     }
 
@@ -589,12 +622,15 @@ class JournalController extends Controller
 
         $headerCc = isset($v['cost_center_id']) ? (int) $v['cost_center_id'] : null;
         $lines = $this->withLineCostCenter(
-            $v['lines'],
+            $this->isiDariCoa($v['lines'], $headerCc, $request->user()),
             $headerCc,
             $this->costCenterOptionalMap(array_column($v['lines'], 'account_id')),
         );
         if ($kurang = $this->missingCostCenter($lines)) {
             return back()->withInput()->with('error', 'Cost center wajib diisi untuk akun: '.implode(', ', $kurang).'.');
+        }
+        if ($salah = app(CostCenterAkun::class)->diLuarDaftar($lines)) {
+            return back()->withInput()->with('error', 'Cost center di luar daftar COA untuk akun: '.implode(', ', $salah).'.');
         }
 
         try {
@@ -650,8 +686,10 @@ class JournalController extends Controller
         }
 
         return Inertia::render('BusinessSupport/Gl/Journals/Form', [
-            'accounts'    => BsAccount::where('is_active', true)->where('is_postable', true)->orderBy('code')->get(['id', 'code', 'name', 'type', 'cost_center_optional']),
+            // cost_center_id (default) + cc_ids (daftar COA) → cost center bawaan tiap baris (CostCenterAkun).
+            'accounts'    => CostCenterAkun::lampirkan(BsAccount::where('is_active', true)->where('is_postable', true)->orderBy('code')->get(['id', 'code', 'name', 'type', 'cost_center_id', 'cost_center_optional'])),
             'costCenters' => BsCostCenter::where('is_active', true)->orderBy('code')->get(['id', 'code', 'name']),
+            'ccUser'      => app(CostCenterAkun::class)->milikUser($request->user()),
             'editing'     => array_merge(
                 $journal->only(['id', 'journal_number', 'journal_date', 'reference', 'description', 'cost_center_id', 'source', 'status']),
                 // cost_center_id per baris WAJIB ikut dimuat — tanpa ini, mengedit jurnal akan
@@ -683,12 +721,18 @@ class JournalController extends Controller
 
         $headerCc = isset($v['cost_center_id']) ? (int) $v['cost_center_id'] : null;
         $lines = $this->withLineCostCenter(
-            $v['lines'],
+            $this->isiDariCoa($v['lines'], $headerCc, $request->user()),
             $headerCc,
             $this->costCenterOptionalMap(array_column($v['lines'], 'account_id')),
         );
         if ($kurang = $this->missingCostCenter($lines)) {
             return back()->withInput()->with('error', 'Cost center wajib diisi untuk akun: '.implode(', ', $kurang).'.');
+        }
+        // Baris lama yang sudah tercatat dengan cost center di luar daftar tetap boleh (forward-only).
+        $lama = $journal->lines()->get(['account_id', 'cost_center_id'])
+            ->mapWithKeys(fn ($l) => [$l->account_id.'|'.$l->cost_center_id => true])->all();
+        if ($salah = app(CostCenterAkun::class)->diLuarDaftar($lines, $lama)) {
+            return back()->withInput()->with('error', 'Cost center di luar daftar COA untuk akun: '.implode(', ', $salah).'.');
         }
 
         try {

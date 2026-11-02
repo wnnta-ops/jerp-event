@@ -5,12 +5,15 @@ import { ArrowLeft, Plus, Trash2, Save, Scale, BookText } from 'lucide-vue-next'
 import Badge from '@/Components/UI/Badge.vue';
 import Button from '@/Components/UI/Button.vue';
 import SearchSelect from '@/Components/UI/SearchSelect.vue';
+import { pilihCc, opsiCc } from '@/Composables/costCenterAkun';
 
 const props = defineProps<{
     // cost_center_optional = akun boleh dijurnal TANPA cost center (mis. bank, piutang,
     // akumulasi penyusutan, utang) — lihat CoaTanpaCostCenterSeeder.
-    accounts: Array<{ id: number; code: string; name: string; type: string; cost_center_optional?: boolean }>;
+    // cc_ids = daftar cost center COA (Setup → Akun), cost_center_id = default-nya.
+    accounts: Array<{ id: number; code: string; name: string; type: string; cost_center_optional?: boolean; cost_center_id?: number | null; cc_ids?: number[] }>;
     costCenters: Array<{ id: number; code: string; name: string }>;
+    ccUser?: number[];   // unit kerja penginput, Utama dulu
     editing?: any;
 }>();
 
@@ -36,6 +39,24 @@ const form = useForm<any>(e ? {
 // Baris baru mewarisi cost center header sebagai titik awal — tetap bisa diganti per baris.
 function addLine() { form.lines.push({ account_id: '', cost_center_id: form.cost_center_id ?? '', description: '', debit: 0, credit: 0 }); }
 function removeLine(i: number) { form.lines.splice(i, 1); }
+
+const akun = (id: any) => props.accounts.find((a) => a.id === Number(id));
+/* COST CENTER IKUT COA yang dipilih (CostCenterAkun): akun berdaftar → unit kerja penginput bila
+   ada di daftar, selain itu default COA — header dipakai bila termasuk daftarnya. Akun tanpa
+   daftar → tetap ikut header; bila header kosong, unit kerja penginput. */
+function pilihAkun(l: any, v: any) {
+    l.account_id = v;
+    const a = akun(v);
+    if (!a) return;
+    if (a.cost_center_optional) { l.cost_center_id = ''; return; }
+    const ids = (a.cc_ids ?? []).map(Number);
+    if (ids.length) {
+        const h = Number(form.cost_center_id) || 0;
+        l.cost_center_id = h && ids.includes(h) ? h : (pilihCc(a, props.ccUser ?? []) ?? '');
+        return;
+    }
+    if (!l.cost_center_id && !form.cost_center_id) l.cost_center_id = props.ccUser?.[0] ?? '';
+}
 
 /* Kolom Keterangan memanjang ke bawah mengikuti isinya, bukan terpotong di ujung kolomnya.
    Tingginya dinolkan dulu sebelum dibaca: tanpa itu scrollHeight hanya bisa BERTAMBAH, sehingga
@@ -169,17 +190,18 @@ const inputCls = 'h-9 w-full rounded-lg border border-neutral-300 bg-white px-3 
                         <tr v-for="(l, i) in form.lines" :key="i" class="align-top"
                             :class="ccKurang(l) ? 'bg-danger-50/40 dark:bg-danger-900/10' : ''">
                             <td class="px-4 py-2.5">
-                                <SearchSelect v-model="l.account_id" :options="accounts" placeholder="— pilih / ketik akun —" no-truncate />
+                                <SearchSelect :model-value="l.account_id" @update:model-value="(v: any) => pilihAkun(l, v)" :options="accounts" placeholder="— pilih / ketik akun —" no-truncate />
                             </td>
                             <!-- Cost center PER COA. Dikosongkan → ikut cost center header, KECUALI
                                  akun yang memang boleh tanpa cost center: dibiarkan kosong apa adanya. -->
                             <td class="px-4 py-2.5">
                                 <div :class="ccKurang(l) ? 'rounded-lg ring-1 ring-danger-400' : ''">
-                                    <SearchSelect v-model="l.cost_center_id" :options="costCenters" no-truncate
+                                    <SearchSelect v-model="l.cost_center_id" :options="opsiCc(akun(l.account_id), costCenters)" no-truncate
                                         :placeholder="ccOptional(l.account_id) ? '— tanpa cost center —' : '— ikut header —'" />
                                 </div>
                                 <p v-if="ccKurang(l)" class="mt-0.5 text-[10.5px] font-medium text-danger-500">Wajib diisi</p>
                                 <p v-else-if="ccOptional(l.account_id)" class="mt-0.5 text-[10.5px] text-neutral-400">Boleh dikosongkan</p>
+                                <p v-else-if="(akun(l.account_id)?.cc_ids ?? []).length" class="mt-0.5 text-[10.5px] text-neutral-400">Sesuai daftar COA</p>
                             </td>
                             <td class="px-4 py-2.5">
                                 <!-- rows="1" + autoGrow: setinggi satu baris selama isinya pendek,

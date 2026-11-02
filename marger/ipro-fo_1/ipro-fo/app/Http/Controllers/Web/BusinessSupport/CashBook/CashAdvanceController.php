@@ -13,6 +13,7 @@ use App\Domain\BusinessSupport\Models\BsJournal;
 use App\Domain\BusinessSupport\Print\PengajuanKasbonPrinter;
 use App\Domain\BusinessSupport\Services\CashAdvanceAllocationService;
 use App\Domain\BusinessSupport\Services\CashAdvanceService;
+use App\Domain\BusinessSupport\Services\CostCenterAkun;
 use App\Domain\BusinessSupport\Services\CostCenterPengguna;
 use App\Domain\BusinessSupport\Support\SaldoBonSementara;
 use App\Exceptions\BusinessRuleException;
@@ -1088,7 +1089,8 @@ class CashAdvanceController extends Controller
                     ->orWhere('name', 'like', 'TITIPAN ESTATE%')
                     ->orWhere('name', 'like', 'PENYELESAIAN BIAYA KONSTRUKSI%')
                     ->orWhere('code', '10104010199'))
-                ->orderBy('code')->get(['id', 'code', 'name', 'type']),
+                ->orderBy('code')->get(['id', 'code', 'name', 'type', 'cost_center_id', 'cost_center_optional'])
+                ->pipe(fn ($c) => CostCenterAkun::lampirkan($c)),
             // Cost center per baris realisasi → diteruskan ke jurnal, dibaca Budget Control.
             'costCenters' => BsCostCenter::where('is_active', true)
                 ->orderBy('code')->get(['id', 'code', 'name']),
@@ -1333,6 +1335,9 @@ class CashAdvanceController extends Controller
         // selalu ditunda → ditangani dept Finance lewat Refund/Reimburse.
         $v['realized_date'] = now()->toDateString();
         $v['defer_settlement'] = true;
+        if ($salah = app(CostCenterAkun::class)->diLuarDaftar($v['lines'], [], 'expense_account_id')) {
+            return back()->with('error', 'Cost center di luar daftar COA untuk akun: '.implode(', ', $salah).'.');
+        }
 
         try {
             $svc->realize($advance, $v, $request->user()->id);
@@ -1356,6 +1361,12 @@ class CashAdvanceController extends Controller
             ...$this->aturanBarisRealisasi(),
             'alasan' => ['required', 'string', 'max:255'],
         ], ['alasan.required' => 'Alasan edit wajib diisi.']);
+        // Baris realisasi lama yang sudah tercatat tetap boleh (forward-only).
+        $lama = $advance->lines()->get(['expense_account_id', 'cost_center_id'])
+            ->mapWithKeys(fn ($l) => [$l->expense_account_id.'|'.$l->cost_center_id => true])->all();
+        if ($salah = app(CostCenterAkun::class)->diLuarDaftar($v['lines'], $lama, 'expense_account_id')) {
+            return back()->with('error', 'Cost center di luar daftar COA untuk akun: '.implode(', ', $salah).'.');
+        }
 
         try {
             $svc->editRealisasi($advance, $v['lines'], $v['alasan'], $request->user()->id);
