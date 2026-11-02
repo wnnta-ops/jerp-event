@@ -74,6 +74,8 @@ class MesinSinkron
     /** @var int[] id kontrak J-ERP yang diisi dari eProperty (pemanggil: faktur + booking BO). */
     private array $kontrakDiisi = [];
 
+    private ?int $idCustomerNa = null;
+
     private int $jalanId = 0;
 
     /**
@@ -357,6 +359,9 @@ class MesinSinkron
             if (! empty($m['pihak_wajib']) && ! $this->pihakSama($tabel, $cfg, $rowB, $x)) {
                 continue;
             }
+            if (isset($m['pihak_cadangan']) && $this->pihakTerang($cfg, $rowB, $x) === false) {
+                continue;   // kontrak/customer jelas berbeda → bukan dokumen yang sama
+            }
             $calon[] = $x;
         }
         if (! $calon && ! empty($m['tahan_pihak_sama'])) {
@@ -379,6 +384,9 @@ class MesinSinkron
             && $this->pihakJugaSama($cfg, $rowB, $x)));
         if (! $persis && ! isset($m['teks']) && ! isset($m['pihak_juga']) && count($calon) === 1) {
             $persis = $calon;
+        }
+        if (! $persis && isset($m['pihak_cadangan']) && count($calon) === 1 && $this->pihakTerang($cfg, $rowB, $calon[0]) === true) {
+            $persis = $calon;   // satu-satunya kandidat, nominal + kontrak/customer sama → keterangan boleh beda
         }
         if (count($persis) > 1 && isset($m['tanggal'])) {
             // Beberapa input J-ERP sama persis: ambil yang tanggalnya paling dekat.
@@ -414,6 +422,28 @@ class MesinSinkron
         }
 
         return $vb !== null && (string) $vb === (string) $n->{$kol};
+    }
+
+    /**
+     * Pihak dokumen yang bisa dipastikan (cocok.pihak_cadangan): kontrak bila keduanya berkontrak,
+     * selain itu customer (mis. TTS booking/UTJ yang belum punya SPR). Customer MIGRASI-NA (tak dikenal)
+     * dianggap tidak jelas. true = sama, false = jelas beda, null = tidak bisa dipastikan.
+     */
+    private function pihakTerang(array $cfg, object $b, object $n): ?bool
+    {
+        $kol = $cfg['cocok']['pihak'];
+        $vb = $b->{$kol} === null ? null : (isset($cfg['ref'][$kol]) ? $this->idNyataRef($cfg['ref'][$kol], $b->{$kol}) : $b->{$kol});
+        if ($vb !== null && $n->{$kol} !== null) {
+            return (string) $vb === (string) $n->{$kol};
+        }
+        $kol = $cfg['cocok']['pihak_cadangan'];
+        $vb = $b->{$kol} === null ? null : (isset($cfg['ref'][$kol]) ? $this->idNyataRef($cfg['ref'][$kol], $b->{$kol}) : $b->{$kol});
+        $na = $this->idCustomerNa ??= (int) $this->c->table($this->n('fo_customers'))->where('code', 'MIGRASI-NA')->value('id');
+        if ($vb === null || $n->{$kol} === null || (int) $vb === $na || (int) $n->{$kol} === $na) {
+            return null;
+        }
+
+        return (string) $vb === (string) $n->{$kol};
     }
 
     /**
