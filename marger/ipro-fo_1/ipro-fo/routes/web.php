@@ -1005,6 +1005,8 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
     Route::get('/business-support/bon-sementara/create', [BsAdvanceController::class, 'create'])->name('bs.advance.create');
     Route::post('/business-support/bon-sementara', [BsAdvanceController::class, 'store'])->name('bs.advance.store');
     Route::get('/business-support/bon-sementara/{advance}', [BsAdvanceController::class, 'show'])->name('bs.advance.show');
+    Route::get('/business-support/bon-sementara/{advance}/ubah', [BsAdvanceController::class, 'edit'])->name('bs.advance.edit');
+    Route::post('/business-support/bon-sementara/{advance}/ubah', [BsAdvanceController::class, 'update'])->name('bs.advance.update');
     // Tampilan DEPT FINANCE untuk bon yang sama — layar & controller yang sama, hanya
     // panel-panel Finance yang ikut dirender. Dipisah lewat rute, bukan izin: SuperAdmin
     // memegang semua izin, sehingga penjagaan izin saja tidak pernah membuat tampilan

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue';
 import { Link, useForm, router } from '@inertiajs/vue3';
-import { Ban, ArrowLeft, Wallet, ClipboardCheck, Printer, HandCoins, Lock, Undo2 } from 'lucide-vue-next';
+import { Ban, ArrowLeft, Wallet, ClipboardCheck, Printer, HandCoins, Lock, Undo2, Pencil } from 'lucide-vue-next';
 import Button from '@/Components/UI/Button.vue';
 import Badge from '@/Components/UI/Badge.vue';
 import SearchSelect from '@/Components/UI/SearchSelect.vue';
@@ -50,6 +50,8 @@ const props = defineProps<{ advance: any; jurnalRealisasi?: { id: number; number
     langkahMundur?: { kode: string; label: string } | null;
     /** Edit Realisasi (izin cashbook.advance.realize-edit) — hanya selama selisih belum diselesaikan. */
     bisaEditRealisasi?: boolean;
+    /** Edit Pengajuan (izin cashbook.advance.update) — hanya selagi Diajukan. */
+    bisaEditPengajuan?: boolean;
     riwayatMundur?: Array<{ langkah: string; alasan: string; created_at: string; oleh: string | null }> }>();
 
 // Mundur SATU LANGKAH — kebalikan urutan majunya. Alasan wajib dan tercatat di riwayat.
@@ -274,6 +276,7 @@ function backToIndex() {
                      berbeda beredar untuk satu bon yang sama. -->
                 <a v-if="advance.status !== 'realized'" :href="route('bs.advance.print', advance.id)" target="_blank" rel="noopener" class="inline-flex items-center gap-1.5 rounded-lg border border-neutral-300 bg-white px-3 py-1.5 text-sm font-medium text-neutral-700 hover:bg-neutral-50 dark:border-neutral-600 dark:bg-neutral-800 dark:text-neutral-200"><Printer class="h-4 w-4" /> {{ advance.status === 'requested' ? 'Cetak Pengajuan' : 'Cetak Pengeluaran' }}</a>
                 <a v-if="advance.status === 'realized'" :href="route('bs.advance.print-realisasi', advance.id)" target="_blank" rel="noopener" class="inline-flex items-center gap-1.5 rounded-lg border border-success-300 bg-success-50 px-3 py-1.5 text-sm font-medium text-success-700 hover:bg-success-100 dark:border-success-700/50 dark:bg-success-900/30 dark:text-success-300"><Printer class="h-4 w-4" /> Cetak Realisasi</a>
+                <Link v-if="bisaEditPengajuan" :href="route('bs.advance.edit', advance.id)" class="inline-flex items-center gap-1.5 rounded-lg border border-primary-300 bg-white px-3 py-1.5 text-sm font-medium text-primary-700 hover:bg-primary-50 dark:border-primary-700/50 dark:bg-neutral-800 dark:text-primary-300"><Pencil class="h-4 w-4" /> Edit Pengajuan</Link>
                 <button v-if="langkahMundur" type="button" @click="bukaMundur = ! bukaMundur" class="inline-flex items-center gap-1.5 rounded-lg border border-danger-300 bg-white px-3 py-1.5 text-sm font-medium text-danger-700 hover:bg-danger-50 dark:border-danger-700/50 dark:bg-neutral-800 dark:text-danger-300"><Undo2 class="h-4 w-4" /> {{ langkahMundur.label }}</button>
                 <Badge :variant="statusVariant[advance.status] ?? 'neutral'">{{ statusLabel[advance.status] ?? advance.status }}</Badge>
             </div>
