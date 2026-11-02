@@ -10,6 +10,8 @@ use App\Domain\BusinessSupport\Models\BsApBerkas;
 use App\Domain\BusinessSupport\Models\BsApBerkasUpload;
 use App\Domain\BusinessSupport\Models\BsApBerkasUploadFile;
 use App\Domain\BusinessSupport\Models\BsApInvoice;
+use App\Domain\BusinessSupport\Models\BsEmployee;
+use App\Domain\BusinessSupport\Models\BsSupplier;
 use App\Domain\Foundation\Audit\Models\AuditLog;
 use App\Exceptions\BusinessRuleException;
 use App\Models\User;
@@ -23,7 +25,8 @@ use Throwable;
  * Upload Berkas: draft → TTD Dept Head → Invoice Hutang (boleh beberapa) → approval invoice.
  *
  * Dua approval di mesin ApprovalChain:
- *   'ap_berkas'  : 1 langkah, approver = Dept Head yang DIPILIH pengunggah (approver_type 'assigned')
+ *   'ap_berkas'  : 1 langkah, approver = Dept Head pengunggah — OTOMATIS dari atasan langsungnya
+ *                  di Employee Center (bs_employees.atasan_id), approver_type 'assigned'
  *   'ap_invoice' : Accounting → Finance → GM → Direktur → MW / BA (sama dengan Memo Internal)
  * Invoice dari berkas tidak bisa dibayar sebelum 'ap_invoice' disetujui penuh
  * (BsApInvoice::assertBolehDibayar).
@@ -35,7 +38,7 @@ final class ApBerkasService
 {
     public const DISK = 'local';
 
-    /** Peran yang boleh dipilih sebagai penanda tangan pertama. */
+    /** Peran Dept Head (label langkah approval 'ap_berkas'); penanda tangannya sendiri = atasan pengunggah. */
     public const DEPT_HEAD_ROLE = 'DeptHead';
 
     /** source_type invoice hutang yang dibuat dari Upload Berkas. */
@@ -45,7 +48,7 @@ final class ApBerkasService
 
     public function __construct(
         private readonly SubmitForApproval $submit,
-        private readonly BudgetGuardService $budget,
+        private readonly CostCenterPengguna $pengguna,
     ) {}
 
     /**
@@ -59,10 +62,13 @@ final class ApBerkasService
         $stored = [];
         try {
             return DB::transaction(function () use ($data, $files, $uploader, $ajukan, &$stored): BsApBerkasUpload {
+                $isian = $this->isian($data);
+                $uploadDate = $data['upload_date'] ?? now()->toDateString();
                 $berkas = BsApBerkasUpload::create([
-                    ...$this->isian($data),
-                    'upload_date' => $data['upload_date'] ?? now()->toDateString(),
-                    'berkas_number' => $this->nextNumber($uploader, $data['upload_date'] ?? now()->toDateString()),
+                    ...$isian,
+                    'upload_date' => $uploadDate,
+                    'berkas_number' => $this->nextNumber($isian['supplier_id'], $isian['document_date'] ?? $uploadDate),
+                    'dept_head_id' => $this->deptHeadUntuk($uploader)?->id,
                     'status' => BsApBerkasUpload::STATUS_DRAFT,
                     'uploaded_by' => $uploader->id,
                 ]);
@@ -86,13 +92,24 @@ final class ApBerkasService
         return $this->create($data, $files, $uploader, true);
     }
 
-    /** Ubah isian (draft / ditolak). */
+    /**
+     * Ubah isian (draft / ditolak). Nomor ikut diganti bila tanggal tagihan atau supplier
+     * berubah — keduanya bagian dari nomor, jadi nomor lama akan menyesatkan.
+     */
     public function update(BsApBerkasUpload $berkas, array $data, User $user): BsApBerkasUpload
     {
         $this->assertBisaDiubah($berkas);
-        $berkas->update($this->isian($data));
 
-        return $berkas->refresh();
+        return DB::transaction(function () use ($berkas, $data): BsApBerkasUpload {
+            $isian = $this->isian($data);
+            $date = $isian['document_date'] ?? $berkas->upload_date?->toDateString() ?? now()->toDateString();
+            if (! str_starts_with((string) $berkas->berkas_number, $this->prefix($isian['supplier_id'], $date))) {
+                $isian['berkas_number'] = $this->nextNumber($isian['supplier_id'], $date);
+            }
+            $berkas->update($isian);
+
+            return $berkas->refresh();
+        });
     }
 
     /** @param list<array{file:UploadedFile, berkas_id:?int}> $files */
@@ -127,16 +144,21 @@ final class ApBerkasService
 
     /**
      * Ajukan (atau ajukan ulang setelah ditolak) ke TTD Dept Head.
-     * Diperiksa: Dept Head sah, file ada, berkas wajib lengkap, anggaran cukup.
+     * Diperiksa: atasan (Dept Head) pengunggah ada, file ada, berkas wajib lengkap.
      */
     public function submit(BsApBerkasUpload $berkas, User $user): BsApBerkasUpload
     {
         $berkas = BsApBerkasUpload::query()->lockForUpdate()->findOrFail($berkas->id);
         $this->assertBisaDiubah($berkas);
 
-        $deptHead = User::with('roles')->find($berkas->dept_head_id);
-        if (! $deptHead || ! $deptHead->hasRole(self::DEPT_HEAD_ROLE)) {
-            throw new BusinessRuleException('Penanda tangan harus user ber-peran Dept Head.', errorCode: 'BERKAS_DEPT_HEAD');
+        // Ditentukan ulang saat diajukan: atasan di Employee Center bisa saja berganti sejak draft dibuat.
+        $uploader = User::find($berkas->uploaded_by);
+        $deptHead = $uploader ? $this->deptHeadUntuk($uploader) : null;
+        if (! $deptHead) {
+            throw new BusinessRuleException(
+                'Dept Head Anda belum diatur — isi atasan langsung Anda di Data Center › Employee Center, atau hubungi HRD.',
+                errorCode: 'BERKAS_DEPT_HEAD',
+            );
         }
         if ((int) $deptHead->id === (int) $berkas->uploaded_by) {
             throw new BusinessRuleException('Dept Head tidak boleh menandatangani berkas yang ia unggah sendiri.', errorCode: 'BERKAS_SELF_SIGN');
@@ -147,8 +169,6 @@ final class ApBerkasService
         if ($kurang = $this->berkasWajibKurang($berkas)) {
             throw new BusinessRuleException('Berkas wajib belum lengkap: '.implode(', ', $kurang).'.', errorCode: 'BERKAS_WAJIB');
         }
-        $this->cekAnggaran($berkas);
-
         $ulang = $berkas->status === BsApBerkasUpload::STATUS_DITOLAK;
         $approval = $this->submit->execute(BsApBerkasUpload::DOCUMENT_TYPE, $berkas, [
             'berkas_number' => $berkas->berkas_number,
@@ -157,6 +177,7 @@ final class ApBerkasService
         ], [1 => (int) $deptHead->id]);
 
         $berkas->update([
+            'dept_head_id' => $deptHead->id,
             'approval_id' => $approval->id,
             'status' => BsApBerkasUpload::STATUS_MENUNGGU_TTD,
             'submitted_at' => now(),
@@ -273,12 +294,32 @@ final class ApBerkasService
             ->whereNotIn('id', $ada)->orderBy('id')->pluck('name')->all();
     }
 
-    /** BRK-{USER}-{MMYY}-{NNNN}; urut per pengunggah per bulan. */
-    public function nextNumber(User $user, string $date): string
+    /**
+     * Dept Head penanda tangan = atasan langsung pengunggah di Employee Center
+     * (karyawan pengunggah → atasan_id → akun user yang NIK-nya = NIK atasan; cadangan: nama).
+     * null bila belum diatur, atasannya tidak punya akun aktif, atau atasannya dirinya sendiri.
+     */
+    public function deptHeadUntuk(User $user): ?User
     {
-        $code = strtoupper(preg_replace('/[^A-Za-z0-9]/', '', (string) ($user->username ?: Str::before(trim($user->name), ' '))) ?: 'U'.$user->id);
-        $code = substr($code, 0, 12);
-        $prefix = 'BRK-'.$code.'-'.\Illuminate\Support\Carbon::parse($date)->format('my').'-';
+        $empId = $this->pengguna->idKaryawan($user);
+        $atasanId = $empId ? BsEmployee::query()->whereKey($empId)->value('atasan_id') : null;
+        $atasan = $atasanId ? BsEmployee::query()->find($atasanId) : null;
+        if (! $atasan) {
+            return null;
+        }
+        $head = User::query()->where('is_active', true)->where('employee_nip', $atasan->nik)->first()
+            ?? User::query()->where('is_active', true)->whereRaw('LOWER(name) = ?', [mb_strtolower(trim((string) $atasan->name))])->first();
+
+        return $head && (int) $head->id !== (int) $user->id ? $head : null;
+    }
+
+    /**
+     * DOC-{YYYYMMDD tanggal tagihan}-{kode supplier}-{NNNN}; urut per tanggal tagihan + supplier.
+     * Supplier belum diisi → kode "NA".
+     */
+    public function nextNumber(?int $supplierId, string $date): string
+    {
+        $prefix = $this->prefix($supplierId, $date);
 
         $last = BsApBerkasUpload::withTrashed()
             ->where('berkas_number', 'like', $prefix.'%')
@@ -290,25 +331,12 @@ final class ApBerkasService
         return $prefix.str_pad((string) $seq, 4, '0', STR_PAD_LEFT);
     }
 
-    /**
-     * Hitung PPN & total dari subtotal, diskon, tarif, dan "harga sudah termasuk PPN".
-     *   normal   : PPN = (subtotal − diskon) × %, total = (subtotal − diskon) + PPN
-     *   inklusif : subtotal sudah termasuk PPN → total = subtotal − diskon, PPN = total × %/(100+%)
-     *
-     * @return array{ppn_amount: float, amount: ?float}
-     */
-    public static function hitungTotal(?float $subtotal, float $discount, float $ppnPct, bool $inclusive): array
+    private function prefix(?int $supplierId, string $date): string
     {
-        if ($subtotal === null) {
-            return ['ppn_amount' => 0.0, 'amount' => null];
-        }
-        $net = max(0.0, $subtotal - $discount);
-        if ($inclusive) {
-            return ['ppn_amount' => round($net * $ppnPct / (100 + $ppnPct)), 'amount' => round($net, 2)];
-        }
-        $ppn = round($net * $ppnPct / 100);
+        $code = $supplierId ? (string) BsSupplier::query()->whereKey($supplierId)->value('code') : '';
+        $code = substr(strtoupper((string) preg_replace('/[^A-Za-z0-9]/', '', $code)), 0, 16) ?: 'NA';
 
-        return ['ppn_amount' => $ppn, 'amount' => round($net + $ppn, 2)];
+        return 'DOC-'.\Illuminate\Support\Carbon::parse($date)->format('Ymd').'-'.$code.'-';
     }
 
     // ── internal ─────────────────────────────────────────────────────────────────
@@ -323,52 +351,17 @@ final class ApBerkasService
         }
     }
 
-    /** Kolom isian yang boleh diisi dari form, dengan PPN & total dihitung server. */
+    /** Kolom isian yang boleh diisi dari form. Dept Head tidak dipilih — lihat deptHeadUntuk(). */
     private function isian(array $data): array
     {
-        $subtotal = isset($data['subtotal']) && $data['subtotal'] !== '' ? (float) $data['subtotal'] : null;
-        $discount = (float) ($data['discount'] ?? 0);
-        $ppnPct = (float) ($data['ppn_pct'] ?? 0);
-        $inclusive = (bool) ($data['tax_inclusive'] ?? false);
-        if ($discount > 0 && ($subtotal === null || $discount > $subtotal + 0.01)) {
-            throw new BusinessRuleException('Diskon tidak boleh melebihi subtotal.', errorCode: 'BERKAS_DISKON');
-        }
-        $total = self::hitungTotal($subtotal, $discount, $ppnPct, $inclusive);
-
         return [
-            'jenis' => $data['jenis'] ?? null,
             'document_date' => $data['document_date'] ?? null,
             'needed_date' => $data['needed_date'] ?? null,
-            'supplier_id' => $data['supplier_id'] ?? null,
+            'supplier_id' => isset($data['supplier_id']) && $data['supplier_id'] !== '' ? (int) $data['supplier_id'] : null,
             'supplier_invoice_no' => $data['supplier_invoice_no'] ?? null,
-            'subtotal' => $subtotal,
-            'discount' => $discount,
-            'ppn_pct' => $ppnPct,
-            'tax_inclusive' => $inclusive,
-            'ppn_amount' => $total['ppn_amount'],
-            // Tanpa rincian pajak boleh isi nominal langsung (kompatibel v1).
-            'amount' => $total['amount'] ?? (isset($data['amount']) && $data['amount'] !== '' ? (float) $data['amount'] : null),
-            'cost_center_id' => $data['cost_center_id'] ?? null,
-            'expense_account_id' => $data['expense_account_id'] ?? null,
+            'amount' => isset($data['amount']) && $data['amount'] !== '' ? (float) $data['amount'] : null,
             'description' => $data['description'],
-            'dept_head_id' => $data['dept_head_id'],
         ];
-    }
-
-    /** Cek anggaran saat diajukan bila akun beban + cost center + nominal terisi. */
-    private function cekAnggaran(BsApBerkasUpload $berkas): void
-    {
-        if (! $berkas->expense_account_id || ! $berkas->cost_center_id || $berkas->amount === null) {
-            return;
-        }
-        $dpp = $berkas->subtotal !== null
-            ? max(0.0, (float) $berkas->subtotal - (float) $berkas->discount - ($berkas->tax_inclusive ? (float) $berkas->ppn_amount : 0))
-            : (float) $berkas->amount;
-        $this->budget->assertWithinBudget(
-            [['account_id' => $berkas->expense_account_id, 'cost_center_id' => $berkas->cost_center_id, 'debit' => $dpp, 'credit' => 0]],
-            null,
-            ($berkas->document_date ?? $berkas->upload_date ?? now())->toDateString(),
-        );
     }
 
     /** @return list<string> path yang tertulis (untuk dibersihkan bila transaksi gagal) */

@@ -8,13 +8,12 @@ type FileRow = { id: number; name: string; jenis: string | null; size: number; m
 const props = defineProps<{
     berkas: {
         id: number; number: string; status: string; deleted: boolean; upload_date: string | null; document_date: string | null;
-        needed_date: string | null; jenis: string | null; supplier: string | null; supplier_invoice_no: string | null; description: string;
-        subtotal: number | null; discount: number; ppn_pct: number; tax_inclusive: boolean; ppn_amount: number; amount: number | null;
-        invoiced: number; sisa: number | null; cost_center: string | null; expense_account: string | null; dept_head: string | null;
+        needed_date: string | null; supplier: string | null; supplier_invoice_no: string | null; description: string;
+        amount: number | null; invoiced: number; sisa: number | null; dept_head: string | null;
         uploader: string | null; cancel_reason: string | null; close_reason: string | null; files: FileRow[];
     };
     wajibKurang: string[];
-    jenisWajib: string[];
+    jenisChecklist: Array<{ name: string; is_mandatory: boolean }>;
     invoices: Array<{ id: number; number: string; total: number; status: string; date: string | null; approval: { status: string; url: string } | null }>;
     ttdApprovalUrl: string | null;
     timeline: Array<{ event: string; at: string; by: string; notes: string | null; changes: Array<{ field: string; old: any; new: any }> }>;
@@ -31,10 +30,14 @@ const variant: Record<string, string> = {
 };
 const approvalText: Record<string, string> = { pending: 'Menunggu approval', in_review: 'Dalam approval', approved: 'Disetujui — boleh dibayar', rejected: 'Ditolak' };
 const fieldLabel: Record<string, string> = {
-    jenis: 'Jenis', document_date: 'Tgl dokumen', needed_date: 'Rencana bayar', supplier_id: 'Supplier', supplier_invoice_no: 'No. tagihan',
-    subtotal: 'Subtotal', discount: 'Diskon', ppn_pct: 'PPN %', tax_inclusive: 'Termasuk PPN', amount: 'Total', cost_center_id: 'Cost center',
-    expense_account_id: 'Akun beban', description: 'Keterangan', dept_head_id: 'Dept Head',
+    berkas_number: 'No. berkas', document_date: 'Tgl tagihan', needed_date: 'Jatuh tempo', supplier_id: 'Supplier', supplier_invoice_no: 'No. tagihan',
+    amount: 'Total', description: 'Keterangan', dept_head_id: 'Dept Head',
+    // Isian lama (sebelum disederhanakan) — tetap terbaca di riwayat.
+    jenis: 'Jenis', subtotal: 'Subtotal', discount: 'Diskon', ppn_pct: 'PPN %', tax_inclusive: 'Termasuk PPN',
+    cost_center_id: 'Cost center', expense_account_id: 'Akun beban',
 };
+
+const ada = (nama: string) => props.berkas.files.some((f) => f.jenis === nama);
 
 // Pratinjau file di halaman (PDF / gambar).
 const pratinjau = ref<FileRow | null>(null);
@@ -63,7 +66,7 @@ const tampil = (v: any) => (v === null || v === '' || v === undefined ? '—' : 
 
         <div class="flex flex-wrap items-start justify-between gap-3">
             <div>
-                <p class="font-mono text-sm text-neutral-500">{{ berkas.number }}<template v-if="berkas.jenis"> · {{ berkas.jenis }}</template></p>
+                <p class="font-mono text-sm text-neutral-500">{{ berkas.number }}</p>
                 <h1 class="text-2xl font-bold">{{ berkas.description }}</h1>
             </div>
             <div class="flex items-center gap-2">
@@ -91,19 +94,14 @@ const tampil = (v: any) => (v === null || v === '' || v === undefined ? '—' : 
                 <div class="card space-y-4 p-6">
                     <dl class="grid gap-4 text-sm sm:grid-cols-3">
                         <div><dt class="text-xs uppercase text-neutral-500">Tgl unggah</dt><dd class="font-medium">{{ berkas.upload_date }}</dd></div>
-                        <div><dt class="text-xs uppercase text-neutral-500">Tgl dokumen</dt><dd class="font-medium">{{ berkas.document_date ?? '—' }}</dd></div>
-                        <div><dt class="text-xs uppercase text-neutral-500">Rencana bayar</dt><dd class="font-medium">{{ berkas.needed_date ?? '—' }}</dd></div>
+                        <div><dt class="text-xs uppercase text-neutral-500">Tgl tagihan</dt><dd class="font-medium">{{ berkas.document_date ?? '—' }}</dd></div>
+                        <div><dt class="text-xs uppercase text-neutral-500">Jatuh tempo</dt><dd class="font-medium">{{ berkas.needed_date ?? '—' }}</dd></div>
                         <div><dt class="text-xs uppercase text-neutral-500">Supplier</dt><dd class="font-medium">{{ berkas.supplier ?? '—' }}</dd></div>
                         <div><dt class="text-xs uppercase text-neutral-500">No. tagihan</dt><dd class="font-medium">{{ berkas.supplier_invoice_no ?? '—' }}</dd></div>
                         <div><dt class="text-xs uppercase text-neutral-500">Pengunggah / TTD</dt><dd class="font-medium">{{ berkas.uploader }} · {{ berkas.dept_head }}</dd></div>
-                        <div class="sm:col-span-2"><dt class="text-xs uppercase text-neutral-500">Akun beban</dt><dd class="font-medium">{{ berkas.expense_account ?? '—' }}</dd></div>
-                        <div><dt class="text-xs uppercase text-neutral-500">Cost center</dt><dd class="font-medium">{{ berkas.cost_center ?? '—' }}</dd></div>
                     </dl>
                     <table class="w-full text-sm tabular-nums">
                         <tbody class="divide-y divide-neutral-100 dark:divide-neutral-800">
-                            <tr><td class="py-1.5 text-neutral-500">Subtotal{{ berkas.tax_inclusive ? ' (termasuk PPN)' : '' }}</td><td class="py-1.5 text-right">{{ rupiah(berkas.subtotal) }}</td></tr>
-                            <tr><td class="py-1.5 text-neutral-500">Diskon</td><td class="py-1.5 text-right">{{ rupiah(berkas.discount) }}</td></tr>
-                            <tr><td class="py-1.5 text-neutral-500">PPN {{ berkas.ppn_pct }}%{{ berkas.tax_inclusive ? ' (informasi)' : '' }}</td><td class="py-1.5 text-right">{{ rupiah(berkas.ppn_amount) }}</td></tr>
                             <tr class="font-bold"><td class="py-1.5">Total tagihan</td><td class="py-1.5 text-right">{{ rupiah(berkas.amount) }}</td></tr>
                             <tr><td class="py-1.5 text-neutral-500">Sudah diinvoice</td><td class="py-1.5 text-right">{{ rupiah(berkas.invoiced) }}</td></tr>
                             <tr v-if="berkas.sisa != null"><td class="py-1.5 text-neutral-500">Sisa</td><td class="py-1.5 text-right">{{ rupiah(berkas.sisa) }}</td></tr>
@@ -116,8 +114,8 @@ const tampil = (v: any) => (v === null || v === '' || v === undefined ? '—' : 
                     <div class="flex flex-wrap items-center justify-between gap-2">
                         <p class="text-xs uppercase text-neutral-500">File berkas ({{ berkas.files.length }})</p>
                         <ul class="flex flex-wrap gap-1 text-xs">
-                            <li v-for="w in jenisWajib" :key="w" :class="['rounded-full px-2 py-0.5', wajibKurang.includes(w) ? 'bg-amber-50 text-amber-800 dark:bg-amber-950/40 dark:text-amber-300' : 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300']">
-                                {{ wajibKurang.includes(w) ? '○' : '✓' }} {{ w }}
+                            <li v-for="j in jenisChecklist" :key="j.name" :class="['rounded-full px-2 py-0.5', ada(j.name) ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300' : j.is_mandatory ? 'bg-amber-50 text-amber-800 dark:bg-amber-950/40 dark:text-amber-300' : 'bg-neutral-100 text-neutral-500 dark:bg-neutral-800']">
+                                {{ ada(j.name) ? '✓' : '○' }} {{ j.name }}{{ j.is_mandatory ? ' (wajib)' : '' }}
                             </li>
                         </ul>
                     </div>

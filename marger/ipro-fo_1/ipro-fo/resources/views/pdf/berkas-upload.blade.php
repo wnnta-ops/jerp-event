@@ -45,21 +45,16 @@
 
     <div class="meta">
         <div><b>Tanggal unggah</b>{{ $b->upload_date?->format('d/m/Y') }}</div>
-        <div><b>Jenis</b>{{ $jenisLabel ?? '—' }}</div>
-        <div><b>Tanggal dokumen</b>{{ $b->document_date?->format('d/m/Y') ?? '—' }}</div>
-        <div><b>Rencana bayar</b>{{ $b->needed_date?->format('d/m/Y') ?? '—' }}</div>
+        <div><b>Tanggal tagihan</b>{{ $b->document_date?->format('d/m/Y') ?? '—' }}</div>
+        <div><b>Jatuh tempo</b>{{ $b->needed_date?->format('d/m/Y') ?? '—' }}</div>
         <div><b>Supplier</b>{{ $b->supplier?->name ?? '—' }}</div>
         <div><b>No. tagihan supplier</b>{{ $b->supplier_invoice_no ?? '—' }}</div>
-        <div><b>Cost center</b>{{ $b->costCenter ? $b->costCenter->code.' — '.$b->costCenter->name : '—' }}</div>
-        <div><b>Akun beban</b>{{ $b->expenseAccount ? $b->expenseAccount->code.' — '.$b->expenseAccount->name : '—' }}</div>
+        <div><b>Dept Head</b>{{ $b->deptHead?->name ?? '—' }}</div>
         <div style="grid-column:1 / 3"><b>Keterangan</b>{{ $b->description }}</div>
     </div>
 
     <h2>Nilai tagihan</h2>
     <table>
-        <tr><td>Subtotal{{ $b->tax_inclusive ? ' (termasuk PPN)' : '' }}</td><td class="n">{{ $rp($b->subtotal) }}</td></tr>
-        <tr><td>Diskon</td><td class="n">{{ $rp($b->discount) }}</td></tr>
-        <tr><td>PPN {{ rtrim(rtrim(number_format((float) $b->ppn_pct, 2, ',', '.'), '0'), ',') }}%{{ $b->tax_inclusive ? ' (informasi)' : '' }}</td><td class="n">{{ $rp($b->ppn_amount) }}</td></tr>
         <tr class="tot"><td>TOTAL</td><td class="n">{{ $rp($b->amount) }}</td></tr>
     </table>
 

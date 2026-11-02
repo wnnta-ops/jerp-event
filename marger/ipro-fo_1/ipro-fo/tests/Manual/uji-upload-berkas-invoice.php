@@ -6,9 +6,9 @@ declare(strict_types=1);
  * Uji Upload Berkas → TTD Dept Head → Invoice Hutang → approval → bayar.
  *
  * Yang dijaga:
- *   · Nomor BRK-{USER}-{MMYY}-{NNNN} urut per pengunggah; file tersimpan di disk privat.
- *   · Penanda tangan harus ber-peran Dept Head dan bukan pengunggahnya sendiri; hanya
- *     Dept Head YANG DIPILIH yang melihat & bisa menandatangani (approver 'assigned').
+ *   · Nomor DOC-{YYYYMMDD tgl tagihan}-{kode supplier}-{NNNN}; file tersimpan di disk privat.
+ *   · Penanda tangan = atasan langsung pengunggah di Employee Center (otomatis), bukan
+ *     pengunggahnya sendiri; hanya Dept Head ITU yang melihat & bisa menandatangani.
  *   · Berkas baru bisa dijadikan invoice setelah TTD, dan hanya sekali.
  *   · Invoice dari berkas TIDAK bisa dibayar (bayar langsung maupun kuitansi) sampai approval
  *     Accounting → Finance → GM → Direktur → MW / BA selesai; invoice lama tetap bisa.
@@ -83,6 +83,21 @@ try {
     foreach (['Accounting', 'Finance', 'GM', 'Direktur', 'Owner'] as $r) {
         $role[$r] = $buatUser("Approver {$r} Berkas Uji", [$r]);
     }
+    // Atasan langsung di Employee Center → Dept Head otomatis.
+    $karyawan = function (User $u, ?User $atasan = null) use ($tenantId): void {
+        $nik = 'UJI-'.Str::upper(Str::random(8));
+        DB::table('bs_employees')->insert([
+            'tenant_id' => $tenantId, 'nik' => $nik, 'name' => $u->name, 'is_active' => true, 'created_at' => now(), 'updated_at' => now(),
+            'atasan_id' => $atasan ? DB::table('bs_employees')->where('nik', $atasan->employee_nip)->value('id') : null,
+        ]);
+        $u->forceFill(['employee_nip' => $nik])->save();
+    };
+    $karyawan($dh);
+    $karyawan($dhLain);
+    $karyawan($staf, $dh);
+    $karyawan($ap, $dh);
+    // Dept Head yang atasannya dirinya sendiri (data salah) — tidak boleh menandatangani berkasnya.
+    DB::table('bs_employees')->where('nik', $dh->employee_nip)->update(['atasan_id' => DB::table('bs_employees')->where('nik', $dh->employee_nip)->value('id')]);
     $svc = app(ApBerkasService::class);
     $inbox = app(ApprovalInboxQuery::class);
     $act = app(ActOnApproval::class);
@@ -91,18 +106,23 @@ try {
     // v2: berkas wajib (master bs_ap_berkas.is_mandatory) harus ada — sertakan semua jenis wajib.
     $wajib = DB::table('bs_ap_berkas')->where('is_active', true)->where('is_mandatory', true)->pluck('id');
     $file = fn () => $wajib->map(fn ($id) => ['file' => UploadedFile::fake()->create("berkas-{$id}.pdf", 120, 'application/pdf'), 'berkas_id' => (int) $id])->all();
-    $data = fn (array $x = []) => $x + ['upload_date' => now()->toDateString(), 'description' => 'Tagihan uji', 'dept_head_id' => $dh->id, 'amount' => 5000000];
+    $data = fn (array $x = []) => $x + ['upload_date' => now()->toDateString(), 'description' => 'Tagihan uji', 'document_date' => '2026-03-15', 'amount' => 5000000];
 
     echo "\n=== 1. Unggah berkas ===\n";
     $sebagai($staf);
     $b = $svc->upload($data(), $file(), $staf);
-    $cek('nomor BRK-{USER}-{MMYY}-0001', (bool) preg_match('#^BRK-[A-Z0-9]+-\d{4}-0001$#', $b->berkas_number), $b->berkas_number);
+    $awal = (int) (DB::table('bs_ap_berkas_uploads')->where('berkas_number', 'like', 'DOC-20260315-NA-%')->count());
+    $cek('nomor DOC-{tgl tagihan}-NA-{urut} (tanpa supplier)', $b->berkas_number === 'DOC-20260315-NA-'.str_pad((string) $awal, 4, '0', STR_PAD_LEFT), $b->berkas_number);
     $b2 = $svc->upload($data(), $file(), $staf);
-    $cek('berkas kedua user sama → urut 0002', str_ends_with($b2->berkas_number, '-0002'), $b2->berkas_number);
+    $cek('berkas kedua tgl & supplier sama → urut berikutnya', (int) substr($b2->berkas_number, -4) === (int) substr($b->berkas_number, -4) + 1, $b2->berkas_number);
+    $supKode = DB::table('bs_suppliers')->orderBy('id')->first(['id', 'code']);
+    $b3 = $svc->create($data(['supplier_id' => $supKode->id]), [], $staf);
+    $cek('nomor memuat kode supplier', str_starts_with($b3->berkas_number, 'DOC-20260315-'.preg_replace('/[^A-Z0-9]/', '', strtoupper($supKode->code)).'-'), $b3->berkas_number);
+    $cek('Dept Head otomatis = atasan pengunggah', (int) $b->dept_head_id === (int) $dh->id);
     $cek('status menunggu_ttd', $b->status === 'menunggu_ttd');
     $cek('file tersimpan di disk privat', Storage::disk('local')->exists($b->files()->first()->path));
-    $cek('Dept Head bukan peran DeptHead ditolak', $kode(fn () => $svc->upload($data(['dept_head_id' => $role['GM']->id]), $file(), $staf)) === 'BERKAS_DEPT_HEAD');
-    $cek('Dept Head menandatangani berkasnya sendiri ditolak', $kode(fn () => $svc->upload($data(), $file(), $dh)) === 'BERKAS_SELF_SIGN');
+    $cek('pengunggah tanpa atasan tidak bisa mengajukan', $kode(fn () => $svc->upload($data(), $file(), $role['GM'])) === 'BERKAS_DEPT_HEAD');
+    $cek('atasan = diri sendiri → tidak bisa menandatangani berkas sendiri', $kode(fn () => $svc->upload($data(), $file(), $dh)) === 'BERKAS_DEPT_HEAD');
     $cek('tanpa file ditolak', $kode(fn () => $svc->upload($data(), [], $staf)) === 'BERKAS_EMPTY');
 
     echo "\n=== 2. TTD Dept Head (approver ditunjuk) ===\n";

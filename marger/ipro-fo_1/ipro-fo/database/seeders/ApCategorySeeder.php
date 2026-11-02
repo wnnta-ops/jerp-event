@@ -105,6 +105,8 @@ class ApCategorySeeder extends Seeder
             ['FAKTUR-PAJAK', 'Faktur Pajak', false],
             ['SURAT-JALAN', 'Surat Jalan / BAP', false],
             ['PO-SPK', 'PO / SPK', false],
+            ['MOU', 'MOU / Perjanjian', false],
+            ['SERAH-TERIMA', 'Bukti Serah Terima', false],
         ];
         foreach ($berkas as [$code, $name, $mandatory]) {
             BsApBerkas::updateOrCreate(
