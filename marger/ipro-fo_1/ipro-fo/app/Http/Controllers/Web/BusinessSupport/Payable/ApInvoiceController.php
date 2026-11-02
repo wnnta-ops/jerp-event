@@ -282,6 +282,7 @@ class ApInvoiceController extends Controller
             // Hutang = kredit akun Hutang Supplier/BYMHD di jurnal (sesudah PPh) — bukan total bruto.
             $hutang = BsApInvoice::nilaiHutangJurnal($inv);
             $rows = $inv->map(fn ($r) => [
+                    'id' => $r->id,
                     'invoice_no' => $r->invoice_number,
                     'invoice_date' => $r->invoice_date?->toDateString(),
                     'receive_date' => $r->receive_date?->toDateString(),

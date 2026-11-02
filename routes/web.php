@@ -181,6 +181,8 @@ Route::middleware('auth')->group(function () {
     // Booked Manual — bukti transfer (untuk tim verifikasi).
     Route::get('/fo/booked/{registration}/bukti-transfer', [CustomerFileController::class, 'bookedBukti'])
         ->name('fo.booked.bukti');
+    Route::get('/fo/booked/files-zip', [CustomerFileController::class, 'bookedZip'])
+        ->name('fo.booked.files-zip');
 
     // FO — cetak dokumen closing (SPR, Kwitansi/BKM, Jadwal Pembayaran). ?pdf=1 → Browsershot.
     Route::get('/fo/cetak/spr/{kontrak}', [ClosingPrintController::class, 'spr'])->name('fo.cetak.spr');
