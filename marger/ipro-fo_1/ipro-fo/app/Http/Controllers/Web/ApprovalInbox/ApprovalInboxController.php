@@ -54,20 +54,55 @@ class ApprovalInboxController extends Controller
 
         return Inertia::render('ApprovalInbox/Create', [
             'today' => now()->toDateString(),
+            'departemen' => $this->pilihanDepartemen($request->user()),
+            'semuaDept' => $request->user()->hasRole('SuperAdmin'),
         ]);
+    }
+
+    /**
+     * Departemen yang boleh dipilih untuk Memo Urgent = cost center (unit kerja) karyawan yang
+     * tertaut ke akun ini di Employee Center (utama lebih dulu); SuperAdmin boleh semua departemen.
+     *
+     * @return list<array{id:int, code:string, name:string}>
+     */
+    private function pilihanDepartemen(\App\Models\User $user): array
+    {
+        $q = \App\Domain\BusinessSupport\Models\BsCostCenter::query()->where('is_active', true);
+        if (! $user->hasRole('SuperAdmin')) {
+            $ids = app(\App\Domain\BusinessSupport\Services\CostCenterPengguna::class)->idsUntuk($user);
+            if ($ids === []) {
+                return [];
+            }
+            $q->whereIn('id', $ids)->orderByRaw('FIELD(id, '.implode(',', array_map('intval', $ids)).')');
+        } else {
+            $q->orderBy('code');
+        }
+
+        return $q->get(['id', 'code', 'name'])->map(fn ($c) => ['id' => $c->id, 'code' => $c->code, 'name' => $c->name])->all();
     }
 
     public function store(Request $request, SubmitMemoInternal $submit): RedirectResponse
     {
         abort_unless($request->user()?->can('approvalinbox.submit'), 403);
 
+        // Departemen dipilih dari daftar milik user (SuperAdmin: semua) — server menyimpan NAMANYA.
+        $dept = collect($this->pilihanDepartemen($request->user()));
+        if ($dept->isEmpty()) {
+            return back()->withInput()->with('error', 'Departemen Anda belum diatur — isi cost center Anda di Data Center › Employee Center, atau hubungi HRD.');
+        }
         $data = $request->validate([
             'memo_date' => 'required|date',
-            'department' => 'required|string|max:100',
+            'cost_center_id' => ['required', 'integer', \Illuminate\Validation\Rule::in($dept->pluck('id')->all())],
             'subject' => 'required|string|max:200',
             'body' => 'required|string|max:5000',
-            'amount' => 'nullable|numeric|min:0',
-        ]);
+            'amount' => 'required|numeric|min:1',
+        ], [
+            'cost_center_id.in' => 'Departemen ini bukan departemen Anda.',
+            'amount.required' => 'Nominal wajib diisi.',
+            'amount.min' => 'Nominal wajib diisi.',
+        ], ['cost_center_id' => 'Departemen', 'amount' => 'Nominal']);
+        $data['department'] = $dept->firstWhere('id', (int) $data['cost_center_id'])['name'];
+        unset($data['cost_center_id']);
 
         try {
             $memo = $submit->execute($data);
