@@ -8,7 +8,7 @@ import Pagination from '@/Components/UI/Pagination.vue';
 
 type Can = { edit: boolean; submit: boolean; cancel: boolean; close: boolean; delete: boolean; invoice: boolean };
 type Row = {
-    id: number; number: string; date: string | null; jenis: string | null; supplier: string | null; supplier_invoice_no: string | null;
+    id: number; number: string; date: string | null; document_date: string | null; needed_date: string | null; supplier: string | null; supplier_invoice_no: string | null;
     amount: number | null; description: string; status: string; deleted: boolean; dept_head: string | null; uploader: string | null;
     files_count: number; reason: string | null; can: Can;
 };
@@ -19,7 +19,6 @@ const props = defineProps<{
     tabCounts: Record<string, number>;
     statusCounts: Record<string, number>;
     statusLabels: Record<string, string>;
-    jenisLabels: Record<string, string>;
     suppliers: Array<{ id: number; name: string }>;
     filters: Record<string, string | undefined>;
     rows: { data: Row[]; links: any[]; from: number | null; to: number | null; total: number };
@@ -29,16 +28,16 @@ const props = defineProps<{
 // Filter — langsung diterapkan (teks dengan jeda singkat), ikut terbawa ke halaman & export.
 const f = reactive({
     q: props.filters.q ?? '', status: props.filters.status ?? '', supplier_id: props.filters.supplier_id ?? '',
-    jenis: props.filters.jenis ?? '', from: props.filters.from ?? '', to: props.filters.to ?? '', trashed: props.filters.trashed ?? '',
+    from: props.filters.from ?? '', to: props.filters.to ?? '', trashed: props.filters.trashed ?? '',
 });
 const params = () => Object.fromEntries(Object.entries({ tab: props.tab, ...f }).filter(([, v]) => v !== '' && v != null));
 const muat = () => router.get(route('bs.ap.berkas.index'), params(), { preserveState: true, preserveScroll: true, replace: true });
 let jeda: ReturnType<typeof setTimeout> | undefined;
 watch(() => f.q, () => { clearTimeout(jeda); jeda = setTimeout(muat, 350); });
-watch(() => [f.status, f.supplier_id, f.jenis, f.from, f.to, f.trashed], muat);
+watch(() => [f.status, f.supplier_id, f.from, f.to, f.trashed], muat);
 
 const keTab = (tab: string) => router.get(route('bs.ap.berkas.index'), { tab }, { preserveState: false });
-const reset = () => { Object.assign(f, { q: '', status: '', supplier_id: '', jenis: '', from: '', to: '', trashed: '' }); };
+const reset = () => { Object.assign(f, { q: '', status: '', supplier_id: '', from: '', to: '', trashed: '' }); };
 const exportUrl = (format: 'xlsx' | 'pdf') => route('bs.ap.berkas.export', { ...params(), format });
 
 // Batal (alasan wajib) — dialog di halaman, bukan confirm() browser.
@@ -108,11 +107,7 @@ const urutStatus = ['draft', 'menunggu_ttd', 'siap_invoice', 'sebagian_diinvoice
                 <option value="">Semua supplier</option>
                 <option v-for="s in suppliers" :key="s.id" :value="String(s.id)">{{ s.name }}</option>
             </select>
-            <select id="f-jenis" v-model="f.jenis" class="input-base">
-                <option value="">Semua jenis</option>
-                <option v-for="(l, k) in jenisLabels" :key="k" :value="k">{{ l }}</option>
-            </select>
-            <div class="flex min-w-0 items-center gap-1 sm:col-span-2">
+            <div class="flex min-w-0 items-center gap-1 sm:col-span-2 xl:col-span-3">
                 <input id="f-from" v-model="f.from" type="date" class="input-base min-w-0 flex-1" aria-label="Dari tanggal" />
                 <span class="text-neutral-400">–</span>
                 <input id="f-to" v-model="f.to" type="date" class="input-base min-w-0 flex-1" aria-label="Sampai tanggal" />
@@ -139,7 +134,7 @@ const urutStatus = ['draft', 'menunggu_ttd', 'siap_invoice', 'sebagian_diinvoice
                     <tr v-for="r in rows.data" :key="r.id" :class="['hover:bg-neutral-50 dark:hover:bg-neutral-800/50', r.deleted && 'opacity-60']">
                         <td class="px-4 py-3">
                             <p class="font-mono text-xs font-semibold">{{ r.number }}</p>
-                            <p class="text-xs text-neutral-500">{{ r.jenis ?? '—' }}</p>
+                            <p class="text-xs text-neutral-500">Jatuh tempo: {{ r.needed_date ?? '—' }}</p>
                         </td>
                         <td class="px-4 py-3">
                             <p class="font-medium">{{ r.description }}</p>

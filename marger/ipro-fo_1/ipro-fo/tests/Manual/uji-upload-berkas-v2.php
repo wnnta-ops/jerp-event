@@ -6,8 +6,9 @@ declare(strict_types=1);
  * Uji Upload Berkas v2 — siklus dokumen lengkap & aturan tambahan.
  *
  *   · Draft: tersimpan tanpa approval; bisa diubah; perubahan tercatat di audit.
- *   · Ajukan: berkas wajib (master) harus lengkap; anggaran dicek bila akun+CC terisi.
- *   · Pajak: subtotal − diskon (+PPN, atau PPN informasi bila harga termasuk PPN); diskon ≤ subtotal.
+ *   · Dept Head otomatis = atasan pengunggah (Employee Center); nomor DOC-{tgl}-{supplier}-{urut}
+ *     ikut berganti bila tanggal tagihan / supplier draft diubah.
+ *   · Ajukan: berkas wajib (master) harus lengkap; MOU & Bukti Serah Terima ada di checklist, tidak wajib.
  *   · Ditolak → revisi → ajukan ulang (approval TTD baru).
  *   · Batal dengan alasan (TTD yang menunggu ikut batal) · tidak bisa batal setelah ada invoice.
  *   · Invoice bertahap: sebagian → tidak boleh melebihi sisa → tutup parsial.
@@ -79,6 +80,16 @@ try {
     $dh = $buatUser('Dept Head V2 Uji', ['DeptHead']);
     $acc = $buatUser('Accounting V2 Uji', ['Accounting']);
     $fin = $buatUser('Finance V2 Uji', ['Finance']);
+    $karyawan = function (User $u, ?User $atasan = null) use ($tenantId): void {
+        $nik = 'UJI-'.Str::upper(Str::random(8));
+        DB::table('bs_employees')->insert([
+            'tenant_id' => $tenantId, 'nik' => $nik, 'name' => $u->name, 'is_active' => true, 'created_at' => now(), 'updated_at' => now(),
+            'atasan_id' => $atasan ? DB::table('bs_employees')->where('nik', $atasan->employee_nip)->value('id') : null,
+        ]);
+        $u->forceFill(['employee_nip' => $nik])->save();
+    };
+    $karyawan($dh);
+    $karyawan($staf, $dh);
     $svc = app(ApBerkasService::class);
     $act = app(ActOnApproval::class);
     $inbox = app(ApprovalInboxQuery::class);
@@ -87,7 +98,7 @@ try {
     $wajib = DB::table('bs_ap_berkas')->where('is_active', true)->where('is_mandatory', true)->pluck('id');
     $fileWajib = fn () => $wajib->map(fn ($id) => ['file' => UploadedFile::fake()->create("w{$id}.pdf", 50, 'application/pdf'), 'berkas_id' => (int) $id])->all();
     $fileLain = fn () => [['file' => UploadedFile::fake()->create('lain.pdf', 50, 'application/pdf'), 'berkas_id' => null]];
-    $data = fn (array $x = []) => $x + ['upload_date' => now()->toDateString(), 'description' => 'Tagihan v2', 'dept_head_id' => $dh->id, 'subtotal' => 10000000];
+    $data = fn (array $x = []) => $x + ['upload_date' => now()->toDateString(), 'description' => 'Tagihan v2', 'document_date' => '2026-04-20', 'amount' => 11100000];
     $notif = fn (User $u, string $type) => DB::table('notifications')->where('notifiable_id', $u->id)->where('type', $type)->count();
     $sup = (int) DB::table('bs_suppliers')->value('id');
     $akun = (int) DB::table('bs_accounts')->where('code', '50302020219')->value('id');
@@ -97,19 +108,24 @@ try {
         'dpp' => $total, 'total' => $total, 'net_payable' => $total, 'paid_amount' => 0, 'status' => 'open',
     ]);
 
-    echo "\n=== 1. Pajak & total ===\n";
-    $t = ApBerkasService::hitungTotal(10000000, 1000000, 11, false);
-    $cek('normal: (10jt − 1jt) + PPN 11% = 9.990.000', $t['amount'] == 9990000.0 && $t['ppn_amount'] == 990000.0, json_encode($t));
-    $t = ApBerkasService::hitungTotal(11100000, 0, 11, true);
-    $cek('termasuk PPN: total = subtotal, PPN informasi 1.100.000', $t['amount'] == 11100000.0 && $t['ppn_amount'] == 1100000.0, json_encode($t));
+    echo "\n=== 1. Dept Head otomatis & nomor ===\n";
     $sebagai($staf);
-    $cek('diskon > subtotal ditolak', $kode(fn () => $svc->create($data(['discount' => 20000000]), [], $staf)) === 'BERKAS_DISKON');
+    $cek('Dept Head = atasan pengunggah', (int) $svc->deptHeadUntuk($staf)?->id === (int) $dh->id);
+    $cek('Dept Head sendiri (tanpa atasan) → tidak ada', $svc->deptHeadUntuk($dh) === null);
 
     echo "\n=== 2. Draft & edit ===\n";
-    $b = $svc->create($data(['ppn_pct' => 11, 'jenis' => 'biaya_non_proyek']), $fileLain(), $staf);
+    $b = $svc->create($data(), $fileLain(), $staf);
     $cek('tersimpan sebagai draft tanpa approval', $b->status === 'draft' && $b->approval_id === null);
-    $cek('total dihitung server (11.100.000)', (float) $b->amount === 11100000.0, (string) $b->amount);
-    $svc->update($b, $data(['description' => 'Tagihan v2 diubah', 'ppn_pct' => 11]), $staf);
+    $cek('Dept Head terisi otomatis', (int) $b->dept_head_id === (int) $dh->id);
+    $cek('nomor DOC-20260420-NA-…', str_starts_with($b->berkas_number, 'DOC-20260420-NA-'), $b->berkas_number);
+    $cek('total tagihan tersimpan (11.100.000)', (float) $b->amount === 11100000.0, (string) $b->amount);
+    $supKode = DB::table('bs_suppliers')->orderBy('id')->first(['id', 'code']);
+    $svc->update($b, $data(['supplier_id' => $supKode->id, 'document_date' => '2026-04-21']), $staf);
+    $cek('ganti supplier & tgl tagihan → nomor ikut berganti', str_starts_with($b->fresh()->berkas_number, 'DOC-20260421-'.preg_replace('/[^A-Z0-9]/', '', strtoupper($supKode->code)).'-'), $b->fresh()->berkas_number);
+    $no = $b->fresh()->berkas_number;
+    $svc->update($b->fresh(), $data(['supplier_id' => $supKode->id, 'document_date' => '2026-04-21', 'description' => 'x']), $staf);
+    $cek('isian lain berubah → nomor tetap', $b->fresh()->berkas_number === $no);
+    $svc->update($b, $data(['description' => 'Tagihan v2 diubah']), $staf);
     $cek('isian draft bisa diubah', $b->fresh()->description === 'Tagihan v2 diubah');
     $cek('perubahan tercatat di audit (updated)', AuditLog::where('auditable_id', $b->id)->where('auditable_type', 'ap_berkas_upload')->where('event', 'updated')->exists());
 
@@ -130,7 +146,7 @@ try {
     $cek('pengunggah dapat notifikasi ditolak', $notif($staf, 'approval.ditolak') === 1);
     $sebagai($staf);
     $lama = (int) $b->fresh()->approval_id;
-    $svc->update($b->fresh(), $data(['description' => 'Tagihan v2 revisi', 'ppn_pct' => 11]), $staf);
+    $svc->update($b->fresh(), $data(['description' => 'Tagihan v2 revisi']), $staf);
     $svc->submit($b->fresh(), $staf);
     $cek('ajukan ulang → approval TTD baru', $b->fresh()->status === 'menunggu_ttd' && (int) $b->fresh()->approval_id !== $lama);
     $cek('riwayat mencatat diajukan ulang', AuditLog::where('auditable_id', $b->id)->where('event', 'berkas.diajukan_ulang')->exists());
@@ -176,16 +192,15 @@ try {
     $cek('draft terhapus (soft delete, masih bisa dilihat)', App\Domain\BusinessSupport\Models\BsApBerkasUpload::withTrashed()->find($d->id)?->trashed() === true);
     $cek('berkas yang sudah ditutup tidak bisa dihapus', $kode(fn () => $svc->delete($b->fresh(), $staf)) === 'BERKAS_NO_DELETE');
 
-    echo "\n=== 9. Cek anggaran saat diajukan ===\n";
-    $ccTanpa = (int) DB::table('bs_cost_centers')->where('code', 'CC-OPS')->value('id');
-    $e = $svc->create($data(['expense_account_id' => $akun, 'cost_center_id' => $ccTanpa]), $fileWajib(), $staf);
-    $tolak = false;
-    try {
-        $svc->submit($e, $staf);
-    } catch (Throwable $ex) {
-        $tolak = true;
-    }
-    $cek('akun × cost center tanpa anggaran → tidak bisa diajukan', $tolak && $e->fresh()->status === 'draft');
+    echo "\n=== 9. Checklist berkas ===\n";
+    $tambahan = DB::table('bs_ap_berkas')->whereIn('code', ['FAKTUR-PAJAK', 'MOU', 'SERAH-TERIMA'])->where('is_active', true)->get(['code', 'is_mandatory']);
+    $cek('Faktur Pajak, MOU, Bukti Serah Terima ada di master', $tambahan->count() === 3, $tambahan->pluck('code')->implode(','));
+    $cek('ketiganya tidak wajib', $tambahan->every(fn ($j) => ! $j->is_mandatory));
+    $cek('tanpa MOU/serah terima tetap bisa diajukan', $svc->berkasWajibKurang($svc->create($data(), $fileWajib(), $staf)) === []);
+    $tanpaAtasan = $buatUser('Staf Tanpa Atasan V2 Uji', ['Collection']);
+    $e = $svc->create($data(), $fileWajib(), $tanpaAtasan);
+    $cek('tanpa atasan: draft tersimpan', $e->status === 'draft' && $e->dept_head_id === null);
+    $cek('tanpa atasan: tidak bisa diajukan', $kode(fn () => $svc->submit($e, $tanpaAtasan)) === 'BERKAS_DEPT_HEAD');
 
     echo "\n".str_repeat('─', 78)."\n";
     echo $gagal === 0 ? "SEMUA LULUS ({$lulus})\n" : "GAGAL: {$gagal}, lulus: {$lulus}\n";

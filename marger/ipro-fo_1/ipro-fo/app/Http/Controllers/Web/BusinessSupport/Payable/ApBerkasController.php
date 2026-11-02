@@ -6,12 +6,10 @@ namespace App\Http\Controllers\Web\BusinessSupport\Payable;
 
 use App\Domain\Approval\Models\Approval;
 use App\Domain\ApprovalInbox\Services\ApprovalInboxQuery;
-use App\Domain\BusinessSupport\Models\BsAccount;
 use App\Domain\BusinessSupport\Models\BsApBerkas;
 use App\Domain\BusinessSupport\Models\BsApBerkasUpload;
 use App\Domain\BusinessSupport\Models\BsApBerkasUploadFile;
 use App\Domain\BusinessSupport\Models\BsApInvoice;
-use App\Domain\BusinessSupport\Models\BsCostCenter;
 use App\Domain\BusinessSupport\Models\BsSupplier;
 use App\Domain\BusinessSupport\Services\ApBerkasService;
 use App\Domain\Foundation\Audit\Models\AuditLog;
@@ -23,7 +21,6 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
-use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 use Inertia\Response;
 use Symfony\Component\HttpFoundation\Response as HttpResponse;
@@ -57,7 +54,7 @@ class ApBerkasController extends Controller
         if (! array_key_exists($tab, $tabs)) {
             $tab = ($tabs['siap'] ?? null) && $this->scope($user, 'siap')->count() > 0 ? 'siap' : 'saya';
         }
-        $filters = $request->only(['q', 'status', 'supplier_id', 'jenis', 'from', 'to', 'trashed']);
+        $filters = $request->only(['q', 'status', 'supplier_id', 'from', 'to', 'trashed']);
 
         $statusCounts = $this->filtered($user, $tab, collect($filters)->except('status')->all())
             ->selectRaw('status, COUNT(*) as n')->groupBy('status')->pluck('n', 'status');
@@ -73,7 +70,6 @@ class ApBerkasController extends Controller
             'tabCounts' => collect($tabs)->map(fn ($l, $k) => $this->scope($user, $k)->count()),
             'statusCounts' => $statusCounts,
             'statusLabels' => BsApBerkasUpload::STATUS_LABELS,
-            'jenisLabels' => BsApBerkasUpload::JENIS_LABELS,
             'suppliers' => BsSupplier::query()->orderBy('name')->get(['id', 'name']),
             'filters' => $filters,
             'rows' => $rows,
@@ -91,18 +87,17 @@ class ApBerkasController extends Controller
         abort_unless($user?->can('ap.berkas.export'), 403);
         $tab = (string) $request->input('tab', 'semua');
         abort_unless(array_key_exists($tab, $this->tabs($user)), 403);
-        $filters = $request->only(['q', 'status', 'supplier_id', 'jenis', 'from', 'to', 'trashed']);
+        $filters = $request->only(['q', 'status', 'supplier_id', 'from', 'to', 'trashed']);
 
         $rows = $this->filtered($user, $tab, $filters)
-            ->with(['supplier:id,name', 'deptHead:id,name', 'uploader:id,name', 'costCenter:id,code'])
+            ->with(['supplier:id,name', 'deptHead:id,name', 'uploader:id,name'])
             ->latest('id')->limit(5000)->get();
-        $head = ['No. Berkas', 'Tgl Unggah', 'Tgl Dokumen', 'Jenis', 'Supplier', 'No. Tagihan', 'Keterangan',
-            'Subtotal', 'Diskon', 'PPN', 'Total', 'Diinvoice', 'Cost Center', 'Status', 'Pengunggah', 'Dept Head'];
+        $head = ['No. Berkas', 'Tgl Unggah', 'Tgl Tagihan', 'Jatuh Tempo', 'Supplier', 'No. Tagihan', 'Keterangan',
+            'Total', 'Diinvoice', 'Status', 'Pengunggah', 'Dept Head'];
         $data = $rows->map(fn (BsApBerkasUpload $b) => [
             $b->berkas_number, $b->upload_date?->format('d/m/Y'), $b->document_date?->format('d/m/Y'),
-            BsApBerkasUpload::JENIS_LABELS[$b->jenis] ?? '', $b->supplier?->name, $b->supplier_invoice_no, $b->description,
-            $b->subtotal !== null ? (float) $b->subtotal : null, (float) $b->discount, (float) $b->ppn_amount,
-            $b->amount !== null ? (float) $b->amount : null, $b->invoicedTotal(), $b->costCenter?->code,
+            $b->needed_date?->format('d/m/Y'), $b->supplier?->name, $b->supplier_invoice_no, $b->description,
+            $b->amount !== null ? (float) $b->amount : null, $b->invoicedTotal(),
             (BsApBerkasUpload::STATUS_LABELS[$b->status] ?? $b->status).($b->trashed() ? ' (dihapus)' : ''),
             $b->uploader?->name, $b->deptHead?->name,
         ])->all();
@@ -157,11 +152,9 @@ class ApBerkasController extends Controller
         return Inertia::render('BusinessSupport/Payable/Berkas/Form', $this->formProps($user) + [
             'berkas' => $this->detail($berkas) + [
                 'files' => $this->files($berkas),
-                'form' => $berkas->only(['jenis', 'supplier_id', 'supplier_invoice_no', 'description', 'dept_head_id',
-                    'cost_center_id', 'expense_account_id', 'discount', 'ppn_pct', 'tax_inclusive']) + [
+                'form' => $berkas->only(['supplier_id', 'supplier_invoice_no', 'description']) + [
                         'document_date' => $berkas->document_date?->toDateString(),
                         'needed_date' => $berkas->needed_date?->toDateString(),
-                        'subtotal' => $berkas->subtotal !== null ? (float) $berkas->subtotal : null,
                         'amount' => $berkas->amount !== null ? (float) $berkas->amount : null,
                     ],
             ],
@@ -240,8 +233,7 @@ class ApBerkasController extends Controller
     {
         $user = $request->user();
         abort_unless($this->canView($user, $berkas), 403);
-        $berkas->load(['files.jenis:id,name', 'supplier:id,name', 'deptHead:id,name', 'uploader:id,name',
-            'costCenter:id,code,name', 'expenseAccount:id,code,name']);
+        $berkas->load(['files.jenis:id,name', 'supplier:id,name', 'deptHead:id,name', 'uploader:id,name']);
 
         $invoices = $berkas->invoices()->orderBy('id')->get(['id', 'invoice_number', 'total', 'status', 'invoice_date']);
         $approvals = Approval::query()->where('document_type', BsApInvoice::APPROVAL_DOCUMENT_TYPE)
@@ -251,7 +243,7 @@ class ApBerkasController extends Controller
         return Inertia::render('BusinessSupport/Payable/Berkas/Show', [
             'berkas' => $this->detail($berkas) + ['files' => $this->files($berkas)],
             'wajibKurang' => $this->service->berkasWajibKurang($berkas),
-            'jenisWajib' => BsApBerkas::query()->where('is_active', true)->where('is_mandatory', true)->pluck('name'),
+            'jenisChecklist' => BsApBerkas::query()->where('is_active', true)->orderByDesc('is_mandatory')->orderBy('id')->get(['name', 'is_mandatory']),
             'invoices' => $invoices->map(fn ($i) => [
                 'id' => $i->id, 'number' => $i->invoice_number, 'total' => (float) $i->total, 'status' => $i->status,
                 'date' => $i->invoice_date?->toDateString(),
@@ -280,13 +272,12 @@ class ApBerkasController extends Controller
     public function print(Request $request, BsApBerkasUpload $berkas): HttpResponse
     {
         abort_unless($this->canView($request->user(), $berkas), 403);
-        $berkas->load(['files.jenis:id,name', 'supplier:id,name', 'deptHead', 'uploader', 'costCenter:id,code,name', 'expenseAccount:id,code,name']);
+        $berkas->load(['files.jenis:id,name', 'supplier:id,name', 'deptHead', 'uploader']);
 
         return response(view('pdf.berkas-upload', [
             'b' => $berkas,
             'invoices' => $berkas->invoices()->orderBy('id')->get(),
             'ttd' => $this->kotakTtd($berkas),
-            'jenisLabel' => BsApBerkasUpload::JENIS_LABELS[$berkas->jenis] ?? null,
             'statusLabel' => BsApBerkasUpload::STATUS_LABELS[$berkas->status] ?? $berkas->status,
             'dicetakOleh' => $request->user()?->name,
         ])->render());
@@ -384,7 +375,6 @@ class ApBerkasController extends Controller
 
         return $q
             ->when($f['status'] ?? null, fn ($q, $s) => $q->where('status', $s))
-            ->when($f['jenis'] ?? null, fn ($q, $j) => $q->where('jenis', $j))
             ->when($f['supplier_id'] ?? null, fn ($q, $s) => $q->where('supplier_id', $s))
             ->when($f['from'] ?? null, fn ($q, $d) => $q->whereDate('upload_date', '>=', $d))
             ->when($f['to'] ?? null, fn ($q, $d) => $q->whereDate('upload_date', '<=', $d))
@@ -405,7 +395,8 @@ class ApBerkasController extends Controller
             'id' => $b->id,
             'number' => $b->berkas_number,
             'date' => $b->upload_date?->toDateString(),
-            'jenis' => BsApBerkasUpload::JENIS_LABELS[$b->jenis] ?? null,
+            'document_date' => $b->document_date?->toDateString(),
+            'needed_date' => $b->needed_date?->toDateString(),
             'supplier' => $b->supplier?->name,
             'supplier_invoice_no' => $b->supplier_invoice_no,
             'amount' => $b->amount !== null ? (float) $b->amount : null,
@@ -430,20 +421,12 @@ class ApBerkasController extends Controller
             'upload_date' => $b->upload_date?->toDateString(),
             'document_date' => $b->document_date?->toDateString(),
             'needed_date' => $b->needed_date?->toDateString(),
-            'jenis' => BsApBerkasUpload::JENIS_LABELS[$b->jenis] ?? null,
             'supplier' => $b->supplier?->name,
             'supplier_invoice_no' => $b->supplier_invoice_no,
             'description' => $b->description,
-            'subtotal' => $b->subtotal !== null ? (float) $b->subtotal : null,
-            'discount' => (float) $b->discount,
-            'ppn_pct' => (float) $b->ppn_pct,
-            'tax_inclusive' => (bool) $b->tax_inclusive,
-            'ppn_amount' => (float) $b->ppn_amount,
             'amount' => $b->amount !== null ? (float) $b->amount : null,
             'invoiced' => $b->invoicedTotal(),
             'sisa' => $b->sisa(),
-            'cost_center' => $b->costCenter ? $b->costCenter->code.' — '.$b->costCenter->name : null,
-            'expense_account' => $b->expenseAccount ? $b->expenseAccount->code.' — '.$b->expenseAccount->name : null,
             'dept_head' => $b->deptHead?->name,
             'uploader' => $b->uploader?->name,
             'cancel_reason' => $b->cancel_reason,
@@ -537,14 +520,10 @@ class ApBerkasController extends Controller
     {
         return [
             'today' => now()->toDateString(),
-            'jenisLabels' => BsApBerkasUpload::JENIS_LABELS,
-            'suppliers' => BsSupplier::query()->where('is_active', true)->orderBy('name')->get(['id', 'name']),
-            'jenisBerkas' => BsApBerkas::query()->where('is_active', true)->orderBy('id')->get(['id', 'code', 'name', 'is_mandatory']),
-            'deptHeads' => User::role(ApBerkasService::DEPT_HEAD_ROLE)->where('is_active', true)
-                ->whereKeyNot($user->id)->orderBy('name')->get(['id', 'name']),
-            'costCenters' => BsCostCenter::query()->where('is_active', true)->orderBy('code')->get(['id', 'code', 'name']),
-            'accounts' => BsAccount::query()->where('type', 'expense')->where('is_postable', true)->where('is_active', true)
-                ->orderBy('code')->get(['id', 'code', 'name']),
+            'suppliers' => BsSupplier::query()->where('is_active', true)->orderBy('name')->get(['id', 'name', 'code']),
+            'jenisBerkas' => BsApBerkas::query()->where('is_active', true)->orderByDesc('is_mandatory')->orderBy('id')->get(['id', 'code', 'name', 'is_mandatory']),
+            // Otomatis = atasan langsung di Employee Center; null → tampilkan peringatan di form.
+            'deptHead' => $this->service->deptHeadUntuk($user)?->only(['id', 'name']),
             'maxFiles' => ApBerkasService::MAX_FILES,
         ];
     }
@@ -553,20 +532,12 @@ class ApBerkasController extends Controller
     {
         return [
             'upload_date' => [$baru ? 'required' : 'sometimes', 'date'],
-            'jenis' => ['nullable', Rule::in(array_keys(BsApBerkasUpload::JENIS_LABELS))],
-            'document_date' => ['nullable', 'date'],
+            'document_date' => ['required', 'date'], // bagian dari nomor berkas
             'needed_date' => ['nullable', 'date'],
             'supplier_id' => ['nullable', 'integer', 'exists:bs_suppliers,id'],
             'supplier_invoice_no' => ['nullable', 'string', 'max:80'],
-            'subtotal' => ['nullable', 'numeric', 'min:0'],
-            'discount' => ['nullable', 'numeric', 'min:0'],
-            'ppn_pct' => ['nullable', 'numeric', 'min:0', 'max:100'],
-            'tax_inclusive' => ['nullable', 'boolean'],
             'amount' => ['nullable', 'numeric', 'min:0'],
-            'cost_center_id' => ['nullable', 'integer', 'exists:bs_cost_centers,id'],
-            'expense_account_id' => ['nullable', 'integer', 'exists:bs_accounts,id'],
             'description' => ['required', 'string', 'max:255'],
-            'dept_head_id' => ['required', 'integer', 'exists:users,id'],
             'files' => [$baru ? 'required' : 'nullable', 'array', 'max:'.ApBerkasService::MAX_FILES],
             'files.*.file' => ['required', 'file', 'mimes:pdf,jpg,jpeg,png', 'max:10240'],
             'files.*.berkas_id' => ['nullable', 'integer', 'exists:bs_ap_berkas,id'],
@@ -585,7 +556,7 @@ class ApBerkasController extends Controller
 
     private function attributes(): array
     {
-        return ['dept_head_id' => 'Dept Head penanda tangan', 'description' => 'Keterangan', 'needed_date' => 'Rencana bayar'];
+        return ['document_date' => 'Tanggal tagihan', 'description' => 'Keterangan', 'needed_date' => 'Jatuh tempo', 'amount' => 'Total tagihan'];
     }
 
     /** @return list<array{file:\Illuminate\Http\UploadedFile, berkas_id:?int}> */
@@ -609,7 +580,7 @@ class ApBerkasController extends Controller
     {
         $e = fn ($s) => htmlspecialchars((string) $s, ENT_QUOTES, 'UTF-8');
         $rp = fn ($v) => $v === null ? '' : number_format((float) $v, 0, ',', '.');
-        $uang = [7, 8, 9, 10, 11];
+        $uang = [7, 8];
         $th = implode('', array_map(fn ($h) => '<th>'.$e($h).'</th>', $head));
         $tr = '';
         foreach ($data as $r) {
