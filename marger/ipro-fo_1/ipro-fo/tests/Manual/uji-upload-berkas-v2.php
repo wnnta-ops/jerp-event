@@ -117,11 +117,11 @@ try {
     $b = $svc->create($data(), $fileLain(), $staf);
     $cek('tersimpan sebagai draft tanpa approval', $b->status === 'draft' && $b->approval_id === null);
     $cek('Dept Head terisi otomatis', (int) $b->dept_head_id === (int) $dh->id);
-    $cek('nomor DOC-20260420-NA-…', str_starts_with($b->berkas_number, 'DOC-20260420-NA-'), $b->berkas_number);
+    $cek('nomor DOC-200426-NA-…', str_starts_with($b->berkas_number, 'DOC-200426-NA-'), $b->berkas_number);
     $cek('total tagihan tersimpan (11.100.000)', (float) $b->amount === 11100000.0, (string) $b->amount);
     $supKode = DB::table('bs_suppliers')->orderBy('id')->first(['id', 'code']);
     $svc->update($b, $data(['supplier_id' => $supKode->id, 'document_date' => '2026-04-21']), $staf);
-    $cek('ganti supplier & tgl tagihan → nomor ikut berganti', str_starts_with($b->fresh()->berkas_number, 'DOC-20260421-'.preg_replace('/[^A-Z0-9]/', '', strtoupper($supKode->code)).'-'), $b->fresh()->berkas_number);
+    $cek('ganti supplier & tgl tagihan → nomor ikut berganti', str_starts_with($b->fresh()->berkas_number, 'DOC-210426-'.preg_replace('/[^A-Z0-9]/', '', strtoupper($supKode->code)).'-'), $b->fresh()->berkas_number);
     $no = $b->fresh()->berkas_number;
     $svc->update($b->fresh(), $data(['supplier_id' => $supKode->id, 'document_date' => '2026-04-21', 'description' => 'x']), $staf);
     $cek('isian lain berubah → nomor tetap', $b->fresh()->berkas_number === $no);

@@ -6,7 +6,7 @@ declare(strict_types=1);
  * Uji Upload Berkas → TTD Dept Head → Invoice Hutang → approval → bayar.
  *
  * Yang dijaga:
- *   · Nomor DOC-{YYYYMMDD tgl tagihan}-{kode supplier}-{NNNN}; file tersimpan di disk privat.
+ *   · Nomor DOC-{DDMMYY tgl tagihan}-{kode supplier}-{NNNN}; file tersimpan di disk privat.
  *   · Penanda tangan = atasan langsung pengunggah di Employee Center (otomatis), bukan
  *     pengunggahnya sendiri; hanya Dept Head ITU yang melihat & bisa menandatangani.
  *   · Berkas baru bisa dijadikan invoice setelah TTD, dan hanya sekali.
@@ -111,13 +111,13 @@ try {
     echo "\n=== 1. Unggah berkas ===\n";
     $sebagai($staf);
     $b = $svc->upload($data(), $file(), $staf);
-    $awal = (int) (DB::table('bs_ap_berkas_uploads')->where('berkas_number', 'like', 'DOC-20260315-NA-%')->count());
-    $cek('nomor DOC-{tgl tagihan}-NA-{urut} (tanpa supplier)', $b->berkas_number === 'DOC-20260315-NA-'.str_pad((string) $awal, 4, '0', STR_PAD_LEFT), $b->berkas_number);
+    $awal = (int) (DB::table('bs_ap_berkas_uploads')->where('berkas_number', 'like', 'DOC-150326-NA-%')->count());
+    $cek('nomor DOC-{tgl tagihan}-NA-{urut} (tanpa supplier)', $b->berkas_number === 'DOC-150326-NA-'.str_pad((string) $awal, 4, '0', STR_PAD_LEFT), $b->berkas_number);
     $b2 = $svc->upload($data(), $file(), $staf);
     $cek('berkas kedua tgl & supplier sama → urut berikutnya', (int) substr($b2->berkas_number, -4) === (int) substr($b->berkas_number, -4) + 1, $b2->berkas_number);
     $supKode = DB::table('bs_suppliers')->orderBy('id')->first(['id', 'code']);
     $b3 = $svc->create($data(['supplier_id' => $supKode->id]), [], $staf);
-    $cek('nomor memuat kode supplier', str_starts_with($b3->berkas_number, 'DOC-20260315-'.preg_replace('/[^A-Z0-9]/', '', strtoupper($supKode->code)).'-'), $b3->berkas_number);
+    $cek('nomor memuat kode supplier', str_starts_with($b3->berkas_number, 'DOC-150326-'.preg_replace('/[^A-Z0-9]/', '', strtoupper($supKode->code)).'-'), $b3->berkas_number);
     $cek('Dept Head otomatis = atasan pengunggah', (int) $b->dept_head_id === (int) $dh->id);
     $cek('status menunggu_ttd', $b->status === 'menunggu_ttd');
     $cek('file tersimpan di disk privat', Storage::disk('local')->exists($b->files()->first()->path));

@@ -33,7 +33,8 @@ const form = useForm({
 
 // Pratinjau nomor — format sama dengan ApBerkasService::nextNumber; urutan akhirnya ditentukan server.
 const pratinjauNomor = computed(() => {
-    const tgl = (form.document_date || props.today).replaceAll('-', '');
+    const [y, m, d] = (form.document_date || props.today).split('-');
+    const tgl = d + m + y.slice(2); // DDMMYY
     const kode = (props.suppliers.find((s) => s.id === Number(form.supplier_id))?.code ?? '').replace(/[^A-Za-z0-9]/g, '').toUpperCase().slice(0, 16) || 'NA';
     return `DOC-${tgl}-${kode}-`;
 });
