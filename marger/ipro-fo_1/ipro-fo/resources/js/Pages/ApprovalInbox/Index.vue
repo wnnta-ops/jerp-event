@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { Head, Link, router } from '@inertiajs/vue3';
 import Badge from '@/Components/UI/Badge.vue';
+import Button from '@/Components/UI/Button.vue';
 import EmptyState from '@/Components/UI/EmptyState.vue';
 
 type Stage = { label: string; state: 'done' | 'rejected' | 'current' | 'waiting' | 'skipped' };
@@ -14,6 +15,7 @@ const props = defineProps<{
     tab: 'perlu' | 'pengajuan' | 'riwayat';
     counts: Record<string, number>;
     rows: Row[];
+    canSubmit: boolean;
 }>();
 
 const tabs = [
@@ -58,8 +60,9 @@ const dot: Record<Stage['state'], string> = {
         <div class="flex flex-wrap items-center justify-between gap-3">
             <div>
                 <h1 class="text-2xl font-bold">Approval Inbox</h1>
-                <p class="text-sm text-neutral-500">TTD Berkas, Invoice Hutang & Koreksi Budget — Accounting → Finance → GM → Direktur → MW / BA</p>
+                <p class="text-sm text-neutral-500">Memo Urgent, TTD Berkas, Invoice Hutang & Koreksi Budget — Accounting → Finance → GM → Direktur → MW / BA</p>
             </div>
+            <Link v-if="canSubmit" :href="route('approval-inbox.create')"><Button>+ Memo Urgent</Button></Link>
         </div>
 
         <div class="flex gap-2 overflow-x-auto border-b border-neutral-200 dark:border-neutral-800">
