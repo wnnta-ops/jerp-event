@@ -1093,7 +1093,11 @@ class ApInvoiceController extends Controller
     /** Cetak "Memo Internal" + "Bukti Permohonan Pembayaran" (layout eProperty MI) di akhir registrasi. */
     public function memo(Request $request, BsApInvoice $invoice): \Illuminate\Http\Response
     {
-        abort_unless($request->user()?->can('ap.memo') || $this->bolehModulJenis($request, $invoice), 403);
+        // Pembuat invoicenya sendiri boleh mencetak memo — staf pengunggah yang meregistrasi
+        // Invoice Hutang dari berkasnya tidak memegang ap.memo, padahal sesudah simpan layar
+        // langsung pindah ke cetak memo ini.
+        abort_unless($request->user()?->can('ap.memo') || $this->bolehModulJenis($request, $invoice)
+            || ((int) $invoice->created_by === (int) $request->user()?->id && $request->user()?->can('ap.invoice.create')), 403);
 
         $invoice->load([
             'supplier:id,code,name,bank_name,bank_account_no,bank_account_name',

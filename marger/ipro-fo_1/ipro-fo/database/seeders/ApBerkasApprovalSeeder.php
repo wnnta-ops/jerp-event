@@ -22,11 +22,15 @@ use Spatie\Permission\PermissionRegistrar;
  *   ap_berkas  BRK-DEFAULT : 1 langkah — Dept Head yang DIPILIH pengunggah ('assigned')
  *   ap_invoice INV-DEFAULT : Accounting → Finance → GM → Direktur → MW / BA (= Memo Internal)
  *
- * Semua peran internal boleh mengunggah berkas (ap.berkas.upload); yang membuat
- * invoicenya tetap pemegang ap.invoice.create. Aman dijalankan ulang (idempoten).
+ * Semua peran internal boleh mengunggah berkas (ap.berkas.upload). Invoice Hutang dibuat oleh
+ * PENGUNGGAH berkasnya sendiri (wajib pilih berkas miliknya di Detil Tagihan) — peran di
+ * PENGAJU_INVOICE ikut diberi ap.invoice.create. Aman dijalankan ulang (idempoten).
  */
 class ApBerkasApprovalSeeder extends Seeder
 {
+    /** Peran staf pengunggah yang juga meregistrasi Invoice Hutang dari berkasnya sendiri. */
+    public const PENGAJU_INVOICE = ['Collection'];
+
     public function run(): void
     {
         $tenant = Tenant::where('code', 'MUP')->firstOrFail();
@@ -44,11 +48,13 @@ class ApBerkasApprovalSeeder extends Seeder
             ->each(fn (Role $r) => $r->givePermissionTo('ap.berkas.upload'));
 
         // Hak per aksi (v2): lihat semua, kelola (batal/tutup/hapus milik siapa pun, lihat yang
-        // dihapus), export. Diberikan ke peran yang sudah memegang hak invoice hutang.
+        // dihapus), export. Diberikan ke peran tim AP. Kelola diturunkan dari hak BAYAR, bukan
+        // ap.invoice.create — hak buat invoice kini juga dipegang staf pengunggah (PENGAJU_INVOICE),
+        // yang tidak boleh mengelola berkas orang lain.
         $izin = [
             'ap.berkas.view' => ['Lihat Semua Berkas', 'ap.invoice.view'],
             'ap.berkas.export' => ['Export Berkas', 'ap.invoice.view'],
-            'ap.berkas.manage' => ['Kelola Berkas', 'ap.invoice.create'],
+            'ap.berkas.manage' => ['Kelola Berkas', 'ap.invoice.pay'],
         ];
         foreach ($izin as $name => [$label, $dariIzin]) {
             Permission::firstOrCreate(['name' => $name, 'guard_name' => 'web'], ['module' => 'ap', 'label' => $label]);
@@ -56,6 +62,15 @@ class ApBerkasApprovalSeeder extends Seeder
                 ->filter(fn (Role $r) => $r->name === 'SuperAdmin' || $r->hasPermissionTo($dariIzin))
                 ->each(fn (Role $r) => $r->givePermissionTo($name));
         }
+
+        // Staf pengunggah meregistrasi Invoice Hutang dari berkasnya sendiri. Cetak memo sesudah
+        // simpan diizinkan untuk pembuat invoicenya (ApInvoiceController::memo), tanpa ap.memo.
+        // menu.bs.ap.create = izin TAMPIL butir sidebar Registrasi Invoice Hutang (lihat
+        // migrasi izin_tampil_menu) — tanpa itu layarnya bisa dibuka tetapi menunya tidak ada.
+        Permission::firstOrCreate(['name' => 'menu.bs.ap.create', 'guard_name' => 'web'],
+            ['module' => 'menu', 'label' => 'Tampil: Generate Invoice › Registrasi Invoice Hutang']);
+        Role::query()->whereIn('name', self::PENGAJU_INVOICE)->get()
+            ->each(fn (Role $r) => $r->givePermissionTo(['ap.invoice.create', 'menu.bs.ap.create']));
 
         $berkas = ApprovalChain::updateOrCreate(
             ['tenant_id' => $tenant->id, 'project_id' => null, 'document_type' => BsApBerkasUpload::DOCUMENT_TYPE, 'code' => 'BRK-DEFAULT'],
