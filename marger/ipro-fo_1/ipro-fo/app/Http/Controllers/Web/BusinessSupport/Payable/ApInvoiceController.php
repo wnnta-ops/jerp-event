@@ -9,6 +9,7 @@ use App\Domain\BusinessSupport\Actions\RegisterApInvoice;
 use App\Domain\BusinessSupport\Models\BsAccount;
 use App\Domain\BusinessSupport\Models\BsApCategory;
 use App\Domain\BusinessSupport\Models\BsApInvoice;
+use App\Domain\BusinessSupport\Models\BsApInvoiceDraft;
 use App\Domain\BusinessSupport\Models\BsApPayment;
 use App\Domain\BusinessSupport\Models\BsCostCenter;
 use App\Domain\BusinessSupport\Models\BsDepartment;
@@ -334,11 +335,12 @@ class ApInvoiceController extends Controller
         $pphAccounts = BsAccount::where('is_active', true)->where('is_postable', true)
             ->where('code', 'like', '2010404%')->orderBy('code')->get(['id', 'code', 'name']);
 
-        // ?berkas={id} dari Upload Berkas → isian awal diambil dari berkas (hanya yang siap).
+        // ?berkas={id} dari Upload Berkas → isian awal diambil dari berkas (hanya yang siap, dan
+        // hanya unggahan user itu sendiri — invoice hutang wajib memakai berkas milik pengaju).
         $dariBerkas = null;
         if ($edit === null && $jenis === 'invoice' && $request->filled('berkas')) {
             $b = \App\Domain\BusinessSupport\Models\BsApBerkasUpload::with('files.jenis:id,name')->find((int) $request->input('berkas'));
-            if ($b && $b->bisaDiinvoice()) {
+            if ($b && $b->bisaDiinvoice() && (int) $b->uploaded_by === (int) $request->user()->id) {
                 // Invoice pertama: nilai & PPN sesuai berkas. Berikutnya (sebagian diinvoice):
                 // sisanya, tanpa PPN tambahan — tim AP menyesuaikan bila perlu.
                 $invoiced = $b->invoicedTotal();
@@ -368,9 +370,19 @@ class ApInvoiceController extends Controller
             }
         }
 
+        // REGISTRASI INVOICE HUTANG WAJIB MEMILIH BERKAS (langkah Detil Tagihan) — pilihannya hanya
+        // berkas yang diunggah user itu sendiri lewat Upload Berkas. Draft = isian yang disimpan
+        // saat user menekan "Edit" berkas; dipulihkan di sini (kecuali dibuka dari ?berkas=).
+        $wajibBerkas = $edit === null && $jenis === 'invoice';
+        $draft = $wajibBerkas && $dariBerkas === null
+            ? BsApInvoiceDraft::query()->where('user_id', $request->user()->id)->where('jenis', $jenis)->first()
+            : null;
+
         return Inertia::render('BusinessSupport/Payable/Form', [
             'jenis' => $info,
             'dariBerkas' => $dariBerkas,
+            'berkasSaya' => $wajibBerkas ? app(\App\Domain\BusinessSupport\Services\ApBerkasService::class)->pilihanInvoice($request->user()) : null,
+            'draftInvoice' => $draft ? ['data' => $draft->data, 'step' => $draft->step, 'updated_at' => $draft->updated_at?->toIso8601String()] : null,
             // Penerima Reimburse/Deposit tercatat sebagai supplier berkategori khusus
             // (PenerimaHutang) — mereka bukan pilihan pada Invoice Hutang ke supplier.
             'suppliers' => $jenis === 'invoice'
@@ -448,6 +460,55 @@ class ApInvoiceController extends Controller
             // Mode EDIT: isian lama untuk mengisi wizard. null = registrasi baru.
             'invoiceEdit' => $edit !== null ? $this->dataEdit($edit) : null,
         ]);
+    }
+
+    /**
+     * Simpan isian wizard Registrasi Invoice Hutang sebagai DRAFT user (satu per user).
+     *
+     * edit_berkas = user menekan "Edit" pada berkas pilihannya: sesudah draft tersimpan ia dibawa
+     * ke Upload Berkas, yang langsung meneruskan ke halaman edit berkas itu. Lewat daftar Upload
+     * Berkas (bukan langsung ke edit) supaya tombol Back peramban kembali ke Upload Berkas, bukan
+     * ke wizard invoice.
+     */
+    public function simpanDraft(Request $request): RedirectResponse
+    {
+        $user = $request->user();
+        abort_unless($user?->can('ap.invoice.create'), 403);
+        $v = $request->validate([
+            'data' => ['required', 'array'],
+            'step' => ['required', 'integer', 'min:1', 'max:5'],
+            'edit_berkas' => ['nullable', 'integer'],
+        ]);
+        $berkasId = isset($v['data']['berkas_upload_id']) && is_numeric($v['data']['berkas_upload_id']) ? (int) $v['data']['berkas_upload_id'] : null;
+
+        $edit = null;
+        if (! empty($v['edit_berkas'])) {
+            $edit = \App\Domain\BusinessSupport\Models\BsApBerkasUpload::findOrFail((int) $v['edit_berkas']);
+            if ((int) $edit->uploaded_by !== (int) $user->id || ! $edit->bisaDiubah()) {
+                return back()->with('error', "Berkas {$edit->berkas_number} tidak bisa diedit (status: "
+                    .(\App\Domain\BusinessSupport\Models\BsApBerkasUpload::STATUS_LABELS[$edit->status] ?? $edit->status).').');
+            }
+        }
+
+        BsApInvoiceDraft::query()->updateOrCreate(
+            ['user_id' => $user->id, 'jenis' => 'invoice'],
+            ['data' => $v['data'], 'step' => $v['step'], 'berkas_upload_id' => $berkasId],
+        );
+
+        if ($edit !== null) {
+            return redirect()->route('bs.ap.berkas.index', ['lanjut_edit' => $edit->id])
+                ->with('success', "Registrasi invoice disimpan sebagai draft. Silakan edit berkas {$edit->berkas_number}.");
+        }
+
+        return back()->with('success', 'Registrasi invoice disimpan sebagai draft.');
+    }
+
+    /** Buang draft Registrasi Invoice Hutang user. */
+    public function buangDraft(Request $request): RedirectResponse
+    {
+        BsApInvoiceDraft::query()->where('user_id', $request->user()->id)->where('jenis', 'invoice')->delete();
+
+        return redirect()->route('bs.ap.create')->with('success', 'Draft invoice dibuang.');
     }
 
     /** Isian invoice lama untuk wizard Edit — bentuknya sama dengan form registrasi. @return array<string,mixed> */
@@ -595,11 +656,17 @@ class ApInvoiceController extends Controller
         // UPLOAD BERKAS: invoice yang dibuat dari berkas ber-TTD Dept Head langsung diajukan ke
         // approval invoice saat tersimpan, dan tidak bisa dibayar sebelum disetujui penuh.
         // Hanya registrasi baru Invoice Hutang; diperiksa lagi (terkunci) di dalam transaksi.
+        // Registrasi baru Invoice Hutang WAJIB memilih berkas unggahan pengaju sendiri.
         $berkas = null;
-        if ($lama === null && $jenis === 'invoice' && $request->filled('berkas_upload_id')) {
+        if ($lama === null && $jenis === 'invoice') {
+            $request->validate(['berkas_upload_id' => ['required', 'integer']], [
+                'berkas_upload_id.required' => 'Pilih berkas dari Upload Berkas di langkah Detil Tagihan.',
+            ]);
             $berkas = \App\Domain\BusinessSupport\Models\BsApBerkasUpload::findOrFail((int) $request->input('berkas_upload_id'));
             try {
-                app(\App\Domain\BusinessSupport\Services\ApBerkasService::class)->assertSiapInvoice($berkas);
+                $layananBerkas = app(\App\Domain\BusinessSupport\Services\ApBerkasService::class);
+                $layananBerkas->assertMilik($berkas, $request->user());
+                $layananBerkas->assertSiapInvoice($berkas);
             } catch (BusinessRuleException $e) {
                 return back()->withInput()->with('error', $e->getMessage());
             }
@@ -708,6 +775,11 @@ class ApInvoiceController extends Controller
         } catch (BusinessRuleException $e) {
             // Penolakan anggaran disalurkan ke DIALOG; selebihnya tetap toast. Lihat trait.
             return $this->balikDenganGalat($e);
+        }
+
+        if ($lama === null) {
+            // Invoice sudah jadi → draft registrasinya tidak diperlukan lagi.
+            BsApInvoiceDraft::query()->where('user_id', $request->user()->id)->where('jenis', $jenis)->delete();
         }
 
         if ($lama !== null) {
