@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { Head, Link, router } from '@inertiajs/vue3';
 import { onBeforeUnmount, ref } from 'vue';
-import { gabungPdf } from '@/Composables/useGabungPdf';
+import { gabungBerkas } from '@/Composables/useGabungPdf';
 import { Files } from 'lucide-vue-next';
 import Badge from '@/Components/UI/Badge.vue';
 import Button from '@/Components/UI/Button.vue';
@@ -20,6 +20,8 @@ const props = defineProps<{
     ttdApprovalUrl: string | null;
     timeline: Array<{ event: string; at: string; by: string; notes: string | null; changes: Array<{ field: string; old: any; new: any }> }>;
     can: { edit: boolean; submit: boolean; cancel: boolean; close: boolean; delete: boolean; invoice: boolean };
+    /** User punya draft Registrasi Invoice Hutang yang memakai berkas ini. */
+    draftInvoice?: boolean;
 }>();
 
 const label: Record<string, string> = {
@@ -53,24 +55,8 @@ async function lihatSemua() {
     menggabung.value = true;
     galatGabung.value = '';
     try {
-        const urutan = props.jenisChecklist.map((j) => j.name);
-        const pos = (f: FileRow) => (f.jenis && urutan.includes(f.jenis) ? urutan.indexOf(f.jenis) : urutan.length);
-        const files = [...props.berkas.files].sort((a, b) => pos(a) - pos(b));
         const b = props.berkas;
-        const blob = await gabungPdf(files, {
-            judul: 'Kumpulan Berkas ' + b.number,
-            subjudul: b.description,
-            baris: [
-                ['Supplier', b.supplier ?? '-'],
-                ['No. tagihan', b.supplier_invoice_no ?? '-'],
-                ['Tanggal tagihan', tglPendek(b.document_date)],
-                ['Jatuh tempo', tglPendek(b.needed_date)],
-                ['Total tagihan', rupiah(b.amount)],
-                ['Pengunggah / Dept Head', `${b.uploader ?? '-'} / ${b.dept_head ?? '-'}`],
-                ['Status', label[b.status] ?? b.status],
-            ],
-        });
-        semua.value = { url: URL.createObjectURL(blob), nama: `${b.number}.pdf` }; // nama unduhan = nomor berkas
+        semua.value = await gabungBerkas({ ...b, status_label: label[b.status] ?? b.status }, props.jenisChecklist.map((j) => j.name));
     } catch (e) {
         galatGabung.value = 'Gagal menggabungkan file — coba buka satu per satu.';
     } finally {
@@ -116,6 +102,12 @@ const tampil = (v: any) => (v === null || v === '' || v === undefined ? '—' : 
                 <Badge :variant="(variant[berkas.status] as any) ?? 'neutral'" dot>{{ label[berkas.status] ?? berkas.status }}</Badge>
                 <Badge v-if="berkas.deleted" variant="danger">Dihapus</Badge>
             </div>
+        </div>
+
+        <!-- Draft Registrasi Invoice Hutang yang memakai berkas ini (dari tombol "Edit" berkas di wizard). -->
+        <div v-if="draftInvoice" class="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-primary-200 bg-primary-50 px-3 py-2 text-sm dark:border-primary-900 dark:bg-primary-950/40">
+            <span>Registrasi Invoice Hutang Anda dengan berkas ini tersimpan sebagai <b>draft</b>.</span>
+            <Link :href="route('bs.ap.create')" class="font-medium text-primary-700 hover:underline dark:text-primary-300">Lanjutkan invoice →</Link>
         </div>
 
         <!-- Aksi -->

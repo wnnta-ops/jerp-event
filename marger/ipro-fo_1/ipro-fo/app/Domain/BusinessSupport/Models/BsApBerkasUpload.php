@@ -54,6 +54,15 @@ class BsApBerkasUpload extends Model
         self::STATUS_DITUTUP => 'Ditutup',
     ];
 
+    /**
+     * Status berkas yang boleh dipilih di langkah Detil Tagihan Registrasi Invoice Hutang —
+     * semua yang masih aktif. Invoicenya sendiri baru bisa DISIMPAN bila bisaDiinvoice().
+     */
+    public const STATUS_PILIHAN_INVOICE = [
+        self::STATUS_DRAFT, self::STATUS_DITOLAK, self::STATUS_MENUNGGU_TTD,
+        self::STATUS_SIAP_INVOICE, self::STATUS_SEBAGIAN,
+    ];
+
     /** Jenis transaksi — sama dengan pembagian jenis Purchase Order. */
     public const JENIS_LABELS = [
         'material' => 'Material',

@@ -15,6 +15,8 @@ const props = defineProps<{
     maxFiles: number;
     /** null = unggah baru; isi = edit draft / revisi setelah ditolak. */
     berkas: null | { id: number; number: string; status: string; files: FileRow[]; form: Record<string, any> };
+    /** Edit: user punya draft Registrasi Invoice Hutang yang memakai berkas ini. */
+    draftInvoice?: boolean;
 }>();
 
 const edit = !!props.berkas;
@@ -76,7 +78,12 @@ const galatFile = (i: number) => (form.errors as Record<string, string>)[`files.
         <Link :href="edit ? route('bs.ap.berkas.show', berkas!.id) : route('bs.ap.berkas.index', { tab: 'saya' })" class="text-sm text-neutral-500 hover:text-primary-600">← {{ edit ? berkas!.number : 'Upload Berkas' }}</Link>
         <div>
             <h1 class="text-2xl font-bold">{{ edit ? (berkas!.status === 'ditolak' ? 'Revisi Berkas' : 'Edit Berkas') : 'Unggah Berkas' }}</h1>
-            <p class="text-sm text-neutral-500">Simpan sebagai draft dulu, atau langsung ajukan ke Dept Head untuk ditandatangani. Setelah TTD, tim AP membuat Invoice Hutang dari berkas ini.</p>
+            <p class="text-sm text-neutral-500">Simpan sebagai draft dulu, atau langsung ajukan ke Dept Head untuk ditandatangani. Setelah TTD, berkas ini bisa Anda pilih di Registrasi Invoice Hutang.</p>
+        </div>
+        <!-- Draft Registrasi Invoice Hutang yang memakai berkas ini (dari tombol "Edit" berkas di wizard). -->
+        <div v-if="draftInvoice" class="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-primary-200 bg-primary-50 px-3 py-2 text-sm dark:border-primary-900 dark:bg-primary-950/40">
+            <span>Registrasi Invoice Hutang Anda dengan berkas ini tersimpan sebagai <b>draft</b>.</span>
+            <Link :href="route('bs.ap.create')" class="font-medium text-primary-700 hover:underline dark:text-primary-300">Lanjutkan invoice →</Link>
         </div>
 
         <form @submit.prevent="simpan(true)" class="card space-y-5 p-6">

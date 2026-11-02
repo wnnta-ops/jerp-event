@@ -80,3 +80,38 @@ export async function gabungPdf(files: FileGabung[], sampul: Sampul): Promise<Bl
 
     return new Blob([(await out.save()) as BlobPart], { type: 'application/pdf' });
 }
+
+/** Data berkas Upload Berkas untuk sampul "Lihat semua" (halaman berkas & wizard Invoice Hutang). */
+export type BerkasGabung = {
+    number: string; description: string; supplier: string | null; supplier_invoice_no: string | null;
+    document_date: string | null; needed_date: string | null; amount: number | null;
+    uploader: string | null; dept_head: string | null; status_label: string; files: FileGabung[];
+};
+
+// 2026-11-02 → 02/11/26
+const tglPendek = (iso: string | null) => (iso ? iso.slice(8, 10) + '/' + iso.slice(5, 7) + '/' + iso.slice(2, 4) : '-');
+const rupiah = (v: number | null) => (v == null ? '—' : 'Rp ' + Math.round(v).toLocaleString('id-ID'));
+
+/**
+ * Semua file satu berkas → satu PDF (sampul + daftar isi). File diurutkan menurut `urutanJenis`
+ * (urutan checklist); bila kosong, urutan file dipakai apa adanya. Nama unduhan = nomor berkas.
+ */
+export async function gabungBerkas(b: BerkasGabung, urutanJenis: string[] = []): Promise<{ url: string; nama: string }> {
+    const pos = (f: FileGabung) => (f.jenis && urutanJenis.includes(f.jenis) ? urutanJenis.indexOf(f.jenis) : urutanJenis.length);
+    const files = urutanJenis.length ? [...b.files].sort((x, y) => pos(x) - pos(y)) : b.files;
+    const blob = await gabungPdf(files, {
+        judul: 'Kumpulan Berkas ' + b.number,
+        subjudul: b.description,
+        baris: [
+            ['Supplier', b.supplier ?? '-'],
+            ['No. tagihan', b.supplier_invoice_no ?? '-'],
+            ['Tanggal tagihan', tglPendek(b.document_date)],
+            ['Jatuh tempo', tglPendek(b.needed_date)],
+            ['Total tagihan', rupiah(b.amount)],
+            ['Pengunggah / Dept Head', `${b.uploader ?? '-'} / ${b.dept_head ?? '-'}`],
+            ['Status', b.status_label],
+        ],
+    });
+
+    return { url: URL.createObjectURL(blob), nama: `${b.number}.pdf` };
+}

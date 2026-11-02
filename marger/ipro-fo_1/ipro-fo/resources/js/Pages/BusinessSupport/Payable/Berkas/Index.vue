@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { Head, Link, router } from '@inertiajs/vue3';
-import { reactive, ref, watch } from 'vue';
+import { onMounted, reactive, ref, watch } from 'vue';
 import Badge from '@/Components/UI/Badge.vue';
 import Button from '@/Components/UI/Button.vue';
 import EmptyState from '@/Components/UI/EmptyState.vue';
@@ -23,7 +23,25 @@ const props = defineProps<{
     filters: Record<string, string | undefined>;
     rows: { data: Row[]; links: any[]; from: number | null; to: number | null; total: number };
     can: { upload: boolean; export: boolean; trashed: boolean };
+    /** Dari tombol "Edit" berkas di Registrasi Invoice Hutang → langsung ke halaman edit berkas ini. */
+    lanjutEdit?: number | null;
 }>();
+
+/* Daftar ini sengaja disinggahi dulu (bukan langsung ke halaman edit) supaya tombol Back peramban
+   dari halaman edit kembali ke Upload Berkas, bukan ke wizard invoice. Penandanya dibuang dari
+   riwayat lebih dulu — kalau tidak, kembali ke sini akan meneruskan ke halaman edit lagi. */
+onMounted(() => {
+    const id = props.lanjutEdit;
+    if (!id) return;
+    const bersih = new URL(window.location.href);
+    bersih.searchParams.delete('lanjut_edit');
+    router.replace({
+        url: bersih.pathname + bersih.search,
+        props: (p: any) => ({ ...p, lanjutEdit: null }),
+        preserveState: true,
+        onFinish: () => router.visit(route('bs.ap.berkas.edit', id)),
+    });
+});
 
 // Filter — langsung diterapkan (teks dengan jeda singkat), ikut terbawa ke halaman & export.
 const f = reactive({

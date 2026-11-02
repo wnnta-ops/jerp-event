@@ -241,6 +241,62 @@ final class ApBerkasService
         $berkas->delete();
     }
 
+    /**
+     * Pilihan berkas di langkah Detil Tagihan Registrasi Invoice Hutang: HANYA unggahan user itu
+     * sendiri (user tidak melihat berkas satu sama lain) yang masih aktif. File diurutkan sesuai
+     * checklist jenis berkas — sama dengan urutan "Lihat semua" di halaman berkas.
+     *
+     * @return list<array<string,mixed>>
+     */
+    public function pilihanInvoice(User $user): array
+    {
+        $urutan = BsApBerkas::query()->where('is_active', true)->orderByDesc('is_mandatory')->orderBy('id')->pluck('id')->flip();
+
+        return BsApBerkasUpload::query()
+            ->where('uploaded_by', $user->id)
+            ->whereIn('status', BsApBerkasUpload::STATUS_PILIHAN_INVOICE)
+            ->with(['supplier:id,name', 'deptHead:id,name', 'files.jenis:id,name'])
+            ->latest('id')->get()
+            ->map(fn (BsApBerkasUpload $b) => [
+                'id' => $b->id,
+                'number' => $b->berkas_number,
+                'status' => $b->status,
+                'status_label' => BsApBerkasUpload::STATUS_LABELS[$b->status] ?? $b->status,
+                'supplier_id' => $b->supplier_id,
+                'supplier' => $b->supplier?->name,
+                'supplier_invoice_no' => $b->supplier_invoice_no,
+                'description' => $b->description,
+                'document_date' => $b->document_date?->toDateString(),
+                'needed_date' => $b->needed_date?->toDateString(),
+                'amount' => $b->amount !== null ? (float) $b->amount : null,
+                'sisa' => $b->sisa(),
+                'dept_head' => $b->deptHead?->name,
+                'uploader' => $user->name,
+                'bisa_diinvoice' => $b->bisaDiinvoice(),
+                'bisa_diubah' => $b->bisaDiubah(),
+                'files' => $b->files
+                    ->sortBy(fn (BsApBerkasUploadFile $f) => $urutan[$f->berkas_id] ?? PHP_INT_MAX)
+                    ->map(fn (BsApBerkasUploadFile $f) => [
+                        'id' => $f->id,
+                        'name' => $f->original_name,
+                        'jenis' => $f->jenis?->name,
+                        'mime' => $f->mime,
+                        'url' => route('bs.ap.berkas.file', [$b->id, $f->id]),
+                    ])->values()->all(),
+            ])->all();
+    }
+
+    /** Berkas pilihan invoice harus unggahan user itu sendiri. */
+    public function assertMilik(BsApBerkasUpload $berkas, User $user): void
+    {
+        if ((int) $berkas->uploaded_by !== (int) $user->id) {
+            throw new BusinessRuleException(
+                "Berkas {$berkas->berkas_number} bukan unggahan Anda — pilih berkas yang Anda unggah sendiri lewat Upload Berkas.",
+                errorCode: 'BERKAS_BUKAN_MILIK',
+            );
+        }
+    }
+
     /** Berkas yang boleh dijadikan invoice: sudah ditandatangani dan masih ada sisa. */
     public function assertSiapInvoice(BsApBerkasUpload $berkas): void
     {

@@ -10,6 +10,7 @@ use App\Domain\BusinessSupport\Models\BsApBerkas;
 use App\Domain\BusinessSupport\Models\BsApBerkasUpload;
 use App\Domain\BusinessSupport\Models\BsApBerkasUploadFile;
 use App\Domain\BusinessSupport\Models\BsApInvoice;
+use App\Domain\BusinessSupport\Models\BsApInvoiceDraft;
 use App\Domain\BusinessSupport\Models\BsSupplier;
 use App\Domain\BusinessSupport\Services\ApBerkasService;
 use App\Domain\Foundation\Audit\Models\AuditLog;
@@ -73,6 +74,9 @@ class ApBerkasController extends Controller
             'suppliers' => BsSupplier::query()->orderBy('name')->get(['id', 'name']),
             'filters' => $filters,
             'rows' => $rows,
+            // Dari tombol "Edit" berkas di Registrasi Invoice Hutang: daftar ini langsung meneruskan
+            // ke halaman edit berkasnya, sehingga Back dari halaman edit kembali ke sini.
+            'lanjutEdit' => $this->lanjutEdit($request, $user),
             'can' => [
                 'upload' => $user->can('ap.berkas.upload'),
                 'export' => $user->can('ap.berkas.export'),
@@ -150,6 +154,7 @@ class ApBerkasController extends Controller
         $berkas->load('files.jenis:id,name');
 
         return Inertia::render('BusinessSupport/Payable/Berkas/Form', $this->formProps($user) + [
+            'draftInvoice' => $this->adaDraftInvoice($user, $berkas),
             'berkas' => $this->detail($berkas) + [
                 'files' => $this->files($berkas),
                 'form' => $berkas->only(['supplier_id', 'supplier_invoice_no', 'description']) + [
@@ -251,6 +256,7 @@ class ApBerkasController extends Controller
             ]),
             'ttdApprovalUrl' => $berkas->approval_id ? route('approval-inbox.show', $berkas->approval_id) : null,
             'timeline' => $this->timeline($berkas),
+            'draftInvoice' => $this->adaDraftInvoice($user, $berkas),
             'can' => $this->aksi($user, $berkas),
         ]);
     }
@@ -295,6 +301,22 @@ class ApBerkasController extends Controller
         return $u !== null && ((int) $b->uploaded_by === (int) $u->id || $u->can('ap.berkas.manage'));
     }
 
+    /** ?lanjut_edit={id} → id berkas yang langsung dibuka halaman edit-nya (hanya yang boleh diubah user). */
+    private function lanjutEdit(Request $request, User $user): ?int
+    {
+        $id = (int) $request->input('lanjut_edit');
+        $b = $id > 0 ? BsApBerkasUpload::query()->find($id) : null;
+
+        return $b && $this->bolehUbah($user, $b) ? $b->id : null;
+    }
+
+    /** User punya draft Registrasi Invoice Hutang yang memakai berkas ini. */
+    private function adaDraftInvoice(User $user, BsApBerkasUpload $b): bool
+    {
+        return BsApInvoiceDraft::query()->where('user_id', $user->id)->where('jenis', 'invoice')
+            ->where('berkas_upload_id', $b->id)->exists();
+    }
+
     private function bolehUbah(?User $u, BsApBerkasUpload $b): bool
     {
         return $this->milikAtauKelola($u, $b) && $b->bisaDiubah();
@@ -335,7 +357,8 @@ class ApBerkasController extends Controller
             'close' => $u->can('ap.berkas.manage') && $b->status === BsApBerkasUpload::STATUS_SEBAGIAN && ! $b->trashed(),
             'delete' => $milikKelola && ! $b->trashed() && in_array($b->status, [
                 BsApBerkasUpload::STATUS_DRAFT, BsApBerkasUpload::STATUS_DITOLAK, BsApBerkasUpload::STATUS_DIBATALKAN], true),
-            'invoice' => $u->can('ap.invoice.create') && $b->bisaDiinvoice(),
+            // Invoice Hutang wajib memakai berkas unggahan pengaju sendiri.
+            'invoice' => $u->can('ap.invoice.create') && $b->bisaDiinvoice() && (int) $b->uploaded_by === (int) $u->id,
         ];
     }
 
