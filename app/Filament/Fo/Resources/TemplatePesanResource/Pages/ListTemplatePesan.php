@@ -10,6 +10,11 @@ class ListTemplatePesan extends ListRecords
 {
     protected static string $resource = TemplatePesanResource::class;
 
+    public function getSubheading(): \Illuminate\Contracts\Support\Htmlable
+    {
+        return TemplatePesanResource::ringkasanBerjalanHtml();
+    }
+
     protected function getHeaderActions(): array
     {
         return [Actions\CreateAction::make()->label('Tambah Template Pesan')];

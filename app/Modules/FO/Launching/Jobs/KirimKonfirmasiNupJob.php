@@ -84,10 +84,8 @@ class KirimKonfirmasiNupJob implements ShouldQueue
             email: $r->email ?: $r->customer?->email,
             // Cadangan bila Template Pesan belum diatur: ID .env & urutan parameter lama
             // (konfirmasi tepat 6 variabel — Qontak menolak 422 bila jumlahnya beda).
-            waIdBawaan: (string) config($approved ? 'services.qontak.template_konfirmasi' : 'services.qontak.template_utj'),
-            waKunciBawaan: $approved
-                ? ['nama', 'nama_acara', 'no_nup', 'no_hp', 'nik', 'sales']
-                : ['nama', 'nama_acara', 'nominal_utj', 'link_bayar'],
+            waIdBawaan: JenisPesan::waIdBawaan($ref['jenis']),
+            waKunciBawaan: JenisPesan::bawaan($ref['jenis'])['wa_kunci'],
             dokumen: $dokumen,
             mailBawaan: fn () => new NupConfirmationMail($r, $sprsUrl),
             kanal: $this->kanal,
