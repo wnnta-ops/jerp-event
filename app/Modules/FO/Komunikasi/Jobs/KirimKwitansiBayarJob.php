@@ -67,17 +67,16 @@ class KirimKwitansiBayarJob implements ShouldQueue
             lokasiId: $lokasiId,
             nomor: $b->customer?->mobile ?: $b->customer?->phone,
             email: $b->customer?->email,
-            waIdBawaan: '',
-            waKunciBawaan: ['nama', 'no_kwitansi', 'nominal_angka', 'unit'],
+            waIdBawaan: JenisPesan::waIdBawaan(JenisPesan::KWITANSI_BAYAR),
+            waKunciBawaan: JenisPesan::bawaan(JenisPesan::KWITANSI_BAYAR)['wa_kunci'],
             dokumen: [
                 'url' => route('fo.cetak.kwitansi-bkm-pdf', ['bkm' => $b->id, 'hash' => ClosingPrintController::kwitansiPdfHash($b->id)]),
                 'nama' => ClosingPrintController::namaBerkasKwitansi($b).'.pdf',
                 'pdf' => fn () => ClosingPrintController::pdfKwitansi($b),
             ],
             mailBawaan: fn () => new PesanTemplateMail(
-                'Kwitansi Pembayaran '.$b->no_bkm,
-                '<p>Yth. '.e($nilai['nama']).',</p><p>Terima kasih, pembayaran '.e($nilai['jenis_pembayaran'])
-                    .' sebesar <b>'.e($nilai['nominal']).'</b> untuk unit '.e($nilai['unit']).' telah kami terima.</p>',
+                JenisPesan::isi(JenisPesan::bawaan(JenisPesan::KWITANSI_BAYAR)['email_subjek'], $nilai),
+                JenisPesan::isi(JenisPesan::bawaan(JenisPesan::KWITANSI_BAYAR)['email_isi'], $nilai, true),
                 fn () => [ClosingPrintController::pdfKwitansi($b), ClosingPrintController::namaBerkasKwitansi($b).'.pdf'],
             ),
             kanal: $this->kanal,
