@@ -35,8 +35,10 @@ class KontrakGeneratorService
      * @param  bool  $withSubsidi  true = terapkan subsidi DP "Free X% developer"
      *                             (mode DP3X). false = hitung tanpa subsidi (DP penuh)
      *                             — dipakai tombol "Cancel Subsidi".
+     * @param  array<string,float>  $paidDp  DP terbayar (nama UPPER → pelunasan) bila baris lamanya
+     *                                       sudah dihapus pemanggil (replace=false, mis. Reschedule).
      */
-    public function tagihan(Kontrak $kontrak, bool $replace = true, bool $withSubsidi = true): int
+    public function tagihan(Kontrak $kontrak, bool $replace = true, bool $withSubsidi = true, array $paidDp = []): int
     {
         // Jaring pengaman: jadwal kontrak data lama tidak pernah dibentuk ulang (lihat Kontrak::dariDataLama).
         if ($kontrak->dariDataLama()) {
@@ -60,7 +62,6 @@ class KontrakGeneratorService
 
         // Snapshot pembayaran DP yang sudah ada (sebelum jadwal di-generate ulang) →
         // DP yang SUDAH dibayar TIDAK ikut di-Free dan pembayarannya dipulihkan.
-        $paidDp = [];
         if ($replace) {
             foreach ($kontrak->tagihan()->where('tipe', 'DP')->where('pelunasan', '>', 0.5)->get() as $t) {
                 $paidDp[strtoupper(trim((string) $t->nama_tagihan))] = (float) $t->pelunasan;

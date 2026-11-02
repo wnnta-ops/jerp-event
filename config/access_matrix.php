@@ -28,6 +28,7 @@ return [
             'fo.kontrak' => 'Kontrak (SPRS)',
             'fo.spr' => 'SPR',
             'fo.adjustment_kontrak' => 'Adjustment Kontrak',
+            'fo.reschedule_tagihan' => 'Reschedule Tagihan',
             'fo.pengalihan_hak' => 'Pengalihan Hak',
             'fo.pindah_unit' => 'Pindah Unit',
             'fo.pembatalan_kontrak' => 'Pembatalan Kontrak',

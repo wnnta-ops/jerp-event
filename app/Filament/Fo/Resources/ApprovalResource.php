@@ -142,6 +142,16 @@ class ApprovalResource extends Resource
                     Infolists\Components\TextEntry::make('perubahan')->hiddenLabel()
                         ->state(fn (Approval $r) => self::renderPerubahan($r))->html()->columnSpanFull(),
                 ]),
+            Infolists\Components\Section::make('Jadwal Tagihan: Sebelum vs Sesudah Reschedule')
+                ->description('Jadwal baru dihitung ulang saat disetujui — bisa sedikit berbeda bila ada pembayaran masuk sesudah pengajuan.')
+                ->visible(fn (Approval $r) => $r->jenis === 'RESCHEDULE')
+                ->columns(2)
+                ->schema([
+                    Infolists\Components\TextEntry::make('jadwal_lama')->label('⊖ Sebelum')
+                        ->state(fn (Approval $r) => \App\Filament\Fo\Pages\RescheduleTagihan::jadwalHtml((array) (((array) $r->detail_lama)['jadwal'] ?? [])))->html(),
+                    Infolists\Components\TextEntry::make('jadwal_baru')->label('⊕ Sesudah')
+                        ->state(fn (Approval $r) => \App\Filament\Fo\Pages\RescheduleTagihan::jadwalHtml((array) (((array) $r->detail_baru)['jadwal'] ?? [])))->html(),
+                ]),
             Infolists\Components\Section::make('Daftar BLT (Pengajuan)')
                 ->description('Rincian BLT yang diajukan dalam batch ini.')
                 ->visible(fn (Approval $r) => $r->jenis === 'BLT')
@@ -186,6 +196,10 @@ class ApprovalResource extends Resource
             }
             $rows = '';
             foreach ($arr as $k => $v) {
+                // Jadwal (RESCHEDULE) tampil di bagiannya sendiri; *_id hanya untuk eksekusi.
+                if (is_array($v) || str_ends_with((string) $k, '_id')) {
+                    continue;
+                }
                 $rows .= '<tr><td style="color:#94a3b8;padding:3px 14px 3px 0;">'.$label((string) $k).'</td>'
                     .'<td style="text-align:right;font-weight:600;padding:3px 0;">'.$val($v).'</td></tr>';
             }

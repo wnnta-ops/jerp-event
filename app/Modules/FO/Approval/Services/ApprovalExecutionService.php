@@ -15,6 +15,8 @@ use App\Modules\FO\MarketingSales\Services\HitungPembatalan;
 use App\Modules\FO\MarketingSales\Services\KontrakGeneratorService;
 use App\Modules\FO\MarketingSales\Services\PengalihanHakService;
 use App\Modules\FO\MarketingSales\Services\PindahUnitService;
+use App\Modules\FO\MarketingSales\Services\RescheduleTagihanService;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use RuntimeException;
 
@@ -53,6 +55,8 @@ class ApprovalExecutionService
             'DISKON' => $this->applyDiskon($kontrak, $baru),
             'DISKON_SPRS' => $this->applyDiskonSprs($kontrak, $baru),
             'ADJ_HARGA' => $this->applyAdjustHarga($kontrak, $baru),
+            'RESCHEDULE' => app(RescheduleTagihanService::class)
+                ->terapkan($kontrak, (int) $baru['skema_id'], Carbon::parse($baru['tgl_mulai'])),
             'BATAL_KONTRAK' => $this->applyBatal($kontrak, $baru),
             'GANTI_NAMA' => $this->applyGantiNama($kontrak, $baru),
             'GANTI_UNIT' => $this->applyGantiUnit($kontrak, $baru),
