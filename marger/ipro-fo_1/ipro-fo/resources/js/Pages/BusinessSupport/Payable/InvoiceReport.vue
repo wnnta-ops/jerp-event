@@ -89,7 +89,8 @@ const totals = computed(() => ({
                 </thead>
                 <tbody class="divide-y divide-neutral-200 dark:divide-neutral-800">
                     <tr v-for="(r, i) in rows" :key="i" class="hover:bg-neutral-50 dark:hover:bg-neutral-800/50">
-                        <td class="px-3 py-2 font-mono text-xs">{{ r.invoice_no }}</td>
+                        <!-- Tab baru: hasil laporan yang sudah ditarik tidak hilang saat kembali. -->
+                        <td class="px-3 py-2 font-mono text-xs"><a :href="route('bs.ap.show', r.id)" target="_blank" class="text-primary-600 underline-offset-2 hover:underline dark:text-primary-400">{{ r.invoice_no }}</a></td>
                         <td class="px-3 py-2">{{ fmtDate(r.invoice_date) }}</td>
                         <td class="px-3 py-2">{{ fmtDate(r.receive_date) }}</td>
                         <td class="px-3 py-2">{{ fmtDate(r.due_date) }}</td>
