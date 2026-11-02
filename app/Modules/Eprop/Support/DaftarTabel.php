@@ -75,7 +75,8 @@ final class DaftarTabel
                 'ref' => ['customer_id' => 'fo_customers', 'kontrak_id' => 'fo_kontrak'],
                 'tunda' => ['bkm_id' => 'fo_bkm'], 'master' => ['bank_id' => 'banks'],
                 'perbarui' => true,
-                'cocok' => ['nominal' => 'amount', 'pihak' => 'kontrak_id', 'teks' => 'keterangan', 'tanggal' => 'tgl_tts'],
+                // pihak_cadangan: TTS booking (UTJ) belum berkontrak → dibandingkan per customer.
+                'cocok' => ['nominal' => 'amount', 'pihak' => 'kontrak_id', 'pihak_cadangan' => 'customer_id', 'teks' => 'keterangan', 'tanggal' => 'tgl_tts'],
                 'label' => ['jenis_pembayaran', 'amount', 'keterangan'],
             ],
             'fo_bkm' => [
@@ -85,7 +86,7 @@ final class DaftarTabel
                 'master' => ['bank_id' => 'banks'],
                 'perbarui' => false,
                 'tambahPelunasan' => true,
-                'cocok' => ['nominal' => 'amount', 'pihak' => 'kontrak_id', 'teks' => 'keterangan', 'tanggal' => 'tgl_bkm'],
+                'cocok' => ['nominal' => 'amount', 'pihak' => 'kontrak_id', 'pihak_cadangan' => 'customer_id', 'teks' => 'keterangan', 'tanggal' => 'tgl_bkm'],
                 'label' => ['jenis_pembayaran', 'amount', 'keterangan'],
             ],
             'fo_memo' => [
