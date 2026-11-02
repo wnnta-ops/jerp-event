@@ -14,6 +14,7 @@ use Filament\Notifications\Notification;
 use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Table;
+use Illuminate\Support\HtmlString;
 use Illuminate\Support\Str;
 
 /**
@@ -250,7 +251,7 @@ class BoRoleResource extends Resource
                 foreach ($menus as $menu => $perField) {
                     $kolom = [
                         Forms\Components\Placeholder::make('lbl_'.Str::slug($awalanState.'-'.$modul.'-'.$sub.'-'.$menu, '_'))
-                            ->label('')->content($menu)->columnSpan(3),
+                            ->label('')->content(self::labelMenu((string) $modul, (string) $menu))->columnSpan(3),
                     ];
 
                     // Centang Tampil selalu di kolom yang sama (4–5) dan aksi mulai kolom 6,
@@ -345,6 +346,11 @@ class BoRoleResource extends Resource
                     ->schema($baris);
             }
 
+            if (isset(PetaMenuBo::CATATAN_MODUL[$modul])) {
+                array_unshift($isi, Forms\Components\Placeholder::make('catatan_'.Str::slug($awalanState.'-'.$modul, '_'))
+                    ->label('')->content(new HtmlString('<div class="rounded-lg p-3 text-sm text-gray-600 ring-1 ring-gray-950/10 dark:text-gray-300 dark:ring-white/20">ℹ '.e(PetaMenuBo::CATATAN_MODUL[$modul]).'</div>')));
+            }
+
             $sections[] = Forms\Components\Section::make((string) $modul)
                 ->description(count($subModul).' sub-modul · '.$jml.' izin')
                 ->collapsible()->collapsed()
@@ -379,6 +385,15 @@ class BoRoleResource extends Resource
         }
 
         return null;
+    }
+
+    /** Nama baris matriks + keterangannya (PetaMenuBo::KETERANGAN) bila ada. */
+    private static function labelMenu(string $modul, string $menu): string|HtmlString
+    {
+        $ket = PetaMenuBo::KETERANGAN[$modul][$menu] ?? null;
+
+        return $ket === null ? $menu : new HtmlString(e($menu)
+            .'<div class="mt-1 text-xs text-gray-500 dark:text-gray-400">'.e($ket).'</div>');
     }
 
     /**
