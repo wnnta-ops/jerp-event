@@ -78,6 +78,10 @@ class RescheduleTagihanService
         if ($k->tahap !== 'SPR') {
             throw new RuntimeException('Reschedule hanya untuk kontrak SPR (final). SPRS cukup ganti skema di form kontrak.');
         }
+        // Dicek juga saat eksekusi approval: status bisa berubah selama pengajuan menunggu.
+        if (in_array($k->status, ['BATAL', 'LUNAS'], true)) {
+            throw new RuntimeException('Kontrak berstatus '.$k->status.' tidak bisa di-reschedule.');
+        }
 
         $lama = $k->tagihan()->get();
         $dibuang = $lama->filter(fn (KontrakTagihan $t) => $t->tipe !== 'ADM' || self::subsidiGenerate($t));

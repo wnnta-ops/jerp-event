@@ -20,6 +20,7 @@ use Filament\Tables\Contracts\HasTable;
 use Filament\Tables\Table;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\HtmlString;
+use Livewire\Attributes\Locked;
 
 /**
  * Reschedule Tagihan — ganti Skema Bayar kontrak yang sudah SPR (padanan eProperty
@@ -50,6 +51,8 @@ class RescheduleTagihan extends Page implements HasForms, HasTable
 
     public ?array $data = [];
 
+    // Locked: kontrak yang diajukan hanya boleh berasal dari pilihan di server (selectKontrak).
+    #[Locked]
     public ?int $selectedKontrakId = null;
 
     /** Jadwal baru hasil pratinjau (null = belum dihitung). */
@@ -196,7 +199,7 @@ class RescheduleTagihan extends Page implements HasForms, HasTable
     public function submit(): void
     {
         $d = $this->form->getState();
-        $k = Kontrak::with('skema')->findOrFail($d['kontrak_id']);
+        $k = Kontrak::with('skema')->findOrFail($this->selectedKontrakId);
 
         $proses = Approval::where('subject_type', Kontrak::class)->where('subject_id', $k->id)
             ->whereIn('status', ['DRAFT', 'PENDING', 'APPROVED'])->first();
