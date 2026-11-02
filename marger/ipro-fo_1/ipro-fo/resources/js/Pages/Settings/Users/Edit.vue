@@ -3,6 +3,7 @@ import { useForm, Link, router } from '@inertiajs/vue3';
 import { ref } from 'vue';
 import Button from '@/Components/UI/Button.vue';
 import Input from '@/Components/UI/Input.vue';
+import BadgeBaru from '@/Components/UI/BadgeBaru.vue';
 
 const props = defineProps<{
     user: any;
@@ -77,7 +78,7 @@ function submit() { form.put(route('settings.users.update', props.user.id)); }
 
         <div class="card p-6 space-y-4">
             <div>
-                <h2 class="text-base font-semibold">Tanda Tangan (TTD)</h2>
+                <h2 class="flex items-center gap-2 text-base font-semibold">Tanda Tangan (TTD) <BadgeBaru /></h2>
                 <p class="text-sm text-neutral-500">PNG, latar transparan disarankan, maks. 1 MB. Distempel otomatis pada tahap approval yang disetujui user ini.</p>
             </div>
 
