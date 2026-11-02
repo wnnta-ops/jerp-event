@@ -5,6 +5,7 @@ namespace App\Filament\Fo\Resources;
 use App\Filament\Concerns\MematuhiIzin;
 use App\Filament\Fo\Resources\ApprovalResource\Pages;
 use App\Modules\FO\Approval\Models\Approval;
+use App\Modules\FO\Approval\Models\ApprovalSetup;
 use App\Modules\FO\Approval\Services\ApprovalService;
 use App\Modules\FO\MarketingSales\Models\Kontrak;
 use Filament\Forms;
@@ -294,6 +295,32 @@ class ApprovalResource extends Resource
             .'<thead>'.$head.'</thead><tbody>'.$body.$tot.'</tbody></table></div>';
     }
 
+    /** Setup Approval single level (L1 diisi, L2 kosong) → persetujuan L1 langsung final. */
+    protected static function l1IsFinal(Approval $r): bool
+    {
+        return (bool) ApprovalSetup::forJenis($r->jenis)?->isSingleLevel();
+    }
+
+    /** Pesan setelah Submit, sesuai tahap & approver yang ditunjuk di Setup Approval. */
+    protected static function submitMessage(Approval $a): string
+    {
+        if ($a->status === 'EXECUTED') {
+            return 'Langsung dieksekusi — bypass Event NUP';
+        }
+
+        $setup = ApprovalSetup::forJenis($a->jenis);
+        $level = (int) $a->current_level;
+        $user = $level === 1 ? $setup?->level1User : $setup?->level2User;
+        $tahap = match (true) {
+            $level === 1 && (bool) $setup?->isSingleLevel() => 'Approval (final)',
+            $level === 1 => 'Approval Level 1',
+            ApprovalService::isSingleLevel($a->jenis) && ! $setup?->level2_user_id => 'Approval GM (final)',
+            default => 'Approval Level 2 (final)',
+        };
+
+        return 'Diajukan — menunggu '.$tahap.($user ? ' oleh '.$user->name : '');
+    }
+
     /** @return array<int,Tables\Actions\Action> Aksi alur 2-level (dipakai di baris & modal Detail). */
     protected static function workflowActions(): array
     {
@@ -301,15 +328,31 @@ class ApprovalResource extends Resource
             Tables\Actions\Action::make('submit')->label('Submit')->icon('heroicon-o-paper-airplane')->color('info')
                 ->visible(fn (Approval $r) => $r->status === 'DRAFT')->requiresConfirmation()
                 ->action(function (Approval $r) {
-                    app(ApprovalService::class)->submit($r);
-                    Notification::make()->title('Diajukan — menunggu Approval Level 1')->success()->send();
+                    $a = app(ApprovalService::class)->submit($r);
+                    Notification::make()->title(static::submitMessage($a))->success()->send();
                 }),
-            Tables\Actions\Action::make('approve_l1')->label('Approve L1')->icon('heroicon-o-check')->color('warning')
+            // Setup Approval L1 diisi & L2 kosong → Approve L1 = persetujuan final.
+            Tables\Actions\Action::make('approve_l1')
+                ->label(fn (Approval $r) => static::l1IsFinal($r) ? 'Approve (final)' : 'Approve L1')
+                ->icon('heroicon-o-check')
+                ->color(fn (Approval $r) => static::l1IsFinal($r) ? 'success' : 'warning')
                 ->visible(fn (Approval $r) => $r->isAwaitingLevel1() && (bool) auth()->user()?->can('approveLevel1', $r))
+                ->requiresConfirmation(fn (Approval $r) => static::l1IsFinal($r))
+                ->modalDescription(fn (Approval $r) => static::l1IsFinal($r)
+                    ? 'Persetujuan final akan LANGSUNG menerapkan perubahan ke kontrak (Level 2 tidak ditunjuk).'
+                    : null)
                 ->form([Forms\Components\Textarea::make('note')->label('Catatan Level 1')->rows(2)])
                 ->action(function (Approval $r, array $data) {
-                    app(ApprovalService::class)->approveLevel1($r, $data['note'] ?? null);
-                    Notification::make()->title('Disetujui Level 1 → menunggu Level 2 (final)')->success()->send();
+                    try {
+                        $a = app(ApprovalService::class)->approveLevel1($r, $data['note'] ?? null);
+                        if ($a->status === 'EXECUTED') {
+                            Notification::make()->title('Disetujui & dieksekusi')->body($a->executed_result)->success()->persistent()->send();
+                        } else {
+                            Notification::make()->title('Disetujui Level 1 → menunggu Level 2 (final)')->success()->send();
+                        }
+                    } catch (\Throwable $e) {
+                        Notification::make()->title('Gagal eksekusi')->body($e->getMessage())->danger()->persistent()->send();
+                    }
                 }),
             Tables\Actions\Action::make('approve_l2')
                 ->label(fn (Approval $r) => ApprovalService::isSingleLevel($r->jenis) ? 'Approve (GM)' : 'Approve L2 (final)')
