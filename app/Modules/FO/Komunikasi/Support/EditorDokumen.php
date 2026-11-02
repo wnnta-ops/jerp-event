@@ -28,11 +28,15 @@ final class EditorDokumen
         );
     }
 
-    /** Span teks yang bisa diedit. $polos = teks satu baris tanpa format (nama, kota, …). */
-    public static function kolom(string $kunci, string $nilai, bool $polos = false): string
+    /**
+     * Span teks yang bisa diedit. $polos = teks satu baris tanpa format (nama, kota, …).
+     * $bagian = satu nilai dipecah ke beberapa span berkunci sama (nomor | sisa judul pasal);
+     * skrip editor menggabungkannya kembali dengan spasi.
+     */
+    public static function kolom(string $kunci, string $nilai, bool $polos = false, ?string $bagian = null): string
     {
         return '<span class="ed" contenteditable="true" spellcheck="false" data-k="'.e($kunci).'"'
-            .($polos ? ' data-polos="1"' : '').'>'
+            .($polos ? ' data-polos="1"' : '').($bagian ? ' data-bagian="'.e($bagian).'"' : '').'>'
             .($polos ? e($nilai) : self::aman($nilai))
             .'</span>';
     }

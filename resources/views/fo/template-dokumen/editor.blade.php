@@ -123,12 +123,19 @@
         o[ks[ks.length - 1]] = v;
     }
 
+    // Satu nilai yang dipecah ke beberapa span (nomor | sisa judul pasal) → digabung lagi.
+    function nilai(el) {
+        if (!el.dataset.bagian) return bersih(el);
+        var bag = document.querySelectorAll('.ed[data-k="' + el.dataset.k + '"][data-bagian]');
+        return Array.prototype.map.call(bag, bersih).filter(function (v) { return v !== ''; }).join(' ');
+    }
+
     document.querySelectorAll('.ed').forEach(function (el) {
         el.addEventListener('input', function () {
             berubah = true;
-            setel(el.dataset.k, bersih(el));
+            setel(el.dataset.k, nilai(el));
             // Teks yang sama tampil di beberapa tempat (mis. label paraf tiap halaman).
-            document.querySelectorAll('.ed[data-k="' + el.dataset.k + '"]').forEach(function (lain) {
+            if (!el.dataset.bagian) document.querySelectorAll('.ed[data-k="' + el.dataset.k + '"]').forEach(function (lain) {
                 if (lain !== el) lain.textContent = el.textContent;
             });
             cekHalaman();
