@@ -83,6 +83,23 @@ class EpropSinkronCommand extends Command
             }
         }
 
+        // SPRS J-ERP berharga 0 yang diisi dari eProperty → seperti "Simpan sebagai SPR": Faktur Penjualan
+        // terbit + booking BO ikut harga baru.
+        if (! $kering && $hasil['kontrak_diisi']) {
+            $sync = app(IproMasterSync::class);
+            foreach ($hasil['kontrak_diisi'] as $id) {
+                try {
+                    if ($k = Kontrak::query()->with(['customer', 'unit'])->find($id)) {
+                        \App\Modules\FO\FinanceAR\Services\FakturPenjualanService::ensureForKontrak($k);
+                        $sync->syncSpr($k);
+                        $this->line("  SPR {$k->no_kontrak} diisi dari eProperty — Faktur Penjualan & booking BO diperbarui.");
+                    }
+                } catch (Throwable $e) {
+                    $this->warn("Faktur/BO kontrak #{$id}: {$e->getMessage()}");
+                }
+            }
+        }
+
         // Webhook Survei: SPR yang masuk/diperbarui dari eProperty tidak memicu observer (ditulis
         // langsung ke tabel), jadi notifikasinya dikirim di sini — satu per SPR.
         if (! $kering && \App\Modules\FO\Survei\Services\WebhookSurvei::aktif()) {
