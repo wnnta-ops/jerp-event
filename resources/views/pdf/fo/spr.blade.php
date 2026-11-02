@@ -32,6 +32,10 @@
         table.pay td.r, table.pay th.r { text-align: right; }
         ol.terms { padding-left: 22px; margin: 6px 0; }
         ol.terms > li { margin-bottom: 6px; text-align: justify; }
+        /* Nomor pasal di kolom kiri, isi menggantung lurus di kanannya (hanging indent ala Word). */
+        ol.terms > li.ps { display: flex; }
+        .ps-no { flex: 0 0 40px; }
+        .ps-tx { flex: 1; min-width: 0; }
         ol.alpha { list-style: lower-alpha; padding-left: 20px; margin: 4px 0; }
         ol.alpha li { margin-bottom: 3px; text-align: justify; }
         .clause-h { font-weight: 700; text-decoration: underline; }
@@ -116,6 +120,14 @@
             }
 
             return \App\Modules\FO\Komunikasi\Support\EditorDokumen::kolom($kunci, $v, $polos);
+        };
+        // Nomor romawi di awal judul ("IV.", "XI. JUDUL") → [nomor, sisa judul] untuk kolom nomor.
+        $pisahNo = function (string $judul): array {
+            if (preg_match('/^\s*((?:<[^>]+>)*)\s*([IVXLCDM]+\.)(?=\s|<|$)/u', $judul, $m)) {
+                return [$m[2], $m[1].ltrim(substr($judul, strlen($m[0])))];
+            }
+
+            return ['', $judul];
         };
         // Kelompokkan pasal per halaman: pasal bertanda "halaman baru" membuka halaman berikutnya.
         $halamanPasal = [];
@@ -229,11 +241,15 @@
                 @foreach ($daftar as $ps)
                     @if ($editor)
                         @php($p = 'pasal.'.$ps['_i'])
-                        <li class="ed-item">{!! \App\Modules\FO\Komunikasi\Support\EditorDokumen::kendali('pasal', $ps['_i'], [
+                        @php([$noPs, $sisaJudul] = $pisahNo((string) ($ps['judul'] ?? '')))
+                        <li class="ed-item ps">{!! \App\Modules\FO\Komunikasi\Support\EditorDokumen::kendali('pasal', $ps['_i'], [
                                 ['naik', '↑', 'Geser pasal ke atas'], ['turun', '↓', 'Geser pasal ke bawah'],
                                 ['halaman', empty($ps['halaman_baru']) ? 'Mulai halaman baru' : 'Gabung ke halaman sebelumnya', 'Pasal ini membuka halaman baru / ikut halaman sebelumnya'],
                                 ['butir', '+ Butir', 'Tambah butir a, b, c …'], ['tambah', '+ Pasal', 'Tambah pasal di bawah ini'], ['hapus', 'Hapus', 'Hapus pasal ini'],
-                            ]) !!}<span class="clause-h">{!! $ed($p.'.judul') !!}</span> {!! $ed($p.'.isi') !!}
+                            ]) !!}
+                            {{-- Judul bernomor tampil sebagai 2 span berkunci sama (nomor | sisa); skrip editor menggabungkannya lagi. --}}
+                            <span class="ps-no clause-h">@if ($noPs !== ''){!! \App\Modules\FO\Komunikasi\Support\EditorDokumen::kolom($p.'.judul', $noPs, true, 'no') !!}@endif</span>
+                            <div class="ps-tx"><span class="clause-h">{!! $noPs !== '' ? \App\Modules\FO\Komunikasi\Support\EditorDokumen::kolom($p.'.judul', $sisaJudul, false, 'sisa') : $ed($p.'.judul') !!}</span> {!! $ed($p.'.isi') !!}
                             @if (! empty($ps['butir']))
                                 <ol class="alpha">
                                     @foreach ($ps['butir'] as $j => $b)
@@ -243,9 +259,12 @@
                                     @endforeach
                                 </ol>
                             @endif
+                            </div>
                         </li>
                     @else
-                    <li><span class="clause-h">{!! $tx($ps['judul'] ?? '') !!}</span>@if (filled($ps['isi'] ?? null)) {!! $tx($ps['isi']) !!}@endif
+                    @php([$noPs, $sisaJudul] = $pisahNo((string) ($ps['judul'] ?? '')))
+                    <li class="ps"><span class="ps-no clause-h">{{ $noPs }}</span>
+                        <div class="ps-tx"><span class="clause-h">{!! $tx($sisaJudul) !!}</span>@if (filled($ps['isi'] ?? null)) {!! $tx($ps['isi']) !!}@endif
                         @if (! empty($ps['butir']))
                             <ol class="alpha">
                                 @foreach ($ps['butir'] as $b)
@@ -253,6 +272,7 @@
                                 @endforeach
                             </ol>
                         @endif
+                        </div>
                     </li>
                     @endif
                 @endforeach
