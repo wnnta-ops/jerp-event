@@ -39,6 +39,7 @@ export interface NavItem {
      */
     tampil?: string;
     children?: NavItem[]; // detail modul (level 3) — bila ada, item jadi sub-modul yang bisa dibuka
+    baru?: boolean;       // tandai "BARU" di sidebar (modul/menu yang baru ditambahkan); induknya ikut diberi titik
 }
 
 /**
@@ -53,6 +54,7 @@ export interface NavGroup {
     color?: string;     // warna aksen kartu
     desc?: string;      // deskripsi singkat pada kartu
     route?: string;     // route landing kartu; bila kosong → pakai sub-modul pertama yang dapat diakses
+    baru?: boolean;     // tandai seluruh modul sebagai "BARU" di judul grup sidebar
 }
 
 /**
@@ -124,13 +126,13 @@ export function navGroups(foUrl: string): NavGroup[] {
     },
     {
         title: 'Approval Inbox',
-        icon: ShieldCheck, color: '#f97316', route: 'approval-inbox.index',
+        icon: ShieldCheck, color: '#f97316', route: 'approval-inbox.index', baru: true,
         desc: 'Ajukan Memo Internal & lacak approval bertingkat.',
         items: [
             // Satu layar, tiga tab (perlu persetujuan / pengajuan saya / riwayat); isi tiap tab
             // dibatasi per baris oleh server, jadi semua peran internal boleh membukanya.
-            { label: 'Inbox Approval', icon: ShieldCheck, href: 'approval-inbox.index', permission: ['approvalinbox.view'] },
-            { label: 'Ajukan Memo', icon: FileText, href: 'approval-inbox.create', permission: ['approvalinbox.submit'] },
+            { label: 'Inbox Approval', icon: ShieldCheck, href: 'approval-inbox.index', permission: ['approvalinbox.view'], baru: true },
+            { label: 'Ajukan Memo', icon: FileText, href: 'approval-inbox.create', permission: ['approvalinbox.submit'], baru: true },
         ],
     },
     {
@@ -372,7 +374,7 @@ export function navGroups(foUrl: string): NavGroup[] {
             { label: 'Master', icon: BookText, permission: ['ap.invoice.view', 'ap.kuitansi.view', 'ap.berkas.upload'], children: [
                 // Titik awal approval hutang: staf unggah berkas → TTD Dept Head → tim AP buat invoice
                 // dari berkas → approval invoice di Approval Inbox → baru boleh dibayar.
-                { label: 'Upload Berkas', href: 'bs.ap.berkas.index' , permission: ['ap.berkas.upload', 'ap.invoice.view'] },
+                { label: 'Upload Berkas', href: 'bs.ap.berkas.index' , permission: ['ap.berkas.upload', 'ap.invoice.view'], baru: true },
                 { label: 'Invoice Hutang', href: 'bs.ap.index' , permission: ['ap.invoice.view'] , tampil: 'menu.bs.ap.index' },
                 { label: 'Kuitansi Hutang', href: 'bs.ap.kuitansi.index' , permission: ['ap.kuitansi.view'] , tampil: 'menu.bs.ap.kuitansi.index' },
             ]},

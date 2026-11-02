@@ -14,6 +14,7 @@ import {
 } from 'lucide-vue-next';
 import { navGroups } from './navGroups';
 import { useIzin } from '@/Composables/useIzin';
+import BadgeBaru from '@/Components/UI/BadgeBaru.vue';
 
 const props = defineProps<{ open: boolean }>();
 /* 'toggle' — nama yang didengarkan AppLayout (@toggle). Dulu 'close', sehingga tombol ciutkan
@@ -79,6 +80,13 @@ function butirTampil(item: any): boolean {
     return item.children.some((c: any) => hasPermission(c.permission) && hasPermission(c.tampil));
 }
 
+// Menu baru yang boleh dilihat orang ini — sub-modul ikut "baru" bila salah satu anaknya baru,
+// supaya penanda tetap kelihatan walau sub-modulnya masih tertutup.
+function adaBaru(item: any): boolean {
+    if (item.baru) return true;
+    return !! item.children?.some((c: any) => c.baru && hasPermission(c.permission) && hasPermission(c.tampil));
+}
+
 function isActive(href?: string, params?: Record<string, any>): boolean {
     if (! href) return false;
     try { return (route() as unknown as { current: (n: string, p?: any) => boolean }).current(href, params); }
@@ -134,7 +142,11 @@ watch(() => page.url, () => revealActive(), { immediate: true });
                 <button v-if="g.title && open && g.items.some(butirTampil)"
                     type="button" @click="toggleGroup(g.title)"
                     class="flex w-full items-center justify-between px-4 mt-4 mb-1 text-[12px] uppercase tracking-wider text-primary-700 font-extrabold hover:text-primary-800">
-                    <span>{{ g.title }}</span>
+                    <span class="flex items-center gap-2">
+                        {{ g.title }}
+                        <BadgeBaru v-if="g.baru" />
+                        <BadgeBaru v-else-if="g.items.some((i: any) => butirTampil(i) && adaBaru(i))" mode="titik" />
+                    </span>
                     <ChevronDown class="h-3.5 w-3.5 transition-transform" :class="{ '-rotate-90': isCollapsed(g.title) }" />
                 </button>
                 <template v-for="item in g.items" :key="(item.href ?? item.label) + JSON.stringify(item.params ?? {})">
@@ -146,8 +158,14 @@ watch(() => page.url, () => revealActive(), { immediate: true });
                                 class="flex w-full items-center gap-3 px-4 py-2 mx-2 rounded-lg text-[15px] font-semibold text-primary-900 transition hover:bg-primary-300 hover:text-primary-950"
                                 :style="{ width: 'calc(100% - 1rem)' }"
                             >
-                                <component :is="item.icon" class="h-[18px] w-[18px] flex-shrink-0" />
-                                <span v-if="open" class="flex-1 text-left">{{ item.label }}</span>
+                                <span class="relative flex-shrink-0">
+                                    <component :is="item.icon" class="h-[18px] w-[18px]" />
+                                    <BadgeBaru v-if="! open && adaBaru(item)" mode="titik" class="absolute -right-1 -top-1" />
+                                </span>
+                                <span v-if="open" class="flex flex-1 items-center gap-2 text-left">
+                                    {{ item.label }}
+                                    <BadgeBaru v-if="adaBaru(item) && ! openSub[g.title + '|' + item.label]" mode="titik" />
+                                </span>
                                 <ChevronDown v-if="open" class="h-3.5 w-3.5 transition-transform" :class="{ 'rotate-180': openSub[g.title + '|' + item.label] }" />
                             </button>
                             <template v-if="open && openSub[g.title + '|' + item.label]">
@@ -159,7 +177,7 @@ watch(() => page.url, () => revealActive(), { immediate: true });
                                         class="flex items-center gap-2 py-1.5 pl-11 pr-4 mx-2 rounded-lg text-sm transition"
                                         :class="isActive(c.href, c.params) ? 'bg-primary-500 text-primary-950 font-bold' : 'text-primary-800 font-medium hover:bg-primary-300 hover:text-primary-950'"
                                     >
-                                        <span v-if="open">{{ c.label }}</span>
+                                        <span v-if="open" class="flex flex-1 items-center justify-between gap-2">{{ c.label }}<BadgeBaru v-if="c.baru" /></span>
                                     </Link>
                                 </template>
                             </template>
@@ -183,8 +201,11 @@ watch(() => page.url, () => revealActive(), { immediate: true });
                                 ? 'bg-primary-500 text-primary-950 font-bold'
                                 : 'text-primary-900 font-semibold hover:bg-primary-300 hover:text-primary-950'"
                         >
-                            <component :is="item.icon" class="h-[18px] w-[18px] flex-shrink-0" />
-                            <span v-if="open">{{ item.label }}</span>
+                            <span class="relative flex-shrink-0">
+                                <component :is="item.icon" class="h-[18px] w-[18px]" />
+                                <BadgeBaru v-if="! open && item.baru" mode="titik" class="absolute -right-1 -top-1" />
+                            </span>
+                            <span v-if="open" class="flex flex-1 items-center justify-between gap-2">{{ item.label }}<BadgeBaru v-if="item.baru" /></span>
                         </Link>
                     </template>
                 </template>
