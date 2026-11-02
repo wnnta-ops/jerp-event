@@ -49,6 +49,9 @@
         $c = $kontrak->customer;
         $u = $kontrak->unit;
         $ag = $kontrak->agent;
+        // Kantor agent ditelusuri lewat rantai atasan (agency_name kosong untuk semua agent).
+        // Sales inhouse tidak punya kantor → '—' (menunggu keputusan tim marketing).
+        $kantorAgent = $ag?->namaKantor();
         $kpr = $kontrak->cara_bayar === 'KPR';
         $alamatKtp = $c?->alamatRingkas() ?: '—';
         $unitDesc = $u?->alamat ?: trim(($u?->kode_unit ?: '').' - '.($u?->unitType?->name ?: '').' - LT '.\App\Support\Luas::rapi($u?->luas_tanah, '-').' - LB '.\App\Support\Luas::rapi($u?->luas_bangunan, '-'), ' -');
@@ -187,7 +190,7 @@
             <tr><td class="k">9. Harga Pemesanan (setelah Diskon)</td><td class="s">:</td><td>Rp {{ number_format($netVal, 0, ',', '.') }}</td></tr>
             <tr><td class="k">10. Cara Pembayaran</td><td class="s">:</td><td>{{ $kontrak->cara_bayar }}</td></tr>
             <tr><td class="k">11. Nama Sales</td><td class="s">:</td><td>{{ $ag?->name ?: '—' }}</td></tr>
-            <tr><td class="k">12. Nama Agent Properti</td><td class="s">:</td><td>{{ $ag?->agency_name ?: '—' }}</td></tr>
+            <tr><td class="k">12. Nama Agent Properti</td><td class="s">:</td><td>{{ $kantorAgent ?: '—' }}</td></tr>
         </table>
 
         <p style="margin-top:10px;">{!! $ed('kalimat_syarat') !!}</p>
@@ -268,7 +271,7 @@
                 </div>
                 <div class="sign" style="margin-top:0;">
                     <div class="c"><div class="nm">{{ $c?->full_name ?: '' }}</div>Pemesan</div>
-                    <div class="c"><div class="nm">{{ $ag?->name ?: '' }}@if ($ag?->agency_name) <br><span style="font-weight:400;font-size:9px;">{{ $ag->agency_name }}</span>@endif</div>Sales</div>
+                    <div class="c"><div class="nm">{{ $ag?->name ?: '' }}@if ($kantorAgent && $kantorAgent !== $ag?->name) <br><span style="font-weight:400;font-size:9px;">{{ $kantorAgent }}</span>@endif</div>Sales</div>
                     <div class="c"><div class="nm">{!! $ed('penandatangan_nama', true) !!}</div>{!! $ed('penandatangan_jabatan', true) !!}</div>
                 </div>
             @endif
