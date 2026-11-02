@@ -107,6 +107,79 @@ final class CashAdvanceService
     }
 
     /**
+     * Edit Pengajuan — hanya selagi 'requested' (belum dibayar, belum berjurnal). Nomor bon &
+     * pemegang tetap. Gerbang anggaran diperiksa ulang atas nilai baru. Persetujuan online
+     * yang sudah terkumpul DIKOSONGKAN bila isi yang disetujui berubah — tanda tangan itu
+     * diberikan untuk angka/keperluan lama. Perubahannya tercatat di riwayat bon.
+     */
+    public function ubahPengajuan(BsCashAdvance $adv, array $data, ?int $userId = null): BsCashAdvance
+    {
+        return DB::transaction(function () use ($adv, $data, $userId): BsCashAdvance {
+            $adv = BsCashAdvance::whereKey($adv->id)->lockForUpdate()->firstOrFail();
+            if ($adv->status !== 'requested') {
+                throw new BusinessRuleException('Bon yang sudah dibayar tidak bisa diubah — mundurkan dulu lewat Batal Pembayaran.', errorCode: 'ADV_EDIT_NOT_REQUESTED');
+            }
+            $amount = round((float) $data['amount'], 2);
+            if ($amount <= 0) {
+                throw new BusinessRuleException('Nilai panjar harus lebih dari 0.', errorCode: 'ADV_ZERO');
+            }
+            $costCenterId = (int) $data['cost_center_id'];
+            app(BudgetGuardService::class)->assertPlafonCostCenter($costCenterId, $amount, (string) $data['advance_date']);
+
+            $baru = [
+                'advance_date' => $data['advance_date'],
+                'purpose' => $data['purpose'],
+                'amount' => $amount,
+                'cost_center_id' => $costCenterId,
+                'approval_mode' => (($data['approval_mode'] ?? null) === 'offline') ? 'offline' : 'online',
+                'rek_sumber' => $data['rek_sumber'] ?? null,
+                'rek_employee_id' => $data['rek_employee_id'] ?? null,
+                'rek_bank' => $data['rek_bank'] ?? null,
+                'rek_nomor' => $data['rek_nomor'] ?? null,
+                'rek_atas_nama' => $data['rek_atas_nama'] ?? null,
+            ];
+
+            $rp = fn ($v) => 'Rp '.number_format((float) $v, 0, ',', '.');
+            $catatan = [];
+            if ($adv->advance_date?->toDateString() !== Carbon::parse($data['advance_date'])->toDateString()) {
+                $catatan[] = 'Tanggal '.$adv->advance_date?->format('d/m/Y').' → '.Carbon::parse($data['advance_date'])->format('d/m/Y');
+            }
+            if (round((float) $adv->amount, 2) !== $amount) {
+                $catatan[] = 'Nominal '.$rp($adv->amount).' → '.$rp($amount);
+            }
+            if (trim((string) $adv->purpose) !== trim((string) $data['purpose'])) {
+                $catatan[] = 'Keperluan diubah';
+            }
+            if ((int) $adv->cost_center_id !== $costCenterId) {
+                $catatan[] = 'Departemen diubah';
+            }
+            if ($adv->approval_mode !== $baru['approval_mode']) {
+                $catatan[] = 'Persetujuan '.$adv->approval_mode.' → '.$baru['approval_mode'];
+            }
+            if ((string) $adv->rek_nomor !== (string) $baru['rek_nomor']) {
+                $catatan[] = 'Rekening tujuan diubah';
+            }
+            if ($catatan === []) {
+                return $adv;
+            }
+            if (! empty($adv->approvals)) {
+                $baru['approvals'] = null;
+                $catatan[] = 'persetujuan online diulang';
+            }
+            $adv->update($baru);
+
+            DB::table('bs_cash_advance_mundur')->insert([
+                'tenant_id' => $adv->tenant_id, 'cash_advance_id' => $adv->id,
+                'advance_number' => $adv->advance_number, 'langkah' => 'Edit Pengajuan',
+                'dari_status' => 'requested', 'alasan' => mb_substr(implode('; ', $catatan), 0, 255),
+                'user_id' => $userId, 'created_at' => now(),
+            ]);
+
+            return $adv;
+        });
+    }
+
+    /**
      * Batalkan pengajuan bon — DITOLAK SEBELUM DIBAYAR.
      *
      * HANYA selagi berstatus 'requested'. Setelah dibayar, uangnya sudah keluar dan jurnalnya
