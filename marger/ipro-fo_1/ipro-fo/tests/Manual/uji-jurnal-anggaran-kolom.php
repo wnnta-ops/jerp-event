@@ -166,7 +166,9 @@ try {
     try {
         $gerbang->assertWithinBudget(
             [['account_id' => $akOver->id, 'cost_center_id' => $cc->id, 'debit' => 1000, 'credit' => 0]],
-            null, "{$tahun}-04-01",
+            // Penjaga budget BULANAN: input di bulan yang sama dengan realisasinya (Maret) — sisa
+            // bulan lain tidak dipakai menutup bulan ini.
+            null, "{$tahun}-03-15",
         );
     } catch (BusinessRuleException $e) {
         $tolak = $e;
@@ -181,6 +183,7 @@ try {
     try {
         $gerbang->assertWithinBudget(
             [['account_id' => $akUnder->id, 'cost_center_id' => $cc->id, 'debit' => 1000, 'credit' => 0]],
+            // April: realisasi Maret tidak memakan anggaran April (penjaga bulanan).
             null, "{$tahun}-04-01",
         );
     } catch (BusinessRuleException $e) {

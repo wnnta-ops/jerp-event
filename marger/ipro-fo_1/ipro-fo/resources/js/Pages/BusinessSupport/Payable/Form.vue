@@ -42,7 +42,7 @@ const props = defineProps<{
     /** Kode COA yang tidak dianggarkan — tidak diisi cost center & tidak dituntut mengisinya. */
     coaTanpaAnggaran?: string[];
     /** Mode EDIT (sebelum diproses FAT): isian invoice lama. null/undefined = registrasi baru. */
-    invoiceEdit?: { id: number; invoice_number: string; pihak_nama: string | null; data: Record<string, any> } | null;
+    invoiceEdit?: { id: number; invoice_number: string; pihak_nama: string | null; journal_id?: number | null; data: Record<string, any> } | null;
     /** Registrasi dari Upload Berkas (?berkas=) — isian awal + file pendukung; tersimpan → diajukan ke approval. */
     dariBerkas?: {
         id: number; number: string; supplier_id: number | null; supplier_invoice_no: string | null;
@@ -78,6 +78,8 @@ const form = useForm<any>({
     ppn_mode: 'none', ppn_pct: 11, ppn_base: 0, ppn_incl: false, // #140 · ppn_incl: false=Exclude PPN, true=Include PPN
     pph_mode: 'none', pph_type: '', pph_pct: 0, pph_base: 0, pph_account_id: '', // #92/#94 — default tarif PPh 0% (dipungut & ditanggung)
     lines: [], schedules: [], journal_lines: [],
+    // Koreksi budget yang diajukan bersama invoice (baris Struktur yang melewati sisa budget bulan ini).
+    koreksi: [],
     // Penerima Reimburse (karyawan) / Deposit (customer + rekening yang diketik).
     employee_id: '', customer_id: '', bank_name: '', bank_account_no: '', bank_account_name: '',
     // Dari Upload Berkas: isian awal diambil dari berkas; berkas_upload_id membuat server
@@ -641,6 +643,92 @@ const draftPada = props.draftInvoice?.updated_at
     ? new Date(props.draftInvoice.updated_at).toLocaleString('id-ID', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' })
     : '';
 
+/* ── SISA BUDGET & KOREKSI BUDGET (langkah Struktur) ──
+   Sisa = anggaran BULAN tanggal invoice − realisasi bulan itu − nilai transaksi invoice ini, per
+   anggaran (akun × cost center, atau akun "semua cost center"). Angkanya dari server
+   (bs.ap.sisa-budget) — aturan yang sama dengan penjaga budget saat simpan. Baris yang minus
+   bisa diajukan Koreksi Budget; invoice tetap jalan dan koreksinya masuk Approval Inbox. */
+type SisaInfo = { budget_id: number; cakupan: 'cc' | 'semua'; anggaran: number; terpakai: number; tanda: number } | null;
+const sisaInfo = ref<Record<string, SisaInfo>>({});
+const bulanBudget = ref('');
+const kunciBudget = (l: any) => `${l.account_id}|${l.cost_center_id ?? ''}`;
+let timerSisa: ReturnType<typeof setTimeout> | null = null;
+function muatSisa() {
+    const pairs = [...new Set((form.journal_lines as any[]).filter((l) => l.account_id).map(kunciBudget))];
+    if (!pairs.length || !form.invoice_date) return;
+    if (timerSisa) clearTimeout(timerSisa);
+    timerSisa = setTimeout(async () => {
+        try {
+            const { data } = await window.axios.get(route('bs.ap.sisa-budget'), {
+                params: { date: form.invoice_date, pairs, exclude_journal_id: props.invoiceEdit?.journal_id ?? undefined },
+            });
+            sisaInfo.value = { ...sisaInfo.value, ...data.sisa };
+            bulanBudget.value = data.bulan;
+        } catch { /* kolom sisa dibiarkan kosong; server tetap menjaga saat simpan */ }
+    }, 250);
+}
+watch(() => [step.value, form.invoice_date, (form.journal_lines as any[]).map(kunciBudget).join(',')], () => {
+    if (step.value >= 4) muatSisa();
+});
+watch(() => form.invoice_date, () => { sisaInfo.value = {}; });
+/** Pemakaian invoice ini per anggaran (netto, bertanda sesuai jenis akun). */
+const pakaiInvoice = computed<Record<number, number>>(() => {
+    const out: Record<number, number> = {};
+    for (const l of form.journal_lines as any[]) {
+        const info = l.account_id ? sisaInfo.value[kunciBudget(l)] : null;
+        if (!info) continue;
+        out[info.budget_id] = (out[info.budget_id] ?? 0) + info.tanda * ((Number(l.debit) || 0) - (Number(l.credit) || 0));
+    }
+    return out;
+});
+const sisaAnggaran = (info: NonNullable<SisaInfo>) => r0(info.anggaran - info.terpakai - (pakaiInvoice.value[info.budget_id] ?? 0));
+/** Sisa budget untuk baris; undefined = belum dimuat, null = akun tanpa anggaran. */
+function sisaBaris(l: any): number | null | undefined {
+    if (!l.account_id) return undefined;
+    const info = sisaInfo.value[kunciBudget(l)];
+    if (info === undefined) return undefined;
+    return info ? sisaAnggaran(info) : null;
+}
+const labelCc = (id: number | null) => {
+    const c = props.costCenters.find((x: any) => x.id === id);
+    return c ? `${c.code} — ${c.name}` : 'Semua cost center';
+};
+/** Anggaran yang terlampaui oleh invoice ini — satu baris per anggaran (baris jurnal sama akun & cost center digabung). */
+const overBudget = computed(() => {
+    const out: Array<{ budget_id: number; account_id: number; cost_center_id: number | null; keterangan: string; kurang: number }> = [];
+    for (const l of form.journal_lines as any[]) {
+        const info = l.account_id ? sisaInfo.value[kunciBudget(l)] : null;
+        if (!info || out.some((o) => o.budget_id === info.budget_id)) continue;
+        const sisa = sisaAnggaran(info);
+        if (sisa < 0) {
+            out.push({ budget_id: info.budget_id, account_id: l.account_id, cost_center_id: info.cakupan === 'cc' ? l.cost_center_id : null,
+                keterangan: String(l.description ?? '').trim(), kurang: -sisa });
+        }
+    }
+    return out;
+});
+const koreksiUntuk = (budgetId: number) => (form.koreksi as any[]).find((k) => k.budget_id === budgetId);
+function ajukanKoreksi(l: any) {
+    const info = sisaInfo.value[kunciBudget(l)];
+    const o = info ? overBudget.value.find((x) => x.budget_id === info.budget_id) : null;
+    if (!o || koreksiUntuk(o.budget_id)) return;
+    form.koreksi.push({ budget_id: o.budget_id, account_id: o.account_id, cost_center_id: o.cost_center_id, keterangan: o.keterangan, nilai: o.kurang });
+}
+function hapusKoreksi(i: number) { form.koreksi.splice(i, 1); }
+/** Tabel koreksi bisa diubah di langkah Struktur; di Selesai hanya ditampilkan. */
+const ubahKoreksi = computed(() => step.value === 4);
+// Anggaran yang tak lagi terlampaui (nilai/akun diubah) → koreksinya dibuang otomatis.
+watch(overBudget, (over) => {
+    if (!Object.keys(sisaInfo.value).length) return;
+    form.koreksi = (form.koreksi as any[]).filter((k) => over.some((o) => o.budget_id === k.budget_id));
+});
+const kurangKoreksi = (k: any) => overBudget.value.find((o) => o.budget_id === k.budget_id)?.kurang ?? 0;
+/** Anggaran terlampaui yang belum diajukan koreksinya, atau nilai pengajuannya di bawah kekurangan. */
+const koreksiBelumCukup = computed(() => overBudget.value.filter((o) => {
+    const k = koreksiUntuk(o.budget_id);
+    return !k || (Number(k.nilai) || 0) < o.kurang;
+}));
+
 function canNext() {
     if (step.value === 1) return !!form[kolomPihak] && (props.jenis.kunci !== 'deposit' || rekeningLengkap.value);
     if (step.value === 2) return !!form.category_id && !!form.supplier_invoice_no && Number(form.dpp) > 0 && !!form.description && Number(form.term_days) > 0;
@@ -649,7 +737,7 @@ function canNext() {
     // center — dan itu tidak muncul sebagai galat apa pun, hanya angka yang kurang. Karena itu
     // ditahan di sini, bukan diperbaiki belakangan.
     if (step.value === 3) return !wajibBerkas || !!berkasDipilih.value;
-    if (step.value === 4) return jurnalBalanced.value && kurangCc.value.length === 0;
+    if (step.value === 4) return jurnalBalanced.value && kurangCc.value.length === 0 && koreksiBelumCukup.value.length === 0;
     return true;
 }
 function next() { if (canNext() && step.value < 5) step.value++; }
@@ -695,7 +783,7 @@ const LANGKAH_KOLOM: Array<[RegExp, number]> = [
     [/^(supplier_id|employee_id|customer_id|bank_)/, 1],
     [/^(category_id|supplier_invoice_no|manual_no|invoice_date|receive_date|due_date|term_days|description|transfer_detail|kurs|dpp|ppn_|pph_)/, 2],
     [/^(lines\.|berkas_upload_id)/, 3],
-    [/^journal_lines\./, 4],
+    [/^(journal_lines|koreksi)\./, 4],
 ];
 function submit() {
     const opsi = {
@@ -975,9 +1063,9 @@ const cellArea = 'w-full rounded-md border border-neutral-300 bg-white px-2 py-1
                     <table class="w-full table-fixed border-collapse text-sm">
                         <colgroup>
                             <!-- Kolom Account dilebarkan: memuat pemilih akun + tombol Salin/Tempel berlabel.
-                                 DELAPAN kolom, sama dengan sel tiap baris — kolom kesembilan yang
-                                 dulu ada di sini menggeser seluruh angka Grand Total satu kolom ke kanan. -->
-                            <col style="width:4%" /><col style="width:27%" /><col style="width:11%" /><col style="width:16%" /><col style="width:11%" /><col style="width:13%" /><col style="width:13%" /><col style="width:5%" />
+                                 SEMBILAN kolom (termasuk Sisa Budget), sama dengan sel tiap baris — jumlah
+                                 kolom yang berbeda menggeser seluruh angka Grand Total satu kolom. -->
+                            <col style="width:3%" /><col style="width:22%" /><col style="width:10%" /><col style="width:13%" /><col style="width:12%" /><col style="width:12%" /><col style="width:12%" /><col style="width:13%" /><col style="width:3%" />
                         </colgroup>
                         <thead class="bg-neutral-50 text-left text-[11px] uppercase tracking-wide text-neutral-500 dark:bg-neutral-800">
                             <tr>
@@ -988,6 +1076,7 @@ const cellArea = 'w-full rounded-md border border-neutral-300 bg-white px-2 py-1
                                 <th class="border-b border-neutral-200 px-2 py-2 text-right dark:border-neutral-700">Nilai Transaksi</th>
                                 <th class="border-b border-neutral-200 px-2 py-2 text-right dark:border-neutral-700">Debit</th>
                                 <th class="border-b border-neutral-200 px-2 py-2 text-right dark:border-neutral-700">Kredit</th>
+                                <th class="border-b border-neutral-200 px-2 py-2 text-right dark:border-neutral-700" :title="'Anggaran ' + (bulanBudget || 'bulan ini') + ' − realisasi bulan ini − nilai transaksi'">Sisa Budget<span v-if="bulanBudget" class="block text-[10px] font-normal normal-case text-neutral-400">{{ bulanBudget }}</span></th>
                                 <th class="border-b border-neutral-200 px-1 py-2 dark:border-neutral-700"></th>
                             </tr>
                         </thead>
@@ -1064,9 +1153,20 @@ const cellArea = 'w-full rounded-md border border-neutral-300 bg-white px-2 py-1
                                     <input type="radio" :name="'side-row-' + i" :checked="l.side==='credit'" @change="setSide(l,'credit')" class="h-4 w-4 accent-primary-600" />
                                     <div class="mt-1 font-mono text-[11px] text-neutral-600 dark:text-neutral-300">{{ l.side==='credit' && Number(l.credit) ? fmtNum(l.credit) : '' }}</div>
                                 </td>
+                                <!-- Sisa budget bulan ini; minus → tombol Koreksi Budget. -->
+                                <td class="px-2 py-2 text-right">
+                                    <template v-if="sisaBaris(l) === null"><span class="text-[11px] text-neutral-400" title="Akun ini tidak punya anggaran">—</span></template>
+                                    <template v-else-if="sisaBaris(l) !== undefined">
+                                        <div :class="['font-mono text-xs', (sisaBaris(l) as number) < 0 ? 'font-semibold text-danger-600' : 'text-success-700 dark:text-success-400']">{{ fmtNum(sisaBaris(l) as number) }}</div>
+                                        <template v-if="(sisaBaris(l) as number) < 0">
+                                            <span v-if="koreksiUntuk(sisaInfo[kunciBudget(l)]!.budget_id)" class="mt-1 inline-flex items-center gap-0.5 text-[10.5px] font-medium text-amber-600"><Check class="h-3 w-3" /> Koreksi diajukan</span>
+                                            <button v-else type="button" class="mt-1 inline-flex h-6 items-center rounded-md border border-danger-300 bg-danger-50 px-2 text-[10.5px] font-semibold text-danger-700 hover:bg-danger-100 dark:border-danger-800 dark:bg-danger-950/40 dark:text-danger-300" @click="ajukanKoreksi(l)">Koreksi Budget</button>
+                                        </template>
+                                    </template>
+                                </td>
                                 <td class="px-1 py-2 text-center"><button type="button" @click="removeJournalLine(i)" class="text-danger-500"><Trash2 class="h-4 w-4" /></button></td>
                             </tr>
-                            <tr v-if="!form.journal_lines.length"><td colspan="8" class="px-2 py-6 text-center text-sm text-neutral-400">Belum ada baris. Tekan "Sebelumnya" lalu "Berikutnya" lagi ke langkah ini untuk membentuk jurnal otomatis dari nilai transaksinya, atau klik "Tambah 1 Baris".</td></tr>
+                            <tr v-if="!form.journal_lines.length"><td colspan="9" class="px-2 py-6 text-center text-sm text-neutral-400">Belum ada baris. Tekan "Sebelumnya" lalu "Berikutnya" lagi ke langkah ini untuk membentuk jurnal otomatis dari nilai transaksinya, atau klik "Tambah 1 Baris".</td></tr>
                         </tbody>
                         <tfoot>
                             <tr class="border-t-2 border-neutral-200 bg-neutral-50 font-semibold dark:border-neutral-700 dark:bg-neutral-800">
@@ -1075,6 +1175,7 @@ const cellArea = 'w-full rounded-md border border-neutral-300 bg-white px-2 py-1
                                 <td class="px-2 py-2 text-right font-mono">{{ fmtNum(jurnalNilai) }}</td>
                                 <td class="px-2 py-2 text-right font-mono">{{ fmtNum(jurnalDebit) }}</td>
                                 <td class="px-2 py-2 text-right font-mono">{{ fmtNum(jurnalKredit) }}</td>
+                                <td></td>
                                 <td></td>
                             </tr>
                         </tfoot>
@@ -1087,6 +1188,44 @@ const cellArea = 'w-full rounded-md border border-neutral-300 bg-white px-2 py-1
                     </div>
                     <span v-if="jurnalBalanced" class="inline-flex items-center gap-1 rounded-full bg-success-50 px-3 py-1 text-xs font-medium text-success-700 dark:bg-success-900/30 dark:text-success-300"><Check class="h-3.5 w-3.5" /> Balance</span>
                     <span v-else class="inline-flex items-center gap-1 rounded-full bg-amber-50 px-3 py-1 text-xs font-medium text-amber-700 dark:bg-amber-900/30 dark:text-amber-300">Selisih {{ fmtRp(Math.abs(jurnalDebit - jurnalKredit)) }} — Debit ≠ Kredit</span>
+                </div>
+            </div>
+
+            <!-- Koreksi Budget — baris yang melewati sisa budget bulan ini -->
+            <div v-if="form.koreksi.length && step === 4" class="card p-5">
+                <div class="mb-1 flex items-center justify-between gap-2">
+                    <h2 class="font-semibold">Koreksi Budget</h2>
+                    <span class="text-[11px] text-neutral-400">{{ bulanBudget }}</span>
+                </div>
+                <p class="mb-2 text-[11px] text-neutral-500">Diajukan bersama invoice ini ke Approval Inbox (Accounting → GM). Setelah disetujui, nilai pengajuan ditambahkan ke budget bulan ini.</p>
+                <div class="overflow-x-auto rounded-lg border border-neutral-200 dark:border-neutral-800">
+                    <table class="w-full text-sm">
+                        <thead class="bg-neutral-50 text-left text-[11px] uppercase tracking-wide text-neutral-500 dark:bg-neutral-800">
+                            <tr>
+                                <th class="w-10 px-2 py-2">No</th><th class="px-2 py-2">Account</th><th class="px-2 py-2">Cost Center</th>
+                                <th class="px-2 py-2">Keterangan</th><th class="w-44 px-2 py-2 text-right">Nilai Pengajuan</th><th v-if="ubahKoreksi" class="w-8"></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr v-for="(k, i) in form.koreksi" :key="k.budget_id" class="border-t border-neutral-100 align-top dark:border-neutral-800">
+                                <td class="px-2 py-2 font-mono text-neutral-400">{{ i + 1 }}</td>
+                                <td class="px-2 py-2 text-xs">{{ accountLabel(k.account_id) }}</td>
+                                <td class="px-2 py-2 text-xs">{{ labelCc(k.cost_center_id) }}</td>
+                                <td class="px-2 py-2 text-xs">
+                                    <textarea v-if="ubahKoreksi" v-model="k.keterangan" rows="2" :class="cellArea" maxlength="200" placeholder="Alasan koreksi…"></textarea>
+                                    <span v-else>{{ k.keterangan || '—' }}</span>
+                                </td>
+                                <td class="px-2 py-2 text-right">
+                                    <template v-if="ubahKoreksi">
+                                        <MoneyInput :model-value="k.nilai" @update:model-value="(v) => (k.nilai = v)" :class="['!h-8 !rounded-md !px-2 !text-xs font-mono', (Number(k.nilai) || 0) < kurangKoreksi(k) ? CINCIN_MERAH : '']" />
+                                        <p :class="['mt-0.5 text-[10.5px]', (Number(k.nilai) || 0) < kurangKoreksi(k) ? 'text-danger-500' : 'text-neutral-400']">Minimal {{ fmtRp(kurangKoreksi(k)) }} (kekurangan)</p>
+                                    </template>
+                                    <span v-else class="font-mono text-xs">{{ fmtRp(k.nilai) }}</span>
+                                </td>
+                                <td v-if="ubahKoreksi" class="px-1 py-2 text-center"><button type="button" class="text-danger-500" title="Batalkan pengajuan koreksi" @click="hapusKoreksi(i)"><Trash2 class="h-4 w-4" /></button></td>
+                            </tr>
+                        </tbody>
+                    </table>
                 </div>
             </div>
         </div>
@@ -1122,6 +1261,49 @@ const cellArea = 'w-full rounded-md border border-neutral-300 bg-white px-2 py-1
                     <tfoot><tr class="border-t-2 border-neutral-200 font-semibold dark:border-neutral-700"><td colspan="3" class="py-1 text-right text-neutral-500">Grand Total</td><td class="py-1 text-right font-mono">{{ fmtRp(jurnalDebit) }}</td><td class="py-1 text-right font-mono">{{ fmtRp(jurnalKredit) }}</td></tr></tfoot>
                 </table>
             </div>
+            <!-- Koreksi budget yang ikut diajukan -->
+            <div v-if="form.koreksi.length" class="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-3 dark:border-amber-900 dark:bg-amber-950/30">
+                <p class="text-sm font-semibold text-amber-800 dark:text-amber-200">Ada koreksi budget</p>
+                <p class="mt-0.5 text-xs text-amber-800/90 dark:text-amber-200/90">Sebagian baris jurnal melewati sisa budget {{ bulanBudget || 'bulan ini' }}. Invoice tetap disimpan dan berjalan; {{ form.koreksi.length }} koreksi budget di bawah ini ikut diajukan ke <b>Approval Inbox</b> (Accounting → GM) dan menambah budget bulan ini setelah disetujui.</p>
+            </div>
+        </div>
+
+        <!-- Koreksi Budget — baris yang melewati sisa budget bulan ini -->
+        <div v-if="form.koreksi.length && step === 5" class="card p-5">
+            <div class="mb-1 flex items-center justify-between gap-2">
+                <h2 class="font-semibold">Koreksi Budget</h2>
+                <span class="text-[11px] text-neutral-400">{{ bulanBudget }}</span>
+            </div>
+            <p class="mb-2 text-[11px] text-neutral-500">Diajukan bersama invoice ini ke Approval Inbox (Accounting → GM). Setelah disetujui, nilai pengajuan ditambahkan ke budget bulan ini.</p>
+            <div class="overflow-x-auto rounded-lg border border-neutral-200 dark:border-neutral-800">
+                <table class="w-full text-sm">
+                    <thead class="bg-neutral-50 text-left text-[11px] uppercase tracking-wide text-neutral-500 dark:bg-neutral-800">
+                        <tr>
+                            <th class="w-10 px-2 py-2">No</th><th class="px-2 py-2">Account</th><th class="px-2 py-2">Cost Center</th>
+                            <th class="px-2 py-2">Keterangan</th><th class="w-44 px-2 py-2 text-right">Nilai Pengajuan</th><th v-if="ubahKoreksi" class="w-8"></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr v-for="(k, i) in form.koreksi" :key="k.budget_id" class="border-t border-neutral-100 align-top dark:border-neutral-800">
+                            <td class="px-2 py-2 font-mono text-neutral-400">{{ i + 1 }}</td>
+                            <td class="px-2 py-2 text-xs">{{ accountLabel(k.account_id) }}</td>
+                            <td class="px-2 py-2 text-xs">{{ labelCc(k.cost_center_id) }}</td>
+                            <td class="px-2 py-2 text-xs">
+                                <textarea v-if="ubahKoreksi" v-model="k.keterangan" rows="2" :class="cellArea" maxlength="200" placeholder="Alasan koreksi…"></textarea>
+                                <span v-else>{{ k.keterangan || '—' }}</span>
+                            </td>
+                            <td class="px-2 py-2 text-right">
+                                <template v-if="ubahKoreksi">
+                                    <MoneyInput :model-value="k.nilai" @update:model-value="(v) => (k.nilai = v)" :class="['!h-8 !rounded-md !px-2 !text-xs font-mono', (Number(k.nilai) || 0) < kurangKoreksi(k) ? CINCIN_MERAH : '']" />
+                                    <p :class="['mt-0.5 text-[10.5px]', (Number(k.nilai) || 0) < kurangKoreksi(k) ? 'text-danger-500' : 'text-neutral-400']">Minimal {{ fmtRp(kurangKoreksi(k)) }} (kekurangan)</p>
+                                </template>
+                                <span v-else class="font-mono text-xs">{{ fmtRp(k.nilai) }}</span>
+                            </td>
+                            <td v-if="ubahKoreksi" class="px-1 py-2 text-center"><button type="button" class="text-danger-500" title="Batalkan pengajuan koreksi" @click="hapusKoreksi(i)"><Trash2 class="h-4 w-4" /></button></td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
         </div>
 
         <!-- Nav -->
@@ -1130,6 +1312,9 @@ const cellArea = 'w-full rounded-md border border-neutral-300 bg-white px-2 py-1
             <span v-else></span>
             <!-- Alasan tombolnya mati DISEBUTKAN, bukan dibiarkan ditebak. Tombol nonaktif tanpa
                  keterangan pada wizard berlangkah membuat orang menyangka layarnya rusak. -->
+            <span v-if="step === 4 && !kurangCc.length && koreksiBelumCukup.length" class="self-center text-xs text-danger-500">
+                Melebihi sisa budget — klik "Koreksi Budget" pada baris merah{{ form.koreksi.length ? ' dan isi nilai pengajuan minimal sebesar kekurangannya' : '' }}.
+            </span>
             <span v-if="step === 4 && kurangCc.length" class="self-center text-xs text-danger-500">
                 Cost center wajib diisi untuk akun: {{ kurangCc.join(', ') }}.
             </span>

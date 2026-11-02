@@ -53,6 +53,7 @@ class ApprovalInboxController extends Controller
         $approval->load('steps')->loadMorph('approvable', [
             \App\Domain\BusinessSupport\Models\BsApBerkasUpload::class => ['supplier:id,name', 'files.jenis:id,name'],
             \App\Domain\BusinessSupport\Models\BsApInvoice::class => ['supplier:id,name'],
+            \App\Domain\BusinessSupport\Models\BsBudgetCorrection::class => ['account:id,code,name', 'costCenter:id,code,name', 'budget'],
         ]);
         abort_unless($this->inbox->canView($user, $approval), 403);
 

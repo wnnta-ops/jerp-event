@@ -6,6 +6,7 @@ namespace App\Http\Controllers\Web\BusinessSupport\Budget;
 
 use App\Domain\BusinessSupport\Models\BsBudget;
 use App\Domain\BusinessSupport\Models\BsBudgetCorrection;
+use App\Domain\BusinessSupport\Services\BudgetCorrectionService;
 use App\Http\Controllers\Controller;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -97,7 +98,7 @@ class BudgetCorrectionController extends Controller
         abort_unless($request->user()?->can('budget.correction.approve'), 403);
 
         $rows = BsBudgetCorrection::with(['account:id,code,name', 'costCenter:id,code,name'])
-            ->where('status', 'baru')->orderBy('doc_no')->get()
+            ->where('status', 'baru')->whereNull('approval_id')->orderBy('doc_no')->get()
             ->map(fn ($c) => [
                 'id' => $c->id, 'doc_no' => $c->doc_no, 'date' => $c->corr_date?->format('Y-m-d'),
                 'account' => $c->account?->code.' - '.$c->account?->name, 'cost_center' => $c->costCenter?->name ?? 'Semua',
@@ -122,27 +123,12 @@ class BudgetCorrectionController extends Controller
         ]);
         $approve = $v['decision'] === 'approve';
 
+        // Koreksi yang diajukan dari invoice hutang diputuskan di Approval Inbox (approval_id) —
+        // tidak ikut di sini, supaya satu koreksi tidak punya dua jalur keputusan.
         DB::transaction(function () use ($v, $request, $approve): void {
-            $corrections = BsBudgetCorrection::whereIn('id', $v['ids'])->where('status', 'baru')->get();
+            $corrections = BsBudgetCorrection::whereIn('id', $v['ids'])->where('status', 'baru')->whereNull('approval_id')->get();
             foreach ($corrections as $c) {
-                if ($approve && $c->budget_id) {
-                    $budget = BsBudget::find($c->budget_id);
-                    if ($budget) {
-                        $new   = round((float) $c->new_amount, 2);
-                        $delta = $new - (float) $budget->amount;
-                        // Sebar selisih merata pada periode koreksi (kompat tampilan bulanan).
-                        $from  = max(1, (int) $c->period_from);
-                        $to    = min(12, (int) $c->period_to);
-                        $span  = max(1, $to - $from + 1);
-                        $per   = round($delta / $span, 2);
-                        for ($m = $from; $m <= $to; $m++) {
-                            $budget->{'m'.$m} = round((float) ($budget->{'m'.$m} ?? 0) + $per, 2);
-                        }
-                        $budget->amount = $new;
-                        $budget->save();
-                    }
-                }
-                $c->update(['status' => $approve ? 'approved' : 'rejected', 'approved_at' => now(), 'approved_by' => $request->user()->id]);
+                app(BudgetCorrectionService::class)->putuskan($c, $approve, $request->user()->id);
             }
         });
 

@@ -13,7 +13,7 @@ use Illuminate\Support\Facades\DB;
 final class ActOnApproval
 {
     /** Jenis dokumen yang tidak boleh disetujui oleh pengajunya sendiri (kecuali SuperAdmin). */
-    public const NO_SELF_APPROVAL = ['memo_internal', 'ap_berkas', 'ap_invoice'];
+    public const NO_SELF_APPROVAL = ['memo_internal', 'ap_berkas', 'ap_invoice', 'budget_correction'];
 
     /**
      * @return Approval refresh setelah aksi.

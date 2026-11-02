@@ -11,6 +11,10 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 /**
  * Koreksi Budget (BO: Koreksi Budget Control, dok BC.MA/...).
+ *
+ * Diajukan dari menu Koreksi Budget (disetujui di layar Approval Koreksi) ATAU dari langkah
+ * Struktur Registrasi Invoice Hutang (source_type 'ap_invoice', disetujui lewat Approval Inbox —
+ * approval_id terisi). Lihat BudgetCorrectionService.
  */
 class BsBudgetCorrection extends Model
 {
@@ -20,7 +24,7 @@ class BsBudgetCorrection extends Model
     protected $fillable = [
         'tenant_id', 'doc_no', 'year', 'project', 'budget_id', 'cost_center_id', 'account_id',
         'corr_date', 'period_from', 'period_to', 'old_amount', 'new_amount', 'status', 'note',
-        'approved_at', 'approved_by', 'created_by',
+        'approved_at', 'approved_by', 'created_by', 'approval_id', 'source_type', 'source_id',
     ];
     protected $casts = [
         'year' => 'integer', 'period_from' => 'integer', 'period_to' => 'integer',
@@ -29,6 +33,12 @@ class BsBudgetCorrection extends Model
     ];
 
     public const STATUSES = ['baru' => 'Baru', 'approved' => 'Approved', 'rejected' => 'Not Approved'];
+
+    /** document_type approval koreksi budget di Approval Inbox. */
+    public const DOCUMENT_TYPE = 'budget_correction';
+
+    /** source_type koreksi yang diajukan dari Registrasi Invoice Hutang. */
+    public const SOURCE_INVOICE = 'ap_invoice';
 
     public function budget(): BelongsTo { return $this->belongsTo(BsBudget::class, 'budget_id'); }
     public function account(): BelongsTo { return $this->belongsTo(BsAccount::class, 'account_id'); }

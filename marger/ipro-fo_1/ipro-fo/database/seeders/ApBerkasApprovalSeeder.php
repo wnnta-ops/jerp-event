@@ -9,6 +9,7 @@ use App\Domain\Approval\Models\ApprovalChainStep;
 use App\Domain\ApprovalInbox\Models\MemoInternal;
 use App\Domain\BusinessSupport\Models\BsApBerkasUpload;
 use App\Domain\BusinessSupport\Models\BsApInvoice;
+use App\Domain\BusinessSupport\Models\BsBudgetCorrection;
 use App\Domain\BusinessSupport\Services\ApBerkasService;
 use App\Domain\Foundation\Tenant\Models\Tenant;
 use Illuminate\Database\Seeder;
@@ -30,6 +31,9 @@ class ApBerkasApprovalSeeder extends Seeder
 {
     /** Peran staf pengunggah yang juga meregistrasi Invoice Hutang dari berkasnya sendiri. */
     public const PENGAJU_INVOICE = ['Collection'];
+
+    /** Urutan approval Koreksi Budget dari invoice hutang (level => peran). */
+    public const KOREKSI_BUDGET_STEPS = [1 => 'Accounting', 2 => 'GM'];
 
     public function run(): void
     {
@@ -89,6 +93,20 @@ class ApBerkasApprovalSeeder extends Seeder
             ApprovalChainStep::updateOrCreate(
                 ['approval_chain_id' => $invoice->id, 'level' => $level],
                 ['approver_type' => 'role', 'approver_value' => $role, 'is_final' => $level === array_key_last(MemoInternal::STEPS)],
+            );
+        }
+
+        // Koreksi Budget yang diajukan dari langkah Struktur Registrasi Invoice Hutang (sisa budget
+        // bulan itu terlampaui): Accounting (budget control) → GM. Disetujui penuh → tambahan
+        // masuk ke budget bulan invoice (SyncBudgetCorrectionStatus).
+        $koreksi = ApprovalChain::updateOrCreate(
+            ['tenant_id' => $tenant->id, 'project_id' => null, 'document_type' => BsBudgetCorrection::DOCUMENT_TYPE, 'code' => 'KB-DEFAULT'],
+            ['name' => 'Koreksi Budget dari Invoice Hutang', 'match_conditions' => null, 'is_active' => true],
+        );
+        foreach (self::KOREKSI_BUDGET_STEPS as $level => $role) {
+            ApprovalChainStep::updateOrCreate(
+                ['approval_chain_id' => $koreksi->id, 'level' => $level],
+                ['approver_type' => 'role', 'approver_value' => $role, 'is_final' => $level === array_key_last(self::KOREKSI_BUDGET_STEPS)],
             );
         }
 

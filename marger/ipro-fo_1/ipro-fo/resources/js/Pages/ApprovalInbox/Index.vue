@@ -58,7 +58,7 @@ const dot: Record<Stage['state'], string> = {
         <div class="flex flex-wrap items-center justify-between gap-3">
             <div>
                 <h1 class="text-2xl font-bold">Approval Inbox</h1>
-                <p class="text-sm text-neutral-500">Memo Internal, TTD Berkas & Invoice Hutang — Accounting → Finance → GM → Direktur → MW / BA</p>
+                <p class="text-sm text-neutral-500">TTD Berkas, Invoice Hutang & Koreksi Budget — Accounting → Finance → GM → Direktur → MW / BA</p>
             </div>
         </div>
 

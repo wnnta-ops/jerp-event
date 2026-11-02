@@ -41,12 +41,18 @@ final class BudgetGuardService
     /**
      * @param  array<int,array<string,mixed>>  $lines  baris jurnal (account_id, cost_center_id, debit, credit)
      * @param  ?int  $headerCostCenterId  cost center header (fallback bila baris tak punya)
+     * @param  array<int,float>  $koreksi  budget_id → tambahan yang DIAJUKAN bersama dokumen ini (koreksi
+     *   budget dari Registrasi Invoice Hutang) — dihitung sebagai ruang tambahan bulan itu.
+     *
+     * PENJAGA BULANAN: yang dibandingkan adalah anggaran BULAN tanggal dokumen (kolom m1..m12)
+     * dengan realisasi bulan itu saja — bukan anggaran setahun. Sisa bulan lalu tidak terbawa.
      *
      * @throws BusinessRuleException bila ada (akun+cost center) yang melebihi anggaran
      */
-    public function assertWithinBudget(array $lines, ?int $headerCostCenterId, string $journalDate, ?int $excludeJournalId = null): void
+    public function assertWithinBudget(array $lines, ?int $headerCostCenterId, string $journalDate, ?int $excludeJournalId = null, array $koreksi = []): void
     {
-        $year = (int) Carbon::parse($journalDate)->year;
+        $tgl = Carbon::parse($journalDate);
+        $year = (int) $tgl->year;
 
         // Kontribusi NETTO (debit − credit, bertanda sesuai jenis akun) — netting dulu, BUKAN buang baris negatif,
         // agar debit + kredit pada akun+cost center yang sama tidak dihitung berlebih (konsisten dgn realisasi GL).
@@ -74,7 +80,7 @@ final class BudgetGuardService
             $budget = BsBudget::where('year', $year)->where('account_id', $accountId)
                 ->where('cost_center_id', $cc)->where('status', 'approved')->first();
             if ($budget) {
-                $this->assertCap($budget, $year, $accountId, $cc, $delta, $excludeJournalId);
+                $this->assertCap($budget, $tgl, $accountId, $cc, $delta, $excludeJournalId, (float) ($koreksi[$budget->id] ?? 0));
             }
         }
 
@@ -86,7 +92,7 @@ final class BudgetGuardService
             $budget = BsBudget::where('year', $year)->where('account_id', $accountId)
                 ->whereNull('cost_center_id')->where('status', 'approved')->first();
             if ($budget) {
-                $this->assertCap($budget, $year, (int) $accountId, null, $delta, $excludeJournalId);
+                $this->assertCap($budget, $tgl, (int) $accountId, null, $delta, $excludeJournalId, (float) ($koreksi[$budget->id] ?? 0));
             }
         }
 
@@ -224,18 +230,73 @@ final class BudgetGuardService
         }
     }
 
-    /** Lempar OVER_BUDGET bila realisasi + tambahan melewati plafon. $cc null = anggaran lintas cost center ("Semua"). */
-    private function assertCap(BsBudget $budget, int $year, int $accountId, ?int $cc, float $delta, ?int $excludeJournalId): void
+    /**
+     * Sisa budget BULAN tanggal dokumen untuk satu akun × cost center — dipakai kolom "Sisa Budget"
+     * di Struktur Jurnal. Anggaran per cost center didahulukan; bila tidak ada, anggaran "Semua
+     * cost center" (realisasinya lintas cost center). null = akun ini tidak punya anggaran.
+     *
+     * @return array{budget_id:int, cakupan:string, anggaran:float, terpakai:float, tanda:int}|null
+     */
+    public function sisaBulan(int $accountId, ?int $costCenterId, string $tanggal, ?int $excludeJournalId = null): ?array
     {
-        $cap  = round((float) $budget->amount, 2);
-        $used = $this->realisasi->total($year, $accountId, $cc, excludeJournalId: $excludeJournalId);
-        if (round($used + $delta, 2) > $cap + 0.001) {
-            $acc   = BsAccount::find($accountId);
-            $rp    = fn ($v) => 'Rp '.number_format((float) $v, 0, ',', '.');
+        $tgl = Carbon::parse($tanggal);
+        $budget = $costCenterId
+            ? BsBudget::where('year', $tgl->year)->where('account_id', $accountId)->where('cost_center_id', $costCenterId)->where('status', 'approved')->first()
+            : null;
+        $cc = $costCenterId;
+        if (! $budget) {
+            $budget = BsBudget::where('year', $tgl->year)->where('account_id', $accountId)->whereNull('cost_center_id')->where('status', 'approved')->first();
+            $cc = null;
+        }
+        if (! $budget) {
+            return null;
+        }
+
+        return [
+            'budget_id' => $budget->id,
+            'cakupan' => $cc === null ? 'semua' : 'cc',
+            'anggaran' => self::anggaranBulan($budget, (int) $tgl->month),
+            'terpakai' => $this->terpakaiBulan($tgl, $accountId, $cc, $excludeJournalId),
+            // +1: debit menambah realisasi (akun beban); -1: kredit yang menambah.
+            'tanda' => $this->realisasi->contribution($accountId, 1, 0) >= 0 ? 1 : -1,
+        ];
+    }
+
+    /**
+     * Anggaran satu bulan dari master budget (kolom m1..m12). Budget lama yang belum dirinci per
+     * bulan (seluruh kolom bulanan kosong) dibagi rata 12.
+     */
+    public static function anggaranBulan(BsBudget $budget, int $bulan): float
+    {
+        $rinci = 0.0;
+        for ($m = 1; $m <= 12; $m++) {
+            $rinci += abs((float) ($budget->{'m'.$m} ?? 0));
+        }
+
+        return round($rinci > 0 ? (float) ($budget->{'m'.$bulan} ?? 0) : (float) $budget->amount / 12, 2);
+    }
+
+    /** Realisasi akun × cost center (null = lintas cost center) pada BULAN tanggal tersebut. */
+    private function terpakaiBulan(Carbon $tgl, int $accountId, ?int $cc, ?int $excludeJournalId): float
+    {
+        return $this->realisasi->total((int) $tgl->year, $accountId, $cc,
+            $tgl->copy()->startOfMonth()->toDateString(), $tgl->copy()->endOfMonth()->toDateString(), $excludeJournalId);
+    }
+
+    /** Lempar OVER_BUDGET bila realisasi BULAN ini + tambahan melewati anggaran bulan ini (+ koreksi yang diajukan). $cc null = anggaran lintas cost center ("Semua"). */
+    private function assertCap(BsBudget $budget, Carbon $tgl, int $accountId, ?int $cc, float $delta, ?int $excludeJournalId, float $koreksi = 0.0): void
+    {
+        $cap = self::anggaranBulan($budget, (int) $tgl->month);
+        $used = $this->terpakaiBulan($tgl, $accountId, $cc, $excludeJournalId);
+        if (round($used + $delta, 2) > round($cap + $koreksi, 2) + 0.001) {
+            $acc = BsAccount::find($accountId);
+            $rp = fn ($v) => 'Rp '.number_format((float) $v, 0, ',', '.');
             $scope = $cc === null ? ' (semua cost center)' : '';
+            $periode = BsBudget::MONTHS[$tgl->month - 1].' '.$tgl->year;
             throw new BusinessRuleException(
-                'Melebihi anggaran '.$year.$scope.' untuk akun '.$acc?->code.' '.$acc?->name.': anggaran '.$rp($cap)
-                .', realisasi '.$rp($used).', tambahan '.$rp($delta).' → sisa hanya '.$rp(max(0, $cap - $used))
+                'Melebihi anggaran '.$periode.$scope.' untuk akun '.$acc?->code.' '.$acc?->name.': anggaran bulan ini '.$rp($cap)
+                .', realisasi bulan ini '.$rp($used).', tambahan '.$rp($delta).' → sisa hanya '.$rp(max(0, $cap - $used))
+                .($koreksi > 0 ? ', koreksi diajukan '.$rp($koreksi).' belum mencukupi' : ' — ajukan Koreksi Budget')
                 .'. Input ditolak.',
                 errorCode: 'OVER_BUDGET',
             );

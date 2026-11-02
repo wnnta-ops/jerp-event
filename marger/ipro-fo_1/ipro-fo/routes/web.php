@@ -704,6 +704,7 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
     Route::post('/business-support/payable', [BsApController::class, 'store'])->name('bs.ap.store');
     // Draft Registrasi Invoice Hutang (dipakai tombol "Edit" berkas di langkah Detil Tagihan).
     Route::post('/business-support/payable/draft', [BsApController::class, 'simpanDraft'])->name('bs.ap.draft.store');
+    Route::get('/business-support/payable/sisa-budget', [BsApController::class, 'sisaBudget'])->name('bs.ap.sisa-budget'); // kolom Sisa Budget di langkah Struktur
     Route::delete('/business-support/payable/draft', [BsApController::class, 'buangDraft'])->name('bs.ap.draft.destroy');
     // AP › Master: Reimburse Biaya Karyawan & Deposit Renovasi Customer — alur Invoice Hutang,
     // dibedakan penerima & akunnya (BsApInvoice::JENIS). Detail/Memo/Kuitansi memakai rute bs.ap.*.
