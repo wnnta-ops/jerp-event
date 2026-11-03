@@ -477,6 +477,8 @@ class ApInvoiceController extends Controller
             // Memo Urgent yang sudah disetujui Direktur & belum dipakai invoice lain — tabel di
             // bawah Struktur Jurnal, satu memo per invoice (opsional).
             'memoUrgent' => app(\App\Domain\ApprovalInbox\Services\MemoUntukInvoice::class)->pilihan($edit?->id),
+            // Tautan "Buat Memo Urgent" di langkah 1 — hanya bagi yang boleh mengajukan memo.
+            'bisaBuatMemo' => (bool) $request->user()?->can('approvalinbox.submit'),
         ]);
     }
 

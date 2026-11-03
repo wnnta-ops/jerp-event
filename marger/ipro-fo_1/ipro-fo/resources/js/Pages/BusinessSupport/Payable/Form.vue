@@ -61,6 +61,7 @@ const props = defineProps<{
     units: Array<any>;
     /** Memo Urgent yang sudah disetujui Direktur & belum dipakai invoice lain (satu memo per invoice, opsional). */
     memoUrgent?: Array<{ id: number; number: string; date: string | null; department: string | null; subject: string; amount: number; status: string; url: string | null }>;
+    bisaBuatMemo?: boolean;
 }>();
 
 const steps = ['Pilih ' + props.jenis.penerima, 'Input Transaksi', 'Detil Tagihan', 'Struktur', 'Selesai'];
@@ -786,6 +787,16 @@ const memoTampil = computed(() => {
 });
 const memoDipilih = computed(() => (props.memoUrgent ?? []).find((m) => m.id === form.memo_internal_id) ?? null);
 function pilihMemo(id: number) { form.memo_internal_id = form.memo_internal_id === id ? null : id; }
+/* Dropdown cari memo di langkah 1 — pilihannya sama dengan tabel di langkah Struktur. */
+const opsiMemo = computed(() => (props.memoUrgent ?? []).map((m) => ({
+    id: m.id, label: `${m.number} — ${m.subject} · ${fmtRp(m.amount)}${m.department ? ' · ' + m.department : ''}`,
+})));
+const memuatMemo = ref(false);
+/** Ambil ulang daftar memo (mis. sesudah membuat / menyetujui memo di tab lain) tanpa mengganggu isian. */
+function muatUlangMemo() {
+    memuatMemo.value = true;
+    router.reload({ only: ['memoUrgent'], onFinish: () => { memuatMemo.value = false; } });
+}
 
 function canNext() {
     if (step.value === 1) return !!form[kolomPihak] && (props.jenis.kunci !== 'deposit' || rekeningLengkap.value);
@@ -921,6 +932,20 @@ const cellArea = 'w-full rounded-md border border-neutral-300 bg-white px-2 py-1
 
         <!-- Step 1: Pilih Supplier -->
         <div v-show="step === 1" class="card p-5">
+            <!-- Memo Urgent (opsional) — memo yang sudah disetujui Direktur; dibuat di modul Memo Urgent. -->
+            <div class="mb-4 rounded-lg border border-neutral-200 bg-neutral-50/60 p-3 dark:border-neutral-800 dark:bg-neutral-800/40">
+                <div class="mb-1.5 flex flex-wrap items-center justify-between gap-2">
+                    <label class="text-sm font-medium">Memo Urgent <span class="text-xs font-normal text-neutral-400">(opsional)</span></label>
+                    <div class="flex items-center gap-3 text-xs">
+                        <button type="button" class="text-neutral-500 hover:text-primary-600 disabled:opacity-50" :disabled="memuatMemo" @click="muatUlangMemo">{{ memuatMemo ? 'Memuat…' : 'Muat ulang' }}</button>
+                        <a v-if="bisaBuatMemo" :href="route('approval-inbox.create')" target="_blank" rel="noopener" class="inline-flex items-center gap-1 font-medium text-primary-600 hover:underline"><Plus class="h-3.5 w-3.5" /> Buat Memo Urgent</a>
+                    </div>
+                </div>
+                <SearchSelect v-model="form.memo_internal_id" :options="opsiMemo" :placeholder="opsiMemo.length ? '— cari no. memo / perihal —' : '— belum ada memo yang disetujui Direktur —'" :no-truncate="true" />
+                <p v-if="memoDipilih" class="mt-1 text-[11px] text-neutral-500">{{ memoDipilih.date }} · {{ memoDipilih.department || '—' }} · <span class="text-amber-600">{{ memoDipilih.status }}</span>
+                    <a v-if="memoDipilih.url" :href="memoDipilih.url" target="_blank" rel="noopener" class="ml-1 text-primary-600 hover:underline">lihat memo</a></p>
+                <p v-else class="mt-1 text-[11px] text-neutral-400">Memo baru dibuat di modul Memo Urgent (tab baru) dan muncul di sini setelah disetujui Direktur — klik "Muat ulang".</p>
+            </div>
             <div class="relative mb-3"><Search class="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-neutral-400" /><input v-model="supplierSearch" :placeholder="jenis.kunci === 'invoice' ? 'Cari supplier / kontraktor…' : 'Cari ' + jenis.penerima.toLowerCase() + '…'" :class="[inputCls,'pl-9']" /></div>
             <div class="max-h-96 divide-y divide-neutral-100 overflow-y-auto dark:divide-neutral-800">
                 <button v-for="s in filteredSuppliers" :key="s.id" type="button" @click="pickSupplier(s)" class="flex w-full items-center justify-between px-2 py-2.5 text-left text-sm hover:bg-neutral-50 dark:hover:bg-neutral-800/50" :class="form[kolomPihak] === s.id ? 'bg-primary-50 dark:bg-primary-900/20' : ''">
