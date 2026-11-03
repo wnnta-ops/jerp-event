@@ -811,32 +811,38 @@ const overBudget = computed(() => {
 });
 const koreksiUntuk = (budgetId: number) => (form.koreksi as any[]).find((k) => k.budget_id === budgetId);
 const alokasiUntuk = (budgetId: number) => (form.alokasi as any[]).find((k) => k.budget_id === budgetId);
-function overBaris(l: any) {
-    const info = sisaInfo.value[kunciBudget(l)];
-    return info ? overBudget.value.find((x) => x.budget_id === info.budget_id) ?? null : null;
+/** Anggaran baris ini (null = akunnya tanpa anggaran). kurang = kekurangan bila terlampaui, 0 bila masih cukup. */
+function budgetBaris(l: any) {
+    const info = l.account_id ? sisaInfo.value[kunciBudget(l)] : null;
+    if (!info) return null;
+    const sisa = sisaAnggaran(info);
+    return { budget_id: info.budget_id, account_id: l.account_id, cost_center_id: info.cakupan === 'cc' ? l.cost_center_id : null,
+        keterangan: String(l.description ?? '').trim(), kurang: sisa < 0 ? -sisa : 0 };
 }
-/* Baris merah diselesaikan dengan SALAH SATU: Koreksi Budget (tambah anggaran, lewat Approval
-   Inbox) atau Alokasi (pindah dari sisa bulan ini di budget lain, langsung berlaku). */
+/* Baris merah WAJIB diselesaikan dengan SALAH SATU: Koreksi Budget (tambah anggaran, lewat Approval
+   Inbox) atau Alokasi (pindah dari sisa bulan ini di budget lain, langsung berlaku). Baris yang
+   anggarannya masih cukup juga boleh memakainya (opsional) — nilai awalnya = nilai baris. */
 function ajukanKoreksi(l: any) {
-    const o = overBaris(l);
+    const o = budgetBaris(l);
     if (!o || koreksiUntuk(o.budget_id) || alokasiUntuk(o.budget_id)) return;
-    form.koreksi.push({ budget_id: o.budget_id, account_id: o.account_id, cost_center_id: o.cost_center_id, keterangan: o.keterangan, nilai: o.kurang });
+    form.koreksi.push({ budget_id: o.budget_id, account_id: o.account_id, cost_center_id: o.cost_center_id, keterangan: o.keterangan, nilai: o.kurang || r0(l.debit) });
 }
 function ajukanAlokasi(l: any) {
-    const o = overBaris(l);
+    const o = budgetBaris(l);
     if (!o || koreksiUntuk(o.budget_id) || alokasiUntuk(o.budget_id)) return;
-    form.alokasi.push({ budget_id: o.budget_id, account_id: o.account_id, cost_center_id: o.cost_center_id, keterangan: o.keterangan, nilai: o.kurang, dari_budget_id: '' });
+    form.alokasi.push({ budget_id: o.budget_id, account_id: o.account_id, cost_center_id: o.cost_center_id, keterangan: o.keterangan, nilai: o.kurang || r0(l.debit), dari_budget_id: '' });
     muatSumber();
 }
 function hapusKoreksi(i: number) { form.koreksi.splice(i, 1); }
 function hapusAlokasi(i: number) { form.alokasi.splice(i, 1); }
 /** Tabel koreksi/alokasi bisa diubah di langkah Struktur; di Selesai hanya ditampilkan. */
 const ubahKoreksi = computed(() => step.value === 4);
-// Anggaran yang tak lagi terlampaui (nilai/akun diubah) → koreksi/alokasinya dibuang otomatis.
-watch(overBudget, (over) => {
+// Anggaran yang tak lagi dipakai baris jurnal (akun dihapus/diganti) → koreksi/alokasinya dibuang otomatis.
+const budgetDipakai = computed(() => (form.journal_lines as any[]).map((l) => budgetBaris(l)?.budget_id).filter(Boolean) as number[]);
+watch(budgetDipakai, (dipakai) => {
     if (!Object.keys(sisaInfo.value).length) return;
-    form.koreksi = (form.koreksi as any[]).filter((k) => over.some((o) => o.budget_id === k.budget_id));
-    form.alokasi = (form.alokasi as any[]).filter((k) => over.some((o) => o.budget_id === k.budget_id));
+    form.koreksi = (form.koreksi as any[]).filter((k) => dipakai.includes(k.budget_id));
+    form.alokasi = (form.alokasi as any[]).filter((k) => dipakai.includes(k.budget_id));
 });
 const kurangKoreksi = (k: any) => overBudget.value.find((o) => o.budget_id === k.budget_id)?.kurang ?? 0;
 
@@ -863,15 +869,20 @@ function sisaSumber(a: any): number | null {
     const lain = (form.alokasi as any[]).filter((x) => x !== a && x.dari_budget_id === a.dari_budget_id).reduce((t, x) => t + (Number(x.nilai) || 0), 0);
     return r0(b.sisa - lain);
 }
-const alokasiSalah = (a: any) => !a.dari_budget_id || (Number(a.nilai) || 0) < kurangKoreksi(a) || (sisaSumber(a) !== null && (Number(a.nilai) || 0) > (sisaSumber(a) as number));
+const alokasiSalah = (a: any) => !a.dari_budget_id || !(Number(a.nilai) > 0) || (Number(a.nilai) || 0) < kurangKoreksi(a) || (sisaSumber(a) !== null && (Number(a.nilai) || 0) > (sisaSumber(a) as number));
 
 /** Anggaran terlampaui yang belum diselesaikan: tanpa koreksi/alokasi, nilai di bawah kekurangan, atau alokasi tanpa/melebihi asal. */
-const koreksiBelumCukup = computed(() => overBudget.value.filter((o) => {
-    const k = koreksiUntuk(o.budget_id);
-    const a = alokasiUntuk(o.budget_id);
-    if (a) return alokasiSalah(a);
-    return !k || (Number(k.nilai) || 0) < o.kurang;
-}));
+const koreksiBelumCukup = computed(() => [
+    ...overBudget.value.filter((o) => {
+        const k = koreksiUntuk(o.budget_id);
+        const a = alokasiUntuk(o.budget_id);
+        if (a) return alokasiSalah(a);
+        return !k || (Number(k.nilai) || 0) < o.kurang;
+    }),
+    // Koreksi/alokasi opsional (anggaran masih cukup) tetap harus lengkap: nilai > 0, asal alokasi dipilih.
+    ...(form.koreksi as any[]).filter((k) => !overBudget.value.some((o) => o.budget_id === k.budget_id) && !(Number(k.nilai) > 0)),
+    ...(form.alokasi as any[]).filter((a) => !overBudget.value.some((o) => o.budget_id === a.budget_id) && alokasiSalah(a)),
+]);
 
 /* MEMO URGENT — satu memo (sudah disetujui Direktur) boleh ditarik ke invoice ini.
    Invoice Hutang: memo menyebut supplier-nya. Kalau supplier sudah dipilih, hanya memo supplier itu
@@ -1460,10 +1471,11 @@ const cellArea = 'w-full rounded-md border border-neutral-300 bg-white px-2 py-1
                                     <template v-if="sisaBaris(l) === null"><span class="text-[11px] text-neutral-400" title="Akun ini tidak punya anggaran">—</span></template>
                                     <template v-else-if="sisaBaris(l) !== undefined">
                                         <div :class="['font-mono text-xs', (sisaBaris(l) as number) < 0 ? 'font-semibold text-danger-600' : 'text-success-700 dark:text-success-400']">{{ fmtNum(sisaBaris(l) as number) }}</div>
-                                        <template v-if="(sisaBaris(l) as number) < 0">
+                                        <!-- Alokasi / Koreksi: wajib bila minus, opsional bila masih cukup (baris debit ber-anggaran). -->
+                                        <template v-if="l.side === 'debit'">
                                             <span v-if="koreksiUntuk(sisaInfo[kunciBudget(l)]!.budget_id)" class="mt-1 inline-flex items-center gap-0.5 text-[10.5px] font-medium text-amber-600"><Check class="h-3 w-3" /> Koreksi diajukan</span>
                                             <span v-else-if="alokasiUntuk(sisaInfo[kunciBudget(l)]!.budget_id)" class="mt-1 inline-flex items-center gap-0.5 text-[10.5px] font-medium text-sky-600"><Check class="h-3 w-3" /> Dialokasikan</span>
-                                            <div v-else class="mt-1 flex justify-end gap-1">
+                                            <div v-else class="mt-1 flex justify-end gap-1" :class="(sisaBaris(l) as number) < 0 ? '' : 'opacity-70 hover:opacity-100'">
                                                 <button type="button" class="inline-flex h-6 items-center rounded-md border border-sky-300 bg-sky-50 px-2 text-[10.5px] font-semibold text-sky-700 hover:bg-sky-100 dark:border-sky-800 dark:bg-sky-950/40 dark:text-sky-300" title="Ambil dari sisa bulan ini di budget lain — langsung berlaku" @click="ajukanAlokasi(l)">Alokasi</button>
                                                 <button type="button" class="inline-flex h-6 items-center rounded-md border border-danger-300 bg-danger-50 px-2 text-[10.5px] font-semibold text-danger-700 hover:bg-danger-100 dark:border-danger-800 dark:bg-danger-950/40 dark:text-danger-300" title="Tambah anggaran bulan ini — lewat Approval Inbox" @click="ajukanKoreksi(l)">Koreksi</button>
                                             </div>
@@ -1524,7 +1536,7 @@ const cellArea = 'w-full rounded-md border border-neutral-300 bg-white px-2 py-1
                                 <td class="px-2 py-2 text-right">
                                     <template v-if="ubahKoreksi">
                                         <MoneyInput :model-value="k.nilai" @update:model-value="(v) => (k.nilai = v)" :class="['!h-8 !rounded-md !px-2 !text-xs font-mono', (Number(k.nilai) || 0) < kurangKoreksi(k) ? CINCIN_MERAH : '']" />
-                                        <p :class="['mt-0.5 text-[10.5px]', (Number(k.nilai) || 0) < kurangKoreksi(k) ? 'text-danger-500' : 'text-neutral-400']">Minimal {{ fmtRp(kurangKoreksi(k)) }} (kekurangan)</p>
+                                        <p :class="['mt-0.5 text-[10.5px]', (Number(k.nilai) || 0) < kurangKoreksi(k) ? 'text-danger-500' : 'text-neutral-400']">{{ kurangKoreksi(k) > 0 ? 'Minimal ' + fmtRp(kurangKoreksi(k)) + ' (kekurangan)' : 'Opsional — anggaran masih cukup' }}</p>
                                     </template>
                                     <span v-else class="font-mono text-xs">{{ fmtRp(k.nilai) }}</span>
                                 </td>
@@ -1569,7 +1581,7 @@ const cellArea = 'w-full rounded-md border border-neutral-300 bg-white px-2 py-1
                                 <td class="px-2 py-2 text-right">
                                     <template v-if="ubahKoreksi">
                                         <MoneyInput :model-value="a.nilai" @update:model-value="(v) => (a.nilai = v)" :class="['!h-8 !rounded-md !px-2 !text-xs font-mono', alokasiSalah(a) && a.dari_budget_id ? CINCIN_MERAH : '']" />
-                                        <p :class="['mt-0.5 text-[10.5px]', (Number(a.nilai) || 0) < kurangKoreksi(a) || (sisaSumber(a) !== null && (Number(a.nilai) || 0) > (sisaSumber(a) as number)) ? 'text-danger-500' : 'text-neutral-400']">Minimal {{ fmtRp(kurangKoreksi(a)) }}<template v-if="sisaSumber(a) !== null"> · maks {{ fmtRp(sisaSumber(a) as number) }}</template></p>
+                                        <p :class="['mt-0.5 text-[10.5px]', (Number(a.nilai) || 0) < kurangKoreksi(a) || (sisaSumber(a) !== null && (Number(a.nilai) || 0) > (sisaSumber(a) as number)) ? 'text-danger-500' : 'text-neutral-400']">{{ kurangKoreksi(a) > 0 ? 'Minimal ' + fmtRp(kurangKoreksi(a)) : 'Opsional' }}<template v-if="sisaSumber(a) !== null"> · maks {{ fmtRp(sisaSumber(a) as number) }}</template></p>
                                     </template>
                                     <span v-else class="font-mono text-xs">{{ fmtRp(a.nilai) }}</span>
                                 </td>
@@ -1685,7 +1697,7 @@ const cellArea = 'w-full rounded-md border border-neutral-300 bg-white px-2 py-1
                             <td class="px-2 py-2 text-right">
                                 <template v-if="ubahKoreksi">
                                     <MoneyInput :model-value="k.nilai" @update:model-value="(v) => (k.nilai = v)" :class="['!h-8 !rounded-md !px-2 !text-xs font-mono', (Number(k.nilai) || 0) < kurangKoreksi(k) ? CINCIN_MERAH : '']" />
-                                    <p :class="['mt-0.5 text-[10.5px]', (Number(k.nilai) || 0) < kurangKoreksi(k) ? 'text-danger-500' : 'text-neutral-400']">Minimal {{ fmtRp(kurangKoreksi(k)) }} (kekurangan)</p>
+                                    <p :class="['mt-0.5 text-[10.5px]', (Number(k.nilai) || 0) < kurangKoreksi(k) ? 'text-danger-500' : 'text-neutral-400']">{{ kurangKoreksi(k) > 0 ? 'Minimal ' + fmtRp(kurangKoreksi(k)) + ' (kekurangan)' : 'Opsional — anggaran masih cukup' }}</p>
                                 </template>
                                 <span v-else class="font-mono text-xs">{{ fmtRp(k.nilai) }}</span>
                             </td>
@@ -1731,7 +1743,7 @@ const cellArea = 'w-full rounded-md border border-neutral-300 bg-white px-2 py-1
                             <td class="px-2 py-2 text-right">
                                 <template v-if="ubahKoreksi">
                                     <MoneyInput :model-value="a.nilai" @update:model-value="(v) => (a.nilai = v)" :class="['!h-8 !rounded-md !px-2 !text-xs font-mono', alokasiSalah(a) && a.dari_budget_id ? CINCIN_MERAH : '']" />
-                                    <p :class="['mt-0.5 text-[10.5px]', (Number(a.nilai) || 0) < kurangKoreksi(a) || (sisaSumber(a) !== null && (Number(a.nilai) || 0) > (sisaSumber(a) as number)) ? 'text-danger-500' : 'text-neutral-400']">Minimal {{ fmtRp(kurangKoreksi(a)) }}<template v-if="sisaSumber(a) !== null"> · maks {{ fmtRp(sisaSumber(a) as number) }}</template></p>
+                                    <p :class="['mt-0.5 text-[10.5px]', (Number(a.nilai) || 0) < kurangKoreksi(a) || (sisaSumber(a) !== null && (Number(a.nilai) || 0) > (sisaSumber(a) as number)) ? 'text-danger-500' : 'text-neutral-400']">{{ kurangKoreksi(a) > 0 ? 'Minimal ' + fmtRp(kurangKoreksi(a)) : 'Opsional' }}<template v-if="sisaSumber(a) !== null"> · maks {{ fmtRp(sisaSumber(a) as number) }}</template></p>
                                 </template>
                                 <span v-else class="font-mono text-xs">{{ fmtRp(a.nilai) }}</span>
                             </td>
