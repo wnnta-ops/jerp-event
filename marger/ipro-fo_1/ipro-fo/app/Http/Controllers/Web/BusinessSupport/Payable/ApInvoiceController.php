@@ -854,6 +854,9 @@ class ApInvoiceController extends Controller
         if ($memoId && ! app(\App\Domain\ApprovalInbox\Services\MemoUntukInvoice::class)->boleh((int) $memoId, $lama?->id)) {
             return back()->withInput()->with('error', 'Memo Urgent ini belum disetujui Direktur atau sudah dipakai invoice lain.');
         }
+        if ($memoId && $jenis === 'invoice' && ! app(\App\Domain\ApprovalInbox\Services\MemoUntukInvoice::class)->supplierCocok((int) $memoId, $request->integer('supplier_id') ?: null)) {
+            return back()->withInput()->with('error', 'Supplier invoice berbeda dengan supplier di Memo Urgent yang ditarik.');
+        }
         $v['memo_internal_id'] = $memoId ? (int) $memoId : null;
 
         $tambahan = [];

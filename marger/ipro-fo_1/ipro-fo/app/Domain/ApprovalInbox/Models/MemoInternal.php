@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Domain\ApprovalInbox\Models;
 
 use App\Domain\Approval\Models\Approval;
+use App\Domain\BusinessSupport\Models\BsSupplier;
 use App\Models\User;
 use App\Support\Traits\HasTenant;
 use Illuminate\Database\Eloquent\Model;
@@ -18,6 +19,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
  * @property int $id
  * @property string $memo_number
  * @property string $status diajukan | disetujui | ditolak
+ * @property int|null $supplier_id
  * @property int|null $approval_id
  * @property int $created_by
  */
@@ -40,7 +42,7 @@ class MemoInternal extends Model
     ];
 
     protected $fillable = [
-        'tenant_id', 'memo_number', 'memo_date', 'department',
+        'tenant_id', 'memo_number', 'memo_date', 'department', 'supplier_id',
         'subject', 'body', 'amount', 'status', 'approval_id', 'created_by',
     ];
 
@@ -52,6 +54,11 @@ class MemoInternal extends Model
     public function approval(): BelongsTo
     {
         return $this->belongsTo(Approval::class);
+    }
+
+    public function supplier(): BelongsTo
+    {
+        return $this->belongsTo(BsSupplier::class, 'supplier_id');
     }
 
     public function creator(): BelongsTo

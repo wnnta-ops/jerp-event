@@ -56,6 +56,7 @@ class ApprovalInboxController extends Controller
             'today' => now()->toDateString(),
             'departemen' => $this->pilihanDepartemen($request->user()),
             'semuaDept' => $request->user()->hasRole('SuperAdmin'),
+            'suppliers' => $this->pilihanSupplier()->get(['id', 'code', 'name']),
         ]);
     }
 
@@ -81,6 +82,17 @@ class ApprovalInboxController extends Controller
         return $q->get(['id', 'code', 'name'])->map(fn ($c) => ['id' => $c->id, 'code' => $c->code, 'name' => $c->name])->all();
     }
 
+    /**
+     * Supplier Memo Urgent = master supplier aktif yang sama dengan pilihan Invoice Hutang (tanpa
+     * penerima Reimburse/Deposit), supaya memo bisa ditarik ke invoice supplier tersebut.
+     */
+    private function pilihanSupplier(): \Illuminate\Database\Eloquent\Builder
+    {
+        return \App\Domain\BusinessSupport\Models\BsSupplier::query()->where('is_active', true)
+            ->where(fn ($q) => $q->whereNull('category')->orWhereNotIn('category', \App\Domain\BusinessSupport\Services\PenerimaHutang::KATEGORI))
+            ->orderBy('name');
+    }
+
     public function store(Request $request, SubmitMemoInternal $submit): RedirectResponse
     {
         abort_unless($request->user()?->can('approvalinbox.submit'), 403);
@@ -93,6 +105,7 @@ class ApprovalInboxController extends Controller
         $data = $request->validate([
             'memo_date' => 'required|date',
             'cost_center_id' => ['required', 'integer', \Illuminate\Validation\Rule::in($dept->pluck('id')->all())],
+            'supplier_id' => ['required', 'integer', fn ($a, $v, $fail) => $this->pilihanSupplier()->whereKey($v)->exists() || $fail('Supplier tidak ditemukan atau tidak aktif.')],
             'subject' => 'required|string|max:200',
             'body' => 'required|string|max:5000',
             'amount' => 'required|numeric|min:1',
@@ -100,7 +113,8 @@ class ApprovalInboxController extends Controller
             'cost_center_id.in' => 'Departemen ini bukan departemen Anda.',
             'amount.required' => 'Nominal wajib diisi.',
             'amount.min' => 'Nominal wajib diisi.',
-        ], ['cost_center_id' => 'Departemen', 'amount' => 'Nominal']);
+            'supplier_id.required' => 'Pilih supplier.',
+        ], ['cost_center_id' => 'Departemen', 'supplier_id' => 'Supplier', 'amount' => 'Nominal']);
         $data['department'] = $dept->firstWhere('id', (int) $data['cost_center_id'])['name'];
         unset($data['cost_center_id']);
 
@@ -123,6 +137,7 @@ class ApprovalInboxController extends Controller
             \App\Domain\BusinessSupport\Models\BsApBerkasUpload::class => ['supplier:id,name', 'files.jenis:id,name'],
             \App\Domain\BusinessSupport\Models\BsApInvoice::class => ['supplier:id,name'],
             \App\Domain\BusinessSupport\Models\BsBudgetCorrection::class => ['account:id,code,name', 'costCenter:id,code,name', 'budget'],
+            \App\Domain\ApprovalInbox\Models\MemoInternal::class => ['supplier:id,name'],
         ]);
         abort_unless($this->inbox->canView($user, $approval), 403);
 

@@ -212,6 +212,25 @@ try {
     $cek('setelah Direktur menyetujui → bisa ditarik', $pilihan->boleh($memo->id));
     $cek('status memo = "Menunggu MW / BA"', MemoUntukInvoice::status($memo) === 'Menunggu MW / BA', MemoUntukInvoice::status($memo));
 
+    // Memo menyebut supplier: wajib di form; invoice yang menarik memo harus ke supplier yang sama.
+    $supIds = DB::table('bs_suppliers')->where('is_active', 1)->whereNull('deleted_at')
+        ->where(fn ($q) => $q->whereNull('category')->orWhereNotIn('category', \App\Domain\BusinessSupport\Services\PenerimaHutang::KATEGORI))
+        ->orderBy('id')->limit(2)->pluck('id')->map(fn ($v) => (int) $v)->all();
+    $sebagai($admin);
+    try {
+        app()->call([app(\App\Http\Controllers\Web\ApprovalInbox\ApprovalInboxController::class), 'store'],
+            ['request' => $minta('POST', ['memo_date' => "{$tahun}-03-01", 'cost_center_id' => DB::table('bs_cost_centers')->value('id'), 'subject' => 'x', 'body' => 'x', 'amount' => 1000])]);
+        $tolak = false;
+    } catch (\Illuminate\Validation\ValidationException $e) {
+        $tolak = isset($e->errors()['supplier_id']);
+    }
+    $cek('form Memo Urgent menolak tanpa supplier', $tolak);
+    $memoSup = app(SubmitMemoInternal::class)->execute(['memo_date' => "{$tahun}-03-01", 'department' => 'Uji', 'supplier_id' => $supIds[0], 'subject' => 'Memo uji supplier', 'body' => 'Isi', 'amount' => 500_000]);
+    $ringkas = app(MemoUntukInvoice::class)->ringkas($memoSup->load(['approval.steps', 'supplier']));
+    $cek('ringkasan memo membawa supplier', $ringkas['supplier_id'] === $supIds[0] && $ringkas['supplier'] !== null, json_encode($ringkas));
+    $cek('supplier sama → cocok; beda → tidak', $pilihan->supplierCocok($memoSup->id, $supIds[0]) && ! $pilihan->supplierCocok($memoSup->id, $supIds[1]));
+    $cek('memo lama tanpa supplier cocok ke supplier mana pun', $pilihan->supplierCocok($memo->id, $supIds[1]));
+
     // Simpan invoice (jenis Reimburse — alurnya sama, tanpa wajib berkas) dengan alokasi + memo.
     $sebagai($admin);
     // Kategori "dipakai di" Reimburse disiapkan di dalam transaksi uji (data lokal hanya punya Invoice Hutang).
@@ -221,7 +240,7 @@ try {
             'credit_position' => $pakai->credit_position, 'payable_account_id' => $pakai->payable_account_id, 'created_at' => now(), 'updated_at' => now()]);
     }
     $kategori = $pakai?->category_id;
-    $karyawan = DB::table('bs_employees')->value('id');
+    $karyawan = DB::table('bs_employees')->whereNull('deleted_at')->where('is_active', 1)->value('id');
     $hutang = (int) ($pakai?->payable_account_id ?? 0);
     if (! $kategori || ! $karyawan || ! $hutang) {
         $cek('data contoh reimburse tersedia (kategori, karyawan, akun hutang)', false);

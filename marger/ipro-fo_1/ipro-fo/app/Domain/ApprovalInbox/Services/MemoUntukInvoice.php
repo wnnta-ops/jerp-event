@@ -13,7 +13,8 @@ use Illuminate\Support\Collection;
  *
  * Yang bisa ditarik: memo yang tahap DIREKTUR-nya sudah menyetujui (rantainya tetap berlanjut ke
  * MW / BA), belum ditolak, dan belum dipakai invoice lain. Status memo ikut tampil di daftar
- * invoice hutang.
+ * invoice hutang. Memo menyebut supplier-nya: invoice yang menarik memo harus ke supplier yang
+ * sama (memo lama tanpa supplier boleh ke supplier mana pun).
  */
 final class MemoUntukInvoice
 {
@@ -21,7 +22,7 @@ final class MemoUntukInvoice
     public const LEVEL_DIREKTUR = 4;
 
     /**
-     * @return Collection<int, array{id:int, number:string, date:?string, department:?string, subject:string, amount:float, status:string}>
+     * @return Collection<int, array{id:int, number:string, date:?string, department:?string, supplier_id:?int, supplier:?string, subject:string, amount:float, status:string}>
      */
     public function pilihan(?int $kecualiInvoiceId = null): Collection
     {
@@ -33,7 +34,7 @@ final class MemoUntukInvoice
             ->where('status', '!=', 'ditolak')
             ->whereNotIn('id', $terpakai ?: [0])
             ->whereHas('approval.steps', fn ($q) => $q->where('level', self::LEVEL_DIREKTUR)->where('status', 'approved'))
-            ->with('approval.steps')
+            ->with(['approval.steps', 'supplier:id,name'])
             ->orderByDesc('memo_date')->orderByDesc('id')->get()
             ->map(fn (MemoInternal $m) => $this->ringkas($m))->values();
     }
@@ -44,12 +45,22 @@ final class MemoUntukInvoice
         return $this->pilihan($kecualiInvoiceId)->contains('id', $memoId);
     }
 
-    /** @return array{id:int, number:string, date:?string, department:?string, subject:string, amount:float, status:string} */
+    /** Supplier memo cocok dengan supplier invoice? Memo tanpa supplier (memo lama) selalu cocok. */
+    public function supplierCocok(int $memoId, ?int $supplierId): bool
+    {
+        $memoSupplier = MemoInternal::query()->whereKey($memoId)->value('supplier_id');
+
+        return $memoSupplier === null || (int) $memoSupplier === (int) $supplierId;
+    }
+
+    /** @return array{id:int, number:string, date:?string, department:?string, supplier_id:?int, supplier:?string, subject:string, amount:float, status:string} */
     public function ringkas(MemoInternal $m): array
     {
         return [
             'id' => $m->id, 'number' => $m->memo_number, 'date' => $m->memo_date?->toDateString(),
-            'department' => $m->department, 'subject' => (string) $m->subject, 'amount' => (float) $m->amount,
+            'department' => $m->department,
+            'supplier_id' => $m->supplier_id ? (int) $m->supplier_id : null, 'supplier' => $m->supplier?->name,
+            'subject' => (string) $m->subject, 'amount' => (float) $m->amount,
             'status' => self::status($m),
             'url' => $m->approval_id ? route('approval-inbox.show', $m->approval_id) : null,
         ];
