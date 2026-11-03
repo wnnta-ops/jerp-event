@@ -218,11 +218,16 @@ function batalForm() {
  * masalah: gerbang layar menolong operator melengkapi isian, bukan menggantikan validasi.
  * Yang tidak boleh justru kebalikannya — melonggarkan di layar apa yang akan ditolak server.
  */
+const MAKS_KETERANGAN = 500; // = max validasi server & lebar kolom description
+/** Pesan error server untuk satu baris (lines.{i}.*), digabung jadi satu kalimat. */
+const errorBaris = (i: number) => Object.entries(form.errors as Record<string, string>)
+    .filter(([k]) => k.startsWith(`lines.${i}.`)).map(([, v]) => v).join(' ');
 function kurangnya(l: any): string[] {
     const k: string[] = [];
     if (!l.expense_account_id) k.push('akun beban');
     if (!l.cost_center_id) k.push('cost center');
     if (!String(l.description ?? '').trim()) k.push('keterangan');
+    else if (String(l.description).length > MAKS_KETERANGAN) k.push(`keterangan lebih dari ${MAKS_KETERANGAN} karakter`);
     if (!(Number(l.amount) > 0)) k.push('jumlah');
 
     return k;
@@ -272,6 +277,7 @@ const inputCls = 'h-9 w-full rounded-lg border border-neutral-300 bg-white px-3 
 // bertabrakan (border-neutral-300 vs border-amber-400) tidak ditentukan pemenangnya oleh
 // urutan di atribut, melainkan oleh urutan di berkas CSS — menumpuknya akan tampak jalan
 // di satu tempat lalu diam-diam gagal di tempat lain.
+const inputLebih = 'h-9 w-full rounded-lg border border-danger-500 bg-danger-50/50 px-3 text-sm ring-1 ring-danger-400 dark:bg-danger-900/10';
 const inputKurang = 'h-9 w-full rounded-lg border border-amber-400 bg-amber-50/50 px-3 text-sm dark:border-amber-500/60 dark:bg-amber-900/10';
 /** Cincin kuning pada SearchSelect — aditif, jadi aman ditumpuk di atas bingkainya. */
 const pilihKurang = 'rounded-lg ring-2 ring-amber-300 dark:ring-amber-500/40';
@@ -409,7 +415,7 @@ function backToIndex() {
                             <span v-if="l.cost_center" class="rounded bg-neutral-100 px-1.5 py-0.5 text-[11px] font-semibold text-neutral-600 dark:bg-neutral-800 dark:text-neutral-300">{{ l.cost_center.code }} · {{ l.cost_center.name }}</span>
                             <span v-else class="text-neutral-300 dark:text-neutral-600">—</span>
                         </td>
-                        <td class="py-1.5 text-neutral-500">{{ l.description }}</td>
+                        <td class="whitespace-pre-line break-words py-1.5 text-neutral-500">{{ l.description }}</td>
                         <td class="py-1.5 text-right font-mono">{{ fmtRp(l.amount) }}</td>
                     </tr>
                 </tbody>
@@ -644,21 +650,34 @@ function backToIndex() {
                         <th></th>
                     </tr></thead>
                     <tbody>
-                        <tr v-for="(l, i) in form.lines" :key="i">
-                            <td class="py-1 pr-2"><SearchSelect :model-value="l.expense_account_id" :options="expenseAccounts" placeholder="— cari akun —" no-truncate :class="l.expense_account_id ? '' : pilihKurang" @update:model-value="(v) => pilihAkunBeban(l, v)" /></td>
+                        <template v-for="(l, i) in form.lines" :key="i">
+                        <tr>
+                            <td class="py-1 pr-2 align-top"><SearchSelect :model-value="l.expense_account_id" :options="expenseAccounts" placeholder="— cari akun —" no-truncate :class="l.expense_account_id ? '' : pilihKurang" @update:model-value="(v) => pilihAkunBeban(l, v)" /></td>
                             <!-- Cost center WAJIB: dialah yang menghubungkan baris ini ke plafon
                                  anggarannya di Budget Control. -->
                             <!-- Terkunci: mengikuti unit kerja pengaju. Hanya Accounting yang boleh
                                      mengubahnya — aturan yang sama dengan Registrasi Invoice Hutang. -->
-                            <td class="py-1 pr-2">
+                            <td class="py-1 pr-2 align-top">
                                 <SearchSelect :model-value="l.cost_center_id" :options="opsiCcBaris(l)" :disabled="! ccBarisBisaDipilih(l)"
-                                              placeholder="— pilih cost center —" :class="l.cost_center_id ? '' : pilihKurang"
+                                              placeholder="— pilih cost center —" no-truncate :class="l.cost_center_id ? '' : pilihKurang"
                                               @update:model-value="(v) => l.cost_center_id = v" />
                             </td>
-                            <td class="py-1 pr-2"><input v-model="l.description" :class="String(l.description ?? '').trim() ? inputCls : inputKurang" /></td>
-                            <td class="py-1 pr-2"><MoneyInput v-model="l.amount" placeholder="0" :class="Number(l.amount) > 0 ? '' : pilihKurang" /></td>
-                            <td class="py-1 text-center"><button type="button" @click="removeLine(i)" :disabled="form.lines.length===1" class="text-danger-500 disabled:opacity-30"><Trash2 class="h-4 w-4" /></button></td>
+                            <!-- Textarea, bukan input satu baris: keterangan sampai 500 karakter harus
+                                 terbaca utuh, tidak terpotong di tepi kotak. Tidak memakai maxlength
+                                 supaya teks tempelan yang kepanjangan tidak terpotong diam-diam —
+                                 kelebihannya ditandai merah dan tombol simpan dikunci. -->
+                            <td class="py-1 pr-2 align-top">
+                                <textarea v-model="l.description" rows="2"
+                                          :class="[String(l.description ?? '').length > MAKS_KETERANGAN ? inputLebih : (String(l.description ?? '').trim() ? inputCls : inputKurang), '!h-auto min-h-9 resize-y py-1.5 leading-snug']"></textarea>
+                                <p class="text-right text-[11px]" :class="String(l.description ?? '').length > MAKS_KETERANGAN ? 'font-semibold text-danger-600' : 'text-neutral-400'">
+                                    {{ String(l.description ?? '').length }}/{{ MAKS_KETERANGAN }}<span v-if="String(l.description ?? '').length > MAKS_KETERANGAN"> — kelebihan {{ String(l.description).length - MAKS_KETERANGAN }} karakter, keterangan tidak bisa disimpan</span>
+                                </p>
+                            </td>
+                            <td class="py-1 pr-2 align-top"><MoneyInput v-model="l.amount" placeholder="0" :class="Number(l.amount) > 0 ? '' : pilihKurang" /></td>
+                            <td class="py-1 text-center align-top"><button type="button" @click="removeLine(i)" :disabled="form.lines.length===1" class="text-danger-500 disabled:opacity-30"><Trash2 class="h-4 w-4" /></button></td>
                         </tr>
+                        <tr v-if="errorBaris(i)"><td colspan="5" class="pb-2 text-xs text-danger-600">Baris {{ i + 1 }}: {{ errorBaris(i) }}</td></tr>
+                        </template>
                     </tbody>
                 </table>
                 </div>

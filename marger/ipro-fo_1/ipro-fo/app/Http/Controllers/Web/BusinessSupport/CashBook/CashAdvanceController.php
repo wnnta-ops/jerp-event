@@ -1329,7 +1329,7 @@ class CashAdvanceController extends Controller
             'realized_date' => ['required', 'date'],
             'defer_settlement' => ['nullable', 'boolean'],
             ...$this->aturanBarisRealisasi(),
-        ]);
+        ], self::PESAN_BARIS_REALISASI);
 
         // Tanggal realisasi dikunci hari ini (UI read-only); penyelesaian sisa/kekurangan
         // selalu ditunda → ditangani dept Finance lewat Refund/Reimburse.
@@ -1360,7 +1360,7 @@ class CashAdvanceController extends Controller
         $v = $request->validate([
             ...$this->aturanBarisRealisasi(),
             'alasan' => ['required', 'string', 'max:255'],
-        ], ['alasan.required' => 'Alasan edit wajib diisi.']);
+        ], ['alasan.required' => 'Alasan edit wajib diisi.'] + self::PESAN_BARIS_REALISASI);
         // Baris realisasi lama yang sudah tercatat tetap boleh (forward-only).
         $lama = $advance->lines()->get(['expense_account_id', 'cost_center_id'])
             ->mapWithKeys(fn ($l) => [$l->expense_account_id.'|'.$l->cost_center_id => true])->all();
@@ -1377,6 +1377,10 @@ class CashAdvanceController extends Controller
         return redirect()->route('bs.advance.show', $advance)->with('success', 'Realisasi '.$advance->advance_number.' diperbarui — jurnal realisasi dibentuk ulang.');
     }
 
+    private const PESAN_BARIS_REALISASI = [
+        'lines.*.description.max' => 'Keterangan maksimal 500 karakter.',
+    ];
+
     /** Aturan baris realisasi — dipakai bersama oleh Realisasi dan Edit Realisasi. */
     private function aturanBarisRealisasi(): array
     {
@@ -1391,7 +1395,7 @@ class CashAdvanceController extends Controller
             // di sini ia diwajibkan, berbeda dari BudgetController yang memang boleh
             // menganggarkan lintas cost center.
             'lines.*.cost_center_id' => ['required', 'integer', 'exists:bs_cost_centers,id'],
-            'lines.*.description' => ['nullable', 'string', 'max:200'],
+            'lines.*.description' => ['nullable', 'string', 'max:500'],
             'lines.*.amount' => ['required', 'numeric', 'min:0.01'],
         ];
     }
