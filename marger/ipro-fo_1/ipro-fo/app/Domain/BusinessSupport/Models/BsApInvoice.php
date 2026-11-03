@@ -22,7 +22,7 @@ class BsApInvoice extends Model
         'expense_account_id', 'payable_account_id', 'description', 'berkas_notes', 'berkas_finance_date', 'transfer_detail', 'kurs',
         'dpp', 'ppn_pct', 'ppn_amount', 'ppn_base', 'ppn_mode', 'pph_mode', 'pph_type', 'pph_pct', 'pph_base', 'pph_amount', 'pph_account_id',
         'total', 'net_payable', 'paid_amount', 'status', 'journal_id', 'created_by', 'jenis', 'credit_position',
-        'cancelled_at', 'cancelled_by', 'cancel_reason',
+        'cancelled_at', 'cancelled_by', 'cancel_reason', 'memo_internal_id',
     ];
     protected $casts = [
         'invoice_date' => 'date', 'receive_date' => 'date', 'due_date' => 'date', 'berkas_finance_date' => 'date', 'term_days' => 'integer',
@@ -63,6 +63,8 @@ class BsApInvoice extends Model
      * jadi ini menangani data yang sudah terlanjur terhapus sebelum larangan itu ada.
      */
     public function supplier(): BelongsTo { return $this->belongsTo(BsSupplier::class, 'supplier_id')->withTrashed(); }
+    /** Memo Urgent (sudah disetujui Direktur) yang ditarik ke invoice ini. */
+    public function memo(): BelongsTo { return $this->belongsTo(\App\Domain\ApprovalInbox\Models\MemoInternal::class, 'memo_internal_id'); }
     public function category(): BelongsTo { return $this->belongsTo(BsApCategory::class, 'category_id'); }
     /** Akun yang dikredit jurnal invoice ini (dibekukan saat registrasi). */
     public function payableAccount(): BelongsTo { return $this->belongsTo(BsAccount::class, 'payable_account_id'); }

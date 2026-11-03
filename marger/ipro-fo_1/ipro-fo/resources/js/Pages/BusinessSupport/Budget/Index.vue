@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, reactive, computed } from 'vue';
 import { router, useForm, Link } from '@inertiajs/vue3';
-import { Plus, Pencil, Trash2, ArrowLeft, PieChart, Send, Check, X, Shuffle, Upload, FileSpreadsheet, Search, ChevronRight, RefreshCw, ExternalLink } from 'lucide-vue-next';
+import { Plus, Eye, Trash2, ArrowLeft, PieChart, Send, Check, X, Shuffle, Upload, FileSpreadsheet, Search, ChevronRight, RefreshCw, ExternalLink } from 'lucide-vue-next';
 import Button from '@/Components/UI/Button.vue';
 import Badge from '@/Components/UI/Badge.vue';
 import EmptyState from '@/Components/UI/EmptyState.vue';
@@ -18,14 +18,12 @@ const props = defineProps<{
     filterStatus?: string;
     pending?: number;
     laporan: { bagian: any[]; laba: any; tanpa_anggaran: boolean };
-    versi: string;
     sd: number;
-    versiOptions: Record<string, string>;
 }>();
 
 const year = ref(props.year);
 const statusFilter = ref(props.filterStatus ?? 'approved');
-function reload() { router.get(route('bs.budget.index'), { year: year.value, status: statusFilter.value, versi: props.versi }, { preserveState: true, replace: true }); }
+function reload() { router.get(route('bs.budget.index'), { year: year.value, status: statusFilter.value, sd: props.sd }, { preserveState: true, replace: true }); }
 function fmtRp(v: number) { return 'Rp ' + Number(v ?? 0).toLocaleString('id-ID'); }
 
 const wfBadge: Record<string, any> = { draft: 'neutral', submitted: 'warning', approved: 'success', rejected: 'danger' };
@@ -44,12 +42,6 @@ const blankMonths = () => ({ m1: 0, m2: 0, m3: 0, m4: 0, m5: 0, m6: 0, m7: 0, m8
 const form = useForm<any>({ year: props.year, project: '', cost_center_id: '', account_id: '', notes: '', ...blankMonths() });
 const monthSum = computed(() => { let s = 0; for (let m = 1; m <= 12; m++) s += Number(form['m' + m] || 0); return s; });
 function openCreate() { editingId.value = null; form.reset(); form.year = props.year; showModal.value = true; }
-function openEdit(b: any) {
-    editingId.value = b.id;
-    form.year = props.year; form.account_id = ''; form.cost_center_id = ''; form.project = b.project ?? ''; form.notes = b.notes ?? '';
-    for (let m = 1; m <= 12; m++) form['m' + m] = Number(b.months?.[m - 1] ?? 0);
-    showModal.value = true;
-}
 function submit() {
     const opts = { onSuccess: () => { showModal.value = false; } };
     editingId.value ? form.put(route('bs.budget.update', editingId.value), opts) : form.post(route('bs.budget.store'), opts);
@@ -60,15 +52,14 @@ const inputCls = 'h-9 w-full rounded-lg border border-neutral-300 bg-white px-3 
 
 // ── Anggaran vs Realisasi Tahunan ────────────────────────────────────────────────
 // Angka sudah dihitung server (BudgetAnnualReportService); layar hanya menyusun & menyaring.
-type Angka = { anggaran: number; realisasi: number; selisih: number; persen: number | null; setahun: number };
+type Angka = { anggaran: number; realisasi: number; sisa: number; persen: number | null; setahun: number };
 type BarisCc = Angka & { cc: string; cc_nama: string; budgets: any[] };
 type Akun = Angka & { id: number; kode: string; nama: string; baris: BarisCc[] };
 type Grup = Angka & { kode: string; nama: string; akun: Akun[] };
 type Bagian = Angka & { kode: string; judul: string; grup: Grup[] };
 
-const versi = ref(props.versi);
 const sd = ref(props.sd);
-function muat() { router.get(route('bs.budget.index'), { year: year.value, status: statusFilter.value, versi: versi.value, sd: sd.value }, { preserveState: true, replace: true }); }
+function muat() { router.get(route('bs.budget.index'), { year: year.value, status: statusFilter.value, sd: sd.value }, { preserveState: true, replace: true }); }
 function fmtAngka(v: number) { return Number(v ?? 0).toLocaleString('id-ID', { maximumFractionDigits: 0 }); }
 function fmtPersen(p: number | null) { return p === null ? '—' : p.toLocaleString('id-ID', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + '%'; }
 const warnaSelisih = (v: number) => (v > 0.004 ? 'text-success-700' : v < -0.004 ? 'text-danger-600' : 'text-neutral-500');
@@ -81,17 +72,16 @@ function bukaSemua() { tertutup.clear(); }
 
 // Cari: cocokkan akun / kelompok / cost center / no. budget; total ikut baris yang tersisa.
 const search = ref('');
-function jumlah(anak: Angka[], pendapatan: boolean): Angka {
+function jumlah(anak: Angka[]): Angka {
     const s = (f: keyof Angka) => anak.reduce((t, r) => t + Number(r[f] ?? 0), 0);
     const anggaran = s('anggaran'), realisasi = s('realisasi');
-    return { anggaran, realisasi, setahun: s('setahun'), selisih: pendapatan ? realisasi - anggaran : anggaran - realisasi, persen: Math.abs(anggaran) >= 0.005 ? Math.round(realisasi / anggaran * 1000) / 10 : null };
+    return { anggaran, realisasi, setahun: s('setahun'), sisa: anggaran - realisasi, persen: Math.abs(anggaran) >= 0.005 ? Math.round(realisasi / anggaran * 1000) / 10 : null };
 }
 const bagian = computed<Bagian[]>(() => {
     const q = search.value.trim().toLowerCase();
     if (!q) return props.laporan.bagian;
     const out: Bagian[] = [];
     for (const bg of props.laporan.bagian as Bagian[]) {
-        const pend = bg.kode === 'income';
         const grup: Grup[] = [];
         for (const g of bg.grup) {
             const gCocok = (g.kode + ' ' + g.nama).toLowerCase().includes(q);
@@ -99,11 +89,11 @@ const bagian = computed<Bagian[]>(() => {
             for (const a of g.akun) {
                 const aCocok = gCocok || (a.kode + ' ' + a.nama).toLowerCase().includes(q);
                 const baris = aCocok ? a.baris : a.baris.filter((r) => [r.cc_nama, ...r.budgets.map((d: any) => d.doc_no ?? '')].join(' ').toLowerCase().includes(q));
-                if (baris.length) akun.push({ ...a, baris, ...jumlah(baris, pend) });
+                if (baris.length) akun.push({ ...a, baris, ...jumlah(baris) });
             }
-            if (akun.length) grup.push({ ...g, akun, ...jumlah(akun, pend) });
+            if (akun.length) grup.push({ ...g, akun, ...jumlah(akun) });
         }
-        if (grup.length) out.push({ ...bg, grup, ...jumlah(grup, pend) });
+        if (grup.length) out.push({ ...bg, grup, ...jumlah(grup) });
     }
     return out;
 });
@@ -112,24 +102,24 @@ const laba = computed<Angka>(() => {
     const n = (k: string) => bagian.value.find((b) => b.kode === k);
     const i = n('income'), e = n('expense');
     const anggaran = (i?.anggaran ?? 0) - (e?.anggaran ?? 0), realisasi = (i?.realisasi ?? 0) - (e?.realisasi ?? 0);
-    return { anggaran, realisasi, setahun: (i?.setahun ?? 0) - (e?.setahun ?? 0), selisih: realisasi - anggaran, persen: Math.abs(anggaran) >= 0.005 ? Math.round(realisasi / anggaran * 1000) / 10 : null };
+    return { anggaran, realisasi, setahun: (i?.setahun ?? 0) - (e?.setahun ?? 0), sisa: anggaran - realisasi, persen: Math.abs(anggaran) >= 0.005 ? Math.round(realisasi / anggaran * 1000) / 10 : null };
 });
 
-const excelUrl = computed(() => route('bs.budget.laporan-export', { year: props.year, status: props.filterStatus ?? 'approved', versi: props.versi, sd: props.sd }));
+const excelUrl = computed(() => route('bs.budget.laporan-export', { year: props.year, status: props.filterStatus ?? 'approved', sd: props.sd }));
 // Tombol Excel di header tetap: daftar dokumen anggaran + realisasi per bulan.
 const excelDaftarUrl = computed(() => route('bs.budget.export', { year: props.year, status: props.filterStatus ?? 'approved' }));
 const bulanSd = computed(() => props.monthLabels[props.sd - 1]);
 
-// ── Klik angka → dasarnya (dokumen anggaran per bulan + Koreksi Budget, atau jurnal) ──
+// ── Klik angka / ikon mata → dasarnya (anggaran, realisasi & sisa per bulan + Koreksi/Alokasi, atau jurnal) ──
 const rincian = ref<any>(null);
 const tabRincian = ref<'anggaran' | 'realisasi'>('anggaran');
 const memuatRincian = ref(false);
-async function bukaRincian(akunId: number, cc: string, tab: 'anggaran' | 'realisasi') {
+async function bukaRincian(akunId: number, cc: string, tab: 'anggaran' | 'realisasi', budgetId?: number) {
     tabRincian.value = tab;
     memuatRincian.value = true;
     rincian.value = { memuat: true };
     try {
-        const { data } = await window.axios.get(route('bs.budget.rincian'), { params: { year: props.year, status: props.filterStatus ?? 'approved', versi: props.versi, sd: props.sd, account_id: akunId, cc } });
+        const { data } = await window.axios.get(route('bs.budget.rincian'), { params: { year: props.year, status: props.filterStatus ?? 'approved', sd: props.sd, account_id: akunId, cc, budget_id: budgetId } });
         rincian.value = data;
     } catch {
         rincian.value = { gagal: true };
@@ -174,17 +164,11 @@ const korLabel: Record<string, string> = { baru: 'Menunggu', approved: 'Disetuju
             <div>
                 <h2 class="font-semibold">Anggaran vs Realisasi Tahunan</h2>
                 <p class="mt-0.5 text-xs text-neutral-500">
-                    <b>Anggaran</b> per bulan dari master budget (versi terpilih) · <b>Realisasi</b> dari jurnal — aturan yang sama dengan penjaga budget &amp; Koreksi Budget.
-                    Selisih positif = lebih baik (pendapatan di atas anggaran, beban di bawah anggaran). <b>Klik angka</b> untuk melihat dasarnya.
+                    <b>Anggaran</b> = master budget yang berlaku (sudah termasuk Koreksi &amp; Alokasi) · <b>Realisasi</b> = pengeluaran dari jurnal (sisi debit akun beban) ·
+                    <b>Sisa</b> = anggaran − realisasi. <b>Klik angka</b> atau ikon mata untuk rincian per bulan.
                 </p>
             </div>
             <div class="flex flex-wrap items-end gap-2">
-                <div>
-                    <label class="mb-1 block text-xs font-medium text-neutral-500">Versi anggaran</label>
-                    <select v-model="versi" class="h-9 rounded-lg border border-neutral-300 bg-white px-3 text-sm dark:border-neutral-700 dark:bg-neutral-900">
-                        <option v-for="(lbl, k) in versiOptions" :key="k" :value="k">{{ lbl }}</option>
-                    </select>
-                </div>
                 <div>
                     <label class="mb-1 block text-xs font-medium text-neutral-500">Realisasi s.d.</label>
                     <select v-model.number="sd" class="h-9 rounded-lg border border-neutral-300 bg-white px-3 text-sm dark:border-neutral-700 dark:bg-neutral-900">
@@ -199,7 +183,7 @@ const korLabel: Record<string, string> = { baru: 'Menunggu', approved: 'Disetuju
                 </div>
             </div>
             <div class="flex flex-wrap items-center justify-between gap-2 text-xs text-neutral-500">
-                <span>Anggaran: <b>{{ versiOptions[props.versi] }}</b> · status <b>{{ statusFilter === 'all' ? 'Semua' : (statuses[statusFilter] ?? statusFilter) }}</b> · realisasi s.d. akhir <b>{{ bulanSd }} {{ year }}</b>.</span>
+                <span>Status <b>{{ statusFilter === 'all' ? 'Semua' : (statuses[statusFilter] ?? statusFilter) }}</b> · realisasi s.d. akhir <b>{{ bulanSd }} {{ year }}</b>.</span>
                 <span class="flex gap-3"><button type="button" class="hover:text-primary-600" @click="bukaSemua">Buka semua</button><button type="button" class="hover:text-primary-600" @click="tutupSemua">Tutup semua</button></span>
             </div>
         </div>
@@ -212,7 +196,7 @@ const korLabel: Record<string, string> = { baru: 'Menunggu', approved: 'Disetuju
                         <th class="px-4 py-3">Uraian</th>
                         <th class="px-3 py-3 text-right">Anggaran s.d. {{ bulanSd }}</th>
                         <th class="px-3 py-3 text-right">Realisasi s.d. {{ bulanSd }}</th>
-                        <th class="px-3 py-3 text-right">Selisih</th>
+                        <th class="px-3 py-3 text-right">Sisa s.d. {{ bulanSd }}</th>
                         <th class="px-3 py-3 text-right">%</th>
                         <th class="px-3 py-3 text-right">Anggaran setahun</th>
                         <th class="px-3 py-3 text-right">Aksi</th>
@@ -227,7 +211,7 @@ const korLabel: Record<string, string> = { baru: 'Menunggu', approved: 'Disetuju
                                 <template v-if="tertutup.has('g:' + bg.kode + g.kode)">
                                     <td class="px-3 py-2 text-right font-mono font-semibold">{{ fmtAngka(g.anggaran) }}</td>
                                     <td class="px-3 py-2 text-right font-mono font-semibold">{{ fmtAngka(g.realisasi) }}</td>
-                                    <td class="px-3 py-2 text-right font-mono font-semibold" :class="warnaSelisih(g.selisih)">{{ fmtAngka(g.selisih) }}</td>
+                                    <td class="px-3 py-2 text-right font-mono font-semibold" :class="warnaSelisih(g.sisa)">{{ fmtAngka(g.sisa) }}</td>
                                     <td class="px-3 py-2 text-right font-semibold">{{ fmtPersen(g.persen) }}</td>
                                     <td class="px-3 py-2 text-right font-mono font-semibold">{{ fmtAngka(g.setahun) }}</td>
                                     <td></td>
@@ -240,7 +224,7 @@ const korLabel: Record<string, string> = { baru: 'Menunggu', approved: 'Disetuju
                                         <td class="py-2 pl-8 pr-4"><ChevronRight class="mr-1 inline h-3.5 w-3.5 text-neutral-400 transition-transform" :class="tertutup.has('a:' + bg.kode + a.id) ? '' : 'rotate-90'" />{{ a.kode }} - {{ a.nama }}</td>
                                         <td class="px-3 py-2 text-right font-mono">{{ fmtAngka(a.anggaran) }}</td>
                                         <td class="px-3 py-2 text-right font-mono">{{ fmtAngka(a.realisasi) }}</td>
-                                        <td class="px-3 py-2 text-right font-mono" :class="warnaSelisih(a.selisih)">{{ fmtAngka(a.selisih) }}</td>
+                                        <td class="px-3 py-2 text-right font-mono" :class="warnaSelisih(a.sisa)">{{ fmtAngka(a.sisa) }}</td>
                                         <td class="px-3 py-2 text-right">{{ fmtPersen(a.persen) }}</td>
                                         <td class="px-3 py-2 text-right font-mono">{{ fmtAngka(a.setahun) }}</td>
                                         <td></td>
@@ -257,7 +241,7 @@ const korLabel: Record<string, string> = { baru: 'Menunggu', approved: 'Disetuju
                                             </td>
                                             <td class="px-3 py-1.5 text-right font-mono text-xs"><button type="button" class="underline decoration-dotted underline-offset-2 hover:text-primary-600" @click="bukaRincian(a.id, r.cc, 'anggaran')">{{ fmtAngka(r.anggaran) }}</button></td>
                                             <td class="px-3 py-1.5 text-right font-mono text-xs"><button type="button" class="underline decoration-dotted underline-offset-2 hover:text-primary-600" @click="bukaRincian(a.id, r.cc, 'realisasi')">{{ fmtAngka(r.realisasi) }}</button></td>
-                                            <td class="px-3 py-1.5 text-right font-mono text-xs" :class="warnaSelisih(r.selisih)">{{ fmtAngka(r.selisih) }}</td>
+                                            <td class="px-3 py-1.5 text-right font-mono text-xs" :class="warnaSelisih(r.sisa)">{{ fmtAngka(r.sisa) }}</td>
                                             <td class="px-3 py-1.5 text-right text-xs">{{ fmtPersen(r.persen) }}</td>
                                             <td class="px-3 py-1.5 text-right font-mono text-xs"><button type="button" class="underline decoration-dotted underline-offset-2 hover:text-primary-600" @click="bukaRincian(a.id, r.cc, 'anggaran')">{{ fmtAngka(r.setahun) }}</button></td>
                                             <td class="px-3 py-1.5">
@@ -265,7 +249,7 @@ const korLabel: Record<string, string> = { baru: 'Menunggu', approved: 'Disetuju
                                                     <button v-if="d.wf_status === 'draft' || d.wf_status === 'rejected'" @click="submitBudget(d)" title="Ajukan" class="text-amber-600 hover:text-amber-800"><Send class="h-4 w-4" /></button>
                                                     <button v-if="d.wf_status === 'submitted'" @click="decideBudget(d, 'approve')" title="Setujui" class="text-success-600 hover:text-success-800"><Check class="h-4 w-4" /></button>
                                                     <button v-if="d.wf_status === 'submitted'" @click="decideBudget(d, 'reject')" title="Tolak" class="text-danger-500 hover:text-danger-700"><X class="h-4 w-4" /></button>
-                                                    <button @click="openEdit(d)" :title="'Edit ' + (d.doc_no ?? '')" class="text-primary-600 hover:text-primary-800"><Pencil class="h-4 w-4" /></button>
+                                                    <button @click="bukaRincian(a.id, r.cc, 'anggaran', d.id)" :title="'Lihat ' + (d.doc_no ?? '') + ' per bulan'" class="text-primary-600 hover:text-primary-800"><Eye class="h-4 w-4" /></button>
                                                     <button @click="destroy(d)" :title="'Hapus ' + (d.doc_no ?? '')" class="text-danger-500 hover:text-danger-700"><Trash2 class="h-4 w-4" /></button>
                                                 </div>
                                             </td>
@@ -276,7 +260,7 @@ const korLabel: Record<string, string> = { baru: 'Menunggu', approved: 'Disetuju
                                     <td class="py-2 pl-8 pr-4">Total {{ g.kode }} {{ g.nama }}</td>
                                     <td class="px-3 py-2 text-right font-mono">{{ fmtAngka(g.anggaran) }}</td>
                                     <td class="px-3 py-2 text-right font-mono">{{ fmtAngka(g.realisasi) }}</td>
-                                    <td class="px-3 py-2 text-right font-mono" :class="warnaSelisih(g.selisih)">{{ fmtAngka(g.selisih) }}</td>
+                                    <td class="px-3 py-2 text-right font-mono" :class="warnaSelisih(g.sisa)">{{ fmtAngka(g.sisa) }}</td>
                                     <td class="px-3 py-2 text-right">{{ fmtPersen(g.persen) }}</td>
                                     <td class="px-3 py-2 text-right font-mono">{{ fmtAngka(g.setahun) }}</td>
                                     <td></td>
@@ -287,7 +271,7 @@ const korLabel: Record<string, string> = { baru: 'Menunggu', approved: 'Disetuju
                             <td class="px-4 py-2 uppercase">Total {{ bg.judul }}</td>
                             <td class="px-3 py-2 text-right font-mono">{{ fmtAngka(bg.anggaran) }}</td>
                             <td class="px-3 py-2 text-right font-mono">{{ fmtAngka(bg.realisasi) }}</td>
-                            <td class="px-3 py-2 text-right font-mono" :class="warnaSelisih(bg.selisih)">{{ fmtAngka(bg.selisih) }}</td>
+                            <td class="px-3 py-2 text-right font-mono" :class="warnaSelisih(bg.sisa)">{{ fmtAngka(bg.sisa) }}</td>
                             <td class="px-3 py-2 text-right">{{ fmtPersen(bg.persen) }}</td>
                             <td class="px-3 py-2 text-right font-mono">{{ fmtAngka(bg.setahun) }}</td>
                             <td></td>
@@ -297,7 +281,7 @@ const korLabel: Record<string, string> = { baru: 'Menunggu', approved: 'Disetuju
                         <td class="px-4 py-2.5">LABA (pendapatan − beban)</td>
                         <td class="px-3 py-2.5 text-right font-mono">{{ fmtAngka(laba.anggaran) }}</td>
                         <td class="px-3 py-2.5 text-right font-mono">{{ fmtAngka(laba.realisasi) }}</td>
-                        <td class="px-3 py-2.5 text-right font-mono" :class="warnaSelisih(laba.selisih)">{{ fmtAngka(laba.selisih) }}</td>
+                        <td class="px-3 py-2.5 text-right font-mono" :class="warnaSelisih(laba.sisa)">{{ fmtAngka(laba.sisa) }}</td>
                         <td class="px-3 py-2.5 text-right">{{ fmtPersen(laba.persen) }}</td>
                         <td class="px-3 py-2.5 text-right font-mono">{{ fmtAngka(laba.setahun) }}</td>
                         <td></td>
@@ -325,22 +309,22 @@ const korLabel: Record<string, string> = { baru: 'Menunggu', approved: 'Disetuju
                     <template v-else>
                         <div class="flex gap-1 border-b border-neutral-200 px-5 dark:border-neutral-800">
                             <button v-for="t in (['anggaran', 'realisasi'] as const)" :key="t" type="button" class="-mb-px border-b-2 px-3 py-2 text-sm font-medium" :class="tabRincian === t ? 'border-primary-600 text-primary-700' : 'border-transparent text-neutral-500'" @click="tabRincian = t">
-                                {{ t === 'anggaran' ? 'Dokumen anggaran' : 'Jurnal realisasi (' + rincian.jurnal.length + ')' }}
+                                {{ t === 'anggaran' ? 'Anggaran per bulan' : 'Jurnal realisasi (' + rincian.jurnal.length + ')' }}
                             </button>
                         </div>
                         <div class="overflow-y-auto p-5 text-sm">
                             <template v-if="tabRincian === 'anggaran'">
                                 <p v-if="!rincian.budgets.length" class="text-neutral-500">Tidak ada dokumen anggaran untuk akun &amp; cost center ini pada status terpilih.</p>
                                 <div v-for="d in rincian.budgets" :key="d.id" class="mb-5 space-y-2">
-                                    <div class="flex items-center gap-2"><span class="font-mono text-xs">{{ d.doc_no ?? '—' }}</span><Badge :variant="wfBadge[d.wf_status]" size="sm">{{ statuses[d.wf_status] ?? d.wf_status }}</Badge></div>
+                                    <div class="flex items-center gap-2"><span class="font-mono text-xs">{{ d.doc_no ?? '—' }}</span><Badge :variant="wfBadge[d.wf_status]" size="sm">{{ statuses[d.wf_status] ?? d.wf_status }}</Badge><span v-if="d.notes" class="text-xs text-neutral-400">{{ d.notes }}</span></div>
                                     <div class="overflow-x-auto">
                                         <table class="w-full text-xs">
-                                            <thead><tr class="text-neutral-500"><th class="py-1 text-left">Versi</th><th v-for="(m, i) in monthLabels" :key="i" class="px-1 py-1 text-right" :class="i + 1 <= props.sd ? '' : 'text-neutral-300'">{{ m }}</th><th class="px-1 py-1 text-right">Setahun</th></tr></thead>
+                                            <thead><tr class="text-neutral-500"><th class="py-1 text-left"></th><th v-for="(m, i) in monthLabels" :key="i" class="px-1 py-1 text-right" :class="i + 1 <= props.sd ? '' : 'text-neutral-300'">{{ m }}</th><th class="px-1 py-1 text-right">Setahun</th></tr></thead>
                                             <tbody>
-                                                <tr v-for="v in (['awal', 'berlaku'] as const)" :key="v" :class="v === props.versi ? 'font-semibold' : 'text-neutral-500'">
+                                                <tr v-for="v in (['anggaran', 'realisasi', 'sisa'] as const)" :key="v" :class="v === 'sisa' ? 'border-t border-neutral-200 font-semibold dark:border-neutral-700' : (v === 'realisasi' ? 'text-neutral-500' : '')">
                                                     <td class="py-1 pr-2 capitalize">{{ v }}</td>
-                                                    <td v-for="(n, i) in d[v]" :key="i" class="px-1 py-1 text-right font-mono">{{ fmtAngka(n) }}</td>
-                                                    <td class="px-1 py-1 text-right font-mono">{{ fmtAngka(d[v].reduce((t: number, n: number) => t + n, 0)) }}</td>
+                                                    <td v-for="(n, i) in d[v]" :key="i" class="px-1 py-1 text-right font-mono" :class="v === 'sisa' ? warnaSelisih(n) : ''">{{ fmtAngka(n) }}</td>
+                                                    <td class="px-1 py-1 text-right font-mono" :class="v === 'sisa' ? warnaSelisih(d[v].reduce((t: number, n: number) => t + n, 0)) : ''">{{ fmtAngka(d[v].reduce((t: number, n: number) => t + n, 0)) }}</td>
                                                 </tr>
                                             </tbody>
                                         </table>
@@ -351,6 +335,13 @@ const korLabel: Record<string, string> = { baru: 'Menunggu', approved: 'Disetuju
                                             <span><span class="font-mono">{{ k.doc_no }}</span> · {{ k.tanggal }} · {{ k.periode }}<span v-if="k.note" class="text-neutral-400"> · {{ k.note }}</span></span>
                                             <span class="flex items-center gap-2"><span class="font-mono" :class="k.nilai < 0 ? 'text-danger-600' : 'text-success-700'">{{ k.nilai > 0 ? '+' : '' }}{{ fmtAngka(k.nilai) }}</span><Badge :variant="korStatus[k.status]" size="sm">{{ korLabel[k.status] ?? k.status }}</Badge><ExternalLink class="h-3 w-3 text-neutral-400" /></span>
                                         </a>
+                                    </div>
+                                    <div v-if="d.alokasi?.length">
+                                        <div class="mb-1 text-xs font-medium text-neutral-500">Alokasi Budget</div>
+                                        <Link v-for="k in d.alokasi" :key="k.doc_no" :href="route('bs.budget.allocation.index')" class="flex items-center justify-between gap-2 rounded-lg border border-neutral-200 px-3 py-1.5 text-xs hover:border-primary-300 dark:border-neutral-800">
+                                            <span><span class="font-mono">{{ k.doc_no }}</span> · {{ k.tanggal }} · {{ k.periode }} · {{ k.arah === 'keluar' ? 'ke' : 'dari' }} {{ k.lawan }}<span v-if="k.note" class="text-neutral-400"> · {{ k.note }}</span></span>
+                                            <span class="font-mono" :class="k.nilai < 0 ? 'text-danger-600' : 'text-success-700'">{{ k.nilai > 0 ? '+' : '' }}{{ fmtAngka(k.nilai) }}</span>
+                                        </Link>
                                     </div>
                                 </div>
                             </template>

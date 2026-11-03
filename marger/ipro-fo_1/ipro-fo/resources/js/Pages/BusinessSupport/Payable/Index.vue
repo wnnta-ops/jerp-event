@@ -20,6 +20,8 @@ type Row = {
     description: string | null; berkas_notes: string | null; berkas_finance_date: string | null;
     status: string; payable: number; sisa: number;
     status_jurnal: string; journal_id: number | null;
+    /** Memo Urgent yang ditarik ke invoice ini (status: Menunggu MW / BA, Disetujui, …). */
+    memo: { number: string; status: string; url: string | null } | null;
 };
 type Kolom = 'no' | 'tgl' | 'terima' | 'supplier' | 'sumber' | 'ket' | 'total' | 'sisa' | 'status' | 'jurnal' | 'berkas' | 'berkasFinance';
 const props = defineProps<{
@@ -268,7 +270,7 @@ watch(rows, () => nextTick(measure));
                             <input v-model="allChecked" type="checkbox" class="rounded border-neutral-300" @click.stop />
                         </th>
                         <th class="whitespace-nowrap px-4 pt-3 pb-1.5">No. Invoice</th><th class="whitespace-nowrap px-4 pt-3 pb-1.5">Tanggal</th><th class="whitespace-nowrap px-4 pt-3 pb-1.5">Tgl. Diterima</th><th class="px-4 pt-3 pb-1.5">{{ modulInvoice ? 'Supplier / Customer' : jenis.penerima }}</th><th class="px-4 pt-3 pb-1.5">Sumber</th><th class="px-4 pt-3 pb-1.5">Keterangan</th>
-                        <th class="whitespace-nowrap px-4 pt-3 pb-1.5 text-right">Total</th><th class="whitespace-nowrap px-4 pt-3 pb-1.5 text-right">Sisa</th><th class="px-4 pt-3 pb-1.5 text-center">Status</th><th class="whitespace-nowrap px-4 pt-3 pb-1.5 text-center">Status<br>Jurnal</th><th class="px-4 pt-3 pb-1.5">Kelengkapan<br>Berkas</th>
+                        <th class="whitespace-nowrap px-4 pt-3 pb-1.5 text-right">Total</th><th class="whitespace-nowrap px-4 pt-3 pb-1.5 text-right">Sisa</th><th class="px-4 pt-3 pb-1.5 text-center">Status</th><th class="whitespace-nowrap px-4 pt-3 pb-1.5 text-center">Status<br>Jurnal</th><th class="whitespace-nowrap px-4 pt-3 pb-1.5">Status<br>Memo</th><th class="px-4 pt-3 pb-1.5">Kelengkapan<br>Berkas</th>
                         <th class="whitespace-nowrap px-4 pt-3 pb-1.5" title="Tanggal berkas fisik diterima Finance — berbeda dari Tgl. Diterima (tagihan supplier masuk). Hanya Dept Finance yang boleh mengisi.">Berkas Diterima<br>Finance</th>
                     </tr>
                     <!-- Filter per-kolom: KETIK langsung di kotak (cocok "berisi"), atau klik panah
@@ -285,6 +287,7 @@ watch(rows, () => nextTick(measure));
                         <th class="px-3 pb-2"><ColumnFilter v-model="col.sisa" v-model:text="txt.sisa" :options="optSisa" align="right" /></th>
                         <th class="px-3 pb-2"><ColumnFilter v-model="col.status" v-model:text="txt.status" :options="optStatus" /></th>
                         <th class="px-3 pb-2"><ColumnFilter v-model="col.jurnal" v-model:text="txt.jurnal" :options="optJurnal" /></th>
+                        <th class="px-3 pb-2"></th>
                         <th class="px-3 pb-2"><ColumnFilter v-model="col.berkas" v-model:text="txt.berkas" :options="optBerkas" /></th>
                         <th class="px-3 pb-2"><ColumnFilter v-model="col.berkasFinance" v-model:text="txt.berkasFinance" :options="optBerkasFinance" /></th>
                     </tr>
@@ -309,6 +312,14 @@ watch(rows, () => nextTick(measure));
                         <td class="px-4 py-2.5 text-center" @click.stop>
                             <Link v-if="r.journal_id && r.status_jurnal !== '—' && punyaIzin('gl.journal.view')" :href="route('bs.gl.journal.show', r.journal_id)" :title="'Buka jurnal invoice ' + r.invoice_number"><Badge :variant="(warnaJurnal[r.status_jurnal] ?? 'neutral') as any" size="sm">{{ r.status_jurnal }}</Badge></Link>
                             <Badge v-else-if="r.status_jurnal && r.status_jurnal !== '—'" :variant="(warnaJurnal[r.status_jurnal] ?? 'neutral') as any" size="sm">{{ r.status_jurnal }}</Badge>
+                            <span v-else class="text-neutral-400">—</span>
+                        </td>
+                        <!-- Memo Urgent yang ditarik — klik membuka memonya di Approval Inbox. -->
+                        <td class="whitespace-nowrap px-4 py-2.5" @click.stop>
+                            <template v-if="r.memo">
+                                <component :is="r.memo.url ? Link : 'span'" :href="r.memo.url ?? undefined" class="block font-mono text-[11px] text-primary-700 hover:underline dark:text-primary-300">{{ r.memo.number }}</component>
+                                <Badge :variant="r.memo.status === 'Disetujui' ? 'success' : (r.memo.status === 'Ditolak' ? 'danger' : 'warning')" size="sm">{{ r.memo.status }}</Badge>
+                            </template>
                             <span v-else class="text-neutral-400">—</span>
                         </td>
                         <td class="px-4 py-2.5 text-neutral-500"><span class="block max-w-[200px] truncate" :title="r.berkas_notes ?? ''">{{ r.berkas_notes || '—' }}</span></td>

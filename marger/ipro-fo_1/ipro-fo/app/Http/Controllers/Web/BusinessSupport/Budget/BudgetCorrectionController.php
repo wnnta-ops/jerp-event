@@ -35,8 +35,9 @@ class BudgetCorrectionController extends Controller
                 'id' => $c->id, 'doc_no' => $c->doc_no, 'date' => $c->corr_date?->format('Y-m-d'),
                 'ref' => $c->budget?->doc_no, 'account' => $c->account?->code.' - '.$c->account?->name,
                 'cost_center' => $c->costCenter?->name ?? 'Semua',
-                'period' => BsBudget::MONTHS[($c->period_from ?: 1) - 1].' s/d '.BsBudget::MONTHS[($c->period_to ?: 12) - 1].' '.$c->year,
+                'period' => self::labelPeriode($c),
                 'old_amount' => (float) $c->old_amount, 'new_amount' => (float) $c->new_amount, 'status' => $c->status,
+                'approval_url' => $c->approval_id ? route('approval-inbox.show', $c->approval_id) : null,
             ])->values();
 
         return Inertia::render('BusinessSupport/Budget/Corrections/Index', [
@@ -66,30 +67,42 @@ class BudgetCorrectionController extends Controller
         ]);
     }
 
-    public function store(Request $request): RedirectResponse
+    /**
+     * Simpan koreksi PER BULAN: isian = nilai baru tiap bulan; yang disimpan selisihnya terhadap
+     * anggaran bulan itu saat ini. Masuk Approval Inbox (Accounting → GM), berlaku setelah disetujui.
+     */
+    public function store(Request $request, BudgetCorrectionService $service): RedirectResponse
     {
         abort_unless($request->user()?->can('budget.correction.create'), 403);
         $v = $request->validate([
             'budget_id'   => ['required', 'integer', 'exists:bs_budgets,id'],
             'corr_date'   => ['required', 'date'],
-            'period_from' => ['required', 'integer', 'min:1', 'max:12'],
-            'period_to'   => ['required', 'integer', 'min:1', 'max:12'],
-            'new_amount'  => ['required', 'numeric', 'min:0'],
+            'months'      => ['required', 'array'],
+            'months.*'    => ['nullable', 'numeric', 'min:0'],
             'note'        => ['nullable', 'string', 'max:200'],
-        ]);
+        ], [], ['months.*' => 'Nilai baru']);
 
         $budget = BsBudget::findOrFail($v['budget_id']);
-        BsBudgetCorrection::create([
-            'tenant_id'   => tenant_id(),
-            'doc_no'      => BsBudgetCorrection::nextDocNo((int) $budget->year, $budget->project, $v['corr_date']),
-            'year'        => $budget->year, 'project' => $budget->project, 'budget_id' => $budget->id,
-            'cost_center_id' => $budget->cost_center_id, 'account_id' => $budget->account_id,
-            'corr_date'   => $v['corr_date'], 'period_from' => $v['period_from'], 'period_to' => $v['period_to'],
-            'old_amount'  => (float) $budget->amount, 'new_amount' => round((float) $v['new_amount'], 2),
-            'status'      => 'baru', 'note' => $v['note'] ?? null, 'created_by' => $request->user()->id,
-        ]);
+        abort_unless($budget->status === 'approved', 422, 'Hanya anggaran yang sudah disetujui yang bisa dikoreksi.');
+        $tambahan = [];
+        foreach ($v['months'] as $m => $baru) {
+            $m = (int) $m;
+            if ($m < 1 || $m > 12 || $baru === null || $baru === '') {
+                continue;
+            }
+            $delta = round((float) $baru - \App\Domain\BusinessSupport\Services\BudgetGuardService::anggaranBulan($budget, $m), 2);
+            if ($delta != 0.0) {
+                $tambahan[$m] = $delta;
+            }
+        }
+        if ($tambahan === []) {
+            return back()->withInput()->with('error', 'Belum ada bulan yang nilainya diubah.');
+        }
 
-        return to_route('bs.budget.correction.index')->with('success', 'Koreksi budget tercatat (menunggu approval).');
+        $c = DB::transaction(fn () => $service->ajukanManual($budget, $tambahan, $v['corr_date'], $v['note'] ?? null, $request->user()->id));
+
+        return to_route('bs.budget.correction.index', ['status' => 'baru'])
+            ->with('success', "Koreksi {$c->doc_no} diajukan ke Approval Inbox (Accounting → GM).");
     }
 
     /** Inbox approval batch koreksi. */
@@ -102,7 +115,7 @@ class BudgetCorrectionController extends Controller
             ->map(fn ($c) => [
                 'id' => $c->id, 'doc_no' => $c->doc_no, 'date' => $c->corr_date?->format('Y-m-d'),
                 'account' => $c->account?->code.' - '.$c->account?->name, 'cost_center' => $c->costCenter?->name ?? 'Semua',
-                'period' => BsBudget::MONTHS[($c->period_from ?: 1) - 1].' s/d '.BsBudget::MONTHS[($c->period_to ?: 12) - 1].' '.$c->year,
+                'period' => self::labelPeriode($c),
                 'old_amount' => (float) $c->old_amount, 'new_amount' => (float) $c->new_amount,
             ])->values();
 
@@ -133,5 +146,15 @@ class BudgetCorrectionController extends Controller
         });
 
         return back()->with('success', $approve ? 'Koreksi disetujui & diterapkan.' : 'Koreksi ditolak.');
+    }
+
+    /** "Nov, Des 2026" untuk koreksi per bulan; koreksi lama "Jan s/d Des 2026". */
+    public static function labelPeriode(BsBudgetCorrection $c): string
+    {
+        if (is_array($c->months) && $c->months !== []) {
+            return collect(array_keys($c->tambahanBulan()))->map(fn ($m) => BsBudget::MONTHS[$m - 1])->implode(', ').' '.$c->year;
+        }
+
+        return BsBudget::MONTHS[($c->period_from ?: 1) - 1].' s/d '.BsBudget::MONTHS[($c->period_to ?: 12) - 1].' '.$c->year;
     }
 }

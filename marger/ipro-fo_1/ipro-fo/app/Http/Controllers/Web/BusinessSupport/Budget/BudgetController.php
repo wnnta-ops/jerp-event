@@ -11,6 +11,7 @@ use App\Domain\BusinessSupport\Models\BsBudgetCorrection;
 use App\Domain\BusinessSupport\Models\BsBudgetMutation;
 use App\Domain\BusinessSupport\Models\BsCostCenter;
 use App\Domain\BusinessSupport\Services\BudgetAnnualReportService;
+use App\Domain\BusinessSupport\Services\BudgetGuardService;
 use App\Domain\BusinessSupport\Services\BudgetRealizationService;
 use App\Exceptions\BusinessRuleException;
 use App\Http\Controllers\Controller;
@@ -27,14 +28,48 @@ class BudgetController extends Controller
         private readonly BudgetAnnualReportService $laporan,
     ) {}
 
-    /** Filter laporan tahunan: versi anggaran & realisasi s.d. bulan (default bulan berjalan / Des untuk tahun lalu). */
-    private function filterLaporan(Request $request, int $year): array
+    /** Realisasi s.d. bulan laporan tahunan (default bulan berjalan / Des untuk tahun lalu / Jan untuk tahun depan). */
+    private function sdLaporan(Request $request, int $year): int
     {
-        $versi = (string) $request->input('versi', 'berlaku');
-        $versi = array_key_exists($versi, BudgetAnnualReportService::VERSI) ? $versi : 'berlaku';
         $bawaan = $year === (int) now()->year ? (int) now()->month : ($year < (int) now()->year ? 12 : 1);
 
-        return [$versi, min(12, max(1, (int) $request->integer('sd', $bawaan)))];
+        return min(12, max(1, (int) $request->integer('sd', $bawaan)));
+    }
+
+    /**
+     * Anggaran, realisasi & sisa per bulan satu master budget — sisa bulan = anggaran bulan (sudah
+     * termasuk Koreksi & Alokasi yang berlaku) − realisasi bulan. Anggaran "Semua cost center"
+     * memakai realisasi seluruh cost center akunnya, sama dengan penjaga budget.
+     *
+     * @return array{anggaran:list<float>, realisasi:list<float>, sisa:list<float>}
+     */
+    public function perBulan(BsBudget $b): array
+    {
+        $real = $this->realisasi->byMonth((int) $b->year, (int) $b->account_id, $b->cost_center_id ? (int) $b->cost_center_id : null);
+        $out = ['anggaran' => [], 'realisasi' => [], 'sisa' => []];
+        for ($m = 1; $m <= 12; $m++) {
+            $a = BudgetGuardService::anggaranBulan($b, $m);
+            $r = round((float) ($real[$m] ?? 0), 2);
+            $out['anggaran'][] = $a;
+            $out['realisasi'][] = $r;
+            $out['sisa'][] = round($a - $r, 2);
+        }
+
+        return $out;
+    }
+
+    /** JSON per bulan satu master budget — form Koreksi, Alokasi & ikon mata Master Budget. */
+    public function bulan(Request $request, BsBudget $budget): \Illuminate\Http\JsonResponse
+    {
+        abort_unless($request->user()?->canAny(['budget.master.view', 'budget.correction.create', 'budget.allocation.create']), 403);
+        $budget->loadMissing(['account:id,code,name', 'costCenter:id,code,name']);
+
+        return response()->json([
+            'id' => $budget->id, 'doc_no' => $budget->doc_no, 'year' => $budget->year, 'wf_status' => $budget->status,
+            'account' => trim($budget->account?->code.' - '.$budget->account?->name, ' -'),
+            'cost_center' => $budget->costCenter?->name ?? 'Semua cost center',
+            'amount' => (float) $budget->amount,
+        ] + $this->perBulan($budget));
     }
 
     /** Hub modul Budget Control (mirror menu eProperty BO /BC/). */
@@ -80,7 +115,7 @@ class BudgetController extends Controller
         // Gate approval: default hanya tampilkan anggaran yang SUDAH di-approve.
         // (Tambahan anggaran/upload yang belum di-approve tidak muncul di Master Budget Control.)
         $status = (string) $request->input('status', 'approved');
-        [$versi, $sd] = $this->filterLaporan($request, $year);
+        $sd = $this->sdLaporan($request, $year);
 
         $budgets = BsBudget::with(['account:id,code,name', 'costCenter:id,code,name'])
             ->where('year', $year)
@@ -124,11 +159,10 @@ class BudgetController extends Controller
             'costCenters' => BsCostCenter::where('is_active', true)->orderBy('code')->get(['id', 'code', 'name']),
             'filterStatus' => $status,
             'pending'      => BsBudget::where('year', $year)->where('status', 'submitted')->count(),
-            // Anggaran vs Realisasi Tahunan (menggantikan tabel daftar anggaran).
-            'laporan'      => $this->laporan->susun($year, $status, $versi, $sd),
-            'versi'        => $versi,
+            // Anggaran vs Realisasi Tahunan (menggantikan tabel daftar anggaran). Anggaran selalu
+            // yang berlaku — sudah termasuk Koreksi & Alokasi.
+            'laporan'      => $this->laporan->susun($year, $status, $sd),
             'sd'           => $sd,
-            'versiOptions' => BudgetAnnualReportService::VERSI,
         ]);
     }
 
@@ -384,26 +418,31 @@ class BudgetController extends Controller
     }
 
     /**
-     * Dasar satu angka di laporan tahunan (klik angka): dokumen anggaran per bulan (awal vs berlaku,
-     * dengan Koreksi Budget yang membentuknya) dan baris jurnal realisasinya.
+     * Dasar satu angka di laporan tahunan (klik angka / ikon mata): per bulan anggaran berlaku,
+     * realisasi & sisa, dengan Koreksi Budget dan Alokasi yang membentuknya, serta baris jurnal
+     * realisasinya.
      */
     public function rincian(Request $request): \Illuminate\Http\JsonResponse
     {
         abort_unless($request->user()?->can('budget.master.view'), 403);
         $year = (int) $request->integer('year', (int) now()->year);
         $status = (string) $request->input('status', 'approved');
-        [$versi, $sd] = $this->filterLaporan($request, $year);
+        $sd = $this->sdLaporan($request, $year);
         $accId = (int) $request->integer('account_id');
         $ccRaw = (string) $request->input('cc', 'semua');
         $cc = $ccRaw === 'semua' ? null : (int) $ccRaw;
         [$from, $to] = BudgetAnnualReportService::rentang($year, $sd);
 
         $budgets = BsBudget::where('year', $year)->where('account_id', $accId)
-            ->when($status !== 'all', fn ($q) => $q->where('status', $status))
+            ->when($request->filled('budget_id'), fn ($q) => $q->whereKey((int) $request->integer('budget_id')))
+            ->when($status !== 'all' && ! $request->filled('budget_id'), fn ($q) => $q->where('status', $status))
             ->when($ccRaw === 'semua', fn ($q) => $q->whereNull('cost_center_id'), fn ($q) => $q->where('cost_center_id', $cc ?: -1))
             ->orderBy('doc_no')->get();
-        $tambahan = BudgetAnnualReportService::tambahanKoreksi($budgets->pluck('id')->all());
-        $koreksi = BsBudgetCorrection::whereIn('budget_id', $budgets->pluck('id')->all() ?: [0])->orderBy('corr_date')->orderBy('id')->get();
+        $ids = $budgets->pluck('id')->all() ?: [0];
+        $koreksi = BsBudgetCorrection::whereIn('budget_id', $ids)->orderBy('corr_date')->orderBy('id')->get();
+        $alokasi = BsBudgetAllocation::whereNotNull('to_budget_id')
+            ->where(fn ($q) => $q->whereIn('budget_id', $ids)->orWhereIn('to_budget_id', $ids))
+            ->with(['budget.account:id,code', 'toBudget.account:id,code'])->orderBy('alloc_date')->orderBy('id')->get();
 
         $pusat = BsCostCenter::withTrashed()->pluck('name', 'id');
 
@@ -412,18 +451,24 @@ class BudgetController extends Controller
             'cost_center' => $ccRaw === 'semua' ? 'Semua cost center' : ($cc === 0 ? 'Tanpa cost center' : ($pusat[$cc] ?? '—')),
             'periode' => 'Jan – '.BsBudget::MONTHS[$sd - 1].' '.$year,
             'budgets' => $budgets->map(fn ($b) => [
-                'id' => $b->id, 'doc_no' => $b->doc_no, 'wf_status' => $b->status ?? 'draft',
-                'awal' => array_values(BudgetAnnualReportService::bulanVersi($b, 'awal', $tambahan)),
-                'berlaku' => array_values(BudgetAnnualReportService::bulanVersi($b, 'berlaku', $tambahan)),
+                'id' => $b->id, 'doc_no' => $b->doc_no, 'wf_status' => $b->status ?? 'draft', 'notes' => $b->notes,
                 'koreksi' => $koreksi->where('budget_id', $b->id)->values()->map(fn ($c) => [
                     'doc_no' => $c->doc_no, 'tanggal' => $c->corr_date?->format('Y-m-d') ?? substr((string) $c->corr_date, 0, 10),
-                    'periode' => BsBudget::MONTHS[max(1, (int) $c->period_from) - 1].((int) $c->period_to !== (int) $c->period_from ? ' – '.BsBudget::MONTHS[min(12, (int) $c->period_to) - 1] : ''),
-                    'nilai' => round((float) $c->new_amount - (float) $c->old_amount, 2),
+                    'periode' => BudgetCorrectionController::labelPeriode($c),
+                    'nilai' => round(array_sum($c->tambahanBulan()), 2),
                     'status' => $c->status, 'note' => $c->note,
-                    // Koreksi dari invoice diputus di Approval Inbox; yang lama di layar Koreksi Budget.
+                    // Koreksi yang diajukan ke Approval Inbox dibuka di sana; yang lama di layar Koreksi Budget.
                     'url' => $c->approval_id ? route('approval-inbox.show', $c->approval_id) : route('bs.budget.correction.index'),
                 ]),
-            ]),
+                // Alokasi: keluar (budget ini asal, nilai minus) / masuk (budget ini tujuan, nilai plus).
+                'alokasi' => $alokasi->filter(fn ($a) => $a->budget_id === $b->id || $a->to_budget_id === $b->id)->values()->map(fn ($a) => [
+                    'doc_no' => $a->doc_no, 'tanggal' => $a->alloc_date?->format('Y-m-d'),
+                    'arah' => $a->budget_id === $b->id ? 'keluar' : 'masuk',
+                    'lawan' => $a->budget_id === $b->id ? ($a->toBudget?->doc_no.' · '.$a->toBudget?->account?->code) : ($a->budget?->doc_no.' · '.$a->budget?->account?->code),
+                    'periode' => collect(array_keys((array) $a->months))->map(fn ($m) => BsBudget::MONTHS[(int) $m - 1])->implode(', '),
+                    'nilai' => ($a->budget_id === $b->id ? -1 : 1) * (float) $a->amount, 'note' => $a->notes,
+                ]),
+            ] + $this->perBulan($b)),
             'jurnal' => array_map(fn ($j) => $j + [
                 'cost_center' => $j['cost_center_id'] ? ($pusat[$j['cost_center_id']] ?? '—') : 'Tanpa cost center',
                 'url' => route('bs.gl.journal.show', $j['journal_id']),
@@ -437,17 +482,17 @@ class BudgetController extends Controller
         abort_unless($request->user()?->can('budget.master.export'), 403);
         $year = (int) $request->integer('year', (int) now()->year);
         $status = (string) $request->input('status', 'approved');
-        [$versi, $sd] = $this->filterLaporan($request, $year);
-        $lap = $this->laporan->susun($year, $status, $versi, $sd);
+        $sd = $this->sdLaporan($request, $year);
+        $lap = $this->laporan->susun($year, $status, $sd);
 
         $e = fn ($s) => htmlspecialchars((string) $s, ENT_QUOTES, 'UTF-8');
         $rp = fn ($n) => number_format((float) $n, 0, ',', '.');
         $pr = fn ($p) => $p === null ? '—' : number_format((float) $p, 1, ',', '.').'%';
-        $sel = fn (array $r, string $gaya, string $uraian) => '<tr style="'.$gaya.'"><td>'.$uraian.'</td><td align="right">'.$rp($r['anggaran']).'</td><td align="right">'.$rp($r['realisasi']).'</td><td align="right">'.$rp($r['selisih']).'</td><td align="right">'.$pr($r['persen']).'</td><td align="right">'.$rp($r['setahun']).'</td></tr>';
+        $sel = fn (array $r, string $gaya, string $uraian) => '<tr style="'.$gaya.'"><td>'.$uraian.'</td><td align="right">'.$rp($r['anggaran']).'</td><td align="right">'.$rp($r['realisasi']).'</td><td align="right">'.$rp($r['sisa']).'</td><td align="right">'.$pr($r['persen']).'</td><td align="right">'.$rp($r['setahun']).'</td></tr>';
 
         $bulan = BsBudget::MONTHS[$sd - 1];
-        $html = '<tr><td colspan="6"><b>Anggaran vs Realisasi Tahunan '.$year.'</b> — versi '.$e(BudgetAnnualReportService::VERSI[$versi]).' · realisasi s.d. akhir '.$bulan.' '.$year.'</td></tr>'
-            .'<tr style="background:#0f766e;color:#fff"><th>Uraian</th><th>Anggaran s.d. '.$bulan.'</th><th>Realisasi s.d. '.$bulan.'</th><th>Selisih</th><th>%</th><th>Anggaran setahun</th></tr>';
+        $html = '<tr><td colspan="6"><b>Anggaran vs Realisasi Tahunan '.$year.'</b> — anggaran berlaku (termasuk Koreksi & Alokasi) · realisasi s.d. akhir '.$bulan.' '.$year.'</td></tr>'
+            .'<tr style="background:#0f766e;color:#fff"><th>Uraian</th><th>Anggaran s.d. '.$bulan.'</th><th>Realisasi s.d. '.$bulan.'</th><th>Sisa s.d. '.$bulan.'</th><th>%</th><th>Anggaran setahun</th></tr>';
         foreach ($lap['bagian'] as $bg) {
             $html .= '<tr style="background:#dbeafe;font-weight:bold"><td colspan="6">'.$e($bg['judul']).'</td></tr>';
             foreach ($bg['grup'] as $g) {

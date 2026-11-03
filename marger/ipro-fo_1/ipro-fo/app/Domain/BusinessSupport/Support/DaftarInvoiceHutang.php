@@ -216,6 +216,6 @@ final class DaftarInvoiceHutang
         return ['bs_ap_invoices.id', 'bs_ap_invoices.invoice_number', 'bs_ap_invoices.invoice_date', 'bs_ap_invoices.receive_date', 'bs_ap_invoices.due_date', 'bs_ap_invoices.supplier_id', 'bs_ap_invoices.customer_id',
             'bs_ap_invoices.source_type', 'bs_ap_invoices.source_id', 'bs_ap_invoices.refund_source', 'bs_ap_invoices.description', 'bs_ap_invoices.berkas_notes', 'bs_ap_invoices.berkas_finance_date',
             'bs_ap_invoices.total', 'bs_ap_invoices.net_payable', 'bs_ap_invoices.paid_amount', 'bs_ap_invoices.status',
-            'bs_ap_invoices.journal_id', DB::raw(self::STATUS_JURNAL.' AS status_jurnal'), DB::raw('s.name AS nama_supplier'), DB::raw('c.full_name AS nama_customer')];
+            'bs_ap_invoices.journal_id', 'bs_ap_invoices.memo_internal_id', DB::raw(self::STATUS_JURNAL.' AS status_jurnal'), DB::raw('s.name AS nama_supplier'), DB::raw('c.full_name AS nama_customer')];
     }
 }
