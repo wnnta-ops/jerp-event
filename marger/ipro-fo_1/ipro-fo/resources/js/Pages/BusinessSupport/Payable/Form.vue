@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue';
 import { useForm, Link, router } from '@inertiajs/vue3';
-import { ArrowLeft, ArrowRight, Save, HandCoins, Plus, Trash2, Check, Search, Copy, ClipboardPaste, Files, Pencil, FileText } from 'lucide-vue-next';
+import { ArrowLeft, ArrowRight, Save, HandCoins, Plus, Trash2, Check, Search, Copy, ClipboardPaste, Files, Pencil, FileText, ChevronDown, Building2 } from 'lucide-vue-next';
 import Button from '@/Components/UI/Button.vue';
 import MoneyInput from '@/Components/UI/MoneyInput.vue';
 import SearchSelect from '@/Components/UI/SearchSelect.vue';
@@ -349,8 +349,13 @@ const kurangCc = computed<string[]>(() => {
 
 function fmtRp(v: number) { return 'Rp ' + Number(v ?? 0).toLocaleString('id-ID'); }
 function fmtNum(v: number) { return Number(v ?? 0).toLocaleString('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
+/* Langkah 1 berisi dua baris terlipat — Memo Urgent & penerima. Klik baris untuk membukanya;
+   hanya satu yang terbuka sekaligus supaya jelas mana yang sedang dipilih. */
+const bukaLangkah1 = ref<'memo' | 'pihak' | null>(null);
+const bukaTutup = (k: 'memo' | 'pihak') => { bukaLangkah1.value = bukaLangkah1.value === k ? null : k; };
 function pickSupplier(s: any) {
     form[kolomPihak] = s.id;
+    if (props.jenis.kunci !== 'deposit') bukaLangkah1.value = null;
     // Deposit: rekening customer diketik dulu di langkah ini (master Customer tak menyimpan bank).
     if (props.jenis.kunci === 'deposit') {
         if (! form.bank_account_name) form.bank_account_name = s.name;
@@ -792,6 +797,8 @@ const opsiMemo = computed(() => (props.memoUrgent ?? []).map((m) => ({
     id: m.id, label: `${m.number} — ${m.subject} · ${fmtRp(m.amount)}${m.department ? ' · ' + m.department : ''}`,
 })));
 const memuatMemo = ref(false);
+// Memo dipilih → barisnya dilipat lagi, ringkasannya tampil di judul baris.
+watch(() => form.memo_internal_id, (id) => { if (id && bukaLangkah1.value === 'memo') bukaLangkah1.value = null; });
 /** Ambil ulang daftar memo (mis. sesudah membuat / menyetujui memo di tab lain) tanpa mengganggu isian. */
 function muatUlangMemo() {
     memuatMemo.value = true;
@@ -932,27 +939,54 @@ const cellArea = 'w-full rounded-md border border-neutral-300 bg-white px-2 py-1
 
         <!-- Step 1: Pilih Supplier -->
         <div v-show="step === 1" class="card p-5">
-            <!-- Memo Urgent (opsional) — memo yang sudah disetujui Direktur; dibuat di modul Memo Urgent. -->
-            <div class="mb-4 rounded-lg border border-neutral-200 bg-neutral-50/60 p-3 dark:border-neutral-800 dark:bg-neutral-800/40">
-                <div class="mb-1.5 flex flex-wrap items-center justify-between gap-2">
-                    <label class="text-sm font-medium">Memo Urgent <span class="text-xs font-normal text-neutral-400">(opsional)</span></label>
-                    <div class="flex items-center gap-3 text-xs">
-                        <button type="button" class="text-neutral-500 hover:text-primary-600 disabled:opacity-50" :disabled="memuatMemo" @click="muatUlangMemo">{{ memuatMemo ? 'Memuat…' : 'Muat ulang' }}</button>
-                        <a v-if="bisaBuatMemo" :href="route('approval-inbox.create')" target="_blank" rel="noopener" class="inline-flex items-center gap-1 font-medium text-primary-600 hover:underline"><Plus class="h-3.5 w-3.5" /> Buat Memo Urgent</a>
+            <!-- Dua baris terlipat: klik untuk memilih Memo Urgent atau penerima. -->
+            <div class="divide-y divide-neutral-200 overflow-hidden rounded-lg border border-neutral-200 dark:divide-neutral-800 dark:border-neutral-800">
+                <!-- Memo Urgent (opsional) — memo yang sudah disetujui Direktur; dibuat di modul Memo Urgent. -->
+                <div>
+                    <button type="button" class="flex w-full items-center gap-3 px-4 py-3 text-left hover:bg-neutral-50 dark:hover:bg-neutral-800/50" :class="bukaLangkah1 === 'memo' ? 'bg-neutral-50 dark:bg-neutral-800/50' : ''" @click="bukaTutup('memo')">
+                        <FileText class="h-5 w-5 shrink-0" :class="memoDipilih ? 'text-primary-600' : 'text-neutral-400'" />
+                        <span class="min-w-0 flex-1">
+                            <span class="block text-sm font-medium">Memo Urgent <span class="text-xs font-normal text-neutral-400">(opsional)</span></span>
+                            <span v-if="memoDipilih" class="block truncate text-xs text-primary-700 dark:text-primary-300">{{ memoDipilih.number }} — {{ memoDipilih.subject }} · {{ fmtRp(memoDipilih.amount) }}</span>
+                            <span v-else class="block text-xs text-neutral-400">{{ opsiMemo.length ? opsiMemo.length + ' memo siap ditarik — klik untuk memilih' : 'Belum ada memo yang disetujui Direktur' }}</span>
+                        </span>
+                        <Check v-if="memoDipilih" class="h-4 w-4 text-success-600" />
+                        <ChevronDown class="h-4 w-4 text-neutral-400 transition-transform" :class="bukaLangkah1 === 'memo' ? 'rotate-180' : ''" />
+                    </button>
+                    <div v-if="bukaLangkah1 === 'memo'" class="border-t border-neutral-100 bg-neutral-50/60 px-4 py-3 dark:border-neutral-800 dark:bg-neutral-800/30">
+                        <div class="mb-1.5 flex flex-wrap items-center justify-end gap-3 text-xs">
+                            <button type="button" class="text-neutral-500 hover:text-primary-600 disabled:opacity-50" :disabled="memuatMemo" @click="muatUlangMemo">{{ memuatMemo ? 'Memuat…' : 'Muat ulang' }}</button>
+                            <a v-if="bisaBuatMemo" :href="route('approval-inbox.create')" target="_blank" rel="noopener" class="inline-flex items-center gap-1 font-medium text-primary-600 hover:underline"><Plus class="h-3.5 w-3.5" /> Buat Memo Urgent</a>
+                        </div>
+                        <SearchSelect v-model="form.memo_internal_id" :options="opsiMemo" :placeholder="opsiMemo.length ? '— cari no. memo / perihal —' : '— belum ada memo yang disetujui Direktur —'" :no-truncate="true" />
+                        <p v-if="memoDipilih" class="mt-1 text-[11px] text-neutral-500">{{ memoDipilih.date }} · {{ memoDipilih.department || '—' }} · <span class="text-amber-600">{{ memoDipilih.status }}</span>
+                            <a v-if="memoDipilih.url" :href="memoDipilih.url" target="_blank" rel="noopener" class="ml-1 text-primary-600 hover:underline">lihat memo</a></p>
+                        <p v-else class="mt-1 text-[11px] text-neutral-400">Memo baru dibuat di modul Memo Urgent (tab baru) dan muncul di sini setelah disetujui Direktur — klik "Muat ulang".</p>
                     </div>
                 </div>
-                <SearchSelect v-model="form.memo_internal_id" :options="opsiMemo" :placeholder="opsiMemo.length ? '— cari no. memo / perihal —' : '— belum ada memo yang disetujui Direktur —'" :no-truncate="true" />
-                <p v-if="memoDipilih" class="mt-1 text-[11px] text-neutral-500">{{ memoDipilih.date }} · {{ memoDipilih.department || '—' }} · <span class="text-amber-600">{{ memoDipilih.status }}</span>
-                    <a v-if="memoDipilih.url" :href="memoDipilih.url" target="_blank" rel="noopener" class="ml-1 text-primary-600 hover:underline">lihat memo</a></p>
-                <p v-else class="mt-1 text-[11px] text-neutral-400">Memo baru dibuat di modul Memo Urgent (tab baru) dan muncul di sini setelah disetujui Direktur — klik "Muat ulang".</p>
-            </div>
-            <div class="relative mb-3"><Search class="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-neutral-400" /><input v-model="supplierSearch" :placeholder="jenis.kunci === 'invoice' ? 'Cari supplier / kontraktor…' : 'Cari ' + jenis.penerima.toLowerCase() + '…'" :class="[inputCls,'pl-9']" /></div>
-            <div class="max-h-96 divide-y divide-neutral-100 overflow-y-auto dark:divide-neutral-800">
-                <button v-for="s in filteredSuppliers" :key="s.id" type="button" @click="pickSupplier(s)" class="flex w-full items-center justify-between px-2 py-2.5 text-left text-sm hover:bg-neutral-50 dark:hover:bg-neutral-800/50" :class="form[kolomPihak] === s.id ? 'bg-primary-50 dark:bg-primary-900/20' : ''">
-                    <span><span class="font-mono text-xs text-neutral-400">{{ s.code }}</span> <span class="font-medium">{{ s.name }}</span><span v-if="s.category" class="ml-2 rounded bg-neutral-100 px-1.5 text-[10px] text-neutral-500 dark:bg-neutral-800">{{ s.category }}</span></span>
-                    <ArrowRight class="h-4 w-4 text-neutral-300" />
-                </button>
-                <p v-if="!filteredSuppliers.length" class="px-2 py-6 text-center text-sm text-neutral-400">Tidak ada {{ jenis.penerima.toLowerCase() }} yang cocok.</p>
+                <!-- Penerima (supplier / karyawan / customer) -->
+                <div>
+                    <button type="button" class="flex w-full items-center gap-3 px-4 py-3 text-left hover:bg-neutral-50 dark:hover:bg-neutral-800/50" :class="bukaLangkah1 === 'pihak' ? 'bg-neutral-50 dark:bg-neutral-800/50' : ''" @click="bukaTutup('pihak')">
+                        <Building2 class="h-5 w-5 shrink-0" :class="supplier ? 'text-primary-600' : 'text-neutral-400'" />
+                        <span class="min-w-0 flex-1">
+                            <span class="block text-sm font-medium">{{ jenis.penerima }} <span class="text-xs font-normal text-danger-500">*</span></span>
+                            <span v-if="supplier" class="block truncate text-xs text-primary-700 dark:text-primary-300">{{ supplier.code }} {{ supplier.name }}</span>
+                            <span v-else class="block text-xs text-neutral-400">Klik untuk mencari {{ jenis.kunci === 'invoice' ? 'supplier / kontraktor' : jenis.penerima.toLowerCase() }}</span>
+                        </span>
+                        <Check v-if="supplier" class="h-4 w-4 text-success-600" />
+                        <ChevronDown class="h-4 w-4 text-neutral-400 transition-transform" :class="bukaLangkah1 === 'pihak' ? 'rotate-180' : ''" />
+                    </button>
+                    <div v-if="bukaLangkah1 === 'pihak'" class="border-t border-neutral-100 px-4 py-3 dark:border-neutral-800">
+                        <div class="relative mb-3"><Search class="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-neutral-400" /><input v-model="supplierSearch" :placeholder="jenis.kunci === 'invoice' ? 'Cari supplier / kontraktor…' : 'Cari ' + jenis.penerima.toLowerCase() + '…'" :class="[inputCls,'pl-9']" /></div>
+                        <div class="max-h-96 divide-y divide-neutral-100 overflow-y-auto dark:divide-neutral-800">
+                            <button v-for="s in filteredSuppliers" :key="s.id" type="button" @click="pickSupplier(s)" class="flex w-full items-center justify-between px-2 py-2.5 text-left text-sm hover:bg-neutral-50 dark:hover:bg-neutral-800/50" :class="form[kolomPihak] === s.id ? 'bg-primary-50 dark:bg-primary-900/20' : ''">
+                                <span><span class="font-mono text-xs text-neutral-400">{{ s.code }}</span> <span class="font-medium">{{ s.name }}</span><span v-if="s.category" class="ml-2 rounded bg-neutral-100 px-1.5 text-[10px] text-neutral-500 dark:bg-neutral-800">{{ s.category }}</span></span>
+                                <ArrowRight class="h-4 w-4 text-neutral-300" />
+                            </button>
+                            <p v-if="!filteredSuppliers.length" class="px-2 py-6 text-center text-sm text-neutral-400">Tidak ada {{ jenis.penerima.toLowerCase() }} yang cocok.</p>
+                        </div>
+                    </div>
+                </div>
             </div>
             <PesanWajib :pesan="pesan.pihak" />
             <!-- Deposit: rekening tujuan pengembalian diketik — master Customer tidak menyimpan data bank. -->
