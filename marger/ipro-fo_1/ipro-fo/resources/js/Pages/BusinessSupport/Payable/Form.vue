@@ -829,6 +829,27 @@ function ajukanAlokasi(l: any) {
     form.alokasi.push({ budget_id: o.budget_id, account_id: o.account_id, cost_center_id: o.cost_center_id, keterangan: o.keterangan, nilai: o.kurang || r0(l.debit), dari_budget_id: '' });
     muatSumber();
 }
+/** Alokasi / Koreksi yang dipilih untuk anggaran baris ini (null = belum). */
+function pilihanBudget(l: any): 'alokasi' | 'koreksi' | null {
+    const o = budgetBaris(l);
+    if (!o) return null;
+    return alokasiUntuk(o.budget_id) ? 'alokasi' : (koreksiUntuk(o.budget_id) ? 'koreksi' : null);
+}
+/* Ganti-ganti selama invoice belum disimpan: klik pilihan yang aktif = lepas; klik yang lain = pindah
+   (nilai yang sudah diketik ikut dibawa). */
+function pilihBudget(l: any, jenis: 'alokasi' | 'koreksi') {
+    const o = budgetBaris(l);
+    if (!o) return;
+    const a = alokasiUntuk(o.budget_id);
+    const k = koreksiUntuk(o.budget_id);
+    const nilai = a?.nilai ?? k?.nilai;
+    form.alokasi = (form.alokasi as any[]).filter((x) => x.budget_id !== o.budget_id);
+    form.koreksi = (form.koreksi as any[]).filter((x) => x.budget_id !== o.budget_id);
+    if ((jenis === 'alokasi' && a) || (jenis === 'koreksi' && k)) return; // lepas
+    jenis === 'alokasi' ? ajukanAlokasi(l) : ajukanKoreksi(l);
+    const baru = jenis === 'alokasi' ? alokasiUntuk(o.budget_id) : koreksiUntuk(o.budget_id);
+    if (baru && nilai !== undefined && Number(nilai) > 0) baru.nilai = nilai;
+}
 function hapusKoreksi(i: number) { form.koreksi.splice(i, 1); }
 function hapusAlokasi(i: number) { form.alokasi.splice(i, 1); }
 /** Tabel koreksi/alokasi bisa diubah di langkah Struktur; di Selesai hanya ditampilkan. */
@@ -1455,12 +1476,14 @@ const cellArea = 'w-full rounded-md border border-neutral-300 bg-white px-2 py-1
                                         <div :class="['font-mono text-xs', (sisaBaris(l) as number) < 0 ? 'font-semibold text-danger-600' : 'text-success-700 dark:text-success-400']">{{ fmtNum(sisaBaris(l) as number) }}</div>
                                         <!-- Alokasi / Koreksi: wajib bila minus, opsional bila masih cukup (baris debit ber-anggaran). -->
                                         <template v-if="l.side === 'debit'">
-                                            <span v-if="koreksiUntuk(sisaInfo[kunciBudget(l)]!.budget_id)" class="mt-1 inline-flex items-center gap-0.5 text-[10.5px] font-medium text-amber-600"><Check class="h-3 w-3" /> Koreksi diajukan</span>
-                                            <span v-else-if="alokasiUntuk(sisaInfo[kunciBudget(l)]!.budget_id)" class="mt-1 inline-flex items-center gap-0.5 text-[10.5px] font-medium text-sky-600"><Check class="h-3 w-3" /> Dialokasikan</span>
-                                            <div v-else class="mt-1 flex justify-end gap-1" :class="(sisaBaris(l) as number) < 0 ? '' : 'opacity-70 hover:opacity-100'">
-                                                <button type="button" class="inline-flex h-6 items-center rounded-md border border-sky-300 bg-sky-50 px-2 text-[10.5px] font-semibold text-sky-700 hover:bg-sky-100 dark:border-sky-800 dark:bg-sky-950/40 dark:text-sky-300" title="Ambil dari sisa bulan ini di budget lain — langsung berlaku" @click="ajukanAlokasi(l)">Alokasi</button>
-                                                <button type="button" class="inline-flex h-6 items-center rounded-md border border-danger-300 bg-danger-50 px-2 text-[10.5px] font-semibold text-danger-700 hover:bg-danger-100 dark:border-danger-800 dark:bg-danger-950/40 dark:text-danger-300" title="Tambah anggaran bulan ini — lewat Approval Inbox" @click="ajukanKoreksi(l)">Koreksi</button>
+                                            <!-- Pilihan bisa diganti / dilepas selama invoice belum disimpan (diajukan). -->
+                                            <div class="mt-1 flex justify-end gap-1" :class="pilihanBudget(l) || (sisaBaris(l) as number) < 0 ? '' : 'opacity-70 hover:opacity-100'">
+                                                <button type="button" :class="['inline-flex h-6 items-center gap-0.5 rounded-md border px-2 text-[10.5px] font-semibold', pilihanBudget(l) === 'alokasi' ? 'border-sky-600 bg-sky-600 text-white' : 'border-sky-300 bg-sky-50 text-sky-700 hover:bg-sky-100 dark:border-sky-800 dark:bg-sky-950/40 dark:text-sky-300']"
+                                                    :title="pilihanBudget(l) === 'alokasi' ? 'Klik untuk melepas alokasi' : 'Ambil dari sisa bulan ini di budget lain — langsung berlaku'" @click="pilihBudget(l, 'alokasi')"><Check v-if="pilihanBudget(l) === 'alokasi'" class="h-3 w-3" />Alokasi</button>
+                                                <button type="button" :class="['inline-flex h-6 items-center gap-0.5 rounded-md border px-2 text-[10.5px] font-semibold', pilihanBudget(l) === 'koreksi' ? 'border-danger-600 bg-danger-600 text-white' : 'border-danger-300 bg-danger-50 text-danger-700 hover:bg-danger-100 dark:border-danger-800 dark:bg-danger-950/40 dark:text-danger-300']"
+                                                    :title="pilihanBudget(l) === 'koreksi' ? 'Klik untuk melepas koreksi' : 'Tambah anggaran bulan ini — lewat Approval Inbox'" @click="pilihBudget(l, 'koreksi')"><Check v-if="pilihanBudget(l) === 'koreksi'" class="h-3 w-3" />Koreksi</button>
                                             </div>
+                                            <div v-if="pilihanBudget(l)" class="mt-0.5 text-[10px] text-neutral-400">{{ pilihanBudget(l) === 'alokasi' ? 'Dialokasikan' : 'Koreksi diajukan bersama invoice' }} · klik untuk ganti / lepas</div>
                                         </template>
                                     </template>
                                 </td>
