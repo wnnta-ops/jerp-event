@@ -45,8 +45,13 @@ class ApBerkasController extends Controller
 
     // ── DAFTAR ───────────────────────────────────────────────────────────────────
 
-    public function index(Request $request): Response
+    public function index(Request $request): Response|RedirectResponse
     {
+        // Modul Upload Berkas DIHAPUS dari menu (3 Nov 2026): berkas kini diunggah di Registrasi Invoice
+        // Hutang › Detil Tagihan (Upload File / Generate Link supplier). Detail, cetak & file berkas tetap
+        // bisa dibuka (Approval Inbox / TTD Dept Head memakainya).
+        return $this->keRegistrasi();
+
         $user = $request->user();
         abort_unless($user?->can('ap.berkas.upload') || $this->bisaLihatSemua($user), 403);
 
@@ -85,8 +90,10 @@ class ApBerkasController extends Controller
         ]);
     }
 
-    public function export(Request $request): HttpResponse
+    public function export(Request $request): HttpResponse|RedirectResponse
     {
+        return $this->keRegistrasi();
+
         $user = $request->user();
         abort_unless($user?->can('ap.berkas.export'), 403);
         $tab = (string) $request->input('tab', 'semua');
@@ -116,8 +123,10 @@ class ApBerkasController extends Controller
 
     // ── FORM ─────────────────────────────────────────────────────────────────────
 
-    public function create(Request $request): Response
+    public function create(Request $request): Response|RedirectResponse
     {
+        return $this->keRegistrasi();
+
         abort_unless($request->user()?->can('ap.berkas.upload'), 403);
 
         return Inertia::render('BusinessSupport/Payable/Berkas/Form', $this->formProps($request->user()) + [
@@ -147,8 +156,10 @@ class ApBerkasController extends Controller
             : "Berkas {$berkas->berkas_number} diajukan — menunggu TTD Dept Head.");
     }
 
-    public function edit(Request $request, BsApBerkasUpload $berkas): Response
+    public function edit(Request $request, BsApBerkasUpload $berkas): Response|RedirectResponse
     {
+        return $this->keRegistrasi();
+
         $user = $request->user();
         abort_unless($this->bolehUbah($user, $berkas), 403);
         $berkas->load('files.jenis:id,name');
@@ -287,6 +298,13 @@ class ApBerkasController extends Controller
             'statusLabel' => BsApBerkasUpload::STATUS_LABELS[$berkas->status] ?? $berkas->status,
             'dicetakOleh' => $request->user()?->name,
         ])->render());
+    }
+
+    /** Halaman daftar/unggah/edit berkas sudah tidak ada — arahkan ke Registrasi Invoice Hutang. */
+    private function keRegistrasi(): RedirectResponse
+    {
+        return redirect()->route('bs.ap.create')
+            ->with('success', 'Upload Berkas kini ada di Registrasi Invoice Hutang › langkah Detil Tagihan (Upload File / Generate Link).');
     }
 
     // ── internal: hak akses ──────────────────────────────────────────────────────

@@ -11,8 +11,7 @@ declare(strict_types=1);
  *   · Invoice baru tanpa berkas ditolak; berkas milik orang lain ditolak; berkas yang belum
  *     di-TTD Dept Head ditolak.
  *   · "Edit" berkas: isian wizard tersimpan sebagai draft (satu per user), lalu diarahkan ke
- *     Upload Berkas ?lanjut_edit=… (bukan langsung ke edit — supaya Back kembali ke Upload
- *     Berkas). Berkas yang sudah diajukan / milik orang lain tidak bisa di-edit lewat sini.
+ *     Upload Berkas ?lanjut_edit=… — DIHAPUS 3 Nov 2026 (menu Upload Berkas tidak ada lagi).
  *   · Draft bisa dibuang.
  *
  * Disk 'local' dipalsukan dan data DB DIBATALKAN (rollback).
@@ -144,17 +143,13 @@ try {
 
     echo "\n=== 3. Edit berkas → draft invoice ===\n";
     $isian = ['supplier_id' => 7, 'description' => 'Invoice setengah jadi', 'berkas_upload_id' => $draft->id, 'lines' => [['description' => 'x', 'qty' => 1, 'amount' => 10]]];
-    $res = $ctlInv->simpanDraft($minta('POST', ['data' => $isian, 'step' => 3, 'edit_berkas' => $draft->id]));
+    $res = $ctlInv->simpanDraft($minta('POST', ['data' => $isian, 'step' => 3]));
     $d = BsApInvoiceDraft::query()->where('user_id', $staf->id)->first();
     $cek('draft tersimpan (isian + langkah + berkas)', $d && $d->step === 3 && $d->data['description'] === 'Invoice setengah jadi' && (int) $d->berkas_upload_id === $draft->id);
-    $cek('diarahkan ke Upload Berkas ?lanjut_edit=', str_contains($res->getTargetUrl(), '/business-support/payable-berkas') && str_contains($res->getTargetUrl(), 'lanjut_edit='.$draft->id), $res->getTargetUrl());
     $ctlInv->simpanDraft($minta('POST', ['data' => $isian + ['term_days' => 30], 'step' => 4]));
     $cek('simpan lagi → tetap satu draft per user, diperbarui', BsApInvoiceDraft::query()->where('user_id', $staf->id)->count() === 1
         && BsApInvoiceDraft::query()->where('user_id', $staf->id)->first()->step === 4);
-    $res = $ctlInv->simpanDraft($minta('POST', ['data' => $isian, 'step' => 3, 'edit_berkas' => $siap->id]));
-    $cek('berkas sudah di-TTD tidak bisa di-edit lewat sini', str_contains($galatSesi(), 'tidak bisa diedit') && ! str_contains($res->getTargetUrl(), 'lanjut_edit'));
-    $ctlInv->simpanDraft($minta('POST', ['data' => $isian, 'step' => 3, 'edit_berkas' => $milikLain->id]));
-    $cek('berkas orang lain tidak bisa di-edit lewat sini', str_contains($galatSesi(), 'tidak bisa diedit'));
+    // "Edit berkas" dari wizard (lewat halaman Upload Berkas) dihapus 3 Nov 2026 bersama menu Upload Berkas.
 
     echo "\n=== 4. Upload Berkas meneruskan ke edit; banner draft ===\n";
     $lanjut = new ReflectionMethod($ctlBerkas, 'lanjutEdit');

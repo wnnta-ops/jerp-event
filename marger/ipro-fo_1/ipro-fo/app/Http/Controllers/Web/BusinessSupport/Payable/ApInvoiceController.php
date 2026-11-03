@@ -572,28 +572,13 @@ class ApInvoiceController extends Controller
         $v = $request->validate([
             'data' => ['required', 'array'],
             'step' => ['required', 'integer', 'min:1', 'max:5'],
-            'edit_berkas' => ['nullable', 'integer'],
         ]);
         $berkasId = isset($v['data']['berkas_upload_id']) && is_numeric($v['data']['berkas_upload_id']) ? (int) $v['data']['berkas_upload_id'] : null;
-
-        $edit = null;
-        if (! empty($v['edit_berkas'])) {
-            $edit = \App\Domain\BusinessSupport\Models\BsApBerkasUpload::findOrFail((int) $v['edit_berkas']);
-            if ((int) $edit->uploaded_by !== (int) $user->id || ! $edit->bisaDiubah()) {
-                return back()->with('error', "Berkas {$edit->berkas_number} tidak bisa diedit (status: "
-                    .(\App\Domain\BusinessSupport\Models\BsApBerkasUpload::STATUS_LABELS[$edit->status] ?? $edit->status).').');
-            }
-        }
 
         BsApInvoiceDraft::query()->updateOrCreate(
             ['user_id' => $user->id, 'jenis' => 'invoice'],
             ['data' => $v['data'], 'step' => $v['step'], 'berkas_upload_id' => $berkasId],
         );
-
-        if ($edit !== null) {
-            return redirect()->route('bs.ap.berkas.index', ['lanjut_edit' => $edit->id])
-                ->with('success', "Registrasi invoice disimpan sebagai draft. Silakan edit berkas {$edit->berkas_number}.");
-        }
 
         return back()->with('success', 'Registrasi invoice disimpan sebagai draft.');
     }

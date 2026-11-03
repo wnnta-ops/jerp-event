@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue';
 import { useForm, Link, router } from '@inertiajs/vue3';
-import { ArrowLeft, ArrowRight, Save, HandCoins, Plus, Trash2, Check, Search, Copy, ClipboardPaste, Files, Pencil, FileText, ChevronDown, Building2, Upload, Link2, RefreshCw } from 'lucide-vue-next';
+import { ArrowLeft, ArrowRight, Save, HandCoins, Plus, Trash2, Check, Search, Copy, ClipboardPaste, Files, FileText, ChevronDown, Building2, Upload, Link2, RefreshCw } from 'lucide-vue-next';
 import Button from '@/Components/UI/Button.vue';
 import MoneyInput from '@/Components/UI/MoneyInput.vue';
 import SearchSelect from '@/Components/UI/SearchSelect.vue';
@@ -607,7 +607,7 @@ watch(step, (s) => {
 });
 
 /* ── BERKAS (langkah Detil Tagihan) ──
-   Registrasi baru Invoice Hutang wajib memilih satu berkas unggahan user sendiri dari Upload Berkas.
+   Registrasi baru Invoice Hutang wajib punya satu berkas: diunggah di sini (Upload File) atau dari supplier (Generate Link).
    Server memeriksa ulang (milik user, sudah di-TTD Dept Head) saat invoice disimpan. */
 const wajibBerkas = Array.isArray(props.berkasSaya);
 const berkasDipilih = computed<BerkasPilihan | null>(() => props.berkasSaya?.find((b) => b.id === Number(form.berkas_upload_id)) ?? null);
@@ -716,25 +716,21 @@ function tutupSemua() {
 }
 onBeforeUnmount(tutupSemua);
 
-/* DRAFT. "Edit" berkas menyimpan isian wizard sebagai draft user lalu membawanya ke Upload Berkas
-   (replace: wizard ini tidak tertinggal di riwayat, jadi Back dari halaman edit berkas kembali ke
-   Upload Berkas). Wizard dipulihkan dari draft saat Registrasi Invoice Hutang dibuka lagi. */
-const dialogEdit = ref(false);
+/* DRAFT. "Simpan Draft" menyimpan isian wizard; dipulihkan saat Registrasi Invoice Hutang dibuka lagi. */
 const menyimpanDraft = ref(false);
-function simpanDraft(editBerkas: number | null = null) {
+function simpanDraft() {
     menyimpanDraft.value = true;
     // Menunggu supplier: draft disimpan di link-nya sendiri (satu user bisa menunggu beberapa link).
-    if (form.link_id && editBerkas === null) {
+    if (form.link_id) {
         (window as any).axios.put(route('bs.ap.berkas-link.draft', form.link_id), { data: form.data(), step: step.value })
             .then(() => { pesanLink.value = 'Draft tersimpan di link ' + (linkAktif.value?.invoice_number ?? '') + '.'; })
             .finally(() => { menyimpanDraft.value = false; });
         return;
     }
-    router.post(route('bs.ap.draft.store'), { data: form.data(), step: step.value, edit_berkas: editBerkas }, {
-        replace: editBerkas !== null,
+    router.post(route('bs.ap.draft.store'), { data: form.data(), step: step.value }, {
         preserveScroll: true,
         preserveState: true,
-        onFinish: () => { menyimpanDraft.value = false; dialogEdit.value = false; },
+        onFinish: () => { menyimpanDraft.value = false; },
     });
 }
 function buangDraft() {
@@ -978,7 +974,7 @@ const pesan = computed(() => ({
     dpp: pesanKolom(galatServer('dpp'), ! (Number(form.dpp) > 0), 'Wajib diisi — lebih dari 0'),
     manual_no: pesanKolom(galatServer('manual_no'), false),
     receive_date: pesanKolom(galatServer('receive_date'), false),
-    berkas: pesanKolom(galatServer('berkas_upload_id'), wajibBerkas && !berkasDipilih.value, 'Wajib dipilih — berkas dari Upload Berkas'),
+    berkas: pesanKolom(galatServer('berkas_upload_id'), wajibBerkas && !berkasDipilih.value, 'Wajib — unggah file tagihan atau tunggu dokumen dari link supplier'),
 }));
 /** Uraian baris Detil Tagihan wajib (server: lines.*.description). */
 const pesanUraian = (i: number) => pesanKolom(galatServer(`lines.${i}.description`), kosong(form.lines[i]?.description));
@@ -1272,21 +1268,10 @@ const cellArea = 'w-full rounded-md border border-neutral-300 bg-white px-2 py-1
                 </div>
 
                 <template v-if="modeBerkas === 'upload'">
-                <p class="mb-2 text-xs text-neutral-500">Pilih berkas yang Anda unggah lewat <Link :href="route('bs.ap.berkas.index', { tab: 'saya' })" class="text-primary-600 hover:underline">Upload Berkas</Link>, atau unggah file baru di bawah. Hanya berkas Anda sendiri yang tampil.</p>
-                <template v-if="berkasSaya!.length">
-                    <select id="berkas-pilih" v-model="form.berkas_upload_id" :class="tandai(inputCls, !!pesan.berkas)">
-                        <option value="">— Pilih berkas —</option>
-                        <option v-for="b in berkasSaya!" :key="b.id" :value="b.id">{{ b.number }} · {{ b.supplier ?? 'Tanpa supplier' }} · {{ b.amount != null ? fmtRp(b.amount) : '—' }} · {{ b.status_label }}</option>
-                    </select>
-                    <PesanWajib :pesan="pesan.berkas" />
-                </template>
-                <div v-else class="rounded-lg border border-dashed border-amber-300 bg-amber-50 px-3 py-3 text-sm text-amber-800 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-200">
-                    Anda belum punya berkas aktif — unggah file baru di bawah.
-                </div>
-
-                <!-- Upload file baru: jadi Upload Berkas Anda (supplier, no. tagihan, nilai & keterangan dari isian ini) + diajukan ke TTD Dept Head. -->
-                <div class="mt-3 rounded-lg border border-neutral-200 p-3 dark:border-neutral-700">
-                    <div class="mb-2 text-xs font-medium text-neutral-500">Upload file baru <span class="font-normal">(PDF/JPG/PNG · maks. 10 MB)</span></div>
+                <!-- Unggah di sini: jadi berkas Anda (supplier, no. tagihan, nilai & keterangan dari isian ini) + diajukan ke TTD Dept Head.
+                     Mengunggah lagi = mengganti berkas invoice ini. -->
+                <div class="rounded-lg border border-neutral-200 p-3 dark:border-neutral-700">
+                    <div class="mb-2 text-xs font-medium text-neutral-500">{{ berkasDipilih ? 'Ganti dengan file baru' : 'Unggah file tagihan' }} <span class="font-normal">(PDF/JPG/PNG · maks. 10 MB)</span></div>
                     <div v-for="(u, i) in unggahan" :key="i" class="mb-2 grid items-center gap-2 sm:grid-cols-[1fr_14rem_auto]">
                         <input type="file" accept=".pdf,.jpg,.jpeg,.png" class="text-xs" @change="u.file = (($event.target as HTMLInputElement).files ?? [])[0] ?? null" />
                         <select v-model="u.berkas_id" :class="inputCls">
@@ -1300,6 +1285,7 @@ const cellArea = 'w-full rounded-md border border-neutral-300 bg-white px-2 py-1
                         <Button size="sm" :disabled="!bisaUnggah" @click="unggahBerkas"><template #icon-left><Upload class="h-4 w-4" /></template>{{ mengunggah ? 'Mengunggah…' : 'Upload & Ajukan TTD' }}</Button>
                         <span v-if="galatUnggah" class="text-xs text-danger-500">{{ galatUnggah }}</span>
                     </div>
+                    <PesanWajib v-if="!berkasDipilih" :pesan="pesan.berkas" />
                 </div>
                 </template>
 
@@ -1312,10 +1298,6 @@ const cellArea = 'w-full rounded-md border border-neutral-300 bg-white px-2 py-1
                         </div>
                         <div class="flex items-center gap-2">
                             <span :class="['rounded-full px-2 py-0.5 text-[11px] font-medium', berkasDipilih.bisa_diinvoice ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300' : 'bg-amber-50 text-amber-800 dark:bg-amber-950/40 dark:text-amber-300']">{{ berkasDipilih.status_label }}</span>
-                            <button type="button" :disabled="!berkasDipilih.bisa_diubah"
-                                :title="berkasDipilih.bisa_diubah ? 'Edit berkas di Upload Berkas' : 'Berkas yang sedang menunggu / sudah di-TTD Dept Head tidak bisa diedit'"
-                                class="inline-flex items-center gap-1 rounded-lg border border-neutral-300 px-2.5 py-1 text-xs hover:bg-neutral-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-neutral-700 dark:hover:bg-neutral-800"
-                                @click="dialogEdit = true"><Pencil class="h-3.5 w-3.5" /> Edit</button>
                         </div>
                     </div>
                     <dl class="mt-2 grid grid-cols-2 gap-x-4 gap-y-1 text-xs sm:grid-cols-4">
@@ -1786,18 +1768,6 @@ const cellArea = 'w-full rounded-md border border-neutral-300 bg-white px-2 py-1
             </div>
             <div class="mx-auto min-h-0 w-full max-w-4xl flex-1 overflow-hidden rounded-lg bg-white">
                 <iframe :src="semua.url" class="h-full w-full" :title="semua.nama" />
-            </div>
-        </div>
-
-        <!-- Konfirmasi Edit berkas: isian invoice disimpan sebagai draft, lalu pindah ke Upload Berkas -->
-        <div v-if="dialogEdit && berkasDipilih" class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" @click.self="dialogEdit = false">
-            <div class="card w-full max-w-md space-y-3 p-5">
-                <p class="font-semibold">Edit berkas {{ berkasDipilih.number }}?</p>
-                <p class="text-sm text-neutral-600 dark:text-neutral-300">Anda akan dibawa ke halaman <b>Unggah Berkas</b> untuk mengedit berkas ini. Isian Registrasi Invoice Hutang Anda <b>disimpan sebagai draft</b> — buka lagi menu Registrasi Invoice Hutang untuk melanjutkannya.</p>
-                <div class="flex justify-end gap-2">
-                    <Button variant="secondary" @click="dialogEdit = false">Batal</Button>
-                    <Button :disabled="menyimpanDraft" @click="simpanDraft(berkasDipilih.id)">{{ menyimpanDraft ? 'Menyimpan…' : 'Simpan draft & edit berkas' }}</Button>
-                </div>
             </div>
         </div>
     </div>

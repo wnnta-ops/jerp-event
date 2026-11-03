@@ -91,7 +91,7 @@ const tampil = (v: any) => (v === null || v === '' || v === undefined ? '—' : 
 <template>
     <Head :title="berkas.number + ' — Upload Berkas'" />
     <div class="mx-auto max-w-5xl space-y-4">
-        <Link :href="route('bs.ap.berkas.index')" class="text-sm text-neutral-500 hover:text-primary-600">← Upload Berkas</Link>
+        <Link :href="route('approval-inbox.index')" class="text-sm text-neutral-500 hover:text-primary-600">← Approval Inbox</Link>
 
         <div class="flex flex-wrap items-start justify-between gap-3">
             <div>
@@ -113,7 +113,7 @@ const tampil = (v: any) => (v === null || v === '' || v === undefined ? '—' : 
         <!-- Aksi -->
         <div class="flex flex-wrap gap-2">
             <Link v-if="can.invoice" :href="route('bs.ap.create', { berkas: berkas.id })"><Button size="sm">Buat Invoice Hutang</Button></Link>
-            <Link v-if="can.edit" :href="route('bs.ap.berkas.edit', berkas.id)"><Button size="sm" variant="outline">{{ berkas.status === 'ditolak' ? 'Revisi' : 'Edit' }}</Button></Link>
+
             <Button v-if="can.submit" size="sm" :disabled="wajibKurang.length > 0" @click="ajukan">{{ berkas.status === 'ditolak' ? 'Ajukan Ulang' : 'Ajukan ke Dept Head' }}</Button>
             <a :href="route('bs.ap.berkas.print', berkas.id)" target="_blank" rel="noopener"><Button size="sm" variant="outline">Cetak / PDF</Button></a>
             <Button v-if="can.close" size="sm" variant="warning" @click="dialog = 'close'">Tutup Parsial</Button>

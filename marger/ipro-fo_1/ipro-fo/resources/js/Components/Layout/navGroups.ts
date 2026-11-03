@@ -372,9 +372,8 @@ export function navGroups(foUrl: string): NavGroup[] {
                 { label: 'Repair Data', href: 'bs.ap.repair.index' , permission: ['ap.repair.view'] , tampil: 'menu.bs.ap.repair.index' },
             ]},
             { label: 'Master', icon: BookText, permission: ['ap.invoice.view', 'ap.kuitansi.view', 'ap.berkas.upload'], children: [
-                // Titik awal approval hutang: staf unggah berkas → TTD Dept Head → tim AP buat invoice
-                // dari berkas → approval invoice di Approval Inbox → baru boleh dibayar.
-                { label: 'Upload Berkas', href: 'bs.ap.berkas.index' , permission: ['ap.berkas.upload', 'ap.invoice.view'], baru: true },
+                // Upload Berkas tidak lagi punya menu: berkas diunggah di Registrasi Invoice Hutang ›
+                // Detil Tagihan (Upload File / Generate Link supplier) → TTD Dept Head → approval invoice.
                 { label: 'Invoice Hutang', href: 'bs.ap.index' , permission: ['ap.invoice.view'] , tampil: 'menu.bs.ap.index' },
                 { label: 'Kuitansi Hutang', href: 'bs.ap.kuitansi.index' , permission: ['ap.kuitansi.view'] , tampil: 'menu.bs.ap.kuitansi.index' },
             ]},
